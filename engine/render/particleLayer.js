@@ -10,7 +10,7 @@
 // the architecture note's "Reason").
 //
 // 1 particle = 1 cell by default; an emitter def `sizeM` (world diameter, m) grows the footprint with
-// proximity to 1..3 x 1..3 cells (odd sizes centred, 2 -> anchor + right/down). Same glyph/colour/depth rule per cell.
+// proximity to 1..MAX_FOOT cells per side (perspective, centred; 1 cell = far floor; >=3x3 drawn as an ellipse). Same glyph/colour/depth rule per cell.
 //
 // `build()` is called once per rendered frame, after `engine.particles.step()`:
 //   1. clears the cells touched LAST frame (tracks which rows that wiped);
@@ -35,6 +35,7 @@ function partEmpty8() { return new Uint8Array(0); }
 function partEmptyF() { return new Float32Array(0); }
 function partEmptyI() { return new Int32Array(0); }
 
+const MAX_FOOT = 12; // max screen footprint of one sized particle (cells per side)
 const _ps = { depth: 0, fogDepth: 0, colCenter: 0, feetRow: 0, rowsOnScreen: 0 };
 const _lightScratch = new Float64Array(3);
 const _fog3 = new Float64Array(3);
@@ -77,8 +78,10 @@ export function createParticleLayer() {
     renderer: 'mesh',
     cols: 0, rows: 0,
     part: partEmpty8(), partZ: partEmptyF(),
+    partBg: partEmpty8(), // PART-VIS-01: per cell rgba8, rgb = fg colour * bgMix (premixed), a = round(bgMix*255); a = 0 -> bg untouched
     touched: partEmptyI(), // first `stats.cells` entries are valid (RE-07 precedent)
     minRow: 0, maxRow: -1, prevMinRow: 0, prevMaxRow: -1,
+    minCol: 0, maxCol: -1, prevMinCol: 0, prevMaxCol: -1, // PARTICLE-UPLOAD-02: touched column span (upload rect)
     stats: { cells: 0 },
 
     /** (Re)allocates the layer for a scene grid (engine grid:changed), like overlay.bind. */
@@ -87,10 +90,12 @@ export function createParticleLayer() {
       layer.cols = c; layer.rows = r;
       layer.part = new Uint8Array(c * r * 4);
       layer.partZ = new Float32Array(c * r);
+      layer.partBg = new Uint8Array(c * r * 4);
       // Worst case every live particle lands on a distinct cell - bounded by
       // the grid itself (never more than cols*rows distinct touched cells).
       layer.touched = new Int32Array(c * r);
       layer.minRow = 0; layer.maxRow = -1; layer.prevMinRow = 0; layer.prevMaxRow = -1;
+      layer.minCol = 0; layer.maxCol = -1; layer.prevMinCol = 0; layer.prevMaxCol = -1;
       layer.stats.cells = 0;
     },
 
@@ -104,9 +109,9 @@ export function createParticleLayer() {
      * @param {string} [renderer] 'dda' | 'mesh' (resolves cam.projection, as SpritePool.project)
      */
     build(ps, cam, rt, lights, world, palette, renderer = layer.renderer) {
-      const part = layer.part, partZ = layer.partZ, touched = layer.touched;
+      const part = layer.part, partZ = layer.partZ, partBg = layer.partBg, touched = layer.touched;
       // 1. Clear the cells touched LAST frame (track which rows that wiped).
-      let pMin = rows, pMax = -1;
+      let pMin = rows, pMax = -1, cMin = cols, cMax = -1;
       const prevCount = layer.stats.cells;
       for (let t = 0; t < prevCount; t++) {
         const i = touched[t];
@@ -114,8 +119,11 @@ export function createParticleLayer() {
         const row = (i / cols) | 0;
         if (row < pMin) pMin = row;
         if (row > pMax) pMax = row;
+        const col = i - row * cols;
+        if (col < cMin) cMin = col;
+        if (col > cMax) cMax = col;
       }
-      layer.prevMinRow = pMin; layer.prevMaxRow = pMax;
+      layer.prevMinRow = pMin; layer.prevMaxRow = pMax; layer.prevMinCol = cMin; layer.prevMaxCol = cMax;
 
       // 2. Camera basis once.
       camBasis(cam, rt, cb, renderer);
@@ -133,7 +141,7 @@ export function createParticleLayer() {
 
       // 4. Per live slot, in slot order.
       let nTouched = 0;
-      let minRow = rows, maxRow = -1;
+      let minRow = rows, maxRow = -1, minCol = cols, maxCol = -1;
       const P = palette;
       const px = ps.px, py = ps.py, pz = ps.pz, age = ps.age, life = ps.life, defOf = ps.def, emOf = ps.em, alive = ps.alive;
       const defRec = ps.defRec, defGlyphs = ps.defGlyphs, defColors = ps.defColors;
@@ -152,7 +160,8 @@ export function createParticleLayer() {
         const glyphBase = d * MAX_RAMP;
         const code = defGlyphs[glyphBase + ri];
         if (code === 32) continue; // ' ' = invisible step
-        const sizeM = defRec[o + D.SIZE_M];
+        // sizeM -> sizeEndM with age: a puff that grows as it rises (smoke). Constant when sizeEndM is unset.
+        const sizeM = defRec[o + D.SIZE_M] + (defRec[o + D.SIZE_END_M] - defRec[o + D.SIZE_M]) * (age[i] / life[i]);
         // sizeM > 0: worldH = sizeM makes rowsOnScreen the projected diameter in rows (aspect baked into planeDistY).
         if (!projectSprite(cb, cam, px[i], py[i], pz[i], sizeM, _ps)) continue;
         // Compare at layer (f32) precision, like overlay's `put` - so two
@@ -165,10 +174,11 @@ export function createParticleLayer() {
         if (sizeM > 0) {
           nx = Math.round(sizeM * cols / (2 * cb.tanHalfHFov * _ps.depth));
           ny = Math.round(_ps.rowsOnScreen);
-          nx = nx < 1 ? 1 : nx > 3 ? 3 : nx;
-          ny = ny < 1 ? 1 : ny > 3 ? 3 : ny;
+          nx = nx < 1 ? 1 : nx > MAX_FOOT ? MAX_FOOT : nx; // 1 = far floor (min-cell rule)
+          ny = ny < 1 ? 1 : ny > MAX_FOOT ? MAX_FOOT : ny;
         }
-        const x0 = nx === 3 ? c - 1 : c, y0 = ny === 3 ? r - 1 : r;
+        const x0 = c - ((nx - 1) >> 1), y0 = r - ((ny - 1) >> 1);
+        const hx = nx * 0.5, hy = ny * 0.5, round = nx >= 3 && ny >= 3; // puffs >= 3x3 are ellipses, not boxes
         if (x0 >= cols || x0 + nx <= 0 || y0 >= rows || y0 + ny <= 0) continue;
 
         const colorBase = (d * MAX_RAMP + ri) * 3;
@@ -185,11 +195,18 @@ export function createParticleLayer() {
           if (f > 0) { rr += (_fog3[0] - rr) * f; gg += (_fog3[1] - gg) * f; bb += (_fog3[2] - bb) * f; }
         }
         const br = toByte(rr), bg = toByte(gg), bbb = toByte(bb);
+        const mixA = toByte(defRec[o + D.BG_MIX] * 255); // 0 = no bg tint (default)
+        const mixK = mixA / 255;
+        const tr = toByte(br * mixK), tg = toByte(bg * mixK), tb = toByte(bbb * mixK);
         const gl = code < 32 || code > 126 ? 0 : code - 32; // CellBuffer glyphIdx convention (printable ASCII only)
         for (let yy = y0; yy < y0 + ny; yy++) {
           if (yy < 0 || yy >= rows) continue;
           for (let xx = x0; xx < x0 + nx; xx++) {
             if (xx < 0 || xx >= cols) continue;
+            if (round) {
+              const ex = (xx - x0 + 0.5 - hx) / hx, ey = (yy - y0 + 0.5 - hy) / hy;
+              if (ex * ex + ey * ey > 1) continue;
+            }
             const idx = yy * cols + xx;
             const cur = partZ[idx];
             if (cur !== 0) {
@@ -199,13 +216,16 @@ export function createParticleLayer() {
             }
             const o4 = idx * 4;
             part[o4] = br; part[o4 + 1] = bg; part[o4 + 2] = bbb; part[o4 + 3] = gl;
+            partBg[o4] = tr; partBg[o4 + 1] = tg; partBg[o4 + 2] = tb; partBg[o4 + 3] = mixA;
             partZ[idx] = depth;
             if (yy < minRow) minRow = yy;
             if (yy > maxRow) maxRow = yy;
+            if (xx < minCol) minCol = xx;
+            if (xx > maxCol) maxCol = xx;
           }
         }
       }
-      layer.minRow = minRow; layer.maxRow = maxRow;
+      layer.minRow = minRow; layer.maxRow = maxRow; layer.minCol = minCol; layer.maxCol = maxCol;
       layer.stats.cells = nTouched;
     },
   };

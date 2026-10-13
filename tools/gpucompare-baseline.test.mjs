@@ -14,7 +14,8 @@ assert.deepEqual(d.regress, ['a']); assert.deepEqual(d.fixed, ['c']);
 assert.deepEqual(d.added.map((x) => x.name + x.verdict), ['eFAIL', 'fPASS']); assert.deepEqual(d.removed, ['b']);
 assert.equal(d.ok, false);
 assert.match(formatBaselineDiff(d), /PASS->FAIL {2}a/);
-// new FAIL row is not a regression
+// rows missing from the run (e.g. the removed gl2 rows) and new FAIL rows are not regressions
+assert.ok(diffBaseline(base, rows({ a: true, c: false, d: false })).ok);
 assert.ok(diffBaseline(base, rows({ a: true, b: true, c: false, d: false, z: false })).ok);
 
 assert.equal(baselineMismatch(base, { backend: 'webgpu', adapter: 'x' }), null);

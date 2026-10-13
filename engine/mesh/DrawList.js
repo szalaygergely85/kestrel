@@ -15,13 +15,14 @@
 // every `DrawItem`'s typed arrays at construction; `begin`/`push`/`cull`
 // never allocate. `addStructures`'s near-to-far sort scratch is module-level
 // (literal copy of `compositor.js`'s `renderWorld` insertion sort).
+import { lodCentreX, lodCentreY } from '../core/camFocus.js';
 import { buildLevelMesh, rebuildLevelMeshDyn } from './levelMesh.js';
 import { resolveMats } from './MeshData.js';
 import { cutoffByte } from '../render/MaskAtlas.js';
 import { localDirToWorld } from '../core/transform.js';
 import { classifyAABB, CULL_OUT } from './culling.js';
 import { groupRadius } from './instances.js';
-import { setLazyView, pumpLazyMeshes, requestMesh, touchMesh, lazyHoldRadius, LOAD_MARGIN_M } from './lazyMesh.js';
+import { setLazyView, pumpLazyMeshes, requestMesh, touchMesh, lazyHoldRadius, warmLazyMeshes, LOAD_MARGIN_M } from './lazyMesh.js';
 import { createClothMesh, updateClothMesh } from './clothMesh.js';
 
 /** `DrawItem.type` values. */
@@ -39,6 +40,16 @@ export const DRAW_WATER = 5;
 export const DRAW_FLAG_DEPTH_BIAS = 1;
 /** MESH-INST-01: DRAW_INSTANCED item whose mesh is ONE identity part: both twins draw `mesh.triCount` triangles as one range (one GL draw per group, the single-draw triangle order) instead of one per `mesh.ranges` entry. */
 export const DRAW_FLAG_ONE_PART = 2;
+/** MESH-INST-02: DRAW_INSTANCED item of an "open" (thin / one-sided: grass cards, walls, bushes) mesh: both twins draw it WITHOUT back-face culling, like the single placed-mesh draw (the instanced path culls back faces otherwise). */
+export const DRAW_FLAG_NO_CULL = 4;
+/** OB-061: DRAW_INSTANCED item (always with NO_CULL) whose opaque cards must shade two-sided: the JS twin flips N on back faces like a masked range (the GPU flips on !front_facing for every item already). */
+export const DRAW_FLAG_TWO_SIDED = 8;
+
+/** MESH-INST-02: placed-mesh object ids live in [0xA000, 0xA000 + MESH_ID_SPAN) (0xFF00..0xFFFF stay free for viewmodel handles); the old `0xA000 | si` overflowed into 0xB000.. at 4096 structures. Identical to the old value for si < 4096. */
+export const MESH_ID_BASE = 0xA000;
+export const MESH_ID_SPAN = 0x5F00;
+/** @param {number} si structure index @returns {number} object id of the placed-mesh draw (wraps, harmlessly, past MESH_ID_SPAN structures) */
+export function meshObjectId(si) { return MESH_ID_BASE + (si < MESH_ID_SPAN ? si : si % MESH_ID_SPAN); }
 
 const _onePartRange = [{ start: 0, count: 0 }]; // shared scratch: callers iterate synchronously (zero alloc)
 /**
@@ -52,8 +63,19 @@ export function instancedRanges(item) {
   return item.mesh.ranges;
 }
 
-/** Preallocated `DrawList` capacity (27.8: <= 60 draws expected in phase 1). */
-export const MAX_DRAW_ITEMS = 256;
+/** Preallocated camera `DrawList` capacity, counted BEFORE `cull()` (OB-043, 38.46: 256 -> 512; roadBend pre-cull peak 214). */
+export const MAX_DRAW_ITEMS = 512;
+/**
+ * OB-043 (38.46): items the placed-mesh GROUP feed (meshGroups.push, the only feed that grows with content) leaves free for
+ * the feeds pushed after it (terrain near+far+skirts, voxel pool <= 48, unit/tree/scatter instance groups, cloths <= 16).
+ */
+export const DRAW_TAIL_RESERVE = 192;
+/**
+ * OB-043: instances per list (`addInstances` drops a whole item past this, counted in `instDropped`) = instances.js
+ * MAX_INSTANCES_PER_FRAME (4096: units + trees + scatter) + meshGroups MAX_GROUPED_KEPT (2048). A literal (instances.js imports
+ * this module: no top-level use of its bindings here); DrawList.test.js pins the sum.
+ */
+export const MAX_LIST_INSTANCES = 6144;
 
 /** Structures cast per frame - same cap as `compositor.js`'s `MAX_STRUCTS` (structSeq is a 3-bit field, arch 7.2). */
 const MAX_STRUCTS = 8;
@@ -72,6 +94,7 @@ const MAX_STRUCTS = 8;
  * @property {number} mirror - 0|1: part matrices have det < 0 (HANDS-01a, view-model hand mirror); front faces wind CW on screen, both twins flip the cull sign
  * @property {number} zBase - G-buffer z = worldZ - zBase - aux.zRef
  * @property {number} flags - DRAW_FLAG_*
+ * @property {number} depthTier - OB-053 (38.49): 0..3, the depth TEST is pulled forward by tier * DEPTH_TIER (both twins); written depth unchanged. 0 level/terrain/cloth, 1 placed meshes, 2 voxel props/models
  * @property {Float64Array} aabb - 6, world, for culling
  * @property {import('./instances.js').InstanceBuffer|null} instBuf - DRAW_INSTANCED: per-instance buffer (64 B each)
  * @property {number} instCount - DRAW_INSTANCED: instances used
@@ -93,6 +116,7 @@ function makeDrawItem() {
     mirror: 0,
     zBase: 0,
     flags: 0,
+    depthTier: 0,
     aabb: new Float64Array(6),
     instBuf: null,
     instCount: 0,
@@ -118,6 +142,7 @@ function resetDrawItem(item) {
   item.mirror = 0;
   item.zBase = 0;
   item.flags = 0;
+  item.depthTier = 0;
   item.aabb.fill(0);
   item.instBuf = null;
   item.instCount = 0;
@@ -128,6 +153,8 @@ function resetDrawItem(item) {
  * Preallocated per-frame draw list. `begin()` resets the count only - the
  * `DrawItem`s themselves (and their typed arrays) are never reallocated.
  */
+export const MAX_DRAW_CARDS = 64; // R6c: card-impostor species per frame
+
 export class DrawList {
   /** @param {number} [capacity] */
   constructor(capacity = MAX_DRAW_ITEMS) {
@@ -136,9 +163,29 @@ export class DrawList {
     this.items = new Array(capacity);
     for (let i = 0; i < capacity; i++) this.items[i] = makeDrawItem();
     this.count = 0;
+    /** OB-043: pushes refused this frame (list full); they wrote into `_sink`, nothing draws them. */
+    this.overflow = 0;
+    /** OB-043: instances summed over this frame's DRAW_INSTANCED items, and instances refused past MAX_LIST_INSTANCES. */
+    this.instTotal = 0;
+    this.instDropped = 0;
+    /** OB-043: true = throw on overflow (tests / dev probes); false (default, the game path) = degrade: drop + count. */
+    this.strict = false;
+    /** @type {DrawItem} scratch target of refused pushes (never in `items`, never drawn) */
+    this._sink = makeDrawItem();
+    /** R6c (38.60): tree card impostor buckets of this frame (rasterCards / the GPU card pass); preallocated, 0 when no species opted in. */
+    this.cardCount = 0;
+    this.cards = new Array(MAX_DRAW_CARDS);
+    for (let i = 0; i < MAX_DRAW_CARDS; i++) this.cards[i] = { ib: null, count: 0, imp: null, eye: null };
   }
 
-  begin() { this.count = 0; }
+  begin() { this.count = 0; this.overflow = 0; this.instTotal = 0; this.instDropped = 0; this.cardCount = 0; }
+
+  /** R6c: queue one group's card bucket (compactGroup output); dropped past MAX_DRAW_CARDS (far trees pop out, like the list overflow). */
+  addCards(ib, count, imp, eye) {
+    if (this.cardCount >= MAX_DRAW_CARDS) return;
+    const c = this.cards[this.cardCount++];
+    c.ib = ib; c.count = count; c.imp = imp; c.eye = eye;
+  }
 
   /**
    * @param {import('./MeshData.js').MeshData|null} mesh
@@ -146,11 +193,15 @@ export class DrawList {
    * @returns {DrawItem} the next preallocated item, reset to identity/0
    */
   push(mesh, type) {
-    if (this.count >= this.capacity) throw new Error(`DrawList.push: over capacity (${this.capacity})`);
-    const item = this.items[this.count++];
+    let item;
+    if (this.count >= this.capacity) { // OB-043: never throw in the game path; later pushes (push order is the priority) are dropped
+      if (this.strict) throw new Error(`DrawList.push: over capacity (${this.capacity})`);
+      this.overflow++; item = this._sink;
+    } else item = this.items[this.count++];
     resetDrawItem(item);
     item.mesh = mesh;
     item.type = type;
+    item.depthTier = type === DRAW_VOXEL ? 2 : type === DRAW_INSTANCED ? 1 : 0; // OB-053 default per type; placed static meshes set 1 (MeshDrawCache), view models 0
     return item;
   }
 
@@ -165,11 +216,14 @@ export class DrawList {
    * @param {import('./instances.js').InstanceBuffer} ib
    * @param {number} count
    * @param {number} [Rin] - RE-15c: precomputed radius (max over both LOD meshes); default = groupRadius(mesh, parts)
-   * @returns {DrawItem|null} null when count <= 0
+   * @returns {DrawItem|null} null when count <= 0, the list is full or the item would pass MAX_LIST_INSTANCES (OB-043: counted, not drawn)
    */
   addInstances(mesh, parts, ib, count, Rin) {
     if (count <= 0) return null;
     if (count > ib.capacity) throw new Error(`DrawList.addInstances: count ${count} > buffer capacity ${ib.capacity}`);
+    if (this.instTotal + count > MAX_LIST_INSTANCES) { if (this.strict) throw new Error(`DrawList.addInstances: over ${MAX_LIST_INSTANCES} instances`); this.instDropped += count; return null; }
+    if (this.count >= this.capacity) { this.push(mesh, DRAW_INSTANCED); return null; } // counts the overflow (or throws when strict)
+    this.instTotal += count;
     const item = this.push(mesh, DRAW_INSTANCED);
     item.instBuf = ib;
     item.instCount = count;
@@ -254,10 +308,16 @@ export class LevelMeshCache {
 const _order = new Int32Array(MAX_STRUCTS);
 const _distScratch = new Float64Array(MAX_STRUCTS);
 
+function bboxDistXY(ex, ey, b) {
+  const dx = ex < b.x0 ? b.x0 - ex : (ex > b.x1 ? ex - b.x1 : 0), dy = ey < b.y0 ? b.y0 - ey : (ey > b.y1 ? ey - b.y1 : 0);
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
 function bboxDist(cam, bbox) {
-  const cx = Math.min(Math.max(cam.x, bbox.x0), bbox.x1);
-  const cy = Math.min(Math.max(cam.y, bbox.y0), bbox.y1);
-  const dx = cam.x - cx, dy = cam.y - cy;
+  const camX = lodCentreX(cam), camY = lodCentreY(cam); // ortho: focus, not the far-back eye (US-068b3a)
+  const cx = Math.min(Math.max(camX, bbox.x0), bbox.x1);
+  const cy = Math.min(Math.max(camY, bbox.y0), bbox.y1);
+  const dx = camX - cx, dy = camY - cy;
   return Math.hypot(dx, dy);
 }
 
@@ -408,6 +468,18 @@ export class MeshDrawCache {
   }
 }
 
+/**
+ * OB-039: last camera-feed `addMeshStructures` call (both the GL/JS compositor and the WebGPU raster feed write it; shadow feeds
+ * do not). requested = single (ungrouped, loaded) placements within fogFarM and inside the frustum (when planes were given);
+ * kept = min(requested, MAX_MESH_DRAWS) chosen by smallest distance/radius (ties: lower structure index); dropped = requested - kept.
+ * @type {{requested: number, kept: number, dropped: number, frustum: number}}
+ */
+export const meshFeedStats = { requested: 0, kept: 0, dropped: 0, frustum: 0, groupsDropped: 0, overflow: 0, instDropped: 0, drawItems: 0 };
+/** OB-043: copies the camera list's overflow counters (pre-cull item count, refused pushes / instances) into `meshFeedStats` (F3). Call right before `list.cull`. @param {DrawList} list */
+export function noteListOverflow(list) {
+  meshFeedStats.drawItems = list.count; meshFeedStats.overflow = list.overflow; meshFeedStats.instDropped = list.instDropped;
+}
+
 const _mOrder = new Int32Array(MAX_MESH_DRAWS);
 const _mDist = new Float64Array(MAX_MESH_DRAWS);
 const _mKey = new Float64Array(MAX_MESH_DRAWS);
@@ -430,28 +502,53 @@ function rankKey(b, d) {
  * @param {boolean} [shadowOnly] - MESH-SHADOW-01: skip placements with `castShadow === false` (the sun shadow feed)
  * @param {any} [budget] - MESH-SHADOW-02 shadow budget {eye, cutM, cap}
  * @param {{has: (si: number) => boolean, chosen: Uint8Array}|null} [groups] - MESH-INST-01 (meshGroups.js): grouped placements take part in the same nearest-MAX_MESH_DRAWS selection but are only marked in `groups.chosen`, not pushed
+ * @param {Float64Array|null} [planes] - OB-039: camera frustum planes (`frustumPlanes`). Singles fully outside are skipped BEFORE
+ *   the cap ranking (the later `list.cull` would drop them anyway, same `classifyAABB` on the same bbox), so the MAX_MESH_DRAWS
+ *   slots go to on-screen props only. Camera feed only; ignored when `shadowOnly`. null = old frustum-blind pick.
  */
-export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shadowOnly = false, budget = null, groups = null) {
+export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shadowOnly = false, budget = null, groups = null, planes = null) {
   const structs = world.structures;
   // MESH-SHADOW-02 (37.19 opt 1): shadow-only budget {eye, cutM, cap}: distance measured from the EYE (not the shadow box
   // centre), props beyond cutM dropped, at most `cap` nearest kept (ties: lower structure index = lower object id).
   const bEye = shadowOnly && budget ? budget.eye : null, bCut = bEye ? budget.cutM : 0;
   const maxKeep = bEye ? Math.min(MAX_MESH_DRAWS, budget.cap) : MAX_MESH_DRAWS;
-  if (groups) groups.chosen.fill(0);
-  if (!shadowOnly) { setLazyView(cam.x, cam.y, fogFarM); pumpLazyMeshes(); } // MESH-LOAD-01: decode queued payloads (<= 2 / 4 ms), remember the eye for scatter groups
-  let count = 0;
-  for (let i = 0; i < structs.length; i++) {
+  if (groups) { groups.chosen.fill(0); if (groups.hits) groups.hits.fill(0); }
+  // STREAM-01b (38.51): residency grid. Re-fetched every frame (never cached: a structVersion change replaces the object); the camera
+  // feed advances it, the shadow feed only reads the lists. Off (`world.streaming.enabled` false / no grid) = today's all-placements path.
+  let grid = world.streaming && world.streaming.enabled && world.refreshPlacementGrid ? world.refreshPlacementGrid() : null;
+  let gl = null, gr2 = null, gN = structs.length, warmM = 0, gx = 0, gy = 0;
+  if (grid) {
+    gx = lodCentreX(cam); gy = lodCentreY(cam);
+    if (!shadowOnly) grid.update(gx, gy);
+    else if (grid.evaluated) { gx = grid.lastX; gy = grid.lastY; } // shadow feed: reach checks use the grid's own (camera) eye, never the shadow camera
+    else grid = null; // fresh grid + shadow feed first: never classify from the shadow camera -> full list this frame
+  }
+  if (grid) {
+    gl = grid.activeList; gr2 = grid.reach2; gN = grid.activeCount; warmM = grid.opts.warmM;
+  }
+  if (!shadowOnly) { setLazyView(lodCentreX(cam), lodCentreY(cam), fogFarM); pumpLazyMeshes(); } // MESH-LOAD-01: decode queued payloads (<= 2 / 4 ms), remember the eye for scatter groups
+  const fr = shadowOnly ? null : planes;
+  let count = 0, requested = 0;
+  for (let q = 0; q < gN; q++) {
+    const i = gl ? gl[q] : q; // grid: ascending active structure indices (same order as 0..N, so ranking ties are unchanged)
     if (structs[i].kind !== 'mesh') continue;
     if (shadowOnly && structs[i].castShadow === false) continue; // MESH-SHADOW-01
     const d = bEye ? bboxDist(bEye, structs[i].bbox) : bboxDist(cam, structs[i].bbox);
-    if (!shadowOnly && structs[i].mesh.lazyOrigin && !structs[i].mesh.lazy && d <= lazyHoldRadius()) touchMesh(structs[i].mesh); // S8-B2-03: LRU keep-alive inside loadM + 60 m
+    // per-placement warm radius (reach + warmM) with the grid, else the global load / hold radius
+    let rw2 = 0, dg = d; // dg: ONE metric for reach + warm = grid xy distance eye -> placement AABB (placementGrid.js)
+    if (gl) { dg = bboxDistXY(gx, gy, structs[i].bbox); const rw = Math.sqrt(gr2[i]) + warmM; rw2 = rw * rw; }
+    if (!shadowOnly && structs[i].mesh.lazyOrigin && !structs[i].mesh.lazy && (gl ? dg * dg <= rw2 : d <= lazyHoldRadius())) touchMesh(structs[i].mesh); // S8-B2-03: LRU keep-alive inside loadM + 60 m
     if (structs[i].mesh.lazy) { // MESH-LOAD-01: payload not loaded = draws nothing; ask for it when within draw distance + margin
-      if (!shadowOnly && d <= fogFarM + LOAD_MARGIN_M) requestMesh(structs[i].mesh);
+      if (!shadowOnly && (gl ? dg * dg <= rw2 : d <= fogFarM + LOAD_MARGIN_M)) requestMesh(structs[i].mesh);
       continue;
     }
     if (d > fogFarM || (bEye && d > bCut)) continue;
-    if (groups && groups.has(i)) { groups.chosen[i] = 1; continue; } // BUG-MESH-MISSING-01: instanced groups are not capped (cheap); only the frustum cull in push() thins them
-    const key = rankKey(structs[i].bbox, d);
+    if (gl && dg * dg > gr2[i]) continue; // per-placement reach: small props stop before big ones
+    if (groups && groups.has(i)) { groups.chosen[i] = 1; if (groups.hits) groups.hits[groups.slotOf[i]]++; continue; } // BUG-MESH-MISSING-01: instanced groups are not capped (cheap); only the frustum cull in push() thins them
+    const bb = structs[i].bbox;
+    if (fr && classifyAABB(fr, bb.x0, bb.y0, bb.z0, bb.x1, bb.y1, bb.z1) === CULL_OUT) continue; // OB-039: off-screen singles never take a slot
+    requested++;
+    const key = rankKey(bb, d);
     if (count < maxKeep) {
       _mOrder[count] = i; _mDist[count] = d; _mKey[count] = key; count++;
     } else if (maxKeep > 0) {
@@ -466,15 +563,20 @@ export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shado
     while (j >= 0 && _mDist[j] > di) { _mOrder[j + 1] = _mOrder[j]; _mDist[j + 1] = _mDist[j]; j--; }
     _mOrder[j + 1] = oi; _mDist[j + 1] = di;
   }
+  if (grid && !shadowOnly) warmLazyMeshes(structs, grid, lodCentreX(cam), lodCentreY(cam)); // warm ring: decode before it becomes active
+  if (!shadowOnly) { // OB-039: F3 / tests - single placed-mesh draws wanted vs kept by the cap (camera feed only)
+    meshFeedStats.requested = requested; meshFeedStats.kept = count; meshFeedStats.dropped = requested - count; meshFeedStats.frustum = fr ? 1 : 0;
+  }
   for (let k = 0; k < count; k++) {
     const si = _mOrder[k];
     const s = structs[si];
     const mesh = cache.get(s.mesh, idFor, world.maskAtlas);
     const item = list.push(mesh, DRAW_STATIC);
+    item.depthTier = 1; // OB-053: placed mesh sits above level/terrain at an exact tie
     placementMatrix12(s, item.matrix);
     item.zBase = s.origin.z;
     item.planeIdOr = (k & 0xFF) << 20;
-    item.objectId = 0xA000 | si;
+    item.objectId = meshObjectId(si);
     item.rangeFirst = 0;
     item.rangeCount = mesh.triCount;
     const b = s.bbox, a = item.aabb;

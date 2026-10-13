@@ -1,7 +1,9 @@
 // ENV-01a2 (37.4). Load-time master words; camera-local, allocation-free feed.
-import { createInstanceBuffer, writeUnitInstance, touchInstances, INSTANCE_STRIDE,
+import { createInstanceBuffer, writeUnitInstance, touchInstances, INSTANCE_STRIDE, INST_FLAGS, INST_OBJECT_ID,
   MAX_INSTANCE_GROUPS, MAX_INSTANCES_PER_FRAME } from './instances.js';
 import { resolveGfxKnobs, keepPlacement } from './gfxKnobs.js';
+import { INST_FLAG_SWAY } from './sway.js';
+import { vegTintObjectId } from './vegTint.js';
 
 export const DETAIL_OBJECT_BASE = 0x40000;
 
@@ -29,7 +31,7 @@ export function bindDetailInstances(detail, instances, cfg, treeInstances = 0, g
     if (def.mesh !== undefined) { // TREES-LP-c: kind-9 mesh species (World.load resolved it into world.detailMeshes)
       if (!meshes?.[def.mesh]) throw new Error(`bindDetailInstances: unresolved mesh ${def.mesh}`);
     } else if (!instances.pool?.models.has(def.model)) throw new Error(`bindDetailInstances: missing voxel model ${def.model}`);
-    const key = (def.mesh !== undefined ? 'mesh:' + def.mesh : def.model) + '|' + def.shadow + '|' + def.lodCells;
+    const key = (def.mesh !== undefined ? 'mesh:' + def.mesh : def.model) + '|' + def.shadow + '|' + def.lodCells + '|' + (def.maxDistM || 0);
     let g = renderKeys.get(key);
     if (g === undefined) {
       g = defs.length;
@@ -57,13 +59,23 @@ export function bindDetailInstances(detail, instances, cfg, treeInstances = 0, g
     const def = defs[g], cap = Math.min(groupCounts[g], maxDraw);
     const group = def.mesh !== undefined ? instances.meshGroup(meshes[def.mesh], cap) : instances.group(def.model, cap);
     if (def.mesh === undefined) group.lodCells = def.lodCells / knobs.lodScale; // GFX-03; mesh groups: no LOD yet (37.15 item 6)
+    // PERF-P4: per-species draw distance; the same group.maxDistM is read by the JS cull (instances.js) and the GPU cull (passCull.js)
+    if (def.maxDistM > 0) group.maxDistM = def.maxDistM * drawScale;
     group.castShadow = def.shadow;
     groups.push(group);
   }
   for (let i = 0; i < detail.count; i++) {
     if (keep && !keep[i]) continue;
     writeUnitInstance(master, i, detail.x[i], detail.y[i], detail.z[i], detail.yawDeg[i], DETAIL_OBJECT_BASE | i, 0);
+    // FOLIAGE-SWAY-01 part 2: per-species sway bit, OR'd in after writeUnitInstance (keeps aligned/team bits already written).
+    // feedDetail copies every word (incl. INST_FLAGS) verbatim per frame, so the bit survives the per-frame re-feed for free.
+    if (detail.speciesDefs[detail.species[i]].sway) {
+      master.u32[i * INSTANCE_STRIDE + INST_FLAGS] |= INST_FLAG_SWAY;
+      // AUD-47: vegetation (= swaying species) gets a deterministic colour tint in the objectId (vegTint.js), computed once here
+      master.u32[i * INSTANCE_STRIDE + INST_OBJECT_ID] = vegTintObjectId(DETAIL_OBJECT_BASE | i, i, detail.x[i], detail.y[i]);
+    }
   }
+  touchInstances(master); // one bump for the whole batch of raw-word ORs above (writeUnitInstance already bumped per changed row)
   return { detail, groups, groupOf, master, offsetX, offsetY, maxDraw, keep, drawR2Scale: drawScale * drawScale,
     maxDrawR2: maxDrawM * maxDrawM, refeedR2: refeedM * refeedM, lastX: NaN, lastY: NaN, fed: 0 };
 }

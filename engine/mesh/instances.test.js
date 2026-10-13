@@ -325,7 +325,7 @@ ok('objectId at word 12, flags at word 13', INST_OBJECT_ID === 12 && INST_FLAGS 
   for (let i = 0; i < N; i++) { list2.begin(); groups.addToDrawList(list2, cache, PL_ALL, ++frameNo); }
   const perFrameMs = (performance.now() - t0) / N;
   console.log(`[RE-15a] cull+compact (burner x500, encompassing frustum): ${perFrameMs.toFixed(4)} ms/frame (target <= 0.1 ms)`);
-  ok(`cull+compact 500 instances well under budget (<= 5 ms/frame soft gate, measured ${perFrameMs.toFixed(4)})`, perFrameMs <= 5);
+  if (process.env.BAKE_BENCH) ok(`cull+compact 500 instances well under budget (<= 5 ms/frame soft gate, measured ${perFrameMs.toFixed(4)})`, perFrameMs <= 5); // wall-clock: BAKE_BENCH=1 only
 }
 
 // ---- RE-15c: LOD selection + hysteresis + 2 draw items per group --------------

@@ -7,7 +7,6 @@
 //   node engine/render/voxelPool.test.js
 
 import { MAX_VOX_INSTANCES_MESH } from '../index.js';
-import { GpuCellPipeline } from './gpu/GpuCellPipeline.js';
 import { VoxelPool } from './voxelPool.js';
 import { loadGolden, goldenFrame } from '../../tools/testing/mesh-golden.mjs';
 const golden = loadGolden('voxelPool');
@@ -75,6 +74,19 @@ pool.beginFrame();
 pool.pushInstance('bear', 3, 0, 2, 0);
 pool.project(cam, rt);
 ok('pool keeps the instance castModels draws (no cull disagreement)', pool.list.length === 1);
+
+// ---- 38.23 objectIdFor(entity): 0x8000 | compact slot, -1 when no slot ----
+{
+  const entA = { id: 1, transform: { x: 3, y: 0, z: 2, yawDeg: 0 }, components: { voxel: { model: 'bear' } } };
+  const entB = { id: 2, transform: { x: 3, y: -500, z: 2, yawDeg: 0 }, components: { voxel: { model: 'bear' } } };
+  const entC = { id: 3, transform: { x: 3, y: 1, z: 2, yawDeg: 0 }, components: { voxel: { model: 'bear' } } };
+  pool.beginFrame();
+  pool._queueEntity(entA); pool._queueEntity(entB); pool._queueEntity(entC);
+  pool.project(cam, rt);
+  ok('objectIdFor: slot = queue/compact index', pool.objectIdFor(entA) === (0x8000 | 0) && pool.objectIdFor(entB) === (0x8000 | 1) && pool.objectIdFor(entC) === (0x8000 | 2) && pool.objectIdFor({}) === -1);
+  pool.beginFrame(); pool.pushInstance('bear', 3, 0, 2, 0); pool.project(cam, rt);
+  ok('objectIdFor: harness instance has no entity; stale entity -> -1', pool.objectIdFor(entA) === -1);
+}
 
 // ---- zero allocation on repeated pushInstance/project once warm -----------
 pool.beginFrame();
@@ -312,9 +324,17 @@ if (global.gc) {
   p.beginFrame(); for (let i = 0; i < 48; i++) p.pushInstance('bear', 0, -i - 1, 0, 0);
   ok('mesh pushInstance accepts all 48', p._rawCount === 48);
   p.project(c, rt);
-  let guarded = false;
-  try { GpuCellPipeline.prototype._uploadVoxelInstances.call({}, p); } catch (e) { guarded = e.message.includes('exceeds DDA cap (16): 48'); }
-  ok('GPU upload rejects mesh-sized list before writing texture scratch', guarded);
+}
+
+// FIX-BROWSER-3 nit: reserve >= cap clamps the entity cap to 0 (never negative)
+{
+  const p = new VoxelPool(); p.renderer = 'mesh'; p.bind(registry, table); p.reserve = p.cap + 10;
+  const ents = [{ components: { voxel: { model: 'bear' } }, transform: { x: 0, y: -3, z: 0, yawDeg: 0 } }];
+  const w = { renderVersion: 1, forEachEntity(fn) { for (const e of ents) fn(e); } };
+  const warn0 = console.warn; console.warn = () => {};
+  let threw = false; try { p.collect(w, { x: 0, y: 1, z: 1, yawDeg: 0, pitchDeg: 0 }); } catch (_) { threw = true; }
+  console.warn = warn0;
+  ok('reserve > cap: no throw, no entity queued, no negative cap', !threw && p._rawCount === 0);
 }
 
 console.log(`${pass} pass, ${fail} fail`);

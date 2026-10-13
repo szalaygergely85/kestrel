@@ -41,7 +41,7 @@
 // still +Inf (sky). One shared sprite pass/shader, no separate draw path.
 import { PROJ_HFOV_DEG as HFOV_DEG } from './projection.js';
 import { lightAt } from './lighting.js';
-import { createPitchedTerms, pitchedTerms, worldToCell, resolveProjection } from './projection.js';
+import { createPitchedTerms, pitchedTermsInto, pitchedTerms, worldToCell, resolveProjection, isPitchedFamily, ORTHO_BACK_M } from './projection.js';
 
 export const MAX_SPRITES = 64;
 export const SPR_TEXELS = 5;
@@ -70,11 +70,11 @@ export function camBasis(cam, rt, out, renderer) {
   out.tanHalfHFov = tanHalfHFov; out.planeDistY = planeDistY; out.horizonRow = horizonRow;
   out.cols = cols; out.rows = rows; out.yawDeg = cam.yawDeg;
   // RE-02a (28.1 A2 item 2): `out.pt` is the pitched terms object when the cam is pitched, else null.
-  if (resolveProjection(cam, renderer) === 'pitched') {
+  if (isPitchedFamily(resolveProjection(cam, renderer))) {
     const pt = out.pt || (out.pt = createPitchedTerms());
     const g = out.grid || (out.grid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 });
     g.cols = cols; g.rows = rows; g.pxCellW = rt.pxCellW || 1; g.pxCellH = rt.pxCellH || 1;
-    pitchedTerms(cam, g, pt);
+    pitchedTermsInto(pt, cam, g);
     out.ptOn = true;
   } else {
     out.ptOn = false;
@@ -130,10 +130,17 @@ export function projectSprite(cb, cam, px, py, pz, worldH, out) {
     const vd = _w3[2];
     if (!(vd > MIN_DEPTH)) return false;
     out.depth = vd;
-    const hd = relX * cb.dirX + relY * cb.dirY;
+    let hd;
+    if (cb.pt.ortho) { // US-068b3b: eye is 500 m back; fog on the focus-plane depth * cosP (constant horizontal fog scale, 38.19)
+      hd = (cam.focusX !== undefined ? vd - ORTHO_BACK_M : vd) * cb.pt.cosP;
+    } else hd = relX * cb.dirX + relY * cb.dirY;
     out.fogDepth = hd > 0 ? hd : 0;
     out.colCenter = _w3[0] + 0.5;
     out.feetRow = _w3[1];
+    if (cb.pt.ortho) { // US-068b3a: parallel view, no 1/vd - size is distance independent (38.19 item 1)
+      out.rowsOnScreen = worldH * cb.pt.rows / (2 * cb.pt.tanHalfY);
+      return true;
+    }
     worldToCell(cb.pt, px, py, pz + worldH, _w3);
     out.rowsOnScreen = _w3[2] > 0 ? out.feetRow - _w3[1] : 0;
     return true;
@@ -269,9 +276,21 @@ export class SpritePool {
   /**
    * Adds one raw sprite (model key, animation name, frame index, world
    * anchor/feet point). `billboard`: optional `{unlit, fogModel, fogMax,
-   * minCells:{w,h}, detailRows}` (architecture.md 14.4 item 7) - null for an
-   * ordinary lit sprite.
+   * minCells:{w,h}, detailRows, nearOk}` (architecture.md 14.4 item 7) - null for an
+   * ordinary lit sprite. `nearOk` (SPR T3.w, 37.8b): view-model attached only; skips the
+   * near cull but is still depth-tested; never for world sprites.
    */
+  /** collect()'s internal entry: same as push() but reads the anchor from the transform (no double args, no `||` phi). */
+  _pushEntity(s, t, billboard) {
+    const m = this.atlas.models.get(s.model);
+    if (!m) { this._warnOnce(`SpritePool: unknown billboard model "${s.model}"`); return; }
+    if (this.rawCount >= MAX_SPRITES) { this.dropped++; return; }
+    const i = this.rawCount++;
+    this._model[i] = m; this._anim[i] = s.anim; this._frame[i] = s.frame ? s.frame | 0 : 0;
+    this._pos[i * 3] = t.x; this._pos[i * 3 + 1] = t.y; this._pos[i * 3 + 2] = t.z;
+    this._billboard[i] = billboard ? billboard : null;
+  }
+
   push(modelKey, anim, frame, x, y, z, billboard = null) {
     const m = this.atlas.models.get(modelKey);
     if (!m) { this._warnOnce(`SpritePool: unknown billboard model "${modelKey}"`); return; }
@@ -291,17 +310,24 @@ export class SpritePool {
     this.reset();
     if (!world) return;
     if (world !== this._entWorld || world.renderVersion !== this._entVersion) {
+      this._rebuildEnts(world);
+    }
+    const ents = this._ents;
+    for (let i = 0; i < ents.length; i++) {
+      const e = ents[i], s = e.components.sprite, t = e.transform;
+      this._pushEntity(s, t, e.components.billboard); // FRAME-ALLOC-02: no many-double-arg call
+    }
+  }
+
+  /** Slow path of collect(), split out so collect() itself holds no closure (an arrow capturing `this` allocates a 40 B context on EVERY call). */
+  _rebuildEnts(world) {
+    {
       this._ents.length = 0;
       // Public, allocation-free iterator (ARCH CHANGES, US-030c) instead of
       // reading World's private `_entities` map directly.
       world.forEachEntity((e) => { if (e.components && e.components.sprite) this._ents.push(e); });
       this._entVersion = world.renderVersion;
       this._entWorld = world;
-    }
-    const ents = this._ents;
-    for (let i = 0; i < ents.length; i++) {
-      const e = ents[i], s = e.components.sprite, t = e.transform;
-      this.push(s.model, s.anim, s.frame || 0, t.x, t.y, t.z, e.components.billboard || null);
     }
   }
 
@@ -375,6 +401,7 @@ export class SpritePool {
       if (x0 >= cb.cols || y0 >= cb.rows || x0 + w <= 0 || y0 + h <= 0) continue;
 
       let mulR = uMulR, mulG = uMulG, mulB = uMulB, b = uB;
+      const nearOk = bb && bb.nearOk ? 1 : 0; // HAND-FIRE-WRAP-01: view-model attached sprite (T3.w): exempt from the near cull
       // US-016 (architecture.md 14.4 item 7): `unlit` - light = 1, no N.L
       // (skips `lightAt` even on the per-sprite `LightSet` path). Still
       // shaded through the ordinary gain curve at b = 1 (not a flat
@@ -417,7 +444,7 @@ export class SpritePool {
       spr[o] = x0; spr[o + 1] = y0; spr[o + 2] = w; spr[o + 3] = h;
       spr[o + 4] = 1 / scale; spr[o + 5] = depth; spr[o + 6] = f; spr[o + 7] = visible;
       spr[o + 8] = fr.x; spr[o + 9] = fr.y; spr[o + 10] = fr.w; spr[o + 11] = fr.h;
-      spr[o + 12] = mulR; spr[o + 13] = mulG; spr[o + 14] = mulB; spr[o + 15] = 0;
+      spr[o + 12] = mulR; spr[o + 13] = mulG; spr[o + 14] = mulB; spr[o + 15] = nearOk;
       spr[o + 16] = fogR; spr[o + 17] = fogG; spr[o + 18] = fogB; spr[o + 19] = 0;
       this.frameOf[n] = anim.base;
       n++;
@@ -506,7 +533,7 @@ export function drawSprites(fb, pool, layer) {
     const o = s * SPR_STRIDE;
     const x0 = spr[o], y0 = spr[o + 1], w = spr[o + 2], h = spr[o + 3];
     const invScale = spr[o + 4], sDepth = spr[o + 5], fogF = spr[o + 6], visible = spr[o + 7] !== 0;
-    if (sDepth < SPRITE_NEAR_DEPTH) continue; // Cull even emissive texels when the eye enters a sprite.
+    if (sDepth < SPRITE_NEAR_DEPTH && spr[o + 15] === 0) continue; // nearOk (view-model attached, depth-tested against the hand voxels) skips it; // Cull even emissive texels when the eye enters a sprite.
     const ax = spr[o + 8], ay = spr[o + 9], srcW = spr[o + 10], srcH = spr[o + 11];
     const mulR = spr[o + 12], mulG = spr[o + 13], mulB = spr[o + 14];
     // US-016 (architecture.md 14.4 item 14): per-sprite fog colour (T4), not
@@ -559,7 +586,14 @@ export function drawSprites(fb, pool, layer) {
       if (!(pz > 0 && pz < depth[i] && pz < spriteDepth[i])) continue;
       const o4 = i * 4;
       const x = i % cols, y = (i / cols) | 0;
-      cells.setCellRGB(x, y, part[o4 + 3], part[o4], part[o4 + 1], part[o4 + 2], bg[o4], bg[o4 + 1], bg[o4 + 2]);
+      // PART-VIS-01: bg = bg*(1-a) + tint (tint premixed by the layer); a = 0 leaves bg untouched
+      const pb = layer.partBg, ma = pb ? pb[o4 + 3] : 0;
+      if (ma === 0) cells.setCellRGB(x, y, part[o4 + 3], part[o4], part[o4 + 1], part[o4 + 2], bg[o4], bg[o4 + 1], bg[o4 + 2]);
+      else {
+        const ia = 255 - ma;
+        cells.setCellRGB(x, y, part[o4 + 3], part[o4], part[o4 + 1], part[o4 + 2],
+          Math.min(255, Math.round((bg[o4] * ia) / 255) + pb[o4]), Math.min(255, Math.round((bg[o4 + 1] * ia) / 255) + pb[o4 + 1]), Math.min(255, Math.round((bg[o4 + 2] * ia) / 255) + pb[o4 + 2]));
+      }
     }
   }
 }

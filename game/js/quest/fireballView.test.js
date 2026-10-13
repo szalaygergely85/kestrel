@@ -26,6 +26,19 @@ A.spellFx.attach();
 const errs = A.spellFx.validate(A.palette);
 ok('designer spellFx validates', errs.length === 0, errs.join('; '));
 
+// the allocation probe runs in a fresh child (FIREBALL_ALLOC_PROBE=1): earlier blocks in this file leave polluted
+// V8 type feedback that boxes allocations in the same isolate (same fix as CHARGEN-22e / CRAFT-ALLOC-01).
+if (process.env.FIREBALL_ALLOC_PROBE) {
+  const probeRig = rig({ wx: 6 });
+  const fake = { push() {} };
+  const pump = (n) => { for (let i = 0; i < n; i++) { if (i % 90 === 0) probeRig.cast(); else probeRig.step(false); probeRig.frame(0.5); probeRig.view.extra(fake); probeRig.view.kickDeg(); probeRig.view.presentEmber(true, 1.5, 0, 0, 1); } };
+  pump(6000); // long warm-up (Node v24 tiers up late)
+  const w = [];
+  for (let k = 0; k < 3; k++) { global.gc(); const h0 = process.memoryUsage().heapUsed; pump(3000); global.gc(); w.push(process.memoryUsage().heapUsed - h0); }
+  console.log(w.sort((a, b) => a - b)[1]);
+  process.exit(0);
+}
+
 function makeParticles() {
   const p = createParticles({});
   for (const k of Object.keys(A.particles.presets)) p.defineEmitter(k, A.particles.toEmitterDef(k, A.palette.rgb));
@@ -175,13 +188,8 @@ const liveEmitters = (p) => { let n = 0; for (let s = 0; s < p.emitters.used.len
 
 // ---- 0 allocation per step + frame --------------------------------------------------------------------------------
 {
-  const r = rig({ wx: 6 });
-  const fake = { push() {} };
-  const pump = (n) => { for (let i = 0; i < n; i++) { if (i % 90 === 0) r.cast(); else r.step(false); r.frame(0.5); r.view.extra(fake); r.view.kickDeg(); r.view.presentEmber(true, 1.5, 0, 0, 1); } };
-  pump(300);
-  global.gc(); const h0 = process.memoryUsage().heapUsed;
-  pump(3000);
-  global.gc(); const dh = process.memoryUsage().heapUsed - h0;
+  const r = spawnSync(process.execPath, ['--expose-gc', fileURLToPath(import.meta.url)], { encoding: 'utf8', env: { ...process.env, FIREBALL_ALLOC_PROBE: '1' } });
+  const dh = parseFloat(r.stdout);
   ok('view step + frame allocate ~nothing over 3000 iterations', dh < 150000, `dh=${dh}`);
 }
 

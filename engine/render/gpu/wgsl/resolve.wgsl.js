@@ -7,7 +7,7 @@
 // @group(1) @binding(0) = ResolveU. Targets: 0 = GI rgba32uint, 1 = GA rgba32uint, 2 = DEPTH r32uint (x only is stored).
 import { defineUniformBlock } from './uniformBlock.js';
 import { GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL } from './common.wgsl.js';
-import { MAX_SUB } from '../glsl/resolve.frag.js';
+export const MAX_SUB = 16; // 4x4, the architecture's hard cap (n <= 4)
 
 /** Uniform block: n = rays per axis (1..4). */
 export const RESOLVE_BLOCK = defineUniformBlock('ResolveU', [

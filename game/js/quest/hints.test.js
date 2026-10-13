@@ -19,7 +19,7 @@ function makeUiStyle() {
       { id: 'capture', text: 'Click to capture mouse', keys: ['Click'], on: { type: 'pointerUnlocked' } },
     ],
     storyHints: [
-      { id: 'burner', text: 'The burner still glows. Take what light you can.', keys: [], on: { type: 'zone', zone: 'hintBurner', skipIfState: 'tower.lantern.taken' } },
+      { id: 'burner', text: 'The burner ticks. The Kestrel is done.', keys: [], on: { type: 'zone', zone: 'hintBurner', skipIfState: 'tower.sword.taken' } },
       { id: 'climb', text: 'Climb. You cannot see the signal from down here.', keys: [], on: { type: 'zone', zone: 'hintClimb' } },
       { id: 'chart', text: 'Press M to read the chart.', keys: ['M'], on: { type: 'timer', sec: 20, skipIfState: 'ui.mapCard.opened' } },
     ],
@@ -49,7 +49,7 @@ function noSignals() { return { walking: false, pointerUnlocked: false, moveOrLo
 {
   resetHints();
   const uiStyle = makeUiStyle();
-  const world = makeWorld({ 'tower.lantern.taken': true });
+  const world = makeWorld({ 'tower.sword.taken': true });
   request(world, uiStyle, 'burner');
   ok('skipIfState true: never queued', currentHintId() === null);
   stepHints(world, uiStyle, 0.001, noSignals());

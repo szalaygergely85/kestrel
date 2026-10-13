@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "sites": {
+    "burl": {
+      "entity": "bear"
+    },
+    "post": {
+      "entity": "post"
+    },
+    "notePost": {
+      "entity": "notePost"
+    },
+    "relayBend": {
+      "entity": "relayBend"
+    },
+    "relayFord": {
+      "entity": "relayFord"
+    },
+    "rook": {
+      "entity": "rook"
+    },
+    "gondola": {
+      "entity": "gondola"
+    },
+    "packet": {
+      "entity": "packet"
+    },
+    "pierStone": {
+      "entity": "pierStone"
+    },
+    "owBoard": {
+      "entity": "owBoard"
+    },
+    "owForge": {
+      "entity": "owForge"
+    },
+    "hesk": {
+      "entity": "hesk"
+    },
+    "dorrin": {
+      "entity": "dorrin"
+    },
+    "relay_glasswater": {
+      "entity": "relay_glasswater"
+    },
+    "relay_northwood": {
+      "entity": "relay_northwood"
+    },
+    "relay_highPastures": {
+      "entity": "relay_highPastures"
+    },
+    "relay_ashMile": {
+      "entity": "relay_ashMile"
+    },
+    "relay_downs": {
+      "entity": "relay_downs"
+    },
+    "relay_signalHill": {
+      "entity": "relay_signalHill"
+    },
+    "relay_heath": {
+      "entity": "relay_heath"
+    },
+    "relay_reedmire": {
+      "entity": "relay_reedmire"
+    },
+    "relay_strand": {
+      "entity": "relay_strand"
+    },
+    "relay_whitecombs": {
+      "entity": "relay_whitecombs"
+    }
+  }
+}

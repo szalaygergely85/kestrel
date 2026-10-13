@@ -126,7 +126,7 @@ export function stepHints(world, uiStyle, dt, signals) {
   if (signals.run) markDone(world, 'run');
   if (signals.jump) markDone(world, 'jump');
   if (signals.pointerLocked) markDone(world, 'capture');
-  if (world.state['tower.lantern.taken']) markDone(world, 'burner');
+  if (world.state['tower.sword.taken']) markDone(world, 'burner'); // CH1-02: the lamp is gone, the sword ends the burner hint
   if (signals.mPressed) markDone(world, 'chart');
 
   const hintStyle = uiStyle.hint;
@@ -206,6 +206,13 @@ export function drawHints(ui, uiStyle, lut) {
   const x = hintStyle.x;
   drawRichLine(ui, x, y, current.prefixLine, current.a, lut);
   drawRichLine(ui, x + prefixLen, y, current.textLine, current.a, lut);
+}
+
+/** FS-01: sets a hint's text/keys (live key labels after a rebind) and drops its cached lines. No-op for an unknown id or an unchanged text. */
+export function relabelHint(uiStyle, id, text, keys) {
+  const def = defFor(uiStyle, id);
+  if (!def || (def.text === text && def.keys === keys)) return;
+  def.text = text; def.keys = keys; lineCache.delete(id);
 }
 
 /** Test/debug: the id of the hint currently on screen, or null. */

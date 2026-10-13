@@ -424,14 +424,36 @@ export class NavGrid {
     const maxStepM = opts.maxStepM ?? Infinity;
     const terrain = world.terrain;
     const normal = { x: 0, y: 0, z: 0 };
+    // NAV-PERF-01: when the cell size equals the terrain's normal/slope step, the +-step heights ARE the neighbour cell centres: sample
+    // ONE padded height ring (1 heightAt per cell instead of 9) and derive normal + type from it (bit-identical to normalAt/typeAt).
+    const e = terrain.normalEps;
+    const padded = typeof terrain.typeAtWithHeights === 'function' && e === this.cell;
+    const w = this.w, h = this.h, pw = w + 2;
+    const H = padded ? new Float64Array(pw * (h + 2)) : null;
+    if (padded) {
+      for (let j = 0; j < h + 2; j++) {
+        const y = this.cellCenterY(j - 1);
+        for (let i = 0; i < pw; i++) H[i + j * pw] = terrain.heightAt(this.cellCenterX(i - 1), y);
+      }
+    }
     for (let cy = 0; cy < this.h; cy++) {
       const y = this.cellCenterY(cy);
       for (let cx = 0; cx < this.w; cx++) {
         const i = this.index(cx, cy);
         const x = this.cellCenterX(cx);
-        this.height[i] = terrain.heightAt(x, y);
-        terrain.normalAt(x, y, normal);
-        const typeId = terrain.typeAt(x, y);
+        let typeId;
+        if (padded) {
+          const q = (cx + 1) + (cy + 1) * pw;
+          const hL = H[q - 1], hR = H[q + 1], hD = H[q - pw], hU = H[q + pw];
+          this.height[i] = H[q];
+          const dhdx = (hR - hL) / (2 * e), dhdy = (hU - hD) / (2 * e);
+          normal.z = 1 / Math.sqrt(dhdx * dhdx + dhdy * dhdy + 1);
+          typeId = terrain.typeAtWithHeights(x, y, hR, hL, hU, hD);
+        } else {
+          this.height[i] = terrain.heightAt(x, y);
+          terrain.normalAt(x, y, normal);
+          typeId = terrain.typeAt(x, y);
+        }
         const typeName = terrain.typeName(typeId);
         let unwalkable = normal.z < cosThresh;
         if (!unwalkable && blockedTypes.indexOf(typeName) !== -1) unwalkable = true;

@@ -448,3 +448,23 @@ await testAsync('runCli: --crease 45 welds a ~10 deg bend that the default (5 de
     assert.strictEqual(creased.report.groupCount, 1, '--crease 45: the bend is below the threshold, 1 group');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+// ---- QUAT-LOD-01 (part 1): `lods` meta field -------------------------------------------------------------------------------------------
+import { writeMeshFiles } from './mesh-file.mjs';
+await testAsync('lods: round-trips through writeMeshFiles/readMeshJSON and never perturbs the bin', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kestrel-lods-'));
+  try {
+    const { json } = importGltfBytes(buildTriangleGlb(), 'test_lods');
+    const withLods = { ...json, lods: [{ mesh: 'quaternius/Test_LOD1', ratio: 0.35, tris: 12 }] };
+    const file = path.join(dir, 'lods.mesh.json');
+    writeMeshFiles(file, withLods);
+    const back = readMeshJSON(file);
+    assert.deepStrictEqual(back.lods, withLods.lods);
+    const file2 = path.join(dir, 'nolods.mesh.json');
+    writeMeshFiles(file2, json); // same mesh, no lods field at all
+    assert.deepStrictEqual(fs.readFileSync(path.join(dir, 'lods.mesh.bin')), fs.readFileSync(path.join(dir, 'nolods.mesh.bin')), 'adding lods must not change the bin bytes');
+    const meta2 = JSON.parse(fs.readFileSync(file2, 'utf8'));
+    assert.ok(!('lods' in meta2), 'no lods field when the json has none');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+console.log('QUAT-LOD-01 lods round-trip OK');

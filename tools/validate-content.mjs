@@ -1,6 +1,19 @@
 #!/usr/bin/env node
+import { validateEditorGroups } from './editor/treeGroups.js';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
+// CHARGEN-15 (38.33): `char.<id>` models come from the add-on packages in content/packages/index.json (registered at boot, not in ASSETS.models).
+const addonChars = new Set();
+try {
+  const { openPackage } = await import('../engine/index.js');
+  const dir = resolvePath('content/packages');
+  const idx = JSON.parse(readFileSync(resolvePath(dir, 'index.json'), 'utf8'));
+  for (const rel of idx.packages || []) {
+    const pkg = await openPackage(new Uint8Array(readFileSync(resolvePath(dir, rel))));
+    for (const a of pkg.manifest.assets || []) if (/^model\.(rigged|static)$/.test(a.type) && a.id) addonChars.add('char.' + a.id);
+  }
+} catch { /* no index = no add-ons */ }
+addonChars.add('char.kit'); // OB-086: the default kit character is registered at boot by main.js (Ch3 Hesk / Dorrin use it)
 // tools/validate-content.mjs (US-058, docs/backlog.md row 30b).
 //
 // Cross-reference checker for the designer's design/ content pack: catches
@@ -52,7 +65,7 @@ import { resolve as resolvePath } from 'node:path';
 // loadContentPack (same loader the game uses) and merged onto the
 // `globalThis.ASSETS` the remaining classic scripts (palette, models,
 // overworld_far's terrain RECIPE - still code, unaffected) already built.
-import { validateVoxelModel, loadContentPack, PROP_SCALE_MIN, PROP_SCALE_MAX, meshFromJSON, meshFromBin, validateMesh, validateLook, maskFromJSON } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
+import { validateVoxelModel, loadContentPack, PROP_SCALE_MIN, PROP_SCALE_MAX, meshFromJSON, meshFromBin, validateMesh, validateLook, maskFromJSON, validateDialogue } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import { validateQuestDefinition } from '../game/js/quest/sim/quest.js';
@@ -73,9 +86,23 @@ const CLASSIC_SCRIPTS = [
   '../design/models/relay.js',
   '../design/models/voxel_props.js',
   '../design/models/voxel_tower.js',
+  '../design/models/voxel_tower_crown.js', // CH1-D1b: ASSETS.models.towerCrown (world_m1 entity "towerCrown"); game/index.html needs the same tag after voxel_tower.js.
   '../design/models/voxel_world.js', // US-026a-content: waystone. Node/tooling only - see the header note above.
   '../design/models/sword.js', // US-078c: the ruin-steel sword (content/levels/tower.level.json prop "sword"), same load position as game/index.html.
   '../design/models/voxel_beast.js', // US-079a: the placeholder boar (content/worlds/world_m1.world.json entities "boar1"/"boar2"), same load position as game/index.html.
+  '../design/models/voxel_wolf.js', // WOLF-D1: the wolf (WOLF_MODEL 'wolf').
+  '../design/models/voxel_goblin.js', // GOB-D1/07a: goblin, goblinTorch, goblinSpear + ASSETS.goblinFx (game/index.html tag after voxel_wolf.js).
+  '../design/models/chest.js', // EQ-10: chestSmall on the world_m1 chest* anchors
+  '../design/models/voxel_bear.js', // NPC-BEAR-01: ASSETS.models.bear (world_m1 entity "bear", content/dialogue/bear.dialogue.json clips), same load position as game/index.html.
+  '../design/models/voxel_bear_black.js', // BEAR-D1: ASSETS.models.bearBlack (clones ASSETS.models.bear -> must follow voxel_bear.js). game/index.html tag: BEAR-01.
+  '../design/models/voxel_bear_cub.js', // NUB-D1: ASSETS.models.bearCub (Nub, Burl's cub; stand-alone). Not in game/index.html / the world yet (placement = later story).
+  '../design/models/voxel_otter.js', // SKIP-D1: ASSETS.models.otter (Skip the otter; stand-alone). Not in game/index.html / the world yet (placement = later story).
+  '../design/models/voxel_goat.js', // CRAG-D1: ASSETS.models.goat + ASSETS.goatFx (Crag, the old goat of Signal Head; stand-alone). Not in game/index.html / the world yet.
+  '../design/models/voxel_heron.js', // STILT-D1: ASSETS.models.heron + ASSETS.heronFx (Stilt, the heron of the Reedmire; stand-alone). Not in game/index.html / the world yet.
+  '../design/models/voxel_tortoise.js', // SLATE-D1: ASSETS.models.tortoise + ASSETS.tortoiseFx (Slate, the ancient tortoise of the Glasswater islet; stand-alone). Not in game/index.html / the world yet.
+  '../design/models/voxel_wildlife.js', // QL-06: ASSETS.models.crow (Rook, world_m1 entity "rook"), same load position as game/index.html.
+  '../design/models/voxel_eat_clips.js', // SWIM-ASSETS-01: eat clips, after the model files, same load position as game/index.html.
+  '../design/models/voxel_seamonster.js', // SWIM-ASSETS-01: ASSETS.models.seaMonster (world_m1 entity "seaMonster").
   '../design/models/m3_props.js', // US-078d: the practice target pell (content/levels/tower.level.json prop "practiceTarget"), same load position as game/index.html.
   '../design/models/far_tower.js',
   '../design/models/ferrum_lights.js',
@@ -218,9 +245,11 @@ const MAX_ENDTEXT_LINE = 40;
  * at the first) and counts every check attempted, whether it passed or not.
  * @returns {{ errors: string[], checks: number }}
  */
+const MAX_OBJECTIVE_TEXT = 38, MAX_ITEM_NAME = 14, MAX_ITEM_DESC = 38;
 export function validateContent(ASSETS, opts = {}) {
   const errors = [];
   const warnings = [];
+  const infos = []; // QL-T2: informational notes (not findings)
   let checks = 0;
   const fail = (path, msg) => errors.push(`${path}: ${msg}`);
   const check = (cond, path, msg) => { checks++; if (!cond) fail(path, msg); };
@@ -270,6 +299,7 @@ export function validateContent(ASSETS, opts = {}) {
   };
   for (const [id, world] of Object.entries(worlds)) {
     for (const entity of world.entities || []) checkMeshEntity(entity, `worlds.${id}.entities[${entity.id}]`);
+    for (const msg of validateEditorGroups(world.editorGroups)) check(false, `worlds.${id}.editorGroups`, msg); // OB-028
   }
   for (const [id, chunk] of Object.entries(ASSETS?.chunks || {})) {
     for (const entity of chunk.entities || []) checkMeshEntity(entity, `chunks.${id}.entities[${entity.id}]`);
@@ -407,7 +437,7 @@ export function validateContent(ASSETS, opts = {}) {
         check(!!resolveModel(models, e.model, undefined), `${base}.entities[${e.id}].model`, `model "${e.model}" not found in ASSETS.models`);
       }
       if (typeof voxelModel === 'string') {
-        check(!!resolveModel(models, voxelModel, undefined), `${base}.entities[${e.id}].components.voxel.model`, `model "${voxelModel}" not found in ASSETS.models`);
+        check(!!resolveModel(models, voxelModel, undefined) || addonChars.has(voxelModel), `${base}.entities[${e.id}].components.voxel.model`, `model "${voxelModel}" not found in ASSETS.models`);
       }
       // ED-SCALE-1 (34.1): `scale` inline shorthand or `transform.scale`.
       const rawScale = e.scale !== undefined ? e.scale : (e.transform && e.transform.scale);
@@ -529,6 +559,37 @@ export function validateContent(ASSETS, opts = {}) {
     }
   }
 
+  // ---- 5b. GS-01d: legend flag terrainFloor (engine/world/Level.js isTerrainFloor) ----
+  // Only non-solid 'outside' cells whose floorH equals the nearest outer-ring cell's floorH (+-0.01, what the
+  // terrain blend ringHAt gives under the bbox) may show the terrain: anything else would put a height step
+  // between the terrain and the walkable sector.
+  for (const [levelId, level] of Object.entries(levels)) {
+    if (!level || !Array.isArray(level.rows) || !level.legend) continue;
+    const flagged = Object.entries(level.legend).filter(([, e]) => e && e.terrainFloor !== undefined);
+    if (!flagged.length) continue;
+    const rows = level.rows, h = rows.length, w = h > 0 ? rows[0].length : 0;
+    const ringH = (cx, cy) => { // same nearest-edge rule as World.makeRingHAt
+      const dl = cx + 0.5, dr = w - cx - 0.5, dt = cy + 0.5, db = h - cy - 0.5, m = Math.min(dl, dr, dt, db);
+      let rx = cx, ry = cy;
+      if (m === dl) rx = 0; else if (m === dr) rx = w - 1;
+      if (m === dt) ry = 0; else if (m === db) ry = h - 1;
+      const e = level.legend[rows[ry][rx]];
+      return e ? e.floorH : NaN;
+    };
+    for (const [ch, e] of flagged) {
+      const base = `levels.${levelId}.legend['${ch}']`;
+      check(e.terrainFloor === true, base, 'terrainFloor must be true when present');
+      check(!e.solid && e.zone === 'outside', base, 'terrainFloor is only allowed on non-solid cells with zone "outside"');
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        if (rows[y][x] !== ch) continue;
+        const rh = ringH(x, y);
+        check(typeof e.floorH === 'number' && Math.abs(e.floorH - rh) <= 0.01,
+          `levels.${levelId}.rows[${y}][${x}]`,
+          `terrainFloor cell '${ch}' floorH ${e.floorH} != outer-ring floorH ${rh} (terrain height step)`);
+      }
+    }
+  }
+
   // ---- 4. UI text: ASCII 32-126, endText lines <= 40 chars ----
   for (const { path, text, isEndTextLine } of collectUiTexts(uiStyle)) {
     check(isAscii(text), path, `not ASCII 32-126: ${JSON.stringify(text)}`);
@@ -546,6 +607,9 @@ export function validateContent(ASSETS, opts = {}) {
     check(def?.id === id, `items.defs.${id}.id`, 'must match the item key');
     inlineText(def?.name, `items.defs.${id}.name`);
     inlineText(def?.desc, `items.defs.${id}.desc`);
+    // S8-C-17b: writer-contract length limits (docs/story.md Sprint 8 texts)
+    if (typeof def?.name === 'string') check(def.name.length <= MAX_ITEM_NAME, `items.defs.${id}.name`, `name is ${def.name.length} chars, expected <= ${MAX_ITEM_NAME}`);
+    if (typeof def?.desc === 'string') check(def.desc.length <= MAX_ITEM_DESC, `items.defs.${id}.desc`, `desc is ${def.desc.length} chars, expected <= ${MAX_ITEM_DESC}`);
   }
   for (const [id, table] of Object.entries(ASSETS?.items?.loot || {})) {
     for (const [i, entry] of (table.entries || []).entries()) {
@@ -556,6 +620,10 @@ export function validateContent(ASSETS, opts = {}) {
     for (const pickup of level.interactables || []) {
       if (typeof pickup.interact === 'string' && pickup.interact.endsWith('.take')) itemIds.add(pickup.id);
     }
+  }
+  for (const [wid, world] of Object.entries(worlds)) for (const e of world.entities || []) { // QUESTS-01: generic pickup props name a real item
+    const q = e.components?.questPickup;
+    if (q) check(itemIds.has(q.item) && Number.isInteger(q.n ?? 1) && (q.n ?? 1) >= 1, `worlds.${wid}.${e.id}.questPickup`, `item "${q.item}" not found in item defs (or bad n)`);
   }
   const beastIds = new Set();
   for (const world of Object.values(worlds)) {
@@ -608,15 +676,83 @@ export function validateContent(ASSETS, opts = {}) {
     for (const objective of def.objectives) {
       const base = `${path}.objectives[${objective.id}]`;
       inlineText(objective.text, `${base}.text`);
+      if (objective.journal !== undefined) { inlineText(objective.journal, `${base}.journal`); check(objective.journal.length <= 240, `${base}.journal`, 'journal over 240 chars'); } // OB-097
+      if (typeof objective.text === 'string') check(objective.text.length <= MAX_OBJECTIVE_TEXT, `${base}.text`, `objective text is ${objective.text.length} chars, expected <= ${MAX_OBJECTIVE_TEXT}`);
       if (objective.when.type === 'area') {
         check(Object.hasOwn(areas, objective.when.id), `${base}.when.id`, `area "${objective.when.id}" not found in ${areaPath}`);
+      }
+      if (objective.when.type === 'collect' || objective.when.type === 'deliver') { // QUESTS-01
+        check(itemIds.has(objective.when.id), `${base}.when.id`, `item "${objective.when.id}" not found in item defs`);
+        const placed = Object.values(worlds).reduce((n, w) => n + (w.entities || []).filter(e => e.components?.questPickup?.item === objective.when.id).reduce((m, e) => m + (e.components.questPickup.n || 1), 0), 0);
+        check(objective.when.type === 'deliver' || placed >= objective.when.count, `${base}.when.count`, `needs ${objective.when.count} "${objective.when.id}" but only ${placed} placed as questPickup world entities`);
       }
       if (objective.when.type === 'item') {
         check(itemIds.has(objective.when.id), `${base}.when.id`, `item "${objective.when.id}" not found in item defs or level pickups`);
       }
       if (objective.when.type === 'beasts') {
-        for (const id of objective.when.ids) check(beastIds.has(id), `${base}.when.ids`, `beast "${id}" not found in world entities`);
+        for (const id of objective.when.ids || []) check(beastIds.has(id), `${base}.when.ids`, `beast "${id}" not found in world entities`);
       }
+    }
+    // QL-02: giver / hand-in ids resolve to a world entity or a level prop; rewards are item ids.
+    const actorIds = new Set();
+    for (const w of Object.values(worlds)) for (const e of w.entities || []) actorIds.add(e.id);
+    for (const lv of Object.values(levels)) for (const pr of lv?.props || []) actorIds.add(pr.id);
+    for (const key of ['npc', 'turnIn']) if (def.giver?.[key] !== undefined) check(actorIds.has(def.giver[key]), `${path}.giver.${key}`, `"${def.giver[key]}" is no world entity or level prop`);
+    for (const objective of def.objectives) if (objective.when?.type === 'deliver') check(actorIds.has(objective.when.to), `${path}.objectives[${objective.id}].when.to`, `hand-in "${objective.when.to}" is no world entity or level prop`);
+    for (const [i, r] of (def.reward?.items || []).entries()) check(itemIds.has(r.id), `${path}.reward.items[${i}].id`, `reward item "${r.id}" not found in item defs`);
+    // EQ-13: given / required items exist; requireEquipped names wearable gear (equip slot) or held items.
+    for (const key of ['giveOnAccept', 'giveOnTalk']) for (const [i, r] of (def[key] || []).entries()) check(itemIds.has(r.id), `${path}.${key}[${i}].id`, `item "${r.id}" not found in item defs`);
+    if (def.requireItem !== undefined) check(itemIds.has(def.requireItem), `${path}.requireItem`, `item "${def.requireItem}" not found in item defs`);
+    for (const id of def.requireEquipped || []) check(itemIds.has(id) && !!itemDefs[id]?.equip, `${path}.requireEquipped`, `"${id}" is no equippable item`);
+  }
+  // QL-02: requires point at known quests/steps and form no cycle.
+  const byQuestId = new Map(quests.map(q => [q.def?.id, q]));
+  const reqEdges = new Map();
+  for (const { path, def } of quests) {
+    reqEdges.set(def?.id, []);
+    for (const r of def?.requires || []) {
+      if (!r || r.quest === undefined) continue; // flag-only requires ({flag}) have no quest edge
+      const target = byQuestId.get(r.quest);
+      check(!!target, `${path}.requires`, `required quest "${r.quest}" not found`);
+      if (!target) continue;
+      if (r.step !== undefined) check((target.def.objectives || []).some(o => o.id === r.step), `${path}.requires`, `quest "${r.quest}" has no step "${r.step}"`);
+      reqEdges.get(def.id).push(r.quest);
+    }
+  }
+  const visiting = new Set(), visited = new Set();
+  const hasCycle = (id) => { if (visiting.has(id)) return true; if (visited.has(id)) return false; visiting.add(id); for (const n of reqEdges.get(id) || []) if (hasCycle(n)) return true; visiting.delete(id); visited.add(id); return false; };
+  for (const id of reqEdges.keys()) check(!hasCycle(id), `quests.${id}.requires`, 'requires chain has a cycle');
+  // QL-T2 (38.44 item 10): giver sites exist and are placed, every quest is reachable from the start, gate key given once by the last main quest.
+  if (quests.length) {
+    const actors = new Set();
+    for (const w of Object.values(worlds)) for (const e of w.entities || []) actors.add(e.id);
+    for (const lv of Object.values(levels)) for (const pr of lv?.props || []) actors.add(pr.id);
+    if (opts.sites) for (const { path, def } of quests) {
+      if (def?.site === undefined) continue;
+      const s = Object.hasOwn(opts.sites, def.site) ? opts.sites[def.site] : null;
+      check(!!s, `${path}.site`, `site "${def.site}" not found in sites.json`);
+      if (s) check(actors.has(s.entity), `${path}.site`, `site "${def.site}" entity "${s.entity}" is not placed in world data`);
+    }
+    // reachability: a quest opens once every quest it requires is reachable (flag-only requires count as satisfiable)
+    const reach = new Set();
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const { def } of quests) {
+        if (!def || reach.has(def.id)) continue;
+        if ((def.requires || []).every(r => r.quest === undefined || reach.has(r.quest))) { reach.add(def.id); grew = true; }
+      }
+    }
+    for (const { path, def } of quests) if (def) check(reach.has(def.id), `${path}.requires`, `quest "${def.id}" is not reachable from the start (cycle or missing prerequisite)`);
+    const GATE = 'key.gate';
+    const givers = quests.filter(q => (q.def?.reward?.items || []).some(r => r.id === GATE));
+    if (!givers.length) infos.push('gate key not assigned yet');
+    else {
+      const total = givers.reduce((n, g) => n + g.def.reward.items.filter(r => r.id === GATE).reduce((m, r) => m + r.n, 0), 0);
+      check(total === 1, 'quests.key.gate', `"${GATE}" must be given exactly once (given ${total}x by ${givers.map(g => g.def.id).join(', ')})`);
+      const needs = new Set(); // main quests another main quest requires are not the last one
+      for (const q of quests) if (q.def?.main === true) for (const r of q.def.requires || []) if (r.quest !== undefined && r.quest !== q.def.id) needs.add(r.quest);
+      const last = quests.filter(q => q.def?.main === true && !needs.has(q.def.id)).map(q => q.def.id);
+      for (const g of givers) check(g.def.main === true && last.includes(g.def.id), `${g.path}.reward`, `"${GATE}" must be given by the last main quest (last: ${last.join(', ') || 'none'})`);
     }
   }
 
@@ -641,6 +777,38 @@ export function validateContent(ASSETS, opts = {}) {
       }
       try { createCrafting(recipeFile.recipes, { items: itemDefs }); check(true, recipePath, ''); }
       catch (e) { check(false, recipePath, e.message); }
+    }
+  }
+
+  // EQ-11: gear loot tables (content/items/loot.json, data-only like recipes.json)
+  const lootFile = opts.lootFile;
+  const lootPath = opts.lootPath || 'content/items/loot.json';
+  if (lootFile !== undefined && lootFile !== null) {
+    const chance01 = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1;
+    const slots = Array.isArray(lootFile.slots) ? lootFile.slots : [];
+    const tiers = plain(lootFile.tiers) ? lootFile.tiers : {};
+    check(lootFile.version === 1 && plain(lootFile.sources), lootPath, 'expected version 1 and a sources object');
+    check(slots.length > 0, `${lootPath}.slots`, 'needs at least one slot');
+    const tierSum = Object.values(tiers).reduce((a, b) => a + (typeof b === 'number' ? b : NaN), 0);
+    check(Object.keys(tiers).length > 0 && Object.values(tiers).every(chance01) && Math.abs(tierSum - 1) < 1e-9, `${lootPath}.tiers`, `tier odds must be in 0..1 and sum to 1, got ${tierSum}`);
+    const gearIds = (slot, tier) => Object.values(itemDefs).filter(d => d?.equip?.slot === slot && d.equip.tier === tier && d.kind === 'gear').map(d => d.id);
+    for (const slot of slots) for (const tier of Object.keys(tiers)) {
+      check(gearIds(slot, tier).length > 0, `${lootPath}.slots`, `no gear item for slot "${slot}" tier "${tier}"`);
+    }
+    const checkGive = (g, path) => {
+      check(Object.hasOwn(itemDefs, g?.item), `${path}.item`, `item "${g?.item}" not found`);
+      check(Number.isInteger(g?.min) && Number.isInteger(g?.max) && g.min >= 1 && g.max >= g.min, `${path}`, 'min/max must be integers, 1 <= min <= max');
+    };
+    for (const [src, table] of Object.entries(lootFile.sources || {})) {
+      for (const [i, roll] of (table?.rolls || []).entries()) {
+        const path = `${lootPath}.sources.${src}.rolls[${i}]`;
+        check(chance01(roll?.chance), `${path}.chance`, `chance must be a number in 0..1, got ${roll?.chance}`);
+        check(!!roll?.pick !== !!roll?.give, path, 'a roll needs exactly one of pick / give');
+        if (roll?.give) checkGive(roll.give, `${path}.give`);
+      }
+      for (const [i, f] of (table?.fixed || []).entries()) {
+        check(Object.hasOwn(itemDefs, f?.item) && Number.isInteger(f?.n) && f.n >= 1, `${lootPath}.sources.${src}.fixed[${i}]`, `fixed entry needs a known item and n >= 1`);
+      }
     }
   }
 
@@ -731,7 +899,115 @@ export function validateContent(ASSETS, opts = {}) {
     errors.push(...scanned.errors);
     checks += scanned.checks;
   }
-  return { errors, warnings, checks, meshOnlyCount };
+  if (opts.dialogueFilesDir) {
+    const dl = validateDialogueFiles(opts.dialogueFilesDir, models, opts.quests ? opts.quests.filter(q => q.def && q.def.giver).map(q => q.def.id) : null);
+    errors.push(...dl.errors);
+    warnings.push(...dl.warnings);
+    checks += dl.checks;
+  }
+  return { errors, warnings, infos, checks, meshOnlyCount };
+}
+
+// DIALOGUE-01a2 (38.28): content/dialogue/*.dialogue.json - engine rules via validateDialogue, plus the one
+// cross-file check: every node `clip` (and the runtime `talk`/`listen` clips) exists on the NPC model named by
+// the file's optional top-level `model`. A model that is not registered (yet) is a warning, not an error.
+const DIALOGUE_RUNTIME_CLIPS = ['talk', 'listen'];
+const BARK_LINE_MAX = 56; // = engine DIALOGUE_LINE_MAX (not exported)
+const S_KEY_RE = /^[A-Za-z][A-Za-z0-9_.-]*$/; // same shape as a quest id
+const Q_OPS = ['available', 'active', 'ready', 'done', 'accept', 'handin'];
+// QG-03 (38.35 item 5): `q.<questId>.<op>` flag keys (requires / setFlag) must name a giver quest (giverIds, null = not checked) and a known op.
+function checkQuestKeys(def, giverIds, file, errors) {
+  const keys = [];
+  for (const e of def.entry || []) if (e && typeof e.requires === 'string') keys.push(e.requires);
+  for (const n of Object.values(def.nodes || {})) {
+    if (n && typeof n.setFlag === 'string') keys.push(n.setFlag);
+    for (const c of (n && n.choices) || []) if (c && typeof c.setFlag === 'string') keys.push(c.setFlag);
+  }
+  let checks = 0;
+  for (const k of keys) {
+    if (k.startsWith('s.')) { // CH1-05: `s.<key>` = world.state flag; the rest must look like a quest id / state key
+      checks++;
+      if (!S_KEY_RE.test(k.slice(2))) errors.push(`${file}: flag "${k}" has a bad state key "${k.slice(2)}"`);
+      continue;
+    }
+    if (!k.startsWith('q.')) continue;
+    if (!giverIds) continue;
+    checks++;
+    const dot = k.lastIndexOf('.'), id = k.slice(2, dot), op = k.slice(dot + 1);
+    if (!giverIds.includes(id)) errors.push(`${file}: flag "${k}" names no giver quest "${id}"`);
+    else if (!Q_OPS.includes(op)) errors.push(`${file}: flag "${k}" has unknown quest op "${op}"`);
+  }
+  return checks;
+}
+/** CH1-05: {kind:'barks', speakers:{k:{label,player?}}, barks:{id:[{who,text}]}}; text <= 56 ASCII chars. */
+export function validateBarks(def) {
+  const errors = []; let checks = 0;
+  const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
+  if (!isObj(def) || def.kind !== 'barks') return { errors: ['kind: expected "barks"'], checks };
+  const sp = isObj(def.speakers) ? def.speakers : null;
+  if (!sp) errors.push('speakers: expected an object');
+  else for (const [k, s] of Object.entries(sp)) if (!isObj(s) || typeof s.label !== 'string' || !s.label) errors.push(`speakers.${k}: needs a non-empty label`);
+  if (!isObj(def.barks) || !Object.keys(def.barks).length) { errors.push('barks: expected a non-empty object'); return { errors, checks }; }
+  for (const [id, lines] of Object.entries(def.barks)) {
+    checks++;
+    if (!S_KEY_RE.test(id)) errors.push(`barks.${id}: bad bark id`);
+    if (!Array.isArray(lines) || !lines.length) { errors.push(`barks.${id}: expected a non-empty array`); continue; }
+    lines.forEach((l, i) => {
+      const p = `barks.${id}[${i}]`;
+      if (!isObj(l)) { errors.push(`${p}: expected {who, text}`); return; }
+      if (!sp || typeof l.who !== 'string' || !Object.prototype.hasOwnProperty.call(sp, l.who)) errors.push(`${p}.who: unknown speaker ${JSON.stringify(l.who)}`);
+      if (typeof l.text !== 'string' || !l.text) errors.push(`${p}.text: expected a non-empty string`);
+      else {
+        if (l.text.length > BARK_LINE_MAX) errors.push(`${p}.text: ${l.text.length} chars, max ${BARK_LINE_MAX}`);
+        if (!/^[ -~]*$/.test(l.text)) errors.push(`${p}.text: char outside ASCII 32-126`);
+      }
+    });
+  }
+  return { errors, checks };
+}
+export function validateDialogueFiles(dir, models = {}, giverIds = null) {
+  const errors = [], warnings = [];
+  let checks = 0;
+  const files = [], barkFiles = [];
+  const walk = (d) => {
+    let entries;
+    try { entries = readdirSync(d, { withFileTypes: true }); } catch (e) { if (e && e.code === 'ENOENT') return; throw e; }
+    for (const entry of entries) {
+      const full = `${d}/${entry.name}`;
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith('.dialogue.json')) files.push(full);
+      else if (entry.name.endsWith('.barks.json')) barkFiles.push(full);
+    }
+  };
+  walk(dir);
+  for (const full of barkFiles) { // CH1-05: `barks` content kind (read by game/js/quest/barks.js, not in the manifest)
+    checks++;
+    let def;
+    try { def = JSON.parse(readFileSync(full, 'utf8')); } catch (e) { errors.push(`${full}: JSON parse failed: ${e.message}`); continue; }
+    const r = validateBarks(def);
+    for (const m of r.errors) errors.push(`${full}: ${m}`);
+    checks += r.checks;
+  }
+  for (const full of files) {
+    checks++;
+    let def;
+    try { def = JSON.parse(readFileSync(full, 'utf8')); } catch (e) { errors.push(`${full}: JSON parse failed: ${e.message}`); continue; }
+    const r = validateDialogue(def);
+    for (const m of r.errors) errors.push(`${full}: ${m}`);
+    for (const m of r.warnings) warnings.push(`${full}: ${m}`);
+    checks += checkQuestKeys(def, giverIds, full, errors);
+    if (def.model === undefined) continue;
+    checks++;
+    const model = typeof def.model === 'string' ? models[def.model] : null;
+    if (!model) { warnings.push(`${full}: model "${def.model}" is not registered, clips not checked`); continue; }
+    const used = new Set(DIALOGUE_RUNTIME_CLIPS);
+    for (const n of Object.values(def.nodes || {})) if (n && typeof n.clip === 'string') used.add(n.clip);
+    for (const c of used) {
+      checks++;
+      if (!hasClip(model, c)) errors.push(`${full}: clip "${c}" not found on model "${def.model}"`);
+    }
+  }
+  return { errors, warnings, checks };
 }
 
 function validateVoxelModelSafe(def, opts) {
@@ -842,21 +1118,97 @@ export function loadQuestFiles(dir) {
   return { quests, errors, areas, areaPath };
 }
 
+/** QL-B1: content/quests/index.json packs -> expanded giver defs (sites.json + rewards.json + item defs), validated like plain quest files. */
+export async function loadPackQuests(dir, itemDefs = {}) {
+  const quests = [], errors = [];
+  let sites;
+  const read = (f) => JSON.parse(readFileSync(`${dir}/${f}`, 'utf8'));
+  let index; try { index = read('index.json'); } catch (e) { return { quests, errors }; }
+  if (!Array.isArray(index.packs) || !index.packs.length) return { quests, errors };
+  const { expandAll } = await import('../game/js/quest/sim/templates.js');
+  try {
+    const packs = index.packs.map(p => read(`${p}/pack.json`));
+    const items = Object.values(itemDefs).map(d => ({ id: d.id, slot: d.equip?.slot, tier: d.equip?.tier }));
+    sites = read('sites.json').sites;
+    const ex = expandAll(packs, { sites, rewards: read('rewards.json').tables, items, strictText: true });
+    for (const e of ex.errors) errors.push(`pack:${e.region}:${e.id}: ${e.message}`);
+    for (const def of ex.defs) quests.push({ path: `pack:${def.id}`, def });
+  } catch (e) { errors.push(`content/quests packs: ${e.message}`); }
+  return { quests, errors, sites };
+}
+
 export function loadRecipeFile(path) {
   try { return { recipeFile: JSON.parse(readFileSync(path, 'utf8')), recipePath: path, errors: [] }; }
   catch (e) { return { recipeFile: null, recipePath: path, errors: [`${path}: recipe JSON read/parse failed: ${e.message}`] }; }
+}
+
+export function loadLootFile(path) {
+  try { return { lootFile: JSON.parse(readFileSync(path, 'utf8')), lootPath: path, errors: [] }; }
+  catch (e) { return { lootFile: null, lootPath: path, errors: [`${path}: loot JSON read/parse failed: ${e.message}`] }; }
+}
+
+// WMP-04: region lint (pure, fixture-testable). o = { geo, quests: raw pack.json quests, sites, relayIds: ['ws_glasswater', ...],
+// itemIds:Set, beastKinds:Set|null, camps: generated far camps }. Returns one "regions:<where>: problem" line per finding.
+export function lintRegions(o) {
+  const out = [], quests = o.quests || [], sites = o.sites || {};
+  const errandOf = (reg) => quests.find((q) => q.id === 'sq.reg.' + reg);
+  // 1. a region relay (ws_<region>) needs an errand sq.reg.<region>
+  for (const id of o.relayIds || []) { const reg = id.replace(/^ws_/, ''); if (!errandOf(reg)) out.push(`regions:${reg}: relay ${id} has no errand (sq.reg.${reg})`); }
+  // 2. errand targets exist: site, kill kind, deliver item + to-site
+  for (const q of quests) {
+    if (q.site && !Object.hasOwn(sites, q.site)) out.push(`regions:${q.id}: site '${q.site}' does not exist`);
+    for (const st of q.steps || []) {
+      const p = st.params || {};
+      if (st.template === 'kill' && o.beastKinds && !o.beastKinds.has(p.kind)) out.push(`regions:${q.id}: kill kind '${p.kind}' does not exist`);
+      if (st.template === 'deliver') {
+        if (p.to && !Object.hasOwn(sites, p.to)) out.push(`regions:${q.id}: deliver-to '${p.to}' does not exist`);
+        if (o.itemIds && !o.itemIds.has(p.item)) out.push(`regions:${q.id}: deliver item '${p.item}' does not exist`);
+      }
+    }
+    // 4. region text present
+    const texts = [['title', q.title], ['returnText', q.returnText], ...(q.steps || []).flatMap((st, i) => [[`steps[${i}].journal`, st.journal], [`steps[${i}].objText`, st.objText]]), ...[...(q.lines?.offer || []), ...(q.lines?.done || [])].map((t, i) => [`lines[${i}]`, t])];
+    for (const [k, v] of texts) { if (typeof v !== 'string' || !v.trim()) out.push(`regions:${q.id}: ${k} is empty`); else if (/NEEDS WRITER/i.test(v)) out.push(`regions:${q.id}: ${k} still says NEEDS WRITER`); }
+    if (!q.lines?.offer?.length) out.push(`regions:${q.id}: lines.offer is empty`);
+  }
+  // 3. generated far camps lie inside the bounds polygon and their region rect (centre + every member)
+  const inPoly = (pts, x, y) => { let c = false; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) if ((pts[i][1] > y) !== (pts[j][1] > y) && x < (pts[j][0] - pts[i][0]) * (y - pts[i][1]) / (pts[j][1] - pts[i][1]) + pts[i][0]) c = !c; return c; };
+  for (const c of o.camps || []) {
+    const r = o.geo.regions.find((g) => g.id === c.region)?.r;
+    if (!r) { out.push(`regions:${c.id}: region '${c.region}' not in geo`); continue; }
+    for (const [tag, x, y] of [['centre', c.at[0], c.at[1]], ...(c.members || []).map((m) => [m.id, c.at[0] + m.at[0], c.at[1] + m.at[1]])]) {
+      if (!inPoly(o.geo.bounds.pts, x, y)) out.push(`regions:${c.id}: ${tag} (${x},${y}) is outside the bounds polygon`);
+      else if (x < r[0] || x > r[2] || y < r[1] || y > r[3]) out.push(`regions:${c.id}: ${tag} (${x},${y}) is outside region ${c.region}`);
+    }
+  }
+  return out;
+}
+
+async function lintRegionsReal(ASSETS, sites) {
+  const { RELAY_WAKE } = await import('../game/js/quest/wire/waystone.js');
+  const { execFileSync } = await import('node:child_process');
+  const out = execFileSync(process.execPath, [fileURLToPath(new URL('./far-camps-dump.mjs', import.meta.url))], { encoding: 'utf8', maxBuffer: 1 << 26, stdio: ['ignore', 'pipe', 'ignore'] });
+  const { camps, bounds, regions } = JSON.parse(out.slice(out.indexOf('@@CAMPS@@') + 9)); // separate process: see far-camps-dump.mjs
+  const pack = JSON.parse(readFileSync(new URL('../content/quests/regions/pack.json', import.meta.url), 'utf8'));
+  return lintRegions({ geo: { bounds, regions }, quests: pack.quests, sites, relayIds: Object.keys(RELAY_WAKE), itemIds: new Set(Object.keys(ASSETS.items?.defs || {})), beastKinds: new Set(['boar', 'wolf', 'bear']), camps }); // kinds = quest.js kindOf() species
 }
 
 async function main() {
   const ASSETS = await loadDesignAssets();
   const meshFilesDir = fileURLToPath(new URL('../content/meshes', import.meta.url));
   const maskFilesDir = fileURLToPath(new URL('../content/masks', import.meta.url));
+  const dialogueFilesDir = fileURLToPath(new URL('../content/dialogue', import.meta.url));
   const questFiles = loadQuestFiles(fileURLToPath(new URL('../content/quests', import.meta.url)));
   const recipeFile = loadRecipeFile(fileURLToPath(new URL('../content/items/recipes.json', import.meta.url)));
-  const { errors: allErrors, warnings, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir, maskFilesDir, quests: questFiles.quests, areas: questFiles.areas, areaPath: questFiles.areaPath, ...recipeFile });
+  const lootFile = loadLootFile(fileURLToPath(new URL('../content/items/loot.json', import.meta.url)));
+  const packQuests = await loadPackQuests(fileURLToPath(new URL('../content/quests', import.meta.url)), ASSETS?.items?.defs);
+  questFiles.quests.push(...packQuests.quests); questFiles.errors.push(...packQuests.errors);
+  const { errors: allErrors, warnings, infos, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir, maskFilesDir, dialogueFilesDir, sites: packQuests.sites, quests: questFiles.quests, areas: questFiles.areas, areaPath: questFiles.areaPath, ...recipeFile, ...lootFile });
   allErrors.push(...questFiles.errors);
+  allErrors.push(...lootFile.errors);
   allErrors.push(...recipeFile.errors);
+  try { allErrors.push(...await lintRegionsReal(ASSETS, packQuests.sites || {})); } catch (e) { allErrors.push(`regions: lint crashed: ${e.message}`); }
   for (const w of warnings) console.warn(`WARN ${w}`);
+  for (const i of infos) console.log(`INFO ${i}`);
   const meshOnlyText = meshOnlyCount ? `, ${meshOnlyCount} mesh-only model(s)` : '';
   if (allErrors.length) {
     for (const e of allErrors) console.error(e);

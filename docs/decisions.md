@@ -1022,7 +1022,175 @@ Arc gpucompare on the pc-b2 tip 5c7c7b3 (includes PREC-01a 1a9d4c2, camera-relat
 Architect batch 16 (opus) on d20c5f6 (BUG-MESH-MISSING-01, grouped placements uncapped) and 4777361 (ALPHA-01e part 1, leafy tree meshes): WebGL2 `waystoneLookBack` now differs because a far prop that used to be dropped is drawn (precision difference on a newly visible far prop), and WebGL2 `lowpolyTrees` fails for the same class as the alphaLeaves rows (D-044: masks are WebGPU only, GLSL is frozen). WebGPU passes both. **Ruling:** record both as per-backend known-FAIL on WebGL2 with the reason; NO threshold is changed (D-039/D-045 stay), the WebGPU rows must stay PASS, and any other PASS->FAIL still blocks. Owner may veto: if so, revert the visibility fix on WebGL2 only is NOT possible (shared CPU feed), so the alternative is waiving the ALPHA-01e tree switch.
 **ALPHA-01f (new story, architect-approved):** masked meshes in instanced groups, WebGPU only: (a) JS twin, (b) WGSL + uvMask stream, (c) shadow variant, (d) GPU cull / indirect draws per range; WebGL2 keeps the voxel species. Before the species switch: owner LOD1 pick + forest triangle budget measured on forestWalk.
 
-## D-052 - Asset direction, closed-valley world, biomes, levelling proposal (owner + manager, 2026-10-09)
+## D-052 - M1.5 "Editor Preview" and M2 "Out of the Wreck" closed; US-046 folded into the WebGPU track (owner, 2026-10-09; recorded by the PC-B main session)
+Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays the same" on the mesh renderer + mesh physics (ME-12 GO already recorded 2026-10-01, D-030); "ok, do that" to closing both milestones today.
+- **M1.5 DONE:** US-031..034, US-063, US-064, US-066 done (owner walk-through); US-067 asset library done (closed with the milestone). US-068 (gizmo + ortho views, P2) stays queued for PC-B (architect note first). **US-046 closed as written:** the editor shipped with its own copy of the frame setup (`tools/editor/frame.js`, "US-046 workaround"), which only drives the WebGL2 `GpuCellPipeline`. The real need is now **ED-WG-01** (new): the editor renders through an engine-owned frame renderer on the WebGPU path and `tools/editor/frame.js` is deleted. ED-WG-01 is a **hard prerequisite of WG-5** (no WebGL2/GLSL deletion while the editor still needs it) and shares one architect note with ED-MESH-1.
+- **M2 DONE:** exit test met (owner walk wake -> breach -> hillside -> waystone on mesh renderer + mesh physics; mesh is the default, `main.js` `renderer = 'mesh'`; suites 370/370, check-deps + typecheck green on 2026-10-09). **Moved to M3 (no longer M2 exit items):** ME-12b leftovers (dev pages/bench/gpucompare defaults), BUG-FP-001 remainder (spawn black for the first frames), US-026b streaming + CO-6, BUG-COORD-001 (a)/(b) re-check. Mesh phase 3 (ME-14..21) continues in M3 as planned; ME-15/16 rows to be verified (sun shadow maps are default per D-043).
+- PC-A to ratify the row moves at the next review batch.
+
+## D-053 - WG-4c OK: WebGL2 is dropped (WG-5 go); boar telegraph stays WebGPU-only; per-cell glyphs on stone (owner, 2026-10-09; recorded by the PC-B main session)
+- Owner walked WG-4c on WebGPU (ultra on RTX 4060) and gave "WG-4c OK": WG-5 (delete the WebGL2 backend + GLSL) may merge after its own gates (ED-WG-01 done, D-052 prerequisite met). Branch `wip/wg5` (kestrel-4).
+- BOAR-SHADER-READ-01 telegraph tint: no GL2 port; WebGPU-only (moot once WG-5 lands).
+- GRID-TEXEL-GLYPH-01 (architecture 38.24): owner approves opting stone, brick and rock_soft into per-cell glyphs (`grid.glyph:'texel'`), reversing the per-block glyph part of the US-028a F1 anti-swim rule (texel stays world-anchored).
+- Settings gets a Quality row (QUALITY-GRID-01); owner prefers ultra on the 4060.
+- No public demo (owner, 2026-10-09: "they can steal our idea"): US-112 itch.io demo build cancelled; lane C DEMO-PAGE-01 dropped; demo size cap moot. DEMO-MODE-01 code stays as a private `?demo=` playtest build only (never published).
+- First quest boar count = 5 (owner, 2026-10-09): unblocks lane C QUEST-CHAIN-02c (`obj.beasts5` text).
+- Combat budget = flat 8 ms GPU p95 on every quality preset (owner, 2026-10-09). Hit-stop = 70 ms. EMIS glow = MEDIUM warm orange-gold (designer pick) OK.
+- Art direction (owner, 2026-10-09): "realistic things, but from squares" - realistic anatomy/proportions from voxels; Burl the bear on all four legs, rounder (designer v2 in progress). No "Esc to close" hint text anywhere in UI. Next designer item: realistic voxel first-person hand + voxel fire around the hand, burning ALL THE TIME; closing the hand (fist) = charge.
+- Environment (owner, 2026-10-09): the environment is built from the existing MESHES (content/meshes) - do not start designer work on new environment assets ("dont start to design, we got a lot"). The meadow preview / environment-pass.md stay as a reference only; the berry bush voxel model was stopped.
+- Combat/FX (owner, 2026-10-09): no visual effect when the BOAR charges (the flat orange telegraph goes; the boar body language stays) - the hand keeps fist = charge with a fireball-style fire; hits make the target BLEED (red blood), not a white flash. Walls back to per-block glyphs. Burl must not track the player around.
+- Pause menu (owner, 2026-10-09): the in-game pause overlay ("Click to resume / [S] Settings") becomes a real menu in the title-menu skin: Resume, Settings, Save, Load, Back to main menu - no slot list on the pause menu itself; the save slots appear only inside a Load submenu (owner). No Esc hint text. Queued as PAUSE-MENU-01.
+- Hand fire placement (owner, 2026-10-10): the fireball-style fire must be AROUND the hand (wrapping the palm/fingers, curling up around it), not a sprite floating in front of it. Next: HAND-FIRE-WRAP-01 - draw the hand flames in the view-model pass (or a near-cull exception for hand-attached sprites), several small flame sprites/particles anchored to the hand mounts around the hand; engine part -> arch-review.
+- Living forest (owner, 2026-10-10): voxel wildlife that moves around and is animated - rabbit, squirrel, fox, bird, deer ("for the forest to live ... so we can sell"). Exception to "no new env designs": animals ARE designer work (voxel, realistic per style-guide section 0, four-legged animals on all fours, birds fly/perch). Plan EP-WILD: designer models + clips (preview first: rabbit + deer), architect note for an ambient wildlife system (spawn around the player, wander/graze/flee from the player, birds perch/fly, LOD/cull, zero alloc, not hashed into combat), programmer wiring.
+- Character generator (owner, 2026-10-10): exports must use widely used formats, not only our design/models/*.js - MagicaVoxel .vox (voxels + palette) and glTF/.glb (mesh, with the rig parts as nodes for animation), plus our model file for the game. Use: BOTH villagers (NPCs) and the player's own look (a character-creation step at New game). Go (owner); first an architect note (part-layer rig, composition, export to .vox / glTF), then designer base human + pieces (preview first), then the app (tools/chargen/) and the New-game hook.
+- Character generator stack (owner, 2026-10-10): voxel-built realistic characters (rigid parts) exported as real meshes; desktop app = Tauri + three.js (MIT) viewer; NO new engine; UI-independent core (composition, mesher, exporters .glb humanoid/Mecanim bones + clips, FBX, .vox, .kestrel package). Smooth non-voxel humans out of scope.
+
+## D-054 - Character generator + .kestrel package (owner, 2026-10-10; recorded by the PC-B main session)
+- Architecture 38.29 (character generator) and 38.30 (.kestrel package) adopted; rows CHARGEN-01..20, RIG-00..03, KPKG-01..05/07 in docs/backlog.md.
+- three.js (MIT, vendored + pinned) allowed as an exception to the no-external-library rule, ONLY in tools/chargen (the generator app). Desktop shell = Tauri (tools/chargen-desktop).
+- In-game rig stays 8 parts for v1 (decide 24 at the CHARGEN-16 owner walk).
+- OPEN for the owner: code-signing costs (Apple ~99 USD/yr + a Windows certificate), which store(s) to sell on, default licence for exported characters/packages.
+
+## D-055 - Chargen head at a finer grid (owner, 2026-10-10; recorded by the PC-B main session)
+- Owner on face v2: "if we make smaller cubes? wouldnt be better? i dont like the eyes and lips". Options shown: finer head only / whole body 2x finer / same cubes + redesign. **Owner pick: finer head only** - the Head (+ Jaw) bones use 1.25 cm cells (2x the 2.5 cm body grid, face ~20 cells wide); the body stays 2.5 cm.
+- Architect note first (architecture 38.34: per-bone cell size in the kit, compose/mesh/collapse/riggedModelDef grid snap, exports, in-game cost), then a programmer, then the designer redraws the head. PC-A to ratify.
+
+## D-056 - M3 "Steel and Hush" closed (owner, 2026-10-10; recorded by the PC-B main session)
+- Owner: "m3 done". M3 exit accepted by the owner walk on PC-B (laptop). Open M3 rows that are not bugs move to M4 or stay parked (BEAST-TUNING-01 dodge = design question).
+- Owner note: "waystones restarts" - the waystone still carries the M1/M2 demo end trigger (`quest.end`: scripted walk + end card, then the game starts over). What happens instead is an owner decision (asked 2026-10-10).
+
+## D-057 - Waystones are travel points (owner, 2026-10-10; recorded by the PC-B main session)
+- Owner: "waystone also teleport location". Travel is picked **from the map (M)**; only waystones the player has **touched** (saved) can be travelled to.
+- Placement: **one more along the road west**, then waystones spread "around the map: crossroads, villages, etc." - the **designer proposes** spots on the chart, the owner picks before anything is built.
+- Order: designer proposal -> owner pick -> PO story rows (travel from the map, touched list in the save, fade + invalidate on arrival) -> programmer.
+
+## D-058 - Quest giver flow; Fen removed (owner, 2026-10-10; recorded by the PC-B main session)
+- Owner: "i wanna able to see, pick up, and finish" quests. Picked the **giver flow**: SEE = a `!` over an NPC with a quest + a map marker; PICK UP = talk -> quest text -> Accept / Later -> quest log; FINISH = NPC shows `?` when the steps are done -> talk -> hand in -> reward (item/coin) + "Quest complete". The boar quest becomes **Burl's quest** (first user of the flow).
+- **Fen removed for now** (the villager added on 2026-10-10 without an owner OK, CHARGEN-15): entity + dialogue out of world_m1; the add-on package system (38.33) stays for later NPCs.
+- Order: architect note + story rows -> programmer(s) -> owner walk.
+- Owner picks (2026-10-10, after 38.35): Burl's boar quest gives **no item reward** - only the "Quest complete" moment (no coin item; currency stays an open question; QG-D1 = the `?` marker only). Quest log key = **J**. Build go: QG-01..05 + QG-W1.
+
+## D-059 - Character style follows the owner references (owner, 2026-10-10; recorded by the PC-B main session)
+- Owner on the fine-head render: "poor guy :( look at him" + 6 reference images (stylised voxel characters: zombie, red-haired woman, bearded man, boy in jacket; files in the owner's Pictures folder, not committed - web images, licence unknown).
+- **Character style (replaces "realistic anatomy" for humans from D-053):** bigger head (~1/5 of the body) with a large flat face; simple face = white eye + one dark pupil, thick dark brow line, 1-2 cube nose shadow, short mouth line; **clean flat skin** (no noise/stripes, minimal shading); chunkier simple limbs; few colours; **default hair + simple clothes** (shirt, trousers, boots) - never bald/underwear by default.
+- Default detail = normal cubes (res 1/1); the fine head (1.25 cm) stays as an **option** in the generator.
+- Next: designer redoes the chargen base in this style (CHARGEN-25), then the owner looks before anything else builds on it.
+- Owner follow-up (2026-10-10): "can go a bit realistic way.. but you understand the difference" -> **in between** the references and realism: head ~1/6 of the body (refs ~1/5, real ~1/7.5), eyes = white + coloured iris + pupil (no lashes/lids), nose and mouth with a little shape, flat skin with only soft top-down shading, sturdy clean limbs, default hair + simple clothes.
+
+## D-060 - World plan "The Relay Line"; relays are the waystones (owner, 2026-10-10; recorded by the PC-B main session)
+- The world follows the canon pencil line (game-design 3): west of the tower, relay to relay toward the signal. Stages: 0 tower+meadow (done); **1 road west to the bend (~250 m play area), dead relay #1 = ws_roadBend**; 2 river crossing + crossroads, relay #2 = ws_fordWest; 3 Outwall village, relay #3 = ws_outwall; 4 north bank (M4 dungeon area); 5 signal-tower hill (Signal Source). Spots from docs/proposals/waystones-2026-10-10.md.
+- **Relays ARE the waystones:** waking a dead relay makes it a travel + save point (D-057 travel from the map, touched/woken only). The meadow waystone stays as the first one.
+- Dressing uses the existing meshes + animals (D-053). **Owner go: start stage 1**; stage 2 after the owner walks stage 1.
+
+## D-061 - Golden pocket compass HUD (owner, 2026-10-10; recorded by the PC-B main session)
+- Owner: "can be a small golden pocket compass to show the next quest bottom right corner?" -> a small brass/gold pocket compass in the bottom-right HUD corner; the needle points to the next quest target (active step target, or the giver showing `!`/`?`), distance under it (e.g. `42 m`); hidden when nothing is tracked and in menus/dialogue/capture modes. Designer draws it (ASCII, in the UI style); programmer adds the pure HUD module + mount.
+
+## D-062 - Build Chapter 1 "Beyond the Wall" from the owner script (owner, 2026-10-10; recorded by the PC-B main session)
+- Script: docs/chapters/chapter-1-beyond-the-wall.md (owner, via ChatGPT). **Build all of it**: sword + note in the tower, second note, Leave the Tower, Burl's boar quest with the script lines, **Follow the Bear** (Burl walks a path to the Waystone with walking dialogue, waits for the player), **Awaken the Stone** (Burl's talk, wake, "WAYSTONE AWAKENED" notice, Burl walks into the forest and disappears), The Next Light (Bend Relay, stage 1), **Not Alone** (Fen - a male wanderer with a staff, built with the chargen in the D-059 style - at Bend Relay), chapter-complete card + final journal entry.
+- **No lamp** (owner: "i dont want lamp. we talked about it will be a torch. no lamp"): no lamp pickup step and no lamp in the waking; the torch stays the later M4 tool. **Waking uses an aether crystal**: killing the boars gives Wick a crystal ("maybe find boar gives you a crystal for killing the boar which activates") that wakes the Waystone; script lines that mention the lamp are rewritten to the crystal.
+- **The breach climb stays required** (owner) - Leave the Tower comes after the climb.
+- Fen supersedes the D-058 removal: the owner's own script brings him back as a man.
+- Owner addition (2026-10-10): the tower must read as a TALL tower from outside (interior is good - keep it), the **sword lies at the top**; order = wake -> climb to the top (breach, required) -> sword + note -> come back down -> leave through an **entrance at the bottom** -> meadow.
+- Owner answer (2026-10-10, CH1-D1a): the tower exit is a **real ground-floor south-west door at 0 m**. The stair may be re-routed to make room, but the climb (stairs, gap jump, upper steps, summit) stays. The designer had proposed a 3.6 m door cut off the upper stair; the owner rejected it.
+
+## D-063 - Character style = the bearded-knight reference (owner, 2026-10-10; recorded by the PC-B main session)
+- Owner sent a stylised voxel knight (Screenshot 2026-10-10 123203.png in the owner's Pictures/Screenshots, not committed) "make look like this please" -> applies to **the whole character style** (all characters), **no wings / halo**.
+- Replaces the D-059 "in between" proportions: **big head ~1/4 of the body**, large expressive face (heavy dark brows, narrow eyes with a highlight, defined nose, full beard as an option, mouth line), chunky simple limbs, clean blocky shading with a few tones per material; outfits with readable texture (e.g. chainmail checker, tabard with an emblem, belt sash). Beard, chainmail, tabard become generator pieces. Default res stays 1/1.
+- Owner tower picks (2026-10-10, 38.37 questions): walls **12-14 m + crown** (about double today), bottom entrance faces **south-west** (toward Burl and the road). Unblocks CH1-D1a/D1b.
+- Owner note on CHARGEN-26 (2026-10-10, end of session): "my issue with the model is the details... i think you can still add more... but after our break" -> after the break: a detail pass on the character model (more detail in face, hair, clothes, hands - follow the D-063 reference closely). Not started.
+
+## D-064 - Stage 2 ford, day/night, quest chain, tower door, waystone, meadow (owner, 2026-10-10; recorded by the PC-B main session)
+- **World stage 2 ford (OQ-WS2-1):** the river crossing is **stepping stones** (no wading, no bridge). Swimming / ford gameplay (OQ-WS2-3), relay #2 position (OQ-WS2-2) and the far-tree swap (OQ-WS2-4) not yet answered.
+- **Day/night in play (AUD-41):** **yes**, a game day lasts **2 real hours** (owner, DN-Q1) - the time of day runs during play (sun path, sky/light ramps already exist for cinematics / `?time=`). Needs an architect note (cycle length, save, night lighting, quest/beast effects) before programming.
+- **Quest flow (QUEST-CHAIN-GATE-01):** chain quests with giver marks: '!' over the wake-spot note -> 'A Blade in the Ashes' (climb, sword, leave) -> '?' over Burl to hand in -> Burl '!' for the boars -> '?' when done, etc. A giver quest only shows its mark once the previous one is handed in.
+- **Tower door:** superseded by DOOR-TOGGLE-01 - the south-west door starts CLOSED and E opens/closes it any time (no bar, no sword gate).
+- **Waystone:** no brass bowl / crystal on top (WAYSTONE-NOBOWL); state shows on the carved mark only.
+- **Meadow:** no voxel stones; bushes ~1.3-1.4 m; every plant/bush randomised in size (+-20/25 %).
+- **Never lock the player during the game (owner, 2026-10-10):** no movement/camera lock from dialogues, notes, notices, the chapter card, escorts or wake effects; only real menus (title, pause, settings, and screens that pause the game) stop the player. Dialogues advance with E and close when the player walks away.
+- **Marks (owner, 2026-10-10):** '!' and '?' appear only over quest givers / hand-in targets (someone or something you talk to or read). Objective steps get no world mark; the compass points to them.
+- **Intro wake-up lock stays (owner, 2026-10-10):** the short lying-down wake cut-scene at the start may lock input; it is the only in-game lock besides real menus, the death screen and the travel fade.
+
+## D-065 - Combat: shield + block and bow + arrows instead of magic; no dungeon now; simple errand quests (owner, 2026-10-10; recorded by the PC-B main session)
+- **No magic for now:** the player fights with the sword, a **shield (block)** and a **bow with arrows**. Magic (D-021 spells, the M5 gauntlet/Spark) is off the plan until the owner reopens it. What happens to the existing fire hand / MP bar: OWNER QUESTION (asked 2026-10-10).
+- **No dungeon now:** the M4 dungeon (US-094) is parked; the quest line stays in the open world.
+- **Quest line:** a proper main quest along the relays + simple side errands (pick up, deliver, fetch, reward items) with the giver '!' / '?' flow. Writer draft: docs/questline-2026-10-10.md (in progress).
+- **Loot = gear, not crafting materials (owner, 2026-10-10):** beasts, chests and containers drop gear with a low chance (shield, chest armour, head, boots, belt, gloves, ...) instead of crafting materials. Equipment + character window next to the item window (EQUIP epic, docs/equipment-epic-2026-10-10.md). Players can dress (visible gear).
+- **Questline owner answers (owner, 2026-10-11; recorded by the PC-B PO; docs/questline-2026-10-10.md section 5 - YES to all 6 writer defaults):** (1) Burl returns to her berry slope after the Waystone and gives errands; (2) Rook the crow is the second talking animal, Bend Relay in Ch1, the ford in Ch2; (3) the crystal keeps waking the relays and is never called magic; (4) the Ford Relay is gated by the glass from Rook's nest (short climb); (5) arrows are found/rewarded/refilled only (no buying), cap 30 (50 with the Big Quiver), shot arrows stick and can be picked up; (6) outfit pieces are visible on the player with one small passive each, and 4 heart pieces make a heart (1 quest + 3 chests in Ch2). Same day: enclosed world (river + mountains on two sides, sea on one, mountains with a locked gate pass on the fourth; the gate key is the LAST quest's reward and opens Part II after release, not built now); target ~100 quests before release via data-driven quest templates. Stories: docs/pc-b-queue.md `## World map + design (MAP, 2026-10-11)` and `## Quest line Ch1-2 (QL, 2026-10-11)`.
+
+## D-066 - PC-B signs instead of PC-A (owner, 2026-10-11; recorded by the PC-B main session)
+- The owner delegates PC-A's sign-off to PC-B: PC-B architect verdicts (ARCH OK / ARCH CHANGES, opus or fable) and PC-B PO verdicts (PO OK / PO REJECT) are FINAL; no "PC-A to ratify" step is needed. PC-B may record decisions (D-xxx) on the owner's word and merge to master after the normal gates (tests + check-deps + validate-content + gpucompare vs the machine baseline + route walk).
+- Ratified now: D-053..D-065 and architecture 38.24-38.39 written by PC-B while PC-A was offline; the batch reviews arch-batch-2026-10-10-pcb.md, po-batch-2026-10-10-evening-pcb.md, po-ch1-flow-2026-10-10.md, arch-audit-2026-10-10.md, arch-audit2-2026-10-10.md; the D-025 grid-max amendment (GRID-MAX-01) when it lands.
+- If PC-A comes back online it follows the same rule (either PC may sign; the owner decides conflicts).
+
+## D-067 - World layout + release scope (owner, 2026-10-11; recorded by the PC-B main session)
+- **Enclosed world:** a river and mountains form two sides, the sea one side, and mountains the fourth side. In the fourth-side mountains stands a **gate with walls** (fortified pass), locked; the **last quest gives the key** and opens **Part II after release** (not built for 1.0).
+- **Release scope:** about **100 quests** (main + side) before release, on a data-driven quest pipeline. No dungeon (D-065).
+- Designer world map: docs/world-map-2026-10-11.md + design/preview/world-map.html (in progress); PO stories: MAP + QL tables in docs/pc-b-queue.md.
+- **Zone level bands (owner, 2026-10-11):** this side of the river (tower side, start) = levels 1-5; the other side of the river = levels 5-10 (zone difficulty: enemy strength + gear tiers; no XP, D-020). The river crossings are the gateways; beyond the mountain gate = Part II.
+- **World map approved (owner, 2026-10-11: "perfect, I like the map, do it"):** docs/world-map-2026-10-11.md + design/preview/world-map.html + design/levels/world_geo.js are the plan of record: Whitecombs north, West Fells + the Sealed Gate west (locked until Part II), sea south (cliffs + Long Strand beaches), Ferrum's Wall east, river spine through Glasswater to the estuary, 17 regions, 74 sites, level bands. The proposed (P) names are accepted unless the owner renames them; Gullhaven is the second village.
+
+## D-068 - Potions on a HUD button; roadmap M4/M5 rewrite (owner, 2026-10-11; recorded by the PC-B main session)
+- **Potions:** used from a **HUD button** (always visible in play, count shown), not only from the item bag. Health potion heals; mana potion stays defined but unused while magic is off (D-065).
+- **Roadmap:** M4/M5 in docs/roadmap.md are rewritten to D-064..D-067 (no dungeon, no magic, shield + bow, gear drops, ~100 quests, enclosed world).
+- Still open for the owner: the new place names (story.md "Places on the chart") and the 12 new characters (quest-roadmap.md section 2b).
+- **Place names approved (owner, 2026-10-11):** The Quiet Sea, The Braid (river), Braidmouth (river mouth), The Shearcliffs (west cliff coast), The Hollins (broadleaf woods) - docs/story.md "Places on the chart (MAP-27)" is canon. Still open: the 12 new characters (quest-roadmap.md 2b).
+- **Owner bug log (owner, 2026-10-11):** every owner finding gets an `OB-NNN` ticket in docs/bugs.md immediately; commits / agent prompts / lane entries cite it; owner verifies the fix. Rule also in CLAUDE.md.
+- **D-068 changed (owner, 2026-10-11, OB-011):** no potion HUD button. Potions show their count in the Items tab and are dragged into the quick bar [1]-[4]; the bar slot shows the count; the slot key drinks one.
+- **River crossing (owner, 2026-10-11, OB-019 / RIVER-A1 open question):** "wade anywhere shallow" - the river stays shallow (~0.4 m) almost everywhere; the player can wade across (slower, current pushes); deep water (> 1.0 m) still blocks (no swimming, D-064); the ford stones are the easy way. Supersedes "cross only on the stones" from D-064.
+- **EQ-04 preview stage budget (PC-B main session, 2026-10-11, D-066; architect review follow-up):** the Character-tab model preview may take up to 12 ms per stage render (was 6 ms). It renders only while the menu is open (game paused), capped at 20 Hz (~2.5 ms mean per frame); the human kit v4 rasterization dominates. 0 alloc per render stays required.
+- **M4 scope (owner, 2026-10-11):** build the missing story quests QL-09..12, 16, 17, 19 and the Ferrum + Wall far silhouettes (MAP-08) inside M4 (not moved to M5); M4 closes when they pass quest-sim and the owner walk.
+
+## D-069 - Fireball from Burl at level 5; black bears; no cuttable tree (owner, 2026-10-12; recorded by the PC-B main session)
+- **Magic (reopens D-065 in part):** around **level 5** Burl gives the player the **fireball** (story beat + quest reward). Until then magic stays off. The existing fireball/MP code (`?magic=1`) is the base; PO writes the story row + ACs, writer the Burl lines, architect checks the unlock path (flag, save, HUD MP).
+- **BEAR-01 (sprint-4 Q1):** the first tougher beast is the **black bear** (realistic, 4 legs; recolour/variant of `design/models/voxel_bear.js`, not Burl's brown).
+- **US-054 cuttable tree (sprint-4 Q3): dropped** ("I don't want").
+- Still open: the 12 new characters (quest-roadmap.md 2b), US-102 sentinel (Q4), tier look (Q5), M4-C3 placement (Q6), barley/range givers.
+- **12 new characters approved (owner, 2026-10-12: "ok all chars"):** Nub, Skip, Stilt, Slate, Crag, Hesk, Dorrin, Sorrel, Pell, Tam, Ama, Cobb as in docs/quest-roadmap.md 2b. Unblocks the Outwall NPCs, US-042/084/085 and the M5 main line. Models: designer, from existing meshes or recolours.
+
+## D-070 - Swimming + diving (owner, 2026-10-13; recorded by the PC-B main session)
+- **Swimming is in** ("i wanna swim"). It fixes a record error: D-064 left swimming open (OQ-WS2-3); the 2026-10-11 river note and later plans cited "no swimming, D-064" by mistake. "Deep water blocks" is superseded.
+- **Swim + dive:** Wick swims on the surface and can dive under it (chests/secrets on the bottom). Diving needs an underwater look (architect note).
+- **Stamina + drowning:** a stamina ring drains while swimming/diving; when empty the player loses hearts until death (death screen, normal respawn).
+- **Amendment (owner 2026-10-13): "dont die on swimming, just diving"** - swimming on the surface never drowns you (no drain, unlimited); only diving uses breath: the ring drains under water and refills at the surface; empty breath under water = drowning (lose hearts until death).
+- **Sea edge = sea monster** (owner: "dont let swim too far into the sea, need a sea monster killing there"): past a set distance from the Long Strand shore a sea monster rises and kills the player (instant death, death screen). The boundary is the monster, not an invisible wall; warning signs first (dark shape circling, writer lore line). Designer: monster model + rise/strike clip.
+- **River gate = free crossing** (owner 2026-10-13): swim across anywhere, any time; the level 5-10 side just hits harder (no current wall, no swim item).
+- Still open: gear in the water (assumed stowed); swim speed; monster distance.
+- Next: PO story rows + ACs (replaces US-055b "no swim" scope), architect note (player controller swim state in engine/physics, water depth query, underwater render), designer swim/dive clips.
+
+## D-071 - Living world AI (owner, 2026-10-13; recorded by the PC-B main session)
+- Owner: "characters should be sleeping, working, walking, chatting each other. make the wild live, predators should run after rabbit. wolf can attack in packs for humans, maybe can be a side quest to help them too. good AI."
+- **Villagers (Outwall first):** daily schedules on the day clock - sleep (in a house at night), work (forge, board, fields), walk between places, and chat with each other (two NPCs stop, face, play talk idles + short overheard lines, NEEDS WRITER). Extends OUT-02 routines.
+- **Wildlife:** predator-prey: wolves/foxes/bears hunt rabbits/deer (chase, catch or lose them, prey flees and hides); herds and flocks react to each other and to the player. Extends EP-WILD (38.31) + US-085 perception.
+- **Wolf packs vs humans:** packs can raid villagers/farms (gooseFarm, Outwall edge); the player can help -> side-quest hook ("defend the farm" events), quest on the template pipeline.
+- Next: architect note (EP-LIFE: schedule/needs model, NPC-NPC interaction, predator-prey sim budget + off-screen LOD, pack-vs-NPC combat using beastSim), then PO stories. Order after SWIM-01 note.
+
+## D-072 - Goblins (owner, 2026-10-13; recorded by the PC-B main session)
+- Owner: "fantasy characters little goblins attacking? can be added?" -> yes, as **raiders on the west bank** (levels 5-10 side of the river): small goblin bands with crude weapons, camps that can be cleared, raids on farms and Outwall like the wolf packs. Writer gives them a place in the lore (a fantasy exception to the realistic-animal look; style = the D-053 "realistic things from squares" voxel look, small and wiry).
+- Fighting (owner picks): **melee in groups** (3-5, pack AI like the wolves), **archers / throwers** (stay back, throw spears or shoot; tests the shield), **night raids with torches** (on the LIFE-08 raid system, torch light). Not picked: steal-and-flee.
+- Next: writer lore line, designer model (+ clips: idle, walk, run, attack, throw, hurt, die; torch), architect short note (goblin brain on beastSim/wolf pack + a ranged enemy projectile + camps + torch raids), PO stories.
+
+## D-073 - Open the world south to the Long Strand first (owner, 2026-10-13; recorded by the PC-B main session)
+- The sea, the Long Strand beach (sign, net stakes, sea monster) and several new spots lie outside today's walk bounds (about x 870-1540, y 850-1110). Owner picked: **widen the walk area from the river south to the beach and sea first** (smallest step that makes today's swim/sea/monster work playable); the whole-map band grid + streaming steps come later.
+
+## D-074 - Model approvals 2026-10-13 (owner; recorded by the PC-B main session)
+- **Approved:** sea monster (voxel_seamonster.js), goblin + goblinTorch + goblinSpear (voxel_goblin.js), wolf, black bear, Skip (otter), Crag (goat), Stilt (heron), Slate (tortoise).
+- **Human characters (char.kit / chargen: Hesk, Dorrin, the player body):** owner "I don't like the character, but use them as placeholder" -> keep them in the game as placeholders; a new human character look is open work (owner to say what is wrong / give a reference before a designer pass; OB-083 v8b history).
+
+## D-075 - Performance plan + 'ultra' = RTX only (owner, 2026-10-13; recorded by the PC-B main session)
+- Owner approved the perf/environment plan docs/proposals/perf-environment-2026-10-13.md, top 5 **in that order**, after the OB-109 loading-bar pre-bake: (1) R1 measure rays 1/2/4 at 480x180 on the Intel iGPU (tools/bench-presets.mjs); (2) G1 grass carpet ON per quality preset (finish TUFT-PERF / OB-103b); (3) R2+R4+P4 per-species lodCells / lodScale / shadow-caster distances / detail maxDistM (owner look on the LOD switch); (4) G2+P3 far grass/field glyph tier on the terrain shade; (5) R3 HZB occlusion gate, then R6 tree card impostors (D-039-level, both twins).
+- **'ultra' means RTX only:** ultra keeps rays 4; on the integrated-GPU laptop the player picks a lower preset (high etc.). Presets are NOT auto-tiered by GPU.
+
+## D-076 - Open the whole map (owner, 2026-10-13; recorded by the PC-B main session)
+- Owner: "open the whole" -> **the whole map, all regions walkable** (supersedes D-073's "south corridor first" as the next map goal). Means the band grid + streaming across all 17 regions (MAP-10..14, STREAM-02+, band cache bake-ahead OB109-B4), bounds = the world edge (sea monster / mountains / Sealed Gate stay the real limits), nav + beasts + wildlife across the map, the frame budget held everywhere (M5 exit test). Architect plan first, then steps.
+
+## D-077 - Whole map answers, Tab, aspect, potions (owner, 2026-10-13; recorded by the PC-B main session)
+- Whole map (38.59): sea edge = coast + 110 m (the sea monster is the limit); the 10 empty regions are dressed by biome rules from existing meshes (WM-07), villages/camps later; terrain memory budget up to 40 MB (32 MB band cache).
+- Tab stays target-cycle; I and C open the inventory.
+- OB-117: Settings "Aspect ratio" option, picture fixed to the chosen ratio, default 16:9 (16:10, 21:9, 4:3, Fill window).
+- OB-113: beasts drop potions into the pack (corpse loot), not an instant heal.
+- OB-115 (main session call): kill objectives count any beast of the kind killed after accept.
+
+## D-078 - Asset direction, closed-valley world, biomes, levelling proposal (owner + manager, 2026-10-09; PC-A recorded it as D-052, renumbered D-078 at the 2026-10-13 merge because PC-B also used D-052; where later PC-B decisions D-060..D-077 differ, the later decision wins)
 **Context:** owner 2026-10-09. The Quaternius meshes on the road verge (MESH-GPU-01, MESH-UVMAP-01) and ALPHA-01e leafy trees look right; the Ferrum horizon billboard looked bad and was removed (78b9e91). The world has no agreed shape or borders, and progression was "no XP, gear levels" (D-020, M4 US-095). Plan: `docs/epics/ep-world.md`.
 **Options:** assets: (a) all voxel, (b) all mesh, (c) split by role. World: (i) open-ended with a pass to a "part 2", (ii) one closed valley = the whole alpha. Progression: (x) gear + spell tiers, no XP (D-020), (y) hybrid XP + gear, (z) enemy scaling.
 **Decision:**

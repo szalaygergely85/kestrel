@@ -11,10 +11,12 @@ for (const p of BOOT_PHASES) {
 }
 const vals = seen.map((x) => x[0]);
 for (let i = 1; i < vals.length; i++) assert.ok(vals[i] >= vals[i - 1], 'monotonic');
-assert.ok(bp.state.value < 1 && bp.state.value > 0.85, 'last phase starts below 1');
+assert.ok(bp.state.value >= 0.75 - 1e-9, 'land phase reached (starts at 75 %)');
+assert.ok(seen.some((x) => Math.abs(x[0] - 0.6) < 1e-9 && x[1] === 'Loading props'), 'props start at 60 %');
 assert.ok(seen.some((x) => x[1] === 'Compiling shaders 10/25'), 'counted label');
-bp.phase('content'); assert.ok(bp.state.value > 0.85, 'out-of-order phase never moves the bar back');
+bp.phase('content'); assert.ok(bp.state.value > 0.55, 'out-of-order phase never moves the bar back');
 bp.phase('nope');
+{const b2 = createBootProgress(); b2.fraction('land', 0.5); assert.ok(Math.abs(b2.state.value - 0.875) < 1e-9 && b2.state.label === 'Shaping the land', 'OB-109 land 50 % = 87.5 %'); }
 bp.finish(); assert.strictEqual(bp.state.value, 1); assert.strictEqual(bp.state.done, true);
 bp.phase('engine'); assert.strictEqual(bp.state.value, 1, 'ends at 1 and stays');
 assert.strictEqual(asciiBar(0, 10), '[░░░░░░░░░░]   0%');

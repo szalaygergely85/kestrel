@@ -73,6 +73,21 @@ export const PHYSICS_DEFAULTS = {
   slideStopCos: Math.cos(45 * Math.PI / 180),
   slideAccel: 20,     // m/s^2 downhill accel while sliding - same as `gravity` (23.3)
   slideMaxSpeed: 8,   // m/s cap on horizontal speed while sliding
+
+  // Swimming (SWIM-03a, architecture.md 38.54, D-070). See swim.js.
+  swim: {
+    swimIn: 1.15,      // m immersion (feet) that turns swimming on
+    swimOut: 0.95,     // m immersion below which (with a reachable floor) swimming turns off
+    floatDepth: 1.25,  // m: feet sit this far under the surface (eye 0.35 above it)
+    buoyK: 6,          // 1/s: vz = (floatZ - z) * buoyK
+    buoyMaxV: 2.5,     // m/s clamp of that vertical speed
+    swimSpeed: 1.8,    // m/s
+    swimFast: 2.6,     // m/s (run)
+    diveSpeed: 1.6,    // m/s (SWIM-04a)
+    buoyRise: 0.5,     // m/s slow float up when diving without input (SWIM-04a)
+    climbOut: 0.9,     // m above the surface a ledge may be and still be climbed onto
+    accelMul: 2,       // accel/decel time multiplier (floaty)
+  },
 };
 
 // Back-compat alias (US-024 Phase C): tests and Player.js still say `PHYSICS`.

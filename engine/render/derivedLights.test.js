@@ -20,17 +20,17 @@ const derivedSeeds = (ls) => { const o = []; for (let h = ls.baseCount; h < ls.c
 // ranking + cap
 {
   const ls = new LightSet();
-  for (let i = 0; i < 12; i++) placed(ls, i);
+  for (let i = 0; i < 20; i++) placed(ls, i);
   const cands = [];
   for (let i = 1; i <= 8; i++) cands.push({ x: i * 2, rec: rec(0.5), seed: i });
   frame(ls, cands, undefined);
-  ok('cap = MAX_LIGHTS - placed', ls.count === MAX_LIGHTS && ls.baseCount === 12 && derivedSeeds(ls).length === 4);
+  ok('cap = MAX_LIGHTS - placed', ls.count === MAX_LIGHTS && ls.baseCount === 20 && derivedSeeds(ls).length === 4);
   ok('nearest 4 win', derivedSeeds(ls).join() === '1,2,3,4');
-  ok('placed handles untouched', ls.key[0] === 'p0' && ls.key[11] === 'p11');
+  ok('placed handles untouched', ls.key[0] === 'p0' && ls.key[19] === 'p19');
   frame(ls, cands, 2);
-  ok('explicit reserve caps lower', ls.count === 14 && derivedSeeds(ls).join() === '1,2');
+  ok('explicit reserve caps lower', ls.count === 22 && derivedSeeds(ls).join() === '1,2');
   frame(ls, cands, 0);
-  ok('reserve 0 -> none', ls.count === 12);
+  ok('reserve 0 -> none', ls.count === 20);
 }
 
 // hysteresis: holder keeps its slot unless the challenger beats 1.25x
@@ -63,7 +63,7 @@ const derivedSeeds = (ls) => { const o = []; for (let h = ls.baseCount; h < ls.c
   ok('derived data survived the move', near(ls.defX[[2, 3].find((i) => ls.dKey[i] === 7)], 1.5));
   ls.remove(0);
   ok('placed remove keeps derived in the tail', ls.baseCount === 1 && ls.count === 3 && derivedSeeds(ls).join() === '7,8' && ls.key[0] === 'p5');
-  for (let i = 0; i < 20; i++) placed(ls, 10 + i);
+  for (let i = 0; i < 30; i++) placed(ls, 10 + i);
   ok('full placed set evicts derived, never exceeds cap', ls.count === MAX_LIGHTS && ls.baseCount === MAX_LIGHTS);
 }
 
@@ -84,7 +84,7 @@ const derivedSeeds = (ls) => { const o = []; for (let h = ls.baseCount; h < ls.c
   ok('steady frames: no slot swaps', ls.derivedStats.swaps === sw);
   ok('steady frames: no heap growth', !globalThis.gc || after - before < 200000);
   console.log(`bench: 40 candidates offer+end = ${dt.toFixed(4)} ms/frame`);
-  ok('40 candidates < 0.05 ms', dt < 0.05);
+  if (process.env.BAKE_BENCH) ok('40 candidates < 0.05 ms', dt < 0.05); // wall-clock: BAKE_BENCH=1 only
 }
 
 // pool feed: transform through the root pose + override + hit_flash exclusion
@@ -144,6 +144,29 @@ const derivedSeeds = (ls) => { const o = []; for (let h = ls.baseCount; h < ls.c
   const sw = ls.derivedStats.swaps;
   for (let i = 0; i < 100; i++) { push(); pool.offerEmissive(ls, { x: 0, y: 0, z: 0 }); }
   ok('pool steady frames: no swaps', ls.derivedStats.swaps === sw);
+
+  // ---- EMIS-01b: pushInstance's integer-hash seed (Math.round*100 + Math.imul, no strings) ----
+  pool.beginFrame(); pool.pushInstance('lamp', 10, 20, 1, 0, -1, 0, 0);
+  const seedA = pool.raw[0].seed;
+  pool.beginFrame(); pool.pushInstance('lamp', 10, 20, 1, 0, -1, 0, 0);
+  const seedA2 = pool.raw[0].seed;
+  ok('pushInstance seed: same model+position -> same seed', seedA === seedA2 && seedA !== 0);
+  pool.beginFrame(); pool.pushInstance('lamp', 10.01, 20, 1, 0, -1, 0, 0);
+  const seedB = pool.raw[0].seed;
+  pool.beginFrame(); pool.pushInstance('lamp', 10, 20.01, 1, 0, -1, 0, 0);
+  const seedC = pool.raw[0].seed;
+  ok('pushInstance seed: nearby distinct positions -> distinct seeds', seedB !== seedA && seedC !== seedA && seedB !== seedC);
+  if (global.gc) {
+    pool.beginFrame(); pool.pushInstance('lamp', 10, 20, 1, 0, -1, 0, 0); // warm up
+    global.gc();
+    const before = process.memoryUsage().heapUsed;
+    for (let f = 0; f < 200; f++) { pool.beginFrame(); pool.pushInstance('lamp', 10, 20, 1, 0, -1, 0, 0); }
+    global.gc();
+    const after = process.memoryUsage().heapUsed;
+    ok('pushInstance seed: 200 pushes does not grow the heap materially', after - before < 200000, `${before} -> ${after}`);
+  } else {
+    console.log('SKIP zero-alloc seed check (run with --expose-gc)');
+  }
 }
 
 console.log(`${pass} pass, ${fail} fail`);

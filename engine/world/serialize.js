@@ -52,11 +52,15 @@ export function serialize(world) {
     // `world.bounds` is already a plain validated copy; `world.def.triggers`
     // is the world-level trigger DEFS (buildTriggers reads them fresh on
     // every load, same as a structure's `def.triggers`).
-    bounds: world.bounds ? { ...world.bounds } : null,
+    bounds: world.bounds ? cloneBounds(world.bounds) : null,
+    ...(world._terrainGridDef ? { terrainGrid: JSON.parse(JSON.stringify(world._terrainGridDef)) } : {}), // MAP-10: grid def (content); slots/zones are derived
+    ...(world.terrainBands && !world.terrainGrid ? { terrainBands: world.terrainBands.map((z) => ({ ...z })), ...(world._bandSwitchDef ? { bandSwitch: { ...world._bandSwitchDef } } : {}) } : {}), // WS2-01: zone list (content); the active band is derived, never saved
+    ...(world.terrainBand ? { terrainBand: { ...world.terrainBand } } : {}), // WS1-02: only when authored (old saves byte-identical)
     triggers: structuredClone((world.def && world.def.triggers) || []),
     structures: world.structures.map((s) => s.kind === 'mesh' ? {
       id: s.id, mesh: s.mesh.id, origin: { ...s.origin }, yawDeg: s.frame.yawDeg,
       ...(s.scale !== undefined && s.scale !== 1 ? { scale: s.scale } : {}),
+      ...(typeof s.collide === 'boolean' ? { collide: s.collide } : {}),
     } : ({
       id: s.id,
       level: s.level.name,
@@ -182,10 +186,13 @@ export function deserialize(state, assets, opts = {}) {
     water: state.water || [],
     waterfalls: state.waterfalls || [],
     bounds: state.bounds || null,
+    terrainBand: state.terrainBand || null,
+    ...(state.terrainGrid ? { terrainGrid: state.terrainGrid } : {}),
+    ...(state.terrainBands ? { terrainBands: state.terrainBands, bandSwitch: state.bandSwitch } : {}),
     triggers: state.triggers || [],
     time: state.time && state.time.timeOfDay,
     structures: state.structures.map((s) => s.mesh
-      ? { id: s.id, mesh: s.mesh, origin: s.origin, yawDeg: s.yawDeg, scale: s.scale }
+      ? { id: s.id, mesh: s.mesh, origin: s.origin, yawDeg: s.yawDeg, scale: s.scale, collide: s.collide }
       : { id: s.id, level: s.level, origin: s.origin, yawSteps: s.yawSteps }),
     entities: [
       // CO-5 follow-up: `parent` must travel through too - otherwise a
@@ -243,4 +250,12 @@ export function deserialize(state, assets, opts = {}) {
  */
 export function stringifySave(state) {
   return stringifyContent({ kind: 'save', ...state });
+}
+
+// WS1-01: deep copy (union parts array must not be shared).
+function cloneBounds(b) {
+  const c = { ...b };
+  if (Array.isArray(b.parts)) c.parts = b.parts.map((p) => ({ ...p }));
+  if (Array.isArray(b.pts)) c.pts = b.pts.map((p) => [p[0], p[1]]); // MAP-11 polygon
+  return c;
 }

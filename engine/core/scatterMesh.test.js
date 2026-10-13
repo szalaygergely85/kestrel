@@ -59,6 +59,19 @@ for (let i = 0; i < w.scatter.count; i++) {
   slot++;
 }
 checks++;
+// MESH-LOD-CELLS-01: per-species lodCells / lod0Cap override (validated; default unchanged = checked above)
+for (const bad of [0, -3, NaN, Infinity, '8']) assert.throws(() => validateScatterConfig(withSp({ ...sp0, model: 'a', lodCells: bad })), /species\[0\]\.lodCells/);
+for (const bad of [-1, 1.5, NaN, '2']) assert.throws(() => validateScatterConfig(withSp({ ...sp0, model: 'a', lod0Cap: bad })), /species\[0\]\.lod0Cap/);
+checks += 9;
+cfg.species[1].lodCells = 30; cfg.species[1].lod0Cap = 4; cfg.species[0].lodCells = 9;
+engine.loadWorld(def, { physics: 'mesh', realTrees: true });
+{
+  const g2 = engine.instances.groups, v = g2.find(g => !g.mesh), m = g2.find(g => g.mesh);
+  ok(m.lodCells === 30 && m.lod0Cap === 4, 'mesh species override honoured');
+  ok(v.lodCells === 9 && v.lod0Cap === 0, 'voxel species override honoured, cap default 0');
+}
+delete cfg.species[1].lodCells; delete cfg.species[1].lod0Cap; delete cfg.species[0].lodCells;
+
 engine.loadWorld(def, { physics: 'mesh', realTrees: false });
 ok(engine.instances.groups.length === 0, 'reload without realTrees leaves 0 groups');
 

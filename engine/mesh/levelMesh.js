@@ -7,6 +7,7 @@
 // planeId, uv, z, aoD all match the caster's G-buffer output - that parity
 // is what `levelMesh.test.js`'s caster-oracle test checks). Never imports
 // the caster itself (27.15.0: "never import a caster... tests may").
+import { isTerrainFloor } from '../world/Level.js';
 import {
   KIND_WALL, KIND_STEP, KIND_UPPER, KIND_FLOOR, KIND_TOP, KIND_CEIL,
   FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D,
@@ -84,7 +85,9 @@ function emitPlane(builder, kind, face, matKey, c, r, zRef, h, bits, faceUp) {
   builder.addQuad(p12, uv8, 0, 0, nz, flat0, flat1, aux8);
 }
 
-function emitFloor(builder, sec, c, r, relief, w) {
+function emitFloor(builder, sec, c, r, relief, w, keepTerrainFloor) {
+  // GS-01f: collider builds pass keepTerrainFloor so the cell stays walkable (collision-only floor)
+  if (!keepTerrainFloor && isTerrainFloor(sec)) return; // GS-01a: terrain shows through (World.carveMask leaves this cell uncarved)
   const h = sec.floorH;
   const kind = sec.solid ? KIND_TOP : KIND_FLOOR;
   const bits = relief.floorRise[r * w + c];
@@ -224,7 +227,7 @@ function pickTag(...secs) {
  * (both just re-run this - it is cheap and deterministic, so "re-run and
  * keep only what changed" needs no incremental bookkeeping).
  * @param {import('../world/Level.js').Level} level
- * @param {{matIdFor?: (key: string) => number, footZ?: number}} opts
+ * @param {{matIdFor?: (key: string) => number, footZ?: number, collisionFloors?: boolean}} opts
  */
 function computeLevelMeshData(level, opts) {
   const matIdFor = opts.matIdFor;
@@ -264,7 +267,7 @@ function computeLevelMeshData(level, opts) {
       const own = S(c, r);
       if (own) {
         const builder = builderFor(pickTag(own));
-        emitFloor(builder, own, c, r, relief, w);
+        emitFloor(builder, own, c, r, relief, w, opts.collisionFloors === true);
         emitCeil(builder, own, c, r, relief, w);
       }
       if (c === 0) doBoundary('EW', c, r, S(c - 1, r), own, c);
@@ -292,7 +295,7 @@ function computeLevelMeshData(level, opts) {
  * mesh-local frame (1 cell = 1 m) - moving the level's world placement never
  * touches these vertices (uv anchoring AC).
  * @param {import('../world/Level.js').Level} level
- * @param {{matIdFor?: (key: string) => number, footZ?: number}} [opts]
+ * @param {{matIdFor?: (key: string) => number, footZ?: number, collisionFloors?: boolean}} [opts]
  * @returns {LevelMeshSet}
  */
 export function buildLevelMesh(level, opts = {}) {
@@ -309,7 +312,7 @@ export function buildLevelMesh(level, opts = {}) {
  * @param {LevelMeshSet} set
  * @param {import('../world/Level.js').Level} level
  * @param {string} tag
- * @param {{matIdFor?: (key: string) => number, footZ?: number}} [opts]
+ * @param {{matIdFor?: (key: string) => number, footZ?: number, collisionFloors?: boolean}} [opts]
  * @returns {LevelMeshSet}
  */
 export function rebuildLevelMeshDyn(set, level, tag, opts = {}) {

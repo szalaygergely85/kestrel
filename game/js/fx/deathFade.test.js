@@ -1,0 +1,23 @@
+import { fadeAt, createDeathFlow } from './deathFade.js';
+let bad = 0; const ok = (n, c) => { if (!c) { bad++; console.log('FAIL', n); } };
+ok('t=0', fadeAt(0).alpha === 0 && fadeAt(0).textAlpha === 0);
+ok('t=1000', fadeAt(1000).alpha === 1);
+let mono = true, pa = 0, pt = 0;
+for (let t = 0; t <= 1200; t += 5) { const f = fadeAt(t); if (f.alpha < pa || f.textAlpha < pt) mono = false; pa = f.alpha; pt = f.textAlpha; }
+ok('monotone', mono);
+ok('text after 300ms', fadeAt(300).textAlpha === 0 && fadeAt(500).textAlpha > 0);
+if (globalThis.gc) gc(); const m0 = process.memoryUsage().heapUsed;
+for (let i = 0; i < 1e5; i++) fadeAt(i % 1200);
+ok('no alloc', process.memoryUsage().heapUsed - m0 < 1000000);
+let n = 0; const fl = createDeathFlow({ onRespawn: () => n++ });
+ok('idle unlocked', !fl.step(0).inputLocked);
+fl.died(100); ok('locked', fl.step(200).inputLocked && n === 0);
+fl.died(500); fl.step(1099); ok('second death ignored, not yet', n === 0);
+fl.step(1100); fl.step(1200); fl.step(1300); ok('respawn once', n === 1);
+fl.respawned(1400); ok('fade in unlocked', !fl.step(1500).inputLocked && fl.step(1500).alpha > 0);
+fl.step(1900); ok('idle again', fl.phase === 'idle' && fl.step(2000).alpha === 0);
+fl.died(3000); ok('new death works', fl.step(3001).inputLocked);
+const off = createDeathFlow({ enabled: false }); off.died(0); ok('disabled', !off.step(10).inputLocked);
+ok('getter locked during out', (()=>{const f=createDeathFlow({onRespawn(){}});f.died(0);f.step(100);return f.inputLocked===true;})());
+ok('getter unlocked idle/disabled', createDeathFlow().inputLocked===false && createDeathFlow({enabled:false}).active===false);
+console.log(bad ? 'FAILED ' + bad : 'deathFade ok'); process.exit(bad ? 1 : 0);

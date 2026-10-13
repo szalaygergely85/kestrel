@@ -77,12 +77,12 @@ export function typePaint(layer, x, y) {
 
 // ---- JSON (base64 little-endian) -------------------------------------------
 
-function toB64(bytes) {
+export function toB64(bytes) {
   let s = '';
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
   return btoa(s);
 }
-function fromB64(str, expectLen, what) {
+export function fromB64(str, expectLen, what) {
   let s;
   try { s = atob(str); } catch (e) { throw new Error(`terrainEdits: ${what} is not valid base64`); }
   if (s.length !== expectLen) throw new Error(`terrainEdits: ${what} has ${s.length} bytes, expected ${expectLen}`);

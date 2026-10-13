@@ -4,28 +4,36 @@
 // shading passes (US-028) and finally the sky - replacing the manual
 // beginFrame/castSectors/.../fillSky sequence main.js used to write out by
 // hand for a single bare level (US-024).
+import { windSwayOn, sunWindClock } from '../mesh/sway.js';
+import { fogShapeCtx, meshOutdoorFog } from './fogShape.js';
 import { fillSky, ambientL, primeAmbientLight } from './sky.js';
 import { shadeTerrainCells } from './terrainShade.js';
+import { carpetCtxFor, carpetCells } from './carpet.js';
 import { computeDerivatives, shadeSurfaces } from './detailShade.js';
 import { edgePass } from './edgePass.js';
-import { lightSurfaces } from './lighting.js';
+import { lightSurfaces, sunFromWorld } from './lighting.js';
+const skySunScratch = { dirX: 0, dirY: 0, dirZ: 0, ambientI: 0, sunI: 0 };
 // ME-06 (27.15.5a item 6): the JS-twin oracle for `fb.renderer === 'mesh'` -
 // same `DrawList`/`rasterJS` path the GPU raster pass (`GpuCellPipeline.
 // _passRaster`) draws, so `?gpucompare=1&renderer=mesh` compares the GPU
 // mesh output against a JS mesh twin instead of the CPU DDA (27.7 item 2 can
 // only hold that way - see 27.15.5a item 6's "Oracle rule").
-import { DrawList, LevelMeshCache, MeshDrawCache, addStructures, addMeshStructures, addCloths } from '../mesh/DrawList.js';
+import { DrawList, noteListOverflow, LevelMeshCache, MeshDrawCache, addStructures, addMeshStructures, addCloths } from '../mesh/DrawList.js';
 import { MeshGroupSet, addMeshStructuresBatched } from '../mesh/meshGroups.js';
-import { rasterDrawList, copyToGBuffer, createRasterTarget, clearRasterTarget, clearRasterDepth } from '../mesh/rasterJS.js';
+import { rasterDrawList, rasterCards, copyToGBuffer, createRasterTarget, clearRasterTarget, clearRasterDepth } from '../mesh/rasterJS.js';
 import { terrainMeshSetFor } from '../mesh/terrainMesh.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../mesh/voxelMesh.js';
-import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, resolveProjection, assertProjectionRenderer, pitchedFogScale } from './projection.js';
+import { projTerms, shearProjection, createPitchedTerms, pitchedTermsInto, resolveProjection, assertProjectionRenderer, pitchedFogScale, orthoHashCell, isPitchedFamily } from './projection.js';
+import { lodCentreX, lodCentreY } from '../core/camFocus.js';
 import { frustumPlanes } from '../mesh/culling.js';
 import { renderWaterJS } from './water.js';
 import { waterCompositeJS } from './waterComposite.js';
+import { updateUnderState, underwaterPass } from './underwater.js';
 // ME-15c (27.9a): JS twin of the GPU sun shadow pass (same list builder, matrix, polygon offset, depth-only raster).
 import { SUN_OFF_MATRIX, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar } from './shadowSun.js';
 import { createShadowList, buildShadowList, shadowWorldZ } from '../mesh/shadowList.js';
+import { createPointShadowTwin, updatePointShadowTwin } from '../mesh/pointShadowJS.js'; // ME-16f
+import { pointCasterOpts } from './shadowPoint.js'; // ME-16d/f: one caster-option helper shared with the GPU point pass
 
 const MAX_STRUCTS = 8; // structSeq is a 3-bit field (arch 7.2) - never exceeded, never wrapped.
 // ---------------------------------------------------------------------------
@@ -48,8 +56,9 @@ let meshHashCell = 0; // BUG-RTS-001 (28.11a)
 let pitchDepthSave = /** @type {Float32Array|null} */ (null);
 const meshFrustumPlanes = new Float64Array(24);
 const meshStructFoot = new Float64Array(MAX_STRUCTS * 4);
+const meshStructMask = /** @type {(Uint8Array|null)[]} */ (new Array(MAX_STRUCTS).fill(null)); // GS-01a: carveMask per box
 const meshGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
-const meshCtx = { M: meshViewProj, kind7Mat: null, structFoot: null, structCount: 0, team: null };
+const meshCtx = { M: meshViewProj, kind7Mat: null, structFoot: null, structCount: 0, structMask: null, team: null };
 /** @type {WeakMap<import('../world/World.js').World, LevelMeshCache>} */
 const _meshLevelMeshCaches = new WeakMap();
 /** @type {import('../mesh/rasterJS.js').RasterTarget|null} */
@@ -61,7 +70,7 @@ const sunShadowMat = createSunShadowMatrix();
 const sunShadowCentreV = new Float64Array(3);
 const sunShadowWorldZ = { min: 0, max: 0 };
 const sunShadowSrc = { centre: { x: 0, y: 0, z: 0 }, cache: /** @type {any} */ (null), terrainSet: /** @type {any} */ (null), voxelPool: /** @type {any} */ (null), voxelMeshCache: sharedVoxelMeshCache, fogFarM: 2000, eye: { x: 0, y: 0 }, meshLod0M: 25, instCastM: 48, instances: /** @type {any} */ (null), cloths: /** @type {any} */ (null), matIdFor: /** @type {any} */ (undefined) };
-const sunShadowRasterCtx = { M: sunShadowMat.M, depthBias: { factor: 0, units: 0 }, structFoot: /** @type {any} */ (null), structCount: 0 };
+const sunShadowRasterCtx = { M: sunShadowMat.M, depthBias: { factor: 0, units: 0 }, structFoot: /** @type {any} */ (null), structCount: 0, structMask: /** @type {any} */ (null) };
 /** What `lightSurfaces` reads (`fb.sunMap`): {map, M, opts}. */
 const sunMapState = { map: /** @type {any} */ (null), M: sunShadowMat.M, opts: /** @type {any} */ (null) };
 /** @type {import('../mesh/rasterJS.js').RasterTarget|null} */
@@ -73,6 +82,15 @@ const sunOffState = { map: /** @type {any} */ (null), M: SUN_OFF_MATRIX, opts: /
  * Renders the sun shadow map for this frame (called by `renderWorldMesh` after the camera list was built and
  * culled) and publishes it as `fb.sunMap`; `null` when shadows.sun is not 'map' or there is no sun.
  */
+const _windCtx = { field: /** @type {any} */ (null), t: 0 };
+/** Wind ctx for rasterDrawList (null = calm): world wind field + fb.timeSec, the clock passRaster/passShadow pack into the wind uniforms. */
+export function windCtx(world, fb, quantised = false) {
+  if (!windSwayOn(world.wind)) return null;
+  const t = fb.timeSec || 0;
+  // quantised (sun map): same 10 Hz step as windShadowKey, so the map is a pure function of its dirty key
+  _windCtx.field = world.wind; _windCtx.t = quantised ? sunWindClock(t) : t;
+  return _windCtx;
+}
 function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, structCount) {
   const so = fb.shadowOpts;
   const sun = fb.lights && fb.lights.sun;
@@ -89,22 +107,60 @@ function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, st
   const vp = fb.voxelPool;
   if (vp && vp.shadowView) { vp.projectShadow(); src.voxelPool = vp.shadowView; } else src.voxelPool = null;
   src.instances = fb.instances || null;
-  src.eye.x = cam.x; src.eye.y = cam.y; src.meshLod0M = so.meshLod0M; src.instCastM = so.instCastM; src.meshCastM = so.meshCastM; src.meshCastCap = so.meshCastCap; // ME-15f / MESH-SHADOW-02
+  src.eye.x = lodCentreX(cam); src.eye.y = lodCentreY(cam); src.meshLod0M = so.meshLod0M; src.instCastM = so.instCastM; src.meshCastM = so.meshCastM; src.meshCastCap = so.meshCastCap; // ME-15f / MESH-SHADOW-02
   src.fogFarM = sunShadowFogFar(fb.palette, so);
   src.cloths = world.cloths && world.cloths.count > 0 ? world.cloths : null; // CLOTH-1b1
   src.matIdFor = fb.matTable ? fb.matTable.idFor : undefined;
   src.meshCache = sharedMeshDrawCache; // ME-14c2 (37.1 item 6)
   src.meshIdFor = fb.matTable ? strictMatIdFor(fb.matTable) : undefined;
+  src.maskAtlas = world.maskAtlas || null; // ALPHA-01f-fix2
   shadowWorldZ(world, cache, sunShadowWorldZ);
   const sm = shadowSunMatrix(sun.dir, sunShadowCentreV, so, sunShadowWorldZ, sunShadowMat);
   buildShadowList(sunShadowList, cameraList, world, sm.planes, src);
   const ctx = sunShadowRasterCtx;
   ctx.depthBias.factor = so.depthBias[0]; ctx.depthBias.units = so.depthBias[1];
-  ctx.structFoot = meshStructFoot; ctx.structCount = structCount;
+  ctx.structFoot = meshStructFoot; ctx.structCount = structCount; ctx.structMask = meshStructMask;
   ctx.maskAtlas = world.maskAtlas || null; // ALPHA-01b
+  ctx.wind = windCtx(world, fb, true); // FOLIAGE-SWAY-01: same field + 10 Hz-quantised clock as the GPU shadow pass
   rasterDrawList(sunShadowList, _sunShadowTarget, ctx);
   sunMapState.map = _sunShadowTarget; sunMapState.opts = so;
   fb.sunMap = sunMapState;
+}
+
+/**
+ * ME-16f (38.22): JS twin of the GPU point-light shadow pass. Opt-in: fb.pointShadowOpts = resolvePointShadowOptions(...) with n > 0.
+ * Publishes fb.lights.pointShadow ({depth,res,slot,O,opts}, read by lightAt); off (default) never touches the lights = byte-identical.
+ */
+const pointTwin = createPointShadowTwin();
+const pointSrc = { centre: { x: 0, y: 0, z: 0 }, cache: /** @type {any} */ (null), terrainSet: /** @type {any} */ (null), voxelPool: /** @type {any} */ (null), voxelMeshCache: sharedVoxelMeshCache, fogFarM: 2000, eye: { x: 0, y: 0 }, meshLod0M: 25, instCastM: 48, instances: /** @type {any} */ (null), cloths: /** @type {any} */ (null), matIdFor: /** @type {any} */ (undefined), gpu: null };
+const pointRasterExtras = { depthBias: /** @type {any} */ (null), structFoot: /** @type {any} */ (null), structCount: 0, structMask: /** @type {any} */ (null), wind: /** @type {any} */ (null), maskAtlas: /** @type {any} */ (null) };
+let _pointWorld = null, _pointCameraList = null, _pointShadowOpts = null;
+function buildPointCasters(list, O, radius, planes) {
+  const src = pointSrc, c = src.centre;
+  c.x = O[0]; c.y = O[1]; c.z = O[2]; src.eye.x = O[0]; src.eye.y = O[1];
+  pointCasterOpts(src, radius, _pointShadowOpts); // shared with the GPU pass (NEEDS B1: passPointShadow._build uses it too)
+  buildShadowList(list, _pointCameraList, _pointWorld, planes, src);
+}
+function renderPointShadowsJS(fb, world, cam, cameraList, cache, terrainMeshSet, structCount) {
+  const lights = fb.lights, po = fb.pointShadowOpts;
+  if (!lights) return;
+  if (!po || !(po.n > 0)) { if (lights.pointShadow) lights.pointShadow = null; return; }
+  const src = pointSrc, vp = fb.voxelPool;
+  src.cache = cache; src.terrainSet = terrainMeshSet;
+  if (vp && vp.shadowView) { vp.projectShadow(); src.voxelPool = vp.shadowView; } else src.voxelPool = null;
+  src.instances = fb.instances || null;
+  src.cloths = world.cloths && world.cloths.count > 0 ? world.cloths : null;
+  src.matIdFor = fb.matTable ? fb.matTable.idFor : undefined;
+  src.meshCache = sharedMeshDrawCache;
+  src.meshIdFor = fb.matTable ? strictMatIdFor(fb.matTable) : undefined;
+  src.maskAtlas = world.maskAtlas || null;
+  pointRasterExtras.structFoot = meshStructFoot; pointRasterExtras.structCount = structCount; pointRasterExtras.structMask = meshStructMask;
+  pointRasterExtras.maskAtlas = world.maskAtlas || null;
+  pointRasterExtras.wind = windCtx(world, fb, true);
+  _pointWorld = world; _pointCameraList = cameraList; _pointShadowOpts = fb.shadowOpts || null;
+  pointRasterExtras.depthBias = _pointShadowOpts ? _pointShadowOpts.depthBias : null;
+  lights.pointShadow = updatePointShadowTwin(pointTwin, lights, cam, po, buildPointCasters, pointRasterExtras);
+  _pointWorld = _pointCameraList = _pointShadowOpts = null;
 }
 
 /** Resolved-materials draw copies of placed glTF meshes (ME-14c2); per mesh, rebuilt when the matTable's idFor changes. */
@@ -161,19 +217,22 @@ function renderWorldMesh(fb, world, cam) {
   meshGrid.cols = cols; meshGrid.rows = rows;
   meshGrid.pxCellW = (fb.rt && fb.rt.pxCellW) || 1;
   meshGrid.pxCellH = (fb.rt && fb.rt.pxCellH) || 1;
-  meshPitched = resolveProjection(cam, fb.renderer || 'mesh') === 'pitched';
+  meshPitched = isPitchedFamily(resolveProjection(cam, fb.renderer || 'mesh'));
   projTerms(cam, meshGrid, meshTerms);
   // The JS deriv fallback reads `gbuf.cam` (castSectors normally sets it; it never runs on mesh), so
   // write it on every mesh frame (RE-02a review: shear frames left it stale / at defaults).
   // GPU `_passDeriv` uses the shear constants for every camera (28.1 A2: deriv unchanged) - same here.
   fb.gbuf.cam.tanHalfHFov = meshTerms.tanHalf; fb.gbuf.cam.cols = cols; fb.gbuf.cam.planeDistY = meshTerms.planeDistY;
   if (meshPitched) {
-    pitchedTerms(cam, meshGrid, meshPitchTerms);
+    pitchedTermsInto(meshPitchTerms, cam, meshGrid);
     meshViewProj.set(meshPitchTerms.M);
     const tr = world.terrain;
-    meshHashCell = -(2 * meshPitchTerms.tanHalfX / cols); // BUG-FP-002: per-cell mode on every pitched frame
+    // BUG-FP-002: per-cell mode on every pitched frame; ortho (38.19): positive fixed cell (constant ground m per column)
+    meshHashCell = meshPitchTerms.ortho ? orthoHashCell(meshPitchTerms, cols) : -(2 * meshPitchTerms.tanHalfX / cols);
+    meshCtx.ortho = meshPitchTerms.ortho === 1;
   } else {
     shearProjection(meshTerms, meshViewProj);
+    meshCtx.ortho = false;
   }
   frustumPlanes(meshViewProj, meshFrustumPlanes);
 
@@ -206,6 +265,8 @@ function renderWorldMesh(fb, world, cam) {
   // `fb.loop.stats.structuresCulled` above, same "only when a Loop is wired" guard).
   if (fb.instances) {
     meshDrawArg.idFor = fb.matTable ? strictMatIdFor(fb.matTable) : null; // TREES-LP-b: kind-9 mesh groups
+    meshDrawArg.maskAtlas = world.maskAtlas || null; // ALPHA-01f-fix2
+    fb.instances.eye = cam; // OB-089: per-group draw-distance cut
     fb.instances.addToDrawList(list, sharedVoxelMeshCache, meshFrustumPlanes, fb.frameNo, meshViewProj, rows, meshDrawArg);
     if (fb.loop && fb.loop.stats) {
       fb.loop.stats.instances = fb.instances.stats.instances;
@@ -216,6 +277,7 @@ function renderWorldMesh(fb, world, cam) {
   // CLOTH-1b1 (33.5): cloth meshes after the voxel feed (JS twin only; the GPU pass draws them from CLOTH-1b2).
   if (world.cloths && world.cloths.count > 0) addCloths(list, world.cloths, meshFrustumPlanes, fb.matTable ? fb.matTable.idFor : undefined);
   meshCtx.team = fb.matTable ? fb.matTable.team : null;
+  noteListOverflow(list); // OB-043: F3 / tests (pre-cull items, refused pushes)
   list.cull(meshFrustumPlanes);
 
   const target = meshRasterTargetFor(cols, rows);
@@ -228,18 +290,22 @@ function renderWorldMesh(fb, world, cam) {
       const b = structs[i].bbox;
       if (!b) continue;
       const o4 = structCount * 4;
+      meshStructMask[structCount] = structs[i].carveMask || null;
       meshStructFoot[o4] = b.x0; meshStructFoot[o4 + 1] = b.y0; meshStructFoot[o4 + 2] = b.x1; meshStructFoot[o4 + 3] = b.y1;
       structCount++;
     }
     meshCtx.structFoot = meshStructFoot;
     meshCtx.structCount = structCount;
+    meshCtx.structMask = meshStructMask;
   } else {
     meshCtx.kind7Mat = null;
     meshCtx.structFoot = null;
     meshCtx.structCount = 0;
   }
   meshCtx.maskAtlas = world.maskAtlas || null; // ALPHA-01b
+  meshCtx.wind = windCtx(world, fb); // FOLIAGE-SWAY-01: JS twin of the raster wind uniforms
   rasterDrawList(list, target, meshCtx);
+  for (let ci = 0; ci < list.cardCount; ci++) { const c = list.cards[ci]; rasterCards(c.ib, c.count, c.imp, target, meshCtx, c.eye); } // R6c (38.60): tree card impostors after the mesh pass; none unless a species opted in
   // US-078a (architecture.md 30.1): first-person view model, same pass after a depth-only clear (twin of the GPU
   // `_passRaster` tail); off on pitched frames and when nothing is shown.
   const vmList = fb.viewModel ? fb.viewModel.buildList(cam, meshPitched) : null;
@@ -252,6 +318,7 @@ function renderWorldMesh(fb, world, cam) {
   if ((world.water && world.water.count > 0) || (world.waterfalls && world.waterfalls.length > 0)) renderWaterJS(fb, world, cam, meshViewProj, meshFrustumPlanes);
   else if (fb.water) fb.water = null;
   renderSunShadowJS(fb, world, cam, list, cache, terrainMeshSet, meshCtx.structCount);
+  renderPointShadowsJS(fb, world, cam, list, cache, terrainMeshSet, meshCtx.structCount);
 }
 
 /** Swaps `depth` to horizontal forward distance (`toShade`) and back from the saved raw copy. Zero alloc once warm. */
@@ -305,13 +372,19 @@ export function renderWorld(fb, world, cam) {
 
   beginFrame(fb);
   meshPitched = false;
-  const meshWater = ((!!world.water && world.water.count > 0) || (world.waterfalls && world.waterfalls.length > 0)); // US-055a2b
+  // SWIM-04c: a submerged eye (fb.under on) skips the surface composite in BOTH twins (GPU: waterComposite.wgsl underOn); the under look owns the ceiling.
+  let underDone = false;
+  const submerged = !!(fb.under && fb.gbuf && updateUnderState(world, cam.x, cam.y, cam.z, fb.under).on);
+  const meshWater = !submerged && ((!!world.water && world.water.count > 0) || (world.waterfalls && world.waterfalls.length > 0)); // US-055a2b
   meshHashCell = 0;
 
   renderWorldMesh(fb, world, cam);
 
   if (fb.gbuf) {
     computeDerivatives(fb.gbuf, fb.depth.depth);
+    // OB-073 D2c/D2e (38.52 item 8 + pitched amendment): carpet cells after resolve, before lighting. Perspective pitched frames only
+    // (rays from meshPitchTerms = GPU rp.pitch); shear and ortho frames: no carpet, like the GPU pass. Off (no world.carpet / fb.carpet === false) = untouched frame.
+    if (world.carpet && fb.carpet !== false && world.carpetQuality && world.carpetQuality.on !== false && meshPitched && !meshPitchTerms.ortho) { const cc = carpetCtxFor(world); if (cc) carpetCells(fb.gbuf, fb, cam, cc, fb.timeSec || 0, meshPitchTerms, fb.palette && fb.palette.timeOfDay ? sunFromWorld(world, fb.palette, skySunScratch) : null); }
     // US-006: `fb.lights` (a LightSet, built by main.js from the world's
     // `level.def.lights`) drives per-cell ambient+point-light shading;
     // `?lights=0` (fb.lights left null) keeps the US-028 uniform-ambient
@@ -333,17 +406,44 @@ export function renderWorld(fb, world, cam) {
     // forward distance `vd * pitchedFogScale(row)`; light/edge/sky/sprites keep the raw view depth.
     // GLSL twin: `dist *= fogScaleCell(...)` in shade.frag.js / edge.frag.js.
     if (meshPitched) scaleDepthForShade(fb.depth.depth, fb.gbuf.cols, fb.gbuf.rows, true);
+    // AUD-45: height fog + sun in-scatter context for the CPU shade twin (same gate as the GPU: terrain world + time-of-day palette).
+    const fsc = fogShapeCtx;
+    fsc.on = !!(world.terrain && fb.palette && fb.palette.timeOfDay);
+    fsc.outdoor = fsc.on && meshOutdoorFog(world, cam, fb.palette); // OB-089
+    if (fsc.outdoor) { const fr = fb.palette.fog.far; fsc.tStart = fr.start; fsc.tFull = fr.full; fsc.tCurve = fr.curve || 1; fsc.tNear = fb.palette.rgb[fr.color]; fsc.tFar = fb.palette.rgb[fr.colorFar]; }
+    if (fsc.on) {
+      const fsun = sunFromWorld(world, fb.palette, skySunScratch);
+      fsc.mode = meshPitched ? (meshPitchTerms.ortho ? 2 : 1) : 0; fsc.terms = meshPitched ? meshPitchTerms : meshTerms; fsc.camZ = cam.z;
+      fsc.sunX = fsun.dirX; fsc.sunY = fsun.dirY; fsc.sunZ = fsun.dirZ; fsc.sunI = fsun.sunI;
+    }
     shadeSurfaces(fb, fb.gbuf, fb.matTable, fb.detailPass, fb.light);
+    fsc.on = false; fsc.outdoor = false;
     shadeTerrainCells(fb, world.terrain, world, fb.timeSec || 0, meshHashCell);
     if (meshPitched) scaleDepthForShade(fb.depth.depth, fb.gbuf.cols, fb.gbuf.rows, false);
     // US-055a2b (35.3): water composite on the surface cells (raw depth), then the edge pass skips opaque-water cells.
     if (meshWater) waterCompositeJS(fb, world, meshTerms, meshPitchTerms, meshPitched, false);
     else if (fb.waterMask) fb.waterMask = null;
+    // SWIM-04c: GPU order is shade -> under -> edge; submerged JS does sky + under here, before the edge pass (edge scales the TINTED colours).
+    if (submerged) {
+      if (!fb.skipSky) fillSky(fb, cam, world && world.terrain && fb.palette && fb.palette.timeOfDay ? sunFromWorld(world, fb.palette, skySunScratch) : null);
+      underDone = true;
+      fogShapeCtx.mode = meshPitched ? (meshPitchTerms.ortho ? 2 : 1) : 0; fogShapeCtx.terms = meshPitched ? meshPitchTerms : meshTerms; fogShapeCtx.camZ = cam.z;
+      underwaterPass(fb.rt, fb.gbuf, fb.depth.depth, cam.x, cam.y, cam.z, fb.timeSec || 0, fb.under);
+    }
     if (fb.detailPass) edgePass(fb.gbuf, fb.depth.depth, fb.rt, fb.detailPass.edges, fb.waterMask || null, fb.matTable ? fb.matTable.soft : null);
   }
 
-  fillSky(fb, cam);
+  if (!fb.skipSky && !underDone) fillSky(fb, cam, world && world.terrain && fb.palette && fb.palette.timeOfDay ? sunFromWorld(world, fb.palette, skySunScratch) : null); // AUD-40 (submerged: sky already filled + tinted above; a 2nd fill would repaint it untinted)
   if (meshWater && fb.gbuf) waterCompositeJS(fb, world, meshTerms, meshPitchTerms, meshPitched, true); // sky cells (water to the horizon)
+  // SWIM-04b (38.54): underwater look, end of the shade chain (after sky). `fb.under` (makeUnderState) absent = untouched frame.
+  if (fb.under && fb.gbuf && !underDone) {
+    updateUnderState(world, cam.x, cam.y, cam.z, fb.under);
+    if (fb.under.on) {
+      const fsc = fogShapeCtx; // reuse the fog ray context for per-cell view rays
+      fsc.mode = meshPitched ? (meshPitchTerms.ortho ? 2 : 1) : 0; fsc.terms = meshPitched ? meshPitchTerms : meshTerms; fsc.camZ = cam.z;
+      underwaterPass(fb.rt, fb.gbuf, fb.depth.depth, cam.x, cam.y, cam.z, fb.timeSec || 0, fb.under);
+    }
+  }
 
   // (US-017 ARCH CHANGES #1 item 2, 7.4 "Fade") CPU scene fade moved OUT of
   // here to the call site right after `sprites.render(...)` (main.js) -

@@ -7,7 +7,7 @@
 // a stub.
 //
 import {
-  World, NavGrid, createRng, createHasher, SIM_STEP, hasLineOfSight, integrate, PHYSICS,
+  World, NavGrid, createRng, createHasher, SIM_STEP, hasLineOfSight, integrate, PHYSICS, NOISE_SPRINT, NOISE_SWING,
 } from '../../../../engine/index.js';
 import paletteMod from '../../../../design/palette.js';
 import detailPassMod from '../../../../design/detail-pass.js';
@@ -33,7 +33,7 @@ import { VITALS_DEFAULTS } from './vitalsConfig.js';
 import { presentBeasts, frameTFromElapsed, DIE_DURATIONS } from '../beastView.js';
 import {
   createBeastSim, STATE_WANDER, STATE_NOTICE, STATE_CHASE, STATE_WINDUP, STATE_CHARGE, STATE_RECOVER, STATE_RETURN,
-  STATE_STAGGER, STATE_FLINCH, STATE_DYING, STATE_CORPSE, STATE_SINK, STATE_GONE,
+  STATE_STAGGER, STATE_FLINCH, STATE_DYING, STATE_CORPSE, STATE_SINK, STATE_GONE, STATE_EAT,
 } from './beastSim.js';
 
 paletteMod; detailPassMod; terrainMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; boarMod;
@@ -1034,6 +1034,246 @@ const BOAR_R = 0.45;
     && Math.abs(s.dirY - (-s.fy * 0.8)) < 1e-9
     && Math.abs(s.dirZ - 0.6) < 1e-9);
   ok('scrape is at the forefeet (0.45 m forward) thrown backward (-facing*0.8, z 0.6)', okScrape, JSON.stringify(scrapes));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// BEAST-PERCEIVE-01w (taken from lane C, offline): engine/nav perceive + leash through the beastSim adapter.
+// ---------------------------------------------------------------------------------------------------------------
+{
+  const mk = (ents, cfg) => {
+    const world = buildWorld(ents);
+    const nav = buildBeastNav(world, NAV_CFG);
+    const { events } = makeEvents();
+    const sim = createBeastSim(world, { nav, rng: createRng(5), events, cfg });
+    return { world, sim };
+  };
+  const SIGHT_ID = (sim) => { sim.fx[0] = 0; sim.fy[0] = 1; }; // face +y (toward the tower-side player below)
+
+  // P1. Perception gating: the wall blocks sight, the same distance in the open field is noticed.
+  {
+    const bx = 1481, by = 1017, px = 1489, py = 1024; // 10.6 m, inside the 12 m notice range, tower in between
+    const { world, sim } = mk([beastEntity('b1', bx, by)]);
+    ok('P1 sanity: LOS tower-blocked, d in (nearR, noticeR)',
+      !hasLineOfSight(world, bx, by, 2.5, px, py, 2.5) && Math.hypot(px - bx, py - by) > 3 && Math.hypot(px - bx, py - by) < 12);
+    SIGHT_ID(sim);
+    let noticed = false;
+    for (let i = 0; i < 90; i++) { sim.step(px, py, groundZ(world, px, py)); if (sim.state[0] === STATE_NOTICE || sim.state[0] === STATE_CHASE) noticed = true; }
+    ok('P1 behind a wall (in range + in cone) = no aggro', !noticed, `state=${sim.state[0]}`);
+    const f = mk([beastEntity('b1', 1461, 1031)]);
+    f.sim.fx[0] = 0; f.sim.fy[0] = -1;
+    let seen = false;
+    for (let i = 0; i < 90; i++) { f.sim.step(1461, 1021, groundZ(f.world, 1461, 1021)); if (f.sim.state[0] === STATE_NOTICE || f.sim.state[0] === STATE_CHASE) seen = true; }
+    ok('P1 control: same range in the open field = aggro', seen);
+  }
+
+  // P2. Hearing: noise scales the any-direction bubble (nearR 3 m): sprint x2 -> 6 m, swing x1.5 -> 4.5 m; no LOS or cone needed.
+  {
+    const bx = 1461, by = 1031;
+    const run = (dist, noise) => {
+      const { world, sim } = mk([beastEntity('b1', bx, by)]);
+      sim.fx[0] = 0; sim.fy[0] = -1; sim.noise = noise;
+      const py = by + dist; // behind the beast (facing north)
+      for (let i = 0; i < 3; i++) sim.step(bx, py, groundZ(world, bx, py));
+      return sim.state[0] === STATE_NOTICE;
+    };
+    ok('P2 walking 5 m behind: not heard', !run(5, 1));
+    ok('P2 sprinting (x2) 5 m behind: heard', run(5, NOISE_SPRINT));
+    ok('P2 swinging (x1.5) 4 m behind: heard, walking 4 m: not', run(4, NOISE_SWING) && !run(4, 1));
+    ok('P2 sprint is heard from 2x the walking distance', run(5.9, NOISE_SPRINT) && !run(6.1, NOISE_SPRINT));
+  }
+
+  // P3. Leash return: a boar chasing past leashR (8 m) from home turns back and walks home.
+  {
+    const hx = 1461, hy = 1031;
+    const { world, sim } = mk([beastEntity('b1', hx, hy)], { leashR: 8 });
+    sim.state[0] = STATE_CHASE;
+    let retAt = -1, d = 0;
+    for (let i = 1; i <= 600 && retAt < 0; i++) {
+      sim.step(hx, hy - 15, groundZ(world, hx, hy - 15)); // player 15 m north of home (inside loseR 20)
+      if (sim.state[0] === STATE_RETURN) { retAt = i; d = Math.hypot(sim.steer.x[0] - hx, sim.steer.y[0] - hy); }
+    }
+    ok('P3 leash: returned once past leashR', retAt > 0 && d > 8 && d < 10, `retAt=${retAt} d=${d}`);
+    let home = false;
+    for (let i = 0; i < 2000 && !home; i++) { sim.step(hx, hy + 40, groundZ(world, hx, hy)); home = sim.state[0] === STATE_WANDER; }
+    ok('P3 leash: back home in wander', home, `state=${sim.state[0]}`);
+  }
+
+  // P4. Give-up: engaged longer than giveUpSec -> walks home and ignores a player standing right there until home.
+  {
+    const hx = 1461, hy = 1031;
+    const { world, sim } = mk([beastEntity('b1', hx, hy)], { giveUpSec: 1 });
+    sim.state[0] = STATE_CHASE;
+    const px = hx, py = hy - 8, pz = groundZ(world, px, py);
+    let retAt = -1;
+    for (let i = 1; i <= 900 && retAt < 0; i++) { sim.step(px, py, pz); if (sim.state[0] === STATE_RETURN) retAt = i; }
+    ok('P4 give-up: boar quits the fight after ~1 s engaged (+ finishing its charge)', retAt > 55 && retAt < 400, `retAt=${retAt}`);
+    let reaggro = false, home = false;
+    for (let i = 0; i < 2000 && !home; i++) {
+      sim.step(sim.steer.x[0], sim.steer.y[0] - 2, pz); // player glued 2 m in front of the boar the whole way home
+      if (sim.state[0] === STATE_NOTICE || sim.state[0] === STATE_CHASE) reaggro = true;
+      home = sim.state[0] === STATE_WANDER;
+    }
+    ok('P4 give-up: ignores the player on the way home, ends in wander', !reaggro && home, `reaggro=${reaggro} home=${home}`);
+  }
+
+  // P6. DRESS-01b: a `temperament:'wary'` (ambient) boar ignores a player 8 m away (a normal boar notices), and
+  // a hit turns it into a normal fighter.
+  {
+    const wary = beastEntity('amb', 1455, 1028); wary.components.brain.temperament = 'wary';
+    const { world, sim } = mk([wary, beastEntity('q', 1455, 1028)]);
+    const pz = groundZ(world, 1455, 1038);
+    sim.fx[0] = 0; sim.fy[0] = 1; sim.fx[1] = 0; sim.fy[1] = 1;
+    let engW = false, engQ = false;
+    for (let i = 0; i < 300; i++) {
+      sim.step(1455, 1036, pz); // 8 m away: inside noticeR 12, outside calmNoticeR 5
+      if (sim.state[0] === STATE_CHASE || sim.state[0] === STATE_NOTICE) engW = true;
+      if (sim.state[1] === STATE_CHASE || sim.state[1] === STATE_NOTICE) engQ = true;
+      sim.fx[0] = 0; sim.fy[0] = 1; sim.fx[1] = 0; sim.fy[1] = 1;
+    }
+    ok('P6 wary boar ignores a player at 8 m, plain boar notices', !engW && engQ, `wary=${engW} plain=${engQ}`);
+  }
+
+  // P5. Zero allocation with the adapter, noise and leash active.
+  {
+    const { world, sim } = mk([beastEntity('a', 1455, 1028), beastEntity('b', 1460, 1030)], { leashR: 12, giveUpSec: 4 });
+    const pz = groundZ(world, 1465, 1025);
+    for (let i = 0; i < 600; i++) sim.step(1465, 1025, pz);
+    if (global.gc) {
+      global.gc();
+      const before = process.memoryUsage().heapUsed;
+      for (let i = 0; i < 10000; i++) { sim.noise = (i & 1) ? NOISE_SPRINT : 1; sim.step(1465 + (i % 7), 1025, pz); }
+      global.gc();
+      const after = process.memoryUsage().heapUsed;
+      ok('P5 zero allocation over 10k steps (perceive + leash adapter)', after <= before + 1e6, `before=${before} after=${after}`);
+    } else console.log('(skip) P5 alloc check needs --expose-gc');
+  }
+}
+
+// EQ-06: a charge whose combat:hit comes back `blocked` -> 0.4 s stagger (not recover), shoved away from the player.
+{
+  const bx = 1461, by = 1031, px = bx, py = by - 0.5;
+  const { sim, events } = freshSim([beastEntity('b1', bx, by)]);
+  events.on('combat:hit', (p) => { if (p.target === 'player') p.blocked = 1; });
+  sim.steer.x[0] = bx; sim.steer.y[0] = by;
+  sim.state[0] = STATE_CHARGE; sim.timer[0] = sim.cfgSteps.chargeMax; sim.cdx[0] = 0; sim.cdy[0] = -1;
+  let n = 0;
+  while (sim.state[0] === STATE_CHARGE && n++ < 20) sim.step(px, py, 0);
+  ok('EQ-06 blocked charge -> STAGGER (not recover)', sim.state[0] === 7, `state=${sim.state[0]}`);
+  ok('EQ-06 blocked stagger lasts blockStagger = 24 steps', sim.cfgSteps.blockStagger === 24 && sim.timer[0] === 24, `timer=${sim.timer[0]}`);
+  ok('EQ-06 beast shoved away from the player (+y)', sim.steer.vy[0] > 0, `vy=${sim.steer.vy[0]}`);
+  for (let i = 0; i < 30; i++) sim.step(px, py, 0);
+  ok('EQ-06 stagger ends after ~24 steps', sim.state[0] !== 7, `state=${sim.state[0]}`);
+}
+
+
+// LIFE-07: a wolf hunts and eats a deer (stub fauna: same surface as engine/fauna: def.species, slots, nearestPrey, kill, setThreats).
+function stubFauna(preys) {
+  const f = { def: { species: [{ name: 'rabbit' }, { name: 'deer' }] }, slots: preys, thr: 0, killed: [], thrX: [] };
+  f.setThreats = (n, xs) => { f.thr = n; f.thrX.length = 0; for (let i = 0; i < n; i++) f.thrX.push(xs[i]); };
+  f.nearestPrey = (x, y, r, out, mask) => {
+    for (let i = 0; i < preys.length; i++) {
+      const q = preys[i]; if (!q.alive || !((mask >> q.species) & 1)) continue;
+      if ((q.x - x) ** 2 + (q.y - y) ** 2 <= r * r) { out.x = q.x; out.y = q.y; return i; }
+    }
+    return -1;
+  };
+  f.kill = (i) => { preys[i].alive = false; f.killed.push(i); };
+  return f;
+}
+function wolfEnt(id, x, y) { const e = beastEntity(id, x, y); e.components.brain.species = 'wolf'; return e; }
+function huntSim(fauna) {
+  const world = buildWorld([wolfEnt('w1', 1461, 1031)]);
+  const nav = buildBeastNav(world, NAV_CFG);
+  const { events } = makeEvents();
+  return createBeastSim(world, { nav, rng: createRng(3), events, fauna });
+}
+{
+  const deer = { x: 1466, y: 1031, species: 1, alive: true };
+  const fa = stubFauna([deer]);
+  const sim = huntSim(fa);
+  const far = [1461, 1090]; // player far away: no notice
+  let eat = -1, hunted = false;
+  for (let n = 0; n < 900 && eat < 0; n++) { sim.step(far[0], far[1], 0); if (sim.hunt[0]) hunted = true; if (sim.state[0] === STATE_EAT) eat = n; }
+  ok('LIFE-07 wolf hunts the deer, kills it and enters STATE_EAT', hunted && eat >= 0 && fa.killed.length === 1 && !deer.alive, `hunted=${hunted} eat=${eat} killed=${fa.killed}`);
+  ok('LIFE-07 beast positions fed as threats', fa.thr === 1 && Math.abs(fa.thrX[0] - sim.steer.x[0]) < 1e-9, `thr=${fa.thr}`);
+  for (let n = 0; n < 8 * 60 + 5; n++) sim.step(far[0], far[1], 0);
+  ok('LIFE-07 meal ends back in wander', sim.state[0] === STATE_WANDER && !sim.hunt[0], `state=${sim.state[0]}`);
+  // wolf does not hunt a rabbit-less/other-species world: bear-only prey filter (wolf eats rabbit too)
+  const rab = { x: 1466, y: 1031, species: 0, alive: true };
+  const sim2 = huntSim(stubFauna([rab]));
+  let h2 = false; for (let n = 0; n < 200; n++) { sim2.step(far[0], far[1], 0); if (sim2.hunt[0]) h2 = true; }
+  ok('LIFE-07 wolf also hunts a rabbit', h2);
+}
+{ // the player notice pre-empts the hunt
+  const deer = { x: 1470, y: 1031, species: 1, alive: true };
+  const fa = stubFauna([deer]);
+  const sim = huntSim(fa);
+  for (let n = 0; n < 120; n++) sim.step(1461, 1033, 0); // player 2 m away
+  ok('LIFE-07 player notice pre-empts the hunt (no kill, in a combat state)', fa.killed.length === 0 && sim.state[0] !== STATE_EAT && sim.state[0] !== STATE_WANDER, `state=${sim.state[0]} killed=${fa.killed.length}`);
+}
+{ // null fauna: no hunt, hash unchanged by the feature; 0 alloc with fauna
+  const sim = huntSim(null);
+  for (let n = 0; n < 200; n++) sim.step(1461, 1090, 0);
+  ok('LIFE-07 null fauna: never hunts/eats', !sim.hunt[0] && sim.state[0] !== STATE_EAT);
+  if (global.gc) {
+    const fa = stubFauna([{ x: 1700, y: 1700, species: 1, alive: true }]);
+    const s2 = huntSim(fa);
+    for (let n = 0; n < 600; n++) s2.step(1461, 1090, 0);
+    global.gc(); const b = process.memoryUsage().heapUsed;
+    for (let n = 0; n < 10000; n++) s2.step(1461, 1090, 0);
+    global.gc(); const a = process.memoryUsage().heapUsed;
+    ok('LIFE-07 zero allocation per step with fauna', a <= b + 1e6, `b=${b} a=${a}`);
+  }
+}
+
+// ---- LIFE-08 (38.56 d): setGoal / clearGoal / setAltTargets ----------------------------------------------------
+function goalSim() {
+  const world = buildWorld([wolfEnt('w1', 1461, 1031)]);
+  const nav = buildBeastNav(world, NAV_CFG);
+  const ev = makeEvents();
+  const sim = createBeastSim(world, { nav, rng: createRng(3), events: ev.events });
+  return { sim, ev };
+}
+{
+  const far = [1461, 1100];
+  const { sim } = goalSim();
+  sim.setGoal(0, 1473, 1033);
+  let arrived = -1;
+  for (let n = 0; n < 1200 && arrived < 0; n++) { sim.step(far[0], far[1], 0); if (sim.atGoal(0)) arrived = n; }
+  ok('LIFE-08 setGoal: wolf travels to the goal and holds', arrived >= 0 && sim.hasGoal(0), 'arrived=' + arrived);
+  for (let n = 0; n < 300; n++) sim.step(far[0], far[1], 0);
+  ok('LIFE-08 setGoal: still at the goal after 5 s (no wander)', sim.atGoal(0) && sim.state[0] === STATE_WANDER);
+  // alt target: nearer than the player -> chase, altHit event, then cooldown
+  const hits = [];
+  sim.events.on('beast:altHit', (p) => hits.push(p.alt + ':' + p.id));
+  const ax = [1476], ay = [1033];
+  sim.setAltTargets(1, ax, ay);
+  for (let n = 0; n < 300; n++) sim.step(far[0], far[1], 0);
+  ok('LIFE-08 alt target hit emits beast:altHit once per cooldown', hits.length === 1 && hits[0] === '0:w1', JSON.stringify(hits));
+  for (let n = 0; n < 6 * 60; n++) sim.step(far[0], far[1], 0);
+  ok('LIFE-08 alt target hit again after the 6 s cooldown', hits.length >= 2, 'hits=' + hits.length);
+  sim.setAltTargets(0, ax, ay);
+  const nh = hits.length;
+  for (let n = 0; n < 900; n++) sim.step(far[0], far[1], 0);
+  ok('LIFE-08 setAltTargets(0) stops the hits', hits.length === nh);
+  sim.clearGoal(0);
+  ok('LIFE-08 clearGoal: flag off, wolf returns home', !sim.hasGoal(0) && sim.state[0] === STATE_RETURN, 'st=' + sim.state[0]);
+  // player nearer than the alt: no altHit, normal notice
+  const g2 = goalSim();
+  g2.sim.setGoal(0, 1473, 1033);
+  const hits2 = [];
+  g2.sim.events.on('beast:altHit', (p) => hits2.push(p.alt));
+  g2.sim.setAltTargets(1, [1465], [1031]);
+  for (let n = 0; n < 240; n++) g2.sim.step(1462, 1031, 0); // player 1 m away, alt 4 m
+  ok('LIFE-08 player nearer than the alt: no altHit', hits2.length === 0 && g2.sim.state[0] !== STATE_WANDER, 'st=' + g2.sim.state[0]);
+  if (global.gc) {
+    const g3 = goalSim(); g3.sim.setGoal(0, 1473, 1033); g3.sim.setAltTargets(1, ax, ay);
+    for (let n = 0; n < 600; n++) g3.sim.step(far[0], far[1], 0);
+    global.gc(); const b = process.memoryUsage().heapUsed;
+    for (let n = 0; n < 10000; n++) g3.sim.step(far[0], far[1], 0);
+    global.gc(); const a = process.memoryUsage().heapUsed;
+    ok('LIFE-08 zero allocation per step with goal + alt', a <= b + 1e6, 'b=' + b + ' a=' + a);
+  }
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

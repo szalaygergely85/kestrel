@@ -65,3 +65,27 @@ try {
 }
 
 console.log('ME-14a material, placement, chunk and filesystem checks ALL PASS');
+
+// ---- QUAT-LOD-01 (part 1): real LOD1 tree assets (Pine_1-5 35%, CommonTree_1-5 25%; TwistedTree_1-5 blocked, no LOD0 yet) ----------------
+{
+  const QUAT_LOD1 = [
+    ['Pine_1', 0.35], ['Pine_2', 0.35], ['Pine_3', 0.35], ['Pine_4', 0.35], ['Pine_5', 0.35],
+    ['CommonTree_1', 0.25], ['CommonTree_2', 0.25], ['CommonTree_3', 0.25], ['CommonTree_4', 0.25], ['CommonTree_5', 0.25],
+  ];
+  const qdir = fileURLToPath(new URL('../content/meshes/quaternius/', import.meta.url));
+  for (const [name, ratio] of QUAT_LOD1) {
+    const lod0 = readMeshJSON(path.join(qdir, `${name}.mesh.json`));
+    const lod1 = readMeshJSON(path.join(qdir, `${name}_LOD1.mesh.json`));
+    assert.ok(Array.isArray(lod0.lods) && lod0.lods.length === 1, `${name}: LOD0 has a lods entry`);
+    assert.deepEqual(lod0.lods[0], { mesh: `quaternius/${name}_LOD1`, ratio, tris: lod1.triCount }, `${name}: lods entry matches the LOD1 file`);
+    const target = ratio * lod0.triCount;
+    assert.ok(Math.abs(lod1.triCount - target) <= target * 0.1, `${name}: LOD1 triCount ${lod1.triCount} within 10% of ${target}`);
+    for (let a = 0; a < 3; a++) {
+      assert.ok(lod1.bbox[a] >= lod0.bbox[a] - 1e-3, `${name}: LOD1 bbox min[${a}] within LOD0's`);
+      assert.ok(lod1.bbox[a + 3] <= lod0.bbox[a + 3] + 1e-3, `${name}: LOD1 bbox max[${a}] within LOD0's`);
+    }
+    for (const k of Object.keys(lod1.mats || {})) assert.ok(k in lod0.mats, `${name}: LOD1 mat key "${k}" is in LOD0's mats`);
+    assert.strictEqual(lod1.collide, false, `${name}: LOD1 has no collider`);
+  }
+  console.log('QUAT-LOD-01 LOD1 tree asset checks ALL PASS');
+}

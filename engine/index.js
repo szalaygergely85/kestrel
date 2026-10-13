@@ -34,12 +34,16 @@ export { stringifyContent } from './content/stringify.js';
 export { maskToJSON, maskFromJSON, downsampleAlpha, MASK_ID_RE } from './content/maskFile.js'; // ALPHA-01a
 export { prefabFromJSON, placePrefabItems, PREFAB_ITEM_TYPES } from './content/prefabFile.js'; // PREFAB-SEAM (38.11)
 export { loadContentPack, globalId } from './content/loadPack.js';
+export { validatePackageManifest, openPackage, mountPackages, loadPackageModels, checkDependencies, parseSemver, parseRange, KPKG_FORMAT, KPKG_FORMAT_VERSION, KPKG_SCHEME } from './content/package.js'; // KPKG-02 (38.30)
+export { readZip, writeZip, crc32, checkZipPath, ZIP_LIMITS } from './content/zip.js'; // KPKG-01/03 (38.30)
 
 // ---- world ----------------------------------------------------------------
 export { World, stepSectorAnims, PROP_SCALE_MIN, PROP_SCALE_MAX } from './world/World.js';
+export { validateCarpetConfig, buildCarpetClassMap, CARPET_MAX_VARIANTS, CARPET_DEFAULTS } from './world/carpet.js';
 export { scatterTrees, validateScatterConfig, scatterDetail, validateDetailConfig, hash2 } from './world/scatter.js';
 export { Terrain } from './world/Terrain.js';
 export { createEditLayer, editLayerFromJSON, editLayerToJSON, applyDab, editHeightAt, heightDelta, typePaint, sampleDh, sampleType, setSampleDh, setSampleType, NO_PAINT } from './world/terrainEdits.js'; // ED-TERRAIN-1a
+export { createGrassMask, maskAt as grassMaskAt, sampleAt as grassSampleAt, setSample as setGrassSample, grassMaskFromJSON, grassMaskToJSON, bakeAreasToMask } from './world/grassMask.js'; // MASK-a (OB-096)
 export { Level } from './world/Level.js';
 export { serialize, deserialize } from './world/serialize.js';
 
@@ -50,15 +54,16 @@ export { ambientL } from './render/sky.js';
 export { PROJ_HFOV_DEG as HFOV_DEG } from './render/projection.js';
 export { sunFromWorld } from './render/lighting.js';
 export { shadeTerrainCells } from './render/terrainShade.js';
+export { buildTuftAtlas, tuftLookup, tuftPlaneT, texelR, texelG, TUFT_ATLAS_DEFAULTS } from './render/tuftAtlas.js';
 export { sunFromHours, sunPathFrom, SUN_PATH_DEFAULT } from './core/sunPath.js';
+export { AO_DEFAULTS } from './render/horizonAo.js'; // host `?ao=` reads the engine defaults (B1 nit)
 export { swayOffset, packWindUniforms, windSwayOn, INST_FLAG_SWAY, SWAY_K, SWAY_MAX } from './mesh/sway.js'; // S8-B2-06
 export { shadeTerrain, makeTerrainShadeCtx } from './render/terrainShade.js';
 export { packTerrainTextures, TLOOK_WIDTH } from './render/gpu/TerrainTextures.js';
 export { drawSprites, SpritePool, MAX_SPRITES } from './render/sprites.js';
 // ---- US-030c GPU sprite pass + atlas + parity harness ----------------------
 export { buildSpriteAtlas } from './render/gpu/spritesAtlas.js';
-export { GpuSpritePass } from './render/gpu/spritesPass.js';
-export { drawText } from './render/textDraw.js';
+export { drawText, drawTextScaled } from './render/textDraw.js';
 // US-047: runShadeTest/runDetailShadeTest (shading parity harness) moved to
 // engine/dev.js. Item 6b fix pass (docs/backlog.md): runSpriteCompare's only
 // real caller is game/js/dev/spriteDev.js (a dev-only parity mode), so it
@@ -83,7 +88,9 @@ export { packVoxelModel } from './voxel/voxelPack.js';
 export { deriveEmissiveLight, EMISSIVE_LIGHT_MIN } from './voxel/emissiveLight.js';
 export { buildVoxelMesh, MESH_ONLY_MAX_QUADS } from './mesh/voxelMesh.js';
 export { prebuildTerrainMesh } from './mesh/terrainMesh.js'; // ED-MESH-1a
-export { loadGltf, buildMeshFromTris, KIND_MESH } from './mesh/gltf.js'; // ME-13a (architecture.md 27.2 Public API)
+export { createFrameRenderer } from './render/frameRenderer.js'; // ED-WG-01a (38.21)
+export { createModelPreview, fitPreviewCamera } from './preview/modelPreview.js'; // EQ-04a (38.40)
+export { loadGltf, buildMeshFromTris, KIND_MESH, readRiggedGlb, sampleRiggedClip } from './mesh/gltf.js'; // ME-13a (architecture.md 27.2 Public API); RIG-01
 export { MaskAtlas, buildMaskAtlas, cutoffByte } from './render/MaskAtlas.js'; // ALPHA-01c: test worlds (gpucompare alphaLeaves) build their own atlas
 // ME-13b: content/meshes/<id>.mesh.json (de)serialization + validation -
 // needed by tools/gltf-import.mjs (and any future mesh-producing CLI tool)
@@ -95,14 +102,20 @@ export { encodeMeshBin, decodeMeshBin, meshFromBin, meshBinMeta, MESH_BIN_VERSIO
 export { simplifyTriangles } from './mesh/simplify.js'; // TREES-LP-a: tools/dae-import.mjs
 export { buildPrismProxy, buildHullProxy, HULL_MAX_FACES, planMeshCollision, PROXY_BAND_H, WALK_OVER_H } from './mesh/colliderProxy.js';
 export { VoxelPool } from './render/voxelPool.js';
+export { GLOW_LEVELS } from './render/glow.js'; // EMIS-03/04: emissive bleed + halo presets
 export { bindShading, bindLevel } from './render/MaterialTable.js';
 // RE-06 (28.6): instanced voxel units - per-instance buffer helpers + team colour remap.
 export { createViewModelLayer, VM_OBJECT_ID, VM_MAX_HANDLES, VM_FEET_BELOW_EYE } from './render/viewModel.js'; // US-078a
+export { bakeImpostor } from './mesh/impostorBake.js'; // R6c (38.60): opt-in tree card impostors (host bakes, then enableGroupImpostor)
+export { enableGroupImpostor } from './mesh/impostorCard.js';
+export { resolveGroupLod1 } from './mesh/instances.js';
 export { createInstanceBuffer, writeUnitInstance, INSTANCE_STRIDE, UNIT_OBJECT_BASE, MAX_INSTANCES_PER_FRAME } from './mesh/instances.js';
 export { bindDetailInstances, feedDetail, removeDetailInstances, DETAIL_OBJECT_BASE } from './mesh/scatterFeed.js';
 // GFX-03: quality knobs (scatter density, LOD scale, tuft draw scale) and the sun shadow levels / 'off'.
 export { GFX_DEFAULTS, GFX_RANGES, resolveGfxKnobs } from './mesh/gfxKnobs.js';
-export { resolveShadowLevel, SHADOW_LEVELS, resolveSunShadowOptions, SUN_SHADOW_DEFAULTS } from './render/shadowSun.js';
+export { CLOUD_Q_SHIFT, resolveShadowLevel, SHADOW_LEVELS, resolveSunShadowOptions, SUN_SHADOW_DEFAULTS } from './render/shadowSun.js';
+export { PSH_NEAR, POINT_SHADOW_DEFAULTS, resolvePointShadowOptions, FACE_TABLE, pointFaceOf, pointFaceMatrix, pointFacePlanes, pointFaceBounds, pointSphereBounds, pointDepthEncode, pointDepthDecode, pointShadowTaps, pointShadowInfo, pointShadowKey, quantiseOrigin, createShadowLightState, selectShadowLights } from './render/shadowPoint.js';
+export { cloudShadeQ, cloudMul, packCloudUniforms } from './render/cloudShadow.js'; // S8-B2-12c (38.13)
 export { buildTeamRemap, TEAM_SLOTS, MAX_TEAMS } from './render/teamRemap.js';
 // US-047: computeDerivatives/shadeSurfaces/shadeV2 (detailShade.js) and
 // edgePass moved to engine/dev.js - pass internals + parity tooling only,
@@ -114,19 +127,16 @@ export { packLevel, repackMaterials } from './world/packed.js';
 
 // ---- US-006 lighting (ambient + point lights + flicker) -------------------
 export {
-  LightSet, buildLightSet, setWorldSun, applySunHours, syncEntityLights, lightAt, lightSurfaces,
+  LightSet, buildLightSet, setWorldSun, applySunHours, applySunPair, syncEntityLights, lightAt, lightSurfaces,
   computeVisGrid, sunVisible, falloff as lightFalloff, packLightUniforms,
-  makeLightBuffer, MAX_LIGHTS, setLook, OUTDOOR_SHIFT, setCloudShadow, // S8-B2-12a NEEDS B1 item (2)/(3): `?clouds=` + gpucompare force-0
-  setHorizonAo, // S8-B2-20 NEEDS B1 item (1)/(3): `?ao=` + gpucompare force-0
+  makeLightBuffer, MAX_LIGHTS, setLook, OUTDOOR_SHIFT,
 } from './render/lighting.js';
 
 // ---- ART-01a look + roof map (docs/architecture.md 37.18 items 2/3) ----------
-export { resolveLook, validateLook } from './render/look.js';
+export { resolveLook, validateLook, blendLook } from './render/look.js';
 export { buildRoofMap, outdoorAt, MAX_ROOF_BOXES } from './render/roofMap.js';
 
 // ---- US-029 GPU cell pipeline (shading + edge pass on the GPU) ------------
-export { GpuCellPipeline, PASS_NAMES } from './render/gpu/GpuCellPipeline.js';
-export { isSoftwareRenderer } from './render/gpu/glUtil.js';
 export { probeWebGpu, evaluateWebGpuLimits } from './render/gpu/device/webgpuProbe.js'; // WG-1a
 export { createGpuDevice, selfTestDevice } from './render/gpu/device/createGpuDevice.js'; // WG-1b2
 export { createRenderer } from './render/createRenderer.js'; // WG-1c2
@@ -151,6 +161,12 @@ export { Entity } from './entities/Entity.js';
 export { Camera } from './entities/Camera.js';
 export { EntityHandle } from './entities/EntityHandle.js';
 export { stepAnimations, animComponent } from './entities/animation.js';
+export { createAnimState, blend as animBlend, BLEND_MS as ANIM_BLEND_MS, PRIORITY as ANIM_PRIORITY } from './entities/animState.js';
+export { bindClips, applyAnimState, modelClipNames } from './entities/animClips.js';
+export { createClipPlayer, clipPlay, clipStep, clipSetPhase, clipFromW } from './entities/clipPlayer.js';
+export { pickGait, gaitRate } from './entities/gait.js';
+export { tintAt, setTint, sampleTint } from './entities/tintEnvelope.js';
+export { createEntityTintTable, clearEntityTints, pushEntityTint, pushEntityTintSample, fillEntityTints, entityTintAt, tintChannel, ENTITY_TINT_MAX } from './render/entityTint.js';
 export { Player } from './entities/Player.js';
 export { createEyeFeel, updateEyeFeel } from './entities/EyeFeel.js';
 
@@ -160,6 +176,7 @@ export { drawCrosshair } from './ui/crosshair.js';
 
 // ---- US-015 UI panels, rich text, scene dim (docs/architecture.md 7.6) ------
 export { compileRichLine, drawRichLine, hexToRgb } from './ui/richText.js';
+export { compileDialogue, validateDialogue, createDialogueRunner } from './ui/dialogue.js'; // DIALOGUE-01a1 (38.28)
 export { buildPanelArt, createPanel, drawPanel, Panel } from './ui/panel.js';
 export { createSceneDim, resetSceneDim, pushDimRect, applySceneDim } from './ui/sceneDim.js';
 // ---- OWN-REQ-003 UI layer (docs/architecture.md 17) -------------------------
@@ -169,7 +186,7 @@ export { createUiLayer, clampUiCols, UI_GRID_ASPECT } from './ui/uiLayer.js';
 // Leaf module (engine/nav/**): never imports render/mesh/ui/world
 // (check-deps rule 14); World is passed into buildFromWorld duck-typed.
 export { NavGrid } from './nav/NavGrid.js';
-export { createAStar, findPath, smoothPath, pathCrossesRect } from './nav/astar.js';
+export { createAStar, findPath, smoothPath, pathCrossesRect, planPath } from './nav/astar.js';
 
 // ---- interaction (US-012) ------------------------------------------------------
 export { findInteractTarget, updateInteraction, hasLineOfSight } from './world/interaction.js';
@@ -197,7 +214,7 @@ export { registerBehaviour, unregisterBehaviour, registerInteraction, registerTr
 // (projTerms/shearProjection/projectPoint/unprojectCell/windowToCell/
 // PROJ_HFOV_DEG/PROJ_NEAR/PROJ_FAR) stay internal/test-only as before.
 export {
-  createPitchedTerms, pitchedTerms, pitchedProjection, screenRay, unprojectPitched,
+  createPitchedTerms, pitchedTerms, pitchedTermsInto, pitchedProjection, screenRay, unprojectPitched,
   worldToCell, pitchedEyeFromFocus, resolveProjection, fpVfovDeg, PITCH_CLAMP_PITCHED_DEG, PROJ_PITCHED_VFOV_DEG, pitchedFogScale, frameMatrix,
 } from './render/projection.js';
 
@@ -207,6 +224,9 @@ export { rayTerrain, pickNearest, selectInRect } from './render/pick.js';
 // ---- RE-08/RE-09 flow-field pathfinding + local avoidance (docs/architecture.md 28.2) --
 export { createFlowField, FlowCache } from './nav/flowField.js';
 export { createSteer } from './nav/steer.js';
+export { createPathFollower } from './nav/pathFollow.js';
+export { perceive, NOISE_SPRINT, NOISE_SWING } from './nav/perceive.js';
+export { leashState, returnTarget, LEASH_HOME, LEASH_ENGAGE, LEASH_RETURN, LEASH_GIVEUP } from './nav/leash.js';
 
 // ---- RE-11 fog-of-war visibility grid (docs/architecture.md 28.3) ---------
 export { Visibility } from './world/Visibility.js';
@@ -229,7 +249,6 @@ export { STEP as SIM_STEP } from './core/loop.js'; // architect RE-EXP review: n
 
 // ---- RE-07 selection overlay (docs/architecture.md 28.9) ----
 export { createOverlay, applyOverlay, OVL_MAX_OPS } from './ui/overlay.js';
-export { GpuOverlayPass } from './render/gpu/overlayPass.js'; // RE-07b
 
 // ---- US-133 fire spread sim (architecture.md 32.3) ----
 export { createFireGrid } from './world/fireGrid.js';
@@ -238,10 +257,27 @@ export { createFireGrid } from './world/fireGrid.js';
 export { createParticles, PARTICLE_CAP, MAX_EMITTERS as PARTICLE_MAX_EMITTERS } from './fx/particles.js';
 export { createEntityEmitters } from './world/entityEmitters.js';
 
+// ---- S8-B2-13b splash ripples (docs/architecture.md 38.14, the note of record) ----
+export { createRipples, RIPPLE_LIFE, RIPPLE_SPEED, RIPPLE_W } from './fx/ripples.js';
+export { defineHitSparks, hitSparks, HIT_SPARK_HUES } from './fx/hitSparks.js';
+export { defineWadeSplash, wadeSplashAt, arrowSplashAt, WADE_SPLASH } from './fx/wadeSplash.js';
+export { laneCells, laneAlpha, LANE_CELL_M, LANE_ALPHA_MAX } from './fx/chargeLane.js';
+
 // ---- US-055a1 water regions + query (architecture.md 32.2; the query is `World#waterAt`) ----
 export { createWater, collectWaterDefs, WATER_MAX } from './world/water.js';
+export { L_LAT, L_TX, L_TY } from './world/river.js'; // RIVER-01b: riverLocate scratch indices (game wading reads the bank side + tangent)
 export { createWaterfalls, collectWaterfallDefs } from './world/waterfalls.js';
 
 // DECAL-01: wall-text bindings over the shared overlay layer.
 export { bindDecals, drawDecals } from './ui/decals.js';
 export { LazyMeshStore, ensureMesh, requestMesh, meshReady } from './mesh/lazyMesh.js'; // MESH-LOAD-01
+export { meshFeedStats, MAX_MESH_DRAWS, MAX_DRAW_ITEMS } from './mesh/DrawList.js'; // OB-039: single placed-mesh draws requested/kept/dropped (F3)
+export * from './chargen/index.js'; // CHARGEN-02..05 (38.29)
+export { riggedFromGlb } from './chargen/fromGlb.js'; // RIG-02a (38.32); not via chargen/index.js: loading gltf.js there shifts mesh.test's heap-based alloc probe
+
+// ---- fauna (WILD-03, architecture.md 38.31) -----------------------------------
+export { compileFaunaDef } from './fauna/faunaDef.js';
+export { createFauna } from './fauna/fauna.js'; // WILD-06
+export { createFaunaFeed, WILD_DRAW_MAX } from './fauna/feed.js';
+export { createSpawner, FAUNA_MAX, CELL_M as FAUNA_CELL_M } from './fauna/spawner.js';
+export { makeUnderState, updateUnderState, UNDER_DEFAULT } from './render/underwater.js'; // SWIM-04c (38.54)

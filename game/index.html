@@ -47,7 +47,7 @@
     // ES modules (js/main.js) refuse to load over file:// (CORS). Catch that
     // case early with a friendly one-line message instead of a silent blank
     // canvas + a console error nobody sees.
-    if (location.protocol === 'file:') {
+    if (location.protocol === 'file:' && !window.__kestrelDesktop) { // desktop shell (tools/desktop/preload.cjs) serves from disk on purpose
       document.write(
         '<div id="file-protocol-notice">Run a static server, e.g. <code>python -m http.server 8000</code>' +
         ' from the project root, then open <code>http://localhost:8000/game/index.html</code></div>'
@@ -63,11 +63,14 @@
   <!-- US-091a (v1.34): item defs + inventory icons + loot sprites (ASSETS.items / ASSETS.lootSprites),
        classic script loaded right after palette.js (design/README.md section 13). -->
   <script src="../design/items.js"></script>
+  <script src="../design/itemsWeapons.js"></script>
   <!-- US-053c: particle presets (flame/smoke/sparks/dust) - no load-order dependency on palette.js itself
        (toEmitterDef resolves palette.rgb at boot-wiring time, not at script-load time). -->
   <script src="../design/models/particles.js"></script>
   <!-- HANDS-01c: spell hand (voxelModels.spellHandL + viewModels.spellHand + spellFx); after particles.js, palette/detail-pass already loaded -->
   <script src="../design/models/spell.js"></script>
+  <!-- HAND-WIRE-01: realistic hand + always-on fire (viewModels.hand, 26 variants); after palette/detail-pass/particles -->
+  <script src="../design/models/hand.js"></script>
   <!-- US-028: v2 detail-pass proposal (G-buffer shading materials, sets,
        edge rules) - loaded right after palette.js, same classic-script
        reasoning; AssetRegistry.fromGlobals reads window.ASSETS.detailPass. -->
@@ -80,6 +83,7 @@
        title/end text later) + the title/subtitle models - same
        classic-script/load-order reasoning as palette.js above. -->
   <script src="../design/models/title.js"></script>
+  <script src="../design/models/compass_ui.js"></script> <!-- COMPASS-D1/02 (D-061): ASSETS.uiStyle.compass; after title.js -->
   <script src="../design/models/menu_ui.js"></script>
   <!-- US-091b: pack screen style (ASSETS.uiStyle.inventory); after title.js (assigns uiStyle) and items.js -->
   <script src="../design/models/inventory_ui.js"></script>
@@ -121,15 +125,27 @@
        voxel_tower.js, same classic-script convention (materials merged
        append-only onto ASSETS.voxelMaterials). -->
   <script src="../design/models/voxel_world.js"></script>
+  <script src="../design/models/voxel_tower_crown.js"></script>
   <!-- US-078: the ruin-steel sword (pickup + held model + view-model clips); colours/materials merged in
        palette.js / detail-pass.js. Not placed in any level yet. -->
   <script src="../design/models/sword.js"></script>
+  <!-- EQ-D1 / EQ-07 / EQ-09: shield + bow + arrow + quiver voxel models and first-person view models (ASSETS.equipment.attach() runs in main.js). -->
+  <script src="../design/models/equipment.js"></script>
   <!-- US-078d / US-080: M3 props (practice pell, HP/MP pickups, vitals HUD style); must load after title.js and sword.js. Colours/materials merged in palette.js / detail-pass.js. Not placed in any level yet. -->
   <script src="../design/models/m3_props.js"></script>
   <!-- US-079a: placeholder boarPlaceholder voxel model (architecture.md 29.1); uses only already-merged
        materials (leather, canvas_dark), no further palette.js/detail-pass.js merge needed. Placed via
        content/worlds/world_m1.world.json's boar1/boar2 entities. -->
   <script src="../design/models/voxel_beast.js"></script>
+  <script src="../design/models/voxel_wolf.js"></script>
+  <script src="../design/models/voxel_goblin.js"></script> <!-- GOB-D1/07a: ASSETS.models.goblin/goblinTorch/goblinSpear + ASSETS.goblinFx -->
+  <script src="../design/models/voxel_bear.js"></script> <!-- NPC-BEAR-01: ASSETS.models.bear + ASSETS.bearFx -->
+  <script src="../design/models/voxel_bear_black.js"></script> <!-- BEAR-D1/D2: ASSETS.models.bearBlack (black bear beast) -->
+  <script src="../design/models/voxel_bear_cub.js"></script> <!-- NUB-01: ASSETS.models.bearCub (Nub) -->
+  <script src="../design/models/voxel_wildlife.js"></script> <!-- WILD-06: ASSETS.models.rabbit/deer/deerBuck + ASSETS.wildlifeFx -->
+  <script src="../design/models/voxel_eat_clips.js"></script> <!-- SWIM-ASSETS-01: eat clips for fox/wolf/bear/bearBlack, AFTER the four model files -->
+  <script src="../design/models/voxel_seamonster.js"></script> <!-- SWIM-ASSETS-01: ASSETS.models.seaMonster + ASSETS.seaMonsterFx -->
+  <script src="../design/chargen/human_kit_swim.js"></script> <!-- SWIM-ASSETS-01: ASSETS.chargenSwimClips (swim/tread/dive; merged into the player grid in main.js) -->
   <!-- S8-A-06: treasure chests chestSmall / chestBig + ASSETS.chestFx (merged materials only; design/README.md 16). -->
   <script src="../design/models/chest.js"></script>
   <!-- S8-A-08: M1 props (waystone variants, lantern post, breach rubble, sword pedestal; merged materials only; design/README.md 18). -->
@@ -164,6 +180,9 @@
        now loads them via loadContentPack + AssetRegistry.fromJSON instead of
        a classic <script> tag; see design/README.md. -->
   <script src="../design/levels/overworld_far.js"></script>
+  <!-- MAP-02/03/05: world geography (sea, ridges, lake, marsh, biomes) installed into the recipe by js/main.js -->
+  <script src="../design/levels/world_geo.js"></script>
+  <script src="../design/ui-region-banner.js"></script> <!-- REGION-01: banner style + approved place names -->
 
   <script type="module" src="js/main.js"></script>
 </body>

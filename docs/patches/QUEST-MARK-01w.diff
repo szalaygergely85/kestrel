@@ -1,0 +1,8 @@
+QUEST-MARK-01w main.js wiring (NOT applied; B1 applies). After questRelay/markers exist and before hooks.boot():
++ import { createQuestMarkers } from './quest/sim/questMarkers.js';
++ import { registerQuestMarks } from './quest/wire/questMarks.js';
++ const questMarkers = createQuestMarkers(questDef, [ /* {objectiveId:'note1',targets:[<prop id>]}, note2, waystone ... */ ]);
++ hooks.setQuestSource((out) => { const s = questRelay.state; out.done = questRelay.done; out.id = out.done ? '' : questDef.objectives[s.completed.length].id; out.targets = questMarkers.markerTargets(s); });
++ // host.create(): spawn a voxel entity {model:'questMark'} and return a handle mapping hidden/scale/anim/setPos to components.voxel + transform
++ // host.resolve(id, out): prop/area id -> world base point (note z + 1.55, prop top z) per ASSETS.questMarkFx.placement
++ if (!isCaptureOrBench && params.get('save') !== '0') registerQuestMarks(hooks, { fx: ASSETS.questMarkFx, resolve, create });

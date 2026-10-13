@@ -1,0 +1,40 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Door_1_Round",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Door_1_Round.mesh.bin",
+  "triCount": 470,
+  "bbox": [
+    -0.04626,
+    -0.06314,
+    0.03309,
+    1.07375,
+    0.05756,
+    2.35133
+  ],
+  "ranges": [
+    {"count": 454, "part": "Door_1_Round#0", "start": 0},
+    {"count": 16, "part": "Door_1_Round#1", "start": 454}
+  ],
+  "matKeys": [
+    "MI_WoodTrim",
+    "MI_WindowGlass"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "ivy",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "f2o8vWiRbb0CKwc9QmDlPSUGgb0CKwc9QmDlPSUGgb3JdhZAf2o8vWiRbb0CKwc9QmDlPSUGgb3JdhZAf2o8vWiRbb3JdhZAQmDlPSUGgb0CKwc9nu9nPyUGgb0CKwc9nu9nPyUGgb3JdhZAQmDlPSUGgb0CKwc9nu9nPyUGgb3JdhZAQmDlPSUGgb3JdhZAnu9nPyUGgb0CKwc9w/WIP2iRbb0CKwc9w/WIP2iRbb3JdhZAnu9nPyUGgb0CKwc9w/WIP2iRbb3JdhZAnu9nPyUGgb3JdhZAw/WIP2iRbb0CKwc9TDeJP2DlUL0CKwc9TDeJP2DlUL3JdhZAw/WIP2iRbb0CKwc9TDeJP2DlUL3JdhZAw/WIP2iRbb3JdhZATDeJP2DlUL0CKwc9TDeJP2DlUD0CKwc9TDeJP2DlUD3JdhZATDeJP2DlUL0CKwc9TDeJP2DlUD3JdhZATDeJP2DlUL3JdhZATDeJP2DlUD0CKwc9w/WIP2iRbT0CKwc9w/WIP2iRbT3JdhZATDeJP2DlUD0CKwc9w/WIP2iRbT3JdhZATDeJP2DlUD3JdhZAw/WIP2iRbT0CKwc9f2o8vWiRbT0CKwc9f2o8vWiRbT3JdhZAw/WIP2iRbT0CKwc9f2o8vWiRbT3JdhZAw/WIP2iRbT3JdhZAf2o8vWiRbT0CKwc9f2o8vWiRbb0CKwc9f2o8vWiRbb3JdhZAf2o8vWiRbT0CKwc9f2o8vWiRbb3JdhZAf2o8vWiRbT3JdhZAf2o8vWiRbb3JdhZAQmDlPSUGgb3JdhZAnu9nPyUGgb3JdhZAf2o8vWiRbb0CKwc9nu9nPyUGgb0CKwc9QmDlPSUGgb0CKwc9f2o8vWiRbb3JdhZAnu9nPyUGgb3JdhZAw/WIP2iRbb3JdhZAf2o8vWiRbb0CKwc9w/WIP2iRbb0CKwc9nu9nPyUGgb0CKwc9f2o8vWiRbb3JdhZAw/WIP2iRbb3JdhZATDeJP2DlUL3JdhZAf2o8vWiRbb0CKwc9TDeJP2DlUL0CKwc9w/WIP2iRbb0CKwc9f2o8vWiRbb3JdhZATDeJP2DlUL3JdhZATDeJP2DlUD3JdhZAf2o8vWiRbb0CKwc9TDeJP2DlUD0CKwc9TDeJP2DlUL0CKwc9f2o8vWiRbb3JdhZATDeJP2DlUD3JdhZAw/WIP2iRbT3JdhZAf2o8vWiRbb0CKwc9w/WIP2iRbT0CKwc9TDeJP2DlUD0CKwc9f2o8vWiRbb3JdhZAw/WIP2iRbT3JdhZAf2o8vWiRbT3JdhZAf2o8vWiRbb0CKwc9f2o8vWiRbT0CKwc9w/WIP2iRbT0CKwc9"
+}

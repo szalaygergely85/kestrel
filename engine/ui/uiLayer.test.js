@@ -1,6 +1,6 @@
 // engine/ui/uiLayer.test.js (OWN-REQ-003). Headless Node ESM, no framework.
 // Run: node engine/ui/uiLayer.test.js
-import { createUiLayer, clampUiCols, UI_GRID_ASPECT } from './uiLayer.js';
+import { createUiLayer, clampUiCols, UI_GRID_ASPECT, UI_SCALE2_BIT } from './uiLayer.js';
 import { makeOk } from '../test/assert.js';
 
 let pass = 0, fail = 0;
@@ -103,6 +103,29 @@ const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
   ui.clear(); ui.clear(); ui.clear();
   ok('clear() reuses the same typed arrays (no allocation)',
     ui.cells.glyphIdx === before.glyphIdx && ui.cells.fg === before.fg && ui.cells.bg === before.bg && ui.cells.mask === before.mask);
+}
+
+// ---- OB-051 setCellScaled ----
+{
+  const ui = createUiLayer({ cols: 160, rows: 60 });
+  ui.setCellScaled(11, 9, 'A', '#ffffff', '#000000');
+  const idx = (x, y) => y * 160 + x;
+  let all = true;
+  for (const [x, y] of [[10, 8], [11, 8], [10, 9], [11, 9]]) {
+    all = all && ui.cells.mask[idx(x, y)] === 1 && (ui.cells.fg[idx(x, y) * 4 + 3] & UI_SCALE2_BIT) !== 0 && ui.cells.glyphIdx[idx(x, y)] === 33 && (ui.cells.fg[idx(x, y) * 4 + 3] & 127) === 33;
+  }
+  ok('odd x/y snaps to even block, 4 cells flagged, glyph plain', all);
+  ok('neighbours untouched', ui.cells.mask[idx(12, 8)] === 0 && ui.cells.mask[idx(9, 9)] === 0);
+  ui.setCellScaled(158, 58, 'B', '#ffffff', '#000000');
+  ui.setCellScaled(-1, -1, 'B', '#ffffff', '#000000'); // x&~1 = -2: all four out of range
+  ok('edge: in-range block written', ui.cells.mask[idx(159, 59)] === 1);
+  ui.setCellScaled(160, 0, 'C', '#ffffff', '#000000');
+  ok('edge: fully outside skipped', ui.cells.mask[idx(159, 0)] === 0);
+  ui.clear();
+  
+  const hb = process.memoryUsage().heapUsed;
+  for (let i = 0; i < 10000; i++) ui.setCellScaled(20 + (i & 63), 20, 'x', '#ffffff', '#000000');
+  ok('10k calls: no meaningful heap growth', process.memoryUsage().heapUsed - hb < 2e6);
 }
 
 console.log(`uiLayer.test.js: ${pass} passed, ${fail} failed`);

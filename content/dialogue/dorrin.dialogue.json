@@ -1,0 +1,34 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "dorrin",
+  "speakers": {
+    "dorrin": {"label": "DORRIN"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "dorrin.done.1", "requires": "s.mq.ow.relay.done"},
+    {"node": "dorrin.relay.1", "requires": "s.mq.ow.relay.active"},
+    {"node": "dorrin.meet.1"}
+  ],
+  "nodes": {
+    "dorrin.relay.1": {"lines": [
+      "Relay. Aye. The brass collar off the top. That was me.",
+      "Barley gate lost its hinge in the first winter."
+    ], "next": "dorrin.relay.2", "speaker": "dorrin"},
+    "dorrin.relay.2": {"lines": [
+      "No iron to spare. That brass was just sitting there.",
+      "Stone's been dark since. I knew. Didn't say."
+    ], "next": "dorrin.relay.3", "speaker": "dorrin"},
+    "dorrin.relay.3": {"end": true, "lines": [
+      "Barley farm, east. Pull the brass. I'll rope the gate."
+    ], "speaker": "dorrin"},
+    "dorrin.done.1": {"end": true, "lines": [
+      "Gate's on rope now. Holds fine. Should've done it then.",
+      "Bring me that ruin steel some day. I owe you work."
+    ], "speaker": "dorrin"},
+    "dorrin.meet.1": {"end": true, "lines": [
+      "Forge is cold. Not now."
+    ], "speaker": "dorrin"}
+  }
+}

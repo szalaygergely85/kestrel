@@ -75,6 +75,10 @@
     flameOuter:     '#ff8a24',
     flameTip:       '#e8401c',
     ember:          '#ff5a1f',
+    bloodWet:       '#7a1212',   // HIT-BLEED-01: fresh blood, dark and dull (not cartoon red)
+    blood:          '#5a0d0d',
+    bloodDark:      '#3a0808',
+    bloodDried:     '#22080a',
     emberDark:      '#8a2a10',
     // --- far overworld (US-016) ---
     grassLight:     '#a6d060',
@@ -119,6 +123,11 @@
     stoneCool:      '#7e838c', // per-block stone tones (with stoneMid, stoneDeep)
     stoneWarm:      '#9c8c72',
     stoneDeep:      '#655d52',
+    // MESH-TONE-AMP-01: per-block tones within +-10 RGB of their base (same hue), replace the cool/warm/deep flip
+    stoneMidHi:     '#a29684', stoneMidLo: '#726857',
+    rockHi:         '#94969a', rockLo:     '#808286',
+    rubbleHi:       '#877e70', rubbleLo:   '#736a5c',
+    flagHi:         '#847c70', flagLo:     '#70685c',
     flagWarm:       '#8c7e68', // per-slab floor tones (with flagstone, flagDark)
     flagCool:       '#6f7174',
     flagDark:       '#5b544a',
@@ -284,7 +293,23 @@
     skinLight: '#d6a07c',        // knuckles, finger ridges, back-of-hand tendons (lit skin)
     skinNail: '#e8c8b0',         // pale nails
     skinGlow: '#ff9858',         // skin touched by its own fire (emissive 0.35)
-    skinChar: '#3a2620'          // sooty nails / fingertips after the burn
+    skinChar: '#3a2620',         // sooty nails / fingertips after the burn
+    // HAND-FIRE-02 (v1.52, realistic hand): warmer flushed skin (knuckle rims, fingertip pulp, palm pads), deep creases,
+    // muted veins (desaturated, never blue-teal: aether is reserved)
+    skinFlush: '#b8705a',        // muted warm red-brown, not pink
+    skinDeep: '#5a382c',         // deep creases between fingers, palmar joint folds
+    skinVein: '#86686a',         // back-of-hand / inner-wrist veins, faint mauve-grey
+    // EP-WILD (v1.53, design/models/voxel_wildlife.js): natural animal coats. Agouti = the ticked grey-brown of a wild
+    // rabbit; roe = the red-brown summer coat of a deer; cream = bellies, the rabbit's tail underside, the deer's rump
+    // patch, throat and inner ears; antler = pale horn.
+    furAgouti: '#7d6e5a',        // rabbit back and flanks (grey-brown, ticked)
+    furAgoutiDark: '#4a4034',    // dorsal ticking, ear rims / tips, tail top, hind-foot soles
+    furAgoutiLight: '#a8977a',   // lower flanks, cheeks, legs (buff); deer lower legs reuse it greyed by fog
+    furCream: '#e6dfcf',         // bellies, tail underside, rump patch, throat, inner ears (warm off-white, below linenLight)
+    furRoe: '#9a5a32',           // deer body (summer red-brown)
+    furRoeDark: '#5e3a24',       // deer dorsal line, mane, crown, ear rims, tail top
+    furRoeLight: '#bd8550',      // deer lower flanks and muzzle; the rabbit's rufous nape patch
+    antler: '#b4a184'            // pale horn (roe buck antlers), tips use linen_light
   };
 
   // ---------------------------------------------------------------------------
@@ -369,6 +394,10 @@
     relay:   { color: 'aether', intensity: 0.9, type: 'point', radius: 10, falloff: 'smooth',
                flicker: { hzMin: 0.4, hzMax: 0.9, amount: 0.10, jitter: 0.0 },
                grow: { duration: 1.0, note: 'intensity ramps 0 -> 1 with the relay "wake" animation (light on at wake frame 2)' } },
+    // CH1-D2 (D-062): the meadow waystone's bowl crystal once woken - a smaller pool than the relay (a marker, not a beacon).
+    waystone: { color: 'aether', intensity: 0.6, type: 'point', radius: 6, falloff: 'smooth',
+               flicker: { hzMin: 0.4, hzMax: 0.9, amount: 0.10, jitter: 0.0 },
+               grow: { duration: 0.75, note: 'ramps with the waystone "wake" clip (light on at wakeLightFrame 2)' } },
     // ENV-02 (D-038, v1.31): SPARE preset for a candle / small coal glow (not placed: the keeper's candle stub in the
     // tower is cold, canon). A small warm pool, well under the hook lamp (0.55 / 3.5 m). Editor light list + previews.
     candle:  { color: 'torch', intensity: 0.32, type: 'point', radius: 2.2, falloff: 'smooth',
@@ -442,7 +471,8 @@
                  hemi:   { sky: 'ambientSky', skyI: 0.40, ground: 'bounceGrass', groundI: 0.12, shadowTint: null, shadowK: 0,
                            sunFromLook: true, terrainTintK: 0.6 },
                  haze:   { near: 'hazeWarm', far: 'skyCyanHorizon', start: 15, full: 700, curve: 0.65, max: 0.78,
-                           bgK: 0.9, blank: 1.01, thin0: 0.45, thinK: 1.0, edgeMax: 0.5 },
+                           bgK: 0.9, blank: 1.01, thin0: 0.45, thinK: 1.0, edgeMax: 0.5,
+                           skyline: { fogMax: 0.55, fromZ: 80, seaFogMax: 0.7 } }, // MAP-06a (38.42)
                  clouds: { lit: 'cloudWhite', shade: 'cloudShade', ramp: 'sky', scale: 1.6, bias: 0.12, cover: 0.5, puffK: 3.0,
                            wispCover: 0.58, wispK: 3.0, wind: [0.006, 0.0015], litK: 2.2, litDy: 0.06, bodyK: 0.9, seed: 3 } },
     evening:   { ambient: 'ambientEvening', ambientI: 0.30, sun: 'sunEvening', sunI: 0.95, sunElev: 12,
@@ -451,7 +481,8 @@
                  hemi:   { sky: 'ambientEvening', skyI: 0.30, ground: 'bounceEvening', groundI: 0.10, shadowTint: 'shadowPurple',
                            shadowK: 0.35, sunFromLook: true, terrainTintK: 0.6 },
                  haze:   { near: 'hazeEvening', far: 'skyEveHorizon', start: 10, full: 400, curve: 0.7, max: 0.6,
-                           bgK: 0.9, blank: 1.01, thin0: 0.45, thinK: 1.0, edgeMax: 0.5 },
+                           bgK: 0.9, blank: 1.01, thin0: 0.45, thinK: 1.0, edgeMax: 0.5,
+                           skyline: { fogMax: 0.55, fromZ: 80, seaFogMax: 0.7 } }, // MAP-06a (38.42)
                  clouds: { lit: 'cloudEve', shade: 'cloudEveShade', ramp: 'sky', scale: 1.6, bias: 0.12, cover: 0.5, puffK: 3.0,
                            wispCover: 0.58, wispK: 3.0, wind: [0.006, 0.0015], litK: 2.2, litDy: 0.06, bodyK: 0.9, seed: 3 } }
   };
@@ -1314,6 +1345,226 @@
       a: { shade: 1.00, glyph: '^' }, m: { shade: 0.95, tint: 'flameOuter', amount: 0.4, glyph: "'" }
     }, rows: ['am', 'ma'] }
   };
+  // HAND-FIRE-02 (v1.52, design/models/hand.js): realistic skin variation + the yellow band of the always-on hand fire
+  // (white root ember_core -> flame_mid -> ember_glow -> flame_tip). Appended last so no material id moves; v2 records
+  // in detail-pass.js.
+  materials.skin_flush = fabricMat('HAND (HAND-FIRE-02). Warmer flushed skin: knuckle rims, fingertip pulp, palm pads, soft tone patches.', 'skinFlush', 0.88, 0.15,
+    { a: { shade: 1.00 }, s: { shade: 0.94, tint: 'skin', amount: 0.35 } },
+    ['aaaa', 'aasa', 'aaaa', 'saaa']);
+  materials.skin_deep = fabricMat('HAND (HAND-FIRE-02). Deep creases: where fingers touch, palmar joint folds, the wrist crease.', 'skinDeep', 0.70, 0.12,
+    { a: { shade: 1.00 }, s: { shade: 1.10, tint: 'skinShade', amount: 0.3 } },
+    ['aaaa', 'aaaa', 'asaa', 'aaaa']);
+  materials.skin_vein = fabricMat('HAND (HAND-FIRE-02). Muted veins on the back of the hand and the inner wrist.', 'skinVein', 0.84, 0.14,
+    { a: { shade: 1.00 }, s: { shade: 1.05, tint: 'skin', amount: 0.3 } },
+    ['aaaa', 'asaa', 'aaaa', 'aaas']);
+  materials.flame_mid = {
+    desc: 'HAND (HAND-FIRE-02). The yellow body of the hand\'s flames between the white-hot root and the orange: flameMid, emissive 0.95.',
+    base: 'flameMid', albedo: 1.00, ramp: 'fire', spec: 0, emissive: 0.95, bg: { mode: 'darken', k: 0.32 }, textureFade: [4, 12],
+    texture: { w: 2, h: 2, scale: [50, 50], key: {
+      a: { shade: 1.00, glyph: '*' }, m: { shade: 1.00, tint: 'flameCore', amount: 0.35, glyph: '%' }
+    }, rows: ['am', 'ma'] }
+  };
+  // EP-WILD (v1.53, design/models/voxel_wildlife.js): animal coats (rabbit, deer). Appended last so no material id moves;
+  // v2 records in detail-pass.js. Soft `fabric` ramp like the bear; a few hair ticks `'` / `"` per 4x4 tile.
+  materials.fur_agouti = fabricMat('WILDLIFE (EP-WILD). Wild rabbit back and flanks: ticked grey-brown, darker hair tips.', 'furAgouti', 0.86, 0.15,
+    { a: { shade: 1.00 }, t: { shade: 0.86, tint: 'furAgoutiDark', amount: 0.35, glyph: "'" }, l: { shade: 1.06, tint: 'furAgoutiLight', amount: 0.3 } },
+    ['atal', 'aaaa', 'laat', 'aaaa']);
+  materials.fur_agouti_dark = fabricMat('WILDLIFE (EP-WILD). Rabbit dorsal ticking, ear rims and tips, tail top, foot soles.', 'furAgoutiDark', 0.72, 0.13,
+    { a: { shade: 1.00 }, h: { shade: 1.10, tint: 'furAgouti', amount: 0.3, glyph: "'" } },
+    ['ahaa', 'aaaa', 'aaah', 'aaaa']);
+  materials.fur_agouti_light = fabricMat('WILDLIFE (EP-WILD). Rabbit lower flanks, cheeks and legs: buff.', 'furAgoutiLight', 0.90, 0.16,
+    { a: { shade: 1.00 }, s: { shade: 0.92, tint: 'furAgouti', amount: 0.3 } },
+    ['aaaa', 'asaa', 'aaaa', 'aaas']);
+  materials.fur_cream = fabricMat('WILDLIFE (EP-WILD). Bellies, the rabbit tail underside, the deer rump patch, throat, inner ears.', 'furCream', 0.94, 0.18,
+    { a: { shade: 1.00 }, s: { shade: 0.93, tint: 'linen', amount: 0.3, glyph: '"' } },
+    ['aaaa', 'aasa', 'aaaa', 'saaa']);
+  materials.fur_roe = fabricMat('WILDLIFE (EP-WILD). Deer body: red-brown summer coat, a few darker hair ticks.', 'furRoe', 0.86, 0.15,
+    { a: { shade: 1.00 }, t: { shade: 0.88, tint: 'furRoeDark', amount: 0.3, glyph: "'" }, l: { shade: 1.06, tint: 'furRoeLight', amount: 0.3 } },
+    ['aata', 'laaa', 'aaaa', 'ataa']);
+  materials.fur_roe_dark = fabricMat('WILDLIFE (EP-WILD). Deer dorsal line, mane, crown, ear rims, tail top.', 'furRoeDark', 0.72, 0.13,
+    { a: { shade: 1.00 }, h: { shade: 1.10, tint: 'furRoe', amount: 0.3, glyph: "'" } },
+    ['aaha', 'aaaa', 'haaa', 'aaaa']);
+  materials.fur_roe_light = fabricMat('WILDLIFE (EP-WILD). Deer lower flanks and muzzle; the rabbit rufous nape.', 'furRoeLight', 0.90, 0.16,
+    { a: { shade: 1.00 }, s: { shade: 0.92, tint: 'furRoe', amount: 0.3 } },
+    ['aaaa', 'aasa', 'aaaa', 'saaa']);
+  materials.antler = fabricMat('WILDLIFE (EP-WILD). Roe buck antlers: pale horn with rough darker pearling.', 'antler', 0.90, 0.16,
+    { a: { shade: 1.00 }, p: { shade: 0.80, tint: 'woodDark', amount: 0.3, glyph: ':' } },
+    ['apaa', 'aaap', 'paaa', 'aapa']);
+
+  // CHARGEN-01 (v1.54, EP-CHARGEN, architecture 38.29 item 3): the character-generator ramps. ONE table drives
+  // (1) new colors, (2) new v1 materials (appended last, so no material id moves), (3) the v2 records in detail-pass.js
+  // (loop over palette.chargen.newMaterials) and (4) the kit ramps built by design/chargen/human_kit.js.
+  // Skin: 5 tones (fair, warm, medium, brown, dark) x 8 keys (light, base, shade, deep + flush, nail, vein, glow); `medium` IS the existing hand skin, so
+  // the default first-person hand does not change. Hair 6 x 3 (darkbrown base = the existing hair_dark), eyes 3,
+  // natural dyes 6 x 3 (+ `undyed` = the existing linen keys). Muted, never pink, never a reserved hue (style-guide 2).
+  var chargen = (function () {
+    var SK = ['light', 'base', 'shade', 'deep', 'flush', 'nail', 'vein', 'glow'];
+    var SKIN = {   // tone -> 8 hex in SK order; null = reuse the existing hand keys
+      fair:   ['#f2d3bf', '#e3b89f', '#b88a74', '#6e4a3c', '#d99a84', '#f5e0d2', '#9c8c98', '#ffa274'],
+      warm:   ['#e6bb98', '#d0a07f', '#a2765e', '#634232', '#c4846b', '#edd0ba', '#93797c', '#ff9c64'],
+      medium: null,
+      brown:  ['#a87452', '#8b5a3c', '#5f3b27', '#3b2419', '#8f4f3b', '#c9a089', '#5f474a', '#f08a4c'],
+      dark:   ['#7a5039', '#5c3a27', '#3d2519', '#23150e', '#62352a', '#a58571', '#45312f', '#e07c42']
+    };
+    var MEDIUM = { light: 'skin_light', base: 'skin', shade: 'skin_shade', deep: 'skin_deep', flush: 'skin_flush',
+                   nail: 'skin_nail', vein: 'skin_vein', glow: 'skin_glow' };
+    var HAIR = {   // id -> [light, base, dark]; null entry = reuse an existing key
+      black:     ['#3a3532', '#1f1b19', '#100d0c'],
+      darkbrown: ['#5a4334', null, '#22180f'],
+      brown:     ['#8a6646', '#6a4a30', '#45301f'],
+      auburn:    ['#a0573a', '#7a3e24', '#4e2616'],
+      blond:     ['#d2b47e', '#b08f5a', '#7d6440'],
+      grey:      ['#c8c4bc', '#9a958d', '#6a665f']
+    };
+    var EYES = { brown: '#4a2e1c', grey: '#6a7a88', green: '#5c6a3c' };
+    var DYES = {   // natural dyes: id -> [light, base, dark]
+      madder:  ['#b4624a', '#8e4234', '#5a2a22'],   // madder root: muted brick red (never `danger`)
+      woad:    ['#6c7e96', '#4a5a72', '#2e3a4c'],   // woad: indigo-grey blue (never mana / aether)
+      weld:    ['#cdb46a', '#a8904a', '#6e5e30'],   // weld: ochre yellow (below gold)
+      walnut:  ['#8a6a4c', '#654a34', '#3e2e20'],   // walnut hulls: brown
+      lincoln: ['#7e8458', '#5c6440', '#3a4028'],   // weld + woad: olive sage (never heroGreen)
+      gall:    ['#8a8682', '#5e5a56', '#3a3734']    // oak gall + iron: grey
+    };
+    function camel(k) { return k.replace(/_([a-z])/g, function (m, c) { return c.toUpperCase(); }); }
+    var out = { version: 1, skinShades: SK, skin: {}, hair: {}, eyes: {}, dyes: {}, handTint: {}, newMaterials: [] };
+    function add(key, hex, kind, desc, albedo, bgK, accent, extra) {
+      var ck = camel(key);
+      colors[ck] = hex;
+      out.newMaterials.push({ key: key, color: ck, kind: kind, desc: desc, albedo: albedo, bgK: bgK, accent: accent,
+                              emissive: extra || 0 });
+      return key;
+    }
+    var SKIN_ALB = { light: 0.92, base: 0.88, shade: 0.80, deep: 0.70, flush: 0.88, nail: 0.96, vein: 0.84, glow: 0.92 };
+    var t, i, id, row;
+    for (t in SKIN) {
+      var m = {};
+      if (!SKIN[t]) { for (i = 0; i < SK.length; i++) m[SK[i]] = MEDIUM[SK[i]]; }
+      else {
+        for (i = 0; i < SK.length; i++) {
+          var k = SK[i] === 'base' ? 'skin_' + t : 'skin_' + t + '_' + SK[i];
+          m[SK[i]] = k;
+        }
+        for (i = 0; i < SK.length; i++) {
+          add(m[SK[i]], SKIN[t][i], 'skin', 'CHARGEN skin (' + t + ' tone): ' + SK[i] + '.', SKIN_ALB[SK[i]],
+              SK[i] === 'glow' ? 0.22 : 0.15, SK[i] === 'shade' || SK[i] === 'deep' ? camel(m.base) : camel(m.shade),
+              SK[i] === 'glow' ? 0.35 : 0);
+        }
+      }
+      out.skin[t] = m;
+      out.handTint[t] = { skin: m.base, skin_light: m.light, skin_shade: m.shade, skin_deep: m.deep,
+                          skin_flush: m.flush, skin_nail: m.nail, skin_vein: m.vein, skin_glow: m.glow };
+    }
+    var HN = ['light', 'base', 'dark'], HALB = [0.80, 0.72, 0.64];
+    for (id in HAIR) {
+      row = {};
+      for (i = 0; i < 3; i++) {
+        if (!HAIR[id][i]) { row[HN[i]] = 'hair_dark'; continue; }
+        row[HN[i]] = add('hair_' + id + (i === 1 ? '' : '_' + HN[i]), HAIR[id][i], 'hair',
+                         'CHARGEN hair (' + id + '): ' + HN[i] + ', strand glyph |.', HALB[i], 0.14, null);
+      }
+      out.hair[id] = row;
+    }
+    for (id in EYES) out.eyes[id] = { iris: add('eye_' + id, EYES[id], 'eye', 'CHARGEN eyes (' + id + ' iris).', 0.80, 0.12, null) };
+    var DALB = [0.90, 0.84, 0.66];
+    for (id in DYES) {
+      row = {};
+      for (i = 0; i < 3; i++) row[HN[i]] = add('dye_' + id + (i === 1 ? '' : '_' + HN[i]), DYES[id][i], 'dye',
+                                                'CHARGEN natural dye (' + id + '): ' + HN[i] + ', faint weave ~.', DALB[i], 0.15, null);
+      out.dyes[id] = row;
+    }
+    out.dyes.undyed = { light: 'linen_light', base: 'linen', dark: 'linen_dark' };
+    // accents that reference keys created later in the same group (hair/dye: the dark / light sibling)
+    for (i = 0; i < out.newMaterials.length; i++) {
+      var r = out.newMaterials[i];
+      if (r.accent) continue;
+      var sib = r.key.replace(/_(light|dark)$/, '');
+      var grp = r.kind === 'hair' ? out.hair[sib.slice(5)] : r.kind === 'dye' ? out.dyes[sib.slice(4)] : null;
+      r.accent = grp ? camel(/_dark$/.test(r.key) ? grp.base : grp.dark) : r.color;
+    }
+    return out;
+  })();
+  (function () {
+    var i, r, acc;
+    for (i = 0; i < chargen.newMaterials.length; i++) {
+      r = chargen.newMaterials[i]; acc = r.accent;
+      if (r.kind === 'skin' && r.emissive) {
+        materials[r.key] = {
+          desc: r.desc + ' Skin touched by its own fire (emissive 0.35), like skin_glow.',
+          base: r.color, albedo: r.albedo, ramp: 'fabric', spec: 0, emissive: r.emissive, bg: { mode: 'darken', k: r.bgK },
+          textureFade: [4, 12],
+          texture: { w: 4, h: 4, scale: [16, 16], key: { a: { shade: 1.00 }, s: { shade: 0.90, tint: acc, amount: 0.35 } },
+                     rows: ['aaaa', 'asaa', 'aaaa', 'aaas'] }
+        };
+      } else if (r.kind === 'skin') {
+        materials[r.key] = fabricMat(r.desc, r.color, r.albedo, r.bgK,
+          { a: { shade: 1.00 }, s: { shade: 0.92, tint: acc, amount: 0.3 } }, ['aaaa', 'aasa', 'aaaa', 'saaa']);
+      } else if (r.kind === 'hair') {
+        materials[r.key] = fabricMat(r.desc, r.color, r.albedo, r.bgK,
+          { a: { shade: 1.00 }, h: { shade: 1.12, glyph: '|' }, d: { shade: 0.9, tint: acc, amount: 0.3 } }, ['ahaa', 'aaah', 'hada', 'aaha']);
+      } else if (r.kind === 'eye') {
+        materials[r.key] = fabricMat(r.desc, r.color, r.albedo, r.bgK, { a: { shade: 1.00 } }, ['aaaa', 'aaaa', 'aaaa', 'aaaa']);
+      } else {
+        materials[r.key] = fabricMat(r.desc, r.color, r.albedo, r.bgK,
+          { a: { shade: 1.00 }, w: { shade: 0.92, tint: acc, amount: 0.25, glyph: '~' } }, ['awaa', 'aaaw', 'waaa', 'aawa']);
+      }
+    }
+  })();
+  // QM-SLIM (v1.57, design/models/quest_mark.js, owner 2026-10-10 "too much glow"): the slim quest-sign gold. Appended
+  // last so no material id moves; v2 records in detail-pass.js. Faint emissive (>= 0.3 = a glow.js source, small aura).
+  materials.mark_gold = {
+    desc: 'QUEST MARK (QM-SLIM). The gold body of the floating ! / ? sign: warm gold, faint self-glow (emissive 0.40).',
+    base: 'gold', albedo: 1.00, ramp: 'brass', spec: 0.70, emissive: 0.40,
+    bg: { mode: 'darken', k: 0.22 }, textureFade: [4, 12]
+  };
+  materials.mark_shine = {
+    desc: 'QUEST MARK (QM-SLIM). The 1-voxel polished shine on one edge of every stroke: pale white-gold, emissive 0.45.',
+    base: 'brassHot', albedo: 1.00, ramp: 'brass', spec: 0.90, emissive: 0.45,
+    bg: { mode: 'darken', k: 0.24 }, textureFade: [4, 12]
+  };
+  // EP-WILD step 2 (v1.58, design/models/voxel_wildlife.js: fox, squirrel, robin): the only coat tone the palette lacked,
+  // the orange-red of a red fox (muted, below `ember`). Colours + materials appended last so no colour / material id
+  // moves; v2 records in detail-pass.js.
+  colors.furFox = '#b45a28';        // red fox back and flanks, robin breast
+  colors.furFoxLight = '#d08c52';   // fox lower flanks, legs' backs, muzzle bridge; squirrel fringe
+  materials.fur_fox = fabricMat('WILDLIFE (EP-WILD v1.58). Red fox coat: orange-red, a few darker guard-hair ticks; robin breast.', 'furFox', 0.88, 0.15,
+    { a: { shade: 1.00 }, t: { shade: 0.86, tint: 'furRoeDark', amount: 0.35, glyph: "'" }, l: { shade: 1.06, tint: 'furFoxLight', amount: 0.3 } },
+    ['atal', 'aaaa', 'laat', 'aaaa']);
+  materials.fur_fox_light = fabricMat('WILDLIFE (EP-WILD v1.58). Fox lower flanks and muzzle bridge, squirrel tail fringe: pale orange.', 'furFoxLight', 0.90, 0.16,
+    { a: { shade: 1.00 }, s: { shade: 0.92, tint: 'furFox', amount: 0.3 } },
+    ['aaaa', 'asaa', 'aaaa', 'aaas']);
+  // WOLF-D1 (v1.60, design/models/voxel_wolf.js): grey wolf coat. Grizzled grey-brown back, a darker saddle / guard-hair
+  // cape, pale buff-grey legs, belly and cheeks (the throat / muzzle-side white reuses fur_cream). Appended last so no
+  // colour / material id moves; v2 records in detail-pass.js.
+  colors.furWolf = '#7c7466';       // grizzled grey-brown flanks, head, outer legs
+  colors.furWolfDark = '#3f3a34';   // saddle, dorsal cape, ear backs, tail tip, the muzzle-top stripe
+  colors.furWolfLight = '#b3aa98';  // pale buff-grey lower flanks, inner legs, belly, brows
+  materials.fur_wolf = fabricMat('WILDLIFE (WOLF-D1 v1.60). Grey wolf flanks and head: grizzled grey-brown, dark guard-hair ticks.', 'furWolf', 0.86, 0.15,
+    { a: { shade: 1.00 }, t: { shade: 0.84, tint: 'furWolfDark', amount: 0.4, glyph: "'" }, l: { shade: 1.07, tint: 'furWolfLight', amount: 0.3 } },
+    ['atal', 'aaaa', 'laat', 'ataa']);
+  materials.fur_wolf_dark = fabricMat('WILDLIFE (WOLF-D1 v1.60). Wolf saddle, dorsal cape, ear backs, tail tip: near-black grey.', 'furWolfDark', 0.72, 0.13,
+    { a: { shade: 1.00 }, h: { shade: 1.12, tint: 'furWolf', amount: 0.35, glyph: "'" } },
+    ['ahaa', 'aaaa', 'aaha', 'aaaa']);
+  materials.fur_wolf_light = fabricMat('WILDLIFE (WOLF-D1 v1.60). Wolf legs, belly, lower flanks, brows: pale buff-grey.', 'furWolfLight', 0.90, 0.16,
+    { a: { shade: 1.00 }, s: { shade: 0.90, tint: 'furWolf', amount: 0.35 } },
+    ['aaaa', 'asaa', 'aaaa', 'aaas']);
+  // BEAR-D1 (D-069): black bear coat (design/models/voxel_bear_black.js switches to these once palette + detail-pass both have them)
+  colors.furBear = '#2c2d33';       // near-black base coat
+  colors.furBearDark = '#17181c';   // dorsal ridge, partings, legs, paws, belly shadow
+  colors.furBearSheen = '#56606f';  // glossy blue-grey guard-hair tips on the lit hump / shoulders
+  // OB-073-D2f: grass carpet blade ramps (base -> mid -> tip) per field; recipe.carpet in design/levels/overworld_far.js
+  colors.bladeMeadowBase = '#46642c'; colors.bladeMeadow = '#6e9444'; colors.bladeMeadowTip = '#a8c468'; // short green meadow
+  colors.bladeStrawBase = '#7a6a34'; colors.bladeStraw = '#b89a50'; colors.bladeStrawTip = '#e0cc8a';    // tall dry-gold straw field
+  colors.bladeBankBase = '#1f3a20'; colors.bladeBank = '#34602e'; colors.bladeBankTip = '#5f8a3c';       // dark lush river bank
+  colors.bladeWallBase = '#4a5040'; colors.bladeWall = '#74806a'; colors.bladeWallTip = '#a4ac90';       // sparse grey-green near the Outwall
+  materials.fur_bear = fabricMat('WILDLIFE (BEAR-D1). Black bear coat: near-black, faint blue-grey sheen ticks.', 'furBear', 0.70, 0.13,
+    { a: { shade: 1.00 }, t: { shade: 1.12, tint: 'furBearSheen', amount: 0.3, glyph: "'" }, d: { shade: 0.86, tint: 'furBearDark', amount: 0.4 } },
+    ['atad', 'aaaa', 'daat', 'aaaa']);
+  materials.fur_bear_dark = fabricMat('WILDLIFE (BEAR-D1). Black bear ridge, legs, paws, belly shadow: deepest black.', 'furBearDark', 0.62, 0.12,
+    { a: { shade: 1.00 }, h: { shade: 1.12, tint: 'furBear', amount: 0.35, glyph: "'" } },
+    ['ahaa', 'aaaa', 'aaha', 'aaaa']);
+  materials.fur_bear_sheen = fabricMat('WILDLIFE (BEAR-D1). Black bear lit guard-hair tips: blue-grey gloss.', 'furBearSheen', 0.84, 0.15,
+    { a: { shade: 1.00 }, s: { shade: 0.88, tint: 'furBear', amount: 0.4 } },
+    ['aaaa', 'asaa', 'aaaa', 'aaas']);
 
   // ---------------------------------------------------------------------------
   // 8. SEMANTIC + UI COLOR KEYS  (color language, see style-guide.md)
@@ -1578,11 +1829,6 @@
     return errs;
   }
 
-  // ALPHA-01d TEST-ONLY materials (used only by the gpucompare alphaLeaves fixture; no committed world uses them): clones of leaf / leaf_dark
-  // with edge:'soft' (silhouette-only outlines). Real foliage materials stay un-flagged until the owner look (37.17 step d).
-  materials.leaf_softtest = Object.assign({}, materials.leaf, { edge: 'soft' });
-  materials.leaf_dark_softtest = Object.assign({}, materials.leaf_dark, { edge: 'soft' });
-
   var palette = {
     version: 1,
     colors: colors,
@@ -1595,7 +1841,11 @@
     fog: fog,
     timeOfDay: timeOfDay,
     defaultTime: 'morning',
+    // DN-01 (38.39, defaults pending owner DN-Q1/Q3): hours -> look keys (wraps 21 -> 5 night); nightFloor = min ambientI + min glyph luminance.
+    daySchedule: [{ h: 5, key: 'night' }, { h: 6.5, key: 'morning' }, { h: 12, key: 'noon' }, { h: 19, key: 'dusk' }, { h: 21, key: 'night' }],
+    nightFloor: { ambientI: 0.06, lum: 0.18 },
     materials: materials,
+    chargen: chargen,  // CHARGEN-01: skin / hair / eye / dye ramps + hand tint maps + the list of appended keys
     semantic: semantic,
     ui: ui,
     util: {

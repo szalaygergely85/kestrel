@@ -1,0 +1,40 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Stairs_Exterior_Straight",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Stairs_Exterior_Straight.mesh.bin",
+  "triCount": 62,
+  "bbox": [
+    -1,
+    -1.00067,
+    -0.20369,
+    1,
+    1.07725,
+    1
+  ],
+  "ranges": [
+    {"count": 50, "part": "Stairs_Exterior_Straight#0", "start": 0},
+    {"count": 12, "part": "Stairs_Exterior_Straight#1", "start": 50}
+  ],
+  "matKeys": [
+    "MI_RockTrim",
+    "MI_Brick"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "ivy",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "AACAvwAAgL9g5VC+ZmZmv8UggL9g5VC+ZmZmv8UggL8AAIA/AACAvwAAgL9g5VC+ZmZmv8UggL8AAIA/AACAvwAAgL8AAIA/ZmZmv8UggL9g5VC+ZmZmP8UggL9g5VC+ZmZmP8UggL8AAIA/ZmZmv8UggL9g5VC+ZmZmP8UggL8AAIA/ZmZmv8UggL8AAIA/ZmZmP8UggL9g5VC+AACAPwAAgL9g5VC+AACAPwAAgL8AAIA/ZmZmP8UggL9g5VC+AACAPwAAgL8AAIA/ZmZmP8UggL8AAIA/AACAPwAAgL9g5VC+AACAPwAAgD9g5VC+AACAPwAAgD8AAIA/AACAPwAAgL9g5VC+AACAPwAAgD8AAIA/AACAPwAAgL8AAIA/AACAPwAAgD9g5VC+ZmZmPyPbiT9g5VC+ZmZmPyPbiT8AAIA/AACAPwAAgD9g5VC+ZmZmPyPbiT8AAIA/AACAPwAAgD8AAIA/ZmZmPyPbiT9g5VC+ZmZmvyPbiT9g5VC+ZmZmvyPbiT8AAIA/ZmZmPyPbiT9g5VC+ZmZmvyPbiT8AAIA/ZmZmPyPbiT8AAIA/ZmZmvyPbiT9g5VC+AACAvwAAgD9g5VC+AACAvwAAgD8AAIA/ZmZmvyPbiT9g5VC+AACAvwAAgD8AAIA/ZmZmvyPbiT8AAIA/AACAvwAAgD9g5VC+AACAvwAAgL9g5VC+AACAvwAAgL8AAIA/AACAvwAAgD9g5VC+AACAvwAAgL8AAIA/AACAvwAAgD8AAIA/AACAvwAAgL8AAIA/ZmZmv8UggL8AAIA/ZmZmP8UggL8AAIA/AACAvwAAgL9g5VC+ZmZmP8UggL9g5VC+ZmZmv8UggL9g5VC+AACAvwAAgL8AAIA/ZmZmP8UggL8AAIA/AACAPwAAgL8AAIA/AACAvwAAgL9g5VC+AACAPwAAgL9g5VC+ZmZmP8UggL9g5VC+AACAvwAAgL8AAIA/AACAPwAAgL8AAIA/AACAPwAAgD8AAIA/AACAvwAAgL9g5VC+AACAPwAAgD9g5VC+AACAPwAAgL9g5VC+AACAvwAAgL8AAIA/AACAPwAAgD8AAIA/ZmZmPyPbiT8AAIA/AACAvwAAgL9g5VC+ZmZmPyPbiT9g5VC+AACAPwAAgD9g5VC+AACAvwAAgL8AAIA/ZmZmPyPbiT8AAIA/ZmZmvyPbiT8AAIA/AACAvwAAgL9g5VC+ZmZmvyPbiT9g5VC+ZmZmPyPbiT9g5VC+AACAvwAAgL8AAIA/ZmZmvyPbiT8AAIA/AACAvwAAgD8AAIA/AACAvwAAgL9g5VC+AACAvwAAgD9g5VC+ZmZmvyPbiT9g5VC+"
+}

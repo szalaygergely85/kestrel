@@ -6,10 +6,11 @@ export const VITALS_DEFAULTS = Object.freeze({
   maxHp: 30,             // hp, max HP
   invulnSteps: 60,       // steps, invulnerability window after any hit (1 s @ 60 Hz)
   beastDamageScale: 5,   // multiplies a combat:hit's `damage` when `source !== 'player'`
-  fallThreshold6m: 6,    // m, fall damage starts strictly above this
+  fallThreshold6m: 4,    // m, fall damage starts strictly above this (owner 2026-10-11: 4 m, was 6; key name kept for saves/tests)
   fallDamage6m: 5,       // hp, damage for a fall > fallThreshold6m (and <= fallThreshold10m)
   fallThreshold10m: 10,  // m, the bigger fall damage threshold
   fallDamage10m: 10,     // hp, damage for a fall > fallThreshold10m
+  blockKnockSpeed: 5.5,  // m/s, EQ-06: shield-block push-back (about 0.3 m of slide)
   knockbackSpeed: 2,     // m/s, added to the player's body velocity away from the hit's source, once per hit
 
   // ---- VOID-RESPAWN-01 ----
@@ -23,4 +24,9 @@ export const VITALS_DEFAULTS = Object.freeze({
   maxMp: 20,             // mp, max MP
   manaRegenSteps: 120,   // steps, +1 mp every this many steps while not paused (2 s @ 60 Hz)
   manaPauseSteps: 180,   // steps, regen pause after any spendMana (3 s @ 60 Hz)
+
+  // ---- OB-077 (hp regen out of combat) ----
+  hpRegenDelaySteps: 480, // steps since the last damage taken before regen starts (8 s @ 60 Hz)
+  hpRegenSteps: 120,      // steps, +1 hp every this many steps once started (2 s @ 60 Hz)
+  hpRegenCombatR: 15,     // m, no regen while a hostile beast is aggro'd (notice..flinch) within this radius
 });

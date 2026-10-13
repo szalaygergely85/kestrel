@@ -276,7 +276,7 @@
       animations: {
         idle:   { durations: [1000], loop: true, frames: [pellPose(0, false)] },
         // 6 steps at 60 Hz = 100 ms (= US-078 AC "flashes white for 0.1 s"); the head twists 4 -> 8 deg (impact)
-        flash:  { durations: [50, 50], loop: false, interp: 'step', frames: [pellPose(4, true), pellPose(8, true)] },
+        flash:  { durations: [50, 50], loop: false, interp: 'step', frames: [pellPose(4, false), pellPose(8, false)] }  /* HIT-BLEED-01: no white shell; chips fly instead */,
         // follow-through after the flash (optional but recommended): 8 -> -5 -> 2 -> 0 deg, linear, 530 ms = 32 steps
         wobble: { durations: [90, 110, 130, 200], loop: false, frames: [pellPose(8, false), pellPose(-5, false), pellPose(2, false), pellPose(0, false)] }
       },
@@ -474,7 +474,180 @@
       frame(["','", "'|'"], ['TtT', 'tTt']), frame(["' '", '. .'], ['T T', 'u u']), frame(['.  ', '  .'], ['t  ', '  u'])
     ] } } } }
   };
-  A.m3Sprites = { pickupHp: pickupHp, pickupMp: pickupMp, strawPuff: strawPuff };
+  // QL-05 berrySprig: the blue-sprig quest pickup (replaces the pickupMp placeholder). A leafy sprig with blue berries; lit, not emissive.
+  var berrySprig = {
+    name: 'berrySprig', displayName: 'blue sprig', billboard: true, directions: ['S'],
+    desc: 'QL-05 sq.burl.blue pickup: a green sprig hung with blue berries (mana palette, lit).',
+    size: { w: 7, h: 5 }, anchor: { x: 3, y: 4 }, world: { w: 0.5, h: 0.5 },
+    keys: { O: { c: 'manaLight' }, m: { c: 'mana' }, e: { c: 'leafLight' }, f: { c: 'leaf' }, s: { c: 'leafDark' } },
+    animations: { idle: { durations: [1000], loop: true, frames: [frame(
+      ['  o o  ', ' /o|o\\ ', ' \\ | / ', '  \\|/  ', '   |   '],
+      ['  O m  ', ' fmsOf ', ' e s e ', '  fsf  ', '   s   '])] } },
+    lods: { half: { size: { w: 3, h: 3 }, anchor: { x: 1, y: 2 }, animations: { idle: { durations: [1000], loop: true, frames: [frame(
+      ['o o', '\\|/', ' | '], ['O m', 'fsf', ' s '])] } } } }
+  };
+  // -------------------------------------------------------------------------------------------------------------------
+  // M4 (EQ-10 / QL-D1, v1.54): pickupGear, pickupRedCap, smokeColumn. Every colour key already exists in palette.colors.
+  // -------------------------------------------------------------------------------------------------------------------
+  // Fill a colour row from a glyph row: every non-space glyph gets the row's key unless `over` names its own key.
+  function keyRow(glyphs, base, over) {
+    var out = '', i, ch;
+    for (i = 0; i < glyphs.length; i++) {
+      ch = glyphs.charAt(i);
+      out += ch === ' ' ? ' ' : (over && over.charAt(i) !== ' ' && over.charAt(i) !== '' ? over.charAt(i) : base);
+    }
+    return out;
+  }
+  // pickupGear: an old nasal helm of the watch (spangenhelm: riveted dome with a raised centre ridge, brow band,
+  // cheek plates either side of the nasal bar, leather chin strap hanging under it). Steel + leather, lit (not
+  // emissive) except the glint. The sprite pool has no per-entity tint, so the 3 loot tiers are 3 CLIPS of the same
+  // shape: `idle` = worn (grey steel, brown leather band, a rust spot), `sturdy` = green-dyed leather band (ivy),
+  // `fine` = polished steel with a brass band, brass rivets and crest knob. Matches characterView tierFg
+  // (worn uiHint / sturdy heroGreen / fine gold) by hue, kept natural (ivy / brass, never the UI colours).
+  var GEAR_KEYS = {
+    H: { c: 'ironLight' },             // lit steel (dome left, nasal, ridge)
+    h: { c: 'iron' },                  // steel
+    d: { c: 'ironDark' },              // steel, shadow side
+    M: { c: 'mirror' },                // polished steel highlight (fine)
+    u: { c: 'rust' },                  // rust spot (worn)
+    o: { c: 'ironLight' },             // iron rivet
+    B: { c: 'wood' },                  // worn: brown leather band
+    b: { c: 'woodDark' },
+    G: { c: 'ivy' },                   // sturdy: green-dyed leather band
+    g: { c: 'ivyDark' },
+    Y: { c: 'brass' },                 // fine: brass band / crest knob
+    y: { c: 'brassDark' },
+    O: { c: 'brassHot' },              // fine: brass rivet
+    L: { c: 'ropeDark' },              // leather chin strap
+    W: { c: 'white', e: true },        // glint (emissive, 90 ms)
+    P: { c: 'mirror', e: true, fill: false }   // collect pop
+  };
+  //                 0          1          2          3          4          5
+  var GEAR_GL = ['  _n_  ', " /'o#\\ ", '(:#|#%)', '[=o=o=]', ' (/|\\) ', "  `-'  "];
+  function gearFrames(t, glint) {   // t = 'worn' | 'sturdy' | 'fine'; glint 0 = none, 1 = on the dome, 2 = on the brow
+    var band = t === 'worn' ? 'B' : (t === 'sturdy' ? 'G' : 'Y'), bandD = band.toLowerCase(), riv = t === 'fine' ? 'O' : 'o';
+    var hi = t === 'fine' ? 'M' : 'H', gl = GEAR_GL.slice();
+    var fg = [
+      '  h' + (t === 'fine' ? 'Y' : 'H') + 'h  ',
+      ' ' + hi + hi + (t === 'worn' ? 'u' : riv) + 'hd ',
+      hi + hi + 'h' + hi + 'h' + (t === 'worn' ? 'u' : 'd') + 'd',
+      band + band + riv + band + riv + bandD + bandD,
+      ' hhHdd ',
+      '  LLL  '
+    ];
+    if (glint === 1) { gl[1] = " /*o#\\ "; fg[1] = ' ' + hi + 'W' + fg[1].substr(3); }
+    if (glint === 2) { gl[3] = '[=o=o*]'; fg[3] = fg[3].substr(0, 5) + 'W' + fg[3].substr(6); }
+    return frame(gl, fg);
+  }
+  function gearHalf(t, glint) {
+    var band = t === 'worn' ? 'B' : (t === 'sturdy' ? 'G' : 'Y'), hi = t === 'fine' ? 'M' : 'H';
+    return frame([glint ? '/*\\' : '/#\\', '[=]', '/|\\'], [hi + (glint ? 'W' : 'h') + 'd', band + band + band.toLowerCase(), 'hHd']);
+  }
+  var GEAR_DUR = [1500, 90, 90];
+  function gearAnims(half) {
+    var out = {}, tiers = { idle: 'worn', sturdy: 'sturdy', fine: 'fine' }, k, t;
+    for (k in tiers) {
+      t = tiers[k];
+      out[k] = { durations: GEAR_DUR, loop: true, frames: half ? [gearHalf(t, 0), gearHalf(t, 1), gearHalf(t, 0)]
+        : [gearFrames(t, 0), gearFrames(t, 1), gearFrames(t, 2)] };
+    }
+    out.collect = { durations: [50, 50, 50], loop: false, frames: half ? popFrames(3, 3, 'P', 'H') : popFrames(7, 6, 'P', 'H') };
+    return out;
+  }
+  var pickupGear = {
+    name: 'pickupGear', displayName: 'gear', billboard: true, directions: ['S'],
+    desc: 'EQ-10 gear world drop: an old riveted nasal helm with a leather chin strap. Clips = loot tier: idle (worn: grey ' +
+          'steel, brown leather band, rust), sturdy (green-dyed band), fine (polished, brass band + rivets + knob). A white ' +
+          'glint runs dome -> brow every 1.7 s. 0.26 m tall: ~6.8 rows at 4 m on 240x90 (full tier, scale ~1.1).',
+    size: { w: 7, h: 6 }, anchor: { x: 3, y: 5 }, world: { w: 0.30, h: 0.26 },
+    keys: GEAR_KEYS, outline: { k: 0.4 },
+    tierClips: { worn: 'idle', sturdy: 'sturdy', fine: 'fine' },
+    animations: gearAnims(false),
+    lods: { half: { size: { w: 3, h: 3 }, anchor: { x: 1, y: 2 }, animations: gearAnims(true) } }
+  };
+  // pickupRedCap: a fly agaric (Amanita muscaria) with a small button cap beside it: red cap with white warts, pale
+  // gills under the rim, a white stem with its ring, moss at the foot. Lit, not emissive; a dew drop catches the light.
+  var CAP_KEYS = {
+    R: { c: 'goreRedLight' },   // cap, lit top
+    r: { c: 'goreRed' },        // cap
+    D: { c: 'goreRedDark' },    // cap, shadow rim
+    w: { c: 'linenLight' },     // white warts + ring
+    g: { c: 'petalWhiteDark' }, // gills under the cap
+    s: { c: 'linen' },          // stem
+    S: { c: 'linenDark' },      // stem shadow
+    m: { c: 'moss' },           // moss / grass at the foot
+    W: { c: 'white', e: true }, // dew glint
+    P: { c: 'linenLight', e: true, fill: false }
+  };
+  //               0          1          2          3          4
+  var CAP_GL = [' _.-._ ', '/o:.O;\\', "`-===-'", '  |=| n', " '|_|'|"];
+  var CAP_FG = [' RRRrr ', 'RwrrwrD', 'DgggggD', '  sws r', ' msSsmS'];
+  function capFrame(glint) {
+    var gl = CAP_GL.slice(), fg = CAP_FG.slice();
+    if (glint) { gl[1] = '/o:*O;\\'; fg[1] = 'RwrWwrD'; }
+    return frame(gl, fg);
+  }
+  function capHalf(glint) { return frame(['/' + (glint ? '*' : 'o') + '\\', "`-'", ' | '], ['R' + (glint ? 'W' : 'w') + 'D', 'DgD', ' s ']); }
+  var pickupRedCap = {
+    name: 'pickupRedCap', displayName: 'red cap', billboard: true, directions: ['S'],
+    desc: 'QL-D1 sq.rook.caps pickup (cap1..5): a fly agaric, red cap with white warts, pale gills, ringed white stem, a ' +
+          'small button cap beside it. Lit; a dew drop glints every 2 s. 0.20 m tall: ~5 rows at 4 m on 240x90.',
+    size: { w: 7, h: 5 }, anchor: { x: 3, y: 4 }, world: { w: 0.28, h: 0.20 },
+    keys: CAP_KEYS, outline: { k: 0.4 },
+    animations: {
+      idle:    { durations: [2000, 110], loop: true, frames: [capFrame(false), capFrame(true)] },
+      collect: { durations: [50, 50, 50], loop: false, frames: popFrames(7, 5, 'P', 'r') }
+    },
+    lods: { half: { size: { w: 3, h: 3 }, anchor: { x: 1, y: 2 }, animations: {
+      idle:    { durations: [2000, 110], loop: true, frames: [capHalf(false), capHalf(true)] },
+      collect: { durations: [50, 50, 50], loop: false, frames: popFrames(3, 3, 'P', 'r') }
+    } } }
+  };
+  // smokeColumn: a thin chimney / cook-fire smoke column seen far off above the trees north of northLook (anchors
+  // smoke1..3; no village built). Rises straight, puffs drift up one row per frame (3 frames, 1.35 s), then leans east
+  // and breaks into wisps at the top. Glyph-only (fill: false) so the sky shows through; denser ash grey at the foot,
+  // pale steam-white higher up, steamDim where it dissolves. Billboard defaults like farTower (unlit, far fog).
+  var SMOKE_KEYS = {
+    a: { c: 'ash', fill: false },          // dense foot (closest to the fire)
+    L: { c: 'ashLight', fill: false },     // lower column
+    w: { c: 'steam', fill: false },        // upper column (sunlit white-grey)
+    d: { c: 'steamDim', fill: false }      // dissolving top wisps
+  };
+  var SMOKE_MID = ['  (  ', '  ;) ', ' (:  '];       // the rising-puff cycle, rows 3..9
+  var SMOKE_TOP = [['   .\'', '  .~-', ' (~\' '], ['  \' .', '   ~-', '  (~\''], ['   \'.', '  -~\'', ' .(~ ']];
+  var SMOKE_ROWKEY = ['d', 'd', 'w', 'w', 'w', 'w', 'L', 'L', 'L', 'a', 'a', 'a'];
+  function smokeFrame(f) {
+    var gl = SMOKE_TOP[f].slice(), fg = [], r;
+    for (r = 3; r <= 9; r++) gl.push(SMOKE_MID[(r + f) % 3]);
+    gl.push('  :  ', '  |  ');
+    for (r = 0; r < 12; r++) fg.push(keyRow(gl[r], SMOKE_ROWKEY[r]));
+    return frame(gl, fg);
+  }
+  var SMOKE_MIN_MID = [' ( ', ' ;)', '(: '];
+  var SMOKE_MIN_TOP = [" .'", "  ~", " '."];
+  var SMOKE_MIN_KEY = ['d', 'w', 'w', 'L', 'a', 'a'];
+  function smokeMin(f) {
+    var gl = [SMOKE_MIN_TOP[f]], fg = [], r;
+    for (r = 1; r <= 4; r++) gl.push(SMOKE_MIN_MID[(r + f) % 3]);
+    gl.push(' | ');
+    for (r = 0; r < 6; r++) fg.push(keyRow(gl[r], SMOKE_MIN_KEY[r]));
+    return frame(gl, fg);
+  }
+  var SMOKE_DUR = [450, 450, 450];
+  var smokeColumn = {
+    name: 'smokeColumn', displayName: 'smoke', billboard: true, directions: ['S'],
+    desc: 'QL-D1 / QL-17 far smoke column (anchors smoke1..3 north of northLook): thin, grey-white, rising, leaning east ' +
+          'at the top. Far-only scenery: place 150-400 m away, never walk-up close.',
+    size: { w: 5, h: 12 }, anchor: { x: 2, y: 11 }, world: { w: 6, h: 28 },
+    keys: SMOKE_KEYS,
+    animations: { idle: { durations: SMOKE_DUR, loop: true, frames: [smokeFrame(0), smokeFrame(1), smokeFrame(2)] } },
+    lods: { min: { size: { w: 3, h: 6 }, anchor: { x: 1, y: 5 }, animations: {
+      idle: { durations: SMOKE_DUR, loop: true, frames: [smokeMin(0), smokeMin(1), smokeMin(2)] } } } },
+    // Billboard entity defaults (README 4.1, as farTower): copy onto the entity's `billboard` component.
+    unlit: true, fogModel: 'far', fogMax: 0.55, minCells: { w: 3, h: 6 }, detailRows: 14
+  };
+  A.m3Sprites = { pickupHp: pickupHp, pickupMp: pickupMp, strawPuff: strawPuff, berrySprig: berrySprig,
+                  pickupGear: pickupGear, pickupRedCap: pickupRedCap, smokeColumn: smokeColumn };
 
   // View-only pickup behaviour (presentPickups, architecture 30.2 US-080b: "the bob and the last-180-step blink are
   // view-only, no sim state"). Steps are the 60 Hz sim steps.
@@ -995,6 +1168,94 @@
     };
   })();
 
+  // 6d. CH1-D1a doorBar: the barred plank door in the tower's south-west doorway (content/levels/tower.level.json Q 15,11).
+  //     20 x 4 x 46 voxels at 0.05 m = 1.0 (fills the 1 m doorway) x 0.2 x 2.3 m. Front (y0) faces north = into the tower.
+  //     y0-y1: the timber bar (timber_old, a pale fresh gouge where it is jammed) held in two iron U-brackets on the jambs;
+  //     y2-y3: the door leaf, five vertical planks (wood, dark timber seams, staggered worn tops) on two iron straps.
+  //     Parts: frameW / frameE (brackets, never move), bar, leaf (hinge = EAST edge, BACK (outer) face of the leaf).
+  //     Clips (prop variant = clip): closed / opening / closing (DOOR-TOGGLE-01, door.toggle: E opens/closes, bar stowed) | open (TOWER-DOOR-OPEN-01, what the level places: no bar, leaf swung out) |
+  //     barred (rest, collider on) | unbar (0.6 s, events thud 3) - barred/unbar kept only for compatibility.
+  //     ROTATION (owner bug 2026-10-10 "door disappeared"): the old pose (west hinge on the FRONT face, rz +100) laid the
+  //     whole leaf on the wall side of its hinge line, i.e. inside wall cell q (14,11) - invisible. Engine Rz: +deg turns
+  //     +x toward +y, model +y = world south (facing 0). Now: hinge at the east edge of the OUTER face [20,4,0], rz -80:
+  //     the leaf swings south out of the tower along the east jamb (f / t walls), its body on the passage side of the
+  //     hinge line, so it never enters a wall cell; the stair turns west at T, so the west ~0.7 m stays clear.
+  //     The bar slides 0.9 m west into its wall socket (hidden in the stone of q) - no fallen bar. Mats: all merged.
+  (function () {
+    var SX = 20, SY = 4, SZ = 46, OPEN_YAW = -80;
+    var MATS = { w: 'wood', t: 'timber_old', d: 'iron_dark' };
+    var g = [], x, y, z;
+    for (z = 0; z < SZ; z++) { g.push([]); for (y = 0; y < SY; y++) { g[z].push([]); for (x = 0; x < SX; x++) g[z][y].push('.'); } }
+    // leaf (y2-y3): planks x 4 wide, seam column x%4 === 3 dark; tops 43/44 staggered, worn corners
+    for (x = 0; x < SX; x++) {
+      var plank = (x / 4) | 0, top = plank % 2 ? 43 : 44, seam = x % 4 === 3;
+      if (x % 4 === 0 && plank % 2) top = 42;
+      for (z = 0; z < top; z++) for (y = 2; y < SY; y++) {
+        var strap = y === 2 && ((z >= 7 && z <= 8) || (z >= 34 && z <= 35));
+        var nail = y === 2 && !strap && (z === 6 || z === 9 || z === 33 || z === 36) && x % 4 === 1;
+        g[z][y][x] = strap || nail ? 'd' : (seam || z === 0 ? 't' : 'w');
+      }
+    }
+    // bar (y0-y1), x3..16, z18..21: dark old timber, lighter top edge, a pale gouge at x12-13
+    for (x = 3; x < 17; x++) for (z = 18; z < 22; z++) for (y = 0; y < 2; y++) {
+      g[z][y][x] = (z === 21 && y === 0) || ((x === 12 || x === 13) && z >= 20) ? 'w' : 't';
+    }
+    // iron U-brackets on the jambs: x0-2 and x17-19, z16..23 (they hide the bar ends)
+    for (z = 16; z < 24; z++) for (y = 0; y < 2; y++) for (x = 0; x < SX; x++) {
+      if (x < 3 || x > 16) g[z][y][x] = 'd';
+    }
+    var layers = g.map(function (L) { return L.map(function (r) { return r.join(''); }); });
+    var BAR_DOWN = { pos: [0, 4, -18], rot: [0, 0, 8] };
+    var BAR_STOWED = { pos: [-18, 0, 0] };          // bar x3..17 -> x-15..-1 = world x 14.25-14.95: inside wall q, unseen
+    A.voxelModels.doorBar = {
+      name: 'doorBar',
+      displayName: 'barred door',
+      desc: 'CH1-D1a / TOWER-DOOR-OPEN-01: a weathered plank door (five planks, two iron straps) in the tower\'s ' +
+            'south-west doorway, standing open: hinged on the east jamb and swung 80 deg out of the tower, the empty ' +
+            'iron bar brackets on both jambs. (Legacy clips barred / unbar keep the timber bar.) 1.0 x 0.2 x 2.3 m.',
+      voxel: {
+        version: 1,
+        cellM: 0.05,
+        size: [SX, SY, SZ],
+        anchor: [10, 0, 0],                         // front (inside) face, centre, floor: the level point
+        mats: MATS,
+        layers: layers,
+        parts: {
+          frameW: { box: [0, 0, 16, 3, 2, 24], pivot: [1.5, 1, 16] },
+          frameE: { box: [17, 0, 16, 20, 2, 24], pivot: [18.5, 1, 16] },
+          bar:    { box: [3, 0, 18, 17, 2, 22], pivot: [10, 1, 20] },
+          leaf:   { box: [0, 2, 0, 20, 4, 46], pivot: [20, 4, 0] }       // hinge: east edge, leaf back (outer) face
+        },
+        animations: {
+          barred: { durations: [1000], loop: true, frames: [{}] },
+          unbar: { durations: [90, 110, 160, 240], loop: false, events: { thud: 3 }, frames: [
+            {},
+            { bar: { pos: [0, 0, 1.5] } },                                  // the sword bites: bar lifts in its brackets
+            { bar: { pos: [0, 2, -8], rot: [0, 0, 4] }, leaf: { rot: [0, 0, -15] } },
+            { bar: BAR_DOWN, leaf: { rot: [0, 0, OPEN_YAW] } }
+          ] },
+          open: { durations: [1000], loop: true, frames: [{ bar: BAR_STOWED, leaf: { rot: [0, 0, OPEN_YAW] } }] },
+          // DOOR-TOGGLE-01: closed = leaf shut, bar stowed in its wall socket (no bar across); opening / closing = 0.8 s swing
+          closed: { durations: [1000], loop: true, frames: [{ bar: BAR_STOWED }] },
+          opening: { durations: [250, 300, 250], loop: false, frames: [
+            { bar: BAR_STOWED, leaf: { rot: [0, 0, OPEN_YAW * 0.3] } },
+            { bar: BAR_STOWED, leaf: { rot: [0, 0, OPEN_YAW * 0.7] } },
+            { bar: BAR_STOWED, leaf: { rot: [0, 0, OPEN_YAW] } }
+          ] },
+          closing: { durations: [250, 300, 250], loop: false, frames: [
+            { bar: BAR_STOWED, leaf: { rot: [0, 0, OPEN_YAW * 0.7] } },
+            { bar: BAR_STOWED, leaf: { rot: [0, 0, OPEN_YAW * 0.3] } },
+            { bar: BAR_STOWED }
+          ] }
+        },
+        mounts: { prompt: { at: [10, 0, 20], part: 'bar' } }              // = the door.unbar aim point (z + 1.0)
+      },
+      clipFor: { barred: 'barred', unbarring: 'unbar', open: 'open', closed: 'closed', opening: 'opening', closing: 'closing' },
+      readability: { note: 'At 3 m on 400x150 ~10 x 22 cells: brown plank stripes with two dark iron bands; the darker bar ' +
+                     'across at hip height with iron blocks at both ends reads as "barred". Open: dark gap + daylight.' }
+    };
+  })();
+
   // ===================================================================================================================
   // 7. ATTACH: only once the materials / colours are merged (a missing v2 record would switch the GPU path off).
   // ===================================================================================================================
@@ -1013,6 +1274,9 @@
         for (k in nm) if (!P.materials[nm[k]] || !DP.materials[nm[k]]) nok = false;
         if (nok && !A.models[nk]) { A.models[nk] = A.voxelModels[nk]; done.push(nk); }
       }
+      var dm = A.voxelModels.doorBar.voxel.mats, dok = true;   // 6d CH1-D1a barred door
+      for (k in dm) if (!P.materials[dm[k]] || !DP.materials[dm[k]]) dok = false;
+      if (dok && !A.models.doorBar) { A.models.doorBar = A.voxelModels.doorBar; done.push('doorBar'); }
       for (a = 0; a < AWK_KEYS.length; a++) {
         if (ok && !A.models[AWK_KEYS[a]]) { A.models[AWK_KEYS[a]] = A.voxelModels[AWK_KEYS[a]]; done.push(AWK_KEYS[a]); }
       }

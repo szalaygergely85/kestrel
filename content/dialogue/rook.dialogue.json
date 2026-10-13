@@ -1,0 +1,106 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "rook",
+  "speakers": {
+    "rook": {"label": "ROOK"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "rook.call.ready.1", "requires": "s.mq.bend.call.ready"},
+    {"node": "rook.call.active", "requires": "s.mq.bend.call.active"},
+    {"node": "rook.mirror.active", "requires": "s.mq.ford.mirror.active"},
+    {"node": "rook.ford.1", "requires": "s.mq.ford.mirror.available"},
+    {"node": "rook.ford.repeat2", "requires": "s.mq.smoke.done"},
+    {"node": "rook.ford.repeat", "requires": "rook.mirror.told"},
+    {"node": "rook.mirror.done.1", "requires": "s.waystone.ws_ford.woken"},
+    {"node": "rook.repeat", "requires": "s.mq.bend.call.done"},
+    {"node": "rook.meet.1"}
+  ],
+  "nodes": {
+    "rook.meet.1": {"clip": "caw", "lines": [
+      "Ha. The fell-bird walks."
+    ], "next": "rook.meet.2", "speaker": "rook"},
+    "rook.meet.2": {"lines": [
+      "...You talk too."
+    ], "next": "rook.meet.3", "speaker": "you"},
+    "rook.meet.3": {"lines": [
+      "Talk. Count. Keep. Crows do all three."
+    ], "next": "rook.meet.4", "speaker": "rook"},
+    "rook.meet.4": {"lines": [
+      "Rook, the others call me."
+    ], "next": "rook.meet.5", "speaker": "rook"},
+    "rook.meet.5": {"lines": [
+      "Your stone blinks now. Like the far one."
+    ], "next": "rook.meet.6", "speaker": "rook"},
+    "rook.meet.6": {"lines": [
+      "It's passing the call along. Toward home."
+    ], "next": "rook.meet.7", "speaker": "you"},
+    "rook.meet.7": {"lines": [
+      "The loud hill? The loud hill never listens."
+    ], "next": "rook.meet.8", "speaker": "rook"},
+    "rook.meet.8": {"end": true, "lines": [
+      "Watch it blink. Count. Then see the knot."
+    ], "setFlag": "s.mq.bend.call.accept", "speaker": "rook"},
+    "rook.call.active": {"end": true, "lines": [
+      "Count the blinks. Then the knot. Then me."
+    ], "speaker": "rook"},
+    "rook.call.ready.1": {"lines": [
+      "Counted? Nine blinks, then quiet. Again."
+    ], "next": "rook.call.ready.2", "speaker": "rook"},
+    "rook.call.ready.2": {"lines": [
+      "That knot. A lamp-trimmer tied it."
+    ], "next": "rook.call.ready.3", "speaker": "you"},
+    "rook.call.ready.3": {"clip": "tilt", "lines": [
+      "Long ago. Nobody untied it. I tried."
+    ], "next": "rook.call.ready.4", "speaker": "rook"},
+    "rook.call.ready.4": {"lines": [
+      "Here. Paper. River on it. Not shiny."
+    ], "next": "rook.call.ready.5", "speaker": "rook"},
+    "rook.call.ready.5": {"lines": [
+      "West is the river. The next stone is cold."
+    ], "next": "rook.call.ready.6", "speaker": "rook"},
+    "rook.call.ready.6": {"clip": "caw", "end": true, "lines": [
+      "I will be there first. Wings."
+    ], "setFlag": "s.mq.bend.call.handin", "speaker": "rook"},
+    "rook.repeat": {"end": true, "lines": [
+      "River. West. Do not drown, fell-bird."
+    ], "speaker": "rook"},
+    "rook.ford.1": {"lines": [
+      "Slow walker. Wet boots?"
+    ], "next": "rook.ford.2", "speaker": "rook"},
+    "rook.ford.2": {"lines": [
+      "The relay here is dead. Its glass is gone."
+    ], "next": "rook.ford.3", "speaker": "you"},
+    "rook.ford.3": {"clip": "tilt", "lines": [
+      "Gone? No. Kept. Kept is different."
+    ], "next": "rook.ford.4", "speaker": "rook"},
+    "rook.ford.4": {"lines": [
+      "You took it."
+    ], "next": "rook.ford.5", "speaker": "you"},
+    "rook.ford.5": {"lines": [
+      "It fell. I found it. Then it was mine."
+    ], "next": "rook.ford.6", "speaker": "rook"},
+    "rook.ford.6": {"lines": [
+      "Old house roof, by the crossing. Take it."
+    ], "next": "rook.ford.7", "speaker": "rook"},
+    "rook.ford.7": {"end": true, "lines": [
+      "I have other shinies. Many."
+    ], "setFlag": "s.mq.ford.mirror.accept", "speaker": "rook"},
+    "rook.mirror.active": {"end": true, "lines": [
+      "Old house roof. By the crossing. Climb."
+    ], "speaker": "rook"},
+    "rook.mirror.done.1": {"clip": "caw", "lines": [
+      "It blinks. Like Bend. Like the far one."
+    ], "next": "rook.mirror.done.2", "speaker": "rook"},
+    "rook.mirror.done.2": {"end": true, "lines": [
+      "My glass, your stone. A fair loan."
+    ], "setFlag": "rook.mirror.told", "speaker": "rook"},
+    "rook.ford.repeat": {"end": true, "lines": [
+      "North, smoke. Fires. People, maybe. Go look."
+    ], "speaker": "rook"},
+    "rook.ford.repeat2": {"end": true, "lines": [
+      "Wet boots, full pack. Still a slow walker."
+    ], "speaker": "rook"}
+  }
+}

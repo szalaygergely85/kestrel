@@ -22,7 +22,7 @@ export const SPRITES_BLOCK = defineUniformBlock('SpritesU', [
   { name: 'dimMul', type: 'vec4' },      // float uDimMul[4]
   { name: 'dimRect', type: 'vec4', count: 4 }, // x0, y0, x1, y1 (scene cells, half-open)
 ]);
-export const SPRITES_TEXTURES = Object.freeze(['uint', 'uint', 'float', 'float', 'float', 'uint', 'float', 'uint', 'uint', 'float', 'float']);
+export const SPRITES_TEXTURES = Object.freeze(['uint', 'uint', 'float', 'float', 'float', 'uint', 'float', 'uint', 'uint', 'float', 'float', 'float']);
 export const SPRITES_TARGETS = Object.freeze(['rgba8', 'rgba8']);
 
 export const SPRITES_WGSL = `${SPRITES_BLOCK.wgsl}
@@ -37,6 +37,7 @@ export const SPRITES_WGSL = `${SPRITES_BLOCK.wgsl}
 @group(0) @binding(8) var uFadeRamp: texture_2d<u32>;    // R8UI, uFadeRampLen x 1: lut.ramp (ascii codes)
 @group(0) @binding(9) var uPart: texture_2d<f32>;        // RGBA8: rgb colour, a = glyph index / 255
 @group(0) @binding(10) var uPartZ: texture_2d<f32>;      // R32F: depth (0 = empty)
+@group(0) @binding(11) var uPartBg: texture_2d<f32>;     // RGBA8: rgb = fg * bgMix (premixed), a = bgMix (PART-VIS-01)
 @group(1) @binding(0) var<uniform> su: SpritesU;
 
 const MAX_SPRITES: i32 = ${MAX_SPRITES};
@@ -82,7 +83,7 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
     let x0 = i32(r.x); let y0 = i32(r.y);
     if (cell.x < x0 || cell.x >= x0 + i32(r.z) || cell.y < y0 || cell.y >= y0 + i32(r.w)) { continue; }
     let p = textureLoad(uSpr, vec2i(1, s), 0);
-    if (p.y < SPRITE_NEAR_DEPTH) { continue; } // BUG-FIRE-001: same cutoff for lit and emissive sprites.
+    if (p.y < SPRITE_NEAR_DEPTH && textureLoad(uSpr, vec2i(3, s), 0).w < 0.5) { continue; } // nearOk (T3.w) = view-model attached sprite // BUG-FIRE-001: same cutoff for lit and emissive sprites.
     if (!(p.y < cellDepth) || !(p.y < best)) { continue; }
     let a = textureLoad(uSpr, vec2i(2, s), 0);
     let sx = i32(floor(f32(cell.x - x0) * p.x));
@@ -118,7 +119,8 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
   if (pz > 0.0 && pz < cellDepth && pz < best) {
     let pcol = textureLoad(uPart, cell, 0);
     o.fg = pcol;
-    o.bg = vec4f(ebg.rgb, 1.0);
+    let pbg = textureLoad(uPartBg, cell, 0);
+    o.bg = vec4f(min(ebg.rgb * (1.0 - pbg.a) + pbg.rgb, vec3f(1.0)), 1.0);
   }
 
   // GPU scene fade (fadeGlyph / applySceneFade ported exactly)

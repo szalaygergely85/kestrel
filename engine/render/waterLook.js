@@ -17,11 +17,11 @@
 //                  32 mode (0 still, 1 linear, 2 radial), 33..34 circle centre, 35 nAng (radial angular streak count)
 //   36.1: 36 ou (packed drift until fill), 37 wavePhase, 38 tintDepth, 39 shoreW; 40..43 shape (rect bounds or circle centre/radius)
 //         44..46 foam codes, 47 foamN, 48..50 rim.rgb, 51 shapeKind (0 rect, 1 circle), 52 foamDepth, 53 foamFar;
-//         54..55 surfaces: ripple glyph code, rippleK; sheets: fallSpeed, sheetAlpha   (S8-B2-13, 38.14)
+//         54..55 sheets only: fallSpeed, sheetAlpha (surfaces leave 54..55 unused - S8-B2-13b, 38.14: ripple glyph/
+//         gain are a single global WaterCompositeU uniform now, not a per-slot look field)
 
 import { hashFastU } from './terrainShade.js';
-import { RIPPLE_MAX, RIPPLE_LIFE, RIPPLE_SPEED, RIPPLE_R0, RIPPLE_HALF_W } from '../world/water.js';
-import { STEP } from '../core/loop.js';
+import { RIPPLE_SPEED, RIPPLE_W, RIPPLE_LIFE } from '../fx/ripples.js';
 
 export const WL_STRIDE = 56;
 export const WL_RAMP_MAX = 8;
@@ -32,10 +32,18 @@ export const WATER_FLOW_SALT = 59;
 export const WATER_FALL_SALT = 61;
 /** Flow below this speed (m/s) is still water: the 32.2 time-bucket hash, no streaks. */
 export const FLOW_MIN = 0.05;
-/** Waterfall sheets later take slots 8..11 (35.3). */
-export const WL_SLOTS = 12;
-/** Splash-ripple strength threshold (S8-B2-13, 38.14): below this, a ring is invisible (both twins). */
-export const RIPPLE_MIN = 0.15;
+/** Slots 0..7 regions, 8..11 waterfall sheets (35.3), 12..13 river ribbons (38.45, RIVER-03: the GPU uniform now holds all 14). */
+export const WL_SLOTS = 14;
+/** JS-twin slot table size (RIVER-02); equal to WL_SLOTS since RIVER-03 ported the WGSL (kept as an alias). */
+export const WL_TABLE_SLOTS = WL_SLOTS;
+export const RIVER_SLOT0 = 12;
+/** Ripple ring slots in `WaterCompositeU.ripple` (S8-B2-13b, 38.14): `array<vec4f, 8>`, matches `createRipples()`'s default cap. */
+export const RIPPLE_SLOTS = 8;
+/** Splash-ripple accumulated-strength threshold (S8-B2-13b, 38.14): below this, no ring shows (both twins). */
+export const RIPPLE_ACC_MIN = 0.2;
+/** Engine defaults for the global ripple glyph/gain uniform (S8-B2-13b, 38.14); the designer look data may override via `setLook` (lane C, NEEDS B1-main). */
+export const DEFAULT_RIPPLE_GLYPH = 'o'.charCodeAt(0) - 32;
+export const DEFAULT_RIPPLE_GAIN = 0.5;
 
 /** The engine default look (the designer's `assets.waterLooks.water` overrides it by name). */
 export const DEFAULT_WATER_LOOK = Object.freeze({
@@ -45,7 +53,7 @@ export const DEFAULT_WATER_LOOK = Object.freeze({
   foamRamp: '*o.', foamDepth: 0.3, foamFar: 40,
   fallRamp: "|:'", fallSpeed: 8, highlight: [235, 245, 255], sheetAlpha: 0.75,
   streak: '-', streakLen: 1.0, streakW: 0.35, streakK: 0.7, // US-141a (35.4)
-  ripple: 'o', rippleK: 0.6, // S8-B2-13 (38.14): row 54/55, surfaces only
+  shoreFade: 0.15, streakT: 0.8, rapidFoam: 0.6, riverFarM: 1200, // 38.45 river-only keys (packRiverLook)
 });
 
 function bad(name, msg) { throw new Error(`waterLook "${name}": ${msg}`); }
@@ -86,8 +94,6 @@ export function packWaterLook(name, look, sheet = false) {
   if (!Number.isFinite(L.fallSpeed) || L.fallSpeed < 8) bad(name, 'fallSpeed must be finite and >= 8');
   if (!(L.sheetAlpha >= 0 && L.sheetAlpha <= 1)) bad(name, 'sheetAlpha must be 0..1');
   rgb3(name, 'highlight', L.highlight);
-  if (typeof L.ripple !== 'string' || L.ripple.length !== 1 || L.ripple.charCodeAt(0) < 33 || L.ripple.charCodeAt(0) > 126) bad(name, '"ripple" must be one printable ASCII glyph (no space)');
-  if (!(L.rippleK >= 0 && L.rippleK <= 1)) bad(name, '"rippleK" must be 0..1');
   const r = new Float32Array(WL_STRIDE);
   r[24] = L.streak.charCodeAt(0) - 32; r[25] = L.streakLen; r[26] = L.streakW; r[27] = L.streakK;
   r[0] = L.shallow[0]; r[1] = L.shallow[1]; r[2] = L.shallow[2]; r[3] = L.opaqueAt;
@@ -105,8 +111,6 @@ export function packWaterLook(name, look, sheet = false) {
     for (let i = 0; i < WL_RAMP_MAX; i++) r[16 + i] = i < L.fallRamp.length ? L.fallRamp.charCodeAt(i) - 32 : 0;
     r[8] = L.highlight[0]; r[9] = L.highlight[1]; r[10] = L.highlight[2];
     r[54] = L.fallSpeed; r[55] = L.sheetAlpha;
-  } else {
-    r[54] = L.ripple.charCodeAt(0) - 32; r[55] = L.rippleK;
   }
   return r;
 }
@@ -116,15 +120,29 @@ export function packWaterLook(name, look, sheet = false) {
  * @property {Map<string, Float32Array>} byName - packed rows by look name
  * @property {Map<string, Float32Array>} fallByName - sheet look rows
  * @property {Float32Array} fallFallback - default sheet look
+ * @property {Map<string, Float32Array>} riverByName - river-only keys by look name (packRiverLook)
+ * @property {Float32Array} riverFallback - default river-only keys
  * @property {Float32Array} fallback - the packed engine default (any region whose look name is not in `byName`)
  */
 
+/**
+ * River-only look keys (38.45) as a 4-float row: [shoreFade (m of column below which alpha fades), streakT (s per streak cell),
+ * rapidFoam (foam glyph probability at full rapid), riverFarM (cull distance)]. Load-time only.
+ * @param {string} name @param {any} look @returns {Float32Array}
+ */
+export function packRiverLook(name, look) {
+  const L = { ...DEFAULT_WATER_LOOK, ...(look || {}) };
+  for (const key of ['shoreFade', 'streakT', 'riverFarM']) if (typeof L[key] !== 'number' || !Number.isFinite(L[key]) || !(L[key] > 0)) bad(name, `"${key}" must be finite and > 0`);
+  if (!(L.rapidFoam >= 0 && L.rapidFoam <= 1)) bad(name, '"rapidFoam" must be 0..1');
+  return Float32Array.of(L.shoreFade, L.streakT, L.rapidFoam, L.riverFarM);
+}
+
 /** Resolves the designer table (`{name: look}`, may be absent) once. @param {Record<string, any>|null|undefined} table @returns {WaterLooks} */
 export function resolveWaterLooks(table) {
-  const byName = new Map(), fallByName = new Map();
+  const byName = new Map(), fallByName = new Map(), riverByName = new Map();
   const names = table ? Object.keys(table) : [];
-  for (const n of names) { byName.set(n, packWaterLook(n, table[n])); fallByName.set(n, packWaterLook(n, table[n], true)); }
-  return { byName, fallByName, fallback: packWaterLook('(default)', null), fallFallback: packWaterLook('(default)', null, true) };
+  for (const n of names) { byName.set(n, packWaterLook(n, table[n])); fallByName.set(n, packWaterLook(n, table[n], true)); riverByName.set(n, packRiverLook(n, table[n])); }
+  return { byName, fallByName, riverByName, fallback: packWaterLook('(default)', null), fallFallback: packWaterLook('(default)', null, true), riverFallback: packRiverLook('(default)', null) };
 }
 
 const _defaultLooks = resolveWaterLooks(null);
@@ -165,6 +183,19 @@ export function fillWaterSlotTable(sel, world, looks, out, timeSec = 0) {
         out[b + 28] = fx / m; out[b + 29] = fy / m; out[b + 30] = m; out[b + 31] = (m * timeSec) % period; out[b + 32] = 1;
       }
     }
+  }
+  // 38.45: river slots 12..13 (JS twin only; `out` must hold WL_TABLE_SLOTS rows). Row = the surface look + the flow block 28..35 repurposed:
+  // 28 o = (t / streakT) mod 1024 (f64 fold), 29 streakT, 30 feather, 31 shoreFade, 32 mode 3, 33 rapidFoam; 51 shapeKind 3.
+  const rc = out.length >= WL_TABLE_SLOTS * WL_STRIDE ? (sel.riverCount || 0) : 0;
+  for (let k = 0; k < rc; k++) {
+    const s = RIVER_SLOT0 + k, b = s * WL_STRIDE, ri = sel.region[s];
+    const name = wt.lookNames[wt.look[ri]], rl = looks.riverByName.get(name) || looks.riverFallback;
+    out.set(looks.byName.get(name) || looks.fallback, b);
+    out[b + 51] = 3;
+    out[b + 36] = (out[b + 36] / out[b + 14] * timeSec) % 1024;
+    out[b + 37] = (timeSec * out[b + 11]) % 1024;
+    out[b + 28] = (timeSec / rl[1]) % 1024; out[b + 29] = rl[1]; out[b + 30] = wt.rivers[wt.riv[ri]].feather; out[b + 31] = rl[0];
+    out[b + 32] = 3; out[b + 33] = rl[2]; out[b + 34] = 0; out[b + 35] = 0;
   }
   for (let k = 0; k < (sel.sheetCount || 0); k++) {
     const s = 8 + k, fall = sel.sheets[s], b = s * WL_STRIDE;
@@ -232,46 +263,31 @@ export function waterFogParams(table, palette, hasTerrain, out) {
   return out;
 }
 
-// ---- S8-B2-13 splash ripples (38.14): packed densely, 4 floats/ring (x, y, r, s); shared by both composite twins ----
+// ---- S8-B2-13b splash ripples (38.14, the note of record): packed densely, 4 floats/ring (x, y, age, amp); the
+// ring buffer itself is `engine/fx/ripples.js` (`createRipples().packInto`) - this is only the shared composite
+// rule, read by both the JS twin (waterComposite.js) and probed against the WGSL ring loop (water.wgsl.test.js).
 
 /**
- * Packs the live rings of `wt` (`world.water`, its sim clock + ring buffer) into `out` (Float32Array(32), 8 rings x
- * 4 floats), densely in slot order. age = (wt.tick - t0) * STEP; a ring with age outside [0, RIPPLE_LIFE) (incl. a
- * clock reset, age < 0) is skipped. Zero allocation; the GPU never sees time, only the packed radius/strength.
- * @param {{tick:number, ripX:Float64Array, ripY:Float64Array, ripT0:Int32Array, ripAmp:Float32Array}} wt
- * @param {Float32Array} out @returns {number} live ring count
+ * Accumulated ripple strength at ground point (px, py) over the first `count` packed rings (x, y, age, amp per
+ * ring), same op order as the WGSL ring loop in waterComposite.wgsl.js: `r = RIPPLE_SPEED*age; d = |P-c|;
+ * b = 1 - |d-r|/RIPPLE_W; if (b>0) acc = max(acc, amp*b*(1-age/RIPPLE_LIFE))`. Zero allocation.
+ * @param {Float32Array} rip @param {number} count @param {number} px @param {number} py @returns {number}
  */
-export function packRipples(wt, out) {
-  let n = 0;
-  for (let i = 0; i < RIPPLE_MAX; i++) {
-    const age = (wt.tick - wt.ripT0[i]) * STEP;
-    if (age < 0 || age >= RIPPLE_LIFE) continue;
-    const b = n * 4;
-    out[b] = wt.ripX[i]; out[b + 1] = wt.ripY[i];
-    out[b + 2] = RIPPLE_R0 + RIPPLE_SPEED * age;
-    out[b + 3] = wt.ripAmp[i] * (1 - age / RIPPLE_LIFE);
-    n++;
-  }
-  return n;
-}
-
-/**
- * Max ripple strength at ground point (px, py) over the first `count` packed rings (twin of the WGSL ring loop in
- * waterComposite.wgsl.js; same f32 (Math.fround) chain as `flowStreakHit`). Negative per-ring terms (outside the
- * ring's band) never pull the result below 0.
- * @param {Float32Array} rip @param {number} count @param {number} px @param {number} py
- */
-export function rippleStrength(rip, count, px, py) {
-  const f = Math.fround, x = f(px), y = f(py);
-  let s = 0;
+export function rippleAccAt(rip, count, px, py) {
+  let acc = 0;
   for (let i = 0; i < count; i++) {
     const b = i * 4;
-    const dx = f(x - rip[b]), dy = f(y - rip[b + 1]);
-    const d = f(Math.sqrt(f(f(dx * dx) + f(dy * dy))));
-    const term = f(rip[b + 3] * f(1 - f(f(Math.abs(f(d - rip[b + 2]))) / RIPPLE_HALF_W)));
-    if (term > s) s = term;
+    const age = rip[b + 2], amp = rip[b + 3];
+    const r = RIPPLE_SPEED * age;
+    const dx = px - rip[b], dy = py - rip[b + 1];
+    const d = Math.sqrt(dx * dx + dy * dy);
+    const band = 1 - Math.abs(d - r) / RIPPLE_W;
+    if (band > 0) {
+      const term = amp * band * (1 - age / RIPPLE_LIFE);
+      if (term > acc) acc = term;
+    }
   }
-  return s;
+  return acc;
 }
 
 // ---- US-141a flow streaks (35.4): the JS half; glsl/waterComposite.frag.js repeats these expressions in the same order ----
@@ -306,4 +322,22 @@ export function flowStreakHit(t, lb, px, py) {
   }
   const ia = Math.floor((a - o) / L);
   return (hashFastU(ia & 1023, ib & 1023, WATER_FLOW_SALT) >>> 8) * (1 / 16777216) > t[lb + 27];
+}
+
+/**
+ * River flow streak (38.45; replaces 35.4 for kind 3): a MATERIAL coordinate, so the pattern moves at the local flow speed and
+ * stretches in rapids. `tau` = seconds of travel from the river head, `e` = distance from the outer ribbon edge, `o` = row[28].
+ * @param {Float32Array} t @param {number} lb @param {number} tau @param {number} e
+ */
+export function riverStreakHit(t, lb, tau, e) {
+  const ia = Math.floor(tau / t[lb + 29] - t[lb + 28]), ib = Math.floor(e / t[lb + 26]);
+  return (hashFastU(ia & 1023, ib & 1023, WATER_FLOW_SALT) >>> 8) * (1 / 16777216) > t[lb + 27];
+}
+
+/**
+ * River ribbon alpha (38.45): the depth alpha `a` times the edge feather clamp(e / feather) and the shore fade clamp(col / shoreFade).
+ * 0 at e = 0 (outer ribbon edge) and at col = 0 (the bank contour); feather 0 disables the edge term.
+ */
+export function riverAlpha(a, e, col, feather, shoreFade) {
+  return a * (feather > 0 ? Math.min(1, e / feather) : 1) * Math.min(1, col / shoreFade);
 }

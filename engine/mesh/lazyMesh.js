@@ -65,6 +65,24 @@ export function ensureMesh(mesh) { return mesh.lazy ? mesh.lazy.store.ensure(mes
 export function pumpLazyMeshes() { for (const s of activeStores) s.pump(); }
 
 /**
+ * STREAM-01b (38.51): request/touch for the WARM (not drawn) placements of the placement grid, per placement
+ * `d <= reach + warmM` (xy distance eye -> bbox). Active placements are handled inside `addMeshStructures`. Zero allocation.
+ * @param {any[]} structs @param {{warmList: Int32Array, warmCount: number, reach2: Float32Array, opts: {warmM: number}}} grid @param {number} ex @param {number} ey
+ */
+export function warmLazyMeshes(structs, grid, ex, ey) {
+  const wl = grid.warmList, r2 = grid.reach2, warmM = grid.opts.warmM;
+  for (let q = 0; q < grid.warmCount; q++) {
+    const i = wl[q], m = structs[i].mesh;
+    if (!m.lazy && !m.lazyOrigin) continue;
+    const b = structs[i].bbox;
+    const dx = ex < b.x0 ? b.x0 - ex : (ex > b.x1 ? ex - b.x1 : 0), dy = ey < b.y0 ? b.y0 - ey : (ey > b.y1 ? ey - b.y1 : 0);
+    const rw = Math.sqrt(r2[i]) + warmM;
+    if (dx * dx + dy * dy > rw * rw) continue;
+    if (m.lazy) requestMesh(m); else touchMesh(m);
+  }
+}
+
+/**
  * Scatter group (instance buffer `ib`, 16-word rows, translation at words 3/7/11): request its mesh when any instance is within
  * the load radius of the last camera feed's eye. The scan is throttled (once per 30 calls per mesh).
  * @param {any} mesh @param {{ib: {f32: Float32Array}, count: number}} g
@@ -140,6 +158,7 @@ export class LazyMeshStore {
       ...(meta.castShadow === false ? { castShadow: false } : {}),
       ...(meta.collide === false ? { collide: false } : {}),
       ...(meta.colliderB64 ? { collider: base64ToF32(meta.colliderB64) } : {}),
+      ...(meta.lods ? { lods: meta.lods } : {}), // QUAT-LOD-01: LOD1 pointer(s), meta-only (not used for drawing yet)
       lazy: rec,
     };
     Object.defineProperty(shell, 'lazyOrigin', { value: rec, enumerable: false, configurable: true, writable: true });

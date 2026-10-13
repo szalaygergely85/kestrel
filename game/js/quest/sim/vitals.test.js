@@ -100,8 +100,9 @@ function fallCase(dist) {
   vitals.step(player, false);
   return vitals.hp;
 }
-ok('5.9 m fall: no damage', fallCase(5.9) === CFG.maxHp, `hp=${fallCase(5.9)}`);
-ok('exactly 6.0 m fall: no damage (threshold is strictly >)', fallCase(6.0) === CFG.maxHp, `hp=${fallCase(6.0)}`);
+ok('3.9 m fall: no damage', fallCase(3.9) === CFG.maxHp, `hp=${fallCase(3.9)}`);
+ok('exactly 4.0 m fall: no damage (threshold is strictly >; owner 2026-10-11: 4 m)', fallCase(4.0) === CFG.maxHp, `hp=${fallCase(4.0)}`);
+ok('4.1 m fall: 5 damage', fallCase(4.1) === CFG.maxHp - 5, `hp=${fallCase(4.1)}`);
 ok('6.1 m fall: 5 damage', fallCase(6.1) === CFG.maxHp - 5, `hp=${fallCase(6.1)}`);
 ok('exactly 10.0 m fall: still only the 5-damage tier', fallCase(10.0) === CFG.maxHp - 5, `hp=${fallCase(10.0)}`);
 ok('10.1 m fall: 10 damage', fallCase(10.1) === CFG.maxHp - 10, `hp=${fallCase(10.1)}`);
@@ -372,6 +373,61 @@ function scriptedRun() {
   player.transform.z = 7 - 2; player.components.body.grounded = false;
   vitals.step(player, false);
   ok('a normal drop below 30 m does not teleport', player.transform.z === 5);
+}
+
+// ---- OB-016: walking down a long slope (fallDistance flickering > 0 between step-downs) never snaps back ----
+{
+  const world = buildWorld([playerEntity(1497, 1028, 2.4)]);
+  const vitals = createVitals(world, makeEvents(), CFG, {});
+  const player = world.get('player').data, t = player.transform, b = player.components.body;
+  vitals.step(player, false);
+  let snapped = false;
+  for (let i = 0; i < 2400; i++) { // ~40 s walking west and 40 m down: grounded each step, small fallDistance left from step-downs
+    t.x -= 0.1; t.z -= 0.0175; b.grounded = true; b.fallDistance = 0.02;
+    vitals.step(player, false);
+    if (t.x > 1497 - (i + 1) * 0.1 + 1) { snapped = true; break; }
+  }
+  ok('OB-016: a 40 m walk downhill on ground never teleports back', !snapped && t.z < 2.4 - 40, `x=${t.x} z=${t.z}`);
+}
+
+
+// ---- OB-077: hp regen out of combat ----
+{
+  const world = buildWorld([playerEntity(), sourceEntity('b1', 5, 0)]);
+  const events = makeEvents();
+  let near = false;
+  const vitals = createVitals(world, events, CFG, { beasts: { resetAll() {}, aggroNear: () => near } });
+  const player = world.get('player').data;
+  const run = (n) => { for (let i = 0; i < n; i++) vitals.step(player, false); };
+  vitals.step(player, false);
+  events.emit('combat:hit', { source: 'b1', target: 'player', damage: 2 }); // -10 -> 20
+  run(CFG.hpRegenDelaySteps - 1);
+  ok('OB-077: no regen before the 8 s delay', vitals.hp === 20, `hp=${vitals.hp}`);
+  run(CFG.hpRegenSteps + 1);
+  ok('OB-077: +1 hp after delay + 2 s', vitals.hp === 21, `hp=${vitals.hp}`);
+  run(CFG.hpRegenSteps);
+  ok('OB-077: then +1 per 2 s', vitals.hp === 22, `hp=${vitals.hp}`);
+  run(CFG.hpRegenSteps * 3 - 5);
+  events.emit('combat:hit', { source: 'b1', target: 'player', damage: 1 }); // -5 -> 
+  const afterHit = vitals.hp;
+  run(CFG.hpRegenDelaySteps - 1 + CFG.invulnSteps * 0);
+  ok('OB-077: a hit resets the delay', vitals.hp === afterHit, `hp=${vitals.hp} want ${afterHit}`);
+  near = true;
+  run(CFG.hpRegenDelaySteps + CFG.hpRegenSteps * 3);
+  ok('OB-077: no regen with an aggro-ed beast near', vitals.hp === afterHit, `hp=${vitals.hp}`);
+  near = false;
+  run(CFG.hpRegenSteps * 200);
+  ok('OB-077: capped at max', vitals.hp === CFG.maxHp, `hp=${vitals.hp}`);
+  // deterministic replay: two identical runs hash equal
+  const hashRun = () => {
+    const w = buildWorld([playerEntity(), sourceEntity('b1', 5, 0)]), ev = makeEvents();
+    const v = createVitals(w, ev, CFG, {}), pl = w.get('player').data;
+    v.step(pl, false); ev.emit('combat:hit', { source: 'b1', target: 'player', damage: 2 });
+    for (let i = 0; i < 1500; i++) v.step(pl, false);
+    let acc = 0; v.hashInto({ u32: (x) => { acc = (Math.imul(acc, 31) + x) >>> 0; } });
+    return acc + ':' + v.hp;
+  };
+  ok('OB-077: replay deterministic', hashRun() === hashRun(), hashRun());
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

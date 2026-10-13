@@ -179,3 +179,87 @@ export function waterInsideJS(u, base, x, y) {
   const dx = x - u[base + U_SHAPE], dy = y - u[base + U_SHAPE + 1];
   return dx * dx + dy * dy <= u[base + U_SHAPE + 2];
 }
+
+// ---------------------------------------------------------------------------
+// OB-019 RIVER-02 (architecture.md 38.45 (2)): the static river ribbon mesh
+// ---------------------------------------------------------------------------
+/** Verts across one ribbon row: lat = +-(hw+feather), +-hw, +-0.6hw, +-0.2hw (ordered right bank -> left bank). */
+export const RIVER_COLS = 8;
+/** Quad rows per chunk (32 x RIVER_DS 2 m = 64 m). */
+export const RIVER_CHUNK_ROWS = 32;
+/** Floats per ribbon vertex: lx, ly (local to the river origin), z, tau, e (edge distance), nx, ny (surface slope), rapid (0..1). */
+export const RIVER_VERT_STRIDE = 8;
+/** LOD1 keeps every RIVER_LOD1_STEP-th row and columns 0, 1, 6, 7. */
+export const RIVER_LOD1_STEP = 4;
+
+/** Across-ribbon offset of column `c` for half width `hw` and feather `f` (signed, + = left of the flow). */
+export function riverColLat(c, hw, f) {
+  switch (c) {
+    case 0: return -(hw + f); case 1: return -hw; case 2: return -0.6 * hw; case 3: return -0.2 * hw;
+    case 4: return 0.2 * hw; case 5: return 0.6 * hw; case 6: return hw; default: return hw + f;
+  }
+}
+
+/**
+ * Builds the static ribbon of a compiled river (`compileRiver`). Load-time only (allocates). Vertices are LOCAL to
+ * (ox, oy) = the first sample (f64 kept on the CPU; the slot uniform carries origin - O). Chunks of 32 quad rows share
+ * their boundary row; index layout: ALL LOD0 chunk ranges first (chunk order) then ALL LOD1 ranges, so adjacent visible
+ * chunks of one LOD merge into a single draw run.
+ * @param {any} rv
+ * @returns {{verts: Float32Array, index: Uint16Array|Uint32Array, ox: number, oy: number, rows: number, chunks: any[], vertCount: number, triCount: number, lod0Tris: number, lod1Tris: number, feather: number}}
+ */
+export function buildRiverMesh(rv) {
+  const n = rv.n, f = rv.feather, ox = rv.x[0], oy = rv.y[0];
+  const verts = new Float32Array(n * RIVER_COLS * RIVER_VERT_STRIDE);
+  for (let i = 0; i < n; i++) {
+    const a = Math.max(0, i - 1), b = Math.min(n - 1, i + 1);
+    const dzds = (rv.z[b] - rv.z[a]) / ((rv.s[b] - rv.s[a]) || 1); // < 0 downstream
+    const slope = -dzds, rapid = Math.min(1, Math.max(0, slope / 0.25));
+    const nx = -dzds * rv.tx[i], ny = -dzds * rv.ty[i]; // normalize(nx, ny, 1) = the surface normal
+    const lx = -rv.ty[i], ly = rv.tx[i]; // left normal
+    const hw = rv.hw[i];
+    for (let c = 0; c < RIVER_COLS; c++) {
+      const lat = riverColLat(c, hw, f), o = (i * RIVER_COLS + c) * RIVER_VERT_STRIDE;
+      verts[o] = rv.x[i] + lat * lx - ox; verts[o + 1] = rv.y[i] + lat * ly - oy; verts[o + 2] = rv.z[i]; verts[o + 3] = rv.tau[i];
+      verts[o + 4] = hw + f - Math.abs(lat); verts[o + 5] = nx; verts[o + 6] = ny; verts[o + 7] = rapid;
+    }
+  }
+  const nChunks = Math.ceil((n - 1) / RIVER_CHUNK_ROWS);
+  const big = n * RIVER_COLS > 65535;
+  const quad = (out, r, c0, c1, r1) => { // rows r -> r1, columns c0 -> c1; CCW from above
+    const A = r * RIVER_COLS + c0, B = r * RIVER_COLS + c1, C = r1 * RIVER_COLS + c0, D = r1 * RIVER_COLS + c1;
+    out.push(A, C, B, B, C, D);
+  };
+  const lod0 = [], lod1 = [], chunks = [];
+  for (let k = 0; k < nChunks; k++) {
+    const r0 = k * RIVER_CHUNK_ROWS, r1 = Math.min(n - 1, r0 + RIVER_CHUNK_ROWS);
+    const c = { r0, r1, x0: Infinity, y0: Infinity, z0: Infinity, x1: -Infinity, y1: -Infinity, z1: -Infinity, lod0Start: lod0.length, lod0Count: 0, lod1Start: 0, lod1Count: 0 };
+    for (let r = r0; r <= r1; r++) for (let q = 0; q < RIVER_COLS; q++) {
+      const o = (r * RIVER_COLS + q) * RIVER_VERT_STRIDE, wx = ox + verts[o], wy = oy + verts[o + 1], wz = verts[o + 2];
+      if (wx < c.x0) c.x0 = wx; if (wx > c.x1) c.x1 = wx; if (wy < c.y0) c.y0 = wy; if (wy > c.y1) c.y1 = wy;
+      if (wz < c.z0) c.z0 = wz; if (wz > c.z1) c.z1 = wz;
+    }
+    for (let r = r0; r < r1; r++) for (let q = 0; q < RIVER_COLS - 1; q++) quad(lod0, r, q, q + 1, r + 1);
+    c.lod0Count = lod0.length - c.lod0Start;
+    chunks.push(c);
+  }
+  const lod0Len = lod0.length;
+  for (let k = 0; k < nChunks; k++) {
+    const c = chunks[k];
+    c.lod1Start = lod0Len + lod1.length;
+    for (let r = c.r0; r < c.r1; r += RIVER_LOD1_STEP) {
+      const rn = Math.min(c.r1, r + RIVER_LOD1_STEP);
+      quad(lod1, r, 0, 1, rn); quad(lod1, r, 1, 6, rn); quad(lod1, r, 6, 7, rn);
+    }
+    c.lod1Count = lod0Len + lod1.length - c.lod1Start;
+  }
+  const all = lod0.concat(lod1);
+  const index = big ? Uint32Array.from(all) : Uint16Array.from(all);
+  return { verts, index, ox, oy, rows: n, chunks, vertCount: n * RIVER_COLS, triCount: all.length / 3, lod0Tris: lod0Len / 3, lod1Tris: lod1.length / 3, feather: f };
+}
+
+/** Packs a ribbon texel's `w` word (objectId channel): slot | back << 4 | 1 << 6 | rapidQ << 8 | min(65535, round(e * 1000)) << 16. */
+export function packRiverTexel(slot, back, rapidQ, e) {
+  const eq = Math.min(65535, Math.max(0, Math.floor(e * 1000 + 0.5)));
+  return ((slot & 15) | ((back & 1) << 4) | 64 | ((rapidQ & 255) << 8) | (eq << 16)) >>> 0;
+}

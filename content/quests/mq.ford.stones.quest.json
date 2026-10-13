@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "id": "mq.ford.stones",
+  "title": "Stones in the Water",
+  "requires": [{ "quest": "mq.river.road", "step": "riverBank" }],
+  "objectives": [
+    { "id": "fordWest", "text": "Cross the stepping stones", "journal": "The river runs wide and loud. Cross on the stepping stones.", "when": { "type": "area", "id": "fordWest" } }
+  ]
+}

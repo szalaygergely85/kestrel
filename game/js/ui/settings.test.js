@@ -1,4 +1,7 @@
 import { makeOk } from '../../../engine/test/assert.js';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import {createUiLayer} from '../../../engine/index.js';
 // game/js/ui/settings.test.js (US-038b, docs/backlog.md row 30f). Headless
 // Node ESM, no framework - same style as titleCard.test.js/mapCard.test.js.
 // Run: node game/js/ui/settings.test.js
@@ -277,6 +280,24 @@ function recordingUi(cols = 160, rows = 60) {
 
 // ---- PC-A PO REJECT fix 2 (backlog row 30f): click-to-resume (look.locked) closes the panel ----
 {
+  const context = vm.createContext({});
+  for (const file of ['palette.js','models/menu_ui.js']) vm.runInContext(readFileSync(new URL('../../../design/'+file,import.meta.url),'utf8'),context);
+  const menu = context.ASSETS.uiStyle.menu;
+  const styledAssets = {uiStyle:{settings:style,menu},palette:context.ASSETS.palette};
+  const input = fakeInput(); input._press('KeyS');
+  updateSettings(1 / 60,input,{assets:styledAssets,engine:fakeEngine(),look:{},canOpen:true});
+  const ui = createUiLayer({cols:160});
+  drawSettingsPanel(ui,fakeRt(),styledAssets);
+  const row = y => Array.from(ui.cells.glyphIdx.slice(y*160+44,y*160+116),v=>String.fromCharCode(v+32)).join('');
+  ok('shared title/pause Settings uses spaced menu title',row(18).includes('S E T T I N G S'));
+  ok('shared Settings preserves configured row order',row(22).includes('Resolution') && row(25).toLowerCase().includes('fullscreen') && row(37).includes('Back'));
+  ok('shared Settings has both menu focus markers',row(22)[2] === '>' && row(22)[69] === '<');
+  const bg = [...ui.cells.bg.slice((22*160+45)*4,(22*160+45)*4+3)];
+  ok('shared Settings reads menu focus background',bg.join(',') === menu.bgRgb.band.join(','));
+  input._clearFrame(); input._press('Escape');
+  for(let i=0;i<20;i++)updateSettings(1 / 60,input,{assets:styledAssets,engine:fakeEngine(),look:{},canOpen:true});
+}
+{
   const input = fakeInput();
   input._press('KeyS');
   updateSettings(1 / 60, input, { assets, engine: fakeEngine(), look: {}, canOpen: true });
@@ -285,6 +306,35 @@ function recordingUi(cols = 160, rows = 60) {
   const look = { locked: true };
   updateSettings(1 / 60, input, { assets, engine: fakeEngine(), look, canOpen: true });
   ok('look.locked becoming true closes the panel immediately (no fade wait)', isSettingsOpen() === false);
+}
+
+// ---- QUALITY-GRID-01: the quality row saves the choice and moves the grid to the preset's grid live ----
+{
+  const { loadPresets } = await import('./gfxPresets.js');
+  const { readFileSync } = await import('node:fs');
+  await loadPresets(JSON.parse(readFileSync(new URL('../../../content/settings/gfx-presets.json', import.meta.url))));
+  const style2 = { ...style, rowOrder: ['quality', 'grid', 'back'] };
+  const assets2 = { uiStyle: { settings: style2 }, palette };
+  const calls = [];
+  const eng = { setGrid: (c, r) => { calls.push([c, r]); return { cols: c, rows: r }; }, renderTarget: { cols: 240, rows: 90 } };
+  const ctx = { assets: assets2, engine: eng, look: {}, canOpen: true };
+  const press = (code) => { const i = fakeInput(); i._press(code); updateSettings(1 / 60, i, ctx); };
+  // close the panel left open by the earlier tests, then reopen with the new row order
+  press('Escape'); for (let k = 0; k < 10; k++) updateSettings(0.05, fakeInput(), ctx);
+  press('KeyS');
+  const q0 = loadSettings().quality;
+  press('KeyD'); // quality row: auto -> (end of list, no wrap)
+  press('KeyA'); press('KeyA'); press('KeyA'); press('KeyA'); press('KeyA'); // auto -> extreme -> ultra -> high -> medium -> low
+  const s = loadSettings();
+  ok('quality row A steps down to low and saves it', s.quality === 'low', `${q0} -> ${s.quality}`);
+  ok('quality low sets the preset grid live (240x90) and saves it', calls.length > 0 && calls[calls.length - 1].join('x') === '240x90' && s.grid === '240x90', JSON.stringify(calls) + s.grid);
+  press('KeyD'); press('KeyD'); press('KeyD'); // low -> medium -> high -> ultra
+  const s2 = loadSettings();
+  ok('quality ultra sets 480x180 live and saves quality + grid together', s2.quality === 'ultra' && s2.grid === '480x180' && calls[calls.length - 1].join('x') === '480x180', s2.quality + ' ' + s2.grid);
+  press('KeyA'); // ultra -> high
+  ok('quality high -> 400x150', loadSettings().grid === '400x150' && loadSettings().quality === 'high');
+  press('KeyW'); // wraps selection to Back; reset to row 0 for later tests is handled by closing below
+  press('Escape'); for (let k = 0; k < 10; k++) updateSettings(0.05, fakeInput(), ctx);
 }
 
 if (failures.length) {

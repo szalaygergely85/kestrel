@@ -6,7 +6,7 @@
  * WHAT THIS FILE SETS
  *   ASSETS.particles.presets.<key>   one EmitterDef per preset, EXACTLY the 32.1 fields, except `colors`, which is
  *                                    an array of PALETTE KEYS (not [r,g,b]); the caller resolves them (32.1:
- *                                    "colours resolved by the CALLER"). Keys: flame, embers, smoke, sparks, dust.
+ *                                    "colours resolved by the CALLER"). Keys: flame, embers, smoke, sparks, dust, blood, bloodDrops, chips.
  *                                    36.2: the burner = sprite `burnerFire` (wreckage.js) + `embers` + `smoke`;
  *                                    `flame` is no longer placed at the burner (kept for small torches / tests).
  *   ASSETS.particles.toEmitterDef(key, rgb)
@@ -83,6 +83,20 @@
                'cinder', 'scorch', 'scorch'],
       emissive: false, emissiveFog: 0, sizeM: 0.25
     },
+    // --- farSmoke (OB-020 v3): billowing plume for the far "smoke means people" landmark. Puffs are born ~1.5 m wide and
+    // swell to ~7 m while they climb (sizeM -> sizeEndM), so from 25 m it is a soft cloud column and from 100+ m still a
+    // column (1-cell far floor). Dense `O` at the base thinning to `. '` at the top; emissive light grey (fog tints it).
+    // ~2.6 m/s climb, 9-11 s, 7 deg cone, leans with the wind. 4 puffs/s, 48 live per plume (cheap: <= 12x12 cells each).
+    farSmoke: {
+      rate: 4, burst: 0,
+      life: [9.0, 11.0], speed: [0.5, 1.0],
+      dir: [0, 0, 1], spreadDeg: 7, box: [0.4, 0.4, 0.05],
+      accelZ: 1.8, drag: 0.7, wind: 1,
+      maxLive: 48, killBelow: null,
+      glyphs:  "OOO%o;:~-'.",
+      colors: ['ashLight', 'ashLight', 'ashLight', 'ashLight', 'ash', 'ash', 'ash', 'ashLight'],
+      emissive: true, emissiveFog: 0.6, sizeM: 1.5, sizeEndM: 7
+    },
     // --- sparks: the sword-hit burst (burstAt, cone along the hit normal via setEmitterDir; default axis = up).
     // 10 sparks at 2.5-5 m/s in a wide 50 deg cone, real gravity, 0.3-0.4 s: a short bright spray that arcs down.
     // White-hot `*` -> `+` -> ember `'` `.`. Kill plane 1.5 m below the hit (the floor at sword height).
@@ -95,6 +109,41 @@
       glyphs:  "**+*+''.",
       colors: ['white', 'flameCore', 'flameCore', 'flameMid', 'flameOuter', 'ember', 'emberDim', 'emberDark'],
       emissive: true, emissiveFog: 0.1, sizeM: 0.05
+    },
+    // --- blood (HIT-BLEED-01): the hit-point burst on a struck beast. 14 heavy droplets, 1.2-3.2 m/s in a wide cone along
+    // the hit direction, real gravity, die 0.45-0.8 s or at the kill plane (about the beast's belly). Dark dull reds,
+    // lit (not emissive), `o` drop -> `.` speck. NOT white, NOT bright: the darkest ramp stays under the grass at dusk.
+    blood: {
+      rate: 0, burst: 14,
+      life: [0.45, 0.8], speed: [1.2, 3.2],
+      dir: [0, 0, 1], spreadDeg: 60, box: [0.03, 0.03, 0.03],
+      accelZ: -9.8, drag: 0.4, wind: 0,
+      maxLive: 40, killBelow: 0.4,
+      glyphs:  "oo*:.,",
+      colors: ['bloodWet', 'bloodWet', 'blood', 'blood', 'bloodDark', 'bloodDark'],
+      emissive: false, emissiveFog: 0, sizeM: 0.05
+    },
+    // --- bloodDrops: the few drops left ON THE GROUND at the beast's feet. Barely move, linger 3-4.5 s, darken as they dry.
+    bloodDrops: {
+      rate: 0, burst: 4,
+      life: [3.0, 4.5], speed: [0.05, 0.4],
+      dir: [0, 0, 1], spreadDeg: 85, box: [0.2, 0.2, 0.01],
+      accelZ: -2, drag: 6.0, wind: 0,
+      maxLive: 24, killBelow: null,
+      glyphs:  "ooo:::.",
+      colors: ['blood', 'blood', 'bloodDark', 'bloodDark', 'bloodDried', 'bloodDried', 'bloodDried'],
+      emissive: false, emissiveFog: 0, sizeM: 0.07
+    },
+    // --- chips (HIT-BLEED-01): straw and wood splinters off the practice pell. 10 light bits, falling, die at the kill plane.
+    chips: {
+      rate: 0, burst: 10,
+      life: [0.4, 0.8], speed: [1.0, 3.0],
+      dir: [0, 0, 1], spreadDeg: 65, box: [0.04, 0.04, 0.04],
+      accelZ: -9.8, drag: 0.8, wind: 0.2,
+      maxLive: 28, killBelow: 1.2,
+      glyphs:  "/-,'.`",
+      colors: ['strawLight', 'straw', 'woodLight', 'wood', 'strawDark', 'woodDark'],
+      emissive: false, emissiveFog: 0, sizeM: 0.05
     },
     // --- dust: the hard-landing puff at the feet (burstAt). 10 motes in an 80 deg cone around up = mostly a flat
     // ring that skids out 0.5-1.5 m/s and stops fast (drag 3), sinks a little (accelZ -0.4) and dies on the floor
@@ -120,6 +169,8 @@
     // (z 0.5): embers up 1.0, smoke up 1.5.
     embers: { use: 'Kestrel burner: components.emitters on the burner entity (replaces `flame`), over the burnerFire sprite', offset: { right: 0, fwd: 0, up: 0.45 }, on: true },
     smoke:  { use: 'same entity, after embers; starts at the sprite\'s tip so smoke never covers the fire body', offset: { right: 0, fwd: 0, up: 0.95 }, on: true },
+    blood:  { use: 'combat:hit on a beast: burstAt(blood, hit point, dir) + bloodDrops at its feet (HIT-BLEED-01)', n: 14, nDrops: 4 },
+    chips:  { use: 'combat:hit on the practice pell (straw / wood, no blood): burstAt(chips, hit point)', n: 10 },
     sparks: { use: 'combat:hit from the player sword: burstAt(sparks, hit point); setEmitterDir / burstAt dx,dy,dz = hit normal when known', n: 10, nHeavy: 14 },
     dust:   { use: 'landing with fall speed > LANDING_DUST_SPEED: burstAt(dust, feet x, y, z + 0.03)', n: 10, nHeavy: 14 }
   };

@@ -6,12 +6,13 @@ import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import { World } from '../world/World.js';
 import { meshFromJSON } from './MeshData.js';
-import { DrawList, DRAW_STATIC, DRAW_INSTANCED, DRAW_FLAG_ONE_PART, MeshDrawCache, LevelMeshCache, addMeshStructures } from './DrawList.js';
+import { DrawList, DRAW_STATIC, DRAW_INSTANCED, DRAW_FLAG_ONE_PART, DRAW_FLAG_NO_CULL, meshObjectId, MESH_ID_BASE, MESH_ID_SPAN, MeshDrawCache, LevelMeshCache, addMeshStructures } from './DrawList.js';
 import { unpackNormalOct } from '../voxel/octNormal.js';
 import { buildWorldColliders } from '../world/colliders.js';
 import { moveCircleMesh } from '../physics/meshCollide.js';
-import { groupRadius } from './instances.js';
-import { MeshGroupSet, addMeshStructuresBatched, meshIsSolid, MAX_GROUPED_INSTANCES } from './meshGroups.js';
+import { groupRadius, MAX_INSTANCES_PER_FRAME } from './instances.js';
+import { meshFeedStats, DRAW_TAIL_RESERVE, MAX_LIST_INSTANCES } from './DrawList.js';
+import { MeshGroupSet, addMeshStructuresBatched, meshIsSolid, MAX_GROUPED_INSTANCES, MAX_GROUPED_KEPT } from './meshGroups.js';
 import { rasterDrawList, createRasterTarget } from './rasterJS.js';
 import { frustumPlanes } from './culling.js';
 import { projTerms, shearProjection } from '../render/projection.js';
@@ -74,12 +75,17 @@ const place = (w, m, x, y, yaw = 0, over) => World.prototype.placeMesh.call(w, m
   const masked = { ...rockA, id: 'masked', ranges: [{ start: 0, count: rockA.triCount, mask: { tex: 't', cutoff: 0.5 } }] };
   const w2 = mkWorld(); place(w2, masked, 0, 0); place(w2, masked, 3, 0);
   const g2 = new MeshGroupSet(); g2.update(w2, { get: () => rockA }, idFor);
-  ok('masked (alpha-cutout) meshes are never grouped', g2.groups.length === 0);
+  ok('MESH-INST-02: masked (alpha-cutout) meshes group too, per-range draws (no ONE_PART)', g2.groups.length === 1 && g2.groups[0].masked === true);
+  const l2 = new DrawList(); l2.begin(); addMeshStructuresBatched(l2, w2, { x: 0, y: 14, z: 1.7 }, { get: () => rockA }, idFor, 2000, g2, null);
+  ok('masked group item: instanced, no ONE_PART flag', l2.count === 1 && l2.items[0].type === DRAW_INSTANCED && (l2.items[0].flags & DRAW_FLAG_ONE_PART) === 0);
   ok('solidity: rocks + tree solid, grass cards not', meshIsSolid(rockA) && meshIsSolid(rockB) && meshIsSolid(tree) && !meshIsSolid(grass));
   const wg = mkWorld(); for (let i = 0; i < 4; i++) place(wg, grass, i * 2, 0);
   const gg = new MeshGroupSet(); gg.update(wg, new MeshDrawCache(), idFor);
   const lg = new DrawList(); lg.begin(); addMeshStructuresBatched(lg, wg, { x: 0, y: 14, z: 1.7 }, new MeshDrawCache(), idFor, 2000, gg, null);
-  ok('one-sided grass stays 4 single draws (back-face cull would change cells)', gg.groups.length === 0 && lg.count === 4 && lg.items[0].type === DRAW_STATIC);
+  ok('MESH-INST-02: one-sided grass groups into ONE instanced item flagged NO_CULL', gg.groups.length === 1 && lg.count === 1 && lg.items[0].type === DRAW_INSTANCED && lg.items[0].instCount === 4
+    && (lg.items[0].flags & DRAW_FLAG_NO_CULL) !== 0 && (lg.items[0].flags & DRAW_FLAG_ONE_PART) !== 0);
+  const lr = new DrawList(); lr.begin(); addMeshStructuresBatched(lr, w, { x: 0, y: 14, z: 1.7 }, new MeshDrawCache(), idFor, 2000, g, null);
+  ok('solid rock group is NOT flagged NO_CULL', lr.items[0].type === DRAW_INSTANCED && (lr.items[0].flags & DRAW_FLAG_NO_CULL) === 0);
   const w3 = mkWorld(); place(w3, rockA, 0, 0);
   const g3 = new MeshGroupSet(); g3.update(w3, new MeshDrawCache(), idFor);
   ok('a lone placement is not grouped', g3.groups.length === 0 && !g3.has(0));
@@ -139,21 +145,21 @@ const place = (w, m, x, y, yaw = 0, over) => World.prototype.placeMesh.call(w, m
   ok('unchanged world: built once', g.stats.builds === 1);
   place(w, rockA, 6, 0); g.update(w, cache, idFor);
   ok('new placement rebuilds (3 members)', g.stats.builds === 2 && g.stats.members === 3);
-  w.structures[1].frame.x += 1; g.update(w, cache, idFor);
+  w.renderVersion++; w.structures[1].frame.x += 1; g.update(w, cache, idFor);
   ok('moved placement rebuilds', g.stats.builds === 3);
   const l = new DrawList(); l.begin(); addMeshStructuresBatched(l, w, { x: 0, y: 14, z: 1.7 }, cache, idFor, 2000, g, null);
   ok('rebuilt instance carries the new x', l.items[0].instBuf.f32[1 * 16 + 3] === w.structures[1].frame.x);
-  w.structures[0].frame.yawDeg = 45; g.update(w, cache, idFor);
+  w.renderVersion++; w.structures[0].frame.yawDeg = 45; g.update(w, cache, idFor);
   ok('yaw change rebuilds', g.stats.builds === 4);
-  const old = w.structures[2]; w.structures[2] = { ...old, frame: { ...old.frame } }; g.update(w, cache, idFor);
+  w.renderVersion++; const old = w.structures[2]; w.structures[2] = { ...old, frame: { ...old.frame } }; g.update(w, cache, idFor);
   ok('replaced structure object rebuilds', g.stats.builds === 5);
-  w.structures[2].scale = 3; g.update(w, cache, idFor);
+  w.renderVersion++; w.structures[2].scale = 3; g.update(w, cache, idFor);
   ok('scale set on a member rebuilds and keeps it grouped (MESH-SCALE-01)', g.stats.builds === 6 && g.has(2) && g.has(0) && g.has(1));
-  w.structures[2].scale = 1; g.update(w, cache, idFor);
+  w.renderVersion++; w.structures[2].scale = 1; g.update(w, cache, idFor);
   ok('scale reset to 1 rebuilds too', g.stats.builds === 7);
-  w.structures[2].scale = undefined; g.update(w, cache, idFor);
+  w.renderVersion++; w.structures[2].scale = undefined; g.update(w, cache, idFor);
   ok('scale 1 vs undefined is the same snapshot (no rebuild)', g.stats.builds === 7);
-  w.structures[2].scale = 3; g.update(w, cache, idFor);
+  w.renderVersion++; w.structures[2].scale = 3; g.update(w, cache, idFor);
   g.update(w, cache, () => 2);
   ok('material resolver change rebuilds', g.stats.builds === 9);
   w.structures.pop(); g.update(w, cache, () => 2);
@@ -297,6 +303,37 @@ const place = (w, m, x, y, yaw = 0, over) => World.prototype.placeMesh.call(w, m
   ok('shadow casters are the 4 nearest by object id', ids.join() === '0,1,2,3', ids.join());
 }
 
+// ---- 5b. MESH-INST-02: open (grass) instanced raster == single draws; id scheme ------------------------
+{
+  const w = mkWorld();
+  for (let i = 0; i < 8; i++) place(w, grass, -3.5 + i * 1, 0, i * 40);
+  const cam = { x: 0, y: 8, z: 1.7, yawDeg: 0, pitchDeg: 0 };
+  const COLS = 240, ROWS = 90;
+  const terms = {}, M = new Float64Array(16), planes = new Float64Array(24);
+  projTerms(cam, { cols: COLS, rows: ROWS, pxCellW: 1, pxCellH: 1 }, terms); shearProjection(terms, M); frustumPlanes(M, planes);
+  const draw = (batched, dropFlag) => {
+    const list = new DrawList(); list.begin();
+    if (batched) addMeshStructuresBatched(list, w, cam, new MeshDrawCache(), idFor, 2000, new MeshGroupSet(), planes);
+    else addMeshStructures(list, w, cam, new MeshDrawCache(), idFor, 2000);
+    if (dropFlag) for (let i = 0; i < list.count; i++) list.items[i].flags &= ~DRAW_FLAG_NO_CULL;
+    const t = createRasterTarget(COLS, ROWS, 1, {});
+    rasterDrawList(list, t, { M });
+    return t;
+  };
+  const single = draw(false, false), inst = draw(true, false), culled = draw(true, true);
+  // matrix composition differs by 1 ulp (float32 depth): depth within 2e-3 (edge samples), a few oct-normal codes may flip (as the scaled parity test above)
+  const diff = (a, b) => { let n = 0, c = 0, nr = 0; for (let i = 0; i < a.kind.length; i++) { if (a.kind[i] !== 0) c++; if (a.kind[i] !== b.kind[i] || Math.abs(a.depth[i] - b.depth[i]) > 2e-3 || a.mat[i] !== b.mat[i] || a.objectId[i] !== b.objectId[i]) n++; else if (a.nrm[i] !== b.nrm[i]) nr++; } return [n + (nr > 5 ? nr : 0), c]; };
+  const [dI, cov] = diff(single, inst), [dC] = diff(single, culled);
+  ok('open grass: instanced NO_CULL raster == single draws (kind/depth/mat/nrm/objectId)', dI === 0 && cov > 100, `mism ${dI} cov ${cov}`);
+  ok('mutation guard: dropping NO_CULL (back-face cull) changes cells', dC > 0, `mism ${dC}`);
+  // id scheme
+  ok('meshObjectId = 0xA000|si below 4096 (picks unchanged)', [0, 1, 7, 4095].every((i) => meshObjectId(i) === (0xA000 | i)));
+  ok('meshObjectId no overflow past 4096: unique, in range, clear of 0xFF00+', meshObjectId(4096) === 0xB000 && meshObjectId(5000) === 0xA000 + 5000 && meshObjectId(MESH_ID_SPAN - 1) < 0xFF00
+    && meshObjectId(MESH_ID_SPAN) === MESH_ID_BASE && new Set([4095, 4096, 4097, 8000, 20000].map(meshObjectId)).size === 5);
+  ok('meshObjectId keeps (id & 0xF) = si & 0xF for planeId (outline) mixing', [4096, 5001, 20000].every((i) => (meshObjectId(i) & 0xF) === (i & 0xF)));
+  ok('group cap constants sane', MAX_GROUPED_KEPT <= 2048 && MAX_GROUPED_INSTANCES >= MAX_GROUPED_KEPT && MAX_GROUPED_KEPT + MAX_INSTANCES_PER_FRAME === MAX_LIST_INSTANCES);
+}
+
 // ---- 6. zero allocation ------------------------------------------------------------------------
 {
   const w = mkWorld();
@@ -312,6 +349,26 @@ const place = (w, m, x, y, yaw = 0, over) => World.prototype.placeMesh.call(w, m
   for (let i = 0; i < 1000; i++) frame();
   global.gc(); const grew = process.memoryUsage().heapUsed - h0;
   ok('0 allocation over 1000 batched feeds', grew < 32 * 1024, `grew ${grew}`);
+}
+
+// ---- OB-043: group items over the list budget -> nearest groups kept, farthest dropped + counted, never throws ----
+{
+  const w = mkWorld();
+  for (let k = 0; k < 6; k++) { const m = { ...rockA, id: 'ob43_' + k }; place(w, m, 10 + k * 10, 0); place(w, m, 11 + k * 10, 0); } // group k nearest x = 10 + 10k
+  const g = new MeshGroupSet(); const cache = new MeshDrawCache();
+  g.update(w, cache, idFor);
+  const l = new DrawList(DRAW_TAIL_RESERVE + 3); l.begin();
+  addMeshStructuresBatched(l, w, { x: 0, y: 0, z: 1.7 }, cache, idFor, 2000, g, null);
+  const xs = []; for (let i = 0; i < l.count; i++) xs.push(l.items[i].instBuf.f32[3]);
+  ok('OB-043: 3 of 6 group items fit the budget (capacity - DRAW_TAIL_RESERVE)', l.count === 3 && g.stats.groupsDropped === 3 && g.stats.instancesDropped === 6, `count ${l.count} drop ${g.stats.groupsDropped}`);
+  ok('OB-043: the 3 nearest groups kept, build order preserved', xs.join() === '10,20,30', xs.join());
+  ok('OB-043: meshFeedStats.groupsDropped', meshFeedStats.groupsDropped === 3);
+  const l2 = new DrawList(DRAW_TAIL_RESERVE + 3); l2.begin();
+  addMeshStructuresBatched(l2, w, { x: 70, y: 0, z: 1.7 }, cache, idFor, 2000, g, null);
+  const xs2 = []; for (let i = 0; i < l2.count; i++) xs2.push(l2.items[i].instBuf.f32[3]);
+  ok('OB-043: ranking follows the eye (x 70 -> groups at 40/50/60)', xs2.join() === '40,50,60', xs2.join());
+  const big = new DrawList(); big.begin(); addMeshStructuresBatched(big, w, { x: 0, y: 0, z: 1.7 }, cache, idFor, 2000, g, null);
+  ok('OB-043: under budget nothing dropped', big.count === 6 && g.stats.groupsDropped === 0 && meshFeedStats.groupsDropped === 0);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

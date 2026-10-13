@@ -1,7 +1,8 @@
 // engine/render/gpu/gpuCompare.test.js (US-029 tech notes item 10).
 // Pure `compareCells` checks: edge-cell exclusion, tolerance edges 4 vs 5,
 // PASS/FAIL rule. Run: node engine/render/gpu/gpuCompare.test.js
-import { compareCells, compareGeometry, compareLight, meshTiesCap } from './gpuCompare.js';
+import { compareCells, meshCellCap, compareGeometry, compareLight, meshTiesCap } from './gpuCompare.js';
+import { packNormalOct } from '../../voxel/octNormal.js';
 import { FACE_E } from '../GBuffer.js';
 import { edgeRules } from '../edgePass.js';
 import { makeOk } from '../../test/assert.js';
@@ -363,8 +364,9 @@ const geom = (f, opts) => compareGeometry(f.gbuf, f.depth, f.giBuf, f.gaBuf, f.d
 {
   const table = bindShading(palette, detailPass, 1), id = table.idFor('stone');
   const boundary = table.records[id].v2.grid.v;
+  const uMid = 0.25 * table.records[id].v2.grid.u; // mid-block in both staggered courses (stagger .5)
   const makeTexel = (n = N) => {
-    const f = makeGeomFixture(2, id, 123, 0.2, boundary - 0.00005, 10, n);
+    const f = makeGeomFixture(2, id, 123, uMid, boundary - 0.00005, 10, n);
     Object.assign(f.gbuf, { face: new Uint8Array(n), z: new Float32Array(n), aoD: new Float32Array(n).fill(Infinity),
       dudx: new Float32Array(n).fill(0.01), dvdx: new Float32Array(n), dudy: new Float32Array(n), dvdy: new Float32Array(n).fill(0.01) });
     for (let i = 0; i < n; i++) f.gaBuf[i * 4 + 3] = f32Bits(Infinity);
@@ -448,3 +450,35 @@ const geom = (f, opts) => compareGeometry(f.gbuf, f.depth, f.giBuf, f.gaBuf, f.d
 
 console.log(`\n[gpuCompare.test.js] ${pass} passed, ${fail} failed`);
 if (fail) { for (const f of failures) console.error('  FAIL: ' + f); process.exit(1); }
+
+// EMIS-03/04: compareGlow - twin vs a "GPU" output equal to the twin passes; a flipped byte beyond tol 1 fails; vacuous (no emissive) fails.
+{
+  const { compareGlow: cg } = await import('./gpuCompare.js');
+  const { glowFrame: gf, GLOW_LEVELS: GL } = await import('../glow.js');
+  const cols = 8, rows = 5, n = cols * rows, kind = new Uint8Array(n).fill(1), mat = new Uint16Array(n), depth = new Float32Array(n).fill(5);
+  mat[2 * cols + 3] = 1;
+  const emis = new Float32Array([0, 1]);
+  const fgIn = new Uint8Array(n * 4).fill(100), bgIn = new Uint8Array(n * 4).fill(20);
+  for (let i = 0; i < n; i++) { fgIn[i * 4 + 3] = 40; bgIn[i * 4 + 3] = 255; }
+  const P = GL.high, oF = new Uint8Array(n * 4), oB = new Uint8Array(n * 4);
+  gf({ kind, mat, depth }, cols, rows, emis, fgIn, bgIn, oF, oB, P);
+  const ok1 = cg({ kind, mat, depth }, cols, rows, emis, fgIn, bgIn, oF, oB, P);
+  if (!ok1.ok) throw new Error('compareGlow: identical output must pass ' + JSON.stringify(ok1));
+  const bad = new Uint8Array(oF); bad[(2 * cols + 4) * 4] += 5;
+  if (cg({ kind, mat, depth }, cols, rows, emis, fgIn, bgIn, bad, oB, P).fg.ok) throw new Error('compareGlow: +5 byte must fail');
+  if (cg({ kind, mat, depth }, cols, rows, new Float32Array([0, 0]), fgIn, bgIn, fgIn, bgIn, P).ok) throw new Error('compareGlow: vacuous pose must fail');
+  console.log('compareGlow checks OK');
+}
+
+// 9. DRESS-01 follow-up: mesh-bar cap is 128 for sun-map shadow poses (single penumbra band flip of 106), 96 otherwise; a 106 diff
+//    passes the shadow bar but still fails the plain one, and a wrong colour (>128) fails both.
+{
+  const kind = new Uint8Array(N).fill(7);
+  const js = makeCells(() => {});
+  const mk = d => makeCells((fg) => { fg[0] = d; });
+  const run = (d, shadow) => compareCells(js.fg, js.bg, mk(d).fg, mk(d).bg, kind, COLS, ROWS, undefined, undefined, 0.01, meshCellCap(shadow), true).pass;
+  ok('meshCellCap values', meshCellCap(true) === 128 && meshCellCap(false) === 96);
+  ok('106 band flip passes with the shadow cap', run(106, true));
+  ok('106 band flip still fails the plain cap', !run(106, false));
+  ok('200 wrong colour fails even with the shadow cap', !run(200, true));
+}

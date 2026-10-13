@@ -72,7 +72,7 @@ for (const [y, yaw] of [[10, 0], [-10, 180]]) {
   const i = hits[0], fi = i * 4, point = new Float64Array(3);
   unprojectCell(terms, i % cols, (i / cols) | 0, fb.water.depth[i], point);
   const h = waterfallHash(table, 8 * WL_STRIDE, point[0], point[1], fb.water.z[i]);
-  const bright = 0.6 + (h % 3) * 0.2, k = palette.timeOfDay.clear.ambientI + palette.timeOfDay.clear.sunI * Math.sin(Math.PI / 4);
+  const bright = 0.6 + (h % 3) * 0.2, k = palette.timeOfDay.clear.ambientI + palette.timeOfDay.clear.sunI; // OB-045: sheets take the full sun term (foam, no N.L / cliff sun map)
   let sr = Math.min(255, table[8 * WL_STRIDE] * k * bright), sg = Math.min(255, table[8 * WL_STRIDE + 1] * k * bright), sb = Math.min(255, table[8 * WL_STRIDE + 2] * k * bright);
   if ((h >>> 8) * (1 / 16777216) > 0.92) { sr = table[8 * WL_STRIDE + 8]; sg = table[8 * WL_STRIDE + 9]; sb = table[8 * WL_STRIDE + 10]; }
   const a = 0.75, byte = (v) => Math.floor(v + 0.5);

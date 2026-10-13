@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "note": "Look-at texts (writer: docs/story.md 'This side - look-at texts'). Key = entity components.inspect.text. Optional: entities[] = extra anchor ids without that component, afterItem = the anchor only appears once that item has been taken (never clashes with its pickup prompt), radius, hint/hintTitle = second banner. Never locks: banner only.",
+  "texts": {
+    "note.strand.monster": {
+      "prompt": "[E] Read the sign",
+      "title": "A sign on the Long Strand",
+      "lines": ["Carved in a driftwood post, worn salt-white:", "SWIM TO THE STAKES. NOT ONE STROKE PAST.", "Under it, newer, in charcoal: IT CIRCLES FIRST."],
+      "radius": 3.0,
+      "entities": ["strandSign"]
+    },
+    "note.knot": {
+      "prompt": "[E] Look at the knot",
+      "title": "A knot on the brass",
+      "lines": ["A skyworks hitch. Lamp-trimmers tie it.", "Pulled tight. Weathered grey. Years old."],
+      "entities": ["knot"]
+    },
+    "note.sealedGate": {
+      "prompt": "[E] Look at the gate",
+      "title": "A gate across the pass",
+      "lines": ["Iron bars. A lock the size of a fist.", "", "The keyhole is clean. No rust in it.", "Someone still keeps a key."],
+      "again": "note.sealedGate.again",
+      "hintTitle": "The Sealed Gate",
+      "hint": "Locked. The bars do not even rattle.",
+      "radius": 3.2,
+      "entities": ["sealedGate"]
+    },
+    "note.sealedGate.again": {
+      "title": "A gate across the pass",
+      "lines": ["Oil on the hinges. Fresh this season.", "Whoever keeps the key keeps the gate."]
+    },
+    "inspect.wagon": {
+      "prompt": "[E] Look at the cart",
+      "title": "A cart off the road",
+      "lines": ["Tipped on its side. The axle snapped clean.", "Crates split open. Straw gone grey. Nothing in them.", "The ruts run east, toward the Wall.", "Nobody came back for it."]
+    },
+    "inspect.well": {
+      "prompt": "[E] Look at the well",
+      "title": "A dry well",
+      "lines": ["Planks across the mouth. One brick gone.", "You drop a pebble. No splash. No echo.", "The bucket rope was cut, not rotted.", "Someone did not want it used again."]
+    },
+    "inspect.shrine": {
+      "prompt": "[E] Look at the shrine",
+      "title": "A fallen shrine",
+      "lines": ["A stone niche on its back. The pillar leans west.", "Three rings cut in the base, worn soft.", "The same mark as the relays.", "In the niche, a cup of rainwater. Fresh."]
+    },
+    "inspect.woodpile": {
+      "prompt": "[E] Look at the woodpile",
+      "title": "A woodcutter's stack",
+      "lines": ["Split logs, stacked bark-up against the rain.", "Grey with age. Moss along the top row.", "A tally cut in the end post stops mid-row.", "Ash on the top logs. Blown from the tower."]
+    },
+    "inspect.gateLamp": {
+      "prompt": "[E] Look at the lanterns",
+      "title": "Lanterns at the gate",
+      "lines": ["Floor lanterns, set in a row. Burning.", "Out here, at the far end of the road.", "Someone wants this gate found."],
+      "entities": ["sgLamp1", "sgLamp2", "sgLamp3", "sgLamp4", "sgLamp5", "sgLamp6"]
+    },
+    "inspect.roadLamp": {
+      "prompt": "[E] Look at the lamp",
+      "title": "A lamp on a crate",
+      "lines": ["Brass, set on an old crate by the road.", "It is lit. Nobody comes to light it.", "The oil never seems to go down."],
+      "entities": ["rsLamp1", "rsLamp2"]
+    },
+    "inspect.tradeLamp": {
+      "prompt": "[E] Look at the lamp",
+      "title": "A lamp on the counter",
+      "lines": ["Brass, on the trade post counter. Lit.", "The flame is trimmed low and even.", "Skyworks neat. Out here."],
+      "entities": ["tradeLamp"]
+    },
+    "inspect.nest.empty": {
+      "prompt": "[E] Look at the nest",
+      "title": "A crow's nest",
+      "lines": ["Sticks, wire, a bootlace, a bent spoon.", "A round hollow where the glass sat.", "Someone has already counted what is left."],
+      "entities": ["nest"],
+      "afterItem": "relay.mirror"
+    },
+    "note.fordMark": {
+      "prompt": "[E] Look at the mark",
+      "title": "A mark cut in the base",
+      "lines": ["Three rings and a line through them.", "The same mark as the stones under the Wards.", "The ones that hum."],
+      "entities": ["fordMark"]
+    },
+    "note.owBoard": {
+      "prompt": "[E] Read the board",
+      "title": "Notices, nailed up",
+      "lines": ["Crown notices, printed in Ferrum. Rain-soft.", "FELL BEYOND THE WALL. Name after name.", "Carried out here and nailed up, one by one.", "One line cut away. On the nail, a skyworks knot."]
+    },
+    "note.pierStone": {
+      "prompt": "[E] Read the stone",
+      "title": "A standing stone",
+      "lines": ["A dressed block, set on end beside the track.", "Old mortar on one face. Once part of a bridge pier.", "A Crown stamp, half chiselled away.", "The bridge was pulled down. Not by the river."]
+    }
+  }
+}

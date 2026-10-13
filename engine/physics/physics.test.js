@@ -945,6 +945,19 @@ function doorwayLevel() {
 }
 
 // ---------------------------------------------------------------------
+// AUD-03: a floor higher than stepUpMax under a grounded body is a wall, not a drop: no same-step
+// "airborne + land" pop onto the ledge, fallDistance >= 0.
+{
+  const level = miniLevel();
+  const player = new Player(level);
+  player.x = 2.5; player.y = 4.5; player.z = 0; // inside the 0.6 m 'L' cell (> stepUpMax 0.45)
+  for (let i = 0; i < 6; i++) {
+    stepN(player, level, { forward: 0, strafe: 0, run: false, yawDeg: 90 }, 1);
+    ok('AUD-03 no ledge pop (step ' + i + ')', player.z < 0.01, 'z=' + player.z);
+    ok('AUD-03 fallDistance >= 0 (step ' + i + ')', !(player.fallDistance < 0), 'fd=' + player.fallDistance);
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed.`);
 if (fail > 0) {
   console.log('\nFAILURES:');

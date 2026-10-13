@@ -22,8 +22,11 @@
 // v1-only material (iron, grate, ash, rock) and the `?detail=0` A/B switch.
 
 import { fastShade, samplePowLUT } from './fastShade.js';
+import { entityTintAt, tintChannel } from './entityTint.js';
+import { vegTintGain } from '../mesh/vegTint.js';
 import { KIND_MODEL, KIND_MESH, FACE_PACKED } from './GBuffer.js';
 import { clamp01, clampByte } from '../core/math.js';
+import { fogShapeCtx, fogShapeF, fogScatterW, fogScatterColor, fogCellDirJS } from './fogShape.js';
 
 // --- fast level()/orientClass() (tech notes item 6) -------------------------
 const TAN22 = Math.tan(22 * Math.PI / 180);
@@ -161,14 +164,23 @@ export function shadeV2(DP, rgb, m, s, L, out) {
   // per block instead of one per fine texel - else on the texel one octave
   // coarser (`floor(u*ds*0.5)`), so both stop rerolling on sub-cell motion.
   // hB (LOD tier dither + fog stipple) stays on the base texel, unchanged.
-  let hA, hC;
-  if (g) {
+  // GRID-TEXEL-GLYPH-01a: `grid.glyph: 'texel'` keys hA/hC on the octave
+  // texel (like non-grid); `jit` keeps the per-block die hJ (== old grid hA).
+  let hA, hC, hJ;
+  if (g && g.glyph !== 'texel') {
     hA = hash(bix, course, m.seed);
     hC = hash(bix, course, m.seed + 13);
+    hJ = hA;
+  } else if (g) {
+    const cx = Math.floor(u * ds * 0.5), cy = Math.floor(v * ds * 0.5);
+    hA = hash(cx, cy, m.seed);
+    hC = hash(cx, cy, m.seed + 13);
+    hJ = hash(bix, course, m.seed);
   } else {
     const cx = Math.floor(u * ds * 0.5), cy = Math.floor(v * ds * 0.5);
     hA = hash(cx, cy, m.seed);
     hC = hash(cx, cy, m.seed + 13);
+    hJ = hA;
   }
   const hB = hash(btx, bty, m.seed + 7);
   const hBlock = hash(bix, course, m.seed + 3);
@@ -246,7 +258,7 @@ export function shadeV2(DP, rgb, m, s, L, out) {
   const fk = faceShade[s.normal] || 1;
   let aok = 1;
   if (s.aoD != null && s.aoD < ao.r) aok = ao.k + (1 - ao.k) * smoothstepFast(0, ao.r, s.aoD);
-  const jit = 1 + (m.jitter || 0) * (hA * 2 - 1);
+  const jit = 1 + (m.jitter || 0) * (hJ * 2 - 1);
   const b = Lm * m.albedo * shadeK * fk * aok * jit + (m.emissive || 0);
   const lift = shading.lift;
   let gb = b < cutoff ? 0 : lift + (1 - lift) * Math.min(b, 1);
@@ -320,7 +332,7 @@ function hashFast(x, y, s) {
 // except at 1-ulp threshold boundaries). Named distinctly from the oracle's
 // own `levelFast` above (different signature: a baked threshold array, not
 // a cutoff/gamma pair).
-function levelFromThresholds(levels, gb, thresholds, cutoff) {
+export function levelFromThresholds(levels, gb, thresholds, cutoff) {
   if (!(gb >= cutoff)) return 0;
   let i = 0;
   for (let k = 1; k < levels; k++) { if (thresholds[k] <= gb) i = k; else break; }
@@ -433,14 +445,16 @@ export function shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist
   else oct = 2;
   const ds = rec.detail * POW2[oct + 3];
   const btx = Math.floor(u * rec.detail), bty = Math.floor(v * rec.detail);
-  let hA, hC;
-  if (g) {
+  let hA, hC, hJ;
+  if (g && !g.texel) {
     hA = hashFast(bix, course, rec.seed);
     hC = hashFast(bix, course, rec.seed + 13);
+    hJ = hA;
   } else {
     const cx = Math.floor(u * ds * 0.5), cy = Math.floor(v * ds * 0.5);
     hA = hashFast(cx, cy, rec.seed);
     hC = hashFast(cx, cy, rec.seed + 13);
+    hJ = g ? hashFast(bix, course, rec.seed) : hA;
   }
   const hB = hashFast(btx, bty, rec.seed + 7);
   const hBlock = hashFast(bix, course, rec.seed + 3);
@@ -549,8 +563,9 @@ export function shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist
   const fk = kind === KIND_MODEL ? 1 : (table.faceK[face] || 1);
   let aok = 1;
   if (aoD < table.ao.r) aok = table.ao.k + (1 - table.ao.k) * smoothstepFast(0, table.ao.r, aoD);
-  const jit = 1 + rec.jitter * (hA * 2 - 1);
-  const b = Lm * rec.albedo * shadeK * fk * aok * jit * (1 - WET_DARK * (shading.wetness || 0)) + rec.emissive;
+  const jit = 1 + rec.jitter * (hJ * 2 - 1);
+  let b = Lm * rec.albedo * shadeK * fk * aok * jit * (1 - WET_DARK * (shading.wetness || 0)) + rec.emissive;
+  const flo = shading.floorLum; if (flo > 0 && b < flo) b = flo; // DN-02 night floor (WGSL twin: shadeCore)
   const lift = shading.lift;
   const gb = b < cutoff ? 0 : lift + (1 - lift) * Math.min(b, 1);
 
@@ -573,9 +588,30 @@ export function shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist
  * the averaged `b`/`gb`/`cr`/`cg`/`cb`/`bgK`/`hA`/`hB`. `face` is only
  * needed for `orientClassCode`'s du/dv axis pick.
  */
-function shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff, light, out) {
+const _fogFgS = [0, 0, 0], _fogBgS = [0, 0, 0], _fogOut = [0, 0, 0];
+let vegOn = false; // AUD-47: set per cell by shadeSurfaces (v2 path) so the gain lands before fog like the WGSL
+const vegGain = new Float32Array(3);
+function shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff, light, out, cellIdx) {
   const fog = table.fog;
-  const f = dist <= fog.start ? 0 : dist >= fog.full ? 1 : (dist - fog.start) / (fog.full - fog.start);
+  let f = dist <= fog.start ? 0 : dist >= fog.full ? 1 : (dist - fog.start) / (fog.full - fog.start);
+  let fogFgC = fog.fgRGB, fogBgC = fog.bgRGB;
+  const fLin = f; // (edge gate keeps the interior linear factor, also outdoors: edge.wgsl recomputes it from the interior start/full)
+  if (fogShapeCtx.outdoor) { // OB-089: terrain far fog (twin of the fogView.z branch in shade.wgsl): colour near->far by the same factor, fg == bg
+    const o = fogShapeCtx;
+    f = dist <= o.tStart ? 0 : dist >= o.tFull ? 1 : (dist - o.tStart) / (o.tFull - o.tStart);
+    if (o.tCurve !== 1) f = Math.pow(f, o.tCurve);
+    const nr = o.tNear, fr2 = o.tFar;
+    _fogOut[0] = nr[0] + (fr2[0] - nr[0]) * f; _fogOut[1] = nr[1] + (fr2[1] - nr[1]) * f; _fogOut[2] = nr[2] + (fr2[2] - nr[2]) * f;
+    fogFgC = _fogOut; fogBgC = _fogOut;
+  } // edge-pass gate (gbuf.fogF): the LINEAR factor - edge.wgsl fogF(dist) recomputes it without the AUD-45 boost
+  if (fogShapeCtx.on && f > 0) { // AUD-45 (twin of the WGSL block in fs_main): height fog + sun in-scatter
+    const sc = fogShapeCtx, cols = sc.terms.cols;
+    const row = Math.floor(cellIdx / cols), col = cellIdx - row * cols;
+    const d = fogCellDirJS(col, row);
+    f = fogShapeF(f, dist, sc.camZ, d[2] / Math.sqrt(Math.max(d[0] * d[0] + d[1] * d[1], 1e-12)));
+    const sw = fogScatterW(d[0] * sc.sunX + d[1] * sc.sunY + d[2] * sc.sunZ, sc.sunZ, sc.sunI);
+    fogFgC = fogScatterColor(_fogFgS, fogFgC, sw); fogBgC = fogScatterColor(_fogBgS, fogBgC, sw);
+  }
 
   let glyphCode;
   if (core.gb <= 0) glyphCode = 0;
@@ -606,8 +642,12 @@ function shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff
   }
   if (r > 255) r = 255; if (gg > 255) gg = 255; if (bl > 255) bl = 255;
   let xr = r * core.bgK, xg = gg * core.bgK, xb = bl * core.bgK;
+  if (vegOn) { // AUD-47: WGSL order - gain on fg and bg after the byte clamp / bgK, BEFORE fog (fog below blends the tinted colour)
+    r *= vegGain[0]; gg *= vegGain[1]; bl *= vegGain[2];
+    xr *= vegGain[0]; xg *= vegGain[1]; xb *= vegGain[2];
+  }
   if (f > 0) {
-    const fogFg = fog.fgRGB, fogBg = fog.bgRGB;
+    const fogFg = fogFgC, fogBg = fogBgC;
     r += (fogFg[0] - r) * f; gg += (fogFg[1] - gg) * f; bl += (fogFg[2] - bl) * f;
     xr += (fogBg[0] - xr) * f; xg += (fogBg[1] - xg) * f; xb += (fogBg[2] - xb) * f;
   }
@@ -615,7 +655,7 @@ function shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff
   out.glyphIdx = glyphCode;
   out.fg[0] = r; out.fg[1] = gg; out.fg[2] = bl;
   out.bg[0] = xr; out.bg[1] = xg; out.bg[2] = xb;
-  out.f = f;
+  out.f = fLin; // NOT the height-boosted f: GPU edge gate parity (fix of AUD-45 edge divergence)
   out.onJoint = core.onJoint;
   return out;
 }
@@ -654,7 +694,7 @@ export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
   const aoD = ((kind === KIND_MODEL || kind === KIND_MESH) && face === FACE_PACKED) ? Infinity : gbuf.aoD[i];
   const dudx = gbuf.dudx[i], dvdx = gbuf.dvdx[i], dudy = gbuf.dudy[i], dvdy = gbuf.dvdy[i];
   const core = shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist, face, kind, light, coreScratch);
-  return shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff, light, out);
+  return shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff, light, out, i);
 }
 
 /**
@@ -704,6 +744,8 @@ const fastOut = { fg: [0, 0, 0], bg: [0, 0, 0], glyphIdx: 0 };
 // US-006: this cell's selected [r,g,b] light (uniform or per-cell - see
 // `shadeSurfaces`), handed to `shadeDetailFast` unchanged.
 const cellLight = [0, 0, 0];
+const tintScratch = new Float32Array(4), tintFg = [0, 0, 0], tintBg = [0, 0, 0]; // 38.23
+const vegFg = [0, 0, 0], vegBg = [0, 0, 0]; // AUD-47 (v1 path post-hoc; v2 path via shadeTail)
 
 // v1 interior fog (US-004b's own fast fog, duplicated here in numbers only -
 // no `P.util.fogFactor` call per cell; matches `fastShade.js`'s
@@ -761,6 +803,7 @@ export function shadeSurfaces(fb, gbuf, table, DP, lightBuf) {
     }
   }
 
+  const tints = fb.entityTints || null; // 38.23 table or null (off)
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const i = y * cols + x;
@@ -774,7 +817,9 @@ export function shadeSurfaces(fb, gbuf, table, DP, lightBuf) {
       const light = cellLight;
 
       if (DP && rec && rec.v2) {
+        vegOn = gbuf.objectId ? vegTintGain(gbuf.objectId[i], vegGain) : false;
         shadeDetailFast(table, rec.v2, i, gbuf, dist, light, fastV2Out);
+        vegOn = false;
         glyphIdx = fastV2Out.glyphIdx; fg = fastV2Out.fg; bg = fastV2Out.bg;
         f = fastV2Out.f; onJoint = fastV2Out.onJoint;
       } else {
@@ -785,6 +830,18 @@ export function shadeSurfaces(fb, gbuf, table, DP, lightBuf) {
         onJoint = false;
       }
 
+      if (!(DP && rec && rec.v2) && gbuf.objectId && vegTintGain(gbuf.objectId[i], vegGain)) { // AUD-47 v1 path (v2 applied before fog in shadeTail)
+        vegFg[0] = fg[0] * vegGain[0]; vegFg[1] = fg[1] * vegGain[1]; vegFg[2] = fg[2] * vegGain[2];
+        vegBg[0] = bg[0] * vegGain[0]; vegBg[1] = bg[1] * vegGain[1]; vegBg[2] = bg[2] * vegGain[2];
+        fg = vegFg; bg = vegBg;
+      }
+      if (tints !== null && tints.count > 0 && gbuf.objectId && entityTintAt(tints, gbuf.objectId[i], tintScratch)) {
+        // 38.23: display override after lighting, before fog (fogF below); no light emitted.
+        const tk = tintScratch[3];
+        tintFg[0] = tintChannel(fg[0], tintScratch[0], tk); tintFg[1] = tintChannel(fg[1], tintScratch[1], tk); tintFg[2] = tintChannel(fg[2], tintScratch[2], tk);
+        tintBg[0] = tintChannel(bg[0], tintScratch[0], tk); tintBg[1] = tintChannel(bg[1], tintScratch[1], tk); tintBg[2] = tintChannel(bg[2], tintScratch[2], tk);
+        fg = tintFg; bg = tintBg;
+      }
       rt.setCellRGB(x, y, glyphIdx,
         clampByte(fg[0]), clampByte(fg[1]), clampByte(fg[2]),
         clampByte(bg[0]), clampByte(bg[1]), clampByte(bg[2]));

@@ -13,13 +13,17 @@
 import { defineUniformBlock } from './uniformBlock.js';
 import { FULLSCREEN_VS_WGSL } from './common.wgsl.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
+import { structMaskDecl, IN_STRUCT_FOOT_WGSL } from './structMask.wgsl.js';
 import { SHADOW_Z_LINE } from './raster.wgsl.js';
 
 export const SHADOW_TERRAIN_BLOCK = defineUniformBlock('ShadowTerrainU', [
   { name: 'model', type: 'mat4' }, { name: 'viewProj', type: 'mat4' }, // viewProj = M_sun
   { name: 'structCount', type: 'i32' }, { name: 'pad0', type: 'f32' }, { name: 'pad1', type: 'f32' }, { name: 'pad2', type: 'f32' },
   { name: 'structFoot', type: 'vec4', count: MAX_STRUCTS }, // x0, y0, x1, y1 (world m) per placed structure
+  { name: 'structMask', type: 'vec4', count: MAX_STRUCTS }, // GS-01b: (row offset in uStructMask, hasMask, 0, 0) per structure
 ]);
+/** Terrain shadow pipeline textures: 0 = uStructMask (GS-01b carve mask atlas, r8ui). */
+export const SHADOW_TERRAIN_TEXTURES = Object.freeze(['uint']);
 
 export const SHADOW_TEXTURES = Object.freeze([]);
 export const SHADOW_TARGETS = Object.freeze([]);            // depth-only: no colour attachments
@@ -34,6 +38,7 @@ fn fs_main() {}
 
 export const SHADOW_TERRAIN_WGSL = `
 ${SHADOW_TERRAIN_BLOCK.wgsl}
+${structMaskDecl(0)}
 @group(1) @binding(0) var<uniform> u: ShadowTerrainU;
 const MAX_STRUCTS: i32 = ${MAX_STRUCTS};
 
@@ -54,16 +59,8 @@ struct VertexOut {
   return o;
 }
 
-// GLSL: the loop body \`discard\`s; same test here, factored so Node can probe it (rasterJS.js insideStructFoot twin).
-fn inStructFoot(wp: vec3f) -> bool {
-  for (var i = 0; i < MAX_STRUCTS; i++) {
-    if (i >= u.structCount) { break; }
-    let b = u.structFoot[i];
-    if (wp.x >= b.x && wp.x < b.z && wp.y >= b.y && wp.y < b.w) { return true; }
-  }
-  return false;
-}
-
+// GLSL: the loop body \`discard\`s; same test here, factored so Node can probe it (rasterJS.js insideStructFoot twin; GS-01b: shared with terrainRaster).
+${IN_STRUCT_FOOT_WGSL}
 @fragment
 fn fs_main(@location(0) vWorldPos: vec3f) {
   if (inStructFoot(vWorldPos)) { discard; }

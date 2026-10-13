@@ -180,3 +180,10 @@ export function stepAnimations(world, dtMs) {
   _animCtx.dtMs = dtMs;
   world.forEachEntity(stepOneEntityAnim);
 }
+
+/** FRAME-ALLOC-01: same as `stepAnimations(world, dtSecBuf[0] * 1000)` without boxing the dt across the call. */
+export function stepAnimationsBuf(world, dtSecBuf) {
+  _animCtx.world = world;
+  _animCtx.dtMs = dtSecBuf[0] * 1000;
+  world.forEachEntity(stepOneEntityAnim);
+}

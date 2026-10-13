@@ -1,0 +1,38 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/WindowShutters_Wide_Flat_Open",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "WindowShutters_Wide_Flat_Open.mesh.bin",
+  "triCount": 120,
+  "bbox": [
+    -1.23871,
+    -0.59317,
+    1.09324,
+    1.24186,
+    -0.13666,
+    2.51728
+  ],
+  "ranges": [
+    {"count": 120, "part": "WindowShutters_Wide_Flat_Open#0", "start": 0}
+  ],
+  "matKeys": [
+    "MI_WoodTrim_Wear"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "ivy",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "jZeevz813r5t54s/mpmZv+XQAr9t54s/mpmZv+XQAr+HFiFAjZeevz813r5t54s/mpmZv+XQAr+HFiFAjZeevz813r6HFiFAmpmZv+XQAr9t54s/CteTv3E9Cr9t54s/CteTv3E9Cr+HFiFAmpmZv+XQAr9t54s/CteTv3E9Cr+HFiFAmpmZv+XQAr+HFiFACteTv3E9Cr9t54s/UI2XP9nOF79t54s/UI2XP9nOF7+HFiFACteTv3E9Cr9t54s/UI2XP9nOF7+HFiFACteTv3E9Cr+HFiFAUI2XP9nOF79t54s/46WbP166Cb9t54s/46WbP166Cb+HFiFAUI2XP9nOF79t54s/46WbP166Cb+HFiFAUI2XP9nOF7+HFiFA46WbP166Cb9t54s/2/meP9ej8L5t54s/2/meP9ej8L6HFiFA46WbP166Cb9t54s/2/meP9ej8L6HFiFA46WbP166Cb+HFiFA2/meP9ej8L5t54s/RrYzP3e+H75t54s/RrYzP3e+H76HFiFA2/meP9ej8L5t54s/RrYzP3e+H76HFiFA2/meP9ej8L6HFiFARrYzP3e+H75t54s/sHIov7pJDL5t54s/sHIov7pJDL6HFiFARrYzP3e+H75t54s/sHIov7pJDL6HFiFARrYzP3e+H76HFiFAsHIov7pJDL5t54s/jZeevz813r5t54s/jZeevz813r6HFiFAsHIov7pJDL5t54s/jZeevz813r6HFiFAsHIov7pJDL6HFiFAjZeevz813r6HFiFAmpmZv+XQAr+HFiFACteTv3E9Cr+HFiFAjZeevz813r5t54s/CteTv3E9Cr9t54s/mpmZv+XQAr9t54s/jZeevz813r6HFiFACteTv3E9Cr+HFiFAUI2XP9nOF7+HFiFAjZeevz813r5t54s/UI2XP9nOF79t54s/CteTv3E9Cr9t54s/jZeevz813r6HFiFAUI2XP9nOF7+HFiFA46WbP166Cb+HFiFAjZeevz813r5t54s/46WbP166Cb9t54s/UI2XP9nOF79t54s/jZeevz813r6HFiFA46WbP166Cb+HFiFA2/meP9ej8L6HFiFAjZeevz813r5t54s/2/meP9ej8L5t54s/46WbP166Cb9t54s/jZeevz813r6HFiFA2/meP9ej8L6HFiFARrYzP3e+H76HFiFAjZeevz813r5t54s/RrYzP3e+H75t54s/2/meP9ej8L5t54s/jZeevz813r6HFiFARrYzP3e+H76HFiFAsHIov7pJDL6HFiFAjZeevz813r5t54s/sHIov7pJDL5t54s/RrYzP3e+H75t54s/"
+}

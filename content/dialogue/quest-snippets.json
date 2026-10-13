@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "slots": "{title} {objective} {giver} {reward} {count} {target}",
+  "choices": {"accept": "I'll do it.", "later": "Not yet."},
+  "later": "Another time, then.",
+  "generic": {
+    "offer": ["I have a job for you: {title}.", "{objective}."],
+    "active": ["{objective}. Come back when it is done."],
+    "ready": ["Well done. {title} is finished.", "Take this: {reward}."]
+  },
+  "byKind": {
+    "collect": {
+      "offer": ["I need {count} of them: {title}.", "{objective}."],
+      "active": ["Still short? {objective}."],
+      "ready": ["That is the lot. Thank you.", "Take this: {reward}."]
+    },
+    "kill": {
+      "offer": ["Something needs clearing: {title}.", "{objective}."],
+      "active": ["Not done yet. {objective}."],
+      "ready": ["It is quiet again. Good work.", "Take this: {reward}."]
+    },
+    "deliver": {
+      "offer": ["Would you carry something for me?", "{objective}."],
+      "active": ["Still carrying it? {objective}."],
+      "ready": ["Delivered. I owe you.", "Take this: {reward}."]
+    },
+    "fetch": {
+      "offer": ["I am missing something: {title}.", "{objective}."],
+      "active": ["Still looking? {objective}."],
+      "ready": ["That is the one. Thank you.", "Take this: {reward}."]
+    },
+    "talk": {
+      "offer": ["Would you pass a word along? {title}.", "{objective}."],
+      "active": ["Not yet spoken? {objective}."],
+      "ready": ["So they heard it. Good.", "Take this: {reward}."]
+    },
+    "escort": {
+      "offer": ["Walk with me a while: {title}.", "{objective}."],
+      "active": ["I will keep up. {objective}."],
+      "ready": ["We made it. Thank you.", "Take this: {reward}."]
+    },
+    "explore": {
+      "offer": ["Have a look around for me: {title}.", "{objective}."],
+      "active": ["Not seen it all yet. {objective}."],
+      "ready": ["So that is what is out there.", "Take this: {reward}."]
+    }
+  }
+}

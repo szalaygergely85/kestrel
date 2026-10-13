@@ -2,7 +2,7 @@
 //
 // Headless test suite for US-018 (docs/architecture.md section 16) step 4,
 // range widened by D-025 (US-038a, architecture.md 22.2/22.9 S1):
-// `clampGrid` (160x60..480x180, 8:3 aspect, default 240x90 on gl2). Plain
+// `clampGrid` (160x60..800x300, 8:3 aspect, default 240x90 on gl2). Plain
 // Node ESM, no test framework, no build step. Run with:
 //
 //   node engine/core/grid.test.js
@@ -24,13 +24,14 @@ const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
   ok('clamped=true when the input was out of range', r.clamped === true);
 }
 
-// ---- above the maximum clamps down to 480x180 (D-025) ---------------------
+// ---- above the maximum clamps down to 800x300 (D-025 amended by GRID-MAX-01) ----
 {
-  const r = clampGrid(500, 188);
-  ok('500 cols clamps down to 480', r.cols === 480, `cols=${r.cols}`);
-  ok('rows derived from the clamped cols (480*3/8=180)', r.rows === 180, `rows=${r.rows}`);
+  const r = clampGrid(900, 338);
+  ok('900 cols clamps down to 800', r.cols === 800 && GRID_MAX_COLS === 800, `cols=${r.cols}`);
+  ok('rows derived from the clamped cols (800*3/8=300)', r.rows === 300, `rows=${r.rows}`);
   ok('clamped=true when the input was out of range', r.clamped === true);
 }
+for (const c of [480, 560, 640, 720, 800]) { const r = clampGrid(c, c * 3 / 8); ok(`${c}x${c * 3 / 8} passes unclamped`, r.cols === c && r.rows === c * 3 / 8 && !r.clamped); }
 
 // ---- default (240x90) is in range, unclamped, rows derived ---------------
 {
@@ -44,7 +45,7 @@ const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 // ---- min/max constants match the documented range (D-025: max is now 480) -
 {
   ok('GRID_MIN_COLS is 160', GRID_MIN_COLS === 160);
-  ok('GRID_MAX_COLS is 480', GRID_MAX_COLS === 480);
+  ok('GRID_MAX_COLS is 800 (GRID-MAX-01)', GRID_MAX_COLS === 800);
 }
 
 // ---- a mismatched rows value (right cols, wrong aspect) is still flagged --

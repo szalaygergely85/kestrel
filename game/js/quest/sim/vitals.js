@@ -11,6 +11,8 @@
 // `dead`/`deathStep`/`cardReady`/`hurtTick` are transient presentation/flow state, kept on the returned sim object
 // only (not serialized - a reload always comes back alive, same as the "respawn never touches world.state" rule).
 
+import { applyDefence } from './equipment.js'; // EQ-02
+
 /** @param {any} player plain entity data (`world.get('player').data`-shaped: `{transform, components}`) */
 function ensureHealth(player, cfg) {
   const c = player.components || (player.components = {});
@@ -43,9 +45,12 @@ export function createVitals(world, events, cfg, hooks) {
   let eyeHStart = 1.6;     // standing eyeH captured the instant death starts, for eyeH()'s sink lerp
   let lastSafe = null;     // VOID-RESPAWN-01: the last grounded, not-falling spot {x,y,z,yawDeg,tick}
   let tick = 0;
+  let hpSince = 0;        // OB-077: steps since the last damage taken (reset by applyDamage/respawn)
+  let hpAcc = 0;          // OB-077: steps accumulated toward the next +1 hp
 
   const sim = {
     dead: false,
+    deathCause: null, // SWIM-05: 'drown' | 'eaten' (SWIM-06b) | null (combat/fall); cleared on respawn
     deathStep: 0,
     cardReady: false,
     hurtTick: 0,
@@ -76,6 +81,7 @@ export function createVitals(world, events, cfg, hooks) {
     health.hp = Math.max(0, health.hp - n);
     health.invuln = cfg.invulnSteps;
     sim.hurtTick = tick;
+    hpSince = 0; hpAcc = 0; // OB-077: any hit stops regen and restarts the delay
     if (player && typeof dirX === 'number' && typeof dirY === 'number') {
       const body = player.components && player.components.body;
       if (body) {
@@ -83,6 +89,24 @@ export function createVitals(world, events, cfg, hooks) {
         body.vy = (body.vy || 0) + dirY * cfg.knockbackSpeed;
       }
     }
+  }
+
+  /** SWIM-05: environmental damage (drowning) - ignores the invuln window, still honours godMode. Kills with `cause`. */
+  function hurt(n, cause) {
+    if (sim.godMode || sim.dead || !health || !(n > 0)) return false;
+    health.hp = Math.max(0, health.hp - n);
+    sim.hurtTick = tick; hpSince = 0; hpAcc = 0;
+    if (health.hp === 0) { kill(cause); return true; }
+    return false;
+  }
+
+  /** SWIM-05: instant death with a cause (drown / eaten). No-op while dead, in godMode or before the first step(). */
+  function kill(cause) {
+    if (sim.godMode || sim.dead || !health || !player) return false;
+    health.hp = 0;
+    sim.deathCause = cause || null;
+    enterDead();
+    return true;
   }
 
   /**
@@ -101,7 +125,7 @@ export function createVitals(world, events, cfg, hooks) {
   function onHit(p) {
     if (!p || p.target !== 'player' || !player || !health) return;
     const scale = p.source !== 'player' ? cfg.beastDamageScale : 1;
-    const n = Math.round((p.damage || 0) * scale);
+    let n = Math.round((p.damage || 0) * scale);
     let dirX, dirY;
     if (p.source != null) {
       const srcHandle = world.get(p.source);
@@ -113,6 +137,23 @@ export function createVitals(world, events, cfg, hooks) {
         if (d > 1e-9) { dirX = dx / d; dirY = dy / d; }
       }
     }
+    // GOB-03 (38.57): a thrown spear hits along its flight direction (block arc + knock), not thrower -> player.
+    if (p.ranged === 1 && typeof p.dirX === 'number' && typeof p.dirY === 'number') { dirX = p.dirX; dirY = p.dirY; }
+    // EQ-A2/EQ-06 (architecture 38.41): a raised shield blocks a frontal hit (needs a source direction): no damage,
+    // no invuln, no hurt; the attacker reads `p.blocked` after emit (out field, no re-entrant emit).
+    const sh = h.block;
+    if (sh && sh.blocking && dirX !== undefined && sh.covers(dirX, dirY)) {
+      p.blocked = 1;
+      sh.blockTick = tick;
+      const body = player.components && player.components.body;
+      if (body) {
+        body.vx = (body.vx || 0) + dirX * (cfg.blockKnockSpeed || 5.5);
+        body.vy = (body.vy || 0) + dirY * (cfg.blockKnockSpeed || 5.5);
+      }
+      return;
+    }
+    // EQ-02: worn gear reduces the damage taken; `h.defence()` = total defence points (equipment.defenceOf).
+    if (typeof h.defence === 'function') n = applyDefence(n, h.defence(), typeof h.defenceBonus === 'function' ? h.defenceBonus() : 0); // QL-19: night cloak
     applyDamage(n, dirX, dirY);
   }
   const offCombatHit = events.on('combat:hit', onHit);
@@ -158,6 +199,8 @@ export function createVitals(world, events, cfg, hooks) {
     health.invuln = cfg.invulnSteps;
     if (mana) mana.mp = mana.max; // US-080b: full mana on respawn, per the US-080 AC
     sim.dead = false;
+    sim.deathCause = null;
+    hpSince = 0; hpAcc = 0;
     sim.deathStep = 0;
     sim.cardReady = false;
     lastSafe = null; // the save point may be >voidFallM below the old safe spot
@@ -184,18 +227,33 @@ export function createVitals(world, events, cfg, hooks) {
       // world (past lastSafe.z - voidFallM, e.g. the BUG-GONDOLA-FALL z=-1977), teleport back with no damage.
       const t = player.transform;
       const body = player.components && player.components.body;
-      if (body && body.grounded && !body.fallDistance) {
+      // OB-016: walking down a long slope (tower +2 -> Bend relay -31) left fallDistance > 0 between small step-downs, so the
+      // safe spot stayed at the tower and the 30 m void rule snapped the player back. Any grounded step is safe now, and the
+      // void rule only fires while actually airborne (falling out of the world), never while walking on ground.
+      // SWIM-03b (D-070): swimming is never a void fall and there is no deep-water rescue (wadeRescue removed): a deep spawn just swims.
+      // The void rule skips while body.swimming (also covers the first steps of a fall into water, wadeImm > 0).
+      if (body && body.grounded && !body.swimming) {
         if (!lastSafe || tick - lastSafe.tick >= cfg.voidSafeIntervalSteps) {
           lastSafe = { x: t.x, y: t.y, z: t.z, yawDeg: t.yawDeg, tick };
         }
       }
-      if (lastSafe && t.z < lastSafe.z - cfg.voidFallM) {
+      if (lastSafe && ((!(body && body.grounded) && t.z < lastSafe.z - cfg.voidFallM && !(body && (body.swimming || body.wadeImm > 0))))) {
         t.x = lastSafe.x; t.y = lastSafe.y; t.z = lastSafe.z;
         if (typeof lastSafe.yawDeg === 'number') t.yawDeg = lastSafe.yawDeg;
-        if (body) { body.vx = 0; body.vy = 0; body.vz = 0; body.grounded = true; body.fallDistance = 0; body.landed = false; } // no fall damage for the void drop
+        if (body) { body.vx = 0; body.vy = 0; body.vz = 0; body.grounded = true; body.fallDistance = 0; body.landed = false; body.wadeImm = 0; } // no fall damage for the void drop
         health.invuln = cfg.invulnSteps; // no damage, just the invuln window
       }
       if (health.hp === 0) enterDead();
+      else {
+        // OB-077 hp regen: after hpRegenDelaySteps without damage, +1 hp every hpRegenSteps; held while a hostile beast
+        // is aggro'd within hpRegenCombatR (h.beasts.aggroNear, beastSim). Integer steps only (deterministic).
+        hpSince++;
+        if (hpSince >= cfg.hpRegenDelaySteps && health.hp < health.max
+            && !(h.beasts && typeof h.beasts.aggroNear === 'function' && player.transform && h.beasts.aggroNear(player.transform.x, player.transform.y, cfg.hpRegenCombatR))) {
+          hpAcc++;
+          if (hpAcc >= cfg.hpRegenSteps) { health.hp = Math.min(health.max, health.hp + 1); hpAcc = 0; }
+        } else hpAcc = 0;
+      }
       // US-080b mana regen: paused `pause` steps after any spend, else +1 mp every `manaRegenSteps` steps.
       if (mana.pause > 0) mana.pause--;
       else {
@@ -227,17 +285,23 @@ export function createVitals(world, events, cfg, hooks) {
     hh.u32(mana ? mana.mp : 0);
     hh.u32(mana ? mana.pause : 0);
     hh.u32(mana ? mana.regen : 0);
+    hh.u32(hpSince); // OB-077
+    hh.u32(hpAcc);
   };
 
   // ---- dev (`?debug=1`, game side: main.js binds a free key to each of these - not this file's job) ----
   sim.setGodMode = function setGodMode(on) { sim.godMode = !!on; };
   sim.debugHit = function debugHit() { applyDamage(5); };
+  sim.hurt = hurt; sim.kill = kill; // SWIM-05
   sim.spendMana = spendMana; // US-080b: exposed for D-021 spells later; nothing calls it yet
 
   // Q9 item 1a: drops the `combat:hit` listener - main.js calls this right before creating the next sim on a
   // world load/restart, so listeners never pile up across restarts (one `events.on` per `createVitals` call,
   // same as the old unbounded behaviour, but now exactly one survives at a time).
   sim.dispose = function dispose() { offCombatHit(); };
+
+  // WS1-07b: travel jumps far; the old safe spot would pull the player back through the void rule.
+  sim.clearSafe = function clearSafe() { lastSafe = null; };
 
   return sim;
 }

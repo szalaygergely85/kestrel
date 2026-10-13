@@ -7,7 +7,7 @@
 // PlayerLook (US-047 - game/js/dev/** is an allowed engine/dev.js importer).
 import {
   AssetRegistry, createEngine, GBuffer, bindShading, bindLevel, DebugOverlay,
-  integrate, Camera, renderWorld, GpuCellPipeline, ambientL, World, drawSprites,
+  integrate, Camera, renderWorld, World, drawSprites, createRenderer, ambientL,
 } from '../../../engine/index.js';
 import { PlayerLook } from '../../../engine/dev.js';
 import { POSES } from '../../../tools/bench-poses.js';
@@ -18,9 +18,14 @@ const canvas = document.getElementById('screen');
 const assets = AssetRegistry.fromGlobals(window.ASSETS);
 const isCompare = params.get('spritecompare') === '1';
 const gridParam = /^(\d+)x(\d+)$/.exec(params.get('grid') || '');
+const gridCols = isCompare ? 160 : (gridParam ? Number(gridParam[1]) : 160), gridRows = isCompare ? 60 : (gridParam ? Number(gridParam[2]) : 60);
+// SPRITECOMPARE-WG-01: WebGPU renderer (createRenderer) + WgCellPipeline; force2d / gpu=0 keep the CPU-only world view.
+const built = await createRenderer({ canvas, cols: gridCols, rows: gridRows, backend: 'webgpu', gpu: params.get('gpu') !== '0', rays: 2, terrainEnabled: false,
+  force2d: params.get('force2d') === '1', shadows: { sun: 'map' } });
+const wgPipeline = built.pipeline && built.pipeline.ready && built.rt.backend === 'webgpu' ? built.pipeline : null;
 const engine = createEngine({
-  canvas, assets,
-  cols: isCompare ? 160 : (gridParam ? Number(gridParam[1]) : 160), rows: isCompare ? 60 : (gridParam ? Number(gridParam[2]) : 60),
+  canvas, assets, cols: gridCols, rows: gridRows,
+  renderTarget: built.rt, renderPipeline: wgPipeline,
   force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0',
 });
 const { renderTarget: rt, depthBuffer, input } = engine;
@@ -30,24 +35,21 @@ const detailPass = params.get('detail') !== '0' ? assets.detailPass : null;
 const gbuf = new GBuffer(rt.cols, rt.rows);
 console.log(`[RenderTarget] back-end: ${rt.backend} ${rt.cols}x${rt.rows}`);
 
-let gpuPipeline = null;
-if (rt.backend === 'gl2' && params.get('gpu') !== '0' && detailPass && matTable.allV2) {
-  const candidate = new GpuCellPipeline(rt);
-  if (candidate.ready) { candidate.bind(matTable, assets.palette); gpuPipeline = candidate; }
-}
-console.log(`[GpuCellPipeline] ${gpuPipeline ? 'active (' + gpuPipeline.rendererString + ')' : 'inactive - JS shading'}`);
-
-const sprites = createSpriteSystem({ assets, rt, gpuPipeline });
-window.__debug = { input, overlay, rt, engine, gpuPipeline, sprites };
+const sprites = createSpriteSystem({ assets, rt, wgPipeline });
+window.__debug = { input, overlay, rt, engine, sprites, wgPipeline };
 
 const fb = {
   rt, depth: depthBuffer, palette: assets.palette, lights: null, timeSec: 0,
   gbuf, matTable, detailPass, gpu: false, renderer: 'mesh',
 };
 
-// `?source=upload`: US-029 path (CPU cast + G-buffer upload, GPU shade/edge/sprites) - see runWorld/runCompare.
-const upload = params.get('source') === 'upload';
-if (upload && gpuPipeline) gpuPipeline.setSource('upload');
+if (wgPipeline) {
+  wgPipeline.bind(matTable, assets.palette);
+  if (window.ASSETS.waterLooks) wgPipeline.setWaterLooks(window.ASSETS.waterLooks);
+  wgPipeline.bindSprites({ pool: sprites.pool, atlas: sprites.atlas, palette: assets.palette, particleLayer: engine.particleLayer, overlay: engine.overlay });
+  if (wgPipeline.spritesCompiled) await wgPipeline.spritesCompiled;
+}
+console.log(`[WgCellPipeline] ${wgPipeline ? 'active (' + wgPipeline.rendererString + ')' : 'inactive - JS shading'}`);
 
 if (isCompare) runCompare(); else runWorld();
 
@@ -61,6 +63,7 @@ function runWorld() {
   };
   const world = engine.loadWorld(worldDef);
   for (const s of world.structures) bindLevel(matTable, s.level);
+  if (wgPipeline) wgPipeline.bind(matTable, assets.palette); // re-pack shade data for the materials bindLevel just added
   const playerHandle = world.get('player');
   const startT = playerHandle.data.transform;
   Object.assign(playerHandle.data.components.body || (playerHandle.data.components.body = {}), {
@@ -92,51 +95,43 @@ function runWorld() {
       const eye = Camera.fromEntity(playerHandle.data);
       cam.x = eye.x; cam.y = eye.y; cam.z = eye.z; cam.yawDeg = eye.yawDeg; cam.pitchDeg = eye.pitchDeg;
       fb.timeSec = simTime;
-      // `?source=upload`: US-029 path (CPU cast + G-buffer upload, GPU shade/edge/sprites).
-      fb.gpu = !!gpuPipeline && !upload;
+      fb.gpu = !!wgPipeline && wgPipeline.frameComplete && rt.gpuActive;
       renderWorld(fb, world, cam);
       sprites.render(fb, world, cam); // US-030c: after the surfaces, before present()
-      if (gpuPipeline) { if (upload) gpuPipeline.frame(fb, ambientL); else gpuPipeline.frame(fb, ambientL, cam, world); }
+      if (wgPipeline && wgPipeline.ready) wgPipeline.frame(fb, ambientL, cam, world);
       rt.present();
       const t = playerHandle.data.transform;
       overlay.update(engine.loop.fps, engine.loop.frameMs,
         `grid draw: ${(performance.now() - t0).toFixed(2)} ms\ncells: ${rt.cols}x${rt.rows}  backend: ${rt.backend}  shade: ${rt.gpuActive ? 'gpu' : 'cpu'}` +
-        (gpuPipeline ? `  upload ${gpuPipeline.stats.uploadMs.toFixed(2)}ms  gpu ${Number.isNaN(gpuPipeline.stats.gpuMsP50) ? 'n/a' : gpuPipeline.stats.gpuMsP50.toFixed(2) + 'ms'}` : '') +
         `\n${sprites.overlayLine()}\nworld (${t.x.toFixed(2)}, ${t.y.toFixed(2)}, ${t.z.toFixed(2)}) yaw ${look.yawDeg.toFixed(0)} pitch ${look.pitchDeg.toFixed(0)}${look.locked ? '' : ' [unlocked - click to look]'}`);
     },
   });
   window.__debug.world = world; window.__debug.playerHandle = playerHandle;
 }
 
-// `?spritecompare=1`: both paths render test_room as a World from the bench
-// poses; the CPU frame (`fb.gpu = false`) is the oracle, then the GPU
-// frame (`gpu = true` + pipeline.frame + present, sprite pass inside).
-function runCompare() {
-  if (!gpuPipeline || !sprites.pass) {
+// `?spritecompare=1`: both paths render test_room as a World from the bench poses; the CPU frame (`fb.gpu = false`)
+// is the oracle, then the WebGPU frame (`fb.gpu = true` + wgPipeline.frame + present, sprite pass inside) is read back
+// with `await wgPipeline.readbackCells()` and compared cell by cell (sprite cells: glyph exact, fg +-4).
+async function runCompare() {
+  if (!wgPipeline || !wgPipeline.frameComplete) {
     overlay.visible = true; overlay.el.style.display = 'block';
-    overlay.el.textContent = `[spritecompare] needs an active GpuCellPipeline + GpuSpritePass (pipeline ${gpuPipeline ? 'ok' : 'inactive'}, sprite pass ${sprites.pass ? 'ok' : 'inactive'})`;
+    overlay.el.textContent = `[spritecompare] needs an active WgCellPipeline with the sprite pass (pipeline ${wgPipeline ? 'ok' : 'inactive'}, frameComplete ${!!(wgPipeline && wgPipeline.frameComplete)})`;
     console.error(overlay.el.textContent);
     return;
   }
   const world = World.load({ terrain: null, structures: [{ id: 'test_room', level: 'test_room', origin: { x: 0, y: 0, z: 0 } }], entities: [] }, assets, {});
   for (const s of world.structures) bindLevel(matTable, s.level);
-  // `?source=upload`: the US-029 path (CPU cast -> G-buffer upload -> GPU
-  // shade/edge -> sprite pass) - the sprite pass only shares the DEPTH texture
-  // with the caster, so its parity can be measured independently of the
-  // US-030a DDA state. Default: the mesh scene path (`gpu`, pipeline.frame with cam/world).
-  runSpriteCompareMode({
-    sprites, fb, poses: POSES, overlay, rendererString: `${gpuPipeline.rendererString} (source: ${upload ? 'upload' : 'scene'})`,
+  wgPipeline.bind(matTable, assets.palette);
+  await runSpriteCompareMode({
+    frameGate: false, // WebGPU scene shading (sun shadow map, light set) is judged by ?gpucompare=1; this page gates on the sprite cells (frame numbers stay informational)
+    sprites, fb, poses: POSES, overlay, rendererString: wgPipeline.rendererString,
     renderCpu(cam) { fb.gpu = false; renderWorld(fb, world, cam); },
-    renderGpu(cam) {
-      if (upload) {
-        gpuPipeline.frame(fb, ambientL); // fb.gbuf/depth still hold the CPU cast of this very pose
-      } else {
-        fb.gpu = true;
-        renderWorld(fb, world, cam); // GPU scene frame: prime ambient light only
-        gpuPipeline.frame(fb, ambientL, cam, world);
-      }
+    async renderGpu(cam) {
+      fb.gpu = true;
+      renderWorld(fb, world, cam); // scene frame: prime ambient light only
+      wgPipeline.frame(fb, ambientL, cam, world);
       rt.present(); // cell pass + sprite pass
-      return gpuPipeline.readback();
+      return await wgPipeline.readbackCells();
     },
   });
 }

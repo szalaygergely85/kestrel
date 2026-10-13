@@ -61,7 +61,7 @@ const WD = { dirDeg: 30, speed: 5, gust: { amp: 0.6, periodSec: 3, travel: 6 } }
 assert.ok(RASTER_INSTANCED_WGSL.includes('swayDisp(a.iRow0.w, a.iRow1.w, wp.z - a.iRow2.w'));
 assert.ok(RASTER_INSTANCED_SHADOW_WGSL.includes('swayDisp('));
 assert.ok(!RASTER_WGSL.includes('swayDisp') && !RASTER_WGSL.includes('windAt'));
-assert.equal(RASTER_BLOCK.field('wind').word, 76); assert.equal(RASTER_BLOCK.field('windT').word, 80); assert.equal(RASTER_BLOCK.field('windK').word, 84); assert.equal(RASTER_BLOCK.sizeBytes, 592);
+assert.equal(RASTER_BLOCK.field('wind').word, 80); assert.equal(RASTER_BLOCK.field('windT').word, 84); assert.equal(RASTER_BLOCK.field('windK').word, 88); assert.equal(RASTER_BLOCK.sizeBytes, 608);
 assert.ok(!/%|\bround\s*\(|\bmod\s*\(|fract/.test(RASTER_INSTANCED_WGSL));
 
 // 4. raster twin on a real mesh group
@@ -116,3 +116,14 @@ console.log(`  raster: sway changed ${dA.n} cells (rows ${dA.minRow}..${dA.maxRo
   console.log('  dither raster: ' + covered + ' covered cells split between the copies');
 }
 console.log('rasterSway: ok');
+
+// FOLIAGE-SWAY-01 host: compositor windCtx gives the JS twin the world field + the fb clock (null while calm)
+{
+  const { windCtx } = await import('../render/compositor.js');
+  const f = createWind({ speed: 3, dir: 0.5 }), calm = createWind({ speed: 0 });
+  const c = windCtx({ wind: f }, { timeSec: 7.25 });
+  assert.ok(c && c.field === f && c.t === 7.25, 'windCtx field + clock');
+  assert.equal(windCtx({ wind: calm }, { timeSec: 1 }), null);
+  assert.equal(windCtx({}, { timeSec: 1 }), null);
+  console.log('windCtx ok');
+}

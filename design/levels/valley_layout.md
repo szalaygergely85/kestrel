@@ -1,6 +1,6 @@
 # Valley layout: EP-WORLD-VALLEY slice 0 (PROPOSAL, owner approval pending)
 
-Owner: Designer. Source: D-052, `docs/epics/ep-world.md`. Preview + self-check: `design/preview/valley-look.html`.
+Owner: Designer. Source: D-078, `docs/epics/ep-world.md`. Preview + self-check: `design/preview/valley-look.html`.
 **Nothing is placed in the world yet.** palette.js, levels and engine are unchanged.
 
 ## Frame
@@ -27,7 +27,7 @@ Owner: Designer. Source: D-052, `docs/epics/ep-world.md`. Preview + self-check: 
 - **A (open):** row 56, world y ~1420, x ~1016. Leads from the forest's south edge to the open fields (5-7).
 - **B (broken):** row 24, world y ~652, x ~1228. The middle span is missing. Leads straight from the north forest into the rocky foothills (7-10): the dangerous shortcut. Manager lean: repaired by the level-5 quest (owner Q1).
 
-## Zones and level bands (fixed beast level, D-052 item 3)
+## Zones and level bands (fixed beast level, D-078 item 3)
 | Zone | Side | Levels | Where |
 |---|---|---|---|
 | start meadow `g` + tower `T` + waystone `w` | near | 1-2 | ellipse around the tower; the shore meadow in the south |

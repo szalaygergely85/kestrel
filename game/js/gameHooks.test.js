@@ -48,12 +48,19 @@ assert.equal(seen[1].id, 'b'); assert.equal(seen[1].n, 1);
 H.emitSimple('flag:set', 'wake', true); assert.equal(H.payload('flag:set').key, 'wake');
 H.emitSimple('player:died', 1, 2, 3); assert.equal(H.payload('player:died').z, 3);
 H.emitSimple('prop:touched', 'p1', 'waystone', { x: 1, y: 2, z: 3 }); assert.equal(H.payload('prop:touched').kind, 'waystone');
+// no 4th arg (interaction:fired has no position) must not throw; missing coords -> 0,0,0
+H.emitSimple('prop:touched', 'p2', 'lever');
+assert.deepEqual([H.payload('prop:touched').x, H.payload('prop:touched').y, H.payload('prop:touched').z], [0, 0, 0]);
 
 // bridge from the engine bus
 const bus = { m: {}, on(n, f) { (this.m[n] ||= []).push(f); return () => {}; }, emit(n, p) { for (const f of this.m[n] || []) f(p); } };
 const H3 = createGameHooks(); const got = []; H3.register({ onEvent: (n, d) => got.push(n + ':' + d.id + ':' + (d.n ?? '')) });
 bridgeEngineEvents(bus, H3); bus.emit('beast:died', { id: 'boar1' }); bus.emit('inventory:added', { id: 'meat', n: 2 }); bus.emit('beast:died', {});
 assert.deepEqual(got, ['beast:died:boar1:', 'item:got:meat:2']);
+// interaction:fired {key, name} -> prop:touched {id:key, kind:name, x,y,z} (no position on the engine event -> 0,0,0)
+bus.emit('interaction:fired', { key: 'lever1', name: 'lever' });
+assert.equal(H3.payload('prop:touched').id, 'lever1'); assert.equal(H3.payload('prop:touched').kind, 'lever');
+assert.deepEqual([H3.payload('prop:touched').x, H3.payload('prop:touched').y, H3.payload('prop:touched').z], [0, 0, 0]);
 
 // no per-call allocation on the hot path (tick / emitSimple / drawHud with 3 handlers)
 const H4 = createGameHooks(); let n4 = 0; const hud = {};

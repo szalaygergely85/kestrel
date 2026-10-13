@@ -1,7 +1,9 @@
-import { KIND_TERRAIN, FACE_PACKED } from '../GBuffer.js';
+import { KIND_TERRAIN, KIND_GRASS, FACE_PACKED } from '../GBuffer.js';
 import { unpackNormalOct } from '../../voxel/octNormal.js';
 import { edgeRules } from '../edgePass.js';
 import { shadeDetailFast } from '../detailShade.js';
+import { packMaterialTable } from './ShadeTextures.js';
+import { glowFrame } from '../glow.js'; // EMIS-03/04: compareGlow twin
 
 // US-029 tech notes item 7 / AC "Parity page": `compareCells` is the pure,
 // Node-testable comparison core; `runGpuCompare` drives it against a real
@@ -317,6 +319,7 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
   let kind9Cells = 0, meshTies = 0, meshTiesEdge = 0, meshBoundaryCells = 0, maskTies = 0;
   const maskPose = !!(opts && opts.maskPose);
   const holeCells = []; // first 20 hole cells (diagnosis)
+  let grassTexelTies = 0, grassCells = 0;
   const meshTieMask = new Uint8Array(n), meshTieCells = []; // geomViolCells: distinct cells with any depth/uv/ao/z/face/nrm violation
 
   for (let y = 0; y < rows; y++) {
@@ -360,7 +363,7 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
       }
       if (kind[i] === 0) continue; // both agree "sky" - nothing else to compare
 
-      matched++;
+      matched++; if (kind[i] === KIND_GRASS) grassCells++;
       if (meshTieMask[i]) { if (mat[i] === ((giBuf[i * 4 + 1] >>> 16) & 0xffff)) matEqual++; continue; } // PREC-04 tie: no violations
       const violBefore = depthViol + uvViol + aoViol + zViol + faceViol + nrmViol;
       const gpuMat = (giBuf[i * 4 + 1] >>> 16) & 0xffff;
@@ -381,7 +384,12 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
       // is at the resolution limit for terrain u/v - use the item 9 rule
       // (1% of depth) for kind 7, keep 1e-3 for sector kinds.
       const uvTol = (kind[i] === KIND_TERRAIN ? 0.01 : 1e-3) * Math.max(1, Math.abs(cpuDepth));
-      if (Number.isFinite(cpuDepth) && (Math.abs(gpuU - u[i]) > uvTol || Math.abs(gpuV - v[i]) > uvTol)) uvViol++;
+      if (Number.isFinite(cpuDepth) && (Math.abs(gpuU - u[i]) > uvTol || Math.abs(gpuV - v[i]) > uvTol)) {
+        // OB-103a: a grass stroke hit on a grazing plane (f32 t error ~1e-5 m at 7 m) can land on the other side of an atlas texel boundary:
+        // same kind, same stroke (depth within 1e-4 rel - ARCH CHANGES 8d1036a6; a different stroke stays a uvViol), only the picked texel (u = stroke height) differs. Counted as a capped tie, not a uv violation.
+        if (kind[i] === KIND_GRASS && gpuKind === KIND_GRASS && Math.abs(gpuDepth - cpuDepth) <= 1e-4 * Math.max(1, Math.abs(cpuDepth)) && planeId[i] === gpuPlaneId && Math.abs(gpuV - v[i]) <= uvTol) { grassTexelTies++; meshTieMask[i] = 1; }
+        else uvViol++;
+      }
       if (kind[i] === KIND_TERRAIN && Number.isFinite(cpuDepth)) { const e = Math.max(Math.abs(gpuU - u[i]), Math.abs(gpuV - v[i])); if (e > terrainUvMaxErr) { terrainUvMaxErr = e; terrainUvMaxAt = [x, y, u[i], v[i], gpuU, gpuV, cpuDepth, gpuDepth]; } }
       // ME-06 per-field diff (reported only, never gates `pass`): face, GA.z
       // (world z) and GA.w (aoD; the packed normal bits for FACE_PACKED
@@ -389,7 +397,8 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
       if (gbuf.face) {
         const gpuFace = (giBuf[i * 4 + 1] >>> 8) & 0xf; // bits 12-15 carry other flags
         if (gbuf.face[i] !== gpuFace) { if (!faceViol) faceSample = gbuf.face[i] * 256 + gpuFace; faceViol++; }
-        else if (gpuFace === FACE_PACKED && gbuf.aoD) {
+        else if ((gpuFace === FACE_PACKED || kind[i] === KIND_GRASS) && gbuf.aoD) {
+          // KIND_GRASS (10) cells carry face U but pack the normal like FACE_PACKED (aoD bits / GI.z).
           // Mesh path: the GPU normal is in GI.z; the JS twin keeps it in aoD's bits.
           const cb = gbufAoBits(gbuf, i), gb = giBuf[i * 4 + 2] >>> 0;
           if (cb !== gb) {
@@ -399,7 +408,7 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
             if (ang > nrmMaxDeg) nrmMaxDeg = ang;
             if (ang > 0.5) nrmViol++;
           }
-        } else if (gpuFace !== FACE_PACKED && gbuf.aoD) {
+        } else if (gpuFace !== FACE_PACKED && kind[i] !== KIND_GRASS && gbuf.aoD) {
           // FACE_PACKED cells hold normal bits (CPU: aoD, mesh GPU: GI.z) - skipped.
           // GPU writes 1e30 for "no AO" where the JS side writes Infinity.
           const ca = gbuf.aoD[i], ga0 = u32ToF32(gaBuf[i * 4 + 3]), ga = ga0 >= 1e29 ? Infinity : ga0;
@@ -419,18 +428,20 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
   let geometryCells = 0;
   if (maskPose) for (let i = 0; i < n; i++) if (kind[i] !== 0) geometryCells++;
   const maskTiesMax = maskPose ? maskTiesCap(geometryCells) : 0, maskTiesOk = maskTies <= maskTiesMax;
+  const grassTexelTiesMax = Math.max(2, Math.ceil(0.001 * grassCells)), grassTexelTiesOk = grassTexelTies <= grassTexelTiesMax;
   const meshTiesMax = maskPose ? maskTiesMax : meshTiesCap(meshBoundaryCells), meshTiesOk = meshTies <= meshTiesMax; // mask poses: the mask-tie cap replaces the boundary cap
   const kindMatchPct = kindChecked ? 100 * (kindChecked - kindMismatch) / kindChecked : 100;
   const kindMatchPctExclK8 = kindCheckedExclK8 ? 100 * (kindCheckedExclK8 - kindMismatchExclK8) / kindCheckedExclK8 : 100;
   const res = {
     kindChecked, kindMismatch, kindMatchPct,
     kindCheckedExclK8, kindMismatchExclK8, kindMatchPctExclK8, holesExclK8, // ME-06: voxel (kind-8) cells excluded, see comment above
+    grassTexelTies, grassTexelTiesMax, grassTexelTiesOk, // OB-103a
     matched, matEqual, planeEqual, depthViol, uvViol, holes,
     faceViol, zViol, aoViol, violNonK8, geomViolCells, faceSample, aoSampleCpu, aoSampleGpu, aoSampleIdx, nrmViol, nrmMaxDeg, matSample, terrainUvMaxErr, terrainUvMaxAt, // ME-06: reported only
     kind9Cells, meshBoundaryCells, meshTies, meshTiesEdge, meshTiesMax, meshTiesOk, meshTieCells, holeCells, maskTies, maskTiesMax, maskTiesOk, // PREC-04; ALPHA-01c maskTies (0 outside mask poses) (meshTieMask is attached non-enumerable below)
     edgeCells, edgeKindMismatch, // reported only, does not affect `pass`
     k8Cpu, k8Gpu, // reported only here; voxel-pose callers gate on both > 0
-    pass: kindMatchPct >= 99.5 && depthViol === 0 && uvViol === 0 && holes === 0 && meshTiesOk,
+    pass: kindMatchPct >= 99.5 && depthViol === 0 && uvViol === 0 && holes === 0 && meshTiesOk && grassTexelTiesOk,
   };
   Object.defineProperty(res, 'meshTieMask', { value: meshTieMask, enumerable: false }); // keeps capture JSON small
   // A9 item 3: exact edge-rule flips. ruleGpu = edgeRules() on the GPU G-buffer (kind/planeId/face from GI, depth from Depth, JS fogF + waterMask).
@@ -775,3 +786,49 @@ export function compareShadowDepth(gpuBits, jsZbuf, res) {
     pass: withinPct >= 99.9 && covMismatchPct <= 0.3,
   };
 }
+
+/**
+ * EMIS-03/04 `?gpucompare=emissive`: rows `emissive-glow-fg` / `emissive-glow-bg`. Runs the JS twin `glowFrame` on the GPU's own pre-glow
+ * cells (fgIn/bgIn = readbackCells with the glow pass off) + the GPU G-buffer (kind/mat/depth) and compares it with the GPU glow output.
+ * Tolerance 1 byte per channel (glyph byte exact on fg.a). `live` = cells the twin changed (0 = vacuous pose, row fails).
+ * @param {{kind:ArrayLike<number>,mat:ArrayLike<number>,depth:Float32Array}} geom @param {Float32Array} emis emissive by material id
+ * @param {Uint8Array} fgIn @param {Uint8Array} bgIn @param {Uint8Array} gpuFg @param {Uint8Array} gpuBg @param {object} P glow params
+ */
+export function compareGlow(geom, cols, rows, emis, fgIn, bgIn, gpuFg, gpuBg, P, tol = 1) {
+  const n = cols * rows, jsFg = new Uint8Array(n * 4), jsBg = new Uint8Array(n * 4);
+  glowFrame(geom, cols, rows, emis, fgIn, bgIn, jsFg, jsBg, P);
+  const one = (js, gpu, inp) => {
+    let max = 0, bad = 0, live = 0;
+    for (let i = 0; i < n; i++) {
+      let changed = false, cellBad = false;
+      for (let k = 0; k < 4; k++) {
+        const o = i * 4 + k, d = Math.abs(js[o] - gpu[o]);
+        if (d > max) max = d;
+        if (d > tol) cellBad = true;
+        if (js[o] !== inp[o]) changed = true;
+      }
+      if (cellBad) bad++;
+      if (changed) live++;
+    }
+    return { max, bad, live, ok: bad === 0 && live > 0 };
+  };
+  const fg = one(jsFg, gpuFg, fgIn), bg = one(jsBg, gpuBg, bgIn);
+  return { fg: { pose: 'emissive-glow-fg', ...fg }, bg: { pose: 'emissive-glow-bg', ...bg }, ok: fg.ok && bg.ok };
+}
+
+/** Emissive by material id from the bound material table, packed like the shade pass (matF texel 1 .x), the same value the WGSL `emisAt` reads. */
+export function emisFromPacked(table) {
+  const packed = packMaterialTable(table);
+  const w = packed.dims.matFWidth, nMat = packed.dims.nMat, e = new Float32Array(nMat);
+  for (let id = 1; id < nMat; id++) e[id] = packed.matF[(id * w + 1) * 4];
+  return e;
+}
+
+/**
+ * DRESS-01 follow-up: fg/bg cap of the mesh-twin compareCells bar (non-K8 cells). A sun shadow-map pose has far more
+ * shadow edges once the world carries ~1000 tree/plant placements; the GPU and JS shadow depth differ by a few ULP
+ * (shadowDepth withinPct 99.99), so a handful of terrain cells sit on opposite sides of a penumbra bias and differ by a
+ * whole shading band (measured 106, rtsHill58Shadow). The count is still bounded by maxOutsideFrac (1 %) and glyph match.
+ * Non-shadow poses keep 96. Not a caster-cap issue: shadowList/instances throw on overflow instead of dropping casters.
+ */
+export function meshCellCap(sunMapShadow) { return sunMapShadow ? 128 : 96; }

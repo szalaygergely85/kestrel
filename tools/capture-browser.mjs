@@ -52,6 +52,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { withTimeFreeze, parseTimeArg } from './tool-url.mjs'; // DN-04a
 import { makeBaseline, diffBaseline, formatBaselineDiff, baselineMismatch } from './gpucompare-baseline.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -74,23 +75,27 @@ export function parseArgs(argv) {
   const opts = {
     mode: null, grid: null, port: null, variant: null, rays: null,
     import: undefined, // string path, or true meaning "read stdin"
-    diff: null, timeoutMs: 120000, swiftshader: false, backend: null,
+    diff: null, timeoutMs: 120000, swiftshader: false, backend: null, time: undefined,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = () => argv[++i];
+    if (a.startsWith('--time=')) { opts.time = parseTimeArg(a.slice(7)); continue; } // DN-04a
     if (a === '--mode') opts.mode = next();
     else if (a === '--grid') opts.grid = next();
     else if (a === '--port') opts.port = Number(next());
     else if (a === '--variant') opts.variant = next();
     else if (a === '--rays') opts.rays = Number(next());
+    else if (a === '--time') opts.time = parseTimeArg(next()); // DN-04a: frozen game hour (default 8)
     else if (a === '--query') opts.query = next();
-    else if (a === '--shadows') opts.shadows = next(); // ME-15e: appends &shadows=<map|dda> to the mode's own query
+    else if (a === '--stable') opts.stable = true; // FLICKER-WG-01 (flicker mode: &stable=1)
+    else if (a === '--shadows') opts.shadows = next(); // ME-15e: appends &shadows=<map|off; dda maps to map> to the mode's own query
     else if (a === '--global') opts.global = next();
     else if (a === '--swiftshader') opts.swiftshader = true;
     else if (a === '--backend') {
       opts.backend = next();
-      if (opts.backend !== 'webgl2' && opts.backend !== 'webgpu') throw new Error(`--backend must be webgl2|webgpu, got '${opts.backend}'`);
+      if (opts.backend === 'webgl2') throw new Error("--backend webgl2 was removed (WG-5b): WebGPU is the only GPU backend; use --backend webgpu (or omit it)");
+      if (opts.backend !== 'webgpu') throw new Error(`--backend must be webgpu, got '${opts.backend}'`);
     }
     else if (a === '--import') {
       // `--import` alone (no path following, or followed by another flag)
@@ -150,12 +155,12 @@ export function buildLaunchFlags(opts = {}, platform = process.platform) {
 export const PRESENTDIFF_POSES = ['crash', 'brazier', 'roadSouth'];
 const WEBGPU_PAGE_MODES = new Set(['webgpu-probe', 'wgsl', 'webgpu-present']);
 
-export function buildQuery(mode, { grid, variant, rays, shadows, backend } = {}) {
+export function buildQuery(mode, { grid, variant, rays, shadows, backend, stable } = {}) {
   const parts = [];
   if (WEBGPU_PAGE_MODES.has(mode)) return ''; // dedicated page, no query (see pagePathFor)
   if (mode === 'gpucompare') {
-    if (variant && variant !== 'shade') throw new Error('gpucompare has only the default mesh twin or --variant shade');
-    parts.push(variant === 'shade' ? 'gpucompare=shade' : 'gpucompare=1');
+    if (variant && variant !== 'shade' && variant !== 'emissive') throw new Error('gpucompare has only the default mesh twin, --variant shade or --variant emissive');
+    parts.push(variant === 'shade' ? 'gpucompare=shade' : variant === 'emissive' ? 'gpucompare=emissive' : 'gpucompare=1');
   } else if (mode === 'bench') {
     // ME-06 (docs/architecture.md 27.11 ME-06 row): `--variant world`
     // requests the real US-018 `?bench=1` pass-timing bench (3 fixed views
@@ -175,9 +180,10 @@ export function buildQuery(mode, { grid, variant, rays, shadows, backend } = {})
     parts.push(`rays=${rays || 2}`);
   } else if (mode === 'presentdiff') {
     // WG-1c2 (38.8a 12): the CPU path is the oracle; `&pose=<slug>` is appended per pose by runLiveCapture
-    parts.push('backend=webgl2', 'gpu=0');
+    parts.push('force2d=1'); // WG-5b: the CPU Canvas2D path is the oracle
   } else if (mode === 'flicker') {
     parts.push('flicker=1'); // ME-08c: `window.__flicker` (jsRow/gpuRow changed-glyph share)
+    if (stable) parts.push('stable=1'); // FLICKER-WG-01: US-073 stable pass on (measure with vs without)
   } else {
     throw new Error(`unknown --mode '${mode}' (expected gpucompare|voxelbench|bench|flicker|webgpu-probe|wgsl|webgpu-present|presentdiff)`);
   }
@@ -651,12 +657,14 @@ export async function evaluate(cdp, expression) {
 // fail fast instead of burning the full timeout waiting for a global that
 // will never appear.
 export function isSoftwareRendererLine(text) {
-  return /\[webgl2Gate\] software renderer detected/.test(text);
+  return /\[(webgl2Gate|webgpu)\] software (renderer|adapter) detected/.test(text);
 }
 
-async function waitForGlobal(cdp, globalName, timeoutMs, { failFast, getSoftwareRendererLine, expectBackend = 'gl2' } = {}) {
+async function waitForGlobal(cdp, globalName, timeoutMs, { failFast, getSoftwareRendererLine, getPageFailure, expectBackend = 'webgpu' } = {}) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    const pf = getPageFailure && getPageFailure();
+    if (pf) throw new Error(`capture-browser: the page reported a failure, window.${globalName} will never appear: ${pf}`);
     if (failFast) {
       const line = getSoftwareRendererLine && getSoftwareRendererLine();
       if (line) {
@@ -731,15 +739,17 @@ export async function runLiveCapture(opts) {
     await cdp.send('Runtime.enable');
 
     // Fail-fast watch (fix 2): the game itself console.warns once when it
-    // detects a software renderer (game/js/ui/webgl2Gate.js). Catching that
+    // detects a software renderer (WebGPU adapter info). Catching that
     // here means gpucompare/voxelbench abort in seconds instead of the full
     // timeout when there's no real GPU to measure.
     let softwareRendererLine = null;
+    let pageFailure = null; // '[gpucompare] failed: <error>' - the mode threw, so the result global will never appear: abort now, not after the timeout
     cdp.onEvent((method, params) => {
       if (process.env.CAP_LOG && method === 'Runtime.exceptionThrown') console.error('[page exception]', JSON.stringify(params.exceptionDetails).slice(0, 600));
       if (process.env.CAP_LOG && method === 'Runtime.consoleAPICalled') console.error('[page]', (params.args || []).map((a) => (a.value !== undefined ? String(a.value) : a.description || '')).join(' ').slice(0, 300));
       if (method !== 'Runtime.consoleAPICalled') return;
-      const text = (params.args || []).map((a) => (a.value !== undefined ? String(a.value) : '')).join(' ');
+      const text = (params.args || []).map((a) => (a.value !== undefined ? String(a.value) : (a.description || ''))).join(' ');
+      if (/^\[(gpucompare|voxelbench|bench|flicker)\] failed:/.test(text) && !pageFailure) pageFailure = text.slice(0, 800);
       if (isSoftwareRendererLine(text)) softwareRendererLine = text;
     });
 
@@ -752,7 +762,9 @@ export async function runLiveCapture(opts) {
     // Server is started at the repo root (matches CLAUDE.md's own
     // `python -m http.server 8000` convention) - the entry point lives at
     // game/index.html, not at the root.
-    const url = `http://127.0.0.1:${opts.port}/${pagePathFor(opts.mode)}${query ? '?' + query : ''}`;
+    // DN-04a: dedicated WebGPU pages (no game clock) keep their bare URL; every game page gets timefreeze=1&time=<h>
+    const timedQuery = WEBGPU_PAGE_MODES.has(opts.mode) ? query : withTimeFreeze(query, opts.time);
+    const url = `http://127.0.0.1:${opts.port}/${pagePathFor(opts.mode)}${timedQuery ? '?' + timedQuery : ''}`;
     const navigated = new Promise((resolve) => {
       cdp.onEvent((method) => { if (method === 'Page.loadEventFired') resolve(); });
     });
@@ -790,7 +802,7 @@ export async function runLiveCapture(opts) {
     const globalName = opts.global || resultGlobalFor(opts.mode);
     const failFast = opts.mode === 'gpucompare' || opts.mode === 'voxelbench';
     const raw = await waitForGlobal(cdp, globalName, opts.timeoutMs, {
-      failFast, getSoftwareRendererLine: () => softwareRendererLine, expectBackend: opts.backend === 'webgpu' ? 'webgpu' : 'gl2',
+      failFast, getSoftwareRendererLine: () => softwareRendererLine, getPageFailure: () => pageFailure, expectBackend: 'webgpu',
     });
 
     const ua = await evaluate(cdp, 'navigator.userAgent');
@@ -875,7 +887,7 @@ async function main() {
   process.exitCode = captureExitCode(mode, normalized);
 
   if (opts.baseline && mode === 'gpucompare') {
-    const run = { backend: opts.backend || 'webgl2', adapter: adapter || 'unknown' };
+    const run = { backend: opts.backend || 'webgpu', adapter: adapter || 'unknown' };
     if (!existsSync(opts.baseline)) {
       mkdirSync(path.dirname(path.resolve(opts.baseline)), { recursive: true });
       const bl = makeBaseline(normalized.rows, { ...run, sha: shortShaSync(), date: todayStr(), grid });

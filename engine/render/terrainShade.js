@@ -11,12 +11,16 @@
 // colour/glyph pick never drifts between the two languages.
 
 import { samplePowLUT } from './fastShade.js';
-import { KIND_TERRAIN } from './GBuffer.js';
+import { KIND_TERRAIN, KIND_GRASS } from './GBuffer.js';
 import { packTerrainTextures } from './gpu/TerrainTextures.js';
 import { unpackNormalOct } from '../voxel/octNormal.js';
 import { clampByte } from '../core/math.js';
 import { sunFromWorld } from './lighting.js';
 import { WET_DARK, wetGain } from './detailShade.js';
+import { LEVEL_NONE, LEVEL_ANIM } from './temporalStable.js';
+import { STEP } from '../core/loop.js';
+import { skylineFogF } from './skyline.js';
+import { resolveLook } from './look.js';
 
 // US-026a (23.4): exported so terrainCaster.js's near-sampling dither uses
 // the SAME avalanche mix (never a second, drifting copy) - the dither must
@@ -27,6 +31,10 @@ export function hashFastU(x, y, s) {
   h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
   h ^= h >>> 16;
   return h >>> 0;
+}
+/** hashFastU >>> 8 (24 bit, always a Smi: a non-inlined call returning the u32 itself would box it). hashFast01 = this * 2^-24. */
+export function hashFast24(x, y, s) {
+  return hashFastU(x, y, s) >>> 8;
 }
 export function hashFast01(x, y, s) {
   return (hashFastU(x, y, s) >>> 8) * (1 / 16777216);
@@ -39,6 +47,8 @@ export function hashFast01(x, y, s) {
 // difference) measures N.z 0.67-0.9 (probe on overworld_far), so 0.9 splits
 // them. GLSL literals come from these exports.
 export const FOREST_FACE_NZ = 0.9;
+// OB-104b (38.55): terrain faces steeper than 60 degrees (N.z < 0.5) shade as the recipe's `rock` type, texture laid along the wall + its height.
+export const CLIFF_NZ = 0.5;
 export const FOREST_FACE_K = 0.8;
 export const FOREST_TRUNK_CHANCE = 1 / 3;
 export const FOREST_TRUNK_SALT = 30;
@@ -75,9 +85,126 @@ function pickCodeFromPacked(x, count, idx) {
  * Power of two clamped 0.125..2; 8 m once past the handover's far edge (near band absent). GLSL twin: terrain.frag.js.
  * @param {number} t @param {number} k @param {number[]} [handover]
  */
+// OB-073 (replaces the OB-054/067 hard 1 m / 4 m cells): patch colour = world-anchored SMOOTH value noise (bilinear, smoothstep
+// weights, NOISE_CELLS octaves, power-of-two cells so u*inv is exact in f32 and f64), thresholded into the tier colours with a
+// 0.25 m dither -> soft organic blobs, no square edges. Each octave fades out by the cell's ground footprint `fp` (mip-like band
+// limit: full when cell >= 3 fp, gone at 1.5 fp), so far ground calms down instead of strobing; nothing keys on a distance-sized cell.
+// Glyph: a calm per-point hash near the eye; each point switches ONCE (per-point threshold) to a glyph that follows the
+// noise contours when its footprint outgrows the cell. WGSL twin: TERRAIN_SHADE_WGSL (same constants).
+export const NOISE_CELLS = [8, 2, 0.5], NOISE_W = [0.2, 0.3, 0.5], NOISE_SALT = 40; // fine octave dominates near the feet (largest one-tier square ~1.5 m)
+export const PATCH_K = 3.5, FP_DEFAULT_K = 0.01, FP_ANISO_T = 8, FP_ANISO_MAX = 4;
+// FAR_GLYPH_CELL: background canopy face / trunk cell (>= bands.near only, unchanged from OB-067's calm cell).
+export const FAR_GLYPH_CELL = 4.0; // OB-073 dead-code cleanup: GLYPH_CELL / PATCH_DITHER / GLINT_RATE / ctx.features removed (nothing read them)
+// OB-081: ground footprint (m) where the far tier-colour blend starts / is full (hard tiers below FP0).
+export const FAR_BLEND_FP0 = 2.0, FAR_BLEND_FP1 = 8.0; // OB-085: was 0.5 -> 2 m (~20-50 m): tier contours on rock slopes morphed while walking closer
+/** OB-103: per-metre cell size k of a perspective view (groundFootprint hashCell = -k): 2 * tan(hfovX / 2) / cols. */
+export function footprintK(tanHalfX, cols) { return 2 * tanHalfX / cols; }
+/** OB-073: ground footprint (m) of one screen cell at depth t; hashCell as in shadeTerrain (<0 = -k, >0 = fixed ortho cell, 0 = default k). */
+export function groundFootprint(t, hashCell) {
+  if (hashCell > 0) return hashCell;
+  const k = hashCell < 0 ? -hashCell : FP_DEFAULT_K;
+  const a = t / FP_ANISO_T;
+  return k * t * (a < 1 ? 1 : a > FP_ANISO_MAX ? FP_ANISO_MAX : a); // grazing view: depth footprint grows ~t^2 (capped anisotropy)
+}
+/** smoothstep weight of a lattice cell vs footprint: 1 when cell >= 3 fp, 0 when cell <= 1.5 fp. */
+export function octaveFade(cell, fp) {
+  let s = (cell / Math.max(fp, 1e-6) - 1.5) / 1.5;
+  s = s < 0 ? 0 : s > 1 ? 1 : s;
+  return s * s * (3 - 2 * s);
+}
+/** bilinear value noise 0..1 at lattice coords (x, y), smoothstep weights, hashFast01 corners. */
+export function valueNoise(x, y, salt) {
+  const ix = Math.floor(x), iy = Math.floor(y);
+  let fx = x - ix, fy = y - iy;
+  fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+  const a = hashFast01(ix, iy, salt), b = hashFast01(ix + 1, iy, salt), c = hashFast01(ix, iy + 1, salt), d = hashFast01(ix + 1, iy + 1, salt);
+  return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
+}
+/** OB-073: band-limited patch field, roughly -2..2 (0 = calm/mid tier). fu, fv = f32-rounded world metres. */
+// v8 = the unfaded 8 m octave (valueNoise at NOISE_CELLS[0]), computed once by the caller (also drives the far glyph).
+/** MASK-c: patch tier offset -1..1 of a ground point (the `off` of shadeTerrain): q[0], q[1] = world metres, q[2] = ground footprint. Int result. */
+// One fully inlined body (no helper takes or returns a double: those box a heap number per call in V8); twin of patchNoise + valueNoise.
+export function groundTierOffset(q) { // q = Float64Array [u, v, fp]: an array, so no double crosses the call (alloc rule of carpetCells)
+  const fu = Math.fround(q[0]), fv = Math.fround(q[1]), fp = q[2], fpc = fp > 1e-6 ? fp : 1e-6;
+  let ws = 0, n = 0;
+  for (let o = 0; o < 3; o++) {
+    const cell = NOISE_CELLS[o];
+    let sf = (cell / fpc - 1.5) / 1.5;
+    sf = sf < 0 ? 0 : sf > 1 ? 1 : sf;
+    const wgt = NOISE_W[o] * (sf * sf * (3 - 2 * sf));
+    if (o > 0 && sf <= 0) continue;
+    const x = fu * (1 / cell), y = fv * (1 / cell), salt = o === 0 ? NOISE_SALT : NOISE_SALT + o;
+    const ix = Math.floor(x), iy = Math.floor(y);
+    let fx = x - ix, fy = y - iy;
+    fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+    const a = hashFast24(ix, iy, salt) * (1 / 16777216), b = hashFast24(ix + 1, iy, salt) * (1 / 16777216), c = hashFast24(ix, iy + 1, salt) * (1 / 16777216), d = hashFast24(ix + 1, iy + 1, salt) * (1 / 16777216);
+    n += wgt * ((a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy) * 2 - 1); ws += wgt;
+  }
+  const off = Math.floor(n / (ws > 0.55 ? ws : 0.55) * PATCH_K + 0.5);
+  return off < -1 ? -1 : off > 1 ? 1 : off;
+}
+/**
+ * MASK-c: calm ground colour of terrain type `type` at tier index `ti` (0..2 = 1 + tier offset), unlit, no fog, bytes 0..255 -> out[0..2].
+ * Same TLOOK colour texel shadeTerrain picks on calm ground (hard tier, no far blend).
+ */
+export function groundAlbedo(type, ti, ctx, out) {
+  const TL = ctx.tlook, o = type * ctx.tlookWidth * 4 + ti * 4;
+  out[0] = TL[o] * 255; out[1] = TL[o + 1] * 255; out[2] = TL[o + 2] * 255;
+  return out;
+}
+export function patchNoise(fu, fv, fp, v8) {
+  const f0 = octaveFade(NOISE_CELLS[0], fp);
+  let ws = NOISE_W[0] * f0, n = ws * (v8 * 2 - 1);
+  for (let o = 1; o < 3; o++) {
+    const c = NOISE_CELLS[o], f = octaveFade(c, fp);
+    if (f <= 0) continue;
+    const w = NOISE_W[o] * f;
+    n += w * (valueNoise(fu * (1 / c), fv * (1 / c), NOISE_SALT + o) * 2 - 1); ws += w;
+  }
+  return n / (ws > 0.55 ? ws : 0.55);
+}
 export function perCellHashSize(t, k, handover) {
   if (handover && !(t < handover[1])) return 8;
   return Math.min(2, Math.max(0.125, Math.pow(2, Math.ceil(Math.log2(Math.max(t * k, 1e-6))))));
+}
+
+// ---- G2 + P3 (D-075 step 4): far grass tier on the terrain shade -------------------------------------------------------------
+// Beyond the carpet radius the grass ground types get the carpet ramp's mid colour (soft, low contrast) and a calm glyph tier
+// `, " '` picked by the band-limited patch noise (+ a slow travelling gust), so the carpet edge hands over to the horizon without a ring.
+// Colour/glyph only, no depth. Cells with a non-zero weight carry stable level 254 (LEVEL_ANIM: the glyph can move with the gust).
+// Data: farGrassFill(rec, cfg, typeNames, quality, windParams) -> rec.types (16 x [r, g, b, strength]) + on/startM/fadeM + wind phase.
+// WGSL twin: shade.wgsl.js shadeTerrain (same constants; uniforms fgP / fgW / fgT). Off (rec.on = 0 / no rec) = bit-identical to before.
+export const FG_MIX = 0.55, FG_GUST = 0.3, FG_FADE_MIN_M = 4, FG_FADE_K = 0.5, FG_SLOPE = 1.5, FG_MOD = 0.2;
+export const FG_CODES = [12, 2, 7]; // ascii - 32 of `,` `"` `'`
+export const FG_TYPES = 16;
+export function makeFarGrass() { return { on: 0, startM: 12, fadeM: 6, mix: FG_MIX, dirX: 1, dirY: 0, cyc: 0, invTravel: 0, types: new Float32Array(FG_TYPES * 4), _cfg: null, _names: null }; }
+/** Fill (no alloc) the far-grass record of a carpet config. Per ground type the variant with the most `areas` wins (no areas = everywhere = wins); colour = ramp middle.
+ *  quality = world.carpetQuality (on, radiusScale, farGrass !== false); windParams = world.wind.params or null (calm: no gust). */
+export function farGrassFill(rec, cfg, typeNames, quality, windParams) {
+  const vs = cfg ? cfg.variants || [] : [], T = rec.types;
+  rec.on = cfg && quality && quality.on !== false && quality.farGrass !== false ? 1 : 0;
+  const radius = (cfg && cfg.radiusM ? cfg.radiusM : 12) * (quality && quality.radiusScale ? quality.radiusScale : 1);
+  rec.startM = radius; rec.fadeM = Math.max(FG_FADE_MIN_M, radius * FG_FADE_K);
+  if (windParams) { rec.dirX = windParams.dirX; rec.dirY = windParams.dirY; rec.cyc = 1 / (STEP * windParams.P); rec.invTravel = windParams.travel > 0 ? 1 / windParams.travel : 0; }
+  else { rec.dirX = 1; rec.dirY = 0; rec.cyc = 0; rec.invTravel = 0; }
+  if (rec._cfg === cfg && rec._names === typeNames) return rec;
+  rec._cfg = cfg; rec._names = typeNames; T.fill(0);
+  if (!cfg || !typeNames) return rec;
+  // G2: WGSL clamps the type index to FG_TYPES-1, JS would index past the table - fail loudly at load (runs once per cfg/names change)
+  if (typeNames.length > FG_TYPES) throw new Error(`farGrassFill: ${typeNames.length} ground types > FG_TYPES (${FG_TYPES})`);
+  for (let t = 0; t < typeNames.length && t < FG_TYPES; t++) {
+    let best = -1, bestScore = -1;
+    for (let k = 0; k < vs.length; k++) {
+      if (vs[k].ground.indexOf(typeNames[t]) < 0) continue;
+      const sc = vs[k].areas ? vs[k].areas.length : 1e9;
+      if (sc >= bestScore) { best = k; bestScore = sc; }
+    }
+    if (best < 0) continue;
+    const r = vs[best].ramp, n = r.length, x = 0.5 * (n - 1), i0 = Math.floor(x), i1 = i0 + 1 < n ? i0 + 1 : i0, f = x - i0;
+    for (let c = 0; c < 3; c++) T[t * 4 + c] = r[i0][c] + (r[i1][c] - r[i0][c]) * f;
+    T[t * 4 + 3] = 1;
+  }
+  return rec;
 }
 
 /**
@@ -98,7 +225,16 @@ export function perCellHashSize(t, k, handover) {
  * }} ctx
  * @param {{glyph:number, fg:Uint8Array|number[], bg:Uint8Array|number[]}} out - written in place (fg/bg length 3)
  */
-export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0) {
+export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, z = NaN, nx = 0, ny = 0, nz = 1) {
+  // OB-104b (38.55) cliff: steep cell (N.z < CLIFF_NZ) of a type without forest-face glyphs (TLOOK row 3 .w == 0) -> rock type,
+  // biplanar (u, v) = (horizontal axis along the wall, z). Defaults nz = 1 / cliffType unset = off. WGSL twin: same 4 lines.
+  const ct = ctx.cliffType;
+  if (ct >= 0 && nz < CLIFF_NZ && !(ctx.tlook[type * ctx.tlookWidth * 4 + 3 * 4 + 3] > 0)) {
+    type = ct;
+    const wy = v; // world y
+    v = z === z ? z : 0; // NaN z (old callers) -> 0
+    u = (nx < 0 ? -nx : nx) > (ny < 0 ? -ny : ny) ? wy : u;
+  }
   // 23.4 near-detail: inside the near-handover band the world-cell hash is
   // keyed at 2 m (matches the near band's own cell size), else at 8 m (the
   // far grid's cell size) - `nearLOD.rules` ("hash cell 2 m when t < h1,
@@ -107,76 +243,78 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0) 
   // BUG-RTS-001 (28.11a): a per-frame `ctx.hashCell` > 0 (pitched views) replaces the fixed cell.
   // BUG-FP-002: hashCell < 0 = per-cell mode, k = -hashCell (ground m per column per m of depth): each cell keys
   // its own power-of-two cell from its distance (0.125..2 m near, 8 m past the handover) - no 2 m blocks at the feet.
-  const hk = ctx.hashCell < 0 ? -ctx.hashCell : 0;
-  const cellSz = hk > 0 ? perCellHashSize(t, hk, ctx.handover)
-    : ctx.hashCell > 0 ? ctx.hashCell : (ctx.handover && t < ctx.handover[1] ? 2 : 8);
-  const cx = Math.floor(u / cellSz), cy = Math.floor(v / cellSz);
-  const hA = hashFast01(cx, cy, type);
-  const hB = hashFast01(cx, cy, 7);
+  // OB-073: no distance-sized cell any more (perCellHashSize stays exported for the old callers/tests only).
+  // f32-robust: round u,v to f32 first (WGSL receives f32); every cell below is a power of two, so the lattice coords are exact in both twins.
+  const fu = Math.fround(u), fv = Math.fround(v);
+  const fp = groundFootprint(t, ctx.hashCell || 0);
+  const v8 = valueNoise(fu * (1 / NOISE_CELLS[0]), fv * (1 / NOISE_CELLS[0]), NOISE_SALT);
+  const nP = patchNoise(fu, fv, fp, v8);
+  // OB-073 calm ground: colour tier only from the smooth noise (no per-cell dither dice); ONE glyph per type (no hash, no band/close/glint).
+  let off = Math.floor(nP * PATCH_K + 0.5);
+  off = off < -1 ? -1 : off > 1 ? 1 : off;
 
   // S8-B2-14b wetness (follow-up to S8-B2-14): `ctx.shading.wetness` 0..1
   // (absent = 0) darkens the lit term entering the tier/gain pick - same
   // WET_DARK constant detailShade.js uses (terrain has no emissive term to
   // keep separate, so the whole incoming `b` is the "lit term" here).
   const wet = ctx.shading.wetness || 0;
-  const bWet = b * (1 - WET_DARK * wet);
+  let bWet = b * (1 - WET_DARK * wet);
+  const flo = ctx.shading.floorLum; if (flo > 0 && bWet < flo) bWet = flo; // DN-02 night floor (WGSL twin: shadeTerrain)
 
   // 23.4 near-detail: close < ctx.closeBand wins over the near/mid/far tier
   // picked below (TLOOK texel 7, fixed) and gets a +-0.08 brightness jitter
   // (own hash salt 10, per-2 m-cell - "shading only, heightAt stays smooth").
   const close = ctx.closeBand != null && t < ctx.closeBand;
-  const bEff = close ? bWet + (hashFast01(cx, cy, 10) * 2 - 1) * 0.08 : bWet;
+  // OB-054: jitter amplitude fades smoothstep to 0 over closeBand/2..closeBand (no brightness step at the band edge). WGSL twin: same expression.
+  let bEff = bWet;
+  if (close) {
+    const q = Math.min(1, Math.max(0, (t - ctx.closeBand * 0.5) / (ctx.closeBand * 0.5)));
+    bEff = bWet + nP * 0.05 * (1 - q * q * (3 - 2 * q)); // OB-073: smooth noise, not a per-cell dice
+  }
 
   const tier = bEff < 0.45 ? 0 : bEff < 0.8 ? 1 : 2;
-  let i = tier + (Math.floor(hA * 3) - 1);
+  let i = tier + off;
   if (i < 0) i = 0; else if (i > 2) i = 2;
+  // OB-081: far ground blends the tier colours continuously (sub-cell normal changes no longer flip a whole colour step
+  // near the horizon). farW 0 below FAR_BLEND_FP0 m footprint (hard tiers, bit-identical), 1 above FAR_BLEND_FP1.
+  let sc = 0.5 + (bEff - 0.45) * (1 / 0.35) + off;
+  sc = sc < 0 ? 0 : sc > 2 ? 2 : sc;
+  let fw = (fp - FAR_BLEND_FP0) * (1 / (FAR_BLEND_FP1 - FAR_BLEND_FP0));
+  fw = fw < 0 ? 0 : fw > 1 ? 1 : fw;
+  fw = fw * fw * (3 - 2 * fw);
+  const xf = i + (sc - i) * fw;
+  const i0 = Math.floor(xf), i1 = i0 < 2 ? i0 + 1 : 2, fx = xf - i0;
 
   const TL = ctx.tlook, W = ctx.tlookWidth, base = type * W * 4;
-  const colOff = base + i * 4;
+  const colOff = base + i0 * 4, colOff1 = base + i1 * 4;
   // TLOOK colours are linear 0..1 (GPU texel layout); bytes are 0..255 (BUG-OWN-004).
-  let fr = TL[colOff] * 255, fg = TL[colOff + 1] * 255, fb = TL[colOff + 2] * 255;
+  let fr = (TL[colOff] + (TL[colOff1] - TL[colOff]) * fx) * 255, fg = (TL[colOff + 1] + (TL[colOff1 + 1] - TL[colOff + 1]) * fx) * 255, fb = (TL[colOff + 2] + (TL[colOff1 + 2] - TL[colOff + 2]) * fx) * 255;
   let gain = gainOf(bEff, ctx.shading);
   gain = wetGain(gain, bEff, wet, ctx.shading.fgMaxGain);
   fr *= gain; fg *= gain; fb *= gain;
   let br = fr * 0.3, bg = fg * 0.3, bb = fb * 0.3;
 
-  const bandIdx = t < ctx.bands.near ? 0 : t < ctx.bands.mid ? 1 : 2;
-  const gOff = close ? base + 7 * 4 : base + (4 + bandIdx) * 4;
+  // OB-073: the calm glyph = middle entry of the NEAR glyph set (TLOOK texel 4), same at every distance/time/point.
+  const gOff = base + 4 * 4;
   const packedX = TL[gOff], packedCount = TL[gOff + 1];
-  let code = pickCodeFromPacked(packedX, packedCount, Math.floor(hB * packedCount));
-
-  // Water glint (item 5): timeSec-keyed, still world-keyed via (cx, cy).
-  const albedo = TL[base + 3 * 4], glintFlag = TL[base + 3 * 4 + 1];
-  if (glintFlag) {
-    const g = hashFast01(cx, cy, Math.floor(timeSec * 1.5) | 0);
-    if (g > 0.5) {
-      const alt = pickCodeFromPacked(packedX, packedCount, (Math.floor(hB * packedCount) + 1) % Math.max(1, packedCount));
-      code = alt;
-      const lightOff = base + 2 * 4; // TLOOK[type][2] (the "light" colour) doubles as the glint tint
-      const lr = TL[lightOff] * 255 * gain, lg = TL[lightOff + 1] * 255 * gain, lb = TL[lightOff + 2] * 255 * gain;
-      fr += (lr - fr) * 0.35; fg += (lg - fg) * 0.35; fb += (lb - fb) * 0.35;
-    }
-  }
-
-  // 23.4 close-band features (wildflower/pebble): `ctx.features` is a flat
-  // list pre-resolved by `makeTerrainShadeCtx` to `{typeId, chance, code0,
-  // code1, fg:[r,g,b]}` (own hash salt per list index, 20+idx, so the
-  // wildflower/pebble dice never correlate with the tier/glyph hash above or
-  // with each other). Deviation flagged for architect review (S5): the doc's
-  // "small FEAT texel row per type" describes a GPU-uploadable packing; this
-  // JS oracle reads the same data straight off `recipe.nearLOD.features`
-  // instead (no GLSL exists yet to port to - S5 designs the real FEAT
-  // texture layout against this same recipe list).
-  if (close && ctx.features) {
-    for (let fi = 0; fi < ctx.features.length; fi++) {
-      const feat = ctx.features[fi];
-      if (feat.typeId !== type) continue;
-      const fh = hashFast01(cx, cy, 20 + fi);
-      if (fh >= feat.chance) continue;
-      code = fh < feat.chance * 0.5 ? feat.code0 : feat.code1;
-      fr = feat.fg[0]; fg = feat.fg[1]; fb = feat.fg[2];
-      br = fr * 0.3; bg = fg * 0.3; bb = fb * 0.3;
-      break;
+  let code = pickCodeFromPacked(packedX, packedCount, packedCount >> 1);
+  // G2 + P3: far grass tier (WGSL twin: shadeTerrain, same lines). fgw = weight 0..1, > 0 = stable level 254.
+  let fgw = 0;
+  const FGR = ctx.farGrass;
+  if (FGR !== undefined && FGR.on !== 0 && !close) {
+    const st = FGR.types[type * 4 + 3];
+    if (st > 0) {
+      let w = (t - FGR.startM) / FGR.fadeM; w = w < 0 ? 0 : w > 1 ? 1 : w;
+      fgw = w * w * (3 - 2 * w) * st;
+      if (fgw > 0) {
+        let ph = (timeSec - (fu * FGR.dirX + fv * FGR.dirY) * FGR.invTravel) * FGR.cyc; ph -= Math.floor(ph);
+        let tri = 1 - Math.abs(2 * ph - 1); tri = tri * tri * (3 - 2 * tri);
+        let sg = nP * FG_SLOPE + (tri - 0.5) * FG_GUST; sg = sg < -1 ? -1 : sg > 1 ? 1 : sg;
+        if (fgw > 0.5 - 0.4 * sg) code = FG_CODES[sg < -0.33 ? 0 : sg > 0.33 ? 2 : 1];
+        const km = fgw * FGR.mix * (1 + FG_MOD * sg), o4 = type * 4;
+        fr += (FGR.types[o4] * gain - fr) * km; fg += (FGR.types[o4 + 1] * gain - fg) * km; fb += (FGR.types[o4 + 2] * gain - fb) * km;
+        br = fr * 0.3; bg = fg * 0.3; bb = fb * 0.3;
+      }
     }
   }
 
@@ -189,8 +327,12 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0) 
   const faceCount = TL[base + 3 * 4 + 3];
   if (faceMode !== 0 && faceCount > 0 && !close && t >= ctx.bands.near) {
     const faceX = TL[base + 3 * 4 + 2];
-    const trunk = faceMode === 2 && hashFast01(cx, cy, FOREST_TRUNK_SALT) < FOREST_TRUNK_CHANCE;
-    code = trunk ? FOREST_TRUNK_CODE : pickCodeFromPacked(faceX, faceCount, faceMode === 2 ? faceCount - 1 : Math.floor(hB * faceCount));
+    const fx4 = Math.floor(fu / FAR_GLYPH_CELL), fy4 = Math.floor(fv / FAR_GLYPH_CELL);
+    // OB-081: once a screen cell covers half a 4 m face cell the hash would re-roll every frame -> fixed face glyph, no trunks
+    const hc = ctx.hashCell || 0, fpH = hc > 0 ? hc : (hc < 0 ? -hc : FP_DEFAULT_K) * t; // faces stand upright: cell WIDTH, no depth stretch
+    const calm = fpH > FAR_GLYPH_CELL * 0.5;
+    const trunk = !calm && faceMode === 2 && hashFast01(fx4, fy4, FOREST_TRUNK_SALT) < FOREST_TRUNK_CHANCE;
+    code = trunk ? FOREST_TRUNK_CODE : pickCodeFromPacked(faceX, faceCount, faceMode === 2 ? faceCount - 1 : calm ? faceCount >> 1 : Math.floor(hashFast01(fx4, fy4, 7) * faceCount));
     if (trunk) {
       const tOff = base + 16 * 4;
       fr = TL[tOff] * 255 * gain; fg = TL[tOff + 1] * 255 * gain; fb = TL[tOff + 2] * 255 * gain;
@@ -203,7 +345,8 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0) 
 
   // Fog (item 5 + overworld_far.js "fog" section): 50 -> 1500 m, curve 0.7.
   const F = ctx.fog;
-  const f = terrainFogF(t, F);
+  // MAP-06a (38.42 Skyline): optional far-texel fog cap (`ctx.skyline` from the look's haze.skyline, `z` = texel height); absent = unchanged.
+  const f = ctx.skyline ? skylineFogF(terrainFogF(t, F), t, type, z, ctx.skyline) : terrainFogF(t, F);
   const fcr = F.nearRGB[0] + (F.farRGB[0] - F.nearRGB[0]) * f;
   const fcg = F.nearRGB[1] + (F.farRGB[1] - F.nearRGB[1]) * f;
   const fcb = F.nearRGB[2] + (F.farRGB[2] - F.nearRGB[2]) * f;
@@ -213,6 +356,103 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0) 
   if (f > 0.85) code = 0; // space (glyphIdx 0)
 
   out.glyph = code;
+  // 38.25 amendment C.1: stable-pass level byte of a terrain cell (twin of shade.wgsl's terrain splice): 254 = the shimmer branch (glyph can change next tick), else 255
+  out.level = fgw > 0 ? LEVEL_ANIM : LEVEL_NONE; // OB-073: no glint branch; G2: far-grass cells animate (gust)
+  out.fg[0] = toByte(fr); out.fg[1] = toByte(fg); out.fg[2] = toByte(fb);
+  out.bg[0] = toByte(br); out.bg[1] = toByte(bg); out.bg[2] = toByte(bb);
+  return out;
+}
+
+
+// ---- OB-073 D2c (38.52 item 7): kind-10 grass carpet shade branch -----------------------------------------
+export const GRASS_AO_LO = 0.55;      // ambient AO = mix(0.55, 1, h01): dark blade base
+export const GRASS_TIP_H = 0.75, GRASS_BASE_H = 0.2, GRASS_LEAN_G = 0.35;
+const GRASS_GLYPHS = [',', '|', "'", '\\', '/']; // base, mid, tip, leanL, leanR: v < 0 = tip leans screen-left = a backslash stroke (arch review 2026-10-12c)
+// MASK-c: packed per-blade word (gbuf.grassX / GA.w): tint byte | back-light byte << 8 | ground type << 16 | (tier offset + 1) << 24 | GRASS_GX_HAS.
+export const GRASS_TINT_AMP = 0.08;     // ramp position shift = (tintByte / 255 * 2 - 1) * AMP
+export const GRASS_GX_HAS = 67108864;   // 1 << 26: the cell below was terrain, the type + tier offset are valid (else no ground blend)
+export const GRASS_GROUND_TINT = 0.6;   // default variant groundTint: blade colour = ground at the root, full ramp colour from h01 >= groundTint
+export const GRASS_BACKLIGHT_K = 0.3;   // back-light warm boost cap (x bl x h01^2 x min(sunI, 1))
+export const GRASS_LEVELS = 15.999;   // stable level byte of a kind-10 cell = floor(ramp position x * 15.999) = 0..15 (same in the grass shade WGSL)
+export const GRASS_ROWS = 5;          // vec4 rows per variant in the GPU table: ramp k=0..3 (rgb; row0.w = n, row1..3.w = base/mid/tip glyph code), row 4 = (leanL, leanR, groundTint)
+/** Pack a grassTableFor() table into the GPU uniform layout (16 variants x GRASS_ROWS vec4) into `out` (Float32Array(80*4)); no alloc. */
+export function packGrassTable(tab, out) {
+  out.fill(0);
+  const nv = Math.min(15, tab.n.length - 1);
+  for (let id = 1; id <= nv; id++) {
+    const o = id * GRASS_ROWS * 4, n = tab.n[id];
+    for (let k = 0; k < 4; k++) for (let c = 0; c < 3; c++) out[o + k * 4 + c] = tab.ramp[id * 12 + Math.min(k, n - 1) * 3 + c];
+    out[o + 3] = n; out[o + 7] = tab.glyph[id * 5]; out[o + 11] = tab.glyph[id * 5 + 1]; out[o + 15] = tab.glyph[id * 5 + 2];
+    out[o + 16] = tab.glyph[id * 5 + 3]; out[o + 17] = tab.glyph[id * 5 + 4]; out[o + 18] = tab.gtint[id];
+  }
+  return out;
+}
+const _grassTabs = new WeakMap();
+const _gnd = new Float64Array(3);
+/**
+ * Per-variant shade table of a carpet config (built once per cfg, then cached): ramp = RGB bytes (0..255) base -> tip,
+ * glyph indices (ASCII - 32) base/mid/tip/leanL/leanR. Variant ids are 1-based (index 0 unused).
+ * @param {{variants:Array}} cfg  variants[].ramp must already be RGB triplets (the game resolves palette keys)
+ */
+export function grassTableFor(cfg) {
+  let tab = _grassTabs.get(cfg);
+  if (tab) return tab;
+  const vs = cfg.variants || [];
+  const n = vs.length + 1;
+  tab = { n: new Uint8Array(n), ramp: new Float64Array(n * 12), glyph: new Uint8Array(n * 5), gtint: new Float64Array(n).fill(GRASS_GROUND_TINT) };
+  for (let id = 1; id < n; id++) {
+    const v = vs[id - 1], r = v.ramp;
+    if (!r || r.length < 2 || r.length > 4 || !Array.isArray(r[0])) throw new Error(`carpet.variants[${id - 1}].ramp: 2..4 RGB triplets expected`);
+    tab.n[id] = r.length;
+    tab.gtint[id] = v.groundTint == null ? GRASS_GROUND_TINT : v.groundTint;
+    for (let k = 0; k < r.length; k++) for (let c = 0; c < 3; c++) tab.ramp[id * 12 + k * 3 + c] = r[k][c];
+    const g = v.glyphs || {}, names = ['base', 'mid', 'tip', 'leanL', 'leanR'];
+    for (let k = 0; k < 5; k++) tab.glyph[id * 5 + k] = (g[names[k]] || GRASS_GLYPHS[k]).charCodeAt(0) - 32;
+  }
+  _grassTabs.set(cfg, tab);
+  return tab;
+}
+
+/**
+ * Shade one grass blade cell. `b` = the lit term already holding the AO-scaled ambient + sun (shadeTerrainCells).
+ * Colour = ramp(h01 + tint) * terrain gain, terrain fog; glyph by h01 / lean (leanL/leanR win when |lean| > 0.35).
+ * Writes `out` (glyph idx, fg, bg, level) like shadeTerrain.
+ */
+export function shadeGrass(t, variant, h01, lean, tint, b, tab, ctx, out, gx = 0, sunI = 0) {
+  const wet = ctx.shading.wetness || 0;
+  let bE = b * (1 - WET_DARK * wet);
+  const flo = ctx.shading.floorLum; if (flo > 0 && bE < flo) bE = flo;
+  let gain = gainOf(bE, ctx.shading);
+  gain = wetGain(gain, bE, wet, ctx.shading.fgMaxGain);
+  let x = h01 + tint; x = x < 0 ? 0 : x > 1 ? 1 : x;
+  const n = tab.n[variant], xf = x * (n - 1);
+  let i0 = Math.floor(xf); if (i0 > n - 2) i0 = n - 2;
+  const fx = xf - i0, o0 = variant * 12 + i0 * 3, o1 = o0 + 3, R = tab.ramp;
+  let cr = R[o0] + (R[o1] - R[o0]) * fx, cg = R[o0 + 1] + (R[o1 + 1] - R[o0 + 1]) * fx, cb = R[o0 + 2] + (R[o1 + 2] - R[o0 + 2]) * fx;
+  // MASK-c: base = the calm ground under the root (groundAlbedo), tip = the variant ramp; w = h01 / groundTint (twin: shade.wgsl.js shadeGrass)
+  if ((gx & GRASS_GX_HAS) !== 0) {
+    groundAlbedo((gx >>> 16) & 255, ((gx >>> 24) & 3), ctx, _gnd);
+    let w = h01 / tab.gtint[variant]; w = w < 0 ? 0 : w > 1 ? 1 : w;
+    cr = _gnd[0] + (cr - _gnd[0]) * w; cg = _gnd[1] + (cg - _gnd[1]) * w; cb = _gnd[2] + (cb - _gnd[2]) * w;
+  }
+  let fr = cr * gain, fg = cg * gain, fb = cb * gain;
+  // MASK-c back-light: sun behind the blade (bl = dot(view, sun) byte) warm-brightens the upper part, capped
+  const bl = ((gx >>> 8) & 255) * (1 / 255);
+  if (bl > 0) {
+    const gl = GRASS_BACKLIGHT_K * bl * h01 * h01 * (sunI < 1 ? sunI : 1);
+    fr *= 1 + gl; fg *= 1 + gl * 0.75; fb *= 1 + gl * 0.25;
+  }
+  let br = fr * 0.3, bg = fg * 0.3, bb = fb * 0.3;
+  const gb = variant * 5;
+  let code = h01 > GRASS_TIP_H ? tab.glyph[gb + 2] : h01 < GRASS_BASE_H ? tab.glyph[gb] : tab.glyph[gb + 1];
+  if (lean < -GRASS_LEAN_G) code = tab.glyph[gb + 3]; else if (lean > GRASS_LEAN_G) code = tab.glyph[gb + 4];
+  const F = ctx.fog, f = terrainFogF(t, F);
+  const fcr = F.nearRGB[0] + (F.farRGB[0] - F.nearRGB[0]) * f, fcg = F.nearRGB[1] + (F.farRGB[1] - F.nearRGB[1]) * f, fcb = F.nearRGB[2] + (F.farRGB[2] - F.nearRGB[2]) * f;
+  fr += (fcr - fr) * f; fg += (fcg - fg) * f; fb += (fcb - fb) * f;
+  const fBg = Math.min(1, 1.1 * f);
+  br += (fcr - br) * fBg; bg += (fcg - bg) * fBg; bb += (fcb - bb) * fBg;
+  if (f > 0.85) code = 0;
+  out.glyph = code; out.level = Math.floor(x * GRASS_LEVELS); // D2e: stable level = ramp position bucket
   out.fg[0] = toByte(fr); out.fg[1] = toByte(fg); out.fg[2] = toByte(fb);
   out.bg[0] = toByte(br); out.bg[1] = toByte(bg); out.bg[2] = toByte(bb);
   return out;
@@ -287,12 +527,12 @@ export function makeTerrainShadeCtx(recipe, tlookPacked, palette) {
     // switch), both from `recipe.nearLOD` - never literal in engine code.
     closeBand: nearLOD && nearLOD.bands ? nearLOD.bands.close : undefined,
     handover: nearLOD && nearLOD.handover ? nearLOD.handover : undefined,
-    features: buildFeatures(recipe, palette),
+    cliffType: recipe.terrain && recipe.terrain.rock ? recipe.terrain.rock.id : -1, // OB-104b: -1 = cliff look off
   };
 }
 
 // ME-19b: deferred terrain-cell shading moved without changing expression order.
-const shadeOut = { glyph: 32, fg: new Uint8Array(3), bg: new Uint8Array(3) };
+const shadeOut = { glyph: 32, level: 255, fg: new Uint8Array(3), bg: new Uint8Array(3) };
 const shadeNrm = new Float64Array(3);
 const _terrainAoAliasCache = new WeakMap();
 function terrainAoAlias(gbuf) {
@@ -324,19 +564,38 @@ export function forestFaceMode(gbuf, alias, ctx, i, t) {
   return faceNrm[2] < FOREST_FACE_NZ ? 1 : 2;
 }
 
+/**
+ * MAP-06a: the look's `haze.skyline` + the recipe's `geo.seaLevel`, cached per (look record, terrain). null = off (no block, no sea level).
+ * The edge-pass gate `gbuf.fogF` stays the UNCAPPED terrain fog (far pixels only; edges there are fog-suppressed as before).
+ * MAP-06b: exported so the WebGPU shade pass (passShade.js) writes the SAME record into ShadeU.skyline.
+ * @returns {{fogMax:number, fromZ:number, seaFogMax:number, seaLevel:number}|null}
+ */
+export function skylineFor(terrain, palette) {
+  const geo = terrain.recipe && terrain.recipe.geo;
+  if (!geo || !Number.isFinite(geo.seaLevel)) return null; // checked first: worlds without a sea never touch the look
+  const lk = resolveLook(palette), sk = lk && lk.haze ? lk.haze.skyline : null;
+  if (!sk) return null;
+  const c = terrain._skylineCache;
+  if (c && c.src === sk && c.seaLevel === geo.seaLevel) return c.S;
+  const S = { fogMax: sk.fogMax, fromZ: sk.fromZ, seaFogMax: sk.seaFogMax, seaLevel: geo.seaLevel };
+  terrain._skylineCache = { src: sk, seaLevel: geo.seaLevel, S };
+  return S;
+}
+
 /** Lazily (re)builds and caches `terrain`'s shading context, keyed by `farVersion`. */
 function terrainShadingFor(matTable, ctx) {
   if (!ctx._paletteShading) ctx._paletteShading = ctx.shading;
   const ms = matTable && matTable.shading;
   if (!ms || !matTable.gainLUT) return ctx._paletteShading;
   if (!ctx._mtShading || ctx._mtShadingSrc !== matTable) {
-    ctx._mtShading = { fgMin: ms.fgMin, fgMaxGain: ms.fgMaxGain, fgGamma: ctx._paletteShading.fgGamma, gainLUT: matTable.gainLUT, wetness: ms.wetness };
+    ctx._mtShading = { fgMin: ms.fgMin, fgMaxGain: ms.fgMaxGain, fgGamma: ctx._paletteShading.fgGamma, gainLUT: matTable.gainLUT, wetness: ms.wetness, floorLum: ms.floorLum };
     ctx._mtShadingSrc = matTable;
   } else {
     // S8-B2-14b: wetness is a per-frame value (rain), same `table.shading.wetness`
     // slot detailShade.js reads every frame - refresh it even when the cached
     // object (built once per MaterialTable instance) is reused.
     ctx._mtShading.wetness = ms.wetness;
+    ctx._mtShading.floorLum = ms.floorLum; // DN-02
   }
   return ctx._mtShading;
 }
@@ -362,7 +621,7 @@ function ensureShadeCtx(terrain, palette) {
  * old code always used the c=8 far difference, even inside the near band).
  * `b = ambientI + sunI*max(0,N.sunDir)` stays analytic/shadow-free (D-007:
  * no terrain shadow rays), now also scaled by the per-cell cloud factor `cF`
- * (S8-B2-12b, 38.13: `light.cloud[i]`, 1 at strength 0 - bit-identical);
+ * (S8-B2-12b, 38.13: `light.cloudQ[i]`, 1 at strength 0 - bit-identical);
  * `Lc` is `fb.light`'s already-computed per-cell
  * point-light contribution (`lightSurfaces` runs before this in
  * `compositor.js` and now skips the sun term for kind 7 - lighting.js -
@@ -385,22 +644,30 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
   // from `MaterialTable.shading` (design/detail-pass.js); match it whenever a
   // v2 MaterialTable is bound, else keep `palette.shading` + Math.pow.
   ctx.shading = terrainShadingFor(fb.matTable, ctx);
+  ctx.skyline = skylineFor(terrain, palette);
   const sun = sunFromWorld(world, palette);
   const cells = fb.rt.cells || fb.rt;
   const n = gbuf.cols * gbuf.rows;
   const light = fb.light;
   const sunMapOn = !!(light && !light.uniform && light.sunMapOn);
   const alias = terrainAoAlias(gbuf);
+  const grassTab = world && world.carpet && world.carpet.cfg ? grassTableFor(world.carpet.cfg) : null;
+  if (grassTab !== null && terrain.typeNames) { // G2 + P3: far grass record (ctx-owned, filled in place)
+    if (!ctx.farGrass) ctx.farGrass = makeFarGrass();
+    farGrassFill(ctx.farGrass, world.carpet.cfg, terrain.typeNames, world.carpetQuality, world.wind && world.wind.params ? world.wind.params : null);
+  } else if (ctx.farGrass) ctx.farGrass.on = 0;
   for (let i = 0; i < n; i++) {
-    if (gbuf.kind[i] !== KIND_TERRAIN) continue;
+    const kd = gbuf.kind[i];
+    if (kd !== KIND_TERRAIN && !(kd === KIND_GRASS && grassTab !== null)) continue; // OB-073 D2c: kind 10 only with a carpet table
+    const isG = kd === KIND_GRASS;
     const u = gbuf.u[i], v = gbuf.v[i], t = fb.depth.depth[i];
     unpackNormalOct(alias[i], shadeNrm);
     const ndotl = shadeNrm[0] * sun.dirX + shadeNrm[1] * sun.dirY + shadeNrm[2] * sun.dirZ;
     // ME-15c (27.9a item 6, US-070b): with the sun shadow map the analytic sun term is scaled by n/4 (light pass PCF taps).
-    // S8-B2-12b (38.13): cloud-darkening byte (`light.cloud[i]`, the JS-side copy of LIGHT.w bits 24..31, 0 at
+    // S8-B2-12b (38.13): cloud-darkening byte (`light.cloudQ[i]`, the JS-side copy of LIGHT.w bits 24..31, 0 at
     // strength 0 or when the light set carries no per-cell byte at all) scales the whole analytic sun term too.
-    const cF = (light && !light.uniform && light.cloud) ? 1 - light.cloud[i] * (1 / 255) : 1;
-    const b = sun.ambientI + sun.sunI * Math.max(0, ndotl) * (sunMapOn ? light.sunN[i] * 0.25 : 1) * cF;
+    const cF = (light && !light.uniform && light.cloudQ) ? 1 - light.cloudQ[i] * (1 / 255) : 1;
+    const b = sun.ambientI * (isG ? GRASS_AO_LO + (1 - GRASS_AO_LO) * u : 1) + sun.sunI * Math.max(0, ndotl) * (sunMapOn ? light.sunN[i] * 0.25 : 1) * cF;
     let lr = 0, lg = 0, lb = 0;
     if (light && !light.uniform) {
       const o = i * 3; lr = light.rgb[o]; lg = light.rgb[o + 1]; lb = light.rgb[o + 2];
@@ -408,7 +675,8 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
       lr = light.rgb[0]; lg = light.rgb[1]; lb = light.rgb[2];
     }
     const bT = b + Math.max(lr, Math.max(lg, lb));
-    shadeTerrain(t, gbuf.mat[i], bT, u, v, timeSec, ctx, shadeOut, forestFaceMode(gbuf, alias, ctx, i, t));
+    if (isG) shadeGrass(t, gbuf.mat[i], u, v, gbuf.vao[i], bT, grassTab, ctx, shadeOut, gbuf.grassX[i], sun.sunI);
+    else shadeTerrain(t, gbuf.mat[i], bT, u, v, timeSec, ctx, shadeOut, forestFaceMode(gbuf, alias, ctx, i, t), gbuf.z[i], shadeNrm[0], shadeNrm[1], shadeNrm[2]); // MAP-06b: z = the rasterised surface height (kind 7: zBase/zRef 0), same value as the GPU's GA.z
     gbuf.fogF[i] = terrainFogF(t, ctx.fog); // edge pass gate (BUG-GPU-005): never a stale value
     shadeOut.fg[0] = clampByte(shadeOut.fg[0] + lr * 0.5 * 255);
     shadeOut.fg[1] = clampByte(shadeOut.fg[1] + lg * 0.5 * 255);

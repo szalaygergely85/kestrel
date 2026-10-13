@@ -112,6 +112,7 @@ function buildDetailMaterialRec(m, setIdByName, P, lodGates) {
       maxCover: g.maxCover == null ? 0.5 : g.maxCover,
       tie: !!g.tie,
       lines: g.lines !== false,
+      texel: g.glyph === 'texel', // GRID-TEXEL-GLYPH-01: hA/hC on the octave texel, not the block
       isGap: g.kind === 'gap',
       gapSetId: g.kind === 'gap' ? setIdByName(g.set) : -1,
     };
@@ -247,6 +248,8 @@ export function bindShading(P, DP, cellAspect) {
       fgMin: DP.shading.fgMin, fgMaxGain: DP.shading.fgMaxGain, tint: DP.shading.tint,
       overbright: DP.shading.overbright, overbrightMax: DP.shading.overbrightMax,
       cellAspect,
+      // DN-02: night glyph-luminance floor (palette.liveLook.floorEff; 0 = off / frozen path), read per cell by shadeCore + uploaded per frame by passShade
+      get floorLum() { const L = P.liveLook; return L && L.floorEff > 0 ? L.floorEff : 0; },
     };
   }
 

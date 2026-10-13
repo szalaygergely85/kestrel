@@ -24,7 +24,24 @@
 import { createChests } from './quest/sim/chest.js';
 import { createItemGetCard } from './ui/itemGetCard.js';
 import { countOf } from './quest/sim/inventory.js';
+import { buildChestDefs } from './quest/sim/chestDefs.js';
+import { CHEST_DEFAULTS as C } from './quest/sim/lootConfig.js';
 import { forwardOf } from '../../engine/index.js';
+
+// OB-106: chests had NO interactable, so the crosshair never found one and "[E] Open chest" was never shown. Pick box = the model's
+// footprint/height (the chest models carry no collider shapes). Half extents in metres, local x = long side, z up from the feet.
+const PICK_HALF = { chestSmall: [0.35, 0.2, 0.275], chestBig: [0.55, 0.35, 0.45] };
+const CHEST_REACH = 2.2; // ray length to the box (findInteractTarget also caps at its own 1.8 m reach)
+export function chestPickShape(e) {
+  const t = e.transform, comp = e.components && (e.components.voxel || e.components.sprite);
+  const h = PICK_HALF[comp && comp.model] || PICK_HALF.chestSmall, sc = t.scale || 1, a = (t.yawDeg || 0) * Math.PI / 180;
+  return { cx: t.x, cy: t.y, cz: t.z + h[2] * sc, hx: h[0] * sc, hy: h[1] * sc, hz: h[2] * sc, c: Math.cos(a), s: Math.sin(a) };
+}
+/** World AABB of a pick shape (the broadphase `rec.pick` findInteractTarget needs next to `pickShapes`). */
+export function shapeAabb(sh) {
+  const ex = Math.abs(sh.c) * sh.hx + Math.abs(sh.s) * sh.hy, ey = Math.abs(sh.s) * sh.hx + Math.abs(sh.c) * sh.hy;
+  return { x0: sh.cx - ex, x1: sh.cx + ex, y0: sh.cy - ey, y1: sh.cy + ey, z0: sh.cz - sh.hz, z1: sh.cz + sh.hz };
+}
 
 export const CLIP_FOR = { closed: 'closed', opening: 'open', open: 'opened' }; // ASSETS.chestFx.clipFor (design/models/chest.js)
 
@@ -38,11 +55,15 @@ export const CLIP_FOR = { closed: 'closed', opening: 'open', open: 'opened' }; /
  * @returns {{card: any, onBoot: Function, onTick: Function, drawHud: Function}} a gameHooks handler set, plus
  *   `card` (test/dev access to the mounted item-get card view).
  */
-export function createChestHook({ defs, items, style, rgb, openedChestsOf = null, seed = 1 }) {
-  const card = createItemGetCard(null, { style, items, rgb });
+export function createChestHook({ defs, items, style, rgb, openedChestsOf = null, seed = 1, reduceMotion = false, notify = null }) {
+  const card = createItemGetCard(null, { style, items, rgb, reduceMotion });
   const itemDefs = items.defs;
-  const fwdScratch = [0, 0], pose = { x: 0, y: 0, z: 0, forwardX: 0, forwardY: 0 }; // reused (rule 9)
-  let sim = null, ctx = null, lastAnim = null;
+  // OB-075: with `notify` (main.js: toasts.say) chest / gear pickups show a one-line "Looted: Leggings" / "Looted: 2 Potions" toast, no pause, no card.
+  // Without it (Node fixtures) the old item-get card is used. The heart-piece card (heartHook.js, a story beat) is kept.
+  const lootedLine = (id, n) => { const d = itemDefs[id], nm = d && d.name ? d.name : id; return 'Looted: ' + (n > 1 ? n + ' ' + nm + (/s$/i.test(nm) ? '' : 's') : nm); };
+  const gotLoot = (id, n, extra) => { if (notify) notify(lootedLine(id, n)); else card.push(id, n, extra); };
+  const fwdScratch = [0, 0], pose = { x: 0, y: 0, z: 0, forwardX: 0, forwardY: 0, onBottom: false }; // reused (rule 9)
+  let recs = [], offGear = null, sim = null, ctx = null, lastAnim = null, active = defs; // EQ-10: `active` = defs, or the world's chest* anchors when defs is []
 
   // The chest sim's PRIVATE event sink: pushes the card directly (so boar loot - which shares `ctx.events` - never
   // opens it), then forwards the same event onto the shared bus for saveRelay (`chest:opened`) and the seam's
@@ -51,7 +72,7 @@ export function createChestHook({ defs, items, style, rgb, openedChestsOf = null
     emit(name, p) {
       if (name === 'inventory:added') {
         const count = ctx.inventory ? countOf(ctx.inventory, p.id) : p.n;
-        card.push(p.id, p.n, { count });
+        gotLoot(p.id, p.n, { count });
       } // card.push looks the id up in `items.defs` itself (itemGetCard.js)
       if (ctx.events) ctx.events.emit(name, p);
     },
@@ -62,25 +83,47 @@ export function createChestHook({ defs, items, style, rgb, openedChestsOf = null
     onBoot(c) {
       ctx = c;
       lastAnim = new Map();
-      sim = defs.length ? createChests(defs, {
+      active = defs.length ? defs : (c.world && typeof c.world.entity === 'function' ? buildChestDefs(c.world) : []);
+      if (offGear) offGear();
+      offGear = c.events && c.events.on ? c.events.on('gear:got', (p) => gotLoot(p.id, p.n, { count: p.n })) : null; // loot.js gear pickup
+      sim = active.length ? createChests(active, {
         items: itemDefs, inventoryOf: () => ctx.inventory, events,
         openedChests: openedChestsOf ? openedChestsOf() : [], seed,
       }) : null;
+      recs = [];
+      if (sim && c.world && c.world.addInteractable) { // OB-106: one crosshair target per still-closed chest
+        for (const d of active) {
+          const e = d.propId && c.world.entity ? c.world.entity(d.propId) : null;
+          const key = 'chest.' + d.id;
+          if (c.world.removeInteractable) c.world.removeInteractable(key);
+          if (!e || sim.stateOf(d.id) !== 'closed') continue;
+          const sh = chestPickShape(e);
+          const rec = c.world.addInteractable({ key, name: 'chest.open', x: d.x, y: d.y, z: d.z + sh.hz, radius: CHEST_REACH, prompt: C.prompt, pick: shapeAabb(sh), pickShapes: [sh], def: { chestId: d.id } });
+          recs.push({ id: d.id, key });
+        }
+      }
     },
+    // The card's own step. main.js calls this EVERY frame outside the `!paused` block (like invView.step): an open card
+    // makes `paused` true, so gameHooks.tick (-> onTick) stops running and a step in onTick could never dismiss it.
+    // `ePressed` = ungated E edge (the card dismisses itself even though interactPressed is false while it's open).
+    stepUi(dt, ePressed) { card.step(dt, !!ePressed); },
     onTick(dt) {
       if (!ctx) return;
       const st = ctx.state;
-      card.step(dt, !!st.interactRaw); // ungated E: the card dismisses itself even though interactPressed is false while it's open
       if (!sim) return;
       sim.step(dt, true);
       if (st.interactPressed && !card.isOpen) {
         forwardOf(st.playerYawDeg || 0, fwdScratch);
         const t = ctx.player.transform;
         pose.x = t.x; pose.y = t.y; pose.z = t.z; pose.forwardX = fwdScratch[0]; pose.forwardY = fwdScratch[1];
-        for (let i = 0; i < defs.length; i++) if (sim.canOpen(defs[i].id, pose)) { sim.open(defs[i].id, pose); break; }
+        const pb = ctx.player.components && ctx.player.components.body; pose.onBottom = !!(pb && pb.onBottom); // SWIM-04d
+        for (let i = 0; i < active.length; i++) if (sim.canOpen(active[i].id, pose)) { sim.open(active[i].id, pose); break; }
       }
-      for (let i = 0; i < defs.length; i++) {
-        const d = defs[i];
+      for (let i = recs.length - 1; i >= 0; i--) { // OB-106: an opened (or opening) chest shows no [E]
+        if (sim.stateOf(recs[i].id) !== 'closed') { if (ctx.world.removeInteractable) ctx.world.removeInteractable(recs[i].key); recs.splice(i, 1); }
+      }
+      for (let i = 0; i < active.length; i++) {
+        const d = active[i];
         if (!d.propId) continue;
         const clip = CLIP_FOR[sim.stateOf(d.id)];
         if (!clip || lastAnim.get(d.id) === clip) continue;

@@ -11,6 +11,7 @@ import {
 } from '../../engine/index.js';
 import { fileKey } from './doc.js';
 import { terrainEditsText } from './terrainBrush.js';
+import { grassMaskText } from './grassBrush.js';
 
 /**
  * One file's full envelope + data (24.10): `{ kind, schema, id, nextId,
@@ -80,6 +81,7 @@ export async function validateDoc(doc, codeParts, opts = {}) {
     const ref = opts.reference || {};
     bundle.meshes = { ...(ref.meshes || {}), ...(bundle.meshes || {}) };
     bundle.terrainEdits = { ...(ref.terrainEdits || {}), ...(bundle.terrainEdits || {}) };
+    bundle.grassMask = { ...(ref.grassMask || {}), ...(bundle.grassMask || {}) }; // MASK-d: read-only reference, like terrainEdits
     const assets = AssetRegistry.fromJSON(bundle, codeParts);
     for (const worldId of Object.keys(bundle.worlds)) {
       World.load(assets.world(worldId), assets, {});
@@ -121,9 +123,22 @@ function downloadFallback(text, filename) {
  * @param {Object} file - a `doc.files` entry
  * @param {{forceDownload?: boolean}} [opts]
  */
+/** OB-030: PUT to tools/serve.py (localhost, content/**.json only). True when written; false -> fall back to picker/download. */
+async function saveViaServer(file, text) {
+  try {
+    if (typeof location === 'undefined' || !['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)) return false;
+    if (!file.meta.url) return false;
+    const p = new URL(file.meta.url, location.href).pathname;
+    if (!p.startsWith('/content/') || !p.endsWith('.json')) return false;
+    const r = await fetch(p, { method: 'PUT', body: text, headers: { 'Content-Type': 'application/json' } });
+    return r.ok;
+  } catch (e) { return false; }
+}
+
 export async function saveFile(file, opts = {}) {
   const text = stringifyContent(toFileObject(file));
   const name = `${file.id}.${file.kind}.json`;
+  if (!opts.forceDownload && await saveViaServer(file, text)) { file.dirty = false; return; }
   const canPicker = typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function' && !opts.forceDownload;
   if (canPicker) {
     if (!file.handle) {
@@ -322,6 +337,31 @@ export async function saveTerrainEdits(state, opts = {}) {
       state.handle = await window.showSaveFilePicker({
         suggestedName: name,
         types: [{ description: 'Kestrel terrain edits', accept: { 'application/json': ['.json'] } }],
+      });
+    }
+    const writable = await state.handle.createWritable();
+    await writable.write(text);
+    await writable.close();
+  } else {
+    downloadFallback(text, name);
+  }
+  state.dirty = false;
+}
+
+/**
+ * MASK-d: saves the grass paint layer to `<key>.grassMask.json` (content/terrain/), same flow as saveTerrainEdits
+ * (picker handle remembered in `state.handle`, else a download). Clears `state.dirty`.
+ * @param {{gm:Object, key:string, handle:Object|null, dirty:boolean}} state `gm` = grassBrush.wrapLayer(...)
+ */
+export async function saveGrassMask(state, opts = {}) {
+  const text = grassMaskText(state.gm, state.key);
+  const name = `${state.key}.grassMask.json`;
+  const canPicker = typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function' && !opts.forceDownload;
+  if (canPicker) {
+    if (!state.handle) {
+      state.handle = await window.showSaveFilePicker({
+        suggestedName: name,
+        types: [{ description: 'Kestrel grass mask', accept: { 'application/json': ['.json'] } }],
       });
     }
     const writable = await state.handle.createWritable();

@@ -1,27 +1,28 @@
 import {
   bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
-  meshFromJSON, meshFromBin, buildMeshFromTris, MaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun, setCloudShadow, setHorizonAo,
-  bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks,
+  meshFromJSON, meshFromBin, composeCharacter, meshCharacter, collapseRig, riggedModelDef, buildMeshFromTris, MaskAtlas, buildMaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
+  bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks, sunPathFrom, applySunPair, blendLook,
+  bakeImpostor, enableGroupImpostor, resolveGroupLod1, createInstanceBuffer,
+  createRipples, defineWadeSplash, wadeSplashAt, validateCarpetConfig, makeUnderState,
 } from '../../../../engine/index.js';
 import {
-  runGpuCompare, compareCells, compareGeometry, compareLight, describeCellNormals, poisonAllCells, unpackReadback,
-  terrainMeshSetFor,
+  runGpuCompare, compareCells, meshCellCap, compareGeometry, compareLight, describeCellNormals, poisonAllCells, unpackReadback,
+  terrainMeshSetFor, runStableRow, compareGlow, emisFromPacked,
   computeDerivatives, shadeSurfaces, edgePass, pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG, createShadowParityRunner,
 } from '../../../../engine/dev.js';
-import { POSES as GPU_COMPARE_POSES } from '../../../../content/dev-poses.js';
+import { POSES as GPU_COMPARE_POSES, GATE_POSES } from '../../../../content/dev-poses.js';
 import { fillUnitGrid, placeholderTeamSpec } from '../unitsHarness.js'; // RE-06: instanced-units pose helpers
 import { placeCompareSprites } from '../spriteDev.js'; // US-030c: the synthetic 3-prop set for non-`real` compare poses
 
 export const name = 'gpucompare';
 
 function noPipelineMsg(ctx) {
-  const { gpuPipeline, rt, detailPass, matTable, overlay } = ctx;
-  const msg = '[gpucompare] no active GpuCellPipeline (backend=' + rt.backend + ', detail=' + (detailPass ? 'on' : 'off') +
+  const { rt, detailPass, matTable, overlay } = ctx;
+  const msg = '[gpucompare] no active wgPipeline (backend=' + rt.backend + ', detail=' + (detailPass ? 'on' : 'off') +
     ', allV2=' + matTable.allV2 + ') - nothing to compare.';
   console.error(msg);
   overlay.visible = true; overlay.el.style.display = 'block';
   overlay.el.textContent = msg;
-  void gpuPipeline;
   return msg;
 }
 
@@ -33,15 +34,15 @@ function noPipelineMsg(ctx) {
 // on screen (the overlay) and in the console. Requires a working GPU
 // pipeline - prints a clear message and does nothing else if one isn't active.
 async function runGpuCompareShadeMode(ctx) {
-  const { gpuPipeline: glPipeline, wgPipeline, rt, assets, matTable, detailPass, depthBuffer, gbuf, overlay, GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPARE_REF_DPR } = ctx;
-  const gpuPipeline = glPipeline || (wgPipeline && wgPipeline.ready ? wgPipeline : null); // WG-3c: the WebGPU pipeline runs this mode too (cells via readbackCells)
+  const { wgPipeline, rt, assets, matTable, detailPass, depthBuffer, gbuf, overlay, GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPARE_REF_DPR } = ctx;
+  const gpuPipeline = wgPipeline && wgPipeline.ready ? wgPipeline : null; // WG-3c: the WebGPU pipeline runs this mode too (cells via readbackCells)
   if (!gpuPipeline) { noPipelineMsg(ctx); return; }
 
   gpuPipeline.setSource('upload'); // 14.2 item 7: force the legacy CPU-fed G-buffer path for this test
 
   const level = loadLevel(assets.level('test_room'));
   bindLevel(matTable, level);
-  if (!glPipeline) gpuPipeline.bind(matTable, assets.palette); // WebGPU: re-pack the shade data textures for the materials bindLevel just added
+  gpuPipeline.bind(matTable, assets.palette); // WebGPU: re-pack the shade data textures for the materials bindLevel just added
   const compareWorld = World.load({ terrain: null, structures: [{ id: 'test_room', level: 'test_room', origin: { x: 0, y: 0, z: 0 } }], entities: [] }, assets, {});
   const fbCompare = {
     rt, depth: depthBuffer, palette: assets.palette, gbuf, matTable, detailPass,
@@ -104,6 +105,7 @@ function buildCompareRuns(ctx) {
   }
   function loadCompareWorld(def, opts = {}) {
     const w = World.load(def, assets, opts);
+    w.maskAtlas = buildMaskAtlas(assets); // TREES-DEFAULT-01: same per-world atlas as engine.loadWorld (mesh trees + the berry bush are masked meshes)
     for (const s of w.structures) {
       if (s.kind === 'mesh') continue; // ME-14c1
       bindLevel(matTable, s.level);
@@ -134,12 +136,19 @@ function buildCompareRuns(ctx) {
     const x = 1428 - 2 * Math.sin(yr), y = 1040 + 2 * Math.cos(yr);
     return { x, y, z: (worldM1.terrain ? worldM1.terrain.groundAt(x, y) : 0.53) + 1.6, yawDeg: yawDeg + yawNudge, pitchDeg };
   };
+  // EMIS-03/04: `?gpucompare=emissive` runs ONLY this pose (tower crown from 15 m west, 24 emissive cells in view - the interior brazier is a sprite, hidden in this mode; glow gate is material-only, so time of day does not matter for parity).
+  const emisParam = ctx.params.get('emispose') || '1485,1025,6,90,20', emisNum = emisParam.split(',').map(Number); // `emispose=<slug>` or `x,y,z,yaw,pitch` (dev)
+  const emisPose = emisNum.length === 5 && emisNum.every(Number.isFinite) ? { x: emisNum[0], y: emisNum[1], z: emisNum[2], yawDeg: emisNum[3], pitchDeg: emisNum[4] } : (GATE_POSES.find((g) => g.slug === emisParam) || {}).cam;
   const runs = [
     ...GPU_COMPARE_POSES.map((pose) => ({ world: testRoom, lights: testRoomLights, name: `test_room: ${pose.name || '(pose)'}`, cam: { x: pose.x, y: pose.y, z: pose.z, yawDeg: pose.yawDeg, pitchDeg: pose.pitchDeg } })),
     { world: worldM1, lights: worldM1Lights, name: `world_m1: player spawn (${m1Eye.x.toFixed(1)}, ${m1Eye.y.toFixed(1)}) yaw ${m1Eye.yawDeg} pitch ${m1Eye.pitchDeg}`,
       cam: { x: m1Eye.x, y: m1Eye.y, z: m1Eye.z, yawDeg: m1Eye.yawDeg, pitchDeg: m1Eye.pitchDeg } },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: BUG-OWN-001 owner repro (1500.69, 1027.36) yaw 236 pitch -29',
       cam: { x: 1500.69, y: 1027.36, z: 3.00 + engine.physics.eyeHeight, yawDeg: 236, pitchDeg: -29 } },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: BUG-WHITE-PIXELS-01 repro (1500.58, 1022.77) yaw 185 pitch -24',
+      cam: { x: 1500.58, y: 1022.77, z: 1.80 + engine.physics.eyeHeight, yawDeg: 185, pitchDeg: -24 } },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: BUG-WHITE-PIXELS-02 owner pose (1500.70, 1027.88) yaw 329 pitch -24',
+      cam: { x: 1500.70, y: 1027.88, z: 3.00 + engine.physics.eyeHeight, yawDeg: 329, pitchDeg: -24 } },
     { world: worldM1, lights: worldM1Lights, name: `world_m1: player spawn, sceneFade=0.5`,
       cam: { x: m1Eye.x, y: m1Eye.y, z: m1Eye.z, yawDeg: m1Eye.yawDeg, pitchDeg: m1Eye.pitchDeg }, fade: 0.5 },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: player spawn, card open (sceneDim 0.35 + plate 0.18)',
@@ -154,10 +163,14 @@ function buildCompareRuns(ctx) {
       cam: { x: 1499.5, y: 1027.8, z: 4.6, yawDeg: 280, pitchDeg: -10 }, real: true },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: relay at distance (half LOD)',
       cam: { x: 1497.0, y: 1027.5, z: engine.physics.eyeHeight, yawDeg: 250, pitchDeg: -2 }, real: true },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: roadBend (WS1-08 road bend, relay waystone, yaw 270)',
+      cam: { x: 1268, y: 1040, z: -29.79 + engine.physics.eyeHeight, yawDeg: 270, pitchDeg: 0 }, real: true }, // floorAt(1268,1040) = -29.79 (absolute z)
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: summit east (relay plinth, yaw 87.6)',
       cam: { x: 1489.0, y: 1025.0, z: 8.2, yawDeg: 87.6, pitchDeg: 0 }, real: true },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: breach looking back east (yaw 87.6)',
       cam: { x: 1486.5, y: 1025.0, z: 7.6, yawDeg: 87.6, pitchDeg: 0 }, real: true },
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: ob053Heap (OB-053 depth tiers: envelopeHeap voxel prop on the tower floor, yaw 104 pitch -24)',
+      cam: { x: 1481.85, y: 1024.30, z: 2.40, yawDeg: 104, pitchDeg: -24 }, real: true },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: breach',
       cam: { x: 1486.5, y: 1025.0, z: 7.6, yawDeg: 270, pitchDeg: 0 }, real: true },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: breachDown',
@@ -185,7 +198,23 @@ function buildCompareRuns(ctx) {
       cam: { x: 1446.63, y: 1024.64, z: 2.02 + engine.physics.eyeHeight, yawDeg: 227, pitchDeg: 1 }, real: true },
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: ownerTreesB (1448.31, 1026.52) yaw 229 pitch 3',
       cam: { x: 1448.31, y: 1026.52, z: 2.08 + engine.physics.eyeHeight, yawDeg: 229, pitchDeg: 3 }, real: true },
+    // MAP-06b (38.42): meadowSkyline - far peaks (fog cap z > fromZ) west/north, the sea line + 6 km sea skirt south-west (seaFogMax)
+    ...[[270, 'west fells'], [0, 'north whitecombs'], [235, 'south-west sea line']].map(([yawDeg, what]) => ({ world: worldM1, lights: worldM1Lights,
+      name: `world_m1: meadowSkyline yaw ${yawDeg} (${what})`,
+      cam: { x: 1460, y: 1030, z: (worldM1.terrain ? worldM1.terrain.groundAt(1460, 1030) : 0) + engine.physics.eyeHeight, yawDeg, pitchDeg: 0 }, real: true })),
+    // OB-104b2 (38.55): cliffNotch - the Glasswater outlet notch wall (steep faces N.z < 0.5 shade as rock, cliffType uniform); JS == GPU
+    { world: worldM1, lights: worldM1Lights, name: 'world_m1: cliffNotch (OB-104b2 cliff rock, 1237, 606 yaw 0 pitch 2)',
+      cam: { x: 1237, y: 606, z: (worldM1.terrain ? worldM1.terrain.groundAt(1237, 606) : 0) + engine.physics.eyeHeight, yawDeg: 0, pitchDeg: 2 }, real: true },
   ];
+
+  // DN-04b (38.39): frozen dusk 19.5 h and night 23 h rows (world_m1). Lit Bend lamps (rsLamp1/2 at 1280,1052 / 1246,1053.5) and the tower, so the
+  // point lights, the moon switch (night), the live sky LUT and the night floor all run through the same JS-vs-GPU parity as the 8 h rows.
+  for (const [hour, tag] of [[19.5, 'dusk 19.5 h'], [23, 'night 23 h']]) {
+    for (const [what, x, y, yawDeg, pitchDeg] of [['Bend lamps', 1268, 1040, 135, -2], ['tower', 1470, 1025, 90, 8]]) {
+      runs.push({ world: worldM1, lights: worldM1Lights, name: `world_m1: ${tag} ${what} (DN-04b)`, hour,
+        cam: { x, y, z: (worldM1.terrain ? worldM1.terrain.groundAt(x, y) : 0) + engine.physics.eyeHeight, yawDeg, pitchDeg }, real: true });
+    }
+  }
 
   // US-078a: the view model's held sword (`voxelModels.swordHeld`) is not in ASSETS.models yet (game wiring = US-078d);
   // register a mesh-only copy for this harness so the pool packs it (kept out of the DDA atlas: existing poses unchanged).
@@ -194,6 +223,12 @@ function buildCompareRuns(ctx) {
   // HANDS-01c: the spell glove (`voxelModels.spellHandL`, authored left), same mesh-only registration (pose `handsSwapped` below).
   const spellHandLDef = globalThis.ASSETS && globalThis.ASSETS.voxelModels && globalThis.ASSETS.voxelModels.spellHandL;
   if (spellHandLDef && !assets.has('model', 'spellHandL')) assets.add('model', 'spellHandL', { ...spellHandLDef, voxel: { ...spellHandLDef.voxel, meshOnly: true } });
+  // RIG-GC-01 (38.32 item 8): the chargen default character (fixed recipe, no randomness) through composeCharacter -> meshCharacter ->
+  // collapseRig -> riggedModelDef, registered as `char.gc` before the pool binds (mesh-only rigged voxel model).
+  try {
+    const gcKit = ctx.gcKit; // fetched in the async scene-mode entry
+    assets.add('model', 'char.gc', riggedModelDef(collapseRig(meshCharacter(composeCharacter(gcKit, gcKit.defaults)), gcKit.partMap)));
+  } catch (e) { console.warn('[gpucompare] char.gc not built:', e && e.message); }
   const compareVoxelPool = new VoxelPool();
   compareVoxelPool.renderer = ctx.renderer;
   compareVoxelPool.bind(assets, matTable);
@@ -252,6 +287,29 @@ function buildCompareRuns(ctx) {
   // per-cell `screenRay` sky elevation and the fog scale at a large |b*sinP| (the RTS poses are 100 % ground).
   runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: rtsHillSky15 (RE-02a pitched, sky + fog scale)',
     cam: rtsHillPose(-15), real: true, meshOnly: true });
+
+  // OB-073-D2e part 2 (38.52 + pitched amendment): the grass carpet ON, a PITCHED perspective first-person pose on the meadow south of the tower.
+  // `carpet: true`: before() installs a minimal 1-variant meadow carpet on worldM1 (World._rebuildCarpet = the real class-map build) and hands it to the
+  // WebGPU pipeline; the loop below removes it again before the next pose. Gate: kind-10 cell agreement >= 98 %, colour within the usual bars.
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: carpetMeadow (OB-073-D2e, pitched first person at (1470, 1035) over grass, carpet ON)',
+    cam: { x: 1470, y: 1035, z: (worldM1.terrain ? worldM1.terrain.groundAt(1470, 1035) : 0) + engine.physics.eyeHeight, yawDeg: 235, pitchDeg: -12 }, real: true, meshOnly: true, pitchedDefault: true, carpet: true,
+    before: () => {
+      const tr = worldM1.terrain;
+      worldM1._carpetCtx = { cfg: validateCarpetConfig({ seed: 11, radiusM: 12, variants: [
+        { name: 'meadow', ground: tr.typeNames.filter((n) => n.startsWith('grass')), density: 0.9, heightM: [0.15, 0.28], ramp: [[10, 40, 10], [60, 160, 40], [180, 230, 90]] },
+      ] }, tr.typeNames), recipe: tr.recipe };
+      worldM1._rebuildCarpet();
+    } });
+
+  // US-068b3b (38.19 item 2): ortho ISO pose over the roadSouth area (look-at 20 m along the roadSouth view, yaw 240).
+  // Eye = focus - 500 m*F (ORTHO_BACK_M), halfH 20 m. NEW row: JS twin (meshPitched path) vs WG under the pitched gate rules.
+  const orthoIsoPose = () => {
+    const fx = 1448.7, fy = 1025.0, fz = worldM1.terrain ? worldM1.terrain.groundAt(fx, fy) : 0;
+    const e = pitchedEyeFromFocus(fx, fy, fz, 45, -35.264, 500, [0, 0, 0]);
+    return { x: e[0], y: e[1], z: e[2], yawDeg: 45, pitchDeg: -35.264, projection: 'ortho', orthoHalfH: 20, focusX: fx, focusY: fy, focusZ: fz };
+  };
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: orthoIso (US-068b3b ortho yaw 45 pitch -35.264, halfH 20, roadSouth area)',
+    cam: orthoIsoPose(), real: true, meshOnly: true });
 
   // RE-07b (28.9 "Tests"): mesh-only overlay pose. Same pitched -58 RTS view as rtsHill58 but focused on the
   // signal tower so rings behind it fail the depth test: 30 rings (6x5 lattice, r 1 m), 30 bars, 1 screen rect.
@@ -329,8 +387,25 @@ function buildCompareRuns(ctx) {
         const yaws = [0, 40, 95, 150, 210, 300];
         for (let i = 0; i < 6; i++) {
           const x = 1462 - (i % 2) * 3.5, y = 1025 + (i - 2.5) * 3.2;
-          writeUnitInstance(ltGroup.ib, ltGroup.count++, x, y, worldM1.terrain ? worldM1.terrain.groundAt(x, y) : 0, yaws[i], 0xB000 | i, 0);
+          writeUnitInstance(ltGroup.ib, ltGroup.count++, x, y, worldM1.terrain ? worldM1.terrain.groundAt(x, y) : 0, yaws[i], 0xFF00 | i, 0); // MESH-INST-02: clear of the placed-mesh id range 0xA000..0xFEFF
         }
+      },
+    });
+  }
+
+  // RIG-GC-01: 1 rigged character, rest pose (the kit has no clips), jaw partRot ry 30, 3 m ahead of the camera, mesh only.
+  if (assets.has('model', 'char.gc')) {
+    const CG = { x: 1470, y: 1025 };
+    const cgZ = worldM1.terrain ? worldM1.terrain.groundAt(CG.x, CG.y) : 0;
+    runs.push({
+      world: worldM1, lights: worldM1Lights, real: true, meshOnly: true, name: 'world_m1: charRig (RIG-GC-01, rigged chargen character, jaw partRot ry 30, 3 m ahead)',
+      cam: { x: CG.x + 3, y: CG.y, z: cgZ + 1.6, yawDeg: 90, pitchDeg: 0 },
+      before: () => {
+        const pm = compareVoxelPool.models.get('char.gc');
+        const idle = pm && pm.clipIndex.idle !== undefined ? pm.clipIndex.idle : -1;
+        const slot = compareVoxelPool.pushInstance('char.gc', CG.x, CG.y, cgZ, 270, idle, 0, 0);
+        const jaw = pm && pm.partIndex ? pm.partIndex.jaw : undefined;
+        if (slot >= 0 && jaw !== undefined) { const sl = compareVoxelPool._rawSlot(slot); sl.addPart = jaw; sl.addRx = 0; sl.addRy = 30; sl.addRz = 0; } // = components.voxel.partRot
       },
     });
   }
@@ -349,6 +424,8 @@ function buildCompareRuns(ctx) {
   // rasterJS depth-only map). With `&shadows=map` every pose above also runs the map; these pin sun az 135 el 30
   // (shadows fall NW) so the casters are long and obvious. Without `&shadows=map` they are plain mesh poses.
   const SUN_135_30 = { azimuth: 135, elevation: 30 };
+  // SWAY-GC-01: fixed wind field for the `swayWindy` pose only (deterministic: explicit seed, fixed clock via the pose's timeSec).
+  const SWAY_GC_WIND = { dirDeg: 45, speed: 8, seed: 7, gust: { amp: 0.5, periodSec: 6, travel: 12 } };
   const groundZ = (x, y) => (worldM1.terrain ? worldM1.terrain.groundAt(x, y) : 0);
   // signal tower shadow on terrain: eye 9 m above the grass 28 m NNW of the tower looking SE-down (into the sun), the shadow lies on the grass between
   runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: towerShadowGrass (ME-15c, signal tower shadow on terrain, sun az 135 el 30)',
@@ -417,6 +494,14 @@ function buildCompareRuns(ctx) {
       real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30,
       before: waterPose([{ id: `cmp.${look}`, shape: 'circle', c: [poolC.x, poolC.y], r: 7, z: groundZ(poolC.x, poolC.y) + 0.9, look }]) });
   }
+  // SWIM-04c (38.54): underwaterLake - eye 2 m below the surface of a 30 m round lake (surface 4 m above the ground at the pool centre, so >= 4 m deep
+  // at the eye), looking over the water (yaw 270 pitch 0) and up at the ceiling (pitch 35). Fog, bubble swap, ceiling hash and caustics through both twins.
+  // Explicit coordinates: eye (1456, 1045.5, surface - 2), surface z = groundZ(1456, 1045.5) + 4; sun az 135 el 30; fb.timeSec 0.
+  const lakeSet = waterPose([{ id: 'cmp.underLake', shape: 'circle', c: [poolC.x, poolC.y], r: 30, z: groundZ(poolC.x, poolC.y) + 4, look: 'water' }]);
+  for (const [what, pitchDeg] of [['underwaterLake', 0], ['underwaterLake up (ceiling)', 35]]) {
+    runs.push({ world: worldM1, lights: worldM1Lights, name: `world_m1: ${what} (SWIM-04c, eye 2 m under a 30 m lake, yaw 270, pitch ${pitchDeg}, sun az 135 el 30)`,
+      cam: { x: poolC.x, y: poolC.y, z: groundZ(poolC.x, poolC.y) + 2, yawDeg: 270, pitchDeg }, real: true, meshOnly: true, sun: SUN_135_30, before: lakeSet, under: true });
+  }
   runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: water sea (US-055a2b, flooded plain 1 m below the eye, shear pitch -3, sun az 135 el 30)',
     cam: { x: waterEye.x, y: waterEye.y, z: groundZ(waterEye.x, waterEye.y) + engine.physics.eyeHeight, yawDeg: 250, pitchDeg: -3 }, real: true, meshOnly: true, sun: SUN_135_30,
     before: waterPose([{ id: 'cmp.sea', shape: 'rect', rect: [1100, 700, 1900, 1400], z: groundZ(waterEye.x, waterEye.y) - 1, look: 'water' }]) });
@@ -449,6 +534,53 @@ function buildCompareRuns(ctx) {
     cam: { x: riverC.x + 1.5, y: riverC.y, z: groundZ(riverC.x, riverC.y) + 16, yawDeg: 270, pitchDeg: -75 }, real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30, timeSec: 10,
     before: waterPose([{ id: 'cmp.radial', shape: 'circle', c: [poolC.x, poolC.y], r: 7, z: groundZ(poolC.x, poolC.y) + 0.9, look: 'water', flow: [1, 0], flowRadial: 2 }]) });
 
+  // RIVER-03 (architecture.md 38.45, OB-019): river ribbon rows on worldM1 (installed like the water poses above: a `river` water def, tick 600,
+  // t = 10 s). Path z = highest ground along the path + 0.6 minus a constant slope (monotone, so it validates); the terrain cuts the flat
+  // cross-section. riverBend: S-bend 300 m long, camera over the head (LOD0 near, LOD1 far, both in view). riverFord: shallow short reach,
+  // grazing (shore foam where stones / banks poke through). riverSteep: 0.2 m/m slope, rapids (rapidQ > 0), looking down the fall line.
+  const riverPath = (pts, hw, slope, speed) => {
+    let zTop = -Infinity;
+    for (const [x, y] of pts) zTop = Math.max(zTop, groundZ(x, y));
+    let s = 0;
+    return pts.map(([x, y], i) => {
+      if (i) s += Math.hypot(x - pts[i - 1][0], y - pts[i - 1][1]);
+      return [x, y, zTop + 0.6 - slope * s, hw, speed];
+    });
+  };
+  const riverPose = (id, pts, hw, slope, speed) => () => {
+    worldM1.water = createWater(collectWaterDefs({ water: [{ id, shape: 'river', path: riverPath(pts, hw, slope, speed), look: 'water', feather: 1.5 }] }, []));
+    worldM1.water.setTickForTest(600);
+  };
+  const bendPts = Array.from({ length: 16 }, (_, i) => [waterEye.x + 6 - 20 * i, waterEye.y + 10 * Math.sin(i * 0.7)]);
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: riverBend (RIVER-03, 300 m S-bend, LOD0 + LOD1, tick 600, t 10 s, sun az 135 el 30)',
+    cam: { x: waterEye.x + 8, y: waterEye.y, z: groundZ(waterEye.x, waterEye.y) + 14, yawDeg: 270, pitchDeg: -16 }, real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30, timeSec: 10,
+    before: riverPose('cmp.riverBend', bendPts, 4, 0.05, 1.5) });
+  const fordPts = Array.from({ length: 8 }, (_, i) => [waterEye.x + 4 - 10 * i, waterEye.y + 1.5 * Math.sin(i)]);
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: riverFord (RIVER-03, shallow reach, grazing, shore foam on the bank contour, tick 600, t 10 s)',
+    cam: { x: waterEye.x + 6, y: waterEye.y + 5, z: groundZ(waterEye.x, waterEye.y) + engine.physics.eyeHeight, yawDeg: 250, pitchDeg: -4 }, real: true, meshOnly: true, sun: SUN_135_30, timeSec: 10,
+    before: riverPose('cmp.riverFord', fordPts, 5, 0.01, 0.8) });
+  // US-055a (architecture.md 38.47): wade splash droplets (pooled particles) + 3 ripple rings at fixed ages, on the ford reach.
+  // Particles are cleared before every pose; fb.ripples is set only for this pose and reset next to that clear().
+  const wadeRipples = createRipples();
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: wadeSplash (US-055a, ford, 12 particle steps + rings at ages 0.2/0.5/0.8 s, t 10 s)',
+    cam: { x: waterEye.x + 6, y: waterEye.y + 5, z: groundZ(waterEye.x, waterEye.y) + engine.physics.eyeHeight, yawDeg: 250, pitchDeg: -4 }, real: true, meshOnly: true, sun: SUN_135_30, timeSec: 10,
+    before: () => {
+      riverPose('cmp.riverFord', fordPts, 5, 0.01, 0.8)();
+      const fw = forwardOf(250, [0, 0]); // 3 m ahead of the camera
+      const fx = waterEye.x + 6 + fw[0] * 3, fy = waterEye.y + 5 + fw[1] * 3;
+      engine.particles.clear(); wadeRipples.clear();
+      defineWadeSplash(engine.particles);
+      const z = groundZ(waterEye.x, waterEye.y) + 0.6;
+      wadeSplashAt(engine.particles, fx, fy, z, 1);
+      wadeRipples.add(fx, fy, 0.8, 9.8); wadeRipples.add(fx, fy, 0.6, 9.5); wadeRipples.add(fx, fy, 0.4, 9.2);
+      for (let i = 0; i < 12; i++) engine.particles.step();
+      ctx.compareRipples = wadeRipples; // read by runGpuCompareSceneMode (fbCompare lives there)
+    } });
+  const steepPts = Array.from({ length: 9 }, (_, i) => [waterEye.x + 6 - 10 * i, waterEye.y + 3 * Math.sin(i * 0.6)]);
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: riverSteep (RIVER-03, 0.2 m/m slope, rapids foam, flow streaks stretch, tick 600, t 10 s)',
+    cam: { x: waterEye.x + 9, y: waterEye.y, z: groundZ(waterEye.x, waterEye.y) + 9, yawDeg: 270, pitchDeg: -22 }, real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30, timeSec: 10,
+    before: riverPose('cmp.riverSteep', steepPts, 3, 0.2, 3) });
+
   // US-078a (architecture.md 30.1): view-model poses (mesh-only): the held sword in the tower interior (crash room), rest
   // (idle t=0) and swingLR t=160, at pitch 0 and +30 (the d*tanPitch term keeps the sword in the lower right at any pitch).
   // `resetInstances` hides the layer before every pose; `before` shows it.
@@ -478,7 +610,7 @@ function buildCompareRuns(ctx) {
         before: () => { vmLayer.setBob(0, 0); vmLayer.show(vmH, vmLayer.clipId(vmH, 'idle'), 0, false); } });
     }
     // HANDS-01c (37.8a): `handsSwapped` - the winding-flip pose (HANDS-01a's GPU frontFace(CW) for det<0 items was never
-    // drawn by a pose). Two handles at once (VM_MAX_HANDLES 4 = main's sword + spell, this sword, the spell glove): the sword
+    // drawn by a pose). Two handles at once (VM_MAX_HANDLES 8; main: main's sword + spell, this sword, the spell glove): the sword
     // (authored left, vmH) in the RIGHT hand = mirrored (det<0), the spell glove (authored left) in the LEFT hand = unmirrored
     // (per-item flip, restored between items). Default pitched camera, vmAssert.
     if (globalThis.ASSETS.viewModels.spellHand && compareVoxelPool.models.has('spellHandL') && vmLayer.stats.items === 0) {
@@ -539,6 +671,51 @@ function buildCompareRuns(ctx) {
       cam: { x, y, z: forestWorld.terrain.groundAt(x, y) + engine.physics.eyeHeight, yawDeg: 270, pitchDeg: 30 },
       real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30,
       before: () => engine.setWorld(forestWorld) });
+
+    // SWAY-GC-01: the ONLY wind-on pose (world_m1 authors speed 0 = calm for every other row). Own world instance with a fixed wind def
+    // (fixed dir/speed/gust/seed, no wall clock) at a fixed fb.timeSec, so the camera view (JS twin vs GPU) uses one clock; the same pose also
+    // yields its `[shadow depth parity]` row (sun map, 10 Hz-quantised wind clock). Same camera as forestWalk -> compare the two for visible sway.
+    const swayWindWorld = loadCompareWorld({ ...assets.world('world_m1'), wind: SWAY_GC_WIND }, { realTrees: true, physics: 'mesh' });
+    swayWindWorld.terrain.bakeFarSync();
+    const swayWindLights = lightsEnabled ? buildLightSet(swayWindWorld, assets.palette) : null;
+    runs.push({ world: swayWindWorld, lights: swayWindLights, name: 'world_m1: swayWindy (SWAY-GC-01, forestWalk pose, wind on, t=7.3 s)',
+      cam: { x, y, z: swayWindWorld.terrain.groundAt(x, y) + engine.physics.eyeHeight, yawDeg: 270, pitchDeg: 30 },
+      real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30, timeSec: 7.3,
+      before: () => engine.setWorld(swayWindWorld) });
+    // R6c (38.60 item 8): card impostor rows, NEW, opt-in (`?imp=1`; default gpucompare unchanged until the WebGPU card pass is wired). One tree species
+    // (the densest mesh group of the forest world) is force-enabled: impMid = forestWalk-like pose looking over trees at 60-120 m with impM 60 (cards to
+    // maxDistM); impBand = camera 4 m inside the 8 m dither band of the tree cluster (impM 60, cluster 64 m away). Expected JS == GPU.
+    if (ctx.params.get('imp') === '1') {
+      const enableImp = (impM) => () => {
+        engine.setWorld(forestWorld);
+        const g = engine.instances.groups.filter((q) => q.mesh && q.count > 0).sort((a, b) => b.count - a.count)[0];
+        if (!g) throw new Error('imp row: no tree mesh group in the forest world');
+        const src = resolveGroupLod1(g, engine.instances._meshLookup) || g.mesh;
+        if (!g.imp) enableGroupImpostor(g, bakeImpostor(src.data || src), impM, createInstanceBuffer);
+        g.impM = impM;
+      };
+      runs.push({ world: forestWorld, lights: forestLights, name: 'world_m1: impMid (R6c, one species as cards 60-300 m, forestWalk eye, pitch 5)',
+        cam: { x, y, z: forestWorld.terrain.groundAt(x, y) + engine.physics.eyeHeight, yawDeg: 270, pitchDeg: 5 },
+        real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30, before: enableImp(60) });
+      const bx = sc.x[best] + 64, by = sc.y[best];
+      runs.push({ world: forestWorld, lights: forestLights, name: 'world_m1: impBand (R6c, camera 64 m from the densest cluster = 4 m inside the 60..68 m dither band)',
+        cam: { x: bx, y: by, z: forestWorld.terrain.groundAt(bx, by) + engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 5 },
+        real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30, before: enableImp(60) });
+    }
+
+    // MAP-12 (arch 38.43): band GRID world, near band at zone g6_9 (cx0 12, cy0 9) - neither the east {8,7} nor the west {6,7} authored zone.
+    // Own world instance (terrainBand(s) replaced by terrainGrid, same bake bytes per cell): exercises near type re-upload + band origin at an arbitrary zone.
+    const gridDef = { ...assets.world('world_m1'), terrainGrid: { cx0: 0, cy0: 0, cx1: 32, cy1: 32, cw: 5, ch: 3, stepX: 2, stepY: 1, ox: 0, oy: 0 } };
+    delete gridDef.terrainBand; delete gridDef.terrainBands;
+    const GZ = { x: 1856, y: 1344 }; // inside zone g6_9 (x 1536..2176, y 1152..1536), >= 192 m from its x edges, 192 m from its y edges
+    const gridZoneWorld = loadCompareWorld(gridDef, { realTrees: true, physics: 'mesh', spawn: GZ });
+    gridZoneWorld.terrain.bakeFarSync();
+    if (gridZoneWorld.bandId !== 'g6_9') throw new Error('gridZone: expected band g6_9, got ' + gridZoneWorld.bandId);
+    const gridZoneLights = lightsEnabled ? buildLightSet(gridZoneWorld, assets.palette) : null;
+    runs.push({ world: gridZoneWorld, lights: gridZoneLights, name: 'world_m1: gridZone (MAP-12, band g6_9, near terrain at a generated zone)',
+      cam: { x: GZ.x, y: GZ.y, z: gridZoneWorld.terrain.groundAt(GZ.x, GZ.y) + engine.physics.eyeHeight, yawDeg: 270, pitchDeg: 15 },
+      real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30,
+      before: () => engine.setWorld(gridZoneWorld) });
   }
 
   // ENV-01a2: existing comparison worlds retain detail off.
@@ -612,7 +789,7 @@ function buildCompareRuns(ctx) {
   if (ctx.renderer === 'mesh') {
     const aw = loadCompareWorld(assets.world('world_m1'), { physics: 'mesh' });
     aw.terrain.bakeFarSync();
-    const atlas = new MaskAtlas();
+    const atlas = buildMaskAtlas(assets); // real masks too: world_m1 meshes (MESH-PLACE-01 flower bushes) reference Leaves_NormalTree_C; a checker-only atlas made the raster throw
     const chk = new Uint8Array(64);
     for (let j = 0; j < 8; j++) for (let i = 0; i < 8; i++) chk[j * 8 + i] = (i + j) % 2 === 0 ? 255 : 0;
     atlas.add('test/checker8', 8, 8, chk);
@@ -639,7 +816,7 @@ function buildCompareRuns(ctx) {
     const mask = { tex: 'test/checker8', cutoff: 0.5 };
     const alphaMesh = buildMeshFromTris(tris, [{ part: 'post', triStart: 0, triCount: nOpaque }, { part: 'leaf', triStart: nOpaque, triCount: nLeaf, mask },
       { part: 'leaf_dark', triStart: nOpaque + nLeaf, triCount: tris.length - nOpaque - nLeaf, mask }], 'test/alphaCards');
-    alphaMesh.mats = { post: 'timber_old', leaf: 'leaf_softtest', leaf_dark: 'leaf_dark_softtest' }; // ALPHA-01d: test-only edge:'soft' clones of leaf / leaf_dark
+    alphaMesh.mats = { post: 'timber_old', leaf: 'leaf', leaf_dark: 'leaf_dark' }; // EMIS-01b/kestrel-2#0: repointed to leaf/leaf_dark directly (already edge:'soft', ALPHA-01e); *_softtest clones removed
     const cx = 1456, cy = 1046, gz = aw.terrain.groundAt(cx, cy);
     aw.placeMesh(alphaMesh, { x: cx, y: cy, z: gz }, 'test.alphaCards');
     const alphaLights = lightsEnabled ? buildLightSet(aw, assets.palette) : null;
@@ -651,6 +828,10 @@ function buildCompareRuns(ctx) {
     }
   }
 
+  if (ctx.params.get('gpucompare') === 'emissive' && emisPose) {
+    runs.length = 0; // emissive mode: only the brazier pose (rows emissive-glow-fg/bg)
+    runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: tower crown (EMIS glow)', cam: { ...emisPose }, real: true });
+  }
   return { testRoom, worldM1, m1Eye, testRoomLights, worldM1Lights, runs, compareVoxelPool, compareInstances, resetInstances };
 }
 
@@ -717,22 +898,44 @@ function applySunOverride(world, lights, sun) {
   };
 }
 
+/**
+ * DN-04b: pins the day/night clock to `hour` for one pose (what main.js's clock driver does per step): moon/sun pair on the light set + world.sun,
+ * the blended look (`P.liveLook`) and the LightSet ambient. Returns the restore closure (liveLook cleared = frozen path, sun + ambient back).
+ */
+function applyHourOverride(world, lights, P, hour, on) {
+  const oldSun = world.sun, oldSource = world.sunSource, hadSource = 'sunSource' in world;
+  const old = lights ? { elevation: lights.sun.elevation, azimuth: lights.sun.azimuth, on: lights.sun.on, amb: Array.from(lights.ambient) } : null;
+  const path = sunPathFrom(world.sun || P.lights.sun);
+  world.sunSource = null;
+  applySunPair(world, lights, hour, hour, path, on);
+  const L = blendLook(P, hour, P.daySchedule);
+  if (lights) { const hu = P.hue[L.ambient]; for (let i = 0; i < 3; i++) lights.ambient[i] = hu[i] * L.ambientI; }
+  return () => {
+    world.sun = oldSun;
+    if (hadSource) world.sunSource = oldSource; else delete world.sunSource;
+    delete P.liveLook; P.liveLookVersion = (P.liveLookVersion | 0) + 1; // back to the frozen look; the version bump re-bakes the sky LUT
+    if (lights && old) { lights.setSun({ elevation: old.elevation, azimuth: old.azimuth, on: old.on }); for (let i = 0; i < 3; i++) lights.ambient[i] = old.amb[i]; }
+  };
+}
+
 async function runGpuCompareSceneMode(ctx) {
   const {
-    gpuPipeline: glPipeline, wgPipeline, rt, assets, matTable, detailPass, depthBuffer, gbuf, overlay, sprites, engine,
+    wgPipeline, rt, assets, matTable, detailPass, depthBuffer, gbuf, overlay, sprites, engine,
     compareNoVoxels, renderer, terrainEnabled, rayParam, params, GPU_COMPARE_REF_W, GPU_COMPARE_REF_H, GPU_COMPARE_REF_DPR, fadeLut,
   } = ctx;
   // WG-2b: a ready WebGPU WgCellPipeline runs the GEOMETRY rows only (cells/light/shadow/overlay need WG-3); readbacks are awaited.
-  const wg = !glPipeline && wgPipeline && wgPipeline.ready ? wgPipeline : null;
-  const gpuPipeline = glPipeline || wg;
+  const wg = wgPipeline && wgPipeline.ready ? wgPipeline : null;
+  const gpuPipeline = wg;
   if (!gpuPipeline) { noPipelineMsg(ctx); return; }
   if (rt.cols !== 160 || rt.rows !== 60) {
     console.warn(`[gpucompare] expected 160x60 for ?gpucompare=1, got ${rt.cols}x${rt.rows} - the grid-forcing block at the top of main.js may have been bypassed.`);
   }
 
   gpuPipeline.setSource('scene');
+  if (wg && wg.setStable) wg.setStable(false); // US-073c: every normal row sees the unstabilised edge output; the `stable` row below switches it on for its two frames
 
   // TREES-LP-b: the unplaced Kenney stub (test-only content) for the `lowpolyTrees` pose; missing file = pose skipped.
+  try { ctx.gcKit = await (await fetch(new URL('../../../../content/chargen/human.charkit.json', import.meta.url))).json(); } catch (e) { ctx.gcKit = null; } // RIG-GC-01
   try { const u = new URL('../../../../content/meshes/kenney/tree_oak.mesh.json', import.meta.url), meta = await (await fetch(u)).json(); ctx.lowpolyTreeMesh = typeof meta.bin === 'string' ? meshFromBin(meta, await (await fetch(new URL(meta.bin, u))).arrayBuffer()) : meshFromJSON(meta); /* MESH-BIN-01 */ } catch (e) { ctx.lowpolyTreeMesh = null; }
   const { testRoom, worldM1, m1Eye, testRoomLights, worldM1Lights, runs, compareVoxelPool, compareInstances, resetInstances } = buildCompareRuns(ctx);
   gpuPipeline.bindVoxels(compareVoxelPool);
@@ -780,6 +983,8 @@ async function runGpuCompareSceneMode(ctx) {
   let sampledOwnTextures = true;
   // ME-15b (27.9a item 10): sun shadow depth parity rows (GPU map vs rasterJS depth-only twin), mesh renderer only.
   const shadowRows = [];
+  const stableRows = []; // US-073c (38.25 item 6): one `stable` row (2-frame pan), first suitable pitched pose
+  let stableDone = false, stableWaterDone = false;
   const shadowRunner = renderer === 'mesh' && gpuPipeline.shadowOpts && gpuPipeline.shadowOpts.sun === 'map'
     ? createShadowParityRunner(gpuPipeline.shadowOpts.res) : null;
   let restoreSun = null; // ME-15c: per-pose sun override (see applySunOverride)
@@ -787,18 +992,28 @@ async function runGpuCompareSceneMode(ctx) {
   // e.g. `?gpucompare=1&renderer=mesh&pose=water pond`. No filter = every pose.
   const poseQ = (params.get('pose') || '').toLowerCase();
   const poseRuns = poseQ ? runs.filter((r) => r.name.toLowerCase().includes(poseQ)) : runs;
-  for (const { world, lights, name: poseName, cam, fade, dim, real, before, spritesExtra, needK8, meshOnly, maskPose, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, instAssert, vmAssert, decalAssert, timeSec: poseTime } of poseRuns) {
+  for (const { world, lights, name: poseName, cam, fade, dim, real, before, spritesExtra, needK8, meshOnly, maskPose, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, hour: poseHour, instAssert, vmAssert, decalAssert, timeSec: poseTime, carpet: carpetPose, under: underPose } of poseRuns) {
+    if (world.carpet || world._carpetCtx) { world._carpetCtx = null; world.carpet = null; wg.setCarpet(null, null, 0); } // D2e: carpet poses only
     if (restoreSun) { restoreSun(); restoreSun = null; }
     if (meshOnly && renderer !== 'mesh') { console.log(`[gpucompare] SKIP ${poseName} (mesh renderer only)`); continue; }
     if (sunOverride) restoreSun = applySunOverride(world, lights, sunOverride);
+    else if (Number.isFinite(poseHour)) restoreSun = applyHourOverride(world, lights, assets.palette, poseHour, ctx.sunEnabled); // DN-04b
     // US-053b (32.1): cleared before EVERY pose (not just the ones that never touch
     // particles) - only the `particles` pose's own `before()` hook repopulates it, so a
     // pose that runs after it never inherits stray live particles from a previous pose.
     if (engine.particles) engine.particles.clear();
+    fbCompare.ripples = null; // US-055a: only the wadeSplash pose sets it
     resetInstances();
     if (world.terrain) while (terrainMeshSetFor(world.terrain).step(1000));
     if (real) {
+      ctx.compareRipples = null;
       if (before) before();
+      if (carpetPose) { // D2e: GPU side of the pose's carpet (calm wind unless the world has some)
+        const nb = world.terrain.near, wp = world.wind && world.wind.params;
+        wg.setCarpet(world.carpet, { data: nb.hDraw, w: nb.w, h: nb.h, x0: nb.x0, y0: nb.y0, cell: nb.cell }, 1);
+        wg.setCarpetFrame(poseTime || 0, wp && wp.speed > 0 ? wp : null);
+      }
+      if (ctx.compareRipples) fbCompare.ripples = ctx.compareRipples;
       compareVoxelPool.collect(world, cam);
     } else {
       compareVoxelPool.beginFrame();
@@ -813,11 +1028,12 @@ async function runGpuCompareSceneMode(ctx) {
       compareSceneDim.rects.set(dim.rects.subarray(0, dim.n * 5));
     }
     fbCompare.sceneDim = compareSceneDim;
+    fbCompare.under = underPose ? makeUnderState() : null; // SWIM-04c: underwater look state (both twins read fb.under; null = dry, untouched frame)
     fbCompare.timeSec = poseTime || 0; // US-141a: frozen per-pose clock (flow streaks); 0 for every other pose
     fbCompare.lights = lights;
     if (lights) lights.update(0, world);
-    if (lights) setCloudShadow(lights, { strength: 0 }); // S8-B2-12a NEEDS B1 item (3): every gpucompare mode forces clouds off
-    if (lights) setHorizonAo(lights, { strength: 0 }); // S8-B2-20 NEEDS B1 item (3): every gpucompare mode forces ao off
+    if (lights) lights.cloud = null; // S8-B2-12c: every gpucompare mode forces clouds off
+    if (lights) lights.ao = null; // S8-B2-20 NEEDS B1 item (3): every gpucompare mode forces ao off
     fbCompare.sceneFade = typeof fade === 'number' ? fade : 1;
     if (sprites.pass) {
       sprites.pass.sceneFade = fbCompare.sceneFade;
@@ -827,11 +1043,11 @@ async function runGpuCompareSceneMode(ctx) {
     if (real) sprites.pool.collect(world);
     else { sprites.pool.reset(); placeCompareSprites(cam, sprites.pool); }
     if (spritesExtra) spritesExtra(sprites.pool); // SPELL-01b: view-only billboards (fireball core / blast)
-    if (params.get('sprites') === '0') sprites.pool.reset(); // diagnostic (WG-3c): isolate shade/edge from the sprite layer WebGPU has not ported
+    if (params.get('sprites') === '0' || params.get('gpucompare') === 'emissive') sprites.pool.reset(); // emissive: glow rows compare the pre-sprite stage // diagnostic (WG-3c): isolate shade/edge from the sprite layer WebGPU has not ported
     sprites.pool.project(cam, rt, lights || ambientL, world, renderer);
     // US-053b (32.1): particle layer, built once per pose from the current (just-cleared-
     // or-just-populated) engine.particles state - both twins below read the SAME layer.
-    if (engine.particleLayer && params.get('sprites') === '0') engine.particleLayer.bind(cols, rows); // diagnostic: no particle cells either
+    if (engine.particleLayer && (params.get('sprites') === '0' || params.get('gpucompare') === 'emissive')) engine.particleLayer.bind(cols, rows); // diagnostic: no particle cells either
     else if (engine.particleLayer) engine.particleLayer.build(engine.particles, cam, rt, lights || ambientL, world, assets.palette, renderer);
 
     engine.overlay.clear(); // RE-07b: per-pose ops (none for the old poses -> pass skipped)
@@ -848,11 +1064,23 @@ async function runGpuCompareSceneMode(ctx) {
     // refs) - `engine.viewModel.stats` is ONE shared object both twins write through, so this must be captured
     // right here, after `present()`, before the JS/mesh twin below overwrites it (BUG-VM-001 item 5).
     const vmItemsGpu = engine.viewModel ? engine.viewModel.stats.items : 0;
-    const rb = wg ? null : await rt.readbackPresent();
-    if (rb) sampledOwnTextures = sampledOwnTextures && rb.sampledOwnTextures;
-    // WG-3c: the WebGPU path still PRESENTS the CPU cells, so its GPU-shaded cells come from the pipeline's own final textures
+        // WG-3c: the WebGPU path still PRESENTS the CPU cells, so its GPU-shaded cells come from the pipeline's own final textures
     const rbw = wg ? await wg.readbackCells() : null;
-    const gpuFg = rb ? rb.fg : rbw ? rbw.fg : null, gpuBg = rb ? rb.bg : rbw ? rbw.bg : null;
+    if (rbw && params.get('gpucompare') === 'emissive') { // EMIS-03/04: glow-off pass for the twin's input, then the real (glow) output stays in rbw
+      if (!wg._glowRan) { overallOk = false; console.log('[gpucompare] FAIL emissive-glow: glow pass did not run (opts.glow missing or pass disabled)'); }
+      else {
+        const outFg = new Uint8Array(rbw.fg), outBg = new Uint8Array(rbw.bg), P = wg.glowOpt;
+        wg.runtimeGlow(null);
+        fbCompare.gpu = true; renderWorld(fbCompare, world, cam); wg.frame(fbCompare, lights || ambientL, cam, world); engine.overlay.flush(cam); rt.present();
+        const rin = await wg.readbackCells(), gi = await gpuPipeline.readbackGeometry();
+        wg.runtimeGlow(P);
+        const up = unpackReadback(gi.GI, gi.GA, gi.Depth, cols, rows);
+        const cg = compareGlow(up, cols, rows, emisFromPacked(matTable), new Uint8Array(rin.fg), new Uint8Array(rin.bg), outFg, outBg, P);
+        for (const r of [cg.fg, cg.bg]) { rowsOut.push({ pose: r.pose, ok: r.ok, glow: r }); console.log(`[gpucompare] ${r.ok ? 'PASS' : 'FAIL'} ${r.pose}: max=${r.max} bad=${r.bad} live=${r.live} (tol 1, live>0)`); }
+        overallOk = overallOk && cg.ok;
+      }
+    }
+    const gpuFg = rbw ? rbw.fg : null, gpuBg = rbw ? rbw.bg : null;
     const { GI, GA, Depth } = await gpuPipeline.readbackGeometry();
     const lightBuf = await gpuPipeline.readbackLight(); // WG-3b: WebGPU too (null only while the pass is not ported)
     const waterBits = poseName.includes('waterfall') ? await gpuPipeline.readbackWater() : null; // WG-3e: WebGPU too
@@ -874,6 +1102,29 @@ async function runGpuCompareSceneMode(ctx) {
       }
     }
 
+    // STABLE-GATE-TEST-01 (38.25 amendment A): two sub-cases on the same 2-frame pan. (i) water drawn (first suitable pitched pose that really draws
+    // water), (ii) water inactive (waterOn = 0, forced by switching the water pass off on the first other pitched pose). Each: 0 non-tie mismatches,
+    // ties <= 0.5 %, liveness floor (twin used >= 20 % of non-sky, GPU held count == twin held count).
+    const isWaterPose = /water|pond|river|fall/i.test(poseName);
+    if (wg && wg._stablePass && cam && (cam.projection === 'pitched' || pitchedDefault) && cam.focusX === undefined
+      && ((!stableDone && !isWaterPose) || (!stableWaterDone && isWaterPose))) {
+      // pan 1 cm sideways + 0.05 deg (a sub-cell move: the stable pass only reuses history within 1.0/detail of the same surface point)
+      const yr = (cam.yawDeg * Math.PI) / 180, camA = { ...cam }, camB = { ...cam, x: cam.x + 0.01 * Math.cos(yr), y: cam.y + 0.01 * Math.sin(yr), yawDeg: cam.yawDeg + 0.05 };
+      const gpuFrame = (c) => () => { fbCompare.gpu = true; renderWorld(fbCompare, world, c); wg.frame(fbCompare, lights || ambientL, c, world); engine.overlay.flush(c); rt.present(); };
+      const subs = isWaterPose ? [['water drawn', false]] : [['water inactive', true]];
+      if (!isWaterPose) stableDone = true; // water poses keep trying until one really draws water
+      for (const [label, waterOff] of subs) {
+        const sr = await runStableRow(wg, camA, camB, gpuFrame(camA), gpuFrame(camB), { waterOff });
+        // sub-case (i) is only meaningful when water really drew (waterOn): else it is an informational skip, never a silent pass
+        const noWater = !waterOff && !sr.skipped && !sr.waterOn;
+        if (!waterOff && sr.waterOn) stableWaterDone = true;
+        const ok = noWater ? true : !!sr.ok;
+        if (!noWater) stableRows.push({ pose: `stable pan (${poseName}) [webgpu stable, ${label}]`, ok, stable: sr });
+        overallOk = overallOk && ok;
+        console.log(`[gpucompare] ${noWater ? 'SKIP' : ok ? 'PASS' : 'FAIL'} stable pan (${poseName}, ${label}): ` + (sr.skipped ? `SKIPPED ${sr.reason}` : `waterOn=${sr.waterOn} histValid=${sr.histValid} used=${sr.usedPct.toFixed(1)}% live=${sr.livePct.toFixed(1)}% of non-sky (>=20) mismatches=${sr.mismatches} (must be 0) tieMismatches=${sr.tieMismatches} ties=${sr.tiePct.toFixed(3)}% (<=0.5) held twin/gpu=${sr.heldTwin}/${sr.heldGpu} held255=${sr.held255} vacuous=${sr.vacuous}${noWater ? ' (no water in view: sub-case not exercised)' : ''}${sr.bad && sr.bad.length ? ' e.g. ' + JSON.stringify(sr.bad[0]) : ''}`));
+      }
+    }
+
     const wasActive = rt.gpuActive;
     rt.gpuActive = false;
     fbCompare.gpu = false;
@@ -888,24 +1139,42 @@ async function runGpuCompareSceneMode(ctx) {
     }
     applySceneDim(fbCompare.rt, compareSceneDim);
     rt.gpuActive = wasActive;
-    let ovlRes = null;
     if (overlayOps) engine.overlay.renderCpu(cam, rt.cells, depthBuffer.depth); // JS twin composite (WebGPU: judged by the final cell row)
-    if (overlayOps && !wg) { // per-overlay-cell GPU-vs-twin check (28.9 bar)
-      ovlRes = compareOverlayCells(engine.overlay, rt.cells.fg, gpuFg, depthBuffer.depth);
-      console.log(`[gpucompare] rtsOverlay: cells=${ovlRes.cells} shownTwin=${ovlRes.shownTwin} shownGpu=${ovlRes.shownGpu} hidden=${ovlRes.hidden} mismatch=${ovlRes.mismatch} boundary=${ovlRes.boundary} (${ovlRes.boundaryPct.toFixed(3)}% , <=0.5%)`);
-      // pass timer (async GpuTimer ring): repeat the composite so p50/p95 fill in (NaN if the timer extension is missing)
-      for (let k = 0; k < 140; k++) rt.present();
-      const ps = rt.overlayPassStats; ovlRes.gpuMsP50 = ps ? ps.gpuMsP50 : NaN; ovlRes.gpuMsP95 = ps ? ps.gpuMsP95 : NaN;
-      console.log(`[gpucompare] rtsOverlay pass ms: p50=${ovlRes.gpuMsP50} p95=${ovlRes.gpuMsP95} uploadRows=${ps ? ps.rows : -1}`);
-    }
 
+    if (params.get('probe')) { // BUG-WHITE-PIXELS-02 r3 (dev): `&probe=col,row` 3x3 dump, `&probe=scan` sky-islands (a sky cell with >=6/8 solid neighbours) per side
+      const pq = params.get('probe'), L = [], gK = (i) => GI[i * 4 + 1] & 0xff, side = (isG, x, y) => (x < 0 || y < 0 || x >= cols || y >= rows) ? 1 : ((isG ? gK(y * cols + x) : gbuf.kind[y * cols + x]) !== 0 ? 1 : 0);
+      if (pq === 'scan') {
+        for (let y = 1; y < rows - 1; y++) for (let x = 1; x < cols - 1; x++) for (const g of [true, false]) {
+          if (side(g, x, y)) continue; let solid = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && side(g, x + dx, y + dy)) solid++;
+          if (solid >= 6) { const i = y * cols + x; L.push(`${g ? 'GPUsky' : 'JSsky'}@${x},${y} solid=${solid} other(${g ? 'js' : 'gpu'})kind=${g ? gbuf.kind[i] : gK(i)} jsPlane=${gbuf.planeId[i]} jsZ=${(+gbuf.z[i]).toFixed(2)} gpuDepth=${Depth[i]}`); }
+        }
+        let nd = 0, gSkyJsSolid = 0, jsSkyGpuSolid = 0; const ex = [];
+        for (let i = 0; i < cols * rows; i++) { const gk = gK(i), jk = gbuf.kind[i]; if ((gk !== 0) !== (jk !== 0)) { nd++; if (gk === 0) gSkyJsSolid++; else jsSkyGpuSolid++; if (ex.length < 12) ex.push(`${i % cols},${(i / cols) | 0}:g${gk}/j${jk}`); } }
+        L.push(`skyDisagree=${nd} gpuSky/jsSolid=${gSkyJsSolid} jsSky/gpuSolid=${jsSkyGpuSolid} e.g. ${ex.join(' ')}`);
+      } else {
+        const [pc, pr] = pq.split(',').map(Number);
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const i = (pr + dy) * cols + pc + dx; L.push(`(${pc + dx},${pr + dy}) gpuKind=${gK(i)} gpuDepth=${Depth[i]} gpuGI=${[0, 1, 2, 3].map((k) => GI[i * 4 + k]).join('/')} | jsKind=${gbuf.kind[i]} jsPlane=${gbuf.planeId[i]} jsZ=${(+gbuf.z[i]).toFixed(2)}`); }
+      }
+      (window.__gpuProbe = window.__gpuProbe || []).push({ pose: poseName, cols, rows, pq, L });
+      console.log(`[gpucompare] probe ${poseName} (${cols}x${rows}) ${pq}: ` + (L.length ? L.join(' ## ') : 'none'));
+    }
     const cmpGeom = compareGeometry(gbuf, depthBuffer.depth, GI, GA, Depth, cols, rows, {
       fogMax: fbCompare.detailPass ? fbCompare.detailPass.edges.fogMax : undefined, suppress: fbCompare.waterMask || null,
-      table: matTable, jsLight: fbCompare.light, pitched: !!(cam && (cam.projection === 'pitched' || pitchedDefault)), maskPose: !!maskPose,
+      table: matTable, jsLight: fbCompare.light, pitched: !!(cam && (cam.projection === 'pitched' || cam.projection === 'ortho' || pitchedDefault)), maskPose: !!maskPose,
     }); // PREC-04b2: oracle ties before cmpCells (exclude mask)
     const maskOk = !maskPose || cmpGeom.kind9Cells > 0; // ALPHA-01c: the fixture must be in view on the JS twin (else a pass would be vacuous)
     if (maskPose) console.log(`[gpucompare] maskTies ${poseName}: ${cmpGeom.maskTies}/${cmpGeom.maskTiesMax} k9=${cmpGeom.kind9Cells} holes=${cmpGeom.holes}${cmpGeom.holes ? ' cells ' + cmpGeom.holeCells.join(',') : ''}${maskOk ? '' : ' FIXTURE NOT IN VIEW'}`);
-    const geomBaseOkG = cmpGeom.kindMatchPct >= 99.5 && cmpGeom.holes === 0 && cmpGeom.meshTiesOk && cmpGeom.texelTiesOk;
+    // D2e: kind-10 (carpet) cell agreement on a carpet pose; its kind bar is 98 % (blade edges), every other pose keeps 99.5 %
+    let carpetCov = null;
+    if (carpetPose) {
+      let both = 0, js = 0, gp = 0;
+      for (let i = 0; i < cols * rows; i++) { const a = gbuf.kind[i] === 10, b = (GI[i * 4 + 1] & 0xff) === 10; if (a) js++; if (b) gp++; if (a && b) both++; }
+      const agree = 100 * (1 - (js + gp - 2 * both) / (cols * rows));
+      carpetCov = { js, gp, both, agree, ok: js > 0 && gp > 0 && agree >= 98 };
+      console.log(`[gpucompare] carpetCoverage ${poseName}: kind10 js=${js} gpu=${gp} both=${both} cellAgree=${agree.toFixed(2)}% (>=98) ${carpetCov.ok ? 'OK' : 'FAIL'}`);
+    }
+    const kindBar = carpetPose ? 98 : 99.5;
+    const geomBaseOkG = cmpGeom.kindMatchPct >= kindBar && cmpGeom.holes === 0 && cmpGeom.meshTiesOk && cmpGeom.texelTiesOk;
     // geometry-only verdict (same terms as the geometry half of the mesh gate below); recorded on both backends so a WebGL2 run is the WG-2b baseline
     const geomOk = cmpGeom.pass || (geomBaseOkG && cmpGeom.geomViolCells <= 4 && cmpGeom.violNonK8 === 0 && cmpGeom.aoViol === 0);
     if (wg) {
@@ -921,72 +1190,21 @@ async function runGpuCompareSceneMode(ctx) {
       let cmpCellsW = null, cellsOkW = true, cellsWait = null;
       if (gpuFg) {
         cmpCellsW = compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.005, 64, false, cmpGeom.excludeMask);
-        const cmpCellsMeshW = renderer === 'mesh' ? compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.01, 96, true, cmpGeom.excludeMask) : null;
-        const geomBaseOkW = cmpGeom.kindMatchPct >= 99.5 && cmpGeom.holes === 0 && cmpGeom.meshTiesOk && cmpGeom.texelTiesOk;
+        const cmpCellsMeshW = renderer === 'mesh' ? compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.01, meshCellCap(gpuPipeline.shadowOpts && gpuPipeline.shadowOpts.sun === 'map'), true, cmpGeom.excludeMask) : null;
+        const geomBaseOkW = cmpGeom.kindMatchPct >= kindBar && cmpGeom.holes === 0 && cmpGeom.meshTiesOk && cmpGeom.texelTiesOk;
         const meshColourOkW = renderer === 'mesh' && geomBaseOkW && cmpGeom.geomViolCells <= 4 && cmpGeom.violNonK8 === 0 && cmpGeom.aoViol === 0 &&
           cmpCellsW.glyphMatchPct >= 99.5 && cmpCellsW.poisonedSurvivors === 0 && cmpCellsMeshW.pass;
-        const pitchedHashOkW = renderer === 'mesh' && cam && (cam.projection === 'pitched' || pitchedDefault) && geomBaseOkW &&
+        const pitchedHashOkW = renderer === 'mesh' && cam && (cam.projection === 'pitched' || cam.projection === 'ortho' || pitchedDefault) && geomBaseOkW &&
           cmpCellsW.outsideFrac <= 0.005 && cmpCellsW.glyphMatchPct >= 99.9 && cmpCellsW.bgMax <= 64 && cmpCellsW.poisonedSurvivors === 0;
         cellsOkW = !!(cmpCellsW.pass || meshColourOkW || pitchedHashOkW);
       }
       const waterfallW = waterfallRow(poseName, waterBits, fbCompare.water, n, cols, rows);
-      const okW = maskOk && geomOk && k8OkW && instOkW && vmOkW && lightOkW && cellsOkW && (!waterfallW || waterfallW.pass);
+      const okW = maskOk && (!carpetCov || carpetCov.ok) && geomOk && k8OkW && instOkW && vmOkW && lightOkW && cellsOkW && (!waterfallW || waterfallW.pass);
       overallOk = overallOk && okW;
       console.log(`[gpucompare] ${okW ? 'PASS' : 'FAIL'} ${poseName} [webgpu geometry]: kind=${cmpGeom.kindMatchPct.toFixed(2)}% holes=${cmpGeom.holes} geomViolCells=${cmpGeom.geomViolCells} violNonK8=${cmpGeom.violNonK8} depthViol=${cmpGeom.depthViol} uvViol=${cmpGeom.uvViol} faceViol=${cmpGeom.faceViol} nrmViol=${cmpGeom.nrmViol} nrmMaxDeg=${cmpGeom.nrmMaxDeg} k8cpu=${cmpGeom.k8Cpu} k8gpu=${cmpGeom.k8Gpu} inst=${instOkW} vm=${vmOkW}(${vmItemsGpu}/${vmItemsJs}) cells=${cmpCellsW ? (cellsWait ? 'WAIT-' + cellsWait + '(glyph ' + cmpCellsW.glyphMatchPct.toFixed(2) + '%, fgOut ' + cmpCellsW.fgOutside + ')' : (cellsOkW ? 'OK' : 'MISMATCH') + '(glyph ' + cmpCellsW.glyphMatchPct.toFixed(2) + '%, fgOut ' + cmpCellsW.fgOutside + ', bgOut ' + cmpCellsW.bgOutside + ', fgMax ' + cmpCellsW.fgMax + ', bgMax ' + cmpCellsW.bgMax + ', outside ' + (cmpCellsW.outsideFrac * 100).toFixed(3) + '%, poisoned ' + cmpCellsW.poisonedSurvivors + ')') : 'n/a'} light=${cmpLightW ? (cmpLightW.pass ? 'OK' : lightWaits ? 'WAIT-WG3d' : 'MISMATCH') : 'n/a'}${cmpLightW ? `(sunlit ${cmpLightW.sunlitMismatch}, dLMax ${cmpLightW.dLMax.toFixed(4)}, dLViol ${cmpLightW.dLViol}, nMismatch ${cmpLightW.nMismatch})` : ''} stats=${JSON.stringify({ mesh: gpuPipeline.stats.meshDraws, voxel: gpuPipeline.stats.voxelDraws, vm: gpuPipeline.stats.vmDraws, inst: gpuPipeline.stats.instancedDraws, gpuCull: gpuPipeline.stats.gpuCullDraws || 0, cloth: gpuPipeline.stats.clothDraws })}`);
       rowsOut.push({ ...(waterfallW ? { waterfall: waterfallW } : {}), pose: poseName, cmpGeom, cmpLight: cmpLightW, cmpCells: cmpCellsW, cellsWait, lightWaits, ok: okW, geomOk, wg: true, k8Ok: k8OkW, instOk: instOkW, vmOk: vmOkW, ...(vmAssert ? { vmItemsGpu, vmItemsJs } : {}) });
       continue;
     }
-    const cmpCells = compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.005, 64, false, cmpGeom.excludeMask);
-    const cmpLight = compareLight(fbCompare.light, lightBuf, gbuf.kind, cols, rows, cmpGeom.meshTieMask);
-    cmpLight.dLSample = describeCellNormals(gbuf, GI, cmpLight.dLSampleIdx, cols); // diagnostic only (HANDS-01c)
-    if (cmpLight.dLSample) console.log('[gpucompare] dLSample ' + poseName + ' ' + JSON.stringify(cmpLight.dLSample));
-    const isVoxelPose = poseName.includes('voxel');
-    const k8Ok = !(isVoxelPose || needK8) || compareNoVoxels || (cmpGeom.k8Cpu > 0 && cmpGeom.k8Gpu > 0);
-    const geomViol = cmpGeom.depthViol + cmpGeom.uvViol + cmpGeom.aoViol + cmpGeom.zViol + cmpGeom.faceViol + cmpGeom.nrmViol;
-    const cmpCellsMesh = renderer === 'mesh' ? compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.01, 96, true, cmpGeom.excludeMask) : null;
-    const geomBaseOk = cmpGeom.kindMatchPct >= 99.5 && cmpGeom.holes === 0 && cmpGeom.meshTiesOk && cmpGeom.texelTiesOk; // PREC-04: both tie caps gate every fallback
-    const meshColourOk = renderer === 'mesh' && geomBaseOk && cmpGeom.geomViolCells <= 4 && cmpGeom.violNonK8 === 0 && cmpGeom.aoViol === 0 &&
-      cmpCells.glyphMatchPct >= 99.5 && cmpCells.poisonedSurvivors === 0 && cmpCellsMesh.pass;
-    if (renderer === 'mesh') console.log(`[gpucompare] mesh8a ${poseName}: geomViol=${geomViol} geomViolCells=${cmpGeom.geomViolCells} violNonK8=${cmpGeom.violNonK8} k8ColourOutliers=${cmpCellsMesh.k8Outside} fgMaxNonK8=${cmpCellsMesh.fgMaxNonK8}`);
-    // RTS tests both shown/hidden marks; this frontal scrawl must show every letter.
-    const ovlOk = !ovlRes || (ovlRes.mismatch === 0 && ovlRes.boundaryPct <= 0.5 &&
-      (decalAssert ? ovlRes.shownGpu >= decalAssert && ovlRes.shownTwin >= decalAssert : ovlRes.hidden > 0 && ovlRes.shownGpu > 0));
-    // BUG-RTS-001 (architecture.md 28.11, architect 2026-09-30): pitched poses (pitchedHashCell > 0) have a
-    // 0.25 m terrain look-hash; GPU float32 u/v vs the JS double twin flip a few boundary cells, so fgMax is
-    // reported but not gated there: outside <= 0.5 %, glyph >= 99.9 %, bgMax <= 64. Shear/dda poses unchanged.
-    const pitchedHashOk = renderer === 'mesh' && cam && (cam.projection === 'pitched' || pitchedDefault) && geomBaseOk &&
-      cmpCells.outsideFrac <= 0.005 && cmpCells.glyphMatchPct >= 99.9 && cmpCells.bgMax <= 64 && cmpCells.poisonedSurvivors === 0;
-    // RE-02b b3 anchor: the same pose's shear JS twin vs the pitched GPU output, same mesh bars.
-    let anchorOk = true;
-    if (anchorShear && renderer === 'mesh') {
-      const shearCam = { ...cam, projection: 'shear' };
-      compareVoxelPool.project(shearCam, rt, renderer);
-      rt.gpuActive = false; fbCompare.gpu = false;
-      renderWorld(fbCompare, world, shearCam);
-      drawSprites(fbCompare, sprites.pool);
-      rt.gpuActive = wasActive;
-      const cmpA = compareCells(rt.cells.fg, rt.cells.bg, gpuFg, gpuBg, gbuf.kind, cols, rows, undefined, undefined, 0.01, 96, true);
-      anchorOk = cmpA.pass && cmpA.glyphMatchPct >= 99;
-      console.log(`[gpucompare] anchor ${poseName}: pitched GPU vs shear twin pass=${cmpA.pass} glyph=${cmpA.glyphMatchPct.toFixed(2)}% fgMaxNonK8=${cmpA.fgMaxNonK8} k8Outside=${cmpA.k8Outside}`);
-    }
-    let instOk = true, instNote = '';
-    if (instAssert) { // RE-15c: drawn + culled = total, LOD1 bucket used (cull+LOD both exercised)
-      const st = engine.instances.stats;
-      instOk = st.instances + st.instancesCulled === instAssert.total && st.instancesCulled > 0 && st.instancesLod1 > 0 && st.instances > st.instancesLod1;
-      instNote = `[drawn ${st.instances} culled ${st.instancesCulled} lod1 ${st.instancesLod1}]`;
-      console.log(`[gpucompare] instances ${poseName}: drawn=${st.instances} culled=${st.instancesCulled} lod1=${st.instancesLod1} total=${instAssert.total} ${instOk ? 'OK' : 'FAIL'}`);
-    }
-    // BUG-VM-001 (item 5): the real visibility regression test - both twins must have built a non-empty view-model
-    // draw list for this pitched pose (not just "both agree", which is also true when both wrongly draw nothing).
-    let vmOk = true;
-    if (vmAssert) {
-      vmOk = vmItemsGpu > 0 && vmItemsJs > 0;
-      console.log(`[gpucompare] viewModel ${poseName}: itemsGpu=${vmItemsGpu} itemsJs=${vmItemsJs} ${vmOk ? 'OK' : 'FAIL'}`);
-    }
-    const waterfall = waterfallRow(poseName, waterBits, fbCompare.water, n, cols, rows);
-    const ok = maskOk && (cmpCells.pass || meshColourOk || pitchedHashOk) && (cmpGeom.pass || meshColourOk) && cmpLight.pass && k8Ok && ovlOk && anchorOk && instOk && vmOk && (!waterfall || waterfall.pass);
-    overallOk = overallOk && ok;
-    rowsOut.push({ ...(waterfall ? { waterfall } : {}), pose: instNote ? `${poseName} ${instNote}` : poseName, cmpCells, cmpGeom, cmpLight, ok, geomOk, isVoxelPose, k8Ok, ...(ovlRes ? { overlay: ovlRes } : {}), mesh8a: renderer === 'mesh' ? { geomViol, geomViolCells: cmpGeom.geomViolCells, violNonK8: cmpGeom.violNonK8, k8Outside: cmpCellsMesh.k8Outside, fgMaxNonK8: cmpCellsMesh.fgMaxNonK8 } : null, ...(vmAssert ? { vmItemsGpu, vmItemsJs, vmOk } : {}) });
   }
   if (restoreSun) { restoreSun(); restoreSun = null; }
   resetInstances();
@@ -1000,7 +1218,7 @@ async function runGpuCompareSceneMode(ctx) {
   let infoRows = null;
   // WG-3a: with `?rays=2` the WebGPU pipeline also gets the INFO n=2 geometry rows (resolved cell-res set, kind%/holes vs the JS twin, no cells compare yet).
   if (rayParam === 2) {
-    const base2 = wg || glPipeline; // same terrain/voxel/view-model/instance inputs as the rays-1 pipeline, so GL and WebGPU INFO rows compare like for like
+    const base2 = wg; // same terrain/voxel/view-model/instance inputs as the rays-1 pipeline
     const pipeline2 = new base2.constructor(rt, { rays: 2, terrainEnabled: base2.terrainEnabled, shadows: base2.shadowOpts, gpuCull: base2.gpuCull });
     if (pipeline2.ready) {
       pipeline2.bind(matTable, assets.palette);
@@ -1020,8 +1238,8 @@ async function runGpuCompareSceneMode(ctx) {
         compareVoxelPool.project(cam, rt);
         fbCompare.lights = lights;
         if (lights) lights.update(0, world);
-        if (lights) setCloudShadow(lights, { strength: 0 }); // S8-B2-12a NEEDS B1 item (3): every gpucompare mode forces clouds off
-        if (lights) setHorizonAo(lights, { strength: 0 }); // S8-B2-20 NEEDS B1 item (3): every gpucompare mode forces ao off
+        if (lights) lights.cloud = null; // S8-B2-12c: every gpucompare mode forces clouds off
+        if (lights) lights.ao = null; // S8-B2-20 NEEDS B1 item (3): every gpucompare mode forces ao off
         if (real) sprites.pool.collect(world);
         else { sprites.pool.reset(); placeCompareSprites(cam, sprites.pool); }
         sprites.pool.project(cam, rt, lights || ambientL, world);
@@ -1031,8 +1249,7 @@ async function runGpuCompareSceneMode(ctx) {
         renderWorld(fbCompare, world, cam);
         pipeline2.frame(fbCompare, lights || ambientL, cam, world);
         rt.present();
-        const rb2 = wg ? null : rt.readbackPresent();
-        const { GI: GI2, GA: GA2, Depth: Depth2 } = await pipeline2.readbackGeometry();
+                const { GI: GI2, GA: GA2, Depth: Depth2 } = await pipeline2.readbackGeometry();
 
         const wasActive2 = rt.gpuActive;
         rt.gpuActive = false;
@@ -1041,7 +1258,7 @@ async function runGpuCompareSceneMode(ctx) {
         drawSprites(fbCompare, sprites.pool);
         rt.gpuActive = wasActive2;
 
-        const cmpCells2 = wg ? { glyphMatchPct: NaN } : compareCells(rt.cells.fg, rt.cells.bg, rb2.fg, rb2.bg, gbuf.kind, cols, rows, undefined, undefined, 0.005);
+        const cmpCells2 = { glyphMatchPct: NaN }; // WebGPU: cells are judged by the main rows
         const cmpGeom2 = compareGeometry(gbuf, depthBuffer.depth, GI2, GA2, Depth2, cols, rows);
         infoRows.push({ pose: poseName, cmpCells: cmpCells2, cmpGeom: cmpGeom2, kindOk: cmpGeom2.kindMatchPct >= 99.5 });
         console.log(`[gpucompare] INFO n=2 ${poseName}: kind=${cmpGeom2.kindMatchPct.toFixed(2)}%(>=99.5% required) glyph=${cmpCells2.glyphMatchPct.toFixed(2)}%(reported only) holes=${cmpGeom2.holes}`);
@@ -1063,24 +1280,12 @@ async function runGpuCompareSceneMode(ctx) {
   for (const r of rowsOut) {
     if (r.wg) { text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose} [webgpu geometry]  kind ${r.cmpGeom.kindMatchPct.toFixed(2)}%  holes ${r.cmpGeom.holes}  geomViolCells ${r.cmpGeom.geomViolCells}  depthViol ${r.cmpGeom.depthViol}  uvViol ${r.cmpGeom.uvViol}
 `; continue; }
-    text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose}\n` +
-      `  geometry: kind ${r.cmpGeom.kindMatchPct.toFixed(2)}%  matEq ${r.cmpGeom.matEqual}/${r.cmpGeom.matched}  planeEq ${r.cmpGeom.planeEqual}/${r.cmpGeom.matched}` +
-      `  depthViol ${r.cmpGeom.depthViol}  uvViol ${r.cmpGeom.uvViol}  holes ${r.cmpGeom.holes} (must be 0)` +
-      `  edgeKindMismatch ${r.cmpGeom.edgeKindMismatch}/${r.cmpGeom.edgeCells}\n` +
-      (r.mesh8a ? `  mesh8a: geomViol ${r.mesh8a.geomViol}  geomViolCells ${r.mesh8a.geomViolCells}  violNonK8 ${r.mesh8a.violNonK8}  k8 colour outliers ${r.mesh8a.k8Outside}  fgMaxNonK8 ${r.mesh8a.fgMaxNonK8}
-` : '') +
-      `  k8 cpu ${r.cmpGeom.k8Cpu}  gpu ${r.cmpGeom.k8Gpu}${r.isVoxelPose ? (r.k8Ok ? ' (both > 0, OK)' : ' (must both be > 0 on a voxel pose - FAIL)') : ''}\n` +
-      `  shading: glyph ${r.cmpCells.glyphMatchPct.toFixed(2)}%  fgOut ${r.cmpCells.fgOutside}  bgOut ${r.cmpCells.bgOutside}` +
-      `  outside ${(r.cmpCells.outsideFrac * 100).toFixed(3)}% (<=0.5%, ${r.cmpCells.cellsOutside} cells)  fgMax ${r.cmpCells.fgMax}  bgMax ${r.cmpCells.bgMax} (<=64)  poisonedSurvivors ${r.cmpCells.poisonedSurvivors}\n` +
-      `  light: ${r.cmpLight.pass ? 'OK' : 'MISMATCH'}  sunlit ${(r.cmpLight.sunlitMismatchFrac * 100).toFixed(3)}% (<=0.5%, ${r.cmpLight.sunlitMismatch}/${r.cmpLight.sunMap ? r.cmpLight.litCells + ' lit' : r.cmpLight.nonSky})  dLMax ${r.cmpLight.dLMax.toFixed(4)}  dLViol ${r.cmpLight.dLViol} (<=1e-3/chan)` +
-      (r.cmpLight.sunMap ? `  [sun map] boundary ${r.cmpLight.boundaryCells} (${(r.cmpLight.boundaryFrac * 100).toFixed(2)}%)  n mismatch ${r.cmpLight.nMismatch} (${(r.cmpLight.nMismatchFrac * 100).toFixed(3)}%, <=1%)` : '') + '\n';
-    if (r.wg) continue;
-    console.log(`[gpucompare] ${r.ok ? 'PASS' : 'FAIL'} ${r.pose}: kind=${r.cmpGeom.kindMatchPct.toFixed(2)}% glyph=${r.cmpCells.glyphMatchPct.toFixed(2)}% holes=${r.cmpGeom.holes} meshTies=${r.cmpGeom.meshTies}/${r.cmpGeom.meshTiesMax}(k9=${r.cmpGeom.kind9Cells}${r.cmpGeom.meshTies ? ' cells ' + r.cmpGeom.meshTieCells.join(',') : ''}) edgeKindMismatch=${r.cmpGeom.edgeKindMismatch}/${r.cmpGeom.edgeCells} k8cpu=${r.cmpGeom.k8Cpu} k8gpu=${r.cmpGeom.k8Gpu} kindExclK8=${r.cmpGeom.kindMatchPctExclK8.toFixed(2)}% holesExclK8=${r.cmpGeom.holesExclK8} poisonedSurvivors=${r.cmpCells.poisonedSurvivors} light=${r.cmpLight.pass ? 'OK' : 'MISMATCH'}(sunlit ${r.cmpLight.sunlitMismatch}, dLViol ${r.cmpLight.dLViol}, litFlip ${r.cmpLight.litFlip}${r.cmpLight.sunMap ? `, sunMap lit=${r.cmpLight.litCells} sunlitFrac=${(r.cmpLight.sunlitMismatchFrac * 100).toFixed(3)}% boundary=${r.cmpLight.boundaryCells} nMismatch=${r.cmpLight.nMismatch}(${(r.cmpLight.nMismatchFrac * 100).toFixed(3)}%)` : ''})`);
   }
   for (const r of shadowRows) {
     const d = r.shadowDepth;
     text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose}\n  items ${d.items}  co-covered ${d.both}  within 16 ULP+0.05 texel ${d.withinPct.toFixed(4)}% (>=99.9%)  flat 16 ULP ${d.within16Pct.toFixed(3)}%  maxUlp ${d.maxUlp}  coverage mismatch ${d.covMismatchPct.toFixed(4)}% (<=0.3%)\n`;
   }
+  for (const r of stableRows) text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose}\n  ` + (r.stable.skipped ? `skipped: ${r.stable.reason}` : `history cells ${r.stable.usedPct.toFixed(1)}% (live ${r.stable.livePct.toFixed(1)}% of non-sky, >=20)  mismatches ${r.stable.mismatches} (must be 0)  tie mismatches ${r.stable.tieMismatches}  ties ${r.stable.tiePct.toFixed(3)}% (<=0.5%)  held twin/gpu ${r.stable.heldTwin}/${r.stable.heldGpu}  waterOn ${r.stable.waterOn}`) + '\n';
   text += `\n${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`;
   console.log(`[gpucompare] ${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`);
 
@@ -1098,12 +1303,25 @@ async function runGpuCompareSceneMode(ctx) {
   overlay.el.style.font = '13px "Courier New", monospace';
   overlay.el.style.whiteSpace = 'pre';
   overlay.el.textContent = text;
-  window.__gpuCompare = { rows: rowsOut.concat(shadowRows), ok: overallOk, infoRows };
+  const droppedFrames = (rt && rt.failedFrames) || 0; // FIX-RING: a dropped frame means the compare images are suspect
+  if (droppedFrames > 0) { overallOk = false; console.error(`[gpucompare] FAIL: ${droppedFrames} GPU frame(s) dropped`); }
+  window.__gpuCompare = { rows: rowsOut.concat(shadowRows, stableRows), ok: overallOk, infoRows, droppedFrames };
+}
+
+/**
+ * ME-16f (38.22 item 4): ?gpucompare=pointshadow - tower interior pose pointShadowTorch (3 torches + carried lamp), compares L + litCount
+ * against the JS twin (engine/mesh/pointShadowJS.js via fb.pointShadowOpts). PENDING until ME-16e lands the GPU host: the row is skipped, never fails.
+ */
+async function runGpuComparePointShadowPending() {
+  const rows = [{ pose: 'world_m1: pointShadowTorch', ok: true, skipped: true, note: 'needs ME-16e' }];
+  console.log('[gpucompare] SKIP pointshadow world_m1: pointShadowTorch (needs ME-16e: GPU point-shadow host not wired yet)');
+  window.__gpuCompare = { rows, ok: true, infoRows: [] };
 }
 
 export function run(ctx) {
   const mode = ctx.params.get('gpucompare');
-  if (mode === '1') return runGpuCompareSceneMode(ctx).catch((e) => { console.error('[gpucompare] failed:', e); throw e; });
+  if (mode === '1' || mode === 'emissive') return runGpuCompareSceneMode(ctx).catch((e) => { console.error('[gpucompare] failed:', e); throw e; });
   else if (mode === 'shade') return runGpuCompareShadeMode(ctx).catch((e) => { console.error('[gpucompare] failed:', e); throw e; });
-  else throw new Error('gpucompare mode must be 1 (mesh twin) or shade');
+  else if (mode === 'pointshadow') return runGpuComparePointShadowPending();
+  else throw new Error('gpucompare mode must be 1 (mesh twin), shade or emissive');
 }

@@ -6,12 +6,17 @@
 // (matTable bind, palette/time of day, terrain far-bake version); per frame only uniform words change.
 // The water layer is WG-3e: edge gets waterOn = 0 and a 1x1 dummy WATER texture. ALPHA-01d soft edges are WGSL-only (edge.wgsl.js header, D-044), not in the shipped GLSL
 // (twin: edgePass.js).
-import { SHADE_BLOCK, SHADE_WGSL, SHADE_TEXTURES } from '../wgsl/shade.wgsl.js';
+import { meshOutdoorFog } from '../../fogShape.js'; // OB-089
+import { updateUnderState } from '../../underwater.js'; // SWIM-04c
+import { SHADE_BLOCK, SHADE_WGSL, SHADE_LEVEL_WGSL, SHADE_TEXTURES } from '../wgsl/shade.wgsl.js';
 import { EDGE_BLOCK, EDGE_WGSL, EDGE_TEXTURES } from '../wgsl/edge.wgsl.js';
 import { packMaterialTable } from '../ShadeTextures.js';
 import { packTerrainTextures } from '../TerrainTextures.js';
-import { SKY_LUT_N } from '../glsl/common.js';
+import { SKY_LUT_N } from '../wgsl/skyLut.js';
 import { sunFromWorld } from '../../lighting.js';
+import { skylineFor, grassTableFor, packGrassTable, makeFarGrass, farGrassFill } from '../../terrainShade.js'; // MAP-06b: same record as the JS twin's ctx.skyline
+import { PROJ_HFOV_DEG } from '../../projection.js';
+import { orthoHashCell } from '../../projection.js'; // US-068b2
 import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
 
 const S = (n) => SHADE_BLOCK.field(n).word;
@@ -27,7 +32,19 @@ const S_HASHCELL = S('hashCell'), S_CLOSEBAND = S('closeBand'), S_HANDOVER = S('
 const S_N = S('n'), S_GPUSKY = S('gpuSky'), S_PROJ = S('projMode'), S_SUNMAP = S('sunMapOn'), S_NEARDETAIL = S('nearDetailOn');
 const S_SPARSE_ALT = S('fogSparseAlt'), S_HAZE_ALT = S('fogHazeAlt');
 const S_SPARSE_C0 = S('fogSparseCode0'), S_SPARSE_C1 = S('fogSparseCode1'), S_HAZE_C0 = S('fogHazeCode0'), S_HAZE_C1 = S('fogHazeCode1');
-const S_PITCH_A = S('pitchA'), S_PITCH_B = S('pitchB'), S_PITCH_C = S('pitchC'), S_FACEK = S('faceK');
+const S_ETA = S('etA'), S_ETID = S('etId'), S_ETC = S('etC'); // 38.23 tint words
+const EMPTY_GRASS = { n: new Uint8Array(1), ramp: new Float64Array(12), glyph: new Uint8Array(5) };
+const S_PITCH_A = S('pitchA'), S_PITCH_B = S('pitchB'), S_PITCH_C = S('pitchC'), S_FACEK = S('faceK'), S_SKYCAM = S('skyCam'), S_FOGVIEW = S('fogView'), S_SKYGLOWON = S('skyGlowOn'), S_SKYLINE = S('skyline'), S_GRASS = S('grass'), S_CLIFF = S('cliff'), S_FGP = S('fgP'), S_FGW = S('fgW'), S_FGT = S('fgT');
+const S_UNDER = S('under'), S_UNDER_TINT = S('underTint'), S_UNDER_CAM = S('underCam'), S_UNDER_CEIL = S('underCeil'), S_UNDER_CAUS = S('underCaus'), S_UNDER_RB = S('underRampB'), S_UNDER_RC = S('underRampC'); // SWIM-04c
+/** 38.23: copy the tint table (fb.entityTints) into the ShadeU words: etA.x = count, etId (u32 view), etC rgb+k. Zero alloc; count 0 and cleared tail when absent. */
+export function writeEntityTints(su, su32, tints) {
+  const n = tints && tints.count > 0 ? (tints.count > 8 ? 8 : tints.count) : 0;
+  su[S_ETA] = n;
+  for (let i = 0; i < 8; i++) {
+    su32[S_ETID + i] = i < n ? tints.ids[i] : 0;
+    for (let k = 0; k < 4; k++) su[S_ETC + i * 4 + k] = i < n ? tints.rgbk[i * 4 + k] : 0;
+  }
+}
 const E_COLS = E('gridCols'), E_ROWS = E('gridRows'), E_FOGMAX = E('fogMax'), E_RIM = E('modelRim'), E_WATER_ON = E('waterOn'), E_WOS = E('wos'), E_PROJ = E('projMode');
 const E_FOG_START = E('fogStart'), E_FOG_FULL = E('fogFull'), E_TFOG_START = E('terrainFogStart'), E_TFOG_FULL = E('terrainFogFull'), E_TFOG_CURVE = E('terrainFogCurve');
 const E_PITCH_C = E('pitchC'), E_GLYPH = E('edgeGlyph'), E_GAIN = E('edgeGain'), E_SOFTGAIN = E('softGain');
@@ -36,19 +53,22 @@ const E_PITCH_C = E('pitchC'), E_GLYPH = E('edgeGlyph'), E_GAIN = E('edgeGain'),
 const SH = { GI: 0, GA: 1, GD: 2, DEPTH: 3, SGI: 4, SGA: 5, FG: 6, BG: 7, SKY: 8, MATF: 9, MATI: 10, SETI: 11, SETF: 12, GAIN: 13, LIGHT: 14, TLOOK: 15 };
 
 export class WgShadePass {
-  constructor(device) {
+  /** @param {any} device @param {{stable?: boolean}} [opts] stable (US-073b): shade writes a 3rd r8ui level target; absent = the unchanged 2-target pipeline */
+  constructor(device, opts = null) {
     this.device = device;
+    this.stable = !!(opts && opts.stable);
+    const lvl = this.stable ? SHADE_LEVEL_WGSL : SHADE_WGSL;
     this.pipeShade = device.createPipeline({
-      vertex: { src: { wgsl: SHADE_WGSL } }, fragment: { src: { wgsl: SHADE_WGSL }, targets: 2 },
+      vertex: { src: { wgsl: lvl } }, fragment: { src: { wgsl: lvl }, targets: this.stable ? 3 : 2 },
       bindings: { uniformBytes: SHADE_BLOCK.sizeBytes, textures: SHADE_TEXTURES.slice() },
-      targetFormats: ['rgba8', 'rgba8'],
+      targetFormats: this.stable ? ['rgba8', 'rgba8', 'r8ui'] : ['rgba8', 'rgba8'],
     });
     this.pipeEdge = device.createPipeline({
       vertex: { src: { wgsl: EDGE_WGSL } }, fragment: { src: { wgsl: EDGE_WGSL }, targets: 2 },
       bindings: { uniformBytes: EDGE_BLOCK.sizeBytes, textures: EDGE_TEXTURES.slice() },
       targetFormats: ['rgba8', 'rgba8'],
     });
-    this.su = new Float32Array(SHADE_BLOCK.sizeWords); this.si = new Int32Array(this.su.buffer);
+    this.grassCfg = undefined; this.grassTmp = null; this.su = new Float32Array(SHADE_BLOCK.sizeWords); this.si = new Int32Array(this.su.buffer); this.su32 = new Uint32Array(this.su.buffer);
     this.eu = new Float32Array(EDGE_BLOCK.sizeWords); this.ei = new Int32Array(this.eu.buffer);
     this.shTex = SHADE_TEXTURES.map((_, slot) => ({ slot, texture: null }));
     this.edTex = EDGE_TEXTURES.map((_, slot) => ({ slot, texture: null }));
@@ -68,7 +88,7 @@ export class WgShadePass {
     this.skyElevTop = 0;
     this.table = null; this.palette = null; this.uniforms = null; this.packed = null;
     this.tableDirty = false; this.nRec = 0;
-    this.skyPalette = null; this.skyTime = null;
+    this.skyPalette = null; this.skyTime = null; this.skyLiveVer = -1; // DN-02: liveLookVersion of the last bake (-1 = baked from the static look)
     this.terrainWorld = null; this.terrainVersion = -1;
     this.terrainU = { bandNear: 0, bandMid: 0, fogOn: false, fogStart: 0, fogFull: 0, fogCurve: 1, nearRGB: null, farRGB: null, nearDetail: false, handover: null, closeBand: 0 };
     this.sunScratch = { dirX: 0, dirY: 0, dirZ: 0, ambientI: 0, sunI: 0 };
@@ -129,13 +149,21 @@ export class WgShadePass {
     for (let i = 0; i < 8; i++) { eu[E_GLYPH + i] = U.edges ? U.edges.ruleGlyph[i] : 0; eu[E_GAIN + i] = U.edges ? U.edges.ruleGain[i] : 1; }
   }
 
+  /** DN-02: the sky LUT needs a (re)bake: new palette / default time, or liveLookVersion changed (-1 = no live look = frozen path). */
+  _skyStale() {
+    const P = this.palette;
+    return this.skyPalette !== P || this.skyTime !== P.defaultTime || this.skyLiveVer !== (P.liveLook ? (P.liveLookVersion | 0) : -1);
+  }
+
   // GL _bakeSkyLUT twin (flat gradient, SKY_LUT_N samples over elevation [0, elevTop]); re-baked when the palette / time of day changes.
   _bakeSky() {
     const P = this.palette;
     this.skyPalette = P; this.skyTime = P ? P.defaultTime : null;
+    const live = P && P.liveLook; // DN-02: day/night look (blendLook); unset = the frozen path, byte-identical to before
+    this.skyLiveVer = live ? (P.liveLookVersion | 0) : -1;
     const rec = P && P.materials && P.materials.sky;
     if (!rec || !P.timeOfDay) return;
-    const stops = P.timeOfDay[P.defaultTime].sky;
+    const stops = (live || P.timeOfDay[P.defaultTime]).sky;
     const data = this.skyData;
     for (let i = 0; i < SKY_LUT_N; i++) {
       const t = i / (SKY_LUT_N - 1);
@@ -183,6 +211,9 @@ export class WgShadePass {
       if (tu.farRGB) for (let k = 0; k < 3; k++) su[S_TFOG_FAR + k] = tu.farRGB[k];
       eu[E_TFOG_START] = tu.fogStart; eu[E_TFOG_FULL] = tu.fogFull; eu[E_TFOG_CURVE] = tu.fogCurve;
     }
+    // OB-104b2 (38.55): cliff look = recipe rock type id (twin: makeTerrainShadeCtx ctx.cliffType; y = 0 -> off)
+    const rk = recipe && recipe.terrain && recipe.terrain.rock;
+    su[S_CLIFF] = rk ? rk.id : 0; su[S_CLIFF + 1] = rk ? 1 : 0;
     si[S_NEARDETAIL] = tu.nearDetail ? 1 : 0;
     if (tu.nearDetail) { su[S_HANDOVER] = tu.handover[0]; su[S_HANDOVER + 1] = tu.handover[1]; su[S_CLOSEBAND] = tu.closeBand; }
   }
@@ -198,7 +229,7 @@ export class WgShadePass {
     if (this.table && this.table.records && this.table.records.length !== this.nRec) this.tableDirty = true; // bindLevel appended materials in place
     if (this.tableDirty) this._uploadTable();
     if (!this.packed) return false; // nothing bound: no shade possible (the CPU present is unaffected)
-    if (this.palette && (this.skyPalette !== this.palette || this.skyTime !== this.palette.defaultTime)) this._bakeSky();
+    if (this.palette && this._skyStale()) this._bakeSky(); // DN-02: re-bake only on a new liveLookVersion
     const useScene = p._source !== 'upload' && !!p._cam && !!p._world;
     if (useScene) this._ensureTerrain(p._world);
     const rp = p._rasterPass, pitched = useScene && !!(rp && rp.pitched);
@@ -206,17 +237,60 @@ export class WgShadePass {
     si[S_GPUSKY] = useScene ? 1 : 0;
     const sh = p._shadowPass, sun = p._light && p._light.sun;
     si[S_SUNMAP] = sh && sh.active && sun && sun.on ? 1 : 0; // WG-3d: GL uSunMapOn = shadowActive && sun.on (light runs sunMode 2)
-    su[S_TIME] = (p._fb && p._fb.timeSec) || 0;
+    const fbT = p._fb; let tSec = 0; if (fbT) { const v = fbT.timeSec; if (v) tSec = v; } // same value as (fb && fb.timeSec) || 0 without a tagged phi (boxes a HeapNumber per frame)
+    su[S_TIME] = tSec;
+    writeEntityTints(su, this.su32, fbT && fbT.entityTints);
     su[S_SKY_ELEV] = this.skyElevTop;
-    si[S_PROJ] = pitched ? 1 : 0; ei[E_PROJ] = pitched ? 1 : 0;
+    const pm = pitched ? (rp.ortho ? 2 : 1) : 0; // US-068b2: 2 = ortho
+    si[S_PROJ] = pm; ei[E_PROJ] = pm;
+    if (useScene && p._cam && !pitched) { // AUD-40: shear-mode sky ray basis (same terms as sky.js fillSky)
+      const yr = p._cam.yawDeg * Math.PI / 180, th = Math.tan(PROJ_HFOV_DEG * Math.PI / 360), dx = Math.sin(yr), dy = -Math.cos(yr);
+      su[S_SKYCAM] = dx; su[S_SKYCAM + 1] = dy; su[S_SKYCAM + 2] = -dy * th; su[S_SKYCAM + 3] = dx * th;
+    }
+    // AUD-45: height fog + sun in-scatter, same gate as the CPU compositor (terrain world with a time-of-day palette).
+    const fogShapeOn = useScene && !!p._world.terrain && !!(p._palette && p._palette.timeOfDay);
+    su[S_FOGVIEW] = fogShapeOn ? p._cam.z : 0; su[S_FOGVIEW + 1] = fogShapeOn ? 1 : 0;
+    su[S_FOGVIEW + 2] = fogShapeOn && this.terrainU.fogOn && meshOutdoorFog(p._world, p._cam, p._palette) ? 1 : 0; // OB-089: mesh pixels fog like the terrain outdoors
+    const liveK = this.palette && this.palette.liveLook; su[S_SKYGLOWON + 1] = liveK && liveK.floorEff > 0 ? liveK.floorEff : 0; // DN-02 night glyph-luminance floor (0 = off)
+    su[S_SKYGLOWON] = fogShapeOn ? 1 : 0; // AUD-40: same gate, written every frame (sunDir/sunI are stale outside terrain worlds)
     if (pitched) {
       const q = rp.pitch;
       su[S_PITCH_A] = q.fX; su[S_PITCH_A + 1] = q.fY; su[S_PITCH_A + 2] = q.fZ; su[S_PITCH_A + 3] = q.tanHalfX;
       su[S_PITCH_B] = q.rX; su[S_PITCH_B + 1] = q.rY; su[S_PITCH_B + 2] = q.uX; su[S_PITCH_B + 3] = q.uY;
       su[S_PITCH_C] = q.uZ; su[S_PITCH_C + 1] = q.tanHalfY; su[S_PITCH_C + 2] = q.cosP; su[S_PITCH_C + 3] = q.sinP;
       eu[E_PITCH_C] = q.uZ; eu[E_PITCH_C + 1] = q.tanHalfY; eu[E_PITCH_C + 2] = q.cosP; eu[E_PITCH_C + 3] = q.sinP;
-      su[S_HASHCELL] = -(2 * q.tanHalfX / p.cols); // BUG-FP-002: per-cell mode on every pitched frame
+      su[S_HASHCELL] = rp.ortho ? orthoHashCell(q, p.cols) : -(2 * q.tanHalfX / p.cols); // BUG-FP-002: per-cell mode on every pitched frame
     } else su[S_HASHCELL] = 0;
+    // MAP-06b (38.42): far-terrain fog cap, written every frame (cached record; x = 0 = off, the JS twin's ctx.skyline === null)
+    const skl = useScene && p._world.terrain && this.palette ? skylineFor(p._world.terrain, this.palette) : null;
+    su[S_SKYLINE] = skl ? skl.fogMax : 0; su[S_SKYLINE + 1] = skl ? skl.fromZ : 0; su[S_SKYLINE + 2] = skl ? skl.seaFogMax : 0; su[S_SKYLINE + 3] = skl ? skl.seaLevel : 0;
+    // SWIM-04c (38.54): underwater look words, written every frame (under.x = 0 = block skipped; fb.under = makeUnderState, absent = dry)
+    const U = useScene && fbT ? fbT.under : null;
+    if (U && p._world.water) updateUnderState(p._world, p._cam.x, p._cam.y, p._cam.z, U); else if (U) U.on = 0;
+    if (U && U.on) {
+      su[S_UNDER] = 1; su[S_UNDER + 1] = U.waterZ; su[S_UNDER + 2] = U.fogM; su[S_UNDER + 3] = U.causticK;
+      su[S_UNDER_TINT] = U.tint[0]; su[S_UNDER_TINT + 1] = U.tint[1]; su[S_UNDER_TINT + 2] = U.tint[2]; su[S_UNDER_TINT + 3] = U.swapAt;
+      su[S_UNDER_CAM] = p._cam.x; su[S_UNDER_CAM + 1] = p._cam.y; su[S_UNDER_CAM + 2] = p._cam.z; su[S_UNDER_CAM + 3] = U.lightK;
+      su[S_UNDER_CEIL] = U.ceil[0]; su[S_UNDER_CEIL + 1] = U.ceil[1]; su[S_UNDER_CEIL + 2] = U.ceil[2];
+      su[S_UNDER_CAUS] = U.causticCol[0]; su[S_UNDER_CAUS + 1] = U.causticCol[1]; su[S_UNDER_CAUS + 2] = U.causticCol[2];
+      for (let k = 0; k < 4; k++) { su[S_UNDER_RB + k] = U.bubble[k]; su[S_UNDER_RC + k] = U.ceilRamp[k]; }
+    } else su[S_UNDER] = 0;
+    // OB-073 D2e: carpet variant ramp/glyph table (rewritten only when the carpet config object changes; null = zeros, kind 10 never appears)
+    const gcfg = useScene && p._world.carpet && p._world.carpet.cfg ? p._world.carpet.cfg : null;
+    if (gcfg !== this.grassCfg) {
+      this.grassCfg = gcfg;
+      if (!this.grassTmp) this.grassTmp = new Float32Array(80 * 4);
+      packGrassTable(gcfg ? grassTableFor(gcfg) : EMPTY_GRASS, this.grassTmp);
+      su.set(this.grassTmp, S_GRASS);
+    }
+    // G2 + P3 (D-075 step 4): far grass tier, per frame (same record + fill as the JS twin's ctx.farGrass; on = 0 without a carpet)
+    {
+      const fgr = this.fgRec || (this.fgRec = makeFarGrass()), w = useScene ? p._world : null;
+      if (gcfg && w.terrain && w.terrain.typeNames) farGrassFill(fgr, gcfg, w.terrain.typeNames, w.carpetQuality, w.wind && w.wind.params ? w.wind.params : null); else fgr.on = 0;
+      su[S_FGP] = fgr.on; su[S_FGP + 1] = fgr.startM; su[S_FGP + 2] = fgr.fadeM; su[S_FGP + 3] = fgr.mix;
+      su[S_FGW] = fgr.dirX; su[S_FGW + 1] = fgr.dirY; su[S_FGW + 2] = fgr.cyc; su[S_FGW + 3] = fgr.invTravel;
+      su.set(fgr.types, S_FGT);
+    }
     if (useScene && lightCam) { su[S_HORIZON] = lightCam.horizonRow; su[S_PLANEDY] = lightCam.planeDistY; }
     if (useScene && p._world.terrain && this.palette) { // US-026a S5: the sun for the terrain look, per frame (a few trig calls)
       const sun = sunFromWorld(p._world, this.palette, this.sunScratch);
@@ -230,7 +304,7 @@ export class WgShadePass {
     tx[SH.SETI].texture = this.texSetI; tx[SH.SETF].texture = this.texSetF; tx[SH.GAIN].texture = this.texGain;
     tx[SH.LIGHT].texture = t.texLight; tx[SH.TLOOK].texture = this.texTlook;
     wgSpanBegin(p, WG_PASS_SLOT.shade);
-    try { d.beginPass(t.targetShade); d.bind(this.pipeShade, this.shBind); d.draw(3); d.endPass(); } finally { wgSpanEnd(p); }
+    try { d.beginPass(this.stable ? t.targetShadeLevel : t.targetShade); d.bind(this.pipeShade, this.shBind); d.draw(3); d.endPass(); } finally { wgSpanEnd(p); }
     // WG-3e: water composite between shade and edge (GL order); a no-op when the layer is inactive
     if (water && water.active) {
       wgSpanBegin(p, WG_PASS_SLOT.water);
@@ -238,7 +312,7 @@ export class WgShadePass {
     }
 
     const wOn = !!(water && water.active); // WG-3e: composite output replaces the shade fg/bg; WATER texture + per-slot opaqueAt/seeThrough
-    ei[E_COLS] = p.cols; ei[E_ROWS] = p.rows; ei[E_WATER_ON] = wOn ? 1 : 0;
+    ei[E_COLS] = p.cols; ei[E_ROWS] = p.rows; ei[E_WATER_ON] = wOn && !(U && U.on) ? 1 : 0; // SWIM-04c: submerged = no surface composite, so no water edge suppression (JS twin: waterMask null)
     if (wOn) eu.set(water.waterOS, E_WOS);
     const et = this.edTex;
     et[0].texture = t.texGI; et[1].texture = t.texDepth;

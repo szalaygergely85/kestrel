@@ -76,7 +76,7 @@ assert.ok(td, 'terrain draw issued'); assert.equal(td.pipe.desc.cull, 'none'); a
 assert.equal(td.count, 6); assert.equal(td.first, 3); assert.equal(td.bind.indexBuffer, tib);
 assert.equal(td.uniforms[TERRAIN_BLOCK.field('objectId').word], 0x7003);
 assert.deepEqual([...new Float32Array(td.uniforms.buffer)].slice(TERRAIN_BLOCK.field('model').word + 12, TERRAIN_BLOCK.field('model').word + 16), [16, 32, 2, 1]);
-assert.deepEqual(td.bind.textures.map((t) => t.slot), [0, 1]); assert.deepEqual(td.pipe.desc.bindings.textures, ['uint', 'uint']);
+assert.deepEqual(td.bind.textures.map((t) => t.slot), [0, 1, 2]); assert.deepEqual(td.pipe.desc.bindings.textures, ['uint', 'uint', 'uint']);
 assert.equal(p.stats.terrainDraws, 1);
 // Type textures: uploaded on version change only (r8ui, resized when the bake size differs), never per frame.
 const world = { terrain: { farReady: true, farVersion: 1, mapW: 4, mapH: 4, farType: new Uint8Array(16), nearReady: true, near: { version: 1, w: 3, h: 3, type: new Uint8Array(9) } } };
@@ -164,6 +164,26 @@ console.log('passRaster.test.js: all checks passed.');
   global.gc(); const grew = process.memoryUsage().heapUsed - h0;
   assert.equal(m2.createCount, created, 'no buffers/pipelines created on warm frames'); assert.equal(on.bindDesc, bd);
   assert.ok(grew < 4e6, 'heap growth over 20000 frames: ' + grew);
+  // S8-B2-10c: occl on = HZB build after raster A, cull phase 2, raster B (load-only); first frame / invalidate / resize -> hzbOn 0 (no phase 2, no pass B)
+  {
+    recOn = true;
+    const oc = make({ occl: true });
+    oc.view[7] = 1; // forward = +y (the clip.w row)
+    const ppo = { _t: { targetRaster: {}, targetVmDepth: {}, texSDepth: {}, subCols: 64, subRows: 32 }, stats: {}, rows: 60 };
+    const passes = []; const obp = dev.beginPass; dev.beginPass = (t, o) => { passes.push(o ? 'A' : 'B'); return obp.call(dev, t, o); };
+    const frame = () => { rec.length = 0; passes.length = 0; dev._dispatches = 0; oc.run(ppo); return { disp: dev._dispatches, passes: passes.join(''), ind: rec.filter((r) => r[0] === 'ind').length }; };
+    const levels = 7; // 64x32 -> 1x1
+    let r = frame();
+    assert.equal(r.disp, 2 + (levels - 1), 'frame 1: phase 1 per batch + the HZB build, no phase 2'); assert.equal(r.passes, 'A'); assert.equal(r.ind, 3);
+    r = frame();
+    assert.equal(r.disp, 2 + (levels - 1) + 2, 'frame 2: + one phase-2 dispatch per batch'); assert.equal(r.passes, 'AB', 'raster B is a load-only pass after A'); assert.equal(r.ind, 6, 'phase-2 entries drawn in B');
+    oc.invalidateHzb(); r = frame();
+    assert.equal(r.disp, 2 + (levels - 1)); assert.equal(r.passes, 'A', 'invalidateHzb: hzbOn 0 frame');
+    r = frame(); assert.equal(r.passes, 'AB', 'valid again after one build');
+    ppo._t.subCols = 48; r = frame(); assert.equal(r.passes, 'A', 'resize invalidates');
+    dev.beginPass = obp; oc.dispose();
+    recOn = false;
+  }
   // gpucull=0: everything on the CPU path, no compute
   recOn = true;
   rec.length = 0; dev._dispatches = 0; dev._indirectDraws = 0;
@@ -237,6 +257,9 @@ console.log('passRaster.test.js (WG-4a): all checks passed.');
     it.partMatrices.set(T, 0); it.partMatrices.set(T, 12); // not DRAW_FLAG_ONE_PART: instancedRanges() returns mesh.ranges, both parts identity
   };
   ps.vmList = null;
+  // ALPHA-01f-fix3: masked leaf cards are two-sided (JS twin), opaque instancing stays back-face culled
+  assert.equal(ps.instanceMaskPipe.desc.cull, 'none'); assert.equal(ps._aoPipe('instanceMask').desc.cull, 'none');
+  assert.equal(ps.instancePipe.desc.cull, 'back'); assert.equal(ps._aoPipe('instance').desc.cull, 'back');
   const pp = { _t: { targetRaster: {}, targetVmDepth: {} }, stats: {} };
   ps.run(pp);
   assert.deepEqual(dr.map((x) => [x.pipe === ps.instanceMaskPipe ? 'mask' : (x.pipe === ps.instancePipe ? 'opaque' : '?'), x.c, x.f, x.i]),
@@ -254,6 +277,26 @@ console.log('passRaster.test.js (WG-4a): all checks passed.');
   assert.deepEqual(dr.map((x) => [x.pipe === ps.instancePipe, x.c, x.f, x.i]), [[true, 6, 0, 4], [true, 9, 6, 4]], 'opaque-only group: both ranges through instancePipe unchanged');
   ps.dispose(); dev.dispose(vb); dev.dispose(uvb); assert.equal(m4.liveCount(), 0, 'mask texture + pipelines disposed');
   console.log('passRaster.test.js (ALPHA-01f b): all checks passed.');
+}
+
+// OB-089 (OB-061 on the GPU cull path): LOD1 of a masked LOD0 tree group (opaque leaf cards) draws through the no-cull pipe; LOD0 and unmasked groups keep back-face culling.
+{
+  const m6 = makeMockGpuDevice(), dev = m6.device, bound = [];
+  dev.drawIndirect = () => bound.push(dev._activePipeline);
+  const ps = new WgRasterPass(dev, { gpuCull: false });
+  const vb = dev.createBuffer({ usage: 'vertex', bytes: 64 });
+  ps.buffers.getVoxel = () => ({ vertexBuffer: vb });
+  const parts = { m: new Float32Array(12), flags: new Uint32Array(1) };
+  const ent = (group, lod) => ({ group, lod, mesh: { ranges: [{ start: 0, count: 2 }] }, instanceBuffer: vb, argsBuffer: vb, argsOffset: 0, parts, active: true });
+  for (const [masked, expect] of [[true, [ 'instancePipe', 'instanceOpenPipe' ]], [false, ['instancePipe', 'instancePipe']]]) {
+    bound.length = 0;
+    const g = { mesh: { ranges: [{ start: 0, count: 2 }], maskRanges: masked ? new Int32Array([0, 0, 4, 4, 128]) : undefined } };
+    ps.gpuN = 1; ps.gpuGroups[0] = g; ps.gpuEntries[0] = [ent(g, 0), ent(g, 1)];
+    ps._cullDraw();
+    assert.deepEqual(bound.map((b) => (b === ps.instancePipe ? 'instancePipe' : b === ps.instanceOpenPipe ? 'instanceOpenPipe' : '?')), expect, `OB-089 masked LOD0=${masked}: [LOD0, LOD1] pipes`);
+  }
+  ps.dispose(); dev.dispose(vb);
+  console.log('passRaster.test.js (OB-089): all checks passed.');
 }
 
 // PREC-01a (37.9, WebGPU twin): camera-relative raster. view/planes stay absolute f64; every camera raster uniform carries view * T(O) and model - O.
@@ -347,3 +390,41 @@ console.log('passRaster.test.js (WG-4a): all checks passed.');
   rp2b.dispose();
   console.log('passRaster.test.js (S8-B2-05/06 wind host wiring): all checks passed.');
 }
+
+// ME-20c-c (38.18): vertex AO wiring - flag bit 1 + ao pipelines + stream at location 11 only for entries with aoBuffer while strength > 0.
+{
+  const { RASTER_FLAG_VAO } = await import('../wgsl/raster.wgsl.js');
+  const m3 = makeMockGpuDevice(), dv = m3.device, dr = [];
+  dv.draw = (count, first, instances) => dr.push({ pipe: dv._activePipeline, extra: dv._lastBind.extraBuffers, u: new Uint32Array(dv._lastBind.uniforms.buffer).slice() });
+  dv.beginPass = () => {};
+  const ps = new WgRasterPass(dv), AX = RASTER_BLOCK.field('axisAligned').word;
+  const vb = dv.createBuffer({ usage: 'vertex', bytes: 64 }), ib = dv.createBuffer({ usage: 'index', bytes: 24 }), aob = dv.createBuffer({ usage: 'vertex', bytes: 16 });
+  const entries = { ao: { vertexBuffer: vb, indexBuffer: ib, aoBuffer: aob }, plain: { vertexBuffer: vb, indexBuffer: ib } };
+  let cur = 'ao'; ps.buffers.getVoxel = () => entries[cur]; ps.vmList = null; ps.prepare = () => {};
+  const ib2 = { f32: new Float32Array(32) };
+  const build = () => {
+    ps.list.begin();
+    const v = ps.list.push(); v.type = DRAW_VOXEL; v.mesh = mesh; v.partMatrices.set(staticItem.matrix); v.partFlags[0] = 1;
+    const mv = ps.list.push(); mv.type = DRAW_VOXEL; mv.mesh = mesh; mv.mirror = 1; mv.partMatrices.set(staticItem.matrix); mv.partFlags[0] = 0;
+    const it = ps.list.push(); it.type = DRAW_INSTANCED; it.mesh = mesh; it.instBuf = ib2; it.instCount = 2; it.partMatrices.set(staticItem.matrix); it.partFlags[0] = 1;
+  };
+  const run = () => { dr.length = 0; build(); ps.run({ _t: { targetRaster: {}, targetVmDepth: {} }, stats: {} }); return dr.slice(); };
+  // off (strength 0): exactly the old draws - plain pipes, no extra stream, flag word == aligned bit only
+  ps.vaoOn = false; let r = run();
+  assert.deepEqual(r.map((x) => x.pipe), [ps.voxelPipe, ps.mirrorPipe, ps.instancePipe]);
+  assert.ok(r.every((x) => !x.extra) && r.map((x) => x.u[AX]).join() === '1,0,1' && ps.aoPipes.voxel === null, 'strength 0 builds/binds nothing new');
+  // on + AO entry: ao pipelines, stream bound, bit 1 set (bit 0 kept)
+  ps.vaoOn = true; r = run();
+  assert.deepEqual(r.map((x) => x.pipe), [ps.aoPipes.voxel, ps.aoPipes.mirror, ps.aoPipes.instance]);
+  assert.equal(ps.aoPipes.mirror.desc.frontFace, 'ccw'); assert.equal(ps.aoPipes.instance.desc.vertex.instanceStrideBytes > 0, true);
+  for (const x of r) { assert.equal(x.extra[0], aob); }
+  assert.equal(ps.aoPipes.voxel.desc.vertex.extraLayouts[0].layout[0].location, 11);
+  assert.deepEqual(r.map((x) => x.u[AX]), [1 | RASTER_FLAG_VAO, RASTER_FLAG_VAO, 1 | RASTER_FLAG_VAO]);
+  // on + entry without AO: old draw
+  cur = 'plain'; r = run();
+  assert.deepEqual(r.map((x) => x.pipe), [ps.voxelPipe, ps.mirrorPipe, ps.instancePipe]); assert.deepEqual(r.map((x) => x.u[AX]), [1, 0, 1]);
+  // warm frames allocate no resources
+  cur = 'ao'; const c0 = m3.createCount; for (let i = 0; i < 20; i++) run(); assert.equal(m3.createCount - c0, 0, 'ao pipelines are cached');
+  ps.dispose();
+}
+console.log('passRaster.test.js: vertex AO wiring ok.');

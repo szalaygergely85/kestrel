@@ -16,6 +16,18 @@ const TYPE_NAMES = ['grass', 'forest', 'water', 'rock', 'path'];
 // palette material key, not look right yet.
 const TYPE_FLOOR_MAT = ['grass', 'grass', 'rock', 'rock', 'grass'];
 
+/** MAP-01b (arch 38.42): the type table is data-sized from `recipe.terrain` (id = entry.id, <= 16 entries, no gaps; ids 0-4 fixed). */
+const MAX_TYPES = 16;
+function typeTables(look) {
+  const names = TYPE_NAMES.slice(), floor = TYPE_FLOOR_MAT.slice();
+  if (!look) return { names, floor };
+  const keys = Object.keys(look);
+  if (keys.length > MAX_TYPES) throw new Error(`Terrain: ${keys.length} terrain types (max ${MAX_TYPES})`);
+  for (const k of keys) { const e = look[k]; names[e.id] = k; if (e.floor) floor[e.id] = e.floor; else if (e.id >= TYPE_FLOOR_MAT.length) floor[e.id] = 'grass'; }
+  for (let i = 0; i < keys.length; i++) if (!names[i]) throw new Error(`Terrain: terrain type id gap at ${i}`);
+  return { names, floor };
+}
+
 function now() {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
@@ -40,6 +52,13 @@ export class Terrain {
     this.mapW = recipe.map.w;
     this.mapH = recipe.map.h;
     this.mapCell = recipe.map.cell;
+    this.mapX0 = recipe.map.x0 || 0; // MAP-01b: far grid origin (default 0,0 = byte-identical)
+    this.mapY0 = recipe.map.y0 || 0;
+    // MAP-01b-FU: the WGSL/GLSL farTypeNearest bounds-checks both axes against mapW only
+    if (this.mapW !== this.mapH) throw new Error(`Terrain: far map must be square (map.w ${this.mapW} != map.h ${this.mapH}; shaders only upload mapW)`);
+    if (this.mapW > 512 || this.mapH > 512) throw new Error('Terrain: far grid max 512 x 512');
+    const tt = typeTables(recipe.terrain);
+    this.typeNames = tt.names; this.typeFloorMat = tt.floor;
 
     // Far bake (arch 7.2): R32F/R8UI-shaped typed arrays, GPU-upload-ready.
     this.farH = new Float32Array(this.mapW * this.mapH);
@@ -59,6 +78,7 @@ export class Terrain {
     this.farVersion = 0;
     this._rbH = null; // rebakeRect height scratch (grow-only)
     this.farDirty = null; // ED-TERRAIN-1b: far texel rect touched by rebakeRect, consumed by TerrainMeshSet.markNearDirty
+    this._bb = null; // WS2-01 pending back band (beginNearBand)
     this._bakeRow = 0;
     // US-018 follow-up: column offset within `_bakeRow` - `bakeFarStep`
     // checks the time budget every `BAKE_CHECK_COLS` columns, not just once
@@ -69,25 +89,19 @@ export class Terrain {
     this._bakeCol = 0;
     // Reused "grid" view object handed to `recipe.util.gridHeight` (no
     // per-call allocation) - farH is the whole 2048x2048 m map at (0,0).
-    this._farGrid = { x0: 0, y0: 0, w: this.mapW, h: this.mapH, cell: this.mapCell, height: this.farH };
+    this._farGrid = { x0: this.mapX0, y0: this.mapY0, w: this.mapW, h: this.mapH, cell: this.mapCell, height: this.farH };
     // Same shape, but over the RENDER heights (with canopy) - the terrain
     // caster/march samples this one, never `_farGrid` (US-016).
-    this._farGridDraw = { x0: 0, y0: 0, w: this.mapW, h: this.mapH, cell: this.mapCell, height: this.farHDraw };
+    this._farGridDraw = { x0: this.mapX0, y0: this.mapY0, w: this.mapW, h: this.mapH, cell: this.mapCell, height: this.farHDraw };
     // Forest type id + canopy height (m), read once from the recipe (never
     // hard-coded - architecture.md 14.4 item 10 "recipe constants arrive
     // through TLOOK/uniforms from the registry", same principle in JS).
-    this._forestTypeId = TYPE_NAMES.indexOf('forest');
+    this._forestTypeId = this.typeNames.indexOf('forest');
     this._canopyM = (recipe.recipe && recipe.recipe.forest && recipe.recipe.forest.canopy) || 0;
 
-    // Near chunks (arch 7.2): 64x64 cells of 2 m (128 m), 3x3 resident ring
-    // in a fixed 9-slot array - `slot = (cy mod 3)*3 + (cx mod 3)`, never a
-    // string-keyed Map on the query path.
+    // Chunk geometry (AUD-04: the dormant 3x3 resident ring was removed; the near band is the only near truth).
     this.chunkSize = (recipe.chunk && recipe.chunk.size) || 128;
     this.nearCell = (recipe.chunk && recipe.chunk.nearCell) || 2;
-    this._chunks = new Array(9).fill(null); // { cx, cy, h, type, version }
-    this._centerCx = null;
-    this._centerCy = null;
-    this._chunkQueue = []; // [{cx, cy}] pending bakes, drained by bakeChunkStep
 
     // US-026a (architecture.md 23.1 item 1): one contiguous 3x3-chunk near
     // band, baked once (synchronously) at World.load, never streamed/
@@ -124,13 +138,26 @@ export class Terrain {
     return this.util.typeAt(x, y);
   }
 
+  /** NAV-PERF-01: central-difference step of `normalAt` and (when equal) of the recipe's typeAt slope; lets a baker on a grid of this cell size reuse one padded height ring. */
+  get normalEps() { return 2; }
+
+  /**
+   * `typeAt` handed the four neighbour heights heightAt(x+e,y)/(x-e,y)/(x,y+e)/(x,y-e), e = `normalEps`, by a caller that already holds them
+   * (saves 4 heightAt). Bit-identical to `typeAt` when the recipe's slopeEps equals `normalEps`; otherwise the hints are ignored.
+   */
+  typeAtWithHeights(x, y, hxp, hxm, hyp, hym) {
+    this._bindEdits();
+    const r = this.recipe.recipe;
+    return (r && r.slopeEps === 2) ? this.util.typeAt(x, y, hxp, hxm, hyp, hym) : this.util.typeAt(x, y);
+  }
+
   /** Material key name for a terrain type id (query/physics use only, US-025 - castTerrain itself lands in US-016). */
   floorMatFor(typeId) {
-    return TYPE_FLOOR_MAT[typeId] || 'grass';
+    return this.typeFloorMat[typeId] || 'grass';
   }
 
   typeName(typeId) {
-    return TYPE_NAMES[typeId] || 'grass';
+    return this.typeNames[typeId] || 'grass';
   }
 
   /** Bilinear height on the baked far 8 m grid; null outside the grid or before `farReady`. */
@@ -179,12 +206,16 @@ export class Terrain {
    * rule as `farHDraw`; `minH`/`maxH` are the band's hDraw extremes (render
    * escape bounds, mirrors `farMaxH`).
    */
-  bakeNearBand(cx, cy) {
+  bakeNearBand(cx0, cy0, cw, ch) {
+    // WS1-02 (arch 38.36): chunk RECT form `(cx0, cy0, cw, ch)` (non-square band, cw/ch 1..6). The legacy
+    // 2-arg call `(cx, cy)` = the 3x3 band centred on chunk (cx, cy) = `(cx-1, cy-1, 3, 3)`, byte-identical.
+    if (cw === undefined) { cx0 -= 1; cy0 -= 1; cw = 3; ch = 3; }
+    if (!Number.isInteger(cw) || !Number.isInteger(ch) || cw < 1 || ch < 1 || cw > 6 || ch > 6) throw new Error(`bakeNearBand: cw/ch must be integers 1..6 (got ${cw}x${ch})`);
     this._bindEdits();
     const n = this.chunkSize / this.nearCell; // 64 near-cells per 128 m chunk
-    const w = 3 * n, h = 3 * n;
-    const x0 = (cx - 1) * this.chunkSize;
-    const y0 = (cy - 1) * this.chunkSize;
+    const w = cw * n, h = ch * n;
+    const x0 = cx0 * this.chunkSize;
+    const y0 = cy0 * this.chunkSize;
     const G = this.util.bake(x0, y0, this.nearCell, w, h);
 
     const hDraw = new Float32Array(w * h);
@@ -205,6 +236,145 @@ export class Terrain {
     this.nearReady = true;
   }
 
+  // ---- stepped near-band re-bake (WS2-01, arch 38.38) -----------------------
+
+  /**
+   * Starts a background bake of a new near band `(cx0, cy0, cw, ch)` (chunk rect, same-size as the
+   * current band in v1 so textures/mesh grids never realloc). Allocates FRESH back arrays (rare event,
+   * no pooling: terrainMesh keys on the `near` object identity) and copies the cells that overlap the
+   * current `near` (the bake is per-cell pure, so copy == re-bake, bit-identical). `nearBandStep`
+   * then bakes the missing cells in row slices; `swapNearBand` publishes atomically. A pending bake is replaced.
+   */
+  beginNearBand(cx0, cy0, cw, ch) {
+    const st = this.newBandState(cx0, cy0, cw, ch, this.near);
+    this._bb = st;
+    return st.b;
+  }
+
+  /**
+   * OB109-B1 (38.58): the back-band state of `beginNearBand`, WITHOUT touching `_bb` / `near`. `src` = band to copy the
+   * overlap from (`terrain.near`, a cached bundle's near, or null = bake every cell; per-cell pure so bytes are identical).
+   * Drive it with `stepBandState`, finish with `finishBandState`.
+   */
+  newBandState(cx0, cy0, cw, ch, src) {
+    if (!Number.isInteger(cw) || !Number.isInteger(ch) || cw < 1 || ch < 1 || cw > 6 || ch > 6) throw new Error(`beginNearBand: cw/ch must be integers 1..6 (got ${cw}x${ch})`);
+    const cur = src || null, n = this.chunkSize / this.nearCell;
+    const w = cw * n, h = ch * n, x0 = cx0 * this.chunkSize, y0 = cy0 * this.chunkSize;
+    const HC = cur ? cur.height.constructor : Float32Array, TC = cur ? cur.type.constructor : Uint8Array, DC = cur ? cur.hDraw.constructor : Float32Array;
+    const b = { x0, y0, w, h, cell: this.nearCell, height: new HC(w * h), type: new TC(w * h), hDraw: new DC(w * h), minH: 0, maxH: 0, version: 0 };
+    // overlap in new-band cell coords [ox0,ox1) x [oy0,oy1)
+    let ox0 = 0, ox1 = 0, oy0 = 0, oy1 = 0;
+    // AUD-31: minH/maxH accumulated while copying/baking (same formula swapNearBand used in its own full pass)
+    const can = this.realTrees ? 0 : this._canopyM, fid = this._forestTypeId;
+    let mn = Infinity, mx = -Infinity, cpSrc = null, cpDx = 0, cpDy = 0;
+    if (cur && cur.cell === b.cell) {
+      const dx = Math.round((cur.x0 - x0) / b.cell), dy = Math.round((cur.y0 - y0) / b.cell); // cur origin in new coords
+      ox0 = Math.max(0, dx); ox1 = Math.min(w, dx + cur.w); oy0 = Math.max(0, dy); oy1 = Math.min(h, dy + cur.h);
+      if (ox1 > ox0 && oy1 > oy0) { cpSrc = cur; cpDx = dx; cpDy = dy; } // WM-02b: rows are copied in stepBandState (sliced)
+      else { ox0 = ox1 = oy0 = oy1 = 0; }
+    }
+    return { b, ox0, ox1, oy0, oy1, row: 0, side: 0, sRow: 0, cur: 0, ce: 0, ready: false, mn, mx, canopy: can, fid, cx0, cy0, cw, ch, cpSrc, cpDx, cpDy, cpRow: oy0, sliceMs: 0, lastT: 0, late: 0 };
+  }
+
+  /** True while a back band is baking or waiting to be swapped. */
+  get nearBandPending() { return this._bb != null; }
+  /** Rect of the pending back band (`{cx0,cy0,cw,ch}` fields of the internal state) or null. */
+  cancelNearBand() { this._bb = null; }
+
+  /**
+   * Bakes missing rows of the pending band until `msBudget` ms are used (always >= 1 slice of progress).
+   * Per slice: one `util.bake` of a full row, or of the left/right spans around the overlap (documented
+   * per-slice alloc exception, arch 38.38). Returns true once the band is complete.
+   */
+  nearBandStep(msBudget) {
+    const st = this._bb;
+    if (!st) return false;
+    return this.stepBandState(st, msBudget);
+  }
+
+  /** OB109-B1: `nearBandStep` for an explicit state (see `newBandState`). */
+  stepBandState(st, msBudget) {
+    if (st.ready) return true;
+    this._bindEdits();
+    const b = st.b, w = b.w, h = b.h, cell = b.cell;
+    const canopy = this.realTrees ? 0 : this._canopyM, forestId = this._forestTypeId;
+    const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    let units = 0, late = 0; // arch fix: units (copy row / 32-cell slice) STARTED after the budget was already used up (deterministic overshoot count, <= 1 per call)
+    if (st.cpSrc) { // WM-02b: overlap copy, row by row under the same budget (min/max order is irrelevant)
+      const cur = st.cpSrc, dx = st.cpDx, dy = st.cpDy, len = st.ox1 - st.ox0, can = st.canopy, fid = st.fid;
+      while (st.cpRow < st.oy1) {
+        if (units++ > 0 && st.lastT - t0 >= msBudget) late++;
+        const j = st.cpRow++, s0 = (j - dy) * cur.w + (st.ox0 - dx), d0 = j * w + st.ox0;
+        b.height.set(cur.height.subarray(s0, s0 + len), d0);
+        b.type.set(cur.type.subarray(s0, s0 + len), d0);
+        b.hDraw.set(cur.hDraw.subarray(s0, s0 + len), d0);
+        let mn = st.mn, mx = st.mx;
+        for (let i = d0, e = d0 + len; i < e; i++) { const v = b.height[i] + (b.type[i] === fid ? can : 0); if (v < mn) mn = v; if (v > mx) mx = v; }
+        st.mn = mn; st.mx = mx;
+        st.lastT = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        if (st.lastT - t0 >= msBudget) { st.late = late; return false; }
+      }
+      st.cpSrc = null;
+    }
+    while (st.row < h || st.cur < st.ce) {
+      if (st.cur >= st.ce) { // next column span; WM-02: a span is baked in <= 32-cell slices so a 2 ms budget holds (cells are pure: bytes unchanged)
+        const r = st.row;
+        const inOv = r >= st.oy0 && r < st.oy1;
+        if (!inOv) { st.cur = 0; st.ce = w; st.row++; }
+        else if (st.side === 0) { st.cur = 0; st.ce = st.ox0; st.side = 1; }
+        else { st.cur = st.ox1; st.ce = w; st.side = 0; st.row++; }
+        st.sRow = r;
+        if (st.ce <= st.cur) { st.cur = st.ce = 0; continue; }
+      }
+      const r = st.sRow, cs = st.cur, ce = Math.min(st.ce, cs + 32), s0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      if (units++ > 0 && s0 - t0 >= msBudget) late++;
+      st.cur = ce; if (st.cur >= st.ce) st.cur = st.ce; // slice end; span done when cur reaches ce
+      if (ce > cs) {
+        const G = this.util.bake(b.x0 + cs * cell, b.y0 + r * cell, cell, ce - cs, 1);
+        const o = r * w + cs;
+        for (let i = 0; i < ce - cs; i++) {
+          const hv = G.height[i];
+          b.height[o + i] = hv; b.type[o + i] = G.type[i];
+          b.hDraw[o + i] = hv + (G.type[i] === forestId ? canopy : 0);
+          const v = b.height[o + i] + (b.type[o + i] === st.fid ? st.canopy : 0);
+          if (v < st.mn) st.mn = v; if (v > st.mx) st.mx = v;
+        }
+      }
+      const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now(), ds = t1 - s0;
+      st.sliceMs = st.sliceMs > ds ? st.sliceMs * 0.98 + ds * 0.02 : ds; // WM-02b: predictive stop (decaying max slice cost)
+      st.lastT = t1;
+      if (t1 - t0 + st.sliceMs >= msBudget) break;
+    }
+    st.late = late;
+    if (st.row >= h && st.cur >= st.ce) st.ready = true;
+    return st.ready;
+  }
+
+  /** Atomic publish: the finished back band becomes `terrain.near` (new object identity, version+1). Throws if not ready. */
+  swapNearBand() {
+    const st = this._bb;
+    if (!st || !st.ready) throw new Error('swapNearBand: no finished back band');
+    const b = this.finishBandState(st);
+    this.publishBand(b);
+    this._bb = null;
+    return b;
+  }
+
+  /** OB109-B1: finalises a finished state's bounds and returns its band (version 0 until published). */
+  finishBandState(st) {
+    if (!st.ready) throw new Error('finishBandState: band not ready');
+    const b = st.b;
+    b.minH = st.mn; b.maxH = st.mx; // AUD-31: accumulated in newBandState/stepBandState (no full pass here)
+    return b;
+  }
+
+  /** OB109-B2 (38.58): makes a finished (possibly cached) band `near`; version = old + 1 (the only change a cached band ever gets). */
+  publishBand(b) {
+    b.version = (this.near ? this.near.version : 0) + 1;
+    this.near = b; this.nearReady = true;
+    return b;
+  }
+
   /**
    * ED-TERRAIN-1b (arch 37.12): live dirty re-bake after a terrain edit. (x0,y0)-(x1,y1) is the world
    * rect of the EDITED lattice samples (e.g. `{i0,j0,i1,j1} * editCell` from `applyDab`). Re-bakes only the
@@ -216,8 +386,8 @@ export class Terrain {
    * @returns {{i0:number,j0:number,i1:number,j1:number}|null} the near dirty rect (band-local) or null
    */
   rebakeRect(x0, y0, x1, y1) {
+    if (this.onRebake) this.onRebake(x0, y0, x1, y1); // OB109-B2: World drops overlapping cached bands
     this._bindEdits();
-    if (this.nearReady) this._chunks.fill(null), this._centerCx = null; // 3x3 chunk cache is stale now
     const eps = (this.recipe.recipe && this.recipe.recipe.slopeEps) || this.nearCell;
     const g = this.near;
     let out = null;
@@ -267,17 +437,17 @@ export class Terrain {
       }
     }
     if (this.farReady) {
-      const c = this.mapCell, m = c + eps;
-      const i0 = Math.max(0, Math.ceil((x0 - m) / c - 0.5)), i1 = Math.min(this.mapW - 1, Math.floor((x1 + m) / c - 0.5));
-      const j0 = Math.max(0, Math.ceil((y0 - m) / c - 0.5)), j1 = Math.min(this.mapH - 1, Math.floor((y1 + m) / c - 0.5));
+      const c = this.mapCell, m = c + eps, ox = this.mapX0, oy = this.mapY0;
+      const i0 = Math.max(0, Math.ceil((x0 - ox - m) / c - 0.5)), i1 = Math.min(this.mapW - 1, Math.floor((x1 - ox + m) / c - 0.5));
+      const j0 = Math.max(0, Math.ceil((y0 - oy - m) / c - 0.5)), j1 = Math.min(this.mapH - 1, Math.floor((y1 - oy + m) / c - 0.5));
       if (i1 >= i0 && j1 >= j0) {
         const canopy = this._canopyM, forestId = this._forestTypeId, util = this.util;
-        const hi0 = Math.ceil((x0 - c) / c - 0.5), hi1 = Math.floor((x1 + c) / c - 0.5);
-        const hj0 = Math.ceil((y0 - c) / c - 0.5), hj1 = Math.floor((y1 + c) / c - 0.5);
+        const hi0 = Math.ceil((x0 - ox - c) / c - 0.5), hi1 = Math.floor((x1 - ox + c) / c - 0.5);
+        const hj0 = Math.ceil((y0 - oy - c) / c - 0.5), hj1 = Math.floor((y1 - oy + c) / c - 0.5);
         for (let j = j0; j <= j1; j++) {
-          const y = (j + 0.5) * c, rowH = j >= hj0 && j <= hj1;
+          const y = oy + (j + 0.5) * c, rowH = j >= hj0 && j <= hj1;
           for (let i = i0; i <= i1; i++) {
-            const x = (i + 0.5) * c, k = i + j * this.mapW;
+            const x = ox + (i + 0.5) * c, k = i + j * this.mapW;
             const t = util.typeAt(x, y);
             if (rowH && i >= hi0 && i <= hi1) this.farH[k] = util.heightAt(x, y);
             this.farType[k] = t;
@@ -391,10 +561,10 @@ export class Terrain {
     const BAKE_CHECK_COLS = 4;
     let col = this._bakeCol;
     outer: while (this._bakeRow < this.mapH) {
-      const y = (this._bakeRow + 0.5) * cell;
+      const y = this.mapY0 + (this._bakeRow + 0.5) * cell;
       const rowBase = this._bakeRow * w;
       while (col < w) {
-        const x = (col + 0.5) * cell;
+        const x = this.mapX0 + (col + 0.5) * cell;
         this.farH[rowBase + col] = this.util.heightAt(x, y);
         this.farType[rowBase + col] = this.util.typeAt(x, y);
         col++;
@@ -445,52 +615,6 @@ export class Terrain {
       h = Math.imul(h, 0x01000193);
     }
     return h >>> 0;
-  }
-
-  // ---- near chunks ----------------------------------------------------------
-
-  _slot(cx, cy) {
-    return (((cy % 3) + 3) % 3) * 3 + (((cx % 3) + 3) % 3);
-  }
-
-  /** Resident chunk at (cx, cy), or null if not currently resident (not yet baked by `bakeChunkStep`). */
-  chunk(cx, cy) {
-    const slot = this._slot(cx, cy);
-    const c = this._chunks[slot];
-    return c && c.cx === cx && c.cy === cy ? c : null;
-  }
-
-  /**
-   * Recenters the resident 3x3 ring on the chunk containing (x, y). Queues
-   * only the chunks not already resident (a one-chunk move regenerates
-   * exactly the new row/column, per AC) - draining happens in `bakeChunkStep`.
-   */
-  setCenter(x, y) {
-    const cx = Math.floor(x / this.chunkSize);
-    const cy = Math.floor(y / this.chunkSize);
-    if (cx === this._centerCx && cy === this._centerCy) return;
-    this._centerCx = cx;
-    this._centerCy = cy;
-    this._chunkQueue.length = 0;
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        const ccx = cx + dx, ccy = cy + dy;
-        const existing = this.chunk(ccx, ccy);
-        if (!existing) this._chunkQueue.push({ cx: ccx, cy: ccy });
-      }
-    }
-  }
-
-  /** Bakes queued chunks, spending at most `msBudget` ms this call. */
-  bakeChunkStep(msBudget = 5) {
-    this._bindEdits();
-    const t0 = now();
-    while (this._chunkQueue.length && now() - t0 < msBudget) {
-      const { cx, cy } = this._chunkQueue.shift();
-      const G = this.util.bakeChunk(cx, cy);
-      const slot = this._slot(cx, cy);
-      this._chunks[slot] = { cx, cy, h: G.height, type: G.type, version: (this._chunks[slot] ? this._chunks[slot].version : 0) + 1 };
-    }
   }
 }
 

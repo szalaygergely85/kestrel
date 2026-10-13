@@ -63,10 +63,10 @@ for (let s = 0; s < table.sets.length; s++) {
   }
 }
 
-// ALPHA-01d/e: soft materials = the three real leaf materials (ALPHA-01e) + the two test-only clones (until the gpucompare fixture is repointed, NEEDS B1).
+// ALPHA-01d/e: soft materials = exactly the three real leaf materials (ALPHA-01e); the *_softtest clones are deleted.
 {
   const softKeys = table.records.filter((r, i) => r && table.soft[i] === 1).map((r) => r.key).sort();
-  ok('ALPHA-01e: soft materials are exactly leaf* and the two test clones', softKeys.join(',') === 'leaf,leaf_dark,leaf_dark_softtest,leaf_light,leaf_softtest', softKeys.join(','));
+  ok('ALPHA-01e: soft materials are exactly leaf*', softKeys.join(',') === 'leaf,leaf_dark,leaf_light', softKeys.join(','));
   ok('ALPHA-01d: softEdge(id) past the table is false', table.softEdge(99999) === false && table.softEdge(0) === false);
 }
 

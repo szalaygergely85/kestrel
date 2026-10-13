@@ -10,7 +10,7 @@ import { WgRasterPass } from './passRaster.js';
 import { FRAME_TIMER_SLOT } from '../device/WebGpuTimer.js';
 
 // 1. Slot-mapping contract: one unique slot per name, 0..N-1 contiguous (writePassStats assumes slot === array index,
-// WebGpuTimer.js), and never FRAME_TIMER_SLOT (10).
+// WebGpuTimer.js), and never FRAME_TIMER_SLOT (15).
 {
   const slots = WG_PASS_NAMES.map((n) => WG_PASS_SLOT[n]);
   assert.strictEqual(slots.length, WG_PASS_NAMES.length);
@@ -87,6 +87,33 @@ function strictTimerSpy() {
     ['begin', WG_PASS_SLOT.raster], ['end'],
   ], 'cull opens/closes before raster opens - never nested');
   raster.dispose();
+}
+
+// 4. OCCL-STATS-01: with the HZB path active the spans run raster, hzb, cull2, raster2 (never nested); timing off = zero timer calls.
+{
+  for (const on of [true, false]) {
+    const { device } = makeMockGpuDevice();
+    device.backend = 'webgpu';
+    const timer = strictTimerSpy(); device.timer = timer;
+    const raster = new WgRasterPass(device, { gpuCull: false });
+    const span = (slot) => (p) => { if (p && p._passTimingOn) { timer.begin(slot); timer.end(); } };
+    const hb = span(WG_PASS_SLOT.hzb), c2 = span(WG_PASS_SLOT.cull2);
+    raster.hzb = { build(t, p) { hb(p); }, fresh() { return {}; }, invalidate() {}, dispose() {} };
+    raster.cull = { runPhase2(h, p) { c2(p); }, dispose() {} };
+    const prep = raster.prepare.bind(raster); raster.prepare = (q) => { prep(q); raster.gpuN = 1; }; raster._cullRun = () => { raster._phase2 = true; }; raster._cullDraw = () => 0;
+    const p = {
+      _passTimingOn: on, device, cols: 10, rows: 5, rt: { pxCellW: 1, pxCellH: 1 },
+      _cam: { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0, projection: 'shear' }, _world: {}, _table: null, _voxelPool: null, _instances: null, _viewModel: null,
+      _t: { targetRaster: {}, targetVmDepth: {}, texSDepth: {} }, stats: {},
+    };
+    raster.run(p);
+    const begins = timer.order.filter((e) => e[0] === 'begin').map((e) => e[1]);
+    if (on) {
+      assert.deepStrictEqual(begins.filter((s) => s !== WG_PASS_SLOT.cull), [WG_PASS_SLOT.raster, WG_PASS_SLOT.hzb, WG_PASS_SLOT.cull2, WG_PASS_SLOT.raster2], 'raster, hzb, cull2, raster2');
+      assert.strictEqual(timer.active(), -1);
+    } else assert.deepStrictEqual(timer.order, [], 'timing off: zero timer calls');
+    raster.hzb = null; raster.cull = null; raster.dispose();
+  }
 }
 
 console.log('WgCellPipeline per-pass GPU timer slot mapping: OK');

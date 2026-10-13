@@ -1,7 +1,7 @@
 // game/js/quest/sim/targetables.js (SPELL-01a1, docs/architecture.md 37.14). Shared SoA list of every entity with a
 // `targetable` component (<= 16), rebuilt on load/add/remove (the 30.1 convention). `refresh()` copies the live
 // positions once per step; an entity with `health.hp <= 0` gets `r = -1` and every query must skip `r < 0`.
-export const MAX_TARGETABLES = 16;
+export const MAX_TARGETABLES = 64; // OB-076: was 16, the world has 26+ (boars, wolves, targets): beasts past the 16th were unhittable
 
 /** @param {any} world @param {{on:(n:string,f:Function)=>()=>void}} events */
 export function createTargetables(world, events) {

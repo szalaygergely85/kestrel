@@ -7,13 +7,15 @@ import { LazyMeshStore, lazyEligible } from '../mesh/lazyMesh.js';
 import { ContentError } from './ContentError.js';
 import { migrateContent, MIGRATIONS } from './migrate.js';
 import { editLayerFromJSON } from '../world/terrainEdits.js';
+import { grassMaskFromJSON } from '../world/grassMask.js';
 import { maskFromJSON } from './maskFile.js';
 import { prefabFromJSON } from './prefabFile.js';
+import { compileDialogue, validateDialogue } from '../ui/dialogue.js';
 import { LATEST_SCHEMA, ID_COLLECTIONS, REF_FIELDS } from './schema.js';
 
 const FILE_ID_RE = /^[a-z][a-z0-9_]*$/;
 const LOCAL_ID_RE = /^[A-Za-z][A-Za-z0-9_-]*$/;
-const KNOWN_KINDS = ['level', 'world', 'mesh', 'terrainEdits', 'mask', 'prefab'];
+const KNOWN_KINDS = ['level', 'world', 'mesh', 'terrainEdits', 'mask', 'prefab', 'dialogue', 'grassMask'];
 
 /** `globalId('tower', 'lamp_hook') -> 'tower/lamp_hook'` (21.3). Only used
  * where a field already says which collection it points into. */
@@ -124,9 +126,12 @@ export async function loadContentPack(manifestUrl, opts = {}) {
     meshes: {},
     lazyMeshes: lazyStore, // MESH-LOAD-01: the LazyMeshStore (null = every mesh payload is loaded)
     terrainEdits: {},
+    grassMasks: {}, // MASK-e1 (38.52 OB-096): raw validated grassMask JSON objects by id (the game builds the layer)
     masks: {},
     prefabs: {}, // PREFAB-SEAM (38.11): validated + frozen {id,title,items}; the game ignores them
-    meta: { level: {}, world: {}, mesh: {}, terrainEdits: {}, mask: {}, prefab: {}, manifest: { [manifest.id]: { url: manifestHref, schema: manifest.schema, nextId: null } } },
+    dialogues: {}, // DIALOGUE-01a1 (38.28): compiled (frozen, int node indices) dialogue definitions
+    warnings: [], // non-fatal content notes (e.g. unreachable dialogue nodes), strings
+    meta: { level: {}, world: {}, mesh: {}, terrainEdits: {}, grassMask: {}, mask: {}, prefab: {}, dialogue: {}, manifest: { [manifest.id]: { url: manifestHref, schema: manifest.schema, nextId: null } } },
   };
 
   const errors = [];
@@ -204,6 +209,23 @@ export async function loadContentPack(manifestUrl, opts = {}) {
     if (kind === 'mask') {
       try { bundle.masks[migrated.id] = maskFromJSON(migrated); } catch (e) { errors.push(asContentError(e, href, 'mask')); continue; }
       bundle.meta.mask[migrated.id] = { url: href, schema: migrated.schema, nextId: null };
+      continue;
+    }
+    if (kind === 'dialogue') {
+      // DIALOGUE-01a1: no nextId/id collections; errors refuse the file, unreachable nodes only warn.
+      const chk = validateDialogue(migrated);
+      if (chk.errors.length) { for (const m of chk.errors) errors.push(new ContentError(href, 'dialogue', m)); continue; }
+      for (const w of chk.warnings) bundle.warnings.push(`${href}: ${w}`);
+      bundle.dialogues[migrated.id] = compileDialogue(migrated);
+      bundle.meta.dialogue[migrated.id] = { url: href, schema: migrated.schema, nextId: null };
+      continue;
+    }
+    if (kind === 'grassMask') {
+      // MASK-e1: sparse paint layer, like terrainEdits - validated by building the layer; the game builds it again.
+      try { grassMaskFromJSON(migrated); } catch (e) { errors.push(asContentError(e, href, 'grassMask')); continue; }
+      bundle.meta.grassMask[migrated.id] = { url: href, schema: migrated.schema, nextId: null };
+      const { kind: _k3, schema: _s3, id: _id3, ...gm } = migrated;
+      bundle.grassMasks[migrated.id] = gm;
       continue;
     }
     if (kind === 'terrainEdits') {

@@ -1,0 +1,38 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Stair_Interior_Solid",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Stair_Interior_Solid.mesh.bin",
+  "triCount": 306,
+  "bbox": [
+    -0.8844,
+    -0.35784,
+    -0.01815,
+    0.8844,
+    4.35183,
+    3.02782
+  ],
+  "ranges": [
+    {"count": 306, "part": "Stair_Interior_Solid#0", "start": 0}
+  ],
+  "matKeys": [
+    "MI_WoodTrim"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "ivy",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "001iv8dLt768dJO8001iP8dLt768dJO8001iP8dLt77BykFA001iv8dLt768dJO8001iP8dLt77BykFA001iv8dLt77BykFA001iP8dLt768dJO8001iP4lBCEC8dJO8001iP4lBCEDBykFA001iP8dLt768dJO8001iP4lBCEDBykFA001iP8dLt77BykFA001iP4lBCEC8dJO8iUFgP5huikC8dJO8iUFgP5huikDBykFA001iP4lBCEC8dJO8iUFgP5huikDBykFA001iP4lBCEDBykFAiUFgP5huikC8dJO8iUFgv5huikC8dJO8iUFgv5huikDBykFAiUFgP5huikC8dJO8iUFgv5huikDBykFAiUFgP5huikDBykFAiUFgv5huikC8dJO8001iv4lBCEC8dJO8001iv4lBCEDBykFAiUFgv5huikC8dJO8001iv4lBCEDBykFAiUFgv5huikDBykFA001iv4lBCEC8dJO8001iv8dLt768dJO8001iv8dLt77BykFA001iv4lBCEC8dJO8001iv8dLt77BykFA001iv4lBCEDBykFA001iv8dLt77BykFA001iP8dLt77BykFA001iP4lBCEDBykFA001iv8dLt768dJO8001iP4lBCEC8dJO8001iP8dLt768dJO8001iv8dLt77BykFA001iP4lBCEDBykFAiUFgP5huikDBykFA001iv8dLt768dJO8iUFgP5huikC8dJO8001iP4lBCEC8dJO8001iv8dLt77BykFAiUFgP5huikDBykFAiUFgv5huikDBykFA001iv8dLt768dJO8iUFgv5huikC8dJO8iUFgP5huikC8dJO8001iv8dLt77BykFAiUFgv5huikDBykFA001iv4lBCEDBykFA001iv8dLt768dJO8001iv4lBCEC8dJO8iUFgv5huikC8dJO8"
+}

@@ -3,6 +3,8 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { shadowInputHash } from './shadowSun.js';
+import { windShadowKey } from '../mesh/sway.js';
+import { createWind } from '../world/wind.js';
 import { DrawList, DRAW_STATIC, DRAW_VOXEL, DRAW_INSTANCED } from '../mesh/DrawList.js';
 import { makeOk } from '../test/assert.js';
 
@@ -66,6 +68,15 @@ ok('meshVersion bump (in-place rebuild) -> new key', h() !== base);
 meshA.meshVersion = 1;
 it = fill();
 ok('restored -> original key', h() === base);
+{ // FOLIAGE-SWAY-01: sway lives in uniforms, so the wind clock (quantised) is part of the key while wind blows
+  const f = createWind({ speed: 3, dir: 0.5 }), calm = createWind({ speed: 0 });
+  const k = (w, t) => { const o = shadowInputHash(list, M, 1, mk(), undefined, windShadowKey(w, t)); return o[0] + ':' + o[1]; };
+  it = fill();
+  ok('calm wind: key independent of time', k(calm, 1) === k(calm, 50) && k(calm, 1) === base);
+  ok('wind on: key changes with the clock', k(f, 1.0) !== k(f, 1.5));
+  ok('wind on: same quantum -> same key', k(f, 1.00) === k(f, 1.04));
+  ok('wind on differs from calm', k(f, 1) !== k(calm, 1));
+}
 {
   const a = shadowInputHash(list, M, 1, mk()), b = shadowInputHash(list, M, 2, mk());
   ok('structVersion change -> new key', a[0] !== b[0] || a[1] !== b[1]);

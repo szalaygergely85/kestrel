@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // US-057: one-command test runner (docs/backlog.md row 30a).
 //
-//   node tools/run-tests.mjs [--filter <substr>] [--json <file>] [--timeout-ms <n>]
+//   node tools/run-tests.mjs [--filter a,b | --filter a --filter b] [--json <file>] [--timeout-ms <n>]
 //
 // Finds every `*.test.js` / `*.test.mjs` under engine/, game/, tools/
 // (skipping node_modules, design/preview and .git), runs each in its own
@@ -27,6 +27,9 @@
 // requirement everywhere run-tests.mjs runs (see docs/architecture.md
 // section 11).
 //
+// A suite is FAIL on a nonzero exit code OR a "<tool> FAILED" line; each suite's
+// line is written the moment it finishes (streamed), the summary comes last.
+//
 // WARN: this project's suites are hand-rolled (no test framework) and most
 // print a line starting with "FAIL" per failed check (see e.g.
 // engine/core/behaviours.test.js: `console.error('FAIL:', f)`) while also
@@ -36,7 +39,9 @@
 // - a real risk, not a hypothetical one, given how many suites in this repo
 // follow this exact hand-rolled pattern.
 //
-// --filter <substr>: only run suites whose path contains the substring.
+// --filter <substr>[,<substr>...]: only run suites whose path contains ANY of the
+//   substrings (comma list = OR; --filter may be repeated). A filter that
+//   matches 0 suites prints `no suites match "<f>"` and the run exits 1.
 // --json <file>: write a JSON report - for each suite: name, status, ms,
 //   and (on FAIL/TIMEOUT/WARN) the last 20 lines of its combined
 //   stdout+stderr.
@@ -57,10 +62,10 @@ const SKIP_DIRS = new Set(['node_modules', '.git']);
 const SKIP_PATH_FRAGMENTS = ['design/preview'];
 
 function parseArgs(argv) {
-  const opts = { filter: null, json: null, timeoutMs: null };
+  const opts = { filter: [], json: null, timeoutMs: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--filter') opts.filter = argv[++i];
+    if (a === '--filter') opts.filter.push(...String(argv[++i] ?? '').split(',').map((x) => x.trim()).filter(Boolean));
     else if (a === '--json') opts.json = argv[++i];
     else if (a === '--timeout-ms') opts.timeoutMs = Number(argv[++i]);
   }
@@ -114,7 +119,7 @@ function collectSuites(root, filter) {
   // (see WARN_ON_FAIL).
   const typecheck = path.join(root, 'tools', 'typecheck.mjs');
   if (fs.existsSync(typecheck)) files.push(typecheck);
-  if (filter) files = files.filter((f) => toPosix(path.relative(root, f)).includes(filter));
+  if (filter && filter.length) files = files.filter((f) => { const r = toPosix(path.relative(root, f)); return filter.some((x) => r.includes(x)); });
   return files;
 }
 
@@ -150,6 +155,11 @@ function runSuite(file, timeoutMs, warnOnFail) {
         resolve({ status: warnOnFail ? 'WARN' : 'FAIL', ms, output });
         return;
       }
+      // Exit 0 but a "<tool> FAILED" verdict line (check-deps style): FAIL (AUD-07); not for *.test.* (fixtures print it on purpose).
+      if (!/\.test\.(js|mjs)$/.test(file) && /(^|\n)[\w./-]+ FAILED\b/.test(output)) {
+        resolve({ status: warnOnFail ? 'WARN' : 'FAIL', ms, output });
+        return;
+      }
       // Exit 0: check for a suite that printed a FAIL-shaped line anyway.
       const printedFail = /(^|\n)\s*FAIL\b/.test(output);
       resolve({ status: printedFail ? 'WARN' : 'PASS', ms, output });
@@ -166,6 +176,11 @@ function runSuite(file, timeoutMs, warnOnFail) {
   });
 }
 
+/** Synchronous write so each suite line reaches a pipe/file as soon as the suite ends (AUD-07). */
+function emit(line) {
+  try { fs.writeSync(1, line + '\n'); } catch { console.log(line); }
+}
+
 function lastLines(text, n) {
   const lines = text.split(/\r?\n/);
   return lines.slice(Math.max(0, lines.length - n));
@@ -180,12 +195,19 @@ async function main() {
   const suites = collectSuites(ROOT, opts.filter);
   const results = [];
   let anyFail = false;
+  if (opts.filter.length) {
+    // a typo'd filter must not pass a gate silently: report each dead term, fail if nothing ran
+    for (const f of opts.filter) {
+      if (!collectSuites(ROOT, [f]).length) console.log(`no suites match "${f}"`);
+    }
+    if (!suites.length) process.exit(1);
+  }
 
   for (const file of suites) {
     const name = toPosix(path.relative(ROOT, file));
     const { status, ms, output } = await runSuite(file, timeoutMs, WARN_ON_FAIL.has(name));
     if (status === 'FAIL' || status === 'TIMEOUT') anyFail = true;
-    console.log(`${status} ${name} ${ms}ms`);
+    emit(`${status} ${name} ${ms}ms`);
     results.push({ name, status, ms, output });
   }
 

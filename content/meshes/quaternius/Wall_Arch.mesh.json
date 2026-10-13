@@ -1,0 +1,38 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Wall_Arch",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Wall_Arch.mesh.bin",
+  "triCount": 196,
+  "bbox": [
+    -1,
+    -0.06405,
+    0,
+    1,
+    0,
+    3
+  ],
+  "ranges": [
+    {"count": 196, "part": "Wall_Arch#0", "start": 0}
+  ],
+  "matKeys": [
+    "MI_WoodTrim"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "ivy",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "AACAv28Sg70AAAAAAACAP28Sg70AAAAAAACAP28Sg70AAEBAAACAv28Sg70AAAAAAACAP28Sg70AAEBAAACAv28Sg70AAEBAAACAP28Sg70AAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAEBAAACAP28Sg70AAAAAAACAPwAAAAAAAEBAAACAP28Sg70AAEBAAACAPwAAAAAAAAAAAACAvwAAAAAAAAAAAACAvwAAAAAAAEBAAACAPwAAAAAAAAAAAACAvwAAAAAAAEBAAACAPwAAAAAAAEBAAACAvwAAAAAAAAAAAACAv28Sg70AAAAAAACAv28Sg70AAEBAAACAvwAAAAAAAAAAAACAv28Sg70AAEBAAACAvwAAAAAAAEBAAACAv28Sg70AAEBAAACAP28Sg70AAEBAAACAPwAAAAAAAEBAAACAv28Sg70AAAAAAACAPwAAAAAAAAAAAACAP28Sg70AAAAAAACAv28Sg70AAEBAAACAPwAAAAAAAEBAAACAvwAAAAAAAEBAAACAv28Sg70AAAAAAACAvwAAAAAAAAAAAACAPwAAAAAAAAAA"
+}

@@ -106,13 +106,18 @@ function transpose3(a, out) {
   out[1] = a10; out[2] = a20; out[3] = a01; out[5] = a21; out[6] = a02; out[7] = a12;
 }
 
-// Builds R(rot) = Rz(rz) * Ry(ry) * Rx(rx) into `out`.
-export function setRot(rx, ry, rz, out) {
-  setRz(rz, _Rz);
-  setRy(ry, _Ry);
-  setRx(rx, _Rx);
+// Builds R(rot) = Rz(rz) * Ry(ry) * Rx(rx) into `out` from the angles in scratch `_ang[0..2]` (shared body).
+const _ang = new Float64Array(3);
+function buildRot(out) {
+  setRz(_ang[2], _Rz);
+  setRy(_ang[1], _Ry);
+  setRx(_ang[0], _Rx);
   matMul3(_Ry, _Rx, _RyRx);
   matMul3(_Rz, _RyRx, out);
+}
+export function setRot(rx, ry, rz, out) {
+  _ang[0] = rx; _ang[1] = ry; _ang[2] = rz;
+  buildRot(out);
 }
 
 /**
@@ -122,19 +127,24 @@ export function setRot(rx, ry, rz, out) {
  */
 const _rotOut = new Float64Array(MAX_VOX_PARTS * 3);
 const _posOut = new Float64Array(MAX_VOX_PARTS * 3);
-function samplePose(pm, inst) {
+// RIG-04b: same as setRot, but the angles are copied from `_rotOut[base..base+2]` (typed array to typed array) instead of being
+// passed: double arguments to a non-inlined function are boxed (a HeapNumber per call). Shares buildRot with setRot.
+function setRotFromPose(base, out) {
+  _ang[0] = _rotOut[base]; _ang[1] = _rotOut[base + 1]; _ang[2] = _rotOut[base + 2];
+  buildRot(out);
+}
+function sampleInto(pm, clipIdx, frameIn, tMs, rotOut, posOut) {
   const partCount = pm.partCount;
-  const clipIdx = inst.clip;
   if (clipIdx === undefined || clipIdx < 0 || !pm.clips || clipIdx >= pm.clips.length) {
-    for (let i = 0; i < partCount * 3; i++) { _rotOut[i] = 0; _posOut[i] = 0; }
+    for (let i = 0; i < partCount * 3; i++) { rotOut[i] = 0; posOut[i] = 0; }
     return;
   }
   const clip = pm.clips[clipIdx];
   const n = clip.n;
-  let frame = inst.frame | 0;
+  let frame = frameIn | 0;
   if (frame < 0) frame = 0;
   if (frame >= n) frame = n - 1;
-  const alpha = clip.step ? 0 : Math.max(0, Math.min(1, inst.tMs / clip.durMs[frame]));
+  const alpha = clip.step ? 0 : Math.max(0, Math.min(1, tMs / clip.durMs[frame]));
   const next = (frame + 1 < n) ? (frame + 1) : (clip.loop ? 0 : frame);
   const stride = partCount * 6;
   for (let p = 0; p < partCount; p++) {
@@ -144,8 +154,37 @@ function samplePose(pm, inst) {
       const v0 = clip.keys[base + c];
       const v1 = clip.keys[baseN + c];
       const v = v0 + (v1 - v0) * alpha;
-      if (c < 3) _rotOut[p * 3 + c] = v; else _posOut[p * 3 + (c - 3)] = v;
+      if (c < 3) rotOut[p * 3 + c] = v; else posOut[p * 3 + (c - 3)] = v;
     }
+  }
+}
+
+// WILD-01 (38.31 item 8): pose crossfade. `inst.fromClip >= 0 && inst.fromW > 0` lerps component-wise
+// from the old clip pose: v = cur + (from - cur) * fromW. Otherwise the output is byte-identical to before.
+const _fromRot = new Float64Array(MAX_VOX_PARTS * 3);
+const _fromPos = new Float64Array(MAX_VOX_PARTS * 3);
+function sampleClip(pm, inst) {
+  sampleInto(pm, inst.clip, inst.frame, inst.tMs, _rotOut, _posOut);
+  const fw = inst.fromW;
+  if (fw > 0 && inst.fromClip >= 0) {
+    sampleInto(pm, inst.fromClip, inst.fromFrame, inst.fromTMs, _fromRot, _fromPos);
+    const n3 = pm.partCount * 3;
+    for (let i = 0; i < n3; i++) {
+      _rotOut[i] = _rotOut[i] + (_fromRot[i] - _rotOut[i]) * fw;
+      _posOut[i] = _posOut[i] + (_fromPos[i] - _posOut[i]) * fw;
+    }
+  }
+}
+
+// TALK-E1 (38.28 item 7): optional extra rotation (degrees, part-local) added on top of the clip rotation
+// of one part (`inst.addPart` = part index, `addRx/Ry/Rz`). Undefined/-1 addPart -> byte-identical output.
+function samplePose(pm, inst) {
+  sampleClip(pm, inst);
+  const ap = inst.addPart;
+  if (ap >= 0 && ap < pm.partCount) {
+    _rotOut[3 * ap] += inst.addRx;
+    _rotOut[3 * ap + 1] += inst.addRy;
+    _rotOut[3 * ap + 2] += inst.addRz;
   }
 }
 
@@ -182,7 +221,7 @@ export function computeVoxelPose(pm, inst, out) {
     const rx = _rotOut[p * 3], ry = _rotOut[p * 3 + 1], rz = _rotOut[p * 3 + 2];
     const posX = _posOut[p * 3], posY = _posOut[p * 3 + 1], posZ = _posOut[p * 3 + 2];
 
-    setRot(rx, ry, rz, _Rrot);
+    setRotFromPose(p * 3, _Rrot);
     const rotZero = rx === 0 && ry === 0 && rz === 0;
 
     const abase = p * 9, bbase = p * 3;

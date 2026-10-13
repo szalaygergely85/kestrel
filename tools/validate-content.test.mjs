@@ -10,9 +10,9 @@
 // checks themselves being too strict - see validate-content.mjs's "3. Voxel
 // models" comment for a real example of a check that started out too
 // strict before this fixture existed).
-import { validateContent, loadQuestFiles } from './validate-content.mjs';
+import { validateContent, loadQuestFiles, validateDialogueFiles, validateBarks } from './validate-content.mjs';
 import { makeOk } from '../engine/test/assert.js';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -141,6 +141,19 @@ function assetsWithRingWorld() {
     structures: [{ id: 'keepPlaced', level: 'keep', origin: { x: 0, y: 0, z: 0 } }],
   };
   return a;
+}
+
+// GS-01d: terrainFloor flag rule.
+{
+  const a = assetsWithRingWorld();
+  a.levels.keep.legend.o.zone = 'outside'; a.levels.keep.legend.o.terrainFloor = true;
+  ok('terrainFloor on an equal-height outside ring is accepted', !validateContent(a).errors.some((e) => e.includes('terrainFloor')));
+  a.levels.keep.legend.g = { floorH: 2.7, solid: false, zone: 'outside', terrainFloor: true };
+  a.levels.keep.rows = ['ooo', 'ogo', 'ooo'];
+  ok('terrainFloor cell off the ring height is rejected', hasFinding(validateContent(a).errors, ['rows[1][1]', 'terrainFloor', 'height step']));
+  const b = assetsWithRingWorld();
+  b.levels.keep.legend['#'].terrainFloor = true;
+  ok('terrainFloor on a solid / non-outside cell is rejected', hasFinding(validateContent(b).errors, ["legend['#']", 'terrainFloor']));
 }
 
 // 1. Clean fixture: zero errors.
@@ -464,6 +477,9 @@ const questCases = [
   ['duplicate objective', (a, q) => { q[0].def.objectives[1].id = 'lamp'; }, ['m1.quest.json', 'duplicate objective']],
   ['empty objective text', (a, q) => { q[0].def.objectives[0].text = ' '; }, ['objectives[lamp].text', 'required']],
   ['non-ASCII objective', (a, q) => { q[0].def.objectives[0].text = '\u2026'; }, ['objectives[lamp].text', 'ASCII']],
+  ['objective text over 38', (a, q) => { q[0].def.objectives[0].text = 'x'.repeat(39); }, ['objectives[lamp].text', '39 chars']],
+  ['item name over 14', (a) => { a.items.defs.sword.name = 'x'.repeat(15); }, ['items.defs.sword.name', '15 chars']],
+  ['item desc over 38', (a) => { a.items.defs.sword.desc = 'x'.repeat(39); }, ['items.defs.sword.desc', '39 chars']],
   ['missing item name', (a) => { delete a.items.defs.sword.name; }, ['items.defs.sword.name', 'required']],
   ['invalid item description', (a) => { a.items.defs.sword.desc = 42; }, ['items.defs.sword.desc', 'required']],
   ['mismatched item id', (a) => { a.items.defs.sword.id = 'lamp'; }, ['items.defs.sword.id', 'match']],
@@ -503,6 +519,41 @@ for (const [name, breakFixture, finding] of areaCases) {
   const { errors } = validateContent(f.a, { quests: f.quests, areas: f.areas });
   ok('quest area resolves a world trigger as well as a placed point marker', errors.length === 0, JSON.stringify(errors));
 }
+// QL-02: givers/hand-ins, rewards, requires chain.
+{
+  const gq = (id, extra = {}) => ({ path: id + '.quest.json', def: { version: 1, id, objectives: [{ id: 'o', text: 'Go', when: { type: 'flag', id: 'f', equals: true } }], ...extra } });
+  const run = (mut) => { const f = questFixture(); mut(f); return validateContent(f.a, { quests: f.quests, areas: f.areas }).errors; };
+  ok('QL-02 valid giver/reward/requires passes', run((f) => { f.quests.push(gq('sq.a', { giver: { npc: 'boar1' }, reward: { items: [{ id: 'sword', n: 1 }] }, requires: [{ quest: 'm1', step: 'lamp' }] })); }).length === 0);
+  ok('QL-02 unknown giver', hasFinding(run((f) => { f.quests.push(gq('sq.a', { giver: { npc: 'nobody' } })); }), ['giver.npc', 'nobody']));
+  ok('QL-02 unknown hand-in', hasFinding(run((f) => { f.quests.push(gq('sq.a', { giver: { npc: 'boar1', turnIn: 'ghost' } })); }), ['giver.turnIn', 'ghost']));
+  ok('QL-02 unknown reward item', hasFinding(run((f) => { f.quests.push(gq('sq.a', { reward: { items: [{ id: 'nope', n: 1 }] } })); }), ['reward.items[0].id', 'nope']));
+  ok('QL-02 duplicate quest id', hasFinding(run((f) => { f.quests.push(gq('m1')); }), ['duplicate quest id']));
+  ok('QL-02 unknown required quest', hasFinding(run((f) => { f.quests.push(gq('sq.a', { requires: [{ quest: 'zz', done: true }] })); }), ['required quest "zz"']));
+  ok('QL-02 unknown required step', hasFinding(run((f) => { f.quests.push(gq('sq.a', { requires: [{ quest: 'm1', step: 'zz' }] })); }), ['no step "zz"']));
+  ok('QL-02 requires cycle', hasFinding(run((f) => { f.quests.push(gq('sq.a', { requires: [{ quest: 'sq.b', done: true }] }), gq('sq.b', { requires: [{ quest: 'sq.a', done: true }] })); }), ['cycle']));
+}
+// QL-T2: site placement, reachability, gate key.
+{
+  const gq = (id, extra = {}) => ({ path: id + '.quest.json', def: { version: 1, id, objectives: [{ id: 'o', text: 'Go', when: { type: 'flag', id: 'f', equals: true } }], ...extra } });
+  const run = (mut, sites = { s1: { entity: 'boar1' } }) => {
+    const f = questFixture();
+    f.a.items.defs['key.gate'] = { id: 'key.gate', name: 'Gate key', desc: 'Opens the gate.' };
+    mut(f);
+    return validateContent(f.a, { quests: f.quests, areas: f.areas, sites });
+  };
+  const gate = { reward: { items: [{ id: 'key.gate', n: 1 }] } };
+  ok('QL-T2 valid site passes', run((f) => { f.quests.push(gq('sq.a', { site: 's1', giver: { npc: 'boar1' } })); }).errors.length === 0);
+  ok('QL-T2 unknown site', hasFinding(run((f) => { f.quests.push(gq('sq.a', { site: 'zz', giver: { npc: 'boar1' } })); }).errors, ['sq.a.quest.json.site', 'zz']));
+  ok('QL-T2 site entity not placed', hasFinding(run((f) => { f.quests.push(gq('sq.a', { site: 's1', giver: { npc: 'boar1' } })); }, { s1: { entity: 'ghost' } }).errors, ['entity "ghost"', 'not placed']));
+  ok('QL-T2 unreachable (cycle) quest', hasFinding(run((f) => { f.quests.push(gq('sq.a', { requires: [{ quest: 'sq.b', done: true }] }), gq('sq.b', { requires: [{ quest: 'sq.a', done: true }] })); }).errors, ['not reachable', 'sq.a']));
+  ok('QL-T2 chain from the start is reachable', !hasFinding(run((f) => { f.quests.push(gq('sq.a', { requires: [{ quest: 'm1', step: 'lamp' }] }), gq('sq.b', { requires: [{ quest: 'sq.a', done: true }] })); }).errors, ['not reachable']));
+  ok('QL-T2 no gate key -> info, no error', (() => { const r = run(() => {}); return r.errors.length === 0 && r.infos.includes('gate key not assigned yet'); })());
+  ok('QL-T2 gate key by the last main quest passes', (() => { const r = run((f) => { f.quests.push(gq('mq.a', { main: true, ...gate })); }); return r.errors.length === 0 && r.infos.length === 0; })());
+  ok('QL-T2 gate key by a side quest', hasFinding(run((f) => { f.quests.push(gq('sq.a', gate)); }).errors, ['key.gate', 'last main quest']));
+  ok('QL-T2 gate key by a non-last main quest', hasFinding(run((f) => { f.quests.push(gq('mq.a', { main: true, ...gate }), gq('mq.b', { main: true, requires: [{ quest: 'mq.a', done: true }] })); }).errors, ['key.gate', 'last main quest', 'mq.b']));
+  ok('QL-T2 gate key given twice', hasFinding(run((f) => { f.quests.push(gq('mq.a', { main: true, ...gate }), gq('mq.b', { main: true, ...gate })); }).errors, ['exactly once']));
+  ok('QL-T2 unknown gear/reward item id', hasFinding(run((f) => { f.quests.push(gq('sq.a', { reward: { items: [{ id: 'gear.nope', n: 1 }] } })); }).errors, ['reward.items[0].id', 'gear.nope']));
+}
 {
   const dir = mkdtempSync(join(tmpdir(), 'kestrel-quest-lint-'));
   try {
@@ -522,6 +573,103 @@ for (const [name, breakFixture, finding] of areaCases) {
     const brokenAreas = loadQuestFiles(dir);
     ok('scanner diagnoses malformed alias JSON and retains quests', brokenAreas.quests.length === 1 && brokenAreas.areas === null && hasFinding(brokenAreas.errors, ['areas.json', 'JSON parse failed']));
   } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+
+// DIALOGUE-01a2: dialogue clip cross-check against the NPC model (fixture model, the real bear model is separate).
+{
+  const dir = mkdtempSync(join(tmpdir(), 'vc-dialogue-'));
+  try {
+    const bear = JSON.parse(readFileSync(new URL('../content/dialogue/bear.dialogue.json', import.meta.url), 'utf8'));
+    const mk = (animNames) => ({ bear: { voxel: { animations: Object.fromEntries(animNames.map((n) => [n, {}])) } } });
+    const all = ['idle', 'talk', 'listen', 'wave', 'laugh'];
+    writeFileSync(join(dir, 'bear.dialogue.json'), JSON.stringify(bear));
+    const good = validateDialogueFiles(dir, mk(all));
+    ok('dialogue clip check: bear file passes against a model with all clips', good.errors.length === 0 && good.warnings.length === 0 && good.checks > 3, good.errors.join('|'));
+    const noLaugh = validateDialogueFiles(dir, mk(all.filter((n) => n !== 'laugh')));
+    ok('dialogue clip check: missing node clip "laugh" is an error', hasFinding(noLaugh.errors, ['clip "laugh"', 'model "bear"']));
+    const noTalk = validateDialogueFiles(dir, mk(['idle', 'wave', 'laugh']));
+    ok('dialogue clip check: missing runtime clips talk/listen are errors', hasFinding(noTalk.errors, ['clip "talk"']) && hasFinding(noTalk.errors, ['clip "listen"']));
+    const unreg = validateDialogueFiles(dir, {});
+    ok('dialogue clip check: unregistered model warns, no error', unreg.errors.length === 0 && unreg.warnings.some((w) => w.includes('not registered')));
+    const broken = { ...bear, nodes: { ...bear.nodes, 'bear.repeat': { ...bear.nodes['bear.repeat'], lines: ['x'.repeat(60)] } } };
+    writeFileSync(join(dir, 'bear.dialogue.json'), JSON.stringify(broken));
+    ok('dialogue file check: engine rules (line > 56) are reported', hasFinding(validateDialogueFiles(dir, mk(all)).errors, ['60 chars']));
+    // QG-03: q.<id>.<op> keys name a loaded giver quest and a known op
+    writeFileSync(join(dir, 'bear.dialogue.json'), JSON.stringify(bear));
+    ok('quest keys: bear file passes with the giver quest loaded', validateDialogueFiles(dir, mk(all), ['burl.boars', 'tower.blade', 'sq.burl.blue']).errors.length === 0);
+    ok('quest keys: unknown quest id is an error', hasFinding(validateDialogueFiles(dir, mk(all), ['other']).errors, ['q.burl.boars.ready', 'no giver quest']));
+    const badOp = JSON.parse(JSON.stringify(bear)); badOp.nodes['bear.q.ready.6'].setFlag = 'q.burl.boars.reward';
+    writeFileSync(join(dir, 'bear.dialogue.json'), JSON.stringify(badOp));
+    ok('quest keys: unknown op is an error', hasFinding(validateDialogueFiles(dir, mk(all), ['burl.boars', 'tower.blade', 'sq.burl.blue']).errors, ['q.burl.boars.reward', 'unknown quest op']));
+    // CH1-05: `s.<key>` state flags and the `barks` kind
+    writeFileSync(join(dir, 'bear.dialogue.json'), JSON.stringify(bear));
+    ok('s. keys: bear file passes (s.burl.follow, s.waystone.waystone.woken ...)', validateDialogueFiles(dir, mk(all), ['burl.boars', 'tower.blade', 'sq.burl.blue']).errors.length === 0);
+    const badS = JSON.parse(JSON.stringify(bear)); badS.nodes['bear.follow.3'].setFlag = 's.1bad key';
+    writeFileSync(join(dir, 'bear.dialogue.json'), JSON.stringify(badS));
+    ok('s. keys: a bad s. key is an error', validateDialogueFiles(dir, mk(all), ['burl.boars', 'tower.blade', 'sq.burl.blue']).errors.length > 0);
+    writeFileSync(join(dir, 'bear.dialogue.json'), JSON.stringify(bear));
+    const barks = JSON.parse(readFileSync(new URL('../content/dialogue/bear.barks.json', import.meta.url), 'utf8'));
+    writeFileSync(join(dir, 'bear.barks.json'), JSON.stringify(barks));
+    const gb = validateDialogueFiles(dir, mk(all), ['burl.boars', 'tower.blade', 'sq.burl.blue']);
+    ok('barks kind: the real bear.barks.json passes', gb.errors.length === 0, gb.errors.join('|'));
+    const b1 = JSON.parse(JSON.stringify(barks)); b1.barks['bear.call'][0].who = 'nobody'; b1.barks['bear.walk1'][0].text = 'x'.repeat(60);
+    writeFileSync(join(dir, 'bear.barks.json'), JSON.stringify(b1));
+    const bad = validateDialogueFiles(dir, mk(all), ['burl.boars', 'tower.blade', 'sq.burl.blue']).errors;
+    ok('barks kind: unknown speaker and a 60-char line are errors', hasFinding(bad, ['unknown speaker']) && hasFinding(bad, ['60 chars']), bad.join('|'));
+    ok('barks kind: wrong kind / empty barks are errors', validateBarks({ kind: 'dialogue' }).errors.length === 1 && validateBarks({ kind: 'barks', speakers: {}, barks: {} }).errors.length > 0);
+    rmSync(join(dir, 'bear.barks.json'));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+
+// QUEST-LOG-TEXT-CHECK-01: real content regression (first offender path)
+{
+  const { readFileSync } = await import('node:fs');
+  const read = (p) => JSON.parse(readFileSync(new URL(p, import.meta.url), 'utf8'));
+  const q = read('../content/quests/m1.quest.json');
+  const badObj = q.objectives.find((o) => o.text.length > 38);
+  ok('m1.quest.json objectives <= 38 chars', !badObj, badObj && `content/quests/m1.quest.json.objectives[${badObj.id}].text (${badObj.text.length})`);
+  const { loadDesignAssets } = await import('./validate-content.mjs');
+  const defs = (await loadDesignAssets()).items?.defs || {};
+  const badName = Object.entries(defs).find(([, d]) => d.name.length > 14);
+  ok('item names <= 14 chars', !badName, badName && `items.defs.${badName[0]}.name`);
+  const badDesc = Object.entries(defs).find(([, d]) => d.desc.length > 38);
+  ok('item descs <= 38 chars', !badDesc, badDesc && `items.defs.${badDesc[0]}.desc`);
+}
+
+// EQ-11: loot.json validation (real file + real item defs, then broken copies)
+{
+  const { loadDesignAssets } = await import('./validate-content.mjs');
+  const A = await loadDesignAssets();
+  const loot = JSON.parse(readFileSync(new URL('../content/items/loot.json', import.meta.url), 'utf8'));
+  const run = (lootFile) => validateContent(A, { lootFile }).errors.filter((e) => String(e).includes('loot.json'));
+  ok('real loot.json validates', run(loot).length === 0, JSON.stringify(run(loot)));
+  ok('loot rates 4/3/8 %', loot.sources.boar.rolls[0].chance === 0.04 && loot.sources.container.rolls[0].chance === 0.03 && loot.sources.chest.rolls[0].chance === 0.08);
+  const bad = (name, fn, text) => { const c = JSON.parse(JSON.stringify(loot)); fn(c); const e = run(c); ok(`loot lint: ${name}`, e.some((x) => String(x).includes(text)), JSON.stringify(e)); };
+  bad('unknown item', (c) => { c.sources.chest.rolls[1].give.item = 'nope'; }, 'not found');
+  bad('chance > 1', (c) => { c.sources.boar.rolls[0].chance = 1.5; }, 'chance');
+  bad('tier odds sum', (c) => { c.tiers.fine = 0.2; }, 'sum to 1');
+  bad('slot without gear', (c) => { c.slots.push('off'); }, 'no gear item');
+  bad('crafting-free fixed ref', (c) => { c.sources.boar.fixed[0].item = 'ghost'; }, 'fixed');
+}
+
+
+// WMP-04: region lint. One fixture per case, each must give exactly its finding; the clean control gives none.
+{
+  const { lintRegions } = await import('./validate-content.mjs');
+  const q = (o = {}) => ({ id: 'sq.reg.aa', title: 'T', returnText: 'Back', site: 'relay_aa', lines: { offer: ['hi'], done: ['bye'] }, steps: [{ journal: 'j', objText: 'o', template: 'kill', params: { kind: 'boar', count: 1 } }], ...o });
+  const base = () => ({ geo: { bounds: { pts: [[0, 0], [100, 0], [100, 100], [0, 100]] }, regions: [{ id: 'aa', r: [10, 10, 60, 60] }] }, quests: [q()], sites: { relay_aa: {}, relay_bb: {} }, relayIds: ['ws_aa'], itemIds: new Set(['arrow']), beastKinds: new Set(['boar']),
+    camps: [{ id: 'campFar.aa', region: 'aa', at: [30, 30], members: [{ id: 'm1', at: [2, 2] }] }] });
+  const one = (name, mut, text) => { const o = base(); mut(o); const e = lintRegions(o); ok('region lint: ' + name, e.length === 1 && e[0].includes(text), JSON.stringify(e)); };
+  ok('region lint: clean control = 0 findings', lintRegions(base()).length === 0, JSON.stringify(lintRegions(base())));
+  one('relay without errand', (o) => { o.relayIds.push('ws_bb'); }, 'ws_bb has no errand');
+  one('unknown kill kind', (o) => { o.quests[0].steps[0].params.kind = 'dragon'; }, "kill kind 'dragon'");
+  one('unknown site', (o) => { o.quests[0].site = 'relay_zz'; }, "site 'relay_zz'");
+  one('unknown deliver-to', (o) => { o.quests[0].steps = [{ journal: 'j', objText: 'o', template: 'deliver', params: { item: 'arrow', to: 'relay_zz', count: 1 } }]; }, "deliver-to 'relay_zz'");
+  one('unknown deliver item', (o) => { o.quests[0].steps = [{ journal: 'j', objText: 'o', template: 'deliver', params: { item: 'ghost', to: 'relay_bb', count: 1 } }]; }, "item 'ghost'");
+  one('camp outside bounds', (o) => { o.camps[0].at = [150, 30]; o.camps[0].members = []; o.geo.regions[0].r = [10, 10, 200, 60]; }, 'outside the bounds polygon');
+  one('camp outside region', (o) => { o.camps[0].at = [80, 80]; o.camps[0].members = []; }, 'outside region aa');
+  one('empty title', (o) => { o.quests[0].title = ''; }, 'title is empty');
+  one('NEEDS WRITER left', (o) => { o.quests[0].steps[0].journal = 'NEEDS WRITER'; }, 'NEEDS WRITER');
 }
 
 console.log(`${pass} passed, ${fail} failed`);

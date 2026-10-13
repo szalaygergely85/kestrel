@@ -1,8 +1,12 @@
 {
-  "1": "rope",
-  "2": "linen_dark",
-  "3": "brass_hot",
-  "4": "linen",
-  "5": "canvas",
-  "6": "linen_light"
+  "1": "straw_light",
+  "2": "straw",
+  "3": "rope",
+  "4": "brass",
+  "5": "tarp_light",
+  "6": "balloon",
+  "7": "balloon_light",
+  "8": "balloon_dark",
+  "9": "canvas_burnt",
+  "10": "wood"
 }

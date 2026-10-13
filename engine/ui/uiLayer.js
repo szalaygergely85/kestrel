@@ -37,6 +37,10 @@ export const UI_GRID_MAX_COLS = 320;
 //   128 = glyph-only (glyph + fg over the scene bg - only the crosshair uses it)
 export const GLYPH_BG_ALPHA = 128;
 
+// OB-051 (docs/architecture.md 38.48): bit 7 of a UI cell's fg alpha marks a
+// cell of a 2x2 "scaled glyph" block (glyphIdx is 0..94, so the bit is free).
+export const UI_SCALE2_BIT = 128;
+
 /** Clamps `cols` to [96, 320] - the range the architecture note (17.1) calls for. */
 export function clampUiCols(cols) {
   let c = Math.round(cols);
@@ -85,6 +89,21 @@ export function createUiLayer(uiGrid) {
       if (x < 0 || x >= cols || y < 0 || y >= rows) return;
       cells.setCell(x, y, glyph, fg, '#000000');
       cells.bg[(y * cols + x) * 4 + 3] = GLYPH_BG_ALPHA;
+    },
+
+    // OB-051: one glyph drawn 2x2 cells big. Writes the block at the even-snapped
+    // origin (x & ~1, y & ~1) and flags every cell with UI_SCALE2_BIT; the present
+    // paths pick the quadrant from cell parity. Out-of-range cells are skipped.
+    setCellScaled(x, y, glyph, fg, bg) {
+      const x0 = x & ~1, y0 = y & ~1;
+      for (let dy = 0; dy < 2; dy++) {
+        for (let dx = 0; dx < 2; dx++) {
+          const cx = x0 + dx, cy = y0 + dy;
+          if (cx < 0 || cx >= cols || cy < 0 || cy >= rows) continue;
+          cells.setCell(cx, cy, glyph, fg, bg);
+          cells.fg[(cy * cols + cx) * 4 + 3] |= UI_SCALE2_BIT;
+        }
+      }
     },
 
     // Per-frame reset to fully transparent (mask=0), never allocates. Unlike

@@ -59,7 +59,7 @@ export function createAmbientMotes(world, particles, opts = {}) {
   return {
     handle,
     step(px, py, pz) {
-      if (disposed || handle < 0) return;
+      if (disposed || handle < 0 || !Number.isFinite(px) || !Number.isFinite(py) || !Number.isFinite(pz)) return; // never park the emitter at NaN
       particles.setEmitterPos(handle, px, py, pz);
       if ((frame % recheckEvery) === 0) {
         let lit = true;

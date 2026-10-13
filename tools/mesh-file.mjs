@@ -17,6 +17,7 @@ export function readMeshJSON(file) {
   const full = { kind: meta.kind, schema: meta.schema, id: meta.id, nextId: meta.nextId, ...JSON.parse(JSON.stringify(meshToJSON(mesh))) };
   if (meta.colliderParts) full.colliderParts = meta.colliderParts; // importer hint for withCollision, kept in the meta
   if (meta.colliderHull) full.colliderHull = meta.colliderHull; // S8-B2-16: hull-flag hint for withCollision, kept in the meta
+  if (meta.lods) full.lods = meta.lods; // QUAT-LOD-01: LOD1 pointer(s) {mesh,ratio,tris}, kept in the meta (not used for drawing yet)
   for (const k of ROUND) if (full[k]) full[k] = full[k].map((v) => Math.round(v * 1e5) / 1e5);
   return full;
 }
@@ -25,7 +26,7 @@ export function readMeshJSON(file) {
 export function renderMeshFiles(file, full) {
   const binName = path.basename(file).replace(/\.mesh\.json$/, '.mesh.bin');
   const mesh = meshFromJSON(full);
-  const meta = { kind: 'mesh', schema: full.schema ?? 1, id: full.id, nextId: full.nextId ?? 1, ...meshBinMeta(mesh, binName), ...(full.colliderParts ? { colliderParts: full.colliderParts } : {}), ...(full.colliderHull ? { colliderHull: full.colliderHull } : {}) };
+  const meta = { kind: 'mesh', schema: full.schema ?? 1, id: full.id, nextId: full.nextId ?? 1, ...meshBinMeta(mesh, binName), ...(full.colliderParts ? { colliderParts: full.colliderParts } : {}), ...(full.colliderHull ? { colliderHull: full.colliderHull } : {}), ...(full.lods ? { lods: full.lods } : {}) };
   return { metaText: stringifyContent(meta), bin: encodeMeshBin(mesh, { collider: false }), binName };
 }
 

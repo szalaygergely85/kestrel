@@ -1,13 +1,14 @@
 // ME-19b: sky/ambient moved verbatim from sectorCaster; shear stays until ME-19d.
 import { fastShadeSky, primeFastShadeFrame } from './fastShade.js';
 import { clampByte } from '../core/math.js';
-import { PROJ_HFOV_DEG as HFOV_DEG, createPitchedTerms, pitchedTerms, screenRay, resolveProjection } from './projection.js';
+import { PROJ_HFOV_DEG as HFOV_DEG, createPitchedTerms, pitchedTerms, screenRay, resolveProjection, isPitchedFamily } from './projection.js';
 // ART-04a (docs/architecture.md 37.18 item 5): the cloud deck reuses the bit-exact
 // `hashFast01` value-noise twin (period 256, seed-keyed) so the JS path and the
 // future GLSL kind-0 branch can never drift; `resolveLook` supplies the resolved
 // `clouds` record (null when the look has no clouds block).
 import { hashFast01 } from './terrainShade.js';
 import { resolveLook } from './look.js';
+import { applySkyGlow } from './skyGlow.js';
 import { dirFromAzEl } from '../core/transform.js';
 
 const refOut = { fg: [0, 0, 0], bg: [0, 0, 0], glyph: ' ' };
@@ -30,6 +31,7 @@ export function primeAmbientLight(P) {
   ambientL[2] = hue[2] * amb.intensity;
 }
 
+const glowBg = [0, 0, 0], glowFg = [0, 0, 0];
 function shadeSkyAndWrite(rt, x, y, ctx, azimuthDeg, elevDeg, tag) {
   let glyphIdx, fg, bg;
   if (ctx.useReferenceShader) {
@@ -54,6 +56,14 @@ function shadeSkyAndWrite(rt, x, y, ctx, azimuthDeg, elevDeg, tag) {
     fastShadeSky(ctx.P, azimuthDeg, elevDeg, ctx.P.defaultTime, fastOut);
     glyphIdx = fastOut.glyphIdx;
     fg = fastOut.fg; bg = fastOut.bg;
+  }
+  const sun = ctx.sun;
+  if (sun && !ctx.useReferenceShader) { // AUD-40: glow + haze on bg and fg (the GPU sky has fg == bg)
+    const er = elevDeg * Math.PI / 180, ar = azimuthDeg * Math.PI / 180, ce = Math.cos(er);
+    const cosA = Math.sin(ar) * ce * sun.dirX - Math.cos(ar) * ce * sun.dirY + Math.sin(er) * sun.dirZ;
+    glowBg[0] = bg[0]; glowBg[1] = bg[1]; glowBg[2] = bg[2]; glowFg[0] = fg[0]; glowFg[1] = fg[1]; glowFg[2] = fg[2];
+    applySkyGlow(glowBg, cosA, elevDeg, sun.dirZ, sun.sunI, x, y); applySkyGlow(glowFg, cosA, elevDeg, sun.dirZ, sun.sunI, x, y);
+    fg = glowFg; bg = glowBg;
   }
   rt.setCellRGB(x, y, glyphIdx, clampByte(fg[0]), clampByte(fg[1]), clampByte(fg[2]),
     clampByte(bg[0]), clampByte(bg[1]), clampByte(bg[2]));
@@ -131,9 +141,9 @@ export function cloudAt(dx, dy, dz, elevDeg, C, off, out) {
   // q = cloud-deck projection, drifted once per frame (off).
   const qx = (dx / (dz + C.bias)) * C.scale + off[0];
   const qy = (dy / (dz + C.bias)) * C.scale + off[1];
-  const puff = cloudValueNoise(qx, qy, seed) * 0.65 + cloudValueNoise(qx * 2.03 + 17.0, qy * 2.03 + 17.0, seed) * 0.35;
+  const puff = cloudValueNoise(qx, qy, seed) * 0.65 + cloudValueNoise(qx * 2.0 + 17.0, qy * 2.0 + 17.0, seed) * 0.35;
   // wisp: stretched 3x along x (the wind axis).
-  const wisp = cloudValueNoise(qx * 0.33 * 1.7 + 41.0, qy * 1.7 + 41.0, seed);
+  const wisp = cloudValueNoise((qx - off[0]) * 0.33 * 1.7 + off[0] + 41.0, (qy - off[1]) * 1.7 + off[1] * 2.0 + 41.0, seed); // CLOUD-WRAP-01: drift term has integer factors (1, 2) so a 256 wrap is seamless
   const cb = out.band;
   const band = smoothstep01(0, cb[0], elevDeg) * (1 - smoothstep01(cb[1], cb[2], elevDeg));
   const dn = clamp01(Math.max((puff - C.cover) * C.puffK, (wisp - C.wispCover) * C.wispK * 0.55) * band);
@@ -177,7 +187,7 @@ const skyRay = { ox: 0, oy: 0, oz: 0, dx: 0, dy: 0, dz: 0 };
  * Paints cells whose depth is Infinity with sky. Both camera branches
  * retain the old expression order until ME-19d removes shear.
  */
-export function fillSky(fb, cam) {
+export function fillSky(fb, cam, sun = null) {
   const rt = fb.rt;
   const cols = rt.cols, rows = rt.rows;
   const P = fb.palette;
@@ -211,12 +221,12 @@ export function fillSky(fb, cam) {
   const ctx = {
     P, U: P.util, rows, horizonRow, planeDistY,
     depthBuffer: fb.depth, useReferenceShader: false,
-    clouds, off, band,
+    clouds, off, band, sun, // AUD-40: sun = {dirX,dirY,dirZ,sunI} (terrain worlds only, like the GPU) or null
   };
 
   // RE-02a (28.1 A2 item 2): the pitched sky twin - per cell the `screenRay` direction gives
   // azimuth and elevation (GLSL: `pitchedCellDir` in shade.frag.js's sky branch).
-  const pitched = resolveProjection(cam, fb.renderer) === 'pitched';
+  const pitched = isPitchedFamily(resolveProjection(cam, fb.renderer)); // US-068b3b: ortho sky = pitched sky for the same F
   if (pitched) {
     skyGrid.cols = cols; skyGrid.rows = rows; skyGrid.pxCellW = rt.pxCellW || 1; skyGrid.pxCellH = rt.pxCellH || 1;
     pitchedTerms(cam, skyGrid, skyTerms);

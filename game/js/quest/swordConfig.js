@@ -17,15 +17,15 @@ export const SWORD_CFG = Object.freeze({
   flash: 6,            // practiceTarget's flash clip length (steps) - also the model's own onHit.steps
 
   // Shared melee arc geometry (original 30.1 bullet list; not superseded by the amendment).
-  reach: 1.6,          // m, apex (eye) to the cylinder's near surface
-  zBandLow: -1.0,       // m below eye: arc z band low (zMin = eye.z + zBandLow)
+  reach: 2.2,          // m, apex (eye) to the cylinder's near surface (OB-116: was 1.6, only point-blank hits)
+  zBandLow: -2.2,       // m below eye: reaches ~0.6 m below the feet (OB-116: was -1.0, a 0.7 m boar barely overlapped)
   zBandHigh: 0.3,       // m above eye: arc z band high (zMax = eye.z + zBandHigh)
   arcDeg: 100,          // total horizontal cone (wedge), split into `slices` equal slices
   slices: 7,
   hand: 'left',         // binding parameter; either hand uses the same arc bounds and authored clips
 
-  light: Object.freeze({ windup: 5, active: 7, recover: 9, damage: 1, reach: 1.6, speed: 0.6 }),
-  hard: Object.freeze({ windup: 4, active: 7, recover: 27, damageMul: 3, reach: 1.6, speed: 0.3, mana: 4, knock: 3 }),
+  light: Object.freeze({ windup: 5, active: 7, recover: 9, damage: 1, reach: 2.2, speed: 0.6 }),
+  hard: Object.freeze({ windup: 4, active: 7, recover: 27, damageMul: 3, reach: 2.4, speed: 0.3, mana: 4, knock: 3 }),
 });
 
 /**

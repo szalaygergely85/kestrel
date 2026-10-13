@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "id": "burl.boars",
+  "title": "Boars in the Woods",
+  "giver": { "npc": "bear" },
+  "requires": [{ "quest": "tower.blade", "done": true }],
+  "objectives": [
+    { "id": "beasts", "text": "Kill boars", "journal": "The bear is called Burl. Boars tear up her woods. Bring down all five.", "when": { "type": "beasts", "kind": "boar", "ids": ["boar1", "boar2", "boar3", "boar4", "boar5"], "count": 5 } }
+  ],
+  "returnText": "Return to the bear"
+}

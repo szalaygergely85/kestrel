@@ -260,14 +260,27 @@
       { id: 'run', text: 'Shift run', keys: ['Shift'], when: 'after 10 s of walking', on: { type: 'walkTime', sec: 10 }, doneOn: 'run input' },
       { id: 'jump', text: '[Space] Jump', keys: ['[Space]'], when: 'on entering hintJump (tower.js triggers, r 2 m round markers.gapEdge, zMin 2.0)',
         on: { type: 'zone', zone: 'hintJump' }, doneOn: 'jump input' },
-      { id: 'capture', text: 'Click to capture mouse', keys: ['Click'], when: 'pointer not locked', on: { type: 'pointerUnlocked' }, doneOn: 'pointer locked' }
+      { id: 'capture', text: 'Click to capture mouse', keys: ['Click'], when: 'pointer not locked', on: { type: 'pointerUnlocked' }, doneOn: 'pointer locked' },
+      // FS-01 (M4 action hints, game/js/quest/actionHints.js): `fmt` = text with {action} key slots, filled from the live
+      // bindings table at request time (text/keys here are the default labels). Once per save, FIFO like the rest.
+      { id: 'actItems', text: '[I] Items', keys: ['[I]'], fmt: '[{inventory}] Items', when: 'first item or gear picked up', on: { type: 'poll' }, doneOn: 'Items window opened' },
+      { id: 'actJournal', text: '[J] Journal', keys: ['[J]'], fmt: '[{questLog}] Journal', when: 'first quest accepted', on: { type: 'poll' }, doneOn: 'journal opened' },
+      { id: 'actSwing', text: '[LMB] Swing', keys: ['[LMB]'], fmt: '[{useLeft}] Swing', when: 'sword taken', on: { type: 'poll' }, doneOn: 'first swing' },
+      { id: 'actBlock', text: 'Hold [RMB] Block', keys: ['[RMB]'], fmt: 'Hold [{useRight}] Block', when: 'shield equipped', on: { type: 'poll' }, doneOn: 'first block raise' },
+      { id: 'actDraw', text: 'Hold [LMB] Draw, release to shoot', keys: ['[LMB]'], fmt: 'Hold [{useLeft}] Draw, release to shoot', when: 'bow equipped', on: { type: 'poll' }, doneOn: 'first arrow shot' },
+      { id: 'actSwap', text: '[Q] Swap weapon', keys: ['[Q]'], fmt: '[{swapSet}] Swap weapon', when: 'second weapon in the bar', on: { type: 'poll' }, doneOn: 'first swap' },
+      { id: 'actQuickbar', text: '[1-4] Use the quick bar', keys: ['[1-4]'], fmt: '[1-4] Use the quick bar', when: 'first potion picked up', on: { type: 'poll' }, doneOn: 'first slot key used' },
+      // FB-03 (writer story.md 'FB-02 Burl's fire' hint.fireball.*): once per save via game/js/quest/fireballHints.js; {fire} = the spell hand's real binding.
+      { id: 'fbCast', text: '[Hold LMB] charge fire. Let go: throw.', keys: ['[Hold LMB]'], fmt: '[Hold {fire}] charge fire. Let go: throw.', when: 'fireball unlocked', on: { type: 'poll' }, doneOn: 'timeout only' },
+      { id: 'fbCost', text: 'Each throw costs MP.', keys: [], fmt: 'Each throw costs MP.', when: 'right after fbCast', on: { type: 'poll' }, doneOn: 'timeout only' },
+      { id: 'fbNoMp', text: 'The fire fizzles. No MP left.', keys: [], fmt: 'The fire fizzles. No MP left.', when: 'first MP-short cast', on: { type: 'poll' }, doneOn: 'timeout only' }
     ],
     // story.md 5 narrative hints (writer), same hint style. `when` = the US-015 programmer AC wording; `on` = the same rule as data.
     // Zones: levelPatch.towerHints below (append to tower.js triggers[]). `skipIfState`: never shown if that world.state key is true.
     storyHints: [
-      { id: 'burner', text: 'The burner still glows. Take what light you can.', keys: [],
-        when: 'once, on entering hintBurner while the lamp is not taken',
-        on: { type: 'zone', zone: 'hintBurner', skipIfState: 'tower.lantern.taken' }, doneOn: 'lantern.take (lamp taken)' },
+      { id: 'burner', text: 'The burner ticks. The Kestrel is done.', keys: [],
+        when: 'once, on entering hintBurner while the sword is not taken (CH1-02)',
+        on: { type: 'zone', zone: 'hintBurner', skipIfState: 'tower.sword.taken' }, doneOn: 'sword taken' },
       { id: 'climb', text: 'Climb. You cannot see the signal from down here.', keys: [],
         when: 'once, on entering hintClimb',
         on: { type: 'zone', zone: 'hintClimb' }, doneOn: 'timeout only' },
@@ -281,7 +294,7 @@
       // tells the player the way out ends the chapter, before they reach the breach (tower.js hintExit zone).
       { id: 'grate', text: 'Something rattles above.', keys: [],
         when: 'once, right when the lever is pulled', on: { type: 'event', event: 'lever.pull' }, doneOn: 'timeout only' },
-      { id: 'exit', text: 'Out there. Step through the breach.', keys: [],
+      { id: 'exit', text: 'The top. Look west through the breach.', keys: [],
         when: 'once, on first entering the summit (z >= 6.0), before the breach',
         on: { type: 'zone', zone: 'hintExit' }, doneOn: 'timeout only' },
       // US-026a-content (PC-B, placeholder strings - writer may reword): the two new
@@ -289,9 +302,12 @@
       // boundsEdge). Not wired to fire yet (needs PC-A's world-level-trigger engine work,
       // US-026a-engine S1-S6) - the text/ids exist so validate-content and the content
       // data are complete now.
-      { id: 'stone', text: 'A stone stands below. Go to it.', keys: [],
+      { id: 'stone', text: 'Someone hums on the hillside.', keys: [],
         when: 'once, on first reaching the near-terrain band, before the waystone (US-026a)',
         on: { type: 'zone', zone: 'hintStone' }, doneOn: 'timeout only' },
+      // COMBAT-HINT-01 (writer: story.md 'Sprint 8 texts' hint.combat.dodge): once per save at the first beast aggro (game/js/quest/combatHint.js).
+      { id: 'combatDodge', text: 'Step aside late. Boars turn slow.', keys: [],
+        when: 'once per save, at the first beast chase/windup/charge', on: { type: 'event', event: 'beast.aggro' }, doneOn: 'timeout only' },
       { id: 'boundsEdge', text: 'The wind turns you back. Not yet.', keys: [],
         when: 'once, on first reaching the walk bound edge (US-026a)',
         on: { type: 'zone', zone: 'boundsEdge' }, doneOn: 'timeout only' }
@@ -346,7 +362,7 @@
       plate: { pad: 1, bgMul: 0.18, note: 'scene cells under the panel (+1) x 0.18, same as the map card: a dark sheet' },
       sceneDim: { bgMul: 0.35, note: 'rest of the scene x 0.35 while open (the simulation is paused behind it)' },
       fadeIn: 0.15, fadeOut: 0.10,                     // ramp-step fade rule (uiStyle.fade); quick, it is a menu
-      rowOrder: ['grid', 'mute', 'back'],              // options.js ids, top -> bottom; ids missing from options.js are skipped
+      rowOrder: ['quality', 'grid', 'mute', 'back'],            // options.js ids, top -> bottom; ids missing from options.js are skipped
       stepRule: { keys: 'A/D (Left/Right) step one value and stop at the ends (no wrap), skipping disabled values',
                   select: 'W/S (Up/Down) wrap top <-> bottom', enter: 'Enter / Space on Back = Esc (return to the pause overlay)' },
       rows: { first: 2, gap: 2, markerCol: 2, labelCol: 4, valueCol: 17, valueW: 21, noteOffset: 1,
@@ -355,11 +371,11 @@
                     '"<" / ">" steps the value down / up, a click elsewhere on the value steps it up (wraps)' },
       labels: { grid: 'Grid', mute: 'Mute', back: 'Back' },
       valueText: {
-        grid: { '240x90': '240x90', '320x120': '320x120', '400x150': '400x150', '480x180': '480x180 ultra' },
+        grid: { '240x90': '240x90', '320x120': '320x120', '400x150': '400x150', '480x180': '480x180 ultra', '560x210': '560x210 extreme' },
         mute: { 'false': 'off', 'true': 'on' }
       },
       notes: {
-        grid: { '480x180': 'ultra: needs a fast GPU', default: null },
+        grid: { '480x180': 'ultra: needs a fast GPU', '560x210': 'extreme: needs a very fast GPU', default: null },
         mute: { default: 'same as the N key' }
       },
       marker: { glyph: '>', color: 'gold', note: 'at markerCol on the selected row only' },
@@ -373,7 +389,7 @@
       note: { color: 'uiDim', col: 6, show: 'selected', note: 'a row\'s note line is drawn only while that row is selected' },
       separator: { row: 8, glyph: '-', color: 'brassShadow', inset: 2 },
       keyHints: { row: 9, align: 'center', color: 'uiDim', key: 'gold',
-                  text: 'W/S select  A/D change  Esc back', keys: ['W/S', 'A/D', 'Esc'],
+                  text: 'W/S select  A/D change', keys: ['W/S', 'A/D'],
                   note: 'arrow keys work too (the AC); the hint names only WASD to stay short' },
       pauseEntry: { text: '[S] Settings', row: 32, align: 'center', color: 'uiHint', keys: ['[S]'],
                     note: 'the pause overlay line under "Click to resume" (row 30), inside its plate (pad 2); S or a click on it opens ' +
@@ -392,6 +408,57 @@
     blink: { edgeGlyph: '-', edgeColor: 'emberDark', edgeRows: 1,
              curve: [[0, 0], [0.6, 0.6], [0.9, 0.25], [1.5, 1.0]],
              note: 'curve = [time s, open fraction]; rows with |row - centre| > open*centre are black; the row just inside the lid gets edgeGlyph in edgeColor at 50%' }
+  };
+
+  // ---- DIALOGUE box (design v1.51, owner 2026-10-09 talking bear; preview design/preview/dialogue-box.html) ----
+  // Same skin as the title / settings cards: brass frame on the cool night plate, gold focus language. Fixed 160x60 UI grid
+  // (panel-relative cols / rows below). fg = palette keys; bg = literal RGB (same convention as uiStyle.menu.bgRgb).
+  //
+  //   r0   +==o==[ Bear ]==================================================================o==+
+  //   r2   |  Hrrm. Easy, little one - I only bite honeycomb. Sit a while; the hill is quiet,     |
+  //   r3   |  and I have stories.                                                                 |
+  //   r6   |  ------------------------------------------------------------------------------      |
+  //   r7   |>  1. Tell me a story.                                                                |  (focus band, gold)
+  //   r8   |   2. What is this place?                                                             |
+  //   r9   |   3. Goodbye.                                                                        |
+  //   r10  |                                                  E: next   Up/Down: choose           |
+  //   r11  +==o===================================================================================o==+
+  A.uiStyle.dialogue = {
+    story: 'owner 2026-10-09 (talking bear); for the dialogue system (content/dialogue/*.dialogue.json)',
+    panel: { w: 96, h: 12, align: 'bottom-center', bottomMargin: 3,
+             note: 'x = (160 - 96) / 2 = 32, y = 60 - 12 - 3 = 45: under the speaker, clear of the crosshair (row 30) and the ' +
+                   'vitals HUD; <= 100 cells (style-guide 5.13). Without choices the panel is 8 tall (rows 0..7, hints on row 6)' },
+    bgRgb: { plate: [10, 11, 16], band: [52, 42, 16] },  // = uiStyle.menu.bgRgb plate / band
+    plate: { pad: 1, bgMul: 0.18, note: 'scene cells under the panel (+1) x 0.18, the card cells are opaque bgRgb.plate' },
+    sceneDim: { bgMul: 0.7, note: 'the rest of the scene x 0.7 while talking (a conversation, not a menu: the speaker stays readable)' },
+    fadeIn: 0.15, fadeOut: 0.12,
+    frame: { corner: '+', h: '=', v: '|', fg: 'brass', cornerFg: 'brassLight',
+             rivets: { glyph: 'o', cols: [3, 92], rows: 'top and bottom', fg: 'brassLight' } },
+    nameTag: { row: 0, col: 6, format: '[ {name} ]', bracketFg: 'brassLight', fg: { npc: 'brassHot', player: 'heroGreen' },
+               note: 'written over the top frame; the speaker name from the dialogue line (player lines = heroGreen, the ' +
+                     'friendly / hero colour)' },
+    text: { row: 2, col: 3, w: 88, maxLines: 4, lineGap: 0, fg: 'uiText', wrap: 'word',
+            emphasis: { mark: '*', fg: 'gold', note: '*word* in the line text is drawn gold without the stars' },
+            typeOn: { cps: 28, pauseMs: 'ASSETS.bearFx.talk.pauseMs (per speaker fx; default , 180 / . 380)',
+                      skip: 'first E / Enter / click completes the line, the next one advances' } },
+    more: { glyph: 'v', row: 'h-2', col: 'w-4', fg: 'gold', blink: { periodSec: 0.8, duty: 0.6 },
+            note: 'shown when the line is complete and no choices follow (= the speaker switches to `listen`)' },
+    separator: { row: 6, glyph: '-', fg: 'brassShadow', inset: 3, show: 'choices' },
+    choices: {
+      firstRow: 7, max: 3, markerCol: 1, numberCol: 3, textCol: 6, bandFrom: 1, bandTo: 94,
+      number: { format: '{n}.', fg: 'uiDim', focusFg: 'brassLight' },
+      normal: { fg: 'uiText' },
+      focus: { fg: 'gold', bg: 'band', marker: '>', markerFg: 'gold', note: 'same focus language as the title menu' },
+      seen: { fg: 'uiHint', note: 'a choice already picked in this conversation' },
+      disabled: { fg: 'uiDim', suffix: ' (locked)', focusable: false },
+      keys: '1-3 pick directly; W/S or arrows move; E / Enter choose; mouse hover = focus, click = choose'
+    },
+    keyHints: { row: 'h-2', align: 'right', colEnd: 'w-4', fg: 'uiDim', keyFg: 'gold',
+                text: 'E: next   Up/Down: choose', keys: ['E', 'Up/Down'],
+                note: 'drawn left of the `more` marker; "W/S: choose" only while choices are shown' },
+    prompt: { text: '[E] Talk', note: 'world prompt = uiStyle.prompt (gold [E]); aim = the speaker mount `interact`' },
+    speechMark: { glyph: '...', fg: 'uiHint', mount: 'speech',
+                  note: 'OPTIONAL overlay over the speaker (model mount `speech`) while the box is open on another speaker' }
   };
 
   // ---- US-128 Z-targeting overlay styles (architecture.md 28.9 decision 7 / 29.2) ----

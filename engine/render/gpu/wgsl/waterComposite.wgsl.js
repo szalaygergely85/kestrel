@@ -11,10 +11,11 @@ import { defineUniformBlock } from './uniformBlock.js';
 import {
   GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL, CELL_RAY_WGSL, CELL_RAY_PITCHED_WGSL, FMOD_WGSL, HASH_FAST_WGSL, BYTE_OUT_WGSL,
 } from './common.wgsl.js';
-import { SUN_N_SHIFT, SUN_N_MASK } from '../../shadowSun.js';
-import { CLOUD_SHIFT } from '../../cloudShadow.js'; // S8-B2-12b (38.13)
-import { WL_STRIDE, WL_SLOTS, WATER_HASH_SALT, WATER_FLOW_SALT, WATER_FALL_SALT, RIPPLE_MIN } from '../../waterLook.js';
-import { RIPPLE_MAX, RIPPLE_HALF_W } from '../../../world/water.js'; // S8-B2-13 (38.14)
+import { SUN_N_SHIFT, SUN_N_MASK, CLOUD_Q_SHIFT } from '../../shadowSun.js'; // CLOUD_Q_SHIFT: S8-B2-12c (38.13)
+import { WL_STRIDE, WL_SLOTS, WATER_HASH_SALT, WATER_FLOW_SALT, WATER_FALL_SALT, RIPPLE_SLOTS, RIPPLE_ACC_MIN } from '../../waterLook.js';
+import { SKY_LUT_N } from './skyLut.js';
+import { WATER_REFLECT } from '../../waterReflect.js'; // AUD-42: constants shared with the JS twin
+import { RIPPLE_SPEED, RIPPLE_W, RIPPLE_LIFE } from '../../../fx/ripples.js'; // S8-B2-13b (38.14, the note of record)
 
 export const WATER_COMPOSITE_VECS_PER_SLOT = WL_STRIDE / 4;
 
@@ -24,13 +25,18 @@ export const WATER_COMPOSITE_BLOCK = defineUniformBlock('WaterCompositeU', [
   { name: 'sunI', type: 'f32' }, { name: 'posX', type: 'f32' }, { name: 'posY', type: 'f32' }, { name: 'eyeH', type: 'f32' },
   { name: 'dirX', type: 'f32' }, { name: 'dirY', type: 'f32' }, { name: 'planeX', type: 'f32' }, { name: 'planeY', type: 'f32' },
   { name: 'horizonRow', type: 'f32' }, { name: 'planeDistY', type: 'f32' }, { name: 'timeSec', type: 'f32' },
-  { name: 'rippleCount', type: 'i32' }, // S8-B2-13 (38.14): was `pad0`, same word 19 - every later offset is unchanged
+  { name: 'rippleCount', type: 'i32' }, // S8-B2-13b (38.14): was `pad0`, same word 19 - every later offset is unchanged
   { name: 'pitchA', type: 'vec4' }, // fX, fY, fZ, tanHalfX
   { name: 'pitchB', type: 'vec4' }, // rX, rY, uX, uY
   { name: 'pitchC', type: 'vec4' }, // uZ, tanHalfY, cosP, sinP
   { name: 'wl', type: 'vec4', count: WL_SLOTS * (WL_STRIDE / 4) }, // packed look rows, WL_STRIDE/4 vec4 per slot (waterLook.js)
   { name: 'wfog', type: 'vec4', count: 5 }, // start/full/curve/bgScale, fgNear, fgFar, bgNear, bgFar
-  { name: 'ripple', type: 'vec4', count: RIPPLE_MAX }, // S8-B2-13 (38.14): x, y, r, s per live ring, densely packed
+  // S8-B2-13b (38.14): appended at the END - rippleGlyph/rippleGain (the global ripple look, lane C via `setLook`,
+  // defaults in waterLook.js) + 2 pad words (align the `ripple` array to 16 B, already aligned, kept explicit).
+  { name: 'rippleGlyph', type: 'u32' }, { name: 'rippleGain', type: 'f32' }, { name: 'underOn', type: 'f32' }, { name: 'ripplePad1', type: 'f32' },
+  { name: 'ripple', type: 'vec4', count: RIPPLE_SLOTS }, // x, y, age, amp per live ring, densely packed
+  { name: 'reflectU', type: 'vec4' }, // AUD-42: x = sky elevTop (deg; 0 = no sky LUT -> reflection off)
+  { name: 'skyLut', type: 'vec4', count: SKY_LUT_N }, // AUD-42: baked sky gradient rgb (0..255), same bake as shade's uSky
 ]);
 export const WATER_COMPOSITE_TEXTURES = Object.freeze(['float', 'float', 'uint', 'uint', 'uint', 'uint']);
 export const WATER_COMPOSITE_TARGETS = Object.freeze(['rgba8', 'rgba8']);
@@ -53,7 +59,7 @@ ${CELL_RAY_PITCHED_WGSL}
 ${FULLSCREEN_VS_WGSL}
 
 fn fogScaleCell(row: i32, rows: i32) -> f32 {
-  return select(pitchFogScale(row, rows, wu.pitchC.y, wu.pitchC.z, wu.pitchC.w), 1.0, wu.projMode == 0);
+  return select(pitchFogScale(row, rows, wu.pitchC.y, wu.pitchC.z, wu.pitchC.w, wu.projMode == 2), 1.0, wu.projMode == 0);
 }
 
 // diamond angle in [0, 4), no atan; twin of waterLook.js diamondAngle
@@ -75,6 +81,7 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
   o.fg = sfg;
   o.bg = sbg;
   if (sbg.a < 0.5) { return o; } // JS-layer passthrough cell (HUD etc.)
+  if (wu.underOn > 0.5) { return o; } // SWIM-04c: eye submerged = no surface composite (the shade pass's under look owns the ceiling); JS twin: compositor.js skips waterCompositeJS
   let w = textureLoad(uWater, cell, 0);
   if (w.x == 0x7f800000u) { return o; } // cleared: no water here
   let dW = bitcast<f32>(w.x);
@@ -84,6 +91,7 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
   if (!(dW < raw)) { return o; }
 
   let sheet = (w.w & 32u) != 0u;
+  let ribbon = (w.w & 64u) != 0u; // RIVER-03 (38.45): river ribbon texel (w = slot | back<<4 | 1<<6 | rapidQ<<8 | e*1000<<16, z = tau)
   let lb = i32(w.w & 15u) * ${WL_STRIDE / 4};
   let r0 = wu.wl[lb]; let r1 = wu.wl[lb + 1]; let r2 = wu.wl[lb + 2]; let r3 = wu.wl[lb + 3];
   let opaqueAt = r0.w; let seeThrough = r1.w; let bgK = r3.y;
@@ -95,14 +103,22 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
 
   var P: vec3f;
   if (wu.projMode == 0) { P = cellRayP(vec2f(cell), grid, wu.posX, wu.posY, wu.eyeH, wu.dirX, wu.dirY, wu.planeX, wu.planeY, wu.horizonRow, wu.planeDistY, dW); }
-  else { P = cellRayPitched(vec2f(cell), grid, vec3f(wu.posX, wu.posY, wu.eyeH), wu.pitchA.xyz, wu.pitchB.xy, vec3f(wu.pitchB.zw, wu.pitchC.x), vec2f(wu.pitchA.w, wu.pitchC.y), dW); }
+  else { P = cellRayPitched(vec2f(cell), grid, vec3f(wu.posX, wu.posY, wu.eyeH), wu.pitchA.xyz, wu.pitchB.xy, vec3f(wu.pitchB.zw, wu.pitchC.x), vec2f(wu.pitchA.w, wu.pitchC.y), dW, wu.projMode == 2); }
 
   var column = 1.0e30;
   if (!isSky) {
     var floorP: vec3f;
     if (wu.projMode == 0) { floorP = cellRayP(vec2f(cell), grid, wu.posX, wu.posY, wu.eyeH, wu.dirX, wu.dirY, wu.planeX, wu.planeY, wu.horizonRow, wu.planeDistY, raw); }
-    else { floorP = cellRayPitched(vec2f(cell), grid, vec3f(wu.posX, wu.posY, wu.eyeH), wu.pitchA.xyz, wu.pitchB.xy, vec3f(wu.pitchB.zw, wu.pitchC.x), vec2f(wu.pitchA.w, wu.pitchC.y), raw); }
+    else { floorP = cellRayPitched(vec2f(cell), grid, vec3f(wu.posX, wu.posY, wu.eyeH), wu.pitchA.xyz, wu.pitchB.xy, vec3f(wu.pitchB.zw, wu.pitchC.x), vec2f(wu.pitchA.w, wu.pitchC.y), raw, wu.projMode == 2); }
     column = max(0.0, P.z - floorP.z);
+    if (!sheet) { a = clamp(max(raw - dW, column * 4.0) / opaqueAt, 0.0, 1.0); } // OB-111: path floor (twin of waterComposite.js)
+  }
+  // river ribbon (twin of waterComposite.js / waterLook.js riverAlpha): alpha feather by edge distance e and column; row 7 = (o, streakT, feather, shoreFade)
+  var rE = 0.0; var rRapid = 0.0;
+  if (ribbon) {
+    rE = f32(w.w >> 16u) * 0.001; rRapid = f32((w.w >> 8u) & 255u) * (1.0 / 255.0);
+    let rr7 = wu.wl[lb + 7];
+    a = a * select(1.0, min(1.0, rE / rr7.z), rr7.z > 0.0) * min(1.0, column / rr7.w);
   }
   var tint = a;
   if (!isSky) { tint = min(column / wu.wl[lb + 9].z, 1.0); }
@@ -112,7 +128,7 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
   let sunF = select(1.0, f32((lightT.w >> ${SUN_N_SHIFT}u) & ${SUN_N_MASK}u) * 0.25, wu.sunMapOn != 0);
   // S8-B2-12b (38.13): cloud-darkening byte (bits 24..31 of the floor cell's LIGHT.w) scales the sun term here too;
   // q 0 (strength 0, or a sky cell under the floor with no cloud byte written) -> cF 1.0 -> bit-identical.
-  let cF = 1.0 - f32((lightT.w >> ${CLOUD_SHIFT}u) & 255u) * (1.0 / 255.0);
+  let cF = 1.0 - f32((lightT.w >> ${CLOUD_Q_SHIFT}u) & 255u) * (1.0 / 255.0);
   let k = wu.ambientI + wu.sunI * max(wu.sunDir.z, 0.0) * sunF * cF;
   var wc = clamp((r0.rgb + (r1.rgb - r0.rgb) * tint) * k, vec3f(0.0), vec3f(255.0));
 
@@ -133,7 +149,17 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
     glyph = select(select(select(gv.w, gv.z, gc == 2), gv.y, gc == 1), gv.x, gc == 0);
     // flow streaks (twin of waterLook.js flowStreakHit): r6 = (streak glyph, L, W, K), r7 = (fhat.xy, |f|, o), r8 = (mode, c.xy, nAng)
     let r6 = wu.wl[lb + 6]; let r7 = wu.wl[lb + 7]; let r8 = wu.wl[lb + 8];
-    if (r8.x > 0.5) {
+    if (ribbon) {
+      // river streak (twin of waterLook.js riverStreakHit): material coordinate tau / streakT - o, across by e / W
+      let ra = i32(floor(bitcast<f32>(w.z) / r7.y - r7.x));
+      let rb = i32(floor(rE / r6.z));
+      let rh = hashFastU(ra & 1023, rb & 1023, ${WATER_FLOW_SALT});
+      if (f32(rh >> 8u) * (1.0 / 16777216.0) > r6.w) { glyph = r6.x; }
+      if (rRapid > 0.0 && f32(h >> 8u) * (1.0 / 16777216.0) < rRapid * r8.y) { // rapids: foam glyph + rim tint
+        glyph = wu.wl[lb + 11].x;
+        wc += (wu.wl[lb + 12].rgb - wc) * 0.5;
+      }
+    } else if (r8.x > 0.5) {
       var fa: f32; var fib: f32;
       if (r8.x < 1.5) {
         fa = P.x * r7.x + P.y * r7.y;
@@ -148,25 +174,48 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
       if (f32(fh >> 8u) * (1.0 / 16777216.0) > r6.w) { glyph = r6.x; }
     }
     if (f32(h >> 8u) * (1.0 / 16777216.0) > 1.0 - r3.w) { wc += (r2.rgb - wc) * 0.5; }
+    // AUD-42: sky tint at the mirrored view elevation + Schlick fresnel (twin: waterReflect.js); off for ortho / no sky LUT
+    if (wu.reflectU.x > 0.0 && wu.projMode != 2) {
+      let rv = P - vec3f(wu.posX, wu.posY, wu.eyeH);
+      let rlen = sqrt(rv.x * rv.x + rv.y * rv.y + rv.z * rv.z);
+      var rc = 0.0;
+      if (rlen > 1.0e-6) { rc = -rv.z / rlen; }
+      rc = clamp(rc, 0.0, 1.0);
+      let rm = 1.0 - rc;
+      let rm2 = rm * rm;
+      let rF = ${WATER_REFLECT.f0} + (1.0 - ${WATER_REFLECT.f0}) * (rm2 * rm2 * rm);
+      let rt = clamp(degrees(asin(rc)) / wu.reflectU.x, 0.0, 1.0);
+      let rsky = wu.skyLut[i32(floor(rt * ${SKY_LUT_N - 1}.0 + 0.5))].rgb;
+      let rkS = rF * ${WATER_REFLECT.skyMix};
+      let rBody = (1.0 - ${WATER_REFLECT.darken} * (1.0 - rF)) * (1.0 - rkS);
+      wc = wc * rBody + rsky * rkS;
+      wb = wb * rBody + rsky * rkS;
+    }
   }
 
-  // S8-B2-13 (38.14): splash ripples, !sheet only (incl. see-through: replaces the floor glyph); fixed 8 with an
-  // early break (uniform control flow) so rippleCount never varies the loop trip count across invocations.
+  // S8-B2-13b (38.14, the note of record): splash ripples, !sheet only (incl. see-through: replaces the floor
+  // glyph); fixed 8 with an early break (uniform control flow) so rippleCount never varies the loop trip count
+  // across invocations. glyph/gain are a single global uniform now, not a per-slot look field.
   if (!sheet) {
-    var rs: f32 = 0.0;
-    for (var ri: i32 = 0; ri < ${RIPPLE_MAX}; ri = ri + 1) {
+    var acc: f32 = 0.0;
+    for (var ri: i32 = 0; ri < ${RIPPLE_SLOTS}; ri = ri + 1) {
       if (ri >= wu.rippleCount) { break; }
       let rp = wu.ripple[ri];
+      let age = rp.z;
+      let amp = rp.w;
+      let r = ${RIPPLE_SPEED} * age;
       let dx = P.x - rp.x;
       let dy = P.y - rp.y;
       let d = sqrt(dx * dx + dy * dy);
-      let term = rp.w * (1.0 - abs(d - rp.z) / ${RIPPLE_HALF_W});
-      rs = max(rs, term);
+      let band = 1.0 - abs(d - r) / ${RIPPLE_W};
+      if (band > 0.0) {
+        let term = amp * band * (1.0 - age / ${RIPPLE_LIFE});
+        acc = max(acc, term);
+      }
     }
-    if (rs > ${RIPPLE_MIN}) {
-      let r13 = wu.wl[lb + 13];
-      glyph = r13.z;
-      wc += (r2.rgb - wc) * (r13.w * rs);
+    if (acc >= ${RIPPLE_ACC_MIN}) {
+      glyph = f32(wu.rippleGlyph);
+      wc = wc + (vec3f(255.0) - wc) * (acc * wu.rippleGain);
     }
   }
 
@@ -181,7 +230,9 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
     let gc = gi & 3;
     glyph = select(select(select(gv.w, gv.z, gc == 2), gv.y, gc == 1), gv.x, gc == 0);
     let brightness = 0.6 + f32(umod(h, 3u)) * 0.2;
-    wc = min(vec3f(255.0), r0.rgb * k * brightness);
+    // OB-045: the sheet hangs in front of the cliff, so the cliff cell's sun-map shadow bits must not darken it (white water)
+    let kS = wu.ambientI + wu.sunI * cF; // foam scatters light every way: full sun term, no N.L
+    wc = min(vec3f(255.0), r0.rgb * kS * brightness);
     wb = wc * bgK;
     if (f32(h >> 8u) * (1.0 / 16777216.0) > 0.92) { wc = r2.rgb; }
   }
@@ -191,7 +242,8 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
     let dx = P.x - shape.x; let dy = P.y - shape.y;
     e = shape.z - sqrt(dx * dx + dy * dy);
   } else { e = min(min(P.x - shape.x, P.y - shape.y), min(shape.z - P.x, shape.w - P.y)); }
-  let shoreS = max(0.0, min(column / shoreParams.x, e / wu.wl[lb + 9].w));
+  var shoreS = max(0.0, min(column / shoreParams.x, e / wu.wl[lb + 9].w));
+  if (ribbon) { shoreS = max(0.0, min(column / shoreParams.x, 1.0)); } // 38.45: shore band by column only
   let shore = !sheet && !isSky && shoreS < 1.0 && dW < shoreParams.y;
   if (shore) {
     let fi = min(i32(floor(shoreS * foam.w)), i32(foam.w) - 1);

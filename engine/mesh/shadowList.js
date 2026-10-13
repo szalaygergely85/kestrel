@@ -11,9 +11,9 @@
 // cast) and RE-06 instanced groups (`src.instances`) are added with their FULL
 // instance buffer `g.ib` (not the camera-compacted `drawIb`): units in the sun
 // outside the view still shadow what is on screen; the sun-plane cull is per group.
-import { DrawList, addStructures, addMeshStructures, pushClothItem, DRAW_TERRAIN, DRAW_FLAG_ONE_PART, MAX_DRAW_ITEMS, MAX_MESH_DRAWS } from './DrawList.js';
+import { DrawList, addStructures, addMeshStructures, pushClothItem, DRAW_TERRAIN, DRAW_FLAG_ONE_PART, MAX_MESH_DRAWS } from './DrawList.js';
 import { addVoxelInstances } from './voxelMesh.js';
-import { fillShadowBands, groupRadius } from './instances.js';
+import { fillShadowBands, groupRadius, resolveGroupLod1, meshIsMasked } from './instances.js';
 
 /**
  * MESH-SHADOW-02 (37.19 option 1, reworked 38.8a item 25a): budget for placed kind-9 mesh props only (towers, terrain, cloth,
@@ -24,7 +24,10 @@ import { fillShadowBands, groupRadius } from './instances.js';
  */
 const _budget = { eye: /** @type {any} */ (null), cutM: 25, cap: MAX_MESH_DRAWS };
 
-/** Builder output capacity before the overflow trim (the trim keeps `MAX_DRAW_ITEMS`). */
+/** OB-043: sun-shadow list size after the overflow trim (was MAX_DRAW_ITEMS = 256; kept when the camera list went to 512). */
+export const MAX_SHADOW_ITEMS = 256;
+
+/** Builder output capacity before the overflow trim (the trim keeps `MAX_SHADOW_ITEMS`). */
 export const SHADOW_BUILD_CAPACITY = 1024;
 
 /** @param {number} [capacity] @returns {DrawList} a list sized for `buildShadowList`. */
@@ -68,13 +71,13 @@ export function buildShadowList(list, cameraList, world, planes, src) {
   addStructures(list, world, c, src.cache, src.fogFarM || 2000);
   if (src.meshCache && src.meshIdFor) {
     let b = null;
-    if (src.eye && src.meshCastM && src.meshCastM > 0) { b = _budget; b.eye = src.eye; b.cutM = src.meshCastM; b.cap = src.meshCastCap == null ? MAX_MESH_DRAWS : src.meshCastCap; } // MESH-SHADOW-02; no eye = old behaviour
+    if (src.eye && src.meshCastM && src.meshCastM > 0) { b = _budget; b.eye = src.eye; b.cutM = world.placementGrid && world.streaming && world.streaming.enabled ? Math.min(src.meshCastM, world.placementGrid.opts.minM) : src.meshCastM; b.cap = src.meshCastCap == null ? MAX_MESH_DRAWS : src.meshCastCap; } // MESH-SHADOW-02; no eye = old behaviour
     // SHADOW-ROT fix: the nearest-MAX_MESH_DRAWS (64) pick is ranked from the EYE (as the camera feed), never from the
     // yaw-dependent box centre (aheadM in front): ranking from the centre swapped out the props around the player when the
     // camera turned (world_m1 has > 64 placements in range). Same set as the camera draws; the sun-plane cull decides.
     addMeshStructures(list, world, src.eye || c, src.meshCache, src.meshIdFor, src.fogFarM || 2000, true, b); // ME-14c2 (37.1 item 6)
   }
-  if (src.terrainSet) src.terrainSet.addToDrawList(list, c);
+  if (src.terrainSet) src.terrainSet.addToDrawList(list, c, true);
   const vp = src.voxelPool;
   if (vp && vp.list.length > 0 && src.voxelMeshCache) {
     addVoxelInstances(list, /** @type {any} */ (vp), src.voxelMeshCache, vp.partNamesFor);
@@ -86,23 +89,30 @@ export function buildShadowList(list, cameraList, world, planes, src) {
     for (let k = 0; k < groups.length; k++) {
       const g = groups[k];
       if (g.count <= 0 || g.castShadow === false) continue;
-      if (g.mesh) { // TREES-LP-b: kind-9 mesh group; one band (<= instCastM), no LOD1
+      if (g.mesh) { // TREES-LP-b: kind-9 mesh group; QUAT-LOD-01 part 2: LOD1 band (27.9a amendment 5 / line 238) when available
         if (g.mesh.lazy) continue; // MESH-LOAD-01: payload not loaded yet
         if (!src.meshCache || !src.meshIdFor) continue;
-        const draw = src.meshCache.get(g.mesh, src.meshIdFor);
-        let it = null;
+        const draw = src.meshCache.get(g.mesh, src.meshIdFor, src.maskAtlas || undefined); // ALPHA-01f-fix2: same atlas as the raster, one cache entry
+        const lod1Mesh = src.eye ? resolveGroupLod1(g, ig._meshLookup) : null; // null without an eye: old full-buffer path never bands
+        const draw1 = lod1Mesh ? src.meshCache.get(lod1Mesh, src.meshIdFor, src.maskAtlas || undefined) : null;
+        let it = null, it1 = null;
         if (!src.eye) it = list.addInstances(draw, g.parts, g.ib, g.count);
         else {
-          if (!(g._R > 0)) g._R = groupRadius(draw, g.parts);
+          let R = groupRadius(draw, g.parts);
+          if (draw1) { const R1 = groupRadius(draw1, g.parts); if (R1 > R) R = R1; }
+          g._R = R;
           const cast = src.instCastM || 48;
-          if (gpu && gpu.accept(g, draw, null, g._R, cast)) continue;
-          fillShadowBands(g, src.eye.x, src.eye.y, cast, cast, planes, g._R, ig.swayPad); // lod0M == castM: band 1 stays empty
-          if (g.shadowCount[0] > 0) it = list.addInstances(draw, g.parts, g.shadowIb[0], g.shadowCount[0], g._R);
+          if (gpu && gpu.accept(g, draw, draw1, R, draw1 ? (src.meshLod0M || 25) : cast)) continue;
+          if (draw1) fillShadowBands(g, src.eye.x, src.eye.y, src.meshLod0M || 25, cast, planes, R, ig.swayPad);
+          else fillShadowBands(g, src.eye.x, src.eye.y, cast, cast, planes, R, ig.swayPad); // no LOD1 ready: lod0M == castM, band 1 stays empty
+          if (g.shadowCount[0] > 0) it = list.addInstances(draw, g.parts, g.shadowIb[0], g.shadowCount[0], R);
+          if (draw1 && g.shadowCount[1] > 0) it1 = list.addInstances(draw1, g.parts, g.shadowIb[1], g.shadowCount[1], R);
         }
         // ALPHA-01f (c): ONE_PART collapses instancedRanges() to one synthetic whole-mesh range (passShadow.js / rasterJS.js's
         // `onePart` guard then drops per-range masking) - only opaque-only groups get it, so a masked group still casts a
         // leaf-shaped (not range[0]-only, unmasked) shadow once passShadow.js's instanced-masked caster path runs.
-        if (it && !g.mesh.maskRanges) it.flags |= DRAW_FLAG_ONE_PART;
+        if (it && !meshIsMasked(g.mesh)) it.flags |= DRAW_FLAG_ONE_PART;
+        if (it1 && !meshIsMasked(lod1Mesh)) it1.flags |= DRAW_FLAG_ONE_PART;
         continue;
       }
       if (!ig.pool || !src.voxelMeshCache) continue;
@@ -147,10 +157,10 @@ function syncTerrainLod(list, cameraList) {
   }
 }
 
-/** Drops farthest-from-centre items (ties: the later one) until `count <= MAX_DRAW_ITEMS`; stable order otherwise. */
+/** Drops farthest-from-centre items (ties: the later one) until `count <= MAX_SHADOW_ITEMS`; stable order otherwise. */
 export function trimShadowList(list, cx, cy) {
   const items = list.items;
-  while (list.count > MAX_DRAW_ITEMS) {
+  while (list.count > MAX_SHADOW_ITEMS) {
     let worst = 0, worstD = -1;
     for (let i = 0; i < list.count; i++) {
       const a = items[i].aabb;
@@ -170,7 +180,7 @@ const _zCache = new WeakMap();
 
 /**
  * World z extent of terrain + placed structures for the depth range. The
- * structure part is cached on `world.structVersion`; the terrain part is read
+ * structure part is cached on `world.structVersion` + `renderVersion` (ED-MESH-01e: a lifted mesh); the terrain part is read
  * each call (a few numbers). Returns `out` (`{min, max}`).
  * @param {import('../world/World.js').World} world
  * @param {import('./DrawList.js').LevelMeshCache} cache
@@ -178,7 +188,7 @@ const _zCache = new WeakMap();
  */
 export function shadowWorldZ(world, cache, out) {
   let e = _zCache.get(world);
-  if (!e || e.version !== world.structVersion) {
+  if (!e || e.version !== world.structVersion || e.rv !== world.renderVersion) {
     let lo = Infinity, hi = -Infinity;
     const structs = world.structures || [];
     for (let i = 0; i < structs.length; i++) {
@@ -189,7 +199,7 @@ export function shadowWorldZ(world, cache, out) {
       lo = Math.min(lo, oz + b[2]);
       hi = Math.max(hi, oz + b[5]);
     }
-    e = { version: world.structVersion, lo, hi };
+    e = { version: world.structVersion, rv: world.renderVersion, lo, hi };
     _zCache.set(world, e);
   }
   let lo = e.lo, hi = e.hi;

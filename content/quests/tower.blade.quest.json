@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "id": "tower.blade",
+  "title": "Not Safe",
+  "giver": { "npc": "noteKeepLight", "turnIn": "bear" },
+  "objectives": [
+    { "id": "breach", "text": "Go up the tower", "journal": "A note pinned to the wall: it is not safe here. Find a blade.", "when": { "type": "area", "id": "breach" } },
+    { "id": "sword", "text": "Sword", "journal": "The note spoke of a blade lying in the ashes. Pick it up.", "when": { "type": "item", "id": "sword" } },
+    { "id": "leave", "text": "Now it is safe to go outside", "journal": "You have the blade. It is safe to go outside now. A bear waits there.", "when": { "type": "area", "id": "towerDoor" } }
+  ],
+  "returnText": "Talk to the bear"
+}

@@ -101,14 +101,14 @@ const tower = world.structures.find((s) => s.id === 'tower');
 
 ok('world.physicsMode === "mesh"', world.physicsMode === 'mesh');
 ok('world.colliders is non-empty', world.colliders.length > 0);
-ok('deterministic ids/order: level colliders then authored props', world.colliders.map((c) => c.id).filter((id) => id !== 'meshes:static').join(',') === 'tower,tower:grate,props:static',
+ok('deterministic ids/order: level colliders, authored props, then kinematic NPCs', world.colliders.map((c) => c.id).filter((id) => id !== 'meshes:static').join(',') === 'tower,tower:grate,props:static,npcs:kinematic', // CH1-08a: Fen (kinematic NPC) in world_m1
   world.colliders.map((c) => c.id).join(','));
 
 {
   const base = world.colliders.find((c) => c.id === 'tower');
-  ok('base collider AABB x matches structure bbox', Math.abs(base.min[0] - tower.bbox.x0) < 1e-6 && Math.abs(base.max[0] - tower.bbox.x1) < 1e-6,
+  ok('base collider AABB x inside structure bbox (GS-01f: terrainFloor cells keep a collision-only floor)', base.min[0] >= tower.bbox.x0 - 1e-6 && base.max[0] <= tower.bbox.x1 + 1e-6,
     `min.x=${base.min[0]} max.x=${base.max[0]} bbox=${tower.bbox.x0}..${tower.bbox.x1}`);
-  ok('base collider AABB y matches structure bbox', Math.abs(base.min[1] - tower.bbox.y0) < 1e-6 && Math.abs(base.max[1] - tower.bbox.y1) < 1e-6,
+  ok('base collider AABB y inside structure bbox (GS-01f: terrainFloor cells keep a collision-only floor)', base.min[1] >= tower.bbox.y0 - 1e-6 && base.max[1] <= tower.bbox.y1 + 1e-6,
     `min.y=${base.min[1]} max.y=${base.max[1]} bbox=${tower.bbox.y0}..${tower.bbox.y1}`);
   ok('base collider AABB z is a sane range (below floor, above summit)', base.min[2] < tower.origin.z && base.max[2] > tower.origin.z + 6,
     `min.z=${base.min[2]} max.z=${base.max[2]}`);
@@ -130,7 +130,7 @@ ok('deterministic ids/order: level colliders then authored props', world.collide
     const collider = world.colliders.find((c) => c.id === 'tower:grate');
 
     // Fresh, independent build at the same ceilH.
-    const fresh = buildLevelMesh(tower.level);
+    const fresh = buildLevelMesh(tower.level, { collisionFloors: true });
     const freshDyn = fresh.dyn.find((d) => d.tag === 'grate');
     // 27.18b: a fresh build = rebuilt dyn mesh + the barrier quads at the same ceilH.
     const freshPos = Float64Array.from([...freshDyn.mesh.pos, ...dynBarrierQuads(tower.level, grateCh, ceilH)]);

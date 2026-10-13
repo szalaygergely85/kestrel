@@ -205,8 +205,8 @@ function registerFakeBehaviours(world) {
   ok('6a: the tower level itself no longer has its own "end" trigger',
     !world.triggers.some((t) => t.structId === 'tower' && t.id === 'end'));
   const end = world.triggers.find((t) => t.structId === null && t.id === 'end');
-  ok('6a-2: real world_m1 has a world-level "end" trigger at the waystone instead',
-    !!end && end.shape === 'circle' && end.name === 'quest.end', end && JSON.stringify(end));
+  ok('6a-2: real world_m1 has a world-level "end" zone at the waystone, area-only (no behaviour since WAYSTONE-NORMAL-01)',
+    !!end && end.shape === 'circle' && end.name === undefined && end.once === false, end && JSON.stringify(end));
   ok('6b: no mismatch warning on real content', !warnings.some((w) => w.includes('differ')), warnings.join('|'));
 }
 

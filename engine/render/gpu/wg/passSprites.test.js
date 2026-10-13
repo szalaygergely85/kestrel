@@ -64,7 +64,7 @@ assert.deepEqual(draws, [{ count: 3, first: 0, instances: 1 }]);
 {
   const b = binds[0], u = b.uniforms, ui = new Int32Array(u.buffer), F = (n) => SPRITES_BLOCK.field(n).word;
   assert.equal(b.pipe, sp.pipe);
-  assert.deepEqual(b.textures, [gi, depth, edgeFg, edgeBg, sp.texSpr, sp.texAtlas, sp.texPal, sp.texFadeLut, sp.texFadeRamp, sp.texPart, sp.texPartZ]);
+  assert.deepEqual(b.textures, [gi, depth, edgeFg, edgeBg, sp.texSpr, sp.texAtlas, sp.texPal, sp.texFadeLut, sp.texFadeRamp, sp.texPart, sp.texPartZ, sp.texPartBg]);
   assert.equal(ui[F('count')], 1); assert.equal(u[F('sceneFade')], 0.5); assert.equal(u[F('fadeMinGain')], 0.25); assert.equal(ui[F('fadeRampLen')], 10);
   assert.equal(u[F('dimAll')], Math.fround(0.8)); assert.equal(ui[F('dimCount')], 2);
   assert.deepEqual([...u.slice(F('dimMul'), F('dimMul') + 4)], [0.4, 0.6, 0, 0].map(Math.fround));
@@ -79,10 +79,10 @@ sp.run(inp); assert.equal(sp.texPart._texWrites, 1, 'clean particle layer: no up
 layer.part[(3 * COLS + 7) * 4 + 3] = 5; layer.partZ[3 * COLS + 7] = 2; layer.minRow = 3; layer.maxRow = 3;
 sp.run(inp); assert.equal(sp.texPart._texWrites, 2); assert.equal(sp.texPart._lastTexWrite.data, layer.part); assert.equal(sp.texPartZ._lastTexWrite.data, layer.partZ);
 // dirty-row slice with a source offset (no subarray): row 3 only
-assert.deepEqual({ ...sp.texPart._lastTexWrite.rect }, { x: 0, y: 3, w: COLS, h: 1 }); assert.equal(sp.texPart._lastTexWrite.dataOffset, 3 * COLS * 4); assert.equal(sp.texPartZ._lastTexWrite.dataOffset, 3 * COLS);
+assert.deepEqual({ ...sp.texPart._lastTexWrite.rect }, { x: 0, y: 3, w: COLS, h: 1, stride: 0 }); assert.equal(sp.texPart._lastTexWrite.dataOffset, 3 * COLS * 4); assert.equal(sp.texPartZ._lastTexWrite.dataOffset, 3 * COLS);
 // current rows 5..6 + previous rows 2..4 -> union 2..6
 layer.minRow = 5; layer.maxRow = 6; layer.prevMinRow = 2; layer.prevMaxRow = 4; sp.run(inp);
-assert.deepEqual({ ...sp.texPart._lastTexWrite.rect }, { x: 0, y: 2, w: COLS, h: 5 }); assert.equal(sp.texPart._lastTexWrite.dataOffset, 2 * COLS * 4);
+assert.deepEqual({ ...sp.texPart._lastTexWrite.rect }, { x: 0, y: 2, w: COLS, h: 5, stride: 0 }); assert.equal(sp.texPart._lastTexWrite.dataOffset, 2 * COLS * 4);
 layer.prevMinRow = 0; layer.prevMaxRow = -1;
 layer.minRow = 0; layer.maxRow = -1;
 // a grid change of the layer recreates the two particle textures
@@ -154,6 +154,18 @@ for (let i = 0; i < 1000; i++) frame();
 global.gc(); const grew = process.memoryUsage().heapUsed - h0;
 assert.equal(mock.createCount, created, 'warm frames create no resources'); assert.equal(sp.u, u0);
 assert.ok(grew < 64 * 1024, `heap growth over 1000 frames ${grew} B`);
+
+// ---- uploadMs timing gated (default off): no performance.now() in run, stat stays 0; on -> measured ----
+{
+  const realNow = performance.now.bind(performance); let calls = 0;
+  performance.now = () => { calls++; return realNow(); };
+  try {
+    assert.equal(sp.timeUploads, false); sp.run(inp);
+    assert.equal(calls, 0, 'timeUploads off: no performance.now calls'); assert.equal(sp.stats.uploadMs, 0);
+    sp.timeUploads = true; sp.run(inp);
+    assert.equal(calls, 2, 'timeUploads on: 2 calls'); assert.ok(sp.stats.uploadMs >= 0);
+  } finally { performance.now = realNow; sp.timeUploads = false; }
+}
 
 sp.dispose(); ovp.dispose();
 for (const t of [gi, depth, edgeFg, edgeBg]) d.dispose(t);

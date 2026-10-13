@@ -14,11 +14,11 @@ import { unprojectCell } from './projection.js';
 import { sunFromWorld } from './lighting.js';
 import {
   DEFAULT_WATER_LOOK, WL_STRIDE, WATER_HASH_SALT, waterSurfaceHash, waterEdgeDistance, packWaterLook, resolveWaterLooks, fillWaterSlotTable, waterFogParams, WFOG_LEN,
+  DEFAULT_RIPPLE_GLYPH,
 } from './waterLook.js';
 import { waterCompositeJS, lastWaterSlotTable } from './waterComposite.js';
 import { lastWaterSelection } from './water.js';
-import { WATER_COMPOSITE_FRAG_SRC } from './gpu/glsl/waterComposite.frag.js';
-import { EDGE_FRAG_SRC } from './gpu/glsl/edge.frag.js';
+import { createRipples } from '../fx/ripples.js';
 import paletteMod from '../../design/palette.js';
 import detailPassMod from '../../design/detail-pass.js';
 import { loadTestAssets } from '../../tools/testing/content-node.mjs';
@@ -115,7 +115,10 @@ function expectedHash(px, py, L, time = 0) {
       continue;
     }
     hits++;
-    const dW = wt.depth[i], a = Math.min(1, Math.max(0, (depth[i] - dW) / L.opaqueAt));
+    const dW = wt.depth[i];
+    unprojectCell(terms, i % COLS, (i / COLS) | 0, dW, P); const wz = P[2];
+    unprojectCell(terms, i % COLS, (i / COLS) | 0, depth[i], P);
+    const a = Math.min(1, Math.max(0, Math.max(depth[i] - dW, Math.max(0, wz - P[2]) * 4) / L.opaqueAt)); // OB-111 path floor: column * 4
     if (a >= L.seeThrough) {
       opaque++;
       if (!fb.waterMask || fb.waterMask[i] !== 1) maskBad++;
@@ -138,7 +141,8 @@ function expectedHash(px, py, L, time = 0) {
       if (snap.glyph[i] !== snap0.glyph[i]) seeBad++; // floor glyph stays
     }
   }
-  ok('twin: pool covers cells, both opaque and see-through ones occur', hits > 200 && opaque > 50 && seeThrough > 5, `hits ${hits} opaque ${opaque} see ${seeThrough}`);
+  ok('twin: pool covers cells, both opaque and see-through ones occur', hits > 200 && opaque > 50, // OB-111: the path floor (column * 4) makes this 0.4 m pool opaque everywhere; see-through is now only the shore feather (ob111-water-near.test.mjs covers the near field)
+     `hits ${hits} opaque ${opaque} see ${seeThrough}`);
   ok('twin: cells without water are bit-identical to the no-water render', untouchedOk);
   ok('twin: opaque cells use the ramp glyph from the drifting brick hash - world anchored', formulaBad === 0, `${formulaBad}`);
   ok('twin: see-through (shallow) cells keep the floor glyph (floor visible through shallows)', seeBad === 0, `${seeBad}`);
@@ -239,19 +243,6 @@ function expectedHash(px, py, L, time = 0) {
   ok('edge: an all-zero mask is a no-op', run(new Uint8Array(9)).gbuf.rule[idx(1, 1)] === plain.gbuf.rule[idx(1, 1)]);
 }
 
-// ---- 7. shader source parity (the GLSL twin) ----
-{
-  const S = WATER_COMPOSITE_FRAG_SRC;
-  const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
-  ok('glsl: the composite uses the shared water hash salt and the (x,y,salt+31*tick) key', S.includes(`${WATER_HASH_SALT} + 31 * tick`) && S.includes('hashFastU(iu & 1023, iv & 1023,'));
-  ok('glsl: opacity / seeThrough / glint / bgK rules are the 32.2 ones', S.includes('clamp((raw - dW) / opaqueAt, 0.0, 1.0)') && S.includes('a >= seeThrough') && S.includes('> 1.0 - r3.w') && S.includes('* 0.5') && S.includes('wc * bgK'));
-  ok('glsl: gl_FragCoord only as the ivec2 cell address, no round(, no Infinity literal', (S.match(/gl_FragCoord/g) || []).length === 1 && /ivec2\s*\(\s*gl_FragCoord\.xy\s*\)/.test(S) && !strip(S).includes('round(') && !S.includes('Infinity'));
-  ok('glsl: reads the +Inf WATER clear by bit pattern, passthrough cells (bg.a < 0.5) are copied', S.includes('0x7f800000u') && S.includes('sbg.a < 0.5'));
-  ok('glsl: terrain sun term on an up normal with the cell sun-map bits', S.includes('max(uSunDir.z, 0.0)') && S.includes('uSunMapOn != 0'));
-  ok('glsl: sampler budget - 6 samplers in the composite, and the edge pass adds only uWater', (S.match(/uniform u?sampler2D/g) || []).length === 6 && (EDGE_FRAG_SRC.match(/uniform u?sampler2D/g) || []).length === 5);
-  ok('glsl: the edge pass suppresses outlines on opaque water (uWaterOn / waterOpaque)', EDGE_FRAG_SRC.includes('!waterOpaque(cell, distRaw)') && EDGE_FRAG_SRC.includes('(raw - dW) / os.x >= os.y'));
-}
-
 // ---- 36.1b: foreground-only glints, fine lattice, CPU phases, isolated drift ----
 {
   const world = World.load(roomDef([POOL]), assets, {});
@@ -287,7 +278,7 @@ function expectedHash(px, py, L, time = 0) {
   ok('drift: the map moves over 1s even when waveHz is zero', changed > 0 && out[37] === 0);
   fillWaterSlotTable(selection, world, resolveWaterLooks({ water: { drift: 0.125, cellM: 0.25, waveHz: 2 } }), out, 1000000000.25);
   ok('phase: long-running clocks fold in f64 before f32 packing', out[36] === 256.125 && out[37] === 0.5);
-  ok('slot table: 56-float stride reserves the shape/shore fields', WL_STRIDE === 56 && lastWaterSlotTable().length === 12 * 56);
+  ok('slot table: 56-float stride reserves the shape/shore fields', WL_STRIDE === 56 && lastWaterSlotTable().length === 14 * 56);
   const boundaryY = 1045.5, boundaryX = (500 * 0.25 - boundaryY * 0.4794) / 0.8776;
   const still = packWaterLook('still', { drift: 0, waveHz: 0 });
   ok('hash precision: sub-f32 offsets at a lattice boundary cannot flip a glint',
@@ -311,10 +302,10 @@ function expectedHash(px, py, L, time = 0) {
   const world = World.load(roomDef([POOL]), assets, {});
   renderWorld(makeFb(world), world, CAM); // selects slot 0 through the actual water layer
   const looks = resolveWaterLooks({ water: { ramp: '~', glintP: 0, foamDepth: 0.05 } });
-  function sample(x, y, column, sky = false, slope = -0.2, dW = 4, light = null) {
+  function sample(x, y, column, sky = false, slope = -0.2, dW = 4, light = null, ripples = null, timeSec = 0) {
     const fb = { rt: new CellBuffer(1, 1), depth: new DepthBuffer(1, 1), gbuf: new GBuffer(1, 1),
       water: { kind: Uint8Array.of(1), depth: Float32Array.of(dW), objectId: Uint32Array.of(0) },
-      palette: assets.palette, matTable: null, light, waterLooks: looks, timeSec: 0 };
+      palette: assets.palette, matTable: null, light, waterLooks: looks, timeSec, ripples };
     fb.gbuf.kind[0] = sky ? 0 : KIND_MODEL;
     fb.depth.depth[0] = dW + column / -slope;
     const terms = { cols: 1, dirX: 0, dirY: 1, planeX: 0, planeY: 0,
@@ -327,7 +318,7 @@ function expectedHash(px, py, L, time = 0) {
   ok('shore: foam changes only foreground, background equals the same-depth centre', edge.bg.every((v, i) => v === centre.bg[i]));
   ok('column tint: shallow water is lighter than a column beyond tintDepth', centre.bg[2] > deep.bg[2]);
   const grazing = sample(5.5, 5.5, 0.2, false, -0.1);
-  ok('column tint: equal vertical columns keep equal colours at different view slopes', centre.bg.every((v, i) => v === grazing.bg[i]));
+  ok('AUD-42 fresnel: a grazing view no longer matches the steeper one (sky tint grows with view angle)', !centre.bg.every((v, i) => v === grazing.bg[i]));
   const sky = sample(2, 5.5, 0, true);
   ok('sky: keeps the deep path colour and surface ramp even at the edge', sky.glyph[0] === '~'.charCodeAt(0) - 32 && sky.bg.every((v, i) => v === deep.bg[i]));
   const far = sample(2, 5.5, 0.2, false, -0.2, 50);
@@ -338,8 +329,8 @@ function expectedHash(px, py, L, time = 0) {
   ok('circle: packed radius gives exact zero edge distance at r', table[51] === 1 && table[42] === 3 && waterEdgeDistance(table, 0, 8, 5) === 0);
   ok('circle: centre distance is r, diagonal boundary also has zero distance', waterEdgeDistance(table, 0, 5, 5) === 3 && Math.abs(waterEdgeDistance(table, 0, 5 + 3 / Math.sqrt(2), 5 + 3 / Math.sqrt(2))) < 1e-12);
 
-  // ---- S8-B2-12b (38.13): the cloud-darkening byte (light.cloud[i], LIGHT.w bits 24..31 on the GPU) scales k ----
-  const cloudLight = (q) => ({ uniform: false, sunMapOn: false, cloud: Uint8Array.of(q) });
+  // ---- S8-B2-12b (38.13): the cloud-darkening byte (light.cloudQ[i], LIGHT.w bits 24..31 on the GPU) scales k ----
+  const cloudLight = (q) => ({ uniform: false, sunMapOn: false, cloudQ: Uint8Array.of(q) });
   const cq0 = sample(5.5, 5.5, 0.2, false, -0.2, 4, cloudLight(0));
   ok('q=0 (explicit cloud byte) is byte-identical to light: null', cq0.bg.every((v, i) => v === centre.bg[i]) && cq0.glyph.every((v, i) => v === centre.glyph[i]));
   const cq153 = sample(5.5, 5.5, 0.2, false, -0.2, 4, cloudLight(153));
@@ -347,24 +338,25 @@ function expectedHash(px, py, L, time = 0) {
   ok('q=153 (cF=0.4) darkens the sun-lit background vs q=0', cq153.bg[2] < cq0.bg[2]);
   ok('q=255 (cF~0) darkens further than q=153 - monotonic in q', cq255.bg[2] <= cq153.bg[2]);
   // a `uniform` light (no per-cell cloud byte) always behaves as cF=1, even if it happens to carry a `cloud` array
-  const cUniform = sample(5.5, 5.5, 0.2, false, -0.2, 4, { uniform: true, sunMapOn: false, cloud: Uint8Array.of(255) });
+  const cUniform = sample(5.5, 5.5, 0.2, false, -0.2, 4, { uniform: true, sunMapOn: false, cloudQ: Uint8Array.of(255) });
   ok('light.uniform ignores the cloud byte (cF stays 1)', cUniform.bg.every((v, i) => v === centre.bg[i]));
 
-  // ---- S8-B2-13 (38.14): splash ripples, !sheet only, composite-only (no geometry change) ----
-  world.water.setTickForTest(0);
-  const zeroR = sample(5.5, 5.5, 0.2);
+  // ---- S8-B2-13b (38.14, the note of record): splash ripples, !sheet only, composite-only (no geometry change) ----
+  // fb.ripples is duck-typed {packInto}; the real engine/fx/ripples.js ring buffer plays that role here.
+  const rip = createRipples({ cap: 8 });
+  const zeroR = sample(5.5, 5.5, 0.2, false, -0.2, 4, null, rip, 0);
   ok('0 rings: byte-identical to the pre-ripple fixture', zeroR.glyph.every((v, i) => v === centre.glyph[i]) && zeroR.bg.every((v, i) => v === centre.bg[i]));
-  ok('addRipple accepts (x, y, amp)', world.water.addRipple(5.5, 5.5, 1) === true);
-  world.water.setTickForTest(30); // age = 30 * (1/60) = 0.5 s; radius = 0.2 + 1.5*0.5 = 0.95
-  const ringHit = sample(6.45, 5.5, 0.2); // |d(0.95) - r(0.95)| = 0 < RIPPLE_HALF_W
-  ok('1 ring at age 0.5s: a cell within the band shows the ripple glyph', ringHit.glyph[0] === 'o'.charCodeAt(0) - 32);
-  const farR = sample(2, 5.5, 0.2); // > 3 m from the ring centre: unchanged shore/foam cell
-  ok('cells far from the ring are unchanged', farR.glyph[0] === edge.glyph[0] && farR.bg.every((v, i) => v === edge.bg[i]));
-  world.water.setTickForTest(120); // age = 2.0 s exactly: AC "fades by 2 s"
-  const gone = sample(6.45, 5.5, 0.2);
-  ok('ring fades by 2 s: the ripple glyph is gone', gone.glyph[0] !== 'o'.charCodeAt(0) - 32);
-  world.water.setTickForTest(0);
-  ok('non-finite input is refused and writes nothing', world.water.addRipple(NaN, 1, 1) === false && world.water.addRipple(1, Infinity, 1) === false);
+  ok('add accepts (x, y, amp, timeSec)', rip.add(5.5, 5.5, 1, 0) === true);
+  // age 1s: r = RIPPLE_SPEED*age = 1.2 m; a cell 1.2 m out sits exactly on the ring (band term 1, acc = amp*1*(1-1/2) = 0.5 >= 0.2).
+  const hitPoint = sample(5.5 + 1.2, 5.5, 0.2, false, -0.2, 4, null, rip, 1);
+  ok('1 ring, amp 1, age 1s: a cell 1.2 m from centre gets the ripple glyph', hitPoint.glyph[0] === DEFAULT_RIPPLE_GLYPH);
+  // 0.4 m out: |d(0.4) - r(1.2)| = 0.8 > RIPPLE_W (0.35) -> band <= 0, acc stays 0.
+  const missPoint = sample(5.5 + 0.4, 5.5, 0.2, false, -0.2, 4, null, rip, 1);
+  ok('a cell 0.4 m from centre does not (unchanged from the pre-ripple fixture)', missPoint.glyph[0] === centre.glyph[0] && missPoint.bg.every((v, i) => v === centre.bg[i]));
+  // age 1.99s: even exactly on the (now far) ring, acc = 1*1*(1-1.99/2) = 0.005 < 0.2 everywhere.
+  const faded = sample(5.5 + 1.2 * 1.99, 5.5, 0.2, false, -0.2, 4, null, rip, 1.99);
+  ok('ring fades by 1.99s: acc stays below the threshold everywhere, glyph untouched', faded.glyph[0] === centre.glyph[0] && faded.bg.every((v, i) => v === centre.bg[i]));
+  ok('non-finite input is refused and writes nothing', rip.add(NaN, 1, 1, 0) === false && rip.add(1, Infinity, 1, 0) === false);
 }
 
 // ---- 8. zero allocation after warm ----

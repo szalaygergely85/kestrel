@@ -2,11 +2,12 @@
 import assert from 'node:assert';
 import { makeMockGpuDevice } from '../../../test/assert.js';
 import { WgCellPipeline, PASS_NAMES } from './WgCellPipeline.js';
-import { GpuCellPipeline, PASS_NAMES as GL_PASS_NAMES } from '../GpuCellPipeline.js';
 import { allocWgTargets, freeWgTargets } from './targets.js';
 import { DEBUG_BLOCK } from '../wgsl/debug.wgsl.js';
 import { SHADE_BLOCK } from '../wgsl/shade.wgsl.js';
 import { EDGE_BLOCK } from '../wgsl/edge.wgsl.js';
+import { LIGHT_BLOCK } from '../wgsl/light.wgsl.js';
+import { createPitchedTerms, pitchedTerms } from '../../projection.js';
 import { bindShading, bindLevel } from '../../MaterialTable.js';
 import { MAT_F_WIDTH, SET_I_WIDTH } from '../ShadeTextures.js';
 import { loadLevel } from '../../../world/Level.js';
@@ -54,9 +55,7 @@ assert.strictEqual(p.ready, true);
 const SURFACE = ['frame', 'bind', 'bindVoxels', 'bindViewModel', 'bindInstances', 'resizeGrid', 'setEnabled', 'setPassTiming', 'setDebugMode', 'readbackGeometry', 'readbackLight', 'readbackWater', 'readbackShadowDepthBits', 'readback', 'dispose'];
 for (const m of SURFACE) {
   assert.strictEqual(typeof p[m], 'function', m);
-  assert.strictEqual(typeof GpuCellPipeline.prototype[m], 'function', 'GL surface ' + m);
 }
-assert.deepStrictEqual([...PASS_NAMES], [...GL_PASS_NAMES]);
 assert.strictEqual(p.stats.passMsP50.length, PASS_NAMES.length);
 assert.deepStrictEqual(p.portedPasses, ['debug', 'raster', 'resolve', 'deriv', 'light', 'shade', 'edge', 'shadow', 'water']); // WG-3d/3e: default sun mode = map
 assert.strictEqual(p.frameComplete, false, 'honest: no scene yet');
@@ -125,7 +124,8 @@ assert.deepStrictEqual(lastBind.textures.map((entry) => entry.texture), [p._t.te
   passes.length = 0; drawn = 0;
   lp.run(host, t);
   assert.deepStrictEqual(passes.map(x => x.t), [t.targetLight]); assert.strictEqual(drawn, 1);
-  assert.strictEqual(device._lastBind.textures.length, 7);
+  assert.strictEqual(device._lastBind.textures.length, 8);
+  assert.strictEqual(device._lastBind.textures[7].texture, lp.texPshDummy, 'ME-16e: 1x1x6 dummy depth array at binding 7 while point shadows are off');
   assert.strictEqual(device._lastBind.textures[6].texture, lp.texSunDummy, 'dummy depth bound until WG-3d');
   assert.strictEqual(device._lastBind.uniforms[0].toFixed(2), '0.10');
   const made = liveCount();
@@ -136,6 +136,20 @@ assert.deepStrictEqual(lastBind.textures.map((entry) => entry.texture), [p._t.te
   assert.strictEqual(lp.texLVis._texWrites, 1, 'dirty LVIS slot uploaded once');
   lp.run(host, t); assert.strictEqual(lp.texLVis._texWrites, 1, 'unchanged LVIS slot not re-uploaded');
   assert.strictEqual(liveCount(), made, 'warm light pass creates no resources');
+  // US-068b2 (38.19): ortho -> projMode 2 + halfW/halfH in the pitch tanHalf slots; pitched 1 with the perspective tanHalf; shear 0
+  {
+    const oc = { ...cam, pitchDeg: -35.264, yawDeg: 45, projection: 'ortho', orthoHalfH: 8, focusX: 1, focusY: 2, focusZ: 0 };
+    const terms = createPitchedTerms(), W = (n) => LIGHT_BLOCK.field(n).word;
+    for (const [mode, c] of [[2, oc], [1, { ...cam, pitchDeg: -20, projection: 'pitched' }], [0, cam]]) {
+      if (mode) pitchedTerms(c, { cols: p.cols, rows: p.rows, pxCellW: 1, pxCellH: 2 }, terms);
+      host._rasterPass = mode ? { pitched: true, ortho: mode === 2, pitch: terms } : null;
+      lp.run(host, t);
+      assert.strictEqual(lp.li[W('projMode')], mode);
+      if (mode === 2) { assert.strictEqual(lp.lu[W('pitchA') + 3], Math.fround(terms.halfW)); assert.strictEqual(lp.lu[W('pitchC') + 1], 8); }
+      if (mode === 1) assert.strictEqual(lp.lu[W('pitchA') + 3], Math.fround(terms.tanHalfX));
+    }
+    host._rasterPass = null;
+  }
 }
 
 
@@ -173,6 +187,20 @@ assert.deepStrictEqual(lastBind.textures.map((entry) => entry.texture), [p._t.te
   host._fb.timeSec = 3; sp.run(host, t, null); sp.run(host, t, null);
   assert.strictEqual(sp.stats.tableUploads, 1); assert.strictEqual(sp.stats.skyBakes, 1); assert.strictEqual(sp.texMatF._texWrites, w0);
   assert.strictEqual(liveCount(), made, 'warm shade pass creates no resources');
+  // US-068b2 (38.19): ortho -> shade/edge projMode 2, fixed positive hashCell, halfH in the pitchC tanHalfY slot; pitched keeps -k
+  {
+    const terms = createPitchedTerms(), g = { cols: p.cols, rows: p.rows, pxCellW: 1, pxCellH: 2 };
+    const base = { x: 1, y: 2, z: 1.5, yawDeg: 45, pitchDeg: -35.264 };
+    const h = { ...host, _cam: base, _world: { structures: [], structVersion: 1 } };
+    for (const [mode, c] of [[2, { ...base, projection: 'ortho', orthoHalfH: 8, focusX: 1, focusY: 2, focusZ: 0 }], [1, { ...base, projection: 'pitched' }]]) {
+      pitchedTerms(c, g, terms);
+      h._rasterPass = { pitched: true, ortho: mode === 2, pitch: terms };
+      sp.run(h, t, null);
+      assert.strictEqual(sp.si[SHADE_BLOCK.field('projMode').word], mode); assert.strictEqual(sp.ei[EDGE_BLOCK.field('projMode').word], mode);
+      const hc = sp.su[SHADE_BLOCK.field('hashCell').word];
+      if (mode === 2) { assert.ok(hc > 0); assert.strictEqual(sp.eu[EDGE_BLOCK.field('pitchC').word + 1], 8); } else assert.ok(hc < 0);
+    }
+  }
   // palette time-of-day change re-bakes the sky only; a new table re-uploads
   const t0 = palette.defaultTime, other = Object.keys(palette.timeOfDay).find(k => k !== t0);
   if (other) { palette.defaultTime = other; sp.run(host, t, null); palette.defaultTime = t0; assert.strictEqual(sp.stats.skyBakes, 2); assert.strictEqual(sp.stats.tableUploads, 1); }
@@ -212,8 +240,27 @@ hook(); assert.strictEqual(passes.length, beforeResizeHook + 4, 'cleared again a
   console.warn = w; device.createTexture = orig; device.checkErrors = hadCE;
   assert.strictEqual(p._t, keep); assert.strictEqual(p.ready, false); assert.strictEqual(p.cols, 20); assert.strictEqual(hook, null, 'setEnabled(false) removed the hook');
   assert.strictEqual(warns.length, 1); assert.strictEqual(drained, 0);
-  p.ready = true; p.setEnabled(true); // restore for the following checks
+  assert.ok(p._rz, 'size remembered for retry'); assert.strictEqual(p.stats.resizeFailures, 1);
+  p._rz = null; p.ready = true; p.setEnabled(true); // restore for the following checks
   assert.ok(hook, 'hook restored');
+}
+// RESIZE-RECOVER-01: alloc fails once -> next frame retries and recovers; 3 failures -> stays disabled
+{
+  const orig = device.createTexture; const w = console.warn; console.warn = () => {};
+  const f0 = p.stats.resizeFailures; let fail = 1;
+  device.createTexture = (...a) => { if (fail > 0) throw new Error('oom'); return orig.apply(device, a); };
+  const keep = p._t;
+  p.resizeGrid(24, 12);
+  assert.strictEqual(p.ready, false); assert.strictEqual(p.frameComplete, false); assert.strictEqual(p._t, keep); assert.deepStrictEqual([p.cols, p.rows], [20, 10], 'grid unchanged while disabled');
+  fail = 0; p.frame(null, null, null, null);
+  assert.strictEqual(p.ready, true); assert.ok(hook, 'hook back'); assert.strictEqual(p._rz, null); assert.deepStrictEqual([p.cols, p.rows], [24, 12]);
+  assert.strictEqual(p._t.texSGI.desc.width, 48); assert.strictEqual(p.stats.resizeFailures, f0 + 1);
+  // 3 failures in a row -> old behaviour (disabled for good, no more retries)
+  fail = 1; p.resizeGrid(30, 15); p.frame(null, null, null, null); p.frame(null, null, null, null);
+  assert.strictEqual(p.ready, false); assert.strictEqual(p._rz, null); assert.strictEqual(p.stats.resizeFailures, f0 + 4); assert.strictEqual(hook, null);
+  fail = 0; p.frame(null, null, null, null); assert.strictEqual(p.ready, false, 'no retry after giving up');
+  device.createTexture = orig; console.warn = w;
+  p.ready = true; p.setEnabled(true); p.resizeGrid(20, 10); assert.ok(hook);
 }
 
 // readbackGeometry: payload shape (4-wide GI/GA/Depth), Depth spread from the 1-wide r32uint
@@ -333,3 +380,40 @@ p.dispose(); // idempotent
   assert.strictEqual(q.ready, false);
 }
 console.log('WgCellPipeline.test.js: all checks passed.');
+
+// OCCL-STATS-01: occl 2 is kept (stats readback), true/1 = occlusion without stats
+{
+  const mk = (o) => new WgCellPipeline(rt, { rays: 2, ...o });
+  const a = mk({ occl: 2 }), b = mk({ occl: true }), c = mk({ occl: 1 }), d0 = mk({}), e = mk({ occl: true, occlStats: true });
+  assert.deepEqual([a.occl, a.occlStats], [2, true]);
+  assert.deepEqual([b.occl, b.occlStats, c.occl, c.occlStats], [true, false, true, false]);
+  assert.deepEqual([d0.occl, d0.occlStats, e.occlStats], [false, false, true]);
+}
+
+// GPU-OFF-REASON-01: offReason strings + one warn per true -> false transition; shadow levels never leave the path off
+{
+  const warns = []; const w = console.warn; console.warn = (...a) => warns.push(a.join(' '));
+  try {
+    for (const sun of ['map', 'off']) { // every Settings shadow level resolves to 'map' or 'off' on the mesh renderer
+      const q = new WgCellPipeline(rt, { rays: 2, shadows: { sun } });
+      assert.strictEqual(q.frameComplete, false); assert.ok(/spritesBound=false/.test(q.stats.offReason), q.stats.offReason);
+      q._spritesBound = true; q._spritesPass = { dispose() {} }; q._overlayPass = { dispose() {} }; q._syncActive();
+      assert.strictEqual(q.frameComplete, true, `sun=${sun} completes`); assert.strictEqual(q.stats.offReason, null);
+      assert.strictEqual(warns.length, 0, 'no warn while turning on');
+      q.setSource('upload'); q._syncActive();
+      assert.strictEqual(q.stats.offReason, 'source=upload'); assert.strictEqual(q.stats.offCount, 1);
+      assert.ok(warns.length === 1 && /GPU path off: source=upload/.test(warns[0]), warns[0]);
+      q._syncActive(); assert.strictEqual(warns.length, 1, 'once per transition'); // still off, no second warn
+      q.setSource('scene'); q._syncActive(); assert.strictEqual(q.frameComplete, true);
+      q.setEnabled(false); // caller hint
+      assert.ok(/enabled=false/.test(q.stats.offReason) && /setEnabled caller:/.test(warns[warns.length - 1]), warns[warns.length - 1]);
+      assert.strictEqual(q.stats.offCount, 2);
+      warns.length = 0; q.dispose();
+    }
+    const r = new WgCellPipeline(rt, { rays: 2 });
+    r._spritesBound = true; r._spritesPass = { dispose() {} }; r._overlayPass = { dispose() {} }; r._syncActive(); assert.strictEqual(r.frameComplete, true);
+    r._shadowPass.enabled = false; r._shadowPass.off = false; r.ready = false; r._syncActive(); // simulated unknown shadow mode
+    assert.ok(/ready=false/.test(r.stats.offReason) && /shadowPass\.enabled=false off=false/.test(r.stats.offReason), r.stats.offReason);
+  } finally { console.warn = w; }
+}
+console.log('WgCellPipeline.test.js: GPU-OFF-REASON-01 checks passed.');

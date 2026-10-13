@@ -32,5 +32,8 @@
   "colliderB64": "z/czv99PDT7+1Hi+4XrUvmQ7H7/+1Hi+4XrUvmQ7H7/ufM9Az/czv99PDT7+1Hi+4XrUvmQ7H7/ufM9Az/czv99PDT7ufM9A4XrUvmQ7H7/+1Hi+4XrUPmQ7H7/+1Hi+4XrUPmQ7H7/ufM9A4XrUvmQ7H7/+1Hi+4XrUPmQ7H7/ufM9A4XrUvmQ7H7/ufM9A4XrUPmQ7H7/+1Hi+z/czP99PDT7+1Hi+z/czP99PDT7ufM9A4XrUPmQ7H7/+1Hi+z/czP99PDT7ufM9A4XrUPmQ7H7/ufM9Az/czP99PDT7+1Hi+8tItPylcjz7+1Hi+8tItPylcjz7ufM9Az/czP99PDT7+1Hi+8tItPylcjz7ufM9Az/czP99PDT7ufM9A8tItPylcjz7+1Hi+c2iRPf7UOD/+1Hi+c2iRPf7UOD/ufM9A8tItPylcjz7+1Hi+c2iRPf7UOD/ufM9A8tItPylcjz7ufM9Ac2iRPf7UOD/+1Hi+c2iRvf7UOD/+1Hi+c2iRvf7UOD/ufM9Ac2iRPf7UOD/+1Hi+c2iRvf7UOD/ufM9Ac2iRPf7UOD/ufM9Ac2iRvf7UOD/+1Hi+8tItvylcjz7+1Hi+8tItvylcjz7ufM9Ac2iRvf7UOD/+1Hi+8tItvylcjz7ufM9Ac2iRvf7UOD/ufM9A8tItvylcjz7+1Hi+z/czv99PDT7+1Hi+z/czv99PDT7ufM9A8tItvylcjz7+1Hi+z/czv99PDT7ufM9A8tItvylcjz7ufM9Az/czv99PDT7ufM9A4XrUvmQ7H7/ufM9A4XrUPmQ7H7/ufM9Az/czv99PDT7+1Hi+4XrUPmQ7H7/+1Hi+4XrUvmQ7H7/+1Hi+z/czv99PDT7ufM9A4XrUPmQ7H7/ufM9Az/czP99PDT7ufM9Az/czv99PDT7+1Hi+z/czP99PDT7+1Hi+4XrUPmQ7H7/+1Hi+z/czv99PDT7ufM9Az/czP99PDT7ufM9A8tItPylcjz7ufM9Az/czv99PDT7+1Hi+8tItPylcjz7+1Hi+z/czP99PDT7+1Hi+z/czv99PDT7ufM9A8tItPylcjz7ufM9Ac2iRPf7UOD/ufM9Az/czv99PDT7+1Hi+c2iRPf7UOD/+1Hi+8tItPylcjz7+1Hi+z/czv99PDT7ufM9Ac2iRPf7UOD/ufM9Ac2iRvf7UOD/ufM9Az/czv99PDT7+1Hi+c2iRvf7UOD/+1Hi+c2iRPf7UOD/+1Hi+z/czv99PDT7ufM9Ac2iRvf7UOD/ufM9A8tItvylcjz7ufM9Az/czv99PDT7+1Hi+8tItvylcjz7+1Hi+c2iRvf7UOD/+1Hi+",
   "colliderParts": [
     "CommonTree_1#0"
+  ],
+  "lods": [
+    {"mesh": "quaternius/CommonTree_1_LOD1", "ratio": 0.25, "tris": 1566}
   ]
 }

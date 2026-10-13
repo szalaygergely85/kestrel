@@ -11,16 +11,16 @@ import { MAX_LIGHTS, MAX_VIS_DIM, MAX_VIS_CELLS, MAX_SUN_STEPS, falloff, sampleV
 import { MAX_STRUCTS } from '../WorldTextures.js';
 import { packNormalOct, unpackNormalOct } from '../../../voxel/octNormal.js';
 import { unprojectPitched } from '../../projection.js';
-import { CLOUD_DARK, CLOUD_SHIFT } from '../../cloudShadow.js';
+import { CLOUD_Q_SHIFT } from '../../shadowSun.js';
 import { AO_MAX } from '../../horizonAo.js';
 
 // --- string rules (38.5) ---
 assert.ok(WGSL_MODULES.some((m) => m.name === 'light' && m.code === LIGHT_WGSL), 'registered');
 assert.ok(!/%|\bround\s*\(|dpdx|dpdy|fwidth|frag_depth|textureSample|texelFetch|gl_FragCoord|\bmod\s*\(|ivec2|uvec|\bint\(/.test(LIGHT_WGSL), 'no raw % / GLSL names');
 assert.ok(/fn vs_main/.test(LIGHT_WGSL) && /fn fs_main\(@builtin\(position\) frag: vec4f\) -> @location\(0\) vec4u/.test(LIGHT_WGSL));
-assert.deepEqual(LIGHT_TEXTURES, ['uint', 'uint', 'uint', 'uint', 'float', 'uint', 'depth']);
+assert.deepEqual(LIGHT_TEXTURES, ['uint', 'uint', 'uint', 'uint', 'float', 'uint', 'depth', 'depthArray']);
 assert.deepEqual(LIGHT_TARGETS, ['rgba32uint']);
-const types = ['texture_2d<u32>', 'texture_2d<u32>', 'texture_2d<u32>', 'texture_2d<u32>', 'texture_2d<f32>', 'texture_2d<u32>', 'texture_depth_2d'];
+const types = ['texture_2d<u32>', 'texture_2d<u32>', 'texture_2d<u32>', 'texture_2d<u32>', 'texture_2d<f32>', 'texture_2d<u32>', 'texture_depth_2d', 'texture_depth_2d_array'];
 types.forEach((t, i) => assert.ok(LIGHT_WGSL.includes(`@group(0) @binding(${i}) var `) && new RegExp(`@binding\\(${i}\\) var \\w+: ${t.replace(/[<>]/g, '\\$&')}`).test(LIGHT_WGSL), `binding ${i} ${t}`));
 assert.ok(/@group\(1\) @binding\(0\) var<uniform> u: LightU/.test(LIGHT_WGSL));
 assert.ok(new RegExp(`const MAX_VIS_DIM: i32 = ${MAX_VIS_DIM};`).test(LIGHT_WGSL) && new RegExp(`const MAX_STRUCTS: i32 = ${MAX_STRUCTS};`).test(LIGHT_WGSL), 'constants interpolated');
@@ -33,14 +33,21 @@ assert.deepEqual(['ambient', 'posX', 'sunDir', 'sunShadowRes', 'sunCol', 'sunSha
 assert.equal(LIGHT_BLOCK.field('sunShadowM').offset % 16, 0);
 assert.equal(LIGHT_BLOCK.field('lightPos').words, MAX_LIGHTS * 4);
 assert.equal(LIGHT_BLOCK.field('structB').words, MAX_STRUCTS * 4);
-// S8-B2-12a (38.13): cloudCover takes the first pad word (30, right after sunShadowNormalOff at 29) so pitchA
-// stays at word 32; `cloud` (strength, invScale, offU, offV) is appended at the very end, word 316; new size 1280 B.
-assert.equal(LIGHT_BLOCK.field('cloudCover').word, 30);
-// S8-B2-20 (38.17): aoStrength takes the last pad word (31); pitchA stays at word 32, cloud at 316, size unchanged.
+// S8-B2-12c (38.13): word 30 is a pad again (cloudCover gone); cloudA/cloudB vec4 are appended at the very END (316, 320).
+assert.equal(LIGHT_BLOCK.field('pad30').word, 30);
+// S8-B2-20 (38.17): aoStrength takes the last pad word (31); pitchA stays at word 32.
 assert.equal(LIGHT_BLOCK.field('aoStrength').word, 31);
 assert.equal(LIGHT_BLOCK.field('pitchA').word, 32);
-assert.equal(LIGHT_BLOCK.field('cloud').word, 316);
-assert.equal(LIGHT_BLOCK.sizeBytes, 1280);
+assert.equal(LIGHT_BLOCK.field('cloudA').word, 412);
+assert.equal(LIGHT_BLOCK.field('cloudB').word, 416);
+assert.equal(LIGHT_BLOCK.field('aoP').word, 420);
+assert.equal(LIGHT_BLOCK.field('pshA').word, 424, 'ME-16d words appended after aoP');
+assert.equal(LIGHT_BLOCK.field('pshO').word, 428); assert.equal(LIGHT_BLOCK.field('pshO').words, 24);
+assert.equal(LIGHT_BLOCK.field('pshSlot').word, 452); assert.equal(LIGHT_BLOCK.field('pshSlot').words, 24);
+assert.equal(LIGHT_BLOCK.sizeBytes, 1904);
+assert.ok(LIGHT_WGSL.includes('aoRc(u.aoP.x, u.planeDistY, dist, u.aoP.z)'), 'rc from aoP');
+assert.ok(!/AO_TAP_CELLS|AO_RADIUS_M|AO_BIAS/.test(LIGHT_WGSL), 'legacy AO consts gone');
+
 
 // --- S8-B2-20 (38.17): horizon AO wired into fs_main, cellPoint/aoTapCell present, never-brighten shape ---
 assert.ok(/fn cellPoint\(/.test(LIGHT_WGSL), 'cellPoint fn present (taps only - P itself is not refactored)');
@@ -49,21 +56,12 @@ assert.ok(/fn aoTapOcc\(/.test(LIGHT_WGSL), 'aoTapOcc fn present (common.wgsl.js
 assert.ok(/u\.aoStrength > 0\.0/.test(LIGHT_WGSL), 'AO block guarded by a uniform branch on aoStrength');
 assert.ok(/L -= u\.ambient \* \(1\.0 - aoF\)/.test(LIGHT_WGSL), 'AO subtracts from L (never adds - cannot brighten)');
 
-// --- S8-B2-12a (38.13): cloud-shadow byte wired into fs_main, CLOUD_DARK interpolated, CLOUD_SHIFT = 24 ---
-assert.ok(new RegExp(`const CLOUD_SHIFT: u32 = ${CLOUD_SHIFT}u;`).test(LIGHT_WGSL), 'CLOUD_SHIFT interpolated');
-assert.ok(new RegExp(`const CLOUD_DARK: f32 = ${CLOUD_DARK};`).test(LIGHT_WGSL), 'CLOUD_DARK interpolated');
-assert.ok(/fn cloudCov\(/.test(LIGHT_WGSL), 'cloudCov fn present (common.wgsl.js CLOUD_SHADOW_WGSL interpolated)');
-assert.ok(/\| cloudBits\)/.test(LIGHT_WGSL), 'LIGHT.w carries the cloud byte');
-// Mutation: a changed CLOUD_DARK literal must show up in a numericLiterals check of LIGHT_WGSL (D-039 style guard).
-// S8-B2-20 (38.17) also bakes 0.6 into the text as AO_MAX, so the literal-SET-difference form of this check (any
-// other check in this file wanting to assert "CLOUD_DARK's value is gone") would false-negative on that
-// coincidence - this check instead targets the CLOUD_DARK declaration text directly, which stays precise.
-{
-  const lits = numericLiterals(LIGHT_WGSL);
-  assert.ok(lits.has(CLOUD_DARK), 'LIGHT_WGSL literal-set has CLOUD_DARK');
-  const mutated = LIGHT_WGSL.replace(`const CLOUD_DARK: f32 = ${CLOUD_DARK};`, 'const CLOUD_DARK: f32 = 0.37;');
-  assert.ok(numericLiterals(mutated).has(0.37) && !new RegExp(`const CLOUD_DARK: f32 = ${CLOUD_DARK};`).test(mutated), 'mutation: a changed CLOUD_DARK literal is caught');
-}
+// --- S8-B2-12c (38.13): cloud-shadow byte wired into fs_main, CLOUD_Q_SHIFT = 24, no raw % / round ---
+assert.ok(new RegExp(`const CLOUD_Q_SHIFT: u32 = ${CLOUD_Q_SHIFT}u;`).test(LIGHT_WGSL), 'CLOUD_Q_SHIFT interpolated');
+assert.ok(LIGHT_WGSL.includes('fn cloudShadeQ(P: vec3f, sd: vec3f) -> u32'), 'cloudShadeQ(P, sd) -> u32 present');
+assert.ok(LIGHT_WGSL.includes('u.cloudA.w > 0.0'), 'cloud branch guarded by a uniform branch on cloudA.w (strength)');
+assert.ok(LIGHT_WGSL.includes('| cloudBits)'), 'LIGHT.w carries the cloud byte');
+assert.ok(!/cloudCov|CLOUD_DARK|CLOUD_SHIFT/.test(LIGHT_WGSL), 'old 12a names are gone');
 // Same mutation guard for AO_MAX (also 0.6 - the two consts' declarations are checked independently, never by a
 // whole-text literal-set difference, for exactly the coincidence noted above).
 {
@@ -203,4 +201,62 @@ console.log(`light.wgsl.test.js: string/layout rules and ${probes} JS-evaluated 
   assert.ok(/let sdm = 0\.5 \+ 0\.5 \* sd;/.test(fn), 'sdm = 0.5 + 0.5 * sd');
   assert.ok(/if \(sdm <= textureLoad\(uSunShadow, t, 0\)\)/.test(fn) && !/if \(sd <= textureLoad/.test(fn), 'tap compare uses sdm');
   assert.ok(/sd < 0\.0 \|\| sd > 1\.0/.test(fn), 'receiver box test stays on sd');
+}
+
+// ME-16d ARCH: the point sampler uses the sun-map depth convention (0.75 + 0.25 * ndc), same literals as shadowPoint.js shadowDepthStore
+{
+  const fn = LIGHT_WGSL.slice(LIGHT_WGSL.indexOf('fn pointShadowTapsS'), LIGHT_WGSL.indexOf('fn pointShadowTapsS') + 2500);
+  assert.ok(/let rd = 0\.75 \+ 0\.25 \* \(/.test(fn), 'rd = 0.75 + 0.25 * ndc');
+}
+
+// ME-20c (38.18): kind-9 packed normal from GI.z; the vertex-AO term sits inside the strength branch, after the horizon term, as a min.
+{
+  const { LIGHT_WGSL: W } = await import('./light.wgsl.js');
+  assert.ok(W.includes('select(textureLoad(uGA, cell, 0).w, textureLoad(uGI, cell, 0).z, kindU == u32(KIND_MESH))'), 'kind 9 packed N from GI.z');
+  const iStr = W.indexOf('if (u.aoStrength > 0.0 && !isTer) {'), iHor = W.indexOf('var aoF = 1.0 - u.aoStrength * AO_MAX * occ;');
+  const iVao = W.indexOf('if (kindU == u32(KIND_MESH)) { aoF = min(aoF, 1.0 - u.aoStrength * AO_MAX * (1.0 - clamp(bitcast<f32>(textureLoad(uGA, cell, 0).w), 0.0, 1.0))); }');
+  const iSub = W.indexOf('L -= u.ambient * (1.0 - aoF);');
+  assert.ok(iStr > 0 && iStr < iHor && iHor < iVao && iVao < iSub, 'vao term inside the strength branch, after the horizon term, before the ambient subtraction');
+  assert.ok(!W.includes('aoF *=') && !W.includes('aoF = aoF *'), 'min, not product');
+  console.log('light.wgsl.test.js (ME-20c): vao term placement ok.');
+}
+
+// ME-16d (38.22 item 3): WGSL pointShadowTapsS evaluated in JS vs the JS twin shadowPoint.js pointShadowTaps.
+{
+  const { pointShadowTaps, pointShadowInfo, pointDepthEncode, POINT_SHADOW_DEFAULTS } = await import('../../shadowPoint.js');
+  const W = LIGHT_WGSL, PS = 'fn pointShadowTapsS';
+  const fn = W.slice(W.indexOf(PS), W.indexOf('fn pointShadowTaps(slot'));
+  assert.ok(!/%|round\s*\(|textureSample/.test(fn), 'no % / round / textureSample');
+  assert.ok(W.includes('var<uniform> u: LightU') && W.indexOf('@binding(7) var uPointShadow: texture_depth_2d_array') > 0 && /textureLoad\(uPointShadow, vec2i\(x, y\), layer, 0\)/.test(fn), 'binding 7, explicit compare via textureLoad');
+  assert.ok(W.includes('if (u.pshA.x > 0.0) {') && W.includes('else { vis = sampleVis(i, P.x + toLight.x * 0.02, P.y + toLight.y * 0.02); }'), 'off: the old sampleVis line runs');
+  const res = 16, far = 6, nSlots = 2;
+  let seed = 12345; const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const depth = new Float32Array(nSlots * 6 * res * res);
+  const O = [[1.25, -2.5, 0.75], [4, 4, 1]];
+  const uni = { pshA: { x: 2, y: res, z: POINT_SHADOW_DEFAULTS.biasM, w: POINT_SHADOW_DEFAULTS.normalOffTexels } };
+  let cur = null;
+  const tl = (_t, c, layer) => depth[layer * res * res + c.y * res + c.x];
+  const f = compileFn(fn, 'pointShadowTapsS', { u: uni, PSH_NEAR: 0.05, textureLoad: tl, uPointShadow: 0 });
+  const P = [0, 0, 0], N = [0, 0, 0], opts = POINT_SHADOW_DEFAULTS;
+  let bad = 0, n = 2000, mism = 0, seams = 0, edges = 0, near = 0;
+  for (let i = 0; i < n; i++) {
+    const slot = i & 1, o = O[slot];
+    // refresh stored depths with a mix: random, or tight around the receiver depth (forces boundary taps)
+    const mode = rnd();
+    let dir = [rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1];
+    if (i % 5 === 0) { const k = (rnd() * 3) | 0, s = rnd() < 0.5 ? -1 : 1; dir[k] = s * 1; dir[(k + 1) % 3] = s * (1 + (rnd() - 0.5) * 1e-3 * (rnd() < 0.5 ? 0 : 1)); seams++; } // face seam (ties)
+    if (i % 7 === 0) { const k = (rnd() * 3) | 0; dir[k] = (dir[k] < 0 ? -1 : 1) * 3; dir[(k + 1) % 3] = (rnd() * 2 - 1) * 2.99; edges++; } // |minor| ~ major: clamped edge
+    const dist = i % 11 === 0 ? 0.01 + rnd() * 0.06 : 0.1 + rnd() * (far + 1);
+    if (i % 11 === 0) near++;
+    const l = Math.hypot(...dir) || 1;
+    for (let k = 0; k < 3; k++) P[k] = o[k] + dir[k] / l * dist;
+    const nn = [rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1], nl = Math.hypot(...nn); for (let k = 0; k < 3; k++) N[k] = nn[k] / nl;
+    const base = slot * 6 * res * res;
+    for (let k = 0; k < 6 * res * res; k++) depth[base + k] = mode < 0.5 ? Math.fround(rnd()) : Math.fround(pointDepthEncode(0.2 + rnd() * far, far) + (rnd() - 0.5) * 0.02);
+    const exp = pointShadowTaps(depth, res, slot, o, far, P, N, opts);
+    const got = f(slot, P[0] - o[0], P[1] - o[1], P[2] - o[2], N[0], N[1], N[2], far);
+    if (got !== exp) mism++;
+  }
+  assert.ok(mism <= n / 1000 + 1, `WGSL taps == JS twin (mismatches ${mism}/${n}, doubles vs f32 only at boundaries)`);
+  console.log(`light.wgsl.test.js (ME-16d): pointShadowTapsS vs twin ${n} cases (${seams} seam, ${edges} edge, ${near} near-range), ${mism} mismatches.`);
 }

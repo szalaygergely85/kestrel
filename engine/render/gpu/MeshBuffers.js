@@ -24,6 +24,7 @@
 // float).
 import { AUX_STRIDE, FLAT_STRIDE, flatKind } from '../../mesh/MeshData.js';
 import { KIND_MESH } from '../GBuffer.js';
+import { vertexAoAt } from '../../mesh/vertexAo.js';
 import { onMeshEvicted } from '../../mesh/lazyMesh.js';
 
 /** Bytes per vertex in the interleaved static buffer (27.15.0 amendment 2). */
@@ -76,6 +77,10 @@ export const STATIC_VERTEX_LAYOUT = Object.freeze([
 /** ALPHA-01c: the optional mask-uv vertex stream (8 B/vertex, `mesh.uvMask`), bound as an extra stream at location 10 (WebGPU `extraLayouts`). */
 export const MASK_UV_LAYOUT = Object.freeze([{ name: 'aUVMask', location: 10, components: 2, type: 'float', offsetBytes: 0 }]);
 export const MASK_UV_STRIDE_BYTES = 8;
+
+/** ME-20c-c (38.18): the optional baked vertex-AO stream (4 B/vertex, kind-9 `--ao` meshes), extra stream at location 11 (only bound while the AO flag is on). */
+export const VAO_LAYOUT = Object.freeze([{ name: 'aAo', location: 11, components: 1, type: 'float', offsetBytes: 0 }]);
+export const VAO_STRIDE_BYTES = 4;
 
 /** RE-06b (architecture 28.7): bytes per voxel vertex = the first 32 B of the static vertex (pos, uv, nrm, flat); aux is constant zero. */
 export const VOXEL_STRIDE_BYTES = 32;
@@ -131,8 +136,13 @@ export function buildVoxelVertexData(mesh) {
  * @returns {{vertex: ArrayBuffer, index: Uint16Array|Uint32Array, quadCount: number, vertexCount: number, indexCount: number}}
  */
 export function buildMeshTriVertexData(mesh) {
+  // ME-20c-c (38.18): lanes 0..4 must stay 0; lanes 5..7 are baked vertex AO (finite, [0,1]); any non-zero one adds an `ao` stream.
+  let hasAo = false;
   for (let i = 0; i < mesh.aux.length; i++) {
-    if (mesh.aux[i] !== 0) throw new Error(`buildMeshTriVertexData: mesh "${mesh.id}" has non-zero aux at ${i}`);
+    const a = mesh.aux[i], lane = i % AUX_STRIDE;
+    if (lane < 5) { if (a !== 0) throw new Error(`buildMeshTriVertexData: mesh "${mesh.id}" has non-zero aux at ${i}`); }
+    else if (!(a >= 0 && a <= 1)) throw new Error(`buildMeshTriVertexData: mesh "${mesh.id}" has AO ${a} outside [0, 1] at aux ${i}`);
+    else if (a !== 0) hasAo = true;
   }
   const V = mesh.triCount * 3;
   const vertex = new ArrayBuffer(V * VOXEL_STRIDE_BYTES);
@@ -146,7 +156,9 @@ export function buildMeshTriVertexData(mesh) {
   }
   const index = V > 65536 ? new Uint32Array(V) : new Uint16Array(V);
   for (let i = 0; i < V; i++) index[i] = i;
-  return { vertex, index, quadCount: 0, vertexCount: V, indexCount: V };
+  const out = { vertex, index, quadCount: 0, vertexCount: V, indexCount: V };
+  if (hasAo) { const ao = new Float32Array(V); for (let v = 0; v < V; v++) ao[v] = vertexAoAt(mesh, v); out.ao = ao; }
+  return out;
 }
 
 /** Bytes per vertex in the interleaved terrain buffer (ME-06, 27.3 "terrain layout has no uv"): pos(12) + nrm(4). */
@@ -222,7 +234,7 @@ export class MeshBuffers {
     this.device = device;
     /** @type {Map<string, {vertexBuffer: any, version: number, mesh: any, vertexCount: number, indexBuffer?: any, indexCount?: number, uvMaskBuffer?: any}>} */
     this.cache = new Map();
-    /** RE-06b: voxel-only entries (32 B vertex + index buffer), separate from `cache` so `get()` is untouched. @type {Map<string, {vertexBuffer: any, indexBuffer: any, indexType: 'u16'|'u32', version: number, mesh: any, vertexCount: number, indexCount: number, uvMaskBuffer?: any}>} */
+    /** RE-06b: voxel-only entries (32 B vertex + index buffer), separate from `cache` so `get()` is untouched. @type {Map<string, {vertexBuffer: any, indexBuffer: any, indexType: 'u16'|'u32', version: number, mesh: any, vertexCount: number, indexCount: number, uvMaskBuffer?: any, aoBuffer?: any}>} */
     this.voxelCache = new Map();
     /** CLOTH-1b2: cloth entries (dynamic 16 B vertex buffer + static uv + static index), keyed by `mesh.id`. @type {Map<string, any>} */
     this.clothCache = new Map();
@@ -248,6 +260,7 @@ export class MeshBuffers {
       this.device.dispose(v.vertexBuffer);
       this.device.dispose(v.indexBuffer);
       if (v.uvMaskBuffer) this.device.dispose(v.uvMaskBuffer);
+      if (v.aoBuffer) this.device.dispose(v.aoBuffer);
       this.voxelCache.delete(mesh.id);
     }
   }
@@ -298,6 +311,7 @@ export class MeshBuffers {
       this.device.dispose(existing.vertexBuffer);
       this.device.dispose(existing.indexBuffer);
       if (existing.uvMaskBuffer) this.device.dispose(existing.uvMaskBuffer);
+      if (existing.aoBuffer) this.device.dispose(existing.aoBuffer);
     }
     const d = buildVoxelVertexData(mesh);
     const vertexBuffer = this.device.createBuffer({ usage: 'vertex', data: new Uint8Array(d.vertex) });
@@ -309,6 +323,7 @@ export class MeshBuffers {
     // ALPHA-01f (b) host: instanced mesh-group entries (TREES-LP-b, static-layout meshes) get the same mask-uv stream as
     // static entries above (`get()`), reusing MASK_UV_LAYOUT location 10 so passRaster.js's instanced masked draw can bind it.
     if (mesh.uvMask) entry.uvMaskBuffer = this.device.createBuffer({ usage: 'vertex', data: mesh.uvMask });
+    if (d.ao) entry.aoBuffer = this.device.createBuffer({ usage: 'vertex', data: d.ao }); // ME-20c-c
     this.voxelCache.set(mesh.id, entry);
     return entry;
   }
@@ -364,6 +379,7 @@ export class MeshBuffers {
       this.device.dispose(entry.vertexBuffer);
       this.device.dispose(entry.indexBuffer);
       if (entry.uvMaskBuffer) this.device.dispose(entry.uvMaskBuffer);
+      if (entry.aoBuffer) this.device.dispose(entry.aoBuffer);
     }
     this.voxelCache.clear();
     for (const entry of this.clothCache.values()) {

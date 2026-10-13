@@ -2,9 +2,11 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { vegTintObjectId } from './vegTint.js';
 import { bindDetailInstances, feedDetail, removeDetailInstances, DETAIL_OBJECT_BASE } from './scatterFeed.js';
 import { InstanceGroups, createInstanceBuffer, writeUnitInstance, INSTANCE_STRIDE,
-  INST_OBJECT_ID, MAX_INSTANCE_GROUPS, MAX_INSTANCES_PER_FRAME } from './instances.js';
+  INST_OBJECT_ID, INST_FLAGS, MAX_INSTANCE_GROUPS, MAX_INSTANCES_PER_FRAME } from './instances.js';
+import { INST_FLAG_SWAY } from './sway.js';
 import { World } from '../world/World.js';
 import '../../design/palette.js';
 import '../../design/detail-pass.js';
@@ -42,7 +44,7 @@ for (let y = 0; y < tilesY; y++) {
 }
 const detail = { count: points.length, tileM, tx0, ty0, tilesX, tilesY,
   tileStart: Uint32Array.from(tileStart), speciesDefs: [
-    { model: 'tuft', shadow: false, lodCells: 4 }, { model: 'rock', shadow: true, lodCells: 6 },
+    { model: 'tuft', shadow: false, lodCells: 4, sway: true }, { model: 'rock', shadow: true, lodCells: 6 },
     { model: 'unused', shadow: false, lodCells: 4 }],
   x: Float64Array.from(points, p => p.x), y: Float64Array.from(points, p => p.y),
   z: Float64Array.from(points, p => p.z), yawDeg: Int16Array.from(points, p => p.yawDeg),
@@ -61,9 +63,18 @@ ok(binding.groupOf instanceof Uint8Array && binding.groupOf[2] === 255);
 const one = createInstanceBuffer(1);
 for (let i = 0; i < detail.count; i++) {
   writeUnitInstance(one, 0, detail.x[i], detail.y[i], detail.z[i], detail.yawDeg[i], DETAIL_OBJECT_BASE | i, 0);
+  if (detail.speciesDefs[detail.species[i]].sway) { one.u32[INST_FLAGS] |= INST_FLAG_SWAY; one.u32[INST_OBJECT_ID] = vegTintObjectId(DETAIL_OBJECT_BASE | i, i, detail.x[i], detail.y[i]); } // FOLIAGE-SWAY-01 part 2 + AUD-47
   for (let w = 0; w < INSTANCE_STRIDE; w++) assert.equal(binding.master.u32[i * INSTANCE_STRIDE + w], one.u32[w]);
 }
 checks++;
+
+// FOLIAGE-SWAY-01 part 2: flagged species ('tuft', 0) carries INST_FLAG_SWAY on every instance; rock (1) never does.
+// (The full-word loop above already proves every other INST_FLAGS bit, e.g. aligned, is unchanged by the OR.)
+for (let i = 0; i < detail.count; i++) {
+  const bits = binding.master.u32[i * INSTANCE_STRIDE + INST_FLAGS];
+  if (detail.species[i] === 0) ok((bits & INST_FLAG_SWAY) !== 0);
+  else ok((bits & INST_FLAG_SWAY) === 0);
+}
 
 // Independent oracle sorts the whole band's tiles, then scans placements.
 function brute(x, y, cap) {
@@ -91,7 +102,7 @@ for (let p = 0; p < 20; p++) {
   for (let s = 0; s < 2; s++) {
     const g = binding.groups[s]; assert.equal(g.count, selected[s].length);
     for (let j = 0; j < g.count; j++) {
-      assert.equal(g.ib.u32[j * INSTANCE_STRIDE + INST_OBJECT_ID], DETAIL_OBJECT_BASE | selected[s][j]);
+      assert.equal(g.ib.u32[j * INSTANCE_STRIDE + INST_OBJECT_ID] & 0xFFFFF, (DETAIL_OBJECT_BASE | selected[s][j]) & 0xFFFFF); // AUD-47: bits 20+ may carry the veg tint
       for (let w = 0; w < INSTANCE_STRIDE; w++) {
         assert.equal(g.ib.u32[j * INSTANCE_STRIDE + w], binding.master.u32[selected[s][j] * INSTANCE_STRIDE + w]);
       }
@@ -99,6 +110,12 @@ for (let p = 0; p < 20; p++) {
   }
   checks++;
 }
+// FOLIAGE-SWAY-01 part 2: the per-frame raw-word re-feed (feedDetail) carries INST_FLAG_SWAY along for every fed
+// 'tuft' (species 0) instance and never sets it on 'rock' (species 1, group index 1).
+ok(binding.groups[0].count > 0 && Array.from({ length: binding.groups[0].count },
+  (_, j) => binding.groups[0].ib.u32[j * INSTANCE_STRIDE + INST_FLAGS]).every(bits => (bits & INST_FLAG_SWAY) !== 0));
+ok(binding.groups[1].count === 0 || Array.from({ length: binding.groups[1].count },
+  (_, j) => binding.groups[1].ib.u32[j * INSTANCE_STRIDE + INST_FLAGS]).every(bits => (bits & INST_FLAG_SWAY) === 0));
 feedDetail(binding, 0, 0, true);
 ok(binding.fed === cfg.maxDraw);
 // Sentinels prove the early return makes no writes, rather than rewriting identical words.
@@ -120,10 +137,10 @@ const unbounded = bindDetailInstances(detail, registry(), { ...cfg, maxDraw: det
 const px = detail.x[0], py = detail.y[0], r = Math.sqrt(detail.r2[0]);
 feedDetail(unbounded, px + r, py, true);
 ok(!unbounded.groups[0].ib.u32.some((word, i) => i % INSTANCE_STRIDE === INST_OBJECT_ID &&
-  i < unbounded.groups[0].count * INSTANCE_STRIDE && word === DETAIL_OBJECT_BASE));
+  i < unbounded.groups[0].count * INSTANCE_STRIDE && (word & 0xFFFFF) === DETAIL_OBJECT_BASE));
 feedDetail(unbounded, px + r - 0.0001, py, true);
 ok(unbounded.groups[0].ib.u32.some((word, i) => i % INSTANCE_STRIDE === INST_OBJECT_ID &&
-  i < unbounded.groups[0].count * INSTANCE_STRIDE && word === DETAIL_OBJECT_BASE));
+  i < unbounded.groups[0].count * INSTANCE_STRIDE && (word & 0xFFFFF) === DETAIL_OBJECT_BASE));
 const tiny = { ...detail, count: 1, tileStart: new Uint32Array(tilesX * tilesY + 1).fill(1) };
 tiny.tileStart[0] = 0;
 const tinyBinding = bindDetailInstances(tiny, registry(), cfg);
@@ -179,9 +196,9 @@ canonicalRegistry.bindPool({ models: new Map(canonical.detail.speciesDefs.map(d 
 // Existing trees and the compare harness's unit group count against the cap.
 for (let i = 0; i < 7; i++) canonicalRegistry.group('tree-or-unit', 1);
 const canonicalBinding = bindDetailInstances(canonical.detail, canonicalRegistry, canonical.terrain.recipe.recipe.detail, 485);
-ok(canonicalBinding.groups.length === 19 && canonicalRegistry.groups.length === 26);
+ok(canonicalBinding.groups.length === 3 && canonicalRegistry.groups.length === 10); // ROCKS-VOXEL-OFF-01 (7/14 -> 3/10); PLANT-VOXEL-OFF-01 + STONES-VOXEL-OFF-01: voxel plants + stones removed (was 19 / 26, then 10 / 17)
 const active = new Set(canonical.detail.species);
-ok(canonical.detail.speciesDefs.every((d, s) => active.has(s) ? canonicalBinding.groupOf[s] < 19 : canonicalBinding.groupOf[s] === 255));
+ok(canonical.detail.speciesDefs.every((d, s) => active.has(s) ? canonicalBinding.groupOf[s] < 7 : canonicalBinding.groupOf[s] === 255));
 feedDetail(canonicalBinding, 1474.5, 1025, true);
 ok(canonicalBinding.fed > 0 && canonicalBinding.fed <= canonicalBinding.maxDraw);
 console.log(`world_m1: ${canonical.detail.count} placements, ${canonicalBinding.groups.length} detail groups`);

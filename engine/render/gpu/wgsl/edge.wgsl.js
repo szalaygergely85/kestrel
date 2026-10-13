@@ -14,7 +14,7 @@
 import { defineUniformBlock } from './uniformBlock.js';
 import { GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL, CELL_RAY_PITCHED_WGSL } from './common.wgsl.js';
 import { F_SOFT_EDGE } from '../ShadeTextures.js';
-import { KIND_MODEL, KIND_MESH, KIND_TERRAIN, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_PACKED } from '../../GBuffer.js';
+import { KIND_MODEL, KIND_MESH, KIND_TERRAIN, KIND_GRASS, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_PACKED } from '../../GBuffer.js';
 
 export const EDGE_BLOCK = defineUniformBlock('EdgeU', [
   { name: 'gridCols', type: 'i32' }, { name: 'gridRows', type: 'i32' }, { name: 'fogMax', type: 'f32' }, { name: 'modelRim', type: 'f32' },
@@ -23,7 +23,7 @@ export const EDGE_BLOCK = defineUniformBlock('EdgeU', [
   { name: 'pitchC', type: 'vec4' },                // uZ, tanHalfY, cosP, sinP (only .y .z .w read)
   { name: 'edgeGlyph', type: 'vec4', count: 2 },   // float[8], rule glyph codes (ASCII-32), index 0 = cap .. 7 = nosing
   { name: 'edgeGain', type: 'vec4', count: 2 },    // float[8]
-  { name: 'wos', type: 'vec4', count: 6 },         // vec2[12]: per slot opaqueAt, seeThrough (waterLook.js rows 3 / 7)
+  { name: 'wos', type: 'vec4', count: 7 },         // vec2[14] (RIVER-03: slots 12..13 = ribbons): per slot opaqueAt, seeThrough (waterLook.js rows 3 / 7)
 ]);
 
 export const EDGE_TEXTURES = Object.freeze(['uint', 'uint', 'float', 'float', 'uint', 'sint']);
@@ -51,7 +51,7 @@ fn isVert(kind: u32, face: u32) -> bool {
 fn isUp(kind: u32, face: u32) -> bool { return kind == 4u || kind == 5u || ((kind == ${KIND_MODEL}u || kind == ${KIND_MESH}u) && face == ${FACE_U}u); }
 
 fn fogScaleCell(row: i32, rows: i32) -> f32 {
-  return select(pitchFogScale(row, rows, u.pitchC.y, u.pitchC.z, u.pitchC.w), 1.0, u.projMode == 0);
+  return select(pitchFogScale(row, rows, u.pitchC.y, u.pitchC.z, u.pitchC.w, u.projMode == 2), 1.0, u.projMode == 0);
 }
 
 // BUG-GPU-005: terrain cells (kind 7) gate on the TERRAIN fog (terrainShade.js terrainFogF), not the interior fog.
@@ -74,7 +74,7 @@ fn faceAt(c: vec2i) -> u32 {
 fn matAt(c: vec2i) -> i32 { return i32(giMat(textureLoad(uGI, c, 0).y)); }
 // ALPHA-01d: MaterialTable.soft[matId]; ids past the texture read 0 (WGSL out-of-bounds textureLoad), like the JS table.
 // Terrain cells (kind 7) carry a terrain type in the mat field, not a material id: never soft.
-fn softMat(k: u32, m: i32) -> bool { return k != ${KIND_TERRAIN}u && (textureLoad(uMatI, vec2i(0, m), 0).y & ${F_SOFT_EDGE}) != 0; }
+fn softMat(k: u32, m: i32) -> bool { return k != ${KIND_TERRAIN}u && k != ${KIND_GRASS}u && (textureLoad(uMatI, vec2i(0, m), 0).y & ${F_SOFT_EDGE}) != 0; }
 fn planeAt(c: vec2i) -> i32 { return i32(textureLoad(uGI, c, 0).x); }
 fn depthAt(c: vec2i) -> f32 { return bitcast<f32>(textureLoad(uDepth, c, 0).x); }
 
@@ -82,6 +82,7 @@ fn farther(ic: vec2i, nc: vec2i, validN: bool, si: bool) -> bool {
   if (!validN) { return false; }
   let nk = kindAt(nc);
   if (nk == 0u) { return true; }
+  if (nk == ${KIND_GRASS}u) { return false; } // OB-073 D2e: carpet blades never make a neighbour's outline (twin edgePass.js)
   if (si && softMat(nk, matAt(nc))) { return false; }
   if (planeAt(nc) == planeAt(ic)) { return false; }
   return depthAt(nc) > depthAt(ic) * 1.18 + 0.35;
@@ -150,7 +151,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
   let ff = select(fogF(dist), terrainFogF(dist), kind == ${KIND_TERRAIN}u);
 
   var rule = 0;
-  if (kind != 0u && ff <= u.fogMax && !waterOpaque(cell, distRaw)) {
+  if (kind != 0u && kind != ${KIND_GRASS}u && ff <= u.fogMax && !waterOpaque(cell, distRaw)) {
     rule = decideRule(cell, kind, face, distRaw, softMat(kind, i32(giMat(gi.y))));
   }
 

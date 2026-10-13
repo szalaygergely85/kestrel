@@ -192,6 +192,35 @@ await test('--filter typecheck matches the typecheck suite and reports WARN with
   }
 });
 
+await test('--filter accepts comma lists and repeats (OR)', async () => {
+  const root = makeFixtureRoot();
+  try {
+    const a = await runRunner(root, ['--filter', 'tools/good,tools/warn', '--timeout-ms', String(FIXTURE_TIMEOUT_MS)]);
+    assert.ok(a.stdout.includes('good.test.js') && a.stdout.includes('warn.test.js'), a.stdout);
+    assert.ok(!a.stdout.includes('bad.test.js'), a.stdout);
+    assert.ok(a.stdout.includes('2 suite(s)'), a.stdout);
+    const b = await runRunner(root, ['--filter', 'tools/good', '--filter', 'tools/warn', '--timeout-ms', String(FIXTURE_TIMEOUT_MS)]);
+    assert.ok(b.stdout.includes('2 suite(s)'), b.stdout);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+await test('--filter matching 0 suites prints a warning and exits 1', async () => {
+  const root = makeFixtureRoot();
+  try {
+    const r = await runRunner(root, ['--filter', 'nope-zzz', '--timeout-ms', String(FIXTURE_TIMEOUT_MS)]);
+    assert.ok(r.stdout.includes('no suites match "nope-zzz"'), r.stdout);
+    assert.strictEqual(r.code, 1);
+    // one dead term among live ones: warned, but the live suite still runs
+    const m = await runRunner(root, ['--filter', 'tools/good,nope-zzz', '--timeout-ms', String(FIXTURE_TIMEOUT_MS)]);
+    assert.ok(m.stdout.includes('no suites match "nope-zzz"') && m.stdout.includes('1 suite(s)'), m.stdout);
+    assert.strictEqual(m.code, 0);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 await test('--json writes a report with name/status/ms and last-20-lines output on failure', async () => {
   const root = makeFixtureRoot();
   const jsonPath = path.join(root, 'report.json');
@@ -219,6 +248,29 @@ await test('--json omits output for a PASS suite', async () => {
     assert.strictEqual(report.length, 1);
     assert.strictEqual(report[0].status, 'PASS');
     assert.strictEqual(report[0].output, undefined);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+await test('exit-0 suite printing "<tool> FAILED" is FAIL; suite lines stream before the run ends', async () => {
+  const root = makeFixtureRoot();
+  try {
+    fs.writeFileSync(path.join(root, 'tools', 'check-deps.mjs'), "console.error('check-deps FAILED (1 finding)');\n");
+    fs.writeFileSync(path.join(root, 'tools', 'a-fast.test.js'), "console.log('ok');\n");
+    fs.writeFileSync(path.join(root, 'tools', 'z-slow.test.js'), 'setTimeout(() => {}, 1500);\n');
+    const t0 = Date.now();
+    const r = await new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [RUNNER, '--filter', 'a-fast,z-slow,check-deps', '--timeout-ms', '10000'], { cwd: root });
+      let out = ''; let firstAt = 0;
+      child.stdout.on('data', (d) => { if (!firstAt) firstAt = Date.now() - t0; out += d; });
+      child.on('close', (code) => resolve({ code, out, firstAt, total: Date.now() - t0 }));
+      child.on('error', reject);
+    });
+    assert.ok(/^FAIL tools\/check-deps\.mjs \d+ms$/m.test(r.out), r.out);
+    assert.strictEqual(r.code, 1);
+    assert.ok(r.out.indexOf('a-fast') < r.out.indexOf('z-slow'), r.out);
+    assert.ok(r.firstAt + 700 < r.total, 'first line at ' + r.firstAt + 'ms, end at ' + r.total + 'ms');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

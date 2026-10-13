@@ -1,25 +1,21 @@
 // @ts-check
 // engine/render/gpu/device/createGpuDevice.js - WG-1b2 (docs/architecture.md 38.3/38.7).
-// `async createGpuDevice({backend, canvas})` + `selfTestDevice(device)`. A `webgpu` request that fails
-// (no navigator.gpu, no adapter, limits below 38.4, device creation, self-test) warns and falls back to
-// WebGL2 until WG-5 (`fallback:false` makes it throw instead). The canvas is attached to WebGPU only after
-// the adapter/device/self-test succeeded, so a failed request leaves it free for a WebGL2 context.
+// `async createGpuDevice({backend:'webgpu', canvas})` + `selfTestDevice(device)`. WG-5b: WebGPU only; a request that
+// fails (no navigator.gpu, no adapter, limits below 38.4, device creation, self-test) throws a readable Error. The
+// canvas is attached only after the adapter/device/self-test succeeded.
 
 import { bootNow, span as bootSpan } from '../../../core/bootMarks.js'; // BOOT-SPEED-01
-import { GpuDeviceGL2 } from './GpuDeviceGL2.js';
 import { GpuDeviceWebGPU } from './GpuDeviceWebGPU.js';
 import { REQUIRED_LIMITS, evaluateWebGpuLimits } from './webgpuProbe.js';
 import { defineUniformBlock } from '../wgsl/uniformBlock.js';
 
 /**
  * @typedef {Object} CreateGpuDeviceOptions
- * @property {'webgl2'|'webgpu'} backend
+ * @property {'webgpu'} backend
  * @property {any} canvas
- * @property {boolean} [fallback] webgpu only: warn + fall back to webgl2 on failure (default true)
  * @property {boolean} [selfTest] webgpu only: run selfTestDevice before returning (default true)
  * @property {(msg: string) => void} [warn]
  * @property {any} [navigatorGpu] override for tests
- * @property {any} [gl] webgl2 only: an existing context instead of `canvas.getContext('webgl2')`
  * @property {number} [ringSlots]
  */
 
@@ -49,22 +45,14 @@ async function createWebGpuDevice(opts) {
   return new GpuDeviceWebGPU(gpuDevice, { adapter, canvasFormat, ringSlots: opts.ringSlots });
 }
 
-/** @param {CreateGpuDeviceOptions} opts */
-function createWebGl2Device(opts) {
-  const gl = opts.gl || (opts.canvas && opts.canvas.getContext('webgl2'));
-  if (!gl) throw new Error('WebGL2 unavailable');
-  return new GpuDeviceGL2(gl);
-}
-
 /**
  * @param {CreateGpuDeviceOptions} opts
  * @returns {Promise<import('./GpuDevice.js').GpuDevice|any>}
  */
 export async function createGpuDevice(opts) {
   const warn = opts.warn || ((m) => { if (typeof console !== 'undefined') console.warn(m); });
-  if (opts.backend === 'webgl2') return createWebGl2Device(opts);
+  if (opts.backend === 'webgl2') throw new Error('createGpuDevice: the webgl2 backend was removed (WG-5b)');
   if (opts.backend !== 'webgpu') throw new Error(`createGpuDevice: unknown backend "${opts.backend}"`);
-  const fallback = opts.fallback !== false;
   /** @type {GpuDeviceWebGPU|null} */
   let dev = null;
   try {
@@ -78,9 +66,8 @@ export async function createGpuDevice(opts) {
   } catch (e) {
     const msg = String(e && /** @type {any} */ (e).message || e);
     if (dev) { try { dev.dispose(); } catch { /* ignore */ } }
-    if (!fallback) throw e;
-    warn(`createGpuDevice: webgpu failed (${msg}); falling back to webgl2`);
-    return createWebGl2Device(opts);
+    warn(`createGpuDevice: webgpu failed (${msg})`);
+    throw e;
   }
 }
 

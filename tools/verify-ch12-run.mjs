@@ -1,0 +1,407 @@
+// M4-C2: scripted playthrough of Chapter 1-2 in the REAL game (headless browser): wake -> note -> sword -> Burl -> boars -> relay wake/SOS/knot -> Rook ->
+// one errand of each template kind (collect, deliver, talk, explore, escort, target hits) -> Rook's nest mirror -> Ford relay -> gear check -> save -> reload + Continue.
+// The player is driven through window.__debug hooks: teleport = what real travel does (floor height, vitals.clearSafe, wait for the band); [E] = a real KeyE key event;
+// dialogue lines/choices go through the dialogue runner (press/choose); boar kills and straw-man hits are combat:hit events (the same event sword and arrow emit).
+// Run: node tools/verify-ch12-run.mjs 9560   (PC-B lane ports 9500-9574; CDP = port+1). Prints beat -> PASS/FAIL, exit 1 on any FAIL.
+import { spawn } from 'node:child_process';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import path from 'node:path'; import os from 'node:os';
+import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, connectCdp, evaluate, evaluateAsync, killTree } from './capture-browser.mjs';
+import { buildGapTable, compareSnaps, questVerdict, renderReport, SAMPLE_EVERY_S, orderErrands, planQuest, pickupPatterns, pickupKeys, lootFixedItems } from './verify-ch12-lib.mjs';
+
+/** short window around the first differing character of two JSON strings */
+const firstDiff = (a, b) => { a = String(a); b = String(b); let i = 0; while (i < a.length && a[i] === b[i]) i++; const w = (x) => x.slice(Math.max(0, i - 40), i + 80); return `@${i}/${a.length},${b.length} ${w(a)} -> ${w(b)}`; };
+const WALK = process.argv.includes('--walk'); // CL-01 input: travel between beats on foot at WALK_SPEED, samples every game-second (see walkLib)
+const WALK_SPEED = 4; // m/s, about the player's walk speed
+const posArgs = process.argv.slice(2).filter((a) => !a.startsWith('--'));
+const port = Number(posArgs[0] || 9560);
+validatePort(port);
+if (port < 9500 || port + 1 > 9999) throw new Error('PC-B port range is 9500-9999 (next port is CDP)');
+const profile = mkdtempSync(path.join(os.tmpdir(), 'kestrel-ch12-'));
+const server = spawn('python', ['-c', 'import http.server,sys; http.server.ThreadingHTTPServer.request_queue_size=128; sys.argv=["tools/serve.py",sys.argv[1]]; import tools.serve; tools.serve.main()', String(port)], { cwd: ROOT, stdio: 'ignore', windowsHide: true });
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+const url = `http://127.0.0.1:${port}/game/index.html?voxelbench=0&save=1&backend=webgpu`;
+const rows = []; const errors = []; const warns = []; let browser, cdp;
+const ev = (js) => evaluate(cdp, js);
+const evA = (js) => evaluateAsync(cdp, js);
+// ---- M4-C2 report plumbing: stills per beat, guidance-gap sampler (AC4), quest table (AC1), save diffs (AC3) -> docs/test-reports/m4-c2/report.md ----
+const OUT = path.join(ROOT, 'docs', 'test-reports', 'm4-c2'); mkdirSync(OUT, { recursive: true });
+const rdj = (p) => JSON.parse(readFileSync(path.join(ROOT, p), 'utf8'));
+const CH12_IDS = [...rdj('content/quests/index.json').legacy.filter((i) => i !== 'm1'), ...rdj('content/quests/ch12/pack.json').quests.map((q) => q.id)]; // m1 is the main quest
+const stills = []; const samples = []; let forcedBy = {}, curBeat = 'start', quests = [], ac3Diffs = [], gearInfo = null, t0 = Date.now(), sampler = null;
+async function still(name) { try { const r = await cdp.send('Page.captureScreenshot', { format: 'png' }); const f = name.replace(/[^a-z0-9]+/gi, '-').slice(0, 40) + '.png'; writeFileSync(path.join(OUT, f), Buffer.from(r.data, 'base64')); return f; } catch (e) { return null; } }
+// one sample = tracked HUD objective? compass target? a ! / ? giver within 30 m? (compass hide flag ignored: capture-like pages hide it)
+const SAMPLE_FN = `(() => { const D = window.__debug, b = D.saveRelay.quest.book, t = D.playerHandle.data.transform, w = D.world, a = [], r = [], O = { x: 1480, y: 1018 }; b.giverMarks(a, r);
+  let giver = false; for (const id of a.concat(r)) { let e = null; try { e = w.get(id); } catch (e2) {} const p = e && e.data && e.data.transform; if (p && Math.hypot(p.x - t.x, p.y - t.y) < 30) giver = true; }
+  let compass = false; try { compass = !!D.compassRetarget(); } catch (e) {}
+  return { x: t.x - O.x, y: t.y - O.y, hour: w.state['clock.hour'] || 0, tracked: b.tracked() >= 0, compass, giver }; })`;
+const SAMPLE = `(${SAMPLE_FN})()`;
+// --walk: page-side T.tp becomes a straight-line walk at WALK_SPEED; every walked game-second pushes one sample (t = accumulated game time) into __walk.out, drained per beat.
+// Floor height follows floorAt; walls/doors are ignored (straight line), so lengths are a lower bound of real path time. Non-walking time (dialogue, waits) is not counted.
+const WALK_LIB = `(() => { const T = window.__t, D = T.D, S = ${SAMPLE_FN}, tp0 = T.tp; window.__walk = { t: 0, out: [], ev: 'start' };
+  T.tp = async (x, y, dz = 0.6, zAbs) => { const p = D.playerHandle.data, t = p.transform, c = p.components, x0 = t.x, y0 = t.y, d = Math.hypot(x - x0, y - y0), n = Math.floor(d / ${WALK_SPEED});
+    for (let i = 1; i <= n; i++) { const f = i / (d / ${WALK_SPEED}), px = x0 + (x - x0) * f, py = y0 + (y - y0) * f, g = T.w.floorAt(px, py); t.x = px; t.y = py; if (g != null) t.z = g + 0.6; c.body.vx = c.body.vy = c.body.vz = 0; D.vitals.clearSafe(); D.look.locked = true;
+      await T.sl(30); window.__walk.t += 1; window.__walk.out.push({ ...S(), t: window.__walk.t, event: window.__walk.ev }); }
+    window.__walk.t += (d - n * ${WALK_SPEED}) / ${WALK_SPEED}; return tp0(x, y, dz, zAbs); }; return true; })()`;
+async function drainWalk() { if (!WALK) return; const out = await ev('(() => { if (!window.__walk) return []; const o = window.__walk.out; window.__walk.out = []; return o; })()'); for (const s of out || []) samples.push(s); }
+function startSampler() { if (WALK) return; t0 = Date.now(); sampler = setInterval(async () => { try { const s = await evaluate(cdp, SAMPLE); if (s) samples.push({ ...s, t: (Date.now() - t0) / 1000, event: curBeat }); } catch (e) { /* page reloading */ } }, SAMPLE_EVERY_S * 1000); }
+const key = async (code, k) => { await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', code, key: k, text: k.length === 1 ? k : undefined }); await pause(70); await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', code, key: k }); await pause(120); };
+
+// ---- page-side helper library (window.__t) ----
+const LIB = `(() => { const D = window.__debug, w = D.world, p = D.playerHandle.data, t = p.transform, c = p.components, sl = (ms) => new Promise((r) => setTimeout(r, ms));
+  const book = () => D.saveRelay.quest.book;
+  const T = window.__t = { D, w, sl,
+    st: (id) => book().statusOf(id),
+    ix: (k) => w.interactables.find((r) => r.key === k),
+    trig: (id) => w.triggers.find((r) => r.key === 'world.' + id),
+    flag: (k) => !!w.state[k] || !!D.saveRelay.quest.state.flags[k],
+    has: (id) => { let n = 0; for (const s of c.inventory.slots) if (s && s.id === id) n += s.n || 1; return n; },
+    // teleport like real travel: floor height at the target, no old safe spot (void rule), then let the band stream in
+    async tp(x, y, dz = 0.6, zAbs) { let g = w.floorAt(x, y); if (zAbs !== undefined) g = zAbs - dz; t.x = x; t.y = y; t.z = (g == null ? t.z + 3 : g + dz); c.body.vx = c.body.vy = c.body.vz = 0; D.vitals.clearSafe(); D.look.locked = true; await sl(450);
+      if (zAbs === undefined) { g = w.floorAt(x, y); if (g != null && Math.abs(t.z - g) > 3) { t.z = g + dz; await sl(250); } } },
+    // stand 'off' m west of the interactable and aim the camera at it (updateInteraction is a view-cone + reach test from the eye)
+    face(r) { const dx = r.x - t.x, dy = r.y - t.y, dz = (r.z || 0) - (t.z + (c.body.eyeH || 1.6)), h = Math.hypot(dx, dy) || 1e-6;
+      const yaw = Math.atan2(dx, -dy) * 180 / Math.PI, pitch = Math.atan2(dz, h) * 180 / Math.PI; D.look.yawDeg = yaw; D.look.pitchDeg = pitch; t.yawDeg = yaw; t.pitchDeg = pitch; },
+    // from = {x,y,z}: approach from that spot (rooftop items whose floor lookup gives the wall top): stand 'off' m before the item on the line from there
+    async goIx(k, off = 0.9, from) { const r = T.ix(k); if (!r) throw new Error('no interactable ' + k);
+      if (from) { const dx = r.x - from.x, dy = r.y - from.y, n = Math.hypot(dx, dy) || 1; await T.tp(r.x - dx / n * off, r.y - dy / n * off, 0.3, from.z); } else await T.tp(r.x - off, r.y); T.face(T.ix(k)); await sl(150); return r; },
+    // npc interactable records keep the spawn spot: stand next to the entity itself and aim at it
+    async goNpc(id, off = 1.2) { const e = w.get(id).data.transform; for (let n = 0, px = e.x, py = e.y; n < 20; n++) { await sl(500); if (Math.hypot(e.x - px, e.y - py) < 0.02) break; px = e.x; py = e.y; } // let a walking npc settle first
+      const g0 = w.floorAt(e.x - off, e.y); // Rook stands on a roof deck: when the floor lookup disagrees with the NPC's z, stand at the NPC's own level
+      if (g0 == null || Math.abs(g0 - e.z) > 0.15) await T.tp(e.x - off, e.y, 0.3, e.z + 0.3); else await T.tp(e.x - off, e.y); T.face({ x: e.x, y: e.y, z: e.z + 1.2 }); await sl(150); return true; },
+    async marker(id) { const { localToWorld } = await import('/engine/core/transform.js'); const o = { x: 0, y: 0, z: 0 };
+      for (const st of w.structures) { const m = st.level && st.level.def && st.level.def.markers && st.level.def.markers[id]; if (m) { localToWorld(st.frame, m.x, m.y, m.z || 0, o); return { x: o.x, y: o.y, z: o.z }; } } return null; },
+    async goTrig(id) { const r = T.trig(id); if (!r) throw new Error('no trigger ' + id); await T.tp(r.x, r.y); await sl(500); return r; },
+    // advance the open dialogue box: press lines, choose the first choice matching one of prefs (regex strings) else the first
+    async dlg(prefs = []) { const r = D.dialogue.runner, log = []; for (let n = 0; n < 400 && D.dialogue.open; n++) {
+        if (r.state === 'typing') (window.__lines = window.__lines || []).push(String(r.line).slice(0, 30));
+        if (r.state === 'choosing') { const ch = []; for (let i = 0; i < r.choiceCount; i++) ch.push(String(r.choiceText(i))); let k = 0;
+          out: for (const q of prefs) for (let i = 0; i < ch.length; i++) if (new RegExp(q, 'i').test(ch[i])) { k = i; break out; }
+          log.push('[' + ch.join(' | ') + '] -> ' + k); r.selected = k; r.choose(); } else r.press();
+        await sl(50); } await sl(300); return log; },
+    snap() { const q = book().toSave(), st = {}, pd = D.playerHandle.data, t = pd.transform, c = pd.components; /* live handles: Continue rebuilds the player */ for (const k of Object.keys(w.state)) if (!/^(clock\\.|quest\\.wakeT|quest\\.endT|hints\\.|ui\\.)/.test(k)) st[k] = w.state[k];
+      const quests = {}; for (const id of Object.keys(q.quests)) { const e = q.quests[id]; quests[id] = { a: e.accepted, h: e.handedIn, g: e.handedIn ? [] : (e.given || []) /* v2 save drops given once handed in (questSaveV2): same canonical form before/after */, done: e.quest.completed }; }
+      return JSON.parse(JSON.stringify({ pos: [t.x, t.y, t.z], hp: c.health.hp, max: c.health.max, inventory: c.inventory.slots, hands: [c.inventory.left, c.inventory.right], equipment: c.equipment, quickbar: c.quickbar, main: { done: q.quest.completed, flags: q.quest.flags }, quests, tracked: book().tracked(), state: st, dead: D.saveRelay.deadBeasts, chests: D.saveRelay.openedChests })); } };
+  return true; })()`;
+
+function rec(name, ok, why, still) { rows.push({ name, ok, why: why || '', still: still || null }); console.log((ok ? 'PASS ' : 'FAIL ') + name + (why ? '  - ' + why : '')); }
+async function beat(name, fn) {
+  curBeat = name; if (WALK) await ev(`(window.__walk && (window.__walk.ev = ${JSON.stringify(name)}), true)`);
+  try { const r = await fn(); const ok = r === true || r === undefined || !!r.ok; rec(name, ok, ok ? '' : r.why, await still('beat-' + String(rows.length + 1).padStart(2, '0') + '-' + name)); }
+  catch (e) { rec(name, false, String(e && e.message || e).slice(0, 400)); }
+  try { await drainWalk(); } catch (e) { /* page reloading */ }
+}
+const stOf = (id) => ev(`__t.st(${JSON.stringify(id)})`);
+const NAMES = ['unavailable', 'available', 'active', 'ready', 'done'];
+const state = async (...ids) => { const o = {}; for (const id of ids) o[id] = NAMES[await stOf(id)]; return JSON.stringify(o); };
+const done = async (id) => (await stOf(id)) === 4;
+const mainDone = () => ev('JSON.stringify(__t.D.saveRelay.quest.state.completed)');
+async function goIx(k, off = 0.9) { await evA(`(async () => { await __t.goIx(${JSON.stringify(k)}, ${off}); return true; })()`); }
+async function goTrig(...ids) { for (const id of ids) await evA(`(async () => { await __t.goTrig(${JSON.stringify(id)}); return true; })()`); }
+async function pressE(n = 1) { for (let i = 0; i < n; i++) { await key('KeyE', 'e'); await pause(450); } }
+// talk to an npc: stand at its [E] Talk interactable, press E, run the dialogue; returns the choice log
+async function talk(id, prefs = []) {
+  await ev('(() => { for (let k = 0; k < 4; k++) __t.D.notice.update(10, false); return true; })()'); // capture-like page never advances the notice timer
+  await evA(`__t.goNpc(${JSON.stringify(id)})`); await pause(300);
+  let open = await ev('__t.D.dialogue.open');
+  for (let i = 0; i < 3 && !open; i++) { if (i > 0) { await evA(`__t.goNpc(${JSON.stringify(id)}, ${[1.2, -1.2, 2.2][i]})`); await pause(200); } await pressE(1); open = await ev('__t.D.dialogue.open'); }
+  if (!open) { const d = await evA(`(async () => { const D = __t.D, w = __t.w, t = D.playerHandle.data.transform, b = w.get(${JSON.stringify(id)}).data.transform, nr = await import('/game/js/quest/noteRead.js'); return JSON.stringify({ note: nr.isNoteOpen(), notice: D.notice.active, ui: D.uiLocked, ist: w.interaction.targetKey, ix: !!__t.ix('npc.${id}'), ixAt: (() => { const r = __t.ix('npc.${id}'); return r && [r.x, r.y, r.z, r.radius]; })(), ent: [b.x, b.y, b.z], me: [t.x, t.y, t.z], dist: Math.hypot(t.x - b.x, t.y - b.y), dz: t.z - b.z, lock: D.look.locked, wake: D.wakeOut.inputLocked }); })()`); throw new Error('E did not open the dialogue with ' + id + ' ' + d); }
+  const lg = await evA(`__t.dlg(${JSON.stringify(prefs)})`); lastLog = JSON.stringify(lg).slice(0, 300); return lg;
+}
+let lastLog = '';
+// errand giver: talk (npc) or inspect/touch ([E]) until the quest reaches `want`; site -> interactable key
+const GIVER = { burl: 'npc.bear', rook: 'npc.rook', post: 'qi.post', notePost: 'qi.notePost', relayBend: 'relay.ws_roadBend', relayFord: 'relay.ws_ford', gondola: 'qi.gondola', packet: 'qi.packet' };
+const YES = ['ok|yes|will|do it|i.ll|take|accept|sure|done|here|ready|deliver|thanks'];
+async function giverStep(site, want, id, prefs = YES) {
+  const k = GIVER[site];
+  for (let i = 0; i < 9; i++) { // a giver offers one available errand per talk
+    if ((await stOf(id)) >= want) return true;
+    if (k.startsWith('npc.')) await talk(k.slice(4), prefs); else { await goIx(k); await pressE(1); if (await ev('__t.D.dialogue.open')) await evA('__t.dlg([])'); }
+  }
+  return (await stOf(id)) >= want;
+}
+const tpA = (x, y) => evA(`(async () => { await __t.tp(${x}, ${y}); return true; })()`);
+const emitHit = (target) => ev(`(() => { __t.D.engine.events.emit('combat:hit', { target: ${JSON.stringify(target)}, damage: 999, source: 'player', cause: 'sword' }); return true; })()`);
+async function waitFor(fn, ms, step = 400) { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (await fn()) return true; await pause(step); } return false; }
+const flag = (k) => ev(`__t.flag(${JSON.stringify(k)})`);
+
+async function open(u = url) {
+  await cdp.send('Page.navigate', { url: u });
+  let ready = false;
+  for (let i = 0; i < 200; i++) { await pause(300); if (await ev('!!(window.__debug && window.__debug.world && window.__debug.playerHandle && window.__debug.saveRelay && window.__debug.relayWake && window.__debug.dialogue && window.__debug.playerHandle.data.components.health)')) { ready = true; break; } }
+  if (!ready) throw new Error('game never ready: ' + JSON.stringify(errors) + ' ' + await ev("JSON.stringify(Object.keys(window.__debug.playerHandle.data.components))"));
+  await pause(1500); await ev(LIB); if (WALK) await ev(WALK_LIB);
+}
+
+try {
+  await waitForHttp(`http://127.0.0.1:${port}/`, 10000);
+  browser = spawn(findBrowserBinary(), ['--headless=new', `--remote-debugging-port=${port + 1}`, ...buildLaunchFlags({}), '--no-sandbox', `--user-data-dir=${profile}`, 'about:blank'], { stdio: 'ignore', windowsHide: true });
+  cdp = await connectCdp(port + 1, 15000);
+  await cdp.send('Page.enable'); await cdp.send('Runtime.enable');
+  cdp.onEvent((m, p) => {
+    if (m === 'Runtime.exceptionThrown') errors.push(JSON.stringify(p.exceptionDetails).slice(0, 300));
+    if (m === 'Runtime.consoleAPICalled' && p.type === 'warning') warns.push((p.args || []).map((a) => a.value ?? a.description).join(' ').slice(0, 200));
+    if (m === 'Runtime.consoleAPICalled' && p.type === 'error') errors.push((p.args || []).map((a) => a.value ?? a.description).join(' ').slice(0, 300));
+  });
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 640, height: 360, deviceScaleFactor: 1, mobile: false });
+  await open();
+  if (!(await ev("localStorage.getItem('kestrel.save.slot.0') === null"))) throw new Error('profile not fresh');
+  startSampler();
+
+  if (posArgs[1]) { const { readFileSync } = await import('node:fs'); console.log(JSON.stringify(await evA(readFileSync(posArgs[1], 'utf8')), null, 1)); if (posArgs[2]) { await pressE(1); console.log(JSON.stringify(await evA(readFileSync(posArgs[2], 'utf8')), null, 1)); } throw new Error('probe done'); } // dev: run a snippet after the page is ready
+  // ===== Chapter 1: the tower =====
+  await beat('1 wake in the tower', async () => {
+    await ev("(__t.w.state['quest.wakeT'] = 100, true)"); await pause(1500); await ev('(__t.D.playerHandle.data.components.body.eyeH = __t.D.engine.physics.eyeHeight, true)'); // as after a played wake (the rise ends at standing eye height); skip the played black/blink/title timeline (real time ~25 s)
+    const ok = await waitFor(async () => (await mainDone()).includes('"wake"'), 8000);
+    return { ok, why: ok ? '' : 'main step wake not completed: ' + await mainDone() };
+  });
+  await beat('2 read the note (tower.blade offered/accepted)', async () => {
+    await goIx('tower.noteKeepLight', 0.8); await pause(300);
+    for (let i = 0; i < 3 && (await stOf('tower.blade')) < 2; i++) await pressE(1);
+    const s = await state('tower.blade'); await key('Escape', 'Escape');
+    return { ok: (await stOf('tower.blade')) >= 2, why: s };
+  });
+  await beat('3 take the sword, leave the tower', async () => {
+    await evA("(async () => { const m = await __t.marker('breach'); await __t.tp(m.x, m.y, 0.3); await __t.sl(500); return true; })()");
+    const bm = await evA("__t.marker('breach')"); await evA(`(async () => { await __t.goIx('tower.sword', 0.8, ${JSON.stringify(bm)}); return true; })()`); const has = await waitFor(async () => { if (await ev("__t.has('sword') > 0 || __t.D.saveRelay.quest.state.items.includes('sword')")) return true; await pressE(1); return false; }, 6000, 100);
+    await goTrig('towerDoor'); await pause(600);
+    const m = await mainDone();
+    return { ok: has && /breach/.test(m) && /sword/.test(m) && /leave/.test(m), why: `sword=${has} main=${m} ${await state('tower.blade')}` };
+  });
+  await beat('4 Burl: hand in the blade, boar quest accepted', async () => {
+    const log = await talk('bear', ['ready|boar|help|will|ok|yes']);
+    const ok = (await done('tower.blade')) && (await stOf('burl.boars')) >= 2;
+    return { ok, why: ok ? '' : (await state('tower.blade', 'burl.boars')) + ' ' + log.join(' ; ').slice(0, 300) };
+  });
+  await beat('5 kill the five boars -> burl.boars ready', async () => {
+    for (const id of ['boar1', 'boar2', 'boar3', 'boar4', 'boar5']) {
+      const r = await ev(`(() => { const h = __t.w.get(${JSON.stringify(id)}); return h ? [h.data.transform.x, h.data.transform.y] : null; })()`);
+      if (r) await tpA(r[0] - 2, r[1]); await emitHit(id); await pause(300);
+    }
+    const ok = await waitFor(async () => (await stOf('burl.boars')) === 3, 6000);
+    return { ok, why: await state('burl.boars') };
+  });
+  await beat('6 Burl: hand in the boar quest', async () => {
+    const log = await talk('bear', ['follow|stone|show|lead|come|yes|ok']);
+    const ok = (await done('burl.boars')) && await flag('quest.burl.boars.done');
+    return { ok, why: ok ? '' : (await state('burl.boars')) + ' ' + log.join(' ; ').slice(0, 300) };
+  });
+  await beat('7 walk to the waystone with Burl (burl.arrived), wake the stone', async () => {
+    let arrived = false; // she walks only while the player is within ~14 m of her: stay a few metres ahead of her along the way
+    for (let i = 0; i < 80 && !arrived; i++) {
+      const b = await ev("(() => { const t = __t.w.get('bear').data.transform; return [t.x, t.y, __t.w.state['burl.phase']]; })()");
+      if (b[2] >= 2) { arrived = true; break; }
+      await tpA(b[0] - 4, b[1] + 1); await pause(1200);
+    }
+    if (!arrived) return { ok: false, why: 'Burl never reached the stone; phase=' + await ev("__t.w.state['burl.phase']") };
+    let woken = false;
+    for (let i = 0; i < 5 && !woken; i++) {
+      if (await ev('__t.D.dialogue.open')) await evA('__t.dlg(["ok|yes|thanks"])'); // her arrival talk absorbs the key
+      await goIx('stone.waystone', 1.2); await pressE(1);
+      woken = await waitFor(async () => (await mainDone()).includes('"waystone"'), 4000);
+    }
+    // wake -> chapter card -> journal note (modal, ch1Hidden pauses the notice timer) -> close note with E -> notice runs ~4.3 s -> Burl's departure talk. By design, not a game bug.
+    for (let i = 0; i < 90; i++) {
+      const st = await evA("(async () => { const nr = await import('/game/js/quest/noteRead.js'); return [nr.isNoteOpen(), !!(__t.D.notice && __t.D.notice.active), !!__t.D.dialogue.open]; })()");
+      if (st[2]) break;
+      if (st[0]) await pressE(1); else if (st[1]) await ev('(() => { for (let k = 0; k < 4; k++) __t.D.notice.update(10, false); return true; })()'); // ?voxelbench=0 is a capture-like page (ch1Hidden always true: notice timer never runs) -> drain it by hand
+      else if (i > 12) break;
+      await pause(500);
+    }
+    return { ok: woken && (await mainDone()).includes('follow'), why: woken ? '' : 'waystone not woken ' + await mainDone() };
+  });
+  await beat('8 Burl says goodbye and goes home (burl.home)', async () => {
+    let log = [];
+    if (await waitFor(() => ev('__t.D.dialogue.open'), 30000)) log = await evA('__t.dlg(["bye|go|home|farewell|ok|yes|thanks"])'); // her departure talk opens by itself once the wake notice is gone
+    else log = await talk('bear', ['bye|go|home|farewell|ok|yes|thanks']).catch((e) => ['(talk: ' + e.message + ')']);
+    const ok = await waitFor(() => flag('burl.home'), 90000, 1000);
+    const dbg = ok ? '' : await evA(`(async () => { const D = __t.D, w = __t.w, t = D.playerHandle.data.transform, b = w.get('bear').data.transform, nr = await import('/game/js/quest/noteRead.js'); return JSON.stringify({ note: nr.isNoteOpen(), noteId: nr.getOpenNoteId(), notice: D.notice && D.notice.active, dlg: D.dialogue.open, ui: D.uiLocked, ist: w.interaction.targetKey, bearIx: !!__t.ix('npc.bear'), dist: Math.hypot(t.x - b.x, t.y - b.y), pos: [t.x, t.y], bear: [b.x, b.y], hidden: D.ch1Hidden && D.ch1Hidden(), map: D.isMapOpen(), inv: D.invView && D.invView.isOpen, ql: D.questLogOpen && D.questLogOpen(), lock: D.look.locked, dead: D.vitals.dead, wake: D.wakeOut.inputLocked }); })()`);
+    return { ok, why: ok ? '' : 'burl.home not set: phase=' + await ev("__t.w.state['burl.phase']") + ' ' + log.join(' ; ').slice(0, 100) + ' ' + dbg };
+  });
+
+  // ===== Chapter 2: the road, the Bend relay, Rook, the ford =====
+  await beat('9 road west + Bend relay found (roadWest, bendRelay)', async () => {
+    await goTrig('roadWest', 'bendRelay');
+    const m = await mainDone();
+    return { ok: /"road"/.test(m) && /relayFound/.test(m), why: m };
+  });
+  await beat('10 Bend relay wakes (relay1), SOS pulse seen, knot read', async () => {
+    await goIx('relay.ws_roadBend', 1.2); await pressE(1);
+    const woken = await waitFor(() => flag('waystone.ws_roadBend.woken'), 15000);
+    if (!woken) return { ok: false, why: 'relay did not wake after [E]' };
+    const relay1 = (await mainDone()).includes('relay1');
+    const pulse = await waitFor(() => flag('relay.bend.pulseSeen'), 15000);
+    await goIx('qi.knot', 0.9); await pressE(2);
+    const knot = await waitFor(() => flag('lore.knot.read'), 4000);
+    const dbg = knot ? '' : ' ' + await evA(`(async () => { const D = __t.D, w = __t.w, t = D.playerHandle.data.transform, r = __t.ix('qi.knot'), nr = await import('/game/js/quest/noteRead.js'); return JSON.stringify({ p: [t.x, t.y, t.z].map((v) => +v.toFixed(2)), knot: r && [r.x, r.y, r.z].map((v) => +(+v).toFixed(2)), ist: w.interaction.targetKey, note: nr.isNoteOpen(), noteId: nr.getOpenNoteId(), notice: !!(D.notice && D.notice.active), dlg: !!D.dialogue.open, ui: D.uiLocked, hp: D.vitals && D.vitals.hp }); })()`);
+    return { ok: relay1 && pulse && knot, why: `relay1=${relay1} pulse=${pulse} knot=${knot}${dbg}` };
+  });
+  await beat('11 Rook: Bend call (mq.bend.call) accepted + handed in', async () => {
+    const ok = await giverStep('rook', 4, 'mq.bend.call', ['call|pulse|knot|seen|yes|ok|read|report']);
+    return { ok, why: await state('mq.bend.call', 'mq.river.road', 'mq.ford.stones') };
+  });
+  await beat('12 river bank + ford stones (mq.river.road, mq.ford.stones)', async () => {
+    await goTrig('riverBank', 'fordWest');
+    const ok = (await done('mq.river.road')) && (await done('mq.ford.stones'));
+    return { ok, why: await state('mq.river.road', 'mq.ford.stones', 'mq.ford.mirror') };
+  });
+  await beat('13 mirror: Rook gives mq.ford.mirror, take relay.mirror from the nest', async () => {
+    const acc = await giverStep('rook', 2, 'mq.ford.mirror', ['mirror|glass|yes|ok|will|fetch']); // the nest pickup is next to Rook: an [E] during the talk may already take the mirror
+    if (!acc) return { ok: false, why: 'mq.ford.mirror not accepted ' + await state('mq.ford.mirror') + ' lines=' + await ev('JSON.stringify((window.__lines||[]).slice(-8))') + ' st=' + await ev("JSON.stringify(Object.keys(__t.w.state).filter((k) => /^mq\.ford|glass|bend.call/.test(k)))") + ' mirror in pack=' + await ev("__t.has('relay.mirror')") + ' log ' + lastLog };
+    if (!(await ev("__t.has('relay.mirror') > 0"))) await goIx('qp.nest', 0.9); const has = await waitFor(async () => { if (await ev("__t.has('relay.mirror') > 0")) return true; await pressE(1); return false; }, 6000, 100);
+    return { ok: has, why: `mirror=${has} ${await state('mq.ford.mirror')}` };
+  });
+  await beat('14 Ford relay wakes -> mq.ford.mirror done', async () => {
+    await goIx('relay.ws_ford', 1.2); await pressE(1);
+    const woken = await waitFor(() => flag('waystone.ws_ford.woken'), 15000);
+    const ok = woken && await waitFor(() => done('mq.ford.mirror'), 6000);
+    return { ok, why: `woken=${woken} ${await state('mq.ford.mirror')} log ${lastLog}` };
+  });
+
+  // ===== errands: one per template kind (quest book status) =====
+  await ev(`(async () => { const D = __t.D, p = D.playerHandle.data, c = p.components, defs = window.ASSETS.items.defs;
+    const inv = await import('/game/js/quest/sim/inventory.js'), qbm = await import('/game/js/quest/sim/quickbar.js'); const inventory = inv.ensureInventory(p, null);
+    for (const [id, n] of [['arrow', 12], ['potion.hp', 2], ['bow', 1]]) if (!__t.has(id)) inv.addItem(inventory, defs, id, n); // test hook: the bow / arrows / potion come from loot later in the game
+    qbm.ensureQuickbar(p); qbm.assign(p, defs, 5, 'potion.hp'); return true; })()`.replace(/^/, '')).catch(() => {});
+  const errand = async (name, id, site, work, turnSite = site) => beat(name + ' (' + id + ')', async () => {
+    if (!(await giverStep(site, 2, id))) return { ok: false, why: 'not accepted: ' + await state(id, 'burl.boars') + ' st=' + await ev("JSON.stringify(Object.keys(__t.w.state).filter((k) => /burl/.test(k)).map((k) => k + '=' + JSON.stringify(__t.w.state[k])))") + ' log ' + lastLog + ' met=' + await flag('burl.home.met') + ' lines=' + await ev('JSON.stringify((window.__lines||[]).slice(-6))') + ' ix=' + await ev("JSON.stringify((() => { const r = __t.ix('npc.bear'), b = __t.w.get('bear').data.transform, p = __t.D.playerHandle.data.transform; return r && { ix: [r.x, r.y, r.z], bear: [b.x, b.y, b.z], pl: [p.x, p.y, p.z], tgt: __t.w.interaction.targetKey, n: __t.w.interactables.filter((q) => q.key === 'npc.bear').length }; })())") };
+    await work();
+    if (!(await giverStep(turnSite, 4, id))) return { ok: false, why: 'not handed in: ' + await state(id) };
+    return true;
+  });
+  const areasOf = (id) => evA(`(async () => { const A = (await (await fetch('/content/quests/areas.json')).json()).areas, b = __t.D.saveRelay.quest.book; for (let i = 1; i < b.count; i++) if (b.def(i).id === ${JSON.stringify(id)}) return b.def(i).objectives.filter((o) => o.when.type === 'area').map((o) => (A[o.when.id] && A[o.when.id].trigger) || o.when.id); return []; })()`);
+  await errand('E2 collect + deliver six blue berries', 'sq.burl.blue', 'burl', async () => {
+    for (let i = 1; i <= 6; i++) { await goIx('qp.berry' + i, 0.7); await pressE(1); }
+  });
+  await errand('E1 explore', 'sq.burl.tower', 'burl', async () => { for (const a of await areasOf('sq.burl.tower')) await goTrig(a); await pause(500); });
+  await errand('E3 talk (ask Burl for Rook)', 'sq.fc.ask', 'rook', async () => { await talk('bear', ['not yet|later|another', 'bear|crow|ask']); /* decline Burl's walk offer: accepting it makes him lead away (E5 does that) */ });
+  await errand('E4 deliver a brass scrap from Rook to Burl', 'sq.rook.gift', 'rook', async () => { await goIx('qp.brass1', 0.7); await pressE(1); }, 'burl');
+  await errand('E5 escort Burl to the Bend relay', 'sq.burl.walk', 'burl', async () => {
+    for (let i = 0; i < 120; i++) {
+      if (await flag('escort.bear.relayBend') || (await ev("__t.w.state['burl.phase']")) === 7) break;
+      const b = await ev("(() => { const t = __t.w.get('bear').data.transform; return [t.x, t.y]; })()");
+      await tpA(b[0] - 5, b[1]); await pause(1200);
+    }
+  });
+  await beat('E6 target hits (sq.nub then sq.straw: three straw men)', async () => {
+    const nub = await giverStep('burl', 2, 'sq.tm.nub');
+    for (const a of await areasOf('sq.tm.nub')) await goTrig(a);
+    await giverStep('burl', 4, 'sq.tm.nub');
+    if (!(await giverStep('notePost', 2, 'sq.straw'))) return { ok: false, why: 'sq.straw not accepted: ' + await state('sq.tm.nub', 'sq.straw') };
+    for (const id of ['target1', 'target2', 'target3']) { const r = await ev(`(() => { const h = __t.w.get(${JSON.stringify(id)}); return h ? [h.data.transform.x, h.data.transform.y] : null; })()`); if (r) await tpA(r[0] - 4, r[1]); await emitHit(id); await pause(300); }
+    const ok = await giverStep('notePost', 4, 'sq.straw');
+    return { ok, why: ok ? '' : await state('sq.tm.nub', 'sq.straw') };
+  });
+
+  // ===== E+ generic errand pass (M4-C2b): every Ch1-2 quest still not done, in dependency order (opensAfter / requires), accepted at its giver, objectives done by template =====
+  const areasJson = rdj('content/quests/areas.json').areas;
+  const forceLine = (id, why) => { (forcedBy[id] = forcedBy[id] || []).push(why); console.log('FORCED ' + id + ': ' + why); };
+  const packQuests = rdj('content/quests/ch12/pack.json').quests, packIds = new Set(packQuests.map((q) => q.id));
+  const legacyDefs = CH12_IDS.filter((i) => !packIds.has(i)).map((i) => { try { return rdj('content/quests/' + i + '.quest.json'); } catch (e) { return null; } }).filter(Boolean);
+  const NPC_OF = { burl: 'bear' }; // site name -> npc entity id for talk targets
+  const lootItems = lootFixedItems(rdj('content/items/loot.json'));
+  const hasN = (item) => ev(`__t.has(${JSON.stringify(item)})`);
+  // pick up world items ([E] on qp./qi. interactables matching the item) until the pack holds `count`
+  async function gather(item, count) {
+    if ((await hasN(item)) >= count) return null;
+    // pickups: key-name match (qp.berry3) PLUS world entities carrying questPickup.item === item (qp.cap1 holds redcap); beast corpses ([E] Loot) when the item is a fixed loot drop
+    const ixs = JSON.parse(await ev(`JSON.stringify(__t.w.interactables.map((r) => ({ key: r.key, name: r.name })))`));
+    const ents = JSON.parse(await ev(`(() => { const o = []; __t.w.forEachEntity((e, id) => { const q = e.components && e.components.questPickup; if (q) o.push({ id, item: q.item }); }); return JSON.stringify(o); })()`));
+    const keys = JSON.stringify([...pickupKeys(item, ents, ixs), ...(lootItems.has(item) ? ixs.filter((r) => r.name === 'beast.loot').map((r) => r.key) : [])]);
+    const packUsed = () => ev('__t.D.playerHandle.data.components.inventory.slots.filter((s) => s && s.id).length');
+    // a full pack (24/24) refuses pickups: drop loose junk first (script fix; never the hand items, equipment or the wanted item)
+    const dropJunk = () => ev(`(() => { const c = __t.D.playerHandle.data.components, inv = c.inventory, keep = new Set([${JSON.stringify(item)}, inv.left, inv.right, 'sword']); const eq = c.equipment && (c.equipment.slots || c.equipment); if (eq && typeof eq === 'object') for (const v of Object.values(eq)) { if (typeof v === 'string') keep.add(v); else if (v && v.id) keep.add(v.id); } let n = 0; for (const s of inv.slots) if (s && s.id && !keep.has(s.id)) { s.id = null; s.n = 0; n++; } return n; })()`);
+    for (const k of JSON.parse(keys)) { if ((await hasN(item)) >= count) break; if ((await packUsed()) >= 23) { const n = await dropJunk(); console.log('dropped ' + n + ' junk pack slots before picking up ' + item); } await goIx(k, 0.7); await pressE(1); }
+    return (await hasN(item)) >= count ? null : `cannot get ${count} x ${item}: ${(await hasN(item))} in pack, pickups tried: ${keys.slice(0, 120)}, pack slots used ${await ev('__t.D.playerHandle.data.components.inventory.slots.filter((s) => s && s.id).length')}/24 (CH12-CONTENT-01: a full pack refuses pickups)`;
+  }
+  async function doStep(s) { // -> null when done, else the reason the script could not do it
+    switch (s.kind) {
+      case 'explore': for (const a of s.triggers) await goTrig(a); await pause(300); return null;
+      case 'kill': case 'hit': for (const id of (s.kind === 'hit' ? [s.target] : s.ids)) { const r = await ev(`(() => { const h = __t.w.get(${JSON.stringify(id)}); return h ? [h.data.transform.x, h.data.transform.y] : null; })()`); if (r) await tpA(r[0] - (s.kind === 'hit' ? 4 : 2), r[1]); await emitHit(id); await pause(300); } return null;
+      case 'collect': case 'fetch': return gather(s.item, s.count);
+      case 'deliver': return gather(s.item, s.count); // the hand-over itself happens in the turn-in step at the target site
+      case 'talk': if (NPC_OF[s.to] || GIVER[s.to]?.startsWith('npc.')) await talk(NPC_OF[s.to] || GIVER[s.to].slice(4), ['not yet|later|another', 'bear|crow|ask']); else if (GIVER[s.to]) { await goIx(GIVER[s.to]); await pressE(1); if (await ev('__t.D.dialogue.open')) await evA('__t.dlg([])'); } else return 'no way to talk to ' + s.to; return null;
+      case 'escort': for (let i = 0; i < 120; i++) { if (await flag('escort.' + s.npc + '.' + s.to) || (await ev("__t.w.state['burl.phase']")) === 7) break; const b = await ev(`(() => { const t = __t.w.get(${JSON.stringify(s.npc)}).data.transform; return [t.x, t.y]; })()`); await tpA(b[0] - 5, b[1]); await pause(1200); } return null;
+      case 'flag': if (s.ix && await ev(`!!__t.ix(${JSON.stringify(s.ix)})`)) { await goIx(s.ix, 0.9); await pressE(2); return null; } return 'pure flag ' + s.id + ' has no interactable to read';
+      default: return s.why || 'unknown step';
+    }
+  }
+  const plans = orderErrands([...legacyDefs, ...packQuests]).map((q) => planQuest(q, areasJson));
+  for (let pass = 0; pass < 2; pass++) for (const pl of plans) { // pass 2 picks up quests whose requirement (a flag / a later chain link) only opened during pass 1
+    if ((await stOf(pl.id)) === 4 || (pass > 0 && forcedBy[pl.id])) continue;
+    await beat('E+ ' + pl.id, async () => {
+      if (pl.site) { if (!GIVER[pl.site]) { forceLine(pl.id, 'giver site ' + pl.site + ' has no interactable mapping in the script'); return true; }
+        if (!(await giverStep(pl.site, 2, pl.id))) { if (pass > 0) forceLine(pl.id, 'not accepted at ' + pl.site + ': ' + await state(pl.id)); return true; } } // pass 0: maybe locked until a later chain link / flag, retried in pass 1
+      else if ((await stOf(pl.id)) === 0) { if (pass > 0) forceLine(pl.id, 'not available (no giver site): ' + await state(pl.id)); return true; }
+      if (pl.equip.length) { await ev(`(() => { const c = __t.D.playerHandle.data.components; c.equipment.off = ${JSON.stringify(pl.equip[0])}; return true; })()`); forceLine(pl.id, 'equipped ' + pl.equip.join('+') + ' by hand (requireEquipped); the real equip flow is not driven here'); }
+      for (const s of pl.steps) { const why = await doStep(s); if (why) { forceLine(pl.id, s.kind + ': ' + why); break; } }
+      if (pl.turnSite && !(await giverStep(pl.turnSite, 4, pl.id)) && !forcedBy[pl.id]) forceLine(pl.id, 'not handed in at ' + pl.turnSite + ': ' + await state(pl.id));
+      return true; // never a FAIL row here: whatever is left shows in the AC1 table and its Forced column
+    });
+  }
+
+  // ===== AC1: every Ch1-2 quest done (m1 main + giver quests); lists the last objective of any that is not =====
+  curBeat = 'AC1 quest table';
+  quests = await ev(`(() => { const b = __t.D.saveRelay.quest.book, ids = ${JSON.stringify(CH12_IDS)}, N = ['unavailable', 'available', 'active', 'ready', 'done'], out = [];
+    const last = (i) => { const d = b.def(i), c = b.questState(i).completed, o = d.objectives.find((x, k) => !(c.includes(x.id) || c.includes(k))); return o ? o.id + ' (' + o.when.type + ' ' + (o.when.id || (o.when.ids || []).join('+')) + ')' : '-'; };
+    out.push({ id: 'm1', status: b.main.completed.length >= b.def(0).objectives.length ? 'done' : 'active', lastObjective: last(0) });
+    for (let i = 1; i < b.count; i++) if (ids.includes(b.def(i).id)) out.push({ id: b.def(i).id, status: N[b.status(i)], lastObjective: last(i) }); return out; })()`);
+  for (const q of quests) if (forcedBy[q.id]) q.forced = forcedBy[q.id];
+  await beat('AC1 all Ch1-2 beats + errands done', async () => { const v = questVerdict(quests); return { ok: v.ok, why: v.open.map((q) => `${q.id}=${q.status}@${q.lastObjective}`).join(', ') }; });
+
+  // ===== AC2: gear shows on the player =====
+  await beat('AC2 gear shows (equipment + view model)', async () => {
+    const g = await ev(`(() => { const D = __t.D, c = D.playerHandle.data.components; return { main: c.equipment.main, off: c.equipment.off, left: c.inventory.left, right: c.inventory.right, vm: !!(D.vmHandles && D.vmHandles.sword) }; })()`);
+    gearInfo = g;
+    return { ok: g.main === 'sword' && (g.left === 'sword' || g.right === 'sword'), why: JSON.stringify(g) };
+  });
+
+  // ===== AC3: save -> reload + Continue =====
+  let before;
+  await beat('AC3a save (rest/save path)', async () => {
+    await ev('__t.D.gameHooks.ctx.requestSave()'); await pause(800); before = await ev('__t.snap()');
+    const len = await ev("(localStorage.getItem('kestrel.save.slot.0') || '').length");
+    return { ok: len > 0, why: 'slot bytes ' + len };
+  });
+  await beat('AC3b Continue restores position, hearts, items, gear, quick bar, quests, flags', async () => {
+    warns.length = 0; clearInterval(sampler); sampler = null;
+    // voxelbench=0 is a capture-like page (no title menu): reload on the normal page and press Continue on the title card
+    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?save=1&backend=webgpu` });
+    // the page needs time to boot (assets + world) before the title host exists: wait for the world first, then for the menu; on failure say what the page does have
+    await waitFor(() => ev('typeof __debug !== "undefined" && !!(__debug.world && __debug.saveRelay)'), 60000);
+    if (!(await waitFor(() => ev('typeof __debug !== "undefined" && !!(__debug.menuHost && __debug.menuHost.active)'), 30000))) return { ok: false, why: 'title menu never showed: ' + await ev('JSON.stringify({ href: location.search, dbg: typeof __debug, host: typeof __debug !== "undefined" && !!__debug.menuHost, active: typeof __debug !== "undefined" && !!(__debug.menuHost && __debug.menuHost.active), world: typeof __debug !== "undefined" && !!__debug.world })') };
+    await ev("(() => { const h = __debug.menuHost, m = h.menu; for (let n = 0; n < 6 && m.snapshot().rows[m.snapshot().selected].id !== 'continue'; n++) m.handleKey('ArrowDown'); m.handleKey('Enter'); h.consume(); return JSON.stringify(m.snapshot().rows.map((r) => r.id + ':' + r.enabled)); })()"); 
+    if (!(await waitFor(() => ev('!__debug.menuHost || !__debug.menuHost.active'), 15000))) return { ok: false, why: 'Continue did not close the menu' };
+    await waitFor(() => ev('typeof __debug !== "undefined" && !!(__debug.playerHandle && __debug.playerHandle.data.components.health && __debug.saveRelay)'), 20000); await waitFor(() => ev('!!(__debug.saveRelay.quest && __debug.saveRelay.quest.book)'), 20000); await pause(2500); await ev(LIB);
+    // the quest book / save relay finish after the player exists: retry until snap() stops throwing
+    const ready = await waitFor(() => ev('(() => { try { __t.snap(); window.__snapErr = null; return true; } catch (e) { window.__snapErr = String(e && e.stack || e).slice(0, 300); return false; } })()'), 20000, 500);
+    if (!ready) { // AC3b diagnostics: is the save missing hp, or is the loaded player not stepping?
+      const dg = await ev(`(() => { const D = __debug, p = D.playerHandle, c = p && p.data.components, raw = JSON.parse(localStorage.getItem('kestrel.save.slot.0') || 'null'), pe = raw && raw.world.entities.find((e) => e.id === 'player' || (e.components && e.components.inventory)); return JSON.stringify({ hasPlayer: !!p, comps: c ? Object.keys(c) : null, savedComps: pe ? Object.keys(pe.components) : null, savedHealth: pe && pe.components.health, vitals: !!D.vitals, menu: !!(D.menuHost && D.menuHost.active), last: D.saveRelay.lastResult, slot: D.saveRelay.slot, pos: p && [p.data.transform.x, p.data.transform.y], savedPos: pe && pe.transform && [pe.transform.x, pe.transform.y], sameWorld: D.world === (D.engine && D.engine.world), worldPlayer: !!(D.world && D.world.get('player') === p), wpComps: D.world && D.world.get('player') ? Object.keys(D.world.get('player').data.components) : null }); })()`);
+      return { ok: false, why: 'snap never ready: ' + await ev('window.__snapErr') + ' | ' + dg };
+    }
+    const after = await ev('__t.snap()');
+    ac3Diffs = compareSnaps(before, after); const diffs = ac3Diffs.map((d) => d.name + ' ' + firstDiff(JSON.stringify(d.before) ?? 'undefined', JSON.stringify(d.after) ?? 'undefined'));
+    return { ok: diffs.length === 0, why: diffs.slice(0, 6).join(' ; ') + (diffs.length ? ' || warns: ' + warns.slice(0, 4).join(' | ') : '') };
+  });
+  await beat('no console errors', async () => ({ ok: errors.length === 0, why: errors.slice(0, 3).join(' | ') }));
+} catch (e) {
+  rec('harness', false, String(e && e.stack || e).slice(0, 600));
+} finally {
+  cdp?.close(); if (browser?.pid) killTree(browser.pid); if (server.pid) killTree(server.pid);
+  if (path.dirname(path.resolve(profile)) !== path.resolve(os.tmpdir())) throw Error('Unexpected profile path');
+  await pause(300);
+  try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch (e) { console.warn('[cleanup] temp profile left behind:', e.message); }
+  clearInterval(sampler);
+  const fails = rows.filter((r) => !r.ok);
+  try { // AC5 report (written even when the run failed part-way)
+    const ac = { ac1: quests.length > 0 && questVerdict(quests).ok, ac2: !!(gearInfo && gearInfo.main === 'sword'), ac3: rows.some((r) => r.name.startsWith('AC3b')) && !!rows.find((r) => r.name.startsWith('AC3b')).ok };
+    const beats = rows.filter((r) => /^\d/.test(r.name)).map((r, i) => ({ id: r.name + (r.ok ? '' : ' [FAIL]'), t: i, still: r.still }));
+    const md = renderReport({ date: new Date().toISOString().slice(0, 10), quests, beats, forced: [...rows.filter((r) => !r.ok).map((r) => r.name + ': ' + r.why), ...Object.entries(forcedBy).flatMap(([id, l]) => l.map((w) => 'E+ ' + id + ': ' + w))], gaps: buildGapTable(samples, WALK ? { every: 1 } : undefined), ac, diffs: ac3Diffs, equipment: gearInfo,
+      notes: [(WALK ? `--walk: ${samples.length} samples, one per walked game-second at ${WALK_SPEED} m/s straight-line (walls ignored, waits/dialogue not counted); gap rows split into main line vs errand (E1-E6) in the Line column. ` : '') + `${samples.length} samples every ${SAMPLE_EVERY_S} s of wall time; the script teleports between beats, so the "where" is the spot the player stood at while a beat ran (event = beat name)`, 'compass column = __debug.compassRetarget() has a target; giver = a ! / ? giver within 30 m', `console errors: ${errors.length}`] });
+    writeFileSync(path.join(OUT, 'report.md'), md); console.log('report: docs/test-reports/m4-c2/report.md');
+    if (!ac.ac1 || !ac.ac3) process.exitCode = 1; // AC1 / AC3 failure = non-zero
+  } catch (e) { console.error('report failed', e && e.message); process.exitCode = 1; }
+  console.log('\n' + 'beat'.padEnd(64) + 'result'); for (const r of rows) console.log(r.name.padEnd(64) + (r.ok ? 'PASS' : 'FAIL ' + r.why));
+  console.log(fails.length ? `Ch1-2 run: ${fails.length} FAIL` : 'Ch1-2 run: all beats PASS');
+  if (fails.length) process.exitCode = 1;
+}

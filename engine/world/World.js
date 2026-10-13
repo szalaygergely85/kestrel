@@ -2,9 +2,15 @@
 // docs/architecture.md section 7 (World/WorldQuery), 7.2 (structTable) and
 // 10/10.1 (entities/handles). See the tech notes in docs/backlog.md US-025
 // for the build order this follows.
-import { loadLevel } from './Level.js';
+import { validatePolygon, compilePolygon } from '../physics/bounds.js';
+import { makeGrid, zoneAt, zoneId, best as bandBest, pick as bandPick, marginX as bandMarginX, marginY as bandMarginY } from './bandGrid.js';
+import { loadLevel, isTerrainFloor } from './Level.js';
 import { Terrain } from './Terrain.js';
-import { scatterTrees, scatterDetail } from './scatter.js';
+import { BandBakeJob, buildNavTile, NavTileFill } from './bandBake.js';
+import { BandCache } from './bandCache.js';
+import { aheadOrder, bestOverlap } from './bandAhead.js';
+import { validateCarpetConfig, buildCarpetClassMap, buildCarpetMask, CarpetMaskJob } from './carpet.js';
+import { scatterTrees, scatterDetail, TreeScatterJob, DetailScatterJob } from './scatter.js';
 import { packLevel, updateAnimatedSector } from './packed.js';
 import { Entity } from '../entities/Entity.js';
 import { EntityHandle } from '../entities/EntityHandle.js';
@@ -14,15 +20,17 @@ import { buildTriggers } from './triggers.js';
 import { clamp01 } from '../core/math.js';
 import { makeFrame, localToWorld, localDirToWorld, QUARTER_COS, QUARTER_SIN, frameBBox } from '../core/transform.js';
 import { gridLocal } from './gridLocal.js';
-import { buildWorldColliders, buildStaticMeshCollider, buildTrunkCollider, buildDetailCollider, buildPropCollider, refitDynCollider } from './colliders.js';
+import { buildWorldColliders, buildStaticMeshCollider, buildTrunkCollider, buildDetailCollider, buildPropCollider, buildKinematicCollider, moveKinematicPrism, refitDynCollider } from './colliders.js';
 import { cosSinDeg } from '../voxel/voxelPose.js';
 import { moveCircleMesh, moveSphereMesh, probeSupport, meshSupportSector, raycastColliders, FLOOR_NONE } from '../physics/meshCollide.js';
-import { pointBlocked } from './interaction.js';
+import { pointBlocked, resolvePropPicks } from './interaction.js';
 import { createWind } from './wind.js';
 import { createClothSystem, collectClothDefs } from './cloths.js';
 import { createWater, collectWaterDefs, SEA_STATES } from './water.js';
+import { riverLocate, L_LAT, L_HW, L_TX, L_TY, L_V, L_Z } from './river.js';
 import { createWaterfalls, collectWaterfallDefs } from './waterfalls.js';
 import { waveHeight } from './waves.js';
+import { PlacementGrid } from './placementGrid.js';
 import { editLayerFromJSON } from './terrainEdits.js';
 
 // ED-TERRAIN-1a: the registry's edits-file body for a terrain key -> a layer (null = none / stub registry).
@@ -106,6 +114,23 @@ function makeRingHAt(placed) {
   };
 }
 
+/**
+ * GS-01a: per-cell terrain carve mask of a placed level (Uint8Array w*h, 1 = carve the terrain, 0 = terrain shows
+ * through on `terrainFloor` cells). null when the level has no flagged cell (whole bbox carved, as before).
+ */
+function buildCarveMask(level) {
+  const w = level.width, h = level.height;
+  let mask = null;
+  for (let r = 0; r < h; r++) {
+    for (let c = 0; c < w; c++) {
+      if (!isTerrainFloor(level.sectorAt(c + 0.5, r + 0.5))) continue;
+      if (!mask) mask = new Uint8Array(w * h).fill(1);
+      mask[r * w + c] = 0;
+    }
+  }
+  return mask;
+}
+
 /** Fill `bbox` with the world AABB of `mesh`'s local bbox under `frame` and uniform scale `k`. */
 function fillMeshBbox(bbox, mesh, frame, k) {
   bbox.x0 = bbox.y0 = bbox.z0 = Infinity; bbox.x1 = bbox.y1 = bbox.z1 = -Infinity;
@@ -120,8 +145,8 @@ function fillMeshBbox(bbox, mesh, frame, k) {
 
 // ED-MESH-1d: cheap key of everything the near-band bake reads from the placed structures
 // (`structureBlend`: bbox + ringHAt = outer-ring sector floorH + frame z). Perimeter cells only.
-function nearBandKey(w, cx, cy) {
-  let k = `${cx},${cy}`;
+function nearBandKey(w, cx, cy, cw = 3, ch = 3) {
+  let k = (w.terrainBand || w.terrainBands) ? `${cx},${cy},${cw}x${ch}` : `${cx},${cy}`; // WS1-02: an authored rect is part of the key (absent = old key)
   for (const p of w.structures) {
     if (p.kind === 'mesh') continue;
     const lv = p.level, W = lv.width, H = lv.height, b = p.bbox;
@@ -138,8 +163,61 @@ function nearBandKey(w, cx, cy) {
 // this story). Validated up front like `validateHorizon` below (throws,
 // never silently dropped) and returns a plain copy (content, not state -
 // never mutated at runtime).
+// WS1-02 (arch 38.36): `world.terrainBand {cx0, cy0, cw, ch}` - the near terrain band as a chunk rect
+// (ints, cw/ch 1..6). Absent = null = the auto-centred 3x3. Validated up front, returned as a plain copy.
+function validateTerrainBand(b) {
+  if (b == null) return null;
+  if (typeof b !== 'object') throw new Error('World.load: terrainBand must be an object {cx0, cy0, cw, ch}');
+  for (const k of ['cx0', 'cy0']) if (!Number.isInteger(b[k]) || b[k] < 0) throw new Error(`World.load: terrainBand.${k} must be an integer >= 0`);
+  for (const k of ['cw', 'ch']) if (!Number.isInteger(b[k]) || b[k] < 1 || b[k] > 6) throw new Error(`World.load: terrainBand.${k} must be an integer 1..6`);
+  return { cx0: b.cx0, cy0: b.cy0, cw: b.cw, ch: b.ch };
+}
+
+// WS2-01 (arch 38.38): `world.terrainBands` - 1..4 authored near-band zones (same cw x ch in v1) + optional
+// `bandSwitch {prefetchM, switchM}`. Mutually exclusive with `terrainBand`. Returns {zones, prefetchM, switchM, bandSwitch} or null.
+function validateTerrainBands(list, sw, single) {
+  if (list == null) return null;
+  if (single != null) throw new Error('World.load: terrainBand and terrainBands are mutually exclusive');
+  if (!Array.isArray(list) || list.length < 1 || list.length > 6) throw new Error('World.load: terrainBands must be an array of 1..6 zones');
+  const zones = [], ids = new Set();
+  list.forEach((z, i) => {
+    if (!z || typeof z !== 'object') throw new Error(`World.load: terrainBands[${i}] must be an object`);
+    if (typeof z.id !== 'string' || !z.id || ids.has(z.id)) throw new Error(`World.load: terrainBands[${i}].id must be a unique non-empty string`);
+    ids.add(z.id);
+    const r = validateTerrainBand({ cx0: z.cx0, cy0: z.cy0, cw: z.cw, ch: z.ch });
+    if (i && (r.cw !== zones[0].cw || r.ch !== zones[0].ch)) throw new Error(`World.load: terrainBands[${i}] must be the same cw x ch as zone 0 (v1)`);
+    zones.push({ id: z.id, cx0: r.cx0, cy0: r.cy0, cw: r.cw, ch: r.ch });
+  });
+  const prefetchM = sw && sw.prefetchM !== undefined ? sw.prefetchM : 176, switchM = sw && sw.switchM !== undefined ? sw.switchM : 112;
+  if (!(typeof prefetchM === 'number' && typeof switchM === 'number' && isFinite(prefetchM) && isFinite(switchM) && switchM > 32 && prefetchM > switchM)) throw new Error('World.load: bandSwitch needs numbers with prefetchM > switchM > 32');
+  return { zones, prefetchM, switchM, bandSwitch: sw ? { prefetchM, switchM } : null };
+}
+
 function validateBounds(b) {
   if (b == null) return null;
+  if (b.shape === 'polygon') { // MAP-11 (38.43): simple polygon, 3..128 verts; bucket grid built here, not in the first step
+    validatePolygon(b.pts);
+    const o = { shape: 'polygon', pts: b.pts.map((p) => [p[0], p[1]]) };
+    compilePolygon(o);
+    return o;
+  }
+  if (b.shape === 'union') {
+    if (!Array.isArray(b.parts) || b.parts.length < 1 || b.parts.length > 16) throw new Error('World.load: bounds.parts must be an array of 1..16 parts');
+    const fin = (v) => typeof v === 'number' && isFinite(v);
+    const parts = b.parts.map((p, i) => {
+      const at = `bounds.parts[${i}]`;
+      if (!p || (p.shape !== 'circle' && p.shape !== 'capsule')) throw new Error(`World.load: ${at}: unknown shape "${p && p.shape}"`);
+      const o = { shape: p.shape };
+      for (const key of (p.shape === 'circle' ? ['x', 'y'] : ['ax', 'ay', 'bx', 'by'])) {
+        if (!fin(p[key])) throw new Error(`World.load: ${at}.${key} must be a finite number`);
+        o[key] = p[key];
+      }
+      if (!fin(p.r) || p.r <= 0) throw new Error(`World.load: ${at}.r must be a finite number > 0`);
+      o.r = p.r;
+      return o;
+    });
+    return { shape: 'union', parts };
+  }
   if (b.shape !== 'circle') throw new Error(`World.load: bounds: unknown shape "${b.shape}"`);
   if (typeof b.x !== 'number' || !isFinite(b.x)) throw new Error('World.load: bounds.x must be a finite number');
   if (typeof b.y !== 'number' || !isFinite(b.y)) throw new Error('World.load: bounds.y must be a finite number');
@@ -192,7 +270,12 @@ export class World {
     this.decals = []; // DECAL-01: derived wall text, never serialized.
     this.detailMeshes = null; // TREES-LP-c: {meshId: MeshData} for ground-cover species with `mesh`
     this.detail = null; // ENV-01a1: derived ground detail, never serialized.
+    this._kinCollider = null;
+    this._kinSlot = new Map(); // CH1-E2: kinematic entity id -> prism slot in 'npcs:kinematic'
     this._groundSnap = []; // ED-TERRAIN-1b: [{id, x, y}] of `z: 'ground'` props/entities, re-snapped after a terrain stroke.
+    this.carpet = null; // OB-073-D2a: derived {cfg, classMap, x0, y0, w, h}, never serialized or hashed.
+    this._carpetCtx = null;
+    this.carpetQuality = { on: true, radiusScale: 1, densScale: 1, minWCells: 0.85, farGrass: true }; // G2 (D-075 step 4): farGrass = far ground-glyph tier beyond the carpet radius (only while on); OB-103: render quality knobs (setCarpetQuality); mutated in place, never serialized
     this._detailCtx = null; // ED-TERRAIN-1b: {cfg, keepOut} the detail scatter was built with.
     // ME-11a (docs/architecture.md 27.18): 'grid' (default, unchanged
     // behaviour) or 'mesh'. Content, not state - never goes through
@@ -208,6 +291,11 @@ export class World {
     // `null` (unbounded - every world before this story). Content, not
     // state; set once by `World.load` from `def.bounds`.
     this.bounds = null;
+    this.terrainBands = null; this.bandSwitch = { prefetchM: 176, switchM: 112 }; this._bandCur = -1; this._bandPend = -1; this._bandJob = null; this.bandCache = new BandCache(); this._bandKeys = []; this._bandKeysC = []; this._evBand = { from: null, to: null, nav: null }; this._maskJob = null; this._maskBack = null; this.lastSwapMs = 0; this.bandMisses = 0; this._ahead = null; this._zoneKeys = new Map(); this._pinKeys = null; this._aheadOrd = []; this._aheadRects = new Float64Array(4 * 64); this._aheadSrc = []; this._aheadPose = null; this.bandId = null; // WS2-01/02
+    this.aheadLateMax = 0; this.navLate = 0; this._navFill = null; this._navQ = null;
+    this.nav = null; this.navTiles = null; // WM-03: live nav tile + {create,maxSlopeDeg,maxStepM,blockedTypes,typeCost} (see setNavTiles)
+    this.terrainGrid = null; this._gridPick = { i: 0, j: 0 }; // MAP-10 (38.43): generated zone grid; terrainBands = 2 reusable slot zones
+    this.terrainBand = null; // WS1-02: authored near-band chunk rect or null (auto 3x3)
     // US-016 D-011 addendum (architecture.md 14.4 item 13): horizon
     // billboards - plain data, content not state (never mutated at
     // runtime), not entities (they have no world position - placed by
@@ -250,6 +338,9 @@ export class World {
     // own cells changed" (dirty-row `texSubImage2D` only, via
     // `packed.version`) - only `placeStructure` bumps this.
     this.structVersion = 0;
+    this.placementGrid = null; this._placementGridVersion = 0; // STREAM-01a: built at the end of load
+    /** STREAM-01b: `enabled` false (`?stream=0`) = the feeds ignore the grid and run today's all-placements path. Not serialized. */
+    this.streaming = { enabled: true };
     this.nextId = 0;
     this.state = {};
     // US-027a (architecture.md 21.8): `null` until `load()` sets it from
@@ -356,6 +447,19 @@ export class World {
       }
     }
     w.bounds = validateBounds(def.bounds);
+    w.terrainBand = validateTerrainBand(def.terrainBand); // WS1-02 (null = auto 3x3)
+    if (def.terrainGrid != null) { // MAP-10 (38.43): generated grid; exclusive with terrainBand/terrainBands
+      if (def.terrainBand != null || def.terrainBands != null) throw new Error('World.load: terrainGrid is mutually exclusive with terrainBand/terrainBands');
+      const tg = w.terrainGrid = makeGrid(def.terrainGrid); w._terrainGridDef = JSON.parse(JSON.stringify(def.terrainGrid));
+      const sl = () => ({ id: '', i: 0, j: 0, cx0: 0, cy0: 0, cw: tg.cw, ch: tg.ch });
+      w.terrainBands = [sl(), sl()]; // slot k = current / pending zone, filled by _gridFill
+      w.bandSwitch = { prefetchM: tg.switch.prefetchX, switchM: tg.switch.switchX };
+      w.bandCache.maxBytes = 32 * 1048576; // WM-02 (38.59): grid cache cap
+    } else
+    { // WS2-01 (38.38): authored zone list; mutually exclusive with terrainBand
+      const tbs = validateTerrainBands(def.terrainBands, def.bandSwitch, def.terrainBand);
+      if (tbs) { w.terrainBands = tbs.zones; w.bandSwitch = { prefetchM: tbs.prefetchM, switchM: tbs.switchM }; w._bandSwitchDef = tbs.bandSwitch; }
+    }
     // US-138 (32.5): built once here, after bounds, before the sun block
     // below (order doesn't matter to wind itself - it reads nothing else off
     // `w`). `def.wind` may be absent -> `createWind(null, ...)` -> calm.
@@ -377,7 +481,7 @@ export class World {
 
     for (const s of def.structures || []) {
       const placed = s.mesh
-        ? w.placeMesh(assets.mesh(s.mesh), s.origin, s.id, s.yawDeg ?? 0, s.castShadow, s.scale === undefined ? 1 : readScale(s.scale, `mesh placement "${s.id}"`))
+        ? w.placeMesh(assets.mesh(s.mesh), s.origin, s.id, s.yawDeg ?? 0, s.castShadow, s.scale === undefined ? 1 : readScale(s.scale, `mesh placement "${s.id}"`), s.collide)
         : w.placeStructure(assets.level(s.level), s.origin, s.id, s.yawSteps || 0);
       if (placed.kind !== 'mesh' && s.dynamics) {
         for (const tag of Object.keys(s.dynamics)) {
@@ -441,16 +545,36 @@ export class World {
       }
       const cx = Math.floor((bx0 + bx1) / 2 / w.terrain.chunkSize);
       const cy = Math.floor((by0 + by1) / 2 / w.terrain.chunkSize);
+      // WS1-02 (38.36): authored `terrainBand` rect (absent = the auto-centred 3x3, byte-identical).
+      let tb = w.terrainBand;
+      if (w.terrainBands) { // WS2-01: start in the best zone for the spawn pose (opts.spawn) or zone 0
+        let sp = opts.spawn;
+        if (!(sp && Number.isFinite(sp.x) && Number.isFinite(sp.y))) { // WM-05: no caller pose -> the world's own player spawn (else zone 0 is the wrong place on the whole-map grid)
+          const pe = (def.entities || []).find((e) => e.type === 'player' && e.spawn), st = pe && w.structures.find((q) => q.id === pe.spawn.structure);
+          if (st && st.kind !== 'mesh' && st.level && st.level.start) { localToWorld(st.frame, st.level.start.x, st.level.start.y, 0, tmpW); sp = { x: tmpW.x, y: tmpW.y }; }
+        }
+        if (w.terrainGrid) { // MAP-10: initial zone = best for the spawn pose (or (0,0)) in slot 0
+          const gp = w._gridPick; gp.i = 0; gp.j = 0;
+          if (sp && Number.isFinite(sp.x) && Number.isFinite(sp.y)) bandBest(w.terrainGrid, null, sp.x, sp.y, gp);
+          w._gridFill(0, gp.i, gp.j); w._bandCur = 0;
+        } else w._bandCur = sp && Number.isFinite(sp.x) && Number.isFinite(sp.y) ? w._bestBand(sp.x, sp.y, w.terrain.chunkSize) : 0;
+        tb = w.terrainBands[w._bandCur]; w.bandId = tb.id;
+      }
+      const bcx0 = tb ? tb.cx0 : cx - 1, bcy0 = tb ? tb.cy0 : cy - 1, bcw = tb ? tb.cw : 3, bch = tb ? tb.ch : 3;
       // ED-MESH-1d: a reused Terrain whose band was baked for the same centre and the same
       // structure footprints (bbox + z + outer-ring floorH, all `ringHAt` can read) is still valid.
-      const key = nearBandKey(w, cx, cy) + `|realTrees:${w.terrain.realTrees}`;
+      const key = nearBandKey(w, tb ? bcx0 : cx, tb ? bcy0 : cy, bcw, bch) + `|realTrees:${w.terrain.realTrees}`;
       if (!(w.terrain.nearReady && w.terrain._nearKey === key)) {
-        w.terrain.bakeNearBand(cx, cy);
+        w.terrain.bakeNearBand(bcx0, bcy0, bcw, bch);
         w.terrain._nearKey = key;
       }
     }
 
     if (w.terrain?.realTrees && w.terrain.nearReady) w.scatter = scatterTrees(w.terrain, w.structures);
+    if (opts.carpet && w.terrain) {
+      w._carpetCtx = { cfg: validateCarpetConfig(opts.carpet, w.terrain.typeNames), recipe: w.terrain.recipe };
+      w._rebuildCarpet();
+    }
     if (opts.detail === true && w.terrain?.nearReady && w.terrain.recipe.recipe?.detail) {
       const cfg = w.terrain.recipe.recipe.detail, keepOut = [];
       // Only registered authored positions: saved/live entities must never move the grass.
@@ -469,7 +593,7 @@ export class World {
         if (!assets || !assets.has('mesh', sp.mesh)) throw new Error(`World.load: detail species references unknown mesh "${sp.mesh}"`);
         (w.detailMeshes || (w.detailMeshes = {}))[sp.mesh] = assets.mesh(sp.mesh);
       }
-      w.detail = scatterDetail(w.terrain, w.structures, keepOut, cfg);
+      w.detail = scatterDetail(w.terrain, w.structures, keepOut, cfg, w.scatter || null);
     }
     if (w.physicsMode === 'mesh' && w.scatter) {
       const trunks = buildTrunkCollider(w.scatter, w.terrain.recipe.recipe.forest.trees);
@@ -478,6 +602,11 @@ export class World {
     if (w.physicsMode === 'mesh' && w.detail) {
       const detailCollider = buildDetailCollider(w.detail);
       if (detailCollider) w.colliders.push(detailCollider);
+    }
+
+    if (w.terrainBands && w.terrain?.nearReady && w._bandCur >= 0) { // OB109-B2: the start band is the first cache entry
+      w._cachePut(w._currentBundle(w._bandKey(w._bandCur), w._bandCur));
+      w.terrain.onRebake = (x0, y0, x1, y1) => { w.bandCache.invalidateRect(x0, y0, x1, y1); w._zoneKeys.clear(); w._pinKeys = null; w._ahead = null; };
     }
 
     if (!w.sun) {
@@ -519,6 +648,8 @@ export class World {
           propId: it.prop ? `${s.id}.${it.prop}` : null,
           def: it,
           usedKey: it.once ? `used.${s.id}.${it.id}` : null,
+          pick: null, // OB-084: filled by resolvePropPicks (rebuildPropColliders) once the props exist
+          pickShapes: null, // OB-088: the prop's oriented collider shapes (the ray tests these; pick = their union AABB = broadphase)
         });
       }
     }
@@ -732,6 +863,10 @@ export class World {
     const missing = validateBehaviours(w);
     if (missing.length) console.warn(`[World] ${missing.length} behaviour(s) referenced by level data but not registered: ${missing.join(', ')}`);
 
+    w.placementGrid = new PlacementGrid(w.structures, def.streaming); // STREAM-01a (38.51): derived residency, never serialized
+    w._placementGridVersion = w.structVersion;
+    if (def.streaming && def.streaming.enabled === false) w.streaming.enabled = false;
+
     if (w.events) w.events.emit('world:loaded', { world: w });
     return w;
   }
@@ -753,6 +888,7 @@ export class World {
     const frame = makeFrame(origin.x, origin.y, origin.z || 0, yawSteps);
     const bbox = frameBBox(frame, level.width, level.height, { x0: 0, y0: 0, x1: 0, y1: 0 });
     const packed = packLevel(level, null);
+    const carveMask = buildCarveMask(level); // GS-01a: null = carve the whole bbox
     // US-014 tech note 1: a tag -> legend-char Map built once here, instead
     // of `animateSector` scanning `Object.keys(level.legend)` on every call
     // (an interaction/save-load call, but also every `stepSectorAnims` tick
@@ -764,7 +900,7 @@ export class World {
     }
     // CO-2: `frame` = the authored placement (content items convert through
     // it); `origin`/`bbox` = the baked grid (equal to the frame while yawSteps = 0).
-    const placed = { id: structId, level, frame, origin: { x: origin.x, y: origin.y, z: origin.z || 0 }, yawSteps, bbox, packed, structSeq, dynamics: {}, tagMap };
+    const placed = { id: structId, level, frame, origin: { x: origin.x, y: origin.y, z: origin.z || 0 }, yawSteps, bbox, packed, structSeq, dynamics: {}, tagMap, carveMask };
     this.structures.push(placed);
 
     if (structSeq < 8) {
@@ -786,7 +922,7 @@ export class World {
   }
 
   /** Place content MeshData; grid sectors and dynamic tags remain level-only. */
-  placeMesh(mesh, origin, id, yawDeg = 0, castShadow = undefined, scale = 1) {
+  placeMesh(mesh, origin, id, yawDeg = 0, castShadow = undefined, scale = 1, collide = undefined) {
     const frame = makeFrame(origin.x, origin.y, origin.z ?? 0, 0, yawDeg);
     const k = scale > 0 ? scale : 1; // MESH-SCALE-01: uniform placement scale about the placement origin
     const bbox = { x0: Infinity, y0: Infinity, z0: Infinity, x1: -Infinity, y1: -Infinity, z1: -Infinity };
@@ -794,6 +930,7 @@ export class World {
     const placed = { id: id || `struct_${this.structures.length}`, kind: 'mesh', mesh,
       origin: { x: frame.x, y: frame.y, z: frame.z }, frame, bbox,
       castShadow: typeof castShadow === 'boolean' ? castShadow : mesh.castShadow !== false }; // MESH-SHADOW-01: placement overrides the mesh flag
+    if (typeof collide === 'boolean') placed.collide = collide; // WS2-07b: per-placement collision override (true = solid prism even for a walk-over mesh, false = walk-through)
     if (k !== 1) placed.scale = k; // absent = unscaled (old saves / world files stay identical)
     this.structures.push(placed);
     this.renderVersion++;
@@ -824,6 +961,7 @@ export class World {
     fillMeshBbox(s.bbox, s.mesh, f, k);
     if (k !== 1) s.scale = k; else delete s.scale;
     this._meshCollidersDirty = true;
+    if (this.placementGrid) this.placementGrid.dirty = true; // STREAM-01a
     this.renderVersion++;
     return true;
   }
@@ -835,11 +973,22 @@ export class World {
   rebuildMeshColliders() {
     this._meshCollidersDirty = false;
     if (this.physicsMode !== 'mesh') return;
-    const c = buildStaticMeshCollider(this);
     const i = this.colliders.findIndex((x) => x.id === 'meshes:static');
+    const c = buildStaticMeshCollider(this, i >= 0 ? this.colliders[i] : null); // same object back = refitted in place
     if (i >= 0) {
       if (c) this.colliders[i] = c; else this.colliders.splice(i, 1);
     } else if (c) this.colliders.push(c);
+  }
+
+  /** STREAM-01a: the placement grid, rebuilt (allocates) when `structVersion` changed or `setMeshPlacement` marked it dirty. Cheap compare otherwise. */
+  refreshPlacementGrid() {
+    const g = this.placementGrid;
+    if (!g) return null;
+    if (g.dirty || this._placementGridVersion !== this.structVersion) {
+      this.placementGrid = new PlacementGrid(this.structures, g.opts);
+      this._placementGridVersion = this.structVersion;
+    }
+    return this.placementGrid;
   }
 
   /** Authored `Frame` of a placed structure by id (`null` if unknown). */
@@ -851,11 +1000,20 @@ export class World {
   /** World (x, y) -> the placed structure's baked grid; see `gridLocal.js`. */
   static gridLocal(placed, x, y, out) { return gridLocal(placed, x, y, out); }
 
-  /** Bbox test first (structures.length is tiny), then the level's own footprint. */
+  /** Grid-level structures only (kind !== 'mesh'). PERF-2026-10-11: 370+ mesh structures made the linear scan below dominate the sun DDA. Cached per (array identity, length). */
+  _gridStructures() {
+    const a = this.structures;
+    if (this._gsSrc !== a || this._gsLen !== a.length) {
+      this._gs = a.filter((s) => s.kind !== 'mesh'); this._gsSrc = a; this._gsLen = a.length;
+    }
+    return this._gs;
+  }
+
+  /** Bbox test first (grid-level structures only, see _gridStructures), then the level's own footprint. */
   structureAt(x, y) {
-    for (let i = 0; i < this.structures.length; i++) {
-      const s = this.structures[i];
-      if (s.kind === 'mesh') continue;
+    const gs = this._gridStructures();
+    for (let i = 0; i < gs.length; i++) {
+      const s = gs[i];
       const b = s.bbox;
       if (x >= b.x0 && x < b.x1 && y >= b.y0 && y < b.y1) return s;
     }
@@ -942,8 +1100,10 @@ export class World {
 
   /** PROP-COLLIDE-01: load/committed edit only; one BVH, never per drag frame. */
   rebuildPropColliders() {
+    resolvePropPicks(this); // OB-084: prop moved / spawned -> refresh the level items' pick boxes (never in the hot pick loop)
     if (this.physicsMode !== 'mesh') return;
-    const shapes = [], cs = new Float64Array(2);
+    const shapes = [], kin = [], cs = new Float64Array(2);
+    this._kinSlot = new Map();
     for (const s of this.structures) {
       if (s.kind === 'mesh') continue;
       for (const p of s.level.def.props || []) {
@@ -952,7 +1112,8 @@ export class World {
         const component = e.components.voxel || e.components.sprite;
         if (!component) continue;
         // BUG-LAMP-COLLIDE-02: a prop may drop its collider in one variant (the taken wall lamp: bracket only).
-        if (p.colliderOffVariant && component.variant === p.colliderOffVariant) continue;
+        // DOOR-TOGGLE-01: a freshly spawned prop has no component.variant yet - fall back to the level's initial one.
+        if (p.colliderOffVariant && (component.variant !== undefined ? component.variant : p.variant) === p.colliderOffVariant) continue;
         const model = this.assets.model(component.model);
         const defs = Object.hasOwn(p, 'colliders') ? p.colliders : model.colliders;
         if (defs === undefined) continue;
@@ -984,12 +1145,457 @@ export class World {
         }
       }
     }
-    const collider = buildPropCollider(shapes, shapes.length);
-    const index = this.colliders.findIndex(c => c.id === 'props:static');
-    if (index >= 0) {
-      if (collider) this.colliders[index] = collider;
-      else this.colliders.splice(index, 1);
-    } else if (collider) this.colliders.push(collider);
+    // NPC-BEAR-01: a world-level entity may carry `components.collider = {r, h}` (metres): one static upright prism
+    // at its transform (feet on transform.z). Re-run on ground snaps, so it follows the terrain re-bake.
+    for (const [id, e] of this._entities) {
+      const cc = e.components && e.components.collider;
+      if (!cc || e.type === 'prop') continue;
+      if (!Number.isFinite(cc.r) || cc.r <= 0 || !Number.isFinite(cc.h) || cc.h <= 0) throw new Error(`World.load: entity "${id}" invalid collider {r,h}`);
+      const t = e.transform;
+      const shape = { kind: 1, x: t.x, y: t.y, zc: t.z + cc.h / 2, hx: 0, hy: 0, hz: 0, r: cc.r, h: cc.h, yawRad: 0 };
+      if (cc.kinematic === true) { kin.push(shape); this._kinSlot.set(id, kin.length - 1); } // CH1-E2
+      else shapes.push(shape);
+    }
+    if (kin.length > 8) throw new Error('World.load: at most 8 kinematic entity colliders');
+    const put = (cid, collider) => {
+      const index = this.colliders.findIndex(c => c.id === cid);
+      if (index >= 0) {
+        if (collider) this.colliders[index] = collider;
+        else this.colliders.splice(index, 1);
+      } else if (collider) this.colliders.push(collider);
+    };
+    put('props:static', buildPropCollider(shapes, shapes.length));
+    const kc = buildKinematicCollider(kin);
+    put('npcs:kinematic', kc);
+    this._kinCollider = kc || null; // cached for setEntityCollider (no per-call find)
+  }
+
+  /**
+   * CH1-E2 (38.37): moves a `collider.kinematic` entity's prism to feet (x, y, z) in place (no alloc, O(1)).
+   * Does not touch the entity transform (the caller moves that). Mesh physics only.
+   * @returns {boolean} false when the entity has no kinematic collider
+   */
+  setEntityCollider(id, x, y, z) {
+    const slot = this._kinSlot.get(id);
+    if (slot === undefined) return false;
+    const c = this._kinCollider;
+    if (!c) return false;
+    moveKinematicPrism(c, slot, x, y, z + this._entities.get(id).components.collider.h / 2);
+    return true;
+  }
+
+  // ---- near-band zones (WS2-01, arch 38.38) --------------------------------
+
+  /** Distance (m) from (x, y) to the nearest edge of zone `z` (negative outside). No allocation. */
+  _bandMargin(z, x, y, cs) {
+    const x0 = z.cx0 * cs, y0 = z.cy0 * cs;
+    return Math.min(x - x0, x0 + z.cw * cs - x, y - y0, y0 + z.ch * cs - y);
+  }
+
+  /** Zone index with the largest margin at (x, y); ties keep the current zone, then the lowest index. */
+  _bestBand(x, y, cs) {
+    const zs = this.terrainBands;
+    let best = -1, bm = -Infinity;
+    for (let i = 0; i < zs.length; i++) {
+      const m = this._bandMargin(zs[i], x, y, cs);
+      if (m > bm || (m === bm && i === this._bandCur)) { bm = m; best = i; }
+    }
+    return best;
+  }
+
+  /** MAP-10: fills slot `k` with grid zone (i, j) (the id string allocates; prefetch/swap only). */
+  _gridFill(k, i, j) { const z = this.terrainBands[k]; zoneAt(this.terrainGrid, i, j, z); z.id = zoneId(z.i, z.j); this._bandKeys[k] = null; return z; }
+
+  /** Drops a pending bake and its scatter job. */
+  /** WS2-05: index of the terrain band being baked, -1 when none. */
+  get bandPending() { return this._bandPend; }
+  _cancelBand() { if (this._bandPend >= 0) { this.terrain.cancelNearBand(); this._bandPend = -1; } this._bandJob = null; }
+
+  /**
+   * WS2-02 (38.38): stepped scatter for the PENDING near band. Phases: trees, detail, trunk collider, detail collider
+   * (each collider is one slice, off the swap frame). Reads a view whose `near` is the pending band, never
+   * `terrain.near`. Returns true when all four results are ready. >= 1 unit of progress per call.
+   */
+  _bandJobStep(msBudget) {
+    const terrain = this.terrain;
+    if (!this._bandJob) this._bandJob = new BandBakeJob(this, terrain._bb); // adopts the pending swap's terrain state
+    return this._bandJob.stepScatter(msBudget);
+  }
+
+  /** OB109-B2 (38.58): cache key of terrain band slot `k` (zone object memoises it; `_gridFill` resets it). */
+  _bandKey(k) {
+    const z = this.terrainBands[k], ks = this._bandKeys;
+    if (!ks[k]) { // side arrays, not zone fields: zones are serialised world data
+      ks[k] = nearBandKey(this, z.cx0, z.cy0, z.cw, z.ch) + `|realTrees:${this.terrain.realTrees}`; // = Terrain._nearKey form
+      this._bandKeysC[k] = ks[k] + `|detail:${this._detailCtx ? 1 : 0}`;
+    }
+    return this._bandKeysC[k];
+  }
+
+  /**
+   * OB109-B3 (38.58): bake every uncached authored zone into the cache, nearest to the current band first. Loading bar only;
+   * never touches the live band (own BandBakeJob, overlap copied from `terrain.near`). Each call stays within `msBudget` plus one slice.
+   * @returns {{done:boolean,total:number,cached:number,bytes:number}} reused object
+   */
+  prebakeBands(msBudget) {
+    const zs = this.terrainBands, out = this._prebakeOut || (this._prebakeOut = { done: true, total: 0, cached: 0, bytes: 0 });
+    if (!zs || zs.length < 2 || this._bandCur < 0 || this.terrainGrid) { out.done = true; out.total = zs ? zs.length : 0; out.cached = out.total; out.bytes = this.bandCache.bytes; return out; }
+    let pb = this._prebake;
+    if (!pb) {
+      const cs = this.terrain.chunkSize, c = zs[this._bandCur], cx = (c.cx0 + c.cw / 2) * cs, cy = (c.cy0 + c.ch / 2) * cs;
+      const order = zs.map((z, k) => ({ k, d: Math.hypot((z.cx0 + z.cw / 2) * cs - cx, (z.cy0 + z.ch / 2) * cs - cy) })).sort((a, b) => a.d - b.d).map((e) => e.k);
+      pb = this._prebake = { order, job: null, k: -1 };
+    }
+    const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now()), t0 = now();
+    do {
+      if (!pb.job) { // next uncached zone
+        let k = -1;
+        for (let i = 0; i < pb.order.length; i++) if (!this.bandCache.has(this._bandKey(pb.order[i]))) { k = pb.order[i]; break; }
+        if (k < 0) break;
+        const z = zs[k]; pb.k = k;
+        pb.job = BandBakeJob.create(this, z.cx0, z.cy0, z.cw, z.ch, this.terrain.near);
+      }
+      if (pb.job.step(Math.max(0, msBudget - (now() - t0)))) {
+        const b = pb.job.bundle(); b.key = this._bandKey(pb.k); b.zone = pb.k;
+        this.bandCache.put(b, this._bandKey(this._bandCur)); this.bandCache.pin(b.key, true);
+        pb.job = null;
+      }
+    } while (now() - t0 < msBudget);
+    let cached = 0;
+    for (let i = 0; i < zs.length; i++) if (this.bandCache.has(this._bandKey(i))) cached++;
+    out.total = zs.length; out.cached = cached; out.bytes = this.bandCache.bytes; out.done = cached === zs.length && !pb.job;
+    if (out.done) this._prebake = null;
+    return out;
+  }
+
+  /** WM-02: cache key of grid zone (i, j) (memoised; structures are static between editor rebakes). */
+  _zoneKey(i, j) {
+    const id = i * 4096 + j; let k = this._zoneKeys.get(id);
+    if (!k) {
+      const z = zoneAt(this.terrainGrid, i, j, {});
+      k = nearBandKey(this, z.cx0, z.cy0, z.cw, z.ch) + `|realTrees:${this.terrain.realTrees}|detail:${this._detailCtx ? 1 : 0}`;
+      this._zoneKeys.set(id, k);
+    }
+    return k;
+  }
+  _gridPinKeys() {
+    if (!this._pinKeys) { this._pinKeys = new Set(); for (const p of this.terrainGrid.pin) this._pinKeys.add(this._zoneKey(p[0], p[1])); }
+    return this._pinKeys;
+  }
+
+  /**
+   * WM-02 (38.59 decision 2): idle bake-ahead for the grid. One job at a time, ring zone ahead in the movement heading first,
+   * overlap copied from the cached neighbour with the largest overlap. Never touches the live band, never synchronous.
+   * Call with the leftover frame budget (streamBand does when it returned 0). Returns true while a job is running.
+   */
+  bakeAhead(px, py, msBudget) {
+    const g = this.terrainGrid;
+    this.bandCache.setFocus(px, py);
+    if (!g || this._bandCur < 0 || this._bandPend >= 0 || !(msBudget > 0)) return !!this._ahead;
+    if (this._navQ && (this._navFill || this._navQ.length) && !this._ahead) { // pending nav tiles of pre-setNavTiles bundles: idle slices before new bake-ahead jobs
+      if (!this._navFill) { const c = this._navQ.pop(); if (c.nav || !c.near) return true; this._navFill = new NavTileFill(this, c); }
+      if (this._navFill.step(Math.max(0.2, msBudget - 0.4))) {
+        const c = this._navFill.bundle; this._navFill = null;
+        this.bandCache.regrow(c, this._bandKey(this._bandCur), this._bandPend >= 0 ? this._bandKey(this._bandPend) : null); // WM-CACHE-01: recount + trim under the cap
+      }
+      return true;
+    }
+    const lp = this._aheadPose || (this._aheadPose = { x: px, y: py, hx: 0, hy: 0 });
+    const dx = px - lp.x, dy = py - lp.y, d = Math.hypot(dx, dy);
+    if (d > 0.5) { lp.hx = lp.hx * 0.8 + (dx / d) * 0.2; lp.hy = lp.hy * 0.8 + (dy / d) * 0.2; lp.x = px; lp.y = py; } // smoothed heading
+    const cur = this.terrainBands[this._bandCur], cache = this.bandCache;
+    let a = this._ahead;
+    if (a && (Math.abs(a.i - cur.i) > 1 || Math.abs(a.j - cur.j) > 1)) a = this._ahead = null; // left the ring: dropped
+    if (!a) {
+      const ord = aheadOrder(g, cur.i, cur.j, lp.hx, lp.hy, px, py, this._aheadOrd);
+      let pick = null;
+      for (let k = 0; k < ord.length && !pick; k++) if (!cache.has(this._zoneKey(ord[k].i, ord[k].j))) pick = ord[k];
+      if (!pick) return false;
+      const z = zoneAt(g, pick.i, pick.j, {}), cs = this.terrain.chunkSize, R = this._aheadRects, srcs = this._aheadSrc;
+      let n = 0; // candidate overlap sources: live band + cached bundles
+      const addSrc = (near) => { if (n >= 64) return; R[n * 4] = near.x0; R[n * 4 + 1] = near.y0; R[n * 4 + 2] = near.x0 + near.w * near.cell; R[n * 4 + 3] = near.y0 + near.h * near.cell; srcs[n++] = near; };
+      addSrc(this.terrain.near);
+      for (const b of cache.map.values()) addSrc(b.near);
+      const bi = bestOverlap(R, n, z.cx0 * cs, z.cy0 * cs, (z.cx0 + z.cw) * cs, (z.cy0 + z.ch) * cs);
+      const src = bi >= 0 ? srcs[bi] : null; srcs.length = 0;
+      a = this._ahead = { i: pick.i, j: pick.j, key: this._zoneKey(pick.i, pick.j), job: BandBakeJob.create(this, z.cx0, z.cy0, z.cw, z.ch, src) };
+      return true; // WM-02b: the start call only builds the job (key + allocs, ~0.7 ms); stepping begins next frame
+    }
+    const stepped = a.job.step(Math.max(0.2, msBudget - 0.4));
+    if (a.job.st.late > this.aheadLateMax) this.aheadLateMax = a.job.st.late; // units started after the budget ran out (deterministic, test asserts <= 1)
+    if (!stepped) return true; // 0.4 ms reserve: one 32-cell slice overshoots by ~0.15-0.3 ms
+    const b = a.job.bundle(); b.key = a.key; b.zone = a.i * this.terrainGrid.nj + a.j;
+    this._ahead = null;
+    cache.put(b, this._bandKey(this._bandCur), this._bandPend >= 0 ? this._bandKey(this._bandPend) : null);
+    if (this._gridPinKeys().has(b.key)) cache.pin(b.key, true);
+    return false;
+  }
+
+  /** Bundle of the current terrain state as a cache entry (key/zone set by the caller). */
+  _currentBundle(key, zone) {
+    const col = (id) => { for (let i = 0; i < this.colliders.length; i++) if (this.colliders[i].id === id) return this.colliders[i]; return null; };
+    return { key, zone, near: this.terrain.near, scatter: this.scatter, detail: this.detail, trunks: col('scatter:trunks'), detailCol: col('scatter:detail'), nav: this.nav, classMap: null, bytes: 0, pinned: false, lastUse: 0 };
+  }
+
+  /** Stores `b` and pins authored (non-grid) zones. */
+  _cachePut(b) {
+    const c = this.bandCache;
+    c.put(b, this._bandKey(this._bandCur));
+    if (!this.terrainGrid) c.pin(b.key, true);
+    else if (this._gridPinKeys().has(b.key)) c.pin(b.key, true); // WM-02: terrainGrid.pin zones
+  }
+
+  /** Indexed collider slot replace (no closure: runs on the swap frame). */
+  _setCollider(id, collider) {
+    const cs = this.colliders;
+    for (let i = 0; i < cs.length; i++) if (cs[i].id === id) { if (collider) cs[i] = collider; else cs.splice(i, 1); return; }
+    if (collider) cs.push(collider);
+  }
+
+  /**
+   * WM-03 (38.59): enables per-band nav tiles (grid worlds without a fixed `nav.area`). `cfg.create(x0,y0,w,h,cell)` returns a NavGrid
+   * (engine/world never imports engine/nav). Builds the live band's tile now (load time); later bands get theirs as BandBakeJob phase 4.
+   */
+  setNavTiles(cfg) {
+    this.navTiles = cfg || null;
+    this.nav = null;
+    if (!cfg) return;
+    this.nav = buildNavTile(this, this.terrain.near);
+    this._navFill = null; this._navQ = [];
+    if (this.terrainBands && this._bandCur >= 0) {
+      const b = this.bandCache.get(this._bandKey(this._bandCur)); if (b) b.nav = this.nav;
+      // arch fix: every other cached bundle gets its nav tile sliced during idle frames (bakeAhead), never on a swap frame
+      for (const c of this.bandCache.map.values()) if (!c.nav) this._navQ.push(c);
+    }
+  }
+
+  /** Swap frame: only pointer flips + the ground-snap loop; every heavy result was prepared by `_bandJobStep`. */
+  _publishBand(to, late) {
+    const terrain = this.terrain, z = this.terrainBands[to], from = this.bandId, cache = this.bandCache;
+    const key = this._bandKey(to), hit = cache.get(key);
+    let j = null;
+    if (!hit) {
+      this.bandMisses++; // WM-02: swaps that had no cached bundle (sliced path or sync fallback)
+      if (!terrain._bb) { terrain._bb = terrain.newBandState(z.cx0, z.cy0, z.cw, z.ch, terrain.near); terrain.nearBandStep(Infinity); } // evicted/never begun: sync fallback
+      if (!this._bandJob || this._bandJob.phase < BandBakeJob.DONE) this._bandJobStep(Infinity); // sync path (ensureBandFor / band:late)
+      j = this._bandJob;
+    }
+    const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    let bundle = hit;
+    if (hit) { terrain._bb = null; terrain.publishBand(hit.near); }
+    else { terrain.swapNearBand(); bundle = null; }
+    this._bandCur = to; this._bandPend = -1; this.bandId = z.id; this._bandJob = null;
+    terrain._nearKey = this._bandKeys[to];
+    const src = hit || j;
+    if (terrain.realTrees) this.scatter = hit ? hit.scatter : j.scatter;
+    if (this._detailCtx) this.detail = hit ? hit.detail : j.detailSet;
+    this._rebuildCarpet(true);
+    if (this.physicsMode === 'mesh') {
+      this._setCollider('scatter:trunks', hit ? hit.trunks : j.trunks);
+      this._setCollider('scatter:detail', hit ? hit.detailCol : j.detailCol);
+    }
+    if (!hit) { bundle = { key, zone: to, near: terrain.near, scatter: j.scatter, detail: j.detailSet, trunks: j.trunks, detailCol: j.detailCol, nav: j.nav, classMap: null, bytes: 0, pinned: false, lastUse: 0 }; this._cachePut(bundle); }
+    if (this.navTiles) { // WM-03: nav tile swaps with the band (pointer flip; a bundle without one = legacy/cached before setNavTiles -> built once)
+      let nv = src.nav;
+      if (!nv) { this.navLate++; nv = buildNavTile(this, terrain.near); src.nav = nv; if (bundle) bundle.nav = nv; } // counted fallback (should stay 0 in play)
+      this.nav = nv;
+    }
+    let snapped = 0;
+    for (const g of this._groundSnap) {
+      const e = this._entities.get(g.id);
+      if (!e) continue;
+      const gz = terrain.groundAt(e.transform.x, e.transform.y);
+      if (e.transform.z !== gz) { e.transform.z = gz; snapped++; }
+    }
+    if (snapped) { this.rebuildPropColliders(); this.renderVersion++; }
+    this.lastSwapMs = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
+    if (this.events) {
+      const ev = this._evBand; ev.from = from; ev.to = z.id; ev.nav = this.nav; // OB109-B2: preallocated payload (consumers must not keep it)
+      this.events.emit('world:band', ev);
+      if (late) this.events.emit('band:late', ev);
+      this.events.emit('world:scatter', this._evScatter || (this._evScatter = { world: this }));
+    }
+  }
+
+  /**
+   * Player-pose band streaming (38.38): 0 idle | 1 baking | 2 swapped. Keeps the current zone while its
+   * margin >= switchM; below prefetchM it bakes the best zone in `msBudget` slices; swaps when margin <
+   * switchM and the bake is ready; below 32 m with a pending bake it finishes synchronously (`band:late`).
+   * Zero allocation while idle.
+   */
+  streamBand(px, py, msBudget) {
+    this.bandCache.setFocus(px, py);
+    const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const r = this._streamBandCore(px, py, msBudget);
+    if (r === 0 && this.terrainGrid) { // WM-02: idle -> bake-ahead with the leftover budget
+      const left = msBudget - ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0);
+      if (left > 0) this.bakeAhead(px, py, left);
+    }
+    if (this._maskJob && r !== 2) { // MASK-b: leftover budget of this frame goes to the row-sliced near-band mask build (never in the swap frame)
+      const left = msBudget - ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0);
+      if (left > 0) this.stepCarpetMask(left);
+    }
+    return r;
+  }
+
+  /** MASK-b: advance the pending sliced mask build; on completion swap front/back and bump `maskVersion`. @returns {boolean} still pending */
+  stepCarpetMask(msBudget) {
+    const j = this._maskJob;
+    if (!j) return false;
+    if (!j.step(msBudget)) return true;
+    this._maskJob = null;
+    const old = this.carpet.mask;
+    this.carpet.mask = j.result; this._maskBack = old || null;
+    this.carpet.maskVersion = (this.carpet.maskVersion | 0) + 1;
+    return false;
+  }
+
+  _streamBandCore(px, py, msBudget) {
+    const zs = this.terrainBands, terrain = this.terrain;
+    if (!zs || zs.length < 2 || !terrain || this._bandCur < 0) return 0;
+    if (this.terrainGrid) return this._streamGrid(px, py, msBudget);
+    const cs = terrain.chunkSize;
+    const mc = this._bandMargin(zs[this._bandCur], px, py, cs);
+    if (mc >= this.bandSwitch.prefetchM) { // far from every edge: idle (drops a stale pending bake if the player walked back)
+      if (this._bandPend >= 0) this._cancelBand();
+      return 0;
+    }
+    const best = this._bestBand(px, py, cs);
+    if (best === this._bandCur) { // still the best zone: nothing to switch to
+      if (this._bandPend >= 0) this._cancelBand();
+      return 0;
+    }
+    if (this._bandPend !== best) {
+      if (this._bandPend >= 0) this._cancelBand();
+      const z = zs[best];
+      if (!this.bandCache.has(this._bandKey(best))) terrain.beginNearBand(z.cx0, z.cy0, z.cw, z.ch); // 38.58: a cached zone needs no bake
+      this._bandPend = best;
+    }
+    if (!terrain._bb) { // cache hit: the swap is a pointer flip
+      if (mc < this.bandSwitch.switchM) { this._publishBand(best, false); return 2; }
+      return 0;
+    }
+    const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    let ready = terrain.nearBandStep(msBudget);
+    if (ready && !(this._bandJob && this._bandJob.phase >= BandBakeJob.DONE)) { // scatter + colliders for the pending near, in the leftover budget
+      const left = msBudget - ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0);
+      ready = this._bandJobStep(left > 0 ? left : 0);
+    } else if (ready) ready = true;
+    if (mc < 32 && !ready) { terrain.nearBandStep(Infinity); this._publishBand(best, true); return 2; }
+    if (ready && mc < this.bandSwitch.switchM) { this._publishBand(best, false); return 2; }
+    return ready ? 0 : 1;
+  }
+
+  /** MAP-10 (38.43): grid variant of streamBand: bandGrid.pick (2D margins + hysteresis), max 2 bands live. */
+  _streamGrid(px, py, msBudget) {
+    const g = this.terrainGrid, terrain = this.terrain, zs = this.terrainBands, cur = zs[this._bandCur], sw = g.switch;
+    const gp = this._gridPick, r = bandPick(g, cur, px, py, gp);
+    if (r === 0) { if (this._bandPend >= 0) this._cancelBand(); return 0; }
+    if (this._bandPend >= 0 && (zs[this._bandPend].i !== gp.i || zs[this._bandPend].j !== gp.j)) this._cancelBand(); // no longer the target: dropped
+    if (this._bandPend < 0) {
+      const k = 1 - this._bandCur, z = this._gridFill(k, gp.i, gp.j);
+      if (!this.bandCache.has(this._bandKey(k))) terrain.beginNearBand(z.cx0, z.cy0, z.cw, z.ch);
+      this._bandPend = k;
+    }
+    const to = this._bandPend;
+    if (!terrain._bb) { // cache hit
+      if (bandMarginX(g, cur.i, px) < sw.switchX || bandMarginY(g, cur.j, py) < sw.switchY) { this._publishBand(to, false); return 2; }
+      return 0;
+    }
+    const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    let ready = terrain.nearBandStep(msBudget);
+    if (ready && !(this._bandJob && this._bandJob.phase >= BandBakeJob.DONE)) {
+      const left = msBudget - ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0);
+      ready = this._bandJobStep(left > 0 ? left : 0);
+    }
+    const mX = bandMarginX(g, cur.i, px), mY = bandMarginY(g, cur.j, py);
+    if ((mX < 32 || mY < 32) && !ready) { terrain.nearBandStep(Infinity); this._publishBand(to, true); return 2; }
+    if (ready && (mX < sw.switchX || mY < sw.switchY)) { this._publishBand(to, false); return 2; }
+    return ready ? 0 : 1;
+  }
+
+  /** Synchronous band pick for load / travel / respawn: bakes + swaps the best zone for (x, y) if it is not current. Returns true when it swapped.
+   * AUD2-06: pass `keepM` (e.g. `bandSwitch.switchM`, as streamBand uses) for callers that poll with a moving camera (editor 4 Hz):
+   * the current zone is kept while its margin >= keepM, so sitting on the overlap midline does not re-bake. Omitted = exact pick. */
+  ensureBandFor(x, y, keepM) {
+    const zs = this.terrainBands, terrain = this.terrain;
+    if (!zs || !terrain || this._bandCur < 0) return false;
+    if (this.terrainGrid) { // MAP-10: exact best zone for the pose (keepM: keep while both margins >= the switch distances)
+      const g = this.terrainGrid, cur = zs[this._bandCur], gp = this._gridPick;
+      if (keepM !== undefined && bandMarginX(g, cur.i, x) >= g.switch.switchX && bandMarginY(g, cur.j, y) >= g.switch.switchY) { if (this._bandPend >= 0) this._cancelBand(); return false; }
+      bandBest(g, cur, x, y, gp);
+      if (this._bandPend >= 0) this._cancelBand();
+      if (gp.i === cur.i && gp.j === cur.j) return false;
+      const k = 1 - this._bandCur, z = this._gridFill(k, gp.i, gp.j);
+      if (!this.bandCache.has(this._bandKey(k))) { terrain.beginNearBand(z.cx0, z.cy0, z.cw, z.ch); terrain.nearBandStep(Infinity); }
+      this._publishBand(k, false);
+      return true;
+    }
+    if (keepM !== undefined && this._bandMargin(zs[this._bandCur], x, y, terrain.chunkSize) >= keepM) { if (this._bandPend >= 0) this._cancelBand(); return false; }
+    const best = this._bestBand(x, y, terrain.chunkSize);
+    if (best === this._bandCur) { if (this._bandPend >= 0) this._cancelBand(); return false; }
+    if (this._bandPend >= 0) this._cancelBand();
+    const z = zs[best];
+    if (!this.bandCache.has(this._bandKey(best))) { terrain.beginNearBand(z.cx0, z.cy0, z.cw, z.ch); terrain.nearBandStep(Infinity); }
+    this._publishBand(best, false);
+    return true;
+  }
+
+  /**
+   * OB-103: far-grass quality knobs, applied by both carpet twins (preset values live in content, not here). Partial objects merge; throws on a bad value.
+   * @param {{on?:boolean, radiusScale?:number (0.25..2), densScale?:number (0..2), minWCells?:number (0.5..1.25)}} q
+   */
+  setCarpetQuality(q) {
+    const cq = this.carpetQuality, rng = (k, lo, hi) => { if (q[k] !== undefined && !(Number.isFinite(q[k]) && q[k] >= lo && q[k] <= hi)) throw new Error(`setCarpetQuality.${k}: must be a number ${lo}..${hi}`); };
+    if (q.on !== undefined && typeof q.on !== 'boolean') throw new Error('setCarpetQuality.on: must be a boolean');
+    if (q.farGrass !== undefined && typeof q.farGrass !== 'boolean') throw new Error('setCarpetQuality.farGrass: must be a boolean');
+    if (q.farGrass !== undefined) cq.farGrass = q.farGrass;
+    rng('radiusScale', 0.25, 2); rng('densScale', 0, 2); rng('minWCells', 0.5, 1.25);
+    if (q.on !== undefined) cq.on = q.on;
+    if (q.radiusScale !== undefined) cq.radiusScale = q.radiusScale;
+    if (q.densScale !== undefined) cq.densScale = q.densScale;
+    if (q.minWCells !== undefined) cq.minWCells = q.minWCells;
+    if (cq.on && cq.radiusScale > 1) this.checkCarpetWindow();
+  }
+
+  /**
+   * OB-103b (38.52 amendment item 4): the class-map window must cover radiusM * 1.5 + slack around the eye (half the window, band is eye-centred).
+   * Warns once per distinct need when radiusScale > 1 outgrows it. No-op without a carpet. Returns {ok, need, have}.
+   */
+  checkCarpetWindow() {
+    const c = this.carpet;
+    if (!c || !c.cfg || !c.w || !c.h || !c.cellM) return { ok: true, need: 0, have: 0 };
+    const need = (c.cfg.radiusM || 12) * this.carpetQuality.radiusScale * 1.5 + (c.cfg.classCellM || 2) + (c.cfg.classJitterM || 0);
+    const have = Math.min(c.w, c.h) * c.cellM * 0.5, ok = have >= need;
+    if (!ok && this._carpetWinWarn !== need) { this._carpetWinWarn = need; console.warn(`[carpet] class-map window half-size ${have.toFixed(1)} m < needed ${need.toFixed(1)} m for radiusScale ${this.carpetQuality.radiusScale}: far grass may clip`); }
+    return { ok, need, have };
+  }
+
+  /** OB-073-D2a (38.52): (re)build the carpet class map for the current near band; reuses the buffer. */
+  _rebuildCarpet(sliced) {
+    const c = this._carpetCtx;
+    if (!c || !this.terrain?.nearReady) return;
+    const m = buildCarpetClassMap(this.terrain, c.recipe, c.cfg, this.carpet, this.structures);
+    if (!this.carpet) this.carpet = { cfg: c.cfg, classMap: null, x0: 0, y0: 0, w: 0, h: 0, cellM: 0 };
+    this.carpet.classMap = m.classMap; this.carpet.x0 = m.x0; this.carpet.y0 = m.y0; this.carpet.w = m.w; this.carpet.h = m.h; this.carpet.cellM = m.cellM; // D2f: cellM was dropped
+    if (sliced && this.carpet.mask) { // band swap: old mask stays valid (own window) until the back buffer is complete
+      this._maskJob = new CarpetMaskJob(this.terrain, c.cfg, c.cfg.mask || null, this.structures, this.scatter, this._maskBack, undefined);
+      if (!this._maskJob.result) this._maskJob = null;
+    } else this.rebuildCarpetMask();
+  }
+
+  /**
+   * MASK-b (38.52 amendment): (re)build the near-band grass density mask (paint * (1 - stamps)); `rect` {x0,y0,x1,y1} metres
+   * limits it to an area (editor stroke end). Bumps `carpet.maskVersion`. Never per frame; buffers reused.
+   */
+  rebuildCarpetMask(rect) {
+    const c = this._carpetCtx;
+    if (!c || !this.carpet || !this.terrain?.nearReady) return;
+    if (!rect) this._maskJob = null; // a sync full build supersedes a pending sliced one
+    const m = buildCarpetMask(this.terrain, c.cfg, c.cfg.mask || null, this.structures, this.scatter, this.carpet.mask, rect);
+    if (!m) return;
+    this.carpet.mask = m;
+    this.carpet.maskVersion = (this.carpet.maskVersion | 0) + 1;
   }
 
   /**
@@ -1005,7 +1611,8 @@ export class World {
     if (!terrain || !terrain.nearReady) return { ms: 0, trees: 0, detail: 0, snapped: 0 };
     terrain.recomputeBounds();
     if (terrain.realTrees) this.scatter = scatterTrees(terrain, this.structures);
-    if (this._detailCtx) this.detail = scatterDetail(terrain, this.structures, this._detailCtx.keepOut, this._detailCtx.cfg);
+    if (this._detailCtx) this.detail = scatterDetail(terrain, this.structures, this._detailCtx.keepOut, this._detailCtx.cfg, this.scatter || null);
+    this._rebuildCarpet();
     if (this.physicsMode === 'mesh') {
       const put = (id, collider) => {
         const i = this.colliders.findIndex((c) => c.id === id);
@@ -1023,6 +1630,7 @@ export class World {
       if (e.transform.z !== z) { e.transform.z = z; snapped++; }
     }
     if (snapped) { this.rebuildPropColliders(); this.renderVersion++; }
+    if (this.terrainBands && this._bandCur >= 0) this._cachePut(this._currentBundle(this._bandKey(this._bandCur), this._bandCur)); // OB109-B2: re-cache the edited live band
     if (this.events) this.events.emit('world:scatter', { world: this });
     const ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
     return { ms, trees: this.scatter ? this.scatter.count : 0, detail: this.detail ? this.detail.count : 0, snapped };
@@ -1088,7 +1696,7 @@ export class World {
     const wt = this.water;
     const i = wt.find(x, y);
     if (i < 0) return false;
-    const z = wt.z[i];
+    const z = wt.zAt(i, x, y); // rect/circle: wt.z[i]; river: local z(s)
     const h = waveHeight(wt, i, x, y, wt.tick);
     const surfaceZ = z + h;
     const fz = this.physicsMode === 'mesh' ? this.supportAt(x, y, z + 0.01, false, null).floorH : this.floorAt(x, y);
@@ -1113,6 +1721,21 @@ export class World {
     const i = wt.find(x, y);
     if (i < 0) { out[0] = 0; out[1] = 0; return false; }
     wt.flowInto(i, x, y, out);
+    return true;
+  }
+
+  /**
+   * RIVER-04 (38.45): the river water at (x, y) as plain numbers, so game code never reads the river scratch (rv.loc, L_* indices).
+   * Fills out {lat (signed, + = left of flow), hw, tx, ty, v, z} and returns true iff the highest water region there is a river. Zero allocation.
+   * @param {number} x @param {number} y @param {{lat:number,hw:number,tx:number,ty:number,v:number,z:number}} out @returns {boolean}
+   */
+  riverAt(x, y, out) {
+    const wt = this.water, i = wt.find(x, y);
+    if (i < 0 || wt.kind[i] !== 3) return false;
+    const rv = wt.rivers[wt.riv[i]];
+    riverLocate(rv, x, y);
+    const l = rv.loc;
+    out.lat = l[L_LAT]; out.hw = l[L_HW]; out.tx = l[L_TX]; out.ty = l[L_TY]; out.v = l[L_V]; out.z = l[L_Z];
     return true;
   }
 
@@ -1414,9 +2037,80 @@ export class World {
       once: false,
       usedKey: null,
       structId: null,
+      pick: null, // OB-084: always present (stable hidden class); the hot pick loop never adds it
+      pickShapes: null, // OB-088
     };
+    if (spec.pick) rec.pick = spec.pick; // OB-066: optional world AABB {x0,y0,z0,x1,y1,z1} the crosshair ray tests
+    if (typeof spec.height === 'number') rec.height = spec.height;
+    // OB-084: `bodyId` = an entity whose live body (bodyR wide, bodyH tall from its feet) is the pick volume (NPC, corpse, pickup)
+    if (spec.bodyId) { rec.bodyId = spec.bodyId; rec.bodyR = typeof spec.bodyR === 'number' ? spec.bodyR : 0.4; rec.bodyH = typeof spec.bodyH === 'number' ? spec.bodyH : 1.8; }
     list.push(rec);
+    if (spec.pickShapes) rec.pickShapes = spec.pickShapes; // OB-088
+    if (rec.propId && !rec.bodyId && !rec.pick) { rec.pick = this.propPickBox(rec.propId) || null; rec.pickShapes = this.propPickShapes(rec.propId) || null; } // OB-084/088: prop collider box + shapes, resolved once
     return rec;
+  }
+
+  /** Shared by propPickBox / propPickShapes: the prop entity + its collider defs (level override or the model's), or null. */
+  _propColliderDefs(id) {
+    const e = this.entity(id);
+    if (!e || e.type !== 'prop') return null;
+    const comp = e.components.voxel || e.components.sprite;
+    const sid = id.slice(0, id.indexOf('.')), pid = id.slice(id.indexOf('.') + 1);
+    const st = this.structures.find((q) => q.id === sid);
+    const p = st && st.level && st.level.def && (st.level.def.props || []).find((q) => q.id === pid);
+    const defs = p && Object.hasOwn(p, 'colliders') ? p.colliders : (comp && this.assets.model(comp.model).colliders);
+    return Array.isArray(defs) && defs.length ? { e, defs } : null;
+  }
+
+  /**
+   * OB-066: world AABB {x0,y0,z0,x1,y1,z1} of a prop's collider shapes (level `colliders` or the model's), for a
+   * crosshair pick volume; null when the prop has none. Static (read once at add time).
+   * @param {string} id entity id
+   */
+  propPickBox(id) {
+    const q = this._propColliderDefs(id);
+    if (!q) return null;
+    const { e, defs } = q;
+    const t = e.transform, sc = t.scale || 1, yaw = (t.yawDeg || 0) * Math.PI / 180, c = Math.cos(yaw), sn = Math.sin(yaw);
+    const r = { x0: Infinity, y0: Infinity, z0: Infinity, x1: -Infinity, y1: -Infinity, z1: -Infinity };
+    for (const d of defs) {
+      if (!d || !Array.isArray(d.c)) continue;
+      const box = d.type === 'box' && Array.isArray(d.half);
+      const a = (d.yawDeg || 0) * Math.PI / 180 + yaw;
+      const hx = box ? d.half[0] : d.r, hy = box ? d.half[1] : d.r, hz = box ? d.half[2] : d.h / 2;
+      const ex = (Math.abs(Math.cos(a - yaw)) * hx + Math.abs(Math.sin(a - yaw)) * hy), ey = (Math.abs(Math.sin(a - yaw)) * hx + Math.abs(Math.cos(a - yaw)) * hy);
+      // rotate the extents by the prop yaw (AABB of the rotated rectangle)
+      const wx = (Math.abs(c) * ex + Math.abs(sn) * ey) * sc, wy = (Math.abs(sn) * ex + Math.abs(c) * ey) * sc;
+      const cx = t.x + (c * d.c[0] - sn * d.c[1]) * sc, cy = t.y + (sn * d.c[0] + c * d.c[1]) * sc, cz = t.z + d.c[2] * sc;
+      if (cx - wx < r.x0) r.x0 = cx - wx; if (cx + wx > r.x1) r.x1 = cx + wx;
+      if (cy - wy < r.y0) r.y0 = cy - wy; if (cy + wy > r.y1) r.y1 = cy + wy;
+      if (cz - hz * sc < r.z0) r.z0 = cz - hz * sc; if (cz + hz * sc > r.z1) r.z1 = cz + hz * sc;
+    }
+    return r.x0 === Infinity ? null : r;
+  }
+
+  /**
+   * OB-088: the prop's collider shapes as oriented world boxes [{cx,cy,cz,hx,hy,hz,c,s}] (cylinders as their square box,
+   * c/s = cos/sin of the shape's world yaw) for the crosshair pick; null when the prop has none. Static (read at add time).
+   * @param {string} id entity id
+   */
+  propPickShapes(id) {
+    const q = this._propColliderDefs(id);
+    if (!q) return null;
+    const { e, defs } = q;
+    const t = e.transform, sc = t.scale || 1, yaw = (t.yawDeg || 0) * Math.PI / 180, c = Math.cos(yaw), sn = Math.sin(yaw);
+    const out = [];
+    for (const d of defs) {
+      if (!d || !Array.isArray(d.c)) continue;
+      const box = d.type === 'box' && Array.isArray(d.half);
+      const a = (d.yawDeg || 0) * Math.PI / 180 + yaw;
+      out.push({
+        cx: t.x + (c * d.c[0] - sn * d.c[1]) * sc, cy: t.y + (sn * d.c[0] + c * d.c[1]) * sc, cz: t.z + d.c[2] * sc,
+        hx: (box ? d.half[0] : d.r) * sc, hy: (box ? d.half[1] : d.r) * sc, hz: (box ? d.half[2] : d.h / 2) * sc,
+        c: Math.cos(a), s: Math.sin(a),
+      });
+    }
+    return out.length ? out : null;
   }
 
   /**
@@ -1463,6 +2157,14 @@ export class World {
  * @param {number} dtSec
  */
 export function stepSectorAnims(world, dtSec) {
+  _sectorDt[0] = dtSec;
+  stepSectorAnimsBuf(world, _sectorDt);
+}
+
+const _sectorDt = new Float64Array(1);
+/** FRAME-ALLOC-01: `stepSectorAnims` taking dt from `dtSecBuf[0]` (no boxed double across the per-frame call). */
+export function stepSectorAnimsBuf(world, dtSecBuf) {
+  const dtSec = dtSecBuf[0];
   for (const s of world.structures) {
     if (s.kind === 'mesh') continue;
     if (!s.tagMap || s.tagMap.size === 0) continue;

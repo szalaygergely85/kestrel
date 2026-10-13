@@ -9,11 +9,12 @@
 // avoided: the field-of-view test below is a horizontal dot product against a `cos(hfovDeg/2)` threshold computed
 // once at create time, not an atan2 per candidate per step.
 import { canSee } from './sim/sight.js';
+import { MAX_TARGETABLES } from './sim/targetables.js'; // OB-076: one shared cap
 import {
   forwardOf, yawFromDelta, shortestArcDeg, DEG2RAD, PHYSICS, SIM_STEP, HFOV_DEG,
 } from '../../../engine/index.js';
 
-const MAX_TARGETS_HARD_CAP = 16; // 29.2 cfg default `maxTargets: 16`; also the Int32Array(16) rank buffer size
+const MAX_TARGETS_HARD_CAP = MAX_TARGETABLES; // OB-076: was 16
 
 const DEFAULTS = Object.freeze({
   range: 15,
@@ -21,7 +22,7 @@ const DEFAULTS = Object.freeze({
   losLostSec: 1.0,
   fadeSec: 0.2,
   noTargetSec: 0.3,
-  maxTargets: 16,
+  maxTargets: MAX_TARGETABLES,
   losEvery: 6,
   hfovDeg: HFOV_DEG,
 });

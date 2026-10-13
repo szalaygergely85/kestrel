@@ -1,0 +1,611 @@
+{
+  "version": 1,
+  "region": "ch3",
+  "band": [
+    5,
+    10
+  ],
+  "quests": [
+    {
+      "id": "mq.ow.path",
+      "title": "Cookfire Smoke",
+      "main": true,
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "owPath"
+            ]
+          },
+          "objText": "Follow the track toward the smoke",
+          "journal": "Cookfire smoke, so someone lives out here. Follow the track toward it."
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.smoke",
+          "step": "north"
+        }
+      ],
+      "abandonable": false
+    },
+    {
+      "id": "mq.ow.fence",
+      "title": "Wolves at the Fence",
+      "main": true,
+      "steps": [
+        {
+          "template": "kill",
+          "params": {
+            "kind": "wolf",
+"ids": ["wolf1","wolf2","wolf3","wolf4","wolf5"],
+            "count": 5
+          },
+          "objText": "Drive the wolves from the goose pen",
+          "journal": "A palisade, and wolves at its goose pen. Drive them off."
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.ow.path",
+          "step": "explore"
+        }
+      ],
+      "abandonable": false
+    },
+    {
+      "id": "mq.ow.names",
+      "title": "A Name at the Gate",
+      "main": true,
+      "site": "hesk",
+      "steps": [
+        {
+          "template": "talk",
+          "params": {
+            "to": "hesk"
+          },
+          "objText": "Speak to the woman at the gate",
+          "journal": "The wolves are gone, and the gate opens a crack. Tell Hesk who you are."
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.ow.fence",
+          "step": "kill"
+        }
+      ],
+      "reward": {
+        "table": "gear.t3"
+      },
+      "abandonable": false,
+      "lines": {
+        "offer": [
+          "Stop there. Hands where I can see them.",
+          "You came over the river. Nobody comes over the river.",
+          "Ferrum says we're dead. Who are you?"
+        ],
+        "active": [
+          "Well? A name. Or the river back the way you came."
+        ],
+        "ready": [
+          "You tell her your name. She turns it over, slowly.",
+          "Wick.",
+          "We watched you at the fence. The wolves, too.",
+          "I'm Hesk. Come in, Wick. Keep your blade low.",
+          "Here. Ferrum's dead don't let a guest go cold."
+        ],
+        "done": [
+          "Ferrum's dead are busy, Wick. Mind the geese."
+        ]
+      }
+    },
+    {
+      "id": "mq.ow.relay",
+      "title": "The Village Relay",
+      "main": true,
+      "site": "hesk",
+      "band": 6,
+      "objectives": [
+        {
+          "id": "talk",
+          "text": "Ask Dorrin at the forge",
+          "when": {
+            "type": "flag",
+            "id": "talk.dorrin",
+            "equals": true
+          },
+          "journal": "The village relay is dark. Part of it is missing. Ask Dorrin at the forge."
+        },
+        {
+          "id": "brass",
+          "text": "Take the brass off the barley gate",
+          "when": {
+            "type": "item",
+            "id": "relay.brass"
+          },
+          "journal": "Dorrin took the relay's brass collar for a gate. Pull it off the barley gate."
+        },
+        {
+          "id": "wake",
+          "text": "Fit the collar to the village relay",
+          "when": {
+            "type": "flag",
+            "id": "waystone.ws_outwall.woken",
+            "equals": true
+          },
+          "journal": "You have the brass collar. Fit it to the village relay and wake it."
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.ow.names",
+          "done": true
+        }
+      ],
+      "abandonable": false,
+      "returnText": "Fit the collar to the village relay",
+      "lines": {
+        "offer": [
+          "The old relay in the yard. You came for it, I think.",
+          "We hear the call too. Nights. The stone here stays dark.",
+          "Something's missing from it. Ask Dorrin. At the forge.",
+          "He'll look at his boots. Let him. Then ask again."
+        ],
+        "active": [
+          "Barley farm. East. Brass collar. Go on."
+        ],
+        "ready": [
+          "The collar seats with a soft, sure click.",
+          "The bowl wakes teal and takes up the call."
+        ],
+        "done": [
+          "Lit. Years, and it took a stranger and a gate."
+        ]
+      }
+    },
+    {
+      "id": "mq.ow.board",
+      "title": "The Board of the Dead",
+      "main": true,
+      "site": "owBoard",
+      "band": 6,
+      "objectives": [
+        {
+          "id": "read",
+          "text": "Read the notices on the board",
+          "when": {
+            "type": "flag",
+            "id": "lore.owBoard.read",
+            "equals": true
+          },
+          "journal": "The village relay burns teal. In the plaza stands a board of names. Read it."
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.ow.relay",
+          "done": true
+        }
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "chart.westFells",
+            "n": 1
+          }
+        ]
+      },
+      "lines": {
+        "offer": [
+          "The board by the gate. Read it. That's who we are."
+        ],
+        "active": [
+          "The board by the gate. Read it. That's who we are."
+        ],
+        "ready": [
+          "Crown notices, carried out past the Wall and nailed up.",
+          "FELL BEYOND THE WALL. HESK, OF THE TANNERS' STAIR.",
+          "FELL BEYOND THE WALL. DORRIN, FORGE HAND, LOW WARDS.",
+          "LOST TO THE HUSH. THE CROWN GRIEVES. SPEAK NO MORE.",
+          "Under each name, in charcoal: HERE.",
+          "One notice is cut. A strip gone, name and all, neatly.",
+          "Above the cut: FELL BEYOND THE WALL.",
+          "On the nail, a knot. A skyworks hitch, tied tight.",
+          "Your hands know it. You were taught it on the skyworks."
+        ],
+        "done": [
+          "Pinned under the knot: a scrap of chart. Lines west.",
+          "You leave the knot where it is. The line runs west."
+        ]
+      },
+      "abandonable": false
+    },
+    {
+      "id": "sq.hw.piers",
+      "title": "The Pulled Bridge",
+      "site": "pierStone",
+      "objectives": [
+        {
+          "id": "read",
+          "text": "Read the stone north of the road",
+          "when": {
+            "type": "flag",
+            "id": "lore.pierStone.read",
+            "equals": true
+          },
+          "journal": "A bridge once stood here. Only the piers are left. Read the stone north of the road."
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 10
+          }
+        ]
+      },
+      "lines": {
+        "offer": [
+          "A tall stone by the track. Cut square, set on end.",
+          "Marks on one face. Too worn to read from here."
+        ],
+        "active": [
+          "The stone by the track. Read it up close."
+        ],
+        "ready": [
+          "Bridge stone. Pulled down from the west bank.",
+          "Behind it, in the grass, ten arrows tied with twine."
+        ],
+        "done": [
+          "The stone stands. The river runs where the bridge was."
+        ]
+      }
+    },
+    {
+      "id": "sq.fc.sign",
+      "title": "The West Arm",
+      "site": "post",
+      "steps": [
+        {
+          "template": "fetch",
+          "params": {
+            "item": "signArm"
+          },
+          "objText": "Find the sign arm in the shallows",
+          "journal": "The post sign has lost its west arm. Find it in the shallows."
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 10
+          }
+        ]
+      },
+      "returnText": "Bring the sign arm to the ford post",
+      "lines": {
+        "offer": [
+          "A tag on the basket: THE WEST ARM OF THE SIGN FELL.",
+          "IN THE SHALLOWS BY THE FORD. BRING IT BACK."
+        ],
+        "active": [
+          "The tag: WEST ARM. IN THE SHALLOWS."
+        ],
+        "ready": [
+          "You lay the arm in the basket. The wood is river-black.",
+          "Under it, tied with twine: ten arrows."
+        ],
+        "done": [
+          "The tag: WEST POINTS WEST AGAIN. THANK YOU."
+        ]
+      }
+    },
+    {
+      "id": "sq.ow.wolves",
+      "title": "Wolf Bounty",
+      "site": "owBoard",
+      "steps": [
+        {
+          "template": "kill",
+          "params": {
+            "kind": "wolf",
+"ids": ["wolf1","wolf2","wolf3","wolf4","wolf5"],
+            "count": 3
+          },
+          "objText": "Drive three wolves from the goose pen",
+          "journal": "Wolves still circle the goose pen. Drive three of them off."
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 10
+          },
+          {
+            "id": "potion.hp",
+            "n": 1
+          }
+        ]
+      },
+      "lines": {
+        "offer": [
+          "A new nail, over the Crown notices. A fresh hand:",
+          "WOLVES AT THE GEESE AGAIN. THREE FEWER, FAIR PAY."
+        ],
+        "active": [
+          "The note: WOLVES. GOOSE PEN. THREE."
+        ],
+        "ready": [
+          "Under the note now, tied with twine: arrows, a red vial."
+        ],
+        "done": [
+          "Someone has written under it: GEESE COUNTED. ALL HERE."
+        ]
+      }
+    },
+    {
+      "id": "sq.ow.boars",
+      "title": "Boar Bounty",
+      "site": "owBoard",
+      "steps": [
+        {
+          "template": "kill",
+          "params": {
+            "kind": "boar",
+"ids": ["boarF1","boarF2"],
+            "count": 2
+          },
+          "objText": "Drive off two boars on the west bank",
+          "journal": "Boars raid the west bank. Drive two of them off."
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "table": "gear.t2"
+      },
+      "lines": {
+        "offer": [
+          "Another note, same hand, nailed over a FELL notice:",
+          "TWO BOARS ROOTING ON THE WEST BANK. MIND THE TUSKS."
+        ],
+        "active": [
+          "The note: TWO BOARS. WEST BANK. TUSKS."
+        ],
+        "ready": [
+          "Under the note, wrapped in sacking: old gear, oiled."
+        ],
+        "done": [
+          "Under the note, a new line: THE BANK IS QUIET. THANKS."
+        ]
+      }
+    },
+    {
+      "id": "sq.ow.parcel",
+      "title": "Parcel for the Forge",
+      "site": "owBoard",
+      "steps": [
+        {
+          "template": "deliver",
+          "params": {
+            "item": "parcel",
+            "to": "owForge"
+          },
+          "objText": "Take the parcel to the forge",
+          "journal": "A parcel waits for the forge. Carry it there."
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "potion.hp",
+            "n": 2
+          }
+        ]
+      },
+      "lines": {
+        "offer": [
+          "A parcel hangs from a nail, wrapped in oilcloth.",
+          "Tag: FOR THE FORGE. LEAVE IT BY THE DOOR."
+        ],
+        "active": [
+          "The tag: FOR THE FORGE. BY THE DOOR."
+        ],
+        "ready": [
+          "You set the parcel by the forge door. It clinks.",
+          "On the step, waiting: two red vials."
+        ],
+        "done": [
+          "The parcel tag is gone. The nail is bare."
+        ]
+      }
+    },
+    {
+      "id": "sq.ow.ford",
+      "title": "Scout the Far Bank",
+      "site": "pierStone",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "fordWest"
+            ]
+          },
+          "objText": "Cross the ford to the west bank",
+          "journal": "Nobody here has scouted the far bank in a while. Cross the ford to it."
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 15
+          }
+        ]
+      },
+      "lines": {
+        "offer": [
+          "Across the water, the other half of the old pier.",
+          "Someone pulled the bridge from that side. Go and see."
+        ],
+        "active": [
+          "The far pier. Across the ford, on the west bank."
+        ],
+        "ready": [
+          "The west pier: rope grooves, worn deep. A crossing.",
+          "In a dry crack of the stone: fifteen arrows, waxed."
+        ],
+        "done": [
+          "Two piers, one river. Neither side built it back."
+        ]
+      }
+    },
+    {
+      "id": "sq.ow.barley",
+      "title": "Barley Sheaf",
+      "site": "owBoard",
+      "steps": [
+        {
+          "template": "fetch",
+          "params": {
+            "item": "barleySheaf"
+          },
+          "objText": "Fetch the sheaf at the barley gate",
+          "journal": "A sheaf is due from the barley gate. Fetch it."
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "potion.hp",
+            "n": 1
+          },
+          {
+            "id": "arrow",
+            "n": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": "sq.ow.range",
+      "title": "Track Targets",
+      "site": "owBoard",
+      "objectives": [
+        {
+          "id": "t1",
+          "text": "Hit target 1",
+          "when": {
+            "type": "flag",
+            "id": "owTarget1.hit",
+            "equals": true
+          },
+          "journal": "Three targets stand along the track. Hit the first."
+        },
+        {
+          "id": "t2",
+          "text": "Hit target 2",
+          "when": {
+            "type": "flag",
+            "id": "owTarget2.hit",
+            "equals": true
+          },
+          "journal": "One target hit. Now the second."
+        },
+        {
+          "id": "t3",
+          "text": "Hit target 3",
+          "when": {
+            "type": "flag",
+            "id": "owTarget3.hit",
+            "equals": true
+          },
+          "journal": "Two hit. One target left on the track. Hit the third."
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "arrow",
+            "n": 15
+          }
+        ]
+      },
+      "returnText": "Back to the board"
+    },
+    {
+      "id": "sq.ow.raid",
+      "title": "Defend the Farm",
+      "site": "owBoard",
+      "objectives": [
+        {
+          "id": "defend",
+          "text": "Defend the goose pen at night",
+          "when": {
+            "type": "flag",
+            "id": "life.raid.gooseFarm.defended",
+            "equals": true
+          },
+          "journal": "Wolves raid the goose pen by night. Wait there after dark, drive off the pack."
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "items": [
+          {
+            "id": "potion.hp",
+            "n": 2
+          },
+          {
+            "id": "arrow",
+            "n": 15
+          }
+        ]
+      },
+      "returnText": "Back to the board",
+      "lines": {
+        "offer": [
+          "A new note, the nail driven deep. The same caps hand:",
+          "WOLVES COME FOR THE GEESE AFTER DARK. STAND AT THE PEN."
+        ],
+        "active": [
+          "The folded note: AFTER DARK. GOOSE PEN. THE PACK."
+        ],
+        "ready": [
+          "On the nail now, tied with twine: two red vials, arrows."
+        ],
+        "done": [
+          "Chalk under the nail: GEESE COUNTED. ALL HERE. AGAIN."
+        ]
+      }
+    }
+  ]
+}

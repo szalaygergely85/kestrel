@@ -26,7 +26,7 @@ import { readMeshJSON } from '../../test/meshFile.test.js';
 import {
   buildStaticVertexData, STATIC_STRIDE_BYTES, STATIC_VERTEX_LAYOUT, MeshBuffers,
   buildTerrainVertexData, TERRAIN_STRIDE_BYTES, TERRAIN_VERTEX_LAYOUT,
-  buildVoxelVertexData, VOXEL_STRIDE_BYTES, VOXEL_VERTEX_LAYOUT,
+  buildVoxelVertexData, buildMeshTriVertexData, VAO_LAYOUT, VAO_STRIDE_BYTES, VOXEL_STRIDE_BYTES, VOXEL_VERTEX_LAYOUT,
   CLOTH_DYN_LAYOUT, CLOTH_UV_LAYOUT, CLOTH_STRIDE_BYTES,
 } from './MeshBuffers.js';
 import { createCloth } from '../../physics/cloth.js';
@@ -378,6 +378,36 @@ function decode(buf, vertCount) {
   const f = new Float32Array(e.vertex), u = new Uint32Array(e.vertex);
   const v = 5 * 3 + 1;
   ok('kind-9 mesh: vertex words = pos, uv, nrm, flat', f[v * 8] === rock.pos[v * 3] && f[v * 8 + 4] === rock.uv[v * 2 + 1] && u[v * 8 + 5] === rock.nrm[v] && u[v * 8 + 7] === rock.flat[v * FLAT_STRIDE + 1]);
+}
+
+// ---- ME-20c-c (38.18): kind-9 vertex AO stream ----
+{
+  const mk = (aux) => ({ id: 'ao:t', layout: 'static', meshVersion: 1, triCount: 1, pos: new Float32Array(9), uv: new Float32Array(6), nrm: new Uint32Array(3),
+    flat: new Uint32Array([0, 9, 0, 9, 0, 9]), aux: Float32Array.from(aux) });
+  const base = new Array(24).fill(0);
+  const plain = buildMeshTriVertexData(mk(base));
+  ok('no-AO mesh: no ao key', !('ao' in plain));
+  const aux = base.slice(); aux[5] = 0.25; aux[8 + 6] = 0.5; aux[16 + 7] = 0.75; // corner rule: v reads lane 5 + v%3
+  const withAo = buildMeshTriVertexData(mk(aux));
+  ok('AO mesh: ao stream (corner rule), vertex bytes identical', withAo.ao.length === 3 && withAo.ao[0] === 0.25 && withAo.ao[1] === 0.5 && withAo.ao[2] === 0.75
+    && Buffer.compare(Buffer.from(withAo.vertex), Buffer.from(plain.vertex)) === 0);
+  const thr = (a) => { try { buildMeshTriVertexData(mk(a)); return false; } catch (e) { return true; } };
+  const bad = base.slice(); bad[2] = 1; ok('lane 0..4 non-zero still throws', thr(bad));
+  const hi = base.slice(); hi[6] = 1.5; ok('AO lane out of [0,1] throws', thr(hi));
+  const nan = base.slice(); nan[7] = NaN; ok('AO lane NaN throws', thr(nan));
+  const mock = makeMockGpuDevice(), bufs = new MeshBuffers(mock.device), m = mk(aux);
+  const e = bufs.getVoxel(m);
+  ok('getVoxel creates aoBuffer holding the ao array', e.aoBuffer && e.aoBuffer.desc.data.length === 3 && e.aoBuffer.desc.usage === 'vertex');
+  ok('VAO_LAYOUT is location 11, 4 B', VAO_LAYOUT[0].location === 11 && VAO_STRIDE_BYTES === 4);
+  const n0 = mock.createCount; bufs.getVoxel(m); ok('cache hit: no re-upload', mock.createCount === n0);
+  bufs.release(m); // the S8-B2-03 eviction listener calls release()
+  ok('release (eviction) disposes aoBuffer', e.aoBuffer._disposed === true && mock.liveCount() === 0, String(mock.liveCount()));
+  const e2 = bufs.getVoxel(m); m.meshVersion = 2; bufs.getVoxel(m);
+  ok('version bump disposes the old aoBuffer', e2.aoBuffer._disposed === true);
+  bufs.dispose(); ok('dispose frees aoBuffer', mock.liveCount() === 0, String(mock.liveCount()));
+  const m0 = makeMockGpuDevice(), b0 = new MeshBuffers(m0.device), p0 = b0.getVoxel(mk(base));
+  ok('no-AO mesh has no aoBuffer', p0.aoBuffer === undefined && m0.createCount === 2);
+  b0.dispose();
 }
 
 console.log(`\n${pass} passed, ${fail} failed.`);

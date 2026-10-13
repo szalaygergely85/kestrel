@@ -8,6 +8,8 @@
 import { World, serialize, deserialize } from '../../../../engine/index.js';
 import { loadTestAssets } from '../../../../tools/testing/content-node.mjs';
 import { makeOk } from '../../../../engine/test/assert.js';
+import { createQuestPickups } from '../../questPickups.js';
+import { SLOTS, countOf } from './inventory.js';
 import { spawnDrop, stepPickups, resetPickups, liveDropIds, PICKUP_LIFE, MAX_DROPS } from './pickups.js';
 
 const { assets } = await loadTestAssets();
@@ -46,7 +48,7 @@ function buildWorld(entities) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// 2. Despawn exactly at life 0 (step 1200): still live at step 1199, gone at step 1200.
+// 2. Despawn exactly at life 0 (step PICKUP_LIFE): still live at step 1199, gone at step 1200.
 // ---------------------------------------------------------------------------------------------------------------
 {
   resetPickups();
@@ -56,7 +58,7 @@ function buildWorld(entities) {
   for (let i = 0; i < PICKUP_LIFE - 1; i++) stepPickups(world, player);
   ok('still live 1 step before life reaches 0', !!world.entity(id), `step=${PICKUP_LIFE - 1}`);
   stepPickups(world, player);
-  ok('despawned exactly when life reaches 0 (step 1200)', !world.entity(id));
+  ok('despawned exactly when life reaches 0 (step PICKUP_LIFE)', !world.entity(id));
   ok('its slot is freed', liveDropIds().every((s) => s === null));
 }
 
@@ -240,6 +242,91 @@ for (const remaining of [PICKUP_LIFE, 5]) {
   ok('fresh-module loaded and new drops all continue their life countdown', loaded.entity('pickup_1').components.pickup.life === 49 && loaded.entity(id).components.pickup.life === PICKUP_LIFE - 1);
   fresh.resetPickups();
   ok('no-world reset still clears fixture state', fresh.liveDropIds().every((slot) => slot === null) && !!loaded.entity('pickup_1'));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// EQ-23. Leftover reward stack drops at the player's feet; re-collect; save round trip; questReward never despawns.
+// ---------------------------------------------------------------------------------------------------------------
+{
+  resetPickups();
+  const defs = { arrow: { stackMax: 99, name: 'Arrow' }, rock: { stackMax: 1, name: 'Rock' } };
+  const world = buildWorld([playerEntity(5, 5, 0)]);
+  const player = world.get('player').data;
+  const mkInv = (free) => ({ slots: Array.from({ length: SLOTS }, (_, i) => (i < SLOTS - free ? { id: 'rock', n: 1 } : { id: null, n: 0 })), left: null, right: null });
+  const inv = mkInv(0);
+  const events = []; const bus = { emit: (n, p) => events.push([n, { ...p }]) };
+  const hook = createQuestPickups({ getBook: () => null, feed() {}, defs, isWorn: null });
+  hook.onBoot({ world, player, inventory: inv, events: bus, state: {} });
+  hook.grantReward({ items: [{ id: 'arrow', n: 10 }] });
+  let live = liveDropIds().filter((x) => x);
+  ok('AC1 full pack: 0 lost, drop holds all 10', live.length === 1 && world.entity(live[0]).components.pickup.amount === 10 && world.entity(live[0]).components.pickup.itemId === 'arrow');
+  const e = world.entity(live[0]); const d = Math.sqrt((e.transform.x - 5) ** 2 + (e.transform.y - 5) ** 2);
+  ok('drop is on the 0.6 m ring', Math.abs(d - 0.6) < 0.01, String(d));
+  ok('inventory:full carries dropped', events.some(([n, p]) => n === 'inventory:full' && p.n === 10 && p.dropped));
+  // AC2 save round trip
+  const w2 = deserialize(JSON.parse(JSON.stringify(serialize(world))), assets, {});
+  const p2 = w2.entity(live[0]).components.pickup;
+  ok('AC2 round trip keeps id/count/position/flag', p2.itemId === 'arrow' && p2.amount === 10 && p2.questReward === true && w2.entity(live[0]).transform.x === e.transform.x);
+  // AC3 survives 10k ticks; full pack leaves it
+  for (let i = 0; i < 10000; i++) stepPickups(world, player);
+  ok('AC3 questReward survives 10k ticks', !!world.entity(live[0]));
+  // second leftover must not overlap the first
+  hook.grantReward({ items: [{ id: 'arrow', n: 3 }] });
+  live = liveDropIds().filter((x) => x);
+  const a = world.entity(live[0]).transform, b = world.entity(live[1]).transform;
+  ok('second drop does not overlap', live.length === 2 && Math.hypot(a.x - b.x, a.y - b.y) > 0.3);
+  // partial fit: room for 4 -> pack gets 4, drop 6 (separate world)
+  resetPickups();
+  const world3 = buildWorld([playerEntity(0, 0, 0)]);
+  const pl3 = world3.get('player').data; const inv3 = mkInv(1);
+  const h3 = createQuestPickups({ getBook: () => null, feed() {}, defs: { arrow: { stackMax: 4, name: 'Arrow' } }, isWorn: null });
+  h3.onBoot({ world: world3, player: pl3, inventory: inv3, events: bus, state: {} });
+  h3.grantReward({ items: [{ id: 'arrow', n: 10 }] });
+  const dr = liveDropIds().filter((x) => x);
+  ok('partial fit: 4 in pack, drop 6', countOf(inv3, 'arrow') === 4 && dr.length === 1 && world3.entity(dr[0]).components.pickup.amount === 6);
+  // re-collect: free a slot, stand on it -> stack moves into the pack
+  inv3.slots[0] = { id: null, n: 0 };
+  stepPickups(world3, { transform: { ...world3.entity(dr[0]).transform, z: 0 }, components: {} });
+  ok('re-collect with room: 4 more in pack, drop shrinks to 2', countOf(inv3, 'arrow') === 8 && world3.entity(dr[0]).components.pickup.amount === 2);
+  inv3.slots[1] = { id: null, n: 0 };
+  stepPickups(world3, { transform: { ...world3.entity(dr[0]).transform, z: 0 }, components: {} });
+  ok('rest collected, drop gone', countOf(inv3, 'arrow') === 10 && !world3.entity(dr[0]));
+}
+
+
+// CH12-CONTENT-01: giveOnAccept (packOps.add) into a full pack drops the leftover at the feet instead of losing it (sq.fc.cog never completable).
+{
+  resetPickups();
+  const defs = { cog: { stackMax: 99, name: 'Cog' }, rock: { stackMax: 1, name: 'Rock' } };
+  const world = buildWorld([playerEntity(2, 2, 0)]);
+  const inv = { slots: Array.from({ length: SLOTS }, () => ({ id: 'rock', n: 1 })), left: null, right: null };
+  const events = []; const bus = { emit: (n, p) => events.push([n, { ...p }]) };
+  const book = { packOps: null, countedItems: () => [] };
+  const hook = createQuestPickups({ getBook: () => book, feed() {}, defs, isWorn: null });
+  hook.onBoot({ world, player: world.get('player').data, inventory: inv, events: bus, state: {} });
+  hook.sync();
+  const k = book.packOps.add('cog', 1);
+  const live = liveDropIds().filter((x) => x);
+  ok('full pack: accept-give returns 0 but a cog drop lies at the feet', k === 0 && live.length === 1 && world.entity(live[0]).components.pickup.itemId === 'cog' && world.entity(live[0]).components.pickup.amount === 1);
+  ok('inventory:full emitted for the cog', events.some(([n, p]) => n === 'inventory:full' && p.id === 'cog' && p.dropped));
+  inv.slots[0] = { id: null, n: 0 };
+  ok('room in pack: add goes in, no new drop', book.packOps.add('cog', 1) === 1 && liveDropIds().filter((x) => x).length === 1);
+}
+
+// EQ-23b: an item sink returning the stored count (partial add into a nearly full pack) never duplicates items.
+{
+  resetPickups();
+  const { addItem } = await import('./inventory.js');
+  const { setItemPickupSink, setStackPickupSink, spawnItemDrop } = await import('./pickups.js'); setStackPickupSink(null);
+  const w = buildWorld([playerEntity(0, 0, 0)]);
+  const inv = { slots: Array.from({ length: SLOTS }, () => ({ id: 'rock', n: 1 })) }; inv.slots[0] = { id: 'gem', n: 3 }; const defs = { gem: { stackMax: 4, name: 'Gem' } };
+
+  setItemPickupSink((id, n) => addItem(inv, defs, id, n));
+  const did = spawnItemDrop(w, 'gem', 0, 0, 0); w.entity(did).components.pickup.amount = 3;
+  stepPickups(w, { transform: { x: 0, y: 0, z: 0 }, components: {} });
+  ok('partial add: pack 4, drop keeps 2, total 6 (no duplicate)', countOf(inv, 'gem') === 4 && w.entity(did).components.pickup.amount === 2);
+  setItemPickupSink(null);
+  ok('PICKUP_LIFE is 60 s', PICKUP_LIFE === 3600);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

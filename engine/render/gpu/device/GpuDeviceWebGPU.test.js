@@ -1,7 +1,7 @@
 // engine/render/gpu/device/GpuDeviceWebGPU.test.js - WG-1b2. Pure/mock tests (no adapter):
 //   node engine/render/gpu/device/GpuDeviceWebGPU.test.js
 import { textureFormatFor, depthFormatFor, vertexFormatFor, padTo256, depadRows, readbackLayout } from './webgpuFormats.js';
-import { GpuDeviceWebGPU } from './GpuDeviceWebGPU.js';
+import { GpuDeviceWebGPU, TRACE_PASSES_AFTER_ABORT } from './GpuDeviceWebGPU.js';
 import { createGpuDevice, selfTestDevice } from './createGpuDevice.js';
 import { GPU_DEVICE_METHODS } from './GpuDevice.js';
 import { makeOk } from '../../../test/assert.js';
@@ -45,7 +45,7 @@ function mockGpu() {
     draw() { calls.push('draw'); }, drawIndexed() { calls.push('drawIndexed'); }, end() { calls.push('end'); },
   });
   const rec = (n) => () => { calls.push(n); return obj(n); };
-  const queue = { writeBuffer() { calls.push('writeBuffer'); }, writeTexture(dst, data, layout, size) { calls.push('writeTexture'); this.lastWrite = { ox: dst.origin[0], oy: dst.origin[1], bpr: layout.bytesPerRow, w: size[0], h: size[1] }; this.objs = [dst, layout, size]; }, submit() { calls.push('submit'); } };
+  const queue = { writeBuffer() { calls.push('writeBuffer'); }, writeTexture(dst, data, layout, size) { calls.push('writeTexture'); this.lastWrite = { ox: dst.origin[0], oy: dst.origin[1], bpr: layout.bytesPerRow, rpi: layout.rowsPerImage, w: size[0], h: size[1] }; this.objs = [dst, layout, size]; }, submit() { calls.push('submit'); } };
   return {
     calls, sets, layouts, queue, limits: { maxColorAttachments: 8 }, lost: new Promise(() => {}),
     createBuffer: rec('createBuffer'), createTexture: rec('createTexture'), createSampler: rec('createSampler'),
@@ -138,6 +138,21 @@ const consts = {
   d.beginPass(tgt);
   ok('beginPass twice throws', throws(() => d.beginPass(tgt)));
   d.endPass();
+  // FIX-PASS: stale-pass guard - an error swallowed inside a pass must be recoverable with abortPass()
+  ok('abortPass with no open pass returns null', d.abortPass() === null && d.passOpen === false);
+  const warn0 = console.warn; console.warn = () => {};
+  const pipeC = d.createPipeline({ vertex: { src: { wgsl: 'y' } }, fragment: { src: { wgsl: 'y' }, targets: 1 }, bindings: { uniformBytes: 0, textures: [] }, targetFormats: ['rgba32ui'] });
+  pipeC.gpu = null; // simulates a pipeline still compiling: bind throws INSIDE the pass
+  d.beginPass(tgt);
+  ok('bind of a compiling pipeline throws inside the pass', throws(() => d.bind(pipeC, {})) && d.passOpen);
+  const owner = d.abortPass('test');
+  ok('abortPass ends the open pass and names its target', d.passOpen === false && /target 4x4 colour=1 depth=true/.test(String(owner)), String(owner));
+  ok('abortPass turns owner tracing on', d.tracePasses === true && d.abortedPasses === 1);
+  d.beginPass(tgt);
+  ok('beginPass works again after abortPass', d.passOpen);
+  const owner2 = d.abortPass('test');
+  ok('second stale pass carries the opening stack', /opened at: .*pass opened here/s.test(String(owner2)));
+  console.warn = warn0;
   ok('canvasTarget without canvas throws at beginPass', throws(() => d.beginPass(d.canvasTarget())));
   ok('writeTexture rejects depth', throws(() => d.writeTexture(dep, new Uint8Array(4))));
   d.dispose();
@@ -168,28 +183,25 @@ const consts = {
   d.endPass();
 }
 
-// ---- createGpuDevice failure / fallback paths
+// ---- createGpuDevice failure paths (WG-5b: WebGPU only, every failure throws; no fallback)
 const warns = [];
-const gl = { fake: 'gl', getParameter: () => 4, getExtension: () => null, createQuery: () => ({}) };
 const okLimits = { maxColorAttachmentBytesPerSample: 64, maxSampledTexturesPerShaderStage: 16, maxColorAttachments: 8 };
-const fakeCanvas = { getContext: (k) => (k === 'webgl2' ? gl : null) };
+const fakeCanvas = { getContext: () => null };
 const run = async (name, opts, expect) => {
   warns.length = 0;
   let res, err = null;
   try { res = await createGpuDevice({ canvas: fakeCanvas, warn: (m) => warns.push(m), ...opts }); } catch (e) { err = e; }
   ok(name, expect(res, err), String((err && err.message) || (res && res.backend) || warns[0]));
 };
-await run('webgl2 request returns GL2 device', { backend: 'webgl2' }, (r) => r && r.backend === 'webgl2');
-await run('webgl2 without context throws', { backend: 'webgl2', canvas: { getContext: () => null } }, (r, e) => !!e && /WebGL2 unavailable/.test(e.message));
-await run('webgpu: no navigator.gpu -> warn + webgl2', { backend: 'webgpu', navigatorGpu: null }, (r) => r && r.backend === 'webgl2' && warns.length === 1 && /no navigator\.gpu/.test(warns[0]));
-await run('webgpu fallback:false -> throws', { backend: 'webgpu', navigatorGpu: null, fallback: false }, (r, e) => !!e && /no navigator\.gpu/.test(e.message));
-await run('webgpu: no adapter -> fallback', { backend: 'webgpu', navigatorGpu: { requestAdapter: async () => null } }, (r) => r && r.backend === 'webgl2' && /no adapter/.test(warns[0]));
-await run('webgpu: adapter below limits -> fallback names the limit', {
+await run('webgl2 request throws (removed in WG-5b)', { backend: 'webgl2' }, (r, e) => !!e && /removed/.test(e.message));
+await run('webgpu: no navigator.gpu -> throws + warns', { backend: 'webgpu', navigatorGpu: null }, (r, e) => !!e && /no navigator\.gpu/.test(e.message) && warns.length === 1 && /no navigator\.gpu/.test(warns[0]));
+await run('webgpu: no adapter -> throws', { backend: 'webgpu', navigatorGpu: { requestAdapter: async () => null } }, (r, e) => !!e && /no adapter/.test(e.message));
+await run('webgpu: adapter below limits -> throws naming the limit', {
   backend: 'webgpu', navigatorGpu: { requestAdapter: async () => ({ limits: { ...okLimits, maxColorAttachmentBytesPerSample: 32 } }) },
-}, (r) => r && r.backend === 'webgl2' && /maxColorAttachmentBytesPerSample 32 < 36/.test(warns[0]));
-await run('webgpu: requestDevice rejects -> fallback', {
+}, (r, e) => !!e && /maxColorAttachmentBytesPerSample 32 < 36/.test(e.message));
+await run('webgpu: requestDevice rejects -> throws', {
   backend: 'webgpu', navigatorGpu: { requestAdapter: async () => ({ limits: okLimits, features: new Set(), requestDevice: async () => { throw new Error('boom'); } }) },
-}, (r) => r && r.backend === 'webgl2' && /boom/.test(warns[0]));
+}, (r, e) => !!e && /boom/.test(e.message));
 {
   let asked = null;
   const adapter = { limits: okLimits, features: new Set(['timestamp-query']), requestDevice: async (d) => { asked = d; return mockGpu(); } };
@@ -197,17 +209,17 @@ await run('webgpu: requestDevice rejects -> fallback', {
   await run('webgpu: mock device, selfTest:false -> webgpu, adapter limits requested', {
     backend: 'webgpu', selfTest: false, canvas: null, navigatorGpu: { requestAdapter: async () => adapter, getPreferredCanvasFormat: () => 'rgba8unorm' },
   }, (r) => r && r.backend === 'webgpu' && asked.requiredLimits.maxColorAttachmentBytesPerSample === 64 && asked.requiredFeatures.includes('timestamp-query'));
-  await run('webgpu: self-test failure (mock cannot readback) -> fallback to webgl2', {
+  await run('webgpu: self-test failure (mock cannot readback) -> throws', {
     backend: 'webgpu', navigatorGpu: { requestAdapter: async () => adapter },
-  }, (r) => r && r.backend === 'webgl2' && /self-test failed/.test(warns[0]));
-  // 38.8a: fallback:false must never touch canvas.getContext on a WebGPU failure (canvas stays free for the caller)
+  }, (r, e) => !!e && /self-test failed/.test(e.message));
+  // the canvas is attached only after success: a failure never touches canvas.getContext
   const calls = [];
   const spyCanvas = { getContext: (k) => { calls.push(k); return null; } };
-  const runSpy = async (opts) => { try { await createGpuDevice({ canvas: spyCanvas, warn: () => {}, fallback: false, backend: 'webgpu', ...opts }); } catch (_) { /* expected */ } };
+  const runSpy = async (opts) => { try { await createGpuDevice({ canvas: spyCanvas, warn: () => {}, backend: 'webgpu', ...opts }); } catch (_) { /* expected */ } };
   await runSpy({ navigatorGpu: { requestAdapter: async () => null } });
-  ok('fallback:false, no adapter: canvas.getContext never called', calls.length === 0, calls.join());
+  ok('no adapter: canvas.getContext never called', calls.length === 0, calls.join());
   await runSpy({ navigatorGpu: { requestAdapter: async () => adapter } });
-  ok('fallback:false, self-test fails: canvas.getContext never called', calls.length === 0, calls.join());
+  ok('self-test fails: canvas.getContext never called', calls.length === 0, calls.join());
   const st = await selfTestDevice({ backend: 'webgl2' });
   ok('selfTestDevice on webgl2 is skipped ok', st.ok && !!st.skipped);
 }
@@ -223,6 +235,9 @@ await run('webgpu: requestDevice rejects -> fallback', {
   d.writeTexture(t, new Uint8Array(2 * 2 * 4), { x: 3, y: 1, w: 2, h: 2 });
   const w2 = g.queue.lastWrite;
   ok('writeTexture sub rect values', w2.ox === 3 && w2.oy === 1 && w2.bpr === 8 && w2.w === 2 && w2.h === 2);
+  ok('writeTexture sets rowsPerImage = h (full + sub rect; regression for 105ea67)', w1.rpi === 4 && w2.rpi === 2);
+  d.writeTexture(t, new Uint8Array(8 * 4 * 4), { x: 1, y: 0, w: 3, h: 2, stride: 8 });
+  ok('writeTexture stride: bytesPerRow = stride*bpp, rowsPerImage = h', g.queue.lastWrite.bpr === 32 && g.queue.lastWrite.rpi === 2);
   d.writeTexture(t, new Uint8Array(8 * 4 * 4));
   const third = g.queue.objs;
   ok('writeTexture reuses dst/layout/size objects per texture', third[0] === first[0] && third[1] === first[1] && third[2] === first[2]);
@@ -376,6 +391,28 @@ await run('webgpu: requestDevice rejects -> fallback', {
   ok('the compute pipeline is tracked', d2._computePipes.indexOf(p2) >= 0);
   d2.dispose(p2);
   ok('dispose(computePipeline) drops it from the tracked list', d2._computePipes.indexOf(p2) < 0);
+}
+
+// R6c part 2: storageBuffers bind groups are cached per desc (2 species share one pipeline, 2 frames -> 2 createBindGroup calls, not 4)
+{
+  const g = mockGpu();
+  g.createBuffer = () => ({ destroy() {} });
+  const c2 = { buf: { ...consts.buf, STORAGE: 32, INDIRECT: 64, COPY_SRC: 128 }, tex: consts.tex, stage: { ...consts.stage, COMPUTE: 4 }, map: consts.map };
+  const d = new GpuDeviceWebGPU(g, { consts: c2, ringSlots: 8 });
+  const a = d.createTexture({ format: 'rgba32ui', width: 4, height: 4 }), dep = d.createTexture({ format: 'depth24', width: 4, height: 4 });
+  const tgt = d.createTarget({ color: [a], depth: dep });
+  const pipe = d.createPipeline({ vertex: { src: { wgsl: 'x' } }, fragment: { src: { wgsl: 'x' }, targets: 1 }, depth: { test: true, write: true },
+    bindings: { uniformBytes: 32, textures: [], buffers: ['read', 'read'] }, targetFormats: ['rgba32ui'], depthFormat: 'depth24' });
+  const atlas = d.createBuffer({ usage: 'storage', bytes: 64 });
+  const mk = () => { const dst = d.createBuffer({ usage: 'storage', bytes: 64 }); return { uniforms: new Float32Array(8), storageBuffers: [{ slot: 0, buffer: dst }, { slot: 1, buffer: atlas }] }; };
+  const s1 = mk(), s2 = mk();
+  const before = g.calls.filter((c) => c === 'createBindGroup').length;
+  for (let f = 0; f < 2; f++) { d.beginPass(tgt, { clear: true }); d.bind(pipe, s1); d.draw(3); d.bind(pipe, s2); d.draw(3); d.endPass(); }
+  ok('2 species x 2 frames -> 2 storage bind groups', g.calls.filter((c) => c === 'createBindGroup').length - before === 2);
+  const s1b = s1.storageBuffers[0].buffer; s1.storageBuffers[0].buffer = d.createBuffer({ usage: 'storage', bytes: 64 });
+  d.beginPass(tgt, { clear: true }); d.bind(pipe, s1); d.draw(3); d.endPass();
+  ok('changed buffer rebuilds that desc group', g.calls.filter((c) => c === 'createBindGroup').length - before === 3 && s1b !== s1.storageBuffers[0].buffer);
+  d.dispose();
 }
 
 console.log(`\n${pass} passed, ${fail} failed.`);

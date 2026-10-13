@@ -4,7 +4,8 @@
 import { readMeshJSON } from '../test/meshFile.test.js';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { DrawList, DRAW_STATIC, LevelMeshCache, MeshDrawCache, addStructures, MAX_DRAW_ITEMS } from './DrawList.js';
+import { DrawList, DRAW_STATIC, LevelMeshCache, MeshDrawCache, addStructures } from './DrawList.js';
+import { MAX_SHADOW_ITEMS } from './shadowList.js';
 import { buildShadowList, createShadowList, shadowWorldZ, trimShadowList } from './shadowList.js';
 import { frustumPlanes } from './culling.js';
 import { projTerms, shearProjection } from '../render/projection.js';
@@ -80,7 +81,7 @@ function cameraPlanes() {
   const sm = createSunShadowMatrix();
   shadowSunMatrix(sunDir, [0, 0, 0], OPTS, { min: 0, max: 0 }, sm);
   // Fill up with fake extras via the builder's own feed: 8 structures x 1 mesh = 8 items; shrink the cap by pushing manually is not
-  // possible, so check ordering/determinism instead and that count never exceeds MAX_DRAW_ITEMS.
+  // possible, so check ordering/determinism instead and that count never exceeds MAX_SHADOW_ITEMS.
   const src = { centre: { x: 0, y: 0, z: 0 }, cache };
   const n1 = buildShadowList(sl, null, world, sm.planes, src);
   const ids1 = [];
@@ -89,7 +90,7 @@ function cameraPlanes() {
   const ids2 = [];
   for (let i = 0; i < sl.count; i++) ids2.push(sl.items[i].objectId);
   ok('deterministic across rebuilds', n1 === n2 && ids1.join() === ids2.join(), `${ids1} / ${ids2}`);
-  ok('never exceeds MAX_DRAW_ITEMS', n1 <= MAX_DRAW_ITEMS);
+  ok('never exceeds MAX_SHADOW_ITEMS', n1 <= MAX_SHADOW_ITEMS);
   ok('near -> far order kept (structSeq ascending by distance)', ids1.join() === '0,1,2,3,4,5,6,7', ids1.join());
 }
 
@@ -97,7 +98,7 @@ function cameraPlanes() {
 {
   const l = new DrawList(400);
   l.begin();
-  for (let i = 0; i < MAX_DRAW_ITEMS + 5; i++) {
+  for (let i = 0; i < MAX_SHADOW_ITEMS + 5; i++) {
     const it = l.push(null, DRAW_STATIC);
     it.objectId = i;
     const x = i === 10 ? 5000 : i; // item 10 is by far the farthest
@@ -106,7 +107,7 @@ function cameraPlanes() {
   trimShadowList(l, 0, 0);
   const ids = new Set();
   for (let i = 0; i < l.count; i++) ids.add(l.items[i].objectId);
-  ok('trim keeps MAX_DRAW_ITEMS', l.count === MAX_DRAW_ITEMS, 'count=' + l.count);
+  ok('trim keeps MAX_SHADOW_ITEMS', l.count === MAX_SHADOW_ITEMS, 'count=' + l.count);
   ok('trim drops the farthest first (item 10, then ids 257..260)', !ids.has(10) && !ids.has(257) && !ids.has(258) && !ids.has(259) && !ids.has(260) && ids.has(256) && ids.has(9));
   ok('trim keeps relative order', (() => { let prev = -1; for (let i = 0; i < l.count; i++) { if (l.items[i].objectId < prev) return false; prev = l.items[i].objectId; } return true; })());
 }
@@ -317,6 +318,24 @@ function cameraPlanes() {
   global.gc();
   const grew = process.memoryUsage().heapUsed - before;
   ok('buildShadowList + matrix: no heap growth over 20k frames', grew < 64 * 1024, `grew ${grew} bytes (sink=${sink})`);
+}
+
+// ---- PCB-PO-SHADOWLIST-01 / ALPHA-01f-fix: buildShadowList emits flags=0 (no ONE_PART) for a masked-range group, ONE_PART for opaque ----
+{
+  const mk = (id, masked) => ({ id, layout: 'static', triCount: 4, bbox: new Float64Array([-1, -1, 0, 1, 1, 2]),
+    ranges: [{ part: 'a', triStart: 0, triCount: 2 }, masked ? { part: 'b', triStart: 2, triCount: 2, mask: { tex: 't', cutoff: 0.5 } } : { part: 'b', triStart: 2, triCount: 2 }] });
+  const run = (mesh) => {
+    const groups = new InstanceGroups();
+    const g = groups.meshGroup(mesh, 2);
+    g.count = 2; writeUnitInstance(g.ib, 0, 0, 0, 0, 0, 0x40000, 0); writeUnitInstance(g.ib, 1, 3, 0, 0, 0, 0x40001, 0);
+    const src = { centre: { x: 0, y: 0, z: 0 }, cache: new LevelMeshCache(), instances: groups, meshCache: { get: () => mesh }, meshIdFor: () => 1 };
+    const sl = createShadowList();
+    buildShadowList(sl, null, { structures: [], structVersion: 1, terrain: null }, new Float64Array(24), src);
+    return { sl, g };
+  };
+  const m = run(mk('mk-masked', true)), o = run(mk('mk-opaque', false));
+  ok('masked meshGroup shadow item: flags 0 (no DRAW_FLAG_ONE_PART), parts.count = 2', m.sl.count === 1 && m.sl.items[0].flags === 0 && m.g.parts.count === 2, `count=${m.sl.count} flags=${m.sl.items[0] && m.sl.items[0].flags}`);
+  ok('opaque meshGroup shadow item: DRAW_FLAG_ONE_PART kept', o.sl.count === 1 && (o.sl.items[0].flags & 2) === 2, `flags=${o.sl.items[0] && o.sl.items[0].flags}`);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

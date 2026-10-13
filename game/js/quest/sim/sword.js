@@ -7,6 +7,8 @@
 // rotation = multiply/add, no trig call), no wall clock, integer step counters only, zero allocation after create.
 import { arcHits, applyImpulse, PHYSICS } from '../../../../engine/index.js';
 import { ARC_BOUNDS_L, ARC_BOUNDS_R } from '../swordConfig.js';
+import { weaponMods } from './weaponStats.js'; // EQ-20
+import { MAX_TARGETABLES } from './targetables.js'; // OB-076: one shared cap
 
 export const ST_IDLE = 0;
 export const ST_HOLD = 1;
@@ -20,7 +22,7 @@ export const ST_REST = 5;
 // and main.js calls `sword.step()` after that reset (same slot the amendment's main.js line uses).
 const SPEED_SCALE = [1, 1, 0.3, 0.6, 0.3, 0.6]; // idle, hold, charge, light, hard, rest
 
-const MAX_TARGETS = 16; // same cap as targeting.js's MAX_TARGETS_HARD_CAP
+const MAX_TARGETS = MAX_TARGETABLES; // OB-076: was 16 (world has 26+ targetables; the 17th+ boar could not be hit)
 const RING_SIZE = 4;    // "Sparks from a 4-slot ring in the sim" (30.1 View paragraph)
 export const SPARK_CLINK = 0;
 export const SPARK_HIT = 1;
@@ -88,6 +90,15 @@ export function createSwordSim(world, events, cfg, hooks) {
     return false;
   }
 
+  /** OB-116: a ray hit that lies ON the terrain surface is the ground the target stands on (slope / crest), not a wall:
+   * walls and props are collider hits well above the ground. Stub worlds without terrain never match. */
+  function isTerrainHit(o) {
+    const tr = world.terrain;
+    if (!tr || typeof tr.groundAt !== 'function') return false;
+    const g = tr.groundAt(o.x, o.y);
+    return g === g && o.z <= g + 0.08;
+  }
+
   function refreshTargetables() {
     for (let i = 0; i < tCount; i++) {
       const e = tEntities[i], tg = e.components.targetable;
@@ -127,6 +138,7 @@ export function createSwordSim(world, events, cfg, hooks) {
   const _losOut = { t: 0, x: 0, y: 0, z: 0 };
   const _outIdx = new Int32Array(MAX_TARGETS);
   const _outT = new Float64Array(MAX_TARGETS);
+  const _arcAll = { ex: 0, ey: 0, zMin: 0, zMax: 0, ax: 0, ay: 0, bx: 0, by: 0, reach: 0 }; // whole 100 deg cone (pendingTarget)
   const _arc = { ex: 0, ey: 0, zMin: 0, zMax: 0, ax: 0, ay: 0, bx: 0, by: 0, reach: 0 };
   // US-079b: `cause: 'sword'` and `knock: 0` ride on the one preallocated payload (knock 0 = the beast uses its own
   // default stagger knock). The heavy body impulse below still uses `S.knock`; this `knock` is only for the beast.
@@ -216,7 +228,7 @@ export function createSwordSim(world, events, cfg, hooks) {
     const d = Math.sqrt(dx * dx + dy * dy);
     const dirX = d > 1e-9 ? dx / d : fx, dirY = d > 1e-9 ? dy / d : fy;
     const p = _hitPayload;
-    p.source = 'player'; p.target = e.id; p.damage = S.damage; p.heavy = S.heavy;
+    p.source = 'player'; p.target = e.id; p.damage = S.damage * weaponMods.dmgMul; p.heavy = S.heavy; // EQ-20: equipped sword tier
     p.dirX = dirX; p.dirY = dirY; p.px = ex; p.py = ey; p.pz = ez;
     events.emit('combat:hit', p);
     if (S.heavy) {
@@ -227,6 +239,27 @@ export function createSwordSim(world, events, cfg, hooks) {
     } else {
       pushSpark(SPARK_HIT, ex, ey, ez); // light entity hit: no hit-stop (hitStop 0)
     }
+  }
+
+  /** COMBAT-REACH-01: true while a live, not-yet-hit target sits inside the WHOLE swing cone (all 7 slices). A wall
+   * hit by an early slice's ray must not abort the swing then (a dummy 0.4 m from a wall was unreachable: slice 0/1 hit
+   * the wall, the swing ended before the slice that reaches the dummy). Walls still block each target per slice
+   * (twM + LOS gate in doHitCheck). */
+  function pendingTarget(bounds, fx, fy, S) {
+    const ax = bounds[0] * -fy + bounds[1] * fx, ay = bounds[0] * fx + bounds[1] * fy;
+    const bx = bounds[14] * -fy + bounds[15] * fx, by = bounds[14] * fx + bounds[15] * fy;
+    const A = _arcAll;
+    A.ex = _arc.ex; A.ey = _arc.ey; A.zMin = _arc.zMin; A.zMax = _arc.zMax;
+    A.ax = ax; A.ay = ay; A.bx = bx; A.by = by; A.reach = S.reach;
+    const n = arcHits(A, tcx, tcy, tcz, tcr, tch, tCount, _outIdx, _outT);
+    for (let k = 0; k < n; k++) {
+      const idx = _outIdx[k], h = tEntities[idx].components.health;
+      if (hitMask[idx] || (h && h.hp <= 0)) continue;
+      const e = tEntities[idx]; // a target the wall hides (LOS blocked by something other than itself) is no reason to keep swinging
+      const blocked = world.raySegment(_eye.x, _eye.y, _eye.z - 0.35, e.transform.x, e.transform.y, e.transform.z + tch[idx] * 0.5, _losOut);
+      if (!blocked || hitsOwnShape(_losOut.x, _losOut.y, idx) || isTerrainHit(_losOut)) return true;
+    }
+    return false;
   }
 
   /** One active-window step: world ray gate (`World.raySegment`) + `arcHits` over this sim's own targetables.
@@ -255,7 +288,7 @@ export function createSwordSim(world, events, cfg, hooks) {
     // PROP-COLLIDE-01b regression (owner 2026-10-06 "practice statue doesn't get damage"): a solid prop target (the
     // practice post) now has its OWN collider, so a ray that stops at that target's own shape is not a wall.
     let worldHit = world.raySegment(_eye.x, _eye.y, rayZ, bxw, byw, rayZ, _rayOut);
-    if (worldHit && hitsOwnShape(_rayOut.x, _rayOut.y, -1)) worldHit = false;
+    if (worldHit && (hitsOwnShape(_rayOut.x, _rayOut.y, -1) || isTerrainHit(_rayOut))) worldHit = false;
     const twM = worldHit ? _rayOut.t * S.reach : S.reach;
 
     const n = arcHits(_arc, tcx, tcy, tcz, tcr, tch, tCount, _outIdx, _outT);
@@ -268,12 +301,12 @@ export function createSwordSim(world, events, cfg, hooks) {
       if (h && h.hp <= 0) continue; // US-079b: a dead boar is skipped by the arc (before hitMask)
       if (hitMask[idx]) continue;
       const ex = e.transform.x, ey = e.transform.y, ez = e.transform.z + tch[idx] * 0.5;
-      if (world.raySegment(_eye.x, _eye.y, rayZ, ex, ey, ez, _losOut) && !hitsOwnShape(_losOut.x, _losOut.y, idx)) continue; // blocked LOS (not by the target's own collider) - skip
+      if (world.raySegment(_eye.x, _eye.y, rayZ, ex, ey, ez, _losOut) && !hitsOwnShape(_losOut.x, _losOut.y, idx) && !isTerrainHit(_losOut)) continue; // blocked LOS (not by the target's own collider) - skip
       hitMask[idx] = 1;
       anyEntity = true;
       emitHit(e, S, ex, ey, ez, fx, fy);
     }
-    return !anyEntity && worldHit;
+    return !anyEntity && worldHit && !pendingTarget(bounds, fx, fy, S);
   }
 
   /** Shared light/hard swing step: the chain-queue press (light #1's recover only), the active-window hit check,

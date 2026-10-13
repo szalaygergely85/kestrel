@@ -68,6 +68,17 @@
 //       stripped first) - deterministic-sim leaves.
 //   17. (WG-1b2, architecture.md 38.2) `navigator.gpu`, GPUBufferUsage, GPUTextureUsage, GPUShaderStage, GPUMapMode
 //       (outside comments) are findings anywhere in engine/** or game/** except engine/render/gpu/device/**.
+//   18. (ED-WG-01c, architecture.md 38.21) tools/editor/**/*.js (tests included) may not import GL-only modules:
+//       GpuCellPipeline, GpuDeviceGL2/WebGL2, GpuSpritePass, overlayPass, glsl/**, RenderTargetGL, editorRenderer.
+//   19. (WILD-03, docs/architecture.md 38.31 item 1) engine/fauna/** (non-test) may import only engine/fauna/**,
+//       engine/nav/**, engine/core/** and engine/entities/{clipPlayer,gait}.js; fauna tests may also import
+//       engine/test/**. engine/render|world|mesh|ui|physics|nav may never import engine/fauna/** (one-way leaf).
+//       (Numbers 15-16 are taken by the determinism WARN and the fx leaf, so the fauna rule is 19.)
+//   20. (CHARGEN-06, architecture.md 38.29 item 6) tools/export/**/*.js (non-test) are browser-safe exporters: they may
+//       import only engine/index.js and tools/export/** - no bare specifiers, no node: built-ins, no fs/zlib, nothing else
+//       under tools/ or game/ or design/. Their *.test.* files are exempt (rule 3/8 still apply).
+//   21. (CHARGEN-06, architecture.md 38.29 item 7) a specifier containing `vendor/three` is a finding anywhere except
+//       under tools/chargen/** (three.js is vendored for the chargen app only).
 //   12. success message as above.
 
 import fs from 'node:fs';
@@ -94,6 +105,7 @@ const PHYSICS_DIR = path.join(ROOT, 'engine', 'physics');
 const MESH_DIR = path.join(ROOT, 'engine', 'mesh');
 const NAV_DIR = path.join(ROOT, 'engine', 'nav');
 const FX_DIR = path.join(ROOT, 'engine', 'fx');
+const FAUNA_DIR = path.join(ROOT, 'engine', 'fauna');
 const RENDER_DIR = path.join(ROOT, 'engine', 'render');
 const UI_DIR = path.join(ROOT, 'engine', 'ui');
 const WORLD_DIR = path.join(ROOT, 'engine', 'world');
@@ -217,9 +229,12 @@ function checkEngineFile(file, src) {
 const RULE3_TOOL_ALLOWLIST = new Set([
   'tools/bench-shadow.mjs',
   'tools/compare-detail-export.mjs',
+  'tools/mesh-tri-budget.mjs', // MESH-QA-01: runs the runtime's own compactGroup/frustum/projection (not in engine/index.js)
+  'tools/mesh-place-budget.mjs', // MESH-PLACE-01: same frustum helpers as mesh-tri-budget (not in engine/index.js)
 ].map((p) => p.split('/').join(path.sep)));
 
 const EDITOR_DIR = path.join(ROOT, 'tools', 'editor');
+const GL_ONLY_RE = /(GpuCellPipeline|GpuDeviceGL2|GpuDeviceWebGL2|GpuSpritePass|overlayPass|RenderTargetGL|editorRenderer)(\.js)?$|\/glsl\//;
 
 // Rule 7 (US-047): who may import engine/dev.js. game/js/dev/** and
 // game/js/main.js (dev-mode code paths) and tools/** (bench/capture/parity
@@ -264,6 +279,10 @@ function checkConsumerFile(file, src) {
         findings.push(`${rel(file)}:${line}: deep import "${spec}" - game/tools must import exactly engine/index.js (or engine/dev.js where allowed)`);
       }
     }
+    // Rule 18 (ED-WG-01c, WG-5b: now engine-wide): the WebGL2 classes/modules are deleted; nothing may import them again.
+    if (!/.test.mjs$/.test(file) && GL_ONLY_RE.test(spec.split('\\').join('/'))) {
+      findings.push(`${rel(file)}:${line}: import "${spec}" is a GL-only module - WebGL2 was removed (WG-5b, rule 18, architecture.md 38.21)`);
+    }
     // Rule 6: tools/editor/** is a second client of engine/index.js only -
     // it must never depend on game/ (architecture.md 24.2).
     if (isEditorFile && (resolved.startsWith(GAME_DIR + path.sep) || resolved === GAME_DIR)) {
@@ -305,8 +324,6 @@ const COORD_ALLOW = [
   'engine/render/terrainCaster.js',       // hot loop
   'engine/render/sprites.js',             // hot loop
   'engine/render/detailShade.js',         // hot loop
-  'engine/render/gpu/GpuCellPipeline.js', // JS twin of the GLSL cast
-  'engine/render/gpu/glsl/',              // GLSL-generating files
   'game/js/dev/',                         // page harnesses / parity modes
 ];
 const COORD_PATTERNS = [
@@ -383,6 +400,31 @@ function checkFxLeafRule(file, src) {
     }
     if (isForbiddenConsumer && inDir(resolved, FX_DIR)) {
       findings.push(`${rel(file)}:${line}: import "${spec}" resolves into engine/fx/ - physics/nav must not import engine/fx/** (rule 16, docs/architecture.md 32.0)`);
+    }
+  }
+}
+
+// Rule 19 (WILD-03, docs/architecture.md 38.31 item 1): engine/fauna/** is a leaf. Non-test files may import
+// engine/fauna/**, engine/nav/**, engine/core/** and the two entity helpers clipPlayer.js + gait.js; tests may also
+// import engine/test/**. Render/world/mesh/ui/physics/nav may never import it.
+const FAUNA_ENTITY_OK = new Set(['clipPlayer.js', 'gait.js'].map((f) => path.join(ROOT, 'engine', 'entities', f)));
+function checkFaunaLeafRule(file, src) {
+  const isTest = /\.test\.(js|mjs)$/.test(file);
+  const isFauna = inDir(file, FAUNA_DIR);
+  const isForbiddenConsumer = inDir(file, RENDER_DIR) || inDir(file, MESH_DIR) || inDir(file, UI_DIR) || inDir(file, WORLD_DIR)
+    || inDir(file, PHYSICS_DIR) || inDir(file, NAV_DIR);
+  if (!isFauna && !isForbiddenConsumer) return;
+  const stripped = stripComments(src);
+  for (const { spec, line } of findImports(stripped)) {
+    if (isBareSpecifier(spec)) continue; // rule 1 already flags this
+    const resolved = path.resolve(path.dirname(file), spec);
+    if (isFauna) {
+      const allowed = inDir(resolved, FAUNA_DIR) || inDir(resolved, NAV_DIR) || inDir(resolved, CORE_DIR)
+        || FAUNA_ENTITY_OK.has(resolved) || (isTest && inDir(resolved, TEST_DIR));
+      if (!allowed) findings.push(`${rel(file)}:${line}: import "${spec}" - engine/fauna/** may only import engine/fauna/**, engine/nav/**, engine/core/**, entities/clipPlayer.js + gait.js${isTest ? ' (+ engine/test/** in tests)' : ''} (rule 19, docs/architecture.md 38.31)`);
+    }
+    if (isForbiddenConsumer && inDir(resolved, FAUNA_DIR)) {
+      findings.push(`${rel(file)}:${line}: import "${spec}" resolves into engine/fauna/ - render/world/mesh/ui/physics/nav must not import engine/fauna/** (rule 19, docs/architecture.md 38.31)`);
     }
   }
 }
@@ -477,6 +519,29 @@ function checkWebGpuGlobals(file, src) {
   }
 }
 
+// Rules 19 + 20 (CHARGEN-06).
+const EXPORT_DIR = path.join(ROOT, 'tools', 'export');
+const CHARGEN_APP_DIR = path.join(ROOT, 'tools', 'chargen');
+function checkExportRules(file, src) {
+  const isExport = inDir(file, EXPORT_DIR) && !/\.test\.m?js$/.test(file);
+  const stripped = stripComments(src);
+  for (const { spec, line } of findImports(stripped)) {
+    if (/vendor[\/]three/.test(spec) && !inDir(file, CHARGEN_APP_DIR)) {
+      findings.push(`${rel(file)}:${line}: import "${spec}" - vendor/three may only be imported under tools/chargen/** (rule 21, architecture.md 38.29 item 7)`);
+    }
+    if (!isExport) continue;
+    if (isBareSpecifier(spec)) {
+      findings.push(`${rel(file)}:${line}: bare/built-in specifier "${spec}" - tools/export/** must be browser-safe (rule 20, architecture.md 38.29 item 6)`);
+      continue;
+    }
+    const resolved = path.resolve(path.dirname(file), spec);
+    const okEngine = resolved === path.join(ENGINE_DIR, 'index.js');
+    if (!okEngine && !inDir(resolved, EXPORT_DIR)) {
+      findings.push(`${rel(file)}:${line}: import "${spec}" - tools/export/** may import only engine/index.js and tools/export/** (rule 20, architecture.md 38.29 item 6)`);
+    }
+  }
+}
+
 function rel(file) {
   return path.relative(ROOT, file).replace(/\\/g, '/');
 }
@@ -496,6 +561,7 @@ for (const file of walk(path.join(ROOT, 'engine'))) {
   const fsrc = fs.readFileSync(file, 'utf8');
   checkNavLeafRule(file, fsrc);
   checkFxLeafRule(file, fsrc);
+  checkFaunaLeafRule(file, fsrc);
 }
 for (const file of walk(path.join(ROOT, 'game'))) {
   const src = fs.readFileSync(file, 'utf8');
@@ -506,6 +572,10 @@ for (const file of walk(path.join(ROOT, 'game'))) {
 for (const file of walk(path.join(ROOT, 'tools'))) {
   if (path.resolve(file) === path.resolve(__filename)) continue;
   checkConsumerFile(file, fs.readFileSync(file, 'utf8'));
+}
+for (const file of [...walk(path.join(ROOT, 'engine')), ...walk(GAME_DIR), ...walk(path.join(ROOT, 'tools'))]) {
+  if (path.resolve(file) === path.resolve(__filename)) continue;
+  checkExportRules(file, fs.readFileSync(file, 'utf8')); // rules 19 + 20
 }
 for (const file of walk(path.join(ROOT, 'design'))) {
   checkDesignFile(file, fs.readFileSync(file, 'utf8'));

@@ -322,6 +322,21 @@ function rig({ wx = null, targets = [], mp = 100, cfg = FIREBALL_CFG, eyeH = 1.6
   ok('0 alloc over 10k steps (with casts and bursts)', grow < 100000, `heap +${grow}`);
 }
 
+// D-065: with `enabled:false` a released fist casts nothing (no ball, no event, no mana); state machine still runs for the hand visual.
+{
+  let spent = 0, casts = 0;
+  const ev = { emit(n) { if (n === 'fireball:cast') casts++; } };
+  const w0 = { raySegment() { return false; } };
+  const tg0 = { count: 0, refresh() {}, r: [], x: [], y: [], z: [], h: [], ent: [] };
+  const off = createFireballSim(w0, ev, FIREBALL_CFG, tg0, { spendMana: () => { spent++; return true; }, enabled: false });
+  const pl = { transform: { x: 0, y: 0, z: 0 }, components: {} };
+  off.step(pl, true, 1, 0, 1, 0, 0);
+  ok(off.state === FB_HOLD, 'D-065 off: press still enters HOLD (hand visual)');
+  for (let i = 0; i < FIREBALL_CFG.holdSteps + 2; i++) off.step(pl, true, 1, 0, 1, 0, 0);
+  off.step(pl, false, 1, 0, 1, 0, 0);
+  ok(off.alive === 0 && casts === 0 && spent === 0, 'D-065 off: release casts nothing, spends no mana');
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

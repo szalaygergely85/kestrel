@@ -23,6 +23,16 @@ test('a non-destroyed loss freezes once, autosaves once, shows the card once', a
   assert.equal(status.triggered, true);
 });
 
+test('a save gate returning false skips the autosave but still shows the card once', async () => {
+  const d = deferred();
+  let saved = 0, shown = 0;
+  watchDeviceLost({ lost: d.promise }, { canSave: () => false, autosave: () => saved++, showCard: () => shown++ });
+  d.resolve({ reason: 'unknown' });
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(saved, 0);
+  assert.equal(shown, 1);
+});
+
 test('reason "destroyed" (our own dispose) is ignored - no autosave, no card', async () => {
   const d = deferred();
   const device = { lost: d.promise };

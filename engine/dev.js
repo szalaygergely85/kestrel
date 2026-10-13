@@ -28,13 +28,15 @@ export { edgePass } from './render/edgePass.js';
 
 // ---- GPU/CPU parity harness (?gpucompare=1) --------------------------------
 export {
-  runGpuCompare, compareCells, compareGeometry, compareLight, describeCellNormals, poisonNonSky, poisonAllCells, unpackReadback,
-  classifyMigrationCells, MIGRATION_CATS, compareShadowDepth,
+  runGpuCompare, compareCells, meshCellCap, compareGeometry, compareLight, describeCellNormals, poisonNonSky, poisonAllCells, unpackReadback,
+  classifyMigrationCells, MIGRATION_CATS, compareShadowDepth, compareGlow, emisFromPacked,
 } from './render/gpu/gpuCompare.js';
 // ME-15b (27.9a item 10): GPU sun shadow depth vs the rasterJS depth-only twin.
 export { createShadowParityRunner } from './render/gpu/shadowParity.js';
+export { runStableRow, compareStableRow } from './render/gpu/wg/stableCompare.js'; // US-073c: gpucompare `stable` row
 // ME-06 (27.15.5a item 6): compare harnesses settle the shared terrain mesh set before each pose.
 export { terrainMeshSetFor } from './mesh/terrainMesh.js';
+export { buildLevelMesh } from './mesh/levelMesh.js'; // OB-053: tools/coplanar-lint.mjs (level triangles)
 
 // ---- GPU/CPU sprite parity harness (?spritecompare=1, US-030c) -------------
 // Item 6b fix pass: moved from engine/index.js - its only real caller is
@@ -65,3 +67,11 @@ export { buildWorldColliders } from './world/colliders.js';
 export { moveCircleMesh, probeSupport } from './physics/meshCollide.js';
 export { buildBvhFromMesh } from './physics/bvh.js';
 export { frameMatrix12 } from './mesh/DrawList.js';
+export { packWaterLook, packRiverLook, riverAlpha, riverStreakHit, WL_STRIDE } from './render/waterLook.js'; // OB-062 test (tools/ob062-river-look.test.mjs)
+
+// ---- test/bench fixtures (INT-1013) ----------------------------------------
+export { FIXTURE_FX, fixtureModels } from './fauna/wildlifeFx.fixture.js';
+
+// ---- WM-07 tools (tools/probe-region-dress.mjs) ----
+export { BandBakeJob } from './world/bandBake.js';
+export { bundleBytes } from './world/bandCache.js';

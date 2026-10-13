@@ -5,16 +5,19 @@
 import {
   AssetRegistry, createEngine, createRenderer, GRID_DEFAULT_COLS, clampGrid, MAX_LIGHTS,
   loadContentPack, ContentError, World, validateBehaviours, registerBehaviour,
-  DebugOverlay, drawText, validateVoxelModel, PITCH_CLAMP_PITCHED_DEG, createEditLayer,
+  DebugOverlay, drawText, validateVoxelModel, PITCH_CLAMP_PITCHED_DEG, createEditLayer, createFrameRenderer,
 } from '../../engine/index.js';
 import {
   createDoc, selectionFromEntityId, selectionEntityId, selectionItemData, selectionItemIndex,
   listOutlinerItems, frameFor, itemToWorld, worldToItem, mintId, fileKey,
 } from './doc.js';
-import { createFrame, editorRenderer } from './frame.js';
-import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose } from './camera.js';
-import { unprojectCell, rayPoint, projectPoint } from './ray.js';
+import { createOverlayTarget } from './overlayTarget.js';
+import { makePickGuard } from './pickGuard.js';
+import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose, applyViewPreset, toggleOrtho, adjustOrthoHalfH, lookAlongAxis } from './camera.js';
+import { createAxisGizmo } from './axisGizmo.js';
+import { unprojectCell, rayPoint, projectPoint, screenCentreGroundHit } from './ray.js';
 import { pickAt, pickMarkers } from './pick.js';
+import { resolveMeshClick } from './meshClick.js';
 import { drawSelectionHighlight, drawMarkers, drawHoverOutline, drawMeshHighlightRect } from './select.js';
 import {
   makeRecord, makeFieldEditRecord, makeDeleteRecord, makeInsertRecord, makeRenameBatch,
@@ -31,8 +34,16 @@ import {
   createAssetFoldersState, parseAssetFolders, serializeAssetFolders, listUserFolders,
   createUserFolder, renameUserFolder, deleteUserFolder, moveAssetToFolder, groupAssetFolders,
 } from './panel.js';
+import {
+  itemKey, buildTreeGroups, parseFold, serializeFold, toggleFold, addUserGroup, removeFromUserGroups,
+  pruneUserGroups, writeUserGroups, readUserGroups, revealKeys,
+} from './treeGroups.js';
+import { findUnusedAssets, planAssetDelete, serializePendingDeletes } from './assetRefs.js';
 import { nextScale, fineScale, clampScale } from './scale.js';
-import { validateDoc, saveAll, loadFile, launchPlaytest, anyDirty, pickBinaryFile, saveTerrainEdits } from './io.js';
+import { applySnapshot, snapshotDiffers, formatAge, startAutosave, getSnapshot, clearSnapshot } from './autosave.js';
+import { validateDoc, saveAll, loadFile, launchPlaytest, anyDirty, pickBinaryFile, saveTerrainEdits, saveGrassMask } from './io.js';
+import * as ENG from '../../engine/index.js';
+import * as GB from './grassBrush.js';
 import {
   BRUSH_OPS, PAINT_TYPES, effectiveStrength, beginStroke, endStroke, isTerrainRecord, applyTerrainSide, rectToWorld, ringPoints,
 } from './terrainBrush.js';
@@ -217,25 +228,31 @@ for (const name of validateBehaviours(World.load(assets.world(doc.worldId), asse
   registerBehaviour(name, () => {});
 }
 
-// WG-1c2: `?backend=webgpu` presents through WebGPU on the CPU path (the editor's GPU gate below stays WebGL2-only until WG-2).
+// ED-WG-01b (38.21 item 2): WebGPU is the default backend (same fallback rule as the game: ?backend=webgl2, ?gpu=0 or a failed
+// WebGPU start run the CPU path at the CPU grid). The editor never builds a GL cell pipeline.
 const g = clampGrid(gridFromParam(params, GRID_DEFAULT_COLS));
 window.__editorBoot?.stage('renderer init', 'Starting renderer');
-const { rt: builtRt } = await createRenderer({ canvas, cols: g.cols, rows: g.rows, backend: params.get('backend') || 'webgl2', gpu: params.get('gpu') !== '0' });
+const { rt: builtRt, pipeline: wgPipeline, info: rendererInfo } = await createRenderer({ canvas, cols: g.cols, rows: g.rows, backend: params.get('backend') || 'webgpu', gpu: params.get('gpu') !== '0', shadows: { sun: params.get('shadows') === 'off' ? 'off' : 'map' } });
 window.__editorBoot?.stage('scene init', 'Preparing scene');
 const engine = createEngine({
-  canvas, assets, cols: g.cols, rows: g.rows, rays: 1, renderTarget: builtRt,
+  canvas, assets, cols: g.cols, rows: g.rows, rays: 1, renderTarget: builtRt, renderPipeline: wgPipeline,
   gpu: params.get('gpu') !== '0', inputTarget: canvas,
-  shadows: { sun: params.get('shadows') === 'map' ? 'map' : 'dda' }, // 31.6 passthrough
+  shadows: { sun: params.get('shadows') === 'off' ? 'off' : 'map' }, // 31.6 passthrough
   uiGrid: (assets.uiStyle && assets.uiStyle.uiGrid) || { cols: 160, rows: 60 },
 });
 const { renderTarget: rt, input } = engine;
 
-// ---- GPU gate (24.3): a real WebGL2 pipeline is required unless ?gpu=0 ----
-const gpuDevSwitch = params.get('gpu') === '0';
-// BUG-EDITOR-001 fix: `?gpu=0` keeps `rt.backend === 'gl2'` (RenderTarget.js
-// only shrinks the grid for it) - createFrame needs the raw param too, so it
-// can skip constructing GpuCellPipeline the same way main.js does.
-const frame = createFrame({ engine, assets, rt, gpuParam: !gpuDevSwitch, renderer: editorRenderer(params) });
+// ---- frame renderer (38.21): the engine owns matTable/GBuffer/voxel pool/sprites/lights + the WebGPU binds ----
+const RENDERER = 'mesh'; // ME-19a: the only renderer
+const pipeline = wgPipeline && wgPipeline.ready ? wgPipeline : null;
+const frame = createFrameRenderer({ engine, rt, pipeline, assets, idleSkip: true });
+await frame.ready;
+// createRenderer builds the webgpu target at the CPU grid (38.8a item 14); once the pipeline owns the whole frame apply the requested grid
+// (240x90 default, same as the old GL editor and the game).
+if (pipeline && rt.backend === 'webgpu' && (rt.cols !== g.cols || rt.rows !== g.rows)) {
+  engine.setGrid(g.cols, g.rows, { immediate: true });
+  frame.resize(rt.cols, rt.rows);
+}
 // The render target defaults to the full window. Fit the editor's centre pane
 // so its canvas and UI aren't cropped behind the docks/toolbars.
 const viewport = canvas.parentElement;
@@ -251,16 +268,8 @@ function fitEditorViewport() {
 }
 fitEditorViewport();
 new ResizeObserver(fitEditorViewport).observe(viewport);
-const pitchClampDeg = frame.renderer === 'mesh' ? PITCH_CLAMP_PITCHED_DEG : 35; // 31.4: per effective renderer
-const gpuReady = rt.backend === 'gl2' && frame.gpuPipeline && frame.gpuPipeline.ready;
-const gpuBlocked = !gpuDevSwitch && !gpuReady;
-if (gpuBlocked) {
-  gateEl.style.display = 'flex';
-  gateEl.textContent = 'editor needs WebGL2 (use ?gpu=0 for the slow CPU path)';
-  canvas.style.display = 'none';
-}
-
-console.log(`[editor] RenderTarget backend: ${rt.backend}${frame.gpuPipeline ? ` GpuCellPipeline: ${frame.gpuPipeline.ready ? 'active' : 'inactive'}` : ''}`);
+const pitchClampDeg = PITCH_CLAMP_PITCHED_DEG;
+console.log(`[editor] RenderTarget backend: ${rt.backend}  renderer: ${rendererInfo ? rendererInfo.label : rt.backend}  frameComplete: ${!!(pipeline && pipeline.frameComplete)}`);
 
 // ---- camera pose: explicit CameraPose data (24.5), restored from localStorage if present ----
 const POSE_KEY = 'kestrel.editor.cam';
@@ -451,11 +460,99 @@ function drawTerrainCursor() {
   const radius = tb.stroke ? tb.stroke.radius : tb.radius;
   const hex = tb.stroke ? '#ffd24a' : '#7CFC7C';
   for (const [x, y] of ringPoints(tb.hover.x, tb.hover.y, radius)) {
-    const p = projectPoint(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, { x, y, z: tb.terrain.heightAt(x, y) + 0.15 }, frame.renderer);
+    const p = projectPoint(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, { x, y, z: tb.terrain.heightAt(x, y) + 0.15 }, RENDERER);
     if (!(p.depth > 0)) continue;
     const c = Math.round(p.col), r = Math.round(p.row);
-    if (c >= 0 && c < rt.cols && r >= 0 && r < rt.rows) rt.setCell(c, r, 'o', hex, EDITOR_PLATE_BG);
+    if (c >= 0 && c < rt.cols && r >= 0 && r < rt.rows) overlayPlate.setCell(c, r, 'o', hex, EDITOR_PLATE_BG);
   }
+}
+
+
+// ---- MASK-d: grass mask brush (docs/architecture.md 38.52 amendment (e)) ---------------------------------
+// Same stroke shape as the terrain brush; the paint layer is world.grassMask (else a fresh engine layer when the
+// engine exports createGrassMask). Stroke end / undo -> world.rebuildCarpetMask(rect) when the world has it.
+const gb = { op: 'paint', radius: 6, pct: 40, gm: null, key: null, handle: null, dirty: false, stroke: null, hover: null };
+const grassToolbarEl = document.getElementById('grass-toolbar');
+const gbRadiusEl = document.getElementById('gb-radius');
+const gbStrengthEl = document.getElementById('gb-strength');
+const gbStatusEl = document.getElementById('gb-status');
+
+function attachGrass() {
+  if (!world) { gb.gm = null; return; }
+  gb.key = world.terrainKey || world.id || 'world';
+  let layer = world.grassMask || null;
+  if (!layer && typeof ENG.createGrassMask === 'function') { layer = ENG.createGrassMask(0.5, 64); world.grassMask = layer; }
+  if (!layer || typeof ENG.setGrassSample !== 'function') { gb.gm = null; return; }
+  if (!gb.gm || gb.gm.layer !== layer) gb.gm = GB.wrapLayer(layer, { sampleAt: ENG.grassSampleAt, setSample: ENG.setGrassSample, grassMaskToJSON: ENG.grassMaskToJSON });
+}
+function updateGrassToolbar() {
+  grassToolbarEl.classList.toggle('on', toolMode === 'grass');
+  grassToolbarEl.querySelectorAll('.gb-op').forEach((b) => b.classList.toggle('active', b.dataset.op === gb.op));
+  gbRadiusEl.nextElementSibling.textContent = `${gb.radius} m`;
+  gbStrengthEl.nextElementSibling.textContent = `${gb.pct}%`;
+  if (toolMode === 'grass') { attachGrass(); gbStatusEl.textContent = gb.gm ? `grass mask "${gb.key}"` : 'grass mask layer not available in this engine build'; }
+  frame.markDirty();
+}
+gbRadiusEl.addEventListener('input', () => { gb.radius = Number(gbRadiusEl.value); updateGrassToolbar(); });
+gbStrengthEl.addEventListener('input', () => { gb.pct = Number(gbStrengthEl.value); updateGrassToolbar(); });
+grassToolbarEl.querySelectorAll('.gb-op').forEach((b) => b.addEventListener('click', () => {
+  if (GB.GRASS_OPS.includes(b.dataset.op)) { gb.op = b.dataset.op; updateGrassToolbar(); }
+}));
+document.getElementById('gb-save').addEventListener('click', async () => {
+  if (!gb.gm) { flash('grass: nothing to save'); return; }
+  try { await saveGrassMask(gb, { forceDownload: !!doc.readOnly }); flash(`saved: grassMask/${gb.key}`); } catch (e) { flash(`grass save failed: ${e && e.message ? e.message : e}`); }
+  refreshIoStatus();
+});
+
+function rebuildGrass(rect) { GB.rebuildCarpet(world, rect); world.renderVersion++; frame.markDirty(); }
+
+function grassStrokeStart(pt) {
+  attachGrass();
+  if (!gb.gm) { flash('grass: no paint layer (engine grassMask missing)'); return; }
+  gb.stroke = GB.beginStroke({ gm: gb.gm, key: gb.key }, { op: gb.op, radius: gb.radius, strength: GB.effectiveStrength(gb.pct), x: pt.x, y: pt.y });
+  grassStrokeMove(pt);
+}
+function grassStrokeMove(pt) {
+  const s = gb.stroke;
+  if (!s) return;
+  for (const [x, y] of s.points(pt.x, pt.y)) { const r = s.dab(x, y); if (r) rebuildGrass(r); }
+  frame.markDirty();
+}
+function grassStrokeEnd(cancel) {
+  const s = gb.stroke;
+  gb.stroke = null;
+  if (!s) return;
+  const rec = GB.endStroke({ gm: gb.gm, key: gb.key }, s);
+  if (!rec) return;
+  if (cancel) { GB.applyGrassSide(gb.gm, rec, 'before'); rebuildGrass(rec.rect); flash('grass: stroke cancelled'); return; }
+  undoStack.push(rec);
+  gb.dirty = true;
+  refreshIoStatus();
+  flash(`grass ${s.op}: ${s.dabs} dabs`);
+}
+function applyGrassRecordSide(rec, side) {
+  attachGrass();
+  if (!gb.gm) return;
+  rebuildGrass(GB.applyGrassSide(gb.gm, rec, side));
+  gb.dirty = true;
+  refreshIoStatus();
+}
+
+/** Cursor ring + tint of painted grass (green dots, brighter = more coverage) around the cursor. */
+function drawGrassCursor() {
+  if (toolMode !== 'grass' || !gb.hover || !world || !world.terrain) return;
+  const radius = gb.stroke ? gb.stroke.radius : gb.radius;
+  const put = (x, y, ch, hex) => {
+    const p = projectPoint(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, { x, y, z: world.terrain.heightAt(x, y) + 0.15 }, RENDERER);
+    if (!(p.depth > 0)) return;
+    const c = Math.round(p.col), r = Math.round(p.row);
+    if (c >= 0 && c < rt.cols && r >= 0 && r < rt.rows) overlayPlate.setCell(c, r, ch, hex, EDITOR_PLATE_BG);
+  };
+  if (gb.gm) {
+    for (const [x, y, v] of GB.paintedPoints(gb.gm, gb.hover.x, gb.hover.y, Math.max(12, radius * 2), 1.5)) put(x, y, '"', v > 0.66 ? '#3fbf3f' : v > 0.33 ? '#6fa04a' : '#8a8a4a');
+  }
+  const hex = gb.stroke ? '#ffd24a' : (gb.op === 'erase' ? '#ff7a7a' : '#7CFC7C');
+  for (const [x, y] of ringPoints(gb.hover.x, gb.hover.y, radius)) put(x, y, 'o', hex);
 }
 
 // ---- US-066: ribbon readouts (tool mode / snap / place toolbar) -----------
@@ -469,6 +566,7 @@ toolModeGroupEl.querySelectorAll('.tool-mode-btn').forEach((btn) => {
     toolMode = btn.dataset.mode;
     updateToolModeButtons();
     updateTerrainToolbar();
+    updateGrassToolbar();
   });
 });
 updateToolModeButtons();
@@ -586,7 +684,7 @@ function toggleItemLocked(item) {
  * `world`/`frame.lightSet` (US-067 AC: "survives a rebuild - add/delete/undo
  * elsewhere - within the same editor session"). Called right after
  * `engine.setWorld(w)` in `rebuild()`, where `frame.lightSet` is already
- * live (built synchronously off the `world:loaded` event, see frame.js).
+ * live (built synchronously off the `world:loaded` event, see frame renderer).
  */
 function reapplyVisibility() {
   for (const item of visState.hidden.values()) applyHiddenForItem(item, true);
@@ -672,7 +770,7 @@ function beginGroupDrag(e,col,row) {
         jobs.push({member,target,original});
       }
     }
-    const ray=unprojectCell(cam,rt.cols,rt.rows,rt.pxCellW,rt.pxCellH,col,row,frame.renderer);
+    const ray=unprojectCell(cam,rt.cols,rt.rows,rt.pxCellW,rt.pxCellH,col,row,RENDERER);
     const primary=snapshot.members[sel.primary], planeZ=primary.point.z;
     if (toolMode==='move' && (Math.abs(ray.dz)<1e-4 || (planeZ-cam.z)/ray.dz<=0)) return;
     const start=toolMode==='move' ? rayPoint(ray,(planeZ-cam.z)/ray.dz) : primary.point;
@@ -704,7 +802,7 @@ function snapTo(v, snap) { return normZero(Math.round(v / snap) * snap); }
 /** `engine.setWorld(World.load(...))` - the one mutation path's rebuild (24.8). <= 5 ms budget. */
 function rebuild() {
   const t0 = performance.now();
-  const w = World.load(assets.world(doc.worldId), assets, { events: engine.events, terrain: engine.world && engine.world.terrain });
+  const w = World.load(assets.world(doc.worldId), assets, { events: engine.events, terrain: engine.world && engine.world.terrain, spawn: { x: cam.x, y: cam.y } }); // WS2: start in the band under the camera
   engine.setWorld(w);
   reapplyVisibility(); // US-067: hide/lock survives this rebuild (in-memory overlay, never in `doc`)
   const ms = performance.now() - t0;
@@ -778,6 +876,7 @@ function applyAndSync(appliedRec) {
 function doUndo() {
   const rec = undoStack.undo();
   if (!rec) { flash('undo: nothing to undo'); return; }
+  if (GB.isGrassRecord(rec)) { applyGrassRecordSide(rec, 'before'); flash(`undo: ${rec.label}`); return; }
   if (isTerrainRecord(rec)) { applyTerrainRecordSide(rec, rec.before); flash(`undo: ${rec.label}`); return; }
   const inv = invert(rec);
   followRename(inv);
@@ -789,6 +888,7 @@ function doUndo() {
 function doRedo() {
   const rec = undoStack.redo();
   if (!rec) { flash('redo: nothing to redo'); return; }
+  if (GB.isGrassRecord(rec)) { applyGrassRecordSide(rec, 'after'); flash(`redo: ${rec.label}`); return; }
   if (isTerrainRecord(rec)) { applyTerrainRecordSide(rec, rec.after); flash(`redo: ${rec.label}`); return; }
   followRename(rec);
   applyEdit(doc, rec);
@@ -1007,9 +1107,9 @@ function deleteSelected() {
   renderProperties();
 }
 
-function teleportToSelection() {
+function selectionPoint() {
   const selection = primarySelection();
-  if (!selection) return;
+  if (!selection) return null;
   let point = null;
   const entId = selectionEntityId(world, selection);
   if (entId) {
@@ -1025,6 +1125,11 @@ function teleportToSelection() {
       point = itemToWorld(sFrame, item.x, item.y, z);
     }
   }
+  return point;
+}
+function teleportToSelection() {
+  if (!primarySelection()) return;
+  const point = selectionPoint();
   if (!point) { flash('teleport: no position for this item'); return; }
   cam.x = point.x;
   cam.y = point.y + 2; // 2 m south (+y), looking north at it (24.5)
@@ -1057,48 +1162,70 @@ treeChipsEl.querySelectorAll('.tree-chip').forEach((chip) => {
   });
 });
 
+// OB-028: category groups + user groups, foldable (fold state in localStorage, try/catch).
+const FOLD_KEY = 'kestrel.editor.treeFolds';
+let treeClosed = new Set();
+try { treeClosed = parseFold(localStorage.getItem(FOLD_KEY) || '[]'); } catch (_) { /* storage blocked */ }
+function persistFold() { try { localStorage.setItem(FOLD_KEY, serializeFold(treeClosed)); } catch (_) { /* ignore */ } }
+let lastRevealSig = '';
+const worldFileForGroups = () => doc.files.get(fileKey('world', doc.worldId));
+
+function foldHeader(key, title, count, open, cls) {
+  const h = document.createElement('div');
+  h.className = `tree-cat-header ${cls}`;
+  h.dataset.groupKey = key;
+  const arrow = document.createElement('span');
+  arrow.textContent = open ? '▾' : '▸';
+  const t = document.createElement('span');
+  t.textContent = title;
+  const c = document.createElement('span');
+  c.className = 'tree-cat-count';
+  c.textContent = String(count);
+  h.append(arrow, t, c);
+  h.addEventListener('click', () => { treeClosed = toggleFold(treeClosed, key); persistFold(); renderOutliner(); });
+  return h;
+}
+
 function renderOutliner() {
   outlinerEl.textContent = '';
-  const allItems = listOutlinerItems(doc, world); // CO-7: attaches structId per level-owned item
+  const realItems = listOutlinerItems(doc, world); // CO-7: attaches structId per level-owned item
+  const levelRows = (world.structures || []).filter((st) => st.level).map((st) => ({ fileId: fileKey('world', doc.worldId), collection: 'levels', id: st.id, item: st, structId: null }));
+  const allItems = realItems.concat(levelRows);
 
-  const counts = { all: allItems.length, entities: 0, props: 0, lights: 0, triggers: 0, interactables: 0 };
-  for (const o of allItems) counts[o.collection] = (counts[o.collection] || 0) + 1;
+  const counts = { all: realItems.length, entities: 0, props: 0, lights: 0, triggers: 0, interactables: 0 };
+  for (const o of realItems) counts[o.collection] = (counts[o.collection] || 0) + 1;
   treeChipsEl.querySelectorAll('.tree-chip').forEach((chip) => {
     const key = chip.dataset.filter;
     chip.textContent = `${TREE_CHIP_LABELS[key]} (${counts[key] || 0})`;
   });
 
-  const q = treeSearch.trim().toLowerCase();
-  const filtered = allItems.filter((o) => {
-    if (treeFilter !== 'all' && o.collection !== treeFilter) return false;
-    if (q && !o.id.toLowerCase().includes(q)) return false;
-    return true;
-  });
-
-  if (!filtered.length) {
+  const wf = worldFileForGroups();
+  const userGroups = pruneUserGroups(readUserGroups(wf && wf.def), allItems.map(itemKey));
+  // Selection from the 3D view: open (and persistently unfold) the group of the newly selected row.
+  const sig = sel.items.map((it) => `${it.fileId}|${it.collection}|${it.id}`).join(',');
+  if (sig !== lastRevealSig) {
+    lastRevealSig = sig;
+    const first = sel.items[0] && allItems.find((o) => o.fileId === sel.items[0].fileId && o.collection === sel.items[0].collection && o.id === sel.items[0].id);
+    if (first) { for (const k of revealKeys(allItems, first, userGroups)) treeClosed.delete(k); persistFold(); }
+  }
+  const groups = buildTreeGroups(allItems, { userGroups, query: treeSearch, filter: treeFilter, closed: treeClosed });
+  if (!groups.length) {
     const empty = document.createElement('div');
     empty.className = 'tree-empty';
-    empty.textContent = allItems.length ? '(no match)' : '(no props/lights/interactables/entities)';
+    empty.textContent = realItems.length ? '(no match)' : '(no props/lights/interactables/entities)';
     outlinerEl.appendChild(empty);
     return;
   }
-
-  // Group by fileId (a level or the world file) so the tree reads as
-  // structure -> its props/lights/... , with `├─`/`└─` branch glyphs
-  // (design/editor-ui.md 4) - purely a visual grouping, same flat
-  // `listOutlinerItems` data and the same `selectItem` click path as before.
-  const groups = new Map();
-  for (const o of filtered) {
-    const group = o.collection === 'structures' ? `${o.fileId} / Meshes` : o.fileId;
-    if (!groups.has(group)) groups.set(group, []);
-    groups.get(group).push(o);
-  }
-  for (const [fileId, items] of groups) {
-    const header = document.createElement('div');
-    header.className = 'tree-group-header';
-    header.textContent = fileId;
-    outlinerEl.appendChild(header);
-    items.forEach((o, i) => {
+  for (const g of groups) {
+    outlinerEl.appendChild(foldHeader(g.key, (g.user ? '★ ' : '') + g.title, g.count, g.open, g.user ? 'user' : 'cat'));
+    if (!g.open) continue;
+    for (const sub of g.subs) {
+      if (sub.title) {
+        outlinerEl.appendChild(foldHeader(sub.key, sub.title, sub.count, sub.open, 'sub'));
+        if (!sub.open) continue;
+      }
+      const items = sub.items;
+      items.forEach((o, i) => {
       const item = { fileId: o.fileId, collection: o.collection, id: o.id };
       const row = document.createElement('div');
       row.className = 'tree-row';
@@ -1143,13 +1270,44 @@ function renderOutliner() {
       lockBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleItemLocked(item); });
       icons.appendChild(eyeBtn);
       icons.appendChild(lockBtn);
-      if (o.collection !== 'structures') row.appendChild(icons);
-      row.addEventListener('click', (e) => selectItem({ fileId: o.fileId, collection: o.collection, id: o.id, structId: o.structId }, e.shiftKey || e.ctrlKey, e.altKey));
-      row.addEventListener('dblclick', () => { selectItem({ fileId: o.fileId, collection: o.collection, id: o.id, structId: o.structId }); teleportToSelection(); });
+      if (o.collection !== 'structures' && o.collection !== 'levels') row.appendChild(icons);
+      if (o.collection === 'levels') row.classList.add('row-locked');
+      else row.addEventListener('click', (e) => selectItem({ fileId: o.fileId, collection: o.collection, id: o.id, structId: o.structId }, e.shiftKey || e.ctrlKey, e.altKey));
+      if (o.collection !== 'levels') row.addEventListener('dblclick', () => { selectItem({ fileId: o.fileId, collection: o.collection, id: o.id, structId: o.structId }); teleportToSelection(); });
       outlinerEl.appendChild(row);
-    });
+      });
+    }
   }
+  const selRow = outlinerEl.querySelector('.tree-row.selected');
+  if (selRow && selRow.scrollIntoView) selRow.scrollIntoView({ block: 'nearest' });
 }
+
+document.getElementById('tree-group-btn').addEventListener('click', () => {
+  const keys = sel.items.map((it) => itemKey(it));
+  if (!keys.length) { flash('group: select items first'); return; }
+  const name = (window.prompt('Group name', 'Group') || '').trim();
+  if (!name) return;
+  const wf = worldFileForGroups();
+  if (!wf) { flash('group: no world file'); return; }
+  writeUserGroups(wf.def, addUserGroup(readUserGroups(wf.def), name, keys));
+  wf.dirty = true;
+  treeClosed.delete(`user:${name}`);
+  refreshIoStatus();
+  renderOutliner();
+  flash(`grouped ${keys.length} as "${name}" (saved with the world)`);
+});
+document.getElementById('tree-ungroup-btn').addEventListener('click', () => {
+  const wf = worldFileForGroups();
+  if (!wf) return;
+  const before = readUserGroups(wf.def), keys = sel.items.map((it) => itemKey(it));
+  const next = removeFromUserGroups(before, keys);
+  if (JSON.stringify(next) === JSON.stringify(before)) { flash('ungroup: selection is in no group'); return; }
+  writeUserGroups(wf.def, next);
+  wf.dirty = true;
+  refreshIoStatus();
+  renderOutliner();
+  flash('ungrouped');
+});
 renderOutliner();
 renderProperties();
 
@@ -1440,6 +1598,11 @@ function buildAssetRow(key, priority = false) {
     row.dataset.meshKey = meshKey;
     row.classList.add('mesh-asset-row');
     row.title = `Mesh: ${meshKey} (${assets.mesh(meshKey).triCount.toLocaleString()} triangles)`;
+    const del = document.createElement('button');
+    del.type = 'button'; del.className = 'asset-del-btn'; del.title = 'Delete this mesh asset (scans references first)'; del.textContent = '✕';
+    del.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+    del.addEventListener('click', (e) => { e.stopPropagation(); deleteMeshAsset(meshKey); });
+    row.appendChild(del);
   }
   // mousedown (not click): same reasoning as the US-063 model-picker rows -
   // fires before the search input's blur / the canvas's own mousedown
@@ -1523,10 +1686,85 @@ function buildFolderSection(folderName, keys) {
   return section;
 }
 
+// ---- OB-029: delete assets (reference scan, pending-deletes file) ----------
+const assetsUnusedChk = document.getElementById('assets-unused-chk');
+const pendingDeletes = new Map(); // mesh key -> plan; written to content/.pending-deletes.json
+let packageSources = {}; // best effort: content/packages/*.json, fetched on first use
+async function loadPackageSources() {
+  try {
+    const idx = await (await fetch('../../content/packages/index.json', { cache: 'no-store' })).json();
+    packageSources['package/index'] = idx;
+    for (const p of idx.packages || []) {
+      const name = typeof p === 'string' ? p : p && (p.file || p.path || p.id);
+      if (!name) continue;
+      try { packageSources[`package/${name}`] = await (await fetch(`../../content/packages/${name}`, { cache: 'no-store' })).json(); } catch (_) { /* skip */ }
+    }
+  } catch (_) { /* packages optional */ }
+}
+function buildAssetSources() {
+  const src = { ...packageSources };
+  for (const [k, f] of doc.files) src[k] = f.def;
+  for (const k of assets.keys('model')) { try { src[`model/${k}`] = assets.model(k); } catch (_) { /* skip */ } }
+  return src;
+}
+async function writePendingDeletes() {
+  const text = serializePendingDeletes([...pendingDeletes.values()]);
+  const name = '.pending-deletes.json';
+  try {
+    if (typeof window.showSaveFilePicker === 'function') {
+      const h = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: 'Pending deletes', accept: { 'application/json': ['.json'] } }] });
+      const w = await h.createWritable(); await w.write(text); await w.close();
+    } else {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' })); a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+    flash('pending deletes written: save it as content/.pending-deletes.json (the main session applies it)');
+  } catch (e) { flash(e && e.name === 'AbortError' ? 'pending deletes: cancelled' : `pending deletes failed: ${e && e.message}`); }
+}
+async function deleteMeshAsset(key) {
+  const plan = planAssetDelete('mesh', key, buildAssetSources());
+  if (!plan.ok && !plan.refs.length) { flash(`cannot delete "${key}": ${plan.reason}`); return; }
+  if (!plan.ok) {
+    const list = plan.refs.slice(0, 12).map((r) => `${r.source} ${r.path}`).join(', ');
+    const removable = plan.refs.every((r) => /^(world|level)\//.test(r.source) && /^(structures|entities|props)\[\d+\]\./.test(r.path));
+    if (!removable) { window.alert(`"${key}" is still used by:
+${list}
+
+Remove those users first (some are not editor placements).`); return; }
+    if (!window.confirm(`"${key}" is used by ${plan.refs.length} placement(s):
+${list}
+
+Delete all those placements AND the asset?`)) return;
+    const byFile = new Map();
+    for (const r of plan.refs) {
+      const m = /^(\w+)\[(\d+)\]/.exec(r.path);
+      if (!byFile.has(r.source)) byFile.set(r.source, []);
+      byFile.get(r.source).push([m[1], Number(m[2])]);
+    }
+    const recs = [];
+    for (const [fileId, list2] of byFile) {
+      const file = doc.files.get(fileId);
+      for (const [coll, idx] of [...new Set(list2.map((x) => x.join(':')))].map((x) => x.split(':')).sort((a, b) => b[1] - a[1])) {
+        recs.push(makeDeleteRecord(fileId, coll, file.def[coll][idx], Number(idx)));
+      }
+    }
+    for (const rec of recs) commit(rec);
+  } else if (!window.confirm(`Delete mesh asset "${key}"? Nothing references it. Its files are queued for deletion.`)) return;
+  pendingDeletes.set(key, { ...plan, files: plan.files, manifest: plan.manifest });
+  renderAssetsList(assetsSearchInput.value);
+  await writePendingDeletes();
+}
+assetsUnusedChk.addEventListener('change', async () => { await loadPackageSources(); renderAssetsList(assetsSearchInput.value); });
+
 function renderAssetsList(query) {
   assetsListEl.textContent = '';
-  const keys = filterModelKeys(listPlaceableModels(assets), query || '');
-  const meshGroups = listMeshAssetGroups(assets, query || '');
+  const showUnused = assetsUnusedChk.checked;
+  const keys = showUnused ? [] : filterModelKeys(listPlaceableModels(assets), query || '');
+  let meshGroups = listMeshAssetGroups(assets, query || '');
+  // OB-029: hide meshes queued for deletion; "unused" keeps only meshes nothing references.
+  const unusedSet = showUnused ? new Set(findUnusedAssets(assets.keys('mesh'), buildAssetSources())) : null;
+  meshGroups = meshGroups.map((g) => ({ pack: g.pack, keys: g.keys.filter((k) => !pendingDeletes.has(k) && (!unusedSet || unusedSet.has(k))) })).filter((g) => g.keys.length);
   if (!keys.length && !meshGroups.length) {
     const empty = document.createElement('div');
     empty.className = 'asset-empty';
@@ -1611,14 +1849,12 @@ async function doImportVox() {
     // runtime add is invisible to it until re-bound (placed prop rendered
     // nothing). Re-bind with the live material table; bumps atlas.version so
     // the GPU re-uploads lazily.
-    frame.voxelPool.bind(assets, frame.fb.matTable);
+    frame.refreshAssets(assets); // ED-MESH-1e: re-binds the pool + pipeline voxels, marks dirty
     frame.markDirty();
     requestIcon(name, true);
     renderAssetsList(assetsSearchInput.value);
     armModelPlacement(name);
-    flash(def.meshOnly && frame.renderer !== 'mesh'
-      ? `imported: ${name} (too large for the editor view: mesh-only model, placed but NOT drawn here - only on ?renderer=mesh; max 32 per axis to see it)`
-      : `imported: ${name} (click viewport to place)`);
+    flash(`imported: ${name} (click viewport to place)`);
   } catch (e) {
     flash(`import .vox failed: ${e && e.message ? e.message : e}`);
   }
@@ -1641,7 +1877,7 @@ async function refreshIoStatus() {
   const gen = ++ioGeneration;
   const err = await validateDoc(doc, window.ASSETS, { reference: bundle });
   if (gen !== ioGeneration) return; // a newer edit landed while this was in flight
-  const dirty = anyDirty(doc) || tb.dirty;
+  const dirty = anyDirty(doc) || tb.dirty || gb.dirty;
   saveBtn.disabled = !!err;
   saveBtn.title = err ? err.message : '';
   ioStatusEl.textContent = err ? `invalid: ${err.message}` : (dirty ? 'unsaved changes' : 'saved');
@@ -1654,7 +1890,9 @@ async function doSave() {
   try {
     const saved = await saveAll(doc);
     if (tb.dirty && tb.layer) { await saveTerrainEdits(tb, { forceDownload: !!doc.readOnly }); saved.push(`terrainEdits/${tb.key}`); }
+    if (gb.dirty && gb.gm) { await saveGrassMask(gb, { forceDownload: !!doc.readOnly }); saved.push(`grassMask/${gb.key}`); }
     flash(saved.length ? `saved: ${saved.join(', ')}` : 'save: nothing dirty');
+    if (!anyDirty(doc) && !tb.dirty && !gb.dirty) autosaver.flush(); // clears the OB-030 autosave record
   } catch (e) {
     flash(`save failed: ${e && e.message ? e.message : e}`);
   }
@@ -1695,9 +1933,30 @@ window.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && ['KeyS','KeyP','KeyD','KeyG'].includes(e.code) && editorKeysActive()) e.preventDefault();
 });
 
+// OB-030: autosave dirty files to IndexedDB every 5 s + on hide; offer restore on open.
+const autosaver = startAutosave(() => doc);
+(async function offerRestore() {
+  let snap = null;
+  try { snap = await getSnapshot(doc.worldId); } catch (e) { return; }
+  if (!snap || !snapshotDiffers(doc, snap).length) return;
+  const bar = document.createElement('div');
+  bar.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:9999;background:#222;color:#fd8;border:1px solid #fd8;padding:8px 12px;font:13px monospace;display:flex;gap:10px;align-items:center';
+  const txt = document.createElement('span');
+  txt.textContent = `Restore unsaved changes from ${new Date(snap.savedAt).toLocaleTimeString()} (${formatAge(snap.savedAt)})?`;
+  const mk = (label, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'ed-btn'; b.textContent = label; b.onclick = () => { bar.remove(); fn(); }; return b; };
+  bar.append(txt,
+    mk('Restore', () => {
+      const keys = applySnapshot(doc, assets, snap);
+      undoStack.clear(); sel = replaceSelection(); rebuild(); refreshIcons(); refreshIoStatus();
+      flash(`restored unsaved changes: ${keys.join(', ')}`);
+    }),
+    mk('Discard', () => { clearSnapshot(doc.worldId).catch(() => {}); }));
+  document.body.appendChild(bar);
+})();
+
 // 24.10: "beforeunload warns while any file is dirty".
 window.addEventListener('beforeunload', (e) => {
-  if (!anyDirty(doc) && !tb.dirty) return;
+  if (!anyDirty(doc) && !tb.dirty && !gb.dirty) return;
   e.preventDefault();
   e.returnValue = '';
 });
@@ -1843,8 +2102,8 @@ function computeMouseCell(e) {
 function pickCtx() {
   return {
     cam, cols: rt.cols, rows: rt.rows, pxCellW: rt.pxCellW, pxCellH: rt.pxCellH,
-    world, assets, fb: frame.fb, gpuPipeline: frame.gpuPipeline, gpuActive: rt.gpuActive,
-    voxelPool: frame.voxelPool, renderer: frame.renderer,
+    world, assets, fb: frame.fb, readSurface: frame.readSurface,
+    voxelPool: frame.voxelPool, renderer: RENDERER,
   };
 }
 
@@ -1860,22 +2119,33 @@ function beginSelectionBox(e, col, row) {
     rect:{minCol:col,maxCol:col,minRow:row,maxRow:row} };
 }
 
-canvas.addEventListener('mousedown', (e) => {
+const clickGuard = makePickGuard(() => world), hoverGuard = makePickGuard(() => world); // one guard per pick channel (click vs hover)
+canvas.addEventListener('mousedown', async (e) => {
   if (e.button !== 0 || !editorKeysActive()) return;
   if (modelPickerEl.style.display !== 'none') return; // US-063: the model picker modal owns clicks while open
   const { col, row } = computeMouseCell(e);
+  const tok = clickGuard.begin();
   if (col < 0 || col >= rt.cols || row < 0 || row >= rt.rows) return;
 
   if (toolMode === 'terrain') { // ED-TERRAIN-1c: the brush owns the left button
-    const hit = pickAt(col, row, pickCtx());
+    const hit = await pickAt(col, row, pickCtx());
+    if (clickGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
     if (hit.kind === 'terrain' && hit.world) { tb.hover = { x: hit.world.x, y: hit.world.y }; terrainStrokeStart(tb.hover); }
     else flash('terrain: click on the terrain');
     return;
   }
+  if (toolMode === 'grass') { // MASK-d: the grass brush owns the left button
+    const hit = await pickAt(col, row, pickCtx());
+    if (clickGuard.isStale(tok)) return;
+    if (hit.kind === 'terrain' && hit.world) { gb.hover = { x: hit.world.x, y: hit.world.y }; grassStrokeStart(gb.hover); }
+    else flash('grass: click on the terrain');
+    return;
+  }
 
   if (placeMode) {
-    const result = pickAt(col, row, pickCtx());
-    const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row, frame.renderer);
+    const result = await pickAt(col, row, pickCtx());
+    if (clickGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+    const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row, RENDERER);
     // 24.9: "at a picked point or cursor ray" - a surface/terrain/entity hit
     // gives a real point; looking at open sky falls back to a point 8 m out
     // along the click ray, so placing never silently no-ops.
@@ -1897,16 +2167,18 @@ canvas.addEventListener('mousedown', (e) => {
     return;
   }
 
-  const result = pickAt(col, row, pickCtx());
+  const decision = await resolveMeshClick(clickGuard, col, row, pickCtx(), tok); // ED-MESH-1g: the one click-resolution path
+  if (decision.action === 'stale') return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+  const result = decision.result;
   lastPickText = formatPickResult(result);
 
-  if (result.kind === 'meshStructure' && result.structureId) {
-    const item = { fileId: fileKey('world', doc.worldId), collection:'structures', id:result.structureId, structId:null };
+  if (decision.action === 'mesh') {
+    const item = { fileId: fileKey('world', doc.worldId), collection:'structures', id:decision.structureId, structId:null };
     const already = primarySelection()?.collection === 'structures' && primarySelection().id === item.id;
     selectItem(item);
     if (already && toolMode === 'move') {
       const data = selectionItemData(doc,item), s=world.structures.find(s=>s.id===item.id);
-      if(data?.mesh && s) meshDrag={ item, startOrigin:{...data.origin}, point:result.world, origin:null, preview:beginMeshDragPreview(world,item.id) };
+      if(data?.mesh && s) meshDrag={ item, startOrigin:{...data.origin}, point:decision.world, origin:null, preview:beginMeshDragPreview(world,item.id) };
     }
     return;
   }
@@ -1919,7 +2191,8 @@ canvas.addEventListener('mousedown', (e) => {
     // It stays selectable from the scene tree (that path never calls this).
     const item = pickSelectionOrNull(visState, rawItem);
     if (!item) {
-      const marker = pickMarkers(col, row, pickCtx());
+      const marker = await pickMarkers(col, row, pickCtx());
+      if (clickGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
       if (marker) { selectMarker(e,col,row,marker); return; }
       beginSelectionBox(e,col,row);
       return;
@@ -1970,13 +2243,15 @@ canvas.addEventListener('mousedown', (e) => {
     }
     return;
   }
-  const marker = pickMarkers(col, row, pickCtx());
+  const marker = await pickMarkers(col, row, pickCtx());
+  if (clickGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
   if (marker) { selectMarker(e,col,row,marker); return; }
   beginSelectionBox(e,col,row);
 });
 
-window.addEventListener('mousemove', (e) => {
+window.addEventListener('mousemove', async (e) => {
   const { col, row } = computeMouseCell(e);
+  const tok = hoverGuard.begin();
   if (col >= 0 && col < rt.cols && row >= 0 && row < rt.rows) { hoverCol = col; hoverRow = row; frame.markDirty(); }
   if (boxDrag) {
     const dx=e.clientX-boxDrag.startX,dy=e.clientY-boxDrag.startY;
@@ -1990,7 +2265,7 @@ window.addEventListener('mousemove', (e) => {
     frame.markDirty();return;
   }
   if (meshDrag) {
-    const ray=unprojectCell(cam,rt.cols,rt.rows,rt.pxCellW,rt.pxCellH,col,row,frame.renderer);
+    const ray=unprojectCell(cam,rt.cols,rt.rows,rt.pxCellW,rt.pxCellH,col,row,RENDERER);
     if(Math.abs(ray.dz)<1e-4)return;
     const distance=(meshDrag.point.z-cam.z)/ray.dz;
     if(distance<=0)return;
@@ -2037,8 +2312,9 @@ window.addEventListener('mousemove', (e) => {
       assetDrag.overView = true;
       assetDrag.lastCol = col;
       assetDrag.lastRow = row;
-      const result = pickAt(col, row, pickCtx());
-      const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row, frame.renderer);
+      const result = await pickAt(col, row, pickCtx());
+      if (hoverGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+      const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row, RENDERER);
       const point = result.world || rayPoint(ray, 8);
       assetDrag.rawPoint = point;
       const meshKey = meshKeyFromIcon(assetDrag.modelKey);
@@ -2076,7 +2352,7 @@ window.addEventListener('mousemove', (e) => {
     const d=groupDrag;
     if (d.mode==='yaw') updateGroupTransform(d.snapshot,0,0,0,(e.clientX-d.startClientX)*0.5);
     else {
-      const ray=unprojectCell(cam,rt.cols,rt.rows,rt.pxCellW,rt.pxCellH,col,row,frame.renderer);
+      const ray=unprojectCell(cam,rt.cols,rt.rows,rt.pxCellW,rt.pxCellH,col,row,RENDERER);
       if (Math.abs(ray.dz)<1e-4 || (d.planeZ-cam.z)/ray.dz<=0) return;
       const point=rayPoint(ray,(d.planeZ-cam.z)/ray.dz), snap=SNAP_OPTIONS[snapIdx];
       updateGroupTransform(d.snapshot,snapTo(point.x-d.start.x,snap),snapTo(point.y-d.start.y,snap));
@@ -2088,7 +2364,7 @@ window.addEventListener('mousemove', (e) => {
     world.renderVersion++;frame.markDirty();return;
   }
   if (!drag) return;
-  const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row, frame.renderer);
+  const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row, RENDERER);
   if (Math.abs(ray.dz) < 1e-4) return;
   const d = (drag.startTransform.z - cam.z) / ray.dz;
   if (d <= 0) return;
@@ -2112,6 +2388,7 @@ window.addEventListener('mouseup', (e) => {
     return;
   }
   if (tb.stroke) { terrainStrokeEnd(false); return; }
+  if (gb.stroke) { grassStrokeEnd(false); return; }
   if (boxDrag) {
     const box=boxDrag;boxDrag=null;
     if (box.moved) {
@@ -2189,12 +2466,15 @@ window.addEventListener('mouseup', (e) => {
 });
 
 // ED-TERRAIN-1c: cursor ring + stroke dabs follow the pointer over the terrain.
-canvas.addEventListener('mousemove', (e) => {
-  if (toolMode !== 'terrain') return;
+canvas.addEventListener('mousemove', async (e) => {
+  if (toolMode !== 'terrain' && toolMode !== 'grass') return;
   const { col, row } = computeMouseCell(e);
+  const tok = hoverGuard.begin();
   if (col < 0 || col >= rt.cols || row < 0 || row >= rt.rows) return;
-  const hit = pickAt(col, row, pickCtx());
+  const hit = await pickAt(col, row, pickCtx());
+  if (hoverGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
   if (hit.kind === 'terrain' && hit.world) {
+    if (toolMode === 'grass') { gb.hover = { x: hit.world.x, y: hit.world.y }; if (gb.stroke) grassStrokeMove(gb.hover); frame.markDirty(); return; }
     tb.hover = { x: hit.world.x, y: hit.world.y };
     if (tb.stroke) terrainStrokeMove(tb.hover);
     frame.markDirty();
@@ -2228,6 +2508,7 @@ speedInput.addEventListener('change', () => {
 });
 canvas.addEventListener('wheel', (e) => {
   if (!editorKeysActive()) return;
+  if (cam.projection === 'ortho') { cam.orthoHalfH = adjustOrthoHalfH(cam.orthoHalfH, e.deltaY); frame.markDirty(); e.preventDefault(); return; }
   speed = adjustSpeed(speed, e.deltaY);
   speedInput.value = speed.toFixed(2);
   e.preventDefault();
@@ -2236,10 +2517,48 @@ canvas.addEventListener('wheel', (e) => {
 let animate = false;
 animateToggle.addEventListener('change', () => { animate = animateToggle.checked; frame.markDirty(); });
 
+// US-068c view presets: orbit around the point VIEW_PIVOT_M ahead of the eye (no selection logic), perspective only.
+const VIEW_PIVOT_M = 10;
+// US-068d: focus = selection centre, else the pivot ahead of the eye
+function currentFocus() {
+  const sp = selectionPoint();
+  if (sp) return { x: sp.x, y: sp.y, z: sp.z };
+  if (cam.projection === 'ortho') return { x: cam.x, y: cam.y, z: cam.z };
+  // 38.19 item 3: terrain hit under screen centre (sync CPU march), else the point VIEW_PIVOT_M ahead
+  try {
+    const hit = tb?.terrain && screenCentreGroundHit(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, (x, y) => tb.terrain.heightAt(x, y));
+    if (hit) return hit;
+  } catch (_) { /* fall through */ }
+  const y = cam.yawDeg * Math.PI / 180, p = cam.pitchDeg * Math.PI / 180;
+  return {
+    x: cam.x + Math.sin(y) * Math.cos(p) * VIEW_PIVOT_M,
+    y: cam.y - Math.cos(y) * Math.cos(p) * VIEW_PIVOT_M,
+    z: cam.z + Math.sin(p) * VIEW_PIVOT_M,
+  };
+}
+function toggleOrthoView() { toggleOrtho(cam, currentFocus()); axisGizmo.update(); frame.markDirty(); }
+function setViewPreset(name) {
+  const y = cam.yawDeg * Math.PI / 180, p = cam.pitchDeg * Math.PI / 180;
+  const focus = {
+    x: cam.x + Math.sin(y) * Math.cos(p) * VIEW_PIVOT_M,
+    y: cam.y - Math.cos(y) * Math.cos(p) * VIEW_PIVOT_M,
+    z: cam.z + Math.sin(p) * VIEW_PIVOT_M,
+  };
+  applyViewPreset(cam, name, focus, pitchClampDeg);
+  axisGizmo.update();
+  frame.markDirty();
+}
+const axisGizmo = createAxisGizmo(document.getElementById('viewport'), { getView: () => cam, onPreset: setViewPreset,
+  onAxis: (k) => { lookAlongAxis(cam, k, currentFocus()); axisGizmo.update(); frame.markDirty(); } });
+
 function update(dt) {
   if (!editorKeysActive()) { input.endFrame(); return; }
   if (input.pressed('F3')) overlay.toggle();
-  if (input.pressed('Home')) { cam = startPose(); frame.markDirty(); }
+  if (input.pressed('Home')) { cam = startPose(); axisGizmo.update(); frame.markDirty(); }
+  if (input.pressed('Numpad5')) toggleOrthoView();
+  if (input.pressed('Numpad7')) setViewPreset('TOP');
+  if (input.pressed('Numpad1')) setViewPreset('FRONT');
+  if (input.pressed('Numpad9')) setViewPreset('ISO');
   if (input.pressed('KeyT')) teleportToSelection();
   if (input.pressed('KeyM')) { markersOn = !markersOn; frame.markDirty(); }
   if (input.pressed('KeyH')) { helpOn = !helpOn; frame.markDirty(); } // US-063 key-help overlay
@@ -2326,6 +2645,8 @@ function update(dt) {
   const changed = updateCamera(cam, input, dt, { speed, lookDx: rmbDown ? dx : 0, lookDy: rmbDown ? dy : 0, pitchClampDeg });
   if (changed) {
     frame.markDirty();
+    clickGuard.bump(); hoverGuard.bump(); // 38.26: a camera move invalidates any in-flight readSurface pick
+    axisGizmo.update();
     savePoseDebounced(cam);
   }
   input.endFrame();
@@ -2374,25 +2695,28 @@ function drawHelpOverlay() {
 function drawAssetGhost() {
   if (!assetDrag || !assetDrag.moved || !assetDrag.overView || !assetDrag.ghostPoint) return;
   const p = assetDrag.ghostPoint;
-  const proj = projectPoint(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, p, frame.renderer);
+  const proj = projectPoint(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, p, RENDERER);
   if (!(proj.depth > 0)) return;
   const c = Math.round(proj.col), r = Math.round(proj.row);
   if (c < 0 || c >= rt.cols || r < 0 || r >= rt.rows) return;
   const goldHex = (assets.palette.colors && assets.palette.colors.gold) || '#ffd24a';
   const dimHex = (assets.palette.colors && assets.palette.colors.uiDim) || '#8b949e';
   const bgHex = '#0c120c'; // matches drawHelpOverlay's panel background
-  rt.setCell(c, r, '+', goldHex, bgHex);
-  drawText(rt, c + 1, r, ` ${meshKeyFromIcon(assetDrag.modelKey) ?? assetDrag.modelKey}`, dimHex, bgHex);
+  overlayPlate.setCell(c, r, '+', goldHex, bgHex);
+  drawText(overlayPlate, c + 1, r, ` ${meshKeyFromIcon(assetDrag.modelKey) ?? assetDrag.modelKey}`, dimHex, bgHex);
 }
 
+const overlayPlate = createOverlayTarget(engine.ui, rt);
+const overlayGlyph = createOverlayTarget(engine.ui, rt, { glyphOnly: true });
 function drawOverlay(fb) {
   const selection = primarySelection();
-  if (markersOn) drawMarkers(rt, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets.palette, selection, frame.renderer, groupDrag?.previewItems);
-  for (const item of sel.items) drawSelectionHighlight(rt, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets, doc, item, '#ffd24a', frame.renderer, groupDrag?.previewItems);
-  if (boxDrag?.moved) drawMeshHighlightRect(rt,boxDrag.rect,'#ffd24a');
-  drawHoverOutline(rt, hoverCol, hoverRow, '#7CFC7C');
+  if (markersOn) drawMarkers(overlayPlate, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets.palette, selection, RENDERER, groupDrag?.previewItems);
+  for (const item of sel.items) drawSelectionHighlight(overlayPlate, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets, doc, item, '#ffd24a', RENDERER, groupDrag?.previewItems);
+  if (boxDrag?.moved) drawMeshHighlightRect(overlayPlate,boxDrag.rect,'#ffd24a');
+  drawHoverOutline(overlayGlyph, hoverCol, hoverRow, '#7CFC7C');
   drawAssetGhost();
   drawTerrainCursor();
+  drawGrassCursor();
   if (helpOn) drawHelpOverlay();
   void fb;
 }
@@ -2405,6 +2729,8 @@ let lastPlateRefresh = -Infinity;
 function refreshViewportPlates(nowMs) {
   if (nowMs - lastPlateRefresh < 250) return;
   lastPlateRefresh = nowMs;
+  // WS2: the editor camera flies anywhere; keep the near band under it (else the far-canopy edge skirt shows as a green block)
+  if (world && world.ensureBandFor && world.ensureBandFor(cam.x, cam.y, world.bandSwitch.switchM)) frame.markDirty();
   camPlateEl.textContent = `CAM ${cam.x.toFixed(1)} ${cam.y.toFixed(1)} ${cam.z.toFixed(1)}  yaw ${cam.yawDeg.toFixed(0)} pitch ${cam.pitchDeg.toFixed(0)}  SPD ${speed.toFixed(1)} m/s`;
   const fps = engine.loop.stats.intervalMs > 0 ? 1000 / engine.loop.stats.intervalMs : 0;
   statsPlateEl.textContent = `${fps.toFixed(0)} fps  grid ${rt.cols}x${rt.rows}  presented ${lastPresented}`;
@@ -2413,7 +2739,7 @@ function refreshViewportPlates(nowMs) {
 function render() {
   const selection = primarySelection();
   rebuildSched.flush(); // ED-MESH-1d: one coalesced rebuild per frame (31.3)
-  const rendered = frame.step(world, cam, { animate, dt: 1 / 60, drawOverlay });
+  const rendered = frame.step(world, cam, { animate, dt: 1 / 60, beforePresent: drawOverlay });
   if (rendered) lastPresented++;
   refreshViewportPlates(performance.now());
   if (overlay.shouldRefresh(performance.now())) {
@@ -2424,7 +2750,7 @@ function render() {
       + `speed: ${speed.toFixed(1)} m/s  animate: ${animate}  snap: ${SNAP_OPTIONS[snapIdx]} m  cell: (${hoverCol ?? '-'},${hoverRow ?? '-'})\n`
       + `selected: ${sel.items.length} · ${selText}${placeMode ? `  place: ${placeMode}` : ''}\n`
       + `${lastPickText}\n`
-      + `presented: ${lastPresented}  backend: ${rt.backend}${frame.gpuPipeline ? ' gpu' : ' js'}`);
+      + `presented: ${lastPresented}  backend: ${rt.backend}${frame.gpuOwnsFrame ? ' gpu' : ' js'}`);
   }
   statusEl.textContent = (doc.readOnly ? 'content: design/*.js (read-only source)\n' : '') + lastPickText;
 }
@@ -2455,4 +2781,4 @@ window.__editor = {
   doImportVox,
 };
 
-if (!gpuBlocked) engine.run({ update, render });
+engine.run({ update, render });

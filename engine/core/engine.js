@@ -3,7 +3,9 @@
 // implementation lives here.
 
 import { RenderTarget } from '../render/RenderTarget.js';
-import { InstanceGroups, MAX_INSTANCE_GROUPS, writeUnitInstance } from '../mesh/instances.js';
+import { InstanceGroups, MAX_INSTANCE_GROUPS, writeUnitInstance, INSTANCE_STRIDE, INST_FLAGS, INST_OBJECT_ID, touchInstances } from '../mesh/instances.js';
+import { INST_FLAG_SWAY } from '../mesh/sway.js';
+import { vegTintObjectId } from '../mesh/vegTint.js';
 import { bindDetailInstances, feedDetail, removeDetailInstances } from '../mesh/scatterFeed.js';
 import { resolveGfxKnobs, keepPlacement } from '../mesh/gfxKnobs.js';
 import { createViewModelLayer } from '../render/viewModel.js';
@@ -26,13 +28,14 @@ export const GRID_MIN_COLS = 160;
 // exactly 240x90 / 320x120 / 400x150 / 480x180 at the 8:3 aspect below.
 // 160x60 stays reachable (dev-only, via `?grid=`) but is no longer a
 // player-facing option (US-038b's list starts at 240x90).
-export const GRID_MAX_COLS = 480;
+// GRID-MAX-01 (amends D-025, owner 2026-10-10): max raised 480 -> 800 (800x300); RenderTarget.canHoldGrid refuses what the GPU cannot hold.
+export const GRID_MAX_COLS = 800;
 // D-009 amendment 2 (owner decision, 2026-09-23): 320x120 cells are 4-6 px
 // on a normal laptop screen - too small to read. Default is now 240x90;
 // `?grid=` still overrides, range is 160x60..480x180 (D-025). Auto-grid-by-
 // window (architect review 1's recommendation) is a future story, not built here.
 export const GRID_DEFAULT_COLS = 240; // US-030a 14.2 item 5: the default on the gl2 GPU path
-export const GRID_ASPECT = 3 / 8; // rows = round(cols * GRID_ASPECT) - 160x60 .. 480x180
+export const GRID_ASPECT = 3 / 8; // rows = round(cols * GRID_ASPECT) - 160x60 .. 800x300
 
 export const SCATTER_OBJECT_BASE = 0x20000;
 
@@ -74,13 +77,24 @@ export function bindScatterInstances(world, instances, previous = [], owner = nu
     if (!counts[s]) continue;
     const sp = cfg.species[s];
     const group = sp.mesh !== undefined ? instances.meshGroup(world.scatterMeshes[s], counts[s]) : instances.group(sp.model, counts[s]);
-    if (sp.mesh !== undefined) group.castShadow = sp.shadow !== false; // mesh groups: no LOD (37.15 item 6)
-    else group.lodCells = cfg.lodCells / knobs.lodScale; // GFX-03: switch distance x lodScale
+    if (sp.mesh !== undefined) group.castShadow = sp.shadow !== false; // mesh groups: LOD off unless the species sets lodCells
+    else group.lodCells = (sp.lodCells ?? cfg.lodCells) / knobs.lodScale; // GFX-03: switch distance x lodScale
+    // MESH-LOD-CELLS-01: per-species override (validated in scatter.js); mesh groups need a ready LOD1 mesh (`lods`) to use it
+    if (sp.mesh !== undefined && sp.lodCells !== undefined) group.lodCells = sp.lodCells / knobs.lodScale;
+    if (sp.lod0Cap !== undefined) group.lod0Cap = sp.lod0Cap;
+    { const md = sp.maxDistM ?? cfg.maxDistM; if (md > 0) group.maxDistM = md; } // OB-089: draw-distance cut (far forest tint takes over)
     for (let i = 0; i < scatter.count; i++) {
       if (scatter.species[i] !== s || (keep && !keep[i])) continue;
       writeUnitInstance(group.ib, group.count++, scatter.x[i], scatter.y[i], scatter.z[i],
         scatter.yawDeg[i], SCATTER_OBJECT_BASE | i, 0);
+      // FOLIAGE-SWAY-01: species.sway (explicit per-species flag, no name matching) ORs INST_FLAG_SWAY into word 13,
+      // keeping the aligned/team bits writeUnitInstance just wrote. sway.js owns the bit and the zero-wind-off behavior.
+      if (sp.sway) {
+        group.ib.u32[(group.count - 1) * INSTANCE_STRIDE + INST_FLAGS] |= INST_FLAG_SWAY;
+        group.ib.u32[(group.count - 1) * INSTANCE_STRIDE + INST_OBJECT_ID] = vegTintObjectId(SCATTER_OBJECT_BASE | i, i, scatter.x[i], scatter.y[i]); // AUD-47
+      }
     }
+    if (sp.sway && group.count) touchInstances(group.ib); // raw u32 write above, batched once per group (instances.js convention)
     groups.push(group);
   }
   if (owner && world?.detail) {
@@ -205,6 +219,7 @@ export function createEngine(opts) {
 
   const engine = {
     _detail: null,
+    feedVoxels: null, // WILD-05 hook (pool, cam), called after voxelPool.collect; the game sets it to fauna.feed
     feedDetail(cam, force = false) {
       if (engine._detail) return feedDetail(engine._detail, cam.x, cam.y, force || !!cam.teleport);
       return 0;
@@ -303,7 +318,7 @@ export function createEngine(opts) {
       // put; a settings menu offering this grid on such a back-end is a
       // product bug upstream of this call, not something to crash over.
       const wgReady = rt.backend === 'webgpu' && !!renderPipeline && renderPipeline.ready;
-      if ((rt.backend !== 'gl2' && !wgReady) || engine.gridRequest.gpu === false) {
+      if (!wgReady || engine.gridRequest.gpu === false) {
         console.warn(`[engine.setGrid] no GPU grid on this back-end (backend=${rt.backend}, gpu=${engine.gridRequest.gpu}) - staying at ${rt.cols}x${rt.rows}`);
         return { cols: rt.cols, rows: rt.rows, clamped: g.clamped, pending: false };
       }

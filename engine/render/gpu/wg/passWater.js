@@ -20,23 +20,33 @@
 //   Formats: WATER 'rgba32ui' (+ own depth24 target), comp outputs 'rgba8' (sampled by edge as float). dispose() frees everything.
 import { WATER_BLOCK, WATER_WGSL, WATER_TEXTURES } from '../wgsl/water.wgsl.js';
 import { WATER_COMPOSITE_BLOCK, WATER_COMPOSITE_WGSL, WATER_COMPOSITE_TEXTURES } from '../wgsl/waterComposite.wgsl.js';
+import { WATER_RIVER_WGSL, WATER_RIVER_VERTEX_LAYOUT, WATER_RIVER_VERTEX_STRIDE_BYTES } from '../wgsl/waterRiver.wgsl.js';
+import { buildRiverMesh } from '../../../mesh/waterMesh.js';
 import { WaterLayer, WATER_VERTEX_LAYOUT, WATER_VERTEX_STRIDE_BYTES, WATER_CLEAR_X } from '../waterLayer.js';
-import { selectWater, createWaterSelection, RUNS_STRIDE } from '../../water.js';
+import { selectWater, createWaterSelection, RUNS_STRIDE, RIVER_RUNS_STRIDE, WATER_RIVER_SLOT0 } from '../../water.js';
 import { WATER_U_STRIDE, U_KIND, U_Z, U_AABB, U_SHAPE, U_SLOT } from '../../../mesh/waterMesh.js';
-import { WL_STRIDE, WL_SLOTS, WFOG_LEN, defaultWaterLooks, resolveWaterLooks, fillWaterSlotTable, waterFogParams, packRipples } from '../../waterLook.js';
-import { RIPPLE_MAX } from '../../../world/water.js'; // S8-B2-13 (38.14)
+import {
+  WL_STRIDE, WL_SLOTS, WFOG_LEN, RIPPLE_SLOTS, DEFAULT_RIPPLE_GLYPH, DEFAULT_RIPPLE_GAIN,
+  defaultWaterLooks, resolveWaterLooks, fillWaterSlotTable, waterFogParams,
+} from '../../waterLook.js';
+import { SKY_LUT_N } from '../wgsl/skyLut.js';
+import { skyLutFromPalette } from '../../waterReflect.js';
 import { sunFromWorld } from '../../lighting.js';
 import { PROJ_HFOV_DEG } from '../../projection.js';
 
 const WF = (n) => WATER_BLOCK.field(n).word;
-const W_MVP = WF('mvp'), W_AABB = WF('aabb'), W_SHAPE = WF('shape'), W_Z = WF('z'), W_KIND = WF('kind'), W_SLOT = WF('slot');
+const W_PROJ = WF('projMode'), W_MVP = WF('mvp'), W_AABB = WF('aabb'), W_SHAPE = WF('shape'), W_Z = WF('z'), W_KIND = WF('kind'), W_SLOT = WF('slot');
+const W_CK0 = WF('clipK0'), W_CK1 = WF('clipK1'), W_CLIP0 = WF('clip0'), W_CLIP1 = WF('clip1');
 const CF = (n) => WATER_COMPOSITE_BLOCK.field(n).word;
 const C_COLS = CF('gridCols'), C_ROWS = CF('gridRows'), C_SUNMAP = CF('sunMapOn'), C_PROJ = CF('projMode'), C_SUNDIR = CF('sunDir');
 const C_AMB = CF('ambientI'), C_SUNI = CF('sunI'), C_POSX = CF('posX'), C_POSY = CF('posY'), C_EYEH = CF('eyeH'), C_DIRX = CF('dirX'), C_DIRY = CF('dirY');
 const C_PLANEX = CF('planeX'), C_PLANEY = CF('planeY'), C_HORIZON = CF('horizonRow'), C_PLANEDY = CF('planeDistY'), C_TIME = CF('timeSec');
 const C_PA = CF('pitchA'), C_PB = CF('pitchB'), C_PC = CF('pitchC'), C_WL = CF('wl'), C_WFOG = CF('wfog');
-// S8-B2-13 (38.14): splash ripples. `rippleCount` (i32) + `ripple` (8 x vec4: x, y, r, s per live ring).
-const C_RIPPLE_COUNT = CF('rippleCount'), C_RIPPLE = CF('ripple');
+// S8-B2-13b (38.14, the note of record): splash ripples. `rippleCount` (i32), the global `rippleGlyph`/`rippleGain`
+// uniform (fb overrides, else waterLook.js defaults), and `ripple` (8 x vec4: x, y, age, amp per live ring).
+const C_REFLECT = CF('reflectU'), C_SKYLUT = CF('skyLut'); // AUD-42
+const C_UNDER_ON = CF('underOn');
+const C_RIPPLE_COUNT = CF('rippleCount'), C_RIPPLE_GLYPH = CF('rippleGlyph'), C_RIPPLE_GAIN = CF('rippleGain'), C_RIPPLE = CF('ripple');
 
 export class WgWaterPass {
   /** @param {any} device */
@@ -44,6 +54,7 @@ export class WgWaterPass {
     this.device = device;
     this.cols = 0; this.rows = 0;
     this.active = false;
+    this.forceOff = false; // test-only (gpucompare `stable` sub-case: water inactive); default false = unchanged
     this.stats = { waterSlots: 0, waterDraws: 0 };
     this.layer = new WaterLayer(device);
     this.sel = createWaterSelection();
@@ -55,18 +66,25 @@ export class WgWaterPass {
     this.cam = { posX: 0, posY: 0, eyeH: 0, dirX: 0, dirY: 0, planeX: 0, planeY: 0, horizonRow: 0, planeDistY: 0 };
     this.wu = new Float32Array(WATER_BLOCK.sizeWords); this.wi = new Int32Array(this.wu.buffer); this.wb = new Uint32Array(this.wu.buffer);
     this.cu = new Float32Array(WATER_COMPOSITE_BLOCK.sizeWords); this.ci = new Int32Array(this.cu.buffer);
-    this._rip32 = new Float32Array(RIPPLE_MAX * 4); // S8-B2-13 (38.14): packRipples scratch, allocated once
-    this.view = null; // the raster pass's f64 viewProj (set by prepare)
+    this._rip32 = new Float32Array(RIPPLE_SLOTS * 4); // S8-B2-13b (38.14): packInto scratch, allocated once
+    this._lut = new Float32Array(4 * SKY_LUT_N); this._lutPal = null; this._lutTime = null; this._lutVer = 0; this._lutBakes = 0; this._lutTop = 0; // AUD-42: sky LUT bake cache
+    this.projMode = 0; this.view = null; // the raster pass's f64 viewProj (set by prepare)
     this.clearOpts = { clear: { color: [[WATER_CLEAR_X, 0, 0, 0]], depth: 1 } };
     this.waterTex = [{ slot: 0, texture: null }];
     this.waterBind = { uniforms: this.wu, textures: this.waterTex, vertexBuffer: null, indexBuffer: null };
     this.compTex = [0, 1, 2, 3, 4, 5].map((slot) => ({ slot, texture: null }));
     this.compBind = { uniforms: this.cu, textures: this.compTex };
-    this.dummy = null; this.waterPipe = null; this.compPipe = null; this.clip = null; this._bound = null;
+    this._worldWater = null; this.dummy = null; this.waterPipe = null; this.riverPipe = null; this.compPipe = null; this.clip = null; this._bound = null;
     try {
       this.waterPipe = device.createPipeline({
         vertex: { src: { wgsl: WATER_WGSL }, layout: WATER_VERTEX_LAYOUT, strideBytes: WATER_VERTEX_STRIDE_BYTES },
         fragment: { src: { wgsl: WATER_WGSL }, targets: 1 },
+        bindings: { uniformBytes: WATER_BLOCK.sizeBytes, textures: WATER_TEXTURES.slice() },
+        targetFormats: ['rgba32ui'], depthFormat: 'depth24', depth: { test: true, write: true }, cull: 'none', frontFace: 'cw',
+      });
+      this.riverPipe = device.createPipeline({ // RIVER-03: ribbon draws (2 attributes), same bindings / target as the clipmap pipeline
+        vertex: { src: { wgsl: WATER_RIVER_WGSL }, layout: WATER_RIVER_VERTEX_LAYOUT, strideBytes: WATER_RIVER_VERTEX_STRIDE_BYTES },
+        fragment: { src: { wgsl: WATER_RIVER_WGSL }, targets: 1 },
         bindings: { uniformBytes: WATER_BLOCK.sizeBytes, textures: WATER_TEXTURES.slice() },
         targetFormats: ['rgba32ui'], depthFormat: 'depth24', depth: { test: true, write: true }, cull: 'none', frontFace: 'cw',
       });
@@ -94,6 +112,8 @@ export class WgWaterPass {
     this._bound = world;
     const falls = world && world.waterfalls;
     for (let i = 0; falls && i < falls.length; i++) this.layer.sheet(falls[i].mesh);
+    const rivers = world && world.water && world.water.rivers; // RIVER-03: ribbon buffers are static, uploaded once per world
+    for (let i = 0; rivers && i < rivers.length; i++) this.layer.sheet(rivers[i].mesh || (rivers[i].mesh = buildRiverMesh(rivers[i])));
   }
 
   /** = setWaterLooks: the designer table resolved to numbers once (absent -> engine defaults). */
@@ -111,10 +131,11 @@ export class WgWaterPass {
    */
   prepare(p, raster) {
     const world = p._world, sel = this.sel;
-    this.view = raster.view;
+    this._worldWater = world.water || null;
+    this.view = raster.view; this.projMode = raster.ortho ? 2 : 0;
     selectWater(world, p._cam, raster.planes, sel);
-    this.active = (sel.count + sel.sheetCount) > 0 && !!this.layer.target;
-    this.stats.waterSlots = sel.count + sel.sheetCount;
+    this.active = (sel.count + sel.sheetCount + sel.riverCount) > 0 && !!this.layer.target && !this.forceOff;
+    this.stats.waterSlots = sel.count + sel.sheetCount + sel.riverCount;
     if (this.active) {
       const t = this.wlTable, os = this.waterOS;
       fillWaterSlotTable(sel, world, this.looks, t, (p._fb && p._fb.timeSec) || 0);
@@ -130,6 +151,7 @@ export class WgWaterPass {
     const d = this.device, sel = this.sel, layer = this.layer, u = sel.u, wu = this.wu, wi = this.wi, wb = this.wb, M = this.view;
     this.waterTex[0].texture = sceneDepth;
     const ox = sel.O[0], oy = sel.O[1];
+    wi[W_PROJ] = this.projMode; // US-068b2: 2 = ortho (linear depth in water.wgsl)
     for (let k = 0; k < 12; k++) wu[W_MVP + k] = M[k];
     for (let k = 0; k < 4; k++) wu[W_MVP + 12 + k] = M[k] * ox + M[4 + k] * oy + M[12 + k]; // viewProj * T(O, 0), f64 -> f32
     const bd = this.waterBind;
@@ -152,8 +174,31 @@ export class WgWaterPass {
         d.bind(this.waterPipe, bd);
         d.draw(fall.mesh.index.length, 0, 1); draws++;
       }
+      // RIVER-03 (38.45): ribbons, slots 12..13; runs = index ranges into the static ribbon mesh (mirrors rasterRiverSlot)
+      const wt = this._worldWater;
+      for (let k = 0; k < sel.riverCount; k++) {
+        const slot = WATER_RIVER_SLOT0 + k, b = slot * WATER_U_STRIDE, ro = k * RIVER_RUNS_STRIDE;
+        const buffers = layer.sheet(sel.riverMesh[k]);
+        wi[W_KIND] = 3; wb[W_SLOT] = slot;
+        wu[W_SHAPE] = u[b + U_SHAPE]; wu[W_SHAPE + 1] = u[b + U_SHAPE + 1]; wu[W_SHAPE + 2] = 0; wu[W_SHAPE + 3] = 0;
+        for (let c = 0; c < 2; c++) this._clipUniform(wt, sel.clip[k * 2 + c], c, ox, oy);
+        bd.vertexBuffer = buffers.vertexBuffer; bd.indexBuffer = buffers.indexBuffer;
+        d.bind(this.riverPipe, bd);
+        for (let r = 0; r < sel.riverRuns[ro]; r++) { d.draw(sel.riverRuns[ro + 2 + r * 2], sel.riverRuns[ro + 1 + r * 2], 1); draws++; }
+      }
     } finally { d.endPass(); }
     this.stats.waterDraws = draws;
+  }
+
+  /** Clip region `ri` (world.water index, -1 none) -> uniform slot c (0/1): kind + shape local to O (twin: rasterJS.js inClipRegion). */
+  _clipUniform(wt, ri, c, ox, oy) {
+    const wu = this.wu, wi = this.wi, o = c ? W_CLIP1 : W_CLIP0;
+    let kind = -1;
+    if (ri >= 0 && wt) {
+      if (wt.kind[ri] === 0) { kind = 0; wu[o] = wt.x0[ri] - ox; wu[o + 1] = wt.y0[ri] - oy; wu[o + 2] = wt.x1[ri] - ox; wu[o + 3] = wt.y1[ri] - oy; }
+      else if (wt.kind[ri] === 1) { kind = 1; wu[o] = wt.cx[ri] - ox; wu[o + 1] = wt.cy[ri] - oy; wu[o + 2] = wt.r2[ri]; wu[o + 3] = 0; }
+    }
+    wi[c ? W_CK1 : W_CK0] = kind;
   }
 
   _camBasis(cam, cols, rows, rt) {
@@ -180,12 +225,13 @@ export class WgWaterPass {
     const light = p._light, rp = p._rasterPass, pitched = !!(rp && rp.pitched);
     ci[C_COLS] = p.cols; ci[C_ROWS] = p.rows;
     ci[C_SUNMAP] = inp.shadowActive && light && light.sun && light.sun.on ? 1 : 0;
-    ci[C_PROJ] = pitched ? 1 : 0;
+    ci[C_PROJ] = pitched ? (rp.ortho ? 2 : 1) : 0; // US-068b2
     cu[C_SUNDIR] = sun.dirX; cu[C_SUNDIR + 1] = sun.dirY; cu[C_SUNDIR + 2] = sun.dirZ;
     cu[C_AMB] = sun.ambientI; cu[C_SUNI] = sun.sunI;
     cu[C_POSX] = cb.posX; cu[C_POSY] = cb.posY; cu[C_EYEH] = cb.eyeH; cu[C_DIRX] = cb.dirX; cu[C_DIRY] = cb.dirY;
     cu[C_PLANEX] = cb.planeX; cu[C_PLANEY] = cb.planeY; cu[C_HORIZON] = cb.horizonRow; cu[C_PLANEDY] = cb.planeDistY;
-    cu[C_TIME] = (p._fb && p._fb.timeSec) || 0;
+    const fb = p._fb, timeSec = (fb && fb.timeSec) || 0;
+    cu[C_TIME] = timeSec;
     if (pitched) {
       const q = rp.pitch;
       cu[C_PA] = q.fX; cu[C_PA + 1] = q.fY; cu[C_PA + 2] = q.fZ; cu[C_PA + 3] = q.tanHalfX;
@@ -193,12 +239,21 @@ export class WgWaterPass {
       cu[C_PC] = q.uZ; cu[C_PC + 1] = q.tanHalfY; cu[C_PC + 2] = q.cosP; cu[C_PC + 3] = q.sinP;
     }
     cu.set(this.wlTable, C_WL); cu.set(this.wfog, C_WFOG);
-    // S8-B2-13 (38.14): splash ripples, zero-alloc (this._rip32 preallocated on construct). 0 rings: only rippleCount
+    const pal = p._palette; // AUD-42: re-bake only when the palette / time of day changes
+    if (pal !== this._lutPal || (pal && (pal.defaultTime !== this._lutTime || (pal.liveLookVersion | 0) !== this._lutVer))) { // DN-02: also on liveLookVersion (twin: waterComposite.js)
+      this._lutBakes++; this._lutPal = pal; this._lutTime = pal ? pal.defaultTime : null; this._lutVer = pal ? (pal.liveLookVersion | 0) : 0; this._lutTop = skyLutFromPalette(pal, this._lut);
+      cu.set(this._lut, C_SKYLUT);
+    }
+    cu[C_REFLECT] = this._lutTop;
+    // S8-B2-13b (38.14, the note of record): splash ripples, zero-alloc (this._rip32 preallocated on construct).
+    // fb.ripples is duck-typed {packInto} (engine/fx/ripples.js); absent = 0 rings. 0 rings: only rippleCount
     // changes - the `ripple` words are never read past rippleCount (shader's early break), so leave them untouched.
-    const water = p._world && p._world.water;
-    const ripN = water ? packRipples(water, this._rip32) : 0;
+    const ripN = fb && fb.ripples ? fb.ripples.packInto(timeSec, this._rip32) : 0;
     ci[C_RIPPLE_COUNT] = ripN;
     if (ripN > 0) cu.set(this._rip32, C_RIPPLE);
+    ci[C_RIPPLE_GLYPH] = (fb && fb.rippleGlyph != null) ? fb.rippleGlyph : DEFAULT_RIPPLE_GLYPH;
+    cu[C_RIPPLE_GAIN] = (fb && fb.rippleGain != null) ? fb.rippleGain : DEFAULT_RIPPLE_GAIN;
+    cu[C_UNDER_ON] = fb && fb.under && fb.under.on ? 1 : 0; // SWIM-04c: shade pass (earlier in the frame) already ran updateUnderState
     const tx = this.compTex;
     tx[0].texture = inp.shadeFg; tx[1].texture = inp.shadeBg; tx[2].texture = inp.gi; tx[3].texture = inp.depth;
     tx[4].texture = this.layer.texture; tx[5].texture = inp.light;
@@ -220,7 +275,7 @@ export class WgWaterPass {
   dispose() {
     const d = this.device;
     this.layer.dispose();
-    for (const k of ['waterPipe', 'compPipe', 'dummy']) if (this[k]) { try { d.dispose(this[k]); } catch (_) { /* best effort */ } this[k] = null; }
+    for (const k of ['waterPipe', 'riverPipe', 'compPipe', 'dummy']) if (this[k]) { try { d.dispose(this[k]); } catch (_) { /* best effort */ } this[k] = null; }
     this.active = false; this._bound = null;
   }
 }

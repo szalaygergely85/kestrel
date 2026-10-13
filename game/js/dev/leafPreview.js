@@ -1,6 +1,6 @@
 // LEAF-PREVIEW-01: standalone alphaLeaves fixture, public engine API only.
 import { AssetRegistry, createRenderer, createEngine, GBuffer, bindShading,
-  renderWorld, makeLightBuffer, ambientL, GpuCellPipeline, MaskAtlas,
+  renderWorld, makeLightBuffer, ambientL, MaskAtlas,
   buildMeshFromTris, SpritePool, buildSpriteAtlas } from '../../../engine/index.js';
 
 async function start() {
@@ -18,8 +18,7 @@ async function start() {
   const engine = createEngine({canvas, assets, renderTarget: rt, renderPipeline: built.pipeline,
     cols: 400, rows: 150, physics: {mode: 'mesh'}, shadows: {sun: 'off'}});
   const table = bindShading(assets.palette, assets.detailPass, rt.pxCellH / rt.pxCellW);
-  const pipeline = built.pipeline || (rt.backend === 'gl2' ?
-    new GpuCellPipeline(rt, {rays: 1, terrainEnabled: false, shadows: {sun: 'off'}}) : null);
+  const pipeline = built.pipeline;
   if (!pipeline?.ready) throw new Error('This preview requires a working GPU cell pipeline.');
   pipeline.bind(table, assets.palette);
   if (rt.backend === 'webgpu') {
@@ -53,12 +52,12 @@ async function start() {
   const mask = { tex: 'test/checker8', cutoff: 0.5 };
   const alphaMesh = buildMeshFromTris(tris, [{ part: 'post', triStart: 0, triCount: nOpaque }, { part: 'leaf', triStart: nOpaque, triCount: nLeaf, mask },
     { part: 'leaf_dark', triStart: nOpaque + nLeaf, triCount: tris.length - nOpaque - nLeaf, mask }], 'test/alphaCards');
-  alphaMesh.mats = { post: 'timber_old', leaf: 'leaf_softtest', leaf_dark: 'leaf_dark_softtest' }; // ALPHA-01d: test-only edge:'soft' clones of leaf / leaf_dark
+  alphaMesh.mats = { post: 'timber_old', leaf: 'leaf', leaf_dark: 'leaf_dark' }; // EMIS-01b/kestrel-2#0: softtest clones removed, leaf/leaf_dark already edge:'soft' (ALPHA-01e)
 
-  const worlds = [true, false].map(soft => {
+  const worlds = [true, false].map(() => {
     // Separate identities avoid stale resolved-material caches when toggling.
-    const mesh = {...alphaMesh, mats: {post: 'timber_old',
-      leaf: soft ? 'leaf_softtest' : 'leaf', leaf_dark: soft ? 'leaf_dark_softtest' : 'leaf_dark'}};
+    // EMIS-01b/kestrel-2#0: both branches now point at leaf/leaf_dark (softtest clones removed; leaf/leaf_dark are already edge:'soft', ALPHA-01e).
+    const mesh = {...alphaMesh, mats: {post: 'timber_old', leaf: 'leaf', leaf_dark: 'leaf_dark'}};
     const world = engine.loadWorld({name: 'leaf-preview', structures: [], entities: [], state: {}}, {physics: 'mesh'});
     world.maskAtlas = atlas;
     world.placeMesh(mesh, {x: 0, y: 0, z: 0}, 'test.alphaCards');

@@ -177,6 +177,8 @@ function killAndRespawn(vitals, player) {
   const inv = freshInv();
   ok('migrateSword on a sword-less pack adds sword + left', migrateSword(inv, defs) === true && countOf(inv, 'sword') === 1 && inv.left === 'sword');
   ok('migrateSword is idempotent (sword already present)', migrateSword(inv, defs) === false && countOf(inv, 'sword') === 1);
+  const held = freshInv(); held.right = 'sword'; // OB-079: wielded sword (in hand, not in pack slots) must not be re-added on Continue
+  ok('migrateSword leaves a wielded sword alone', migrateSword(held, defs) === false && countOf(held, 'sword') === 0 && held.left === null);
 }
 {
   const world = buildWorld([playerEntity()]);
@@ -229,6 +231,20 @@ function killAndRespawn(vitals, player) {
   let threw = null;
   try { validateItemDefs(bad); } catch (e) { threw = e; }
   ok('a bad def throws naming its id', !!threw && /bad\.item/.test(threw.message), threw && threw.message);
+}
+
+// EQ-01: equip data validated; 35 gear ids (EQ-21); bad slot/tier throws.
+{
+  const gear = Object.values(defs).filter((d) => d.kind === 'gear' && !d.unique);
+  ok('35 rollable gear ids over 7 slots x 5 tiers (+ unique River Boots)', gear.length === 35 && new Set(gear.map((d) => d.equip.slot)).size === 7);
+  ok('arrow quiver stack 30', defs.arrow.kind === 'ammo' && defs.arrow.stackMax === 30 && defs.arrow.equip.slot === 'quiver');
+  ok('potions', defs['potion.hp'].stackMax === 5 && defs['potion.hp'].use.heal === 2 && defs['potion.mp'].kind === 'potion');
+  ok('sword/shield/bow equip slots', defs.sword.equip.slot === 'main' && defs.shield.equip.slot === 'off' && defs.bow.equip.slot === 'ranged');
+  const mk = (equip) => ({ ...defs, 'bad.gear': { ...defs['gear.head.hood.worn'], id: 'bad.gear', equip } });
+  for (const [label, equip] of [['slot', { slot: 'tail', tier: 'worn', def: 1 }], ['tier', { slot: 'head', tier: 'epic', def: 1 }], ['def', { slot: 'head', tier: 'fine', def: -1 }]]) {
+    let t = null; try { validateItemDefs(mk(equip)); } catch (e) { t = e; }
+    ok(`bad equip.${label} throws`, !!t && /bad\.gear/.test(t.message), t && t.message);
+  }
 }
 
 // S8-C-08: explicit kinds preserve authored stack limits, hand assignment and saved ids.

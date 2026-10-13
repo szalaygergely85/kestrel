@@ -8,13 +8,14 @@
  * @param {any} player
  * @param {any} look
  * @param {boolean} blocked pause/Settings/map/death/wake/end gate, resolved by the caller
+ * @param {string} [lockKey] EQ-07: Q became the weapon-set swap, so main.js passes the lockTarget binding (R)
  * @returns {boolean} whether targeting advanced this step
  */
-export function stepTargetingInput(targeting, dt, input, player, look, blocked) {
+export function stepTargetingInput(targeting, dt, input, player, look, blocked, lockKey = 'KeyQ') {
   const wheel = input.consumeWheel();
   if (blocked || !targeting || !player || !look) return false;
   const cycleDir = (input.pressed('Tab')
     ? (input.isDown('ShiftLeft') || input.isDown('ShiftRight') ? -1 : 1) : 0) + wheel;
-  targeting.step(dt, input.pressed('KeyQ'), cycleDir, player, look);
+  targeting.step(dt, input.pressed(lockKey), cycleDir, player, look);
   return true;
 }

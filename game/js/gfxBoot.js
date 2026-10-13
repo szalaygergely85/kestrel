@@ -49,7 +49,11 @@ export function resolveBootOptions({ params, resolved, savedSettings = {}, captu
     const gm = gridStr && GRID_RE.exec(gridStr);
     if (gm) { reqCols = Number(gm[1]); reqRows = Number(gm[2]); }
   }
-  if (geometryCompare) { reqCols = 160; reqRows = 60; }
+  if (geometryCompare) {
+    reqCols = 160; reqRows = 60;
+    const rg = GRID_RE.exec((params.get('refgrid') || '').trim()); // dev only (BUG-WHITE-PIXELS-02): &refgrid=480x180 runs gpucompare at the owner grid; default unchanged
+    if (rg) { reqCols = Number(rg[1]); reqRows = Number(rg[2]); }
+  }
   sources.grid = gridSource;
 
   // ---- rays ----
@@ -71,7 +75,8 @@ export function resolveBootOptions({ params, resolved, savedSettings = {}, captu
   } else {
     Object.assign(shadowOpts, { sun: 'map', instCastM: LEGACY_INST_CAST_M });
   }
-  if (shadowParam === 'dda' || shadowParam === 'off' || shadowParam === 'map') shadowOpts.sun = shadowParam;
+  if (shadowParam === 'dda') { warn('[gfx] ?shadows=dda is retired (ME-19c2): using the shadow map'); shadowOpts.sun = 'map'; } // DDA sun retired
+  else if (shadowParam === 'off' || shadowParam === 'map') shadowOpts.sun = shadowParam;
   else if (!preset) shadowOpts.sun = 'map';
   const inst = numParam(params, 'shadowinst'); if (inst !== undefined) shadowOpts.instCastM = inst;
   if (params.get('shadowres')) shadowOpts.res = Number(params.get('shadowres'));

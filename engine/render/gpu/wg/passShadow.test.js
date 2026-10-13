@@ -184,6 +184,7 @@ console.log(`passShadow.test.js: all checks passed (heap +${grew} B / 1000 frame
   const m6 = makeMockGpuDevice(), dev = m6.device, dr = [];
   dev.draw = (c, f, i) => dr.push({ pipe: dev._activePipeline, c, f, i, bind: dev._lastBind, u: new Uint32Array(dev._lastBind.uniforms.buffer, dev._lastBind.uniforms.byteOffset, dev._lastBind.uniforms.length).slice() });
   const s6 = new WgShadowPass(dev, { shadows: { res: 256 } });
+  assert.equal(s6.instanceMaskPipe.desc.cull, 'none', 'ALPHA-01f-fix3: two-sided leaf-card casters'); assert.equal(s6.instancePipe.desc.cull, 'back');
   assert.equal(s6.instanceMaskPipe.desc.fragment.src.entry, 'fs_mask_shadow');
   assert.deepEqual(s6.instanceMaskPipe.desc.bindings.textures, ['uint']);
   assert.equal(s6.instanceMaskPipe.desc.vertex.extraLayouts[0].layout[0].location, 10);
@@ -238,6 +239,33 @@ console.log(`passShadow.test.js: all checks passed (heap +${grew} B / 1000 frame
   assert.deepEqual([...s7.u.subarray(WIND_T, WIND_T + 4)], [...t4], 'wind on: windT4 == packWindUniforms twin');
   assert.deepEqual([...s7.u.subarray(WIND_K, WIND_K + 64)], [...k64], 'wind on: windK == packWindUniforms twin');
   assert.equal(s7.windOn, true);
+  // B1 nit: the shadow pass packs the 10 Hz-quantised clock (pure function of the dirty key); the camera raster keeps the live time.
+  const shadowT = (t) => { list7.begin(); s7.run({ ...p7b, _fb: { timeSec: t } }, raster7); return [...s7.u.subarray(WIND_T, WIND_T + 4)]; };
+  assert.deepEqual(shadowT(9.01), shadowT(9.07), 'same 10 Hz quantum -> identical shadow wind words');
+  assert.notDeepEqual(shadowT(9.07), shadowT(9.12), 'next quantum -> different shadow words');
+  assert.equal(shadowT(9.07)[0], 9, 'quantised seconds = floor(t*10)/10');
+  // sun-map twin parity: packed GPU windT seconds == the JS twin's wind ctx clock (t=7.3 and exactly on a quantum boundary)
+  { const { sunWindCtx } = await import('../../../mesh/sway.js'); const out = { field: null, t: 0 };
+    for (const t of [7.3, 7.5, 9]) {
+      const ctxT = sunWindCtx(blown.wind, t, out);
+      assert.equal(ctxT.field, blown.wind, 'twin uses the same field object');
+      assert.equal(shadowT(t)[0], Math.fround(ctxT.t), 'GPU windT seconds == twin ctx clock at t=' + t);
+      assert.equal(shadowT(t)[1], blown.wind.params.P); assert.equal(shadowT(t)[2], Math.fround(blown.wind.params.travel));
+    }
+    assert.equal(sunWindCtx({ params: { speed: 0 } }, 7.3, out), null, 'calm -> null'); }
+  const cam1 = new Float32Array(4), cam2 = new Float32Array(4);
+  packWindUniforms(blown.wind, 9.01, w4, cam1, k64); packWindUniforms(blown.wind, 9.07, w4, cam2, k64);
+  assert.notDeepEqual([...cam1], [...cam2], 'camera raster words stay on the live time');
   s7.dispose();
   console.log('passShadow.test.js (S8-B2-05/06 wind host wiring): all checks passed.');
+}
+
+// 068b3b gpucompare orthoIso: the caster LOD eye is the focus point in ortho (the real eye sits ORTHO_BACK_M behind it); perspective keeps cam.x/y
+{
+  const sho = new WgShadowPass(d, { shadows });
+  const co = { x: 100, y: -400, z: 500, yawDeg: 0, pitchDeg: -35, projection: 'ortho', orthoHalfH: 8, focusX: 10, focusY: 20, focusZ: 0 };
+  sho.run({ ...p, _cam: co }, raster);
+  assert.deepEqual([sho.src.eye.x, sho.src.eye.y], [10, 20], 'ortho: shadow LOD eye = focus');
+  sho.run({ ...p, _cam: { ...co, projection: 'pitched' } }, raster);
+  assert.deepEqual([sho.src.eye.x, sho.src.eye.y], [100, -400], 'pitched: eye unchanged');
 }

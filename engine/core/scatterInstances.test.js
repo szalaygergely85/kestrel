@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict';
 import { bindScatterInstances, createEngine, SCATTER_OBJECT_BASE } from './engine.js';
 import { InstanceGroups, createInstanceBuffer, writeUnitInstance, INSTANCE_STRIDE,
-  INST_OBJECT_ID, MAX_INSTANCE_GROUPS } from '../mesh/instances.js';
+  INST_OBJECT_ID, INST_FLAGS, INST_FLAG_ALIGNED, MAX_INSTANCE_GROUPS } from '../mesh/instances.js';
+import { INST_FLAG_SWAY } from '../mesh/sway.js';
 import { serialize, deserialize } from '../world/serialize.js';
 
 let checks = 0;
@@ -133,4 +134,25 @@ engine.feedDetail({ x: 2, y: 2, teleport: true });
 ok(engine._detail.groups[0].ib.u32[0] !== 0xdeadbeef && engine._detail.fed === 1);
 engine.setWorld({ events: engine.events, structures: [], entities: [] });
 ok(engine._detail === null && engine.instances.groups.length === 0);
+// FOLIAGE-SWAY-01: species.sway is an explicit per-species flag (no name matching). The bit is OR'd into word 13 for
+// every instance of a swaying species, never set for a non-swaying one, and the aligned/team bits stay as writeUnitInstance wrote them.
+{
+  const swayCfg = { seed: 1, cellM: 6, jitter: 1.5, fill: 0.8, maxTrees: 10, lodCells: 6,
+    species: [{ model: 'oak', weight: 1, trunkR: 0.4, trunkH: 3, sway: true }, // foliage: sways
+      { model: 'birch', weight: 1, trunkR: 0.4, trunkH: 3 }] };               // rock stand-in: no sway flag
+  const swayScatter = { count: 4, x: Float64Array.of(1, 2, 3, 4), y: Float64Array.of(1, 2, 3, 4),
+    z: Float64Array.of(0, 0, 0, 0), yawDeg: Int16Array.of(0, 45, 90, 180), species: Uint8Array.of(0, 0, 1, 1) };
+  const swayWorld = { scatter: swayScatter, terrain: { recipe: { recipe: { forest: { trees: swayCfg } } } } };
+  const swayInstances = new InstanceGroups();
+  swayInstances.bindPool({ models: new Map([['oak', {}], ['birch', {}]]) });
+  const swayGroups = bindScatterInstances(swayWorld, swayInstances);
+  const oakGroup = swayGroups.find(g => g.modelKey === 'oak'), rockGroup = swayGroups.find(g => g.modelKey === 'birch');
+  ok(oakGroup.count === 2 && rockGroup.count === 2);
+  for (let i = 0; i < oakGroup.count; i++) ok((oakGroup.ib.u32[i * INSTANCE_STRIDE + INST_FLAGS] & INST_FLAG_SWAY) !== 0);
+  for (let i = 0; i < rockGroup.count; i++) ok((rockGroup.ib.u32[i * INSTANCE_STRIDE + INST_FLAGS] & INST_FLAG_SWAY) === 0);
+  // other word-13 bits unchanged: aligned bit still follows the yaw-multiple-of-90 rule (yaws 0, 45 went to the oak group), team stays 0
+  ok((oakGroup.ib.u32[0 * INSTANCE_STRIDE + INST_FLAGS] & INST_FLAG_ALIGNED) !== 0); // yaw 0
+  ok((oakGroup.ib.u32[1 * INSTANCE_STRIDE + INST_FLAGS] & INST_FLAG_ALIGNED) === 0); // yaw 45
+  ok((oakGroup.ib.u32[0 * INSTANCE_STRIDE + INST_FLAGS] >>> 8) === 0 && (oakGroup.ib.u32[1 * INSTANCE_STRIDE + INST_FLAGS] >>> 8) === 0);
+}
 console.log(`${checks} passed, 0 failed. ALL PASS`);

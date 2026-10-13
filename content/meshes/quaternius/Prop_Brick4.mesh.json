@@ -1,0 +1,39 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Prop_Brick4",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Prop_Brick4.mesh.bin",
+  "triCount": 126,
+  "bbox": [
+    -0.12834,
+    -0.10262,
+    -0.11487,
+    0.12833,
+    0.11301,
+    0.13484
+  ],
+  "ranges": [
+    {"count": 126, "part": "Prop_Brick4#0", "start": 0}
+  ],
+  "matKeys": [
+    "MI_RockTrim"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "ivy",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "collide": false,
+  "castShadow": false
+}

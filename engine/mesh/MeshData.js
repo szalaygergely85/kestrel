@@ -445,6 +445,7 @@ export function meshToJSON(mesh) {
     ...(mesh.castShadow === false ? { castShadow: false } : {}),
     ...(mesh.collide === false ? { collide: false } : {}),
     ...(mesh.collider ? { collider: arr(mesh.collider) } : {}),
+    ...(mesh.lods ? { lods: mesh.lods.map((l) => ({ ...l })) } : {}), // QUAT-LOD-01: meta-only LOD pointers
   };
 }
 
@@ -472,5 +473,6 @@ export function meshFromJSON(obj) {
     ...(obj.castShadow === false ? { castShadow: false } : {}),
     ...(obj.collide === false ? { collide: false } : {}),
     ...(obj.collider ? { collider: Float32Array.from(obj.collider) } : {}),
+    ...(obj.lods ? { lods: obj.lods.map((l) => ({ ...l })) } : {}), // QUAT-LOD-01: meta-only LOD pointers
   };
 }

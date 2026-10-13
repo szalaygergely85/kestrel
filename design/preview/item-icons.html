@@ -295,6 +295,10 @@ function checks() {
   ok('every def kind is in the game validateItemDefs KINDS (boot does not throw)', Object.keys(IT.defs).every(id => GAME_KINDS.includes(IT.defs[id].kind)));
   ok('order lists every def once', Object.keys(IT.defs).every(id => IT.order.filter(x => x === id).length === 1) && IT.order.length === Object.keys(IT.defs).length);
   ok('cog marked pending owner', IT.defs.cog.pending === 'owner');
+  const AC = IT.defs.aetherCrystal;   // CH1-D2: shown in the "extra" rows of the pack sheet (order, not iconSet)
+  ok('CH1-D2 aetherCrystal: CH1-W3 copy, stackMax 1, teal emissive icon, distinct art', !!AC && AC.name === 'Teal Crystal' &&
+     AC.desc === 'Warm, and it hums like the old stones.' && AC.stackMax === 1 && AC.icon.fg.join('').split('').filter(c => c !== ' ').every(c => IT.keys[c].e) &&
+     !Object.keys(IT.defs).some(id => id !== 'aetherCrystal' && IT.defs[id].icon.glyphs.join('|') === AC.icon.glyphs.join('|')));
   ok('iconSet names <= 14, lines <= 38 (writer limits)', IT.iconSet.every(id => IT.defs[id].name.length <= 14 && IT.defs[id].desc.length <= 38));
   // distinct icons: no two of the 12 share the same glyph art
   const art = IT.iconSet.map(id => IT.defs[id].icon.glyphs.join('|')); ok('12 icons have distinct glyph art (1-colour fallback tells them apart)', new Set(art).size === 12);

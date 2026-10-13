@@ -9,7 +9,8 @@ import { MAX_VOX_INSTANCES, MAX_VOX_INSTANCES_MESH, MAX_VOX_PARTS, PART_STRIDE }
 import { packVoxelModel } from '../voxel/voxelPack.js';
 import { voxelPointWorld } from '../voxel/voxelPose.js';
 import { computeProjection, computeProjectionPitched, instanceRect } from '../voxel/instanceRect.js';
-import { createPitchedTerms, pitchedTerms, resolveProjection } from './projection.js';
+import { createPitchedTerms, pitchedTerms, resolveProjection, isPitchedFamily } from './projection.js';
+import { lodCentreX, lodCentreY, lodCentreZ } from '../core/camFocus.js';
 import { buildVoxelAtlas } from './gpu/VoxelTextures.js';
 
 const _proj = { cols: 0, rows: 0, dirX: 0, dirY: 0, planeX: 0, planeY: 0, planeDet: 0, horizonRow: 0, planeDistY: 0, eyeX: 0, eyeY: 0, eyeZ: 0,
@@ -21,6 +22,11 @@ function hashStr(str, h = 0x811c9dc5) {
   for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
   return h | 0;
 }
+// EMIS-01b: mixes a running hash with an already-integer value (Math.imul, no strings/allocation).
+function hashInt(h, v) {
+  h ^= v | 0;
+  return Math.imul(h, 0x01000193) | 0;
+}
 const _poolPitch = createPitchedTerms(); // RE-02a
 const _poolGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
 
@@ -31,8 +37,14 @@ function warnOnce(pool, msg) {
   if (typeof console !== 'undefined' && console.warn) console.warn(msg);
 }
 
+// RIG-04b: `arr.length = n` with n < capacity/2 right-trims V8's backing store, so the next frame that grows the list again
+// allocates a new one (~600 B when a 48-instance list drops to 4 and back). pop() keeps the capacity: zero allocation.
+function shrinkTo(arr, n) {
+  while (arr.length > n) arr.pop();
+}
+
 function projectedSlot() {
-  return { model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, scale: 1, slot: 0,
+  return { model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, fromClip: -1, fromFrame: 0, fromTMs: 0, fromW: 0, scale: 1, slot: 0, entity: null, addPart: -1, addRx: 0, addRy: 0, addRz: 0,
     pose: new Float64Array(MAX_VOX_PARTS * PART_STRIDE),
     rect: { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0, minCol: 0, maxCol: 0, minRow: 0, maxRow: 0, empty: false } };
 }
@@ -45,8 +57,9 @@ export class VoxelPool {
     this.models = new Map();
     // This frame's pushInstance() queue - plain objects, reused slot by
     // slot across frames (no per-frame allocation once warm).
-    this.raw = Array.from({ length: MAX_VOX_INSTANCES_MESH }, () => ({ model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, scale: 1, seed: 0 }));
+    this.raw = Array.from({ length: MAX_VOX_INSTANCES_MESH }, () => ({ model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, fromClip: -1, fromFrame: 0, fromTMs: 0, fromW: 0, scale: 1, seed: 0, entity: null, addPart: -1, addRx: 0, addRy: 0, addRz: 0 }));
     this._rawCount = 0;
+    this.reserve = 0;
     // Projected + culled instances, compact 0..count-1 (list.length ===
     // stats.count after project()); each entry's `slot` index is what the
     // GPU instance rows / planeId's slot field key off.
@@ -131,6 +144,9 @@ export class VoxelPool {
     for (let i = 0; i < atlasKeys.length; i++) this._modelIndexByKey[atlasKeys[i]] = i;
   }
 
+  /** Instances queued this frame (raw, before the cap clamp). */
+  get rawCount() { return this._rawCount; }
+
   /** Clears this frame's instance queue. Call once before this frame's
    * pushInstance() calls (US-041a's collect(world) replaces the harness
    * loop but keeps this reset). */
@@ -142,17 +158,17 @@ export class VoxelPool {
    * queues one instance of `modelKey` (must be bound, i.e. have `.voxel`) at
    * world feet position (x,y,z), yaw `yawDeg`, playing `clip`/`frame`/`tMs`
    * (clip -1 or omitted = rest pose, matching voxelPose.js's samplePose).
-   * Past the active renderer cap, extra pushes are dropped (warn once). */
+   * Past the active renderer cap, extra pushes are dropped (warn once). Returns the raw slot index, -1 when dropped. */
   pushInstance(modelKey, x, y, z, yawDeg, clip, frame, tMs, scale = 1) {
     const pm = this.models.get(modelKey);
-    if (!pm) { warnOnce(this, `VoxelPool.pushInstance: unknown or non-voxel model '${modelKey}'`); return; }
+    if (!pm) { warnOnce(this, `VoxelPool.pushInstance: unknown or non-voxel model '${modelKey}'`); return -1; }
     if (this._rawCount >= this.cap) {
       const bit = this.cap === MAX_VOX_INSTANCES_MESH ? 2 : 1;
       if (!(this._pushWarned & bit)) {
         this._pushWarned |= bit;
         warnOnce(this, `VoxelPool.pushInstance: cap (${this.cap}) exceeded, extra instances dropped`);
       }
-      return;
+      return -1;
     }
     const slot = this._rawSlot(this._rawCount);
     slot.model = pm;
@@ -162,10 +178,30 @@ export class VoxelPool {
     slot.clip = clip === undefined ? -1 : clip;
     slot.frame = frame || 0;
     slot.tMs = tMs || 0;
+    slot.fromClip = -1; slot.fromW = 0;
     slot.scale = scale > 0 ? scale : 1; // ED-SCALE-1a (34.2 item 5)
-    // EMIS-01b: harness instances have no entity id -> identity from model + position
-    slot.seed = pm.emissiveLight ? hashStr(modelKey, hashStr(x.toFixed(2) + ',' + y.toFixed(2) + ',' + z.toFixed(2))) || 1 : 0;
-    this._rawCount++;
+    // EMIS-01b: harness instances have no entity id -> identity from model + position.
+    // Integer hash (Math.round to 1cm buckets, Math.imul mixing) instead of string concat - no strings/allocation per push.
+    slot.seed = pm.emissiveLight
+      ? (hashInt(hashInt(hashInt(hashStr(modelKey), Math.round(x * 100)), Math.round(y * 100)), Math.round(z * 100)) || 1)
+      : 0;
+    slot.entity = null;
+    slot.addPart = -1;
+    return this._rawCount++;
+  }
+
+  /** WILD-01 (38.31 item 8): sets the from-clip of raw slot `i` (a `pushInstance` return). `fromW` = weight of the old pose (1 -> 0). */
+  blendInstance(i, fromClip, fromFrame, fromTMs, fromW) {
+    if (i < 0 || i >= this._rawCount) return;
+    const slot = this.raw[i];
+    slot.fromClip = fromClip; slot.fromFrame = fromFrame || 0; slot.fromTMs = fromTMs || 0; slot.fromW = fromW;
+  }
+
+  /** 38.23: the G-buffer objectId (0x8000 | slot, same as voxelMesh's draw item) of `entity` in the last project(); -1 when it has no slot. */
+  objectIdFor(entity) {
+    const list = this.list;
+    for (let i = 0; i < list.length; i++) if (list[i].entity === entity) return 0x8000 | list[i].slot;
+    return -1;
   }
 
   /** Reused per-slot raw-instance object at `this.raw[idx]` (no per-frame allocation once warm). */
@@ -190,13 +226,20 @@ export class VoxelPool {
     slot.model = pm;
     slot.modelKey = v.model;
     slot.x = t.x; slot.y = t.y; slot.z = t.z;
-    slot.yawDeg = t.yawDeg || 0;
+    if (t.yawDeg) slot.yawDeg = t.yawDeg; else slot.yawDeg = 0;
     const idx = v.anim && pm.clipIndex && Object.prototype.hasOwnProperty.call(pm.clipIndex, v.anim) ? pm.clipIndex[v.anim] : -1;
     slot.clip = idx;
-    slot.frame = v.frame || 0;
-    slot.tMs = v.t || 0;
-    slot.scale = t.scale > 0 ? t.scale : 1;
+    if (v.frame) slot.frame = v.frame; else slot.frame = 0;
+    if (v.t) slot.tMs = v.t; else slot.tMs = 0;
+    slot.fromClip = -1; slot.fromW = 0;
+    if (t.scale > 0) slot.scale = t.scale; else slot.scale = 1;
     // EMIS-01b: stable identity of the entity (numeric id as-is; string id hashed, no allocation)
+    slot.entity = e; // 38.23: objectIdFor(entity)
+    // TALK-E1 (38.28 item 7): optional `components.voxel.partRot = {part, rx, ry, rz}`, added to the clip rotation.
+    const pr = v.partRot;
+    const ap = pr && pm.partIndex && pm.partIndex[pr.part] !== undefined ? pm.partIndex[pr.part] : -1;
+    slot.addPart = ap;
+    if (ap >= 0) { slot.addRx = pr.rx || 0; slot.addRy = pr.ry || 0; slot.addRz = pr.rz || 0; }
     slot.seed = 0;
     if (pm.emissiveLight) slot.seed = (typeof e.id === 'number' ? (e.id | 0) : hashStr(e.id)) || 1;
     this._rawCount++;
@@ -218,18 +261,22 @@ export class VoxelPool {
    * takes one of the nearest slots. The flag is read LIVE each frame (not
    * cached by `renderVersion`), since the view toggles it per state.
    */
+  /** Slow path of collect(), split out so collect() holds no closure (an arrow capturing `this` allocates a context on EVERY call; FRAME-ALLOC-02). */
+  _rebuildEnts(world) {
+    this._ents.length = 0;
+    world.forEachEntity((e) => { if (e.components && e.components.voxel) this._ents.push(e); });
+    this._entVersion = world.renderVersion;
+    this._entWorld = world;
+  }
+
   collect(world, cam) {
     this.beginFrame();
     if (!world) return;
-    if (world !== this._entWorld || world.renderVersion !== this._entVersion) {
-      this._ents.length = 0;
-      world.forEachEntity((e) => { if (e.components && e.components.voxel) this._ents.push(e); });
-      this._entVersion = world.renderVersion;
-      this._entWorld = world;
-    }
+    if (world !== this._entWorld || world.renderVersion !== this._entVersion) this._rebuildEnts(world);
     const ents = this._ents;
     const n = ents.length;
-    if (n <= this.cap) {
+    const ecap = Math.max(0, this.cap - this.reserve); // `reserve` slots stay free for pushInstance feeds (ambient fauna)
+    if (n <= ecap) {
       for (let i = 0; i < n; i++) {
         // US-079b0 (37.16.1 item 1): a hidden voxel entity renders nothing.
         if (ents[i].components.voxel.hidden === true) continue;
@@ -241,9 +288,9 @@ export class VoxelPool {
     const bit = this.cap === MAX_VOX_INSTANCES_MESH ? 2 : 1;
     if (!(this._collectWarned & bit)) {
       this._collectWarned |= bit;
-      warnOnce(this, `VoxelPool.collect: ${n} voxel entities exceed cap (${this.cap}); only the nearest ${this.cap} render`);
+      warnOnce(this, `VoxelPool.collect: ${n} voxel entities exceed cap (${ecap}); only the nearest ${ecap} render`);
     }
-    const cx = cam ? cam.x : 0, cy = cam ? cam.y : 0, cz = cam ? cam.z : 0;
+    const cx = cam ? lodCentreX(cam) : 0, cy = cam ? lodCentreY(cam) : 0, cz = cam ? lodCentreZ(cam) : 0;
     const idx = this._nearIdx, dist = this._nearDist;
     let count = 0;
     for (let i = 0; i < n; i++) {
@@ -254,7 +301,7 @@ export class VoxelPool {
       const t = ents[i].transform;
       const dx = t.x - cx, dy = t.y - cy, dz = t.z - cz;
       const d2 = dx * dx + dy * dy + dz * dz;
-      if (count < this.cap) {
+      if (count < ecap) {
         let j = count - 1;
         while (j >= 0 && dist[j] > d2) { dist[j + 1] = dist[j]; idx[j + 1] = idx[j]; j--; }
         dist[j + 1] = d2; idx[j + 1] = i;
@@ -305,10 +352,11 @@ export class VoxelPool {
       instanceRect(_noCullProj, inst.model, inst, out.pose, null, out.rect);
       out.model = inst.model; out.modelKey = inst.modelKey;
       out.x = inst.x; out.y = inst.y; out.z = inst.z; out.yawDeg = inst.yawDeg;
-      out.clip = inst.clip; out.frame = inst.frame; out.tMs = inst.tMs; out.scale = inst.scale;
+      out.clip = inst.clip; out.frame = inst.frame; out.tMs = inst.tMs; out.fromClip = inst.fromClip; out.fromFrame = inst.fromFrame; out.fromTMs = inst.fromTMs; out.fromW = inst.fromW; out.scale = inst.scale;
+      out.addPart = inst.addPart; out.addRx = inst.addRx; out.addRy = inst.addRy; out.addRz = inst.addRz;
       out.slot = i;
     }
-    this.shadowList.length = n;
+    shrinkTo(this.shadowList, n);
     return n;
   }
 
@@ -318,7 +366,7 @@ export class VoxelPool {
    * `this.list` in queue order (slot = compact index). Zero allocation once
    * `raw`/`list` are warm (reused per-slot objects/typed arrays). */
   project(cam, rt, renderer = this.renderer) {
-    if (resolveProjection(cam, renderer) === 'pitched') {
+    if (isPitchedFamily(resolveProjection(cam, renderer))) {
       // RE-02a (28.1 A2 item 2): pitched screen-rect cull.
       _poolGrid.cols = rt.cols; _poolGrid.rows = rt.rows; _poolGrid.pxCellW = rt.pxCellW || 1; _poolGrid.pxCellH = rt.pxCellH || 1;
       computeProjectionPitched(pitchedTerms(cam, _poolGrid, _poolPitch), _proj);
@@ -346,11 +394,13 @@ export class VoxelPool {
       if (out.rect.empty) { culled++; continue; }
       out.model = inst.model; out.modelKey = inst.modelKey;
       out.x = inst.x; out.y = inst.y; out.z = inst.z; out.yawDeg = inst.yawDeg;
-      out.clip = inst.clip; out.frame = inst.frame; out.tMs = inst.tMs; out.scale = inst.scale;
+      out.clip = inst.clip; out.frame = inst.frame; out.tMs = inst.tMs; out.fromClip = inst.fromClip; out.fromFrame = inst.fromFrame; out.fromTMs = inst.fromTMs; out.fromW = inst.fromW; out.scale = inst.scale;
+      out.addPart = inst.addPart; out.addRx = inst.addRx; out.addRy = inst.addRy; out.addRz = inst.addRz;
       out.slot = count;
+      out.entity = inst.entity;
       count++;
     }
-    this.list.length = count;
+    shrinkTo(this.list, count);
     this.stats.count = count;
     this.stats.instancesCulled = culled + Math.max(0, this._rawCount - this.cap);
   }

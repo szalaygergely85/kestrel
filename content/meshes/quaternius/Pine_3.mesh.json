@@ -32,5 +32,8 @@
   "colliderB64": "vp/avkjhWj/Xo3C+uB7Fvo/Cdb3Xo3C+uB7Fvo/Cdb2e799Avp/avkjhWj/Xo3C+uB7Fvo/Cdb2e799Avp/avkjhWj+e799AuB7Fvo/Cdb3Xo3C+exQuvpHtjL/Xo3C+exQuvpHtjL+e799AuB7Fvo/Cdb3Xo3C+exQuvpHtjL+e799AuB7Fvo/Cdb2e799AexQuvpHtjL/Xo3C+bxKDPPCnhr/Xo3C+bxKDPPCnhr+e799AexQuvpHtjL/Xo3C+bxKDPPCnhr+e799AexQuvpHtjL+e799AbxKDPPCnhr/Xo3C+SOGKPzVeOr7Xo3C+SOGKPzVeOr6e799AbxKDPPCnhr/Xo3C+SOGKPzVeOr6e799AbxKDPPCnhr+e799ASOGKPzVeOr7Xo3C+BFYOPzvfjz/Xo3C+BFYOPzvfjz+e799ASOGKPzVeOr7Xo3C+BFYOPzvfjz+e799ASOGKPzVeOr6e799ABFYOPzvfjz/Xo3C+exQuvrKdnz/Xo3C+exQuvrKdnz+e799ABFYOPzvfjz/Xo3C+exQuvrKdnz+e799ABFYOPzvfjz+e799AexQuvrKdnz/Xo3C+ppvEvlpkiz/Xo3C+ppvEvlpkiz+e799AexQuvrKdnz/Xo3C+ppvEvlpkiz+e799AexQuvrKdnz+e799AppvEvlpkiz/Xo3C+vp/avkjhWj/Xo3C+vp/avkjhWj+e799AppvEvlpkiz/Xo3C+vp/avkjhWj+e799AppvEvlpkiz+e799Avp/avkjhWj+e799AuB7Fvo/Cdb2e799AexQuvpHtjL+e799Avp/avkjhWj/Xo3C+exQuvpHtjL/Xo3C+uB7Fvo/Cdb3Xo3C+vp/avkjhWj+e799AexQuvpHtjL+e799AbxKDPPCnhr+e799Avp/avkjhWj/Xo3C+bxKDPPCnhr/Xo3C+exQuvpHtjL/Xo3C+vp/avkjhWj+e799AbxKDPPCnhr+e799ASOGKPzVeOr6e799Avp/avkjhWj/Xo3C+SOGKPzVeOr7Xo3C+bxKDPPCnhr/Xo3C+vp/avkjhWj+e799ASOGKPzVeOr6e799ABFYOPzvfjz+e799Avp/avkjhWj/Xo3C+BFYOPzvfjz/Xo3C+SOGKPzVeOr7Xo3C+vp/avkjhWj+e799ABFYOPzvfjz+e799AexQuvrKdnz+e799Avp/avkjhWj/Xo3C+exQuvrKdnz/Xo3C+BFYOPzvfjz/Xo3C+vp/avkjhWj+e799AexQuvrKdnz+e799AppvEvlpkiz+e799Avp/avkjhWj/Xo3C+ppvEvlpkiz/Xo3C+exQuvrKdnz/Xo3C+",
   "colliderParts": [
     "Pine_3#0"
+  ],
+  "lods": [
+    {"mesh": "quaternius/Pine_3_LOD1", "ratio": 0.35, "tris": 1737}
   ]
 }

@@ -199,6 +199,16 @@
     .tree-row.row-hidden .tree-label { color: var(--ed-fg-dim); font-style: italic; }
     .tree-row.row-locked .tree-label { color: var(--ed-fg-dim); }
 
+    /* OB-028: foldable scene-tree groups + Group/Ungroup row; OB-029: asset delete / unused filter */
+    .tree-cat-header { display: flex; align-items: center; gap: 4px; color: var(--ed-fg-dim); font-size: 10px; padding: 3px 4px; text-transform: uppercase; letter-spacing: 0.02em; cursor: pointer; user-select: none; }
+    .tree-cat-header:hover { color: var(--ed-fg-hi); }
+    .tree-cat-header.user { color: var(--ed-amber); }
+    .tree-cat-header.sub { padding-left: 14px; text-transform: none; }
+    .tree-cat-count { margin-left: auto; color: var(--ed-fg-ghost); }
+    #tree-actions { flex: 0 0 auto; display: flex; gap: 4px; padding: 4px; border-bottom: 1px solid var(--ed-line); }
+    .asset-del-btn { margin-left: auto; background: none; border: none; color: var(--ed-fg-ghost); cursor: pointer; font: 11px var(--ed-font-mono); }
+    .asset-del-btn:hover { color: var(--ed-amber); }
+    #assets-unused-label { font-size: 10px; color: var(--ed-fg-dim); display: flex; align-items: center; gap: 3px; }
     /* scene tree */
     #tree-search-row, #assets-search-row { flex: 0 0 auto; padding: 4px; border-bottom: 1px solid var(--ed-line); }
     #tree-search-input, #assets-search-input {
@@ -284,6 +294,11 @@
       display: none; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 6px; pointer-events: auto;
     }
     #terrain-toolbar.on { display: flex; }
+    #grass-toolbar { display: none; align-items: center; gap: 6px; flex-wrap: wrap; }
+    #grass-toolbar.on { display: flex; }
+    #grass-toolbar .gb-op.active { outline: 1px solid var(--ed-fg-hi); }
+    #grass-toolbar label { font-size: 11px; color: var(--ed-fg-dim); display: inline-flex; align-items: center; gap: 4px; }
+    #grass-toolbar input[type=range] { width: 90px; }
     #terrain-toolbar .tb-op.active { outline: 1px solid var(--ed-fg-hi); }
     #terrain-toolbar label { font-size: 11px; color: var(--ed-fg-dim); display: inline-flex; align-items: center; gap: 4px; }
     #terrain-toolbar input[type=range] { width: 90px; }
@@ -428,10 +443,11 @@
         <button type="button" class="ed-btn tool-mode-btn" data-mode="yaw" title="Yaw tool (LMB-drag)">&#8635; Yaw</button>
         <button type="button" class="ed-btn tool-mode-btn" data-mode="scale" title="Scale tool (LMB-drag)">&#8596; Scale</button>
         <button type="button" class="ed-btn tool-mode-btn" data-mode="terrain" title="Terrain brush (LMB-drag paints a stroke; Ctrl+Z undoes it)">^ Terrain</button>
+        <button type="button" class="ed-btn tool-mode-btn" data-mode="grass" title="Grass mask brush (LMB-drag paints/erases where the grass carpet grows; Ctrl+Z undoes it)">&quot; Grass</button>
       </div>
       <button type="button" id="snap-btn" class="ed-btn" title="Cycle snap ([ ])"># Snap 0.25m</button>
       <div class="ed-sep"></div>
-      <button type="button" id="save-btn" class="ed-btn">S Save (Ctrl+S)</button>
+      <button type="button" id="save-btn" class="ed-btn">S Save all (Ctrl+S)</button>
       <button type="button" id="load-btn" class="ed-btn">L Load...</button>
       <div class="ed-spacer"></div>
       <!-- US-067: the currently-armed Assets-tab model (see main.js armModelPlacement) - empty while nothing is armed. -->
@@ -462,6 +478,10 @@
             <button type="button" class="tree-chip" data-filter="triggers">TRIGGERS (0)</button>
             <button type="button" class="tree-chip" data-filter="interactables">INTERACT (0)</button>
           </div>
+          <div id="tree-actions">
+            <button type="button" id="tree-group-btn" class="ed-btn" title="Group the selected items under a name (editor metadata, saved with the world)">Group</button>
+            <button type="button" id="tree-ungroup-btn" class="ed-btn" title="Remove the selected items from their user group">Ungroup</button>
+          </div>
           <div id="outliner">(loading...)</div>
         </div>
         <!-- US-067: Assets tab - every placeable model, an ASCII thumbnail
@@ -477,6 +497,7 @@
                  design/palette.js materials (tools/voxAutoMap.js) and
                  register it as a new model (AssetRegistry.add) - no CLI, no
                  hand-written map.json. -->
+            <label id="assets-unused-label" title="Show only meshes nothing references (delete candidates)"><input type="checkbox" id="assets-unused-chk" /> unused</label>
             <button type="button" id="assets-import-vox-btn" class="ed-btn" title="Import a MagicaVoxel .vox file as a new model">Import .vox</button>
           </div>
           <!-- ED-FOLDERS-01: create a user folder (the input is shown only while
@@ -511,6 +532,14 @@
           <label>Strength <input type="range" id="tb-strength" min="1" max="100" step="1" value="40" /><span id="tb-strength-val">40%</span></label>
           <button type="button" id="tb-save" class="ed-btn" title="Save content/terrain/&lt;key&gt;.edits.json (also saved by Ctrl+S)">Save terrain</button>
           <span id="tb-status" class="chip"></span>
+        </div>
+        <div id="grass-toolbar" class="ed-plate">
+          <button type="button" class="ed-btn gb-op" data-op="paint" title="Paint grass coverage">Paint</button>
+          <button type="button" class="ed-btn gb-op" data-op="erase" title="Erase grass coverage">Erase</button>
+          <label>Radius <input type="range" id="gb-radius" min="1" max="24" step="0.5" value="6" /><span>6 m</span></label>
+          <label>Strength <input type="range" id="gb-strength" min="1" max="100" step="1" value="40" /><span>40%</span></label>
+          <button type="button" id="gb-save" class="ed-btn" title="Save content/terrain/&lt;key&gt;.grassMask.json (also saved by Ctrl+S)">Save grass</button>
+          <span id="gb-status" class="chip"></span>
         </div>
         <div id="stats-plate" class="ed-plate">fps -</div>
       </div>
@@ -601,7 +630,9 @@
   <script src="../../design/models/far_tower.js"></script>
   <script src="../../design/models/ferrum_lights.js"></script>
   <script src="../../design/levels/overworld_far.js"></script>
+  <script src="../../design/levels/world_geo.js"></script>
 
-  <script>window.__editorBoot.start(() => import('./main.js'));</script>
+  <script>if (window.ASSETS.levels.world_geo && new URLSearchParams(location.search).get('geo') !== '0') window.ASSETS.levels.world_geo.util.installGeo(window.ASSETS.levels.overworld_far.util); // MAP-02..05, same as game/js/main.js
+  window.__editorBoot.start(() => import('./main.js'));</script>
 </body>
 </html>

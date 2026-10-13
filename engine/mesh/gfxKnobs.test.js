@@ -102,7 +102,8 @@ ok(Object.isFrozen(mkEngine().gfx)); eq({ ...mkEngine().gfx }, { ...GFX_DEFAULTS
   const def = resolveSunShadowOptions(undefined, 'mesh'), off = resolveSunShadowOptions({ sun: 'off' }, 'mesh');
   eq(def.sun, 'map'); eq(off.sun, 'off');
   assert.throws(() => resolveSunShadowOptions({ sun: 'off' }, 'dda'), /needs renderer 'mesh'/); checks++;
-  eq([...SHADOW_LEVELS], ['off', 'low', 'mid', 'high']); ok(Object.isFrozen(SHADOW_LEVELS));
+  { const u = resolveShadowLevel('ultra'), h = resolveShadowLevel('high'); eq([u.meshLod0M, u.instCastM, h.meshLod0M, h.instCastM], [16, 32, 25, 48]); eq(u.res, h.res); resolveSunShadowOptions(u, 'mesh'); }
+  eq([...SHADOW_LEVELS], ['off', 'low', 'mid', 'high', 'ultra']); ok(Object.isFrozen(SHADOW_LEVELS));
   eq(resolveSunShadowOptions(resolveShadowLevel('high'), 'mesh'), def, "'high' == today's defaults");
   eq(resolveShadowLevel('off'), { sun: 'off' });
   for (const lv of ['low', 'mid']) {
@@ -111,7 +112,7 @@ ok(Object.isFrozen(mkEngine().gfx)); eq({ ...mkEngine().gfx }, { ...GFX_DEFAULTS
   }
   const lo = resolveSunShadowOptions(resolveShadowLevel('low'), 'mesh'), mid = resolveSunShadowOptions(resolveShadowLevel('mid'), 'mesh');
   ok(lo.res < mid.res && lo.instCastM < mid.instCastM && lo.meshCastCap < mid.meshCastCap, 'low < mid');
-  assert.throws(() => resolveShadowLevel('ultra'), /unknown level/); checks++;
+  assert.throws(() => resolveShadowLevel('extreme'), /unknown level/); checks++;
 
   // JS twin: sun off = everything sunlit, no map
   ok(sunShadowTaps(null, SUN_OFF_MATRIX, [10, 20, 3], [0, 0, 1], off) === 4 && sunShadowTaps(null, SUN_OFF_MATRIX, [-5e4, 7e3, -9], [0, 1, 0], off) === 4, 'off matrix: every receiver is outside the box (4 taps)');

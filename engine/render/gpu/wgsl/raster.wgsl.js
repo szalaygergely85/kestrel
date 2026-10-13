@@ -1,16 +1,20 @@
 // WG-2b: literal port of mesh.vert/frag.js. Static, compact voxel, instanced and cloth input layouts.
 import { defineUniformBlock } from './uniformBlock.js';
-import { WIND_AT_WGSL } from './common.wgsl.js';
 import { INST_FLAG_SWAY, SWAY_K, SWAY_MAX } from '../../../mesh/sway.js';
+import { WIND_AT_WGSL, ORTHO_NEAR_WGSL, ORTHO_FAR_WGSL } from './common.wgsl.js';
+import { DEPTH_TIER } from '../../projection.js';
 import { KIND_MODEL, KIND_MESH, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D, FACE_PACKED } from '../../GBuffer.js';
 
 const RASTER_FIELDS = [
   { name: 'model', type: 'mat4' }, { name: 'viewProj', type: 'mat4' },
   { name: 'planeIdOr', type: 'u32' }, { name: 'zBase', type: 'f32' },
   { name: 'objectId', type: 'u32' }, { name: 'axisAligned', type: 'u32' },
-  { name: 'flat', type: 'vec2' },
+  // US-068b1/b2 (38.19): `projMode` (2 = ortho) sits in the shared prefix, so every raster block has it at the same word; the host writes it once per frame; fragment dist = linear z when 2.
+  { name: 'projMode', type: 'u32' },
+  // OB-053 (38.49): `depthTier` fills the 4-byte hole before `flat` (vec2 align 8): no other offset or block size moves.
+  { name: 'depthTier', type: 'u32' }, { name: 'flat', type: 'vec2' },
 ];
-export const RASTER_BASE_BLOCK = defineUniformBlock('RasterU', RASTER_FIELDS);
+export const RASTER_BASE_BLOCK = defineUniformBlock('RasterU', [...RASTER_FIELDS]);
 // ALPHA-01c: static mesh with a mask range (one draw per masked range): the base block + the atlas rect (x0,y0,w,h) and the cutoff byte
 export const RASTER_MASK_BLOCK = defineUniformBlock('RasterU', [...RASTER_FIELDS,
   { name: 'maskX0', type: 'u32' }, { name: 'maskY0', type: 'u32' }, { name: 'maskW', type: 'u32' }, { name: 'maskH', type: 'u32' }, { name: 'maskCut', type: 'u32' },
@@ -113,12 +117,17 @@ fn maskDiscard(uvm: vec2f, x0: u32, y0: u32, w: u32, h: u32, cut: u32) -> bool {
 }
 `;
 
+/** ME-20c (38.18): `RasterU.axisAligned` is a flag word. Bit 0 = aligned (unchanged); bit 1 = write the interpolated vertex AO into kind-9 GA.w (set by passRaster iff lights.ao.strength > 0). */
+export const RASTER_FLAG_VAO = 2;
+
 /**
  * @param {'static'|'voxel'|'instanced'|'cloth'|'mask'|'instancedMask'} variant 'mask' = the static layout + per-vertex mask uv
  * (location 10) + texMask discard; 'instancedMask' (ALPHA-01f b) = the instanced layout (sway + LOD dither) with the same
  * mask uv stream + discard added on top, matching rasterJS.js rasterInstanced's per-range mask/two-sided rule exactly.
+ * @param {{ao?: boolean}} [opts] ME-20c: `ao` adds the per-vertex AO stream (`@location(11) aAo: f32` -> varying `@location(8) vAo`); voxel/instanced/mask/instancedMask only.
  */
-export function rasterWgsl(variant = 'static') {
+export function rasterWgsl(variant = 'static', { ao = false } = {}) {
+  if (ao && (variant === 'static' || variant === 'cloth')) throw new Error(`rasterWgsl: ao stream is not available for variant '${variant}'`);
   const cloth = variant === 'cloth';
   const instanced = variant === 'instanced' || variant === 'instancedMask';
   const compact = variant === 'voxel' || instanced;
@@ -134,6 +143,7 @@ struct VertexIn {
 ${cloth ? '' : '  @location(3) aFlat: vec2u,'}
 ${cloth || compact ? '' : '  @location(4) aAux0123: vec4f,\n  @location(5) aAux4567: vec4f,'}
 ${mask ? '  @location(10) aUVMask: vec2f,' : ''}
+${ao ? '  @location(11) aAo: f32,' : ''}
 ${instanced ? '  @location(6) iRow0: vec4f,\n  @location(7) iRow1: vec4f,\n  @location(8) iRow2: vec4f,\n  @location(9) iMeta: vec2u,' : ''}
 };
 struct VertexOut {
@@ -146,6 +156,7 @@ struct VertexOut {
   @location(5) vUV: vec2f,
   @location(6) vWorldZ: f32,
 ${mask ? '  @location(7) vUVMask: vec2f,' : ''}
+${ao ? '  @location(8) vAo: f32,' : ''}
 };
 @vertex fn vs_main(a: VertexIn) -> VertexOut {
   var o: VertexOut;
@@ -171,7 +182,7 @@ ${instanced ? `  let lp = (u.model * vec4f(a.aPos, 1.0)).xyz;
   let nw = normalize(vec3f(dot(a.iRow0.xyz, ln), dot(a.iRow1.xyz, ln), dot(a.iRow2.xyz, ln)));
   o.vNrmW = nw; o.vNrmS = nw;
 ` : `  let worldPos = u.model * vec4f(a.aPos, 1.0);
-  o.packed = vec4u(${cloth ? 'bitcast<u32>(u.flat.x)' : 'a.aFlat.x'} | u.planeIdOr, ${cloth ? 'bitcast<u32>(u.flat.y)' : 'a.aFlat.y'}, u.objectId, ${cloth ? '0u' : 'u.axisAligned'});
+  o.packed = vec4u(${cloth ? 'bitcast<u32>(u.flat.x)' : 'a.aFlat.x'} | u.planeIdOr, ${cloth ? 'bitcast<u32>(u.flat.y)' : 'a.aFlat.y'}, u.objectId, ${cloth ? '0u' : '(u.axisAligned & 1u)'});
   o.aux4567.z = u.zBase;
   o.vNrmW = normalize(modelN * unpackNormalOct(a.aNrmBits));
   o.vNrmS = ${cloth ? 'modelN * unpackNormalOct(a.aNrmBits)' : 'normalize(modelN * unpackNormalOct(a.aNrmBits))'};
@@ -179,12 +190,15 @@ ${instanced ? `  let lp = (u.model * vec4f(a.aPos, 1.0)).xyz;
 ${cloth || compact ? '' : '  o.aux0123 = a.aAux0123; o.aux4567 = vec4f(a.aAux4567.xy, o.aux4567.z, 0.0);'}
   o.vUV = a.aUV; o.vWorldZ = worldPos.z;
 ${mask ? '  o.vUVMask = a.aUVMask;' : ''}
+${ao ? '  o.vAo = a.aAo;' : ''}
   o.pos = u.viewProj * worldPos;
-  o.pos.y = -o.pos.y; o.pos.z = 0.5 * (o.pos.z + o.pos.w);
+  o.pos.y = -o.pos.y; ${RASTER_Z_LINE}
+  ${RASTER_TIER_LINE}
   return o;
 }
 const KIND_MODEL: u32 = ${KIND_MODEL}u;
 const KIND_MESH: u32 = ${KIND_MESH}u;
+const RASTER_FLAG_VAO: u32 = ${RASTER_FLAG_VAO}u;
 const FACE_N: u32 = ${FACE_N}u; const FACE_E: u32 = ${FACE_E}u;
 const FACE_S: u32 = ${FACE_S}u; const FACE_W: u32 = ${FACE_W}u;
 const FACE_U: u32 = ${FACE_U}u; const FACE_D: u32 = ${FACE_D}u;
@@ -225,7 +239,7 @@ ${instanced ? '  if (!ditherKeep(v.packed.w >> 1u, u32(v.pos.x), u32(v.pos.y))) 
   let vKind = v.packed.y & 0xffu; let vFace = (v.packed.y >> 8u) & 0xfu; let vMat = (v.packed.y >> 16u) & 0xffffu;
   let aoD = computeAoD(v.aux0123.y, v.vUV.x, v.vUV.y, v.aux0123.x, v.aux0123.z, v.aux0123.w, v.aux4567.x, v.aux4567.y);
   let z = v.vWorldZ - v.aux4567.z - v.aux0123.x;
-  let dist = 1.0 / v.pos.w;
+  let dist = select(1.0 / v.pos.w, ${ORTHO_NEAR_WGSL} + v.pos.z * (${ORTHO_FAR_WGSL} - ${ORTHO_NEAR_WGSL}), u.projMode == 2u); // 38.19: w = 1 in ortho, depth = linear z
   var face = vFace; var nrmBits = 0u; var gaW = bitcast<u32>(aoD);
 ${cloth ? '  var nrmW = normalize(v.vNrmS); if (!front) { nrmW = -nrmW; }' : '  let nrmW = v.vNrmW;'}
   if (vKind == KIND_MODEL) {
@@ -236,6 +250,7 @@ ${cloth ? '' : `  if (vKind == KIND_MESH) {
     ${mask ? 'var nm = normalize(v.vNrmS); if (!front) { nm = -nm; }' : 'let nm = normalize(v.vNrmS);'} nrmBits = packNormalOct(nm);
     if (max(abs(nm.x), max(abs(nm.y), abs(nm.z))) >= 0.9) { face = roundedFace(nm); }
     else { face = FACE_PACKED; gaW = nrmBits; }
+    if ((u.axisAligned & RASTER_FLAG_VAO) != 0u) { gaW = bitcast<u32>(${ao ? 'v.vAo' : '1.0'}); } // ME-20c: kind-9 GA.w carries the vertex AO (light reads GI.z for the packed normal)
   }`}
   out.GI = vec4u(v.packed.x, vKind | (face << 8u) | (vMat << 16u), nrmBits, v.packed.z);
   out.GA = vec4u(bitcast<u32>(v.vUV.x), bitcast<u32>(v.vUV.y), bitcast<u32>(z), gaW);
@@ -250,6 +265,8 @@ ${mask ? `@fragment fn fs_mask_shadow(v: VertexOut) {
 
 /** The raster vertex stages' depth line (z -> [0,1], the GL2 convention after the y flip). */
 export const RASTER_Z_LINE = 'o.pos.z = 0.5 * (o.pos.z + o.pos.w);';
+/** OB-053 (38.49): depth tier pull-forward of the depth TEST (fragment Depth / GA come from 1/pos.w and stay unbiased). Raster colour passes only; the shadow variant drops it. */
+export const RASTER_TIER_LINE = `o.pos.z -= f32(u.depthTier) * ${DEPTH_TIER.toExponential()} * o.pos.w;`;
 /**
  * Sun shadow vertex line (38.5 item 6, depth32float): clip z lands in [0.5, 1] so one float ULP / depthBias unit is 2^-24 at every
  * depth (= the twin's 24-bit model). light.wgsl.js sunShadowTaps compares against 0.5 + 0.5 * sd; shadowParity converts back (d - 0.5) * 2.
@@ -259,7 +276,8 @@ export const SHADOW_Z_LINE = 'o.pos.z = 0.25 * (o.pos.z + o.pos.w) + 0.5 * o.pos
 export function toShadowVertexWgsl(code) {
   const parts = code.split(RASTER_Z_LINE);
   if (parts.length !== 2) throw new Error(`toShadowVertexWgsl: expected exactly one raster z line, found ${parts.length - 1}`);
-  return parts.join(SHADOW_Z_LINE);
+  return parts.join(SHADOW_Z_LINE).replace(`
+  ${RASTER_TIER_LINE}`, '');
 }
 
 export const RASTER_WGSL = rasterWgsl('static');

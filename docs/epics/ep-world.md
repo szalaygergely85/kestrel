@@ -1,4 +1,4 @@
-# EP-WORLD-VALLEY - the closed valley (manager, 2026-10-09, D-052)
+# EP-WORLD-VALLEY - the closed valley (manager, 2026-10-09, D-078)
 
 **Goal:** the whole alpha is one closed, readable valley: the player starts in a meadow on the near side, grows through better gear and spells in the level 1-5 zones (hillside, forest), earns the second bridge and fights the level 5-10 zones on the far side (zone/beast levels only, no player level), and never sees an invisible wall or a horizon sprite.
 
@@ -28,7 +28,7 @@
 | 2 | ALPHA-01f + QUAT-GROUND-01 | B2 (ALPHA-01f a-d, WebGPU only) -> C (QUAT-GROUND-01 scatter tables) | ~3 d + ~1 d | Masked instanced leafy trees per D-051; ground-cover scatter by ground type; owner LOD1 pick + forest triangle budget on forestWalk first. |
 | 3 | Biome map + forest + one flower glade showcase | PC-A designer (forest + glade look sheets, owner-approved BEFORE placement) -> B1 (biome map layer in world data, read by scatter) -> C (editor paint brush, content) | ~3 d | Editor-paintable biome layer drives scatter/trees; one hand-placed glade as the showcase shot. |
 | 4 | Far-side fields + foothills | PC-A designer (look sheets) -> C (content, scatter tables, beast spawns) | ~2-3 d | Uses slices 1-3 tooling only; per-biome beasts + ambient particles. |
-| 5 | Item tiers + spell tiers + beast level badge (owner-decided, D-052 item 3: no XP, no player level) | PC-A PO (ACs) + designer (item + spell tier art, badge/tier colours) -> C: tier data in `design/items.js` + crafting recipes (~0.5 d), spell upgrade sim (~0.75 d); HUD badge via the gameHooks seam (C, ~0.5 d) | ~2 d | Tiered weapons/armour/shields (found, crafted, bought); spell tiers unlocked by quests/chests/bosses; fixed beast level per zone shown as a health-bar badge or tier colour; no enemy scaling; save fields for tiers. |
+| 5 | Item tiers + spell tiers + beast level badge (owner-decided, D-078 item 3: no XP, no player level) | PC-A PO (ACs) + designer (item + spell tier art, badge/tier colours) -> C: tier data in `design/items.js` + crafting recipes (~0.5 d), spell upgrade sim (~0.75 d); HUD badge via the gameHooks seam (C, ~0.5 d) | ~2 d | Tiered weapons/armour/shields (found, crafted, bought); spell tiers unlocked by quests/chests/bosses; fixed beast level per zone shown as a health-bar badge or tier colour; no enemy scaling; save fields for tiers. |
 
 Rules: every new mesh pack -> `docs/licences.md` + `THIRD_PARTY_NOTICES.md` entry first; imports keep MESH-SIMP-01 budgets, UVMAP materials and proxy colliders; no owner-art reshaping (preview options first).
 

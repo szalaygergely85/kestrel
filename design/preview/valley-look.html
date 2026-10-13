@@ -31,13 +31,13 @@
 <body>
 <h1>Kestrel : EP-WORLD-VALLEY slice 0 : the closed valley (layout sheet + biome look sheets)</h1>
 <div class="note">
-  <b>Proposal for the owner, nothing is placed in the world.</b> D-052 / <code>docs/epics/ep-world.md</code>. Part 1 is a top-down
+  <b>Proposal for the owner, nothing is placed in the world.</b> D-078 / <code>docs/epics/ep-world.md</code>. Part 1 is a top-down
   layout sheet (120 x 80 cells, 1 cell = 16 m east-west x 24 m north-south, so the sheet covers the 2048 m world square of
   <code>overworld_far</code>: x = east, y = south, same origin; the big river is the existing recipe river
   <code>x_r(y)</code>, the tower sits at its real (1496, 1024)). Part 2 is one look sheet per biome, hand-composed
   coloured-letter mockups at the in-game cell grid (240 x 90 default), painted by this page with palette keys
   (existing + the proposed list below, not in <code>palette.js</code>). Environment = Quaternius-style meshes + scatter
-  tables (D-052 item 1), so each sheet lists mesh + scatter ingredients, not voxel models. Part 3 = self-check.
+  tables (D-078 item 1), so each sheet lists mesh + scatter ingredients, not voxel models. Part 3 = self-check.
   Opens from file:// (classic scripts). <b>palette.js, levels and engine are unchanged.</b>
 </div>
 <div id="fatal" class="fail"></div>
@@ -357,7 +357,7 @@ function drawLegend() {
     var sw = G[1].map(function (key) { return '<span class="sw" title="' + key + '" style="background:' + hexOf(key) + '"></span>'; }).join('');
     h += '<tr><td>' + k + '</td><td>' + G[0].join(' ').replace(/</g, '&lt;') + ' ' + sw + '</td><td>' + Z.name + '</td><td>' + lv + '</td><td>' + Z.note + '</td></tr>';
   });
-  h += '</table><div class="note">Level bands (D-052 item 3: fixed beast level per zone, no player level, no scaling): '
+  h += '</table><div class="note">Level bands (D-078 item 3: fixed beast level per zone, no player level, no scaling): '
      + 'meadow 1-2, hillside 2-3, forest + glades 3-5 | river, banks, bridges, beach take their side (near 1-5 / far 5-10) | '
      + 'open fields 5-7, rocky foothills 7-10. Bridge B and the north ford open onto level 7-10 foothills: the dangerous shortcut.</div>';
   document.getElementById('legend').innerHTML = h;

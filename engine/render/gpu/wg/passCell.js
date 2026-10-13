@@ -23,7 +23,8 @@ export function derivTerms(cols, rows, pxCellW, pxCellH, out) {
 }
 
 export class WgCellPass {
-  constructor(device, shadowPass = null, waterPass = null) {
+  /** @param {{stable?: boolean}} [opts] stable (US-073c): shade also writes the ramp-level target; absent = unchanged */
+  constructor(device, shadowPass = null, waterPass = null, opts = null) {
     this.water = waterPass; // WG-3e WgWaterPass (owned by the pipeline)
     this.device = device;
     this.pipeResolve = device.createPipeline({
@@ -37,7 +38,7 @@ export class WgCellPass {
       targetFormats: ['rgba32ui'],
     });
     this.lightPass = new WgLightPass(device, shadowPass);
-    this.shadePass = new WgShadePass(device); // WG-3c: shade + edge after light
+    this.shadePass = new WgShadePass(device, opts && opts.stable ? { stable: true } : null); // WG-3c: shade + edge after light
     this.shaded = false; // true when this frame's shade + edge ran (final cells valid)
     this.upload = new WgUploadSource(device);  // WG-3c: `?gpucompare=shade` test source
     this.ru = new Float32Array(RESOLVE_BLOCK.sizeWords); this.ri = new Int32Array(this.ru.buffer);
@@ -47,6 +48,7 @@ export class WgCellPass {
     this.rBind = { uniforms: this.ru, textures: this.rTex };
     this.dBind = { uniforms: this.du, textures: this.dTex };
     this.terms = { tanHalfHFov: 0, planeDistY: 0 };
+    this.carpet = null; // OB-073-D2d: WgCarpetPass (set by the pipeline on setCarpet); null = never encoded
   }
 
   /** Test hook: forwards the bound MaterialTable + palette (the shade pass packs lazily, only when they change). */
@@ -92,9 +94,10 @@ export class WgCellPass {
     }
     // WG-3b: light (needs the camera + world; without them the frame has no lit content)
     if (sceneOk) {
+      let tl = t; // OB-073-D2d: carpet after resolve/deriv/water, before light (no free timer slot: it is counted in 'light')
       wgSpanBegin(p, WG_PASS_SLOT.light);
-      try { this.lightPass.run(p, t); } finally { wgSpanEnd(p); }
-      this.shaded = this.shadePass.run(p, t, this.lightPass.cam, wp); // WG-3c (+ water composite WG-3e)
+      try { const cp = this.carpet; if (cp && cp.active) tl = cp.run(p, t) || t; this.lightPass.run(p, tl); } finally { wgSpanEnd(p); }
+      this.shaded = this.shadePass.run(p, tl, this.lightPass.cam, wp); // WG-3c (+ water composite WG-3e)
     }
   }
 

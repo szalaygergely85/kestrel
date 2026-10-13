@@ -69,7 +69,7 @@ checks += 2;
 const normalized = validateDetailConfig(cfg, names);
 assert.deepEqual([normalized.tileM, normalized.maxDraw, normalized.refeedM, normalized.maxPlacements,
   normalized.structClearM, normalized.entityClearM, normalized.layers[0].lodCells], [16, 768, 4, 40000, 2, 1.5, 4]); checks++;
-assert.deepEqual(normalized.layers[0].ground.grass[0], { model: 'tuft', weight: 1, sinkM: 0.05, yawStep: 1, shadow: false }); checks++;
+assert.deepEqual(normalized.layers[0].ground.grass[0], { model: 'tuft', weight: 1, sinkM: 0.05, yawStep: 1, shadow: false, sway: false }); checks++;
 const bad = [ ['tileM', 0], ['maxDraw', 0], ['maxPlacements', 65537], ['refeedM', NaN], ['structClearM', -1], ['entityClearM', Infinity], ['exclude', [{}]], ['layers', null] ];
 for (const [key, value] of bad) { assert.throws(() => validateDetailConfig({ ...cfg, [key]: value }), new RegExp(key)); checks++; }
 for (const [key, value] of [['fill', 2], ['cellM', 0], ['clearM', -1], ['maxSlope', NaN], ['seed', 0.5]]) {
@@ -83,5 +83,23 @@ for (const [ground, key] of [[{ mud: [{ model: 'a', weight: 1 }] }, 'ground.mud'
 assert.throws(() => scatterDetail(flat, [], [], { layers: [layer], maxPlacements: 1 }), /detail.maxPlacements/); checks++;
 const degenerate = scatterDetail(flat, [], [{ shape: 'capsule', ax: 0, ay: 0, bx: 0, by: 0, r: 8 }], { layers: [layer] });
 ok([...degenerate.x].every((x, i) => Math.hypot(x, degenerate.y[i]) > 8));
+// GS-01c: carveMask keep-out. 10x10 box, 4x4 walled core (cells 3..6) non-flagged, the ring around it flagged (open ground).
+{
+  const mask = new Uint8Array(100).fill(0);
+  for (let r = 3; r < 7; r++) for (let c = 3; c < 7; c++) mask[r * 10 + c] = 1;
+  const box = { x0: 0, y0: 10, x1: 10, y1: 20 };
+  const masked = scatterDetail(flat, [{ kind: 'mesh', bbox: box, carveMask: mask }], [], { layers: [layer], structClearM: 2 });
+  const plain = scatterDetail(flat, [{ kind: 'mesh', bbox: box }], [], { layers: [layer], structClearM: 2 });
+  const none = scatterDetail(flat, [{ kind: 'mesh', bbox: box, carveMask: null }], [], { layers: [layer], structClearM: 2 });
+  assert.deepEqual(none.x, plain.x); assert.deepEqual(none.y, plain.y); checks += 2; // null mask = unflagged level, unchanged
+  let inRing = 0, plainIn = 0;
+  for (let i = 0; i < masked.count; i++) {
+    const x = masked.x[i], y = masked.y[i];
+    assert.ok(!(x >= 3 - 2 && x <= 7 + 2 && y >= 13 - 2 && y <= 17 + 2)); // 2 m clear of the walled core
+    if (x >= 0 && x < 10 && y >= 10 && y < 20) inRing++;
+  }
+  for (let i = 0; i < plain.count; i++) if (plain.x[i] >= 0 && plain.x[i] < 10 && plain.y[i] >= 10 && plain.y[i] < 20) plainIn++;
+  ok(inRing > 0 && plainIn === 0 && masked.count > plain.count);
+}
 const start = performance.now(); scatterDetail(flat, [], [], { layers: [layer] }); const ms = performance.now() - start;
 console.log(`scatterDetail synthetic: ${a.count} placements, 2-layer ${two.count}; ${ms.toFixed(3)} ms${ms > 40 ? ' WARN >40ms' : ''}; ${checks} checks ALL PASS`);

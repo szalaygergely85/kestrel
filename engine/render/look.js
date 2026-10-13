@@ -23,11 +23,14 @@
 //                    tint: F32(3) = rgb(shadowTint)/max (or [1,1,1] when shadowTint null),
 //                    tintK: number = shadowK, sunFromLook: boolean, terrainTintK: number },
 //     haze: null | { near: F32(3), far: F32(3), start, full, curve, max, bgK,
-//                    blank, thin0, thinK, edgeMax },
+//                    blank, thin0, thinK, edgeMax, skyline: null | {fogMax, fromZ, seaFogMax} },
 //     clouds: null | { lit: F32(3), shade: F32(3), ramp: string (resolved glyph ramp),
 //                    scale, bias, cover, puffK, wispCover, wispK, wind: F32(2),
 //                    litK, litDy, bodyK, seed },
 //   }
+import { AO_DEFAULTS } from './horizonAo.js';
+import { skylineError } from './skyline.js'; // MAP-06a (pure module) // S8-B2-20b (pure module, no further imports)
+
 
 /**
  * @typedef {Object} ResolvedHemi
@@ -122,6 +125,7 @@ export function resolveLook(P, key = P.defaultTime) {
     hemi: null,
     haze: null,
     clouds: null,
+    ao: null, // S8-B2-20b (38.16): null | {strength, radiusM, bias, maxCells}
   };
 
   if (td.hemi) {
@@ -143,6 +147,8 @@ export function resolveLook(P, key = P.defaultTime) {
       near: rgb3(P, h.near), far: rgb3(P, h.far),
       start: h.start, full: h.full, curve: h.curve, max: h.max, bgK: h.bgK,
       blank: h.blank, thin0: h.thin0, thinK: h.thinK, edgeMax: h.edgeMax,
+      // MAP-06a (38.42): optional far-terrain fog cap {fogMax, fromZ, seaFogMax}; null = off (today's fog)
+      skyline: h.skyline ? { fogMax: h.skyline.fogMax, fromZ: h.skyline.fromZ, seaFogMax: h.skyline.seaFogMax } : null,
     };
   }
 
@@ -152,6 +158,22 @@ export function resolveLook(P, key = P.defaultTime) {
       lit: rgb3(P, c.lit), shade: rgb3(P, c.shade), ramp: P.ramps[c.ramp],
       scale: c.scale, bias: c.bias, cover: c.cover, puffK: c.puffK, wispCover: c.wispCover, wispK: c.wispK,
       wind: Float32Array.from(c.wind), litK: c.litK, litDy: c.litDy, bodyK: c.bodyK, seed: c.seed,
+      // S8-B2-12c (38.13): optional cloud-shadow block, null when absent (strength defaults 0, deckH 300).
+      shadow: c.shadow ? {
+        strength: c.shadow.strength === undefined ? 0 : c.shadow.strength, scale: c.shadow.scale, cover: c.shadow.cover,
+        soft: c.shadow.soft, deckH: c.shadow.deckH === undefined ? 300 : c.shadow.deckH,
+      } : null,
+    };
+  }
+
+  // S8-B2-20b (38.16): optional look.ao with defaults (strength 0 = off).
+  if (td.ao) {
+    const D = AO_DEFAULTS, a = td.ao;
+    rec.ao = {
+      strength: a.strength === undefined ? D.strength : a.strength,
+      radiusM: a.radiusM === undefined ? D.radiusM : a.radiusM,
+      bias: a.bias === undefined ? D.bias : a.bias,
+      maxCells: D.maxCells,
     };
   }
 
@@ -213,10 +235,20 @@ export function validateLook(P, key, onWarn) {
     if (!(h.thin0 >= 0 && h.thin0 <= 1)) errors.push(`${path}.haze.thin0: must be in [0, 1], got ${h.thin0}`);
     if (!(h.thinK >= 0)) errors.push(`${path}.haze.thinK: must be >= 0, got ${h.thinK}`);
     if (!(h.edgeMax > 0 && h.edgeMax <= 1)) errors.push(`${path}.haze.edgeMax: must be in (0, 1], got ${h.edgeMax}`);
+    if (h.skyline !== undefined && h.skyline !== null) { const se = skylineError(h.skyline); if (se) errors.push(`${path}.haze.skyline: ${se}`); }
     const sky0 = td.sky && td.sky[0] && td.sky[0].c;
     if (sky0 && h.far !== sky0) warn(`${path}.haze.far ("${h.far}") !== sky[0].c ("${sky0}") - the horizon colour must equal the far haze (architecture.md 37.18)`);
   }
 
+  if (td.ao !== undefined && td.ao !== null) {
+    const a = td.ao, ap = `${path}.ao`;
+    if (typeof a !== 'object') errors.push(`${ap}: must be an object, got ${JSON.stringify(a)}`);
+    else {
+      if (a.strength !== undefined && !(a.strength >= 0 && a.strength <= 1)) errors.push(`${ap}.strength: must be in [0, 1], got ${a.strength}`);
+      if (a.radiusM !== undefined && !(a.radiusM > 0 && a.radiusM <= 5)) errors.push(`${ap}.radiusM: must be in (0, 5], got ${a.radiusM}`);
+      if (a.bias !== undefined && !(a.bias >= 0 && a.bias < 1)) errors.push(`${ap}.bias: must be in [0, 1), got ${a.bias}`);
+    }
+  }
   if (td.clouds) {
     const c = td.clouds;
     if (!has(c.lit)) errors.push(`${path}.clouds.lit: unknown color key "${c.lit}"`);
@@ -236,7 +268,100 @@ export function validateLook(P, key, onWarn) {
         if (cc < 32 || cc > 126) { errors.push(`${path}.clouds.ramp: non-printable-ASCII glyph at index ${i}`); break; }
       }
     }
+    if (c.shadow !== undefined && c.shadow !== null) {
+      const s = c.shadow, sp = `${path}.clouds.shadow`;
+      if (typeof s !== 'object') errors.push(`${sp}: must be an object, got ${JSON.stringify(s)}`);
+      else {
+        if (s.strength !== undefined && !(s.strength >= 0 && s.strength <= 1)) errors.push(`${sp}.strength: must be in [0, 1], got ${s.strength}`);
+        if (!(s.scale > 0)) errors.push(`${sp}.scale: must be > 0, got ${s.scale}`);
+        if (!(s.cover >= 0 && s.cover <= 1)) errors.push(`${sp}.cover: must be in [0, 1], got ${s.cover}`);
+        if (!(s.soft > 0)) errors.push(`${sp}.soft: must be > 0, got ${s.soft}`);
+        if (s.deckH !== undefined && !(s.deckH > 0)) errors.push(`${sp}.deckH: must be > 0, got ${s.deckH}`);
+      }
+    }
   }
 
   return errors;
+}
+
+// ---- DN-01 (docs/architecture.md 38.39): live day/night look ----------------
+// `blendLook(P, hour, schedule, out)` lerps the two schedule neighbours of `hour`
+// into ONE reusable record `out` (same shape as `P.timeOfDay[key]`, so every
+// reader that takes a timeOfDay record takes it unchanged) and publishes it as
+// `P.liveLook`, bumping `P.liveLookVersion`. Colours are written as synthetic
+// palette keys ('$live.ambient' ...) into P.rgb / P.hue, so readers that do
+// `P.rgb[T.ambient]` or `P.rgb[stops[i].c]` need no change. Allocation-free after
+// the first call for a given `out`. `P.nightFloor` (data) clamps ambientI; the
+// glyph-luminance floor is exposed as `out.floorLum` for the shaders.
+const LIVE_PREFIX = '$live.';
+function liveKey(P, out, slot) {
+  const k = LIVE_PREFIX + slot;
+  if (!P.rgb[k]) { P.rgb[k] = [0, 0, 0]; P.hue[k] = [1, 1, 1]; }
+  return k;
+}
+function setLiveColor(P, key, ra, rb, f) {
+  const c = P.rgb[key], h = P.hue[key];
+  c[0] = ra[0] + (rb[0] - ra[0]) * f; c[1] = ra[1] + (rb[1] - ra[1]) * f; c[2] = ra[2] + (rb[2] - ra[2]) * f;
+  const mx = Math.max(c[0], c[1], c[2]) || 1;
+  h[0] = c[0] / mx; h[1] = c[1] / mx; h[2] = c[2] / mx;
+}
+
+/**
+ * @param {any} P palette (needs rgb, hue, timeOfDay)
+ * @param {number} hour 0..24 (wraps)
+ * @param {Array<{h:number,key:string}>} schedule ascending hours; wraps last -> first (+24)
+ * @param {any} [out] reusable record (default: P.liveLook or a new one)
+ * @returns {any} out (also P.liveLook)
+ */
+export function blendLook(P, hour, schedule, out) {
+  const n = schedule.length;
+  const h = ((hour % 24) + 24) % 24;
+  // segment i = [schedule[i], schedule[i+1]); the last wraps to the first + 24.
+  let i = n - 1;
+  for (let k = 0; k < n; k++) { if (schedule[k].h > h) { i = k - 1; break; } }
+  let h0, h1, a, b;
+  if (i < 0) { i = n - 1; h0 = schedule[i].h - 24; } else h0 = schedule[i].h;
+  a = schedule[i]; b = schedule[(i + 1) % n];
+  h1 = (i + 1 < n) ? b.h : b.h + 24;
+  const span = h1 - h0;
+  const f = span > 0 ? (h - h0) / span : 0;
+  const A = P.timeOfDay[a.key], B = P.timeOfDay[b.key];
+
+  if (!out) out = P.liveLook;
+  if (!out) out = {};
+  if (!out.sky) {
+    out.key = 'live';
+    out.ambient = liveKey(P, out, 'ambient'); out.sun = liveKey(P, out, 'sun');
+    out.cloud = liveKey(P, out, 'cloud'); out.fog = liveKey(P, out, 'fog');
+    out.sky = [];
+    for (let s = 0; s < A.sky.length; s++) out.sky.push({ t: 0, c: liveKey(P, out, 'sky' + s) });
+    out.ambientI = 0; out.sunI = 0; out.sunElev = 0; out.floorLum = 0; out.floorEff = 0; // fixed shape up front (no late field adds)
+  }
+  const near = f < 0.5 ? A : B;
+  out.ambientI = A.ambientI + (B.ambientI - A.ambientI) * f;
+  out.sunI = A.sunI + (B.sunI - A.sunI) * f;
+  out.sunElev = A.sunElev + (B.sunElev - A.sunElev) * f;
+  const nf = P.nightFloor;
+  if (nf) {
+    if (out.ambientI < nf.ambientI) out.ambientI = nf.ambientI;
+    out.floorLum = nf.lum || 0;
+    // DN-02: effective glyph-luminance floor = floorLum faded out with the sun/moon intensity (full at night, 0 by dusk's sunI .8), so day shadows keep today's look.
+    const sk = (out.sunI - 0.25) / 0.55, ss = sk <= 0 ? 0 : sk >= 1 ? 1 : sk * sk * (3 - 2 * sk);
+    out.floorEff = out.floorLum * (1 - ss);
+  }
+  setLiveColor(P, out.ambient, P.rgb[A.ambient], P.rgb[B.ambient], f);
+  setLiveColor(P, out.sun, P.rgb[A.sun], P.rgb[B.sun], f);
+  setLiveColor(P, out.cloud, P.rgb[A.cloud], P.rgb[B.cloud], f);
+  setLiveColor(P, out.fog, P.rgb[A.fog], P.rgb[B.fog], f);
+  // sky stops: lerp only when both records have the same stop count (else the nearer one wins).
+  const same = A.sky.length === B.sky.length && A.sky.length === out.sky.length;
+  for (let s = 0; s < out.sky.length; s++) {
+    const sa = same ? A.sky[s] : near.sky[Math.min(s, near.sky.length - 1)];
+    const sb = same ? B.sky[s] : sa;
+    out.sky[s].t = sa.t + (sb.t - sa.t) * f;
+    setLiveColor(P, out.sky[s].c, P.rgb[sa.c], P.rgb[sb.c], f);
+  }
+  P.liveLook = out;
+  P.liveLookVersion = (P.liveLookVersion | 0) + 1;
+  return out;
 }

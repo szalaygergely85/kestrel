@@ -253,7 +253,8 @@ export function fastShade(P, matKey, u, v, dist, z, out) {
     if (tex.glyphOverride[idx] && tfFade > 0.5) glyphOverride = tex.glyphOverride[idx];
   }
 
-  const b = frameLm * rec.albedo * s + rec.emissive;
+  let b = frameLm * rec.albedo * s + rec.emissive;
+  const flo = P.liveLook ? P.liveLook.floorEff : 0; if (flo > 0 && b < flo) b = flo; // DN-02 night floor (same value the shade uniform carries)
 
   // glyph: exact Math.pow, see module doc.
   const cutoff = P.shading.cutoff;
@@ -312,7 +313,7 @@ export function fastShade(P, matKey, u, v, dist, z, out) {
  */
 export function fastShadeSky(P, az, elev, timeKey, out) {
   const rec = resolveSky(P);
-  const T = P.timeOfDay[timeKey || P.defaultTime];
+  const T = (P.liveLook && (!timeKey || timeKey === P.defaultTime)) ? P.liveLook : P.timeOfDay[timeKey || P.defaultTime]; // DN-01
   const stops = T.sky;
 
   // skyGradient, inlined (no array/string alloc): find the bracketing stops.

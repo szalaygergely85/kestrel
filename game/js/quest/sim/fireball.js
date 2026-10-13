@@ -5,9 +5,9 @@
 // The sim is transient (like the sword): not saved; a reload has no balls in flight.
 import { explosionHits, applyImpulse, PHYSICS, SIM_STEP } from '../../../../engine/index.js';
 import { MAX_TARGETABLES } from './targetables.js';
+import { sweepSegment, NO_HIT, WORLD_HIT, TARGET_HIT } from './sweep.js';
 
 export const FB_IDLE = 0, FB_HOLD = 1, FB_CHARGE = 2;
-const NO_HIT = 0, WORLD_HIT = 1, TARGET_HIT = 2;
 const MAXC = MAX_TARGETABLES + 1; // targets + the player
 
 /**
@@ -15,7 +15,7 @@ const MAXC = MAX_TARGETABLES + 1; // targets + the player
  * @param {{emit:Function}} events
  * @param {typeof import('../spellConfig.js').FIREBALL_CFG} cfg
  * @param {ReturnType<typeof import('./targetables.js').createTargetables>} targets
- * @param {{spendMana?: (n:number)=>boolean}} [hooks]
+ * @param {{spendMana?: (n:number)=>boolean, enabled?: boolean, isEnabled?: () => boolean}} [hooks] `enabled:false` = casting disabled (D-065)
  */
 export function createFireballSim(world, events, cfg, targets, hooks) {
   const spendMana = (n) => (hooks && typeof hooks.spendMana === 'function' ? hooks.spendMana(n) : true);
@@ -47,51 +47,7 @@ export function createFireballSim(world, events, cfg, targets, hooks) {
   const castPayload = { hand: 'right', charged: false, x: 0, y: 0, z: 0 };
   const burstPayload = { x: 0, y: 0, z: 0, radius: 0, charged: false };
 
-  /** Segment p0 -> p1 vs world + targets. Fills `hit` (kind, fraction t, target idx, point). Ties go to the target. */
-  function sweep(x0, y0, z0, x1, y1, z1) {
-    hit.kind = NO_HIT; hit.idx = -1; hit.t = 1;
-    const dx = x1 - x0, dy = y1 - y0, dz = z1 - z0;
-    let tw = 2;
-    if (dx * dx + dy * dy + dz * dz > 1e-12 && world.raySegment(x0, y0, z0, x1, y1, z1, _ray)) tw = _ray.t;
-    let tt = 2, ti = -1;
-    const pad = cfg.hitPad, a = dx * dx + dy * dy;
-    for (let i = 0; i < targets.count; i++) {
-      const R = targets.r[i];
-      if (R < 0) continue;
-      const Rp = R + pad, fx = x0 - targets.x[i], fy = y0 - targets.y[i];
-      let lo, hi;
-      if (a < 1e-12) {
-        if (fx * fx + fy * fy > Rp * Rp) continue;
-        lo = 0; hi = 1;
-      } else {
-        const b = 2 * (fx * dx + fy * dy), c = fx * fx + fy * fy - Rp * Rp;
-        const disc = b * b - 4 * a * c;
-        if (disc < 0) continue;
-        const sq = Math.sqrt(disc);
-        lo = (-b - sq) / (2 * a); hi = (-b + sq) / (2 * a);
-        if (lo < 0) lo = 0;
-        if (hi > 1) hi = 1;
-        if (lo > hi) continue;
-      }
-      const zl = targets.z[i] - pad, zh = targets.z[i] + targets.h[i] + pad;
-      if (dz > -1e-12 && dz < 1e-12) {
-        if (z0 < zl || z0 > zh) continue;
-      } else {
-        let s1 = (zl - z0) / dz, s2 = (zh - z0) / dz;
-        if (s1 > s2) { const s = s1; s1 = s2; s2 = s; }
-        if (s1 > lo) lo = s1;
-        if (s2 < hi) hi = s2;
-        if (lo > hi) continue;
-      }
-      if (lo < tt) { tt = lo; ti = i; }
-    }
-    if (ti >= 0 && tt <= tw) {
-      hit.kind = TARGET_HIT; hit.t = tt; hit.idx = ti;
-    } else if (tw <= 1) {
-      hit.kind = WORLD_HIT; hit.t = tw;
-    } else return;
-    hit.x = x0 + dx * hit.t; hit.y = y0 + dy * hit.t; hit.z = z0 + dz * hit.t;
-  }
+  const sweep = (x0, y0, z0, x1, y1, z1) => sweepSegment(world, targets, cfg.hitPad, x0, y0, z0, x1, y1, z1, hit);
 
   function burst(cx, cy, cz, radius, damage, knock, charged, direct, ddx, ddy, player) {
     targets.refresh(); // cheap; keeps a cast-time (point-blank) burst exact
@@ -144,6 +100,8 @@ export function createFireballSim(world, events, cfg, targets, hooks) {
   }
 
   function cast(player, charged, fx, fy, ax, ay, az) {
+    if (hooks && hooks.enabled === false) return; // D-065 flag off: no projectile, burst, damage or mana (hand visual keeps its state)
+    if (hooks && hooks.isEnabled && !hooks.isEnabled()) return; // FB-01: locked until unlocked (live getter; 0 MP, no projectile)
     if (aliveCount >= cfg.maxAlive) return; // refused at the cap, no mana
     let C = cfg.tap;
     if (charged) {

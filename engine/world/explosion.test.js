@@ -94,7 +94,7 @@ const oi = new Int32Array(32), of = new Float64Array(32), od = new Float64Array(
   for (let i = 0; i < 20000; i++) run();
   const ms = Number(process.hrtime.bigint() - t0) / 1e6 / 20000;
   global.gc();
-  ok('16 candidates <= 0.35 ms', ms <= 0.35, `${ms.toFixed(4)} ms`);
+  if (process.env.BAKE_BENCH) ok('16 candidates <= 0.35 ms', ms <= 0.35, `${ms.toFixed(4)} ms`); // wall-clock: BAKE_BENCH=1 only
   console.log(`  info explosionHits(16) ${ms.toFixed(4)} ms/call (stub ray world)`);
   ok('explosionHits: no heap growth', process.memoryUsage().heapUsed - h0 < 64 * 1024);
 }

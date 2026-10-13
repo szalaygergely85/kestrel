@@ -23,7 +23,7 @@
 // individually pathological there.
 
 import { CellBuffer } from './CellBuffer.js';
-import { computeCellBox, FONT_STACK } from './glyphMetrics.js';
+import { computeCellBox, fitCssRatio, FONT_STACK } from './glyphMetrics.js';
 import { GLYPH_BG_ALPHA } from '../ui/uiLayer.js'; // UI-XHAIR-01: glyph-only bg-alpha mask (128)
 
 const MAX_PX_CELL_H = 16; // D-005: cap the fallback's backing resolution, CSS-upscale
@@ -38,6 +38,7 @@ export class RenderTargetCanvas2D {
     this.cells = new CellBuffer(cols, rows);
 
     this.cellW = 1; this.cellH = 1;
+    this._aspect = 16 / 9; // OB-117: displayed picture ratio (w/h); null = fill the window. setAspect() changes it live
     this.pxCellW = 1; this.pxCellH = 1;
     this.glyphAscent = 1;
     this.fontSize = 16;
@@ -65,6 +66,13 @@ export class RenderTargetCanvas2D {
   // window-derived box with a fixed one - used ONLY by `?gpucompare=1`/
   // `?gpucompare=shade` (main.js), see RenderTargetGL.resize's header
   // comment. Normal gameplay never passes these.
+  /** OB-117: picture ratio (number w/h, e.g. 16/9) or null = fill the window; re-fits the live window at once. */
+  setAspect(ratio) {
+    this._aspect = ratio > 0 ? ratio : null;
+    const rb = this._refBox || {};
+    this.resize(rb.availW, rb.availH, rb.dpr);
+  }
+
   resize(refAvailW, refAvailH, refDpr) {
     const dpr = refDpr != null ? refDpr : (window.devicePixelRatio || 1);
     const availW = refAvailW != null ? refAvailW : window.innerWidth;
@@ -77,6 +85,7 @@ export class RenderTargetCanvas2D {
     if (availW <= 0 || availH <= 0) return;
 
     this.dpr = dpr;
+    this._refBox = { availW: refAvailW, availH: refAvailH, dpr: refDpr }; // OB-117: setAspect re-fits with the same box (live window stays live)
     const box = computeCellBox(this._measureCtx, this.cols, this.rows, availW * dpr, availH * dpr, MAX_PX_CELL_H);
     this.fontSize = box.fontPx;
     this.pxCellW = box.pxCellW;
@@ -89,8 +98,10 @@ export class RenderTargetCanvas2D {
     // The backing resolution is capped (MAX_PX_CELL_H) but the element
     // still fills the window via CSS - browsers upscale it (accepted
     // softness, see D-005).
-    this.canvas.style.width = (availW) + 'px';
-    this.canvas.style.height = (availH) + 'px';
+    // OB-117: fills the whole window like the WebGPU target.
+    const css = fitCssRatio(this._aspect, this.pxCellW * this.cols, this.pxCellH * this.rows, dpr, availW, availH);
+    this.canvas.style.width = (css.w > 0 ? css.w : availW) + 'px';
+    this.canvas.style.height = (css.h > 0 ? css.h : availH) + 'px';
     this.canvas.width = this.pxCellW * this.cols;
     this.canvas.height = this.pxCellH * this.rows;
 
@@ -211,7 +222,9 @@ export class RenderTargetCanvas2D {
         const x0 = Math.round(ux * sx), x1 = Math.min(this.cols, Math.round((ux + 1) * sx));
         const fi = ui_i * 4;
         const glyphOnly = src.bg[fi + 3] === GLYPH_BG_ALPHA;
-        const gIdx = src.glyphIdx[ui_i];
+        // OB-051 degrade: a scaled block shows its glyph only in the even/even cell, space in the others
+        const scaledCell = (src.fg[fi + 3] & 128) !== 0;
+        const gIdx = scaledCell && ((ux & 1) || (uy & 1)) ? 0 : src.glyphIdx[ui_i];
         const fr = src.fg[fi], fg1 = src.fg[fi + 1], fb = src.fg[fi + 2];
         const br = src.bg[fi], bgc = src.bg[fi + 1], bb = src.bg[fi + 2];
         for (let cy = y0; cy < y1; cy++) {
@@ -267,14 +280,17 @@ export class RenderTargetCanvas2D {
         }
 
         const mask = this._buildGlyphMask(gIdx);
+        const scaled = (fgArr[fi + 3] & 128) !== 0; // OB-051: 2x2 block cell; quadrant = cell parity
+        const qx = cx & 1, qy = cy & 1;
         const fr = fgArr[fi], fgg = fgArr[fi + 1], fb = fgArr[fi + 2];
         const fgWord = (255 << 24) | (fb << 16) | (fgg << 8) | fr;
 
         for (let j = 0; j < pxCellH; j++) {
           let idx = rowBase + j * canvasW;
           let mi = j * pxCellW;
+          const mrow = scaled ? ((qy * pxCellH + j) >> 1) * pxCellW : 0;
           for (let k = 0; k < pxCellW; k++) {
-            const a = mask[mi];
+            const a = scaled ? mask[mrow + ((qx * pxCellW + k) >> 1)] : mask[mi];
             if (a === 0) {
               pixels[idx] = bgWord;
             } else if (a === 255) {

@@ -35,6 +35,11 @@ export function createWaterfallHooks(world, particles, cfg) {
         const f = falls[i], u = (tick % 60) / 59;
         particles.setEmitterPos(handles[i * 4], f.lip[0] + (f.lip[2] - f.lip[0]) * u,
           f.lip[1] + (f.lip[3] - f.lip[1]) * u, f.z);
+        // OB-045: spray + mist sweep the whole foot line (a wide fall had one 1 m puff at its centre). Phase-shifted so they never coincide.
+        const dx = (f.lip[2] - f.lip[0]) * 0.8, dy = (f.lip[3] - f.lip[1]) * 0.8;
+        const us = ((tick * 7) % 60) / 59 - 0.5, um = ((tick * 11 + 30) % 60) / 59 - 0.5;
+        particles.setEmitterPos(handles[i * 4 + 1], footX[i] + dx * us, footY[i] + dy * us, footZ[i] + 0.04);
+        particles.setEmitterPos(handles[i * 4 + 2], footX[i] + dx * um, footY[i] + dy * um, footZ[i] + 0.04);
         if (tick % cfg.ripple.periodTicks === 0) particles.burst(handles[i * 4 + 3], cfg.ripple.points);
       }
       tick++;

@@ -11,10 +11,12 @@ import { defineUniformBlock } from './uniformBlock.js';
 import { GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL, CELL_RAY_WGSL, CELL_RAY_PITCHED_WGSL, FALLOFF_FAST_WGSL, OCT_NORMAL_WGSL, HASH_FAST_WGSL, CLOUD_SHADOW_WGSL, HORIZON_AO_WGSL } from './common.wgsl.js';
 import { MAX_LIGHTS, MAX_VIS_DIM, MAX_SUN_STEPS } from '../../lighting.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
-import { FACE_PACKED, KIND_TERRAIN } from '../../GBuffer.js';
-import { SUN_N_SHIFT } from '../../shadowSun.js';
-import { CLOUD_SHIFT, CLOUD_DARK } from '../../cloudShadow.js';
-import { AO_TAP_CELLS, AO_MAX } from '../../horizonAo.js';
+import { FACE_PACKED, KIND_TERRAIN, KIND_MESH, KIND_GRASS } from '../../GBuffer.js';
+import { SUN_N_SHIFT, CLOUD_Q_SHIFT } from '../../shadowSun.js';
+import { AO_MAX } from '../../horizonAo.js';
+import { PSH_NEAR } from '../../shadowPoint.js';
+
+export const PSH_MAX_SLOTS = 6;
 
 const FACE_N = 1, FACE_E = 2, FACE_S = 3, FACE_W = 4, FACE_U = 5, FACE_D = 6;
 
@@ -28,9 +30,8 @@ export const LIGHT_BLOCK = defineUniformBlock('LightU', [
   { name: 'posY', type: 'f32' }, { name: 'eyeH', type: 'f32' }, { name: 'dirX', type: 'f32' }, { name: 'dirY', type: 'f32' },
   { name: 'planeX', type: 'f32' }, { name: 'planeY', type: 'f32' }, { name: 'horizonRow', type: 'f32' }, { name: 'planeDistY', type: 'f32' },
   { name: 'sunShadowBiasM', type: 'f32' }, { name: 'sunShadowNormalOff', type: 'f32' },
-  // S8-B2-12a (38.13): takes the first pad word (30). S8-B2-20 (38.17): aoStrength takes the last pad word
-  // (31); pitchA stays at word 32.
-  { name: 'cloudCover', type: 'f32' },
+  // word 30 = pad. S8-B2-20 (38.17): aoStrength takes the last pad word (31); pitchA stays at word 32.
+  { name: 'pad30', type: 'f32' },
   { name: 'aoStrength', type: 'f32' },
   { name: 'pitchA', type: 'vec4' }, // fX, fY, fZ, tanHalfX
   { name: 'pitchB', type: 'vec4' }, // rX, rY, uX, uY
@@ -41,12 +42,22 @@ export const LIGHT_BLOCK = defineUniformBlock('LightU', [
   { name: 'visBox', type: 'vec4', count: MAX_LIGHTS },   // ox, oy, w, h (world cell units)
   { name: 'structA', type: 'vec4', count: MAX_STRUCTS }, // origin.xyz, w (width)
   { name: 'structB', type: 'vec4', count: MAX_STRUCTS }, // h, yOff, structSeq, maxH
-  // S8-B2-12a (38.13): strength, invScale (1/scaleM), offU, offV - appended at the end (word 316).
-  { name: 'cloud', type: 'vec4' },
+  // S8-B2-12c (38.13): cloud-shadow uniforms appended at the END (packCloudUniforms): A = (offX, offY, scale, strength),
+  // B = (cover, soft, deckH, seed).
+  { name: 'cloudA', type: 'vec4' },
+  { name: 'cloudB', type: 'vec4' },
+  // S8-B2-20b (38.16): AO params appended at the very END: (radiusM, bias, maxCells, 0). aoStrength stays word 31.
+  { name: 'aoP', type: 'vec4' },
+  // ME-16d (38.22 item 3): point-light shadow maps, appended at the very END (no word moves). pshA = (count n, res, biasM,
+  // normalOffTexels); count 0 = off (the old LVIS line runs). pshO[slot] = (origin xyz, far). pshSlot: light i -> slot + 1, 0 = unshadowed
+  // (MAX_LIGHTS floats = MAX_LIGHTS/4 vec4, light i at pshSlot[i >> 2][i & 3]).
+  { name: 'pshA', type: 'vec4' },
+  { name: 'pshO', type: 'vec4', count: PSH_MAX_SLOTS },
+  { name: 'pshSlot', type: 'vec4', count: MAX_LIGHTS / 4 },
 ]);
 
 /** Texture slot kinds for PipelineDesc.bindings.textures. */
-export const LIGHT_TEXTURES = Object.freeze(['uint', 'uint', 'uint', 'uint', 'float', 'uint', 'depth']);
+export const LIGHT_TEXTURES = Object.freeze(['uint', 'uint', 'uint', 'uint', 'float', 'uint', 'depth', 'depthArray']);
 export const LIGHT_TARGETS = Object.freeze(['rgba32uint']);
 
 export const LIGHT_WGSL = `
@@ -58,6 +69,7 @@ ${LIGHT_BLOCK.wgsl}
 @group(0) @binding(4) var uWorldGeom: texture_2d<f32>;   // rgba32float: floorH, ceilH, topH, ceilOpenH (unused)
 @group(0) @binding(5) var uWorldFlags: texture_2d<u32>;  // rg8uint: r = solid|ceilSky<<1|topSky<<2|dynamic<<3
 @group(0) @binding(6) var uSunShadow: texture_depth_2d;  // depth32float, textureLoad (NEAREST, no hardware compare)
+@group(0) @binding(7) var uPointShadow: texture_depth_2d_array; // ME-16d: layer = slot*6 + face, depth in [0,1] (off: 1x1x6 dummy, never sampled)
 @group(1) @binding(0) var<uniform> u: LightU;
 
 const MAX_VIS_DIM: i32 = ${MAX_VIS_DIM};
@@ -66,17 +78,18 @@ const MAX_SUN_STEPS: i32 = ${MAX_SUN_STEPS};
 const FACE_N: i32 = ${FACE_N}; const FACE_E: i32 = ${FACE_E}; const FACE_S: i32 = ${FACE_S};
 const FACE_W: i32 = ${FACE_W}; const FACE_U: i32 = ${FACE_U}; const FACE_D: i32 = ${FACE_D};
 const FACE_PACKED: i32 = ${FACE_PACKED};
+const PSH_NEAR: f32 = ${PSH_NEAR};
 const SUN_N_SHIFT: u32 = ${SUN_N_SHIFT}u;
 // US-026a S5: kind 7 (terrain) is lit by the sun analytically in the terrain shade pass (D-007).
 const KIND_TERRAIN: i32 = ${KIND_TERRAIN};
+const KIND_MESH: i32 = ${KIND_MESH}; // ME-20c
+const KIND_GRASS: i32 = ${KIND_GRASS}; // OB-073 D2e: carpet blade = terrain for light (twin lighting.js: sun term analytic in shade, no AO, N = GI.z lean-tilted)
 // BUG-LIGHT-002: same epsilon as lighting.js VIS_FLOOR_EPS (float32 noise at exact vis-grid boundaries).
 const VIS_FLOOR_EPS: f32 = 1e-3;
-// S8-B2-12a (38.13): cloud-shadow darkening byte shift + strength, bits 24..31 of LIGHT.w (free - gpucompare's
-// decode only reads bits 0, 8..15, 16..18).
-const CLOUD_SHIFT: u32 = ${CLOUD_SHIFT}u;
-const CLOUD_DARK: f32 = ${CLOUD_DARK};
-// S8-B2-20 (38.17): horizon AO light-pass term. AO_RADIUS_M/AO_BIAS live inside HORIZON_AO_WGSL itself.
-const AO_TAP_CELLS: i32 = ${AO_TAP_CELLS};
+// S8-B2-12c (38.13): cloud-shadow darkening byte shift, bits 24..31 of LIGHT.w (free - gpucompare's decode only
+// reads bits 0, 8..15, 16..18).
+const CLOUD_Q_SHIFT: u32 = ${CLOUD_Q_SHIFT}u;
+// S8-B2-20b (38.16): horizon AO radius/bias/maxCells come from u.aoP = (radiusM, bias, maxCells, 0).
 const AO_MAX: f32 = ${AO_MAX};
 
 ${GBUF_UNPACK_WGSL}
@@ -87,6 +100,7 @@ ${OCT_NORMAL_WGSL}
 ${FULLSCREEN_VS_WGSL}
 ${HASH_FAST_WGSL}
 ${CLOUD_SHADOW_WGSL}
+fn cloudShadeQ(P: vec3f, sd: vec3f) -> u32 { return cloudShadeQ4(P, sd, u.cloudA, u.cloudB); }
 ${HORIZON_AO_WGSL}
 
 // S8-B2-20 (38.17): tap point Pt, same projection as P - the existing P code above is NOT refactored to call this
@@ -95,7 +109,7 @@ fn cellPoint(cell: vec2f, dist: f32) -> vec3f {
   if (u.projMode == 0) {
     return cellRayP(cell, vec2i(u.gridCols, u.gridRows), u.posX, u.posY, u.eyeH, u.dirX, u.dirY, u.planeX, u.planeY, u.horizonRow, u.planeDistY, dist);
   }
-  return cellRayPitched(cell, vec2i(u.gridCols, u.gridRows), vec3f(u.posX, u.posY, u.eyeH), u.pitchA.xyz, u.pitchB.xy, vec3f(u.pitchB.zw, u.pitchC.x), vec2f(u.pitchA.w, u.pitchC.y), dist);
+  return cellRayPitched(cell, vec2i(u.gridCols, u.gridRows), vec3f(u.posX, u.posY, u.eyeH), u.pitchA.xyz, u.pitchB.xy, vec3f(u.pitchB.zw, u.pitchC.x), vec2f(u.pitchA.w, u.pitchC.y), dist, u.projMode == 2);
 }
 
 // One AO tap at grid cell (tx, ty): open (0) if outside the grid or kind 0 (no finite-depth check here - unlike
@@ -106,7 +120,7 @@ fn aoTapCell(tx: i32, ty: i32, P: vec3f, N: vec3f) -> f32 {
   if (giKind(textureLoad(uGI, t, 0).y) == 0u) { return 0.0; }
   let tDist = bitcast<f32>(textureLoad(uDepth, t, 0).x);
   let Pt = cellPoint(vec2f(f32(tx), f32(ty)), tDist);
-  return aoTapOcc(N, Pt - P);
+  return aoTapOcc(N, Pt - P, u.aoP.x, u.aoP.y);
 }
 
 // --- US-007 sun shadow DDA (JS twin: lighting.js sunVisible/sunCellBlocked) ---
@@ -221,6 +235,45 @@ fn sunShadowTaps(P: vec3f, N: vec3f) -> i32 {
   return n;
 }
 
+// ME-16d (38.22 item 3): point-light shadow taps, scalar form (JS twin: shadowPoint.js pointShadowTaps, same op order).
+// (dx,dy,dz) = P - O (O = unjittered map origin), n = N. Face = largest |axis| (ties X, Y, Z; zero counts positive), (a, b, c) = (right, up,
+// forward) components per FACE_TABLE. 2x2 taps at floor(uv*res - 0.5) clamped to the face (no cross-face taps). Beyond far / inside near -> 4.
+fn pointShadowTapsS(slot: i32, dx: f32, dy: f32, dz: f32, nx: f32, ny: f32, nz: f32, far: f32) -> i32 {
+  let res = u.pshA.y;
+  let ma = max(max(abs(dx), abs(dy)), abs(dz));
+  let len = sqrt(dx * dx + dy * dy + dz * dz);
+  let no = u.pshA.w * (2.0 * ma / res);
+  let il = select(0.0, 1.0 / len, len > 0.0);
+  let vx = dx + (nx * no - dx * il * u.pshA.z);
+  let vy = dy + (ny * no - dy * il * u.pshA.z);
+  let vz = dz + (nz * no - dz * il * u.pshA.z);
+  let ax = abs(vx); let ay = abs(vy); let az = abs(vz);
+  var face: i32 = 4; var a: f32 = vx; var b: f32 = vy; var c: f32 = vz;
+  if (ax >= ay && ax >= az) {
+    if (vx >= 0.0) { face = 0; a = vy; b = vz; c = vx; } else { face = 1; a = vz; b = vy; c = -vx; }
+  } else if (ay >= az) {
+    if (vy >= 0.0) { face = 2; a = vz; b = vx; c = vy; } else { face = 3; a = vx; b = vz; c = -vy; }
+  } else if (vz < 0.0) { face = 5; a = vy; b = vx; c = -vz; }
+  if (c >= far || c <= PSH_NEAR) { return 4; }
+  let rd = 0.75 + 0.25 * ((far + PSH_NEAR) / (far - PSH_NEAR) - 2.0 * far * PSH_NEAR / ((far - PSH_NEAR) * c)); // sun convention (SHADOW_Z_LINE): stored = 0.75 + 0.25 * ndc
+  let fu = (a / c * 0.5 + 0.5) * res - 0.5;
+  let fv = (b / c * 0.5 + 0.5) * res - 0.5;
+  let x0 = i32(floor(fu)); let y0 = i32(floor(fv));
+  let last = i32(res) - 1;
+  let layer = slot * 6 + face;
+  var n = 0;
+  for (var k = 0; k < 4; k++) {
+    let x = clamp(x0 + (k & 1), 0, last);
+    let y = clamp(y0 + (k >> 1u), 0, last);
+    if (rd <= textureLoad(uPointShadow, vec2i(x, y), layer, 0)) { n++; }
+  }
+  return n;
+}
+fn pointShadowTaps(slot: i32, P: vec3f, N: vec3f) -> i32 {
+  let o = u.pshO[slot];
+  return pointShadowTapsS(slot, P.x - o.x, P.y - o.y, P.z - o.z, N.x, N.y, N.z, o.w);
+}
+
 fn faceNormal(face: u32) -> vec3f {
   if (face == u32(FACE_N)) { return vec3f(0.0, -1.0, 0.0); }
   if (face == u32(FACE_E)) { return vec3f(1.0, 0.0, 0.0); }
@@ -255,13 +308,14 @@ fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
     P = cellRayP(vec2f(cell), vec2i(u.gridCols, u.gridRows), u.posX, u.posY, u.eyeH, u.dirX, u.dirY, u.planeX, u.planeY, u.horizonRow, u.planeDistY, dist);
   } else {
     // RE-02a: pitched camera (28.1 A2); dist is the view depth vd.
-    P = cellRayPitched(vec2f(cell), vec2i(u.gridCols, u.gridRows), vec3f(u.posX, u.posY, u.eyeH), u.pitchA.xyz, u.pitchB.xy, vec3f(u.pitchB.zw, u.pitchC.x), vec2f(u.pitchA.w, u.pitchC.y), dist);
+    P = cellRayPitched(vec2f(cell), vec2i(u.gridCols, u.gridRows), vec3f(u.posX, u.posY, u.eyeH), u.pitchA.xyz, u.pitchB.xy, vec3f(u.pitchB.zw, u.pitchC.x), vec2f(u.pitchA.w, u.pitchC.y), dist, u.projMode == 2);
   }
   let faceU = giFace(gi.y);
   // US-041a: face 7 (rotated voxel-model part) decodes its normal from GA.w's octahedral bits
   var N: vec3f;
-  if (kindU == u32(KIND_TERRAIN)) { N = unpackNormalOct(textureLoad(uGI, cell, 0).z); } // ME-06: terrain's packed normal lives in GI.z
-  else if (faceU == u32(FACE_PACKED)) { N = unpackNormalOct(textureLoad(uGA, cell, 0).w); }
+  let isTer = kindU == u32(KIND_TERRAIN) || kindU == u32(KIND_GRASS);
+  if (isTer) { N = unpackNormalOct(textureLoad(uGI, cell, 0).z); } // ME-06: terrain's packed normal lives in GI.z
+  else if (faceU == u32(FACE_PACKED)) { N = unpackNormalOct(select(textureLoad(uGA, cell, 0).w, textureLoad(uGI, cell, 0).z, kindU == u32(KIND_MESH))); } // ME-20c: kind 9 GA.w may carry vertex AO; its packed normal is the same bits in GI.z
   else { N = faceNormal(faceU); }
 
   var litCount = 0;
@@ -279,7 +333,11 @@ fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
     if (ndotl <= 0.0) { continue; }
     // BUG-LIGHT-001: sample at S = P + (L-P)/|L-P| * 0.02, toward the LIGHT (not along N)
     let toLight = d3 / d;
-    let vis = sampleVis(i, P.x + toLight.x * 0.02, P.y + toLight.y * 0.02);
+    var vis: f32;
+    var psl = 0;
+    if (u.pshA.x > 0.0) { let iu = u32(i); psl = i32(u.pshSlot[iu >> 2u][iu & 3u]); } // ME-16d: 0 = unshadowed / off
+    if (psl > 0) { vis = f32(pointShadowTaps(psl - 1, P, N)) * 0.25; }
+    else { vis = sampleVis(i, P.x + toLight.x * 0.02, P.y + toLight.y * 0.02); }
     if (vis <= 0.0) { continue; }
     L += u.lightCol[i].rgb * (fo * ndotl * vis);
     litCount++;
@@ -293,15 +351,12 @@ fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
   var cloudBits: u32 = 0u;
   if (u.sunMode == 2) {
     // ME-15c: shadow-map sun. Terrain only gets n (shade scales its analytic sun term by n/4); sun off -> terrain n = 4.
-    let isT = kindU == u32(KIND_TERRAIN);
+    let isT = isTer;
     if (u.sunOn != 0) {
       // cov is computed once per cell here (before the ndotsun test below) - terrain is included, 12b's shade
       // consumer reads the same byte for its analytic sun term.
       var cloudQ: u32 = 0u;
-      if (u.cloud.x > 0.0) {
-        let cov = cloudCov(P.x, P.y, u.cloud.y, u.cloud.z, u.cloud.w, u.cloudCover);
-        cloudQ = u32(floor(u.cloud.x * CLOUD_DARK * cov * 255.0 + 0.5));
-      }
+      if (u.cloudA.w > 0.0) { cloudQ = cloudShadeQ(P, u.sunDir); }
       let ndotsun = dot(N, u.sunDir);
       if (isT || ndotsun > 0.0) {
         sunN = sunShadowTaps(P, N);
@@ -311,16 +366,13 @@ fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
           L += u.sunCol * (ndotsun * f32(sunN) * 0.25 * cloudF);
         }
       }
-      cloudBits = cloudQ << CLOUD_SHIFT;
+      cloudBits = cloudQ << CLOUD_Q_SHIFT;
     } else if (isT) {
       sunN = 4;
     }
-  } else if (u.sunOn != 0 && kindU != u32(KIND_TERRAIN)) {
+  } else if (u.sunOn != 0 && !isTer) {
     var cloudQ2: u32 = 0u;
-    if (u.cloud.x > 0.0) {
-      let cov = cloudCov(P.x, P.y, u.cloud.y, u.cloud.z, u.cloud.w, u.cloudCover);
-      cloudQ2 = u32(floor(u.cloud.x * CLOUD_DARK * cov * 255.0 + 0.5));
-    }
+    if (u.cloudA.w > 0.0) { cloudQ2 = cloudShadeQ(P, u.sunDir); }
     let ndotsun = dot(N, u.sunDir);
     if (ndotsun > 0.0) {
       // BUG-LIGHT-001: nudge toward the sun direction, not along N
@@ -331,19 +383,22 @@ fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
         L += u.sunCol * (ndotsun * cloudF);
       }
     }
-    cloudBits = cloudQ2 << CLOUD_SHIFT;
+    cloudBits = cloudQ2 << CLOUD_Q_SHIFT;
   }
 
   // S8-B2-20 (38.17): horizon AO, LAST operation on L, after points/sun/cloud. Uniform branch - strength 0 runs
   // none of this (bit-identical), and terrain (kind 7) is excluded (D-007, analytic ambient in shade).
-  if (u.aoStrength > 0.0 && kindU != u32(KIND_TERRAIN)) {
+  if (u.aoStrength > 0.0 && !isTer) {
+    let rc = aoRc(u.aoP.x, u.planeDistY, dist, u.aoP.z);
     var occSum: f32 = 0.0;
-    occSum += aoTapCell(cell.x - AO_TAP_CELLS, cell.y, P, N);
-    occSum += aoTapCell(cell.x + AO_TAP_CELLS, cell.y, P, N);
-    occSum += aoTapCell(cell.x, cell.y - AO_TAP_CELLS, P, N);
-    occSum += aoTapCell(cell.x, cell.y + AO_TAP_CELLS, P, N);
+    occSum += aoTapCell(cell.x - rc, cell.y, P, N);
+    occSum += aoTapCell(cell.x + rc, cell.y, P, N);
+    occSum += aoTapCell(cell.x, cell.y - rc, P, N);
+    occSum += aoTapCell(cell.x, cell.y + rc, P, N);
     let occ = occSum * 0.25;
-    let aoF = 1.0 - u.aoStrength * AO_MAX * occ;
+    var aoF = 1.0 - u.aoStrength * AO_MAX * occ;
+    // ME-20c (38.18): baked vertex AO of kind-9 cells (GA.w, written by raster when RASTER_FLAG_VAO). min, not product: both estimate the same ambient visibility.
+    if (kindU == u32(KIND_MESH)) { aoF = min(aoF, 1.0 - u.aoStrength * AO_MAX * (1.0 - clamp(bitcast<f32>(textureLoad(uGA, cell, 0).w), 0.0, 1.0))); }
     L -= u.ambient * (1.0 - aoF);
   }
 

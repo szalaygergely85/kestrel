@@ -2,13 +2,16 @@
 // Weights follow docs/test-reports/BOOT-SPEED-01.md (WebGPU, ~3.5 s after module start); the world build + world:loaded
 // handler + terrain prebuild are one synchronous block in main.js (nothing can repaint inside it), so they share one phase.
 export const BOOT_PHASES = Object.freeze([
-  { id: 'content', label: 'Loading content', weight: 0.03 },
-  { id: 'registry', label: 'Building assets', weight: 0.02 },
-  { id: 'renderer', label: 'Starting renderer', weight: 0.05 },
-  { id: 'compile', label: 'Compiling shaders', weight: 0.30, counted: true },
-  { id: 'engine', label: 'Preparing engine', weight: 0.06 },
-  { id: 'world', label: 'Building world', weight: 0.44 },
-  { id: 'frame', label: 'First frame', weight: 0.10 },
+  { id: 'content', label: 'Loading content', weight: 0.018 },
+  { id: 'registry', label: 'Building assets', weight: 0.012 },
+  { id: 'renderer', label: 'Starting renderer', weight: 0.03 },
+  { id: 'compile', label: 'Compiling shaders', weight: 0.18, counted: true },
+  { id: 'engine', label: 'Preparing engine', weight: 0.036 },
+  { id: 'world', label: 'Building world', weight: 0.264 },
+  { id: 'frame', label: 'First frame', weight: 0.06 },
+  // OB-109: the far terrain bake runs behind the card at full speed (content load = first 60 %, props 60-75 %, land 75-100 %)
+  { id: 'props', label: 'Loading props', weight: 0.15, counted: true }, // OB-109: every lazy mesh of the world, not just near the spawn
+  { id: 'land', label: 'Shaping the land', weight: 0.25, counted: true },
 ]);
 
 /** @param {(s: {value: number, label: string, phase: string, done: boolean}) => void} [onChange] */
@@ -31,6 +34,8 @@ export function createBootProgress(onChange) {
     phase(id) { const i = BOOT_PHASES.findIndex((p) => p.id === id); if (i >= 0) set(i, 0, ''); },
     /** Counted progress inside a phase (e.g. compile 12/25): label gets " 12/25". */
     count(id, done, totalN) { const i = BOOT_PHASES.findIndex((p) => p.id === id); if (i >= 0 && totalN > 0) set(i, done / totalN, ` ${done}/${totalN}`); },
+    /** Fractional progress inside a phase (label gets no counter): OB-109 far-terrain bake. */
+    fraction(id, frac) { const i = BOOT_PHASES.findIndex((p) => p.id === id); if (i >= 0) set(i, frac, ''); },
     finish() { if (s.done) return; s.value = 1; s.done = true; s.label = 'Ready'; s.phase = 'done'; if (onChange) onChange(s); },
   };
 }

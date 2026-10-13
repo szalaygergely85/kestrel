@@ -39,6 +39,7 @@ export function computeProjection(cam, rt, proj) {
   proj.horizonRow = horizonRow; proj.planeDistY = planeDistY;
   proj.eyeX = cam.x; proj.eyeY = cam.y; proj.eyeZ = cam.z;
   proj.pitched = false;
+  proj.ortho = false;
   return proj;
 }
 
@@ -56,6 +57,7 @@ export function computeProjectionPitched(pt, proj) {
   proj.tanHalfX = pt.tanHalfX; proj.tanHalfY = pt.tanHalfY;
   proj.near = pt.near;
   proj.pitched = true;
+  proj.ortho = !!pt.ortho; // US-068b3a: parallel projection, no /vd
   return proj;
 }
 
@@ -120,11 +122,12 @@ export function instanceRect(proj, pm, inst, pose, partAABB, rect) {
     for (let c = 0; c < 8; c++) {
       const dx = ((c & 1) ? maxX : minX) - proj.eyeX, dy = ((c & 2) ? maxY : minY) - proj.eyeY, dz = ((c & 4) ? maxZ : minZ) - proj.eyeZ;
       const vd = dx * proj.fX + dy * proj.fY + dz * proj.fZ;
-      if (vd <= proj.near) { useFull = true; break; }
+      if (!proj.ortho && vd <= proj.near) { useFull = true; break; }
       const vx = dx * proj.rX + dy * proj.rY;
       const vy = dx * proj.uX + dy * proj.uY + dz * proj.uZ;
-      const colF = (vx / vd / proj.tanHalfX + 1) * (cols / 2) - 0.5;
-      const rowF = (1 - vy / vd / proj.tanHalfY) * (rows / 2);
+      const sd = proj.ortho ? 1 : vd; // US-068b3a: ortho = no perspective divide
+      const colF = (vx / sd / proj.tanHalfX + 1) * (cols / 2) - 0.5;
+      const rowF = (1 - vy / sd / proj.tanHalfY) * (rows / 2);
       const c0 = Math.floor(colF) - 1, c1 = Math.ceil(colF) + 1;
       const r0 = Math.floor(rowF) - 1, r1 = Math.ceil(rowF) + 1;
       if (c0 < rMinCol) rMinCol = c0; if (c1 > rMaxCol) rMaxCol = c1;
