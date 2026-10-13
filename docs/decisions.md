@@ -1146,3 +1146,19 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 - **US-054 cuttable tree (sprint-4 Q3): dropped** ("I don't want").
 - Still open: the 12 new characters (quest-roadmap.md 2b), US-102 sentinel (Q4), tier look (Q5), M4-C3 placement (Q6), barley/range givers.
 - **12 new characters approved (owner, 2026-10-12: "ok all chars"):** Nub, Skip, Stilt, Slate, Crag, Hesk, Dorrin, Sorrel, Pell, Tam, Ama, Cobb as in docs/quest-roadmap.md 2b. Unblocks the Outwall NPCs, US-042/084/085 and the M5 main line. Models: designer, from existing meshes or recolours.
+
+## D-070 - Swimming + diving (owner, 2026-10-13; recorded by the PC-B main session)
+- **Swimming is in** ("i wanna swim"). It fixes a record error: D-064 left swimming open (OQ-WS2-3); the 2026-10-11 river note and later plans cited "no swimming, D-064" by mistake. "Deep water blocks" is superseded.
+- **Swim + dive:** Wick swims on the surface and can dive under it (chests/secrets on the bottom). Diving needs an underwater look (architect note).
+- **Stamina + drowning:** a stamina ring drains while swimming/diving; when empty the player loses hearts until death (death screen, normal respawn).
+- **Sea edge = sea monster** (owner: "dont let swim too far into the sea, need a sea monster killing there"): past a set distance from the Long Strand shore a sea monster rises and kills the player (instant death, death screen). The boundary is the monster, not an invisible wall; warning signs first (dark shape circling, writer lore line). Designer: monster model + rise/strike clip.
+- **River gate = free crossing** (owner 2026-10-13): swim across anywhere, any time; the level 5-10 side just hits harder (no current wall, no swim item).
+- Still open: gear in the water (assumed stowed); swim speed; monster distance.
+- Next: PO story rows + ACs (replaces US-055b "no swim" scope), architect note (player controller swim state in engine/physics, water depth query, underwater render), designer swim/dive clips.
+
+## D-071 - Living world AI (owner, 2026-10-13; recorded by the PC-B main session)
+- Owner: "characters should be sleeping, working, walking, chatting each other. make the wild live, predators should run after rabbit. wolf can attack in packs for humans, maybe can be a side quest to help them too. good AI."
+- **Villagers (Outwall first):** daily schedules on the day clock - sleep (in a house at night), work (forge, board, fields), walk between places, and chat with each other (two NPCs stop, face, play talk idles + short overheard lines, NEEDS WRITER). Extends OUT-02 routines.
+- **Wildlife:** predator-prey: wolves/foxes/bears hunt rabbits/deer (chase, catch or lose them, prey flees and hides); herds and flocks react to each other and to the player. Extends EP-WILD (38.31) + US-085 perception.
+- **Wolf packs vs humans:** packs can raid villagers/farms (gooseFarm, Outwall edge); the player can help -> side-quest hook ("defend the farm" events), quest on the template pipeline.
+- Next: architect note (EP-LIFE: schedule/needs model, NPC-NPC interaction, predator-prey sim budget + off-screen LOD, pack-vs-NPC combat using beastSim), then PO stories. Order after SWIM-01 note.
