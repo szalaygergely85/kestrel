@@ -129,6 +129,7 @@ import { createWetStones } from './quest/sim/wetStones.js'; // QL-19: wet ford s
 import { createBand } from './quest/sim/band.js'; // US-129a: level band for beasts + loot
 import { createWadeFx } from './quest/sim/wadeFx.js'; // US-055a
 import { createSwimWire } from './quest/swimWire.js'; // SWIM-03c (38.54)
+import { createShore } from './quest/seaEdge.js'; // SWIM-HOOKS-01
 import { createWading } from './quest/sim/wading.js'; // RIVER-04 (38.45 (3)): river wading around the player's integrate
 import { BOW_CFG } from './quest/bowConfig.js'; // EQ-09
 import { createQuickbar, ensureQuickbar, autoFill, assign as qbAssign, clearSlot as qbClear, syncHandSlots, HAND_SLOTS } from './quest/sim/quickbar.js'; // EQ-12 + QB-6
@@ -1500,6 +1501,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
           look.yawDeg = t.yawDeg; look.pitchDeg = t.pitchDeg;
         },
       });
+      if (swimWire) { const gg = window.ASSETS.levels.world_geo, sh = world.get('seaMonster'); swimWire.bindVitals(vitals, { shore: gg && gg.coast ? createShore(gg.coast) : null, ripples, ent: sh ? sh.data : null }); window.__debug.swimWire = swimWire; } // SWIM-HOOKS-01: stamina ring + sea monster (entity optional)
       resetPickups(world); // BUG-PICKUP-001: reindex retained drops on every load/restart.
       applyDoorState(world); // DOOR-TOGGLE-01: tower door prop/collider/prompt follow the saved tower.door.open
       removeSwordIfTaken(world); // US-078c: a world with the flag already set shouldn't show a taken sword
@@ -1987,6 +1989,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       }
       if (swimWire) swimWire.before(playerHandle.data); // SWIM-03c: water -> body fields + current, after wading.before (which resets speedScale from `other`)
       integrate(playerHandle.data, dt, controls, engine.world, engine.physics);
+      if (swimWire) swimWire.afterStep(playerHandle.data, fb ? fb.timeSec : 0); // SWIM-HOOKS-01: stamina/drown + sea monster
       wadeFx.step(playerHandle.data, fb ? fb.timeSec : 0); // deep water (> 1.0 m) is a wall (D-064)
       // CLOTH-1b3/1b5 (33.5): the player capsule pushes cloth; sleep-by-distance reads the eye (presentation-only,
       // never hashed/saved - cloths.js's own doc comment). Approx eye = feet + eyeH (good enough for a sleep radius).
@@ -2065,7 +2068,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (vitals) {
         const wasDead = vitals.dead;
         vitals.step(playerHandle.data, input.pressed(gameKeys.interact) || (deathFlow.active && deathRespawnDue)); // US-080a1 (30.2); DEATH-FLOW-01: fade end = virtual [E]
-        if (wasDead && !vitals.dead) { deathRespawnDue = false; deathFlow.respawned(performance.now()); }
+        if (wasDead && !vitals.dead) { if (swimWire) swimWire.reset(); deathRespawnDue = false; deathFlow.respawned(performance.now()); }
         deathFlow.step(performance.now());
         hurtFx.step(1000 / 60, vitals.hp, !vitals.dead); // HURT-FX-01
         stepPickups(engine.world, playerHandle.data); // US-080b (30.2)
@@ -2425,6 +2428,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
           // Q9 item 2c: hidden on the title (wakeOut.inputLocked covers the wake/title timeline) and map cards too,
           // not just while dead - the end card is already covered by the `!ending` gate around this whole block.
           drawVitals(ui, engine.world, assets.uiStyle.vitals, fb.timeSec, !vitals.dead && !wakeOut.inputLocked && !isMapOpen(), vitals, fbOn);
+          if (swimWire) swimWire.draw(ui, assets.uiStyle.vitals, playerHandle.data, fb.timeSec); // SWIM-HOOKS-01
           drawHurtEdge(ui, vitals, fb.timeSec, assets.uiStyle.vitals, isReduceMotion());
           if (equipPlay) { // EQ-07/09: block spark + the arrow count next to the hearts while the bow set is out
             const eqH = engine.world.get('player').data.components.equipment, hudOn = !vitals.dead && !wakeOut.inputLocked && !isMapOpen();

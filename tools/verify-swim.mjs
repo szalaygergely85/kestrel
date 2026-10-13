@@ -34,11 +34,16 @@ try {
   assert.ok(st && st.swimming, 'Braid: swimming after the drop ' + JSON.stringify({ st, errors }));
   assert.ok(!st.sword, 'gear stowed while swimming (sword hand empty) ' + JSON.stringify(st));
   await shot('swim-braid-' + backend);
+  // SWIM-HOOKS-01: the stamina ring is drawn under the MP bar while swimming; after a few seconds in the water the stamina has dropped.
+  await pause(3000);
+  const ring = await evaluate(cdp, '(()=>{const w=window.__debug.swimWire;return w&&w.vitals?{stamina:w.vitals.state.stamina,visible:w.vitals.visible(__debug.playerHandle.data.components.body),monster:w.monster?w.monster.name:null}:null;})()');
+  assert.ok(ring && ring.visible && ring.stamina < 100, 'stamina ring visible + draining while swimming ' + JSON.stringify(ring));
+  await shot('swim-ring-' + backend);
   // Under water: put the body 4 m below the Glasswater surface (-58); the eye is under until the buoyancy lift reaches the surface.
   await evaluate(cdp, '(()=>{const h=__debug.playerHandle,t=h.data.transform;t.x=1230;t.y=505;t.z=-62;h.data.components.body.vz=0;})()');
   let under = null;
   for (let i = 0; i < 20; i++) { await pause(100); const s2 = await evaluate(cdp, q); if (s2 && s2.swimming && s2.eye < s2.waterZ - 0.05) { under = s2; await shot('swim-under-' + backend); break; } }
-  console.log(JSON.stringify({ backend, braid: st, under: under || 'eye not under water in the sampled window (still not taken)' }));
+  console.log(JSON.stringify({ backend, braid: st, ring, under: under || 'eye not under water in the sampled window (still not taken)' }));
   assert.deepEqual(errors, []);
   console.log('Swim: Braid swim + gear stowed' + (under ? ' + under-water still' : '') + ' PASS');
 } finally {
