@@ -6,6 +6,7 @@
       "prompt": "[E] Read the sign",
       "title": "A sign on the Long Strand",
       "lines": ["Carved in a driftwood post, worn salt-white:", "SWIM TO THE STAKES. NOT ONE STROKE PAST.", "Under it, newer, in charcoal: IT CIRCLES FIRST."],
+      "radius": 3.0,
       "entities": ["strandSign"]
     },
     "note.knot": {

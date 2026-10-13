@@ -130,6 +130,15 @@
       icon: icon(["   ,'", '  // ', '(=/  '],
                  ['   TW', '  uT ', 'nnu  '])
     },
+    'goblin.trinket': { // GOB-05: a sell item; icon + sprite are the tusk's placeholders (NEEDS DESIGNER)
+      id: 'goblin.trinket', name: 'Goblin Trinket', kind: 'material', stackMax: 20, hand: false, inPack: true,
+      desc: 'Bent wire and bone. Sells well.', // placeholder text (NEEDS WRITER)
+      use: { none: 'Material - sell it' },
+      glyph: { ch: '*', c: 'linenLight' },
+      sprite: 'lootTusk',
+      icon: icon(["   ,'", '  // ', '(=/  '],
+                 ['   TW', '  uT ', 'nnu  '])
+    },
     // ---------------- ground orbs (US-080b drops; NOT stored: used on touch) ----------------
     'orb.hp': {
       id: 'orb.hp', name: 'Herb Flask', kind: 'pickup', stackMax: 0, hand: false, inPack: false,

@@ -17,3 +17,14 @@ export const BOW_CFG = Object.freeze({
   hitPad: 0.05,        // m added to a target cylinder
   stuckBack: 0.05,     // m the stuck arrow sits in front of the surface
 });
+
+/** GOB-03 (38.57): the goblin thrower's spear on the arrow sim (opts.owner 'enemy'). Never pickable, no water floaters. */
+export const GOBLIN_SPEAR_CFG = Object.freeze({
+  ...BOW_CFG,
+  speedH: 13,          // m/s horizontal (lobVelocity)
+  survivePct: 0,       // never pickable
+  maxFlying: 8,
+  maxStuck: 8,
+  maxFloat: 0,
+  stickSteps: 600,     // 10 s stuck
+});

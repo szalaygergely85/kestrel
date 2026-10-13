@@ -91,6 +91,34 @@ ok('nightOf: 22:00 day 4 = night 4, 02:00 day 5 = night 4, noon = -1', nightOf(4
   const d = make({ pack: ['nobody'] }); d.raids.step(3, 22);
   ok('pack with no known beasts: no raid', !d.raids.isActive(0));
 }
+
+{ // GOB-06: goblin camp raid with torches
+  const ids = ['g1', 'g2', 'g3', 'g4', 'g5'];
+  const campDefs = [{ id: 'campNorth', members: ids.map((id) => ({ id })) }];
+  const mk = (stateInit, keepLog = true) => {
+    const sim = stubSim(ids); sim.entities = ids.map(() => ({ components: { voxel: { model: 'goblin' } } }));
+    const events = bus(keepLog), state = stateInit || {};
+    const raids = createRaids({ defs: [{ id: 'gob', campId: 'campNorth', torches: 5, target: 'gooseFarm', from: 22, to: 4, chancePerNight: 1, cooldownDays: 3 }],
+      sim, events, state, anchors: { gooseFarm: [860, 990] }, npcPos: () => false, campDefs });
+    return { sim, events, state, raids, models: () => sim.entities.map((e) => e.components.voxel.model).join(',') };
+  };
+  const t = mk();
+  t.raids.step(3, 12);
+  ok('goblin raid: none by day', !t.raids.isActive(0));
+  t.raids.step(3, 22.5);
+  ok('goblin raid starts from its camp at night (5 goals)', t.raids.isActive(0) && Object.keys(t.sim.goals).length === 5);
+  ok('max 3 torch-bearers swap to goblinTorch (first 3)', t.models() === 'goblinTorch,goblinTorch,goblinTorch,goblin,goblin', t.models());
+  t.sim.dead.add(1); t.raids.step(3, 23);
+  ok('a dying torch-bearer reverts its model', t.models() === 'goblinTorch,goblin,goblinTorch,goblin,goblin' && t.raids.isActive(0), t.models());
+  [0, 2, 3, 4].forEach((s) => t.sim.dead.add(s)); t.raids.step(3, 23.5);
+  ok('all dead: defended event + models back', t.events.log.includes('life:raid:defended:gob') && t.models() === 'goblin,goblin,goblin,goblin,goblin' && t.state[defendedKey('gob')] === true);
+  const l = mk(); l.raids.step(3, 22.5); l.raids.step(4, 4.5);
+  ok('timeout at dawn: lost event + models back', l.events.log.includes('life:raid:lost:gob') && l.models() === 'goblin,goblin,goblin,goblin,goblin');
+  const dn = mk({ 'life.camp.campNorth.down': true }); dn.raids.step(3, 22.5);
+  ok('camp cleared (down): no goblin raid', !dn.raids.isActive(0));
+  const w = mk(); w.raids.step(3, 22.5);
+  ok('wolf-style one-raid-at-a-time unaffected: same def cannot restart tonight', (w.raids.step(3, 23), w.raids.isActive(0)));
+}
 if (global.gc) {
   const t = make({ chancePerNight: 0.5 }, null, false);
   for (let d = 0; d < 300; d++) { t.raids.step(d, 22); t.sim.dead.clear(); t.raids.step(d + 1, 5.1); }

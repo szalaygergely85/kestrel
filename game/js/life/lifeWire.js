@@ -16,11 +16,11 @@ export function syncGates(book, state, gates) {
 }
 
 /** @returns {{step(hour:number):void, dispose():void, raids:object, sync():void}} one object for main.js */
-export function createLifeWire({ defs, gates, sim, events, state, world, book }) {
+export function createLifeWire({ defs, gates, sim, events, state, world, book, campDefs }) {
   const anchors = {};
   for (const d of defs) { const e = world.entity ? world.entity(d.target) : null; if (e && e.transform) anchors[d.target] = [e.transform.x, e.transform.y]; }
   const npcPos = (id, out) => { const e = world.entity ? world.entity(id) : null; if (!e || !e.transform) return false; out.x = e.transform.x; out.y = e.transform.y; return true; };
-  const raids = createRaids({ defs, sim, events, state, anchors, npcPos });
+  const raids = createRaids({ defs, sim, events, state, anchors, npcPos, campDefs });
   let lastHour = state['clock.hour'] === undefined ? -1 : state['clock.hour'], syncT = 0;
   const sync = () => syncGates(typeof book === 'function' ? book() : book, state, gates);
   sync();

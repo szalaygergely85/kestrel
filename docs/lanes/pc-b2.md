@@ -717,3 +717,14 @@ Open: (1) no `area` objective (no gooseFarm area trigger exists in areas.json; n
 - bindings.js/gameKeys.js: new `dive` action (ControlLeft, remappable); Space stays `jump` (swim-up while swimming). Pure mapper `game/js/quest/swimInput.js` (swimUpOf/jumpOf) + test.
 - chest.js: def.needsBottom -> pose.onBottom required; chestDefs.js `chestBed` (10 arrows + sturdy gear), world_m1 entity chestBed (1240,505,z ground = bed ~-68); chestHook sets pose.onBottom from body.
 - NEEDS B1-main: per step `controls.swimUp = swimUpOf(input.isDown(gameKeys.jump), input.isDown(gameKeys.dive), body)`; `controls.jump = jumpOf(...)`. No settings/key-hint list or audio bus touched (none found/skipped).
+
+### GOB-03 enemy spear on the arrow sim (kestrel-4, game, arch-review) - programmer
+- arrows.js: `createArrowSim(..., opts.owner='enemy')`, `fireVel(x,y,z,vx,vy,vz,dmg,srcId)`, exports `lobVelocity`, `createPlayerTarget(world)`; separate enemy payload (ranged 1, blocked out-field), blocked spear sticks pointing down + emits `beast:spearBlocked`. bowConfig.js `GOBLIN_SPEAR_CFG` (speedH 13, survivePct 0, 8/8/0 pools, stick 10 s). vitals.js: `p.ranged===1` -> dir = (p.dirX,p.dirY) for the block arc + knock.
+- New `sim/goblinSpear.test.js` (16 checks: hit at 12 m, strafe miss 8/10/12 m, block front / damage from behind, never hits goblins, not pickable, lob closed form, 0 alloc). arrows/vitals/shield/wading suites unchanged and PASS; check-deps OK.
+- Not done here (other items): beastSim thrower calling fireVel, main.js wiring (B1-main creates the enemy sim with createPlayerTarget), spear view.
+
+### GOB-04 + GOB-05 (kestrel-4, gob-03 branch, uncommitted) -> arch-review
+- GOB-04: `game/js/life/goblinCamps.js` + `content/life/goblinCamps.json` (campNorth 5 goblins @925,905, campEast 4 @965,975, campSouthWest disabled) + `goblinCamps.test.js` (42 checks, 0 alloc). Placement checked vs band>=5, x<1100, walk bounds, leash.
+- GOB-05: `LOOT_TABLE.goblin` + prompt, `rollGoblinWeapon` + weapons.json `sources.goblin`, loot.js per-slot table by `sim.group===2` (MAX_SLOTS 48), own weapon stream; `design/items.js` placeholder `goblin.trinket`; `goblinLoot.test.js` (47). validate-content OK.
+- NEEDS from GOB-01: `sim.setDormant`, `sim.flee`, `sim.group`, AND `sim.setDown(slot,on)` (GONE <-> alive-at-home; not in 38.57). main.js wiring (ensureGoblinCamps before createBeastSim, createGoblinCamps step with clock.day) not done (main.js off limits).
+- GAP: no tempered/warden weapon defs in itemsWeapons.js: band 7+/9+ drops fall back to fine until a designer/balance story adds them (synthetic-table test proves the exact tier). `content-smoke` manifest-list failure is pre-existing (outwall/raids too).
