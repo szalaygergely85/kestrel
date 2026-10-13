@@ -12,6 +12,7 @@ import { INSTANCE_BYTES } from '../../../mesh/instances.js';
 export const CARD_ATLAS_MAX_BYTES = 2 * 1024 * 1024; // one read-only storage buffer for every species' bake
 export const MAX_CARD_SPECIES = 64;                   // = DrawList MAX_DRAW_CARDS
 export const CARD_IDLE_FRAMES = 600;
+export const CARD_POOL_PER_SPECIES = 4;              // R6e: dropped dst buffers kept per bake for re-created groups
 const ARGS_WORDS = 5, ARGS_BYTES = 20;                // passCull's record size; the non-indexed draw reads the first 4 words
 const F = (n) => IMP_BLOCK.field(n).word;
 const PLANES = F('planes'), EYE = F('eye'), PARAMS = F('params'), IMP = F('imp'), VP = F('vp'), VIEW = F('view'), COUNT = F('count'), SLOT = F('slot'),
@@ -25,6 +26,7 @@ export class WgCardPass {
     this.atlas = null; this.atlasUsed = 0; this.ranges = new Map(); this._frame = 0; this._stale = null; this._warned = false;
     this.cpipe = null; this.rpipe = null;
     this._free = new Int32Array(MAX_CARD_SPECIES); this._freeTop = 0;
+    this.pool = new Map(); // R6e: bake bytes -> [{dst, slot, cap}] of dropped species, reused by re-created groups of the same species (destroyed in dispose())
     this._sweepFn = (sp, g) => { if (this._frame - sp.last > CARD_IDLE_FRAMES) (this._stale || (this._stale = [])).push(g); };
     const lim = device.caps && device.caps.maxStorageBuffersInVertexStage;
     if ((lim === undefined || lim === null ? 8 : lim) < 1) { this._log('maxStorageBuffersInVertexStage < 1: card impostors off (trees keep the mesh cut)'); return; }
@@ -58,12 +60,16 @@ export class WgCardPass {
       cbind: null, sto: null, rbind: null };
     this.species.set(g, sp);
     if (!this._range(bytes)) { sp.skip = true; this._log('species skipped (atlas ' + (this.atlasUsed + n) + ' B > ' + CARD_ATLAS_MAX_BYTES + ' B, or bad size)'); return sp; }
-    try {
-      if (this._freeTop > 0) sp.slot = this._free[--this._freeTop]; else sp.slot = this.cull._allocSlots(1);
-    } catch (e) { sp.skip = true; this._log('args slot capacity exceeded: species skipped'); return sp; }
+    const pl = this.pool.get(bytes); let pe = null;
+    if (pl) for (let i = pl.length - 1; i >= 0; i--) if (pl[i].cap >= g.ib.capacity) { pe = pl[i]; pl[i] = pl[pl.length - 1]; pl.pop(); break; }
+    if (pe) { sp.slot = pe.slot; sp.dst = pe.dst; sp.cap = pe.cap; } else {
+      try {
+        if (this._freeTop > 0) sp.slot = this._free[--this._freeTop]; else sp.slot = this.cull._allocSlots(1);
+      } catch (e) { sp.skip = true; this._log('args slot capacity exceeded: species skipped'); return sp; }
+    }
     if (!this.atlas) this.atlas = this.device.createBuffer({ usage: 'storage', bytes: CARD_ATLAS_MAX_BYTES });
     this.cull.argsCpu[sp.slot * ARGS_WORDS] = 6; // vertexCount; instanceCount is zeroed by the existing per-frame args write
-    sp.dst = this.device.createBuffer({ usage: 'storage', bytes: g.ib.capacity * INSTANCE_BYTES });
+    if (!sp.dst) { sp.dst = this.device.createBuffer({ usage: 'storage', bytes: g.ib.capacity * INSTANCE_BYTES }); sp.cap = g.ib.capacity; }
     const v = IMP_BLOCK.createViews(sp.ub); sp.uf = v.f32; sp.uu = v.u32;
     sp.cbind = { buffers: [{ slot: 0, buffer: null }, { slot: 1, buffer: sp.dst }, { slot: 2, buffer: this.cull.argsBuffer }], uniforms: sp.uf };
     sp.sto = [{ slot: 0, buffer: sp.dst }, { slot: 1, buffer: this.atlas }];
@@ -125,8 +131,15 @@ export class WgCardPass {
   _drop(g) {
     const sp = this.species.get(g); if (!sp) return;
     this.species.delete(g); g._cardOk = false;
-    if (sp.dst) this.device.dispose(sp.dst);
-    if (sp.slot >= 0) { this.cull.argsCpu[sp.slot * ARGS_WORDS + 1] = 0; if (this._freeTop < MAX_CARD_SPECIES) this._free[this._freeTop++] = sp.slot; }
+    if (sp.slot >= 0) this.cull.argsCpu[sp.slot * ARGS_WORDS + 1] = 0;
+    const key = sp.bytes; let pl = key ? this.pool.get(key) : null;
+    if (sp.dst && key && (!pl || pl.length < CARD_POOL_PER_SPECIES)) { // keep dst + args slot for the next group of this species
+      if (!pl) this.pool.set(key, pl = []);
+      pl.push({ dst: sp.dst, slot: sp.slot, cap: sp.cap });
+    } else {
+      if (sp.dst) this.device.dispose(sp.dst);
+      if (sp.slot >= 0 && this._freeTop < MAX_CARD_SPECIES) this._free[this._freeTop++] = sp.slot;
+    }
     // the atlas range stays in `ranges` (keyed by its bake): a re-created group reuses it, so churn does not grow the atlas
   }
 
@@ -143,6 +156,7 @@ export class WgCardPass {
 
   dispose() {
     for (const g of [...this.species.keys()]) this._drop(g);
+    this.pool.forEach((pl) => { for (const e of pl) this.device.dispose(e.dst); }); this.pool.clear();
     if (this.atlas) this.device.dispose(this.atlas);
     if (this.cpipe) this.device.dispose(this.cpipe);
     if (this.rpipe) this.device.dispose(this.rpipe);

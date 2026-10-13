@@ -5,7 +5,7 @@ import { makeMockGpuDevice } from '../../../test/assert.js';
 import { IMP_CULL_WGSL, IMP_BLOCK } from '../wgsl/impostor.wgsl.js';
 import { CULL_WGSL } from '../wgsl/cull.wgsl.js';
 import { compileFn } from '../wgsl/wgslProbe.js';
-import { makeInstanceGroup, compactGroup, createInstanceBuffer, writeUnitInstance, INSTANCE_STRIDE } from '../../../mesh/instances.js';
+import { InstanceGroups, makeInstanceGroup, compactGroup, createInstanceBuffer, writeUnitInstance, INSTANCE_STRIDE } from '../../../mesh/instances.js';
 import { enableGroupImpostor } from '../../../mesh/impostorCard.js';
 import { WgCardPass, CARD_ATLAS_MAX_BYTES } from './WgCardPass.js';
 
@@ -112,4 +112,31 @@ assert.equal(cardArgs[1], g.cardCount, 'LOD-3 (card) count == compactGroup card 
   }
   console.warn = warn;
 }
+// ---- R6e: 10 band swaps x 3 species -> GPU buffer count constant, destroyed only on final removal; JS cardIb pool does not leak
+{
+  const mock = makeMockGpuDevice(), d = mock.device; const set = new Set(); let created = 0, live = 0;
+  const cb = d.createBuffer.bind(d), db = d.dispose.bind(d);
+  d.createBuffer = (o) => { const b = cb(o); set.add(b); live = set.size; created++; return b; }; d.dispose = (b) => { set.delete(b); live = set.size; return db(b); };
+  const cull = { argsBuffer: d.createBuffer({ usage: 'indirect', bytes: 4096 }), argsCpu: new Uint32Array(1024), _allocSlots: () => next++, batches: new Map(), frame: { planes: null, eye, maxDistM: 0 } };
+  let next = 20;
+  const pass = new WgCardPass(d, cull);
+  const baked = [0, 1, 2].map(() => new Uint8Array(1344 * 8));
+  const mk = (k) => ({ ib: { capacity: 16 }, imp: { bytes: baked[k], radius: 1, vMin: 0, vMax: 2 }, impM: 40, count: 0, maxDistM: 0 });
+  let gs = [0, 1, 2].map(mk); gs.forEach((g) => pass.ensure(g));
+  const base = live, slots0 = next;
+  for (let swap = 0; swap < 10; swap++) { gs.forEach((g) => pass._drop(g)); gs = [0, 1, 2].map(mk); gs.forEach((g) => assert.ok(pass.ensure(g))); assert.equal(live, base, 'no buffer growth at swap ' + swap); }
+  assert.equal(next, slots0, 'args slots reused'); assert.equal(created, base, 'no createBuffer after the first build');
+  pass.dispose(); assert.equal(live, 1, 'only the test-owned args buffer is left after final removal (dst + atlas + pipelines destroyed)');
+}
+{
+  const groups = new InstanceGroups(); let made = 0;
+  const create = (c) => { made++; return createInstanceBuffer(c); };
+  const imp = { bytes: new Uint8Array(8), radius: 1, vMin: 0, vMax: 1 };
+  for (let k = 0; k < 10; k++) {
+    const gg = [0, 1, 2].map((i) => { const g = makeInstanceGroup('s' + i, 8); groups.groups.push(g); enableGroupImpostor(g, imp, 40, create); return g; });
+    gg.forEach((g) => groups.remove(g)); assert.equal(g0(gg), null);
+  }
+  assert.equal(made, 3, 'cardIb reused across re-created groups (3 species -> 3 buffers total)');
+}
+function g0(gg) { return gg[0].cardIb; }
 console.log('passCull.imp.test.js OK: cs_card count/set/flags == compactGroup card bucket, mesh band bits == compactGroup, impM=0 old path, WgCardPass host shape');

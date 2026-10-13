@@ -14,6 +14,7 @@
 import { computeVoxelPose, FORWARD, cosSinDeg } from '../voxel/voxelPose.js';
 import { MAX_VOX_PARTS, PART_STRIDE } from '../voxel/VoxelModel.js';
 import { classifyAABB, CULL_OUT } from './culling.js';
+import { releaseGroupImpostor } from './impostorCard.js';
 import { lodBandFrac, lodDitherBits } from './lodDither.js';
 import { impBandBits, IMP_BAND_M } from './impostorCard.js';
 import { requestMeshForGroup } from './lazyMesh.js';
@@ -476,6 +477,7 @@ export class InstanceGroups {
   remove(g) {
     const i = this.groups.indexOf(g);
     if (i >= 0) this.groups.splice(i, 1);
+    releaseGroupImpostor(g); // R6e: card bucket back to the pool (no-op for groups without an impostor)
   }
 
   /**

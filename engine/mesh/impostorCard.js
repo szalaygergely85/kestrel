@@ -83,5 +83,17 @@ export function impDecodeTexel(imp, view, mip, u, v, yaw, out) {
 
 /** Group opt-in: allocates the engine-owned card bucket (called once by the host). */
 export function enableGroupImpostor(g, imp, impM, createBuffer) {
-  g.imp = imp; g.impM = impM; g.cardIb = createBuffer(g.ib.capacity); g.cardCount = 0;
+  const cap = g.ib.capacity, pl = cardPool.get(cap), reused = pl && pl.length ? pl.pop() : null; // R6e: reuse a released bucket
+  g.imp = imp; g.impM = impM; g.cardIb = reused || createBuffer(cap); g.cardCount = 0;
 }
+
+const cardPool = new Map(); // capacity -> released card buckets (bounded)
+const CARD_IB_POOL_MAX = 8;
+/** R6e: called by InstanceGroups.remove - hands the group's card bucket back for the next enableGroupImpostor of the same capacity. */
+export function releaseGroupImpostor(g) {
+  const ib = g.cardIb; if (!ib) return;
+  g.cardIb = null; g.cardCount = 0; g.imp = null; g.impM = 0;
+  const cap = g.ib.capacity; let pl = cardPool.get(cap); if (!pl) cardPool.set(cap, pl = []);
+  if (pl.length < CARD_IB_POOL_MAX) pl.push(ib);
+}
+export function _cardPoolSize() { let n = 0; cardPool.forEach((p) => { n += p.length; }); return n; }
