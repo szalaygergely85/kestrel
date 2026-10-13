@@ -1211,3 +1211,6 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 
 ## D-082
 **2026-10-14, owner (PC-B session).** Quests: "proper pick up, proper return... mostly characters, not items, on the roof which not reachable". Every quest is GIVEN by a character (NPC/animal you talk to) and RETURNED to a character with a hand-in conversation + reward there. Objects (packet, notice post, waystones) are never quest givers - only targets (fetch / look / use). Every quest character stands where the player can walk up and talk (never on roofs, OB-147). Supersedes object-given errands (QL-12 packet, WMP-01 waystone errands): they move to NPCs near those places.
+
+## D-083
+**2026-10-14, owner (PC-B session, OB-153/150).** "create 30 types for this big map at least. respawn time too, walking around, and proper AI, proper AI. so could be easy, mid and hard game!": the bestiary grows to >= 30 creature types across the regions (river/water creatures like crocodiles included), each with a respawn timer, roaming/patrol behaviour and proper AI; a difficulty setting Easy / Normal / Hard. PO epic + architect (AI system) + designer (voxel creatures, realistic, 4 legs for animals).
