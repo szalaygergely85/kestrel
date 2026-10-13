@@ -10,7 +10,7 @@ import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, c
 import { buildGapTable, compareSnaps, questVerdict, renderReport, SAMPLE_EVERY_S, orderErrands, planQuest, pickupPatterns, pickupKeys, lootFixedItems } from './verify-ch12-lib.mjs';
 
 /** short window around the first differing character of two JSON strings */
-const firstDiff = (a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i++; const w = (x) => x.slice(Math.max(0, i - 40), i + 80); return `@${i}/${a.length},${b.length} ${w(a)} -> ${w(b)}`; };
+const firstDiff = (a, b) => { a = String(a); b = String(b); let i = 0; while (i < a.length && a[i] === b[i]) i++; const w = (x) => x.slice(Math.max(0, i - 40), i + 80); return `@${i}/${a.length},${b.length} ${w(a)} -> ${w(b)}`; };
 const WALK = process.argv.includes('--walk'); // CL-01 input: travel between beats on foot at WALK_SPEED, samples every game-second (see walkLib)
 const WALK_SPEED = 4; // m/s, about the player's walk speed
 const posArgs = process.argv.slice(2).filter((a) => !a.startsWith('--'));
@@ -308,7 +308,10 @@ try {
     const ixs = JSON.parse(await ev(`JSON.stringify(__t.w.interactables.map((r) => ({ key: r.key, name: r.name })))`));
     const ents = JSON.parse(await ev(`(() => { const o = []; __t.w.forEachEntity((e, id) => { const q = e.components && e.components.questPickup; if (q) o.push({ id, item: q.item }); }); return JSON.stringify(o); })()`));
     const keys = JSON.stringify([...pickupKeys(item, ents, ixs), ...(lootItems.has(item) ? ixs.filter((r) => r.name === 'beast.loot').map((r) => r.key) : [])]);
-    for (const k of JSON.parse(keys)) { if ((await hasN(item)) >= count) break; await goIx(k, 0.7); await pressE(1); }
+    const packUsed = () => ev('__t.D.playerHandle.data.components.inventory.slots.filter((s) => s && s.id).length');
+    // a full pack (24/24) refuses pickups: drop loose junk first (script fix; never the hand items, equipment or the wanted item)
+    const dropJunk = () => ev(`(() => { const c = __t.D.playerHandle.data.components, inv = c.inventory, keep = new Set([${JSON.stringify(item)}, inv.left, inv.right, 'sword']); const eq = c.equipment && (c.equipment.slots || c.equipment); if (eq && typeof eq === 'object') for (const v of Object.values(eq)) { if (typeof v === 'string') keep.add(v); else if (v && v.id) keep.add(v.id); } let n = 0; for (const s of inv.slots) if (s && s.id && !keep.has(s.id)) { s.id = null; s.n = 0; n++; } return n; })()`);
+    for (const k of JSON.parse(keys)) { if ((await hasN(item)) >= count) break; if ((await packUsed()) >= 23) { const n = await dropJunk(); console.log('dropped ' + n + ' junk pack slots before picking up ' + item); } await goIx(k, 0.7); await pressE(1); }
     return (await hasN(item)) >= count ? null : `cannot get ${count} x ${item}: ${(await hasN(item))} in pack, pickups tried: ${keys.slice(0, 120)}, pack slots used ${await ev('__t.D.playerHandle.data.components.inventory.slots.filter((s) => s && s.id).length')}/24 (CH12-CONTENT-01: a full pack refuses pickups)`;
   }
   async function doStep(s) { // -> null when done, else the reason the script could not do it
@@ -377,7 +380,7 @@ try {
       return { ok: false, why: 'snap never ready: ' + await ev('window.__snapErr') + ' | ' + dg };
     }
     const after = await ev('__t.snap()');
-    ac3Diffs = compareSnaps(before, after); const diffs = ac3Diffs.map((d) => d.name + ' ' + firstDiff(JSON.stringify(d.before), JSON.stringify(d.after)));
+    ac3Diffs = compareSnaps(before, after); const diffs = ac3Diffs.map((d) => d.name + ' ' + firstDiff(JSON.stringify(d.before) ?? 'undefined', JSON.stringify(d.after) ?? 'undefined'));
     return { ok: diffs.length === 0, why: diffs.slice(0, 6).join(' ; ') + (diffs.length ? ' || warns: ' + warns.slice(0, 4).join(' | ') : '') };
   });
   await beat('no console errors', async () => ({ ok: errors.length === 0, why: errors.slice(0, 3).join(' | ') }));
