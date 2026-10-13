@@ -4,7 +4,7 @@ import { GRID_VALUES } from '../settings/options.js';
 export const QUALITY_NAMES = Object.freeze(['low', 'medium', 'high', 'ultra', 'extreme']);
 export const QUALITY_CHOICES = Object.freeze([...QUALITY_NAMES, 'auto']);
 export const SHADOW_CHOICES = Object.freeze(['off', 'low', 'mid', 'high', 'ultra']);
-const KNOBS = ['grid', 'rays', 'shadowQuality', 'scatter', 'lodScale', 'pointShadows', 'carpet'];
+const KNOBS = ['grid', 'rays', 'shadowQuality', 'scatter', 'lodScale', 'pointShadows', 'carpet', 'impM', 'impMaxDistM', 'occl'];
 let presets = null;
 
 function validKnob(key, value) {
@@ -14,6 +14,11 @@ function validKnob(key, value) {
   if (key === 'scatter') return Number.isFinite(value) && value >= 0 && value <= 1;
   if (key === 'pointShadows') return typeof value === 'boolean'; // AUD-44: preset default for point-light shadows (?pointshadows= still wins)
   if (key === 'carpet') return !!value && typeof value === 'object' && typeof value.on === 'boolean' && Number.isFinite(value.radiusScale) && value.radiusScale >= 0.25 && value.radiusScale <= 2 && Number.isFinite(value.densScale) && value.densScale >= 0 && value.densScale <= 2; // OB-103b: grass carpet {on, radiusScale, densScale} (World.setCarpetQuality)
+  // R6d (38.60, D-075 step 5): tree card impostors. impM = metres where cards start (0 = off), impMaxDistM = card draw cut (> impM + 8 when on).
+  // occl = R3 HZB occlusion switch slot: null = unchanged (R3 decides later), else boolean.
+  if (key === 'impM') return Number.isFinite(value) && value >= 0 && value <= 500;
+  if (key === 'impMaxDistM') return Number.isFinite(value) && value >= 0 && value <= 2000;
+  if (key === 'occl') return value === null || typeof value === 'boolean';
   return key === 'lodScale' && Number.isFinite(value) && value >= 0.25 && value <= 4;
 }
 
@@ -29,6 +34,7 @@ export async function loadPresets(data = null, fetcher = globalThis.fetch) {
   for (const name of QUALITY_NAMES) {
     const knobs = data.presets[name];
     if (!knobs || Object.keys(knobs).length !== KNOBS.length || KNOBS.some(key => !validKnob(key, knobs[key]))) throw new Error(`gfx presets: invalid ${name}`);
+    if ((knobs.impM > 0) !== (knobs.impMaxDistM > 0) || (knobs.impM > 0 && knobs.impMaxDistM <= knobs.impM + 8)) throw new Error(`gfx presets: invalid ${name} (impM/impMaxDistM)`);
     next[name] = Object.freeze({ ...knobs, carpet: Object.freeze({ ...knobs.carpet }) });
   }
   presets = Object.freeze(next);
@@ -64,7 +70,7 @@ export function resolveQuality({ param = new URLSearchParams(), saved = null, au
     else warn(`Invalid saved lodScale ${String(savedLod)}; using preset`);
   }
   for (const key of KNOBS) {
-    if (!params.has(key) || key === 'pointShadows' || key === 'carpet') continue; // pointShadows: lowercase ?pointshadows= handled by parsePointShadows; carpet: ?carpet=0|1 is a force switch (carpetQualityFor)
+    if (!params.has(key) || key === 'pointShadows' || key === 'carpet' || key === 'impM' || key === 'impMaxDistM' || key === 'occl') continue; // pointShadows: lowercase ?pointshadows= handled by parsePointShadows; carpet: ?carpet=0|1 is a force switch (carpetQualityFor)
     const raw = params.get(key);
     const value = ['grid', 'shadowQuality'].includes(key) ? raw : raw.trim() ? Number(raw) : NaN;
     if (validKnob(key, value)) { knobs[key] = value; knobSources[key] = 'param'; }
