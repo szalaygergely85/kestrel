@@ -106,6 +106,9 @@ export { GLOW_LEVELS } from './render/glow.js'; // EMIS-03/04: emissive bleed + 
 export { bindShading, bindLevel } from './render/MaterialTable.js';
 // RE-06 (28.6): instanced voxel units - per-instance buffer helpers + team colour remap.
 export { createViewModelLayer, VM_OBJECT_ID, VM_MAX_HANDLES, VM_FEET_BELOW_EYE } from './render/viewModel.js'; // US-078a
+export { bakeImpostor } from './mesh/impostorBake.js'; // R6c (38.60): opt-in tree card impostors (host bakes, then enableGroupImpostor)
+export { enableGroupImpostor } from './mesh/impostorCard.js';
+export { resolveGroupLod1 } from './mesh/instances.js';
 export { createInstanceBuffer, writeUnitInstance, INSTANCE_STRIDE, UNIT_OBJECT_BASE, MAX_INSTANCES_PER_FRAME } from './mesh/instances.js';
 export { bindDetailInstances, feedDetail, removeDetailInstances, DETAIL_OBJECT_BASE } from './mesh/scatterFeed.js';
 // GFX-03: quality knobs (scatter density, LOD scale, tuft draw scale) and the sun shadow levels / 'off'.
