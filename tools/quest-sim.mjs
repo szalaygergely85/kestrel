@@ -15,6 +15,7 @@ function factsFor(o, w, packOps) {
     if (!w.areas.has(t.id)) throw new Error(`area "${t.id}" not defined`);
     return [{ type: 'area:entered', id: t.id }];
   }
+  if (t.type === 'beasts' && t.kind !== undefined && !Array.isArray(t.ids)) return Array.from({ length: t.count }, (_, i) => ({ type: 'beast:died', id: t.kind + 'Sim' + i })); // OB-115 kind-kill: any beast of the kind
   if (t.type === 'beasts') {
     for (const id of t.ids) if (!w.beasts.has(id)) throw new Error(`beast "${id}" not in world`);
     return t.ids.slice(0, t.count).map(id => ({ type: 'beast:died', id }));
@@ -90,6 +91,7 @@ export function simulateQuests(defs, world, mainId = 'm1') {
     progress = false;
     for (const id of [...pending]) {
       const def = byId.get(id);
+      for (const q of def.requires || []) if (q.flag && /^waystone..*.woken$/.test(q.flag)) book.feed({ type: 'flag:set', key: q.flag, value: true }); // WMP-01: the sim walks every relay awake
       const st = book.statusOf(id);
       if (st === 0) continue; // not open yet
       pending.delete(id); done.add(id); rows.push(runQuest(def)); progress = true;

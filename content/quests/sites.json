@@ -39,6 +39,36 @@
     },
     "dorrin": {
       "entity": "dorrin"
+    },
+    "relay_glasswater": {
+      "entity": "relay_glasswater"
+    },
+    "relay_northwood": {
+      "entity": "relay_northwood"
+    },
+    "relay_highPastures": {
+      "entity": "relay_highPastures"
+    },
+    "relay_ashMile": {
+      "entity": "relay_ashMile"
+    },
+    "relay_downs": {
+      "entity": "relay_downs"
+    },
+    "relay_signalHill": {
+      "entity": "relay_signalHill"
+    },
+    "relay_heath": {
+      "entity": "relay_heath"
+    },
+    "relay_reedmire": {
+      "entity": "relay_reedmire"
+    },
+    "relay_strand": {
+      "entity": "relay_strand"
+    },
+    "relay_whitecombs": {
+      "entity": "relay_whitecombs"
     }
   }
 }
