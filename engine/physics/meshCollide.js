@@ -16,7 +16,7 @@
 // must not import engine/mesh/** at runtime). Tests build synthetic/real
 // meshes via `buildBvh` directly, same as bvh.test.js.
 
-import { queryAABB, raycast } from './bvh.js';
+import { queryAABB, raycastRay, RAY_LEN } from './bvh.js';
 
 /** @typedef {Object} MeshCollider
  * @property {string} id              `${structure.id}` (base) or `${structure.id}:${tag}` (dynamic tag)
@@ -66,6 +66,10 @@ const _clipB = new Float64Array(5 * 3);
 // probeSupport's two raycasts (floor down, ceiling up) reuse one RayHit-shaped
 // scratch object each - not re-entrant, as bvh.js's own queries.
 const _floorRay = { t: 0, tri: -1, u: 0, v: 0, nx: 0, ny: 0, nz: 0 };
+// Caller-owned ray arrays for bvh.raycastRay (scalar-arg raycast boxes doubles, arch 38.61 2b); one per call site.
+const _floorArg = new Float64Array(RAY_LEN);
+const _ceilArg = new Float64Array(RAY_LEN);
+const _rcArg = new Float64Array(RAY_LEN);
 const _ceilRay = { t: 0, tri: -1, u: 0, v: 0, nx: 0, ny: 0, nz: 0 };
 
 // ---------------------------------------------------------------------------
@@ -379,7 +383,8 @@ export function probeSupport(colliders, count, x, y, footZ, grounded, opts, out)
     if (!c.enabled || c.kind !== 'trimesh') continue;
     const min = c.min, max = c.max;
     if (x < min[0] || x > max[0] || y < min[1] || y > max[1]) continue;
-    if (raycast(c.bvh, x, y, originZ, 0, 0, -1, floorT, _floorRay)) {
+    _floorArg[0] = x; _floorArg[1] = y; _floorArg[2] = originZ; _floorArg[3] = 0; _floorArg[4] = 0; _floorArg[5] = -1; _floorArg[6] = floorT;
+    if (raycastRay(c.bvh, _floorArg, _floorRay)) {
       floorHit = true;
       floorT = _floorRay.t;
       floorCollider = ci;
@@ -398,7 +403,8 @@ export function probeSupport(colliders, count, x, y, footZ, grounded, opts, out)
     if (!c.enabled || c.kind !== 'trimesh') continue;
     const min = c.min, max = c.max;
     if (x < min[0] || x > max[0] || y < min[1] || y > max[1]) continue;
-    if (raycast(c.bvh, x, y, ceilOriginZ, 0, 0, 1, ceilT, _ceilRay)) {
+    _ceilArg[0] = x; _ceilArg[1] = y; _ceilArg[2] = ceilOriginZ; _ceilArg[3] = 0; _ceilArg[4] = 0; _ceilArg[5] = 1; _ceilArg[6] = ceilT;
+    if (raycastRay(c.bvh, _ceilArg, _ceilRay)) {
       ceilHit = true;
       ceilT = _ceilRay.t;
     }
@@ -528,7 +534,8 @@ export function raycastColliders(colliders, count, ox, oy, oz, dx, dy, dz, tMax,
       }
     }
     if (!ok) continue;
-    if (raycast(c.bvh, ox, oy, oz, dx, dy, dz, best, _rcHit)) {
+    _rcArg[0] = ox; _rcArg[1] = oy; _rcArg[2] = oz; _rcArg[3] = dx; _rcArg[4] = dy; _rcArg[5] = dz; _rcArg[6] = best;
+    if (raycastRay(c.bvh, _rcArg, _rcHit)) {
       best = _rcHit.t;
       found = true;
       out.t = _rcHit.t; out.tri = _rcHit.tri; out.u = _rcHit.u; out.v = _rcHit.v;

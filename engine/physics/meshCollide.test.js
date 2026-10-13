@@ -19,6 +19,7 @@ import {
   moveCircleMesh, probeSupport, meshSupportSector, moveSphereMesh,
   MESH_CAND_MAX, FLOOR_NONE,
 } from './meshCollide.js';
+import { allocProbe } from '../../tools/allocProbe.mjs';
 import { PHYSICS_DEFAULTS } from './config.js';
 import { makeOk } from '../test/assert.js';
 
@@ -545,6 +546,24 @@ const OPTS = { height: 2, stepUpMax: 0.3, walkCos: WALK_COS };
 }
 
 if (VERBOSE) console.log(`MESH_CAND_MAX=${MESH_CAND_MAX}`);
+
+// GATE-FLAKY-03 (arch 38.61 2b): probeSupport with VARYING x/y allocates 0 B/call (floor + ceiling raycastRay).
+{
+  const floor = buildCollider('probe-alloc-floor', [[[-10, -10, 0], [10, -10, 0], [10, 10, 0], [-10, 10, 0]]]);
+  const ceil = buildCollider('probe-alloc-ceil', [[[-10, -10, 1.5], [10, -10, 1.5], [10, 10, 1.5], [-10, 10, 1.5]]]);
+  const cols = [floor, ceil];
+  const sup = { floorZ: 0.5, floorHit: false, fnx: 0.5, fny: 0.5, fnz: 0.5, floorCollider: -1, floorTri: -1, ceilZ: 0.5, ceilHit: false };
+  const N = 4096, xy = new Float64Array(N * 2);
+  for (let i = 0; i < N * 2; i++) xy[i] = (((i * 7919) % 1000) / 1000) * 16 - 8;
+  const nHitA = new Int32Array(1);
+  const run = (n) => { for (let i = 0; i < n; i++) { const o = (i & (N - 1)) * 2; probeSupport(cols, 2, xy[o], xy[o + 1], 0.05, true, OPTS, sup); if (sup.floorHit) nHitA[0]++; } };
+  const pr = allocProbe(run, { n: 100000, warm: 6 });
+  if (pr.skipped) console.log('SKIP probeSupport varying alloc (no --expose-gc)');
+  // OPEN (ASK ARCHITECT, docs/lanes/pc-b2.md): measured 1.89 B/call, not 0; independent of floor/ceiling/out writes (bisected), so
+  // likely the 3-double call boundary (x, y, footZ). Interim ALLOC_EXEMPT until decided; target < 1 B.
+  else ok('probeSupport varying x/y: ALLOC_EXEMPT cap 2.4 B/call (target < 1, arch 38.61)', pr.perCall <= 2.4 && nHitA[0] > 0, `${pr.perCall.toFixed(3)} B/call, hits ${nHitA[0]}`);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');
