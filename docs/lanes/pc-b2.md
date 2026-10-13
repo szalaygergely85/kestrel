@@ -656,3 +656,9 @@ Stills (AC3, not run): node tools/verify-secrets-outwall.mjs 9660  -> docs/test-
   Tests: errands3 41 pass; filter run 144/144 PASS; validate-content OK; prop-ground-lint 0; coplanar-lint exit 0. NEEDS WRITER: titles/objTexts/returnText placeholders (<= 38 chars), no lines. Not browser-checked (target placement / ground spot by eye).
 - TUFT-01a part 2 (JS twin, branch tuft-01a2, arch-review): tuftHit in render/carpet.js (TUFTS flag, cfg.tufts, 2 sheared planes + atlas, root cull, MASK-c kept), CARPET_DEFAULTS cellM 0.35 + tuftR, overworld_far cellM override removed. tests/cell mean 1.71 calm / 2.07 wind; WGSL twin test pinned to blades (tufts:false, cellM 0.1) until 01b; gpucompare carpetMeadow expected to differ until 01b (baseline untouched).
   Open for 01b/architect: g-cap decides by texel centre, so near hits are quantised to whole texels (~20 mm > 1.25 fp); a sub-texel cap needs a sign/offset bit in g.
+
+### CH12-AC3B-01 (kestrel-3, ch12-save): Continue changed the tracked quest (47 -> 59)
+- Root cause: questSaveV2 (the real save format) dropped the OB-087 accept-order `seq`; on load seq fell back to array order, so the unpinned HUD track (most recently accepted) jumped to the highest-index active quest. Not a quest-count issue; `tracked` is a book index.
+- Fix: game/js/quest/sim/questSaveV2.js writes `s:<seq>` on accepted active entries and restores it (old saves without `s` fall back to array order as before). Verify script compares the right thing; unchanged.
+- Test: questBookScale.test.js (accept q13 then q8, v2 round trip keeps tracked); fails with the fix reverted. Save-size budget in that test 3072 -> 3300 B (+~64 B / 100 quests). No golden changed. No main.js change needed.
+- Browser (main session): `node tools/verify-ch12-run.mjs {port}`; expect AC3b "tracked" diff gone.
