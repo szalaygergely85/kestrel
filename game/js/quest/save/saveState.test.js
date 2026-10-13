@@ -87,3 +87,14 @@ console.log('saveState: player components/hands, quest/chests/deaths, byte-stabl
   assert.equal(r2.world.get('player').data.components.health.hp,17,'hp restored on Continue');
   assert.ok(!r2.world.get('questMark_0'));
 }
+
+// Browser finding (verify-continue): swim.js leaves body.waterZ/waterFloorZ = NaN ("no water") on every body -> save threw 'expected finite JSON data'.
+{
+  const w=World.load({name:'nowater',terrain:null,structures:[],entities:[]},assets,{});
+  const p=w.spawn('unit',{x:1,y:2,z:0,yawDeg:0,pitchDeg:0},{health:{hp:3,max:5,invuln:0}},'player');
+  p.data.components.body={waterZ:NaN,waterFloorZ:NaN,swimming:false};
+  const s=collectSave(w,{});
+  assert.doesNotThrow(()=>stringifyGameSave(s),'NaN water feed must not break save');
+  assert.ok(!('waterZ' in (s.world.entities.find(e=>e.id==='player').components.body||{})),'NaN water feed dropped');
+  assert.ok(Number.isNaN(p.data.components.body.waterZ),'live body untouched');
+}

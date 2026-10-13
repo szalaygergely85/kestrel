@@ -94,7 +94,15 @@ export function validateSave(save) {
 const TRANSIENT_ENTITY = /^(questMark|demo\.)/; // OB-086: demo.* = runtime show-off entities, never saved
 function dropTransient(worldState) {
   if (!worldState || !Array.isArray(worldState.entities)) return worldState;
-  return { ...worldState, entities: worldState.entities.filter(e => !(e && typeof e.id === 'string' && TRANSIENT_ENTITY.test(e.id))) };
+  return { ...worldState, entities: worldState.entities.filter(e => !(e && typeof e.id === 'string' && TRANSIENT_ENTITY.test(e.id))).map(stripNoWater) };
+}
+/** body.waterZ/waterFloorZ are per-step swim feeds; NaN = "no water here" (engine/physics/swim.js) and is not JSON. Drop them
+ *  while non-finite (swim.js re-inits them to NaN on load) - a save with any entity out of water used to throw 'expected finite JSON data'. */
+function stripNoWater(e) {
+  const b = e && e.components && e.components.body;
+  if (!b || (Number.isFinite(b.waterZ) && Number.isFinite(b.waterFloorZ))) return e;
+  const { waterZ, waterFloorZ, ...rest } = b;
+  return { ...e, components: { ...e.components, body: rest } };
 }
 
 /** Player transform, hearts/mana, pack and hands have one source: WorldState entity components. */
