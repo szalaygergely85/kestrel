@@ -163,7 +163,7 @@ async function runScenario(assets, name, dist, opt, goblin = false, at = null) {
   let spears = null, lob = { vx: 0, vy: 0, vz: 0 }, throwers = [];
   if (goblin) {
     const pent = { data: { transform: { x: px, y: py, z: 0, yaw: 0 }, components: { health: { hp: 1e9, max: 1e9 } } } };
-    const wproxy = { get: (id) => (id === 'player' ? pent : null), raySegment: (...a) => S.world.raySegment(...a), flowAt: (...a) => S.world.flowAt(...a) };
+    const wproxy = { get: (id) => (id === 'player' ? pent : null), raySegment: (...a) => S.world.raySegment(...a), raySegmentRay: (s, o) => S.world.raySegmentRay(s, o), flowAt: (...a) => S.world.flowAt(...a) };
     spears = createArrowSim(wproxy, S.events, GOBLIN_SPEAR_CFG, createPlayerTarget(wproxy), null, { owner: 'enemy' });
     S.beasts.step(px, py, 0); // slots exist; collect thrower ids for the keep-full top-up
     for (let i = 0; i < S.beasts.count; i++) if (S.beasts.ranged[i]) throwers.push(i);
