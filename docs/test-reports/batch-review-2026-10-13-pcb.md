@@ -36,3 +36,24 @@ d. WM-07/07b 890b2d41 + 3d05332f: ARCH OK -> po-review
 e. R6a 30aaa681: ARCH OK -> po-review. Deviations accepted: 16-bit oct split over bytes 2/3 (hi) + 6/7 (lo) is needed for the <= 1/127 AC; the private 32x32 raster is fine because both twins read the same baked bytes.
    Required doc follow-up (main session, with R6b): update 38.60 item 2 (texel layout + own raster); R6b WGSL/JS decode must use `decodeImpNormal`'s byte order.
 f. streamRoute.test 75abd72a: ARCH OK. The cut rule matches placementGrid (`cutM > 0 && d > cutM && !isLandmark(s, keepFar)`); the test is the bbox distance <= reach, so it is consistent.
+
+## R6 + cache + villagers (2026-10-13c)
+Architect (opus, PC-B per D-066). Reviewed from the diffs only; no probes needed.
+
+**R6c ASK ARCHITECT answers**
+(a) frag_depth: ACCEPT. Shifted-point depth is the 38.60 item 5 design (terrain, fog and HZB see a real silhouette, and crossing cards sort per texel). The exemption is for `impostorCard` only, and the index.test.js guard enforces that. The cost (no early-Z on 2-tri cards) is acceptable. Keep the JS twin as it is.
+(b) Vertex-stage read-only storage `cards`: ACCEPT. In core WebGPU this limit defaults to maxStorageBuffersPerShaderStage (>= 8; the D3D12/Vulkan Intel and RTX 4060 targets qualify). Guard: at pipeline creation, if `(device.limits.maxStorageBuffersInVertexStage ?? 8) < 1`, disable cards (log once). Trees then fall back to today's cut. Do not request compat mode.
+(c) cull.wgsl mesh-side band: the pin change is APPROVED for part 2. Part 2 spec:
+ 1. New `engine/render/gpu/wg/WgCardPass.js` owns the cs_card compute pipeline and the card render pipeline. The render pipeline uses passRaster's 3 colour targets, its depth format and its compare. depthWrite is on, cullMode none. There is one preallocated ImpU slot per species, and the card dst buffers are STORAGE (sized to g.ib.capacity).
+ 2. Args: 4 words per species in the existing indirect args buffer. The host writes vertexCount=6. instanceCount is zeroed by the existing args reset. The draw is `drawIndirect`, non-indexed.
+ 3. Atlas: one read-only storage buffer. A species is appended on enableGroupImpostor (`atlasBase` = word offset) and uploaded once (version check), never per frame. Above 2 MB the species is skipped and logged.
+ 4. cull.wgsl (when CullU impM > 0): at d >= impM+8, no mesh copy. For impM <= d < impM+8, OR `impBandBits(d, impM, 0)` into word 13 of the mesh copy and skip the LOD-hysteresis dither (same as compactGroup `!inImpBand`). With impM = 0 the output must equal today's (passCull.test).
+ 5. Frame order: dispatch cs_card in the cull compute pass, next to the instance cull (frustum + distance; card HZB stays out until the R3 re-run). Then mesh raster, then the card drawIndirect in the same render pass after the instanced mesh draws and before the view-model depth clear. HZB is built afterwards. Both shadow passes ignore cards.
+ 6. Per frame: 0 allocations (uniforms go into the preallocated ArrayBuffer). The CPU compactGroup card bucket must not also be drawn on the GPU path.
+ 7. ACs: passCull.test LOD-3 counts and band bits match compactGroup on a seeded band scene. gpucompare impMid/impBand are identical; tie cells are allowed only at GPU atan2/cos view-pick or oct boundaries, with a note in the story. Default rows stay unchanged with `?imp` off. Record the bench-presets roadSouth GPU delta.
+
+**Verdicts**
+a. R6b 12d0c21f: ARCH OK -> po-review. Off is byte-identical (impOn gate). The band is complementary and replaces the hysteresis dither. Cards never cast. 0-alloc scratch. Nit (optional): cos/sin of `view*pi/4+yaw` is computed per fragment in impDecodeTexel; hoist it per card.
+b. WM-CACHE-01 eae685ac: ARCH OK -> po-review. Farthest-centre eviction keeps pinned, current, pending and newest. `regrow` keeps the grown bundle and trims (this replaces the old byte fix-up). The NaN focus LRU fallback is fine. setFocus per call is O(1).
+c. R6c part 1 3bda29e9: ARCH OK -> po-review (part 1 scope). The WGSL helpers mirror the twin. impBandBits constants equal LDT_ACTIVE/LDT_INVERT. The JS frame wiring is off unless a species opts in. The rows are behind `?imp=1`. Note: the probes are f64 JS translations, and real-GPU parity is proven only by the part 2 gpucompare.
+d. OUT-LIFE-TILE 0cb383eb: ARCH OK -> po-review. rebindNav re-plans walkers on the new grid (A* per grid in a WeakMap). Dormancy (outside the tile or > 200 m) freezes state, re-snaps on return, and is skipped in chat. Fixed-area is unchanged. NEEDS B1-main: the main.js wiring (`tileNav: !!gridNav` + `world:band` rebind) as in the lane note.
