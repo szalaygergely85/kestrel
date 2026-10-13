@@ -1208,3 +1208,6 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 
 ## D-081
 **2026-10-14, owner (PC-B session, OB-151).** Item stats: the fixed tier table (defence 1-5, dmg x1-x2) is rejected. Items get classic RPG stats: **min-max damage, crit (chance + damage), armour, and the attributes STR / DEX / INT**. PO writes the epic (stat meanings, drop rolls, rarity, inventory display), owner approves before code.
+
+## D-082
+**2026-10-14, owner (PC-B session).** Quests: "proper pick up, proper return... mostly characters, not items, on the roof which not reachable". Every quest is GIVEN by a character (NPC/animal you talk to) and RETURNED to a character with a hand-in conversation + reward there. Objects (packet, notice post, waystones) are never quest givers - only targets (fetch / look / use). Every quest character stands where the player can walk up and talk (never on roofs, OB-147). Supersedes object-given errands (QL-12 packet, WMP-01 waystone errands): they move to NPCs near those places.
