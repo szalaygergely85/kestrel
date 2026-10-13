@@ -1,5 +1,7 @@
 # Owner to-do, 2026-10-13
 
+> **Superseded for testing by docs/owner-test-2026-10-13.md (evening list).** This file keeps the morning answers.
+
 The server runs on port 8000 from the repo root (`python -m http.server 8000`; restart it with that if a link does not load).
 Tick the boxes as you go and write notes after the arrows; the main session reads this file back.
 
