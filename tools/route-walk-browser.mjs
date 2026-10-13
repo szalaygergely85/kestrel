@@ -151,11 +151,16 @@ try {
   handles.b = spawn(binary, [`--remote-debugging-port=${dbg}`, '--headless=new', ...buildLaunchFlags({}), '--no-sandbox', `--user-data-dir=${handles.dir}`, 'about:blank'], { stdio: 'ignore' });
   const cdp = await connectCdp(dbg, 15000);
   await cdp.send('Page.enable'); await cdp.send('Runtime.enable');
+  const bootLog = []; // [boot] page exceptions + console errors, printed when the driver throws (boot never finishing)
+  cdp.onEvent((m, p) => {
+    if (m === 'Runtime.exceptionThrown') bootLog.push('exception: ' + JSON.stringify(p.exceptionDetails).slice(0, 600));
+    else if (m === 'Runtime.consoleAPICalled' && (p.type === 'error' || p.type === 'warning')) bootLog.push('console.' + p.type + ': ' + (p.args || []).map((x) => x.value ?? x.description).join(' ').slice(0, 400));
+  });
   const loaded = new Promise((r) => cdp.onEvent((m) => { if (m === 'Page.loadEventFired') r(); }));
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?${query}` });
   await loaded;
   const r = await cdp.send('Runtime.evaluate', { expression: DRIVER, returnByValue: true, awaitPromise: true, timeout: 400000 });
-  if (r.exceptionDetails) throw new Error('driver threw: ' + JSON.stringify(r.exceptionDetails).slice(0, 800));
+  if (r.exceptionDetails) { for (const l of bootLog.slice(0, 20)) console.error('[boot] ' + l); throw new Error('driver threw: ' + JSON.stringify(r.exceptionDetails).slice(0, 800)); }
   const res = { query, ...r.result.value };
   if (res.physicsMode !== (physics === 'grid' ? 'grid' : 'mesh')) throw new Error('mesh physics default/override mismatch: ' + res.physicsMode);
   // S8-B1-14: fixed-schema frame-time trace (p50/p95/p99/max per leg + worst-frame list),
