@@ -304,6 +304,17 @@ function routeRun(physics, { reload = false } = {}) {
     if (!ow.completed) process.exitCode = 1;
     legs.push(ow);
   }
+  // MAP-STRAND-01 (D-073) leg `strand`: ford east bank -> road east -> down the south corridor (bands south1..3 stream in) -> the strand sign (1384,1742). No fall, no band:late, ends <= 4 m from the sign.
+  {
+    const lateBefore = late, t = sim.player.transform, b = sim.player.components.body, SIGN = { x: 1384, y: 1742 };
+    sim.world.ensureBandFor(1046, 1069); t.x = 1046; t.y = 1069; t.z = sim.world.floorAt(1046, 1069) ?? 0; b.vx = b.vy = b.vz = 0; b.fallDistance = 0; b.grounded = true;
+    const path = [{ x: 1090, y: 1070 }, { x: 1180, y: 1062 }, { x: 1260, y: 1045 }, { x: 1350, y: 1048 }, { x: 1410, y: 1078 }, { x: 1470, y: 1100 }, { x: 1520, y: 1180 }, { x: 1590, y: 1300 }, { x: 1590, y: 1500 }, { x: 1520, y: 1700 }, { x: 1500, y: 1735 }, { x: 1440, y: 1762 }, { x: 1386, y: 1743.5 }];
+    const sl = runLeg(sim, 'strand (ford -> road -> south corridor -> strand sign)', path, { maxWpSteps: 3000 });
+    info.strandLate = late - lateBefore; info.strandSignDist = Math.hypot(t.x - SIGN.x, t.y - SIGN.y);
+    sl.completed = sl.completed && !sl.fell && info.strandLate === 0 && info.strandSignDist <= 4;
+    if (!sl.completed) process.exitCode = 1;
+    legs.push(sl);
+  }
   sim.stream = false;
   return { legs, info, ms: sim.ms, sim };
 }

@@ -38,8 +38,8 @@ const same = (a, b) => a.x0 === b.x0 && a.y0 === b.y0 && a.w === b.w && a.h === 
 
 // --- validation ---------------------------------------------------------------
 ok('both terrainBand and terrainBands -> error', throws({ terrainBand: A, terrainBands: [A, B] }, /mutually exclusive/));
-ok('0 zones -> error', throws({ terrainBands: [] }, /1\.\.4/));
-ok('5 zones -> error', throws({ terrainBands: [1, 2, 3, 4, 5].map((i) => ({ ...A, id: 'z' + i })) }, /1\.\.4/));
+ok('0 zones -> error', throws({ terrainBands: [] }, /1..6/));
+ok('7 zones -> error', throws({ terrainBands: [1, 2, 3, 4, 5, 6, 7].map((i) => ({ ...A, id: 'z' + i })) }, /1..6/));
 ok('different sizes -> error', throws({ terrainBands: [A, { ...B, cw: 4 }] }, /same cw x ch/));
 ok('duplicate id -> error', throws({ terrainBands: [A, { ...B, id: 'east' }] }, /unique/));
 ok('bad bandSwitch -> error', throws({ terrainBands: [A, B], bandSwitch: { prefetchM: 100, switchM: 112 } }, /bandSwitch/));
