@@ -78,6 +78,10 @@ function preyMaskOf(fauna, names) {
   return m;
 }
 
+const TILE_DORMANT_R = 200; // WM-04: grid worlds - home farther than this from the player (or outside the live nav tile) = dormant
+const _astarCache = new WeakMap(); // WM-04: one A* (scratch arrays) per nav tile grid, reused when a band comes back
+function astarFor(grid) { let a = _astarCache.get(grid); if (!a) { a = createAStar(grid); _astarCache.set(grid, a); } return a; }
+
 export function createBeastSim(world, opts) {
   const { nav, rng, events } = opts;
   const band = opts.band || null; // US-129a: optional createBand() result; absent = every beast tier 1 (x1)
@@ -186,6 +190,7 @@ export function createBeastSim(world, opts) {
     backT: new Uint16Array(MAX_BEASTS),      // GOB-02: steps a thrower has spent backing off inside cornerR
     packer: new Uint8Array(MAX_BEASTS),      // GOB-01: wolf or melee goblin (circle while waiting, retreat after the strike)
     down: new Uint8Array(MAX_BEASTS),        // GOB-01b: setDown(slot, true) -> STATE_GONE until setDown(slot, false) (not hashed/saved)
+    dormCamp: new Uint8Array(MAX_BEASTS), dormTile: new Uint8Array(MAX_BEASTS), tileMode: false, // WM-04 reasons
     dormant: new Uint8Array(MAX_BEASTS),     // GOB-01: setDormant(slot, true) -> skipped like GONE, state kept
     fleeing: new Uint8Array(MAX_BEASTS),     // WOLF-01: STATE_RETURN that runs away from the player first
     hunt: new Uint8Array(MAX_BEASTS),        // LIFE-07: 1 = STATE_WANDER leg chasing a fauna prey slot (huntSlot)
@@ -326,29 +331,67 @@ export function createBeastSim(world, opts) {
     sim.altTgt[slot] = -1; sim.altCd[slot] = 0;
     if (sim.state[slot] === STATE_WANDER && !sim.hunt[slot]) { sim.timer[slot] = sim.cfgSteps.pauseMin; sim.pathLen[slot] = 0; sim.pathIdx[slot] = 0; sim.pathReq[slot] = 0; }
   };
-  /** GOB-01: a dormant slot is skipped like GONE (no perceive/path/steer/post, steer agent parked) but keeps its state. */
-  sim.setDormant = function setDormant(slot, on) {
-    if (slot < 0 || slot >= sim.count) return;
-    const d = on ? 1 : 0;
+  /** GOB-01: a dormant slot is skipped like GONE (no perceive/path/steer/post, steer agent parked) but keeps its state.
+   *  WM-04: two independent reasons (camp distance, nav tile / player distance); a slot is dormant while either is set. */
+  function applyDormant(slot) {
+    const d = (sim.dormCamp[slot] | sim.dormTile[slot]) ? 1 : 0;
     if (sim.dormant[slot] === d || deadSt(sim.state[slot])) return;
     sim.dormant[slot] = d;
     sim.steer.vx[slot] = 0; sim.steer.vy[slot] = 0;
     sim.steer.active[slot] = d ? 0 : 1; // parked agents are skipped by steer.step and deOverlap
     sim.seen[slot] = 0; sim.pathReq[slot] = 0;
+  }
+  sim.setDormant = function setDormant(slot, on) {
+    if (slot < 0 || slot >= sim.count) return;
+    sim.dormCamp[slot] = on ? 1 : 0;
+    applyDormant(slot);
+  };
+  /** WM-04: nav-tile / 200 m dormancy (separate reason from the camp's, so a camp wake never wakes a tile-dormant beast). */
+  sim.setTileDormant = function setTileDormant(slot, on) {
+    if (slot < 0 || slot >= sim.count) return;
+    sim.dormTile[slot] = on ? 1 : 0;
+    applyDormant(slot);
+  };
+  /** WM-04: the live nav tile swapped (`world:band` ev.nav). Rebinds grid, A-star and steer bounds, clears paths so live ones re-plan
+   *  on the new tile (hunters/travellers request a path at once), then re-evaluates tile dormancy. */
+  sim.rebindNav = function rebindNav(navGrid, px, py) {
+    if (!navGrid || navGrid === sim.grid) return;
+    sim.tileMode = true;
+    sim.grid = navGrid;
+    sim.astar = astarFor(navGrid);
+    if (sim._cellPath.length < navGrid.w * navGrid.h) { sim._cellPath = new Int32Array(navGrid.w * navGrid.h); sim._xy = new Float64Array(navGrid.w * navGrid.h * 2); }
+    sim.steer.bounds.x0 = navGrid.x0; sim.steer.bounds.y0 = navGrid.y0;
+    for (let i = 0; i < sim.count; i++) {
+      if (deadSt(sim.state[i])) continue;
+      sim.pathLen[i] = 0; sim.pathIdx[i] = 0;
+      // an agent with a goal (chase / travel / goal override) asks for a fresh path on the new tile
+      if (sim.dormant[i] === 0 && (sim.goalOn[i] || sim.state[i] === STATE_CHASE || sim.state[i] === STATE_RETURN)) sim.pathReq[i] = 1; else sim.pathReq[i] = 0;
+    }
+    sim.updateTileDormancy(px, py);
+  };
+  /** WM-04: dormant when the home is outside the live tile or > TILE_DORMANT_R from the player. Cheap (count <= MAX_BEASTS), call ~1 Hz. */
+  sim.updateTileDormancy = function updateTileDormancy(px, py) {
+    if (!sim.tileMode) return;
+    const g = sim.grid, x1 = g.x0 + g.w * g.cell, y1 = g.y0 + g.h * g.cell, r2 = TILE_DORMANT_R * TILE_DORMANT_R;
+    for (let i = 0; i < sim.count; i++) {
+      const hx = sim.homeX[i], hy = sim.homeY[i], dx = hx - px, dy = hy - py;
+      const out = hx < g.x0 || hy < g.y0 || hx >= x1 || hy >= y1 || dx * dx + dy * dy > r2;
+      sim.setTileDormant(i, out);
+    }
   };
   /** GOB-01b: on -> slot goes to STATE_GONE (steer agent dropped, hidden, skipped); off -> back alive at home, hp max. */
   sim.setDown = function setDown(slot, on) {
     if (slot < 0 || slot >= sim.count) return;
     if (on) {
       if (sim.down[slot]) return;
-      sim.down[slot] = 1; sim.dormant[slot] = 0;
+      sim.down[slot] = 1; sim.dormant[slot] = 0; sim.dormCamp[slot] = 0; sim.dormTile[slot] = 0;
       // park (not remove) a live agent: removeAgent/addAgent hands out the lowest free slot, parking keeps slot ids stable
       if (sim.steer.active[slot]) { sim.steer.vx[slot] = 0; sim.steer.vy[slot] = 0; sim.steer.active[slot] = 0; sim.down[slot] = 2; }
       sim.state[slot] = STATE_GONE; sim.pendingDied[slot] = 0; sim.despawnReq[slot] = 0;
       sim.pathLen[slot] = 0; sim.pathIdx[slot] = 0; sim.pathReq[slot] = 0; sim.seen[slot] = 0; sim.goalOn[slot] = 0;
     } else if (sim.down[slot]) {
       if (sim.down[slot] === 2) sim.steer.active[slot] = 1;
-      sim.down[slot] = 0; sim.dormant[slot] = 0;
+      sim.down[slot] = 0; sim.dormant[slot] = 0; sim.dormCamp[slot] = 0; sim.dormTile[slot] = 0;
       resetSlotSim(sim, slot);
       resyncLeash(sim);
     }
