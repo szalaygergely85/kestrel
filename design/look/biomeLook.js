@@ -246,6 +246,18 @@
       }
     }
   };
+  // ENV-02a (arch 38.63): look = f(ground type, biome). Ordered rules, the FIRST match wins, no match = look 0 = today's ground (byte-identical).
+  // ground = terrain type names (overworld_far.js terrain), biomes = geo.biomes ids (world_geo.js); a missing key matches anything.
+  // DEFAULTS PENDING OWNER (mapping questions unanswered): fields=grassFields(6), glade=flowerFields(5), foothills=alpineMeadow(9);
+  // fen(8) and beachDunes(7) get the shore look only on sand/reeds; Ash Mile(4) and twistedWood(3) keep today's ground.
+  BIOME_LOOK.lookMap = [
+    { look: 'shore', ground: ['sand', 'reeds'] },
+    { look: 'glade', biomes: [5] },
+    { look: 'fields', biomes: [6] },
+    { look: 'forest', ground: ['forest'] },
+    { look: 'foothills', biomes: [9], ground: ['grass', 'rock'] },
+    { look: 'meadow', ground: ['grass'], biomes: [0] }
+  ];
   root.BIOME_LOOK = BIOME_LOOK;
   if (typeof module !== 'undefined' && module.exports) module.exports = BIOME_LOOK;
 })(typeof window !== 'undefined' ? window : globalThis);
