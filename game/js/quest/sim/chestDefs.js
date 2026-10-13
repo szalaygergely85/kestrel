@@ -19,6 +19,7 @@ export const CHEST_TABLES = {
   chestRook: { fixed: [{ item: 'arrow', n: 15 }], weighted: [], gear: { tier: 'sturdy' } },
   chestBoots: { fixed: [{ item: 'gear.feet.riverBoots', n: 1 }], weighted: [] }, // QL-16: River Boots (unique, never rolled)
   chestHidden: { fixed: [], weighted: [], gear: { tier: 'fine' } },
+  chestBed: { fixed: [{ item: 'arrow', n: 10 }], weighted: [], gear: { tier: 'sturdy' } }, // SWIM-04d: Glasswater lake-bed chest (needsBottom)
   chestForge: { fixed: [{ item: 'gear.main.sword.sturdy', n: 1 }], weighted: [] }, // EQ-20: Outwall forge chest (a sturdy sword). Band 5+ chests: add `weapon: { tier: 'fine' }`.
 };
 
@@ -31,7 +32,7 @@ export function buildChestDefs(world) {
     const t = e.transform;
     forwardOf(t.yawDeg || 0, f);
     out.push({
-      id, x: t.x, y: t.y, z: t.z, frontX: f[0], frontY: f[1], propId: id,
+      id, x: t.x, y: t.y, z: t.z, frontX: f[0], frontY: f[1], propId: id, needsBottom: id === 'chestBed',
       interact: { radius: C.radius, facingDeg: C.facingDeg, facingCos: C.facingCos }, table: CHEST_TABLES[id],
     });
   }

@@ -27,7 +27,8 @@ function openAll(seed) {
     const inv = ensureInventory(player, { pack: [], left: null, right: null });
     const events = { emit() {} };
     const sim = createChests([d], { items, inventoryOf: () => inv, events, seed });
-    const pose = { x: d.x + d.frontX, y: d.y + d.frontY, z: d.z, forwardX: -d.frontX, forwardY: -d.frontY }; // 1 m in front of the chest, facing it
+    const pose = { x: d.x + d.frontX, y: d.y + d.frontY, z: d.z, forwardX: -d.frontX, forwardY: -d.frontY, onBottom: true }; // SWIM-04d: onBottom only matters for chestBed; 1 m in front of the chest, facing it
+    if (d.needsBottom) assert.equal(sim.canOpen(d.id, { ...pose, onBottom: false }), false, d.id + ' needs onBottom');
     assert.equal(sim.open(d.id, pose), true, d.id + ' opens');
     sim.step(1);
     assert.equal(sim.stateOf(d.id), 'open');

@@ -82,3 +82,11 @@ if(typeof global.gc==='function') {
   global.gc();assert.ok(process.memoryUsage().heapUsed-before < 65536,'idle sim does not allocate per frame');
 }
 console.log('chest: lifecycle, range/facing, atomic capacity, seeded order, save/load and event-time save PASS');
+// SWIM-04d: a needsBottom chest opens only with pose.onBottom
+{
+  const bd={...def,id:'bedChest',needsBottom:true}, rb=rig([bd]);
+  assert.equal(rb.sim.canOpen(bd.id,pose),false,'no onBottom flag: closed');
+  assert.equal(rb.sim.open(bd.id,{...pose,onBottom:false}),false,'swimming above the bed: closed');
+  assert.equal(rb.sim.open(bd.id,{...pose,onBottom:true}),true,'on the bed: opens');
+  assert.equal(rig([def]).sim.canOpen(def.id,pose),true,'normal chests ignore onBottom');
+}
