@@ -45,3 +45,20 @@ export function buildDecorConfig(detailCfg, meshOf, o = {}) {
   }
   return { names: gl.map((l) => l.name), cfg: { packed: packDecorLayers({ layers }), layers: hostLayers, carpetRadiusM: o.carpetRadiusM || 0, objectId: o.objectId === undefined ? 0x40000 : o.objectId, radiusM } };
 }
+
+/**
+ * Wraps `pass.run` (called every frame inside the render loop): counts dispatches into `dbg.total`; on the FIRST error counts it,
+ * switches the pass off (`setMasks(null, 0)`), flags `dbg.bad`, warns once and never rethrows (a failing pass must not throw every frame).
+ * @param {{run:Function, stats:{dispatches:number}, setMasks:Function}} pass @param {{total:number, frameErrors:number, bad?:boolean}} dbg @param {(m:string)=>void} [warn]
+ */
+export function guardDecorRun(pass, dbg, warn = console.warn) {
+  const run0 = pass.run.bind(pass);
+  pass.run = (fr, p) => {
+    if (dbg.bad) return;
+    try { run0(fr, p); dbg.total += pass.stats.dispatches; } catch (e) {
+      dbg.frameErrors++; dbg.bad = true;
+      try { pass.setMasks(null, 0); } catch (_) { /* already failing */ }
+      warn('[decor] GPU decor pass failed, disabled: ' + (e && e.message));
+    }
+  };
+}
