@@ -279,16 +279,17 @@
   var CT = function (a) { var o = {}; a.forEach(function (w, i) { o['quaternius/CommonTree_' + (i + 1)] = w; }); return o; };
   var PN = function (a) { var o = {}; a.forEach(function (w, i) { o['quaternius/Pine_' + (i + 1)] = w; }); return o; };
   var mix = function (a, b) { var o = {}, k; for (k in a) o[k] = a[k]; for (k in b) o[k] = b[k]; return o; };
+  // WM-07 (38.59 item 5): detail.boulders/ruins/reeds/wildflowers/pebbles = per-cell probability of the biomeOnly layers in overworld_far.js (region dressing by rule).
   G.biomes = {
-    1: { name: 'broadleafForest', blendM: 24, forest: { fill: 0.72, species: CT([14, 14, 12, 10, 10]) }, detail: { rocks: 1.2 }, scale: [0.85, 1.2], hueJitter: 0.1 },
-    2: { name: 'pineForest', blendM: 30, forest: { fill: 0.72, species: mix(PN([10, 10, 8, 6, 6]), CT([2, 2, 1, 0, 0])) }, detail: { rocks: 1.0 }, scale: [0.9, 1.4], hueJitter: 0.08 },
-    3: { name: 'twistedWood', blendM: 20, standIn: 'TwistedTree_*', forest: { fill: 0.72, species: mix(CT([0, 0, 6, 14, 14]), PN([0, 0, 8, 0, 0])) }, detail: { rocks: 1.5 }, scale: [1.0, 1.6], hueJitter: 0.12 },
-    4: { name: 'ashMile', blendM: 40, standIn: 'DeadTree_*', forest: { fill: 0.13, species: CT([0, 0, 0, 0, 1]) }, detail: { rocks: 0.6 }, scale: [0.8, 1.1], hueJitter: 0.15 },
-    5: { name: 'flowerFields', blendM: 30, forest: { fill: 0.04, species: CT([1, 1, 1, 0, 0]) }, detail: { rocks: 0.3 }, scale: [0.9, 1.3], hueJitter: 0.4 },
+    1: { name: 'broadleafForest', blendM: 24, forest: { fill: 0.72, species: CT([14, 14, 12, 10, 10]) }, detail: { rocks: 1.2, boulders: 0.12, ruins: 0.02 }, scale: [0.85, 1.2], hueJitter: 0.1 },
+    2: { name: 'pineForest', blendM: 30, forest: { fill: 0.72, species: mix(PN([10, 10, 8, 6, 6]), CT([2, 2, 1, 0, 0])) }, detail: { rocks: 1.0, boulders: 0.22, ruins: 0.03 }, scale: [0.9, 1.4], hueJitter: 0.08 },
+    3: { name: 'twistedWood', blendM: 20, standIn: 'TwistedTree_*', forest: { fill: 0.72, species: mix(CT([0, 0, 6, 14, 14]), PN([0, 0, 8, 0, 0])) }, detail: { rocks: 1.5, boulders: 0.18, ruins: 0.03 }, scale: [1.0, 1.6], hueJitter: 0.12 },
+    4: { name: 'ashMile', blendM: 40, standIn: 'DeadTree_*', forest: { fill: 0.13, species: CT([0, 0, 0, 0, 1]) }, detail: { rocks: 0.6, boulders: 0.18, ruins: 0.05 }, scale: [0.8, 1.1], hueJitter: 0.15 },
+    5: { name: 'flowerFields', blendM: 30, forest: { fill: 0.04, species: CT([1, 1, 1, 0, 0]) }, detail: { rocks: 0.3, boulders: 0.06, ruins: 0.015, wildflowers: 0.15 }, scale: [0.9, 1.3], hueJitter: 0.4 },
     6: { name: 'grassFields', blendM: 30, forest: { fill: 0.06, species: CT([1, 1, 1, 0, 0]) }, detail: { rocks: 0.3 }, scale: [1.0, 1.5], hueJitter: 0.2 },
-    7: { name: 'beachDunes', blendM: 60, forest: { fill: 0 }, detail: { rocks: 0.1 }, scale: [0.8, 1.2], hueJitter: 0.1 },
-    8: { name: 'fen', blendM: 40, forest: { fill: 0.1, species: CT([0, 0, 0, 1, 1]) }, detail: { rocks: 0.2 }, scale: [1.0, 1.5], hueJitter: 0.1 },
-    9: { name: 'alpineMeadow', blendM: 20, forest: { fill: 0.05, species: PN([1, 1, 1, 1, 1]) }, detail: { rocks: 0.5 }, scale: [0.8, 1.1], hueJitter: 0.08 }
+    7: { name: 'beachDunes', blendM: 60, forest: { fill: 0 }, detail: { rocks: 0.1, pebbles: 0.15 }, scale: [0.8, 1.2], hueJitter: 0.1 },
+    8: { name: 'fen', blendM: 40, forest: { fill: 0.1, species: CT([0, 0, 0, 1, 1]) }, detail: { rocks: 0.2, reeds: 0.45 }, scale: [1.0, 1.5], hueJitter: 0.1 },
+    9: { name: 'alpineMeadow', blendM: 20, forest: { fill: 0.05, species: PN([1, 1, 1, 1, 1]) }, detail: { rocks: 0.5, boulders: 0.20, ruins: 0.03, wildflowers: 0.08, pebbles: 0.10 }, scale: [0.8, 1.1], hueJitter: 0.08 }
   };
   var KIND_BIOME = { broadleaf: 1, pine: 2, twisted: 3, dead: 4 };
   function rectSd(r, x, y) {   // signed distance to an axis rect (negative inside)

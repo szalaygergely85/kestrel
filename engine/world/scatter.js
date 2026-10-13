@@ -361,7 +361,7 @@ export class DetailScatterJob {
     for (let ix = Math.floor(g.x0 / l.cellM); ix < Math.ceil(x1 / l.cellM); ix++) {
       const x = (ix + 0.5) * l.cellM + (u(ix, iy, 1) * 2 - 1) * l.jitter;
       const y = (iy + 0.5) * l.cellM + (u(ix, iy, 2) * 2 - 1) * l.jitter;
-      let fill = l.fill;
+      let fill = l.biomeOnly ? 0 : l.fill;   // WM-07: `biomeOnly` layers place nowhere unless the biome's detail table names them
       if (bio !== null) {   // MAP-01c: per-biome density multiplier (capped at 1; biome 0 / keep = unchanged)
         const d = bio.detail[bio.biomeAt(x, y)];
         if (d !== undefined && d[l.name] !== undefined) fill = Math.min(1, l.fill * d[l.name]);
