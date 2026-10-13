@@ -166,6 +166,12 @@ export function createBeastSim(world, opts) {
     cdy: new Float64Array(MAX_BEASTS),
     goalX: new Float64Array(MAX_BEASTS),
     goalY: new Float64Array(MAX_BEASTS),
+    mv: new Float32Array(MAX_BEASTS),       // BEAST-01: smoothed measured ground speed (m/s), view + stuck rule (not hashed)
+    moving: new Uint8Array(MAX_BEASTS),     // BEAST-01: hysteresis flag (on > 0.15 m/s, off < 0.05 m/s)
+    stkT: new Int32Array(MAX_BEASTS),       // BEAST-01: steps spent wanting to move without leaving the anchor
+    stkAx: new Float64Array(MAX_BEASTS), stkAy: new Float64Array(MAX_BEASTS),
+    stkFail: new Uint8Array(MAX_BEASTS),    // failed re-plans in a row
+    stkSt: new Uint8Array(MAX_BEASTS),
     prevX: new Float64Array(MAX_BEASTS),
     prevY: new Float64Array(MAX_BEASTS),
     path: new Float64Array(MAX_BEASTS * PATH_SLOTS * 2),
@@ -1052,8 +1058,45 @@ function storePath(sim, i, wn) {
 
 // ---- steer targets (29.1 step 4) -----------------------------------------------------------------------------
 
+const STUCK_STEPS = 90;      // BEAST-01: 1.5 s
+const STUCK_MOVE_M = 0.1;
+/** BEAST-01: measured speed (displacement of the last step, EMA) + stuck rule. Runs before prevX is overwritten. */
+function measureAndUnstick(sim, i, st) {
+  const steer = sim.steer;
+  const dx = steer.x[i] - sim.prevX[i], dy = steer.y[i] - sim.prevY[i];
+  const inst = Math.sqrt(dx * dx + dy * dy) * 60;
+  const m = sim.mv[i] += (Math.min(inst, 30) - sim.mv[i]) * 0.2;
+  if (m > 0.15) sim.moving[i] = 1; else if (m < 0.05) sim.moving[i] = 0;
+  if (sim.stkSt[i] !== st) { sim.stkSt[i] = st; sim.stkFail[i] = 0; sim.stkT[i] = 0; }
+  if (m > 0.5) sim.stkFail[i] = 0;
+  // wants to move: walking wander / chase not waiting / return, and not already at its goal
+  let want = (st === STATE_WANDER && sim.timer[i] === WALKING) || st === STATE_RETURN || (st === STATE_CHASE && !sim.waiting[i]);
+  if (want) {
+    const gx = st === STATE_CHASE ? sim._px : sim.goalX[i], gy = st === STATE_CHASE ? sim._py : sim.goalY[i];
+    const ex = gx - steer.x[i], ey = gy - steer.y[i];
+    if (ex * ex + ey * ey < (st === STATE_CHASE ? 6 : 1)) want = false; // arrived / in melee range
+  }
+  if (!want) { sim.stkT[i] = 0; return; }
+  const ax = steer.x[i] - sim.stkAx[i], ay = steer.y[i] - sim.stkAy[i];
+  if (sim.stkT[i] === 0 || ax * ax + ay * ay >= STUCK_MOVE_M * STUCK_MOVE_M) { sim.stkAx[i] = steer.x[i]; sim.stkAy[i] = steer.y[i]; sim.stkT[i] = 1; return; }
+  if (++sim.stkT[i] < STUCK_STEPS) return;
+  sim.stkT[i] = 0;
+  if (sim.stkFail[i] < 2) { // re-plan (fresh A* to the same goal; chase re-targets the player)
+    sim.stkFail[i]++;
+    sim.pathLen[i] = 0; sim.pathIdx[i] = 0; sim.pathReq[i] = 1;
+    if (st === STATE_CHASE) { sim.goalX[i] = sim._px; sim.goalY[i] = sim._py; }
+    return;
+  }
+  sim.stkFail[i] = 0; // give up this target
+  sim.pathLen[i] = 0; sim.pathIdx[i] = 0; sim.pathReq[i] = 0;
+  if (st === STATE_CHASE) enterReturn(sim, i);
+  else enterWander(sim, i);
+}
+
 function setSteerTarget(sim, i) {
-  const steer = sim.steer, cfg = sim.cfg, st = sim.state[i];
+  const steer = sim.steer, cfg = sim.cfg;
+  measureAndUnstick(sim, i, sim.state[i]);
+  const st = sim.state[i];
   sim.prevX[i] = steer.x[i];
   sim.prevY[i] = steer.y[i];
 
