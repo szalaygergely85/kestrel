@@ -90,6 +90,15 @@ export function createSwordSim(world, events, cfg, hooks) {
     return false;
   }
 
+  /** OB-116: a ray hit that lies ON the terrain surface is the ground the target stands on (slope / crest), not a wall:
+   * walls and props are collider hits well above the ground. Stub worlds without terrain never match. */
+  function isTerrainHit(o) {
+    const tr = world.terrain;
+    if (!tr || typeof tr.groundAt !== 'function') return false;
+    const g = tr.groundAt(o.x, o.y);
+    return g === g && o.z <= g + 0.08;
+  }
+
   function refreshTargetables() {
     for (let i = 0; i < tCount; i++) {
       const e = tEntities[i], tg = e.components.targetable;
@@ -248,7 +257,7 @@ export function createSwordSim(world, events, cfg, hooks) {
       if (hitMask[idx] || (h && h.hp <= 0)) continue;
       const e = tEntities[idx]; // a target the wall hides (LOS blocked by something other than itself) is no reason to keep swinging
       const blocked = world.raySegment(_eye.x, _eye.y, _eye.z - 0.35, e.transform.x, e.transform.y, e.transform.z + tch[idx] * 0.5, _losOut);
-      if (!blocked || hitsOwnShape(_losOut.x, _losOut.y, idx)) return true;
+      if (!blocked || hitsOwnShape(_losOut.x, _losOut.y, idx) || isTerrainHit(_losOut)) return true;
     }
     return false;
   }
@@ -279,7 +288,7 @@ export function createSwordSim(world, events, cfg, hooks) {
     // PROP-COLLIDE-01b regression (owner 2026-10-06 "practice statue doesn't get damage"): a solid prop target (the
     // practice post) now has its OWN collider, so a ray that stops at that target's own shape is not a wall.
     let worldHit = world.raySegment(_eye.x, _eye.y, rayZ, bxw, byw, rayZ, _rayOut);
-    if (worldHit && hitsOwnShape(_rayOut.x, _rayOut.y, -1)) worldHit = false;
+    if (worldHit && (hitsOwnShape(_rayOut.x, _rayOut.y, -1) || isTerrainHit(_rayOut))) worldHit = false;
     const twM = worldHit ? _rayOut.t * S.reach : S.reach;
 
     const n = arcHits(_arc, tcx, tcy, tcz, tcr, tch, tCount, _outIdx, _outT);
@@ -292,7 +301,7 @@ export function createSwordSim(world, events, cfg, hooks) {
       if (h && h.hp <= 0) continue; // US-079b: a dead boar is skipped by the arc (before hitMask)
       if (hitMask[idx]) continue;
       const ex = e.transform.x, ey = e.transform.y, ez = e.transform.z + tch[idx] * 0.5;
-      if (world.raySegment(_eye.x, _eye.y, rayZ, ex, ey, ez, _losOut) && !hitsOwnShape(_losOut.x, _losOut.y, idx)) continue; // blocked LOS (not by the target's own collider) - skip
+      if (world.raySegment(_eye.x, _eye.y, rayZ, ex, ey, ez, _losOut) && !hitsOwnShape(_losOut.x, _losOut.y, idx) && !isTerrainHit(_losOut)) continue; // blocked LOS (not by the target's own collider) - skip
       hitMask[idx] = 1;
       anyEntity = true;
       emitHit(e, S, ex, ey, ez, fx, fy);

@@ -807,3 +807,7 @@ Left: remaining villager max 6-50 ms is sparse GC/OS noise from beast/fauna allo
 - `engine/world/bandAhead.test.js` (22 checks): priority table, 12-zone walk at 6 m/s (12 swaps, 0 misses, 0 band:late, 25 MB <= 32 MB), pins survive a 3 MB cap, cached bundle == fresh bake (near bytes + scatter/detail counts). Bake-active call p50 1.7 / p95 1.9 / p99 2.6 / max 3.7 ms; one-off job-start call (key + overlap copy) max ~5.7 ms (not sliced; open point for arch).
 - Walk test starts after a 10 s idle settle (ring prefilled); pins in world data not set yet (WM-05). Not run: browser, gpucompare.
 - NEEDS B1-main: none. -> arch-review
+
+- OB-116 (sword hits only point-blank): cause = zBandLow -1.0 (a 0.7 m boar only grazed the band) + reach 1.6. Fix: swordConfig reach 2.2 light / 2.4 hard, zBandLow -2.2 (~0.6 m below feet); sword.js `isTerrainHit` so a ray hit ON the terrain (slope/crest under the target) no longer counts as a wall (world ray, LOS, pendingTarget); walls still block (sword.test.js COMBAT-REACH-01 green).
+  New `game/js/quest/sim/swordReach.test.js` (stub planar terrain, boar r0.45 h0.7, eye 1.6; centre 1.0/1.5/2.0/2.5 m). Before (HIT/--): flat H H H -; 0.3 lower - - - -; 0.3 higher H H H -; uphill20% H H H -; downhill20% - - - -; downhill40% - - - -. After: all HIT at 1.0-2.5 m; 3.2 m miss; hard hits 2.5 m.
+  `run-tests --filter sword,combat,practice,beast` 15/15 PASS. Node only (stub world, not the real world_m1; real raySegment terrain gate mimicked by groundAt). Owner look: swing at a boar 2 m away, downhill too. -> po-review
