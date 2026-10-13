@@ -188,15 +188,20 @@ fn shadeTerrain(t: f32, typeIdIn: i32, b: f32, uIn: f32, vIn: f32, timeSec: f32,
   var code = pickCodeFromPacked(packedX, packedCount, packedCount >> 1u);
 
   // G2 + P3 far grass tier (twin: terrainShade.js shadeTerrain, same lines). fgw = weight, > 0 = stable level 254.
-  var fgw = 0.0;
+  var fgw = 0.0; var fgAnimW = 0.0;
   if (su.fgP.x > 0.5 && (!close || su.fgP.x > 1.0)) { // OB-121b: fgP.x = on * (1 + underlay)
     let fst = su.fgT[typeId].w;
     if (fst > 0.0) {
       let fw0 = clamp((t - su.fgP.y) / su.fgP.z, 0.0, 1.0);
-      fgw = max(su.fgP.x - 1.0, fw0 * fw0 * (3.0 - 2.0 * fw0)) * fst;
+      let fwr = fw0 * fw0 * (3.0 - 2.0 * fw0);
+      let fstat = (su.fgP.x - 1.0) > fwr; // OB-154: underlay-won cell = static (no gust phase)
+      fgw = max(su.fgP.x - 1.0, fwr) * fst; fgAnimW = select(fgw, 0.0, fstat);
       if (fgw > 0.0) {
-        var ph = (timeSec - (u * su.fgW.x + v * su.fgW.y) * su.fgW.w) * su.fgW.z; ph = ph - floor(ph);
-        var tri = 1.0 - abs(2.0 * ph - 1.0); tri = tri * tri * (3.0 - 2.0 * tri);
+        var tri = 0.5;
+        if (!fstat) {
+          var ph = (timeSec - (u * su.fgW.x + v * su.fgW.y) * su.fgW.w) * su.fgW.z; ph = ph - floor(ph);
+          tri = 1.0 - abs(2.0 * ph - 1.0); tri = tri * tri * (3.0 - 2.0 * tri);
+        }
         let sg = clamp(nP * ${FG_SLOPE.toFixed(4)} + (tri - 0.5) * ${FG_GUST.toFixed(4)}, -1.0, 1.0);
         if (fgw > 0.5 - 0.4 * sg) { code = select(select(${FG_CODES[1]}, ${FG_CODES[2]}, sg > 0.33), ${FG_CODES[0]}, sg < -0.33); }
         let km = fgw * su.fgP.w * (1.0 + ${FG_MOD.toFixed(4)} * sg);
@@ -240,7 +245,7 @@ fn shadeTerrain(t: f32, typeIdIn: i32, b: f32, uIn: f32, vIn: f32, timeSec: f32,
   if (f > 0.85) { code = 0; }
 
   var o: TerrainOut;
-  o.fr = fr; o.fg = fgc; o.fb = fbc; o.br = br; o.bg = bgc; o.bb = bbc; o.glyph = code; o.fgw = fgw;
+  o.fr = fr; o.fg = fgc; o.fb = fbc; o.br = br; o.bg = bgc; o.bb = bbc; o.glyph = code; o.fgw = fgAnimW;
   return o;
 }
 // OB-073 D2e: kind-10 carpet blade (twin: terrainShade.js shadeGrass). No skyline cap, glyph by h01 / lean, colour = ramp(h01 + tint).

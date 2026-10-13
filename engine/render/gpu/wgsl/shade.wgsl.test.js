@@ -236,7 +236,7 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   });
   const MAX_F = MAX_FEATURES_PER_TYPE;
   function runTerrain(src, trials, wet = 0, floorY = 0, sky = null) {
-    let bad = 0, n = 0, faces = 0, closeN = 0, cliffN = 0, fgN = 0, fgGlyph = 0;
+    let bad = 0, n = 0, faces = 0, closeN = 0, cliffN = 0, fgN = 0, fgGlyph = 0, nearAnim = 0;
     const h = mkHash(src);
     for (const hashCell of [0, 3, -0.05]) {
       const suT = makeSu(hashCell, wet, floorY, sky);
@@ -267,11 +267,12 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
         const g = st(tt, type, b, u, v, time, faceMode, z, { x: nx, y: ny, z: nzr });
         const q = (x) => Math.floor(Math.min(255, Math.max(0, x)) + 0.5);
         n++; if (tt < 40) closeN++; if (faceMode && type === 2) faces++;
+        if (o.level === 254 && tt < 12) nearAnim++;
         if (o.level === 254) { fgN++; if (o.glyph === 2 || o.glyph === 7 || o.glyph === 12) fgGlyph++; }
         if ((g.fgw > 0 ? 254 : 255) !== o.level || g.glyph !== o.glyph || q(g.fr) !== o.fg[0] || q(g.fg) !== o.fg[1] || q(g.fb) !== o.fg[2] || q(g.br) !== o.bg[0] || q(g.bg) !== o.bg[1] || q(g.bb) !== o.bg[2]) { bad++; if (bad < 10 && src === SHADE_WGSL) console.error("terr", hashCell, JSON.stringify({ type, tt, b, u, v, time, faceMode }), JSON.stringify(g), o.glyph, Array.from(o.fg), Array.from(o.bg)); }
       }
     }
-    return { bad, n, faces, closeN, cliffN, fgN, fgGlyph };
+    return { bad, n, faces, closeN, cliffN, fgN, fgGlyph, nearAnim };
   }
   const base = runTerrain(SHADE_WGSL, 1500);
   assert.ok(base.bad <= base.n * 0.001, `shadeTerrain vs JS: ${base.bad}/${base.n} differ`);
@@ -284,7 +285,7 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   FGREC = mkFg(); FGREC.under = 0.6;
   const ulRun = runTerrain(SHADE_WGSL, 3000);
   assert.ok(ulRun.bad <= ulRun.n * 0.001, 'underlay shadeTerrain vs JS: ' + ulRun.bad + '/' + ulRun.n + ' differ');
-  assert.ok(ulRun.fgN > fgRun.fgN * 1.5, 'underlay widens the grass cells ' + ulRun.fgN + ' vs ' + fgRun.fgN);
+  assert.equal(ulRun.nearAnim, 0, 'OB-154: underlay-won cells (t < ramp start) are static, never level 254 (wind shimmer only from the ramp)');
   FGREC = null;
   assert.ok(base.faces > 100 && base.closeN > 300, `terrain coverage faces ${base.faces} close ${base.closeN}`);
   probes += base.n;
@@ -491,14 +492,15 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
 {
   // sha256 of SHADE_WGSL taken before the 073b change, re-pinned after the 38.23 entity-tint merge and AUD-40 sky glow, AUD-45 fog shape and AUD-47 vegGain, SKY-GLOW-SOFT-01, DN-02 night floor, MAP-06b skyline cap, OB-073 smooth ground noise, OB-073 calm ground, OB-081 far tier blend + calm faces (41264 chars): the stable-off shader must not move by a single byte.
   // re-pinned 48155 -> 48644 by OB-104b2 on top of SWIM-04c (cliff branch + nrm param + ShadeU.cliff after the 7 under vec4)
+  // re-pinned 50210 -> 50440 by OB-154 (underlay-won cells static: no gust phase, fgw out = ramp-won only)
   // re-pinned 50129 -> 50210 by OB-121b (underlay: fgP.x = on * (1 + under); max(under, ramp) weight, close-band gate; under 0 = same output, asserted by the terrain probes)
   // re-pinned 49079 -> 50129 by G2 + P3 (far grass tier in shadeTerrain + fgP/fgW/fgT appended after cliff; off = zero uniforms = unchanged output)
   // re-pinned 48644 -> 49079 by OB-089 (outdoor mesh fog branch, fogView.z; uniform layout unchanged)
   // re-pinned 45683 -> 48155 by SWIM-04c (UNDER_WGSL + shadeCell/fs_main split + 7 appended ShadeU vec4; underwater block is skipped when su.under.x = 0)
   // re-pinned 44782 -> 45683 by MASK-c (shadeGrass ground blend + back-light, packed GA.w word; TS_PATCH_NOISE_WGSL extracted verbatim)
   // re-pinned 41264 -> 44782 by OB-073-D2e (kind-10 shadeGrass + ShadeU.grass table + the kind-10 branch in fs_main; calm-ground code untouched, asserted by the terrain mutation probes above)
-  assert.equal(SHADE_WGSL.length, 50210, 'stable off: SHADE_WGSL length unchanged');
-  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '204873b959bffc1ebeb0d59e9d0be57d9ad56c3a485b71560a2e06b35ec83f45', 'stable off: SHADE_WGSL byte-identical to pre-073b');
+  assert.equal(SHADE_WGSL.length, 50440, 'stable off: SHADE_WGSL length unchanged');
+  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), 'c27d5b8f1b0f1257ea8efbbb85dade2c2b20c0d8a426d5d80e8dc58532fc7a68', 'stable off: SHADE_WGSL byte-identical to pre-073b');
   assert.ok(!/lvl|lvOut|location\(2\)/.test(SHADE_WGSL), 'stable off: no level output');
   assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
   assert.deepEqual(SHADE_LEVEL_TARGETS, ['rgba8', 'rgba8', 'r8ui']);
