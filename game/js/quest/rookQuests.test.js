@@ -69,7 +69,7 @@ assert.equal(talk().length, 2); // rook.mirror.done
 
 // QL-07/16 real content: knot + nest pickup entities exist, and the SOS pulse is 3 cycles of 3 short + 3 long
 const wd = rd('content/worlds/world_m1.world.json'), ent = (id) => wd.entities.find((e) => e.id === id);
-assert.deepEqual(ent('nest').components.questPickup, { item: 'relay.mirror', n: 1 }); assert.ok(ent('nest').components.sprite);
+assert.deepEqual(ent('nest').components.questPickup, { item: 'relay.mirror', n: 1 }); assert.equal(ent('nest').components.voxel.model, 'pickup.relay.mirror'); // OB-132 voxel pickup
 assert.equal(ent('knot').components.inspect.text, 'note.knot');
 assert.equal(wd.entities.filter((e) => /^boarF\d$/.test(e.id) && e.components.brain.temperament === 'wary').length, 2);
 const { pulseFactor } = await import('./relayWake.js');
