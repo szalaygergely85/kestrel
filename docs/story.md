@@ -1980,3 +1980,28 @@ Notes: `life.chat.any.6` needs goblins live (D-072). Until then, use `Wind, or t
 | `lines.done` | `Chalk under the nail: GEESE COUNTED. ALL HERE. AGAIN.` | 53 |
 
 Notes: the board notice is the read text, for wherever the board shows the full note (`note.owBoard` style). The pack has no `accepted` field yet. If none is added, drop that line, because `active` already works on its own. The objective `text` `Defend the goose pen at night` (29) stays as it is.
+
+## Weapon tiers 4-5 + goblin trinket (EQ-20b, GOB)
+
+(PC-B writer 2026-10-13, owner-authorised.) Replaces `T4` / `T5` names and the `Placeholder copy.` desc in `design/itemsWeapons.js` (gob-01). Name <= 14 (MAX_ITEM_NAME), desc <= 38 (MAX_ITEM_DESC), ASCII only. Follows armour option A: tempered = forged iron work, warden = "Watch" (old tower watch make, as `Watch Jerkin`).
+
+| key | text | chars |
+|---|---|---|
+| `item.gear.main.sword.tempered.name` | `Quenched Edge` | 13 |
+| `item.gear.main.sword.tempered.desc` | `Oil-quenched. Rings like a bell.` | 32 |
+| `item.gear.main.sword.warden.name` | `Watch Blade` | 11 |
+| `item.gear.main.sword.warden.desc` | `Tower watch steel. It never dulled.` | 35 |
+| `item.gear.ranged.bow.tempered.name` | `Horn Bow` | 8 |
+| `item.gear.ranged.bow.tempered.desc` | `Ash and horn, glued and bound. Heavy.` | 37 |
+| `item.gear.ranged.bow.warden.name` | `Watch Bow` | 9 |
+| `item.gear.ranged.bow.warden.desc` | `A tower archer's bow. Quick to draw.` | 36 |
+| `item.gear.off.shield.tempered.name` | `Iron Kite` | 9 |
+| `item.gear.off.shield.tempered.desc` | `Riveted iron over oak. Barely dents.` | 36 |
+| `item.gear.off.shield.warden.name` | `Watch Shield` | 12 |
+| `item.gear.off.shield.warden.desc` | `Watch plate. Holds when you can't.` | 34 |
+| `item.goblin.trinket.name` | `Scrap Charm` | 11 |
+| `item.goblin.trinket.desc` | `Bent nails on a cord. Goblin-made.` | 33 |
+
+Notes:
+- If the owner picks armour option B (`Relay` for warden), read `Relay Blade` / `Relay Bow` / `Relay Shield` and keep the descs.
+- The trinket fits "They want metal more than meat" (Goblins, D-072): goblins wear what they steal. Alt name `Goblin Charm` (12).
