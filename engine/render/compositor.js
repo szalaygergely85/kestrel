@@ -82,13 +82,14 @@ const sunOffState = { map: /** @type {any} */ (null), M: SUN_OFF_MATRIX, opts: /
  * Renders the sun shadow map for this frame (called by `renderWorldMesh` after the camera list was built and
  * culled) and publishes it as `fb.sunMap`; `null` when shadows.sun is not 'map' or there is no sun.
  */
-const _windCtx = { field: /** @type {any} */ (null), t: 0 };
+const _windCtx = { field: /** @type {any} */ (null), t: 0, halfCols: 0 };
 /** Wind ctx for rasterDrawList (null = calm): world wind field + fb.timeSec, the clock passRaster/passShadow pack into the wind uniforms. */
 export function windCtx(world, fb, quantised = false) {
   if (!windSwayOn(world.wind)) return null;
   const t = fb.timeSec || 0;
   // quantised (sun map): same 10 Hz step as windShadowKey, so the map is a pure function of its dirty key
   _windCtx.field = world.wind; _windCtx.t = quantised ? sunWindClock(t) : t;
+  _windCtx.halfCols = quantised ? 0 : (fb.gbuf ? fb.gbuf.cols * 0.5 : 0); // OB-144: sway distance fade (main camera pass only)
   return _windCtx;
 }
 function renderSunShadowJS(fb, world, cam, cameraList, cache, terrainMeshSet, structCount) {
