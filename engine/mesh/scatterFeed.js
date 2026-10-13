@@ -31,7 +31,7 @@ export function bindDetailInstances(detail, instances, cfg, treeInstances = 0, g
     if (def.mesh !== undefined) { // TREES-LP-c: kind-9 mesh species (World.load resolved it into world.detailMeshes)
       if (!meshes?.[def.mesh]) throw new Error(`bindDetailInstances: unresolved mesh ${def.mesh}`);
     } else if (!instances.pool?.models.has(def.model)) throw new Error(`bindDetailInstances: missing voxel model ${def.model}`);
-    const key = (def.mesh !== undefined ? 'mesh:' + def.mesh : def.model) + '|' + def.shadow + '|' + def.lodCells;
+    const key = (def.mesh !== undefined ? 'mesh:' + def.mesh : def.model) + '|' + def.shadow + '|' + def.lodCells + '|' + (def.maxDistM || 0);
     let g = renderKeys.get(key);
     if (g === undefined) {
       g = defs.length;
@@ -59,6 +59,8 @@ export function bindDetailInstances(detail, instances, cfg, treeInstances = 0, g
     const def = defs[g], cap = Math.min(groupCounts[g], maxDraw);
     const group = def.mesh !== undefined ? instances.meshGroup(meshes[def.mesh], cap) : instances.group(def.model, cap);
     if (def.mesh === undefined) group.lodCells = def.lodCells / knobs.lodScale; // GFX-03; mesh groups: no LOD yet (37.15 item 6)
+    // PERF-P4: per-species draw distance; the same group.maxDistM is read by the JS cull (instances.js) and the GPU cull (passCull.js)
+    if (def.maxDistM > 0) group.maxDistM = def.maxDistM * drawScale;
     group.castShadow = def.shadow;
     groups.push(group);
   }

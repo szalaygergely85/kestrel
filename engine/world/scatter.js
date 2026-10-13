@@ -251,6 +251,7 @@ export function validateDetailConfig(cfg, typeNames = DETAIL_TYPES) {
         if (!Number.isFinite(species.sinkM)) bad(`${skey}.sinkM`);
         integer(species.yawStep, `${skey}.yawStep`, 1, 360);
         if (typeof species.shadow !== 'boolean') bad(`${skey}.shadow`);
+        if (species.maxDistM !== undefined) number(species.maxDistM, `${skey}.maxDistM`, 0, false); // PERF-P4: per-species draw distance (m)
         if (typeof species.sway !== 'boolean') bad(`${skey}.sway`); // FOLIAGE-SWAY-01 part 2: explicit per-species flag, no name regex
         if (species.collider !== undefined) {
           const c = species.collider;
@@ -327,7 +328,7 @@ export class DetailScatterJob {
       for (const [type, list] of Object.entries(l.ground)) {
         speciesByType[type] = list.map(s => {
           const index = speciesDefs.length;
-          speciesDefs.push({ model: s.model, mesh: s.mesh, layer, shadow: s.shadow, sway: s.sway, lodCells: l.lodCells, collider: s.collider });
+          speciesDefs.push({ model: s.model, mesh: s.mesh, layer, shadow: s.shadow, sway: s.sway, lodCells: l.lodCells, maxDistM: s.maxDistM, collider: s.collider });
           return index;
         });
       }
@@ -382,7 +383,7 @@ export class DetailScatterJob {
       if (exclusions.some(e => detailExcluded(x, y, e))) continue;
       let pick = u(ix, iy, 3) * list.reduce((sum, s) => sum + s.weight, 0), chosen = list.length - 1;
       for (let j = 0; j < list.length; j++) { pick -= list[j].weight; if (pick < 0) { chosen = j; break; } }
-      const s = list[chosen], r = l.drawM * (0.85 + 0.15 * u(ix, iy, 5));
+      const s = list[chosen], r = detailDrawM(l.drawM, s.maxDistM) * (0.85 + 0.15 * u(ix, iy, 5));
       points.push({ x, y, z: terrain.groundAt(x, y) - s.sinkM,
         yawDeg: Math.floor(u(ix, iy, 4) * 360 / s.yawStep) * s.yawStep,
         species: speciesByType[type][chosen], r2: r * r,
@@ -411,4 +412,9 @@ export function scatterDetail(terrain, structures = [], keepOut = [], cfg = terr
   const job = new DetailScatterJob(terrain, structures, keepOut, cfg);
   job.step(Infinity);
   return job.result;
+}
+
+/** PERF-P4: effective placement draw radius (m) = the layer's drawM capped by the species' own maxDistM (undefined/0 = layer drawM). */
+export function detailDrawM(layerDrawM, speciesMaxDistM) {
+  return speciesMaxDistM > 0 && speciesMaxDistM < layerDrawM ? speciesMaxDistM : layerDrawM;
 }

@@ -33,13 +33,19 @@
   ];
   // OB-089 (owner 2026-10-13, 'LOD for dark trees should be closer'): was 150 = LOD1 from ~9 m (rows 100, R 7.7 m: d = R*1.73*rows/lodCells). 50 holds the lit LOD0 to ~27 m.
   var TREE_LODCELLS = 50;
+  // PERF-R2 (D-075 step 3): per-species lodCells so LOD1 engages at ~15-20 m (was ~27 m for all). d = R*1.73*rows/lodCells, so heavier
+  // meshes switch earlier: LOD0 tris >= 5000 -> 90, 3500..5000 -> 80, < 3500 -> 70, Pine_5 (1.6k tris) 60.
+  // mesh-tri-budget sweep (lodCells 50 -> 80): forestWalk 184k -> 174k tris, roadSouth 20.0k -> 17.8k tris (all-LOD0 63.6k).
+  // TwistedTree (~300) has no content mesh yet; add it to this table when it lands.
+  var TREE_LODCELLS_BY_MESH = { CommonTree_1: 90, CommonTree_2: 90, CommonTree_3: 70, CommonTree_4: 80, CommonTree_5: 70,
+                                Pine_1: 80, Pine_2: 80, Pine_3: 90, Pine_4: 80, Pine_5: 60 };
   var TREE_SPECIES_MESH = (function () {
   var out = [];
   [[14, 0.5, 2.3], [14, 0.5, 2.8], [12, 0.5, 2.5], [10, 0.5, 5.0], [10, 0.45, 2.3]].forEach(function (t, i) {
-    out.push({ mesh: 'quaternius/CommonTree_' + (i + 1), weight: t[0], trunkR: t[1], trunkH: t[2], sway: true, lodCells: TREE_LODCELLS });
+    out.push({ mesh: 'quaternius/CommonTree_' + (i + 1), weight: t[0], trunkR: t[1], trunkH: t[2], sway: true, lodCells: TREE_LODCELLS_BY_MESH['CommonTree_' + (i + 1)] });
   });
   [[10, 0.45, 2.1], [10, 0.45, 1.1], [8, 0.45, 3.0], [6, 0.45, 2.4], [6, 0.35, 1.4]].forEach(function (t, i) {
-    out.push({ mesh: 'quaternius/Pine_' + (i + 1), weight: t[0], trunkR: t[1], trunkH: t[2], sway: true, lodCells: TREE_LODCELLS });
+    out.push({ mesh: 'quaternius/Pine_' + (i + 1), weight: t[0], trunkR: t[1], trunkH: t[2], sway: true, lodCells: TREE_LODCELLS_BY_MESH['Pine_' + (i + 1)] });
   });
   return out;
   })();
@@ -137,13 +143,14 @@
           // PLANT-VOXEL-OFF-01 / STONES-VOXEL-OFF-01 (owner 2026-10-10): the voxel plant scatter and the small voxel stones/pebbles layer are gone;
           // placed Quaternius meshes (world_m1 mdw/roadL rows) are the plants and stones now.
           // ROCKS-VOXEL-OFF-01 (owner 2026-10-10): voxel rockMed*/rockLarge* and the `rock` ground list removed; layer keeps wooden logs/stumps only.
+          // PERF-P4: per-species maxDistM (small props 25-60 m, bushes 60, rocks 120, logs/stumps 50-70); layer drawM stays the upper bound.
           { name: 'rocks', seed: 38307, cellM: 11, jitter: 3.0, fill: 0.5, maxSlope: 0.35, clearM: 1.6, drawM: 70, lodCells: 4,
             ground: {
-              grass:  [ { model: 'logShort',   weight: 10, sinkM: 0.08, shadow: true, collider: { box: { hx: 0.96, hy: 0.24, h: 0.52 } } },
-                        { model: 'stumpCut',   weight: 12, sinkM: 0.04, shadow: true, collider: { prism: { r: 0.33, h: 0.55 } } } ],
-              forest: [ { model: 'logShort',   weight: 20, sinkM: 0.08, shadow: true, collider: { box: { hx: 0.96, hy: 0.24, h: 0.52 } } },
-                        { model: 'logLong',    weight: 16, sinkM: 0.10, shadow: true, collider: { box: { hx: 1.43, hy: 0.33, h: 0.72 } } },
-                        { model: 'stumpCut',   weight: 22, sinkM: 0.04, shadow: true, collider: { prism: { r: 0.33, h: 0.55 } } } ]
+              grass:  [ { model: 'logShort',   weight: 10, sinkM: 0.08, shadow: true, maxDistM: 50, collider: { box: { hx: 0.96, hy: 0.24, h: 0.52 } } },
+                        { model: 'stumpCut',   weight: 12, sinkM: 0.04, shadow: true, maxDistM: 50, collider: { prism: { r: 0.33, h: 0.55 } } } ],
+              forest: [ { model: 'logShort',   weight: 20, sinkM: 0.08, shadow: true, maxDistM: 50, collider: { box: { hx: 0.96, hy: 0.24, h: 0.52 } } },
+                        { model: 'logLong',    weight: 16, sinkM: 0.10, shadow: true, maxDistM: 70, collider: { box: { hx: 1.43, hy: 0.33, h: 0.72 } } },
+                        { model: 'stumpCut',   weight: 22, sinkM: 0.04, shadow: true, maxDistM: 50, collider: { prism: { r: 0.33, h: 0.55 } } } ]
             } }
         ]
       },
