@@ -22,7 +22,7 @@ import { makeOk } from '../../../../engine/test/assert.js';
 import itemsMod from '../../../../design/items.js'; // classic script: side effect on globalThis.ASSETS (ASSETS.items)
 import { buildBeastNav } from './beastNav.js';
 import { createBeastSim, STATE_CORPSE, STATE_SINK, STATE_GONE } from './beastSim.js';
-import { ensureInventory, addItem, countOf } from './inventory.js';
+import { ensureInventory, addItem, removeItem, countOf } from './inventory.js';
 import { readFileSync } from 'node:fs';
 import { resetPickups, spawnItemDrop, stepPickups } from './pickups.js';
 import { BAND_TABLE } from './band.js';
@@ -264,11 +264,13 @@ const OUT = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
   kill(env);
   const want = [0, 1, 2, 3].map((k) => env.loot.countOf('boar1', k));
   const wantIds = [0, 1, 2, 3].map((k) => env.loot.itemOf('boar1', k));
+  const heldOrb = env.loot.orbOf('boar1'); // OB-113: the potion item is logged last
   updateInteraction(env.world, {}, eyeAtBody(env), true);
   const inv = env.player.components.inventory;
   ok('E moves meat (+ arrows) into the pack',
     countOf(inv, 'boar.meat') === want[0] && countOf(inv, 'arrow') === want[1], want.join());
   const expectLog = want.map((n, k) => (n > 0 ? `+${n} ${wantIds[k]}` : null)).filter(Boolean);
+  if (heldOrb) expectLog.push('+1 ' + (heldOrb === 'mp' ? 'potion.mp' : 'potion.hp'));
   ok('one inventory:added per kind that moved, in order', env.events.log.join('|') === expectLog.join('|'), env.events.log.join('|'));
   ok('flag cleared after an emptied corpse', !env.world.state['loot.boar1']);
   ok('corpse counts zeroed', want.every((_, k) => env.loot.countOf('boar1', k) === 0));
@@ -434,25 +436,41 @@ const OUT = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
   ok('OB-064: some gear rolled; gear reaches the pack only after E', gearKills > 3 && gearInPackAfterLoot === gearKills, gearKills + '/' + gearInPackAfterLoot);
 }
 
-// OB-074: the hp/mp potion (orb) stays in the corpse until E; no ground pickup at the kill.
+// OB-074/OB-113: the hp/mp potion (orb) stays in the corpse until E, then goes INTO THE PACK (no instant heal).
 {
   const env = fresh({ seed: 7 });
-  let orbs = 0, onGround = 0, appliedOnE = 0;
-  const hp = env.player.components.health;
+  let orbs = 0, onGround = 0, given = 0, healed = 0;
+  const hp = env.player.components.health, inv = env.player.components.inventory;
   for (let d = 0; d < 300; d++) {
     if (hp) hp.hp = 1;
     kill(env);
     let ground = 0; env.world.forEachEntity((e) => { if (e.components && e.components.pickup && e.components.pickup.kind !== 'item') ground++; });
     onGround += ground;
     const o = env.loot.orbOf('boar1');
+    const pid = o === 'mp' ? 'potion.mp' : 'potion.hp';
+    const before = o ? countOf(inv, pid) : 0;
     env.loot.lootBoar('boar1');
-    if (o) { orbs++; if (o === 'mp' || !hp || hp.hp > 1) appliedOnE++; }
+    if (o) { orbs++; if (countOf(inv, pid) === before + 1) given++; if (hp && hp.hp !== 1) healed++; }
+    // empty the pack each round so a full stack never skews the count
+    for (const id of ['potion.hp', 'potion.mp', 'boar.meat', 'arrow', 'boar.hide', 'boar.tusk']) { const n = countOf(inv, id); if (n > 0) removeItem(inv, id, n); }
     env.world.forEachEntity((e, id) => { if (e.components && e.components.pickup) env.world.remove(id); });
     resetPickups(env.world);
     env.beasts.resetAll();
   }
   ok('OB-074: no hp/mp orb pickup on the ground after a kill (300 kills)', onGround === 0, onGround);
-  ok('OB-074: orbs were rolled and given on E', orbs > 50 && appliedOnE === orbs, orbs + '/' + appliedOnE);
+  ok('OB-113: orbs rolled and given as potion.hp/mp x1 in the pack on E', orbs > 50 && given === orbs, orbs + '/' + given);
+  ok('OB-113: no instant heal on E', healed === 0, healed);
+}
+// OB-113: pack full of other items -> the potion stays in the corpse, nothing lost or duplicated.
+{
+  const env = fresh({ seed: 7 });
+  const inv = env.player.components.inventory;
+  kill(env);
+  env.loot.orbHeld[env.beasts.slotOf('boar1')] = 'hp'; // force the hit
+  for (let n = 0; n < 200; n++) addItem(inv, defs, 'gear.body.jerkin.worn', 1);
+  const before = countOf(inv, 'potion.hp');
+  const r = env.loot.lootBoar('boar1');
+  ok('OB-113: full pack -> potion stays in corpse, loot returns false', env.loot.orbOf('boar1') === 'hp' && countOf(inv, 'potion.hp') === before && r === false);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);
