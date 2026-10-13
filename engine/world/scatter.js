@@ -302,7 +302,7 @@ function structBlocks(st, x, y, m) {
 
 /** WS2-02: the detail scatter as a resumable job (see TreeScatterJob). Rows of every layer, then the tile sort. */
 export class DetailScatterJob {
-  constructor(terrain, structures = [], keepOut = [], cfg = terrain.recipe.recipe.detail) {
+  constructor(terrain, structures = [], keepOut = [], cfg = terrain.recipe.recipe.detail, trees = null) {
     cfg = validateDetailConfig(cfg);
     const g = terrain.near;
     if (!g) throw new Error('scatterDetail: terrain.near must be baked');
@@ -336,7 +336,7 @@ export class DetailScatterJob {
     }
     const bio = compileBiomes(terrain.recipe, null);
     Object.assign(this, { bio, terrain, cfg, g, x1, y1, tx0, ty0, tilesX, tilesY, structureTiles, speciesDefs, layers,
-      points: [], exclusions: cfg.exclude.concat(keepOut), layer: 0, iy: 0, rowInit: false, result: null });
+      points: [], trees, _treeGrid: null, exclusions: cfg.exclude.concat(keepOut), layer: 0, iy: 0, rowInit: false, result: null });
   }
   step(msBudget) {
     if (this.result) return true;
@@ -384,6 +384,7 @@ export class DetailScatterJob {
       }
       if (blocked) continue;
       if (exclusions.some(e => detailExcluded(x, y, e))) continue;
+      if (l.biomeOnly && this.trees && this._onTrunk(x, y, list, u(ix, iy, 3))) continue;   // WM-07b: collide dressing keeps off tree trunks (hash draws only, nothing shifts)
       let pick = u(ix, iy, 3) * list.reduce((sum, s) => sum + s.weight, 0), chosen = list.length - 1;
       for (let j = 0; j < list.length; j++) { pick -= list[j].weight; if (pick < 0) { chosen = j; break; } }
       const s = list[chosen], r = detailDrawM(l.drawM, s.maxDistM) * (0.85 + 0.15 * u(ix, iy, 5));
@@ -393,6 +394,33 @@ export class DetailScatterJob {
         tile });
       if (points.length > cfg.maxPlacements) throw new Error('detail.maxPlacements: placement cap exceeded');
     }
+  }
+  /** WM-07b: true when the picked collide species at (x,y) lies within trunkR + own radius + 0.3 m of a tree of the same band. */
+  _onTrunk(x, y, list, pickU) {
+    let pick = pickU * list.reduce((sum, s) => sum + s.weight, 0), s = list[list.length - 1];
+    for (const e of list) { pick -= e.weight; if (pick < 0) { s = e; break; } }
+    const c = s.collider;
+    if (!c) return false;
+    const own = c.prism ? c.prism.r : Math.max(c.box.hx, c.box.hy);
+    const t = this.trees, sp = this.terrain.recipe.recipe.forest.trees.species;
+    let grid = this._treeGrid;
+    if (!grid) {
+      grid = this._treeGrid = new Map();
+      for (let i = 0; i < t.count; i++) {
+        const k = Math.floor(t.x[i] / 8) * 100003 + Math.floor(t.y[i] / 8);
+        const a = grid.get(k); if (a) a.push(i); else grid.set(k, [i]);
+      }
+    }
+    const cx = Math.floor(x / 8), cy = Math.floor(y / 8);
+    for (let gx = cx - 1; gx <= cx + 1; gx++) for (let gy = cy - 1; gy <= cy + 1; gy++) {
+      const a = grid.get(gx * 100003 + gy);
+      if (!a) continue;
+      for (const i of a) {
+        const lim = sp[t.species[i]].trunkR + own + 0.3, dx = t.x[i] - x, dy = t.y[i] - y;
+        if (dx * dx + dy * dy < lim * lim) return true;
+      }
+    }
+    return false;
   }
   _finish() {
     const { cfg, points, tx0, ty0, tilesX, tilesY, speciesDefs } = this;
@@ -411,8 +439,8 @@ export class DetailScatterJob {
   }
 }
 
-export function scatterDetail(terrain, structures = [], keepOut = [], cfg = terrain.recipe.recipe.detail) {
-  const job = new DetailScatterJob(terrain, structures, keepOut, cfg);
+export function scatterDetail(terrain, structures = [], keepOut = [], cfg = terrain.recipe.recipe.detail, trees = null) {
+  const job = new DetailScatterJob(terrain, structures, keepOut, cfg, trees);
   job.step(Infinity);
   return job.result;
 }

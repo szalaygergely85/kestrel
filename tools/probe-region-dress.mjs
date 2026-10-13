@@ -116,3 +116,17 @@ if (process.argv.includes('--scan')) {
     console.log('scan', p.join(','), 'gentle', (h.grass || 0) + (h.alpine || 0) + (h.flowers || 0), 'rock', h.rock || 0, 'newPlacements', nb);
   }
 }
+if (process.argv.includes('--overlap')) {
+  // WM-07b: collide dressing (boulders/ruins) vs tree trunks of the same band: must be 0 within trunkR + own radius + 0.3 m
+  const sp = world.terrain.recipe.recipe.forest.trees.species; let tot = 0, bad = 0, placed = 0;
+  for (const p of [...Object.values(REGIONS), ...Object.values(KEEP)]) {
+    const z = T(p), b = bake(z.cx, z.cy), d = b.detail, t = b.scatter; if (!t) continue;
+    for (let i = 0; i < d.count; i++) {
+      const s = d.speciesDefs[d.species[i]]; if (!s.collider || s.layer < 1) continue;
+      placed++; const c = s.collider, own = c.prism ? c.prism.r : Math.max(c.box.hx, c.box.hy);
+      for (let j = 0; j < t.count; j++) { const lim = sp[t.species[j]].trunkR + own + 0.3, dx = t.x[j] - d.x[i], dy = t.y[j] - d.y[i]; if (dx * dx + dy * dy < lim * lim) { bad++; break; } }
+    }
+    tot++;
+  }
+  console.log('overlap zones', tot, 'colliderDressing', placed, 'overlaps', bad);
+}
