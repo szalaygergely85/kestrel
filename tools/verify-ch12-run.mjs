@@ -309,7 +309,7 @@ try {
     const ents = JSON.parse(await ev(`(() => { const o = []; __t.w.forEachEntity((e, id) => { const q = e.components && e.components.questPickup; if (q) o.push({ id, item: q.item }); }); return JSON.stringify(o); })()`));
     const keys = JSON.stringify([...pickupKeys(item, ents, ixs), ...(lootItems.has(item) ? ixs.filter((r) => r.name === 'beast.loot').map((r) => r.key) : [])]);
     for (const k of JSON.parse(keys)) { if ((await hasN(item)) >= count) break; await goIx(k, 0.7); await pressE(1); }
-    return (await hasN(item)) >= count ? null : `cannot get ${count} x ${item}: ${(await hasN(item))} in pack, pickups tried: ${keys.slice(0, 120)}`;
+    return (await hasN(item)) >= count ? null : `cannot get ${count} x ${item}: ${(await hasN(item))} in pack, pickups tried: ${keys.slice(0, 120)}, pack slots used ${await ev('__t.D.playerHandle.data.components.inventory.slots.filter((s) => s && s.id).length')}/24 (CH12-CONTENT-01: a full pack refuses pickups)`;
   }
   async function doStep(s) { // -> null when done, else the reason the script could not do it
     switch (s.kind) {

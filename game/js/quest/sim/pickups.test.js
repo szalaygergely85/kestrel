@@ -294,6 +294,25 @@ for (const remaining of [PICKUP_LIFE, 5]) {
 }
 
 
+// CH12-CONTENT-01: giveOnAccept (packOps.add) into a full pack drops the leftover at the feet instead of losing it (sq.fc.cog never completable).
+{
+  resetPickups();
+  const defs = { cog: { stackMax: 99, name: 'Cog' }, rock: { stackMax: 1, name: 'Rock' } };
+  const world = buildWorld([playerEntity(2, 2, 0)]);
+  const inv = { slots: Array.from({ length: SLOTS }, () => ({ id: 'rock', n: 1 })), left: null, right: null };
+  const events = []; const bus = { emit: (n, p) => events.push([n, { ...p }]) };
+  const book = { packOps: null, countedItems: () => [] };
+  const hook = createQuestPickups({ getBook: () => book, feed() {}, defs, isWorn: null });
+  hook.onBoot({ world, player: world.get('player').data, inventory: inv, events: bus, state: {} });
+  hook.sync();
+  const k = book.packOps.add('cog', 1);
+  const live = liveDropIds().filter((x) => x);
+  ok('full pack: accept-give returns 0 but a cog drop lies at the feet', k === 0 && live.length === 1 && world.entity(live[0]).components.pickup.itemId === 'cog' && world.entity(live[0]).components.pickup.amount === 1);
+  ok('inventory:full emitted for the cog', events.some(([n, p]) => n === 'inventory:full' && p.id === 'cog' && p.dropped));
+  inv.slots[0] = { id: null, n: 0 };
+  ok('room in pack: add goes in, no new drop', book.packOps.add('cog', 1) === 1 && liveDropIds().filter((x) => x).length === 1);
+}
+
 // EQ-23b: an item sink returning the stored count (partial add into a nearly full pack) never duplicates items.
 {
   resetPickups();

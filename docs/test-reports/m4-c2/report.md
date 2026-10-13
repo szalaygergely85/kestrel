@@ -1,6 +1,6 @@
 # M4-C2 scripted fresh-player Ch1-2 run
 
-Date: 2026-10-12. Tool: `node tools/verify-ch12-run.mjs <port>`.
+Date: 2026-10-13. Tool: `node tools/verify-ch12-run.mjs <port>`.
 
 | AC | Result |
 |---|---|
@@ -21,57 +21,65 @@ Date: 2026-10-12. Tool: `node tools/verify-ch12-run.mjs <port>`.
 | mq.ford.stones | done | - | - |
 | mq.bend.call | done | - | - |
 | mq.ford.mirror | done | - | - |
-| mq.smoke | active | mark (flag lore.fordMark.read) | - |
+| mq.smoke | done | - | - |
 | sq.tm.nub | done | - | - |
-| sq.burl.boars.n | active | kill (beasts boarN1+boarN2+boarN3) | - |
-| sq.burl.boars.w | unavailable | kill (beasts boarW1+boarW2) | - |
-| sq.burl.boars.s | unavailable | kill (beasts boarS1+boarS2+boarS3) | - |
-| sq.burl.meat | active | fetch (item boar.meat) | - |
+| sq.burl.boars.n | done | - | - |
+| sq.burl.boars.w | done | - | - |
+| sq.burl.boars.s | done | - | - |
+| sq.burl.meat | active | fetch (item boar.meat) | fetch: cannot get 1 x boar.meat: 0 in pack, pickups tried: [] |
 | sq.burl.stone | done | - | - |
 | sq.burl.hint | done | - | - |
 | sq.burl.tower | done | - | - |
-| sq.burl.scout | unavailable | - | - |
-| sq.burl.ask | unavailable | talk (flag talk.notePost) | - |
-| sq.burl.walk | active | escort (flag escort.bear.relayBend) | - |
-| sq.burl.parcel | unavailable | deliver (deliver boar.meat) | - |
-| sq.post.spare | unavailable | - | - |
+| sq.burl.scout | done | - | - |
+| sq.burl.ask | done | - | - |
+| sq.burl.walk | done | - | - |
+| sq.burl.parcel | unavailable | deliver (deliver boar.meat) | not accepted at burl: {"sq.burl.parcel":"unavailable"} |
+| sq.post.spare | unavailable | - | not accepted at post: {"sq.post.spare":"unavailable"} |
 | sq.straw | done | - | - |
-| sq.rb.shield | available | - | - |
-| sq.rb.regards | unavailable | - | - |
-| sq.rb.road | unavailable | - | - |
-| sq.fc.ford | ready | - | - |
-| sq.fc.smoke | unavailable | - | - |
-| sq.fc.cross | unavailable | - | - |
-| sq.fc.again | unavailable | - | - |
+| sq.rb.shield | done | - | equipped shield by hand (requireEquipped); the real equip flow is not driven here |
+| sq.rb.regards | done | - | - |
+| sq.rb.road | done | - | - |
+| sq.fc.ford | done | - | - |
+| sq.fc.smoke | done | - | - |
+| sq.fc.cross | done | - | - |
+| sq.fc.again | done | - | - |
 | sq.tm.gap | done | - | - |
 | sq.tm.wood | done | - | - |
-| sq.tm.cart | active | explore (area wagon) | - |
-| sq.rb.lamps | available | - | - |
-| sq.rb.rocks | unavailable | - | - |
-| sq.rb.parcel | unavailable | - | - |
-| sq.he.wallow | active | explore (area wallow) | - |
-| sq.he.farm | unavailable | explore (area farmGate) | - |
-| sq.dw.bees | unavailable | explore (area beeFarm) | - |
-| sq.dw.stones | unavailable | explore (area standStones) | - |
-| sq.fc.stores | available | kill (beasts boarF1+boarF2) | - |
-| sq.fc.caps | active | collect (collect redcap) | - |
+| sq.tm.cart | done | - | - |
+| sq.rb.lamps | done | - | - |
+| sq.rb.rocks | done | - | - |
+| sq.rb.parcel | done | - | - |
+| sq.he.wallow | done | - | - |
+| sq.he.farm | done | - | - |
+| sq.dw.bees | done | - | - |
+| sq.dw.stones | done | - | - |
+| sq.fc.stores | done | - | - |
+| sq.fc.caps | active | collect (collect redcap) | collect: cannot get 5 x redcap: 0 in pack, pickups tried: [] |
 | sq.fc.well | done | - | - |
-| sq.fc.shrine | available | explore (area shrine) | - |
-| sq.fc.jetty | unavailable | explore (area jetty) | - |
-| sq.fc.cog | unavailable | deliver (deliver cog) | - |
+| sq.fc.shrine | done | - | - |
+| sq.fc.jetty | done | - | - |
+| sq.fc.cog | active | deliver (deliver cog) | deliver: cannot get 1 x cog: 0 in pack, pickups tried: [] |
 | sq.fc.ask | done | - | - |
 | sq.rook.gift | done | - | - |
-| sq.wreck.plate | available | fetch (item boar.hide) | - |
+| sq.wreck.plate | available | fetch (item boar.hide) | giver site gondola has no interactable mapping in the script |
 | sq.honey | done | - | - |
-| sq.rook.shiny | active | collect (collect brass.scrap) | - |
-| sq.packet | available | deliver (deliver packet) | - |
+| sq.rook.shiny | done | - | - |
+| sq.packet | available | deliver (deliver packet) | giver site packet has no interactable mapping in the script |
+| sq.burl.fire | active | collect (collect emberpod) | collect: cannot get 3 x emberpod: 0 in pack, pickups tried: ["qp.emberpod1","qp.emberpod2","qp.emberpod3"] |
 
 Steps the script had to feed by hand (the real interaction did not fire by itself; each is a candidate bug):
 
-- E3 talk (ask Burl for Rook) (sq.fc.ask): E did not open the dialogue with rook {"note":false,"notice":false,"ist":null,"ix":true,"ixAt":[974.9,1056.4,-82.07,2.2],"ent":[974.9,1056.4,-83.07],"me":[972.6999999999999,1056.4,-83.12299998760223],"dist":2.2000000000000455,"dz":-0.052999987602234455,"lock":true,"wake":false}
-- E5 escort Burl to the Bend relay (sq.burl.walk): not handed in: {"sq.burl.walk":"active"}
-- AC1 all Ch1-2 beats + errands done: mq.smoke=active@mark (flag lore.fordMark.read), sq.burl.boars.n=active@kill (beasts boarN1+boarN2+boarN3), sq.burl.boars.w=unavailable@kill (beasts boarW1+boarW2), sq.burl.boars.s=unavailable@kill (beasts boarS1+boarS2+boarS3), sq.burl.meat=active@fetch (item boar.meat), sq.burl.scout=unavailable@-, sq.burl.ask=unavailable@talk (flag talk.notePost), sq.burl.walk=active@escort (flag escort.bear.relayBend), sq.burl.parcel=unavailable@deliver (deliver boar.meat), sq.post.spare=unavailable@-, sq.rb.shield=available@-, sq.rb.regards=unavailable@-, sq.rb.road=unavailable@-, sq.fc.ford=ready@-, sq.fc.smoke=unavailable@-, sq.fc.cross=unavailable@-, sq.fc.again=unavailable@-, sq.tm.cart=active@explore (area wagon), sq.rb.lamps=available@-, sq.rb.rocks=unavailable@-, sq.rb.parcel=unavailable@-, sq.he.wallow=active@explore (area wallow), sq.he.farm=unavailable@explore (area farmGate), sq.dw.bees=unavailable@explore (area beeFarm), sq.dw.stones=unavailable@explore (area standStones), sq.fc.stores=available@kill (beasts boarF1+boarF2), sq.fc.caps=active@collect (collect redcap), sq.fc.shrine=available@explore (area shrine), sq.fc.jetty=unavailable@explore (area jetty), sq.fc.cog=unavailable@deliver (deliver cog), sq.wreck.plate=available@fetch (item boar.hide), sq.rook.shiny=active@collect (collect brass.scrap), sq.packet=available@deliver (deliver packet)
-- AC3b Continue restores position, hearts, items, gear, quick bar, quests, flags: tracked @0/2,2 32 -> 50 // warns: [LightSet] MAX_LIGHTS reached, dropping light entity.tradeLamp / [LightSet] MAX_LIGHTS reached, dropping light entity.rsLamp1 / [LightSet] MAX_LIGHTS reached, dropping light entity.rsLamp2 / [LightSet] MAX_LIGHTS reached, dropping light entity.relayOutwall
+- AC1 all Ch1-2 beats + errands done: sq.burl.meat=active@fetch (item boar.meat), sq.burl.parcel=unavailable@deliver (deliver boar.meat), sq.post.spare=unavailable@-, sq.fc.caps=active@collect (collect redcap), sq.fc.cog=active@deliver (deliver cog), sq.wreck.plate=available@fetch (item boar.hide), sq.packet=available@deliver (deliver packet), sq.burl.fire=active@collect (collect emberpod)
+- AC3b Continue restores position, hearts, items, gear, quick bar, quests, flags: title menu never showed
+- E+ sq.burl.meat: fetch: cannot get 1 x boar.meat: 0 in pack, pickups tried: []
+- E+ sq.rb.shield: equipped shield by hand (requireEquipped); the real equip flow is not driven here
+- E+ sq.fc.caps: collect: cannot get 5 x redcap: 0 in pack, pickups tried: []
+- E+ sq.fc.cog: deliver: cannot get 1 x cog: 0 in pack, pickups tried: []
+- E+ sq.wreck.plate: giver site gondola has no interactable mapping in the script
+- E+ sq.packet: giver site packet has no interactable mapping in the script
+- E+ sq.burl.fire: collect: cannot get 3 x emberpod: 0 in pack, pickups tried: ["qp.emberpod1","qp.emberpod2","qp.emberpod3"]
+- E+ sq.burl.parcel: not accepted at burl: {"sq.burl.parcel":"unavailable"}
+- E+ sq.post.spare: not accepted at post: {"sq.post.spare":"unavailable"}
 
 ## Main beats (stills)
 
@@ -95,7 +103,7 @@ Steps the script had to feed by hand (the real interaction did not fire by itsel
 ## Gear (AC2)
 
 ```
-{"main":"sword","off":null,"left":"sword","right":null,"vm":false}
+{"main":"sword","off":"shield","left":"sword","right":"shield","vm":false}
 ```
 
 ## Guidance-gap table (AC4)
@@ -106,18 +114,10 @@ No gaps.
 
 ## Save compare (AC3)
 
-```
-[
- {
-  "name": "tracked",
-  "before": 32,
-  "after": 50
- }
-]
-```
+Identical after Continue.
 
 ## Notes
 
-- --walk: 1202 samples, one per walked game-second at 4 m/s straight-line (walls ignored, waits/dialogue not counted); gap rows split into main line vs errand (E1-E6) in the Line column. 1202 samples every 5 s of wall time; the script teleports between beats, so the "where" is the spot the player stood at while a beat ran (event = beat name)
+- 138 samples every 5 s of wall time; the script teleports between beats, so the "where" is the spot the player stood at while a beat ran (event = beat name)
 - compass column = __debug.compassRetarget() has a target; giver = a ! / ? giver within 30 m
 - console errors: 0
