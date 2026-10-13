@@ -1,0 +1,15 @@
+{
+  "kind": "barks", "schema": 1, "id": "life",
+  "_note": "LIFE-05 overheard villager chat. One line per talk turn. Key life.chat.<a>.<b>.<n> (npc ids, optional) falls back to life.chat.any.<n>. NEEDS WRITER: every text below is a placeholder; writer replaces/extends (any.1..any.8 required, pair-specific keys optional).",
+  "speakers": {"npc": {"label": "VILLAGER"}},
+  "barks": {
+    "life.chat.any.1": [{"who":"npc","text":"NEEDS WRITER: Cold morning for it."}],
+    "life.chat.any.2": [{"who":"npc","text":"NEEDS WRITER: Heard the wolves again last night."}],
+    "life.chat.any.3": [{"who":"npc","text":"NEEDS WRITER: The geese are loud today."}],
+    "life.chat.any.4": [{"who":"npc","text":"NEEDS WRITER: Is the well still sweet?"}],
+    "life.chat.any.5": [{"who":"npc","text":"NEEDS WRITER: Mind the wall, it leans."}],
+    "life.chat.any.6": [{"who":"npc","text":"NEEDS WRITER: Any word from the road?"}],
+    "life.chat.any.7": [{"who":"npc","text":"NEEDS WRITER: Bread is better when it is shared."}],
+    "life.chat.any.8": [{"who":"npc","text":"NEEDS WRITER: Quiet lately. Too quiet."}]
+  }
+}
