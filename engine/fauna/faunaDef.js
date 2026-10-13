@@ -22,7 +22,7 @@ const NAME_DEFAULTS = {
 const KINDS = ['ground', 'climber', 'flyer'];
 const KNOWN_KEYS = new Set(['models', 'clipFor', 'enter', 'once', 'extra', 'gaits', 'speeds', 'dist', 'times', 'flee',
   'blendMs', 'groupSize', 'buckChance', 'habitat', 'note', 'spawn', 'bodyR', 'trunkR', 'perchByModel', 'kind', 'flight', 'climb',
-  'variantChance', 'perchFrom']);
+  'variantChance', 'perchFrom', 'hunts', 'huntR', 'chaseMaxS', 'eatS', 'fleeFrom']);
 const KNOWN_SPAWN_KEYS = new Set(['habitats', 'cellChance', 'spawnMinM', 'spawnMaxM', 'despawnM', 'drawM', 'cap', 'kind']);
 const warned = new Set();
 
@@ -163,7 +163,23 @@ export function compileFaunaDef(wildlifeFx, models, opts) {
       flight: a.flight || null, perchFrom: a.perchFrom || null, bodyR: num(name, 'bodyR', a.bodyR, 0.4),
       habitatMask: mask, cellChance, spawnMinM, spawnMaxM, despawnM, drawM, cap,
       hideOrDespawn: !!(a.flee && a.flee.hideOrDespawn),
+      // LIFE-06 predator-prey (38.56 c): huntMask = bitmask of prey species indices (0 = not a hunter)
+      huntMask: 0, huntR: num(name, 'huntR', a.huntR, 25), chaseMaxS: num(name, 'chaseMaxS', a.chaseMaxS, 8),
+      eatS: num(name, 'eatS', a.eatS, 4), fleePred: a.fleeFrom === 'predators',
     });
+    if (a.fleeFrom !== undefined && a.fleeFrom !== 'predators') fail(name, 'fleeFrom', `only "predators" is known, got ${JSON.stringify(a.fleeFrom)}`);
+    if (a.hunts !== undefined && !Array.isArray(a.hunts)) fail(name, 'hunts', 'expected an array of species names');
   }
-  return { version: wildlifeFx.version || 1, states, species };
+  // resolve hunts names -> masks (species indices < 31)
+  let preyMask = 0;
+  for (let k = 0; k < names.length; k++) {
+    const h = wildlifeFx.animals[names[k]].hunts;
+    if (!h) continue;
+    for (const pn of h) {
+      const pi = names.indexOf(pn);
+      if (pi < 0 || pi >= 31) fail(names[k], 'hunts', `unknown prey species "${pn}"`);
+      species[k].huntMask |= (1 << pi); preyMask |= (1 << pi);
+    }
+  }
+  return { version: wildlifeFx.version || 1, states, species, preyMask };
 }
