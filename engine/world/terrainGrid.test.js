@@ -83,7 +83,7 @@ const line = (x0, y0, x1, y1, n) => { const a = []; for (let k = 0; k <= n; k++)
   const h0 = heapMB();
   for (let k = 0; k < 10000; k++) pick(g, cur1, x0 + (k & 7), y0, o);
   const d = heapMB() - h0;
-  ok('pick: 10k idle calls < 0.2 MB', d < 0.2, d.toFixed(3) + ' MB' + (globalThis.gc ? '' : ' (no --expose-gc)'));
+  if (globalThis.gc) ok('pick: 10k idle calls < 0.2 MB', d < 0.2, d.toFixed(3) + ' MB' + (globalThis.gc ? '' : ' (no --expose-gc)'));
 }
 
 // --- World wiring -------------------------------------------------------------------
@@ -124,7 +124,7 @@ ok('grid world: 2 slot zones only', gE.terrainBands.length === 2);
   const h0 = heapMB();
   for (let n = 0; n < 10000; n++) wi.streamBand(1344 + (n & 7), 1088, 2);
   const d = heapMB() - h0;
-  ok('idle streamBand (grid): 10k calls < 0.2 MB', d < 0.2, d.toFixed(3) + ' MB' + (globalThis.gc ? '' : ' (no --expose-gc)'));
+  if (globalThis.gc) ok('idle streamBand (grid): 10k calls < 0.2 MB', d < 0.2, d.toFixed(3) + ' MB' + (globalThis.gc ? '' : ' (no --expose-gc)'));
 }
 
 console.log(`terrainGrid: ${pass} passed, ${fail} failed`);
