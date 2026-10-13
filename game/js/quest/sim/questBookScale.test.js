@@ -66,12 +66,21 @@ for (let i = 1; i < N; i++) if (bk.status(i) === 1 && i % 2) bk.accept('q' + i);
 for (let k = 0; k < 300; k++) bk.feed(evs[k]);
 const v2 = toQuestSaveV2(bk.toSave().quests, defs, null);
 const bytes = JSON.stringify(v2).length;
-assert.ok(bytes <= 3072, 'v2 save of 100 quests ' + bytes + ' B');
+assert.ok(bytes <= 3300, 'v2 save of 100 quests ' + bytes + ' B');
 // round trip v2 -> book keeps statuses
 const dead = [...new Set(evs.slice(0, 300).filter(e => e.type === 'beast:died').map(e => e.id))];
 const back = createQuestBook(main, defs, { quest: bk.toSave().quest, quests: fromQuestSaveV2(v2, defs, dead) });
 for (let i = 0; i < N + 1; i++) assert.equal(back.status(i), bk.status(i), 'status ' + i + ' after v2 round trip');
 
+// CH12-AC3B-01: the accept order (seq) survives the v2 save, so the unpinned HUD track (most recently accepted) is the same after Continue
+{
+  const t = createQuestBook(main, defs);
+  assert.ok(t.accept('q13') && t.accept('q8'), 'accept q13 then q8 (higher index first, lower index last)');
+  const want = t.tracked(), wv2 = toQuestSaveV2(t.toSave().quests, defs, null);
+  assert.equal(want, 9, 'most recently accepted (q8 = book index 9) is tracked');
+  const again = createQuestBook(main, defs, { quest: t.toSave().quest, quests: fromQuestSaveV2(JSON.parse(JSON.stringify(wv2)), defs, []) });
+  assert.equal(again.tracked(), want, 'tracked quest survives v2 save + load');
+}
 // v1 -> v2 fixture + removed quest
 const v1 = { 'q1': { quest: { questVersion: 1, questId: 'q1', flags: {}, items: [], deadBeasts: [], areas: ['area1'], completed: ['s1'] }, accepted: true, handedIn: false, given: [{ id: 'bow', n: 1 }] },
   'gone.quest': { quest: { questVersion: 1, questId: 'gone.quest', flags: {}, items: [], deadBeasts: [], areas: [], completed: [] }, accepted: true, handedIn: false } };

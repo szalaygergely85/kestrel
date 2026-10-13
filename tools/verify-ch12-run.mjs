@@ -264,7 +264,7 @@ try {
     for (const [id, n] of [['arrow', 12], ['potion.hp', 2], ['bow', 1]]) if (!__t.has(id)) inv.addItem(inventory, defs, id, n); // test hook: the bow / arrows / potion come from loot later in the game
     qbm.ensureQuickbar(p); qbm.assign(p, defs, 5, 'potion.hp'); return true; })()`.replace(/^/, '')).catch(() => {});
   const errand = async (name, id, site, work, turnSite = site) => beat(name + ' (' + id + ')', async () => {
-    if (!(await giverStep(site, 2, id))) return { ok: false, why: 'not accepted: ' + await state(id, 'burl.boars') + ' st=' + await ev("JSON.stringify(Object.keys(__t.w.state).filter((k) => /burl/.test(k)).map((k) => k + '=' + JSON.stringify(__t.w.state[k])))") + ' log ' + lastLog };
+    if (!(await giverStep(site, 2, id))) return { ok: false, why: 'not accepted: ' + await state(id, 'burl.boars') + ' st=' + await ev("JSON.stringify(Object.keys(__t.w.state).filter((k) => /burl/.test(k)).map((k) => k + '=' + JSON.stringify(__t.w.state[k])))") + ' log ' + lastLog + ' met=' + await flag('burl.home.met') + ' lines=' + await ev('JSON.stringify((window.__lines||[]).slice(-6))') + ' ix=' + await ev("JSON.stringify((() => { const r = __t.ix('npc.bear'), b = __t.w.get('bear').data.transform, p = __t.D.playerHandle.data.transform; return r && { ix: [r.x, r.y, r.z], bear: [b.x, b.y, b.z], pl: [p.x, p.y, p.z], tgt: __t.w.interaction.targetKey, n: __t.w.interactables.filter((q) => q.key === 'npc.bear').length }; })())") };
     await work();
     if (!(await giverStep(turnSite, 4, id))) return { ok: false, why: 'not handed in: ' + await state(id) };
     return true;
