@@ -2,6 +2,13 @@
   "version": 1,
   "note": "Look-at texts (writer: docs/story.md 'This side - look-at texts'). Key = entity components.inspect.text. Optional: entities[] = extra anchor ids without that component, afterItem = the anchor only appears once that item has been taken (never clashes with its pickup prompt), radius, hint/hintTitle = second banner. Never locks: banner only.",
   "texts": {
+    "note.strand.monster": {
+      "prompt": "[E] Read the post",
+      "title": "A driftwood post",
+      "lines": ["Carved in a driftwood post, worn salt-white:", "SWIM TO THE STAKES. NOT ONE STROKE PAST.", "Under it, newer, in charcoal: IT CIRCLES FIRST."],
+      "radius": 3.0,
+      "entities": []
+    },
     "note.knot": {
       "prompt": "[E] Look at the knot",
       "title": "A knot on the brass",
