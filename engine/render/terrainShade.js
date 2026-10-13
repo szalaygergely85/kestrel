@@ -246,9 +246,28 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   // OB-073: no distance-sized cell any more (perCellHashSize stays exported for the old callers/tests only).
   // f32-robust: round u,v to f32 first (WGSL receives f32); every cell below is a power of two, so the lattice coords are exact in both twins.
   const fu = Math.fround(u), fv = Math.fround(v);
-  const fp = groundFootprint(t, ctx.hashCell || 0);
-  const v8 = valueNoise(fu * (1 / NOISE_CELLS[0]), fv * (1 / NOISE_CELLS[0]), NOISE_SALT);
-  const nP = patchNoise(fu, fv, fp, v8);
+  // Alloc rule (arch 38.61): groundFootprint / valueNoise / patchNoise are inlined here (twins of the exported helpers, same arithmetic):
+  // helpers that take or return a double box a heap number per call whenever V8 does not inline them.
+  const hcl = ctx.hashCell || 0;
+  let fp;
+  if (hcl > 0) fp = hcl;
+  else { const k = hcl < 0 ? -hcl : FP_DEFAULT_K, an = t / FP_ANISO_T; fp = k * t * (an < 1 ? 1 : an > FP_ANISO_MAX ? FP_ANISO_MAX : an); }
+  const fpc = fp > 1e-6 ? fp : 1e-6; // octaveFade uses max(fp, 1e-6)
+  let nWs = 0, nN = 0;
+  for (let o = 0; o < 3; o++) {
+    const cell = NOISE_CELLS[o];
+    let sf = (cell / fpc - 1.5) / 1.5;
+    sf = sf < 0 ? 0 : sf > 1 ? 1 : sf;
+    const fade = sf * sf * (3 - 2 * sf);
+    if (o > 0 && fade <= 0) continue;
+    const wgt = NOISE_W[o] * fade;
+    const lx = fu * (1 / cell), ly = fv * (1 / cell), ix = Math.floor(lx), iy = Math.floor(ly), salt = o === 0 ? NOISE_SALT : NOISE_SALT + o;
+    let wx = lx - ix, wy = ly - iy;
+    wx = wx * wx * (3 - 2 * wx); wy = wy * wy * (3 - 2 * wy);
+    const ca = hashFast24(ix, iy, salt) * (1 / 16777216), cb = hashFast24(ix + 1, iy, salt) * (1 / 16777216), cc2 = hashFast24(ix, iy + 1, salt) * (1 / 16777216), cd = hashFast24(ix + 1, iy + 1, salt) * (1 / 16777216);
+    nN += wgt * ((ca + (cb - ca) * wx + (cc2 - ca) * wy + (ca - cb - cc2 + cd) * wx * wy) * 2 - 1); nWs += wgt;
+  }
+  const nP = nN / (nWs > 0.55 ? nWs : 0.55);
   // OB-073 calm ground: colour tier only from the smooth noise (no per-cell dither dice); ONE glyph per type (no hash, no band/close/glint).
   let off = Math.floor(nP * PATCH_K + 0.5);
   off = off < -1 ? -1 : off > 1 ? 1 : off;
@@ -289,15 +308,20 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   const colOff = base + i0 * 4, colOff1 = base + i1 * 4;
   // TLOOK colours are linear 0..1 (GPU texel layout); bytes are 0..255 (BUG-OWN-004).
   let fr = (TL[colOff] + (TL[colOff1] - TL[colOff]) * fx) * 255, fg = (TL[colOff + 1] + (TL[colOff1 + 1] - TL[colOff + 1]) * fx) * 255, fb = (TL[colOff + 2] + (TL[colOff1 + 2] - TL[colOff + 2]) * fx) * 255;
-  let gain = gainOf(bEff, ctx.shading);
-  gain = wetGain(gain, bEff, wet, ctx.shading.fgMaxGain);
+  // gainOf + wetGain inlined (alloc rule, see above); twins of the helpers.
+  const SH = ctx.shading, bcc = bEff < 0 ? 0 : bEff, bc1 = bcc > 1 ? 1 : bcc;
+  const gp = SH.gainLUT ? SH.gainLUT[(bc1 * (SH.gainLUT.length - 1) + 0.5) | 0] : Math.pow(bc1, SH.fgGamma);
+  let gain = SH.fgMin + (1 - SH.fgMin) * gp;
+  if (bcc > 1) gain = Math.min(SH.fgMaxGain, gain + (bcc - 1) * 0.5);
+  if (wet > 0) gain = wetGain(gain, bEff, wet, SH.fgMaxGain); // wet ground only: a rare path
   fr *= gain; fg *= gain; fb *= gain;
   let br = fr * 0.3, bg = fg * 0.3, bb = fb * 0.3;
 
   // OB-073: the calm glyph = middle entry of the NEAR glyph set (TLOOK texel 4), same at every distance/time/point.
   const gOff = base + 4 * 4;
   const packedX = TL[gOff], packedCount = TL[gOff + 1];
-  let code = pickCodeFromPacked(packedX, packedCount, packedCount >> 1);
+  const pcn = packedCount | 0; let pci = pcn >> 1; if (pci >= pcn) pci = pcn - 1; // pickCodeFromPacked inlined: its double arg would box per call
+  let code = (packedX >> (8 * pci)) & 0xff;
   // G2 + P3: far grass tier (WGSL twin: shadeTerrain, same lines). fgw = weight 0..1, > 0 = stable level 254.
   let fgw = 0;
   const FGR = ctx.farGrass;
@@ -346,7 +370,10 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   // Fog (item 5 + overworld_far.js "fog" section): 50 -> 1500 m, curve 0.7.
   const F = ctx.fog;
   // MAP-06a (38.42 Skyline): optional far-texel fog cap (`ctx.skyline` from the look's haze.skyline, `z` = texel height); absent = unchanged.
-  const f = ctx.skyline ? skylineFogF(terrainFogF(t, F), t, type, z, ctx.skyline) : terrainFogF(t, F);
+  let f = (t - F.start) / (F.full - F.start); // = terrainFogF, inlined
+  f = f < 0 ? 0 : f > 1 ? 1 : f;
+  f = Math.pow(f, F.curve || 1);
+  if (ctx.skyline) f = skylineFogF(f, t, type, z, ctx.skyline);
   const fcr = F.nearRGB[0] + (F.farRGB[0] - F.nearRGB[0]) * f;
   const fcg = F.nearRGB[1] + (F.farRGB[1] - F.nearRGB[1]) * f;
   const fcb = F.nearRGB[2] + (F.farRGB[2] - F.nearRGB[2]) * f;
@@ -358,8 +385,10 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   out.glyph = code;
   // 38.25 amendment C.1: stable-pass level byte of a terrain cell (twin of shade.wgsl's terrain splice): 254 = the shimmer branch (glyph can change next tick), else 255
   out.level = fgw > 0 ? LEVEL_ANIM : LEVEL_NONE; // OB-073: no glint branch; G2: far-grass cells animate (gust)
-  out.fg[0] = toByte(fr); out.fg[1] = toByte(fg); out.fg[2] = toByte(fb);
-  out.bg[0] = toByte(br); out.bg[1] = toByte(bg); out.bg[2] = toByte(bb);
+  // toByte inlined (a non-inlined call returning a double boxes it); same clamp + round
+  const ofg = out.fg, obg = out.bg;
+  ofg[0] = Math.floor((fr < 0 ? 0 : fr > 255 ? 255 : fr) + 0.5); ofg[1] = Math.floor((fg < 0 ? 0 : fg > 255 ? 255 : fg) + 0.5); ofg[2] = Math.floor((fb < 0 ? 0 : fb > 255 ? 255 : fb) + 0.5);
+  obg[0] = Math.floor((br < 0 ? 0 : br > 255 ? 255 : br) + 0.5); obg[1] = Math.floor((bg < 0 ? 0 : bg > 255 ? 255 : bg) + 0.5); obg[2] = Math.floor((bb < 0 ? 0 : bb > 255 ? 255 : bb) + 0.5);
   return out;
 }
 

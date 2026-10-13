@@ -82,12 +82,19 @@ for (let i = 0; i < 100000; i++) s += util.recipeHeight(2000 + (i % 400), 300 + 
 const dHeap = process.memoryUsage().heapUsed - heap0;
 ok(`100k samples heap delta ${(dHeap / 1e6).toFixed(1)} MB < 8 MB`, dHeap < 8e6);
 
-const med = (f) => { const t = []; for (let k = 0; k < 3; k++) { const a = performance.now(); f(); t.push(performance.now() - a); } return t.sort((a, b) => a - b)[1]; };
+const time1 = (f) => { const a = performance.now(); f(); return performance.now() - a; };
+const med = (f) => { const t = []; for (let k = 0; k < 3; k++) t.push(time1(f)); return t.sort((x, y) => x - y)[1]; };
+// arch 38.61 (5): median of 3, baseline (no layers) and 4 layers INTERLEAVED A,B,A,B,A,B in this process, so machine load hits both alike.
+const tA = [], tB = [], fA = [], fB = [];
+for (let k = 0; k < 3; k++) {
+  util.setGeoLayers([]); tA.push(time1(east)); fA.push(time1(far));
+  util.setGeoLayers(layers, { d: sd }); tB.push(time1(east)); fB.push(time1(far));
+}
+const m3 = (t) => t.sort((x, y) => x - y)[1];
+const tEmpty = m3(fA), tZone0 = m3(tA), tFour = m3(fB), tZone4 = m3(tB);
 util.setGeoLayers([]);
-const tEmpty = med(far), tZone0 = med(east);
 const tBuild = med(() => new util.GeoFields(recipe.geo.world, { d: sd }));
 util.setGeoLayers(layers, { d: sd });
-const tFour = med(far), tZone4 = med(east);
 console.log(`bake ms: far256 empty ${tEmpty.toFixed(1)} / 4 layers ${tFour.toFixed(1)}; near zone empty ${tZone0.toFixed(1)} / 4 layers (in keep) ${tZone4.toFixed(1)}; GeoFields build (1 field, 4096 world) ${tBuild.toFixed(1)} ms`);
 ok('zone bake inside keep +<=10% (noise margin 25%)', tZone4 <= tZone0 * 1.25 + 2);
 console.log(`geoLayers: ${pass} passed, ${fail} failed`);
