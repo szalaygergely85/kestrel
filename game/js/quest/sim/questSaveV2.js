@@ -1,5 +1,5 @@
 // QL-T3 (38.44 item 8): compact quest save. Pure; no world/DOM/clock.
-// v2 = {v:2, done:[ids], active:{<id>:{c:<completed count>, a?:1 accepted, g?:[{id,n}] given, f?:{flags,items,areas,counts}}}, tracked:<id>|null}
+// v2 = {v:2, done:[ids], active:{<id>:{c:<completed count>, a?:1 accepted, s?:accept seq, g?:[{id,n}] given, f?:{flags,items,areas,counts}}}, tracked:<id>|null}
 // Fresh quests are not stored. Dead beasts are NOT stored: they replay from the global `game.deadBeasts` store on load.
 // The runtime/book shape stays the v1 map {id:{quest,accepted,handedIn,given}}; these two functions convert at the save boundary.
 import { createQuest, applyQuestEvent } from './quest.js';
@@ -22,7 +22,7 @@ export function toQuestSaveV2(map, defs, tracked = null) {
     if (hasKeys(q.counts)) f.counts = { ...q.counts };
     if (!e.accepted && !hasKeys(f) && !q.completed.length) continue; // fresh (dead beasts replay from the global store)
     const a = { c: q.completed.length };
-    if (e.accepted === true) a.a = 1;
+    if (e.accepted === true) { a.a = 1; if (Number.isInteger(e.seq) && e.seq > 0) a.s = e.seq; } // CH12-AC3B-01: accept order (HUD track = most recently accepted)
     if (Array.isArray(e.given) && e.given.length) a.g = e.given.map(g => ({ id: g.id, n: g.n }));
     if (hasKeys(f)) a.f = f;
     active[id] = a;
@@ -56,6 +56,7 @@ export function fromQuestSaveV2(v2, defs, deadBeasts = [], warn = console.warn) 
     const def = byId.get(id), a = v2.active[id];
     if (!def) { warn('quest save: unknown quest dropped: ' + id); continue; }
     out[id] = { quest: state(def, a.c, a.f), accepted: a.a === 1, handedIn: false };
+    if (a.a === 1 && Number.isInteger(a.s) && a.s > 0) out[id].seq = a.s;
     if (Array.isArray(a.g) && a.g.length) out[id].given = a.g.map(g => ({ id: g.id, n: g.n }));
   }
   if (deadBeasts.length) { // facts count before accept: replay the global dead set into every quest that listens to those beasts
