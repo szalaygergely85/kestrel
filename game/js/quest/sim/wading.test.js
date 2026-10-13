@@ -91,36 +91,24 @@ const flatBed = (z) => () => z;
   const e4 = mkEnt(w, 5, 0); e4.transform.y = 50; wd.before(e4);
   ok('outside water: speedScale = other, push 0', e4.components.body.speedScale === 1 && e4.components.body.pushX === 0);
 }
-// ---- deep wall ----
+// ---- deep wall is gone (SWIM-03b): a walker crosses y > 10 into deep water and swims ----
 {
-  const w = mkWorld(), wd = createWading(w), e = mkEnt(w, 5, 5); // walking +y toward the deep half y > 10
+  const w = mkWorld(), wd = createWading(w), e = mkEnt(w, 5, 5);
   let maxY = 0;
-  for (let i = 0; i < 600; i++) { step(wd, w, e, south); maxY = Math.max(maxY, e.transform.y); }
-  ok('deep wall: never enters y > 10 (imm > 1.0, y 11)', maxY <= 11.0 + 0.02 && maxY > 10.8);
-  ok('deep wall: z stays on the bed', near(e.transform.z, 9.6 - 0.2 * (e.transform.y - 8), 1e-6));
-  const e2 = mkEnt(w, 5, 10.8), diag = { forward: -1, strafe: 1, yawDeg: 0 }; // +y and -x? slide along the edge either way
-  const x0 = e2.transform.x;
-  for (let i = 0; i < 180; i++) step(wd, w, e2, diag);
-  ok('deep wall: slides along the edge (x moved, y <= 10)', Math.abs(e2.transform.x - x0) > 1 && e2.transform.y <= 11.02);
+  for (let i = 0; i < 240; i++) { wd.before(e); e.components.body.waterZ = 10; e.components.body.waterFloorZ = w.bedFn(e.transform.x, e.transform.y); integrate(e, dt, south, w, PHYSICS); wd.after(e); maxY = Math.max(maxY, e.transform.y); }
+  ok('no deep wall: walks past y 11 (imm > 1.0)', maxY > 12, maxY);
+  ok('no deep wall: swimming (feet on the 1.2 m bed)', e.components.body.swimming === true, e.transform.z);
+  const sw = mkEnt(w, 5, 20); sw.components.body.swimming = true; sw.components.body.pushX = 9;
+  wd.before(sw);
+  ok('wading.before backs off while swimming (speedScale = other, no push)', sw.components.body.speedScale === 1 && sw.components.body.pushX === 0 && sw.components.body.wadeImm === 0);
+  const dp = mkEnt(createWading(mkWorld(flatBed(8.8))) && w, 5, 20); wd.before(dp);
+  ok('deep spawn: no bank push, no rescue flag', dp.components.body.wadeRescue === undefined && dp.components.body.pushX >= 0 && Math.abs(dp.components.body.pushY) < 1e-9);
 }
 // ---- stones dry ----
 {
   const w = mkWorld(), wd = createWading(w), e = mkEnt(w, 41, 0); // stone top 10.3 > surface 10
   wd.before(e);
   ok('stone above the surface: speedScale 1, push 0', e.components.body.speedScale === 1 && e.components.body.pushX === 0 && e.components.body.pushY === 0);
-}
-// ---- spawn deep -> pushed to the bank, rescue after 3 s ----
-{
-  const w = mkWorld(flatBed(8.8)), wd = createWading(w);
-  const eN = mkEnt(w, 5, 20), eS = mkEnt(w, 5, -20);
-  wd.before(eN); const nY = eN.components.body.pushY, nX = eN.components.body.pushX;
-  wd.before(eS);
-  ok('deep spawn: pushed toward the bank at 2 m/s', near(Math.hypot(nX, nY), 2, 1e-9) && Math.abs(nY) > 1.99);
-  ok('deep spawn: the two banks push opposite ways', Math.sign(nY) === -Math.sign(eS.components.body.pushY));
-  ok('deep spawn: push points away from the centre line', Math.sign(nY) === Math.sign(20));
-  const e4 = mkEnt(w, 5, 20); let first = -1;
-  for (let i = 1; i <= 200; i++) { wd.before(e4); if (first < 0 && e4.components.body.wadeRescue) first = i; }
-  ok('deep spawn: rescue flag after 3 s (181st step)', first === 181);
 }
 // ---- arrows ----
 {

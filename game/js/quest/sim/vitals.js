@@ -208,18 +208,17 @@ export function createVitals(world, events, cfg, hooks) {
       // OB-016: walking down a long slope (tower +2 -> Bend relay -31) left fallDistance > 0 between small step-downs, so the
       // safe spot stayed at the tower and the 30 m void rule snapped the player back. Any grounded step is safe now, and the
       // void rule only fires while actually airborne (falling out of the world), never while walking on ground.
-      // RIVER-04: wading is grounded walking, never a void fall. No safe spot is taken in deep water (body.wadeDeep > 0), and only
-      // `body.wadeRescue` (3 s stuck in deep water, wading.js) teleports back, like the void rule. Both fields are absent without wading.
-      const wadeRescue = !!(body && body.wadeRescue);
-      if (body && body.grounded && !(body.wadeDeep > 0)) {
+      // SWIM-03b (D-070): swimming is never a void fall and there is no deep-water rescue (wadeRescue removed): a deep spawn just swims.
+      // The void rule skips while body.swimming (also covers the first steps of a fall into water, wadeImm > 0).
+      if (body && body.grounded && !body.swimming) {
         if (!lastSafe || tick - lastSafe.tick >= cfg.voidSafeIntervalSteps) {
           lastSafe = { x: t.x, y: t.y, z: t.z, yawDeg: t.yawDeg, tick };
         }
       }
-      if (lastSafe && ((!(body && body.grounded) && t.z < lastSafe.z - cfg.voidFallM && !(body && body.wadeImm > 0)) || wadeRescue)) {
+      if (lastSafe && ((!(body && body.grounded) && t.z < lastSafe.z - cfg.voidFallM && !(body && (body.swimming || body.wadeImm > 0))))) {
         t.x = lastSafe.x; t.y = lastSafe.y; t.z = lastSafe.z;
         if (typeof lastSafe.yawDeg === 'number') t.yawDeg = lastSafe.yawDeg;
-        if (body) { body.vx = 0; body.vy = 0; body.vz = 0; body.grounded = true; body.fallDistance = 0; body.landed = false; body.wadeDeep = 0; body.wadeRescue = false; body.wadeImm = 0; } // no fall damage for the void drop
+        if (body) { body.vx = 0; body.vy = 0; body.vz = 0; body.grounded = true; body.fallDistance = 0; body.landed = false; body.wadeImm = 0; } // no fall damage for the void drop
         health.invuln = cfg.invulnSteps; // no damage, just the invuln window
       }
       if (health.hp === 0) enterDead();

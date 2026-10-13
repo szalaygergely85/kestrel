@@ -7,9 +7,10 @@ const iB = main.indexOf('wading.before('), iI = main.indexOf('integrate(playerHa
 ok('main.js: wading.before < integrate < wading.after', iB > 0 && iB < iI && iI < iA, [iB, iI, iA]);
 ok('main.js: wading built per world', /wading = createWading\(world\)/.test(main));
 const wsrc = fs.readFileSync(new URL('./wading.js', import.meta.url), 'utf8');
+ok('wading.js: deep wall + rescue removed', !/wadeRescue\s*=|wadeDeep|bankPush/.test(wsrc.replace(/\/\/.*$/gm, '')));
 ok('wading.js reads no engine internals (rv.loc / L_*)', !/\.loc\b|L_LAT|L_TX|L_TY|world.water[.[]/.test(wsrc.replace(/\/\/.*$/gm, '')));
 const vsrc = fs.readFileSync(new URL('./vitals.js', import.meta.url), 'utf8');
-ok('vitals: wadeRescue teleports back, void rule skipped while wading', /wadeRescue/.test(vsrc) && /wadeImm > 0/.test(vsrc));
+ok('vitals: wadeRescue removed, void rule skipped while swimming/wading (SWIM-03b)', !/wadeRescue\s*=|\|\| wadeRescue/.test(vsrc) && /body\.swimming/.test(vsrc) && /wadeImm > 0/.test(vsrc));
 const w = new World();
 w.water = createWater(collectWaterDefs({ water: [{ id: 'r', shape: 'river', path: [[0, 0, 10, 20, 1], [60, 0, 10, 20, 1], [120, 0, 10, 20, 1]] }, { id: 'p', shape: 'rect', rect: [200, 0, 220, 20], z: 5 }] }, []));
 const o = { lat: 0, hw: 0, tx: 0, ty: 0, v: 0, z: 0 };
