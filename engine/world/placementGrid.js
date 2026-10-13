@@ -5,8 +5,17 @@
 // `warmList` (ascending structure indices) instead of 0..N. `update` allocates nothing after the build.
 
 export const PLACEMENT_GRID_DEFAULTS = Object.freeze({
-  cellM: 64, reachPerM: 734, minM: 160, farM: 2000, hystM: 16, warmM: 120, maxCellsPerFrame: 8, // STREAM-01c: reachPerM 734 = 1 cell at 480 cols / HFOV 75 (38.51's 400 popped ~1 m road pieces at 260-290 m)
+  cellM: 64, reachPerM: 734, minM: 160, farM: 2000, hystM: 16, warmM: 120, maxCellsPerFrame: 8, cutM: 0, keepFar: [], // OB-089: cutM > 0 caps every placement's reach (m) except landmarks (`s.keepFar` or an id starting with a `keepFar` prefix) which keep their size reach
+   // STREAM-01c: reachPerM 734 = 1 cell at 480 cols / HFOV 75 (38.51's 400 popped ~1 m road pieces at 260-290 m)
 });
+
+/** OB-089: a landmark stays visible from afar (explicit flag or id prefix from `streaming.keepFar`). */
+export function isLandmark(s, prefixes) {
+  if (s.keepFar === true) return true;
+  const id = s.id;
+  if (typeof id === 'string' && prefixes) for (let i = 0; i < prefixes.length; i++) if (id.startsWith(prefixes[i])) return true;
+  return false;
+}
 
 const COLD = 0, WARM = 1, ACTIVE = 2;
 
@@ -43,6 +52,7 @@ export class PlacementGrid {
       const r = Math.sqrt(hx * hx + hy * hy + hz * hz);
       let reach = Math.min(o.farM, Math.max(o.minM, r * o.reachPerM));
       if (reach !== reach) reach = o.farM; // NaN (reachPerM Infinity * r 0): unknown size -> far, never near
+      if (o.cutM > 0 && reach > o.cutM && !isLandmark(s, o.keepFar)) reach = o.cutM; // OB-089: far buildings/props stop drawing where the far terrain takes over
       this.reach2[i] = reach * reach;
       px0[i] = b.x0; py0[i] = b.y0; px1[i] = b.x1; py1[i] = b.y1;
       const cx = Math.floor(((b.x0 + b.x1) * 0.5) / cell), cy = Math.floor(((b.y0 + b.y1) * 0.5) / cell);
