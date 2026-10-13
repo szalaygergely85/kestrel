@@ -38,6 +38,7 @@ export const STATE_EAT = 13; // LIFE-07: a wolf/bear eating its kill (counts as 
 const FIRST_DEAD_STATE = STATE_DYING;
 const deadSt = (st) => st >= FIRST_DEAD_STATE && st <= STATE_GONE; // EAT (13) is alive
 const HUNT_PREY = { wolf: ['rabbit', 'deer'], bear: ['deer'] }; // LIFE-07: species-filtered prey (38.56 c)
+const GOAL_ARRIVE_R = 3, ALT_R = 14, ALT_HIT_R = 1.4, ALT_COOLDOWN_S = 6, MAX_ALT = 8; // LIFE-08 (38.56 d): raid goal + villager alt targets
 const HUNT_R = 18, HUNT_CATCH_R = 1.2, HUNT_MAX_S = 6, EAT_S = 8; // states >= this skip perception/path/steer and run stepDead instead
 
 // US-079b: the 2-entry cause table for the `beast:died` payload's `cause` string (sim stores a Uint8 index).
@@ -181,6 +182,10 @@ export function createBeastSim(world, opts) {
     fleeing: new Uint8Array(MAX_BEASTS),     // WOLF-01: STATE_RETURN that runs away from the player first
     hunt: new Uint8Array(MAX_BEASTS),        // LIFE-07: 1 = STATE_WANDER leg chasing a fauna prey slot (huntSlot)
     huntSlot: new Int32Array(MAX_BEASTS), huntT: new Int32Array(MAX_BEASTS), preyMask: new Int32Array(MAX_BEASTS),
+    goalOn: new Uint8Array(MAX_BEASTS), goalTX: new Float64Array(MAX_BEASTS), goalTY: new Float64Array(MAX_BEASTS), // LIFE-08: setGoal override
+    altTgt: new Int32Array(MAX_BEASTS).fill(-1), altCd: new Int32Array(MAX_BEASTS), // LIFE-08: alt chase index / re-hit cooldown (steps)
+    altN: 0, altX: new Float64Array(MAX_ALT), altY: new Float64Array(MAX_ALT),
+    _altPayload: beastEntities.slice(0, count).map((e, k) => ({ slot: k, alt: 0, id: e.id })),
     fauna: opts.fauna || null, _prey: { x: 0, y: 0 }, _thrX: new Float64Array(16), _thrY: new Float64Array(16),
     scfg: [], ssteps: [],                    // WOLF-01: per-slot cfg / cfgSteps (the shared objects for boars)
     _px: 0, _py: 0, _tmp: { x: 0, y: 0 },
@@ -296,6 +301,32 @@ export function createBeastSim(world, opts) {
       if (dx * dx + dy * dy <= r2) return true;
     }
     return false;
+  };
+  /** LIFE-08 (38.56 d): while set, a WANDER beast travels to (x, y) (A* up to TRAVEL_MAX_NODES) and holds there instead of wandering. Player notice and combat work as usual. */
+  sim.setGoal = function setGoal(slot, x, y) {
+    if (slot < 0 || slot >= sim.count) return;
+    sim.goalOn[slot] = 1; sim.goalTX[slot] = x; sim.goalTY[slot] = y;
+    sim.altTgt[slot] = -1; sim.altCd[slot] = 0;
+    if (sim.state[slot] === STATE_WANDER && !sim.hunt[slot]) { sim.timer[slot] = sim.cfgSteps.pauseMin; sim.pathLen[slot] = 0; sim.pathIdx[slot] = 0; sim.pathReq[slot] = 0; }
+  };
+  /** LIFE-08: drop the goal override; a wandering beast walks back home (STATE_RETURN). */
+  sim.clearGoal = function clearGoal(slot) {
+    if (slot < 0 || slot >= sim.count || !sim.goalOn[slot]) return;
+    sim.goalOn[slot] = 0; sim.altTgt[slot] = -1;
+    if (sim.state[slot] === STATE_WANDER) enterReturn(sim, slot);
+  };
+  sim.hasGoal = function hasGoal(slot) { return slot >= 0 && slot < sim.count && sim.goalOn[slot] === 1; };
+  /** LIFE-08: true once a goal beast stands within GOAL_ARRIVE_R of its goal. */
+  sim.atGoal = function atGoal(slot) {
+    if (!sim.hasGoal(slot)) return false;
+    const dx = sim.goalTX[slot] - sim.steer.x[slot], dy = sim.goalTY[slot] - sim.steer.y[slot];
+    return dx * dx + dy * dy <= GOAL_ARRIVE_R * GOAL_ARRIVE_R;
+  };
+  /** LIFE-08: up to 8 extra targets (villager points). A goal beast that finds one nearer than the player chases it; reaching it emits `beast:altHit {slot, alt, id}`. n = 0 clears. */
+  sim.setAltTargets = function setAltTargets(n, xs, ys) {
+    n = Math.min(n | 0, MAX_ALT);
+    for (let k = 0; k < n; k++) { sim.altX[k] = xs[k]; sim.altY[k] = ys[k]; }
+    sim.altN = n > 0 ? n : 0;
   };
   /** US-079b: request a corpse sink (loot emptied the body). True if the slot was DYING/CORPSE (sets despawnReq). */
   sim.despawnCorpse = function despawnCorpse(id) {
@@ -458,12 +489,43 @@ function eatStep(sim, i, px, py) {
 }
 
 function wanderStep(sim, i, px, py) {
+  if (sim.goalOn[i]) { goalStep(sim, i, px, py); return; }
   if (sim.hunt[i]) { huntStep(sim, i, px, py); return; }
   if (noticedOf(sim, i, px, py)) { enterNotice(sim, i); return; }
   if (sim.fauna && sim.timer[i] !== WALKING) { huntLook(sim, i); if (sim.hunt[i]) return; }
   if (sim.timer[i] === WALKING) return; // following a path; arrival is handled by updatePathRequests/postOne
   sim.timer[i]--;
   if (sim.timer[i] <= 0) pickWanderTarget(sim, i);
+}
+
+/** LIFE-08: raid leg of STATE_WANDER: nearer-than-player alt target -> chase + hit; else player notice; else travel to / hold at the goal. */
+function goalStep(sim, i, px, py) {
+  const steer = sim.steer, sx = steer.x[i], sy = steer.y[i];
+  if (sim.altCd[i] > 0) sim.altCd[i]--;
+  sim.altTgt[i] = -1;
+  if (sim.altCd[i] <= 0 && sim.altN > 0) {
+    let best = -1, bd = ALT_R * ALT_R;
+    for (let k = 0; k < sim.altN; k++) {
+      const dx = sim.altX[k] - sx, dy = sim.altY[k] - sy, d2 = dx * dx + dy * dy;
+      if (d2 < bd) { bd = d2; best = k; }
+    }
+    const pdx = px - sx, pdy = py - sy;
+    if (best >= 0 && bd < pdx * pdx + pdy * pdy) {
+      if (bd <= ALT_HIT_R * ALT_HIT_R) {
+        sim.altCd[i] = toSteps(ALT_COOLDOWN_S);
+        sim.timer[i] = sim.cfgSteps.pauseMin; sim.pathLen[i] = 0; sim.pathIdx[i] = 0; sim.pathReq[i] = 0;
+        const pl = sim._altPayload[i]; pl.alt = best;
+        sim.events.emit('beast:altHit', pl);
+      } else sim.altTgt[i] = best;
+      return;
+    }
+  }
+  if (noticedOf(sim, i, px, py)) { enterNotice(sim, i); return; }
+  if (sim.atGoal(i)) { sim.timer[i] = sim.cfgSteps.pauseMin; sim.pathLen[i] = 0; return; } // hold at the goal
+  if (sim.timer[i] !== WALKING) {
+    sim.goalX[i] = sim.goalTX[i]; sim.goalY[i] = sim.goalTY[i];
+    sim.pathLen[i] = 0; sim.pathIdx[i] = 0; sim.pathReq[i] = 1; sim.timer[i] = WALKING;
+  }
 }
 
 function pickWanderTarget(sim, i) {
@@ -816,7 +878,7 @@ function computePath(sim, i) {
   const grid = sim.grid, astar = sim.astar, steer = sim.steer;
   const sx = grid.cellX(steer.x[i]), sy = grid.cellY(steer.y[i]);
   const gx = grid.cellX(sim.goalX[i]), gy = grid.cellY(sim.goalY[i]);
-  const maxNodes = sim.state[i] === STATE_WANDER ? WANDER_MAX_NODES : TRAVEL_MAX_NODES;
+  const maxNodes = sim.state[i] === STATE_WANDER && !sim.goalOn[i] ? WANDER_MAX_NODES : TRAVEL_MAX_NODES;
   const len = findPath(astar, sx, sy, gx, gy, sim._cellPath, { maxNodes });
   sim.stats.astar++;
   sim.stats.astarNodes += len; // approximation: findPath does not expose expanded-node count (see report deviations)
@@ -863,6 +925,12 @@ function setSteerTarget(sim, i) {
   if (st === STATE_WANDER && sim.hunt[i]) { // LIFE-07: direct steer at the prey (no A*; the NavGrid still blocks)
     const ps = sim.fauna.slots[sim.huntSlot[i]];
     steer.setWaypoint(i, ps.x, ps.y, 0);
+    steer.maxSpeed[i] = sim.scfg[i].chase * sim.spdMul[i];
+    return;
+  }
+
+  if (st === STATE_WANDER && sim.goalOn[i] && sim.altTgt[i] >= 0) { // LIFE-08: direct steer at the villager point
+    steer.setWaypoint(i, sim.altX[sim.altTgt[i]], sim.altY[sim.altTgt[i]], 0);
     steer.maxSpeed[i] = sim.scfg[i].chase * sim.spdMul[i];
     return;
   }
@@ -1137,6 +1205,7 @@ function resetAllSim(sim) {
     }
     const health = sim.entities[i].components.health;
     health.hp = health.max; // US-079b: boars come back alive
+    sim.goalOn[i] = 0; sim.altTgt[i] = -1; sim.altCd[i] = 0; // LIFE-08: raids restart next night
     sim.hunt[i] = 0; sim.dmgCd[i] = 0; sim.hurtT[i] = 9999; sim.pendingDied[i] = 0; sim.despawnReq[i] = 0; sim.cause[i] = 0; sim.provoked[i] = 0;
     sim.steer.x[i] = sim.homeX[i]; sim.steer.y[i] = sim.homeY[i];
     sim.steer.vx[i] = 0; sim.steer.vy[i] = 0;
