@@ -137,6 +137,8 @@ export function createVitals(world, events, cfg, hooks) {
         if (d > 1e-9) { dirX = dx / d; dirY = dy / d; }
       }
     }
+    // GOB-03 (38.57): a thrown spear hits along its flight direction (block arc + knock), not thrower -> player.
+    if (p.ranged === 1 && typeof p.dirX === 'number' && typeof p.dirY === 'number') { dirX = p.dirX; dirY = p.dirY; }
     // EQ-A2/EQ-06 (architecture 38.41): a raised shield blocks a frontal hit (needs a source direction): no damage,
     // no invuln, no hurt; the attacker reads `p.blocked` after emit (out field, no re-entrant emit).
     const sh = h.block;

@@ -46,7 +46,7 @@ export function createChestHook({ defs, items, style, rgb, openedChestsOf = null
   // Without it (Node fixtures) the old item-get card is used. The heart-piece card (heartHook.js, a story beat) is kept.
   const lootedLine = (id, n) => { const d = itemDefs[id], nm = d && d.name ? d.name : id; return 'Looted: ' + (n > 1 ? n + ' ' + nm + (/s$/i.test(nm) ? '' : 's') : nm); };
   const gotLoot = (id, n, extra) => { if (notify && id !== 'heart.piece') notify(lootedLine(id, n)); else card.push(id, n, extra); };
-  const fwdScratch = [0, 0], pose = { x: 0, y: 0, z: 0, forwardX: 0, forwardY: 0 }; // reused (rule 9)
+  const fwdScratch = [0, 0], pose = { x: 0, y: 0, z: 0, forwardX: 0, forwardY: 0, onBottom: false }; // reused (rule 9)
   let offGear = null, sim = null, ctx = null, lastAnim = null, active = defs; // EQ-10: `active` = defs, or the world's chest* anchors when defs is []
 
   // The chest sim's PRIVATE event sink: pushes the card directly (so boar loot - which shares `ctx.events` - never
@@ -88,6 +88,7 @@ export function createChestHook({ defs, items, style, rgb, openedChestsOf = null
         forwardOf(st.playerYawDeg || 0, fwdScratch);
         const t = ctx.player.transform;
         pose.x = t.x; pose.y = t.y; pose.z = t.z; pose.forwardX = fwdScratch[0]; pose.forwardY = fwdScratch[1];
+        const pb = ctx.player.components && ctx.player.components.body; pose.onBottom = !!(pb && pb.onBottom); // SWIM-04d
         for (let i = 0; i < active.length; i++) if (sim.canOpen(active[i].id, pose)) { sim.open(active[i].id, pose); break; }
       }
       for (let i = 0; i < active.length; i++) {

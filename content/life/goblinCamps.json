@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "note": "GOB-04 (architecture 38.57 (3)): goblin camps on the Outwall west bank (band 5, inside the walk bounds). Owner has not decided 2 vs 3 camps: camp C is authored but disabled. Props use existing model ids only; the tent is NEEDS DESIGNER (listed in needsDesigner, never spawned).",
+  "needsDesigner": ["tent"],
+  "camps": [
+    {
+      "id": "campNorth",
+      "at": [925, 905],
+      "leashR": 25,
+      "respawnDays": 3,
+      "props": [
+        { "model": "brazier", "at": [0, 0], "yaw": 0 }
+      ],
+      "members": [
+        { "id": "gobN1", "role": "melee", "at": [-4, 3] },
+        { "id": "gobN2", "role": "melee", "at": [4, 3] },
+        { "id": "gobN3", "role": "melee", "at": [3, -4] },
+        { "id": "gobN4", "role": "thrower", "at": [-5, -3] },
+        { "id": "gobN5", "role": "thrower", "at": [0, 6] }
+      ]
+    },
+    {
+      "id": "campEast",
+      "at": [965, 975],
+      "leashR": 25,
+      "respawnDays": 3,
+      "props": [
+        { "model": "brazier", "at": [0, 0], "yaw": 0 }
+      ],
+      "members": [
+        { "id": "gobE1", "role": "melee", "at": [-3, 4] },
+        { "id": "gobE2", "role": "melee", "at": [4, 2] },
+        { "id": "gobE3", "role": "melee", "at": [2, -5] },
+        { "id": "gobE4", "role": "thrower", "at": [-5, -2] }
+      ]
+    },
+    {
+      "id": "campSouthWest",
+      "enabled": false,
+      "note": "third camp, disabled until the owner decides 2 vs 3",
+      "at": [880, 1012],
+      "leashR": 25,
+      "respawnDays": 3,
+      "props": [
+        { "model": "brazier", "at": [0, 0], "yaw": 0 }
+      ],
+      "members": [
+        { "id": "gobS1", "role": "melee", "at": [-3, 3] },
+        { "id": "gobS2", "role": "melee", "at": [4, 1] },
+        { "id": "gobS3", "role": "melee", "at": [1, -4] },
+        { "id": "gobS4", "role": "thrower", "at": [-4, -3] }
+      ]
+    }
+  ]
+}

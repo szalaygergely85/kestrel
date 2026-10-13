@@ -28,7 +28,7 @@ export function createChests(defs, {items, inventoryOf, events, openedChests = [
       || !Number.isFinite(d.facingDeg) || d.facingDeg <= 0 || d.facingDeg >= 90
       || !Number.isFinite(d.facingCos) || d.facingCos <= 0 || d.facingCos >= 1) throw new Error('chest: invalid or duplicate def');
     const r = {id:def.id, x:def.x, y:def.y, z:def.z, frontX:def.frontX, frontY:def.frontY,
-      radius2:d.radius*d.radius, facingCos2:d.facingCos*d.facingCos,
+      radius2:d.radius*d.radius, needsBottom:def.needsBottom === true, facingCos2:d.facingCos*d.facingCos,
       state:restored.has(def.id) ? 'open' : 'closed', time:0,
       loot:createLoot(null, events, {kind:'chest', items, table:def.table,
         rng:createRng(streamSeed(seed, def.id)), inventoryOf})};
@@ -38,6 +38,7 @@ export function createChests(defs, {items, inventoryOf, events, openedChests = [
   function reachable(r, p) {
     if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)
       || !Number.isFinite(p.forwardX) || !Number.isFinite(p.forwardY)) return false;
+    if (r.needsBottom && p.onBottom !== true) return false; // SWIM-04d: lake-bed chest opens only while standing on the bed
     const dx=r.x-p.x, dy=r.y-p.y, dz=r.z-p.z, distance2=dx*dx+dy*dy;
     if (distance2+dz*dz > r.radius2 || -dx*r.frontX-dy*r.frontY <= 0) return false;
     const forward2=p.forwardX*p.forwardX+p.forwardY*p.forwardY, dot=dx*p.forwardX+dy*p.forwardY;

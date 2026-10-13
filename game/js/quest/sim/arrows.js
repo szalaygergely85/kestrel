@@ -13,14 +13,54 @@ export function arrowDamage(swordDamage, draw) {
   return d < 1 ? 1 : d;
 }
 
+const _lobNone = { vx: 0, vy: 0, vz: 0 };
+/**
+ * GOB-03 (38.57): pure, trig-free lob. Horizontal speed `speedH` toward (tx,ty), flight time t = dH / speedH, vz chosen so the
+ * ballistic arc under gravity `g` passes through (tx,ty,tz). Writes out.vx/vy/vz (out defaults to a shared scratch).
+ */
+export function lobVelocity(x0, y0, z0, tx, ty, tz, speedH, g, out = _lobNone) {
+  const dx = tx - x0, dy = ty - y0, dz = tz - z0;
+  const dH = Math.sqrt(dx * dx + dy * dy);
+  let t = dH / speedH;
+  if (t < 1 / 60) t = 1 / 60; // point blank: avoid a divide by ~0
+  out.vx = dx / t; out.vy = dy / t; out.vz = dz / t + 0.5 * g * t;
+  return out;
+}
+
+/**
+ * GOB-03: a one-entry target list (the player only) for the enemy projectile sim: same SoA shape as createTargetables.
+ * r = -1 while the player is dead. Goblins are not in it, so a spear can never hit one.
+ * @param {any} world
+ */
+export function createPlayerTarget(world) {
+  const t = {
+    count: 1, x: new Float64Array(1), y: new Float64Array(1), z: new Float64Array(1),
+    r: new Float64Array(1), h: new Float64Array(1), ent: [{ id: 'player' }],
+    refresh() {
+      const hd = world.get('player');
+      const d = hd && hd.data, tr = d && d.transform;
+      if (!tr) { t.r[0] = -1; return; }
+      const hp = d.components && d.components.health;
+      t.x[0] = tr.x; t.y[0] = tr.y; t.z[0] = tr.z; t.h[0] = 1.7;
+      t.r[0] = hp && hp.hp <= 0 ? -1 : 0.35;
+    },
+    dispose() {},
+  };
+  t.refresh();
+  return t;
+}
+
 /**
  * @param {any} world engine World (`raySegment`)
  * @param {{emit:Function}} events
  * @param {typeof import('../bowConfig.js').BOW_CFG} cfg
  * @param {ReturnType<typeof import('./targetables.js').createTargetables>} targets
  * @param {((x:number,y:number,z:number)=>void)|null} [onWaterHit] US-055a: called where an arrow lands in river water (splash fx)
+ * @param {{owner?:'player'|'enemy'}} [opts] GOB-03: owner 'enemy' = goblin spear (hits only `targets` = createPlayerTarget,
+ *   payload target 'player' + ranged 1 + source from fireVel, a blocked spear drops, never pickable). Default 'player' = unchanged.
  */
-export function createArrowSim(world, events, cfg, targets, onWaterHit = null) {
+export function createArrowSim(world, events, cfg, targets, onWaterHit = null, opts = null) {
+  const enemy = !!(opts && opts.owner === 'enemy');
   const dt = SIM_STEP;
   const NF = cfg.maxFlying, NS = cfg.maxStuck;
   let serialNo = 0, tick = 0, flyingCount = 0, stuckCount = 0, floatCount = 0;
@@ -35,6 +75,7 @@ export function createArrowSim(world, events, cfg, targets, onWaterHit = null) {
     n: NF, alive: new Uint8Array(NF), age: new Int32Array(NF), damage: new Float64Array(NF),
     x: new Float64Array(NF), y: new Float64Array(NF), z: new Float64Array(NF),
     vx: new Float64Array(NF), vy: new Float64Array(NF), vz: new Float64Array(NF),
+    src: new Array(NF).fill(null), // GOB-03: the thrower id (enemy mode)
   };
   const stuck = {
     n: NS, alive: new Uint8Array(NS), age: new Int32Array(NS), serial: new Int32Array(NS), pickable: new Uint8Array(NS),
@@ -43,6 +84,8 @@ export function createArrowSim(world, events, cfg, targets, onWaterHit = null) {
   };
   const hit = { kind: NO_HIT, t: 0, idx: -1, x: 0, y: 0, z: 0 };
   const payload = { source: 'player', target: null, damage: 0, heavy: 0, cause: 'arrow', dirX: 0, dirY: 0, px: 0, py: 0, pz: 0 };
+
+  const ePayload = { source: null, target: 'player', damage: 0, heavy: 0, cause: 'spear', ranged: 1, blocked: 0, dirX: 0, dirY: 0, px: 0, py: 0, pz: 0 };
 
   function stickAt(x, y, z, dx, dy, dz) {
     let k = 0;
@@ -86,6 +129,16 @@ export function createArrowSim(world, events, cfg, targets, onWaterHit = null) {
       flying.vx[s] = fx * v; flying.vy[s] = fy * v; flying.vz[s] = fz * v;
       return true;
     },
+    /** GOB-03: launch with an explicit velocity (enemy spear; lobVelocity gives it). false = pool full. */
+    fireVel(x, y, z, vx, vy, vz, damage, srcId) {
+      if (flyingCount >= NF) return false;
+      let s = 0;
+      while (flying.alive[s] === 1) s++;
+      flying.alive[s] = 1; flyingCount++; flying.age[s] = 0; flying.damage[s] = damage; flying.src[s] = srcId;
+      flying.x[s] = x; flying.y[s] = y; flying.z[s] = z;
+      flying.vx[s] = vx; flying.vy[s] = vy; flying.vz[s] = vz;
+      return true;
+    },
     /** Quiver-aware shot: refuses at 0 arrows, takes one only when the arrow really flew. eq = equipment {quiver:{id,n}|null}. */
     shoot(eq, x, y, z, fx, fy, fz, draw, damage) {
       const q = eq && eq.quiver;
@@ -110,7 +163,18 @@ export function createArrowSim(world, events, cfg, targets, onWaterHit = null) {
           if (hit.kind === NO_HIT) { flying.x[s] = nx; flying.y[s] = ny; flying.z[s] = nz; continue; }
           const sp = Math.sqrt(vx * vx + vy * vy + vz * vz) || 1;
           const dx = vx / sp, dy = vy / sp, dz = vz / sp;
-          if (hit.kind === TARGET_HIT) {
+          if (hit.kind === TARGET_HIT && enemy) {
+            const hl = Math.sqrt(vx * vx + vy * vy) || 1;
+            const p = ePayload;
+            p.source = flying.src[s]; p.damage = flying.damage[s]; p.dirX = vx / hl; p.dirY = vy / hl; p.blocked = 0;
+            p.px = hit.x; p.py = hit.y; p.pz = hit.z;
+            kill(s);
+            events.emit('combat:hit', p);
+            if (p.blocked === 1) { // EQ-06: the shield took it, the spear drops at the hit point pointing down
+              stickAt(hit.x, hit.y, hit.z, 0, 0, -1);
+              events.emit('beast:spearBlocked', p);
+            }
+          } else if (hit.kind === TARGET_HIT) {
             const e = targets.ent[hit.idx];
             const hl = Math.sqrt(vx * vx + vy * vy) || 1;
             const p = payload;
@@ -182,7 +246,7 @@ export function createArrowSim(world, events, cfg, targets, onWaterHit = null) {
       }
       return n;
     },
-    reset() { flying.alive.fill(0); stuck.alive.fill(0); flyingCount = 0; stuckCount = 0; },
+    reset() { flying.alive.fill(0); flying.src.fill(null); stuck.alive.fill(0); flyingCount = 0; stuckCount = 0; },
     dispose() {},
     hashInto(h) {
       h.u32(flyingCount); h.u32(stuckCount); h.u32(serialNo);
