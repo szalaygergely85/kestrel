@@ -116,7 +116,7 @@ function walk(b, x, y, vx, vy, steps, speed) {
   const t0 = performance.now(); run(400000); const us = (performance.now() - t0) / 400000 * 1000;
   gc(); const dh = process.memoryUsage().heapUsed - h0;
   ok('bucket lookup: 400k project+overshoot calls allocate ~0 (< 256 KB)', dh < 262144, 'dh ' + dh);
-  ok('per-step cost well under 0.02 ms', us < 20, us.toFixed(2) + ' us');
+  if (process.env.BAKE_BENCH) ok('per-step cost well under 0.02 ms', us < 20, us.toFixed(2) + ' us'); // wall-clock: BAKE_BENCH=1 only
   console.log('  ' + us.toFixed(2) + ' us per project+overshoot pair, heap +' + dh + ' B, s=' + (s > 0));
 }
 console.log(`boundsPolygon: ${pass} pass, ${fail} fail`);
