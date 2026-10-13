@@ -220,7 +220,7 @@ async function runScenario(assets, name, dist, opt, goblin = false, at = null) {
 export async function runBench(opt) {
   const { assets } = await loadTestAssets();
   const results = [];
-  for (const [name, dist] of SCENARIOS.slice(0, opt.scenarios || SCENARIOS.length)) results.push(await runScenario(assets, name, dist, opt));
+  for (const [name, dist] of SCENARIOS.slice(0, opt.scenarios ?? SCENARIOS.length)) results.push(await runScenario(assets, name, dist, opt));
   if (opt.poses) for (const [nm, x, y] of POSES) { const r = await runScenario(assets, 'pose ' + nm, 0, opt, false, [x, y]); results.push(r); }
   // GOB-08: 48 beasts, 20 goblins awake (2 camps + torch raid), 6 throwers, 8 spears in flight, player in Outwall
   let gob = null;
