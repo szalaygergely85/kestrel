@@ -1,7 +1,7 @@
 // LIFE-HOOKS-01: headless check of the raid wiring (lifeWire live, board note accepted, raid:start within N nights, still at gooseFarm).
-// Run: node tools/verify-raid.mjs <port>  (slot 2 range 9575-9649; CDP = port+1). Not run in the lane (Node only); main session runs it once.
+// Run: node tools/verify-raid.mjs <port>  (slot 2 range 9500-9999; CDP = port+1). Not run in the lane (Node only); main session runs it once.
 // QL-WIRE: headless structural check of the Ch1-2 errand wiring: post / notePost [E] Inspect interactables, hillPath area trigger, 21 errand defs in the book,
-// inspect hook live (window.__debug.errands). Loads game/index.html?dev=1 (saves on). Run: node tools/verify-errands.mjs <port>   (PC-B lane ports 9575-9649; CDP = port+1)
+// inspect hook live (window.__debug.errands). Loads game/index.html?dev=1 (saves on). Run: node tools/verify-errands.mjs <port>   (PC-B lane ports 9500-9999; CDP = port+1)
 import { spawn } from 'node:child_process';
 import { withTimeFreeze } from './tool-url.mjs'; // DN-04a
 import assert from 'node:assert/strict';
@@ -11,11 +11,12 @@ import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, c
 
 const port = Number(process.argv[2] || 9580);
 validatePort(port);
-if (port < 9575 || port + 1 > 9649) throw new Error('PC-B lane B1 range is 9575-9649 (next port is CDP)');
+if (port < 9500 || port + 1 > 9999) throw new Error('PC-B range is 9500-9999 (next port is CDP)');
 
 const profile = mkdtempSync(path.join(os.tmpdir(), 'kestrel-qui-'));
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 const out = path.join(ROOT, 'docs/test-reports/captures'); mkdirSync(out, { recursive: true });
+const server = spawn('python', ['-c', 'import http.server,sys; http.server.ThreadingHTTPServer.request_queue_size=128; sys.argv=["tools/serve.py",sys.argv[1]]; import tools.serve; tools.serve.main()', String(port)], { cwd: ROOT, stdio: 'ignore', windowsHide: true });
 let browser, cdp;
 try {
   await waitForHttp(`http://127.0.0.1:${port}/`, 10000);
@@ -29,6 +30,7 @@ try {
   let ready = false;
   for (let i = 0; i < 150; i++) { await pause(300); if (await evaluate(cdp, '!!(window.__debug && window.__debug.world && window.__debug.playerHandle && window.__debug.lifeWire)')) { ready = true; break; } }
   assert.ok(ready, 'world / lifeWire never ready: ' + JSON.stringify(errors));
+  await evaluate(cdp, 'setInterval(() => { if (window.__debug && window.__debug.look) window.__debug.look.locked = true; }, 30), true'); // headless: no pointer lock -> sim paused (see verify-swim)
   const ev = (js) => evaluate(cdp, js);
   console.log('[1/4] lifeWire live');
   // 2. accept the board note (book.accept = what the board read / dialogue action does); prereq may block -> report

@@ -10,7 +10,7 @@ import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, c
 
 const port = Number(process.argv[2] || 9500);
 validatePort(port);
-if (port < 9500 || port + 1 > 9574) throw new Error('PC-B lane B1 range is 9500-9574 (next port is CDP)');
+if (port < 9500 || port + 1 > 9999) throw new Error('PC-B range is 9500-9999 (next port is CDP)');
 const backend = process.argv[3] || 'webgpu';
 assert.ok(['webgpu'].includes(backend), 'backend must be webgpu');
 

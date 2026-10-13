@@ -1,5 +1,5 @@
 // GOB-07b: headless check of goblins in play: by day near campNorth (925,905) goblins present + still + forced throw; at night (time=23) a forced
-// goblinNorth raid gives torch-bearers + still. Run: node tools/verify-goblins.mjs <port>  (slot 2 range 9575-9649; CDP = port+1). Not run in the lane (Node only); main session runs it once.
+// goblinNorth raid gives torch-bearers + still. Run: node tools/verify-goblins.mjs <port>  (slot 2 range 9500-9999; CDP = port+1). Not run in the lane (Node only); main session runs it once.
 import { spawn } from 'node:child_process';
 import { withTimeFreeze } from './tool-url.mjs'; // DN-04a
 import assert from 'node:assert/strict';
@@ -9,7 +9,7 @@ import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, c
 
 const port = Number(process.argv[2] || 9580);
 validatePort(port);
-if (port < 9575 || port + 1 > 9649) throw new Error('PC-B lane B1 range is 9575-9649 (next port is CDP)');
+if (port < 9500 || port + 1 > 9999) throw new Error('PC-B range is 9500-9999 (next port is CDP)');
 const profile = mkdtempSync(path.join(os.tmpdir(), 'kestrel-gob-'));
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 const out = path.join(ROOT, 'docs/test-reports/captures'); mkdirSync(out, { recursive: true });
@@ -17,7 +17,7 @@ const server = spawn('python', ['-c', 'import http.server,sys; http.server.Threa
 let browser, cdp;
 async function load(query) {
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(query)}` });
-  for (let i = 0; i < 150; i++) { await pause(300); if (await evaluate(cdp, '!!(window.__debug && window.__debug.world && window.__debug.playerHandle && window.__debug.goblinWire && window.__debug.beasts)')) return true; }
+  for (let i = 0; i < 150; i++) { await pause(300); if (await evaluate(cdp, '!!(window.__debug && window.__debug.world && window.__debug.playerHandle && window.__debug.goblinWire && window.__debug.beasts)')) { await evaluate(cdp, 'setInterval(() => { if (window.__debug && window.__debug.look) window.__debug.look.locked = true; }, 30), true'); return true; } } // headless: no pointer lock -> sim paused (see verify-swim)
   return false;
 }
 const shot = async (name) => { const s = await cdp.send('Page.captureScreenshot', { format: 'png' }); writeFileSync(path.join(out, name), Buffer.from(s.data, 'base64')); console.log('   still docs/test-reports/captures/' + name); };
@@ -48,7 +48,7 @@ try {
   // 3. night raid: force goblinNorth, torch-bearers present
   assert.ok(await load('dev=1&backend=webgpu&time=23&at=915,905'), 'night: world never ready: ' + JSON.stringify(errors));
   const raid = JSON.parse(await ev(`JSON.stringify((()=>{const d=window.__debug,st=d.world.state,lw=d.lifeWire,p=d.playerHandle.data.transform; const ids=[]; d.engine.events.on('life:raid:start',(q)=>ids.push(q&&q.id)); for(let i=0;i<60;i++) d.goblinWire.step(st['clock.day']|0,p.x,p.y);
-    let night=-1; for(let day=1;day<=60&&night<0;day++){ st['clock.day']=day; lw.step(22); lw.step(22.5); if(ids.includes('goblinNorth')) night=day; else lw.step(6);} d.goblinWire.update(); return {night,ids};})()`));
+    let night=-1; for(let day=1;day<=60&&night<0;day++){ st['clock.day']=day; lw.step(22); lw.step(22.5); if(ids.includes('goblinNorth')) night=day; else lw.step(6);} d.goblinWire.update(); return {night,ids};})())`));
   console.log('[3/3] night raid', JSON.stringify(raid));
   assert.ok(raid.night > 0, 'goblinNorth raid starts within 60 nights');
   const torches = await count('goblinTorch');

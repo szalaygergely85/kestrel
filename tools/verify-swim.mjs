@@ -30,9 +30,11 @@ try {
   // Braid deepest reach (world_m1: x 1018.6, y 984, 1.44 m deep, surface -89.85); start 2 m above the surface so it drops in.
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?at=1018.6,984,-88,90,0&backend=${backend}` });
   const q = '(()=>{const h=window.__debug&&window.__debug.playerHandle;if(!h)return null;const b=h.data.components.body,t=h.data.transform;return {swimming:!!b.swimming,z:t.z,eye:t.z+b.eyeH,waterZ:b.waterZ,x:t.x,y:t.y,sword:window.__debug.hands?window.__debug.hands.handOf("sword"):null};})()';
+  // Headless has no pointer lock -> main.js isPaused() (look.locked false) freezes the sim, so the body would hover at the pose. Same trick as verify-pointshadows.
+  await evaluate(cdp, 'setInterval(() => { if (window.__debug && window.__debug.look) window.__debug.look.locked = true; }, 30), true');
   let st = null;
   for (let i = 0; i < 120; i++) { await pause(500); st = await evaluate(cdp, q); if (st && st.swimming) break; }
-  assert.ok(st && st.swimming, 'Braid: swimming after the drop ' + JSON.stringify({ st, errors }));
+  assert.ok(st && st.swimming, 'Braid: swimming after the drop ' + JSON.stringify({ st, errors, diag: await evaluate(cdp, '(()=>{const w=__debug.engine.world,wa={surfaceZ:0,depth:0,region:""},t=__debug.playerHandle.data.transform;const wet=!!w.waterAt(t.x,t.y,wa);return {wet,surfaceZ:wa.surfaceZ,depth:wa.depth,region:wa.region,groundAt:w.floorAt?w.floorAt(t.x,t.y):null,locked:!!(__debug.look&&__debug.look.locked)};})()') }));
   assert.ok(!st.sword, 'gear stowed while swimming (sword hand empty) ' + JSON.stringify(st));
   await shot('swim-braid-' + backend);
   // SWIM-HOOKS-01: the stamina ring is drawn under the MP bar while swimming; after a few seconds in the water the stamina has dropped.
