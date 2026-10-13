@@ -61,7 +61,7 @@ export const SHADE_BLOCK = defineUniformBlock('ShadeU', [
   // 38.23 entity tint table, APPENDED (no earlier word moves): etA.x = count (0 = branch skipped), etId = 8 u32 ids (written through a Uint32Array view), etC = rgb 0..1 + k
   { name: 'etA', type: 'vec4' }, { name: 'etId', type: 'vec4', count: 2 }, { name: 'etC', type: 'vec4', count: 8 },
   { name: 'skyCam', type: 'vec4' }, // AUD-40, APPENDED: shear-mode sky ray = (dirX + planeX*cx, dirY + planeY*cx): dirX, dirY, planeX, planeY
-  { name: 'fogView', type: 'vec4' }, // AUD-45, APPENDED: x = eye height (m), y = 1 when height fog + sun in-scatter are on (terrain worlds), z/w unused
+  { name: 'fogView', type: 'vec4' }, // AUD-45, APPENDED: x = eye height (m), y = 1 when height fog + sun in-scatter are on (terrain worlds), z = 1 outdoor mesh fog (OB-089), w unused
   { name: 'skyGlowOn', type: 'vec4' }, // AUD-40 fix, APPENDED: x = 1 when sky glow + horizon haze apply (compositor gate: terrain world + timeOfDay palette), written every frame; DN-02 y = night glyph-luminance floor (liveLook.floorEff, 0 = off)
   { name: 'skyline', type: 'vec4' }, // MAP-06b (38.42), APPENDED: far-terrain fog cap x fogMax (0 = off), y fromZ, z seaFogMax, w seaLevel
   { name: 'grass', type: 'vec4', count: 80 }, // OB-073 D2e, APPENDED: carpet variant table, 16 variants x GRASS_ROWS vec4 (terrainShade.js packGrassTable); all 0 = no carpet
@@ -830,6 +830,12 @@ fn shadeCell(frag: vec4f) -> FO {
 
   var f = select(select((dist - su.fogStart) / (su.fogFull - su.fogStart), 1.0, dist >= su.fogFull), 0.0, dist <= su.fogStart);
   var fogFgC = su.fogFg; var fogBgC = su.fogBg;
+  if (su.fogView.z > 0.5) { // OB-089: outdoor mesh fog = the terrain's far fog (twin: detailShade.js shadeTail, fogShapeCtx.outdoor); fg == bg
+    f = clamp((dist - su.terrainFogStart) / (su.terrainFogFull - su.terrainFogStart), 0.0, 1.0);
+    f = select(pow(f, su.terrainFogCurve), f, su.terrainFogCurve == 1.0);
+    let oc = su.terrainFogNearRGB + (su.terrainFogFarRGB - su.terrainFogNearRGB) * f;
+    fogFgC = oc; fogBgC = oc;
+  }
   if (su.fogView.y > 0.5 && f > 0.0) { // AUD-45: height fog + sun in-scatter (only where f > 0)
     let fd = fogCellDir(cell, gridSize);
     f = fogShapeF(f, dist, su.fogView.x, fd.z * inverseSqrt(max(fd.x * fd.x + fd.y * fd.y, 1e-12)));

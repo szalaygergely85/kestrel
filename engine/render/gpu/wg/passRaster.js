@@ -371,7 +371,7 @@ export class WgRasterPass {
     const fbT = p._fb; let tSec = 0; if (fbT) { const v = fbT.timeSec; if (v) tSec = v; } // no tagged phi: avoids a per-frame HeapNumber
     packWindUniforms(world.wind, tSec, this.windV, this.windTV, this.windKV);
     if (p._instances) {
-      p._instances.swayPad = this.windOn ? SWAY_MAX : 0;
+      p._instances.swayPad = this.windOn ? SWAY_MAX : 0; p._instances.eye = p._cam || null; // OB-089
       this.meshDrawArg.cache = this.meshCache; this.meshDrawArg.idFor = this.strictMatIdFor || null; this.meshDrawArg.maskAtlas = (world && world.maskAtlas) || null; // ALPHA-01f-fix2: instanced masked groups share the static cache entry
       p._instances.addToDrawList(list, sharedVoxelMeshCache, this.planes, p._fb.frameNo, this.view, p.rows, this.meshDrawArg);
       p.stats.instancesCulled = p._instances.stats.instancesCulled; p.stats.instancesLod1 = p._instances.stats.instancesLod1;

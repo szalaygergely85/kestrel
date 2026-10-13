@@ -79,6 +79,7 @@
                  // cellM 6.5 (not 6): the large oak's chunky voxel trunk needs trunkR 0.95.
                  trees: {
                    seed: 7349, cellM: 6.5, jitter: 1.5, fill: 0.72, maxTrees: 1500, lodCells: 6,
+                   maxDistM: 140, // OB-089: beyond this the far-terrain forest tint (bands.near 150) stands for trees; no navy silhouettes in front of it
                    species: TREE_SPECIES_MESH, speciesVoxel: TREE_SPECIES_VOXEL
                  } },
       rock:    { slope: 0.42, scale: 90, threshold: 0.78, minHomeDist: 60 },

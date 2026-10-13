@@ -18,6 +18,7 @@ export function validateScatterConfig(cfg) {
   if (cfg.fill > 1) bad('fill');
   if (!Number.isInteger(cfg.maxTrees) || cfg.maxTrees < 0) bad('maxTrees');
   finite('lodCells', 0, false);
+  if (cfg.maxDistM !== undefined) finite('maxDistM', 0, false); // OB-089: tree draw-distance cut (m)
   if (!Array.isArray(cfg.species) || !cfg.species.length || cfg.species.length > 256) bad('species');
   let maxRc = 0, weight = 0;
   for (let i = 0; i < cfg.species.length; i++) {

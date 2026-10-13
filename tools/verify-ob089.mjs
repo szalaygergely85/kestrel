@@ -24,15 +24,22 @@ try {
   await cdp.send('Page.enable'); await cdp.send('Runtime.enable');
   const errors = []; cdp.onEvent((m, p) => { if (m === 'Runtime.exceptionThrown') errors.push(p.exceptionDetails); });
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 700, deviceScaleFactor: 1, mobile: false });
+  // OB-089 part 3: wait for the world (poll the same ready flag the other verify scripts use) instead of a blind sleep -> no loading-screen stills
+  const READY = '!!(window.__debug && window.__debug.playerHandle && window.__debug.wgPipeline && window.__debug.wgPipeline.ready)';
+  async function waitReady() {
+    let ok = false;
+    for (let i = 0; i < 200 && !ok; i++) { await pause(300); try { ok = !!(await evaluate(cdp, READY)); } catch { /* page still navigating */ } }
+    if (!ok) throw new Error('world never became ready (loading screen)');
+    await pause(6000); // lazy meshes + streaming cells settle
+  }
   async function shot(name) { await pause(350); const s = await cdp.send('Page.captureScreenshot', { format: 'png' }); writeFileSync(path.join(out, name + '.png'), Buffer.from(s.data, 'base64')); }
 
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?pose=roadSouth&gpu=webgpu` });
-  await pause(25000); // world load + lazy meshes streaming in
-  for (let i = 0; i < 6; i++) await pause(1000);
+  await waitReady();
   await shot('ob089-roadSouth');
   // second still with the sun shadows off (gfxBoot ?shadows=off): if trees/buildings turn lit, the dark navy is the shadow term
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?pose=roadSouth&gpu=webgpu&shadows=off` });
-  await pause(25000); for (let i = 0; i < 6; i++) await pause(1000);
+  await waitReady();
   await shot('ob089-roadSouth-noshadow');
   console.log('OB-089 still saved: docs/test-reports/captures/ob089-roadSouth.png', JSON.stringify(errors.map((e) => e.text)));
 } finally {

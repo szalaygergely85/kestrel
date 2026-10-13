@@ -473,11 +473,12 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
 {
   // sha256 of SHADE_WGSL taken before the 073b change, re-pinned after the 38.23 entity-tint merge and AUD-40 sky glow, AUD-45 fog shape and AUD-47 vegGain, SKY-GLOW-SOFT-01, DN-02 night floor, MAP-06b skyline cap, OB-073 smooth ground noise, OB-073 calm ground, OB-081 far tier blend + calm faces (41264 chars): the stable-off shader must not move by a single byte.
   // re-pinned 48155 -> 48644 by OB-104b2 on top of SWIM-04c (cliff branch + nrm param + ShadeU.cliff after the 7 under vec4)
+  // re-pinned 48644 -> 49079 by OB-089 (outdoor mesh fog branch, fogView.z; uniform layout unchanged)
   // re-pinned 45683 -> 48155 by SWIM-04c (UNDER_WGSL + shadeCell/fs_main split + 7 appended ShadeU vec4; underwater block is skipped when su.under.x = 0)
   // re-pinned 44782 -> 45683 by MASK-c (shadeGrass ground blend + back-light, packed GA.w word; TS_PATCH_NOISE_WGSL extracted verbatim)
   // re-pinned 41264 -> 44782 by OB-073-D2e (kind-10 shadeGrass + ShadeU.grass table + the kind-10 branch in fs_main; calm-ground code untouched, asserted by the terrain mutation probes above)
-  assert.equal(SHADE_WGSL.length, 48644, 'stable off: SHADE_WGSL length unchanged');
-  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '55f719fe72d4c13e4c53b915bb920d620fb3f084f8103457e54ab1200fef1527', 'stable off: SHADE_WGSL byte-identical to pre-073b');
+  assert.equal(SHADE_WGSL.length, 49079, 'stable off: SHADE_WGSL length unchanged');
+  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), 'fa0982cb45de0ae081c142f8cb052df889506528d4908ad1debfefd1b7e940c7', 'stable off: SHADE_WGSL byte-identical to pre-073b');
   assert.ok(!/lvl|lvOut|location\(2\)/.test(SHADE_WGSL), 'stable off: no level output');
   assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
   assert.deepEqual(SHADE_LEVEL_TARGETS, ['rgba8', 'rgba8', 'r8ui']);

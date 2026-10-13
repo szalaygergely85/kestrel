@@ -157,7 +157,9 @@ export function groupRadius(mesh, parts) {
  * @param {number} rows
  * @param {number} [swayPad] - S8-B2-06: extra metres on the cull sphere (SWAY_MAX while wind sway is on); the LOD cell estimate keeps plain `R`
  */
-export function compactGroup(g, planes, R, vp, rows, swayPad = 0) {
+export function compactGroup(g, planes, R, vp, rows, swayPad = 0, eye = null) {
+  // OB-089: per-group draw-distance cut (twin of passCull.js's per-batch eye.w = g.maxDistM^2): 3D distance from the eye > maxDistM -> not drawn
+  const md2 = eye && g.maxDistM > 0 ? g.maxDistM * g.maxDistM : 0;
   const srcF = g.ib.f32, srcU = g.ib.u32;
   const dst0 = g.drawIb[0].u32, dst1 = g.drawIb[1].u32;
   const n = g.count;
@@ -179,6 +181,7 @@ export function compactGroup(g, planes, R, vp, rows, swayPad = 0) {
     const o = i * INSTANCE_STRIDE;
     const tx = srcF[o + 3], ty = srcF[o + 7], tz = srcF[o + 11];
     if (planes && classifyAABB(planes, tx - Rc, ty - Rc, tz - Rc, tx + Rc, ty + Rc, tz + Rc) === CULL_OUT) continue;
+    if (md2 > 0) { const dx = tx - eye.x, dy = ty - eye.y, dz = tz - eye.z; if (dx * dx + dy * dy + dz * dz > md2) continue; }
     let lod = 0;
     let cellsForCap = Infinity; // w <= 1e-6 (behind/at the eye): no projected size, treat as nearest (top cap priority)
     if (lodOn) {
@@ -308,6 +311,7 @@ export function fillShadowBands(g, ex, ey, lod0M, castM, planes, R, swayPad = 0)
  * @property {[InstanceBuffer, InstanceBuffer]} drawIb - RE-15a/c: engine-owned compacted scratch, 0 = LOD0, 1 = LOD1
  * @property {number} _R - cached group radius (both LODs) for the memoized frame
  * @property {boolean} [lodDither] - S8-B2-07: crossfade the LOD hysteresis band by screen-door dither (lodDither.js); undefined/false = off
+ * @property {number} maxDistM - OB-089: draw-distance cut in metres from the eye (0 = none; trees: forest.trees.maxDistM)
  * @property {number} lodCells - RE-15c: projected-size LOD threshold in cells; 0 (default) = LOD off
  * @property {number} lod0Cap - QUAT-LOD-01 part 2: max LOD0 instances drawn per frame (0 default = no cap); the nearest
  *   (largest projected `cells`) `lod0Cap` naturally-LOD0 instances stay LOD0, the rest draw at LOD1 (needs a ready LOD1 mesh).
@@ -351,7 +355,7 @@ export function makeInstanceGroup(modelKey, capacity) {
     drawCount: /** @type {[number, number]} */ ([0, 0]),
     shadowIb: /** @type {[InstanceBuffer, InstanceBuffer]} */ ([createInstanceBuffer(capacity), createInstanceBuffer(capacity)]),
     shadowCount: /** @type {[number, number]} */ ([0, 0]), shadowBand: new Uint8Array(capacity),
-    lodCells: 0, castShadow: true, lodPrev: new Uint8Array(capacity), _R: 0,
+    lodCells: 0, maxDistM: 0, castShadow: true, lodPrev: new Uint8Array(capacity), _R: 0,
     _memoFrameNo: /** @type {number|null} */ (null),
     // QUAT-LOD-01 part 2: near-LOD0 cap (0 = off) + its scratch, and the lazily-resolved LOD1 registry mesh for `g.mesh` groups.
     lod0Cap: 0, _mesh1: undefined, _lod0Idx: new Uint32Array(capacity), _lod0Cells: new Float32Array(capacity),
@@ -392,6 +396,8 @@ export class InstanceGroups {
     this.stats = { instances: 0, instancesCulled: 0, instancesLod1: 0 };
     /** S8-B2-06: metres added to every group's cull / shadow-cull sphere; the host sets SWAY_MAX while wind sway is on (windSwayOn), else 0. */
     this.swayPad = 0;
+    /** OB-089: camera {x,y,z} for the per-group maxDistM cut (set by the compositor / passRaster each frame; null = no cut) @type {{x:number,y:number,z:number}|null} */
+    this.eye = null;
     /** @type {number|null} the last `frameNo` seen by `addToDrawList` */
     this._lastFrameNo = null;
     /** @type {((id: string) => any)|null} QUAT-LOD-01 part 2: resolves a registry mesh id to its MeshData, for `g.mesh.lods[0].mesh`; unbound (null) = mesh groups never get LOD1 (`resolveGroupLod1` always returns null). */
@@ -494,7 +500,7 @@ export class InstanceGroups {
           let R = groupRadius(draw, g.parts);
           if (draw1) { const R1 = groupRadius(draw1, g.parts); if (R1 > R) R = R1; }
           g._R = R;
-          const kept = compactGroup(g, planes, R, draw1 ? viewProj : null, draw1 ? (rows || 0) : 0, this.swayPad);
+          const kept = compactGroup(g, planes, R, draw1 ? viewProj : null, draw1 ? (rows || 0) : 0, this.swayPad, this.eye);
           g._memoFrameNo = frameNo;
           this.stats.instances += kept;
           this.stats.instancesCulled += g.count - kept;
@@ -533,7 +539,7 @@ export class InstanceGroups {
         let R = groupRadius(mesh, g.parts);
         if (mesh1) { const R1 = groupRadius(mesh1, g.parts); if (R1 > R) R = R1; }
         g._R = R;
-        const kept = compactGroup(g, planes, R, viewProj || null, rows || 0, this.swayPad);
+        const kept = compactGroup(g, planes, R, viewProj || null, rows || 0, this.swayPad, this.eye);
         g._memoFrameNo = frameNo;
         this.stats.instances += kept;
         this.stats.instancesCulled += g.count - kept;

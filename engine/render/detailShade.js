@@ -588,21 +588,29 @@ export function shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist
  * the averaged `b`/`gb`/`cr`/`cg`/`cb`/`bgK`/`hA`/`hB`. `face` is only
  * needed for `orientClassCode`'s du/dv axis pick.
  */
-const _fogFgS = [0, 0, 0], _fogBgS = [0, 0, 0];
+const _fogFgS = [0, 0, 0], _fogBgS = [0, 0, 0], _fogOut = [0, 0, 0];
 let vegOn = false; // AUD-47: set per cell by shadeSurfaces (v2 path) so the gain lands before fog like the WGSL
 const vegGain = new Float32Array(3);
 function shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff, light, out, cellIdx) {
   const fog = table.fog;
   let f = dist <= fog.start ? 0 : dist >= fog.full ? 1 : (dist - fog.start) / (fog.full - fog.start);
   let fogFgC = fog.fgRGB, fogBgC = fog.bgRGB;
-  const fLin = f; // edge-pass gate (gbuf.fogF): the LINEAR factor - edge.wgsl fogF(dist) recomputes it without the AUD-45 boost
+  const fLin = f; // (edge gate keeps the interior linear factor, also outdoors: edge.wgsl recomputes it from the interior start/full)
+  if (fogShapeCtx.outdoor) { // OB-089: terrain far fog (twin of the fogView.z branch in shade.wgsl): colour near->far by the same factor, fg == bg
+    const o = fogShapeCtx;
+    f = dist <= o.tStart ? 0 : dist >= o.tFull ? 1 : (dist - o.tStart) / (o.tFull - o.tStart);
+    if (o.tCurve !== 1) f = Math.pow(f, o.tCurve);
+    const nr = o.tNear, fr2 = o.tFar;
+    _fogOut[0] = nr[0] + (fr2[0] - nr[0]) * f; _fogOut[1] = nr[1] + (fr2[1] - nr[1]) * f; _fogOut[2] = nr[2] + (fr2[2] - nr[2]) * f;
+    fogFgC = _fogOut; fogBgC = _fogOut;
+  } // edge-pass gate (gbuf.fogF): the LINEAR factor - edge.wgsl fogF(dist) recomputes it without the AUD-45 boost
   if (fogShapeCtx.on && f > 0) { // AUD-45 (twin of the WGSL block in fs_main): height fog + sun in-scatter
     const sc = fogShapeCtx, cols = sc.terms.cols;
     const row = Math.floor(cellIdx / cols), col = cellIdx - row * cols;
     const d = fogCellDirJS(col, row);
     f = fogShapeF(f, dist, sc.camZ, d[2] / Math.sqrt(Math.max(d[0] * d[0] + d[1] * d[1], 1e-12)));
     const sw = fogScatterW(d[0] * sc.sunX + d[1] * sc.sunY + d[2] * sc.sunZ, sc.sunZ, sc.sunI);
-    fogFgC = fogScatterColor(_fogFgS, fog.fgRGB, sw); fogBgC = fogScatterColor(_fogBgS, fog.bgRGB, sw);
+    fogFgC = fogScatterColor(_fogFgS, fogFgC, sw); fogBgC = fogScatterColor(_fogBgS, fogBgC, sw);
   }
 
   let glyphCode;
