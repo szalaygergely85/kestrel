@@ -71,7 +71,7 @@ ok('x=1130 margin 106 < switchM: swap', w.streamBand(1130, 1088, 2) === 2 && w.b
 ok('events: world:band east>west, no band:late', ev.includes('world:band:east>west') && !ev.some((e) => e.startsWith('band:late')), ev.join(','));
 ok('swap -> new near identity, version+1, x0 768', T.near !== nearBefore && T.near.x0 === 768 && T.near.version > nearBefore.version);
 ok('west zone, x=1140 (west margin >= 176): idle', w.streamBand(1140, 1088, 2) === 0);
-ok('back east: prefetch at x=1230 (west margin 178 -> 1232 edge)', w.streamBand(1234, 1088, 2) === 1 && w._bandPend === 0);
+ok('back east: prefetch at x=1230 (west margin 178 -> 1232 edge); east is cached (OB-109) so nothing bakes', w.streamBand(1234, 1088, 2) === 0 && w._bandPend === 0 && !T.nearBandPending);
 w.streamBand(1000, 1088, 2);
 ok('walking back west cancels the pending bake', !T.nearBandPending && w._bandPend === -1);
 

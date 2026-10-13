@@ -246,8 +246,19 @@ export class Terrain {
    * then bakes the missing cells in row slices; `swapNearBand` publishes atomically. A pending bake is replaced.
    */
   beginNearBand(cx0, cy0, cw, ch) {
+    const st = this.newBandState(cx0, cy0, cw, ch, this.near);
+    this._bb = st;
+    return st.b;
+  }
+
+  /**
+   * OB109-B1 (38.58): the back-band state of `beginNearBand`, WITHOUT touching `_bb` / `near`. `src` = band to copy the
+   * overlap from (`terrain.near`, a cached bundle's near, or null = bake every cell; per-cell pure so bytes are identical).
+   * Drive it with `stepBandState`, finish with `finishBandState`.
+   */
+  newBandState(cx0, cy0, cw, ch, src) {
     if (!Number.isInteger(cw) || !Number.isInteger(ch) || cw < 1 || ch < 1 || cw > 6 || ch > 6) throw new Error(`beginNearBand: cw/ch must be integers 1..6 (got ${cw}x${ch})`);
-    const cur = this.near, n = this.chunkSize / this.nearCell;
+    const cur = src || null, n = this.chunkSize / this.nearCell;
     const w = cw * n, h = ch * n, x0 = cx0 * this.chunkSize, y0 = cy0 * this.chunkSize;
     const HC = cur ? cur.height.constructor : Float32Array, TC = cur ? cur.type.constructor : Uint8Array, DC = cur ? cur.hDraw.constructor : Float32Array;
     const b = { x0, y0, w, h, cell: this.nearCell, height: new HC(w * h), type: new TC(w * h), hDraw: new DC(w * h), minH: 0, maxH: 0, version: 0 };
@@ -269,8 +280,7 @@ export class Terrain {
         }
       } else { ox0 = ox1 = oy0 = oy1 = 0; }
     }
-    this._bb = { b, ox0, ox1, oy0, oy1, row: 0, side: 0, ready: false, mn, mx, canopy: can, fid, cx0, cy0, cw, ch };
-    return b;
+    return { b, ox0, ox1, oy0, oy1, row: 0, side: 0, ready: false, mn, mx, canopy: can, fid, cx0, cy0, cw, ch };
   }
 
   /** True while a back band is baking or waiting to be swapped. */
@@ -286,6 +296,11 @@ export class Terrain {
   nearBandStep(msBudget) {
     const st = this._bb;
     if (!st) return false;
+    return this.stepBandState(st, msBudget);
+  }
+
+  /** OB109-B1: `nearBandStep` for an explicit state (see `newBandState`). */
+  stepBandState(st, msBudget) {
     if (st.ready) return true;
     this._bindEdits();
     const b = st.b, w = b.w, h = b.h, cell = b.cell;
@@ -319,10 +334,24 @@ export class Terrain {
   swapNearBand() {
     const st = this._bb;
     if (!st || !st.ready) throw new Error('swapNearBand: no finished back band');
+    const b = this.finishBandState(st);
+    this.publishBand(b);
+    this._bb = null;
+    return b;
+  }
+
+  /** OB109-B1: finalises a finished state's bounds and returns its band (version 0 until published). */
+  finishBandState(st) {
+    if (!st.ready) throw new Error('finishBandState: band not ready');
     const b = st.b;
-    b.minH = st.mn; b.maxH = st.mx; // AUD-31: accumulated in beginNearBand/nearBandStep (no full pass here)
+    b.minH = st.mn; b.maxH = st.mx; // AUD-31: accumulated in newBandState/stepBandState (no full pass here)
+    return b;
+  }
+
+  /** OB109-B2 (38.58): makes a finished (possibly cached) band `near`; version = old + 1 (the only change a cached band ever gets). */
+  publishBand(b) {
     b.version = (this.near ? this.near.version : 0) + 1;
-    this.near = b; this.nearReady = true; this._bb = null;
+    this.near = b; this.nearReady = true;
     return b;
   }
 
@@ -337,6 +366,7 @@ export class Terrain {
    * @returns {{i0:number,j0:number,i1:number,j1:number}|null} the near dirty rect (band-local) or null
    */
   rebakeRect(x0, y0, x1, y1) {
+    if (this.onRebake) this.onRebake(x0, y0, x1, y1); // OB109-B2: World drops overlapping cached bands
     this._bindEdits();
     const eps = (this.recipe.recipe && this.recipe.recipe.slopeEps) || this.nearCell;
     const g = this.near;
