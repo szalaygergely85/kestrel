@@ -17,7 +17,8 @@ assert.strictEqual(summarizeCompilation('z', undefined).errors, 0);
 // present WGSL string rules (38.5): no raw %, no round/dpdx/fwidth/frag_depth, entry points + bindings per 38.8a
 for (const m of WGSL_MODULES) {
   assert.ok(!/[^%]%[^%]/.test(m.code.replace(/%%/g, '')) || m.name === 'common', `${m.name}: raw %`);
-  assert.ok(!/\bround\s*\(|dpdx|dpdy|fwidth|frag_depth/.test(m.code), `${m.name}: forbidden builtin`);
+  // R6c (38.60 items 5/7): the card fragment writes the depth of the texel-shifted point (rule 6) = the only frag_depth user (architect to ratify)
+  assert.ok(!/\bround\s*\(|dpdx|dpdy|fwidth/.test(m.code) && (m.name === 'impostorCard' || !/frag_depth/.test(m.code)), `${m.name}: forbidden builtin`);
 }
 assert.ok(/fn vs_main/.test(PRESENT_WGSL) && /fn fs_main/.test(PRESENT_WGSL));
 assert.ok(/@group\(0\) @binding\(3\) var uAtlasSampler: sampler/.test(PRESENT_WGSL), 'sampler at binding textures.length + 0');

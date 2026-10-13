@@ -535,6 +535,7 @@ export class InstanceGroups {
         // ALPHA-01f (b): ONE_PART collapses instancedRanges() to one synthetic whole-mesh range (rasterJS.js rasterInstanced's
         // `onePart` guard then drops per-range masking) - only opaque-only groups get it; a masked group keeps its real
         // mesh.ranges so passRaster.js's instanced-masked draw sees each range's mask rect (JS-twin parity, ALPHA-01f a).
+        if (g.cardCount > 0 && g.imp) list.addCards(g.cardIb, g.cardCount, g.imp, this.eye); // R6c: card bucket (opt-in species only)
         if (g.drawCount[0] > 0) { const it = list.addInstances(draw, g.parts, g.drawIb[0], g.drawCount[0], g._R); if (it && !meshIsMasked(g.mesh)) it.flags |= DRAW_FLAG_ONE_PART; }
         if (draw1 && g.drawCount[1] > 0) {
           const it1 = list.addInstances(draw1, g.parts, g.drawIb[1], g.drawCount[1], g._R);
