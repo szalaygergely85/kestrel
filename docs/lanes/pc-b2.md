@@ -869,3 +869,7 @@ New `tools/verify-wm-regions.mjs <port>` (10 stills -> docs/test-reports/wm-regi
 - content/quests/regions/pack.json (10 errands sq.reg.<region>, giver = relay_<region>, requires flag waystone.ws_<region>.woken; kill kind boar/wolf/bear by REGION_RULES, strand = deliver 5 arrows to relay_downs), 10 relay sites in sites.json, pack in index.json; test game/js/quest/regionErrands.test.js (91 pass; lists 20 NEEDS WRITER title/journal keys). quest-sim, validate-content OK.
 - NEEDS B1-main: check relay wake sets quest flag waystone.ws_<region>.woken via questFlag (the errands gate on it); relay inspect -> book.inspect for relay_<region> givers (errands.js relayEnt path).
 - -> po-review
+### WMP-03 region ambient life (kestrel-3)
+- New game/js/quest/regionAmbient.js (not quest/ambient.js = motes) + test + content/life/regionAmbient.json (9 regions): regionIdAt at 1 Hz, 1 s linear cross-fade of species spawn-cap multipliers (def.species[i].cap, exact base at mul 1) + cue volumes via onCue; no-entry region identical (pinned); 0 alloc (limit 20 KB kept; steady-state window; the earlier ~24 KB was a constant one-off JIT cost, same at 20k..2M steps, no per-step alloc); suites ambient,wild,region,audio 12/12 PASS.
+- NEEDS AUDIO: birdsong, insects, windLoop (no such cue ids exist; only burnerCrackle/breachWind do) - silent until added. NEEDS B1-main: call ra.step(dt,px,py) after wild.step with createRegionAmbient({regions: geo.regions, table, species: wild.fauna def.species, knownCues, onCue}).
+- -> po-review + owner listen
