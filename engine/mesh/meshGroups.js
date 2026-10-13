@@ -309,7 +309,7 @@ export class MeshGroupSet {
     for (let k = 0; k < G; k++) {
       const g = this.groups[k], w = g.drawCount[0];
       if (w <= 0 || (live > budget && !take[k])) continue;
-      const it = list.addInstances(g.draw, g.parts, g.drawIb[0], w, g._R);
+      const it = list.addGroupInstances(g.draw, g, g.drawIb[0], w);
       if (it) it.flags |= (g.masked ? 0 : DRAW_FLAG_ONE_PART) | (g.open ? DRAW_FLAG_NO_CULL : 0);
     }
     this.stats.kept = kept - instDropped;

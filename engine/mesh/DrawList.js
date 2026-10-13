@@ -166,6 +166,8 @@ export class DrawList {
     /** OB-043: instances summed over this frame's DRAW_INSTANCED items, and instances refused past MAX_LIST_INSTANCES. */
     this.instTotal = 0;
     this.instDropped = 0;
+    /** radius handed to `_addInstancesCore` (double field, see `addGroupInstances`) */
+    this._instR = 0.5;
     /** OB-043: true = throw on overflow (tests / dev probes); false (default, the game path) = degrade: drop + count. */
     this.strict = false;
     /** @type {DrawItem} scratch target of refused pushes (never in `items`, never drawn) */
@@ -206,6 +208,21 @@ export class DrawList {
    * @returns {DrawItem|null} null when count <= 0, the list is full or the item would pass MAX_LIST_INSTANCES (OB-043: counted, not drawn)
    */
   addInstances(mesh, parts, ib, count, Rin) {
+    this._instR = Rin !== undefined ? Rin : (count > 0 ? groupRadius(mesh, parts) : 0);
+    return this._addInstancesCore(mesh, parts, ib, count);
+  }
+
+  /**
+   * `addInstances` for a group object `g` (`g.parts`, `g._R`): the radius travels through the list's `_instR` field, not as a
+   * double argument (a non-inlined call boxes a double arg = 16 B per call; GATE-FLAKY-02a). Zero allocation.
+   * @returns {DrawItem|null}
+   */
+  addGroupInstances(mesh, g, ib, count) {
+    this._instR = g._R;
+    return this._addInstancesCore(mesh, g.parts, ib, count);
+  }
+
+  _addInstancesCore(mesh, parts, ib, count) {
     if (count <= 0) return null;
     if (count > ib.capacity) throw new Error(`DrawList.addInstances: count ${count} > buffer capacity ${ib.capacity}`);
     if (this.instTotal + count > MAX_LIST_INSTANCES) { if (this.strict) throw new Error(`DrawList.addInstances: over ${MAX_LIST_INSTANCES} instances`); this.instDropped += count; return null; }
@@ -219,7 +236,7 @@ export class DrawList {
     // RE-15a (28.13 point 2): factored into instances.js's `groupRadius` so
     // the per-instance cull (InstanceGroups.addToDrawList) shares this exact
     // computation instead of redoing it.
-    const R = Rin !== undefined ? Rin : groupRadius(mesh, parts);
+    const R = this._instR;
     const f = ib.f32;
     let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
     for (let i = 0; i < count; i++) {
