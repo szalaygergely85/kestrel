@@ -7,7 +7,7 @@ import { makeGrid, zoneAt, zoneId, best as bandBest, pick as bandPick, marginX a
 import { loadLevel, isTerrainFloor } from './Level.js';
 import { Terrain } from './Terrain.js';
 import { BandBakeJob, buildNavTile, NavTileFill } from './bandBake.js';
-import { BandCache, bundleBytes } from './bandCache.js';
+import { BandCache } from './bandCache.js';
 import { aheadOrder, bestOverlap } from './bandAhead.js';
 import { validateCarpetConfig, buildCarpetClassMap, buildCarpetMask, CarpetMaskJob } from './carpet.js';
 import { scatterTrees, scatterDetail, TreeScatterJob, DetailScatterJob } from './scatter.js';
@@ -1290,12 +1290,13 @@ export class World {
    */
   bakeAhead(px, py, msBudget) {
     const g = this.terrainGrid;
+    this.bandCache.setFocus(px, py);
     if (!g || this._bandCur < 0 || this._bandPend >= 0 || !(msBudget > 0)) return !!this._ahead;
     if (this._navQ && (this._navFill || this._navQ.length) && !this._ahead) { // pending nav tiles of pre-setNavTiles bundles: idle slices before new bake-ahead jobs
       if (!this._navFill) { const c = this._navQ.pop(); if (c.nav || !c.near) return true; this._navFill = new NavTileFill(this, c); }
       if (this._navFill.step(Math.max(0.2, msBudget - 0.4))) {
         const c = this._navFill.bundle; this._navFill = null;
-        if (this.bandCache.map.get(c.key) === c) { const nb = bundleBytes(c); this.bandCache.bytes += nb - c.bytes; c.bytes = nb; } // keep the cache byte count honest
+        this.bandCache.regrow(c, this._bandKey(this._bandCur), this._bandPend >= 0 ? this._bandKey(this._bandPend) : null); // WM-CACHE-01: recount + trim under the cap
       }
       return true;
     }
@@ -1423,6 +1424,7 @@ export class World {
    * Zero allocation while idle.
    */
   streamBand(px, py, msBudget) {
+    this.bandCache.setFocus(px, py);
     const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
     const r = this._streamBandCore(px, py, msBudget);
     if (r === 0 && this.terrainGrid) { // WM-02: idle -> bake-ahead with the leftover budget

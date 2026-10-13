@@ -14,11 +14,25 @@ function sumBytes(o, depth = 0, seen = new Set()) {
 }
 export const bundleBytes = (b) => sumBytes(b.near) + sumBytes(b.scatter) + sumBytes(b.detail) + sumBytes(b.trunks) + sumBytes(b.detailCol) + sumBytes(b.nav) + (b.classMap ? b.classMap.byteLength : 0);
 
+/** Squared distance from a bundle's zone centre (near rect) to a point. */
+function zoneDist2(b, x, y) {
+  const g = b.near, dx = g.x0 + g.w * g.cell * 0.5 - x, dy = g.y0 + g.h * g.cell * 0.5 - y;
+  return dx * dx + dy * dy;
+}
+
 export class BandCache {
   constructor({ maxBytes = 24 * 1048576 } = {}) {
     this.maxBytes = maxBytes; this.map = new Map(); this.tick = 0;
     this._stats = { entries: 0, bytes: 0, hits: 0, misses: 0, bakes: 0, evictions: 0 };
     this.bytes = 0;
+    this.focusX = NaN; this.focusY = NaN; // player position: eviction drops the zone whose centre is farthest from it
+  }
+  setFocus(x, y) { this.focusX = x; this.focusY = y; }
+  /** After a bundle grew outside put() (nav tiles): re-count its bytes and trim back under the cap. */
+  regrow(b, keep1, keep2) {
+    if (this.map.get(b.key) !== b) return;
+    const nb = bundleBytes(b); this.bytes += nb - b.bytes; b.bytes = nb;
+    this.evict(keep1, keep2, b.key);
   }
   /** Bundle or null; counts a hit/miss and refreshes LRU. */
   get(key) {
@@ -40,9 +54,14 @@ export class BandCache {
   pin(key, on) { const b = this.map.get(key); if (b) b.pinned = !!on; }
   /** Evicts least-recently-used unpinned entries until under the cap; never `keep1` / `keep2` / `keep3` (current / pending / newest). */
   evict(keep1, keep2, keep3) {
+    const fx = this.focusX, fy = this.focusY, far = fx === fx && fy === fy; // WM-CACHE-01: NaN focus -> plain LRU
     while (this.bytes > this.maxBytes) {
-      let victim = null;
-      for (const b of this.map.values()) if (!b.pinned && b.key !== keep1 && b.key !== keep2 && b.key !== keep3 && (!victim || b.lastUse < victim.lastUse)) victim = b;
+      let victim = null, vd = -1;
+      for (const b of this.map.values()) {
+        if (b.pinned || b.key === keep1 || b.key === keep2 || b.key === keep3) continue;
+        if (far) { const d = zoneDist2(b, fx, fy); if (d > vd) { vd = d; victim = b; } }
+        else if (!victim || b.lastUse < victim.lastUse) victim = b;
+      }
       if (!victim) break;
       this.map.delete(victim.key); this.bytes -= victim.bytes; this._stats.evictions++;
     }
