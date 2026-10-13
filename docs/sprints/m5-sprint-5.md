@@ -46,12 +46,13 @@ Files: `game/js/quest/seaEdge.js` + test.
 
 ## C. Waits on the architect (ARCH-NOTE NEEDED; do not design here)
 
-- **SWIM-01 (engine, ARCH-NOTE NEEDED, opus):** note covering the player swim state in the controller (`engine/physics`, keep stand-alone), a water depth query, and the underwater look for diving (render). Ends: note only.
-- **SWIM-03 Swim on the surface** (engine -> arch-review) [kestrel-1/2 by file]: enter/leave water, buoyant move, gear stowed, free crossing of the river at any level. Needs SWIM-01.
-- **SWIM-04 Dive** (engine -> arch-review): dive/surface input, depth clamp, underwater tint + fog, bottom chests. Needs SWIM-01, SWIM-03.
-- **SWIM-05 Stamina ring wiring** (-> po-review): HUD ring + SWIM-02 into the controller. Needs SWIM-03.
-- **SWIM-06b Sea monster** (-> po-review): warn-band shape, rise + strike, death screen "drowned/eaten". Needs SWIM-06a, SWIM-05, designer model.
-- **OB-104b Glasswater outlet-notch cliff** (engine/world -> arch-review, ARCH-NOTE NEEDED): ~17 m vertical terrain with smeared ground texture. Options for the note: rock material on steep slopes (general) vs a gentler notch in the terrain data (local). ACs after the note: no smeared texture on slopes > 60 degrees; notch still blocks/permits the route as designed.
+- **SWIM-01 (engine) - NOTE DONE:** architecture.md 38.54 (PC-B architect opus 2026-10-13, owner-authorised, PC-A to ratify). Water fed to the body as `waterZ`/`waterFloorZ` (physics stays stand-alone), swim in/out 1.15/0.95 m, float lock, climb-out, dive, reduced 35.6 under look (one shade function, both twins), sea monster, gear stowed. Deep-water wall + `wadeRescue` removed.
+- **SWIM-03 Swim on the surface** -> steps **SWIM-03a** (engine/physics `swim.js` + integrate branch, k2) -> **SWIM-03b** (game `swimFeed.js` + wading/vitals changes, k3) -> **SWIM-03c** (main.js wiring, gear stowed, k1). ACs: 38.54 step table.
+- **SWIM-04 Dive** -> **SWIM-04a** (engine/physics dive + `controls.swimUp`, k2) -> **SWIM-04b** (engine/render `underwater.js` JS twin, k4) -> **SWIM-04c** (WGSL twin + ShadeU append + gpucompare `underwaterLake`, k4) -> **SWIM-04d** (dive key + bottom chests, k1). Needs SWIM-03a.
+- **SWIM-05 Stamina ring wiring** (k3 + k1 hook): SWIM-02 driven from `body.swimming/diving`, `vitals.kill(cause)` + `deathCause`, HUD ring. Needs SWIM-03b. ACs: 38.54.
+- **SWIM-06b Sea monster** (k2 + k1 hook): `seaMonster.js` (hidden/circle/rise/strike, 4 Hz `seaEdgeState`), designer model `seaMonster` + clips. Needs SWIM-06a, SWIM-05. ACs: 38.54.
+- **OB-104b Glasswater outlet-notch cliff - NOTE DONE:** architecture.md 38.55. Chosen: rock look on steep faces (N.z < 0.5, non-forest types) with biplanar (along-wall, z) noise, in both twins; notch shape unchanged. Steps **OB-104b1** (JS twin, k4, 0.5 d) -> **OB-104b2** (WGSL + gpucompare pose `lakeEdge`, k4, 0.5 d).
+- **EP-LIFE (D-071) - NOTE DONE:** architecture.md 38.56. Steps: **LIFE-01** (engine/nav path reuse, k4) -> **LIFE-02** (schedule, k3) -> **LIFE-03** (mover + villagers + LOD, k3) -> **LIFE-04** (main.js, k1); **LIFE-05** (NPC chat + barks repeat, k2); **LIFE-06** (engine/fauna predator-prey, k4) -> **LIFE-07** (beastSim hunt/eat, k2); **LIFE-08** (raids + beastSim goal/alt targets, k3) -> **LIFE-09** (defend-the-farm quest, content, k4); **LIFE-10** (bench-life, k2). PO writes rows from the 38.56 table.
 - **US-055 floating props** (engine -> arch-review, ARCH-NOTE NEEDED): water splash + props that float; follows SWIM-03.
 - **STREAM-02+ (streaming steps 2 and later)** (engine -> arch-review, ARCH-NOTE NEEDED): waits on OB-073 and the architect note; a 5th-agent architect may write it now.
 

@@ -6162,3 +6162,234 @@ With 1-4 fixed (probe, the same image by construction): steps **28.3 -> 5.3** (m
   - Owner walk-check at the tower meadow: grass reads out to the radius, no ring, no shimmer (`capture-browser --mode flicker --walk` <= the TUFT-01 baseline + 2 pp).
 **OB-103b (PC-B, game + content, <= 0.5 d, after the owner's preset answer):** the `carpet` knob in gfx-presets.json + `gfxPresets.js` validation + main.js wiring (`setCarpetQuality` on boot and on settings change, <= 8 lines), and the optional F3 field `carpet r R m d D`. Tests: `gfxPresets.test.js` (an invalid knob is rejected), `settings.test.js`, a bench per preset.
 **Do not:** fade on footprint again; scale lattice cells by distance; hard-code preset values in `engine/`; widen gpucompare thresholds.
+
+### 38.54 SWIM-01 swimming + diving (D-070) (PC-B architect opus 2026-10-13, owner-authorised, PC-A to ratify)
+Note number: 38.53 was already taken (FB-01), so SWIM-01 is 38.54. This note supersedes the "no swimming / deep = wall" lines in 38.43, 38.45 (3)+(5) and 35.7 (D-070 corrects the D-064 record).
+
+**Decisions**
+1. **Swim lives in `engine/physics`** as a new branch of `integrate`, in the new file `engine/physics/swim.js` (it imports only `engine/physics/**`, as the 27.10 rule requires). Physics never calls `waterAt`. The game feeds the water as plain numbers on the body before `integrate`, the same way it feeds `pushX` today:
+   - `body.waterZ`: the live surface z, or `NaN` when there is no water;
+   - `body.waterFloorZ`: the floor under the water at (x, y), from `waterAt(...).surfaceZ - depth`.
+   The game side is `game/js/quest/sim/swimFeed.js`. It handles every region kind (rect / circle / river), not only rivers.
+2. **Depth thresholds**, measured from the feet: `imm = waterZ - floorZ` at the body's (x, y).
+   - Wading as now: `imm <= wadeMax 1.0` (the RIVER-01b slow + push stay).
+   - **Enter swim** when `imm > swimIn 1.15`.
+   - **Leave swim** when `imm < swimOut 0.95` **and** the floor is within `stepUpMax` of the feet. The hysteresis means a bank edge cannot flicker.
+   - The wading deep-wall (`wading.after`) is **deleted**. `wading.before` stays for imm <= 1.0 and skips itself when `body.swimming`.
+3. **Surface lock + buoyancy.** At the surface the feet sit at `floatZ = waterZ - floatDepth 1.25`, so the eye (1.6) is 0.35 m above the water.
+   - Vertical uses a critically damped approach: `vz = (floatZ - z) * buoyK 6`, clamped to +-`buoyMaxV 2.5` m/s. There is no gravity while swimming.
+   - The waves move `waterZ`, so bobbing comes for free (35.7 143c).
+   - A fall into deep water: on the step where `swimming` turns on, `vz *= 0.3`, `fallDistance = 0` and `landed = false`. So there is no fall damage into water.
+4. **Horizontal speed.** The step 3 accel code is reused, with `targetSpeed = (run ? swimFast 2.6 : swimSpeed 1.8) * speedScale` and the accel time x2 (it feels floaty).
+   - The current is the existing `pushX/Y`: `swimFeed` sets it to `flow * 0.7`, capped at 3 m/s, the same as wading at k = 1.
+   - The horizontal collide is unchanged (moveCircle / mesh capsule).
+   - No jump while swimming. `controls.jump` is the "rise" input instead.
+5. **Climb-out.** While surfaced, if the floor at the new (x, y) is above the feet by more than `stepUpMax`:
+   - if `floorH <= waterZ + climbOut 0.9`, put the body on the ledge (`z = floorH`, grounded, swimming off, `body.climbedOut = true` for one step: the anim and splash hook);
+   - else revert x/y to prev (a wall).
+   This covers the Glasswater shelf (surface + 0.8) and the river banks.
+6. **Diving** (SWIM-04a). New control `controls.swimUp`, in -1..1 (game: Space = +1, dive key = -1; see the owner question).
+   - Under the surface, `vz` approaches `swimUp * diveSpeed 1.6` (accel 4 m/s^2).
+   - With no input: `vz` approaches `+buoyRise 0.5` (a slow float up).
+   - Clamps: `z >= waterFloorZ` (the body rests on the bottom, still swimming, `body.onBottom = true` so chests can be opened) and `z <= floatZ`, where it snaps back to the surface lock. The ceiling clamp stays as in step 5.
+   - `body.diving = eyeZ < waterZ - 0.05`; it turns off at `eyeZ > waterZ + 0.05` (the same hysteresis as the 35.6 under state).
+7. **New body fields**, all created by `ensureScratch`:
+   - `swimming`, `diving`, `onBottom`, `climbedOut`: booleans, outputs;
+   - `waterZ`, `waterFloorZ`: inputs, `NaN` by default.
+   - With `waterZ` NaN the old path runs bit-identical, so every existing physics test is unchanged.
+   - Tuning lives in `PHYSICS.swim = {swimIn, swimOut, floatDepth, buoyK, buoyMaxV, swimSpeed, swimFast, diveSpeed, buoyRise, climbOut}` in `config.js`.
+   - The body state is plain numbers. Save: the game saves the player pose as now. A load inside water re-enters swim on the first step, because the water feed is live.
+8. **Gear stowed** (game, D-070 assumption). While `swimming`, main.js passes `gateOpen = false` to `hands.step` and calls `hands.disarm()` on entry. The held-item views (gearLook / handFireView / bow) hide on `body.swimming`. Worn armour stays visible. Fireball, bow and sword are unavailable while swimming.
+9. **Vitals.**
+   - The void rule skips while `body.swimming`.
+   - `wadeRescue` is removed, because a deep spawn now just swims.
+   - New `vitals.kill(cause)` and `sim.deathCause` (`'drown' | 'eaten' | ...`): the death card picks its line from the cause (NEEDS WRITER keys `death.drown`, `death.eaten`).
+   - SWIM-02 `stepStamina` is driven with `{swimming, diving}` from the body. Its `onDamage` hook calls `vitals.applyDamage(n)` and returns `vitals.dead`, so the module's own `hearts` is not used in the game.
+   - Stamina is not saved (it refills on land), and it resets on respawn.
+
+**Underwater look (SWIM-04b/c): the cheapest path on WebGPU + JS twin.** This is a reduced 35.6 that replaces 144a1 for v1.
+- **One function, two twins:** `engine/render/underwater.js` exports `underShade(rgbFg, rgbBg, glyph, L, Pz, Px, Py, nz, timeSec, U, out)` (JS) and `UNDER_WGSL` (the same maths as a string, the fogShape.js pattern).
+  - It runs once per cell at the **end** of the shade pass (every kind: terrain, mesh, sky, water), in passShade (WGSL) and the CPU compositor shade.
+  - It is gated by `U.on`, so it costs 0 when the eye is dry.
+- **State (CPU, per frame, presentation only):**
+  - `world.waterAt(eye)`; on when `eyeZ < surfaceZ - 0.05 && depth >= 0.3`, off when `eyeZ > surfaceZ + 0.05`.
+  - The result goes into two **appended** ShadeU fields: `under: vec4(on, waterZ, fogM, causticK)` and `underTint: vec4(rgb, swapAt)`. Never retype the existing fields.
+  - The look values come from the eye region's water look (`look.under = {tint, fogM 12, swapAt 0.5, ceil, caustic 0.35}`; content default in the water look table).
+- **Maths** (no `exp`, the 32.6 parity rule):
+  1. `s = min(1, L / fogM)`, `f = s * (2 - s)`.
+  2. `fg = mix(fg, tint * (ambient + sunI * 0.5), f)`; `bg = mix(bg, tint * 0.35, f)`.
+  3. Glyph: if `f >= swapAt`, glyph = `bubbleRamp[floor(lum * 4)]` (`" .:o"` style, designer data).
+  4. **Ceiling:** a sky cell, or `Pz >= waterZ - 0.02`, gets fg = `ceil` colour, glyph from `"~-~="` by `hash(floor(Px*2), floor(Py*2), floor(t*2)) & 3`, then the same fog over L.
+  5. **Caustics:** on cells with `Pz < waterZ`, `nz > 0.6` and `L < 10`: if `hash(floor(Px/0.7), floor(Py/0.7), floor(t*3)) > 1 - causticK`, the glyph is `'~'` or `'*'` (hash bit) and `fg += causticCol * (1 - f)`.
+  6. Hash = the existing `hashFastU` twin (exact in f32 on the lattice).
+- **Sprites + particles:** the CPU colour gets `underFogK(L, U)` from the same file (the 35.6 144a2 rule). Edges are suppressed where `f >= swapAt`.
+- **No** light shafts, no Snell window, no refraction, no new pass, no new texture.
+- **Budget:** <= 0.05 ms GPU at 480x180 when under, and 0 when dry. JS twin <= 0.6 ms (fallback only).
+- **gpucompare row `underwaterLake`:** eye at Glasswater pond (1235, 505), feet at -61.5 (eye about 1.9 m under the -58 surface), yaw 0, pitch -10 and +25, t fixed 10 s. Thresholds are the standard ones, never widened.
+
+**Sea monster edge (SWIM-06b, game only).**
+- The trigger is `seaEdge.js` (SWIM-06a). The shore is built once from world_geo coast data at load.
+- Call `seaEdgeState` at 4 Hz (every 15th step), and only while `body.swimming` and inside the sea region (`waterAt(...).region === 'sea'`).
+- `game/js/quest/seaMonster.js` is a 4-state machine with integer step timers and no `Math.random`:
+  - `hidden` -> `circle`: warn band. The monster entity orbits the spawn point at 10-14 m from the player and 0.6 rad/s, with z = `surfaceZ - 1.0` so only the back/fin shows above the sheet. A ripple ring (engine/fx/ripples) every 0.5 s at its head. Writer warning sign at the strand: NEEDS WRITER.
+  - `circle` -> `rise`: kill band. It moves to 3 m in front of the player and rises to `surfaceZ + 1.5` over 0.8 s (clip `rise`).
+  - `strike` at 0.6 s: `vitals.kill('eaten')`. The death screen and the normal respawn follow; the owner allows this lock (D-064 menus/death).
+  - Back in the safe band, or on respawn: `hidden` again (entity parked at HIDE_Z, collider none).
+- **Model:** one voxel/mesh entity `seaMonster` (designer: model + clips `circle`, `rise`, `strike`), placed once in the world data and parked. It is drawn by the normal entity path. The dark read in the circle state uses the 38.23 entity tint (rgb dark, k 0.6). It is not a beast (no beastSim slot), and it cannot be targeted or hit.
+
+**Steps** (build in this order; each <= 1 d; Node first, ONE browser pass at the end)
+
+| Step | Track / slot | What | Node ACs |
+|---|---|---|---|
+| **SWIM-03a** | engine/physics, k2 | `swim.js` + the `integrate` branch (items 2-5, 7) + `PHYSICS.swim` | New `engine/physics/swim.test.js`: (1) `waterZ` NaN gives a bit-identical hash vs today on the `physics.test` + `jump.test` fixtures. (2) Walking into a 3 m deep basin: swimming turns on at imm > 1.15, and feet settle at `waterZ - 1.25` +-0.02 within 1 s. (3) A 10 m fall into water: no `landed`, fallDistance 0. (4) A shelf edge 0.8 above the surface climbs out; 1.2 above is a wall. (5) The current pushes at 0.7 x flow. (6) Swim 1.8 / fast 2.6 m/s +-2 %. (7) 0 alloc (gc probe, 10k steps). (8) `check-deps` green (physics stand-alone). |
+| **SWIM-03b** | game, k3 | `swimFeed.js` (water -> body fields + current) + the wading changes (item 2) + vitals (item 9 void/rescue) | `swimFeed.test.js` + updated `wading.test` / `wadingWired.test`: crossing the deepest river reach and the Glasswater pond end to end on the real world data with a scripted stick, no wall, no rescue, out on the far bank. The rect sea region feeds too. |
+| **SWIM-03c** | game, **k1** (main.js) | Wiring <= 25 lines: the feed before integrate, `hands` gate + disarm, gear views hidden, swim/tread clip pick (placeholder = the idle clip until the designer clips land) | `wadingWired.test` / a main-wiring test where the repo has one. Browser: walk into Glasswater, swim, climb out. |
+| **SWIM-04a** | engine/physics, k2 | Dive (item 6) + `controls.swimUp` | `swim.test.js`: dive to the 10 m bottom, `onBottom`, rise on release, the diving hysteresis, ceiling clamp, 0 alloc. |
+| **SWIM-04b** | engine/render JS, k4 | `underwater.js` JS twin + `underFogK` + the under state in the compositor | `underwater.test.js`: f ramp values, glyph swap at swapAt, ceiling on sky / Pz >= waterZ, caustic hash determinism, no-op when `on = 0` (golden frame unchanged). 0 alloc. |
+| **SWIM-04c** | engine/render GPU, k4 | `UNDER_WGSL` in passShade + the appended ShadeU fields + the gpucompare row | `shade.wgsl` constant/layout test (append only); JS == GPU on the `underwaterLake` pose; old poses: 0 rows changed. `?gpucompare=1` run by the main session. |
+| **SWIM-04d** | game, k1 | Dive key + the bottom-chest data (existing chest.js, z on the bed) + under-state sound mute hook (none if no audio bus) | `chest.test`: open at `onBottom`. |
+| **SWIM-05** | game, k3 + k1 hook | Stamina wiring (item 9) + the HUD ring (existing vitals HUD style) + `vitals.kill` / `deathCause` | `stamina` wired test: 12 s swim -> drown ticks -> death cause `drown`; refill on land; reset on respawn. |
+| **SWIM-06b** | game, k2 + k1 hook | `seaMonster.js` + the designer model | `seaMonster.test.js`: a scripted swim out (safe -> circle -> rise -> strike -> `deathCause 'eaten'`), back inside -> hidden, respawn -> hidden, 4 Hz check, 0 alloc per step. |
+
+**Do not:** let physics call `waterAt` or import `engine/world`; keep the deep-water wall or `wadeRescue`; add gravity while swimming; save stamina; use `exp` / `Math.random` in the under shade; add a new render pass or texture for the under look; retype ShadeU fields (append only); make the monster a beastSim slot or hittable; put a hard invisible wall at the sea edge (the monster is the boundary).
+
+### 38.55 OB-104b Glasswater outlet-notch cliff (PC-B architect opus 2026-10-13, owner-authorised, PC-A to ratify)
+**Cause.**
+- At (1237, 600-606) the river poly drops 17 m in 2 m (`[603, -60.2] -> [605, -77]`, the `braidFalls` lip).
+- The terrain type there comes from the grid type map (world_geo `slope > 0.9 -> rock`, evaluated at grid resolution). It stays grass/path on the narrow notch.
+- `shadeTerrain` keys its noise on the world (u, v) = (x, y). On a near-vertical face every cell in a column gets the same (u, v), so the ground texture smears into vertical stripes.
+- With D-070 the player can now swim up to the plunge pool, so the spot is reachable.
+
+**Chosen approach (one): rock look on steep faces, at shade time, in both twins.**
+- Reshaping the notch would kill the waterfall, and rock meshes would only fix this one site. This fix is general: every cliff gets it (Shearcliffs, Whitecombs, the bowl wall).
+- In `shadeTerrain` (JS `engine/render/terrainShade.js`, WGSL `shade.wgsl.js`), before the TLOOK lookup:
+  - if the cell normal `N.z < CLIFF_NZ 0.5` (60 degrees) **and** the type has no forest-face glyphs (TLOOK row 3 `.w == 0`, so ME-06b canopy faces keep working), then:
+    - `type = ctx.cliffType` (the recipe's `rock` id, a uniform; -1 = off);
+    - `(u, v) = (|N.x| > |N.y| ? y : x, z)` (biplanar: the horizontal axis along the wall, plus the height).
+  - `z` is already passed in (MAP-06b `gaT.z`) and the normal is already unpacked for the faceMode check. So the cost is one compare plus two selects per terrain cell: < 0.01 ms GPU, no new data.
+- **The white strip at the wall base** (the waterfall foam sheet edge, OB-045) is out of scope. File it as OB-104c if it still shows after this.
+
+**Steps**
+
+| Step | Track / slot | What | ACs |
+|---|---|---|---|
+| **OB-104b1** | engine/render JS, k4, <= 0.5 d | `CLIFF_NZ` export, `ctx.cliffType` from the recipe type names, the JS twin | `terrainShade.test`: (1) a 70-degree fixture face gives the rock type, and its glyph / colour varies with z (no two vertically adjacent cells share a (u, v)); (2) a 50-degree slope and a forest face are unchanged; (3) the golden terrain frame changes only on cells with `N.z < 0.5` (count logged); 0 alloc. |
+| **OB-104b2** | engine/render GPU, k4, <= 0.5 d | The WGSL twin + the `cliffType` uniform (appended) | `shade.wgsl` layout test; gpucompare: a new pose `lakeEdge` (1237, 606, yaw 0) with JS == GPU; terrain poses re-baselined only where JS == GPU (reason "OB-104b cliff rock"). Owner check at `?pose=lakeEdge`: no vertical stripes on slopes > 60 degrees, waterfall unchanged. |
+
+The route stays as designed: the notch shape and the colliders are unchanged.
+
+**Do not:** edit the river poly or the lake bowl for this; place rock meshes; change the grid type map / world_geo `rock` rule; touch the carpet classMap (grass tufts on cliffs is its own issue if it ever shows); change the forest face mode.
+
+### 38.56 EP-LIFE living world AI (D-071) (PC-B architect opus 2026-10-13, owner-authorised, PC-A to ratify)
+**Layering.**
+- Villagers, chat and raids are **game** code in the new `game/js/life/`.
+- Predator-prey among ambient animals is an **engine/fauna** extension: generic, with no species names in code.
+- Wolves and bears stay in the game beastSim.
+- Everything follows rule 15 of `sim/**`, applied to `game/js/life/**` too: no `Math.random`, no wall clock, no trig in steps, integer step timers, 0 alloc per step. The hashes are `hashFastU(npcIdx, dayIndex, salt)` style.
+
+**(a) Villager schedules** (`game/js/life/schedule.js`, `villagers.js`)
+- **Data** (`content/life/outwall.life.json`; an OUT-02 `ROUTINES` stop is a valid activity):
+  - each NPC: `{id, home: anchor, activities: [{kind: 'sleep'|'work'|'eat'|'walk'|'idle'|'chat', at: anchor | [x, y], from, to, dwell, pose, need?}]}`;
+  - plus `needs: {energy, hunger, social}` start values.
+- **Needs** (0..1) drift per game hour: energy -0.06 awake / +0.15 asleep; hunger +0.08; social +0.05 (-0.4 after a chat).
+- **Choice** (a decision tick every 1 s, staggered by `idx % 60`):
+  - a `sleep` window is forced;
+  - otherwise, among the activities whose window is open, take the highest of `prio + needBonus(kind)`, tie-broken by hash;
+  - `eat` cuts hunger, `chat` cuts social.
+- **Sleep** = walk to the home door anchor, then park (npcWalk's HIDE_Z, collider parked) until the window ends, then reappear at the door.
+- **Movement:** new `game/js/life/npcMover.js` = free-target walking on the existing beast NavGrid (world `nav` block):
+  - `findPath` (maxNodes 1500) + `smoothPath` into a preallocated 32-waypoint buffer + `createPathFollower` reused per NPC (`setPath(buf, n)`: add this reuse API to the engine pathFollow if missing; it is an engine step, k4);
+  - z from `terrain.groundAt`, collider via `world.setEntityCollider`, clips walk/idle/work/talk;
+  - npcWalk's polylines stay for scripted walks (escorts). A scripted walk owns the NPC: schedules pause while `npcWalk.active`.
+- **No save:** the villager state is a pure function of the clock. On load / teleport / > 120 m, each NPC is snapped to its current activity spot (`resolveAt(hour)`), and needs are reset from the hour.
+- The player talk interrupt keeps OUT-02's `setTalking`.
+
+**(b) NPC-NPC chat** (`game/js/life/chat.js`)
+- **Pairing tick:** 1 Hz, O(n^2), n <= 24.
+- **Two NPCs pair** when all of these hold:
+  - both are idle, or dwelling at a stop;
+  - they are within 3 m;
+  - both have `social > 0.5`;
+  - both are off cooldown (90 s);
+  - neither is talking to the player.
+- **Paired:**
+  - both stop and turn to face each other (turn rate 240 deg/s, `yawFromDelta` in the view);
+  - they alternate the `talk` clip every 2.5 s (A, B, A ...);
+  - the length is 8-14 s (hash).
+- **Overheard lines:**
+  - keys `life.chat.<a>.<b>.<n>` with fallback `life.chat.any.<n>` (NEEDS WRITER), in `content/dialogue/life.barks.json`;
+  - shown only when the player is within 8 m, through `barks.js`, which gets a **`repeat: true`** mode (no once-flag, not saved), with a global 6 s gap;
+  - outside 8 m the chat runs silent.
+- The player interacting with either NPC ends the chat.
+
+**(c) Predator-prey in the wild**
+- **engine/fauna (generic):**
+  - species def keys `hunts: [speciesName]`, `huntR`, `chaseMaxS`, `eatS`;
+  - prey def keys `fleeFrom: 'predators'`.
+  - A new ground state `HUNT`:
+    - on the 10 Hz decision tick, the nearest prey slot within `huntR` (linear scan of <= 40 slots, only for predator species) is chased at run speed with the existing feeler steering;
+    - a catch within 0.6 m runs `spawner.despawn(prey, true)` (the cell cooldown) and the predator plays `eat` for `eatS`;
+    - it gives up after `chaseMaxS` or when the prey is > `dist.safe` away.
+  - Prey run the existing flee code with the threat = the nearest predator or player.
+  - **Herds:** on the decision tick a group member > 8 m from its group centroid steers toward it (a per-group centroid, summed once per tick into preallocated arrays).
+  - **New API:**
+    - `fauna.setThreats(n, xs, ys)`: up to 16 external threats (beasts), copied into preallocated arrays;
+    - `fauna.nearestPrey(x, y, r, out)`: returns slot index or -1, plus x/y.
+  - **Kill API:** `fauna.kill(slotIdx)`.
+  - The fox gets `hunts: ['rabbit']` in `wildlifeFx` (designer data, and an `eat` clip or the idle fallback).
+- **beastSim (game):**
+  - Wolves and bears in `STATE_WANDER` with no player notice query `fauna.nearestPrey` every 1 s (staggered), species-filtered (wolf: rabbit + deer; bear: deer).
+  - They chase with a direct steer goal (no A*; the NavGrid still blocks), at most 6 s.
+  - A catch calls `fauna.kill` and enters a new `STATE_EAT` (8 s, which counts as wander for perception, so the player can still interrupt).
+  - main.js passes live beast positions to `fauna.setThreats` each step.
+  - The fauna handle is optional: with `null`, beastSim is bit-identical to today (every existing beastSim test unchanged).
+- **Determinism:** fauna is seeded and runs on the fixed step, and its inputs are the player + camera state. So the coupling is deterministic. It is not saved, which is fine: beasts reset on load as today.
+
+**(d) Wolf pack raids + the defend hook** (`game/js/life/raids.js`)
+- **Data** (`content/life/raids.json`): `{id, pack: [wolf ids], target: anchor ('gooseFarm', 'owEdge'), from: 21, to: 5, chancePerNight: 0.35, requires?: flag, cooldownDays: 2}`.
+- **Start:** at `from` each game night, roll `hash(dayIndex, raidIdx) < chancePerNight`.
+- **Raid behaviour:**
+  - the pack's beastSim slots get a **goal override**: new `sim.setGoal(slot, x, y)` / `clearGoal(slot)`, which uses the existing travel / A* path (TRAVEL_MAX_NODES);
+  - at the target they treat villagers as targets: beastSim gets **alt targets**, `sim.setAltTargets(n, xs, ys)` (<= 8 SoA). It picks the nearer of the player and an alt target for perceive / chase.
+  - A hit on an alt target emits `life:npcHit {npc}`. Villagers never die: they switch to a `flee` activity (run home, park) for the raid.
+- **Ends:**
+  - all pack wolves dead -> flag `life.raid.<id>.defended` + event `life:raid:defended`;
+  - time out at `to` -> `life:raid:lost` (flavour: a goose missing, a writer line) and the wolves go home.
+- **Saved** in `world.state`: `life.raid.<id>.lastDay`, and the `defended` flag. A raid in progress at save is not resumed (it restarts the next night).
+- **Quest:** "Defend the farm" is a template-pipeline quest with a `flag` objective on `life.raid.<id>.defended` (no new objective type). It is the giver's quest (`requires` gates the first raid). An `area` objective leads the player there.
+
+**(e) Simulation budget**
+- **Caps:**
+  - `MAX_VILLAGERS 24`;
+  - <= 1 A* request served per step for all villagers (queue, FIFO), maxNodes 1500;
+  - fauna FAUNA_MAX 40 unchanged; threats <= 16;
+  - beast prey queries <= 4 per step.
+- **LOD by distance to the player:**
+  - **near** (< 60 m, or in view): full 60 Hz movement + clips;
+  - **mid** (60-150 m): movement at 15 Hz (dt x4, the same integrator), no clip update;
+  - **far** (> 150 m): abstract. No movement. Activity changes happen at the decision tick by `resolveAt(hour)` snapping; the entity stays parked or hidden. A chat only pairs in the near band.
+- **ms caps** (Node bench `tools/bench-life.mjs`, 24 villagers + 40 fauna + 32 beasts, worst step):
+  - life <= 0.25 ms mean / 0.6 ms p99;
+  - fauna incl. hunts <= 0.15 ms;
+  - beastSim hunt/raid extras <= 0.1 ms.
+  - Over the cap, lower the mid-band Hz first.
+- **Per step:** 0 alloc (gc probe in each test). Fixed step only; no `performance.now()` in decisions.
+
+**Steps** (each <= 1 d; game unless marked engine; k1 = the only main.js editor)
+
+| Step | Track / slot | What | Node ACs |
+|---|---|---|---|
+| **LIFE-01** | engine/nav, k4 | `pathFollow` `setPath(buf, n)` reuse + a free-target `planPath(grid, astar, sx, sy, gx, gy, outBuf, maxNodes)` helper | `pathFollow.test`, `astar.test` extended; 0 alloc on reuse. |
+| **LIFE-02** | game, k3 | `schedule.js` (needs + choice + `resolveAt`) + the life data format, importing the OUT-02 table | `schedule.test.js`: a 24 h loop per NPC, the sleep window forced, need-driven eat / chat picks, `resolveAt` == the stepped result at 6 hours, determinism (2 runs, same hash). |
+| **LIFE-03** | game, k3 | `npcMover.js` + `villagers.js` (sleep park, LOD bands, A* queue) | `villagers.test.js` on the real world nav: 5 Outwall NPCs over a game day, no position inside a collider, <= 1 A* per step, the LOD snap, 0 alloc, bench row. |
+| **LIFE-04** | game, k1 | main.js wiring (<= 20 lines; replaces the OUT-02 spawn hook) | Browser pass at Outwall day / night. |
+| **LIFE-05** | game, k2 | `chat.js` + `barks.js` `repeat` mode + the writer key table | `chat.test.js`: pairing rules, facing, clip alternation, cooldown, the 8 m bark gate, the 6 s gap, player interrupt; `barks.test` repeat mode not saved. |
+| **LIFE-06** | engine/fauna, k4 | `hunts` / HUNT state, `setThreats`, `nearestPrey`, `kill`, herd cohesion | `groundBrain.test` + `faunaDef.test`: fox catches a scripted rabbit, the rabbit flees a predator, the give-up timer, a herd regroups, threats flee; old fixtures unchanged without `hunts`; 0 alloc; check-deps rule 19 green. |
+| **LIFE-07** | game, k2 | beastSim `STATE_EAT` + the prey query + fox data / designer `eat` clip | `beastSim.test`: wolf hunts and eats a deer, the player notice preempts; `null` fauna is bit-identical on all old tests. |
+| **LIFE-08** | game, k3 | beastSim `setGoal` / `setAltTargets` + `raids.js` | `raids.test.js`: the night roll by hash, the pack travels to gooseFarm, hits an alt target -> the villager flee, the defended flag on the pack kill, timeout -> lost, cooldown, save keys. |
+| **LIFE-09** | game, k4 (content) | "Defend the farm" quest on the template pipeline + `raids.json` + NEEDS WRITER keys | `validate-content` green; quest-sim reaches the flag. |
+| **LIFE-10** | tools, k2 | `tools/bench-life.mjs` + the budget rows | The budgets in (e) are met, or the step is flagged. |
+
+**Order:** LIFE-01 -> 02 -> 03 -> 04 (Outwall alive); then 05 (chat); 06 -> 07 (the wild); 08 -> 09 (raids); 10 alongside 03. Lanes: k3 = 02 / 03 / 08, k2 = 05 / 07 / 10, k4 = 01 / 06 / 09, k1 = 04 + hooks.
+
+**Do not:** save villager positions or needs (they derive from the clock); let villagers die in raids; run A* for more than one request per step or give fauna a NavGrid; let fauna import game or beastSim (beasts are passed in only as threat points); use `Math.random` / wall clock / Map iteration in steps; make barks' once-flags for overheard chat; put species or villager names in engine code; add a new quest objective type for raids.
