@@ -22,7 +22,7 @@ import { makeFrame, localToWorld, localDirToWorld, QUARTER_COS, QUARTER_SIN, fra
 import { gridLocal } from './gridLocal.js';
 import { buildWorldColliders, buildStaticMeshCollider, buildTrunkCollider, buildDetailCollider, buildPropCollider, buildKinematicCollider, moveKinematicPrism, refitDynCollider } from './colliders.js';
 import { cosSinDeg } from '../voxel/voxelPose.js';
-import { moveCircleMesh, moveSphereMesh, probeSupport, meshSupportSector, raycastColliders, FLOOR_NONE } from '../physics/meshCollide.js';
+import { moveCircleMesh, moveSphereMesh, probeSupport, meshSupportSector, raycastCollidersRay, FLOOR_NONE } from '../physics/meshCollide.js';
 import { pointBlocked, resolvePropPicks } from './interaction.js';
 import { createWind } from './wind.js';
 import { createClothSystem, collectClothDefs } from './cloths.js';
@@ -258,6 +258,12 @@ function validateHorizon(list, assets) {
 }
 
 const RAY_STEP = 0.1, RAY_MAX_SAMPLES = 20, RAY_BISECT = 6;
+/** raySegmentRay scratch: bvh ray layout [ox,oy,oz,dx,dy,dz,tMax]. */
+const _rayArg = new Float64Array(7);
+/** Scratch for the cold scalar raySegment wrapper. */
+const _raySeg = new Float64Array(6);
+/** Sample point handed to _rayBlocked (module scratch: no boxed double args). */
+const _rayP = new Float64Array(3);
 const _rayHit = { t: 0, tri: -1, u: 0, v: 0, nx: 0, ny: 0, nz: 0, collider: -1 };
 
 /** scatterDetail + the baked decor masks (job.decor) on the result; opts null = plain scatterDetail (byte-identical, no `decor`). */
@@ -1782,20 +1788,22 @@ export class World {
    * (`groundAt` every 0.1 m, <= 20 samples, then 6 bisections; terrain is
    * skipped inside a structure footprint, as `supportAt`). grid physics: the
    * `hasLineOfSight` sector sampling + the same bisection. Pure, zero alloc.
-   * @param {number} ax @param {number} ay @param {number} az
-   * @param {number} bx @param {number} by @param {number} bz
+   * Hot-path form (arch 38.61 2b): caller-owned Float64Array(6), no boxed double args.
+   * @param {Float64Array} seg `[ax,ay,az,bx,by,bz]`
    * @param {{t:number,x:number,y:number,z:number}} out
    * @returns {boolean} true on a hit (out filled); out untouched on a miss
    */
-  raySegment(ax, ay, az, bx, by, bz, out) {
-    const dx = bx - ax, dy = by - ay, dz = bz - az;
+  raySegmentRay(seg, out) {
+    const ax = seg[0], ay = seg[1], az = seg[2];
+    const dx = seg[3] - ax, dy = seg[4] - ay, dz = seg[5] - az;
     const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
     let bestT = 2;
     if (len < 1e-9) return false;
     let steps = Math.ceil(len / RAY_STEP);
     if (steps > RAY_MAX_SAMPLES) steps = RAY_MAX_SAMPLES;
     const mesh = this.physicsMode === 'mesh';
-    if (mesh && raycastColliders(this.colliders, this.colliders.length, ax, ay, az, dx, dy, dz, 1, _rayHit)) {
+    _rayArg[0] = ax; _rayArg[1] = ay; _rayArg[2] = az; _rayArg[3] = dx; _rayArg[4] = dy; _rayArg[5] = dz; _rayArg[6] = 1;
+    if (mesh && raycastCollidersRay(this.colliders, this.colliders.length, _rayArg, _rayHit)) {
       bestT = _rayHit.t;
     }
     // March; in mesh mode only up to the collider hit (later samples cannot be nearer).
@@ -1803,11 +1811,13 @@ export class World {
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
       if (prevT >= bestT) break;
-      if (this._rayBlocked(mesh, ax + dx * t, ay + dy * t, az + dz * t)) {
+      _rayP[0] = ax + dx * t; _rayP[1] = ay + dy * t; _rayP[2] = az + dz * t;
+      if (this._rayBlocked(mesh)) {
         let lo = prevT, hi = t;
         for (let k = 0; k < RAY_BISECT; k++) {
           const m = 0.5 * (lo + hi);
-          if (this._rayBlocked(mesh, ax + dx * m, ay + dy * m, az + dz * m)) hi = m; else lo = m;
+          _rayP[0] = ax + dx * m; _rayP[1] = ay + dy * m; _rayP[2] = az + dz * m;
+          if (this._rayBlocked(mesh)) hi = m; else lo = m;
         }
         if (hi < bestT) bestT = hi;
         break;
@@ -1820,8 +1830,22 @@ export class World {
     return true;
   }
 
+  /**
+   * Cold-path scalar wrapper of `raySegmentRay` (7 double args box at the call boundary when they vary).
+   * ALLOC_EXEMPT (arch 38.61 2b): per-frame callers use `raySegmentRay`.
+   * @param {number} ax @param {number} ay @param {number} az
+   * @param {number} bx @param {number} by @param {number} bz
+   * @param {{t:number,x:number,y:number,z:number}} out
+   * @returns {boolean}
+   */
+  raySegment(ax, ay, az, bx, by, bz, out) {
+    _raySeg[0] = ax; _raySeg[1] = ay; _raySeg[2] = az; _raySeg[3] = bx; _raySeg[4] = by; _raySeg[5] = bz;
+    return this.raySegmentRay(_raySeg, out);
+  }
+
   /** One raySegment sample: grid sector test, or (mesh) point below the terrain outside structures. */
-  _rayBlocked(mesh, x, y, z) {
+  _rayBlocked(mesh) {
+    const x = _rayP[0], y = _rayP[1], z = _rayP[2];
     if (!mesh) return pointBlocked(this, x, y, z);
     if (!this.terrain || this.structureAt(x, y)) return false;
     const g = this.terrain.groundAt(x, y);

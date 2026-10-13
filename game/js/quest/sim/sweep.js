@@ -8,12 +8,13 @@ const _ray = { t: 0, x: 0, y: 0, z: 0 };
  * Fills `hit` {kind, t (fraction 0..1), idx (target index or -1), x, y, z}.
  * @param {any} world @param {any} targets createTargetables() list @param {number} pad metres
  */
+const _seg = new Float64Array(6); // World.raySegmentRay arg (arch 38.61 2b)
 export function sweepSegment(world, targets, pad, x0, y0, z0, x1, y1, z1, hit) {
 
   hit.kind = NO_HIT; hit.idx = -1; hit.t = 1;
   const dx = x1 - x0, dy = y1 - y0, dz = z1 - z0;
   let tw = 2;
-  if (dx * dx + dy * dy + dz * dz > 1e-12 && world.raySegment(x0, y0, z0, x1, y1, z1, _ray)) tw = _ray.t;
+  if (dx * dx + dy * dy + dz * dz > 1e-12 && (_seg[0] = x0, _seg[1] = y0, _seg[2] = z0, _seg[3] = x1, _seg[4] = y1, _seg[5] = z1, world.raySegmentRay(_seg, _ray))) tw = _ray.t;
   let tt = 2, ti = -1;
   const a = dx * dx + dy * dy;
   for (let i = 0; i < targets.count; i++) {

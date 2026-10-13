@@ -20,7 +20,7 @@ function rig(playerX, shieldFront) {
   const ents = new Map();
   const player = { data: { transform: { x: playerX, y: 0, z: 0 }, components: {} } };
   const world = {
-    addEntity: (e) => ents.set(e.id, e), get: (id) => (id === 'player' ? player : null), flowAt() {}, raySegment: () => false,
+    addEntity: (e) => ents.set(e.id, e), get: (id) => (id === 'player' ? player : null), flowAt() {}, raySegmentRay: () => false,
     forEachEntity: (f) => ents.forEach((e, id) => f(e, id)),
   };
   const events = makeEvents(), state = {};

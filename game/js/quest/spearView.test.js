@@ -16,7 +16,7 @@ const player = { data: { transform: { x: 500, y: 500, z: 0 }, components: {} } }
 const ground = { z: 0.2 };
 const world = {
   addEntity: (e) => ents.set(e.id, e), get: (id) => (id === 'player' ? player : null), flowAt() {},
-  raySegment(ax, ay, az, bx, by, bz, out) { // flat ground at ground.z
+  raySegmentRay(seg, out) { const ax = seg[0], ay = seg[1], az = seg[2], bx = seg[3], by = seg[4], bz = seg[5]; // flat ground at ground.z
     if (bz > ground.z) return false;
     out.t = (az - ground.z) / (az - bz); out.x = ax + (bx - ax) * out.t; out.y = ay + (by - ay) * out.t; out.z = ground.z; return true;
   },

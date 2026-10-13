@@ -107,7 +107,7 @@ const flatBed = (z) => () => z;
 // ---- arrows ----
 {
   const w = mkWorld(flatBed(9.6)); // flat bed: the sloped stub bed boxes its own doubles (harness noise)
-  w.raySegment = (ax, ay, az, bx, by, bz, out) => { // the river bed as terrain (z = 9.6)
+  w.raySegmentRay = (seg, out) => { const ax = seg[0], ay = seg[1], az = seg[2], bx = seg[3], by = seg[4], bz = seg[5]; // the river bed as terrain (z = 9.6)
     if (bz > 9.6) return false;
     const t = (az - 9.6) / (az - bz);
     out.t = t; out.x = ax + (bx - ax) * t; out.y = ay + (by - ay) * t; out.z = 9.6; return true;

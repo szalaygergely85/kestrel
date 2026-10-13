@@ -42,7 +42,7 @@ function makeWorld(entities, wall) {
       const e = entities.find((x) => x.id === id);
       return e ? { data: e, id, play() {} } : null;
     },
-    raySegment(ax, ay, az, bx, by, bz, o) {
+    raySegmentRay(seg, o) { const ax = seg[0], ay = seg[1], az = seg[2], bx = seg[3], by = seg[4], bz = seg[5];
       if (!wall) return false;
       const t = segCircleT(ax, ay, bx, by, wall.cx, wall.cy, wall.r);
       if (t === null) return false;

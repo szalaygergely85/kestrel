@@ -338,6 +338,10 @@ export function queryAABB(bvh, x0, y0, z0, x1, y1, z1, out, maxOut) {
 // Ray scratch: ox,oy,oz,dx,dy,dz, tMaxCur (6), slab entry t (7). Passing doubles as args/returns to the non-inlined helpers boxes
 // them (~128 B/ray, GATE-FLAKY-02a part A2). Re-entrancy-safe: raycast/raycastAny never call themselves or user code while RAY is live.
 const RAY = new Float64Array(8);
+/** Layout length of the caller-owned ray array `[ox,oy,oz,dx,dy,dz,tMax]` taken by `raycastRay`/`raycastAnyRay`. */
+export const RAY_LEN = 7;
+// Private arg array for the scalar wrappers (`raycast`, `raycastAny`, `segment`). Convenience, cold paths only.
+const _ARG = new Float64Array(RAY_LEN);
 /**
  * Robust slab test (handles axis-parallel rays without NaN) of node `node` against RAY (tMaxCur = RAY[6]):
  * returns true on a hit and writes the entry t in [0, tMaxCur] to RAY[7]; false on a miss.
@@ -421,7 +425,7 @@ function writeHitNormal(bvh, ti, out) {
   const e1x = p1x - p0x, e1y = p1y - p0y, e1z = p1z - p0z;
   const e2x = p2x - p0x, e2y = p2y - p0y, e2z = p2z - p0z;
   let nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
-  const len = Math.hypot(nx, ny, nz) || 1;
+  const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
   out.nx = nx / len; out.ny = ny / len; out.nz = nz / len;
 }
 
@@ -435,14 +439,26 @@ function writeHitNormal(bvh, ti, out) {
  * @param {number} tMax
  * @param {RayHit} out
  * @returns {boolean}
+ * Convenience, cold paths only (scalar args box at the call boundary); hot callers use `raycastRay`.
  */
 export function raycast(bvh, ox, oy, oz, dx, dy, dz, tMax, out) {
+  const r = _ARG;
+  r[0] = ox; r[1] = oy; r[2] = oz; r[3] = dx; r[4] = dy; r[5] = dz; r[6] = tMax;
+  return raycastRay(bvh, r, out);
+}
+
+/**
+ * Hot-path form of `raycast`: `ray` is a caller-owned Float64Array(RAY_LEN) `[ox,oy,oz,dx,dy,dz,tMax]`, read-only here.
+ * @param {Bvh} bvh @param {Float64Array} ray @param {RayHit} out
+ * @returns {boolean}
+ */
+export function raycastRay(bvh, ray, out) {
   if (bvh.nodeCount === 0) return false;
   const stack = bvh.stack;
   let sp = 0;
   stack[sp++] = 0;
-  let bestT = tMax;
-  RAY[0] = ox; RAY[1] = oy; RAY[2] = oz; RAY[3] = dx; RAY[4] = dy; RAY[5] = dz; RAY[6] = tMax;
+  let bestT = ray[6];
+  RAY[0] = ray[0]; RAY[1] = ray[1]; RAY[2] = ray[2]; RAY[3] = ray[3]; RAY[4] = ray[4]; RAY[5] = ray[5]; RAY[6] = bestT;
   let bestTri = -1;
   const hit = out; // reuse caller's object as scratch (zero allocation)
   hit.t = bestT;
@@ -489,15 +505,27 @@ export function raycast(bvh, ox, oy, oz, dx, dy, dz, tMax, out) {
  * @param {number} dx @param {number} dy @param {number} dz
  * @param {number} tMax
  * @returns {boolean}
+ * Convenience, cold paths only; hot callers use `raycastAnyRay`.
  */
 export function raycastAny(bvh, ox, oy, oz, dx, dy, dz, tMax) {
+  const r = _ARG;
+  r[0] = ox; r[1] = oy; r[2] = oz; r[3] = dx; r[4] = dy; r[5] = dz; r[6] = tMax;
+  return raycastAnyRay(bvh, r);
+}
+
+/**
+ * Hot-path form of `raycastAny`: `ray` = caller-owned Float64Array(RAY_LEN) `[ox,oy,oz,dx,dy,dz,tMax]`, read-only.
+ * @param {Bvh} bvh @param {Float64Array} ray
+ * @returns {boolean}
+ */
+export function raycastAnyRay(bvh, ray) {
   if (bvh.nodeCount === 0) return false;
   const stack = bvh.stack;
   let sp = 0;
   stack[sp++] = 0;
   const scratch = _anyScratch;
-  scratch.t = tMax;
-  RAY[0] = ox; RAY[1] = oy; RAY[2] = oz; RAY[3] = dx; RAY[4] = dy; RAY[5] = dz; RAY[6] = tMax;
+  scratch.t = ray[6];
+  RAY[0] = ray[0]; RAY[1] = ray[1]; RAY[2] = ray[2]; RAY[3] = ray[3]; RAY[4] = ray[4]; RAY[5] = ray[5]; RAY[6] = ray[6];
   while (sp > 0) {
     const nodeIdx = stack[--sp];
     if (!slabEntry(bvh, nodeIdx)) continue;
@@ -528,5 +556,7 @@ const _anyScratch = { t: 0, tri: -1, u: 0, v: 0, nx: 0, ny: 0, nz: 0 };
  * @returns {boolean}
  */
 export function segment(bvh, ax, ay, az, bx, by, bz, out) {
-  return raycast(bvh, ax, ay, az, bx - ax, by - ay, bz - az, 1, out);
+  const r = _ARG;
+  r[0] = ax; r[1] = ay; r[2] = az; r[3] = bx - ax; r[4] = by - ay; r[5] = bz - az; r[6] = 1;
+  return raycastRay(bvh, r, out);
 }

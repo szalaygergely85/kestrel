@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { allocProbe } from '../../tools/allocProbe.mjs';
 import {
-  BVH_LEAF_MAX, buildBvh, buildBvhFromMesh, refit, queryAABB, raycast, raycastAny, segment,
+  BVH_LEAF_MAX, buildBvh, buildBvhFromMesh, refit, queryAABB, raycast, raycastAny, segment, raycastRay, raycastAnyRay, RAY_LEN,
 } from './bvh.js';
 import { buildLevelMesh } from '../mesh/levelMesh.js';
 import { loadLevel } from '../world/Level.js';
@@ -455,6 +455,53 @@ function checkRaycast(label, pos, idx, matrix12, bvh, ox, oy, oz, dx, dy, dz, tM
   const pr = allocProbe(run, { n: 20000 });
   if (pr.skipped) console.log('SKIP raycast strict alloc (no --expose-gc)');
   else ok('raycast internals: < 8 B/call (hit + miss)', pr.perCall < 8 && misses > 0, `${pr.perCall.toFixed(2)} B/call, hits ${hits} misses ${misses}`);
+}
+
+const RAYCAST_WRAPPER_CAP = 0.5; // measured ~0.003 B/call (inlined here); cap = strict floor since boxing is JIT-dependent
+// 7. GATE-FLAKY-03 (arch 38.61 2b): caller-owned ray array form, VARYING doubles. Strict <= 0.5 B/call; scalar wrapper explicitly exempt.
+{
+  const N = 4096;
+  const rays = new Float64Array(N * RAY_LEN);
+  let seed = 12345;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  for (let i = 0; i < N; i++) {
+    let dx = rnd() * 2 - 1, dy = rnd() * 2 - 1, dz = rnd() * 2 - 1;
+    const len = Math.hypot(dx, dy, dz) || 1;
+    const o = i * RAY_LEN;
+    rays[o] = (rnd() * 2 - 1) * 60; rays[o + 1] = (rnd() * 2 - 1) * 60; rays[o + 2] = (rnd() * 2 - 1) * 60;
+    rays[o + 3] = dx / len; rays[o + 4] = dy / len; rays[o + 5] = dz / len; rays[o + 6] = 200 * rnd();
+  }
+  // Equivalence raycastRay vs raycast (and raycastAnyRay vs raycastAny) on 1000 rays.
+  const ray = new Float64Array(RAY_LEN);
+  const h1 = { t: 0, tri: -1, u: 0, v: 0, nx: 0, ny: 0, nz: 0 }, h2 = { ...h1 };
+  let same = true, nHit = 0, anySame = true;
+  for (let i = 0; i < 1000; i++) {
+    const o = i * RAY_LEN;
+    for (let k = 0; k < RAY_LEN; k++) ray[k] = rays[o + k];
+    h1.t = h1.tri = 0; h2.t = h2.tri = 0;
+    const a = raycastRay(towerBvh, ray, h1);
+    const b = raycast(towerBvh, ray[0], ray[1], ray[2], ray[3], ray[4], ray[5], ray[6], h2);
+    if (a !== b || (a && (h1.t !== h2.t || h1.tri !== h2.tri || h1.u !== h2.u || h1.v !== h2.v || h1.nx !== h2.nx || h1.ny !== h2.ny || h1.nz !== h2.nz))) same = false;
+    if (a) nHit++;
+    if (raycastAnyRay(towerBvh, ray) !== raycastAny(towerBvh, ray[0], ray[1], ray[2], ray[3], ray[4], ray[5], ray[6])) anySame = false;
+  }
+  ok('raycastRay == raycast (t, tri, u, v, n) on 1000 rays', same && nHit > 0, `hits ${nHit}`);
+  ok('raycastAnyRay == raycastAny on 1000 rays', anySame);
+
+  const hit = { t: 0.5, tri: -1, u: 0.5, v: 0.5, nx: 0.5, ny: 0.5, nz: 0.5 };
+  const acc = new Int32Array(1);
+  const runRay = (n) => { for (let i = 0; i < n; i++) { const o = (i & (N - 1)) * RAY_LEN; for (let k = 0; k < RAY_LEN; k++) ray[k] = rays[o + k]; if (raycastRay(towerBvh, ray, hit)) acc[0]++; } };
+  const runAny = (n) => { for (let i = 0; i < n; i++) { const o = (i & (N - 1)) * RAY_LEN; for (let k = 0; k < RAY_LEN; k++) ray[k] = rays[o + k]; if (raycastAnyRay(towerBvh, ray)) acc[0]++; } };
+  const runWrap = (n) => { for (let i = 0; i < n; i++) { const o = (i & (N - 1)) * RAY_LEN; if (raycast(towerBvh, rays[o], rays[o + 1], rays[o + 2], rays[o + 3], rays[o + 4], rays[o + 5], rays[o + 6], hit)) acc[0]++; } };
+  const p1 = allocProbe(runRay, { n: 100000 }), p2 = allocProbe(runAny, { n: 100000 }), p3 = allocProbe(runWrap, { n: 100000 });
+  if (p1.skipped) console.log('SKIP raycastRay varying alloc (no --expose-gc)');
+  else {
+    ok('raycastRay varying rays: <= 0.5 B/call', p1.perCall <= 0.5, `${p1.perCall.toFixed(3)} B/call`);
+    ok('raycastAnyRay varying rays: <= 0.5 B/call', p2.perCall <= 0.5, `${p2.perCall.toFixed(3)} B/call`);
+    // Cold-path wrapper: boxes 7 doubles at the call boundary.
+    const ALLOC_EXEMPT = { cap: RAYCAST_WRAPPER_CAP, reason: 'boxed-double call boundary, cold-path wrapper', ref: 'arch 38.61' };
+    ok(`raycast wrapper (varying args) ALLOC_EXEMPT <= ${ALLOC_EXEMPT.cap} B/call`, p3.perCall <= ALLOC_EXEMPT.cap, `${p3.perCall.toFixed(2)} B/call`);
+  }
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

@@ -22,8 +22,8 @@ const LOCKED = featuresFromParams(new URLSearchParams(''));
 let emitted = 0;
 const events = { on() { return () => {}; }, emit(n) { if (n === 'magic.unlocked') emitted++; else if (n === 'fireball:cast') casts++; } };
 let casts = 0, mp = 100, spent = 0;
-const tg = createTargetables({ state: {}, forEachEntity() {}, raySegment() { return false; } }, events);
-const sim = createFireballSim({ state: {}, forEachEntity() {}, raySegment() { return false; } }, events, FIREBALL_CFG, tg, {
+const tg = createTargetables({ state: {}, forEachEntity() {}, raySegmentRay() { return false; } }, events);
+const sim = createFireballSim({ state: {}, forEachEntity() {}, raySegmentRay() { return false; } }, events, FIREBALL_CFG, tg, {
   spendMana: (n) => { if (mp < n) return false; mp -= n; spent += n; return true; },
   isEnabled: () => fireballOn(world, LOCKED),
 });
@@ -56,7 +56,7 @@ assert.equal(fireballOn(old.world, LOCKED), false, 'old save without the key is 
 // (4) dev override
 assert.equal(fireballOn(fresh, featuresFromParams(new URLSearchParams('fireball=1'))), true, '?fireball=1 on without the flag');
 // (5) 0 alloc: 1000 locked step + fireballOn calls
-const lw = mkWorld(), lsim = createFireballSim({ state: {}, forEachEntity() {}, raySegment() { return false; } }, events, FIREBALL_CFG, tg, { spendMana: () => true, isEnabled: () => fireballOn(lw, LOCKED) });
+const lw = mkWorld(), lsim = createFireballSim({ state: {}, forEachEntity() {}, raySegmentRay() { return false; } }, events, FIREBALL_CFG, tg, { spendMana: () => true, isEnabled: () => fireballOn(lw, LOCKED) });
 for (let i = 0; i < 200; i++) { lsim.step(pl, i % 5 === 0, 1, 0, 1, 0, 0); fireballOn(lw, LOCKED); }
 global.gc(); const h0 = process.memoryUsage().heapUsed;
 for (let i = 0; i < 1000; i++) { lsim.step(pl, i % 5 === 0, 1, 0, 1, 0, 0); fireballOn(lw, LOCKED); }

@@ -44,7 +44,7 @@ function stubWorld(entities, wx) {
   return {
     state: {},
     forEachEntity(fn) { entities.forEach(fn); },
-    raySegment(ax, ay, az, bx, by, bz, out) {
+    raySegmentRay(seg, out) { const ax = seg[0], ay = seg[1], az = seg[2], bx = seg[3], by = seg[4], bz = seg[5];
       if (wx === null) return false;
       const dx = bx - ax;
       if (dx * dx + (by - ay) ** 2 + (bz - az) ** 2 < 1e-18) return false;
@@ -326,7 +326,7 @@ function rig({ wx = null, targets = [], mp = 100, cfg = FIREBALL_CFG, eyeH = 1.6
 {
   let spent = 0, casts = 0;
   const ev = { emit(n) { if (n === 'fireball:cast') casts++; } };
-  const w0 = { raySegment() { return false; } };
+  const w0 = { raySegmentRay() { return false; } };
   const tg0 = { count: 0, refresh() {}, r: [], x: [], y: [], z: [], h: [], ent: [] };
   const off = createFireballSim(w0, ev, FIREBALL_CFG, tg0, { spendMana: () => { spent++; return true; }, enabled: false });
   const pl = { transform: { x: 0, y: 0, z: 0 }, components: {} };

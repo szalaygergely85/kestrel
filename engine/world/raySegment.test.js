@@ -107,6 +107,37 @@ const out = { t: -1, x: 0, y: 0, z: 0 };
   }
 }
 
+// GATE-FLAKY-04 (arch 38.61 2b): raySegmentRay == raySegment, and the per-frame form's alloc with VARYING segments.
+{
+  const cy = (bb.y0 + bb.y1) / 2, zz = tower.origin.z + 1.2;
+  const N = 4096, S = new Float64Array(N * 6);
+  let sd = 12345; const rnd = () => { sd = (sd * 1103515245 + 12345) & 0x7fffffff; return sd / 0x7fffffff; };
+  for (let i = 0; i < N; i++) {
+    const k = i * 6;
+    S[k] = bb.x0 + rnd() * 6; S[k + 1] = cy + rnd() - 0.5; S[k + 2] = zz + rnd();
+    S[k + 3] = S[k] + (rnd() - 0.5) * 3; S[k + 4] = S[k + 1] + (rnd() - 0.5) * 3; S[k + 5] = S[k + 2] + (rnd() - 0.5) * 2;
+  }
+  const sg = new Float64Array(6), o1 = { t: 0, x: 0, y: 0, z: 0 }, o2 = { t: 0, x: 0, y: 0, z: 0 };
+  let same = true, hits = 0;
+  for (const w of [wm, wg]) for (let i = 0; i < 1000; i++) {
+    const k = i * 6;
+    for (let j = 0; j < 6; j++) sg[j] = S[k + j];
+    o1.t = o2.t = -1;
+    const h1 = w.raySegmentRay(sg, o1), h2 = w.raySegment(S[k], S[k + 1], S[k + 2], S[k + 3], S[k + 4], S[k + 5], o2);
+    if (h1 !== h2 || (h1 && (o1.t !== o2.t || o1.x !== o2.x || o1.y !== o2.y || o1.z !== o2.z))) same = false;
+    if (h1) hits++;
+  }
+  ok('raySegmentRay == raySegment on 2 x 1000 segments (mesh + grid)', same && hits > 20, `hits ${hits}`);
+  if (gc) {
+    const run = (n) => { for (let i = 0; i < n; i++) { const k = (i & (N - 1)) * 6; sg[0] = S[k]; sg[1] = S[k + 1]; sg[2] = S[k + 2]; sg[3] = S[k + 3]; sg[4] = S[k + 4]; sg[5] = S[k + 5]; wm.raySegmentRay(sg, o1); } };
+    const pr = allocProbe(run, { n: 20000 });
+    // OPEN (ASK ARCHITECT, docs/lanes/pc-b2.md): 12.1 B/call, all of it Terrain.groundAt's boxed double return (isolated probe: 16 B/call);
+    // raycast + structureAt are 0.01 B. Terrain.js is outside this item's scope. Target < 1 B once groundAt has a non-boxing form.
+    const ALLOC_EXEMPT = { cap: 15.2, reason: 'Terrain.groundAt returns a boxed double (terrain march in _rayBlocked)', ref: 'arch 38.61 (2b)' };
+    ok(`raySegmentRay varying segments: ALLOC_EXEMPT <= ${ALLOC_EXEMPT.cap} B/call`, pr.perCall <= ALLOC_EXEMPT.cap, `${pr.perCall.toFixed(2)} B/call (was ~182 via scalar raySegment)`);
+  }
+}
+
 // ---- arcHits: 100 deg wedge centred on +x (edges at -50 / +50 deg), apex origin, reach 1.6 ----
 {
   const c = Math.cos(50 * Math.PI / 180), s = Math.sin(50 * Math.PI / 180);
