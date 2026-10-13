@@ -54,6 +54,8 @@ export class Terrain {
     this.mapCell = recipe.map.cell;
     this.mapX0 = recipe.map.x0 || 0; // MAP-01b: far grid origin (default 0,0 = byte-identical)
     this.mapY0 = recipe.map.y0 || 0;
+    // MAP-01b-FU: the WGSL/GLSL farTypeNearest bounds-checks both axes against mapW only
+    if (this.mapW !== this.mapH) throw new Error(`Terrain: far map must be square (map.w ${this.mapW} != map.h ${this.mapH}; shaders only upload mapW)`);
     if (this.mapW > 512 || this.mapH > 512) throw new Error('Terrain: far grid max 512 x 512');
     const tt = typeTables(recipe.terrain);
     this.typeNames = tt.names; this.typeFloorMat = tt.floor;

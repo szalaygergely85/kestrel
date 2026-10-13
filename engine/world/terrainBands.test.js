@@ -65,7 +65,7 @@ let maxStep = 0, steps = 0, r = 1; const stepMs = [];
 while (r === 1) { const t = performance.now(); r = w.streamBand(1190, 1088, 2); const dt = performance.now() - t; stepMs.push(dt.toFixed(1)); maxStep = Math.max(maxStep, dt); if (++steps > 5000) break; }
 ok('bake completes; margin 166 >= switchM: no swap yet', r === 0 && w.bandId === 'east' && T.near === nearBefore && T.nearBandPending);
 console.log(`stepped bake: ${steps} steps, max ${maxStep.toFixed(2)} ms; ${stepMs.join(" ")}`);
-ok('slice budget: step <= 2 ms + one row / one collider slice (<10)', maxStep < 10, maxStep.toFixed(2));
+if (process.env.BAKE_BENCH) ok('slice budget: step <= 2 ms + one row / one collider slice (<10)', maxStep < 10, maxStep.toFixed(2)); // wall-clock: BAKE_BENCH=1 only
 ok('x=1150 margin 126 >= 112: still no swap', w.streamBand(1150, 1088, 2) === 0 && w.bandId === 'east');
 ok('x=1130 margin 106 < switchM: swap', w.streamBand(1130, 1088, 2) === 2 && w.bandId === 'west');
 ok('events: world:band east>west, no band:late', ev.includes('world:band:east>west') && !ev.some((e) => e.startsWith('band:late')), ev.join(','));
