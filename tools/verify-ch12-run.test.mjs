@@ -1,6 +1,6 @@
 // node tools/verify-ch12-run.test.mjs - pure parts of the M4-C2 harness.
 import assert from 'node:assert/strict';
-import { lineOf, buildGapTable, compareSnaps, questVerdict, renderReport, depsOf, orderErrands, pickupPatterns, stepsOf, planQuest } from './verify-ch12-lib.mjs';
+import { lineOf, buildGapTable, compareSnaps, questVerdict, renderReport, depsOf, orderErrands, pickupPatterns, stepsOf, planQuest, pickupKeys, lootFixedItems } from './verify-ch12-lib.mjs';
 
 const S = (t, o = {}) => ({ t, x: t, y: 0, hour: 8, tracked: false, compass: false, giver: false, event: 'e' + t, ...o });
 
@@ -77,3 +77,15 @@ console.log('verify-ch12 pure parts: PASS');
   const re = pickupPatterns('brass.scrap').map((p) => new RegExp(p)); assert.ok(re.some((r) => r.test('qp.brass1'))); assert.ok(re.some((r) => r.test('qi.scrap2'))); assert.ok(!re.some((r) => r.test('qp.berry1')));
 }
 console.log('verify-ch12-run: errand plan ok');
+
+// CH12-RUN-02: pickups found by entity item (redcap -> qp.cap1), key patterns still work, loot-drop items
+{
+  const ents = [{ id: 'cap1', item: 'redcap' }, { id: 'cap2', item: 'redcap' }, { id: 'berry1', item: 'berry' }];
+  const ixs = [{ key: 'qp.cap1' }, { key: 'qp.cap2' }, { key: 'qp.emberpod1' }, { key: 'npc.bear' }];
+  assert.deepEqual(pickupKeys('redcap', ents, ixs), ['qp.cap1', 'qp.cap2']);
+  assert.deepEqual(pickupKeys('emberpod', [], ixs), ['qp.emberpod1']);
+  assert.deepEqual(pickupKeys('cog', ents, ixs), []);
+  const li = lootFixedItems({ sources: { boar: { fixed: [{ item: 'boar.meat', n: 1 }] }, container: { fixed: [] } } });
+  assert.ok(li.has('boar.meat') && !li.has('cog'));
+}
+console.log('CH12-RUN-02 pickupKeys/lootFixedItems ok');
