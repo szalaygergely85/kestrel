@@ -6,9 +6,8 @@
 // PASS/FLAG per budget row. Exit code is non-zero only with --strict and a FLAG.
 // Skipped with a note: chat (game/js/life/chat.js missing on this branch). Villager count is 5 (budget is for 24).
 import { World } from '../engine/index.js';
-import { compileFaunaDef } from '../engine/fauna/faunaDef.js';
-import { createFauna } from '../engine/fauna/fauna.js';
-import { FIXTURE_FX, fixtureModels } from '../engine/fauna/wildlifeFx.fixture.js';
+import { compileFaunaDef, createFauna } from '../engine/index.js';
+import { FIXTURE_FX, fixtureModels } from '../engine/dev.js';
 import paletteMod from '../design/palette.js';
 import detailPassMod from '../design/detail-pass.js';
 import terrainDef from '../design/levels/overworld_far.js';
