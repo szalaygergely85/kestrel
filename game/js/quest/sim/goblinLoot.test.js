@@ -32,9 +32,9 @@ for (const b of Object.keys(expect)) {
   for (let k = 0; k < 3; k++) {
     const u2 = k / 3 + 0.01;
     ok('band ' + b + ' exact tier ' + expect[b] + ' (synthetic full table)', synth[rollGoblinWeapon(synth, tierOf(+b), 0.0, u2)].equip.tier === expect[b]);
-    // the real item table has no tempered / warden weapons yet: the drop falls back to the best existing tier (never null)
+    // real item table (EQ-20b): the forced tier is exact
     const id = rollGoblinWeapon(items, tierOf(+b), 0.0, u2);
-    const want = items['gear.' + id.split('.').slice(1, 3).join('.') + '.' + expect[b]] ? expect[b] : 'fine';
+    const want = expect[b];
     ok('band ' + b + ' real table drop ' + id, !!id && items[id].equip.tier === want, id);
   }
 }
@@ -62,7 +62,7 @@ function run(group, x, y, seed) {
       for (let k = 0; k < 4; k++) { if (l.corpseItem[o + k] === 'goblin.trinket') trinkets += l.corpseN[o + k]; if (l.corpseItem[o + k] === 'arrow') arrows += l.corpseN[o + k] > 0 ? 1 : 0; if (l.corpseItem[o + k] === 'boar.meat') boarMeat++; }
       if (l.gearHeld[0] && /^gear\.(main|ranged|off)\./.test(l.gearHeld[0])) weaponTiers[band].add(items[l.gearHeld[0]].equip.tier);
     }
-    const realWant = items['gear.main.sword.' + want] ? want : 'fine'; // fallback while tempered/warden weapons do not exist
+    const realWant = want;
     ok('goblin at band ' + band + ': only ' + realWant + ' weapons drop', weaponTiers[band].size === 1 && weaponTiers[band].has(realWant), [...weaponTiers[band]].join());
   }
   ok('goblin corpses never hold boar meat', boarMeat === 0);

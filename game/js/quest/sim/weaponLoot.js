@@ -44,8 +44,7 @@ const TIER_ORDER = ['worn', 'sturdy', 'fine', 'tempered', 'warden'];
 export function rollGoblinWeapon(items, tier, u1, u2, T = WEAPON_LOOT) {
   if (u1 >= T.goblin.chance) return null;
   const pick = T.goblin.items[Math.min(T.goblin.items.length - 1, Math.floor(u2 * T.goblin.items.length))];
-  // NEEDS DESIGNER/BALANCE: itemsWeapons.js has only sturdy + fine weapons today; a forced tempered / warden falls back to the
-  // best existing lower tier, so the drop is never lost. Once the defs exist the forced tier is exact (tested with a synthetic table).
+  // forced tier is exact since EQ-20b; the loop still falls back to a lower tier if a def is ever missing.
   for (let k = TIER_ORDER.indexOf(tier || 'sturdy'); k >= 0; k--) {
     const id = 'gear.' + pick + '.' + TIER_ORDER[k];
     if (items[id]) return id;
