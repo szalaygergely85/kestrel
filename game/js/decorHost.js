@@ -5,7 +5,8 @@ import { packDecorLayers } from '../../engine/index.js';
 /** `?decor=cpu` forces the CPU layers; anything else (missing, garbage, 'gpu') = `canGpu` (true only on the WebGPU mesh renderer with a GPU cull). */
 export function parseDecorMode(raw, canGpu) {
   if (!canGpu) return false;
-  return typeof raw === 'string' && raw.trim().toLowerCase() === 'cpu' ? false : true;
+  // OB-119 (owner 2026-10-14: game would not start, WebGPU 'buffer used in submit while destroyed'): GPU decor is OPT-IN until fixed.
+  return typeof raw === 'string' && raw.trim().toLowerCase() === 'gpu';
 }
 
 /** Preset `decorDensity` (0..1) -> layer densityQ8 (256 = the mask's own probability). Garbage -> 256. */

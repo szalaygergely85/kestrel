@@ -5,7 +5,9 @@ import { DEFAULT_DENSITY_Q8, packDecorLayers } from '../../engine/index.js';
 
 assert.equal(parseDecorMode('cpu', true), false);
 assert.equal(parseDecorMode(' CPU ', true), false);
-for (const g of [null, undefined, '', 'gpu', 'banana', '1', '0']) assert.equal(parseDecorMode(g, true), true, String(g));
+for (const g of [null, undefined, '', 'banana', '1', '0']) assert.equal(parseDecorMode(g, true), false, String(g)); // OB-119: opt-in
+assert.equal(parseDecorMode('gpu', true), true);
+assert.equal(parseDecorMode(' GPU ', true), true);
 for (const g of [null, 'cpu', 'gpu']) assert.equal(parseDecorMode(g, false), false);
 assert.equal(densityQ8For(1), DEFAULT_DENSITY_Q8);
 assert.equal(densityQ8For(0.5), 128);
