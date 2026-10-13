@@ -42,7 +42,8 @@ const rel = (p) => fileURLToPath(new URL(p, import.meta.url));
   const w = World.load(tAssets.world('world_m1'), tAssets, { physics: 'mesh' });
   const nav = buildBeastNav(w, tAssets.world('world_m1').nav);
   const lifeJson = lifeFromRoutines(ROUTINES), barksData = JSON.parse(readFileSync(rel('../../../content/dialogue/life.barks.json'), 'utf8'));
-  const dlg = { open: false, added: [], addNpc(id) { this.added.push(id); } };
+  let bandCalls = 0; const eb = w.ensureBandFor; w.ensureBandFor = function (...a) { bandCalls++; return eb ? eb.apply(this, a) : false; }; // LIFE-04-COLLIDE spy
+  const dlg = { open: false, added: [], addNpc(id) { this.added.push(id); const t = w.get(id).data.transform; return w.addInteractable({ key: 'npc.' + id, name: 'npc.talk', x: t.x, y: t.y, z: t.z + 1, radius: 2.2, prompt: '[E] Talk', def: { npcId: id } }); } };
   const mk = (hour) => {
     const ow = createOutwall({ world: w, questFlag() {} });
     const ol = createOutwallLife({ world: w, life: lifeJson, nav, events: null, state: w.state, outwall: ow, dialogue: dlg, barksData, hour });
@@ -57,18 +58,26 @@ const rel = (p) => fileURLToPath(new URL(p, import.meta.url));
   // a game hour near the plaza: they move, the yaw seam hands over, chat pairs form
   const { ol, ow } = mk(14.5), h0 = [ents('hesk').transform.x, ents('hesk').transform.y];
   const sx = ents('hesk').transform.x, sy = ents('hesk').transform.y;
-  let paired = 0, walked = 0, ownedYaw = 0, talkCut = false, hr = 14.5, moved = false;
+  let paired = 0, walked = 0, ownedYaw = 0, talkCut = false, hr = 14.5, moved = false, trackN = 0, trackOk = 0;
   for (let k = 0; k < 18000 * 3; k++) {
     hr = 14.5 + k / 18000; if (hr >= 24) hr -= 24;
     ol.step(1 / 60, hr, 915, 945); ow.step(1 / 60, 915, 945);
     if (ol.chat.partner(0) >= 0) { paired++; if (!talkCut && paired > 120) { dlg.open = true; ol.talked('hesk'); ol.step(1 / 60, hr, 915, 945); talkCut = ol.chat.partner(0) < 0 && ol.chat.partner(1) < 0; dlg.open = false; } }
     if (ol.villagers.actors[0].anim === 'walk') { walked++; if (ow.npcs[0].owned) ownedYaw++; }
     if (ents('hesk').transform.x !== sx || ents('hesk').transform.y !== sy) moved = true;
+    if (ol.villagers.actors[0].anim === 'walk' && !ol.villagers.actors[0].hidden && k % 60 === 0) {
+      const r = w.interactables.find((q) => q.key === 'npc.hesk'), t = ents('hesk').transform; trackN++;
+      if (r && r.x === t.x && r.y === t.y) trackOk++;
+    }
   }
   ok(moved && walked > 0, 'hesk moved/walked over 3 game hours: walked=' + walked);
   ok(ownedYaw === walked, 'routine owns the yaw while walking (OUT-01 skipped): ' + ownedYaw + '/' + walked);
   ok(paired > 0, 'a chat pair formed (hesk with dorrin)');
   ok(talkCut, 'player talk interrupts the chat pair');
+  ok(trackN > 0 && trackOk === trackN, 'LIFE-04-COLLIDE: [E] Talk interactable tracks the walking NPC: ' + trackOk + '/' + trackN);
+  ok(bandCalls === 0, 'LIFE-04-COLLIDE: villager steps never call world.ensureBandFor: calls=' + bandCalls);
+  let worst = 0; for (let k = 0; k < 600; k++) { const t0 = performance.now(); ol.step(1 / 60, 14.5 + k / 18000, 915, 945); worst = Math.max(worst, performance.now() - t0); }
+  if (process.env.BAKE_BENCH) ok(worst < 4, 'LIFE-04-COLLIDE: one villagers.step < 4 ms: worst=' + worst.toFixed(2));
   ol.dispose();
   void h0;
 }

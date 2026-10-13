@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import { swimUpOf, jumpOf } from './swimInput.js';
+import { createSafeBindings, resolveGameKeys } from '../gameKeys.js';
+const land = { swimming: false }, wet = { swimming: true };
+assert.equal(jumpOf(true, land), true, 'Space jumps on land');
+assert.equal(jumpOf(true, wet), false, 'Space does not jump in water');
+assert.equal(swimUpOf(true, false, land), 0);
+assert.equal(swimUpOf(true, false, wet), 1, 'Space swims up in water');
+assert.equal(swimUpOf(false, true, wet), -1, 'Ctrl dives');
+assert.equal(swimUpOf(true, true, wet), 0);
+assert.equal(swimUpOf(false, true, land), 0, 'Ctrl ignored on land');
+assert.equal(swimUpOf(true, false, null), 0);
+const b = createSafeBindings(null);
+assert.equal(resolveGameKeys(b).dive, 'ControlLeft');
+assert.equal(resolveGameKeys(createSafeBindings({ version: 1, keyboard: { dive: ['KeyC'] } })).dive, 'KeyC', 'dive remappable');
+console.log('swimInput.test PASS');

@@ -65,14 +65,24 @@ export function createOutwallLife({ world, life, nav, events, state, outwall, di
   const out = {}, xs = new Float64Array(ents.length), ys = new Float64Array(ents.length), player = { x: 0, y: 0 };
   let talkId = null, talking = null, lastHour = hour;
   const idx = (id) => { for (let i = 0; i < lf.npcs.length; i++) if (lf.npcs[i].id === id) return i; return -1; };
+  // LIFE-04-COLLIDE: mesh colliders only. Never world.ensureBandFor here (it bakes a terrain band synchronously, 260-1400 ms);
+  // outside the resident band groundAt is the coarse height, good enough for a far, LOD-snapped villager.
   const collide = (x, y, o) => {
-    if (world.ensureBandFor) world.ensureBandFor(x, y);
     const r = world.collideCircle(x, y, 0, 0, 0.4, world.terrain.groundAt(x, y), true, COLL, out);
     o.x = r.x ?? x; o.y = r.y ?? y;
   };
-  const parked = (i, hidden) => { // interactable follows the NPC only where it stands still
+  const recs = new Array(ents.length).fill(null);
+  const findRec = (key) => { const l = world.interactables; if (l) for (let j = 0; j < l.length; j++) if (l[j].key === key) return l[j]; return null; };
+  // [E] Talk interactable stays attached to the NPC: registered once while visible, its live x/y/z follow every step; removed while hidden.
+  const parked = (i, hidden) => {
     const id = lf.npcs[i].id, k = 'npc.' + id;
-    world.removeInteractable(k); if (!hidden) dialogue.addNpc(id);
+    if (hidden) { world.removeInteractable(k); recs[i] = null; return; }
+    let r = recs[i];
+    if (!r || !world.interactables || world.interactables.indexOf(r) < 0) { // first time, or the world reloaded and dropped it
+      if (!findRec(k)) dialogue.addNpc(id);
+      r = recs[i] = findRec(k);
+    }
+    if (r) { const t = ents[i].data.transform; r.x = t.x; r.y = t.y; r.z = t.z + 1; }
   };
   function apply(a, i) {
     const d = ents[i].data, t = d.transform, c = d.components, v = c.voxel, wasHidden = v && v.hidden;
@@ -83,8 +93,7 @@ export function createOutwallLife({ world, life, nav, events, state, outwall, di
       const clip = a.anim === 'work' ? 'idle' : a.anim; // char.kit ships idle + walk only (work: idle until a clip exists)
       if (!a.hidden && v.anim !== clip) { try { if (ents[i].play) ents[i].play(clip); else v.anim = clip; } catch (e) { /* clip missing: keep the current one */ } }
     }
-    if (a.hidden !== !!wasHidden || (!a.hidden && a.anim !== 'walk' && a._par !== a.anim)) parked(i, a.hidden);
-    a._par = a.anim;
+    if (a.hidden !== !!wasHidden || !a.hidden) parked(i, a.hidden);
   }
   const v = createVillagers({ life: lf, nav, groundAt: (x, y) => world.terrain.groundAt(x, y), collide, hour, dayIndex: state[DAY_KEY] | 0, events, apply,
     isPaused: (id) => id === talking || chat.stopped(idx(id)) });
