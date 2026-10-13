@@ -1,7 +1,6 @@
 {
   "kind": "world",
   "schema": 1,
-  "streaming": { "cutM": 180, "keepFar": ["sg", "relay", "tower", "waystone"] },
   "id": "world_m1",
   "nextId": 1,
   "name": "world_m1",
@@ -2224,6 +2223,15 @@
     "maxSlopeDeg": 30,
     "maxStepM": 1,
     "seed": 1
+  },
+  "streaming": {
+    "cutM": 180,
+    "keepFar": [
+      "sg",
+      "relay",
+      "tower",
+      "waystone"
+    ]
   },
   "terrainBands": [
     {"id": "east", "ch": 3, "cw": 5, "cx0": 8, "cy0": 7},
