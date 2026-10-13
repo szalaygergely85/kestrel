@@ -61,10 +61,12 @@ export class BandBakeJob {
   stepScatter(msBudget) {
     const w = this.world, terrain = w.terrain, st = this.st;
     if (this.phase < 0) {
+      if (msBudget < 1.2 && !this._wait) { this._wait = true; return false; } // WM-02b: the job constructors (~1 ms) start on a call with a fresh budget
       this.view = Object.create(terrain); this.view.near = st.b;
       this.phase = terrain.realTrees ? 0 : 1;
       if (terrain.realTrees) this.trees = new TreeScatterJob(this.view, w.structures);
       if (w._detailCtx) this.detail = new DetailScatterJob(this.view, w.structures, w._detailCtx.keepOut, w._detailCtx.cfg);
+      if (msBudget < 3) return false; // WM-02b: constructors are one call of their own under a small budget (phase is already set)
     }
     const t0 = now(), mesh = w.physicsMode === 'mesh';
     while (this.phase < 5) {

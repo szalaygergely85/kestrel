@@ -345,8 +345,11 @@ export class DetailScatterJob {
       const l = this.layers[this.layer].l;
       if (!this.rowInit) { this.iy = Math.floor(this.g.y0 / l.cellM); this.rowInit = true; }
       if (this.iy >= Math.ceil(this.y1 / l.cellM)) { this.layer++; this.rowInit = false; continue; }
+      const r0 = _now();
       this._row(this.layer, this.iy++);
-      if (_now() - t0 >= msBudget) break;
+      const t1 = _now(), dr = t1 - r0;
+      this._rowMs = this._rowMs > dr ? this._rowMs * 0.98 + dr * 0.02 : dr; // WM-02b: predictive stop (never overshoot by a row)
+      if (t1 - t0 + this._rowMs >= msBudget) break;
     }
     if (this.layer >= this.layers.length) this._finish();
     return this.result !== null;

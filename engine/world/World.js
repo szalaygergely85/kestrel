@@ -1306,6 +1306,7 @@ export class World {
       const bi = bestOverlap(R, n, z.cx0 * cs, z.cy0 * cs, (z.cx0 + z.cw) * cs, (z.cy0 + z.ch) * cs);
       const src = bi >= 0 ? srcs[bi] : null; srcs.length = 0;
       a = this._ahead = { i: pick.i, j: pick.j, key: this._zoneKey(pick.i, pick.j), job: BandBakeJob.create(this, z.cx0, z.cy0, z.cw, z.ch, src) };
+      return true; // WM-02b: the start call only builds the job (key + allocs, ~0.7 ms); stepping begins next frame
     }
     if (!a.job.step(Math.max(0.2, msBudget - 0.4))) return true; // 0.4 ms reserve: one 32-cell slice overshoots by ~0.15-0.3 ms
     const b = a.job.bundle(); b.key = a.key; b.zone = a.i * this.terrainGrid.nj + a.j;
