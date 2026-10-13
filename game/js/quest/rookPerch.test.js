@@ -32,4 +32,22 @@ for (const e of def.entities) {
   const t = w.get(e.id)?.data?.transform; if (!t) continue;
   assert.ok(t.z - gz(t.x, t.y) <= 2.5, `${e.id} floats ${(t.z - gz(t.x, t.y)).toFixed(2)} m above ground`);
 }
-console.log('rookPerch.test OK');
+// OB-152: every chest + questPickup is reachable on foot: <= 0.5 m above the terrain (not floating, not on a roof) and walkable ground within 2 m.
+// Exception: chests deliberately set on a 1 m stair-block platform (chestCrossroads) are allowed up to 1.2 m.
+const PLATFORM = new Set(['chestCrossroads']);
+let checked = 0;
+for (const e of def.entities) {
+  const c = e.components || {};
+  const isChest = c.voxel && c.voxel.model === 'chestSmall', isPick = !!c.questPickup;
+  if (!isChest && !isPick) continue;
+  const t = w.get(e.id)?.data?.transform; if (!t) continue;
+  const dz = t.z - gz(t.x, t.y), maxDz = PLATFORM.has(e.id) ? 1.2 : 0.8;
+  assert.ok(dz <= maxDz && dz >= -0.5, e.id + ' is ' + dz.toFixed(2) + ' m above the ground (max ' + maxDz + ')');
+  let ok = false;
+  for (let a = 0; a < 360 && !ok; a += 30) for (const d of [0.8, 1.5, 2]) if (Math.abs(gz(t.x + Math.cos(a * Math.PI / 180) * d, t.y + Math.sin(a * Math.PI / 180) * d) - gz(t.x, t.y)) < 0.3) { ok = true; break; }
+  assert.ok(ok, e.id + ': no walkable ground within 2 m');
+  checked++;
+}
+assert.ok(checked >= 12, 'reachability checked ' + checked + ' chests/pickups');
+for (const id of ['nest', 'chestBoots', 'chestRook']) { const t = w.get(id).data.transform; assert.ok(t.z - gz(t.x, t.y) <= 0.8, id + ' must be on the ground'); }
+console.log('rookPerch.test OK (' + checked + ' chests/pickups reachable)');
