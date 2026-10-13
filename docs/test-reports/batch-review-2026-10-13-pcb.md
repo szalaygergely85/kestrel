@@ -24,3 +24,15 @@ Diff-only review of 11 commits on `pc-b`. Suites run: geo-perf, bandAhead (4x), 
 
 ## P3 answer (ASK ARCHITECT, G2 class tint)
 Do NOT bind the carpet classMap in the shade pass. The classMap is an eye-centred window sized to the carpet radius (radiusM * radiusScale * 1.5 + slack, 38.52 item 4). The far tier starts where that window ends, so it would have no class data there. Covering it would mean a much bigger map (memory + a slower sliced mask job) and one more texture plus a fetch per terrain cell in the hottest pass. Keep the per-ground-type colour (`fgT`). If owners want regional variety far out, add a coarse region/biome byte to the near TerrainTextures (baked with the band, per 2 m cell) as its own story. Twin rule as usual.
+
+## Re-review 2026-10-13b
+a. WM-02/02b + WM-03 + WM-04 b248a5ba: ARCH OK -> po-review
+   Note: the late counter is almost always 0 by construction (each loop exits once the budget is spent); fine as a structural guard. NavTileFill grows `c.bytes` after put without an evict check: the cache may sit a few hundred KB over cap until the next put (accept; evict on the next put).
+b. SWIM-04c + G2 assert + Canvas2D _refBox 8e218d1b: ARCH OK -> po-review (gpucompare underwaterLake + ceiling by the main session still required)
+c. WM-06 d29c50e7: ARCH OK -> po-review
+   Margin policy: 32 MB is an LRU cap, so a peak at ~cap is normal; the real gate is 0 sync bakes / 0 band:late. Keep 32 MB; raise it (max 36 MB, inside the 40 MB D-077 budget) only when a walk shows a miss, and only after trying "evict the zone farthest from the player first" instead of LRU.
+d. WM-07/07b 890b2d41 + 3d05332f: ARCH OK -> po-review
+   Byte-identical claim holds: `biomeOnly` and `_onTrunk` only touch biomeOnly layers, and they use hash draws only (no rng shift). Species without `trunkR` give NaN -> no exclusion (fails safe).
+e. R6a 30aaa681: ARCH OK -> po-review. Deviations accepted: 16-bit oct split over bytes 2/3 (hi) + 6/7 (lo) is needed for the <= 1/127 AC; the private 32x32 raster is fine because both twins read the same baked bytes.
+   Required doc follow-up (main session, with R6b): update 38.60 item 2 (texel layout + own raster); R6b WGSL/JS decode must use `decodeImpNormal`'s byte order.
+f. streamRoute.test 75abd72a: ARCH OK. The cut rule matches placementGrid (`cutM > 0 && d > cutM && !isLandmark(s, keepFar)`); the test is the bbox distance <= reach, so it is consistent.
