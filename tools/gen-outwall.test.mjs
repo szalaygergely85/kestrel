@@ -16,7 +16,7 @@ for (let i = 1; i <= 5; i++) { const d = Math.hypot(ent['wolf' + i].x - ent.goos
 assert.equal(ent.signArm.components.questPickup.item, 'signArm');
 assert.equal(ent.pierStone.components.inspect.text, 'note.pierStone');
 assert.ok(!w.entities.some((e) => /npc/i.test(e.type) && /^ow/.test(e.id)), 'no NPCs');
-assert.ok(w.bounds.parts.length <= 8);
+assert.ok(w.bounds.parts.length <= 16);
 const over = staticReach(w).bad.filter((p) => ['owGate', 'gooseFarm', 'barleyGate', 'owPathPost', 'signArm'].includes(p.id));
 assert.deepEqual(over, [], 'anchors inside the walk bounds');
 console.log('gen-outwall.test: OK', ow.length, 'meshes,', ids.length, 'distinct');

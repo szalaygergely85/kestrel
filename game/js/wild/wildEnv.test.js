@@ -18,9 +18,10 @@ import { makeOk } from '../../../engine/test/assert.js';
 import { buildBeastNav } from '../quest/sim/beastNav.js';
 import { createBeastSim } from '../quest/sim/beastSim.js';
 import wildlifeMod from '../../../design/models/voxel_wildlife.js'; // the real rabbit + deer data (sets ASSETS.models/wildlifeFx)
+import eatClipsMod from '../../../design/models/voxel_eat_clips.js'; // LIFE-07: eat clips, loaded after the wildlife models like game/index.html
 import { createWildEnv, createWild, buildTrunkGrid, buildMeshBlockGrid, placedTrees } from './wildEnv.js';
 
-wildlifeMod; paletteMod; detailPassMod; terrainMod; boarMod; swordMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; m3PropsMod;
+eatClipsMod; wildlifeMod; paletteMod; detailPassMod; terrainMod; boarMod; swordMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; m3PropsMod;
 const { assets } = await loadTestAssets();
 let pass = 0, fail = 0;
 const ok0 = makeOk(() => pass++, () => fail++, (m) => console.log('FAIL', m));

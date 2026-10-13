@@ -25,7 +25,7 @@ const t0 = performance.now();
 const nav = buildBeastNav(world, def.nav);
 const ms = performance.now() - t0;
 const g = nav.grid;
-ok('nav build < 2000 ms (cell 2: ~0.8 s; cell 1 was 3.0 s; old 192x192 area 0.5 s)', ms < 2000, `${ms.toFixed(0)} ms`);
+ok('nav build < 12000 ms (MAP-STRAND-01 widened nav.area to 455x490 cells at cell 2, ~223k cells: 5-7 s one-time load; was 0.8 s on the old area)', ms < 12000, `${ms.toFixed(0)} ms`);
 ok('nav grid < 400k cells', g.w * g.h < 400000, `${g.w}x${g.h}`);
 
 const homes = [];
