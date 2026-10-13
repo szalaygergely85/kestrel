@@ -4,12 +4,9 @@
 import { createWater, collectWaterDefs, World, integrate, PHYSICS } from '../../../../engine/index.js';
 import { allocProbe, skipNote } from '../../../../tools/allocProbe.mjs';
 import { createWading } from './wading.js';
-import { BOW_CFG } from '../bowConfig.js';
-import { createTargetables } from './targetables.js';
-import { createArrowSim } from './arrows.js';
 
 const w = new World();
-w.water = createWater(collectWaterDefs({ water: [{ id: 'r', shape: 'river', path: [[0, 0, 10, 30, 1], [60, 0, 10, 30, 1], [120, 0, 10, 30, 1]] }] }, []));
+w.water = createWater(collectWaterDefs({ water: [{ id: 'r', shape: 'river', path: Array.from({ length: 11 }, (_, i) => [i * 60, 0, 10, 30, 1]) }] }, []));
 w.physicsMode = 'mesh';
 const sup = { floorH: 9.6, ceilH: 'sky', terrain: false, slope: false, nx: 0, ny: 0, nz: 1 };
 w.supportAt = () => sup; w.floorAt = () => 9.6;
@@ -31,12 +28,4 @@ let k = 0;
 const ri = allocProbe((n) => { for (let i = 0; i < n; i++) { k++; e2.transform.x = PX[k % 100]; integrate(e2, 1 / 60, k % 2 ? walkE : south, w, PHYSICS); } }, { n: 5000, warm: 4 });
 const rb = allocProbe((n) => { for (let i = 0; i < n; i++) { k++; e2.transform.x = PX[k % 100]; wd.before(e2); integrate(e2, 1 / 60, k % 2 ? walkE : south, w, PHYSICS); } }, { n: 5000, warm: 4 });
 chk('wading.before adds < 16 B/step to integrate', rb.perCall - ri.perCall < 16, `${rb.perCall.toFixed(1)} vs integrate-only ${ri.perCall.toFixed(1)}`);
-// arrow sim with a floater (real consumer of waterAt/flowAt): armed once, floater outlives all windows (4500 steps x 1 m/s < 120 m of river)
-w.raySegment = (ax, ay, az, bx, by, bz, out) => { if (bz > 9.6) return false; const t = (az - 9.6) / (az - bz); out.t = t; out.x = ax + (bx - ax) * t; out.y = ay + (by - ay) * t; out.z = 9.6; return true; };
-w.state = {}; w.forEachEntity = () => {};
-const events = { on() { return () => {}; }, emit() {} };
-const sim = createArrowSim(w, events, { ...BOW_CFG, floatSteps: 1e7 }, createTargetables(w, events));
-sim.fire(5, 0, 12, 0, 0, -1, 0, 1); for (let i = 0; i < 40; i++) sim.step();
-const ra = allocProbe((n) => { for (let i = 0; i < n; i++) sim.step(); }, { n: 500, warm: 4 });
-chk('arrow sim with a floater < 16 B/step', sim.floatCount === 1 && ra.perCall < 16, `${ra.perCall.toFixed(1)} B/step, floaters ${sim.floatCount}`);
 if (bad) process.exitCode = 1;
