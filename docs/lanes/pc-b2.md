@@ -717,3 +717,8 @@ Open: (1) no `area` objective (no gooseFarm area trigger exists in areas.json; n
 - bindings.js/gameKeys.js: new `dive` action (ControlLeft, remappable); Space stays `jump` (swim-up while swimming). Pure mapper `game/js/quest/swimInput.js` (swimUpOf/jumpOf) + test.
 - chest.js: def.needsBottom -> pose.onBottom required; chestDefs.js `chestBed` (10 arrows + sturdy gear), world_m1 entity chestBed (1240,505,z ground = bed ~-68); chestHook sets pose.onBottom from body.
 - NEEDS B1-main: per step `controls.swimUp = swimUpOf(input.isDown(gameKeys.jump), input.isDown(gameKeys.dive), body)`; `controls.jump = jumpOf(...)`. No settings/key-hint list or audio bus touched (none found/skipped).
+
+### GOB-03 enemy spear on the arrow sim (kestrel-4, game, arch-review) - programmer
+- arrows.js: `createArrowSim(..., opts.owner='enemy')`, `fireVel(x,y,z,vx,vy,vz,dmg,srcId)`, exports `lobVelocity`, `createPlayerTarget(world)`; separate enemy payload (ranged 1, blocked out-field), blocked spear sticks pointing down + emits `beast:spearBlocked`. bowConfig.js `GOBLIN_SPEAR_CFG` (speedH 13, survivePct 0, 8/8/0 pools, stick 10 s). vitals.js: `p.ranged===1` -> dir = (p.dirX,p.dirY) for the block arc + knock.
+- New `sim/goblinSpear.test.js` (16 checks: hit at 12 m, strafe miss 8/10/12 m, block front / damage from behind, never hits goblins, not pickable, lob closed form, 0 alloc). arrows/vitals/shield/wading suites unchanged and PASS; check-deps OK.
+- Not done here (other items): beastSim thrower calling fireVel, main.js wiring (B1-main creates the enemy sim with createPlayerTarget), spear view.
