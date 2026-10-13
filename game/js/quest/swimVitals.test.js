@@ -13,20 +13,24 @@ const v = createVitals(w, ev, CFG, {}); v.step(pl, false);
 const sv = createSwimVitals(v);
 const tick = (sec) => { for (let i = 0; i < Math.round(sec * 60); i++) { sv.step(body, 1 / 60); v.step(pl, false); } };
 
-body.swimming = true; tick(11.5);
-assert.equal(v.dead, false); assert.ok(v.hp === 30 && sv.state.stamina > 0);
-tick(2.2); assert.equal(v.hp, 20, 'first drown tick = 1 heart (10 hp)'); // ~13.1 s: empty at 12 + 1.5
-tick(3.1); assert.equal(v.dead, true); assert.equal(v.deathCause, 'drown');
+body.swimming = true; tick(60);
+assert.equal(v.dead, false); assert.equal(v.hp, 30); assert.equal(sv.state.stamina, 100, '60 s surface swim: no drain, no damage');
+assert.equal(sv.visible(body), false, 'ring hidden while surface swimming at full');
+body.diving = true; tick(5.5); assert.equal(v.hp, 30); assert.ok(sv.state.stamina > 0); assert.equal(sv.visible(body), true);
+tick(2.2); assert.equal(v.hp, 20, 'first drown tick = 1 heart (10 hp)'); // ~7.7 s: empty at 6 + 1.5
+body.diving = false; tick(1); assert.equal(sv.state.drowning, false, 'surfacing stops drowning'); assert.ok(sv.state.stamina > 0 && v.hp === 20 && !v.dead);
+assert.equal(sv.visible(body), true, 'ring shown while refilling after a dive'); tick(5); assert.equal(sv.visible(body), false);
+body.diving = true; tick(6 + 4.6); assert.equal(v.dead, true); assert.equal(v.deathCause, 'drown'); body.diving = false;
 // reset on respawn: die, then respawn -> full stamina, no cause
 assert.equal(v.dead, true);
 for (let i = 0; i < 600 && !v.cardReady; i++) v.step(pl, false);
 v.step(pl, true); // [E] on the death card respawns
 assert.equal(v.dead, false); assert.equal(v.deathCause, null); assert.equal(v.hp, 30);
-body.swimming = true; tick(0.1); assert.ok(sv.state.stamina > 90, 'full after respawn');
+tick(0.1); assert.ok(sv.state.stamina > 90, 'full after respawn');
 // refill on land
 body.swimming = false; sv.state.stamina = 10; tick(0.5); assert.ok(sv.state.stamina > 20);
 body.swimming = false; tick(6); assert.equal(sv.state.stamina, 100);
-// diving drains twice as fast; drown ignores the invuln window
+// dive empties in 6 s
 body.diving = true; body.swimming = false; tick(6.1); assert.equal(sv.state.stamina, 0); body.diving = false;
 // 0 alloc
 if (global.gc) { const m0 = process.memoryUsage().heapUsed; body.swimming = true; for (let i = 0; i < 20000; i++) sv.step(body, 1 / 60); assert.ok(process.memoryUsage().heapUsed - m0 < 2e5); }

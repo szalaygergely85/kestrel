@@ -56,12 +56,14 @@ ok('clip pick: swim / tread / dive', wire.clipFor(e, true) === 'swim' && wire.cl
   const vit = createVitals(world, ev, VITALS_DEFAULTS, {}); vit.step(pl, false);
   const w2 = createSwimWire(world); w2.bindVitals(vit, { shore: createShore(globalThis.ASSETS.levels.world_geo.coast), ent: null });
   const run = (sec) => { for (let i = 0; i < Math.round(sec * 60); i++) { w2.afterStep(pl, i / 60); vit.step(pl, false); } };
-  // (a) 12 s in the Braid deep water: stamina empty, then drown ticks through vitals -> death 'drown'
+  // (a) D-070 amendment: 60 s surface swim in the Braid: no drain, no damage; then a dive > breath time -> drown ticks -> death 'drown'
   pt.x = cx; pt.y = by; pb.swimming = true;
   const wet = world.waterAt(pt.x, pt.y, wa); ok('Braid point is water, not sea', wet && wa.region !== 'sea', wa.region);
-  run(12); ok('stamina drained after 12 s', w2.vitals.state.stamina <= 1 && !vit.dead, w2.vitals.state.stamina);
+  run(60); ok('60 s surface swim: no drain, no damage', w2.vitals.state.stamina === 100 && !vit.dead && vit.hp === VITALS_DEFAULTS.startHp, [w2.vitals.state.stamina, vit.hp]);
+  pb.diving = true; run(6.5); ok('stamina drained after 6 s dive', w2.vitals.state.stamina <= 1 && !vit.dead, w2.vitals.state.stamina);
   run(6); ok('drown via vitals', vit.dead && vit.deathCause === 'drown', [vit.dead, vit.deathCause]);
   ok('monster stayed hidden in the river', w2.monster.state === 0);
+  pb.diving = false;
   // respawn -> reset
   for (let i = 0; i < 600 && !vit.cardReady; i++) vit.step(pl, false);
   vit.step(pl, true); w2.reset(); pb.swimming = false;

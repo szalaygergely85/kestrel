@@ -38,9 +38,9 @@ export function createSwimVitals(vitals, cfg = SWIM_VITALS_CONFIG) {
     st.stamina = CFG.max; st.dead = false; st.cause = null; st.drowning = false; st.drownTimer = 0; sv.shown = 0;
   };
 
-  /** True while the ring should be visible: in water or not full. */
+  /** True while the ring should be visible: diving or not full (surface swimming never shows it). */
   sv.visible = function visible(body) {
-    return st.stamina < CFG.max || !!(body && (body.swimming || body.diving));
+    return st.stamina < CFG.max || !!(body && body.diving); // D-070 amendment: only while diving or refilling after a dive
   };
 
   /** 12-cell ring below the MP bar. `style` = uiStyle.vitals (layout.x / mpRow / textBg). Lit cells clockwise = stamina share. */

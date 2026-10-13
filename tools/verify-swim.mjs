@@ -47,8 +47,6 @@ try {
   let under = null;
   for (let i = 0; i < 20; i++) { await pause(100); const s2 = await evaluate(cdp, q); if (s2 && s2.swimming && s2.eye < s2.waterZ - 0.05) { under = s2; await shot('swim-under-' + backend); break; } }
   // SWIM-ASSETS-01: sea monster circle still - teleport into the warn band of the south sea (z = sea surface -96), wait for state 'circle'.
-  // The stamina model has no refill in the water: the Braid + Glasswater swims above already used ~12 s (empty after 12 s, drowned 4.5 s later), so the player would drown during the 10 s wait and the monster parks (vitals.dead). Start the sea leg with a full ring.
-  await evaluate(cdp, '(()=>{const w=__debug.swimWire;if(w&&w.vitals)w.vitals.reset();return true;})()');
   await evaluate(cdp, `(()=>{const h=__debug.playerHandle,t=h.data.transform;t.x=1525;t.y=${1770 + SEA_EDGE_CONFIG.warnM + 4};t.z=-95;h.data.components.body.vz=0;})()`);
   let mon = null;
   for (let i = 0; i < 40; i++) { await pause(250); mon = await evaluate(cdp, '(()=>{const w=__debug.swimWire;const m=w&&w.monster;return m?{state:m.name,x:m.x,y:m.y,z:m.z,clip:m.clip,hidden:!!(m.ent&&m.ent.components&&m.ent.components.voxel&&m.ent.components.voxel.hidden)}:null;})()'); if (mon && mon.state === 'circle') { await shot('swim-monster-circle-' + backend); break; } }
