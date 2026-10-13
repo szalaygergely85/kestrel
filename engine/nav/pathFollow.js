@@ -6,18 +6,28 @@
 //         waitFar (stop when the target is farther than this, default Infinity), resumeNear (resume once the
 //         target is closer than this, default = waitFar), onArrive(wpIndex) (called when a waypoint is reached).
 //   follower.step(dt, speedScale = 1, px = NaN, py = NaN) -> true if it moved. (px,py) = the player to wait for.
+//   follower.setPath(buf, n) reuses the follower for a new route (first n points of buf, no allocation).
 //   follower fields: x, y, yawDeg, seg (index of the last waypoint reached; heads for seg+1), s (metres walked),
 //                    done, waiting.  reset(seg) puts it on waypoint `seg` and clears done/waiting.
 import { yawFromDelta } from '../core/transform.js';
 
 export function createPathFollower(points, opts = {}) {
-  const n = points.length >> 1;
+  let n = points.length >> 1;
   if (n < 1) throw new Error('createPathFollower: need at least one point');
   const speed = opts.speed ?? 1, arriveR = opts.arriveR ?? 0.4, turnRate = opts.turnRate ?? 360;
   const waitFar = opts.waitFar ?? Infinity, resumeNear = opts.resumeNear ?? waitFar;
   const onArrive = opts.onArrive || null;
   const f = {
     x: points[0], y: points[1], yawDeg: 0, seg: 0, s: 0, done: n === 1, waiting: false,
+    // LIFE-01: reuse this follower for a new route in a caller-owned buffer (no allocation). Uses the first n
+    // points of buf (n >= 1, clamped to buf), puts the follower on point 0; yaw is kept (smooth turn into the new leg).
+    setPath(buf, count) {
+      const m = Math.min(count | 0, buf.length >> 1);
+      if (m < 1) return f;
+      points = buf; n = m;
+      f.seg = 0; f.s = 0; f.x = buf[0]; f.y = buf[1]; f.done = m === 1; f.waiting = false;
+      return f;
+    },
     reset(seg = 0) {
       const k = seg < 0 ? 0 : seg > n - 1 ? n - 1 : seg | 0;
       f.seg = k; f.x = points[k * 2]; f.y = points[k * 2 + 1]; f.done = k === n - 1; f.waiting = false;
