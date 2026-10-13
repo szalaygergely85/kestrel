@@ -16,10 +16,11 @@ export const L_SEED = 0, L_CELL_CM = 1, L_JIT_CM = 2, L_DRAW_CM = 3, L_NSPECIES 
 export const LAYER_WORDS = 8;
 // per species SPECIES_WORDS: cum16 (cumulative weight, 0..65536, last = 65536),
 // lodCm (>= this distance -> LOD1; >= maxCm means never), maxCm, flags,
-// scaleMinMilli, scaleMaxMilli (scale = (min + (max-min)*q/255)/1000, q 8 bit).
-export const S_CUM16 = 0, S_LOD_CM = 1, S_MAX_CM = 2, S_FLAGS = 3, S_SCALE_MIN = 4, S_SCALE_MAX = 5;
-export const SPECIES_WORDS = 6;
-export const SP_GRASS_LIKE = 1;
+// scaleMinMilli, scaleMaxMilli (scale = (min + (max-min)*q/255)/1000, q 8 bit), sinkCm (z = ground - sink).
+export const S_CUM16 = 0, S_LOD_CM = 1, S_MAX_CM = 2, S_FLAGS = 3, S_SCALE_MIN = 4, S_SCALE_MAX = 5, S_SINK_CM = 6;
+export const SPECIES_WORDS = 7;
+export const SP_GRASS_LIKE = 1, SP_SWAY = 2; // S_FLAGS bits; SP_SWAY = species sways (content species.sway, e.g. not pebbles)
+export const DEFAULT_SINK_M = 0.05;  // same default as engine/world/scatter.js species.sinkM
 export const MASK_PROB_MASK = 127, MASK_CARPET_BIT = 128;
 export const MAX_DIST_CM = 32000;     // 2*32000^2 < 2^31: with the per-axis reject every accepted d2 is exact in i32
 export const FADE_Q8_MIN = 205;       // fade factor 0.8 .. 0.996 (205 + hash8*51>>8) / 256
@@ -49,7 +50,7 @@ export function jitterCm(h, jitCm) {
 
 /**
  * cfg = { layers: [{ seed, cellM, jitterM, drawM, densityQ8?, species: [{ weight, lodM, maxDistM,
- *   grassLike?, scaleMin, scaleMax }] }] } -> { words, nLayers }.
+ *   grassLike?, sway?, sinkM?, scaleMin, scaleMax }] }] } -> { words, nLayers }.
  * Metres -> integer cm once, here. Throws on values that would break exactness.
  */
 export function packDecorLayers(cfg) {
@@ -78,7 +79,10 @@ export function packDecorLayers(cfg) {
       const mx = Math.round(S.maxDistM * 100), lod = Math.round(S.lodM * 100);
       if (mx < 1 || mx > MAX_DIST_CM) throw new Error('decor layer ' + l + ' species ' + i + ': maxDistM out of range');
       words[p + S_LOD_CM] = Math.min(lod, MAX_DIST_CM); words[p + S_MAX_CM] = mx;
-      words[p + S_FLAGS] = S.grassLike ? SP_GRASS_LIKE : 0;
+      const sink = Math.round((S.sinkM != null ? S.sinkM : DEFAULT_SINK_M) * 100);
+      if (!(sink >= 0 && sink <= 1000)) throw new Error('decor layer ' + l + ' species ' + i + ': sinkM out of range');
+      words[p + S_FLAGS] = (S.grassLike ? SP_GRASS_LIKE : 0) | (S.sway ? SP_SWAY : 0);
+      words[p + S_SINK_CM] = sink;
       words[p + S_SCALE_MIN] = Math.round(S.scaleMin * 1000); words[p + S_SCALE_MAX] = Math.round(S.scaleMax * 1000);
     }
     sOff += ns * SPECIES_WORDS;

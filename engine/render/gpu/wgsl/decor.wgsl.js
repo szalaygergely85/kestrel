@@ -17,7 +17,7 @@ import { VEG_MARK, VEG_VAL_SHIFT, VEG_HUE_SHIFT } from '../../../mesh/vegTint.js
 import {
   K_RANK, K_JX, K_JY, K_SPECIES, K_YAW, K_SCALE, K_FADE, KEY_MUL, FADE_Q8_MIN, FADE_Q8_SPAN, MAX_DIST_CM,
   L_SEED, L_CELL_CM, L_JIT_CM, L_DRAW_CM, L_NSPECIES, L_SPECIES_OFF, L_DENSITY_Q8, LAYER_WORDS,
-  S_CUM16, S_LOD_CM, S_MAX_CM, S_FLAGS, S_SCALE_MIN, S_SCALE_MAX, SPECIES_WORDS, SP_GRASS_LIKE,
+  S_CUM16, S_LOD_CM, S_MAX_CM, S_FLAGS, S_SCALE_MIN, S_SCALE_MAX, S_SINK_CM, SPECIES_WORDS, SP_GRASS_LIKE, SP_SWAY,
   MASK_PROB_MASK, MASK_CARPET_BIT, O_SPECIES, O_XCM, O_YCM, O_JQX, O_JQY, O_YAWQ, O_SCALEQ, O_DIST2, DECOR_OUT_WORDS,
 } from '../../../mesh/decorScatter.js';
 
@@ -159,6 +159,13 @@ fn decorScaleW(p: u32, q: u32) -> f32 {
   return (smin + (smax - smin) * f32(q) / 255.0) / 1000.0;
 }
 
+// per-species row facts (decorScatter.js S_SINK_CM / SP_SWAY): z sinks into the ground, only swaying species get INST_FLAG_SWAY
+fn decorSinkZ(z: f32, p: u32) -> f32 { return z - f32(dw[p + ${S_SINK_CM}u]) * 0.01; }
+fn decorRowFlags(p: u32) -> u32 {
+  if ((dw[p + ${S_FLAGS}u] & ${SP_SWAY}u) != 0u) { return ${INST_FLAG_SWAY}u; }
+  return 0u;
+}
+
 @compute @workgroup_size(${DECOR_WORKGROUP})
 fn cs_decor(@builtin(global_invocation_id) gid: vec3u) {
   let t = gid.x;
@@ -179,7 +186,7 @@ fn cs_decor(@builtin(global_invocation_id) gid: vec3u) {
   let p = dw[o + ${L_SPECIES_OFF}u] + sp * ${SPECIES_WORDS}u;
   let x = f32(dout[${O_XCM}]) * 0.01;
   let y = f32(dout[${O_YCM}]) * 0.01;
-  let z = decorGround(x, y);
+  let z = decorSinkZ(decorGround(x, y), p);
   if (aabbOutside(x, y, z)) { return; }
   let seed = dw[o + ${L_SEED}u];
   let slot = sp * 2u + (r - 1u);
@@ -194,6 +201,6 @@ fn cs_decor(@builtin(global_invocation_id) gid: vec3u) {
   rows[b] = bitcast<u32>(c); rows[b + 1u] = bitcast<u32>(-s); rows[b + 2u] = 0u; rows[b + 3u] = bitcast<u32>(x);
   rows[b + 4u] = bitcast<u32>(s); rows[b + 5u] = bitcast<u32>(c); rows[b + 6u] = 0u; rows[b + 7u] = bitcast<u32>(y);
   rows[b + 8u] = 0u; rows[b + 9u] = 0u; rows[b + 10u] = bitcast<u32>(sc); rows[b + 11u] = bitcast<u32>(z);
-  rows[b + 12u] = id; rows[b + 13u] = ${INST_FLAG_SWAY}u; rows[b + 14u] = 0u; rows[b + 15u] = 0u;
+  rows[b + 12u] = id; rows[b + 13u] = decorRowFlags(p); rows[b + 14u] = 0u; rows[b + 15u] = 0u;
 }
 `;
