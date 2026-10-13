@@ -712,3 +712,8 @@ Open: (1) no `area` objective (no gooseFarm area trigger exists in areas.json; n
 - Cause: lifeWire `collide` called `world.ensureBandFor` (sync band bake). `World.collideCircle` itself is mesh-collider only (moveCircleMesh), no band/lazy build. Removed the call; groundAt outside the band is coarse (fine, far villagers are LOD-snapped).
 - [E] Talk rec now stays attached: registered once, live x/y/z rewritten every apply; removed only while hidden; re-added if the world dropped it.
 - Tests (lifeWire.test.js): ensureBandFor spy = 0 calls; interactable pos == NPC pos while walking; step < 4 ms behind BAKE_BENCH=1 (passes). Filter run 6/6 PASS. Files: game/js/life/lifeWire.js, lifeWire.test.js.
+
+### SWIM-04d dive key + lake-bed chest (kestrel-4, game, po-review) - programmer
+- bindings.js/gameKeys.js: new `dive` action (ControlLeft, remappable); Space stays `jump` (swim-up while swimming). Pure mapper `game/js/quest/swimInput.js` (swimUpOf/jumpOf) + test.
+- chest.js: def.needsBottom -> pose.onBottom required; chestDefs.js `chestBed` (10 arrows + sturdy gear), world_m1 entity chestBed (1240,505,z ground = bed ~-68); chestHook sets pose.onBottom from body.
+- NEEDS B1-main: per step `controls.swimUp = swimUpOf(input.isDown(gameKeys.jump), input.isDown(gameKeys.dive), body)`; `controls.jump = jumpOf(...)`. No settings/key-hint list or audio bus touched (none found/skipped).
