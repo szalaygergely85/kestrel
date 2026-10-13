@@ -14,7 +14,7 @@ import { packMaterialTable } from '../ShadeTextures.js';
 import { packTerrainTextures } from '../TerrainTextures.js';
 import { SKY_LUT_N } from '../wgsl/skyLut.js';
 import { sunFromWorld } from '../../lighting.js';
-import { skylineFor, grassTableFor, packGrassTable } from '../../terrainShade.js'; // MAP-06b: same record as the JS twin's ctx.skyline
+import { skylineFor, grassTableFor, packGrassTable, makeFarGrass, farGrassFill } from '../../terrainShade.js'; // MAP-06b: same record as the JS twin's ctx.skyline
 import { PROJ_HFOV_DEG } from '../../projection.js';
 import { orthoHashCell } from '../../projection.js'; // US-068b2
 import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
@@ -34,7 +34,7 @@ const S_SPARSE_ALT = S('fogSparseAlt'), S_HAZE_ALT = S('fogHazeAlt');
 const S_SPARSE_C0 = S('fogSparseCode0'), S_SPARSE_C1 = S('fogSparseCode1'), S_HAZE_C0 = S('fogHazeCode0'), S_HAZE_C1 = S('fogHazeCode1');
 const S_ETA = S('etA'), S_ETID = S('etId'), S_ETC = S('etC'); // 38.23 tint words
 const EMPTY_GRASS = { n: new Uint8Array(1), ramp: new Float64Array(12), glyph: new Uint8Array(5) };
-const S_PITCH_A = S('pitchA'), S_PITCH_B = S('pitchB'), S_PITCH_C = S('pitchC'), S_FACEK = S('faceK'), S_SKYCAM = S('skyCam'), S_FOGVIEW = S('fogView'), S_SKYGLOWON = S('skyGlowOn'), S_SKYLINE = S('skyline'), S_GRASS = S('grass'), S_CLIFF = S('cliff');
+const S_PITCH_A = S('pitchA'), S_PITCH_B = S('pitchB'), S_PITCH_C = S('pitchC'), S_FACEK = S('faceK'), S_SKYCAM = S('skyCam'), S_FOGVIEW = S('fogView'), S_SKYGLOWON = S('skyGlowOn'), S_SKYLINE = S('skyline'), S_GRASS = S('grass'), S_CLIFF = S('cliff'), S_FGP = S('fgP'), S_FGW = S('fgW'), S_FGT = S('fgT');
 const S_UNDER = S('under'), S_UNDER_TINT = S('underTint'), S_UNDER_CAM = S('underCam'), S_UNDER_CEIL = S('underCeil'), S_UNDER_CAUS = S('underCaus'), S_UNDER_RB = S('underRampB'), S_UNDER_RC = S('underRampC'); // SWIM-04c
 /** 38.23: copy the tint table (fb.entityTints) into the ShadeU words: etA.x = count, etId (u32 view), etC rgb+k. Zero alloc; count 0 and cleared tail when absent. */
 export function writeEntityTints(su, su32, tints) {
@@ -282,6 +282,14 @@ export class WgShadePass {
       if (!this.grassTmp) this.grassTmp = new Float32Array(80 * 4);
       packGrassTable(gcfg ? grassTableFor(gcfg) : EMPTY_GRASS, this.grassTmp);
       su.set(this.grassTmp, S_GRASS);
+    }
+    // G2 + P3 (D-075 step 4): far grass tier, per frame (same record + fill as the JS twin's ctx.farGrass; on = 0 without a carpet)
+    {
+      const fgr = this.fgRec || (this.fgRec = makeFarGrass()), w = useScene ? p._world : null;
+      if (gcfg && w.terrain && w.terrain.typeNames) farGrassFill(fgr, gcfg, w.terrain.typeNames, w.carpetQuality, w.wind && w.wind.params ? w.wind.params : null); else fgr.on = 0;
+      su[S_FGP] = fgr.on; su[S_FGP + 1] = fgr.startM; su[S_FGP + 2] = fgr.fadeM; su[S_FGP + 3] = fgr.mix;
+      su[S_FGW] = fgr.dirX; su[S_FGW + 1] = fgr.dirY; su[S_FGW + 2] = fgr.cyc; su[S_FGW + 3] = fgr.invTravel;
+      su.set(fgr.types, S_FGT);
     }
     if (useScene && lightCam) { su[S_HORIZON] = lightCam.horizonRow; su[S_PLANEDY] = lightCam.planeDistY; }
     if (useScene && p._world.terrain && this.palette) { // US-026a S5: the sun for the terrain look, per frame (a few trig calls)

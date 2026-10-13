@@ -1,6 +1,6 @@
 // US-016 Node tests for `shadeTerrain` (docs/architecture.md 14.4 item 5,
 // near-detail extension 23.4).
-import { shadeTerrain, hashFast01, perCellHashSize, shadeTerrainCells, groundAlbedo, groundTierOffset, patchNoise, valueNoise, NOISE_CELLS, NOISE_SALT, PATCH_K, shadeGrass, grassTableFor, GRASS_GX_HAS, GRASS_BACKLIGHT_K, CLIFF_NZ } from './terrainShade.js';
+import { shadeTerrain, hashFast01, perCellHashSize, shadeTerrainCells, groundAlbedo, groundTierOffset, patchNoise, valueNoise, NOISE_CELLS, NOISE_SALT, PATCH_K, shadeGrass, grassTableFor, GRASS_GX_HAS, GRASS_BACKLIGHT_K, CLIFF_NZ, makeFarGrass, farGrassFill } from './terrainShade.js';
 import { Terrain } from '../world/Terrain.js';
 import { GBuffer, KIND_TERRAIN } from './GBuffer.js';
 import { CellBuffer } from './CellBuffer.js';
@@ -503,6 +503,21 @@ export function patchShape(shade) {
   const h0 = process.memoryUsage().heapUsed;
   for (let k = 0; k < 200000; k++) shadeTerrain(100, 0, 0.9, k, 7, 0, cc, o, 0, 12.3, 1, 0, 0.1);
   check('OB-104b 0 alloc (' + (process.memoryUsage().heapUsed - h0) + ' B)', process.memoryUsage().heapUsed - h0 < 500000);
+}
+// G2 + P3: far grass tier - nothing inside the carpet radius, ramp colour + level 254 beyond, off = identical
+{
+  const cfg = { radiusM: 12, variants: [{ ground: ['grass'], ramp: [[10, 40, 10], [30, 200, 30], [60, 255, 60]], areas: [1] }] };
+  const rec = farGrassFill(makeFarGrass(), cfg, ['water', 'grass'], { on: true, radiusScale: 1, farGrass: true }, null);
+  check('farGrass: type 1 strength + mid colour', rec.types[7] === 1 && rec.types[4] === 30 && rec.types[5] === 200 && rec.types[0 + 3] === 0);
+  const oa = { glyph: 0, level: 0, fg: new Uint8Array(3), bg: new Uint8Array(3) }, ob = { glyph: 0, level: 0, fg: new Uint8Array(3), bg: new Uint8Array(3) };
+  shadeTerrain(8, 1, 0.9, 100, 100, 0, ctx, oa);
+  shadeTerrain(8, 1, 0.9, 100, 100, 0, { ...ctx, farGrass: rec }, ob);
+  check('farGrass: inside the radius unchanged (level 255)', oa.glyph === ob.glyph && oa.fg[1] === ob.fg[1] && ob.level === 255);
+  shadeTerrain(40, 1, 0.9, 100, 100, 0, ctx, oa);
+  shadeTerrain(40, 1, 0.9, 100, 100, 0, { ...ctx, farGrass: rec }, ob);
+  check('farGrass: beyond the fade -> level 254 and greener', ob.level === 254 && ob.fg[1] > oa.fg[1]);
+  rec.on = 0; shadeTerrain(40, 1, 0.9, 100, 100, 0, { ...ctx, farGrass: rec }, ob);
+  check('farGrass: off = identical', ob.glyph === oa.glyph && ob.fg[1] === oa.fg[1] && ob.level === 255);
 }
 console.log(`terrainShade.test.js: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);
