@@ -6542,3 +6542,39 @@ The route stays as designed: the notch shape and the colliders are unchanged.
 - save goblin positions;
 - place goblins east of WEST_X or below band 5;
 - change boar / wolf / bear numbers or hashes.
+
+### 38.58 Terrain band cache + pre-bake (OB-109) (PC-B architect opus 2026-10-13, owner-authorised, PC-A to ratify)
+Problem: `World.ensureBandFor` / `streamBand` keep only current + pending; every swap re-bakes terrain + tree/detail scatter + colliders (measured Node, world_m1: `ensureBandFor` 311-512 ms per zone, swap frame `lastSwapMs` 3-24 ms). Owner wants nothing baked in play.
+
+**Decision: a per-World `BandCache` of finished band bundles. Authored zones: bake ALL behind the loading bar and keep them. Grid (MAP-10): byte-capped LRU with pins, filled ahead in idle slices. A swap in play is a cache hit = pointer flips + GPU re-upload, never a bake.** This amends 38.38 "Do not pool or reuse `near` objects": a cached bundle may be re-published later (new `version`, identity differs from the outgoing `near`, so terrainMesh/TerrainTextures rebuild as today). Bundles are never mutated after bake, except `near.version` at publish and editor edits (below).
+
+**Memory (measured from typed-array bytes, world_m1 Node probe, mesh physics, trees + detail on):** near 320x192 x 9 B = 0.53 MB per band (fixed); trees 0-1150 (<= 0.03 MB); detail <= 824 (<= 0.03 MB); trunk collider 0-2.0 MB; detail collider 0-1.5 MB. Per band: east 2.9, west 3.9, south1 2.2, south2 0.7, south3 0.5 MB = **10.3 MB for the 5 zones; budget 16 MB for 6**. Worst case at the 38.43 caps (3000 trees, 40k detail) ~8 MB/band. Carpet (off by default, OB-096): cache only `classMap` per band if on (mask stays the sliced MASK-b job). Default cap `bandCache.maxBytes = 24 MB`; authored zones that fit are all pinned.
+
+**API (engine/world/bandCache.js, new; World owns it, never serialised):**
+```js
+/** @typedef {{key:string, zone:number, near:object, scatter:object|null, detail:object|null,
+ *   trunks:object|null, detailCol:object|null, classMap:Uint8Array|null, bytes:number, pinned:boolean, lastUse:number}} BandBundle */
+new BandCache({ maxBytes })        // get(key) -> BandBundle|null; put(b); pin(key, on); evict() LRU unpinned, never current/pending; clear()
+bandCache.stats() -> { entries, bytes, hits, misses, bakes, evictions }   // reused object, F3 + verify tools
+World.prebakeBands(msBudget) -> { done, total, bytes }                     // sliced, loading bar only; reused out object
+World.bandCache                                                            // read-only
+```
+Key = `_nearKey` form (`nearBandKey(zone) + realTrees + detail cfg id`). Bundle bytes = sum of `byteLength` of its typed arrays (incl. collider arrays).
+
+**Bake without touching the live band.** Today the bake lives in `terrain._bb` + `world._bandJob` (one pending slot). Step a turns these into a reusable `BandBakeJob` (terrain rows via `util.bake` slices + the 4 scatter/collider phases, view `Object.create(terrain)` with `near = job.b`), so `_bb`/`_bandJob` become "the job for the pending swap" and `prebakeBands` / bake-ahead run their own job. Overlap copy only from `terrain.near` or a cached bundle (per-cell pure, byte-identical).
+
+**Swap on hit (`_publishBand`):** `get(key)` hit -> skip `_bandJobStep` and `swapNearBand` bake; set `terrain.near = bundle.near` (version = old + 1), `scatter/detail` refs, collider slot replace (indexed, no closure), `carpet.classMap` from bundle, ground snap, events with preallocated payloads. JS swap frame <= 4 ms, 0 alloc (when no ground-snap entity moved). GPU: TerrainTextures re-upload on `near.version` (0.55 MB texSubImage, ~0.3-1 ms iGPU), instance buffers on `world:scatter` (< 2k instances, < 0.1 ms), terrainMesh rows stay under their own sliced budget (unchanged, far exclusion still moves at `_publishNear`). Miss in play = today's sliced 2 ms bake + `put` (never a new sync path); `band:late` stays as the logged last resort.
+
+**Loading bar:** "Shaping the land" (bootCard / far hold) gets a second progress slice: after `World.load` (start band baked + `put` + pinned), the bar loop calls `world.prebakeBands(12)` per rAF until `done === total` (order: zones by distance from the spawn/saved pose). Continue / Load / restart reuse the cache if the World instance is the same; a new World re-prebakes. `?prebake=0` = old behaviour (baseline). Expected ~2 s laptop for 5 zones, under the bar.
+
+**Grid (MAP-10, 17+ regions):** same cache, cap 24 MB, pinned = current + start zone + `terrainGrid.pin: [[i,j],...]` (main roads, data). Bake-ahead: when `streamBand` returns 0 and frame budget is left (<= 2 ms total with the band work), bake the next uncached zone by priority (the <= 3x3 ring around the current zone, ordered by distance to the zone edge the player approaches) into the cache. Never synchronous in play; never more than one bake-ahead job; a job for a zone that left the ring is dropped.
+
+**Editor:** `Terrain.rebakeRect` / `refreshTerrainScatter` mutate the live band: drop every cached bundle whose rect overlaps the edit, then re-`put` the current band after `refreshTerrainScatter`.
+
+**Steps (each <= 1 programmer-day, Node ACs; PC-A track `engine/world`, PC-B may take per cross-track rule, ends in `arch-review`):**
+- **OB109-B1 BandBakeJob refactor.** Terrain + scatter/collider job independent of `_bb`/`_bandJob`; existing tests unchanged; new: a job baked for each world_m1 zone == `ensureBandFor` result bytes (near arrays, scatter/detail arrays, collider positions).
+- **OB109-B2 BandCache + hit path.** `bandCache.js` + `_publishBand`/`ensureBandFor`/`streamBand` hit path. ACs: second visit = 0 calls to `util.bake`/`TreeScatterJob`/`DetailScatterJob` (spy counters); cached bundle byte-identical to a fresh bake; `stats().bytes` == summed byteLength; LRU evicts unpinned only, never current/pending; swap-on-hit 0 alloc (heap delta over 100 east<->west swaps, `--expose-gc`) and `lastSwapMs` reported; editor invalidation test.
+- **OB109-B3 prebakeBands + loading bar (PC-B, main.js/bootCard).** ACs: `prebakeBands(ms)` never exceeds ms+one slice; after done all 5 zones cached, walking route legs 8-10 logs 0 bakes and 0 `band:late`; headless `tools/verify-ob109.mjs` prints bar time + cache MB + max in-game frame.
+- **OB109-B4 grid bake-ahead (with/after MAP-10).** ACs: ring priority table; idle bake-ahead stays <= 2 ms/frame; route walk across 4 grid zones: 0 sync bakes, cache <= maxBytes, pins never evicted.
+
+**Do not:** bake on a swap frame or synchronously in play (except the logged `band:late`); mutate a cached bundle other than `version`; serialise the cache; let game code pick zones (it passes pose, budget, pins in data); keep the cache across World instances.
