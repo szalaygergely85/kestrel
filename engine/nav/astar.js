@@ -40,6 +40,7 @@ export function createAStar(grid) {
     closedStamp: new Uint32Array(n),
     generation: 0,
     partial: false,
+    scratch: new Int32Array(n), // planPath's cell path (LIFE-01)
     heap: /** @type {IndexHeap} */ (/** @type {unknown} */ (null)),
   };
   astar.heap = new IndexHeap(n, (a, b) => {
@@ -239,4 +240,29 @@ export function pathCrossesRect(path, len, grid, rect) {
     if (x >= cx0 && x < cx1 && y >= cy0 && y < cy1) return true;
   }
   return false;
+}
+
+/**
+ * LIFE-01 free-target helper: plan (sx,sy,gx,gy world metres) on `grid`, smooth, and write waypoint x,y pairs into
+ * `outBuf` (Float64Array, caller-owned; capacity = outBuf.length>>1 waypoints, extra corners are dropped but the last
+ * waypoint is always the path end). Returns the waypoint count, 0 if the start is off-grid/blocked.
+ * `astar.partial` is true when the goal was unreachable/blocked/over `maxNodes` (the path then ends at the closest
+ * reached cell). Allocates nothing.
+ * @param {import('./NavGrid.js').NavGrid} grid
+ * @param {ReturnType<typeof createAStar>} astar
+ * @param {Float64Array} outBuf
+ */
+export function planPath(grid, astar, sx, sy, gx, gy, outBuf, maxNodes = 1500) {
+  const cells = astar.scratch;
+  const len = findPath(astar, grid.cellX(sx), grid.cellY(sy), grid.cellX(gx), grid.cellY(gy), cells, { maxNodes });
+  if (len === 0) return 0;
+  let count = smoothPath(grid, cells, len, outBuf);
+  const cap = outBuf.length >> 1;
+  if (count > cap) {
+    const last = cells[len - 1];
+    outBuf[(cap - 1) * 2] = grid.cellCenterX(last % grid.w);
+    outBuf[(cap - 1) * 2 + 1] = grid.cellCenterY((last / grid.w) | 0);
+    count = cap;
+  }
+  return count;
 }

@@ -4,7 +4,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { NavGrid } from './NavGrid.js';
-import { createAStar, findPath, smoothPath, pathCrossesRect } from './astar.js';
+import { createAStar, findPath, smoothPath, pathCrossesRect, planPath } from './astar.js';
 import { makeOk } from '../test/assert.js';
 
 if (typeof global.gc !== 'function') {
@@ -277,6 +277,41 @@ function pathCost(grid, path, len) {
   const after = process.memoryUsage().heapUsed;
   const grew = after - before;
   ok('zero alloc: findPath/smoothPath/pathCrossesRect over 2000 queries (--expose-gc)', grew < 64 * 1024, `grew by ${grew} bytes (sink=${sink})`);
+}
+
+// LIFE-01 planPath
+{
+  const grid = openGrid(32, 32);
+  for (let y = 4; y < 28; y++) grid.terrainCost[y * 32 + 16] = 0; // wall x=16, gap at y<4 and y>=28
+  grid._recomputeCost();
+  const astar = createAStar(grid);
+  const buf = new Float64Array(64);
+  let n = planPath(grid, astar, 2.5, 16.5, 29.5, 16.5, buf, 1500);
+  ok('planPath: free target around obstacle', n >= 3 && !astar.partial && buf[0] === 2.5 && buf[(n - 1) * 2] === 29.5, `n=${n}`);
+  let crosses = false;
+  for (let i = 0; i < n - 1; i++) if ((buf[i * 2] < 16 && buf[i * 2 + 2] > 17) && buf[i * 2 + 1] > 4 && buf[i * 2 + 3] > 4 && buf[i * 2 + 1] < 28) crosses = true;
+  ok('planPath: path goes round the wall', !crosses, '');
+  // enclosed (unreachable) target: partial path, ends at a reachable cell
+  for (let y = 10; y < 13; y++) for (let x = 24; x < 27; x++) grid.terrainCost[y * 32 + x] = 0;
+  grid.terrainCost[11 * 32 + 25] = 1; grid._recomputeCost();
+  n = planPath(grid, astar, 2.5, 16.5, 25.5, 11.5, buf, 1500);
+  ok('planPath: unreachable target -> partial', n >= 1 && astar.partial, `n=${n} partial=${astar.partial}`);
+  ok('planPath: blocked start -> 0', planPath(grid, astar, 16.5, 10.5, 2.5, 2.5, buf, 1500) === 0, '');
+  // maxNodes cap respected: tiny cap = partial, short of the goal
+  n = planPath(grid, astar, 2.5, 2.5, 29.5, 29.5, buf, 5);
+  ok('planPath: maxNodes cap -> partial', astar.partial && n >= 1 && !(buf[(n - 1) * 2] === 29.5 && buf[(n - 1) * 2 + 1] === 29.5), `n=${n}`);
+  // waypoint capacity clamps, last point is the end
+  const small = new Float64Array(4);
+  n = planPath(grid, astar, 2.5, 16.5, 29.5, 16.5, small, 1500);
+  ok('planPath: capacity clamp keeps the end', n === 2 && small[2] === 29.5 && small[3] === 16.5, `n=${n}`);
+  // zero alloc on reuse
+  global.gc();
+  const b0 = process.memoryUsage().heapUsed;
+  let sink = 0;
+  for (let i = 0; i < 2000; i++) sink += planPath(grid, astar, 2.5, 16.5, 29.5, 16.5, buf, 1500);
+  global.gc();
+  const grew = process.memoryUsage().heapUsed - b0;
+  ok('planPath: zero alloc over 2000 plans', grew < 64 * 1024, `grew ${grew} (sink=${sink})`);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

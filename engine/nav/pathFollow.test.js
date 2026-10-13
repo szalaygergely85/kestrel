@@ -70,4 +70,22 @@ const DT = 1 / 60;
   const grow = process.memoryUsage().heapUsed - h0;
   ok(grow < 200000, 'heap flat over 10k steps: ' + grow);
 }
+// LIFE-01: setPath reuse
+{
+  const buf = new Float64Array(16);
+  buf.set([0, 0, 4, 0]);
+  const f = createPathFollower(buf.subarray(0, 4), { speed: 2, turnRate: 100000 });
+  let guard = 0; while (!f.done && guard++ < 1000) f.step(DT);
+  ok(f.done && f.x === 4, 'first route done');
+  buf.set([4, 0, 4, 6, 0, 6]);
+  ok(f.setPath(buf, 3) === f && !f.done && f.x === 4 && f.y === 0 && f.seg === 0 && f.s === 0, 'setPath restarts on new buffer');
+  guard = 0; while (!f.done && guard++ < 2000) f.step(DT);
+  ok(f.done && f.x === 0 && f.y === 6 && f.seg === 2, 'second route arrives');
+  ok(f.setPath(buf, 1).done, 'single point is done');
+  f.setPath(buf, 0); ok(f.done, 'n<1 ignored');
+  f.setPath(buf, 3);
+  const grow2 = (() => { globalThis.gc(); const h = process.memoryUsage().heapUsed;
+    for (let i = 0; i < 20000; i++) { f.setPath(buf, 3); f.step(DT); } globalThis.gc(); return process.memoryUsage().heapUsed - h; })();
+  ok(grow2 < 200000, 'setPath reuse 0 alloc: ' + grow2);
+}
 console.log(`pathFollow: ${checks} checks ok`);
