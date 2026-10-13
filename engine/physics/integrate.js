@@ -16,6 +16,7 @@ import { projectBounds } from './bounds.js';
 import { moveCapsule, sectorOrOutside } from './capsule.js';
 import { updateEyeFeel } from '../entities/EyeFeel.js';
 import { clamp, approach } from '../core/math.js';
+import { swimCfg, ensureSwimFields, updateSwimState, swimVertical } from './swim.js';
 
 const EPS = 1e-6;
 const _bp = { x: 0, y: 0, nx: 0, ny: 0 }; // step 4b scratch (WS1-01)
@@ -53,6 +54,7 @@ function ensureScratch(body, cfg) {
   if (typeof body.slideNx !== 'number') body.slideNx = 0; // downhill unit (x, y), set in step 5, read by step 3 next step
   if (typeof body.slideNy !== 'number') body.slideNy = 0;
   if (typeof body.boundsHit !== 'boolean') body.boundsHit = false; // US-026a walk bound (23.3 step 4b)
+  ensureSwimFields(body); // SWIM-03a (38.54 item 7)
 }
 
 /**
@@ -89,11 +91,15 @@ export function integrate(entity, dt, controls, world, cfg) {
   body.landed = false;
   body.stepDelta = 0;
 
+  // ---- 1b. Swim state (SWIM-03a, 38.54): only when the game fed water ----
+  const swimming = updateSwimState(body, t.z, P);
+
   // ---- 2. Jump decision ---------------------------------------------------
   const jumpHeld = !!(controls && controls.jump);
   const pressed = jumpHeld && !body.jumpHeldPrev;
   body.jumpHeldPrev = jumpHeld;
   if (pressed) body.buffer = P.jumpBufferTime;
+  if (swimming) body.buffer = 0; // no jump while swimming
   if (body.buffer > EPS && (body.grounded || body.coyote > EPS)) {
     body.vz = P.jumpSpeed; // SET, not added
     body.grounded = false;
@@ -137,13 +143,16 @@ export function integrate(entity, dt, controls, world, cfg) {
     if (Math.hypot(wishX, wishY) <= 1e-6) slideFreeze = true;
   }
 
-  const targetSpeed = (run ? P.runSpeed : P.walkSpeed) * Math.min(1, wishLen) * body.speedScale; // US-013
+  const SW = swimming ? swimCfg(P) : null;
+  const targetSpeed = (swimming ? (run ? SW.swimFast : SW.swimSpeed) : (run ? P.runSpeed : P.walkSpeed)) * Math.min(1, wishLen) * body.speedScale; // US-013
   const targetVelX = wishX * targetSpeed;
   const targetVelY = wishY * targetSpeed;
 
   const accelerating = wishLen > 1e-6;
-  const baseSpeed = run ? P.runSpeed : P.walkSpeed;
-  const rate = (baseSpeed / (accelerating ? P.accelTime : P.decelTime)) * (body.grounded ? 1 : P.airControl);
+  const baseSpeed = swimming ? (run ? SW.swimFast : SW.swimSpeed) : (run ? P.runSpeed : P.walkSpeed);
+  const rate = swimming
+    ? baseSpeed / ((accelerating ? P.accelTime : P.decelTime) * SW.accelMul) // floaty (38.54 item 4)
+    : (baseSpeed / (accelerating ? P.accelTime : P.decelTime)) * (body.grounded ? 1 : P.airControl);
 
   if (!slideFreeze) {
     body.vx = approach(body.vx, targetVelX, rate * dt);
@@ -200,6 +209,12 @@ export function integrate(entity, dt, controls, world, cfg) {
     ? world.supportAt(t.x, t.y, t.z, body.grounded, body._collideOpts)
     : sectorOrOutside(world, t.x, t.y);
   const floorH = sector.floorH;
+
+  if (swimming) {
+    swimVertical(body, t, dt, P, floorH, sector.ceilH);
+    updateEyeFeel(body.feel, dt, body, P);
+    return;
+  }
 
   if (body.grounded) {
     const floorDiff = floorH - t.z;
