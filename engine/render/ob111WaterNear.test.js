@@ -1,25 +1,26 @@
 // OB-111: shallow water near a standing player keeps its surface (opaque in fb.waterMask), no see-through hole around the camera.
-// Run: node tools/ob111-water-near.test.mjs
+// Run: node engine/render/ob111WaterNear.test.js
 import fs from 'node:fs';
-import '../design/palette.js'; import '../design/detail-pass.js';
-import '../design/levels/overworld_far.js'; import '../design/levels/world_geo.js';
+import '../../design/palette.js'; import '../../design/detail-pass.js';
+import '../../design/levels/overworld_far.js'; import '../../design/levels/world_geo.js';
+import '../../design/models/voxel_seamonster.js'; import '../../design/models/voxel_goblin.js';
 globalThis.window = globalThis.window || globalThis;
 globalThis.ASSETS.levels.world_geo.util.installGeo(globalThis.ASSETS.levels.overworld_far.util);
-for (const m of ['lantern', 'lever', 'voxel_props', 'voxel_tower', 'voxel_world', 'boulder', 'rubble', 'wreckage', 'relay', 'sword', 'voxel_beast', 'chest', 'm3_props', 'far_tower', 'ferrum_lights', 'title', 'voxel_bear', 'voxel_wildlife', 'voxel_tower_crown']) { try { await import(`../design/models/${m}.js`); } catch {} }
-import { World } from '../engine/index.js';
-import { loadTestAssets } from './testing/content-node.mjs';
+for (const m of ['lantern', 'lever', 'voxel_props', 'voxel_tower', 'voxel_world', 'boulder', 'rubble', 'wreckage', 'relay', 'sword', 'voxel_beast', 'chest', 'm3_props', 'far_tower', 'ferrum_lights', 'title', 'voxel_bear', 'voxel_wildlife', 'voxel_tower_crown']) { try { await import(`../../design/models/${m}.js`); } catch {} }
+import { World } from '../index.js';
+import { loadTestAssets } from '../../tools/testing/content-node.mjs';
 const data = JSON.parse(fs.readFileSync('content/worlds/world_m1.world.json', 'utf8'));
 const { assets } = await loadTestAssets();
 const w = World.load(data, assets, { physics: 'mesh' });
 
 
-import { projTerms, unprojectCell } from '../engine/render/projection.js';
-import { CellBuffer } from '../engine/render/CellBuffer.js';
-import { DepthBuffer } from '../engine/render/DepthBuffer.js';
-import { GBuffer } from '../engine/render/GBuffer.js';
-import { bindShading } from '../engine/render/MaterialTable.js';
-import { renderWorld } from '../engine/render/compositor.js';
-import { makeLightBuffer } from '../engine/render/lighting.js';
+import { projTerms, unprojectCell } from './projection.js';
+import { CellBuffer } from './CellBuffer.js';
+import { DepthBuffer } from './DepthBuffer.js';
+import { GBuffer } from './GBuffer.js';
+import { bindShading } from './MaterialTable.js';
+import { renderWorld } from './compositor.js';
+import { makeLightBuffer } from './lighting.js';
 let fail = 0;
 const ok = (n, c, d) => { if (!c) fail++; console.log((c ? 'ok   ' : 'FAIL ') + n + (d === undefined ? '' : ' ' + d)); };
 const C = 160, R = 60, wa = { surfaceZ: 0, flatZ: 0, depth: 0, region: '', index: -1, look: 0 };
