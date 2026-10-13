@@ -588,7 +588,7 @@ export class World {
         if (!assets || !assets.has('mesh', sp.mesh)) throw new Error(`World.load: detail species references unknown mesh "${sp.mesh}"`);
         (w.detailMeshes || (w.detailMeshes = {}))[sp.mesh] = assets.mesh(sp.mesh);
       }
-      w.detail = scatterDetail(w.terrain, w.structures, keepOut, cfg);
+      w.detail = scatterDetail(w.terrain, w.structures, keepOut, cfg, w.scatter || null);
     }
     if (w.physicsMode === 'mesh' && w.scatter) {
       const trunks = buildTrunkCollider(w.scatter, w.terrain.recipe.recipe.forest.trees);
@@ -1590,7 +1590,7 @@ export class World {
     if (!terrain || !terrain.nearReady) return { ms: 0, trees: 0, detail: 0, snapped: 0 };
     terrain.recomputeBounds();
     if (terrain.realTrees) this.scatter = scatterTrees(terrain, this.structures);
-    if (this._detailCtx) this.detail = scatterDetail(terrain, this.structures, this._detailCtx.keepOut, this._detailCtx.cfg);
+    if (this._detailCtx) this.detail = scatterDetail(terrain, this.structures, this._detailCtx.keepOut, this._detailCtx.cfg, this.scatter || null);
     this._rebuildCarpet();
     if (this.physicsMode === 'mesh') {
       const put = (id, collider) => {

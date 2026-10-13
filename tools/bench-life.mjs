@@ -26,6 +26,7 @@ import ferrumLightsMod from '../design/models/ferrum_lights.js';
 import titleMod from '../design/models/title.js';
 import voxelWorldMod from '../design/models/voxel_world.js';
 import { loadTestAssets } from './testing/content-node.mjs';
+import { gridVariant } from '../game/js/quest/bandPose.js'; // WM-06: --poses runs on the ?grid=1 world
 import { buildBeastNav } from '../game/js/quest/sim/beastNav.js';
 import { createBeastSim, MAX_BEASTS } from '../game/js/quest/sim/beastSim.js';
 import { createRng } from '../engine/index.js';
@@ -45,6 +46,8 @@ paletteMod; terrainDef; geoMod; detailPassMod; lanternMod; leverMod; voxelPropsM
 const STEPS_PER_HOUR = 18000; // 300 s per game hour at 60 Hz (D-064: 2 real hours per day)
 const PLAZA = [915, 945];
 const GOBLINS_AWAKE = 20, THROWERS = 6, SPEARS_FLYING = 8; // GOB-08 (38.57 (6))
+// WM-06 (38.59): whole-map poses, same systems at a far-region pose on the ?grid=1 world; JS (life+fauna+beast p95 sum) <= 8 ms (D-007)
+export const POSES = [['northwood', 1600, 700], ['downs', 1620, 1310], ['westHeath', 560, 1300]];
 const SCENARIOS = [['in Outwall', 0], ['100 m away', 100], ['600 m away', 600]];
 // Budget rows (38.56 e). stat = which statistic is compared with cap.
 const BUDGETS = [
@@ -59,7 +62,7 @@ function parseArgs(argv) {
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--strict') o.strict = true; else if (a === '--json') o.json = true; else if (a === '--quiet') o.quiet = true;
-    else if (a === '--no-goblin') o.goblin = false; else if (a === '--scenarios') o.scenarios = +argv[++i]; else if (a === '--hours') o.hours = +argv[++i]; else if (a === '--start') o.start = +argv[++i];
+    else if (a === '--poses') o.poses = true; else if (a === '--no-goblin') o.goblin = false; else if (a === '--scenarios') o.scenarios = +argv[++i]; else if (a === '--hours') o.hours = +argv[++i]; else if (a === '--start') o.start = +argv[++i];
   }
   return o;
 }
@@ -78,9 +81,10 @@ function summarize(t, n) {
 }
 
 /** Builds the whole living world once per scenario (fresh state, same seeds). */
-async function build(assets, goblin = false) {
+async function build(assets, goblin = false, grid = false) {
   const events = new Events();
-  const wdef = assets.world('world_m1');
+  let wdef = assets.world('world_m1');
+  if (grid) { const geo = globalThis.ASSETS.levels.world_geo; if (geo && geo.util) geo.util.installGeo(globalThis.ASSETS.levels.overworld_far.util); wdef = gridVariant(wdef, geo); }
   const world = World.load(wdef, assets, { physics: 'mesh', events });
   // fauna: fixture rabbit + deer, plus a bench fox that hunts rabbits (predator-prey, LIFE-06)
   const fx = JSON.parse(JSON.stringify(FIXTURE_FX));
@@ -129,10 +133,11 @@ async function build(assets, goblin = false) {
   return { warmMs, campDefs, goblinCount, events, world, nav, fauna, beasts, life, pushOut, realBeasts, groundAt: (x, y) => world.terrain.groundAt(x, y) };
 }
 
-async function runScenario(assets, name, dist, opt, goblin = false) {
-  const S = await build(assets, goblin);
+async function runScenario(assets, name, dist, opt, goblin = false, at = null) {
+  const S = await build(assets, goblin, !!at);
   const nav = S.nav;
-  const px = PLAZA[0] + dist, py = PLAZA[1];
+  const px = at ? at[0] : PLAZA[0] + dist, py = at ? at[1] : PLAZA[1];
+  if (at) S.world.ensureBandFor(px, py); // pose band baked at load, as the game does behind the fade
   const hour0 = opt.start;
   const vill = createVillagers({ life: S.life, nav, groundAt: S.groundAt, collide: S.pushOut, hour: hour0, dayIndex: 0, events: S.events });
   const wolves = [];
@@ -214,12 +219,14 @@ export async function runBench(opt) {
   const { assets } = await loadTestAssets();
   const results = [];
   for (const [name, dist] of SCENARIOS.slice(0, opt.scenarios || SCENARIOS.length)) results.push(await runScenario(assets, name, dist, opt));
+  if (opt.poses) for (const [nm, x, y] of POSES) { const r = await runScenario(assets, 'pose ' + nm, 0, opt, false, [x, y]); results.push(r); }
   // GOB-08: 48 beasts, 20 goblins awake (2 camps + torch raid), 6 throwers, 8 spears in flight, player in Outwall
   let gob = null;
   if (opt.goblin !== false) { gob = await runScenario(assets, 'goblins 48 beasts', 0, { ...opt, hours: opt.goblinHours ?? opt.hours }, true); results.push(gob); }
   const rows = [];
   for (const r of results) {
     if (r === gob) continue;
+    if (r.scenario.startsWith('pose ')) { const v = r.sys.life.p95 + r.sys.fauna.p95 + r.sys.beast.p95; rows.push({ scenario: r.scenario, label: 'WM-06 life+fauna+beast JS p95 sum (ms, cap 8 = D-007)', value: v, cap: 8, verdict: v <= 8 ? 'PASS' : 'FLAG' }); continue; }
     for (const b of BUDGETS) {
       const v = r.sys[b.sys][b.stat];
       rows.push({ scenario: r.scenario, label: b.label, value: v, cap: b.cap, verdict: b.cap == null ? 'INFO' : v <= b.cap ? 'PASS' : 'FLAG' });

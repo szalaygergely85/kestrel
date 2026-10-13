@@ -72,7 +72,7 @@ export class BandBakeJob {
     while (this.phase < 5) {
       const left = msBudget - (now() - t0);
       if (this.phase === 0) { if (this.trees.step(left)) { this.scatter = this.trees.result; this.phase = 1; } }
-      else if (this.phase === 1) { if (!this.detail || this.detail.step(left)) { this.detailSet = this.detail ? this.detail.result : null; this.phase = 2; } }
+      else if (this.phase === 1) { if (this.detail && this.scatter) this.detail.trees = this.scatter; if (!this.detail || this.detail.step(left)) { this.detailSet = this.detail ? this.detail.result : null; this.phase = 2; } }
       else if (this.phase === 2) { this.trunks = mesh && this.scatter ? buildTrunkCollider(this.scatter, terrain.recipe.recipe.forest.trees) : null; this.phase = 3; }
       else if (this.phase === 3) { this.detailCol = mesh && this.detailSet ? buildDetailCollider(this.detailSet) : null; this.phase = 4; }
       else if (this._navStep(left)) this.phase = 5;

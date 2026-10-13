@@ -151,7 +151,46 @@
               forest: [ { model: 'logShort',   weight: 20, sinkM: 0.08, shadow: true, maxDistM: 50, collider: { box: { hx: 0.96, hy: 0.24, h: 0.52 } } },
                         { model: 'logLong',    weight: 16, sinkM: 0.10, shadow: true, maxDistM: 70, collider: { box: { hx: 1.43, hy: 0.33, h: 0.72 } } },
                         { model: 'stumpCut',   weight: 22, sinkM: 0.04, shadow: true, maxDistM: 50, collider: { prism: { r: 0.33, h: 0.55 } } } ]
-            } }
+            } },
+          // WM-07 (arch 38.59 item 5, owner D-077): region dressing by RULES from existing Quaternius meshes. All four layers are `biomeOnly`:
+          // they place nowhere (biome 0 / the keep / heartland stay byte-identical) except in biomes whose geo.biomes[id].detail names the layer;
+          // there `detail[layer]` is the per-cell probability (fill 1 * mult). No hand placement. Densities live in world_geo.js G.biomes.
+          // Gap rule (collide species): cellM - 2 * jitter >= 2 * circumradius + 1.2: boulders prism r 1.0 (circ 1.08) -> 3.4 <= 20 - 12 = 8;
+          // ruin walls half-diagonal 1.02 -> 3.3 <= 8. Rock_Medium_3 is left out: its mesh is 1.7 m off its origin (prism would not cover it).
+          { name: 'boulders', seed: 38411, cellM: 20, jitter: 6.0, fill: 1, biomeOnly: true, maxSlope: 0.75, clearM: 2, drawM: 130, lodCells: 4,
+            ground: (function () {
+              var list = [ { mesh: 'quaternius/Rock_Medium_1', weight: 5, sinkM: 0.4, shadow: true, maxDistM: 130, collider: { prism: { r: 1.0, h: 1.6 } } },
+                           { mesh: 'quaternius/Rock_Medium_2', weight: 5, sinkM: 0.3, shadow: true, maxDistM: 130, collider: { prism: { r: 1.0, h: 1.5 } } } ];
+              return { grass: list, forest: list, flowers: list, alpine: list, rock: list };
+            })() },
+          // ruin stubs: a low foundation strip (walk-over step) and, rarely, one standing wall fragment (Wall_UnevenBrick_Straight 2 x 0.4 x 3.1 m)
+          { name: 'ruins', seed: 38413, cellM: 20, jitter: 6.0, fill: 1, biomeOnly: true, maxSlope: 0.25, clearM: 2.5, drawM: 130, lodCells: 4,
+            ground: (function () {
+              var list = [ { mesh: 'quaternius/Wall_BottomCover', weight: 8, sinkM: 0.04, shadow: true, maxDistM: 100, collider: { box: { hx: 1.0, hy: 0.2, h: 0.24 } } },
+                           { mesh: 'quaternius/Wall_UnevenBrick_Straight', weight: 3, sinkM: 0.05, shadow: true, maxDistM: 130, collider: { box: { hx: 1.0, hy: 0.25, h: 3.1 } } } ];
+              return { grass: list, flowers: list, alpine: list };
+            })() },
+          // reeds in wet ground (fen / reed type), tall common grass stands in for reeds (no reed mesh exists)
+          { name: 'reeds', seed: 38417, cellM: 3.5, jitter: 1.4, fill: 1, biomeOnly: true, maxSlope: 0.3, clearM: 0.8, drawM: 60, lodCells: 4,
+            ground: { fen: [ { mesh: 'quaternius/Grass_Common_Tall', weight: 3, sinkM: 0.05, shadow: false, sway: true, maxDistM: 45 },
+                             { mesh: 'quaternius/Grass_Wispy_Tall', weight: 1, sinkM: 0.05, shadow: false, sway: true, maxDistM: 45 } ],
+                      reeds: [ { mesh: 'quaternius/Grass_Common_Tall', weight: 3, sinkM: 0.05, shadow: false, sway: true, maxDistM: 45 },
+                               { mesh: 'quaternius/Grass_Wispy_Tall', weight: 1, sinkM: 0.05, shadow: false, sway: true, maxDistM: 45 } ] } },
+          // wild flower clumps + low plants on meadow ground, sparse pebbles on sand / alpine ground
+          { name: 'wildflowers', seed: 38419, cellM: 6, jitter: 2.2, fill: 1, biomeOnly: true, maxSlope: 0.3, clearM: 0.8, drawM: 50, lodCells: 4,
+            ground: (function () {
+              var list = [ { mesh: 'quaternius/Flower_3_Single', weight: 4, sinkM: 0.03, shadow: false, sway: true, maxDistM: 40 },
+                           { mesh: 'quaternius/Plant_7_Big', weight: 3, sinkM: 0.03, shadow: false, sway: true, maxDistM: 40 },
+                           { mesh: 'quaternius/Fern_1', weight: 1, sinkM: 0.03, shadow: false, sway: true, maxDistM: 40 } ];
+              return { flowers: list, grass: list, alpine: list };
+            })() },
+          { name: 'pebbles', seed: 38423, cellM: 5, jitter: 2.0, fill: 1, biomeOnly: true, maxSlope: 0.3, clearM: 0.6, drawM: 40, lodCells: 4,
+            ground: (function () {
+              var list = [ { mesh: 'quaternius/Pebble_Round_1', weight: 1, sinkM: 0.03, shadow: false, maxDistM: 35 },
+                           { mesh: 'quaternius/Pebble_Round_3', weight: 1, sinkM: 0.03, shadow: false, maxDistM: 35 },
+                           { mesh: 'quaternius/Pebble_Square_1', weight: 1, sinkM: 0.03, shadow: false, maxDistM: 35 } ];
+              return { sand: list, alpine: list };
+            })() }
         ]
       },
       // OB-073-D2f (arch 38.52 item 6): near-field grass carpet, world opt `carpet` (main.js resolves ramp keys -> RGB; ?carpet=0 off).
