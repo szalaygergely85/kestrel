@@ -921,3 +921,7 @@ New `tools/verify-wm-regions.mjs <port>` (10 stills -> docs/test-reports/wm-regi
 - ACs green: 2 runs identical; species freq within 3 % (100k cells); exact-cm boundaries (lod/max/draw/fade, single fade crossing); carpet hand-off (cut-1 drops, cut draws); jq in [-jit,jit]; frame == per-cell brute; 0 B/frame (inline probe, min of 5 windows, memoryUsage overhead subtracted).
 - Deviations: tools/allocProbe.mjs does not exist yet (GATE-FLAKY-02a), probe inline; `out` is an 8-int decision record (species, xcm, ycm, jq, yaw q, scale q, d2), not the 16-word instance row (row layout/z/rotation belong to ENV-01c/d). fadeCm = per-species distance (caller packs), per-placement factor 205..255/256; fadeLim clamped to 460 m to keep lim^2 exact in i32 (WGSL must clamp too).
 - -> arch-review
+
+### ENV-01a ARCH CHANGES (kestrel-2, p3-assert)
+- decorScatter.js: per-axis reject (|dx|,|dy| >= draw -> 0) before squaring; MAX_DIST_CM 32000 (draw/maxDist/fadeLim/carpetCut all clamped, d2 exact); architecture 38.62 now "per-axis reject, exact to 320 m". New test 5b at drawM 320: 14400 frame-corner cells all rejected + decorFrame vs float brute force (guard regression at the new max; the old 460 m layer is now refused by pack); 2 wide-species tests moved 460 -> 320 m.
+- decorScatter test, run-tests --filter, check-deps green. -> arch re-review
