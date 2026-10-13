@@ -304,7 +304,7 @@ export class WgShadePass {
     }
 
     const wOn = !!(water && water.active); // WG-3e: composite output replaces the shade fg/bg; WATER texture + per-slot opaqueAt/seeThrough
-    ei[E_COLS] = p.cols; ei[E_ROWS] = p.rows; ei[E_WATER_ON] = wOn ? 1 : 0;
+    ei[E_COLS] = p.cols; ei[E_ROWS] = p.rows; ei[E_WATER_ON] = wOn && !(U && U.on) ? 1 : 0; // SWIM-04c: submerged = no surface composite, so no water edge suppression (JS twin: waterMask null)
     if (wOn) eu.set(water.waterOS, E_WOS);
     const et = this.edTex;
     et[0].texture = t.texGI; et[1].texture = t.texDepth;

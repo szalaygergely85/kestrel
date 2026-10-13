@@ -33,7 +33,7 @@ export const WATER_COMPOSITE_BLOCK = defineUniformBlock('WaterCompositeU', [
   { name: 'wfog', type: 'vec4', count: 5 }, // start/full/curve/bgScale, fgNear, fgFar, bgNear, bgFar
   // S8-B2-13b (38.14): appended at the END - rippleGlyph/rippleGain (the global ripple look, lane C via `setLook`,
   // defaults in waterLook.js) + 2 pad words (align the `ripple` array to 16 B, already aligned, kept explicit).
-  { name: 'rippleGlyph', type: 'u32' }, { name: 'rippleGain', type: 'f32' }, { name: 'ripplePad0', type: 'f32' }, { name: 'ripplePad1', type: 'f32' },
+  { name: 'rippleGlyph', type: 'u32' }, { name: 'rippleGain', type: 'f32' }, { name: 'underOn', type: 'f32' }, { name: 'ripplePad1', type: 'f32' },
   { name: 'ripple', type: 'vec4', count: RIPPLE_SLOTS }, // x, y, age, amp per live ring, densely packed
   { name: 'reflectU', type: 'vec4' }, // AUD-42: x = sky elevTop (deg; 0 = no sky LUT -> reflection off)
   { name: 'skyLut', type: 'vec4', count: SKY_LUT_N }, // AUD-42: baked sky gradient rgb (0..255), same bake as shade's uSky
@@ -81,6 +81,7 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
   o.fg = sfg;
   o.bg = sbg;
   if (sbg.a < 0.5) { return o; } // JS-layer passthrough cell (HUD etc.)
+  if (wu.underOn > 0.5) { return o; } // SWIM-04c: eye submerged = no surface composite (the shade pass's under look owns the ceiling); JS twin: compositor.js skips waterCompositeJS
   let w = textureLoad(uWater, cell, 0);
   if (w.x == 0x7f800000u) { return o; } // cleared: no water here
   let dW = bitcast<f32>(w.x);
