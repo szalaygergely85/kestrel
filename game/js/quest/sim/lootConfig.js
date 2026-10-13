@@ -5,6 +5,7 @@
 /** Corpse prompt text, `[E]` prefix included (crosshair.js highlights it). Writer placeholder (37.16.3). */
 export const LOOT_PROMPT = {
   boar: '[E] Loot boar',
+  goblin: '[E] Loot goblin', // GOB-05 placeholder (writer)
   bear: '[E] Loot bear', // BEAR-01 placeholder (writer); bears use the boar table (same kill/loot path)
 };
 
@@ -25,6 +26,15 @@ export const LOOT_TABLE = {
     ],
     fixed: [{ item: 'boar.meat', n: 1 }],
     orb: { chance: 0.50, kinds: ['hp', 'mp'] },
+  },
+  // GOB-05 (38.57 (5)): no fixed drops; arrow 2-4 (0.3), goblin.trinket x1 (0.25, a sell item, icon NEEDS DESIGNER), orb 0.4.
+  goblin: {
+    rolls: [
+      { chance: 0.3, give: { item: 'arrow', min: 2, max: 4 } },
+      { chance: 0.25, give: { item: 'goblin.trinket', min: 1, max: 1 } },
+    ],
+    fixed: [],
+    orb: { chance: 0.40, kinds: ['hp', 'mp'] },
   },
 };
 
