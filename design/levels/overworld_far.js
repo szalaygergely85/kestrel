@@ -204,7 +204,7 @@
       // Technique reference: SMM Stylized Grass (MIT, SirMishMash), see docs/licences.md. Default glyphs: base ',' mid '|' tip "'" leanL '\' leanR '/'.
       carpet: {
         cutGround: ['path', 'water', 'rock'], // MASK-e2 (38.52 OB-096): no grass on road / track / river bed / bare rock (mask stamp)
-        seed: 40731, radiusM: 20, underlay: 0.6, // OB-121b: far-grass weight floor so the ground between near tufts is grass-coloured
+        seed: 40731, radiusM: 20, underlay: 0, // OB-121b: far-grass weight floor so the ground between near tufts is grass-coloured
         patchM: 6, classCellM: 2, classJitterM: 0.8, gustM: 5, travelM: 1.5, bladeW: 0.06,
         variants: [
           // dark lush river bank: ragged strips ~14 m off the river centre x_r(y) (water = centre +- 10), broken by gaps; the road +
