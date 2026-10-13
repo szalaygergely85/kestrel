@@ -148,7 +148,7 @@ ok('walking back west cancels the pending bake', !T.nearBandPending && w._bandPe
   let n = 0, r2 = 1, maxStep2 = 0;
   while (r2 === 1 && n++ < 5000) { const t = performance.now(); r2 = ws.streamBand(1190, 1088, 2); maxStep2 = Math.max(maxStep2, performance.now() - t); }
   ok('pending: scatter/detail/colliders pointers untouched before the swap', ws.scatter === sc0 && ws.detail === dt0 && ws.colliders.length === col0.length && ws.colliders.every((c, i) => c === col0[i]));
-  ok('job finished ahead of the swap (phase 4)', ws._bandJob && ws._bandJob.phase === 4);
+  ok('job finished ahead of the swap (phase 5 = done)', ws._bandJob && ws._bandJob.phase === 5);
   const pend = ws.terrain._bb.b;
   const view = Object.create(ws.terrain); view.near = pend;
   const refD = ws._detailCtx ? scatterDetail(view, ws.structures, ws._detailCtx.keepOut, ws._detailCtx.cfg) : null;

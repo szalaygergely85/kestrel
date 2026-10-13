@@ -12,7 +12,7 @@ function sumBytes(o, depth = 0, seen = new Set()) {
   for (const k in o) { const v = o[k]; if (v && typeof v === 'object') n += sumBytes(v, depth + 1, seen); }
   return n;
 }
-export const bundleBytes = (b) => sumBytes(b.near) + sumBytes(b.scatter) + sumBytes(b.detail) + sumBytes(b.trunks) + sumBytes(b.detailCol) + (b.classMap ? b.classMap.byteLength : 0);
+export const bundleBytes = (b) => sumBytes(b.near) + sumBytes(b.scatter) + sumBytes(b.detail) + sumBytes(b.trunks) + sumBytes(b.detailCol) + sumBytes(b.nav) + (b.classMap ? b.classMap.byteLength : 0);
 
 export class BandCache {
   constructor({ maxBytes = 24 * 1048576 } = {}) {
