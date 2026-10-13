@@ -55,7 +55,21 @@ export function fogDirShear(hx, hy, tanE, out) {
  * CPU frame context, filled by the compositor before shadeSurfaces (module state, no allocation). mode: 0 shear, 1 pitched,
  * 2 ortho. terms = shear ProjTerms (mode 0) or PitchedTerms (modes 1/2). sun = {dirX,dirY,dirZ,sunI}.
  */
-export const fogShapeCtx = { on: false, mode: 0, camZ: 0, terms: null, sunX: 0, sunY: 0, sunZ: 0, sunI: 0 };
+export const fogShapeCtx = { on: false, mode: 0, camZ: 0, terms: null, sunX: 0, sunY: 0, sunZ: 0, sunI: 0,
+  // OB-089: outdoor MESH fog (terrain's far fog: palette.fog.far near->far colours over start..full, curve) instead of the interior fogV2.
+  outdoor: false, tStart: 0, tFull: 1, tCurve: 1, tNear: /** @type {ArrayLike<number>|null} */ (null), tFar: /** @type {ArrayLike<number>|null} */ (null) };
+
+/**
+ * OB-089: true when placed meshes should fog like the terrain: a terrain world with a time-of-day palette that defines `fog.far`, and the camera
+ * outside every sector (not in the tower / a building interior; those keep the interior fogV2). Shared by the CPU compositor and passShade.js (`fogView.z`).
+ * @param {any} world @param {{x:number,y:number}} cam @param {any} palette
+ */
+export function meshOutdoorFog(world, cam, palette) {
+  if (!world || !world.terrain || !palette || !palette.timeOfDay || !palette.rgb) return false;
+  const fr = palette.fog && palette.fog.far;
+  if (!fr || !palette.rgb[fr.color] || !palette.rgb[fr.colorFar]) return false;
+  return !(typeof world.sectorAt === 'function' && world.sectorAt(cam.x, cam.y));
+}
 const _dir = [0, 0, 0], _ray = { ox: 0, oy: 0, oz: 0, dx: 0, dy: 0, dz: 0 };
 
 /** Unit view direction of cell (col,row) for the active ctx (JS twin of WGSL fogCellDir). Returns the shared scratch. */

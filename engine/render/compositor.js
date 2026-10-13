@@ -5,7 +5,7 @@
 // beginFrame/castSectors/.../fillSky sequence main.js used to write out by
 // hand for a single bare level (US-024).
 import { windSwayOn, sunWindClock } from '../mesh/sway.js';
-import { fogShapeCtx } from './fogShape.js';
+import { fogShapeCtx, meshOutdoorFog } from './fogShape.js';
 import { fillSky, ambientL, primeAmbientLight } from './sky.js';
 import { shadeTerrainCells } from './terrainShade.js';
 import { carpetCtxFor, carpetCells } from './carpet.js';
@@ -405,13 +405,15 @@ export function renderWorld(fb, world, cam) {
     // AUD-45: height fog + sun in-scatter context for the CPU shade twin (same gate as the GPU: terrain world + time-of-day palette).
     const fsc = fogShapeCtx;
     fsc.on = !!(world.terrain && fb.palette && fb.palette.timeOfDay);
+    fsc.outdoor = fsc.on && meshOutdoorFog(world, cam, fb.palette); // OB-089
+    if (fsc.outdoor) { const fr = fb.palette.fog.far; fsc.tStart = fr.start; fsc.tFull = fr.full; fsc.tCurve = fr.curve || 1; fsc.tNear = fb.palette.rgb[fr.color]; fsc.tFar = fb.palette.rgb[fr.colorFar]; }
     if (fsc.on) {
       const fsun = sunFromWorld(world, fb.palette, skySunScratch);
       fsc.mode = meshPitched ? (meshPitchTerms.ortho ? 2 : 1) : 0; fsc.terms = meshPitched ? meshPitchTerms : meshTerms; fsc.camZ = cam.z;
       fsc.sunX = fsun.dirX; fsc.sunY = fsun.dirY; fsc.sunZ = fsun.dirZ; fsc.sunI = fsun.sunI;
     }
     shadeSurfaces(fb, fb.gbuf, fb.matTable, fb.detailPass, fb.light);
-    fsc.on = false;
+    fsc.on = false; fsc.outdoor = false;
     shadeTerrainCells(fb, world.terrain, world, fb.timeSec || 0, meshHashCell);
     if (meshPitched) scaleDepthForShade(fb.depth.depth, fb.gbuf.cols, fb.gbuf.rows, false);
     // US-055a2b (35.3): water composite on the surface cells (raw depth), then the edge pass skips opaque-water cells.
