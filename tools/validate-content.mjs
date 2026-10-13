@@ -1147,6 +1147,51 @@ export function loadLootFile(path) {
   catch (e) { return { lootFile: null, lootPath: path, errors: [`${path}: loot JSON read/parse failed: ${e.message}`] }; }
 }
 
+// WMP-04: region lint (pure, fixture-testable). o = { geo, quests: raw pack.json quests, sites, relayIds: ['ws_glasswater', ...],
+// itemIds:Set, beastKinds:Set|null, camps: generated far camps }. Returns one "regions:<where>: problem" line per finding.
+export function lintRegions(o) {
+  const out = [], quests = o.quests || [], sites = o.sites || {};
+  const errandOf = (reg) => quests.find((q) => q.id === 'sq.reg.' + reg);
+  // 1. a region relay (ws_<region>) needs an errand sq.reg.<region>
+  for (const id of o.relayIds || []) { const reg = id.replace(/^ws_/, ''); if (!errandOf(reg)) out.push(`regions:${reg}: relay ${id} has no errand (sq.reg.${reg})`); }
+  // 2. errand targets exist: site, kill kind, deliver item + to-site
+  for (const q of quests) {
+    if (q.site && !Object.hasOwn(sites, q.site)) out.push(`regions:${q.id}: site '${q.site}' does not exist`);
+    for (const st of q.steps || []) {
+      const p = st.params || {};
+      if (st.template === 'kill' && o.beastKinds && !o.beastKinds.has(p.kind)) out.push(`regions:${q.id}: kill kind '${p.kind}' does not exist`);
+      if (st.template === 'deliver') {
+        if (p.to && !Object.hasOwn(sites, p.to)) out.push(`regions:${q.id}: deliver-to '${p.to}' does not exist`);
+        if (o.itemIds && !o.itemIds.has(p.item)) out.push(`regions:${q.id}: deliver item '${p.item}' does not exist`);
+      }
+    }
+    // 4. region text present
+    const texts = [['title', q.title], ['returnText', q.returnText], ...(q.steps || []).flatMap((st, i) => [[`steps[${i}].journal`, st.journal], [`steps[${i}].objText`, st.objText]]), ...[...(q.lines?.offer || []), ...(q.lines?.done || [])].map((t, i) => [`lines[${i}]`, t])];
+    for (const [k, v] of texts) { if (typeof v !== 'string' || !v.trim()) out.push(`regions:${q.id}: ${k} is empty`); else if (/NEEDS WRITER/i.test(v)) out.push(`regions:${q.id}: ${k} still says NEEDS WRITER`); }
+    if (!q.lines?.offer?.length) out.push(`regions:${q.id}: lines.offer is empty`);
+  }
+  // 3. generated far camps lie inside the bounds polygon and their region rect (centre + every member)
+  const inPoly = (pts, x, y) => { let c = false; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) if ((pts[i][1] > y) !== (pts[j][1] > y) && x < (pts[j][0] - pts[i][0]) * (y - pts[i][1]) / (pts[j][1] - pts[i][1]) + pts[i][0]) c = !c; return c; };
+  for (const c of o.camps || []) {
+    const r = o.geo.regions.find((g) => g.id === c.region)?.r;
+    if (!r) { out.push(`regions:${c.id}: region '${c.region}' not in geo`); continue; }
+    for (const [tag, x, y] of [['centre', c.at[0], c.at[1]], ...(c.members || []).map((m) => [m.id, c.at[0] + m.at[0], c.at[1] + m.at[1]])]) {
+      if (!inPoly(o.geo.bounds.pts, x, y)) out.push(`regions:${c.id}: ${tag} (${x},${y}) is outside the bounds polygon`);
+      else if (x < r[0] || x > r[2] || y < r[1] || y > r[3]) out.push(`regions:${c.id}: ${tag} (${x},${y}) is outside region ${c.region}`);
+    }
+  }
+  return out;
+}
+
+async function lintRegionsReal(ASSETS, sites) {
+  const { RELAY_WAKE } = await import('../game/js/quest/wire/waystone.js');
+  const { execFileSync } = await import('node:child_process');
+  const out = execFileSync(process.execPath, [fileURLToPath(new URL('./far-camps-dump.mjs', import.meta.url))], { encoding: 'utf8', maxBuffer: 1 << 26, stdio: ['ignore', 'pipe', 'ignore'] });
+  const { camps, bounds, regions } = JSON.parse(out.slice(out.indexOf('@@CAMPS@@') + 9)); // separate process: see far-camps-dump.mjs
+  const pack = JSON.parse(readFileSync(new URL('../content/quests/regions/pack.json', import.meta.url), 'utf8'));
+  return lintRegions({ geo: { bounds, regions }, quests: pack.quests, sites, relayIds: Object.keys(RELAY_WAKE), itemIds: new Set(Object.keys(ASSETS.items?.defs || {})), beastKinds: new Set(['boar', 'wolf', 'bear']), camps }); // kinds = quest.js kindOf() species
+}
+
 async function main() {
   const ASSETS = await loadDesignAssets();
   const meshFilesDir = fileURLToPath(new URL('../content/meshes', import.meta.url));
@@ -1161,6 +1206,7 @@ async function main() {
   allErrors.push(...questFiles.errors);
   allErrors.push(...lootFile.errors);
   allErrors.push(...recipeFile.errors);
+  try { allErrors.push(...await lintRegionsReal(ASSETS, packQuests.sites || {})); } catch (e) { allErrors.push(`regions: lint crashed: ${e.message}`); }
   for (const w of warnings) console.warn(`WARN ${w}`);
   for (const i of infos) console.log(`INFO ${i}`);
   const meshOnlyText = meshOnlyCount ? `, ${meshOnlyCount} mesh-only model(s)` : '';
