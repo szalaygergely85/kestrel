@@ -2,7 +2,7 @@
 // Real World + real chest defs; aim from 1.3 m in front of each chest at its centre -> target = that chest; 1 m to the side -> none;
 // beyond the 1.8 m ray reach -> none; an opened chest hides it. Run: node game/js/chestPick.test.js
 import { World } from '../../engine/index.js';
-import { findInteractTarget } from '../../engine/world/interaction.js';
+import { findInteractTarget } from '../../engine/index.js';
 import paletteMod from '../../design/palette.js';
 import detailPassMod from '../../design/detail-pass.js';
 import terrainMod from '../../design/levels/overworld_far.js';
