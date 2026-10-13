@@ -42,7 +42,7 @@ try {
   // 3. step the raid clock by hand (headless sim does not run): night 22:00, scan nights until the roll hits
   const r = JSON.parse(await ev(`JSON.stringify((()=>{const d=window.__debug,st=d.world.state,lw=d.lifeWire; const ev=[]; for(const n of ['life:raid:start','life:raid:defended','life:raid:lost','life:npcHit']) d.engine.events.on(n,(p)=>ev.push(n));
     let night=-1; for(let day=1;day<=40&&night<0;day++){ st['clock.day']=day; lw.step(22); lw.step(22.5); if(ev.includes('life:raid:start')) night=day; lw.step(6);}
-    return {night,ev,lastDay:st['life.raid.gooseFarm.lastDay']};})()`));
+    return {night,ev,lastDay:st['life.raid.gooseFarm.lastDay']};})())`));
   console.log('[3/4] raid roll', JSON.stringify(r));
   assert.ok(r.night > 0 && r.ev.includes('life:raid:start'), 'a raid:start fires within 40 nights once the gate is open');
   // 4. still at gooseFarm
