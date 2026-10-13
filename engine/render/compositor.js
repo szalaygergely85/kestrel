@@ -28,6 +28,7 @@ import { lodCentreX, lodCentreY } from '../core/camFocus.js';
 import { frustumPlanes } from '../mesh/culling.js';
 import { renderWaterJS } from './water.js';
 import { waterCompositeJS } from './waterComposite.js';
+import { updateUnderState, underwaterPass } from './underwater.js';
 // ME-15c (27.9a): JS twin of the GPU sun shadow pass (same list builder, matrix, polygon offset, depth-only raster).
 import { SUN_OFF_MATRIX, createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, sunShadowFogFar } from './shadowSun.js';
 import { createShadowList, buildShadowList, shadowWorldZ } from '../mesh/shadowList.js';
@@ -420,6 +421,15 @@ export function renderWorld(fb, world, cam) {
 
   if (!fb.skipSky) fillSky(fb, cam, world && world.terrain && fb.palette && fb.palette.timeOfDay ? sunFromWorld(world, fb.palette, skySunScratch) : null); // AUD-40
   if (meshWater && fb.gbuf) waterCompositeJS(fb, world, meshTerms, meshPitchTerms, meshPitched, true); // sky cells (water to the horizon)
+  // SWIM-04b (38.54): underwater look, end of the shade chain (after sky). `fb.under` (makeUnderState) absent = untouched frame.
+  if (fb.under && fb.gbuf) {
+    updateUnderState(world, cam.x, cam.y, cam.z, fb.under);
+    if (fb.under.on) {
+      const fsc = fogShapeCtx; // reuse the fog ray context for per-cell view rays
+      fsc.mode = meshPitched ? (meshPitchTerms.ortho ? 2 : 1) : 0; fsc.terms = meshPitched ? meshPitchTerms : meshTerms; fsc.camZ = cam.z;
+      underwaterPass(fb.rt, fb.gbuf, fb.depth.depth, cam.x, cam.y, cam.z, fb.timeSec || 0, fb.under);
+    }
+  }
 
   // (US-017 ARCH CHANGES #1 item 2, 7.4 "Fade") CPU scene fade moved OUT of
   // here to the call site right after `sprites.render(...)` (main.js) -
