@@ -104,7 +104,7 @@ export function createArrowSim(world, events, cfg, targets, onWaterHit = null, o
     if (NW === 0 || floatCount >= NW || !riverWaterAt(world, x, y, wq) || z > wq.surfaceZ + 0.02) return false;
     let k = 0;
     while (floaters.alive[k] === 1) k++;
-    floaters.alive[k] = 1; floaters.age[k] = 0; floaters.x[k] = x; floaters.y[k] = y; floaters.z[k] = wq.surfaceZ - cfg.floatDraft;
+    floaters.alive[k] = 1; floaters.age[k] = 0; floaters.x[k] = x; floaters.y[k] = y; floaters.z[k] = rk.z - cfg.floatDraft;
     world.flowAt(x, y, fv); floaters.fx[k] = fv[0]; floaters.fy[k] = fv[1];
     floatCount++;
     if (onWaterHit) onWaterHit(x, y, wq.surfaceZ);
@@ -117,9 +117,10 @@ export function createArrowSim(world, events, cfg, targets, onWaterHit = null, o
       if (++floaters.age[k] > cfg.floatSteps) { floaters.alive[k] = 0; floatCount--; continue; }
       // the current at the floater is cached from the last accepted position (fx/fy); fp/fn are hoisted scratch for the world queries
       fp.x = floaters.x[k]; fp.y = floaters.y[k];
-      fn.x = fp.x + floaters.fx[k] * dt; fn.y = fp.y + floaters.fy[k] * dt;
-      if (world.waterAt(fn.x, fn.y, wq) && world.riverAt(fn.x, fn.y, rk)) { // = riverWaterAt spelled out (and no flowAt): two inlinable queries, no boxed doubles
-        floaters.x[k] = fn.x; floaters.y[k] = fn.y; floaters.z[k] = wq.surfaceZ - cfg.floatDraft;
+      const nx = fp.x + floaters.fx[k] * dt, ny = fp.y + floaters.fy[k] * dt; // locals: one box per coordinate shared by both queries
+      fn.x = nx; fn.y = ny;
+      if (world.riverAt(nx, ny, rk)) { // riverAt = highest water region is a river (surfaceZ = rk.z, rivers have no waves): no waterAt call (a big non-inlined call boxes the doubles) // = riverWaterAt spelled out (and no flowAt): two inlinable queries, no boxed doubles
+        floaters.x[k] = fn.x; floaters.y[k] = fn.y; floaters.z[k] = rk.z - cfg.floatDraft;
         const q = rk.lat / rk.hw, fl = rk.v * (1 - 0.5 * q * q); // = World#flowAt river formula
         floaters.fx[k] = rk.tx * fl; floaters.fy[k] = rk.ty * fl;
       } else { floaters.alive[k] = 0; floatCount--; stickAt(fp.x, fp.y, floaters.z[k], 0, 0, -1); } // reached the bank: stays
