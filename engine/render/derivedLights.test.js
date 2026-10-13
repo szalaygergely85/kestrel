@@ -20,17 +20,17 @@ const derivedSeeds = (ls) => { const o = []; for (let h = ls.baseCount; h < ls.c
 // ranking + cap
 {
   const ls = new LightSet();
-  for (let i = 0; i < 12; i++) placed(ls, i);
+  for (let i = 0; i < 20; i++) placed(ls, i);
   const cands = [];
   for (let i = 1; i <= 8; i++) cands.push({ x: i * 2, rec: rec(0.5), seed: i });
   frame(ls, cands, undefined);
-  ok('cap = MAX_LIGHTS - placed', ls.count === MAX_LIGHTS && ls.baseCount === 12 && derivedSeeds(ls).length === 4);
+  ok('cap = MAX_LIGHTS - placed', ls.count === MAX_LIGHTS && ls.baseCount === 20 && derivedSeeds(ls).length === 4);
   ok('nearest 4 win', derivedSeeds(ls).join() === '1,2,3,4');
-  ok('placed handles untouched', ls.key[0] === 'p0' && ls.key[11] === 'p11');
+  ok('placed handles untouched', ls.key[0] === 'p0' && ls.key[19] === 'p19');
   frame(ls, cands, 2);
-  ok('explicit reserve caps lower', ls.count === 14 && derivedSeeds(ls).join() === '1,2');
+  ok('explicit reserve caps lower', ls.count === 22 && derivedSeeds(ls).join() === '1,2');
   frame(ls, cands, 0);
-  ok('reserve 0 -> none', ls.count === 12);
+  ok('reserve 0 -> none', ls.count === 20);
 }
 
 // hysteresis: holder keeps its slot unless the challenger beats 1.25x
@@ -63,7 +63,7 @@ const derivedSeeds = (ls) => { const o = []; for (let h = ls.baseCount; h < ls.c
   ok('derived data survived the move', near(ls.defX[[2, 3].find((i) => ls.dKey[i] === 7)], 1.5));
   ls.remove(0);
   ok('placed remove keeps derived in the tail', ls.baseCount === 1 && ls.count === 3 && derivedSeeds(ls).join() === '7,8' && ls.key[0] === 'p5');
-  for (let i = 0; i < 20; i++) placed(ls, 10 + i);
+  for (let i = 0; i < 30; i++) placed(ls, 10 + i);
   ok('full placed set evicts derived, never exceeds cap', ls.count === MAX_LIGHTS && ls.baseCount === MAX_LIGHTS);
 }
 

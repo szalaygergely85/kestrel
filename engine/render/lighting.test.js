@@ -1008,6 +1008,20 @@ function approx(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }
   ok('setLook: ao resolved', lsN.ao && lsN.ao.strength === 0.5 && lsN.ao.radiusM === 0.8 && lsN.ao.bias === 0.15 && lsN.ao.maxCells === 4);
 }
 
+// LIGHTS-24-01: 24 slots - the 17th..24th light is kept, the 25th is dropped (handle -1)
+{
+  const ls = new LightSet();
+  const origWarn = console.warn; console.warn = () => {};
+  const hs = [];
+  for (let i = 0; i < 25; i++) hs.push(ls.add({ x: i, y: 0, z: 1, hue: [1, 1, 1], intensity: 1, radius: 5, on: true }));
+  console.warn = origWarn;
+  ok('MAX_LIGHTS is 24', MAX_LIGHTS === 24);
+  ok('lights 17..24 kept', hs.slice(16, 24).every((h, k) => h === 16 + k) && ls.count === 24);
+  ok('25th light dropped', hs[24] === -1 && ls.count === 24);
+  ls.update(0, null);
+  ok('pos/col arrays sized for 24', ls.pos.length === 96 && ls.col.length === 96 && ls.pos[4 * 23] === 23);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { console.log('FAILED:\n' + failures.map((f) => '  - ' + f).join('\n')); process.exit(1); }
 else console.log('ALL PASS');
