@@ -24,6 +24,7 @@ import { CULL_SHADOW_WGSL } from './cullShadow.wgsl.js';
 import { HZB_WGSL } from './hzb.wgsl.js'; // S8-B2-09
 import { CARPET_WGSL } from './carpet.wgsl.js'; // OB-073-D2d
 import { IMP_CULL_WGSL, IMP_CARD_WGSL } from './impostor.wgsl.js'; // R6c (38.60)
+import { DECOR_WGSL } from './decor.wgsl.js'; // ENV-01c (38.62)
 
 /** @type {ReadonlyArray<{name: string, code: string}>} */
 export const WGSL_MODULES = Object.freeze([
@@ -53,6 +54,7 @@ export const WGSL_MODULES = Object.freeze([
   { name: 'carpet', code: CARPET_WGSL }, // OB-073-D2d grass carpet (fragment, after resolve)
   { name: 'impostorCull', code: IMP_CULL_WGSL }, // R6c (38.60) tree card cull (compute)
   { name: 'impostorCard', code: IMP_CARD_WGSL }, // R6c (38.60) tree card raster (frag_depth: see index.test.js exemption)
+  { name: 'decor', code: DECOR_WGSL }, // ENV-01c (38.62) decor scatter (compute, entry cs_decor)
   { name: 'cull', code: CULL_WGSL }, // WG-4a compute (entry cs_main)
   { name: 'cullShadow', code: CULL_SHADOW_WGSL }, // WG-4b compute (entry cs_main)
   // WG-3d 24b: sun shadow vertex variants (depth in [0.5, 1])
