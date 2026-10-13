@@ -3,7 +3,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { groundFootprint, hashFast24 } from './terrainShade.js';
-import { NMAX, makeCarpetCtx, makeCarpetHit, traceCarpet, traceCarpetIn, loadInput, traceCarpetBrute, bladeAtCell, FADE_FP0, FADE_FP1, FADE_R0 } from './carpet.js';
+import { NMAX, makeCarpetCtx, makeCarpetHit, traceCarpet, traceCarpetIn, loadInput, traceCarpetBrute, bladeAtCell } from './carpet.js';
 
 // AC6 needs gc(): re-spawn once with --expose-gc
 if (typeof global.gc !== 'function') {
@@ -108,9 +108,9 @@ function dirOf(yawDeg, pitchDeg, out) {
       ray(cx, cy, d); const tA = terrainT(A, d); const hA = traceCarpet(A, d, tA, ctx, 0, out);
       const tB = terrainT(B, d); const hB = traceCarpet(B, d, tB, ctx, 0, out);
       if (!(tA < Infinity)) continue;
-      // exclude the fade front (widest blade 0.07 m) and the radius ramp
-      const q = groundFootprint(tA, ctx.fpK) / 0.07, rr = tA * Math.hypot(d[0], d[1]) / 12;
-      if ((q > FADE_FP0 * 0.7 && q < FADE_FP1 * 1.3) || rr > FADE_R0 * 0.9) { front++; continue; }
+      // OB-103: exclude the radius ramp (the footprint fade is gone)
+      const rr = tA * Math.hypot(d[0], d[1]) / 12;
+      if (rr > ctx.fadeStart * 0.9) { front++; continue; }
       total++; if (hA) hitsA++;
       if (hA !== hB) diff++;
     }
@@ -338,7 +338,8 @@ function dirOf(yawDeg, pitchDeg, out) {
   check(lo >= 0 && hi <= 1 && lo < 0.2 && hi > 0.8, `TUFT-01a h01 range ${lo.toFixed(2)}..${hi.toFixed(2)}`);
 }
 
-const GOLD_CALM = [1340636530, 3523949449, 1144344956], GOLD_WIND = [3165381766, 2244530883, 2258403597]; // pinned pre-01b (current code)
+// RE-PINNED OB-103: fade model changed (footprint fade removed, min stroke width + LOD cut, radius fade from fadeStart). Before: GOLD_CALM [1340636530, 3523949449, 1144344956], GOLD_WIND [3165381766, 2244530883, 2258403597].
+const GOLD_CALM = [2579676716, 973560348, 1751570053], GOLD_WIND = [1849014812, 4292197613, 743443586];
 // ---- TUFT-PERF-01b golden: FNV hash of (hit, t bits, ix, iy) over the AC2 240x90 grid (poses A + B), the OB-101 flat field and the AC5 random rays, calm + wind.
 // Pinned from the code BEFORE the exact culls (maxHNear / tFade / ascending clip / leanMaxR); every cull must leave it unchanged.
 {

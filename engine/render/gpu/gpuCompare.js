@@ -319,6 +319,7 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
   let kind9Cells = 0, meshTies = 0, meshTiesEdge = 0, meshBoundaryCells = 0, maskTies = 0;
   const maskPose = !!(opts && opts.maskPose);
   const holeCells = []; // first 20 hole cells (diagnosis)
+  let grassTexelTies = 0, grassCells = 0;
   const meshTieMask = new Uint8Array(n), meshTieCells = []; // geomViolCells: distinct cells with any depth/uv/ao/z/face/nrm violation
 
   for (let y = 0; y < rows; y++) {
@@ -362,7 +363,7 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
       }
       if (kind[i] === 0) continue; // both agree "sky" - nothing else to compare
 
-      matched++;
+      matched++; if (kind[i] === KIND_GRASS) grassCells++;
       if (meshTieMask[i]) { if (mat[i] === ((giBuf[i * 4 + 1] >>> 16) & 0xffff)) matEqual++; continue; } // PREC-04 tie: no violations
       const violBefore = depthViol + uvViol + aoViol + zViol + faceViol + nrmViol;
       const gpuMat = (giBuf[i * 4 + 1] >>> 16) & 0xffff;
@@ -383,7 +384,12 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
       // is at the resolution limit for terrain u/v - use the item 9 rule
       // (1% of depth) for kind 7, keep 1e-3 for sector kinds.
       const uvTol = (kind[i] === KIND_TERRAIN ? 0.01 : 1e-3) * Math.max(1, Math.abs(cpuDepth));
-      if (Number.isFinite(cpuDepth) && (Math.abs(gpuU - u[i]) > uvTol || Math.abs(gpuV - v[i]) > uvTol)) uvViol++;
+      if (Number.isFinite(cpuDepth) && (Math.abs(gpuU - u[i]) > uvTol || Math.abs(gpuV - v[i]) > uvTol)) {
+        // OB-103a: a grass stroke hit on a grazing plane (f32 t error ~1e-5 m at 7 m) can land on the other side of an atlas texel boundary:
+        // same kind, same stroke (depth within 1e-4 rel - ARCH CHANGES 8d1036a6; a different stroke stays a uvViol), only the picked texel (u = stroke height) differs. Counted as a capped tie, not a uv violation.
+        if (kind[i] === KIND_GRASS && gpuKind === KIND_GRASS && Math.abs(gpuDepth - cpuDepth) <= 1e-4 * Math.max(1, Math.abs(cpuDepth)) && planeId[i] === gpuPlaneId && Math.abs(gpuV - v[i]) <= uvTol) { grassTexelTies++; meshTieMask[i] = 1; }
+        else uvViol++;
+      }
       if (kind[i] === KIND_TERRAIN && Number.isFinite(cpuDepth)) { const e = Math.max(Math.abs(gpuU - u[i]), Math.abs(gpuV - v[i])); if (e > terrainUvMaxErr) { terrainUvMaxErr = e; terrainUvMaxAt = [x, y, u[i], v[i], gpuU, gpuV, cpuDepth, gpuDepth]; } }
       // ME-06 per-field diff (reported only, never gates `pass`): face, GA.z
       // (world z) and GA.w (aoD; the packed normal bits for FACE_PACKED
@@ -422,18 +428,20 @@ export function compareGeometry(gbuf, depthArr, giBuf, gaBuf, depthBuf, cols, ro
   let geometryCells = 0;
   if (maskPose) for (let i = 0; i < n; i++) if (kind[i] !== 0) geometryCells++;
   const maskTiesMax = maskPose ? maskTiesCap(geometryCells) : 0, maskTiesOk = maskTies <= maskTiesMax;
+  const grassTexelTiesMax = Math.max(2, Math.ceil(0.001 * grassCells)), grassTexelTiesOk = grassTexelTies <= grassTexelTiesMax;
   const meshTiesMax = maskPose ? maskTiesMax : meshTiesCap(meshBoundaryCells), meshTiesOk = meshTies <= meshTiesMax; // mask poses: the mask-tie cap replaces the boundary cap
   const kindMatchPct = kindChecked ? 100 * (kindChecked - kindMismatch) / kindChecked : 100;
   const kindMatchPctExclK8 = kindCheckedExclK8 ? 100 * (kindCheckedExclK8 - kindMismatchExclK8) / kindCheckedExclK8 : 100;
   const res = {
     kindChecked, kindMismatch, kindMatchPct,
     kindCheckedExclK8, kindMismatchExclK8, kindMatchPctExclK8, holesExclK8, // ME-06: voxel (kind-8) cells excluded, see comment above
+    grassTexelTies, grassTexelTiesMax, grassTexelTiesOk, // OB-103a
     matched, matEqual, planeEqual, depthViol, uvViol, holes,
     faceViol, zViol, aoViol, violNonK8, geomViolCells, faceSample, aoSampleCpu, aoSampleGpu, aoSampleIdx, nrmViol, nrmMaxDeg, matSample, terrainUvMaxErr, terrainUvMaxAt, // ME-06: reported only
     kind9Cells, meshBoundaryCells, meshTies, meshTiesEdge, meshTiesMax, meshTiesOk, meshTieCells, holeCells, maskTies, maskTiesMax, maskTiesOk, // PREC-04; ALPHA-01c maskTies (0 outside mask poses) (meshTieMask is attached non-enumerable below)
     edgeCells, edgeKindMismatch, // reported only, does not affect `pass`
     k8Cpu, k8Gpu, // reported only here; voxel-pose callers gate on both > 0
-    pass: kindMatchPct >= 99.5 && depthViol === 0 && uvViol === 0 && holes === 0 && meshTiesOk,
+    pass: kindMatchPct >= 99.5 && depthViol === 0 && uvViol === 0 && holes === 0 && meshTiesOk && grassTexelTiesOk,
   };
   Object.defineProperty(res, 'meshTieMask', { value: meshTieMask, enumerable: false }); // keeps capture JSON small
   // A9 item 3: exact edge-rule flips. ruleGpu = edgeRules() on the GPU G-buffer (kind/planeId/face from GI, depth from Depth, JS fogF + waterMask).
