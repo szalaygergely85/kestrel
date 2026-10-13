@@ -34,6 +34,7 @@ World.load(assets.world('world_m1'), assets, { physics: 'mesh', events: new Even
 // Run: node tools/probe-region-dress.mjs [--hash]
 import { BandBakeJob, bundleBytes } from '../engine/dev.js';
 const world = World.load(assets.world('world_m1'), assets, { physics: 'mesh', events: new Events(), realTrees: true, detail: true });
+if (process.argv.includes('--oldrocks')) { const B = world.terrain.recipe.geo.biomes; B[1].detail.rocks = 1.2; B[2].detail.rocks = 1.0; B[3].detail.rocks = 1.5; }
 if (process.argv.includes('--base')) for (const b of Object.values(world.terrain.recipe.geo.biomes)) for (const k of ['boulders', 'ruins', 'reeds', 'wildflowers', 'pebbles']) delete b.detail[k];
 const CH = 128, CW = 5, CHH = 3;
 const sha = (...bufs) => { const h = createHash('sha1'); for (const b of bufs) h.update(b); return h.digest('hex').slice(0, 16); };
@@ -128,4 +129,14 @@ if (process.argv.includes('--overlap')) {
     tot++;
   }
   console.log('overlap zones', tot, 'colliderDressing', placed, 'overlaps', bad);
+}
+if (process.argv.includes('--keeprect')) {
+  // WMP-08: layer-0 points inside the protected keep rect only (940..1600 x 930..1130); compare run with and without --oldrocks (pre-WMP-08 values)
+  const out = {};
+  for (const [k, p] of Object.entries(KEEP)) {
+    const z = T(p), d = bake(z.cx, z.cy).detail, xs = [], ys = [], sp = [];
+    for (let i = 0; i < d.count; i++) if (d.speciesDefs[d.species[i]].layer === 0 && d.x[i] > 940 && d.x[i] < 1600 && d.y[i] > 930 && d.y[i] < 1130) { xs.push(d.x[i]); ys.push(d.y[i]); sp.push(d.species[i]); }
+    out[k] = sha(Buffer.from(new Float64Array(xs).buffer), Buffer.from(new Uint16Array(sp).buffer), Buffer.from(new Float64Array(ys).buffer)) + ':' + xs.length;
+  }
+  console.log('keeprect', JSON.stringify(out));
 }
