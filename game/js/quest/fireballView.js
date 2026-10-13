@@ -91,7 +91,7 @@ export function createFireballView(o) {
 
     /**
      * On every 'world:loaded', after `buildLightSet` AND the fireball sim exist. Binds up to 4 flight + 2 flash lights
-     * (+ 1 ember glow) `on: false` (never `remove`d); if the 16-light cap leaves less room it binds fewer, flash first.
+     * (+ 1 ember glow) `on: false` (never `remove`d); if the MAX_LIGHTS (24) cap leaves less room it binds fewer, flash first.
      * @param {any} fireballSim @param {any} lightSet LightSet or null (`?lights=0`)
      */
     bind(fireballSim, lightSet) {
