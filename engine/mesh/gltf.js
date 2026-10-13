@@ -1003,8 +1003,13 @@ export function readRiggedGlb(bytes, id = 'rigged', opts = {}) {
       if (a.TEXCOORD_0 !== undefined) readAccessor(json, buffers, a.TEXCOORD_0, id).forEach((u) => uv.push(u));
       else hasUv = false;
       const before = idx.length;
-      if (prim.indices !== undefined) readAccessor(json, buffers, prim.indices, id, { allowIndexTypes: true }).forEach((i) => idx.push(i[0] + base));
-      else for (let v = 0; v < P.length; v++) idx.push(base + v);
+      if (prim.indices !== undefined) {
+        readAccessor(json, buffers, prim.indices, id, { allowIndexTypes: true }).forEach((i) => {
+          // package .glb is user data: an index past the vertex count would read garbage / NaN downstream
+          if (i[0] < 0 || i[0] >= P.length) bad(id, `primitive index ${i[0]} out of range (vertex count ${P.length})`);
+          idx.push(i[0] + base);
+        });
+      } else for (let v = 0; v < P.length; v++) idx.push(base + v);
       for (let k = before; k + 2 < idx.length; k += 3) { const t1 = idx[k + 1]; idx[k + 1] = idx[k + 2]; idx[k + 2] = t1; } // reflection: flip winding
       for (let k = 0; k < (idx.length - before) / 3; k++) mats.push(prim.material === undefined ? -1 : prim.material);
     }

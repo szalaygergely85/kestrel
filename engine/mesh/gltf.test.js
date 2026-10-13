@@ -686,7 +686,7 @@ function sphereTris(radius, lonSegs, latSegs) {
 // ---------------------------------------------------------------------------
 // RIG-01: readRiggedGlb (3 bones, rigid weights, one clip).
 // ---------------------------------------------------------------------------
-function riggedGlb({ weights, interp = 'LINEAR', extras } = {}) {
+function riggedGlb({ weights, interp = 'LINEAR', extras, indices } = {}) {
   const chunks = [], views = [], accs = [];
   const add = (buf, type, comp, count, target) => {
     const off = chunks.reduce((n, c) => n + c.length, 0);
@@ -701,7 +701,7 @@ function riggedGlb({ weights, interp = 'LINEAR', extras } = {}) {
   const aJ = add(jb, 'VEC4', 5121, 6);
   const wRows = weights || [[1, 0, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0]];
   const aW = add(f32Buf(wRows, 4), 'VEC4', 5126, 6);
-  const aIdx = add(u16Buf([0, 1, 2, 3, 4, 5]), 'SCALAR', 5123, 6);
+  const aIdx = add(u16Buf(indices || [0, 1, 2, 3, 4, 5]), 'SCALAR', 5123, 6);
   const tr = (y) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, -y, 0, 1]; // ibm: inverse of translate(0,y,0)
   const aIbm = add(f32Buf([tr(0), tr(1), tr(2)], 16), 'MAT4', 5126, 3);
   const aT = add(f32Buf([[0], [1]], 1), 'SCALAR', 5126, 2);
@@ -751,6 +751,7 @@ function riggedGlb({ weights, interp = 'LINEAR', extras } = {}) {
   ok('rig: STEP holds previous key', approxEqual(ss.t[6 + 1], 0) && approxEqual(ss.t[6 + 2], 1) && approxEqual(sampleRiggedClip(st, st.clips[0], 1).t[6 + 1], -2));
 }
 expectThrow('rig: smooth weights rejected', () => readRiggedGlb(riggedGlb({ weights: [[1, 0, 0, 0], [0.5, 0.5, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0]] }), 'test:rig-smooth'));
+expectThrow('rig: out-of-range primitive index rejected', () => readRiggedGlb(riggedGlb({ indices: [0, 1, 2, 3, 4, 99] }), 'test:rig-badidx'));
 expectThrow('rig: unskinned glb rejected', () => readRiggedGlb(simpleGlb({ positions: [[0, 0, 0], [1, 0, 0], [0, 1, 0]] }), 'test:rig-static'));
 ok('rig: static loadGltf still rejects skins', (() => { try { loadGltf(riggedGlb(), 'x'); return false; } catch (e) { return /skin/.test(e.message); } })());
 

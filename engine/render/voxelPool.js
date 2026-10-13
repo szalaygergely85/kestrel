@@ -144,6 +144,9 @@ export class VoxelPool {
     for (let i = 0; i < atlasKeys.length; i++) this._modelIndexByKey[atlasKeys[i]] = i;
   }
 
+  /** Instances queued this frame (raw, before the cap clamp). */
+  get rawCount() { return this._rawCount; }
+
   /** Clears this frame's instance queue. Call once before this frame's
    * pushInstance() calls (US-041a's collect(world) replaces the harness
    * loop but keeps this reset). */

@@ -707,3 +707,8 @@ Open: (1) no `area` objective (no gooseFarm area trigger exists in areas.json; n
 
 - 2026-10-13 kestrel-4 OB-104b2 (WGSL twin) -> arch-review: `shade.wgsl.js` shadeTerrain gets `nrm: vec3f` + the 4-line cliff branch (CLIFF_NZ literal, `ShadeU.cliff` vec4 appended after `grass`: x = rock id, y = on), `passShade.js` writes it from `recipe.terrain.rock`, SHADE_WGSL pin re-pinned 45683 -> 46172.
 - Tests: `shade.wgsl.test.js` JS==WGSL terrain parity now with random normals (cliff cells > 400) + 3 mutations (CLIFF_NZ, axis pick, v=z) + layout asserts; 25 wgsl/terrainShade suites PASS. gpucompare NOT run: row `world_m1: lakeEdge (OB-104b2 cliff rock, 1237, 606 yaw 0 pitch 2)` added in `game/js/dev/modes/gpucompare.js`; main session: run gpucompare, expect new row PASS (JS==GPU) and terrain rows re-baselined only where JS==GPU (reason "OB-104b cliff rock"). Note: this branch's `content/dev-poses.js` lakeEdge is still (1237,606) (the OB-104 move to (1215,556) is not here), so no separate cliffNotch pose was needed.
+### REVIEW-NITS-01 (kestrel-4, review-nits) - arch-review
+- RIG-01: readRiggedGlb rejects primitive indices >= vertex count (bad() with clear message); gltf.test.js +1 test (corrupt index 99).
+- RIG-04: setRot/setRotFromPose share buildRot(out) via `_ang` scratch; partRot.test.js alloc gate PASS.
+- WILD-05: VoxelPool `get rawCount()`; engine/fauna/feed.js uses it. WS2-05: World `get bandPending()`; game/js/quest/bandPose.js uses it (bandPose.test fake got the getter).
+- Suites PASS: gltf, voxelPool, faunaFeed, partRot, bandPose, travel; check-deps OK. terrainBands.test: 3 timing/heap FAILs (16.9 ms slice, no --expose-gc, loaded PC) - unrelated, only a getter added to World.
