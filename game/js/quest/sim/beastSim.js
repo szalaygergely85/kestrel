@@ -15,6 +15,8 @@ import { canSee } from './sight.js';
 import { BEAR_TUNING, bearOverrides, isBearEntity } from './bearBrain.js'; // BEAR-01
 import { WOLF_TUNING, wolfOverrides, isWolfEntity, circleTarget, awayTarget } from './wolfBrain.js'; // WOLF-01
 import { GOBLIN_TUNING, goblinOverrides, isGoblinEntity } from './goblinBrain.js'; // GOB-01
+import { KINDS, kindIndex, kindOfEntity } from './beastKinds.js'; // BEAST-03a
+import { archIndex } from './archetypes.js';
 import { perceive, leashState, returnTarget, LEASH_HOME, LEASH_ENGAGE, LEASH_RETURN, LEASH_GIVEUP } from '../../../../engine/index.js';
 
 export const MAX_BEASTS = 96; // GOB-01: boars + wolves + bears + goblin camps (was 32; loot.js MAX_SLOTS must match)
@@ -36,6 +38,17 @@ export const STATE_SINK = 11;    // US-079b: sinks into the ground (z = deathZ -
 export const STATE_GONE = 12;    // US-079b: hidden, skipped everywhere, back via resetAll
 
 export const STATE_EAT = 13; // LIFE-07: a wolf/bear eating its kill (counts as wander for perception)
+// BEAST-03a (arch 38.64 (2)): states for the new archetype layers. Numbers only - nothing sets them yet (03b+). Never renumber 0-23.
+export const STATE_GRAZE = 14;     // grazer/skittish idle feed
+export const STATE_PATROL = 15;    // roaming route leg
+export const STATE_FLEE = 16;      // run away (skittish, routed pack)
+export const STATE_STUCK = 17;     // sidestep / replan
+export const STATE_CIRCLE = 18;    // waiting for an attack token on a flank slot
+export const STATE_HIDDEN = 19;    // ambush: no drift, near bubble only
+export const STATE_SUBMERGED = 20; // water: eyes-only approach
+export const STATE_GRAB = 21;      // croc hold + roll
+export const STATE_AIRBORNE = 22;  // flyer cruise / circle
+export const STATE_CAST = 23;      // caster / healer cast (a hit cancels)
 const FIRST_DEAD_STATE = STATE_DYING;
 const deadSt = (st) => st >= FIRST_DEAD_STATE && st <= STATE_GONE; // EAT (13) is alive
 const HUNT_PREY = { wolf: ['rabbit', 'deer'], bear: ['deer'] }; // LIFE-07: species-filtered prey (38.56 c)
@@ -189,6 +202,8 @@ export function createBeastSim(world, opts) {
     cause: new Uint8Array(MAX_BEASTS),       // US-079b: 0 sword, 1 fire (indexes CAUSE_STR)
     knockV: new Float64Array(MAX_BEASTS),    // US-079b: per-slot stagger clamp speed (replaces shared cfg.staggerKnock)
     wolf: new Uint8Array(MAX_BEASTS),        // WOLF-01: brain.species==='wolf' (per-slot cfg below, pack token, circle, flee)
+    kindIdx: new Uint8Array(MAX_BEASTS),     // BEAST-03a: index into KIND_NAMES (beastKinds.js); data only so far
+    archIdx: new Uint8Array(MAX_BEASTS),     // BEAST-03a: index into ARCH_NAMES (archetypes.js)
     bear: new Uint8Array(MAX_BEASTS),        // BEAR-01: brain.species==='bear' (per-slot cfg, fixed 2-heart swipe, light hits don't cancel windup)
     goblin: new Uint8Array(MAX_BEASTS),      // GOB-01: brain.species==='goblin'
     group: new Uint8Array(MAX_BEASTS),       // GOB-01: attack-token group 0 boar/bear, 1 wolf, 2 goblin
@@ -239,6 +254,7 @@ export function createBeastSim(world, opts) {
     const home = (e.components.brain && e.components.brain.home) || [e.transform.x, e.transform.y];
     sim.homeX[i] = home[0];
     sim.homeY[i] = home[1];
+    { const kn = kindOfEntity(e); sim.kindIdx[i] = kindIndex(kn); sim.archIdx[i] = archIndex(KINDS[kn].arch); } // BEAST-03a
     if (isWolfEntity(e)) { // WOLF-01: wolf slot = boar defaults + overrides, own step counts
       sim.wolf[i] = 1; sim.group[i] = 1; sim.packer[i] = 1;
       const wc = { ...cfg, ...wolfOverrides(cfg) };
