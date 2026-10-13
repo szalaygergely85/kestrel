@@ -1202,3 +1202,6 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 
 ## D-079
 **2026-10-14, owner (PC-B session).** ENV-02 ground richness: the owner approved `design/preview/ground-richness.html` ("this is good") as shown, i.e. the default pick **ground A** for all six biomes in `design/look/biomeLook.js` (meadow, forest, glade, fields, foothills, shore). ENV-02 code may start (architect note first). ENV-03 atmosphere pick still open.
+
+## D-080
+**2026-10-14, owner (PC-B session, OB-146).** "remove relays, i like waystones": the relay concept is removed from the player view. Every regional relay becomes a **Waystone** - same voxel model as the tower Waystone, name "Waystone" in every prompt, map label, quest and hint (no "relay" word in player text; internal ids may stay). Functions unchanged: fast travel (M), heal + save, region side quest (blue !), beasts fear its light. Burl explains waystones in one plain line when she gives the crystal; the first wake shows a short card of what unlocked. Supersedes the relay look of WMP-01/05 and WM-13 for the player.
