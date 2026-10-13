@@ -89,8 +89,10 @@ const pc = (a, q) => { a.sort((x, y) => x - y); return a[Math.min(a.length - 1, 
 const aMax = Math.max(...act), mMax = Math.max(...mk0);
 console.log(`  bake-active calls ${act.length}: p50 ${pc(act, .5).toFixed(2)} p95 ${pc(act, .95).toFixed(2)} p99 ${pc(act, .99).toFixed(2)} max ${aMax.toFixed(2)} ms; job-start calls ${mk0.length} max ${mMax.toFixed(2)} ms`);
 ok('bake-active call p95 <= 2.3 ms (2 ms budget + one 32-cell slice)', pc(act, .95) <= 2.3, pc(act, .95).toFixed(2));
-ok('bake-active call p99 <= 3.5 ms', pc(act, .99) <= 3.5, pc(act, .99).toFixed(2));
-ok('job-start call (key + overlap copy, once per zone) <= 8 ms', mMax <= 8, mMax.toFixed(2));
+const allAct = act.concat(mk0.filter((d) => d > 0.3)); // WM-02b: job-start calls (key + alloc; overlap copy now sliced) count as bake-active
+ok('bake-active call p99 <= 2.0 ms (incl. job start)', pc(allAct, .99) <= 2.0, pc(allAct, .99).toFixed(2));
+ok('bake-active call max <= 2.5 ms (incl. job start)', Math.max(...allAct) <= 2.5, Math.max(...allAct).toFixed(2));
+ok('job-start call (key + alloc, no stepping) <= 2 ms (typ. 0.7-1.1)', mMax <= 2, mMax.toFixed(2));
 ok('idle slice avg <= 2 ms', idleSum / idleN <= 2, (idleSum / idleN).toFixed(2));
 // pins never evicted: shrink the cap hard
 const nEnt = st.entries, nEv = st.evictions, pinKey = w._zoneKey(4, j0);

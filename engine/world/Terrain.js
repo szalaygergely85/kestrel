@@ -266,21 +266,14 @@ export class Terrain {
     let ox0 = 0, ox1 = 0, oy0 = 0, oy1 = 0;
     // AUD-31: minH/maxH accumulated while copying/baking (same formula swapNearBand used in its own full pass)
     const can = this.realTrees ? 0 : this._canopyM, fid = this._forestTypeId;
-    let mn = Infinity, mx = -Infinity;
+    let mn = Infinity, mx = -Infinity, cpSrc = null, cpDx = 0, cpDy = 0;
     if (cur && cur.cell === b.cell) {
       const dx = Math.round((cur.x0 - x0) / b.cell), dy = Math.round((cur.y0 - y0) / b.cell); // cur origin in new coords
       ox0 = Math.max(0, dx); ox1 = Math.min(w, dx + cur.w); oy0 = Math.max(0, dy); oy1 = Math.min(h, dy + cur.h);
-      if (ox1 > ox0 && oy1 > oy0) {
-        for (let j = oy0; j < oy1; j++) {
-          const s0 = (j - dy) * cur.w + (ox0 - dx), d0 = j * w + ox0, len = ox1 - ox0;
-          b.height.set(cur.height.subarray(s0, s0 + len), d0);
-          b.type.set(cur.type.subarray(s0, s0 + len), d0);
-          b.hDraw.set(cur.hDraw.subarray(s0, s0 + len), d0);
-          for (let i = d0, e = d0 + len; i < e; i++) { const v = b.height[i] + (b.type[i] === fid ? can : 0); if (v < mn) mn = v; if (v > mx) mx = v; }
-        }
-      } else { ox0 = ox1 = oy0 = oy1 = 0; }
+      if (ox1 > ox0 && oy1 > oy0) { cpSrc = cur; cpDx = dx; cpDy = dy; } // WM-02b: rows are copied in stepBandState (sliced)
+      else { ox0 = ox1 = oy0 = oy1 = 0; }
     }
-    return { b, ox0, ox1, oy0, oy1, row: 0, side: 0, sRow: 0, cur: 0, ce: 0, ready: false, mn, mx, canopy: can, fid, cx0, cy0, cw, ch };
+    return { b, ox0, ox1, oy0, oy1, row: 0, side: 0, sRow: 0, cur: 0, ce: 0, ready: false, mn, mx, canopy: can, fid, cx0, cy0, cw, ch, cpSrc, cpDx, cpDy, cpRow: oy0, sliceMs: 0 };
   }
 
   /** True while a back band is baking or waiting to be swapped. */
@@ -306,6 +299,20 @@ export class Terrain {
     const b = st.b, w = b.w, h = b.h, cell = b.cell;
     const canopy = this.realTrees ? 0 : this._canopyM, forestId = this._forestTypeId;
     const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (st.cpSrc) { // WM-02b: overlap copy, row by row under the same budget (min/max order is irrelevant)
+      const cur = st.cpSrc, dx = st.cpDx, dy = st.cpDy, len = st.ox1 - st.ox0, can = st.canopy, fid = st.fid;
+      while (st.cpRow < st.oy1) {
+        const j = st.cpRow++, s0 = (j - dy) * cur.w + (st.ox0 - dx), d0 = j * w + st.ox0;
+        b.height.set(cur.height.subarray(s0, s0 + len), d0);
+        b.type.set(cur.type.subarray(s0, s0 + len), d0);
+        b.hDraw.set(cur.hDraw.subarray(s0, s0 + len), d0);
+        let mn = st.mn, mx = st.mx;
+        for (let i = d0, e = d0 + len; i < e; i++) { const v = b.height[i] + (b.type[i] === fid ? can : 0); if (v < mn) mn = v; if (v > mx) mx = v; }
+        st.mn = mn; st.mx = mx;
+        if ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 >= msBudget) return false;
+      }
+      st.cpSrc = null;
+    }
     while (st.row < h || st.cur < st.ce) {
       if (st.cur >= st.ce) { // next column span; WM-02: a span is baked in <= 32-cell slices so a 2 ms budget holds (cells are pure: bytes unchanged)
         const r = st.row;
@@ -316,7 +323,7 @@ export class Terrain {
         st.sRow = r;
         if (st.ce <= st.cur) { st.cur = st.ce = 0; continue; }
       }
-      const r = st.sRow, cs = st.cur, ce = Math.min(st.ce, cs + 32);
+      const r = st.sRow, cs = st.cur, ce = Math.min(st.ce, cs + 32), s0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
       st.cur = ce; if (st.cur >= st.ce) st.cur = st.ce; // slice end; span done when cur reaches ce
       if (ce > cs) {
         const G = this.util.bake(b.x0 + cs * cell, b.y0 + r * cell, cell, ce - cs, 1);
@@ -329,7 +336,9 @@ export class Terrain {
           if (v < st.mn) st.mn = v; if (v > st.mx) st.mx = v;
         }
       }
-      if ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 >= msBudget) break;
+      const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now(), ds = t1 - s0;
+      st.sliceMs = st.sliceMs > ds ? st.sliceMs * 0.98 + ds * 0.02 : ds; // WM-02b: predictive stop (decaying max slice cost)
+      if (t1 - t0 + st.sliceMs >= msBudget) break;
     }
     if (st.row >= h && st.cur >= st.ce) st.ready = true;
     return st.ready;
