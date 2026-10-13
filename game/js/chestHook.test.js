@@ -154,4 +154,24 @@ if (typeof global.gc === 'function') {
   assert.match(msgs[1], /^Looted: \S/); assert.ok(!/^Looted: 1 /.test(msgs[1]), 'single item has no count');
 }
 
+// OB-105: a heart piece in the pack (chest / quest reward / loot) is a toast via heartHook `notify`, never the card; a chest that
+// holds a heart piece also only toasts.
+{
+  const { createHeartHook } = await import('./heartHook.js');
+  const msgs = [];
+  const playerData = { transform: { x: 0, y: 0, z: 0 }, components: { health: { hp: 3, maxHp: 3 } } };
+  const inv = ensureInventory(playerData, { pack: [], left: null, right: null });
+  const events = { emit() {} };
+  const world = { state: {} };
+  const chest = createChestHook({ defs: [], items: A.items, style: A.uiStyle.itemGetCard, rgb, seed: 3, notify: (t) => msgs.push(t) });
+  const hh = createHeartHook({ getCard: () => chest.card, notify: (t) => msgs.push(t) });
+  hh.onBoot({ world, player: playerData, events, inventory: inv });
+  const { addItem } = await import('./quest/sim/inventory.js');
+  addItem(inv, A.items.defs, 'heart.piece', 1); // e.g. a quest reward
+  for (let i = 0; i < 10; i++) hh.onTick(1 / 60);
+  assert.equal(msgs.length, 1); assert.match(msgs[0], /^Looted: Heart piece/);
+  assert.equal(chest.card.isOpen, false, 'OB-105: heart piece opens no card');
+  chest.onBoot({ world: { get: () => ({ play() {} }) }, player: playerData, events: { emit() {}, on() { return () => {}; } }, inventory: inv, state: {} });
+}
+
 console.log('chestHook: interact opens once, item added once, clip driven, save-relay/seam events forwarded, restored-open, card dismiss, no-defs, idle GC PASS');

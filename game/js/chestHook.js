@@ -45,7 +45,7 @@ export function createChestHook({ defs, items, style, rgb, openedChestsOf = null
   // OB-075: with `notify` (main.js: toasts.say) chest / gear pickups show a one-line "Looted: Leggings" / "Looted: 2 Potions" toast, no pause, no card.
   // Without it (Node fixtures) the old item-get card is used. The heart-piece card (heartHook.js, a story beat) is kept.
   const lootedLine = (id, n) => { const d = itemDefs[id], nm = d && d.name ? d.name : id; return 'Looted: ' + (n > 1 ? n + ' ' + nm + (/s$/i.test(nm) ? '' : 's') : nm); };
-  const gotLoot = (id, n, extra) => { if (notify && id !== 'heart.piece') notify(lootedLine(id, n)); else card.push(id, n, extra); };
+  const gotLoot = (id, n, extra) => { if (notify) notify(lootedLine(id, n)); else card.push(id, n, extra); };
   const fwdScratch = [0, 0], pose = { x: 0, y: 0, z: 0, forwardX: 0, forwardY: 0, onBottom: false }; // reused (rule 9)
   let offGear = null, sim = null, ctx = null, lastAnim = null, active = defs; // EQ-10: `active` = defs, or the world's chest* anchors when defs is []
 
