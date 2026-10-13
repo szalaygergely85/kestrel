@@ -228,19 +228,22 @@ export function createWildEnv(world, opts) {
       out.x = x; out.y = y;
     },
     perchNear,
+    /** WM-04: force a trunk-grid rebuild (a `world:scatter` / grid band swap may keep the same scatter object identity). */
+    rebuild() { grid = bake(); env.grid = grid; },
   };
   return env;
 }
 
 /** One object for main.js: fauna + feed over a world. Returns null when the world has no terrain. */
 const WILD_POOL_RESERVE = 12; // collect() keeps the nearest (cap - 12) entities; animals draw into the rest
-export function createWild({ world, pool, fx, seed = 1, hfovRad }) {
+export function createWild({ world, pool, fx, seed = 1, hfovRad, events }) {
   if (!world || !world.terrain || !fx) return null;
   const models = (name) => pool.models.get(name);
   const def = compileFaunaDef(fx, models);
   const sbFx = fx.animals && fx.animals.songbird;
   const env = createWildEnv(world, { perchRings: sbFx && sbFx.perchByModel });
   for (const spc of def.species) if (GROUND_START[spc.name] !== undefined) spc.groundStart = GROUND_START[spc.name];
+  const offScatter = events && events.on ? events.on('world:scatter', () => env.rebuild()) : null; // WM-04: grid worlds re-scatter per band swap
   const fauna = createFauna(def, env, { seed, models });
   const feeder = createFaunaFeed(def, fauna.slots, { hfovRad });
   if (pool.reserve !== undefined) pool.reserve = WILD_POOL_RESERVE; // static world props (47+ since the POI pass) filled the 48-slot pool: keep room for the animals
@@ -259,5 +262,6 @@ export function createWild({ world, pool, fx, seed = 1, hfovRad }) {
       fauna.update(dt, player, cam);
     },
     reset() { fauna.reset(); lx = NaN; },
+    dispose() { if (offScatter) offScatter(); },
   };
 }
