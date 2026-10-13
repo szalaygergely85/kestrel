@@ -78,7 +78,7 @@ console.log('gfxPresets: D-047 data, precedence, independent shadows, validation
   assert.equal(applyCarpetPreset('high', null, ''), null);
   const c = knobsFor('high').carpet; c.on = false; assert.equal(knobsFor('high').carpet.on, true, 'knobsFor returns a copy');
   // real World: low -> medium switches on live
-  const { World } = await import('../../../engine/world/World.js');
+  const { World } = await import('../../../engine/index.js');
   const w = new World(); applyCarpetPreset('low', w, ''); assert.equal(w.carpetQuality.on, false);
   applyCarpetPreset('medium', w, ''); assert.deepEqual([w.carpetQuality.on, w.carpetQuality.radiusScale, w.carpetQuality.densScale], [true, 0.5, 0.6]);
   assert.deepEqual(w.checkCarpetWindow(), { ok: true, need: 0, have: 0 }, 'no carpet = no window check');
