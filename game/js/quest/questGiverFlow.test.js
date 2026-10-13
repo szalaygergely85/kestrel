@@ -98,7 +98,7 @@ const kill = (r, n) => { for (let i = 0; i < n; i++) r.feed({ type: 'beast:died'
   assert.equal(r.book.statusOf('burl.boars'), 1, 'Later keeps it available');
   kill(r, 5);
   assert.equal(r.book.statusOf('burl.boars'), 1, 'boars killed before accept: still needs Accept');
-  t.talk(0); assert.equal(r.book.statusOf('burl.boars'), 3, 'accept with 5 dead -> ready');
+  t.talk(0); assert.equal(r.book.statusOf('burl.boars'), 2, 'OB-115: accept with 5 dead -> still active (pre-accept kills do not count)'); kill(r, 5); assert.equal(r.book.statusOf('burl.boars'), 3, 'kills after accept -> ready');
   t.talk(0, 1); assert.equal(r.book.statusOf('burl.boars'), 3, 'Esc on the first ready line: nothing handed in');
   assert.equal(r.state.completed.includes('beasts'), false);
   t.talk(); assert.equal(r.book.statusOf('burl.boars'), 4);
@@ -150,9 +150,9 @@ const kill = (r, n) => { for (let i = 0; i < n; i++) r.feed({ type: 'beast:died'
   const r = mkRelay(), t = setup(r), ev = [];
   for (const e of [{ type: 'flag:set', key: 'wake', value: true }, { type: 'area:entered', id: 'breach' }, { type: 'item:got', id: 'sword' }, { type: 'area:entered', id: 'towerDoor' }]) r.feed(e);
   r.book.actKey('q.tower.blade.accept'); r.book.actKey('q.tower.blade.handin');
-  for (const b of BOARS) r.feed({ type: 'beast:died', id: b });
   r.book.onChange = (n, id) => ev.push(n + ':' + id);
   assert.equal(r.book.actKey('q.burl.boars.accept'), true);
+  for (const b of BOARS) r.feed({ type: 'beast:died', id: b }); // OB-115: kills count from accept
   assert.deepEqual(ev, ['quest:accepted:burl.boars', 'quest:ready:burl.boars'], 'accept -> ready in one go (main.js re-opens Burl on this)');
   assert.equal(r.book.statusOf('burl.boars'), 3);
   const lines = t.talk(); assert.ok(lines[0].startsWith('Ah! I can smell the berries'), 'the re-opened talk lands on the hand-in: ' + lines[0]);
