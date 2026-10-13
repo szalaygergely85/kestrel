@@ -79,7 +79,7 @@ function preyMaskOf(fauna, names) {
 }
 
 const TILE_DORMANT_R = 200; // WM-04: grid worlds - home farther than this from the player (or outside the live nav tile) = dormant
-const _astarCache = new WeakMap(); // WM-04: one A* (scratch arrays) per nav tile grid, reused when a band comes back
+const _astarCache = new WeakMap(); // WM-04: one A* per nav tile grid; WeakMap keyed by the grid -> freed when BandCache evicts the bundle (and rebindNav moved on), no extra eviction code
 function astarFor(grid) { let a = _astarCache.get(grid); if (!a) { a = createAStar(grid); _astarCache.set(grid, a); } return a; }
 
 export function createBeastSim(world, opts) {
@@ -433,6 +433,9 @@ export function createBeastSim(world, opts) {
   sim.isDead = function isDead(slot) { return deadSt(sim.state[slot]); };
   /** US-079b: the slot index for a boar id, or -1 when not tracked. */
   sim.slotOf = function slotOf(id) { const i = idSlot[id]; return i === undefined ? -1 : i; };
+
+  // arch fix (WM-04): a grid world's nav IS a tile -> tile dormancy applies from creation, not only after the first swap (opts.spawn optional: without it only the out-of-tile rule runs)
+  if (opts.tileNav) { sim.tileMode = true; sim.updateTileDormancy(opts.spawn ? opts.spawn.x : NaN, opts.spawn ? opts.spawn.y : NaN); }
 
   return sim;
 }

@@ -827,3 +827,9 @@ Test game/js/quest/sim/navTile.test.js: tile vs buildFromWorld 100.00 % (keep st
 - OPEN (tool-call cap hit): 5 suites still red, all feed kills BEFORE accept (old rule) and need updating, not code bugs: questBook.test.js:62, questGiverFlow.test.js:101, ch3names.test.js:36, tools/quest-sim.test.mjs (+ tools/quest-sim.mjs feeds deaths before accept; must accept first), sim/wading.test.js (not checked, may be pre-existing).
 - ASK ARCHITECT: none. -> po-review (after those tests are updated)
 - OB-115 follow-up: tests updated to the new rule (questBook.test, questGiverFlow.test x2: kills after accept; ch3names + quest-sim.test pass via auto-quest rule: giverless quests count kind kills once their requirements are met). Run: 149/150 suites PASS (wading = known flaky alloc test), quest-sim 73/73 OK, validate-content OK. -> po-review
+
+### wm-archfix (kestrel-4, branch wm-archfix) - ARCH CHANGES WM-02/02b, WM-03, WM-04
+- WM-02/02b: Terrain.stepBandState counts units (copy row / 32-cell slice) started after the budget ran out (`st.late`), World.bakeAhead keeps `aheadLateMax`; bandAhead.test asserts <= 1 (replaces wall-clock max), walk 12 -> 6 zone rows (~4.8 s, 3/3 runs pass); unused `now` closure removed.
+- WM-03: setNavTiles queues cached bundles without nav (`_navQ`), bakeAhead fills them row-sliced (`NavTileFill` in bandBake.js, cache bytes updated); swap fallback now counts `navLate++`; navTile.test: pre-cached bundles get nav before swap, navLate 0.
+- WM-04: createBeastSim `opts.tileNav` (+ optional `opts.spawn`) turns tileMode on + dormancy at creation (main.js passes `tileNav: !!gridNav`); beastTile test "dormancy before any swap". `_astarCache` is a WeakMap keyed by the grid: freed once BandCache evicts the bundle (no other holder after rebindNav), so no manual eviction.
+- Node only; filtered suite band,terrain,navTile,beast,goblin x3 (see reply). -> arch re-review

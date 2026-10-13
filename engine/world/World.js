@@ -6,8 +6,8 @@ import { validatePolygon, compilePolygon } from '../physics/bounds.js';
 import { makeGrid, zoneAt, zoneId, best as bandBest, pick as bandPick, marginX as bandMarginX, marginY as bandMarginY } from './bandGrid.js';
 import { loadLevel, isTerrainFloor } from './Level.js';
 import { Terrain } from './Terrain.js';
-import { BandBakeJob, buildNavTile } from './bandBake.js';
-import { BandCache } from './bandCache.js';
+import { BandBakeJob, buildNavTile, NavTileFill } from './bandBake.js';
+import { BandCache, bundleBytes } from './bandCache.js';
 import { aheadOrder, bestOverlap } from './bandAhead.js';
 import { validateCarpetConfig, buildCarpetClassMap, buildCarpetMask, CarpetMaskJob } from './carpet.js';
 import { scatterTrees, scatterDetail, TreeScatterJob, DetailScatterJob } from './scatter.js';
@@ -292,6 +292,7 @@ export class World {
     // state; set once by `World.load` from `def.bounds`.
     this.bounds = null;
     this.terrainBands = null; this.bandSwitch = { prefetchM: 176, switchM: 112 }; this._bandCur = -1; this._bandPend = -1; this._bandJob = null; this.bandCache = new BandCache(); this._bandKeys = []; this._bandKeysC = []; this._evBand = { from: null, to: null, nav: null }; this._maskJob = null; this._maskBack = null; this.lastSwapMs = 0; this.bandMisses = 0; this._ahead = null; this._zoneKeys = new Map(); this._pinKeys = null; this._aheadOrd = []; this._aheadRects = new Float64Array(4 * 64); this._aheadSrc = []; this._aheadPose = null; this.bandId = null; // WS2-01/02
+    this.aheadLateMax = 0; this.navLate = 0; this._navFill = null; this._navQ = null;
     this.nav = null; this.navTiles = null; // WM-03: live nav tile + {create,maxSlopeDeg,maxStepM,blockedTypes,typeCost} (see setNavTiles)
     this.terrainGrid = null; this._gridPick = { i: 0, j: 0 }; // MAP-10 (38.43): generated zone grid; terrainBands = 2 reusable slot zones
     this.terrainBand = null; // WS1-02: authored near-band chunk rect or null (auto 3x3)
@@ -1286,7 +1287,14 @@ export class World {
   bakeAhead(px, py, msBudget) {
     const g = this.terrainGrid;
     if (!g || this._bandCur < 0 || this._bandPend >= 0 || !(msBudget > 0)) return !!this._ahead;
-    const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    if (this._navQ && (this._navFill || this._navQ.length) && !this._ahead) { // pending nav tiles of pre-setNavTiles bundles: idle slices before new bake-ahead jobs
+      if (!this._navFill) { const c = this._navQ.pop(); if (c.nav || !c.near) return true; this._navFill = new NavTileFill(this, c); }
+      if (this._navFill.step(Math.max(0.2, msBudget - 0.4))) {
+        const c = this._navFill.bundle; this._navFill = null;
+        if (this.bandCache.map.get(c.key) === c) { const nb = bundleBytes(c); this.bandCache.bytes += nb - c.bytes; c.bytes = nb; } // keep the cache byte count honest
+      }
+      return true;
+    }
     const lp = this._aheadPose || (this._aheadPose = { x: px, y: py, hx: 0, hy: 0 });
     const dx = px - lp.x, dy = py - lp.y, d = Math.hypot(dx, dy);
     if (d > 0.5) { lp.hx = lp.hx * 0.8 + (dx / d) * 0.2; lp.hy = lp.hy * 0.8 + (dy / d) * 0.2; lp.x = px; lp.y = py; } // smoothed heading
@@ -1308,7 +1316,9 @@ export class World {
       a = this._ahead = { i: pick.i, j: pick.j, key: this._zoneKey(pick.i, pick.j), job: BandBakeJob.create(this, z.cx0, z.cy0, z.cw, z.ch, src) };
       return true; // WM-02b: the start call only builds the job (key + allocs, ~0.7 ms); stepping begins next frame
     }
-    if (!a.job.step(Math.max(0.2, msBudget - 0.4))) return true; // 0.4 ms reserve: one 32-cell slice overshoots by ~0.15-0.3 ms
+    const stepped = a.job.step(Math.max(0.2, msBudget - 0.4));
+    if (a.job.st.late > this.aheadLateMax) this.aheadLateMax = a.job.st.late; // units started after the budget ran out (deterministic, test asserts <= 1)
+    if (!stepped) return true; // 0.4 ms reserve: one 32-cell slice overshoots by ~0.15-0.3 ms
     const b = a.job.bundle(); b.key = a.key; b.zone = a.i * this.terrainGrid.nj + a.j;
     this._ahead = null;
     cache.put(b, this._bandKey(this._bandCur), this._bandPend >= 0 ? this._bandKey(this._bandPend) : null);
@@ -1346,7 +1356,12 @@ export class World {
     this.nav = null;
     if (!cfg) return;
     this.nav = buildNavTile(this, this.terrain.near);
-    if (this.terrainBands && this._bandCur >= 0) { const b = this.bandCache.get(this._bandKey(this._bandCur)); if (b) b.nav = this.nav; }
+    this._navFill = null; this._navQ = [];
+    if (this.terrainBands && this._bandCur >= 0) {
+      const b = this.bandCache.get(this._bandKey(this._bandCur)); if (b) b.nav = this.nav;
+      // arch fix: every other cached bundle gets its nav tile sliced during idle frames (bakeAhead), never on a swap frame
+      for (const c of this.bandCache.map.values()) if (!c.nav) this._navQ.push(c);
+    }
   }
 
   /** Swap frame: only pointer flips + the ground-snap loop; every heavy result was prepared by `_bandJobStep`. */
@@ -1377,7 +1392,7 @@ export class World {
     if (!hit) { bundle = { key, zone: to, near: terrain.near, scatter: j.scatter, detail: j.detailSet, trunks: j.trunks, detailCol: j.detailCol, nav: j.nav, classMap: null, bytes: 0, pinned: false, lastUse: 0 }; this._cachePut(bundle); }
     if (this.navTiles) { // WM-03: nav tile swaps with the band (pointer flip; a bundle without one = legacy/cached before setNavTiles -> built once)
       let nv = src.nav;
-      if (!nv) { nv = buildNavTile(this, terrain.near); src.nav = nv; if (bundle) bundle.nav = nv; }
+      if (!nv) { this.navLate++; nv = buildNavTile(this, terrain.near); src.nav = nv; if (bundle) bundle.nav = nv; } // counted fallback (should stay 0 in play)
       this.nav = nv;
     }
     let snapped = 0;
