@@ -1,5 +1,5 @@
 // OB-089: still of the real game at ?pose=roadSouth (mid-distance trees + buildings in front of the hills), for the owner look.
-// Run: node tools/verify-ob089.mjs 9725  -> docs/test-reports/captures/ob089-roadSouth.png (PC-B port range 9500-9999, CDP = port+1)
+// Run: node tools/verify-ob089.mjs 9725  -> docs/test-reports/captures/ob089-roadSouth.png + ob089-roadSouth-noshadow.png (PC-B port range 9500-9999, CDP = port+1)
 import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { writeFileSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs';
@@ -30,6 +30,10 @@ try {
   await pause(25000); // world load + lazy meshes streaming in
   for (let i = 0; i < 6; i++) await pause(1000);
   await shot('ob089-roadSouth');
+  // second still with the sun shadows off (gfxBoot ?shadows=off): if trees/buildings turn lit, the dark navy is the shadow term
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?pose=roadSouth&gpu=webgpu&shadows=off` });
+  await pause(25000); for (let i = 0; i < 6; i++) await pause(1000);
+  await shot('ob089-roadSouth-noshadow');
   console.log('OB-089 still saved: docs/test-reports/captures/ob089-roadSouth.png', JSON.stringify(errors.map((e) => e.text)));
 } finally {
   cdp?.close(); if (browser?.pid) killTree(browser.pid); if (server.pid) killTree(server.pid);
