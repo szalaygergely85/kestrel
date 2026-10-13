@@ -129,6 +129,7 @@ import { createWetStones } from './quest/sim/wetStones.js'; // QL-19: wet ford s
 import { createBand } from './quest/sim/band.js'; // US-129a: level band for beasts + loot
 import { createWadeFx } from './quest/sim/wadeFx.js'; // US-055a
 import { createSwimWire } from './quest/swimWire.js'; // SWIM-03c (38.54)
+import { swimUpOf, jumpOf } from './quest/swimInput.js'; // SWIM-04d
 import { createShore } from './quest/seaEdge.js'; // SWIM-HOOKS-01
 import { createWading } from './quest/sim/wading.js'; // RIVER-04 (38.45 (3)): river wading around the player's integrate
 import { BOW_CFG } from './quest/bowConfig.js'; // EQ-09
@@ -1967,6 +1968,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         // updates - is never lost (integrate() does its own edge detection on
         // top of this, architecture.md section 5 `Controls` typedef).
         controls.jump = input.isDown(gameKeys.jump) || input.pressed(gameKeys.jump);
+        { const sb = playerHandle && playerHandle.data.components.body; controls.swimUp = swimUpOf(controls.jump, input.isDown(gameKeys.dive), sb); controls.jump = jumpOf(controls.jump, sb); } // SWIM-04d: Space = swim up / Left Ctrl = dive in water, jump on land
       }
       if (ending) {
         // Arch review 1: `integrate` copies controls.yaw/pitch onto the
