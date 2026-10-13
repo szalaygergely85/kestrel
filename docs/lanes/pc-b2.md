@@ -717,3 +717,9 @@ Open: (1) no `area` objective (no gooseFarm area trigger exists in areas.json; n
 - bindings.js/gameKeys.js: new `dive` action (ControlLeft, remappable); Space stays `jump` (swim-up while swimming). Pure mapper `game/js/quest/swimInput.js` (swimUpOf/jumpOf) + test.
 - chest.js: def.needsBottom -> pose.onBottom required; chestDefs.js `chestBed` (10 arrows + sturdy gear), world_m1 entity chestBed (1240,505,z ground = bed ~-68); chestHook sets pose.onBottom from body.
 - NEEDS B1-main: per step `controls.swimUp = swimUpOf(input.isDown(gameKeys.jump), input.isDown(gameKeys.dive), body)`; `controls.jump = jumpOf(...)`. No settings/key-hint list or audio bus touched (none found/skipped).
+
+### MAP-STRAND-01 south corridor to the Long Strand (kestrel-4, branch strand-open, arch-review) - programmer
+- world_m1.world.json: bounds +7 parts (corridor r30 along the southTrack: (1480,1100)->(1590,1300)->(1590,1500)->(1500,1740), sea end capsule+circle r45 covering sign + stakes); nav.area 455x490 cells (to x1700,y1840); terrainBands +south1/2/3 (cx0 8, cy0 9/11/13, 1-chunk overlaps). Slopes along the corridor <= 0.21.
+- ENGINE (small, ARCH to ratify): World.js caps raised: union parts 8 -> 16, terrainBands 4 -> 6 (tests terrainBands/world.test updated). ASK ARCHITECT: 1-chunk band overlaps give a 64 m tie margin (forced sync swap at < 32 m); a taller zone or 2-chunk steps would need 6+ zones. Band swap cost in the strand leg not measured in a browser.
+- Tests: game/js/quest/strandOpen.test.js (bounds, ground, nav exact path, real 8000-step walk); tools/route-walk.mjs leg `strand` (ford -> sign, 0 band:late, 2.9 m from sign); tools/verify-strand.mjs <port 9725> written, NOT run (Node only).
+- Pre-existing: route-walk "clearance follow" FAIL (compares nav area w/h in metres, they are cells); terrainBands heap rows need --expose-gc.
