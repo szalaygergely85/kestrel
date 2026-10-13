@@ -6,6 +6,7 @@
 // (engine/entities/Player.js, engine/physics/*), so this now comes from
 // engine/index.js like everything else (check-deps rule 3).
 
+import { applyImpostorBoot } from './ui/impostorPreset.js'; // R6-WIRE
 import { loadPresets, resolveQuality, saveQuality, knobsFor, dropStaleOverrides, carpetQualityFor, carpetBuildFor } from './ui/gfxPresets.js';
 import { loadQuestFiles, showBootErrors } from './questBoot.js';
 import { registerRiggedChars } from './quest/charRegister.js';
@@ -2625,6 +2626,10 @@ stream act ${g.activeCount}/${g.memberCount} warm ${g.warmCount} cells ${g.cellC
     while (farHold.step()) { bootProg.fraction('land', farHold.frac); await bootPaint(); }
     window.__farHoldMs = performance.now() - t0;
     console.info(`[boot] far terrain + bands baked behind the card in ${window.__farHoldMs.toFixed(0)} ms (${farHold.slices} slices, bands ${(engine.world.bandCache.bytes / 1048576).toFixed(1)} MB)`);
+  }
+  { // R6-WIRE: card impostors from the quality preset (after the pre-bake; capture/bench pages without a preset stay impostor-free)
+    const fo = window.ASSETS && window.ASSETS.levels && window.ASSETS.levels.overworld_far && window.ASSETS.levels.overworld_far.recipe && window.ASSETS.levels.overworld_far.recipe.forest;
+    if (resolvedQuality && resolvedQuality.knobs && fo && fo.trees) applyImpostorBoot(engine, resolvedQuality.knobs, { species: fo.trees.species, log: console.warn, imp: params.get('imp') });
   }
   window.__farReadyAtBoot = !!(engine.world && engine.world.terrain && engine.world.terrain.farReady);
   if (bootProg) engine.events.on('world:loaded', ({ world: nw }) => {

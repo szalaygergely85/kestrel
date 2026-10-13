@@ -64,3 +64,17 @@ assert.equal(calls.bake, Math.floor(IMPOSTOR_BUDGET_BYTES / 86016), 'bakes stop 
 assert.ok(impostorCacheBytes() <= IMPOSTOR_BUDGET_BYTES); assert.equal(r.skipped, 30 - calls.bake); assert.equal(logs.length, r.skipped);
 assert.match(logs[0], /over .* budget/);
 console.log('impostorPreset.test: OK');
+
+// R6-WIRE: boot path applies once with preset knobs; ?imp=0 zeroes impM; Settings reapply reuses species.
+{
+  const { impostorKnobs, applyImpostorBoot, reapplyImpostorPreset } = await import('./impostorPreset.js');
+  const k = { impM: 60, impMaxDistM: 300 };
+  if (impostorKnobs(k, '0').impM !== 0 || impostorKnobs(k, '0').impMaxDistM !== 300) throw new Error('imp=0 must zero impM');
+  if (impostorKnobs(k, '1') !== k || impostorKnobs(k, null) !== k) throw new Error('imp=1/absent keeps knobs');
+  const eng = { instances: { groups: [{ mesh: { id: 'x/CommonTree_1', data: { triCount: 0 } } }] } };
+  const logs = [];
+  const r = applyImpostorBoot(eng, k, { species: [{ mesh: 'CommonTree_1', impostor: true }], log: (m) => logs.push(m), imp: '0' });
+  if (r.on) throw new Error('boot with imp=0 must be off');
+  if (reapplyImpostorPreset(eng, k).on) throw new Error('reapply keeps imp=0');
+  console.log('impostor wire OK');
+}

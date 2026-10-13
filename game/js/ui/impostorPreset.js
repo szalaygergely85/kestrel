@@ -55,3 +55,24 @@ export function applyImpostorPreset(world, knobs, opts = {}) {
   out.bytes = cacheBytes;
   return out;
 }
+
+// R6-WIRE: boot + Settings glue. `?imp=0` forces impM 0 (bench), `?imp=1` is the normal enable path (preset knobs decide).
+let remembered = { species: [], log: undefined, imp: null };
+
+/** Pure: preset knobs, with impM zeroed when the `imp` URL param is '0'. */
+export function impostorKnobs(knobs, impParam) {
+  if (!knobs) return knobs;
+  return impParam === '0' ? { ...knobs, impM: 0 } : knobs;
+}
+
+/** Boot call (after the OB-109 pre-bake): remembers species/log/imp param for later quality changes, then applies once. */
+export function applyImpostorBoot(engine, knobs, { species, log, imp } = {}) {
+  remembered = { species: species || [], log, imp: imp ?? null };
+  return applyImpostorPreset(engine, impostorKnobs(knobs, remembered.imp), { species: remembered.species, log });
+}
+
+/** Settings quality change: same call with the new preset's knobs (cache hit, no re-bake). No-op before boot applied once. */
+export function reapplyImpostorPreset(engine, knobs) {
+  if (!remembered.species.length) return null;
+  return applyImpostorPreset(engine, impostorKnobs(knobs, remembered.imp), { species: remembered.species, log: remembered.log });
+}
