@@ -1101,6 +1101,8 @@ async function runGame(mode, cinematic = null) {
   const entityTintTable = createEntityTintTable(); // TELEGRAPH-WIRE-01 part 2: one table, reused
   let telegraphWire = null; // TELEGRAPH-WIRE-01: rebuilt on 'world:loaded'
   let beastAnim = null; const beastAnimOn = params.get('beastanim') === '1'; // ANIM-STATE-WIRE-01: default OFF (wander/return would use the walk clip)
+  // WMP-05: map travel is refused in combat (aggro beast within 40 m or the hit-invuln window is up); same sim the hp-regen gate reads.
+  const mapTravelBlocked = () => { const t = playerHandle && playerHandle.data.transform; return !!((vitals && vitals.invuln > 0) || (beasts && t && beasts.aggroNear(t.x, t.y, 40))); };
   let beasts = null; // US-079a (29.1): rebuilt on every 'world:loaded', below
   let vitals = null; // US-080a1/a2 (30.2): rebuilt on every 'world:loaded', below
   let travel = null; // WS1-07b: created once below (after wakeOut)
@@ -1733,11 +1735,11 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         }
         { // WM-10: the whole-map view is the default M card (?map=chart keeps the baked chart); region.seen drives fog + names
           const wg = window.ASSETS.levels.world_geo, rbN = window.ASSETS.uiRegionBanner;
-          if (wg && rbN && params.get('map') !== 'chart') chartOptions = Object.assign(chartOptions || { markers: [], travel: null }, { worldMap: { geo: wg, names: rbN.names, getSeen: () => world.state['region.seen'] } });
+          if (wg && rbN && params.get('map') !== 'chart') chartOptions = Object.assign(chartOptions || { markers: [], travel: null }, { worldMap: { geo: wg, lockUnseen: true, names: rbN.names, getSeen: () => world.state['region.seen'] } });
         }
         try {
           initMapCard(assets, ui.cols, ui.rows, chartOptions);
-          { const cv = getMapChart(); if (cv) cv.onTravel = (id) => travel.request(id); } // WS1-07b
+          { const cv = getMapChart(); if (cv) { cv.onTravel = (id) => travel.request(id); cv.travelBlocked = () => mapTravelBlocked(); } } // WS1-07b
         } catch (e) {
           console.warn('[map] chart card init failed, falling back to the plain card:', e && e.message);
           initMapCard(assets, ui.cols, ui.rows);
