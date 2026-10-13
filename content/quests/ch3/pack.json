@@ -584,7 +584,7 @@
             "id": "life.raid.gooseFarm.defended",
             "equals": true
           },
-          "journal": "NEEDS WRITER: wolves raid the goose pen after dark. Be there at night and kill the pack."
+          "journal": "Wolves raid the goose pen by night. Wait there after dark, drive off the pack."
         }
       ],
       "opensAfter": [
@@ -605,16 +605,17 @@
       "returnText": "Back to the board",
       "lines": {
         "offer": [
-          "NEEDS WRITER: WOLVES COME AT NIGHT. DEFEND THE GEESE."
+          "A new note, the nail driven deep. The same caps hand:",
+          "WOLVES COME FOR THE GEESE AFTER DARK. STAND AT THE PEN."
         ],
         "active": [
-          "NEEDS WRITER: NIGHTS. GOOSE PEN. KILL THE PACK."
+          "The folded note: AFTER DARK. GOOSE PEN. THE PACK."
         ],
         "ready": [
-          "NEEDS WRITER: tied with twine: red vials and arrows."
+          "On the nail now, tied with twine: two red vials, arrows."
         ],
         "done": [
-          "NEEDS WRITER: GEESE COUNTED. ALL HERE."
+          "Chalk under the nail: GEESE COUNTED. ALL HERE. AGAIN."
         ]
       }
     }
