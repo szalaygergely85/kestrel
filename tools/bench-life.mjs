@@ -1,5 +1,5 @@
 // LIFE-10: living-world simulation budget bench (docs/architecture.md 38.56 part (e)). Node only, no browser.
-//   node --expose-gc tools/bench-life.mjs [--hours 24] [--start 18] [--strict] [--json] [--quiet]
+//   node --expose-gc tools/bench-life.mjs [--hours 24] [--start 18] [--strict] [--json] [--quiet] [--poses --scenarios 0 --no-goblin]
 // Builds the real world_m1, the 5 Outwall villagers (+schedule), the fauna (rabbit/deer + a bench fox that hunts
 // rabbits), the beast sim (fauna hunts + a bench raid) and steps them at the fixed 60 Hz step with the player at 3
 // distances from Outwall (in the village, 100 m, 600 m). Prints per-system ms/step p50/p95/max + heap growth, then
@@ -26,7 +26,7 @@ import ferrumLightsMod from '../design/models/ferrum_lights.js';
 import titleMod from '../design/models/title.js';
 import voxelWorldMod from '../design/models/voxel_world.js';
 import { loadTestAssets } from './testing/content-node.mjs';
-import { gridVariant } from '../game/js/quest/bandPose.js'; // WM-06: --poses runs on the ?grid=1 world
+import { gridVariant } from '../game/js/quest/bandPose.js'; // WM-06: --poses: whole-map poses on the default (WM-05 grid) world
 import { buildBeastNav } from '../game/js/quest/sim/beastNav.js';
 import { createBeastSim, MAX_BEASTS } from '../game/js/quest/sim/beastSim.js';
 import { createRng } from '../engine/index.js';
@@ -46,8 +46,9 @@ paletteMod; terrainDef; geoMod; detailPassMod; lanternMod; leverMod; voxelPropsM
 const STEPS_PER_HOUR = 18000; // 300 s per game hour at 60 Hz (D-064: 2 real hours per day)
 const PLAZA = [915, 945];
 const GOBLINS_AWAKE = 20, THROWERS = 6, SPEARS_FLYING = 8; // GOB-08 (38.57 (6))
-// WM-06 (38.59): whole-map poses, same systems at a far-region pose on the ?grid=1 world; JS (life+fauna+beast p95 sum) <= 8 ms (D-007)
-export const POSES = [['northwood', 1600, 700], ['downs', 1620, 1310], ['westHeath', 560, 1300]];
+// WM-06 (38.59): whole-map poses, same systems at a far-region pose on the default world; JS (life+fauna+beast p95 sum) <= 8 ms (D-007)
+export const POSES = [['glasswater', 1200, 600], ['northwood', 1660, 600], ['highPastures', 650, 600], ['ashMile', 1780, 1100], ['downs', 1580, 1430],
+  ['signalHill', 720, 1300], ['heath', 450, 1350], ['reedmire', 1090, 1510], ['strand', 1590, 1720], ['whitecombsFoot', 150, 300]]; // WM-11: one per opened region
 const SCENARIOS = [['in Outwall', 0], ['100 m away', 100], ['600 m away', 600]];
 // Budget rows (38.56 e). stat = which statistic is compared with cap.
 const BUDGETS = [
@@ -84,7 +85,7 @@ function summarize(t, n) {
 async function build(assets, goblin = false, grid = false) {
   const events = new Events();
   let wdef = assets.world('world_m1');
-  if (grid) { const geo = globalThis.ASSETS.levels.world_geo; if (geo && geo.util) geo.util.installGeo(globalThis.ASSETS.levels.overworld_far.util); wdef = gridVariant(wdef, geo); }
+  if (grid) { const geo = globalThis.ASSETS.levels.world_geo; if (geo && geo.util) geo.util.installGeo(globalThis.ASSETS.levels.overworld_far.util); if (!(wdef.terrainGrid && wdef.bounds && wdef.bounds.shape === 'polygon')) wdef = gridVariant(wdef, geo); }
   const world = World.load(wdef, assets, { physics: 'mesh', events });
   // fauna: fixture rabbit + deer, plus a bench fox that hunts rabbits (predator-prey, LIFE-06)
   const fx = JSON.parse(JSON.stringify(FIXTURE_FX));

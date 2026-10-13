@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// tools/map-loop.mjs (WM-06, arch 38.59): the whole-map loop walk, headless Node, `?grid=1` world variant (terrainGrid + polygon bounds).
+// tools/map-loop.mjs (WM-06, arch 38.59): the whole-map loop walk, headless Node, default world (WM-05: terrainGrid + polygon bounds ship in world_m1; `?grid=1` accepted as a no-op).
 //   node tools/map-loop.mjs [--json] [--no-return] [--stride N]    exit 1 on FAIL. Asserts: 0 band:late, 0 sync bakes (world.bandMisses), no fall, no stuck,
 //   max swap <= 4 ms, band cache <= 32 MB; then save/load round trip at the 6 pose stops. Waypoints: tools/map-loop-waypoints.mjs.
 import { MAP_LOOP, mapLoopFull, mapLoopPoses, outsideBounds } from './map-loop-waypoints.mjs';
@@ -35,7 +35,8 @@ const geo = globalThis.ASSETS.levels.world_geo;
 if (geo && geo.util) geo.util.installGeo(globalThis.ASSETS.levels.overworld_far.util); // as game/js/main.js does (MAP-02/03/05)
 
 const DT = P.fixedDt, asJson = process.argv.includes('--json'), noReturn = process.argv.includes('--no-return');
-const def = gridVariant(assets.world('world_m1'), geo);
+const raw = assets.world('world_m1');
+const def = raw.terrainGrid && raw.bounds && raw.bounds.shape === 'polygon' ? raw : gridVariant(raw, geo); // WM-05: the default already is the grid world (fallback for old content)
 const world = World.load(def, assets, { physics: 'mesh', events: new Events() });
 const MB = 1048576, CACHE_MB = 32, SWAP_MS = 4;
 
@@ -71,7 +72,7 @@ function walkTo(wp, rec, maxWp = 12000) {
 }
 const route = noReturn ? MAP_LOOP : mapLoopFull();
 const legs = [];
-const outsideSet = new Set(outsideBounds(def.bounds.pts).map((w) => w.n)); // flagged + skipped until WM-05 widens the polygon
+const outsideSet = new Set(outsideBounds(def.bounds.pts).map((w) => w.n)); // flagged + skipped if a stop ever leaves the polygon
 for (let i = 1; i < route.length; i++) {
   const rec = { name: route[i - 1].n + ' -> ' + route[i].n, ok: true, fell: false, steps: 0, stuck: null };
   if (outsideSet.has(route[i].n)) { rec.skipped = 'outside the bounds polygon today (WM-05)'; rec.end = { x: +player.transform.x.toFixed(1), y: +player.transform.y.toFixed(1) }; legs.push(rec); continue; }
