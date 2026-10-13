@@ -73,5 +73,18 @@ console.log(`  after swaps: match ${c1.pct.toFixed(2)} %; misses ${w.bandMisses}
 ok('swapped tile still >= 99.5 %', c1.pct >= 99.5, c1.pct.toFixed(3));
 // swap = pointer flip (code path: `_publishBand` assigns `world.nav`; only a legacy bundle without a tile builds one)
 ok('0 misses: every swap was a cache hit', w.bandMisses === 0);
+ok('navLate 0 in the walk', w.navLate === 0, String(w.navLate));
+// --- arch fix: bundles cached BEFORE setNavTiles get their tile during idle frames, so a swap into them never builds one
+{
+  const w2 = World.load({ ...def0, terrainGrid: GRID }, assets, { detail: true, spawn: sp });
+  for (let n = 0; n < 900; n++) w2.streamBand(sp.x, sp.y, 2); // fill the ring cache without nav tiles
+  const pre = [...w2.bandCache.map.values()].filter((b) => b !== w2.bandCache.get(w2._bandKey(w2._bandCur)));
+  w2.setNavTiles(CFG);
+  ok('pre-setNavTiles: cache has bundles without a tile', pre.length >= 3 && pre.every((b) => !b.nav), String(pre.length));
+  let f = 0; while (pre.some((b) => !b.nav) && f++ < 4000) w2.streamBand(sp.x, sp.y, 2);
+  ok('idle frames filled nav for every cached bundle (sliced)', pre.every((b) => b.nav) && f > 2, `frames ${f}`);
+  let y2 = sp.y, sw = 0, fr = 0; while (sw < 2 && fr++ < 20000) { y2 -= 6 / 60; if (w2.streamBand(sp.x, y2, 2) === 2) sw++; }
+  ok('swapped into pre-cached bundles, navLate 0, nav matches band', sw === 2 && w2.navLate === 0 && w2.nav.x0 === w2.terrain.near.x0, `sw ${sw} late ${w2.navLate}`);
+}
 console.log(`navTile: ${pass} passed, ${fail} failed`);
 if (fail) { console.log(failures.join('\n')); process.exit(1); }
