@@ -16,11 +16,13 @@ import m3PropsMod from '../../../../design/models/m3_props.js';
 import { loadTestAssets } from '../../../../tools/testing/content-node.mjs';
 import { makeOk } from '../../../../engine/test/assert.js';
 import { buildBeastNav } from './beastNav.js';
-import { createBeastSim, STATE_WANDER, STATE_RETURN, STATE_CHASE, STATE_WINDUP, STATE_CHARGE, STATE_RECOVER, STATE_STAGGER } from './beastSim.js';
+import { createBeastSim, STATE_WANDER, STATE_RETURN, STATE_CHASE, STATE_WINDUP, STATE_CHARGE, STATE_RECOVER, STATE_STAGGER, STATE_CIRCLE } from './beastSim.js';
 import { KINDS } from './beastKinds.js';
 import { COMBAT_TARGETS, toSteps } from './beastConfig.js';
 import { createTactics, FLANK_X, FLANK_Y, TOK_M, TOK_R, TOK_S } from './tactics.js';
-import { allocProbe } from '../../../../tools/allocProbe.mjs';
+import { ensureGcChild, heapGrowth } from '../../../../engine/test/allocGate.js';
+
+ensureGcChild(); // re-runs under --expose-gc so the alloc gate is not load-sensitive
 
 lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; m3PropsMod; paletteMod; detailPassMod; terrainMod; boarMod; NavGrid;
 const { assets } = await loadTestAssets();
@@ -49,7 +51,7 @@ for (const [diff, cap] of [['normal', 2], ['easy', 1], ['hard', 3]]) {
   for (let t = 0; t < 1800; t++) {
     sim.step(px, py, z);
     const a = attackers(sim); if (a > maxAtt) maxAtt = a;
-    let held = 0; for (let k = 0; k < 6; k++) { if (sim.tactics.held[k]) held++; if (sim.state[k] === STATE_CHASE && sim.waiting[k] === 1) circled++; }
+    let held = 0; for (let k = 0; k < 6; k++) { if (sim.tactics.held[k]) held++; if (sim.state[k] === STATE_CIRCLE) circled++; }
     if (held !== sim.tactics.nM) { leak = false; bad = `t=${t} held=${held} nM=${sim.tactics.nM}`; }
     if (held > cap) { leak = false; bad = 'over cap ' + held; }
   }
@@ -85,7 +87,7 @@ for (const [diff, cap] of [['normal', 2], ['easy', 1], ['hard', 3]]) {
   const px = HX + 4, py = HY - 8, z = world.terrain.heightAt(px, py); let okSp = false, got = '';
   const d = (x, y) => Math.abs(FLANK_X[x] * FLANK_X[y] + FLANK_Y[x] * FLANK_Y[y] + 0.5) < 1e-9;
   for (let t = 0; t < 900 && !okSp; t++) { sim.step(px, py, z);
-    const f = []; for (let k = 0; k < 6; k++) if (sim.state[k] === STATE_CHASE && sim.waiting[k] === 1 && sim.tactics.flank[k] >= 0) f.push(sim.tactics.flank[k]);
+    const f = []; for (let k = 0; k < 6; k++) if (sim.state[k] === STATE_CIRCLE && sim.tactics.flank[k] >= 0) f.push(sim.tactics.flank[k]);
     if (f.length >= 3) { okSp = d(f[0], f[1]) && d(f[1], f[2]) && d(f[2], f[0]); got = f.join(','); } }
   ok('live pack: first three circlers sit 120 deg apart', okSp, got); }
 
@@ -128,13 +130,31 @@ function run(seed, steps) {
 { const code = readFileSync(new URL('./tactics.js', import.meta.url), 'utf8').replace(/\/\/.*$/gm, '');
   ok('rule 15: no Math.random / trig / clock / Map / Set in tactics.js', !/Math\.(random|sin|cos|tan|atan2?)|Date\.now|performance\.now|new Map|new Set/.test(code)); }
 
-// AC6: allocation delta of the tactics layer (same 6-wolf scene with tactOn zeroed = legacy ground path)
+// AC6: heap growth of the tactics layer (same 6-wolf scene with tactOn zeroed = legacy ground path), allocGate helpers
 { const measure = (tact) => { const { world, sim } = mk(Array(6).fill('grey_wolf')); if (!tact) sim.tactOn.fill(0);
     const z = world.terrain.heightAt(HX + 4, HY - 8); let k = 0;
-    return allocProbe((n) => { for (let t = 0; t < n; t++, k++) { const ph = (k % 400) / 400, tri = ph < 0.5 ? ph * 2 : 2 - ph * 2; sim.step(HX + 4 + 10 * tri, HY - 8, z); } }, { n: 2000 }); };
+    return heapGrowth(() => { for (let t = 0; t < 2000; t++, k++) { const ph = (k % 400) / 400, tri = ph < 0.5 ? ph * 2 : 2 - ph * 2; sim.step(HX + 4 + 10 * tri, HY - 8, z); } }) / 2000; };
   const A = measure(true), B = measure(false);
-  if (A.skipped) console.log('SKIP alloc (no --expose-gc)');
-  else { console.log(`tactics alloc: with ${A.perCall.toFixed(1)} B/step, without ${B.perCall.toFixed(1)} B/step`); ok('tactics layer adds < 20 B/step', A.perCall - B.perCall < 20, (A.perCall - B.perCall).toFixed(1)); } }
+  console.log(`tactics alloc: with ${A.toFixed(1)} B/step, without ${B.toFixed(1)} B/step`); ok('tactics layer adds < 20 B/step', A - B < 20, (A - B).toFixed(1)); }
+
+// BEAST-04 re-review fix: easy (1 token), 6 wolves, every wolf winds up at least once (waiters outside windupR must re-ask)
+{ const { world, sim } = mk(Array(6).fill('grey_wolf')); sim.tactics.setDifficulty('easy');
+  const px = HX + 4, py = HY - 8, z = world.terrain.heightAt(px, py); const wound = new Uint8Array(6);
+  for (let t = 0; t < 1800; t++) { sim.step(px, py, z); for (let k = 0; k < 6; k++) if (sim.state[k] === STATE_WINDUP || sim.state[k] === STATE_CHARGE) wound[k] = 1; }
+  ok('easy: every wolf winds up at least once in 1800 steps', wound.every((v) => v === 1), Array.from(wound).join(''));
+}
+
+// BEAST-04 ARCH CHANGES: token-less waiters sit in the sticky STATE_CIRCLE (no CHASE<->waiting flip-flop at the ring)
+{ const { world, sim } = mk(Array(6).fill('grey_wolf')); sim.tactics.setDifficulty('easy'); // 1 token, 5 waiters
+  const px = HX + 4, py = HY - 8, z = world.terrain.heightAt(px, py);
+  const last = new Int16Array(6).fill(-1); let flips = 0, circled = 0;
+  for (let t = 0; t < 600; t++) { sim.step(px, py, z);
+    for (let k = 0; k < 6; k++) { const s = sim.state[k];
+      if (s === STATE_CIRCLE) circled++;
+      if (last[k] === STATE_CIRCLE && s !== STATE_CIRCLE && s !== STATE_WINDUP) flips++; // a waiter only leaves CIRCLE by winning the token (leash/lose aside)
+      last[k] = s; } }
+  ok('600 steps: token-less waiters do not flip-flop (CIRCLE exits other than to WINDUP: ' + flips + ', circle slot-steps ' + circled + ')', circled > 0 && flips <= 2, 'flips=' + flips);
+}
 console.warn = orig;
 console.log(`beastTactics: ${pass} pass, ${fail} fail`); for (const f of failures) console.log('  FAIL ' + f);
 if (fail) process.exit(1);

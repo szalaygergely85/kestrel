@@ -109,7 +109,11 @@ import { createWild } from './wild/wildEnv.js'; // WILD-06: ambient rabbits + de
 import { createGoblinWire } from './life/goblinWire.js'; // GOB-07b
 import { createLifeWire, prepareRaidDefs, createOutwallLife } from './life/lifeWire.js'; // LIFE-HOOKS-01: wolf raids wiring
 import { planWorldLife } from './quest/sim/worldGen.js';
+import { bootPoiWire } from './life/poiWire.js'; // POI-02 (OB-141, D-088)
+import { createPoiDiscover } from './ui/poiDiscover.js'; // POI-03
+import { createPoiFights } from './life/poiFights.js'; import { spawnPoiBeasts, poiGroups } from './life/poiBeasts.js'; // POI-05/05b: fight members = static parked beast slots
 import { bootRegionalBeasts } from './quest/sim/regionalBeastsBoot.js'; // WM-12
+import { HFOV_DEG } from '../../engine/index.js'; import { createBeastDirectorWire } from './quest/beastDirectorWire.js'; import { setDifficultyName } from './ui/difficultyFlag.js'; // BEAST-WIRE-01
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
 import { ensureWolves } from './quest/sim/wolfBrain.js'; // WOLF-01
 import { ensureBears } from './quest/sim/bearBrain.js'; // BEAR-01 (D-069): black bears in Thornwood
@@ -268,7 +272,7 @@ const hitStop = createHitStop({ enabled: hitStopEnabled(params, isCaptureOrBench
 let deathRespawnDue = false; // DEATH-FLOW-01: fade finished -> next vitals.step gets a virtual [E] (its normal respawn path, pose logic untouched)
 const deathFlow = createDeathFlow({ enabled: deathFlowEnabled(params, isCaptureOrBench), onRespawn: () => { deathRespawnDue = true; } });
 setReduceMotion(savedSettings.reduceMotion); // SETTINGS-APPLY-01: read at boot, the Settings panel updates it live
-setEnemyBarsOn(savedSettings.enemyBars); setDamageNumbersOn(savedSettings.dmgNumbers); // HPBAR-02 / DMGNUM-01: Combat HUD switches (default On)
+setDifficultyName(savedSettings.difficulty); setEnemyBarsOn(savedSettings.enemyBars); setDamageNumbersOn(savedSettings.dmgNumbers); // HPBAR-02 / DMGNUM-01: Combat HUD switches (default On)
 const hurtFx = createHurtFx({ enabled: hurtFxEnabled(params, isCaptureOrBench), reduceMotion: isReduceMotion }); // HURT-FX-01: off in capture/bench/compare and ?fx=0
 const bootOpts = resolveBootOptions({ params, resolved: resolvedQuality, savedSettings, captureLike: isCaptureOrBench, geometryCompare: isGeometryCompare,
   defaultCols: GRID_DEFAULT_COLS, shadowLevel: resolveShadowLevel });
@@ -1123,6 +1127,7 @@ async function runGame(mode, cinematic = null) {
   let beastAnim = null; const beastAnimOn = params.get('beastanim') === '1'; // ANIM-STATE-WIRE-01: default OFF (wander/return would use the walk clip)
   // WMP-05: map travel is refused in combat (aggro beast within 40 m or the hit-invuln window is up); same sim the hp-regen gate reads.
   const mapTravelBlocked = () => { const t = playerHandle && playerHandle.data.transform; return !!((vitals && vitals.invuln > 0) || (beasts && t && beasts.aggroNear(t.x, t.y, 40))); };
+  let beastDir = null, regionalList = null; // BEAST-WIRE-01
   let beasts = null; // US-079a (29.1): rebuilt on every 'world:loaded', below
   let vitals = null; // US-080a1/a2 (30.2): rebuilt on every 'world:loaded', below
   let travel = null; // WS1-07b: created once below (after wakeOut)
@@ -1131,6 +1136,9 @@ async function runGame(mode, cinematic = null) {
   try { raidDefs = prepareRaidDefs(await (await fetch('../content/life/raids.json')).json()); } catch (e) { console.warn('[life] raids off:', e && e.message); }
   let regionAmbTable = null, regionAmb = null; // WMP-03: content/life/regionAmbient.json; no audio cue API for birdsong/insects yet -> onCue is a no-op (knownCues [])
   try { regionAmbTable = await (await fetch('../content/life/regionAmbient.json')).json(); } catch (e) { console.warn('[regionAmbient] off:', e && e.message); }
+  let poiDiscover = null; // POI-03: 'Found: <name>' toast + M-map marks
+  let poiFights = null; // POI-05
+  let poiWire = null; // POI-02: generated points of interest (world_geo sites), dormant beyond 200 m, state in world.state['poi.v1']
   let goblinWire = null, goblinJson = null; // GOB-07b: goblin camps + enemy spears (content/life/goblinCamps.json)
   try { goblinJson = await (await fetch('../content/life/goblinCamps.json')).json(); } catch (e) { console.warn('[goblins] off:', e && e.message); }
   Object.defineProperty(window.__debug, 'goblinWire', { configurable: true, get: () => goblinWire }); // verify-goblins
@@ -1325,6 +1333,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
   // where it used to be rebuilt as a fresh object literal every call.
   const controls = { forward: 0, strafe: 0, run: false, jump: false, yawDeg: 0, pitchDeg: 0 };
   const eqCtx = { gate: false, fx: 0, fy: 1, fz: 0, ex: 0, ey: 0, ez: 0, px: 0, py: 0, pz: 0, interact: false }; // EQ-07/09: reused per-step context
+  const dirFwd = new Float64Array(2); // BEAST-WIRE-01
   const swordFwd = new Float64Array(2); // US-078d (30.1): reused forwardOf(look.yawDeg) output, no per-step allocation
   // Reused every fixed step for `updateInteraction` (US-012 arch review,
   // 2026-09-24 item 2): `Camera.fromEntity` allocated a `new Camera` 60x/s.
@@ -1531,6 +1540,8 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (params.get('bench') === 'combat' || (benchActive && params.get('enemies') === '4')) ensureBenchBoars(world); // COMBAT-BENCH-01
       ensureWolves(world); // WOLF-01: turns MAP-26 anchors wolf1..5 into wolf beasts (no-op while they are absent)
       ensureBears(world); // BEAR-01: blackBear1..3 -> bear beasts
+      if (poiWire) { if (poiFights) poiFights.dispose(); poiFights = null; poiWire.dispose(); poiWire = null; poiDiscover = null; if (chestHook) chestHook.setExtraDefs([]); }
+      if (!isCaptureOrBench && mode === 'world' && world.terrainGrid && gridEnabled(params)) { poiWire = bootPoiWire(world, window.ASSETS?.levels?.world_geo, worldDef, 12, { openedOf: () => (saveRelay ? saveRelay.openedChests : []), onChange: (l) => { if (chestHook) chestHook.setExtraDefs(l); } }); if (poiWire) window.__debug.poi = { get wire() { return poiWire; }, get discover() { return poiDiscover; } }; if (poiWire) poiDiscover = createPoiDiscover({ wire: poiWire, say: (t) => { if (lootToast) lootToast.say(t, [226, 214, 176]); } }); } // POI-02/03 + POI-CHEST-01 (fights: POI-05b below)
       if (goblinWire) { goblinWire.dispose(); goblinWire = null; } // GOB-07b: before the new sim (camps add members)
       if (goblinJson && !isCaptureOrBench && mode === 'world') goblinWire = createGoblinWire({ world, events: engine.events, state: world.state, json: goblinJson, terrain: world.terrain, groundAt: (x, y) => world.terrain.groundAt(x, y) });
       // WM-04 (38.59 dec. 3): grid worlds (?grid=1) have no fixed nav.area - the world builds one nav tile per band with the SAME params as the fixed grid
@@ -1540,12 +1551,17 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         world.setNavTiles({ create: (x0, y0, w, h, cell) => new NavGrid({ x0, y0, w, h, cell }), maxSlopeDeg: nc.maxSlopeDeg ?? 30, maxStepM: nc.maxStepM ?? Infinity, blockedTypes: nc.blockedTypes ?? ['water'] });
       }
       const gridNav = world.terrainGrid && world.nav ? { grid: world.nav, astar: createAStar(world.nav) } : null;
-      bootRegionalBeasts(world, window.ASSETS?.levels?.world_geo, params, isCaptureOrBench); // WM-12: regional herds, after World.load, before the sim
+      if (beastDir) { beastDir.dispose(); beastDir = null; }
+      regionalList = bootRegionalBeasts(world, window.ASSETS?.levels?.world_geo, params, isCaptureOrBench); // WM-12: regional herds, after World.load, before the sim
       if (goblinWire && world.terrainGrid && gridEnabled(params)) { // WMP-02: far goblin camps, last in slot order (authored, regional, far camps)
         goblinWire.addFarCamps(planWorldLife(world, window.ASSETS?.levels?.world_geo, 12).camps); // WMP-09: authored-only avoid, same defs on Continue
       }
+      const poiMembers = poiWire ? spawnPoiBeasts(world, poiWire.defs) : null; // POI-05b: after far camps, so their slot order is untouched
       beasts = createBeastSim(world, { tileNav: !!gridNav, nav: (lifeNav = gridNav || (worldDef.nav && buildBeastNav(world, worldDef.nav))), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events, band: worldBand, fauna: wild ? wild.fauna : null }); // LIFE-07: predators hunt the ambient fauna
       combatHud.setSim(beasts); // HPBAR-02 + DMGNUM-01
+      const poiGr = poiMembers ? poiGroups(beasts, poiMembers, poiWire.defs) : [];
+      if (Array.isArray(regionalList) && mode === 'world') beastDir = createBeastDirectorWire({ extraGroups: poiGr, sim: beasts, members: regionalList, seed: 12, state: world.state, events: engine.events, terrain: world.terrain, geo: window.ASSETS?.levels?.world_geo, nav: lifeNav, dayLenSec: clockCfg.dayLenS, hour: () => clockHour(world.state, clockCfg), hfovRad: HFOV_DEG * Math.PI / 180 }); // BEAST-WIRE-01, BEAST-07 (D-083/D-087)
+      if (poiWire) poiFights = createPoiFights({ wire: poiWire, sim: beasts, dir: beastDir ? beastDir.dir : null, groups: poiGr, events: engine.events }); // POI-05b
       if (goblinWire) goblinWire.attach(beasts, { onClank: () => playShieldClank() }); // GOB-07b: camps + spear sim + view
       if (lifeWire) { lifeWire.dispose(); lifeWire = null; } // LIFE-08: night raids (content/life/raids.json), rebuilt with every beast sim
       if (raidDefs && !isCaptureOrBench && mode === 'world') lifeWire = createLifeWire({ ...raidDefs, campDefs: goblinWire ? goblinWire.campDefs : undefined, sim: beasts, events: engine.events, state: world.state, world, book: () => (saveRelay ? saveRelay.quest.book : null) });
@@ -1786,7 +1802,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         }
         { // WM-10: the whole-map view is the default M card (?map=chart keeps the baked chart); region.seen drives fog + names
           const wg = window.ASSETS.levels.world_geo, rbN = window.ASSETS.uiRegionBanner;
-          if (wg && rbN && params.get('map') !== 'chart') chartOptions = Object.assign(chartOptions || { markers: [], travel: null }, { worldMap: { geo: wg, lockUnseen: true, names: rbN.names, getSeen: () => world.state['region.seen'] } });
+          if (wg && rbN && params.get('map') !== 'chart') chartOptions = Object.assign(chartOptions || { markers: [], travel: null }, { worldMap: { geo: wg, lockUnseen: true, names: rbN.names, getSeen: () => world.state['region.seen'], getPois: () => (poiDiscover ? poiDiscover.marks() : []) } });
         }
         try {
           initMapCard(assets, ui.cols, ui.rows, chartOptions);
@@ -1808,7 +1824,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       window.__debug.world = world;
       window.__debug.playerHandle = playerHandle;
       window.__debug.look = look;
-      window.__debug.beasts = beasts; window.__debug.hands = hands; window.__debug.sword = sword; window.__debug.fireball = fireball; window.__debug.invView = invView; window.__debug.getUi = () => ui; // HANDS-01b: test hooks; EQ-04: verify-equip-play reads the UI cells of the Character view box
+      window.__debug.beasts = beasts; window.__debug.beastDir = beastDir; window.__debug.hands = hands; window.__debug.sword = sword; window.__debug.fireball = fireball; window.__debug.invView = invView; window.__debug.getUi = () => ui; // HANDS-01b: test hooks; EQ-04: verify-equip-play reads the UI cells of the Character view box
       window.__debug.equipPlay = equipPlay; window.__debug.quickbar = quickbar; window.__debug.vmHandles = { sword: swordVmH && swordVmH.h, shield: shieldVmH && shieldVmH.h, bow: bowVmH && bowVmH.h }; window.__debug.shieldSim = shieldSim; window.__debug.arrowSim = arrowSim; window.__debug.vitals = vitals; window.__debug.wakeOut = wakeOut; // EQ-07/09: tools/verify-equip-play.mjs hooks
       window.__debug.isNoteOpen = isNoteOpen; window.__debug.pauseUp = pauseUp; window.__debug.openNote = (id) => noteRead({ world: engine.world, def: { noteId: id } }); /* OB-049: tools/verify-note-close.mjs */ window.__debug.isMapOpen = isMapOpen; window.__debug.getMapPanel = getMapPanel; window.__debug.getMapChart = getMapChart; window.__debug.questBook = () => (saveRelay ? saveRelay.quest.book : null); window.__debug.questLogOpen = qlIsOpen; window.__debug.gameHooks = gameHooks; window.__debug.travel = travel; window.__debug.travelTo = (id) => travel.request(id, true); window.__debug.waystoneSim = () => (waystoneWire ? waystoneWire.sim : null); // QG-04/05: tools/verify-quest-ui.mjs hooks
       // S8-B1-15: test hook (tools/verify-map-wire.mjs)
@@ -2120,7 +2136,8 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       stepAnimations(engine.world, dt * 1000);
       resolveBodyContacts(engine.world, playerHandle.data, engine.physics);
       const simDue = hitStop.due(1000 / 60); // HITSTOP-01: the window gates beasts.step only; the sword freezes by its own hitStopHard counter
-      if (beasts && simDue) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); if (beasts.tileMode && (++tileDormTick % 60) === 0) beasts.updateTileDormancy(pt.x, pt.y); } // WM-04: 200 m dormancy at ~1 Hz
+      if (beasts && simDue) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); if (beastDir) { forwardOf(look.yawDeg, dirFwd); beastDir.step(1 / 60, pt.x, pt.y, dirFwd[0], dirFwd[1]); } if (beasts.tileMode && (++tileDormTick % 60) === 0) beasts.updateTileDormancy(pt.x, pt.y); } // WM-04: 200 m dormancy at ~1 Hz
+      if (poiWire && simDue) { const pt = playerHandle.data.transform; poiWire.step(pt.x, pt.y); if (poiFights) poiFights.step(pt.x, pt.y, engine.world.state['clock.day'] | 0); if (poiDiscover) poiDiscover.step(pt.x, pt.y); } // POI-02
       if (goblinWire && simDue) { const pt = playerHandle.data.transform; goblinWire.step(engine.world.state['clock.day'] | 0, pt.x, pt.y); } // GOB-07b
       if (lifeWire && simDue) lifeWire.step(clockHour(engine.world.state, clockCfg)); // LIFE-08: raids roll at night
       if (wild) { const pt = playerHandle.data.transform; wild.step(dt, pt.x, pt.y, controls.run, look.yawDeg); if (regionAmb) regionAmb.step(dt, pt.x, pt.y); } // WILD-06: ambient only, never hashed

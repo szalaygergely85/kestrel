@@ -59,7 +59,7 @@ function assignFlanks(sim, S) {
   let rank = 0, anchor = 0;
   for (let i = 0; i < sim.count; i++) {
     const r = sim.tactRole[i];
-    if (!sim.tactOn[i] || r === TACT_RANGED || r === TACT_CASTER || sim.state[i] !== S.CHASE || sim.waiting[i] !== 1) { T.flank[i] = -1; continue; }
+    if (!sim.tactOn[i] || r === TACT_RANGED || r === TACT_CASTER || sim.state[i] !== S.CIRCLE) { T.flank[i] = -1; continue; }
     if (rank === 0) { // ring slot facing this beast (max dot with the table)
       const dx = st.x[i] - px, dy = st.y[i] - py;
       let best = -1e18;
@@ -73,13 +73,14 @@ function assignFlanks(sim, S) {
 /** Steer hook for a tactical slot (called from setSteerTarget). True = T.out holds the waypoint (x, y) + speed factor. */
 export function tacticsSteer(sim, i, S) {
   const T = sim.tactics, st = sim.steer, o = T.out, px = sim._px, py = sim._py;
-  if (sim.state[i] !== S.CHASE) return false;
   const role = sim.tactRole[i], w = sim.waiting[i];
   if (role === TACT_MELEE || role === TACT_SWARM) {
-    if (w !== 1 || T.flank[i] < 0) return false;
-    const k = T.flank[i], r = role === TACT_SWARM ? TACT_TUNING.swarmR : TACT_TUNING.flankR;
+    if (sim.state[i] !== S.CIRCLE || T.flank[i] < 0) return false;
+    const k = T.flank[i], bo = i * 3, bmax = sim.tactBand[bo + 1]; // ring radius = middle of the archetype keepMin..keepMax (melee 4-6 m -> 5)
+    const r = bmax > 0 ? (sim.tactBand[bo] + bmax) / 2 : (role === TACT_SWARM ? TACT_TUNING.swarmR : TACT_TUNING.flankR);
     o.x = px + FLANK_X[k] * r; o.y = py + FLANK_Y[k] * r; o.speed = 0.8; return true;
   }
+  if (sim.state[i] !== S.CHASE) return false;
   const dx = st.x[i] - px, dy = st.y[i] - py, d = Math.sqrt(dx * dx + dy * dy) || 1;
   if (w === 2) { o.x = st.x[i] + (dx / d) * 4; o.y = st.y[i] + (dy / d) * 4; o.speed = 0.9; return true; } // back off
   if (w === 1) { // hold in the band, strafing 2 m between shots

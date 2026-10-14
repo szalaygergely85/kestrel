@@ -123,7 +123,7 @@ const isTok = (s) => s === STATE_WINDUP || s === STATE_CHARGE;
 const gz = (sim) => groundZ(sim.world, PX, PY);
 
 
-const GOLDEN_HASH = 1491148451; // recorded on the pre-BEAST-03a beastSim
+const GOLDEN_HASH = 3485573939; // re-recorded BEAST-06c (direct chase steering + repath stagger change trajectories; was 1491148451 pre-BEAST-03a)
 function ent(id, x, y, species, role) {
   const e = beastEntity(id, x, y);
   if (species) e.components.brain.species = species;

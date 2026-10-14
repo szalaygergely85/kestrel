@@ -41,21 +41,21 @@ assert.deepEqual(createSettingsView(JSON.parse(JSON.stringify(view.snapshot())),
 const menuStyle=context.ASSETS.uiStyle.menu;
 const styledChanges=[];
 const styled=createSettingsView(view.snapshot(),{...config,menuStyle,onChange:(id,value)=>styledChanges.push([id,value])});
-const styledState=styled.snapshot();delete styledState.lodScale;delete styledState.aspect;assert.equal(styledState.enemyBars,true,'Combat HUD defaults On');assert.equal(styledState.dmgNumbers,true);delete styledState.enemyBars;delete styledState.dmgNumbers;
+const styledState=styled.snapshot();delete styledState.lodScale;delete styledState.aspect;assert.equal(styledState.enemyBars,true,'Combat HUD defaults On');assert.equal(styledState.dmgNumbers,true);assert.equal(styledState.difficulty,'normal','BEAST-WIRE-01: Difficulty defaults Normal');delete styledState.enemyBars;delete styledState.dmgNumbers;delete styledState.difficulty;
 assert.deepEqual(styledState,view.snapshot(),'skin preserves every existing option');
 assert.equal(styled.snapshot().lodScale,1);
 styled.draw(ui);
 const styledLine=y=>Array.from(ui.cells.glyphIdx.slice(y*ui.cols+44,y*ui.cols+116),v=>String.fromCharCode(v+32)).join('');
-assert.ok(styledLine(11).includes('-=[  S E T T I N G S  ]=-'));
-assert.ok(styledLine(21).includes('Resolution'));
-assert.ok(styledLine(19).includes('LOD distance'));
-assert.equal(styledLine(15)[menuStyle.row.focus.markerRightCol],'<');
-assert.deepEqual([...ui.cells.bg.slice((15*160+45)*4,(15*160+45)*4+3)],[...menuStyle.bgRgb.band]);
+assert.ok(styledLine(9).includes('-=[  S E T T I N G S  ]=-'));
+assert.ok(styledLine(19).includes('Resolution'));
+assert.ok(styledLine(17).includes('LOD distance'));
+assert.equal(styledLine(13)[menuStyle.row.focus.markerRightCol],'<');
+assert.deepEqual([...ui.cells.bg.slice((13*160+45)*4,(13*160+45)*4+3)],[...menuStyle.bgRgb.band]);
 styled.handleKey('ArrowDown');styled.handleKey('ArrowDown');assert.equal(styled.selectedId(),'lodScale');
 styled.handleKey('ArrowRight');assert.equal(styled.snapshot().lodScale,1.25);
 assert.deepEqual(styledChanges,[['lodScale',1.25]]);
 // HPBAR-02 / DMGNUM-01: the Combat HUD rows toggle and report through onChange
-styledChanges.length=0;for(let i=0;i<9&&styled.selectedId()!=='enemyBars';i++)styled.handleKey('ArrowDown');assert.equal(styled.selectedId(),'enemyBars');styled.handleKey('Enter');styled.handleKey('ArrowDown');styled.handleKey('Enter');assert.deepEqual(styledChanges,[['enemyBars',false],['dmgNumbers',false]]);assert.ok(styledLine(34).includes('Back')||true);
+styledChanges.length=0;for(let i=0;i<9&&styled.selectedId()!=='enemyBars';i++)styled.handleKey('ArrowDown');assert.equal(styled.selectedId(),'enemyBars');styled.handleKey('Enter');styled.handleKey('ArrowDown');styled.handleKey('Enter');assert.deepEqual(styledChanges,[['enemyBars',false],['dmgNumbers',false]]);assert.ok(styledLine(32).includes('Back')||true);
 styled.handleKey('Escape');assert.equal(styled.takeAction(),'back');assert.equal(styled.takeAction(),null);
 assert.throws(()=>createSettingsView({lodScale:2},{...config,menuStyle}),TypeError);
 const changedMenu={...menuStyle,frame:{...menuStyle.frame,fg:'aether'},row:{...menuStyle.row,focus:{...menuStyle.row.focus,fg:'aether',markerFg:'aether'}}};
@@ -74,3 +74,9 @@ if(global.gc) {
  assert.ok(delta<65536,'warmed draw heap '+delta);
 }
 console.log('Settings full view round-trip, controls, opaque plate and disabled choices PASS');
+{ // BEAST-WIRE-01: Difficulty row (Easy / Normal / Hard), reachable after the Combat HUD rows, reports changes
+  const dv=createSettingsView({quality:'high'},{...config,menuStyle,onChange:(id,v)=>dch.push([id,v])}),dch=[];
+  for(let i=0;i<12&&dv.selectedId()!=='difficulty';i++)dv.handleKey('ArrowDown');
+  assert.equal(dv.selectedId(),'difficulty');dv.handleKey('ArrowRight');assert.deepEqual(dch,[['difficulty','hard']]);assert.equal(dv.snapshot().difficulty,'hard');
+  assert.throws(()=>createSettingsView({quality:'high',difficulty:'insane'},{...config,menuStyle}),TypeError);
+}
