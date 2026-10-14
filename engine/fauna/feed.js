@@ -12,6 +12,7 @@
 // Zero allocation after createFaunaFeed. Imports engine/fauna/** + engine/entities/clipPlayer.js only.
 
 import { clipFromW } from '../entities/clipPlayer.js';
+import { createLegDriver } from '../entities/legDriver.js';
 
 export const WILD_DRAW_MAX = 20;
 export const WILD_SPARE = 4;
@@ -23,7 +24,11 @@ const RAD2DEG = 180 / Math.PI;
 /**
  * @param {object} def     compileFaunaDef result (species[].drawM, .models)
  * @param {Array}  slots   spawner slots (the array is read live every frame)
- * @param {{drawMax?:number, spare?:number, hfovRad?:number}} [opts]  hfovRad defaults to the 75 deg render FOV
+ * @param {{drawMax?:number, spare?:number, hfovRad?:number, legIk?:boolean, ground?:{groundAt:Function}}} [opts]  hfovRad defaults to the 75 deg render FOV.
+ *   ANIM-C-04: `legIk` (default true; the game passes `?legik=0` as false -> the driver never attaches) and `ground` (anything with groundAt(x, y)).
+ *   A model without `pm.legRig` is never attached: that animal's draw is byte-identical to before. Yaw rule: the driver gets the pool yawDeg
+ *   UNCHANGED (the same rotation the pose uses, so rest feet land under the model); travel direction comes from the root displacement, so a
+ *   model whose nose is model -y (quadruped16) needs no offset. `cam.dtMs` (optional, default 1000/60) is the frame time for the driver.
  */
 export function createFaunaFeed(def, slots, opts) {
   const o = opts || {};
@@ -40,10 +45,18 @@ export function createFaunaFeed(def, slots, opts) {
   }
   const selIdx = new Int32Array(Math.max(1, drawMax));
   const selD2 = new Float64Array(Math.max(1, drawMax));
-  const stats = { drawn: 0, candidates: 0 };
+  const stats = { drawn: 0, candidates: 0, legs: 0 };
+  // ANIM-C-04: one driver slot per spawner slot, attached lazily on first draw, released when not drawn / dead / model without a rig
+  const legIk = o.legIk !== false, ground = o.ground || null;
+  const driver = legIk ? createLegDriver(Math.max(1, drawMax + 8)) : null;
+  const legSlot = new Int16Array(slots.length).fill(-1);
+  const legStamp = new Uint32Array(slots.length);
+  const legModel = new Array(slots.length).fill(null);
+  let frameNo = 0;
 
   function feed(pool, cam) {
-    stats.drawn = 0; stats.candidates = 0;
+    stats.drawn = 0; stats.candidates = 0; stats.legs = 0;
+    frameNo++;
     if (!pool || !cam || drawMax === 0) return 0;
     const room = pool.cap - pool.rawCount - spare;
     const limit = room < drawMax ? room : drawMax;
@@ -78,6 +91,7 @@ export function createFaunaFeed(def, slots, opts) {
       const cp = brain ? s.clip : s.cp;
       const yawDeg = brain ? s.yaw * RAD2DEG + 90 : s.yaw;
       const key = keys[s.species][s.model];
+      const si = selIdx[n];
       let r;
       if (cp) {
         r = pool.pushInstance(key, s.x, s.y, s.z, yawDeg, cp.clip, cp.frame, cp.tMs);
@@ -85,9 +99,30 @@ export function createFaunaFeed(def, slots, opts) {
       } else {
         r = pool.pushInstance(key, s.x, s.y, s.z, yawDeg, -1, 0, 0);
       }
-      if (r >= 0) stats.drawn++;
+      if (r >= 0) {
+        stats.drawn++;
+        if (driver) legPass(pool, cam, s, si, key, cp, yawDeg, r);
+      }
+    }
+    if (driver) {
+      for (let i = 0; i < legSlot.length; i++) {
+        if (legSlot[i] >= 0 && legStamp[i] !== frameNo) { driver.release(legSlot[i]); legSlot[i] = -1; legModel[i] = null; }
+      }
     }
     return stats.drawn;
   }
-  return { feed, stats, drawMax, spare };
+  /** Attach (first draw) / update the driver of spawner slot `si`, then hand its LegPose to the pool. Inert without a legRig. */
+  function legPass(pool, cam, s, si, key, cp, yawDeg, r) {
+    const pm = pool.models.get(key);
+    if (!pm || !pm.legRig) return;
+    if (legSlot[si] >= 0 && legModel[si] !== pm) { driver.release(legSlot[si]); legSlot[si] = -1; } // model swap
+    if (legSlot[si] < 0) { legSlot[si] = driver.attach(pm); legModel[si] = pm; if (legSlot[si] < 0) return; }
+    legStamp[si] = frameNo;
+    const io = driver.io;
+    io[0] = s.x; io[1] = s.y; io[2] = s.z; io[3] = yawDeg; io[4] = cam.dtMs || 1000 / 60; io[5] = cam.x; io[6] = cam.y;
+    driver.update(legSlot[si], pm, cp ? cp.clip : -1, ground);
+    const pose = driver.poseOf(legSlot[si]);
+    if (pose[0] > 0) { pool.legInstance(r, pose); stats.legs++; }
+  }
+  return { feed, stats, drawMax, spare, legDriver: driver };
 }
