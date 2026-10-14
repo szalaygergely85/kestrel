@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - animal look options: bear leg rigs + walk review of every animal (designer, 2026-10-14)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:17px; margin:26px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  h3 { font-size:14px; margin:6px 0 4px; color:#e0b860; }
+  .note { color:#8a8778; font-size:12px; max-width:1500px; }
+  .pass { color:#4fd66a; } .fail { color:#ff3b3b; } .info { color:#8fb4e0; }
+  canvas { display:block; background:#000; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:12px; align-items:center; font-size:13px; }
+  .controls label { display:flex; align-items:center; gap:5px; }
+  .controls input[type=range] { width:110px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:36px; display:inline-block; }
+  button, select { background:#15171f; color:#d8d2c0; border:1px solid #333845; border-radius:3px; padding:3px 9px; cursor:pointer; font-size:12px; }
+  .row { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-start; margin:6px 0 12px; }
+  .col { background:#0b0d13; border:1px solid #1d2029; border-radius:4px; padding:8px; width:416px; }
+  .col .cost { font-size:12px; color:#b9b08f; margin:2px 0 6px; min-height:54px; }
+  .col .cost b { color:#ffd27a; }
+  .cap { font-size:11px; color:#8a8778; font-family:Consolas, monospace; margin:2px 0 6px; }
+  .rev { background:#0b0d13; border:1px solid #1d2029; border-radius:4px; padding:8px; width:376px; }
+  .rev .verdict { font-size:12px; color:#c9c2a8; margin-top:4px; min-height:84px; }
+  .rev .verdict b { color:#ffd27a; }
+  .ok { color:#4fd66a; font-weight:bold; } .bad { color:#ff7a5a; font-weight:bold; } .mid { color:#ffc23c; font-weight:bold; }
+  #checks div { font-family:Consolas, monospace; font-size:12px; }
+  table { border-collapse:collapse; font-size:12px; margin:6px 0; }
+  td, th { border:1px solid #22252e; padding:3px 8px; text-align:left; vertical-align:top; }
+  th { color:#ffc23c; }
+</style>
+</head>
+<body>
+<h1>Kestrel : animal look options - bear leg rigs (A / B / C) + a walk review of every animal</h1>
+<div class="note">
+  Owner 2026-10-14: "bears look ok, I just don't like the way the legs are moving, like sticks... check other animals too".
+  <b>Nothing in <code>design/models/*.js</code> is changed</b>: every option here is built in this page from the shipped bear voxels
+  (same cells, same colours). Pick one, and the change goes into the model files afterwards. Written note:
+  <code>design/animal-look-options.md</code>.<br>
+  Cause: every animal has <b>one rigid box per leg</b> (MAX_VOX_PARTS = 8 in <code>engine/voxel/VoxelModel.js</code>: body, head, jaw, ears,
+  4 legs), rotating only at the shoulder / hip. No elbow, knee, hock or ankle, so the whole leg swings like a pendulum and the paw sweeps an arc.<br>
+  Rendering here = a page-local pack + pose (the engine's maths, without the 8-part cap) + the preview CPU march (<code>lib/voxelMarch.js</code>) +
+  the v1 shader. <b>Needs http</b>: open <code>http://localhost:8000/design/preview/animal-look-options.html</code>.
+</div>
+<div id="fatal" class="fail"></div>
+
+<div class="controls">
+  <label>gait (A, B, C) <select id="gait"><option value="amble">bear amble (lateral couplets, the bear roll)</option><option value="lateral">lateral-sequence walk (LH, LF, RH, RF)</option><option value="diagonal">diagonal pairs (= the current clip timing)</option></select></label>
+  <label>C speed m/s <input type="range" id="cv" min="0.4" max="1.6" step="0.05" value="1.0"><span class="val" id="cvV"></span></label>
+  <label>C slope deg <input type="range" id="cs" min="-10" max="10" step="1" value="6"><span class="val" id="csV"></span></label>
+  <label>light az <input type="range" id="az" min="-180" max="180" step="1" value="-40"><span class="val" id="azV"></span></label>
+  <label>elev <input type="range" id="el" min="-10" max="85" step="1" value="40"><span class="val" id="elV"></span></label>
+  <label>sun <input type="range" id="int" min="0" max="1.5" step="0.01" value="1.0"><span class="val" id="intV"></span></label>
+  <label>ambient x <input type="range" id="amb" min="0" max="3" step="0.05" value="1.2"><span class="val" id="ambV"></span></label>
+  <label>edges <select id="edges"><option value="rim">rules + model rim</option><option value="eng">rules, no rim</option><option value="off">off</option></select></label>
+  <label>speed <select id="speed"><option>0.1</option><option>0.25</option><option>0.5</option><option selected>1</option></select></label>
+  <label><input type="checkbox" id="pause"> pause</label>
+  <span class="cap" id="now"></span>
+</div>
+
+<h2>1. The bear walk, four ways (side + 3/4; 0 / A / B play their keyed clips, C runs live from the speed + slope sliders)</h2>
+<div class="row" id="optRow"></div>
+<table>
+  <tr><th>Option</th><th>Look</th><th>Cost</th><th>Suits</th></tr>
+  <tr><td><b>0 current</b></td><td>pendulum legs, trot timing, arc-sweeping paws</td><td>-</td><td>-</td></tr>
+  <tr><td><b>A gait only</b></td><td>real walk sequence, planted feet (no slide at 1.0 m/s), foot lift + plant, body bob / pitch / roll / yaw, head counter-motion; legs still straight</td><td>8 parts, <b>no engine change</b>, clip re-author per animal (~0.5 d each with the generator)</td><td>boar, otter, tortoise, cub, rabbit, squirrel (short legs) - and as the fallback for everything</td></tr>
+  <tr><td><b>B knees</b></td><td>upper + lower leg: elbow folds the paw back in the swing, heel lifts at push-off, toes-up heel strike, the foot stays flat mid-stance; A's body motion on top</td><td><b>12 parts</b> for a 4-legged talker (body, head, jaw, ears + 8), 13 with a tail part (wolf, fox, deer), 10 for heron / goblin. <b>Engine change: MAX_VOX_PARTS 8 -> 16</b> (see the note). Same voxels, ~+4 % quads at the split seams</td><td>bear, black bear, wolf, deer, goat, heron, goblin, fox; cub if the mother gets it</td></tr>
+  <tr><td><b>C runtime solve</b></td><td>B's rig, but the legs are solved every frame from ground speed and the terrain under each foot: no foot slide at any speed, feet plant on slopes, stride and body pitch follow the slope</td><td>12 parts + <b>engine</b>: per-instance leg solve (4 legs x 2-bone, ~0.3 us) + 4 terrain height samples per frame, gait rate = speed / tuned (D-090 stage 2 "foot IK + clip blending")</td><td>same list as B; biggest win on the hills (the whole valley is a slope)</td></tr>
+</table>
+
+<h2>Checks</h2>
+<div id="checks"><div class="info">loading engine modules ...</div></div>
+
+<h2>2. Every animal: current model + its walk (3/4 view), verdict</h2>
+<div class="note">Legend: <span class="ok">OK</span> = leave as is, <span class="mid">MINOR</span> = gait re-author within 8 parts (option A),
+  <span class="bad">FIX</span> = needs the knee rig (option B / C). The clip menu plays the model's own clips (unchanged).</div>
+<div class="row" id="revRow"></div>
+
+<script src="../palette.js"></script>
+<script src="../detail-pass.js"></script>
+<script src="../models/voxel_bear.js"></script>
+<script src="../models/voxel_bear_black.js"></script>
+<script src="../models/voxel_bear_cub.js"></script>
+<script src="../models/voxel_wolf.js"></script>
+<script src="../models/voxel_beast.js"></script>
+<script src="../models/voxel_goat.js"></script>
+<script src="../models/voxel_heron.js"></script>
+<script src="../models/voxel_otter.js"></script>
+<script src="../models/voxel_tortoise.js"></script>
+<script src="../models/voxel_wildlife.js"></script>
+<script src="../models/voxel_goblin.js"></script>
+<script src="../models/voxel_seamonster.js"></script>
+<script src="../models/voxel_eat_clips.js"></script>
+<script>
+  setTimeout(function () {
+    if (!window.__optOK) document.getElementById('fatal').textContent =
+      'Engine modules did not load (or the page script threw - see the console). Serve over http: python -m http.server from the repo root.';
+  }, 2500);
+  window.addEventListener('error', function (e) { document.getElementById('fatal').textContent = 'page error: ' + e.message; });
+</script>
+<script type="module">
+import { PART_STRIDE } from '../../engine/voxel/VoxelModel.js';
+import * as VM from './lib/voxelMarch.js';
+import { FACE_N, FACE_E, FACE_S, FACE_W, FACE_U } from '../../engine/render/GBuffer.js';
+
+window.__optOK = true;
+const A = window.ASSETS, P = A.palette, U = P.util, DP = A.detailPass, D2R = Math.PI / 180, R2D = 180 / Math.PI;
+const FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
+const $ = (id) => document.getElementById(id);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const smooth = (t) => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
+
+// ==================================================================== page-local pack + pose (engine maths, no 8-part cap)
+function packLocal(def) {
+  const sx = def.size[0], sy = def.size[1], sz = def.size[2];
+  const names = Object.keys(def.parts), n = names.length;
+  const parts = new Float64Array(n * PART_STRIDE), boxes = [];
+  let off = 0;
+  names.forEach((nm, i) => {
+    const pd = def.parts[nm], b = pd.box, bx = b[3] - b[0], by = b[4] - b[1], bz = b[5] - b[2], base = i * PART_STRIDE;
+    parts[base] = b[0]; parts[base + 1] = b[1]; parts[base + 2] = b[2]; parts[base + 3] = b[3]; parts[base + 4] = b[4]; parts[base + 5] = b[5];
+    parts[base + 6] = pd.pivot[0]; parts[base + 7] = pd.pivot[1]; parts[base + 8] = pd.pivot[2];
+    parts[base + 9] = pd.parent !== undefined ? names.indexOf(pd.parent) : -1;
+    parts[base + 10] = off; parts[base + 11] = bx; parts[base + 12] = by; parts[base + 13] = bz;
+    boxes.push({ b, off, bx, by, bz }); off += bx * by * bz;
+  });
+  const matKeys = [null], charTo = new Map();
+  for (const k of Object.keys(def.mats)) { const v = def.mats[k]; if (v === null) continue; matKeys.push(v); charTo.set(k, matKeys.length - 1); }
+  const vox = new Uint8Array(off), claimed = new Uint8Array(sx * sy * sz), count = new Array(n).fill(0);
+  boxes.forEach((B, i) => {
+    const b = B.b;
+    for (let z = b[2]; z < b[5]; z++) for (let y = b[1]; y < b[4]; y++) {
+      const row = def.layers[z][y];
+      for (let x = b[0]; x < b[3]; x++) {
+        const gi = x + sx * (y + sy * z);
+        if (claimed[gi]) continue;
+        const loc = charTo.get(row[x]);
+        if (loc === undefined) continue;
+        claimed[gi] = 1; count[i]++;
+        vox[B.off + (x - b[0]) + B.bx * ((y - b[1]) + B.by * (z - b[2]))] = loc;
+      }
+    }
+  });
+  return { sx, sy, sz, cellM: def.cellM, partCount: n, partNames: names, anchor: def.anchor, parts, vox, matKeys, count, def };
+}
+function rotM(rx, ry, rz) {
+  const cx = Math.cos(rx * D2R), sx = Math.sin(rx * D2R), cy = Math.cos(ry * D2R), sy = Math.sin(ry * D2R), cz = Math.cos(rz * D2R), sz = Math.sin(rz * D2R);
+  const Rx = [1, 0, 0, 0, cx, -sx, 0, sx, cx], Ry = [cy, 0, sy, 0, 1, 0, -sy, 0, cy], Rz = [cz, -sz, 0, sz, cz, 0, 0, 0, 1];
+  return mul3(Rz, mul3(Ry, Rx));
+}
+function mul3(a, b) {
+  const o = new Array(9);
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) o[r * 3 + c] = a[r * 3] * b[c] + a[r * 3 + 1] * b[3 + c] + a[r * 3 + 2] * b[6 + c];
+  return o;
+}
+function mulV(a, v) { return [a[0] * v[0] + a[1] * v[1] + a[2] * v[2], a[3] * v[0] + a[4] * v[1] + a[5] * v[2], a[6] * v[0] + a[7] * v[1] + a[8] * v[2]]; }
+function tr3(a) { return [a[0], a[3], a[6], a[1], a[4], a[7], a[2], a[5], a[8]]; }
+// instance at the origin, yaw 0. L = world-to-part-local (stride 16, what marchVoxelRay reads), F = part-to-world (stride 12, metres)
+function poseLocal(pm, frame, L, F) {
+  const n = pm.partCount, cm = pm.cellM, anc = pm.anchor, Ak = [], bk = [];
+  const bw = [-cm * anc[0], -cm * anc[1], -cm * anc[2]];
+  for (let p = 0; p < n; p++) {
+    const pb = p * PART_STRIDE, pf = frame[pm.partNames[p]];
+    const rot = (pf && pf.rot) || [0, 0, 0], pos = (pf && pf.pos) || [0, 0, 0];
+    const R = rotM(rot[0] || 0, rot[1] || 0, rot[2] || 0);
+    const piv = [pm.parts[pb + 6], pm.parts[pb + 7], pm.parts[pb + 8]], par = pm.parts[pb + 9];
+    const rv = mulV(R, piv), l = [piv[0] + (pos[0] || 0) - rv[0], piv[1] + (pos[1] || 0) - rv[1], piv[2] + (pos[2] || 0) - rv[2]];
+    if (par < 0) { Ak[p] = R; bk[p] = l; }
+    else { Ak[p] = mul3(Ak[par], R); const t = mulV(Ak[par], l); bk[p] = [t[0] + bk[par][0], t[1] + bk[par][1], t[2] + bk[par][2]]; }
+    const f = p * 12;
+    for (let i = 0; i < 9; i++) F[f + i] = Ak[p][i] * cm;
+    F[f + 9] = cm * bk[p][0] + bw[0]; F[f + 10] = cm * bk[p][1] + bw[1]; F[f + 11] = cm * bk[p][2] + bw[2];
+    const Am = tr3(Ak[p]).map((v) => v / cm), o = p * PART_STRIDE;
+    for (let i = 0; i < 9; i++) L[o + i] = Am[i];
+    const bb = mulV(Am, [F[f + 9], F[f + 10], F[f + 11]]);
+    L[o + 9] = -bb[0]; L[o + 10] = -bb[1]; L[o + 11] = -bb[2]; L[o + 12] = 0; L[o + 13] = 0; L[o + 14] = 0; L[o + 15] = 0;
+  }
+}
+function clipDur(c) { return c.durations ? c.durations : c.frames.map(() => 1000 / c.fps); }
+function clipTotal(c) { let t = 0; for (const d of clipDur(c)) t += d; return t; }
+function sampleFrame(c, tMs) {
+  const d = clipDur(c), n = c.frames.length, total = clipTotal(c);
+  let e = c.loop ? ((tMs % total) + total) % total : Math.min(Math.max(0, tMs), total - 1e-3);
+  let f = 0; while (f < n - 1 && e >= d[f]) { e -= d[f]; f++; }
+  const alpha = c.interp === 'step' ? 0 : clamp(e / d[f], 0, 1), nx = f + 1 < n ? f + 1 : (c.loop ? 0 : f);
+  const Fa = c.frames[f], Fb = c.frames[nx], out = {};
+  for (const nm of new Set(Object.keys(Fa).concat(Object.keys(Fb)))) {
+    const a = Fa[nm] || {}, b = Fb[nm] || {}, ar = a.rot || [0, 0, 0], br = b.rot || [0, 0, 0], ap = a.pos || [0, 0, 0], bp = b.pos || [0, 0, 0];
+    out[nm] = { rot: [ar[0] + (br[0] - ar[0]) * alpha, ar[1] + (br[1] - ar[1]) * alpha, ar[2] + (br[2] - ar[2]) * alpha],
+                pos: [ap[0] + (bp[0] - ap[0]) * alpha, ap[1] + (bp[1] - ap[1]) * alpha, ap[2] + (bp[2] - ap[2]) * alpha] };
+  }
+  return out;
+}
+
+// ==================================================================== gait generator (A: 1 segment, B / C: 2 segments)
+// leg = { upper, lower|null, foot (the part that touches the ground), x (pivot x), u: hip->joint rest offset [dy, dz] (voxels),
+//         w: joint->foot rest offset [dy, dz] (null = 1 segment), k: share of the foot pitch (0 = flat foot), kind: 'fore' | 'hind' }
+// Rx convention (engine): y' = c*y - s*z, z' = s*y + c*z; rx + = foot BACK (+y = south).
+function fkY(leg, r1, r2) {
+  const c1 = Math.cos(r1), s1 = Math.sin(r1), ky = c1 * leg.u[0] - s1 * leg.u[1];
+  if (!leg.w) return ky - leg.u[0];
+  const a = r1 + r2;
+  return ky + Math.cos(a) * leg.w[0] - Math.sin(a) * leg.w[1] - (leg.u[0] + leg.w[0]);
+}
+function lowerRot(leg, r1, extra) { return leg.w ? -(1 - leg.k) * r1 + extra : 0; }
+function solveR1(leg, Ty, extra) {
+  let lo = -85 * D2R, hi = 85 * D2R;
+  const f = (r) => fkY(leg, r, lowerRot(leg, r, extra)) - Ty;
+  if (f(lo) > 0) return lo;
+  if (f(hi) < 0) return hi;
+  for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (f(m) < 0) lo = m; else hi = m; }
+  return (lo + hi) / 2;
+}
+const GAITS = {
+  amble:    { phase: { HL: 0, FL: 0.12, HR: 0.5, FR: 0.62 }, roll: 5, yaw: 4 },
+  lateral:  { phase: { HL: 0, FL: 0.25, HR: 0.5, FR: 0.75 }, roll: 3, yaw: 3 },
+  diagonal: { phase: { HL: 0.5, FL: 0, HR: 0, FR: 0.5 }, roll: 1.5, yaw: 2 }
+};
+const BASE_G = { T: 800, v: 1.0, beta: 0.65, bob: 0.5, pitch: 1.5, nod: 1.5, ears: 3, heel: 28, foldF: 32, foldH: 12, H: 1.4, slopeDeg: 0 };
+function gaitFrame(rig, p, G) {
+  const S = G.v * (G.T / 1000) * G.beta / rig.cellM;        // stance travel in voxels
+  const bob = G.bob * Math.cos(4 * Math.PI * (p - 0.08));
+  const pitch = G.pitch * Math.sin(4 * Math.PI * p + 0.6);
+  const roll = -G.roll * Math.sin(2 * Math.PI * (p - 0.2));
+  const yaw = G.yaw * Math.sin(2 * Math.PI * p);
+  const fr = {};
+  fr[rig.body] = { rot: [pitch - G.slopeDeg, roll, yaw], pos: [0, 0, bob] };
+  fr[rig.head] = { rot: [-pitch * 1.3 + G.nod * Math.sin(4 * Math.PI * p + 0.6), 0, -yaw * 0.8], pos: [0, 0, 0] };
+  if (rig.ears) fr[rig.ears] = { rot: [G.ears * Math.sin(4 * Math.PI * p + 2.0), 0, 0], pos: [0, 0, 0] };
+  for (const name of Object.keys(rig.legs)) {
+    const leg = rig.legs[name];
+    let ph = (p - G.phase[name]) % 1; if (ph < 0) ph += 1;
+    let Ty, lift = 0, extra = 0;
+    if (ph < G.beta) {                                       // stance: the foot moves back under the body, front -> back
+      const s = ph / G.beta;
+      Ty = -S / 2 + S * s;
+      extra = (leg.kind === 'hind' ? G.heel * smooth((s - 0.7) / 0.3) : G.heel * 0.4 * smooth((s - 0.8) / 0.2)) * D2R;
+    } else {                                                 // swing: lifted, folded, back -> front
+      const q = (ph - G.beta) / (1 - G.beta);
+      Ty = S / 2 - S * smooth(q);
+      lift = G.H * Math.sin(Math.PI * q);
+      extra = (leg.kind === 'fore' ? G.foldF : G.foldH) * Math.sin(Math.PI * q) * D2R;
+    }
+    const r1 = solveR1(leg, Ty, extra);
+    fr[leg.upper] = { rot: [r1 * R2D, 0, 0], pos: [0, 0, 0] };
+    if (leg.lower) fr[leg.lower] = { rot: [lowerRot(leg, r1, extra) * R2D, 0, 0], pos: [0, 0, 0] };
+    leg.liftT = lift;
+  }
+  return fr;
+}
+// ground-snap: raise / lower each leg (upper part pos z, body-local) so the foot's lowest voxel sits on ground + lift
+function snapFeet(pm, rig, fr, groundZ, L, F) {
+  for (let it = 0; it < 3; it++) {
+    poseLocal(pm, fr, L, F);
+    for (const name of Object.keys(rig.legs)) {
+      const leg = rig.legs[name], k = pm.partNames.indexOf(leg.foot), f = k * 12;
+      let minz = Infinity, ysum = 0;
+      for (const pt of leg.pts) {
+        const wz = F[f + 6] * pt[0] + F[f + 7] * pt[1] + F[f + 8] * pt[2] + F[f + 11];
+        const wy = F[f + 3] * pt[0] + F[f + 4] * pt[1] + F[f + 5] * pt[2] + F[f + 10];
+        if (wz < minz) minz = wz; ysum += wy;
+      }
+      const target = groundZ(ysum / leg.pts.length) + leg.liftT * pm.cellM;
+      fr[leg.upper].pos[2] += (target - minz) / pm.cellM;
+    }
+  }
+}
+function footPts(def, partName) {
+  const b = def.parts[partName].box, px = def.parts[partName].pivot[0];
+  for (let z = b[2]; z < b[5]; z++) {
+    let y0 = 1e9, y1 = -1;
+    for (let y = b[1]; y < b[4]; y++) { const row = def.layers[z][y]; for (let x = b[0]; x < b[3]; x++) if (row[x] !== '.' && row[x] !== ' ') { y0 = Math.min(y0, y); y1 = Math.max(y1, y); } }
+    if (y1 >= 0) return [[px, y0, z], [px, y1 + 1, z]];
+  }
+  return [[px, b[1], b[2]], [px, b[4], b[2]]];
+}
+function keyedClip(pm, rig, G, nKeys) {
+  const L = new Float64Array(pm.partCount * PART_STRIDE), F = new Float64Array(pm.partCount * 12), frames = [], durations = [];
+  for (let i = 0; i < nKeys; i++) { const fr = gaitFrame(rig, i / nKeys, G); snapFeet(pm, rig, fr, () => 0, L, F); frames.push(fr); durations.push(G.T / nKeys); }
+  return { durations, frames, loop: true };
+}
+
+// ==================================================================== the bear rigs
+const BEAR = A.models.bear.voxel;
+function cloneDef(d, parts) { return Object.assign({}, d, { parts: JSON.parse(JSON.stringify(parts || d.parts)), animations: {} }); }
+// A: the shipped 8 parts
+const defA = cloneDef(BEAR);
+const pmA = packLocal(defA);
+const RIG_A = { cellM: BEAR.cellM, body: 'body', head: 'head', ears: 'ears', legs: {
+  FL: { upper: 'armL', lower: null, foot: 'armL', x: 7.5, u: [0, -16], w: null, k: 0, kind: 'fore' },
+  FR: { upper: 'armR', lower: null, foot: 'armR', x: 20.5, u: [0, -16], w: null, k: 0, kind: 'fore' },
+  HL: { upper: 'legL', lower: null, foot: 'legL', x: 7.5, u: [0, -15], w: null, k: 0, kind: 'hind' },
+  HR: { upper: 'legR', lower: null, foot: 'legR', x: 20.5, u: [0, -15], w: null, k: 0, kind: 'hind' } } };
+// B: the same voxels, each leg box split into upper + lower (elbow at z 9 behind the forearm, ankle at z 4 in front of the instep)
+const PARTS_B = {
+  body: BEAR.parts.body, head: BEAR.parts.head, jaw: BEAR.parts.jaw, ears: BEAR.parts.ears,
+  armUL: { box: [3, 10, 9, 11, 18, 19], pivot: [7.5, 14.5, 16], parent: 'body' },
+  armLL: { box: [3, 10, 0, 11, 18, 9], pivot: [7.5, 15.5, 9], parent: 'armUL' },
+  armUR: { box: [17, 10, 9, 25, 18, 19], pivot: [20.5, 14.5, 16], parent: 'body' },
+  armLR: { box: [17, 10, 0, 25, 18, 9], pivot: [20.5, 15.5, 9], parent: 'armUR' },
+  legUL: { box: [3, 22, 4, 11, 34, 21], pivot: [7.5, 27.5, 15], parent: 'body' },
+  legLL: { box: [3, 22, 0, 11, 34, 4], pivot: [7.5, 25.5, 4], parent: 'legUL' },
+  legUR: { box: [17, 22, 4, 25, 34, 21], pivot: [20.5, 27.5, 15], parent: 'body' },
+  legLR: { box: [17, 22, 0, 25, 34, 4], pivot: [20.5, 25.5, 4], parent: 'legUR' }
+};
+const defB = cloneDef(BEAR, PARTS_B);
+const pmB = packLocal(defB);
+const RIG_B = { cellM: BEAR.cellM, body: 'body', head: 'head', ears: 'ears', legs: {
+  FL: { upper: 'armUL', lower: 'armLL', foot: 'armLL', x: 7.5, u: [1, -7], w: [-1, -9], k: 0.5, kind: 'fore' },
+  FR: { upper: 'armUR', lower: 'armLR', foot: 'armLR', x: 20.5, u: [1, -7], w: [-1, -9], k: 0.5, kind: 'fore' },
+  HL: { upper: 'legUL', lower: 'legLL', foot: 'legLL', x: 7.5, u: [-2, -11], w: [2, -4], k: 0.35, kind: 'hind' },
+  HR: { upper: 'legUR', lower: 'legLR', foot: 'legLR', x: 20.5, u: [-2, -11], w: [2, -4], k: 0.35, kind: 'hind' } } };
+for (const rg of [[RIG_A, defA], [RIG_B, defB]]) for (const n of Object.keys(rg[0].legs)) rg[0].legs[n].pts = footPts(rg[1], rg[0].legs[n].foot);
+
+const OPTS = [
+  { id: 'cur', title: '0. Current', cost: 'The shipped <code>walk</code> clip: 8 parts, diagonal pairs, 0.7 s loop. <b>Parts 8</b>, engine change <b>no</b>.',
+    pm: packLocal(BEAR), mode: 'clip', clip: BEAR.animations.walk, pitch34: 14 },
+  { id: 'A', title: 'A. Gait only', cost: 'Same 8 parts, a re-authored walk: stance / swing split (duty 0.65), planted feet, lift + plant, bob, pitch, roll, yaw, head counter-nod. <b>Parts 8</b>, engine change <b>no</b>.',
+    pm: pmA, rig: RIG_A, mode: 'clip', H: 1.6, pitch34: 14 },
+  { id: 'B', title: 'B. Knees', cost: 'Upper + lower leg per limb (elbow / ankle), A\'s body motion. <b>Parts 12</b> (+4), engine change <b>yes</b>: MAX_VOX_PARTS 8 -> 16.',
+    pm: pmB, rig: RIG_B, mode: 'clip', H: 1.2, pitch34: 14 },
+  { id: 'C', title: 'C. B rig + runtime solve', cost: 'B\'s 12 parts, legs solved every frame from speed + ground height (slope / speed sliders above). <b>Parts 12</b>, engine change <b>yes</b>: parts cap + per-foot terrain IK (D-090 stage 2).',
+    pm: pmB, rig: RIG_B, mode: 'proc', H: 1.2, pitch34: 20 }
+];
+function buildClips() {
+  const g = GAITS[$('gait').value];
+  for (const o of OPTS) if (o.mode === 'clip' && o.rig) {
+    o.G = Object.assign({}, BASE_G, { H: o.H, phase: g.phase, roll: g.roll, yaw: g.yaw });
+    o.clip = keyedClip(o.pm, o.rig, o.G, 16);
+  }
+}
+buildClips();
+$('gait').oninput = () => { buildClips(); runChecks(); };
+
+// ==================================================================== render (same trace / shade / edge pass as voxel_bear.html)
+const ctl = {};
+function readCtl() {
+  ctl.az = +$('az').value; ctl.el = +$('el').value; ctl.int = +$('int').value; ctl.amb = +$('amb').value;
+  ctl.edges = $('edges').value; ctl.speed = +$('speed').value; ctl.cv = +$('cv').value; ctl.cs = +$('cs').value; ctl.pause = $('pause').checked;
+  $('azV').textContent = ctl.az; $('elV').textContent = ctl.el; $('intV').textContent = ctl.int.toFixed(2);
+  $('ambV').textContent = ctl.amb.toFixed(2); $('cvV').textContent = ctl.cv.toFixed(2); $('csV').textContent = ctl.cs;
+}
+document.querySelectorAll('.controls input, .controls select').forEach((el) => el.addEventListener('input', readCtl));
+readCtl();
+
+const HIT = new Float64Array(8), NL = [0, 0, 0], Lacc = [0, 0, 0];
+function faceNormal(face, o) {
+  o[0] = 0; o[1] = 0; o[2] = 0;
+  if (face === FACE_N) o[1] = -1; else if (face === FACE_S) o[1] = 1; else if (face === FACE_E) o[0] = 1;
+  else if (face === FACE_W) o[0] = -1; else if (face === FACE_U) o[2] = 1; else o[2] = -1;
+}
+function trace(sc, ox, oy, oz, dx, dy, dz, res) {
+  let best = Infinity, kind = 0;
+  const pm = sc.pm;
+  for (let k = 0; k < pm.partCount; k++) {
+    if (VM.marchVoxelRay(pm, k, sc.L, ox, oy, oz, dx, dy, dz, best, HIT)) {
+      best = HIT[0]; kind = 8; res.k = k; res.face = HIT[4]; res.lx = HIT[1]; res.ly = HIT[2]; res.lz = HIT[3]; res.mat = VM.LAST_MAT_LOCAL;
+    }
+  }
+  if (sc.ground) {
+    const kk = sc.slopeK || 0, den = dz + kk * dy;
+    if (oz + kk * oy < 0) { if (best === Infinity) { best = 1e-6; kind = 2; } }
+    else if (den !== 0) { const t = -(oz + kk * oy) / den; if (t > 1e-6 && t < best) { best = t; kind = 1; } }
+  }
+  res.kind = kind; res.t = best;
+  return kind;
+}
+function shadeHit(sc, res, ox, oy, oz, dx, dy, dz, out) {
+  const t = res.t, px = ox + dx * t, py = oy + dy * t;
+  let nx, ny, nz, mat, u, v;
+  if (res.kind === 8) {
+    const A9 = sc.L, b = res.k * PART_STRIDE, cm = sc.pm.cellM;
+    faceNormal(res.face, NL);
+    nx = cm * (A9[b] * NL[0] + A9[b + 3] * NL[1] + A9[b + 6] * NL[2]);
+    ny = cm * (A9[b + 1] * NL[0] + A9[b + 4] * NL[1] + A9[b + 7] * NL[2]);
+    nz = cm * (A9[b + 2] * NL[0] + A9[b + 5] * NL[1] + A9[b + 8] * NL[2]);
+    const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+    mat = P.materials[sc.pm.matKeys[res.mat]] || P.materials.stone;
+    if (res.face === FACE_E || res.face === FACE_W) { u = res.ly * cm; v = res.lz * cm; }
+    else if (res.face === FACE_N || res.face === FACE_S) { u = res.lx * cm; v = res.lz * cm; }
+    else { u = res.lx * cm; v = res.ly * cm; }
+  } else {
+    const kk = sc.slopeK || 0, nl = Math.hypot(kk, 1);
+    nx = 0; ny = kk / nl; nz = 1 / nl; mat = P.materials.grass; u = px; v = py;
+  }
+  Lacc[0] = 0; Lacc[1] = 0; Lacc[2] = 0;
+  U.addLight(Lacc, 'ambient', 0.14 * ctl.amb);
+  const a = ctl.az * D2R, e = ctl.el * D2R;
+  const ndl = nx * Math.sin(a) * Math.cos(e) - ny * Math.cos(a) * Math.cos(e) + nz * Math.sin(e);
+  if (ndl > 0) U.addLight(Lacc, 'sun', ctl.int * ndl);
+  U.shade(mat, Lacc, u, v, 3, out, { fog: null, z: v });
+}
+function makeCanvas(cols, rows, cw, ch) {
+  const cv = document.createElement('canvas'), dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(cols * cw * dpr); cv.height = Math.round(rows * ch * dpr);
+  cv.style.width = cols * cw + 'px'; cv.style.height = rows * ch + 'px';
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.font = Math.round(ch * 0.9) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  return { cv, ctx, cols, rows, cw, ch };
+}
+const RES = { kind: 0, t: 0, k: 0, face: 0, lx: 0, ly: 0, lz: 0, mat: 0 }, SH = { fg: [0, 0, 0], bg: [0, 0, 0] };
+const Ov = [0, 0, 0], Dv = [0, 0, 0];
+function renderView(view, sc) {
+  const { cols, rows, ctx, cw, ch } = view.grid, n = cols * rows, cam = view.cam;
+  if (!view.buf) view.buf = { kind: new Int8Array(n), depth: new Float64Array(n), glyph: new Array(n), fg: new Float32Array(n * 3), bg: new Float32Array(n * 3) };
+  const B = view.buf;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c;
+    cam.ray(c, r, Ov, Dv);
+    const kind = trace(sc, Ov[0], Ov[1], Ov[2], Dv[0], Dv[1], Dv[2], RES);
+    B.kind[i] = kind; B.depth[i] = RES.t;
+    if (!kind || kind === 2) {
+      B.glyph[i] = ' '; B.fg.fill(0, i * 3, i * 3 + 3);
+      const d = kind === 2 ? 10 : 7; B.bg[i * 3] = d; B.bg[i * 3 + 1] = d + 1; B.bg[i * 3 + 2] = d + 5;
+      continue;
+    }
+    shadeHit(sc, RES, Ov[0], Ov[1], Ov[2], Dv[0], Dv[1], Dv[2], SH);
+    B.glyph[i] = SH.glyph;
+    for (let k = 0; k < 3; k++) { B.fg[i * 3 + k] = SH.fg[k]; B.bg[i * 3 + k] = SH.bg[k]; }
+  }
+  if (ctl.edges !== 'off') {
+    const E = DP.edges, rim = ctl.edges === 'rim' ? (E.modelRim || 0.55) : 1;
+    const far = (i, j) => B.kind[j] === 0 || B.depth[j] > B.depth[i] * E.depthRatio + E.depthAbs;
+    const rule = new Int8Array(n);
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const i = r * cols + c;
+      if (B.kind[i] !== 8) continue;
+      if (r > 0 && far(i, i - cols)) rule[i] = 1;
+      else if ((c > 0 && far(i, i - 1)) || (c < cols - 1 && far(i, i + 1))) rule[i] = 2;
+      else if (r < rows - 1 && far(i, i + cols)) rule[i] = 3;
+    }
+    for (let i = 0; i < n; i++) {
+      if (!rule[i]) continue;
+      const R = rule[i] === 1 ? E.rules.cap : rule[i] === 2 ? E.rules.side : E.rules.lip;
+      if (B.glyph[i] !== ' ') B.glyph[i] = R.glyph;
+      for (let k = 0; k < 3; k++) { B.fg[i * 3 + k] = Math.min(255, B.fg[i * 3 + k] * R.gain) * rim; B.bg[i * 3 + k] *= rim; }
+    }
+  }
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c, x = c * cw, y = r * ch;
+    ctx.fillStyle = 'rgb(' + (B.bg[i * 3] | 0) + ',' + (B.bg[i * 3 + 1] | 0) + ',' + (B.bg[i * 3 + 2] | 0) + ')';
+    ctx.fillRect(x, y, cw + 0.5, ch + 0.5);
+    const gl = B.glyph[i];
+    if (gl && gl !== ' ') {
+      ctx.fillStyle = 'rgb(' + (B.fg[i * 3] | 0) + ',' + (B.fg[i * 3 + 1] | 0) + ',' + (B.fg[i * 3 + 2] | 0) + ')';
+      ctx.fillText(gl, x + cw / 2, y + ch / 2 + 1);
+    }
+  }
+}
+function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+function norm(a) { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
+function orthoCam(center, yawDeg, pitchDeg, cols, rows, chM) {
+  const a = yawDeg * D2R, p = pitchDeg * D2R, R = 14;
+  const pos = [center[0] + R * Math.sin(a) * Math.cos(p), center[1] - R * Math.cos(a) * Math.cos(p), center[2] + R * Math.sin(p)];
+  const fwd = norm([center[0] - pos[0], center[1] - pos[1], center[2] - pos[2]]);
+  const right = norm(cross([0, 0, 1], fwd)), up = cross(fwd, right), cwM = chM / 2;
+  return { ray(c, r, O, D) {
+    const sx = (c + 0.5 - cols / 2) * cwM, sy = (rows / 2 - (r + 0.5)) * chM;
+    O[0] = pos[0] + right[0] * sx + up[0] * sy; O[1] = pos[1] + right[1] * sx + up[1] * sy; O[2] = pos[2] + right[2] * sx + up[2] * sy;
+    D[0] = fwd[0]; D[1] = fwd[1]; D[2] = fwd[2];
+  } };
+}
+
+// ==================================================================== section 1: the four bear columns
+const OROWS = 40, OCOLS = 80, OCW = 5.2, OCH = 10.4, VIEW_H = 2.0, CENTER = [0, 0, 0.55];
+for (const o of OPTS) {
+  const col = document.createElement('div'); col.className = 'col';
+  col.innerHTML = '<h3>' + o.title + '</h3><div class="cost">' + o.cost + '</div>';
+  o.views = [];
+  for (const [lab, yaw, pit] of [['side (right)', 90, 8], ['front 3/4', -40, o.pitch34]]) {
+    const g = makeCanvas(OCOLS, OROWS, OCW, OCH), cap = document.createElement('div'); cap.className = 'cap';
+    cap.textContent = lab + ' - ' + o.pm.partCount + ' parts';
+    col.appendChild(g.cv); col.appendChild(cap);
+    o.views.push({ grid: g, cam: orthoCam(CENTER, yaw, pit, OCOLS, OROWS, VIEW_H / OROWS) });
+  }
+  o.L = new Float64Array(o.pm.partCount * PART_STRIDE); o.F = new Float64Array(o.pm.partCount * 12);
+  $('optRow').appendChild(col);
+}
+let phC = 0, lastNow = performance.now(), tAnim = 0;
+function renderOptions(now) {
+  const dt = ctl.pause ? 0 : (now - lastNow) * ctl.speed; lastNow = now; tAnim += dt;
+  // C: continuous phase from the speed slider; T and duty follow the speed
+  const vC = ctl.cv, TC = 800 * Math.pow(vC, -0.4), betaC = clamp(0.72 - 0.1 * vC, 0.5, 0.75);
+  phC = (phC + dt / TC) % 1;
+  for (const o of OPTS) {
+    let fr;
+    if (o.mode === 'proc') {
+      const g = GAITS[$('gait').value];
+      const G = Object.assign({}, BASE_G, { H: o.H, phase: g.phase, roll: g.roll, yaw: g.yaw, v: vC, T: TC, beta: betaC, slopeDeg: ctl.cs });
+      const kk = Math.tan(ctl.cs * D2R);
+      fr = gaitFrame(o.rig, phC, G);
+      snapFeet(o.pm, o.rig, fr, (y) => -kk * y, o.L, o.F);
+      o.slopeK = kk;
+    } else {
+      fr = sampleFrame(o.clip, tAnim);                     // 0 / A / B: the keyed clip at its tuned rate (A, B: 800 ms = 1.0 m/s)
+      poseLocal(o.pm, fr, o.L, o.F);
+      o.slopeK = 0;
+    }
+    for (const v of o.views) renderView(v, { pm: o.pm, L: o.L, ground: true, slopeK: o.slopeK });
+  }
+  $('now').textContent = 'stride phase ' + phC.toFixed(2) + ' | C: ' + vC.toFixed(2) + ' m/s, T ' + TC.toFixed(0) + ' ms, duty ' + betaC.toFixed(2) + ', slope ' + ctl.cs + ' deg';
+}
+
+// ==================================================================== section 2: every animal, current model + walk
+const REVIEW = [
+  { key: 'bear', title: 'Burl, brown bear (1.1 m at the hump)', clips: ['walk', 'turn', 'idle', 'eat'], grade: 'bad',
+    verdict: 'Head and trunk: good (owner). Legs: ONE rigid column each from the shoulder (0.8 m) / hip to the ground; the whole leg pendulums, the paw sweeps an arc, 5-8 cm lift, no elbow / ankle, and the diagonal-pair timing reads as a trot, not a bear\'s rolling walk. <b>Fix: B (12 parts) + the amble gait; A is the no-engine fallback.</b>' },
+  { key: 'bearBlack', title: 'Black bear (same rig as Burl)', clips: ['walk', 'charge', 'windup', 'idle'], grade: 'bad',
+    verdict: 'Clones Burl\'s voxels, parts and walk, so the same stick legs; the charge lope hides it better (big leg angles, flight). <b>Fix: inherits B automatically (voxel_bear_black.js clones ASSETS.models.bear).</b>' },
+  { key: 'bearCub', title: 'Nub, bear cub (0.5 m)', clips: ['walk', 'trot', 'idle'], grade: 'mid',
+    verdict: 'Same 8-part rig at half scale; short thick legs on a round body, so the stick reads less, but the trot still pendulums. <b>A-style gait now; B rig later (same builder as the mother).</b>' },
+  { key: 'wolf', title: 'Grey wolf (0.8 m at the withers)', clips: ['walk', 'run', 'crouch', 'eat', 'idle'], grade: 'bad',
+    verdict: 'Thin 2 x 2 voxel (10 cm) legs 0.4 m long, rotating rigidly from elbow / stifle height; the hock is drawn but frozen; swing lift only 5 cm so the paws drag. "Wire legs" - the worst after the bear. <b>Fix: B = thigh+shank | metatarsus+paw, forearm | paw: 13 parts with the tail.</b>' },
+  { key: 'boarPlaceholder', title: 'Wild boar (0.7 m)', clips: ['walk', 'charge', 'windup', 'idle'], grade: 'ok',
+    verdict: 'Short 2 x 2 x 4 stub legs under a heavy body: a boar\'s legs ARE short columns, the rigid stick hardly reads, the 50 ms gallop keys work. <b>OK; at most an A-style lateral walk for the (unused) walk clip.</b>' },
+  { key: 'goat', title: 'Crag, old goat (0.8 m at the withers)', clips: ['walk', 'climbStep', 'lead', 'idle'], grade: 'bad',
+    verdict: 'Deer rig, hooves ground-snapped: the slow walk is acceptable; <code>climbStep</code> lifts a straight 0.4 m leg 22 cm high = a stilt. Knee calluses are modelled but never bend. <b>Fix: B (12 parts).</b>' },
+  { key: 'heron', title: 'Stilt, grey heron (0.94 m)', clips: ['stalk', 'strike', 'idle'], grade: 'bad',
+    verdict: 'Two straight 1-voxel legs; <code>stalk</code> is a high step with a STRAIGHT leg. A heron folds the tarsus up against the tibia on every step (the "backward knee") - the most recognisable stick on the page. <b>Fix: 2-segment legs (tibia | tarsus + toes) = 10 parts.</b>' },
+  { key: 'otter', title: 'Skip, river otter (1.1 m long)', clips: ['walk', 'lope', 'idle'], grade: 'ok',
+    verdict: 'Short wide-set legs on a long low body: rigid legs hardly read; the lope arches with body pitch only (a one-part trunk). <b>OK. Optional: chest | hips trunk split for the bound (9 parts).</b>' },
+  { key: 'tortoise', title: 'Slate, giant tortoise (1.2 m shell)', clips: ['walk', 'idle'], grade: 'ok',
+    verdict: 'Elephant-column legs at 0.12 m/s: rigid columns are what a tortoise\'s legs look like. <b>OK as is.</b>' },
+  { key: 'rabbit', title: 'Wild rabbit (0.42 m)', clips: ['hop', 'run', 'graze'], grade: 'mid',
+    verdict: 'Hind leg = haunch + foot in one part, so the hop rocks a whole block; at 0.42 m and 6 m+ away it passes. <b>Optional: haunch | foot split (10 parts), low priority.</b>' },
+  { key: 'deer', title: 'Deer hind (1.0 m at the withers)', clips: ['walk', 'trot', 'gallop', 'graze'], grade: 'bad',
+    verdict: 'Best current gait (lateral walk, duty factor, limb solver). But the long slender legs are straight sticks from shoulder / hip; the hock is drawn but never bends, so trot and gallop reaches look wooden. 1 m tall and seen often. <b>Fix: B (13 parts: body, head, ears, tail + 8).</b>' },
+  { key: 'fox', title: 'Red fox (0.4 m at the shoulder)', clips: ['trot', 'run', 'sniff', 'pounce'], grade: 'mid',
+    verdict: 'Same solver as the deer at half the size; the bushy tail carries the silhouette. Acceptable at ambient distances. <b>B optional (13 parts), after the deer.</b>' },
+  { key: 'squirrel', title: 'Red squirrel (0.34 m)', clips: ['hop', 'run', 'climb', 'forage'], grade: 'ok',
+    verdict: 'Hops and climbs; the legs are 3 voxels; sticks are invisible at any in-game distance. <b>OK.</b>' },
+  { key: 'robin', title: 'Songbird: robin (16 cm)', clips: ['perch', 'flap', 'peck', 'glide'], grade: 'ok',
+    verdict: 'Legs are 1 voxel. The only tell is the folded wing (a spread wing rotated flat against the body). Ambient and tiny. <b>OK.</b>' },
+  { key: 'crow', title: 'Crow / Rook (0.5 m)', clips: ['walk', 'perch', 'caw', 'talk'], grade: 'ok',
+    verdict: 'A waddle on stick legs at 0.5 m: fine at distance; the moving lower beak (Rook\'s talk) is what matters. <b>OK.</b>' },
+  { key: 'goblin', title: 'Goblin raider (1.05 m)', clips: ['walk', 'run', 'attack', 'idle'], grade: 'bad',
+    verdict: 'Legs modelled bent but rotating rigidly from the hip: a wind-up-toy scurry at 1 m; the long arms the same. <b>Fix: 2-segment legs (10 parts: body, chest, head, 2 arms, spear + 4), or move goblins to the chargen rigged path (RIG-00) which has knees.</b>' },
+  { key: 'seaMonster', title: 'Sea monster (7.3 m)', clips: ['circle', 'rise', 'strike'], grade: 'ok',
+    verdict: 'No legs; neck x2 + tail x2 segments give a real travelling S-wave. <b>OK.</b>' }
+];
+const RROWS = 36, RCOLS = 72, RCW = 5, RCH = 10;
+function bounds(def, zMin) {
+  let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9, z0 = 1e9, z1 = -1e9;
+  def.layers.forEach((l, z) => {
+    if ((z - def.anchor[2]) * def.cellM < zMin) return;
+    l.forEach((row, y) => { for (let x = 0; x < row.length; x++) if (row[x] !== '.' && row[x] !== ' ') { x0 = Math.min(x0, x); x1 = Math.max(x1, x + 1); y0 = Math.min(y0, y); y1 = Math.max(y1, y + 1); z0 = Math.min(z0, z); z1 = Math.max(z1, z + 1); } });
+  });
+  const c = def.cellM, a = def.anchor;
+  return { c: [((x0 + x1) / 2 - a[0]) * c, ((y0 + y1) / 2 - a[1]) * c, ((z0 + z1) / 2 - a[2]) * c], ex: (x1 - x0) * c, ey: (y1 - y0) * c, ez: (z1 - z0) * c };
+}
+const reviewItems = [];
+for (const r of REVIEW) {
+  const box = document.createElement('div'); box.className = 'rev';
+  const model = A.models[r.key];
+  const G = { ok: 'OK', mid: 'MINOR', bad: 'FIX' }[r.grade];
+  box.innerHTML = '<h3>' + r.title + ' <span class="' + r.grade + '">' + G + '</span></h3>';
+  if (!model || !model.voxel) { box.innerHTML += '<div class="fail">model `' + r.key + '` not loaded</div><div class="verdict">' + r.verdict + '</div>'; $('revRow').appendChild(box); continue; }
+  try {
+    const def = model.voxel, pm = packLocal(def);
+    const clips = r.clips.filter((c) => def.animations && def.animations[c]);
+    const all = Object.keys(def.animations || {});
+    for (const c of all) if (clips.indexOf(c) < 0) clips.push(c);
+    const sel = document.createElement('select');
+    for (const c of clips) { const o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o); }
+    const cap = document.createElement('div'); cap.className = 'cap';
+    const isSea = r.key === 'seaMonster', bd = bounds(def, isSea ? -5 : -0.02);
+    const viewH = Math.max(bd.ez, bd.ey * 0.95, bd.ex) * 1.25 + 0.1;
+    const g = makeCanvas(RCOLS, RROWS, RCW, RCH);
+    const it = { r, pm, def, sel, t0: performance.now(), ground: !isSea, L: new Float64Array(pm.partCount * PART_STRIDE), F: new Float64Array(pm.partCount * 12),
+                 view: { grid: g, cam: orthoCam([bd.c[0], bd.c[1], bd.c[2]], -35, isSea ? 25 : 14, RCOLS, RROWS, viewH / RROWS) } };
+    sel.oninput = () => { it.t0 = performance.now(); };
+    cap.textContent = pm.partCount + ' parts, ' + def.size.join('x') + ' @ ' + def.cellM + ' m, view ' + viewH.toFixed(2) + ' m';
+    const top = document.createElement('div'); top.style.cssText = 'display:flex;gap:8px;align-items:center;margin:2px 0 4px'; top.appendChild(sel); top.appendChild(cap);
+    box.appendChild(top); box.appendChild(g.cv);
+    const vd = document.createElement('div'); vd.className = 'verdict'; vd.innerHTML = r.verdict; box.appendChild(vd);
+    reviewItems.push(it);
+  } catch (err) { box.innerHTML += '<div class="fail">' + err.message + '</div>'; console.error(r.key, err); }
+  $('revRow').appendChild(box);
+}
+function renderReview(it, now) {
+  const c = it.def.animations[it.sel.value];
+  if (!c) return;
+  const total = clipTotal(c);
+  let e = (now - it.t0) * ctl.speed;
+  if (!c.loop) e = e % (total + 700);
+  const fr = sampleFrame(c, e);
+  poseLocal(it.pm, fr, it.L, it.F);
+  renderView(it.view, { pm: it.pm, L: it.L, ground: it.ground, slopeK: 0 });
+}
+
+// ==================================================================== frame loop (options at ~25 Hz, review items round-robin)
+let tick = 0;
+function frame() {
+  const now = performance.now();
+  tick++;
+  renderOptions(now);
+  if (!ctl.pause) for (let j = 0; j < 3 && reviewItems.length; j++) renderReview(reviewItems[(tick * 3 + j) % reviewItems.length], now);
+  setTimeout(() => requestAnimationFrame(frame), 40);
+}
+
+// ==================================================================== checks
+function runChecks() {
+  const out = [];
+  const ok = (c, m) => out.push([c ? 'pass' : 'fail', (c ? 'PASS ' : 'FAIL ') + m]);
+  const info = (m) => out.push(['info', 'INFO ' + m]);
+  ok(pmB.partCount === 12, 'option B rig: ' + pmB.partCount + ' parts (' + pmB.partNames.join(', ') + '), parents earlier: ' +
+     pmB.partNames.every((n, i) => !defB.parts[n].parent || pmB.partNames.indexOf(defB.parts[n].parent) < i));
+  const sumA = pmA.count.reduce((a, b) => a + b, 0), sumB = pmB.count.reduce((a, b) => a + b, 0);
+  ok(sumA === sumB, 'B owns the same voxels as the shipped bear: ' + sumB + ' vs ' + sumA + ' (per part B: ' + pmB.partNames.map((n, i) => n + ' ' + pmB.count[i]).join(', ') + ')');
+  const sums = pmB.partNames.map((n) => { const b = defB.parts[n].box; return (b[3] - b[0]) + (b[4] - b[1]) + (b[5] - b[2]); });
+  ok(sums.every((s) => s <= 48), 'style 5.14 part box sx+sy+sz <= 48 (B): ' + sums.join(' / '));
+  for (const o of OPTS) {
+    if (o.mode !== 'clip' || !o.rig) continue;
+    let worst = 0, slide = 0;
+    const L = new Float64Array(o.pm.partCount * PART_STRIDE), F = new Float64Array(o.pm.partCount * 12);
+    const S = o.G.v * (o.G.T / 1000) * o.G.beta;
+    o.clip.frames.forEach((fr, i) => {
+      poseLocal(o.pm, fr, L, F);
+      for (const name of Object.keys(o.rig.legs)) {
+        const leg = o.rig.legs[name], k = o.pm.partNames.indexOf(leg.foot), f = k * 12;
+        let minz = Infinity;
+        for (const pt of leg.pts) minz = Math.min(minz, F[f + 6] * pt[0] + F[f + 7] * pt[1] + F[f + 8] * pt[2] + F[f + 11]);
+        let ph = (i / o.clip.frames.length - o.G.phase[name]) % 1; if (ph < 0) ph += 1;
+        if (ph < o.G.beta) worst = Math.max(worst, Math.abs(minz));
+      }
+    });
+    slide = S;
+    ok(worst <= 0.012, 'option ' + o.id + ' keys: planted feet on the ground, worst |z| ' + (worst * 1000).toFixed(1) + ' mm (<= 12 mm); stance travel ' + slide.toFixed(2) + ' m = ' + o.G.v + ' m/s x ' + o.G.T + ' ms x duty ' + o.G.beta);
+  }
+  info('gait `' + $('gait').value + '`: phases ' + JSON.stringify(GAITS[$('gait').value].phase) + ' (HL = left hind at 0), 16 keys x 50 ms, linear interp (what the engine plays)');
+  info('models in the review: ' + reviewItems.length + ' / ' + REVIEW.length + ' loaded');
+  const host = $('checks'); host.innerHTML = '';
+  for (const [c, m] of out) { const d = document.createElement('div'); d.className = c; d.textContent = m; host.appendChild(d); }
+}
+try { runChecks(); } catch (err) { $('checks').innerHTML = '<div class="fail">checks threw: ' + err.message + '</div>'; console.error(err); }
+frame();
+</script>
+</body>
+</html>
