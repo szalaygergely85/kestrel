@@ -145,7 +145,8 @@
     .dock-panel { display: none; flex-direction: column; min-height: 0; flex: 1 1 auto; }
     .dock-panel.active { display: flex; }
     /* ED-QUEST-02 quest panel */
-    #quests-panel { overflow: auto; font-size: 11px; gap: 4px; }
+    #quests-panel, #creatures-panel { overflow: auto; font-size: 11px; gap: 4px; }
+    .ai-row { display: flex; gap: 4px; align-items: center; } .ai-row label { flex: 0 0 120px; } .ai-flag { color: #e8a040; }
     .q-bar { display: flex; gap: 4px; } .q-bar input { flex: 1; }
     .q-list { max-height: 30%; overflow: auto; } .q-row { cursor: pointer; padding: 2px 3px; } .q-row.active { background: var(--ed-panel); outline: 1px solid var(--ed-cyan); }
     .q-chip { display: inline-block; width: 3.2em; text-align: center; margin-right: 4px; color: #0D1117; } .q-chip.blue { background: #58A6FF; } .q-chip.gold { background: #E3B341; }
@@ -480,6 +481,7 @@
             <button type="button" class="dock-tab active" data-dock-tab="tree">Scene Tree</button>
             <button type="button" class="dock-tab" data-dock-tab="assets">Assets</button>
             <button type="button" class="dock-tab" data-dock-tab="quests">Quests</button>
+            <button type="button" class="dock-tab" data-dock-tab="creatures">Creatures</button>
           </div>
           <button type="button" id="left-dock-collapse" title="Collapse">-</button>
         </div>
@@ -529,6 +531,8 @@
         </div>
         <!-- ED-QUEST-02: Quests tab (questPanel.js mounts into it on first open) -->
         <div id="quests-panel" class="dock-panel"></div>
+        <!-- ED-AI-03: Creatures tab (aiPanel.js mounts into it on first open) -->
+        <div id="creatures-panel" class="dock-panel"></div>
       </div>
 
       <!-- VIEWPORT -->

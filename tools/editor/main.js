@@ -195,6 +195,15 @@ async function openQuestsTab() {
   } catch (e) { root.textContent = 'Quests failed to load: ' + e.message; console.error(e); }
 }
 
+// ---- ED-AI-03: Creatures tab - mounts aiPanel.js once, on first open.
+let creaturesHandle = null;
+async function openCreaturesTab() {
+  if (creaturesHandle) return;
+  const root = document.getElementById('creatures-panel');
+  try { creaturesHandle = await (await import('./aiPanel.js')).mountCreaturesTab(root); window.__creatures = creaturesHandle; }
+  catch (e) { root.textContent = 'Creatures failed to load: ' + e.message; console.error(e); }
+}
+
 // ---- US-067: left-dock tabs (Scene Tree / Assets) --------------------------
 leftDockTabsEl.querySelectorAll('.dock-tab').forEach((tab) => {
   tab.addEventListener('click', () => {
@@ -205,6 +214,8 @@ leftDockTabsEl.querySelectorAll('.dock-tab').forEach((tab) => {
     assetsPanelEl.classList.toggle('active', which === 'assets');
     document.getElementById('quests-panel').classList.toggle('active', which === 'quests');
     if (which === 'quests') openQuestsTab();
+    document.getElementById('creatures-panel').classList.toggle('active', which === 'creatures');
+    if (which === 'creatures') openCreaturesTab();
     if (which === 'assets') renderAssetsList(assetsSearchInput.value);
   });
 });
