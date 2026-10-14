@@ -1121,3 +1121,8 @@ Open: hurt-number anchor defaults to col 6/row 2 (needs the real hearts position
 
 - QFIX-S3 (kestrel-1, OB-155h/i/j/k + OB-164): marker height = anchor model top (voxel size-anchor*cellM*scale; mesh bbox; mesh placements via bbox) + 0.05 (`game/js/quest/markTop.js`, MARK_TOP only noteKeepLight); `book.dedupeMarks` = one marker per entity (? > gold ! > blue !, wired in main.js); chainMarks no early `?` (only the start `!`, cleared by mark.taken); isMain transitive over `requires` (tower.blade etc. gold).
   Tests: new `markRules.test.js` (82 quests, real world), chainMarks.test.js updated; `node tools/verify-mark-heights.mjs` (Node, no port). Not browser-checked; the ? for relay/Bend steps is gone by design (compass only). -> owner look
+
+### QUEST-WOW-01 (D-098; closes OB-155 markers, OB-156, OB-161, OB-163, OB-164, OB-165) - dev done, Node only
+- `!` at every offered giver (gold main / blue side); accepted quest -> grey `?` (new `questMarkGrey` = ready model + team.a mats, markSide.js) at its hand-in, gold/blue `?` when ready; m1 chain end shows the gold `?` on the thing itself (waystone, bend, doorway; reverses QFIX-S3 "no chain ?"). One marker per entity, priority ready ? > ! > grey ? (`book.activeMarks`, `dedupeMarks(..., grey)`).
+- M map: pins `!`, ready `?`, new grey `?` (kind `questGrey`, mapCard + worldMap); tracker top-right new `ui/questTracker.js` (title + objectives with counts; none existed). OB-165 Ford hints in relayWake.js (`questActive` callback from main.js).
+- Tests: new `quest/markD098.test.js` (all 82 quests, available/active, ready on synthetic); chainMarks/markRules/offerMarks/noRelayText updated. main.js +~6 lines. No browser run. -> owner look

@@ -323,14 +323,20 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     const m = o && o.mark; if (!m) return;
     // OB-157: optional mark.taken = flag set when the start giver handed the step over -> the '!' is gone, the '?' at `end` shows
     const taken = m.taken && entries[0].state.flags[m.taken];
-    // OB-155i: no early '?' waypoint - chain steps are flag/area steps with no hand-in, so only the start '!' shows (mark.end stays data for compass/HUD)
     if (m.start && !taken) outAvail[outAvail.length] = m.start;
+    else if (m.end && outReady) outReady[outReady.length] = m.end; // D-098: go/wake/use X -> X itself shows the gold '?' while the step is active
+  };
+  /** D-098: grey '?' = where each ACTIVE (accepted, not yet ready) giver quest is finished (its hand-in place; default the giver). */
+  book.activeMarks = function activeMarks(outGrey) {
+    let g = 0;
+    for (let i = 1; i < n; i++) if (statusOf(i) === ACTIVE && entries[i].turnIn) outGrey[g++] = entries[i].turnIn;
+    outGrey.length = g;
   };
   /** OB-155j: ONE marker per world entity. Priority: '?' ready (gold before blue) > gold '!' > blue '!'. Lists are filtered in place;
    *  keyOf maps a marker id to its entity (default book.entityFor). */
-  book.dedupeMarks = function dedupeMarks(gA, gR, sA, sR, keyOf = book.entityFor) {
+  book.dedupeMarks = function dedupeMarks(gA, gR, sA, sR, keyOf = book.entityFor, grey) {
     const seen = new Set();
-    for (const l of [gR, sR, gA, sA]) {
+    for (const l of [gR, sR, gA, sA, grey]) {
       if (!l) continue; let k = 0;
       for (let j = 0; j < l.length; j++) { const e = keyOf(l[j]); if (seen.has(e)) continue; seen.add(e); l[k++] = l[j]; }
       l.length = k;

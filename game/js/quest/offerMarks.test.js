@@ -41,6 +41,6 @@ er2.inspected('packet'); assert.equal(n2.length, 1, 'unavailable giver object: f
 
 // side marker models: cloned with the blue materials, gold pair untouched
 const A = { voxelModels: { questMark: { name: 'questMark', voxel: { mats: { O: 'brass_dark', C: 'mark_gold', S: 'mark_shine' } } }, questMarkReady: { name: 'questMarkReady', voxel: { mats: { O: 'brass_dark', C: 'mark_gold', S: 'mark_shine' } } } } };
-assert.equal(addSideMarks(A), 2);
+assert.equal(addSideMarks(A), 3); // blue ! + blue ? + grey ? (D-098)
 assert.equal(A.voxelModels.questMarkSide.voxel.mats.C, SIDE_MATS.C); assert.equal(A.voxelModels.questMark.voxel.mats.C, 'mark_gold'); assert.equal(A.models.questMarkReadySide.voxel.mats.O, 'brass_dark');
 console.log('offerMarks OK');

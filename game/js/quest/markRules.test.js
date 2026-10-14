@@ -57,12 +57,12 @@ assert.equal(structureTop([], 1, 1, 0), null);
   assert.deepEqual([a, r, sa, sr], [['bear'], ['y'], ['z'], ['x']], 'blue ? beats gold ! beats blue !; gold ? beats everything');
 }
 
-// OB-155i: the main chain never shows a '?' waypoint, and the road '!' clears once the talk happened (OB-163), through every step
+// D-098 (was OB-155i): the chain shows its gold '?' on the finish thing, and the road '!' clears once the talk happened (OB-163), through every step
 {
   const b = createQuestBook(m1, all.filter(d => d.id !== 'm1'));
   const steps = m1.objectives.map(o => o.id);
   for (let k = 0; k < steps.length; k++) {
-    const a = [], r = []; b.chainMarks(a, r); assert.deepEqual(r, [], 'step ' + steps[k] + ': no chain ?');
+    const a = [], r = []; b.chainMarks(a, r); assert.ok(r.length <= 1, 'step ' + steps[k] + ': D-098 at most one chain ? (gold, on the finish thing)'); if (!a.length && m1.objectives[k].mark && m1.objectives[k].mark.end) assert.deepEqual(r, [m1.objectives[k].mark.end], steps[k] + ': chain ? at its end');
     const o = m1.objectives[k];
     if (o.mark && o.mark.taken) { b.feed({ type: 'flag:set', key: o.mark.taken, value: true }); const a2 = []; b.chainMarks(a2, []); assert.deepEqual(a2, [], o.id + ': ! gone after the talk'); }
     const w = o.when; // advance to the next step

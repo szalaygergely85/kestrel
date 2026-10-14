@@ -27,6 +27,7 @@ for (const f of files) {
 
 // 2) JS constants the HUD / map / toasts show.
 for (const k of ['PROMPT_WAKE', 'PROMPT_TOUCH', 'PROMPT_STONE', 'PROMPT_LOOK', 'HINT_NEED_CRYSTAL', 'HINT_NEED_WAYSTONE', 'HINT_NEED_TALK']) check('relayWake.' + k, RW[k]);
+check('relayWake.HINT_FORD_NOQUEST', RW.HINT_FORD_NOQUEST.text); check('relayWake.HINT_FORD_GLASS', RW.HINT_FORD_GLASS.text);
 check('relayWake.HINT_NO_CRYSTAL', RW.HINT_NO_CRYSTAL.text); RW.NOTICE.forEach((s, i) => check('relayWake.NOTICE' + i, s));
 check('card', RW.wakeCard('ws_ford', true)); check('card', RW.wakeCard('x', false));
 for (const [k, v] of Object.entries(WS.RELAY_TITLES)) check('RELAY_TITLES.' + k, v); // also the M-map labels

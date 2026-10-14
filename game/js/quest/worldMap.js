@@ -38,7 +38,7 @@ export function createWorldMapCard(geo, names, palette, { getSeen, w, h, travel 
   const box = worldBox(geo), innerW = w - 2, innerH = h - 2, N = innerW * innerH, spanX = box.x1 - box.x0, spanY = box.y1 - box.y0;
   const col = (k, g = 1) => { const c = hexToRgb(palette.colors[k] || '#888888'); return [c[0] * g, c[1] * g, c[2] * g]; };
   const C = { edge: col('chartEdge', 0.8), land: col('pencil', 0.8), fog: col('chartInk', 0.28), sea: col('aetherDim', 0.7), bound: col('ferrum'),
-    line: col('chartInk', 0.9), name: col('uiText'), relay: col('aetherDim'), waystone: col('aether'), quest: col('gold'), player: col('gold') };
+    line: col('chartInk', 0.9), name: col('uiText'), relay: col('aetherDim'), waystone: col('aether'), quest: col('gold'), questGrey: col('pencil'), player: col('gold') };
   const art = { w, h, nFrames: 1, codes: new Uint8Array(w * h), rgb: new Uint8Array(w * h * 3), durMs: new Float64Array([1000]), loopMs: 1000 };
   const baseCodes = new Uint8Array(w * h), baseRgb = new Uint8Array(w * h * 3);
   const regIdx = new Int16Array(N), inB = new Uint8Array(N), sea = new Uint8Array(N);
@@ -96,7 +96,7 @@ export function createWorldMapCard(geo, names, palette, { getSeen, w, h, travel 
     }
     for (let k = 0; k < statics.length; k += 2) { const i = index(statics[k], statics[k + 1]); if (i >= 0) put(i, staticKinds[k >> 1] === 'waystone' ? 79 : 111, staticKinds[k >> 1] === 'waystone' ? C.waystone : C.relay); }
     for (let k = 0; k < dig.length; k += 2) { const i = index(dig[k], dig[k + 1]); if (i >= 0) put(i, 49 + (k >> 1), C.waystone); }
-    for (let k = 0; k < quest.length; k += 2) { const i = index(quest[k], quest[k + 1]); if (i >= 0) put(i, questKinds[k >> 1] === 'quest' ? 33 : 63, C.quest); }
+    for (let k = 0; k < quest.length; k += 2) { const i = index(quest[k], quest[k + 1]); if (i >= 0) put(i, questKinds[k >> 1] === 'quest' ? 33 : 63, questKinds[k >> 1] === 'questGrey' ? C.questGrey : C.quest); }
     const row = (h - 1) * w, st = (w - travelLine.length) >> 1; // travel line centred on the bottom border
     for (let q = -1; q <= travelLine.length && travelLine; q++) put(row + st + q, q < 0 || q >= travelLine.length ? 32 : travelLine.charCodeAt(q), C.name);
     art.codes.set(baseCodes); art.rgb.set(baseRgb); previous = -1; dirty = false;
@@ -109,7 +109,7 @@ export function createWorldMapCard(geo, names, palette, { getSeen, w, h, travel 
   function setQuestMarkers(list) {
     quest.length = 0; questKinds.length = 0;
     for (const m of list) {
-      if (m.kind !== 'quest' && m.kind !== 'questReady') throw new Error('worldMap: invalid quest marker');
+      if (m.kind !== 'quest' && m.kind !== 'questReady' && m.kind !== 'questGrey') throw new Error('worldMap: invalid quest marker');
       if (index(m.x, m.y) >= 0) { quest.push(m.x, m.y); questKinds.push(m.kind); }
     }
     compose();

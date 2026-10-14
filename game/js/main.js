@@ -193,6 +193,7 @@ import { createQuestMarkers } from './quest/sim/questMarkers.js'; // QUEST-MARK-
 import { registerQuestMarks } from './quest/wire/questMarks.js';
 import { markHeight, structureTop, MARK_MARGIN } from './quest/markTop.js';
 import { createQuestLogScreen, QUEST_LOG_KEYS } from './ui/questLog.js'; // QG-05
+import { drawQuestTracker } from './ui/questTracker.js'; // D-098 item 5
 import { createCompassHud } from './ui/compassHud.js'; // COMPASS-02 (D-061)
 import { createCombatHud } from './ui/combatHud.js'; import { setEnemyBarsOn, setDamageNumbersOn } from './ui/combatHudFlags.js'; // HPBAR-02 + DMGNUM-01 (D-086)
 import { createCrafting } from './quest/sim/crafting.js'; // MAIN-WIRE-01: crafting list on C
@@ -571,10 +572,10 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
     const OBJECTIVE_MARKS = false;
     if (OBJECTIVE_MARKS) registerQuestMarks(gameHooks, { fx: window.ASSETS.questMarkFx, resolve: markResolve, create: () => markHandle('questMark') });
     // QG-04: giver markers over Burl: '!' while his quest is available, '?' while ready, none while active/done (book.giverMarks)
-    const gAvail = [], gReady = [], sAvail = [], sReady = []; // OB-125: main chain = gold, side quests = light blue (book.isMain, from quest data)
-    for (const [model, list] of [['questMark', gAvail], ['questMarkReady', gReady], ['questMarkSide', sAvail], ['questMarkReadySide', sReady]]) {
+    const gAvail = [], gReady = [], sAvail = [], sReady = [], gGrey = []; // OB-125: main chain = gold, side quests = light blue (book.isMain, from quest data)
+    for (const [model, list] of [['questMark', gAvail], ['questMarkReady', gReady], ['questMarkSide', sAvail], ['questMarkReadySide', sReady], ['questMarkGrey', gGrey]]) {
       registerQuestMarks(gameHooks, { fx: window.ASSETS.questMarkFx, resolve: markResolve, create: () => markHandle(model),
-        source: (out) => { const b = saveRelay.quest.book; b.giverMarks(gAvail, gReady, sAvail, sReady); b.chainMarks(gAvail, gReady); b.dedupeMarks(gAvail, gReady, sAvail, sReady); out.done = false; out.targets = list; } });
+        source: (out) => { const b = saveRelay.quest.book; b.giverMarks(gAvail, gReady, sAvail, sReady); b.chainMarks(gAvail, gReady); b.activeMarks(gGrey); b.dedupeMarks(gAvail, gReady, sAvail, sReady, undefined, gGrey); out.done = false; out.targets = list; } });
     }
   }
   } catch (e) { console.error('[save] relay setup failed:', e); window.__debug.bootErrors.push({ file: 'save relay', message: String(e && e.message) }); showBootErrors(document, [{ file: 'save relay', message: '' }]); }
@@ -1303,8 +1304,8 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
     const c = getMapChart(), b = saveRelay && saveRelay.quest.book;
     if (!c || !b || !isMapOpen() || (c === mapQmChart && b.version === mapQmVer)) return;
     mapQmChart = c; mapQmVer = b.version;
-    const a = [], r = [], list = []; b.giverMarks(a, r);
-    for (const [ids, kind] of [[a, 'quest'], [r, 'questReady']]) for (const id of ids) {
+    const a = [], r = [], g = [], list = []; b.giverMarks(a, r); b.chainMarks(a, r); b.activeMarks(g); b.dedupeMarks(a, r, [], [], undefined, g); // D-098: pin every found '!' and every '?' of active quests
+    for (const [ids, kind] of [[a, 'quest'], [r, 'questReady'], [g, 'questGrey']]) for (const id of ids) {
       const e = giverEntity(engine.world, id), t = e && e.data && e.data.transform; if (t) list.push({ kind, x: t.x, y: t.y });
     }
     c.setQuestMarkers(list);
@@ -1613,7 +1614,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         inventoryOf: () => playerHandle.data.components.inventory || null }) : null;
       setLootApi(loot); window.__debug.loot = loot; // OB-064: tools/verify-boar-loot.mjs
       // WS1-06b: one [E] interactable per kind:'relay' point (crystal-gated wake; woken ones restore awake from world.state).
-      relayWake = createRelayWake({ questFlag: saveEnabled && saveRelay ? (k) => saveRelay.quest.questFlag(k) : undefined, world, palette: assets.palette, notice: saveEnabled ? notice : null, emit: (id, kind, p) => gameHooks.emitSimple('prop:touched', id, kind, p) });
+      relayWake = createRelayWake({ questFlag: saveEnabled && saveRelay ? (k) => saveRelay.quest.questFlag(k) : undefined, questActive: (id) => { const b = saveRelay && saveRelay.quest.book; return !!b && b.statusOf(id) >= 2; }, world, palette: assets.palette, notice: saveEnabled ? notice : null, emit: (id, kind, p) => gameHooks.emitSimple('prop:touched', id, kind, p) });
       setRelayWakeApi(relayWake); window.__debug.relayWake = relayWake; // tools/verify-relay-wake.mjs
       // DIALOGUE-01b2 (38.28): box + runner; NPCs with a `dialogue` component get an [E] Talk interactable (none until NPC-BEAR-01 places one).
       if (dialogueCtl) dialogueCtl.dispose();
@@ -2561,6 +2562,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
           hurtFx.draw(ui); // HURT-FX-01
           deathFlow.draw(ui, ui.cols, ui.rows); // DEATH-FLOW-01
           presentPickups(engine.world, assets.pickupStyle, fb.timeSec); // US-080b
+          if (!isCaptureOrBench && !vitals.dead && !wakeOut.inputLocked && !isMapOpen() && !cinematic) drawQuestTracker(ui, ui.cols, saveRelay && saveRelay.quest.book); // D-098
           compass.setHidden(compassHide); compass.draw(ui, ui.cols, ui.rows, fb.timeSec); // COMPASS-02 (D-061)
           if (!isCaptureOrBench && playerHandle) { const hp = playerHandle.data.transform; combatHud.frame(cam, fb.rt, ui, hp.x, hp.y, targeting ? targeting.targetId : null, fb.timeSec); combatHud.draw(ui, vitals.dead || wakeOut.inputLocked || isMapOpen() || isSettingsOpen() || pauseResume.soft || pauseResume.active || ending || !!(invView && invView.isOpen)); } // HPBAR-02 + DMGNUM-01
           if (toasts && !vitals.dead && !wakeOut.inputLocked && !isMapOpen()) toasts.draw(ui, fb.timeSec); // US-091a2 loot toast
