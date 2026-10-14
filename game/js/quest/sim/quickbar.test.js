@@ -81,4 +81,10 @@ const mk = (pack) => { const p = { components: { health: { hp: 10, max: 30 } } }
   for (let i = 0; i < SIP_STEPS; i++) qb.step(); p.components.health.hp = 1;
   assert.equal(qb.drink(p), 'none'); assert.equal(qb.press(p, 3), 'none', 'empty stack keeps the slot');
 }
+// ARCH CHANGES (batch 4): non-string ids in a saved quickbar are cleared, not thrown on
+{
+  const p = { components: { quickbar: [null, null, 42, { a: 1 }, 'potion.hp', null] } };
+  const qb = ensureQuickbar(p, {});
+  assert.equal(qb[2], null); assert.equal(qb[3], null); assert.equal(qb[4], 'potion.hp');
+}
 console.log('quickbar.test: ok');

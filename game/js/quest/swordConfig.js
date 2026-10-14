@@ -25,7 +25,7 @@ export const SWORD_CFG = Object.freeze({
   hand: 'left',         // binding parameter; either hand uses the same arc bounds and authored clips
 
   light: Object.freeze({ windup: 5, active: 7, recover: 9, damage: 1, reach: 2.2, speed: 0.6 }),
-  hard: Object.freeze({ windup: 4, active: 7, recover: 27, damageMul: 3, reach: 2.4, speed: 0.3, mana: 4, knock: 3 }),
+  hard: Object.freeze({ windup: 4, active: 7, recover: 27, damageMul: 3, reach: 2.4, speed: 0.3, mana: 20, knock: 3 }),
 });
 
 /**

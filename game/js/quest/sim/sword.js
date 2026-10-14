@@ -110,7 +110,7 @@ export function createSwordSim(world, events, cfg, hooks) {
   // ---- state -------------------------------------------------------------------------------------------------
   let state = ST_IDLE;
   let stateStep = 0;
-  let spdAcc = 0; // ITEM-04: fractional swing-speed accumulator
+  const spd = new Float64Array(1); // ITEM-04: fractional swing-speed accumulator (typed array: a closure `let` double would box on every write)
   let holdSteps = 0;
   let prevDown = 0;
   let chain = 0;
@@ -172,7 +172,7 @@ export function createSwordSim(world, events, cfg, hooks) {
   function enterLight() {
     swingHand = hand;
     const isSecond = chain === 1;
-    state = ST_LIGHT; stateStep = 0; spdAcc = 0; frozen = 0; queued = false;
+    state = ST_LIGHT; stateStep = 0; spd[0] = 0; frozen = 0; queued = false;
     hitMask.fill(0, 0, tCount);
     chain += 1;
     blend = isSecond;
@@ -180,7 +180,7 @@ export function createSwordSim(world, events, cfg, hooks) {
   }
   function enterHard() {
     swingHand = hand;
-    state = ST_HARD; stateStep = 0; spdAcc = 0; frozen = 0; queued = false;
+    state = ST_HARD; stateStep = 0; spd[0] = 0; frozen = 0; queued = false;
     hitMask.fill(0, 0, tCount);
     chain = 0; // "a hard resets chain to 0"
     blend = true; // key 0 = the captured charge pose, always
@@ -341,8 +341,8 @@ export function createSwordSim(world, events, cfg, hooks) {
 
     stateStep++;
     if (stateStep > S.hitEnd + 1 && stateStep < S.total - 1) { // ITEM-04 attack speed: only outside the hit window, never over a chain press
-      spdAcc += cm.speedRate;
-      if (spdAcc >= 1) { spdAcc -= 1; if (!(S === LIGHT && queued)) stateStep++; } else if (spdAcc <= -1) { spdAcc += 1; stateStep--; }
+      spd[0] += cm.speedRate;
+      if (spd[0] >= 1) { spd[0] -= 1; if (!(S === LIGHT && queued)) stateStep++; } else if (spd[0] <= -1) { spd[0] += 1; stateStep--; }
     }
     if (stateStep >= S.total) {
       if (S === HARD || chain < 2) toIdle(); else toRest();

@@ -111,4 +111,17 @@ assert.equal(applySave(v1, assets, {}).saveVersion, 1, 'v1 save is read');
   assert.equal(addDrop(inv, defs, 'gear.head.hood.worn', 1, null, 1, got), 1); assert.equal(got.id, 'gear.head.hood.worn'); assert.equal(inv.slots[1].it, null);
   assert.equal(addDrop(inv, defs, 'potion.hp', 1, 5, 2, got), 1); assert.equal(got.id, 'potion.hp');
 }
+// ARCH CHANGES (batch 4): drop seeds come from the source id + landing slot, not a fixed call-site number
+{
+  const mk = () => { const p = { components: {} }; ensureInventory(p, { pack: [] }); return p.components.inventory; };
+  const got = { id: '' }, id = legacyIds.find((x) => x.endsWith('.warden')) || legacyIds[0];
+  const a = mk(), b = mk(), c = mk();
+  addDrop(a, defs, id, 1, 7, 'chestA#0', got); addDrop(b, defs, id, 1, 7, 'chestB#0', got); addDrop(c, defs, id, 1, 7, 'chestA#0', got);
+  const sig = (inv) => JSON.stringify(inv.slots[0].it);
+  assert.equal(sig(a), sig(c), 'same source + slot + save id -> same item');
+  const tries = []; for (let k = 0; k < 8; k++) { const inv = mk(); addDrop(inv, defs, id, 1, 7, 'chest' + k + '#0', got); tries.push(sig(inv)); }
+  assert.ok(new Set(tries).size > 1, 'different sources roll different items');
+  const d = mk(); addDrop(d, defs, id, 1, 7, 'pick', got); addDrop(d, defs, id, 1, 7, 'pick', got);
+  assert.notEqual(JSON.stringify(d.slots[0].it), JSON.stringify(d.slots[1].it), 'two pickups of one id land in different slots -> different rolls');
+}
 console.log('itemMigrate OK', legacyIds.length, 'ids x pack+worn');

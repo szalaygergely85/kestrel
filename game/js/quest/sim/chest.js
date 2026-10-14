@@ -31,7 +31,7 @@ export function createChests(defs, {items, inventoryOf, events, openedChests = [
       radius2:d.radius*d.radius, needsBottom:def.needsBottom === true, facingCos2:d.facingCos*d.facingCos,
       state:restored.has(def.id) ? 'open' : 'closed', time:0,
       loot:createLoot(null, events, {kind:'chest', items, table:def.table,
-        rng:createRng(streamSeed(seed, def.id)), inventoryOf, saveIdOf, bandIL: bandAt ? bandAt(def.x, def.y) : 1})};
+        rng:createRng(streamSeed(seed, def.id)), inventoryOf, saveIdOf, srcId:def.id, bandIL: bandAt ? bandAt(def.x, def.y) : 1})};
     records.push(r); byId.set(r.id, r);
   }
   const opened = {id:''}, full = {id:''}, started = {id:''};

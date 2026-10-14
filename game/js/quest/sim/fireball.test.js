@@ -101,35 +101,35 @@ function rig({ wx = null, targets = [], mp = 100, cfg = FIREBALL_CFG, eyeH = 1.6
   const a = rig(); a.press(35); ok('35 steps down = still HOLD', a.sim.state === FB_HOLD, `state=${a.sim.state}`);
   ok('mana untouched while holding', a.m.mp === 100 && a.m.calls === 0);
   a.release();
-  ok('35-step release = tap: 5 MP, normal radius', a.m.mp === 95 && a.log.casts.length === 1 && a.log.casts[0].charged === false, `mp=${a.m.mp}`);
+  ok('35-step release = tap MP, normal radius', a.m.mp === 100 - FIREBALL_CFG.tap.mana && a.log.casts.length === 1 && a.log.casts[0].charged === false, `mp=${a.m.mp}`);
   const b = rig(); b.press(36); ok('36 steps down = CHARGE', b.sim.state === FB_CHARGE, `state=${b.sim.state}`);
   ok('still no mana spent in CHARGE', b.m.mp === 100);
   b.release();
-  ok('36-step release = charged: 10 MP', b.m.mp === 90 && b.log.casts[0].charged === true, `mp=${b.m.mp}`);
+  ok('36-step release = charged MP', b.m.mp === 100 - FIREBALL_CFG.charged.mana && b.log.casts[0].charged === true, `mp=${b.m.mp}`);
   ok('charged ball: speed 12, radius 3, damage 5', b.sim.slots.speed[0] === 12 && b.sim.slots.radius[0] === 3 && b.sim.slots.damage[0] === 5);
   ok('tap ball: speed 16, radius 2, damage 3', a.sim.slots.speed[0] === 16 && a.sim.slots.radius[0] === 2 && a.sim.slots.damage[0] === 3);
   ok('back to idle after release', b.sim.state === FB_IDLE && a.sim.state === FB_IDLE);
 }
 // ---- charged with 5-9 MP = normal ball; < 5 = refused without a flash-less cast -----------------------------------
 {
-  const a = rig({ mp: 7 }); a.press(40); a.release();
-  ok('charged release with 7 MP casts a normal tap ball for 5', a.log.casts.length === 1 && a.log.casts[0].charged === false && a.m.mp === 2, `mp=${a.m.mp}`);
+  const a = rig({ mp: FIREBALL_CFG.tap.mana + 2 }); a.press(40); a.release();
+  ok('charged release with 7 MP casts a normal tap ball', a.log.casts.length === 1 && a.log.casts[0].charged === false && a.m.mp === 2, `mp=${a.m.mp}`);
   ok('...and it is a tap ball (radius 2)', a.sim.slots.radius[0] === 2);
-  const b = rig({ mp: 4 }); b.press(40); b.release();
-  ok('4 MP: nothing cast, MP unchanged', b.log.casts.length === 0 && b.m.mp === 4 && b.sim.alive === 0);
+  const b = rig({ mp: FIREBALL_CFG.tap.mana - 1 }); b.press(40); b.release();
+  ok('4 MP: nothing cast, MP unchanged', b.log.casts.length === 0 && b.m.mp === FIREBALL_CFG.tap.mana - 1 && b.sim.alive === 0);
   ok('4 MP: no cooldown started', b.sim.cooldown === 0);
-  const c = rig({ mp: 4 }); c.press(5); c.release();
-  ok('tap with 4 MP refused', c.log.casts.length === 0 && c.m.mp === 4);
+  const c = rig({ mp: FIREBALL_CFG.tap.mana - 1 }); c.press(5); c.release();
+  ok('tap with 4 MP refused', c.log.casts.length === 0 && c.m.mp === FIREBALL_CFG.tap.mana - 1);
 }
 // ---- cooldown ------------------------------------------------------------------------------------------------------
 {
   const a = rig(); a.press(3); a.release();
   ok('cooldown set to 30 after the cast', a.sim.cooldown === 30, `cd=${a.sim.cooldown}`);
   a.press(3); a.release();
-  ok('a press inside the cooldown is ignored', a.log.casts.length === 1 && a.m.mp === 95);
+  ok('a press inside the cooldown is ignored', a.log.casts.length === 1 && a.m.mp === 100 - FIREBALL_CFG.tap.mana);
   a.idle(30);
   a.press(3); a.release();
-  ok('after the cooldown a new cast works', a.log.casts.length === 2 && a.m.mp === 90, `casts=${a.log.casts.length}`);
+  ok('after the cooldown a new cast works', a.log.casts.length === 2 && a.m.mp === 100 - 2 * FIREBALL_CFG.tap.mana, `casts=${a.log.casts.length}`);
   // a button held through the cooldown must be pressed again
   const b = rig(); b.press(3); b.release();
   for (let i = 0; i < 40; i++) b.step(true);
@@ -144,12 +144,12 @@ function rig({ wx = null, targets = [], mp = 100, cfg = FIREBALL_CFG, eyeH = 1.6
 // ---- cap of 4 --------------------------------------------------------------------------------------------------------
 {
   const cfg = { ...FIREBALL_CFG, cooldown: 1, maxRange: 60 };
-  const a = rig({ cfg });
+  const a = rig({ cfg, mp: 1000 });
   for (let i = 0; i < 4; i++) { a.press(2); a.release(); a.idle(2); }
-  ok('4 balls alive', a.sim.alive === 4 && a.m.mp === 80, `alive=${a.sim.alive}`);
+  ok('4 balls alive', a.sim.alive === 4 && a.m.mp === 1000 - 4 * FIREBALL_CFG.tap.mana, `alive=${a.sim.alive}`);
   a.press(2); a.release();
-  ok('5th cast refused at the cap: MP unchanged, still 4 alive', a.sim.alive === 4 && a.m.mp === 80 && a.log.casts.length === 4);
-  const b = rig({ cfg, mp: 100 });
+  ok('5th cast refused at the cap: MP unchanged, still 4 alive', a.sim.alive === 4 && a.m.mp === 1000 - 4 * FIREBALL_CFG.tap.mana && a.log.casts.length === 4);
+  const b = rig({ cfg, mp: 1000 });
   for (let i = 0; i < 4; i++) { b.press(40); b.release(); b.idle(2); }
   b.press(40); const before = b.m.mp, calls = b.m.calls; b.release();
   ok('charged at the cap: no mana call at all', b.m.mp === before && b.m.calls === calls);
@@ -210,7 +210,7 @@ function rig({ wx = null, targets = [], mp = 100, cfg = FIREBALL_CFG, eyeH = 1.6
 {
   const a = rig({ wx: 0.3 }); a.press(2); a.release();
   ok('wall between eye and hand: immediate burst, nothing alive', a.log.bursts.length === 1 && a.sim.alive === 0 && a.log.bursts[0].x < 0.3, `n=${a.log.bursts.length}`);
-  ok('...mana still spent (the cast happened)', a.m.mp === 95);
+  ok('...mana still spent (the cast happened)', a.m.mp === 100 - FIREBALL_CFG.tap.mana);
 }
 // ---- aim point vs hand offset + castOffset + hands --------------------------------------------------------------------
 {

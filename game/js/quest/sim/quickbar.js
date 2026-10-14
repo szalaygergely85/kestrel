@@ -66,7 +66,7 @@ export function ensureQuickbar(player, defs) {
     }
   }
   if (!c.quickbarSeen) c.quickbarSeen = {};
-  for (let i = HAND_SLOTS; i < QB_SLOTS; i++) { const q = c.quickbar[i]; if (q && (defs && defs[q] ? defs[q].kind === 'spell' : q.startsWith('spell.'))) c.quickbar[i] = null; } // SPELLBOOK-02 (D-100): spells live only in the hands; the spell stays in the book / hand
+  for (let i = HAND_SLOTS; i < QB_SLOTS; i++) { const q = c.quickbar[i]; if (q !== null && typeof q !== 'string') { c.quickbar[i] = null; continue; } if (q && (defs && defs[q] ? defs[q].kind === 'spell' : q.startsWith('spell.'))) c.quickbar[i] = null; } // SPELLBOOK-02 (D-100): spells live only in the hands; the spell stays in the book / hand
   syncHandSlots(player);
   return c.quickbar;
 }

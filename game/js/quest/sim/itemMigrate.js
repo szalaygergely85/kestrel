@@ -115,12 +115,21 @@ export function migrateItems(player, defs, saveId) {
   return out;
 }
 
+/** Seed index of a drop: source id (corpse / chest id, or '' for a bare pickup) + item id + the pack slot it lands in,
+ *  so two chests with one legacy id roll differently and a pickup after a reload (other pack state) does not repeat. */
+export function dropSeed(inv, id, src) {
+  let k = 0;
+  while (k < inv.slots.length && inv.slots[k].id) k++;
+  return fnv1a32(String(src || '') + '|' + id + '|' + k);
+}
+
 /**
  * Loot entry (ITEM-02c, until ITEM-06): a legacy `gear.*` drop enters the pack as a rolled instance (iL/rarity from the
  * tier map = the zone band, req kept). No saveId or another id -> plain addItem. Returns the count stored; `gotId.id` = id stored.
  */
-export function addDrop(inv, defs, id, n, saveId, idx, gotId) {
+export function addDrop(inv, defs, id, n, saveId, src, gotId) {
   gotId.id = id;
+  const idx = typeof src === 'number' ? src : dropSeed(inv, id, src);
   const inst = saveId != null && n === 1 && typeof id === 'string' && id.startsWith('gear.') ? convertLegacy(id, saveId, idx, true) : null;
   if (!inst || !defs[inst.id]) return addItem(inv, defs, id, n);
   if (addInstance(inv, defs, inst) < 0) return 0;
