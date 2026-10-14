@@ -8,7 +8,7 @@
       "The water goes still. The bowl glows clear and steady."
     ], "offer": [
       "The bowl flickers: three boars, mud in the still water."
-    ]}, "requires": [{"flag": "waystone.ws_glasswater.woken"}], "returnText": "Back to the Glasswater waystone", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "relay_glasswater", "steps": [{"journal": "The Glasswater bowl showed boars churning the shallows. Drive off three, then come back to the light.", "objText": "Drive off 3 boars", "params": {"count": 3, "kind": "boar"}, "template": "kill"}], "title": "Tusks at the Water"},
+    ]}, "requires": [{"flag": "waystone.ws_glasswater.woken"}, {"quest": "sq.burl.fire", "done": true}], "returnText": "Back to the Glasswater waystone", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "relay_glasswater", "steps": [{"journal": "The Glasswater bowl showed boars churning the shallows. Drive off three, then come back to the light.", "objText": "Drive off 3 boars", "params": {"count": 3, "kind": "boar"}, "template": "kill"}], "title": "Tusks at the Water"},
     {"id": "sq.reg.northwood", "lines": {"done": [
       "The pines are quiet. The waystone hums one long, even note."
     ], "offer": [
@@ -20,7 +20,7 @@
     ], "offer": [
       "Wind moves in the bowl, and two heavy shapes move",
       "through it."
-    ]}, "requires": [{"flag": "waystone.ws_highPastures.woken"}], "returnText": "Back to the Pasture waystone", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "relay_highPastures", "steps": [{"journal": "The Pasture Waystone flickered with two bears in the high grass. Drive both off, then return.", "objText": "Drive off 2 bears", "params": {"count": 2, "kind": "bear"}, "template": "kill"}], "title": "Bears in the High Grass"},
+    ]}, "requires": [{"flag": "waystone.ws_highPastures.woken"}, {"quest": "sq.burl.fire", "done": true}], "returnText": "Back to the Pasture waystone", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "relay_highPastures", "steps": [{"journal": "The Pasture Waystone flickered with two bears in the high grass. Drive both off, then return.", "objText": "Drive off 2 bears", "params": {"count": 2, "kind": "bear"}, "template": "kill"}], "title": "Bears in the High Grass"},
     {"id": "sq.reg.ashMile", "lines": {"done": [
       "The ash settles. The bowl burns a little brighter."
     ], "offer": [
@@ -36,12 +36,12 @@
       "The pattern runs clean again. The hill answers."
     ], "offer": [
       "The pattern breaks. Three wolves on the slope below."
-    ]}, "requires": [{"flag": "waystone.ws_signalHill.woken"}], "returnText": "Back to the Signal Hill waystone", "reward": {"items": [{"id": "arrow", "n": 20}]}, "site": "relay_signalHill", "steps": [{"journal": "Wolves prowl Signal Hill and its waystone stutters. Drive off three of them, then return to it.", "objText": "Drive off 3 wolves", "params": {"count": 3, "kind": "wolf"}, "template": "kill"}], "title": "The Hill Pack"},
+    ]}, "requires": [{"flag": "waystone.ws_signalHill.woken"}, {"quest": "sq.burl.fire", "done": true}], "returnText": "Back to the Signal Hill waystone", "reward": {"items": [{"id": "arrow", "n": 20}]}, "site": "relay_signalHill", "steps": [{"journal": "Wolves prowl Signal Hill and its waystone stutters. Drive off three of them, then return to it.", "objText": "Drive off 3 wolves", "params": {"count": 3, "kind": "wolf"}, "template": "kill"}], "title": "The Hill Pack"},
     {"id": "sq.reg.heath", "lines": {"done": [
       "The heather springs back. The hum bends with it."
     ], "offer": [
       "The heather shakes in the bowl. Three boars, rooting."
-    ]}, "requires": [{"flag": "waystone.ws_heath.woken"}], "returnText": "Back to the Heath waystone", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "relay_heath", "steps": [{"journal": "Three boars are tearing up the heather by Heath Waystone. Drive them off, then come back.", "objText": "Drive off 3 boars", "params": {"count": 3, "kind": "boar"}, "template": "kill"}], "title": "Boars in the Heather"},
+    ]}, "requires": [{"flag": "waystone.ws_heath.woken"}, {"quest": "sq.burl.fire", "done": true}], "returnText": "Back to the Heath waystone", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "relay_heath", "steps": [{"journal": "Three boars are tearing up the heather by Heath Waystone. Drive them off, then come back.", "objText": "Drive off 3 boars", "params": {"count": 3, "kind": "boar"}, "template": "kill"}], "title": "Boars in the Heather"},
     {"id": "sq.reg.reedmire", "lines": {"done": [
       "The reeds hiss and settle. The black water goes still."
     ], "offer": [
@@ -57,7 +57,7 @@
       "The rock is clear. The bowl rings like cold glass."
     ], "offer": [
       "Snow light in the bowl. Two bears on the rock below it."
-    ]}, "requires": [{"flag": "waystone.ws_whitecombs.woken"}], "returnText": "Back to the Combfoot waystone", "reward": {"items": [{"id": "potion.hp", "n": 3}]}, "site": "relay_whitecombs", "steps": [{"journal": "Two bears den on the bare rock below the Whitecombs. Drive them off and return to Combfoot Waystone.", "objText": "Drive off 2 bears", "params": {"count": 2, "kind": "bear"}, "template": "kill"}], "title": "Bears Below the Snow"}
+    ]}, "requires": [{"flag": "waystone.ws_whitecombs.woken"}, {"quest": "sq.burl.fire", "done": true}], "returnText": "Back to the Combfoot waystone", "reward": {"items": [{"id": "potion.hp", "n": 3}]}, "site": "relay_whitecombs", "steps": [{"journal": "Two bears den on the bare rock below the Whitecombs. Drive them off and return to Combfoot Waystone.", "objText": "Drive off 2 bears", "params": {"count": 2, "kind": "bear"}, "template": "kill"}], "title": "Bears Below the Snow"}
   ],
   "region": "regions",
   "version": 1

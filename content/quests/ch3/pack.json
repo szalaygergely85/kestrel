@@ -26,7 +26,8 @@
         {
           "quest": "mq.smoke",
           "step": "north"
-        }
+        },
+        { "quest": "sq.burl.fire", "done": true }
       ],
       "abandonable": false
     },

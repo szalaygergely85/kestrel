@@ -11,7 +11,7 @@ import { loadTestAssets } from '../../../../tools/testing/content-node.mjs';
 import { makeOk } from '../../../../engine/test/assert.js';
 import {
   ensureInventory, addItem, removeItem, countOf, assignHand, swapHands, hashInto,
-  validateItemDefs, migrateSword, SLOTS,
+  validateItemDefs, migrateSword, SLOTS, itemDisplayName, setItemFlagReader,
 } from './inventory.js';
 import { createVitals } from './vitals.js';
 import { VITALS_DEFAULTS as CFG } from './vitalsConfig.js';
@@ -270,6 +270,16 @@ function killAndRespawn(vitals, player) {
     const d = defs[id];
     ok(`${id} fits the approved card copy limits`, d.name.length <= 14 && d.desc.length <= 38 && /^[ -~]+$/.test(d.name + d.desc) && d.placeholderName === false);
   }
+}
+
+// D-097: nameAfter {flag,name}
+{
+  const cr = defs.aetherCrystal; let named = false; setItemFlagReader((k) => k === cr.nameAfter.flag && named);
+  ok('nameAfter: base name before the flag', itemDisplayName(cr) === 'Teal Crystal');
+  named = true; ok('nameAfter: new name once the flag is set', itemDisplayName(cr) === 'Aether Crystal');
+  ok('nameAfter: plain defs unchanged', itemDisplayName(defs['boar.meat']) === defs['boar.meat'].name);
+  let bad = false; try { validateItemDefs({ x: { ...defs['boar.meat'], id: 'x', nameAfter: { flag: 1 } } }); } catch { bad = true; }
+  ok('nameAfter: malformed def rejected', bad); setItemFlagReader(null);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

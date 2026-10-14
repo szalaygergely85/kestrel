@@ -2,6 +2,7 @@
 // movement is npcWalk. world.state['burl.phase'] (int) and ['burl.wp'] (int) are saved with world.state.
 //   0 home  1 walking to the stone  2 at the stone  3 departing  4 gone (hidden)  5 back home (flags burl.home)
 // s.* dialogue flags live in world.state without the "s." (dialogueCtl): burl.follow, burl.depart, burl.departing.
+import { setItemFlagReader } from './sim/inventory.js';
 export const PHASE_HOME = 0, PHASE_WALK = 1, PHASE_STONE = 2, PHASE_DEPART = 3, PHASE_GONE = 4, PHASE_BACK = 5; // 5 = QL-05: back on her berry slope (errand giver)
 export const HOME_FAR_M = 40; // QL-05: Burl reappears at home only when the player is at least this far away (never pops in sight)
 export const WAIT_BARK_M = 12, WAIT_BARK_COOL_S = 20; // PO-CH1-14: player runs ahead of Burl during the walk
@@ -17,6 +18,7 @@ export const CALL_NEAR_M = 14, TALK_NEAR_M = 4, TALK_REARM_M = 7;
  */
 export function createBurlEscort(o) {
   const { world, walk, questFlag } = o, st = world.state, id = o.id || 'bear';
+  setItemFlagReader((k) => st[k] === true); // D-097: item defs with nameAfter read world flags through this
   const t0 = (world.get(id) && world.get(id).data.transform) || null, homeYaw = t0 ? t0.yawDeg : 0;
   let talkLatch = false, wokenLatch = false, waitCool = 0;
   const phase = () => st['burl.phase'] | 0;

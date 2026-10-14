@@ -219,11 +219,11 @@ export async function buildContext(opts = {}) {
   // R9: quest targets (positions) + early = band < 5 and no requires on the level-5 flag / a gated quest
   const areas = JSON.parse(fs.readFileSync(path.join(qdir, 'areas.json'), 'utf8')).areas;
   const trig = new Map((def.triggers || []).map((t) => [t.id, t]));
-  const LV5 = /level5|lvl5|fireball|burl\.lvl/i, qById = new Map(quests.map((q) => [q.id, q]));
+  const LV5 = /level5|lvl5|fireball|burl\.lvl/i, LV5_QUEST = 'sq.burl.fire', qById = new Map([...quests, ...(await import('./validate-content.mjs')).loadQuestFiles(qdir).quests.map((x) => x.def)].map((q) => [q.id, q]));
   const gated = (q, seen = new Set()) => {
     if (!q || seen.has(q.id)) return false; seen.add(q.id);
     if ((q.band || 0) >= 5) return true;
-    return (q.requires || []).some((r) => (r.flag && LV5.test(r.flag)) || (r.quest && gated(qById.get(r.quest), seen)));
+    return (q.requires || []).some((r) => (r.flag && LV5.test(r.flag)) || r.quest === LV5_QUEST || (r.quest && gated(qById.get(r.quest), seen)));
   };
   const posAny = (id) => { const e = pos(id); if (e) return e; const a = areas[id], t = a && trig.get(a.trigger); return t ? { x: t.x, y: t.y } : null; };
   const qs = quests.map((q) => {
