@@ -166,6 +166,17 @@ for (const k of ['KeyI', 'KeyC', 'Tab']) {
   const t2 = r.draw();
   ok('item card: vs worn piece, worse stat shown', /vs Worn Sword|vs worn Worn Sword/.test(t2) && /Crit chance -2 %/.test(t2) && /Avg damage \+/.test(t2));
 }
+{ // ITEM-07b: a 3-bonus Epic card floats over the pack and shows every line (base stats, 3 bonuses, requirement, compare)
+  registerGenDefs(defs);
+  const r = rig();
+  r.inv.slots[3] = { id: 'gen.sword', n: 1, it: { iL: 6, r: 3, a: [['A1', 0.18], ['A8', 4], ['A3', 0.03]], req: { str: 9 } } };
+  r.eq.rev = (r.eq.rev | 0) + 1; r.eq.main = 'gen.sword'; r.eq.it = r.eq.it || {}; r.eq.it.main = { iL: 2, r: 1, a: [['A3', 0.02]] };
+  r.step('KeyI'); packPtr(r, 3); const t = r.draw();
+  ok('epic card: name + [Epic] tag, level line', /Steel Sword +\[Epic\]|Iron Sword +\[Epic\]/.test(t) && /Level 6/.test(t));
+  ok('epic card: all 3 bonus lines', /\+18 % damage/.test(t) && /\+4 STR/.test(t) && /Crit chance/.test(t));
+  ok('epic card: requirement + compare present', /Needs STR 9|STR 9/.test(t) && /Avg damage/.test(t));
+  ok('epic card: floating panel taller than the 6-row pane', /\+-{20,}\+/.test(t));
+}
 if (global.gc) {
   const r = rig(); r.step('KeyI'); r.draw(); for (let i = 0; i < 100; i++) r.view.draw(r.ui);
   global.gc(); const before = process.memoryUsage().heapUsed;

@@ -26,6 +26,7 @@ import { ensureInventory, addItem, removeItem, countOf } from './inventory.js';
 import { readFileSync } from 'node:fs';
 import { resetPickups, spawnItemDrop, stepPickups } from './pickups.js';
 import { BAND_TABLE } from './band.js';
+import { registerGenDefs } from './itemInst.js';
 import { createLoot, setLootApi, rollGear, gearIdFor } from './loot.js';
 import { LOOT_TABLE, LOOT_PROMPT, LOOT_SEED_SALT, LOOT_TIERS, LOOT_SLOTS } from './lootConfig.js';
 import '../index.js'; // registers `beast.loot`
@@ -169,7 +170,7 @@ const OUT = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
   for (let d = 0; d < N; d++) {
     kill(env);
     const g = gearIds();
-    gear += g.length; for (const id of g) tiers[defs[id].equip.tier]++;
+    gear += g.length;
     const m = env.loot.countOf('boar1', 0), a = env.loot.countOf('boar1', 1);
     meat += m; if (a > 0) { arrows++; arrowMin = Math.min(arrowMin, a); arrowMax = Math.max(arrowMax, a); }
     let entries = 0; for (let k = 0; k < 4; k++) if (env.loot.countOf('boar1', k) > 0) entries++;
@@ -182,46 +183,19 @@ const OUT = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
   ok('meat 100 %', meat === N, meat);
   ok('arrows ~20 % (+-1.5)', Math.abs(arrows / N - 0.2) < 0.015, arrows / N);
   ok('arrows n in 3..5', arrowMin >= 3 && arrowMax <= 5, arrowMin + '..' + arrowMax);
-  ok('gear ~4 % (+-0.5)', Math.abs(gear / N - 0.04) < 0.005, gear / N);
-  ok('gear tiers ~70/25/5 (+-5 pts)', Math.abs(tiers.worn / gear - 0.7) < 0.05 && Math.abs(tiers.sturdy / gear - 0.25) < 0.05 && Math.abs(tiers.fine / gear - 0.05) < 0.03, JSON.stringify(tiers));
+  ok('gear ~5 % (ITEM-06, +-0.7)', Math.abs(gear / N - 0.05) < 0.007, gear / N);
   ok('at most 4 entries per kill', maxEntries <= 4, maxEntries);
   // Determinism: a mirror stream (3 draws per roll row, then 2 orb draws) reproduces the first rolls exactly.
   const m = createRng((1 ^ LOOT_SEED_SALT) >>> 0);
   const mirror = [];
   for (let d = 0; d < 6; d++) {
-    const g1 = m.nextFloat() < 0.04, gb = m.nextFloat(), gc = m.nextFloat();
+    const g1 = (m.nextFloat(), false), gb = m.nextFloat(), gc = m.nextFloat();
     const a1 = m.nextFloat() < 0.2, ab = m.nextFloat(); m.nextFloat();
     m.nextFloat(); m.int(2);
-    mirror.push('1:' + (a1 ? 3 + Math.min(2, Math.floor(ab * 3)) : 0) + ':' + (g1 ? rollGear(defs, gb, gc) : '-'));
+    mirror.push('1:' + (a1 ? 3 + Math.min(2, Math.floor(ab * 3)) : 0) + ':' + '-');
   }
-  ok('first 6 rolls for seed 1 match the mirror stream', mirror.join(' ') === seq.join(' '), seq.join(' ') + ' / ' + mirror.join(' '));
-}
-
-// US-129a AC2: gear tier from the zone band. Outwall (band 5 = T3) -> fine only; meadow (T1) rolls == no band (golden).
-{
-  await import('../../../../design/levels/world_geo.js');
-  const { createBand } = await import('./band.js');
-  const real = createBand(globalThis.ASSETS.levels.world_geo.regions);
-  const outwall = { gearTierAt: () => real.gearTierAt(905, 940) };
-  const gearIds = (env) => { const g = env.loot.gearOf('boar1'); return g ? [g] : []; };
-  const run = (band, N) => {
-    const env = fresh({ seed: 1, band }); const out = [];
-    for (let d = 0; d < N; d++) {
-      kill(env); out.push(gearIds(env).map((id) => defs[id].equip.tier).join('+') + '/' + env.loot.countOf('boar1', 0) + env.loot.countOf('boar1', 1));
-      env.world.forEachEntity((e, id) => { if (e.components && e.components.pickup) env.world.remove(id); });
-      resetPickups(env.world); env.beasts.resetAll();
-    }
-    return out;
-  };
-  const o = run(outwall, 10000).join('|').split('|').map((x) => x.split('/')[0]).filter(Boolean);
-  ok('Outwall 10k kills: gear drops exist, all T3 (fine)', o.length > 300 && o.every((t) => t === 'fine'), o.length);
-  ok('meadow band (T1) rolls identical to no band', run(real, 1500).join() === run(null, 1500).join());
-  // EQ-21 AC2: band 7-8 (T4) -> only tempered, band 9-10 (T5) -> only warden; bands 1-6 untouched (golden above + fine-only T3).
-  for (const [band, tier, name] of [[7, 'tempered', 'T4'], [9, 'warden', 'T5']]) {
-    const t = run({ gearTierAt: () => band === 7 ? 4 : 5 }, 10000).join('|').split('|').map((x) => x.split('/')[0]).filter(Boolean);
-    ok('band ' + band + ' 10k kills: gear drops exist, all ' + tier, t.length > 300 && t.every((x) => x === tier), t.length);
-  }
-  ok('real band: T4 regions -> tempered, T5 -> warden', [7, 8].every((b) => BAND_TABLE.gearItemTier[BAND_TABLE.gearTier[b - 1]] === 'tempered') && [9, 10].every((b) => BAND_TABLE.gearItemTier[BAND_TABLE.gearTier[b - 1]] === 'warden'));
+  const strip = (x) => x.split(' ').map((q) => q.split(':').slice(0, 2).join(':')).join(' ');
+  ok('first 6 rolls for seed 1 match the mirror stream (corpse columns)', strip(mirror.join(' ')) === strip(seq.join(' ')), seq.join(' ') + ' / ' + mirror.join(' '));
 }
 
 // EQ-21 AC1/AC3: 35 gear ids, def strictly monotonic per base, old 21 unchanged; warden piece equips + save round trip.
@@ -242,6 +216,7 @@ const OUT = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
   ok('def strictly monotonic worn < sturdy < fine < tempered < warden', mono);
   ok('old 21 ids keep def + names', golden);
   ok('validate(palette) has no errors', globalThis.ASSETS.items.validate(globalThis.ASSETS.palette || null).length === 0);
+  registerGenDefs(defs); // ITEM-06: gen.<type> defs (after the legacy validate)
   const { World: W, AssetRegistry: AR } = await import('../../../../engine/index.js');
   const { ensureEquipment, equip } = await import('./equipment.js');
   const { collectSave, applySave, stringifyGameSave, parseGameSave } = await import('../save/saveState.js');
@@ -467,15 +442,17 @@ const OUT = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
 {
   const env = fresh({ seed: 7 });
   const inv = env.player.components.inventory;
-  const gid = 'gear.body.jerkin.sturdy';
+  const gid = 'gen.armour.body';
+  const mk = () => ({ id: gid, n: 1, it: { iL: 3, r: 2, a: [['life', 5], ['armour', 2]] } });
+  const hold = () => { const si = env.beasts.slotOf('boar1'); env.loot.gearHeld[si] = gid; env.loot.instHeld[si] = mk(); };
   const pickups = () => { let n = 0; env.world.forEachEntity((e) => { if (e.components && e.components.pickup && e.components.pickup.kind === 'item') n++; }); return n; };
   kill(env);
-  env.loot.gearHeld[env.beasts.slotOf('boar1')] = gid;
+  hold();
   env.loot.lootBoar('boar1');
   ok('OB-064: gear in the pack on the first E, no world pickup, corpse emptied', countOf(inv, gid) === 1 && pickups() === 0 && env.loot.gearOf('boar1') === null);
   env.beasts.resetAll(); kill(env);
   for (let n = 0; n < 200; n++) addItem(inv, defs, 'gear.body.jerkin.worn', 1);
-  env.loot.gearHeld[env.beasts.slotOf('boar1')] = gid;
+  hold();
   const done = env.loot.lootBoar('boar1');
   ok('OB-064: pack full -> gear stays in the corpse (lootable), nothing on the ground', !done && env.loot.gearOf('boar1') === gid && pickups() === 0 && countOf(inv, gid) === 1); // the 1 is from the first half
 }

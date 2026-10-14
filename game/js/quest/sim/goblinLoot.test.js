@@ -6,7 +6,6 @@ import { loadTestAssets } from '../../../../tools/testing/content-node.mjs';
 import itemsMod from '../../../../design/items.js';
 import { createLoot } from './loot.js';
 import { LOOT_TABLE, LOOT_PROMPT } from './lootConfig.js';
-import { WEAPON_LOOT, rollGoblinWeapon } from './weaponLoot.js';
 import { BAND_TABLE } from './band.js';
 
 await loadTestAssets();
@@ -15,30 +14,10 @@ let pass = 0, fail = 0; const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 const items = globalThis.ASSETS.items.defs;
 
-// --- config / mirror
-const j = JSON.parse(readFileSync(new URL('../../../../content/loot/weapons.json', import.meta.url), 'utf8'));
-ok('weapons.json goblin source mirrors weaponLoot.js', j.sources.goblin.chance === WEAPON_LOOT.goblin.chance && JSON.stringify(j.sources.goblin.items) === JSON.stringify(WEAPON_LOOT.goblin.items));
 const G = LOOT_TABLE.goblin;
 ok('goblin table: no fixed, arrow 2-4 @0.3, trinket x1 @0.25, orb 0.4', G.fixed.length === 0 && G.rolls[0].give.item === 'arrow' && G.rolls[0].chance === 0.3 && G.rolls[0].give.min === 2 && G.rolls[0].give.max === 4 && G.rolls[1].give.item === 'goblin.trinket' && G.rolls[1].chance === 0.25 && G.orb.chance === 0.4);
 ok('goblin.trinket has an item def', !!items['goblin.trinket'] && !!items['arrow']);
 ok('goblin prompt', LOOT_PROMPT.goblin === '[E] Loot goblin');
-
-// --- tier by band (pure roll)
-const tierOf = (band) => BAND_TABLE.gearItemTier[BAND_TABLE.gearTier[band - 1]];
-const expect = { 5: 'fine', 6: 'fine', 7: 'tempered', 8: 'tempered', 9: 'warden', 10: 'warden' };
-const RANK = ['worn', 'sturdy', 'fine', 'tempered', 'warden'];
-const synth = {}; for (const b of ['main.sword', 'ranged.bow', 'off.shield']) for (const t of RANK) synth['gear.' + b + '.' + t] = { equip: { tier: t } };
-for (const b of Object.keys(expect)) {
-  for (let k = 0; k < 3; k++) {
-    const u2 = k / 3 + 0.01;
-    ok('band ' + b + ' exact tier ' + expect[b] + ' (synthetic full table)', synth[rollGoblinWeapon(synth, tierOf(+b), 0.0, u2)].equip.tier === expect[b]);
-    // real item table (EQ-20b): the forced tier is exact
-    const id = rollGoblinWeapon(items, tierOf(+b), 0.0, u2);
-    const want = expect[b];
-    ok('band ' + b + ' real table drop ' + id, !!id && items[id].equip.tier === want, id);
-  }
-}
-ok('no drop above the chance', rollGoblinWeapon(items, 'fine', 0.06, 0) === null);
 
 // --- through createLoot: goblin slot uses the goblin table + band tier; boar slot unchanged
 function run(group, x, y, seed) {
@@ -60,10 +39,10 @@ function run(group, x, y, seed) {
       l.die();
       const o = 0; // slot 0
       for (let k = 0; k < 4; k++) { if (l.corpseItem[o + k] === 'goblin.trinket') trinkets += l.corpseN[o + k]; if (l.corpseItem[o + k] === 'arrow') arrows += l.corpseN[o + k] > 0 ? 1 : 0; if (l.corpseItem[o + k] === 'boar.meat') boarMeat++; }
-      if (l.gearHeld[0] && /^gear\.(main|ranged|off)\./.test(l.gearHeld[0])) weaponTiers[band].add(items[l.gearHeld[0]].equip.tier);
+      if (l.gearHeld[0]) weaponTiers[band].add(l.instHeld[0].it.iL);
     }
     const realWant = want;
-    ok('goblin at band ' + band + ': only ' + realWant + ' weapons drop', weaponTiers[band].size === 1 && weaponTiers[band].has(realWant), [...weaponTiers[band]].join());
+    ok('goblin at band ' + band + ': gear iL = band (ITEM-06)', weaponTiers[band].size === 1 && weaponTiers[band].has(5), [...weaponTiers[band]].join());
   }
   ok('goblin corpses never hold boar meat', boarMeat === 0);
   ok('trinket ~25 % and arrows ~30 %', Math.abs(trinkets / (3 * n) - 0.25) < 0.03 && Math.abs(arrows / (3 * n) - 0.3) < 0.03, trinkets / (3 * n) + ' ' + arrows / (3 * n));

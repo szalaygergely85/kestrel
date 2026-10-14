@@ -46,3 +46,21 @@ export const CHEST_DEFAULTS = {
   openSeconds: 0.6, radius: 1.6, facingDeg: 70, facingCos: 0.3420201433256687,
   prompt: '[E] Open chest',
 };
+
+/**
+ * ITEM-06 (ep-items-stats section 3): generated gear drops. `chance` = gear drop per kill; `rBonus` = rarity steps added
+ * (cap Epic). Rarity weights C/M/R/E by zone-band side (near 1-4, far 5-10; PO correction 2026-10-14); Unique never rolls
+ * here. Type pick: weapons 30 % (sword/axe/spear/bow/shield even), armour 70 % (even per slot). Chest: 100 %, 1-2 items,
+ * min Rare, iL = band + 1.
+ */
+export const GEAR_DROP = {
+  boar: { chance: 0.05, rBonus: 0 }, wolf: { chance: 0.08, rBonus: 0 }, goblin: { chance: 0.15, rBonus: 0 },
+  goblinElite: { chance: 1, rBonus: 1 }, // torch-bearer / camp chief
+  bear: { chance: 0.30, rBonus: 1 },
+};
+export const RARITY_BY_SIDE = { near: [70, 24, 5, 1], far: [50, 32, 14, 4] };
+export const FAR_BAND = 5;
+export const WEAPON_SHARE = 0.30;
+export const WEAPON_TYPES = ['sword', 'axe', 'spear', 'bow', 'shield'];
+export const ARMOUR_TYPES = ['armour.head', 'armour.body', 'armour.cloak', 'armour.hands', 'armour.belt', 'armour.legs', 'armour.feet'];
+export const CHEST_MIN_RARITY = 2;

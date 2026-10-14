@@ -645,7 +645,7 @@ if (mapFogHook) gameHooks.register(mapFogHook);
 let lootToast = null; // OB-082: the toast view lives in the boot block below (let toasts); the chest hook reaches it through this
 const chestHook = (itemDefs && assets.uiStyle && assets.uiStyle.itemGetCard)
   ? createChestHook({
-    defs: [], items: window.ASSETS.items, style: assets.uiStyle.itemGetCard, rgb: assets.palette.rgb,
+    defs: [], bandAt: worldBand ? worldBand.bandAt : null, items: window.ASSETS.items, style: assets.uiStyle.itemGetCard, rgb: assets.palette.rgb,
     openedChestsOf: () => (saveRelay ? saveRelay.openedChests : []), reduceMotion: isReduceMotion,
     notify: (t) => { if (lootToast) lootToast.say(t, [226, 214, 176]); }, // OB-075 (+ OB-082: was a ReferenceError on every loot): chest / gear loot = a toast line, not the item-get card
   })
