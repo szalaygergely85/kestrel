@@ -1,0 +1,17 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "warden_highpastures",
+  "speakers": {
+    "warden": {"label": "WARDEN"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "warden.hello"}
+  ],
+  "nodes": {
+    "warden.hello": {"end": true, "lines": [
+      "I keep this light. Nothing more to ask of me today."
+    ], "speaker": "warden"}
+  }
+}

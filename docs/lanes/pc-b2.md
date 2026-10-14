@@ -846,3 +846,8 @@ New `tools/verify-wm-regions.mjs <port>` (10 stills -> docs/test-reports/wm-regi
 - Tests: new regionWarden.test.js (12, fixture + glasswater), regionErrands/regionRelays adapted (warden-aware, 8 m clearance exempts own warden). validate-content OK. content-lint R14: 92 -> 90 (sq.reg.glasswater no longer a finding).
 - engine/world/world.test.js: 2 FAIL (lever deserialize anim/frame) not touched here, not baseline-checked. Offer lines in pack still say "bowl flickers" (writer, S5c-2).
 - NEEDS B1-main: none.
+
+### QFIX-S5c-2/3 (kestrel-3, 2026-10-14)
+- Other 9 wardens done (northwood, highPastures, ashMile, downs, signalHill, heath, reedmire, strand, whitecombs): npc `warden_<r>` (char.kit) 2.5-3 m from relay_<r> (first free of 8 offsets, >1.8 m from any entity), dialogue shell, manifest, sites.json, pack `site` + returnText "...warden". Dialogue ids/files must be lowercase (highpastures, ashmile, signalhill); entity/site ids keep camelCase.
+- Wording: offer lines "bowl" -> "light" (also glasswater "The light flickers"); sq.reg.strand deliver target relay_downs -> warden_downs (journal/objText say Downs warden). NEEDS WRITER: warden_<region>.* (hello shells + offer/done lines in warden voice, all 10 regions).
+- Lint R12,R14: before R12=12 R14=90 -> after R12=12 (no warden) R14=72 (no sq.reg.* left; remaining are tower/legacy). validate-content OK, content-canonical ALL PASS, regionWarden/Errands/Relays PASS. Positions not terrain-checked beyond entity clearance (z ground): owner walk-check advised.
