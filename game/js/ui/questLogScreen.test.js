@@ -50,7 +50,7 @@ assert.equal(s.left.length, 1, 'boars handed in -> disappears; m1 small entry ap
 assert.equal(s.left[0], 'Follow the Bear', 'm1 shows only the current uncovered step');
 assert.ok(s.right[0].startsWith('Follow the Bear'));
 assert.ok(has(/^\[>\] Follow the bear$/) && !has(/Wake the waystone/), 'one objective, no count, no future: ' + s.right);
-book.feed({ type: 'flag:set', key: 'burl.arrived', value: true }); upd();
+book.feed({ type: 'flag:set', key: 'quest.burl.follow.done', value: true }); upd(); // OB-178/D-105
 assert.equal(s.left[0], 'Awaken the Stone', 'title follows the step');
 assert.ok(!has(/Follow the bear/), 'previous section steps not repeated');
 // two giver quests at once + selection + mouse

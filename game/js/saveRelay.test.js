@@ -72,7 +72,7 @@ assert.deepEqual(A.quest.book.handIn('burl.boars'), { items: [] }); assert.equal
 A.quest.checkSections(); // main.js: stepGame does this each step
 assert.deepEqual(toasts, [], 'q03 silent');
 assert.equal(A.quest.objectiveText(), OBJ.follow);
-assert.equal(A.quest.questFlag('burl.arrived'), true); assert.equal(world.state['burl.arrived'], true, 'questFlag writes world.state');
+assert.equal(A.quest.questFlag('quest.burl.follow.done'), true); assert.equal(world.state['quest.burl.follow.done'], true, 'questFlag writes world.state'); // OB-178/D-105
 assert.equal(A.quest.objectiveText(), OBJ.waystone);
 A.quest.questFlag('waystone.waystone.woken');
 assert.equal(A.quest.objectiveText(), OBJ.road);
