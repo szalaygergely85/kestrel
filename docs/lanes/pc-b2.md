@@ -1010,3 +1010,7 @@ NOT done: player rig (charkit: bone clips idle/walk/swim only, no run/attack/hur
 
 ### ED-QUEST-DEPS-2 (kestrel-3, 2026-10-14)
 lintQuest no longer imports game/: local resolveGiver mirror (ctx.resolveGiver overrides) + tools/quest-editor-resolvegiver-parity.test.mjs (all pack quests). check-deps OK; lintQuest/lintAgree/sidequest/wire/content-lint/markers+resolvegiver parity PASS.
+
+### ED-AI-01 (kestrel-4, 2026-10-14)
+Data moved to content/beasts/archetypes.json + kinds.json (canonical, 1 entry/line); archetypes.js/beastKinds.js now build the same frozen tables via `import ... with {type:'json'}` (Node 22 ok; NOT browser-checked - needs Chrome 123+). tools/editor/ai/{validate,model}.js (+model.test.mjs, fixtures/beasts-baseline.json), tools/beasts-data.test.mjs (game tables deep-equal baseline), tools/verify-edai-01.mjs, validate-content wired ("beasts:" errors).
+Suites green: archetypes, beastSim, beastTactics, beastStuck, beastGolden, beastLayers, spawnDirector, life*, check-deps, validate-content. "Big attack" = aoe or dmgF >= 2.4 (needs windup >= 0.8 s; the row did not define big).

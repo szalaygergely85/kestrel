@@ -1207,6 +1207,12 @@ async function main() {
   allErrors.push(...questFiles.errors);
   allErrors.push(...lootFile.errors);
   allErrors.push(...recipeFile.errors);
+  // ED-AI-01: content/beasts archetypes + kinds (plain-language range errors, tools/editor/ai/validate.js)
+  try {
+    const bd = fileURLToPath(new URL('../content/beasts', import.meta.url));
+    const { validateBeasts } = await import('./editor/ai/validate.js');
+    allErrors.push(...validateBeasts(JSON.parse(readFileSync(`${bd}/archetypes.json`, 'utf8')), JSON.parse(readFileSync(`${bd}/kinds.json`, 'utf8'))).map((m) => `beasts: ${m}`));
+  } catch (e) { allErrors.push(`beasts: could not validate content/beasts: ${e.message}`); }
   try { allErrors.push(...await lintRegionsReal(ASSETS, packQuests.sites || {})); } catch (e) { allErrors.push(`regions: lint crashed: ${e.message}`); }
   for (const w of warnings) console.warn(`WARN ${w}`);
   // CONTENT-LINT-01: `--lint` also runs tools/content-lint.mjs; its findings are printed as INFO/WARN and never fail validate-content
