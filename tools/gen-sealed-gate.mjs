@@ -103,7 +103,7 @@ for (const cy of TOWER_Y) {
 const ents = [];
 [[-5, -5], [-5, 5], [5, -5], [5, 5], [-5, -30], [-5, 30]].forEach(([dx, dy], i) => {
   const x = X0 + dx, y = Y0 + dy;
-  ents.push({ id: 'sgLamp' + (i + 1), type: 'prop', x, y, z: +(gz(x, y) + 0.04).toFixed(2), components: { voxel: { anim: 'lit', loop: true, model: 'floorLantern' } }, note: 'MAP-09 lantern at the Sealed Gate (static, no light)' });
+  ents.push({ id: 'sgLamp' + (i + 1), type: 'prop', x, y, z: +(gz(x, y) + 0.04).toFixed(2), components: { voxel: { anim: 'lit', loop: true, model: 'floorLanternVox' } }, note: 'MAP-09 lantern at the Sealed Gate (static, no light)' });
 });
 ents.push({ id: 'sealedGate', type: 'prop', x: X0 - 2.6, y: Y0, z: 'ground', components: { inspect: { text: 'note.sealedGate', requireItem: 'gate.key' } },
   note: 'MAP-09 the Sealed Gate: [E] Look at the gate (errands.js qi.sealedGate, story.md Sealed Gate texts). requireItem gate.key = the LAST quest reward; the hook always refuses (Part II after release, not built)' });

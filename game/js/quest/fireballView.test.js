@@ -48,7 +48,7 @@ function makeParticles() {
 function stubWorld(entities, wx) {
   return {
     state: {}, forEachEntity(fn) { entities.forEach(fn); },
-    raySegment(ax, ay, az, bx, by, bz, out) {
+    raySegmentRay(seg, out) { const ax = seg[0], ay = seg[1], az = seg[2], bx = seg[3], by = seg[4], bz = seg[5];
       if (wx === null) return false;
       const dx = bx - ax;
       if (Math.abs(dx) < 1e-12) return false;

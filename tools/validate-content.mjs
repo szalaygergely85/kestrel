@@ -78,6 +78,7 @@ const CLASSIC_SCRIPTS = [
   '../design/models/title.js',
   '../design/models/menu_ui.js',
   '../design/models/lantern.js',
+  '../design/models/pickups_voxel.js',
   '../design/models/brazier.js',
   '../design/models/lever.js',
   '../design/models/boulder.js',
@@ -1208,6 +1209,16 @@ async function main() {
   allErrors.push(...recipeFile.errors);
   try { allErrors.push(...await lintRegionsReal(ASSETS, packQuests.sites || {})); } catch (e) { allErrors.push(`regions: lint crashed: ${e.message}`); }
   for (const w of warnings) console.warn(`WARN ${w}`);
+  // CONTENT-LINT-01: `--lint` also runs tools/content-lint.mjs; its findings are printed as INFO/WARN and never fail validate-content
+  if (process.argv.includes('--lint')) {
+    // child process: content-lint loads its own world/assets and would collide with this process's registered globals
+    const { spawnSync } = await import('node:child_process');
+    const r = spawnSync(process.execPath, [fileURLToPath(new URL('./content-lint.mjs', import.meta.url))], { encoding: 'utf8', maxBuffer: 64 << 20 });
+    const lines = (r.stdout || '').split(/\r?\n/).filter((l) => /^R\d+ /.test(l));
+    for (const l of lines) console.warn(`LINT ${l}`);
+    console.log(`INFO content-lint: ${lines.length} finding(s) (advisory here; run node tools/content-lint.mjs for the exit code)`);
+    if (r.status === null || (r.status !== 0 && r.status !== 1)) console.warn(`WARN content-lint crashed: ${(r.stderr || '').split(/\r?\n/).filter(Boolean).slice(-2).join(' | ')}`);
+  }
   for (const i of infos) console.log(`INFO ${i}`);
   const meshOnlyText = meshOnlyCount ? `, ${meshOnlyCount} mesh-only model(s)` : '';
   if (allErrors.length) {

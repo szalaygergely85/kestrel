@@ -1,4 +1,6 @@
 // ME-06c1 (architecture.md 37.2): derived, load-time tree placements.
+import { buildCarpetClassMap } from "./carpet.js";
+import { decorHash, jitterCm, K_JX, K_JY } from "../mesh/decorScatter.js";
 export function hash2(ix, iy, seed) {
   let h = Math.imul(ix | 0, 0x8da6b343) ^ Math.imul(iy | 0, 0xd8163841) ^ seed;
   h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
@@ -231,6 +233,7 @@ export function validateDetailConfig(cfg, typeNames = DETAIL_TYPES) {
     for (const k of ['cellM', 'drawM', 'lodCells']) number(l[k], `${key}.${k}`, 0, false);
     for (const k of ['jitter', 'fill', 'maxSlope', 'clearM']) number(l[k], `${key}.${k}`, 0);
     if (l.fill > 1) bad(`${key}.fill`);
+    if (l.gpu !== undefined && typeof l.gpu !== 'boolean') bad(`${key}.gpu`); // ENV-01b (arch 38.62): GPU decor layer
     if (!l.ground || typeof l.ground !== 'object' || Array.isArray(l.ground)) bad(`${key}.ground`);
     l.ground = {};
     for (const [type, list] of Object.entries(layer.ground)) {
@@ -253,6 +256,8 @@ export function validateDetailConfig(cfg, typeNames = DETAIL_TYPES) {
         if (typeof species.shadow !== 'boolean') bad(`${skey}.shadow`);
         if (species.maxDistM !== undefined) number(species.maxDistM, `${skey}.maxDistM`, 0, false); // PERF-P4: per-species draw distance (m)
         if (typeof species.sway !== 'boolean') bad(`${skey}.sway`); // FOLIAGE-SWAY-01 part 2: explicit per-species flag, no name regex
+        if (species.grassLike !== undefined && typeof species.grassLike !== 'boolean') bad(`${skey}.grassLike`);
+        if (l.gpu && (species.collider !== undefined || species.shadow)) bad(`${skey}: gpu layer species must have no collider and shadow:false`);
         if (species.collider !== undefined) {
           const c = species.collider;
           if (!c || typeof c !== 'object' || Object.keys(c).length !== 1 || !(c.prism || c.box)) bad(`${skey}.collider`);
@@ -302,7 +307,7 @@ function structBlocks(st, x, y, m) {
 
 /** WS2-02: the detail scatter as a resumable job (see TreeScatterJob). Rows of every layer, then the tile sort. */
 export class DetailScatterJob {
-  constructor(terrain, structures = [], keepOut = [], cfg = terrain.recipe.recipe.detail, trees = null) {
+  constructor(terrain, structures = [], keepOut = [], cfg = terrain.recipe.recipe.detail, trees = null, opts = null) {
     cfg = validateDetailConfig(cfg);
     const g = terrain.near;
     if (!g) throw new Error('scatterDetail: terrain.near must be baked');
@@ -336,7 +341,14 @@ export class DetailScatterJob {
     }
     const bio = compileBiomes(terrain.recipe, null);
     Object.assign(this, { bio, terrain, cfg, g, x1, y1, tx0, ty0, tilesX, tilesY, structureTiles, speciesDefs, layers,
-      points: [], trees, _treeGrid: null, exclusions: cfg.exclude.concat(keepOut), layer: 0, iy: 0, rowInit: false, result: null });
+      points: [], trees, _treeGrid: null, exclusions: cfg.exclude.concat(keepOut), layer: 0, iy: 0, rowInit: false, result: null,
+      decorGpu: !!(opts && opts.decorGpu), carpet: null, decor: null, _mask: null });
+    if (this.decorGpu) {
+      this.decor = { layers: [] };
+      // ENV-01b fix: the band's OWN class map (never world.carpet, which is the live near band and is rewritten in place)
+      const cc = opts && opts.carpetCtx;
+      if (cc && cc.cfg && cc.cfg.variants) this.carpet = buildCarpetClassMap(terrain, cc.recipe, cc.cfg, null, structures);
+    }
   }
   step(msBudget) {
     if (this.result) return true;
@@ -344,9 +356,9 @@ export class DetailScatterJob {
     while (this.layer < this.layers.length) {
       const l = this.layers[this.layer].l;
       if (!this.rowInit) { this.iy = Math.floor(this.g.y0 / l.cellM); this.rowInit = true; }
-      if (this.iy >= Math.ceil(this.y1 / l.cellM)) { this.layer++; this.rowInit = false; continue; }
+      if (this.iy >= Math.ceil(this.y1 / l.cellM)) { this._mask = null; this.layer++; this.rowInit = false; continue; }
       const r0 = _now();
-      this._row(this.layer, this.iy++);
+      if (this.decorGpu && l.gpu) this._maskRow(this.layer, this.iy++); else this._row(this.layer, this.iy++);
       const t1 = _now(), dr = t1 - r0;
       this._rowMs = this._rowMs > dr ? this._rowMs * 0.98 + dr * 0.02 : dr; // WM-02b: predictive stop (never overshoot by a row)
       if (t1 - t0 + this._rowMs >= msBudget) break;
@@ -395,6 +407,54 @@ export class DetailScatterJob {
       if (points.length > cfg.maxPlacements) throw new Error('detail.maxPlacements: placement cap exceeded');
     }
   }
+  /**
+   * ENV-01b (arch 38.62): one lattice row of a `gpu` layer's decor mask. Lattice anchored to the WORLD origin; the root is the
+   * twin's (decorScatter.js) integer-cm jittered root. Byte = bits 0-6 keep prob round(fill*mult*127) (0 = never, the 37.4 rules
+   * evaluated at the root), bit 7 = root inside a carpet area. Roots outside the band rect stay 0.
+   */
+  _maskRow(layer, iy) {
+    const { terrain, cfg, g, x1, y1, tx0, ty0, tilesX, structureTiles, exclusions, bio } = this;
+    const { l } = this.layers[layer];
+    const cellCm = Math.round(l.cellM * 100), jitCm = Math.round(l.jitter * 100);
+    const ix0 = Math.floor(g.x0 / l.cellM), ix1 = Math.ceil(x1 / l.cellM), iy0 = Math.floor(g.y0 / l.cellM);
+    let m = this._mask;
+    if (!m) {
+      m = this._mask = { name: l.name, mask: new Uint8Array((ix1 - ix0) * (Math.ceil(y1 / l.cellM) - iy0)), ix0, iy0, w: ix1 - ix0, h: Math.ceil(y1 / l.cellM) - iy0 };
+      this.decor.layers.push(m);
+    }
+    const row = (iy - iy0) * m.w;
+    for (let ix = ix0; ix < ix1; ix++) {
+      const bx = decorRootCm(ix, iy, l.seed, cellCm, jitCm);
+      const x = bx[0] / 100, y = bx[1] / 100;
+      let fill = l.biomeOnly ? 0 : l.fill;
+      if (bio !== null) {
+        const d = bio.detail[bio.biomeAt(x, y)];
+        if (d !== undefined && d[l.name] !== undefined) fill = Math.min(1, l.fill * d[l.name]);
+      }
+      const prob = Math.round(fill * 127);
+      if (prob === 0) continue;
+      if (x < g.x0 || y < g.y0 || x >= x1 || y >= y1) continue;
+      const t = terrain.groundTypeAt(x, y), list = l.ground[terrain.typeName(t)];
+      if (!list || !list.length) continue;
+      if (terrain.groundTypeAt(x - l.clearM, y - l.clearM) !== t ||
+          terrain.groundTypeAt(x - l.clearM, y + l.clearM) !== t ||
+          terrain.groundTypeAt(x + l.clearM, y - l.clearM) !== t ||
+          terrain.groundTypeAt(x + l.clearM, y + l.clearM) !== t) continue;
+      terrain.groundNormalAt(x, y, detailNormal);
+      if (Math.hypot(detailNormal.x, detailNormal.y) / detailNormal.z > l.maxSlope) continue;
+      const boxes = structureTiles[Math.floor(x / cfg.tileM) - tx0 + (Math.floor(y / cfg.tileM) - ty0) * tilesX];
+      let blocked = false;
+      if (boxes) for (const st of boxes) { if (structBlocks(st, x, y, cfg.structClearM)) { blocked = true; break; } }
+      if (blocked || exclusions.some(e => detailExcluded(x, y, e))) continue;
+      m.mask[row + ix - ix0] = prob | (this._inCarpet(x, y) ? 128 : 0);
+    }
+  }
+  _inCarpet(x, y) {
+    const c = this.carpet;
+    if (!c || !c.classMap || !(c.cellM > 0)) return false;
+    const i = Math.floor((x - c.x0) / c.cellM), j = Math.floor((y - c.y0) / c.cellM);
+    return i >= 0 && j >= 0 && i < c.w && j < c.h && c.classMap[j * c.w + i] !== 0;
+  }
   /** WM-07b: true when the picked collide species at (x,y) lies within trunkR + own radius + 0.3 m of a tree of the same band. */
   _onTrunk(x, y, list, pickU) {
     let pick = pickU * list.reduce((sum, s) => sum + s.weight, 0), s = list[list.length - 1];
@@ -435,12 +495,13 @@ export class DetailScatterJob {
       const i = cursor[p.tile]++;
       for (const k of ['x', 'y', 'z', 'yawDeg', 'species', 'r2']) out[k][i] = p[k];
     }
+    if (this.decor) out.decorLayerNames = this.decor.layers.map(m => m.name);
     this.result = out; this.points = null; this.structureTiles = null;
   }
 }
 
-export function scatterDetail(terrain, structures = [], keepOut = [], cfg = terrain.recipe.recipe.detail, trees = null) {
-  const job = new DetailScatterJob(terrain, structures, keepOut, cfg, trees);
+export function scatterDetail(terrain, structures = [], keepOut = [], cfg = terrain.recipe.recipe.detail, trees = null, opts = null) {
+  const job = new DetailScatterJob(terrain, structures, keepOut, cfg, trees, opts);
   job.step(Infinity);
   return job.result;
 }
@@ -449,3 +510,12 @@ export function scatterDetail(terrain, structures = [], keepOut = [], cfg = terr
 export function detailDrawM(layerDrawM, speciesMaxDistM) {
   return speciesMaxDistM > 0 && speciesMaxDistM < layerDrawM ? speciesMaxDistM : layerDrawM;
 }
+
+/** ENV-01b: the twin's jittered root of lattice cell (ix,iy) in integer cm -> [xcm, ycm] (shared scratch array, copy to keep). */
+const _root = [0, 0];
+function decorRootCm(ix, iy, seed, cellCm, jitCm) {
+  _root[0] = Math.imul(ix, cellCm) + jitterCm(decorHash(ix, iy, seed >>> 0, K_JX), jitCm);
+  _root[1] = Math.imul(iy, cellCm) + jitterCm(decorHash(ix, iy, seed >>> 0, K_JY), jitCm);
+  return _root;
+}
+export { decorRootCm };

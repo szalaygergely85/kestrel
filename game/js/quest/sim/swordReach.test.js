@@ -19,7 +19,7 @@ function run(dist, dz, slope, cfgOver, hard) {
     terrain: { groundAt: ground },
     forEachEntity(fn) { for (const e of ents) fn(e); },
     get(id) { const e = ents.find((x) => x.id === id); return e ? { data: e, id, play() {} } : null; },
-    raySegment(ax, ay, az, bx, by, bz, o) { // march, blocked where z < ground
+    raySegmentRay(seg, o) { const ax = seg[0], ay = seg[1], az = seg[2], bx = seg[3], by = seg[4], bz = seg[5]; // march, blocked where z < ground
       const n = 64;
       for (let i = 1; i <= n; i++) {
         const t = i / n, x = ax + (bx - ax) * t, y = ay + (by - ay) * t, z = az + (bz - az) * t;

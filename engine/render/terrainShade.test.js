@@ -1,5 +1,6 @@
 // US-016 Node tests for `shadeTerrain` (docs/architecture.md 14.4 item 5,
 // near-detail extension 23.4).
+import { allocProbe, skipNote } from '../../tools/allocProbe.mjs';
 import { shadeTerrain, hashFast01, perCellHashSize, shadeTerrainCells, groundAlbedo, groundTierOffset, patchNoise, valueNoise, NOISE_CELLS, NOISE_SALT, PATCH_K, shadeGrass, grassTableFor, GRASS_GX_HAS, GRASS_BACKLIGHT_K, CLIFF_NZ, makeFarGrass, farGrassFill } from './terrainShade.js';
 import { Terrain } from '../world/Terrain.js';
 import { GBuffer, KIND_TERRAIN } from './GBuffer.js';
@@ -500,9 +501,8 @@ export function patchShape(shade) {
   console.log('OB-104b golden sweep: ' + changed + ' of 2000 cells changed, ' + steep + ' have N.z < 0.5');
   check('OB-104b only N.z < 0.5 cells change (' + bad + ' flat cells changed)', bad === 0 && changed > 0 && changed <= steep);
   // 0 alloc
-  const h0 = process.memoryUsage().heapUsed;
-  for (let k = 0; k < 200000; k++) shadeTerrain(100, 0, 0.9, k, 7, 0, cc, o, 0, 12.3, 1, 0, 0.1);
-  check('OB-104b 0 alloc (' + (process.memoryUsage().heapUsed - h0) + ' B)', process.memoryUsage().heapUsed - h0 < 500000);
+  const pr = allocProbe((n) => { for (let k = 0; k < n; k++) shadeTerrain(100, 0, 0.9, k, 7, 0, cc, o, 0, 12.3, 1, 0, 0.1); }, { n: 20000 });
+  if (!skipNote(pr, 'OB-104b 0 alloc')) check('OB-104b 0 alloc (' + pr.perCall.toFixed(2) + ' B/call)', pr.perCall <= 1);
 }
 // G2 + P3: far grass tier - nothing inside the carpet radius, ramp colour + level 254 beyond, off = identical
 {
@@ -518,6 +518,74 @@ export function patchShape(shade) {
   check('farGrass: beyond the fade -> level 254 and greener', ob.level === 254 && ob.fg[1] > oa.fg[1]);
   rec.on = 0; shadeTerrain(40, 1, 0.9, 100, 100, 0, { ...ctx, farGrass: rec }, ob);
   check('farGrass: off = identical', ob.glyph === oa.glyph && ob.fg[1] === oa.fg[1] && ob.level === 255);
+}
+// OB-121b: near underlay (carpet.underlay) - weight max(under, ramp), also in the close band; 0 = bit-identical
+{
+  const mk = (under) => farGrassFill(makeFarGrass(), { radiusM: 20, underlay: under, variants: [{ ground: ['grass'], ramp: [[10, 40, 10], [30, 200, 30], [60, 255, 60]], areas: [1] }] }, ['water', 'grass'], { on: true, radiusScale: 1, farGrass: true }, null);
+  const r0 = mk(0), r6 = mk(0.6), cc = { ...ctx, closeBand: 40 };
+  check('underlay: rec.under 0 / 0.6', r0.under === 0 && r6.under === 0.6);
+  const mkO = () => ({ glyph: 0, level: 0, fg: new Uint8Array(3), bg: new Uint8Array(3) });
+  let ident = true, ulGrass = 0, n = 0, greener = 0, waterSame = true;
+  const o0 = mkO(), o6 = mkO(), ob = mkO();
+  for (let k = 0; k < 4000; k++) {
+    const t = 1.5 + (k % 80) * 0.6, u = 100 + (k * 7) % 53, v = 200 + (k * 13) % 41, tm = (k % 5) * 0.3, b = 0.5 + (k % 7) * 0.07;
+    shadeTerrain(t, 1, b, u, v, tm, cc, ob);                                         // no farGrass at all
+    shadeTerrain(t, 1, b, u, v, tm, { ...cc, farGrass: r0 }, o0);
+    if (t < 20 && (o0.glyph !== ob.glyph || o0.level !== ob.level || o0.fg[0] !== ob.fg[0] || o0.fg[1] !== ob.fg[1] || o0.fg[2] !== ob.fg[2] || o0.bg[1] !== ob.bg[1])) ident = false;
+    shadeTerrain(t, 1, b, u, v, tm, { ...cc, farGrass: r6 }, o6);
+    if (t < 20) { n++; if (o6.level === 255 && o6.fg[1] !== ob.fg[1]) ulGrass++; if (o6.fg[1] > ob.fg[1]) greener++; }
+    shadeTerrain(t, 0, b, u, v, tm, { ...cc, farGrass: r6 }, o6); shadeTerrain(t, 0, b, u, v, tm, cc, ob);   // water: no far-grass entry
+    if (o6.glyph !== ob.glyph || o6.fg[1] !== ob.fg[1] || o6.level !== ob.level) waterSame = false;
+  }
+  check('underlay 0: shade bytes identical to no far grass (inside the radius, close band incl.)', ident);
+  check('underlay 0.6 (OB-154): every grass cell inside the radius is static (level 255) and tinted (' + ulGrass + '/' + n + ')', ulGrass === n);
+  check('underlay 0.6: grass cells are greener than the calm ground (' + greener + '/' + n + ')', greener > n * 0.8);
+  check('underlay: types without a far-grass entry untouched', waterSame);
+  // calm wind (cyc 0): two frames at different times are byte-identical
+  let calm = true; const a = mkO(), c = mkO();
+  for (let k = 0; k < 500; k++) { const t = 1.5 + (k % 50) * 0.5; shadeTerrain(t, 1, 0.8, 100 + k, 50, 0, { ...cc, farGrass: r6 }, a); shadeTerrain(t, 1, 0.8, 100 + k, 50, 9.7, { ...cc, farGrass: r6 }, c); if (a.glyph !== c.glyph || a.fg[1] !== c.fg[1] || a.bg[1] !== c.bg[1]) calm = false; }
+  check('underlay: calm wind frames byte-identical', calm);
+}
+// OB-121b AC(a): meadow pose (1470, 1035), eye 1.6 m, pitch -12, 480x180, flat grass ground: share of 1.5-6 m band cells that are grass-coloured
+// (underlay alone, no blades counted: the carpet hits only add to it) must be >= 85 %. Underlay 0 as the reference (calm ground).
+{
+  const COLS = 480, ROWS = 180, TANX = Math.tan(37.5 * Math.PI / 180), TANY = TANX * ROWS / COLS * 2, P = -12 * Math.PI / 180, EYE = 1.6;
+  const recU = farGrassFill(makeFarGrass(), { radiusM: 20, underlay: 0.6, variants: [{ ground: ['grass'], ramp: [[10, 60, 10], [40, 190, 40], [90, 240, 80]], areas: [1] }] }, ['grass', 'water'], { on: true, radiusScale: 1, farGrass: true }, null);
+  const rec0 = farGrassFill(makeFarGrass(), { radiusM: 20, variants: [{ ground: ['grass'], ramp: [[10, 60, 10], [40, 190, 40], [90, 240, 80]], areas: [1] }] }, ['grass', 'water'], { on: true, radiusScale: 1, farGrass: true }, null);
+  const cc = { ...ctx, closeBand: 40 }, oc = { glyph: 0, level: 0, fg: new Uint8Array(3), bg: new Uint8Array(3) }, og = { glyph: 0, level: 0, fg: new Uint8Array(3), bg: new Uint8Array(3) };
+  const cp = Math.cos(P), sp = Math.sin(P);
+  let band = 0, grass = 0, grass0 = 0;
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+    const b = (1 - (2 * (y + 0.5)) / ROWS) * TANY, a = ((2 * (x + 0.5)) / COLS - 1) * TANX;
+    const dx = cp - b * sp, dy = -a, dz = sp + b * cp, l = Math.hypot(dx, dy, dz);
+    if (!(dz < 0)) continue;
+    const t = EYE / (-dz / l), hd = t * Math.hypot(dx, dy) / l;
+    if (hd < 1.5 || hd > 6) continue;
+    const u = 1470 + 0.7 * dx / l * t - 0.7 * dy / l * t, v = 1035 + 0.7 * dy / l * t + 0.7 * dx / l * t;
+    band++;
+    shadeTerrain(t, 0, 0.8, u, v, 0, { ...cc, farGrass: recU }, oc); shadeTerrain(t, 0, 0.8, u, v, 0, { ...cc, farGrass: rec0 }, og);
+    if (oc.fg[1] > og.fg[1]) grass++;
+    if (og.level === 254 || og.fg[1] > oc.fg[1]) grass0++;
+  }
+  check('underlay meadow pose: band has cells (' + band + ')', band > 2000);
+  check('underlay meadow pose: >= 85 % of the 1.5-6 m cells grass-coloured (' + (100 * grass / band).toFixed(1) + ' %, without underlay ' + (100 * grass0 / band).toFixed(1) + ' %)', grass >= 0.85 * band && grass0 === 0);
+}
+// OB-154: wind ON - the underlay is static: frames 0.33 s apart are byte-identical for every cell in the 1.5-12 m band where the underlay wins
+{
+  const wind = { dirX: 0.8, dirY: 0.6, P: 4, travel: 6 };
+  const cfgU = { radiusM: 20, underlay: 0.6, variants: [{ ground: ['grass'], ramp: [[10, 60, 10], [40, 190, 40], [90, 240, 80]], areas: [1] }] };
+  const recW = farGrassFill(makeFarGrass(), cfgU, ['grass', 'water'], { on: true, radiusScale: 1, farGrass: true }, wind);
+  const cc = { ...ctx, closeBand: 40, farGrass: recW }, mkO = () => ({ glyph: 0, level: 0, fg: new Uint8Array(3), bg: new Uint8Array(3) });
+  const a = mkO(), b = mkO(); let n = 0, changed = 0;
+  for (let k = 0; k < 3000; k++) {
+    const t = 1.5 + (k % 60) * 0.175, u = 1470 + (k * 7) % 53, v = 1035 + (k * 13) % 41; // t up to 12 m < ramp start (20 m)
+    shadeTerrain(t, 0, 0.8, u, v, 10, cc, a); shadeTerrain(t, 0, 0.8, u, v, 10.33, cc, b);
+    n++; if (a.glyph !== b.glyph || a.level !== b.level || a.fg[0] !== b.fg[0] || a.fg[1] !== b.fg[1] || a.fg[2] !== b.fg[2] || a.bg[0] !== b.bg[0] || a.bg[1] !== b.bg[1] || a.bg[2] !== b.bg[2]) changed++;
+  }
+  check('underlay + wind on: 0 changed cells in the 1.5-12 m band over 0.33 s (' + changed + '/' + n + ')', changed === 0);
+  let anim = 0; const far = { ...cc, farGrass: recW };
+  for (let k = 0; k < 300; k++) { const t = 40 + k * 0.1, u = 1500 + k; shadeTerrain(t, 0, 0.8, u, 1035, 10, far, a); shadeTerrain(t, 0, 0.8, u, 1035, 10.33, far, b); if (a.level === 254 && (a.glyph !== b.glyph || a.fg[1] !== b.fg[1])) anim++; }
+  check('beyond the carpet the ramp shimmer still animates with wind (' + anim + ' cells changed)', anim > 0);
 }
 console.log(`terrainShade.test.js: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

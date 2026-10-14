@@ -1032,9 +1032,9 @@ Notes: `rook.meet` gives the quest (main quest, no choice). `rook.call.ready` is
 | `rook.ford` (3) | ROOK | `Gone? No. Kept. Kept is different.` | 34 |
 | `rook.ford` (4) | YOU | `You took it.` | 12 |
 | `rook.ford` (5) | ROOK | `It fell. I found it. Then it was mine.` | 38 |
-| `rook.ford` (6) | ROOK | `Old house roof, by the crossing. Take it.` | 41 |
+| `rook.ford` (6) | ROOK | `Old house by the crossing. Inside.` | 34 |
 | `rook.ford` (7) | ROOK | `I have other shinies. Many.` | 27 |
-| `rook.mirror.active` | ROOK | `Old house roof. By the crossing. Climb.` | 39 |
+| `rook.mirror.active` | ROOK | `Old house by the crossing. Look inside.` | 39 |
 | `rook.mirror.done` (1) | ROOK | `It blinks. Like Bend. Like the far one.` | 39 |
 | `rook.mirror.done` (2) | ROOK | `My glass, your stone. A fair loan.` | 34 |
 | `rook.ford.repeat` | ROOK | `North, smoke. Fires. People, maybe. Go look.` | 44 |
@@ -2050,3 +2050,9 @@ Notes:
 - Offers are images, not speech: the relays have no voice of their own in canon, so the "ask" is what the bowl shows. Wick reads it.
 - Strand: the five "thin lines" are the arrows; the journal makes it plain. Hand-in is the Downs Relay, return text unchanged.
 - Signal Hill's done line echoes its wake line on purpose; the pattern itself is not restated.
+
+## Waystones (D-080, OB-146)
+Owner: "remove relays, i like waystones". Player text never says "relay": every regional relay is a Waystone (same model as the tower stone). Internal ids/keys keep "relay".
+- `q.burl.waystones` (Burl, after she sees the crystal, `bear.q.ready.5b`): "Wake the waystones. They heal you, / save your path, and beasts fear / their light."
+- `notice.waystone.first` (first wake of any waystone): "Waystone woken: travel (M), heal + save, new task." (the last part only when a task exists)
+- Names: "Bend Waystone", "Ford Waystone", "Palisade Waystone" ... (place.relay.<id> keys keep their ids); prompts "[E] Touch the waystone", "[E] Look at the waystone".

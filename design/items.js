@@ -295,9 +295,9 @@
                ['LPddd', ' Ldd ', '  d  '])
   };
   defs['relay.mirror'] = {
-    id: 'relay.mirror', name: 'Relay Glass', kind: 'key', stackMax: 1, hand: false, inPack: true,
+    id: 'relay.mirror', name: 'Waystone Glass', kind: 'key', stackMax: 1, hand: false, inPack: true,
     desc: 'Round, silvered, scratched by claws.',
-    use: { none: 'Quest item - the Ford Relay needs it (mq.ford.mirror)' },
+    use: { none: 'Quest item - the Ford Waystone needs it (mq.ford.mirror)' },
     glyph: { ch: 'o', c: 'mirror' },
     icon: icon([' .-. ', '( o )', " '-' "],
                [' sss ', 's S s', ' sss '])
@@ -311,9 +311,9 @@
                ['hhhhh', 'hqqqh', 'hhhhh'])
   };
   defs['relay.brass'] = {
-    id: 'relay.brass', name: 'Relay Collar', kind: 'key', stackMax: 1, hand: false, inPack: true,
+    id: 'relay.brass', name: 'Brass Collar', kind: 'key', stackMax: 1, hand: false, inPack: true,
     desc: 'A green brass collar, cut with glyphs.',
-    use: { none: 'Quest item - the Outwall Relay needs it (mq.ow.relay)' },
+    use: { none: 'Quest item - the Outwall Waystone needs it' },
     glyph: { ch: '=', c: 'brass' },
     icon: icon([' .=. ', '( o )', " '=' "],
                [' AAA ', 'A J A', ' AAA '])
@@ -530,15 +530,15 @@
     equip: { slot: 'quiver', tier: 'worn', def: 0 }
   };
   defs['potion.hp'] = {
-    id: 'potion.hp', name: 'Red Draught', kind: 'potion', stackMax: 5, hand: false, inPack: true,
-    desc: 'Heals two hearts. Placeholder copy.',
+    id: 'potion.hp', name: 'Health Potion', kind: 'potion', stackMax: 5, hand: false, inPack: true,
+    desc: 'Heals two hearts.',
     use: { heal: 2, unit: 'hearts', time: 0.6 },
     glyph: { ch: '!', c: 'vital' },
     icon: icon(['  _  ', ' (R) ', ' \\_/ '], ['  g  ', ' cLc ', ' ccc '])
   };
   defs['potion.mp'] = {
-    id: 'potion.mp', name: 'Blue Draught', kind: 'potion', stackMax: 5, hand: false, inPack: true,
-    desc: 'Restores magic. Not dropped yet.',
+    id: 'potion.mp', name: 'Mana Potion', kind: 'potion', stackMax: 5, hand: false, inPack: true,
+    desc: 'Restores magic.',
     use: { mp: 2, unit: 'mana', time: 0.6, dropped: false },
     glyph: { ch: '!', c: 'mana' },
     icon: icon(['  _  ', ' (M) ', ' \\_/ '], ['  g  ', ' qmq ', ' qqq '])

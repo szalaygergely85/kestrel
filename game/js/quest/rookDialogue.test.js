@@ -38,7 +38,7 @@ const R = (t) => 'ROOK: ' + t;
 { const w = walk(mk('s.mq.bend.call.done')); ok('repeat at the Bend', w.said.length === 1 && w.said[0] === R('River. West. Do not drown, fell-bird.')); }
 { const f = mk('s.mq.bend.call.done', 's.mq.ford.mirror.available'); const w = walk(f);
   ok('ford: 7 lines, accept flag, wins over bend.done', w.said.length === 7 && w.said[0] === R('Slow walker. Wet boots?') && f.s.has('s.mq.ford.mirror.accept')); }
-{ const w = walk(mk('s.mq.bend.call.done', 's.mq.ford.mirror.active')); ok('mirror active hint', w.said.length === 1 && /Climb/.test(w.said[0])); }
+{ const w = walk(mk('s.mq.bend.call.done', 's.mq.ford.mirror.active')); ok('mirror active hint', w.said.length === 1 && /Look inside/.test(w.said[0])); }
 { const f = mk('s.mq.bend.call.done', 's.waystone.ws_ford.woken'); const w1 = walk(f);
   ok('mirror done: 2 lines once, sets rook.mirror.told', w1.said.length === 2 && f.s.has('rook.mirror.told'));
   const w2 = walk(f); ok('then the ford repeat (smoke hint)', w2.said.length === 1 && /smoke/.test(w2.said[0])); 

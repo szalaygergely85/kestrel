@@ -5,7 +5,7 @@
   "barks": {
     "life.chat.any.1": [{"who":"npc","text":"Frost on the barley again."},{"who":"npc","text":"Then we cut early. Again."}],
     "life.chat.any.2": [{"who":"npc","text":"Wolves sang till dawn."},{"who":"npc","text":"Count the geese twice, then."}],
-    "life.chat.any.3": [{"who":"npc","text":"The relay hummed all night."},{"who":"npc","text":"Let it. Better than the quiet."}],
+    "life.chat.any.3": [{"who":"npc","text":"The waystone hummed all night."},{"who":"npc","text":"Let it. Better than the quiet."}],
     "life.chat.any.4": [{"who":"npc","text":"Has anyone seen my good knife?"},{"who":"npc","text":"Ask the crows. Or Dorrin."}],
     "life.chat.any.5": [{"who":"npc","text":"Wind's off the Wall today. Smell it?"},{"who":"npc","text":"Coal smoke. I don't miss it."}],
     "life.chat.any.6": [{"who":"npc","text":"Another nail gone from the fence."},{"who":"npc","text":"Goblins. Or the smith."}],

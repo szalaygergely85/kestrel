@@ -1199,3 +1199,18 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 3. **Progression (x), OWNER-DECIDED 2026-10-09:** NO XP and no player level (D-020 confirmed). Progression = higher-tier items (weapons, armour, shields; found, crafted or bought) and stronger spells (spell tiers/upgrades unlocked by quests, chests, bosses). Zones have fixed levels; beasts have fixed levels per zone, shown as a badge on the health bar or as a tier colour; no enemy scaling. NPC fighting companions = a later epic.
 4. **Biomes:** start meadow, pine/oak forest, flower glades inside the forest (hand-placed set pieces first, generated later), far-side open fields, rocky foothills, river banks / sea shore. Designer look sheets (forest + flower glade) are approved by the owner before any world placement.
 **Consequences:** new epic EP-WORLD-VALLEY (`docs/epics/ep-world.md`, 5 slices: terrain borders/river/bridges -> ALPHA-01f + QUAT-GROUND-01 -> biome map + forest + glade showcase -> far side -> item tiers + spell tiers + beast level badge). Mesh imports keep the MESH-SIMP/UVMAP budgets and colliders. The roadmap's old "EP-WORLD part 2" streaming line and M5 "new region" (US-100) shrink to work inside the valley. Licence entries become a gate on each new pack.
+
+## D-079
+**2026-10-14, owner (PC-B session).** ENV-02 ground richness: the owner approved `design/preview/ground-richness.html` ("this is good") as shown, i.e. the default pick **ground A** for all six biomes in `design/look/biomeLook.js` (meadow, forest, glade, fields, foothills, shore). ENV-02 code may start (architect note first). ENV-03 atmosphere pick still open.
+
+## D-080
+**2026-10-14, owner (PC-B session, OB-146).** "remove relays, i like waystones": the relay concept is removed from the player view. Every regional relay becomes a **Waystone** - same voxel model as the tower Waystone, name "Waystone" in every prompt, map label, quest and hint (no "relay" word in player text; internal ids may stay). Functions unchanged: fast travel (M), heal + save, region side quest (blue !), beasts fear its light. Burl explains waystones in one plain line when she gives the crystal; the first wake shows a short card of what unlocked. Supersedes the relay look of WMP-01/05 and WM-13 for the player.
+
+## D-081
+**2026-10-14, owner (PC-B session, OB-151).** Item stats: the fixed tier table (defence 1-5, dmg x1-x2) is rejected. Items get classic RPG stats: **min-max damage, crit (chance + damage), armour, and the attributes STR / DEX / INT**. PO writes the epic (stat meanings, drop rolls, rarity, inventory display), owner approves before code.
+
+## D-082
+**2026-10-14, owner (PC-B session).** Quests: "proper pick up, proper return... mostly characters, not items, on the roof which not reachable". Every quest is GIVEN by a character (NPC/animal you talk to) and RETURNED to a character with a hand-in conversation + reward there. Objects (packet, notice post, waystones) are never quest givers - only targets (fetch / look / use). Every quest character stands where the player can walk up and talk (never on roofs, OB-147). Supersedes object-given errands (QL-12 packet, WMP-01 waystone errands): they move to NPCs near those places.
+
+## D-083
+**2026-10-14, owner (PC-B session, OB-153/150).** "create 30 types for this big map at least. respawn time too, walking around, and proper AI, proper AI. so could be easy, mid and hard game!": the bestiary grows to >= 30 creature types across the regions (river/water creatures like crocodiles included), each with a respawn timer, roaming/patrol behaviour and proper AI; a difficulty setting Easy / Normal / Hard. PO epic + architect (AI system) + designer (voxel creatures, realistic, 4 legs for animals).

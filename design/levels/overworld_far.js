@@ -171,20 +171,20 @@
               return { grass: list, flowers: list, alpine: list };
             })() },
           // reeds in wet ground (fen / reed type), tall common grass stands in for reeds (no reed mesh exists)
-          { name: 'reeds', seed: 38417, cellM: 3.5, jitter: 1.4, fill: 1, biomeOnly: true, maxSlope: 0.3, clearM: 0.8, drawM: 60, lodCells: 4,
-            ground: { fen: [ { mesh: 'quaternius/Grass_Common_Tall', weight: 3, sinkM: 0.05, shadow: false, sway: true, maxDistM: 45 },
-                             { mesh: 'quaternius/Grass_Wispy_Tall', weight: 1, sinkM: 0.05, shadow: false, sway: true, maxDistM: 45 } ],
-                      reeds: [ { mesh: 'quaternius/Grass_Common_Tall', weight: 3, sinkM: 0.05, shadow: false, sway: true, maxDistM: 45 },
-                               { mesh: 'quaternius/Grass_Wispy_Tall', weight: 1, sinkM: 0.05, shadow: false, sway: true, maxDistM: 45 } ] } },
+          { name: 'reeds', gpu: true, seed: 38417, cellM: 3.5, jitter: 1.4, fill: 1, biomeOnly: true, maxSlope: 0.3, clearM: 0.8, drawM: 60, lodCells: 4,
+            ground: { fen: [ { mesh: 'quaternius/Grass_Common_Tall', weight: 3, sinkM: 0.05, shadow: false, sway: true, grassLike: true, maxDistM: 45 },
+                             { mesh: 'quaternius/Grass_Wispy_Tall', weight: 1, sinkM: 0.05, shadow: false, sway: true, grassLike: true, maxDistM: 45 } ],
+                      reeds: [ { mesh: 'quaternius/Grass_Common_Tall', weight: 3, sinkM: 0.05, shadow: false, sway: true, grassLike: true, maxDistM: 45 },
+                               { mesh: 'quaternius/Grass_Wispy_Tall', weight: 1, sinkM: 0.05, shadow: false, sway: true, grassLike: true, maxDistM: 45 } ] } },
           // wild flower clumps + low plants on meadow ground, sparse pebbles on sand / alpine ground
-          { name: 'wildflowers', seed: 38419, cellM: 6, jitter: 2.2, fill: 1, biomeOnly: true, maxSlope: 0.3, clearM: 0.8, drawM: 50, lodCells: 4,
+          { name: 'wildflowers', gpu: true, seed: 38419, cellM: 6, jitter: 2.2, fill: 1, biomeOnly: true, maxSlope: 0.3, clearM: 0.8, drawM: 50, lodCells: 4,
             ground: (function () {
               var list = [ { mesh: 'quaternius/Flower_3_Single', weight: 4, sinkM: 0.03, shadow: false, sway: true, maxDistM: 40 },
                            { mesh: 'quaternius/Plant_7_Big', weight: 3, sinkM: 0.03, shadow: false, sway: true, maxDistM: 40 },
                            { mesh: 'quaternius/Fern_1', weight: 1, sinkM: 0.03, shadow: false, sway: true, maxDistM: 40 } ];
               return { flowers: list, grass: list, alpine: list };
             })() },
-          { name: 'pebbles', seed: 38423, cellM: 5, jitter: 2.0, fill: 1, biomeOnly: true, maxSlope: 0.3, clearM: 0.6, drawM: 40, lodCells: 4,
+          { name: 'pebbles', gpu: true, seed: 38423, cellM: 5, jitter: 2.0, fill: 1, biomeOnly: true, maxSlope: 0.3, clearM: 0.6, drawM: 40, lodCells: 4,
             ground: (function () {
               var list = [ { mesh: 'quaternius/Pebble_Round_1', weight: 1, sinkM: 0.03, shadow: false, maxDistM: 35 },
                            { mesh: 'quaternius/Pebble_Round_3', weight: 1, sinkM: 0.03, shadow: false, maxDistM: 35 },
@@ -204,7 +204,8 @@
       // Technique reference: SMM Stylized Grass (MIT, SirMishMash), see docs/licences.md. Default glyphs: base ',' mid '|' tip "'" leanL '\' leanR '/'.
       carpet: {
         cutGround: ['path', 'water', 'rock'], // MASK-e2 (38.52 OB-096): no grass on road / track / river bed / bare rock (mask stamp)
-        seed: 40731, radiusM: 12, patchM: 6, classCellM: 2, classJitterM: 0.8, gustM: 5, travelM: 1.5, bladeW: 0.06,
+        seed: 40731, radiusM: 20, underlay: 0, // OB-121b: far-grass weight floor so the ground between near tufts is grass-coloured
+        patchM: 6, classCellM: 2, classJitterM: 0.8, gustM: 5, travelM: 1.5, bladeW: 0.06,
         variants: [
           // dark lush river bank: ragged strips ~14 m off the river centre x_r(y) (water = centre +- 10), broken by gaps; the road +
           // ford lane (y ~1054-1080), the jetty (1043,1058) and the Outwall track (y ~1031-1035 west bank) stay clear.
@@ -529,16 +530,34 @@
   // biomeAt(x, y) -> u8: argmax of w_i = smooth(+b/2, -b/2, sdf_i) + 1.0 * (hash01_i(floor(x/2), floor(y/2)) - 0.5) (b = blendM_i; w = 0.5 on
   // the area edge, so two touching biomes mix over ~b/2 either side; each biome has its own 2 m hash), biome 0 (meadow) when no weight beats BIO_BASE. Inside the keep rect it returns 0 by branch. Table `geo.biomes[id]` is read by engine/world/scatter.js.
   var BIO_F = null, BIO_KEYS = [], BIO_IDS = [], BIO_BLEND = [], BIO_BASE = 0.35, BIO_NOISE = 1.0;   // noise amp 1.0 (not 0.25): 0.25 gave a ~5 m mixed edge, 1.0 gives ~blendM
-  function biomeAt(x, y) {
+  function biomeAt(x, y, clean) {   // clean = true: skip the 2 m hash term (ENV-02a test reference; biomeBlend is the same without it)
     if (BIO_F === null || inKeep(x, y)) return 0;
     var ix = Math.floor(x / 2), iy = Math.floor(y / 2), best = 0, bw = BIO_BASE;
     for (var i = 0; i < BIO_IDS.length; i++) {
       var b = BIO_BLEND[i] * 0.5, d = BIO_F.sdf(BIO_KEYS[i], x, y);
       if (d >= b) continue;
-      var w = smooth(b, -b, d) + BIO_NOISE * (hash(ix, iy, 8191 + BIO_IDS[i]) - 0.5);
+      var w = smooth(b, -b, d) + (clean ? 0 : BIO_NOISE * (hash(ix, iy, 8191 + BIO_IDS[i]) - 0.5));
       if (w >= bw) { bw = w; best = BIO_IDS[i]; }   // ties: the higher id (more specific area) wins
     }
     return best;
+  }
+  // ENV-02a (arch 38.63): biomeBlend(x, y, out) -> out {a, b, w}: top-2 biome ids + w = share of the 2nd (0..0.5, smooth, NO hash term).
+  // Scores = the biomeAt weights without noise (biome 0 = BIO_BASE constant), so a == biomeAt(x, y, true) wherever w < 0.4.
+  // w = 0.5 * q^2, q = s2/s1 (0 far from a border, 0.5 on a tie; deep inside a biome q = 0.35 -> 6% trimmed to ~3%). Inside the keep rect: a = b = 0, w = 0. 0 alloc.
+  function biomeBlend(x, y, out) {
+    var s1 = BIO_BASE, i1 = 0, s2 = -1, i2 = 0;
+    if (BIO_F !== null && !inKeep(x, y)) {
+      for (var i = 0; i < BIO_IDS.length; i++) {
+        var b = BIO_BLEND[i] * 0.5, d = BIO_F.sdf(BIO_KEYS[i], x, y);
+        if (d >= b) continue;
+        var s = smooth(b, -b, d);
+        if (s >= s1) { s2 = s1; i2 = i1; s1 = s; i1 = BIO_IDS[i]; } else if (s > s2) { s2 = s; i2 = BIO_IDS[i]; }
+      }
+    }
+    var w = 0;
+    if (s2 > 0 && i2 !== i1) { var q = s2 / s1; w = 0.5 * q * q - 0.03; w = w > 0 ? w * (0.5 / 0.47) : 0; }
+    out.a = i1; out.b = w > 0 ? i2 : i1; out.w = w;
+    return out;
   }
   // table: {id: {name, blendM?, forest?: {fill, species: {meshId: weight}}, detail?: {layer: densityMult}, scale?: [min,max], hueJitter?}}
   // areas: {id: signed-distance fn (negative inside)} (<= 16). Passing no table clears the biomes (today's bytes).
@@ -689,7 +708,7 @@
   DEF.util = {
     heightAt: heightAt, typeAt: typeAt, recipeHeight: recipeHeight, setEditLayer: setEditLayer, getEditLayer: getEditLayer, baseHeightAt: baseHeightAt,
     generate: generate, bake: bake, bakeChunk: bakeChunk, gridHeight: gridHeight, chunkKey: chunkKey,
-    setGeoLayers: setGeoLayers, setGeoBiomes: setGeoBiomes, biomeAt: biomeAt, GeoFields: GeoFields, polylineSdf: polylineSdf, polygonSdf: polygonSdf,
+    setGeoLayers: setGeoLayers, setGeoBiomes: setGeoBiomes, biomeAt: biomeAt, biomeBlend: biomeBlend, GeoFields: GeoFields, polylineSdf: polylineSdf, polygonSdf: polygonSdf,
     reindexOverrides: indexOverrides, hash: hash, fbm: fbm, riverX: riverX, pathDist: pathDist
   };
   A.levels.overworld_far = DEF;

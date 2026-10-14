@@ -7,7 +7,7 @@ for (let i = 1; i <= 5; i++) {
   const e = by('cap' + i);
   assert.ok(e, 'cap' + i);
   assert.deepEqual(e.components.questPickup, { item: 'redcap', n: 1 });
-  assert.equal(e.components.sprite.model, 'pickupRedCap');
+  assert.equal(e.components.voxel.model, 'pickup.redcap');
 }
 for (let i = 1; i <= 3; i++) {
   const e = by('smoke' + i);

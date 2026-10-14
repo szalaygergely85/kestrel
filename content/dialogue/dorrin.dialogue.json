@@ -13,7 +13,7 @@
   ],
   "nodes": {
     "dorrin.relay.1": {"lines": [
-      "Relay. Aye. The brass collar off the top. That was me.",
+      "Waystone. Aye. The brass collar off it. That was me.",
       "Barley gate lost its hinge in the first winter."
     ], "next": "dorrin.relay.2", "speaker": "dorrin"},
     "dorrin.relay.2": {"lines": [

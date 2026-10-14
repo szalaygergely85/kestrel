@@ -21,7 +21,8 @@ export const REGION_RULES = Object.freeze([
 
 export const REGIONAL_BEAST_COUNT = REGION_RULES.reduce((n, r) => n + r.groups * r.size, 0);
 
-const MODEL = { boar: 'boarPlaceholder', wolf: 'boarPlaceholder', bear: 'bearBlack' };
+import { WOLF_MODEL } from './wolfBrain.js';
+const MODEL = { boar: 'boarPlaceholder', wolf: WOLF_MODEL, bear: 'bearBlack' }; // BEAST-02: wolf packs use the real voxel_wolf model ('wolf')
 const BODY = { boar: { height: 0.7, radius: 0.45 }, wolf: { height: 0.7, radius: 0.45 }, bear: { height: 1.1, radius: 0.7 } };
 const EDGE = 12, MIN_GROUP_GAP = 45, AUTHORED_GAP = 40, MAX_SLOPE = 0.3, TRIES = 600;
 
@@ -94,9 +95,17 @@ export function generateRegionalBeasts(o) {
 }
 
 /** Add the generated beasts to a loaded World (before createBeastSim). Returns the list. */
-export function spawnRegionalBeasts(world, geo, seed) {
+export const GENERATED_ID = /^[A-Za-z]+\.[A-Za-z]+\.\d+$/; // regional herd '<species>.<key>.n' and far-camp members 'gobF.<key>.n'
+
+/** Homes of AUTHORED beasts only (never generated ids): the generators are pure in (geo, terrain, seed, authored homes), so a world restored from a save regenerates the same defs. */
+export function authoredHomes(world) {
   const avoid = [];
-  world.forEachEntity((e) => { const b = e.components && e.components.brain; if (b && b.kind === 'beast' && b.home) avoid.push([b.home[0], b.home[1]]); });
+  world.forEachEntity((e) => { const b = e.components && e.components.brain; if (b && b.kind === 'beast' && b.home && !GENERATED_ID.test(String(e.id))) avoid.push([b.home[0], b.home[1]]); });
+  return avoid;
+}
+
+export function spawnRegionalBeasts(world, geo, seed) {
+  const avoid = authoredHomes(world);
   const list = generateRegionalBeasts({ geo, terrain: world.terrain, seed, avoid });
   for (const b of list) {
     if (world.get(b.id)) continue; // WMP-09: a world restored from a save already holds the herd (saves keep all entities) - spawn only the missing ones

@@ -12,6 +12,17 @@ import { spawnLeftoverDrop, setStackPickupSink } from './quest/sim/pickups.js';
 
 export const REACH = 2.2, REACH_DZ = 3, POLL_STEPS = 10;
 
+/** OB-137: display name for a pickup/inspect prompt: the item def's name; never a raw id (fallback: humanised id + one warning). */
+const warnedIds = new Set();
+export function itemLabel(defs, id) {
+  const d = defs && defs[id];
+  if (d && typeof d.name === 'string' && d.name) return d.name;
+  const h = String(id).replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[._]+/g, ' ').trim().toLowerCase();
+  const out = h.charAt(0).toUpperCase() + h.slice(1);
+  if (!warnedIds.has(id)) { warnedIds.add(id); console.warn('[pickup] no item def name for', id, '- using', out); }
+  return out;
+}
+
 /** @param {{getBook: () => any, feed: (e:any) => any, defs: Record<string, any>}} o */
 export function createQuestPickups({ getBook, feed, defs, isWorn }) {
   let ctx = null, props = [], tick = 0, ops = null, opsInv = null;
@@ -50,7 +61,7 @@ export function createQuestPickups({ getBook, feed, defs, isWorn }) {
         // QL-05: "[E] Pick" prompt (the take itself stays in onTick; the behaviour 'pickup.take' is a no-op that only shows the prompt)
         if (!c.world.addInteractable) return;
         c.world.removeInteractable('qp.' + id);
-        c.world.addInteractable({ key: 'qp.' + id, name: 'pickup.take', x: e.transform.x, y: e.transform.y, z: e.transform.z + 0.3, radius: REACH, prompt: ('[E] Pick up ' + String(q.item).replace(/[._]/g, ' ')).slice(0, 28), def: { pickupId: id }, bodyId: id, bodyR: 0.35, bodyH: 0.7 }); // OB-084: [E] on the whole item
+        c.world.addInteractable({ key: 'qp.' + id, name: 'pickup.take', x: e.transform.x, y: e.transform.y, z: e.transform.z + 0.3, radius: REACH, prompt: ('[E] Pick up ' + itemLabel(defs, q.item)).slice(0, 28), def: { pickupId: id }, bodyId: id, bodyR: 0.35, bodyH: 0.7 }); // OB-084: [E] on the whole item
       });
     },
     onTick() {

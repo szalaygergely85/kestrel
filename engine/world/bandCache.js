@@ -12,7 +12,7 @@ function sumBytes(o, depth = 0, seen = new Set()) {
   for (const k in o) { const v = o[k]; if (v && typeof v === 'object') n += sumBytes(v, depth + 1, seen); }
   return n;
 }
-export const bundleBytes = (b) => sumBytes(b.near) + sumBytes(b.scatter) + sumBytes(b.detail) + sumBytes(b.trunks) + sumBytes(b.detailCol) + sumBytes(b.nav) + (b.classMap ? b.classMap.byteLength : 0);
+export const bundleBytes = (b) => sumBytes(b.near) + sumBytes(b.scatter) + sumBytes(b.detail) + sumBytes(b.decor) + sumBytes(b.trunks) + sumBytes(b.detailCol) + sumBytes(b.nav) + (b.classMap ? b.classMap.byteLength : 0);
 
 /** Squared distance from a bundle's zone centre (near rect) to a point. */
 function zoneDist2(b, x, y) {
@@ -22,7 +22,7 @@ function zoneDist2(b, x, y) {
 
 export class BandCache {
   constructor({ maxBytes = 24 * 1048576 } = {}) {
-    this.maxBytes = maxBytes; this.map = new Map(); this.tick = 0;
+    this.maxBytes = maxBytes; this.map = new Map(); this.tick = 0; this.ver = 0; // ver: bumps on every put / delete (bake-ahead idle memo)
     this._stats = { entries: 0, bytes: 0, hits: 0, misses: 0, bakes: 0, evictions: 0 };
     this.bytes = 0;
     this.focusX = NaN; this.focusY = NaN; // player position: eviction drops the zone whose centre is farthest from it
@@ -47,7 +47,7 @@ export class BandCache {
     const old = this.map.get(b.key);
     if (old) this.bytes -= old.bytes;
     b.bytes = bundleBytes(b); b.lastUse = ++this.tick;
-    this.map.set(b.key, b); this.bytes += b.bytes; this._stats.bakes++;
+    this.map.set(b.key, b); this.bytes += b.bytes; this._stats.bakes++; this.ver++;
     this.evict(protect1, protect2, b.key); // the entry just stored is always safe
     return b;
   }
@@ -63,7 +63,7 @@ export class BandCache {
         else if (!victim || b.lastUse < victim.lastUse) victim = b;
       }
       if (!victim) break;
-      this.map.delete(victim.key); this.bytes -= victim.bytes; this._stats.evictions++;
+      this.map.delete(victim.key); this.bytes -= victim.bytes; this._stats.evictions++; this.ver++;
     }
   }
   /** Editor: drops every bundle whose near rect overlaps the world rect. Returns the number dropped. */
@@ -71,11 +71,11 @@ export class BandCache {
     let n = 0;
     for (const [k, b] of this.map) {
       const g = b.near;
-      if (g.x0 < x1 && g.x0 + g.w * g.cell > x0 && g.y0 < y1 && g.y0 + g.h * g.cell > y0) { this.map.delete(k); this.bytes -= b.bytes; n++; }
+      if (g.x0 < x1 && g.x0 + g.w * g.cell > x0 && g.y0 < y1 && g.y0 + g.h * g.cell > y0) { this.map.delete(k); this.bytes -= b.bytes; n++; this.ver++; }
     }
     return n;
   }
-  clear() { this.map.clear(); this.bytes = 0; }
+  clear() { this.map.clear(); this.bytes = 0; this.ver++; }
   /** Reused object. */
   stats() { const s = this._stats; s.entries = this.map.size; s.bytes = this.bytes; return s; }
 }

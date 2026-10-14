@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - voxel pickups (OB-132 / OB-137)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:16px; margin:24px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  .note { color:#8a8778; font-size:12px; max-width:1400px; }
+  .pass { color:#4fd66a; } .fail { color:#ff3b3b; }
+  canvas { display:block; background:#000; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:12px; align-items:center; font-size:13px; }
+  .controls label { display:flex; align-items:center; gap:5px; }
+  .controls input[type=range] { width:110px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:36px; display:inline-block; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start; margin:6px 0 12px; }
+  .card { border:1px solid #1a1d26; padding:4px; }
+  .cap { font-size:11px; color:#8a8778; font-family:Consolas, monospace; margin-top:2px; max-width:300px; }
+  .cap b { color:#ffd27a; font-weight:normal; }
+  #checks div { font-family:Consolas, monospace; font-size:12px; }
+</style>
+</head>
+<body>
+<h1>Kestrel : voxel pickups, gear drops, potions, floor lamp (OB-132 / OB-137)</h1>
+<div class="note">
+  <code>design/models/pickups_voxel.js</code>. Every model turns (the game turns them with the entity yaw). Camera pitched down
+  like first person looking at the ground. The renderer here is a small standalone voxel DDA with the real v1 surface shader
+  (<code>palette.util.shade</code>, material ramps + emissive), no engine import, so it also opens from <code>file://</code>.
+  "world scale" draws every model in the same 1.2 m frame (the sizes as they lie side by side in the game); "fit" fills each frame.
+</div>
+<div class="controls">
+  <label>scale <select id="scale"><option value="world">world 1.2 m</option><option value="fit" selected>fit</option></select></label>
+  <label>pitch <input type="range" id="pitch" min="5" max="80" value="35"><span class="val" id="pitchV"></span></label>
+  <label>light az <input type="range" id="az" min="-180" max="180" value="-40"><span class="val" id="azV"></span></label>
+  <label>elev <input type="range" id="el" min="0" max="85" value="45"><span class="val" id="elV"></span></label>
+  <label>sun <input type="range" id="sun" min="0" max="1.5" step="0.01" value="1.0"><span class="val" id="sunV"></span></label>
+  <label>ambient <input type="range" id="amb" min="0" max="1" step="0.01" value="0.30"><span class="val" id="ambV"></span></label>
+  <label>turn speed <select id="spd"><option value="0">stop</option><option value="0.5">slow</option><option value="1" selected>1</option><option value="2">fast</option></select></label>
+  <label>rows <select id="rows"><option>16</option><option selected>24</option><option>36</option></select></label>
+</div>
+<h2>Checks</h2>
+<div id="checks"></div>
+<h2>Quest pickups + potions</h2><div class="row" id="rowQ"></div>
+<h2>Gear (one model per equip slot)</h2><div class="row" id="rowG"></div>
+<h2>Floor lamp (replaces the floorLantern sprite)</h2><div class="row" id="rowL"></div>
+
+<script src="../palette.js"></script>
+<script src="../models/pickups_voxel.js"></script>
+<script>
+(function () {
+  'use strict';
+  var A = window.ASSETS, P = A.palette, PV = A.pickupsVoxel;
+  var $ = function (id) { return document.getElementById(id); };
+  var checks = $('checks');
+  function line(ok, t) { var d = document.createElement('div'); d.className = ok ? 'pass' : 'fail'; d.textContent = (ok ? 'PASS ' : 'FAIL ') + t; checks.appendChild(d); }
+  var errs = PV.validate();
+  line(errs.length === 0, 'pickupsVoxel.validate(): ' + (errs.length ? errs.join('; ') : 'layers, sizes, materials OK (' + PV.ids.length + ' models)'));
+  [['signArm'], ['berry.blue'], ['potion.hp'], ['redcap'], ['x.sword', 'main'], ['helm.t3', 'head'], ['x', 'boots'], ['nothing']].forEach(function (c) {
+    var m = PV.pickupModelFor(c[0], c[1]);
+    line(c[0] === 'nothing' ? m === null : !!A.voxelModels[m], 'pickupModelFor(' + JSON.stringify(c[0]) + (c[1] ? ', ' + JSON.stringify(c[1]) : '') + ') -> ' + m);
+  });
+
+  var CW = 7, CH = 14;
+  var views = [];
+  PV.ids.forEach(function (id) {
+    var rec = A.voxelModels[id], v = rec.voxel;
+    var row = id.indexOf('pickup.gear.') === 0 ? 'rowG' : id.indexOf('floorLantern') === 0 ? 'rowL' : 'rowQ';
+    var card = document.createElement('div'); card.className = 'card';
+    var cv = document.createElement('canvas'); card.appendChild(cv);
+    var cap = document.createElement('div'); cap.className = 'cap';
+    cap.innerHTML = '<b>' + id + '</b> ' + v.size.join('x') + ' @ ' + v.cellM + ' m = ' + rec.world.w + ' x ' + rec.world.d + ' x ' + rec.world.h + ' m<br>' + rec.desc;
+    card.appendChild(cap); $(row).appendChild(card);
+    views.push({ id: id, v: v, cv: cv, ctx: cv.getContext('2d'), phase: views.length * 0.7 });
+  });
+
+  var out = { glyph: ' ', fg: [0, 0, 0], bg: [0, 0, 0], b: 0 };
+  var HIT = { x: 0, y: 0, z: 0, ax: 0, sg: 0, t: 0, ch: '.' };
+  function cast(v, o, d) {
+    var S = v.size, tmin = 0, tmax = 1e9, ent = 0, k;
+    for (k = 0; k < 3; k++) {
+      if (Math.abs(d[k]) < 1e-9) { if (o[k] < 0 || o[k] > S[k]) return false; continue; }
+      var t1 = (0 - o[k]) / d[k], t2 = (S[k] - o[k]) / d[k];
+      if (t1 > t2) { var tt = t1; t1 = t2; t2 = tt; }
+      if (t1 > tmin) { tmin = t1; ent = k; }
+      if (t2 < tmax) tmax = t2;
+    }
+    if (tmin > tmax) return false;
+    var c = [], st = [], tM = [], tD = [], t = tmin + 1e-6;
+    for (k = 0; k < 3; k++) {
+      c[k] = Math.min(S[k] - 1, Math.max(0, Math.floor(o[k] + d[k] * t)));
+      st[k] = d[k] > 0 ? 1 : d[k] < 0 ? -1 : 0;
+      tM[k] = d[k] > 0 ? (c[k] + 1 - o[k]) / d[k] : d[k] < 0 ? (c[k] - o[k]) / d[k] : 1e9;
+      tD[k] = d[k] !== 0 ? Math.abs(1 / d[k]) : 1e9;
+    }
+    var ax = ent, tHit = tmin;
+    for (var n = 0; n < 256; n++) {
+      var ch = v.layers[c[2]][c[1]].charAt(c[0]);
+      if (ch !== '.') { HIT.x = c[0]; HIT.y = c[1]; HIT.z = c[2]; HIT.ax = ax; HIT.sg = -st[ax]; HIT.t = tHit; HIT.ch = ch; return true; }
+      ax = tM[0] < tM[1] ? (tM[0] < tM[2] ? 0 : 2) : (tM[1] < tM[2] ? 1 : 2);
+      tHit = tM[ax]; c[ax] += st[ax]; tM[ax] += tD[ax];
+      if (c[ax] < 0 || c[ax] >= S[ax]) return false;
+    }
+    return false;
+  }
+
+  var rows = 24, last = 0, tSec = 0;
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (now - last < 66) return;
+    var dt = Math.min(0.2, (now - last) / 1000); last = now;
+    tSec += dt * (+$('spd').value);
+    ['pitch', 'az', 'el', 'sun', 'amb'].forEach(function (k) { $(k + 'V').textContent = $(k).value; });
+    rows = +$('rows').value;
+    var cols = rows * 2, phi = $('pitch').value * Math.PI / 180, az = $('az').value * Math.PI / 180, el = $('el').value * Math.PI / 180;
+    var sun = +$('sun').value, amb = +$('amb').value, world = $('scale').value === 'world';
+    views.forEach(function (V) {
+      var v = V.v, S = v.size, cv = V.cv, ctx = V.ctx;
+      if (cv.width !== cols * CW) { cv.width = cols * CW; cv.height = rows * CH; }
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.font = '13px Consolas, monospace'; ctx.textBaseline = 'top';
+      var th = tSec * 0.9 + V.phase, ct = Math.cos(th), sn = Math.sin(th), cp = Math.cos(phi), sp = Math.sin(phi);
+      var f = [sn * cp, ct * cp, -sp], r = [ct, -sn, 0], u = [sn * sp, ct * sp, cp];
+      var Ld = [r[0] * Math.sin(az) * Math.cos(el) - Math.sin(th) * Math.cos(az) * Math.cos(el),
+                r[1] * Math.sin(az) * Math.cos(el) - Math.cos(th) * Math.cos(az) * Math.cos(el), Math.sin(el)];
+      var span = world ? 1.2 / v.cellM : Math.max(S[0], S[1], S[2]) * 1.15;
+      var ch = span / rows, cw = ch / 2;
+      var C = [S[0] / 2, S[1] / 2, S[2] / 2 * (world ? 0.6 : 1)];
+      if (world) C[2] = 0.35 / v.cellM;
+      for (var j = 0; j < rows; j++) for (var i = 0; i < cols; i++) {
+        var sx = (i + 0.5 - cols / 2) * cw, sy = (rows / 2 - j - 0.5) * ch;
+        var o = [C[0] + r[0] * sx + u[0] * sy - f[0] * 200, C[1] + r[1] * sx + u[1] * sy - f[1] * 200, C[2] + u[2] * sy - f[2] * 200];
+        if (!cast(v, o, f)) {
+          var tg = -o[2] / f[2], gx = o[0] + f[0] * tg - S[0] / 2, gy = o[1] + f[1] * tg - S[1] / 2;
+          if (tg > 0 && gx * gx + gy * gy < sq(Math.max(S[0], S[1]) * 0.75) && (i + j) % 2 === 0) { ctx.fillStyle = '#1c2130'; ctx.fillText('.', i * CW, j * CH); }
+          continue;
+        }
+        var nrm = [0, 0, 0]; nrm[HIT.ax] = HIT.sg;
+        var ndl = Math.max(0, nrm[0] * Ld[0] + nrm[1] * Ld[1] + nrm[2] * Ld[2]);
+        var L = [amb * 0.85 + sun * ndl, amb * 0.9 + sun * ndl * 0.95, amb * 1.1 + sun * ndl * 0.85];
+        var px = o[0] + f[0] * HIT.t, py = o[1] + f[1] * HIT.t, pz = o[2] + f[2] * HIT.t, m = v.cellM;
+        var uu = HIT.ax === 0 ? py * m : px * m, vv = HIT.ax === 2 ? py * m : pz * m;
+        P.util.shade(v.mats[HIT.ch], L, uu, vv, 2, out, { fog: null });
+        ctx.fillStyle = 'rgb(' + (out.bg[0] | 0) + ',' + (out.bg[1] | 0) + ',' + (out.bg[2] | 0) + ')';
+        ctx.fillRect(i * CW, j * CH, CW, CH);
+        ctx.fillStyle = 'rgb(' + (out.fg[0] | 0) + ',' + (out.fg[1] | 0) + ',' + (out.fg[2] | 0) + ')';
+        ctx.fillText(out.glyph, i * CW, j * CH);
+      }
+    });
+  }
+  function sq(a) { return a * a; }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

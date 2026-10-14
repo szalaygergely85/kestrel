@@ -8,7 +8,7 @@ const adv = (v, sec) => { for (let i = 0; i < Math.round(sec * 100); i++) v.upda
 
 // text table: lengths per spec, and the key push resolves
 for (const k of Object.keys(NOTICE_TEXT)) { const e = NOTICE_TEXT[k]; assert.ok(e.title.length <= 30 && e.lines.length <= 3 && e.lines.every(l => l.length <= 38), k); }
-{ const v = createNoticeView(); assert.ok(v.push('relay')); assert.equal(v.title, 'BEND RELAY AWAKENED'); assert.equal(v.push('nope'), false); }
+{ const v = createNoticeView(); assert.ok(v.push('relay')); assert.equal(v.title, 'WAYSTONE AWAKENED'); assert.equal(v.push('nope'), false); }
 
 // timings
 { const v = createNoticeView(); v.push('A', ['x']);

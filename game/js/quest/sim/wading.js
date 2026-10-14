@@ -4,7 +4,7 @@
 //   after(entity)         - SWIM-03b (D-070): no-op kept for main.js until SWIM-03c. The deep-water wall and the 3 s wadeRescue are gone:
 //                           deep water is swum (engine/physics/swim.js, fed by swimFeed.js). While `body.swimming` before() backs off.
 // Only `river` shapes (water kind 3) wade; rect/circle regions keep today's behaviour (world blocks / sea). Rule 15: no random/trig, 0 alloc.
-const kindScratch = { lat: 0, hw: 0, tx: 0, ty: 0, v: 0, z: 0 };
+const kindScratch = { lat: 0, hw: 0, tx: 0, ty: 0, v: 0, z: 0, fx: 0, fy: 0 };
 export const WADE_CFG = Object.freeze({ deepM: 1.0, fullM: 0.9, slow: 0.5, pushK: 0.7, pushMax: 3 });
 
 /**
@@ -12,13 +12,12 @@ export const WADE_CFG = Object.freeze({ deepM: 1.0, fullM: 0.9, slow: 0.5, pushK
  * @param {any} world @param {number} x @param {number} y @param {any} out
  */
 export function riverWaterAt(world, x, y, out) {
-  if (typeof world.waterAt !== 'function' || !world.waterAt(x, y, out)) return false;
-  return world.riverAt(x, y, kindScratch); // river-kind only (World#riverAt)
+  if (typeof world.riverAt !== 'function' || !world.riverAt(x, y, kindScratch)) return false; // river-kind only (World#riverAt), checked first
+  return world.waterAt(x, y, out);
 }
 
 export function createWading(world, cfg = WADE_CFG) {
-  const w = { surfaceZ: 0, flatZ: 0, depth: 0, region: '', index: -1, look: 0 };
-  const flow = [0, 0];
+  const rq = { lat: 0, hw: 0, tx: 0, ty: 0, v: 0, z: 0, fx: 0, fy: 0 }; // ONE riverAt per step (river z = surface, no waves; fx/fy = flow)
 
   const api = {
     cfg,
@@ -26,13 +25,13 @@ export function createWading(world, cfg = WADE_CFG) {
       const body = entity.components.body, t = entity.transform;
       body.pushX = 0; body.pushY = 0;
       if (typeof body.wadeImm !== 'number') body.wadeImm = 0;
-      if (body.swimming || !riverWaterAt(world, t.x, t.y, w)) { body.speedScale = other; body.wadeImm = 0; return; } // swimFeed owns the current while swimming
-      const imm = w.surfaceZ - t.z;
+      if (body.swimming || !world.riverAt(t.x, t.y, rq)) { body.speedScale = other; body.wadeImm = 0; return; } // swimFeed owns the current while swimming
+      const imm = rq.z - t.z;
       body.wadeImm = imm;
       const k = imm <= 0 ? 0 : imm >= cfg.fullM ? 1 : imm / cfg.fullM;
       body.speedScale = Math.min(other, 1 - cfg.slow * k);
-      if (k > 0 && world.flowAt(t.x, t.y, flow)) {
-        let px = flow[0] * cfg.pushK * k, py = flow[1] * cfg.pushK * k;
+      if (k > 0) {
+        let px = rq.fx * cfg.pushK * k, py = rq.fy * cfg.pushK * k;
         const m = Math.sqrt(px * px + py * py);
         if (m > cfg.pushMax) { px *= cfg.pushMax / m; py *= cfg.pushMax / m; }
         body.pushX = px; body.pushY = py;

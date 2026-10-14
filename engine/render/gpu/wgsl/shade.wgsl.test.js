@@ -229,14 +229,14 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
     terrainFogStart: fog.start, terrainFogFull: fog.full, terrainFogCurve: fog.curve,
     terrainFogNearRGB: { x: fog.nearRGB[0], y: fog.nearRGB[1], z: fog.nearRGB[2] }, terrainFogFarRGB: { x: fog.farRGB[0], y: fog.farRGB[1], z: fog.farRGB[2] },
     wetness: wet, // S8-B2-14b
-    fgP: FGREC ? { x: 1, y: FGREC.startM, z: FGREC.fadeM, w: FGREC.mix } : { x: 0, y: 0, z: 1, w: 0 }, fgW: FGREC ? { x: FGREC.dirX, y: FGREC.dirY, z: FGREC.cyc, w: FGREC.invTravel } : { x: 0, y: 0, z: 0, w: 0 },
+    fgP: FGREC ? { x: 1 + (FGREC.under || 0), y: FGREC.startM, z: FGREC.fadeM, w: FGREC.mix } : { x: 0, y: 0, z: 1, w: 0 }, fgW: FGREC ? { x: FGREC.dirX, y: FGREC.dirY, z: FGREC.cyc, w: FGREC.invTravel } : { x: 0, y: 0, z: 0, w: 0 },
     fgT: Array.from({ length: FG_TYPES }, (_, i) => FGREC ? { x: FGREC.types[i * 4], y: FGREC.types[i * 4 + 1], z: FGREC.types[i * 4 + 2], w: FGREC.types[i * 4 + 3] } : { x: 0, y: 0, z: 0, w: 0 }),
     cliff: { x: 1, y: 1, z: 0, w: 0 }, // OB-104b2: rock = fixture row 1
     skyGlowOn: { x: 0, y: floorY, z: 0, w: 0 }, // DN-02
   });
   const MAX_F = MAX_FEATURES_PER_TYPE;
   function runTerrain(src, trials, wet = 0, floorY = 0, sky = null) {
-    let bad = 0, n = 0, faces = 0, closeN = 0, cliffN = 0, fgN = 0, fgGlyph = 0;
+    let bad = 0, n = 0, faces = 0, closeN = 0, cliffN = 0, fgN = 0, fgGlyph = 0, nearAnim = 0;
     const h = mkHash(src);
     for (const hashCell of [0, 3, -0.05]) {
       const suT = makeSu(hashCell, wet, floorY, sky);
@@ -267,11 +267,12 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
         const g = st(tt, type, b, u, v, time, faceMode, z, { x: nx, y: ny, z: nzr });
         const q = (x) => Math.floor(Math.min(255, Math.max(0, x)) + 0.5);
         n++; if (tt < 40) closeN++; if (faceMode && type === 2) faces++;
+        if (o.level === 254 && tt < 12) nearAnim++;
         if (o.level === 254) { fgN++; if (o.glyph === 2 || o.glyph === 7 || o.glyph === 12) fgGlyph++; }
         if ((g.fgw > 0 ? 254 : 255) !== o.level || g.glyph !== o.glyph || q(g.fr) !== o.fg[0] || q(g.fg) !== o.fg[1] || q(g.fb) !== o.fg[2] || q(g.br) !== o.bg[0] || q(g.bg) !== o.bg[1] || q(g.bb) !== o.bg[2]) { bad++; if (bad < 10 && src === SHADE_WGSL) console.error("terr", hashCell, JSON.stringify({ type, tt, b, u, v, time, faceMode }), JSON.stringify(g), o.glyph, Array.from(o.fg), Array.from(o.bg)); }
       }
     }
-    return { bad, n, faces, closeN, cliffN, fgN, fgGlyph };
+    return { bad, n, faces, closeN, cliffN, fgN, fgGlyph, nearAnim };
   }
   const base = runTerrain(SHADE_WGSL, 1500);
   assert.ok(base.bad <= base.n * 0.001, `shadeTerrain vs JS: ${base.bad}/${base.n} differ`);
@@ -280,6 +281,11 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   const fgRun = runTerrain(SHADE_WGSL, 3000);
   assert.ok(fgRun.bad <= fgRun.n * 0.001, 'far grass shadeTerrain vs JS: ' + fgRun.bad + '/' + fgRun.n + ' differ');
   assert.ok(fgRun.fgN > 300 && fgRun.fgGlyph > 100, 'far grass coverage ' + fgRun.fgN + ' glyph ' + fgRun.fgGlyph);
+  // OB-121b: underlay 0.6 (fgP.x = 1 + under): weight floor, also inside the close band; JS == WGSL, and more cells carry level 254 than without
+  FGREC = mkFg(); FGREC.under = 0.6;
+  const ulRun = runTerrain(SHADE_WGSL, 3000);
+  assert.ok(ulRun.bad <= ulRun.n * 0.001, 'underlay shadeTerrain vs JS: ' + ulRun.bad + '/' + ulRun.n + ' differ');
+  assert.equal(ulRun.nearAnim, 0, 'OB-154: underlay-won cells (t < ramp start) are static, never level 254 (wind shimmer only from the ramp)');
   FGREC = null;
   assert.ok(base.faces > 100 && base.closeN > 300, `terrain coverage faces ${base.faces} close ${base.closeN}`);
   probes += base.n;
@@ -486,13 +492,15 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
 {
   // sha256 of SHADE_WGSL taken before the 073b change, re-pinned after the 38.23 entity-tint merge and AUD-40 sky glow, AUD-45 fog shape and AUD-47 vegGain, SKY-GLOW-SOFT-01, DN-02 night floor, MAP-06b skyline cap, OB-073 smooth ground noise, OB-073 calm ground, OB-081 far tier blend + calm faces (41264 chars): the stable-off shader must not move by a single byte.
   // re-pinned 48155 -> 48644 by OB-104b2 on top of SWIM-04c (cliff branch + nrm param + ShadeU.cliff after the 7 under vec4)
+  // re-pinned 50210 -> 50440 by OB-154 (underlay-won cells static: no gust phase, fgw out = ramp-won only)
+  // re-pinned 50129 -> 50210 by OB-121b (underlay: fgP.x = on * (1 + under); max(under, ramp) weight, close-band gate; under 0 = same output, asserted by the terrain probes)
   // re-pinned 49079 -> 50129 by G2 + P3 (far grass tier in shadeTerrain + fgP/fgW/fgT appended after cliff; off = zero uniforms = unchanged output)
   // re-pinned 48644 -> 49079 by OB-089 (outdoor mesh fog branch, fogView.z; uniform layout unchanged)
   // re-pinned 45683 -> 48155 by SWIM-04c (UNDER_WGSL + shadeCell/fs_main split + 7 appended ShadeU vec4; underwater block is skipped when su.under.x = 0)
   // re-pinned 44782 -> 45683 by MASK-c (shadeGrass ground blend + back-light, packed GA.w word; TS_PATCH_NOISE_WGSL extracted verbatim)
   // re-pinned 41264 -> 44782 by OB-073-D2e (kind-10 shadeGrass + ShadeU.grass table + the kind-10 branch in fs_main; calm-ground code untouched, asserted by the terrain mutation probes above)
-  assert.equal(SHADE_WGSL.length, 50129, 'stable off: SHADE_WGSL length unchanged');
-  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), 'e4b05ee582cd8466845df261ca7a4060f7bbba1d0edf5aeed6bbfcb734ee318d', 'stable off: SHADE_WGSL byte-identical to pre-073b');
+  assert.equal(SHADE_WGSL.length, 50440, 'stable off: SHADE_WGSL length unchanged');
+  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), 'c27d5b8f1b0f1257ea8efbbb85dade2c2b20c0d8a426d5d80e8dc58532fc7a68', 'stable off: SHADE_WGSL byte-identical to pre-073b');
   assert.ok(!/lvl|lvOut|location\(2\)/.test(SHADE_WGSL), 'stable off: no level output');
   assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
   assert.deepEqual(SHADE_LEVEL_TARGETS, ['rgba8', 'rgba8', 'r8ui']);

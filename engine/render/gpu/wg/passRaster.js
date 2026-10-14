@@ -15,6 +15,7 @@ import { projTerms, shearProjection, pitchedTermsInto, createPitchedTerms, resol
 import { frustumPlanes } from '../../../mesh/culling.js';
 import { WgCullPass } from './passCull.js';
 import { WgCardPass } from './WgCardPass.js'; // R6c part 2
+import { WgDecorPass } from './passDecor.js'; // ENV-01d
 import { WgHzbPass } from './passHzb.js'; // S8-B2-10c
 import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
 import { windSwayOn, packWindUniforms, SWAY_MAX } from '../../../mesh/sway.js'; // S8-B2-05/06 host wiring: per-frame wind uniforms + cull swayPad
@@ -97,6 +98,7 @@ export class WgRasterPass {
     // WG-4a: GPU cull of InstanceGroups batches (meshGroup + single-range voxel units). instances.js hands each supported group to `accept` instead of
     // compacting it on the CPU; MeshGroupSet groups (nearest-64 `chosen` selection is CPU-side) and multi-range voxel units keep the CPU path.
     this.cull = null;
+    /** @type {any} ENV-01d: WgDecorPass (GPU decor scatter), null until enableDecor(); drawn like cull entries */ this.decor = null; this._decorFr = { eye: { x: 0, y: 0 }, planes: /** @type {Float64Array|null} */ (null), swayPad: 0 };
     /** @type {any} S8-B2-10c HZB builder (only with opts.occl) */ this.hzb = null;
     this._hzbFwd = { x: 0, y: 1, z: 0 }; this._eye = { x: 0, y: 0, z: 0 }; this._phase2 = false; this._beginArgs = { planes: null, viewProj: null, rows: 0, eye: null, maxDistM: 0, swayPad: 0, hzb: null }; // _eye: world-space camera for the cull kernel's occNear
     this.gpuGroups = []; this.gpuM0 = []; this.gpuM1 = []; this.gpuEntries = []; this.gpuN = 0; this._pair = [null, null];
@@ -139,6 +141,13 @@ export class WgRasterPass {
     } catch (e) { this.dispose(); throw e; }
   }
 
+  /** ENV-01d (38.62): creates the decor pass (needs the GPU cull; returns null without it). Content is supplied via `this.decor.configure/setMasks/setNear`. */
+  enableDecor() {
+    if (!this.cull) return null;
+    if (!this.decor) this.decor = new WgDecorPass(this.device, this.cull);
+    return this.decor;
+  }
+
   _accept(g, m0, m1) {
     const cull = this.cull, n = this.gpuN;
     if (!cull) return false;
@@ -151,7 +160,8 @@ export class WgRasterPass {
   // Before the raster pass (outside any pass): queue the accepted batches and run the kernel (one dispatch each).
   _cullRun(p) {
     const n = this.gpuN, cull = this.cull, pair = this._pair;
-    if (!n) return;
+    const dec = this.decor && this.decor.on ? this.decor : null; // ENV-01d: decor alone still needs cull.begin/run (args zeroing)
+    if (!n && !dec) return;
     // S8-B2-10c: the previous frame's HZB, or null (first frame / resize / invalidateHzb / ortho = no usable forward) -> cull phase 1 runs with hzbOn 0
     let hz = null; this._phase2 = false;
     const hp = this.hzb;
@@ -167,8 +177,9 @@ export class WgRasterPass {
     cull.begin(bf); // reused arg object: no per-frame literal
     this._phase2 = !!hz;
     for (let i = 0; i < n; i++) { pair[0] = this.gpuM0[i]; pair[1] = this.gpuM1[i]; this.gpuEntries[i] = cull.add(this.gpuGroups[i], pair); }
+    if (dec) dec.queue(); // generated args slots / slabs (after the adds, before the ONE args write in run())
     cull.run();
-    if (card && card.on) { // R6c: cs_card in the cull span, after the mesh cull wrote the args (instanceCount 0) and the batch rows
+    if (n && card && card.on) { // R6c: cs_card in the cull span, after the mesh cull wrote the args (instanceCount 0) and the batch rows
       const cf = this._cardFr; cf.w = p._t.subCols; cf.h = p._t.subRows; cf.ox = this.ox; cf.oy = this.oy; cf.vaoOn = this.vaoOn;
       card.dispatch(this.gpuGroups, n, cf);
     }
@@ -206,6 +217,29 @@ export class WgRasterPass {
           }
           draws++;
         }
+      }
+    }
+    return draws;
+  }
+
+  // ENV-01d: decor entries (species*2 + lod per layer) through instancePipe exactly like an unmasked cull entry; the slab offset rides in bindDesc.instanceOffset.
+  _decorDraw() {
+    let draws = 0;
+    const b = this.bindDesc, dc = this.decor;
+    for (let l = 0; l < dc.entries.length; l++) {
+      const es = dc.entries[l];
+      for (let k = 0; k < es.length; k++) {
+        const e = es[k];
+        if (!e.active) continue;
+        this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0; this.bits[TIER] = 1;
+        this._model(e.parts.m, 0);
+        const entry = this.buffers.getVoxel(e.mesh); this.bits[AXIS] = this._axis(e.parts.flags[0], entry);
+        b.uniforms = this.u; b.vertexBuffer = entry.vertexBuffer; b.indexBuffer = entry.indexBuffer || null; b.instanceBuffer = e.instanceBuffer; b.instanceOffset = e.instanceOffset;
+        if (this.vaoOn && entry.aoBuffer) { this.aoExtra[0] = entry.aoBuffer; b.extraBuffers = this.aoExtra; this.device.bind(this._aoPipe('instance'), b); }
+        else { b.extraBuffers = null; this.device.bind(this.instancePipe, b); }
+        this.device.drawIndirect(e.argsBuffer, e.argsOffset);
+        b.instanceOffset = 0;
+        draws++;
       }
     }
     return draws;
@@ -378,7 +412,7 @@ export class WgRasterPass {
     // S8-B2-05/06: per-frame wind uniforms (zero when sway is off: bit-identical to before) + the cull/instance sway padding.
     this.windOn = windSwayOn(world.wind);
     const fbT = p._fb; let tSec = 0; if (fbT) { const v = fbT.timeSec; if (v) tSec = v; } // no tagged phi: avoids a per-frame HeapNumber
-    packWindUniforms(world.wind, tSec, this.windV, this.windTV, this.windKV);
+    packWindUniforms(world.wind, tSec, this.windV, this.windTV, this.windKV, p.rt && p.rt.cols ? p.rt.cols * 0.5 : 0); // OB-144 halfCols
     if (p._instances) {
       p._instances.swayPad = this.windOn ? SWAY_MAX : 0; p._instances.eye = p._cam || null; // OB-089
       this.meshDrawArg.cache = this.meshCache; this.meshDrawArg.idFor = this.strictMatIdFor || null; this.meshDrawArg.maskAtlas = (world && world.maskAtlas) || null; // ALPHA-01f-fix2: instanced masked groups share the static cache entry
@@ -499,6 +533,11 @@ export class WgRasterPass {
     // S8-B1-07: cull (compute) and raster (render) are separate timer slots - one span each, never nested.
     wgSpanBegin(p, WG_PASS_SLOT.cull);
     try { this._cullRun(p); } finally { wgSpanEnd(p); }
+    if (this.decor && this.decor.on) { // ENV-01d: own timer slot `decor` (spans never nest), after cull.run() zeroed the args, before the raster pass
+      const fr = this._decorFr, cam = p._cam; if (cam) { fr.eye.x = cam.x; fr.eye.y = cam.y; }
+      fr.planes = this.planes; fr.swayPad = this.windOn ? SWAY_MAX : 0;
+      this.decor.run(fr, p);
+    }
     let staticDraws = 0, instancedDraws = 0, instances = 0;
     this.maskDraws = 0;
     wgSpanBegin(p, WG_PASS_SLOT.raster);
@@ -540,6 +579,7 @@ export class WgRasterPass {
           }
         }
         if (this.gpuN) { const gd = this._cullDraw(); instancedDraws += gd; p.stats.gpuCullDraws = gd; } else p.stats.gpuCullDraws = 0;
+        if (this.decor && this.decor.on) { const dd = this._decorDraw(); instancedDraws += dd; p.stats.decorDraws = dd; } else p.stats.decorDraws = 0;
         if (this.card && this.gpuN) this.card.draw(); // R6c: after the instanced mesh draws, before the view-model depth clear; shadows never see cards
         p.stats.clothDraws = this._cloths(list);
         p.stats.terrainDraws = this._terrain(list);
@@ -593,6 +633,7 @@ export class WgRasterPass {
     if (this.nearTex) this.device.dispose(this.nearTex);
     if (this.farTex) this.device.dispose(this.farTex);
     this.nearTex = this.farTex = null;
+    if (this.decor) { this.decor.dispose(); this.decor = null; }
     if (this.cull) { this.cull.dispose(); this.cull = null; }
     for (const ent of this.instanceBuffers.values()) this.device.dispose(ent.buffer);
     this.instanceBuffers.clear();

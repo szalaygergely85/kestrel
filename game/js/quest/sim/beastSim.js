@@ -15,6 +15,8 @@ import { canSee } from './sight.js';
 import { BEAR_TUNING, bearOverrides, isBearEntity } from './bearBrain.js'; // BEAR-01
 import { WOLF_TUNING, wolfOverrides, isWolfEntity, circleTarget, awayTarget } from './wolfBrain.js'; // WOLF-01
 import { GOBLIN_TUNING, goblinOverrides, isGoblinEntity } from './goblinBrain.js'; // GOB-01
+import { KINDS, kindIndex, kindOfEntity } from './beastKinds.js'; // BEAST-03a
+import { archIndex } from './archetypes.js';
 import { perceive, leashState, returnTarget, LEASH_HOME, LEASH_ENGAGE, LEASH_RETURN, LEASH_GIVEUP } from '../../../../engine/index.js';
 
 export const MAX_BEASTS = 96; // GOB-01: boars + wolves + bears + goblin camps (was 32; loot.js MAX_SLOTS must match)
@@ -36,6 +38,17 @@ export const STATE_SINK = 11;    // US-079b: sinks into the ground (z = deathZ -
 export const STATE_GONE = 12;    // US-079b: hidden, skipped everywhere, back via resetAll
 
 export const STATE_EAT = 13; // LIFE-07: a wolf/bear eating its kill (counts as wander for perception)
+// BEAST-03a (arch 38.64 (2)): states for the new archetype layers. Numbers only - nothing sets them yet (03b+). Never renumber 0-23.
+export const STATE_GRAZE = 14;     // grazer/skittish idle feed
+export const STATE_PATROL = 15;    // roaming route leg
+export const STATE_FLEE = 16;      // run away (skittish, routed pack)
+export const STATE_STUCK = 17;     // sidestep / replan
+export const STATE_CIRCLE = 18;    // waiting for an attack token on a flank slot
+export const STATE_HIDDEN = 19;    // ambush: no drift, near bubble only
+export const STATE_SUBMERGED = 20; // water: eyes-only approach
+export const STATE_GRAB = 21;      // croc hold + roll
+export const STATE_AIRBORNE = 22;  // flyer cruise / circle
+export const STATE_CAST = 23;      // caster / healer cast (a hit cancels)
 const FIRST_DEAD_STATE = STATE_DYING;
 const deadSt = (st) => st >= FIRST_DEAD_STATE && st <= STATE_GONE; // EAT (13) is alive
 const HUNT_PREY = { wolf: ['rabbit', 'deer'], bear: ['deer'] }; // LIFE-07: species-filtered prey (38.56 c)
@@ -166,6 +179,12 @@ export function createBeastSim(world, opts) {
     cdy: new Float64Array(MAX_BEASTS),
     goalX: new Float64Array(MAX_BEASTS),
     goalY: new Float64Array(MAX_BEASTS),
+    mv: new Float32Array(MAX_BEASTS),       // BEAST-01: smoothed measured ground speed (m/s), view + stuck rule (not hashed)
+    moving: new Uint8Array(MAX_BEASTS),     // BEAST-01: hysteresis flag (on > 0.15 m/s, off < 0.05 m/s)
+    stkT: new Int32Array(MAX_BEASTS),       // BEAST-01: steps spent wanting to move without leaving the anchor
+    stkAx: new Float64Array(MAX_BEASTS), stkAy: new Float64Array(MAX_BEASTS),
+    stkFail: new Uint8Array(MAX_BEASTS),    // failed re-plans in a row
+    stkSt: new Uint8Array(MAX_BEASTS),
     prevX: new Float64Array(MAX_BEASTS),
     prevY: new Float64Array(MAX_BEASTS),
     path: new Float64Array(MAX_BEASTS * PATH_SLOTS * 2),
@@ -183,6 +202,8 @@ export function createBeastSim(world, opts) {
     cause: new Uint8Array(MAX_BEASTS),       // US-079b: 0 sword, 1 fire (indexes CAUSE_STR)
     knockV: new Float64Array(MAX_BEASTS),    // US-079b: per-slot stagger clamp speed (replaces shared cfg.staggerKnock)
     wolf: new Uint8Array(MAX_BEASTS),        // WOLF-01: brain.species==='wolf' (per-slot cfg below, pack token, circle, flee)
+    kindIdx: new Uint8Array(MAX_BEASTS),     // BEAST-03a: index into KIND_NAMES (beastKinds.js); data only so far
+    archIdx: new Uint8Array(MAX_BEASTS),     // BEAST-03a: index into ARCH_NAMES (archetypes.js)
     bear: new Uint8Array(MAX_BEASTS),        // BEAR-01: brain.species==='bear' (per-slot cfg, fixed 2-heart swipe, light hits don't cancel windup)
     goblin: new Uint8Array(MAX_BEASTS),      // GOB-01: brain.species==='goblin'
     group: new Uint8Array(MAX_BEASTS),       // GOB-01: attack-token group 0 boar/bear, 1 wolf, 2 goblin
@@ -233,6 +254,7 @@ export function createBeastSim(world, opts) {
     const home = (e.components.brain && e.components.brain.home) || [e.transform.x, e.transform.y];
     sim.homeX[i] = home[0];
     sim.homeY[i] = home[1];
+    { const kn = kindOfEntity(e); sim.kindIdx[i] = kindIndex(kn); sim.archIdx[i] = archIndex(KINDS[kn].arch); } // BEAST-03a
     if (isWolfEntity(e)) { // WOLF-01: wolf slot = boar defaults + overrides, own step counts
       sim.wolf[i] = 1; sim.group[i] = 1; sim.packer[i] = 1;
       const wc = { ...cfg, ...wolfOverrides(cfg) };
@@ -1052,8 +1074,45 @@ function storePath(sim, i, wn) {
 
 // ---- steer targets (29.1 step 4) -----------------------------------------------------------------------------
 
+const STUCK_STEPS = 90;      // BEAST-01: 1.5 s
+const STUCK_MOVE_M = 0.1;
+/** BEAST-01: measured speed (displacement of the last step, EMA) + stuck rule. Runs before prevX is overwritten. */
+function measureAndUnstick(sim, i, st) {
+  const steer = sim.steer;
+  const dx = steer.x[i] - sim.prevX[i], dy = steer.y[i] - sim.prevY[i];
+  const inst = Math.sqrt(dx * dx + dy * dy) * 60;
+  const m = sim.mv[i] += (Math.min(inst, 30) - sim.mv[i]) * 0.2;
+  if (m > 0.15) sim.moving[i] = 1; else if (m < 0.05) sim.moving[i] = 0;
+  if (sim.stkSt[i] !== st) { sim.stkSt[i] = st; sim.stkFail[i] = 0; sim.stkT[i] = 0; }
+  if (m > 0.5) sim.stkFail[i] = 0;
+  // wants to move: walking wander / chase not waiting / return, and not already at its goal
+  let want = (st === STATE_WANDER && sim.timer[i] === WALKING) || st === STATE_RETURN || (st === STATE_CHASE && !sim.waiting[i]);
+  if (want) {
+    const gx = st === STATE_CHASE ? sim._px : sim.goalX[i], gy = st === STATE_CHASE ? sim._py : sim.goalY[i];
+    const ex = gx - steer.x[i], ey = gy - steer.y[i];
+    if (ex * ex + ey * ey < (st === STATE_CHASE ? 6 : 1)) want = false; // arrived / in melee range
+  }
+  if (!want) { sim.stkT[i] = 0; return; }
+  const ax = steer.x[i] - sim.stkAx[i], ay = steer.y[i] - sim.stkAy[i];
+  if (sim.stkT[i] === 0 || ax * ax + ay * ay >= STUCK_MOVE_M * STUCK_MOVE_M) { sim.stkAx[i] = steer.x[i]; sim.stkAy[i] = steer.y[i]; sim.stkT[i] = 1; return; }
+  if (++sim.stkT[i] < STUCK_STEPS) return;
+  sim.stkT[i] = 0;
+  if (sim.stkFail[i] < 2) { // re-plan (fresh A* to the same goal; chase re-targets the player)
+    sim.stkFail[i]++;
+    sim.pathLen[i] = 0; sim.pathIdx[i] = 0; sim.pathReq[i] = 1;
+    if (st === STATE_CHASE) { sim.goalX[i] = sim._px; sim.goalY[i] = sim._py; }
+    return;
+  }
+  sim.stkFail[i] = 0; // give up this target
+  sim.pathLen[i] = 0; sim.pathIdx[i] = 0; sim.pathReq[i] = 0;
+  if (st === STATE_CHASE) enterReturn(sim, i);
+  else enterWander(sim, i);
+}
+
 function setSteerTarget(sim, i) {
-  const steer = sim.steer, cfg = sim.cfg, st = sim.state[i];
+  const steer = sim.steer, cfg = sim.cfg;
+  measureAndUnstick(sim, i, sim.state[i]);
+  const st = sim.state[i];
   sim.prevX[i] = steer.x[i];
   sim.prevY[i] = steer.y[i];
 

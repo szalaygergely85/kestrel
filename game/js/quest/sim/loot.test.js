@@ -264,12 +264,14 @@ const OUT = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
   kill(env);
   const want = [0, 1, 2, 3].map((k) => env.loot.countOf('boar1', k));
   const wantIds = [0, 1, 2, 3].map((k) => env.loot.itemOf('boar1', k));
+  const heldGear = env.loot.gearOf('boar1');
   const heldOrb = env.loot.orbOf('boar1'); // OB-113: the potion item is logged last
   updateInteraction(env.world, {}, eyeAtBody(env), true);
   const inv = env.player.components.inventory;
   ok('E moves meat (+ arrows) into the pack',
     countOf(inv, 'boar.meat') === want[0] && countOf(inv, 'arrow') === want[1], want.join());
   const expectLog = want.map((n, k) => (n > 0 ? `+${n} ${wantIds[k]}` : null)).filter(Boolean);
+  if (heldGear) expectLog.push('+1 ' + heldGear); // OB-064: gear same E, before the potion
   if (heldOrb) expectLog.push('+1 ' + (heldOrb === 'mp' ? 'potion.mp' : 'potion.hp'));
   ok('one inventory:added per kind that moved, in order', env.events.log.join('|') === expectLog.join('|'), env.events.log.join('|'));
   ok('flag cleared after an emptied corpse', !env.world.state['loot.boar1']);
@@ -461,6 +463,22 @@ const OUT = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
   ok('OB-113: orbs rolled and given as potion.hp/mp x1 in the pack on E', orbs > 50 && given === orbs, orbs + '/' + given);
   ok('OB-113: no instant heal on E', healed === 0, healed);
 }
+// OB-064 (reopened): gear goes into the pack on the SAME E (tier kept, no world pickup); pack full -> stays in the corpse.
+{
+  const env = fresh({ seed: 7 });
+  const inv = env.player.components.inventory;
+  const gid = 'gear.body.jerkin.sturdy';
+  const pickups = () => { let n = 0; env.world.forEachEntity((e) => { if (e.components && e.components.pickup && e.components.pickup.kind === 'item') n++; }); return n; };
+  kill(env);
+  env.loot.gearHeld[env.beasts.slotOf('boar1')] = gid;
+  env.loot.lootBoar('boar1');
+  ok('OB-064: gear in the pack on the first E, no world pickup, corpse emptied', countOf(inv, gid) === 1 && pickups() === 0 && env.loot.gearOf('boar1') === null);
+  env.beasts.resetAll(); kill(env);
+  for (let n = 0; n < 200; n++) addItem(inv, defs, 'gear.body.jerkin.worn', 1);
+  env.loot.gearHeld[env.beasts.slotOf('boar1')] = gid;
+  const done = env.loot.lootBoar('boar1');
+  ok('OB-064: pack full -> gear stays in the corpse (lootable), nothing on the ground', !done && env.loot.gearOf('boar1') === gid && pickups() === 0 && countOf(inv, gid) === 1); // the 1 is from the first half
+}
 // OB-113: pack full of other items -> the potion stays in the corpse, nothing lost or duplicated.
 {
   const env = fresh({ seed: 7 });
@@ -471,6 +489,24 @@ const OUT = () => ({ targetKey: null, prompt: '', dist: 0, angleDeg: 0 });
   const before = countOf(inv, 'potion.hp');
   const r = env.loot.lootBoar('boar1');
   ok('OB-113: full pack -> potion stays in corpse, loot returns false', env.loot.orbOf('boar1') === 'hp' && countOf(inv, 'potion.hp') === before && r === false);
+}
+
+// OB-120: magic locked -> every potion is hp (same draws); unlocked -> hp/mp mix unchanged.
+{
+  let lockedMp = 0, lockedHp = 0, unMp = 0, unHp = 0, same = true;
+  for (let seed = 1; seed <= 24; seed++) {
+    const a = fresh({ seed }), b = fresh({ seed, state: { 'magic.fireball': true } });
+    kill(a); kill(b);
+    const oa = a.loot.orbOf('boar1'), ob = b.loot.orbOf('boar1');
+    if (oa === 'mp') lockedMp++; if (oa === 'hp') lockedHp++;
+    if (ob === 'mp') unMp++; if (ob === 'hp') unHp++;
+    if ((oa === null) !== (ob === null) || (ob === 'hp' && oa !== 'hp') || (ob === 'mp' && oa !== 'hp')) same = false;
+    // stream shape: next draw after the roll is identical
+    if (a.loot.corpseItem && b.loot.corpseItem && Array.from(a.loot.corpseItem).join() !== Array.from(b.loot.corpseItem).join()) same = false;
+  }
+  ok('OB-120: locked -> 0 potion.mp, some hp', lockedMp === 0 && lockedHp > 0, `${lockedMp}/${lockedHp}`);
+  ok('OB-120: unlocked -> mix kept (both kinds appear)', unMp > 0 && unHp > 0, `${unMp}/${unHp}`);
+  ok('OB-120: same corpses/orb hits locked vs unlocked, mp mapped to hp', same);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

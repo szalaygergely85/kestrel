@@ -37,7 +37,7 @@ function rig(px) {
     { id: 'player', type: 'player', x: px, y: 0, z: 0, components: { body: { vx: 0, vy: 0, vz: 0, grounded: true, landed: false, fallDistance: 0, eyeH: 1.6 } } },
     { id: 'g1', type: 'beast', x: 0, y: 0, z: 0, components: {} },
   ], state: {} }, assets, {});
-  const world = { get: (id) => real.get(id), raySegment: () => false, flowAt() {}, forEachEntity: (f) => real.forEachEntity(f) };
+  const world = { get: (id) => real.get(id), raySegmentRay: () => false, flowAt() {}, forEachEntity: (f) => real.forEachEntity(f) };
   const events = makeEvents();
   const shield = createShieldSim();
   const vitals = createVitals(real, events, VCFG, { block: shield });
@@ -95,7 +95,7 @@ for (const d of [8, 10, 12]) {
     { id: 'player', type: 'player', x: 40, y: 20, z: 0, components: {} },
     { id: 'gob2', type: 'beast', x: 6, y: 0, z: 0, components: { targetable: { radius: 0.5, height: 1.7 }, health: { hp: 4, max: 4 } } },
   ], state: {} }, assets, {});
-  const world = { get: (id) => real.get(id), raySegment: () => false, flowAt() {}, forEachEntity: (f) => real.forEachEntity(f) };
+  const world = { get: (id) => real.get(id), raySegmentRay: () => false, flowAt() {}, forEachEntity: (f) => real.forEachEntity(f) };
   const events = makeEvents(); let hits = 0; events.on('combat:hit', () => hits++);
   const sim = createArrowSim(world, events, GOBLIN_SPEAR_CFG, createPlayerTarget(world), null, { owner: 'enemy' });
   lobVelocity(0, 0, 1.4, 12, 0, 0.9, 13, GOBLIN_SPEAR_CFG.g, lob);
@@ -103,7 +103,7 @@ for (const d of [8, 10, 12]) {
   for (let i = 0; i < 100; i++) sim.step();
   ok('spear flying through a goblin never hits it', hits === 0);
   // a spear in the ground sticks but is never pickable
-  const w2 = { get: world.get, flowAt() {}, raySegment: (ax, ay, az, bx, by, bz, out) => {
+  const w2 = { get: world.get, flowAt() {}, raySegmentRay: (seg, out) => { const ax = seg[0], ay = seg[1], az = seg[2], bx = seg[3], by = seg[4], bz = seg[5];
     if (bz > 0.2) return false;
     out.t = (az - 0.2) / (az - bz); out.x = ax + (bx - ax) * out.t; out.y = ay + (by - ay) * out.t; out.z = 0.2; return true;
   } };
@@ -122,7 +122,7 @@ for (const d of [8, 10, 12]) {
 {
   const real = World.load({ name: 'gs3', terrain: null, structures: [], entities: [], state: {} }, assets, {});
   const events = makeEvents();
-  const sim = createArrowSim({ raySegment: () => false, get: () => null, flowAt() {} }, events, BOW_CFG, createTargetables(real, events));
+  const sim = createArrowSim({ raySegmentRay: () => false, get: () => null, flowAt() {} }, events, BOW_CFG, createTargetables(real, events));
   ok('default owner keeps the BOW_CFG pools', sim.flying.n === BOW_CFG.maxFlying && sim.stuck.n === BOW_CFG.maxStuck);
 }
 // ---- 0 allocation per step with 8 spears in flight ----

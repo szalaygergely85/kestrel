@@ -106,7 +106,7 @@ const er = createErrands({ getBook: () => book, questFlag: (k, v = true) => { fl
 assert.equal(er.load(fw), 2, 'post + notePost only');
 assert.deepEqual(fw.interactables.map((r) => [r.key, r.name, r.def.objectId]).sort(), [['qi.notePost', 'quest.inspect', 'notePost'], ['qi.post', 'quest.inspect', 'post']]);
 assert.equal(er.load(fw), 0, 'idempotent: no duplicates'); // second world:loaded on the same fake list
-er.onEvent('prop:touched', { id: 'ws_roadBend', kind: 'relay' }); er.onEvent('prop:touched', { id: 'ws_roadBend', kind: 'waystone' }); er.onEvent('prop:touched', { id: 'nope', kind: 'relay' });
+er.onEvent('prop:touched', { id: 'ws_roadBend', kind: 'relay' }); /* OB-126: a relay with an available errand only offers on the 1st touch */ assert.deepEqual(inspected, [], 'first touch offers only, no inspect'); er.onEvent('prop:touched', { id: 'ws_roadBend', kind: 'relay' }); er.onEvent('prop:touched', { id: 'ws_roadBend', kind: 'waystone' }); er.onEvent('prop:touched', { id: 'nope', kind: 'relay' });
 assert.deepEqual(inspected, ['relayBend'], 'relay touch -> inspect(relayBend) only');
 
 // 4. real inspect flow: shield at the Bend relay (giveOnTalk), requireEquipped hand-in at the Ford relay

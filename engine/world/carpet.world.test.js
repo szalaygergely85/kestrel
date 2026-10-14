@@ -51,12 +51,13 @@ const POSES = [
   { name: 'east river bank south of the ford', x: 1050, y: 1096, want: 'riverbank' },
   { name: 'barley field (north of the barley fence)', x: 976, y: 882, want: 'straw' },
   { name: 'Outwall (west, outside the palisade)', x: 871, y: 947, want: 'outwall' },
-  { name: 'tower interior', x: 1496, y: 1024, want: 'none' },
+  { name: 'tower interior', x: 1496, y: 1024, want: 'none', r: 12 } /* OB-121a: radiusM 20 reaches meadow outside the tower walls; the interior share is judged within 12 m */,
   { name: 'road (route-walk leg 8 waypoint)', x: 1350, y: 1050, want: 'none' },
 ];
-const names = ['none', ...cfg.variants.map((v) => v.name)], R = cfg.radiusM || 12;
+const names = ['none', ...cfg.variants.map((v) => v.name)], R0 = cfg.radiusM || 12;
 const covers = (c, x, y) => c && x >= c.x0 && y >= c.y0 && x < c.x0 + c.w * c.cellM && y < c.y0 + c.h * c.cellM;
 for (const p of POSES) {
+  const R = p.r || R0;
   world.ensureBandFor(p.x, p.y);
   if (!covers(world.carpet, p.x, p.y)) { world.terrain.bakeNearBand(Math.floor(p.x / 128) - 1, Math.floor(p.y / 128) - 1, 3, 3); world._rebuildCarpet(); }
   // OB-096: the share test is about the recipe fields, so it reads the map WITHOUT the structure mask (the mask empties cells near props/stones by design)

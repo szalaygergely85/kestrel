@@ -301,6 +301,18 @@ function buildCompareRuns(ctx) {
       worldM1._rebuildCarpet();
     } });
 
+  // OB-121b: carpetNear - same minimal meadow carpet as carpetMeadow but with the near underlay (carpet.underlay 0.6 -> fgP.x = 1.6, grass colour under the
+  // tufts, also inside the 40 m close band) and a steeper pitch -35 so most of the frame is near ground. Gate = the usual pitched bars.
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: carpetNear (OB-121b underlay 0.6, pitched -35 first person at (1470, 1035) over grass, carpet ON)',
+    cam: { x: 1470, y: 1035, z: (worldM1.terrain ? worldM1.terrain.groundAt(1470, 1035) : 0) + engine.physics.eyeHeight, yawDeg: 235, pitchDeg: -35 }, real: true, meshOnly: true, pitchedDefault: true, carpet: true,
+    before: () => {
+      const tr = worldM1.terrain;
+      worldM1._carpetCtx = { cfg: validateCarpetConfig({ seed: 11, radiusM: 12, underlay: 0.6, variants: [
+        { name: 'meadow', ground: tr.typeNames.filter((n) => n.startsWith('grass')), density: 0.9, heightM: [0.15, 0.28], ramp: [[10, 40, 10], [60, 160, 40], [180, 230, 90]] },
+      ] }, tr.typeNames), recipe: tr.recipe };
+      worldM1._rebuildCarpet();
+    } });
+
   // US-068b3b (38.19 item 2): ortho ISO pose over the roadSouth area (look-at 20 m along the roadSouth view, yaw 240).
   // Eye = focus - 500 m*F (ORTHO_BACK_M), halfH 20 m. NEW row: JS twin (meshPitched path) vs WG under the pitched gate rules.
   const orthoIsoPose = () => {
@@ -728,6 +740,18 @@ function buildCompareRuns(ctx) {
       cam: { x, y, z: detailWorld.terrain.groundAt(x, y) + 1.6, yawDeg: 270, pitchDeg: -15 },
       real: true, meshOnly: true, pitchedDefault: true, sun: SUN_135_30,
       before: () => engine.setWorld(detailWorld) });
+  }
+  // ENV-01d (38.62): decorGpu rows. Existing rows above stay decor=cpu (world.decorGpu undefined = no mask, identical bytes). These two rows share a world that sets the
+  // plain property `decorGpu` (ENV-01b); the GPU decor pass itself is fed by main.js / the renderer host (NEEDS B1-main). Main session runs them, thresholds unchanged.
+  if (ctx.renderer === 'mesh') {
+    const decorWorld = loadCompareWorld(assets.world('world_m1'), { detail: true, physics: 'mesh' });
+    decorWorld.decorGpu = true; decorWorld.terrain.bakeFarSync();
+    const decorLights = lightsEnabled ? buildLightSet(decorWorld, assets.palette) : null;
+    const dpose = (name, x, y, yawDeg, pitchDeg) => runs.push({ world: decorWorld, lights: decorLights, name,
+      cam: { x, y, z: decorWorld.terrain.groundAt(x, y) + 1.6, yawDeg, pitchDeg }, real: true, meshOnly: true, pitchedDefault: true, decorGpu: true, sun: SUN_135_30,
+      before: () => engine.setWorld(decorWorld) });
+    dpose('world_m1: decorMeadow (ENV-01d, decorGpu, flower meadow, eye 1.6 m: carpet hand-off)', 1474.5, 1025, 270, -15);
+    dpose('world_m1: decorFord (ENV-01d, decorGpu, ford reeds + pebbles)', 1045.96, 1066.69, 246, -11);
   }
   // Every pose that does not ask for a projection is a shear (dda-vs-mesh parity) pose until ME-19: pin it.
   for (const r of runs) if (!r.pitchedDefault && !r.cam.projection) r.cam = { ...r.cam, projection: 'shear' };

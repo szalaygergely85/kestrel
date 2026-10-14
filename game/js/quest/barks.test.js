@@ -1,4 +1,5 @@
 // barks.test.js (CH1-06): once per id, 1.6 s lines, cancel on dialogue, 0-alloc draw.
+import { allocProbe } from '../../../tools/allocProbe.mjs';
 import assert from 'node:assert/strict';
 import { createBarks, BARK_LINE_SEC } from './barks.js';
 
@@ -56,10 +57,9 @@ const run = (b, sec) => { for (let i = 0; i < Math.round(sec * 60); i++) b.step(
   const { b, layer } = mk({ lineSec: 100 });
   b.play('bear.walk1'); run(b, 1);
   for (let i = 0; i < 2000; i++) { b.draw(layer, i * 0.016); b.step(DT); } // warm
-  globalThis.gc && globalThis.gc();
-  const h0 = process.memoryUsage().heapUsed;
-  for (let i = 0; i < 200000; i++) { b.draw(layer, i * 0.016); b.step(DT); }
-  const d = process.memoryUsage().heapUsed - h0;
+  const pr = allocProbe((n) => { for (let i = 0; i < n; i++) { b.draw(layer, i * 0.016); b.step(DT); } }, { n: 20000 });
+  const d = pr.skipped ? 0 : pr.bytes * 10; // scaled to the old 200k-frame budget
+  if (pr.skipped) console.log('SKIP barks alloc (no --expose-gc)');
   assert.ok(d < 1000000, 'heap growth ' + d);
 }
 // repeat mode (LIFE-05): no once-flag, nothing saved, replayable; dropped while a bark is on screen; has()

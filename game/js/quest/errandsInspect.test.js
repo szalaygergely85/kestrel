@@ -52,4 +52,15 @@ banners.length = 0; er.inspected('nest'); assert.equal(banners[0][0], "A crow's 
 // no texts table: nothing added, nothing breaks
 const w2 = { interactables: [], get: world.get, addInteractable: world.addInteractable, forEachEntity: world.forEachEntity };
 const e2 = createErrands({ getBook: () => book, questFlag() {}, inspect() {}, note() {} }); assert.equal(e2.load(w2), 0); e2.inspected('knot');
+// OB-127: every inspect entity id exists in world_m1 and has a model the sprite/voxel path can draw (a sprite-only model under
+// components.voxel was silently not drawn: prompt but no lamp).
+{
+  const wd = JSON.parse(readFileSync(new URL("../../../content/worlds/world_m1.world.json", import.meta.url), "utf8"));
+  const byId = new Map(wd.entities.map((e) => [e.id, e]));
+  for (const [k, t] of Object.entries(texts.texts)) for (const id of t.entities || []) {
+    const e = byId.get(id); assert.ok(e, k + ": entity missing in world_m1: " + id);
+    const c = e.components || {}; const m = (c.sprite || c.voxel || {}).model;
+    if (id.endsWith("Lamp") || /Lampd$/.test(id)) { assert.ok(c.voxel && !c.sprite && m === "floorLanternVox", id + ": OB-132 lamps are voxel floorLanternVox"); }
+  }
+}
 console.log('errandsInspect.test.js: OK');

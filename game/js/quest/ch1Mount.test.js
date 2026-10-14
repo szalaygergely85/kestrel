@@ -13,7 +13,7 @@ import { createNoticeView } from '../ui/noticeView.js';
   const rw = createRelayWake({ world, palette: { lights: {} }, emit() {}, hum() {}, notice });
   assert.equal(notice.active, false);
   assert.equal(rw.interact('ws_roadBend'), true);
-  assert.equal(notice.active, true); assert.equal(notice.title, 'BEND RELAY AWAKENED');
+  assert.equal(notice.active, true); assert.equal(notice.title, 'WAYSTONE AWAKENED');
   assert.equal(rw.toastLeft, 0, 'no old toast when the notice view is injected');
   // hidden (menu/dialogue open): timer paused
   notice.update(10, true); assert.equal(notice.active, true);

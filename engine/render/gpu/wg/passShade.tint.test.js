@@ -40,8 +40,9 @@ ok('upload: rgb+k', su[W('etC')] === tab.rgbk[0] && su[W('etC') + 3] === tab.rgb
 {
   const many = ents.slice(); const run = () => { for (let i = 0; i < 20000; i++) { fillEntityTints(tab, many, pool, 1010); writeEntityTints(su, s32, tab); } };
   for (let w = 0; w < 10; w++) run(); // warm-up past JIT tier-up (tier-up boxes doubles; that is not a per-frame leak)
+  if (!global.gc) { console.log('SKIP zero alloc (needs node --expose-gc)'); process.exit(fails ? 1 : 0); }
   let d = Infinity; // best of 5 windows: a real per-frame allocation shows in every window
-  for (let w = 0; w < 5; w++) { if (global.gc) { global.gc(); global.gc(); } const h0 = process.memoryUsage().heapUsed; run(); d = Math.min(d, process.memoryUsage().heapUsed - h0); }
+  for (let w = 0; w < 5; w++) { global.gc(); global.gc(); const h0 = process.memoryUsage().heapUsed; run(); d = Math.min(d, process.memoryUsage().heapUsed - h0); }
   ok('zero alloc (' + d + ' B / 20000 iters)', d < 128 * 1024);
 }
 process.exit(fails ? 1 : 0);

@@ -42,6 +42,7 @@ function put(mesh, x, y, yaw, o = {}) {
 // plants the foot; a leaning stake, there is no upright post mesh and meshes take no pitch) with ONE fence plank nailed near its top as the sign.
 const BRACE_FOOT = 1.21, BRACE_TOP = 1.7;   // foot height above the origin, rise from foot to top
 function markerPost(x, y, yaw, plankYaw, plankScale = 0.5) {
+  return;   // OB-143 (owner): no crossed X-beam struts (Prop_Support) - they stood in the air on slopes; marker posts are no longer emitted
   put('Prop_Support', x, y, yaw, { dz: -BRACE_FOOT, ext: 0.3, collide: false });
   const [tx, ty] = rot(yaw, 0, -1.75);   // the high end of the strut lies at local y -1.75
   put('Prop_WoodenFence_Single', x + tx, y + ty, plankYaw, { dz: BRACE_TOP - 0.55, scale: plankScale, ext: 0.3, collide: false });
@@ -107,17 +108,9 @@ put('Roof_Wooden_2x1', RC[0] + 5.2, RC[1] - 0.6, 160, { collide: false, ext: 1.0
 // OB-060: no Roof_Support2 (crossed X-beams hovered 0.8 m above the ground / leaned out of the slope); removed from world_m1 too
 // rubble ramp: a pile of 2 m stair-block columns running south from the west side of the roof (clear of the 9e line and of the world-bounds
 // edge in the north), each top <= 0.7 m above the previous (jump apex 1.05 m, step-up 0.45), first top ~0.7 m over its ground, the last (against the roof box) exactly DECK.
+// OB-138: a chain of 4 hull-wedge stairs (colliderHull), each rising 1 m toward -y over 2 m, walkable without jumping; last top = DECK.
 const PX = RC[0] - 4.3, stepTops = [], stepYs = [];
-{
-  const Y = (n, i) => RC[1] - 2 + 2 * (n - 1 - i);
-  const N = Math.max(2, Math.ceil((DECK - (low(PX, Y(7, 0), 1.0) + 0.7)) / 0.7) + 1);
-  let top = low(PX, Y(N, 0), 1.0) + 0.7; const inc = (DECK - top) / (N - 1);
-  for (let i = 0; i < N; i++, top += inc) {
-    const y = Y(N, i), g = low(PX, y, 1.0) - 0.04, n = Math.max(1, Math.ceil(top - g - 0.05));
-    for (let k = 0; k < n; k++) put('Stairs_Exterior_Straight', PX + ((i + k) % 4) * 0.03, y, k % 2 ? 180 : 0, { z: +(top - 1 - (n - 1 - k) * Math.max(0.5, Math.min(1, (top - 1 - g) / Math.max(1, n - 1))) + ((k * 5 + i * 3) % 7) * 0.012).toFixed(2), ext: 1.0 }); // +0..9 cm per step: stacked stair meshes share tread planes otherwise (OB-053b)
-    stepTops.push(+top.toFixed(2)); stepYs.push(+y.toFixed(1));
-  }
-}
+for (let i = 0; i < 4; i++) { const y = RC[1] + 4 - 2 * i; put('Stairs_Exterior_Straight', 970.7, y, 180, { z: +(DECK - 4 + i).toFixed(2), ext: 1.0 }); stepTops.push(+(DECK - 3 + i).toFixed(2)); stepYs.push(y); }
 { rubble(PX - 2.1, stepYs[0] - 0.4, 30, 2); rubble(PX - 2.3, stepYs[2], 120, 3); rubble(PX + 2.2, stepYs[1], 75, 4); rubble(PX - 1.9, stepYs[1] + 0.5, 200, 1); } // beside the pile, never on the approach line
 const nestZ = +(DECK + 0.05).toFixed(2);
 // OB-036: Rook's nest = a stick bundle of 5 Roof_Log pieces (the smallest scale the world accepts is 0.25: 2.7 m x 0.29 m, so a true ring of small logs
@@ -131,10 +124,10 @@ const nestZ = +(DECK + 0.05).toFixed(2);
     put(m, NX + dx * 1.6, NY + dy * 1.4, i * 61, { z: +(DECK + 0.3).toFixed(2), scale: 0.45, collide: false, noShadow: true })); }
 const CHEST = { voxel: { anim: 'closed', loop: false, model: 'chestSmall' } };
 const ruinEnts = [
-  { id: 'nest', type: 'prop', x: RC[0] - 0.9, y: RC[1] - 1.6, z: +(nestZ + 0.5).toFixed(2), components: { questPickup: { item: 'relay.mirror', n: 1 }, sprite: { model: 'pickupGear', anim: 'idle', frame: 0 } }, note: 'QL-16: relay.mirror questPickup (taken stays taken; pickupGear sprite until a mirror sprite exists). ' + 'MAP-23 Rook nest anchor on the ruin roof (QL-16 relay.mirror pickup; QL-D1 nest sprite pending). Roof deck z ' + DECK },
-  { id: 'chestBoots', type: 'prop', x: RC[0] + 0.7, y: RC[1] - 1.6, z: nestZ, yawDeg: 180, components: CHEST, note: 'QL-16 River Boots chest on the ruin roof beside the nest (table chestDefs.js: gear.feet.riverBoots)' },
+  { id: 'nest', type: 'prop', x: RC[0] + 1.8, y: RC[1] - 0.8, z: 'ground', /* OB-152: on the floor inside the ruin room */ components: { questPickup: { item: 'relay.mirror', n: 1 }, voxel: { anim: 'idle', loop: true, model: 'pickup.relay.mirror' } }, note: 'QL-16: relay.mirror questPickup (taken stays taken; pickupGear sprite until a mirror sprite exists). ' + 'MAP-23 Rook nest anchor on the ruin roof (QL-16 relay.mirror pickup; QL-D1 nest sprite pending). Roof deck z ' + DECK },
+  { id: 'chestBoots', type: 'prop', x: RC[0], y: RC[1] + 1.9, z: 'ground', /* OB-152: inside the ruin room */ yawDeg: 180, components: CHEST, note: 'QL-16 River Boots chest on the ruin roof beside the nest (table chestDefs.js: gear.feet.riverBoots)' },
   { id: 'rook', type: 'npc', x: RC[0] - 0.1, y: RC[1] - 1.6, z: nestZ, yawDeg: 90, scale: 1.6, components: { dialogue: 'rook', voxel: { anim: 'perch', loop: true, model: 'crow' } }, note: 'OB-044: no collider (a perched crow must not block the 1 m deck). QL-06 Rook the talking crow (crow model x1.6) on the nest of the ruin roof; [E] Talk via the dialogue component' },
-  { id: 'chestRook', type: 'prop', x: RC[0] - 2.4, y: RC[1] - 1.6, z: nestZ, yawDeg: 180, components: CHEST, note: 'MAP-23 chest on the ruin roof (EQ-10: arrows 15 + a sturdy gear roll; table in chestDefs.js)' },
+  { id: 'chestRook', type: 'prop', x: RC[0] - 1.1, y: RC[1] + 0.4, z: 'ground', /* OB-152: inside the ruin room */ yawDeg: 180, components: CHEST, note: 'MAP-23 chest on the ruin roof (EQ-10: arrows 15 + a sturdy gear roll; table in chestDefs.js)' },
 ];
 // ---- MAP-25 loot spots + red caps + smoke anchors. Anchors are bare props (QL-18/QL-17 wire the content); caps are Quaternius mushrooms.
 const free = (x, y) => T.groundTypeAt(x, y) !== WATER && T.groundTypeAt(x + 1, y) !== WATER && T.groundTypeAt(x, y + 1) !== WATER;
@@ -163,12 +156,13 @@ anchor('chestBend', 1268, 1014, 'MAP-25 heart-piece chest 2 (Bend Relay ridge, ~
     world.ensureBandFor(tx, ty);
     const ang = (k * 67 + 20) * Math.PI / 180, rt = 0.42 * sc;           // out-direction and approx trunk radius
     const fx = tx + Math.cos(ang) * rt, fy = ty + Math.sin(ang) * rt;
-    put('Mushroom_Laetiporus', fx, fy, (ang * 180 / Math.PI) + 90, { collide: false, noShadow: true, ext: 0.2, scale: 1.0, dz: 0.5 + 0.12 * k });
+    // OB-130 (owner): shelf fungus removed; trunk-foot pickup + ground mushrooms stay
+    // put('Mushroom_Laetiporus', fx, fy, (ang * 180 / Math.PI) + 90, { collide: false, noShadow: true, ext: 0.2, scale: 1.0, dz: 0.5 + 0.12 * k });
     const gx = tx + Math.cos(ang + 0.9) * (rt + 0.5), gy = ty + Math.sin(ang + 0.9) * (rt + 0.5);
     if (k % 2) put('Mushroom_Common', gx, gy, k * 53, { collide: false, noShadow: true, ext: 0.2, scale: 0.9 });
     const px = tx + Math.cos(ang) * (rt + 0.8), py = ty + Math.sin(ang) * (rt + 0.8);
     if (pd(px, py) < 6 || !free(px, py)) throw new Error('cap' + k + ' on road/water');
-    ruinEnts.push({ id: 'cap' + k, type: 'prop', x: +px.toFixed(1), y: +py.toFixed(1), z: 'ground', components: { questPickup: { item: 'redcap', n: 1 }, sprite: { model: 'pickupRedCap', anim: 'idle', frame: 0 } }, note: 'MAP-25 red-cap pickup ' + k + ' (OB-023: at the foot of tree ' + tid + ', shelf fungus on its trunk; M4 pickupRedCap sprite, questPickup item redcap; QL-18 sq.rook.caps)' });
+    ruinEnts.push({ id: 'cap' + k, type: 'prop', x: +px.toFixed(1), y: +py.toFixed(1), z: 'ground', components: { questPickup: { item: 'redcap', n: 1 }, voxel: { anim: 'idle', loop: true, model: 'pickup.redcap' } }, note: 'MAP-25 red-cap pickup ' + k + ' (OB-023: at the foot of tree ' + tid + ', shelf fungus on its trunk; M4 pickupRedCap sprite, questPickup item redcap; QL-18 sq.rook.caps)' });
   }); }
 // M4: smokeColumn far billboard (design/models/m3_props.js settings: unlit, far fog, minCells 3x6, detailRows 14); z 'ground' like the other props
 // OB-020 (owner: the billboard smoke looked very bad): smoke1..3 carry a thin particle plume (preset farSmoke, game ASSETS.particles) via components.emitters.
@@ -189,13 +183,13 @@ ruinEnts.push({ id: 'fordMark', type: 'prop', x: 993.6, y: 1077.4, z: 'ground', 
 [['boarF1', 958, 1078], ['boarF2', 962, 1081]].forEach(([id, x, y]) => { world.ensureBandFor(x, y); if (!free(x, y)) throw new Error(id + ' in water');
   ruinEnts.push({ id, type: 'beast', x, y, z: 'ground', components: { brain: { home: [x, y], kind: 'beast', temperament: 'wary' }, targetable: { height: 0.7, radius: 0.45 }, voxel: { anim: 'idle', loop: true, model: 'boarPlaceholder' } }, note: 'QL-16 wary boar grazing near the ford (DRESS-01 pattern); NOT in the burl.boars quest' }); });
 ruinEnts.push({ id: 'smokeRuin', type: 'prop', x: chimney.origin.x, y: chimney.origin.y, z: +(chimney.origin.z + 3.05).toFixed(2), components: { emitters: [{ preset: 'smoke', offset: { up: 0.1 }, on: true }] }, note: 'OB-031: smoke from the standing chimney of the Rook ruin (existing emitter preset smoke)' });
-ruinEnts.push({ id: 'tradeLamp', type: 'prop', x: +TP_LAMP.x.toFixed(2), y: +TP_LAMP.y.toFixed(2), z: +(low(TP_LAMP.x, TP_LAMP.y, 0.4) + 1.12).toFixed(2), components: { light: { preset: 'lanternHook', on: true, offset: { down: -0.35 } }, voxel: { anim: 'lit', loop: true, model: 'floorLantern' } }, note: 'OB-031: brass lamp on the trade post counter (existing floorLantern + lanternHook light)' });
+ruinEnts.push({ id: 'tradeLamp', type: 'prop', x: +TP_LAMP.x.toFixed(2), y: +TP_LAMP.y.toFixed(2), z: +(low(TP_LAMP.x, TP_LAMP.y, 0.4) + 1.12).toFixed(2), components: { light: { preset: 'lanternHook', on: true, offset: { down: -0.35 } }, voxel: { anim: 'lit', loop: true, model: 'floorLanternVox' } }, note: 'OB-031: brass lamp on the trade post counter (existing floorLantern + lanternHook light)' });
 // ---- M4 story quests (QL-09/11/12): gondola inspect giver (tower ground floor, sq.wreck.plate), oilcloth packet at the Bend Relay base
 // (sq.packet), brass scraps brass1..4 (sq.rook.shiny; QL-11 spots). Anchors only: the gondola is the existing wreck dressing, the rest reuses the pickupGear sprite.
 ruinEnts.push({ id: 'gondola', type: 'prop', x: 1496, y: 1024, z: 0, components: { inspect: { text: 'prompt.gondola' } }, note: 'QL-09 Kestrel gondola on the tower ground floor: inspect giver of sq.wreck.plate (fetch boar.hide -> Brass Buckler)' });
-ruinEnts.push({ id: 'packet', type: 'prop', x: 1260.6, y: 1034.8, z: 'ground', components: { sprite: { anim: 'idle', frame: 0, model: 'pickupGear' } }, note: 'QL-12 oilcloth packet by the Bend Relay base: inspect = accept sq.packet (item packet, deliver to the post)' });
+ruinEnts.push({ id: 'packet', type: 'prop', x: 1260.6, y: 1034.8, z: 'ground', components: { voxel: { anim: 'idle', loop: true, model: 'pickup.packet' } }, note: 'QL-12 oilcloth packet by the Bend Relay base: inspect = accept sq.packet (item packet, deliver to the post)' });
 [[1490, 1010], [1465, 1047], [1405, 1040], [1300, 1048]].forEach(([x, y], i) => { world.ensureBandFor(x, y);
-  ruinEnts.push({ id: 'brass' + (i + 1), type: 'prop', x, y, z: 'ground', components: { questPickup: { item: 'brass.scrap', n: 1 }, sprite: { anim: 'idle', frame: 0, model: 'pickupGear' } }, note: `QL-11 brass scrap ${i + 1} of 4 (sq.rook.shiny; E Pick, stays taken)` }); });
+  ruinEnts.push({ id: 'brass' + (i + 1), type: 'prop', x, y, z: 'ground', components: { questPickup: { item: 'brass.scrap', n: 1 }, voxel: { anim: 'idle', loop: true, model: 'pickup.brass.scrap' } }, note: `QL-11 brass scrap ${i + 1} of 4 (sq.rook.shiny; E Pick, stays taken)` }); });
 const ents = [...ruinEnts, 
   { id: 'post', type: 'prop', x: +basket.x.toFixed(2), y: +basket.y.toFixed(2), z: 'ground', components: { inspect: { text: 'post.basket' } }, note: 'MAP-22 trade post basket crate: inspect anchor (sq.packet delivers here, 20 arrows in the basket)' },
   { id: 'notePost', type: 'prop', x: NOTE[0], y: NOTE[1], z: 'ground', components: { inspect: { text: 'note.straw' } }, note: 'MAP-24 note post of the straw-man field (QL-13 sq.straw giver)' },

@@ -335,43 +335,55 @@ export function queryAABB(bvh, x0, y0, z0, x1, y1, z1, out, maxOut) {
   return count;
 }
 
+// Ray scratch: ox,oy,oz,dx,dy,dz, tMaxCur (6), slab entry t (7). Passing doubles as args/returns to the non-inlined helpers boxes
+// them (~128 B/ray, GATE-FLAKY-02a part A2). Re-entrancy-safe: raycast/raycastAny never call themselves or user code while RAY is live.
+const RAY = new Float64Array(8);
+/** Layout length of the caller-owned ray array `[ox,oy,oz,dx,dy,dz,tMax]` taken by `raycastRay`/`raycastAnyRay`. */
+export const RAY_LEN = 7;
+// Private arg array for the scalar wrappers (`raycast`, `raycastAny`, `segment`). Convenience, cold paths only.
+const _ARG = new Float64Array(RAY_LEN);
 /**
- * Robust slab test (handles axis-parallel rays without NaN): returns entry t
- * in [0, tMaxCur], or -1 on a miss.
+ * Robust slab test (handles axis-parallel rays without NaN) of node `node` against RAY (tMaxCur = RAY[6]):
+ * returns true on a hit and writes the entry t in [0, tMaxCur] to RAY[7]; false on a miss.
  */
-function slabEntry(minX, minY, minZ, maxX, maxY, maxZ, ox, oy, oz, dx, dy, dz, tMaxCur) {
-  let t0 = 0, t1 = tMaxCur;
+function slabEntry(bvh, node) {
+  const b = node * 3;
+  const minX = bvh.nodeMin[b], minY = bvh.nodeMin[b + 1], minZ = bvh.nodeMin[b + 2];
+  const maxX = bvh.nodeMax[b], maxY = bvh.nodeMax[b + 1], maxZ = bvh.nodeMax[b + 2];
+  const ox = RAY[0], oy = RAY[1], oz = RAY[2], dx = RAY[3], dy = RAY[4], dz = RAY[5];
+  let t0 = 0, t1 = RAY[6];
   if (dx === 0) {
-    if (ox < minX || ox > maxX) return -1;
+    if (ox < minX || ox > maxX) return false;
   } else {
     const invD = 1 / dx;
     let tn = (minX - ox) * invD, tf = (maxX - ox) * invD;
     if (tn > tf) { const tmp = tn; tn = tf; tf = tmp; }
     if (tn > t0) t0 = tn;
     if (tf < t1) t1 = tf;
-    if (t0 > t1) return -1;
+    if (t0 > t1) return false;
   }
   if (dy === 0) {
-    if (oy < minY || oy > maxY) return -1;
+    if (oy < minY || oy > maxY) return false;
   } else {
     const invD = 1 / dy;
     let tn = (minY - oy) * invD, tf = (maxY - oy) * invD;
     if (tn > tf) { const tmp = tn; tn = tf; tf = tmp; }
     if (tn > t0) t0 = tn;
     if (tf < t1) t1 = tf;
-    if (t0 > t1) return -1;
+    if (t0 > t1) return false;
   }
   if (dz === 0) {
-    if (oz < minZ || oz > maxZ) return -1;
+    if (oz < minZ || oz > maxZ) return false;
   } else {
     const invD = 1 / dz;
     let tn = (minZ - oz) * invD, tf = (maxZ - oz) * invD;
     if (tn > tf) { const tmp = tn; tn = tf; tf = tmp; }
     if (tn > t0) t0 = tn;
     if (tf < t1) t1 = tf;
-    if (t0 > t1) return -1;
+    if (t0 > t1) return false;
   }
-  return t0;
+  RAY[7] = t0;
+  return true;
 }
 
 /**
@@ -380,7 +392,8 @@ function slabEntry(minX, minY, minZ, maxX, maxY, maxZ, ox, oy, oz, dx, dy, dz, t
  * returns true on a strictly-closer hit than `hit.t` on entry (caller resets
  * `hit.t = tMax` first, or use the `raycast` wrapper below).
  */
-function intersectTri(bvh, ti, ox, oy, oz, dx, dy, dz, bestT, hit) {
+function intersectTri(bvh, ti, hit) {
+  const ox = RAY[0], oy = RAY[1], oz = RAY[2], dx = RAY[3], dy = RAY[4], dz = RAY[5], bestT = RAY[6];
   const o = ti * 9;
   const p0x = bvh.tri[o], p0y = bvh.tri[o + 1], p0z = bvh.tri[o + 2];
   const p1x = bvh.tri[o + 3], p1y = bvh.tri[o + 4], p1z = bvh.tri[o + 5];
@@ -412,7 +425,7 @@ function writeHitNormal(bvh, ti, out) {
   const e1x = p1x - p0x, e1y = p1y - p0y, e1z = p1z - p0z;
   const e2x = p2x - p0x, e2y = p2y - p0y, e2z = p2z - p0z;
   let nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
-  const len = Math.hypot(nx, ny, nz) || 1;
+  const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
   out.nx = nx / len; out.ny = ny / len; out.nz = nz / len;
 }
 
@@ -426,50 +439,47 @@ function writeHitNormal(bvh, ti, out) {
  * @param {number} tMax
  * @param {RayHit} out
  * @returns {boolean}
+ * Convenience, cold paths only (scalar args box at the call boundary); hot callers use `raycastRay`.
  */
 export function raycast(bvh, ox, oy, oz, dx, dy, dz, tMax, out) {
+  const r = _ARG;
+  r[0] = ox; r[1] = oy; r[2] = oz; r[3] = dx; r[4] = dy; r[5] = dz; r[6] = tMax;
+  return raycastRay(bvh, r, out);
+}
+
+/**
+ * Hot-path form of `raycast`: `ray` is a caller-owned Float64Array(RAY_LEN) `[ox,oy,oz,dx,dy,dz,tMax]`, read-only here.
+ * @param {Bvh} bvh @param {Float64Array} ray @param {RayHit} out
+ * @returns {boolean}
+ */
+export function raycastRay(bvh, ray, out) {
   if (bvh.nodeCount === 0) return false;
   const stack = bvh.stack;
   let sp = 0;
   stack[sp++] = 0;
-  let bestT = tMax;
+  let bestT = ray[6];
+  RAY[0] = ray[0]; RAY[1] = ray[1]; RAY[2] = ray[2]; RAY[3] = ray[3]; RAY[4] = ray[4]; RAY[5] = ray[5]; RAY[6] = bestT;
   let bestTri = -1;
   const hit = out; // reuse caller's object as scratch (zero allocation)
   hit.t = bestT;
   while (sp > 0) {
     const nodeIdx = stack[--sp];
-    const b = nodeIdx * 3;
-    const entry = slabEntry(
-      bvh.nodeMin[b], bvh.nodeMin[b + 1], bvh.nodeMin[b + 2],
-      bvh.nodeMax[b], bvh.nodeMax[b + 1], bvh.nodeMax[b + 2],
-      ox, oy, oz, dx, dy, dz, bestT,
-    );
-    if (entry < 0 || entry > bestT) continue;
+    if (!slabEntry(bvh, nodeIdx) || RAY[7] > bestT) continue;
     const cnt = bvh.nodeTriCount[nodeIdx];
     if (cnt > 0) {
       const start = bvh.nodeStart[nodeIdx];
       for (let i = 0; i < cnt; i++) {
         const ti = start + i;
-        if (intersectTri(bvh, ti, ox, oy, oz, dx, dy, dz, bestT, hit)) {
-          bestT = hit.t;
+        if (intersectTri(bvh, ti, hit)) {
+          bestT = hit.t; RAY[6] = bestT;
           bestTri = ti;
         }
       }
     } else {
       const left = bvh.nodeStart[nodeIdx];
       const right = left + 1;
-      const lb = left * 3, rb = right * 3;
-      const entryL = slabEntry(
-        bvh.nodeMin[lb], bvh.nodeMin[lb + 1], bvh.nodeMin[lb + 2],
-        bvh.nodeMax[lb], bvh.nodeMax[lb + 1], bvh.nodeMax[lb + 2],
-        ox, oy, oz, dx, dy, dz, bestT,
-      );
-      const entryR = slabEntry(
-        bvh.nodeMin[rb], bvh.nodeMin[rb + 1], bvh.nodeMin[rb + 2],
-        bvh.nodeMax[rb], bvh.nodeMax[rb + 1], bvh.nodeMax[rb + 2],
-        ox, oy, oz, dx, dy, dz, bestT,
-      );
-      const hitL = entryL >= 0, hitR = entryR >= 0;
+      const hitL = slabEntry(bvh, left), entryL = RAY[7];
+      const hitR = slabEntry(bvh, right), entryR = RAY[7];
       if (hitL && hitR) {
         // Nearer first; tie -> left. LIFO stack: push the farther one first.
         if (entryL <= entryR) { stack[sp++] = right; stack[sp++] = left; }
@@ -495,28 +505,35 @@ export function raycast(bvh, ox, oy, oz, dx, dy, dz, tMax, out) {
  * @param {number} dx @param {number} dy @param {number} dz
  * @param {number} tMax
  * @returns {boolean}
+ * Convenience, cold paths only; hot callers use `raycastAnyRay`.
  */
 export function raycastAny(bvh, ox, oy, oz, dx, dy, dz, tMax) {
+  const r = _ARG;
+  r[0] = ox; r[1] = oy; r[2] = oz; r[3] = dx; r[4] = dy; r[5] = dz; r[6] = tMax;
+  return raycastAnyRay(bvh, r);
+}
+
+/**
+ * Hot-path form of `raycastAny`: `ray` = caller-owned Float64Array(RAY_LEN) `[ox,oy,oz,dx,dy,dz,tMax]`, read-only.
+ * @param {Bvh} bvh @param {Float64Array} ray
+ * @returns {boolean}
+ */
+export function raycastAnyRay(bvh, ray) {
   if (bvh.nodeCount === 0) return false;
   const stack = bvh.stack;
   let sp = 0;
   stack[sp++] = 0;
   const scratch = _anyScratch;
-  scratch.t = tMax;
+  scratch.t = ray[6];
+  RAY[0] = ray[0]; RAY[1] = ray[1]; RAY[2] = ray[2]; RAY[3] = ray[3]; RAY[4] = ray[4]; RAY[5] = ray[5]; RAY[6] = ray[6];
   while (sp > 0) {
     const nodeIdx = stack[--sp];
-    const b = nodeIdx * 3;
-    const entry = slabEntry(
-      bvh.nodeMin[b], bvh.nodeMin[b + 1], bvh.nodeMin[b + 2],
-      bvh.nodeMax[b], bvh.nodeMax[b + 1], bvh.nodeMax[b + 2],
-      ox, oy, oz, dx, dy, dz, tMax,
-    );
-    if (entry < 0) continue;
+    if (!slabEntry(bvh, nodeIdx)) continue;
     const cnt = bvh.nodeTriCount[nodeIdx];
     if (cnt > 0) {
       const start = bvh.nodeStart[nodeIdx];
       for (let i = 0; i < cnt; i++) {
-        if (intersectTri(bvh, start + i, ox, oy, oz, dx, dy, dz, tMax, scratch)) return true;
+        if (intersectTri(bvh, start + i, scratch)) return true;
       }
     } else {
       const left = bvh.nodeStart[nodeIdx];
@@ -539,5 +556,7 @@ const _anyScratch = { t: 0, tri: -1, u: 0, v: 0, nx: 0, ny: 0, nz: 0 };
  * @returns {boolean}
  */
 export function segment(bvh, ax, ay, az, bx, by, bz, out) {
-  return raycast(bvh, ax, ay, az, bx - ax, by - ay, bz - az, 1, out);
+  const r = _ARG;
+  r[0] = ax; r[1] = ay; r[2] = az; r[3] = bx - ax; r[4] = by - ay; r[5] = bz - az; r[6] = 1;
+  return raycastRay(bvh, r, out);
 }

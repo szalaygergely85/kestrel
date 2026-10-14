@@ -40,6 +40,7 @@ import { loadTestAssets } from './testing/content-node.mjs';
 // come from one of these.
 import '../design/palette.js';
 import '../design/detail-pass.js';
+import '../design/models/pickups_voxel.js'; // OB-132: voxel pickups + floorLanternVox (world_m1 has no sprites)
 import '../design/models/title.js'; // ASSETS.uiStyle (hints/storyHints referenced by triggers below)
 import '../design/models/menu_ui.js';
 import '../design/models/notes.js'; // READ-01: ASSETS.notes + uiStyle.note (texts/panel; the note/notePinned prop models are m3_props.js 6c)

@@ -22,7 +22,7 @@ import { makeFrame, localToWorld, localDirToWorld, QUARTER_COS, QUARTER_SIN, fra
 import { gridLocal } from './gridLocal.js';
 import { buildWorldColliders, buildStaticMeshCollider, buildTrunkCollider, buildDetailCollider, buildPropCollider, buildKinematicCollider, moveKinematicPrism, refitDynCollider } from './colliders.js';
 import { cosSinDeg } from '../voxel/voxelPose.js';
-import { moveCircleMesh, moveSphereMesh, probeSupport, meshSupportSector, raycastColliders, FLOOR_NONE } from '../physics/meshCollide.js';
+import { moveCircleMesh, moveSphereMesh, probeSupport, meshSupportSector, raycastCollidersRay, FLOOR_NONE } from '../physics/meshCollide.js';
 import { pointBlocked, resolvePropPicks } from './interaction.js';
 import { createWind } from './wind.js';
 import { createClothSystem, collectClothDefs } from './cloths.js';
@@ -258,7 +258,22 @@ function validateHorizon(list, assets) {
 }
 
 const RAY_STEP = 0.1, RAY_MAX_SAMPLES = 20, RAY_BISECT = 6;
+/** raySegmentRay scratch: bvh ray layout [ox,oy,oz,dx,dy,dz,tMax]. */
+const _rayArg = new Float64Array(7);
+/** Scratch for the cold scalar raySegment wrapper. */
+const _raySeg = new Float64Array(6);
+/** Sample point handed to _rayBlocked (module scratch: no boxed double args). */
+const _rayP = new Float64Array(3);
 const _rayHit = { t: 0, tri: -1, u: 0, v: 0, nx: 0, ny: 0, nz: 0, collider: -1 };
+
+/** scatterDetail + the baked decor masks (job.decor) on the result; opts null = plain scatterDetail (byte-identical, no `decor`). */
+function scatterDetailD(terrain, structures, keepOut, cfg, trees, opts) {
+  if (!opts) return scatterDetail(terrain, structures, keepOut, cfg, trees);
+  const job = new DetailScatterJob(terrain, structures, keepOut, cfg, trees, opts);
+  job.step(Infinity);
+  if (job.decor) job.result.decor = job.decor;
+  return job.result;
+}
 
 export class World {
   constructor() {
@@ -270,6 +285,8 @@ export class World {
     this.decals = []; // DECAL-01: derived wall text, never serialized.
     this.detailMeshes = null; // TREES-LP-c: {meshId: MeshData} for ground-cover species with `mesh`
     this.detail = null; // ENV-01a1: derived ground detail, never serialized.
+    this.decor = null; // ENV-01: baked GPU-decor masks {layers:[{name,mask,ix0,iy0,w,h}]} of the current band (null = decorGpu off), never serialized
+    this.decorGpu = false;
     this._kinCollider = null;
     this._kinSlot = new Map(); // CH1-E2: kinematic entity id -> prism slot in 'npcs:kinematic'
     this._groundSnap = []; // ED-TERRAIN-1b: [{id, x, y}] of `z: 'ground'` props/entities, re-snapped after a terrain stroke.
@@ -291,7 +308,7 @@ export class World {
     // `null` (unbounded - every world before this story). Content, not
     // state; set once by `World.load` from `def.bounds`.
     this.bounds = null;
-    this.terrainBands = null; this.bandSwitch = { prefetchM: 176, switchM: 112 }; this._bandCur = -1; this._bandPend = -1; this._bandJob = null; this.bandCache = new BandCache(); this._bandKeys = []; this._bandKeysC = []; this._evBand = { from: null, to: null, nav: null }; this._maskJob = null; this._maskBack = null; this.lastSwapMs = 0; this.bandMisses = 0; this._ahead = null; this._zoneKeys = new Map(); this._pinKeys = null; this._aheadOrd = []; this._aheadRects = new Float64Array(4 * 64); this._aheadSrc = []; this._aheadPose = null; this.bandId = null; // WS2-01/02
+    this.terrainBands = null; this.bandSwitch = { prefetchM: 176, switchM: 112 }; this._bandCur = -1; this._bandPend = -1; this._bandJob = null; this.bandCache = new BandCache(); this._bandKeys = []; this._bandKeysC = []; this._evBand = { from: null, to: null, nav: null }; this._maskJob = null; this._maskBack = null; this.lastSwapMs = 0; this.bandMisses = 0; this._ahead = null; this._zoneKeys = new Map(); this._pinKeys = null; this._aheadOrd = []; this._aheadRects = new Float64Array(4 * 64); this._aheadSrc = []; this._aheadPose = null; this._aheadIdle = -1; this._aheadIdleVer = -1; this.bandId = null; // WS2-01/02
     this.aheadLateMax = 0; this.navLate = 0; this._navFill = null; this._navQ = null;
     this.nav = null; this.navTiles = null; // WM-03: live nav tile + {create,maxSlopeDeg,maxStepM,blockedTypes,typeCost} (see setNavTiles)
     this.terrainGrid = null; this._gridPick = { i: 0, j: 0 }; // MAP-10 (38.43): generated zone grid; terrainBands = 2 reusable slot zones
@@ -570,6 +587,7 @@ export class World {
       }
     }
 
+    w.decorGpu = !!opts.decorGpu; // ENV-01: GPU decor layers (no CPU points, mask baked instead); off = byte-identical
     if (w.terrain?.realTrees && w.terrain.nearReady) w.scatter = scatterTrees(w.terrain, w.structures);
     if (opts.carpet && w.terrain) {
       w._carpetCtx = { cfg: validateCarpetConfig(opts.carpet, w.terrain.typeNames), recipe: w.terrain.recipe };
@@ -593,7 +611,8 @@ export class World {
         if (!assets || !assets.has('mesh', sp.mesh)) throw new Error(`World.load: detail species references unknown mesh "${sp.mesh}"`);
         (w.detailMeshes || (w.detailMeshes = {}))[sp.mesh] = assets.mesh(sp.mesh);
       }
-      w.detail = scatterDetail(w.terrain, w.structures, keepOut, cfg, w.scatter || null);
+      w.detail = scatterDetailD(w.terrain, w.structures, keepOut, cfg, w.scatter || null, w.decorGpu ? { decorGpu: true, carpetCtx: w._carpetCtx } : null);
+      w.decor = w.detail.decor || null;
     }
     if (w.physicsMode === 'mesh' && w.scatter) {
       const trunks = buildTrunkCollider(w.scatter, w.terrain.recipe.recipe.forest.trees);
@@ -1227,7 +1246,7 @@ export class World {
     const z = this.terrainBands[k], ks = this._bandKeys;
     if (!ks[k]) { // side arrays, not zone fields: zones are serialised world data
       ks[k] = nearBandKey(this, z.cx0, z.cy0, z.cw, z.ch) + `|realTrees:${this.terrain.realTrees}`; // = Terrain._nearKey form
-      this._bandKeysC[k] = ks[k] + `|detail:${this._detailCtx ? 1 : 0}`;
+      this._bandKeysC[k] = ks[k] + `|detail:${this._detailCtx ? 1 : 0}|decor:${this.decorGpu ? 1 : 0}`;
     }
     return this._bandKeysC[k];
   }
@@ -1273,7 +1292,7 @@ export class World {
     const id = i * 4096 + j; let k = this._zoneKeys.get(id);
     if (!k) {
       const z = zoneAt(this.terrainGrid, i, j, {});
-      k = nearBandKey(this, z.cx0, z.cy0, z.cw, z.ch) + `|realTrees:${this.terrain.realTrees}|detail:${this._detailCtx ? 1 : 0}`;
+      k = nearBandKey(this, z.cx0, z.cy0, z.cw, z.ch) + `|realTrees:${this.terrain.realTrees}|detail:${this._detailCtx ? 1 : 0}|decor:${this.decorGpu ? 1 : 0}`;
       this._zoneKeys.set(id, k);
     }
     return k;
@@ -1281,6 +1300,13 @@ export class World {
   _gridPinKeys() {
     if (!this._pinKeys) { this._pinKeys = new Set(); for (const p of this.terrainGrid.pin) this._pinKeys.add(this._zoneKey(p[0], p[1])); }
     return this._pinKeys;
+  }
+
+  /** True when bake-ahead has nothing to do (whole ring cached, no job, no nav work): streamBand then skips the timer reads (performance.now boxes a double). */
+  _aheadQuiet() {
+    if (this._bandCur < 0 || this._bandPend >= 0 || this._ahead || (this._navQ && (this._navFill || this._navQ.length))) return false;
+    const cur = this.terrainBands[this._bandCur];
+    return this._aheadIdle === cur.i * 4096 + cur.j && this._aheadIdleVer === this.bandCache.ver;
   }
 
   /**
@@ -1300,17 +1326,19 @@ export class World {
       }
       return true;
     }
-    const lp = this._aheadPose || (this._aheadPose = { x: px, y: py, hx: 0, hy: 0 });
-    const dx = px - lp.x, dy = py - lp.y, d = Math.hypot(dx, dy);
-    if (d > 0.5) { lp.hx = lp.hx * 0.8 + (dx / d) * 0.2; lp.hy = lp.hy * 0.8 + (dy / d) * 0.2; lp.x = px; lp.y = py; } // smoothed heading
+    // smoothed heading in a Float64Array [x, y, hx, hy]: object double fields would box a HeapNumber per store, per frame (arch 38.61)
+    const lp = this._aheadPose || (this._aheadPose = Float64Array.of(px, py, 0, 0));
+    const dx = px - lp[0], dy = py - lp[1], d = Math.sqrt(dx * dx + dy * dy);
+    if (d > 0.5) { lp[2] = lp[2] * 0.8 + (dx / d) * 0.2; lp[3] = lp[3] * 0.8 + (dy / d) * 0.2; lp[0] = px; lp[1] = py; }
     const cur = this.terrainBands[this._bandCur], cache = this.bandCache;
     let a = this._ahead;
     if (a && (Math.abs(a.i - cur.i) > 1 || Math.abs(a.j - cur.j) > 1)) a = this._ahead = null; // left the ring: dropped
     if (!a) {
-      const ord = aheadOrder(g, cur.i, cur.j, lp.hx, lp.hy, px, py, this._aheadOrd);
+      if (this._aheadIdle === cur.i * 4096 + cur.j && this._aheadIdleVer === cache.ver) return false;
+      const ord = aheadOrder(g, cur.i, cur.j, lp[2], lp[3], px, py, this._aheadOrd);
       let pick = null;
       for (let k = 0; k < ord.length && !pick; k++) if (!cache.has(this._zoneKey(ord[k].i, ord[k].j))) pick = ord[k];
-      if (!pick) return false;
+      if (!pick) { this._aheadIdle = cur.i * 4096 + cur.j; this._aheadIdleVer = cache.ver; return false; } // whole ring cached: memo, the scan below is skipped until the zone or the cache changes
       const z = zoneAt(g, pick.i, pick.j, {}), cs = this.terrain.chunkSize, R = this._aheadRects, srcs = this._aheadSrc;
       let n = 0; // candidate overlap sources: live band + cached bundles
       const addSrc = (near) => { if (n >= 64) return; R[n * 4] = near.x0; R[n * 4 + 1] = near.y0; R[n * 4 + 2] = near.x0 + near.w * near.cell; R[n * 4 + 3] = near.y0 + near.h * near.cell; srcs[n++] = near; };
@@ -1388,13 +1416,13 @@ export class World {
     terrain._nearKey = this._bandKeys[to];
     const src = hit || j;
     if (terrain.realTrees) this.scatter = hit ? hit.scatter : j.scatter;
-    if (this._detailCtx) this.detail = hit ? hit.detail : j.detailSet;
+    if (this._detailCtx) { this.detail = hit ? hit.detail : j.detailSet; this.decor = hit ? hit.decor || null : (j.detail && j.detail.decor) || null; }
     this._rebuildCarpet(true);
     if (this.physicsMode === 'mesh') {
       this._setCollider('scatter:trunks', hit ? hit.trunks : j.trunks);
       this._setCollider('scatter:detail', hit ? hit.detailCol : j.detailCol);
     }
-    if (!hit) { bundle = { key, zone: to, near: terrain.near, scatter: j.scatter, detail: j.detailSet, trunks: j.trunks, detailCol: j.detailCol, nav: j.nav, classMap: null, bytes: 0, pinned: false, lastUse: 0 }; this._cachePut(bundle); }
+    if (!hit) { bundle = { key, zone: to, near: terrain.near, scatter: j.scatter, detail: j.detailSet, decor: (j.detail && j.detail.decor) || null, trunks: j.trunks, detailCol: j.detailCol, nav: j.nav, classMap: null, bytes: 0, pinned: false, lastUse: 0 }; this._cachePut(bundle); }
     if (this.navTiles) { // WM-03: nav tile swaps with the band (pointer flip; a bundle without one = legacy/cached before setNavTiles -> built once)
       let nv = src.nav;
       if (!nv) { this.navLate++; nv = buildNavTile(this, terrain.near); src.nav = nv; if (bundle) bundle.nav = nv; } // counted fallback (should stay 0 in play)
@@ -1425,9 +1453,11 @@ export class World {
    */
   streamBand(px, py, msBudget) {
     this.bandCache.setFocus(px, py);
-    const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    // timer reads box a double each: skipped while there is no leftover-budget work (bake-ahead quiet, no mask job)
+    const timed = !!this._maskJob || (!!this.terrainGrid && !this._aheadQuiet());
+    const t0 = timed ? (typeof performance !== 'undefined' ? performance.now() : Date.now()) : 0;
     const r = this._streamBandCore(px, py, msBudget);
-    if (r === 0 && this.terrainGrid) { // WM-02: idle -> bake-ahead with the leftover budget
+    if (r === 0 && timed && this.terrainGrid) { // WM-02: idle -> bake-ahead with the leftover budget
       const left = msBudget - ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0);
       if (left > 0) this.bakeAhead(px, py, left);
     }
@@ -1611,7 +1641,8 @@ export class World {
     if (!terrain || !terrain.nearReady) return { ms: 0, trees: 0, detail: 0, snapped: 0 };
     terrain.recomputeBounds();
     if (terrain.realTrees) this.scatter = scatterTrees(terrain, this.structures);
-    if (this._detailCtx) this.detail = scatterDetail(terrain, this.structures, this._detailCtx.keepOut, this._detailCtx.cfg, this.scatter || null);
+    if (this._detailCtx) this.detail = scatterDetailD(terrain, this.structures, this._detailCtx.keepOut, this._detailCtx.cfg, this.scatter || null, this.decorGpu ? { decorGpu: true, carpetCtx: this._carpetCtx } : null);
+    if (this._detailCtx) this.decor = this.detail.decor || null;
     this._rebuildCarpet();
     if (this.physicsMode === 'mesh') {
       const put = (id, collider) => {
@@ -1696,8 +1727,9 @@ export class World {
     const wt = this.water;
     const i = wt.find(x, y);
     if (i < 0) return false;
-    const z = wt.zAt(i, x, y); // rect/circle: wt.z[i]; river: local z(s)
-    const h = waveHeight(wt, i, x, y, wt.tick);
+    // river (kind 3): z(s) from the river scratch, no waves ('waves: none' is enforced), all inline: a non-inlined call with double args/return boxes (alloc)
+    let z, h;
+    if (wt.kind[i] === 3) { const rv = wt.rivers[wt.riv[i]]; riverLocate(rv, x, y); z = rv.loc[L_Z]; h = 0; } else { z = wt.z[i]; h = waveHeight(wt, i, x, y, wt.tick); }
     const surfaceZ = z + h;
     const fz = this.physicsMode === 'mesh' ? this.supportAt(x, y, z + 0.01, false, null).floorH : this.floorAt(x, y);
     const d = fz === fz && fz !== null && fz > FLOOR_NONE ? surfaceZ - fz : 0; // NaN / null / FLOOR_NONE floor = depth 0
@@ -1720,14 +1752,21 @@ export class World {
     const wt = this.water;
     const i = wt.find(x, y);
     if (i < 0) { out[0] = 0; out[1] = 0; return false; }
+    if (wt.kind[i] === 3) { // river inline (same math as water.flowInto): no boxed double args
+      const rv = wt.rivers[wt.riv[i]];
+      riverLocate(rv, x, y);
+      const l = rv.loc, q = l[L_LAT] / l[L_HW], f = l[L_V] * (1 - 0.5 * q * q);
+      out[0] = l[L_TX] * f; out[1] = l[L_TY] * f;
+      return true;
+    }
     wt.flowInto(i, x, y, out);
     return true;
   }
 
   /**
    * RIVER-04 (38.45): the river water at (x, y) as plain numbers, so game code never reads the river scratch (rv.loc, L_* indices).
-   * Fills out {lat (signed, + = left of flow), hw, tx, ty, v, z} and returns true iff the highest water region there is a river. Zero allocation.
-   * @param {number} x @param {number} y @param {{lat:number,hw:number,tx:number,ty:number,v:number,z:number}} out @returns {boolean}
+   * Fills out {lat (signed, + = left of flow), hw, tx, ty, v, z, fx, fy (flow = same math as flowAt kind 3)} and returns true iff the highest water region there is a river. Zero allocation.
+   * @param {number} x @param {number} y @param {{lat:number,hw:number,tx:number,ty:number,v:number,z:number,fx:number,fy:number}} out @returns {boolean}
    */
   riverAt(x, y, out) {
     const wt = this.water, i = wt.find(x, y);
@@ -1736,6 +1775,8 @@ export class World {
     riverLocate(rv, x, y);
     const l = rv.loc;
     out.lat = l[L_LAT]; out.hw = l[L_HW]; out.tx = l[L_TX]; out.ty = l[L_TY]; out.v = l[L_V]; out.z = l[L_Z];
+    const q = out.lat / out.hw, f = out.v * (1 - 0.5 * q * q);
+    out.fx = out.tx * f; out.fy = out.ty * f;
     return true;
   }
 
@@ -1747,20 +1788,22 @@ export class World {
    * (`groundAt` every 0.1 m, <= 20 samples, then 6 bisections; terrain is
    * skipped inside a structure footprint, as `supportAt`). grid physics: the
    * `hasLineOfSight` sector sampling + the same bisection. Pure, zero alloc.
-   * @param {number} ax @param {number} ay @param {number} az
-   * @param {number} bx @param {number} by @param {number} bz
+   * Hot-path form (arch 38.61 2b): caller-owned Float64Array(6), no boxed double args.
+   * @param {Float64Array} seg `[ax,ay,az,bx,by,bz]`
    * @param {{t:number,x:number,y:number,z:number}} out
    * @returns {boolean} true on a hit (out filled); out untouched on a miss
    */
-  raySegment(ax, ay, az, bx, by, bz, out) {
-    const dx = bx - ax, dy = by - ay, dz = bz - az;
+  raySegmentRay(seg, out) {
+    const ax = seg[0], ay = seg[1], az = seg[2];
+    const dx = seg[3] - ax, dy = seg[4] - ay, dz = seg[5] - az;
     const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
     let bestT = 2;
     if (len < 1e-9) return false;
     let steps = Math.ceil(len / RAY_STEP);
     if (steps > RAY_MAX_SAMPLES) steps = RAY_MAX_SAMPLES;
     const mesh = this.physicsMode === 'mesh';
-    if (mesh && raycastColliders(this.colliders, this.colliders.length, ax, ay, az, dx, dy, dz, 1, _rayHit)) {
+    _rayArg[0] = ax; _rayArg[1] = ay; _rayArg[2] = az; _rayArg[3] = dx; _rayArg[4] = dy; _rayArg[5] = dz; _rayArg[6] = 1;
+    if (mesh && raycastCollidersRay(this.colliders, this.colliders.length, _rayArg, _rayHit)) {
       bestT = _rayHit.t;
     }
     // March; in mesh mode only up to the collider hit (later samples cannot be nearer).
@@ -1768,11 +1811,13 @@ export class World {
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
       if (prevT >= bestT) break;
-      if (this._rayBlocked(mesh, ax + dx * t, ay + dy * t, az + dz * t)) {
+      _rayP[0] = ax + dx * t; _rayP[1] = ay + dy * t; _rayP[2] = az + dz * t;
+      if (this._rayBlocked(mesh)) {
         let lo = prevT, hi = t;
         for (let k = 0; k < RAY_BISECT; k++) {
           const m = 0.5 * (lo + hi);
-          if (this._rayBlocked(mesh, ax + dx * m, ay + dy * m, az + dz * m)) hi = m; else lo = m;
+          _rayP[0] = ax + dx * m; _rayP[1] = ay + dy * m; _rayP[2] = az + dz * m;
+          if (this._rayBlocked(mesh)) hi = m; else lo = m;
         }
         if (hi < bestT) bestT = hi;
         break;
@@ -1785,8 +1830,22 @@ export class World {
     return true;
   }
 
+  /**
+   * Cold-path scalar wrapper of `raySegmentRay` (7 double args box at the call boundary when they vary).
+   * ALLOC_EXEMPT (arch 38.61 2b): per-frame callers use `raySegmentRay`.
+   * @param {number} ax @param {number} ay @param {number} az
+   * @param {number} bx @param {number} by @param {number} bz
+   * @param {{t:number,x:number,y:number,z:number}} out
+   * @returns {boolean}
+   */
+  raySegment(ax, ay, az, bx, by, bz, out) {
+    _raySeg[0] = ax; _raySeg[1] = ay; _raySeg[2] = az; _raySeg[3] = bx; _raySeg[4] = by; _raySeg[5] = bz;
+    return this.raySegmentRay(_raySeg, out);
+  }
+
   /** One raySegment sample: grid sector test, or (mesh) point below the terrain outside structures. */
-  _rayBlocked(mesh, x, y, z) {
+  _rayBlocked(mesh) {
+    const x = _rayP[0], y = _rayP[1], z = _rayP[2];
     if (!mesh) return pointBlocked(this, x, y, z);
     if (!this.terrain || this.structureAt(x, y)) return false;
     const g = this.terrain.groundAt(x, y);

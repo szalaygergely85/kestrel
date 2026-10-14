@@ -36,6 +36,13 @@ ok('deterministic: same seed -> same ids + homes', JSON.stringify(list1) === JSO
 ok('different seed -> different homes', JSON.stringify(list1) !== JSON.stringify(list3));
 ok('ids unique + stable shape', new Set(list1.map((b) => b.id)).size === list1.length && list1.every((b) => /^(boar|wolf|bear)\.[A-Za-z]+\.\d+$/.test(b.id)), list1.map((b) => b.id).join(','));
 
+// BEAST-02/OB-152: wolf packs spawn in northwood + signalHill with the real wolf model id
+{
+  const ww = mkWorld(); quiet(() => spawnRegionalBeasts(ww, G, 12));
+  let n = 0, bad = 0; ww.forEachEntity((e) => { if (/^wolf\.(northwood|signalHill)\./.test(String(e.id))) { n++; if (e.components.voxel.model !== 'wolf' || e.components.brain.species !== 'wolf') bad++; } });
+  ok('BEAST-02: >= 7 wolves in northwood+signalHill, model wolf', n >= 7 && bad === 0, 'n=' + n + ' bad=' + bad);
+}
+
 const walk = makeWalkable(wA.terrain, G.bounds);
 const rectOf = (rule) => rule.rect || G.regions.find((g) => g.id === rule.region).r;
 let bad = [];

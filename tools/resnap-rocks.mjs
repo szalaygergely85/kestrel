@@ -20,19 +20,29 @@ import { meshClass } from './editor/meshPlace.js';
 // ROCK-SNAP-01 (owner 2026-10-10: "those stones are in the air"): the generators placed rocks at the MAX ground height of 5 samples
 // + LIFT 0.15, so on slopes the downhill side floats. Re-snap every placed Rock_* / Pebble* / RockPath* mesh to the LOWEST ground
 // under its footprint (scaled bbox), sunk by SINK so the base is buried. Layout (x, y, yaw, scale) unchanged.
-// Usage: node tools/resnap-rocks.mjs [--dry]
+// Usage: node tools/resnap-rocks.mjs [--dry] [--trees]
 const FILE = 'content/worlds/world_m1.world.json';
 const SINK = { rock: 0.12, pebble: 0.03, rockpath: 0.02 };
-const dry = process.argv.includes('--dry');
+// OB-131 ("why trees in the air?"): the generators put trees at the MAX of 5 ground samples, so the downhill side of the trunk floats. Trees only ever move
+// DOWN here: if the mesh base (z + bbox z0 * scale) is above the lowest ground under the root flare (radius 0.74 * scale), z = that ground - TREE_SINK (scatter's 0.1).
+const TREE_SINK = 0.1, TREE_FLARE = 0.74;
+const dry = process.argv.includes('--dry'), treesOnly = process.argv.includes('--trees');   // --trees: leave rocks/pebbles untouched
 const data = JSON.parse(fs.readFileSync(FILE, 'utf8'));
 const { assets } = await loadTestAssets();
 const world = World.load(data, assets, { physics: 'mesh' });
 const T = world.terrain;
-let n = 0, maxFix = 0;
+let n = 0, maxFix = 0; const treeFix = [];
 for (const s of data.structures) {
   if (!s.mesh || !s.mesh.startsWith('quaternius/')) continue;
   const name = s.mesh.slice('quaternius/'.length), cls = meshClass(name);
-  if (!(cls in SINK)) continue;
+  if (cls === 'tree') {
+    const k = s.scale || 1; let lo = Infinity;
+    for (let i = 0; i < 9; i++) { const a = i * Math.PI / 4, r = i === 8 ? 0 : TREE_FLARE * k; lo = Math.min(lo, T.groundAt(s.origin.x + r * Math.cos(a), s.origin.y + r * Math.sin(a))); }
+    const base = s.origin.z + assets.mesh(s.mesh).bbox[2] * k;
+    if (base - lo > 0.05) { treeFix.push({ id: s.id, from: s.origin.z, gap: +(base - lo).toFixed(2) }); const z = +(lo - TREE_SINK).toFixed(2); maxFix = Math.max(maxFix, s.origin.z - z); s.origin.z = z; n++; }
+    continue;
+  }
+  if (!(cls in SINK) || treesOnly) continue;
   const b = assets.mesh(s.mesh).bbox, k = s.scale || 1, ext = 0.5 * k * Math.max(b[3] - b[0], b[4] - b[1]);
   let lo = Infinity;
   for (let i = 0; i < 9; i++) {
@@ -42,5 +52,6 @@ for (const s of data.structures) {
   const z = +(lo - SINK[cls]).toFixed(2);
   if (Math.abs(z - s.origin.z) > 0.005) { maxFix = Math.max(maxFix, s.origin.z - z); s.origin.z = z; n++; }
 }
-console.log(`resnapped ${n} rock/pebble meshes, largest drop ${maxFix.toFixed(2)} m`);
+console.log(`resnapped ${n} rock/pebble/tree meshes, largest drop ${maxFix.toFixed(2)} m`);
+treeFix.sort((a, b) => b.gap - a.gap); console.log(`trees lowered ${treeFix.length}; top 5 gap before (m):`, treeFix.slice(0, 5).map((t) => t.id + ' ' + t.gap).join(', '));
 if (!dry) { fs.writeFileSync(FILE, stringifyContent(data), 'utf8'); console.log('wrote', FILE); }

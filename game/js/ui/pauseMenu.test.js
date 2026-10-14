@@ -87,3 +87,14 @@ test('draw: real skin, no Esc text, no allocation-free surprises', () => {
   assert.ok(text.length > 1000);
   assert.doesNotMatch(text.join(''), /esc/i);
 });
+
+test('OB-140: Unstuck row sits before Back to main menu, moves the player and reports the toast; absent without the callback', () => {
+  const log = [], ad = createMemoryAdapter();
+  const m = createPauseMenu({ adapter: ad, style: globalThis.ASSETS.uiStyle.menu, onResume() {}, onSettings() {}, onSave: () => true, onLoad() {}, onMainMenu: () => log.push('menu'),
+    onUnstuck: () => (log.push('unstuck'), true) });
+  assert.deepEqual(m.snapshot().rows.map(r => r.text), ['Resume', 'Settings', 'Fullscreen', 'Save', 'Load', 'Unstuck', 'Back to main menu']);
+  down(m, 5); m.handleKey('Enter');
+  assert.deepEqual(log, ['unstuck']);
+  assert.equal(m.snapshot().message, 'Moved to safe ground.');
+  assert.ok(!mk().m.snapshot().rows.some(r => r.id === 'unstuck'));
+});

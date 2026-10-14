@@ -134,6 +134,7 @@ export function createSwordSim(world, events, cfg, hooks) {
 
   // ---- scratch (zero allocation after create) -----------------------------------------------------------------
   const _eye = { x: 0, y: 0, z: 0 };
+  const _rs = new Float64Array(6); // World.raySegmentRay arg (arch 38.61 2b)
   const _rayOut = { t: 0, x: 0, y: 0, z: 0 };
   const _losOut = { t: 0, x: 0, y: 0, z: 0 };
   const _outIdx = new Int32Array(MAX_TARGETS);
@@ -256,7 +257,7 @@ export function createSwordSim(world, events, cfg, hooks) {
       const idx = _outIdx[k], h = tEntities[idx].components.health;
       if (hitMask[idx] || (h && h.hp <= 0)) continue;
       const e = tEntities[idx]; // a target the wall hides (LOS blocked by something other than itself) is no reason to keep swinging
-      const blocked = world.raySegment(_eye.x, _eye.y, _eye.z - 0.35, e.transform.x, e.transform.y, e.transform.z + tch[idx] * 0.5, _losOut);
+      const blocked = (_rs[0] = _eye.x, _rs[1] = _eye.y, _rs[2] = _eye.z - 0.35, _rs[3] = e.transform.x, _rs[4] = e.transform.y, _rs[5] = e.transform.z + tch[idx] * 0.5, world.raySegmentRay(_rs, _losOut));
       if (!blocked || hitsOwnShape(_losOut.x, _losOut.y, idx) || isTerrainHit(_losOut)) return true;
     }
     return false;
@@ -287,7 +288,7 @@ export function createSwordSim(world, events, cfg, hooks) {
     refreshTargetables();
     // PROP-COLLIDE-01b regression (owner 2026-10-06 "practice statue doesn't get damage"): a solid prop target (the
     // practice post) now has its OWN collider, so a ray that stops at that target's own shape is not a wall.
-    let worldHit = world.raySegment(_eye.x, _eye.y, rayZ, bxw, byw, rayZ, _rayOut);
+    let worldHit = (_rs[0] = _eye.x, _rs[1] = _eye.y, _rs[2] = rayZ, _rs[3] = bxw, _rs[4] = byw, _rs[5] = rayZ, world.raySegmentRay(_rs, _rayOut));
     if (worldHit && (hitsOwnShape(_rayOut.x, _rayOut.y, -1) || isTerrainHit(_rayOut))) worldHit = false;
     const twM = worldHit ? _rayOut.t * S.reach : S.reach;
 
@@ -301,7 +302,7 @@ export function createSwordSim(world, events, cfg, hooks) {
       if (h && h.hp <= 0) continue; // US-079b: a dead boar is skipped by the arc (before hitMask)
       if (hitMask[idx]) continue;
       const ex = e.transform.x, ey = e.transform.y, ez = e.transform.z + tch[idx] * 0.5;
-      if (world.raySegment(_eye.x, _eye.y, rayZ, ex, ey, ez, _losOut) && !hitsOwnShape(_losOut.x, _losOut.y, idx) && !isTerrainHit(_losOut)) continue; // blocked LOS (not by the target's own collider) - skip
+      if ((_rs[0] = _eye.x, _rs[1] = _eye.y, _rs[2] = rayZ, _rs[3] = ex, _rs[4] = ey, _rs[5] = ez, world.raySegmentRay(_rs, _losOut)) && !hitsOwnShape(_losOut.x, _losOut.y, idx) && !isTerrainHit(_losOut)) continue; // blocked LOS (not by the target's own collider) - skip
       hitMask[idx] = 1;
       anyEntity = true;
       emitHit(e, S, ex, ey, ez, fx, fy);

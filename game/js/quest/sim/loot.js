@@ -10,7 +10,7 @@
 // the whole page). The corpse counts are runtime-only: boars always come back alive on a load (37.16.2), so a stale
 // `loot.*` flag from a save is deleted at create rather than restored.
 import { addItem } from './inventory.js';
-import { spawnItemDrop, setItemPickupSink, PICKUP_AMOUNT } from './pickups.js';
+import { setItemPickupSink, PICKUP_AMOUNT } from './pickups.js';
 import { BAND_TABLE } from './band.js';
 import { LOOT_PROMPT, LOOT_TABLE, LOOT_TIERS, LOOT_SLOTS } from './lootConfig.js';
 import { rollWolfWeapon, rollGoblinWeapon, rollChestWeapon, weaponRng } from './weaponLoot.js'; // EQ-20
@@ -117,6 +117,7 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
     count,
     corpseN: new Int8Array(MAX_SLOTS * ITEMS_PER_CORPSE),
     gearHeld: new Array(MAX_SLOTS).fill(null), // OB-064: rolled gear id / tier waits IN the corpse; the drop spawns at E
+    _gear: { id: '', n: 1 },
     gearTier: new Array(MAX_SLOTS).fill('worn'),
     orbHeld: new Array(MAX_SLOTS).fill(null), // OB-074: the hp/mp potion waits IN the corpse ('hp'|'mp'); applied on E, never a ground pickup
     corpseItem: new Array(MAX_SLOTS * ITEMS_PER_CORPSE).fill(null), // item id per column (entry order: fixed, then give rolls)
@@ -166,7 +167,8 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
     }
     const orbHit = rng.nextFloat() < tb.orb.chance;
     const orbKind = tb.orb.kinds[rng.int(tb.orb.kinds.length)];
-    if (orbHit) loot.orbHeld[i] = orbKind; // OB-074: held in the corpse until E
+    // OB-120: while the fireball is locked the potion.mp cell is unusable (FB-01), so every potion is hp; same draws either way.
+    if (orbHit) loot.orbHeld[i] = (orbKind === 'mp' && world.state['magic.fireball'] !== true) ? 'hp' : orbKind; // OB-074: held in the corpse until E
     const rec = recs[i];
     rec.x = p.x; rec.y = p.y; rec.z = p.z + CORPSE_LIFT;
     world.state[flagKey[i]] = true;
@@ -212,11 +214,18 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
         events.emit('inventory:added', loot._added);
       }
     }
-    const gh = loot.gearHeld[i]; // OB-064: held gear appears as a pickup at the body on the first E (pack full -> it lies there, EQ-23)
+    const gh = loot.gearHeld[i]; // OB-064 (reopened): held gear goes INTO THE PACK on the same E like meat; pack full -> stays in the corpse
     if (gh) {
-      loot.gearHeld[i] = null;
-      const t = recs[i];
-      spawnItemDrop(world, gh, t.x, t.y, t.z - CORPSE_LIFT, loot.gearTier[i]);
+      const added = inv ? addItem(inv, items, gh, 1) : 0; // tier lives in the item def (equip.tier), so it is kept
+      if (added > 0) {
+        loot.gearHeld[i] = null;
+        loot._added.id = gh; loot._added.n = added;
+        events.emit('inventory:added', loot._added);
+        loot._gear.id = gh; loot._gear.n = added;
+        events.emit('gear:got', loot._gear);
+      } else {
+        left += 1; if (!leftId) { leftId = gh; loot._full.n = 1; }
+      }
     }
     const orb = loot.orbHeld[i]; // OB-113: the potion goes INTO THE PACK like meat (hp -> potion.hp, mp -> potion.mp); no instant heal
     if (orb) {

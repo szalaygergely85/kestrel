@@ -40,7 +40,7 @@ function mk(state = {}, wsId = 'ws_roadBend') {
   assert.equal(t.ent.components.light.on, false, 'light waits for the glow event');
   assert.equal(t.world.state['waystone.ws_roadBend.woken'], true);
   assert.deepEqual(t.emits, [['ws_roadBend', 'relay', 10, 20, 3]]);
-  assert.equal(t.rw.toastLeft > 0, true); assert.equal(NOTICE[0], 'BEND RELAY AWAKENED'); assert.equal(t.recs[0].prompt, PROMPT_TOUCH);
+  assert.equal(t.rw.toastLeft > 0, true); assert.equal(NOTICE[0], 'WAYSTONE AWAKENED'); assert.equal(t.recs[0].prompt, PROMPT_TOUCH);
   assert.equal(t.rw.interact('ws_roadBend'), false, 'no replay while waking'); assert.equal(t.hums.length, 1);
   const dt = 1 / 60; let s = 0;
   for (; s < 10; s++) t.rw.step(dt, t.lights); // 0.167 s < 0.25 s
@@ -89,3 +89,35 @@ function mk(state = {}, wsId = 'ws_roadBend') {
   const o = mk({ [FLAG_ATTUNED]: true, 'waystone.waystone.woken': true }); o.rw.interact('ws_roadBend'); cells.length = 0; o.rw.drawHud(ui);
   assert.ok(cells.join('').includes(NOTICE[0]) === false || true); assert.ok(!cells.join('').includes('hum rolls'), 'old relay: generic'); }
 console.log('relayWake.test.js PASS');
+
+// OB-123: the pick covers the whole stone (owner pose 1429.51,1039.74 z0.68: pitch -3 AND -26 hit; 1 m above the top / 1 m aside miss)
+{ const { findInteractTarget } = await import('../../../engine/index.js');
+  const sm = { voxel: { cellM: 0.125, size: [14, 10, 24], anchor: [7, 5, 2], animations: model.voxel.animations } };
+  const ent = { id: 'endMarker', transform: { x: 1428, y: 1040, z: 0 }, components: { voxel: { model: 'waystone', anim: 'dead' }, light: { preset: 'relay', on: false }, waystone: { id: 'waystone', kind: 'stone', dormant: true } } };
+  const recs = [];
+  const world = { state: { 'dlg.bear.stone.told': true }, assets: { has: () => true, model: () => sm }, forEachEntity: (fn) => fn(ent, ent.id), get: () => null,
+    addInteractable: (sp) => { const r = { ...sp, usedKey: null, pickShapes: null }; recs.push(r); return r; },
+    interactables: recs, structureAt: () => null, outsideSector: () => ({ solid: false, floorH: 0, ceilH: 'sky' }), entity: () => null };
+  createRelayWake({ world, palette, emit() {}, hum() {} });
+  const top = recs[0].pick.z1;
+  assert.ok(top > 2.2 && top < 3.2, 'pick spans the stone height ' + top);
+  const hit = (x, y, z, yaw, pitch) => { const out = { targetKey: null, prompt: '', dist: 0, angleDeg: 0 }; findInteractTarget(world, { x, y, z, yawDeg: yaw, pitchDeg: pitch }, { reach: 3 }, out); return out.targetKey; };
+  const ex = 1429.51, ey = 1039.74, ez = 0.68 + 1.6, yaw = 256;
+  assert.equal(hit(ex, ey, ez, yaw, -3), 'stone.waystone', 'straight at the stone');
+  assert.equal(hit(ex, ey, ez, yaw, -26), 'stone.waystone', 'down at its base');
+  // from 2 m out (stone centre 1428,1040): a ray aimed 1 m above the top / 1 m to the side of the stone's edge misses
+  const fx = 1430, fy = 1040, fz = 1.6, rise = Math.atan2(top + 1 - fz, 1.0) * 180 / Math.PI;
+  assert.equal(hit(fx, fy, fz, 270, rise), null, 'aim 1 m above the top');
+  assert.equal(hit(fx, fy, fz, 270, 0), 'stone.waystone', 'aim at its middle');
+  assert.equal(hit(fx, fy, fz, 270 - Math.atan2(1.0 + 0.975, 1.0) * 180 / Math.PI, 0), null, 'aim 1 m beside it');
+}
+
+// OB-145: blocked prompt is plain, E names the missing step, woken path unchanged
+{ const { PROMPT_LOOK, HINT_NEED_CRYSTAL, HINT_NEED_WAYSTONE, PROMPT_WAKE: PW } = await import('./relayWake.js');
+  const t = mk(); t.rw.step(0.016, null); assert.equal(t.recs[0].prompt, PROMPT_LOOK, 'no crystal: neutral prompt');
+  assert.equal(t.rw.interact('ws_roadBend'), false); assert.equal(t.rw.hintLine, HINT_NEED_CRYSTAL);
+  const u = mk({ [FLAG_ATTUNED]: true }); delete u.world.state['waystone.waystone.woken']; u.rw.step(0.016, null);
+  assert.equal(u.recs[0].prompt, PROMPT_LOOK); assert.equal(u.rw.interact('ws_roadBend'), false); assert.equal(u.rw.hintLine, HINT_NEED_WAYSTONE);
+  u.world.state['waystone.waystone.woken'] = true; u.rw.step(0.016, null); assert.equal(u.recs[0].prompt, PW, 'gate open: wake prompt');
+  assert.equal(u.rw.interact('ws_roadBend'), true); }
+console.log('OB-145 ok');

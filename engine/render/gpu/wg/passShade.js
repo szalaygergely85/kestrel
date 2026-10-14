@@ -287,7 +287,7 @@ export class WgShadePass {
     {
       const fgr = this.fgRec || (this.fgRec = makeFarGrass()), w = useScene ? p._world : null;
       if (gcfg && w.terrain && w.terrain.typeNames) farGrassFill(fgr, gcfg, w.terrain.typeNames, w.carpetQuality, w.wind && w.wind.params ? w.wind.params : null); else fgr.on = 0;
-      su[S_FGP] = fgr.on; su[S_FGP + 1] = fgr.startM; su[S_FGP + 2] = fgr.fadeM; su[S_FGP + 3] = fgr.mix;
+      su[S_FGP] = fgr.on * (1 + fgr.under); su[S_FGP + 1] = fgr.startM; su[S_FGP + 2] = fgr.fadeM; su[S_FGP + 3] = fgr.mix;
       su[S_FGW] = fgr.dirX; su[S_FGW + 1] = fgr.dirY; su[S_FGW + 2] = fgr.cyc; su[S_FGW + 3] = fgr.invTravel;
       su.set(fgr.types, S_FGT);
     }

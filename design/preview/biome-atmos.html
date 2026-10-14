@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - ENV-03-DESIGN biome atmosphere (PROPOSAL, owner pick)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:17px; margin:30px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  h3 { font-size:14px; margin:10px 0 4px; color:#e8c27a; }
+  .note { color:#8a8778; font-size:12px; max-width:1300px; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:13px; }
+  .row { display:flex; gap:8px; }
+  .row figure { margin:0; flex:1; min-width:0; }
+  .row canvas { width:100%; display:block; background:#000; }
+  figcaption, .cap { font:12px Consolas, monospace; color:#a9a390; margin:2px 0 6px; }
+  .sw { display:inline-block; width:22px; height:12px; border:1px solid #333; vertical-align:middle; margin-right:2px; }
+  .var { border:1px solid #22252e; border-radius:4px; padding:6px 10px; margin:8px 0 14px; }
+  .var.picked { border-color:#6fdc7a; }
+  code { color:#e8c27a; }
+  pre.json { background:#0b0c12; border:1px solid #22252e; padding:8px; font:11px/1.35 Consolas, monospace; color:#cfe3c0; white-space:pre; overflow:auto; }
+  button { background:#1d3a22; color:#8fe09a; border:1px solid #2e5a35; border-radius:3px; padding:3px 9px; cursor:pointer; }
+</style>
+</head>
+<body>
+<h1>Kestrel : ENV-03-DESIGN : biome atmosphere (fog, haze, colour grade)</h1>
+<div class="note">
+  <b>Proposal for the owner, nothing in the game changes.</b> Each biome has 2 atmospheres (A / B), each shown at <b>day / dusk / night</b>
+  (D-064) on the same small sample scene: sky band (palette <code>skyCyan*</code> / <code>skyEve*</code> / <code>skyNight*</code>, horizon tinted by the
+  biome haze), far hills (~1.5 km), near hills (~450 m), trees (12-140 m) and the biome ground (the ground look you picked on
+  <code>ground-richness.html</code>, default A). An atmosphere = fog colour + density, horizon haze, and a 3-way grade (lift / gamma / gain + saturation) per time of day.
+  In game the look cross-fades by the biome under the camera (ENV-03: >= 1.5 s or >= 20 m, no pops). Data: <code>design/look/biomeLook.js</code>.
+  Untick "grade" or "fog" to see what each part does.
+</div>
+
+<div class="controls">
+  <label><input type="checkbox" id="grade" checked> colour grade</label>
+  <label><input type="checkbox" id="fog" checked> fog + haze</label>
+  <label>biome <select id="biome"></select></label>
+  <button id="copy">copy picks</button> <span class="note" id="perf"></span>
+</div>
+<div id="out"></div>
+<h2>Picks</h2>
+<pre class="json" id="picks"></pre>
+
+<script src="../look/biomeLook.js"></script>
+<script src="look-lib.js"></script>
+<script>
+(function () {
+  var L = LOOKLIB, BL = BIOME_LOOK, $ = function (id) { return document.getElementById(id); };
+  var picks = L.picks();
+  var W = 120, H = 45, CW = 8, CH = 12, HZ = 18, F = H * 0.9, CAMH = 1.7;
+  var SKY = { day: ['#1c95e0', '#52beef', '#c8ecf3'], dusk: ['#3e3c86', '#c4708a', '#ffc07a'], night: ['#050814', '#0e1630', '#1f2c4a'] };
+  var LIGHT = { day: [1, 1, 1], dusk: [0.95, 0.7, 0.52], night: [0.24, 0.29, 0.44] };
+  // scene recipe per biome (preview only): hill colours, ridge height, tree kind / count / distance range
+  var SCENE = {
+    meadow:    { hill: '#5a7a4a', mid: '#46663a', hh: 1.0, trees: 'oak',   n: 6,  zr: [35, 110], seed: 1 },
+    forest:    { hill: '#4a6040', mid: '#3a5034', hh: 1.2, trees: 'mixed', n: 24, zr: [12, 70],  seed: 2 },
+    glade:     { hill: '#56784a', mid: '#44663a', hh: 0.9, trees: 'oak',   n: 10, zr: [25, 60],  seed: 3 },
+    fields:    { hill: '#6a7a50', mid: '#5a6e40', hh: 0.6, trees: 'oak',   n: 3,  zr: [60, 140], seed: 4 },
+    foothills: { hill: '#6a6a70', mid: '#5e5a52', hh: 2.3, trees: 'pine',  n: 6,  zr: [40, 120], seed: 5 },
+    shore:     { hill: '#5a6a70', mid: '#4e6050', hh: 0.8, trees: 'pine',  n: 3,  zr: [30, 90],  seed: 6 }
+  };
+  var PINE = ['#1e4028', '#2e5a30', '#4f7a40'].map(L.rgb), OAK = ['#25502e', '#4f8c36', '#93bf52'].map(L.rgb), BARK = L.rgb('#4a3420');
+
+  var sel = $('biome');
+  sel.innerHTML = '<option value="all">all biomes</option>' + BL.order.map(function (id) {
+    return '<option value="' + id + '">' + BL.biomes[id].label + '</option>'; }).join('');
+
+  function sw(hex) { return '<span class="sw" style="background:' + hex + '" title="' + hex + '"></span>'; }
+  function gr(g) { return 'lift ' + g.lift.join('/') + ' gamma ' + g.gamma.join('/') + ' gain ' + g.gain.join('/') + ' sat ' + g.sat; }
+
+  function scene(id, atm, tod) {
+    var sc = SCENE[id], gv = BL.biomes[id].ground[picks[id].ground];
+    var cells = new Array(W * H), hill = L.rgb(sc.hill), mid = L.rgb(sc.mid), sky = SKY[tod].map(L.rgb), haze = L.rgb(atm.haze[tod]);
+    var x, y, i;
+    for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
+      i = y * W + x;
+      if (y < HZ) {
+        var s = y / HZ, c = L.ramp(sky, s);
+        if ($('fog').checked) c = L.mix(c, haze, atm.hazeAmount * s * s);
+        var g = ' ', fc = c;
+        if (tod === 'night' && y < HZ - 3) { var hs = L.hash(x, y, 9); if (hs < 0.025) { g = hs < 0.005 ? '+' : '.'; fc = L.rgb('#c8d0e8'); } }
+        if (tod === 'dusk') { var dx = (x - W * 0.78) / 2, dy = y - (HZ - 1.5), r = Math.sqrt(dx * dx + dy * dy);
+          if (r < 1.2) { g = '@'; fc = L.rgb('#fff0c0'); c = L.mix(c, L.rgb('#ffd090'), 0.8); }
+          else if (r < 5) c = L.mix(c, L.rgb('#ffd090'), 0.5 * (1 - r / 5)); }
+        cells[i] = { g: g, f: fc, b: c, d: -1 };
+      } else {
+        var z = CAMH * F / (y - HZ + 0.5), xw = (x - W / 2 + 0.5) / 2 * z / F;
+        var gc = L.groundCell(gv, xw, z, z * z / (CAMH * F), x, y, 0, 0);
+        cells[i] = { g: gc.g, f: gc.f, b: gc.b, d: z };
+      }
+    }
+    // hills (far, then near)
+    for (x = 0; x < W; x++) {
+      var rf = HZ - sc.hh * (3 + 2 * Math.sin(x * 0.06 + sc.seed) + 1.3 * Math.sin(x * 0.17 + 2 * sc.seed) + 1.6 * L.vnoise(x * 0.12, 0, sc.seed));
+      var rm = HZ - sc.hh * (1 + 1.2 * Math.sin(x * 0.09 + sc.seed * 3) + 1.0 * L.vnoise(x * 0.2, 1, sc.seed));
+      for (y = Math.max(0, Math.ceil(rf)); y < HZ; y++) {
+        var near = y >= Math.ceil(rm), base = near ? mid : hill, hh = L.hash(x, y, 7);
+        cells[y * W + x] = { g: hh < (near ? 0.35 : 0.2) ? (near ? ',' : ':') : ' ', f: L.mul(base, [1.25, 1.25, 1.2]), b: L.mix(base, [0, 0, 0], hh * 0.1), d: near ? 450 : 1500 };
+      }
+    }
+    // trees, far to near
+    var trees = [];
+    for (var k = 0; k < sc.n; k++) {
+      var tz = sc.zr[0] + L.hash(k, 1, sc.seed) * (sc.zr[1] - sc.zr[0]);
+      var kind = sc.trees === 'mixed' ? (L.hash(k, 2, sc.seed) < 0.5 ? 'pine' : 'oak') : sc.trees;
+      trees.push({ z: tz, x: L.hash(k, 3, sc.seed) * W, kind: kind });
+    }
+    trees.sort(function (a, b) { return b.z - a.z; });
+    trees.forEach(function (t) {
+      var yb = HZ + CAMH * F / t.z - 0.5, hm = t.kind === 'pine' ? 14 : 11, hR = hm * F / t.z, colPerM = 2 * F / t.z;
+      for (var r = Math.floor(yb - hR); r <= Math.floor(yb); r++) {
+        if (r < 0 || r >= H) continue;
+        var v = (yb - r) / hR, hw, trunk = false;
+        if (t.kind === 'pine') { if (v < 0.12) { hw = 0.25; trunk = true; } else hw = 2.8 * (1 - (v - 0.12) / 0.88); }
+        else { if (v < 0.35) { hw = 0.35; trunk = true; } else { var e = (v - 0.62) / 0.38; hw = 4 * Math.sqrt(Math.max(0, 1 - e * e)); } }
+        var hc = Math.max(trunk ? 0.5 : 0.6, hw * colPerM);
+        for (var cx = Math.round(t.x - hc); cx <= Math.round(t.x + hc); cx++) {
+          if (cx < 0 || cx >= W) continue;
+          var hsh = L.hash(cx, r, 11 + Math.round(t.z));
+          if (trunk) { cells[r * W + cx] = { g: '|', f: L.mul(BARK, [1.4, 1.4, 1.4]), b: L.mul(BARK, [0.5, 0.5, 0.5]), d: t.z }; continue; }
+          var side = (cx - t.x) / Math.max(1, hc), tone = L.cl(0.55 - side * 0.35 + hsh * 0.2), rp = t.kind === 'pine' ? PINE : OAK;
+          var gl = t.kind === 'pine' ? (hsh < 0.5 ? '^' : 'A') : (hsh < 0.4 ? '&' : hsh < 0.75 ? '@' : '%');
+          var fcol = L.ramp(rp, tone);
+          cells[r * W + cx] = { g: gl, f: fcol, b: L.mul(fcol, [0.42, 0.42, 0.42]), d: t.z };
+        }
+      }
+    });
+    // light, fog, grade
+    var fog = L.rgb(atm.fog[tod]), lt = LIGHT[tod], useFog = $('fog').checked, useGrade = $('grade').checked, grd = atm.grade[tod];
+    return cells.map(function (c) {
+      var f = c.f, b = c.b;
+      if (c.d >= 0) {
+        f = L.mul(f, lt); b = L.mul(b, lt);
+        if (useFog) { var kf = 1 - Math.exp(-atm.fogDensity * c.d); f = L.mix(f, fog, kf); b = L.mix(b, fog, kf); }
+      }
+      if (useGrade) { f = L.grade(f, grd); b = L.grade(b, grd); }
+      return { g: c.g, f: L.css(f), b: L.css(b) };
+    });
+  }
+
+  function build() {
+    var s0 = performance.now(), ids = sel.value === 'all' ? BL.order : [sel.value], html = '', jobs = [];
+    ids.forEach(function (id) {
+      var bio = BL.biomes[id];
+      html += '<h2>' + bio.label + ' <span class="note">(' + id + ', ground ' + picks[id].ground + ' - ' + bio.ground[picks[id].ground].name + ')</span></h2>';
+      ['A', 'B'].forEach(function (v) {
+        var a = bio.atmos[v], key = id + v;
+        html += '<div class="var' + (picks[id].atmos === v ? ' picked' : '') + '" id="box' + key + '"><h3>' + v + ' - ' + a.name +
+          ' <label class="note"><input type="radio" name="pk' + id + '" value="' + v + '"' + (picks[id].atmos === v ? ' checked' : '') + '> pick</label></h3>' +
+          '<div class="cap">fog ' + sw(a.fog.day) + sw(a.fog.dusk) + sw(a.fog.night) + ' density ' + a.fogDensity + '/m (50% at ' + Math.round(Math.LN2 / a.fogDensity) + ' m)' +
+          ' &nbsp; haze ' + sw(a.haze.day) + sw(a.haze.dusk) + sw(a.haze.night) + ' x' + a.hazeAmount + '</div><div class="row">';
+        ['day', 'dusk', 'night'].forEach(function (tod) {
+          html += '<figure><canvas id="cv' + key + tod + '"></canvas><figcaption>' + tod + ': ' + gr(a.grade[tod]) + '</figcaption></figure>';
+          jobs.push({ id: id, a: a, tod: tod, cv: key + tod });
+        });
+        html += '</div></div>';
+      });
+    });
+    $('out').innerHTML = html;
+    jobs.forEach(function (j) {
+      var P = new L.Panel($('cv' + j.cv), W, H, CW, CH), cells = scene(j.id, j.a, j.tod);
+      for (var y = 0; y < H; y++) for (var x = 0; x < W; x++) { var c = cells[y * W + x]; P.put(x, y, c.g, c.f, c.b); }
+    });
+    ids.forEach(function (id) {
+      document.querySelectorAll('input[name=pk' + id + ']').forEach(function (r) {
+        r.onchange = function () {
+          picks[id].atmos = r.value; L.savePicks(picks); showPicks();
+          ['A', 'B'].forEach(function (v) { $('box' + id + v).className = 'var' + (v === r.value ? ' picked' : ''); });
+        };
+      });
+    });
+    $('perf').textContent = Math.round(performance.now() - s0) + ' ms';
+  }
+  function showPicks() {
+    var o = {}; BL.order.forEach(function (id) { o[id] = picks[id]; });
+    $('picks').textContent = JSON.stringify(o, null, 1);
+  }
+  $('grade').onchange = build; $('fog').onchange = build; sel.onchange = build;
+  $('copy').onclick = function () { navigator.clipboard && navigator.clipboard.writeText($('picks').textContent); };
+  showPicks(); build();
+})();
+</script>
+</body>
+</html>
