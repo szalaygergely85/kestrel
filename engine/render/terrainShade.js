@@ -260,7 +260,7 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   let nWs = 0, nN = 0;
   // ENV-02b: a look cell replaces the 3-octave loop by the look tone (nP := 2 tone - 1); the look shade runs once, results in GLq
   const GL = ctx.groundLook, lookOn = GL ? (lookLo | lookHi) !== 0 : false, GLq = lookOn ? GL.q : null;
-  if (lookOn) { GLq[0] = fu; GLq[1] = fv; GLq[2] = fp; GLq[3] = t; GLq[4] = timeSec; GLq[5] = lookW; shadeLookCell(GL, lookLo, lookHi, GLq); }
+  if (lookOn) { GLq[0] = fu; GLq[1] = fv; GLq[2] = fp; GLq[3] = t; GLq[4] = timeSec; GLq[5] = lookW; GLq[21] = ctx.farGrass !== undefined && ctx.farGrass.on !== 0 ? 0 : 1; shadeLookCell(GL, lookLo, lookHi, GLq); }
   for (let o = 0; o < 3; o++) {
     if (lookOn) break;
     const cell = NOISE_CELLS[o];
@@ -488,7 +488,7 @@ export function shadeGrass(t, variant, h01, lean, tint, b, tab, ctx, out, gx = 0
     const GL = ctx.groundLook;
     if (GL && (lookLo | lookHi) !== 0) {
       const hcl = ctx.hashCell || 0, gk = hcl < 0 ? -hcl : FP_DEFAULT_K, ga = t / FP_ANISO_T, GLq = GL.q;
-      GLq[0] = Math.fround(wu); GLq[1] = Math.fround(wv); GLq[2] = hcl > 0 ? hcl : gk * t * (ga < 1 ? 1 : ga > FP_ANISO_MAX ? FP_ANISO_MAX : ga); GLq[3] = t; GLq[4] = 0; GLq[5] = lookW;
+      GLq[0] = Math.fround(wu); GLq[1] = Math.fround(wv); GLq[2] = hcl > 0 ? hcl : gk * t * (ga < 1 ? 1 : ga > FP_ANISO_MAX ? FP_ANISO_MAX : ga); GLq[3] = t; GLq[4] = 0; GLq[5] = lookW; GLq[21] = 1; // grass reads only 7..9
       shadeLookCell(GL, lookLo, lookHi, GLq);
       _gnd[0] = GLq[7] * 255; _gnd[1] = GLq[8] * 255; _gnd[2] = GLq[9] * 255;
     } else groundAlbedo((gx >>> 16) & 255, ((gx >>> 24) & 3), ctx, _gnd);
@@ -699,19 +699,25 @@ function ensureShadeCtx(terrain, palette) {
 // Results in module scratch (no object / array per cell); w is the GPU's f32(w8) * f32(1/255).
 let lkLo = 0, lkHi = 0, lkW = 0;
 const F32_1_255 = Math.fround(1 / 255);
-function lookAtXY(terrain, x, y) {
+// Per-frame lookup state (lookFrameInit): the terrain's property loads / null checks are hoisted out of the per-cell call.
+let lkNear = null, lkNearX0 = 0, lkNearY0 = 0, lkNearCell = 1, lkNearW = 0, lkNearH = 0, lkFar = null, lkMapX0 = 0, lkMapY0 = 0, lkMapCell = 1, lkMapW = 0, lkMapH = 0;
+function lookFrameInit(terrain) {
+  const g = terrain.nearReady ? terrain.near : null;
+  if (g && g.look) { lkNear = g.look; lkNearX0 = g.x0; lkNearY0 = g.y0; lkNearCell = g.cell; lkNearW = g.w; lkNearH = g.h; } else lkNear = null;
+  lkFar = terrain.farLook || null; lkMapX0 = terrain.mapX0; lkMapY0 = terrain.mapY0; lkMapCell = terrain.mapCell; lkMapW = terrain.mapW; lkMapH = terrain.mapH;
+}
+function lookAtXY(x, y) {
   lkLo = 0; lkHi = 0; lkW = 0;
   let L = null, k = 0;
-  const g = terrain.nearReady ? terrain.near : null;
-  if (g && g.look) {
-    const i = Math.floor((x - g.x0) / g.cell), j = Math.floor((y - g.y0) / g.cell);
-    if (i >= 0 && j >= 0 && i < g.w && j < g.h) { L = g.look; k = (i + j * g.w) * 2; }
+  if (lkNear !== null) {
+    const i = Math.floor((x - lkNearX0) / lkNearCell), j = Math.floor((y - lkNearY0) / lkNearCell);
+    if (i >= 0 && j >= 0 && i < lkNearW && j < lkNearH) { L = lkNear; k = (i + j * lkNearW) * 2; }
   }
-  if (!L) {
-    L = terrain.farLook; if (!L) return;
-    const i = Math.floor((x - terrain.mapX0) / terrain.mapCell), j = Math.floor((y - terrain.mapY0) / terrain.mapCell);
-    if (i < 0 || j < 0 || i >= terrain.mapW || j >= terrain.mapH) return;
-    k = (j * terrain.mapW + i) * 2;
+  if (L === null) {
+    L = lkFar; if (L === null) return;
+    const i = Math.floor((x - lkMapX0) / lkMapCell), j = Math.floor((y - lkMapY0) / lkMapCell);
+    if (i < 0 || j < 0 || i >= lkMapW || j >= lkMapH) return;
+    k = (j * lkMapW + i) * 2;
   }
   const bt = L[k]; lkLo = bt & 15; lkHi = bt >> 4; lkW = Math.fround(L[k + 1] * F32_1_255);
 }
@@ -729,7 +735,8 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
   if (!terrain || !terrain.farReady || !fb.gbuf) return;
   const gbuf = fb.gbuf, palette = fb.palette;
   const ctx = ensureShadeCtx(terrain, palette);
-  const GLK = ensureGroundLookCtx(ctx, terrain, world); // ENV-02d: null (groundLook off) = the old path, bit-exact
+  const GLK = ensureGroundLookCtx(ctx, terrain, world);
+  if (GLK) lookFrameInit(terrain); // ENV-02d: null (groundLook off) = the old path, bit-exact
   ctx.hashCell = hashCell; // BUG-RTS-001 (28.11a): per-frame, 0 = fixed 2/8 m cell
   // BUG-GPU-005: the GPU terrain branch takes fgMin/fgMaxGain + the gain LUT
   // from `MaterialTable.shading` (design/detail-pass.js); match it whenever a
@@ -767,7 +774,7 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
     }
     const bT = b + Math.max(lr, Math.max(lg, lb));
     if (isG) shadeGrass(t, gbuf.mat[i], u, v, gbuf.vao[i], bT, grassTab, ctx, shadeOut, gbuf.grassX[i], sun.sunI);
-    else if (GLK) { lookAtXY(terrain, u, v); shadeTerrain(t, gbuf.mat[i], bT, u, v, timeSec, ctx, shadeOut, forestFaceMode(gbuf, alias, ctx, i, t), gbuf.z[i], shadeNrm[0], shadeNrm[1], shadeNrm[2], lkLo, lkHi, lkW); } // ENV-02d: u,v = world x,y of a terrain cell
+    else if (GLK) { lookAtXY(u, v); shadeTerrain(t, gbuf.mat[i], bT, u, v, timeSec, ctx, shadeOut, forestFaceMode(gbuf, alias, ctx, i, t), gbuf.z[i], shadeNrm[0], shadeNrm[1], shadeNrm[2], lkLo, lkHi, lkW); } // ENV-02d: u,v = world x,y of a terrain cell
     else shadeTerrain(t, gbuf.mat[i], bT, u, v, timeSec, ctx, shadeOut, forestFaceMode(gbuf, alias, ctx, i, t), gbuf.z[i], shadeNrm[0], shadeNrm[1], shadeNrm[2]); // MAP-06b: z = the rasterised surface height (kind 7: zBase/zRef 0), same value as the GPU's GA.z
     gbuf.fogF[i] = terrainFogF(t, ctx.fog); // edge pass gate (BUG-GPU-005): never a stale value
     shadeOut.fg[0] = clampByte(shadeOut.fg[0] + lr * 0.5 * 255);
