@@ -780,11 +780,12 @@ function buildCompareRuns(ctx) {
   // ENV-02d-LIVE: ground look rows (lookMeadow / lookForestEdge / lookShore from content/dev-poses.js GATE_POSES): a world_m1 load with `groundLook` on, same opts main.js builds.
   { const gl = groundLookFromParams(params, globalThis.BIOME_LOOK, globalThis.ASSETS && globalThis.ASSETS.levels.overworld_far);
     if (gl) {
-      const lookWorld = loadCompareWorld(assets.world('world_m1'), { groundLook: gl });
-      lookWorld.terrain.bakeFarSync();
-      const lookLights = lightsEnabled ? buildLightSet(lookWorld, assets.palette) : null;
       for (const slug of ['lookMeadow', 'lookForestEdge', 'lookShore']) {
         const g = GATE_POSES.find((q) => q.slug === slug); if (!g) continue;
+        // GC-FIX: one fresh world per look row (a shared world leaked state from lookMeadow into lookForestEdge: meshTies 2 -> 124)
+        const lookWorld = loadCompareWorld(assets.world('world_m1'), { groundLook: gl });
+        lookWorld.terrain.bakeFarSync();
+        const lookLights = lightsEnabled ? buildLightSet(lookWorld, assets.palette) : null;
         runs.push({ world: lookWorld, lights: lookLights, name: `world_m1: ${slug} (ENV-02d ground look)`, cam: { ...g.cam, z: lookWorld.terrain.groundAt(g.cam.x, g.cam.y) + 1.7 },
           real: true, pitchedDefault: true, sun: SUN_135_30, before: () => engine.setWorld(lookWorld) });
       }
