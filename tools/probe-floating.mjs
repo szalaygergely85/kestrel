@@ -67,7 +67,7 @@ console.log('trees', n, 'floating(>' + maxGap + ')', bad.length, 'maxGap', bad.l
 // Placed tree meshes (world structures): base = z + mesh bbox min z * scale (-0.24), footprint radius 0.74 * scale (CommonTree root flare).
 const placed = [];
 for (const s of assets.world('world_m1').structures) {
-  if (!s.mesh || !/Tree/.test(s.mesh) || !s.origin) continue;
+  if (!s.mesh || !/Tree|Pine/.test(s.mesh) || !s.origin) continue;
   const sc = s.scale || 1, r = 0.74 * sc; let lo = Infinity;
   for (let k = -1; k < 8; k++) { const a = k * Math.PI / 4, h = world.terrain.heightAt(s.origin.x + (k < 0 ? 0 : r * Math.cos(a)), s.origin.y + (k < 0 ? 0 : r * Math.sin(a))); if (h < lo) lo = h; }
   placed.push({ id: s.id, mesh: s.mesh, x: s.origin.x, y: s.origin.y, z: s.origin.z, gap: +(s.origin.z - 0.24 * sc - lo).toFixed(2), centre: +(s.origin.z - world.terrain.heightAt(s.origin.x, s.origin.y)).toFixed(2) });

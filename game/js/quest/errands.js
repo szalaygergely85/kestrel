@@ -50,8 +50,7 @@ export function bannerLines(def, action, wrap, maxRows = 10) {
 }
 
 const ESCORT_R = 14;
-const MQ = ['mq.bend.call', 'mq.ford.mirror', 'mq.ow.names', 'mq.ow.relay']; // + Ch3 (Hesk / Dorrin): names + relay run through the dialogue flags // Rook's main quests (world.state keys 'mq.<id>.*' = dialogue 's.mq.<id>.*')
-const MQ_AUTO = new Set(['mq.ford.mirror', 'mq.ow.names', 'mq.ow.relay']); // no hand-in line: handed in as soon as READY
+const MQ = ['mq.bend.call', 'mq.river.road', 'mq.ford.stones', 'mq.ford.mirror', 'mq.smoke', 'mq.ow.path', 'mq.ow.fence', 'mq.ow.names', 'mq.ow.relay', 'mq.ow.board']; // + Ch3 (Hesk / Dorrin): names + relay run through the dialogue flags // Rook's main quests (world.state keys 'mq.<id>.*' = dialogue 's.mq.<id>.*')
 const PULSE_DELAY = 4; // seconds after the Bend relay wakes (questline: flag relay.bend.pulseSeen)
 const ACTIVE = 2; // questBook statusOf: 0 unavailable, 1 available, 2 active, 3 ready, 4 done
 /**
@@ -193,7 +192,6 @@ export function createErrands({ getBook, questFlag, inspect, note, texts }) {
         const k = 'mq.' + id.slice(3) + '.';
         if (st[k + 'accept']) { if (b.statusOf(id) !== 1 || b.accept(id)) { delete st[k + 'accept']; ch = true; } }
         if (st[k + 'handin']) { if (b.statusOf(id) !== 3 || b.handIn(id)) { delete st[k + 'handin']; ch = true; } }
-        if (MQ_AUTO.has(id) && b.statusOf(id) === 3 && b.handIn(id)) ch = true;
         const s = b.statusOf(id);
         put(k + 'available', s === 1); put(k + 'active', s === 2 || s === 3); put(k + 'ready', s === 3); put(k + 'done', s === 4);
       }

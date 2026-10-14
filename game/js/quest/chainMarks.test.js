@@ -18,16 +18,18 @@ const feed = (e) => book.feed(e);
 
 // walk the chain up to the waystone step
 feed({ type: 'flag:set', key: 'wake', value: true }); feed({ type: 'area:entered', id: 'breach' }); feed({ type: 'item:got', id: 'sword' });
-assert.deepEqual(marks(), [[], ['doorMarker']], 'leave: ? at the door');
+assert.deepEqual(marks(), [[], []], 'leave: no early ? waypoint (OB-155i)');
 feed({ type: 'area:entered', id: 'towerDoor' }); feed({ type: 'flag:set', key: 'quest.burl.boars.done', value: true }); feed({ type: 'flag:set', key: 'burl.arrived', value: true });
-assert.deepEqual(marks(), [[], ['endMarker']], 'waystone step');
+assert.deepEqual(marks(), [[], []], 'waystone step: no ? waypoint');
 feed({ type: 'flag:set', key: 'waystone.waystone.woken', value: true });
 // road step available: gold ! on Burl
 assert.deepEqual(marks(), [['bear'], []], 'road available -> ! on bear');
+feed({ type: 'flag:set', key: 'burl.departing', value: true }); // OB-157: Burl handed the step over
+assert.deepEqual(marks(), [[], []], 'after the give: no ! on bear, no ? waypoint');
 feed({ type: 'area:entered', id: 'roadWest' });
-assert.deepEqual(marks(), [[], ['relayBend']], 'road taken (relayFound active) -> ? on the Bend relay');
+assert.deepEqual(marks(), [[], []], 'road taken -> nothing');
 feed({ type: 'area:entered', id: 'bendRelay' });
-assert.deepEqual(marks(), [[], ['relayBend']], 'relay1 active -> ? on the Bend relay');
+assert.deepEqual(marks(), [[], []], 'relay1 active -> nothing');
 feed({ type: 'flag:set', key: 'waystone.ws_roadBend.woken', value: true });
 assert.deepEqual(marks(), [[], []], 'chain done -> none');
 // every authored mark names a valid id (no raw junk)

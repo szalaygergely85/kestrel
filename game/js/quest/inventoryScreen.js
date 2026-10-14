@@ -35,6 +35,7 @@ const HINTS = [['W/A/S/D', true], [' select   ', false], ['E', true], [' use / w
  * @param {Record<string, number[]>} o.rgb palette key -> [r, g, b]   @param {() => any} o.inventoryOf
  * @param {() => ({hp:number,max:number}|null)} [o.healthOf] @param {{say?: Function}|null} [o.toast]
  * @param {() => void} [o.onHandsChanged] after a hand assignment (spells) @param {() => void} [o.onOpen] @param {() => void} [o.onClose]
+ * @param {(i:number)=>string} [o.slotLockText] OB-156: detail line for a locked cell that holds an item
  * @param {(i:number)=>boolean} [o.isSlotDisabled] host-owned pack locks @param {boolean} [o.characterKey] false: C belongs to crafting
  * @param {{assign:(n:number,id:string)=>boolean}} [o.quickbar] 1-4 over an item
  * @param {object} [o.character] {equipmentOf, createPreview, charCache, getLook, kit, onGearChanged}; absent = no gear slots / model
@@ -217,7 +218,7 @@ export function createInventoryScreen(o) {
   }
   function text(x, y, s, fg, b) { for (let j = 0; j < s.length; j++) put(x + j, y, s.charCodeAt(j), fg, b); }
   /** one 9x5 slot box. `sel` = gold cursor style, borderFg = border colour (flash override), innerBg = interior */
-  function box(bx, by, id, sel, borderFg, innerBg, handTag, count, borderOverride) {
+  function box(bx, by, id, sel, borderFg, innerBg, handTag, count, borderOverride, dim) {
     const bd = borderOverride || slotCfg.border;
     const bc = (sel ? slotCfg.selected : bd).corner.charCodeAt(0), bh = (sel ? slotCfg.selected : bd).h.charCodeAt(0), bv = (sel ? slotCfg.selected : bd).v.charCodeAt(0);
     const fg = sel ? slotCfg.selected.fg : borderFg;
@@ -225,16 +226,26 @@ export function createInventoryScreen(o) {
     for (let y = 1; y < sb.h - 1; y++) { put(bx, by + y, bv, fg, bg); put(bx + sb.w - 1, by + y, bv, fg, bg); }
     put(bx, by, bc, fg, bg); put(bx + sb.w - 1, by, bc, fg, bg); put(bx, by + sb.h - 1, bc, fg, bg); put(bx + sb.w - 1, by + sb.h - 1, bc, fg, bg);
     for (let y = 0; y < ib.h; y++) for (let x = 0; x < ib.w; x++) put(bx + ib.x + x, by + ib.y + y, 32, C.uiText, innerBg);
-    if (id && info[id]) iconAt(bx + slotCfg.icon.x, by + slotCfg.icon.y, id, innerBg);
+    if (id && info[id]) iconAt(bx + slotCfg.icon.x, by + slotCfg.icon.y, id, innerBg, dim);
     if (handTag) put(bx + slotCfg.equippedTag.col, by + slotCfg.equippedTag.row, handTag.charCodeAt(0), slotCfg.equippedTag.fg, bg);
     if (count >= slotCfg.count.minN) { const s = cStr[count > 99 ? 99 : count]; text(bx + sb.w - 1 - s.length, by + sb.h - 1, s, slotCfg.count.fg, bg); }
   }
-  function iconAt(x, y, id, b) {
+  const dimRgb = [0, 0, 0];
+  function iconAt(x, y, id, b, dim) {
     const cells = info[id].cells;
-    for (let r = 0; r < 3; r++) for (let c = 0; c < 5; c++) { const cl = cells[r * 5 + c]; if (cl.rgb) put(x + c, y + r, cl.code, cl.rgb, b); }
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 5; c++) {
+      const cl = cells[r * 5 + c]; if (!cl.rgb) continue;
+      if (dim) { dimRgb[0] = cl.rgb[0] * 0.4; dimRgb[1] = cl.rgb[1] * 0.4; dimRgb[2] = cl.rgb[2] * 0.4; put(x + c, y + r, cl.code, dimRgb, b); } else put(x + c, y + r, cl.code, cl.rgb, b);
+    }
+  }
+  /** OB-156: a locked pack cell under the mouse (the cursor itself still refuses it); its detail pane names the item + the lock reason. */
+  let lockHover = -1, tipLock = -2;
+  function lockedAt(x, y) {
+    for (let k = nodes.length - 1; k >= 0; k--) { const n = nodes[k]; if (n.kind === 2 && x >= n.x && x < n.x + n.w && y >= n.y && y < n.y + n.h && slotDisabled(n.i)) return k; }
+    return -1;
   }
 
-  function buildTip(node, id, worn) {
+  function buildTip(node, id, worn, lockText) {
     tipLines = []; tipFg = [];
     const add = (s, fg) => { tipLines.push(s); tipFg.push(fg); };
     if (node.kind === 1) { add('Wick', C.uiText); add('Drag a piece onto him to wear it. Turn him with A / D or the mouse.', C.uiDim); return; }
@@ -242,6 +253,7 @@ export function createInventoryScreen(o) {
     if (!d) { add(node.kind === 0 ? 'Empty ' + slotLabel[node.slot].toLowerCase() + ' slot' : 'Empty', C.uiDim); return; }
     const q = d.equip, tier = q ? q.tier : null;
     add(d.name, tier && tierFg[tier] ? tierFg[tier] : C.uiText);
+    if (lockText) { add(lockText, C.uiDim); return; }
     if (q) {
       add((tierName[tier] || '') + ' ' + (slotLabel[q.slot] || q.slot).toLowerCase() + (q.def > 0 ? '  -  Defence ' + q.def : '') + (q.stats && q.stats.dmgMul ? '  -  Damage x' + q.stats.dmgMul : ''), C.uiHint);
       if (node.kind === 2) { // compare with what is worn in that slot
@@ -277,7 +289,7 @@ export function createInventoryScreen(o) {
       pxLast = px; pyLast = py; rx = px - ox; ry = py - oy;
       if (turning) { if (rxLast >= 0) dragPx += rx - rxLast; rxLast = rx; return; }
       rxLast = rx;
-      const k = hit(rx, ry);
+      const k = hit(rx, ry); lockHover = k >= 0 ? -1 : lockedAt(rx, ry);
       if (k >= 0 && !(k < N_EQ && !eq())) { if (k !== cur && dragSrc >= 0) dragMoved = true; cur = k; }
     },
 
@@ -370,7 +382,9 @@ export function createInventoryScreen(o) {
           if (pass !== (isSel ? 1 : 0)) continue;
           let bf = bd.fg, ibg = isSel ? slotCfg.selected.innerBg : slotCfg.innerBg;
           if (node.kind === 2 && slotDisabled(node.i)) {
-            if (disabledSlot) { box(node.x, node.y, null, false, disabledSlot.fg, disabledSlot.innerBg, null, 0, disabledSlot); put(node.x + disabledSlot.x, node.y + disabledSlot.y, disabledSlot.glyph.charCodeAt(0), disabledSlot.glyphFg, disabledSlot.innerBg); }
+            const held = idAt(node);
+            if (held && info[held]) box(node.x, node.y, held, false, disabledSlot.fg, disabledSlot.innerBg, null, 0, disabledSlot, true); // OB-156: item stays visible, dimmed, no x
+            else if (disabledSlot) { box(node.x, node.y, null, false, disabledSlot.fg, disabledSlot.innerBg, null, 0, disabledSlot); put(node.x + disabledSlot.x, node.y + disabledSlot.y, disabledSlot.glyph.charCodeAt(0), disabledSlot.glyphFg, disabledSlot.innerBg); }
             continue;
           }
           const id = idAt(node), d = id && defs[id];
@@ -399,8 +413,11 @@ export function createInventoryScreen(o) {
       }
       text(L.stats.x, L.stats.y, stat1, C.uiText, bg); text(L.stats.x, L.stats.y + 1, stat2, C.uiText, bg);
       // details of the item under the cursor, under the pack
+      const lk = lockHover >= 0 && slotDisabled(nodes[lockHover].i) && idAt(nodes[lockHover]) ? lockHover : -1;
+      if (lk >= 0 && (tipLock !== lk || tipCur !== -3)) { tipLock = lk; tipCur = -3; tipId = null; buildTip(nodes[lk], idAt(nodes[lk]), null, o.slotLockText ? o.slotLockText(nodes[lk].i) : 'Locked'); }
+      else if (lk < 0) tipLock = -2;
       const node = nodes[cur], id = idAt(node), worn = node.kind === 2 && id && defs[id] && defs[id].equip ? wornId(defs[id].equip.slot) : null;
-      if (cur !== tipCur || id !== tipId || worn !== tipWorn || def !== tipDef) { tipCur = cur; tipId = id; tipWorn = worn; tipDef = def; buildTip(node, id, worn); }
+      if (lk < 0 && (cur !== tipCur || id !== tipId || worn !== tipWorn || def !== tipDef)) { tipCur = cur; tipId = id; tipWorn = worn; tipDef = def; buildTip(node, id, worn); }
       for (let i = 0; i < tipLines.length; i++) text(L.details.x, L.details.y + i, tipLines[i], tipFg[i], bg);
       // the dragged icon rides the pointer
       if (dragSrc >= 0 && dragMoved) { const did = idAt(nodes[dragSrc]); if (did) iconAt(rx - 2, ry - 1, did, slotCfg.selected.innerBg); }

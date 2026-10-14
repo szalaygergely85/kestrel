@@ -15,6 +15,7 @@ import { createOverlayTarget } from './overlayTarget.js';
 import { makePickGuard } from './pickGuard.js';
 import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose, applyViewPreset, toggleOrtho, adjustOrthoHalfH, lookAlongAxis } from './camera.js';
 import { createAxisGizmo } from './axisGizmo.js';
+import { createQuestOverlay } from './questOverlay.js';
 import { unprojectCell, rayPoint, projectPoint, screenCentreGroundHit } from './ray.js';
 import { pickAt, pickMarkers } from './pick.js';
 import { resolveMeshClick } from './meshClick.js';
@@ -41,9 +42,12 @@ import {
 import { findUnusedAssets, planAssetDelete, serializePendingDeletes } from './assetRefs.js';
 import { nextScale, fineScale, clampScale } from './scale.js';
 import { applySnapshot, snapshotDiffers, formatAge, startAutosave, getSnapshot, clearSnapshot } from './autosave.js';
-import { validateDoc, saveAll, loadFile, launchPlaytest, anyDirty, pickBinaryFile, saveTerrainEdits, saveGrassMask } from './io.js';
+import { validateDoc, saveAll, saveFile, loadFile, launchPlaytest, anyDirty, pickBinaryFile, saveTerrainEdits, saveGrassMask, saveDecorPaint } from './io.js';
 import * as ENG from '../../engine/index.js';
 import * as GB from './grassBrush.js';
+import * as FP from './foliagePanel.js';
+import * as FB from './foliageBudget.js';
+import { resnapFoliage } from './foliageBrush.js';
 import {
   BRUSH_OPS, PAINT_TYPES, effectiveStrength, beginStroke, endStroke, isTerrainRecord, applyTerrainSide, rectToWorld, ringPoints,
 } from './terrainBrush.js';
@@ -174,21 +178,42 @@ drawerTabs.forEach((tab) => {
   });
 });
 
+// ---- ED-QUEST-02: Quests tab - mounts questPanel.js once, on first open.
+let questPanelHandle = null;
+async function openQuestsTab() {
+  if (questPanelHandle) return;
+  const root = document.getElementById('quests-panel');
+  try {
+    const qp = await import('./questPanel.js'), fl = await import('./quest/flow.js');
+    const A = window.ASSETS || {}, itemDefs = (A.items && A.items.defs) || {};
+    questPanelHandle = await qp.mountQuestPanel(root, { names: fl.makeNames({ itemDefs }), itemDefs, loadFiles: () => qp.fetchQuestFiles(), loadDialogueFiles: () => qp.fetchDialogueFiles(), write: qp.downloadWrite, getWorld: () => assets.world(doc.worldId), floorAt: (x, y) => world.floorAt(x, y), onMarkers: () => frame.markDirty(),
+      worldId: doc.worldId, // ED-QUEST-WIRE: applyPick needs model + worldId (areas.json world field)
+      saveWorld: () => { const f = doc.files.get(fileKey('world', doc.worldId)); if (f) { f.dirty = true; saveFile(f).then(() => refreshIoStatus(), (e) => flash('world save failed: ' + (e && e.message))); } }, // 03b: area-only zones land in the world json
+      getCamGround: () => ({ x: cam.x, y: cam.y, z: world.floorAt(cam.x, cam.y) }), // 07: Play from here
+      onFocus: (id) => { const e = (assets.world(doc.worldId).entities || []).find((x) => x.id === id); if (e && Number.isFinite(e.x)) { cam = createCameraPose({ ...cam, x: e.x, y: e.y - 6, z: world.floorAt(e.x, e.y) + 6, yawDeg: 0, pitchDeg: -40 }); frame.markDirty(); } } }); // 05: lint "Go to"
+    window.__questPanel = questPanelHandle;
+  } catch (e) { root.textContent = 'Quests failed to load: ' + e.message; console.error(e); }
+}
+
 // ---- US-067: left-dock tabs (Scene Tree / Assets) --------------------------
 leftDockTabsEl.querySelectorAll('.dock-tab').forEach((tab) => {
   tab.addEventListener('click', () => {
     leftDockTabsEl.querySelectorAll('.dock-tab').forEach((t) => t.classList.remove('active'));
     tab.classList.add('active');
-    const isTree = tab.dataset.dockTab === 'tree';
-    treePanelEl.classList.toggle('active', isTree);
-    assetsPanelEl.classList.toggle('active', !isTree);
-    if (!isTree) renderAssetsList(assetsSearchInput.value);
+    const which = tab.dataset.dockTab;
+    treePanelEl.classList.toggle('active', which === 'tree');
+    assetsPanelEl.classList.toggle('active', which === 'assets');
+    document.getElementById('quests-panel').classList.toggle('active', which === 'quests');
+    if (which === 'quests') openQuestsTab();
+    if (which === 'assets') renderAssetsList(assetsSearchInput.value);
   });
 });
 
 // ---- US-066: keyboard focus (design/editor-ui.md AC 6) - Esc blurs a
 // focused tree-search/inspector field so editor keys resume; clicking the
 // viewport already does this via canvas's own mousedown->focus() below.
+const questPickerArmed = () => !!(questPanelHandle && questPanelHandle.picker.armed);
+document.addEventListener('keydown', (e) => { if (questPanelHandle) questPanelHandle.picker.onKey(e); });
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   const a = document.activeElement;
@@ -438,6 +463,8 @@ function terrainStrokeEnd(cancel) {
   const t0 = performance.now();
   const sc = world.refreshTerrainScatter();
   if (cancel) { flash('terrain: stroke cancelled'); return; }
+  const fb = resnapFoliage({ doc, fileId: `world/${doc.worldId}`, assets, world }, rectToWorld(tb.layer, rec.rect)); // ED-FOLIAGE-05: fol_ placements follow the new floor, same undo record
+  if (fb) { rec.foliage = fb; applyEdit(doc, fb); applyAndSync(fb); }
   undoStack.push(rec);
   tb.dirty = true;
   refreshIoStatus();
@@ -555,6 +582,137 @@ function drawGrassCursor() {
   for (const [x, y] of ringPoints(gb.hover.x, gb.hover.y, radius)) put(x, y, 'o', hex);
 }
 
+// ---- ED-FOLIAGE-02: Foliage tab (architecture.md 38.69). Logic in foliagePanel.js; this is the thin DOM/canvas wiring. ----
+const fl = { st: FP.createFoliageState(null), json: null, ctl: null, hover: null, refs: () => [], base: new Map(), zoneKey: null }; // base = zoneKey -> last measured bundleBytes
+const foliageToolbarEl = document.getElementById('foliage-toolbar');
+const flEl = (id) => document.getElementById(id);
+async function loadFoliageData() {
+  try { fl.json = await (await fetch('../../content/editor/foliage.json')).json(); fl.st = FP.createFoliageState(fl.json); } catch { fl.json = null; }
+  try { // quest files -> externalRefs so erase refuses quest-referenced placements
+    const base = '../../content/quests/', idx = await (await fetch(base + 'index.json')).json(), texts = {};
+    const names = [...(idx.packs || []).map((n) => `${n}/pack.json`), ...(idx.legacy || []).map((n) => `${n}.quest.json`)];
+    await Promise.all(names.map(async (n) => { try { texts[n] = await (await fetch(base + n)).text(); } catch { /* missing file: skipped */ } }));
+    fl.refs = FP.buildExternalRefs(texts);
+  } catch { /* no quests reachable: in-file referrers still apply */ }
+  const sel = flEl('fl-palette');
+  sel.innerHTML = ''; for (const id of fl.st.ids) sel.add(new Option(id, id));
+  updateFoliageToolbar();
+}
+function foliageController() {
+  fl.ctl = fl.ctl || FP.createFoliageController({ doc, fileId: `world/${doc.worldId}`, assets, json: fl.json, getWorld: () => world, commit: (rec) => { commit(rec); updateFoliageMeter(); }, flash, externalRefs: (id) => fl.refs(id), budget: (items) => FB.checkBudget(doc.files.get(`world/${doc.worldId}`).def.structures, assets, items, (k) => fl.base.get(k) || 0) }, fl.st);
+  return fl.ctl;
+}
+/** Budget meter for the zone under the cursor (green/amber/red, 38.69 section 5). */
+function updateFoliageMeter() {
+  const el = flEl('fl-meter'); if (!el || toolMode !== 'foliage' || !fl.hover || !doc) return;
+  const z = FB.zoneOf(fl.hover.x, fl.hover.y), k = FB.zoneKey(z.cx, z.cy);
+  const st = FB.zoneStats(doc.files.get(`world/${doc.worldId}`).def.structures, assets, z, { baseBytes: fl.base.get(k) || 0 });
+  el.dataset.level = FB.meterLevel(st); el.style.setProperty('--fill', `${Math.round(FB.meterFill(st) * 100)}%`);
+  el.textContent = `zone ${k}: ${FB.meterText(st)}${fl.base.has(k) ? '' : ' (not measured)'}`;
+}
+async function measureFoliageZone() {
+  if (!fl.hover || !world) { flash('foliage: hover the terrain first'); return; }
+  const z = FB.zoneOf(fl.hover.x, fl.hover.y); flash('foliage: measuring zone ...');
+  try { const dev = await import('../foliageMeasure.js'); fl.base.set(FB.zoneKey(z.cx, z.cy), FB.measureZone(world, z, dev)); updateFoliageMeter(); flash('foliage: zone measured'); }
+  catch (e) { flash(`foliage: measure failed (${e.message})`); }
+}
+function updateFoliageToolbar() {
+  foliageToolbarEl.classList.toggle('on', toolMode === 'foliage');
+  foliageToolbarEl.querySelectorAll('.fl-op').forEach((b) => b.classList.toggle('active', b.dataset.op === fl.st.op));
+  updateDecorToolbar();
+  flEl('fl-radius').nextElementSibling.textContent = `${fl.st.radius} m`;
+  flEl('fl-density').nextElementSibling.textContent = `${fl.st.density}/100m2`;
+  flEl('fl-status').textContent = fl.json ? `palette "${fl.st.palette}"` : 'content/editor/foliage.json not loaded';
+  updateFoliageMeter();
+  frame.markDirty();
+}
+for (const [id, k] of [['fl-radius', 'radius'], ['fl-density', 'density'], ['fl-seed', 'seed'], ['fl-palette', 'palette'], ['fl-falloff', 'falloff']]) {
+  flEl(id).addEventListener('input', () => { FP.setFoliageParam(fl.st, k, flEl(id).value); updateFoliageToolbar(); });
+}
+foliageToolbarEl.querySelectorAll('.fl-op').forEach((b) => b.addEventListener('click', () => { FP.setFoliageParam(fl.st, 'op', b.dataset.op); updateFoliageToolbar(); }));
+flEl('fl-measure').addEventListener('click', measureFoliageZone);
+flEl('fl-save').addEventListener('click', () => flEl('save-btn').click()); // placements live in the world file: same save as Ctrl+S
+loadFoliageData();
+window.__foliage = { fl, controller: foliageController, dp: () => dp, decorStrokeStart, decorStrokeMove, decorStrokeEnd }; // verify-edfol-02/04.mjs drive strokes through this
+
+// ---- ED-FOLIAGE-04: decor mode = density paint on the detail layers (grassBrush decor ops, content/terrain/<key>.decorPaint.json) ----
+const dp = { layers: null, key: null, handle: null, dirty: false, stroke: null, loaded: false };
+const dpApi = { createGrassMask: ENG.createGrassMask, sampleAt: ENG.grassSampleAt, setSample: ENG.setGrassSample, grassMaskToJSON: ENG.grassMaskToJSON, grassMaskFromJSON: ENG.grassMaskFromJSON };
+function decorNames() {
+  const w = world && world._detailCtx && world._detailCtx.cfg && world._detailCtx.cfg.layers;
+  return [...new Set([...(w || []).map((l) => l.name), ...fl.st.decorLayers])].sort();
+}
+/** Loads the layers once (file if present, else neutral); a no-paint world keeps dp.layers null until the first stroke. */
+async function decorAttach() {
+  if (!world) return false;
+  dp.key = world.terrainKey || world.id || 'world';
+  if (dp.layers) { for (const n of decorNames()) if (!dp.layers[n]) Object.assign(dp.layers, GB.createDecorLayers([n], dpApi)); return true; }
+  let obj = null;
+  try { const r = await fetch(`../../content/${GB.decorPaintPath(dp.key)}`); if (r.ok) obj = await r.json(); } catch { /* no paint file: neutral */ }
+  dp.layers = GB.parseDecorPaint(obj, decorNames(), dpApi);
+  if (obj) rebuild(); // world was loaded without the paint: reload it once with the layers
+  return true;
+}
+function decorRebuild(rect) { GB.rebuildDecor(world, rect); if (world) world.renderVersion++; frame.markDirty(); }
+async function decorStrokeStart(pt) {
+  if (!(await decorAttach()) || !fl.st.decorLayer) { flash('decor: no layer'); return false; }
+  const gm = dp.layers[fl.st.decorLayer];
+  if (!gm) { flash(`decor: unknown layer ${fl.st.decorLayer}`); return false; }
+  if (!world.decorPaint) world.decorPaint = GB.decorWorldOpt(dp.layers); // live world gets the layers without a reload
+  dp.stroke = GB.beginDecorStroke({ gm, key: dp.key }, { layer: fl.st.decorLayer, op: fl.st.op, target: fl.st.target, radius: fl.st.radius, strength: GB.effectiveStrength(fl.st.density * 5), x: pt.x, y: pt.y });
+  decorStrokeMove(pt);
+  return true;
+}
+function decorStrokeMove(pt) { if (dp.stroke) { dp.stroke.points(pt.x, pt.y).forEach(([x, y]) => dp.stroke.dab(x, y)); frame.markDirty(); } }
+function decorStrokeEnd(cancel) {
+  const s = dp.stroke; dp.stroke = null;
+  if (!s) return null;
+  const rec = GB.endStroke({ gm: dp.layers[s.layer], key: dp.key }, s);
+  if (!rec) return null;
+  if (cancel) { GB.applyDecorSide(dp.layers, rec, 'before'); return null; }
+  undoStack.push(rec); dp.dirty = true;
+  decorRebuild(rec.rect); // live: World.rebuildDecor on the stroke rect only
+  refreshIoStatus(); flash(`${rec.label} (${s.layer}): ${rec.entries.length} texels`);
+  return rec;
+}
+function applyDecorRecordSide(rec, side) {
+  if (!dp.layers) return;
+  const rect = GB.applyDecorSide(dp.layers, rec, side);
+  if (rect) { dp.dirty = true; decorRebuild(rect); refreshIoStatus(); }
+}
+async function saveDecor() {
+  if (!dp.layers) return false;
+  await saveDecorPaint(dp, GB.decorPaintText(dp.layers, dp.key), { forceDownload: !!doc.readOnly });
+  return true;
+}
+function updateDecorToolbar() {
+  const d = fl.st.mode === 'decor';
+  flEl('fl-mode').textContent = d ? 'Mode: decor' : 'Mode: placements';
+  flEl('fl-decor').style.display = d ? '' : 'none'; flEl('fl-target-l').style.display = d ? '' : 'none'; flEl('fl-reset').style.display = d ? '' : 'none';
+  flEl('fl-palette').style.display = d ? 'none' : '';
+  flEl('fl-target').nextElementSibling.textContent = `x${fl.st.target}`;
+  const sel = flEl('fl-decor'); if (sel.options.length !== fl.st.decorLayers.length) { sel.innerHTML = ''; for (const n of fl.st.decorLayers) sel.add(new Option(n, n)); }
+}
+flEl('fl-mode').addEventListener('click', async () => { FP.setFoliageParam(fl.st, 'mode', fl.st.mode === 'decor' ? 'place' : 'decor'); if (fl.st.mode === 'decor') { fl.st.decorLayers = decorNames(); if (!fl.st.decorLayer) fl.st.decorLayer = fl.st.decorLayers[0] || null; await decorAttach(); } updateFoliageToolbar(); });
+flEl('fl-decor').addEventListener('input', () => { FP.setFoliageParam(fl.st, 'decorLayer', flEl('fl-decor').value); });
+flEl('fl-target').addEventListener('input', () => { FP.setFoliageParam(fl.st, 'target', flEl('fl-target').value); updateFoliageToolbar(); });
+
+function foliageStrokeEnd(cancel) { if (dp.stroke) { decorStrokeEnd(cancel); frame.markDirty(); return; } if (fl.ctl && fl.ctl.active) { fl.ctl.end(cancel); frame.markDirty(); } }
+
+/** Ring cursor (red = erase, green = paint, gold = running stroke) + placement ghosts while dragging. */
+function drawFoliageCursor() {
+  if (toolMode !== 'foliage' || !fl.hover || !world || !world.terrain) return;
+  const put = (x, y, z, ch, hex) => {
+    const p = projectPoint(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, { x, y, z }, RENDERER);
+    if (!(p.depth > 0)) return;
+    const c = Math.round(p.col), r = Math.round(p.row);
+    if (c >= 0 && c < rt.cols && r >= 0 && r < rt.rows) overlayPlate.setCell(c, r, ch, hex, EDITOR_PLATE_BG);
+  };
+  const active = fl.ctl && fl.ctl.active;
+  for (const [x, y] of ringPoints(fl.hover.x, fl.hover.y, fl.st.radius)) put(x, y, world.terrain.heightAt(x, y) + 0.15, 'o', active ? '#ffd24a' : fl.st.op === 'erase' ? '#ff7a7a' : '#7CFC7C');
+  if (active) for (const o of fl.ctl.ghosts()) put(o.x, o.y, o.z + 1, 'T', '#9be59b');
+}
+
 // ---- US-066: ribbon readouts (tool mode / snap / place toolbar) -----------
 function updateToolModeButtons() {
   toolModeGroupEl.querySelectorAll('.tool-mode-btn').forEach((btn) => {
@@ -567,6 +725,7 @@ toolModeGroupEl.querySelectorAll('.tool-mode-btn').forEach((btn) => {
     updateToolModeButtons();
     updateTerrainToolbar();
     updateGrassToolbar();
+    updateFoliageToolbar();
   });
 });
 updateToolModeButtons();
@@ -802,7 +961,7 @@ function snapTo(v, snap) { return normZero(Math.round(v / snap) * snap); }
 /** `engine.setWorld(World.load(...))` - the one mutation path's rebuild (24.8). <= 5 ms budget. */
 function rebuild() {
   const t0 = performance.now();
-  const w = World.load(assets.world(doc.worldId), assets, { events: engine.events, terrain: engine.world && engine.world.terrain, spawn: { x: cam.x, y: cam.y } }); // WS2: start in the band under the camera
+  const w = World.load(assets.world(doc.worldId), assets, { events: engine.events, terrain: engine.world && engine.world.terrain, spawn: { x: cam.x, y: cam.y }, decorPaint: dp.layers ? GB.decorWorldOpt(dp.layers) : undefined }); // WS2: start in the band under the camera
   engine.setWorld(w);
   reapplyVisibility(); // US-067: hide/lock survives this rebuild (in-memory overlay, never in `doc`)
   const ms = performance.now() - t0;
@@ -876,8 +1035,9 @@ function applyAndSync(appliedRec) {
 function doUndo() {
   const rec = undoStack.undo();
   if (!rec) { flash('undo: nothing to undo'); return; }
+  if (GB.isDecorRecord(rec)) { applyDecorRecordSide(rec, 'before'); flash(`undo: ${rec.label}`); return; }
   if (GB.isGrassRecord(rec)) { applyGrassRecordSide(rec, 'before'); flash(`undo: ${rec.label}`); return; }
-  if (isTerrainRecord(rec)) { applyTerrainRecordSide(rec, rec.before); flash(`undo: ${rec.label}`); return; }
+  if (isTerrainRecord(rec)) { applyTerrainRecordSide(rec, rec.before); if (rec.foliage) { const inv = invert(rec.foliage); applyEdit(doc, inv); applyAndSync(inv); } flash(`undo: ${rec.label}`); return; }
   const inv = invert(rec);
   followRename(inv);
   applyEdit(doc, inv);
@@ -888,8 +1048,9 @@ function doUndo() {
 function doRedo() {
   const rec = undoStack.redo();
   if (!rec) { flash('redo: nothing to redo'); return; }
+  if (GB.isDecorRecord(rec)) { applyDecorRecordSide(rec, 'after'); flash(`redo: ${rec.label}`); return; }
   if (GB.isGrassRecord(rec)) { applyGrassRecordSide(rec, 'after'); flash(`redo: ${rec.label}`); return; }
-  if (isTerrainRecord(rec)) { applyTerrainRecordSide(rec, rec.after); flash(`redo: ${rec.label}`); return; }
+  if (isTerrainRecord(rec)) { applyTerrainRecordSide(rec, rec.after); if (rec.foliage) { applyEdit(doc, rec.foliage); applyAndSync(rec.foliage); } flash(`redo: ${rec.label}`); return; }
   followRename(rec);
   applyEdit(doc, rec);
   applyAndSync(rec);
@@ -1891,8 +2052,9 @@ async function doSave() {
     const saved = await saveAll(doc);
     if (tb.dirty && tb.layer) { await saveTerrainEdits(tb, { forceDownload: !!doc.readOnly }); saved.push(`terrainEdits/${tb.key}`); }
     if (gb.dirty && gb.gm) { await saveGrassMask(gb, { forceDownload: !!doc.readOnly }); saved.push(`grassMask/${gb.key}`); }
+    if (dp.dirty && dp.layers) { await saveDecor(); saved.push(`decorPaint/${dp.key}`); }
     flash(saved.length ? `saved: ${saved.join(', ')}` : 'save: nothing dirty');
-    if (!anyDirty(doc) && !tb.dirty && !gb.dirty) autosaver.flush(); // clears the OB-030 autosave record
+    if (!anyDirty(doc) && !tb.dirty && !gb.dirty && !dp.dirty) autosaver.flush(); // clears the OB-030 autosave record
   } catch (e) {
     flash(`save failed: ${e && e.message ? e.message : e}`);
   }
@@ -2127,6 +2289,16 @@ canvas.addEventListener('mousedown', async (e) => {
   const tok = clickGuard.begin();
   if (col < 0 || col >= rt.cols || row < 0 || row >= rt.rows) return;
 
+  if (questPanelHandle && !questPickerArmed()) { // ED-QUEST-04: a click on a quest pin selects that objective in the panel
+    const pin = questOverlay.pinAt(col, row);
+    if (pin) { questPanelHandle.selectObjective(pin.qid, pin.obj); return; }
+  }
+  if (questPickerArmed()) { // ED-QUEST-03: Pick mode owns the left button; the quest panel decides what the hit means
+    const hit = await pickAt(col, row, pickCtx());
+    if (clickGuard.isStale(tok)) return;
+    questPanelHandle.picker.handle({ entityId: hit.kind === 'entity' ? hit.entityId : null, point: hit.world && (hit.kind === 'terrain' || hit.kind === 'surface') ? hit.world : null });
+    return;
+  }
   if (toolMode === 'terrain') { // ED-TERRAIN-1c: the brush owns the left button
     const hit = await pickAt(col, row, pickCtx());
     if (clickGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
@@ -2139,6 +2311,13 @@ canvas.addEventListener('mousedown', async (e) => {
     if (clickGuard.isStale(tok)) return;
     if (hit.kind === 'terrain' && hit.world) { gb.hover = { x: hit.world.x, y: hit.world.y }; grassStrokeStart(gb.hover); }
     else flash('grass: click on the terrain');
+    return;
+  }
+  if (toolMode === 'foliage') { // ED-FOLIAGE-02: the foliage brush owns the left button
+    const hit = await pickAt(col, row, pickCtx());
+    if (clickGuard.isStale(tok)) return;
+    if (hit.kind === 'terrain' && hit.world) { fl.hover = { x: hit.world.x, y: hit.world.y }; fl.st.shift = !!e.shiftKey; if (fl.st.mode === 'decor') decorStrokeStart(fl.hover); else foliageController().start(fl.hover); frame.markDirty(); }
+    else flash('foliage: click on the terrain');
     return;
   }
 
@@ -2389,6 +2568,7 @@ window.addEventListener('mouseup', (e) => {
   }
   if (tb.stroke) { terrainStrokeEnd(false); return; }
   if (gb.stroke) { grassStrokeEnd(false); return; }
+  if ((fl.ctl && fl.ctl.active) || dp.stroke) { foliageStrokeEnd(false); return; }
   if (boxDrag) {
     const box=boxDrag;boxDrag=null;
     if (box.moved) {
@@ -2467,13 +2647,14 @@ window.addEventListener('mouseup', (e) => {
 
 // ED-TERRAIN-1c: cursor ring + stroke dabs follow the pointer over the terrain.
 canvas.addEventListener('mousemove', async (e) => {
-  if (toolMode !== 'terrain' && toolMode !== 'grass') return;
+  if (toolMode !== 'terrain' && toolMode !== 'grass' && toolMode !== 'foliage') return;
   const { col, row } = computeMouseCell(e);
   const tok = hoverGuard.begin();
   if (col < 0 || col >= rt.cols || row < 0 || row >= rt.rows) return;
   const hit = await pickAt(col, row, pickCtx());
   if (hoverGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
   if (hit.kind === 'terrain' && hit.world) {
+    if (toolMode === 'foliage') { fl.hover = { x: hit.world.x, y: hit.world.y }; { const z = FB.zoneOf(fl.hover.x, fl.hover.y), k = FB.zoneKey(z.cx, z.cy); if (k !== fl.zoneKey) { fl.zoneKey = k; updateFoliageMeter(); } } if (dp.stroke) decorStrokeMove(fl.hover); else if (fl.ctl && fl.ctl.active) fl.ctl.move(fl.hover); frame.markDirty(); return; }
     if (toolMode === 'grass') { gb.hover = { x: hit.world.x, y: hit.world.y }; if (gb.stroke) grassStrokeMove(gb.hover); frame.markDirty(); return; }
     tb.hover = { x: hit.world.x, y: hit.world.y };
     if (tb.stroke) terrainStrokeMove(tb.hover);
@@ -2570,6 +2751,8 @@ function update(dt) {
     restoreGroupDrag(groupDrag);groupDrag=null;
   } else if (input.pressed('Escape') && boxDrag) {
     boxDrag=null;frame.markDirty();
+  } else if (input.pressed('Escape') && fl.ctl && fl.ctl.active) {
+    foliageStrokeEnd(true); // ED-FOLIAGE-02: Esc drops the stroke in progress (nothing committed)
   } else if (input.pressed('Escape') && tb.stroke) {
     terrainStrokeEnd(true); // ED-TERRAIN-1c: Esc reverts the stroke in progress (no record)
   } else if (input.pressed('Escape') && meshDrag) {
@@ -2708,8 +2891,11 @@ function drawAssetGhost() {
 
 const overlayPlate = createOverlayTarget(engine.ui, rt);
 const overlayGlyph = createOverlayTarget(engine.ui, rt, { glyphOnly: true });
+const questOverlay = createQuestOverlay({ rt, getCam: () => cam, getWorld: () => assets.world(doc.worldId), floorAt: (x, y) => world.floorAt(x, y), renderer: RENDERER,
+  getAreasFile: () => (questPanelHandle && questPanelHandle.areasFile) || null });
 function drawOverlay(fb) {
   const selection = primarySelection();
+  if (questPanelHandle) questOverlay.draw(overlayPlate, questPanelHandle.markerState());   // ED-QUEST-04
   if (markersOn) drawMarkers(overlayPlate, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets.palette, selection, RENDERER, groupDrag?.previewItems);
   for (const item of sel.items) drawSelectionHighlight(overlayPlate, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets, doc, item, '#ffd24a', RENDERER, groupDrag?.previewItems);
   if (boxDrag?.moved) drawMeshHighlightRect(overlayPlate,boxDrag.rect,'#ffd24a');
@@ -2717,6 +2903,7 @@ function drawOverlay(fb) {
   drawAssetGhost();
   drawTerrainCursor();
   drawGrassCursor();
+  drawFoliageCursor();
   if (helpOn) drawHelpOverlay();
   void fb;
 }

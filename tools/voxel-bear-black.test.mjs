@@ -55,17 +55,17 @@ test('clips: idle / walk / turn identical to Burl; no dialogue clips; BEAR-D2 fi
 });
 
 // BEAR-D2: frame counts, durations, loop flags, timing contracts (telegraph >= 0.8 s, swipe hit key), all on four legs
-const SPEC = { charge: [6, 400, true], windup: [7, 800, false], swipe: [6, 600, false], hurt: [2, 100, false],
+const SPEC = { charge: [10, 500, true], windup: [7, 800, false], swipe: [6, 600, false], hurt: [2, 100, false],
                flinch: [3, 250, false], die: [5, 500, false], dead: [1, 1000, true], sink: [2, 600, false] };
 test('BEAR-D2 clips: frame counts, total ms, loop, durations multiples of 50, every part keyed', () => {
-  const parts = Object.keys(DEF.parts).sort();
+  const parts12 = Object.keys(DEF.parts).sort(), parts = parts12.filter((p) => !/2$/.test(p));   // legacy fight clips key the 8 base parts; the generated charge keys all 12
   for (const [k, [n, ms, loop]] of Object.entries(SPEC)) {
     const c = DEF.animations[k];
     assert.strictEqual(c.frames.length, n, k + ' frames'); assert.strictEqual(c.durations.length, n, k + ' durations');
     assert.strictEqual(c.durations.reduce((a, b) => a + b, 0), ms, k + ' total ms');
     assert.strictEqual(!!c.loop, loop, k + ' loop');
     for (const d of c.durations) assert.strictEqual(d % 50, 0, k + ' duration ' + d);
-    c.frames.forEach((f, i) => assert.deepStrictEqual(Object.keys(f).sort(), parts, k + ' key ' + i));
+    c.frames.forEach((f, i) => assert.deepStrictEqual(Object.keys(f).sort(), k === 'charge' ? parts12 : parts, k + ' key ' + i));
   }
   assert.strictEqual(DEF.animations.hurt.interp, 'step');
   assert.ok(FX.telegraph.ms >= 800 && FX.telegraph.clip === 'windup');

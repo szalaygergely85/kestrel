@@ -1,4 +1,4 @@
-// WMP-01 wiring: wake ws_downs -> questFlag -> book offers sq.reg.downs -> relay touch -> errands.inspected -> book.inspect accepts.
+// WMP-01 wiring (S5c: giver is warden_<region>): wake ws_downs -> questFlag -> book offers sq.reg.downs -> relay touch -> errands.inspected -> book.inspect accepts.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -25,5 +25,7 @@ assert.equal(state['waystone.ws_downs.woken'], true, 'quest flag set through que
 assert.equal(book.statusOf('sq.reg.downs'), AVAILABLE, 'OB-126: the wake touch only OFFERS the errand');
 for (let i = 0; i < 600; i++) rw.step(0.05, null); // let the wake finish
 assert.equal(rw.interact('ws_downs'), true); // second E on the awake relay = explicit accept
-assert.equal(book.statusOf('sq.reg.downs'), ACTIVE, 'second touch -> inspect(relay_downs) -> errand accepted');
+assert.equal(book.statusOf('sq.reg.downs'), AVAILABLE, 'S5c: the relay no longer gives the errand (the warden does)');
+book.inspect('warden_downs'); // talking to the warden = accept
+assert.equal(book.statusOf('sq.reg.downs'), ACTIVE, 'warden inspect -> errand accepted');
 console.log('regionRelayWire OK');

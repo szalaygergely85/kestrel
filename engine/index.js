@@ -43,7 +43,7 @@ export { validateCarpetConfig, buildCarpetClassMap, CARPET_MAX_VARIANTS, CARPET_
 export { scatterTrees, validateScatterConfig, scatterDetail, validateDetailConfig, hash2 } from './world/scatter.js';
 export { Terrain } from './world/Terrain.js';
 export { createEditLayer, editLayerFromJSON, editLayerToJSON, applyDab, editHeightAt, heightDelta, typePaint, sampleDh, sampleType, setSampleDh, setSampleType, NO_PAINT } from './world/terrainEdits.js'; // ED-TERRAIN-1a
-export { createGrassMask, maskAt as grassMaskAt, sampleAt as grassSampleAt, setSample as setGrassSample, grassMaskFromJSON, grassMaskToJSON, bakeAreasToMask } from './world/grassMask.js'; // MASK-a (OB-096)
+export { createGrassMask, maskAt as grassMaskAt, sampleAt as grassSampleAt, setSample as setGrassSample, grassMaskFromJSON, grassMaskToJSON, bakeAreasToMask, paintAt as decorPaintAt } from './world/grassMask.js'; // MASK-a (OB-096)
 export { Level } from './world/Level.js';
 export { serialize, deserialize } from './world/serialize.js';
 
@@ -62,6 +62,7 @@ export { packDecorLayers, DEFAULT_DENSITY_Q8 } from './mesh/decorScatter.js'; //
 export { shadeTerrain, makeTerrainShadeCtx } from './render/terrainShade.js';
 export { packTerrainTextures, TLOOK_WIDTH } from './render/gpu/TerrainTextures.js';
 export { drawSprites, SpritePool, MAX_SPRITES } from './render/sprites.js';
+export { createAtmosState, mixAtmos, applyAtmosToPalette, gradeCells, gradeRGB, ATMOS_FOG_FIT } from './render/atmos.js'; // ENV-03c: biome atmosphere (game driver = ENV-03a)
 // ---- US-030c GPU sprite pass + atlas + parity harness ----------------------
 export { buildSpriteAtlas } from './render/gpu/spritesAtlas.js';
 export { drawText, drawTextScaled } from './render/textDraw.js';
@@ -86,6 +87,7 @@ export {
 // the gpucompare harness needs them.
 export { validateVoxelModel, assertVoxelModel, MAX_VOX_PARTS, MAX_VOX_INSTANCES, MAX_VOX_INSTANCES_MESH, MESH_ONLY_MAX_DIM, MESH_ONLY_MAX_CELLS } from './voxel/VoxelModel.js';
 export { packVoxelModel } from './voxel/voxelPack.js';
+export { validateBlend, packBlend, BLEND_FADE_DEFAULT_MS, BLEND_FADE_MAX_MS } from './voxel/blendPack.js'; // ANIM-BLEND-01a (38.68)
 export { deriveEmissiveLight, EMISSIVE_LIGHT_MIN } from './voxel/emissiveLight.js';
 export { buildVoxelMesh, MESH_ONLY_MAX_QUADS } from './mesh/voxelMesh.js';
 export { prebuildTerrainMesh } from './mesh/terrainMesh.js'; // ED-MESH-1a
@@ -165,6 +167,7 @@ export { stepAnimations, animComponent } from './entities/animation.js';
 export { createAnimState, blend as animBlend, BLEND_MS as ANIM_BLEND_MS, PRIORITY as ANIM_PRIORITY } from './entities/animState.js';
 export { bindClips, applyAnimState, modelClipNames } from './entities/animClips.js';
 export { createClipPlayer, clipPlay, clipStep, clipSetPhase, clipFromW } from './entities/clipPlayer.js';
+export { createLegDriver } from './entities/legDriver.js'; // ANIM-C-05: game beastView leg IK wiring
 export { pickGait, gaitRate } from './entities/gait.js';
 export { tintAt, setTint, sampleTint } from './entities/tintEnvelope.js';
 export { createEntityTintTable, clearEntityTints, pushEntityTint, pushEntityTintSample, fillEntityTints, entityTintAt, tintChannel, ENTITY_TINT_MAX } from './render/entityTint.js';
@@ -244,6 +247,7 @@ export { createRtsCamera, update as updateRtsCamera, zoomBy as zoomRtsCamera } f
 // ---- RE-14 deterministic sim: commands/rng/hash/replay + loop STEP --------
 export { createCommandQueue } from './core/commands.js';
 export { createRng } from './core/rng.js';
+export { compileLogic, createLogic, validateLogic, LOGIC_LIMITS } from './core/logic.js'; // ED-LOGIC-01a
 export { createHasher } from './core/hash.js';
 export { createRecorder, createPlayer as createReplayPlayer } from './core/replay.js';
 export { STEP as SIM_STEP } from './core/loop.js'; // architect RE-EXP review: not a bare STEP next to STEP_MIN/KIND_STEP
@@ -282,3 +286,4 @@ export { createFauna } from './fauna/fauna.js'; // WILD-06
 export { createFaunaFeed, WILD_DRAW_MAX } from './fauna/feed.js';
 export { createSpawner, FAUNA_MAX, CELL_M as FAUNA_CELL_M } from './fauna/spawner.js';
 export { makeUnderState, updateUnderState, UNDER_DEFAULT } from './render/underwater.js'; // SWIM-04c (38.54)
+export { createAnimBlender } from './entities/animBlend.js'; // ANIM-BLEND-01b (38.68)

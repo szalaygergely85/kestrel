@@ -7,6 +7,9 @@
 // engine/index.js like everything else (check-deps rule 3).
 
 import { applyImpostorBoot, reapplyRememberedImpostors } from './ui/impostorPreset.js'; // R6-WIRE
+import { groundLookFromParams } from './look/groundLookConfig.js'; // ENV-02d
+import { buildAtmosConfig } from './look/atmosConfig.js'; import { createAtmosDriver } from './look/atmosDriver.js'; // ENV-03
+import { createAtmosState, mixAtmos, applyAtmosToPalette, gradeCells } from '../../engine/index.js'; // ENV-03: `?atmos=0` = no driver, palette untouched
 import { parseDecorMode, buildDecorConfig, guardDecorRun } from './decorHost.js'; // ENV-01-WIRE
 import { loadPresets, resolveQuality, saveQuality, knobsFor, dropStaleOverrides, carpetQualityFor, carpetBuildFor } from './ui/gfxPresets.js';
 import { loadQuestFiles, showBootErrors } from './questBoot.js';
@@ -50,6 +53,7 @@ import { parseCloudShadowFlag, devCloudShadow, parseAoStrength } from './cloudPa
 import { MODES } from './dev/modes/index.js';
 import { loadCinematic, evaluatePath, createPlayback } from './dev/modes/cinematic.js';
 import { createPauseResume } from './quest/pauseResume.js'; // OB-068
+import { entityTop, markZ } from './quest/markTop.js'; // OB-155h/OB-164: marker height from the model top
 import { createPauseMenu, PAUSE_KEYS } from './ui/pauseMenu.js'; // PAUSE-MENU-01 (D-053): replaces the old 'Click to resume' overlay
 // CHARGEN-17 parked (owner 2026-10-10): import { createCharCreate } from './ui/charCreate.js';
 import { createCreditsView } from './ui/creditsView.js'; // CREDITS-MOUNT-01
@@ -75,7 +79,8 @@ import { stepBeacon } from './quest/beacon.js';
 import { stepLantern } from './quest/lantern.js'; // OWN-REQ-006: hook-light off, same fixed-step slot as stepBeacon
 import { removeSwordIfTaken } from './quest/swordTake.js'; // US-078c
 import { applyDoorState } from './quest/doorToggle.js'; // DOOR-TOGGLE-01
-import { noteRead, resetNoteRead, stepNoteRead, isNoteOpen, isNoteEscGrace, pushNoteDim, drawNotePanel } from './quest/noteRead.js'; // READ-01
+import { noteRead, resetNoteRead, stepNoteRead, isNoteOpen, getOpenNoteId, isNoteEscGrace, pushNoteDim, drawNotePanel } from './quest/noteRead.js'; // READ-01
+import { createNoteOffer } from './quest/objectOffer.js'; // QFIX-S5-CLOSE: keep-light note close -> Accept/Exit offer
 import { wakeFrame, drawEyelid, applyWakeOnLoad } from './quest/wake.js';
 import { initMapCard, stepMapCard, isMapOpen, getMapPanel, getMapChart, drawMapCard } from './quest/mapCard.js';
 import { resetHints, stepHints, drawHints, pushHintDim, setPaletteColors as setHintPaletteColors } from './quest/hints.js';
@@ -89,13 +94,14 @@ import { createTitleMenuHost, withRelock } from './titleMenuHost.js'; // US-090w
 import { createStorageAdapter } from './quest/save/saveState.js';
 import { retintHand, lookOrDefault } from './quest/look/handLook.js'; // CHARGEN-16
 import { createQuitSave } from './quest/quitSave.js'; // OB-079
+import { parseQstateParam, applyQuestPreset } from './quest/statePreset.js'; // ED-QUEST-07
 import { createSaveRelay } from './saveRelay.js'; // US-089w/US-096w: save + autosave + quest event hook
 import { parseOccl, createHzbInvalidator } from './occlGate.js'; // OCCL-MAIN-01
 import { watchDeviceLost } from './deviceLost.js'; // S8-B1-10 (38.10c): device-lost card
 import { createQuestPickups, itemLabel } from './questPickups.js'; // QUESTS-01
 import { setInspectSink, wrapText } from './quest/questInspect.js'; // QL-04
 import { createErrands, labelOf, gateOnMeet, isWorn, bannerLines } from './quest/errands.js'; // QL-WIRE: Ch1-2 errands
-import { generateAll } from './quest/questSnippets.js'; // QL-T4: generated q.<id>.* dialogue routes
+import { generateAll, generateForNpc } from './quest/questSnippets.js'; // QL-T4: generated q.<id>.* dialogue routes
 import { createHeartHook } from './heartHook.js'; // QL-08: heart pieces -> max HP
 import { createChestHook } from './chestHook.js'; // S8-B1-04: chest sim + item-get card, through the seam only
 import { createMapFogHook } from './mapFogHook.js'; // S8-B1-16: visited-cell mask feed, through the seam only
@@ -110,6 +116,8 @@ import { createGoblinWire } from './life/goblinWire.js'; // GOB-07b
 import { createLifeWire, prepareRaidDefs, createOutwallLife } from './life/lifeWire.js'; // LIFE-HOOKS-01: wolf raids wiring
 import { planWorldLife } from './quest/sim/worldGen.js';
 import { bootRegionalBeasts } from './quest/sim/regionalBeastsBoot.js'; // WM-12
+import { createLogicWire } from './logic/logicWire.js'; // ED-LOGIC-01c
+import { loadDecorPaint } from './decorPaintLoad.js'; // ED-FOLIAGE-04
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
 import { ensureWolves } from './quest/sim/wolfBrain.js'; // WOLF-01
 import { ensureBears } from './quest/sim/bearBrain.js'; // BEAR-01 (D-069): black bears in Thornwood
@@ -118,6 +126,7 @@ import { startMpFade } from './quest/vitalsView.js'; // FB-03: MP bar fades in o
 const fbS = { fbOn: false, hand: null, casting: false, manaFlashTick: 0 }; // FB-03: reused hint input
 import { buildBeastNav } from './quest/sim/beastNav.js';
 import { presentBeasts } from './quest/beastView.js';
+import { createBeastLegs } from './quest/beastLegs.js'; // ANIM-C-05: leg IK for beasts (?legik=0 off)
 import { createBeastAnim } from './quest/beastAnim.js'; // ANIM-STATE-WIRE-01
 import { questOverlayStyles } from './quest/overlayStyles.js';
 import { createVitals } from './quest/sim/vitals.js'; // US-080a1/a2 (architecture.md 30.2)
@@ -193,6 +202,7 @@ import { createQuestMarkers } from './quest/sim/questMarkers.js'; // QUEST-MARK-
 import { registerQuestMarks } from './quest/wire/questMarks.js';
 import { createQuestLogScreen, QUEST_LOG_KEYS } from './ui/questLog.js'; // QG-05
 import { createCompassHud } from './ui/compassHud.js'; // COMPASS-02 (D-061)
+import { createCombatHud } from './ui/combatHud.js'; import { setEnemyBarsOn, setDamageNumbersOn } from './ui/combatHudFlags.js'; // HPBAR-02 + DMGNUM-01 (D-086)
 import { createCrafting } from './quest/sim/crafting.js'; // MAIN-WIRE-01: crafting list on C
 import { createCraftView } from './ui/craftView.js';
 import { drawDemoScene } from './dev/demoScene.js';
@@ -266,6 +276,7 @@ const hitStop = createHitStop({ enabled: hitStopEnabled(params, isCaptureOrBench
 let deathRespawnDue = false; // DEATH-FLOW-01: fade finished -> next vitals.step gets a virtual [E] (its normal respawn path, pose logic untouched)
 const deathFlow = createDeathFlow({ enabled: deathFlowEnabled(params, isCaptureOrBench), onRespawn: () => { deathRespawnDue = true; } });
 setReduceMotion(savedSettings.reduceMotion); // SETTINGS-APPLY-01: read at boot, the Settings panel updates it live
+setEnemyBarsOn(savedSettings.enemyBars); setDamageNumbersOn(savedSettings.dmgNumbers); // HPBAR-02 / DMGNUM-01: Combat HUD switches (default On)
 const hurtFx = createHurtFx({ enabled: hurtFxEnabled(params, isCaptureOrBench), reduceMotion: isReduceMotion }); // HURT-FX-01: off in capture/bench/compare and ?fx=0
 const bootOpts = resolveBootOptions({ params, resolved: resolvedQuality, savedSettings, captureLike: isCaptureOrBench, geometryCompare: isGeometryCompare,
   defaultCols: GRID_DEFAULT_COLS, shadowLevel: resolveShadowLevel });
@@ -355,7 +366,7 @@ if (bootProg) { bootProg.phase('renderer'); await bootPaint(); }
 // (load-time only - no runtime look switching, that is US-122). Unknown key ->
 // warn + keep the default.
 const lookParam = params.get('look');
-if (lookParam) {
+if (lookParam && lookParam !== '0') { // '0' = ENV-02d ground-look off
   if (assets.palette && assets.palette.timeOfDay && assets.palette.timeOfDay[lookParam]) {
     assets.palette.defaultTime = lookParam;
   } else {
@@ -499,6 +510,7 @@ engine.events.on('magic.unlocked', () => startMpFade(fb ? fb.timeSec : 0)); // F
 // pages and automated browsers never load or save unless `?save=1` forces it (the headless reload check does).
 const saveEnabled = params.get('save') !== '0' && (params.get('save') === '1' || !(isCaptureOrBench || params.get('capture') === '1' || params.has('at') || navigator.webdriver)); // `?at` = dev pose: never autosave it into slot 0
 let saveRelay = null;
+let qstateItems = null; // ED-QUEST-07: pack items granted by the ?qstate preset (new-game boot only)
 let markWorld = null; // QUEST-MARK-01w: the current World (set per load before gameHooks.boot)
 let titleMenuActive = true; // S8-B1-10: mirrors menuHost.active each frame (true until the first frame says otherwise); gates the loss autosave
 let deviceLostFrozen = false; // S8-B1-10 (38.10c): set once by watchDeviceLost's `freeze` hook below; gates `paused` in the frame loop
@@ -526,13 +538,22 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
       const raws = {}; ids.forEach((id, i) => { if (rawList[i]) raws[id] = rawList[i]; });
       const gen = generateAll(raws, qb.giverDefs, snip || {});
       for (const id of Object.keys(gen)) if (gen[id] !== raws[id]) bundle.dialogues[id] = compileDialogue(gen[id]);
+      for (const oid of new Set(qb.giverDefs.filter((d) => d.objectGiver === true && d.giver).map((d) => d.giver.npc))) { // D-087: object givers get an Accept/Exit offer dialogue 'obj.<id>'
+        const shell = { kind: 'dialogue', schema: 1, id: 'obj.' + oid, speakers: { obj: { label: 'NOTE' }, you: { label: 'YOU', player: true } }, entry: [{ node: 'obj.none' }], nodes: { 'obj.none': { end: true, lines: ['Nothing more here.'], speaker: 'obj' } } };
+        const g = generateForNpc(shell, oid, qb.giverDefs, snip || {});
+        if (g !== shell) bundle.dialogues['obj.' + oid] = compileDialogue(g);
+      }
     } catch (e) { console.warn('[QL-T4] quest dialogue off:', e && e.message); }
   }
   window.__debug = window.__debug || {}; window.__debug.bootErrors = qb.errors;
   if (qb.errors.length) showBootErrors(document, qb.errors);
   if (qb.questDef && qb.giverDefs && qb.charKit) { try {
   const { questDef, giverDefs, charKit } = qb;
-  saveRelay = createSaveRelay({ storage: saveStorage(), questDef, giverDefs, enabled: saveEnabled, defaultLook: charKit.defaults });
+  saveRelay = createSaveRelay({ storage: saveStorage(), questDef, giverDefs, enabled: saveEnabled, defaultLook: charKit.defaults,
+    freshPreset: () => { // ED-QUEST-07: editor "Play from here" `?qstate=<questId>:<preset>`; fresh run only, ignored in capture/bench, never writes a slot
+      const qs = (isCaptureOrBench || params.get('capture') === '1') ? null : parseQstateParam(location.search); if (!qs) return null;
+      try { const r = applyQuestPreset({ main: questDef, givers: giverDefs }, qs.questId, qs.preset); qstateItems = r.items; return r.save; } catch (err) { console.warn('[qstate] preset failed:', err && err.message); return null; }
+    } });
   window.__charKit = charKit;
   saveRelay.bindEvents(engine.events);
   gameHooks.register(saveRelay.handlers());
@@ -544,7 +565,7 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
       { objectiveId: 'leave', targets: ['doorMarker'] }, /* MARK-FOLLOW-01: no mark while following Burl (owner) */ { objectiveId: 'waystone', targets: ['endMarker'] },
       { objectiveId: 'road', targets: ['roadWest'] }, { objectiveId: 'relayFound', targets: ['relayBend'] }, { objectiveId: 'relay1', targets: ['relayBend'] }]);
     const MARK_AREA = { doorMarker: 'towerDoor', roadWest: 'roadWest' }; const MARK_AT = { doorMarker: { x: 1495.5, y: 1030.5 } }; // owner 2026-10-10: the leave marker hangs in the open SW doorway (cell Q), not at the area centre (that sat in the wall) // marker id -> world area trigger id (no entity)
-    const MARK_TOP = { endMarker: 3.0, bear: 1.1, noteKeepLight: 0.14 }; const MARK_DY = { noteKeepLight: -0.03 }; const MARK_SCALE = { noteKeepLight: 0.4 }; // OB-095 (owner: too big, should almost touch the note + wall): the page is z 0.80-1.04 on the wall; a 0.4-scale '!' (0.31 m glyph, 0.14 m float) puts its bottom ~4 cm above the page top, centre 0.1 m off the wall (clears it while spinning). // QUEST-CHAIN-Q-01: the page sits ON the tower wall (y 10.0 local, interior = smaller y): hang the '!' 0.55 m inside so it is not half in / through the wall // prop top above its base z (waystone 24 voxels x 0.125 m; bear 22 voxels x 0.05 m = 1.1 m, glyph floats 0.35 m above); notes would use z + 1.55 (owner 2026-10-10: "!" too high)
+    const MARK_TOP = { endMarker: 3.0, noteKeepLight: 0.14 }; /* OB-155h: overrides only; everything else hangs above the model top (quest/markTop.js) */ const MARK_DY = { noteKeepLight: -0.03 }; const MARK_SCALE = { noteKeepLight: 0.4 }; // OB-095 (owner: too big, should almost touch the note + wall): the page is z 0.80-1.04 on the wall; a 0.4-scale '!' (0.31 m glyph, 0.14 m float) puts its bottom ~4 cm above the page top, centre 0.1 m off the wall (clears it while spinning). // QUEST-CHAIN-Q-01: the page sits ON the tower wall (y 10.0 local, interior = smaller y): hang the '!' 0.55 m inside so it is not half in / through the wall // prop top above its base z (waystone 24 voxels x 0.125 m; bear 22 voxels x 0.05 m = 1.1 m, glyph floats 0.35 m above); notes would use z + 1.55 (owner 2026-10-10: "!" too high)
     gameHooks.setQuestSource((out) => { const st = saveRelay.quest.state; out.done = saveRelay.quest.done; out.id = out.done ? '' : questDef.objectives[st.completed.length].id; out.targets = qm.markerTargets(st); });
     let markN = 0;
     const markHandle = (model) => { // entity handle for one marker; re-spawns itself when a world reload dropped the entity
@@ -563,7 +584,7 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
       };
     };
     const MARK_ENT = { noteKeepLight: 'tower.noteKeepLight' }; // level props are world entities '<placementId>.<propId>'
-    const markResolve = (id, out) => { const h = markWorld && markWorld.get(MARK_ENT[id] || (saveRelay.quest.book ? saveRelay.quest.book.entityFor(id) : id)), t = h && h.data && h.data.transform; if (!t) { const a = MARK_AREA[id], tr = a && markWorld && areaTrigger(markWorld, a); if (!tr) return false; const at = MARK_AT[id] || tr, gz = markWorld.heightAt(at.x, at.y); out.x = at.x; out.y = at.y; out.z = (gz == null ? 0 : gz) + 2.2; return true; } out.x = t.x; out.y = t.y + (MARK_DY[id] || 0); out.z = t.z + (MARK_TOP[id] || 1.55); out.s = MARK_SCALE[id] || 1; return true; };
+    const markResolve = (id, out) => { const h = markWorld && markWorld.get(MARK_ENT[id] || (saveRelay.quest.book ? saveRelay.quest.book.entityFor(id) : id)), t = h && h.data && h.data.transform; if (!t) { const a = MARK_AREA[id], tr = a && markWorld && areaTrigger(markWorld, a); if (!tr) return false; const at = MARK_AT[id] || tr, gz = markWorld.heightAt(at.x, at.y); out.x = at.x; out.y = at.y; out.z = (gz == null ? 0 : gz) + 2.2; return true; } out.x = t.x; out.y = t.y + (MARK_DY[id] || 0); out.z = markZ(t, entityTop(markWorld, h.data, (k) => gameVoxelPool.models.get(k)), MARK_TOP[id]); out.s = MARK_SCALE[id] || 1; return true; };
     // MARK-GIVER-ONLY-01 (owner), amended OB-124b: objective steps get no per-step waypoint mark here; instead book.chainMarks (m1 objective.mark data) adds gold '!' at the start entity / '?' at the end entity of the current main step (below). Flip to re-enable if a distinct waypoint symbol is designed.
     const OBJECTIVE_MARKS = false;
     if (OBJECTIVE_MARKS) registerQuestMarks(gameHooks, { fx: window.ASSETS.questMarkFx, resolve: markResolve, create: () => markHandle('questMark') });
@@ -571,7 +592,7 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
     const gAvail = [], gReady = [], sAvail = [], sReady = []; // OB-125: main chain = gold, side quests = light blue (book.isMain, from quest data)
     for (const [model, list] of [['questMark', gAvail], ['questMarkReady', gReady], ['questMarkSide', sAvail], ['questMarkReadySide', sReady]]) {
       registerQuestMarks(gameHooks, { fx: window.ASSETS.questMarkFx, resolve: markResolve, create: () => markHandle(model),
-        source: (out) => { const b = saveRelay.quest.book; b.giverMarks(gAvail, gReady, sAvail, sReady); b.chainMarks(gAvail, gReady); out.done = false; out.targets = list; } });
+        source: (out) => { const b = saveRelay.quest.book; b.markLists(gAvail, gReady, sAvail, sReady); /* OB-155j: one marker per entity */ out.done = false; out.targets = list; } });
     }
   }
   } catch (e) { console.error('[save] relay setup failed:', e); window.__debug.bootErrors.push({ file: 'save relay', message: String(e && e.message) }); showBootErrors(document, [{ file: 'save relay', message: '' }]); }
@@ -1082,7 +1103,8 @@ async function runGame(mode, cinematic = null) {
     if (params.get('trees') === 'voxel' && ft.speciesVoxel) ft.species = ft.speciesVoxel; }
   const worldLoadOpts = { physics,
     realTrees: renderer === 'mesh' && physics === 'mesh' && params.get('trees') !== '0',
-    detail: renderer === 'mesh' && physics === 'mesh' && params.get('scatter') !== '0' }; // ENV-01a2: `?scatter=0` (not `?detail=0`, that is the US-028 v1-shading switch)
+    detail: renderer === 'mesh' && physics === 'mesh' && params.get('scatter') !== '0',
+    groundLook: groundLookFromParams(params, window.BIOME_LOOK, window.ASSETS.levels.overworld_far) }; // ENV-02d (ENV-02d-LIVE: the LEVEL def holds .terrain, not its inner .recipe): `?look=0` -> null // ENV-01a2: `?scatter=0` (not `?detail=0`, that is the US-028 v1-shading switch)
   // ENV-01-WIRE (38.62): GPU decor scatter, only on the WebGPU mesh renderer with the GPU cull; `?decor=cpu` keeps today's CPU layers (decorGpu false = byte-identical)
   let decorPass = null; const decorDbg = { total: 0, frameErrors: 0, bad: false };
   { const dl = ((window.ASSETS.levels.overworld_far?.recipe?.detail?.layers) || []).some((l) => l.gpu); // every early-out names its reason once (?decor=cpu is silent)
@@ -1103,6 +1125,7 @@ async function runGame(mode, cinematic = null) {
     if (worldLoadOpts.carpet && gm) worldLoadOpts.carpet.mask = grassMaskFromJSON(gm);
     if (worldLoadOpts.carpet) engine.events.on('world:loaded', (e) => { const w = (e && e.world) || engine.world; if (w && w.setCarpetQuality) w.setCarpetQuality(carpetQualityFor(resolvedQuality && resolvedQuality.knobs, params.get('carpet'))); }); // OB-103b: preset knob -> world (Settings quality change: settings.js applyQuality)
   }
+  { const dp = await loadDecorPaint('overworld_far', grassMaskFromJSON); if (dp) worldLoadOpts.decorPaint = dp; } // ED-FOLIAGE-04: painted decor density (none = unchanged world)
   if (params.get('debug') === '1' || params.get('f3') === '1') overlay.toggle(); // per CLAUDE.md `?debug=1`; ME-08c `?f3=1` = F3 pass times at start
   // US-020a: arms the (one-shot) first-gesture listeners only - creates
   // nothing yet, so there is no autoplay warning and no sound before input.
@@ -1117,9 +1140,11 @@ async function runGame(mode, cinematic = null) {
   let decalBind = null; // DECAL-01: refreshed on load/restart.
   const entityTintTable = createEntityTintTable(); // TELEGRAPH-WIRE-01 part 2: one table, reused
   let telegraphWire = null; // TELEGRAPH-WIRE-01: rebuilt on 'world:loaded'
+  let beastLegs = null; const beastLegsOn = params.get('legik') !== '0'; // ANIM-C-05
   let beastAnim = null; const beastAnimOn = params.get('beastanim') === '1'; // ANIM-STATE-WIRE-01: default OFF (wander/return would use the walk clip)
   // WMP-05: map travel is refused in combat (aggro beast within 40 m or the hit-invuln window is up); same sim the hp-regen gate reads.
   const mapTravelBlocked = () => { const t = playerHandle && playerHandle.data.transform; return !!((vitals && vitals.invuln > 0) || (beasts && t && beasts.aggroNear(t.x, t.y, 40))); };
+  let logicWire = null, logicUnreg = null; // ED-LOGIC-01c: rebuilt with the beast sim on every 'world:loaded'
   let beasts = null; // US-079a (29.1): rebuilt on every 'world:loaded', below
   let vitals = null; // US-080a1/a2 (30.2): rebuilt on every 'world:loaded', below
   let travel = null; // WS1-07b: created once below (after wakeOut)
@@ -1166,6 +1191,7 @@ async function runGame(mode, cinematic = null) {
     const t = e && e.data && e.data.transform; if (!t) return false;
     out.x = t.x; out.y = t.y; out.z = t.z; return true;
   } };
+  const combatHud = createCombatHud({ events: engine.events, rgb: assets.palette.rgb, band: worldBand }); // HPBAR-02 + DMGNUM-01: enemy bars + damage numbers
   window.__debug.compass = compass; window.__debug.compassRetarget = () => { const b = saveRelay && saveRelay.quest.book; return b ? compass.target(b, compassResolver) : null; }; window.__debug.compassHidden = () => compassHide; // tools/verify-compass.mjs
   function compassFindMarker(w, markerId) { // structure marker -> world position (same lookup as audio/ambient.js; load-time-ish, cached)
     const o = { x: 0, y: 0, z: 0 };
@@ -1243,10 +1269,12 @@ async function runGame(mode, cinematic = null) {
   const notice = createNoticeView();
 const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop: accept or hand in, show its short text (banner, never locks)
   const b = saveRelay && saveRelay.quest.book, r = b && b.inspect(id); if (!r) return null;
+  if (r.action === 'offer') { if (dialogueCtl) dialogueCtl.openObject(id); return r; } // D-087: object giver = Accept/Exit dialogue, no auto-accept
   const d = b.def(b.index(r.id)); // QL-WIRE: the writer's def.lines (offer / ready / active) win over the short giver text
   notice.push(String(d.title || r.id).slice(0, 30), bannerLines(d, r.action, wrapText) || wrapText(r.text || (r.action === 'handin' ? 'Done.' : r.action === 'accept' ? 'Quest accepted.' : 'Not yet.')));
   return r;
 };
+const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.book : null), inspect: inspectObject }); // QFIX-S5-CLOSE: tower.blade is an objectGiver; the page opens the offer when it closes
   // QL-WIRE: Ch1-2 errands: object givers (post / notePost / relays), talk.<site>, target1..3.hit (sword + arrow = combat:hit), escort flag
   const errands = createErrands({ getBook: () => (saveRelay ? saveRelay.quest.book : null), questFlag: (k, v) => saveRelay.quest.questFlag(k, v), inspect: inspectObject, note: (t, l) => notice.push(t, l), texts: inspectTexts });
   setInspectSink((id) => errands.inspected(id));
@@ -1309,6 +1337,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
   let waterfallHooks = null;
   let ambientMotes = null;
   let lightSet = null; // US-006: built from the loaded world's level.def.lights, below
+  let atmosDrv = null, atmosCfg = null, atmosV = -1, atmosBase = null; const atmosState = createAtmosState(); // ENV-03: biome atmosphere driver (null = off)
   let clockDriver = null; // DN-03: step-quantised sun/look/ambient driver, rebuilt on every 'world:loaded'
   let clockTimeApplied = false; // DN-03: ?time= seeds the clock once, not on every restart
   let worldSunPath = null; // US-122a: fit the load-time sun before static/cinematic hour writes.
@@ -1479,6 +1508,10 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
           if (lightSet) { const hu = P.hue[L.ambient]; lightSet.ambient[0] = hu[0] * L.ambientI; lightSet.ambient[1] = hu[1] * L.ambientI; lightSet.ambient[2] = hu[2] * L.ambientI; }
         });
         clockDriver.update(clockHour(world.state, clockCfg), true);
+        { const G = window.ASSETS.levels.world_geo, far = window.ASSETS.levels.overworld_far, f = P.fog && (P.fog.farBase || P.fog.far); // ENV-03: only with BIOME_LOOK + geo biomes + terrain (and a running clock: capture/gpucompare never get a driver)
+          if (!atmosDrv && params.get('atmos') !== '0' && window.BIOME_LOOK && G && G.biomes && far && far.util && far.util.biomeBlend && f) {
+            atmosCfg = buildAtmosConfig(window.BIOME_LOOK, G.biomes); atmosBase = { start: f.start, full: f.full, curve: f.curve || 1, near: P.rgb[f.color], far: P.rgb[f.colorFar] };
+            atmosDrv = createAtmosDriver({ nEntries: atmosCfg.table.n, biomeToEntry: atmosCfg.biomeToEntry, biomeBlend: (x, y, o) => far.util.biomeBlend(x, y, o), schedule: P.daySchedule, slotOf: { morning: 0, noon: 0, dusk: 1, night: 2 }, frozenSlot: 0 }); } }
       } else if (Number.isFinite(timeHour)) { if (!clockTimeApplied) { seedClockFromParam(world.state, timeHour); clockTimeApplied = true; } applySunHours(world, lightSet, timeHour, worldSunPath, sunEnabled); } // frozen clock: the NPC schedules still read the ?time= hour
       // Architect review 1 item 7 (tech notes item 8): `?lights=8` test-only -
       // 7 synthetic extra lights (torch preset) spread 2-4 m around the
@@ -1521,7 +1554,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (wild && wild.dispose) wild.dispose();
       wild = null; regionAmb = null; engine.feedVoxels = null; // WILD-06: off in capture/bench/compare/cinematic, `?at=`/`?pose=` dev poses and `?fauna=0`
       if (mode === 'world' && !cinematic && params.get('fauna') !== '0' && !isCaptureOrBench && params.get('capture') !== '1' && !params.has('at') && !params.has('pose')) {
-        try { wild = createWild({ world, pool: gameVoxelPool, fx: window.ASSETS.wildlifeFx, seed: 0x5EED, events: engine.events }); if (wild) engine.feedVoxels = wild.feed; regionAmb = bootRegionAmbient({ table: regionAmbTable, geo: window.ASSETS.levels && window.ASSETS.levels.world_geo, wild }); } catch (err) { console.warn('[wild] fauna off:', err && err.message); }
+        try { wild = createWild({ world, pool: gameVoxelPool, fx: window.ASSETS.wildlifeFx, seed: 0x5EED, events: engine.events, legIk: new URLSearchParams(location.search).get('legik') !== '0' }); if (wild) engine.feedVoxels = wild.feed; regionAmb = bootRegionAmbient({ table: regionAmbTable, geo: window.ASSETS.levels && window.ASSETS.levels.world_geo, wild }); } catch (err) { console.warn('[wild] fauna off:', err && err.message); }
       }
       if (beasts) beasts.dispose();
       if (params.get('bench') === 'combat' || (benchActive && params.get('enemies') === '4')) ensureBenchBoars(world); // COMBAT-BENCH-01
@@ -1541,6 +1574,16 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         goblinWire.addFarCamps(planWorldLife(world, window.ASSETS?.levels?.world_geo, 12).camps); // WMP-09: authored-only avoid, same defs on Continue
       }
       beasts = createBeastSim(world, { tileNav: !!gridNav, nav: (lifeNav = gridNav || (worldDef.nav && buildBeastNav(world, worldDef.nav))), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events, band: worldBand, fauna: wild ? wild.fauna : null }); // LIFE-07: predators hunt the ambient fauna
+      // ED-LOGIC-01c: logic wire, rebuilt with every sim; no blocks (01d loads them) = nothing registered, nothing written
+      if (logicUnreg) { logicUnreg(); logicUnreg = null; } logicWire = null;
+      { const lb = (window.ASSETS && window.ASSETS.logicBlocks) || []; // 01d: content/logic/*.logic.json blocks; hint/sound callbacks wired with 01d
+        if (lb.length && saveRelay) {
+          try {
+            logicWire = createLogicWire({ world, blocks: lb, book: saveRelay.quest.book, inventory: playerHandle && playerHandle.data.components.inventory, sim: beasts, nav: world.nav, hooks: gameHooks, feed: (e) => saveRelay.quest.feed(e), player: () => playerHandle && playerHandle.data.transform });
+            logicUnreg = gameHooks.register(logicWire.handlers()); logicWire.onWorldLoaded();
+          } catch (err) { console.warn('[logic] wire failed:', err && err.message); logicWire = null; }
+        } }
+      combatHud.setSim(beasts); // HPBAR-02 + DMGNUM-01
       if (goblinWire) goblinWire.attach(beasts, { onClank: () => playShieldClank() }); // GOB-07b: camps + spear sim + view
       if (lifeWire) { lifeWire.dispose(); lifeWire = null; } // LIFE-08: night raids (content/life/raids.json), rebuilt with every beast sim
       if (raidDefs && !isCaptureOrBench && mode === 'world') lifeWire = createLifeWire({ ...raidDefs, campDefs: goblinWire ? goblinWire.campDefs : undefined, sim: beasts, events: engine.events, state: world.state, world, book: () => (saveRelay ? saveRelay.quest.book : null) });
@@ -1599,6 +1642,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       ensureInventory(playerHandle.data, startFor(params.get('demo') !== '0', fireballOn(engine.world, FEATURES))); // startConfig.js (fireball locked -> empty right hand)
       if (!window.__fbEquipHooked) window.__fbEquipHooked = true, engine.events.on('magic.unlocked', () => { const c = playerHandle && playerHandle.data.components; if (c && c.inventory && c.equipment && itemDefs && c.equipment.off === null && c.equipment.set !== 'ranged') equipItem(c.inventory, c.equipment, itemDefs, 'spell.fireball'); }); // FB-01/03 fix: the unlock puts the spell into the free off hand (RMB); hands are derived from equipment, so inventory.right alone never held it
       if (world.state['tower.sword.taken'] && itemDefs) migrateSword(playerHandle.data.components.inventory, itemDefs);
+      if (qstateItems && itemDefs) { for (const it of qstateItems) addItem(playerHandle.data.components.inventory, itemDefs, it.id, it.n); qstateItems = null; } // ED-QUEST-07: preset grants
       if (itemDefs) migrateEquipment(playerHandle.data, itemDefs); // EQ-02: old saves sword->main, shield->off (before initialState)
       // US-091a2 (37.16.3): corpse loot + toast. Own RNG stream (nav seed ^ salt) so the beast wander RNG is never
       // perturbed; `beast.loot` (quest/index.js) reaches this load's sim through setLootApi.
@@ -1664,6 +1708,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         saveRelay.quest.onSection = (title) => { if (tv && msg) tv.say('Quest complete: ' + title, msg.fg); const ws = world.state; if (chapterCard && saveRelay.quest.done && ws['waystone.waystone.woken'] && ws['waystone.ws_roadBend.woken']) chapterCard.trigger(); /* PO-CH1-08: card only after the meadow stone AND the relay */ }; // CH1-02: live section completion only
         saveRelay.quest.book.onChange = (name, id) => {
           gameHooks.emitSimple(name, id);
+          if (logicWire && (name === 'quest:accepted' || name === 'quest:done')) logicWire.notify(name === 'quest:accepted' ? 'quest.accepted' : 'quest.done', 'quest', id); // ED-LOGIC-01c
           if (name === 'quest:accepted') actionSig.questAccepted = true; // FS-01: first accepted quest -> [J] Journal hint
           if (name === 'quest:ready' && id === 'burl.boars' && crystal) crystal.check('ready'); // CH1-03
           if (name === 'quest:ready' && id === 'burl.boars' && dialogueCtl && dialogueCtl.open) burlReopen = true; // PO-CH1-07: boars were already dead when accepted -> Burl speaks again (the hand-in) once this box closes
@@ -1676,6 +1721,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       invView = itemDefs && window.ASSETS.uiStyle.inventory ? createInventoryScreen({
         style: window.ASSETS.uiStyle.inventory, tabOpens: false, items: window.ASSETS.items, rgb: assets.palette.rgb, toast: toasts,
         inventoryOf: () => (playerHandle && playerHandle.data.components.inventory) || null,
+        slotLockText: () => 'Locked - learn fire first', // OB-156
         isSlotDisabled: (i) => { if (fbOn || !playerHandle) return false; const inv = playerHandle.data.components.inventory, sl = inv && inv.slots[i]; return !!(sl && sl.id && FB_LOCKED_IDS[sl.id]); }, // FB-01: spell + mana potion cells show as locked until unlocked (Items + Character tabs)
         healthOf: () => (playerHandle && playerHandle.data.components.health) || null,
         onHandsChanged: () => { if (hands && playerHandle) hands.step(playerHandle.data, false, false, false); }, // router sees the change now (cancel + setHand + hands:changed)
@@ -2049,7 +2095,8 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (paused) { duckAudio(); if (hands) hands.disarm(); } else { unduckAudio(); resetSimAccumulator(engine); } // HANDS-01b: the sim does not step while paused, so disarm at once
     }
     if (mode === 'world' && playerHandle && !paused) {
-      if (clockDriver && !titleMenuActive) { const w = engine.world; tickClock(w.state, dt, clockCfg); clockDriver.update(w.state[CLOCK_KEY]); } // DN-03: stops on title/pause (this block), runs through respawn/restart/travel
+      if (clockDriver && !titleMenuActive) { const w = engine.world; tickClock(w.state, dt, clockCfg); clockDriver.update(w.state[CLOCK_KEY]);
+        if (atmosDrv) { const t = playerHandle.data.transform; atmosDrv.step(t.x, t.y, clockHour(w.state, clockCfg), dt, true); if (atmosDrv.out.version !== atmosV) { atmosV = atmosDrv.out.version; mixAtmos(atmosCfg.table, atmosDrv.active ? atmosDrv.out : null, atmosBase, atmosState); applyAtmosToPalette(assets.palette, atmosState); } } } // ENV-03 // DN-03: stops on title/pause (this block), runs through respawn/restart/travel
       if (ending || uiLocked || vLocked() || isNoteOpen()) { // OB-057 (owner): no movement while a note is open
         controls.forward = 0; controls.strafe = 0; controls.run = false; controls.jump = false;
       } else {
@@ -2210,7 +2257,8 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       // no-op while no note is open; the close guard (`state === 'open'`)
       // keeps the opening E press from also closing it.
       stepNoteRead(dt, input, !!(look && look.locked), interactEye); // BUG-NOTE-ESC-01: Esc under pointer lock = lock lost = close
-      if (saveRelay && engine.world && (engine.world.state['notes.keepLight.read'] === true || engine.world.state['tower.sword.taken'] === true)) saveRelay.quest.book.actKey('q.tower.blade.accept'); // reading the wake-spot page accepts 'A Blade in the Ashes'; PO-CH1-01: taking the sword is the safety net when the note was skipped (no-op unless available)
+      if (saveRelay && engine.world && engine.world.state['tower.sword.taken'] === true) saveRelay.quest.book.actKey('q.tower.blade.accept'); // PO-CH1-01: taking the sword is the safety net when the offer was skipped (no-op unless available)
+      if (saveRelay && engine.world) noteOffer.step(getOpenNoteId()); // QFIX-S5-CLOSE: reading the wake-spot page = Accept/Exit offer for 'A Blade in the Ashes' (objectGiver, D-087), opened when the note closes
       if (saveRelay && engine.world && engine.world.state['tower.sword.taken'] === true && saveRelay.quest.book.statusOf('tower.blade') === 2) { // PO-CH1-09: sword in hand and Burl (outside) within 10 m = the player left the tower (old saves / door missed): the blade is ready to hand in
         const bh = engine.world.get('bear'), bt3 = bh && bh.data.transform, p3 = playerHandle.data.transform;
         if (bt3 && (bt3.x - p3.x) ** 2 + (bt3.y - p3.y) ** 2 <= 100) saveRelay.quest.feed({ type: 'area:entered', id: 'towerDoor' });
@@ -2337,8 +2385,10 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
     terrainEnabled,
   };
 
+  let legRenderT = 0, legDtMs = 1000 / 60;
   function render(alpha) {
     const renderStart = performance.now();
+    { const lt = legRenderT; legRenderT = renderStart; legDtMs = lt > 0 ? Math.min(50, Math.max(1, renderStart - lt)) : 1000 / 60; } // ANIM-C-05b: real frame time for the leg driver
     const bootFirst = !bootPrinted;
     if (farHold.active) { // OB-109: Continue/Load/back-to-menu swapped in a fresh Terrain: bake at full speed behind a card, no world render
       if (!farHold.step() && landCard) { landCard.remove(); landCard = null; } else if (landCard) landCard.set(farHold.frac);
@@ -2425,6 +2475,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       // cells right after its own sprite loop).
       engine.particleLayer.build(engine.particles, cam, rt, fb.lights, engine.world, assets.palette, renderer);
       sprites.render(fb, engine.world, cam, fbView ? (handFxOn ? handFbExtra : fbView.extra) : undefined); // US-030c (ARCH CHANGES item 1): after the surfaces, before present()
+      if (atmosState.on) gradeCells(rt, atmosState); // ENV-03c: JS-path grade (the GPU sprite pass grades itself)
       // US-017 ARCH CHANGES #1 item 2: CPU-path scene fade, moved here from
       // compositor.js so sprites fade too (oracle parity with the GPU
       // composite pass, which fades every non-mask cell in one pass). Skips
@@ -2445,7 +2496,8 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       engine.overlay.clear();
       drawDecals(decalBind, engine.overlay, cam, fb.lights, engine.world);
       if (goblinWire) goblinWire.update(); // GOB-07b: spear view
-      if (beasts && !cinematic) presentBeasts(beasts, engine.world, engine.overlay, ovlStyles, beastAnimOn ? (beastAnim || (beastAnim = createBeastAnim(16))) : undefined);
+      if (beastLegs) beastLegs.dtMs = legDtMs; if (beasts && !cinematic) presentBeasts(beasts, engine.world, engine.overlay, ovlStyles, beastAnimOn ? (beastAnim || (beastAnim = createBeastAnim(16))) : undefined, beastLegsOn ? (beastLegs || (beastLegs = createBeastLegs({ pool: gameVoxelPool }))) : undefined, cam); // ANIM-C-05
+      if (beastLegsOn && !cinematic && mode === 'world') { const bh = engine.world.get('bear'), bv = bh && bh.data.components && bh.data.components.voxel; if (bv) (beastLegs || (beastLegs = createBeastLegs({ pool: gameVoxelPool }))).stepNpc('bear', bh.data, bv, cam.x, cam.y, engine.world.terrain); } // ANIM-C-05: Burl (scripted NPC bear)
       if (targeting && !cinematic) targeting.present(engine.overlay, ovlStyles); // US-128b (29.2)
       // US-078d (30.1): hidden until the sword is actually taken (US-078a review note); no eyeFeel/bobPhase
       // system exists yet in this codebase, so `simTime` stands in as the walk-bob phase (cosmetic only).
@@ -2556,6 +2608,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
           deathFlow.draw(ui, ui.cols, ui.rows); // DEATH-FLOW-01
           presentPickups(engine.world, assets.pickupStyle, fb.timeSec); // US-080b
           compass.setHidden(compassHide); compass.draw(ui, ui.cols, ui.rows, fb.timeSec); // COMPASS-02 (D-061)
+          if (!isCaptureOrBench && playerHandle) { const hp = playerHandle.data.transform; combatHud.frame(cam, fb.rt, ui, hp.x, hp.y, targeting ? targeting.targetId : null, fb.timeSec); combatHud.draw(ui, vitals.dead || wakeOut.inputLocked || isMapOpen() || isSettingsOpen() || pauseResume.soft || pauseResume.active || ending || !!(invView && invView.isOpen)); } // HPBAR-02 + DMGNUM-01
           if (toasts && !vitals.dead && !wakeOut.inputLocked && !isMapOpen()) toasts.draw(ui, fb.timeSec); // US-091a2 loot toast
         }
       }

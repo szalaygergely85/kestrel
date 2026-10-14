@@ -2,11 +2,12 @@
 // a mesh lookup and the WgDecorPass; everything here is testable in Node.
 import { packDecorLayers } from '../../engine/index.js';
 
-/** `?decor=cpu` forces the CPU layers; anything else (missing, garbage, 'gpu') = `canGpu` (true only on the WebGPU mesh renderer with a GPU cull). */
+/** `?decor=cpu` / `?decor=0` force the CPU layers; anything else (missing, garbage, 'gpu') = `canGpu` (true only on the WebGPU mesh renderer with a GPU cull).
+ *  DECOR-ON-01 (OB-119 follow-up): default ON again now that the dispose-deferral fix is in. */
 export function parseDecorMode(raw, canGpu) {
   if (!canGpu) return false;
-  // OB-119 (owner 2026-10-14: game would not start, WebGPU 'buffer used in submit while destroyed'): GPU decor is OPT-IN until fixed.
-  return typeof raw === 'string' && raw.trim().toLowerCase() === 'gpu';
+  const v = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  return v !== 'cpu' && v !== '0';
 }
 
 /** Preset `decorDensity` (0..1) -> layer densityQ8 (256 = the mask's own probability). Garbage -> 256. */

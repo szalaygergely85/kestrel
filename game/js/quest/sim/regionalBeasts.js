@@ -24,6 +24,8 @@ export const REGIONAL_BEAST_COUNT = REGION_RULES.reduce((n, r) => n + r.groups *
 import { WOLF_MODEL } from './wolfBrain.js';
 const MODEL = { boar: 'boarPlaceholder', wolf: WOLF_MODEL, bear: 'bearBlack' }; // BEAST-02: wolf packs use the real voxel_wolf model ('wolf')
 const BODY = { boar: { height: 0.7, radius: 0.45 }, wolf: { height: 0.7, radius: 0.45 }, bear: { height: 1.1, radius: 0.7 } };
+// 32 literal unit directions (rule 15: no trig in sim code); same 2 rng draws per try as the old angle pick.
+const DIRS = [[1,0],[0.980785,0.19509],[0.92388,0.382683],[0.83147,0.55557],[0.707107,0.707107],[0.55557,0.83147],[0.382683,0.92388],[0.19509,0.980785],[0,1],[-0.19509,0.980785],[-0.382683,0.92388],[-0.55557,0.83147],[-0.707107,0.707107],[-0.83147,0.55557],[-0.92388,0.382683],[-0.980785,0.19509],[-1,0],[-0.980785,-0.19509],[-0.92388,-0.382683],[-0.83147,-0.55557],[-0.707107,-0.707107],[-0.55557,-0.83147],[-0.382683,-0.92388],[-0.19509,-0.980785],[0,-1],[0.19509,-0.980785],[0.382683,-0.92388],[0.55557,-0.83147],[0.707107,-0.707107],[0.83147,-0.55557],[0.92388,-0.382683],[0.980785,-0.19509]];
 const EDGE = 12, MIN_GROUP_GAP = 45, AUTHORED_GAP = 40, MAX_SLOPE = 0.3, TRIES = 600;
 
 function mulberry32(a) { return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -47,7 +49,7 @@ export function makeWalkable(terrain, bounds) {
     if (terrain.typeAt(x, y) === 2) return false; // TYPE_IDS.water
     const dx = (terrain.heightAt(x + e, y) - terrain.heightAt(x - e, y)) / (2 * e);
     const dy = (terrain.heightAt(x, y + e) - terrain.heightAt(x, y - e)) / (2 * e);
-    return Math.hypot(dx, dy) <= MAX_SLOPE;
+    return dx * dx + dy * dy <= MAX_SLOPE * MAX_SLOPE; // squared: no Math.hypot (rule 15)
   };
 }
 
@@ -73,8 +75,8 @@ export function generateRegionalBeasts(o) {
         const y = Math.round((r[1] + EDGE + rng() * (r[3] - r[1] - 2 * EDGE)) * 2) / 2;
         if (!walkable(x, y)) continue;
         let clear = true;
-        for (const p of centres) if (Math.hypot(p[0] - x, p[1] - y) < MIN_GROUP_GAP) { clear = false; break; }
-        for (const p of avoid) if (clear && Math.hypot(p[0] - x, p[1] - y) < AUTHORED_GAP) clear = false;
+        for (const p of centres) if ((p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y) < MIN_GROUP_GAP * MIN_GROUP_GAP) { clear = false; break; }
+        for (const p of avoid) if (clear && (p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y) < AUTHORED_GAP * AUTHORED_GAP) clear = false;
         if (clear) c = [x, y];
       }
       if (!c) continue; // a region with no valid ground simply gets fewer groups (never an unwalkable home)
@@ -83,7 +85,7 @@ export function generateRegionalBeasts(o) {
         let hx = c[0], hy = c[1];
         if (k > 0) { // members 3-7 m from the group centre; fall back to the centre if no walkable spot
           for (let t = 0; t < 40; t++) {
-            const a = rng() * 6.283185307, d = 3 + rng() * 4, x = Math.round((c[0] + Math.cos(a) * d) * 2) / 2, y = Math.round((c[1] + Math.sin(a) * d) * 2) / 2;
+            const dir = DIRS[(rng() * 32) | 0], d = 3 + rng() * 4, x = Math.round((c[0] + dir[0] * d) * 2) / 2, y = Math.round((c[1] + dir[1] * d) * 2) / 2;
             if (x > r[0] && x < r[2] && y > r[1] && y < r[3] && walkable(x, y)) { hx = x; hy = y; break; }
           }
         }

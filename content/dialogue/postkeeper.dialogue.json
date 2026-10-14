@@ -1,0 +1,17 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "postkeeper",
+  "speakers": {
+    "postkeeper": {"label": "POST-KEEPER"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "postkeeper.hello.1"}
+  ],
+  "nodes": {
+    "postkeeper.hello.1": {"end": true, "lines": [
+      "Welcome to the post. Mind the basket."
+    ], "speaker": "postkeeper"}
+  }
+}

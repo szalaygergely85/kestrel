@@ -84,3 +84,11 @@ export function resolveLook(cfg, groundId, biomeId) {
   }
   return 0;
 }
+
+// ENV-02d (B1-main): `?look=0` -> null (World opt off = byte-identical old path); else the built config; no BIOME_LOOK loaded -> null.
+// Capture/gpucompare keep it on so the lookMeadow/lookForestEdge/lookShore poses see it. (`?look=<timeOfDay key>` is the ART-01a flag, unrelated.)
+export function groundLookFromParams(params, biomeLook, recipe) {
+  if (params.get('look') === '0' || !biomeLook || !recipe || !recipe.terrain) return null;
+  const T = {}; for (const [k, v] of Object.entries(recipe.terrain)) T[k] = v.id;
+  return buildGroundLookConfig(biomeLook, T);
+}

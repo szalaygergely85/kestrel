@@ -3,6 +3,7 @@ import { dynamicTowerAssets } from '../../tools/testing/dynamic-tower.mjs';
 // Headless Node ESM, no framework. Run: node engine/world/serialize.test.js
 import { World } from './World.js';
 import { serialize, deserialize } from './serialize.js';
+import { normState } from '../test/normState.js';
 import paletteMod from '../../design/palette.js';
 import detailPassMod from '../../design/detail-pass.js';
 import terrainDef from '../../design/levels/overworld_far.js';
@@ -53,9 +54,9 @@ function roundTrip(w) {
 
 const { s1, s2, w2 } = roundTrip(world);
 
-ok('round trip is deep-equal (serialize -> JSON -> deserialize -> serialize)', JSON.stringify(s1) === JSON.stringify(s2));
+ok('round trip is deep-equal (serialize -> JSON -> deserialize -> serialize)', JSON.stringify(normState(s1)) === JSON.stringify(normState(s2)));
 // CO-5 (docs/coordinates.md 8): WorldState is version 2 going forward.
-ok('serialize writes version 2', s1.version === 2);
+ok('serialize writes version 3', s1.version === 3);
 ok('positions are bit-exact (no rounding)', s2.entities.find((e) => e.id === 'player').transform.x === player.data.transform.x);
 ok('grate dynamics survive the round trip', s2.structures.find((s) => s.id === 'tower').dynamics.grate.t === 0.5);
 ok('boulder-style / arbitrary state survives the round trip', s2.state['tower.lantern.taken'] === true);

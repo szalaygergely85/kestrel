@@ -85,6 +85,8 @@ export function serialize(world) {
         components: stripScratch(structuredClone(e.components)),
       };
       // ED-SCALE-1 (34.1): written only when != 1, so existing saves stay byte-identical.
+      // SWIM-SAVE-01: water inputs are re-fed by the game every step (NaN = no water) - never saved.
+      if (out.components && out.components.body) { delete out.components.body.waterZ; delete out.components.body.waterFloorZ; }
       if (e.transform.scale > 0 && e.transform.scale !== 1) out.transform.scale = e.transform.scale;
       if (fromContent && contentIds.has(e.id)) out.fromContent = true;
       return out;
@@ -125,6 +127,7 @@ export function deserialize(state, assets, opts = {}) {
   // from content entirely, loads exactly as before this story).
   const useContentRule = state.contentVersion != null && assets && typeof assets.has === 'function' && assets.has('world', state.world);
   let keptSavedEntities = state.entities; // state shape: {id,type,transform,components,fromContent?}
+  const runtimeOverlay = []; // saved content entities that respawn from content; their RUNTIME state is overlaid after load
   let appendedContentEntities = []; // raw content shape (may use x/y/z or spawn, not transform)
   const removedSet = new Set(state.removed || []);
 
@@ -155,6 +158,10 @@ export function deserialize(state, assets, opts = {}) {
     const dropped = [];
     keptSavedEntities = state.entities.filter((e) => {
       if (e.fromContent && !currentContentIds.has(e.id)) { dropped.push(e.id); return false; }
+      // QFIX-S6 (OB-155g): content wins. A still-current content entity is NOT restored from the
+      // save (it respawns from content below / in World.load's prop loop) unless the sim owns it:
+      // the player or anything with a body. Taken/killed ones stay out via `removed`.
+      if (e.fromContent && e.type !== 'player' && !(e.components && e.components.body)) { runtimeOverlay.push(e); return false; }
       return true; // rule 3: a runtime-spawned entity (no fromContent) is always kept
     });
     if (dropped.length) {
@@ -191,7 +198,7 @@ export function deserialize(state, assets, opts = {}) {
     ...(state.terrainBands ? { terrainBands: state.terrainBands, bandSwitch: state.bandSwitch } : {}),
     triggers: state.triggers || [],
     time: state.time && state.time.timeOfDay,
-    structures: state.structures.map((s) => s.mesh
+    structures: contentStructures(state, assets, useContentRule).map((s) => s.mesh
       ? { id: s.id, mesh: s.mesh, origin: s.origin, yawDeg: s.yawDeg, scale: s.scale, collide: s.collide }
       : { id: s.id, level: s.level, origin: s.origin, yawSteps: s.yawSteps }),
     entities: [
@@ -207,6 +214,35 @@ export function deserialize(state, assets, opts = {}) {
 
   const world = World.load(def, assets, { ...opts, skipIds: useContentRule ? removedSet : opts.skipIds });
   if (useContentRule) world._removedContent = new Set(removedSet);
+
+  // QFIX-S6b: content-vs-save split for a still-current content entity (respawned from content above).
+  //   CONTENT wins (authored): transform x/y/z/yaw/pitch, which model/sprite/voxel/mesh it is (a component whose kind
+  //     content no longer has is dropped; its `model` id is always the content's), removed/added props, structures.
+  //   SAVE wins (runtime): every other field of a component content also has (voxel/sprite anim, frame, t, playing,
+  //     speed; door/lever/structure state ...), components content has not at all except sprite/voxel/mesh
+  //     (health, flags, inventory ...), z when x/y are unchanged (ground snap), and a runtime-changed transform.scale (saved scale != 1 while content is 1/unset).
+  const IDENT = { sprite: 1, voxel: 1, mesh: 1 };
+  for (const se of runtimeOverlay) {
+    const live = world.entity(se.id);
+    if (!live) continue;
+    const sc = se.components || {};
+    live.components = live.components || {};
+    for (const k of Object.keys(sc)) {
+      const cur = live.components[k];
+      if (cur && typeof cur === 'object' && typeof sc[k] === 'object' && sc[k]) {
+        const keep = cur.model;
+        Object.assign(cur, structuredClone(sc[k]));
+        if (keep !== undefined) cur.model = keep;
+      } else if (!cur && !IDENT[k]) live.components[k] = structuredClone(sc[k]);
+    }
+    // ground-snapped z is derived from authored x/y: unchanged x/y -> keep the saved z (exact round trip), else content's.
+    const st = se.transform;
+    if (st && Math.abs(st.x - live.transform.x) < 1e-6 && Math.abs(st.y - live.transform.y) < 1e-6) live.transform.z = st.z;
+    const ss = se.transform && se.transform.scale;
+    if (ss > 0 && ss !== 1 && !(live.transform.scale > 0 && live.transform.scale !== 1)) live.transform.scale = ss;
+  }
+  // colliders were built from the content variants (e.g. door open/closed): rebuild now the saved runtime state is on.
+  if (runtimeOverlay.length && world.rebuildPropColliders) world.rebuildPropColliders();
 
   // Re-apply dynamics AFTER load (World.load's own structures[].dynamics
   // handling already does this from `def.structures[i].dynamics`, but that
@@ -237,6 +273,16 @@ export function deserialize(state, assets, opts = {}) {
   // US-143a (35.8 "Save"): restored BEFORE the first step, so the bob is continuous across a load.
   if (state.waterState != null) world.water.loadState(state.waterState);
   return world;
+}
+
+// QFIX-S6 (OB-155g): structures are content, not state. With the content rule on, the list comes from the
+// current world def (saved-only structures are kept; `dynamics` is re-applied from the save by id afterwards).
+function contentStructures(state, assets, useContentRule) {
+  if (!useContentRule) return state.structures;
+  const cur = assets.world(state.world).structures || [];
+  const curIds = new Set(cur.map((c) => c.id));
+  const adapt = (c) => c.mesh && typeof c.mesh === 'object' ? { ...c, mesh: c.mesh.id || c.mesh } : c;
+  return [...cur.map(adapt), ...state.structures.filter((s) => !curIds.has(s.id))];
 }
 
 /**

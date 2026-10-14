@@ -131,21 +131,23 @@
   var EARS_BACK = [-26, 0, 0];
   var DEAD_O = { free: true, b: [0, 90, 0, 0, 0, groundZ(90)], h: [-4, 8, 0], j: 8, e: [-10, 0, 0],
                  aL: -24, aR: -14, lL: 26, lR: 16 };
-  // charge: fast bounding lope (rotary gallop), 0.4 s loop, ~6 m/s; fronts land one after the other, hinds swing through
-  anim.charge = clip([
-    [50,  { b: [-4, 0, 0, 0, 0, 1.2], h: [6, 0, 0], e: EARS_BACK, j: 6, aL: -40, aR: -30, lL: 30, lR: 25,
-            lift: { aL: 2, aR: 2.5, lL: 1.5, lR: 1.5 } }],                                  // stretched flight
-    [100, { b: [2, 0, 1, 0, 0, 0.3], h: [12, 0, 0], e: EARS_BACK, j: 8, aL: -18, aR: -10, lL: 15, lR: 10,
-            lift: { aR: 1.5, lL: 2, lR: 2 } }],                                             // lead fore lands
-    [50,  { b: [5, 0, 0, 0, 0, -0.3], h: [15, 0, 0], e: EARS_BACK, j: 6, aL: 12, aR: 4, lL: -20, lR: -10,
-            lift: { lL: 2.5, lR: 2.5 } }],                                                  // both fores down, hump up
-    [50,  { b: [3, 0, -1, 0, 0, 0.2], h: [11, 0, 0], e: EARS_BACK, j: 4, aL: 28, aR: 20, lL: -28, lR: -22,
-            lift: { aL: 2, aR: 1.5 } }],                                                    // gathered: hinds plant forward
-    [100, { b: [-2, 0, 0, 0, 0, 0.8], h: [8, 0, 0], e: EARS_BACK, j: 6, aL: 4, aR: -6, lL: 6, lR: -4,
-            lift: { aL: 3, aR: 3 } }],                                                      // hind push-off
-    [50,  { b: [-4, 0, 1, 0, 0, 1.0], h: [6, 0, 0], e: EARS_BACK, j: 8, aL: -28, aR: -20, lL: 24, lR: 20,
-            lift: { aL: 2.5, aR: 2.5, lL: 1, lR: 1 } }]                                     // fores reach again
-  ], true);
+  // charge (ANIM-B-01a): run gait from the knee-rig generator (tools/gen-gait.mjs, config bear.charge), rotary-gallop phases, 0.5 s loop,
+  // planted feet at tunedMps 3.0 (legRig.gaits.charge); the old hand-keyed 0.4 s lope is replaced
+  // GAIT-A BEGIN bear.charge (tools/gen-gait.mjs: legs of gallop gait, duty 0.45, tuned 3 m/s, 10 keys; re-run, do not hand-edit)
+  var BEAR_CHARGE = { durations: [50,50,50,50,50,50,50,50,50,50], frames: [
+      { body: { rot: [2.259,1.902,0], pos: [0,0,0.804] }, head: { rot: [-1.242,0,0], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, ears: { rot: [0,0,0], pos: [0,0,0] }, armL: { rot: [-34.42,0,0], pos: [0,0,-0.97] }, armR: { rot: [-46.098,0,0], pos: [0,0,0.108] }, legL: { rot: [30.075,0,0], pos: [0,0,-1.046] }, legR: { rot: [20.294,0,0], pos: [0,0,0.171] }, armL2: { rot: [17.21,0,0], pos: [0,0,0] }, armR2: { rot: [44.674,0,0], pos: [0,0,0] }, legL2: { rot: [-13.914,0,0], pos: [0,0,0] }, legR2: { rot: [0.611,0,0], pos: [0,0,0] } },
+      { body: { rot: [3.838,1.176,1.176], pos: [0,0,1.453] }, head: { rot: [-2.111,0,-0.94], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, ears: { rot: [0,0,0], pos: [0,0,0] }, armL: { rot: [-18.72,0,0], pos: [0,0,-0.926] }, armR: { rot: [-34.42,0,0], pos: [0,0,-1.011] }, legL: { rot: [14.948,0,0], pos: [0,0,1.746] }, legR: { rot: [30.075,0,0], pos: [0,0,-1.572] }, armL2: { rot: [9.36,0,0], pos: [0,0,0] }, armR2: { rot: [17.21,0,0], pos: [0,0,0] }, legL2: { rot: [5.399,0,0], pos: [0,0,0] }, legR2: { rot: [-13.914,0,0], pos: [0,0,0] } },
+      { body: { rot: [0.113,0,1.902], pos: [0,0,0.094] }, head: { rot: [-0.062,0,-1.522], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, ears: { rot: [0,0,0], pos: [0,0,0] }, armL: { rot: [-3.731,0,0], pos: [0,0,0.04] }, armR: { rot: [-18.72,0,0], pos: [0,0,0.157] }, legL: { rot: [-2.525,0,0], pos: [0,0,5.163] }, legR: { rot: [14.948,0,0], pos: [0,0,3.632] }, armL2: { rot: [1.865,0,0], pos: [0,0,0] }, armR2: { rot: [9.36,0,0], pos: [0,0,0] }, legL2: { rot: [21.438,0,0], pos: [0,0,0] }, legR2: { rot: [5.399,0,0], pos: [0,0,0] } },
+      { body: { rot: [-3.768,-1.176,1.902], pos: [0,0,-1.395] }, head: { rot: [2.072,0,-1.522], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, ears: { rot: [0,0,0], pos: [0,0,0] }, armL: { rot: [11.335,0,0], pos: [0,0,1.094] }, armR: { rot: [-3.731,0,0], pos: [0,0,1.116] }, legL: { rot: [-18.287,0,0], pos: [0,0,5.655] }, legR: { rot: [-2.525,0,0], pos: [0,0,6.651] }, armL2: { rot: [-5.668,0,0], pos: [0,0,0] }, armR2: { rot: [1.865,0,0], pos: [0,0,0] }, legL2: { rot: [30.079,0,0], pos: [0,0,0] }, legR2: { rot: [21.438,0,0], pos: [0,0,0] } },
+      { body: { rot: [-2.442,-1.902,1.176], pos: [0,0,-0.956] }, head: { rot: [1.343,0,-0.94], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, ears: { rot: [0,0,0], pos: [0,0,0] }, armL: { rot: [24.402,0,0], pos: [0,0,1.024] }, armR: { rot: [11.335,0,0], pos: [0,0,0.518] }, legL: { rot: [-29.173,0,0], pos: [0,0,2.565] }, legR: { rot: [-18.287,0,0], pos: [0,0,4.91] }, armL2: { rot: [-8.865,0,0], pos: [0,0,0] }, armR2: { rot: [-5.668,0,0], pos: [0,0,0] }, legL2: { rot: [29.775,0,0], pos: [0,0,0] }, legR2: { rot: [30.079,0,0], pos: [0,0,0] } },
+      { body: { rot: [2.259,-1.902,0], pos: [0,0,0.804] }, head: { rot: [-1.242,0,0], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, ears: { rot: [0,0,0], pos: [0,0,0] }, armL: { rot: [24.211,0,0], pos: [0,0,0.825] }, armR: { rot: [24.402,0,0], pos: [0,0,-0.711] }, legL: { rot: [-31.401,0,0], pos: [0,0,-0.935] }, legR: { rot: [-29.173,0,0], pos: [0,0,0.426] }, armL2: { rot: [-0.836,0,0], pos: [0,0,0] }, armR2: { rot: [-8.865,0,0], pos: [0,0,0] }, legL2: { rot: [20.41,0,0], pos: [0,0,0] }, legR2: { rot: [29.775,0,0], pos: [0,0,0] } },
+      { body: { rot: [3.838,-1.176,-1.176], pos: [0,0,1.453] }, head: { rot: [-2.111,0,0.94], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, ears: { rot: [0,0,0], pos: [0,0,0] }, armL: { rot: [-1.959,0,0], pos: [0,0,2.902] }, armR: { rot: [24.211,0,0], pos: [0,0,-0.073] }, legL: { rot: [-17.197,0,0], pos: [0,0,-1.497] }, legR: { rot: [-31.401,0,0], pos: [0,0,-2.065] }, armL2: { rot: [31.209,0,0], pos: [0,0,0] }, armR2: { rot: [-0.836,0,0], pos: [0,0,0] }, legL2: { rot: [11.178,0,0], pos: [0,0,0] }, legR2: { rot: [20.41,0,0], pos: [0,0,0] } },
+      { body: { rot: [0.113,0,-1.902], pos: [0,0,0.094] }, head: { rot: [-0.062,0,1.522], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, ears: { rot: [0,0,0], pos: [0,0,0] }, armL: { rot: [-26.245,0,0], pos: [0,0,4.123] }, armR: { rot: [-1.959,0,0], pos: [0,0,3.755] }, legL: { rot: [-3.453,0,0], pos: [0,0,0.038] }, legR: { rot: [-17.197,0,0], pos: [0,0,0.231] }, armL2: { rot: [52.715,0,0], pos: [0,0,0] }, armR2: { rot: [31.209,0,0], pos: [0,0,0] }, legL2: { rot: [2.244,0,0], pos: [0,0,0] }, legR2: { rot: [11.178,0,0], pos: [0,0,0] } },
+      { body: { rot: [-3.768,1.176,-1.902], pos: [0,0,-1.395] }, head: { rot: [2.072,0,1.522], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, ears: { rot: [0,0,0], pos: [0,0,0] }, armL: { rot: [-42.976,0,0], pos: [0,0,2.994] }, armR: { rot: [-26.245,0,0], pos: [0,0,5.075] }, legL: { rot: [10.589,0,0], pos: [0,0,1.383] }, legR: { rot: [-3.453,0,0], pos: [0,0,2.33] }, armL2: { rot: [57.874,0,0], pos: [0,0,0] }, armR2: { rot: [52.715,0,0], pos: [0,0,0] }, legL2: { rot: [-6.883,0,0], pos: [0,0,0] }, legR2: { rot: [2.244,0,0], pos: [0,0,0] } },
+      { body: { rot: [-2.442,1.902,-1.176], pos: [0,0,-0.956] }, head: { rot: [1.343,0,0.94], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, ears: { rot: [0,0,0], pos: [0,0,0] }, armL: { rot: [-46.098,0,0], pos: [0,0,0.616] }, armR: { rot: [-42.976,0,0], pos: [0,0,3.226] }, legL: { rot: [20.294,0,0], pos: [0,0,2.042] }, legR: { rot: [10.589,0,0], pos: [0,0,1.217] }, armL2: { rot: [44.674,0,0], pos: [0,0,0] }, armR2: { rot: [57.874,0,0], pos: [0,0,0] }, legL2: { rot: [0.611,0,0], pos: [0,0,0] }, legR2: { rot: [-6.883,0,0], pos: [0,0,0] } }
+  ] };
+  // GAIT-A END bear.charge
+  anim.charge = { durations: BEAR_CHARGE.durations, loop: true, frames: BEAR_CHARGE.frames };
   // windup 0.8 s: the black bear's bluff tell on ALL FOURS - head drops, ears pin, weight rocks back, right then left
   // front-paw stomp with a huff (jaw pop), last key = coiled, head low, weight back (held until the charge starts)
   anim.windup = clip([
@@ -209,7 +211,7 @@
     displayName: 'black bear',
     desc: 'BEAR-D1 wild American black bear: Burl\'s bear v2 rig + voxels (1.1 m at the hump, 1.7 m nose to rump, all ' +
           'fours), recoloured: near-black coat with glossy lit guard-hair tips, darkest legs and dorsal ridge, tan muzzle ' +
-          'and chin under a dark face, small pale chest blaze, dark claws, amber eyes. 8 parts; clips idle, walk, turn ' +
+          'and chin under a dark face, small pale chest blaze, dark claws, amber eyes. 12 parts (knee rig); clips idle, walk, turn ' +
           '(Burl) + BEAR-D2 fight clips on all fours: charge (lope), windup (bluff stomp + huff), swipe, hurt, flinch, ' +
           'die (slump to the right side), dead, sink.',
     voxel: {
@@ -222,6 +224,7 @@
       mats: mats,
       layers: layers,
       parts: clone(SV.parts),
+      legRig: (function () { var r = clone(SV.legRig); r.gaits.charge = { tunedMps: 3, duty: 0.45, phase: [0, 0.1, 0.5, 0.6], liftM: 0.15 }; return r; })(),   // gaits.charge == tools/gait-configs.mjs bear.charge
       animations: anim,
       mounts: mounts           // eyes, mouth, pawR (grid coords, follow their part)
     }

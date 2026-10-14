@@ -6,12 +6,15 @@
 // engine/). No GDD words live here (the test fixture is a generic
 // "quadruped", see fixtures/quadruped12.js).
 
+import { validateLegRig } from './legRig.js';
+import { validateBlend } from './blendPack.js';
+
 // ---- constants ---------------------------------------------------------
 // KIND_MODEL/FACE_PACKED now live in ../render/GBuffer.js (US-040, 15.2
 // item 1); re-exported here so existing `./VoxelModel.js` imports keep
 // working without a repo-wide rename.
 export { KIND_MODEL, FACE_PACKED } from '../render/GBuffer.js';
-export const MAX_VOX_PARTS = 8;
+export const MAX_VOX_PARTS = 16;
 export const MAX_VOX_STEPS = 48;
 export const MAX_VOX_DIM = 32;
 export const MAX_VOX_INSTANCES = 16; // DDA texture/slot budget.
@@ -37,7 +40,7 @@ const NAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,15}$/;
  * @property {[number,number,number]} anchor       voxel units, feet centre
  * @property {Object<string,string|null>} mats     1 char (0x21..0x7E) -> material key, or null
  * @property {string[][]} layers                   layers[z][y] = row string of sx chars
- * @property {Object<string,VoxelPartDef>} parts    insertion order = part index 0..7
+ * @property {Object<string,VoxelPartDef>} parts    insertion order = part index 0..15
  * @property {Object<string,VoxelClipDef>} [animations]
  * @property {false|{preset:string}} [light]       EMIS-01a: derived emissive light override (false = none)
  * @property {Object<string,VoxelMountDef>} [mounts]  US-041a (15.3 item 5): light anchors / E-prompt points,
@@ -231,8 +234,9 @@ export function validateVoxelModel(def, opts) {
   const partNames = [];
   if (def.parts !== null && typeof def.parts === 'object' && !Array.isArray(def.parts)) {
     const names = Object.keys(def.parts);
-    if (names.length < 1) errors.push('voxel.parts: expected 1..8 parts, got 0');
-    if (names.length > 8) errors.push(`voxel.parts: ${names.length} parts, expected <= 8 (> 8 parts)`);
+    if (names.length < 1) errors.push(`voxel.parts: expected 1..${MAX_VOX_PARTS} parts, got 0`);
+    if (names.length > MAX_VOX_PARTS) errors.push(`voxel.parts: ${names.length} parts, expected <= ${MAX_VOX_PARTS} (> ${MAX_VOX_PARTS} parts)`);
+    else if (names.length > 8 && def.meshOnly !== true) errors.push(`voxel.parts: > 8 parts needs meshOnly (no DDA atlas), got ${names.length}`);
     for (let i = 0; i < names.length; i++) {
       const name = names[i];
       partNames.push(name);
@@ -396,6 +400,11 @@ export function validateVoxelModel(def, opts) {
       errors.push('voxel.light: expected false or { preset: string }');
     }
   }
+
+  // ---- legRig (ANIM-C-01, 38.67 item 2): optional runtime leg-solve data -------
+  if (def.legRig !== undefined) validateLegRig(def, partNames, errors);
+  // ---- blend (ANIM-BLEND-01a, 38.68 item 2): optional clip sets / fades / additive layers ----
+  if (def.blend !== undefined) validateBlend(def, partNames, errors);
 
   // ---- mounts (rule 7, US-041a 15.3 item 5) ----------------------------------
   if (def.mounts !== undefined) {

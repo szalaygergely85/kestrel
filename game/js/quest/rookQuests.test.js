@@ -46,17 +46,24 @@ for (const o of files.questDef.objectives) { const w = o.when; if (w.type === 'f
 questFlag('waystone.ws_roadBend.woken');
 er.mainSync(0); assert.equal(st('mq.bend.call'), 1); assert.ok(state['mq.bend.call.available']);
 er.mainSync(3); assert.ok(!state['relay.bend.pulseSeen']); er.mainSync(1.5); assert.ok(state['relay.bend.pulseSeen'], 'pulse seen');
-const meet = talk(); assert.equal(meet.length, 8); assert.equal(st('mq.bend.call'), 2, 'accepted via dialogue'); assert.ok(state['mq.bend.call.active']);
+const meet = talk(); assert.equal(meet.length, 9); assert.equal(st('mq.bend.call'), 2, 'accepted via dialogue'); assert.ok(state['mq.bend.call.active']);
 assert.match(talk()[0], /Count the blinks/);
 er.inspected('knot'); er.mainSync(0); assert.equal(notes.length, 1); assert.equal(notes[0][0], 'A knot on the brass');
 assert.equal(st('mq.bend.call'), 3); assert.ok(state['mq.bend.call.ready']);
 const ready = talk(); assert.equal(ready.length, 6);
 assert.equal(st('mq.bend.call'), 4, 'handed in via dialogue'); assert.deepEqual(book.lastReward.items, [{ id: 'chart.river', n: 1 }]);
-assert.ok(state['mq.bend.call.done']); assert.match(talk()[0], /Do not drown/);
+assert.ok(state['mq.bend.call.done']);
+// OB-156 (QFIX-S5a-4): river road + stones are Rook's Accept/Not yet + hand-in talks too
+assert.equal(st('mq.river.road'), 1); assert.match(talk()[0], /road runs to the river/); assert.equal(st('mq.river.road'), 2, 'accepted via dialogue');
+book.feed({ type: 'area:entered', id: 'riverBank' }); er.mainSync(0); assert.equal(st('mq.river.road'), 3);
+talk(); assert.equal(st('mq.river.road'), 4, 'handed in via dialogue'); assert.equal(st('mq.ford.stones'), 1);
+assert.match(talk()[0], /Stones in the water/); assert.equal(st('mq.ford.stones'), 2);
+book.feed({ type: 'area:entered', id: 'fordWest' }); er.mainSync(0); assert.equal(st('mq.ford.stones'), 3);
+talk(); assert.equal(st('mq.ford.stones'), 4, 'handed in via dialogue');
 
 // Ch2: stones crossed -> mirror available; relay gate flag follows the pack; auto hand-in once the relay wakes
-assert.equal(st('mq.ford.mirror'), 0);
-book.feed({ type: 'area:entered', id: 'riverBank' }); book.feed({ type: 'area:entered', id: 'fordWest' }); er.mainSync(0);
+assert.equal(st('mq.ford.mirror'), 1);
+er.mainSync(0);
 assert.equal(st('mq.ford.mirror'), 1);
 assert.match(talk()[0], /Wet boots/); assert.equal(st('mq.ford.mirror'), 2);
 assert.match(talk()[0], /Look inside/);
@@ -64,8 +71,9 @@ assert.ok(!state['mq.ford.mirror.glass']);
 pack.set('relay.mirror', 1); book.feed({ type: 'item:got', id: 'relay.mirror' }); er.mainSync(0);
 assert.ok(state['mq.ford.mirror.glass'], 'gate flag follows the pack');
 questFlag('waystone.ws_ford.woken'); er.mainSync(0);
-assert.equal(st('mq.ford.mirror'), 4, 'auto handed in'); assert.ok(state['mq.ford.mirror.done']);
-assert.equal(talk().length, 2); // rook.mirror.done
+assert.equal(st('mq.ford.mirror'), 3, 'READY, no auto hand-in');
+assert.equal(talk().length, 2); // rook.mirror.done = the hand-in talk
+assert.equal(st('mq.ford.mirror'), 4, 'handed in by talking to Rook'); assert.ok(state['mq.ford.mirror.done']);
 
 // QL-07/16 real content: knot + nest pickup entities exist, and the SOS pulse is 3 cycles of 3 short + 3 long
 const wd = rd('content/worlds/world_m1.world.json'), ent = (id) => wd.entities.find((e) => e.id === id);

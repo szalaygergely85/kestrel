@@ -123,11 +123,11 @@ test('realistic sizes: rabbit ~0.4 m long, ~0.22 m back; deer ~1.6 m long, ~1.0 
   assert.ok(rb >= 0.18 && rb <= 0.26, 'rabbit back ' + rb);
   assert.ok(dl >= 1.5 && dl <= 1.7, 'deer length ' + dl);
   assert.ok(db >= 0.95 && db <= 1.05, 'deer withers ' + db);
-  for (const k of KEYS) { const T = R[k].posed(null); for (const n of LIMBS) assert.ok(Math.abs(R[k].lowest(T, n)) < 1e-9, `${k} ${n} on z 0`); }
+  for (const k of KEYS) { const T = R[k].posed(null); for (const n of LIMBS) assert.ok(Math.abs(R[k].lowest(T, R[k].DEF.parts[n + '2'] ? n + '2' : n)) < 1e-9, `${k} ${n} on z 0`); }
 });
 
 test('clips: names, frames name every part, durations whole 60 Hz steps (multiples of 50 ms)', () => {
-  assert.deepStrictEqual(Object.keys(R.rabbit.DEF.animations).sort(), ['alert', 'graze', 'hop', 'idle', 'run', 'sitUp']);
+  assert.deepStrictEqual(Object.keys(R.rabbit.DEF.animations).sort(), ['alert', 'graze', 'hop', 'idle', 'run', 'sitUp', 'walk']);
   for (const k of ['deer', 'deerBuck']) assert.deepStrictEqual(Object.keys(R[k].DEF.animations).sort(), ['alert', 'gallop', 'graze', 'idle', 'trot', 'walk']);
   for (const k of KEYS) {
     const C = R[k].DEF.animations;
@@ -142,13 +142,13 @@ const within = (m, tol) => Math.abs(m) <= tol;
 test('all fours: idle keeps all 4 feet within 2 cm; graze / alert keep >= 3 (one forefoot may step / stamp)', () => {
   for (const k of KEYS) {
     const r = R[k], C = r.DEF.animations;
-    C.idle.frames.forEach((f, i) => { const T = r.posed(f); for (const n of LIMBS) assert.ok(within(r.lowest(T, n), 0.02), `${k} idle[${i}] ${n} ${r.lowest(T, n).toFixed(3)}`); });
+    C.idle.frames.forEach((f, i) => { const T = r.posed(f); for (const n of LIMBS) assert.ok(within(r.lowest(T, (r.DEF.parts[n + '2'] ? n + '2' : n)), 0.02), `${k} idle[${i}] ${n} ${r.lowest(T, (r.DEF.parts[n + '2'] ? n + '2' : n)).toFixed(3)}`); });
     if (k === 'rabbit') {
       C.graze.frames.forEach((f, i) => { const T = r.posed(f); for (const n of LIMBS) assert.ok(within(r.lowest(T, n), 0.02), `rabbit graze[${i}] ${n} ${r.lowest(T, n).toFixed(3)}`); });
       continue;
     }
     for (const c of ['graze', 'alert']) C[c].frames.forEach((f, i) => {
-      const T = r.posed(f), lows = LIMBS.map((n) => r.lowest(T, n));
+      const T = r.posed(f), lows = LIMBS.map((n) => r.lowest(T, r.DEF.parts[n + '2'] ? n + '2' : n));   // B-01b/c: knee rigs have the sole on <leg>2
       assert.ok(lows.filter((m) => within(m, 0.02)).length >= 3, `${k} ${c}[${i}] grounded ${lows.map((m) => m.toFixed(3))}`);
     });
   }
@@ -249,8 +249,9 @@ test('v1.58 models: valid, budgets, clip names, whole 50 ms keys, every frame na
 test('v1.58 fox / squirrel stand on all fours in idle (feet within 2 cm); squirrel climb is pitched -90', () => {
   for (const k of ['fox', 'squirrel']) {
     const r = rig(k);
-    for (const n of LIMBS) assert.ok(Math.abs(r.lowest(r.posed(null), n)) < 1e-9, `${k} ${n} rest on z 0`);
-    r.DEF.animations.idle.frames.forEach((f, i) => { const T = r.posed(f); for (const n of LIMBS) assert.ok(within(r.lowest(T, n), 0.02), `${k} idle[${i}] ${n} ${r.lowest(T, n).toFixed(3)}`); });
+    const sole = (n) => (r.DEF.parts[n + '2'] ? n + '2' : n);   // ANIM-B-01b: the fox sole is on the lower leg part
+    for (const n of LIMBS) assert.ok(Math.abs(r.lowest(r.posed(null), sole(n))) < 1e-9, `${k} ${n} rest on z 0`);
+    r.DEF.animations.idle.frames.forEach((f, i) => { const T = r.posed(f); for (const n of LIMBS) assert.ok(within(r.lowest(T, sole(n)), 0.02), `${k} idle[${i}] ${n} ${r.lowest(T, sole(n)).toFixed(3)}`); });
   }
   for (const f of A.models.squirrel.voxel.animations.climb.frames) assert.ok(f.body.rot[0] <= -85, 'climb body pitch');
 });

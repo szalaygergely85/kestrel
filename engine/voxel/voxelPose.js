@@ -147,7 +147,10 @@ function sampleInto(pm, clipIdx, frameIn, tMs, rotOut, posOut) {
     for (let i = 0; i < partCount * 3; i++) { rotOut[i] = 0; posOut[i] = 0; }
     return;
   }
-  const clip = pm.clips[clipIdx];
+  sampleClipObj(partCount, pm.clips[clipIdx], frameIn, tMs, rotOut, posOut);
+}
+// Shared body (also samples the packed additive delta clips of ANIM-BLEND-01a): one clip object {n, loop, step, durMs, keys}.
+function sampleClipObj(partCount, clip, frameIn, tMs, rotOut, posOut) {
   const n = clip.n;
   let frame = frameIn | 0;
   if (frame < 0) frame = 0;
@@ -184,16 +187,123 @@ function sampleClip(pm, inst) {
   }
 }
 
+// ---- ANIM-BLEND-01a (38.68 item 1): pose layers. `inst.layers` (Float64Array(20), null/[0]=0 = off = today's bytes):
+// [on, clip,frame,tMs, clip2,frame2,tMs2, w2, fClip,fFrame,fTMs, fClip2,fFrame2,fTMs2, fW2, fromW, addIdx,addFrame,addTMs,addW]
+// base source = clip A lerped toward clip B by w2; from source (same shape, offset 8) lerped in by fromW; additive delta on a part mask.
+const _tmpRot = new Float64Array(MAX_VOX_PARTS * 3);
+const _tmpPos = new Float64Array(MAX_VOX_PARTS * 3);
+// One source (A + (B - A) * w2) whose 7 numbers start at L[off]; written to rotOut/posOut. Uses _tmpRot/_tmpPos as B scratch.
+function sampleSource(pm, L, off, rotOut, posOut) {
+  sampleInto(pm, L[off], L[off + 1], L[off + 2], rotOut, posOut);
+  const w2 = L[off + 6];
+  if (w2 > 0 && L[off + 3] >= 0) {
+    sampleInto(pm, L[off + 3], L[off + 4], L[off + 5], _tmpRot, _tmpPos);
+    const n3 = pm.partCount * 3;
+    for (let i = 0; i < n3; i++) {
+      rotOut[i] = rotOut[i] + (_tmpRot[i] - rotOut[i]) * w2;
+      posOut[i] = posOut[i] + (_tmpPos[i] - posOut[i]) * w2;
+    }
+  }
+}
+function sampleLayers(pm, L) {
+  sampleSource(pm, L, 1, _rotOut, _posOut);
+  const n3 = pm.partCount * 3;
+  const fw = L[15];
+  if (fw > 0 && L[8] >= 0) {
+    sampleSource(pm, L, 8, _fromRot, _fromPos);
+    for (let i = 0; i < n3; i++) {
+      _rotOut[i] = _rotOut[i] + (_fromRot[i] - _rotOut[i]) * fw;
+      _posOut[i] = _posOut[i] + (_fromPos[i] - _posOut[i]) * fw;
+    }
+  }
+  const aw = L[19], ai = L[16] | 0, bl = pm.blend;
+  if (aw !== 0 && L[16] >= 0 && bl && ai < bl.addClips.length) {
+    sampleClipObj(pm.partCount, bl.addClips[ai], L[17], L[18], _tmpRot, _tmpPos);
+    const mask = bl.addMask[ai];
+    for (let p = 0; p < pm.partCount; p++) {
+      if ((mask & (1 << p)) === 0) continue;
+      for (let c = p * 3; c < p * 3 + 3; c++) {
+        _rotOut[c] += aw * _tmpRot[c];
+        _posOut[c] += aw * _tmpPos[c];
+      }
+    }
+  }
+}
+
 // TALK-E1 (38.28 item 7): optional extra rotation (degrees, part-local) added on top of the clip rotation
 // of one part (`inst.addPart` = part index, `addRx/Ry/Rz`). Undefined/-1 addPart -> byte-identical output.
 function samplePose(pm, inst) {
-  sampleClip(pm, inst);
+  const L = inst.layers;
+  if (L && L[0] === 1) sampleLayers(pm, L); else sampleClip(pm, inst);
+  // ANIM-C-01: leg driver body tilt/drop (weighted by the driver), only while the leg solve is on.
+  const lg = inst.legs, lr = pm.legRig;
+  if (lr && lg && lg[0] > 0) {
+    const bi = lr.bodyIdx * 3;
+    _rotOut[bi] += lg[1];
+    _rotOut[bi + 1] += lg[2];
+    _posOut[bi + 2] += lg[3];
+  }
   const ap = inst.addPart;
   if (ap >= 0 && ap < pm.partCount) {
     _rotOut[3 * ap] += inst.addRx;
     _rotOut[3 * ap + 1] += inst.addRy;
     _rotOut[3 * ap + 2] += inst.addRz;
   }
+}
+
+// ---- ANIM-C-01 (38.67 item 3): in-pose 2-bone leg solve --------------------------------------------------------------
+// Runs in the part loop of computeVoxelPose: when part p is a leg's UPPER part its parent transform (_Ak/_bk) is final, so the world
+// foot target (inst.legs) is taken into the parent's local frame and solved as a 2-bone chain in the (y,z) plane; the results overwrite
+// the clip rotation (x only) of the upper and (later, when the loop reaches it) the lower part, blended by the weight w = legs[0].
+const R2D = 180 / Math.PI;
+const _legR2 = new Float64Array(4); // solved lower-part rx (deg) per leg, handed from the upper part to the lower one
+function wrap180(a) { while (a > 180) a -= 360; while (a <= -180) a += 360; return a; }
+function blendRx(p, solvedDeg, w) {
+  const clip = _rotOut[p * 3];
+  _rotOut[p * 3] = clip + wrap180(solvedDeg - clip) * w;
+  const k = 1 - w;
+  _rotOut[p * 3 + 1] *= k; _rotOut[p * 3 + 2] *= k;
+  _posOut[p * 3] *= k; _posOut[p * 3 + 1] *= k; _posOut[p * 3 + 2] *= k;
+}
+const _legInv = new Float64Array(1); // 1 / cellM (typed array: a double argument would box)
+function legOverride(lr, lg, p, parentIdx) {
+  const invCellM = _legInv[0];
+  const w = lg[0] > 1 ? 1 : lg[0];
+  const kl = lr.lowerOf[p];
+  if (kl >= 0) { blendRx(p, _legR2[kl], w); return; }
+  const k = lr.upperOf[p];
+  if (k < 0) return;
+  const g = lr.geo, o = k * 12, t = 4 + k * 3;
+  const dx = lg[t] - _bw[0], dy = lg[t + 1] - _bw[1], dz = lg[t + 2] - _bw[2];
+  // model cells: c = RzYaw^T (T - bw) / cellM (_RzYawInv is the transpose already)
+  let vx = (_RzYawInv[0] * dx + _RzYawInv[1] * dy + _RzYawInv[2] * dz) * invCellM;
+  let vy = (_RzYawInv[3] * dx + _RzYawInv[4] * dy + _RzYawInv[5] * dz) * invCellM;
+  let vz = (_RzYawInv[6] * dx + _RzYawInv[7] * dy + _RzYawInv[8] * dz) * invCellM;
+  let xy = vy, xz = vz;
+  if (parentIdx >= 0) { // into the parent's local frame: Ak_par^T (c - bk_par)
+    const pa = parentIdx * 9, pb = parentIdx * 3;
+    vx -= _bk[pb]; vy -= _bk[pb + 1]; vz -= _bk[pb + 2];
+    xy = _Ak[pa + 1] * vx + _Ak[pa + 4] * vy + _Ak[pa + 7] * vz;
+    xz = _Ak[pa + 2] * vx + _Ak[pa + 5] * vy + _Ak[pa + 8] * vz;
+  }
+  const hy = xy - g[o], hz = xz - g[o + 1];
+  const a = g[o + 6], b = g[o + 7], sigma = g[o + 10];
+  let D = Math.sqrt(hy * hy + hz * hz);
+  const lo = Math.abs(a - b) + 0.01 * (a + b), hi = (a + b) * 0.99;
+  if (D < lo) D = lo; else if (D > hi) D = hi;
+  let cK = (D * D - a * a - b * b) / (2 * a * b);
+  if (cK > 1) cK = 1; else if (cK < -1) cK = -1;
+  let r2d = (g[o + 8] - g[o + 9] + sigma * Math.acos(cK)) * R2D;
+  let s2 = sigma * r2d; // limits: knee 150 deg flexion, 10 deg hyperextension
+  if (s2 < -10) s2 = -10; else if (s2 > 150) s2 = 150;
+  r2d = sigma * s2;
+  const r2 = r2d / R2D, c2 = Math.cos(r2), sn2 = Math.sin(r2);
+  const ex = g[o + 2] + c2 * g[o + 4] - sn2 * g[o + 5];
+  const ez = g[o + 3] + sn2 * g[o + 4] + c2 * g[o + 5];
+  let r1d = wrap180((Math.atan2(hz, hy) - Math.atan2(ez, ex)) * R2D);
+  if (r1d < -80) r1d = -80; else if (r1d > 80) r1d = 80;
+  _legR2[k] = r2d;
+  blendRx(p, r1d, w);
 }
 
 /**
@@ -222,10 +332,14 @@ export function computeVoxelPose(pm, inst, out) {
   samplePose(pm, inst);
 
   const yawMod90 = ((yawDeg % 90) + 90) % 90 === 0;
+  const legSet = pm.legRig, legPose = inst.legs;
+  const legsOn = !!(legSet && legPose && legPose[0] > 0);
+  if (legsOn) _legInv[0] = invCellM;
 
   for (let p = 0; p < partCount; p++) {
     const pbase = p * PART_STRIDE;
     const parentIdx = pm.parts[pbase + 9];
+    if (legsOn) legOverride(legSet, legPose, p, parentIdx);
     const pivotX = pm.parts[pbase + 6], pivotY = pm.parts[pbase + 7], pivotZ = pm.parts[pbase + 8];
     const rx = _rotOut[p * 3], ry = _rotOut[p * 3 + 1], rz = _rotOut[p * 3 + 2];
     const posX = _posOut[p * 3], posY = _posOut[p * 3 + 1], posZ = _posOut[p * 3 + 2];

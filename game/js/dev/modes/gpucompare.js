@@ -1,7 +1,7 @@
 import {
   bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
   meshFromJSON, meshFromBin, composeCharacter, meshCharacter, collapseRig, riggedModelDef, buildMeshFromTris, MaskAtlas, buildMaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
-  bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks, sunPathFrom, applySunPair, blendLook,
+  bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks, sunPathFrom, applySunPair, blendLook, createAtmosState, mixAtmos, applyAtmosToPalette, gradeCells,
   bakeImpostor, enableGroupImpostor, resolveGroupLod1, createInstanceBuffer,
   createRipples, defineWadeSplash, wadeSplashAt, validateCarpetConfig, makeUnderState,
 } from '../../../../engine/index.js';
@@ -10,8 +10,10 @@ import {
   terrainMeshSetFor, runStableRow, compareGlow, emisFromPacked,
   computeDerivatives, shadeSurfaces, edgePass, pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG, createShadowParityRunner,
 } from '../../../../engine/dev.js';
+import { quadruped16 } from '../../../../engine/dev.js'; // VOX-PARTS-16b: 12-part fixture for the `vox12` row
 import { POSES as GPU_COMPARE_POSES, GATE_POSES } from '../../../../content/dev-poses.js';
 import { fillUnitGrid, placeholderTeamSpec } from '../unitsHarness.js'; // RE-06: instanced-units pose helpers
+import { groundLookFromParams } from '../../look/groundLookConfig.js'; // ENV-02d-LIVE
 import { placeCompareSprites } from '../spriteDev.js'; // US-030c: the synthetic 3-prop set for non-`real` compare poses
 
 export const name = 'gpucompare';
@@ -151,6 +153,10 @@ function buildCompareRuns(ctx) {
       cam: { x: 1500.70, y: 1027.88, z: 3.00 + engine.physics.eyeHeight, yawDeg: 329, pitchDeg: -24 } },
     { world: worldM1, lights: worldM1Lights, name: `world_m1: player spawn, sceneFade=0.5`,
       cam: { x: m1Eye.x, y: m1Eye.y, z: m1Eye.z, yawDeg: m1Eye.yawDeg, pitchDeg: m1Eye.pitchDeg }, fade: 0.5 },
+    // ENV-03c: biome atmosphere rows (fixed driver weights, no driver; pose.atmos = { w: [per entry], tod: [day, dusk, night] }): fog + haze + sprite grade
+    ...[['atmosForestDay', 12, { w: [1, 0, 0], tod: [1, 0, 0] }], ['atmosMeadowDusk', 18, { w: [0, 1, 0], tod: [0, 1, 0] }], ['atmosBorderNight', 23, { w: [0, 0.5, 0.5], tod: [0, 0, 1] }]].map(([n, hour, atmos]) => (
+      { world: worldM1, lights: worldM1Lights, name: `world_m1: ${n} (ENV-03c biome atmosphere)`, hour, atmos,
+        cam: { x: m1Eye.x, y: m1Eye.y, z: m1Eye.z, yawDeg: m1Eye.yawDeg, pitchDeg: m1Eye.pitchDeg } })),
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: player spawn, card open (sceneDim 0.35 + plate 0.18)',
       cam: { x: m1Eye.x, y: m1Eye.y, z: m1Eye.z, yawDeg: m1Eye.yawDeg, pitchDeg: m1Eye.pitchDeg },
       dim: { all: 0.35, n: 1, rects: (() => { const r = new Float32Array(20); r.set([10, 4, 70, 26, 0.18]); return r; })() } },
@@ -229,6 +235,14 @@ function buildCompareRuns(ctx) {
     const gcKit = ctx.gcKit; // fetched in the async scene-mode entry
     assets.add('model', 'char.gc', riggedModelDef(collapseRig(meshCharacter(composeCharacter(gcKit, gcKit.defaults)), gcKit.partMap)));
   } catch (e) { console.warn('[gpucompare] char.gc not built:', e && e.message); }
+  // VOX-PARTS-16b (38.67 section 1): `vox12` registers the 12-part fixture (meshOnly, mats remapped to palette keys) with a `splay` clip
+  // that rotates the lower-leg parts 8..11 by 30-60 deg, so the 4th part bit (flat0 bit 17) is set on every vertex of parts 8..11.
+  try {
+    const q16 = JSON.parse(JSON.stringify(quadruped16));
+    q16.mats = { '#': 'wood', 'o': 'wood_cut', 'e': 'iron_light' }; // ENV-GATEFIX: real material keys (woodLight/ironLight are palette colours, fastShade threw)
+    q16.animations.splay = { fps: 1, loop: true, frames: [{ legFL2: { rot: [30, 0, 0] }, legFR2: { rot: [45, 0, 0] }, legBL2: { rot: [60, 0, 0] }, legBR2: { rot: [-40, 0, 0] } }] };
+    assets.add('model', 'vox12', { voxel: q16 });
+  } catch (e) { console.warn('[gpucompare] vox12 not registered:', e && e.message); }
   const compareVoxelPool = new VoxelPool();
   compareVoxelPool.renderer = ctx.renderer;
   compareVoxelPool.bind(assets, matTable);
@@ -267,6 +281,16 @@ function buildCompareRuns(ctx) {
     // "voxel over terrain" NOT added - see this story's Programmer notes
     // (pre-existing terrain/sun-visibility parity gap, not a voxel-pass bug).
   );
+
+  // VOX-PARTS-16b: 12-part mesh-only instances (parts 8..11 posed), ~2 m from the camera, sun shadow pose (az 135 el 30).
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: vox12 (VOX-PARTS-16b, 12-part voxel model, lower legs 30-60 deg, sun az 135 el 30)',
+    cam: { x: LANTERN_X - 2.0, y: LANTERN_Y, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 20 }, meshOnly: true, sun: { azimuth: 135, elevation: 30 },
+    before: () => {
+      const pm = compareVoxelPool.models.get('vox12');
+      const ci = pm && pm.clipIndex.splay !== undefined ? pm.clipIndex.splay : -1;
+      compareVoxelPool.pushInstance('vox12', LANTERN_X - 0.2, LANTERN_Y, LANTERN_Z, 90, ci, 0, 0);
+      compareVoxelPool.pushInstance('vox12', LANTERN_X + 0.4, LANTERN_Y + 1.2, LANTERN_Z, 200, ci, 0, 0);
+    } });
 
   // RE-02a (28.1 A2 item 8): mesh-only pitched poses, RTS view of the world_m1 hillside west of the tower.
   // Focus-driven eye exactly like `engine/core/rtsCamera.js` (dist = widthM * zoom / (2 tanHalfX), widthM 30),
@@ -753,6 +777,19 @@ function buildCompareRuns(ctx) {
     dpose('world_m1: decorMeadow (ENV-01d, decorGpu, flower meadow, eye 1.6 m: carpet hand-off)', 1474.5, 1025, 270, -15);
     dpose('world_m1: decorFord (ENV-01d, decorGpu, ford reeds + pebbles)', 1045.96, 1066.69, 246, -11);
   }
+  // ENV-02d-LIVE: ground look rows (lookMeadow / lookForestEdge / lookShore from content/dev-poses.js GATE_POSES): a world_m1 load with `groundLook` on, same opts main.js builds.
+  { const gl = groundLookFromParams(params, globalThis.BIOME_LOOK, globalThis.ASSETS && globalThis.ASSETS.levels.overworld_far);
+    if (gl) {
+      for (const slug of ['lookMeadow', 'lookForestEdge', 'lookShore']) {
+        const g = GATE_POSES.find((q) => q.slug === slug); if (!g) continue;
+        // GC-FIX: one fresh world per look row (a shared world leaked state from lookMeadow into lookForestEdge: meshTies 2 -> 124)
+        const lookWorld = loadCompareWorld(assets.world('world_m1'), { groundLook: gl });
+        lookWorld.terrain.bakeFarSync();
+        const lookLights = lightsEnabled ? buildLightSet(lookWorld, assets.palette) : null;
+        runs.push({ world: lookWorld, lights: lookLights, name: `world_m1: ${slug} (ENV-02d ground look)`, cam: { ...g.cam, z: lookWorld.terrain.groundAt(g.cam.x, g.cam.y) + 1.7 },
+          real: true, pitchedDefault: true, sun: SUN_135_30, before: () => engine.setWorld(lookWorld) });
+      }
+    } }
   // Every pose that does not ask for a projection is a shear (dda-vs-mesh parity) pose until ME-19: pin it.
   for (const r of runs) if (!r.pitchedDefault && !r.cam.projection) r.cam = { ...r.cam, projection: 'shear' };
 
@@ -1011,14 +1048,24 @@ async function runGpuCompareSceneMode(ctx) {
   let stableDone = false, stableWaterDone = false;
   const shadowRunner = renderer === 'mesh' && gpuPipeline.shadowOpts && gpuPipeline.shadowOpts.sun === 'map'
     ? createShadowParityRunner(gpuPipeline.shadowOpts.res) : null;
+  // ENV-03c: synthetic 3-entry atmosphere table (day/dusk/night per entry: forest, meadow, fields); numbers in the 38.65 ranges
+  const atmosSt = createAtmosState(), atmosDrv = { w: new Float32Array(3), wNone: 0, tod: new Float32Array(3), version: 0 };
+  const atmosTable = (() => { const rec = (fog, dens, haze, hk, lift, gamma, gain, sat) => ({ fog: Float32Array.from(fog), fogDensity: dens, haze: Float32Array.from(haze), hazeAmount: hk, lift: Float32Array.from(lift), gamma: Float32Array.from(gamma), gain: Float32Array.from(gain), sat });
+    const E = [[[150, 180, 150], [120, 130, 140], [30, 40, 60]], [[200, 210, 225], [220, 170, 150], [40, 45, 70]], [[210, 205, 180], [215, 180, 140], [45, 45, 65]]];
+    const recs = []; E.forEach((e, i) => e.forEach((fog, s) => recs.push(rec(fog, 0.006 + 0.004 * i + 0.002 * s, fog.map((v) => Math.min(255, v + 20)), 0.5, [0.01 + 0.01 * s, 0.01, 0.02], [1 + 0.1 * i, 1.05, 1.1 - 0.1 * s], [1 - 0.2 * s, 1 - 0.15 * s, 1 - 0.1 * s], 1 - 0.1 * s)))); return { n: 3, recs }; })();
+  const atmosOn = (a) => { for (let i = 0; i < 3; i++) { atmosDrv.w[i] = a.w[i]; atmosDrv.tod[i] = a.tod[i]; } atmosDrv.wNone = 1 - (a.w[0] + a.w[1] + a.w[2]); atmosDrv.version++; const f = atmosBase(); mixAtmos(atmosTable, atmosDrv, f, atmosSt); applyAtmosToPalette(assets.palette, atmosSt); };
+  const atmosOff = () => { if (atmosSt.on) { atmosSt.on = false; applyAtmosToPalette(assets.palette, atmosSt); } };
+  let atmosBaseRec = null;
+  const atmosBase = () => { const P = assets.palette, f = P.fog.farBase || P.fog.far; if (!atmosBaseRec) atmosBaseRec = { start: f.start, full: f.full, curve: f.curve || 1, near: P.rgb[f.color], far: P.rgb[f.colorFar] }; return atmosBaseRec; };
   let restoreSun = null; // ME-15c: per-pose sun override (see applySunOverride)
   // `&pose=<text>` (US-055a2b): run only the poses whose name contains <text> (case-insensitive); the last one stays on the canvas = an owner look,
   // e.g. `?gpucompare=1&renderer=mesh&pose=water pond`. No filter = every pose.
   const poseQ = (params.get('pose') || '').toLowerCase();
   const poseRuns = poseQ ? runs.filter((r) => r.name.toLowerCase().includes(poseQ)) : runs;
-  for (const { world, lights, name: poseName, cam, fade, dim, real, before, spritesExtra, needK8, meshOnly, maskPose, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, hour: poseHour, instAssert, vmAssert, decalAssert, timeSec: poseTime, carpet: carpetPose, under: underPose } of poseRuns) {
+  for (const { world, lights, name: poseName, cam, fade, dim, real, before, spritesExtra, needK8, meshOnly, maskPose, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, hour: poseHour, atmos: poseAtmos, instAssert, vmAssert, decalAssert, timeSec: poseTime, carpet: carpetPose, under: underPose } of poseRuns) {
     if (world.carpet || world._carpetCtx) { world._carpetCtx = null; world.carpet = null; wg.setCarpet(null, null, 0); } // D2e: carpet poses only
     if (restoreSun) { restoreSun(); restoreSun = null; }
+    atmosOff(); // ENV-03c: previous pose's atmosphere off (one palette bump)
     if (meshOnly && renderer !== 'mesh') { console.log(`[gpucompare] SKIP ${poseName} (mesh renderer only)`); continue; }
     if (sunOverride) restoreSun = applySunOverride(world, lights, sunOverride);
     else if (Number.isFinite(poseHour)) restoreSun = applyHourOverride(world, lights, assets.palette, poseHour, ctx.sunEnabled); // DN-04b
@@ -1055,6 +1102,7 @@ async function runGpuCompareSceneMode(ctx) {
     fbCompare.under = underPose ? makeUnderState() : null; // SWIM-04c: underwater look state (both twins read fb.under; null = dry, untouched frame)
     fbCompare.timeSec = poseTime || 0; // US-141a: frozen per-pose clock (flow streaks); 0 for every other pose
     fbCompare.lights = lights;
+    if (poseAtmos) atmosOn(poseAtmos); // ENV-03c: before the first frame so both twins see the same live fog/haze/grade
     if (lights) lights.update(0, world);
     if (lights) lights.cloud = null; // S8-B2-12c: every gpucompare mode forces clouds off
     if (lights) lights.ao = null; // S8-B2-20 NEEDS B1 item (3): every gpucompare mode forces ao off
@@ -1152,7 +1200,7 @@ async function runGpuCompareSceneMode(ctx) {
     const wasActive = rt.gpuActive;
     rt.gpuActive = false;
     fbCompare.gpu = false;
-    renderWorld(fbCompare, world, cam);
+    try { renderWorld(fbCompare, world, cam); } catch (e) { e.message += ' [pose: ' + poseName + ']'; throw e; } // ENV-GATEFIX: name the failing pose
     // BUG-VM-001 (item 5): the JS/mesh twin's own `buildList` call (compositor.js's `renderWorldMesh`), right
     // after `renderWorld` above runs it - before anything else touches `engine.viewModel.stats`.
     const vmItemsJs = engine.viewModel ? engine.viewModel.stats.items : 0;
@@ -1162,6 +1210,7 @@ async function runGpuCompareSceneMode(ctx) {
       applySceneFade(fbCompare.rt, fbCompare.sceneFade, fbCompare.fadeLut);
     }
     applySceneDim(fbCompare.rt, compareSceneDim);
+    if (poseAtmos) gradeCells(fbCompare.rt, atmosSt); // ENV-03c: JS twin grade after fade/dim (the GPU does it in the sprites pass)
     rt.gpuActive = wasActive;
     if (overlayOps) engine.overlay.renderCpu(cam, rt.cells, depthBuffer.depth); // JS twin composite (WebGPU: judged by the final cell row)
 
@@ -1234,6 +1283,7 @@ async function runGpuCompareSceneMode(ctx) {
   resetInstances();
   overallOk = overallOk && sampledOwnTextures;
   for (const r of shadowRows) overallOk = overallOk && r.ok;
+  atmosOff();
   fbCompare.sceneFade = 1;
   if (sprites.pass) sprites.pass.sceneFade = 1;
   resetSceneDim(compareSceneDim);

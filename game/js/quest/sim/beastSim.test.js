@@ -9,6 +9,22 @@
 import {
   World, NavGrid, createRng, createHasher, SIM_STEP, hasLineOfSight, integrate, PHYSICS, NOISE_SPRINT, NOISE_SWING,
 } from '../../../../engine/index.js';
+import { allocProbe } from '../../../../tools/allocProbe.mjs';
+// BEAST-ALLOC-01 (arch 38.61): per-step garbage via allocProbe (min of 5 windows). The sim's OWN garbage is measured with a stub
+// floor (world.supportAt boxes its double args at a non-inlined boundary: engine/world, open ASK ARCHITECT in docs/lanes/pc-b2.md)
+// stays within ownPerBeast (the 48 B/beast left is the 3 boxed doubles of the supportAt CALL itself); the real-floor figure is asserted against an explicit per-beast cap (ALLOC_EXEMPT, ref arch 38.61).
+// BEAST-ALLOC-02: ALLOC_EXEMPT removed - postOne uses world.supportAtOut (caller-owned Float64Array), so the REAL floor must also stay < ALLOC_CAP B/step (whole sim step, not per beast).
+const ALLOC_CAP = 8;
+function stepAlloc(f, world, tag) {
+  const run = (n) => { for (let i = 0; i < n; i++) f(); };
+  const real = world.supportAtOut;
+  world.supportAtOut = (g, o, io) => { io[3] = 0; };
+  const own = allocProbe(run, { n: 5000 }).perCall;
+  world.supportAtOut = real;
+  const full = allocProbe(run, { n: 5000 }).perCall;
+  console.log(`  [alloc] ${tag}: own ${own.toFixed(1)} B/step, with real floor ${full.toFixed(1)} B/step`);
+  return { own, full };
+}
 import paletteMod from '../../../../design/palette.js';
 import detailPassMod from '../../../../design/detail-pass.js';
 import lanternMod from '../../../../design/models/lantern.js';
@@ -381,11 +397,8 @@ function hashAt(sim, steer, tick, rng) {
   ok('perf: 8-beast step mean/p95 within budget (or PERF_STRICT unset)', strict ? (okMean && okP95) : true, `mean=${mean} p95=${p95}`);
 
   if (global.gc) {
-    const heapBefore = process.memoryUsage().heapUsed;
-    for (let i = 0; i < 10000; i++) sim.step(px, py, pz);
-    global.gc();
-    const heapAfter = process.memoryUsage().heapUsed;
-    ok('zero allocation over 10k steps (--expose-gc heap check)', heapAfter <= heapBefore + 1e6, `before=${heapBefore} after=${heapAfter}`);
+    const r = stepAlloc(() => sim.step(px, py, pz), sim.world, 'beast8');
+    ok('zero allocation per step, 8 chasing beasts (own and real floor < 8 B/step)', r.own < ALLOC_CAP && r.full < ALLOC_CAP, `own=${r.own} full=${r.full}`);
   } else {
     console.log('(skip) zero-allocation heap check needs --expose-gc');
   }
@@ -1139,12 +1152,8 @@ const BOAR_R = 0.45;
     const pz = groundZ(world, 1465, 1025);
     for (let i = 0; i < 600; i++) sim.step(1465, 1025, pz);
     if (global.gc) {
-      global.gc();
-      const before = process.memoryUsage().heapUsed;
-      for (let i = 0; i < 10000; i++) { sim.noise = (i & 1) ? NOISE_SPRINT : 1; sim.step(1465 + (i % 7), 1025, pz); }
-      global.gc();
-      const after = process.memoryUsage().heapUsed;
-      ok('P5 zero allocation over 10k steps (perceive + leash adapter)', after <= before + 1e6, `before=${before} after=${after}`);
+      const r = allocProbe((n) => { for (let i = 0; i < n; i++) { sim.noise = (i & 1) ? NOISE_SPRINT : 1; sim.step(1465 + (i % 7), 1025, pz); } }, { n: 10000 });
+      ok('P5 zero allocation over 10k steps (perceive + leash adapter)', r.perCall < 100, `perCall=${r.perCall}`);
     } else console.log('(skip) P5 alloc check needs --expose-gc');
   }
 }
@@ -1169,7 +1178,7 @@ const BOAR_R = 0.45;
 // LIFE-07: a wolf hunts and eats a deer (stub fauna: same surface as engine/fauna: def.species, slots, nearestPrey, kill, setThreats).
 function stubFauna(preys) {
   const f = { def: { species: [{ name: 'rabbit' }, { name: 'deer' }] }, slots: preys, thr: 0, killed: [], thrX: [] };
-  f.setThreats = (n, xs) => { f.thr = n; f.thrX.length = 0; for (let i = 0; i < n; i++) f.thrX.push(xs[i]); };
+  f.setThreats = (n, xs) => { f.thr = n; for (let i = 0; i < n; i++) f.thrX[i] = xs[i]; f.thrX.length = n; }; // no per-step push/length churn (boxed doubles)
   f.nearestPrey = (x, y, r, out, mask) => {
     for (let i = 0; i < preys.length; i++) {
       const q = preys[i]; if (!q.alive || !((mask >> q.species) & 1)) continue;
@@ -1219,11 +1228,33 @@ function huntSim(fauna) {
     const fa = stubFauna([{ x: 1700, y: 1700, species: 1, alive: true }]);
     const s2 = huntSim(fa);
     for (let n = 0; n < 600; n++) s2.step(1461, 1090, 0);
-    global.gc(); const b = process.memoryUsage().heapUsed;
-    for (let n = 0; n < 10000; n++) s2.step(1461, 1090, 0);
-    global.gc(); const a = process.memoryUsage().heapUsed;
-    ok('LIFE-07 zero allocation per step with fauna', a <= b + 1e6, `b=${b} a=${a}`);
+    const r = stepAlloc(() => s2.step(1461, 1090, 0), s2.world, 'life07');
+    ok('LIFE-07 zero allocation per step with fauna (own and real floor < 8 B/step)', r.own < ALLOC_CAP && r.full < ALLOC_CAP, `own=${r.own} full=${r.full}`);
   }
+}
+
+{ // LIFE-DET-01: replay hash, same seed + inputs -> equal state hash every step (fauna null, and a hunt that ends in EAT)
+  const run = (mkFauna, steps) => {
+    const world = buildWorld([wolfEnt("w1", 1461, 1031)]);
+    const nav = buildBeastNav(world, NAV_CFG);
+    const { events } = makeEvents();
+    const rng = createRng(3);
+    const fauna = mkFauna();
+    const sim = createBeastSim(world, { nav, rng, events, fauna });
+    const hs = []; let eat = -1;
+    for (let n = 0; n < steps; n++) {
+      sim.step(1461, 1090, 0);
+      if (sim.state[0] === STATE_EAT && eat < 0) eat = n;
+      const h = createHasher(); h.u32(n); rng.hashInto(h); sim.hashInto(h); hs.push(h.value());
+    }
+    return { hs, eat, fauna };
+  };
+  const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+  const n1 = run(() => null, 600), n2 = run(() => null, 600);
+  ok("LIFE-DET-01 fauna null: per-step hashes equal across two runs", same(n1.hs, n2.hs) && n1.eat < 0);
+  const mk = () => stubFauna([{ x: 1466, y: 1031, species: 1, alive: true }]);
+  const h1 = run(mk, 900), h2 = run(mk, 900);
+  ok("LIFE-DET-01 hunt -> EAT: per-step hashes equal across two runs", same(h1.hs, h2.hs) && h1.eat >= 0 && h1.eat === h2.eat, "eat=" + h1.eat);
 }
 
 // ---- LIFE-08 (38.56 d): setGoal / clearGoal / setAltTargets ----------------------------------------------------
@@ -1269,11 +1300,37 @@ function goalSim() {
   if (global.gc) {
     const g3 = goalSim(); g3.sim.setGoal(0, 1473, 1033); g3.sim.setAltTargets(1, ax, ay);
     for (let n = 0; n < 600; n++) g3.sim.step(far[0], far[1], 0);
-    global.gc(); const b = process.memoryUsage().heapUsed;
-    for (let n = 0; n < 10000; n++) g3.sim.step(far[0], far[1], 0);
-    global.gc(); const a = process.memoryUsage().heapUsed;
-    ok('LIFE-08 zero allocation per step with goal + alt', a <= b + 1e6, 'b=' + b + ' a=' + a);
+    const r = stepAlloc(() => g3.sim.step(far[0], far[1], 0), g3.sim.world, 'life08');
+    ok('LIFE-08 zero allocation per step with goal + alt (own and real floor < 8 B/step)', r.own < ALLOC_CAP && r.full < ALLOC_CAP, `own=${r.own} full=${r.full}`);
   }
+}
+
+// ---- BEAST-ALLOC-02: supportAtOut == supportAt bit for bit (terrain, tower tops/inside, water, band edges), grid + mesh physics.
+for (const physics of ['grid', 'mesh']) {
+  const w = buildWorld([], physics);
+  const opts = { height: 0, stepUpMax: 1.0, walkCos: -1 }, out = new Float64Array(10);
+  const xs = [], ys = [];
+  for (let x = 1400; x <= 1592; x += 7.3) xs.push(x);
+  for (let y = 928; y <= 1120; y += 7.1) ys.push(y);
+  // structure footprint + tower top probes, plus points outside the near band and the map edge
+  const extra = [[1480, 1018], [1484.5, 1020.5], [1478, 1015], [10, 10], [2040, 2040], [1000, 1000], [1303.2, 1307.9], [1596.5, 1124.5]];
+  let n = 0, bad = 0, water = 0, bandEdge = 0;
+  const probe = (x, y, fz) => {
+    const r = w.supportAt(x, y, fz, true, opts);
+    const e = { floorH: r.floorH, nx: r.nx, ny: r.ny, nz: r.nz, t: r.terrain, s: r.slope, c: r.ceilH };
+    out[0] = x; out[1] = y; out[2] = fz; w.supportAtOut(true, opts, out);
+    n++;
+    const same = Object.is(out[3], e.floorH) && Object.is(out[4], e.nx) && Object.is(out[5], e.ny) && Object.is(out[6], e.nz)
+      && out[7] === (e.t ? 1 : 0) && out[8] === (e.s ? 1 : 0) && (e.c === 'sky' ? Number.isNaN(out[9]) : Object.is(out[9], e.c));
+    if (!same) bad++;
+    if (w.terrain && w.terrain.groundTypeAt(x, y) === 2) water++;
+    if (w.terrain && w.terrain.near && (Math.abs(x - w.terrain.near.x0) < 4 || Math.abs(y - w.terrain.near.y0) < 4)) bandEdge++;
+  };
+  for (const x of xs) for (const y of ys) { probe(x, y, 0.6); probe(x, y, 12); }
+  for (const [x, y] of extra) for (const fz of [0.6, 4, 12, 30]) probe(x, y, fz);
+  const b = w.terrain.near;
+  for (const x of [b.x0 - 1, b.x0, b.x0 + 0.5, b.x0 + 1, b.x0 + b.w * b.cell - 1.5, b.x0 + b.w * b.cell - 0.5]) for (const y of [b.y0 + 40.3, b.y0 + 100.1]) probe(x, y, 0.6);
+  ok(`supportAtOut == supportAt bit for bit (${physics} physics, ${n} points, ${water} water, ${bandEdge} band-edge)`, bad === 0 && n > 1000, `mismatches ${bad}`);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

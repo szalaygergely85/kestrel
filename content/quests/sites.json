@@ -40,6 +40,36 @@
     "dorrin": {
       "entity": "dorrin"
     },
+    "warden_glasswater": {
+      "entity": "warden_glasswater"
+    },
+    "warden_whitecombs": {
+      "entity": "warden_whitecombs"
+    },
+    "warden_strand": {
+      "entity": "warden_strand"
+    },
+    "warden_reedmire": {
+      "entity": "warden_reedmire"
+    },
+    "warden_heath": {
+      "entity": "warden_heath"
+    },
+    "warden_signalHill": {
+      "entity": "warden_signalHill"
+    },
+    "warden_downs": {
+      "entity": "warden_downs"
+    },
+    "warden_ashMile": {
+      "entity": "warden_ashMile"
+    },
+    "warden_highPastures": {
+      "entity": "warden_highPastures"
+    },
+    "warden_northwood": {
+      "entity": "warden_northwood"
+    },
     "relay_glasswater": {
       "entity": "relay_glasswater"
     },
@@ -69,6 +99,9 @@
     },
     "relay_whitecombs": {
       "entity": "relay_whitecombs"
+    },
+    "postkeeper": {
+      "entity": "postkeeper"
     }
   }
 }

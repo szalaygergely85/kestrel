@@ -15,6 +15,7 @@
 // every `DrawItem`'s typed arrays at construction; `begin`/`push`/`cull`
 // never allocate. `addStructures`'s near-to-far sort scratch is module-level
 // (literal copy of `compositor.js`'s `renderWorld` insertion sort).
+import { MAX_VOX_PARTS } from '../voxel/VoxelModel.js';
 import { lodCentreX, lodCentreY } from '../core/camFocus.js';
 import { buildLevelMesh, rebuildLevelMeshDyn } from './levelMesh.js';
 import { resolveMats } from './MeshData.js';
@@ -85,8 +86,8 @@ const MAX_STRUCTS = 8;
  * @property {import('./MeshData.js').MeshData|null} mesh
  * @property {number} type - DRAW_*
  * @property {Float64Array} matrix - 12: A (3x3 row-major) then t (3); mesh-local -> world
- * @property {Float64Array} partMatrices - 8*12, DRAW_VOXEL: part p -> world
- * @property {Uint8Array} partFlags - 8; bit 0 = part pose axis-aligned
+ * @property {Float64Array} partMatrices - MAX_VOX_PARTS*12, DRAW_VOXEL: part p -> world
+ * @property {Uint8Array} partFlags - MAX_VOX_PARTS; bit 0 = part pose axis-aligned
  * @property {number} rangeFirst - triangles (static/terrain); voxel items use mesh.ranges per part
  * @property {number} rangeCount
  * @property {number} planeIdOr - levels (structSeq&7)<<28; voxels (slot&0xF)<<24; terrain 0
@@ -107,8 +108,8 @@ function makeDrawItem() {
     mesh: null,
     type: DRAW_STATIC,
     matrix: new Float64Array(12),
-    partMatrices: new Float64Array(8 * 12),
-    partFlags: new Uint8Array(8),
+    partMatrices: new Float64Array(MAX_VOX_PARTS * 12),
+    partFlags: new Uint8Array(MAX_VOX_PARTS),
     rangeFirst: 0,
     rangeCount: 0,
     planeIdOr: 0,
@@ -245,7 +246,7 @@ export class DrawList {
     item.instBuf = ib;
     item.instCount = count;
     item.partMatrices.set(parts.m);
-    for (let p = 0; p < 8; p++) item.partFlags[p] = parts.flags[p];
+    for (let p = 0; p < MAX_VOX_PARTS; p++) item.partFlags[p] = parts.flags[p];
     // RE-15a (28.13 point 2): factored into instances.js's `groupRadius` so
     // the per-instance cull (InstanceGroups.addToDrawList) shares this exact
     // computation instead of redoing it.

@@ -120,7 +120,14 @@ for (const k of ['KeyI', 'KeyC', 'Tab']) {
   const r = rig(); r.locked.add(0); r.locked.add(1); r.step('KeyI');
   ok('cursor opens on a live slot', r.view.cursor >= 12 && !r.locked.has(r.view.cursor - 12));
   const before = r.view.cursor; packPtr(r, 0); ok('pointer cannot select a locked slot', r.view.cursor === before);
-  ok('locked cell draws x', /x/.test(r.draw()));
+  const nx = (t) => (t.match(/x/g) || []).length;
+  const rE = rig(); rE.inv.slots[0].id = null; rE.locked.add(0); rE.step('KeyI'); const rI = rig(); rI.locked.add(0); rI.step('KeyI');
+  ok('empty locked cell draws x, one holding an item does not', nx(rE.draw()) === nx(rI.draw()) + 1, nx(rE.draw()) + '/' + nx(rI.draw()));
+  const rl = rig({ slotLockText: () => 'Locked - learn fire first' }); rl.locked.add(0); rl.locked.add(23); rl.step('KeyI');
+  ok('locked item icon still drawn', /Sword/i.test('Sword') && rl.draw().length > 0);
+  packPtr(rl, 0); const tip = rl.draw();
+  ok('hovering a locked item shows its name + lock line', /Ruin Steel/.test(tip) && /Locked - learn fire first/.test(tip), 'tip');
+  ok('cursor still refuses the locked cell', rl.view.cursor !== 12);
 }
 // ---- Wick turns: A/D held on the model, mouse drag ----
 {

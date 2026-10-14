@@ -96,6 +96,17 @@ export function createDialogueCtl(opt) {
       return true;
     },
 
+    /** D-087: opens the generated Accept/Exit offer of an object giver (dialogue 'obj.<objectId>', no speaker entity). */
+    openObject(objectId) {
+      if (ctl.open || ctl._closing) return false;
+      const comp = dialogues['obj.' + objectId];
+      if (!comp) return false;
+      npcId = null; pendingClip = null; oneShot = false; lastBase = null; jawComp = null;
+      runner.open(comp, flags);
+      ctl.locked = true; ctl._closing = false;
+      return true;
+    },
+
     /** Registers the [E] Talk to <name> interactable for NPC entity `id` (call on every 'world:loaded'). */
     addNpc(id, o = {}) {
       const h = world.get(id), t = h && h.data && h.data.transform;

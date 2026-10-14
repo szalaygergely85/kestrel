@@ -176,13 +176,13 @@ Output: a design/models/*.js-style snippet:
 This tool only reads <in.vox>/<map.json> and writes --out - it never edits
 files under design/.
 
-Rejects more than 8 parts and overlapping part boxes always. Rejects
+Rejects more than 16 parts (MAX_VOX_PARTS) and overlapping part boxes always. Rejects
 combined dimensions over 32 per axis or 4096 total voxels (axis-sum over 48
 for a single-part 'body') UNLESS the result fits the mesh-only bounds, in
 which case it imports with voxel.meshOnly: true instead (see --no-mesh-only
 above to disable that and keep the old hard refusal). Still refused, with
 the numbers, past the mesh-only bounds (256/axis, 2,097,152 voxels, 32768
-mesh quads) or MAX_VOX_PARTS (8, unchanged for mesh-only). See the file's
+mesh quads) or MAX_VOX_PARTS (16; > 8 parts needs meshOnly). See the file's
 own header comment for exactly which .vox scene-graph shapes are supported
 (rotated/animated nodes and multi-model shapes are not).
 `;

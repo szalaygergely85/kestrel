@@ -102,7 +102,7 @@ const files = {};
 const getJson = async (u) => {
   const m = /content\/quests\/(.*)$/.exec(u); if (!m) { if (u.includes('barks')) return {}; if (u.includes('charkit')) return {}; throw new Error('404 ' + u); }
   const n = m[1];
-  if (n === 'index.json') return { version: 1, packs: ['west'], legacy: ['m1', 'tower.blade', 'burl.boars', 'mq.river.road', 'mq.ford.stones'] };
+  if (n === 'index.json') return { version: 1, packs: ['west'], legacy: ['m1', 'tower.blade', 'burl.boars', 'mq.river.road', 'mq.ford.stones', 'mq.bend.call'] };
   if (n === 'sites.json') return { version: 1, sites: ctx.sites };
   if (n === 'rewards.json') return { version: 1, tables: ctx.rewards };
   if (n === 'west/pack.json') return { version: 1, region: 'west', band: [1, 5], quests: [{ id: 'sq.w.one', title: 'One', template: 'kill', site: 'rook.bend', params: { ids: ['b1'], count: 1 } }, { id: 'sq.w.bad', title: 'Bad', template: 'zzz', site: 'rook.bend' }] };
@@ -110,19 +110,22 @@ const getJson = async (u) => {
 };
 const logs = [];
 const boot = await loadQuestFiles(getJson, { log: (m) => logs.push(m) });
-assert.deepEqual(boot.giverDefs.map(d => d.id), ['tower.blade', 'burl.boars', 'mq.river.road', 'mq.ford.stones', 'sq.w.one']);
+assert.deepEqual(boot.giverDefs.map(d => d.id), ['tower.blade', 'burl.boars', 'mq.river.road', 'mq.ford.stones', 'mq.bend.call', 'sq.w.one']);
 assert.deepEqual(boot.errors.map(e => e.file), ['pack:west:sq.w.bad']);
 const ids = m1.objectives.map(o => o.id), upto = ids.slice(0, ids.indexOf('relay1') + 1);
 const book = createQuestBook(boot.questDef, boot.giverDefs, { quest: { questVersion: 1, questId: 'm1', flags: {}, items: [], deadBeasts: [], areas: [], completed: [] }, quests: null });
 assert.equal(book.statusOf('mq.river.road'), UNAVAILABLE); assert.equal(book.statusOf('mq.ford.stones'), UNAVAILABLE);
-const book2 = createQuestBook(boot.questDef, boot.giverDefs, { quest: { questVersion: 1, questId: 'm1', flags: {}, items: [], deadBeasts: [], areas: [], completed: upto }, quests: null });
-assert.equal(book2.statusOf('mq.river.road'), ACTIVE); assert.equal(book2.statusOf('mq.ford.stones'), UNAVAILABLE);
+const book2 = createQuestBook(boot.questDef, boot.giverDefs, { quest: { questVersion: 1, questId: 'm1', flags: {}, items: [], deadBeasts: [], areas: [], completed: upto }, quests: { 'mq.bend.call': { quest: null, accepted: true, handedIn: true } } });
+assert.equal(book2.statusOf('mq.river.road'), AVAILABLE); assert.equal(book2.statusOf('mq.ford.stones'), UNAVAILABLE); // Rook-given since QFIX-S5a-4/5
+assert.ok(book2.accept('mq.river.road'));
 const ev = []; book2.onChange = (n, id) => ev.push(n + ':' + id);
 book2.feed({ type: 'area:entered', id: 'riverBank' });
-assert.equal(book2.statusOf('mq.river.road'), DONE); assert.equal(book2.statusOf('mq.ford.stones'), ACTIVE);
-assert.equal(book2.tracked(), book2.index('mq.ford.stones'));
+assert.equal(book2.statusOf('mq.river.road'), READY); book2.handIn('mq.river.road');
+assert.equal(book2.statusOf('mq.river.road'), DONE); assert.equal(book2.statusOf('mq.ford.stones'), AVAILABLE);
+book2.accept('mq.ford.stones'); assert.equal(book2.tracked(), book2.index('mq.ford.stones'));
 book2.feed({ type: 'area:entered', id: 'fordWest' });
-assert.equal(book2.statusOf('mq.ford.stones'), DONE); assert.deepEqual(ev, ['quest:done:mq.river.road', 'quest:done:mq.ford.stones']);
+assert.equal(book2.statusOf('mq.ford.stones'), READY); book2.handIn('mq.ford.stones');
+assert.equal(book2.statusOf('mq.ford.stones'), DONE); assert.ok(ev.includes('quest:done:mq.river.road') && ev.includes('quest:done:mq.ford.stones'), ev.join());
 assert.equal(book2.lastReward.items.length, 0);
 const marks = [[], []]; book2.giverMarks(marks[0], marks[1]); assert.ok(marks[0].every(Boolean) && marks[1].every(Boolean));
 assert.equal(book2.entityFor('rook'), 'rook'); assert.equal(book2.inspect('nobody'), null);

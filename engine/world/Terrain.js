@@ -28,6 +28,8 @@ function typeTables(look) {
   return { names, floor };
 }
 
+import { LookBaker, assertBlendM } from './lookBake.js';
+
 function now() {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
@@ -97,6 +99,7 @@ export class Terrain {
     // hard-coded - architecture.md 14.4 item 10 "recipe constants arrive
     // through TLOOK/uniforms from the registry", same principle in JS).
     this._forestTypeId = this.typeNames.indexOf('forest');
+    this.groundLook = null; this.farLook = null; // ENV-02c: LookBaker + far RG8 look bytes (null = feature off, bytes unchanged)
     this._canopyM = (recipe.recipe && recipe.recipe.forest && recipe.recipe.forest.canopy) || 0;
 
     // Chunk geometry (AUD-04: the dormant 3x3 resident ring was removed; the near band is the only near truth).
@@ -112,6 +115,8 @@ export class Terrain {
     // Reused output object for `groundNormalAt` central-difference reads of
     // `groundAt` (rule 9: no per-call allocation on the query path).
     this._groundNormalScratch = { x: 0, y: 0, z: 1 };
+    // BEAST-ALLOC-02 (arch 38.61): caller-owned *Out forms write doubles into Float64Arrays (no boxed returns).
+    this._gOut4 = new Float64Array(4);
   }
 
   /** The recipe's edit layer is module-global: re-bind THIS terrain's layer before any call into the recipe (two Terrains, one recipe). */
@@ -233,6 +238,7 @@ export class Terrain {
       height: G.height, type: G.type, hDraw, minH, maxH,
       version: (this.near ? this.near.version : 0) + 1,
     };
+    if (this.groundLook) { this.near.look = new Uint8Array(w * h * 2); this._fillNearLook(this.near); }
     this.nearReady = true;
   }
 
@@ -252,6 +258,27 @@ export class Terrain {
   }
 
   /**
+   * ENV-02c (arch 38.63): turns the per-texel look bytes on (cfg = World opt `groundLook`) or off (null). Call before the bakes; an
+   * already baked far grid / near band is filled at once. `cfg.blendM` (smallest biome blend, m), when given, must be >= 3 far texels.
+   */
+  setGroundLook(cfg) {
+    if (!cfg) { this.groundLook = null; this.farLook = null; if (this.near) delete this.near.look; return; }
+    if (cfg.blendM !== undefined) assertBlendM(cfg.blendM, this.mapCell);
+    this.groundLook = new LookBaker(cfg, this.util);
+    this.farLook = new Uint8Array(this.mapW * this.mapH * 2);
+    if (this.farReady) this._fillFarLook();
+    if (this.nearReady) { const g = this.near; g.look = new Uint8Array(g.w * g.h * 2); this._fillNearLook(g); g.version++; }
+  }
+  _fillFarLook() {
+    const L = this.groundLook, w = this.mapW, c = this.mapCell;
+    for (let j = 0; j < this.mapH; j++) for (let i = 0; i < w; i++) L.bakeCell(this.mapX0 + (i + 0.5) * c, this.mapY0 + (j + 0.5) * c, this.farType[i + j * w], this.farLook, i + j * w);
+  }
+  _fillNearLook(g) {
+    const L = this.groundLook, c = g.cell;
+    for (let j = 0; j < g.h; j++) for (let i = 0; i < g.w; i++) L.bakeCell(g.x0 + (i + 0.5) * c, g.y0 + (j + 0.5) * c, g.type[i + j * g.w], g.look, i + j * g.w);
+  }
+
+  /**
    * OB109-B1 (38.58): the back-band state of `beginNearBand`, WITHOUT touching `_bb` / `near`. `src` = band to copy the
    * overlap from (`terrain.near`, a cached bundle's near, or null = bake every cell; per-cell pure so bytes are identical).
    * Drive it with `stepBandState`, finish with `finishBandState`.
@@ -262,6 +289,7 @@ export class Terrain {
     const w = cw * n, h = ch * n, x0 = cx0 * this.chunkSize, y0 = cy0 * this.chunkSize;
     const HC = cur ? cur.height.constructor : Float32Array, TC = cur ? cur.type.constructor : Uint8Array, DC = cur ? cur.hDraw.constructor : Float32Array;
     const b = { x0, y0, w, h, cell: this.nearCell, height: new HC(w * h), type: new TC(w * h), hDraw: new DC(w * h), minH: 0, maxH: 0, version: 0 };
+    if (this.groundLook) b.look = new Uint8Array(w * h * 2); // ENV-02c: (lo | hi << 4, w_hi) per texel
     // overlap in new-band cell coords [ox0,ox1) x [oy0,oy1)
     let ox0 = 0, ox1 = 0, oy0 = 0, oy1 = 0;
     // AUD-31: minH/maxH accumulated while copying/baking (same formula swapNearBand used in its own full pass)
@@ -308,6 +336,10 @@ export class Terrain {
         b.height.set(cur.height.subarray(s0, s0 + len), d0);
         b.type.set(cur.type.subarray(s0, s0 + len), d0);
         b.hDraw.set(cur.hDraw.subarray(s0, s0 + len), d0);
+        if (b.look) {
+          if (cur.look) b.look.set(cur.look.subarray(s0 * 2, (s0 + len) * 2), d0 * 2);
+          else { const L = this.groundLook, ey = b.y0 + (j + 0.5) * cell; for (let q = 0; q < len; q++) L.bakeCell(b.x0 + (st.ox0 + q + 0.5) * cell, ey, b.type[d0 + q], b.look, d0 + q); } // source baked before the look was on
+        }
         let mn = st.mn, mx = st.mx;
         for (let i = d0, e = d0 + len; i < e; i++) { const v = b.height[i] + (b.type[i] === fid ? can : 0); if (v < mn) mn = v; if (v > mx) mx = v; }
         st.mn = mn; st.mx = mx;
@@ -336,6 +368,7 @@ export class Terrain {
           const hv = G.height[i];
           b.height[o + i] = hv; b.type[o + i] = G.type[i];
           b.hDraw[o + i] = hv + (G.type[i] === forestId ? canopy : 0);
+          if (b.look) this.groundLook.bakeCell(b.x0 + (cs + i + 0.5) * cell, b.y0 + (r + 0.5) * cell, G.type[i], b.look, o + i);
           const v = b.height[o + i] + (b.type[o + i] === st.fid ? st.canopy : 0);
           if (v < st.mn) st.mn = v; if (v > st.mx) st.mx = v;
         }
@@ -424,6 +457,7 @@ export class Terrain {
               g.height[k] = util.heightAt(x, y);
             }
             g.type[k] = t;
+            if (g.look) this.groundLook.bakeCell(x, y, t, g.look, k);
             const hv = g.height[k] + (t === forestId ? canopy : 0); // float32 height, double sum like bakeNearBand
             g.hDraw[k] = hv;
             if (hv < minH) minH = hv;
@@ -451,6 +485,7 @@ export class Terrain {
             const t = util.typeAt(x, y);
             if (rowH && i >= hi0 && i <= hi1) this.farH[k] = util.heightAt(x, y);
             this.farType[k] = t;
+            if (this.farLook) this.groundLook.bakeCell(x, y, t, this.farLook, k);
             const hv = this.farH[k] + (t === forestId ? canopy : 0);
             this.farHDraw[k] = hv;
             if (hv > this.farMaxH) this.farMaxH = hv;
@@ -505,6 +540,50 @@ export class Terrain {
     return this.heightAt(x, y);
   }
 
+  /**
+   * Buffer core of `groundAt` (BEAST-ALLOC-02, arch 38.61 2b): reads b[0]=x, b[1]=y, writes b[2]=height. Same value bit for bit as
+   * `groundAt`: the near-band bilinear is the recipe's `util.gridHeight` formula inlined (design contract: bilinear on a baked grid,
+   * cell centres at +0.5); outside the band the analytic `heightAt`. No double args / boxed returns cross the call.
+   */
+  _groundCore(b) {
+    const x = b[0], y = b[1];
+    if (this.nearReady) {
+      const G = this.near;
+      const fx = (x - (G.x0 || 0)) / G.cell - 0.5, fy = (y - (G.y0 || 0)) / G.cell - 0.5;
+      const i = Math.floor(fx), j = Math.floor(fy);
+      if (!(i < 0 || j < 0 || i >= G.w - 1 || j >= G.h - 1)) {
+        const u = fx - i, v = fy - j, W = G.w, H0 = G.height;
+        const a = H0[i + j * W], c0 = H0[i + 1 + j * W], c = H0[i + (j + 1) * W], d = H0[i + 1 + (j + 1) * W];
+        b[2] = a + (c0 - a) * u + (c - a) * v + (a - c0 - c + d) * u * v;
+        return;
+      }
+    }
+    b[2] = this.heightAt(x, y);
+  }
+
+  /** `groundAt` for caller buffer `io`: in io[0]=x, io[1]=y; out io[3]=height (io[2] is left alone). */
+  groundAtBuf(io) {
+    const t = this._gOut4;
+    t[0] = io[0]; t[1] = io[1];
+    this._groundCore(t);
+    io[3] = t[2];
+  }
+
+  /** `groundNormalAt` for caller buffer `io`: in io[0]=x, io[1]=y; out io[4..6]=(nx, ny, nz); bit-identical to it. */
+  groundNormalAtBuf(io) {
+    const e = 2, t = this._gOut4, x = io[0], y = io[1];
+    t[0] = x - e; t[1] = y; this._groundCore(t); const hL = t[2];
+    t[0] = x + e; t[1] = y; this._groundCore(t); const hR = t[2];
+    t[0] = x; t[1] = y - e; this._groundCore(t); const hD = t[2];
+    t[0] = x; t[1] = y + e; this._groundCore(t); const hU = t[2];
+    const dhdx = (hR - hL) / (2 * e);
+    const dhdy = (hU - hD) / (2 * e);
+    const len = Math.sqrt(dhdx * dhdx + dhdy * dhdy + 1);
+    io[4] = -dhdx / len;
+    io[5] = -dhdy / len;
+    io[6] = 1 / len;
+  }
+
   /** `groundAt`'s surface normal via a 2 m central difference, written into the caller-owned `out` (no allocation - mirrors `normalAt`). */
   groundNormalAt(x, y, out) {
     const e = 2;
@@ -538,6 +617,7 @@ export class Terrain {
     const G = this.util.generate();
     this.farH.set(G.height);
     this.farType.set(G.type);
+    if (this.groundLook) this._fillFarLook();
     this._bakeRow = this.mapH;
     this._bakeCol = 0;
     this._finishBake();
@@ -567,6 +647,7 @@ export class Terrain {
         const x = this.mapX0 + (col + 0.5) * cell;
         this.farH[rowBase + col] = this.util.heightAt(x, y);
         this.farType[rowBase + col] = this.util.typeAt(x, y);
+        if (this.farLook) this.groundLook.bakeCell(x, y, this.farType[rowBase + col], this.farLook, rowBase + col);
         col++;
         if ((col & (BAKE_CHECK_COLS - 1)) === 0 && now() - t0 >= msBudget) {
           this._bakeCol = col;
@@ -614,6 +695,7 @@ export class Terrain {
       h ^= this.farType[i];
       h = Math.imul(h, 0x01000193);
     }
+    if (this.farLook) for (let i = 0; i < this.farLook.length; i++) { h ^= this.farLook[i]; h = Math.imul(h, 0x01000193); } // ENV-02c: only with looks on
     return h >>> 0;
   }
 }

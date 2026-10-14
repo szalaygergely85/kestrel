@@ -353,6 +353,19 @@ export async function saveTerrainEdits(state, opts = {}) {
  * (picker handle remembered in `state.handle`, else a download). Clears `state.dirty`.
  * @param {{gm:Object, key:string, handle:Object|null, dirty:boolean}} state `gm` = grassBrush.wrapLayer(...)
  */
+/** ED-FOLIAGE-04: writes content/terrain/<key>.decorPaint.json (`text` = grassBrush.decorPaintText). */
+export async function saveDecorPaint(state, text, opts = {}) {
+  const name = `${state.key}.decorPaint.json`;
+  const canPicker = typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function' && !opts.forceDownload;
+  if (canPicker) {
+    if (!state.handle) state.handle = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: 'Kestrel decor paint', accept: { 'application/json': ['.json'] } }] });
+    const writable = await state.handle.createWritable();
+    await writable.write(text);
+    await writable.close();
+  } else downloadFallback(text, name);
+  state.dirty = false;
+}
+
 export async function saveGrassMask(state, opts = {}) {
   const text = grassMaskText(state.gm, state.key);
   const name = `${state.key}.grassMask.json`;

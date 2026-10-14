@@ -32,6 +32,8 @@ export function validateGiverQuest(def) {
   }
   for (const o of def.objectives) if (def.giver && o.when.type === 'deliver' && o.when.to !== (def.giver.turnIn || def.giver.npc)) throw new Error('quest: deliver.to must be the hand-in npc (giver.turnIn or giver.npc)');
   if (def.abandonable !== undefined && typeof def.abandonable !== 'boolean') throw new Error('quest: invalid abandonable');
+  if (def.objectGiver !== undefined && typeof def.objectGiver !== 'boolean') throw new Error('quest: invalid objectGiver');
+  if (def.objectGiver === true && (!def.giver || !def.giver.turnIn || def.giver.turnIn === def.giver.npc)) throw new Error('quest: objectGiver needs giver.turnIn = a character (the "?" sits at a character)'); // D-087
   if (def.returnText !== undefined && typeof def.returnText !== 'string') throw new Error('quest: invalid returnText');
   if (def.giver) for (const k of ['entity', 'turnInEntity', 'text', 'turnInText', 'refuseText']) if (def.giver[k] !== undefined && (typeof def.giver[k] !== 'string' || !def.giver[k])) throw new Error('quest: invalid giver.' + k); // QL-04: object givers (inspect props)
   if (def.giveOnAccept !== undefined) {
@@ -55,6 +57,8 @@ export function validateGiverQuest(def) {
 function deepFreeze(o) { if (o && typeof o === 'object') { for (const k of Object.keys(o)) deepFreeze(o[k]); Object.freeze(o); } return o; }
 
 /** saved = {quest: m1 state|null, quests: {id:{quest,accepted,handedIn}}|null}; toSave() returns the same shape. */
+/** OB-155: static part of the main/side rule: `main: true`, `kind: 'main'` or an `mq.*` id (the chain-waits-on flag is checked by book.isMain). */
+export const isMainDef = (d) => !!d && (d.main === true || d.kind === 'main' || (typeof d.id === 'string' && d.id.startsWith('mq.')));
 export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   validateQuestDefinition(mainDef);
   const entries = [{ def: mainDef, giver: null, state: createQuest(mainDef, saved?.quest || null), accepted: true, handedIn: false, seq: 0, prev: ACTIVE }];
@@ -207,7 +211,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     const i = byId.get(id);
     if (i === undefined || i === 0 || statusOf(i) !== READY) return null;
     const e = entries[i];
-    // EQ-13: hand-in needs the item in the pack (requireItem, kept) and the gear worn (requireEquipped; packOps.equipped(id) is set by the game)
+    // EQ-13: hand-in needs the item in the pack (requireItem, consumed at hand-in) and the gear worn (requireEquipped; packOps.equipped(id) is set by the game)
     if (e.def.requireItem && (!book.packOps || book.packOps.count(e.def.requireItem) < 1)) return null;
     if (e.def.requireEquipped && (!book.packOps || !book.packOps.equipped || !e.def.requireEquipped.every(id => book.packOps.equipped(id)))) return null;
     const dl = e.def.objectives.filter(o => o.when.type === 'deliver').map(o => o.when);
@@ -216,6 +220,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
       for (const w of dl) if (book.packOps.count(w.id) < w.count) return null;
       for (const w of dl) { book.packOps.remove(w.id, w.count); book.feed({ type: 'item:count', id: w.id, n: Math.max(0, book.packOps.count(w.id)) }); }
     }
+    if (e.def.requireItem && book.packOps.remove) { book.packOps.remove(e.def.requireItem, 1); book.feed({ type: 'item:count', id: e.def.requireItem, n: Math.max(0, book.packOps.count(e.def.requireItem)) }); } // OB-155p: the item is consumed at hand-in
     e.handedIn = true; book.version++;
     const reward = e.def.reward ? deepFreeze(structuredClone(e.def.reward)) : NO_REWARD;
     book.lastReward = reward;
@@ -274,22 +279,27 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   /**
    * QL-04: the player inspects object `objectId` (no dialogue). Accepts the first AVAILABLE quest it gives, else hands in the
    * first READY quest whose hand-in is this object. Returns {action:'accept'|'handin'|'refuse', id, text, reward?} or null
-   * (nothing to do here). 'refuse' = a quest of this object is active but its items are not in the pack.
+   * (nothing to do here). 'offer' = an objectGiver quest is AVAILABLE (not accepted; the UI asks Accept/Exit). 'refuse' = a quest of this object is active but its items are not in the pack.
    */
   book.inspect = function inspect(objectId) {
+    // OB-155o: READY hand-ins first (an AVAILABLE offer or an ACTIVE quest of the same object never blocks one), then accept, then refuse.
+    let refuse = null;
     for (let i = 1; i < n; i++) {
       const e = entries[i];
-      if (e.giver === objectId && statusOf(i) === AVAILABLE && book.accept(e.def.id)) return { action: 'accept', id: e.def.id, text: e.def.giver.text || '' };
+      if (e.turnIn !== objectId || statusOf(i) !== READY) continue;
+      const reward = book.handIn(e.def.id);
+      if (reward) return { action: 'handin', id: e.def.id, text: e.def.giver.turnInText || '', reward };
+      if (!refuse) refuse = { action: 'refuse', id: e.def.id, text: e.def.giver.refuseText || '' }; // items left the pack since
     }
     for (let i = 1; i < n; i++) {
-      const e = entries[i], s = statusOf(i);
-      if (e.turnIn !== objectId) continue;
-      if (s === READY) {
-        const reward = book.handIn(e.def.id);
-        if (reward) return { action: 'handin', id: e.def.id, text: e.def.giver.turnInText || '', reward };
-        return { action: 'refuse', id: e.def.id, text: e.def.giver.refuseText || '' }; // items left the pack since
-      }
-      if (s === ACTIVE) return { action: 'refuse', id: e.def.id, text: e.def.giver.refuseText || '' };
+      const e = entries[i];
+      if (e.giver === objectId && statusOf(i) === AVAILABLE && e.def.objectGiver === true) return { action: 'offer', id: e.def.id, text: e.def.giver.text || '' }; // OB-156/D-087: an object giver offers Accept/Exit (the caller opens the dialogue; nothing is accepted here)
+      if (e.giver === objectId && statusOf(i) === AVAILABLE && book.accept(e.def.id)) return { action: 'accept', id: e.def.id, text: e.def.giver.text || '' };
+    }
+    if (refuse) return refuse;
+    for (let i = 1; i < n; i++) {
+      const e = entries[i];
+      if (e.turnIn === objectId && statusOf(i) === ACTIVE) return { action: 'refuse', id: e.def.id, text: e.def.giver.refuseText || '' };
     }
     return null;
   };
@@ -297,7 +307,11 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   // (`quest.<id>.done` as a flag objective, e.g. burl.boars / tower.blade); everything else is a side quest.
   const mainDone = new Set();
   for (const o of entries[0].def.objectives) if (o.when && o.when.type === 'flag' && typeof o.when.id === 'string') mainDone.add(o.when.id);
-  book.isMain = (i) => entries[i].def.main === true || mainDone.has('quest.' + entries[i].def.id + '.done');
+  // OB-155k: transitive - a quest that a main quest `requires` (tower.blade -> burl.boars) is main too.
+  const mainSet = new Set();
+  for (let i = 0; i < n; i++) if (i === 0 || isMainDef(entries[i].def) || mainDone.has('quest.' + entries[i].def.id + '.done')) mainSet.add(i);
+  for (let grew = true; grew;) { grew = false; for (const i of [...mainSet]) for (const r of entries[i].def.requires || []) { const q = r.quest !== undefined ? byId.get(r.quest) : undefined; if (q !== undefined && !mainSet.has(q)) { mainSet.add(q); grew = true; } } }
+  book.isMain = (i) => mainSet.has(i); // OB-155: ONE rule (questLog uses it too)
   /** Giver marks: `outAvail` ('!') / `outReady` ('?') get the main-chain quests; with the optional `sideAvail` / `sideReady` the side
    *  quests go there instead (OB-125: a different colour), else everything goes to the first two (old behaviour). */
   book.giverMarks = function giverMarks(outAvail, outReady, sideAvail, sideReady) {
@@ -310,12 +324,21 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     outAvail.length = a; outReady.length = r;
     if (sideAvail) { sideAvail.length = sa; sideReady.length = sr; }
   };
-  /** OB-124b: main-chain step marks (data: objective.mark = {start?, end?}). The CURRENT m1 step shows a gold '!' at `start` while it
-   *  has one (step available), else a gold '?' at `end` (step active / where it completes). Appends to the main lists; none when done. */
-  book.chainMarks = function chainMarks(outAvail, outReady) {
+  /** OB-124b / OB-155i: main-chain step marks (data: objective.mark = {start?, taken?}). The CURRENT m1 step shows a gold '!' at `start`
+   *  until the giver handed it over (flag `mark.taken`). No '?' here: a waypoint is not a hand-in (rule OB-156); waypoints go on the compass/HUD. */
+  book.chainMarks = function chainMarks(outAvail) {
     const st = entries[0].state, o = entries[0].def.objectives[st.completed.length];
-    const m = o && o.mark; if (!m) return;
-    if (m.start) outAvail[outAvail.length] = m.start; else if (m.end) outReady[outReady.length] = m.end;
+    const m = o && o.mark; if (!m || !m.start) return;
+    if (m.taken && entries[0].state.flags[m.taken]) return;
+    outAvail[outAvail.length] = m.start;
+  };
+  /** OB-155j: ONE marker per entity. Fills the four lists (gold/blue x '!'/'?') from giverMarks + chainMarks, then keeps each entity only
+   *  in its best list: gold '?' > blue '?' > gold '!' > blue '!' (a return beats an offer). */
+  const markSeen = new Set(); // reused per call (no per-frame alloc)
+  book.markLists = function markLists(gA, gR, sA, sR) {
+    book.giverMarks(gA, gR, sA, sR); book.chainMarks(gA);
+    const seen = markSeen; seen.clear();
+    for (const list of [gR, sR, gA, sA]) { let k = 0; for (let j = 0; j < list.length; j++) { const e = list[j]; if (!seen.has(e)) { seen.add(e); list[k++] = e; } } list.length = k; }
   };
   /** QL-03: index of the tracked giver quest: the player's pick (main flag `ui.tracked`, saved with the main quest) while it is active/ready, else the most recently accepted one, else -1. */
   book.tracked = function tracked() {

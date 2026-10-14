@@ -14,14 +14,14 @@
 // matrix the single draw and the collider bake use); the twin and WGSL vertex stages renormalise normals, so no shader change.
 // The group's cull radius R uses the largest member scale (conservative). A scale change on a member rebuilds the set.
 //
-// Not grouped (stay single `addMeshStructures` draws): meshes with a masked range, > MAX_VOX_PARTS ranges or thin one-sided geometry
+// Not grouped (stay single `addMeshStructures` draws): meshes with a masked range, > 8 ranges or thin one-sided geometry
 // (grass cards; see `meshIsSolid`: the instanced path back-face culls), a mesh with only one
 // placement, and anything past MAX_GROUPED_INSTANCES. The shadow feed never uses groups (MESH-SHADOW-02 budget).
 //
 // Invalidation: the set is rebuilt when world.structures / its length / structVersion / the material resolver changes,
 // and when any member's frame or object identity differs from the snapshot taken at build time (checked per feed).
 // Zero allocation per frame after a build.
-import { MAX_VOX_PARTS } from '../voxel/VoxelModel.js';
+const MAX_GROUP_RANGES = 8; // pinned (was MAX_VOX_PARTS = 8): 9-16 range meshes stay single draws
 import { addMeshStructures, placementMatrix12, meshObjectId, meshFeedStats, DRAW_FLAG_ONE_PART, DRAW_FLAG_NO_CULL, DRAW_TAIL_RESERVE } from './DrawList.js';
 import { INSTANCE_STRIDE, INST_OBJECT_ID, INST_FLAGS, makeInstanceGroup, createInstanceParts, groupRadius, touchInstances } from './instances.js';
 import { classifyAABB, CULL_OUT } from './culling.js';
@@ -85,7 +85,7 @@ export function meshIsSolid(mesh) {
 
 /** @param {any} mesh @returns {boolean} meshes the instanced path can draw as one identity part set (MESH-INST-02: masked and open meshes too). */
 function meshGroupable(mesh) {
-  return mesh.layout === 'static' && !!mesh.ranges && mesh.ranges.length <= MAX_VOX_PARTS && mesh.ranges.length >= 1;
+  return mesh.layout === 'static' && !!mesh.ranges && mesh.ranges.length <= MAX_GROUP_RANGES && mesh.ranges.length >= 1;
 }
 /** @param {any} mesh @returns {boolean} some range carries an alpha mask (needs per-range draws, no ONE_PART) */
 function meshHasMask(mesh) {

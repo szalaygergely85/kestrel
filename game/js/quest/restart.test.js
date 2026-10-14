@@ -11,6 +11,7 @@
 // independent fresh `World.load` - i.e. none of this story's live-world
 // mutation (`quest.end` and the boulder) ever leaked
 // into the shared level def/legend objects other loads read from.
+const normState = (s) => s; // QFIX-S6b: exact again (saved ground-snapped z kept when x/y unchanged)
 import {
   World, serialize, deserialize, validateBehaviours,
   updateTriggers,
@@ -126,7 +127,7 @@ ok('5c: initialState has no grate dynamics',
 // 6. serialize(deserialize(initialState)) deep-equals initialState.
 // ---------------------------------------------------------------------------
 const roundTripped = serialize(deserialize(initialState, assets));
-ok('6a: serialize(deserialize(initialState)) deep-equals initialState', deepEqual(roundTripped, initialState));
+ok('6a: serialize(deserialize(initialState)) deep-equals initialState', deepEqual(normState(roundTripped), normState(initialState)));
 
 // ---------------------------------------------------------------------------
 // 7. A world rebuilt from `initialState` has the SAME tower packed.geom as

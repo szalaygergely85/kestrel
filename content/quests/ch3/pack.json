@@ -28,7 +28,9 @@
           "step": "north"
         }
       ],
-      "abandonable": false
+      "abandonable": false,
+      "site": "hesk",
+      "returnText": "Tell Hesk you found the smoke"
     },
     {
       "id": "mq.ow.fence",
@@ -39,7 +41,13 @@
           "template": "kill",
           "params": {
             "kind": "wolf",
-"ids": ["wolf1","wolf2","wolf3","wolf4","wolf5"],
+            "ids": [
+              "wolf1",
+              "wolf2",
+              "wolf3",
+              "wolf4",
+              "wolf5"
+            ],
             "count": 5
           },
           "objText": "Drive the wolves from the goose pen",
@@ -52,7 +60,9 @@
           "step": "explore"
         }
       ],
-      "abandonable": false
+      "abandonable": false,
+      "site": "hesk",
+      "returnText": "Tell Hesk the wolves are gone"
     },
     {
       "id": "mq.ow.names",
@@ -168,7 +178,7 @@
       "id": "mq.ow.board",
       "title": "The Board of the Dead",
       "main": true,
-      "site": "owBoard",
+      "site": "hesk",
       "band": 6,
       "objectives": [
         {
@@ -219,7 +229,8 @@
           "You leave the knot where it is. The line runs west."
         ]
       },
-      "abandonable": false
+      "abandonable": false,
+      "returnText": "Tell Hesk what the board says"
     },
     {
       "id": "sq.hw.piers",
@@ -263,12 +274,15 @@
         "done": [
           "The stone stands. The river runs where the bridge was."
         ]
-      }
+      },
+      "turnIn": "dorrin",
+      "objectGiver": true,
+      "returnText": "Tell Dorrin what the stone says"
     },
     {
       "id": "sq.fc.sign",
       "title": "The West Arm",
-      "site": "post",
+      "site": "postkeeper",
       "steps": [
         {
           "template": "fetch",
@@ -290,34 +304,24 @@
           }
         ]
       },
-      "returnText": "Bring the sign arm to the ford post",
-      "lines": {
-        "offer": [
-          "A tag on the basket: THE WEST ARM OF THE SIGN FELL.",
-          "IN THE SHALLOWS BY THE FORD. BRING IT BACK."
-        ],
-        "active": [
-          "The tag: WEST ARM. IN THE SHALLOWS."
-        ],
-        "ready": [
-          "You lay the arm in the basket. The wood is river-black.",
-          "Under it, tied with twine: ten arrows."
-        ],
-        "done": [
-          "The tag: WEST POINTS WEST AGAIN. THANK YOU."
-        ]
-      }
+      "returnText": "Bring the sign arm to the post-keeper"
     },
     {
       "id": "sq.ow.wolves",
       "title": "Wolf Bounty",
-      "site": "owBoard",
+      "site": "hesk",
       "steps": [
         {
           "template": "kill",
           "params": {
             "kind": "wolf",
-"ids": ["wolf1","wolf2","wolf3","wolf4","wolf5"],
+            "ids": [
+              "wolf1",
+              "wolf2",
+              "wolf3",
+              "wolf4",
+              "wolf5"
+            ],
             "count": 3
           },
           "objText": "Drive three wolves from the goose pen",
@@ -339,32 +343,21 @@
           }
         ]
       },
-      "lines": {
-        "offer": [
-          "A new nail, over the Crown notices. A fresh hand:",
-          "WOLVES AT THE GEESE AGAIN. THREE FEWER, FAIR PAY."
-        ],
-        "active": [
-          "The note: WOLVES. GOOSE PEN. THREE."
-        ],
-        "ready": [
-          "Under the note now, tied with twine: arrows, a red vial."
-        ],
-        "done": [
-          "Someone has written under it: GEESE COUNTED. ALL HERE."
-        ]
-      }
+      "returnText": "Back to Hesk"
     },
     {
       "id": "sq.ow.boars",
       "title": "Boar Bounty",
-      "site": "owBoard",
+      "site": "hesk",
       "steps": [
         {
           "template": "kill",
           "params": {
             "kind": "boar",
-"ids": ["boarF1","boarF2"],
+            "ids": [
+              "boarF1",
+              "boarF2"
+            ],
             "count": 2
           },
           "objText": "Drive off two boars on the west bank",
@@ -377,32 +370,18 @@
       "reward": {
         "table": "gear.t2"
       },
-      "lines": {
-        "offer": [
-          "Another note, same hand, nailed over a FELL notice:",
-          "TWO BOARS ROOTING ON THE WEST BANK. MIND THE TUSKS."
-        ],
-        "active": [
-          "The note: TWO BOARS. WEST BANK. TUSKS."
-        ],
-        "ready": [
-          "Under the note, wrapped in sacking: old gear, oiled."
-        ],
-        "done": [
-          "Under the note, a new line: THE BANK IS QUIET. THANKS."
-        ]
-      }
+      "returnText": "Back to Hesk"
     },
     {
       "id": "sq.ow.parcel",
       "title": "Parcel for the Forge",
-      "site": "owBoard",
+      "site": "hesk",
       "steps": [
         {
           "template": "deliver",
           "params": {
             "item": "parcel",
-            "to": "owForge"
+            "to": "dorrin"
           },
           "objText": "Take the parcel to the forge",
           "journal": "A parcel waits for the forge. Carry it there."
@@ -419,27 +398,12 @@
           }
         ]
       },
-      "lines": {
-        "offer": [
-          "A parcel hangs from a nail, wrapped in oilcloth.",
-          "Tag: FOR THE FORGE. LEAVE IT BY THE DOOR."
-        ],
-        "active": [
-          "The tag: FOR THE FORGE. BY THE DOOR."
-        ],
-        "ready": [
-          "You set the parcel by the forge door. It clinks.",
-          "On the step, waiting: two red vials."
-        ],
-        "done": [
-          "The parcel tag is gone. The nail is bare."
-        ]
-      }
+      "returnText": "Take it to Dorrin"
     },
     {
       "id": "sq.ow.ford",
       "title": "Scout the Far Bank",
-      "site": "pierStone",
+      "site": "dorrin",
       "steps": [
         {
           "template": "explore",
@@ -463,27 +427,12 @@
           }
         ]
       },
-      "lines": {
-        "offer": [
-          "Across the water, the other half of the old pier.",
-          "Someone pulled the bridge from that side. Go and see."
-        ],
-        "active": [
-          "The far pier. Across the ford, on the west bank."
-        ],
-        "ready": [
-          "The west pier: rope grooves, worn deep. A crossing.",
-          "In a dry crack of the stone: fifteen arrows, waxed."
-        ],
-        "done": [
-          "Two piers, one river. Neither side built it back."
-        ]
-      }
+      "returnText": "Back to Dorrin"
     },
     {
       "id": "sq.ow.barley",
       "title": "Barley Sheaf",
-      "site": "owBoard",
+      "site": "hesk",
       "steps": [
         {
           "template": "fetch",
@@ -508,12 +457,13 @@
             "n": 10
           }
         ]
-      }
+      },
+      "returnText": "Back to Hesk"
     },
     {
       "id": "sq.ow.range",
       "title": "Track Targets",
-      "site": "owBoard",
+      "site": "hesk",
       "objectives": [
         {
           "id": "t1",
@@ -557,16 +507,16 @@
           }
         ]
       },
-      "returnText": "Back to the board"
+      "returnText": "Back to Hesk"
     },
     {
       "id": "sq.ow.raid",
       "title": "Defend the Farm",
-      "site": "owBoard",
+      "site": "hesk",
       "objectives": [
         {
           "id": "defend",
-          "text": "Defend the goose pen at night",
+          "text": "Hold the goose pen at night",
           "when": {
             "type": "flag",
             "id": "life.raid.gooseFarm.defended",
@@ -590,22 +540,7 @@
           }
         ]
       },
-      "returnText": "Back to the board",
-      "lines": {
-        "offer": [
-          "A new note, the nail driven deep. The same caps hand:",
-          "WOLVES COME FOR THE GEESE AFTER DARK. STAND AT THE PEN."
-        ],
-        "active": [
-          "The folded note: AFTER DARK. GOOSE PEN. THE PACK."
-        ],
-        "ready": [
-          "On the nail now, tied with twine: two red vials, arrows."
-        ],
-        "done": [
-          "Chalk under the nail: GEESE COUNTED. ALL HERE. AGAIN."
-        ]
-      }
+      "returnText": "Back to Hesk"
     }
   ]
 }

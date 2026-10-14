@@ -144,6 +144,13 @@
     .dock-tab.active { color: var(--ed-cyan); }
     .dock-panel { display: none; flex-direction: column; min-height: 0; flex: 1 1 auto; }
     .dock-panel.active { display: flex; }
+    /* ED-QUEST-02 quest panel */
+    #quests-panel { overflow: auto; font-size: 11px; gap: 4px; }
+    .q-bar { display: flex; gap: 4px; } .q-bar input { flex: 1; }
+    .q-list { max-height: 30%; overflow: auto; } .q-row { cursor: pointer; padding: 2px 3px; } .q-row.active { background: var(--ed-panel); outline: 1px solid var(--ed-cyan); }
+    .q-chip { display: inline-block; width: 3.2em; text-align: center; margin-right: 4px; color: #0D1117; } .q-chip.blue { background: #58A6FF; } .q-chip.gold { background: #E3B341; }
+    .q-meta { color: var(--ed-fg-dim); } .q-flow { white-space: pre-wrap; margin: 4px 0; } .q-field { display: block; margin: 3px 0; } .q-field span { display: block; color: var(--ed-fg-dim); }
+    .q-field input, .q-field textarea { width: 100%; box-sizing: border-box; } .q-obj { border-top: 1px solid var(--ed-panel); padding-top: 3px; }
 
     /* US-067: Assets tab list */
     #assets-list { flex: 1 1 auto; overflow-y: auto; padding: 4px; }
@@ -297,6 +304,15 @@
     #grass-toolbar { display: none; align-items: center; gap: 6px; flex-wrap: wrap; }
     #grass-toolbar.on { display: flex; }
     #grass-toolbar .gb-op.active { outline: 1px solid var(--ed-fg-hi); }
+    #foliage-toolbar { display: none; align-items: center; gap: 6px; flex-wrap: wrap; }
+    #foliage-toolbar.on { display: flex; }
+    #foliage-toolbar .fl-op.active { outline: 1px solid var(--ed-fg-hi); }
+    #foliage-toolbar label { font-size: 11px; color: var(--ed-fg-dim); display: inline-flex; align-items: center; gap: 4px; }
+    #foliage-toolbar input[type=range] { width: 90px; }
+    #fl-meter { background: linear-gradient(90deg, var(--fl-c) var(--fill, 0%), transparent var(--fill, 0%)); border: 1px solid var(--fl-c); --fl-c: #3fa34d; }
+    #fl-meter[data-level=amber] { --fl-c: #d9a21b; }
+    #fl-meter[data-level=red] { --fl-c: #d9453b; }
+    #foliage-toolbar input[type=number] { width: 60px; }
     #grass-toolbar label { font-size: 11px; color: var(--ed-fg-dim); display: inline-flex; align-items: center; gap: 4px; }
     #grass-toolbar input[type=range] { width: 90px; }
     #terrain-toolbar .tb-op.active { outline: 1px solid var(--ed-fg-hi); }
@@ -444,6 +460,7 @@
         <button type="button" class="ed-btn tool-mode-btn" data-mode="scale" title="Scale tool (LMB-drag)">&#8596; Scale</button>
         <button type="button" class="ed-btn tool-mode-btn" data-mode="terrain" title="Terrain brush (LMB-drag paints a stroke; Ctrl+Z undoes it)">^ Terrain</button>
         <button type="button" class="ed-btn tool-mode-btn" data-mode="grass" title="Grass mask brush (LMB-drag paints/erases where the grass carpet grows; Ctrl+Z undoes it)">&quot; Grass</button>
+        <button type="button" class="ed-btn tool-mode-btn" data-mode="foliage" title="Foliage brush (LMB-drag paints/erases tree and rock placements; Shift erases any mesh; Ctrl+Z undoes the stroke)">T Foliage</button>
       </div>
       <button type="button" id="snap-btn" class="ed-btn" title="Cycle snap ([ ])"># Snap 0.25m</button>
       <div class="ed-sep"></div>
@@ -462,6 +479,7 @@
           <div id="left-dock-tabs">
             <button type="button" class="dock-tab active" data-dock-tab="tree">Scene Tree</button>
             <button type="button" class="dock-tab" data-dock-tab="assets">Assets</button>
+            <button type="button" class="dock-tab" data-dock-tab="quests">Quests</button>
           </div>
           <button type="button" id="left-dock-collapse" title="Collapse">-</button>
         </div>
@@ -509,6 +527,8 @@
           </div>
           <div id="assets-list">(loading...)</div>
         </div>
+        <!-- ED-QUEST-02: Quests tab (questPanel.js mounts into it on first open) -->
+        <div id="quests-panel" class="dock-panel"></div>
       </div>
 
       <!-- VIEWPORT -->
@@ -540,6 +560,23 @@
           <label>Strength <input type="range" id="gb-strength" min="1" max="100" step="1" value="40" /><span>40%</span></label>
           <button type="button" id="gb-save" class="ed-btn" title="Save content/terrain/&lt;key&gt;.grassMask.json (also saved by Ctrl+S)">Save grass</button>
           <span id="gb-status" class="chip"></span>
+        </div>
+        <div id="foliage-toolbar" class="ed-plate">
+          <select id="fl-palette" title="Foliage palette"></select>
+          <button type="button" class="ed-btn fl-op" data-op="paint" title="Paint placements">Paint</button>
+          <button type="button" class="ed-btn fl-op" data-op="erase" title="Erase placements (quest-referenced ones are refused)">Erase</button>
+          <button type="button" class="ed-btn fl-op" data-op="reset" id="fl-reset" title="Decor mode: back to the authored density">Reset</button>
+          <button type="button" class="ed-btn" id="fl-mode" title="Placements (trees, rocks) or Decor (flowers, tufts density paint)">Mode: placements</button>
+          <select id="fl-decor" title="Decor layer" style="display:none"></select>
+          <label id="fl-target-l" style="display:none">Target <input type="range" id="fl-target" min="0" max="2" step="0.1" value="2" /><span>x2</span></label>
+          <label>Radius <input type="range" id="fl-radius" min="1" max="24" step="0.5" value="8" /><span>8 m</span></label>
+          <label>Density <input type="range" id="fl-density" min="0.1" max="20" step="0.1" value="6" /><span>6</span></label>
+          <label>Falloff <select id="fl-falloff"><option value="smooth">smooth</option><option value="hard">hard</option></select></label>
+          <label>Seed <input type="number" id="fl-seed" value="1" step="1" /></label>
+          <button type="button" id="fl-save" class="ed-btn" title="Save the world file (same as Ctrl+S)">Save</button>
+          <button type="button" id="fl-measure" class="ed-btn" title="Bake the zone under the cursor and read its real bundle size">Measure</button>
+          <span id="fl-meter" class="chip fl-meter" data-level="green" title="Foliage budget of the zone under the cursor"></span>
+          <span id="fl-status" class="chip"></span>
         </div>
         <div id="stats-plate" class="ed-plate">fps -</div>
       </div>
@@ -615,6 +652,7 @@
        that and needs it now so the waystone entity is even pickable/visible
        here (ray.js/select.js also guard `assets.has()` either way, in case
        a future world references a model no page's script list carries). -->
+  <script src="../../design/items.js"></script><!-- ED-QUEST-02: plain item names for the quest reward picker -->
   <script src="../../design/models/voxel_world.js"></script>
   <!-- same models the game loads for world_m1 / tower (sword on the tower level, boars in the world); order as game/index.html -->
   <script src="../../design/models/sword.js"></script>

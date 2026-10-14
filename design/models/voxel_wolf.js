@@ -234,8 +234,34 @@
       pose({ t: [8, -4, 0] }),
       pose({ b: [-1, 0, 0, 0, 0, 0.3], plant: true, h: -3, hz: 6, t: [10, 5, 0] })
     ] },
-    walk:   { durations: [100, 100, 100, 100, 100, 100], loop: true, frames: trot },
-    run:    { durations: [60, 60, 60, 60, 60, 60], loop: true, frames: gallop },
+    // GAIT-A BEGIN walk (tools/gen-gait.mjs: option A, diagonal gait, duty 0.55, tuned 1.1 m/s, 12 keys x 50 ms; re-run, do not hand-edit)
+    walk: { durations: [50,50,50,50,50,50,50,50,50,50,50,50], loop: true, frames: [
+        { body: { rot: [0.678,0.951,0], pos: [0,0,0.064] }, head: { rot: [-0.034,0,0], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, legFL: { rot: [-36.478,0,0], pos: [0,0,-0.77] }, legFR: { rot: [29.309,0,0], pos: [0,0,-0.212] }, legBL: { rot: [21.554,0,0], pos: [0,0,-0.475] }, legBR: { rot: [-34.106,0,0], pos: [0,0,-0.061] }, tail: { rot: [19.683,0,3.728], pos: [0,0,0] }, legFL2: { rot: [18.239,0,0], pos: [0,0,0] }, legFR2: { rot: [-14.654,0,0], pos: [0,0,0] }, legBL2: { rot: [0.926,0,0], pos: [0,0,0] }, legBR2: { rot: [17.053,0,0], pos: [0,0,0] } },
+        { body: { rot: [1.196,0.669,0.75], pos: [0,0,0.12] }, head: { rot: [-0.06,0,-0.6], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, legFL: { rot: [-24.731,0,0], pos: [0,0,-0.36] }, legFR: { rot: [30.251,0,0], pos: [0,0,0.009] }, legBL: { rot: [44.009,0,0], pos: [0,0,-1.846] }, legBR: { rot: [-23.659,0,0], pos: [0,0,-0.056] }, tail: { rot: [19.777,0,3.953], pos: [0,0,0] }, legFL2: { rot: [12.365,0,0], pos: [0,0,0] }, legFR2: { rot: [-8.207,0,0], pos: [0,0,0] }, legBL2: { rot: [-27.77,0,0], pos: [0,0,0] }, legBR2: { rot: [11.829,0,0], pos: [0,0,0] } },
+        { body: { rot: [0.519,0.208,1.299], pos: [0,0,0.056] }, head: { rot: [-0.026,0,-1.039], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, legFL: { rot: [-13.754,0,0], pos: [0,0,-0.08] }, legFR: { rot: [9.197,0,0], pos: [0,0,1.097] }, legBL: { rot: [41.005,0,0], pos: [0,0,-1.322] }, legBR: { rot: [-13.422,0,0], pos: [0,0,0.111] }, tail: { rot: [18.094,0,3.119], pos: [0,0,0] }, legFL2: { rot: [6.877,0,0], pos: [0,0,0] }, legFR2: { rot: [17.223,0,0], pos: [0,0,0] }, legBL2: { rot: [-38.687,0,0], pos: [0,0,0] }, legBR2: { rot: [6.711,0,0], pos: [0,0,0] } },
+        { body: { rot: [-0.678,-0.309,1.5], pos: [0,0,-0.064] }, head: { rot: [0.034,0,-1.2], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, legFL: { rot: [-3.152,0,0], pos: [0,0,0.101] }, legFR: { rot: [-13.634,0,0], pos: [0,0,1.372] }, legBL: { rot: [23.474,0,0], pos: [0,0,0.313] }, legBR: { rot: [-3.135,0,0], pos: [0,0,0.302] }, tail: { rot: [16.317,0,1.449], pos: [0,0,0] }, legFL2: { rot: [1.576,0,0], pos: [0,0,0] }, legFR2: { rot: [36.361,0,0], pos: [0,0,0] }, legBL2: { rot: [-36.357,0,0], pos: [0,0,0] }, legBR2: { rot: [1.567,0,0], pos: [0,0,0] } },
+        { body: { rot: [-1.196,-0.743,1.299], pos: [0,0,-0.12] }, head: { rot: [0.06,0,-1.039], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, legFL: { rot: [7.368,0,0], pos: [0,0,0.215] }, legFR: { rot: [-32.655,0,0], pos: [0,0,0.631] }, legBL: { rot: [1.025,0,0], pos: [0,0,1.194] }, legBR: { rot: [7.47,0,0], pos: [0,0,0.273] }, tail: { rot: [16.223,0,-0.609], pos: [0,0,0] }, legFL2: { rot: [-3.684,0,0], pos: [0,0,0] }, legFR2: { rot: [43.874,0,0], pos: [0,0,0] }, legBL2: { rot: [-23.468,0,0], pos: [0,0,0] }, legBR2: { rot: [-3.735,0,0], pos: [0,0,0] } },
+        { body: { rot: [-0.519,-0.978,0.75], pos: [0,0,-0.056] }, head: { rot: [0.026,0,-0.6], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, legFL: { rot: [18.081,0,0], pos: [0,0,0.193] }, legFR: { rot: [-41.815,0,0], pos: [0,0,-0.363] }, legBL: { rot: [-19.914,0,0], pos: [0,0,0.911] }, legBR: { rot: [17.635,0,0], pos: [0,0,-0.085] }, tail: { rot: [17.906,0,-2.504], pos: [0,0,0] }, legFL2: { rot: [-9.041,0,0], pos: [0,0,0] }, legFR2: { rot: [37.393,0,0], pos: [0,0,0] }, legBL2: { rot: [-3.781,0,0], pos: [0,0,0] }, legBR2: { rot: [-7.372,0,0], pos: [0,0,0] } },
+        { body: { rot: [0.678,-0.951,0], pos: [0,0,0.064] }, head: { rot: [-0.034,0,0], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, legFL: { rot: [29.309,0,0], pos: [0,0,-0.112] }, legFR: { rot: [-36.478,0,0], pos: [0,0,-0.67] }, legBL: { rot: [-34.106,0,0], pos: [0,0,0.038] }, legBR: { rot: [21.554,0,0], pos: [0,0,-0.375] }, tail: { rot: [19.683,0,-3.728], pos: [0,0,0] }, legFL2: { rot: [-14.654,0,0], pos: [0,0,0] }, legFR2: { rot: [18.239,0,0], pos: [0,0,0] }, legBL2: { rot: [17.053,0,0], pos: [0,0,0] }, legBR2: { rot: [0.926,0,0], pos: [0,0,0] } },
+        { body: { rot: [1.196,-0.669,-0.75], pos: [0,0,0.12] }, head: { rot: [-0.06,0,0.6], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, legFL: { rot: [30.251,0,0], pos: [0,0,0.079] }, legFR: { rot: [-24.731,0,0], pos: [0,0,-0.29] }, legBL: { rot: [-23.659,0,0], pos: [0,0,0.014] }, legBR: { rot: [44.009,0,0], pos: [0,0,-1.776] }, tail: { rot: [19.777,0,-3.953], pos: [0,0,0] }, legFL2: { rot: [-8.207,0,0], pos: [0,0,0] }, legFR2: { rot: [12.365,0,0], pos: [0,0,0] }, legBL2: { rot: [11.829,0,0], pos: [0,0,0] }, legBR2: { rot: [-27.77,0,0], pos: [0,0,0] } },
+        { body: { rot: [0.519,-0.208,-1.299], pos: [0,0,0.056] }, head: { rot: [-0.026,0,1.039], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, legFL: { rot: [9.197,0,0], pos: [0,0,1.119] }, legFR: { rot: [-13.754,0,0], pos: [0,0,-0.058] }, legBL: { rot: [-13.422,0,0], pos: [0,0,0.132] }, legBR: { rot: [41.005,0,0], pos: [0,0,-1.3] }, tail: { rot: [18.094,0,-3.119], pos: [0,0,0] }, legFL2: { rot: [17.223,0,0], pos: [0,0,0] }, legFR2: { rot: [6.877,0,0], pos: [0,0,0] }, legBL2: { rot: [6.711,0,0], pos: [0,0,0] }, legBR2: { rot: [-38.687,0,0], pos: [0,0,0] } },
+        { body: { rot: [-0.678,0.309,-1.5], pos: [0,0,-0.064] }, head: { rot: [0.034,0,1.2], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, legFL: { rot: [-13.634,0,0], pos: [0,0,1.339] }, legFR: { rot: [-3.152,0,0], pos: [0,0,0.069] }, legBL: { rot: [-3.135,0,0], pos: [0,0,0.269] }, legBR: { rot: [23.474,0,0], pos: [0,0,0.281] }, tail: { rot: [16.317,0,-1.449], pos: [0,0,0] }, legFL2: { rot: [36.361,0,0], pos: [0,0,0] }, legFR2: { rot: [1.576,0,0], pos: [0,0,0] }, legBL2: { rot: [1.567,0,0], pos: [0,0,0] }, legBR2: { rot: [-36.357,0,0], pos: [0,0,0] } },
+        { body: { rot: [-1.196,0.743,-1.299], pos: [0,0,-0.12] }, head: { rot: [0.06,0,1.039], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, legFL: { rot: [-32.655,0,0], pos: [0,0,0.553] }, legFR: { rot: [7.368,0,0], pos: [0,0,0.137] }, legBL: { rot: [7.47,0,0], pos: [0,0,0.195] }, legBR: { rot: [1.025,0,0], pos: [0,0,1.116] }, tail: { rot: [16.223,0,0.609], pos: [0,0,0] }, legFL2: { rot: [43.874,0,0], pos: [0,0,0] }, legFR2: { rot: [-3.684,0,0], pos: [0,0,0] }, legBL2: { rot: [-3.735,0,0], pos: [0,0,0] }, legBR2: { rot: [-23.468,0,0], pos: [0,0,0] } },
+        { body: { rot: [-0.519,0.978,-0.75], pos: [0,0,-0.056] }, head: { rot: [0.026,0,0.6], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, legFL: { rot: [-41.815,0,0], pos: [0,0,-0.465] }, legFR: { rot: [18.081,0,0], pos: [0,0,0.091] }, legBL: { rot: [17.635,0,0], pos: [0,0,-0.188] }, legBR: { rot: [-19.914,0,0], pos: [0,0,0.809] }, tail: { rot: [17.906,0,2.504], pos: [0,0,0] }, legFL2: { rot: [37.393,0,0], pos: [0,0,0] }, legFR2: { rot: [-9.041,0,0], pos: [0,0,0] }, legBL2: { rot: [-7.372,0,0], pos: [0,0,0] }, legBR2: { rot: [-3.781,0,0], pos: [0,0,0] } }
+    ] },
+    // GAIT-A END walk
+    // GAIT-A BEGIN run (tools/gen-gait.mjs: option A, gallop gait, duty 0.4, tuned 2.4 m/s, 8 keys x 50 ms; re-run, do not hand-edit)
+    run: { durations: [50,50,50,50,50,50,50,50], loop: true, frames: [
+        { body: { rot: [2.259,1.427,0], pos: [0,0,0.321] }, head: { rot: [-1.242,0,0], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, legFL: { rot: [-38.857,0,0], pos: [0,0,-1.053] }, legFR: { rot: [-42.039,0,0], pos: [0,0,-0.122] }, legBL: { rot: [42.263,0,0], pos: [0,0,-1.523] }, legBR: { rot: [42.702,0,0], pos: [0,0,-2.319] }, tail: { rot: [71.683,0,3.728], pos: [0,0,0] }, legFL2: { rot: [19.428,0,0], pos: [0,0,0] }, legFR2: { rot: [33.519,0,0], pos: [0,0,0] }, legBL2: { rot: [-28.631,0,0], pos: [0,0,0] }, legBR2: { rot: [-21.351,0,0], pos: [0,0,0] } },
+        { body: { rot: [3.301,0.681,1.061], pos: [0,0,0.507] }, head: { rot: [-1.816,0,-0.849], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, legFL: { rot: [-13.852,0,0], pos: [0,0,-0.48] }, legFR: { rot: [-33.494,0,0], pos: [0,0,-0.84] }, legBL: { rot: [24.479,0,0], pos: [0,0,-0.399] }, legBR: { rot: [39.814,0,0], pos: [0,0,-1.512] }, tail: { rot: [71.081,0,3.661], pos: [0,0,0] }, legFL2: { rot: [6.926,0,0], pos: [0,0,0] }, legFR2: { rot: [16.747,0,0], pos: [0,0,0] }, legBL2: { rot: [-26.098,0,0], pos: [0,0,0] }, legBR2: { rot: [-29.039,0,0], pos: [0,0,0] } },
+        { body: { rot: [-2.259,-0.464,1.5], pos: [0,0,-0.321] }, head: { rot: [1.242,0,-1.2], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, legFL: { rot: [9.197,0,0], pos: [0,0,0.358] }, legFR: { rot: [-9.197,0,0], pos: [0,0,0.288] }, legBL: { rot: [0.176,0,0], pos: [0,0,2.743] }, legBR: { rot: [19.818,0,0], pos: [0,0,2.075] }, tail: { rot: [68.317,0,1.449], pos: [0,0,0] }, legFL2: { rot: [-4.598,0,0], pos: [0,0,0] }, legFR2: { rot: [4.598,0,0], pos: [0,0,0] }, legBL2: { rot: [-14.577,0,0], pos: [0,0,0] }, legBR2: { rot: [-24.398,0,0], pos: [0,0,0] } },
+        { body: { rot: [-3.301,-1.337,1.061], pos: [0,0,-0.507] }, head: { rot: [1.816,0,-0.849], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, legFL: { rot: [33.494,0,0], pos: [0,0,0.364] }, legFR: { rot: [13.852,0,0], pos: [0,0,0.509] }, legBL: { rot: [-22.534,0,0], pos: [0,0,2.581] }, legBR: { rot: [-4.704,0,0], pos: [0,0,3.109] }, tail: { rot: [68.919,0,-1.611], pos: [0,0,0] }, legFL2: { rot: [-16.747,0,0], pos: [0,0,0] }, legFR2: { rot: [-6.926,0,0], pos: [0,0,0] }, legBL2: { rot: [2.135,0,0], pos: [0,0,0] }, legBR2: { rot: [-11.506,0,0], pos: [0,0,0] } },
+        { body: { rot: [2.259,-1.427,0], pos: [0,0,0.321] }, head: { rot: [-1.242,0,0], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, legFL: { rot: [23.847,0,0], pos: [0,0,0.933] }, legFR: { rot: [38.857,0,0], pos: [0,0,-0.762] }, legBL: { rot: [-36.149,0,0], pos: [0,0,-0.463] }, legBR: { rot: [-26.273,0,0], pos: [0,0,0.514] }, tail: { rot: [71.683,0,-3.728], pos: [0,0,0] }, legFL2: { rot: [0.576,0,0], pos: [0,0,0] }, legFR2: { rot: [-19.428,0,0], pos: [0,0,0] }, legBL2: { rot: [18.075,0,0], pos: [0,0,0] }, legBR2: { rot: [5.636,0,0], pos: [0,0,0] } },
+        { body: { rot: [3.301,-0.681,-1.061], pos: [0,0,0.507] }, head: { rot: [-1.816,0,0.849], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, legFL: { rot: [-1.56,0,0], pos: [0,0,1.973] }, legFR: { rot: [19.04,0,0], pos: [0,0,0.995] }, legBL: { rot: [-13.514,0,0], pos: [0,0,-0.814] }, legBR: { rot: [-31.507,0,0], pos: [0,0,-0.84] }, tail: { rot: [71.081,0,-3.661], pos: [0,0,0] }, legFL2: { rot: [23.877,0,0], pos: [0,0,0] }, legFR2: { rot: [5.699,0,0], pos: [0,0,0] }, legBL2: { rot: [6.757,0,0], pos: [0,0,0] }, legBR2: { rot: [15.754,0,0], pos: [0,0,0] } },
+        { body: { rot: [-2.259,0.464,-1.5], pos: [0,0,-0.321] }, head: { rot: [1.242,0,1.2], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, legFL: { rot: [-25.701,0,0], pos: [0,0,1.959] }, legFR: { rot: [-6.725,0,0], pos: [0,0,2.574] }, legBL: { rot: [9.357,0,0], pos: [0,0,0.587] }, legBR: { rot: [-9.047,0,0], pos: [0,0,0.982] }, tail: { rot: [68.317,0,-1.449], pos: [0,0,0] }, legFL2: { rot: [36.999,0,0], pos: [0,0,0] }, legFR2: { rot: [27.51,0,0], pos: [0,0,0] }, legBL2: { rot: [-4.679,0,0], pos: [0,0,0] }, legBR2: { rot: [4.524,0,0], pos: [0,0,0] } },
+        { body: { rot: [-3.301,1.337,-1.061], pos: [0,0,-0.507] }, head: { rot: [1.816,0,0.849], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, legFL: { rot: [-40.846,0,0], pos: [0,0,0.51] }, legFR: { rot: [-29.72,0,0], pos: [0,0,1.773] }, legBL: { rot: [24.637,0,0], pos: [0,0,0.84] }, legBR: { rot: [14.226,0,0], pos: [0,0,0.903] }, tail: { rot: [68.919,0,1.611], pos: [0,0,0] }, legFL2: { rot: [35.642,0,0], pos: [0,0,0] }, legFR2: { rot: [37.957,0,0], pos: [0,0,0] }, legBL2: { rot: [1,0,0], pos: [0,0,0] }, legBR2: { rot: [-7.113,0,0], pos: [0,0,0] } }
+    ] },
+    // GAIT-A END run
     // lunge telegraph 0.5 s: sink + weight back (100 ms), crouched (300 ms), coiled + held (last 100 ms and after)
     crouch: { durations: [100, 300, 100], loop: false, frames: [CR_START, CROUCH, COILED] },
     // leap 0.62 s: launch -> flight -> strike (jaws widest) -> land (snap) -> landed (held)
@@ -275,6 +301,8 @@
   };
   animations.windup = animations.crouch;           // aliases: the boar view (beastView / beastAnim) works unchanged
   animations.charge = animations.run;
+  // ANIM-BLEND-02: additive hit (architecture.md 38.68): frame 0 = REST (delta 0), jolt = the two hurt keys, back to REST. Masked to body/head/jaw/tail.
+  animations.hitAdd = { durations: [40, 50, 70, 100], loop: false, frames: [REST, animations.hurt.frames[0], animations.hurt.frames[1], REST] };
 
   A.models.wolf = {
     name: 'wolf',
@@ -303,13 +331,44 @@
         body:  { box: [0, 8, 8, SX, 27, SZ], pivot: [8, 13.5, 0] },
         head:  { box: [0, 0, 11, SX, 8, SZ], pivot: [5, 8, 13], parent: 'body' },
         jaw:   { box: [2, 0, 9, 8, 8, 11], pivot: [5, 6, 11], parent: 'head' },
-        legFL: { box: [2, 9, 0, 4, 15, 8], pivot: [3, 12, 8], parent: 'body' },
-        legFR: { box: [6, 9, 0, 8, 15, 8], pivot: [7, 12, 8], parent: 'body' },
-        legBL: { box: [2, 21, 0, 4, 27, 8], pivot: [3, 24, 8], parent: 'body' },
-        legBR: { box: [6, 21, 0, 8, 27, 8], pivot: [7, 24, 8], parent: 'body' },
-        tail:  { box: [2, 27, 4, 8, 33, 15], pivot: [5, 27, 13.5], parent: 'body' }
+        legFL: { box: [2, 9, 4, 4, 15, 8], pivot: [3, 12, 8], parent: 'body' },
+        legFR: { box: [6, 9, 4, 8, 15, 8], pivot: [7, 12, 8], parent: 'body' },
+        legBL: { box: [2, 21, 4, 4, 27, 8], pivot: [3, 24, 8], parent: 'body' },
+        legBR: { box: [6, 21, 4, 8, 27, 8], pivot: [7, 24, 8], parent: 'body' },
+        tail:  { box: [2, 27, 4, 8, 33, 15], pivot: [5, 27, 13.5], parent: 'body' },
+        // ANIM-B-01b lower leg parts (appended: indices 0-7 unchanged). Split z4 (elbow / hock); hind hock pivot y25.5 = behind the hip-foot line
+        legFL2: { box: [2, 9, 0, 4, 15, 4], pivot: [3, 12, 4], parent: 'legFL' },
+        legFR2: { box: [6, 9, 0, 8, 15, 4], pivot: [7, 12, 4], parent: 'legFR' },
+        legBL2: { box: [2, 21, 0, 4, 27, 4], pivot: [3, 25.5, 4], parent: 'legBL' },
+        legBR2: { box: [6, 21, 0, 8, 27, 4], pivot: [7, 25.5, 4], parent: 'legBR' }
+      },
+      // ANIM-B-01b (note 38.67 item 2): walk / run are generated by tools/gen-gait.mjs from tools/gait-configs.mjs (wolf.walk / wolf.run); keep these numbers = that config
+      legRig: {
+        body: 'body',
+        legs: [
+          { upper: 'legFL', lower: 'legFL2', foot: [3, 12, 0], bend: 'front' },
+          { upper: 'legFR', lower: 'legFR2', foot: [7, 12, 0], bend: 'front' },
+          { upper: 'legBL', lower: 'legBL2', foot: [3, 24.5, 0], bend: 'back' },
+          { upper: 'legBR', lower: 'legBR2', foot: [7, 24.5, 0], bend: 'back' }
+        ],
+        gaits: {
+          walk: { tunedMps: 1.1, duty: 0.55, phase: [0, 0.5, 0.5, 0], liftM: 0.05 },
+          run: { tunedMps: 2.4, duty: 0.4, phase: [0, 0.1, 0.5, 0.6], liftM: 0.1 }
+        },
+        stand: ['idle', 'crouch']
       },
       animations: animations,
+      // ANIM-BLEND-02 (38.68; OB-150 readable wind-up / recover). Sets use legRig tunedMps. crouch (500 ms, last key held from 400) fades in
+      // <= 25 %; leap / bite snap in (60 ms); recovering to run / walk / idle takes >= 150 ms (200) so the wolf visibly settles.
+      blend: {
+        sets: { locomotion: { param: 'speed', clips: [{ clip: 'walk', at: 1.1 }, { clip: 'run', at: 2.4 }] } },
+        fades: {
+          default: 150,
+          into: { crouch: 100, windup: 100, leap: 60, bite: 60 },
+          pairs: { 'crouch>leap': 60, 'leap>run': 200, 'leap>walk': 200, 'leap>idle': 200, 'bite>run': 200, 'bite>walk': 200, 'bite>idle': 200 }
+        },
+        additive: { hit: { clip: 'hitAdd', parts: ['body', 'head', 'jaw', 'tail'], inMs: 40, outMs: 160, gain: 1 } }
+      },
       // grid coords, rest pose. Same names / parts as the boar (notice / forefeet / hit / loot on `body`) + `mouth`.
       mounts: {
         notice:   { at: [5, 6, 24], part: 'body' },      // 1.2 m: 0.25 m over the ear tips

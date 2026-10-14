@@ -44,7 +44,7 @@ function shrinkTo(arr, n) {
 }
 
 function projectedSlot() {
-  return { model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, fromClip: -1, fromFrame: 0, fromTMs: 0, fromW: 0, scale: 1, slot: 0, entity: null, addPart: -1, addRx: 0, addRy: 0, addRz: 0,
+  return { model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, fromClip: -1, fromFrame: 0, fromTMs: 0, fromW: 0, scale: 1, slot: 0, entity: null, addPart: -1, addRx: 0, addRy: 0, addRz: 0, legs: null, layers: null,
     pose: new Float64Array(MAX_VOX_PARTS * PART_STRIDE),
     rect: { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0, minCol: 0, maxCol: 0, minRow: 0, maxRow: 0, empty: false } };
 }
@@ -57,7 +57,7 @@ export class VoxelPool {
     this.models = new Map();
     // This frame's pushInstance() queue - plain objects, reused slot by
     // slot across frames (no per-frame allocation once warm).
-    this.raw = Array.from({ length: MAX_VOX_INSTANCES_MESH }, () => ({ model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, fromClip: -1, fromFrame: 0, fromTMs: 0, fromW: 0, scale: 1, seed: 0, entity: null, addPart: -1, addRx: 0, addRy: 0, addRz: 0 }));
+    this.raw = Array.from({ length: MAX_VOX_INSTANCES_MESH }, () => ({ model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, fromClip: -1, fromFrame: 0, fromTMs: 0, fromW: 0, scale: 1, seed: 0, entity: null, addPart: -1, addRx: 0, addRy: 0, addRz: 0, legs: null, layers: null }));
     this._rawCount = 0;
     this.reserve = 0;
     // Projected + culled instances, compact 0..count-1 (list.length ===
@@ -197,6 +197,18 @@ export class VoxelPool {
     slot.fromClip = fromClip; slot.fromFrame = fromFrame || 0; slot.fromTMs = fromTMs || 0; slot.fromW = fromW;
   }
 
+  /** ANIM-C-04 (38.67 section 3): sets the LegPose (Float64Array(16), engine/entities/legDriver.js poseOf) of raw slot `i`; null = authored legs (byte-identical). Reference only, no copy. */
+  legInstance(i, legPose) {
+    if (i < 0 || i >= this._rawCount) return;
+    this.raw[i].legs = legPose || null;
+  }
+
+  /** ANIM-BLEND-01a (38.68): sets the AnimLayers (Float64Array(20)) of raw slot `i`; null = plain clip fields (byte-identical). Reference only. */
+  layerInstance(i, rec) {
+    if (i < 0 || i >= this._rawCount) return;
+    this.raw[i].layers = rec || null;
+  }
+
   /** 38.23: the G-buffer objectId (0x8000 | slot, same as voxelMesh's draw item) of `entity` in the last project(); -1 when it has no slot. */
   objectIdFor(entity) {
     const list = this.list;
@@ -206,7 +218,10 @@ export class VoxelPool {
 
   /** Reused per-slot raw-instance object at `this.raw[idx]` (no per-frame allocation once warm). */
   _rawSlot(idx) {
-    return this.raw[idx];
+    const s = this.raw[idx];
+    s.layers = null; // ANIM-BLEND-01a
+    s.legs = null; // ANIM-C-04: reset here (not in pushInstance: an extra store there tipped rigPerf's 0-alloc gate)
+    return s;
   }
 
   /**
@@ -238,6 +253,8 @@ export class VoxelPool {
     // TALK-E1 (38.28 item 7): optional `components.voxel.partRot = {part, rx, ry, rz}`, added to the clip rotation.
     const pr = v.partRot;
     const ap = pr && pm.partIndex && pm.partIndex[pr.part] !== undefined ? pm.partIndex[pr.part] : -1;
+    slot.legs = v.legPose || null; // ANIM-C-04: components.voxel.legPose (set by the game view)
+    slot.layers = v.animLayers || null; // ANIM-BLEND-01a: components.voxel.animLayers (AnimLayers Float64Array(20))
     slot.addPart = ap;
     if (ap >= 0) { slot.addRx = pr.rx || 0; slot.addRy = pr.ry || 0; slot.addRz = pr.rz || 0; }
     slot.seed = 0;
@@ -353,7 +370,7 @@ export class VoxelPool {
       out.model = inst.model; out.modelKey = inst.modelKey;
       out.x = inst.x; out.y = inst.y; out.z = inst.z; out.yawDeg = inst.yawDeg;
       out.clip = inst.clip; out.frame = inst.frame; out.tMs = inst.tMs; out.fromClip = inst.fromClip; out.fromFrame = inst.fromFrame; out.fromTMs = inst.fromTMs; out.fromW = inst.fromW; out.scale = inst.scale;
-      out.addPart = inst.addPart; out.addRx = inst.addRx; out.addRy = inst.addRy; out.addRz = inst.addRz;
+      out.addPart = inst.addPart; out.addRx = inst.addRx; out.addRy = inst.addRy; out.addRz = inst.addRz; out.legs = inst.legs; out.layers = inst.layers;
       out.slot = i;
     }
     shrinkTo(this.shadowList, n);
@@ -395,7 +412,7 @@ export class VoxelPool {
       out.model = inst.model; out.modelKey = inst.modelKey;
       out.x = inst.x; out.y = inst.y; out.z = inst.z; out.yawDeg = inst.yawDeg;
       out.clip = inst.clip; out.frame = inst.frame; out.tMs = inst.tMs; out.fromClip = inst.fromClip; out.fromFrame = inst.fromFrame; out.fromTMs = inst.fromTMs; out.fromW = inst.fromW; out.scale = inst.scale;
-      out.addPart = inst.addPart; out.addRx = inst.addRx; out.addRy = inst.addRy; out.addRz = inst.addRz;
+      out.addPart = inst.addPart; out.addRx = inst.addRx; out.addRy = inst.addRy; out.addRz = inst.addRz; out.legs = inst.legs; out.layers = inst.layers;
       out.slot = count;
       out.entity = inst.entity;
       count++;

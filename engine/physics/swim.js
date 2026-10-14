@@ -5,7 +5,9 @@
 // `body.waterFloorZ` (floor under the water at x,y). Outputs on the body:
 // `swimming`, `climbedOut` (one step). `diving`, `onBottom` (SWIM-04a); input `controls.swimUp` -1..1.
 import { PHYSICS_DEFAULTS } from './config.js';
-import { clamp } from '../core/math.js';
+
+/** Local clamp: keeps engine/physics stand-alone. */
+function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 
 /** Defaults for old cfg objects without `swim`. */
 export function swimCfg(cfg) { return cfg.swim || PHYSICS_DEFAULTS.swim; }

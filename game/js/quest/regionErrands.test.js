@@ -27,7 +27,8 @@ const mk = () => {
 };
 for (const r of regs) {
   const d = all.find(x => x.id === 'sq.reg.' + r);
-  ok(d.giver && d.giver.npc === 'relay_' + r, r + ' offered at its relay');
+  const wardenWorld = JSON.parse(fs.readFileSync(dir + '/../worlds/world_m1.world.json', 'utf8')).entities.some(e => e.id === 'warden_' + r); // QFIX-S5c-1: a region with a placed warden is served by the warden, else by its relay
+  ok(d.giver && d.giver.npc === (wardenWorld ? 'warden_' : 'relay_') + r, r + ' offered at its ' + (wardenWorld ? 'warden' : 'relay'));
   const { b, inv } = mk();
   ok(!b.accept(d.id), r + ' not offered before the relay is woken');
   b.feed({ type: 'flag:set', key: `waystone.ws_${r}.woken`, value: true });

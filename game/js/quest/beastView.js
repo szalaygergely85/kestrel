@@ -87,8 +87,11 @@ export function frameTFromElapsed(elapsed, durations, out) {
  * @param {{beastNotice: number, beastNoticePop?: number}} styleIds resolved overlay style ids
  *   (overlay.styleId('beastNotice') and overlay.styleId('beastNoticePop'))
  * @param {ReturnType<import('./beastAnim.js').createBeastAnim>} [anim] ANIM-STATE-WIRE-01 (?beastanim=1): clip state adapter
+ * @param {ReturnType<import('./beastLegs.js').createBeastLegs>} [legs] ANIM-C-05: leg IK wiring (omit = ?legik=0, today's behaviour)
+ * @param {{x:number,y:number}} [cam] camera (driver LOD)
+ * @param {ReturnType<import('./beastBlend.js').createBeastBlend>} [blend] ANIM-BLEND-03: clip blender (omit = ?animblend=0, today's behaviour)
  */
-export function presentBeasts(sim, world, overlay, styleIds, anim) {
+export function presentBeasts(sim, world, overlay, styleIds, anim, legs, cam, blend) {
   if (!sim) return;
   for (let i = 0; i < sim.count; i++) {
     const e = sim.entities[i];
@@ -98,7 +101,7 @@ export function presentBeasts(sim, world, overlay, styleIds, anim) {
     const v = e.components.voxel;
     if (!v) continue; // defensive: beast entities always carry a voxel component in the game
 
-    if (st === STATE_GONE) { v.hidden = true; continue; } // US-079b: hidden at GONE (voxel-pool skip)
+    if (st === STATE_GONE) { v.hidden = true; if (legs) legs.release(i, v); if (blend) blend.release(i, v); continue; } // US-079b: hidden at GONE (voxel-pool skip)
     v.hidden = false;
 
     // US-079b ARCH (37.16.1 amendment): decide the clip, then reset the pose on every clip change (a clip entered
@@ -112,6 +115,9 @@ export function presentBeasts(sim, world, overlay, styleIds, anim) {
     else if (sim.hurtT[i] < HURT_STEPS) clip = 'hurt';
     else if (st === STATE_FLINCH) clip = 'flinch';
     else clip = st === STATE_EAT ? eatClip(v.model) : (STATE_CLIPS[st] || 'idle'); // LIFE-07: 'eat' where voxel_eat_clips.js extends the model
+    // ANIM-BLEND-03: a blend model shows hurt as an ADDITIVE hit over its state clip (walk / run / windup keep playing), never the full `hurt` clip
+    const blended = blend && blend.has(v) && st !== STATE_DYING && st !== STATE_CORPSE && st !== STATE_SINK;
+    if (blended && clip === 'hurt') clip = st === STATE_EAT ? eatClip(v.model) : (STATE_CLIPS[st] || 'idle');
     // BEAST-01 (OB-149): gait follows the measured speed, never the intended state: a wander/chase/return beast that is
     // not actually moving shows idle (STATE_EAT = the clip-mapper's "idle" name, no notice overlay).
     let vst = st;
@@ -123,7 +129,8 @@ export function presentBeasts(sim, world, overlay, styleIds, anim) {
       if (st !== STATE_DYING && st !== STATE_CORPSE && st !== STATE_SINK) clip = goblinClip(clip, vst, i, sim, v);
       v.speed = v.model === 'goblinTorch' && (clip === 'carryTorch') && (st === STATE_CHASE || sim.fleeing && sim.fleeing[i] && st === STATE_RETURN) ? 1.6 : 1;
     }
-    if (clip !== v.anim) { v.anim = clip; v.frame = 0; v.t = 0; v.loop = undefined; }
+    if (blend && !blended) blend.release(i, v); // dying / corpse / sink / no blend block: today's manual clips
+    if (!blended && clip !== v.anim) { v.anim = clip; v.frame = 0; v.t = 0; v.loop = undefined; }
     if (anim) { v.blendFrom = anim.prevClip[i]; v.blendW = anim.w[i]; } // cross-fade data; renderer does not consume it yet
 
     if (playing) {
@@ -133,6 +140,13 @@ export function presentBeasts(sim, world, overlay, styleIds, anim) {
       const elapsed = (steps - sim.timer[i]) * STEP_MS;
       frameTFromElapsed(elapsed, (st === STATE_DYING) ? DIE_DURATIONS : SINK_DURATIONS, v);
       v.playing = false;
+    }
+
+    if (blended) blend.step(i, sim, e, v, clip, legs); // ANIM-BLEND-03: BEFORE legs.step (blender.update, then driver.update; sets v.animLayers, v.anim = dominant clip)
+
+    if (legs) { // ANIM-C-05: leg driver (bear/black bear; models without a legRig stay inert); gait clip time from the phase
+      if (st === STATE_DYING || st === STATE_CORPSE || st === STATE_SINK) legs.release(i, v);
+      else legs.step(i, e, v, cam ? cam.x : 0, cam ? cam.y : 0, world && world.terrain);
     }
 
     if (st === STATE_NOTICE) {

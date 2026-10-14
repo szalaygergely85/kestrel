@@ -100,6 +100,14 @@ function expandReward(src, ctx, band) {
 
 function deepFreeze(o) { if (o && typeof o === 'object') { for (const k of Object.keys(o)) deepFreeze(o[k]); Object.freeze(o); } return o; }
 
+/** Pack row `site`/`turnIn` (site ids) -> {npc, turnIn?} entity ids via ctx.sites; turnInSite = a deliver step's `to`. Shared with the editor's lintQuest. */
+export function resolveGiver(src, ctx, turnInSite) {
+  const s = site(src, ctx, src.site), giver = { npc: s.entity };
+  const turn = src.turnIn !== undefined ? src.turnIn : turnInSite;
+  if (turn !== undefined) { const t = site(src, ctx, turn); if (t.entity !== s.entity) giver.turnIn = t.entity; }
+  return giver;
+}
+
 /**
  * Pure: one pack row -> frozen plain def (validated by validateGiverQuest). `ctx = {sites, rewards, snippets, items, pack?}`.
  * A row with `objectives` and no `template`/`steps` passes through unchanged (escape hatch).
@@ -126,13 +134,7 @@ export function expandQuest(src, ctx = {}) {
     for (const ob of objectives) if (ob.text.length > OBJ_MAX && ctx.strictText) fail(src, 'objText over ' + OBJ_MAX);
   }
   // giver / hand-in sites
-  if (src.site !== undefined) {
-    const s = site(src, ctx, src.site);
-    def.giver = { npc: s.entity };
-    const turn = src.turnIn !== undefined ? src.turnIn : extra.turnInSite;
-    if (turn !== undefined) { const t = site(src, ctx, turn); if (t.entity !== s.entity) def.giver.turnIn = t.entity; }
-    def.site = src.site;
-  }
+  if (src.site !== undefined) { def.giver = resolveGiver(src, ctx, extra.turnInSite); def.site = src.site; }
   const turnNpc = def.giver ? (def.giver.turnIn || def.giver.npc) : null;
   for (const ob of objectives) if (ob.when.to === '@turnIn') ob.when.to = turnNpc;
   def.objectives = objectives;
@@ -145,6 +147,7 @@ export function expandQuest(src, ctx = {}) {
   const reward = expandReward(src, ctx, src.band ?? pack.band);
   if (reward) def.reward = reward;
   def.main = src.main === true;
+  if (src.objectGiver === true) def.objectGiver = true; // D-087/OB-156: a flagged object giver (Accept/Exit on the object, '?' at the turnIn character)
   def.abandonable = !def.main && !!def.giver && src.abandonable !== false;
   const band = src.band !== undefined ? src.band : pack.band;
   if (band !== undefined) def.band = band;

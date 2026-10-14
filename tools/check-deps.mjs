@@ -228,6 +228,7 @@ function checkEngineFile(file, src) {
 // are tool-only exceptions for mesh/shadow pass internals (rule 3).
 const RULE3_TOOL_ALLOWLIST = new Set([
   'tools/bench-shadow.mjs',
+  'tools/bench-vox-parts.mjs', // VOX-PARTS-16b: 30-animal draw bench (DrawList + raster/shadow pass encode on the device mock)
   'tools/compare-detail-export.mjs',
   'tools/mesh-tri-budget.mjs', // MESH-QA-01: runs the runtime's own compactGroup/frustum/projection (not in engine/index.js)
   'tools/mesh-place-budget.mjs', // MESH-PLACE-01: same frustum helpers as mesh-tri-budget (not in engine/index.js)

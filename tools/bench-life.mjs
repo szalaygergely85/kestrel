@@ -254,6 +254,40 @@ export async function runBench(opt) {
   return { options: opt, chat: 'skipped (game/js/life/chat.js missing on this branch)', results, rows, flags: rows.filter((r) => r.verdict === 'FLAG').length };
 }
 
+/** ANIM-C-04: fauna feed + leg driver cost with `n` animals (quadruped16 fixture standing in for deer/fox/goat rigs), ms/frame at 60 Hz.
+ *  Compares legIk off vs on; D-007: the on-p95 (plus the other life rows, <= 8 ms) must stay within the JS budget. Hills = synthetic groundAt. */
+export async function benchLegs(n = 30, frames = 3000) {
+  const { createFaunaFeed, VoxelPool, packVoxelModel } = await import('../engine/index.js');
+  const { quadruped16 } = await import('../engine/dev.js');
+  const def = compileFaunaDef(FIXTURE_FX, fixtureModels());
+  const pm = packVoxelModel(quadruped16, () => 1);
+  const ground = { groundAt: (x, y) => 0.6 * Math.sin(x * 0.2) + 0.5 * Math.cos(y * 0.15) };
+  const res = {};
+  for (const legIk of [false, true]) {
+    const pool = new VoxelPool(); pool.renderer = 'mesh';
+    for (const k of ['rabbit', 'deer', 'deerBuck']) pool.models.set(k, pm);
+    const slots = [];
+    for (let i = 0; i < n; i++) slots.push({ alive: true, species: 1, model: 0, x: -20 + (i % 10) * 4, y: -8 - Math.floor(i / 10) * 5, z: 0, yaw: -Math.PI / 2, cp: { clip: 1, frame: 0, tMs: 0, fromClip: -1, fromFrame: 0, fromTMs: 0, fadeMs: 0, fadeT: 0 } });
+    const feed = createFaunaFeed(def, slots, { drawMax: n, legIk, ground });
+    const cam = { x: 0, y: 0, z: 1.7, yawDeg: 0, pitchDeg: 0, dtMs: 1000 / 60 };
+    const t = new Float64Array(frames);
+    for (let f = -300; f < frames; f++) {
+      for (let i = 0; i < n; i++) { const s = slots[i]; s.y -= 1.2 / 60; s.x += Math.sin(f * 0.01 + i) * 0.4 / 60; if (s.y < -60) s.y += 55; }
+      const t0 = performance.now(); pool.beginFrame(); feed.feed(pool, cam); const dt = performance.now() - t0;
+      if (f >= 0) t[f] = dt;
+    }
+    res[legIk ? 'on' : 'off'] = { ...summarize(t, frames), drawn: feed.stats.drawn, solved: feed.stats.legs };
+  }
+  return res;
+}
+
+if (process.argv.includes('--legs') && process.argv[1]?.endsWith('bench-life.mjs')) {
+  const n = +(process.argv[process.argv.indexOf('--legs') + 1]) || 30;
+  const r = await benchLegs(n);
+  for (const k of ['off', 'on']) console.log(`legs ${k}: drawn ${r[k].drawn} solved ${r[k].solved} feed ms p50 ${r[k].p50.toFixed(4)} p95 ${r[k].p95.toFixed(4)} max ${r[k].max.toFixed(4)} mean ${r[k].mean.toFixed(4)}`);
+  console.log(`delta p95 ${(r.on.p95 - r.off.p95).toFixed(4)} ms (D-007 JS budget 8 ms total)`);
+  process.exit(0);
+}
 if (import.meta.url === new URL(process.argv[1], 'file:///').href || process.argv[1]?.endsWith('bench-life.mjs')) {
   const opt = parseArgs(process.argv);
   const out = await runBench(opt);

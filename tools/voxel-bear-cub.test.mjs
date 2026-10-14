@@ -46,7 +46,8 @@ test('validateVoxelModel: no errors / warnings against palette + detail-pass mat
 });
 
 test('same rig names / parents as Burl (8 parts), every part box sx+sy+sz <= 48', () => {
-  assert.deepStrictEqual(Object.keys(DEF.parts), Object.keys(BURL.parts));
+  // ANIM-B-01a: Burl is a 12-part knee rig now, the cub keeps the 8 base parts (cub knees = later)
+  assert.deepStrictEqual(Object.keys(DEF.parts), Object.keys(BURL.parts).slice(0, 8));
   for (const [k, p] of Object.entries(DEF.parts)) {
     assert.strictEqual(p.parent, BURL.parts[k].parent, k + ' parent');
     const b = p.box; assert.ok(b[3] - b[0] + b[4] - b[1] + b[5] - b[2] <= 48, k + ' box size');
@@ -66,7 +67,7 @@ test('size: 45-55 % of Burl (length, height); cub proportions: bigger head share
 });
 
 // clips: [frames, total ms, loop]
-const SPEC = { idle: [8, 4000, true], walk: [4, 600, true], trot: [4, 400, true], sniff: [8, 2000, true],
+const SPEC = { idle: [8, 4000, true], walk: [12, 600, true], trot: [10, 500, true], sniff: [8, 2000, true],
                lookUp: [6, 2400, true], stuckWiggle: [6, 800, true], lieDown: [4, 900, false], lie: [4, 3000, true],
                getUp: [3, 600, false] };
 test('clips: exact set (no dialogue clips), frame counts, total ms, loop, durations multiples of 50, every part keyed', () => {

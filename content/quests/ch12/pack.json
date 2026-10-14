@@ -652,10 +652,10 @@
           "params": {
             "item": "boar.meat",
             "count": 2,
-            "to": "post"
+            "to": "postkeeper"
           },
-          "objText": "Leave the meat in the post basket",
-          "journal": "Burl gave you two pieces of meat. Leave them in the post basket."
+          "objText": "Bring the meat to the post-keeper",
+          "journal": "Burl gave you two pieces of meat. Bring them to the post-keeper."
         }
       ],
       "requires": [
@@ -680,7 +680,7 @@
         ]
       },
       "band": 2,
-      "returnText": "Put the meat in the trade post basket",
+      "returnText": "Give the meat to the post-keeper",
       "lines": {
         "offer": [
           "There's a basket on a post, by the crossroads.",
@@ -703,17 +703,17 @@
     {
       "id": "sq.post.spare",
       "title": "Leave What You Can Spare",
-      "site": "post",
+      "site": "postkeeper",
       "steps": [
         {
           "template": "deliver",
           "params": {
             "item": "arrow",
             "count": 3,
-            "to": "notePost"
+            "to": "postkeeper"
           },
-          "objText": "Carry three arrows to the note post",
-          "journal": "The post asks travellers to leave what they can. Carry three arrows to it."
+          "objText": "Take 3 arrows to the post-keeper",
+          "journal": "The post-keeper asks travellers to spare a little. Bring three arrows."
         }
       ],
       "requires": [
@@ -738,24 +738,7 @@
         ]
       },
       "band": 4,
-      "returnText": "Leave the arrows at the note post",
-      "lines": {
-        "offer": [
-          "A second tag, tied under the first:",
-          "THREE ARROWS TO THE NOTE POST. FOR PRACTICE.",
-          "Three arrows lie beside it, set apart."
-        ],
-        "active": [
-          "The tag sways: THREE ARROWS TO THE NOTE POST."
-        ],
-        "ready": [
-          "A clip on the post. You leave the three arrows in it.",
-          "In the clip already: a red draught, stoppered."
-        ],
-        "done": [
-          "The basket waits. The tags turn in the wind."
-        ]
-      }
+      "returnText": "Give the arrows to the post-keeper"
     },
     {
       "id": "sq.straw",
@@ -776,7 +759,7 @@
         ]
       },
       "band": 5,
-      "turnIn": "notePost",
+      "turnIn": "rook",
       "objectives": [
         {
           "id": "t1",
@@ -809,28 +792,25 @@
           "journal": "Two down. One straw man still stands. Hit the third."
         }
       ],
-      "returnText": "Take the bundle from the note post",
+      "returnText": "Tell Rook the straw men are down",
       "lines": {
         "offer": [
-          "Three straw men. Three arrows. Three hits.",
-          "The bundle under the post is for whoever can."
+          "NEEDS WRITER note.straw.offer:",
+          "Three straw men, three arrows. Try your aim?"
         ],
         "active": [
           "Three straw men. Three hits. The bundle waits."
         ],
-        "ready": [
-          "Three hits. Under the post, a bundle of arrows.",
-          "Twenty, tied with twine. Fresh knots."
-        ],
         "done": [
           "A new line on the tally. Yours, this time."
         ]
-      }
+      },
+      "objectGiver": true
     },
     {
       "id": "sq.rb.shield",
       "title": "Left at the Bend",
-      "site": "relayBend",
+      "site": "postkeeper",
       "steps": [
         {
           "template": "explore",
@@ -866,32 +846,14 @@
       "requireEquipped": [
         "shield"
       ],
-      "turnIn": "relayFord",
       "abandonable": false,
       "band": 2,
-      "returnText": "Show the buckler at the Ford Waystone",
-      "lines": {
-        "offer": [
-          "TICK. TICK-TICK. A drawer slides out of the mount.",
-          "HELD: ONE BUCKLER. LEFT FOR THE NEXT WALKER.",
-          "NO NAME. CARRY IT WORN. SHOW THE FORD."
-        ],
-        "active": [
-          "TICK. BUCKLER WORN? FORD. WEST."
-        ],
-        "ready": [
-          "TICK. BUCKLER SEEN. CARRIER LOGGED.",
-          "KEEP IT. ONE DRAUGHT, HELD FOR YOU."
-        ],
-        "done": [
-          "TICK. CARRIER LOGGED AT THE FORD. LINE HOLDS."
-        ]
-      }
+      "returnText": "Show the buckler to the post-keeper"
     },
     {
       "id": "sq.rb.regards",
       "title": "Word for Burl",
-      "site": "relayBend",
+      "site": "postkeeper",
       "steps": [
         {
           "template": "talk",
@@ -921,28 +883,12 @@
         ]
       },
       "band": 2,
-      "returnText": "Go back to the Bend Waystone",
-      "lines": {
-        "offer": [
-          "TICK. BEAR ON THE SLOPE. KNOWN.",
-          "MESSAGE: ROAD CLEAR. LIGHT HOLDS. CARRY IT."
-        ],
-        "active": [
-          "TICK. MESSAGE FOR THE BEAR. NOT YET CARRIED."
-        ],
-        "ready": [
-          "TICK. MESSAGE CARRIED. LOGGED.",
-          "FIVE ARROWS, HELD FOR YOU."
-        ],
-        "done": [
-          "TICK. LINE QUIET. ALL WELL."
-        ]
-      }
+      "returnText": "Report to the post-keeper"
     },
     {
       "id": "sq.rb.road",
       "title": "Down the Road West",
-      "site": "relayBend",
+      "site": "postkeeper",
       "steps": [
         {
           "template": "explore",
@@ -984,28 +930,12 @@
         ]
       },
       "band": 2,
-      "returnText": "Report to the Bend Waystone",
-      "lines": {
-        "offer": [
-          "TICK. ROAD CHECK DUE. LAST CHECK: LONG AGO.",
-          "WALK TO THE OLD TURN. RETURN. REPORT."
-        ],
-        "active": [
-          "TICK. ROAD CHECK OPEN. WALK. RETURN."
-        ],
-        "ready": [
-          "TICK. ROAD CHECKED. LOGGED.",
-          "FIVE ARROWS, HELD FOR YOU."
-        ],
-        "done": [
-          "TICK. NEXT ROAD CHECK: LONG FROM NOW."
-        ]
-      }
+      "returnText": "Report to the post-keeper"
     },
     {
       "id": "sq.fc.ford",
       "title": "Wet Boots",
-      "site": "relayFord",
+      "site": "postkeeper",
       "steps": [
         {
           "template": "explore",
@@ -1041,28 +971,12 @@
         }
       },
       "band": 4,
-      "returnText": "Report to the Ford Waystone",
-      "lines": {
-        "offer": [
-          "TICK. FORD STONES: UNCHECKED.",
-          "CROSS. COUNT THE STONES. RETURN."
-        ],
-        "active": [
-          "TICK. FORD UNCHECKED. CROSS. RETURN."
-        ],
-        "ready": [
-          "TICK. FORD CROSSED. WALKER WET.",
-          "DRY BOOTS, HELD FOR YOU. TAKE THEM."
-        ],
-        "done": [
-          "TICK. FORD CHECKED. MIND THE MOSS."
-        ]
-      }
+      "returnText": "Report to the post-keeper"
     },
     {
       "id": "sq.fc.smoke",
       "title": "North Watch",
-      "site": "relayFord",
+      "site": "postkeeper",
       "steps": [
         {
           "template": "explore",
@@ -1071,7 +985,7 @@
               "northLook"
             ]
           },
-          "objText": "Climb to the lookout north of the ford",
+          "objText": "Climb the north lookout",
           "journal": "From the ford, a thread of smoke shows in the north. Climb the lookout."
         }
       ],
@@ -1094,28 +1008,12 @@
         ]
       },
       "band": 5,
-      "returnText": "Report to the Ford Waystone",
-      "lines": {
-        "offer": [
-          "TICK. NORTH WATCH DUE. NO WATCHER.",
-          "CLIMB. LOOK NORTH. RETURN. REPORT."
-        ],
-        "active": [
-          "TICK. NORTH WATCH OPEN. CLIMB. LOOK."
-        ],
-        "ready": [
-          "TICK. NORTH WATCH DONE. LOGGED.",
-          "TEN ARROWS, HELD FOR YOU."
-        ],
-        "done": [
-          "TICK. NORTH WATCH LOGGED. LINE HOLDS."
-        ]
-      }
+      "returnText": "Report to the post-keeper"
     },
     {
       "id": "sq.fc.cross",
       "title": "The Crossroads Report",
-      "site": "relayFord",
+      "site": "postkeeper",
       "steps": [
         {
           "template": "explore",
@@ -1124,7 +1022,7 @@
               "crossroads"
             ]
           },
-          "objText": "Walk the west road to the crossroads",
+          "objText": "Walk to the west crossroads",
           "journal": "The west road leads to a crossroads. Walk it and see what is there."
         }
       ],
@@ -1147,28 +1045,12 @@
         ]
       },
       "band": 5,
-      "returnText": "Report to the Ford Waystone",
-      "lines": {
-        "offer": [
-          "TICK. CROSSROADS: NO REPORT IN YEARS.",
-          "WALK THERE. RETURN. REPORT."
-        ],
-        "active": [
-          "TICK. CROSSROADS REPORT OPEN."
-        ],
-        "ready": [
-          "TICK. CROSSROADS REPORTED. LOGGED.",
-          "ONE DRAUGHT, HELD FOR YOU."
-        ],
-        "done": [
-          "TICK. ALL ROADS REPORTED. ALMOST."
-        ]
-      }
+      "returnText": "Report to the post-keeper"
     },
     {
       "id": "sq.fc.again",
       "title": "Back Across",
-      "site": "relayFord",
+      "site": "postkeeper",
       "steps": [
         {
           "template": "explore",
@@ -1200,23 +1082,7 @@
         ]
       },
       "band": 4,
-      "returnText": "Report to the Ford Waystone",
-      "lines": {
-        "offer": [
-          "TICK. FORD CHECK, RETURN LEG. DUE.",
-          "CROSS BACK. RETURN. REPORT."
-        ],
-        "active": [
-          "TICK. RETURN LEG OPEN. CROSS BACK."
-        ],
-        "ready": [
-          "TICK. BOTH LEGS LOGGED. FORD SOUND.",
-          "TEN ARROWS, HELD FOR YOU."
-        ],
-        "done": [
-          "TICK. FORD SOUND. WALKER SOUND. LINE HOLDS."
-        ]
-      }
+      "returnText": "Report to the post-keeper"
     },
     {
       "id": "sq.tm.gap",
@@ -1385,7 +1251,7 @@
     {
       "id": "sq.rb.lamps",
       "title": "Lamps on the Verge",
-      "site": "relayBend",
+      "site": "postkeeper",
       "steps": [
         {
           "template": "explore",
@@ -1413,28 +1279,12 @@
         ]
       },
       "band": 2,
-      "returnText": "Report to the Bend Waystone",
-      "lines": {
-        "offer": [
-          "TICK. LAMPS: TWO. LIT: UNKNOWN.",
-          "WALK THE VERGE. RETURN. REPORT."
-        ],
-        "active": [
-          "TICK. LAMP COUNT OPEN. WALK THE VERGE."
-        ],
-        "ready": [
-          "TICK. LAMPS COUNTED. TWO. BRASS.",
-          "ONE DRAUGHT, HELD FOR YOU."
-        ],
-        "done": [
-          "TICK. TWO LAMPS. LINE HOLDS."
-        ]
-      }
+      "returnText": "Report to the post-keeper"
     },
     {
       "id": "sq.rb.rocks",
       "title": "Rocks at the Forest Edge",
-      "site": "relayBend",
+      "site": "postkeeper",
       "steps": [
         {
           "template": "explore",
@@ -1466,38 +1316,22 @@
         ]
       },
       "band": 2,
-      "returnText": "Report to the Bend Waystone",
-      "lines": {
-        "offer": [
-          "TICK. ROAD NORTH VERGE: ROCKS. FALLEN LOGS.",
-          "CHECK. RETURN. REPORT."
-        ],
-        "active": [
-          "TICK. VERGE CHECK OPEN. ROCKS. LOGS."
-        ],
-        "ready": [
-          "TICK. VERGE CLEAR. LOGS OLD. LOGGED.",
-          "FIVE ARROWS, HELD FOR YOU."
-        ],
-        "done": [
-          "TICK. VERGE LOGGED. LINE HOLDS."
-        ]
-      }
+      "returnText": "Report to the post-keeper"
     },
     {
       "id": "sq.rb.parcel",
       "title": "Brass for the Ford",
-      "site": "relayBend",
+      "site": "postkeeper",
       "steps": [
         {
           "template": "deliver",
           "params": {
             "item": "brass.scrap",
             "count": 1,
-            "to": "relayFord"
+            "to": "postkeeper"
           },
-          "objText": "Carry the brass to the Ford Waystone",
-          "journal": "You carry a brass scrap for the Ford Waystone. Bring it there."
+          "objText": "Bring the brass to the post-keeper",
+          "journal": "You carry a brass scrap for the post-keeper. Hand it over at the trade post."
         }
       ],
       "requires": [
@@ -1519,23 +1353,7 @@
         ]
       },
       "band": 2,
-      "returnText": "Set the brass at the Ford Waystone",
-      "lines": {
-        "offer": [
-          "TICK. BRASS, ONE PIECE. HELD FOR THE FORD.",
-          "CARRY WEST. LEAVE AT THE FORD MOUNT."
-        ],
-        "active": [
-          "TICK. BRASS IN TRANSIT. FORD. WEST."
-        ],
-        "ready": [
-          "TICK. BRASS RECEIVED. FORD MOUNT SEATED.",
-          "TEN ARROWS, HELD FOR YOU."
-        ],
-        "done": [
-          "TICK. BRASS DELIVERED. BEND WAYSTONE: NOTED."
-        ]
-      }
+      "returnText": "Hand the brass to the post-keeper"
     },
     {
       "id": "sq.he.wallow",
@@ -1749,7 +1567,7 @@
     {
       "id": "sq.fc.stores",
       "title": "Boars in the Stores",
-      "site": "post",
+      "site": "postkeeper",
       "steps": [
         {
           "template": "kill",
@@ -1774,23 +1592,7 @@
         "table": "gear.t2"
       },
       "band": 5,
-      "returnText": "Take what the post left for you",
-      "lines": {
-        "offer": [
-          "A tag on the basket: BOARS BROKE THE CROCK.",
-          "TWO. SOUTH OF THE POST. DRIVE THEM OFF."
-        ],
-        "active": [
-          "The tag: TWO BOARS, SOUTH OF THE POST."
-        ],
-        "ready": [
-          "The grain crock is whole again. The boars are gone.",
-          "In the basket, new, tied with twine: a bundle."
-        ],
-        "done": [
-          "The tag is turned over. It reads: THANK YOU."
-        ]
-      }
+      "returnText": "Tell the post-keeper the boars are gone"
     },
     {
       "id": "sq.fc.caps",
@@ -1894,7 +1696,7 @@
     {
       "id": "sq.fc.shrine",
       "title": "The Fallen Shrine",
-      "site": "notePost",
+      "site": "postkeeper",
       "steps": [
         {
           "template": "explore",
@@ -1903,7 +1705,7 @@
               "shrine"
             ]
           },
-          "objText": "Look at the fallen shrine by the post",
+          "objText": "Look at the fallen shrine",
           "journal": "A shrine lies fallen by the note post. Go and look at it."
         }
       ],
@@ -1926,28 +1728,12 @@
         ]
       },
       "band": 4,
-      "returnText": "Read the note post",
-      "lines": {
-        "offer": [
-          "A fresh scrap pinned on the post, in a careful hand:",
-          "THE SHRINE EAST OF HERE FELL. TELL ME WHICH WAY."
-        ],
-        "active": [
-          "The note: THE SHRINE EAST FELL. WHICH WAY?"
-        ],
-        "ready": [
-          "You look. The pillar leans WEST, toward the water.",
-          "A new line on the note, and ten arrows tied below."
-        ],
-        "done": [
-          "The note: WEST. THANK YOU. IT WAS ALWAYS WEST."
-        ]
-      }
+      "returnText": "Tell the post-keeper which way it fell"
     },
     {
       "id": "sq.fc.jetty",
       "title": "Rotten Planks",
-      "site": "relayFord",
+      "site": "postkeeper",
       "steps": [
         {
           "template": "explore",
@@ -1979,38 +1765,22 @@
         ]
       },
       "band": 4,
-      "returnText": "Report to the Ford Waystone",
-      "lines": {
-        "offer": [
-          "TICK. EAST BANK JETTY: PLANKS. CONDITION: ROT.",
-          "WALK OUT. RETURN. REPORT."
-        ],
-        "active": [
-          "TICK. JETTY CHECK OPEN. PLANKS: ROT."
-        ],
-        "ready": [
-          "TICK. JETTY HOLDS A WALKER. NOT TWO. LOGGED.",
-          "FIVE ARROWS, HELD FOR YOU."
-        ],
-        "done": [
-          "TICK. JETTY LOGGED. ONE WALKER MAX."
-        ]
-      }
+      "returnText": "Report to the post-keeper"
     },
     {
       "id": "sq.fc.cog",
       "title": "A Cog for the Bend",
-      "site": "relayFord",
+      "site": "postkeeper",
       "steps": [
         {
           "template": "deliver",
           "params": {
             "item": "cog",
             "count": 1,
-            "to": "relayBend"
+            "to": "postkeeper"
           },
-          "objText": "Carry the cog to the Bend Waystone",
-          "journal": "You carry a cog from the ford. Take it to the Bend Waystone."
+          "objText": "Bring the cog to the post-keeper",
+          "journal": "You carry a cog for the post-keeper. Hand it over at the trade post."
         }
       ],
       "requires": [
@@ -2032,23 +1802,7 @@
         ]
       },
       "band": 5,
-      "returnText": "Set the cog at the Bend Waystone",
-      "lines": {
-        "offer": [
-          "TICK. SPARE COG, ONE. HELD FOR THE BEND.",
-          "CARRY EAST. LEAVE AT THE BEND MOUNT."
-        ],
-        "active": [
-          "TICK. COG IN TRANSIT. BEND. EAST."
-        ],
-        "ready": [
-          "TICK. COG SEATED. BEND MOUNT QUIET. SOUND.",
-          "TEN ARROWS, HELD FOR YOU."
-        ],
-        "done": [
-          "TICK. COG DELIVERED. BOTH MOUNTS SOUND."
-        ]
-      }
+      "returnText": "Hand the cog to the post-keeper"
     },
     {
       "id": "sq.fc.ask",
@@ -2194,23 +1948,21 @@
       },
       "abandonable": true,
       "band": 2,
-      "returnText": "Bring the hide to the wrecked airship",
+      "returnText": "Bring the hide to Burl",
       "lines": {
         "offer": [
-          "The side plate hangs by one rivet.",
-          "Bent round. Light. A strap would hold it."
+          "NEEDS WRITER prompt.gondola.offer:",
+          "A bent plate hangs here. Make a shield of it?"
         ],
         "active": [
           "A plate and a strap. Boar hide would do."
         ],
-        "ready": [
-          "Hide strap, brass plate. A buckler now.",
-          "Hold right mouse to block."
-        ],
         "done": [
           "The wreck creaks. The plate is yours now."
         ]
-      }
+      },
+      "turnIn": "burl",
+      "objectGiver": true
     },
     {
       "id": "sq.honey",
@@ -2322,10 +2074,10 @@
           "template": "deliver",
           "params": {
             "item": "packet",
-            "to": "post"
+            "to": "postkeeper"
           },
-          "objText": "Leave the packet at the ford post",
-          "journal": "You found an oilcloth packet. Leave it at the ford post."
+          "objText": "Bring the packet to the post-keeper",
+          "journal": "You found an oilcloth packet. Bring it to the post-keeper."
         }
       ],
       "opensAfter": [
@@ -2341,25 +2093,20 @@
       },
       "abandonable": true,
       "band": 3,
-      "returnText": "Leave the packet at the ford post",
+      "returnText": "Hand the packet to the post-keeper",
       "lines": {
         "offer": [
-          "Oilcloth, tied with twine.",
-          "Stitched on the cloth: FOR THE FORD POST.",
-          "It has waited here a long time."
+          "NEEDS WRITER prompt.packet.offer:",
+          "An oilcloth packet. Take it to the post-keeper?"
         ],
         "active": [
           "The packet. The ford post, by the crossroads."
         ],
-        "ready": [
-          "A basket on a post. Arrows inside, and a tag:",
-          "TAKEN. LEAVE WHAT YOU CAN SPARE.",
-          "Packet left. Arrows taken. Fair trade."
-        ],
         "done": [
           "The basket waits. The tags turn in the wind."
         ]
-      }
+      },
+      "objectGiver": true
     },
     {
       "id": "sq.burl.fire",

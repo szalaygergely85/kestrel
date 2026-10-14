@@ -314,5 +314,34 @@ function pathCost(grid, path, len) {
   ok('planPath: zero alloc over 2000 plans', grew < 64 * 1024, `grew ${grew} (sink=${sink})`);
 }
 
+// ---- NAV-REACH-01: river / island / determinism / zero alloc ----------------
+{
+  const W = 40, H = 20;
+  const grid = openGrid(W, H);
+  for (let y = 0; y < H; y++) for (let x = 18; x <= 21; x++) grid.terrainCost[y * W + x] = 0; // full-height river
+  grid._recomputeCost();
+  const astar = createAStar(grid);
+  const out = new Int32Array(W * H);
+  const len = findPath(astar, 5, 10, 35, 10, out, { maxNodes: 3000 });
+  const end = out[len - 1], ex = end % W, ey = (end / W) | 0;
+  ok('river: partial, ends on the near bank next to the river', astar.partial && ex === 17 && ey === 10, `end=${ex},${ey}`);
+  const len2 = findPath(astar, 5, 10, 35, 10, out, { maxNodes: 3000 });
+  ok('river: same result every run', len2 === len && out[len2 - 1] === end);
+  // island: goal cell walkable but ringed by water
+  for (let y = 0; y < H; y++) for (let x = 18; x <= 21; x++) grid.terrainCost[y * W + x] = 1;
+  for (let y = 8; y <= 12; y++) for (let x = 28; x <= 32; x++) grid.terrainCost[y * W + x] = (x === 30 && y === 10) ? 1 : 0;
+  grid._recomputeCost();
+  const l3 = findPath(astar, 5, 10, 30, 10, out, { maxNodes: 3000 });
+  const e3 = out[l3 - 1], x3 = e3 % W, y3 = (e3 / W) | 0;
+  ok('island: partial, ends on the shore nearest the island', astar.partial && x3 === 27 && y3 === 10, `end=${x3},${y3}`);
+  for (let i = 0; i < 200; i++) findPath(astar, 5, 10, 30, 10, out, { maxNodes: 3000 });
+  if (global.gc) global.gc();
+  const m0 = process.memoryUsage().heapUsed;
+  for (let i = 0; i < 2000; i++) findPath(astar, 5, 10, 30, 10, out, { maxNodes: 3000 });
+  if (global.gc) global.gc();
+  const g2 = process.memoryUsage().heapUsed - m0;
+  ok('unreachable query: zero alloc over 2000 queries', g2 < 64 * 1024, 'grew ' + g2);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }

@@ -8,11 +8,13 @@
 // (twin: edgePass.js).
 import { meshOutdoorFog } from '../../fogShape.js'; // OB-089
 import { updateUnderState } from '../../underwater.js'; // SWIM-04c
-import { SHADE_BLOCK, SHADE_WGSL, SHADE_LEVEL_WGSL, SHADE_TEXTURES } from '../wgsl/shade.wgsl.js';
+import { SHADE_BLOCK, SHADE_WGSL, SHADE_LEVEL_WGSL, SHADE_TEXTURES, SHADE_LOOK_BLOCK, SHADE_LOOK_WGSL, SHADE_LEVEL_LOOK_WGSL } from '../wgsl/shade.wgsl.js';
+import { packLookTable, LOOK_TABLE_WORDS } from '../../groundLook.js'; // ENV-02d
 import { EDGE_BLOCK, EDGE_WGSL, EDGE_TEXTURES } from '../wgsl/edge.wgsl.js';
 import { packMaterialTable } from '../ShadeTextures.js';
 import { packTerrainTextures } from '../TerrainTextures.js';
 import { SKY_LUT_N } from '../wgsl/skyLut.js';
+import { applySkyHaze } from '../../atmos.js'; // ENV-03c
 import { sunFromWorld } from '../../lighting.js';
 import { skylineFor, grassTableFor, packGrassTable, makeFarGrass, farGrassFill } from '../../terrainShade.js'; // MAP-06b: same record as the JS twin's ctx.skyline
 import { PROJ_HFOV_DEG } from '../../projection.js';
@@ -63,6 +65,9 @@ export class WgShadePass {
       bindings: { uniformBytes: SHADE_BLOCK.sizeBytes, textures: SHADE_TEXTURES.slice() },
       targetFormats: this.stable ? ['rgba8', 'rgba8', 'r8ui'] : ['rgba8', 'rgba8'],
     });
+    // ENV-02d (38.63): look variant of the shade pipeline (ShadeU + the look table), built lazily the first time a world with groundLook is drawn.
+    // Look off (no groundLook) never touches any of this: pipeline, uniforms and binds stay exactly as before.
+    this.pipeShadeLook = null; this.suL = null; this.suL32 = null; this.shBindL = null; this.lookCfg = null;
     this.pipeEdge = device.createPipeline({
       vertex: { src: { wgsl: EDGE_WGSL } }, fragment: { src: { wgsl: EDGE_WGSL }, targets: 2 },
       bindings: { uniformBytes: EDGE_BLOCK.sizeBytes, textures: EDGE_TEXTURES.slice() },
@@ -88,6 +93,7 @@ export class WgShadePass {
     this.skyElevTop = 0;
     this.table = null; this.palette = null; this.uniforms = null; this.packed = null;
     this.tableDirty = false; this.nRec = 0;
+    this.skyFogVer = 0; this.terrainFogVer = 0; // ENV-03c: liveFogVersion of the last sky bake / terrain fog upload
     this.skyPalette = null; this.skyTime = null; this.skyLiveVer = -1; // DN-02: liveLookVersion of the last bake (-1 = baked from the static look)
     this.terrainWorld = null; this.terrainVersion = -1;
     this.terrainU = { bandNear: 0, bandMid: 0, fogOn: false, fogStart: 0, fogFull: 0, fogCurve: 1, nearRGB: null, farRGB: null, nearDetail: false, handover: null, closeBand: 0 };
@@ -152,7 +158,7 @@ export class WgShadePass {
   /** DN-02: the sky LUT needs a (re)bake: new palette / default time, or liveLookVersion changed (-1 = no live look = frozen path). */
   _skyStale() {
     const P = this.palette;
-    return this.skyPalette !== P || this.skyTime !== P.defaultTime || this.skyLiveVer !== (P.liveLook ? (P.liveLookVersion | 0) : -1);
+    return this.skyPalette !== P || this.skyTime !== P.defaultTime || this.skyLiveVer !== (P.liveLook ? (P.liveLookVersion | 0) : -1) || this.skyFogVer !== (P.liveFogVersion | 0);
   }
 
   // GL _bakeSkyLUT twin (flat gradient, SKY_LUT_N samples over elevation [0, elevTop]); re-baked when the palette / time of day changes.
@@ -161,6 +167,7 @@ export class WgShadePass {
     this.skyPalette = P; this.skyTime = P ? P.defaultTime : null;
     const live = P && P.liveLook; // DN-02: day/night look (blendLook); unset = the frozen path, byte-identical to before
     this.skyLiveVer = live ? (P.liveLookVersion | 0) : -1;
+    this.skyFogVer = P ? (P.liveFogVersion | 0) : 0;
     const rec = P && P.materials && P.materials.sky;
     if (!rec || !P.timeOfDay) return;
     const stops = (live || P.timeOfDay[P.defaultTime]).sky;
@@ -177,6 +184,7 @@ export class WgShadePass {
       data[i * 4 + 2] = a[2] + (b[2] - a[2]) * kk;
       data[i * 4 + 3] = 0;
     }
+    if (P.atmos) applySkyHaze(data, SKY_LUT_N, P.atmos); // ENV-03c: horizon haze (no-op when off), same rule as the JS LUT bakes
     this.device.writeTexture(this.texSky, data);
     this.skyElevTop = rec.elevTop;
     this.stats.skyBakes++;
@@ -186,12 +194,17 @@ export class WgShadePass {
   _ensureTerrain(world) {
     const terrain = world && world.terrain;
     if (!terrain || !terrain.farReady || !this.palette) return;
-    if (this.terrainVersion === terrain.farVersion && this.terrainWorld === world) return;
-    const packed = packTerrainTextures(terrain, this.palette);
-    this.texTlook = this._recreate(this.texTlook, 'rgba32f', packed.tlookWidth, Math.max(1, packed.tlookHeight));
-    this.device.writeTexture(this.texTlook, packed.tlook);
-    this.terrainVersion = terrain.farVersion; this.terrainWorld = world;
-    this.stats.terrainUploads++;
+    const fogVer = this.palette.liveFogVersion | 0; // ENV-03c: the fog uniforms also follow the live atmosphere record
+    const newBake = this.terrainVersion !== terrain.farVersion || this.terrainWorld !== world;
+    if (!newBake && this.terrainFogVer === fogVer) return;
+    this.terrainFogVer = fogVer;
+    if (newBake) { // tlook pack + upload only on a new far bake (a fog-only bump rewrites just the uniforms below, 0 alloc)
+      const packed = packTerrainTextures(terrain, this.palette);
+      this.texTlook = this._recreate(this.texTlook, 'rgba32f', packed.tlookWidth, Math.max(1, packed.tlookHeight));
+      this.device.writeTexture(this.texTlook, packed.tlook);
+      this.terrainVersion = terrain.farVersion; this.terrainWorld = world;
+      this.stats.terrainUploads++;
+    }
     const recipe = terrain.recipe, P = this.palette, fogRec = P && P.fog && P.fog.far, tu = this.terrainU;
     tu.bandNear = recipe && recipe.bands ? recipe.bands.near : tu.bandNear;
     tu.bandMid = recipe && recipe.bands ? recipe.bands.mid : tu.bandMid;
@@ -297,6 +310,8 @@ export class WgShadePass {
       su[S_SUN_DIR] = sun.dirX; su[S_SUN_DIR + 1] = sun.dirY; su[S_SUN_DIR + 2] = sun.dirZ;
       su[S_AMBIENT_I] = sun.ambientI; su[S_SUN_I] = sun.sunI;
     }
+    // ENV-02d: look on = the terrain raster wrote the look word into GA.w (rp.lookActive, set by the raster host) AND the world has groundLook
+    const lkCfg = useScene && rp && rp.lookActive && p._world.terrain && p._world.terrain.groundLook ? p._world.terrain.groundLook.cfg : null;
     const tx = this.shTex;
     tx[SH.GI].texture = t.texGI; tx[SH.GA].texture = t.texGA; tx[SH.GD].texture = t.texGD; tx[SH.DEPTH].texture = t.texDepth;
     tx[SH.SGI].texture = t.texSGI; tx[SH.SGA].texture = t.texSGA; tx[SH.FG].texture = rt.fgTex; tx[SH.BG].texture = rt.bgTex;
@@ -304,7 +319,7 @@ export class WgShadePass {
     tx[SH.SETI].texture = this.texSetI; tx[SH.SETF].texture = this.texSetF; tx[SH.GAIN].texture = this.texGain;
     tx[SH.LIGHT].texture = t.texLight; tx[SH.TLOOK].texture = this.texTlook;
     wgSpanBegin(p, WG_PASS_SLOT.shade);
-    try { d.beginPass(this.stable ? t.targetShadeLevel : t.targetShade); d.bind(this.pipeShade, this.shBind); d.draw(3); d.endPass(); } finally { wgSpanEnd(p); }
+    try { d.beginPass(this.stable ? t.targetShadeLevel : t.targetShade); if (lkCfg) this._bindLook(lkCfg, p._world); else d.bind(this.pipeShade, this.shBind); d.draw(3); d.endPass(); } finally { wgSpanEnd(p); }
     // WG-3e: water composite between shade and edge (GL order); a no-op when the layer is inactive
     if (water && water.active) {
       wgSpanBegin(p, WG_PASS_SLOT.water);
@@ -324,9 +339,30 @@ export class WgShadePass {
     return true;
   }
 
+  /** ENV-02d: bind the look pipeline. The plain su words are copied bit-exact into the bigger look block (no alloc), the table is packed only on a new cfg, wind01 written per frame. */
+  _bindLook(cfg, world) {
+    const d = this.device;
+    if (!this.pipeShadeLook) {
+      const src = this.stable ? SHADE_LEVEL_LOOK_WGSL : SHADE_LOOK_WGSL;
+      this.pipeShadeLook = d.createPipeline({
+        vertex: { src: { wgsl: src } }, fragment: { src: { wgsl: src }, targets: this.stable ? 3 : 2 },
+        bindings: { uniformBytes: SHADE_LOOK_BLOCK.sizeBytes, textures: SHADE_TEXTURES.slice() },
+        targetFormats: this.stable ? ['rgba8', 'rgba8', 'r8ui'] : ['rgba8', 'rgba8'],
+      });
+      this.suL = new Float32Array(SHADE_LOOK_BLOCK.sizeWords); this.suL32 = new Uint32Array(this.suL.buffer);
+      this.shBindL = { uniforms: this.suL, textures: this.shTex };
+      this.lookWords = new Float32Array(LOOK_TABLE_WORDS); this.lookTW = SHADE_LOOK_BLOCK.field('lookT').word; this.lookPW = SHADE_LOOK_BLOCK.field('lookP').word;
+    }
+    if (this.lookCfg !== cfg) { packLookTable(cfg, this.lookWords); this.suL.set(this.lookWords, this.lookTW); this.lookCfg = cfg; this.stats.lookUploads = (this.stats.lookUploads || 0) + 1; }
+    this.suL32.set(this.su32);
+    const wp = world.wind && world.wind.params; // wind01: strength 0..1 of the world wind (0 = calm = look output is time-independent)
+    this.suL[this.lookPW] = wp && wp.amp > 0 ? (wp.amp < 1 ? wp.amp : 1) : 0;
+    d.bind(this.pipeShadeLook, this.shBindL);
+  }
+
   dispose() {
     const d = this.device;
-    for (const k of ['pipeShade', 'pipeEdge', 'texMatF', 'texMatI', 'texSetI', 'texSetF', 'texGain', 'texSky', 'texTlook', 'texWaterDummy']) {
+    for (const k of ['pipeShade', 'pipeShadeLook', 'pipeEdge', 'texMatF', 'texMatI', 'texSetI', 'texSetF', 'texGain', 'texSky', 'texTlook', 'texWaterDummy']) {
       if (this[k]) { try { d.dispose(this[k]); } catch (_) { /* best effort */ } this[k] = null; }
     }
   }

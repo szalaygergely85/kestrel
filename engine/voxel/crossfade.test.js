@@ -1,5 +1,6 @@
 // engine/voxel/crossfade.test.js - WILD-01/02 (architecture.md 38.31 item 8): pose crossfade, clip player, gait.
 //   node --expose-gc engine/voxel/crossfade.test.js
+import { allocProbe } from '../../tools/allocProbe.mjs';
 import { createRequire } from 'node:module';
 import { packVoxelModel } from './voxelPack.js';
 import { computeVoxelPose, FORWARD } from './voxelPose.js';
@@ -141,9 +142,12 @@ const mats = { idFor: () => 1 };
   const run = (n) => { let acc = 0; for (let i = 0; i < n; i++) { clipPlay(p, pm, i & 1, true, 80); clipStep(p, pm, 16); clipSetPhase(p, pm, 0.3); acc += clipFromW(p) + gaitRate(g[0], 1.2) + pickGait(g, 1, 0); inst.fromTMs = i % 40; computeVoxelPose(pm, inst, out); } return acc; };
   run(2000);
   if (global.gc) {
-    global.gc(); const h0 = process.memoryUsage().heapUsed; run(100000); global.gc();
-    const d = process.memoryUsage().heapUsed - h0;
-    ok('zero allocation (<1 B/step over 100000 pose + clip + gait steps)', d < 100000, `${d} B`);
+    // BEAST-ALLOC-01: real per-step garbage via allocProbe (min of 5 windows). Measured per call: clipPlay 0.2, clipStep/SetPhase/
+    // FromW/pickGait 0; gaitRate 16 (boxed double return, non-inlined) and the pose call 16 (inst.fromTMs write / boxed arg). 38.61 ALLOC_EXEMPT.
+    const ALLOC_EXEMPT = { cap: 40, reason: 'gaitRate double return + pose harness arg, ~32 B/step measured', ref: 'arch 38.61' };
+    const run2 = (n) => { for (let i = 0; i < n; i++) { clipPlay(p, pm, i & 1, true, 80); clipStep(p, pm, 16); clipSetPhase(p, pm, 0.3); clipFromW(p); gaitRate(g[0], 1.2); pickGait(g, 1, 0); inst.fromTMs = i % 40; computeVoxelPose(pm, inst, out); } };
+    const r = allocProbe(run2, { n: 20000 });
+    ok('allocation per step bounded (<= ' + ALLOC_EXEMPT.cap + ' B/step over pose + clip + gait steps)', r.perCall <= ALLOC_EXEMPT.cap, `${r.perCall} B/step`);
   } else console.log('(run with --expose-gc for the allocation check)');
 }
 

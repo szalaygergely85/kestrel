@@ -139,6 +139,7 @@ export function packTerrainTextures(terrain, palette) {
   return {
     width: terrain.mapW, height: terrain.mapH,
     farH: terrain.farHDraw, farType: terrain.farType,
+    farLook: terrain.farLook || null, // ENV-02c: FARLOOK RG8UI mapW x mapH (null = looks off), uploaded at load only
     tlookWidth: TLOOK_WIDTH, tlookHeight: rows, tlook, typeIds,
   };
 }
@@ -160,5 +161,6 @@ export function packNearTextures(terrain) {
   return {
     width: near.w, height: near.h, x0: near.x0, y0: near.y0, cell: near.cell,
     nearH: near.hDraw, nearType: near.type,
+    nearLook: near.look || null, // ENV-02c: NEARLOOK RG8UI w x h, uploaded on near.version change only (null = looks off)
   };
 }

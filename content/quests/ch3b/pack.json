@@ -11,11 +11,11 @@
       "returnText": "Back to Hesk"
     },
     {
-      "id": "sq.ow.bears", "title": "Black Bears", "site": "owBoard",
+      "id": "sq.ow.bears", "title": "Black Bears", "site": "hesk",
       "steps": [{ "template": "kill", "params": { "ids": ["blackBear1", "blackBear2", "blackBear3"], "count": 2 }, "objText": "Drive off two black bears", "journal": "NEEDS WRITER: black bears prowl the fields by the settlement. Drive off two." }],
       "opensAfter": ["sq.ow.night"],
       "reward": { "items": [{ "id": "potion.hp", "n": 2 }] },
-      "returnText": "Back to the board"
+      "returnText": "Back to Hesk"
     },
     {
       "id": "sq.ow.letters", "title": "Letters Down the Line", "site": "hesk",
@@ -31,11 +31,11 @@
       "returnText": "Tell Hesk what Dorrin said"
     },
     {
-      "id": "sq.ow.trail", "title": "Walk the Track", "site": "owBoard",
+      "id": "sq.ow.trail", "title": "Walk the Track", "site": "owBoard", "turnIn": "hesk", "objectGiver": true,
       "steps": [{ "template": "explore", "params": { "areas": ["owPath", "crossroads"] }, "objText": "Walk the track to the crossroads", "journal": "NEEDS WRITER: scout the west-bank track from the settlement path to the crossroads." }],
       "opensAfter": ["mq.ford.mirror"],
       "reward": { "items": [{ "id": "arrow", "n": 15 }] },
-      "returnText": "Back to the board"
+      "returnText": "Back to Hesk"
     },
     {
       "id": "sq.ow.news", "title": "Word for Rook", "site": "dorrin",
