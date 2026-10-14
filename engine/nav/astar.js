@@ -156,6 +156,21 @@ export function findPath(astar, sx, sy, gx, gy, outPath, opts = EMPTY_OPTS) {
   return count;
 }
 
+/**
+ * NAV-REACH-01 (OB-149/150): the walkable cell reachable from (sx,sy) that is closest to (gx,gy) (river bank, ford
+ * edge, wall gap), as a cell index; -1 if the start is invalid. Bounded by `opts.maxNodes`, deterministic
+ * (smallest octile h, then g, then index), allocation-free (needs `outPath` as findPath). `astar.partial` is false
+ * when the goal itself is reachable (the result is then the goal cell).
+ * @param {ReturnType<typeof createAStar>} astar
+ * @param {number} sx @param {number} sy @param {number} gx @param {number} gy
+ * @param {Int32Array} outPath
+ * @param {{maxNodes?: number}} [opts]
+ */
+export function nearestReachable(astar, sx, sy, gx, gy, outPath, opts = EMPTY_OPTS) {
+  const len = findPath(astar, sx, sy, gx, gy, outPath, opts);
+  return len > 0 ? outPath[len - 1] : -1;
+}
+
 /** Bresenham supercover line of sight between two cells, `cost > 0` only,
  * same no-corner-cutting rule as `findPath` (a diagonal step past two
  * blocked orthogonal neighbours is never "in sight"). Zero allocation. */
