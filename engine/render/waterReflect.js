@@ -2,6 +2,7 @@
 // engine/render/waterReflect.js - AUD-42: cheap "ASCII reflection" for opaque water (sky tint at the mirrored view elevation +
 // Schlick fresnel). JS twin of the reflect block in gpu/wgsl/waterComposite.wgsl.js (same expression order, D-039).
 // All numbers live in WATER_REFLECT; the WGSL interpolates them. Zero alloc: results go into a caller scratch (Float64Array(4)).
+import { applySkyHaze } from './atmos.js';
 import { SKY_LUT_N } from './gpu/wgsl/skyLut.js';
 
 export const WATER_REFLECT = Object.freeze({
@@ -27,6 +28,7 @@ export function skyLutFromPalette(P, out) {
     out[i * 4 + 2] = a[2] + (b[2] - a[2]) * kk;
     out[i * 4 + 3] = 0;
   }
+  if (P.atmos) applySkyHaze(out, SKY_LUT_N, P.atmos, 4); // ENV-03b
   return rec.elevTop;
 }
 

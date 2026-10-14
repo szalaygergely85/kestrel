@@ -9,6 +9,7 @@
 // 9 PART rgba8 (particle colour, a = glyph index/255), 10 PART_Z r32float.  @group(1) @binding(0) = SpritesU. Targets rgba8, rgba8 (fg, bg; bg.a = 1).
 import { defineUniformBlock } from './uniformBlock.js';
 import { GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL, BYTE_OUT_WGSL } from './common.wgsl.js';
+import { ATMOS_GRADE_WGSL } from '../../atmos.js'; // ENV-03c
 import { MAX_SPRITES, SPRITE_NEAR_DEPTH } from '../../sprites.js';
 
 export const SPRITES_BLOCK = defineUniformBlock('SpritesU', [
@@ -21,6 +22,9 @@ export const SPRITES_BLOCK = defineUniformBlock('SpritesU', [
   { name: 'pad0', type: 'f32' }, { name: 'pad1', type: 'f32' },
   { name: 'dimMul', type: 'vec4' },      // float uDimMul[4]
   { name: 'dimRect', type: 'vec4', count: 4 }, // x0, y0, x1, y1 (scene cells, half-open)
+  { name: 'atmosLift', type: 'vec4' },     // ENV-03c: xyz = lift, w = on (1 = grade the cell, 0 = untouched)
+  { name: 'atmosInvGamma', type: 'vec4' }, // xyz = 1/gamma, w = sat
+  { name: 'atmosGain', type: 'vec4' },     // xyz = gain
 ]);
 export const SPRITES_TEXTURES = Object.freeze(['uint', 'uint', 'float', 'float', 'float', 'uint', 'float', 'uint', 'uint', 'float', 'float', 'float']);
 export const SPRITES_TARGETS = Object.freeze(['rgba8', 'rgba8']);
@@ -46,7 +50,7 @@ const SPRITE_NEAR_DEPTH: f32 = ${SPRITE_NEAR_DEPTH};
 ${GBUF_UNPACK_WGSL}
 ${BYTE_OUT_WGSL}
 ${FULLSCREEN_VS_WGSL}
-
+${ATMOS_GRADE_WGSL}
 fn depthAt(c: vec2i) -> f32 { return bitcast<f32>(textureLoad(uDepth, c, 0).r); }
 
 // fadeGlyph's step: j = floor(a * i + 0.5) clamped to 0..last (never the round builtin).
@@ -154,6 +158,12 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
       o.fg = vec4f(o.fg.rgb * k, o.fg.a);
       o.bg = vec4f(o.bg.rgb * k, o.bg.a);
     }
+  }
+
+  // ENV-03c: biome grade on fg + bg after fade/dim (twin: gradeCells); glyph (fg.a) and bg.a never change; off = skipped
+  if (su.atmosLift.w > 0.5) {
+    o.fg = vec4f(clamp(atmosGrade(o.fg.rgb, su.atmosLift.xyz, su.atmosInvGamma.xyz, su.atmosGain.xyz, su.atmosInvGamma.w), vec3f(0.0), vec3f(1.0)), o.fg.a);
+    o.bg = vec4f(clamp(atmosGrade(o.bg.rgb, su.atmosLift.xyz, su.atmosInvGamma.xyz, su.atmosGain.xyz, su.atmosInvGamma.w), vec3f(0.0), vec3f(1.0)), o.bg.a);
   }
   return o;
 }

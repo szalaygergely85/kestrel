@@ -661,10 +661,18 @@ function terrainShadingFor(matTable, ctx) {
 }
 
 function ensureShadeCtx(terrain, palette) {
-  if (terrain._shadeCtx && terrain._shadeCtxVersion === terrain.farVersion) return terrain._shadeCtx;
+  if (terrain._shadeCtx && terrain._shadeCtxVersion === terrain.farVersion) {
+    const fv = palette.liveFogVersion | 0; // ENV-03b: fog scalars/colours follow the live atmosphere record (in place, 0 alloc)
+    if (terrain._shadeCtxFogVer !== fv) {
+      terrain._shadeCtxFogVer = fv;
+      const fr = palette.fog.far, F = terrain._shadeCtx.fog;
+      F.start = fr.start; F.full = fr.full; F.curve = fr.curve; F.nearRGB = palette.rgb[fr.color]; F.farRGB = palette.rgb[fr.colorFar];
+    }
+    return terrain._shadeCtx;
+  }
   const packed = packTerrainTextures(terrain, palette);
   terrain._shadeCtx = makeTerrainShadeCtx(terrain.recipe, packed, palette);
-  terrain._shadeCtxVersion = terrain.farVersion;
+  terrain._shadeCtxVersion = terrain.farVersion; terrain._shadeCtxFogVer = palette.liveFogVersion | 0;
   return terrain._shadeCtx;
 }
 
