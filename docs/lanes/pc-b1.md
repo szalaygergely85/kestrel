@@ -1015,3 +1015,7 @@ mq.ow.path: Hesk (938,930), owPath trigger center (942,925.33) r10 = owGate gap:
 - templates.js passes `objectGiver`; content-lint: acceptOf true for objectGiver, tower level props count as placed giver (ctx.levelIds). R14 65 -> 47 (none of the 11 ids left). objectGiver count in data = 4. validate-content OK, content-canonical PASS; errands.test.js updated (notePost only; straw handed in at Rook).
 - FAIL not mine: sim/templates.test.js (requires unknown quest mq.bend.call, from S5a-4/5 giverDefs), tower-prop-colliders.test.mjs (doorway reload; not checked on baseline).
 - Not browser-checked: tower.blade note read in main.js still uses the actKey flow (may bypass obj.<id> offer; NEEDS B1-main look), `?` over postkeeper for the 6 quests.
+
+### QFIX-S5-CLOSE (kestrel-1, 2026-10-14)
+- keep-light note: it is read via note.read (not errands), so the actKey auto-accept bypassed `obj.noteKeepLight`. New `game/js/quest/objectOffer.js` (`createNoteOffer`): on the close edge of note 'keepLight' while tower.blade is AVAILABLE it calls inspectObject -> Accept/Exit; main.js keeps actKey only as the sword-taken safety net. The other 5 objectGivers already go errands.inspected -> inspectObject -> openObject. `objectOffer.test.js` covers all 6 from real content + the note edge. Not browser-checked.
+- R14 3 -> 0, all lint fixes (data was right): burl.boars / sq.burl.blue accept via `setFlag "q.<id>.accept"` in bear.dialogue.json (lint now recognises it); `m1` is the sectioned umbrella with no giver (lint skips quests with sections and no giver).
