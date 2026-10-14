@@ -8,6 +8,7 @@ import { loadLevel, isTerrainFloor } from './Level.js';
 import { Terrain } from './Terrain.js';
 import { BandBakeJob, buildNavTile, NavTileFill } from './bandBake.js';
 import { BandCache } from './bandCache.js';
+import { GILoader } from './giLoader.js';
 import { aheadOrder, bestOverlap } from './bandAhead.js';
 import { validateCarpetConfig, buildCarpetClassMap, buildCarpetMask, CarpetMaskJob } from './carpet.js';
 import { scatterTrees, scatterDetail, TreeScatterJob, DetailScatterJob, decorRootCm } from './scatter.js';
@@ -325,7 +326,7 @@ export class World {
     // `null` (unbounded - every world before this story). Content, not
     // state; set once by `World.load` from `def.bounds`.
     this.bounds = null;
-    this.terrainBands = null; this.bandSwitch = { prefetchM: 176, switchM: 112 }; this._bandCur = -1; this._bandPend = -1; this._bandJob = null; this.bandCache = new BandCache(); this._bandKeys = []; this._bandKeysC = []; this._evBand = { from: null, to: null, nav: null }; this._maskJob = null; this._maskBack = null; this.lastSwapMs = 0; this.bandMisses = 0; this._ahead = null; this._zoneKeys = new Map(); this._pinKeys = null; this._aheadOrd = []; this._aheadRects = new Float64Array(4 * 64); this._aheadSrc = []; this._aheadPose = null; this._aheadIdle = -1; this._aheadIdleVer = -1; this.bandId = null; // WS2-01/02
+    this.terrainBands = null; this.bandSwitch = { prefetchM: 176, switchM: 112 }; this._bandCur = -1; this._bandPend = -1; this._bandJob = null; this.bandCache = new BandCache(); this._bandKeys = []; this._bandKeysC = []; this._evBand = { from: null, to: null, nav: null }; this._maskJob = null; this._maskBack = null; this.lastSwapMs = 0; this.bandMisses = 0; this._ahead = null; this._zoneKeys = new Map(); this._pinKeys = null; this._aheadOrd = []; this._aheadRects = new Float64Array(4 * 64); this._aheadSrc = []; this._aheadPose = null; this._aheadIdle = -1; this._aheadIdleVer = -1; this.bandId = null; this.giField = null; this.giVersion = 0; this.giLoader = null; // WS2-01/02; GI-PROBE-03: baked probe field of the current band
     this.aheadLateMax = 0; this.navLate = 0; this._navFill = null; this._navQ = null;
     this.nav = null; this.navTiles = null; // WM-03: live nav tile + {create,maxSlopeDeg,maxStepM,blockedTypes,typeCost} (see setNavTiles)
     this.terrainGrid = null; this._gridPick = { i: 0, j: 0 }; // MAP-10 (38.43): generated zone grid; terrainBands = 2 reusable slot zones
@@ -1308,7 +1309,7 @@ export class World {
         pb.job = BandBakeJob.create(this, z.cx0, z.cy0, z.cw, z.ch, this.terrain.near);
       }
       if (pb.job.step(Math.max(0, msBudget - (now() - t0)))) {
-        const b = pb.job.bundle(); b.key = this._bandKey(pb.k); b.zone = pb.k;
+        const b = pb.job.bundle(); b.key = this._bandKey(pb.k); b.zone = pb.k; b.giId = this.terrainBands[pb.k].id; b.gi = this._giFor(b.giId);
         this.bandCache.put(b, this._bandKey(this._bandCur)); this.bandCache.pin(b.key, true);
         pb.job = null;
       }
@@ -1385,7 +1386,7 @@ export class World {
     const stepped = a.job.step(Math.max(0.2, msBudget - 0.4));
     if (a.job.st.late > this.aheadLateMax) this.aheadLateMax = a.job.st.late; // units started after the budget ran out (deterministic, test asserts <= 1)
     if (!stepped) return true; // 0.4 ms reserve: one 32-cell slice overshoots by ~0.15-0.3 ms
-    const b = a.job.bundle(); b.key = a.key; b.zone = a.i * this.terrainGrid.nj + a.j;
+    const b = a.job.bundle(); b.key = a.key; b.zone = a.i * this.terrainGrid.nj + a.j; b.giId = zoneId(a.i, a.j); b.gi = this._giFor(b.giId);
     this._ahead = null;
     cache.put(b, this._bandKey(this._bandCur), this._bandPend >= 0 ? this._bandKey(this._bandPend) : null);
     if (this._gridPinKeys().has(b.key)) cache.pin(b.key, true);
@@ -1395,7 +1396,30 @@ export class World {
   /** Bundle of the current terrain state as a cache entry (key/zone set by the caller). */
   _currentBundle(key, zone) {
     const col = (id) => { for (let i = 0; i < this.colliders.length; i++) if (this.colliders[i].id === id) return this.colliders[i]; return null; };
-    return { key, zone, near: this.terrain.near, scatter: this.scatter, detail: this.detail, trunks: col('scatter:trunks'), detailCol: col('scatter:detail'), nav: this.nav, classMap: null, bytes: 0, pinned: false, lastUse: 0 };
+    const giId = this.terrainBands ? this.terrainBands[zone].id : null;
+    return { key, zone, giId, gi: this._giFor(giId), near: this.terrain.near, scatter: this.scatter, detail: this.detail, trunks: col('scatter:trunks'), detailCol: col('scatter:detail'), nav: this.nav, classMap: null, bytes: 0, pinned: false, lastUse: 0 };
+  }
+
+  /** GI-PROBE-03: loaded probe field of a zone id, or null (no loader / missing / stale / not yet arrived). */
+  _giFor(id) { return this.giLoader && id ? this.giLoader.get(id) : null; }
+
+  /**
+   * GI-PROBE-03: attaches a GILoader and fetches `.gi.bin` for every authored zone (grid zones load on demand via `loadGIZone`).
+   * Quiet: missing files are the normal case (null, one fetch per zone). Never bakes. Resolves when all requests settled.
+   */
+  loadGI(opts = {}) {
+    const loader = this.giLoader = new GILoader({ ...opts, onLoad: (id, f) => this._giArrived(id, f) });
+    for (const b of this.bandCache.map.values()) if (b.giId && !b.gi) { const f = loader.get(b.giId); if (f) this._giArrived(b.giId, f); }
+    return loader.loadAll(this.terrainBands && !this.terrainGrid ? this.terrainBands.map((z) => z.id) : []);
+  }
+  /** Idle-time fetch of one grid zone's field (e.g. zones in the bake-ahead ring). */
+  loadGIZone(id) { return this.giLoader ? this.giLoader.load(id) : Promise.resolve(null); }
+
+  /** A field arrived after its bundle was cached: attach, re-count the bytes, and flip `giField` when it is the current band. */
+  _giArrived(id, field) {
+    const cur = this._bandCur >= 0 ? this._bandKey(this._bandCur) : null, pend = this._bandPend >= 0 ? this._bandKey(this._bandPend) : null;
+    for (const b of this.bandCache.map.values()) if (b.giId === id && !b.gi) { b.gi = field; this.bandCache.regrow(b, cur, pend); }
+    if (this.bandId === id) { this.giField = field; this.giVersion++; }
   }
 
   /** Stores `b` and pins authored (non-grid) zones. */
@@ -1455,7 +1479,8 @@ export class World {
       this._setCollider('scatter:trunks', hit ? hit.trunks : j.trunks);
       this._setCollider('scatter:detail', hit ? hit.detailCol : j.detailCol);
     }
-    if (!hit) { bundle = { key, zone: to, near: terrain.near, scatter: j.scatter, detail: j.detailSet, decor: (j.detail && j.detail.decor) || null, trunks: j.trunks, detailCol: j.detailCol, nav: j.nav, classMap: null, bytes: 0, pinned: false, lastUse: 0 }; this._cachePut(bundle); }
+    if (!hit) { bundle = { key, zone: to, giId: z.id, gi: this._giFor(z.id), near: terrain.near, scatter: j.scatter, detail: j.detailSet, decor: (j.detail && j.detail.decor) || null, trunks: j.trunks, detailCol: j.detailCol, nav: j.nav, classMap: null, bytes: 0, pinned: false, lastUse: 0 }; this._cachePut(bundle); }
+    this.giField = bundle.gi || null; // GI-PROBE-03: pointer flip (hit or miss path); null = ambient only
     if (this.navTiles) { // WM-03: nav tile swaps with the band (pointer flip; a bundle without one = legacy/cached before setNavTiles -> built once)
       let nv = src.nav;
       if (!nv) { this.navLate++; nv = buildNavTile(this, terrain.near); src.nav = nv; if (bundle) bundle.nav = nv; } // counted fallback (should stay 0 in play)

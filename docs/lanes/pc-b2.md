@@ -1101,6 +1101,8 @@ flowField.js `stepLayered` now relaxes links in REVERSE (reverse index = link id
 
 ### GATE-FLAKY-07 (kestrel-3, 2026-10-14)
 navLayers01d.test: per-slice ms = min over 5 fresh bakes (rep 0 = warm-up), budget 2.5 ms kept hard; idle 1.2-1.8 ms, no split needed (1 source = 1 slice). Proof: alone 3x pass, `run-tests --filter sim` 67/67 PASS.
+### GI-PROBE-02a (kestrel-4, 2026-10-14) -> arch-review
+`engine/world/giBake.js` + test (12 checks): sliced `GIBake.step(ms)` (64 Fibonacci rays, L1 SH pre-convolved, sky/6 sun keys/static emissive, raw Float32 + valid; world needs `raySegmentRay`+`groundAt`); open sky 1.0, canopy 0.6 m over probe <=0.2 (a 4x4 roof 2 m up only blocks ~50% of cosine sky: AC geometry), albedo bounce <5%, fixture bake 64x64 m 192 probes x 6 keys ~20 ms. SWAP POINT: `encodeRaw` -> giProbe.js encoder when GI-PROBE-01 lands; open: World.raySegmentRay caps at 20 samples/ray (coarse over 48 m) and gives no hit normal (default = terrain gradient or cfg.surfaceAt).
 ### GI-PROBE-01 (kestrel-2, 2026-10-14) -> arch-review
 engine/render/giProbe.js (+ giProbe.test.js): 88-channel uint8 probe (sky4, sun6x12, emis12), `encodeGIField`/`decodeGIChannel`, `createGIState`, `mixGIState(st,hour,sky,sun,{night,emisK,skyFloor})`, `giKeyWeights` (cyclic, midnight wrap, moon = hour+12), `sampleGI(st,x,y,z,nx,ny,nz,out)` (manual trilinear, invalid renormalise, +0.5 m normal offset). Tests: const field 1e-6, round trip <=1/255, invalid renormalise, key continuity incl. moon, 0 alloc. giVolumes + GI_SAMPLE_WGSL left to 05.
 
