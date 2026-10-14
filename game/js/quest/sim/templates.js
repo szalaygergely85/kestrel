@@ -145,7 +145,8 @@ export function expandQuest(src, ctx = {}) {
   const reward = expandReward(src, ctx, src.band ?? pack.band);
   if (reward) def.reward = reward;
   def.main = src.main === true;
-  def.abandonable = !def.main && !!def.giver && src.abandonable !== false;
+  if (src.takeGiverOnAccept === true) def.takeGiverOnAccept = true; // D-098/OB-155: the giver is a pickup-able item: Accept puts it in the pack and removes it from the world
+  def.abandonable = !def.main && !!def.giver && src.abandonable !== false && !def.takeGiverOnAccept; // the taken giver cannot be put back, so no abandon
   const band = src.band !== undefined ? src.band : pack.band;
   if (band !== undefined) def.band = band;
   if (pack.region !== undefined) def.region = pack.region;
