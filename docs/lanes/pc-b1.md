@@ -1114,3 +1114,7 @@ NEEDS B1-main: in game/js/main.js right after World.load of the grid world and B
 - OB-156: inventoryScreen.js draws a locked cell WITH its item dimmed + disabled border, no x (empty locked cells unchanged); mouse-hover shows name + `o.slotLockText(i)` ("Locked - learn fire first", set in main.js). Cursor/drag refusal unchanged. Tests extended.
 - OB-157: generic optional `mark.taken` flag in book.chainMarks; m1 step `road` uses `burl.departing` (set by burlEscort when Burl hands it over) -> '?' at relayBend, no '!'. chainMarks.test.js extended.
 - Suites pass (questBook, questLog*, offerMarks, chainMarks, inventoryScreen, mainRule). -> owner look
+
+### HPBAR-01/02 + DMGNUM-01 (kestrel-1, 2026-10-14) - dev done, Node only
+New game/js/ui: enemyBar.js (model + top-3 select), enemyBarView.js (12-cell bar, 0.3 s fade, edge clamp), damageNumbers.js (pool 24, crit gold "!", red hurt number), combatHud.js (host: sim adapter, projection, combat:hit), combatHudFlags.js; tests for each; Settings group "COMBAT HUD" (Enemy health bars / Damage numbers, default On, saved; menu panel h 36->42, settings tests re-based). main.js: ~6 lines (import, boot flags, create, setSim, frame+draw after compass). Not browser-checked, no verify script (40-call cap).
+Open: hurt-number anchor defaults to col 6/row 2 (needs the real hearts position); crit = payload.crit (ITEM-01 sets it); "out of sight" = behind camera only (no LOS ray); 22-cell cap cuts long names ("Lv 10 Boa"); bossName/level read from entity brain.* (no content sets them yet); HPBAR-03 skipped. -> owner look
