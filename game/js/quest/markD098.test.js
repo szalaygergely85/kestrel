@@ -7,6 +7,7 @@ import { setTalkFlags } from './sim/questBook.js';
 import { dialogueFlagOwners } from './talkEnds.js';
 import { trackerLines } from '../ui/questTracker.js';
 import { loadDesignAssets, loadQuestFiles, loadPackQuests } from '../../../tools/validate-content.mjs';
+import { giverOf, turnInOf } from './sim/giverResolve.js';
 import { fileURLToPath } from 'node:url';
 
 const assets = await loadDesignAssets();
@@ -25,21 +26,21 @@ for (let i = 1; i < rest.length + 1; i++) {
   const probe = createQuestBook(m1, rest); const d = probe.def(i), id = d.id;
   const main = probe.isMain(i);
   // available (only when it really is offered now): '!' at the giver, right colour
-  if (probe.status(i) === 1 && d.giver && d.giver.npc) {
-    const l = marks(probe), ent = probe.entityFor(d.giver.npc), all5 = Object.values(l).flat().filter(x => probe.entityFor(x) === ent);
+  if (probe.status(i) === 1 && d.giver && giverOf(d)) {
+    const l = marks(probe), ent = probe.entityFor(giverOf(d)), all5 = Object.values(l).flat().filter(x => probe.entityFor(x) === ent);
     assert.equal(all5.length, 1, id + ': exactly one marker at the giver ' + ent);
-    if (all5[0] === d.giver.npc && !l.gR.includes(all5[0]) && !l.sR.includes(all5[0])) assert.ok((main ? l.gA : [...l.sA, ...l.gA]).includes(d.giver.npc), id + ': ! colour'); nAvail++;
+    if (all5[0] === giverOf(d) && !l.gR.includes(all5[0]) && !l.sR.includes(all5[0])) assert.ok((main ? l.gA : [...l.sA, ...l.gA]).includes(giverOf(d)), id + ': ! colour'); nAvail++;
   }
   // active-not-done: accept, expect grey '?' (or a ready/! of something else on that entity)
   const b = createQuestBook(m1, rest);
   if (!b.accept(id)) continue;
-  if (b.status(i) === 2 && b.def(i).giver && !b.def(i).giver.auto && (b.def(i).giver.turnIn || b.def(i).giver.npc)) {
-    const l = marks(b), t = b.def(i).giver.turnIn || b.def(i).giver.npc;
+  if (b.status(i) === 2 && b.def(i).giver && !b.def(i).giver.auto && turnInOf(b.def(i))) {
+    const l = marks(b), t = turnInOf(b.def(i));
     assert.ok(Object.values(l).flat().some(x => b.entityFor(x) === b.entityFor(t)), id + ': active quest must show a marker at its finish place ' + t);
     const mine = l.gr.includes(t); if (mine) assert.ok(![...l.gR, ...l.sR, ...l.gA, ...l.sA].some(x => b.entityFor(x) === b.entityFor(t)), id + ': grey only when nothing stronger'); nActive++;
   }
   const keys = Object.values(marks(b)).flat().map(x => b.entityFor(x)); assert.equal(new Set(keys).size, keys.length, id + ': one marker per entity');
-  if (b.status(i) === 3) { const l = marks(b), t = b.def(i).giver.turnIn || b.def(i).giver.npc; assert.ok(l.gR.includes(t) || l.sR.includes(t), id + ': ready ? at ' + t); nReady++; }
+  if (b.status(i) === 3) { const l = marks(b), t = turnInOf(b.def(i)); assert.ok(l.gR.includes(t) || l.sR.includes(t), id + ': ready ? at ' + t); nReady++; }
 }
 assert.ok(nAvail >= 30 && nActive >= 30, 'walked: avail ' + nAvail + ' active ' + nActive + ' ready ' + nReady);
 
