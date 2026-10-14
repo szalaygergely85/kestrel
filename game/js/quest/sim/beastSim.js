@@ -1232,9 +1232,9 @@ function measureAndUnstick(sim, i, st) {
   // wants to move: walking wander / chase not waiting / return, and not already at its goal
   let want = (st === STATE_WANDER && sim.timer[i] === WALKING) || st === STATE_RETURN || (st === STATE_CHASE && !sim.waiting[i]);
   if (want) {
-    const gx = st === STATE_CHASE ? sim._px : sim.goalX[i], gy = st === STATE_CHASE ? sim._py : sim.goalY[i];
-    const ex = gx - steer.x[i], ey = gy - steer.y[i];
-    if (ex * ex + ey * ey < (st === STATE_CHASE ? 6 : 1)) want = false; // arrived / in melee range
+    let ex, ey, lim; // one branch per case: a ?: between a heap field and a typed-array double boxes the double (16 B/slot/step)
+    if (st === STATE_CHASE) { ex = sim._px - steer.x[i]; ey = sim._py - steer.y[i]; lim = 6; } else { ex = sim.goalX[i] - steer.x[i]; ey = sim.goalY[i] - steer.y[i]; lim = 1; }
+    if (ex * ex + ey * ey < lim) want = false; // arrived / in melee range // arrived / in melee range
   }
   if (!want) { sim.stkT[i] = 0; return; }
   const ax = steer.x[i] - sim.stkAx[i], ay = steer.y[i] - sim.stkAy[i];

@@ -117,15 +117,38 @@ export function hasLineOfSightRay(world, r) {
     const t = i / steps;
     const x = ax + dx * t, y = ay + dy * t, z = az + dz * t;
 
+    let b = 0;
     if (lq) { // NAV-ALLOC-01: World fast path on scratch (no boxed double args)
       lq[0] = x; lq[1] = y; lq[2] = z;
-      const b = world.losPointQ();
+      b = world.losPointQ();
       if (b === 1) return false;
       if (b === 0) continue;
+    }
+    if (b === -1 && world._gridStructures) { // inside a structure bbox: same answer as pointBlocked, reading the lq scratch (pointBlocked boxes its 3 double args per sample)
+      const sb = structureBlockedQ(world, lq);
+      if (sb !== -1) { if (sb === 1) return false; continue; }
     }
     if (pointBlocked(world, x, y, z)) return false;
   }
   return true;
+}
+
+/** pointBlocked for a point inside a grid structure, no boxed args. 1 blocked, 0 free, -1 = not in a structure (caller falls back). */
+function structureBlockedQ(world, q) {
+  const x = q[0], y = q[1], z = q[2];
+  const gs = world._gridStructures();
+  for (let i = 0; i < gs.length; i++) {
+    const st = gs[i], bb = st.bbox;
+    if (!(x >= bb.x0 && x < bb.x1 && y >= bb.y0 && y < bb.y1)) continue;
+    const o = st.origin, sector = st.level.sectorAt(Math.floor(x - o.x), Math.floor(y - o.y)); // integers -> Smi args, sectorAt floors again (idempotent)
+    if (!sector) return 1;
+    if (sector.solid) return 1;
+    if (z < sector.floorH + o.z) return 1;
+    const c = sector.ceilH;
+    if (typeof c === 'number' && z > c + o.z) return 1;
+    return 0;
+  }
+  return -1;
 }
 
 /**
