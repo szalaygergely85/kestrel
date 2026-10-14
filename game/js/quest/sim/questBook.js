@@ -2,6 +2,7 @@
 // Status is derived from facts + two booleans; facts count before accept (boars stay dead).
 import { createQuest, applyQuestEvent, questObjectives, stringifyQuest, questHash, validateQuestDefinition, applyKindKill, kindOf } from './quest.js';
 
+import { normalizeQuestDef } from './questFormat.js';
 export const UNAVAILABLE = 0, AVAILABLE = 1, ACTIVE = 2, READY = 3, DONE = 4;
 export const STATUS_NAMES = Object.freeze(['unavailable', 'available', 'active', 'ready', 'done']);
 const QUEST_ID = /^[a-z][a-zA-Z0-9_.]*$/;
@@ -20,6 +21,7 @@ function bladeFromMain(def, main, boars) {
 }
 
 export function validateGiverQuest(def) {
+  def = normalizeQuestDef(def); // QUEST-FORMAT: begin/end/requires{quests}/rewards -> the legacy shape below
   validateQuestDefinition(def);
   if (!QUEST_ID.test(def.id)) throw new Error('quest: invalid giver quest id');
   if (def.giver === undefined) { // QL-T1: giverless area quest (objects/areas as objectives): starts when `requires` is met, ends with its last objective
@@ -86,6 +88,11 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     if (si < 0) throw new Error('quest: requires unknown step ' + r.step);
     return { qi, si };
   }));
+  entries.forEach((e, i) => { // QUEST-FORMAT: `next` is offered at the hand-in: the target also waits on this quest being handed in (never auto-started, D-105)
+    const nx = e.def.next; if (nx === undefined || nx === null) return;
+    const qi = byId.get(nx); if (qi === undefined) throw new Error('quest: next unknown quest ' + nx);
+    if (i > 0 && qi > 0 && !requireSteps[qi].some(r => r.qi === i && r.si === -1)) requireSteps[qi].push({ qi: i, si: -1 });
+  });
   const keys = new Map();
   for (let i = 1; i < n; i++) {
     const id = entries[i].def.id;
@@ -171,7 +178,16 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     d.objectives = e.def.objectives.map(o => { const p = by.get(o.id); if (!p) return o; const n = { ...o }; if (str(p.text) !== undefined) n.text = p.text; if (str(p.journal) !== undefined) n.journal = p.journal; return n; });
     e.def = d; return true;
   };
-  book.giverOf = i => entries[i].giver; // QL-03: npc id that offers quest i
+  /** QUEST-FORMAT: index of quest i's `next` quest, or -1. */
+  book.nextOf = i => { const nx = entries[i].def.next; return nx && byId.has(nx) ? byId.get(nx) : -1; };
+  /** QUEST-FORMAT: the offer after a hand-in, [{from, id, giver, title, hint}] for every handed-in quest whose `next` is waiting (AVAILABLE) at its giver. */
+  book.nextOffers = function nextOffers() {
+    const out = [];
+    for (let i = 1; i < n; i++) { const q = book.nextOf(i); if (q > 0 && entries[i].handedIn && statusOf(q) === AVAILABLE) out.push({ from: entries[i].def.id, id: entries[q].def.id, giver: entries[q].giver, title: entries[q].def.title, hint: entries[i].def.nextHint || null }); }
+    return out;
+  };
+  book.giverOf = i => entries[i].giver;
+  book.turnInOf = i => entries[i].turnIn; // QUEST-FORMAT: the hand-in npc (the quest's `end`) // QL-03: npc id that offers quest i
   book.questState = i => entries[i].state;
   book.status = i => statusOf(i);
   book.statusOf = id => byId.has(id) ? statusOf(byId.get(id)) : -1;
