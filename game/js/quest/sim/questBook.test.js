@@ -171,4 +171,23 @@ if (global.gc) {
   const mg2 = migrateQuestSave(sv2, { main: m1d, givers: [bd, br] });
   assert.equal(createQuestBook(m1d, [bd, br], { quest: sv2.quest, quests: mg2 }).statusOf('tower.blade'), ACTIVE, 'still inside: stays active');
 }
+// ---- OB-170 / D-098: later step met -> skipped area steps catch up; talk/flag steps never skipped ----
+{
+  const ch1 = rd('m1.quest.json');
+  const upTo = ['wake', 'breach', 'sword', 'leave', 'beasts', 'follow', 'waystone'];
+  const mk = (completed, flags = {}) => createQuestBook(ch1, [], { quest: { questVersion: 1, questId: 'm1', flags, items: [], deadBeasts: [], areas: [], completed }, quests: null });
+  const wakeBend = { type: 'flag:set', key: 'waystone.ws_roadBend.woken', value: true };
+  const b = mk(upTo);
+  assert.equal(b.main.completed.length, 7);
+  b.feed(wakeBend);
+  assert.deepEqual(b.main.completed.slice(7), ['road', 'relayFound', 'relay1'], 'stone woken off the road finishes road + relayFound + relay1');
+  assert.ok(b.main.areas.includes('roadWest') && b.main.areas.includes('bendRelay'));
+  assert.equal(b.statusOf('m1'), DONE);
+  // a pending flag/talk step before is NOT skipped: the later flag waits
+  const b2 = mk(upTo.slice(0, 6)); b2.feed(wakeBend);
+  assert.equal(b2.main.completed.length, 6, 'waystone (flag) step still pending: nothing skipped');
+  // load of a stuck save (flag set, chain stuck at road) catches up on Continue
+  const b3 = mk(upTo, { 'waystone.ws_roadBend.woken': true });
+  assert.equal(b3.main.completed.length, 10, 'stuck save catches up on load');
+}
 console.log('questBook.test OK');
