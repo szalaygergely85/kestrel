@@ -183,7 +183,7 @@ async function openQuestsTab() {
   try {
     const qp = await import('./questPanel.js'), fl = await import('./quest/flow.js');
     const A = window.ASSETS || {}, itemDefs = (A.items && A.items.defs) || {};
-    questPanelHandle = await qp.mountQuestPanel(root, { names: fl.makeNames({ itemDefs }), itemDefs, loadFiles: () => qp.fetchQuestFiles(), write: qp.downloadWrite, getWorld: () => assets.world(doc.worldId), floorAt: (x, y) => world.floorAt(x, y), onMarkers: () => frame.markDirty() });
+    questPanelHandle = await qp.mountQuestPanel(root, { names: fl.makeNames({ itemDefs }), itemDefs, loadFiles: () => qp.fetchQuestFiles(), loadDialogueFiles: () => qp.fetchDialogueFiles(), write: qp.downloadWrite, getWorld: () => assets.world(doc.worldId), floorAt: (x, y) => world.floorAt(x, y), onMarkers: () => frame.markDirty() });
     window.__questPanel = questPanelHandle;
   } catch (e) { root.textContent = 'Quests failed to load: ' + e.message; console.error(e); }
 }

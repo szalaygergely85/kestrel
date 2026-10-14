@@ -7,6 +7,8 @@ import { questRows, filterRows, buildFlow, itemChoices, objText, objJournal } fr
 import * as ed from './quest/edit.js';
 import { applyPick } from './quest/targets.js';
 import { createQuestPicker } from './questPick.js';
+import { renderLineEditor } from './questDialogue.js';
+import { loadDialogues, saveDialogues, captureBaseline } from './quest/lines.js';
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 
@@ -14,7 +16,7 @@ const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls)
 function memFs(files) {
   const names = Object.keys(files);
   const dirs = new Set(names.filter((n) => n.includes('/')).map((n) => n.split('/')[0]));
-  const key = (p) => p.replace(/^q\//, '');
+  const key = (p) => p.replace(/^[qd]\//, '');
   return {
     readFileSync: (p) => { const k = key(p); if (!(k in files)) throw new Error('missing ' + k); return files[k]; },
     readdirSync: () => [...new Set(names.map((n) => n.split('/')[0]))],
@@ -29,6 +31,11 @@ export async function mountQuestPanel(root, opts) {
   let areasFile = null;   // ED-QUEST-04: content/quests/areas.json (named areas -> world trigger zones); optional
   if (files['areas.json']) { try { areasFile = JSON.parse(files['areas.json']); } catch (e) { /* ignore */ } delete files['areas.json']; }
   const model = loadQuests('q', memFs(files));
+  // ED-QUEST-06: dialogue files ({ 'rook.dialogue.json': text }) are optional; line edits write them back via write('dialogue/<name>')
+  const dfiles = opts.loadDialogueFiles ? await opts.loadDialogueFiles() : {};
+  const dm = loadDialogues('d', memFs(dfiles));
+  const lineBase = captureBaseline(model);
+  let lineMsg = '';
   const stack = makeStack();
   let current = null, filter = '', pickMsg = '', selObj = -1, showAll = false;   // ED-QUEST-04: selObj = step highlighted in the view
   const sites = (model.files.get('sites.json') || { obj: {} }).obj.sites || {};
@@ -93,6 +100,8 @@ export async function mountQuestPanel(root, opts) {
     detail.append(slotRow('Giver', 'giver'), slotRow('Return to', 'return'));
     const pm = el('div', 'q-msg', picker.armed ? 'Click in the 3D view (Esc cancels)' : pickMsg); pm.id = 'quest-pick-msg'; detail.append(pm);
     detail.append(field('Title', q.title, (v) => run(ed.setTitle(q, v))));
+    detail.append(renderLineEditor({ q, dm, base: lineBase, model, names, run, setMsg: (m) => { lineMsg = m; const e = document.getElementById('quest-line-msg'); if (e) e.textContent = m; } }));
+    const lm = el('div', 'q-msg', lineMsg); lm.id = 'quest-line-msg'; detail.append(lm);
     detail.append(field('Offer (Accept / Exit text, one line each)', ((q.lines && q.lines.offer) || []).join('\n'), (v) => run(ed.setOfferLines(q, v.split('\n'))), true));
     q.objectives.forEach((o, i) => {
       const box = el('div', 'q-obj' + (selObj === i ? ' active' : '')); box.dataset.obj = i; box.append(el('b', null, `Step ${i + 1}`));
@@ -126,7 +135,8 @@ export async function mountQuestPanel(root, opts) {
     const msg = el('span', 'q-msg');
     save.addEventListener('click', () => {
       const r = saveQuest(model, q, { writeFileSync: (p, t) => write(p.replace(/^q\//, ''), t) });
-      msg.textContent = r.ok ? 'Saved ' + r.file : r.errors.join('; ');
+      const dw = r.ok ? saveDialogues(dm, { writeFileSync: (p2, t) => write('dialogue/' + p2.replace(/^d\//, ''), t) }) : [];
+      msg.textContent = r.ok ? 'Saved ' + [r.file, ...dw.map((n) => 'dialogue/' + n)].join(', ') : r.errors.join('; ');
     });
     tools.append(undo, redo, save, msg); detail.append(tools);
   }
@@ -135,7 +145,7 @@ export async function mountQuestPanel(root, opts) {
   newBtn.addEventListener('click', () => { const c = ed.newSideQuest(model); stack.run(c); current = c.quest; redraw(); });
   redraw();
   return {
-    model, stack, picker, areasFile, select: (id) => { current = model.quests.find((x) => x.id === id); selObj = -1; redraw(); },
+    model, stack, picker, areasFile, dialogues: dm, lineBase, select: (id) => { current = model.quests.find((x) => x.id === id); selObj = -1; redraw(); },
     /** ED-QUEST-04: what the view draws - the open quest, or every quest when "Show all" is on. */
     markerState: () => ({ quests: showAll ? model.quests : (current ? [current] : []), all: showAll, selObj, sites }),
     selectObjective: (id, i) => { current = model.quests.find((x) => x.id === id) || current; selObj = i; redraw(); },
@@ -143,6 +153,15 @@ export async function mountQuestPanel(root, opts) {
 }
 
 /** Default loader: content/quests/index.json lists packs + legacy files; plain fetch from the page's server. */
+/** Dialogue files listed in content/manifest.json (dialogue/*.dialogue.json) -> { name: text }. */
+export async function fetchDialogueFiles(root = '../../content/') {
+  const man = JSON.parse(await (await fetch(root + 'manifest.json')).text()), out = {};
+  for (const p of Object.values(man).flat().filter((x) => typeof x === 'string' && /^dialogue\/[^/]+\.dialogue\.json$/.test(x))) {
+    const r = await fetch(root + p); if (r.ok) out[p.slice(9)] = await r.text();
+  }
+  return out;
+}
+
 export async function fetchQuestFiles(base = '../../content/quests/') {
   const get = async (p) => { const r = await fetch(base + p); if (!r.ok) throw new Error(p + ' ' + r.status); return r.text(); };
   const idx = JSON.parse(await get('index.json'));
