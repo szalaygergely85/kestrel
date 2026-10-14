@@ -1035,3 +1035,7 @@ mq.ow.path: Hesk (938,930), owPath trigger center (942,925.33) r10 = owGate gap:
 ### B1-MAIN logic + decorPaint (kestrel-1, 2026-10-14)
 - main.js: `createLogicWire` built after the beast sim each 'world:loaded' (only when `ASSETS.logicBlocks` non-empty = 01d loader; none today = no handler, no events, no save state), unregisters old handler, book `quest:accepted/done` -> `logicWire.notify`. hint/sound callbacks left unwired until 01d.
 - decorPaint: new `game/js/decorPaintLoad.js` (+ test) fetches `content/terrain/overworld_far.decorPaint.json` quietly (missing = null) -> `worldLoadOpts.decorPaint`.
+
+### ED-FOLIAGE-05 (kestrel-1, 2026-10-14)
+- New `tools/editor/foliageBudget.js` (zone = 128 m cell; `zoneStats`, `meterLevel` green/amber/red, `checkBudget`, `measureZone` via BandBakeJob + bundleBytes; caps 4/6 MB; `FOLIAGE_TRI_CAP` 1.5 M is an UNCONFIRMED guess, owner to confirm) + `foliageBudget.test.mjs`. Controller `host.budget` refuses a whole paint stroke over a hard cap (plain flash). `foliageBrush.js`: `resnapFoliage` / `floatingFoliage`; main.js terrain stroke end stores the `fol_` z re-snap batch as `rec.foliage` on the terrain record (undo/redo apply it too); Foliage toolbar: Measure button + meter chip.
+- Tests: meter = hand sum, levels, refusal (bytes + tris), paint + terrain edit + undo -> 0 floating. Not browser-run (`tools/verify-edfol-05.mjs <port>` only serves). Unchecked: after `applyAndSync(batch)` rebuild, the terrain layer/world stay attached in the editor (rebuild reloads the World).

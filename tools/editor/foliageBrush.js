@@ -3,7 +3,7 @@
 // and ends in ONE undo batch record. Decor mode (detail-layer paint) is ED-FOLIAGE-04, not here.
 
 import { hash2, PROP_SCALE_MIN, PROP_SCALE_MAX } from '../../engine/index.js';
-import { makeInsertRecord, makeDeleteRecord, findReferrers } from './commands.js';
+import { makeInsertRecord, makeDeleteRecord, makeFieldEditRecord, findReferrers } from './commands.js';
 import { createMeshPlacement, snapMeshOrigin, meshScale } from './meshPlace.js';
 
 export const FOLIAGE_MAX_PER_STROKE = 200;
@@ -148,4 +148,40 @@ export function beginFoliageStroke(ctx, p) {
       return added.length ? { label: 'foliage paint', batch: added.map(it => makeInsertRecord(fileId, 'structures', it)) } : null;
     },
   });
+}
+
+// ---- ED-FOLIAGE-05: terrain re-snap (OB-155 nothing floats) ----
+export const isFolId = id => typeof id === 'string' && id.startsWith('fol_');
+
+/** The z a placement should have on the current floor (same rule as paint: snapMeshOrigin). null = no floor. */
+const snappedZ = (world, assets, s) => { const o = snapMeshOrigin(world, assets.mesh(s.mesh), s.mesh, s.origin.x, s.origin.y, meshScale(s.scale ?? 1)); return o ? o.z : null; };
+
+/**
+ * After a terrain stroke: every `fol_` mesh placement inside world rect [x0,y0,x1,y1] (metres, padded by the footprint)
+ * gets its z re-snapped to the NEW floor. Returns ONE batch of field-edit records (or null when nothing moved) that the
+ * host stores on the terrain record, so undo/redo of the stroke undoes/redoes the z changes too. `world.floorAt` must
+ * already see the new terrain; the doc is NOT changed here (applyEdit the batch).
+ */
+export function resnapFoliage({ doc, fileId, assets, world }, rect, pad = 2) {
+  const file = doc.files.get(fileId); if (!file) return null;
+  const [x0, y0, x1, y1] = [rect[0] - pad, rect[1] - pad, rect[2] + pad, rect[3] + pad], batch = [];
+  (file.def.structures || []).forEach((s, index) => {
+    if (!isMesh(s) || !isFolId(s.id)) return;
+    if (s.origin.x < x0 || s.origin.x > x1 || s.origin.y < y0 || s.origin.y > y1) return;
+    const z = snappedZ(world, assets, s);
+    if (z === null || Math.abs(z - s.origin.z) < 0.005) return;
+    batch.push(makeFieldEditRecord('resnap', fileId, 'structures', s, index, { origin: { ...s.origin, z } }));
+  });
+  return batch.length ? { label: 'foliage resnap', batch } : null;
+}
+
+/** probe-floating twin for placed foliage: `fol_` placements whose z differs from the current snapped floor by > tol. */
+export function floatingFoliage({ doc, fileId, assets, world }, tol = 0.01) {
+  const out = [];
+  for (const s of doc.files.get(fileId).def.structures || []) {
+    if (!isMesh(s) || !isFolId(s.id)) continue;
+    const z = snappedZ(world, assets, s);
+    if (z !== null && Math.abs(s.origin.z - z) > tol) out.push({ id: s.id, gap: +(s.origin.z - z).toFixed(3) });
+  }
+  return out;
 }

@@ -302,6 +302,9 @@
     #foliage-toolbar .fl-op.active { outline: 1px solid var(--ed-fg-hi); }
     #foliage-toolbar label { font-size: 11px; color: var(--ed-fg-dim); display: inline-flex; align-items: center; gap: 4px; }
     #foliage-toolbar input[type=range] { width: 90px; }
+    #fl-meter { background: linear-gradient(90deg, var(--fl-c) var(--fill, 0%), transparent var(--fill, 0%)); border: 1px solid var(--fl-c); --fl-c: #3fa34d; }
+    #fl-meter[data-level=amber] { --fl-c: #d9a21b; }
+    #fl-meter[data-level=red] { --fl-c: #d9453b; }
     #foliage-toolbar input[type=number] { width: 60px; }
     #grass-toolbar label { font-size: 11px; color: var(--ed-fg-dim); display: inline-flex; align-items: center; gap: 4px; }
     #grass-toolbar input[type=range] { width: 90px; }
@@ -561,6 +564,8 @@
           <label>Falloff <select id="fl-falloff"><option value="smooth">smooth</option><option value="hard">hard</option></select></label>
           <label>Seed <input type="number" id="fl-seed" value="1" step="1" /></label>
           <button type="button" id="fl-save" class="ed-btn" title="Save the world file (same as Ctrl+S)">Save</button>
+          <button type="button" id="fl-measure" class="ed-btn" title="Bake the zone under the cursor and read its real bundle size">Measure</button>
+          <span id="fl-meter" class="chip fl-meter" data-level="green" title="Foliage budget of the zone under the cursor"></span>
           <span id="fl-status" class="chip"></span>
         </div>
         <div id="stats-plate" class="ed-plate">fps -</div>

@@ -87,6 +87,10 @@ export function createFoliageController(host, state) {
       if (!s) return null;
       count++; // next stroke gets a different seed so repeat strokes do not stack on identical cells
       const rec = cancel ? null : s.end();
+      if (rec && state.op === 'paint' && host.budget) { // ED-FOLIAGE-05: a stroke that would pass a hard cap is refused whole
+        const chk = host.budget(rec.batch.map((r) => r.after));
+        if (!chk.ok) { host.flash?.(`foliage: stroke refused. ${chk.reason}`); return { rec: null, messages: s.messages, refused: [], stats: s.stats, budget: chk }; }
+      }
       if (rec) host.commit(rec);
       const info = { rec, messages: s.messages, refused: s.refused, stats: s.stats };
       if (host.flash) host.flash(rec ? `${rec.label}: ${rec.batch.length} placements${s.messages.length ? ` (${s.messages[0]})` : ''}` : s.refused.length ? `foliage erase refused: ${s.refused.length} referenced (${s.refused[0].refs[0]})` : cancel ? 'foliage: stroke cancelled' : 'foliage: nothing placed');
