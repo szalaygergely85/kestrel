@@ -158,3 +158,14 @@ Owner questions still open: (1) first logic ambush, which quest / area / existin
 - `waits: ARCH CHANGES`: 15. `waits` other: 2 (VOX-PARTS-16b, ENV-03c).
 - PO REJECT: 2 (QFIX-S2, ED-QUEST-05). Partial splits (still PO OK for the built part): ANIM-BLEND-02 -> 02b, ED-QUEST-07 -> 07b.
 - NOT FOUND / not built / not merged: DECOR-ON-01, ED-QUEST-08, ED-AI-02, ED-AI-03.
+
+## Addendum: HPBAR/DMGNUM
+(claims only, Node only, nothing browser-checked; builds on the 2026-10-14 PC-B verdicts)
+
+- HPBAR-01 bar model: PO OK (PC-A 2026-10-15) -> testing. Open: level/bossName read from entity brain.* but no content sets them; "out of sight" = behind camera only (no LOS).
+- HPBAR-02 bar draw + mount: PO OK (PC-A 2026-10-15) -> testing. Open: 22-cell cap cuts long names ("Lv 10 Boa"); pause/inventory/map hiding and UI-scale not mentioned in the claim.
+- DMGNUM-01 damage numbers: PO OK (PC-A 2026-10-15) -> testing. Open: hurt-number anchor defaults to col 6/row 2 (real hearts position unknown); crit "!" only once ITEM-01 sets payload.crit.
+
+Owner walk-test:
+1. NEW GAME, Settings -> "COMBAT HUD": both switches On. Walk up to a boar/beast and hit it: a 12-cell bar "[#####-----] Lv N Name" appears over its head, drops per hit, fades ~0.3 s after it dies or you leave; with 4+ beasts engaged only 3 bars show. Open pause/inventory/map: bars must hide. Look for a clipped long name.
+2. Each hit shows a white number rising ~1.2 m; take damage: a red number appears near the hearts (check it is not off-position). Switch both Off: no bars, no numbers.
