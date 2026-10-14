@@ -52,6 +52,8 @@
     {"name":"HIT_SPARK_HUES","area":"fx","tier":"experimental"},
     {"name":"HULL_MAX_FACES","area":"render","tier":"experimental"},
     {"name":"HUMANOID_PART_MAP","area":"anim","tier":"stable"},
+    {"name":"HUMANOID_SPLIT_LEG_PART_MAP","area":"anim","tier":"experimental"},
+    {"name":"HUMANOID_SPLIT_LEG_RIG","area":"anim","tier":"experimental"},
     {"name":"ID_COLLECTIONS","area":"content","tier":"stable"},
     {"name":"IMPULSE_MAX_H","area":"core","tier":"experimental"},
     {"name":"IMPULSE_MAX_V","area":"core","tier":"experimental"},
