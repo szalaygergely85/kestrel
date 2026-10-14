@@ -1217,3 +1217,8 @@ NAME-LINT: content-lint R16 (WARN) = badName(): raw `sq.`/`mq.`, `_`, camelCase,
 ### OB-135 tier names (kestrel-4, ob152lint, 2026-10-14)
 design/items.js:491 + itemsWeapons.js:23: T4/T5 -> Tempered/Warden (comment: OB-135 plain names). content-lint R16=0, exit 0; item/gear/loot/equip suites 7/7 PASS.
 validate-content: 3 findings, "Tempered Jerkin/Gloves/Shield" = 15 chars > MAX_ITEM_NAME 14 -> needs owner/PA call (shorter prefix or limit 15).
+
+### BEAST-08a water mask + swim nav (kestrel-3, branch beast08a) -> arch-review
+`beastNav.js` +`buildWaterMask`/`buildWaterNav` (1 waterAt per cell: mask 1 = depth >= 0.6, 2 = bank <= 4 m, `surf`, swim grid = mask 1, croc grid = 1|2, each with createAStar). New `brains/water.js` (`createSwimmers/spawnSwimmer/stepSwimmers`: hashed wander target -> A* -> cell-centre follow; z = surf - 0.4). Test `sim/waterNav.test.js` (fixture lake, 12 asserts: mask == depth, 10k steps no slot leaves its mask, z, byte-determinism, alloc).
+Alloc: ~0.7 B/step after 60 warm windows (probe floor, tier-up noise; threshold 1.5). Not passing `maxNodes` to findPath (it boxes, +6 B/call).
+NOT done: wiring into beastSim LAYERS/STATE_SUBMERGED slots (water.js is a standalone pool 08b plugs attacks into); real world_m1 mask check (fixture only). Pre-existing check-deps FAIL: beastSim.core/hunt.test.js deep-import engine/nav/astar.js (REV-BEASTALLOC-2).
