@@ -159,7 +159,8 @@ function packClips(def, partNames, partCount) {
       const idxs = Array.isArray(val) ? val : [val];
       for (let j = 0; j < idxs.length; j++) tagCodes[idxs[j]] |= (1 << ti);
     }
-    clips.push({ name, n, loop: !!cd.loop, step, durMs, keys, tagCodes });
+    let totMs = 0; for (let i = 0; i < n; i++) totMs += durMs[i]; // total length, fixed at pack time (animBlend reads it)
+    clips.push({ name, n, loop: !!cd.loop, step, durMs, totMs, keys, tagCodes });
     clipIndex[name] = ci;
   }
 

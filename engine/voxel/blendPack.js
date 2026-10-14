@@ -139,7 +139,8 @@ export function packBlend(def, pm, partNames) {
     const a = adds[n], src = pm.clips[ci[a.clip]], stride = pc * 6;
     const keys = new Float64Array(src.keys.length);
     for (let fr = 0; fr < src.n; fr++) for (let j = 0; j < stride; j++) keys[fr * stride + j] = src.keys[fr * stride + j] - src.keys[j];
-    addClips.push({ name: src.name, n: src.n, loop: false, step: src.step, durMs: src.durMs, keys, tagCodes: src.tagCodes });
+    let totMs = 0; for (let i = 0; i < src.n; i++) totMs += src.durMs[i];
+    addClips.push({ name: src.name, n: src.n, loop: false, step: src.step, durMs: src.durMs, totMs, keys, tagCodes: src.tagCodes });
     let m = 0;
     for (const pn of a.parts) m |= 1 << partNames.indexOf(pn);
     addMask[i] = m; addIn[i] = a.inMs; addOut[i] = a.outMs; addGain[i] = a.gain === undefined ? 1 : a.gain;

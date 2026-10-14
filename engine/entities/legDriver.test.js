@@ -206,7 +206,7 @@ for (const m of [0.5, 1, 1.5]) {
       for (let i = 0; i < 16; i++) { setIo(d, i * 2, t * (1 + (i % 3) * 0.3), 0, (i * 20 + t * 5) % 360, 0, 0); d.update(slots[i], pm, i % 5 === 0 ? IDLE : WALK, flat); }
     }
   };
-  run(600);
+  run(3000); // warm-up past JIT tier-up (a one-off ~100 KB compile cost otherwise lands in the window)
   if (global.gc) global.gc();
   const h0 = process.memoryUsage().heapUsed;
   run(5000);
