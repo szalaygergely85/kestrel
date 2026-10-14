@@ -24,16 +24,18 @@ function matchEnd(s, i) {              // index after the bracket that opens at 
 function clipText(cfg, clip, info, ind) {
   const G = info.G, fm = (o) => JSON.stringify(o).replace(/"/g, '');
   const lines = clip.frames.map((f) => ind + '    { ' + Object.keys(f).map((n) => n + ': { rot: ' + JSON.stringify(f[n].rot) + ', pos: ' + JSON.stringify(f[n].pos) + ' }').join(', ') + ' }');
-  return `${ind}// GAIT-A BEGIN ${cfg.clip} (tools/gen-gait.mjs: option A, ${cfg.gait} gait, duty ${G.beta}, tuned ${G.v} m/s, ${clip.frames.length} keys x ${clip.durations[0]} ms; re-run, do not hand-edit)\n` +
-    `${ind}${cfg.clip}: { durations: ${JSON.stringify(clip.durations)}, loop: true, frames: [\n${lines.join(',\n')}\n${ind}] },\n${ind}// GAIT-A END ${cfg.clip}\n`;
+  const mk = cfg.mark || cfg.clip;     // marker key: cfg.mark when several models share a file (fox.walk vs rabbit walk)
+  return `${ind}// GAIT-A BEGIN ${mk} (tools/gen-gait.mjs: option A, ${cfg.gait} gait, duty ${G.beta}, tuned ${G.v} m/s, ${clip.frames.length} keys x ${clip.durations[0]} ms; re-run, do not hand-edit)\n` +
+    `${ind}${cfg.clip}: { durations: ${JSON.stringify(clip.durations)}, loop: true, frames: [\n${lines.join(',\n')}\n${ind}] },\n${ind}// GAIT-A END ${mk}\n`;
 }
 const edits = new Map();
 for (const cfg of CONFIGS) {
   const def = defOf(cfg), { clip, info } = genGait(def, cfg), err = plantedError(def, cfg, clip, 4) * 1000;
   const file = path.join(root, cfg.file);
   let s = edits.get(file) || fs.readFileSync(file, 'utf8');
-  const bm = s.indexOf(`// GAIT-A BEGIN ${cfg.clip} `);
-  const em = `// GAIT-A END ${cfg.clip}\n`;
+  const mk = cfg.mark || cfg.clip;
+  const bm = s.indexOf(`// GAIT-A BEGIN ${mk} `);
+  const em = '// GAIT-A END ' + mk + '\n';
   if (bm >= 0) {
     const ls = s.lastIndexOf('\n', bm) + 1, ind = s.slice(ls, bm), ee = s.indexOf(em, bm) + em.length;
     s = s.slice(0, ls) + clipText(cfg, clip, info, ind) + s.slice(ee);
@@ -42,7 +44,9 @@ for (const cfg of CONFIGS) {
     if (at < 0) throw new Error('rabbit insert anchor missing');
     s = s.slice(0, at) + clipText(cfg, clip, info, ind) + s.slice(at);
   } else {
-    const m = new RegExp(`\\n( +)${cfg.clip}:\\s*`).exec(s);
+    const re = new RegExp('\\n( +)' + cfg.clip + ':\\s*', 'g');       // cfg.from = anchor text before this model's clips (shared files)
+    if (cfg.from) { re.lastIndex = s.indexOf(cfg.from); if (re.lastIndex < 0) throw new Error(cfg.id + ': anchor missing'); }
+    const m = re.exec(s);
     if (!m) throw new Error(cfg.id + ': clip not found');
     const ind = m[1], start = m.index + 1, open = start + m[0].length - 1 + 1 - 1;
     let k = m.index + m[0].length;                       // at `clip(` or `{`

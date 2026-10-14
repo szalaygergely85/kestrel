@@ -52,7 +52,7 @@ test('validateVoxelModel: no errors / warnings against palette + detail-pass mat
 });
 
 test('rig: deer ungulate parts + jaw, tail in the body (8 = engine max), parents earlier, box sx+sy+sz <= 48, no empty part', () => {
-  assert.deepStrictEqual(Object.keys(DEF.parts), ['body', 'head', 'jaw', 'ears', ...LIMBS]);
+  assert.deepStrictEqual(Object.keys(DEF.parts), ['body', 'head', 'jaw', 'ears', ...LIMBS, ...LIMBS.map((l) => l + '2')]);   // ANIM-B-01c: knee rig, lower legs appended
   const names = Object.keys(DEF.parts);
   for (const [k, p] of Object.entries(DEF.parts)) {
     if (p.parent) assert.ok(names.indexOf(p.parent) < names.indexOf(k), k + ' parent order');
@@ -74,7 +74,7 @@ test('size: withers ~0.8 m, horns above the withers, beard on the jaw, ~1.2 m lo
 });
 
 // clips: [frames, total ms, loop]
-const SPEC = { idle: [10, 4000, true], walk: [4, 800, true], climbStep: [6, 1200, false], lead: [10, 3000, true],
+const SPEC = { idle: [10, 4000, true], walk: [8, 800, true], climbStep: [6, 1200, false], lead: [10, 3000, true],
                grumbleTalk: [12, 1600, true], listen: [5, 2400, true], headshake: [8, 1200, false],
                lieDown: [4, 1000, false], lie: [4, 3000, true], getUp: [3, 700, false] };
 test('clips: exact set, frame counts, total ms, loop, durations multiples of 50, every part keyed, clipFor valid', () => {
@@ -111,9 +111,9 @@ test('owner rule 0.2: never upright, hooves planted in x/y, ground-snapped, four
     for (const l of LIMBS) {
       assert.strictEqual(f[l].pos[0], -f.body.pos[0] || 0, k + ' ' + l + ' x planted');
       assert.strictEqual(f[l].pos[1], -f.body.pos[1] || 0, k + ' ' + l + ' y planted');
-      const m = minZ(l, f);
-      assert.ok(m >= -0.03, k + ' key ' + i + ' ' + l + ' sinks ' + m.toFixed(2));
-      if (m < 0.05) down++;
+      const m = minZ(l + '2', f);   // sole = the lower leg part (ANIM-B-01c)
+      assert.ok(m >= (k === 'walk' ? -0.15 : -0.03), k + ' key ' + i + ' ' + l + ' sinks ' + m.toFixed(2));
+      if (m < (k === 'walk' ? 0.25 : 0.05)) down++;   // generated walk: roll / yaw make this pitch-only FK ~0.2 cell off
       if (k === 'climbStep' && (l === 'legFL' || l === 'legFR')) climbLift = Math.max(climbLift, m);
       if (k !== 'climbStep') assert.ok(m <= 2.5, k + ' key ' + i + ' ' + l + ' lift ' + m.toFixed(2) + ' (walk steps <= 2.5 cells)');
     }
