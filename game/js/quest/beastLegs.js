@@ -12,20 +12,22 @@ export function createBeastLegs(opts) {
   let slot = new Int32Array(64).fill(-1);
   let ent = new Array(64).fill(null);
   let mod = new Array(64).fill(null);
+  let phase = new Float64Array(64).fill(-1); // ANIM-BLEND-03: per-slot driver phase of the last step (-1 = legs inactive); the blender reads it
   const scratch = { clip: 0, frame: 0, tMs: 0 };
   const npcKeys = [];
-  const api = { driver, pool: o.pool, dtMs: 1000 / 60, stats: { attached: 0 }, step, stepNpc, release, releaseAll };
+  const api = { driver, pool: o.pool, dtMs: 1000 / 60, stats: { attached: 0 }, get phase() { return phase; }, step, stepNpc, release, releaseAll };
 
   function grow(i) {
     if (i < slot.length) return;
     const n = Math.max(i + 1, slot.length * 2);
     const s = new Int32Array(n).fill(-1); s.set(slot); slot = s;
     ent.length = n; mod.length = n;
+    const ph = new Float64Array(n).fill(-1); ph.set(phase); phase = ph;
   }
   function release(i, v) {
     if (!driver || i >= slot.length) return;
     if (slot[i] >= 0) { driver.release(slot[i]); slot[i] = -1; api.stats.attached--; }
-    ent[i] = null; mod[i] = null;
+    ent[i] = null; mod[i] = null; if (i < phase.length) phase[i] = -1;
     if (v) v.legPose = null;
   }
   function releaseAll() { for (let i = 0; i < slot.length; i++) release(i, null); }
@@ -47,6 +49,7 @@ export function createBeastLegs(opts) {
     io[0] = t.x; io[1] = t.y; io[2] = t.z; io[3] = t.yawDeg; io[4] = api.dtMs; io[5] = camX; io[6] = camY; // yaw UNCHANGED (C-04 rule)
     driver.update(slot[i], pm, idx, ground);
     const pose = driver.poseOf(slot[i]);
+    phase[i] = io[10] === 1 ? io[8] : -1;
     v.legPose = pose[0] > 0 ? pose : null;
     const lr = pm.legRig;
     if (pose[0] > 0 && idx >= 0 && idx < lr.gaitClip.length && lr.gaitClip[idx] >= 0) {
