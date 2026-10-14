@@ -1,17 +1,19 @@
 // engine/world/grassMask.js (MASK-a, docs/architecture.md 38.52 amendment, OB-096).
 // Sparse chunked grass-density paint layer: one u8 (0..255 = 0..1) per 0.5 m lattice sample. Pure render data:
 // never in saves. Lattice sample (gi,gj) sits at x = gi*cell; maskAt is bilinear over the lattice.
-// Absent chunk = 0 (unpainted). No layer at all (null/undefined) = 1 everywhere (today's behaviour).
+// Absent chunk = `neutral` (default 0 = unpainted). No layer at all (null/undefined) = 1 everywhere (today's behaviour).
 import { toB64, fromB64 } from './terrainEdits.js';
 
 /** @typedef {{cell:number, chunkSize:number, n:number, chunks: Map<number,Uint8Array>}} GrassMaskLayer */
 
 /** @returns {GrassMaskLayer} */
-export function createGrassMask(cell = 0.5, chunkSize = 64) {
+export function createGrassMask(cell = 0.5, chunkSize = 64, neutral = 0) {
   if (!(cell > 0) || !(chunkSize > 0) || !Number.isInteger(chunkSize / cell)) {
     throw new Error(`grassMask: chunkSize ${chunkSize} must be a whole multiple of cell ${cell}`);
   }
-  return { cell, chunkSize, n: chunkSize / cell, chunks: new Map(), _lk: -1, _lc: null };
+  if (!Number.isInteger(neutral) || neutral < 0 || neutral > 255) throw new Error(`grassMask: neutral ${neutral} must be an integer 0..255`);
+  // neutral (ED-FOLIAGE-03, 38.69): value of absent chunks and fill of new ones. 0 = today (byte-identical); decor paint layers use 128.
+  return { cell, chunkSize, n: chunkSize / cell, neutral, chunks: new Map(), _lk: -1, _lc: null };
 }
 
 // Internal chunk key is a number (no string alloc per sample); string "cx,cy" only in the JSON.
@@ -23,7 +25,7 @@ function chunkAt(layer, cx, cy, create) {
   const key = ckey(cx, cy);
   if (key === layer._lk && layer._lc) return layer._lc;
   let c = layer.chunks.get(key);
-  if (!c && create) { c = new Uint8Array(layer.n * layer.n); layer.chunks.set(key, c); }
+  if (!c && create) { c = new Uint8Array(layer.n * layer.n); if (layer.neutral) c.fill(layer.neutral); layer.chunks.set(key, c); }
   if (c) { layer._lk = key; layer._lc = c; }
   return c || null;
 }
@@ -32,7 +34,7 @@ function chunkAt(layer, cx, cy, create) {
 export function sampleAt(layer, gi, gj) {
   const n = layer.n, cx = Math.floor(gi / n), cy = Math.floor(gj / n);
   const c = chunkAt(layer, cx, cy, false);
-  return c ? c[gi - cx * n + (gj - cy * n) * n] : 0;
+  return c ? c[gi - cx * n + (gj - cy * n) * n] : layer.neutral;
 }
 export function setSample(layer, gi, gj, u8) {
   const n = layer.n, cx = Math.floor(gi / n), cy = Math.floor(gj / n);
@@ -42,12 +44,22 @@ export function setSample(layer, gi, gj, u8) {
 /** Bilinear density 0..1 at world (x,y). No layer (null/undefined) = 1 everywhere. */
 export function maskAt(layer, x, y) {
   if (!layer) return 1;
-  if (layer.chunks.size === 0) return 0;
+  if (layer.chunks.size === 0) return layer.neutral / 255;
   const fx = x / layer.cell, fy = y / layer.cell;
   const gi = Math.floor(fx), gj = Math.floor(fy), u = fx - gi, v = fy - gj;
   const a = sampleAt(layer, gi, gj), b = sampleAt(layer, gi + 1, gj);
   const c = sampleAt(layer, gi, gj + 1), d = sampleAt(layer, gi + 1, gj + 1);
   return (a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v) / 255;
+}
+
+/**
+ * Decor paint multiplier at world (x,y) = bilinear raw byte / 128 (neutral 128 -> 1, 0 -> 0, 255 -> ~2). No layer = 1.
+ * Shared by CPU scatterDetail and the decor mask bake (38.69). Allocation-free.
+ */
+export function paintAt(layer, x, y) {
+  if (!layer) return 1;
+  if (layer.chunks.size === 0) return layer.neutral / 128;
+  return maskAt(layer, x, y) * (255 / 128);
 }
 
 // ---- JSON ----------------------------------------------------------------------
@@ -58,7 +70,7 @@ export function grassMaskFromJSON(obj) {
   if (!obj || typeof obj !== 'object') throw new Error('grassMask: not an object');
   if (obj.kind !== undefined && obj.kind !== 'grassMask') throw new Error(`grassMask: bad kind "${obj.kind}"`);
   if (obj.schema !== undefined && obj.schema !== 1) throw new Error(`grassMask: unsupported schema ${obj.schema}`);
-  const layer = createGrassMask(obj.cell === undefined ? 0.5 : obj.cell, obj.chunkSize === undefined ? 64 : obj.chunkSize);
+  const layer = createGrassMask(obj.cell === undefined ? 0.5 : obj.cell, obj.chunkSize === undefined ? 64 : obj.chunkSize, obj.neutral === undefined ? 0 : obj.neutral);
   const chunks = obj.chunks || {};
   const n2 = layer.n * layer.n;
   for (const key of Object.keys(chunks)) {
@@ -77,11 +89,12 @@ export function grassMaskToJSON(layer, id = '') {
   named.sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0)); // same string order as before
   for (const [key, c] of named) {
     let any = false;
-    for (let i = 0; i < c.length; i++) if (c[i] !== 0) { any = true; break; }
+    for (let i = 0; i < c.length; i++) if (c[i] !== layer.neutral) { any = true; break; }
     if (any) chunks[key] = toB64(c);
   }
   const out = { kind: 'grassMask', schema: 1, id, cell: layer.cell };
   if (layer.chunkSize !== 64) out.chunkSize = layer.chunkSize;
+  if (layer.neutral) out.neutral = layer.neutral;
   out.chunks = chunks;
   return out;
 }
