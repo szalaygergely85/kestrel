@@ -17,7 +17,7 @@ function streamSeed(seed, id) {
  * openedIds() is a cold save snapshot for collectSave({openedChests}); pass restored ids at create.
  * Every chest has its own seeded roll, independent of opening/definition order and other RNG streams.
  */
-export function createChests(defs, {items, inventoryOf, events, openedChests = [], seed = 1}) {
+export function createChests(defs, {items, inventoryOf, events, openedChests = [], seed = 1, saveIdOf = null}) {
   if (!Array.isArray(defs) || !Array.isArray(openedChests) || !openedChests.every(validId)
     || !Number.isInteger(seed) || seed < 0 || seed > 4294967295) throw new Error('chest: invalid definitions/save/seed');
   const restored = new Set(openedChests), records = [], byId = new Map();
@@ -31,7 +31,7 @@ export function createChests(defs, {items, inventoryOf, events, openedChests = [
       radius2:d.radius*d.radius, needsBottom:def.needsBottom === true, facingCos2:d.facingCos*d.facingCos,
       state:restored.has(def.id) ? 'open' : 'closed', time:0,
       loot:createLoot(null, events, {kind:'chest', items, table:def.table,
-        rng:createRng(streamSeed(seed, def.id)), inventoryOf})};
+        rng:createRng(streamSeed(seed, def.id)), inventoryOf, saveIdOf})};
     records.push(r); byId.set(r.id, r);
   }
   const opened = {id:''}, full = {id:''}, started = {id:''};

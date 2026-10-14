@@ -180,7 +180,8 @@ import { createModelPreview, createCharCache } from '../../engine/index.js'; // 
 import { composeCharacter, meshCharacter, collapseRig, riggedModelDef } from '../../engine/index.js'; // OB-086: the kit character in the world
 import { drawArrowCount, drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
-import { ensureInventory, validateItemDefs, migrateSword, addItem } from './quest/sim/inventory.js'; // US-091a1 (37.16.4)
+import { ensureInventory, validateItemDefs, migrateSword, addItem } from './quest/sim/inventory.js';
+import { registerGenDefs, createStatsCache } from './quest/sim/itemInst.js'; import { migrateItems, ensureSaveId } from './quest/sim/itemMigrate.js'; // ITEM-02c // US-091a1 (37.16.4)
 import { presentPickups } from './quest/pickupsView.js';
 import { createLoot, setLootApi } from './quest/sim/loot.js'; // US-091a2 (37.16.3)
 import { createRelayWake, setRelayWakeApi } from './quest/relayWake.js'; // WS1-06b: wake the road-bend relay
@@ -445,7 +446,8 @@ window.addEventListener('unhandledrejection', (evt) => fatalError(evt.reason));
 // (id/name/kind/stackMax/icon); a bad def throws naming the id, which the fatal-card listeners above catch.
 // `null` (items.js script tag missing) skips validation - addItem/migrateSword then just no-op on unknown ids.
 const itemDefs = window.ASSETS && window.ASSETS.items ? window.ASSETS.items.defs : null;
-if (itemDefs) validateItemDefs(itemDefs);
+if (itemDefs) { registerGenDefs(itemDefs); validateItemDefs(itemDefs); } // ITEM-02c: gen.<type> defs first
+const statsCache = createStatsCache(); // ITEM-02c: one totals cache per player (inventory screen now, combat in ITEM-04); not saved
 // US-012: crosshair/prompt colors, resolved once from the palette's `ui`
 // semantic keys (design/palette.js section 8) - `ASSETS.uiStyle` doesn't
 // exist yet (that's US-015's art), so this is the game's own small style
@@ -1638,11 +1640,12 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (!window.__fbEquipHooked) window.__fbEquipHooked = true, engine.events.on('magic.unlocked', () => { if (playerHandle && itemDefs) learnAndEquip(playerHandle.data, itemDefs, 'spell.fireball'); }); // SPELLBOOK-01: learn into the book + free off hand // FB-01/03 fix: the unlock puts the spell into the free off hand (RMB); hands are derived from equipment, so inventory.right alone never held it
       if (world.state['tower.sword.taken'] && itemDefs) migrateSword(playerHandle.data.components.inventory, itemDefs);
       if (itemDefs) migrateEquipment(playerHandle.data, itemDefs); // EQ-02: old saves sword->main, shield->off (before initialState)
+      if (itemDefs) migrateItems(playerHandle.data, itemDefs, ensureSaveId(world.state, 'Wick', saveRelay ? saveRelay.playTimeSec : 0)); // ITEM-02c: v1 gear ids -> instances once (before initialState)
       if (itemDefs) syncSpellbook(playerHandle.data, itemDefs, 'spell.fireball', fireballOn(engine.world, FEATURES)); // SPELLBOOK-01: old pack spell -> spellbook, pack slot freed
       // US-091a2 (37.16.3): corpse loot + toast. Own RNG stream (nav seed ^ salt) so the beast wander RNG is never
       // perturbed; `beast.loot` (quest/index.js) reaches this load's sim through setLootApi.
       if (loot) loot.dispose();
-      loot = itemDefs ? createLoot(world, engine.events, { items: itemDefs, beasts, table: LOOT_TABLE.boar, band: worldBand,
+      loot = itemDefs ? createLoot(world, engine.events, { items: itemDefs, saveIdOf: () => world.state['items.saveId'], beasts, table: LOOT_TABLE.boar, band: worldBand,
         rng: createRng(((worldDef.nav?.seed ?? 1) ^ LOOT_SEED_SALT) >>> 0),
         inventoryOf: () => playerHandle.data.components.inventory || null }) : null;
       setLootApi(loot); window.__debug.loot = loot; // OB-064: tools/verify-boar-loot.mjs
@@ -1716,7 +1719,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       }
       if (invView && invView.isOpen) invView.close();
       invView = itemDefs && window.ASSETS.uiStyle.inventory ? createInventoryScreen({
-        style: window.ASSETS.uiStyle.inventory, tabOpens: false, items: window.ASSETS.items, rgb: assets.palette.rgb, toast: toasts,
+        style: window.ASSETS.uiStyle.inventory, statsCache, tabOpens: false, items: window.ASSETS.items, rgb: assets.palette.rgb, toast: toasts,
         inventoryOf: () => (playerHandle && playerHandle.data.components.inventory) || null,
         spellbook: itemDefs ? { ids: () => (playerHandle ? learnedIds(playerHandle.data) : []), tierOf: (id) => tierOf(playerHandle.data, id), equip: (id, hand) => qbAssign(playerHandle.data, itemDefs, hand === 'left' ? 0 : 1, id) } : undefined, // SPELLBOOK-01/02: spells only in the hands
         slotLockText: () => 'Locked - learn fire first', // OB-156

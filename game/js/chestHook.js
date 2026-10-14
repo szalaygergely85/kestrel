@@ -81,7 +81,7 @@ export function createChestHook({ defs, items, style, rgb, openedChestsOf = null
   function build(opened) {
     sim = active.length ? createChests(active, {
         items: itemDefs, inventoryOf: () => ctx.inventory, events,
-        openedChests: Array.from(new Set(opened)), seed,
+        openedChests: Array.from(new Set(opened)), seed, saveIdOf: () => (ctx.world && ctx.world.state ? ctx.world.state['items.saveId'] : null), // ITEM-02c
       }) : null;
       recs = [];
       if (sim && ctx.world && ctx.world.addInteractable) { // OB-106: one crosshair target per still-closed chest

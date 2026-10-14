@@ -17,7 +17,7 @@ const m1At = (n, dead = []) => {
   for (const id of dead) applyQuestEvent(q, { type: 'beast:died', id }, m1Old);
   return q;
 };
-assert.equal(SAVE_VERSION, 1);
+assert.equal(SAVE_VERSION, 2);
 
 // migration fixtures
 const done = m1At(4, ['boar1', 'boar2', 'boar3', 'boar4', 'boar5']); assert.ok(done.completed.includes('beasts'));

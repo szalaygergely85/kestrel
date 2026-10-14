@@ -25,7 +25,7 @@ world.get('player').data.components.health.hp=1;assert.equal(save.world.entities
 restored.quest.flags.wake=false;assert.equal(save.game.quest.flags.wake,true,'restore has no aliases');
 const legacy=structuredClone(save);legacy.world.version=1;for(const e of legacy.world.entities)delete e.parent;
 assert.equal(collectSave(applySave(legacy,assets,{questDef}).world).world.version,2,'public deserialize migrates WorldState v1');
-const newer=structuredClone(save);newer.saveVersion=2;assert.throws(()=>applySave(newer,assets,{questDef}));
+const newer=structuredClone(save);newer.saveVersion=3;assert.throws(()=>applySave(newer,assets,{questDef}));
 const bad=structuredClone(save);bad.meta.playTimeSec=NaN;assert.throws(()=>stringifyGameSave(bad));
 const adapter=createMemoryAdapter();assert.equal(adapter.readSlot(0).save,null);
 assert.equal(adapter.writeSlot(0,save).ok,true);assert.equal(adapter.writeSlot(2,save).ok,true);
