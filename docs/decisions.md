@@ -1290,3 +1290,6 @@ Crocodile (owner, same session): **short grab + mash to escape (1.5 s, max 12 % 
 
 ## D-106
 **2026-10-14, owner (PC-B session).** Character level = the PLAYER-LEVEL-01 formula from GEAR (ep-items-stats section 9; OK'd), but it is **hidden**: never shown to the player (no "Level N" on screen, no "Requires level 5" text). It is only our internal power measure to decide when to let the player into places/quests: a quest with `minLevel` above the hidden level shows no `!` and is not offered (the giver may say a "come back when you're stronger" line). Enemy levels on the health bar (D-093) are a separate thing and stay.
+
+## D-107
+**2026-10-14, owner (PC-B session).** Quest windows (D-098 rule 4): **E = Accept / Complete**, **Q = Decline / Close** (also on the hand-in window and NPC talk). Mouse buttons keep working.
