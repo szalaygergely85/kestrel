@@ -31,7 +31,7 @@ for (const [cols, rows] of PRESETS) {
   ok('seen region named (Whitecombs)', t2.includes('The Whitecombs'));
   ok('seen region named (Crossroads)', t2.includes('The Crossroads'));
   ok('unseen region stays unnamed', !t2.includes('Northwood') && !t2.includes('Glasswater'));
-  ok('null-name region (roadWest) seen shows no text', !text(mk(['roadWest']).v).match(/[A-Za-z]{4,}/));
+  ok('roadWest seen is named (WMP-10: The West Road)', text(mk(['roadWest']).v).includes('The West Road'));
   const all = text(mk(geo.regions.map((r) => r.id)).v);
   ok('all seen: every named region appears at 240x90', Object.entries(names).filter(([id, n]) => n && id !== 'east') /* east = off-limits strip outside the walk bounds */.every(([, n]) => all.includes(n)) || (console.log('  missing:', Object.entries(names).filter(([id, n]) => n && id !== 'east' && !all.includes(n)).map((e) => e[1]).join(',')), false));
   ok('fog glyph for unseen land', none.includes('.') && !none.includes('|'));

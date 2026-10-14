@@ -794,7 +794,7 @@ const giIo = new Float64Array(6), giAmb = new Float32Array(3);
 function lightAtScratch(lights, world, out, idxList, idxCount, skipSun, sunMap) {
   const x = lightP[0], y = lightP[1], z = lightP[2], nx = lightN[0], ny = lightN[1], nz = lightN[2];
   const gi = lights.gi;
-  if (gi !== null && gi.on && gi.field !== null) {
+  if (gi != null && gi.on && gi.field != null) {
     // GI-PROBE-04: sky/bounce ambient from the probe field. Engine z is up, giProbe y is up -> swap y/z.
     giIo[0] = x; giIo[1] = z; giIo[2] = y; giIo[3] = nx; giIo[4] = nz; giIo[5] = ny;
     sampleGIBuf(gi, giIo, giAmb);
@@ -1312,7 +1312,7 @@ export function lightSurfaces(fb, lights, cam, world) {
         // ME-20c (38.18): baked vertex AO on kind-9 cells. min (not product): both estimate the same ambient visibility, so they never double-darken.
         if (kind[i] === KIND_MESH) { const va = gbuf.vao[i]; aoF = Math.min(aoF, 1 - ao.strength * AO_MAX * (1 - (va < 0 ? 0 : va > 1 ? 1 : va))); }
         const k = 1 - aoF;
-        if (lights.gi !== null && lights.gi.on && lights.gi.field !== null) { // GI: AO multiplies the GI ambient part only
+        if (lights.gi != null && lights.gi.on && lights.gi.field != null) { // GI: AO multiplies the GI ambient part only
           giIo[0] = px; giIo[1] = pz; giIo[2] = py; giIo[3] = nx; giIo[4] = nz; giIo[5] = ny; sampleGIBuf(lights.gi, giIo, giAmb);
           rgb[o] -= giAmb[0] * k; rgb[o + 1] -= giAmb[1] * k; rgb[o + 2] -= giAmb[2] * k;
         } else { rgb[o] -= lights.ambient[0] * k; rgb[o + 1] -= lights.ambient[1] * k; rgb[o + 2] -= lights.ambient[2] * k; }
