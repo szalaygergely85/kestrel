@@ -100,6 +100,9 @@ async function build(assets, goblin = false, grid = false) {
   };
   const fauna = createFauna(fdef, env, { seed: 7, models: fixtureModels() });
   // beasts: pad to MAX_BEASTS by cloning existing beast entities (as dev/combatBench.js does)
+  // ED-LOGIC reserve groups (farm ambush goblins) start down in the game and are no part of the GOB-08 worst case: drop them
+  const resv = []; world.forEachEntity((e) => { const b = e.components && e.components.brain; if (b && b.reserve === true) resv.push(e.id); });
+  for (const id of resv) world.removeEntity(id);
   const found = [];
   world.forEachEntity((e) => { if (e.components && e.components.brain && e.components.brain.kind === 'beast') found.push(e); });
   const realBeasts = found.length;
