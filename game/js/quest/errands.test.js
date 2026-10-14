@@ -81,10 +81,13 @@ function talkBurl(pick = 0) { // run the real dialogue runner to its end; return
 }
 // Burl offers the first available errand (sq.tm.nub needs burl.boars done = yes) and accepts it by the choice
 const said = talkBurl(0);
-assert.ok(said.length >= 2 && flagsOut.some((k) => /^q.sq..*.accept$/.test(k)), 'offer + accept by talking: ' + flagsOut.join(','));
+// D-098: the talk only OFFERS; accept is the window button (book.actKey q.<id>.accept) after the talk
+const offered = burlErrands.find((d) => book.statusOf(d.id) === AVAILABLE);
+assert.ok(said.length >= 1 && offered, 'offer by talking: ' + JSON.stringify(said) + ' lines, available ' + burlErrands.map((d) => d.id + ':' + book.statusOf(d.id)).join(','));
 assert.ok(said.some((l) => /Nub|slope|boar|sky-cub/i.test(l)), 'writer lines are spoken');
-const acceptedId = flagsOut.find((k) => /.accept$/.test(k)).slice(2, -7);
-assert.equal(book.statusOf(acceptedId), ACTIVE);
+assert.equal(book.actKey('q.' + offered.id + '.accept'), true, 'accept via the window');
+const acceptedId = offered.id;
+assert.ok([ACTIVE, READY].includes(book.statusOf(acceptedId)), 'accepted -> active (or already ready)');
 const again = talkBurl(0); assert.ok(again.length, 'next talk offers the next errand or repeats active');
 // the routes themselves (compile gate): ready < offer < active, each errand has all three
 const ent = patched.entry.map((e) => e.requires || '');
@@ -110,13 +113,18 @@ er.onEvent('prop:touched', { id: 'ws_roadBend', kind: 'relay' }); /* OB-126: a r
 assert.deepEqual(inspected, ['relayBend'], 'relay touch -> inspect(relayBend) only');
 
 // 4. real inspect flow: shield at the Bend relay (giveOnTalk), requireEquipped hand-in at the Ford relay
+// D-095: the west-bank errands sit behind sq.burl.fire (opens after mq.river.road): play that gate through first
+feed({ type: 'area:entered', id: 'riverBank' });
+assert.equal(book.statusOf('mq.river.road'), 4, 'river road done'); book.actKey('q.sq.burl.fire.accept');
+for (let i = 1; i <= 3; i++) feed({ type: 'item:count', id: 'emberpod', n: i });
+assert.equal(book.actKey('q.sq.burl.fire.handin'), true, 'gate quest handed in');
 assert.equal(book.statusOf('sq.rb.shield'), AVAILABLE);
 const acc = book.inspect('relayBend'); assert.equal(acc.action, 'accept'); assert.equal(pack.get('shield'), 1, 'shield given on accept');
 feed({ type: 'area:entered', id: 'fordWest' });
 assert.equal(book.statusOf('sq.rb.shield'), READY);
-assert.equal(book.inspect('relayFord').action, 'refuse', 'shield not worn -> refused');
+assert.equal(book.actKey('q.sq.rb.shield.handin'), false, 'shield not worn -> hand-in refused'); // D-098: hand-in at the post keeper window, not at the ford relay
 eq.off = 'shield'; assert.equal(isWorn(eq, 'shield'), true); assert.equal(isWorn({ off: { id: 'shield' } }, 'shield'), true); assert.equal(isWorn(null, 'x'), false);
-const hi = book.inspect('relayFord'); assert.equal(hi.action, 'handin'); assert.deepEqual(hi.reward.items, [{ id: 'potion.hp', n: 1 }]);
+assert.equal(book.actKey('q.sq.rb.shield.handin'), true); assert.deepEqual(book.lastReward.items, [{ id: 'potion.hp', n: 1 }]);
 // banner rows from the writer lines
 const d = book.def(book.index('sq.rb.shield'));
 const rows = bannerLines(d, 'accept', wrapText); assert.ok(rows && rows.length && rows.every((r) => r.length <= 38), 'wrapped offer rows');
@@ -147,7 +155,7 @@ er.hit({ target: 'target2' }); er.hit({ target: 'target9' }); er.hit({ target: '
 assert.deepEqual(Object.keys(flags).filter((k) => k.startsWith('target')), ['target2.hit']);
 er.hit({ target: 'target1' }); er.hit({ target: 'target3' });
 assert.equal(book.statusOf('sq.straw'), READY, 'three straw men -> ready; note post hands in');
-assert.equal(book.inspect('notePost').action, 'handin'); assert.deepEqual(book.lastReward.items, [{ id: 'arrow', n: 20 }], 'Big Quiver: 20 arrows');
+assert.equal(book.actKey('q.sq.straw.handin'), true); /* D-098: window hand-in */ assert.deepEqual(book.lastReward.items, [{ id: 'arrow', n: 20 }], 'Big Quiver: 20 arrows');
 
 // 6. escort flag: only while sq.burl.walk is active and Burl is within 14 m of the Bend relay
 assert.equal(er.escortTick(), false, 'quest not active');

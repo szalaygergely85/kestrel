@@ -55,7 +55,7 @@ let b4 = mk(); b4.accept(def.id); count(b4, 2); b4.abandon(def.id); b4.accept(de
 assert.equal(b4.statusOf(def.id), ACTIVE); assert.equal(b4.objectives(1, [])[0].progress, 2); assert.equal(b4.questState(1).completed.length, 0);
 assert.equal(b3.abandon('m1'), false);
 assert.equal(createQuestBook(main, [{ ...def, abandonable: undefined }]).canAbandon(def.id), false);
-assert.throws(() => createQuestBook(main, [{ ...def, giver: { npc: 'bear', turnIn: 'fox' } }]), /deliver\.to/);
+assert.throws(() => createQuestBook(main, [{ ...def, giverNpc: undefined, turnInNpc: undefined, giver: { npc: 'bear', turnIn: 'fox' } }]), /deliver\.to/);
 
 // questPickups hook: E takes the nearest sprig once (stays removed), count feeds the book, reward lands in the pack
 const removed = new Set(), ents = new Map();

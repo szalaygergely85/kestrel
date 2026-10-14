@@ -40,6 +40,8 @@ import { loadTestAssets } from './testing/content-node.mjs';
 // come from one of these.
 import '../design/palette.js';
 import '../design/detail-pass.js';
+import '../design/models/marker_props_voxel.js'; // NPC-LOOKS-01 markerPost / standingStone
+import '../design/models/buildings_voxel.js'; // BLD-01 bldRuin etc.
 import '../design/models/pickups_voxel.js'; // OB-132: voxel pickups + floorLanternVox (world_m1 has no sprites)
 import '../design/models/title.js'; // ASSETS.uiStyle (hints/storyHints referenced by triggers below)
 import '../design/models/menu_ui.js';
@@ -232,6 +234,7 @@ for (const key of Object.keys(bundle.worlds)) {
  * billboard sub-model) - mirrors validate-content.mjs's resolveModel. */
 // CHARGEN-15 (38.33): `char.<id>` models come from the add-on packages in content/packages/index.json (registered at boot).
 const addonChars = new Set();
+for (const id of ['npcPostKeeper', 'npcGlasswater', 'npcNorthwood', 'npcHighPastures', 'npcAshMile', 'npcDowns', 'npcSignalHill', 'npcHeath', 'npcReedmire', 'npcStrand', 'npcWhitecombs']) addonChars.add('char.' + id); // NPC-LOOKS-01: registered at boot by giverNpcs.registerGiverLooks
 // OB-086 / Ch3: `char.kit` is built at boot by game/js/main.js from content/chargen/human.charkit.json (composeCharacter ->
 // riggedModelDef), not a design model - world entities (hesk, dorrin) may use it as long as the kit file exists.
 { const { existsSync } = await import('node:fs'); const kitUrl = new URL('../content/chargen/human.charkit.json', import.meta.url);
