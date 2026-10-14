@@ -95,6 +95,7 @@ import { watchDeviceLost } from './deviceLost.js'; // S8-B1-10 (38.10c): device-
 import { createQuestPickups, itemLabel } from './questPickups.js'; // QUESTS-01
 import { setInspectSink, wrapText } from './quest/questInspect.js'; // QL-04
 import { createErrands, labelOf, gateOnMeet, isWorn, bannerLines } from './quest/errands.js'; // QL-WIRE: Ch1-2 errands
+import { openQuestWindow } from './quest/questWindow.js'; // QFIX-S4: D-098 offer / hand-in windows
 import { generateAll } from './quest/questSnippets.js'; // QL-T4: generated q.<id>.* dialogue routes
 import { createHeartHook } from './heartHook.js'; // QL-08: heart pieces -> max HP
 import { createChestHook } from './chestHook.js'; // S8-B1-04: chest sim + item-get card, through the seam only
@@ -1254,7 +1255,9 @@ async function runGame(mode, cinematic = null) {
   // CH1-MOUNT (38.37): notice banner (page lifetime) + crystal grant / barks / chapter card (rebuilt per world; only when saves are live = never in capture/bench/compare/?at=)
   const notice = createNoticeView();
 const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop: accept or hand in, show its short text (banner, never locks)
-  const b = saveRelay && saveRelay.quest.book, r = b && b.inspect(id); if (!r) return null;
+  const b = saveRelay && saveRelay.quest.book;
+  if (b && dialogueCtl) { if (dialogueCtl.open) return null; const pl = b.plan(id); if (pl && pl.action !== 'refuse') return openQuestWindow({ book: b, ctl: dialogueCtl, compile: compileDialogue, nameOf: (i) => itemLabel(itemDefs, i), objectId: id }); } // QFIX-S4 / D-098: offer + hand-in WINDOWS (Accept / Decline / Complete), no auto-accept
+  const r = b && b.inspect(id); if (!r) return null;
   const d = b.def(b.index(r.id)); // QL-WIRE: the writer's def.lines (offer / ready / active) win over the short giver text
   notice.push(String(d.title || r.id).slice(0, 30), bannerLines(d, r.action, wrapText) || wrapText(r.text || (r.action === 'handin' ? 'Done.' : r.action === 'accept' ? 'Quest accepted.' : 'Not yet.')));
   return r;

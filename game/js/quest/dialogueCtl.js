@@ -96,6 +96,16 @@ export function createDialogueCtl(opt) {
       return true;
     },
 
+    /** QFIX-S4: open an ad-hoc compiled dialogue (quest offer / hand-in window) anchored at entity `id`; `onEnd` runs when it closes. */
+    openComp(comp, id, onEnd) {
+      if (ctl.open || ctl._closing || !comp) return false;
+      npcId = id; pendingClip = null; oneShot = false; lastBase = null; jawComp = null; ctl._onEnd = onEnd || null;
+      runner.open(comp, flags);
+      ctl.locked = true; ctl._closing = false;
+      ctl._clips();
+      return true;
+    },
+
     /** Registers the [E] Talk to <name> interactable for NPC entity `id` (call on every 'world:loaded'). */
     addNpc(id, o = {}) {
       const h = world.get(id), t = h && h.data && h.data.transform;
@@ -115,6 +125,7 @@ export function createDialogueCtl(opt) {
     },
     _finish() {
       ctl._closing = true; // locked stays true until the next step() begins
+      const onEnd = ctl._onEnd; ctl._onEnd = null; if (onEnd) { ctl._closing = false; npcId = null; onEnd(); if (ctl.open) return; ctl._closing = true; } // QFIX-S4: chain the next offer window
       if (npcId !== null) ctl._play('idle');
       npcId = null; pendingClip = null; oneShot = false; lastBase = null;
     },

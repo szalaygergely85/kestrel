@@ -52,6 +52,6 @@ export function presentPickups(world, pickupStyle, simTime) {
     if (!def) return;
     const t = e.transform;
     if (!blinkVisible(p.life, pickupStyle.blink)) { t.z = HIDE_Z; return; }
-    t.z = p.baseZ + def.hoverM + bobOffset(id, simTime, def.bob);
+    t.z = p.baseZ; // D-098 / OB-155p: drops lie on the ground (no hover, no bob); bobOffset stays exported for the preview
   });
 }
