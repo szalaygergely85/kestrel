@@ -2,6 +2,10 @@
 // Beast record (filled by the host adapter, see combatHud.js): { id, name, x, y, z (head), spawnX, spawnY, hp, maxHp, dead, dist,
 //   visible, engaged, targeted, hitAt (seconds on the same clock as `now`; -Infinity = never), level (0 = use the band), bossName ('' = none) }.
 // band = createBand(...) result (bandAt(x, y) -> 1..10). Tint is a palette key: danger (>= +2 over the player), gold (+-1), uiDim (<= -2).
+import { difficultyName } from './difficultyFlag.js';
+
+// HPBAR-03: shown level = band + difficulty shift (Easy -1, Normal 0, Hard +1), clamped 1..10.
+export function difficultyShift(name) { return name === 'easy' ? -1 : name === 'hard' ? 1 : 0; }
 export const HIT_SHOW_SEC = 4;
 export const SHOW_RANGE_M = 30;
 export const MAX_BARS = 3;
@@ -25,7 +29,8 @@ export function enemyBarModel(beast, band, now, playerBand = 1, out = _res) {
   if (out.boss) { out.level = 0; out.name = beast.bossName; out.tint = 'danger'; }
   else {
     const lv = beast.level > 0 ? beast.level | 0 : (band ? band.bandAt(beast.spawnX, beast.spawnY) : 1);
-    out.level = lv < 1 ? 1 : lv > 10 ? 10 : lv;
+    const sl = lv + difficultyShift(difficultyName());
+    out.level = sl < 1 ? 1 : sl > 10 ? 10 : sl;
     out.name = beast.name;
     const d = out.level - playerBand;
     out.tint = d >= DIFF_RED ? 'danger' : d <= DIFF_GREY ? 'uiDim' : 'gold';

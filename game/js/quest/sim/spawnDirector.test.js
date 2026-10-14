@@ -1,7 +1,7 @@
 // BEAST-06a: group list determinism, respawn timers + never-in-view, save round trip by gid, difficulty, rule 15, 0 alloc.
 // Run: node --expose-gc game/js/quest/sim/spawnDirector.test.js
 import { readFileSync } from 'node:fs';
-import { buildGroups, createSpawnDirector, RESPAWN_SEC, CAMP_DAYS } from './spawnDirector.js';
+import { buildGroups, createSpawnDirector, RESPAWN_SEC, CAMP_DAYS, VIEW_MARGIN_RAD } from './spawnDirector.js';
 import { DIFFICULTY, resolveDifficulty, applyDifficulty } from './difficulty.js';
 import { createTactics } from './tactics.js';
 let fails = 0; const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } };
@@ -16,7 +16,7 @@ ok(G1.every((g) => g.route.length >= 3 && g.route.length <= 6 && g.slots.length 
 
 // respawn timer + never in view
 let spawned = [];
-const dir = createSpawnDirector({ groups: G1, viewHalfRad: 0.5236, los: () => false, onRespawn: (g) => spawned.push(g) });
+const dir = createSpawnDirector({ groups: G1, viewCos: Math.cos(0.5236 + VIEW_MARGIN_RAD), los: () => false, onRespawn: (g) => spawned.push(g) });
 const wolf = 2, wolfHome = G1[wolf].home;
 for (let k = 0; k < 4; k++) dir.memberDied(wolf);
 ok(dir.dead[wolf] === 1 && dir.dueAt(wolf) === RESPAWN_SEC.pack, 'pack timer ' + dir.dueAt(wolf));
@@ -65,7 +65,7 @@ const run = () => { const d = createSpawnDirector({ groups: G1 }); d.memberDied(
 ok(run() === run(), 'deterministic');
 // rule 15 + alloc
 const src = readFileSync(new URL('./spawnDirector.js', import.meta.url), 'utf8').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
-ok(!/Math\.random|Date\.now|performance\.now|Math\.(sin|cos|atan2?|tan)\b.*\n?/.test(src.replace(/const viewCos[^\n]*/, '')), 'rule 15 (viewCos is create-time)');
+ok(!/Math\.random|Date\.now|performance\.now|Math\.(sin|cos|atan2?|tan)\b.*\n?/.test(src.replace(/const viewCos[^\n]*/, '')), 'rule 15 (no Math.cos in sim code)');
 ok(!/new Map|\.forEach\(|for \(const \w+ of D\./.test(src.slice(src.indexOf('D.step'), src.indexOf('D.save'))), 'no Map iteration in step');
 const da = createSpawnDirector({ groups: G1, los: () => false, onRespawn: () => {} });
 for (let s = 0; s < 600; s++) da.step(1 / 60, 0, 0, 1, 0);

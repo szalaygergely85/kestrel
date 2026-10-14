@@ -63,7 +63,7 @@ export function createChestHook({ defs, items, style, rgb, openedChestsOf = null
   const lootedLine = (id, n) => { const d = itemDefs[id], nm = d && d.name ? d.name : id; return 'Looted: ' + (n > 1 ? n + ' ' + nm + (/s$/i.test(nm) ? '' : 's') : nm); };
   const gotLoot = (id, n, extra) => { if (notify) notify(lootedLine(id, n)); else card.push(id, n, extra); };
   const fwdScratch = [0, 0], pose = { x: 0, y: 0, z: 0, forwardX: 0, forwardY: 0, onBottom: false }; // reused (rule 9)
-  let recs = [], offGear = null, sim = null, ctx = null, lastAnim = null, active = defs; // EQ-10: `active` = defs, or the world's chest* anchors when defs is []
+  let recs = [], offGear = null, sim = null, ctx = null, lastAnim = null, active = defs, extra = [], extraIds = new Set(); // EQ-10: `active` = defs, or the world's chest* anchors when defs is []
 
   // The chest sim's PRIVATE event sink: pushes the card directly (so boar loot - which shares `ctx.events` - never
   // opens it), then forwards the same event onto the shared bus for saveRelay (`chest:opened`) and the seam's
@@ -78,30 +78,42 @@ export function createChestHook({ defs, items, style, rgb, openedChestsOf = null
     },
   };
 
+  function build(opened) {
+    sim = active.length ? createChests(active, {
+        items: itemDefs, inventoryOf: () => ctx.inventory, events,
+        openedChests: Array.from(new Set(opened)), seed,
+      }) : null;
+      recs = [];
+      if (sim && ctx.world && ctx.world.addInteractable) { // OB-106: one crosshair target per still-closed chest
+        for (const d of active) {
+          const e = d.propId && ctx.world.entity ? ctx.world.entity(d.propId) : null;
+          const key = 'chest.' + d.id;
+          if (ctx.world.removeInteractable) ctx.world.removeInteractable(key);
+          if (!e || sim.stateOf(d.id) !== 'closed') continue;
+          const sh = chestPickShape(e);
+          const rec = ctx.world.addInteractable({ key, name: 'chest.open', x: d.x, y: d.y, z: d.z + sh.hz, radius: CHEST_REACH, prompt: C.prompt, pick: shapeAabb(sh), pickShapes: [sh], def: { chestId: d.id } });
+          recs.push({ id: d.id, key });
+        }
+      }
+  }
   return {
     card,
     onBoot(c) {
       ctx = c;
       lastAnim = new Map();
-      active = defs.length ? defs : (c.world && typeof c.world.entity === 'function' ? buildChestDefs(c.world) : []);
+      active = (defs.length ? defs : (c.world && typeof c.world.entity === 'function' ? buildChestDefs(c.world) : [])).concat(extra);
       if (offGear) offGear();
       offGear = c.events && c.events.on ? c.events.on('gear:got', (p) => gotLoot(p.id, p.n, { count: p.n })) : null; // loot.js gear pickup
-      sim = active.length ? createChests(active, {
-        items: itemDefs, inventoryOf: () => ctx.inventory, events,
-        openedChests: openedChestsOf ? openedChestsOf() : [], seed,
-      }) : null;
-      recs = [];
-      if (sim && c.world && c.world.addInteractable) { // OB-106: one crosshair target per still-closed chest
-        for (const d of active) {
-          const e = d.propId && c.world.entity ? c.world.entity(d.propId) : null;
-          const key = 'chest.' + d.id;
-          if (c.world.removeInteractable) c.world.removeInteractable(key);
-          if (!e || sim.stateOf(d.id) !== 'closed') continue;
-          const sh = chestPickShape(e);
-          const rec = c.world.addInteractable({ key, name: 'chest.open', x: d.x, y: d.y, z: d.z + sh.hz, radius: CHEST_REACH, prompt: C.prompt, pick: shapeAabb(sh), pickShapes: [sh], def: { chestId: d.id } });
-          recs.push({ id: d.id, key });
-        }
-      }
+      build(openedChestsOf ? openedChestsOf() : []);
+    },
+    /** POI-CHEST-01: late chest defs (poiWire.chestDefs(true), replaced as a whole on every POI spawn/despawn). Opened chests stay opened. */
+    setExtraDefs(list) {
+      const same = list.length === extra.length && list.every((d, i) => d.id === extra[i].id);
+      extra = list.slice();
+      if (same || !ctx) return;
+      const base = active.filter((d) => !extraIds.has(d.id)); extraIds = new Set(extra.map((d) => d.id));
+      active = base.concat(extra);
+      build((openedChestsOf ? openedChestsOf() : []).concat(sim ? sim.openedIds() : []));
     },
     // The card's own step. main.js calls this EVERY frame outside the `!paused` block (like invView.step): an open card
     // makes `paused` true, so gameHooks.tick (-> onTick) stops running and a step in onTick could never dismiss it.

@@ -57,7 +57,11 @@ r.feed({ type: 'area:entered', id: 'towerDoor' }); expectToasts(0, 'q02 silent')
 // first talk with Burl turns the blade quest in, then he offers the boars (q03): accept, 5 boars, hand in
 assert.equal(r.book.statusOf('tower.blade'), 3, "left the tower: blade ready ('?' over Burl)");
 talk(r, 0);
+assert.equal(r.book.statusOf('tower.blade'), 3, 'D-098: the story talk alone does not hand in');
+r.book.actKey('q.tower.blade.handin'); // Complete button
 assert.equal(r.book.statusOf('tower.blade'), 4, 'blade turned in at Burl');
+assert.equal(r.book.statusOf('burl.boars'), 1, 'offered, not auto-accepted');
+r.book.actKey('q.burl.boars.accept'); // Accept button
 assert.equal(r.book.statusOf('burl.boars'), 2, 'accepted');
 for (let i = 0; i < 4; i++) r.feed({ type: 'beast:died', id: BOARS[i] });
 expectToasts(0, 'no toast before the 5th boar');
@@ -65,6 +69,8 @@ r.feed({ type: 'beast:died', id: BOARS[4] });
 assert.equal(r.book.statusOf('burl.boars'), 3, 'ready');
 expectToasts(0, 'no toast at ready (needs the hand-in)');
 talk(r);
+assert.equal(r.book.statusOf('burl.boars'), 3, 'story talk alone does not hand in');
+r.book.actKey('q.burl.boars.handin');
 assert.equal(r.book.statusOf('burl.boars'), 4, 'handed in');
 r.checkSections(); // saveRelay.stepGame does this each step for hand-ins that bypass feed
 expectToasts(0, 'q03 silent (burl.boars owns the toast)');

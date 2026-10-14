@@ -221,6 +221,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
       for (const w of dl) if (book.packOps.count(w.id) < w.count) return null;
       for (const w of dl) { book.packOps.remove(w.id, w.count); book.feed({ type: 'item:count', id: w.id, n: Math.max(0, book.packOps.count(w.id)) }); }
     }
+    if (e.def.requireItem) { book.packOps.remove(e.def.requireItem, 1); book.feed({ type: 'item:count', id: e.def.requireItem, n: Math.max(0, book.packOps.count(e.def.requireItem)) }); } // D-098: the handed-over item leaves the pack
     e.handedIn = true; book.version++;
     const reward = e.def.reward ? deepFreeze(structuredClone(e.def.reward)) : NO_REWARD;
     book.lastReward = reward;
@@ -281,22 +282,35 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
    * first READY quest whose hand-in is this object. Returns {action:'accept'|'handin'|'refuse', id, text, reward?} or null
    * (nothing to do here). 'refuse' = a quest of this object is active but its items are not in the pack.
    */
-  book.inspect = function inspect(objectId) {
+  book.inspect = function inspect(objectId, ask = false) {
+    const pl = book.plan(objectId);
+    if (!pl || ask) return pl; // ask: the game opens an offer / hand-in window and calls accept / handIn on the button (D-098 rule 4)
+    const d = entries[byId.get(pl.id)].def;
+    if (pl.action === 'offer') { book.accept(pl.id); return { action: 'accept', id: pl.id, text: d.giver.text || '' }; }
+    if (pl.action === 'handin') { const reward = book.handIn(pl.id); return { action: 'handin', id: pl.id, text: d.giver.turnInText || '', reward }; }
+    return { action: 'refuse', id: pl.id, text: d.giver.refuseText || '' };
+  };
+  /** Hand-in possible now (pure check, same rules as handIn). */
+  function canHandIn(i) {
+    const e = entries[i];
+    if (statusOf(i) !== READY) return false;
+    if (e.def.requireItem && (!book.packOps || book.packOps.count(e.def.requireItem) < 1)) return false;
+    if (e.def.requireEquipped && (!book.packOps || !book.packOps.equipped || !e.def.requireEquipped.every(x => book.packOps.equipped(x)))) return false;
+    for (const o of e.def.objectives) if (o.when.type === 'deliver' && (!book.packOps || book.packOps.count(o.when.id) < o.when.count)) return false;
+    return true;
+  }
+  /** D-098 rule 4 / QFIX-S4: what E on object `objectId` does, WITHOUT doing it. Order: hand-in of a READY quest > offer of an
+   *  AVAILABLE one > refuse (an active / not-deliverable quest of this object). An active quest never blocks a hand-in. */
+  book.plan = function plan(objectId) {
+    let refuse = null;
     for (let i = 1; i < n; i++) {
-      const e = entries[i];
-      if (e.giver === objectId && statusOf(i) === AVAILABLE && book.accept(e.def.id)) return { action: 'accept', id: e.def.id, text: e.def.giver.text || '' };
+      const e = entries[i]; if (e.turnIn !== objectId) continue;
+      const s = statusOf(i);
+      if (s === READY && canHandIn(i)) return { action: 'handin', id: e.def.id };
+      if ((s === READY || s === ACTIVE) && !refuse) refuse = { action: 'refuse', id: e.def.id };
     }
-    for (let i = 1; i < n; i++) {
-      const e = entries[i], s = statusOf(i);
-      if (e.turnIn !== objectId) continue;
-      if (s === READY) {
-        const reward = book.handIn(e.def.id);
-        if (reward) return { action: 'handin', id: e.def.id, text: e.def.giver.turnInText || '', reward };
-        return { action: 'refuse', id: e.def.id, text: e.def.giver.refuseText || '' }; // items left the pack since
-      }
-      if (s === ACTIVE) return { action: 'refuse', id: e.def.id, text: e.def.giver.refuseText || '' };
-    }
-    return null;
+    for (let i = 1; i < n; i++) if (entries[i].giver === objectId && statusOf(i) === AVAILABLE) return { action: 'offer', id: entries[i].def.id };
+    return refuse;
   };
   // OB-125: a quest is MAIN when its def says `main: true` or the main chain (entries[0], m1) waits on its done flag
   // (`quest.<id>.done` as a flag objective, e.g. burl.boars / tower.blade); everything else is a side quest.

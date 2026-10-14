@@ -60,20 +60,22 @@ const you = (t) => 'YOU: ' + t;
 // 5 ready -> thanks -> follow
 { const f = mk('q.burl.boars.ready'); const w = walk(f, 0);
   ok('5 ready: 10 after-five lines, thanks (hand-in), then the 5 follow lines', w.said.length === 10 + 1 + 5 && w.said[10] === burl("You've done an old bear a kindness.") && w.said[11] === burl('Come along, sky-cub.'), w.said.length + ' ' + w.said[7]);
-  ok('5 ready: hand-in flag then s.burl.follow', ids(w.events.filter((e) => e.startsWith('flag:'))) === ids(['flag:q.burl.boars.handin', 'flag:s.burl.follow']), w.events.join());
+  ok('5 ready: only s.burl.follow is set (the hand-in is the window, D-098)', ids(w.events.filter((e) => e.startsWith('flag:'))) === ids(['flag:s.burl.follow']), w.events.join());
+  const af = walk(mk('bear.after.burl.boars'), 0);
+  ok('5 after-flag (set by the Complete button): thanks + follow story, no flag but follow', af.said.length === 16 && af.said[10] === burl("You've done an old bear a kindness."), af.said.length);
   ok('5 ready: wave clip on the thanks node', w.clips.includes('wave'));
   const g = mk('q.burl.boars.ready'); const r = createDialogueRunner({}); r.open(comp, g);
-  for (let i = 0; i < 40 && !g.s.has('q.burl.boars.handin'); i++) r.press();
+  for (let i = 0; i < 8; i++) r.press();
   r.close();
-  ok('5 ready: Esc right after the hand-in keeps handin, no follow flag yet', g.s.has('q.burl.boars.handin') && !g.s.has('s.burl.follow')); }
+  ok('5 ready: Esc mid-story sets no hand-in and no follow flag yet', !g.s.has('q.burl.boars.handin') && !g.s.has('s.burl.follow')); }
 // 6 active
 { const f = mk('q.burl.boars.active', 'bear.talked'); const w = walk(f, 0);
   ok('6 active: two lines, no flags', w.said.length === 2 && w.said[0] === burl('Still hearing those greedy snouts.') && f.s.size === 2); }
 // 7 available: accept / later
 { const f = mk('q.burl.boars.available', 'bear.talked'); const w = walk(f, 0);
-  ok('7 available accept: 9 offer lines + 2 accepted, sets q.burl.boars.accept', w.said.length === 11 && f.s.has('q.burl.boars.accept') && lastOf(w) === burl('Mind their tusks, sky-cub.'), w.said.length);
+  ok('7 available: 9 offer lines + 2 accepted, sets NO accept flag (Accept button = window)', w.said.length === 11 && !f.s.has('q.burl.boars.accept') && lastOf(w) === burl('Mind their tusks, sky-cub.'), w.said.length);
   const g = mk('q.burl.boars.available'); const w2 = walk(g, 1);
-  ok('7 available later: kept later line (laugh), no accept flag', lastOf(w2) === burl('Then sit a while. The boars will still be rude.') && !g.s.has('q.burl.boars.accept') && w2.clips.includes('laugh'));
+  ok('7 available: no inline choice any more (Not yet = window), same story, no accept flag', lastOf(w2) === burl('Mind their tusks, sky-cub.') && !g.s.has('q.burl.boars.accept'));
   const h = mk('q.burl.boars.available'); const r = createDialogueRunner({}); r.open(comp, h); r.press(); r.close();
   ok('7 Esc keeps the quest un-accepted', !h.s.has('q.burl.boars.accept')); }
 // 8 repeat
@@ -84,10 +86,10 @@ const R = 'q.tower.blade.ready';
 {
   const f = mk(R); const w = walk(f, 0); // meet choice 0 (crash), offer choice 0 (accept)
   ok('9 fresh: opens with the quote, 10 meet lines then the crash exchange', first(w) === burl('Quite a fall you took, sky-cub.') && w.said[9] === burl('but a bear with words troubles you?') && w.said[10] === burl('Hard to miss a burning sky-boat.') && w.said[13] === burl('Not much of one now.'), w.said.slice(8, 14).join('|'));
-  ok('9 fresh crash+accept: 10 + 4 + 9 + 2 = 25 lines; talked + accept set', w.said.length === 25 && f.s.has('bear.talked') && f.s.has('q.burl.boars.accept'), w.said.length);
+  ok('9 fresh crash+accept: 10 + 4 + 9 + 2 = 25 lines; talked set, no accept flag', w.said.length === 25 && f.s.has('bear.talked') && !f.s.has('q.burl.boars.accept') && !f.s.has('q.tower.blade.handin'), w.said.length);
   ok('9 fresh: wave clip on the first line', w.clips[0] === 'wave');
   const g = mk(R); const w2 = walk(g, 1); // meet choice 1 (west) skips the crash lines; offer choice 1 (Not yet)
-  ok('9 fresh west+later: no crash lines (10 + 9 + 1 = 20), talked set, no accept, blade handed in', !w2.said.includes(burl('Hard to miss a burning sky-boat.')) && w2.said.length === 20 && g.s.has('bear.talked') && g.s.has('q.tower.blade.handin') && !g.s.has('q.burl.boars.accept'), w2.said.length);
+  ok('9 fresh west+later: no crash lines (10 + 9 + 2 = 21), talked set, no accept, blade hand-in left to the window', !w2.said.includes(burl('Hard to miss a burning sky-boat.')) && w2.said.length === 21 && g.s.has('bear.talked') && !g.s.has('q.tower.blade.handin') && !g.s.has('q.burl.boars.accept'), w2.said.length);
   const h = mk(R); const r = createDialogueRunner({}); r.open(comp, h); r.press(); r.press(); r.close();
   ok('9 Esc halfway through the meet: nothing set', h.s.size === 1 && !h.s.has('q.tower.blade.handin'));
 }
@@ -96,17 +98,18 @@ const R = 'q.tower.blade.ready';
   ok('9b early (' + have + '): early lines, no new flags', ids(w.said) === ids([burl('Out of the tower already, sky-cub? Empty-pawed?'), burl('Climb back up. The top holds more than a view.')]) && f.s.size === have.length, w.said.join('|')); } }
 // 9c PO-CH1-01: blade accepted but not ready -> its own placeholder node (NEEDS WRITER), not 'Empty-pawed?'
 { const f = mk('q.tower.blade.active'); const w = walk(f, 0); ok('9c blade active: bear.blade.wait lines, no flags', w.said.length === 2 && w.said[0].includes('not done with you yet') && f.s.size === 1, w.said.join('|')); }
+ok('no accept/handin flag is set inside the dialogue (D-098)', !comp.nodes.some((n) => [n.setFlag, ...n.choices.map((c) => c.setFlag)].some((x) => /.(accept|handin)$/.test(x || ''))));
 // graph-wide
 {
   const reach = new Set(), st = comp.entry.map((e) => e.node);
   while (st.length) { const i = st.pop(); if (reach.has(i)) continue; reach.add(i); const n = comp.nodes[i]; if (n.next != null && n.next >= 0) st.push(n.next); for (const c of n.choices) st.push(c.next); }
   ok(`every node reachable (${reach.size}/${comp.nodes.length})`, reach.size === comp.nodes.length);
-  ok('13 entries, last is unconditional', comp.entry.length === 18 && comp.entry[17].requires === null);
+  ok('21 entries (3 after-flag entries on top), last is unconditional', comp.entry.length === 21 && comp.entry[20].requires === null);
   const long = comp.nodes.flatMap((n) => n.lines).filter((l) => l.length > 56);
   ok('every line <= 56 chars', long.length === 0, long.join('|'));
   ok('D-013: no player name in the lines', !comp.nodes.flatMap((n) => n.lines).some((l) => /\bWick\b/.test(l)));
   const flags = new Set(comp.nodes.flatMap((n) => [n.setFlag, ...n.choices.map((c) => c.setFlag)]).filter(Boolean));
-  ok('flags set by the graph', ids([...flags].sort()) === ids(['bear.stone.told', 'bear.talked', 'q.burl.boars.accept', 'q.burl.boars.handin', 'q.sq.burl.blue.accept', 'q.sq.burl.blue.handin', 'q.tower.blade.handin', 's.burl.depart', 's.burl.follow', 's.burl.home.met']), [...flags].join());
+  ok('flags set by the graph', ids([...flags].sort()) === ids(['bear.stone.told', 'bear.talked', 's.burl.depart', 's.burl.follow', 's.burl.home.met']), [...flags].join());
 }
 // barks file shape
 {

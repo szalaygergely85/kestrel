@@ -72,6 +72,7 @@ export function createDialogueCtl(opt) {
     locked: false,
     get open() { return runner.state !== 'idle' && runner.state !== 'ended'; },
     _closing: false,
+    questGate: null, // QFIX-S4b: main sets (id) => bool (true = a quest window was opened instead)
     escGrace: createEscGrace(), // OB-049: Esc under pointer lock closes the box only; main.js keeps pause down while .active
 
     /** Entity id -> dialogue id (components.dialogue as string or {id}), else null. */
@@ -82,16 +83,27 @@ export function createDialogueCtl(opt) {
     },
 
     /** Opens the conversation of NPC entity `id`. Returns false when it has no (known) dialogue or one is open. */
-    openFor(id) {
-      if (ctl.open || ctl._closing) return false; // DIALOGUE-LOCK-01: not in the step that just closed (the closing E must not re-open via the [E] Talk interactable)
+    openFor(id, skipGate, onEnd) { // QFIX-S4b: ctl.questGate(id) (D-098: hand-in / offer window around the NPC talk) runs first unless skipGate; onEnd runs when the box closes
+      if (ctl.open || ctl._closing) return false;
+      if (!skipGate && ctl.questGate && ctl.questGate(id)) return true; // DIALOGUE-LOCK-01: not in the step that just closed (the closing E must not re-open via the [E] Talk interactable)
       const did = ctl.dialogueIdOf(id);
       const comp = did && dialogues[did];
       if (!comp) return false;
-      npcId = id; pendingClip = null; oneShot = false; lastBase = null;
+      npcId = id; pendingClip = null; oneShot = false; lastBase = null; ctl._onEnd = onEnd || null;
       jawComp = null; // re-pick the jaw component for THIS npc (_jaw reacquires it on the next step)
       runner.open(comp, flags);
       ctl.locked = true; ctl._closing = false;
       if (opt.onTalk) opt.onTalk(id);
+      ctl._clips();
+      return true;
+    },
+
+    /** QFIX-S4: open an ad-hoc compiled dialogue (quest offer / hand-in window) anchored at entity `id`; `onEnd` runs when it closes. */
+    openComp(comp, id, onEnd) {
+      if (ctl.open || ctl._closing || !comp) return false;
+      npcId = id; pendingClip = null; oneShot = false; lastBase = null; jawComp = null; ctl._onEnd = onEnd || null;
+      runner.open(comp, flags);
+      ctl.locked = true; ctl._closing = false;
       ctl._clips();
       return true;
     },
@@ -115,6 +127,7 @@ export function createDialogueCtl(opt) {
     },
     _finish() {
       ctl._closing = true; // locked stays true until the next step() begins
+      const onEnd = ctl._onEnd; ctl._onEnd = null; if (onEnd) { ctl._closing = false; npcId = null; onEnd(); if (ctl.open) return; ctl._closing = true; } // QFIX-S4: chain the next offer window
       if (npcId !== null) ctl._play('idle');
       npcId = null; pendingClip = null; oneShot = false; lastBase = null;
     },

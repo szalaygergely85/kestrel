@@ -44,14 +44,13 @@ export function buildGroups(members, seed, walkable) {
 }
 
 /**
- * opts: { groups, dayLenSec, viewHalfRad (hfov/2), los(px,py,hx,hy)->bool, onRespawn(groupIndex, group) }
+ * opts: { groups, dayLenSec, viewCos (cos(hfov/2 + VIEW_MARGIN_RAD), computed by the caller), los(px,py,hx,hy)->bool, onRespawn(groupIndex, group) }
  * Per group: alive count, diedAt (game sec), base timer secs. Respawn due when t >= diedAt + base * difficulty.respawn.
  */
 export function createSpawnDirector(opts) {
   const groups = opts.groups, N = groups.length, dayLen = opts.dayLenSec || DEFAULT_DAY_SEC;
-  const viewCos = Math.cos((opts.viewHalfRad || 0.5236) + VIEW_MARGIN_RAD); // create-time only
   const D = {
-    groups, t: 0, tick: 0, mult: 1, diffName: 'normal',
+    groups, viewCos: opts.viewCos === undefined ? 0.7071067811865476 : opts.viewCos, t: 0, tick: 0, mult: 1, diffName: 'normal',
     alive: new Int16Array(N), rule: new Uint8Array(N), base: new Float64Array(N), diedAt: new Float64Array(N), dead: new Uint8Array(N),
     nextTry: new Int32Array(N), idx: Object.create(null), respawns: 0, deferred: 0,
   };
@@ -70,7 +69,7 @@ export function createSpawnDirector(opts) {
   D.canSpawnAt = (hx, hy, px, py, fx, fy) => {
     const dx = hx - px, dy = hy - py, d2 = dx * dx + dy * dy;
     if (d2 < SPAWN_MIN_DIST * SPAWN_MIN_DIST) return false;
-    if ((dx * fx + dy * fy) > viewCos * Math.sqrt(d2)) return false; // inside the cone (cos larger = smaller angle)
+    if ((dx * fx + dy * fy) > D.viewCos * Math.sqrt(d2)) return false; // inside the cone (cos larger = smaller angle)
     return !(opts.los && opts.los(px, py, hx, hy));
   };
   /** Advance by dt GAME seconds (0 while paused). Checks every CHECK_STEPS steps; a blocked respawn retries after RETRY_STEPS. */

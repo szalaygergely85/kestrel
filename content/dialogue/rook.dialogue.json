@@ -7,6 +7,7 @@
     "you": {"label": "YOU", "player": true}
   },
   "entry": [
+    {"node": "rook.call.ready.1", "requires": "rook.after.mq.bend.call"},
     {"node": "rook.call.ready.1", "requires": "s.mq.bend.call.ready"},
     {"node": "rook.call.active", "requires": "s.mq.bend.call.active"},
     {"node": "rook.mirror.active", "requires": "s.mq.ford.mirror.active"},
@@ -41,7 +42,7 @@
     ], "next": "rook.meet.8", "speaker": "rook"},
     "rook.meet.8": {"end": true, "lines": [
       "Watch it blink. Count. Then see the knot."
-    ], "setFlag": "s.mq.bend.call.accept", "speaker": "rook"},
+    ], "speaker": "rook"},
     "rook.call.active": {"end": true, "lines": [
       "Count the blinks. Then the knot. Then me."
     ], "speaker": "rook"},
@@ -62,7 +63,7 @@
     ], "next": "rook.call.ready.6", "speaker": "rook"},
     "rook.call.ready.6": {"clip": "caw", "end": true, "lines": [
       "I will be there first. Wings."
-    ], "setFlag": "s.mq.bend.call.handin", "speaker": "rook"},
+    ], "speaker": "rook"},
     "rook.repeat": {"end": true, "lines": [
       "River. West. Do not drown, fell-bird."
     ], "speaker": "rook"},
@@ -86,7 +87,7 @@
     ], "next": "rook.ford.7", "speaker": "rook"},
     "rook.ford.7": {"end": true, "lines": [
       "I have other shinies. Many."
-    ], "setFlag": "s.mq.ford.mirror.accept", "speaker": "rook"},
+    ], "speaker": "rook"},
     "rook.mirror.active": {"end": true, "lines": [
       "Old house by the crossing. Look inside."
     ], "speaker": "rook"},

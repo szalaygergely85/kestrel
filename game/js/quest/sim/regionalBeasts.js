@@ -17,6 +17,10 @@ export const REGION_RULES = Object.freeze([
   { region: 'reedmire', key: 'reedmire', species: 'boar', groups: 2, size: 2 },
   { region: 'whitecombs', key: 'whitecombsFoot', species: 'bear', groups: 2, size: 1, rect: [0, 200, 2048, 330] },
   { region: 'ford', key: 'ford', species: 'boar', groups: 2, size: 2, rect: [990, 980, 1150, 1140] }, // OB-142: river banks around the ford had no animals within 150 m
+  // BEAST-07b (D-087: undead at night = yes). NIGHT-PLACEHOLDER: wolf packs stand in for the undead (`placeholderFor: 'undead'`) until undead models exist;
+  // `when: 'night'` -> parked by day, roam 20:00-05:00 only out of view (beastRoutes.js). Far regions only, 9 slots (inside MAX_BEASTS headroom).
+  { region: 'westFells', key: 'westFellsNight', species: 'wolf', groups: 2, size: 3, when: 'night', placeholderFor: 'undead' },
+  { region: 'thornwood', key: 'thornNight', species: 'wolf', groups: 1, size: 3, when: 'night', placeholderFor: 'undead' },
   // strand: none (open beach, ambient fauna only)
 ]);
 
@@ -88,7 +92,7 @@ export function generateRegionalBeasts(o) {
             if (x > r[0] && x < r[2] && y > r[1] && y < r[3] && walkable(x, y)) { hx = x; hy = y; break; }
           }
         }
-        out.push({ id: `${rule.species}.${rule.key}.${++n}`, species: rule.species, region: rule.region, x: hx, y: hy, group: g });
+        out.push({ id: `${rule.species}.${rule.key}.${++n}`, species: rule.species, region: rule.region, x: hx, y: hy, group: g, ...(rule.when ? { when: rule.when } : {}) });
       }
     }
   }
@@ -105,15 +109,18 @@ export function authoredHomes(world) {
   return avoid;
 }
 
+/** One generated beast entity (skipped when a restored save already holds it, WMP-09). POI-05b reuses it for the POI fight members. */
+export function spawnBeastEntity(world, id, species, x, y, wary = true) {
+  if (world.get(id)) return;
+  const brain = { kind: 'beast', home: [x, y], temperament: wary ? 'wary' : 'bold' };
+  if (species !== 'boar') brain.species = species;
+  world.spawn('beast', { x, y, z: world.terrain.heightAt(x, y) },
+    { voxel: { anim: 'idle', loop: true, model: MODEL[species] }, brain, targetable: { ...BODY[species] } }, id);
+}
+
 export function spawnRegionalBeasts(world, geo, seed) {
   const avoid = authoredHomes(world);
   const list = generateRegionalBeasts({ geo, terrain: world.terrain, seed, avoid });
-  for (const b of list) {
-    if (world.get(b.id)) continue; // WMP-09: a world restored from a save already holds the herd (saves keep all entities) - spawn only the missing ones
-    const brain = { kind: 'beast', home: [b.x, b.y], temperament: 'wary' };
-    if (b.species !== 'boar') brain.species = b.species;
-    world.spawn('beast', { x: b.x, y: b.y, z: world.terrain.heightAt(b.x, b.y) },
-      { voxel: { anim: 'idle', loop: true, model: MODEL[b.species] }, brain, targetable: { ...BODY[b.species] } }, b.id);
-  }
+  for (const b of list) spawnBeastEntity(world, b.id, b.species, b.x, b.y);
   return list;
 }
