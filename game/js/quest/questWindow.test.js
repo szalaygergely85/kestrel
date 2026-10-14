@@ -40,10 +40,10 @@ const mkFlags = () => { const set = []; return { set, has: () => false, setf: (k
 const run = (raw) => { const fl = mkFlags(); const r = createDialogueRunner({ cps: 1e6 }); r.open(compileDialogue(raw), { has: fl.has, set: fl.setf }); return { r, fl }; };
 const offer = questWindowDialogue(clone('sq.packet'), 'offer', nameOf);
 const o = offer.nodes['w.0'];
-ok(o.choices.map(c => c.text).join() === 'Accept,Decline', 'offer buttons');
+ok(o.choices.map(c => c.text).join() === '[E] Accept,[Q] Decline', 'offer buttons');
 ok(o.lines.join('\n').includes('Reward:') && o.lines.join('\n').includes('Objective:') && o.lines.every(l => l.length <= 56), 'offer shows objective + reward, lines fit');
 const hw = questWindowDialogue(clone('sq.packet'), 'handin', nameOf);
-ok(hw.nodes['w.0'].choices.map(c => c.text).join() === 'Complete,Not yet', 'hand-in button = Complete');
+ok(hw.nodes['w.0'].choices.map(c => c.text).join() === '[E] Complete,[Q] Not yet', 'hand-in button = Complete');
 { const { r, fl } = run(offer); for (let i = 0; i < 400 && r.state !== 'choosing'; i++) { r.tick(1); if (r.state === 'waiting' || r.state === 'paged') r.press(); }
   ok(fl.set.length === 0, 'opening the offer accepts nothing (state ' + r.state + ')'); }
 
