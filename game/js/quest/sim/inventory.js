@@ -8,6 +8,8 @@
 // pure - no world, no events, no module state - and `hashInto` (the only function on the per-step replay
 // path) allocates nothing.
 
+import { hashIt } from './itemInst.js'; // import cycle (itemInst reads itemDisplayName): function-only use, safe
+
 export const SLOTS = 24;
 
 // -----------------------------------------------------------------------------------------------------------
@@ -28,8 +30,9 @@ export function ensureInventory(player, start) {
   const c = player.components || (player.components = {});
   if (!c.inventory) {
     const slots = new Array(SLOTS);
-    for (let i = 0; i < SLOTS; i++) slots[i] = { id: null, n: 0 };
+    for (let i = 0; i < SLOTS; i++) slots[i] = { id: null, n: 0, it: null };
     const inv = {
+      v: 2, // ITEM-02a: slots are {id, n, it}
       slots,
       left: start ? (start.left ?? null) : null,
       right: start ? (start.right ?? null) : null,
@@ -81,7 +84,8 @@ export function validateItemDefs(defs) {
     const q = d.equip; // EQ-01: { slot, tier, def, shell?, held? }
     if (q !== undefined) {
       if (!q || !EQUIP_SLOTS.includes(q.slot)) throw new Error(`[items] bad def "${id}": equip.slot "${q && q.slot}"`);
-      if (!EQUIP_TIERS.includes(q.tier)) throw new Error(`[items] bad def "${id}": equip.tier "${q.tier}"`);
+      if (!EQUIP_TIERS.includes(q.tier) && !d.gen) // ITEM-02a: gen.* defs have no tier
+       throw new Error(`[items] bad def "${id}": equip.tier "${q.tier}"`);
       if (typeof q.def !== 'number' || !(q.def >= 0)) throw new Error(`[items] bad def "${id}": equip.def`);
     }
     if (d.kind === 'gear' && !q) throw new Error(`[items] bad def "${id}": gear needs equip`);
@@ -106,14 +110,14 @@ export function validateItemDefs(defs) {
 export function addItem(inv, defs, id, n) {
   if (!(n > 0)) return 0;
   const def = defs[id];
-  if (!def) return 0;
+  if (!def || def.gen) return 0; // gen.* ids enter only through addInstance
   const stackMax = def.stackMax;
   if (!(stackMax > 0)) return 0;
 
   let remaining = n;
   for (let i = 0; i < SLOTS && remaining > 0; i++) {
     const s = inv.slots[i];
-    if (s.id === id && s.n < stackMax) {
+    if (s.id === id && s.n < stackMax && s.it == null) { // instances never stack
       const add = Math.min(stackMax - s.n, remaining);
       s.n += add;
       remaining -= add;
@@ -125,6 +129,7 @@ export function addItem(inv, defs, id, n) {
       const add = Math.min(stackMax, remaining);
       s.id = id;
       s.n = add;
+      s.it = null;
       remaining -= add;
     }
   }
@@ -141,15 +146,16 @@ export function addItem(inv, defs, id, n) {
  * @returns {number}
  */
 export function removeItem(inv, id, n) {
-  if (!(n > 0)) return 0;
+  if (!(n > 0) || (typeof id === 'string' && id.startsWith('gen.'))) return 0; // instances leave via removeAt
+  
   let remaining = n;
   for (let i = SLOTS - 1; i >= 0 && remaining > 0; i--) {
     const s = inv.slots[i];
-    if (s.id === id) {
+    if (s.id === id && s.it == null) {
       const take = Math.min(s.n, remaining);
       s.n -= take;
       remaining -= take;
-      if (s.n === 0) s.id = null;
+      if (s.n === 0) { s.id = null; s.it = null; }
     }
   }
   if (countOf(inv, id) === 0) {
@@ -157,6 +163,37 @@ export function removeItem(inv, id, n) {
     if (inv.right === id) inv.right = null;
   }
   return n - remaining;
+}
+
+/**
+ * ITEM-02a: stores an item instance `{id, it}` (by reference) in the first empty slot. Returns the slot index, -1 when
+ * the pack is full or the instance is unusable.
+ */
+export function addInstance(inv, defs, inst) {
+  if (!inst || inst.it == null || !defs[inst.id]) return -1;
+  for (let i = 0; i < SLOTS; i++) {
+    const s = inv.slots[i];
+    if (s.id === null) { s.id = inst.id; s.n = 1; s.it = inst.it; return i; }
+  }
+  return -1;
+}
+
+/** Empties slot `idx`, writing `{id, it}` into the caller's reused `out`; null when the slot is empty. */
+export function removeAt(inv, idx, out) {
+  const s = inv.slots[idx];
+  if (!s || s.id === null) return null;
+  out.id = s.id; out.it = s.it == null ? null : s.it;
+  s.id = null; s.n = 0; s.it = null;
+  return out;
+}
+
+/** Swaps the contents (id, n, it) of two pack slots (drag between cells). */
+export function moveSlot(inv, a, b) {
+  if (a === b) return;
+  const x = inv.slots[a], y = inv.slots[b];
+  const id = x.id, n = x.n, it = x.it == null ? null : x.it;
+  x.id = y.id; x.n = y.n; x.it = y.it == null ? null : y.it;
+  y.id = id; y.n = n; y.it = it;
 }
 
 /** Total count of `id` across every slot (a hand item is still counted - the hand only references it). */
@@ -239,6 +276,7 @@ export function hashInto(inv, h) {
   for (let i = 0; i < SLOTS; i++) {
     hashIdInto(h, inv.slots[i].id);
     h.u32(inv.slots[i].n);
+    hashIt(h, inv.slots[i].it);
   }
   hashIdInto(h, inv.left);
   hashIdInto(h, inv.right);

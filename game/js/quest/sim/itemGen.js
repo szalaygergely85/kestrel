@@ -35,9 +35,17 @@ export function affixesFor(type) {
 
 /** Base stats incl. rarity multiplier: { dmg: [min,max] } for weapons, { armour } for shield/armour (rounded ints). */
 export function baseStats(type, iL, r) {
+  const o = baseStatsInto(type, iL, r, { dmg: [0, 0], armour: 0 });
+  return ITEM_BASES[type].kind === 'weapon' ? { dmg: o.dmg } : { armour: o.armour };
+}
+
+/** 0-alloc twin of baseStats: weapons write out.dmg[0..1] (array must exist) and armour 0; others write out.armour. Returns out. */
+export function baseStatsInto(type, iL, r, out) {
   const b = ITEM_BASES[type], m = RARITY[r].base; iL = clampIL(iL);
-  if (b.kind === 'weapon') return { dmg: [Math.round((4 + 2 * iL) * b.dmgMul * m), Math.round((7 + 3 * iL) * b.dmgMul * m)] };
-  return { armour: Math.round((b.kind === 'shield' ? 2 * (2 + iL) : (2 + iL) * b.weight) * m) };
+  if (b.kind === 'weapon') {
+    out.dmg[0] = Math.round((4 + 2 * iL) * b.dmgMul * m); out.dmg[1] = Math.round((7 + 3 * iL) * b.dmgMul * m); out.armour = 0;
+  } else out.armour = Math.round((b.kind === 'shield' ? 2 * (2 + iL) : (2 + iL) * b.weight) * m);
+  return out;
 }
 
 export function baseName(type, iL) { const n = ITEM_BASES[type].names; return n[iL <= 3 ? 0 : iL <= 6 ? 1 : 2]; }
