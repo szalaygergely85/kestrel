@@ -105,7 +105,7 @@ export function createErrands({ getBook, questFlag, inspect, note, texts }) {
     },
     /** world:loaded: [E] Inspect on the object givers that have no dialogue and no relay touch of their own. */
     load(w) {
-      world = w; relayEnt = new Map();
+      world = w; relayEnt = new Map(); offered.clear(); looked.clear(); // BH-S7: a loaded world starts fresh (OB-126)
       const b = getBook(); if (!b) return 0;
       let added = 0;
       for (let i = 1; i < b.count; i++) {
