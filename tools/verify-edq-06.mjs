@@ -27,7 +27,7 @@ try {
   let ready = false;
   for (let i = 0; i < 100 && !ready; i++) { await pause(300); ready = await ev('!!document.querySelector(\'[data-dock-tab="quests"]\')'); }
   assert.ok(ready, 'editor did not boot: ' + JSON.stringify(errors));
-  await ev('document.querySelector(\'[data-dock-tab="quests"]\').click()');
+  for (let i = 0; i < 60 && !(await ev('!!window.__questPanel')); i++) { await ev("document.querySelector('[data-dock-tab=quests]').click()"); await pause(500); }   // main.js boots lazily: re-click until mounted
   let rows = 0;
   for (let i = 0; i < 50 && rows < 10; i++) { await pause(200); rows = await ev('document.querySelectorAll("#quest-list .q-row").length'); }
   assert.ok(rows >= 10, 'quest list rows: ' + rows);

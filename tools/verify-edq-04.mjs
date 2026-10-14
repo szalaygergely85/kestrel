@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
-import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, connectCdp, evaluate, killTree } from './capture-browser.mjs';
+import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, connectCdp, evaluate, evaluateAsync, killTree } from './capture-browser.mjs';
 
 const port = Number(process.argv[2] || 9500);
 validatePort(port);
@@ -28,7 +28,7 @@ try {
   let ready = false;
   for (let i = 0; i < 100 && !ready; i++) { await pause(300); ready = await evaluate(cdp, '!!document.querySelector(\'[data-dock-tab="quests"]\')'); }
   assert.ok(ready, 'editor did not boot: ' + JSON.stringify(errors));
-  await evaluate(cdp, 'document.querySelector(\'[data-dock-tab="quests"]\').click()');
+  for (let i = 0; i < 60 && !(await evaluate(cdp, '!!window.__questPanel')); i++) { await evaluate(cdp, "document.querySelector('[data-dock-tab=quests]').click()"); await pause(500); }   // main.js boots lazily: re-click until mounted
   let rows = 0;
   for (let i = 0; i < 50 && rows < 10; i++) { await pause(200); rows = await evaluate(cdp, 'document.querySelectorAll("#quest-list .q-row").length'); }
   assert.ok(rows >= 10, 'quest list rows: ' + rows);
@@ -42,12 +42,12 @@ try {
   await open('sq.burl.blue');
   let st = await state(); assert.deepEqual(st.ids, ['sq.burl.blue']);
   // 2. Marker content (pure module in the page): blue '!' + '?' at bear, pin 2.
-  const mk = (id) => ev(`import('/tools/editor/quest/markers.js').then(m=>{const p=window.__questPanel;const q=p.model.quests.find(q=>q.id==${JSON.stringify(id)});return JSON.stringify(m.questMarkers(q,{entities:[]},{}).map(x=>x.kind))})`);
+  const mk = (id) => evaluateAsync(cdp, `import('/tools/editor/quest/markers.js').then(m=>{const p=window.__questPanel;const q=p.model.quests.find(q=>q.id==${JSON.stringify(id)});return JSON.stringify(m.questMarkers(q,{entities:[]},{}).map(x=>x.kind))})`);
   assert.ok(typeof (await mk('sq.burl.blue')) === 'string');
   // 3. Pin click selects the objective (panel highlight + selObj).
   await ev('window.__questPanel.selectObjective("sq.burl.blue",1)');
   st = await state(); assert.equal(st.selObj, 1, 'selectObjective sets selObj');
-  assert.ok(await ev('document.querySelector("#quest-detail .q-obj[data-obj=\"1\"]").classList.contains("active")'), 'step 2 highlighted in the panel');
+  assert.ok(await ev("document.querySelector('#quest-detail .q-obj[data-obj=\"1\"]').classList.contains('active')"), 'step 2 highlighted in the panel');
   // 4. Show all toggle (default off).
   assert.equal(await ev('document.getElementById("quest-show-all").checked'), false, 'default off');
   await ev('(()=>{const c=document.getElementById("quest-show-all");c.checked=true;c.dispatchEvent(new Event("change"))})()');
@@ -56,7 +56,7 @@ try {
   assert.equal((await state()).n, 1);
   // 5. A pack quest (sq.tm.nub): numbered pins 1..3 in step order.
   await open('sq.tm.nub');
-  const labels = await ev(`import('/tools/editor/quest/markers.js').then(async m=>{const p=window.__questPanel;const q=p.model.quests.find(q=>q.id=="sq.tm.nub");const w=await fetch('/content/worlds/world_m1.world.json').then(r=>r.json());return JSON.stringify(m.questMarkers(q,w,{sites:p.markerState().sites,floorAt:()=>0,areaPos:m.makeAreaPos(p.areasFile,w)}).filter(x=>x.kind=="pin").map(x=>x.label))})`);
+  const labels = await evaluateAsync(cdp, `import('/tools/editor/quest/markers.js').then(async m=>{const p=window.__questPanel;const q=p.model.quests.find(q=>q.id=="sq.tm.nub");const w=await fetch('/content/worlds/world_m1.world.json').then(r=>r.json());return JSON.stringify(m.questMarkers(q,w,{sites:p.markerState().sites,floorAt:()=>0,areaPos:m.makeAreaPos(p.areasFile,w)}).filter(x=>x.kind=="pin").map(x=>x.label))})`);
   assert.deepEqual(JSON.parse(labels), ['1', '2', '3']);
   // 6. Something was actually drawn: a screenshot of the viewport differs from the quest-less frame.
   const shot = async () => (await cdp.send('Page.captureScreenshot', { format: 'png' })).data.length;

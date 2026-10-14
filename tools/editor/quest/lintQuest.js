@@ -6,7 +6,7 @@
 //   characters:Set<id>, pos(id)->{x,y,z}|null, groundAt(x,y), walkable(x,y,z), support(id)->R12 record|null,
 //   labelOf(id)->plain name, itemDefs:{id:{name}}, hasFlag(name)->bool,
 //   flowOf(quest)->{accept, exit, markLeft, pickupsKept, earlyReturn} (OB-156 data from dialogue/errand files).
-import { r5One, r10Quest, r12One, r14Quest, rawIn } from '../../content-lint.mjs';
+import { r5One, r10Quest, r12One, r14Quest, rawIn } from '../../content-lint-rules.js';
 
 const ID_LIKE = /\b(?:sq|mq|heart)\.[A-Za-z][\w.]*/, PLACEHOLDER = /\{[^}]*\}/;
 

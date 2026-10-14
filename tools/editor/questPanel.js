@@ -14,7 +14,7 @@ import { loadDialogues, saveDialogues, captureBaseline } from './quest/lines.js'
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 
 /** In-memory fs over a {path: text} map, so model.js loads without node:fs. */
-function memFs(files) {
+export function memFs(files) {
   const names = Object.keys(files);
   const dirs = new Set(names.filter((n) => n.includes('/')).map((n) => n.split('/')[0]));
   const key = (p) => p.replace(/^[qd]\//, '');
