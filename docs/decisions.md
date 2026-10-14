@@ -1256,3 +1256,13 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 
 ## D-097
 **2026-10-14, owner (PC-B session; renumbered from D-084..D-090 at the pc-a merge - same numbers were used on both PCs), writer questions.** The fireball spell is named **Fireball** (not Ember). The teal crystal shows as "Teal Crystal" until Burl names it, then **"Aether Crystal"** (story canon: Wick has no word for it at first). Item names: the ITEM-03 item bases replace the old fixed tier table (D-081), so the writer's base names are the final ones once ITEM-04/06 land. GPU gate: PC-B pauses its agents ~30 min per batch to run gpucompare on an idle laptop (owner).
+
+## D-098
+**2026-10-14, owner (PC-B session): "can you just copy WoW or Diablo how the quests are working?"** THE quest rule, copied from WoW/Diablo. It supersedes every earlier marker rule (MARK-GIVER-ONLY-01, OB-124b, OB-125, OB-155i "no early ?", OB-161/163/164 details). One rule, no per-quest exceptions:
+1. **`!` = you can TAKE a quest here.** Above the character (or flagged object giver, D-087) offering a quest you can accept now. Gold = main story, blue = side.
+2. **`?` = you FINISH here.** As soon as a quest/step is accepted, a `?` hangs over the place or person where it is finished/handed in: **grey `?`** while the objectives are not done yet, **gold (main) / blue (side) `?`** when it is ready to hand in. For "go to / wake / use X" steps the finish place is X itself (e.g. the waystone shows the gold `?` while the step is active).
+3. **One marker per thing**, priority: ready `?` > `!` > grey `?`. Marker height = model top + margin (never inside a model).
+4. **Accept / hand-in by talking** (or E on the flagged object): an offer window with the quest text + rewards and Accept / Decline; hand-in window with rewards + Complete. No auto-accept, no auto-complete except "reach / use X" steps. Hand-in always beats a new offer on the same thing (QFIX-S4). After a hand-in the next quest of a chain is offered right away by the same character if it has one.
+5. **Quest tracker** on screen (top right): the tracked quest(s) with their objectives and counts ("Kill boars 3/5"); the journal lists accepted quests only; the M map pins every `?` of active quests and every `!` you have found.
+6. Kills/items count only after accepting (OB-115 rule stays).
+Crocodile (owner, same session): **short grab + mash to escape (1.5 s, max 12 % HP)** wins over D-088's movement-only pin.
