@@ -16,6 +16,8 @@ const get = (id) => all.find((d) => d.id === id);
 const state = {}, pack = new Map();
 const smoke = { ...get('mq.smoke') }; delete smoke.requires;
 const defs = [get('m1'), smoke, get('mq.ow.path'), get('mq.ow.fence'), get('mq.ow.names'), get('mq.ow.relay'), get('mq.ow.board')];
+// D-095: gate chain (sq.burl.fire, mq.river.road ...) lives outside this subset: load the rest of the set too
+for (const d of all) if (!defs.some(x => x.id === d.id)) defs.push(d);
 const book = createQuestBook(defs[0], defs.slice(1));
 book.packOps = { count: (id) => pack.get(id) || 0, remove() {}, add: (id, n) => { pack.set(id, (pack.get(id) || 0) + n); return n; }, equipped: () => false };
 const questFlag = (k, v = true) => { state[k] = v; book.feed({ type: 'flag:set', key: k, value: v }); };

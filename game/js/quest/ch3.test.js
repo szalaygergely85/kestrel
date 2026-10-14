@@ -13,7 +13,8 @@ const files = loadQuestFiles(dir), packs = await loadPackQuests(dir, assets.item
 const all = [...files.quests, ...packs.quests].map(q => q.def);
 const get = id => all.find(d => d.id === id);
 const smoke = { ...get('mq.smoke') }; delete smoke.requires; // stub the earlier chapters: start the chain at mq.smoke
-const defs = [get('m1'), smoke, get('mq.ow.path'), get('mq.ow.fence')];
+// D-095: west-bank quests are gated behind sq.burl.fire (ch12 pack): load the FULL quest set (smoke stubbed), not a subset
+const defs = [get('m1'), smoke, ...all.filter(d => d.id !== 'm1' && d.id !== 'mq.smoke')];
 const mk = () => createQuestBook(defs[0], defs.slice(1));
 const wolves = ['wolf1', 'wolf2', 'wolf3', 'wolf4', 'wolf5'];
 

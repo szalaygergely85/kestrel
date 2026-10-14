@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { makeOk } from '../../../engine/test/assert.js';
 import { createQuestBook, DONE, ACTIVE, READY } from './sim/questBook.js';
 import { RELAY_TITLES } from './wire/waystone.js';
-import { loadDesignAssets, loadPackQuests } from '../../../tools/validate-content.mjs';
+import { loadDesignAssets, loadPackQuests, loadQuestFiles } from '../../../tools/validate-content.mjs';
 
 let pass = 0, fail = 0; const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
@@ -16,11 +16,13 @@ const all = packs.quests.map(q => q.def);
 const m1 = JSON.parse(fs.readFileSync(dir + '/m1.quest.json', 'utf8'));
 const regs = Object.keys(RELAY_TITLES).filter(k => !['ws_roadBend', 'ws_ford', 'ws_outwall'].includes(k)).map(k => k.slice(3));
 const defs = regs.map(r => all.find(d => d.id === 'sq.reg.' + r));
+const legacy = loadQuestFiles(dir).quests.map(q => q.def).filter(d => d.id !== 'm1'); // D-095: gate chain (sq.burl.fire <- mq.river.road ...)
+const gateDefs = [...legacy, ...all.filter(d => !d.id.startsWith('sq.reg.'))]
 ok(regs.length === 10 && defs.every(Boolean), 'exactly one errand for each of the 10 region relays');
 ok(new Set(all.map(d => d.id)).size === all.length, 'quest ids unique across all packs');
 ok(all.filter(d => d.id.startsWith('sq.reg.')).length === 10, 'no extra region errands');
 const mk = () => {
-  const b = createQuestBook(m1, defs);
+  const b = createQuestBook(m1, [...gateDefs, ...defs]);
   const inv = new Map();
   b.packOps = { count: (id) => inv.get(id) || 0, remove: (id, n) => inv.set(id, (inv.get(id) || 0) - n), add: (id, n) => { inv.set(id, (inv.get(id) || 0) + n); return n; }, equipped: () => true };
   return { b, inv };
@@ -49,7 +51,7 @@ for (const r of regs) {
   b.feed({ type: 'flag:set', key: 'waystone.ws_northwood.woken', value: true });
   b.accept(id); b.feed({ type: 'beast:died', id: 'wolfA' });
   const snap = JSON.parse(JSON.stringify(b.toSave()));
-  const b2 = createQuestBook(m1, defs, snap);
+  const b2 = createQuestBook(m1, [...gateDefs, ...defs], snap);
   ok(b2.statusOf(id) === ACTIVE, 'round trip keeps the errand active');
   b2.feed({ type: 'beast:died', id: 'wolfB' }); b2.feed({ type: 'beast:died', id: 'wolfC' });
   ok(b2.statusOf(id) === READY, 'round trip keeps progress');

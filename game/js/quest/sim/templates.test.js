@@ -113,10 +113,14 @@ const boot = await loadQuestFiles(getJson, { log: (m) => logs.push(m) });
 assert.deepEqual(boot.giverDefs.map(d => d.id), ['tower.blade', 'burl.boars', 'mq.river.road', 'mq.ford.stones', 'sq.w.one']);
 assert.deepEqual(boot.errors.map(e => e.file), ['pack:west:sq.w.bad']);
 const ids = m1.objectives.map(o => o.id), upto = ids.slice(0, ids.indexOf('relay1') + 1);
+// D-095: mq.river.road / mq.ford.stones are gated behind sq.burl.fire (ch12 pack): add a stub gate quest
+const gateStub = { version: 1, id: 'sq.burl.fire', title: 'Gate', objectives: [{ id: 'g', text: 'g', journal: 'g', when: { type: 'flag', id: 'gate.stub', equals: true } }] }; // giverless: DONE once its flag is fed
+boot.giverDefs = [gateStub, ...boot.giverDefs];
 const book = createQuestBook(boot.questDef, boot.giverDefs, { quest: { questVersion: 1, questId: 'm1', flags: {}, items: [], deadBeasts: [], areas: [], completed: [] }, quests: null });
 assert.equal(book.statusOf('mq.river.road'), UNAVAILABLE); assert.equal(book.statusOf('mq.ford.stones'), UNAVAILABLE);
 const book2 = createQuestBook(boot.questDef, boot.giverDefs, { quest: { questVersion: 1, questId: 'm1', flags: {}, items: [], deadBeasts: [], areas: [], completed: upto }, quests: null });
 assert.equal(book2.statusOf('mq.river.road'), ACTIVE); assert.equal(book2.statusOf('mq.ford.stones'), UNAVAILABLE);
+book2.feed({ type: 'flag:set', key: 'gate.stub', value: true }); // the gate quest is done -> ford stones opens
 const ev = []; book2.onChange = (n, id) => ev.push(n + ':' + id);
 book2.feed({ type: 'area:entered', id: 'riverBank' });
 assert.equal(book2.statusOf('mq.river.road'), DONE); assert.equal(book2.statusOf('mq.ford.stones'), ACTIVE);
