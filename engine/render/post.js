@@ -1,8 +1,8 @@
 // POST-STACK-01a (docs/architecture.md 38.73): data-driven per-cell finish chain, JS twin. Pure numbers, no design/ import.
 // Order per cell (fixed): mist -> grade (biome grade composed with the preset grade into ONE set) -> vignette. fg and bg, glyph never changes.
 // The grade stage IS gradeCells (atmos.js) fed with the composed values, so identity post + atmos is bit-equal to gradeCells alone.
-// Colours in cfg/state (mist.rgb, vignette.rgb) are 0..1. 01b adds POST_WGSL from the same constants.
-import { ATMOS_LUMA } from './atmos.js';
+// Colours in cfg/state (mist.rgb, vignette.rgb) are 0..1. POST_WGSL (01b) is the GPU twin of the same chain (needs ATMOS_GRADE_WGSL spliced before it).
+import { ATMOS_LUMA, ATMOS_GRADE_WGSL } from './atmos.js';
 
 /** @typedef {{ bloom: null|{radius:number,gain:number,haloBg:number,haloMin:number},
  *   grade: null|{lift:ArrayLike<number>,gamma:ArrayLike<number>,gain:ArrayLike<number>,sat:number},
@@ -198,3 +198,37 @@ function vigTable(rt, cb, s) {
   }
   return tab;
 }
+
+/**
+ * POST-STACK-01b: WGSL twin of the per-cell chain for ONE colour (0..1), spliced into the sprites shader AFTER ATMOS_GRADE_WGSL.
+ * Scalar helpers + a vec3 wrapper (probe-able by wgslProbe compileFn). Like postCells every stage result is rounded to a byte
+ * (postQ8) so the GPU matches the twin to float noise: input q8 -> mist -> q8 -> grade (composed set, atmosGrade) -> q8 -> vignette -> q8.
+ * postMistF: 1 - exp(-density * max(0, d - start)) * exp(-heightK * z) (z = 0 on the GPU: no per-cell height there, heightK ignored in v1).
+ * postVigF: k * smoothstep(r0, r1, r), r = |(nx * aspect, ny)| / |(aspect, 1)| at the cell centre uv (0..1).
+ * Uniform words (SpritesU, appended at the END): postVig (k, r0, r1, on), postVigRGB (rgb, aspect), postMist (rgb, density), postMistB (start, heightK, on, 0).
+ */
+export const POST_WGSL = `fn postQ8(x: f32) -> f32 { return floor(clamp(x, 0.0, 1.0) * 255.0 + 0.5) / 255.0; }
+fn postMistF(depth: f32, z: f32, density: f32, start: f32, heightK: f32) -> f32 {
+  let e = depth - start;
+  if (!(e > 0.0)) { return 0.0; }
+  var f = 1.0 - exp(-density * e);
+  if (heightK > 0.0) { f = f * exp(-heightK * z); }
+  return f;
+}
+fn postVigF(ux: f32, uy: f32, aspect: f32, k: f32, r0: f32, r1: f32) -> f32 {
+  let nx = (ux * 2.0 - 1.0) * aspect;
+  let ny = uy * 2.0 - 1.0;
+  let t = clamp((sqrt(nx * nx + ny * ny) / sqrt(aspect * aspect + 1.0) - r0) / (r1 - r0), 0.0, 1.0);
+  return k * t * t * (3.0 - 2.0 * t);
+}
+fn postFinish(c: vec3f, mf: f32, vf: f32, mc: vec3f, vc: vec3f, gOn: f32, lift: vec3f, ig: vec3f, gain: vec3f, sat: f32) -> vec3f {
+  let c0 = vec3f(postQ8(c.x), postQ8(c.y), postQ8(c.z));
+  var m = c0;
+  if (mf > 0.0) { m = vec3f(postQ8(c0.x + (mc.x - c0.x) * mf), postQ8(c0.y + (mc.y - c0.y) * mf), postQ8(c0.z + (mc.z - c0.z) * mf)); }
+  var g = m;
+  if (gOn > 0.5) { let a = atmosGrade(m, lift, ig, gain, sat); g = vec3f(postQ8(a.x), postQ8(a.y), postQ8(a.z)); }
+  var v = g;
+  if (vf > 0.0) { v = vec3f(postQ8(g.x + (vc.x - g.x) * vf), postQ8(g.y + (vc.y - g.y) * vf), postQ8(g.z + (vc.z - g.z) * vf)); }
+  return v;
+}
+`;

@@ -10,6 +10,7 @@
 import { defineUniformBlock } from './uniformBlock.js';
 import { GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL, BYTE_OUT_WGSL } from './common.wgsl.js';
 import { ATMOS_GRADE_WGSL } from '../../atmos.js'; // ENV-03c
+import { POST_WGSL } from '../../post.js'; // POST-STACK-01b
 import { MAX_SPRITES, SPRITE_NEAR_DEPTH } from '../../sprites.js';
 
 export const SPRITES_BLOCK = defineUniformBlock('SpritesU', [
@@ -25,6 +26,11 @@ export const SPRITES_BLOCK = defineUniformBlock('SpritesU', [
   { name: 'atmosLift', type: 'vec4' },     // ENV-03c: xyz = lift, w = on (1 = grade the cell, 0 = untouched)
   { name: 'atmosInvGamma', type: 'vec4' }, // xyz = 1/gamma, w = sat
   { name: 'atmosGain', type: 'vec4' },     // xyz = gain
+  // POST-STACK-01b (38.73): appended at the END; the 3 atmos vec4 above carry the COMPOSED grade (biome + preset) when post is on
+  { name: 'postVig', type: 'vec4' },       // k, r0, r1, on
+  { name: 'postVigRGB', type: 'vec4' },    // rgb 0..1, aspect (displayed picture ratio)
+  { name: 'postMist', type: 'vec4' },      // rgb 0..1, density
+  { name: 'postMistB', type: 'vec4' },     // start, heightK, on, 0
 ]);
 export const SPRITES_TEXTURES = Object.freeze(['uint', 'uint', 'float', 'float', 'float', 'uint', 'float', 'uint', 'uint', 'float', 'float', 'float']);
 export const SPRITES_TARGETS = Object.freeze(['rgba8', 'rgba8']);
@@ -51,6 +57,7 @@ ${GBUF_UNPACK_WGSL}
 ${BYTE_OUT_WGSL}
 ${FULLSCREEN_VS_WGSL}
 ${ATMOS_GRADE_WGSL}
+${POST_WGSL}
 fn depthAt(c: vec2i) -> f32 { return bitcast<f32>(textureLoad(uDepth, c, 0).r); }
 
 // fadeGlyph's step: j = floor(a * i + 0.5) clamped to 0..last (never the round builtin).
@@ -160,6 +167,19 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
     }
   }
 
+  // POST-STACK-01b: mist -> composed grade -> vignette per cell (twin: postCells), fg + bg, glyph never changes. Post off = the ENV-03c block below, untouched.
+  if (su.postMistB.z > 0.5 || su.postVig.w > 0.5) {
+    var mf = 0.0;
+    if (su.postMistB.z > 0.5) { mf = postMistF(cellDepth, 0.0, su.postMist.w, su.postMistB.x, su.postMistB.y); }
+    var vf = 0.0;
+    if (su.postVig.w > 0.5) {
+      let dims = vec2f(textureDimensions(uDepth));
+      vf = postVigF((f32(cell.x) + 0.5) / dims.x, (f32(cell.y) + 0.5) / dims.y, su.postVigRGB.w, su.postVig.x, su.postVig.y, su.postVig.z);
+    }
+    o.fg = vec4f(postFinish(o.fg.rgb, mf, vf, su.postMist.xyz, su.postVigRGB.xyz, su.atmosLift.w, su.atmosLift.xyz, su.atmosInvGamma.xyz, su.atmosGain.xyz, su.atmosInvGamma.w), o.fg.a);
+    o.bg = vec4f(postFinish(o.bg.rgb, mf, vf, su.postMist.xyz, su.postVigRGB.xyz, su.atmosLift.w, su.atmosLift.xyz, su.atmosInvGamma.xyz, su.atmosGain.xyz, su.atmosInvGamma.w), o.bg.a);
+    return o;
+  }
   // ENV-03c: biome grade on fg + bg after fade/dim (twin: gradeCells); glyph (fg.a) and bg.a never change; off = skipped
   if (su.atmosLift.w > 0.5) {
     o.fg = vec4f(clamp(atmosGrade(o.fg.rgb, su.atmosLift.xyz, su.atmosInvGamma.xyz, su.atmosGain.xyz, su.atmosInvGamma.w), vec3f(0.0), vec3f(1.0)), o.fg.a);
