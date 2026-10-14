@@ -90,9 +90,9 @@ function advance(state, def) {
 function catchUp(state, def) {
   const objs = def.objectives, c = state.completed.length;
   if (c >= objs.length || objs[c].when.type !== 'area') return false;
-  let j = c;
+  let j = c; // first met step after only area steps; an area met out of order (bendRelay) vouches for the earlier waypoints too
   while (j < objs.length && objs[j].when.type === 'area' && progress(state, objs[j].when) < (objs[j].when.count ?? 1)) j++;
-  if (j >= objs.length || objs[j].when.type !== 'flag' || progress(state, objs[j].when) < (objs[j].when.count ?? 1)) return false; // only a met flag (stone woken, quest handed in) vouches for the skipped waypoints
+  if (j === c || j >= objs.length || (objs[j].when.type !== 'area' && objs[j].when.type !== 'flag') || progress(state, objs[j].when) < (objs[j].when.count ?? 1)) return false; // only a met flag/area vouches for the skipped waypoints
   for (let k = c; k < j; k++) { const id = objs[k].when.id; if (!state.areas.includes(id)) state.areas.push(id); }
   state.areas.sort();
   return true;
