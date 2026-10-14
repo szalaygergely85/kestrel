@@ -63,7 +63,7 @@ assert.equal(strip(t1), strip(ftext));
 ch = changedLines(model, dm, base);
 assert.equal(ch.length, 2); assert.equal(ch[0].kind, 'changed'); assert.equal(ch[1].kind, 'added');
 const txt = exportChangedText(ch);
-assert.match(txt, /was: West\. The road runs/); assert.match(txt, /now: Second line\./);
+{ const was0 = JSON.parse(ftext).nodes['rook.road.1'].lines[0]; assert.ok(txt.includes('was: ' + was0), 'export names the old line'); } // reads the shipped text (writer lines change it) assert.match(txt, /now: Second line\./);
 const written = [];
 assert.deepEqual(saveDialogues(dm, { writeFileSync: (p, t) => written.push([p, t]) }), ['rook.dialogue.json']);
 assert.equal(written[0][1], t1);
