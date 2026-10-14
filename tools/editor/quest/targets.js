@@ -1,7 +1,7 @@
 // tools/editor/quest/targets.js - ED-QUEST-03. Pure (imports model.js + flow.js only): what a click in the 3D view means
 // for a quest slot. world = world json ({entities:[...]}); ctx = { sites, floorAt(x,y), areaRadius }.
 // Characters = NPCs with dialogue (D-082). Objects = props (inspect posts, notes). Enemies = beasts (brain component).
-import { setQuestField } from './model.js';
+import { setQuestField, setAreaCmd } from './model.js';
 import { objField } from './flow.js';
 
 export const AREA_RADIUS = 4;
@@ -82,17 +82,30 @@ export function applyPick(q, slot, hit, world, ctx = {}) {
     return fail(want === 'character' ? NOT_CHARACTER : want === 'area' ? 'Click the ground for this step' : want === 'enemy' ? 'Pick an enemy' : 'Pick an item or object');
   }
   let next;
+  const swap = (raw, nx) => { raw[field] = raw[field].map((o, k) => (k === i ? nx : o)); };
   if (want === 'area') {
+    // game format: areas.json {world, trigger} + an area-only world zone; the step names the area by id (explore.areas / when.id)
+    if (!ctx.model) return fail('No quest model to store the area in');
     const g = groundTarget(hit.point, ctx), spot = { x: g.x, y: g.y, z: g.z, r: g.radius };
-    next = step.template ? { ...step, params: { ...step.params, spot } } : { ...step, when: { ...step.when, ...spot, radius: g.radius } };
+    const own = `${q.id}.a${i + 1}`;
+    const nx = step.template ? { ...step, params: { ...step.params, areas: [own] } } : { ...step, when: { ...step.when, type: 'area', id: own } };
+    for (const k of ['spot', 'x', 'y', 'z', 'radius']) { if (nx.params) delete nx.params[k]; if (nx.when) delete nx.when[k]; }
+    return { cmd: setAreaCmd(ctx.model, q, own, spot, (raw) => swap(raw, nx), ctx.worldId), error: null };
   } else if (want === 'character') {
     const ref = step.template ? siteFor(ctx.sites, ent.id) : ent.id;
     next = step.template ? { ...step, params: { ...step.params, to: ref } } : { ...step, when: { ...step.when, to: ref } };
   } else if (want === 'enemy') {
+    // templates.js kill: {kind, count>=1} counts any beast of the kind from accept (no ids)
     const params = { ...step.params, kind: enemyKind(ent) }; delete params.ids;
+    if (!Number.isInteger(params.count) || params.count < 1) params.count = 1;
     next = { ...step, params };
   } else {
-    next = step.template ? { ...step, params: { ...step.params, placement: ent.id } } : { ...step, when: { ...step.when, placement: ent.id } };
+    // items: the existing pickup placement's item id (components.questPickup.item), never a new field
+    const qp = ent.components && ent.components.questPickup;
+    if (!qp || typeof qp.item !== 'string') return fail('Pick a quest pickup (an item you can take)');
+    if (!step.template) next = { ...step, when: { ...step.when, id: qp.item } };
+    else if (step.template === 'collect') next = { ...step, params: { ...step.params, ids: [qp.item], ...(Number.isInteger(step.params && step.params.count) && step.params.count > 0 ? {} : { count: 1 }) } };
+    else { const params = { ...step.params, item: qp.item }; next = { ...step, params }; }
   }
   const list = q.raw[field].map((o, k) => (k === i ? next : o));
   return { cmd: setQuestField(q, field, list), error: null };
