@@ -12,11 +12,13 @@ const clean = () => ({
   structures: [S('c1', 'quaternius/Prop_Chimney2', 100, 100), S('w1', 'quaternius/Wall_A', 101, 100), S('w2', 'quaternius/Floor_A', 102, 100), S('w3', 'quaternius/Roof_A', 100, 102), S('tree1', 'quaternius/CommonTree_1', 5, 5)],
   texts: [{ where: 'rook', text: 'Go to the old waystone.' }],
   jsTexts: [{ where: 'js', text: 'Waystone woken.' }],
-  quests: [{ id: 'q1', giver: { npc: 'rook', turnIn: 'rook' }, reward: { items: [{ id: 'arrow', n: 5 }] }, early: true, targets: [{ id: 'rook', x: 1300, y: 1000 }] }],
+  quests: [{ id: 'q1', giver: { npc: 'rook', turnIn: 'rook' }, reward: { items: [{ id: 'arrow', n: 5 }] }, early: true, accept: true, auto: false, objectGiver: false, targets: [{ id: 'rook', x: 1300, y: 1000 }] }],
   itemDefs: { arrow: { id: 'arrow', name: 'Arrow' } }, labelOf,
   giverIds: new Set(['rook']), pos: (id) => (id === 'rook' ? { x: 10, y: 10, z: 1 } : null), groundAt: () => 0, walkable: () => true,
   characters: new Set(['rook']), chests: [{ id: 'chestA', x: 60, y: 55 }], guards: [{ x: 60, y: 60, kind: 'camp' }],
   riverX: () => 1030, riverHalf: 10,
+  entSupport: [{ id: 'chestA', x: 60, y: 55, base: 0.05, support: 0, floorAbove: null }, { id: 'tower.lantern', x: 1, y: 1, base: 4, support: 0, floorAbove: null }],
+  anchors: [{ id: 'sign1', x: 2, y: 2, hasModel: true, nearVisual: false }, { id: 'knot', x: 3, y: 3, hasModel: false, nearVisual: true }],
 });
 const run = (c) => lint(c);
 assert.deepEqual(run(clean()), [], 'clean control: no findings');
@@ -33,12 +35,15 @@ const cases = {
   R8: (c) => { c.guards = []; },
   R9: (c) => { c.quests[0].targets.push({ id: 'fordWest', x: 1010, y: 1072 }); },
   R10: (c) => { c.quests[0].giver = { npc: 'post' }; },
+  R12: (c) => { c.entSupport.push({ id: 'pineChest', x: 1, y: 1, base: 0.8, support: 0, floorAbove: null }); },
+  R13: (c) => { c.anchors.push({ id: 'notePost', x: 4, y: 4, hasModel: false, nearVisual: false }); },
+  R14: (c) => { c.quests[0].accept = false; },
   R11: (c) => { c.structures.push(S('m1', 'quaternius/Mushroom_Laetiporus', 7, 7)); },
 };
 for (const [rule, mutate] of Object.entries(cases)) {
   const c = clean(); mutate(c);
   const found = run(c);
-  assert.ok(found.length >= 1 && found.every((f) => f.rule === rule), `${rule}: expected only ${rule} findings, got ` + found.map(line).join(' | '));
+  assert.ok(found.length >= 1 && found.every((f) => f.rule === rule || (rule === 'R10' && f.rule === 'R14')), `${rule}: expected only ${rule} findings, got ` + found.map(line).join(' | '));
   assert.equal(found[0].level, LEVELS[rule]);
 }
 // also: Prop_Support fires R11 (but strandStake* is exempt), unwalkable giver fires R5, raw giver/reward fire R3, relay in quest text fires R4
@@ -47,6 +52,11 @@ for (const [rule, mutate] of Object.entries(cases)) {
 { const c = clean(); c.quests[0].giver = { npc: 'relayBend' }; c.quests[0].reward.items.push({ id: 'gear.feet.boots.sturdy', n: 1 }); assert.equal(RULES.R3(c).length, 2); }
 { const c = clean(); c.texts.push({ where: 'q', text: 'Light the relay at dusk' }); assert.equal(RULES.R4(c).length, 1); }
 { const c = clean(); c.quests[0].early = false; c.quests[0].targets.push({ id: 'x', x: 900, y: 1000 }); assert.equal(RULES.R9(c).length, 0, 'late quests may cross the river'); }
+{ const c = clean(); c.entSupport.push({ id: 'b1', x: 1, y: 1, base: 0, support: 0, floorAbove: 0.4 }); assert.equal(RULES.R12(c).length, 1, 'buried'); }
+{ const c = clean(); c.quests[0].giver = { npc: 'post' }; c.pos = () => ({ x: 1, y: 1, z: 0 }); assert.ok(RULES.R14(c).some((f) => /not a character/.test(f.msg))); c.quests[0].objectGiver = true; assert.equal(RULES.R14(c).length, 2, 'giver allowed; return is an object + share > 10 %'); assert.ok(RULES.R14(c).some((f) => f.id === '*' || /return/.test(f.msg))); }
+{ const c = clean(); c.quests[0].giver = { npc: 'ghost' }; assert.ok(RULES.R14(c).some((f) => /does not resolve|not a character/.test(f.msg))); }
+{ const c = clean(); c.quests[0].auto = true; assert.ok(RULES.R14(c).some((f) => /auto hand-in/.test(f.msg))); c.quests[0].auto = false; c.quests[0].giver = {}; assert.ok(RULES.R14(c).some((f) => /no giver/.test(f.msg))); }
+{ const c = clean(); c.texts.push({ where: 'legacy.m1 lines[0]', text: 'Wake the Relay stone.' }); assert.equal(RULES.R4(c).length, 1, 'PLAYER-TEXT-RELAY-01: legacy quest text is scanned'); }
 assert.equal(rawIn('Reward: gear.feet.boots.sturdy'), 'gear.feet.boots.sturdy'); assert.equal(rawIn('The well. Cold water.'), null); assert.equal(rawIn('signArm'), null);
-assert.ok(Object.values(LEVELS).filter((l) => l === 'warn').length === 3, 'R8 R9 R10 are warn level');
+assert.ok(Object.values(LEVELS).filter((l) => l === 'warn').length === 3, 'R8 R9 R10 are warn level (R12 R13 R14 errors)');
 console.log('content-lint.test: ok (' + Object.keys(cases).length + ' rules + clean control)');
