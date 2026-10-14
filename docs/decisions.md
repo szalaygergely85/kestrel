@@ -1220,3 +1220,15 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 
 ## D-085
 **2026-10-14, owner (PC-B session).** "houses approved": the own building set as shown in design/preview/buildings-voxel.html (OB-139) is approved -> import/collision stories. "biome too": biome atmosphere as shown in design/preview/biome-atmos.html (ENV-03-DESIGN) is approved -> ENV-03 code may start (picks = the data-file defaults unless the owner sends changed picks via "copy picks"). Ground richness preview (design/preview/ground-richness.html): owner "i don't see it" (page shows nothing / no visible difference - to check) "but go ahead" -> ENV-02 continues.
+
+## D-086
+**2026-10-14, owner (PC-B session), world epic answers (docs/epics/ep-world.md).** (1) Bridge B: no lock - the player can cross; the far side only has harder beasts. Owner asks for an **enemy health bar with the beast's level** (new UI, PO story + ACs). (2) Far-side size: owner asked how big it is today (~1.1 km far side vs ~1 km near side, ~1.8 km north-south: about equal) - no change requested. (3) Spell upgrades: shrines and altars, and quests.
+
+## D-087
+**2026-10-14, owner (PC-B session), bestiary epic answers (docs/epics/ep-bestiary.md section 6).** (1) 16 bosses = bigger named versions of the 32 types, once per save: OK. (2) Undead at night (skeletons, wisps, bats) + human bandits on the roads: yes. (3) Difficulty changeable any time (outside combat). (4) Respawn 3-20 real minutes, camps 3 in-game days: OK. (5) Crocodile grab + roll (~25 % HP, mash to escape): too harsh -> PO proposes a softer croc attack before BEAST-08.
+
+## D-088
+**2026-10-14, owner (PC-B session).** OB-141 POIs: (1) generate POIs from the world_geo site list (no hand placement), today's models until the own buildings (OB-139) replace them; (2) NO discovery counter (pure exploration, no Heart Piece for a full region); (3) mixed respawn: small fights at a POI come back like camps, the POI's main guardian stays dead. OB-136: plan approved - mq.ford.stones / mq.ford.mirror / mq.smoke start only after the level-5 beat (D-069 Burl fireball); mq.river.road is the last early quest and ends on the east bank ("come back when you are stronger"); sq.packet / sq.straw / sq.honey targets move to the tower side; the river stays physically open. Grass underlay ON at 0.6 (owner to look, keep or lower). PC-B keeps working on engine/look items (ENV-02d, ENV-03, BEAST-06a, enemy health bar + level after the PO story) while PC-A investigates the quest/item bugs.
+
+## D-089
+**2026-10-14, owner (PC-B session).** Crocodile: option B "short grab" (grab, 1.5 s to escape by mashing a key, max 12 % HP total) - CROC-SOFT unblocked for BEAST-08. Gear attribute requirements: HARD rule - an item whose STR/DEX/INT requirement is not met cannot be equipped (not the PO's -50 % proposal); ITEM-09 ACs follow this.

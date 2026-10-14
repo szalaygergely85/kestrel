@@ -156,8 +156,8 @@ outside combat; damage/AI knobs apply at once, HP/group size on the next spawn; 
 | BEAST-W writer | writer | `docs/story.md` | final names (<= 14 chars), one bestiary line each, boss intro lines | none |
 
 ## 6. Owner questions
-1. Bosses: one per region = 16; OK that they are bigger named versions of the 32 types (no extra models), and once per save?
-2. Undead (skeletons, wisps, bats) at night and human bandits on the roads - fit the world?
-3. Difficulty changeable any time (outside combat), or fixed at new game?
-4. Respawn in real minutes (3-20 min) and camps 3 in-game days - OK, or longer?
-5. Crocodile grab + roll (mash a key to escape, ~25 % HP on Normal) - fun or too harsh?
+1. Bosses: one per region = 16; OK that they are bigger named versions of the 32 types (no extra models), and once per save? **Owner 2026-10-14: OK.**
+2. Undead (skeletons, wisps, bats) at night and human bandits on the roads - fit the world? **Owner 2026-10-14: yes.**
+3. Difficulty changeable any time (outside combat), or fixed at new game? **Owner 2026-10-14: any time (outside combat).**
+4. Respawn in real minutes (3-20 min) and camps 3 in-game days - OK, or longer? **Owner 2026-10-14: OK.**
+5. Crocodile grab + roll (mash a key to escape, ~25 % HP on Normal) - fun or too harsh? **Owner 2026-10-14: too harsh** -> PO to propose a softer croc attack (D-087).
