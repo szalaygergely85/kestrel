@@ -1086,3 +1086,6 @@ tools/editor/logic/model.js (+ model.test.mjs): load/save byte-identical (origin
 
 ### ED-LOGIC-02b (kestrel-1, 2026-10-14)
 Logic tab: tools/editor/logicPanel.js (DOM) + logic/view.js (pure: labels, defaults, 3D pick -> ref, live lint = validateLogic + R15 refs/double-spawn/flag-loop with Go to) + view.test.mjs; vocab.schema.json got `label` per entry + `argLabels` (parity green); content/logic/index.json lists files for the editor; tab wired in index.html/main.js (pick via questPick). tools/verify-edl-02.mjs <port> written, NOT run (Node-only); engine content-lint R15 for logic stays with 01d. Status: po-review.
+
+### DLG-REPEAT (kestrel-1, 2026-10-14)
+No new code: postkeeper hello.1 now `setFlag: met.postkeeper` (saved in world.state dlg.*), entry `postkeeper.hello.2` `requires` it. Only postkeeper has a .hello.2 in story.md. Test game/js/quest/postkeeperDialogue.test.js 5 pass; canonical + validate-content OK. Status: po-review.

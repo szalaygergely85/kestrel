@@ -7,12 +7,16 @@
     "you": {"label": "YOU", "player": true}
   },
   "entry": [
+    {"node": "postkeeper.hello.2", "requires": "met.postkeeper"},
     {"node": "postkeeper.hello.1"}
   ],
   "nodes": {
     "postkeeper.hello.1": {"end": true, "lines": [
       "Saw your ship come down. Loud, for a bird.",
       "I'm Bram. I keep the post. Leave what you can."
+    ], "setFlag": "met.postkeeper", "speaker": "postkeeper"},
+    "postkeeper.hello.2": {"end": true, "lines": [
+      "Post's open. Take what you need."
     ], "speaker": "postkeeper"}
   }
 }
