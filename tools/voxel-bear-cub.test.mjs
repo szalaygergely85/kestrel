@@ -67,7 +67,7 @@ test('size: 45-55 % of Burl (length, height); cub proportions: bigger head share
 });
 
 // clips: [frames, total ms, loop]
-const SPEC = { idle: [8, 4000, true], walk: [4, 600, true], trot: [4, 400, true], sniff: [8, 2000, true],
+const SPEC = { idle: [8, 4000, true], walk: [12, 600, true], trot: [10, 500, true], sniff: [8, 2000, true],
                lookUp: [6, 2400, true], stuckWiggle: [6, 800, true], lieDown: [4, 900, false], lie: [4, 3000, true],
                getUp: [3, 600, false] };
 test('clips: exact set (no dialogue clips), frame counts, total ms, loop, durations multiples of 50, every part keyed', () => {

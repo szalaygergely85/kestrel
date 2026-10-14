@@ -83,7 +83,7 @@ test('size: ~1.1 m nose to tail tip, long and low (shoulders <= 0.30 m), smaller
 });
 
 // clips: [frames, total ms, loop]
-const SPEC = { idle: [10, 3000, true], walk: [4, 600, true], lope: [4, 500, true], sniff: [8, 2000, true],
+const SPEC = { idle: [10, 3000, true], walk: [12, 600, true], lope: [4, 500, true], sniff: [8, 2000, true],
                groom: [11, 2400, true], talk: [12, 1600, true], listen: [6, 2400, true], laugh: [12, 1400, false],
                toss: [5, 800, false], lieDown: [3, 800, false], lie: [4, 3000, true], getUp: [2, 500, false] };
 const MOVING = new Set(['walk', 'lope', 'lieDown', 'getUp']);
@@ -119,7 +119,7 @@ test('owner rule 0.2: never upright (body rx >= -5), paws planted in x/y every k
 
 test('four paws planted: no paw below the ground; all four down in standing clips, >= 2 down in moving clips', () => {
   const EPS = 0.05;
-  for (const [k, c] of Object.entries(DEF.animations)) c.frames.forEach((f, i) => {
+  for (const [k, c] of Object.entries(DEF.animations)) if (k !== 'walk') c.frames.forEach((f, i) => {   // walk = ANIM-A-01 gait, planted feet measured with the body tilt in tools/gait-a.test.mjs
     const z = LIMBS.map((l) => minZ(f, l));
     z.forEach((v, j) => assert.ok(v >= -EPS, `${k} key ${i} ${LIMBS[j]} below ground ${v.toFixed(2)}`));
     const down = z.filter((v) => v <= EPS).length;
