@@ -165,7 +165,8 @@ function emitFaceQuad(builder, pm, face, x0, y0, z0, layer, a0, a1, b0, b1, mat,
   // `planeIdOr` (ME-03's `(flat0 | item.planeIdOr)`, NOT baked in here - a
   // mesh is shared by every instance of the model); layer kept so greedy
   // quads still outline at voxel steps.
-  const flat0 = ((0xF << 28) | ((partIndex & 7) << 21) | ((face & 7) << 18) | (layer & 0x3FFFF)) | 0;
+  const flat0 = ((0xF << 28) | ((partIndex & 7) << 21) | ((face & 7) << 18) | (((partIndex >> 3) & 1) << 17) | (layer & 0x1FFFF)) | 0;
+  if (layer > 0x1FFFF) throw new Error('voxelMesh: layer ' + layer + ' exceeds 17 bits');
   const flat1 = packFlat1(KIND_MODEL, face, pm.matIds[mat]);
   const aux8 = [0, AO_NONE, 0, 0, 0, 0, 0, 0];
   builder.addQuad(p12, uv8, nx, ny, nz, flat0, flat1, aux8);

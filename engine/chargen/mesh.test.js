@@ -15,7 +15,7 @@ if (typeof globalThis.gc !== 'function' && !process.env.MESH_TEST_GC) {
 let pass = 0, fail = 0;
 const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
-ok('MAX_PARTS equals MAX_VOX_PARTS', MAX_PARTS === MAX_VOX_PARTS);
+ok('MAX_PARTS <= MAX_VOX_PARTS', MAX_PARTS <= MAX_VOX_PARTS);
 
 const SKEL = [
   ['Hips', null], ['Spine', 'Hips'], ['Chest', 'Spine'], ['Neck', 'Chest'], ['Head', 'Neck'], ['Jaw', 'Head'],

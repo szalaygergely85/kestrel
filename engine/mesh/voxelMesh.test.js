@@ -284,7 +284,7 @@ function marchOracle(name, def, inst) {
       unpackNormalOct(mesh.nrm[i0], nrmLocal);
       const flat0 = mesh.flat[i0 * 2], flat1 = mesh.flat[i0 * 2 + 1];
       const expFace = (flat1 >>> 8) & 0xf;
-      const expLayer = flat0 & 0x3FFFF;
+      const expLayer = flat0 & 0x1FFFF;
 
       const lx = cx + 1e-3 * nrmLocal[0], ly = cy + 1e-3 * nrmLocal[1], lz = cz + 1e-3 * nrmLocal[2];
       const wx = A0 * lx + A1 * ly + A2 * lz + bx0;

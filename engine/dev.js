@@ -75,3 +75,6 @@ export { FIXTURE_FX, fixtureModels } from './fauna/wildlifeFx.fixture.js';
 // ---- WM-07 tools (tools/probe-region-dress.mjs) ----
 export { BandBakeJob } from './world/bandBake.js';
 export { bundleBytes } from './world/bandCache.js';
+
+// ---- VOX-PARTS-16b: 12-part test fixture for the gpucompare `vox12` row (game/js/dev/modes/gpucompare.js) ----
+export { default as quadruped16 } from './voxel/fixtures/quadruped16.js';

@@ -336,7 +336,7 @@ export function castModels(fb, list, cam, opts) {
           face = FACE_PACKED;
         }
 
-        const planeId = (0xF << 28) | ((ii & 0xF) << 24) | ((bestPart & 0x7) << 21) | ((localFace & 0x7) << 18) | (layer & 0x3FFFF);
+        const planeId = (0xF << 28) | ((ii & 0xF) << 24) | ((bestPart & 0x7) << 21) | ((localFace & 0x7) << 18) | (((bestPart >> 3) & 1) << 17) | (layer & 0x1FFFF);
 
         depth[i] = t;
         if (face === FACE_PACKED) {
