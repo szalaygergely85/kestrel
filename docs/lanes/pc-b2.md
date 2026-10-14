@@ -1165,3 +1165,6 @@ NEEDS B1-main (main.js line ~920 `riggedModelDef(collapseRig(...))`): pass `{leg
 ### GATE-FIX-7 (kestrel-4, 2026-10-14)
 All four were stale tests, no code change: actionHints (storyHints now starts with logic hint hint.farm.ambush, ED-LOGIC-01d), boarPlacement (farmGob1-3 reserve goblins counted as boars; filter goblin species), swimWire (main.js now `under: createUnderState()`; gate/gear/fb.under behaviour intact), content-smoke (gi/manifest.json known standalone).
 Filtered run 25/25 PASS, check-deps OK.
+
+### REV-ENV02D (kestrel-2, 2026-10-15) -> arch re-review
+passRaster: separate nearLookWorld/farLookWorld, set only on an actual upload (+ swap-world and not-ready tests); Terrain.setGroundLook bumps farVersion on a baked far grid (smaller than a lookVersion: hosts already key on it; toggle is rare) + test in lookBake.test.js.
