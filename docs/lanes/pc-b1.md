@@ -1089,3 +1089,7 @@ Logic tab: tools/editor/logicPanel.js (DOM) + logic/view.js (pure: labels, defau
 
 ### POST-STACK-01c (kestrel-1, 2026-10-14) -> po-review
 design/look/post.js (window.POST_LOOK, classic script, in game/index.html) + game/js/look/postConfig.js (resolvePost: preset x scene, `?post=0` null, gpucompare modes null, bloom = parseGlow so `?emissive=` kept; outdoor mist off) + postConfig.test (table low..ultra, ?post=0); main.js +4 lines: composePost on atmosV change, `_spritesPass.post = postState`, `postCells(rt, fb.depth.depth, ...)` replaces gradeCells; design/preview/post.html (day/dusk/interior off vs on, JS twin). Open: scene is always 'outdoor' (no interior flag in main yet), glow option still read from parseGlow at the renderer (not moved); in-game stills + gpucompare not run (main session).
+
+### SCENE-INTERIOR (kestrel-1, 2026-10-14)
+- New `game/js/look/sceneFlag.js` `sceneOf(world, p, scratch, dt)`: engine roof map (`outdoorAt` at feet+1 m; roof map rebuilt every 16 calls, version-checked) -> 'interior'|'outdoor', 0.5 s hysteresis, 0 alloc after warm-up; `sceneFlag.test.js` (tower in/out, doorway jitter, alloc). main.js: scene passed as `outdoor` to atmosDriver.step and `resolvePost(..., scene)` re-run on change only (`?post=0`/gpucompare stay null).
+- Limits: mesh structures (`kind==='mesh'`) are skipped by the roof map, so a mesh-built interior reads outdoor until it stamps a roof box; underwater not wired. NEEDS main/PO walk: enter tower + a house, confirm mist fades and scene grade switches. Node only; check-deps OK, filtered suites PASS.
