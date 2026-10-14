@@ -1111,6 +1111,19 @@ export class World {
     return this.terrain ? this.terrain.groundAt(x, y) : null;
   }
 
+  /**
+   * `outsideFloorH` with the point in a caller buffer (BEAST-ALLOC-02b: no double args / boxed return per LOS sample): b[0]=x, b[1]=y;
+   * returns 1 and writes b[2]=floor (bit-identical to `terrain.groundAt`), 0 = no terrain (solid outside), -1 = unavailable (ask the full query).
+   */
+  outsideFloorHBuf(b) {
+    if (this.outsideSector !== World.prototype.outsideSector) return -1;
+    const t = this.terrain;
+    if (!t) return 0;
+    if (typeof t._groundCore !== 'function') return -1;
+    t._groundCore(b);
+    return 1;
+  }
+
   // ---- mesh physics (ME-11a, 27.18) ------------------------------------------
 
   /** `moveCircleMesh` over `world.colliders` (empty on 'grid' - always a well-defined, if trivial, call). */

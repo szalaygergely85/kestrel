@@ -46,6 +46,7 @@ const losGrid = { x: 0, y: 0, z: 0 }; // gridLocal scratch (rule 9)
  * on grid physics): true if the world point is inside solid / below the floor
  * / above a numeric ceiling. Pure, zero allocation.
  */
+const losPt = new Float64Array(3); // pointBlocked's outsideFloorHBuf scratch
 /**
  * OB-084: a level item on a prop picks on the prop's whole collider box. Resolved here (World.load after the props spawn,
  * addInteractable, and whenever a prop moves via rebuildPropColliders), never inside findInteractTarget's hot loop.
@@ -60,6 +61,14 @@ export function resolvePropPicks(world) {
 }
 
 export function pointBlocked(world, x, y, z) {
+  losP[0] = x; losP[1] = y; losP[2] = z;
+  return pointBlockedBuf(world, losP);
+}
+const losP = new Float64Array(3);
+
+/** `pointBlocked` with the point in a caller buffer p[0..2] (BEAST-ALLOC-02b: hasLineOfSight samples without boxing 3 doubles per sample). */
+function pointBlockedBuf(world, p) {
+  const x = p[0], y = p[1], z = p[2];
   const s = world.structureAt(x, y);
   let floorH, ceilH, solid;
   if (s) {
@@ -72,6 +81,13 @@ export function pointBlocked(world, x, y, z) {
   } else {
     // MESH-PHYS-02: LOS only needs floor/solid; `outsideSector` also computes the ground normal (4 more groundAt) + type + material.
     // `outsideFloorH` answers undefined when unavailable (not a World, or `outsideSector` overridden) -> the full query.
+    // BEAST-ALLOC-02b: buffer form first (no boxed doubles per sample); -1 = unavailable -> the value form / full query.
+    if (world.outsideFloorHBuf) {
+      losPt[0] = x; losPt[1] = y;
+      const r = world.outsideFloorHBuf(losPt);
+      if (r === 0) return true; // no terrain = solid outside
+      if (r === 1) return z < losPt[2];
+    }
     const f = world.outsideFloorH ? world.outsideFloorH(x, y) : undefined;
     if (f !== undefined) return f === null || z < f; // null = no terrain = solid outside; ceiling is 'sky'
     const sector = world.outsideSector(x, y);
@@ -105,7 +121,8 @@ export function hasLineOfSight(world, ax, ay, az, bx, by, bz) {
     const t = i / steps;
     const x = ax + dx * t, y = ay + dy * t, z = az + dz * t;
 
-    if (pointBlocked(world, x, y, z)) return false;
+    losP[0] = x; losP[1] = y; losP[2] = z;
+    if (pointBlockedBuf(world, losP)) return false;
   }
   return true;
 }
