@@ -1212,6 +1212,9 @@ async function main() {
     const bd = fileURLToPath(new URL('../content/beasts', import.meta.url));
     const { validateBeasts } = await import('./editor/ai/validate.js');
     allErrors.push(...validateBeasts(JSON.parse(readFileSync(`${bd}/archetypes.json`, 'utf8')), JSON.parse(readFileSync(`${bd}/kinds.json`, 'utf8'))).map((m) => `beasts: ${m}`));
+    // ED-AI-04: painted spawn areas (empty list shipped)
+    const { validateSpawnAreas } = await import('./editor/ai/spawnAreas.js');
+    allErrors.push(...validateSpawnAreas(JSON.parse(readFileSync(`${bd}/spawnAreas.json`, 'utf8')), JSON.parse(readFileSync(`${bd}/kinds.json`, 'utf8'))).map((m) => `spawn areas: ${m}`));
   } catch (e) { allErrors.push(`beasts: could not validate content/beasts: ${e.message}`); }
   try { allErrors.push(...await lintRegionsReal(ASSETS, packQuests.sites || {})); } catch (e) { allErrors.push(`regions: lint crashed: ${e.message}`); }
   for (const w of warnings) console.warn(`WARN ${w}`);

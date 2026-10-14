@@ -85,3 +85,43 @@ export function addAttack(m, kind, attack = NEW_ATTACK) {
 export function removeAttack(m, kind, idx) {
   return cmd(`remove ${kind} attack ${idx}`, m.files.kinds, (o) => { attacksOf(o, kind).splice(idx, 1); });
 }
+
+// ---- ED-AI-04: content/beasts/spawnAreas.json (painted spawn areas). Same byte-identical load/save + undoable commands. ----
+import { validateSpawnAreas } from './spawnAreas.js';
+
+/** Canonical text: { "areas": [ one area per line ] } + trailing newline; empty list -> "areas": []. */
+export function stringifySpawnAreas(file) {
+  const areas = file.areas || [], rest = Object.keys(file).filter((k) => k !== 'areas').map((k) => `  ${J(k)}: ${inline(file[k])}`);
+  const body = areas.length ? `[\n${areas.map((a) => '    ' + inline(a)).join(',\n')}\n  ]` : '[]';
+  return `{\n  "areas": ${body}${rest.length ? ',\n' + rest.join(',\n') : ''}\n}\n`;
+}
+
+/** Loads <dir>/spawnAreas.json (a missing file = empty list). Returns { dir, file:{name,text,obj,snap}, errors, get areas }. */
+export function loadSpawnAreas(dir, fs = REAL_FS) {
+  const errors = [];
+  let text = '';
+  try { text = fs.readFileSync(join(dir, 'spawnAreas.json'), 'utf8'); } catch (e) { text = ''; }
+  let obj = { areas: [] };
+  if (text) { try { obj = JSON.parse(text); } catch (e) { errors.push(`spawnAreas.json: not valid JSON (${e.message})`); } }
+  const file = { name: 'spawnAreas.json', text, obj, snap: J(obj) };
+  return { dir, file, errors, get areas() { return file.obj.areas; } };
+}
+export const spawnAreasText = (m) => (J(m.file.obj) === m.file.snap && m.file.text ? m.file.text : stringifySpawnAreas(m.file.obj));
+export const validateSpawnAreasModel = (m, kinds) => validateSpawnAreas(m.file.obj, kinds);
+export function saveSpawnAreas(m, fs = REAL_FS) {
+  const t = spawnAreasText(m);
+  if (t === m.file.text) return { written: [] };
+  fs.writeFileSync(join(m.dir, m.file.name), t);
+  m.file.text = t; m.file.snap = J(m.file.obj);
+  return { written: [m.file.name] };
+}
+const areaOf = (o, id) => { const a = o.areas.find((x) => x.id === id); if (!a) throw new Error(`no spawn area "${id}"`); return a; };
+export function addSpawnArea(m, area) {
+  return cmd(`add spawn area ${area.id}`, m.file, (o) => { if (o.areas.some((x) => x.id === area.id)) throw new Error(`spawn area "${area.id}" exists`); o.areas.push(JSON.parse(J(area))); });
+}
+export function removeSpawnArea(m, id) {
+  return cmd(`remove spawn area ${id}`, m.file, (o) => { areaOf(o, id); o.areas = o.areas.filter((x) => x.id !== id); });
+}
+export function setSpawnAreaField(m, id, field, value) {
+  return cmd(`set spawn area ${id}.${field}`, m.file, (o) => { const a = areaOf(o, id); if (value === undefined) delete a[field]; else a[field] = value; });
+}
