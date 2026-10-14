@@ -201,3 +201,29 @@ export function applyAtmosGrade(rt, state) {
     }
   }
 }
+
+/**
+ * GPU twin of gradeRGB (WGSL, 0..1 floats, same Rec.709 luma). Per-channel helper `atmosCh` + `atmosGrade` take the three uniform vec3 (lift, 1/gamma, gain)
+ * and sat so the node probe (compileFn) can run them. Uniform = 3 vec4 at the end of SpritesU: atmosLift.xyz + on, atmosInvGamma.xyz + sat, atmosGain.xyz.
+ */
+export const ATMOS_GRADE_WGSL = `
+fn atmosCh(v: f32, lift: f32, gain: f32, ig: f32) -> f32 {
+  return pow(max(gain * (v + lift * (1.0 - v)), 0.0), ig);
+}
+fn atmosGrade(c: vec3f, lift: vec3f, ig: vec3f, gain: vec3f, sat: f32) -> vec3f {
+  let r = atmosCh(c.x, lift.x, gain.x, ig.x);
+  let g = atmosCh(c.y, lift.y, gain.y, ig.y);
+  let b = atmosCh(c.z, lift.z, gain.z, ig.z);
+  let l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return vec3f(l + (r - l) * sat, l + (g - l) * sat, l + (b - l) * sat);
+}
+`;
+
+/** Write the grade uniforms (3 vec4 = 12 floats) at `u[off..off+12)`; identity/off writes on = 0 (the shader skips). No allocation. */
+export function writeAtmosGradeUniform(u, off, state) {
+  if (!state || !state.on || !state.gradeOn) { u[off + 3] = 0; return; }
+  const l = state.lift, ig = state.invGamma, g = state.gain;
+  u[off] = l[0]; u[off + 1] = l[1]; u[off + 2] = l[2]; u[off + 3] = 1;
+  u[off + 4] = ig[0]; u[off + 5] = ig[1]; u[off + 6] = ig[2]; u[off + 7] = state.sat;
+  u[off + 8] = g[0]; u[off + 9] = g[1]; u[off + 10] = g[2]; u[off + 11] = 0;
+}

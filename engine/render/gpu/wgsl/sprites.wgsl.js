@@ -10,6 +10,7 @@
 import { defineUniformBlock } from './uniformBlock.js';
 import { GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL, BYTE_OUT_WGSL } from './common.wgsl.js';
 import { MAX_SPRITES, SPRITE_NEAR_DEPTH } from '../../sprites.js';
+import { ATMOS_GRADE_WGSL } from '../../atmos.js'; // ENV-03c
 
 export const SPRITES_BLOCK = defineUniformBlock('SpritesU', [
   { name: 'count', type: 'i32' },        // uCount
@@ -21,6 +22,9 @@ export const SPRITES_BLOCK = defineUniformBlock('SpritesU', [
   { name: 'pad0', type: 'f32' }, { name: 'pad1', type: 'f32' },
   { name: 'dimMul', type: 'vec4' },      // float uDimMul[4]
   { name: 'dimRect', type: 'vec4', count: 4 }, // x0, y0, x1, y1 (scene cells, half-open)
+  { name: 'atmosLift', type: 'vec4' },     // ENV-03c: lift.xyz + on (0 = no grade)
+  { name: 'atmosInvGamma', type: 'vec4' }, // 1/gamma.xyz + sat
+  { name: 'atmosGain', type: 'vec4' },     // gain.xyz + pad
 ]);
 export const SPRITES_TEXTURES = Object.freeze(['uint', 'uint', 'float', 'float', 'float', 'uint', 'float', 'uint', 'uint', 'float', 'float', 'float']);
 export const SPRITES_TARGETS = Object.freeze(['rgba8', 'rgba8']);
@@ -55,6 +59,8 @@ fn fadeJ(a: f32, i: i32, last: i32) -> i32 {
   j = select(select(j, last, j > last), 0, j < 0);
   return j;
 }
+
+${ATMOS_GRADE_WGSL}
 
 struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
 
@@ -154,6 +160,12 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
       o.fg = vec4f(o.fg.rgb * k, o.fg.a);
       o.bg = vec4f(o.bg.rgb * k, o.bg.a);
     }
+  }
+
+  // ENV-03c biome grade (twin: applyAtmosGrade): after fade/dim, scene cells only (UI cells returned above), glyph unchanged
+  if (su.atmosLift.w > 0.5) {
+    o.fg = vec4f(atmosGrade(o.fg.rgb, su.atmosLift.xyz, su.atmosInvGamma.xyz, su.atmosGain.xyz, su.atmosInvGamma.w), o.fg.a);
+    o.bg = vec4f(atmosGrade(o.bg.rgb, su.atmosLift.xyz, su.atmosInvGamma.xyz, su.atmosGain.xyz, su.atmosInvGamma.w), o.bg.a);
   }
   return o;
 }
