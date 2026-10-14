@@ -957,3 +957,8 @@ Tests: gait-b.test +13 (validate, identity, gaits==config, planted <= 12 mm, tor
 ### ED-QUEST-01 (kestrel-4, 2026-10-14)
 Done: `tools/editor/quest/model.js` (+ `model.test.mjs`, `tools/verify-edq-01.mjs {port}` 9725-9799, Node only). `loadQuests(dir)` -> 83 quests / 17 files; `saveQuest`/`saveAll` rewrite only changed original files; legacy style (inline rows) regenerated, pack rows keep their ORIGINAL text until edited (packs mix compact/expanded styles); byte-identical for all files. Undoable cmds: setQuestField/addObjective/moveObjective/removeObjective + makeStack (own small stack, not commands.js records: those are doc-collection based). Errors (dup id, missing id/title) block writes.
 Left: wiring into the editor undo stack/UI (later ED-QUEST items). Note: tester/PO to run `node tools/verify-edq-01.mjs 9725`.
+
+### ED-LOGIC-01a (kestrel-4, 2026-10-14) -> arch-review
+Done: `engine/core/logic.js` (compileLogic/createLogic/validateLogic/LOGIC_LIMITS; export line in engine/index.js) + `logic.test.js` (38 checks, fake vocab, Node only; ambush shape, chaining, `after`, caps, determinism, save/load mid-pending, migration, 12 validate fixtures, alloc 256 B/4000 steps = probe noise). check-deps OK.
+Choices to ratify: conds `not` = `{is:'not',cond:{...}}`; event key = first declared arg present (else wildcard), game pushes `program.kindId(name)` + `program.argId(argName,value)` (resolve at load, argId allocs a string); maxPerStep defers whole blocks (resume index); save also carries queued events `e` (not in 38.70 save shape) and an opaque game section `g` (`logic.groups`); validator arg types: int|bool|text|ref:*|enum "a|b", trailing `?` = optional.
+Not done: 512-block perf budget probe (warn-only) - add when 01c wires the real vocab.
