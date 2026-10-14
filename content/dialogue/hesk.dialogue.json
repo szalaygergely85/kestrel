@@ -7,6 +7,8 @@
     "you": {"label": "YOU", "player": true}
   },
   "entry": [
+    {"node": "hesk.names.done.1", "requires": "s.mq.ow.names.ready"},
+    {"node": "hesk.relay.done.1", "requires": "s.mq.ow.relay.ready"},
     {"node": "hesk.board.1", "requires": "s.mq.ow.relay.done"},
     {"node": "hesk.relay.active.1", "requires": "s.mq.ow.relay.active"},
     {"node": "hesk.relay.1", "requires": "s.mq.ow.relay.available"},
@@ -25,10 +27,19 @@
     "hesk.names.3": {"lines": [
       "Well? A name. Or the river back the way you came."
     ], "next": "hesk.names.4", "speaker": "hesk"},
-    "hesk.names.4": {"end": true, "lines": [
+    "hesk.names.4": {"choices": [{"next": "hesk.names.5", "setFlag": "s.mq.ow.names.accept", "text": "Wick."}, {"next": "hesk.later", "text": "Not yet."}], "lines": [
+      "Your name. Or the river."
+    ], "speaker": "hesk"},
+    "hesk.names.5": {"end": true, "lines": [
+      "Wick. Say it again at the gate, so the yard hears."
+    ], "speaker": "hesk"},
+    "hesk.names.done.1": {"end": true, "lines": [
       "Wick.",
       "I'm Hesk. Come in, Wick. Keep your blade low."
-    ], "setFlag": "s.mq.ow.names.accept", "speaker": "hesk"},
+    ], "setFlag": "s.mq.ow.names.handin", "speaker": "hesk"},
+    "hesk.later": {"end": true, "lines": [
+      "The river is still there, Wick."
+    ], "speaker": "hesk"},
     "hesk.relay.1": {"lines": [
       "The old waystone in the yard. You came for it, I think.",
       "We hear the call too. Nights. The stone here stays dark."
@@ -36,9 +47,15 @@
     "hesk.relay.2": {"lines": [
       "Something's missing from it. Ask Dorrin. At the forge."
     ], "next": "hesk.relay.3", "speaker": "hesk"},
-    "hesk.relay.3": {"end": true, "lines": [
+    "hesk.relay.3": {"choices": [{"next": "hesk.relay.4", "setFlag": "s.mq.ow.relay.accept", "text": "I'll ask him."}, {"next": "hesk.later", "text": "Not yet."}], "lines": [
       "He'll look at his boots. Let him. Then ask again."
-    ], "setFlag": "s.mq.ow.relay.accept", "speaker": "hesk"},
+    ], "speaker": "hesk"},
+    "hesk.relay.4": {"end": true, "lines": [
+      "Dorrin. At the forge. Barley gate, then the waystone."
+    ], "speaker": "hesk"},
+    "hesk.relay.done.1": {"end": true, "lines": [
+      "The stone blinks. Nights will be shorter. Good work."
+    ], "setFlag": "s.mq.ow.relay.handin", "speaker": "hesk"},
     "hesk.relay.active.1": {"end": true, "lines": [
       "Dorrin. At the forge. Barley gate, then the waystone."
     ], "speaker": "hesk"},

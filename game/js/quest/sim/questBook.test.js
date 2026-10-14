@@ -171,4 +171,13 @@ if (global.gc) {
   const mg2 = migrateQuestSave(sv2, { main: m1d, givers: [bd, br] });
   assert.equal(createQuestBook(m1d, [bd, br], { quest: sv2.quest, quests: mg2 }).statusOf('tower.blade'), ACTIVE, 'still inside: stays active');
 }
+// D-087: objectGiver = offer only (no auto-accept), its ? sits at a character
+{
+  const og = { ...structuredClone(burl), id: 'og.test', requires: [], objectGiver: true, giver: { npc: 'noteX', turnIn: 'rookX' } };
+  assert.throws(() => validateGiverQuest({ ...og, giver: { npc: 'noteX' } }), /objectGiver/);
+  const b = createQuestBook(mainDef, [og]);
+  const r = b.inspect('noteX');
+  assert.equal(r && r.action, 'offer'); assert.equal(b.statusOf('og.test'), AVAILABLE, 'inspect does not accept');
+  assert.ok(b.accept('og.test')); assert.equal(b.statusOf('og.test'), ACTIVE);
+}
 console.log('questBook.test OK');

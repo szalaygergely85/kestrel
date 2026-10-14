@@ -32,6 +32,8 @@ export function validateGiverQuest(def) {
   }
   for (const o of def.objectives) if (def.giver && o.when.type === 'deliver' && o.when.to !== (def.giver.turnIn || def.giver.npc)) throw new Error('quest: deliver.to must be the hand-in npc (giver.turnIn or giver.npc)');
   if (def.abandonable !== undefined && typeof def.abandonable !== 'boolean') throw new Error('quest: invalid abandonable');
+  if (def.objectGiver !== undefined && typeof def.objectGiver !== 'boolean') throw new Error('quest: invalid objectGiver');
+  if (def.objectGiver === true && (!def.giver || !def.giver.turnIn || def.giver.turnIn === def.giver.npc)) throw new Error('quest: objectGiver needs giver.turnIn = a character (the "?" sits at a character)'); // D-087
   if (def.returnText !== undefined && typeof def.returnText !== 'string') throw new Error('quest: invalid returnText');
   if (def.giver) for (const k of ['entity', 'turnInEntity', 'text', 'turnInText', 'refuseText']) if (def.giver[k] !== undefined && (typeof def.giver[k] !== 'string' || !def.giver[k])) throw new Error('quest: invalid giver.' + k); // QL-04: object givers (inspect props)
   if (def.giveOnAccept !== undefined) {
@@ -277,7 +279,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   /**
    * QL-04: the player inspects object `objectId` (no dialogue). Accepts the first AVAILABLE quest it gives, else hands in the
    * first READY quest whose hand-in is this object. Returns {action:'accept'|'handin'|'refuse', id, text, reward?} or null
-   * (nothing to do here). 'refuse' = a quest of this object is active but its items are not in the pack.
+   * (nothing to do here). 'offer' = an objectGiver quest is AVAILABLE (not accepted; the UI asks Accept/Exit). 'refuse' = a quest of this object is active but its items are not in the pack.
    */
   book.inspect = function inspect(objectId) {
     // OB-155o: READY hand-ins first (an AVAILABLE offer or an ACTIVE quest of the same object never blocks one), then accept, then refuse.
@@ -291,6 +293,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     }
     for (let i = 1; i < n; i++) {
       const e = entries[i];
+      if (e.giver === objectId && statusOf(i) === AVAILABLE && e.def.objectGiver === true) return { action: 'offer', id: e.def.id, text: e.def.giver.text || '' }; // OB-156/D-087: an object giver offers Accept/Exit (the caller opens the dialogue; nothing is accepted here)
       if (e.giver === objectId && statusOf(i) === AVAILABLE && book.accept(e.def.id)) return { action: 'accept', id: e.def.id, text: e.def.giver.text || '' };
     }
     if (refuse) return refuse;

@@ -7,13 +7,13 @@
     "you": {"label": "YOU", "player": true}
   },
   "entry": [
+    {"node": "rook.mirror.done.1", "requires": "s.mq.ford.mirror.ready"},
     {"node": "rook.call.ready.1", "requires": "s.mq.bend.call.ready"},
     {"node": "rook.call.active", "requires": "s.mq.bend.call.active"},
     {"node": "rook.mirror.active", "requires": "s.mq.ford.mirror.active"},
     {"node": "rook.ford.1", "requires": "s.mq.ford.mirror.available"},
     {"node": "rook.ford.repeat2", "requires": "s.mq.smoke.done"},
-    {"node": "rook.ford.repeat", "requires": "rook.mirror.told"},
-    {"node": "rook.mirror.done.1", "requires": "s.waystone.ws_ford.woken"},
+    {"node": "rook.ford.repeat", "requires": "s.mq.ford.mirror.done"},
     {"node": "rook.repeat", "requires": "s.mq.bend.call.done"},
     {"node": "rook.meet.1"}
   ],
@@ -39,9 +39,15 @@
     "rook.meet.7": {"lines": [
       "The loud hill? The loud hill never listens."
     ], "next": "rook.meet.8", "speaker": "rook"},
-    "rook.meet.8": {"end": true, "lines": [
+    "rook.meet.8": {"choices": [{"next": "rook.meet.9", "setFlag": "s.mq.bend.call.accept", "text": "I'll count."}, {"next": "rook.later", "text": "Not yet."}], "lines": [
       "Watch it blink. Count. Then see the knot."
-    ], "setFlag": "s.mq.bend.call.accept", "speaker": "rook"},
+    ], "speaker": "rook"},
+    "rook.meet.9": {"end": true, "lines": [
+      "Nine blinks. Then quiet. Then me."
+    ], "speaker": "rook"},
+    "rook.later": {"end": true, "lines": [
+      "Slow walker. The stone will wait."
+    ], "speaker": "rook"},
     "rook.call.active": {"end": true, "lines": [
       "Count the blinks. Then the knot. Then me."
     ], "speaker": "rook"},
@@ -84,9 +90,12 @@
     "rook.ford.6": {"lines": [
       "Old house by the crossing. Inside."
     ], "next": "rook.ford.7", "speaker": "rook"},
-    "rook.ford.7": {"end": true, "lines": [
+    "rook.ford.7": {"choices": [{"next": "rook.ford.8", "setFlag": "s.mq.ford.mirror.accept", "text": "I'll fetch it."}, {"next": "rook.later", "text": "Not yet."}], "lines": [
       "I have other shinies. Many."
-    ], "setFlag": "s.mq.ford.mirror.accept", "speaker": "rook"},
+    ], "speaker": "rook"},
+    "rook.ford.8": {"end": true, "lines": [
+      "Old house by the crossing. Inside."
+    ], "speaker": "rook"},
     "rook.mirror.active": {"end": true, "lines": [
       "Old house by the crossing. Look inside."
     ], "speaker": "rook"},
@@ -95,7 +104,7 @@
     ], "next": "rook.mirror.done.2", "speaker": "rook"},
     "rook.mirror.done.2": {"end": true, "lines": [
       "My glass, your stone. A fair loan."
-    ], "setFlag": "rook.mirror.told", "speaker": "rook"},
+    ], "setFlag": "s.mq.ford.mirror.handin", "speaker": "rook"},
     "rook.ford.repeat": {"end": true, "lines": [
       "North, smoke. Fires. People, maybe. Go look."
     ], "speaker": "rook"},

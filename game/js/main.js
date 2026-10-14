@@ -96,7 +96,7 @@ import { watchDeviceLost } from './deviceLost.js'; // S8-B1-10 (38.10c): device-
 import { createQuestPickups, itemLabel } from './questPickups.js'; // QUESTS-01
 import { setInspectSink, wrapText } from './quest/questInspect.js'; // QL-04
 import { createErrands, labelOf, gateOnMeet, isWorn, bannerLines } from './quest/errands.js'; // QL-WIRE: Ch1-2 errands
-import { generateAll } from './quest/questSnippets.js'; // QL-T4: generated q.<id>.* dialogue routes
+import { generateAll, generateForNpc } from './quest/questSnippets.js'; // QL-T4: generated q.<id>.* dialogue routes
 import { createHeartHook } from './heartHook.js'; // QL-08: heart pieces -> max HP
 import { createChestHook } from './chestHook.js'; // S8-B1-04: chest sim + item-get card, through the seam only
 import { createMapFogHook } from './mapFogHook.js'; // S8-B1-16: visited-cell mask feed, through the seam only
@@ -529,6 +529,11 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
       const raws = {}; ids.forEach((id, i) => { if (rawList[i]) raws[id] = rawList[i]; });
       const gen = generateAll(raws, qb.giverDefs, snip || {});
       for (const id of Object.keys(gen)) if (gen[id] !== raws[id]) bundle.dialogues[id] = compileDialogue(gen[id]);
+      for (const oid of new Set(qb.giverDefs.filter((d) => d.objectGiver === true && d.giver).map((d) => d.giver.npc))) { // D-087: object givers get an Accept/Exit offer dialogue 'obj.<id>'
+        const shell = { kind: 'dialogue', schema: 1, id: 'obj.' + oid, speakers: { obj: { label: 'NOTE' }, you: { label: 'YOU', player: true } }, entry: [{ node: 'obj.none' }], nodes: { 'obj.none': { end: true, lines: ['Nothing more here.'], speaker: 'obj' } } };
+        const g = generateForNpc(shell, oid, qb.giverDefs, snip || {});
+        if (g !== shell) bundle.dialogues['obj.' + oid] = compileDialogue(g);
+      }
     } catch (e) { console.warn('[QL-T4] quest dialogue off:', e && e.message); }
   }
   window.__debug = window.__debug || {}; window.__debug.bootErrors = qb.errors;
@@ -1247,6 +1252,7 @@ async function runGame(mode, cinematic = null) {
   const notice = createNoticeView();
 const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop: accept or hand in, show its short text (banner, never locks)
   const b = saveRelay && saveRelay.quest.book, r = b && b.inspect(id); if (!r) return null;
+  if (r.action === 'offer') { if (dialogueCtl) dialogueCtl.openObject(id); return r; } // D-087: object giver = Accept/Exit dialogue, no auto-accept
   const d = b.def(b.index(r.id)); // QL-WIRE: the writer's def.lines (offer / ready / active) win over the short giver text
   notice.push(String(d.title || r.id).slice(0, 30), bannerLines(d, r.action, wrapText) || wrapText(r.text || (r.action === 'handin' ? 'Done.' : r.action === 'accept' ? 'Quest accepted.' : 'Not yet.')));
   return r;
