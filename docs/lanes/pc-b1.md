@@ -1097,3 +1097,6 @@ design/look/post.js (window.POST_LOOK, classic script, in game/index.html) + gam
 ### SCENE-INTERIOR-2 (kestrel-1, 2026-10-14)
 - `sceneOf(world, p, scratch, dt, body)`: + static mesh cover (5 upward `world.supportAtOut` rays at eye+-1.5 m, ceiling <= 6 m, >= 3 of 5, every 8 ticks, 0 alloc) -> 'interior'; `body.diving` -> third value 'underwater' (atmos treats it as non-outdoor; `design/look/post.js` scenes.underwater mist off). Tests in sceneFlag.test (roof/canopy/far/underwater/alloc). main.js passes the player body.
 - Untuned on real meshes (Rook ruin room / meshed house: needs a main-session walk; COVER_M/SPREAD exported-const tunables). Node only; check-deps OK.
+
+### ANIM-LOOKAT-01 main hook (kestrel-1, 2026-10-14)
+main.js: createBeastLook (lazy, `?lookat=0` off, on in capture/bench) -> 9th arg of presentBeasts; setTarget(player x,y,z+1.5) each frame before it. check passes, 5 suites PASS; turn direction (rx+/rz+) still needs the owner look.
