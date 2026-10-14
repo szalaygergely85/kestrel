@@ -90,11 +90,31 @@ export function sampleGIBuf(st, io, out) {
   // snapped position (GI_SNAP per probe cell = 0.5 m at cellM 8; GPU twin must snap identically) in a direct-mapped
   // cache that lives on the state and is flushed on version / field change. Only the 4-term SH eval runs per cell.
   const sn = GI_SNAP / f.cellM, qx = Math.floor(x * sn), qy = Math.floor(y * sn), qz = Math.floor(z * sn);
+  // PERF (GI-PROBE-04b): per-frame last-result memo (opt-in via giMemoBegin/End, state is constant inside the frame):
+  // same snapped position + same normal as the previous call -> identical output, bit for bit.
+  const mm = st.memo;
+  if (mm !== undefined && mm.on === 1 && mm.q0 === qx && mm.q1 === qy && mm.q2 === qz && mm.n0 === nx && mm.n1 === ny && mm.n2 === nz) {
+    out[0] = mm.o0; out[1] = mm.o1; out[2] = mm.o2; return mm.ret === 1;
+  }
+  const hint = mm !== undefined && mm.on === 1 && mm.q0 === qx && mm.q1 === qy && mm.q2 === qz ? mm.slot : -1; // same cell, other normal: skip the cache lookup
+  const ret = sampleGISnapped(st, f, qx, qy, qz, sn, nx, ny, nz, out, hint);
+  if (mm !== undefined && mm.on === 1) { mm.slot = gSlot; mm.q0 = qx; mm.q1 = qy; mm.q2 = qz; mm.n0 = nx; mm.n1 = ny; mm.n2 = nz; mm.o0 = out[0]; mm.o1 = out[1]; mm.o2 = out[2]; mm.ret = ret ? 1 : 0; }
+  return ret;
+}
+/** Open / close the per-frame last-result memo of sampleGIBuf (call both around a loop; state must not change in between). */
+export function giMemoBegin(st) {
+  if (st.memo === undefined) st.memo = { on: 0, slot: 0, q0: 0, q1: 0, q2: 0, n0: 0, n1: 0, n2: 0, o0: 0, o1: 0, o2: 0, ret: 0 };
+  st.memo.on = 1; st.memo.q0 = st.memo.q1 = st.memo.q2 = 0x7fffffff; // impossible key: first call misses
+}
+export function giMemoEnd(st) { if (st.memo !== undefined) st.memo.on = 0; }
+let gSlot = 0;
+function sampleGISnapped(st, f, qx, qy, qz, sn, nx, ny, nz, out, hint) {
   let c = st.cache;
   if (c === null) c = st.cache = { n: GI_CACHE, keys: new Int32Array(GI_CACHE * 3), stamp: new Int32Array(GI_CACHE), ok: new Uint8Array(GI_CACHE), coef: new Float32Array(GI_CACHE * 28), field: null, ver: -1, gen: 1 };
   if (c.field !== f || c.ver !== st.version) { c.field = f; c.ver = st.version; c.gen++; }
-  const slot = (Math.imul(qx, 73856093) ^ Math.imul(qz, 19349663) ^ Math.imul(qy, 83492791)) & (GI_CACHE - 1), k3 = slot * 3, co = slot * 28;
-  if (c.stamp[slot] !== c.gen || c.keys[k3] !== qx || c.keys[k3 + 1] !== qy || c.keys[k3 + 2] !== qz) {
+  const slot = hint >= 0 ? hint : (Math.imul(qx, 73856093) ^ Math.imul(qz, 19349663) ^ Math.imul(qy, 83492791)) & (GI_CACHE - 1), k3 = slot * 3, co = slot * 28;
+  gSlot = slot;
+  if (hint < 0 && (c.stamp[slot] !== c.gen || c.keys[k3] !== qx || c.keys[k3 + 1] !== qy || c.keys[k3 + 2] !== qz)) {
     gp[0] = (qx + 0.5) / sn; gp[1] = (qy + 0.5) / sn; gp[2] = (qz + 0.5) / sn;   // scratch: doubles as args would box per miss
     const ok = giCoef(st, f);
     c.stamp[slot] = c.gen; c.keys[k3] = qx; c.keys[k3 + 1] = qy; c.keys[k3 + 2] = qz; c.ok[slot] = ok ? 1 : 0;

@@ -20,7 +20,7 @@ import { WET_DARK, wetGain } from './detailShade.js';
 import { LEVEL_NONE, LEVEL_ANIM } from './temporalStable.js';
 import { STEP } from '../core/loop.js';
 import { skylineFogF } from './skyline.js';
-import { sampleGIBuf } from './giProbe.js'; // GI-PROBE-04
+import { sampleGIBuf, giMemoBegin, giMemoEnd } from './giProbe.js'; // GI-PROBE-04
 import { resolveLook } from './look.js';
 import { shadeLookCell, packLookTable, makeGroundLook, LOOK_TABLE_WORDS } from './groundLook.js'; // ENV-02b (38.63); circular with this file but only called at runtime
 
@@ -773,6 +773,7 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
   const gi = fb.lights ? fb.lights.gi : null;
   const giOn = !!gi && gi.on && gi.field !== null;
   const giInvSky = giOn ? 1 / Math.max(1e-6, gi.skyRGB[0] + gi.skyRGB[1] + gi.skyRGB[2]) : 0;
+  if (giOn) giMemoBegin(gi);
   for (let i = 0; i < n; i++) {
     const kd = gbuf.kind[i];
     if (kd !== KIND_TERRAIN && !(kd === KIND_GRASS && grassTab !== null)) continue; // OB-073 D2c: kind 10 only with a carpet table
@@ -806,4 +807,5 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
     const x = i % gbuf.cols, y = (i / gbuf.cols) | 0;
     cells.setCellRGB(x, y, shadeOut.glyph, shadeOut.fg[0], shadeOut.fg[1], shadeOut.fg[2], shadeOut.bg[0], shadeOut.bg[1], shadeOut.bg[2]);
   }
+  if (giOn) giMemoEnd(gi);
 }
