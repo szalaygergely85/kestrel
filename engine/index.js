@@ -178,6 +178,8 @@ export { createAnimState, blend as animBlend, BLEND_MS as ANIM_BLEND_MS, PRIORIT
 export { bindClips, applyAnimState, modelClipNames } from './entities/animClips.js';
 export { createClipPlayer, clipPlay, clipStep, clipSetPhase, clipFromW } from './entities/clipPlayer.js';
 export { createLegDriver } from './entities/legDriver.js'; // ANIM-C-05: game beastView leg IK wiring
+export { createFootIk } from './entities/footIk.js'; // ANIM-IK-01b: game footIkWire (player/kit foot placement)
+export { voxelPointWorld } from './voxel/voxelPose.js'; // ANIM-IK-01b: clip foot world position for footIkWire
 export { pickGait, gaitRate } from './entities/gait.js';
 export { tintAt, setTint, sampleTint } from './entities/tintEnvelope.js';
 export { createEntityTintTable, clearEntityTints, pushEntityTint, pushEntityTintSample, fillEntityTints, entityTintAt, tintChannel, ENTITY_TINT_MAX } from './render/entityTint.js';
