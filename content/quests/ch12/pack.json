@@ -691,9 +691,8 @@
           "Two haunches, in the basket. Don't eat them on the way."
         ],
         "ready": [
-          "You lay the meat in the basket, under the tag:",
-          "TAKEN. LEAVE WHAT YOU CAN SPARE.",
-          "Beneath it, a bundle of arrows. Twine. Fresh knots."
+          "Boar meat, from Burl? She always sends too much.",
+          "In the basket it goes. Arrows for you. Basket's rule."
         ],
         "done": [
           "Fed someone, did we? Good. The slope can spare it."
@@ -738,7 +737,23 @@
         ]
       },
       "band": 4,
-      "returnText": "Give the arrows to the post-keeper"
+      "returnText": "Give the arrows to the post-keeper",
+      "lines": {
+        "offer": [
+          "The basket runs low. Arrows go first, always.",
+          "Spare me three? Others walk this road too."
+        ],
+        "active": [
+          "Three arrows, when you can spare them."
+        ],
+        "ready": [
+          "Three. Someone will need these. Thank you.",
+          "Here. A health potion. The basket gives back."
+        ],
+        "done": [
+          "Leave what you can spare. You did."
+        ]
+      }
     },
     {
       "id": "sq.straw",
@@ -795,11 +810,15 @@
       "returnText": "Tell Rook the straw men are down",
       "lines": {
         "offer": [
-          "NEEDS WRITER note.straw.offer:",
-          "Three straw men, three arrows. Try your aim?"
+          "Three straw men stand by the notice post.",
+          "Hit all three, then tell Rook the crow?"
         ],
         "active": [
           "Three straw men. Three hits. The bundle waits."
+        ],
+        "ready": [
+          "Three hits. I counted. Crows always count.",
+          "Twenty sticks from the bundle. Feathered. Yours."
         ],
         "done": [
           "A new line on the tally. Yours, this time."
@@ -848,7 +867,23 @@
       ],
       "abandonable": false,
       "band": 2,
-      "returnText": "Show the buckler to the post-keeper"
+      "returnText": "Show the buckler to the post-keeper",
+      "lines": {
+        "offer": [
+          "Someone left this buckler by the Bend Waystone.",
+          "Wear it down to the ford. Then show me."
+        ],
+        "active": [
+          "Buckler on your arm. Down to the ford, then back."
+        ],
+        "ready": [
+          "Fits you. Nobody came back for it.",
+          "Keep it. And a health potion, for the knocks."
+        ],
+        "done": [
+          "A buckler on a flier. Now I've seen it all."
+        ]
+      }
     },
     {
       "id": "sq.rb.regards",
@@ -860,8 +895,8 @@
           "params": {
             "to": "burl"
           },
-          "objText": "Carry the waystone's word to Burl",
-          "journal": "The waystone has word for Burl. Carry it back to her slope."
+          "objText": "Tell Burl the road is clear",
+          "journal": "The post-keeper has word for Burl: the road is clear. Carry it up her hill."
         }
       ],
       "requires": [
@@ -883,7 +918,23 @@
         ]
       },
       "band": 2,
-      "returnText": "Report to the post-keeper"
+      "returnText": "Report to the post-keeper",
+      "lines": {
+        "offer": [
+          "Tell Burl, up on the tower hill: the road's clear.",
+          "She asks after it. Don't ask me how."
+        ],
+        "active": [
+          "Burl. Tower hill. The road's clear. That's all."
+        ],
+        "ready": [
+          "She heard? Good. She worries, for a bear.",
+          "Five arrows. Straight ones."
+        ],
+        "done": [
+          "Road's clear, and the bear knows. Quiet day."
+        ]
+      }
     },
     {
       "id": "sq.rb.road",
@@ -930,7 +981,23 @@
         ]
       },
       "band": 2,
-      "returnText": "Report to the post-keeper"
+      "returnText": "Report to the post-keeper",
+      "lines": {
+        "offer": [
+          "Walk the road back toward your tower, would you?",
+          "Then on to the Bend Waystone. Tell me what moves."
+        ],
+        "active": [
+          "Back along the road. Then the Bend Waystone."
+        ],
+        "ready": [
+          "Nothing moving? Good. Nothing is good news.",
+          "Five arrows. Fair, for a walk."
+        ],
+        "done": [
+          "Road walked. I'll sleep easier."
+        ]
+      }
     },
     {
       "id": "sq.fc.ford",
@@ -971,7 +1038,22 @@
         }
       },
       "band": 4,
-      "returnText": "Report to the post-keeper"
+      "returnText": "Report to the post-keeper",
+      "lines": {
+        "offer": [
+          "The ford's past the bend. Wet boots are the price.",
+          "Cross to the west bank, then come back to me."
+        ],
+        "active": [
+          "Down to the river. Across to the west bank."
+        ],
+        "ready": [
+          "Wet to the knee. Here. Dry boots. Better ones."
+        ],
+        "done": [
+          "Dry feet. Out here, that's half of living."
+        ]
+      }
     },
     {
       "id": "sq.fc.smoke",
@@ -1008,7 +1090,23 @@
         ]
       },
       "band": 5,
-      "returnText": "Report to the post-keeper"
+      "returnText": "Report to the post-keeper",
+      "lines": {
+        "offer": [
+          "There's a lookout north of the ford. High rocks.",
+          "Climb it. Look north. Tell me what you see."
+        ],
+        "active": [
+          "The lookout, north of the ford. Climb. Look."
+        ],
+        "ready": [
+          "Smoke, you say? Cookfires, or trouble.",
+          "Ten arrows. Either way, you'll want them."
+        ],
+        "done": [
+          "North's watched. Somebody had to."
+        ]
+      }
     },
     {
       "id": "sq.fc.cross",
@@ -1045,7 +1143,23 @@
         ]
       },
       "band": 5,
-      "returnText": "Report to the post-keeper"
+      "returnText": "Report to the post-keeper",
+      "lines": {
+        "offer": [
+          "Past the ford, the west road meets a crossroads.",
+          "Walk out to it. Tell me which ways still go."
+        ],
+        "active": [
+          "The west road. Out to the crossroads."
+        ],
+        "ready": [
+          "All still go? Good. Roads forget slowly.",
+          "A health potion. Roads are long."
+        ],
+        "done": [
+          "Every road goes somewhere. Most go west."
+        ]
+      }
     },
     {
       "id": "sq.fc.again",
@@ -1082,7 +1196,23 @@
         ]
       },
       "band": 4,
-      "returnText": "Report to the post-keeper"
+      "returnText": "Report to the post-keeper",
+      "lines": {
+        "offer": [
+          "One more crossing. Back to the river bank.",
+          "See the stones hold both ways. Then me."
+        ],
+        "active": [
+          "Back to the river bank. Mind the moss."
+        ],
+        "ready": [
+          "Both ways, then. The ford's sound.",
+          "Ten arrows. For the wet boots."
+        ],
+        "done": [
+          "Ford's sound. You're sound. Good day's work."
+        ]
+      }
     },
     {
       "id": "sq.tm.gap",
@@ -1279,7 +1409,23 @@
         ]
       },
       "band": 2,
-      "returnText": "Report to the post-keeper"
+      "returnText": "Report to the post-keeper",
+      "lines": {
+        "offer": [
+          "Old lamps stand along the road. Dark, mostly.",
+          "Walk the line of them. See if any still burn."
+        ],
+        "active": [
+          "The lamps by the road. Walk the whole line."
+        ],
+        "ready": [
+          "All dark? Thought so. Someone trimmed them, once.",
+          "A health potion, for the walk."
+        ],
+        "done": [
+          "Dark lamps. Nobody left to trim them."
+        ]
+      }
     },
     {
       "id": "sq.rb.rocks",
@@ -1316,7 +1462,23 @@
         ]
       },
       "band": 2,
-      "returnText": "Report to the post-keeper"
+      "returnText": "Report to the post-keeper",
+      "lines": {
+        "offer": [
+          "Rocks piled at the forest edge. Too neat for chance.",
+          "Go and look. Tell me what you make of them."
+        ],
+        "active": [
+          "The rocks at the forest edge. Look close."
+        ],
+        "ready": [
+          "Stacked, like a cairn? Old way-marks, then.",
+          "Five arrows. Mind the edge after dark."
+        ],
+        "done": [
+          "Way-marks. Someone walked this road before us."
+        ]
+      }
     },
     {
       "id": "sq.rb.parcel",
@@ -1353,7 +1515,23 @@
         ]
       },
       "band": 2,
-      "returnText": "Hand the brass to the post-keeper"
+      "returnText": "Hand the brass to the post-keeper",
+      "lines": {
+        "offer": [
+          "The basket lid hangs on string. Brass would hold.",
+          "Bring me a brass scrap. Your ship dropped plenty."
+        ],
+        "active": [
+          "One brass scrap. From your wreck, or anywhere."
+        ],
+        "ready": [
+          "Good brass. The lid will hold now.",
+          "Ten arrows. Brass is worth that, out here."
+        ],
+        "done": [
+          "Lid holds. The crow can't open it now."
+        ]
+      }
     },
     {
       "id": "sq.he.wallow",
@@ -1592,7 +1770,23 @@
         "table": "gear.t2"
       },
       "band": 5,
-      "returnText": "Tell the post-keeper the boars are gone"
+      "returnText": "Tell the post-keeper the boars are gone",
+      "lines": {
+        "offer": [
+          "Two boars broke into my stores. Right there.",
+          "Drive them off before they eat the winter."
+        ],
+        "active": [
+          "The two boars, in my stores. Go on."
+        ],
+        "ready": [
+          "Gone, and only one sack torn. Good.",
+          "Take something off the shelf. You earned it."
+        ],
+        "done": [
+          "Stores whole. Boars elsewhere. Good."
+        ]
+      }
     },
     {
       "id": "sq.fc.caps",
@@ -1728,7 +1922,23 @@
         ]
       },
       "band": 4,
-      "returnText": "Tell the post-keeper which way it fell"
+      "returnText": "Tell the post-keeper which way it fell",
+      "lines": {
+        "offer": [
+          "A shrine lies fallen by the notice post.",
+          "Go and look. Tell me which way it fell."
+        ],
+        "active": [
+          "The fallen shrine, by the notice post."
+        ],
+        "ready": [
+          "West? It fell west. Of course it did.",
+          "Ten arrows. Odd thing to ask, I know."
+        ],
+        "done": [
+          "Always west, out here. Even the stones."
+        ]
+      }
     },
     {
       "id": "sq.fc.jetty",
@@ -1765,7 +1975,23 @@
         ]
       },
       "band": 4,
-      "returnText": "Report to the post-keeper"
+      "returnText": "Report to the post-keeper",
+      "lines": {
+        "offer": [
+          "An old jetty runs out over the water. Rotten.",
+          "Walk out on it, slowly. Tell me if it holds."
+        ],
+        "active": [
+          "The jetty. Step light. Plank by plank."
+        ],
+        "ready": [
+          "It held? Half of it, anyway. Good to know.",
+          "Five arrows. Dry ones, at least."
+        ],
+        "done": [
+          "Half a jetty. Better than none."
+        ]
+      }
     },
     {
       "id": "sq.fc.cog",
@@ -1802,7 +2028,23 @@
         ]
       },
       "band": 5,
-      "returnText": "Hand the cog to the post-keeper"
+      "returnText": "Hand the cog to the post-keeper",
+      "lines": {
+        "offer": [
+          "The Bend Waystone's mount is short one cog.",
+          "Bring me a brass cog. I'll fit it myself."
+        ],
+        "active": [
+          "One brass cog. You'll have one somewhere."
+        ],
+        "ready": [
+          "That'll do. It'll turn smooth now.",
+          "Ten arrows. Fair trade."
+        ],
+        "done": [
+          "You won't see the cog turn. I will."
+        ]
+      }
     },
     {
       "id": "sq.fc.ask",
@@ -1951,8 +2193,8 @@
       "returnText": "Bring the hide to Burl",
       "lines": {
         "offer": [
-          "NEEDS WRITER prompt.gondola.offer:",
-          "A bent plate hangs here. Make a shield of it?"
+          "A bent plate hangs off the wreck. Shield-sized.",
+          "Bring boar hide to Burl so she can strap it?"
         ],
         "active": [
           "A plate and a strap. Boar hide would do."
@@ -2096,11 +2338,16 @@
       "returnText": "Hand the packet to the post-keeper",
       "lines": {
         "offer": [
-          "NEEDS WRITER prompt.packet.offer:",
-          "An oilcloth packet. Take it to the post-keeper?"
+          "An oilcloth packet, stitched: FOR THE FORD POST.",
+          "Carry it to the post-keeper by the crossroads?"
         ],
         "active": [
           "The packet. The ford post, by the crossroads."
+        ],
+        "ready": [
+          "FOR THE FORD POST. That's here. Long road for it.",
+          "Not my hand on it. Older. I'll keep it safe.",
+          "Twenty arrows. It waited longer than you did."
         ],
         "done": [
           "The basket waits. The tags turn in the wind."

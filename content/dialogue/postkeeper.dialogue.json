@@ -3,7 +3,7 @@
   "schema": 1,
   "id": "postkeeper",
   "speakers": {
-    "postkeeper": {"label": "POST-KEEPER"},
+    "postkeeper": {"label": "BRAM"},
     "you": {"label": "YOU", "player": true}
   },
   "entry": [
@@ -11,7 +11,8 @@
   ],
   "nodes": {
     "postkeeper.hello.1": {"end": true, "lines": [
-      "Welcome to the post. Mind the basket."
+      "Saw your ship come down. Loud, for a bird.",
+      "I'm Bram. I keep the post. Leave what you can."
     ], "speaker": "postkeeper"}
   }
 }

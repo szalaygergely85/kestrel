@@ -3,7 +3,7 @@
   "schema": 1,
   "id": "warden_highpastures",
   "speakers": {
-    "warden": {"label": "WARDEN"},
+    "warden": {"label": "EWAN"},
     "you": {"label": "YOU", "player": true}
   },
   "entry": [
@@ -11,7 +11,7 @@
   ],
   "nodes": {
     "warden.hello": {"end": true, "lines": [
-      "I keep this light. Nothing more to ask of me today."
+      "Ewan. Long grass, long wind. I keep the light."
     ], "speaker": "warden"}
   }
 }

@@ -3,7 +3,7 @@
   "schema": 1,
   "id": "warden_glasswater",
   "speakers": {
-    "warden": {"label": "WARDEN"},
+    "warden": {"label": "LIN"},
     "you": {"label": "YOU", "player": true}
   },
   "entry": [
@@ -11,7 +11,7 @@
   ],
   "nodes": {
     "warden.hello": {"end": true, "lines": [
-      "I keep this light. Nothing more to ask of me today."
+      "Lin. I keep this waystone. The water keeps me."
     ], "speaker": "warden"}
   }
 }

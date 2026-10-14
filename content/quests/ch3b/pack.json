@@ -15,7 +15,8 @@
       "steps": [{ "template": "kill", "params": { "ids": ["blackBear1", "blackBear2", "blackBear3"], "count": 2 }, "objText": "Drive off two black bears", "journal": "NEEDS WRITER: black bears prowl the fields by the settlement. Drive off two." }],
       "opensAfter": ["sq.ow.night"],
       "reward": { "items": [{ "id": "potion.hp", "n": 2 }] },
-      "returnText": "Back to Hesk"
+      "returnText": "Back to Hesk",
+      "lines": { "offer": ["Black bears in the fields. Two too many.", "Drive two off. Big as doors, and hungry."], "active": ["Two black bears. The fields. Careful."], "ready": ["Gone? Good. The fields are ours again.", "Two health potions. For the claw marks."], "done": ["The fields are quiet. For now."] }
     },
     {
       "id": "sq.ow.letters", "title": "Letters Down the Line", "site": "hesk",
