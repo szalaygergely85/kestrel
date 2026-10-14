@@ -6,13 +6,15 @@ const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } };
 const t0 = performance.now();
 const out = await runBench({ hours: 0.05, start: 21, scenarios: 2, goblinHours: 0.04 });
 const secs = (performance.now() - t0) / 1000;
-ok(out.results.length === 3, '2 distance scenarios (first two; all 3 are in the full bench) + the goblin scenario');
-const gob = out.results[2];
+ok(out.results.length === 4, '2 distance scenarios (first two; all 3 are in the full bench) + the goblin scenario + the BEAST-06b caps-full scene');
+const gob = out.results[2], capsR = out.results[3];
+ok(capsR.scenario.startsWith('caps-full') && capsR.beasts === 160 && capsR.activeN <= 48 && capsR.engagedN <= 12, `BEAST-06b caps-full: 160 slots, <= 48 active, <= 12 engaged (${capsR.beasts}/${capsR.activeN}/${capsR.engagedN})`);
+ok(capsR.activeN > 0 && out.rows.some((r) => r.scenario === capsR.scenario && r.cap === 1.2) && out.rows.some((r) => r.scenario === capsR.scenario && r.cap === 8), 'caps-full budget rows (beastSim 1.2 ms, total 8 ms)');
 ok(gob.scenario.startsWith('goblins') && gob.beasts === 48 && gob.goblins === 20 && gob.throwers === 6 && gob.flyMax === 8, 'GOB-08 scenario: 48 beasts, 20 goblins, 6 throwers, 8 spears in flight');
 ok(gob.raidStarts > 0, 'goblin torch raid started');
 ok(gob.sys.spears && gob.sys.spears.p95 >= gob.sys.spears.p50 && gob.sys.spears.max >= gob.sys.spears.p999, 'spears stats shape');
 ok(out.rows.some((r) => r.scenario === gob.scenario && r.label.startsWith('beastSim goblin extras') && r.cap === 0.1), 'goblin extras budget row');
-for (const r of out.results) {
+for (const r of out.results.filter((x) => x !== capsR)) {
   ok(r.villagers === 5, 'villagers 5');
   ok(r.beasts > 0, 'beasts present');
   for (const k of ['villagers', 'raids', 'life', 'fauna', 'beast', ...(r === gob ? ['spears'] : [])]) {

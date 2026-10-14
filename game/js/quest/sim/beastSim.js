@@ -22,7 +22,8 @@ import { createTactics, tacticsSync, tacticsSteer, tacticsBand, tacticsAllies, T
 import { archIndex } from './archetypes.js';
 import { perceive, leashState, returnTarget, LEASH_HOME, LEASH_ENGAGE, LEASH_RETURN, LEASH_GIVEUP } from '../../../../engine/index.js';
 
-export const MAX_BEASTS = 96; // GOB-01: boars + wolves + bears + goblin camps (was 32; loot.js MAX_SLOTS must match)
+export const MAX_BEASTS = 160; // BEAST-06b (38.64 (8)): was 96 (GOB-01), 32 before; loot.js MAX_SLOTS must match
+export const ACTIVE_CAP = 48, ENGAGED_CAP = 12; // BEAST-06b: <= 48 simulated slots (nearest), <= 12 of them prioritised as engaged
 const PATH_SLOTS = 64; // waypoints kept per beast path (truncated, final = the exact goal - see `storePath`)
 
 // ---- states -----------------------------------------------------------------------------------------------------
@@ -55,6 +56,7 @@ export const STATE_CAST = 23;      // caster / healer cast (a hit cancels)
 const TACT_ROLE_OF = Object.freeze({ melee: TACT_MELEE, ranged: TACT_RANGED, caster: TACT_CASTER, swarm: TACT_SWARM }); // archetype role -> tactical role (BEAST-04)
 const ARCH_AGGRO_IDX = Object.freeze({ hostile: 0, whenHit: 1, never: 2, near: 3 });
 const FIRST_DEAD_STATE = STATE_DYING;
+const isEngaged = (st) => st === STATE_NOTICE || st === STATE_CHASE || st === STATE_WINDUP || st === STATE_CHARGE || st === STATE_RECOVER || st === STATE_CIRCLE || st === STATE_CAST || st === STATE_GRAB || st === STATE_FLEE;
 const deadSt = (st) => st >= FIRST_DEAD_STATE && st <= STATE_GONE; // EAT (13) is alive
 const HUNT_PREY = { wolf: ['rabbit', 'deer'], bear: ['deer'] }; // LIFE-07: species-filtered prey (38.56 c)
 const GOAL_ARRIVE_R = 3, ALT_R = 14, ALT_HIT_R = 1.4, ALT_COOLDOWN_S = 6, MAX_ALT = 8; // LIFE-08 (38.56 d): raid goal + villager alt targets
@@ -222,6 +224,7 @@ export function createBeastSim(world, opts) {
     packer: new Uint8Array(MAX_BEASTS),      // GOB-01: wolf or melee goblin (circle while waiting, retreat after the strike)
     down: new Uint8Array(MAX_BEASTS),        // GOB-01b: setDown(slot, true) -> STATE_GONE until setDown(slot, false) (not hashed/saved)
     dormCamp: new Uint8Array(MAX_BEASTS), dormTile: new Uint8Array(MAX_BEASTS), tileMode: false, // WM-04 reasons
+    dormCap: new Uint8Array(MAX_BEASTS), capMark: new Uint8Array(MAX_BEASTS), capIdx: new Int16Array(ACTIVE_CAP), capD: new Float64Array(ACTIVE_CAP), activeN: 0, engagedN: 0, pathServes: 0, // BEAST-06b: active-cap reason
     dormant: new Uint8Array(MAX_BEASTS),     // GOB-01: setDormant(slot, true) -> skipped like GONE, state kept
     fleeing: new Uint8Array(MAX_BEASTS),     // WOLF-01: STATE_RETURN that runs away from the player first
     hunt: new Uint8Array(MAX_BEASTS),        // LIFE-07: 1 = STATE_WANDER leg chasing a fauna prey slot (huntSlot)
@@ -379,7 +382,7 @@ export function createBeastSim(world, opts) {
   /** GOB-01: a dormant slot is skipped like GONE (no perceive/path/steer/post, steer agent parked) but keeps its state.
    *  WM-04: two independent reasons (camp distance, nav tile / player distance); a slot is dormant while either is set. */
   function applyDormant(slot) {
-    const d = (sim.dormCamp[slot] | sim.dormTile[slot]) ? 1 : 0;
+    const d = (sim.dormCamp[slot] | sim.dormTile[slot] | sim.dormCap[slot]) ? 1 : 0;
     if (sim.dormant[slot] === d || deadSt(sim.state[slot])) return;
     sim.dormant[slot] = d;
     sim.steer.vx[slot] = 0; sim.steer.vy[slot] = 0;
@@ -390,6 +393,36 @@ export function createBeastSim(world, opts) {
     if (slot < 0 || slot >= sim.count) return;
     sim.dormCamp[slot] = on ? 1 : 0;
     applyDormant(slot);
+  };
+  /** BEAST-06b (38.64 (8)): active cap. Of the non-dead, tile-awake slots the <= ENGAGED_CAP nearest engaged ones (notice/chase/windup/
+   *  charge/recover/circle/cast/grab/flee) are picked first, then the nearest others up to ACTIVE_CAP; every other slot gets the third
+   *  dormancy reason (one compare per slot). Insertion select into preallocated arrays: no allocation. Call ~every 30-60 steps. */
+  function capSelect(from, maxN, px, py, engagedOnly) {
+    let n = 0;
+    const idx = sim.capIdx, dd = sim.capD;
+    for (let i = 0; i < sim.count; i++) {
+      if (sim.capMark[i] || deadSt(sim.state[i]) || sim.dormTile[i] || sim.dormCamp[i] || sim.down[i]) continue;
+      if (engagedOnly && !isEngaged(sim.state[i])) continue;
+      const dx = sim.steer.x[i] - px, dy = sim.steer.y[i] - py, d = dx * dx + dy * dy;
+      if (n >= maxN && d >= dd[from + maxN - 1]) continue;
+      let j = n < maxN ? n++ : maxN - 1;
+      while (j > 0 && dd[from + j - 1] > d) { dd[from + j] = dd[from + j - 1]; idx[from + j] = idx[from + j - 1]; j--; }
+      dd[from + j] = d; idx[from + j] = i;
+    }
+    return n;
+  }
+  sim.updateActiveSet = function updateActiveSet(px, py) {
+    sim.capMark.fill(0);
+    const ne = capSelect(0, ENGAGED_CAP, px, py, true);
+    for (let j = 0; j < ne; j++) sim.capMark[sim.capIdx[j]] = 1;
+    const no = capSelect(ne, ACTIVE_CAP - ne, px, py, false);
+    for (let j = 0; j < no; j++) sim.capMark[sim.capIdx[ne + j]] = 1;
+    sim.activeN = ne + no; sim.engagedN = ne;
+    for (let i = 0; i < sim.count; i++) {
+      if (deadSt(sim.state[i])) continue;
+      sim.dormCap[i] = sim.capMark[i] || sim.dormTile[i] || sim.dormCamp[i] || sim.down[i] ? 0 : 1;
+      applyDormant(i);
+    }
   };
   /** WM-04: nav-tile / 200 m dormancy (separate reason from the camp's, so a camp wake never wakes a tile-dormant beast). */
   sim.setTileDormant = function setTileDormant(slot, on) {
@@ -423,6 +456,7 @@ export function createBeastSim(world, opts) {
       const out = hx < g.x0 || hy < g.y0 || hx >= x1 || hy >= y1 || dx * dx + dy * dy > r2;
       sim.setTileDormant(i, out);
     }
+    sim.updateActiveSet(px, py); // BEAST-06b
   };
   /** GOB-01b: on -> slot goes to STATE_GONE (steer agent dropped, hidden, skipped); off -> back alive at home, hp max. */
   sim.setDown = function setDown(slot, on) {
@@ -1030,7 +1064,7 @@ function stepDead(sim, i) {
 function updatePathRequests(sim, px, py) {
   const n = sim.count, cfg = sim.cfg;
   for (let i = 0; i < n; i++) {
-    if (deadSt(sim.state[i])) continue; // US-079b: dead slots don't path
+    if (sim.dormant[i] || deadSt(sim.state[i])) continue; // US-079b: dead slots don't path; BEAST-06b: a dormant slot is one compare
     if (sim.repathT[i] > 0) sim.repathT[i]--;
     if (sim.pathReq[i]) continue;
     const st = sim.state[i];
@@ -1059,11 +1093,11 @@ function servePathRequest(sim, px, py) {
   if (n === 0) return;
   for (let k = 1; k <= n; k++) {
     const i = (sim.lastServed + k) % n;
-    if (sim.pathReq[i] && !deadSt(sim.state[i])) {
+    if (sim.pathReq[i] && !sim.dormant[i] && !deadSt(sim.state[i])) {
       computePath(sim, i);
       sim.pathReq[i] = 0;
       sim.repathT[i] = sim.cfgSteps.repath;
-      sim.lastServed = i;
+      sim.lastServed = i; sim.pathServes++;
       return;
     }
   }

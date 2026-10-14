@@ -17,7 +17,7 @@ import { rollWolfWeapon, rollGoblinWeapon, rollChestWeapon, weaponRng } from './
 
 // EQ-10: 0..4 rolled entries per corpse (table.fixed + the `give` rolls). Gear is a world pickup, never a column.
 const ITEMS_PER_CORPSE = 4;
-const MAX_SLOTS = 96;       // beastSim MAX_BEASTS (keep equal)
+const MAX_SLOTS = 160;      // beastSim MAX_BEASTS (keep equal)
 const CORPSE_LIFT = 0.35;   // m above the death z: the interactable sits on the body, not in the ground (37.16.3)
 const LOOT_RADIUS = 1.8;
 
