@@ -30,9 +30,9 @@ ok('1b: fixture has no entities[].parent yet (that is what migration adds)', v1.
 // 2. Migrating v1 -> v2.
 // ---------------------------------------------------------------------------
 const v2 = migrateState(v1);
-ok('2a: migrated state is version 2', v2.version === 2);
-ok('2b: LATEST_VERSION is 2', LATEST_VERSION === 2);
-ok('2c: exactly one migration step is registered (v1 -> v2)', MIGRATIONS.length === 1);
+ok('2a: migrated state is version 3', v2.version === 3);
+ok('2b: LATEST_VERSION is 3', LATEST_VERSION === 3);
+ok('2c: two migration steps are registered (v1 -> v2 -> v3)', MIGRATIONS.length === 2);
 
 const brazier = v2.entities.find((e) => e.id === 'tower.brazier');
 const lantern = v2.entities.find((e) => e.id === 'annex.lantern');
@@ -72,9 +72,9 @@ ok('4a: an already-v2 state is returned as-is', alreadyV2 === v2);
 // ---------------------------------------------------------------------------
 {
   let threw = null;
-  try { migrateState({ ...v2, version: 3 }); } catch (err) { threw = err; }
-  ok('5a: version 3 throws', threw instanceof Error);
-  ok('5b: the message names the offending version and the max supported', /3/.test(threw.message) && /2/.test(threw.message));
+  try { migrateState({ ...v2, version: 4 }); } catch (err) { threw = err; }
+  ok('5a: version 4 throws', threw instanceof Error);
+  ok('5b: the message names the offending version and the max supported', /4/.test(threw.message) && /3/.test(threw.message));
 }
 {
   let threw = null;
