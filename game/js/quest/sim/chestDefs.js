@@ -11,7 +11,7 @@ export const SECRET_TABLE = { fixed: [{ item: 'arrow', n: 4 }], weighted: [], ge
 // US-104b: the Outwall track chests: same source, gear tier forced to T3 = 'fine' (US-129a: band 5 -> fine only).
 export const OUTWALL_SECRET_TABLE = { fixed: [{ item: 'arrow', n: 4 }], weighted: [], gear: { chance: 0.08, tier: 'fine' } };
 export const CHEST_TABLES = {
-  secretRook: SECRET_TABLE, secretBend: SECRET_TABLE, secretField: SECRET_TABLE, secretBank: SECRET_TABLE,
+  secretRook: SECRET_TABLE,
   secretOw1: OUTWALL_SECRET_TABLE, secretOw2: OUTWALL_SECRET_TABLE, secretOw3: OUTWALL_SECRET_TABLE,
   chestMeadow: HEART,
   chestBend: HEART,

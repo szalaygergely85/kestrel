@@ -51,8 +51,8 @@ for (let s = 1; s <= 12; s++) slots.add(items[openAll(s).chestHidden[0].replace(
 assert.ok(slots.size > 1, 'hidden chest slot varies with the seed: ' + [...slots]);
 // US-104a: the 4 secret chests = 4 arrows always + a gear roll with chance 0.08 (over many seeds ~8 %)
 let gearN = 0; const N = 400;
-for (let s = 1; s <= N; s++) { const r = openAll(s); for (const id of ['secretRook', 'secretBend', 'secretField', 'secretBank']) { assert.ok(r[id].includes('arrowx4'), id + ': 4 arrows'); if (r[id].some((x) => x.startsWith('gear.'))) gearN++; } }
-assert.ok(gearN / (N * 4) > 0.05 && gearN / (N * 4) < 0.11, 'secret gear chance ~8 %: ' + gearN / (N * 4));
+for (let s = 1; s <= N; s++) { const r = openAll(s); for (const id of ['secretRook']) { assert.ok(r[id].includes('arrowx4'), id + ': 4 arrows'); if (r[id].some((x) => x.startsWith('gear.'))) gearN++; } }
+assert.ok(gearN / (N * 1) > 0.05 && gearN / (N * 1) < 0.11, 'secret gear chance ~8 %: ' + gearN / (N * 1));
 // US-104b: the 3 Outwall chests = 4 arrows + ~8 % gear, always 'fine' (T3)
 let owN = 0;
 for (let s = 1; s <= N; s++) { const r = openAll(s); for (const id of ['secretOw1', 'secretOw2', 'secretOw3']) { assert.ok(r[id].includes('arrowx4'), id + ': 4 arrows'); for (const x of r[id]) if (x.startsWith('gear.')) { owN++; assert.equal(items[x.replace(/x1$/, '')].equip.tier, 'fine', id + ': T3 gear is fine'); } } }

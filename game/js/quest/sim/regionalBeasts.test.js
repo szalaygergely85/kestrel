@@ -43,6 +43,12 @@ ok('ids unique + stable shape', new Set(list1.map((b) => b.id)).size === list1.l
   ok('BEAST-02: >= 7 wolves in northwood+signalHill, model wolf', n >= 7 && bad === 0, 'n=' + n + ' bad=' + bad);
 }
 
+// OB-142: the river band around the ford is never empty - >= 6 beast homes (authored + generated) within 150 m of (1060, 1060)
+{
+  const near = [...avoid, ...list1.map((b) => [b.x, b.y])].filter((p) => Math.hypot(p[0] - 1060, p[1] - 1060) <= 150).length;
+  ok('OB-142: >= 6 beasts within 150 m of the river (1060,1060)', near >= 6, 'near=' + near);
+}
+
 const walk = makeWalkable(wA.terrain, G.bounds);
 const rectOf = (rule) => rule.rect || G.regions.find((g) => g.id === rule.region).r;
 let bad = [];
