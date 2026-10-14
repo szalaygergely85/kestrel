@@ -3,6 +3,7 @@
 import '../design/palette.js';
 import '../design/detail-pass.js';
 import '../design/models/voxel_bear.js';
+import '../design/models/voxel_bear_black.js';
 import '../design/models/voxel_otter.js';
 import '../design/models/voxel_tortoise.js';
 import '../design/models/voxel_bear_cub.js';
@@ -68,3 +69,10 @@ CONFIGS.push(
     gait: 'biped', keys: 6, G: { T: 500, v: 1.6, beta: 0.5, bobM: 0.006, liftM: 0.05, pitch: 0, nod: 0, roll: 2, yaw: 0, foldF: 35 } },
   { id: 'goblin.run', mark: 'goblin.run', model: 'goblin', file: 'voxel_goblin.js', clip: 'run', var: 'GOB_RUN', only: ['body', 'legL', 'legL2', 'legR', 'legR2'], body: 'body', head: 'head', legs: GOB_LEGS,
     gait: 'biped', keys: 6, G: { T: 360, v: 2.6, beta: 0.5, bobM: 0.02, liftM: 0.06, pitch: 0, nod: 0, roll: 2, yaw: 0, foldF: 25 } });
+// ANIM-B-01 follow-up: bear + black bear (was a bespoke ASSETS.bearGait copy). Hind fold sign +: G.hindSign 1 (the hock flexes the foot BACK), heelF = 0.4 heel.
+const BEAR_LEGS = { FL: { ...K('armL', 'armL2', 'fore'), k: 0.5 }, FR: { ...K('armR', 'armR2', 'fore'), k: 0.5 }, HL: { ...K('legL', 'legL2', 'hind'), k: 0.35 }, HR: { ...K('legR', 'legR2', 'hind'), k: 0.35 } };
+CONFIGS.push(
+  { id: 'bear.walk', mark: 'bear.walk', model: 'bear', file: 'voxel_bear.js', clip: 'walk', body: 'body', head: 'head', ears: 'ears', legs: BEAR_LEGS,
+    gait: 'amble', keys: 16, G: { T: 800, v: 1.0, beta: 0.65, bobM: 0.025, liftM: 0.07, pitch: 1.5, nod: 1.5, ears: 3, roll: 5, yaw: 4, heel: 28, heelF: 11.2, foldF: 32, foldH: 12, hindSign: 1 } },
+  { id: 'bear.charge', mark: 'bear.charge', model: 'bearBlack', file: 'voxel_bear_black.js', clip: 'charge', var: 'BEAR_CHARGE', body: 'body', head: 'head', ears: 'ears', legs: BEAR_LEGS,
+    gait: 'gallop', keys: 10, G: { T: 500, v: 3.0, beta: 0.45, bobM: 0.075, liftM: 0.15, pitch: 4, nod: 3, ears: 0, roll: 2, yaw: 2, heel: 20, heelF: 8, foldF: 40, foldH: 20, hindSign: 1 } });
