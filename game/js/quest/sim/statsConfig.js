@@ -51,3 +51,10 @@ export const RARITY = [
 
 // Base weapon damage by iL (sword): (4+2iL)-(7+3iL). Other types scale by this multiplier.
 export const WEAPON_MUL = { sword: 1, axe: 1.25, spear: 0.9, bow: 0.9 };
+
+// ITEM-09 (D-091): attribute requirement = primary attribute only. req(iL) = 5 + floor(0.9 * (iL - 1)).
+// Armour, shield, cloak, belt, boots: none. Uniques are hand-set (item.req), capped at REQ_UNIQUE_MAX.
+export const REQ_ATTR = { sword: 'str', axe: 'str', spear: 'str', bow: 'dex', fireball: 'int', staff: 'int' };
+export const REQ_BASE = 5, REQ_PER_IL = 0.9, REQ_UNIQUE_MAX = 13;
+export const REQ_UNMET_MUL = 0.5; // not meeting the requirement: -50 % damage / armour (no hard block)
+export const ATTR_NAME = { str: 'STR', dex: 'DEX', int: 'INT' };

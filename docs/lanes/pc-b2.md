@@ -1101,3 +1101,6 @@ flowField.js `stepLayered` now relaxes links in REVERSE (reverse index = link id
 
 ### GATE-FLAKY-07 (kestrel-3, 2026-10-14)
 navLayers01d.test: per-slice ms = min over 5 fresh bakes (rep 0 = warm-up), budget 2.5 ms kept hard; idle 1.2-1.8 ms, no split needed (1 source = 1 slice). Proof: alone 3x pass, `run-tests --filter sim` 67/67 PASS.
+
+### ITEM-09 (kestrel-3, 2026-10-14) -> po-review
+statsConfig.js REQ_* + stats.js `reqValue/itemReqAttr/itemReqValue/meetsReq(totals,item)/reqMul (0.5 unmet, no block)/reqHint -> {text:'Needs DEX 12',met}`; new statsReq.test.js (table 5,5,6..13, 2000-kit reachability iL3-10 all >= 90 %, table not lowered). Not found: design/itemBases.js, ITEM-03 generator, ITEM-07 card do not exist yet -> they call reqMul/reqHint when built; legacy hard `meetsRequirement` kept (stats.test) but superseded.

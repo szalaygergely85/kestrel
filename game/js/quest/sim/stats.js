@@ -2,7 +2,7 @@
 // Equipment = { main, ranged, off, head, body, cloak, hands, belt, legs, feet }, each null or an item instance:
 //   { type, iL, r: rarityIdx, dmg: [min,max]?, armour: n?, a: [[affixId, value], ...], req: {str,dex,int}? }
 // `dmg`/`armour` are the already-rarity-scaled base stats (ITEM-03 generates them).
-import { STATS_CFG as C, AFFIX, RARITY, IL_MIN, IL_MAX, ALL_SLOTS } from './statsConfig.js';
+import { STATS_CFG as C, AFFIX, RARITY, IL_MIN, IL_MAX, ALL_SLOTS, REQ_ATTR, REQ_BASE, REQ_PER_IL, REQ_UNIQUE_MAX, REQ_UNMET_MUL, ATTR_NAME } from './statsConfig.js';
 
 export { weaponRng as createStatsRng } from './weaponLoot.js'; // seeded mulberry32 stream (no Math.random)
 
@@ -86,11 +86,49 @@ export function computeTotals(eq, out = createTotals()) {
   return out;
 }
 
-/** Hard rule (D-089): item.req = {str,dex,int} (missing = 0); not met -> cannot equip. Numbers set by ITEM-09. */
+/** Legacy hard check (D-089), all three attributes; ITEM-09 equip rule is the soft one below (meetsReq / reqMul). */
 export function meetsRequirement(item, totals) {
   const q = item && item.req;
   if (!q) return true;
   return totals.str >= (q.str || 0) && totals.dex >= (q.dex || 0) && totals.int >= (q.int || 0);
+}
+
+/** req(iL) = 5 + floor(0.9 x (iL - 1)): iL1-2 -> 5, iL5 -> 8, iL9 -> 12, iL10 -> 13. */
+export function reqValue(iL) {
+  return REQ_BASE + Math.floor(REQ_PER_IL * (clamp(iL | 0, IL_MIN, IL_MAX) - IL_MIN));
+}
+
+/** Requirement of an item as 'str'|'dex'|'int' + value, or null (armour etc.). Uniques/legacy: item.req = {str|dex|int: n}, max 13. */
+export function itemReqAttr(item) {
+  if (!item) return null;
+  const q = item.req;
+  if (q) return q.str ? 'str' : q.dex ? 'dex' : q.int ? 'int' : null;
+  return REQ_ATTR[item.type] || null;
+}
+export function itemReqValue(item) {
+  const a = itemReqAttr(item);
+  if (!a) return 0;
+  const q = item.req;
+  if (q) { const v = q[a] || 0; return v > REQ_UNIQUE_MAX ? REQ_UNIQUE_MAX : v; }
+  return reqValue(item.iL);
+}
+
+/** True when the wearer's totals reach the item's requirement (no requirement = true). 0 alloc. */
+export function meetsReq(totals, item) {
+  const a = itemReqAttr(item);
+  return !a || totals[a] >= itemReqValue(item);
+}
+
+/** Damage / armour multiplier for an item at these totals: 1 when met, 0.5 when not (live, nothing is blocked). */
+export function reqMul(totals, item) {
+  return meetsReq(totals, item) ? 1 : REQ_UNMET_MUL;
+}
+
+/** Card line: { text: 'Needs DEX 12', met: bool } (red when unmet, green/normal when met) or null if no requirement. */
+export function reqHint(totals, item) {
+  const a = itemReqAttr(item);
+  if (!a) return null;
+  return { text: 'Needs ' + ATTR_NAME[a] + ' ' + itemReqValue(item), met: totals[a] >= itemReqValue(item) };
 }
 
 /**
