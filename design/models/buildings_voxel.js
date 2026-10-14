@@ -115,7 +115,7 @@
     A.voxelModels[this.id] = {
       name: this.id, proposal: 'OB-139', desc: meta.desc, sizeM: meta.sizeM,
       voxel: {
-        version: 1, cellM: CM, size: [this.sx, this.sy, this.sz], anchor: anchor, mats: mats, layers: this.G.layers(),
+        version: 1, cellM: CM, meshOnly: true, size: [this.sx, this.sy, this.sz], anchor: anchor, mats: mats, layers: this.G.layers(), // meshOnly (ME-22): > 32/axis, never into the 256-row DDA atlas (owner crash buildVoxelAtlas 6878 rows)
         parts: { body: { box: [0, 0, 0, this.sx, this.sy, this.sz], pivot: anchor } },
         animations: { idle: { durations: [1000], loop: true, interp: 'step', frames: [{}] } },
         mounts: this.mounts
