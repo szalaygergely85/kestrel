@@ -7,6 +7,6 @@ export { randomRecipe } from './random.js';
 export { composeCharacter } from './compose.js';
 export { meshCharacter } from './mesh.js';
 export { sampleClip, eulerToQuat, quatToEuler } from './clip.js';
-export { collapseRig, HUMANOID_PART_MAP, CLIP_STEP_MS, MAX_PARTS } from './collapse.js';
+export { collapseRig, HUMANOID_PART_MAP, HUMANOID_SPLIT_LEG_PART_MAP, HUMANOID_SPLIT_LEG_RIG, CLIP_STEP_MS, MAX_PARTS } from './collapse.js';
 export { riggedModelDef } from './rigModel.js'; // RIG-02b (38.32)
 export { createCharCache } from './cache.js'; // EQ-05 (38.40 item 6)

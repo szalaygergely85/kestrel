@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import '../design/palette.js';
 import '../design/detail-pass.js';
 import '../design/chargen/human_kit.js';
-import { HUMANOID_PART_MAP, composeCharacter, meshCharacter, collapseRig, CHAR_GAME_MAX_QUADS } from '../engine/index.js';
+import { HUMANOID_PART_MAP, HUMANOID_SPLIT_LEG_PART_MAP, composeCharacter, meshCharacter, collapseRig, CHAR_GAME_MAX_QUADS } from '../engine/index.js';
 
 let passed = 0;
 const test = (name, fn) => { try { fn(); passed++; console.log(`ok - ${name}`); } catch (e) { console.error(`not ok - ${name}\n${e.stack}`); process.exitCode = 1; } };
@@ -21,10 +21,10 @@ test('checkKit: no errors, no warnings', () => {
   assert.deepStrictEqual(res.errors, []);
   assert.deepStrictEqual(res.warnings, []);
 });
-test('skeleton: 22 humanoid bones, parents first; partMap = engine array form, every bone once in <= 8 parts', () => {
+test('skeleton: 22 humanoid bones, parents first; partMap = engine array form, every bone once in <= 16 parts', () => {
   assert.strictEqual(kit.skeleton.length, 22);
   assert.ok(Array.isArray(kit.partMap), 'partMap must be the collapseRig array');
-  assert.ok(kit.partMap.length <= 8);
+  assert.ok(kit.partMap.length <= 16);
   const seen = {}, parts = {};
   for (const p of kit.partMap) {
     assert.ok(p.parent === null || parts[p.parent], p.name + ': parent listed first');
@@ -35,8 +35,8 @@ test('skeleton: 22 humanoid bones, parents first; partMap = engine array form, e
   assert.strictEqual(parts.body.compose, 2);
   assert.strictEqual(parts.head.compose, 2);
 });
-test('partMap equals engine HUMANOID_PART_MAP', () => {
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(kit.partMap)), JSON.parse(JSON.stringify(HUMANOID_PART_MAP)));
+test('partMap equals engine HUMANOID_SPLIT_LEG_PART_MAP (ANIM-IK-01b)', () => {
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(kit.partMap)), JSON.parse(JSON.stringify(HUMANOID_SPLIT_LEG_PART_MAP)));
 });
 test('size: 1.75 m tall, ~70 rows, shoulders over the deltoids 0.42-0.55 m, grid about 36x20x76', () => {
   const st = res.stats.bases.m_avg;

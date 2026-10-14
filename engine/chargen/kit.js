@@ -132,7 +132,7 @@ function checkDetail(base, W, { regions, boxes, boneAt, levelsOf, usedChars, err
   }
 }
 
-const MAX_PARTS_KIT = 8; // = MAX_VOX_PARTS (collapse.js pins it with a test)
+const MAX_PARTS_KIT = 16; // = MAX_VOX_PARTS (collapse.js pins it with a test)
 function checkPartMap(pm, bones, err) {
   if (!Array.isArray(pm)) { err('partMap: must be an array [{name,bones,parent,compose?}] (the object form is not accepted)'); return; }
   if (!pm.length || pm.length > MAX_PARTS_KIT) err(`partMap: ${pm.length} parts, need 1..${MAX_PARTS_KIT}`);
@@ -143,6 +143,7 @@ function checkPartMap(pm, bones, err) {
     if (!p || typeof p.name !== 'string' || !Array.isArray(p.bones) || !p.bones.length) { err(`${W}: needs name and a non-empty bones array`); return; }
     if (partIdx.has(p.name)) err(`${W}: duplicate part "${p.name}"`);
     partIdx.set(p.name, i);
+    if (p.rigid !== undefined && typeof p.rigid !== 'boolean') err(`${W}: rigid must be a boolean`);
     if (p.compose !== undefined && !(Number.isInteger(p.compose) && p.compose >= 1 && p.compose <= p.bones.length)) err(`${W}: compose must be an int 1..${p.bones.length}`);
     for (const bn of p.bones) {
       if (!bones.has(bn)) err(`${W}: unknown bone "${bn}"`);

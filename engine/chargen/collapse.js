@@ -7,7 +7,7 @@
 //   - part pos = the root bone's Hips pos (cells) when the root is Hips.
 // PartRig: {cellM, anchorCells:[x,y,z], boneJoints:[{name,part,jointCells}], parts:[{name,parent:index|-1,pivot:[x,y,z] grid cells,pivotM:[x,y,z] metres from the anchor,bones:[names]}], bones:[...], mesh (one range per part,
 //   same layout as meshCharacter), matKeys, clips:{name:{loop,interp:'linear',durations:[50..],frames:[{part:{rot,pos?}}]}}, mounts}
-export const MAX_PARTS = 8; // engine/chargen imports only itself; the test pins this to MAX_VOX_PARTS
+export const MAX_PARTS = 16; // engine/chargen imports only itself; the test pins this to MAX_VOX_PARTS
 import { sampleClip, quatToEuler } from './clip.js';
 
 export const HUMANOID_PART_MAP = [
@@ -20,6 +20,21 @@ export const HUMANOID_PART_MAP = [
   { name: 'legL', bones: ['LeftUpperLeg', 'LeftLowerLeg', 'LeftFoot', 'LeftToes'], parent: 'body' },
   { name: 'legR', bones: ['RightUpperLeg', 'RightLowerLeg', 'RightFoot', 'RightToes'], parent: 'body' },
 ];
+
+/** ANIM-IK-01b: player split-leg map (10 parts). The lower part (knee pivot) is `rigid`: rotation 0, so with IK off it follows the upper part
+ *  exactly like the old one-part leg (same vertex order, same look); the 2-bone solve (def.legRig) then bends it. */
+export const HUMANOID_SPLIT_LEG_PART_MAP = [
+  ...HUMANOID_PART_MAP.slice(0, 6),
+  { name: 'legL', bones: ['LeftUpperLeg'], parent: 'body' },
+  { name: 'legLowL', bones: ['LeftLowerLeg', 'LeftFoot', 'LeftToes'], parent: 'legL', rigid: true },
+  { name: 'legR', bones: ['RightUpperLeg'], parent: 'body' },
+  { name: 'legLowR', bones: ['RightLowerLeg', 'RightFoot', 'RightToes'], parent: 'legR', rigid: true },
+];
+/** Matching riggedModelDef opts.legRig (foot = the Foot bone joint = ankle). Gaits are empty: the IK driver only needs the 2-bone solve. */
+export const HUMANOID_SPLIT_LEG_RIG = {
+  body: 'body',
+  legs: [{ upper: 'legL', lower: 'legLowL', footBone: 'LeftFoot', bend: 'front' }, { upper: 'legR', lower: 'legLowR', footBone: 'RightFoot', bend: 'front' }],
+};
 
 export const CLIP_STEP_MS = 50;
 
@@ -108,7 +123,7 @@ export function collapseRig(rigged, partMap) {
           eul[a] += 360 * Math.round((pv - eul[a]) / 360);
           prev[3 * pi + a] = eul[a];
         }
-        const e = { rot: [eul[0], eul[1], eul[2]] };
+        const e = { rot: partMap[pi].rigid ? [0, 0, 0] : [eul[0], eul[1], eul[2]] };
         if (p.bones[0] === 'Hips') e.pos = [hips[0] / rigged.cellM, hips[1] / rigged.cellM, hips[2] / rigged.cellM];
         frame[p.name] = e;
       });
