@@ -6925,3 +6925,95 @@ Scope: D-101 (B = knee rigs, C = runtime leg solve ASAP), `design/animal-look-op
 | ANIM-C-05 | - (kestrel-1, game) | `beastView` wiring, bear first (then wolf/goblin): driver attach/release on spawn/death, gait clip time from Phi, `legPose` on the voxel component. Owner walk on a hill with Burl. | C-04, B-01a | - |
 
 Order: 16a -> {16b, B-01a, C-01} -> C-02 -> C-03 -> C-04 -> C-05 (bear first). B-01b..d run alongside C-02..C-04. Each animal gets C as soon as its B data and C-04 exist (one wiring line + an owner look).
+
+### 38.68 ANIM-BLEND: clip blending, cross-fades, additive hits (D-090 stage 2) (PC-B architect opus 2026-10-14, PC-A to ratify)
+Builds on RIG-00 38.32 (rigged models use the same `pm.clips` path), 38.67 (leg solve), 38.61 (0 alloc), WILD-01/02 (38.31 item 8).
+**Facts checked in code.** (1) `voxelPose.js` `sampleClip` = one clip + an optional from-clip lerp (`inst.fromClip/fromFrame/fromTMs/fromW`; the from pose is a single clip); `samplePose` then adds the leg-driver body tilt (`inst.legs`) and `addPart` (jaw); the 2-bone solve overrides leg `rx` in `computeVoxelPose` with weight `legs[0]`. (2) Only the fauna feed cross-fades (`clipPlayer.js` + `pool.blendInstance`). The entity path `VoxelPool._queueEntity` forces `fromW = 0`, so player, beasts, goblins and NPCs **pop on every clip change** (beastView sets `v.anim/t` directly; `hurt`/`flinch` are full clips). (3) `animState.js` `BLEND_MS = 80` is a weight nobody feeds into the pose. (4) `gait.js` `pickGait` is a hard switch with hysteresis. (5) `legDriver.update` takes the gait from `lr.gaitClip[clipIdx]` and computes `stride = tuned * T * clamp(sqrt(v/tuned), 0.8, 1.25)`; `io[7]` and `io[11..]` are free.
+
+**1. Pose layers (in `samplePose`, fixed order, all optional; absent = today's bytes).**
+- (a) **Base source** = clip A at (frame, tMs), lerped toward clip B at (frame2, tMs2) by `w2` (the parameter blend). (b) **From source** (the previous state) = the same A/B/w2 shape, advanced like `clipStep` does; the result lerps toward it by `fromW`, so leaving a half-walk/half-run blend never pops. (c) **Additive** = `addW * delta(addClip, addFrame, addTMs)` on the parts in `addMask` (delta keys precomputed at pack = keys minus frame 0, so frame 0 adds exactly 0). (d) Then the existing leg body tilt, `addPart`, and the leg solve.
+- Input: one `AnimLayers` Float64Array(20) per instance, `inst.layers` (null = byte-identical): `[on, clip, frame, tMs, clip2, frame2, tMs2, w2, fClip, fFrame, fTMs, fClip2, fFrame2, fTMs2, fW2, fromW, addIdx, addFrame, addTMs, addW]`. When `on = 1`, base clip/frame/tMs come from the record, not from `v.anim` (the serialized name stays the game's job, for saves only).
+- Scratch: module-level rot/pos arrays (MAX_VOX_PARTS*3) per extra source. Worst case 5 `sampleInto` per pose.
+
+**2. Data format** (`def.voxel.blend`, plain JSON, cold, validated in `validateVoxelModel`; unknown keys error; same for voxel and RIG-00 rigged defs):
+```js
+/** @typedef {{
+ *   sets?: {[name]: {param: 'speed', clips: {clip: string, at: number}[]}},   // 2..4 looping clips, `at` m/s strictly increasing, phase-synced
+ *   fades?: {default: number, into?: {[clip]: number}, pairs?: {[fromGtTo]: number}},  // key 'walk>attack'; ms 0..400; default 150 (= legDriver w fade)
+ *   additive?: {[name]: {clip: string, parts: string[], inMs: number, outMs: number, gain?: number}}  // clip non-looping; parts = mask
+ * }} BlendDef */
+```
+- Pack: `engine/voxel/blendPack.js` `packBlend(def, pm) -> pm.blend | null`, called from `packVoxelModel` like `packLegRig`: `setClip: Int16Array`, `setAt: Float64Array`, `fadeInto: Uint16Array(clipCount)` (0xFFFF = default), `fadePair: Uint16Array(clipCount*clipCount)` (0xFFFF = none; <= 32 clips -> 2 KB), `addKeys: Float64Array` per additive clip, `addMask: Uint16Array`. A clip may sit in only one set.
+
+**3. Blender** `engine/entities/animBlend.js` (view only, like legDriver): `createAnimBlender(capacity = 64)`, `attach(pm) -> slot` (-1 when full), `release`, `reset(slot, clipIdx)` (no fade: spawn/load/teleport), `layersOf(slot) -> AnimLayers` (subarray made at create), `update(slot, pm, dtMs)`. Inputs in `blender.io` Float64Array: `[reqClip | -(set+1), speed, phase01 (-1 = self-advance), hit (additive index, -1 none), rate]`.
+- **Fade on every change:** a new request copies the current source into the from slot, `fromW = 1 - smoothstep(t/ms)`; ms = `fadePair[from,to]` else `fadeInto[to]` else default. A change during a fade restarts from the current blended source (the older from is dropped; at most 2 sources in flight).
+- **Parameter blend:** in a set, `at_i <= speed < at_(i+1)` gives `w2 = smoothstep((speed - at_i)/(at_(i+1) - at_i))`; below `at_0` clip 0 only, above the last the last only. Both clips are sampled at the SAME phase01 (`clipSetPhase` maths on scratch). Self-advance: `phase += speed * dt / lerp(stride_i, stride_j, w2)`, `stride = at * T` (T = clip length), rate clamped [0.6, 1.6]. Replaces `pickGait` for models that have `blend.sets`.
+- **Additive hit:** `hit >= 0` (re)starts the envelope: up in `inMs`, clip time runs, down in `outMs`; `addW = gain * env`. Hurt/flinch become additive on top of walk/run/attack instead of replacing them (the game may still play a full `hurt` clip for knock-downs).
+- **Readable wind-up / recover (OB-150):** `windup` and `recover` are ordinary non-looping states with their own fades. Rule tested per model: `into[windup] <= 0.25 * windup length`, the windup reaches its last key (held) before the sim's windup time ends, `into[attack] <= 80`, `attack>recover >= 150`.
+
+**4. Composition with the leg solve (38.67): the blend never fights a planted foot.**
+- While the solve is on (`legs[0] = w > 0`) it overrides leg `rx` after all layers, so blends/fades/additives only move body, head, tail. Additive `parts` naming a `legRig` upper/lower part is a validator error.
+- Phase: with a driver attached the blender takes `phase01 = driver io[8]` (no self-advance), so both set clips stay in step with the feet.
+- Stride: the blender writes the blended stride (m) to driver `io[11]`; `legDriver.update` uses it instead of its formula when > 0 (0 = byte-identical). Footfall pattern (duty, phase[]) = the dominant clip (`w2 < 0.5` ? A : B), passed as `clipIdx`; a pattern change takes effect per foot at its next touchdown (stance feet stay planted; new per-foot state `H_PAT`).
+- Gait -> attack/die: the driver fades `w` to 0 in 150 ms and the default fade is 150 ms, so the legs leave the solve and the old clip together.
+
+**5. Cost / alloc / determinism.** Per pose <= 5 `sampleInto` (16 parts x 6 lerps) ~0.5 us, <= 3 pose calls/frame; blender update ~0.3 us. 48 instances <= 0.1 ms JS (D-007). GPU 0. **0 B/frame** after attach (38.61 probe through the present path). No Math.random, no wall clock; never serialized (reset on spawn/load).
+**Do not:** blend in the sim; serialize AnimLayers; name game clips (`hurt`, `charge`) in engine code; change WGSL; change any byte when `blend`/`layers` are absent.
+
+**Steps (each <= 1 programmer-day; E = engine, ends in arch-review on PC-A).**
+| ID | E | What | Deps |
+|---|---|---|---|
+| ANIM-BLEND-01a | E | `blend` validator + `blendPack.js` + pose layers in `voxelPose.js` (`inst.layers`) + VoxelPool `layers` slot field (`_queueEntity` reads `components.voxel.animLayers`, `layerInstance(i, rec)`, both projection copies). Tests: every shipped model bit-identical without `blend`/`layers`; w2/fromW/additive maths vs a reference lerp; delta at frame 0 = 0; mask; a RIG-00 rigged fixture works; 0 alloc. | none |
+| ANIM-BLEND-01b | E | `animBlend.js`: requests, fade table, phase-synced sets, self-advance, additive envelope. Tests: **no pop** (max per-part rot step between 60 Hz frames across every state change <= the largest in-clip step + 1 deg), set sync, determinism, 0 alloc. | 01a |
+| ANIM-BLEND-01c | E | legDriver composition: `io[11]` stride, pattern switch at touchdown, phase hand-off. Tests: foot slide <= 12 mm over a 0 -> run -> 0 speed ramp; walk -> attack legs reach the clip within 150 ms, no step > 1 deg/frame; `io[11] = 0` byte-identical. | 01b, ANIM-C-02 |
+| ANIM-BLEND-02 | - | Content (designer + kestrel-4): `blend` blocks, `hitAdd` clips, windup/recover fades for player rig, bear, wolf, boar, goblin. Node: validators + the OB-150 windup rule. | 01a |
+| ANIM-BLEND-03 | - | Game wiring (kestrel-1): beastView + beastLegs + player view own a blender; hurt -> additive; `?animblend=0` kill switch. Owner look: walk -> run ramp, hit while running, boar windup. | 01b, 01c, 02 |
+
+### 38.69 ED-FOLIAGE: foliage brush (placements + decor paint) (D-102) (PC-B architect opus 2026-10-14, PC-A to ratify)
+Builds on MASK-d `tools/editor/grassBrush.js` (38.52 amendment (e)), ED-MESH-01b `meshPlace.js` (37.20), `commands.js` batch records (24.9), ENV-01 38.62 (decor mask), 38.58 (`bundleBytes`), 38.43/38.59 caps.
+**Facts checked in code.** (1) grassBrush is pure: `applyGrassDab` (smoothstep falloff, `onTouch` undo snapshot), `beginStroke`/`endStroke` -> one record `{kind:'grass', key, rect, entries:[i,j,before,after]}`, `applyGrassSide`, `rebuildCarpet(world, rect)`, save `content/terrain/<key>.grassMask.json`. (2) `createMeshPlacement(file, key, pt, {assets, world, yawDeg, scale})` validates, ground-snaps via `snapMeshOrigin` (highest of centre + 4 footprint samples + `LIFT[meshClass]`, refuses courtyard gaps / no floor) and mints the id; it does not insert. (3) `World.placeMesh(..., collide)` + `colliders.js proxySource`: a mesh collides through its `collider` proxy (tools/gen-mesh-colliders.mjs) or, with a warning, its render triangles; `collide:false` = walk-through. (4) `commands.js` `makeInsertRecord`/`makeDeleteRecord` + `{label, batch:[...]}` invert as one undo step. (5) The detail keep probability is `fill * biome detail mult` in BOTH paths: CPU `scatterDetail` (scatter.js ~376-379) and the ENV-01b mask bake (~429-434, `prob = round(fill*127)`). (6) `bandCache.js` `bundleBytes(b)` is the real per-band MB; `tools/probe-heavy-zones.mjs` bakes zones with `BandBakeJob`.
+
+**1. Two brush modes, one panel ("Foliage" tab).**
+- **Placements mode** (species with an id/collider: trees, rocks, logs, stumps, boulders): every dab makes real mesh placements in the open world file (`def.structures`, ids minted `fol_<n>`, via `createMeshPlacement`), so they are pickable, movable, saved, collide, cast shadows.
+- **Decor mode** (no collider, no id: flowers, tufts, pebbles, reeds = the 38.62 `gpu` layers): paints a density multiplier layer per detail layer. It never makes placements.
+- A palette entry decides the mode by data: a species with a mesh that has a `collider` proxy or a tree trunk -> placements; a detail layer name -> decor. A placement species whose mesh has no proxy is refused at palette load (no render-triangle colliders from a brush).
+
+**2. Palette data** (`content/editor/foliage.json`, editor-only, validated at load, unknown keys error):
+```js
+/** @typedef {{ version: 1, palettes: {[id]: {
+ *   place?: {mesh: string, w: number, gapM: number, scale: [number, number], maxSlopeDeg: number, collide?: boolean, shadow?: boolean}[],
+ *   decor?: {layer: string, target: number}[]          // detail layer name, target multiplier 0..2
+ * }}}} FoliagePalettes */
+```
+Brush params (UI, not saved): radius 1..24 m, falloff (hard/smooth = smoothstep), density (placements per 100 m^2 at the centre, 0.1..20) or decor strength %, op paint/erase (decor also: reset to neutral).
+
+**3. Placement dab** (`tools/editor/foliageBrush.js`, pure, no DOM):
+- Candidates: a 1 m world lattice inside the dab; per cell `h = hash2(ix, iy, strokeSeed)` (scatter.js `hash2`, no Math.random); keep when `h01 < density/100 * falloff(d/r)`; jitter + species pick + yaw + scale from the next hash words. Deterministic for a given seed (tests).
+- Rejects: `snapMeshOrigin` null (no floor, courtyard gap); slope from 4 `world.floorAt` samples at the footprint > `maxSlopeDeg`; inside any structure bbox or `classifyPlacement` zone != world; closer than `max(gapA, gapB)` to an existing mesh placement (a grid hash of the file's mesh placements built at stroke start, updated as the stroke adds); water (`floorAt` below the water level where the world reports one). Max 200 placements per stroke (message when hit).
+- **Snap always (OB-155):** z only from `snapMeshOrigin`; never a typed z in this mode. Terrain brush strokes re-snap every `fol_` placement inside the stroke rect, as part of the SAME undo record (field-edit records in the batch). AC with `tools/probe-floating.mjs`: 0 floating `fol_` placements after paint + terrain edit + undo.
+- Erase: deletes the placements whose mesh is in the active palette within the radius (falloff = keep chance), refusing referenced items (`findReferrers`); `Shift` erases any mesh species.
+- During the stroke placements show as ghosts (meshDragPreview path); stroke end = ONE `{label:'foliage paint', batch:[insert...]}` record, applied through `applyEdit` + livepatch once, then `world.rebuildMeshColliders` once.
+
+**4. Decor paint layer (engine part).**
+- Storage: one GrassMaskLayer (engine/world/grassMask.js, 0.5 m lattice) per detail layer, with a new optional `neutral` byte: `createGrassMask(cell, chunkSize, neutral = 0)`; absent chunks read `neutral`, new chunks fill with it (0 = today, byte-identical). Decor layers use `neutral = 128`, multiplier = `v / 128` (0..~2).
+- Rule: `fill = min(1, fill * biomeMult * paint(x, y))` at the same line in CPU `scatterDetail` and `bakeDecorMask` (one shared helper), so both paths and the GPU twin agree. No paint file = exact old bytes.
+- Save: `content/terrain/<key>.decorPaint.json` = `{version:1, layers:{<layerName>: grassMaskToJSON(...)}}` (manifest entry like grassMask). World opt `decorPaint` (loaded layers); never in saves; world hash unchanged.
+- Live: `World.rebuildDecor(rect)` re-runs the detail/mask bake for the near-band cells in `rect` and bumps `decor.version` / `renderVersion` (passDecor re-uploads on version, 38.62 ENV-01d).
+- Editor side reuses grassBrush unchanged: `wrapLayer` over the decor layer; ops paint (toward `target*128`), erase (toward 0), reset (toward 128); record `{kind:'decor', layer, key, rect, entries}` + `applyGrassSide`.
+
+**5. Budget meter** (`tools/editor/foliageBudget.js`, pure):
+- Zone = the 38.43 band cell under the cursor. Live estimate per zone: mesh placement count, LOD0 triangles (sum of `assets.mesh(k).triCount`), collider bytes (sum of proxy bytes per species, computed once at palette load), plus the zone's last measured base bytes.
+- Caps (constants, one place): bundle <= 6 MB hard / 4 MB target (WMP-08), <= 60 meshes within 64 m (meshPlace warning), placed-mesh triangles per zone <= `FOLIAGE_TRI_CAP` = 1.5 M LOD0 (proposal, see open item). Bar green < target, amber < cap, red >= cap; a stroke that would pass a hard cap is refused with the reason.
+- "Measure" button: bakes that zone with `BandBakeJob` and reads `bundleBytes` (seconds, on demand; replaces the zone's base bytes).
+
+**6. Risks.** (1) Mesh placement count per world file grows fast; 200/stroke + the 60-in-64-m rule bound it, and saves stay JSON (ids). (2) `rebuildMeshColliders` per stroke on a full file: measure; if > 50 ms, rebuild only the touched rect (later). (3) Re-snap ties foliage to the terrain brush; placements made by hand (not `fol_`) are not re-snapped (OB-155 for those = probe-floating). (4) Decor paint above 128 can raise density above the authored layer; prob still clamps at 127 and `DECOR_MAX_ROWS` (38.62) bounds the GPU side.
+**Do not:** write into `content/` silently (save = existing editor save); let the brush set z by hand; make placements for collider-less decor; read `design/` from engine; use Math.random.
+
+**Steps (each <= 1 programmer-day; E = engine, ends in arch-review on PC-A).**
+| ID | E | What | Deps |
+|---|---|---|---|
+| ED-FOLIAGE-01 | - | kestrel-1: `foliageBrush.js` + palette validator + `content/editor/foliage.json` (2 palettes: forest edge, rock field). Node: deterministic per seed; density within 10 % of target over a 20 m disc on flat ground; every reject rule; gap rule; erase + referrer refusal; one batch record, undo restores the doc byte-identical. | none |
+| ED-FOLIAGE-02 | - | kestrel-1: editor wiring: Foliage tab, ring cursor, ghosts, stroke commit (applyEdit + livepatch + colliders once), undo/redo, save. Node (panel/undo tests) + one browser pass. | 01 |
+| ED-FOLIAGE-03 | E | kestrel-3: `grassMask` `neutral`; shared paint multiplier in `scatterDetail` + `bakeDecorMask`; `decorPaint` load + JSON; `World.rebuildDecor(rect)`. Tests: no paint = byte-identical (detail, mask, hashes); paint 0 = none, 255 = ~2x placements; CPU and mask agree per cell; rebuild touches only rect cells. | ENV-01b |
+| ED-FOLIAGE-04 | - | kestrel-1: decor mode on grassBrush (`wrapLayer` over decor layers, paint/erase/reset, `kind:'decor'` record, save `decorPaint.json`, `rebuildDecor` hook). Node: record round trip, save text canonical. | 03, 02 |
+| ED-FOLIAGE-05 | - | kestrel-1: `foliageBudget.js` + meter UI + Measure; terrain-stroke re-snap of `fol_` placements (same record). Node: meter numbers vs a hand sum; hard-cap refusal; probe-floating 0 after paint + terrain edit + undo. | 02 |
