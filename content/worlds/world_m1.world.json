@@ -14,6 +14,9 @@
     "preset": "sun"
   },
   "structures": [
+    {"id": "lintAnchorScrawl", "mesh": "quaternius/Rock_Medium_1", "origin": {"x": 929.5, "y": 973.7, "z": -83.55}, "scale": 0.5, "yawDeg": 20},
+    {"id": "lintAnchorFord", "mesh": "quaternius/Rock_Medium_1", "origin": {"x": 993.6, "y": 1077.9, "z": -87.15}, "scale": 0.4, "yawDeg": 110},
+    {"id": "lintAnchorGate", "mesh": "quaternius/Rock_Medium_1", "origin": {"x": 237.4, "y": 840.8, "z": -30.1}, "scale": 0.7, "yawDeg": 60},
     {"id": "tower", "level": "tower", "note": "level (0,0) -> world (1480, 1018); footprint 24 x 14 m = world x 1480..1504, y 1018..1032; matches overworld_far.structures[0]", "origin": {"x": 1480, "y": 1018, "z": 0}, "yawSteps": 0},
     {"id": "roadS00", "mesh": "quaternius/DeadTree_1", "origin": {"x": 1440, "y": 1046, "z": 1.61}, "yawDeg": 40},
     {"id": "roadS05", "mesh": "quaternius/Mushroom_Common", "origin": {"x": 1452, "y": 1041, "z": 2.11}, "scale": 0.36, "yawDeg": 0},

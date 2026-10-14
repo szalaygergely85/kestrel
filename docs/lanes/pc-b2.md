@@ -1183,3 +1183,10 @@ REV-ANIM-2: out-params (Float64Array scratch) for groundZ / swingPos / landing a
 
 ### GATE-FLAKY-08 (kestrel-3, 2026-10-14)
 carpetCells AC6: single 600-frame heap delta -> allocProbe (min of 5 gc'd windows x 60 frames, warm 8), bound 2 KB -> 128 B/frame; real residual 37-92 B/frame is the test caller's boxed double time arg (cast+carpetCells themselves alloc-free); frames 1200 -> ~600 total. Alone 3x ok, run-tests --filter engine/render ok.
+
+### LINT-WARN-01 (kestrel-4, 2026-10-14)
+Before -> after: R8 1->0, R10 6->0, R12 13->0, R13 3->0 (R9 76 unchanged). tools/content-lint-rules.js: R10 skips giver with objectGiver:true (R14 allows it), R8 exception chestBed (dive-guarded), R12 exception map with reasons (endMarker/relayBend/relayFord slabs, chestCrossroads stair platform, seaMonster, towerCrown, tower.*). R13: 3 Rock_Medium_1 structures (lintAnchorScrawl/Ford/Gate) beside hiddenScrawl/fordMark/sealedGate in world_m1.
+R9 for PO (not changed): top quests sq.ow.wolves 6, sq.ow.night 6, mq.ow.fence 6, sq.ow.trail 4, sq.ow.bears 4, sq.ow.boars 3; early targets west of river e.g. fordWest, postkeeper (sq.burl.scout/parcel, sq.post.spare).
+
+### QFIX-S2-FIX (kestrel-4, 2026-10-15) -> po-review
+R12 now samples w.floorAt (level/structure floors) + exact triangle tops (`meshTopAt`, stairs/slabs; bury judged at centre only); exception map cut 13 -> 4 with reasons (towerCrown + tower.ropeTether hung, relayBend/relayFord feet seated in slab, seaMonster water); `tower.note*` joins WALL_MOUNTED. content-lint exit 0, R12=0 R13=0 (R9 76 warn); fixtures added in content-lint.test.mjs; validate/canonical/check-deps OK. Files: tools/content-lint{.mjs,-rules.js,.test.mjs}, tools/prop-ground-lint.mjs (boxes carry mesh).
