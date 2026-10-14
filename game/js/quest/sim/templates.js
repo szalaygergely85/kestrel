@@ -144,6 +144,8 @@ export function expandQuest(src, ctx = {}) {
   else if (Array.isArray(src.requires)) def.requires = structuredClone(src.requires);
   const reward = expandReward(src, ctx, src.band ?? pack.band);
   if (reward) def.reward = reward;
+  for (const k of ['giverNpc', 'turnInNpc']) if (typeof src[k] === 'string' && src[k]) def[k] = src[k]; // QFIX-S5a-2 (D-098)
+  for (const k of ['objectGiver', 'pendingNpc', 'storyStart']) if (src[k] === true) def[k] = true;
   def.main = src.main === true;
   def.abandonable = !def.main && !!def.giver && src.abandonable !== false;
   const band = src.band !== undefined ? src.band : pack.band;

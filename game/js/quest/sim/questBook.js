@@ -1,6 +1,7 @@
 // QG-01 (38.35): giver quests on top of quest.js (unchanged). Pure sim: no world/DOM/clock/random.
 // Status is derived from facts + two booleans; facts count before accept (boars stay dead).
 import { createQuest, applyQuestEvent, questObjectives, stringifyQuest, questHash, validateQuestDefinition, applyKindKill, kindOf } from './quest.js';
+import { giverOf, turnInOf } from './giverResolve.js';
 
 export const UNAVAILABLE = 0, AVAILABLE = 1, ACTIVE = 2, READY = 3, DONE = 4;
 export const STATUS_NAMES = Object.freeze(['unavailable', 'available', 'active', 'ready', 'done']);
@@ -30,7 +31,7 @@ export function validateGiverQuest(def) {
     if (!Array.isArray(def.requires)) throw new Error('quest: requires must be an array');
     for (const r of def.requires) if (!r || (typeof r.flag === 'string' ? !r.flag : typeof r.quest !== 'string' || (r.done !== true && typeof r.step !== 'string'))) throw new Error('quest: invalid requires entry'); // QL-05: {flag} = main quest flag set (Burl home)
   }
-  for (const o of def.objectives) if (def.giver && o.when.type === 'deliver' && o.when.to !== (def.giver.turnIn || def.giver.npc)) throw new Error('quest: deliver.to must be the hand-in npc (giver.turnIn or giver.npc)');
+  for (const o of def.objectives) if (def.giver && o.when.type === 'deliver' && o.when.to !== (def.giver.turnIn || def.giver.npc) && o.when.to !== def.turnInNpc) throw new Error('quest: deliver.to must be the hand-in npc (giver.turnIn or giver.npc)');
   if (def.abandonable !== undefined && typeof def.abandonable !== 'boolean') throw new Error('quest: invalid abandonable');
   if (def.returnText !== undefined && typeof def.returnText !== 'string') throw new Error('quest: invalid returnText');
   if (def.giver) for (const k of ['entity', 'turnInEntity', 'text', 'turnInText', 'refuseText']) if (def.giver[k] !== undefined && (typeof def.giver[k] !== 'string' || !def.giver[k])) throw new Error('quest: invalid giver.' + k); // QL-04: object givers (inspect props)
@@ -71,7 +72,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     ids.add(def.id);
     const s = saved?.quests?.[def.id];
     const auto = !def.giver; // QL-T1: giverless
-    const e = { def, auto, giver: auto ? null : def.giver.npc, turnIn: auto ? null : def.giver.turnIn || def.giver.npc, state: createQuest(def, s ? s.quest : null), accepted: !!(s && s.accepted === true), handedIn: !!(s && s.handedIn === true), seq: 0, prev: 0, given: Array.isArray(s && s.given) ? s.given.filter(g => g && typeof g.id === 'string' && Number.isInteger(g.n) && g.n > 0) : [] };
+    const e = { def, auto, giver: auto ? null : giverOf(def), turnIn: auto ? null : turnInOf(def), state: createQuest(def, s ? s.quest : null), accepted: !!(s && s.accepted === true), handedIn: !!(s && s.handedIn === true), seq: 0, prev: 0, given: Array.isArray(s && s.given) ? s.given.filter(g => g && typeof g.id === 'string' && Number.isInteger(g.n) && g.n > 0) : [] };
     // OB-087: the saved accept order wins (the unpinned HUD track = most recently accepted must survive Continue); old saves: array order
     if (e.accepted) e.seq = (s && Number.isInteger(s.seq) && s.seq > 0) ? s.seq : ++seqCounter;
     if (e.seq > seqCounter) seqCounter = e.seq;

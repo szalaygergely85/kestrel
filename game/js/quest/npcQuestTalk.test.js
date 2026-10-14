@@ -1,6 +1,7 @@
 // QFIX-S4b / D-098 rule 4 for NPC talk: Burl (bear), Rook, Hesk, Dorrin. Real content: ready -> hand-in window first, offer -> story then offer window,
 // nothing accepted on Decline, no accept/handin flags left inside the dialogues, story lines still reachable.
 import { fileURLToPath } from 'node:url';
+import { giverOf, turnInOf } from './sim/giverResolve.js';
 import { readFileSync } from 'node:fs';
 import { makeOk } from '../../../engine/test/assert.js';
 import { compileDialogue, createDialogueRunner } from '../../../engine/index.js';
@@ -25,7 +26,7 @@ for (const n of NPCS) {
 }
 
 // 2) per quest of each NPC: stub ctl records what opens in which order
-const handles = (n) => all.filter(d => d.giver && (d.giver.npc === n || d.giver.turnIn === n)).map(d => d.id);
+const handles = (n) => all.filter(d => d.giver && (giverOf(d) === n || turnInOf(d) === n)).map(d => d.id);
 for (const n of NPCS) {
   const ids = handles(n);
   if (!ids.length) { ok(true, n + ': no quests (talk is plain)'); continue; }
@@ -38,7 +39,7 @@ for (const n of NPCS) {
     const st = {};
     // offered: story first (no accept in it), then the offer window; Decline leaves it AVAILABLE
     let bk = mk(); ok(bk.statusOf(id) === AVAILABLE, id + ' available');
-    if (d.giver.npc === n) {
+    if (giverOf(d) === n) {
       const go = () => npcQuestTalk({ book: bk, ctl, compile: compileDialogue, nameOf, npcId: n, state: st });
       ok(go() === true && log[0] === 'story:' + n, n + '/' + id + ' offer: story first ' + log);
       ok(bk.statusOf(id) === AVAILABLE, 'story alone accepts nothing'); cb();
@@ -48,7 +49,7 @@ for (const n of NPCS) {
     } else { bk.accept(id); }
     // ready: hand-in window first; "Not yet" opens no story; Complete opens the story with <npc>.after.<id> set for that open only
     bk = mk(); bk.accept(id); bk.feed({ type: 'flag:set', key: 'zz.' + id, value: true });
-    if (d.giver.turnIn === n || (!d.giver.turnIn && d.giver.npc === n)) {
+    if (turnInOf(d) === n) {
       ok(bk.statusOf(id) === READY, id + ' ready');
       log.length = 0;
       const go = () => npcQuestTalk({ book: bk, ctl, compile: compileDialogue, nameOf, npcId: n, state: st });

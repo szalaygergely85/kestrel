@@ -1,6 +1,7 @@
 // QL-T4: generated quest dialogue (entry order, override precedence, never locks) against the REAL content packs.
 // Run: node game/js/quest/questSnippets.test.js
 import assert from 'node:assert/strict';
+import { giverOf, turnInOf } from './sim/giverResolve.js';
 import { readFileSync } from 'node:fs';
 import { loadQuestFiles } from '../questBoot.js';
 import { compileDialogue } from '../../../engine/index.js';
@@ -49,7 +50,7 @@ checkNoLock(gb); compileDialogue(gb);
 
 // 2. Rook: his non-main errands get routes, main quests keep the hand-written s.mq.* scenes; meet stays the fallback
 const gr = generateAll({ rook }, defs, snip).rook;
-const rookErr = defs.filter((d) => d.giver && d.giver.npc === 'rook' && !d.main);
+const rookErr = defs.filter((d) => d.giver && giverOf(d) === 'rook' && !d.main);
 assert.ok(rookErr.length >= 4);
 for (const d of rookErr) for (const s of ['ready', 'available', 'active']) assert.ok(gr.entry.some((e) => e.requires === 'q.' + d.id + '.' + s), d.id + ' ' + s);
 assert.ok(!gr.entry.some((e) => /^q\.mq\./.test(e.requires || '')), 'no generated route for main quests');
@@ -69,12 +70,12 @@ const kinds = new Set(defs.filter((d) => d.objectives).map(kindOf)); for (const 
 assert.equal(kindOf({ objectives: [{ when: { type: 'flag', id: 'talk.rook' } }] }), 'talk'); assert.equal(kindOf({ objectives: [{ when: { type: 'flag', id: 'escort.bear.relayBend' } }] }), 'escort');
 
 // 4. every non-main quest in content gets all three entries at its giver (even without a dialogue file: synthetic one), no lock
-const npcs = [...new Set(defs.map((d) => d.giver && d.giver.npc).filter(Boolean))];
+const npcs = [...new Set(defs.map((d) => d.giver && giverOf(d)).filter(Boolean))];
 let n = 0;
 for (const npc of npcs) {
   const empty = { kind: 'dialogue', schema: 1, id: npc, speakers: { x: { label: 'X' }, you: { label: 'YOU', player: true } }, entry: [{ node: 'x.idle' }], nodes: { 'x.idle': { lines: ['...'], end: true, speaker: 'x' } } };
   const g = generateForNpc(empty, npc, defs, snip);
-  for (const d of defs) if (d.giver && d.giver.npc === npc && !d.main) { n++; for (const s of ['ready', 'available', 'active']) assert.ok(g.entry.some((e) => e.requires === 'q.' + d.id + '.' + s), npc + ' ' + d.id + ' ' + s); }
+  for (const d of defs) if (d.giver && giverOf(d) === npc && !d.main) { n++; for (const s of ['ready', 'available', 'active']) assert.ok(g.entry.some((e) => e.requires === 'q.' + d.id + '.' + s), npc + ' ' + d.id + ' ' + s); }
   assert.equal(g.entry.at(-1).node, 'x.idle', 'idle last'); checkNoLock(g); compileDialogue(g);
 }
 assert.ok(n >= 30, 'quests covered: ' + n);

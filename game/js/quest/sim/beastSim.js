@@ -484,6 +484,8 @@ export function createBeastSim(world, opts) {
   /** GOB-01b (kept as a thin alias): on -> parkSlot, off -> unparkSlot. */
   sim.setDown = function setDown(slot, on) { if (on) sim.parkSlot(slot); else sim.unparkSlot(slot); };
   /** BEAST-PARK-01: slots currently engaged (as counted by the last updateActiveSet). */
+  /** Single source for 'combat owns this slot' (routes, difficulty, director wire). */
+  sim.isEngaged = function (s) { return isEngaged(sim.state[s]); };
   sim.engagedCount = function engagedCount() { let n = 0; for (let i = 0; i < sim.count; i++) if (!sim.down[i] && isEngaged(sim.state[i])) n++; return n; };
   /** BEAST-WIRE-01: spawn-director respawn of ONE dead slot at home (any order: re-activates this exact steer slot, unlike addAgent's lowest-free rule). */
   sim.respawnSlot = function respawnSlot(slot) {
@@ -778,7 +780,7 @@ function circleStep(sim, i, px, py) {
   }
 }
 
-function enterCircle(sim, i) { sim.state[i] = STATE_CIRCLE; sim.waiting[i] = 0; sim.pathLen[i] = 0; sim.pathIdx[i] = 0; }
+function enterCircle(sim, i) { sim.state[i] = STATE_CIRCLE; sim.timer[i] = 0; sim.waiting[i] = 0; sim.pathLen[i] = 0; sim.pathIdx[i] = 0; }
 
 function checkChaseExit(sim, i, px, py) {
   const cfg = sim.cfg, steer = sim.steer;
@@ -877,12 +879,19 @@ function emitScrape(sim, i) {
   sim.events.emit('beast:scrape', p);
 }
 
+/** BEAST-04 fix: true while another live slot of the same token class (melee / swarm) waits in CIRCLE. */
+function otherWaiterSameClass(sim, i) {
+  const role = sim.tactRole[i];
+  for (let j = 0; j < sim.count; j++) if (j !== i && sim.state[j] === STATE_CIRCLE && sim.tactOn[j] && sim.tactRole[j] === role && !sim.down[j] && !sim.dormant[j]) return true;
+  return false;
+}
+
 function recoverStep(sim, i, px, py) {
   void px; void py;
   sim.timer[i]--;
   if (sim.timer[i] <= 0) {
     if (sim.tactOn[i] && (sim.tactRole[i] === TACT_MELEE || sim.tactRole[i] === TACT_SWARM)) { // BEAST-04 fix: rotate the token - release, sit out CIRCLE_COOLDOWN_STEPS as a waiter
-      sim.tactics.release(i); enterCircle(sim, i); sim.timer[i] = CIRCLE_COOLDOWN_STEPS; return;
+      if (otherWaiterSameClass(sim, i)) { sim.tactics.release(i); enterCircle(sim, i); sim.timer[i] = CIRCLE_COOLDOWN_STEPS; return; } // lone wolf keeps its attack interval
     }
     enterChase(sim, i);
     checkChaseExit(sim, i, px, py); // 29.1: "chase's lose checks apply on its first step"

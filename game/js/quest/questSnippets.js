@@ -1,3 +1,4 @@
+import { giverOf, turnInOf } from './sim/giverResolve.js';
 // QL-T4 (architecture 38.44 item 5): game-side dialogue snippet generator. For every non-main quest a giver NPC gets
 //   entry rows  q.<id>.ready | q.<id>.available | q.<id>.active  +  nodes qs.<id>.{offer.1..,accepted,active,ready}
 // inserted BEFORE the NPC's hand-written scene entries (after any leading hand-written q.* overrides).
@@ -64,7 +65,7 @@ export function generateForNpc(raw, npcId, defs, snippets, opts = {}) {
   let usedLater = false;
   for (const d of defs) {
     if (!d || d.main || !d.giver) continue;
-    const here = d.giver.npc === npcId, turn = (d.giver.turnIn || d.giver.npc) === npcId;
+    const here = giverOf(d) === npcId, turn = turnInOf(d) === npcId;
     if (!here && !turn) continue;
     const k = 'qs.' + d.id;
     const add = (state) => {

@@ -217,6 +217,7 @@ import { createSpriteSystem, spawnTestSprites } from './dev/spriteDev.js';
 import { validateBehaviours, createRipples, defineWadeSplash, createEntityTintTable, fillEntityTints, localToWorld } from '../../engine/index.js';
 import { selectHints, createHintSet, pulseStep, buildHintColors, HINT_GLYPH } from './quest/useHints.js'; // INT-HL-01
 import './quest/index.js';
+import { giverOf, turnInOf } from './quest/sim/giverResolve.js';
 import { parseDemo, filterDemoParams, demoStorage, blockFKeys, createEndCard, drawDemoBuildLine } from './demoMode.js';
 // ---- end US-010 ----
 
@@ -532,7 +533,7 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
   if (qb.giverDefs) { // QL-WIRE: errands open after Burl's first greeting; his errand lines become dialogue routes
     qb.giverDefs = gateOnMeet(qb.giverDefs);
     try { // QL-T4: every giver NPC with a dialogue gets generated ready / offer / active routes (writer lines override the snippets)
-      const ids = [...new Set(qb.giverDefs.map((d) => d.giver && d.giver.npc).concat(qb.giverDefs.map((d) => d.giver && d.giver.turnIn)))].filter((id) => id && bundle.dialogues && bundle.dialogues[id]);
+      const ids = [...new Set(qb.giverDefs.map((d) => d.giver && giverOf(d)).concat(qb.giverDefs.map((d) => d.giver && turnInOf(d))))].filter((id) => id && bundle.dialogues && bundle.dialogues[id]);
       const get = (u) => fetch(u).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
       const [snip, ...rawList] = await Promise.all([get('../content/dialogue/quest-snippets.json').catch(() => null), ...ids.map((id) => get('../content/dialogue/' + id + '.dialogue.json').catch(() => null))]);
       const raws = {}; ids.forEach((id, i) => { if (rawList[i]) raws[id] = rawList[i]; });
