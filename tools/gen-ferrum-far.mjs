@@ -7,8 +7,8 @@
 // each simplified once (simplifyTriangles) before the copies are baked, planar UVs and smoothing groups rebuilt by
 // buildMeshFromTris. Geography: design/levels/world_geo.js wall {x0 1985, amp 14, period 310} and ferrum {x 2450, y 1000,
 // tiers r 430/300/170}. Heights are COMPRESSED (impostor): Low Wards 3 courses, mid tiers 5, the Crown 10 (+ spires).
-// Also a `ferrumGlow` billboard (model ferrumLights, amber pinpoints) behind the Crown: the glow lights seen at dusk.
-// Writes the mesh pair, registers it in content/manifest.json, and replaces the "fr###" structures + "ferrumGlow" entity of
+// No glow billboard (D-086: ferrumGlow dropped, sprites looked bad); the script only removes a stale `ferrumGlow` entity.
+// Writes the mesh pair, registers it in content/manifest.json, and replaces the "fr###" structures (and drops any "ferrumGlow" entity) of
 // content/worlds/world_m1.world.json with ONE structure `fr000`. Re-runnable.
 // Usage: node tools/gen-ferrum-far.mjs [--dry-run]
 globalThis.window = globalThis.window || globalThis;
@@ -69,8 +69,6 @@ for (const sp of spec) {
     cols++;
   }
 }
-const ents = [{ id: 'ferrumGlow', type: 'billboard', model: 'ferrumLights', x: FER.x - 200, y: FER.y, z: +(base + 5 * H).toFixed(1), unlit: true, fogModel: 'far', fogMax: 0.5,
-  sizeM: { w: 640, h: 71 }, minCells: { w: 18, h: 2 }, note: 'MAP-08 Ferrum glow lights (amber pinpoints, model ferrumLights) as a world billboard behind/above the Crown (gen-ferrum-far.mjs; the removed fixed-angle horizon sprite looked bad)' }];
 // ---- bake: every slab/spire placement -> world triangles -> one mesh around PIVOT ----
 const SIMPLIFY = { [ARCH]: 24, [SOLID]: 16, [SPIRE]: 36 };            // far-only: a slab/spire is a few cells wide at 600+ m
 const MAT = { [ARCH]: 'MI_Brick', [SOLID]: 'MI_UnevenBrick', [SPIRE]: 'MI_RockTrim' };
@@ -108,8 +106,8 @@ validateMesh(full);
 const MESH_FILE = 'content/meshes/far/ferrum_far.mesh.json';
 const placed = { id: 'fr000', mesh: 'far/ferrum_far', origin: PIVOT, yawDeg: 0, collide: false, castShadow: false,
   note: 'MAP-08 far-only Ferrum + Wall silhouette, ONE baked mesh (tools/gen-ferrum-far.mjs; OB-043 / architecture.md 38.46)' };
-data.structures.push(placed); data.entities.push(...ents);
-console.log(`ferrum far: ${out.length} slabs baked (${cols} Ferrum columns, wall ${WY0}..${WY1}) -> ${tris.length} tris, base z ${base.toFixed(1)}, ${ents.length} entity`);
+data.structures.push(placed);
+console.log(`ferrum far: ${out.length} slabs baked (${cols} Ferrum columns, wall ${WY0}..${WY1}) -> ${tris.length} tris, base z ${base.toFixed(1)}`);
 if (!dry) {
   const sz = writeMeshFiles(MESH_FILE, full);
   const man = JSON.parse(fs.readFileSync('content/manifest.json', 'utf8'));

@@ -52,6 +52,7 @@ if (process.argv.includes('--check')) {
   const cur = fs.existsSync(out) ? fs.readFileSync(out, 'utf8') : '';
   if (cur !== text) { console.error('STALE: ' + path.relative(process.cwd(), out) + ' differs from the generator'); process.exit(1); }
   console.log('OK: ' + path.relative(process.cwd(), out) + ' is current');
+  if (levelStats.length) console.log('per level: ' + levelStats.join(' | '));
 } else {
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, text);
