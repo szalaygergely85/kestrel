@@ -1190,3 +1190,6 @@ R9 for PO (not changed): top quests sq.ow.wolves 6, sq.ow.night 6, mq.ow.fence 6
 
 ### QFIX-S2-FIX (kestrel-4, 2026-10-15) -> po-review
 R12 now samples w.floorAt (level/structure floors) + exact triangle tops (`meshTopAt`, stairs/slabs; bury judged at centre only); exception map cut 13 -> 4 with reasons (towerCrown + tower.ropeTether hung, relayBend/relayFord feet seated in slab, seaMonster water); `tower.note*` joins WALL_MOUNTED. content-lint exit 0, R12=0 R13=0 (R9 76 warn); fixtures added in content-lint.test.mjs; validate/canonical/check-deps OK. Files: tools/content-lint{.mjs,-rules.js,.test.mjs}, tools/prop-ground-lint.mjs (boxes carry mesh).
+
+### REV-LOGIC (kestrel-base, 2026-10-15) -> arch re-review
+engine/core/logic.js + logic.test.js: items 1-4 done (events saved [kind,argName,value]; pending rows carry rev; `r: blockId` resume; todo snapshot before phase 1); old saves migrate. logic/logicWire/farmAmbush/gameHooks green, check-deps OK.

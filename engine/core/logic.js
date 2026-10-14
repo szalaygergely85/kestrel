@@ -103,7 +103,8 @@ export function compileLogic(blocks, vocab, opts = {}) {
   const kindNames = Object.keys(vocab.events);
   const kindOf = new Map(kindNames.map((n, i) => [n, i]));
   const argIds = new Map();
-  const argId = (name, value) => { const k = name + '\u0000' + value; let v = argIds.get(k); if (v === undefined) { v = argIds.size + 1; argIds.set(k, v); } return v; };
+  const argRev = [null]; // argId -> [name, value] (index-free save format)
+  const argId = (name, value) => { const k = name + '\u0000' + value; let v = argIds.get(k); if (v === undefined) { v = argIds.size + 1; argIds.set(k, v); argRev[v] = [name, value]; } return v; };
   const compiled = blocks.map((b) => {
     const spec = vocab.events[b.when.on];
     let key = -1; // -1 = wildcard (no key arg given)
@@ -123,6 +124,8 @@ export function compileLogic(blocks, vocab, opts = {}) {
     kindId: (name) => (kindOf.has(name) ? kindOf.get(name) : -1),
     /** argId of an event argument value; 0 = not used by any block (matches wildcards only). */
     argId: (name, value) => argIds.get(name + '\u0000' + value) || 0,
+    /** [name, value] of an argId (for saves), null for 0/unknown. */
+    argName: (id) => argRev[id] || null,
   };
 }
 
@@ -173,6 +176,8 @@ export function createLogic(program, { maxPerStep = 32, ring = 64, pending = 32,
   /** One fixed step. Returns the number of actions run. */
   function step(ctx) {
     tick++; used = 0;
+    // snapshot first: events pushed by actions of this step (delayed ones included) wait for the next step
+    let todo = count;
     // 1) delayed actions: count down, run the due ones in insertion order (compacting in place)
     let w = 0;
     const n0 = pCount;
@@ -185,7 +190,6 @@ export function createLogic(program, { maxPerStep = 32, ring = 64, pending = 32,
     for (let i = n0; i < pCount; i++) { pB[w] = pB[i]; pA[w] = pA[i]; pL[w] = pL[i]; w++; }
     pCount = w;
     // 2) events present at step start (later pushes wait for the next step)
-    let todo = count;
     while (todo > 0) {
       const a = evA[head];
       const list = program.byKind[evK[head]];
@@ -209,10 +213,16 @@ export function createLogic(program, { maxPerStep = 32, ring = 64, pending = 32,
     const b = {};
     for (let i = 0; i < nb; i++) b[program.blocks[i].id] = { n: fired[i], rev: program.blocks[i].rev };
     const p = [];
-    for (let i = 0; i < pCount; i++) p.push([program.blocks[pB[i]].id, pA[i], pL[i]]);
-    const e = []; // queued events: [kindName, argId] (argIds are stable for unchanged content)
-    for (let i = 0; i < count; i++) { const t = (head + i) % ring; e.push([program.kindNames[evK[t]], evA[t]]); }
-    return { v: 1, b, p, e, g: JSON.parse(JSON.stringify(extra)) };
+    for (let i = 0; i < pCount; i++) p.push([program.blocks[pB[i]].id, pA[i], pL[i], program.blocks[pB[i]].rev]);
+    const e = []; // queued events: [kindName, argName|null, value|null] (never intern ids)
+    for (let i = 0; i < count; i++) {
+      const t = (head + i) % ring, an = program.argName(evA[t]);
+      e.push([program.kindNames[evK[t]], an ? an[0] : null, an ? an[1] : null]);
+    }
+    const out = { v: 1, b, p, e, g: JSON.parse(JSON.stringify(extra)) };
+    // head event partly handled after a deferral: next block to run, by id
+    if (count > 0 && resume > 0) { const list = program.byKind[evK[head]]; if (resume < list.length) out.r = program.blocks[list[resume]].id; }
+    return out;
   }
 
   function load(obj) {
@@ -228,9 +238,20 @@ export function createLogic(program, { maxPerStep = 32, ring = 64, pending = 32,
     for (const row of obj.p || []) {
       const bi = program.idIndex.get(row[0]);
       if (bi === undefined || row[1] >= program.blocks[bi].acts.length || pCount >= pending) continue;
+      if (row[3] !== undefined && row[3] !== program.blocks[bi].rev) continue; // block edited: action index may point elsewhere
       pB[pCount] = bi; pA[pCount] = row[1]; pL[pCount] = row[2]; pCount++;
     }
-    for (const row of obj.e || []) { const k = program.kindId(row[0]); if (k >= 0) push(k, row[1] | 0); }
+    for (const row of obj.e || []) {
+      const k = program.kindId(row[0]);
+      if (k < 0) continue;
+      if (row.length >= 3) push(k, row[1] === null ? 0 : program.argId(row[1], row[2])); // 0 = unused value: wildcards only
+      else if (!row[1]) push(k, 0); // old format stored intern ids (index-keyed): only the wildcard form is trusted
+    }
+    if (typeof obj.r === 'string' && count > 0) {
+      const list = program.byKind[evK[head]], bi = program.idIndex.get(obj.r);
+      const j = bi === undefined ? -1 : list.indexOf(bi);
+      if (j > 0) resume = j;
+    }
     Object.assign(extra, JSON.parse(JSON.stringify(obj.g || {})));
   }
 
