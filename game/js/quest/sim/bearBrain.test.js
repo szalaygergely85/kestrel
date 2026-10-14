@@ -31,11 +31,11 @@ import { createTargeting } from '../targeting.js';
 import { createVitals } from './vitals.js';
 import { VITALS_DEFAULTS } from './vitalsConfig.js';
 import { presentBeasts, frameTFromElapsed, DIE_DURATIONS } from '../beastView.js';
-import { ensureBears, BEAR_TUNING, BEAR_MODEL, isBearEntity } from './bearBrain.js';
+import { ensureBears, BEAR_TUNING, BEAR_MODEL, isBearEntity, bearPicksBite } from './bearBrain.js';
 import { BEAST_DEFAULTS } from './beastConfig.js';
 import { LOOT_PROMPT } from './lootConfig.js';
 import {
-  createBeastSim, STATE_WANDER, STATE_CHASE, STATE_WINDUP, STATE_CHARGE, STATE_RETURN, STATE_RECOVER,
+  createBeastSim, STATE_WANDER, STATE_CHASE, STATE_WINDUP, STATE_CHARGE, STATE_RETURN, STATE_RECOVER, STATE_BITE,
 } from './beastSim.js';
 
 paletteMod; detailPassMod; terrainMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; boarMod;
@@ -196,6 +196,44 @@ const gz = (w, x, y) => w.terrain.heightAt(x, y);
   const e = w.entity('blackBear1');
   ok('ensureBears converts one anchor', n === 1 && e.components.brain.species === 'bear' && e.components.voxel.model === 'bearBlack');
   ok('ensureBears no-op without anchors', ensureBears(buildWorld([])) === 0);
+}
+
+// 6. BEAR-BITE: close-range lunge-bite - timing mirrors blackBearFx.bite, one hit at ~200 ms, deterministic, Burl never bites
+{
+  const fx = assets.blackBearFx && assets.blackBearFx.bite;
+  ok('bite constants mirror blackBearFx.bite', !fx || (fx.ms === BEAR_TUNING.biteMs && fx.snapMs === BEAR_TUNING.biteHitMs && fx.hearts === BEAR_TUNING.swipeHearts), JSON.stringify(fx));
+  // player stands next to the bear's home; trace = [step, state, hit count] at every state change
+  const run = (ents, seed) => {
+    const { sim, hits } = freshSim(ents, seed);
+    const z = gz(sim.world, PX, PY);
+    const bx = ents[0].x, by = ents[0].y;
+    const trace = [], biteHits = []; let prev = -1, biteStart = -1, bites = 0;
+    for (let t = 0; t < 3000; t++) {
+      const nh = hits.length;
+      sim.step(bx + 1.3, by, z);
+      const st = sim.state[0];
+      if (st === STATE_BITE && prev !== STATE_BITE) { biteStart = t; bites++; }
+      for (let k = nh; k < hits.length; k++) if (hits[k].target === 'player' && st === STATE_BITE) biteHits.push(t - biteStart);
+      if (st !== prev) trace.push(t + ':' + st);
+      prev = st;
+    }
+    return { trace: trace.join(','), bites, biteHits, sim };
+  };
+  const e1 = () => [bearEntity('blackBear1', PX - 30, PY)];
+  const a = run(e1(), 11), b = run(e1(), 11);
+  ok('bite happens', a.bites > 0, `bites ${a.bites}`);
+  ok('bite hit lands exactly once per bite', a.biteHits.length > 0 && a.biteHits.length <= a.bites, JSON.stringify(a.biteHits));
+  ok('bite hit at ~200 ms (step 12)', a.biteHits.every((s) => s >= 11 && s <= 13), JSON.stringify(a.biteHits));
+  ok('same trace two runs', a.trace === b.trace && a.trace.length > 0);
+  ok('bearPicksBite deterministic and mixed', bearPicksBite(0, 3) === bearPicksBite(0, 3) && [0, 1, 2, 3, 4, 5, 6, 7].some((n) => bearPicksBite(0, n)) && [0, 1, 2, 3, 4, 5, 6, 7].some((n) => !bearPicksBite(0, n)));
+  // Burl (friendly bear model 'bear', same brain species) never bites
+  const burl = bearEntity('burl1', PX - 30, PY); burl.components.voxel.model = 'bear';
+  const c = run([burl], 11);
+  ok('Burl never bites', c.bites === 0, `bites ${c.bites}`);
+  // 0 allocations per step while biting
+  const { sim } = freshSim(e1(), 11); const z = gz(sim.world, PX, PY);
+  for (let t = 0; t < 600; t++) sim.step(PX - 30 + 1.3, PY, z);
+  if (global.gc) { global.gc(); const m0 = process.memoryUsage().heapUsed; for (let t = 0; t < 600; t++) sim.step(PX - 30 + 1.3, PY, z); ok('bite steps ~0 alloc', process.memoryUsage().heapUsed - m0 < 200000, String(process.memoryUsage().heapUsed - m0)); }
 }
 
 console.log(`${pass} passed, ${fail} failed.`);
