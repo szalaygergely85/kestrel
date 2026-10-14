@@ -260,7 +260,7 @@ export function initMapCard(assets, sceneCols, sceneRows, chartOptions = null) {
   // WM-10: `worldMap {geo, names, getSeen}` = the whole-map view (default in the game); else the baked chart card (?map=chart)
   if (chartOptions?.worldMap) {
     const wm = chartOptions.worldMap, g = assets.uiStyle.uiGrid, sz = worldMapSize(worldBox(wm.geo), g.cols, g.rows);
-    chartView = createWorldMapCard(wm.geo, wm.names, assets.palette, { getSeen: wm.getSeen, w: sz.w, h: sz.h, travel: chartOptions.travel, travelHeader: chartOptions.travelHeader, lockUnseen: !!wm.lockUnseen });
+    chartView = createWorldMapCard(wm.geo, wm.names, assets.palette, { getSeen: wm.getSeen, w: sz.w, h: sz.h, travel: chartOptions.travel, travelHeader: chartOptions.travelHeader, lockUnseen: !!wm.lockUnseen, getPois: wm.getPois });
     for (const m of chartOptions.markers || []) chartView.setMarker(m.x, m.y, m.kind);
   } else chartView = chartOptions ? createChartCard(chartOptions.chart, assets.palette, chartOptions) : null;
   panel = createPanel(chartView ? chartView.art : art, {

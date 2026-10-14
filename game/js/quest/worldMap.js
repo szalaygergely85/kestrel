@@ -34,7 +34,7 @@ function inPoly(P, x, y) {
 
 /** @param {Object} geo world_geo (bounds, coast, regions)  @param {Object} names region id -> approved name | null
  *  @param {Object} palette {colors}  @param {{getSeen:function():string[]|undefined, w:number, h:number, travel?:Object, travelHeader?:string}} o */
-export function createWorldMapCard(geo, names, palette, { getSeen, w, h, travel = null, travelHeader = 'Travel: press a number', lockUnseen = false }) {
+export function createWorldMapCard(geo, names, palette, { getSeen, w, h, travel = null, travelHeader = 'Travel: press a number', lockUnseen = false, getPois = null }) {
   const box = worldBox(geo), innerW = w - 2, innerH = h - 2, N = innerW * innerH, spanX = box.x1 - box.x0, spanY = box.y1 - box.y0;
   const col = (k, g = 1) => { const c = hexToRgb(palette.colors[k] || '#888888'); return [c[0] * g, c[1] * g, c[2] * g]; };
   const C = { edge: col('chartEdge', 0.8), land: col('pencil', 0.8), fog: col('chartInk', 0.28), sea: col('aetherDim', 0.7), bound: col('ferrum'),
@@ -97,6 +97,7 @@ export function createWorldMapCard(geo, names, palette, { getSeen, w, h, travel 
     for (let k = 0; k < statics.length; k += 2) { const i = index(statics[k], statics[k + 1]); if (i >= 0) put(i, staticKinds[k >> 1] === 'waystone' ? 79 : 111, staticKinds[k >> 1] === 'waystone' ? C.waystone : C.relay); }
     for (let k = 0; k < dig.length; k += 2) { const i = index(dig[k], dig[k + 1]); if (i >= 0) put(i, 49 + (k >> 1), C.waystone); }
     for (let k = 0; k < quest.length; k += 2) { const i = index(quest[k], quest[k + 1]); if (i >= 0) put(i, questKinds[k >> 1] === 'quest' ? 33 : 63, C.quest); }
+    if (getPois) for (const q of getPois()) { const i = index(q.x, q.y); if (i >= 0) put(i, 42, C.name); } // POI-03: '*' per found point of interest (no counts)
     const row = (h - 1) * w, st = (w - travelLine.length) >> 1; // travel line centred on the bottom border
     for (let q = -1; q <= travelLine.length && travelLine; q++) put(row + st + q, q < 0 || q >= travelLine.length ? 32 : travelLine.charCodeAt(q), C.name);
     art.codes.set(baseCodes); art.rgb.set(baseRgb); previous = -1; dirty = false;

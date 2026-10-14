@@ -12,11 +12,14 @@ import { CHEST_DEFAULTS as C } from '../quest/sim/lootConfig.js';
 export const ACTIVE_R = 200, HYST = 20, RESPAWN_DAYS = 3, SAVE_KEY = 'poi.v1';
 
 export function propId(def, k) { return `${def.id}.p${k}`; }
+/** OB-152: a POI chest is earned - only at a POI with a fight / guardian or a puzzle; a loose chest is neither shown nor lootable. */
+export function earned(def) { return !!(def.fight || def.guardian || def.kind === 'puzzle'); }
 
 /** Entity records for one POI's props (pure). `chestDone` shows the chest open. */
 export function propEntities(def, groundAt, chestDone) {
   const out = [];
   def.props.forEach((p, k) => {
+    if (p.chest && !earned(def)) return;
     const x = def.at[0] + p.at[0], y = def.at[1] + p.at[1], z = groundAt ? groundAt(x, y) : 0;
     const components = {};
     if (p.model) components.voxel = { model: p.model, anim: p.chest && chestDone ? 'opened' : p.anim || 'idle', loop: !p.chest };
@@ -30,23 +33,27 @@ export function propEntities(def, groundAt, chestDone) {
 /**
  * @param {{world:{addEntity:Function, removeEntity:Function}, defs:any[], state:object, terrain?:{groundAt:Function}}} o
  */
-export function createPoiWire({ world, defs, state, terrain }) {
+export function createPoiWire({ world, defs, state, terrain, openedOf = null, onChange = null }) {
   const saved = (state[SAVE_KEY] && typeof state[SAVE_KEY] === 'object') ? state[SAVE_KEY] : (state[SAVE_KEY] = {});
   const live = new Set(); // POI ids whose props exist now
   const byId = new Map(defs.map((d) => [d.id, d]));
   const groundAt = terrain && terrain.groundAt ? (x, y) => terrain.groundAt(x, y) : null;
-  const rec = (id) => saved[id] || (saved[id] = { done: false, guardianDead: false, fightClearedAtDay: -1 });
-  const activate = (d) => { for (const e of propEntities(d, groundAt, !!(saved[d.id] && saved[d.id].done))) world.addEntity(e); live.add(d.id); };
-  const deactivate = (d) => { d.props.forEach((p, k) => world.removeEntity(propId(d, k))); live.delete(d.id); };
+  const rec = (id) => saved[id] || (saved[id] = { done: false, guardianDead: false, fightClearedAtDay: -1, found: false });
+  // POI-CHEST-01: a chest opened in the chest sim (saveRelay.openedChests, persisted) shows open and counts as done; `onChange(liveChestDefs)` tells the chest hook.
+  const chestOpened = (d) => { const o = openedOf ? openedOf() : null; return !!(o && d.props.some((p, k) => p.chest && o.indexOf(propId(d, k)) >= 0)); };
+  const activate = (d) => { for (const e of propEntities(d, groundAt, !!(saved[d.id] && saved[d.id].done) || chestOpened(d))) world.addEntity(e); live.add(d.id); };
+  const deactivate = (d) => { d.props.forEach((p, k) => { if (!p.chest || earned(d)) world.removeEntity(propId(d, k)); }); live.delete(d.id); };
   const pw = {
     defs,
     /** Call per sim step (cheap: one distance test per POI). Returns the number of live POIs. */
     step(px, py) {
+      let changed = false;
       for (const d of defs) {
         const dist = Math.hypot(d.at[0] - px, d.at[1] - py), on = live.has(d.id);
-        if (!on && dist <= ACTIVE_R) activate(d);
-        else if (on && dist > ACTIVE_R + HYST) deactivate(d);
+        if (!on && dist <= ACTIVE_R) { activate(d); changed = true; }
+        else if (on && dist > ACTIVE_R + HYST) { deactivate(d); changed = true; }
       }
+      if (changed && onChange) onChange(pw.chestDefs(true));
       return live.size;
     },
     isLive(id) { return live.has(id); },
@@ -64,10 +71,13 @@ export function createPoiWire({ world, defs, state, terrain }) {
       return day - r.fightClearedAtDay >= RESPAWN_DAYS;
     },
     markFightCleared(id, day) { if (byId.has(id)) rec(id).fightClearedAtDay = day; },
-    /** Chest defs (chestDefs.js shape) for every POI chest prop, for the chest hook. */
-    chestDefs() {
+    isFound(id) { return !!(saved[id] && saved[id].found); },
+    markFound(id) { if (byId.has(id)) rec(id).found = true; },
+    /** Chest defs (chestDefs.js shape) for every EARNED POI chest prop (OB-152), for the chest hook. */
+    chestDefs(liveOnly = false) {
       const out = [], f = [0, 0];
       for (const d of defs) {
+        if (!earned(d) || (liveOnly && !live.has(d.id))) continue;
         d.props.forEach((p, k) => {
           if (!p.chest) return;
           const x = d.at[0] + p.at[0], y = d.at[1] + p.at[1];
@@ -84,8 +94,8 @@ export function createPoiWire({ world, defs, state, terrain }) {
 }
 
 /** main.js helper: generate the POIs for a loaded world and wire them (null when the world has no geo / terrain grid). */
-export function bootPoiWire(world, geo, worldDef, seed = 12) {
+export function bootPoiWire(world, geo, worldDef, seed = 12, hooks = {}) {
   if (!geo || !world.terrain) return null;
   const defs = generatePois({ geo, terrain: world.terrain, seed, avoid: authoredPoints(worldDef.entities) });
-  return defs.length ? createPoiWire({ world, defs, state: world.state, terrain: world.terrain }) : null;
+  return defs.length ? createPoiWire({ world, defs, state: world.state, terrain: world.terrain, openedOf: hooks.openedOf, onChange: hooks.onChange }) : null;
 }

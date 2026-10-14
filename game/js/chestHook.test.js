@@ -175,3 +175,19 @@ if (typeof global.gc === 'function') {
 }
 
 console.log('chestHook: interact opens once, item added once, clip driven, save-relay/seam events forwarded, restored-open, card dismiss, no-defs, idle GC PASS');
+
+// POI-CHEST-01: late defs (poiWire.chestDefs(true)) become openable; replaced as a whole; an opened one stays opened across a rebuild.
+{
+  const late = { ...def, id: 'poi.late.p0', propId: 'chestEntity1' };
+  const lr = rig([]);
+  lr.hook.setExtraDefs([late]);
+  lr.state.playerYawDeg = 180; lr.state.interactPressed = true; lr.state.interactRaw = true;
+  lr.tick(1 / 60); lr.state.interactPressed = false; lr.state.interactRaw = false; lr.tick(C.openSeconds + 0.01);
+  assert.equal(countOf(lr.inv, 'brass.scrap'), 2, 'late chest opens, loot in the pack');
+  lr.hook.setExtraDefs([late, { ...late, id: 'poi.other.p0', propId: 'nope' }]); // another POI spawns: rebuild keeps the opened one
+  lr.state.interactPressed = true; lr.state.interactRaw = true; lr.tick(1 / 60);
+  assert.equal(lr.log.filter((e) => e.name === 'chest:opening').length, 1, 'opened late chest stays opened after a rebuild');
+  lr.hook.setExtraDefs([]);
+  assert.doesNotThrow(() => lr.tick(1 / 60), 'removing all late defs is safe');
+}
+console.log('chestHook late defs ok');
