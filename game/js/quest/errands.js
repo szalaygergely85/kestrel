@@ -50,7 +50,7 @@ export function bannerLines(def, action, wrap, maxRows = 10) {
 }
 
 const ESCORT_R = 14;
-const MQ = ['mq.bend.call', 'mq.ford.mirror', 'mq.ow.names', 'mq.ow.relay']; // + Ch3 (Hesk / Dorrin): names + relay run through the dialogue flags // Rook's main quests (world.state keys 'mq.<id>.*' = dialogue 's.mq.<id>.*')
+const MQ = ['mq.bend.call', 'mq.river.road', 'mq.ford.stones', 'mq.ford.mirror', 'mq.smoke', 'mq.ow.names', 'mq.ow.relay']; // + Ch3 (Hesk / Dorrin): names + relay run through the dialogue flags // Rook's main quests (world.state keys 'mq.<id>.*' = dialogue 's.mq.<id>.*')
 const PULSE_DELAY = 4; // seconds after the Bend relay wakes (questline: flag relay.bend.pulseSeen)
 const ACTIVE = 2; // questBook statusOf: 0 unavailable, 1 available, 2 active, 3 ready, 4 done
 /**

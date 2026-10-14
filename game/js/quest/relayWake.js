@@ -11,7 +11,7 @@ export const FLAG_ATTUNED = 'aether.attuned';
 export const PROMPT_WAKE = '[E] Hold up the crystal'; // story.md q06 prompt.relay.wake
 export const PROMPT_TOUCH = '[E] Touch the waystone';    // WS1-W1 prompt.relay.touch
 // story.md q06 hint.relay.nocrystal (PC-B writer 2026-10-10, owner-authorised while PC-A offline).
-export const HINT_NO_CRYSTAL = { key: 'hint.relay.nocrystal', text: 'Cold stone. Your hands are not enough.' };
+export const HINT_NO_CRYSTAL = { key: 'hint.relay.nocrystal', text: 'Its glass is gone from the mount.' };
 // Wake notice (story.md q06 notice.relay.title / notice.relay); CH1-04a replaces the toast with the notice view.
 export const NOTICE = ['WAYSTONE AWAKENED', 'Travel unlocked.', 'You can now travel between', 'awakened Waystones.'];
 export const FLAG_STONE_TOLD = 'dlg.bear.stone.told'; // set by Burl's stone talk (bear.dialogue.json)

@@ -962,3 +962,8 @@ OB-155s (check only, no change): voxelPool picks the nearest-cap (16 DDA / 48 me
 - MQ_AUTO removed (errands.js); Rook (bend.call, ford.mirror) + Hesk (ow.names, ow.relay) offers are now Accept/Not yet choices; hand-in talks added for mirror (Rook), names + relay (Hesk). Tests updated (rookDialogue, rookQuests, ch3names) + new objectGiver case in questBook.test.js.
 - content-lint R14: 95 before -> 92 after (giverless quests + object givers still to move in S5a-2..5). Suites: 83/84 PASS; spawnDirector.test.js FAIL = BEAST-06a (not touched here, not checked on baseline).
 - Not browser-checked: the `obj.<id>` dialogue open path (needs a flagged objectGiver quest, none exists yet).
+
+### QFIX-S5a-4 + S5a-5 (kestrel-1, 2026-10-14)
+- mq.river.road / mq.ford.stones / mq.smoke: `giver: rook`, `main: true`, `returnText`; river.road now requires bend.call done (chain: call -> road -> stones -> mirror -> smoke, each Accept/Not yet + hand-in talk at Rook). errands.js MQ list extended (mainSync flags); rook.dialogue.json entries + nodes added; rookQuests.test.js walks the chain. R14: 92 -> 89 (the three ids gone). Filtered suites + validate-content PASS.
+- OB-165: relayWake HINT_NO_CRYSTAL text -> "Its glass is gone from the mount." (mirror flow already gates the mount; 1-line fix).
+- NEEDS WRITER: rook.road.1/.2/.active/.ready/.ready2, rook.stones.* (same suffixes), rook.smoke.* (placeholder Rook lines written by me). Not done: `m1` still giverless (spine quest, not in these rows); the queue rows S5a-4/5 were not in this clone's pc-b-queue.md, worked from the prompt.
