@@ -95,7 +95,7 @@ import { watchDeviceLost } from './deviceLost.js'; // S8-B1-10 (38.10c): device-
 import { createQuestPickups, itemLabel } from './questPickups.js'; // QUESTS-01
 import { setInspectSink, wrapText } from './quest/questInspect.js'; // QL-04
 import { createErrands, labelOf, gateOnMeet, isWorn, bannerLines } from './quest/errands.js'; // QL-WIRE: Ch1-2 errands
-import { openQuestWindow } from './quest/questWindow.js'; // QFIX-S4: D-098 offer / hand-in windows
+import { openQuestWindow, npcQuestTalk } from './quest/questWindow.js'; // QFIX-S4: D-098 offer / hand-in windows
 import { generateAll } from './quest/questSnippets.js'; // QL-T4: generated q.<id>.* dialogue routes
 import { createHeartHook } from './heartHook.js'; // QL-08: heart pieces -> max HP
 import { createChestHook } from './chestHook.js'; // S8-B1-04: chest sim + item-get card, through the seam only
@@ -1642,6 +1642,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         questFlag: saveRelay ? (k) => saveRelay.quest.questFlag(k) : undefined, // CH1-06: `s.*` dialogue keys
         onTalk: (npcId) => { errands.talked(npcId); if (outwall) outwall.talked(npcId); if (outLife) outLife.talked(npcId); }, // OUT-01 ow.<npc>.met; QL-WIRE: talk.<site> flag for 'talk' errands
         onFlag: (k, v) => { if (k.charCodeAt(0) !== 113 || k.charCodeAt(1) !== 46) gameHooks.emitSimple('flag:set', 'dlg.' + k, v); } });
+      dialogueCtl.questGate = (nid) => { const qb = saveRelay && saveRelay.quest.book; return !!qb && npcQuestTalk({ book: qb, ctl: dialogueCtl, compile: compileDialogue, nameOf: (i) => itemLabel(itemDefs, i), npcId: nid, state: world.state }); }; // QFIX-S4b / D-098: quest windows around the NPC talk
       setDialogueApi(dialogueCtl); window.__debug.dialogue = dialogueCtl; // tools/verify-ch12-run.mjs: read-only test hook
       errands.load(world); // QL-WIRE: [E] Inspect on post / notePost
       bearTurn = createNpcTurn(world, 'bear'); // NPC-BEAR-01: null when the world has no bear

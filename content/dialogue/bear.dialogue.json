@@ -7,6 +7,9 @@
     "you": {"label": "YOU", "player": true}
   },
   "entry": [
+    {"node": "bear.blue.ready", "requires": "bear.after.sq.burl.blue"},
+    {"node": "bear.q.ready.1", "requires": "bear.after.burl.boars"},
+    {"node": "bear.meet.1", "requires": "bear.after.tower.blade"},
     {"node": "bear.blue.ready", "requires": "q.sq.burl.blue.ready"},
     {"node": "bear.blue.active", "requires": "q.sq.burl.blue.active"},
     {"node": "bear.blue.offer.1", "requires": "q.sq.burl.blue.available"},
@@ -31,7 +34,7 @@
       "The boars trampled half my bushes, sky-cub.",
       "The blue sprigs by the north trees still stand."
     ], "next": "bear.blue.offer.2", "speaker": "burl"},
-    "bear.blue.offer.2": {"choices": [{"next": "bear.blue.accepted", "setFlag": "q.sq.burl.blue.accept", "text": "I'll fetch them."}, {"next": "bear.q.later", "text": "Not yet."}], "lines": [
+    "bear.blue.offer.2": {"next": "bear.blue.accepted", "lines": [
       "Six would do. Don't eat any. I'll know."
     ], "speaker": "burl"},
     "bear.blue.accepted": {"end": true, "lines": [
@@ -43,7 +46,7 @@
     "bear.blue.ready": {"end": true, "lines": [
       "Oh, look at them. Not one nibbled.",
       "Found this in the roots. Warm. Yours."
-    ], "setFlag": "q.sq.burl.blue.handin", "speaker": "burl"},
+    ], "speaker": "burl"},
     "bear.meet.1": {"clip": "wave", "lines": [
       "Quite a fall you took, sky-cub."
     ], "next": "bear.meet.2", "speaker": "burl"},
@@ -62,7 +65,7 @@
     ], "next": "bear.meet.6", "speaker": "burl"},
     "bear.meet.6": {"lines": [
       "This isn't possible."
-    ], "next": "bear.meet.7", "setFlag": "q.tower.blade.handin", "speaker": "you"},
+    ], "next": "bear.meet.7", "speaker": "you"},
     "bear.meet.7": {"choices": [{"next": "bear.crash.1", "text": "You saw me fall?"}, {"next": "bear.q.offer.1", "text": "I'm going west."}], "lines": [
       "You folk from the loud hill are odd.",
       "You believe a balloon can fly,",
@@ -92,7 +95,7 @@
     "bear.q.offer.4": {"lines": [
       "A light. It blinks in the distance."
     ], "next": "bear.q.offer.5", "speaker": "you"},
-    "bear.q.offer.5": {"choices": [{"next": "bear.q.accepted", "setFlag": "q.burl.boars.accept", "text": "I'll clear the path."}, {"next": "bear.q.later", "text": "Not yet."}], "lines": [
+    "bear.q.offer.5": {"next": "bear.q.accepted", "lines": [
       "Ah. The far light.",
       "There is an old Waystone past the trees.",
       "Might guide you. But first, those boars need moving."
@@ -140,7 +143,7 @@
     ], "next": "bear.q.ready.6", "speaker": "burl"},
     "bear.q.ready.6": {"clip": "wave", "lines": [
       "You've done an old bear a kindness."
-    ], "next": "bear.follow.1", "setFlag": "q.burl.boars.handin", "speaker": "burl"},
+    ], "next": "bear.follow.1", "speaker": "burl"},
     "bear.follow.1": {"lines": [
       "Come along, sky-cub.",
       "I'll show you that old stone."
