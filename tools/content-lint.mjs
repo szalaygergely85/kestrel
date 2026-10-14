@@ -117,6 +117,7 @@ export const RULES = {
     const out = [];
     let givers = 0, objGivers = 0;
     for (const q of c.quests) {
+      if (q.umbrella) continue; // spine umbrella (sections of silent sub-quests, no giver of its own)
       const g = q.giver?.npc, r = q.giver?.turnIn || g;
       if (!g) { out.push(F('R14', q.id, '-', '-', 'quest has no giver: needs a character giver with Accept/Exit')); continue; }
       givers++;
@@ -124,6 +125,7 @@ export const RULES = {
         const isChar = c.characters.has(id);
         if (!isChar && !(q.objectGiver && role === 'giver')) out.push(F('R14', q.id, '-', '-', `${role} "${id}" is not a character (set objectGiver: true to allow)`));
         const p = c.pos?.(id);
+        if (!p && role === 'giver' && q.objectGiver && c.levelIds?.has(id)) continue; // level prop (tower), placed in its own level file
         if (!p) { out.push(F('R14', q.id, '-', '-', `${role} "${id}" does not resolve to a placed entity`)); continue; }
         // walkable ground / height: R5 checks every giver + turn-in entity (buildContext adds them to giverIds)
       }
@@ -267,12 +269,12 @@ export async function buildContext(opts = {}) {
   // R14 inputs: pack quests get Accept/Exit from quest-snippets.json (generated text); legacy ones need a hand-written accept flag/choice in a dialogue file
   const dlgRaw = jsonFiles(path.join(root, 'content/dialogue')).map((f) => fs.readFileSync(f, 'utf8')).join(' ');
   const MQ_AUTO = new Set(); // OB-155m: MQ_AUTO removed from errands.js (no auto hand-ins)
-  const acceptOf = (q) => !!q.giver?.npc && (packIds.has(q.id) ? true : dlgRaw.includes(`s.${q.id}.accept`) || new RegExp(String.raw`"(quest|startQuest|accept)"\s*:\s*"` + q.id.replace(/\./g, String.raw`\.`) + '"').test(dlgRaw));
+  const acceptOf = (q) => !!q.giver?.npc && (packIds.has(q.id) || q.objectGiver ? true : dlgRaw.includes(`s.${q.id}.accept`) || dlgRaw.includes(`"q.${q.id}.accept"`) || new RegExp(String.raw`"(quest|startQuest|accept)"\s*:\s*"` + q.id.replace(/\./g, String.raw`\.`) + '"').test(dlgRaw));
   const qs = quests.map((q) => {
     const ids = new Set([q.giver?.npc, q.giver?.turnIn]);
     for (const o of q.objectives || []) { const wn = o.when || {}; if (wn.type === 'area' || wn.type === 'deliver') ids.add(wn.type === 'area' ? wn.id : wn.to); for (const b of wn.ids || []) ids.add(b); }
     const targets = [...ids].filter(Boolean).map((id) => ({ id, ...(posAny(id) || {}) })).filter((t) => t.x !== undefined);
-    return { id: q.id, band: q.band, requires: q.requires, giver: q.giver, objectGiver: !!q.objectGiver, accept: acceptOf(q), auto: MQ_AUTO.has(q.id), reward: q.reward, objectives: q.objectives, targets, early: !gated(q) };
+    return { id: q.id, umbrella: Array.isArray(q.sections) && q.sections.length > 0 && !q.giver, band: q.band, requires: q.requires, giver: q.giver, objectGiver: !!q.objectGiver, accept: acceptOf(q), auto: MQ_AUTO.has(q.id), reward: q.reward, objectives: q.objectives, targets, early: !gated(q) };
   });
 
   // R8: chests vs enemies (authored + regional herds + goblin camps + far camps), puzzles, givers
@@ -311,7 +313,7 @@ export async function buildContext(opts = {}) {
 
   return {
     entSupport, anchors, entities, structures: def.structures, floating, texts, jsTexts, quests: qs, itemDefs: assets.items?.defs || (await loadDesignAssets()).items?.defs,
-    labelOf, giverIds, pos, groundAt: gz, walkable, characters, chests: entities.filter((e) => /^chest/.test(e.id)), guards,
+    labelOf, giverIds, pos, groundAt: gz, walkable, characters, levelIds: new Set((JSON.parse(fs.readFileSync(path.join(root, 'content/levels/tower.level.json'), 'utf8')).props || []).map((p) => p.id)), chests: entities.filter((e) => /^chest/.test(e.id)), guards,
     riverX: (y) => T.util.riverX(y), riverHalf: 10,
   };
 }

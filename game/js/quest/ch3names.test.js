@@ -24,16 +24,19 @@ er.load({ state, get: () => null, interactables: [], addInteractable() {} });
 const small = { kind: 'manifest', schema: 1, id: 't', contentVersion: 1, files: ['dialogue/hesk.dialogue.json', 'dialogue/dorrin.dialogue.json'] };
 const bundle = await loadContentPack(new URL('content/manifest.json', ROOT).href, { fetchText: async (u) => (u.endsWith('manifest.json') ? JSON.stringify(small) : readFileSync(new URL(u), 'utf8')) });
 const talk = (npc) => {
-  const said = [], r = createDialogueRunner({ pageLines: 1 });
+  er.mainSync(0); const said = [], r = createDialogueRunner({ pageLines: 1 });
   r.open(bundle.dialogues[npc], { has: (k) => (k.startsWith('s.') ? !!state[k.slice(2)] : state['dlg.' + k] === true), set: (k) => { if (k.startsWith('s.')) questFlag(k.slice(2)); else state['dlg.' + k] = true; } });
   for (let g = 0; g < 40 && r.state !== 'ended'; g++) { if (r.state === 'typing') { said.push(r.line); r.press(); } else if (r.state === 'choosing') r.choose(); else r.press(); }
   er.talked(npc); return said;
 };
 const st = (id) => book.statusOf(id);
 book.feed({ type: 'flag:set', key: 'lore.fordMark.read', value: true }); book.feed({ type: 'area:entered', id: 'northLook' });
-book.feed({ type: 'area:entered', id: 'owPath' });
+// path + fence are Hesk's main quests now: Accept at Hesk, do, hand in at Hesk
+assert.equal(st('mq.ow.path'), 1); assert.match(talk('hesk')[0], /Smoke on the wind/); assert.equal(st('mq.ow.path'), 2, 'path accepted at Hesk');
+book.feed({ type: 'area:entered', id: 'owPath' }); er.mainSync(0); assert.equal(st('mq.ow.path'), 3); talk('hesk'); assert.equal(st('mq.ow.path'), 4, 'path handed in at Hesk');
+assert.equal(st('mq.ow.fence'), 1); talk('hesk'); assert.equal(st('mq.ow.fence'), 2, 'fence accepted at Hesk');
 for (const id of ['wolf1', 'wolf2', 'wolf3', 'wolf4', 'wolf5']) book.feed({ type: 'beast:died', id });
-er.mainSync(0); assert.equal(st('mq.ow.names'), 1, 'names open after the fence');
+er.mainSync(0); assert.equal(st('mq.ow.fence'), 3); talk('hesk'); assert.equal(st('mq.ow.fence'), 4, 'fence handed in at Hesk'); assert.equal(st('mq.ow.names'), 1, 'names open after the fence');
 assert.match(talk('hesk')[0], /Hands where I can see them/);
 assert.equal(st('mq.ow.names'), 3, 'accept + talk in ONE conversation = READY, no auto hand-in'); assert.match(talk('hesk')[0], /^Wick./); assert.equal(st('mq.ow.names'), 4, 'handed in by talking to Hesk again');
 assert.ok(book.lastReward.items.some((i) => /^gear\./.test(i.id)), 'gear T3 reward');
@@ -42,7 +45,7 @@ assert.match(talk('dorrin')[0], /brass collar off it/);
 book.packOps.add('relay.brass', 1); book.feed({ type: 'item:got', id: 'relay.brass' });
 questFlag('waystone.ws_outwall.woken'); er.mainSync(0);
 assert.equal(st('mq.ow.relay'), 3, 'relay READY once the Outwall relay wakes'); talk('hesk'); assert.equal(st('mq.ow.relay'), 4, 'handed in at Hesk'); assert.equal(st('mq.ow.board'), 1);
-assert.ok(book.accept('mq.ow.board')); er.inspected('owBoard'); assert.equal(st('mq.ow.board'), 3, 'reading the board readies it');
-assert.ok(book.handIn('mq.ow.board')); assert.deepEqual(book.lastReward.items, [{ id: 'chart.westFells', n: 1 }]);
+talk('hesk'); assert.equal(st('mq.ow.board'), 2, 'board accepted at Hesk'); er.inspected('owBoard'); assert.equal(st('mq.ow.board'), 3, 'reading the board readies it');
+talk('hesk'); assert.equal(st('mq.ow.board'), 4, 'board handed in at Hesk'); assert.deepEqual(book.lastReward.items, [{ id: 'chart.westFells', n: 1 }]);
 book.packOps.add('chart.westFells', 1); er.mainSync(0); assert.equal(state['chart.westFells'], true, 'chart piece flag from the pack');
 console.log('ch3 names/relay/board: pass');

@@ -1000,3 +1000,22 @@ OB-155s (check only, no change): voxelPool picks the nearest-cap (16 DDA / 48 me
 - R14: 89 -> 65 (R12 stays 12, none mine). validate-content OK, content-canonical ALL PASS, 13 filtered suites PASS.
 - NOT done: the 10 region errands sq.reg.* (relay_<region> givers) are not in these 12; waystone touch no longer offers errands. NEEDS WRITER: postkeeper.* (hello + every qs.sq.rb/fc.* offer/active/ready; old TICK lines are in git).
 - NEEDS B1-main: none expected (generateAll picks postkeeper from giverDefs); `?` marks over him not browser-checked.
+### QFIX-S5b-1/2 (kestrel-1, 2026-10-14)
+- S5b-1: sq.ow.wolves/boars/barley/range/raid/bears/parcel -> giver Hesk (parcel hands in at Dorrin), sq.ow.ford -> Dorrin (generated Accept/Not yet via questSnippets; old board-voice `lines` removed so snippets speak). owBoard keeps only sq.ow.trail (`objectGiver`, turnIn hesk); sq.hw.piers = flagged pierStone object giver, turnIn dorrin. templates.js now passes `objectGiver: true` through.
+- S5b-2: mq.ow.path / fence / board -> giver Hesk (main, returnText), added to errands MQ; hesk.dialogue.json offers (Accept / Not yet), active and hand-in nodes for all three; ch3names.test walks path -> fence -> names -> relay -> board by talking to Hesk. "relay" not in new text.
+- content-lint R14: 94 lines before -> 41 after; none of the mq.ow.* / sq.ow.* / sq.hw.piers ids left. validate-content OK; quest/ch3/errands/outwall suites PASS. FAIL not mine: sim/templates.test.js (requires unknown mq.bend.call, S5a-4 chain), spawnDirector (BEAST-06a).
+- NEEDS WRITER: hesk.path.*, hesk.fence.*, hesk.board.* (placeholder lines by me), sq.ow.* Hesk/Dorrin `lines` (generic snippets now), sq.ow.ford/sq.ow.parcel Dorrin voice. Risk: mq.ow.path is accepted at Hesk but its owPath trigger lies behind the gate (player may need to walk back); sq.ow.raid objective shortened to "Hold the goose pen at night" (snippet line cap).
+
+### QFIX-TPLFIX (kestrel-1, 2026-10-14)
+templates.test.js: option (a) - its fake index.json lacked mq.bend.call (game index has it; game was fine). Added it to legacy + expected giverDefs, seeded bend.call handedIn, and the river.road/ford.stones flow now uses accept/handIn (they are Rook-given since 53aa6c50). Data untouched. validate-content OK; content-lint R14=21; filter templates,questBook,rookQuests,errands,ch3,questBatch,content-smoke 12/12 PASS.
+mq.ow.path: Hesk (938,930), owPath trigger center (942,925.33) r10 = owGate gap: distance 6.2 < r10, so Hesk stands inside the zone and no walk-back is needed (unchanged).
+
+### QFIX-S5a-3 (kestrel-2, 2026-10-14)
+- post.spare/fc.stores/fc.shrine/fc.sign: site -> postkeeper (giver+return), writer lines removed (generated Accept/Not yet); burl.parcel + packet deliver to postkeeper. objectGiver:true on tower.blade (return bear, main), sq.straw (return rook), sq.wreck.plate (return bear), sq.packet (return postkeeper). Placeholder offers `NEEDS WRITER note.keepLight.offer / note.straw.offer / prompt.gondola.offer / prompt.packet.offer` (2 lines <= 56 chars, in `lines.offer`).
+- templates.js passes `objectGiver`; content-lint: acceptOf true for objectGiver, tower level props count as placed giver (ctx.levelIds). R14 65 -> 47 (none of the 11 ids left). objectGiver count in data = 4. validate-content OK, content-canonical PASS; errands.test.js updated (notePost only; straw handed in at Rook).
+- FAIL not mine: sim/templates.test.js (requires unknown quest mq.bend.call, from S5a-4/5 giverDefs), tower-prop-colliders.test.mjs (doorway reload; not checked on baseline).
+- Not browser-checked: tower.blade note read in main.js still uses the actKey flow (may bypass obj.<id> offer; NEEDS B1-main look), `?` over postkeeper for the 6 quests.
+
+### QFIX-S5-CLOSE (kestrel-1, 2026-10-14)
+- keep-light note: it is read via note.read (not errands), so the actKey auto-accept bypassed `obj.noteKeepLight`. New `game/js/quest/objectOffer.js` (`createNoteOffer`): on the close edge of note 'keepLight' while tower.blade is AVAILABLE it calls inspectObject -> Accept/Exit; main.js keeps actKey only as the sword-taken safety net. The other 5 objectGivers already go errands.inspected -> inspectObject -> openObject. `objectOffer.test.js` covers all 6 from real content + the note edge. Not browser-checked.
+- R14 3 -> 0, all lint fixes (data was right): burl.boars / sq.burl.blue accept via `setFlag "q.<id>.accept"` in bear.dialogue.json (lint now recognises it); `m1` is the sectioned umbrella with no giver (lint skips quests with sections and no giver).

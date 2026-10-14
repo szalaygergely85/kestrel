@@ -103,8 +103,8 @@ const ents = {
 const fw = { interactables: [], get: (id) => (ents[id] ? { data: ents[id] } : null), addInteractable(s) { this.interactables.push(s); return s; } };
 const inspected = [], flags = {};
 const er = createErrands({ getBook: () => book, questFlag: (k, v = true) => { flags[k] = v; return flag(k); }, inspect: (id) => inspected.push(id) });
-assert.equal(er.load(fw), 2, 'post + notePost only');
-assert.deepEqual(fw.interactables.map((r) => [r.key, r.name, r.def.objectId]).sort(), [['qi.notePost', 'quest.inspect', 'notePost'], ['qi.post', 'quest.inspect', 'post']]);
+assert.equal(er.load(fw), 1, 'QFIX-S5a-3: notePost only (sq.straw object giver); the basket post is a delivery target no more');
+assert.deepEqual(fw.interactables.map((r) => [r.key, r.name, r.def.objectId]).sort(), [['qi.notePost', 'quest.inspect', 'notePost']]);
 assert.equal(er.load(fw), 0, 'idempotent: no duplicates'); // second world:loaded on the same fake list
 er.onEvent('prop:touched', { id: 'ws_roadBend', kind: 'relay' }); /* OB-126: a relay with an available errand only offers on the 1st touch */ assert.deepEqual(inspected, [], 'first touch offers only, no inspect'); er.onEvent('prop:touched', { id: 'ws_roadBend', kind: 'relay' }); er.onEvent('prop:touched', { id: 'ws_roadBend', kind: 'waystone' }); er.onEvent('prop:touched', { id: 'nope', kind: 'relay' });
 assert.deepEqual(inspected, [], 'QFIX-S5a-2: no errand is given at a relay any more (the post-keeper gives them)');
@@ -118,7 +118,7 @@ assert.equal(book.handIn('sq.rb.shield'), null, 'shield not worn -> refused');
 eq.off = 'shield'; assert.equal(isWorn(eq, 'shield'), true); assert.equal(isWorn({ off: { id: 'shield' } }, 'shield'), true); assert.equal(isWorn(null, 'x'), false);
 const hiS = book.handIn('sq.rb.shield'); assert.deepEqual(hiS.items, [{ id: 'potion.hp', n: 1 }]);
 // banner rows from the writer lines
-const d = book.def(book.index('sq.fc.stores'));
+const d = book.def(book.index('sq.wreck.plate'));
 const rows = bannerLines(d, 'accept', wrapText); assert.ok(rows && rows.length && rows.every((r) => r.length <= 38), 'wrapped offer rows');
 assert.deepEqual(bannerLines(d, 'handin', wrapText), bannerLines(d, 'handin', wrapText));
 assert.equal(bannerLines({}, 'accept', wrapText), null); assert.equal(bannerLines(d, 'nonsense', wrapText), null);
@@ -146,8 +146,8 @@ book.accept('sq.straw');
 er.hit({ target: 'target2' }); er.hit({ target: 'target9' }); er.hit({ target: 'boar1' }); er.hit(null);
 assert.deepEqual(Object.keys(flags).filter((k) => k.startsWith('target')), ['target2.hit']);
 er.hit({ target: 'target1' }); er.hit({ target: 'target3' });
-assert.equal(book.statusOf('sq.straw'), READY, 'three straw men -> ready; note post hands in');
-assert.equal(book.inspect('notePost').action, 'handin'); assert.deepEqual(book.lastReward.items, [{ id: 'arrow', n: 20 }], 'Big Quiver: 20 arrows');
+assert.equal(book.statusOf('sq.straw'), READY, 'three straw men -> ready; Rook hands in');
+assert.equal(book.inspect('notePost'), null, 'QFIX-S5a-3: nothing at the note post once accepted'); const hiSt = book.handIn('sq.straw'); assert.deepEqual(hiSt.items, [{ id: 'arrow', n: 20 }], 'Big Quiver: 20 arrows (handed in at Rook)');
 
 // 6. escort flag: only while sq.burl.walk is active and Burl is within 14 m of the Bend relay
 assert.equal(er.escortTick(), false, 'quest not active');
