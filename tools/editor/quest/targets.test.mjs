@@ -11,7 +11,7 @@ const world = JSON.parse(readFileSync(join(root, 'content/worlds/world_m1.world.
 const m = loadQuests(join(root, 'content/quests'));
 const sites = JSON.parse(readFileSync(join(root, 'content/quests/sites.json'), 'utf8')).sites;
 const floorAt = (x, y) => 100 + x * 0.01 + y * 0.001;     // stand-in terrain: only "snapped, not ray z" matters
-const ctx = { sites, floorAt };
+const ctx = { sites, floorAt, model: m };
 const q = (id) => m.quests.find((x) => x.id === id);
 
 // classification over every real entity: npcs with dialogue are characters, brains are enemies, rest objects
@@ -54,11 +54,12 @@ r = applyPick(bl, 'giver', { point: { x: 1, y: 2, z: 3 } }, world, ctx); assert.
 
 // objective target: area step <- ground (legacy when / pack params), snapped; character step <- npc only
 r = applyPick(tb, { obj: 0 }, { point: { x: 1010, y: 1020, z: 0 } }, world, ctx); stack.run(r.cmd);
-assert.equal(tb.raw.objectives[0].when.z, +floorAt(1010, 1020).toFixed(2)); assert.equal(tb.raw.objectives[0].when.radius, 4);
-assert.equal(tb.raw.objectives[0].when.type, 'area');
+assert.deepEqual(tb.raw.objectives[0].when, { type: 'area', id: 'tower.blade.a1' }, 'legacy when keeps the game format (area id only)');
+assert.deepEqual(m.files.get('areas.json').obj.areas['tower.blade.a1'], { world: 'world_m1', trigger: 'tower.blade.a1' });
+assert.deepEqual(m.zones.find((z) => z.id === 'tower.blade.a1'), { id: 'tower.blade.a1', note: m.zones[0].note, r: 4, shape: 'circle', x: 1010, y: 1020 });
 r = applyPick(tm, { obj: 0 }, { point: { x: 1010, y: 1020, z: 0 } }, world, ctx); stack.run(r.cmd);
-assert.deepEqual(tm.raw.steps[0].params.spot, { x: 1010, y: 1020, z: +floorAt(1010, 1020).toFixed(2), r: 4 });
-assert.ok(tm.raw.steps[0].params.areas, 'named areas stay');
+assert.deepEqual(tm.raw.steps[0].params.areas, ['sq.tm.nub.a1']); assert.equal(tm.raw.steps[0].params.spot, undefined);
+stack.undo(); assert.equal(m.files.get('areas.json').obj.areas['sq.tm.nub.a1'], undefined, 'undo removes the area too'); stack.redo();
 r = applyPick(tm, { obj: 0 }, { entityId: 'bear' }, world, ctx); assert.equal(r.error, 'Click the ground for this step');
 const dq = m.quests.find((x) => x.kind === 'pack' && x.raw.steps.some((s) => s.template === 'deliver'));
 const di = dq.raw.steps.findIndex((s) => s.template === 'deliver');

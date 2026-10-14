@@ -110,6 +110,8 @@ export function loadQuests(dir, fs = REAL_FS) {
       const text = rd(n), obj = JSON.parse(text);
       files.set(n, { kind: 'legacy', obj, text, snap: JSON.stringify(obj) });
       quests.push(normalize(obj, 'legacy', n, null));
+    } else if (n === 'areas.json') {
+      const text = rd(n); files.set(n, { kind: 'areas', obj: JSON.parse(text), text });
     } else if (n === 'sites.json') {
       const text = rd(n); files.set(n, { kind: 'sites', obj: JSON.parse(text), text });
     } else if (fs.statSync(join(dir, n)).isDirectory() && fs.existsSync(join(dir, n, 'pack.json'))) {
@@ -118,7 +120,7 @@ export function loadQuests(dir, fs = REAL_FS) {
       (obj.quests || []).forEach((row, i) => quests.push(normalize(row, 'pack', rel, i)));
     }
   }
-  return { dir, quests, files, errors: validate(quests) };
+  return { dir, quests, files, zones: [], errors: validate(quests) };
 }
 
 /** Error list: missing id/title, duplicate ids. */
@@ -199,6 +201,47 @@ export function moveObjective(q, from, to) {
 }
 export function removeObjective(q, at) {
   return makeCmd('remove objective', q, () => { objList(q).splice(at, 1); });
+}
+
+/**
+ * ED-QUEST-03b: one undo step that (re)defines a named area the GAME reads - content/quests/areas.json `areas[id] = {world, trigger}`
+ * plus the area-only world zone `{id, r, shape:'circle', x, y}` (model.zones, merged into the world json by applyZones) - and
+ * runs `mutate(raw)` on the quest (the step that references the area id).
+ */
+export function setAreaCmd(model, q, areaId, spot, mutate, worldId = 'world_m1') {
+  const af = model.files.get('areas.json');
+  let before = null, after = null;
+  const snap = () => ({ raw: structuredClone(q.raw), area: structuredClone(af.obj.areas[areaId]), zone: structuredClone(model.zones.find((z) => z.id === areaId)) });
+  const put = (st) => {
+    for (const k of Object.keys(q.raw)) delete q.raw[k];
+    Object.assign(q.raw, structuredClone(st.raw)); refresh(q);
+    if (st.area) af.obj.areas[areaId] = structuredClone(st.area); else delete af.obj.areas[areaId];
+    model.zones = model.zones.filter((z) => z.id !== areaId);
+    if (st.zone) model.zones.push(structuredClone(st.zone));
+  };
+  return {
+    label: 'set area', questId: q.id,
+    apply() {
+      if (!before) {
+        before = snap();
+        af.obj.areas[areaId] = { world: worldId, trigger: areaId };
+        model.zones = model.zones.filter((z) => z.id !== areaId);
+        model.zones.push({ id: areaId, note: 'ED-QUEST-03b area-only zone for ' + q.id, r: spot.r, shape: 'circle', x: spot.x, y: spot.y });
+        mutate(q.raw); refresh(q); after = snap();
+      } else put(after);
+    },
+    undo() { put(before); },
+  };
+}
+
+/** Merges the model's pending area zones into a world json object (`triggers`, replace by id). Returns the number merged. */
+export function applyZones(model, world) {
+  world.triggers = world.triggers || [];
+  for (const z of model.zones) {
+    const i = world.triggers.findIndex((t) => t.id === z.id);
+    if (i >= 0) world.triggers[i] = { ...z }; else world.triggers.push({ ...z });
+  }
+  return model.zones.length;
 }
 
 /** Minimal undo/redo stack for model commands. */
