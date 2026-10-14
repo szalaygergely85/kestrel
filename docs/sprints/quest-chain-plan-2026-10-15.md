@@ -92,3 +92,4 @@ What changed from version 1:
 - Tension: Rook is suspicious and hints that waking stones is dangerous ("draws eyes"); trust grows over 5-8.
 - Quest 3 is a character moment, short, Burl waits for you (burlEscort LEAD_WAIT_M / WAIT_BARK already exist - check the walk length and the wait behaviour).
 - All new lines NEEDS WRITER (writer agent: Burl's walk talk, Rook's arrival + suspicion, the broken stone).
+- Owner 2026-10-15 ("and missing the fight"): EVERY quest has a fight. Quest 1: goblin scavengers are picking through the wreck at the tower top (first fight with the new sword). Quest 4: waking the stone draws a boar pack out of the trees; hold them off while the stone charges (~20 s), then it wakes. => 8/8 quests with a fight.
