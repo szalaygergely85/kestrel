@@ -214,7 +214,7 @@ export function createBeastSim(world, opts) {
     pAggro: new Uint8Array(MAX_BEASTS),      // 0 hostile 1 whenHit 2 never 3 near (ARCH_AGGRO order)
     _ctx: { px: 0, py: 0 },
     tactOn: new Uint8Array(MAX_BEASTS), tactRole: new Uint8Array(MAX_BEASTS), tactBand: new Float64Array(MAX_BEASTS * 3), // BEAST-04 (tactics.js)
-    tactics: createTactics(MAX_BEASTS, (opts && opts.seed) || 0x9e3779b1), _allyN: 0, _allyX: 0, _allyY: 0, _tS: { CHASE: STATE_CHASE, WINDUP: STATE_WINDUP, CHARGE: STATE_CHARGE, RECOVER: STATE_RECOVER },
+    tactics: createTactics(MAX_BEASTS, (opts && opts.seed) || 0x9e3779b1), _allyN: 0, _allyX: 0, _allyY: 0, _tS: { CIRCLE: STATE_CIRCLE, CHASE: STATE_CHASE, WINDUP: STATE_WINDUP, CHARGE: STATE_CHARGE, RECOVER: STATE_RECOVER },
     archIdx: new Uint8Array(MAX_BEASTS),     // BEAST-03a: index into ARCH_NAMES (archetypes.js)
     bear: new Uint8Array(MAX_BEASTS),        // BEAR-01: brain.species==='bear' (per-slot cfg, fixed 2-heart swipe, light hits don't cancel windup)
     goblin: new Uint8Array(MAX_BEASTS),      // GOB-01: brain.species==='goblin'
@@ -224,7 +224,7 @@ export function createBeastSim(world, opts) {
     packer: new Uint8Array(MAX_BEASTS),      // GOB-01: wolf or melee goblin (circle while waiting, retreat after the strike)
     down: new Uint8Array(MAX_BEASTS),        // GOB-01b: setDown(slot, true) -> STATE_GONE until setDown(slot, false) (not hashed/saved)
     dormCamp: new Uint8Array(MAX_BEASTS), dormTile: new Uint8Array(MAX_BEASTS), tileMode: false, // WM-04 reasons
-    dormCap: new Uint8Array(MAX_BEASTS), capMark: new Uint8Array(MAX_BEASTS), capIdx: new Int16Array(ACTIVE_CAP), capD: new Float64Array(ACTIVE_CAP), activeN: 0, engagedN: 0, pathServes: 0, // BEAST-06b: active-cap reason
+    dormCap: new Uint8Array(MAX_BEASTS), capMark: new Uint8Array(MAX_BEASTS), capIdx: new Int16Array(ACTIVE_CAP), capD: new Float64Array(ACTIVE_CAP), activeN: 0, engagedN: 0, engNow: 0, pathServes: 0, // BEAST-06b: active-cap reason
     dormant: new Uint8Array(MAX_BEASTS),     // GOB-01: setDormant(slot, true) -> skipped like GONE, state kept
     fleeing: new Uint8Array(MAX_BEASTS),     // WOLF-01: STATE_RETURN that runs away from the player first
     hunt: new Uint8Array(MAX_BEASTS),        // LIFE-07: 1 = STATE_WANDER leg chasing a fauna prey slot (huntSlot)
@@ -540,6 +540,9 @@ function stepSim(sim, px, py, pz) {
   for (let i = 0; i < n; i++) if (live(sim, i)) { perceiveOne(sim, i, px, py, pz); leashOne(sim, i, px, py); }
   sim._ctx.px = px; sim._ctx.py = py;
   tacticsSync(sim, sim._tS); // BEAST-04: token release + flank re-assign
+  let eng = 0; // BEAST-06b: per-step count of chasing slots (engaged except NOTICE); NOTICE -> CHASE is allowed while < ENGAGED_CAP
+  for (let i = 0; i < n; i++) { const st = sim.state[i]; if (st !== STATE_NOTICE && isEngaged(st) && !sim.dormant[i]) eng++; }
+  sim.engNow = eng;
   for (let i = 0; i < n; i++) if (live(sim, i)) { if (!LAYERS[sim.archIdx[i]](sim, i, sim._ctx)) transitionOne(sim, i, px, py); }
   updatePathRequests(sim, px, py);
   servePathRequest(sim, px, py);
@@ -646,6 +649,7 @@ function transitionOne(sim, i, px, py) {
     case STATE_EAT: eatStep(sim, i, px, py); break;
     case STATE_NOTICE: noticeStep(sim, i); break;
     case STATE_CHASE: checkChaseExit(sim, i, px, py); break;
+    case STATE_CIRCLE: circleStep(sim, i, px, py); break; // BEAST-04
     case STATE_WINDUP: windupStep(sim, i, px, py); break;
     case STATE_CHARGE: /* handled in postOne (needs the post-steer position) */ break;
     case STATE_RECOVER: recoverStep(sim, i, px, py); break;
@@ -734,9 +738,27 @@ function pickWanderTarget(sim, i) {
 }
 
 function noticeStep(sim, i) {
-  sim.timer[i]--;
-  if (sim.timer[i] <= 0) enterChase(sim, i);
+  if (sim.timer[i] > 0) sim.timer[i]--;
+  if (sim.timer[i] <= 0) {
+    if (sim.engNow >= ENGAGED_CAP) return; // BEAST-06b: engaged cap - hold in NOTICE (faces the player) until a chaser frees up
+    sim.engNow++; enterChase(sim, i);
+  }
 }
+
+/** BEAST-04: sticky token-less waiter (melee/swarm tactical slots). Each step: leash/lose rules, else ask for the token
+ *  again; granted -> WINDUP. Movement = flank ring waypoint (tacticsSteer). No state change while it waits. */
+function circleStep(sim, i, px, py) {
+  const steer = sim.steer, dx = px - steer.x[i], dy = py - steer.y[i], d2 = dx * dx + dy * dy;
+  const lm = sim._lagents[i].leashMode;
+  if (lm === LEASH_RETURN || lm === LEASH_GIVEUP) { sim.tactics.release(i); enterReturn(sim, i); return; }
+  if ((sim.wolf[i] || sim.goblin[i]) && shouldFlee(sim, i)) { sim.tactics.release(i); enterFlee(sim, i, px, py); return; }
+  const lr = sim.scfg[i].loseR;
+  if (d2 > lr * lr || sim.unseen[i] >= sim.ssteps[i].loseSight) { sim.tactics.release(i); enterReturn(sim, i); return; }
+  const wr = sim.scfg[i].windupR;
+  if (d2 <= wr * wr && sim.seen[i] && sim.tactics.request(i, sim.tactRole[i] === TACT_SWARM ? TOK_S : TOK_M)) enterWindup(sim, i);
+}
+
+function enterCircle(sim, i) { sim.state[i] = STATE_CIRCLE; sim.waiting[i] = 0; sim.pathLen[i] = 0; sim.pathIdx[i] = 0; }
 
 function checkChaseExit(sim, i, px, py) {
   const cfg = sim.cfg, steer = sim.steer;
@@ -748,6 +770,10 @@ function checkChaseExit(sim, i, px, py) {
   if (sim.ranged[i] && rangedChase(sim, i, px, py, d2)) return; // GOB-02
   if (sim.tactOn[i] && (sim.tactRole[i] === TACT_RANGED || sim.tactRole[i] === TACT_CASTER) && tacticsBand(sim, i, d2)) return; // BEAST-04
   const wr = sim.scfg[i].windupR;
+  if (sim.tactOn[i] && !sim.ranged[i] && d2 <= wr * wr && sim.seen[i]) { // BEAST-04: token or sticky CIRCLE (no waiting flag flip-flop)
+    if (hasActiveCharger(sim, i)) enterCircle(sim, i); else { sim.waiting[i] = 0; enterWindup(sim, i); }
+    return;
+  }
   if (!sim.ranged[i] && d2 <= wr * wr && sim.seen[i]) {
     // US-079c: only one boar winds up/charges at a time - the first eligible (lowest slot) wins; the rest hold.
     if (hasActiveCharger(sim, i)) sim.waiting[i] = 1;
@@ -1201,7 +1227,7 @@ function setSteerTarget(sim, i) {
     return;
   }
 
-  if (sim.tactOn[i] && st === STATE_CHASE) { // BEAST-04: flank slot / band / behind-allies waypoint
+  if (sim.tactOn[i] && (st === STATE_CHASE || st === STATE_CIRCLE)) { // BEAST-04: flank slot / band / behind-allies waypoint
     if (sim.tactRole[i] === TACT_CASTER) tacticsAllies(sim, i);
     if (tacticsSteer(sim, i, sim._tS)) { const o = sim.tactics.out; steer.setWaypoint(i, o.x, o.y, 0); steer.maxSpeed[i] = sim.scfg[i].chase * o.speed * sim.spdMul[i]; return; }
   }
