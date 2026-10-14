@@ -1229,3 +1229,6 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 
 ## D-088
 **2026-10-14, owner (PC-A session; answers ratify CHANGES 2 on 38.64 item 5).** The crocodile GRAB is a movement-only pin: the player cannot move while grabbed, but camera, attack, block and items keep working (D-064: never lock the player's input). 38.64 item 5 is amended to this, and BEAST-08b builds it this way (BEAST-08b-PIN).
+
+## D-089
+**2026-10-14, owner (PC-A session).** No PhysX and no NavMesh library (Recast/Detour). Both are heavy WASM in the browser, break the "same result every run" sim rule (rule 15) and stand-alone `engine/physics` (27.10), and the game does not need their extra features. We keep and extend our own: `engine/nav` (NAV-REACH-01 unreachable fallback, NAV-LAYERS-01 bridges/floors/stairs, NAV-LINKS-01 ledges/ford/ladders/doors) now, and later, after the QFIX wave, small own rigid bodies + a hinge joint + physics trigger events (ENG-PHYS-EXT-01, parked) as engine "good to have". No vehicles and no ragdolls. Reopen only if a roadmap feature needs them; then look at Rapier (deterministic mode) or Jolt as an optional plugin, never the core.

@@ -1,5 +1,16 @@
 # PC-B queue
 
+## Navigation + physics extensions (owner 2026-10-14, D-089) (PC-A main session)
+Own `engine/nav` (NavGrid 2 m tiles, astar, flowField, steer) is kept; no Recast/NavMesh or PhysX library (D-089). The NAV rows are engine work (cross-track): an ARCH-NOTE comes first where marked, and each ends in arch-review on PC-A. Start NAV-REACH-01 now (it fixes what the owner feels, OB-149/150); NAV-LAYERS/LINKS after their note.
+
+| ID | Slot | Files | AC (Node unless noted) | Deps | Status |
+|---|---|---|---|---|---|
+| NAV-REACH-01 unreachable target fallback | kestrel-3 | `engine/nav/astar.js` / flowField (nearest-reachable query), beastSim CHASE/RETURN use | OB-149/150: when no path exists, the agent moves to the nearest REACHABLE cell to the target (bounded search, same result every run), or switches to RETURN after N s; never walk-in-place (BEAST-01 anim rule kept). Tests: target across the river -> agent stops at the bank facing it then returns; target on an island; 0 alloc per query after warm-up (38.61); goblins on the riverbank case from OB-149. | none | todo |
+| NAV-LAYERS-01-NOTE | 5th agent (architect opus) | `docs/architecture.md` new 38.x | Multi-level nav: extra layer cells for bridge decks, ruin/house floors, the 2-storey house (OB-139), with how they are baked from structures/meshes, stored per nav tile, and connected (stairs, doors); memory per tile; streaming with nav tiles (WM-03); determinism. Split into <= 1 d stories. | none | ARCH-NOTE NEEDED |
+| NAV-LAYERS-01 | kestrel-3 | per the note | Agents path over the two bridges, into the Rook ruin room, and up the house stair; ground-only worlds byte-identical; nav bake time + MB table before/after. Ends: arch-review (PC-A). | NOTE | todo |
+| NAV-LINKS-01 | kestrel-3 (+ kestrel-4 content data) | `engine/nav` link table, content link data | Off-grid links with a cost: ledge drop (one way), ford wade, ladder, door (open/closed state). astar + flowField use them; links come from content data and are validated (validate-content). Tests per link kind; same result every run. ARCH-NOTE NEEDED if the note above does not cover links. Ends: arch-review. | NAV-LAYERS-01-NOTE | todo |
+| ENG-PHYS-EXT-01 (PARKED, after QFIX) | later, architect note first | `engine/physics` | Engine "good to have" (D-089): basic rigid bodies (boxes/barrels tip + stack), hinge joint (doors, gates, swinging signs), physics trigger/hit events. Own code on impulse.js/contacts.js, stays stand-alone (27.10), same result every run. NOT vehicles, NOT ragdolls. | QFIX done | parked |
+
 ## Follow-ups from the PC-A ratify pass 2026-10-14 (`docs/test-reports/pca-ratify-2026-10-14.md`)
 41 ratified, 36 ratified with a note, 2 CHANGES (38.56 (c) fauna/camera determinism, 38.64 item 5 croc grab locks input vs D-064). Owner questions C1-C5 are listed in the report.
 
