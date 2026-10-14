@@ -238,6 +238,8 @@
     // nothing is left to pop when the entity is hidden at the end). corpseDust bursts at 0 and 250 ms cover it.
     sink:   { durations: [500, 100], loop: false, frames: [DEAD, SUNK] }
   };
+  // ANIM-BLEND-02: additive hit (38.68): frame 0 = REST (delta 0), the two hurt keys, back to REST
+  animations.hitAdd = { durations: [40, 50, 70, 100], loop: false, frames: [REST, animations.hurt.frames[0], animations.hurt.frames[1], REST] };
 
   A.models.boarPlaceholder = {
     name: 'boarPlaceholder',
@@ -278,6 +280,13 @@
         tail:  { box: [5, 22, FZ + 7, 7, 24, FZ + 10], pivot: [6, 22, FZ + 9.5], parent: 'body' }
       },
       animations: animations,
+      // ANIM-BLEND-02 (38.68; OB-150). walk (spare trot, tuned 1.5 m/s) -> charge gallop (4 m/s, estimate: hand-keyed 200 ms loop). windup
+      // (525 ms, held scrape pose from 500) fades in <= 25 %; the charge snaps in (60); charge>idle recover takes 200 ms.
+      blend: {
+        sets: { locomotion: { param: 'speed', clips: [{ clip: 'walk', at: 1.5 }, { clip: 'charge', at: 4 }] } },
+        fades: { default: 150, into: { windup: 100, charge: 60 }, pairs: { 'windup>charge': 60, 'charge>idle': 200, 'charge>walk': 200 } },
+        additive: { hit: { clip: 'hitAdd', parts: ['body', 'head', 'tail'], inMs: 40, outMs: 160, gain: 1 } }
+      },
       // grid coords, rest pose, on part `body` (posed with the part where the engine supports it). z 15 = ground.
       // Same world points as v1.34 (cellM halved, coordinates doubled round the new anchor).
       mounts: {
