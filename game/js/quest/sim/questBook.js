@@ -55,6 +55,8 @@ export function validateGiverQuest(def) {
 function deepFreeze(o) { if (o && typeof o === 'object') { for (const k of Object.keys(o)) deepFreeze(o[k]); Object.freeze(o); } return o; }
 
 /** saved = {quest: m1 state|null, quests: {id:{quest,accepted,handedIn}}|null}; toSave() returns the same shape. */
+/** OB-155: static part of the main/side rule: `main: true`, `kind: 'main'` or an `mq.*` id (the chain-waits-on flag is checked by book.isMain). */
+export const isMainDef = (d) => !!d && (d.main === true || d.kind === 'main' || (typeof d.id === 'string' && d.id.startsWith('mq.')));
 export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   validateQuestDefinition(mainDef);
   const entries = [{ def: mainDef, giver: null, state: createQuest(mainDef, saved?.quest || null), accepted: true, handedIn: false, seq: 0, prev: ACTIVE }];
@@ -297,7 +299,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   // (`quest.<id>.done` as a flag objective, e.g. burl.boars / tower.blade); everything else is a side quest.
   const mainDone = new Set();
   for (const o of entries[0].def.objectives) if (o.when && o.when.type === 'flag' && typeof o.when.id === 'string') mainDone.add(o.when.id);
-  book.isMain = (i) => entries[i].def.main === true || mainDone.has('quest.' + entries[i].def.id + '.done');
+  book.isMain = (i) => i === 0 || isMainDef(entries[i].def) || mainDone.has('quest.' + entries[i].def.id + '.done'); // OB-155: ONE rule (questLog uses it too)
   /** Giver marks: `outAvail` ('!') / `outReady` ('?') get the main-chain quests; with the optional `sideAvail` / `sideReady` the side
    *  quests go there instead (OB-125: a different colour), else everything goes to the first two (old behaviour). */
   book.giverMarks = function giverMarks(outAvail, outReady, sideAvail, sideReady) {
@@ -315,7 +317,9 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   book.chainMarks = function chainMarks(outAvail, outReady) {
     const st = entries[0].state, o = entries[0].def.objectives[st.completed.length];
     const m = o && o.mark; if (!m) return;
-    if (m.start) outAvail[outAvail.length] = m.start; else if (m.end) outReady[outReady.length] = m.end;
+    // OB-157: optional mark.taken = flag set when the start giver handed the step over -> the '!' is gone, the '?' at `end` shows
+    const taken = m.taken && entries[0].state.flags[m.taken];
+    if (m.start && !taken) outAvail[outAvail.length] = m.start; else if (m.end) outReady[outReady.length] = m.end;
   };
   /** QL-03: index of the tracked giver quest: the player's pick (main flag `ui.tracked`, saved with the main quest) while it is active/ready, else the most recently accepted one, else -1. */
   book.tracked = function tracked() {

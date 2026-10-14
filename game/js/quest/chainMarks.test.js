@@ -24,6 +24,8 @@ assert.deepEqual(marks(), [[], ['endMarker']], 'waystone step');
 feed({ type: 'flag:set', key: 'waystone.waystone.woken', value: true });
 // road step available: gold ! on Burl
 assert.deepEqual(marks(), [['bear'], []], 'road available -> ! on bear');
+feed({ type: 'flag:set', key: 'burl.departing', value: true }); // OB-157: Burl handed the step over
+assert.deepEqual(marks(), [[], ['relayBend']], 'after the give: no ! on bear, ? on the Bend relay');
 feed({ type: 'area:entered', id: 'roadWest' });
 assert.deepEqual(marks(), [[], ['relayBend']], 'road taken (relayFound active) -> ? on the Bend relay');
 feed({ type: 'area:entered', id: 'bendRelay' });
