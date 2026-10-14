@@ -23,8 +23,8 @@ assert.ok(!/\.(rgb|xyz|xy)\s*[*+\-]?=[^=]/.test(SPRITES_WGSL), 'no swizzle assig
 
 // --- sprites: layout, bindings, constants ---
 const S = SPRITES_BLOCK;
-assert.deepEqual(['count', 'sceneFade', 'fadeMinGain', 'fadeRampLen', 'dimAll', 'dimCount', 'dimMul', 'dimRect', 'atmosLift', 'atmosInvGamma', 'atmosGain'].map((n) => S.field(n).offset), [0, 4, 8, 12, 16, 20, 32, 48, 112, 128, 144]);
-assert.equal(S.sizeBytes, 160); assert.equal(S.field('dimRect').count, 4);
+assert.deepEqual(['count', 'sceneFade', 'fadeMinGain', 'fadeRampLen', 'dimAll', 'dimCount', 'dimMul', 'dimRect', 'atmosLift', 'atmosInvGamma', 'atmosGain', 'postVig', 'postVigRGB', 'postMist', 'postMistB'].map((n) => S.field(n).offset), [0, 4, 8, 12, 16, 20, 32, 48, 112, 128, 144, 160, 176, 192, 208]); // POST-STACK-01b appended at the end
+assert.equal(S.sizeBytes, 224); assert.equal(S.field('dimRect').count, 4);
 assert.equal(SPRITES_TEXTURES.length, 12);
 const kinds = { float: 'texture_2d<f32>', uint: 'texture_2d<u32>' };
 SPRITES_TEXTURES.forEach((k, i) => assert.ok(new RegExp(`@group\\(0\\) @binding\\(${i}\\) var \\w+: ${kinds[k].replace(/[<>]/g, '\\$&')}`).test(SPRITES_WGSL), 'sprites binding ' + i));

@@ -27,6 +27,7 @@ const F = (n) => SPRITES_BLOCK.field(n).word;
 const W_COUNT = F('count'), W_FADE = F('sceneFade'), W_MING = F('fadeMinGain'), W_RAMP = F('fadeRampLen');
 const W_DIMALL = F('dimAll'), W_DIMN = F('dimCount'), W_DIMMUL = F('dimMul'), W_DIMRECT = F('dimRect');
 const W_ALIFT = F('atmosLift'), W_AIG = F('atmosInvGamma'), W_AGAIN = F('atmosGain'); // ENV-03c
+const W_PVIG = F('postVig'), W_PVRGB = F('postVigRGB'), W_PMIST = F('postMist'), W_PMISTB = F('postMistB'); // POST-STACK-01b
 
 export const ATLAS_FORMAT = 'rgba8ui';
 
@@ -44,6 +45,9 @@ export class WgSpritesPass {
     this.stats = { sprites: 0, uploadMs: 0, partBytes: 0 }; // partBytes: cumulative particle-layer upload bytes (both textures)
     this.cropColumns = true; // PARTICLE-UPLOAD-02 (false = row band only, for the equivalence test)
     this.ran = false;
+    // POST-STACK-01b: `post` = a composePost() state (engine/render/post.js) or null (= today's pipeline). When set it carries the COMPOSED grade
+    // (biome + preset, so nothing is graded twice) and replaces palette.atmos below; `postAspect` = displayed picture ratio for the vignette (0 = cols/rows).
+    this.post = null; this.postAspect = 0;
     this._rowRect = { x: 0, y: 0, w: 0, h: 0, stride: 0 }; // reused dirty-row rect for writeTexture (no per-frame allocation)
     this.sceneFade = 1; this.fadeMinGain = 0; this.fadeRampLen = 1;
     this.dimAll = 1; this.dimCount = 0;
@@ -183,13 +187,21 @@ export class WgSpritesPass {
     ui[W_COUNT] = count; u[W_FADE] = this.sceneFade; u[W_MING] = this.fadeMinGain; ui[W_RAMP] = this.fadeRampLen;
     u[W_DIMALL] = this.dimAll; ui[W_DIMN] = this.dimCount;
     u.set(this.dimMul, W_DIMMUL); u.set(this.dimRect, W_DIMRECT);
-    const A = this.palette && this.palette.atmos; // ENV-03c: published by applyAtmosToPalette; absent/off/identity = w 0 (shader skips)
+    const PS = this.post; // POST-STACK-01b: composed state wins over palette.atmos (composePost already folded the biome grade in)
+    const A = PS ? (PS.gradeOn && !PS.gradeId ? PS : null) : this.palette && this.palette.atmos; // ENV-03c: published by applyAtmosToPalette; absent/off/identity = w 0 (shader skips)
     if (A && A.on && !A.gradeId) {
       const l = A.lift, ig = A.invGamma, g = A.gain;
       u[W_ALIFT] = l[0]; u[W_ALIFT + 1] = l[1]; u[W_ALIFT + 2] = l[2]; u[W_ALIFT + 3] = 1;
       u[W_AIG] = ig[0]; u[W_AIG + 1] = ig[1]; u[W_AIG + 2] = ig[2]; u[W_AIG + 3] = A.sat;
       u[W_AGAIN] = g[0]; u[W_AGAIN + 1] = g[1]; u[W_AGAIN + 2] = g[2];
     } else u[W_ALIFT + 3] = 0;
+    if (PS && (PS.vig[3] > 0 || PS.mist[3] > 0)) {
+      const v = PS.vig, vr = PS.vigRGB, m = PS.mist, mr = PS.mistRGB;
+      u[W_PVIG] = v[0]; u[W_PVIG + 1] = v[1]; u[W_PVIG + 2] = v[2]; u[W_PVIG + 3] = v[3];
+      u[W_PVRGB] = vr[0]; u[W_PVRGB + 1] = vr[1]; u[W_PVRGB + 2] = vr[2]; u[W_PVRGB + 3] = this.postAspect > 0 ? this.postAspect : this.cols / (this.rows || 1);
+      u[W_PMIST] = mr[0]; u[W_PMIST + 1] = mr[1]; u[W_PMIST + 2] = mr[2]; u[W_PMIST + 3] = m[0];
+      u[W_PMISTB] = m[1]; u[W_PMISTB + 1] = m[2]; u[W_PMISTB + 2] = m[3]; u[W_PMISTB + 3] = 0;
+    } else { u[W_PVIG + 3] = 0; u[W_PMISTB + 2] = 0; }
     const tx = this.tex;
     tx[0].texture = inp.gi; tx[1].texture = inp.depth; tx[2].texture = inp.edgeFg; tx[3].texture = inp.edgeBg;
     tx[4].texture = this.texSpr; tx[5].texture = this.texAtlas; tx[6].texture = this.texPal;

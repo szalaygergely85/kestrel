@@ -1,7 +1,7 @@
 import {
   bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
   meshFromJSON, meshFromBin, composeCharacter, meshCharacter, collapseRig, riggedModelDef, buildMeshFromTris, MaskAtlas, buildMaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
-  bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks, sunPathFrom, applySunPair, blendLook, createAtmosState, mixAtmos, applyAtmosToPalette, gradeCells,
+  bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks, sunPathFrom, applySunPair, blendLook, createAtmosState, mixAtmos, applyAtmosToPalette, gradeCells, createPostState, composePost, postCells,
   bakeImpostor, enableGroupImpostor, resolveGroupLod1, createInstanceBuffer,
   createRipples, defineWadeSplash, wadeSplashAt, validateCarpetConfig, makeUnderState,
 } from '../../../../engine/index.js';
@@ -156,6 +156,13 @@ function buildCompareRuns(ctx) {
     // ENV-03c: biome atmosphere rows (fixed driver weights, no driver; pose.atmos = { w: [per entry], tod: [day, dusk, night] }): fog + haze + sprite grade
     ...[['atmosForestDay', 12, { w: [1, 0, 0], tod: [1, 0, 0] }], ['atmosMeadowDusk', 18, { w: [0, 1, 0], tod: [0, 1, 0] }], ['atmosBorderNight', 23, { w: [0, 0.5, 0.5], tod: [0, 0, 1] }]].map(([n, hour, atmos]) => (
       { world: worldM1, lights: worldM1Lights, name: `world_m1: ${n} (ENV-03c biome atmosphere)`, hour, atmos,
+        cam: { x: m1Eye.x, y: m1Eye.y, z: m1Eye.z, yawDeg: m1Eye.yawDeg, pitchDeg: m1Eye.pitchDeg } })),
+    // POST-STACK-01b (38.73 section 5): per-cell finish chain rows (pose.post = PostConfig; pose.atmos on top = composed grade). Bloom = the existing glow pass (`?gpucompare=emissive`, 01c wires it), not a row here.
+    ...[['postVignette', 12, null, { vignette: { k: 0.45, r0: 0.4, r1: 0.95, rgb: [0.02, 0.02, 0.05] } }],
+      ['postGradeOverAtmos', 12, { w: [1, 0, 0], tod: [1, 0, 0] }, { grade: { lift: [0.01, 0, 0.01], gamma: [1.05, 1, 0.95], gain: [1.02, 1, 0.98], sat: 1.1 } }],
+      ['postMistInterior', 12, null, { mist: { rgb: [0.55, 0.6, 0.7], density: 0.03, start: 4, heightK: 0 } }],
+      ['postAllHigh', 18, { w: [0, 1, 0], tod: [0, 1, 0] }, { grade: { lift: [0.01, 0, 0.01], gamma: [1.05, 1, 0.95], gain: [1.02, 1, 0.98], sat: 1.1 }, vignette: { k: 0.45, r0: 0.4, r1: 0.95, rgb: [0.02, 0.02, 0.05] }, mist: { rgb: [0.55, 0.6, 0.7], density: 0.03, start: 4, heightK: 0 } }]].map(([n, hour, atmos, post]) => (
+      { world: worldM1, lights: worldM1Lights, name: `world_m1: ${n} (POST-STACK-01b finish chain)`, hour, atmos: atmos || undefined, post,
         cam: { x: m1Eye.x, y: m1Eye.y, z: m1Eye.z, yawDeg: m1Eye.yawDeg, pitchDeg: m1Eye.pitchDeg } })),
     { world: worldM1, lights: worldM1Lights, name: 'world_m1: player spawn, card open (sceneDim 0.35 + plate 0.18)',
       cam: { x: m1Eye.x, y: m1Eye.y, z: m1Eye.z, yawDeg: m1Eye.yawDeg, pitchDeg: m1Eye.pitchDeg },
@@ -1054,6 +1061,7 @@ async function runGpuCompareSceneMode(ctx) {
     const E = [[[150, 180, 150], [120, 130, 140], [30, 40, 60]], [[200, 210, 225], [220, 170, 150], [40, 45, 70]], [[210, 205, 180], [215, 180, 140], [45, 45, 65]]];
     const recs = []; E.forEach((e, i) => e.forEach((fog, s) => recs.push(rec(fog, 0.006 + 0.004 * i + 0.002 * s, fog.map((v) => Math.min(255, v + 20)), 0.5, [0.01 + 0.01 * s, 0.01, 0.02], [1 + 0.1 * i, 1.05, 1.1 - 0.1 * s], [1 - 0.2 * s, 1 - 0.15 * s, 1 - 0.1 * s], 1 - 0.1 * s)))); return { n: 3, recs }; })();
   const atmosOn = (a) => { for (let i = 0; i < 3; i++) { atmosDrv.w[i] = a.w[i]; atmosDrv.tod[i] = a.tod[i]; } atmosDrv.wNone = 1 - (a.w[0] + a.w[1] + a.w[2]); atmosDrv.version++; const f = atmosBase(); mixAtmos(atmosTable, atmosDrv, f, atmosSt); applyAtmosToPalette(assets.palette, atmosSt); };
+  const postSt = createPostState(); // POST-STACK-01b: one composed state shared by the GPU sprites pass and the JS twin
   const atmosOff = () => { if (atmosSt.on) { atmosSt.on = false; applyAtmosToPalette(assets.palette, atmosSt); } };
   let atmosBaseRec = null;
   const atmosBase = () => { const P = assets.palette, f = P.fog.farBase || P.fog.far; if (!atmosBaseRec) atmosBaseRec = { start: f.start, full: f.full, curve: f.curve || 1, near: P.rgb[f.color], far: P.rgb[f.colorFar] }; return atmosBaseRec; };
@@ -1062,7 +1070,7 @@ async function runGpuCompareSceneMode(ctx) {
   // e.g. `?gpucompare=1&renderer=mesh&pose=water pond`. No filter = every pose.
   const poseQ = (params.get('pose') || '').toLowerCase();
   const poseRuns = poseQ ? runs.filter((r) => r.name.toLowerCase().includes(poseQ)) : runs;
-  for (const { world, lights, name: poseName, cam, fade, dim, real, before, spritesExtra, needK8, meshOnly, maskPose, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, hour: poseHour, atmos: poseAtmos, instAssert, vmAssert, decalAssert, timeSec: poseTime, carpet: carpetPose, under: underPose } of poseRuns) {
+  for (const { world, lights, name: poseName, cam, fade, dim, real, before, spritesExtra, needK8, meshOnly, maskPose, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, hour: poseHour, atmos: poseAtmos, post: posePost, instAssert, vmAssert, decalAssert, timeSec: poseTime, carpet: carpetPose, under: underPose } of poseRuns) {
     if (world.carpet || world._carpetCtx) { world._carpetCtx = null; world.carpet = null; wg.setCarpet(null, null, 0); } // D2e: carpet poses only
     if (restoreSun) { restoreSun(); restoreSun = null; }
     atmosOff(); // ENV-03c: previous pose's atmosphere off (one palette bump)
@@ -1103,6 +1111,9 @@ async function runGpuCompareSceneMode(ctx) {
     fbCompare.timeSec = poseTime || 0; // US-141a: frozen per-pose clock (flow streaks); 0 for every other pose
     fbCompare.lights = lights;
     if (poseAtmos) atmosOn(poseAtmos); // ENV-03c: before the first frame so both twins see the same live fog/haze/grade
+    if (wg && wg._spritesPass) { // POST-STACK-01b: composed grade (biome + preset) -> the atmos slots; null = today's pipeline
+      if (posePost) { composePost(poseAtmos ? atmosSt : null, posePost, postSt); wg._spritesPass.post = postSt; wg._spritesPass.postAspect = (rt.cols * (rt.pxCellW || 1)) / (rt.rows * (rt.pxCellH || 1)); } else wg._spritesPass.post = null;
+    }
     if (lights) lights.update(0, world);
     if (lights) lights.cloud = null; // S8-B2-12c: every gpucompare mode forces clouds off
     if (lights) lights.ao = null; // S8-B2-20 NEEDS B1 item (3): every gpucompare mode forces ao off
@@ -1210,7 +1221,8 @@ async function runGpuCompareSceneMode(ctx) {
       applySceneFade(fbCompare.rt, fbCompare.sceneFade, fbCompare.fadeLut);
     }
     applySceneDim(fbCompare.rt, compareSceneDim);
-    if (poseAtmos) gradeCells(fbCompare.rt, atmosSt); // ENV-03c: JS twin grade after fade/dim (the GPU does it in the sprites pass)
+    if (posePost) postCells(fbCompare.rt, depthBuffer.depth, postSt); // POST-STACK-01b: JS twin of the whole chain (grade stage = composed set)
+    else if (poseAtmos) gradeCells(fbCompare.rt, atmosSt); // ENV-03c: JS twin grade after fade/dim (the GPU does it in the sprites pass)
     rt.gpuActive = wasActive;
     if (overlayOps) engine.overlay.renderCpu(cam, rt.cells, depthBuffer.depth); // JS twin composite (WebGPU: judged by the final cell row)
 
@@ -1284,6 +1296,7 @@ async function runGpuCompareSceneMode(ctx) {
   overallOk = overallOk && sampledOwnTextures;
   for (const r of shadowRows) overallOk = overallOk && r.ok;
   atmosOff();
+  if (wg && wg._spritesPass) wg._spritesPass.post = null; // POST-STACK-01b
   fbCompare.sceneFade = 1;
   if (sprites.pass) sprites.pass.sceneFade = 1;
   resetSceneDim(compareSceneDim);
