@@ -299,7 +299,11 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   // (`quest.<id>.done` as a flag objective, e.g. burl.boars / tower.blade); everything else is a side quest.
   const mainDone = new Set();
   for (const o of entries[0].def.objectives) if (o.when && o.when.type === 'flag' && typeof o.when.id === 'string') mainDone.add(o.when.id);
-  book.isMain = (i) => i === 0 || isMainDef(entries[i].def) || mainDone.has('quest.' + entries[i].def.id + '.done'); // OB-155: ONE rule (questLog uses it too)
+  // OB-155k: transitive - a quest that a main quest `requires` (tower.blade -> burl.boars) is main too.
+  const mainSet = new Set();
+  for (let i = 0; i < n; i++) if (i === 0 || isMainDef(entries[i].def) || mainDone.has('quest.' + entries[i].def.id + '.done')) mainSet.add(i);
+  for (let grew = true; grew;) { grew = false; for (const i of [...mainSet]) for (const r of entries[i].def.requires || []) { const q = r.quest !== undefined ? byId.get(r.quest) : undefined; if (q !== undefined && !mainSet.has(q)) { mainSet.add(q); grew = true; } } }
+  book.isMain = (i) => mainSet.has(i); // OB-155: ONE rule (questLog uses it too)
   /** Giver marks: `outAvail` ('!') / `outReady` ('?') get the main-chain quests; with the optional `sideAvail` / `sideReady` the side
    *  quests go there instead (OB-125: a different colour), else everything goes to the first two (old behaviour). */
   book.giverMarks = function giverMarks(outAvail, outReady, sideAvail, sideReady) {
@@ -312,14 +316,21 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     outAvail.length = a; outReady.length = r;
     if (sideAvail) { sideAvail.length = sa; sideReady.length = sr; }
   };
-  /** OB-124b: main-chain step marks (data: objective.mark = {start?, end?}). The CURRENT m1 step shows a gold '!' at `start` while it
-   *  has one (step available), else a gold '?' at `end` (step active / where it completes). Appends to the main lists; none when done. */
-  book.chainMarks = function chainMarks(outAvail, outReady) {
+  /** OB-124b / OB-155i: main-chain step marks (data: objective.mark = {start?, taken?}). The CURRENT m1 step shows a gold '!' at `start`
+   *  until the giver handed it over (flag `mark.taken`). No '?' here: a waypoint is not a hand-in (rule OB-156); waypoints go on the compass/HUD. */
+  book.chainMarks = function chainMarks(outAvail) {
     const st = entries[0].state, o = entries[0].def.objectives[st.completed.length];
-    const m = o && o.mark; if (!m) return;
-    // OB-157: optional mark.taken = flag set when the start giver handed the step over -> the '!' is gone, the '?' at `end` shows
-    const taken = m.taken && entries[0].state.flags[m.taken];
-    if (m.start && !taken) outAvail[outAvail.length] = m.start; else if (m.end) outReady[outReady.length] = m.end;
+    const m = o && o.mark; if (!m || !m.start) return;
+    if (m.taken && entries[0].state.flags[m.taken]) return;
+    outAvail[outAvail.length] = m.start;
+  };
+  /** OB-155j: ONE marker per entity. Fills the four lists (gold/blue x '!'/'?') from giverMarks + chainMarks, then keeps each entity only
+   *  in its best list: gold '?' > blue '?' > gold '!' > blue '!' (a return beats an offer). */
+  const markSeen = new Set(); // reused per call (no per-frame alloc)
+  book.markLists = function markLists(gA, gR, sA, sR) {
+    book.giverMarks(gA, gR, sA, sR); book.chainMarks(gA);
+    const seen = markSeen; seen.clear();
+    for (const list of [gR, sR, gA, sA]) { let k = 0; for (let j = 0; j < list.length; j++) { const e = list[j]; if (!seen.has(e)) { seen.add(e); list[k++] = e; } } list.length = k; }
   };
   /** QL-03: index of the tracked giver quest: the player's pick (main flag `ui.tracked`, saved with the main quest) while it is active/ready, else the most recently accepted one, else -1. */
   book.tracked = function tracked() {
