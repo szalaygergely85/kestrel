@@ -258,6 +258,9 @@
     { look: 'foothills', biomes: [9], ground: ['grass', 'rock'] },
     { look: 'meadow', ground: ['grass'], biomes: [0] }
   ];
+  // ENV-03a (arch 38.65 point 3): geo biome id -> biomeLook entry whose picked atmos applies there. Ids not listed (3 twistedWood, 4 ashMile) = the current look.
+  // DEFAULTS PENDING OWNER (same mapping question as lookMap): 1/2 forests share 'forest', 7/8 beach+fen share 'shore'.
+  BIOME_LOOK.atmosMap = { 0: 'meadow', 1: 'forest', 2: 'forest', 5: 'glade', 6: 'fields', 9: 'foothills', 7: 'shore', 8: 'shore' };
   root.BIOME_LOOK = BIOME_LOOK;
   if (typeof module !== 'undefined' && module.exports) module.exports = BIOME_LOOK;
 })(typeof window !== 'undefined' ? window : globalThis);
