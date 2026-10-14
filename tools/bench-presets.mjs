@@ -31,6 +31,7 @@ export function parseArgs(argv) {
     else if (a === '--grid') o.grid = String(argv[++i]);
     else if (a === '--imp') o.imp = String(argv[++i]).split(',').filter(Boolean).map((v) => (v === 'on' || v === '1' ? 1 : 0));
     else if (a === '--quality') o.quality = String(argv[++i]);
+    else if (a === '--query') o.query = String(argv[++i]); // ENV-02d: extra URL params, e.g. look=0 (look off baseline)
     else if (a === '--gpu') o.gpu = String(argv[++i]);
     else if (a === '--seconds') o.seconds = Number(argv[++i]);
     else rest.push(a);
@@ -96,7 +97,7 @@ async function main() {
     await cdp.send('Page.enable'); await cdp.send('Runtime.enable');
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 700, deviceScaleFactor: 1, mobile: false });
     for (const pose of o.poses) for (const rays of o.rays) for (const imp of o.imp) {
-      await cdp.send('Page.navigate', { url: `http://127.0.0.1:${o.port}/game/index.html?pose=${pose}&grid=${o.grid}&rays=${rays}${o.quality ? `&quality=${o.quality}` : ''}${imp === null ? '' : `&imp=${imp}`}&title=0` });
+      await cdp.send('Page.navigate', { url: `http://127.0.0.1:${o.port}/game/index.html?pose=${pose}&grid=${o.grid}&rays=${rays}${o.quality ? `&quality=${o.quality}` : ''}${imp === null ? '' : `&imp=${imp}`}&title=0${o.query ? `&${o.query}` : ''}` });
       let ready = false;
       for (let i = 0; i < 400; i++) { // up to ~2 min: pipeline ready + far terrain baked
         await pause(300);

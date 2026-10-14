@@ -7,6 +7,7 @@
 // engine/index.js like everything else (check-deps rule 3).
 
 import { applyImpostorBoot, reapplyRememberedImpostors } from './ui/impostorPreset.js'; // R6-WIRE
+import { groundLookFromParams } from './look/groundLookConfig.js'; // ENV-02d
 import { parseDecorMode, buildDecorConfig, guardDecorRun } from './decorHost.js'; // ENV-01-WIRE
 import { loadPresets, resolveQuality, saveQuality, knobsFor, dropStaleOverrides, carpetQualityFor, carpetBuildFor } from './ui/gfxPresets.js';
 import { loadQuestFiles, showBootErrors } from './questBoot.js';
@@ -358,7 +359,7 @@ if (bootProg) { bootProg.phase('renderer'); await bootPaint(); }
 // (load-time only - no runtime look switching, that is US-122). Unknown key ->
 // warn + keep the default.
 const lookParam = params.get('look');
-if (lookParam) {
+if (lookParam && lookParam !== '0') { // '0' = ENV-02d ground-look off
   if (assets.palette && assets.palette.timeOfDay && assets.palette.timeOfDay[lookParam]) {
     assets.palette.defaultTime = lookParam;
   } else {
@@ -1090,7 +1091,8 @@ async function runGame(mode, cinematic = null) {
     if (params.get('trees') === 'voxel' && ft.speciesVoxel) ft.species = ft.speciesVoxel; }
   const worldLoadOpts = { physics,
     realTrees: renderer === 'mesh' && physics === 'mesh' && params.get('trees') !== '0',
-    detail: renderer === 'mesh' && physics === 'mesh' && params.get('scatter') !== '0' }; // ENV-01a2: `?scatter=0` (not `?detail=0`, that is the US-028 v1-shading switch)
+    detail: renderer === 'mesh' && physics === 'mesh' && params.get('scatter') !== '0',
+    groundLook: groundLookFromParams(params, window.BIOME_LOOK, window.ASSETS.levels.overworld_far?.recipe) }; // ENV-02d: `?look=0` -> null // ENV-01a2: `?scatter=0` (not `?detail=0`, that is the US-028 v1-shading switch)
   // ENV-01-WIRE (38.62): GPU decor scatter, only on the WebGPU mesh renderer with the GPU cull; `?decor=cpu` keeps today's CPU layers (decorGpu false = byte-identical)
   let decorPass = null; const decorDbg = { total: 0, frameErrors: 0, bad: false };
   { const dl = ((window.ASSETS.levels.overworld_far?.recipe?.detail?.layers) || []).some((l) => l.gpu); // every early-out names its reason once (?decor=cpu is silent)

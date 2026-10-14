@@ -81,3 +81,15 @@ for (let i = 0; i < 100000; i++) {
 console.log('dw per 2 m: pairs ' + pairs + ', >0.1: ' + big + ', >0.2: ' + over02 + ', max ' + worst.toFixed(3));
 ok('w continuous: < 0.3% of 2 m steps change by > 0.2', over02 / pairs < 0.003);
 console.log('groundLookConfig tests: ' + n + ' ok');
+
+// ENV-02d: flag parse
+{
+  const { groundLookFromParams } = await import('./groundLookConfig.js');
+  const P = (s) => new URLSearchParams(s);
+  assert.equal(groundLookFromParams(P('look=0'), BL, recipe), null);
+  assert.equal(groundLookFromParams(P(''), null, recipe), null);
+  const on = groundLookFromParams(P('look=dusk'), BL, recipe);
+  assert.deepEqual(on, buildGroundLookConfig(BL, T));
+  assert.equal(JSON.stringify(groundLookFromParams(P(''), BL, recipe)), JSON.stringify(on));
+  console.log('groundLookFromParams ok');
+}

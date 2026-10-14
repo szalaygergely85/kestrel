@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { Terrain } from './Terrain.js';
 import { LookBaker, assertBlendM } from './lookBake.js';
 import { BandCache, bundleBytes } from './bandCache.js';
+import { allocProbe, skipNote } from '../../tools/allocProbe.mjs';
 import { packNearTextures, packTerrainTextures } from '../render/gpu/TerrainTextures.js';
 
 let n = 0; const ok = (name, c, extra) => { assert.ok(c, name + (extra ? ' ' + extra : '')); n++; };
@@ -82,11 +83,8 @@ const bakeBand = (t, cx0, cy0, cw, ch, src) => { const st = t.newBandState(cx0, 
 // 4. 0 extra alloc per baked cell
 {
   const L = new LookBaker(CFG, R.util), out = new Uint8Array(2);
-  for (let i = 0; i < 20000; i++) L.bakeCell(i * 0.1, 5, i & 1, out, 0);
-  if (globalThis.gc) globalThis.gc();
-  const h0 = process.memoryUsage().heapUsed;
-  for (let i = 0; i < 2000000; i++) L.bakeCell((i % 1000) * 0.37, 5, i & 1, out, 0);
-  const d = process.memoryUsage().heapUsed - h0;
-  ok('bakeCell 2M calls: heap delta < 1 MB', d < 1048576, d + ' B');
+  // arch 38.61: shared probe (warm-up, gc before each window, min of 5 windows); the old single 2M-call heap delta flaked at 1.2-1.56 MB.
+  const r = allocProbe((m) => { for (let i = 0; i < m; i++) L.bakeCell((i % 1000) * 0.37, 5, i & 1, out, 0); }, { n: 200000 });
+  if (!skipNote(r, 'bakeCell alloc')) ok('bakeCell 0 alloc: min window < 0.1 B/call', r.perCall < 0.1, r.perCall.toFixed(3) + ' B/call');
 }
 console.log(`lookBake.test.js: ${n} checks passed`);
