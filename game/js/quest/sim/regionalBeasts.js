@@ -87,7 +87,7 @@ export function generateRegionalBeasts(o) {
             if (x > r[0] && x < r[2] && y > r[1] && y < r[3] && walkable(x, y)) { hx = x; hy = y; break; }
           }
         }
-        out.push({ id: `${rule.species}.${rule.key}.${++n}`, species: rule.species, region: rule.region, x: hx, y: hy, group: g });
+        out.push({ id: `${rule.species}.${rule.key}.${++n}`, species: rule.species, region: rule.region, x: hx, y: hy, group: g, ...(rule.when ? { when: rule.when } : {}) });
       }
     }
   }

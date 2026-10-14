@@ -1559,7 +1559,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       beasts = createBeastSim(world, { tileNav: !!gridNav, nav: (lifeNav = gridNav || (worldDef.nav && buildBeastNav(world, worldDef.nav))), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events, band: worldBand, fauna: wild ? wild.fauna : null }); // LIFE-07: predators hunt the ambient fauna
       combatHud.setSim(beasts); // HPBAR-02 + DMGNUM-01
       const poiGr = poiMembers ? poiGroups(beasts, poiMembers, poiWire.defs) : [];
-      if (Array.isArray(regionalList) && mode === 'world') beastDir = createBeastDirectorWire({ extraGroups: poiGr, sim: beasts, members: regionalList, seed: 12, state: world.state, events: engine.events, terrain: world.terrain, dayLenSec: clockCfg.dayLenS, hfovRad: HFOV_DEG * Math.PI / 180 }); // BEAST-WIRE-01 (D-083/D-087)
+      if (Array.isArray(regionalList) && mode === 'world') beastDir = createBeastDirectorWire({ extraGroups: poiGr, sim: beasts, members: regionalList, seed: 12, state: world.state, events: engine.events, terrain: world.terrain, dayLenSec: clockCfg.dayLenS, hour: () => clockHour(world.state, clockCfg), hfovRad: HFOV_DEG * Math.PI / 180 }); // BEAST-WIRE-01, BEAST-07 (D-083/D-087)
       if (poiWire) poiFights = createPoiFights({ wire: poiWire, sim: beasts, dir: beastDir ? beastDir.dir : null, groups: poiGr, events: engine.events }); // POI-05b
       if (goblinWire) goblinWire.attach(beasts, { onClank: () => playShieldClank() }); // GOB-07b: camps + spear sim + view
       if (lifeWire) { lifeWire.dispose(); lifeWire = null; } // LIFE-08: night raids (content/life/raids.json), rebuilt with every beast sim
