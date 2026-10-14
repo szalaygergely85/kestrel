@@ -1111,3 +1111,5 @@ New engine/world/giLoader.js (quiet once-per-zone fetch, missing/stale/non-gi ->
 
 ### TEXT-BATCH3-APPLY (kestrel-1, 2026-10-14)
 Applied story.md text batch 3 (farm ambush, 3 waystone hints, rook.ford.6/.8 + rook.mirror.active); rook tests now pin "Look on the floor" (text changed).
+### GI-PROBE-06 (kestrel-1, 2026-10-14) -> po-review
+`game/js/look/giWire.js` (+test PASS): preset table GI off at low, on medium/high/ultra/extreme (no preset = off, `?gi=1` forces, `?gi=0`/gpucompare = null = today's frames); main.js 6 lines: `world.loadGI({})` on world build (no `expectHash`: bake tool writes no manifest, hash lives only inside each file; runtime cannot sha), `giWire.clock(hq, moon)` in the clock driver (mix on hour step), `giWire.sync()` per frame = pointer compare flipping `LightSet.gi` (null while no field = old path). `engine/index.js` exports createGIState/mixGIState. Limits: no `.gi.bin` exist yet so each zone costs one 404 fetch (browser's own network line, no console.warn); never run in a browser/GPU, owner stills pending GI-Q1.
