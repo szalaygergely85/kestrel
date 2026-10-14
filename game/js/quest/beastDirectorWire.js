@@ -1,11 +1,22 @@
 // BEAST-WIRE-01 (D-083/D-087): wires BEAST-06a (spawnDirector + difficulty) into the running game.
 // Builds the groups from generateRegionalBeasts output, respawns a dead group's members at home when the director says so,
 // keeps state['beast.v1'] in world.state (the save blob already carries world.state) and owns the Settings difficulty applier.
-import { buildGroups, createSpawnDirector } from './sim/spawnDirector.js';
+import { buildGroups, createSpawnDirector, VIEW_MARGIN_RAD } from './sim/spawnDirector.js';
 import { applyDifficulty, resolveDifficulty } from './sim/difficulty.js';
 import { setDifficultyApplier, difficultyName } from '../ui/difficultyFlag.js';
 
 const EYE = 1.7, LOS_STEP = 4, SAVE_STEPS = 300;
+const ENGAGED = new Set([2, 3, 4, 5, 18]); // STATE_CHASE/WINDUP/CHARGE/RECOVER/CIRCLE (beastSim.js)
+/** Never-in-view cone cosine for a full horizontal fov (rad) + the director's margin; lives here so sim code stays Math.cos-free. */
+export const viewCosFor = (hfovRad) => Math.cos(hfovRad / 2 + VIEW_MARGIN_RAD);
+// TODO (BEAST-06b/c): switch to sim.engagedCount once beastSim has it.
+function anyEngaged(sim) {
+  if (typeof sim.engagedCount === 'number') return sim.engagedCount > 0;
+  if (typeof sim.engagedCount === 'function') return sim.engagedCount() > 0;
+  if (!sim.state) return false;
+  for (let i = 0; i < sim.count; i++) if (ENGAGED.has(sim.state[i])) return true;
+  return false;
+}
 
 /** Terrain line of sight (player eye -> point 1 m above home): false when the ground rises above the ray. */
 export function terrainLos(terrain) {
@@ -19,7 +30,7 @@ export function terrainLos(terrain) {
 
 /**
  * o: { sim, members (generateRegionalBeasts output: {id,species,region,x,y,group}), seed, state (world.state), events, terrain,
- *      dayLenSec (the game's real day length), hfovRad?, los? }
+ *      dayLenSec (the game's real day length), hfovRad? (full camera hfov, rad; default 1.2), los? }
  * Returns { dir, step(dt, px, py, fx, fy), save(), setDifficulty(name)->bool, dispose() }.
  */
 export function createBeastDirectorWire(o) {
@@ -28,12 +39,16 @@ export function createBeastDirectorWire(o) {
   const groups = buildGroups(ms, o.seed || 12, null), gOfSlot = Object.create(null);
   for (let g = 0; g < groups.length; g++) for (const s of groups[g].slots) gOfSlot[s] = g;
   const dir = createSpawnDirector({
-    groups, dayLenSec: o.dayLenSec, viewHalfRad: o.hfovRad || 0.6, los: o.los || (o.terrain ? terrainLos(o.terrain) : null),
-    onRespawn: (g, gr) => { for (const s of gr.slots) sim.respawnSlot(s); wire.save(); },
+    groups, dayLenSec: o.dayLenSec, viewCos: viewCosFor(o.hfovRad || 1.2), los: o.los || (o.terrain ? terrainLos(o.terrain) : null),
+    onRespawn: (g, gr) => { for (const s of gr.slots) { if (sim.isDown && sim.isDown(s)) sim.setDown(s, false); else sim.respawnSlot(s); } wire.save(); },
   });
   dir.setDifficulty(resolveDifficulty(difficultyName()));
   if (sim.tactics && sim.tactics.setDifficulty) applyDifficulty(sim, difficultyName(), dir);
   dir.load(state);
+  // dead groups stay dead after a load and after resetAll (travel/Unstuck): park their members until the timer says so
+  const keepDown = () => { if (!sim.setDown) return; for (let g = 0; g < groups.length; g++) if (dir.dead[g]) for (const s of groups[g].slots) sim.setDown(s, true); };
+  keepDown();
+  const offReset = o.events ? o.events.on('beasts:reset', keepDown) : null;
   const off = o.events ? o.events.on('beast:died', (p) => {
     const slot = p && sim.slotOf(p.id), g = slot >= 0 ? gOfSlot[slot] : undefined;
     if (g !== undefined) { dir.memberDied(g); wire.save(); }
@@ -43,8 +58,9 @@ export function createBeastDirectorWire(o) {
     dir, groups,
     step: (dt, px, py, fx, fy) => { dir.step(dt, px, py, fx, fy); if (++saveTick % SAVE_STEPS === 0) wire.save(); }, // t drifts <= 5 s between saves
     save: () => dir.save(state),
-    setDifficulty: (name) => applyDifficulty(sim, name, dir),
-    dispose() { if (typeof off === 'function') off(); setDifficultyApplier(null); },
+    setDifficulty: (name) => (anyEngaged(sim) ? false : applyDifficulty(sim, name, dir)), // refused while ANY slot is engaged
+    setHfov: (rad) => { dir.viewCos = viewCosFor(rad); },
+    dispose() { if (typeof off === 'function') off(); if (typeof offReset === 'function') offReset(); setDifficultyApplier(null); },
   };
   setDifficultyApplier(wire.setDifficulty);
   return wire;

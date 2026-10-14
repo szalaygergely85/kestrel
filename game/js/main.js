@@ -112,7 +112,7 @@ import { planWorldLife } from './quest/sim/worldGen.js';
 import { bootPoiWire } from './life/poiWire.js'; // POI-02 (OB-141, D-088)
 import { createPoiDiscover } from './ui/poiDiscover.js'; // POI-03
 import { bootRegionalBeasts } from './quest/sim/regionalBeastsBoot.js'; // WM-12
-import { createBeastDirectorWire } from './quest/beastDirectorWire.js'; import { setDifficultyName } from './ui/difficultyFlag.js'; // BEAST-WIRE-01
+import { HFOV_DEG } from '../../engine/index.js'; import { createBeastDirectorWire } from './quest/beastDirectorWire.js'; import { setDifficultyName } from './ui/difficultyFlag.js'; // BEAST-WIRE-01
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
 import { ensureWolves } from './quest/sim/wolfBrain.js'; // WOLF-01
 import { ensureBears } from './quest/sim/bearBrain.js'; // BEAR-01 (D-069): black bears in Thornwood
@@ -1555,7 +1555,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       }
       beasts = createBeastSim(world, { tileNav: !!gridNav, nav: (lifeNav = gridNav || (worldDef.nav && buildBeastNav(world, worldDef.nav))), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events, band: worldBand, fauna: wild ? wild.fauna : null }); // LIFE-07: predators hunt the ambient fauna
       combatHud.setSim(beasts); // HPBAR-02 + DMGNUM-01
-      if (Array.isArray(regionalList) && mode === 'world') beastDir = createBeastDirectorWire({ sim: beasts, members: regionalList, seed: 12, state: world.state, events: engine.events, terrain: world.terrain, dayLenSec: clockCfg.dayLenS }); // BEAST-WIRE-01 (D-083/D-087)
+      if (Array.isArray(regionalList) && mode === 'world') beastDir = createBeastDirectorWire({ sim: beasts, members: regionalList, seed: 12, state: world.state, events: engine.events, terrain: world.terrain, dayLenSec: clockCfg.dayLenS, hfovRad: HFOV_DEG * Math.PI / 180 }); // BEAST-WIRE-01 (D-083/D-087)
       if (goblinWire) goblinWire.attach(beasts, { onClank: () => playShieldClank() }); // GOB-07b: camps + spear sim + view
       if (lifeWire) { lifeWire.dispose(); lifeWire = null; } // LIFE-08: night raids (content/life/raids.json), rebuilt with every beast sim
       if (raidDefs && !isCaptureOrBench && mode === 'world') lifeWire = createLifeWire({ ...raidDefs, campDefs: goblinWire ? goblinWire.campDefs : undefined, sim: beasts, events: engine.events, state: world.state, world, book: () => (saveRelay ? saveRelay.quest.book : null) });
