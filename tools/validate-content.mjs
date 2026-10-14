@@ -65,7 +65,7 @@ addonChars.add('char.kit'); // OB-086: the default kit character is registered a
 // loadContentPack (same loader the game uses) and merged onto the
 // `globalThis.ASSETS` the remaining classic scripts (palette, models,
 // overworld_far's terrain RECIPE - still code, unaffected) already built.
-import { validateVoxelModel, loadContentPack, PROP_SCALE_MIN, PROP_SCALE_MAX, meshFromJSON, meshFromBin, validateMesh, validateLook, maskFromJSON, validateDialogue } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
+import { validateVoxelModel, loadContentPack, PROP_SCALE_MIN, PROP_SCALE_MAX, meshFromJSON, meshFromBin, validateMesh, validateLinks, validateLook, maskFromJSON, validateDialogue } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import { validateQuestDefinition } from '../game/js/quest/sim/quest.js';
@@ -428,6 +428,8 @@ export function validateContent(ASSETS, opts = {}) {
     const world = worlds[worldKey];
     if (!world || typeof world !== 'object') continue;
     const base = `worlds.${worldKey}`;
+    // NAV-LINKS-01a (arch 38.71): authored nav links (ladder / drop / door) - shape checks here, walkable ends + cost bound at bake time (addAuthoredLinks)
+    if (world.nav && world.nav.links !== undefined) { checks++; for (const e of validateLinks(world.nav.links)) fail(`${base}.nav.links`, e); }
     for (const e of world.entities || []) {
       // Billboard/legacy world entities carry a top-level `model` (e.g.
       // farTower); a `type: 'prop'` entity with a voxel look carries it

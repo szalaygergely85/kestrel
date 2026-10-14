@@ -70,15 +70,20 @@ export function makeNavTileLayers(lcfg) {
  * `{area:{x0,y0,w,h}, cell, maxSlopeDeg, maxStepM, blockedTypes}`) and the real `world` (terrain + structures).
  * Flagged structures add sheets (`grid.layers`); a world without flagged structures is byte-identical to before.
  * @param {any} world engine World
- * @param {{area:{x0:number,y0:number,w:number,h:number}, cell?:number, maxSlopeDeg?:number, maxStepM?:number, blockedTypes?:string[], layers?:any}} navCfg
+ * @param {{area:{x0:number,y0:number,w:number,h:number}, cell?:number, maxSlopeDeg?:number, maxStepM?:number, blockedTypes?:string[], layers?:any, ford?:{maxDepth?:number, cost?:number}}} navCfg
  */
 export function buildBeastNav(world, navCfg) {
   const a = navCfg.area;
+  // NAV-LINKS-01b: `navCfg.ford = {maxDepth?, cost?}` makes shallow water (< maxDepth, default 0.6 m) walkable at the ford cost; absent = unchanged.
+  const wq = { surfaceZ: 0, flatZ: 0, depth: 0, region: '', index: 0, look: 0 };
+  const ford = navCfg.ford && typeof world.waterAt === 'function'
+    ? { maxDepth: navCfg.ford.maxDepth ?? 0.6, cost: navCfg.ford.cost ?? 4, depthAt: (x, y) => (world.waterAt(x, y, wq) ? wq.depth : -1) } : undefined;
   const grid = new NavGrid({ x0: a.x0, y0: a.y0, w: a.w, h: a.h, cell: navCfg.cell ?? 1 });
   grid.buildFromWorld(world, {
     maxSlopeDeg: navCfg.maxSlopeDeg ?? 30,
     maxStepM: navCfg.maxStepM ?? Infinity,
     blockedTypes: navCfg.blockedTypes ?? ['water'],
+    ford,
   });
   if (typeof world.navFloorProbe === 'function') { const bk = createLayerBaker(world, grid, navCfg.layers); if (bk) while (!bk.step(1e9)); }
   const astar = createAStar(grid);
