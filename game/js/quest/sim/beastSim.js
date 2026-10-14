@@ -12,7 +12,7 @@ import { createAStar, findPath, findPathCells, smoothPath, createSteer, PHYSICS,
 import { BEAST_DEFAULTS, toSteps } from './beastConfig.js';
 import { tierMult } from './band.js';
 import { canSee } from './sight.js';
-import { BEAR_TUNING, bearOverrides, isBearEntity } from './bearBrain.js'; // BEAR-01
+import { BEAR_TUNING, BEAR_MODEL, bearOverrides, bearPicksBite, isBearEntity } from './bearBrain.js'; // BEAR-01, BEAR-BITE
 import { WOLF_TUNING, wolfOverrides, isWolfEntity, circleTarget, awayTarget } from './wolfBrain.js'; // WOLF-01
 import { GOBLIN_TUNING, goblinOverrides, isGoblinEntity } from './goblinBrain.js'; // GOB-01
 import { KINDS, kindIndex, kindOfEntity } from './beastKinds.js'; // BEAST-03a
@@ -52,6 +52,7 @@ export const STATE_HIDDEN = 19;    // ambush: no drift, near bubble only
 export const STATE_SUBMERGED = 20; // water: eyes-only approach
 export const STATE_GRAB = 21;      // croc hold + roll
 export const STATE_AIRBORNE = 22;  // flyer cruise / circle
+export const STATE_BITE = 24;      // BEAR-BITE: black bear lunge-bite (clip attack); damage once at biteHitMs
 export const STATE_CAST = 23;      // caster / healer cast (a hit cancels)
 const TACT_ROLE_OF = Object.freeze({ melee: TACT_MELEE, ranged: TACT_RANGED, caster: TACT_CASTER, swarm: TACT_SWARM }); // archetype role -> tactical role (BEAST-04)
 const ARCH_AGGRO_IDX = Object.freeze({ hostile: 0, whenHit: 1, never: 2, near: 3 });
@@ -224,6 +225,7 @@ export function createBeastSim(world, opts) {
     tactics: createTactics(MAX_BEASTS, (opts && opts.seed) || 0x9e3779b1), _allyN: 0, _allyX: 0, _allyY: 0, _tS: { CHASE: STATE_CHASE, WINDUP: STATE_WINDUP, CHARGE: STATE_CHARGE, RECOVER: STATE_RECOVER },
     ap: { slot: new Uint8Array(MAX_BEASTS), tab: Object.fromEntries(Object.keys(ARCHETYPES).map((k) => [k, { ...ARCHETYPES[k] }])), q: [], n: 0 }, // ED-AI-02: slot = 1 where config comes from the archetype row; tab = per-sim mutable copy of the frozen table; q/n = pending patches ({arch, fields}), applied before the next step
     archIdx: new Uint8Array(MAX_BEASTS),     // BEAST-03a: index into ARCH_NAMES (archetypes.js)
+    biteCd: new Uint16Array(MAX_BEASTS), biteN: new Uint16Array(MAX_BEASTS), biteDone: new Uint8Array(MAX_BEASTS), // BEAR-BITE
     bear: new Uint8Array(MAX_BEASTS),        // BEAR-01: brain.species==='bear' (per-slot cfg, fixed 2-heart swipe, light hits don't cancel windup)
     goblin: new Uint8Array(MAX_BEASTS),      // GOB-01: brain.species==='goblin'
     group: new Uint8Array(MAX_BEASTS),       // GOB-01: attack-token group 0 boar/bear, 1 wolf, 2 goblin
@@ -673,6 +675,7 @@ function leashOne(sim, i, px, py) {
 }
 
 function transitionOne(sim, i, px, py) {
+  if (sim.biteCd[i] > 0) sim.biteCd[i]--;
   switch (sim.state[i]) {
     case STATE_WANDER: wanderStep(sim, i, px, py); break;
     case STATE_EAT: eatStep(sim, i, px, py); break;
@@ -681,6 +684,7 @@ function transitionOne(sim, i, px, py) {
     case STATE_WINDUP: windupStep(sim, i, px, py); break;
     case STATE_CHARGE: /* handled in postOne (needs the post-steer position) */ break;
     case STATE_RECOVER: recoverStep(sim, i, px, py); break;
+    case STATE_BITE: biteStep(sim, i, px, py); break;
     case STATE_RETURN: returnStep(sim, i, px, py); break;
     case STATE_STAGGER: staggerStep(sim, i); break;
     case STATE_FLINCH: flinchStep(sim, i); break;
@@ -779,6 +783,8 @@ function checkChaseExit(sim, i, px, py) {
   if ((sim.wolf[i] || sim.goblin[i]) && shouldFlee(sim, i)) { enterFlee(sim, i, px, py); return; } // WOLF-01
   if (sim.ranged[i] && rangedChase(sim, i, px, py, d2)) return; // GOB-02
   if (sim.tactOn[i] && (sim.tactRole[i] === TACT_RANGED || sim.tactRole[i] === TACT_CASTER) && tacticsBand(sim, i, d2)) return; // BEAST-04
+  if (sim.bear[i] && sim.seen[i] && sim.biteCd[i] === 0 && sim.entities[i].components.voxel.model === BEAR_MODEL
+      && d2 <= BEAR_TUNING.biteReachR * BEAR_TUNING.biteReachR && bearPicksBite(i, sim.biteN[i])) { enterBite(sim, i); return; } // BEAR-BITE
   const wr = sim.scfg[i].windupR;
   if (!sim.ranged[i] && d2 <= wr * wr && sim.seen[i]) {
     // US-079c: only one boar winds up/charges at a time - the first eligible (lowest slot) wins; the rest hold.
@@ -863,6 +869,29 @@ function emitScrape(sim, i) {
   sim.events.emit('beast:scrape', p);
 }
 
+const BITE_STEPS = Math.round(BEAR_TUNING.biteMs / 1000 * 60), BITE_HIT_STEP = Math.round(BEAR_TUNING.biteHitMs / 1000 * 60);
+function enterBite(sim, i) {
+  sim.biteN[i]++; sim.biteDone[i] = 0;
+  sim.state[i] = STATE_BITE; sim.timer[i] = 0; // timer = steps elapsed in the bite
+  sim.waiting[i] = 0; sim.steer.accel[i] = DEFAULT_ACCEL;
+}
+
+/** BEAR-BITE: holds position facing the player; one combat:hit when the jaws snap (200 ms) if still in reach. */
+function biteStep(sim, i, px, py) {
+  const t = ++sim.timer[i];
+  if (t === BITE_HIT_STEP && !sim.biteDone[i]) {
+    sim.biteDone[i] = 1;
+    const dx = px - sim.steer.x[i], dy = py - sim.steer.y[i], r = BEAR_TUNING.biteReachR + 0.3;
+    if (dx * dx + dy * dy <= r * r) {
+      const hp = sim._hitPayload[i];
+      hp.blocked = 0;
+      sim.events.emit('combat:hit', hp);
+      if (hp.blocked) { enterBlocked(sim, i, -dx, -dy); sim.biteCd[i] = Math.round(BEAR_TUNING.biteCdSec * 60); return; }
+    }
+  }
+  if (t >= BITE_STEPS) { sim.biteCd[i] = Math.round(BEAR_TUNING.biteCdSec * 60); enterRecover(sim, i, false); }
+}
+
 function recoverStep(sim, i, px, py) {
   void px; void py;
   sim.timer[i]--;
@@ -901,6 +930,7 @@ function enterChase(sim, i) {
 }
 
 function enterWindup(sim, i) {
+  if (sim.bear[i]) sim.biteN[i]++; // BEAR-BITE: the swipe (windup+charge) also consumes one bite-vs-swipe decision
   sim.state[i] = STATE_WINDUP;
   sim.waiting[i] = 0; // US-079c: it is the charger now, not a waiter
   sim.timer[i] = sim.ssteps[i].windup;
@@ -1019,7 +1049,7 @@ function reactToHit(sim, i, p) {
   }
   if (sim.goblin[i] && st !== STATE_STAGGER) { enterRecover(sim, i, false); return; } // GOB-01: scatter - a damaging hit enters the retreat
   if (st === STATE_WINDUP && !sim.bear[i]) { enterRecover(sim, i, false); return; } // AC: a light hit cancels the charge
-  if (st === STATE_CHARGE || st === STATE_STAGGER || (st === STATE_WINDUP && sim.bear[i])) return; // BEAR-01: an arrow doesn't break the bluff          // D-034: only a hard hit stops a charge
+  if (st === STATE_CHARGE || st === STATE_STAGGER || ((st === STATE_WINDUP || st === STATE_BITE) && sim.bear[i])) return; // BEAR-01: an arrow doesn't break the bluff          // D-034: only a hard hit stops a charge
   enterFlinch(sim, i);
 }
 
@@ -1341,7 +1371,7 @@ function postOne(sim, i) {
   // (US-078d amendment: "Facing frozen" - a knockback slide must not spin the beast to face the shove).
   if (sim.state[i] === STATE_STAGGER) {
     // frozen
-  } else if (sim.state[i] === STATE_NOTICE || sim.state[i] === STATE_WINDUP
+  } else if (sim.state[i] === STATE_NOTICE || sim.state[i] === STATE_WINDUP || sim.state[i] === STATE_BITE
              || (sim.state[i] === STATE_CHASE && (sim.waiting[i] || sim.bankHold[i]))) {
     // US-079c: a waiting boar faces the player while holding (so it reads as aware, like notice/windup).
     const ddx = px - steer.x[i], ddy = py - steer.y[i];
@@ -1540,6 +1570,7 @@ function resetAllSim(sim) {
 
 /** One slot back to home, alive, state wander (shared by resetAll and setDown(slot, false)). */
 function resetSlotSim(sim, i) {
+  sim.biteCd[i] = 0; sim.biteN[i] = 0; sim.biteDone[i] = 0; // BEAR-BITE
   // US-079b: dead steer slots are re-added in ascending order; addAgent hands out the lowest free slot, and the
   // live slots stay active (slots >= count are never used), so the lowest free slot is always the lowest dead one.
   if (!sim.steer.active[i] && !sim.dormant[i]) {
