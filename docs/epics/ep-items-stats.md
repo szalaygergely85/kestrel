@@ -1,6 +1,6 @@
 # EP-ITEMS-STATS - classic RPG item stats (D-081, OB-151, OB-150, OB-152, OB-064)
 
-Status: **owner answered section 8 on 2026-10-14 (D-084)**; ITEM-08 tonics dropped, attribute requirements + damage-number setting to add (PO). (D-081) PO, 2026-10-14 (+ owner input same day: item types,
+Status: **owner answered section 8 on 2026-10-14 (D-091)**; ITEM-08 tonics dropped, attribute requirements + damage-number setting to add (PO). (D-081) PO, 2026-10-14 (+ owner input same day: item types,
 rarity colours, rarity = number of bonus lines, concrete affix list, card mock-up).
 Replaces the fixed tier table (itemsWeapons.js `STATS` dmgMul/drawMul/blockStamMul, equip.def 1-5, band.js
 `gearItemTier`, lootConfig `LOOT_TIERS`). Keeps: no XP / no player level (D-020, D-078 3), zone levels (near side 1-5,
