@@ -142,6 +142,7 @@ import { createFireballView } from './quest/fireballView.js'; // SPELL-01b (37.1
 import { createShieldSim } from './quest/sim/shield.js'; // EQ-07 (38.41 a)
 import { createArrowSim } from './quest/sim/arrows.js'; // EQ-09 (38.41 b)
 import { createWetStones } from './quest/sim/wetStones.js'; // QL-19: wet ford stones + River Boots sure footing
+import { ENEMY_HP } from './quest/sim/beastConfig.js'; // ITEM-04 temp
 import { createBand } from './quest/sim/band.js'; // US-129a: level band for beasts + loot
 import { createWadeFx } from './quest/sim/wadeFx.js'; // US-055a
 import { createSwimWire } from './quest/swimWire.js'; // SWIM-03c (38.54)
@@ -447,6 +448,7 @@ window.addEventListener('unhandledrejection', (evt) => fatalError(evt.reason));
 // `null` (items.js script tag missing) skips validation - addItem/migrateSword then just no-op on unknown ids.
 const itemDefs = window.ASSETS && window.ASSETS.items ? window.ASSETS.items.defs : null;
 if (itemDefs) { registerGenDefs(itemDefs); validateItemDefs(itemDefs); } // ITEM-02c: gen.<type> defs first
+ENEMY_HP.mul = 10; // ITEM-04/OB-150: player damage is x10, enemy HP x10 until ITEM-05 rescales the configs
 const statsCache = createStatsCache(); // ITEM-02c: one totals cache per player (inventory screen now, combat in ITEM-04); not saved
 // US-012: crosshair/prompt colors, resolved once from the palette's `ui`
 // semantic keys (design/palette.js section 8) - `ASSETS.uiStyle` doesn't
@@ -1603,7 +1605,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       swimWire = createSwimWire(world); // SWIM-03c: needs world.waterAt / flowAt
       wetStones = createWetStones(worldDef.structures); // QL-19
       if (itemDefs) registerGearItems(hands, itemDefs, () => createStubItemSim());
-      equipPlay = createEquipPlay({ hands, shield: shieldSim, arrows: arrowSim, defs: itemDefs || {}, bowCfg: BOW_CFG, swordDamage: SWORD_CFG.light.damage,
+      equipPlay = createEquipPlay({ hands, shield: shieldSim, arrows: arrowSim, defs: itemDefs || {}, bowCfg: BOW_CFG, swordDamage: SWORD_CFG.light.damage, statsCache,
         say: (t) => { if (toasts) toasts.say(t, [226, 214, 176]); } });
       quickbar = itemDefs ? createQuickbar(itemDefs) : null; qbTick = 0; // EQ-12: sip timer lives per world
       if (fbView) fbView.bind(fireball, lightSet); // SPELL-01b: 4 flight + 2 flash + 1 ember light, never removed
@@ -1616,7 +1618,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       engine.overlay.setGroundFn(world.terrain ? (x, y) => world.terrain.groundAt(x, y) : null);
       if (vitals) vitals.dispose(); // Q9 item 1a: drop the old world's `combat:hit` listener before a new one is added below
       hurtFx.reset();
-      vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting, block: shieldSim, // EQ-07: hooks.block = the shield sim
+      vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting, block: shieldSim, levelAt: (x, y) => (worldBand ? worldBand.bandAt(x, y) : 1), // EQ-07: hooks.block = the shield sim
         defence: () => { const c = playerHandle && playerHandle.data.components; return c && c.equipment && itemDefs ? defenceOf(c.equipment, itemDefs) : 0; }, // EQ-02
         defenceBonus: () => { const c = playerHandle && playerHandle.data.components; return c && c.equipment && itemDefs ? nightBonus(c.equipment, itemDefs, clockHour(world.state, clockCfg)) : 0; }, // QL-19: night cloak +10 %
         respawnPose: () => { hzb.invalidate('respawn'); const rp = gameHooks.respawn(); ensureBand(world, rp); return rp; }, // WS2-05: band for the respawn pose // seam onRespawn(): first non-null {x,y,z,yawDeg} wins

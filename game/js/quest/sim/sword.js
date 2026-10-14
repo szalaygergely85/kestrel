@@ -7,7 +7,7 @@
 // rotation = multiply/add, no trig call), no wall clock, integer step counters only, zero allocation after create.
 import { arcHits, applyImpulse, PHYSICS } from '../../../../engine/index.js';
 import { ARC_BOUNDS_L, ARC_BOUNDS_R } from '../swordConfig.js';
-import { weaponMods } from './weaponStats.js'; // EQ-20
+import { combatMods as cm, rollMelee } from './combatMods.js'; // ITEM-04
 import { MAX_TARGETABLES } from './targetables.js'; // OB-076: one shared cap
 
 export const ST_IDLE = 0;
@@ -110,6 +110,7 @@ export function createSwordSim(world, events, cfg, hooks) {
   // ---- state -------------------------------------------------------------------------------------------------
   let state = ST_IDLE;
   let stateStep = 0;
+  let spdAcc = 0; // ITEM-04: fractional swing-speed accumulator
   let holdSteps = 0;
   let prevDown = 0;
   let chain = 0;
@@ -143,7 +144,7 @@ export function createSwordSim(world, events, cfg, hooks) {
   const _arc = { ex: 0, ey: 0, zMin: 0, zMax: 0, ax: 0, ay: 0, bx: 0, by: 0, reach: 0 };
   // US-079b: `cause: 'sword'` and `knock: 0` ride on the one preallocated payload (knock 0 = the beast uses its own
   // default stagger knock). The heavy body impulse below still uses `S.knock`; this `knock` is only for the beast.
-  const _hitPayload = { source: 'player', target: null, damage: 0, heavy: 0, dirX: 0, dirY: 0, px: 0, py: 0, pz: 0, cause: 'sword', knock: 0 };
+  const _hitPayload = { source: 'player', target: null, damage: 0, heavy: 0, dirX: 0, dirY: 0, px: 0, py: 0, pz: 0, cause: 'sword', knock: 0, crit: 0, life: 0 };
 
   function eyeOf(player, out) {
     const t = player.transform, body = player.components && player.components.body;
@@ -171,7 +172,7 @@ export function createSwordSim(world, events, cfg, hooks) {
   function enterLight() {
     swingHand = hand;
     const isSecond = chain === 1;
-    state = ST_LIGHT; stateStep = 0; frozen = 0; queued = false;
+    state = ST_LIGHT; stateStep = 0; spdAcc = 0; frozen = 0; queued = false;
     hitMask.fill(0, 0, tCount);
     chain += 1;
     blend = isSecond;
@@ -179,7 +180,7 @@ export function createSwordSim(world, events, cfg, hooks) {
   }
   function enterHard() {
     swingHand = hand;
-    state = ST_HARD; stateStep = 0; frozen = 0; queued = false;
+    state = ST_HARD; stateStep = 0; spdAcc = 0; frozen = 0; queued = false;
     hitMask.fill(0, 0, tCount);
     chain = 0; // "a hard resets chain to 0"
     blend = true; // key 0 = the captured charge pose, always
@@ -229,7 +230,9 @@ export function createSwordSim(world, events, cfg, hooks) {
     const d = Math.sqrt(dx * dx + dy * dy);
     const dirX = d > 1e-9 ? dx / d : fx, dirY = d > 1e-9 ? dy / d : fy;
     const p = _hitPayload;
-    p.source = 'player'; p.target = e.id; p.damage = S.damage * weaponMods.dmgMul; p.heavy = S.heavy; // EQ-20: equipped sword tier
+    p.source = 'player'; p.target = e.id; p.heavy = S.heavy;
+    if (cm.active) { const r = rollMelee(S.damage / LIGHT.damage); p.damage = r.dmg; p.crit = r.crit; p.life = r.life; } // ITEM-04: rolled from the stats cache
+    else { p.damage = S.damage; p.crit = 0; p.life = 0; }
     p.dirX = dirX; p.dirY = dirY; p.px = ex; p.py = ey; p.pz = ez;
     events.emit('combat:hit', p);
     if (S.heavy) {
@@ -251,7 +254,7 @@ export function createSwordSim(world, events, cfg, hooks) {
     const bx = bounds[14] * -fy + bounds[15] * fx, by = bounds[14] * fx + bounds[15] * fy;
     const A = _arcAll;
     A.ex = _arc.ex; A.ey = _arc.ey; A.zMin = _arc.zMin; A.zMax = _arc.zMax;
-    A.ax = ax; A.ay = ay; A.bx = bx; A.by = by; A.reach = S.reach;
+    A.ax = ax; A.ay = ay; A.bx = bx; A.by = by; A.reach = S.reach + cm.reachAdd;
     const n = arcHits(A, tcx, tcy, tcz, tcr, tch, tCount, _outIdx, _outT);
     for (let k = 0; k < n; k++) {
       const idx = _outIdx[k], h = tEntities[idx].components.health;
@@ -277,20 +280,20 @@ export function createSwordSim(world, events, cfg, hooks) {
     const bx = blx * -fy + bly * fx, by = blx * fx + bly * fy;
     _arc.ex = _eye.x; _arc.ey = _eye.y;
     _arc.zMin = _eye.z + cfg.zBandLow; _arc.zMax = _eye.z + cfg.zBandHigh;
-    _arc.ax = ax; _arc.ay = ay; _arc.bx = bx; _arc.by = by; _arc.reach = S.reach;
+    _arc.ax = ax; _arc.ay = ay; _arc.bx = bx; _arc.by = by; _arc.reach = S.reach + cm.reachAdd;
 
     // World ray along the slice's bisector (unit), from eye z - 0.35, over `reach` (30.1's "eye z - 0.35" rule).
     let mx = ax + bx, my = ay + by;
     const mlen = Math.sqrt(mx * mx + my * my);
     if (mlen > 1e-9) { mx /= mlen; my /= mlen; } else { mx = fx; my = fy; }
     const rayZ = _eye.z - 0.35;
-    const bxw = _eye.x + mx * S.reach, byw = _eye.y + my * S.reach;
+    const reach = S.reach + cm.reachAdd, bxw = _eye.x + mx * reach, byw = _eye.y + my * reach;
     refreshTargetables();
     // PROP-COLLIDE-01b regression (owner 2026-10-06 "practice statue doesn't get damage"): a solid prop target (the
     // practice post) now has its OWN collider, so a ray that stops at that target's own shape is not a wall.
     let worldHit = (_rs[0] = _eye.x, _rs[1] = _eye.y, _rs[2] = rayZ, _rs[3] = bxw, _rs[4] = byw, _rs[5] = rayZ, world.raySegmentRay(_rs, _rayOut));
     if (worldHit && (hitsOwnShape(_rayOut.x, _rayOut.y, -1) || isTerrainHit(_rayOut))) worldHit = false;
-    const twM = worldHit ? _rayOut.t * S.reach : S.reach;
+    const twM = worldHit ? _rayOut.t * reach : reach;
 
     const n = arcHits(_arc, tcx, tcy, tcz, tcr, tch, tCount, _outIdx, _outT);
     let anyEntity = false;
@@ -337,6 +340,10 @@ export function createSwordSim(world, events, cfg, hooks) {
     }
 
     stateStep++;
+    if (stateStep > S.hitEnd + 1 && stateStep < S.total - 1) { // ITEM-04 attack speed: only outside the hit window, never over a chain press
+      spdAcc += cm.speedRate;
+      if (spdAcc >= 1) { spdAcc -= 1; if (!(S === LIGHT && queued)) stateStep++; } else if (spdAcc <= -1) { spdAcc += 1; stateStep--; }
+    }
     if (stateStep >= S.total) {
       if (S === HARD || chain < 2) toIdle(); else toRest();
     }

@@ -23,7 +23,9 @@ import spellMod from '../../../../design/models/spell.js';
 import { loadTestAssets } from '../../../../tools/testing/content-node.mjs';
 import { buildBeastNav } from './beastNav.js';
 import { createBeastSim, STATE_STAGGER, STATE_FLINCH } from './beastSim.js';
-import { FIREBALL_CFG } from '../spellConfig.js';
+import { FIREBALL_CFG as FB_NOW } from '../spellConfig.js';
+// ITEM-04: the live cfg is x10 (tap 25-35, charged 45-60); these behaviour asserts keep the old 3 / 5 scale
+const FIREBALL_CFG = { ...FB_NOW, tap: { ...FB_NOW.tap, damage: 3 }, charged: { ...FB_NOW.charged, damage: 5 } };
 import { createTargetables } from './targetables.js';
 import { createFireballSim, FB_IDLE, FB_HOLD, FB_CHARGE } from './fireball.js';
 

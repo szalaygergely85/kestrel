@@ -5,7 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { World, AssetRegistry } from '../../../../engine/index.js';
 import { featuresFromParams, fireballOn, unlockFireball } from '../features.js';
 import { createFireballSim } from './fireball.js';
-import { FIREBALL_CFG } from '../spellConfig.js';
+import { FIREBALL_CFG as FB_NOW } from '../spellConfig.js';
+// ITEM-04: the live cfg is x10 (tap 25-35, charged 45-60); these behaviour asserts keep the old 3 / 5 scale
+const FIREBALL_CFG = { ...FB_NOW, tap: { ...FB_NOW.tap, damage: 3 }, charged: { ...FB_NOW.charged, damage: 5 } };
 import { createTargetables } from './targetables.js';
 import { collectSave, applySave, stringifyGameSave, parseGameSave } from '../save/saveState.js';
 

@@ -76,7 +76,7 @@ function setup(opts = {}) {
   ok(t.shots.length === 0 && t.play.bow.drawing, 'holding LMB draws (no shot yet)');
   t.run(1, false, false);
   ok(t.shots.length === 1 && t.eq.quiver.n === 2, 'release shoots one arrow, quiver 3 -> 2');
-  ok(Math.abs(t.shots[0].d - 1) < 1e-9 && t.shots[0].dmg === 3, 'full draw = draw 1, damage 3');
+  ok(Math.abs(t.shots[0].d - 1) < 1e-9 && t.shots[0].dmg >= 9 && t.shots[0].dmg <= 23, 'full draw = draw 1, damage = rolled x3 (ITEM-04, fist fallback 3-5, crit up to x1.5)');
   t.run(30, false, false);
   t.run(BOW_MIN_DRAW - 2, true, false); t.run(1, false, false);
   ok(t.shots.length === 1, 'a release before the minimum draw cancels');
