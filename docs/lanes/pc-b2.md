@@ -1165,3 +1165,7 @@ NEEDS B1-main (main.js line ~920 `riggedModelDef(collapseRig(...))`): pass `{leg
 ### GATE-FIX-7 (kestrel-4, 2026-10-14)
 All four were stale tests, no code change: actionHints (storyHints now starts with logic hint hint.farm.ambush, ED-LOGIC-01d), boarPlacement (farmGob1-3 reserve goblins counted as boars; filter goblin species), swimWire (main.js now `under: createUnderState()`; gate/gear/fb.under behaviour intact), content-smoke (gi/manifest.json known standalone).
 Filtered run 25/25 PASS, check-deps OK.
+
+### REV-NAV + REV-BEASTALLOC (kestrel-base, 2026-10-15) -> arch re-review
+REV-NAV: steer/flowField/NavGrid pass layered queries via module scratch `LQ` (NavGrid.js: `locateQ()`, steer `walkableQ`, `ff.dirAtQ`); layersFlow gate unchanged, steer.step 48192 -> 3368 B/200 steps (~17 B/step); layersFlow 0.7 s. BEAST-ALLOC: probeSupportIo-vs-probeSupport parity test (3600 pts, 3 modes) in meshCollide.test.js (0.5 s); beastSim alloc probes cut (n 5000 -> 1500, warm 4): 24+7 s -> ~0.8 s total.
+OPEN: beastSim.test.js still ~22 s: 61x freshSim = 61x buildBeastNav (~160 ms each, 9.9 s) + World.load (2.7 s); needs a nav/world cache or a file split (not done, call cap).
