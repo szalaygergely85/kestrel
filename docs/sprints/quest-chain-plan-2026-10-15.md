@@ -71,3 +71,24 @@ Then: writer pass (lines above), main-session headless route walk, owner walk-te
 - "Wake Up" removed: no quest for waking. Quest 1 = Find a Blade, offered by the note on the wall (object giver, D-087); you read it when you get up.
 - NO XP and no player level (D-020, D-0xx progression x): rewards are items, coin, Heart Pieces, gear tiers, spells. `requires` = prerequisite QUESTS only (zone level bands stay a world property, not a quest gate).
 - So there is NO exception any more: every quest has a giver, Accept, `?`, hand-in, reward, next.
+
+## Version 2 (owner review 2026-10-15: fights + gear, fewer stone activations, Rook as an event, narrative tension)
+Rules unchanged: every quest = giver `!` + Accept E / Exit Q, 1-3 objectives, `?` at the return character, hand-in, a reward, the next quest offered (D-105, D-106). No XP (D-020). Requires = the previous quest.
+
+| # | Quest | Begin | Objectives | End | Reward | Next |
+|---|---|---|---|---|---|---|
+| 1 | Find a Blade | the note on the tower wall | climb the tower; take the sword; leave by the door | Burl, outside the door | Health Potion | Boars in the Woods |
+| 2 | Boars in the Woods | Burl | drive off 5 boars | Burl | leather armour | Follow the Bear |
+| 3 | Follow the Bear | Burl | walk with Burl to the meadow stone (she TALKS on the way: what she saw fall from the sky, the forest changing; she STOPS AND WAITS for you, never makes you chase her; short walk); wolves ambush halfway - drive them off | Burl at the meadow stone | Heart Piece | Wake the Stone |
+| 4 | Wake the Stone | Burl at the stone | wake the meadow stone (FIRST activation: new - it saves your progress, it is where you come back after a fall, and later you can travel between woken stones; shown by the stone, not a tutorial text) | Burl | 15 coin | The Stone at the Bend |
+| 5 | The Stone at the Bend | Burl (her farewell: "follow the road west, there is another") | take the road west; drive the goblins off the Bend stone; wake it (SECOND activation: shows the network - the two stones link) | EVENT on waking: a bright pulse shoots into the sky, a black bird lands - Rook: "Well, that's unfortunate." / "What is?" / "You. You woke it." -> `?` over Rook | bow + arrows (Rook, grudgingly: "you'll need reach") | The River Road |
+| 6 | The River Road | Rook at the Bend (suspicious: "Waking stones draws eyes. Walk with me, I'll watch you.") | follow the road to the river; cross the stepping stones - a crocodile waits in the ford | Rook at the ford ruin | 2 Health Potions | The Missing Glass |
+| 7 | The Missing Glass | Rook at the ford | the Ford stone is BROKEN (cracked, its glass gone) - it cannot be woken the normal way; take the glass back from Rook's old nest (guarded: a black bear has moved in); set the glass in the stone (THIRD stone, but a repair, not an activation) | Rook | first spell (the repaired stone gives it) + Heart Piece | Smoke in the North |
+| 8 | Smoke in the North | Rook (now trusts you a little: tells part of what he knows) | look at the mark on the Ford stone; follow the path north to the smoke - goblins are burning a farm, drive them off | Rook | shield | chapter 2 |
+
+What changed from version 1:
+- "The Stone's Call" (examine the stone) is gone: its blink + knot clue becomes part of the Rook event in quest 5 and Rook's lines. Stone activations: meadow (new), Bend (network), Ford (broken -> repair quest, not a plain activation).
+- Fights: 6 of 8 quests have one (boars, wolves, goblins, crocodile, bear, goblins). Gear steps: armour -> bow -> spell -> shield, Heart Pieces at 3 and 7.
+- Tension: Rook is suspicious and hints that waking stones is dangerous ("draws eyes"); trust grows over 5-8.
+- Quest 3 is a character moment, short, Burl waits for you (burlEscort LEAD_WAIT_M / WAIT_BARK already exist - check the walk length and the wait behaviour).
+- All new lines NEEDS WRITER (writer agent: Burl's walk talk, Rook's arrival + suspicion, the broken stone).
