@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - quest-giver NPC looks (Post-keeper + 10 region givers) + marker post / standing stone (QFIX-S1 / S5a-4 / S5c)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:16px; margin:24px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  .note { color:#8a8778; font-size:12px; max-width:1400px; }
+  .pass { color:#4fd66a; } .fail { color:#ff3b3b; } .info { color:#8fb4e0; }
+  canvas { display:block; background:#000; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:12px; align-items:center; font-size:13px; }
+  .controls label { display:flex; align-items:center; gap:5px; }
+  .controls input[type=range] { width:110px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:36px; display:inline-block; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin:6px 0 12px; }
+  .card { border:1px solid #1a1d26; padding:4px; }
+  .views { display:flex; gap:4px; align-items:flex-end; }
+  .cap { font-size:11px; color:#8a8778; font-family:Consolas, monospace; margin-top:2px; max-width:560px; }
+  .cap b { color:#ffd27a; font-weight:normal; }
+  #checks div { font-family:Consolas, monospace; font-size:12px; }
+</style>
+</head>
+<body>
+<h1>Kestrel : quest-giver NPC looks (Post-keeper + 10 region givers) + marker post / standing stone</h1>
+<div class="note">
+  NPCs: <code>design/chargen/npc_looks.js</code> = 11 CharRecipes on the EXISTING human kit base <code>m_avg</code>
+  (<code>content/chargen/human.charkit.json</code>; no new body, existing ramps only, no palette edit) + 8 hats fitted to the kit's head
+  (<code>buildHats(kit)</code>). Props: <code>design/models/marker_props_voxel.js</code> (<code>markerPost</code>, <code>standingStone</code>).
+  Rendered with the real v1 surface shader (<code>palette.util.shade</code>, material ramps) by a small standalone voxel DDA; the
+  composer is the preview twin <code>chargenKit.composePreview</code> (same rules as the engine composeCharacter, level-1 head).
+  It ignores <code>height</code> / <code>age</code> (the engine stretches the shin / waist rows and makes elders one row shorter), so
+  every NPC is shown at 1.75 m here. Light is fixed in the world (az 0 = from the front). Needs http for the kit JSON + the engine
+  validator (<code>python -m http.server</code> from the repo root); from file:// it builds the kit with the generator and skips the
+  engine validator.
+</div>
+<div class="controls">
+  <label>turn <input type="range" id="yaw" min="-180" max="180" step="5" value="0"><span class="val" id="yawV"></span></label>
+  <label>pitch <input type="range" id="pitch" min="0" max="45" value="8"><span class="val" id="pitchV"></span></label>
+  <label>light az <input type="range" id="az" min="-180" max="180" value="-35"><span class="val" id="azV"></span></label>
+  <label>elev <input type="range" id="el" min="0" max="85" value="40"><span class="val" id="elV"></span></label>
+  <label>sun <input type="range" id="sun" min="0" max="1.5" step="0.01" value="1.0"><span class="val" id="sunV"></span></label>
+  <label>ambient <input type="range" id="amb" min="0" max="1" step="0.01" value="0.35"><span class="val" id="ambV"></span></label>
+  <label>lineup rows <select id="rows"><option>30</option><option selected>44</option><option>60</option></select></label>
+  <label><input type="checkbox" id="spin"> turntable</label>
+</div>
+
+<h2>Checks</h2>
+<div id="checks"><div class="info">building ...</div></div>
+
+<h2>1. Lineup at the same scale (2.0 m frame): Post-keeper, the 10 region givers, marker post, standing stone</h2>
+<div class="note">Readable as different people: hat silhouette first (felt hat / sou'wester / knit cap / fur hat / hood / brow band),
+  then the 2-3 big colour fields (cape, tunic, trousers), then the beard. "turn" rotates all of them.</div>
+<div class="row" id="lineup"></div>
+
+<h2>2. Each look: front / 3/4 / profile / back + head close-up (front, 3/4, profile)</h2>
+<div id="cards"></div>
+
+<h2>3. The 8 hats on the default kit man (head close-ups: front / 3/4 / profile / back)</h2>
+<div class="note">Hats live in X -5..5, Y -9..8, z 59..71: at the kit default res {head: 2} a Head attachment is clipped to
+  kit.regions.head.box (X -5..5) and the grid ends at z 71, so brims reach out front / back, not to the sides, and crowns are low.
+  Nothing is painted at or below the brows in front of the face.</div>
+<div id="hats"></div>
+
+<h2>4. Props: marker post (1.60 m) and standing stone (1.40 m), front / 3/4 / side / back + a top-down</h2>
+<div id="props"></div>
+
+<script src="../palette.js"></script>
+<script src="../detail-pass.js"></script>
+<script src="../chargen/human_kit.js"></script>
+<script src="../chargen/npc_looks.js"></script>
+<script src="../models/marker_props_voxel.js"></script>
+<script>
+(function () {
+  'use strict';
+  var A = window.ASSETS, P = A && A.palette, CK = A && A.chargenKit, NL = A && A.npcLooks, MP = A && A.markerProps;
+  var $ = function (id) { return document.getElementById(id); };
+  var D2R = Math.PI / 180, CW = 7, CH = 13;
+  var checks = $('checks');
+  function line(kind, t) { var d = document.createElement('div'); d.className = kind; d.textContent = (kind === 'pass' ? 'PASS ' : kind === 'fail' ? 'FAIL ' : 'INFO ') + t; checks.appendChild(d); }
+  if (!P || !CK || !NL || !MP) { checks.innerHTML = ''; line('fail', 'a script did not load (palette / human_kit / npc_looks / marker_props_voxel)'); return; }
+
+  // ------------------------------------------------------------------ models: {S, cellM, anchor, get(x,y,z) -> char, mat(char) -> material key}
+  function charModel(kit, recipe) {
+    var g = CK.composePreview(kit, 'm_avg', recipe), S = g.size, tab = {};
+    for (var c in kit.slots) tab[c] = CK.resolveMat(kit, recipe, c);
+    return { S: S, cellM: kit.cellM, anchor: kit.bases.m_avg.anchor, grid: g,
+             get: function (x, y, z) { return g.ch[x + S[0] * (y + S[1] * z)]; },
+             mat: function (ch) { return tab[ch]; } };
+  }
+  function voxModel(rec) {
+    var v = rec.voxel;
+    return { S: v.size, cellM: v.cellM, anchor: v.anchor,
+             get: function (x, y, z) { return v.layers[z][y].charAt(x); },
+             mat: function (ch) { return v.mats[ch]; } };
+  }
+
+  // ------------------------------------------------------------------ DDA (same as pickups-voxel.html, generic get)
+  var HIT = { x: 0, y: 0, z: 0, ax: 0, sg: 0, t: 0, ch: '.' };
+  function cast(M, o, d) {
+    var S = M.S, tmin = 0, tmax = 1e9, ent = 0, k;
+    for (k = 0; k < 3; k++) {
+      if (Math.abs(d[k]) < 1e-9) { if (o[k] < 0 || o[k] > S[k]) return false; continue; }
+      var t1 = (0 - o[k]) / d[k], t2 = (S[k] - o[k]) / d[k];
+      if (t1 > t2) { var tt = t1; t1 = t2; t2 = tt; }
+      if (t1 > tmin) { tmin = t1; ent = k; }
+      if (t2 < tmax) tmax = t2;
+    }
+    if (tmin > tmax) return false;
+    var c = [], st = [], tM = [], tD = [], t = tmin + 1e-6;
+    for (k = 0; k < 3; k++) {
+      c[k] = Math.min(S[k] - 1, Math.max(0, Math.floor(o[k] + d[k] * t)));
+      st[k] = d[k] > 0 ? 1 : d[k] < 0 ? -1 : 0;
+      tM[k] = d[k] > 0 ? (c[k] + 1 - o[k]) / d[k] : d[k] < 0 ? (c[k] - o[k]) / d[k] : 1e9;
+      tD[k] = d[k] !== 0 ? Math.abs(1 / d[k]) : 1e9;
+    }
+    var ax = ent, tHit = tmin;
+    for (var n = 0; n < 400; n++) {
+      var ch = M.get(c[0], c[1], c[2]);
+      if (ch !== '.' && ch !== ' ' && ch !== undefined) { HIT.x = c[0]; HIT.y = c[1]; HIT.z = c[2]; HIT.ax = ax; HIT.sg = -st[ax]; HIT.t = tHit; HIT.ch = ch; return true; }
+      ax = tM[0] < tM[1] ? (tM[0] < tM[2] ? 0 : 2) : (tM[1] < tM[2] ? 1 : 2);
+      tHit = tM[ax]; c[ax] += st[ax]; tM[ax] += tD[ax];
+      if (c[ax] < 0 || c[ax] >= S[ax]) return false;
+    }
+    return false;
+  }
+  function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+  function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
+
+  // ASCII view: rows x cols cells, `span` metres tall, centred on (anchor x, anchor y, cz metres above the anchor);
+  // yaw 0 = the model's front (-y side). Light fixed in the world.
+  var out = { glyph: ' ', fg: [0, 0, 0], bg: [0, 0, 0], b: 0 };
+  function makeView(host, rows, cols, cap) {
+    var wrap = document.createElement('div'), cv = document.createElement('canvas'), c = document.createElement('div');
+    cv.width = cols * CW; cv.height = rows * CH; c.className = 'cap'; c.textContent = cap || '';
+    wrap.appendChild(cv); wrap.appendChild(c); host.appendChild(wrap);
+    return { cv: cv, ctx: cv.getContext('2d'), rows: rows, cols: cols };
+  }
+  function render(V, M, yawDeg, pitchDeg, spanM, czM, dist) {
+    var ctx = V.ctx, rows = V.rows, cols = V.cols, S = M.S, m = M.cellM;
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, V.cv.width, V.cv.height);
+    ctx.font = '12px Consolas, "Cascadia Mono", monospace'; ctx.textBaseline = 'top';
+    var th = yawDeg * D2R, p = pitchDeg * D2R;
+    var f = norm([Math.sin(th) * Math.cos(p), Math.cos(th) * Math.cos(p), -Math.sin(p)]);
+    var r = norm(cross([0, 0, 1], f)), u = cross(f, r);
+    var az = ctl.az * D2R, el = ctl.el * D2R;
+    var Ld = [Math.sin(az) * Math.cos(el), -Math.cos(az) * Math.cos(el), Math.sin(el)];
+    var span = spanM / m, ch = span / rows, cw = ch / 2;
+    var C = [M.anchor[0], M.anchor[1], M.anchor[2] + czM / m];
+    for (var j = 0; j < rows; j++) for (var i = 0; i < cols; i++) {
+      var sx = (i + 0.5 - cols / 2) * cw, sy = (rows / 2 - j - 0.5) * ch;
+      var o = [C[0] + r[0] * sx + u[0] * sy - f[0] * 400, C[1] + r[1] * sx + u[1] * sy - f[1] * 400, C[2] + r[2] * sx + u[2] * sy - f[2] * 400];
+      if (!cast(M, o, f)) {
+        if (f[2] < 0) {
+          var tg = (M.anchor[2] - o[2]) / f[2], gx = o[0] + f[0] * tg - M.anchor[0], gy = o[1] + f[1] * tg - M.anchor[1];
+          if (tg > 0 && gx * gx + gy * gy < Math.pow(0.5 / m, 2) && (i + j) % 2 === 0) { ctx.fillStyle = '#1c2130'; ctx.fillText('.', i * CW, j * CH); }
+        }
+        continue;
+      }
+      var key = M.mat(HIT.ch);
+      if (!key || !P.materials[key]) { ctx.fillStyle = '#f0f'; ctx.fillRect(i * CW, j * CH, CW, CH); continue; }
+      var nrm = [0, 0, 0]; nrm[HIT.ax] = HIT.sg;
+      var ndl = Math.max(0, nrm[0] * Ld[0] + nrm[1] * Ld[1] + nrm[2] * Ld[2]), sky = 0.75 + 0.25 * nrm[2];
+      var L = [ctl.amb * 0.85 * sky + ctl.sun * ndl, ctl.amb * 0.9 * sky + ctl.sun * ndl * 0.95, ctl.amb * 1.1 * sky + ctl.sun * ndl * 0.85];
+      var px = o[0] + f[0] * HIT.t, py = o[1] + f[1] * HIT.t, pz = o[2] + f[2] * HIT.t;
+      var uu = HIT.ax === 0 ? py * m : px * m, vv = HIT.ax === 2 ? py * m : pz * m;
+      P.util.shade(key, L, uu, vv, dist || 3, out, { fog: null });
+      ctx.fillStyle = 'rgb(' + (out.bg[0] | 0) + ',' + (out.bg[1] | 0) + ',' + (out.bg[2] | 0) + ')';
+      ctx.fillRect(i * CW, j * CH, CW, CH);
+      ctx.fillStyle = 'rgb(' + (out.fg[0] | 0) + ',' + (out.fg[1] | 0) + ',' + (out.fg[2] | 0) + ')';
+      ctx.fillText(out.glyph, i * CW, j * CH);
+    }
+  }
+
+  // ------------------------------------------------------------------ controls
+  var ctl = {};
+  function readCtl() { ['yaw', 'pitch', 'az', 'el', 'sun', 'amb'].forEach(function (k) { ctl[k] = +$(k).value; $(k + 'V').textContent = ctl[k]; }); ctl.rows = +$('rows').value; ctl.spin = $('spin').checked; }
+  readCtl();
+
+  // ------------------------------------------------------------------ kit: the JSON (http) or the generator (file://)
+  function start(kit, src) {
+    checks.innerHTML = '';
+    line('info', 'kit source: ' + src + ' (' + kit.name + ')');
+    var K2 = NL.extendKit(kit);
+    var e1 = NL.validate(kit);
+    line(e1.length ? 'fail' : 'pass', 'npcLooks.validate(kit): ' + (e1.length ? e1.join('; ') : NL.ids.length + ' looks, ' + NL.hatIds.length + ' hats: sizes, slot chars, head-region box, ramps, items OK'));
+    var e2 = MP.validate();
+    line(e2.length ? 'fail' : 'pass', 'markerProps.validate(): ' + (e2.length ? e2.join('; ') : 'layers, sizes, materials in palette.materials OK'));
+    var dp = A.detailPass && A.detailPass.materials, miss = [];
+    MP.ids.forEach(function (id) { var v = A.voxelModels[id].voxel; for (var c in v.mats) if (dp && !dp[v.mats[c]]) miss.push(id + ':' + v.mats[c]); });
+    line(miss.length ? 'fail' : 'pass', 'prop materials in detailPass.materials (v2 merged): ' + (miss.length ? miss.join(', ') : 'all'));
+    // ASCII only
+    var bad = [];
+    NL.hatIds.forEach(function (h) { var a = K2.attachments.filter(function (x) { return x.id === h; })[0]; a.layers.forEach(function (L) { L.forEach(function (r) { if (/[^\x20-\x7e]/.test(r)) bad.push(h); }); }); });
+    line(bad.length ? 'fail' : 'pass', 'hat layers printable ASCII');
+    // every hat paints something, never below the brows in front of the face
+    var models = {}, fails = [];
+    NL.ids.forEach(function (id) {
+      try { models[id] = charModel(K2, K2.looks[id]); } catch (err) { fails.push(id + ': ' + err.message); }
+    });
+    line(fails.length ? 'fail' : 'pass', 'composePreview of every look: ' + (fails.length ? fails.join('; ') : 'all 11 compose'));
+    // distinct: no two looks share hat id + hat ramp, and no two share (cloak, top) colours AND hat id
+    var sig = {}, dup = [];
+    NL.ids.forEach(function (id) {
+      var r = K2.looks[id], s1 = r.hat.id + '/' + r.hat.ramp, s2 = r.hat.id + '|' + (r.cloak ? r.cloak.ramp : '-') + '|' + r.top.id + '/' + r.top.ramp;
+      if (sig[s1]) dup.push(id + ' = ' + sig[s1] + ' (hat ' + s1 + ')'); sig[s1] = id;
+      if (sig[s2]) dup.push(id + ' = ' + sig[s2]); sig[s2] = id;
+    });
+    line(dup.length ? 'fail' : 'pass', 'every look differs in hat (id + colour) and in hat + cape + top: ' + (dup.length ? dup.join('; ') : '11 distinct'));
+    line('info', 'palette: existing keys only (kit ramps + merged materials); NEEDS PALETTE: none');
+    line('info', 'composePreview ignores height / age: heights ' + NL.ids.map(function (id) { return id.replace('npc', '') + ' ' + K2.looks[id].height + (K2.looks[id].age !== 'adult' ? ' ' + K2.looks[id].age : ''); }).join(', '));
+    // the engine validator (http only)
+    import('../../engine/voxel/VoxelModel.js').then(function (VM) {
+      var keys = Object.keys(P.materials);
+      MP.ids.forEach(function (id) {
+        var res = VM.validateVoxelModel(A.voxelModels[id].voxel, { materialKeys: keys });
+        line(res.errors.length ? 'fail' : 'pass', 'engine validateVoxelModel(' + id + '): ' + (res.errors.length ? res.errors.slice(0, 6).join('; ') : 'OK') + (res.warnings.length ? ' (warnings: ' + res.warnings.join('; ') + ')' : ''));
+      });
+    }).catch(function () { line('info', 'engine validateVoxelModel not loaded (file:// ?): run the page over http'); });
+
+    build(K2, models);
+  }
+
+  var LINE = [], CARDS = [], HATS = [], PROPS = [];
+  function build(K2, models) {
+    var props = MP.ids.map(function (id) { return voxModel(A.voxelModels[id]); });
+    // 1. lineup
+    function lineup() {
+      $('lineup').innerHTML = ''; LINE = [];
+      var rows = ctl.rows, cols = Math.round(rows * 0.8);
+      NL.ids.forEach(function (id) { LINE.push({ M: models[id], V: makeView($('lineup'), rows, cols, id.replace('npc', '')) }); });
+      props.forEach(function (M, i) { LINE.push({ M: M, V: makeView($('lineup'), rows, cols, MP.ids[i]) }); });
+    }
+    lineup();
+    $('rows').addEventListener('change', function () { readCtl(); lineup(); draw(); });
+    // 2. cards
+    NL.ids.forEach(function (id) {
+      var card = document.createElement('div'); card.className = 'card'; $('cards').appendChild(card);
+      var vs = document.createElement('div'); vs.className = 'views'; card.appendChild(vs);
+      var r = K2.looks[id], cap = document.createElement('div'); cap.className = 'cap';
+      var pick = function (s) { return r[s] ? r[s].id + '/' + r[s].ramp : '-'; };
+      cap.innerHTML = '<b>' + id + '</b> (model id ' + NL.modelId(id) + ') ' + NL.notes[id] + '<br>skin ' + r.skin + ', eyes ' + r.eyes +
+        ', hair ' + pick('hair') + ', beard ' + pick('beard') + ', top ' + pick('top') + ', legs ' + pick('legs') + ', feet ' + pick('feet') +
+        ', outer ' + pick('outer') + ', belt ' + pick('belt') + ', hands ' + pick('hands') + ', cloak ' + pick('cloak') + ', hat ' + pick('hat') +
+        ', height ' + r.height + ', age ' + r.age;
+      card.appendChild(cap);
+      var body = [[0, 'front'], [-35, '3/4'], [-90, 'profile'], [180, 'back']].map(function (a) { return { yaw: a[0], V: makeView(vs, 48, 38, a[1]) }; });
+      var head = [[0, 'face'], [-35, 'face 3/4'], [-90, 'face profile']].map(function (a) { return { yaw: a[0], V: makeView(vs, 26, 36, a[1]) }; });
+      CARDS.push({ M: models[id], body: body, head: head });
+    });
+    // 3. hats on the default man
+    NL.hatIds.forEach(function (h) {
+      var rc = JSON.parse(JSON.stringify(K2.defaults)); rc.hat = { id: h, ramp: h === 'hatPost' ? 'gall' : h === 'sowester' ? 'weld' : h === 'furHat' ? 'undyed' : 'madder' };
+      var M = charModel(K2, rc), a = K2.attachments.filter(function (x) { return x.id === h; })[0];
+      var card = document.createElement('div'); card.className = 'card'; $('hats').appendChild(card);
+      var vs = document.createElement('div'); vs.className = 'views'; card.appendChild(vs);
+      var cap = document.createElement('div'); cap.className = 'cap'; cap.innerHTML = '<b>' + h + '</b> (ramp ' + rc.hat.ramp + ') ' + a.desc + (a.hides ? ' - hides ' + a.hides.join(', ') : '');
+      card.appendChild(cap);
+      HATS.push({ M: M, views: [[0, 'front'], [-35, '3/4'], [-90, 'profile'], [180, 'back']].map(function (q) { return { yaw: q[0], V: makeView(vs, 24, 34, q[1]) }; }) });
+    });
+    // 4. props
+    MP.ids.forEach(function (id, i) {
+      var rec = A.voxelModels[id], card = document.createElement('div'); card.className = 'card'; $('props').appendChild(card);
+      var vs = document.createElement('div'); vs.className = 'views'; card.appendChild(vs);
+      var cap = document.createElement('div'); cap.className = 'cap';
+      cap.innerHTML = '<b>' + id + '</b> ' + rec.voxel.size.join('x') + ' @ ' + rec.voxel.cellM + ' m = ' + rec.world.w + ' x ' + rec.world.d + ' x ' + rec.world.h + ' m. ' + rec.desc + '<br>replaces: ' + MP.replaces[id];
+      card.appendChild(cap);
+      var V = [[0, 'front'], [-35, '3/4'], [-90, 'side'], [180, 'back']].map(function (q) { return { yaw: q[0], pitch: null, V: makeView(vs, 44, 46, q[1]) }; });
+      V.push({ yaw: -30, pitch: 70, V: makeView(vs, 24, 44, 'from above') });
+      PROPS.push({ M: props[i], views: V, h: rec.world.h });
+    });
+    draw();
+  }
+
+  function draw() {
+    var y = ctl.yaw;
+    LINE.forEach(function (L) { render(L.V, L.M, y, ctl.pitch, 2.0, 0.98, 4); });
+    CARDS.forEach(function (C) {
+      C.body.forEach(function (b) { render(b.V, C.M, b.yaw + y, ctl.pitch, 1.95, 0.95, 3); });
+      C.head.forEach(function (b) { render(b.V, C.M, b.yaw + y, 4, 0.40, 1.63, 1.5); });
+    });
+    HATS.forEach(function (H) { H.views.forEach(function (b) { render(b.V, H.M, b.yaw + y, 4, 0.40, 1.63, 1.5); }); });
+    PROPS.forEach(function (Pp) { Pp.views.forEach(function (b) { render(b.V, Pp.M, b.yaw + y, b.pitch === null ? ctl.pitch : b.pitch, Math.max(1.0, Pp.h * 1.12), Pp.h * 0.5, 3); }); });
+  }
+  ['yaw', 'pitch', 'az', 'el', 'sun', 'amb'].forEach(function (k) { $(k).addEventListener('change', function () { readCtl(); draw(); }); $(k).addEventListener('input', function () { readCtl(); }); });
+  $('spin').addEventListener('change', function () { readCtl(); });
+  var lastSpin = 0;
+  function tick(now) {
+    requestAnimationFrame(tick);
+    if (!ctl.spin || now - lastSpin < 250) return;
+    lastSpin = now;
+    var v = (+$('yaw').value + 15); if (v > 180) v -= 360; $('yaw').value = v; readCtl(); draw();
+  }
+  requestAnimationFrame(tick);
+
+  fetch('../../content/chargen/human.charkit.json', { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function (kit) { start(kit, 'content/chargen/human.charkit.json'); })
+    .catch(function () {
+      try { start(CK.buildHumanKit(P), 'generator design/chargen/human_kit.js (JSON not reachable: file:// ?)'); }
+      catch (e) { checks.innerHTML = ''; line('fail', 'kit: ' + e.message); }
+    });
+})();
+</script>
+</body>
+</html>
