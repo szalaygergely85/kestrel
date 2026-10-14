@@ -319,7 +319,7 @@ function buildCompareRuns(ctx) {
   // lookMeadow = pure meadow (look 1) at the tower; lookForestEdge = forest/glade blend (2|3, w ~ 0.5); lookShore = look-0 / meadow border (the far map has no
   // shore-look cells, ids by BIOME_LOOK.order: 1 meadow 2 forest 3 glade 4 fields 5 foothills 6 shore).
   if (globalThis.BIOME_LOOK && params.get('look') !== '0') {
-    const T = {}; for (const [k, v] of Object.entries(assets.levels.overworld_far.terrain)) T[k] = v.id;
+    const T = {}; for (const [k, v] of Object.entries(globalThis.ASSETS.levels.overworld_far.terrain)) T[k] = v.id;
     const worldLook = loadCompareWorld(assets.world('world_m1'), { groundLook: buildGroundLookConfig(globalThis.BIOME_LOOK, T) });
     if (worldLook.terrain) worldLook.terrain.bakeFarSync();
     const lookLights = lightsEnabled ? buildLightSet(worldLook, assets.palette) : null;
