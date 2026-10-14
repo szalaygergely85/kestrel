@@ -316,7 +316,7 @@ function buildCompareRuns(ctx) {
 
   // ENV-02d (38.63): ground-look rows. A SECOND world_m1 with groundLook on (the rows above keep the look-less worldM1, byte-identical); skipped when no
   // BIOME_LOOK is loaded or `?look=0`. JS twin: shadeTerrainCells passes the same look bytes; GPU: NEARLOOK/FARLOOK + the look shade pipeline.
-  // lookMeadow = pure meadow (look 1) at the tower; lookForestEdge = forest/glade blend (2|3, w ~ 0.5); lookShore = look-0 / meadow border (the far map has no
+  // lookMeadow = pure meadow (look 1) at the tower; lookForestEdge = forest/glade blend (2|3, w ~ 0.5); lookBorder0 = look-0 / meadow border (the far map has no
   // shore-look cells, ids by BIOME_LOOK.order: 1 meadow 2 forest 3 glade 4 fields 5 foothills 6 shore).
   if (globalThis.BIOME_LOOK && params.get('look') !== '0') {
     const T = {}; for (const [k, v] of Object.entries(globalThis.ASSETS.levels.overworld_far.terrain)) T[k] = v.id;
@@ -328,7 +328,7 @@ function buildCompareRuns(ctx) {
       cam: { x, y, z: (worldLook.terrain ? worldLook.terrain.groundAt(x, y) : 0) + engine.physics.eyeHeight, yawDeg, pitchDeg } });
     lookPose('lookMeadow (ENV-02d ground look: meadow, pitched first person at (1470, 1035))', 1470, 1035, 235, -12);
     lookPose('lookForestEdge (ENV-02d ground look: forest/glade blend at (1788, 1276))', 1788, 1276, 0, -12);
-    lookPose('lookShore (ENV-02d ground look: look-0 / meadow border at (1884, 1012))', 1884, 1012, 270, -12);
+    lookPose('lookBorder0 (ENV-02d ground look: look-0 / meadow border at (1884, 1012))', 1884, 1012, 270, -12);
   }
 
   // US-068b3b (38.19 item 2): ortho ISO pose over the roadSouth area (look-at 20 m along the roadSouth view, yaw 240).

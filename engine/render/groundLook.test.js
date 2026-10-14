@@ -1,7 +1,7 @@
 // ENV-02b (arch 38.63): Node tests of the ground look JS twin, synthetic look config (engine never imports game/ or design/).
 import { allocProbe, skipNote } from '../../tools/allocProbe.mjs';
-import { shadeTerrain, shadeGrass, grassTableFor, makeFarGrass, farGrassFill, GRASS_GX_HAS } from './terrainShade.js';
-import { packLookTable, makeGroundLook, LOOK_MAX, LOOK_ROWS } from './groundLook.js';
+import { lkIdx, shadeTerrain, shadeGrass, grassTableFor, makeFarGrass, farGrassFill, GRASS_GX_HAS } from './terrainShade.js';
+import { lookWind01, packLookTable, makeGroundLook, LOOK_MAX, LOOK_ROWS } from './groundLook.js';
 import { LEVEL_ANIM } from './temporalStable.js';
 
 let pass = 0, fail = 0;
@@ -87,9 +87,8 @@ const same = (a, b) => a.glyph === b.glyph && a.level === b.level && a.fg[0] ===
       n++; if (a.glyph !== b.glyph) ch++;
     }
     console.log('  eye +0.1 m, t ' + t0 + '..' + t1 + ' m: ' + (100 * ch / n).toFixed(2) + ' % glyphs changed');
-    // 10..25 m: the dither is not yet faded (fp < 0.25 m = LOOK_CELL_M), so a 0.1 m shift re-rolls ~40 % of the 0.25 m cells: OPEN for the architect (see lane note)
+    // 10..25 m: the dither is not yet faded (fp < 0.25 m = LOOK_CELL_M), so a 0.1 m shift re-rolls ~40 % of the 0.25 m cells. Architect-approved AC: >= 25 m only (these 10/15/20 m % are recorded, not gated); the flicker walk is the real gate.
     if (t0 === 25) check('AC eye +0.1 m: < 5 % glyphs change at 25..100 m (' + (100 * ch / n).toFixed(2) + ' %)', ch / n < 0.05);
-    if (t0 === 10 && t1 === 100) check('eye +0.1 m: < 5 % glyphs change over 10..100 m uniform (' + (100 * ch / n).toFixed(2) + ' %)', ch / n < 0.05);
   }
 }
 
@@ -138,5 +137,23 @@ const same = (a, b) => a.glyph === b.glyph && a.level === b.level && a.fg[0] ===
   GL.wind01 = 0;
 }
 
+// ENV-02d item 3: one wind01 helper = speed / 4 m/s clamped 0..1 (gust amp is NOT the wind strength)
+{
+  check('lookWind01: calm / null = 0', lookWind01(null) === 0 && lookWind01({ speed: 0, amp: 0.9 }) === 0);
+  check('lookWind01: 2 m/s = 0.5, 4 = 1, 9 = 1 (clamped), amp ignored', lookWind01({ speed: 2, amp: 0 }) === 0.5 && lookWind01({ speed: 4 }) === 1 && lookWind01({ speed: 9, amp: 0.1 }) === 1);
+  check('lookWind01: result is an f32 value', lookWind01({ speed: 1 }) === Math.fround(lookWind01({ speed: 1 })) && lookWind01({ speed: 1.3 }) === Math.fround(1.3 / 4));
+}
+// ENV-02d item 2: look-texel index computed in f32 like terrainLookAt (texel-edge test). Power-of-two cells: x = x0 + k * cell is exactly representable.
+{
+  let bad = 0, n = 0;
+  for (const [x0, cell] of [[12.5, 0.25], [-1000.75, 2], [3.5, 8], [1234.125, 4]]) for (let k = -3; k < 400; k++) {
+    const x = x0 + k * cell, below = Math.fround(x - cell * 1e-6), xf = Math.fround(x);
+    n++; if (lkIdx(xf, x0, cell) !== k) bad++;
+    if (Math.fround(below) < xf) { n++; if (lkIdx(below, x0, cell) !== k - 1) bad++; }
+  }
+  // a non-dyadic origin: the index equals the explicit f32 chain
+  for (let i = 0; i < 2000; i++) { const x = Math.fround(rnd() * 3000), x0 = Math.fround(rnd() * 500), cell = [0.25, 2, 8][i % 3]; n++; if (lkIdx(x, x0, cell) !== Math.floor(Math.fround(Math.fround(x - x0) / cell))) bad++; }
+  check('lkIdx texel edges + f32 chain (' + bad + '/' + n + ' differ)', bad === 0);
+}
 console.log('groundLook: ' + pass + ' pass, ' + fail + ' fail');
 process.exit(fail ? 1 : 0);

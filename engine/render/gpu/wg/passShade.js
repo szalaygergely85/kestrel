@@ -9,7 +9,7 @@
 import { meshOutdoorFog } from '../../fogShape.js'; // OB-089
 import { updateUnderState } from '../../underwater.js'; // SWIM-04c
 import { SHADE_BLOCK, SHADE_WGSL, SHADE_LEVEL_WGSL, SHADE_TEXTURES, SHADE_LOOK_BLOCK, SHADE_LOOK_WGSL, SHADE_LEVEL_LOOK_WGSL } from '../wgsl/shade.wgsl.js';
-import { packLookTable, LOOK_TABLE_WORDS } from '../../groundLook.js'; // ENV-02d
+import { packLookTable, lookWind01, LOOK_TABLE_WORDS } from '../../groundLook.js'; // ENV-02d
 import { EDGE_BLOCK, EDGE_WGSL, EDGE_TEXTURES } from '../wgsl/edge.wgsl.js';
 import { packMaterialTable } from '../ShadeTextures.js';
 import { packTerrainTextures } from '../TerrainTextures.js';
@@ -346,8 +346,7 @@ export class WgShadePass {
     }
     if (this.lookCfg !== cfg) { packLookTable(cfg, this.lookWords); this.suL.set(this.lookWords, this.lookTW); this.lookCfg = cfg; this.stats.lookUploads = (this.stats.lookUploads || 0) + 1; }
     this.suL32.set(this.su32);
-    const wp = world.wind && world.wind.params; // wind01: strength 0..1 of the world wind (0 = calm = look output is time-independent)
-    this.suL[this.lookPW] = wp && wp.amp > 0 ? (wp.amp < 1 ? wp.amp : 1) : 0;
+    this.suL[this.lookPW] = lookWind01(world.wind && world.wind.params); // wind01 = speed / 4 m/s (0 = calm = look output is time-independent)
     d.bind(this.pipeShadeLook, this.shBindL);
   }
 

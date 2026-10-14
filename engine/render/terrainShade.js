@@ -21,7 +21,7 @@ import { LEVEL_NONE, LEVEL_ANIM } from './temporalStable.js';
 import { STEP } from '../core/loop.js';
 import { skylineFogF } from './skyline.js';
 import { resolveLook } from './look.js';
-import { shadeLookCell, makeGroundLook, packLookTable, LOOK_TABLE_WORDS } from './groundLook.js'; // ENV-02b (38.63); circular with this file but only called at runtime
+import { shadeLookCell, makeGroundLook, packLookTable, lookWind01, LOOK_TABLE_WORDS } from './groundLook.js'; // ENV-02b (38.63); circular with this file but only called at runtime
 
 // US-026a (23.4): exported so terrainCaster.js's near-sampling dither uses
 // the SAME avalanche mix (never a second, drifting copy) - the dither must
@@ -663,14 +663,16 @@ function terrainShadingFor(matTable, ctx) {
 // ENV-02d: the look bytes of the texel the GPU terrain raster samples (near band first, else the far grid; twin of terrainLookAt in terrainRaster.wgsl.js).
 // Result in lkLo / lkHi / lkW (module scratch, no alloc). Off-grid = look 0.
 let lkLo = 0, lkHi = 0, lkW = 0;
+// texel index exactly as the WGSL: floor((x - x0) / cell) with each op rounded to f32 (x is the f32 hit position; a double divide could pick the neighbour texel on an edge)
+export function lkIdx(x, x0, cell) { return Math.floor(Math.fround(Math.fround(Math.fround(x) - Math.fround(x0)) / Math.fround(cell))); }
 function lookBytesAt(terrain, x, y) {
   lkLo = 0; lkHi = 0; lkW = 0;
   const g = terrain.nearReady ? terrain.near : null;
   if (g && g.look) {
-    const ix = Math.floor((x - g.x0) / g.cell), iy = Math.floor((y - g.y0) / g.cell);
+    const ix = lkIdx(x, g.x0, g.cell), iy = lkIdx(y, g.y0, g.cell);
     if (ix >= 0 && iy >= 0 && ix < g.w && iy < g.h) { const o = 2 * (ix + iy * g.w), r = g.look[o]; lkLo = r & 15; lkHi = r >> 4; lkW = g.look[o + 1] * (1 / 255); return; }
   }
-  const c = terrain.mapCell, fx = Math.floor((x - terrain.mapX0) / c), fy = Math.floor((y - terrain.mapY0) / c);
+  const c = terrain.mapCell, fx = lkIdx(x, terrain.mapX0, c), fy = lkIdx(y, terrain.mapY0, c);
   if (fx < 0 || fy < 0 || fx >= terrain.mapW || fy >= terrain.mapH) return;
   const o = 2 * (fx + fy * terrain.mapW), r = terrain.farLook[o]; lkLo = r & 15; lkHi = r >> 4; lkW = terrain.farLook[o + 1] * (1 / 255);
 }
@@ -680,8 +682,7 @@ function groundLookFor(ctx, terrain, world) {
   const bk = terrain.groundLook;
   if (!bk || !terrain.farLook || (terrain.nearReady && !(terrain.near && terrain.near.look))) { ctx.groundLook = null; return null; }
   if (!ctx._lookGL || ctx._lookCfg !== bk.cfg) { const tbl = new Float32Array(LOOK_TABLE_WORDS); packLookTable(bk.cfg, tbl); ctx._lookGL = makeGroundLook(tbl); ctx._lookCfg = bk.cfg; }
-  const wp = world && world.wind && world.wind.params; // wind01: same clamp as passShade._bindLook
-  ctx._lookGL.wind01 = wp && wp.amp > 0 ? (wp.amp < 1 ? wp.amp : 1) : 0;
+  ctx._lookGL.wind01 = lookWind01(world && world.wind && world.wind.params); // same helper as passShade._bindLook
   return ctx.groundLook = ctx._lookGL;
 }
 

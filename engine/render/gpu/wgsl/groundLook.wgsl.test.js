@@ -94,7 +94,7 @@ const LOOKSRC = SHADE_LOOK_WGSL;
 const rLo = () => Math.floor(rand() * 7) % 7;
 const rW = () => { const r = rand(); return r < 0.2 ? 0 : r < 0.3 ? 0.5 : Math.fround(Math.round(rand() * 255) / 255); };
 function run(src, trials, FG) {
-  let bad = 0, n = 0, anim = 0, lean = 0, blend = 0, maxErr = 0, lkBad = 0, lkN = 0;
+  let bad = 0, n = 0, anim = 0, lean = 0, blend = 0, maxErr = 0, lkBad = 0, lkN = 0, lkSideBad = 0;
   for (const hashCell of [0, 3, -0.05]) for (const wind of [0, 1.5]) {
     const su = makeSu(hashCell, wind, FG);
     const { base, st } = compileAll(src, su);
@@ -102,7 +102,7 @@ function run(src, trials, FG) {
     const ctx = { tlook, tlookWidth: TLOOK_WIDTH, bands, fog, shading: { ...shadingT, wetness: 0, floorLum: 0 }, closeBand: 40, handover: [40, 90], features: null, hashCell, skyline: null, cliffType: 1, farGrass: FG || undefined, groundLook: GL };
     for (let t = 0; t < trials; t++) {
       const type = Math.floor(rand() * rows), tt = rand() < 0.5 ? rand() * 60 : rand() * 1700;
-      const b = rand() * 1.3, u = rand() * 900 - 100, v = rand() * 900 - 100, time = rand() * 20, faceMode = Math.floor(rand() * 3);
+      const b = rand() * 1.3, u = Math.fround(rand() * 900 - 100), v = Math.fround(rand() * 900 - 100), time = rand() * 20, faceMode = Math.floor(rand() * 3);
       const nzr = rand(), nph = rand() * 6.2831853, nsn = Math.sqrt(1 - nzr * nzr), nx = nsn * Math.cos(nph), ny = nsn * Math.sin(nph);
       const lo = rLo(), hi = rLo(), w = rW();
       const o = { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3), level: 255 };
@@ -119,19 +119,20 @@ function run(src, trials, FG) {
         lkN++;
         const e = Math.max(Math.abs(L.tone - Q[6]), Math.abs(L.fr - Q[7]), Math.abs(L.fg - Q[8]), Math.abs(L.fb - Q[9]), Math.abs(L.br - Q[10]), Math.abs(L.tr - Q[15]));
         if (e > maxErr) maxErr = e;
+        if (Math.abs(L.tone - Q[6]) > 1e-5) lkSideBad++; // tone feeds every decision
         if (L.code !== Q[13] || L.anim !== Q[14] || L.g0 !== Q[18] || L.g1 !== Q[19] || L.g2 !== Q[20]) lkBad++;
         if (Q[14] > 0) lean++;
       }
     }
   }
-  return { bad, n, anim, blend, lean, maxErr, lkBad, lkN };
+  return { bad, n, anim, blend, lean, maxErr, lkBad, lkN, lkSideBad };
 }
 // look on, far grass off / on: JS-evaluated shadeTerrain == shadeTerrain twin on >= 3000 cells each (looks 0..6, blends, wind 0 and 1.5)
 const r1 = run(LOOKSRC, 600, null);
-assert.ok(r1.n >= 3000 && r1.bad <= r1.n * 0.001, `look shadeTerrain vs JS: ${r1.bad}/${r1.n} differ`);
+assert.ok(r1.n >= 3000 && r1.bad === 0, `look shadeTerrain vs JS: ${r1.bad}/${r1.n} differ (bit-exact decisions, ENV-02d)`);
 const r2 = run(LOOKSRC, 600, mkFg());
-assert.ok(r2.bad <= r2.n * 0.001, `look + far grass shadeTerrain vs JS: ${r2.bad}/${r2.n} differ`);
-assert.ok(r1.lkBad <= r1.lkN * 0.002 && r1.maxErr < 2e-4, `lkShade vs shadeLookCell: codes ${r1.lkBad}/${r1.lkN}, max err ${r1.maxErr}`);
+assert.ok(r2.bad === 0, `look + far grass shadeTerrain vs JS: ${r2.bad}/${r2.n} differ`);
+assert.ok(r1.lkBad === 0 && r1.lkSideBad === 0 && r1.maxErr < 2e-4, `lkShade vs shadeLookCell: codes ${r1.lkBad}/${r1.lkN}, sides ${r1.lkSideBad}, max err ${r1.maxErr}`);
 assert.ok(r1.blend > 500 && r1.anim > 100 && r1.lean > 50, `coverage blend ${r1.blend} anim ${r1.anim} lean ${r1.lean}`);
 // calm (wind 0): look cells never animate
 {
