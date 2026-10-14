@@ -4,6 +4,7 @@
 // Not wired yet: regionalBeasts/goblinCamps keep their own respawn until BEAST-06b/13 (NEEDS B1-main: see lanes/pc-b2.md).
 import { KINDS } from './beastKinds.js';
 import { hashU } from '../../life/schedule.js';
+import { SPAWN_AREAS, areaGid, areaGroupSpecs } from './spawnAreas.js';
 
 export const RESPAWN_SEC = Object.freeze({ grazer: 180, common: 360, pack: 480, swarm: 480, elite: 1200 }); // camp/boss handled apart
 export const CAMP_DAYS = 3, DEFAULT_DAY_SEC = 1200; // dayLenSec is an option: pass the game's real day length
@@ -18,7 +19,7 @@ function strHash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h
  * Returns groups [{ gid '<kind>.<key>.<n>', kind, region, cls, slots[], members[], home:[x,y], route:[[x,y]x3..6] }]. Same seed + members -> same list.
  * `walkable(x,y)` optional (route points fall back to home when blocked).
  */
-export function buildGroups(members, seed, walkable) {
+export function buildGroups(members, seed, walkable, areas = SPAWN_AREAS) {
   const order = [], byKey = {}; // insertion order = input order (no Map iteration)
   for (let i = 0; i < members.length; i++) {
     const m = members[i], kind = m.kind || m.species, k = kind + '|' + m.key + '|' + m.group;
@@ -39,6 +40,14 @@ export function buildGroups(members, seed, walkable) {
       route.push(!walkable || walkable(x, y) ? [x, y] : [cx, cy]);
     }
     out.push({ gid: `${rk}.${n}`, kind: g.kind, region: g.region, cls, slots: g.slots, members: g.members, home: [cx, cy], route });
+  }
+  // ED-AI-04: painted spawn areas (content/beasts/spawnAreas.json) after the regional rules; none -> identical output.
+  if (areas && areas.length) {
+    for (const { area, members: am } of areaGroupSpecs(areas, seed, members.length, walkable)) {
+      let cx = 0, cy = 0; for (const m of am) { cx += m.x; cy += m.y; } cx /= am.length; cy /= am.length;
+      const spec = KINDS[area.kind], cls = (spec && spec.respawn) || 'common';
+      out.push({ gid: areaGid(area), kind: area.kind, region: area.id, cls, slots: am.map((m) => m.slot), members: am, home: [cx, cy], route: [[cx, cy]], area: area.id, when: area.when, respawnSec: area.respawnSec });
+    }
   }
   return out;
 }
@@ -63,7 +72,7 @@ export function createSpawnDirector(opts) {
     D.alive[g] = gr.slots.length; D.idx[gr.gid] = g;
     if (cls === 'boss') D.rule[g] = R_BOSS;
     else if (cls === 'camp') { D.rule[g] = R_CAMP; D.base[g] = CAMP_DAYS * dayLen; }
-    else { D.rule[g] = R_TIMED; D.base[g] = RESPAWN_SEC[cls] || RESPAWN_SEC.common; }
+    else { D.rule[g] = R_TIMED; D.base[g] = gr.respawnSec || RESPAWN_SEC[cls] || RESPAWN_SEC.common; }
   }
   D.setDifficulty = (d) => { D.mult = d.respawn; D.diffName = d.name; };
   /** A member died: when the last one dies the group timer starts (bosses: dead for good). */

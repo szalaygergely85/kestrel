@@ -1054,3 +1054,9 @@ Suites green (beastBlend/View/Legs, animBlend, legDriver, crossfade, check-deps)
 ### ED-AI-01 (kestrel-4, 2026-10-14)
 Data moved to content/beasts/archetypes.json + kinds.json (canonical, 1 entry/line); archetypes.js/beastKinds.js now build the same frozen tables via `import ... with {type:'json'}` (Node 22 ok; NOT browser-checked - needs Chrome 123+). tools/editor/ai/{validate,model}.js (+model.test.mjs, fixtures/beasts-baseline.json), tools/beasts-data.test.mjs (game tables deep-equal baseline), tools/verify-edai-01.mjs, validate-content wired ("beasts:" errors).
 Suites green: archetypes, beastSim, beastTactics, beastStuck, beastGolden, beastLayers, spawnDirector, life*, check-deps, validate-content. "Big attack" = aoe or dmgF >= 2.4 (needs windup >= 0.8 s; the row did not define big).
+
+### ED-AI-04 (kestrel-4, 2026-10-14)
+content/beasts/spawnAreas.json ({"areas":[]} shipped) + game/js/quest/sim/spawnAreas.js (loader, JSON import) + tools/editor/ai/spawnAreas.js (validator, wired into validate-content) + model.js load/save/add/remove/set commands. buildGroups(members, seed, walkable, areas=SPAWN_AREAS) appends one group per area (gid kind.area.<hex hash of area id>, slots after members, respawnSec honored by the director); empty = identical. Test: tools/editor/ai/spawnAreas.test.mjs.
+
+### ED-AI-04 (kestrel-4, 2026-10-14)
+content/beasts/spawnAreas.json ({"areas":[]} shipped) + game/js/quest/sim/spawnAreas.js (loader) + tools/editor/ai/spawnAreas.js (validator, wired into validate-content) + model.js load/save/add/remove/set commands. buildGroups(members, seed, walkable, areas=SPAWN_AREAS) appends one group per area (gid kind.area.<hex hash of area id>, slots after members, respawnSec honored by the director); empty = identical. Tests: game/js/quest/sim/spawnAreas.test.js, tools/editor/ai/spawnAreas.test.mjs.
