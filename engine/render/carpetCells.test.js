@@ -5,6 +5,7 @@ import { GBuffer, KIND_GRASS, KIND_TERRAIN, KIND_MESH, FACE_U } from './GBuffer.
 import { makeCarpetCtx, carpetCells } from './carpet.js';
 import { shadeGrass, grassTableFor } from './terrainShade.js';
 import { edgeRules } from './edgePass.js';
+import { allocProbe } from '../../tools/allocProbe.mjs';
 
 if (typeof global.gc !== 'function') {
   const res = spawnSync(process.execPath, ['--expose-gc', fileURLToPath(import.meta.url)], { stdio: 'inherit' });
@@ -117,10 +118,12 @@ check(n > 200, `AC2 carpet cells written (${n})`);
 for (const windy of [false, true]) {
   const c = makeCarpetCtx({ cfg, classMap, x0: X0, y0: Y0, w: W, h: H }, flat, windy ? (q) => { q[3] = 2; q[4] = 1; } : null);
   const f = makeFrame(60, 30), run = (nf, t0) => { for (let k = 0; k < nf; k++) { cast(f); carpetCells(f.g, f.fb, cam, c, t0 + k * 0.016); } };
-  run(40, 0); global.gc();
-  const h0 = process.memoryUsage().heapUsed; run(600, 1); const dh = process.memoryUsage().heapUsed - h0;
-  console.log(`  (info) AC6 ${windy ? 'wind' : 'calm'}: ${(dh / 600).toFixed(0)} B/frame over 600 frames (cast() included, it allocates nothing)`);
-  check(dh / 600 < 2048, `AC6 ${windy ? 'wind' : 'calm'}: < 2 KB/frame (target 0)`);
+  // allocProbe: min over 5 gc'd windows of 60 frames (single heap delta was noise under load)
+  let tk = 0;
+  const r = allocProbe((n) => { run(n, 1 + (tk += n) * 0.016); }, { n: 60, warm: 8 });
+  const per = r.perCall;
+  console.log(`  (info) AC6 ${windy ? 'wind' : 'calm'}: ${per.toFixed(1)} B/frame (min of 5 windows x 60 frames, cast() included)`);
+  check(r.skipped || per < 128, `AC6 ${windy ? 'wind' : 'calm'}: < 128 B/frame (target 0; residual is test-caller boxed doubles, like rigPerf)`);
 }
 console.log(fails ? `${fails} FAILED` : 'carpetCells: all ok');
 process.exit(fails ? 1 : 0);
