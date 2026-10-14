@@ -1076,3 +1076,7 @@ NEEDS B1-main: game side must listen on BroadcastChannel 'kestrel-ai-patch' and 
 
 ### ED-AI-RECV (kestrel-1, 2026-10-14)
 game/js/quest/aiPatchRecv.js (create(channelFactory,getSim); BroadcastChannel kestrel-ai-patch -> sim.patchArchetype -> ai-patch-result with plain refusal text) + aiPatchRecv.test.js; wired in game/js/main.js after `let beasts` only with ?playtest=1 or ?dev=1 and not capture/bench/webdriver (getSim = () => beasts, survives reloads). Suites + check-deps pass; tools/verify-edai-recv.mjs is --check only (needs puppeteer + CHROME_PATH), not run; browser untested.
+
+### ED-AI-05 + 06 editor (kestrel-1, 2026-10-14)
+Creatures tab "Spawn areas": tools/editor/aiAreaTool.js (pure: disc drag/polygon, ground probe, refuse "Can't spawn here.", undo via model, invalid() marks, Save, drop msg 'ai-drop'/'ai-clear') + aiAreaOverlay.js + aiPanel.js UI + editor main.js viewport hooks; Live apply = "Reload to apply" (relaunches playtest tab; architect decision pending). Game: aiPatchRecv.js handles ai-drop/ai-clear -> aiTest.dropPack/clearTest; sim/aiReserve.js (12 reserve slots per boar/wolf/bear, only ?dev=1/?playtest=1); dev/aiLabels.js state+distance labels (?dev=1, ui.setGlyph); regionalBeasts MODEL/BODY now exported.
+Node only (tests: aiAreaTool, aiPatchRecv, aiLabels; verify-edai-05 = --check + tests); browser untested. Not done: token-holder mark in labels, hit-testing of area handles in the viewport (select via list), Esc cancel for polygon.

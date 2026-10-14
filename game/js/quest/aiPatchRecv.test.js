@@ -17,3 +17,15 @@ r.close(); assert.ok(ch.closed);
 assert.equal(create(null, () => sim).active, false); assert.equal(create(() => null, () => sim).active, false);
 assert.equal(create(() => { throw new Error('x'); }, () => sim).active, false);
 console.log('aiPatchRecv OK');
+// ED-AI-06: drop / clear messages
+{
+  const ch2 = mk(); const calls = [];
+  const sim2 = { groups: {}, count: 0, grid: null };
+  create(() => ch2, () => sim2);
+  ch2.onmessage({ data: { type: 'ai-drop', kind: 'nokind', count: 3, x: 1, y: 2, seed: 5 } });
+  assert.equal(ch2.sent[0].type, 'ai-drop-result'); assert.equal(ch2.sent[0].ok, false); assert.equal(ch2.sent[0].n, 0);
+  ch2.onmessage({ data: { type: 'ai-clear' } }); assert.equal(ch2.sent[1].ok, true);
+  const ch3 = mk(); create(() => ch3, () => null);
+  ch3.onmessage({ data: { type: 'ai-drop', kind: 'wolf' } }); assert.equal(ch3.sent[0].ok, false); void calls;
+  console.log('aiPatchRecv drop OK');
+}

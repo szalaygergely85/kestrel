@@ -4,6 +4,7 @@ import { setArchField, setAttackField, validateModel, saveArchetypes, makeStack 
 import { ARCH_FIELDS, ARCH_GROUPS, ATTACK_FIELDS, clampField, boundsOf, specOf, attackNote } from './ai/form.js';
 import { MAX_ATTACKS } from './ai/validate.js';
 import { createPatchBridge } from './ai/patchBridge.js';
+import { RESPAWN_CHOICES, WHEN_CHOICES, BRUSH_R_MIN, BRUSH_R_MAX } from './aiAreaTool.js';
 
 export function createCreatures({ model, stack = makeStack(), bridge = null, fs, onChange = () => {} }) {
   const st = { filter: '', refusal: {}, flags: {}, drag: null };
@@ -77,7 +78,7 @@ export function createCreatures({ model, stack = makeStack(), bridge = null, fs,
 }
 
 // ---- thin DOM (not covered by Node tests; checked by --check only) ----
-export function mountAiPanel(root, { model, fs, channel }) {
+export function mountAiPanel(root, { model, fs, channel, areaTool = null }) {
   let ctl;
   const bridge = createPatchBridge({ channel, onResult: (r) => ctl.onResult(r) });
   ctl = createCreatures({ model, bridge, fs, onChange: render });
@@ -94,6 +95,40 @@ export function mountAiPanel(root, { model, fs, channel }) {
     if (spec.special !== undefined && value === spec.special) row.append(h('span', '', ' ' + spec.specialLabel));
     return row;
   }
+  // ---- ED-AI-05 / ED-AI-06: spawn areas + drop pack (logic in aiAreaTool.js) ----
+  function renderAreas(status) {
+    const t = areaTool, S = t.st, names = Object.keys(model.kinds);
+    const box = h('div', 'ai-areas'); box.append(h('b', '', 'Spawn areas'));
+    const sel = (opts, val, on) => { const d = h('select'); opts.forEach(([l, v]) => { const o = h('option', '', l); o.value = v; d.append(o); }); d.value = val; d.onchange = () => on(d.value); return d; };
+    const row = (label, el) => { const r = h('div', 'ai-row'); r.append(h('label', '', label), el); box.append(r); };
+    const bar = h('div'); const mk = (txt, fn, on) => { const b = h('button', 'ed-btn' + (on ? ' active' : ''), txt); b.type = 'button'; b.onclick = fn; bar.append(b); };
+    mk(S.armed ? 'Painting: on' : 'Paint areas', () => t.arm(!S.armed), S.armed);
+    mk('Disc', () => { S.mode = 'disc'; t.cancel(); }, S.mode === 'disc'); mk('Polygon', () => { S.mode = 'polygon'; t.cancel(); }, S.mode === 'polygon');
+    if (S.mode === 'polygon') mk('Finish polygon', () => t.finish());
+    mk('Undo', () => t.undo()); mk('Redo', () => t.redo());
+    mk('Save areas', () => { const r = t.save(fs); const bad = Object.keys(t.invalid()).length; status.textContent = `saved ${r.written.join(', ') || '(no changes)'}` + (bad ? ` - ${bad} area(s) marked, check them` : ''); });
+    mk('Reload to apply', () => t.reloadToApply());
+    box.append(bar);
+    row('Creature', sel(names.map((k) => [model.kinds[k].name, k]), S.brush.kind, (v) => t.setBrush('kind', v)));
+    const cnt = h('input'); cnt.type = 'number'; cnt.min = 1; cnt.max = 12; cnt.value = S.brush.count; cnt.style.width = '64px'; cnt.onchange = () => t.setBrush('count', Number(cnt.value)); row('How many', cnt);
+    row('Comes back after', sel(RESPAWN_CHOICES, S.brush.respawnSec, (v) => t.setBrush('respawnSec', Number(v))));
+    row('Active', sel(WHEN_CHOICES, S.brush.when, (v) => t.setBrush('when', v)));
+    const rad = h('input'); rad.type = 'range'; rad.min = BRUSH_R_MIN; rad.max = BRUSH_R_MAX; rad.value = S.radius; rad.oninput = () => { S.radius = Number(rad.value); }; row(`Brush radius (m)`, rad);
+    if (S.msg) box.append(h('div', 'ai-flag', S.msg));
+    if (S.dirtyLive) box.append(h('i', '', 'Changes show in the game after "Reload to apply".'));
+    const bad = t.invalid();
+    t.model.areas.forEach((a) => {
+      const line = h('div', 'ai-row'), b = h('button', 'ed-btn' + (a.id === S.sel ? ' active' : ''), `${model.kinds[a.kind] ? model.kinds[a.kind].name : a.kind} x${a.count} (${a.id})`); b.type = 'button'; b.onclick = () => t.select(a.id);
+      const x = h('button', 'ed-btn', 'Delete'); x.type = 'button'; x.onclick = () => t.remove(a.id); line.append(b, x); box.append(line);
+      if (bad[a.id]) bad[a.id].forEach((m) => box.append(h('div', 'ai-flag', m)));
+    });
+    box.append(h('b', '', 'Try it in the game'));
+    row('Pack', sel(names.map((k) => [model.kinds[k].name, k]), S.dropKind, (v) => { S.dropKind = v; }));
+    const dc = h('input'); dc.type = 'number'; dc.min = 0; dc.max = 12; dc.value = S.dropCount; dc.style.width = '64px'; dc.onchange = () => { S.dropCount = Number(dc.value); }; row('How many (0 = usual)', dc);
+    const bar2 = h('div'); const dp = h('button', 'ed-btn' + (S.dropArmed ? ' active' : ''), S.dropArmed ? 'Click the ground...' : 'Drop pack here'); dp.type = 'button'; dp.onclick = () => { S.dropArmed = !S.dropArmed; t.arm(false); };
+    const cl = h('button', 'ed-btn', 'Clear test creatures'); cl.type = 'button'; cl.onclick = () => t.clearTest(); bar2.append(dp, cl); box.append(bar2);
+    root.append(box);
+  }
   function render() {
     root.textContent = '';
     const f = h('input'); f.placeholder = 'Filter'; f.value = ctl.st.filter; f.oninput = () => { ctl.st.filter = f.value; render(); };
@@ -102,6 +137,7 @@ export function mountAiPanel(root, { model, fs, channel }) {
     mk('Undo', () => ctl.undo()); mk('Redo', () => ctl.redo()); mk('Reset to saved', () => ctl.reset());
     mk('Save', () => { const r = ctl.save(); status.textContent = r.ok ? `saved ${r.written.join(', ') || '(no changes)'}` : r.errors[0]; });
     root.append(f, bar, status);
+    if (areaTool) renderAreas(status);
     const L = ctl.list(), ul = h('div');
     L.archetypes.forEach((n) => { const b = h('button', 'ed-btn', n); b.type = 'button'; b.onclick = () => { sel = { arch: n, kind: null }; render(); }; ul.append(b); });
     L.kinds.forEach((k) => { const b = h('button', 'ed-btn', model.kinds[k].name); b.type = 'button'; b.onclick = () => { sel = { arch: model.kinds[k].arch, kind: k }; render(); }; ul.append(b); });
@@ -133,13 +169,22 @@ export function mountAiPanel(root, { model, fs, channel }) {
 }
 
 /** Browser glue: loads the two JSON files over http, saves by download (like the Quests tab), BroadcastChannel to the game tab. */
-export async function mountCreaturesTab(root) {
+export async function mountCreaturesTab(root, deps = {}) {
   const get = async (n) => (await fetch(`../../content/beasts/${n}`)).text();
-  const files = { 'archetypes.json': await get('archetypes.json'), 'kinds.json': await get('kinds.json') };
+  let sa = ''; try { sa = await get('spawnAreas.json'); } catch (e) { sa = ''; }
+  const files = { 'archetypes.json': await get('archetypes.json'), 'kinds.json': await get('kinds.json'), 'spawnAreas.json': sa };
   const fs = { readFileSync: (p) => files[p.split('/').pop()], writeFileSync: (p, t) => {
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([t], { type: 'application/json' })); a.download = p.split('/').pop(); a.click(); } };
   const { loadArchetypes } = await import('./ai/model.js');
   const bc = new BroadcastChannel('kestrel-ai-patch');
   const channel = { post: (m) => bc.postMessage(m), set onmessage(fn) { bc.onmessage = (e) => fn(e.data); } };
-  return mountAiPanel(root, { model: loadArchetypes('content/beasts', fs), fs, channel });
+  const { loadSpawnAreas, makeStack: mkStack } = await import('./ai/model.js');
+  const { createAreaTool } = await import('./aiAreaTool.js');
+  const model = loadArchetypes('content/beasts', fs);
+  const raw = { post: (m) => bc.postMessage(m) };
+  let handle;
+  const areaTool = createAreaTool({ model: loadSpawnAreas('content/beasts', fs), kinds: model.kinds, stack: mkStack(), probe: deps.probe || (() => ({ z: 0, walkable: true })),
+    channel: raw, reload: deps.reload || (() => {}), seed: () => (Date.now() & 0x7fffffff), onChange: () => { if (handle) handle.render(); if (deps.onAreasChange) deps.onAreasChange(); } });
+  handle = mountAiPanel(root, { model, fs, channel, areaTool });
+  handle.areaTool = areaTool; handle.kindName = (k) => (model.kinds[k] ? model.kinds[k].name : k); return handle;
 }

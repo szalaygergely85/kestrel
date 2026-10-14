@@ -71,6 +71,8 @@ import { applyLocalOverlay } from './localOverlay.js';
 import { createBootCard, createLandCard } from './bootCard.js';
 import { createFarHold } from './farHold.js'; // OB-109: hold boot/world swaps until the far terrain is baked // boot loading card + ASCII progress bar
 import { createBootStageTimer } from './bootStageTimer.js'; // S8-B1-20: per-stage ms (content/adapter/pipelines/world/meshes)
+import { addAiReserve } from './quest/sim/aiReserve.js'; // ED-AI-06: reserve slots for "Drop pack here" (dev/playtest only)
+import { drawAiLabels } from './dev/aiLabels.js'; // ED-AI-06: ?dev=1 state labels over beast heads
 import { create as createAiPatchRecv, broadcastFactory } from './quest/aiPatchRecv.js'; // ED-AI-RECV: editor live creature edits (dev runs only)
 import { applyPlaytestOverlay } from './dev/playtest.js'; // US-034: editor play-test handoff (docs/architecture.md 24.11)
 import { computeEndCardState, drawEndCard } from './ui/endCard.js';
@@ -453,6 +455,9 @@ const P = assets.palette;
 // INT-HL-01: faint use-hint markers (colour table from the prompt key colour; scratch reused every frame)
 const useHintColors = buildHintColors(P.colors[P.ui.promptKey]), useHintSet = createHintSet(), useHintTerms = createPitchedTerms(), useHintGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
 const useHintProject = (x, y, z, o) => worldToCell(useHintTerms, x, y, z, o);
+const aiLabelTerms = createPitchedTerms(), aiLabelGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 }; // ED-AI-06 (?dev=1 labels)
+const aiLabelProject = (x, y, z, o) => worldToCell(aiLabelTerms, x, y, z, o);
+const aiLabelGround = (x, y) => { const t = engine.world.terrain; return t && t.heightAt ? t.heightAt(x, y) : 0; };
 const useHintLos = (ax, ay, az, bx, by, bz) => hasLineOfSight(engine.world, ax, ay, az, bx, by, bz);
 const crosshairStyle = {
   crosshair: { dim: P.colors[P.ui.crosshair], active: P.colors[P.ui.crosshairActive] },
@@ -1150,7 +1155,8 @@ async function runGame(mode, cinematic = null) {
   let logicWire = null, logicUnreg = null; // ED-LOGIC-01c: rebuilt with the beast sim on every 'world:loaded'
   let beasts = null; // US-079a (29.1): rebuilt on every 'world:loaded', below
   // ED-AI-RECV: editor Creatures tab -> sim.patchArchetype over BroadcastChannel; only editor play-test / ?dev=1, never capture/bench; getSim reads the current sim (survives world reloads)
-  if ((params.get('playtest') === '1' || params.get('dev') === '1') && !isCaptureOrBench && params.get('capture') !== '1' && !navigator.webdriver) createAiPatchRecv(broadcastFactory, () => beasts);
+  const aiDevRun = (params.get('playtest') === '1' || params.get('dev') === '1') && !isCaptureOrBench && params.get('capture') !== '1' && !navigator.webdriver; // ED-AI-06: editor live-test runs only
+  if (aiDevRun) createAiPatchRecv(broadcastFactory, () => beasts);
   let vitals = null; // US-080a1/a2 (30.2): rebuilt on every 'world:loaded', below
   let travel = null; // WS1-07b: created once below (after wakeOut)
   let dialogueCtl = null; // DIALOGUE-01b2 (38.28): rebuilt on every 'world:loaded', below
@@ -1578,6 +1584,7 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
       if (goblinWire && world.terrainGrid && gridEnabled(params)) { // WMP-02: far goblin camps, last in slot order (authored, regional, far camps)
         goblinWire.addFarCamps(planWorldLife(world, window.ASSETS?.levels?.world_geo, 12).camps); // WMP-09: authored-only avoid, same defs on Continue
       }
+      if (aiDevRun) addAiReserve(world, 12, [0, 0]); // ED-AI-06: parked test creatures (never in normal play)
       beasts = createBeastSim(world, { tileNav: !!gridNav, nav: (lifeNav = gridNav || (worldDef.nav && buildBeastNav(world, worldDef.nav))), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events, band: worldBand, fauna: wild ? wild.fauna : null }); // LIFE-07: predators hunt the ambient fauna
       // ED-LOGIC-01c: logic wire, rebuilt with every sim; no blocks (01d loads them) = nothing registered, nothing written
       if (logicUnreg) { logicUnreg(); logicUnreg = null; } logicWire = null;
@@ -2578,6 +2585,11 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
         selectHints(engine.world, cam, engine.world.interaction.targetKey, useHintProject, useHintGrid, useHintLos, useHintSet);
         const hc = useHintColors[pulseStep(fb.timeSec)];
         for (let i = 0; i < useHintSet.n; i++) ui.setGlyph(Math.floor(useHintSet.col[i] / ui.sx), Math.floor(useHintSet.row[i] / ui.sy), HINT_GLYPH, hc);
+      }
+      if (params.get('dev') === '1' && beasts && !cinematic && mode === 'world' && resolveProjection(cam, 'mesh') === 'pitched') { // ED-AI-06: state names over heads
+        aiLabelGrid.cols = rt.cols; aiLabelGrid.rows = rt.rows; aiLabelGrid.pxCellW = rt.pxCellW || 1; aiLabelGrid.pxCellH = rt.pxCellH || 1;
+        pitchedTermsInto(aiLabelTerms, cam, aiLabelGrid);
+        drawAiLabels(ui, beasts, aiLabelProject, cam.x, cam.y, aiLabelGround);
       }
       if (window.__debug) window.__debug.useHints = useHintSet; // tools/verify-use-hints.mjs
       if (questUiActive && !ending) {
