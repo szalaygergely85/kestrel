@@ -1220,3 +1220,6 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 
 ## D-085
 **2026-10-14, owner (PC-A session; answers ratify conflict C3).** GPU frame budget: **8 ms on the RTX (4060) at every preset**, and **up to 10 ms on Intel at high**. This replaces the mixed numbers in D-053 (flat 8 ms), 38.43 (14 ms) and 38.60 (10 ms). D-075 now uses these numbers. Perf gates (bench-presets, m5-exit, R6d) assert against them.
+
+## D-086
+**2026-10-14, owner (PC-A session; answers ratify conflict C4).** No Ferrum glow billboard: "sprites looked bad". D-078 "never a horizon sprite" stands. The `ferrumGlow` part of 38.46 is dropped. Ferrum on the horizon may only show as real geometry or lights (voxel/mesh), never as a sprite card.
