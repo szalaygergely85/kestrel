@@ -6,7 +6,6 @@
 //   characters:Set<id>, pos(id)->{x,y,z}|null, groundAt(x,y), walkable(x,y,z), support(id)->R12 record|null,
 //   labelOf(id)->plain name, itemDefs:{id:{name}}, hasFlag(name)->bool,
 //   flowOf(quest)->{accept, exit, markLeft, pickupsKept, earlyReturn} (OB-156 data from dialogue/errand files).
-import { resolveGiver } from '../../../game/js/quest/sim/templates.js';
 import { r5One, r10Quest, r12One, r14Quest, rawIn } from '../../content-lint.mjs';
 
 const ID_LIKE = /\b(?:sq|mq|heart)\.[A-Za-z][\w.]*/, PLACEHOLDER = /\{[^}]*\}/;
@@ -20,12 +19,21 @@ function objectiveSpots(o) {
   return ids;
 }
 
+/** Local mirror of game/js/quest/sim/templates.js resolveGiver (editor may not import game/); parity: tools/quest-editor-resolvegiver-parity.test.mjs. Throws on unknown site like the original. */
+export function resolveGiver(src, ctx, turnInSite) {
+  const site = (n) => { const s = ctx.sites[n]; if (!s || typeof s.entity !== 'string' || !s.entity) throw new Error('unknown site ' + n); return s; };
+  const s = site(src.site), giver = { npc: s.entity };
+  const turn = src.turnIn !== undefined ? src.turnIn : turnInSite;
+  if (turn !== undefined) { const t = site(turn); if (t.entity !== s.entity) giver.turnIn = t.entity; }
+  return giver;
+}
+
 /** Giver {npc, turnIn?}: legacy `giver`, or a pack row's `site` resolved through ctx.sites exactly like templates.js (unknown site -> none). */
 function giverOf(q, ctx) {
   if (q.raw.giver) return q.raw.giver;
   if (q.raw.site === undefined || !ctx.sites) return {};
   const step = (q.raw.steps || []).find((st) => st.template === 'deliver') || (q.raw.template === 'deliver' ? q.raw : null);
-  try { return resolveGiver(q.raw, ctx, step ? (step.params || step).to : undefined); } catch { return {}; }
+  try { return (ctx.resolveGiver || resolveGiver)(q.raw, ctx, step ? (step.params || step).to : undefined); } catch { return {}; }
 }
 
 export function lintQuest(model, questId, ctx = {}) {
