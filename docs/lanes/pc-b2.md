@@ -1073,3 +1073,9 @@ Limits: flow goes forward over links only (a one-way drop is not climbed by a fi
 ### ED-AI-06 sim (kestrel-3, 2026-10-14)
 New pure `game/js/quest/sim/aiTest.js` (+ aiTest.test.js, 12 checks): `dropPack(sim,{kind,count,x,y,seed})` wakes DOWN reserve slots of that kind (brain.reserve) on walkable cells around the point, tags group `test.<n>` (count default = kind group min; needs reserve slots in the world, the sim has a fixed slot table), `clearTest(sim)`, `stateLabels(sim,out)` -> n (0 alloc, `STATE_LABELS` names 0..23), `runScenario(simFactory,{ticks,path,drops,patches})` -> `{hash, states}`.
 Open for kestrel-1: the editor world must carry reserve slots per kind (e.g. 12 per test kind) for the button to have something to wake.
+
+### POST-STACK-01a (kestrel-2, 2026-10-14) -> arch-review
+engine/render/post.js (+ post.test.js on a real RenderTargetCanvas2D, engine/index.js export): validatePost, createPostState, composePost, postCells; grade stage reuses gradeCells (identity post + atmos bit-equal, 3 poses); all ACs green, 0 alloc, check-deps OK. Open: twin cost all 3 stages on at 480x180 measured ~5.8 ms/frame (cold-ish, 10 runs) vs the 0.8 ms budget - architect to judge budget scope; heightK needs an optional per-cell z array (4th arg of postCells), POST_WGSL left for 01b.
+
+### POST-STACK-01a perf (kestrel-2, 2026-10-14) -> arch-review
+postCells fused into ONE pass (mist->grade->vignette), shared grade LUT, per-cell Float64 vignette table (cached; Float32 would break bit-equality), last-value memos (mist f, grade colour); bit-equal to the old 3-pass (reference + 3 poses x 4 cfgs x z in post.test). `engine/render/post.bench.mjs`, all stages on: 480x180 p50 5.0 -> noise 5.4 / scene-like 2.7 ms (budget 0.8 NOT met), 240x90 1.3 / 0.66 ms. Hot spots: Math.exp in mist (~1.1 ms) + 12 channel float ops per cell; <=0.8 ms needs dropping bit-exactness (exp LUT, Float32 tables) or the Canvas2D twin running at a lower cell count.
