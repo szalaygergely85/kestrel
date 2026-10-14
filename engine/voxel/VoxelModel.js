@@ -6,6 +6,8 @@
 // engine/). No GDD words live here (the test fixture is a generic
 // "quadruped", see fixtures/quadruped12.js).
 
+import { validateLegRig } from './legRig.js';
+
 // ---- constants ---------------------------------------------------------
 // KIND_MODEL/FACE_PACKED now live in ../render/GBuffer.js (US-040, 15.2
 // item 1); re-exported here so existing `./VoxelModel.js` imports keep
@@ -397,6 +399,9 @@ export function validateVoxelModel(def, opts) {
       errors.push('voxel.light: expected false or { preset: string }');
     }
   }
+
+  // ---- legRig (ANIM-C-01, 38.67 item 2): optional runtime leg-solve data -------
+  if (def.legRig !== undefined) validateLegRig(def, partNames, errors);
 
   // ---- mounts (rule 7, US-041a 15.3 item 5) ----------------------------------
   if (def.mounts !== undefined) {

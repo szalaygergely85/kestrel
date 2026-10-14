@@ -35,6 +35,7 @@ export {
 export { createShadowParityRunner } from './render/gpu/shadowParity.js';
 export { runStableRow, compareStableRow } from './render/gpu/wg/stableCompare.js'; // US-073c: gpucompare `stable` row
 // ME-06 (27.15.5a item 6): compare harnesses settle the shared terrain mesh set before each pose.
+export { default as quadruped16 } from './voxel/fixtures/quadruped16.js'; // ANIM-C-04: tools/bench-life.mjs --legs (rigged stand-in)
 export { terrainMeshSetFor } from './mesh/terrainMesh.js';
 export { buildLevelMesh } from './mesh/levelMesh.js'; // OB-053: tools/coplanar-lint.mjs (level triangles)
 
