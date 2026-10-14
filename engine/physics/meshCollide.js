@@ -364,6 +364,17 @@ export function moveCircleMesh(colliders, count, x, y, dx, dy, radius, footZ, gr
  * @returns {MeshSupport}
  */
 export function probeSupport(colliders, count, x, y, footZ, grounded, opts, out) {
+  _psIo[0] = x; _psIo[1] = y; _psIo[2] = footZ;
+  return probeSupportIo(colliders, count, _psIo, grounded, opts, out);
+}
+const _psIo = new Float64Array(3);
+
+/**
+ * `probeSupport` with the query point in a caller-owned buffer (BEAST-ALLOC-02, arch 38.61 2b): io[0]=x, io[1]=y, io[2]=footZ.
+ * No double args cross the call, so a per-tick caller (beast sim via World.supportAtOut) allocates nothing. Same results.
+ */
+export function probeSupportIo(colliders, count, io, grounded, opts, out) {
+  const x = io[0], y = io[1], footZ = io[2];
   // BUG-GONDOLA-FALL: a body may opt in (opts.airStepUp, integrate.js sets it) to probe up to that far above the feet while
   // airborne. A depenetration squeeze (prop box face vs a stepped tower wall, gap < capsule width) can leave the feet a
   // few cm BELOW a floor top they stand in; with up = SKIN that floor was missed and the player fell out of the world.

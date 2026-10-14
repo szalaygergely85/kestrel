@@ -1293,12 +1293,14 @@ function postOne(sim, i) {
 
   // Ground: supportAt reads the floor under the beast (terrain or mesh collider); z never integrates gravity.
   const t = sim.entities[i].transform;
-  const support = world.supportAt(steer.x[i], steer.y[i], t.z + 0.6, true, _supportOpts);
+  _supportOut[0] = steer.x[i]; _supportOut[1] = steer.y[i]; _supportOut[2] = t.z + 0.6;
+  world.supportAtOut(true, _supportOpts, _supportOut);
   t.x = steer.x[i];
   t.y = steer.y[i];
-  t.z = support.floorH;
+  t.z = _supportOut[3];
 }
 
+const _supportOut = new Float64Array(10); // BEAST-ALLOC-02: world.supportAtOut io (in x,y,footZ; floorH at [3])
 const _supportOpts = { height: 0, stepUpMax: 1.0, walkCos: -1 };
 
 function chargePost(sim, i, px, py) {
