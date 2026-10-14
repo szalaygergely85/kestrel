@@ -27,7 +27,7 @@ const layers = (o = {}) => Float64Array.from([1, o.c ?? -1, o.f ?? 0, o.t ?? 0, 
 // ---- 1. shipped models: layers null / absent / "plain" are byte-identical to the clip fields ----
 for (const [name, def] of [['boar', boar.voxel || boar], ['bear', bear.voxel || bear], ['dummy', quadruped12]]) {
   const pm = packVoxelModel(def, () => 1);
-  ok(`${name}: pm.blend is null without def.blend`, pm.blend === null);
+  ok(`${name}: pm.blend matches def.blend presence`, def.blend ? pm.blend !== null : pm.blend === null); // ANIM-BLEND-02 gave the boar a blend block
   let allSame = true;
   for (let c = 0; c < pm.clips.length; c++) {
     for (const f of [0, pm.clips[c].n - 1]) {
