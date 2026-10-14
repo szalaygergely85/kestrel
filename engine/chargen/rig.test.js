@@ -50,6 +50,13 @@ const pm = packVoxelModel(def.voxel, matId);
 ok('rig pm: no atlas, rig set, partCount', pm.vox.length === 0 && pm.rig === def.voxel.rig && pm.partCount === 4 && pm.emissiveLight === null);
 ok('all local vertex coords are integers >= 0', def.voxel.rig.pos.every((v) => v >= 0 && Number.isInteger(v)));
 ok('matIds resolved via matIdFor', pm.matIds[1] === 10 && pm.matIds[2] === 11);
+// ANIM-LOOKAT-01: opts.lookAt -> def.voxel.lookAt -> pm.lookAt (head part idx); absent -> no key, pm.lookAt null (byte-identical)
+{
+  const dl = riggedModelDef(partRig, { lookAt: { part: 'head', yawLimitDeg: 60, pitchLimitDeg: 25, hz: 2 } });
+  const pl = packVoxelModel(dl.voxel, matId);
+  ok('rigged lookAt: packs with the head part', pl.lookAt && pl.lookAt.part === Object.keys(dl.voxel.parts).indexOf('head') && pl.lookAt.yawLimit === 60 && pl.lookAt.pitchLimit === 25, JSON.stringify(pl.lookAt));
+  ok('rigged no lookAt: key absent, pm.lookAt null', !('lookAt' in def.voxel) && pm.lookAt === null);
+}
 ok('mount parts: nearest joint (hand_r -> armL, mouth -> jaw)', def.voxel.mounts.hand_r.part === 'armL' && def.voxel.mounts.mouth.part === 'jaw');
 
 const qmulv = (q, v) => { // rotate v by quaternion q (x,y,z,w)
