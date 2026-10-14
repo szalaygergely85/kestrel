@@ -65,8 +65,16 @@ export function openQuestWindow({ book, ctl, compile, nameOf, objectId, anchorId
  * follows (its entry list starts with `<npc>.after.<questId>`, a dlg flag set only for that one open), then the next offer. An OFFER ->
  * the story talk first (no accept inside it), then the offer window (Accept / Decline). Returns true when it took over, false = plain talk.
  */
-export function npcQuestTalk({ book, ctl, compile, nameOf, npcId, state }) {
+/** D-106: the giver's "come back when you're stronger" line. Text key giver.<npc>.tooWeak, else giver.tooWeak, else the placeholder (NEEDS WRITER). Never names a level. */
+export const TOO_WEAK_FALLBACK = "You're not ready for this yet.";
+export function tooWeakDialogue(npcId, texts) {
+  const t = (texts && (texts['giver.' + npcId + '.tooWeak'] || texts['giver.tooWeak'])) || TOO_WEAK_FALLBACK;
+  return { kind: 'dialogue', schema: 1, id: 'qwin.tooWeak.' + npcId, speakers: { npc: { label: ascii(npcId).slice(0, 24).toUpperCase() } }, entry: [{ node: 'w.0' }],
+    nodes: { 'w.0': { lines: lines({}, [t]), choices: [{ next: 'w.end', text: '[E] Okay' }, { next: 'w.end', text: '[Q] Close' }], speaker: 'npc' }, 'w.end': { end: true, lines: ['...'], speaker: 'npc' } } };
+}
+export function npcQuestTalk({ book, ctl, compile, nameOf, npcId, state, texts }) {
   const pl = book.plan(npcId);
+  if (!pl && book.tooWeakGiver && book.tooWeakGiver(npcId)) return !!ctl.openComp(compile(tooWeakDialogue(npcId, texts)), npcId);
   if (!pl || pl.action === 'refuse') return false;
   const win = { book, ctl, compile, nameOf, objectId: npcId, anchorId: npcId, chain: false };
   const offerNext = () => { const p = book.plan(npcId); if (p && p.action === 'offer') openQuestWindow(win); };

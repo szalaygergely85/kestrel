@@ -118,9 +118,11 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   const touch = i => { if (!mark[i]) { mark[i] = 1; touched[touchedN++] = i; } };
   const touchWithDeps = i => { touch(i); const d = deps[i]; for (let k = 0; k < d.length; k++) touch(d[k]); };
 
-  const book = { main: entries[0].state, version: 0, onChange: null, lastReward: null, count: n, packOps: null /* QUESTS-01: {count(id), remove(id, n), add?(id, n) -> n added} set by the game; deliver needs it */ };
+  const book = { levelOf: null, main: entries[0].state, version: 0, onChange: null, lastReward: null, count: n, packOps: null /* QUESTS-01: {count(id), remove(id, n), add?(id, n) -> n added} set by the game; deliver needs it */ };
   const packCounts = new Map(); // last absolute pack count per item id (runtime mirror of item:count, re-applied on abandon)
 
+  // PLAYER-LEVEL-01 (D-105/D-106): minLevel gates the OFFER only (never revoked after accept); book.levelOf() = the hidden player level (null = no gate)
+  function tooWeak(i) { const m = entries[i].def.minLevel; return m > 1 && !!book.levelOf && book.levelOf() < m; }
   function met(i) {
     const r = requireSteps[i];
     for (let k = 0; k < r.length; k++) {
@@ -135,7 +137,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     if (i === 0) return e.state.completed.length >= e.def.objectives.length ? DONE : ACTIVE;
     if (e.auto) return !met(i) ? UNAVAILABLE : e.state.completed.length < e.def.objectives.length ? ACTIVE : DONE; // QL-T1: no accept / hand-in step
     if (e.handedIn) return DONE;
-    if (!e.accepted) return met(i) ? AVAILABLE : UNAVAILABLE; // an accepted quest never goes back to unavailable (old saves)
+    if (!e.accepted) return met(i) && !tooWeak(i) ? AVAILABLE : UNAVAILABLE; // an accepted quest never goes back to unavailable (old saves)
     return e.state.completed.length < e.def.objectives.length ? ACTIVE : READY;
   }
   function emit(name, id) { if (book.onChange) book.onChange(name, id); }
@@ -195,6 +197,11 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     if (event && event.type === 'beast:died' && typeof event.id === 'string') for (let i = 1; i < n; i++) if ((entries[i].accepted || (entries[i].auto && met(i))) && !entries[i].handedIn && kindListen.has(kindOf(event.id)) && kindListen.get(kindOf(event.id)).includes(i) && applyKindKill(entries[i].state, kindOf(event.id), entries[i].def)) changed = true;
     if (changed) { book.version++; settle(); }
     return changed;
+  };
+  /** D-106: id of a not-yet-accepted quest of `npc` held back ONLY by minLevel (the giver then says "come back when you're stronger"), else null. */
+  book.tooWeakGiver = function tooWeakGiver(npc) {
+    for (let i = 1; i < n; i++) { const e = entries[i]; if (e.giver === npc && !e.accepted && !e.handedIn && !e.auto && tooWeak(i) && met(i)) return e.def.id; }
+    return null;
   };
   book.accept = function accept(id) {
     const i = byId.get(id);
