@@ -157,3 +157,43 @@ Order: 01 -> (02, 03) -> 04 -> (05, 06, 07) -> 08; D1 alongside (axe/spear drop 
 3. Rarity names/colours Common white / Magic blue / Rare yellow / Epic purple / Unique orange - OK? **Owner: OK.**
 4. Should gear need attributes (e.g. Steel Bow needs DEX 12), or do attributes only boost? **Owner: yes, gear needs attributes.**
 5. Floating damage numbers over enemies (crits in yellow) - want them? **Owner: yes, with a Settings switch to turn them off.**
+
+## 9. PLAYER-LEVEL-01 - derived player level (D-084, owner OK needed)
+PO, 2026-10-14. No XP (D-078). The level is computed, never earned, and shown in the character view / HUD and used by one gate (D-069 fireball).
+
+**Story.** As a player, I want to see one level number that grows when I find better gear and learn stronger spells, so that I know how ready I am for the next zone (and for the beast level on the enemy health bar, D-093).
+
+**Formula (proposal, all numbers in `game/js/quest/playerLevelConfig.js`):**
+- `G` = gear score = mean item level (iL 1-10) of the **5 highest equipped items**; fewer than 5 equipped = missing ones count 0. Only EQUIPPED items count (D-096: an item you cannot equip adds nothing).
+- `S` = sum of unlocked spell tiers (Fireball tier 1-3, further spells later); `T` = 10 x min(S, 6) / 6.
+- `Level = clamp(round(1 + 0.8 x G + 0.2 x T), 1, 10)`.
+- Pure function `playerLevel(spells, equipped)`; same input = same output; 0 alloc; no attributes involved.
+
+**Worked examples**
+| Case | Equipped | Spells | G | T | Level |
+|---|---|---|---|---|---|
+| 1. Start | wooden sword iL1 + shield iL1 | none | 0.4 | 0 | 1 + 0.32 -> **1** |
+| 2. End of near side (zone 1-5), the Burl fireball beat | sword, bow, shield, body, head all iL5 | Fireball tier 1 (S=1) | 5.0 | 1.67 | 1 + 4.0 + 0.33 = 5.33 -> **5** |
+| 3. Far side | five pieces iL8 | Fireball tier 3 (S=3) | 8.0 | 5.0 | 1 + 6.4 + 1.0 = 8.4 -> **8** |
+| 3b. Gear-rich, spell-poor | five pieces iL9 | none | 9.0 | 0 | 1 + 7.2 = 8.2 -> **8** |
+| 3c. Spell-rich, gear-poor | five pieces iL1 | S=6 | 1.0 | 10 | 1 + 0.8 + 2 = 3.8 -> **4** |
+Max (five iL10 + S 6) = 11 -> clamped **10**.
+
+**Interaction with D-096 (hard attribute requirements)**
+- Level never grants attributes and never gates equipping. Equipping is decided only by STR/DEX/INT (base 5 + gear bonus lines, D-091).
+- A high-iL item you cannot equip yet counts 0 until you can; so the level cannot be inflated by carrying gear. Taking off a piece lowers the level at once.
+- Gates read the level once, at the grant beat: the D-069 Burl fireball beat checks `Level >= 5` when you talk to Burl; once the spell is granted, the flag is saved and never re-locked if you later swap gear.
+- Attribute requirements of near-side gear must be reachable from the zone below (D-091 4) - the formula assumes a normal path reaches iL5 kit by the end of the near side.
+
+**Acceptance criteria (for the programmer row):**
+- [ ] `playerLevel` returns the 5 table results above for those fixtures and 10 for the max fixture; never < 1 or > 10.
+- [ ] Unequipped / unequippable items (D-096) do not count; fixture with an unmet requirement gives the lower level.
+- [ ] Changing any config weight changes the result (data-driven, no magic numbers in code).
+- [ ] Character view and HUD show "Level N"; updates on equip/unequip and spell unlock; no XP bar anywhere.
+- [ ] The Burl fireball beat reads it (Level 5) and stays granted after un-equipping; saved flag test.
+- [ ] 0 alloc per call (10k calls, heap flat).
+
+**Owner questions**
+1. Formula weights 0.8 gear / 0.2 spells and the "top 5 items" rule: OK, or should every slot count?
+2. Max level 10 (matches zone bands 1-5 / 5-10): OK?
+3. Fireball gate stays "Level 5 at the beat, then granted for good": OK?
