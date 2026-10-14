@@ -1,4 +1,5 @@
 // EQ-10: the five real world_m1 chests (anchors from tools/gen-poi-props.mjs) -> createChests defs -> contents.
+import { registerGenDefs } from './itemInst.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import '../../../../design/palette.js';
@@ -32,30 +33,26 @@ function openAll(seed) {
     assert.equal(sim.open(d.id, pose), true, d.id + ' opens');
     sim.step(1);
     assert.equal(sim.stateOf(d.id), 'open');
-    out[d.id] = inv.slots.filter((s) => s.id).map((s) => s.id + 'x' + s.n);
+    out[d.id] = inv.slots.filter((s) => s.id).map((s) => s.id + 'x' + s.n + (s.it ? '@r' + s.it.r : ''));
   }
   return out;
 }
+registerGenDefs(items);
 const a = openAll(5), b = openAll(5), c = openAll(6);
 assert.deepEqual(a, b, 'deterministic for a seed');
 for (const id of ['chestMeadow', 'chestBend', 'chestCrossroads']) assert.deepEqual(a[id], ['heart.piecex1'], id + ' = 1 heart piece');
-assert.equal(a.chestRook.length, 2);
+// ITEM-06: a gear/weapon chest = 100 % 1-2 generated instances (min Rare), plus its fixed rows
+const gens = (r) => r.filter((x) => x.startsWith('gen.'));
+const rarOf = (x) => +x.split('@r')[1];
 assert.ok(a.chestRook.includes('arrowx15'), 'Rook: 15 arrows');
-const rookGear = a.chestRook.find((s) => s.startsWith('gear.'));
-assert.equal(items[rookGear.replace(/x1$/, '')].equip.tier, 'sturdy', 'Rook: a sturdy gear piece');
-assert.equal(a.chestHidden.length, 1);
-assert.equal(items[a.chestHidden[0].replace(/x1$/, '')].equip.tier, 'fine', 'hidden: a fine gear piece');
-// the slot roll varies with the seed over a few seeds (not a constant)
-const slots = new Set();
-for (let s = 1; s <= 12; s++) slots.add(items[openAll(s).chestHidden[0].replace(/x1$/, '')].equip.slot);
-assert.ok(slots.size > 1, 'hidden chest slot varies with the seed: ' + [...slots]);
-// US-104a: the 4 secret chests = 4 arrows always + a gear roll with chance 0.08 (over many seeds ~8 %)
-let gearN = 0; const N = 400;
-for (let s = 1; s <= N; s++) { const r = openAll(s); for (const id of ['secretRook']) { assert.ok(r[id].includes('arrowx4'), id + ': 4 arrows'); if (r[id].some((x) => x.startsWith('gear.'))) gearN++; } }
-assert.ok(gearN / (N * 1) > 0.05 && gearN / (N * 1) < 0.11, 'secret gear chance ~8 %: ' + gearN / (N * 1));
-// US-104b: the 3 Outwall chests = 4 arrows + ~8 % gear, always 'fine' (T3)
-let owN = 0;
-for (let s = 1; s <= N; s++) { const r = openAll(s); for (const id of ['secretOw1', 'secretOw2', 'secretOw3']) { assert.ok(r[id].includes('arrowx4'), id + ': 4 arrows'); for (const x of r[id]) if (x.startsWith('gear.')) { owN++; assert.equal(items[x.replace(/x1$/, '')].equip.tier, 'fine', id + ': T3 gear is fine'); } } }
-assert.ok(owN / (N * 3) > 0.04 && owN / (N * 3) < 0.12, 'outwall gear chance ~8 %: ' + owN / (N * 3));
+for (const id of ['chestRook', 'chestHidden', 'chestBed', 'secretRook', 'secretOw1', 'secretOw2', 'secretOw3']) {
+  for (let s = 1; s <= 60; s++) {
+    const g = gens(openAll(s)[id]);
+    assert.ok(g.length >= 1 && g.length <= 2, id + ': 1-2 gear items, got ' + g.length);
+    for (const x of g) assert.ok(rarOf(x) >= 2, id + ': min Rare, got r' + rarOf(x));
+  }
+}
+assert.ok(a.chestRook.every((x) => x.startsWith('gen.') || x.startsWith('arrow')), 'Rook: arrows + generated gear only');
+assert.ok(a.secretRook.includes('arrowx4'), 'secret: 4 arrows still fixed');
 void c; void countOf;
 console.log('chestDefs.test: ALL PASS');

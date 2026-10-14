@@ -14,7 +14,52 @@ import { addDrop } from './itemMigrate.js'; // ITEM-02c
 import { setItemPickupSink, PICKUP_AMOUNT } from './pickups.js';
 import { BAND_TABLE } from './band.js';
 import { LOOT_PROMPT, LOOT_TABLE, LOOT_TIERS, LOOT_SLOTS } from './lootConfig.js';
-import { rollWolfWeapon, rollGoblinWeapon, rollChestWeapon, weaponRng } from './weaponLoot.js'; // EQ-20
+import { addInstance } from './inventory.js';
+import { generateItem } from './itemGen.js'; // ITEM-06
+import { KIND_NAMES } from './beastKinds.js';
+import { GEAR_DROP, RARITY_BY_SIDE, FAR_BAND, WEAPON_SHARE, WEAPON_TYPES, ARMOUR_TYPES, CHEST_MIN_RARITY } from './lootConfig.js';
+
+/** Tiny seeded stream (mulberry32; state is one uint32). Merged here from weaponLoot.js (ITEM-06); stats.js re-exports it. */
+export function weaponRng(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Rarity 0-3 from the band side's C/M/R/E weights (1 draw). */
+export function rollRarity(f, band) {
+  const w = RARITY_BY_SIDE[band >= FAR_BAND ? 'far' : 'near'];
+  let t = f() * 100;
+  for (let i = 0; i < 4; i++) { if ((t -= w[i]) < 0) return i; }
+  return 0;
+}
+/** Item type: weapons 30 % (even over the 5 weapon types), else armour (even per slot). 2 draws. */
+export function rollType(f) {
+  const kind = f() < WEAPON_SHARE ? WEAPON_TYPES : ARMOUR_TYPES;
+  return kind[Math.min(kind.length - 1, Math.floor(f() * kind.length))];
+}
+/** One kill drop: instance or null. src = GEAR_DROP key. Draws: gate, rarity, type(2), then the affixes. */
+export function rollKillGear(f, src, band) {
+  const g = GEAR_DROP[src];
+  if (!g || f() >= g.chance) return null;
+  const r = Math.min(3, rollRarity(f, band) + g.rBonus);
+  return generateItem(f, { iL: band, r, type: rollType(f) });
+}
+/** Chest drop: 1-2 instances, min Rare, iL = band + 1 (cap 10 by the generator). */
+export function rollChestGear(f, band) {
+  const n = f() < 0.5 ? 1 : 2, out = [];
+  for (let k = 0; k < n; k++) {
+    const r = Math.max(CHEST_MIN_RARITY, rollRarity(f, band));
+    out.push(generateItem(f, { iL: band + 1, r, type: rollType(f) }));
+  }
+  return out;
+}
+const ELITE_KINDS = new Set([KIND_NAMES.indexOf('goblin_torch_bearer'), KIND_NAMES.indexOf('goblin_chief')]);
 
 // EQ-10: 0..4 rolled entries per corpse (table.fixed + the `give` rolls). Gear is a world pickup, never a column.
 const ITEMS_PER_CORPSE = 4;
@@ -99,8 +144,7 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
   // 37.16.3 "At create: delete any stale loot.* flag from a save". Create-time only (Object.keys allocates).
   for (const k of Object.keys(world.state)) if (k.startsWith('loot.')) delete world.state[k];
 
-  const grng = weaponRng(0x60B11 ^ count); // GOB-05: goblin weapon drops use their own stream too
-  const wrng = weaponRng(0x5EA90 ^ count); // EQ-20: wolf weapon drops use their own stream (boar/chest streams stay untouched)
+  const drng = weaponRng(0x60B11 ^ count); // ITEM-06: gear drops use their own stream (boar/chest streams stay untouched)
   /** @type {string[]} `loot.<id>` per slot, built once (no string concat on events). */
   const flagKey = ids.map((id) => 'loot.' + id);
   /** @type {any[]} the live interactable records, one per slot (x/y/z rewritten on death). */
@@ -120,7 +164,7 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
     corpseN: new Int8Array(MAX_SLOTS * ITEMS_PER_CORPSE),
     gearHeld: new Array(MAX_SLOTS).fill(null), // OB-064: rolled gear id / tier waits IN the corpse; the drop spawns at E
     _gear: { id: '', n: 1 },
-    gearTier: new Array(MAX_SLOTS).fill('worn'),
+    instHeld: new Array(MAX_SLOTS).fill(null), // ITEM-06: the rolled instance behind gearHeld
     orbHeld: new Array(MAX_SLOTS).fill(null), // OB-074: the hp/mp potion waits IN the corpse ('hp'|'mp'); applied on E, never a ground pickup
     corpseItem: new Array(MAX_SLOTS * ITEMS_PER_CORPSE).fill(null), // item id per column (entry order: fixed, then give rolls)
     // Preallocated emit payloads (toastView builds its string from them, on the event).
@@ -131,7 +175,7 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
 
   function clearSlot(i) {
     delete world.state[flagKey[i]];
-    loot.gearHeld[i] = null; loot.orbHeld[i] = null;
+    loot.gearHeld[i] = null; loot.instHeld[i] = null; loot.orbHeld[i] = null;
     const o = i * ITEMS_PER_CORPSE;
     for (let k = 0; k < ITEMS_PER_CORPSE; k++) { loot.corpseN[o + k] = 0; loot.corpseItem[o + k] = null; }
   }
@@ -151,21 +195,14 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
         loot.corpseItem[o + col] = r.give.item;
         loot.corpseN[o + col] = hit ? r.give.min + Math.min(r.give.max - r.give.min, Math.floor(b * (r.give.max - r.give.min + 1))) : 0;
         col++;
-      } else if (hit && r.pick && r.pick.gear) {
-        // US-129a: gear tier from the zone band (T1 = today's weighted roll, so the meadow is unchanged); same draws either way.
-        const forced = band ? BAND_TABLE.gearItemTier[band.gearTierAt(p.x, p.y)] : null;
-        const gid = rollGear(items, b, c, undefined, undefined, forced);
-        if (gid) { loot.gearHeld[i] = gid; loot.gearTier[i] = items && items[gid] && items[gid].equip ? items[gid].equip.tier : 'worn'; } // OB-064: no ground drop before E
       }
     }
-    if (beasts.wolf && beasts.wolf[i]) { // EQ-20: wolves 3 % sturdy shield/bow (fine only from band 5)
-      const wid = rollWolfWeapon(items, band ? band.bandAt(p.x, p.y) : 1, wrng(), wrng(), wrng());
-      if (wid) { loot.gearHeld[i] = wid; loot.gearTier[i] = items[wid].equip.tier; }
-    }
-    if (isGoblin(i)) { // GOB-05: tier forced by the zone band (5-6 fine, 7-8 tempered, 9-10 warden)
-      const forced = band ? BAND_TABLE.gearItemTier[band.gearTierAt(p.x, p.y)] : null;
-      const wid = rollGoblinWeapon(items, forced, grng(), grng());
-      if (wid) { loot.gearHeld[i] = wid; loot.gearTier[i] = items[wid].equip.tier; }
+    { // ITEM-06: one generated gear roll per kill by source (own stream, iL = zone band at the kill spot)
+      const bn = band ? band.bandAt(p.x, p.y) : 1;
+      const src = isGoblin(i) ? (beasts.kindIdx && ELITE_KINDS.has(beasts.kindIdx[i]) ? 'goblinElite' : 'goblin')
+        : (beasts.wolf && beasts.wolf[i]) ? 'wolf' : (beasts.bear && beasts.bear[i]) ? 'bear' : 'boar';
+      const inst = rollKillGear(drng, src, bn);
+      if (inst) { loot.gearHeld[i] = inst.id; loot.instHeld[i] = inst; }
     }
     const orbHit = rng.nextFloat() < tb.orb.chance;
     const orbKind = tb.orb.kinds[rng.int(tb.orb.kinds.length)];
@@ -218,9 +255,10 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
     }
     const gh = loot.gearHeld[i]; // OB-064 (reopened): held gear goes INTO THE PACK on the same E like meat; pack full -> stays in the corpse
     if (gh) {
-      const added = inv ? addDrop(inv, items, gh, 1, saveIdOf ? saveIdOf() : null, 1000 + i, gotId) : 0; // ITEM-02c: an instance (zone band iL) when the save id is known
+      const inst = loot.instHeld[i];
+      const added = inv && inst && addInstance(inv, items, inst) >= 0 ? 1 : 0; // ITEM-06: into the pack, pack full = stays
       if (added > 0) {
-        loot.gearHeld[i] = null;
+        gotId.id = inst.id; loot.gearHeld[i] = null; loot.instHeld[i] = null;
         loot._added.id = gotId.id; loot._added.n = added;
         events.emit('inventory:added', loot._added);
         loot._gear.id = gotId.id; loot._gear.n = added;
@@ -305,7 +343,7 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
 // S8-C-06: the chest branch shares createLoot and inventory transfer rather than a second loot service.
 // A table contains fixed [{item,n}] plus one optional weighted pick [{item,n,weight}].
 // Roll once at create with a chest-owned stream. claim is all-or-nothing so openedChests is sufficient to save it.
-function buildChestLoot(events, {items, table, rng, inventoryOf, saveIdOf = null}) {
+function buildChestLoot(events, {items, table, rng, inventoryOf, saveIdOf = null, bandIL = 1}) {
   // EQ-10: optional table.gear = {tier?} -> one gear roll at create (2 draws, after the weighted pick); tier fixed or rolled.
   if (!table || !Array.isArray(table.fixed) || !Array.isArray(table.weighted)) throw new Error('chest loot: invalid table');
   const ids = [], counts = [], caps = [];
@@ -333,21 +371,8 @@ function buildChestLoot(events, {items, table, rng, inventoryOf, saveIdOf = null
       if (pick < 0 || i === table.weighted.length - 1) { add(row); break; }
     }
   }
-  if (table.gear) {
-    // US-104a: optional gear.chance (the loot.json chest source: 0.08) = one extra leading draw; without it the stream is unchanged (EQ-10 chests).
-    const hit = table.gear.chance === undefined || rng.nextFloat() < table.gear.chance;
-    const b = rng.nextFloat(), c = rng.nextFloat();
-    if (hit) {
-      const gid = rollGear(items, b, c, undefined, undefined, table.gear.tier || null);
-      if (!gid) throw new Error('chest loot: no gear def for the roll');
-      add({item: gid, n: 1});
-    }
-  }
-  if (table.weapon) { // EQ-20: one weapon roll (1 draw, after the gear roll); tier fixed (default sturdy)
-    const wid = rollChestWeapon(items, table.weapon, rng.nextFloat());
-    if (!wid) throw new Error('chest loot: no weapon def for the roll');
-    add({item: wid, n: 1});
-  }
+  // ITEM-06: gear/weapon in a chest table = 100 %, 1-2 generated instances, min Rare, iL = band + 1 (opts.band = zone band at the chest)
+  const insts = (table.gear || table.weapon) ? rollChestGear(() => rng.nextFloat(), bandIL) : [];
   const added = {id:'', n:0};
   function fits(inv) {
     if (!inv) return false;
@@ -361,14 +386,16 @@ function buildChestLoot(events, {items, table, rng, inventoryOf, saveIdOf = null
       }
       if (n > 0) needed += Math.ceil(n / caps[i]);
     }
-    return needed <= empty;
+    return needed + insts.length <= empty;
   }
   return {
+    insts, // ITEM-06 test hook: the rolled chest instances
     canClaim() { return !claimed && fits(inventoryOf()); },
     claim() {
       const inv = inventoryOf();
       if (claimed || !fits(inv)) return false;
       for (let i = 0; i < ids.length; i++) addDrop(inv, items, ids[i], counts[i], saveIdOf ? saveIdOf() : null, 3000 + i, { id: '' }); // ITEM-02c
+      for (let i = 0; i < insts.length; i++) addInstance(inv, items, insts[i]);
       claimed = true;
       return true;
     },
@@ -376,6 +403,7 @@ function buildChestLoot(events, {items, table, rng, inventoryOf, saveIdOf = null
     emitAdded() {
       if (!claimed) return;
       for (let i = 0; i < ids.length; i++) { added.id = ids[i]; added.n = counts[i]; events.emit('inventory:added', added); }
+      for (let i = 0; i < insts.length; i++) { added.id = insts[i].id; added.n = 1; events.emit('inventory:added', added); }
     },
   };
 }

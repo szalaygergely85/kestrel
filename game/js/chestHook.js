@@ -55,7 +55,7 @@ export const CLIP_FOR = { closed: 'closed', opening: 'open', open: 'opened' }; /
  * @returns {{card: any, onBoot: Function, onTick: Function, drawHud: Function}} a gameHooks handler set, plus
  *   `card` (test/dev access to the mounted item-get card view).
  */
-export function createChestHook({ defs, items, style, rgb, openedChestsOf = null, seed = 1, reduceMotion = false, notify = null }) {
+export function createChestHook({ defs, items, style, rgb, openedChestsOf = null, seed = 1, reduceMotion = false, notify = null, bandAt = null }) {
   const card = createItemGetCard(null, { style, items, rgb, reduceMotion });
   const itemDefs = items.defs;
   // OB-075: with `notify` (main.js: toasts.say) chest / gear pickups show a one-line "Looted: Leggings" / "Looted: 2 Potions" toast, no pause, no card.
@@ -81,7 +81,8 @@ export function createChestHook({ defs, items, style, rgb, openedChestsOf = null
   function build(opened) {
     sim = active.length ? createChests(active, {
         items: itemDefs, inventoryOf: () => ctx.inventory, events,
-        openedChests: Array.from(new Set(opened)), seed, saveIdOf: () => (ctx.world && ctx.world.state ? ctx.world.state['items.saveId'] : null), // ITEM-02c
+        openedChests: Array.from(new Set(opened)), seed, bandAt, // ITEM-06: chest iL = zone band + 1
+        saveIdOf: () => (ctx.world && ctx.world.state ? ctx.world.state['items.saveId'] : null), // ITEM-02c
       }) : null;
       recs = [];
       if (sim && ctx.world && ctx.world.addInteractable) { // OB-106: one crosshair target per still-closed chest

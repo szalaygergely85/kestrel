@@ -291,8 +291,10 @@ export function createInventoryScreen(o) {
     return -1;
   }
 
+  let tipPanel = false; const tipBox = { x: 0, y: 0, w: 0, h: 0 }; // ITEM-07b
   /** ITEM-07: card lines into the 6-row details pane, two columns (22 + 24 cells); the framed 34-wide rows are for the item-get card / tests. */
   function addCard(card) {
+    tipPanel = true; tipLines = []; tipFg = []; tipX = []; tipY = []; // the card carries its own name line
     const W = 24, X2 = 25; let y = 0, y2 = 0, right = false;
     const col = (kind) => kind === 'req' || kind === 'reqBad' || kind === 'divider' || kind === 'head' || kind === 'better' || kind === 'worse' || kind === 'same';
     for (const l of card.lines) {
@@ -302,12 +304,12 @@ export function createInventoryScreen(o) {
       if (l.tag) t = t.padEnd(W - l.tag.length - 1, ' ').slice(0, W - l.tag.length - 1) + ' ' + l.tag;
       if (l.kind === 'head' && t.length > W) t = t.replace(/ \(.*$/, '').slice(0, W);
       const fg = o.rgb[l.c] || C.uiText;
-      if (right) { if (y2 < L.details.rows) tipLines.push(t), tipFg.push(fg), tipX.push(X2), tipY.push(y2++); } else if (y < L.details.rows) tipLines.push(t), tipFg.push(fg), tipX.push(0), tipY.push(y++);
+      if (right) tipLines.push(t), tipFg.push(fg), tipX.push(X2), tipY.push(y2++); else tipLines.push(t), tipFg.push(fg), tipX.push(0), tipY.push(y++); // ITEM-07b: no row cap, the floating panel grows upward
     }
   }
 
   function buildTip(node, id, worn, lockText) {
-    tipLines = []; tipFg = []; tipX = []; tipY = [];
+    tipPanel = false; tipLines = []; tipFg = []; tipX = []; tipY = [];
     const add = (s, fg, x = 0, y = tipLines.length) => { tipLines.push(s); tipFg.push(fg); tipX.push(x); tipY.push(y); };
     if (node.kind === 1) { add('Wick', C.uiText); add('Drag a piece onto him to wear it. Turn him with A / D or the mouse.', C.uiDim); return; }
     const d = id && defs[id];
@@ -496,7 +498,15 @@ export function createInventoryScreen(o) {
       const node = nodes[cur], id = idAt(node), worn = node.kind === 2 && id && defs[id] && defs[id].equip ? wornId(defs[id].equip.slot) : null;
       const tit = node.kind === 2 && inv() && inv().slots[node.i] ? inv().slots[node.i].it : null, eqv = eq() ? eq().rev : 0;
       if (lk < 0 && (cur !== tipCur || id !== tipId || worn !== tipWorn || def !== tipDef || tit !== tipIt || eqv !== tipRev)) { tipCur = cur; tipId = id; tipWorn = worn; tipDef = def; tipIt = tit; tipRev = eqv; buildTip(node, id, worn); }
-      for (let i = 0; i < tipLines.length; i++) text(L.details.x + tipX[i], L.details.y + tipY[i], tipLines[i], tipFg[i], bg);
+      if (tipPanel && tipLines.length) { // ITEM-07b: the rolled-item card floats over the pack, bottom edge on the details pane, as tall as its lines need
+        let rows = 0; for (let i = 0; i < tipY.length; i++) if (tipY[i] + 1 > rows) rows = tipY[i] + 1;
+        const pw = 51, ph = rows + 2, px = L.details.x - 1, py = L.details.y + L.details.rows - ph;
+        const edge = '+' + '-'.repeat(pw - 2) + '+', blank = '|' + ' '.repeat(pw - 2) + '|';
+        text(px, py, edge, C.uiDim, bg); text(px, py + ph - 1, edge, C.uiDim, bg);
+        for (let r = 1; r < ph - 1; r++) text(px, py + r, blank, C.uiDim, bg);
+        for (let i = 0; i < tipLines.length; i++) text(px + 1 + tipX[i], py + 1 + tipY[i], tipLines[i], tipFg[i], bg);
+        tipBox.x = px; tipBox.y = py; tipBox.w = pw; tipBox.h = ph;
+      } else for (let i = 0; i < tipLines.length; i++) text(L.details.x + tipX[i], L.details.y + tipY[i], tipLines[i], tipFg[i], bg);
       // the dragged icon rides the pointer
       if (dragSrc >= 0 && dragMoved) { const did = idAt(nodes[dragSrc]); if (did) iconAt(rx - 2, ry - 1, did, slotCfg.selected.innerBg); }
       if (page === 1) drawSpellbook(); // over the pack grid + details

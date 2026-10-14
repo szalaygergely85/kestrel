@@ -4,7 +4,7 @@
 // `dmg`/`armour` are the already-rarity-scaled base stats (ITEM-03 generates them).
 import { STATS_CFG as C, AFFIX, RARITY, IL_MIN, IL_MAX, ALL_SLOTS } from './statsConfig.js';
 
-export { weaponRng as createStatsRng } from './weaponLoot.js'; // seeded mulberry32 stream (no Math.random)
+export { weaponRng as createStatsRng } from './loot.js'; // seeded mulberry32 stream (no Math.random)
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
