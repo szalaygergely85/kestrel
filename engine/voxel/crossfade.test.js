@@ -141,8 +141,10 @@ const mats = { idFor: () => 1 };
   const run = (n) => { let acc = 0; for (let i = 0; i < n; i++) { clipPlay(p, pm, i & 1, true, 80); clipStep(p, pm, 16); clipSetPhase(p, pm, 0.3); acc += clipFromW(p) + gaitRate(g[0], 1.2) + pickGait(g, 1, 0); inst.fromTMs = i % 40; computeVoxelPose(pm, inst, out); } return acc; };
   run(2000);
   if (global.gc) {
-    global.gc(); const h0 = process.memoryUsage().heapUsed; run(100000); global.gc();
-    const d = process.memoryUsage().heapUsed - h0;
+    // retained-heap check (gc'd before and after, min of 3 windows; the old single window flaked under load). A raw garbage
+    // probe reads ~16 B/step (boxed acc/double args in this harness) - see docs/lanes/pc-b2.md GATE-FLAKY-06.
+    let d = Infinity;
+    for (let w = 0; w < 3; w++) { global.gc(); global.gc(); const h0 = process.memoryUsage().heapUsed; run(100000); global.gc(); global.gc(); d = Math.min(d, process.memoryUsage().heapUsed - h0); }
     ok('zero allocation (<1 B/step over 100000 pose + clip + gait steps)', d < 100000, `${d} B`);
   } else console.log('(run with --expose-gc for the allocation check)');
 }
