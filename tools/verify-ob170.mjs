@@ -71,7 +71,9 @@ try {
   await ev('(() => { const rw = window.__debug.relayWake; for (let i = 0; i < 400; i++) rw.step(1 / 60, null); return true; })()'); // finish the wake timer by hand (sim may not tick headless)
   const before = await snap('BEFORE bend (first stone woken)');
   // --- the Bend stone: stand 3 m west, aim, real KeyE ---
-  await evA(FACE('relayBend', 3));
+  await evA(FACE('relayBend', Number(process.env.OFF || 2.5)));
+  console.log('DIAG ' + await evA(`(async () => { const D = window.__debug, w = D.world, rec = w.interactables.find((x) => x.key === 'relay.ws_roadBend'), p = D.playerHandle.data, t = p.transform;
+    const L = D.look, eh = p.components.body.eyeH || 1.6; return JSON.stringify({ pick: rec && rec.pick, shapes: !!(rec && rec.pickShapes), propId: rec && rec.propId, bodyId: rec && rec.bodyId, used: rec && rec.usedKey && w.state[rec.usedKey], req: rec && rec.requires, radius: rec && rec.radius, eyeT: [t.x, t.y, t.z + eh], yaw: L.yawDeg, pitch: L.pitchDeg, n: w.interactables.length, los: (() => { const o = [], x1 = rec.pick.x0; for (const f of [0.3, 0.5, 0.8, 1, 1.5, 2]) { const x = t.x + f; o.push([f, w.losPointQ ? 1 : 0, (D.pointBlocked ? D.pointBlocked(w, x, t.y, t.z + eh) : null)]); } return o; })(), structAt: !!w.structureAt(t.x, t.y), keys: w.interactables.filter((x) => /relay|stone/.test(x.key)).map((x) => x.key) }); })()`));
   const pre = await snap('at bend, aimed, before E'); await shot('bend-before');
   await key('KeyE', 'e'); await pause(1200);
   await shot('bend-after-e1');
@@ -79,6 +81,8 @@ try {
   // a second E (touch) in case the first E only starts the wake
   await key('KeyE', 'e'); await pause(1200);
   const after2 = await snap('AFTER 2nd E (bend)'); await shot('bend-after-e2');
+  await ev("(() => { const q = window.__debug.saveRelay.quest; q.feed({ type: 'area:entered', id: 'roadWest' }); q.feed({ type: 'area:entered', id: 'bendRelay' }); return true; })()"); await pause(500);
+  const after3 = await snap('AFTER entering road+bend areas late'); console.log('LATE-AREAS nextObjectives ' + JSON.stringify(after3.nextObjectives));
   console.log('SUMMARY ' + JSON.stringify({
     prompt: pre.relay && pre.relay.prompt, targetKey: pre.targetKey, hintAfterE: after.hint, attunedBefore: before.state['aether.attuned'], attunedAfter: after2.state['aether.attuned'],
     bendWokenBefore: pre.state['waystone.ws_roadBend.woken'], bendWokenAfter: after2.state['waystone.ws_roadBend.woken'],

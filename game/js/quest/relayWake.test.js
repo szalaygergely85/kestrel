@@ -121,3 +121,19 @@ console.log('relayWake.test.js PASS');
   u.world.state['waystone.waystone.woken'] = true; u.rw.step(0.016, null); assert.equal(u.recs[0].prompt, PW, 'gate open: wake prompt');
   assert.equal(u.rw.interact('ws_roadBend'), true); }
 console.log('OB-145 ok');
+
+// OB-170: Bend (1262,1033) and Ford relays are pickable by the interact ray at the game's default reach from 2.5 m; 3 m is out of reach by design (pick edge ~2 m out)
+{ const { findInteractTarget } = await import('../../../engine/index.js');
+  const sm = { voxel: { cellM: 0.125, size: [14, 10, 24], anchor: [7, 5, 2], animations: model.voxel.animations } };
+  for (const [id, wsId, cx, cy] of [['relayBend', 'ws_roadBend', 1262, 1033], ['relayFord', 'ws_ford', 1100, 900]]) {
+    const ent = { id, transform: { x: cx, y: cy, z: 0 }, components: { collider: { h: 2.2, r: 0.9 }, voxel: { model: 'waystone', anim: 'dead' }, light: { preset: 'relay', on: false }, waystone: { id: wsId, kind: 'relay' } } };
+    const recs = [];
+    const world = { state: { [FLAG_ATTUNED]: true, 'waystone.waystone.woken': true }, assets: { has: () => true, model: () => sm }, forEachEntity: (fn) => fn(ent, ent.id), get: () => null,
+      addInteractable: (sp) => { const r = { ...sp, usedKey: null, pickShapes: null }; recs.push(r); return r; },
+      interactables: recs, structureAt: () => null, outsideSector: () => ({ solid: false, floorH: 0, ceilH: 'sky' }), entity: () => null };
+    createRelayWake({ world, palette, emit() {}, hum() {} });
+    const hit = (d) => { const out = { targetKey: null, prompt: '', dist: 0, angleDeg: 0 }; findInteractTarget(world, { x: cx - d, y: cy, z: 1.6, yawDeg: 90, pitchDeg: 0 }, undefined, out); return out.targetKey; };
+    assert.equal(hit(2.5), 'relay.' + wsId, id + ' pickable from 2.5 m');
+    assert.equal(hit(1.5), 'relay.' + wsId, id + ' pickable from 1.5 m');
+  } }
+console.log('OB-170 ok');
