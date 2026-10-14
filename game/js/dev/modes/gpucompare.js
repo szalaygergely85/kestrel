@@ -13,6 +13,7 @@ import {
 import { quadruped16 } from '../../../../engine/dev.js'; // VOX-PARTS-16b: 12-part fixture for the `vox12` row
 import { POSES as GPU_COMPARE_POSES, GATE_POSES } from '../../../../content/dev-poses.js';
 import { fillUnitGrid, placeholderTeamSpec } from '../unitsHarness.js'; // RE-06: instanced-units pose helpers
+import { groundLookFromParams } from '../../look/groundLookConfig.js'; // ENV-02d-LIVE
 import { placeCompareSprites } from '../spriteDev.js'; // US-030c: the synthetic 3-prop set for non-`real` compare poses
 
 export const name = 'gpucompare';
@@ -776,6 +777,18 @@ function buildCompareRuns(ctx) {
     dpose('world_m1: decorMeadow (ENV-01d, decorGpu, flower meadow, eye 1.6 m: carpet hand-off)', 1474.5, 1025, 270, -15);
     dpose('world_m1: decorFord (ENV-01d, decorGpu, ford reeds + pebbles)', 1045.96, 1066.69, 246, -11);
   }
+  // ENV-02d-LIVE: ground look rows (lookMeadow / lookForestEdge / lookShore from content/dev-poses.js GATE_POSES): a world_m1 load with `groundLook` on, same opts main.js builds.
+  { const gl = groundLookFromParams(params, globalThis.BIOME_LOOK, globalThis.ASSETS && globalThis.ASSETS.levels.overworld_far);
+    if (gl) {
+      const lookWorld = loadCompareWorld(assets.world('world_m1'), { groundLook: gl });
+      lookWorld.terrain.bakeFarSync();
+      const lookLights = lightsEnabled ? buildLightSet(lookWorld, assets.palette) : null;
+      for (const slug of ['lookMeadow', 'lookForestEdge', 'lookShore']) {
+        const g = GATE_POSES.find((q) => q.slug === slug); if (!g) continue;
+        runs.push({ world: lookWorld, lights: lookLights, name: `world_m1: ${slug} (ENV-02d ground look)`, cam: { ...g.cam, z: lookWorld.terrain.groundAt(g.cam.x, g.cam.y) + 1.7 },
+          real: true, pitchedDefault: true, sun: SUN_135_30, before: () => engine.setWorld(lookWorld) });
+      }
+    } }
   // Every pose that does not ask for a projection is a shear (dda-vs-mesh parity) pose until ME-19: pin it.
   for (const r of runs) if (!r.pitchedDefault && !r.cam.projection) r.cam = { ...r.cam, projection: 'shear' };
 

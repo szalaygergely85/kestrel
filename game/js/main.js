@@ -1102,7 +1102,7 @@ async function runGame(mode, cinematic = null) {
   const worldLoadOpts = { physics,
     realTrees: renderer === 'mesh' && physics === 'mesh' && params.get('trees') !== '0',
     detail: renderer === 'mesh' && physics === 'mesh' && params.get('scatter') !== '0',
-    groundLook: groundLookFromParams(params, window.BIOME_LOOK, window.ASSETS.levels.overworld_far?.recipe) }; // ENV-02d: `?look=0` -> null // ENV-01a2: `?scatter=0` (not `?detail=0`, that is the US-028 v1-shading switch)
+    groundLook: groundLookFromParams(params, window.BIOME_LOOK, window.ASSETS.levels.overworld_far) }; // ENV-02d (ENV-02d-LIVE: the LEVEL def holds .terrain, not its inner .recipe): `?look=0` -> null // ENV-01a2: `?scatter=0` (not `?detail=0`, that is the US-028 v1-shading switch)
   // ENV-01-WIRE (38.62): GPU decor scatter, only on the WebGPU mesh renderer with the GPU cull; `?decor=cpu` keeps today's CPU layers (decorGpu false = byte-identical)
   let decorPass = null; const decorDbg = { total: 0, frameErrors: 0, bad: false };
   { const dl = ((window.ASSETS.levels.overworld_far?.recipe?.detail?.layers) || []).some((l) => l.gpu); // every early-out names its reason once (?decor=cpu is silent)
