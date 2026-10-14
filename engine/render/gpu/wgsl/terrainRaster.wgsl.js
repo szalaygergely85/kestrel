@@ -7,6 +7,7 @@ import { KIND_TERRAIN, FACE_PACKED } from '../../GBuffer.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
 import { structMaskDecl, IN_STRUCT_FOOT_WGSL } from './structMask.wgsl.js';
 import { SKYLINE_SEA_TYPE } from '../../skyline.js';
+import { LOOK_GA_HI_SHIFT, LOOK_GA_W_SHIFT } from '../../groundLook.js'; // ENV-02d
 
 /** MAP-06b: max sea horizon skirts (one per grid side, terrainMesh.js buildSeaSkirts). */
 export const SKIRT_MAX = 4;
@@ -25,11 +26,15 @@ export const TERRAIN_BLOCK = defineUniformBlock('TerrainU', [
 /** Slot order of PipelineDesc.bindings.textures: 0 = uNearType, 1 = uFarType, 2 = uStructMask (GS-01b carve mask atlas; all r8ui). */
 export const TERRAIN_TEXTURES = Object.freeze(['uint', 'uint', 'uint']);
 
-export const TERRAIN_RASTER_WGSL = `${TERRAIN_BLOCK.wgsl}
+/** ENV-02d: slots 3 = uNearLook, 4 = uFarLook (rg8uint: r = lo | hi << 4, g = round(w_hi * 255), ENV-02c bake); look pipelines only. */
+export const TERRAIN_LOOK_TEXTURES = Object.freeze([...TERRAIN_TEXTURES, 'uint', 'uint']);
+const terrainRasterWgsl = (LK) => `${TERRAIN_BLOCK.wgsl}
 @group(0) @binding(0) var uNearType: texture_2d<u32>;
 @group(0) @binding(1) var uFarType: texture_2d<u32>;
 ${structMaskDecl(2)}
-@group(1) @binding(0) var<uniform> u: TerrainU;
+${LK ? `@group(0) @binding(3) var uNearLook: texture_2d<u32>;
+@group(0) @binding(4) var uFarLook: texture_2d<u32>;
+` : ''}@group(1) @binding(0) var<uniform> u: TerrainU;
 ${OCT_NORMAL}
 struct VertexIn {
   @location(0) aPos: vec3f,
@@ -71,7 +76,21 @@ fn terrainTypeAt(x: f32, y: f32) -> i32 {
   return farTypeNearest(x, y);
 }
 ${IN_STRUCT_FOOT_WGSL}
-struct FragmentOut { @location(0) GI: vec4u, @location(1) GA: vec4u, @location(2) Depth: u32, };
+${LK ? `// ENV-02d: look byte pair of the same texel the type comes from (twin: Terrain near.look / farLook), packed into GA.w for the shade pass.
+fn terrainLookAt(x: f32, y: f32) -> u32 {
+  if (u.nearReady != 0u) {
+    let ix = i32(floor((x - u.nearMap.x) / u.nearMap.z));
+    let iy = i32(floor((y - u.nearMap.y) / u.nearMap.z));
+    let W = i32(u.nearMap.w); let H = i32(textureDimensions(uNearLook).y);
+    if (ix >= 0 && iy >= 0 && ix < W && iy < H) { let l = textureLoad(uNearLook, vec2i(ix, iy), 0); return (l.r & 255u) | (l.g << ${LOOK_GA_W_SHIFT}u); }
+  }
+  let fx = i32(floor((x - u.farMap.x) / u.farMap.z)); let fy = i32(floor((y - u.farMap.y) / u.farMap.z));
+  let FW = i32(u.farMap.w);
+  if (fx < 0 || fy < 0 || fx >= FW || fy >= FW) { return 0u; }
+  let l = textureLoad(uFarLook, vec2i(fx, fy), 0);
+  return (l.r & 255u) | (l.g << ${LOOK_GA_W_SHIFT}u);
+}
+` : ''}struct FragmentOut { @location(0) GI: vec4u, @location(1) GA: vec4u, @location(2) Depth: u32, };
 @fragment fn fs_main(v: VertexOut) -> FragmentOut {
   var out: FragmentOut;
   let wp = vec3f(v.vWorldRel.x + u.worldO.x, v.vWorldRel.y + u.worldO.y, v.vWorldRel.z); // OB-041: one rounding to absolute f32 (JS twin: f64 hit -> Float32 gbuf.u/v)
@@ -80,8 +99,11 @@ struct FragmentOut { @location(0) GI: vec4u, @location(1) GA: vec4u, @location(2
   let terrType = terrainTypeAt(wp.x, wp.y);
   let dist = select(1.0 / v.pos.w, ${ORTHO_NEAR_WGSL} + v.pos.z * (${ORTHO_FAR_WGSL} - ${ORTHO_NEAR_WGSL}), u.projMode == 2u); // 38.19 ortho: w = 1, depth = linear z
   out.GI = vec4u(PLANEID_TERRAIN, KIND_TERRAIN | (FACE_PACKED << 8u) | (u32(terrType) << 16u), packNormalOct(N), u.objectId);
-  out.GA = vec4u(bitcast<u32>(wp.x), bitcast<u32>(wp.y), bitcast<u32>(wp.z), bitcast<u32>(1.0e30f));
+  out.GA = vec4u(bitcast<u32>(wp.x), bitcast<u32>(wp.y), bitcast<u32>(wp.z), ${LK ? 'terrainLookAt(wp.x, wp.y)' : 'bitcast<u32>(1.0e30f)'});
   out.Depth = bitcast<u32>(dist);
   return out;
 }
 `;
+export const TERRAIN_RASTER_WGSL = terrainRasterWgsl(false);
+/** ENV-02d: GA.w carries the look word (lo | hi << 4 | w8 << 8) instead of the aoD constant; look pipelines only (+2 r8ui->rg8uint textures). */
+export const TERRAIN_RASTER_LOOK_WGSL = terrainRasterWgsl(true);

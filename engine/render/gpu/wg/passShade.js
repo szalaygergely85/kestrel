@@ -8,7 +8,8 @@
 // (twin: edgePass.js).
 import { meshOutdoorFog } from '../../fogShape.js'; // OB-089
 import { updateUnderState } from '../../underwater.js'; // SWIM-04c
-import { SHADE_BLOCK, SHADE_WGSL, SHADE_LEVEL_WGSL, SHADE_TEXTURES } from '../wgsl/shade.wgsl.js';
+import { SHADE_BLOCK, SHADE_WGSL, SHADE_LEVEL_WGSL, SHADE_TEXTURES, SHADE_LOOK_BLOCK, SHADE_LOOK_WGSL, SHADE_LEVEL_LOOK_WGSL } from '../wgsl/shade.wgsl.js';
+import { packLookTable, LOOK_TABLE_WORDS } from '../../groundLook.js'; // ENV-02d
 import { EDGE_BLOCK, EDGE_WGSL, EDGE_TEXTURES } from '../wgsl/edge.wgsl.js';
 import { packMaterialTable } from '../ShadeTextures.js';
 import { packTerrainTextures } from '../TerrainTextures.js';
@@ -63,6 +64,9 @@ export class WgShadePass {
       bindings: { uniformBytes: SHADE_BLOCK.sizeBytes, textures: SHADE_TEXTURES.slice() },
       targetFormats: this.stable ? ['rgba8', 'rgba8', 'r8ui'] : ['rgba8', 'rgba8'],
     });
+    // ENV-02d (38.63): look variant of the shade pipeline (ShadeU + the look table), built lazily the first time a world with groundLook is drawn.
+    // Look off (no groundLook) never touches any of this: pipeline, uniforms and binds stay exactly as before.
+    this.pipeShadeLook = null; this.suL = null; this.suL32 = null; this.shBindL = null; this.lookCfg = null;
     this.pipeEdge = device.createPipeline({
       vertex: { src: { wgsl: EDGE_WGSL } }, fragment: { src: { wgsl: EDGE_WGSL }, targets: 2 },
       bindings: { uniformBytes: EDGE_BLOCK.sizeBytes, textures: EDGE_TEXTURES.slice() },
@@ -297,6 +301,8 @@ export class WgShadePass {
       su[S_SUN_DIR] = sun.dirX; su[S_SUN_DIR + 1] = sun.dirY; su[S_SUN_DIR + 2] = sun.dirZ;
       su[S_AMBIENT_I] = sun.ambientI; su[S_SUN_I] = sun.sunI;
     }
+    // ENV-02d: look on = the terrain raster wrote the look word into GA.w (rp.lookActive, set by the raster host) AND the world has groundLook
+    const lkCfg = useScene && rp && rp.lookActive && p._world.terrain && p._world.terrain.groundLook ? p._world.terrain.groundLook.cfg : null;
     const tx = this.shTex;
     tx[SH.GI].texture = t.texGI; tx[SH.GA].texture = t.texGA; tx[SH.GD].texture = t.texGD; tx[SH.DEPTH].texture = t.texDepth;
     tx[SH.SGI].texture = t.texSGI; tx[SH.SGA].texture = t.texSGA; tx[SH.FG].texture = rt.fgTex; tx[SH.BG].texture = rt.bgTex;
@@ -304,7 +310,7 @@ export class WgShadePass {
     tx[SH.SETI].texture = this.texSetI; tx[SH.SETF].texture = this.texSetF; tx[SH.GAIN].texture = this.texGain;
     tx[SH.LIGHT].texture = t.texLight; tx[SH.TLOOK].texture = this.texTlook;
     wgSpanBegin(p, WG_PASS_SLOT.shade);
-    try { d.beginPass(this.stable ? t.targetShadeLevel : t.targetShade); d.bind(this.pipeShade, this.shBind); d.draw(3); d.endPass(); } finally { wgSpanEnd(p); }
+    try { d.beginPass(this.stable ? t.targetShadeLevel : t.targetShade); if (lkCfg) this._bindLook(lkCfg, p._world); else d.bind(this.pipeShade, this.shBind); d.draw(3); d.endPass(); } finally { wgSpanEnd(p); }
     // WG-3e: water composite between shade and edge (GL order); a no-op when the layer is inactive
     if (water && water.active) {
       wgSpanBegin(p, WG_PASS_SLOT.water);
@@ -324,9 +330,30 @@ export class WgShadePass {
     return true;
   }
 
+  /** ENV-02d: bind the look pipeline. The plain su words are copied bit-exact into the bigger look block (no alloc), the table is packed only on a new cfg, wind01 written per frame. */
+  _bindLook(cfg, world) {
+    const d = this.device;
+    if (!this.pipeShadeLook) {
+      const src = this.stable ? SHADE_LEVEL_LOOK_WGSL : SHADE_LOOK_WGSL;
+      this.pipeShadeLook = d.createPipeline({
+        vertex: { src: { wgsl: src } }, fragment: { src: { wgsl: src }, targets: this.stable ? 3 : 2 },
+        bindings: { uniformBytes: SHADE_LOOK_BLOCK.sizeBytes, textures: SHADE_TEXTURES.slice() },
+        targetFormats: this.stable ? ['rgba8', 'rgba8', 'r8ui'] : ['rgba8', 'rgba8'],
+      });
+      this.suL = new Float32Array(SHADE_LOOK_BLOCK.sizeWords); this.suL32 = new Uint32Array(this.suL.buffer);
+      this.shBindL = { uniforms: this.suL, textures: this.shTex };
+      this.lookWords = new Float32Array(LOOK_TABLE_WORDS); this.lookTW = SHADE_LOOK_BLOCK.field('lookT').word; this.lookPW = SHADE_LOOK_BLOCK.field('lookP').word;
+    }
+    if (this.lookCfg !== cfg) { packLookTable(cfg, this.lookWords); this.suL.set(this.lookWords, this.lookTW); this.lookCfg = cfg; this.stats.lookUploads = (this.stats.lookUploads || 0) + 1; }
+    this.suL32.set(this.su32);
+    const wp = world.wind && world.wind.params; // wind01: strength 0..1 of the world wind (0 = calm = look output is time-independent)
+    this.suL[this.lookPW] = wp && wp.amp > 0 ? (wp.amp < 1 ? wp.amp : 1) : 0;
+    d.bind(this.pipeShadeLook, this.shBindL);
+  }
+
   dispose() {
     const d = this.device;
-    for (const k of ['pipeShade', 'pipeEdge', 'texMatF', 'texMatI', 'texSetI', 'texSetF', 'texGain', 'texSky', 'texTlook', 'texWaterDummy']) {
+    for (const k of ['pipeShade', 'pipeShadeLook', 'pipeEdge', 'texMatF', 'texMatI', 'texSetI', 'texSetF', 'texGain', 'texSky', 'texTlook', 'texWaterDummy']) {
       if (this[k]) { try { d.dispose(this[k]); } catch (_) { /* best effort */ } this[k] = null; }
     }
   }
