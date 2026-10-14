@@ -1266,3 +1266,6 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 5. **Quest tracker** on screen (top right): the tracked quest(s) with their objectives and counts ("Kill boars 3/5"); the journal lists accepted quests only; the M map pins every `?` of active quests and every `!` you have found.
 6. Kills/items count only after accepting (OB-115 rule stays).
 Crocodile (owner, same session): **short grab + mash to escape (1.5 s, max 12 % HP)** wins over D-088's movement-only pin.
+
+## D-099
+**2026-10-14, owner (PC-B session).** "Fireball shouldn't be an item... it will be a spellbook." Spells are NOT pack items: `spell.fireball` (and later spells) leave the inventory/pack and live in a **spellbook** (own screen/tab, learned spells + tiers, cast from the quick bar or a spell key). Mana potions stay items. Follow-up: the OB-162 "locked slot" case for spells disappears with this. Also (OB-167): the no-sprite rule (OB-132) is about items/props only; fire and flame effects stay animated sprites.
