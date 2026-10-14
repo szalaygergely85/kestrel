@@ -16,6 +16,7 @@ export const REGION_RULES = Object.freeze([
   { region: 'westHeath', key: 'heath', species: 'boar', groups: 1, size: 3 },
   { region: 'reedmire', key: 'reedmire', species: 'boar', groups: 2, size: 2 },
   { region: 'whitecombs', key: 'whitecombsFoot', species: 'bear', groups: 2, size: 1, rect: [0, 200, 2048, 330] },
+  { region: 'ford', key: 'ford', species: 'boar', groups: 2, size: 2, rect: [990, 980, 1150, 1140] }, // OB-142: river banks around the ford had no animals within 150 m
   // strand: none (open beach, ambient fauna only)
 ]);
 

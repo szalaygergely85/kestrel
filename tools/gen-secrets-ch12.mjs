@@ -1,3 +1,4 @@
+// OB-152: world json no longer has secretBend/secretField/secretBank and secretRook sits in campEast - see tools/anchor-chests.mjs. Do not re-run this generator wholesale.
 // US-104a (M5 sprint 3): four hidden chests for Ch1-2, each off the road but in view of it (existing chest entity + chestSmall model, no new art).
 //   secretRook (behind the Rook ruin), secretBend (forest hollow N of the Bend), secretField (field edge W of the Bend), secretBank (river bank at the ford).
 // Per zone a seeded search finds the first spot that passes: 8..25 m from the road centre line, >= 8 m from the route-walk lines, >= 3 m from every other placement /

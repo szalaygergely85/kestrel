@@ -1,5 +1,65 @@
 # PC-B queue
 
+## Engine catch-up (owner 2026-10-14, D-090: EP-ENGINE-CATCHUP) (PC-A main session)
+Order: stage 1 = QFIX + NAV-REACH + ENV-02/03 (queued above) -> **stage 2 "alive and lit"** -> **stage 3 "engine release prep"**. Start stage 2 only when the QFIX blockers (S3, S4, S6) are done. Every engine row starts with an ARCH-NOTE (PC-B 5th agent, architect opus) and ends in arch-review on PC-A. The JS twin + gpucompare (D-017/D-039), 0 alloc (38.61) and the GPU budget (D-085: 8 ms RTX, 10 ms Intel high) apply to all of them.
+
+| ID | Stage | Slot | What (AC in its note) | Deps | Status |
+|---|---|---|---|---|---|
+| ANIM-BLEND-NOTE | 2 | 5th agent (architect opus) | Clip blending on voxel + rigged models (RIG-00 38.32): blend by a parameter (walk->run by speed), cross-fade on state change, additive hit reaction; data format for blend sets; cost per entity. Split into <= 1 d stories. | none | ARCH-NOTE NEEDED |
+| ANIM-BLEND-01 | 2 | kestrel-3 | Per the note: walk/run blend by real speed for player + beasts, cross-fade on every state change (no pops), readable wind-up/recover (OB-150); Node tests on sampled poses; 0 alloc. | NOTE | todo |
+| ANIM-IK-01 | 2 | kestrel-3 | Foot IK on slopes/steps (2-bone, ground ray per foot, pelvis offset) for player + 4-legged beasts; off = byte-identical; slope test poses. | ANIM-BLEND-01 | todo |
+| ANIM-LOOKAT-01 | 2 | kestrel-1 (wiring) + kestrel-3 | Head/eye look-at with angle limits: NPCs turn to the player while talking, beasts look at their target; smooth in/out. | ANIM-BLEND-01 | todo |
+| MAT-RESPONSE-01 | 2 | designer + kestrel-2 | A material response table instead of full PBR: matte / shiny / wet / metal / glowing -> specular glyph + colour response in the light pass; designer preview first, owner picks; per-material data in content. | designer preview | design |
+| GI-PROBE-NOTE | 2 | 5th agent (architect opus) | Baked bounce light: coarse probe grid (or per-zone SH probes) baked per band, blended with day/night + emissive lights; bake time, MB per zone, streaming with BandCache (38.58), twin + gpucompare plan. | none | ARCH-NOTE NEEDED |
+| GI-PROBE-01..n | 2 | kestrel-2 (+ kestrel-4 bake tool) | Per the note (split there). Owner look: before/after stills at meadow, forest, ruin interior, dusk. | NOTE | todo |
+| POST-STACK-01 | 2 | kestrel-2 | One engine post-effects module configured by data: colour grade (shares ENV-03 data), bloom on emissive cells, vignette, depth fog; per-preset on/off; budget inside D-085. | ENV-03 | todo |
+| EDITOR-PATH-01 | 3 | PO (sonnet) then kestrel-1 | Editor "golden path" story set: place/move/rotate meshes + prefabs, paint biomes, place NPCs + quests (D-082/D-087 rules), playtest from the editor and back; PO writes the rows + ACs first. | QFIX done | todo (PO) |
+| ENG-API-01 | 3 | 5th agent (architect opus) then kestrel-2/3 | Clean public API: everything a game needs is reachable from `engine/index.js` (render, world, physics, nav, anim, ui); no game imports of engine internals (check-deps rule); stable names list for 1.0. | stage 2 | todo |
+| ENGINE-GUIDE-01 | 3 | writer + architect (opus) | Short public engine guide (`docs/engine-guide/`): getting started, the API, content formats (`.kestrel`, meshes, levels), one small sample game folder that runs. | ENG-API-01 | todo |
+| ENG-PHYS-EXT-01 | 3 | see the Navigation section | rigid bodies + hinge + triggers (D-089). | QFIX done | parked |
+| DEMO-DEVLOG (PARKED) | later | owner | Demo / devlog / community. **Blocked by D-053 "no public demo"**; only the owner can reopen it. | owner | parked |
+
+## Navigation + physics extensions (owner 2026-10-14, D-089) (PC-A main session)
+Own `engine/nav` (NavGrid 2 m tiles, astar, flowField, steer) is kept; no Recast/NavMesh or PhysX library (D-089). The NAV rows are engine work (cross-track): an ARCH-NOTE comes first where marked, and each ends in arch-review on PC-A. Start NAV-REACH-01 now (it fixes what the owner feels, OB-149/150); NAV-LAYERS/LINKS after their note.
+
+| ID | Slot | Files | AC (Node unless noted) | Deps | Status |
+|---|---|---|---|---|---|
+| NAV-REACH-01 unreachable target fallback | kestrel-3 | `engine/nav/astar.js` / flowField (nearest-reachable query), beastSim CHASE/RETURN use | OB-149/150: when no path exists, the agent moves to the nearest REACHABLE cell to the target (bounded search, same result every run), or switches to RETURN after N s; never walk-in-place (BEAST-01 anim rule kept). Tests: target across the river -> agent stops at the bank facing it then returns; target on an island; 0 alloc per query after warm-up (38.61); goblins on the riverbank case from OB-149. | none | todo |
+| NAV-LAYERS-01-NOTE | 5th agent (architect opus) | `docs/architecture.md` new 38.x | Multi-level nav: extra layer cells for bridge decks, ruin/house floors, the 2-storey house (OB-139), with how they are baked from structures/meshes, stored per nav tile, and connected (stairs, doors); memory per tile; streaming with nav tiles (WM-03); determinism. Split into <= 1 d stories. | none | ARCH-NOTE NEEDED |
+| NAV-LAYERS-01 | kestrel-3 | per the note | Agents path over the two bridges, into the Rook ruin room, and up the house stair; ground-only worlds byte-identical; nav bake time + MB table before/after. Ends: arch-review (PC-A). | NOTE | todo |
+| NAV-LINKS-01 | kestrel-3 (+ kestrel-4 content data) | `engine/nav` link table, content link data | Off-grid links with a cost: ledge drop (one way), ford wade, ladder, door (open/closed state). astar + flowField use them; links come from content data and are validated (validate-content). Tests per link kind; same result every run. ARCH-NOTE NEEDED if the note above does not cover links. Ends: arch-review. | NAV-LAYERS-01-NOTE | todo |
+| ENG-PHYS-EXT-01 (PARKED, after QFIX) | later, architect note first | `engine/physics` | Engine "good to have" (D-089): basic rigid bodies (boxes/barrels tip + stack), hinge joint (doors, gates, swinging signs), physics trigger/hit events. Own code on impulse.js/contacts.js, stays stand-alone (27.10), same result every run. NOT vehicles, NOT ragdolls. | QFIX done | parked |
+
+## Follow-ups from the PC-A ratify pass 2026-10-14 (`docs/test-reports/pca-ratify-2026-10-14.md`)
+41 ratified, 36 ratified with a note, 2 CHANGES (38.56 (c) fauna/camera determinism, 38.64 item 5 croc grab locks input vs D-064). Owner questions C1-C5 are listed in the report.
+
+| ID | Slot | AC (short) | Status |
+|---|---|---|---|
+| LIFE-DET-01 | kestrel-3 | beastSim replay-hash test with `fauna: null` covering the hunt/EAT paths (38.56 CHANGES 1). | todo |
+| BEAST-08b-PIN | with BEAST-08b | D-088 (owner: pin): croc GRAB = movement-only pin (camera, attack, block, items still work), never an input lock (D-064); amend the 38.64 item 5 text in the same commit. | todo (with 08b) |
+| SIM-RULE15-01 | kestrel-3 | `game/js/quest/sim/regionalBeasts.js` Math.hypot/cos/sin in sim code (check-deps rule 15): use integer/literal tables or move it to create time. | todo |
+| WMP-03-PROBE | kestrel-4 | WMP-03 retained-heap check -> `tools/allocProbe.mjs` per 38.61 (2a). | todo |
+| QPIPE-LINT-01 | kestrel-4 (fold into QFIX-S2 R14) | a quest giver/turnIn must resolve to an NPC/animal on walkable ground (D-082, OB-147); an object giver only with `objectGiver: true`, and those are <= 10 % of all givers (D-087). | todo |
+| PLAYER-TEXT-RELAY-01 | kestrel-4 | lint player-facing strings for "relay" (D-080). | todo |
+| SWIM-SAVE-01 | kestrel-2 with QFIX-S6 (PC-A track, PC-A reviews) | `waterZ/waterFloorZ` out of serialized body state (scratch or finite sentinel); inline `clamp` in swim.js (physics stand-alone); physics + save round-trip tests. | todo |
+| PLAYER-LEVEL-01 | PO (sonnet) first, then kestrel-3 | D-084: PO writes the story + formula proposal in docs/epics/ep-items-stats.md (level from spell tiers + equipped item levels, no XP), owner OKs the numbers; then a pure `playerLevel(spells, equipped)` + test, character view / HUD shows it, D-069 fireball gate reads it. | todo (owner numbers) |
+| FERRUM-NOSPRITE-01 | kestrel-4 | D-086: remove the `ferrumGlow` billboard from `design/models/ferrum_lights.js` + `tools/gen-ferrum-far.mjs` (and any placement/registration); test or lint: no sprite card on the horizon; 38.46 text marked "ferrumGlow dropped (D-086)". | todo |
+| ARCH-DOC-RATIFY-01 | PC-A main session (doc only) | 38.56 + 38.31 item 10 supersede text, 38.60 frag_depth answer, 38.62 ASK answers + DECOR_MAX_ROWS 16384, "superseded by" marks in 38.28 item 4. | todo |
+
+## PC-B queue 2026-10-14 (quest + item audit, OB-155/156) (PC-A main session, owner 2026-10-14)
+Source: `docs/test-reports/quest-item-audit-2026-10-14.md` (findings OB-155a..s + an 82-quest table). Owner rule OB-156: a `!` over a CHARACTER where the quest starts (gold = main, blue = side) -> Accept / Exit -> once ALL objectives are done, a `?` in the same colour at the return character -> each mark disappears after accept / return; picked-up quest objects disappear. D-082: givers and returns are characters. Do these BEFORE new feature rows; S3 + S4 first (they are the blockers the owner sees).
+
+| ID | Slot | Files | AC (Node unless noted) | Deps | Status |
+|---|---|---|---|---|---|
+| QFIX-S3 markers | kestrel-1 (main.js marks) | `game/js/main.js` ~547/566 marker z, questBook chainMarks / giverMarks / isMain | OB-155h/i/j/k: marker height from the anchor model's top (not a fixed 1.55 m; nothing buried in a 2.6 m waystone); ONE marker per entity (priority: ? ready > gold ! > blue !); the main chain shows no early `?` waypoint, and Burl's road `!` clears after the talk; `tower.blade` is gold. Test per rule over all 82 quests. | none | todo |
+| QFIX-S4 hand-in + pickups | kestrel-3 | `questBook.js:279` inspect order, `pickupsView.js:55`, questPickups, snippets | OB-155o/f/p/q: E on an entity hands in a READY quest BEFORE offering a new one; an active quest at the same entity never blocks a hand-in (sq.packet at post with sq.fc.stores active = test); drops sit on the ground (no 0.15 m hover/bob); packet = questPickup, requireItem consumed; reward names in the snippets. | none | todo |
+| QFIX-S1 grounding + anchors | kestrel-4 (+ designer for posts) | placements in `design/levels/`, content | OB-155a/b/d/e: re-ground the 20 floating pines (`/Tree/` regex missed `Pine_*`), crossroads chest on the stair top, visible posts/stone at notePost, knot, pierStone (check poi010), gondola anchor. Tower `components.sprite` -> voxel = a separate OB-132 follow-up row. | none | todo |
+| QFIX-S2 lint rules | kestrel-4 | `tools/content-lint.mjs` + test | OB-155c/r: R12 entity support (all 139 placed entities vs ground + structure tops + model pivot), R13 visible anchor (prompt/marker anchor has a model), R14 quest flow (OB-156 rule per quest), fix the tree regex, legacy quests + generated text in R3/R10. Fixtures per rule; after S1/S5 real content = 0 errors. | none | todo |
+| QFIX-S5a Ch1-2 givers | PO (sonnet) + writer + kestrel-3 | quest data, dialogue, story.md | D-087: the PO first picks the few notes/items that stay object givers (about 5-10 of the ~100, flagged `objectGiver: true`, still with Accept/Exit + a `?` at a character); everything else moves to characters. OB-155l/m/n: a trade-post NPC takes the post/notePost/packet/relayBend/relayFord errands; Rook's main quests get Accept/Exit + a hand-in talk (no auto-accept, no MQ_AUTO hand-in); mq.river.road / mq.ford.stones / mq.smoke get a giver. | PO rows first | todo |
+| QFIX-S5b Outwall givers | PO + writer + kestrel-3 | same | OB-155l/n: owBoard/pierStone quests move to Hesk/Dorrin or a board-keeper NPC; mq.ow.path/fence get a giver; Hesk gets Accept/Exit + hand-in. | S5a pattern | todo |
+| QFIX-S5c region givers | PO + writer + designer + kestrel-3 | region data | OB-155l: one NPC beside each region waystone gives and takes the 10 sq.reg.* errands. | S5a pattern | todo |
+| QFIX-S6 save vs content | kestrel-2 (cross-track, owner 2026-10-14: PC-B builds, PC-A architect reviews; ends in arch-review) | `engine/world/serialize.js:194/202`, save version | OB-155g/s: on Continue/Load, CONTENT wins for content-owned entities + structures (positions, models, removed props); the save keeps only player state + taken/killed/opened flags; save version bump + migration test (an old save shows the OB-147/132/143 fixes); voxel cap priority check. | none | todo |
+
 ## PC-B queue 2026-10-13 (environment look: "Unity-like" richness) (PC-A main session, owner 2026-10-13)
 Goal (owner): richer outdoor scenes. The ideas come from how Unity does terrain: GPU-built decor, ground variety you can read at cell size, atmosphere per biome. Each item starts with its note or design step. The PC-B 5th agent (architect opus / designer) may write that step, and the code rows start only after it exists. The ENV-*-NOTE / design steps go to PC-A for ratify, as usual. Grass already runs on the GPU (carpet pass 38.52, no instances) and is out of scope for ENV-01. Trees, rocks, logs and stumps stay on CPU scatter (colliders, ids, saves, editor).
 
@@ -479,26 +539,26 @@ Goal: wade the Braid, walk to a walled Outwall that looks inhabited, and fight a
 | PART-VIS-01 | kestrel-2 | engine/fx/emitterDef.js (bgMix), engine/render/particleLayer.js (partBg), sprites.js, gpu/wg/passSprites.js, gpu/wgsl/sprites.wgsl.js + glslref, design/waterfall.js, wadeSplash.js | Per-preset `bgMix` 0..1 (default 0): spray/mist/splash tint the cell bg. New layer array `partBg` (rgba8: rgb = fg*bgMix, a = bgMix) + WGSL binding 11 `uPartBg`. bgMix: waterfallSpray 0.35, waterfallMist 0.45, wadeSplash 0.4. Node suites PASS (83). gpucompare: main session to run (`particles` row must stay unchanged since bgMix=0; `wadeSplash` and any waterfall row will change). | 38.47, OB-045 | dev done, ARCH OK (batch 2026-10-13) |
 
 ## PC-B queue 2026-10-14 (owner answers) (PC-B PO 2026-10-14, PC-A to ratify)
-Source: D-084..D-088 in `docs/decisions.md` (kestrel copy). All rows status **todo** unless marked HOLD. Rules: Node ACs only; 0 alloc per frame in UI/sim; texts are plain names, never raw ids (OB-137); text keys not yet in `docs/story.md` = `NEEDS WRITER:`; palette keys only; `?save=0`/capture/bench output byte-identical when the feature is off.
+Source: D-091..D-095 in `docs/decisions.md` (kestrel copy). All rows status **todo** unless marked HOLD. Rules: Node ACs only; 0 alloc per frame in UI/sim; texts are plain names, never raw ids (OB-137); text keys not yet in `docs/story.md` = `NEEDS WRITER:`; palette keys only; `?save=0`/capture/bench output byte-identical when the feature is off.
 
-### A. Enemy health bar + level, floating damage numbers (D-086, D-084 Q5)
-UI style: draw through the same `ui` text/cell API and palette keys as `game/js/ui/compassHud.js` and `noticeView.js` (cell-based, rgb from `uiStyle`, no new hex). Level = `bandAt(x, y)` of the beast's spawn point via `game/js/quest/sim/band.js` (`createBand`; 1-10), unless `entities[].level` overrides. Difficulty (D-083/D-087 Easy/Normal/Hard) shifts the shown level later (HPBAR-03), not now.
+### A. Enemy health bar + level, floating damage numbers (D-093, D-091 Q5)
+UI style: draw through the same `ui` text/cell API and palette keys as `game/js/ui/compassHud.js` and `noticeView.js` (cell-based, rgb from `uiStyle`, no new hex). Level = `bandAt(x, y)` of the beast's spawn point via `game/js/quest/sim/band.js` (`createBand`; 1-10), unless `entities[].level` overrides. Difficulty (D-083/D-094 Easy/Normal/Hard) shifts the shown level later (HPBAR-03), not now.
 
 | id | slot | files | ACs (Node) | deps | status |
 |---|---|---|---|---|---|
 | HPBAR-01 bar model | kestrel-3 | new `game/js/ui/enemyBar.js` (pure model, no draw) + `enemyBar.test.js` | `enemyBarModel(beast, band, now)` returns `{show, frac, level, name, tint}`. show = beast engaged with the player (aggro/attacking) OR current lock-on target OR hit in the last 4 s; hidden at 0 HP, when dead, beyond 30 m, or out of sight. frac = hp/maxHp clamped 0..1; level = band (1-10) from the spawn point, `entities[].level` wins, bosses show a skull-free "Boss" tag from `bossName`. tint by level vs player band: >= +2 red, +-1 yellow, <= -2 grey (palette keys). Max 3 bars at once (nearest engaged first; ties by id). Two runs with the same inputs identical. 0 alloc per call (reused result object). Name = plain kind name from the bestiary text table, never an id. | HPBAR-02 independent; band.js | todo |
 | HPBAR-02 bar draw + mount | kestrel-1 | new `game/js/ui/enemyBarView.js` + test, `game/js/main.js` (<= 10 lines) | Draws a 12-cell bar ("[#####-----] Lv 6 Boar") projected above the beast's head (screen-clamped to the view edge, fades out over 0.3 s), colours from HPBAR-01 tint. Fake-ui golden-cell test for frac 0, 0.5, 1 and for level 1 / 10 (two digits, no overflow of the 22-cell width); a hit lowers frac next frame; hidden while pause/inventory/map is open; scales with UI scale in Settings. Settings entry "Enemy health bars" On/Off (default On) saved with settings; Off -> nothing drawn and `enemyBarModel` not called (counter test). | HPBAR-01 | todo |
-| HPBAR-03 difficulty-aware level | kestrel-3 | `game/js/ui/enemyBar.js` + test | Shown level = band + difficulty shift (Easy -1, Normal 0, Hard +1, clamped 1..10), reading the Settings difficulty once D-087 BEAST difficulty exists; falls back to 0 shift if the setting is absent. | HPBAR-01, BEAST difficulty setting | todo (start after the difficulty setting lands) |
+| HPBAR-03 difficulty-aware level | kestrel-3 | `game/js/ui/enemyBar.js` + test | Shown level = band + difficulty shift (Easy -1, Normal 0, Hard +1, clamped 1..10), reading the Settings difficulty once D-094 BEAST difficulty exists; falls back to 0 shift if the setting is absent. | HPBAR-01, BEAST difficulty setting | todo (start after the difficulty setting lands) |
 | DMGNUM-01 floating damage numbers | kestrel-1 | new `game/js/ui/damageNumbers.js` (pool + model) + `damageNumbers.test.js`, `game/js/main.js` (<= 10 lines), `settings.js` entry | Fixed pool of 24 numbers (no growth). On every player-dealt hit event, a number rises 1.2 m over 0.8 s and fades, drawn at the hit point. Normal = white, **crit = yellow** (palette key) with a "!" suffix and 1.3x size or bold glyph; damage taken by the player = red, shown near the hero's HP bar only (not floating over the world). Value = integer rounded from the real damage (after armour). Pool full -> oldest is recycled. Numbers from one multi-hit (arrow volley) stack with a 0.1 s stagger and 0.3 m x-offset. Settings switch "Damage numbers" On/Off (default On, saved), **the same switch group as the enemy bar** (HPBAR-02 has its own On/Off; both live under "Combat HUD"). Off -> no spawns, pool untouched (test). 0 alloc per step; Node test with seeded 10k hits: pool never exceeds 24, crit colour exactly on crit events. | ITEM-01 crit event (until then: crit flag from `rollHit` stub) | todo |
 
-### B. Softer crocodile attack (D-087 Q5; before BEAST-08)
+### B. Softer crocodile attack (D-094 Q5; before BEAST-08)
 | id | slot | files | ACs (Node) | deps | status |
 |---|---|---|---|---|---|
 | CROC-SOFT | kestrel-3 | spec in `docs/epics/ep-bestiary.md` (croc row), then `game/js/quest/sim/crocBrain.js` + test in BEAST-08 | **Owner picks A or B**, then the AC is: seeded brain test, telegraph >= 0.7 s, one attack per 4 s, never more than 15 % max HP per attack on Normal (Easy x0.6, Hard x1.2), 0 alloc. **Option A "snap and drag":** the croc lunges from the water edge (3 m), bite for 8 % HP, then drags the hero 2 m toward the water; no hold, no mash; the hero is free at once and can sidestep or block the bite (shield = 0 damage, 3 m shove back). Danger stays near water only. **Option B "grab with escape":** the grab holds for max 1.5 s with 3 small ticks of 4 % HP each (12 % total, 15 % hard cap), the hero can break free by any dodge roll or one sword hit (not button mash), then the croc retreats under water for 3 s. Either option: a 0.7 s tell (jaws open, ripple at the croc), croc never attacks on land beyond 3 m from the water, arrow cancels the tell. PO default: A. | owner pick, BEAST-08 | todo (blocked on owner pick) |
 
-> Owner 2026-10-14 (D-089): CROC-SOFT = **option B** (short grab, 1.5 s escape, max 12 % HP). ITEM-09 = **hard rule**: an item whose requirement is not met cannot be equipped (no -50 % mode).
+> Owner 2026-10-14 (D-096): CROC-SOFT = **option B** (short grab, 1.5 s escape, max 12 % HP). ITEM-09 = **hard rule**: an item whose requirement is not met cannot be equipped (no -50 % mode).
 
-### C. River quest plan (OB-136, D-088; plan in `docs/test-reports/ob136-quest-river-audit.md` "## Proposals")
+### C. River quest plan (OB-136, D-095; plan in `docs/test-reports/ob136-quest-river-audit.md` "## Proposals")
 All rows: **HOLD: PC-A investigating quest bugs (owner 2026-10-14) - start after PC-A reports.** Content only (`content/quests/`, `content/quests/areas.json`); the river stays physically open (D-070). Rule for QL authors: any objective at x < ~1035 requires the level-5 beat flag (`flag.burl.fireball`, D-069).
 
 | id | slot | files | ACs (Node) | deps | status |
@@ -507,8 +567,8 @@ All rows: **HOLD: PC-A investigating quest bugs (owner 2026-10-14) - start after
 | RQ-02 river road ends east | kestrel-4 | `content/quests/ch1/mq.river.road.json`, Rook line text | Last objective + bark are on the east bank (x >= 1060 at the tower side); hand-off line "come back when you are stronger" as a `NEEDS WRITER:` key; mq.river.road does not unlock anything west of x 1035. | RQ-01 | HOLD |
 | RQ-03 move sq.packet / sq.straw / sq.honey targets | kestrel-4 | `content/quests/areas.json`, `content/quests/side/sq.packet|straw|honey.json` | sq.packet: deliver to Burl (1471,1029) or the Waystone basket (1428,1040); sq.straw: 3 targets on the tower-side meadow (1405,1040 / 1465,1047 verge); sq.honey: turn-in Rook at the Bend relay, never the ford. A lint test fails if any objective of a pre-level-5 quest has x < 1035. | RQ-01 | HOLD |
 
-### D. Points of interest (OB-141, D-088; plan `docs/test-reports/ob141-poi-plan.md`)
-Plan rows POI-01..POI-10 from section 4 of that file stand, with the D-088 answers applied:
+### D. Points of interest (OB-141, D-095; plan `docs/test-reports/ob141-poi-plan.md`)
+Plan rows POI-01..POI-10 from section 4 of that file stand, with the D-095 answers applied:
 - POI sites are **generated from `world_geo.sites`** (as planned), today's models, no edits to `world_m1.world.json`.
 - **NO discovery counter:** POI-03 shrinks to the toast only. Remove "per-region 2/5 found", the map count and the region Heart Piece. Per-POI map marks are shown only for POIs the player has found; no totals anywhere (test: no string with "/" counts in the map text).
 - **Mixed respawn:** small fights at a POI (POI-05 boar group, 3-goblin mini camp) come back like camps (3 in-game days); the POI's main guardian (wolf-den alpha, chest guard) and opened chests / read notes stay done for the save.
@@ -522,10 +582,10 @@ Rewritten rows (replace the same-id rows in the plan file):
 | POI-05 (mixed respawn) | kestrel-3 | `game/js/life/poiFights.js` + test | as plan, plus: mini fight respawns after 3 in-game days, `guardian: true` entities never respawn; seeded test across 10 simulated days: fights 4 returns, guardians 0 returns. | POI-02 | todo |
 | POI-04, 06, 07, 08, 09, 10 | as plan | as plan | unchanged; POI-08 lint drops the "found" statistics (density only) | as plan | todo |
 
-### E. Items epic amendments (D-084; `docs/epics/ep-items-stats.md` section 7)
-- **ITEM-01 may start now** (owner OK, D-084).
+### E. Items epic amendments (D-091; `docs/epics/ep-items-stats.md` section 7)
+- **ITEM-01 may start now** (owner OK, D-091).
 - **ITEM-08 loses the tonic part:** only the character panel remains ("panel equals `stats.js` totals for 3 fixtures"); no tonic defs, no +1 attribute rewards, no save field for tonics. Growth = gear only; attributes = base 5 + gear bonus lines (A8-A10).
-- Numbers x~10 (D-084 Q2), rarity names/colours per D-084 Q3 are as in section 1/2 and need no change.
+- Numbers x~10 (D-091 Q2), rarity names/colours per D-091 Q3 are as in section 1/2 and need no change.
 
 | id | slot | files | ACs (Node) | deps | status |
 |---|---|---|---|---|---|

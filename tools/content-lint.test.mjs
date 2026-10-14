@@ -16,6 +16,7 @@ const clean = () => ({
   itemDefs: { arrow: { id: 'arrow', name: 'Arrow' } }, labelOf,
   giverIds: new Set(['rook']), pos: (id) => (id === 'rook' ? { x: 10, y: 10, z: 1 } : null), groundAt: () => 0, walkable: () => true,
   characters: new Set(['rook']), chests: [{ id: 'chestA', x: 60, y: 55 }], guards: [{ x: 60, y: 60, kind: 'camp' }],
+  allChests: [{ id: 'chestA', x: 60, y: 55 }], owners: [{ x: 60, y: 60, kind: 'camp' }],
   riverX: () => 1030, riverHalf: 10,
 });
 const run = (c) => lint(c);
@@ -31,6 +32,7 @@ const cases = {
   R6: (c) => { c.entities.push(E('smokeLone', 300, 300, 0, { emitters: [{ preset: 'farSmoke' }] })); },
   R7: (c) => { c.structures.push(S('c2', 'quaternius/Prop_Chimney2', 500, 500)); },
   R8: (c) => { c.guards = []; },
+  R15: (c) => { c.owners = [{ x: 60, y: 80, kind: 'camp' }]; }, // owner 25 m away
   R9: (c) => { c.quests[0].targets.push({ id: 'fordWest', x: 1010, y: 1072 }); },
   R10: (c) => { c.quests[0].giver = { npc: 'post' }; },
   R11: (c) => { c.structures.push(S('m1', 'quaternius/Mushroom_Laetiporus', 7, 7)); },
