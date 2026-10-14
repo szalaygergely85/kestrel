@@ -33,6 +33,7 @@ import { SKY_GLOW_WGSL } from '../../skyGlow.js';
 import { FOG_SHAPE_WGSL } from '../../fogShape.js';
 import { SKYLINE_FOG_WGSL } from '../../skyline.js'; // MAP-06b (38.42)
 import { UNDER_WGSL } from '../../underwater.js'; // SWIM-04c (38.54)
+import { GI_SAMPLE_WGSL, giBindingWgsl } from '../../giGpu.js';
 import { CLIFF_NZ, FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE, FAR_GLYPH_CELL, FAR_BLEND_FP0, FAR_BLEND_FP1, NOISE_CELLS, NOISE_W, NOISE_SALT, PATCH_K, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX, GRASS_AO_LO, GRASS_TIP_H, GRASS_BASE_H, GRASS_LEAN_G, GRASS_LEVELS, GRASS_ROWS, GRASS_TINT_AMP, GRASS_GX_HAS, GRASS_BACKLIGHT_K, FG_SLOPE, FG_GUST, FG_MOD, FG_CODES, FG_TYPES } from '../../terrainShade.js';
 
 
@@ -977,3 +978,19 @@ export const SHADE_LOOK_WGSL = buildShadeWgsl(false, true);
 export const SHADE_LEVEL_LOOK_WGSL = buildShadeWgsl(true, true);
 export const SHADE_LEVEL_TARGETS = Object.freeze(['rgba8', 'rgba8', 'r8ui']);
 
+
+// GI-PROBE-05 (arch 38.72): GI variants of the shade pipelines. The terrain / carpet analytic ambient `ambientI` is scaled by
+// (GI ambient / flat sky colour) from the baked probe field (storage buffer binding 16, after the 16 textures: the texture limit is full).
+// Exact text splices on the plain builders, so SHADE_WGSL & co (GI off) stay byte-identical. Twin: terrainShade.js giTerrainK.
+function giSplice(src, from, to) { if (!src.includes(from)) throw new Error('shade.wgsl GI splice: anchor missing: ' + from); return src.replace(from, to); }
+function shadeGi(src) {
+  let s = giSplice(src, '@group(1) @binding(0) var<uniform> su: ShadeU;', '@group(1) @binding(0) var<uniform> su: ShadeU;\n' + giBindingWgsl(16) + '\n' + GI_SAMPLE_WGSL);
+  s = giSplice(s, 'let bSunT = su.ambientI + su.sunI', 'let bSunT = su.ambientI * giTerrK(uT, vT, bitcast<f32>(gaT.z), Nt) + su.sunI');
+  s = giSplice(s, 'let bG = su.ambientI * (', 'let bG = su.ambientI * giTerrK(hG, lnG, bitcast<f32>(gaG.z), NG) * (');
+  return s;
+}
+export const SHADE_GI_WGSL = shadeGi(SHADE_WGSL);
+export const SHADE_LEVEL_GI_WGSL = shadeGi(SHADE_LEVEL_WGSL);
+export const SHADE_LOOK_GI_WGSL = shadeGi(SHADE_LOOK_WGSL);
+export const SHADE_LEVEL_LOOK_GI_WGSL = shadeGi(SHADE_LEVEL_LOOK_WGSL);
+export const SHADE_GI_BUFFERS = Object.freeze(['read']);

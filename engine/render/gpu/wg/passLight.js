@@ -3,7 +3,8 @@
 // geometry/flags atlas (sun DDA); writes texLight (rgba32uint). The sun shadow MAP (WG-3d, passShadow.js) switches sunMode to 2 and binds its depth
 // texture; without an active map uSunShadow is a 1x1 dummy depth texture (= the GL `--shadows dda` path).
 // Pipeline + bind descriptor are built once (22b); per frame only uniform words change, textures upload only on change.
-import { LIGHT_BLOCK, LIGHT_WGSL, LIGHT_TEXTURES } from '../wgsl/light.wgsl.js';
+import { LIGHT_BLOCK, LIGHT_WGSL, LIGHT_TEXTURES, LIGHT_GI_WGSL, LIGHT_GI_BUFFERS } from '../wgsl/light.wgsl.js';
+import { giBufferFor } from './giUpload.js'; // GI-PROBE-05
 import { MAX_LIGHTS, MAX_VIS_DIM, MAX_VIS_CELLS } from '../../lighting.js';
 import { MAX_STRUCTS, buildWorldTextures, planFrameUpdate, makeFrameUpdatePlan } from '../WorldTextures.js';
 import { packCloudUniforms } from '../../cloudShadow.js';
@@ -52,6 +53,8 @@ export class WgLightPass {
     this.atlas = null; this.atlasWorld = null; this.plan = null;
     this.tex = [0, 1, 2, 3, 4, 5, 6, 7].map(slot => ({ slot, texture: null }));
     this.bindDesc = { uniforms: this.lu, textures: this.tex };
+    // GI-PROBE-05: the GI variant pipeline is built lazily the first time a light set carries an active gi; GI off never touches it (today's pipeline + bind).
+    this.pipeGI = null; this.bindDescGI = null;
     this.visBox = new Float32Array(4 * MAX_LIGHTS);
     this.timeBuf = new Float64Array(1);
   }
@@ -212,15 +215,26 @@ export class WgLightPass {
     const tx = this.tex;
     tx[0].texture = t.texGI; tx[1].texture = t.texGA; tx[2].texture = t.texDepth; tx[3].texture = this.texLVis;
     tx[4].texture = this.texGeom; tx[5].texture = this.texFlags; tx[6].texture = sunTex; tx[7].texture = pshTex;
+    const gl = p._light, gsto = gl && gl.gi ? giBufferFor(d).sync(gl.gi) : null; // light set array / no gi -> null
     d.beginPass(t.targetLight);
-    d.bind(this.pipe, this.bindDesc);
+    if (gsto) {
+      if (!this.pipeGI) {
+        this.pipeGI = d.createPipeline({
+          vertex: { src: { wgsl: LIGHT_GI_WGSL } }, fragment: { src: { wgsl: LIGHT_GI_WGSL }, targets: 1 },
+          bindings: { uniformBytes: LIGHT_BLOCK.sizeBytes, textures: LIGHT_TEXTURES.slice(), buffers: LIGHT_GI_BUFFERS.slice() },
+          targetFormats: ['rgba32ui'],
+        });
+        this.bindDescGI = { uniforms: this.lu, textures: this.tex, storageBuffers: gsto };
+      }
+      d.bind(this.pipeGI, this.bindDescGI);
+    } else d.bind(this.pipe, this.bindDesc);
     d.draw(3);
     d.endPass();
   }
 
   dispose() {
     const d = this.device;
-    for (const k of ['pipe', 'texLVis', 'texSunDummy', 'texPshDummy', 'texGeom', 'texFlags']) {
+    for (const k of ['pipe', 'pipeGI', 'texLVis', 'texSunDummy', 'texPshDummy', 'texGeom', 'texFlags']) {
       if (this[k]) { try { d.dispose(this[k]); } catch (_) { /* best effort */ } this[k] = null; }
     }
   }
