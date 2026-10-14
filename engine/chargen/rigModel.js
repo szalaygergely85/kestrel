@@ -75,6 +75,7 @@ export function riggedModelDef(partRig, opts = {}) {
       animations: partRig.clips,
       mounts,
       ...(legRig ? { legRig } : {}),
+      ...(opts.lookAt ? { lookAt: opts.lookAt } : {}), // ANIM-LOOKAT-01: {part,yawLimitDeg,pitchLimitDeg,hz?}; kit head part = 'head'
       rig: { quads: mesh.quads, pos, nrm: mesh.nrm, mat: mesh.mat, ranges: mesh.ranges, matKeys: partRig.matKeys.slice() },
     },
   };

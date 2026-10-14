@@ -1222,3 +1222,12 @@ validate-content: 3 findings, "Tempered Jerkin/Gloves/Shield" = 15 chars > MAX_I
 `beastNav.js` +`buildWaterMask`/`buildWaterNav` (1 waterAt per cell: mask 1 = depth >= 0.6, 2 = bank <= 4 m, `surf`, swim grid = mask 1, croc grid = 1|2, each with createAStar). New `brains/water.js` (`createSwimmers/spawnSwimmer/stepSwimmers`: hashed wander target -> A* -> cell-centre follow; z = surf - 0.4). Test `sim/waterNav.test.js` (fixture lake, 12 asserts: mask == depth, 10k steps no slot leaves its mask, z, byte-determinism, alloc).
 Alloc: ~0.7 B/step after 60 warm windows (probe floor, tier-up noise; threshold 1.5). Not passing `maxNodes` to findPath (it boxes, +6 B/call).
 NOT done: wiring into beastSim LAYERS/STATE_SUBMERGED slots (water.js is a standalone pool 08b plugs attacks into); real world_m1 mask check (fixture only). Pre-existing check-deps FAIL: beastSim.core/hunt.test.js deep-import engine/nav/astar.js (REV-BEASTALLOC-2).
+
+### ANIM-LOOKAT-01 remainder verify (kestrel-3, lookat01r, 2026-10-14)
+| AC | state |
+|---|---|
+| 1 yaw/pitch limits clamp | met (lookAt.js aim + hard clamp; lookAt.test.js limits, wrap, behind=neutral) |
+| 2 smooth in/out | met (critically damped; flip/release/behind tests, 0 B/step) |
+| 4 beasts look at target | met (beastLook.step aware states, 24 m; main hook 962f5a49) |
+| 3 NPC (char.kit) look only while dialogue open | added engine side: `riggedModelDef(partRig, {lookAt:{part:'head',yawLimitDeg,pitchLimitDeg,hz}})` -> def.voxel.lookAt (rig.test.js +2). NEEDS B1-main: (a) main.js:931 kitDef `riggedModelDef(..., { legRig: HUMANOID_SPLIT_LEG_RIG, lookAt: { part: 'head', yawLimitDeg: 60, pitchLimitDeg: 25, hz: 2 } })`; (b) per frame for the NPC being talked to: `beastLook.stepEntity(1024 + npcIdx, npcEnt, npcVoxelComp, dialogueCtl.open && talkingNpcId === id)` (setTarget already fed); other NPCs: stepEntity(..., false). Note: the player rig shares char.kit, so (a) also gives the player a look slot (inert unless stepEntity is called for it).
+Tests: lookat/look/blend/dialog/rig 24/24 PASS, check-deps OK.
