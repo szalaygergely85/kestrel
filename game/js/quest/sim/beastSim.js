@@ -17,6 +17,7 @@ import { WOLF_TUNING, wolfOverrides, isWolfEntity, circleTarget, awayTarget } fr
 import { GOBLIN_TUNING, goblinOverrides, isGoblinEntity } from './goblinBrain.js'; // GOB-01
 import { KINDS, kindIndex, kindOfEntity } from './beastKinds.js'; // BEAST-03a
 import { ARCHETYPES } from "./archetypes.js";
+import { createWaterBrain, stepWaterBrain, grabMash as wbGrabMash, waterBlocks, waterHit } from './brains/waterBrain.js'; // BEAST-08b
 import { LAYERS } from './brains/layers.js'; // BEAST-03b: LAYERS[archIdx](sim, i, ctx)
 import { createTactics, tacticsSync, tacticsSteer, tacticsBand, tacticsAllies, TACT_MELEE, TACT_RANGED, TACT_CASTER, TACT_SWARM, TOK_M, TOK_R, TOK_S } from './tactics.js'; // BEAST-04
 import { archIndex, ARCH_NAMES } from './archetypes.js';
@@ -217,6 +218,8 @@ export function createBeastSim(world, opts) {
     cause: new Uint8Array(MAX_BEASTS),       // US-079b: 0 sword, 1 fire (indexes CAUSE_STR)
     knockV: new Float64Array(MAX_BEASTS),    // US-079b: per-slot stagger clamp speed (replaces shared cfg.staggerKnock)
     wolf: new Uint8Array(MAX_BEASTS),        // WOLF-01: brain.species==='wolf' (per-slot cfg below, pack token, circle, flee)
+    wat: new Uint8Array(MAX_BEASTS),         // BEAST-08b: 1 = water slot, run by brains/waterBrain.js (live() skips it)
+    wb: null,
     kindIdx: new Uint8Array(MAX_BEASTS),     // BEAST-03a: index into KIND_NAMES (beastKinds.js); data only so far
     pNear: new Float64Array(MAX_BEASTS).fill(cfg.nearR), pCone: new Float64Array(MAX_BEASTS).fill(cfg.coneCos), // BEAST-03b per-slot perception
     pAggro: new Uint8Array(MAX_BEASTS),      // 0 hostile 1 whenHit 2 never 3 near (ARCH_AGGRO order)
@@ -323,6 +326,11 @@ export function createBeastSim(world, opts) {
     steer.addAgent(e.transform.x, e.transform.y, cfg.radius, 0, DEFAULT_ACCEL);
   }
 
+  if (opts.waterNav) { // BEAST-08b: water kinds swim over the water-mask grids (opts.waterNav = beastNav.buildWaterNav result)
+    sim.wb = createWaterBrain(sim, opts.waterNav, { seed: opts.seed, playerMaxHp: opts.playerMaxHp, hpPerDamage: opts.hpPerDamage });
+    sim.grabMash = function grabMash(slot) { if (sim.wb) wbGrabMash(sim.wb, slot); };
+    sim.grabSlot = function grabSlot() { return sim.wb ? sim.wb.grabSlot : -1; };
+  }
   // US-078d amendment (D-034) + US-079b (37.16.2): one `combat:hit` listener registered at create, id -> slot via
   // a prebuilt plain-object lookup (no Map iteration in step()). US-079b widens it to every hit on a boar id (not
   // just heavy): damage + cooldown + hurt/flinch/stagger + death. `events` is one persistent instance for the
@@ -337,6 +345,7 @@ export function createBeastSim(world, opts) {
     const i = idSlot[p.target];
     if (i === undefined) return;
     if (deadSt(sim.state[i])) return; // 37.16.2 item 1: dead/corpse/sink/gone -> ignore
+    if (sim.wat[i] === 1 && waterBlocks(sim.wb, sim, i, p)) return; // BEAST-08b: turtle front block
     const health = sim.entities[i].components.health;
     if (sim.dmgCd[i] > 0) { // 37.16.2 item 2: ignore damage, still flash/flinch; heavy knockback still applies
       reactToHit(sim, i, p);
@@ -529,7 +538,7 @@ export function createBeastSim(world, opts) {
 // ---- step pipeline (29.1 "Fixed-step order inside step") ----------------------------------------------------
 
 /** GOB-01: a slot that perceives, paths, steers and posts (not dead/GONE, not dormant). */
-const live = (sim, i) => !deadSt(sim.state[i]) && sim.dormant[i] === 0;
+const live = (sim, i) => !deadSt(sim.state[i]) && sim.dormant[i] === 0 && sim.wat[i] === 0;
 
 /** ED-AI-02 (shared by create and patch): perception / leash / speeds / tactical role+band of one archetype-driven slot, written in place (no alloc). */
 function deriveArchSlot(sim, i, A) {
@@ -576,6 +585,7 @@ function stepSim(sim, px, py, pz) {
   sim._ctx.px = px; sim._ctx.py = py;
   tacticsSync(sim, sim._tS); // BEAST-04: token release + flank re-assign
   for (let i = 0; i < n; i++) if (live(sim, i)) { if (!LAYERS[sim.archIdx[i]](sim, i, sim._ctx)) transitionOne(sim, i, px, py); }
+  if (sim.wb) stepWaterBrain(sim.wb, px, py); // BEAST-08b: water slots (own grid, own movement)
   updatePathRequests(sim, px, py);
   servePathRequest(sim, px, py);
   for (let i = 0; i < n; i++) if (live(sim, i)) setSteerTarget(sim, i);
@@ -1042,6 +1052,7 @@ function enterWander(sim, i) {
  * where the damage step was skipped but the physical/visual reaction still applies). `hurtT` was already reset for
  * a damaging hit, so "flash only" below is just "no state change" - the view flashes off `hurtT`. */
 function reactToHit(sim, i, p) {
+  if (sim.wat[i] === 1) { waterHit(sim.wb, sim, i, p); return; } // BEAST-08b
   const st = sim.state[i];
   if (p.heavy) {
     const knock = p.knock > 0 ? p.knock : sim.cfg.staggerKnock;

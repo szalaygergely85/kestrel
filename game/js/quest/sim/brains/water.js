@@ -20,7 +20,7 @@ export function createSwimmers(nav, o = {}) {
   return {
     nav, max, n: 0, seed: o.seed ?? 1, tick: 0, step1: (o.speed ?? 1.2) * dt, guard: 0,
     x: new Float32Array(max), y: new Float32Array(max), z: new Float32Array(max),
-    kind: new Uint8Array(max), state: new Uint8Array(max), wait: new Int32Array(max),
+    sp: new Float64Array(max).fill((o.speed ?? 1.2) * dt), kind: new Uint8Array(max), state: new Uint8Array(max), wait: new Int32Array(max),
     pathLen: new Int32Array(max), pathPos: new Int32Array(max), path: new Int32Array(max * PATH_MAX),
     tmp: new Int32Array(PATH_MAX),
   };
@@ -60,12 +60,27 @@ function pickPath(s, i) {
 /** One 60 Hz step for every swimmer. */
 export function stepSwimmers(s) {
   s.tick++;
-  for (let i = 0; i < s.n; i++) {
-    if (s.wait[i] > 0) { s.wait[i]--; continue; }
-    if (s.pathPos[i] >= s.pathLen[i]) { pickPath(s, i); continue; }
+  for (let i = 0; i < s.n; i++) stepSwimmer(s, i);
+}
+
+/** BEAST-08b: init slot i directly (beastSim owns the slot numbers). false = cell not walkable for that kind. */
+export function initSwimmer(s, i, kind, x, y) {
+  const g = gridOf(s, kind).grid, cx = g.cellX(x), cy = g.cellY(y);
+  if (!g.inBounds(cx, cy) || g.cost[cy * g.w + cx] === 0) return false;
+  s.kind[i] = kind; s.state[i] = SW_SUBMERGED; s.x[i] = x; s.y[i] = y; s.z[i] = s.nav.surf[cy * g.w + cx] - SWIM_SUBMERGE_M;
+  s.wait[i] = 0; s.pathLen[i] = 0; s.pathPos[i] = 0;
+  if (s.n <= i) s.n = i + 1;
+  return true;
+}
+
+/** One wander step for slot i (the body of stepSwimmers; `s.tick` is advanced by the caller). */
+export function stepSwimmer(s, i) {
+  {
+    if (s.wait[i] > 0) { s.wait[i]--; return; }
+    if (s.pathPos[i] >= s.pathLen[i]) { pickPath(s, i); return; }
     const grid = gridOf(s, s.kind[i]).grid, c = s.path[i * PATH_MAX + s.pathPos[i]];
     const tx = grid.cellCenterX(c % grid.w), ty = grid.cellCenterY((c / grid.w) | 0);
-    const dx = tx - s.x[i], dy = ty - s.y[i], d2 = dx * dx + dy * dy, st = s.step1;
+    const dx = tx - s.x[i], dy = ty - s.y[i], d2 = dx * dx + dy * dy, st = s.sp[i];
     let nx, ny, arrived = false;
     if (d2 <= st * st) { nx = tx; ny = ty; arrived = true; } else { const inv = st / Math.sqrt(d2); nx = s.x[i] + dx * inv; ny = s.y[i] + dy * inv; }
     const cx = grid.cellX(nx), cy = grid.cellY(ny);
