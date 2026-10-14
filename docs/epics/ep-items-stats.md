@@ -1,6 +1,6 @@
 # EP-ITEMS-STATS - classic RPG item stats (D-081, OB-151, OB-150, OB-152, OB-064)
 
-Status: **draft - owner approval needed before any code** (D-081). PO, 2026-10-14 (+ owner input same day: item types,
+Status: **owner answered section 8 on 2026-10-14 (D-084)**; ITEM-08 tonics dropped, attribute requirements + damage-number setting to add (PO). (D-081) PO, 2026-10-14 (+ owner input same day: item types,
 rarity colours, rarity = number of bonus lines, concrete affix list, card mock-up).
 Replaces the fixed tier table (itemsWeapons.js `STATS` dmgMul/drawMul/blockStamMul, equip.def 1-5, band.js
 `gearItemTier`, lootConfig `LOOT_TIERS`). Keeps: no XP / no player level (D-020, D-078 3), zone levels (near side 1-5,
@@ -152,8 +152,8 @@ Matching gear (iL = zone level, Magic, base attributes), sword light swings ~0.6
 Order: 01 -> (02, 03) -> 04 -> (05, 06, 07) -> 08; D1 alongside (axe/spear drop only after D1 lands).
 
 ## 8. Owner questions
-1. Growth without XP: gear only, or also ~10 permanent +1 STR/DEX/INT Tonics from quests/chiefs/bosses?
-2. OK to rescale all numbers x~10 (player 100 HP, level-1 sword "6-10", boar ~35 HP)?
-3. Rarity names/colours Common white / Magic blue / Rare yellow / Epic purple / Unique orange - OK?
-4. Should gear need attributes (e.g. Steel Bow needs DEX 12), or do attributes only boost?
-5. Floating damage numbers over enemies (crits in yellow) - want them?
+1. Growth without XP: gear only, or also ~10 permanent +1 STR/DEX/INT Tonics from quests/chiefs/bosses? **Owner: gear only (no Tonics).**
+2. OK to rescale all numbers x~10 (player 100 HP, level-1 sword "6-10", boar ~35 HP)? **Owner: OK.**
+3. Rarity names/colours Common white / Magic blue / Rare yellow / Epic purple / Unique orange - OK? **Owner: OK.**
+4. Should gear need attributes (e.g. Steel Bow needs DEX 12), or do attributes only boost? **Owner: yes, gear needs attributes.**
+5. Floating damage numbers over enemies (crits in yellow) - want them? **Owner: yes, with a Settings switch to turn them off.**

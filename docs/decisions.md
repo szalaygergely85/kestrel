@@ -1214,3 +1214,9 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 
 ## D-083
 **2026-10-14, owner (PC-B session, OB-153/150).** "create 30 types for this big map at least. respawn time too, walking around, and proper AI, proper AI. so could be easy, mid and hard game!": the bestiary grows to >= 30 creature types across the regions (river/water creatures like crocodiles included), each with a respawn timer, roaming/patrol behaviour and proper AI; a difficulty setting Easy / Normal / Hard. PO epic + architect (AI system) + designer (voxel creatures, realistic, 4 legs for animals).
+
+## D-084
+**2026-10-14, owner (PC-B session), items epic answers (docs/epics/ep-items-stats.md section 8).** (1) Growth = gear only, no Tonics (ITEM-08 tonic part dropped). (2) Rescale all numbers x~10: OK. (3) Rarity names/colours Common white / Magic blue / Rare yellow / Epic purple / Unique orange: OK. (4) Gear NEEDS attributes (e.g. Steel Bow needs DEX 12) - with no XP and no Tonics, attributes come from base 5 + gear bonus lines only; PO to set requirement numbers so the needed attribute is reachable from the gear of the zone below. (5) Floating damage numbers over enemies (crits yellow): yes, with a Settings switch to turn them off. ITEM-01 may start.
+
+## D-085
+**2026-10-14, owner (PC-B session).** "houses approved": the own building set as shown in design/preview/buildings-voxel.html (OB-139) is approved -> import/collision stories. "biome too": biome atmosphere as shown in design/preview/biome-atmos.html (ENV-03-DESIGN) is approved -> ENV-03 code may start (picks = the data-file defaults unless the owner sends changed picks via "copy picks"). Ground richness preview (design/preview/ground-richness.html): owner "i don't see it" (page shows nothing / no visible difference - to check) "but go ahead" -> ENV-02 continues.
