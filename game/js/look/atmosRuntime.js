@@ -6,7 +6,9 @@ import { createAtmosState, mixAtmos, applyAtmosToPalette, applyAtmosGrade } from
 import { buildAtmosConfig } from './atmosConfig.js';
 import { createAtmosDriver } from './atmosDriver.js';
 
-export function createAtmosRuntime(biomeLook, P, world) {
+export function createAtmosRuntime(biomeLook, P, world, disabled) {
+  applyAtmosToPalette(P, null); // reset: a previous world's biome fog must never leak into this one (also when off / no terrain)
+  if (disabled) return null;
   const util = world && world.terrain && world.terrain.util;
   if (!biomeLook || !biomeLook.atmosMap || !util || typeof util.biomeBlend !== 'function' || !P.fog || !P.fog.far || !P.daySchedule) return null;
   let cfg;
@@ -16,15 +18,18 @@ export function createAtmosRuntime(biomeLook, P, world) {
   const drv = createAtmosDriver({ nEntries: cfg.n, biomeToEntry: cfg.biomeToEntry, biomeBlend: util.biomeBlend, schedule: P.daySchedule, slotOf: cfg.slotOf, defaultTime: cfg.defaultTime });
   const state = createAtmosState();
   let seen = -1;
+  drv.snap(); // first frame jumps straight to the target (camera jumps > 50 m snap inside the driver)
   return {
     state,
     step(t, hour, dt) {
-      drv.step(t.x, t.y, hour, dt, true);
+      // outdoor = camera outside every sector (same rule as meshOutdoorFog, OB-089): towers/buildings/dungeons -> target 'none'
+      drv.step(t.x, t.y, hour, dt, !(typeof world.sectorAt === 'function' && world.sectorAt(t.x, t.y)));
       if (drv.version === seen) return;
       seen = drv.version;
       mixAtmos(cfg, drv, base, state);
       applyAtmosToPalette(P, state);
     },
+    dispose() { applyAtmosToPalette(P, null); },
     apply(fb) { if (fb.gpu) fb.atmos = state; else applyAtmosGrade(fb.rt, state); },
   };
 }
