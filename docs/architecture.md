@@ -6779,3 +6779,59 @@ Source: `design/look/biomeLook.js` `biomes[k].atmos[pick.atmos]` (A for all six;
 - **ENV-03b** [kestrel-2, engine JS twin] `engine/render/atmos.js` + `atmos.test.js`; `applyAtmosToPalette`; JS consumers refresh on `liveFogVersion`; `applySkyHaze` in `skyLutFromPalette` + `fillSky`; JS grade after sprites. AC: fit error <= 0.09; state off / never applied -> JS frames byte-identical for 3 poses (hash vs pre-change); wNone = 1 with on = true gives the identity (fog == base, grade == identity, bytes identical); a w lo/hi swap is symmetric; grade matches `L.grade` within 1/255; 0 alloc. Ends: arch-review.
 - **ENV-03c** [kestrel-2 GPU + kestrel-1 main.js <= 6 lines] `ATMOS_GRADE_WGSL` splice + `SpritesU` append + per-frame upload; passShade `_ensureTerrain` fog + `_bakeSky` and the passWater LUT on `liveFogVersion` + haze; gpucompare rows; budget bench. main.js: build the config + driver when `BIOME_LOOK` and terrain exist, `driver.step` next to the clock driver, `mixAtmos` + `applyAtmosToPalette`, `?atmos=0`. AC: compileFn probes `atmosGrade` == `gradeRGB` within 1/255 on >= 3000 colours x 4 states; WGSL lint; 0 alloc per frame; existing gpucompare rows unchanged (the main session runs them), 3 new rows pass; GPU budget bench. Ends: arch-review.
 **Do not:** import design/ or name biomes in `engine/`; read `biomeBlend` per frame without the 2 m gate; change the fog shape function or any glyph; grade the overlay/UI; allocate the live fog record per bump; save atmosphere state (view-only, rebuilt on load).
+
+### 38.66 Item instances, equip requirements, totals cache, save v2 (ITEM-02 note; PC-B architect opus 2026-10-14, PC-A to ratify)
+Scope: game/ only (D-081, D-091, D-096, D-084; epic `docs/epics/ep-items-stats.md` s2/s5/s9). Engine untouched. Rule 15 holds for all of `sim/**`.
+
+**1. Shapes (one shape per place, saved as plain JSON on the player entity).**
+- Pack slot (`inventory.slots[i]`, 24 fixed objects, mutated in place): `{id: string|null, n: number, it: ItemIt|null}`. `it === null` for stackables, plain items (spells, keys, potions), uniques and empty slots. A slot with `it !== null` always has `n === 1` and never stacks.
+- `ItemIt = {iL: 1..10, r: 0..3, a: Array<[affixId, number]>, req?: {str?, dex?, int?}}` (the itemGen.js output without `id`/`n`). Base dmg/armour are NOT stored (derived by `baseStats(type, iL, r)`); names are NOT stored (`baseName(type, iL)`).
+- Rolled item ids are `gen.<type>` (`itemId(type)`). ITEM-02a registers one def per type at boot, `registerGenDefs(defs)`: `{id, name: first base name, kind: 'weapon'|'shield'|'gear', stackMax: 1, gen: type, icon, equip: {slot, held/shell copied from the old base def}}`. `validateItemDefs` accepts a missing `equip.tier` when `gen` is set.
+- Uniques stay plain ids. Their fixed lines live in the def: `defs[id].equip.it = {iL, r: 4, a, req?}`.
+- Equipment: `eq[slot]` stays the item id (or null), so hands, quickbar, held models and `owns` keep working unchanged. A new sibling `eq.it = {head..ranged: ItemIt|null}` (no quiver) holds the instance part, plus `eq.rev` (an int, ++ on every equipment mutation; saved, harmless). `eq.it[slot]` is the SAME object that sat in the pack slot (moved by reference, never cloned).
+
+**2. One accessor module: new `game/js/quest/sim/itemInst.js`. No other file reads `.it` / `.a` / `.req` of an entry.**
+```js
+/** @returns {ItemIt|null} entry = pack slot | {id, it}; falls back to defs[id].equip.it (uniques) */
+export function itOf(entry, defs) {}
+export function isInstance(entry) {}                   // entry.it != null
+export function itemName(entry, defs) {}               // gen -> baseName(type, it.iL); else defs[id].name (+ itemDisplayName rules)
+export function rarityOf(entry, defs) {}               // it.r; plain gear 0; unique 4; non-gear -1
+export function itemLevelOf(entry, defs) {}            // it.iL; plain non-gear 0 (playerLevel G reads this)
+export function reqOf(entry, defs) {}                  // it.req | null
+export function fillView(view, id, it, defs) {}        // writes a stats-shaped view (stats.js header) into a REUSED object; returns view|null
+export function sanitizeIt(it, type) {}                // load time: clamp iL/r, drop unknown/disallowed affix lines and non-finite values; never throws; returns it|null
+export function hashIt(h, it) {}                       // replay hash: u32 flag, iL, r, a.length, per line id chars + u32(round(v*1e4)>>>0), req
+export function fnv1a32(str) {}                        // load-time seed helper
+```
+UI (inventoryScreen, itemGetCard, quickbarView, craftView), loot, playerLevel and the card compare all call these. `itemView()` in itemGen.js becomes a thin test helper over `fillView`. Code classifies weapons by `defs[id].equip.slot` / `defs[id].gen`, never by id literals (`=== 'sword'`).
+
+**3. Pack ops (inventory.js).** `ensureInventory` creates `{id: null, n: 0, it: null}` slots and sets `inv.v = 2`. New: `addInstance(inv, defs, inst) -> slotIdx | -1` (first empty slot; `inst.it` stored by reference), `removeAt(inv, idx, out) -> out | null` (writes `{id, it}` into the caller's reused `out`, empties the slot), `moveSlot(inv, a, b)` (swaps id/n/it; drag between pack cells). `addItem` never stacks into a slot whose `it !== null` and returns 0 for `gen.*` ids (instances enter only through `addInstance`). `removeItem` refuses `gen.*` ids (use `removeAt`). `hashInto` adds `hashIt` per slot.
+
+**4. Equip with the hard requirement (equipment.js, D-096).** The new primary API works by pack index:
+```js
+/** @returns {0|1|2|3|4|5} OK | NO_SLOT | EMPTY | NEEDS | PACK_FULL | BREAKS; details in `why` (reused {attr, need, have, blockerSlot}) */
+export function equipAt(inv, eq, defs, packIdx, cache, why) {}
+export function unequipSlot(inv, eq, defs, slot, cache, why) {}   // OK | PACK_FULL | BREAKS
+```
+- NEEDS: the item's `req` is checked against totals computed with the target slot EMPTIED and without the item's own lines. An item never satisfies its own requirement, and swapping out a +STR piece cannot sneak a requirement through. Uses `meetsRequirement` on the cache's second scratch totals object (no alloc).
+- BREAKS: after the change, every other worn item's req must still be met. Otherwise the change is refused and the first blocker is named ("Iron Axe needs STR 9"). No cascade unequip and no inactive-item state, so "equipped" always means "counts" (s9 playerLevel, D-096).
+- A refusal changes nothing (the existing undo pattern). UI text comes only from the code + `why`: NEEDS -> "Needs STR 10", BREAKS -> "<name> needs STR 9", PACK_FULL -> "Pack is full".
+- The old `equip(inv, eq, defs, id)` stays as a wrapper (first pack index holding `id`) for plain items, `autoEquipMain`, `migrateEquipment` and the quickbar. It goes through the same checks.
+- Quickbar key slots (2..5) refuse `gen.*` ids (an id there is ambiguous between instances). LMB/RMB stay derived from `eq` as today.
+
+**5. Totals for combat (ITEM-04) and UI.** `createStatsCache()` (in itemInst.js) = `{rev: -1, totals: createTotals(), scratch: createTotals(), views: {<slot>: preallocated view}, viewEq: {<slot>: view|null}}`. `refreshTotals(cache, eq, defs)`: if `cache.rev === eq.rev`, return. Otherwise fill the views via `fillView` (dmg goes into each view's own `[0, 0]` array) and call `computeTotals(cache.viewEq, cache.totals)`. There is one cache per player, owned by main.js. It is not saved and is rebuilt on load because `rev` starts at -1. Combat calls `refreshTotals` once per step (an int compare) and `rollHit(cache.totals, ...)` per hit: 0 alloc per hit and per step. Plain items without `it` give a null view (the fireball in the off hand adds nothing). The character panel and playerLevel read the same cache.
+
+**6. Save v2 + migration (saveState.js, new `sim/itemMigrate.js`).**
+- `SAVE_VERSION = 2`. `validateSave` accepts 1 and 2 on read; writers write 2, so an older build refuses a v2 save instead of silently dropping instances. `applySave` returns `saveVersion`.
+- Save id: `world.state['items.saveId']` (u32). When it is missing (old save or new game), main.js sets it once from `fnv1a32(meta.playerName + '|' + Math.floor(meta.playTimeSec))` (new game: playTimeSec 0). It is saved from then on.
+- `migrateItems(player, defs, saveId) -> {converted, dropped}` runs when `inv.v !== 2`. It is idempotent and is called in main.js right after `migrateEquipment`, before `initialState = serialize(...)`. It visits each pack slot index k (0..23) and each worn slot (index 24 + EQUIP_SLOTS index):
+  - plain `sword`/`bow`/`shield` -> iL1 Common;
+  - `gear.<slot>.<base>.<tier>` (not `unique`) -> tier map worn 1/Common, sturdy 2/Magic, fine 4/Magic, tempered 6/Rare, warden 8/Rare;
+  - base -> type: sword, bow and shield map directly; every armour base -> `'armour.' + slot`.
+
+  Each item = `generateItem(createStatsRng(fnv(saveId, k)), {iL, type, r})`, with `fnv` = FNV-1a over the two u32s; the id becomes `gen.<type>`. **Migrated items drop `req`**: they were earned under the old rules, and this matches the ITEM-09 row "no req on legacy ids". New drops always carry req. Quickbar ids that were converted are cleared (the hands re-derive). Then `inv.v = 2` and `eq.rev++`.
+- Every loaded `it` passes `sanitizeIt`. An unknown id stays plain. A non-array `slots` or a missing field is rebuilt by the ensure* functions. A stale save never throws.
+- Old gear defs stay registered (read-only) for one release. Any legacy gear id that still enters the pack after migration (old quest/chest data until ITEM-06) is converted at entry by the same table, seed `fnv(saveId, slotIdx)`.
+
+**7. Risks / do not.** (a) No shape checks outside itemInst.js (review rule: grep `.it` / `.a[` reads outside it). (b) Do not clone `it` on equip/unequip: that breaks identity and doubles memory; move references. (c) No per-hit `computeTotals` or `itemView` (it allocates) in combat. (d) Affix values are floats: saved as JSON doubles (exact round trip), hashed quantised. (e) The ITEM-09 row text still describes the -50 % soft mode; the D-096 hard rule wins, and the PO updates the row. (f) Grandfathered migrated items without req are a balance hole for one release only (iL <= 8). If the owner wants req on them too, it is a one-line change in itemMigrate.js plus a "move an unmet worn item to the pack" step. (g) The `gen.*` defs must exist before `validateItemDefs` and before any save load.
