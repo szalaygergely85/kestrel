@@ -37,7 +37,7 @@ const sp = world.terrain.recipe.recipe.forest.trees.species;
 const lowest = (get, x, y, r) => { let lo = Infinity; for (let k = -1; k < 8; k++) { const a = k * Math.PI / 4, h = get(x + (k < 0 ? 0 : r * Math.cos(a)), y + (k < 0 ? 0 : r * Math.sin(a))); if (h !== null && h < lo) lo = h; } return lo; };
 let worst = 0, nPlaced = 0;
 for (const s of assets.world('world_m1').structures) {
-  if (!s.mesh || !/Tree/.test(s.mesh) || !s.origin) continue;
+  if (!s.mesh || !/Tree|Pine/.test(s.mesh) || !s.origin) continue;
   const sc = s.scale || 1, gap = s.origin.z + assets.mesh(s.mesh).bbox[2] * sc - lowest((x, y) => world.terrain.heightAt(x, y), s.origin.x, s.origin.y, 0.74 * sc);
   assert.ok(gap <= MAX_GAP, `placed tree ${s.id} floats ${gap.toFixed(2)} m`); worst = Math.max(worst, gap); nPlaced++;
 }
