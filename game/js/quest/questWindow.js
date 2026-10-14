@@ -31,8 +31,8 @@ export function questWindowDialogue(def, action, nameOf) {
   if (rw) body.push('Reward: ' + rw);
   const key = 'q.' + def.id + '.' + (action === 'offer' ? 'accept' : 'handin');
   const choices = action === 'offer'
-    ? [{ next: 'w.yes', setFlag: key, text: 'Accept' }, { next: 'w.no', text: 'Decline' }]
-    : [{ next: 'w.yes', setFlag: key, text: 'Complete' }, { next: 'w.no', text: 'Not yet' }]; // the runner needs 2..3 choices
+    ? [{ next: 'w.yes', setFlag: key, text: '[E] Accept' }, { next: 'w.no', text: '[Q] Decline' }]
+    : [{ next: 'w.yes', setFlag: key, text: '[E] Complete' }, { next: 'w.no', text: '[Q] Not yet' }]; // the runner needs 2..3 choices
   return {
     kind: 'dialogue', schema: 1, id: 'qwin.' + def.id + '.' + action,
     speakers: { npc: { label: ascii(def.title || 'Quest').slice(0, 24).toUpperCase() } },

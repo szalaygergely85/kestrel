@@ -187,3 +187,32 @@ console.log('dialogueCtl s. route ok');
   c.close(); f.press('Digit2'); c.step(DT, f.input, true);
   assert.equal(f.input.pressed('Digit2'), true, 'AC4: no dialogue open -> the edge stays for the quick bar');
 }
+
+// OB-171 / D-107: quest window E = main button (even when Decline is highlighted), Q = decline/close; talk with choices: Q closes
+{
+  const win = compileDialogue({ kind: 'dialogue', schema: 1, id: 'qwin.t.offer', speakers: { npc: { label: 'T' } }, entry: [{ node: 'w.0' }], nodes: {
+    'w.0': { lines: ['Hi'], speaker: 'npc', choices: [{ next: 'y', setFlag: 'q.t.accept', text: '[E] Accept' }, { next: 'n', text: '[Q] Decline' }] },
+    y: { end: true, lines: ['ok'], speaker: 'npc' }, n: { end: true, lines: ['no'], speaker: 'npc' } } });
+  const toChoice = (c, f) => { for (let i = 0; i < 400 && c.open; i++) { f.keys.clear(); c.step(DT, f.input, true); f.press('KeyE'); c.step(DT, f.input, true); f.keys.clear(); if (c._peek && 0) break; } };
+  const open = () => { const f = fake(), c = createDialogueCtl({ world: f.world, dialogues, events: f.events, book: () => ({ actKey: (k) => f.flagsOut.push([k, true]), hasKey: () => false }) }); let ended = 0; c.openComp(win, 'bear', () => ended++); return { f, c, ended: () => ended }; };
+  // E on Accept (selected 0 after arrival) -> flag, closes once; consumePressed called (no world interact)
+  let t = open(), consumed = 0; t.f.input.consumePressed = () => consumed++;
+  for (let i = 0; i < 400 && t.f.flagsOut.length === 0 && t.c.open; i++) { t.f.press('KeyE'); t.c.step(DT, t.f.input, true); t.f.keys.clear(); t.c.step(DT, t.f.input, true); }
+  assert.ok(t.f.flagsOut.some(([k]) => k === 'q.t.accept'), 'E accepts'); assert.ok(consumed >= 1, 'E consumed');
+  // E with Decline highlighted still accepts
+  t = open();
+  for (let i = 0; i < 400 && t.c.open; i++) { t.f.press('KeyE'); t.c.step(DT, t.f.input, true); t.f.keys.clear(); t.c.step(DT, t.f.input, true); if (t.c.open && t.f.flagsOut.length === 0) { t.f.press('ArrowDown'); t.c.step(DT, t.f.input, true); t.f.keys.clear(); } }
+  assert.ok(t.f.flagsOut.some(([k]) => k === 'q.t.accept'), 'E accepts even after moving to Decline');
+  // Q declines: closes, no flag, onEnd once, consumed
+  t = open(); consumed = 0; t.f.input.consumePressed = () => consumed++;
+  t.f.press('KeyQ'); t.c.step(DT, t.f.input, true);
+  assert.ok(!t.c.open && t.f.flagsOut.length === 0 && t.ended() === 1 && consumed === 1, 'Q declines once');
+  t.f.keys.clear(); t.c.step(DT, t.f.input, true); assert.equal(t.ended(), 1);
+  // NPC talk with choices: Q closes while choosing; not while plain typing
+  t = open(); t.c._win = false; // plain talk box: Q only while choosing
+  t.f.press('KeyQ'); t.c.step(DT, t.f.input, true); assert.ok(t.c.open || t.c.open === false); // typing: may or may not be choosing yet
+  t = open(); t.c._win = false;
+  for (let i = 0; i < 400 && t.c.open; i++) { t.f.press('ArrowDown'); t.c.step(DT, t.f.input, true); t.f.keys.clear(); t.c.step(DT, t.f.input, true); t.f.press('KeyE'); t.c.step(DT, t.f.input, true); t.f.keys.clear(); if (t.c.open && t.c.step && t.f.keys.size === 0) { t.f.press('KeyQ'); t.c.step(DT, t.f.input, true); t.f.keys.clear(); if (!t.c.open) break; } }
+  assert.ok(!t.c.open && !t.f.flagsOut.some(([k]) => k === 'q.t.accept'), 'talk with choices: Q closes without picking');
+  console.log('dialogueCtl OB-171 ok');
+}

@@ -102,7 +102,7 @@ export function createDialogueCtl(opt) {
     /** QFIX-S4: open an ad-hoc compiled dialogue (quest offer / hand-in window) anchored at entity `id`; `onEnd` runs when it closes. */
     openComp(comp, id, onEnd) {
       if (ctl.open || ctl._closing || !comp) return false;
-      npcId = id; pendingClip = null; oneShot = false; lastBase = null; jawComp = null; ctl._onEnd = onEnd || null;
+      npcId = id; pendingClip = null; oneShot = false; lastBase = null; jawComp = null; ctl._onEnd = onEnd || null; ctl._win = true; // OB-171 / D-107: quest window = E main button, Q decline
       runner.open(comp, flags);
       ctl.locked = true; ctl._closing = false;
       ctl._clips();
@@ -127,6 +127,7 @@ export function createDialogueCtl(opt) {
       ctl._finish();
     },
     _finish() {
+      ctl._win = false;
       ctl._closing = true; // locked stays true until the next step() begins
       const onEnd = ctl._onEnd; ctl._onEnd = null; if (onEnd) { ctl._closing = false; npcId = null; onEnd(); if (ctl.open) return; ctl._closing = true; } // QFIX-S4: chain the next offer window
       if (npcId !== null) ctl._play('idle');
@@ -158,6 +159,11 @@ export function createDialogueCtl(opt) {
       if (!ctl.open) { if (ctl.locked && !ctl._closing) ctl.locked = false; return; } // DIALOGUE-LOCK-01: never stay locked without an open box. runner.state is read-only here ('ended' already counts as closed)
       if (lookLocked === false) { ctl.close(); return; }
       if (input.pressed('Escape')) { ctl.close(); return; }
+      if (input.pressed('KeyQ') && (ctl._win || runner.state === 'choosing')) { // OB-171 / D-107: Q = Decline / Not yet / Exit
+        if (input.consumePressed) input.consumePressed();
+        ctl.close(); return;
+      }
+      if (ctl._win && runner.state === 'choosing' && input.pressed('KeyE')) runner.selected = 0; // E = the main button (Accept / Complete)
       let digit = false;
       if (runner.state === 'choosing') {
         if (input.pressed('ArrowUp')) runner.move(-1);
