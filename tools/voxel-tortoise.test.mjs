@@ -77,7 +77,7 @@ test('size: shell ~1.2 m long, dome 0.7-0.95 m high, plastron off the ground, mo
 });
 
 // clips: [frames, total ms, loop]
-const SPEC = { idle: [8, 4800, true], walk: [4, 2000, true], withdraw: [4, 1200, false], emerge: [5, 1800, false],
+const SPEC = { idle: [8, 4800, true], walk: [20, 2000, true], withdraw: [4, 1200, false], emerge: [5, 1800, false],
                talk: [12, 2000, true], listen: [5, 3000, true], slowNod: [5, 1800, false], lookUp: [6, 3600, false] };
 test('clips: exact set, frame counts, total ms, loop, durations multiples of 50, every part keyed, clipFor valid', () => {
   assert.deepStrictEqual(Object.keys(DEF.animations).sort(), Object.keys(SPEC).sort());
@@ -113,12 +113,13 @@ test('owner rule 0.2: never upright, feet planted in x/y, ground-snapped, four d
     for (const l of LIMBS) {
       assert.strictEqual(f[l].pos[0], -f.shell.pos[0] || 0, k + ' ' + l + ' x planted');
       assert.strictEqual(f[l].pos[1], -f.shell.pos[1] || 0, k + ' ' + l + ' y planted');
+      if (k === 'walk') continue;   // ANIM-A-01 gait: planted feet measured with the body tilt in tools/gait-a.test.mjs
       const m = minZ(l, f);
       assert.ok(m >= -0.03, k + ' key ' + i + ' ' + l + ' sinks ' + m.toFixed(2));
       assert.ok(m <= 1.5, k + ' key ' + i + ' ' + l + ' lift ' + m.toFixed(2) + ' (slow steps <= 1.5 cells)');
       if (m < 0.05) down++;
     }
-    assert.ok(down >= (STEPPING[k] || 4), k + ' key ' + i + ': ' + down + ' feet down');
+    if (k !== 'walk') assert.ok(down >= (STEPPING[k] || 4), k + ' key ' + i + ': ' + down + ' feet down');
   });
 });
 
