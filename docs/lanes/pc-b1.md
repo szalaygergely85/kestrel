@@ -962,3 +962,7 @@ OB-155s (check only, no change): voxelPool picks the nearest-cap (16 DDA / 48 me
 - normState (engine/test + restart.test.js inline) is now identity: exact comparisons restored. contentWins.test green.
 - Passing: serialize*, migrateState, saveState, restart, swim*, world, scale, tower-prop-colliders, meshPlace, doorToggle; check-deps OK. lookBake.test.js shows FAIL in run-tests.mjs but exit 0 standalone and untouched (not mine).
 - Limitation: a runtime-changed scale cannot be told from authored; saved scale wins when content scale is 1/unset.
+### SIM-RULE15-01 + LIFE-DET-01 (kestrel-1, 2026-10-14)
+- SIM-RULE15-01: regionalBeasts.js hypot -> squared compares (same results); member offset cos/sin -> 32 literal unit-vector table DIRS (same 2 rng draws, placements differ slightly, tests still pass, no pinned values changed). spawnDirector viewCos (create-time) -> cosPoly Taylor (+,* only). check-deps: no rule-15 warnings for either file (engine/nav/perceive.js:25 still warns, not in scope).
+- LIFE-DET-01: beastSim.test.js: per-step hash equal across two runs for fauna:null (no hunt) and stub-fauna hunt -> STATE_EAT (eat step equal). Suites beastSim/spawnDirector/regionalBeasts PASS.
+- Note: spawnDirector.test alloc/step check (<8 B) is flaky under --expose-gc (14-15 B on baseline too, passes ~half the runs); not from this change.

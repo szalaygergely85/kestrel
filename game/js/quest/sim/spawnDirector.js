@@ -47,9 +47,12 @@ export function buildGroups(members, seed, walkable) {
  * opts: { groups, dayLenSec, viewHalfRad (hfov/2), los(px,py,hx,hy)->bool, onRespawn(groupIndex, group) }
  * Per group: alive count, diedAt (game sec), base timer secs. Respawn due when t >= diedAt + base * difficulty.respawn.
  */
+/** Cosine by Taylor series (+,* only; trig is banned in sim code by rule 15). Accurate to ~1e-6 for |x| <= 1.5. */
+function cosPoly(x) { const x2 = x * x; return 1 - x2 / 2 + x2 * x2 / 24 - x2 * x2 * x2 / 720 + x2 * x2 * x2 * x2 / 40320 - x2 * x2 * x2 * x2 * x2 / 3628800; }
+
 export function createSpawnDirector(opts) {
   const groups = opts.groups, N = groups.length, dayLen = opts.dayLenSec || DEFAULT_DAY_SEC;
-  const viewCos = Math.cos((opts.viewHalfRad || 0.5236) + VIEW_MARGIN_RAD); // create-time only
+  const viewCos = cosPoly((opts.viewHalfRad || 0.5236) + VIEW_MARGIN_RAD); // create-time only
   const D = {
     groups, t: 0, tick: 0, mult: 1, diffName: 'normal',
     alive: new Int16Array(N), rule: new Uint8Array(N), base: new Float64Array(N), diedAt: new Float64Array(N), dead: new Uint8Array(N),
