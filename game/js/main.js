@@ -87,7 +87,7 @@ import { stepBeacon } from './quest/beacon.js';
 import { stepLantern } from './quest/lantern.js'; // OWN-REQ-006: hook-light off, same fixed-step slot as stepBeacon
 import { removeSwordIfTaken } from './quest/swordTake.js'; // US-078c
 import { applyDoorState } from './quest/doorToggle.js'; // DOOR-TOGGLE-01
-import { noteRead, resetNoteRead, stepNoteRead, isNoteOpen, getOpenNoteId, isNoteEscGrace, pushNoteDim, drawNotePanel } from './quest/noteRead.js'; // READ-01
+import { noteRead, resetNoteRead, stepNoteRead, isNoteOpen, getOpenNoteId, isNoteEscGrace, pushNoteDim, drawNotePanel, setNoteOfferProvider } from './quest/noteRead.js'; // READ-01
 import { createNoteOffer } from './quest/objectOffer.js'; // QFIX-S5-CLOSE: keep-light note close -> Accept/Exit offer
 import { wakeFrame, drawEyelid, applyWakeOnLoad } from './quest/wake.js';
 import { initMapCard, stepMapCard, isMapOpen, getMapPanel, getMapChart, drawMapCard } from './quest/mapCard.js';
@@ -1313,6 +1313,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
   return r;
 };
 const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.book : null), inspect: inspectObject }); // QFIX-S5-CLOSE: tower.blade is an objectGiver; the page opens the offer when it closes
+setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel itself offers [E] Accept / [Q] Close (no separate offer dialogue)
   // QL-WIRE: Ch1-2 errands: object givers (post / notePost / relays), talk.<site>, target1..3.hit (sword + arrow = combat:hit), escort flag
   const errands = createErrands({ getBook: () => (saveRelay ? saveRelay.quest.book : null), questFlag: (k, v) => saveRelay.quest.questFlag(k, v), inspect: inspectObject, note: (t, l) => notice.push(t, l), texts: inspectTexts });
   setInspectSink((id) => errands.inspected(id));
@@ -2311,7 +2312,8 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
       // keeps the opening E press from also closing it.
       stepNoteRead(dt, input, !!(look && look.locked), interactEye); // BUG-NOTE-ESC-01: Esc under pointer lock = lock lost = close
       if (saveRelay && engine.world && engine.world.state['tower.sword.taken'] === true) saveRelay.quest.book.actKey('q.tower.blade.accept'); // PO-CH1-01: taking the sword is the safety net when the offer was skipped (no-op unless available)
-      if (saveRelay && engine.world) noteOffer.step(getOpenNoteId()); // QFIX-S5-CLOSE: reading the wake-spot page = Accept/Exit offer for 'A Blade in the Ashes' (objectGiver, D-087), opened when the note closes
+      // OB-173: noteOffer.step (offer dialogue on note close) retired - the note panel accepts directly
+      // QFIX-S5-CLOSE: reading the wake-spot page = Accept/Exit offer for 'A Blade in the Ashes' (objectGiver, D-087), opened when the note closes
       if (saveRelay && engine.world && engine.world.state['tower.sword.taken'] === true && saveRelay.quest.book.statusOf('tower.blade') === 2) { // PO-CH1-09: sword in hand and Burl (outside) within 10 m = the player left the tower (old saves / door missed): the blade is ready to hand in
         const bh = engine.world.get('bear'), bt3 = bh && bh.data.transform, p3 = playerHandle.data.transform;
         if (bt3 && (bt3.x - p3.x) ** 2 + (bt3.y - p3.y) ** 2 <= 100) saveRelay.quest.feed({ type: 'area:entered', id: 'towerDoor' });
