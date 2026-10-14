@@ -1165,3 +1165,6 @@ NEEDS B1-main (main.js line ~920 `riggedModelDef(collapseRig(...))`): pass `{leg
 ### GATE-FIX-7 (kestrel-4, 2026-10-14)
 All four were stale tests, no code change: actionHints (storyHints now starts with logic hint hint.farm.ambush, ED-LOGIC-01d), boarPlacement (farmGob1-3 reserve goblins counted as boars; filter goblin species), swimWire (main.js now `under: createUnderState()`; gate/gear/fb.under behaviour intact), content-smoke (gi/manifest.json known standalone).
 Filtered run 25/25 PASS, check-deps OK.
+
+### REV-ANIM (kestrel-3, 2026-10-15) -> arch re-review
+ANIM-C-04: feedLegs alloc check now allocProbe (warm 8, 6 windows); the "real" 55-60 B/frame was tier-up lag (steady 256 B/1500 frames both variants); feed.js yaw now via driver.io[3]. BLEND-01a: voxelPose sample args via typed `_sa` (bit-identical). 01b: probe n 200k->50k. 01a/01c did NOT reproduce on Node 22.14 (0.17 / 0.03 B), so the PC-A Node 24 failures are unverified; swingPos/landing/groundZ double args in legDriver.js remain the suspects for 01c (not changed). totMs-at-pack advisory not done.

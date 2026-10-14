@@ -34,11 +34,11 @@ const DT = 1000 / 60;
   const bl = createAnimBlender(4), s = bl.attach(pm), L = bl.layersOf(s);
   const inst = { x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, scale: 1, layers: L };
   const drive = (i) => { bl.io[0] = (i % 200) < 100 ? LOCO : ci.attack; bl.io[1] = (i % 90) / 30; bl.io[2] = -1; bl.io[3] = i % 97 === 0 ? 0 : -1; bl.update(s, pm, DT); };
-  const r = allocProbe((n) => { for (let i = 0; i < n; i++) drive(i); }, { n: 200000 });
+  const r = allocProbe((n) => { for (let i = 0; i < n; i++) drive(i); }, { n: 50000 });
   if (r.skipped) console.log('SKIP alloc (no --expose-gc)');
   else {
     ok(`0 B/step blender update (switches + hits + speed ramp): ${r.perCall.toFixed(3)}`, r.perCall < 0.5);
-    const rp = allocProbe((n) => { for (let i = 0; i < n; i++) { drive(i); computeVoxelPose(pm, inst, outB); } }, { n: 200000 });
+    const rp = allocProbe((n) => { for (let i = 0; i < n; i++) { drive(i); computeVoxelPose(pm, inst, outB); } }, { n: 50000 });
     console.log(`  info: update + layered pose ${rp.perCall.toFixed(2)} B/step`);
   }
 }

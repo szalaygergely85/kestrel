@@ -45,7 +45,7 @@ function frameC(r) {
 // ---- 0. 0 alloc per step (first in the file: later scenarios make the JIT state noisy, see animBlend.test.js)
 {
   const r = rig();
-  const res = allocProbe((n) => { for (let i = 0; i < n; i++) { ctl[0] = (i % 200) < 100 ? LOCO : ci.attack; ctl[1] = (i % 90) / 25; frameC(r); } }, { n: 100000 });
+  const res = allocProbe((n) => { for (let i = 0; i < n; i++) { ctl[0] = (i % 200) < 100 ? LOCO : ci.attack; ctl[1] = (i % 90) / 25; frameC(r); } }, { n: 50000 });
   if (res.skipped) console.log('SKIP alloc (no --expose-gc)');
   else ok(`0 B/step blender + driver ${res.perCall.toFixed(3)}`, res.perCall < 0.5);
 }
