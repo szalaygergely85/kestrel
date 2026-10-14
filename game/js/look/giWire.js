@@ -36,3 +36,14 @@ export function createGIWire(cfg, world, lights) {
     },
   };
 }
+
+/**
+ * GI-PROBE-07: loader options for World.loadGI. Fetches content/gi/manifest.json {zone: inputHash} once; missing/bad = {} (no hash check, quiet).
+ * A zone whose baked file does not match its manifest hash is ignored by the loader (one plain console note, field stays null).
+ */
+export async function giLoadOptions(fetchText, url = 'content/gi/manifest.json') {
+  let m = null;
+  try { const t = await fetchText(url); m = t ? JSON.parse(t) : null; } catch { m = null; }
+  if (!m || typeof m !== 'object') return {};
+  return { expectHash: (id) => (typeof m[id] === 'string' ? m[id] : null) };
+}

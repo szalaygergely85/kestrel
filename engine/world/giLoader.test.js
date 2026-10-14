@@ -61,6 +61,14 @@ const log = []; const warn = (m) => log.push(m);
   ok('stats', L.stats().loaded === 1 && L.stats().missing === 2 && L.stats().stale === 1);
 }
 
+// --- GI-PROBE-07: per-zone expectHash function (game manifest): stale -> null, match -> field, null for a zone = no check
+{
+  const files = { 'content/gi/a.gi.bin': good, 'content/gi/b.gi.bin': stale, 'content/gi/c.gi.bin': stale }, lg = [];
+  const L = new GILoader({ expectHash: (id) => (id === 'a' || id === 'b' ? HASH : null), warn: (m) => lg.push(m), fetchBytes: async (u) => files[u] || null });
+  await L.loadAll(['a', 'b', 'c']);
+  ok('manifest fn: match attached, stale null (one note), unlisted zone unchecked', L.get('a') && L.get('b') === null && L.get('c') && lg.length === 1);
+}
+
 // --- world: swaps, bytes, giField
 const files = { 'content/gi/east.gi.bin': good, 'content/gi/west.gi.bin': fixture(HASH, 10, 4) };
 const calls = [];

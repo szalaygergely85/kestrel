@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { resolveGI, createGIWire, GI_PRESET } from './giWire.js';
+import { resolveGI, createGIWire, GI_PRESET, giLoadOptions } from './giWire.js';
 const r = (s, q) => resolveGI(new URLSearchParams(s), q);
 assert.equal(r('', 'low'), null); for (const q of ['medium', 'high', 'ultra', 'extreme']) assert.ok(r('', q), q);
 assert.equal(r('', undefined), null); assert.ok(r('gi=1', 'low')); assert.equal(r('gi=0', 'ultra'), null); assert.equal(r('gpucompare=1', 'high'), null);
@@ -14,3 +14,11 @@ for (let i = 0; i < 1000; i++) w.sync(); assert.equal(w.st.version, v0 + 1, 'per
 w.clock(11, false); assert.equal(w.st.version, v0 + 2);
 world.giField = null; w.sync(); assert.equal(lights.gi, null);
 console.log('giWire.test PASS');
+// GI-PROBE-07: manifest -> expectHash (loader behaviour per hash is covered in engine/world/giLoader.test.js)
+{
+  const H = 'ab'.repeat(32), o1 = await giLoadOptions(async () => JSON.stringify({ z1: H }));
+  assert.equal(o1.expectHash('z1'), H); assert.equal(o1.expectHash('zz'), null, 'zone not in manifest: no check');
+  for (const bad of [null, 'junk']) assert.deepEqual(await giLoadOptions(async () => bad), {});
+  assert.deepEqual(await giLoadOptions(async () => { throw new Error('x'); }), {});
+}
+console.log('giWire manifest PASS');
