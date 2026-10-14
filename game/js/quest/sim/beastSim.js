@@ -375,6 +375,12 @@ export function createBeastSim(world, opts) {
   sim.load = function load(obj) { loadSim(sim, obj); };
   /** US-080a1: every slot back to home, state wander, timers/paths cleared, steer positions reset. */
   sim.resetAll = function resetAll() { resetAllSim(sim); };
+  /** BEAST-06a-WIRE: one slot back to home, alive, wander (spawn director respawn). A parked/GONE slot (down) goes through setDown(false). */
+  sim.resetSlot = function resetSlot(i) {
+    if (i < 0 || i >= sim.count) return;
+    if (sim.down[i]) { sim.setDown(i, false); return; }
+    sim.dormant[i] = 0; resetSlotSim(sim, i); resyncLeash(sim);
+  };
   /** OB-077: true if any live beast in an aggro state (notice, chase, windup, charge, recover, stagger, flinch) is within `r` m (2D). */
   sim.aggroNear = function aggroNear(x, y, r) {
     const r2 = r * r;

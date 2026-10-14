@@ -2,7 +2,7 @@
 // Run: node --expose-gc game/js/quest/sim/spawnDirector.test.js
 import { readFileSync } from 'node:fs';
 import { allocProbe, skipNote } from '../../../../tools/allocProbe.mjs';
-import { buildGroups, createSpawnDirector, RESPAWN_SEC, CAMP_DAYS } from './spawnDirector.js';
+import { buildGroups, regionalMembers, createSpawnDirector, RESPAWN_SEC, CAMP_DAYS } from './spawnDirector.js';
 import { DIFFICULTY, resolveDifficulty, applyDifficulty } from './difficulty.js';
 import { createTactics } from './tactics.js';
 let fails = 0; const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } };
@@ -57,6 +57,33 @@ const d2 = createSpawnDirector({ groups: G1 }); d2.setDifficulty(hard);
 ok(d2.load(sv) && d2.dead[wolf] === 1 && d2.alive[wolf] === 0 && Math.abs(d2.dueAt(wolf) - dir.dueAt(wolf)) < 1e-9, 'round trip keeps timer; unknown gid ignored');
 const sb = {}; db.save(sb); const d3 = createSpawnDirector({ groups: bg, dayLenSec: 100 }); d3.load(JSON.parse(JSON.stringify(sb)));
 ok(d3.dead[0] === 1, 'boss stays dead after load');
+
+// BEAST-06a-WIRE: generateRegionalBeasts-shaped members ({id, species, region, x, y, group}) -> groups -> respawn resets every member slot
+{
+  const list = [];
+  const addR = (species, region, group, n, x, y) => { for (let k = 0; k < n; k++) list.push({ id: `${species}.${region}.${list.length + 1}`, species, region, x: x + k * 3, y, group }); };
+  addR('boar', 'downs', 0, 3, 500, 500); addR('boar', 'downs', 1, 3, 900, 500); addR('wolf', 'northwood', 0, 4, 1500, 800); addR('bear', 'alpine', 0, 1, 300, 300);
+  const slotOf = (id) => { const i = list.findIndex((b) => b.id === id); return i; };
+  const W = buildGroups(regionalMembers(list, slotOf), 12, null, []), W2 = buildGroups(regionalMembers(list, slotOf), 12, null, []);
+  ok(W.map((g) => g.gid).join() === 'boar.downs.1,boar.downs.2,grey_wolf.northwood.1,black_bear.alpine.1', 'wire gids ' + W.map((g) => g.gid));
+  ok(JSON.stringify(W) === JSON.stringify(W2) && W[2].slots.join() === '6,7,8,9' && W[2].cls === 'pack', 'wire: static slots + class ' + W[2].slots + W[2].cls);
+  ok(regionalMembers(list, (id) => (id === 'boar.downs.1' ? -1 : slotOf(id))).length === list.length - 1, 'untracked members dropped');
+  const resets = [];
+  const mk = () => createSpawnDirector({ groups: W, los: () => false, onRespawn: (gi, g) => { for (const sl of g.slots) resets.push(sl); } });
+  const d = mk(); const home = W[2].home, px = home[0] - 300, py = home[1];
+  for (let k = 0; k < 4; k++) d.memberDied(2);
+  const hashRun = () => { const dd = mk(); resets.length = 0; for (let k = 0; k < 4; k++) dd.memberDied(2); for (let s = 0; s < 60 * 600; s++) dd.step(1 / 60, px, py, -1, 0); return resets.join() + ':' + dd.respawns; };
+  const h1 = hashRun(), h2 = hashRun();
+  ok(h1 === '6,7,8,9:1' && h1 === h2, 'wire: pack respawn resets its 4 slots after region time, player away, replay equal: ' + h1);
+  resets.length = 0; const dv = mk(); for (let k = 0; k < 4; k++) dv.memberDied(2);
+  for (let s = 0; s < 60 * 600; s++) dv.step(1 / 60, px, py, 1, 0); // looking toward home, player 300 m away: cone blocks
+  ok(resets.length === 0 && dv.deferred > 0, 'wire: no respawn in view');
+  // save/load round trip across a fresh director (new session)
+  const dm = mk(); for (let k = 0; k < 4; k++) dm.memberDied(2); for (let s = 0; s < 60 * 100; s++) dm.step(1 / 60, px, py, -1, 0);
+  const sv = JSON.parse(JSON.stringify(dm.save({}))); const dl2 = mk(); dl2.load({ 'beast.v1': sv });
+  resets.length = 0; for (let s = 0; s < 60 * 500; s++) dl2.step(1 / 60, px, py, -1, 0);
+  ok(dl2.dead[2] === 0 && resets.join() === '6,7,8,9', 'wire: save/load keeps the pending timer, then respawns');
+}
 // applyDifficulty -> tactics
 const sim = { tactics: createTactics(8, 1) };
 ok(applyDifficulty(sim, 'hard', dir) && sim.tactics.tokM === 3 && applyDifficulty(sim, 'easy') && sim.tactics.tokM === 1, 'applyDifficulty sets tokM');
