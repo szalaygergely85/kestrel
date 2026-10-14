@@ -1010,3 +1010,5 @@ NOT done: player rig (charkit: bone clips idle/walk/swim only, no run/attack/hur
 
 ### ED-QUEST-DEPS-2 (kestrel-3, 2026-10-14)
 lintQuest no longer imports game/: local resolveGiver mirror (ctx.resolveGiver overrides) + tools/quest-editor-resolvegiver-parity.test.mjs (all pack quests). check-deps OK; lintQuest/lintAgree/sidequest/wire/content-lint/markers+resolvegiver parity PASS.
+### ENV-02d-LIVE (kestrel-base, 2026-10-14)
+Cause: main.js passed `overworld_far.recipe` (inner; no `.terrain`) to groundLookFromParams -> null. Now passes the level def (the unit test used the level, so it missed it); test added (groundLookConfig.test.js). gpucompare: 3 rows `world_m1: lookMeadow/lookForestEdge/lookShore (ENV-02d ground look)` from a `groundLook` world (new block before the projection pin; not yet run in gpucompare). verify-look-flicker 9600 webgpu: terrain {near,gl:true}; flips 3, flicker 0.004 % (max 0.5 %) PASS.

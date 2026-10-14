@@ -93,3 +93,12 @@ console.log('groundLookConfig tests: ' + n + ' ok');
   assert.equal(JSON.stringify(groundLookFromParams(P(''), BL, recipe)), JSON.stringify(on));
   console.log('groundLookFromParams ok');
 }
+
+// ENV-02d-LIVE: main.js must pass the LEVEL def (it holds .terrain), not its inner .recipe (no .terrain -> null in the real boot).
+{
+  const { groundLookFromParams } = await import('./groundLookConfig.js'), P = (q) => new URLSearchParams(q), lvl = globalThis.ASSETS.levels.overworld_far;
+  assert.equal(groundLookFromParams(P(''), globalThis.BIOME_LOOK, lvl.recipe), null, 'inner recipe has no terrain table');
+  const live = groundLookFromParams(P('dev=1&title=0'), globalThis.BIOME_LOOK, lvl);
+  assert.ok(live && live.looks.length === 6, 'main.js-equivalent opts give a look config');
+  console.log('groundLookFromParams live-opts ok');
+}
