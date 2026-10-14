@@ -187,7 +187,7 @@ async function openQuestsTab() {
   try {
     const qp = await import('./questPanel.js'), fl = await import('./quest/flow.js');
     const A = window.ASSETS || {}, itemDefs = (A.items && A.items.defs) || {};
-    questPanelHandle = await qp.mountQuestPanel(root, { names: fl.makeNames({ itemDefs }), itemDefs, loadFiles: () => qp.fetchQuestFiles(), loadDialogueFiles: () => qp.fetchDialogueFiles(), write: qp.downloadWrite, getWorld: () => assets.world(doc.worldId), floorAt: (x, y) => world.floorAt(x, y), onMarkers: () => frame.markDirty(),
+    questPanelHandle = await qp.mountQuestPanel(root, { names: fl.makeNames({ itemDefs }), itemDefs, loadFiles: () => qp.fetchQuestFiles(), loadDialogueFiles: () => qp.fetchDialogueFiles(), write: qp.downloadWrite, getWorld: () => assets.world(doc.worldId), floorAt: (x, y) => world.floorAt(x, y), getMesh: (k) => assets.mesh(k), onMarkers: () => frame.markDirty(),
       worldId: doc.worldId, // ED-QUEST-WIRE: applyPick needs model + worldId (areas.json world field)
       saveWorld: () => { const f = doc.files.get(fileKey('world', doc.worldId)); if (f) { f.dirty = true; saveFile(f).then(() => refreshIoStatus(), (e) => flash('world save failed: ' + (e && e.message))); } }, // 03b: area-only zones land in the world json
       getCamGround: () => ({ x: cam.x, y: cam.y, z: world.floorAt(cam.x, cam.y) }), // 07: Play from here
