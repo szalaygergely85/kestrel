@@ -6,11 +6,20 @@ import { hashFast24 } from './terrainShade.js';
 
 export const LOOK_CELL_M = 0.25;          // fixed world lattice of the glyph / colour / accent hashes
 export const LOOK_MAX = 16;               // ids 0..15 (nibbles in the bake); row 0 stays zero
-export const LOOK_ROWS = 11;              // vec4 rows per look (38.63 said 10; accents need 2 more scalars rows, see layout)
+export const LOOK_ROWS = 11;              // vec4 rows per look (38.63 said 10; 11 accepted by the architect: 16 x 11 x 16 B = 2.8 KB uniform, accents need the extra rows)
 export const LOOK_W = [0.4, 0.25, 0.35];  // octave weights: fine (noiseScale), fine x2.3, macro (macroScale)
 export const LOOK_FINE2 = 2.3;
 export const LOOK_SALT = 60;              // octave o uses salt 60 + o; glyph hashes h1..h4 = 70..73; accents 40 + i; gust 90
 export const LOOK_GUST_M = 5, LOOK_GUST_SPEED = 0.35;
+export const LOOK_WIND_FULL_MPS = 4;      // wind01 = base wind speed / this, clamped 0..1 (ENV-02d item 3)
+const FR = Math.fround;
+// f32 constants shared with the WGSL twin (printed via f32lit): the lattice / gust coordinates are single f32 multiplies, bit-exact on both sides
+const INV_FINE2 = FR(1 / LOOK_FINE2), INV_GUST = FR(1 / LOOK_GUST_M), GUST_SPEED32 = FR(LOOK_GUST_SPEED);
+/** wind01 of a world wind params record ({speed}): clamp(speed / 4 m/s, 0, 1), f32-rounded. ONE helper for the JS twin and the passShade upload. */
+export function lookWind01(wp) {
+  const v = wp && wp.speed > 0 ? wp.speed / LOOK_WIND_FULL_MPS : 0;
+  return FR(v > 1 ? 1 : v);
+}
 /* Row layout (look k starts at k * LOOK_ROWS * 4):
  *  r0..r3 ramp 0..3 rgb (linear 0..1), .w = noiseScale, macroScale, contrast, shimmer amp
  *  r4..r5 bg 0..1 rgb, r4.w = sheen, r5.w = glyph count + 8 * (mode: 0 sheen, 1 lean)
@@ -55,18 +64,18 @@ export function makeGroundLook(table) { return { table, wind01: 0, q: new Float6
 export function shadeLookCell(GL, lo, hi, q) {
   const T = GL.table, R = LOOK_ROWS * 4;
   const fu = q[0], fv = q[1], fp = q[2];
-  let w = q[5];
+  let w = FR(q[5]);
   if (lo === 0 || hi === 0) { if (lo === 0) lo = hi; else hi = lo; w = 0; } else if (lo === hi) w = 0;
-  const a = lo * R, b = hi * R, w0 = 1 - w;
-  const ns = T[a + 3] * w0 + T[b + 3] * w, ms = T[a + 7] * w0 + T[b + 7] * w, ct = T[a + 11] * w0 + T[b + 11] * w;
+  const a = lo * R, b = hi * R, w0 = FR(1 - w);
+  const ns = FR(T[a + 3] * w0 + T[b + 3] * w), ms = FR(T[a + 7] * w0 + T[b + 7] * w), ct = T[a + 11] * w0 + T[b + 11] * w;
   // tone: 3 value-noise octaves, each faded to its mean by 1 - ss(0.15 s, 0.5 s, fp) (s = octave wavelength)
   let nsum = 0;
   for (let o = 0; o < 3; o++) {
-    const cell = o === 0 ? ns : o === 1 ? ns * (1 / LOOK_FINE2) : ms;
+    const cell = o === 0 ? ns : o === 1 ? FR(ns * INV_FINE2) : ms;
     let fd = (fp - 0.15 * cell) / (0.35 * cell); fd = fd < 0 ? 0 : fd > 1 ? 1 : fd;
     const wgt = LOOK_W[o] * (1 - fd * fd * (3 - 2 * fd));
     if (wgt <= 0) continue;
-    const lx = fu / cell, ly = fv / cell, ix = Math.floor(lx), iy = Math.floor(ly), salt = LOOK_SALT + o;
+    const inv = FR(1 / cell), lx = FR(fu * inv), ly = FR(fv * inv), ix = Math.floor(lx), iy = Math.floor(ly), salt = LOOK_SALT + o;
     let wx = lx - ix, wy = ly - iy; wx = wx * wx * (3 - 2 * wx); wy = wy * wy * (3 - 2 * wy);
     const ca = hashFast24(ix, iy, salt) * (1 / 16777216), cb = hashFast24(ix + 1, iy, salt) * (1 / 16777216), cc = hashFast24(ix, iy + 1, salt) * (1 / 16777216), cd = hashFast24(ix + 1, iy + 1, salt) * (1 / 16777216);
     nsum += wgt * ((ca + (cb - ca) * wx + (cc - ca) * wy + (ca - cb - cc + cd) * wx * wy) * 2 - 1);
@@ -94,7 +103,7 @@ export function shadeLookCell(GL, lo, hi, q) {
   let kk = 0;
   const wind = GL.wind01;
   if (wind > 0 && ampM > 0) {
-    const gxx = fu * (1 / LOOK_GUST_M) - q[4] * LOOK_GUST_SPEED * (0.5 + wind), gyy = fv * (1 / LOOK_GUST_M);
+    const gxx = FR(FR(fu * INV_GUST) - FR(FR(FR(q[4]) * GUST_SPEED32) * FR(0.5 + wind))), gyy = FR(fv * INV_GUST);
     const ix = Math.floor(gxx), iy = Math.floor(gyy);
     let wx = gxx - ix, wy = gyy - iy; wx = wx * wx * (3 - 2 * wx); wy = wy * wy * (3 - 2 * wy);
     const ca = hashFast24(ix, iy, 90) * (1 / 16777216), cb = hashFast24(ix + 1, iy, 90) * (1 / 16777216), cc = hashFast24(ix, iy + 1, 90) * (1 / 16777216), cd = hashFast24(ix + 1, iy + 1, 90) * (1 / 16777216);
@@ -148,7 +157,7 @@ export const LOOK_TABLE_WORDS = LOOK_MAX * LOOK_ROWS * 4;
 export const LOOK_BLOCK_FIELDS = Object.freeze([{ name: 'lookT', type: 'vec4', count: LOOK_MAX * LOOK_ROWS }, { name: 'lookP', type: 'vec4' }]);
 /** GA.w of a terrain fragment (look pipelines only): lo | hi << 4 | round(w * 255) << 8; look off writes the old constant (aoD = 1e30). */
 export const LOOK_GA_HI_SHIFT = 4, LOOK_GA_W_SHIFT = 8;
-const F = (x) => x.toFixed(10), LKR = LOOK_ROWS * 4;
+const F = (x) => x.toFixed(10), f32lit = (x) => { const t = String(FR(x)); return /[.e]/.test(t) ? t : t + '.0'; }, LKR = LOOK_ROWS * 4;
 export const GROUND_LOOK_WGSL = `
 struct LookOut { tone: f32, fr: f32, fg: f32, fb: f32, br: f32, bg: f32, bb: f32, code: i32, anim: f32, tr: f32, tg: f32, tb: f32, g0: i32, g1: i32, g2: i32 };
 fn lkT(i: i32) -> f32 {
@@ -159,7 +168,7 @@ fn lkOct(fu: f32, fv: f32, fp: f32, cell: f32, salt: i32, wgt0: f32) -> f32 {
   var fd = clamp((fp - 0.15 * cell) / (0.35 * cell), 0.0, 1.0);
   let wgt = wgt0 * (1.0 - fd * fd * (3.0 - 2.0 * fd));
   if (wgt <= 0.0) { return 0.0; }
-  let lx = fu / cell; let ly = fv / cell; let x0 = floor(lx); let y0 = floor(ly);
+  let inv = f32(1.0 / cell); let lx = f32(fu * inv); let ly = f32(fv * inv); let x0 = floor(lx); let y0 = floor(ly);
   let ix = i32(x0); let iy = i32(y0);
   var wx = lx - x0; var wy = ly - y0;
   wx = wx * wx * (3.0 - 2.0 * wx); wy = wy * wy * (3.0 - 2.0 * wy);
@@ -178,10 +187,10 @@ fn lkAccentHit(i: i32, s: i32, tone: f32, t: f32, dith: f32, cx: i32, cy: i32) -
 fn lkShade(fu: f32, fv: f32, fp: f32, t: f32, timeSec: f32, loIn: i32, hiIn: i32, wIn: f32) -> LookOut {
   var lo = loIn; var hi = hiIn; var w = wIn;
   if (lo == 0 || hi == 0) { if (lo == 0) { lo = hi; } else { hi = lo; } w = 0.0; } else if (lo == hi) { w = 0.0; }
-  let a = lo * ${LKR}; let b = hi * ${LKR}; let w0 = 1.0 - w;
-  let ns = lkT(a + 3) * w0 + lkT(b + 3) * w; let ms = lkT(a + 7) * w0 + lkT(b + 7) * w; let ct = lkT(a + 11) * w0 + lkT(b + 11) * w;
+  let a = lo * ${LKR}; let b = hi * ${LKR}; let w0 = f32(1.0 - w);
+  let ns = f32(lkT(a + 3) * w0 + lkT(b + 3) * w); let ms = f32(lkT(a + 7) * w0 + lkT(b + 7) * w); let ct = lkT(a + 11) * w0 + lkT(b + 11) * w;
   var nsum = lkOct(fu, fv, fp, ns, ${LOOK_SALT}, ${F(LOOK_W[0])});
-  nsum += lkOct(fu, fv, fp, ns * ${F(1 / LOOK_FINE2)}, ${LOOK_SALT + 1}, ${F(LOOK_W[1])});
+  nsum += lkOct(fu, fv, fp, f32(ns * ${f32lit(INV_FINE2)}), ${LOOK_SALT + 1}, ${F(LOOK_W[1])});
   nsum += lkOct(fu, fv, fp, ms, ${LOOK_SALT + 2}, ${F(LOOK_W[2])});
   let tone = clamp(0.5 + ct * nsum, 0.0, 1.0);
   let cx = i32(floor(fu * ${F(1 / LOOK_CELL_M)})); let cy = i32(floor(fv * ${F(1 / LOOK_CELL_M)}));
@@ -203,7 +212,7 @@ fn lkShade(fu: f32, fv: f32, fp: f32, t: f32, timeSec: f32, loIn: i32, hiIn: i32
   var kk = 0.0; var anim = 0.0;
   let wind = su.lookP.x;
   if (wind > 0.0 && ampM > 0.0) {
-    let gax = fu * ${F(1 / LOOK_GUST_M)} - timeSec * ${F(LOOK_GUST_SPEED)} * (0.5 + wind); let gay = fv * ${F(1 / LOOK_GUST_M)};
+    let gax = f32(f32(fu * ${f32lit(INV_GUST)}) - f32(f32(f32(timeSec) * ${f32lit(GUST_SPEED32)}) * f32(0.5 + wind))); let gay = f32(fv * ${f32lit(INV_GUST)});
     let gx0 = floor(gax); let gy0 = floor(gay); let gix = i32(gx0); let giy = i32(gy0);
     var wx = gax - gx0; var wy = gay - gy0;
     wx = wx * wx * (3.0 - 2.0 * wx); wy = wy * wy * (3.0 - 2.0 * wy);

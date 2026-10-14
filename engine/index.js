@@ -135,6 +135,7 @@ export {
 
 // ---- ART-01a look + roof map (docs/architecture.md 37.18 items 2/3) ----------
 export { resolveLook, validateLook, blendLook } from './render/look.js';
+export { ATMOS_FOG_FIT, createAtmosState, mixAtmos, applyAtmosToPalette, refreshFogCtx, applySkyHaze, hazeSky, gradeRGB, applyAtmosGrade } from './render/atmos.js'; // ENV-03b
 export { buildRoofMap, outdoorAt, MAX_ROOF_BOXES } from './render/roofMap.js';
 
 // ---- US-029 GPU cell pipeline (shading + edge pass on the GPU) ------------

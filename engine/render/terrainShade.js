@@ -10,6 +10,7 @@
 // `glsl/common.js`'s `HASH_FAST` (same avalanche constants), so a cell's
 // colour/glyph pick never drifts between the two languages.
 
+import { refreshFogCtx } from './atmos.js'; // ENV-03b
 import { samplePowLUT } from './fastShade.js';
 import { KIND_TERRAIN, KIND_GRASS } from './GBuffer.js';
 import { packTerrainTextures } from './gpu/TerrainTextures.js';
@@ -21,7 +22,7 @@ import { LEVEL_NONE, LEVEL_ANIM } from './temporalStable.js';
 import { STEP } from '../core/loop.js';
 import { skylineFogF } from './skyline.js';
 import { resolveLook } from './look.js';
-import { shadeLookCell } from './groundLook.js'; // ENV-02b (38.63); circular with this file but only called at runtime
+import { shadeLookCell, makeGroundLook, packLookTable, lookWind01, LOOK_TABLE_WORDS, LOOK_ROWS } from './groundLook.js'; // ENV-02b (38.63); circular with this file but only called at runtime
 
 // US-026a (23.4): exported so terrainCaster.js's near-sampling dither uses
 // the SAME avalanche mix (never a second, drifting copy) - the dither must
@@ -470,9 +471,9 @@ export function grassTableFor(cfg) {
  * Colour = ramp(h01 + tint) * terrain gain, terrain fog; glyph by h01 / lean (leanL/leanR win when |lean| > 0.35).
  * Writes `out` (glyph idx, fg, bg, level) like shadeTerrain.
  */
-// ENV-02b: lookLo / lookHi / lookW + wu / wv (world m of the blade root) route the root colour through the ground look function (needs ctx.groundLook).
-// Bit budget note: the packed gx word has only bits 27..31 (+ the 2 tier bits, unused for look cells) free = 7 bits, fewer than lo + hi + w need: ASK ARCHITECT for the GPU packing (ENV-02d).
-export function shadeGrass(t, variant, h01, lean, tint, b, tab, ctx, out, gx = 0, sunI = 0, lookLo = 0, lookHi = 0, lookW = 0, wu = 0, wv = 0) {
+// ENV-02e: gx bits 28..31 = the blade's look id (picked per blade by grassLookId); the root colour = that look's ramp at tone 0.5 (stops 1 -> 2 at 0.5,
+// no noise/shimmer: a per-blade dither makes the variety). Look id 0 / no ctx.groundLook = the old groundAlbedo path, byte-identical. Twin: shade.wgsl.js shadeGrass.
+export function shadeGrass(t, variant, h01, lean, tint, b, tab, ctx, out, gx = 0, sunI = 0) {
   const wet = ctx.shading.wetness || 0;
   let bE = b * (1 - WET_DARK * wet);
   const flo = ctx.shading.floorLum; if (flo > 0 && bE < flo) bE = flo;
@@ -485,12 +486,10 @@ export function shadeGrass(t, variant, h01, lean, tint, b, tab, ctx, out, gx = 0
   let cr = R[o0] + (R[o1] - R[o0]) * fx, cg = R[o0 + 1] + (R[o1 + 1] - R[o0 + 1]) * fx, cb = R[o0 + 2] + (R[o1 + 2] - R[o0 + 2]) * fx;
   // MASK-c: base = the calm ground under the root (groundAlbedo), tip = the variant ramp; w = h01 / groundTint (twin: shade.wgsl.js shadeGrass)
   if ((gx & GRASS_GX_HAS) !== 0) {
-    const GL = ctx.groundLook;
-    if (GL && (lookLo | lookHi) !== 0) {
-      const hcl = ctx.hashCell || 0, gk = hcl < 0 ? -hcl : FP_DEFAULT_K, ga = t / FP_ANISO_T, GLq = GL.q;
-      GLq[0] = Math.fround(wu); GLq[1] = Math.fround(wv); GLq[2] = hcl > 0 ? hcl : gk * t * (ga < 1 ? 1 : ga > FP_ANISO_MAX ? FP_ANISO_MAX : ga); GLq[3] = t; GLq[4] = 0; GLq[5] = lookW;
-      shadeLookCell(GL, lookLo, lookHi, GLq);
-      _gnd[0] = GLq[7] * 255; _gnd[1] = GLq[8] * 255; _gnd[2] = GLq[9] * 255;
+    const GL = ctx.groundLook, lid = gx >>> GRASS_LOOK_SHIFT;
+    if (GL && lid !== 0) {
+      const T = GL.table, a = lid * LOOK_ROWS * 4;
+      _gnd[0] = (T[a + 4] + (T[a + 8] - T[a + 4]) * 0.5) * 255; _gnd[1] = (T[a + 5] + (T[a + 9] - T[a + 5]) * 0.5) * 255; _gnd[2] = (T[a + 6] + (T[a + 10] - T[a + 6]) * 0.5) * 255;
     } else groundAlbedo((gx >>> 16) & 255, ((gx >>> 24) & 3), ctx, _gnd);
     let w = h01 / tab.gtint[variant]; w = w < 0 ? 0 : w > 1 ? 1 : w;
     cr = _gnd[0] + (cr - _gnd[0]) * w; cg = _gnd[1] + (cg - _gnd[1]) * w; cb = _gnd[2] + (cb - _gnd[2]) * w;
@@ -660,11 +659,57 @@ function terrainShadingFor(matTable, ctx) {
   return ctx._mtShading;
 }
 
+// ENV-02d: the look bytes of the texel the GPU terrain raster samples (near band first, else the far grid; twin of terrainLookAt in terrainRaster.wgsl.js).
+// Result in lkLo / lkHi / lkW (module scratch, no alloc). Off-grid = look 0.
+let lkLo = 0, lkHi = 0, lkW = 0;
+// texel index exactly as the WGSL: floor((x - x0) / cell) with each op rounded to f32 (x is the f32 hit position; a double divide could pick the neighbour texel on an edge)
+export function lkIdx(x, x0, cell) { return Math.floor(Math.fround(Math.fround(Math.fround(x) - Math.fround(x0)) / Math.fround(cell))); }
+function lookBytesAt(terrain, x, y) {
+  lkLo = 0; lkHi = 0; lkW = 0;
+  const g = terrain.nearReady ? terrain.near : null;
+  if (g && g.look) {
+    const ix = lkIdx(x, g.x0, g.cell), iy = lkIdx(y, g.y0, g.cell);
+    if (ix >= 0 && iy >= 0 && ix < g.w && iy < g.h) { const o = 2 * (ix + iy * g.w), r = g.look[o]; lkLo = r & 15; lkHi = r >> 4; lkW = g.look[o + 1] * (1 / 255); return; }
+  }
+  const c = terrain.mapCell, fx = lkIdx(x, terrain.mapX0, c), fy = lkIdx(y, terrain.mapY0, c);
+  if (fx < 0 || fy < 0 || fx >= terrain.mapW || fy >= terrain.mapH) return;
+  const o = 2 * (fx + fy * terrain.mapW), r = terrain.farLook[o]; lkLo = r & 15; lkHi = r >> 4; lkW = terrain.farLook[o + 1] * (1 / 255);
+}
+
+/** ENV-02e: the terrain look word lo | hi << 4 | wByte << 8 at world (x, y) (0 = no look); same texel as the GPU terrain raster's GA.w. No alloc. */
+export function lookWordAt(terrain, x, y) { lookBytesAt(terrain, x, y); return lkLo | (lkHi << 4) | (Math.round(lkW * 255) << 8); }
+/** ENV-02e: the same activation condition as the GPU raster host's lookActive (bytes present). */
+export function groundLookActive(terrain) { return !!(terrain.groundLook && terrain.farLook && !(terrain.nearReady && !(terrain.near && terrain.near.look))); }
+export const GRASS_LOOK_SHIFT = 28, GRASS_LOOK_SALT = 73; // gx bits 28..31 = the 4-bit look id of the blade root (0 = none); salt 73 = the ground glyph's h4
+/**
+ * ENV-02e: per-blade look pick: dithered side of the cell's look pair, `w > hash(root cell, 73)` (hi wins) on the fixed 0.25 m world lattice, stable in time.
+ * A look-0 side borrows the other side (as shadeLookCell). Integer compare (wByte * 2^24 > h24 * 255) so the WGSL twin is exact. Returns the id 0..15.
+ */
+export function grassLookId(word, rx, ry) {
+  let lo = word & 15, hi = (word >> 4) & 15, wb = (word >> 8) & 255;
+  if ((lo | hi) === 0) return 0;
+  if (lo === 0) { lo = hi; wb = 0; } else if (hi === 0) { hi = lo; wb = 0; } else if (lo === hi) wb = 0;
+  return wb * 16777216 > hashFast24(Math.floor(rx * 4), Math.floor(ry * 4), GRASS_LOOK_SALT) * 255 ? hi : lo;
+}
+
+// ENV-02d: ctx.groundLook for this frame, or null (look off / bytes missing: same condition as the GPU raster host's lookActive). Table packed once per cfg.
+function groundLookFor(ctx, terrain, world) {
+  const bk = terrain.groundLook;
+  if (!groundLookActive(terrain)) { ctx.groundLook = null; return null; }
+  if (!ctx._lookGL || ctx._lookCfg !== bk.cfg) { const tbl = new Float32Array(LOOK_TABLE_WORDS); packLookTable(bk.cfg, tbl); ctx._lookGL = makeGroundLook(tbl); ctx._lookCfg = bk.cfg; }
+  ctx._lookGL.wind01 = lookWind01(world && world.wind && world.wind.params); // same helper as passShade._bindLook
+  return ctx.groundLook = ctx._lookGL;
+}
+
 function ensureShadeCtx(terrain, palette) {
-  if (terrain._shadeCtx && terrain._shadeCtxVersion === terrain.farVersion) return terrain._shadeCtx;
+  if (terrain._shadeCtx && terrain._shadeCtxVersion === terrain.farVersion) {
+    // ENV-03b: atmosphere fog follows the live `P.fog.far` record (cached scalars re-read on a liveFogVersion change)
+    if (terrain._fogSeen !== (palette.liveFogVersion | 0)) { refreshFogCtx(terrain._shadeCtx, palette, -1); terrain._fogSeen = palette.liveFogVersion | 0; }
+    return terrain._shadeCtx;
+  }
   const packed = packTerrainTextures(terrain, palette);
   terrain._shadeCtx = makeTerrainShadeCtx(terrain.recipe, packed, palette);
-  terrain._shadeCtxVersion = terrain.farVersion;
+  terrain._shadeCtxVersion = terrain.farVersion; terrain._fogSeen = palette.liveFogVersion | 0;
   return terrain._shadeCtx;
 }
 
@@ -705,6 +750,7 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
   // v2 MaterialTable is bound, else keep `palette.shading` + Math.pow.
   ctx.shading = terrainShadingFor(fb.matTable, ctx);
   ctx.skyline = skylineFor(terrain, palette);
+  const GLk = groundLookFor(ctx, terrain, world); // ENV-02d: null = look off, output byte-identical
   const sun = sunFromWorld(world, palette);
   const cells = fb.rt.cells || fb.rt;
   const n = gbuf.cols * gbuf.rows;
@@ -736,7 +782,10 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
     }
     const bT = b + Math.max(lr, Math.max(lg, lb));
     if (isG) shadeGrass(t, gbuf.mat[i], u, v, gbuf.vao[i], bT, grassTab, ctx, shadeOut, gbuf.grassX[i], sun.sunI);
-    else shadeTerrain(t, gbuf.mat[i], bT, u, v, timeSec, ctx, shadeOut, forestFaceMode(gbuf, alias, ctx, i, t), gbuf.z[i], shadeNrm[0], shadeNrm[1], shadeNrm[2]); // MAP-06b: z = the rasterised surface height (kind 7: zBase/zRef 0), same value as the GPU's GA.z
+    else {
+      if (GLk) lookBytesAt(terrain, u, v);
+      shadeTerrain(t, gbuf.mat[i], bT, u, v, timeSec, ctx, shadeOut, forestFaceMode(gbuf, alias, ctx, i, t), gbuf.z[i], shadeNrm[0], shadeNrm[1], shadeNrm[2], GLk ? lkLo : 0, GLk ? lkHi : 0, GLk ? lkW : 0); // MAP-06b: z = the rasterised surface height (kind 7: zBase/zRef 0), same value as the GPU's GA.z
+    }
     gbuf.fogF[i] = terrainFogF(t, ctx.fog); // edge pass gate (BUG-GPU-005): never a stale value
     shadeOut.fg[0] = clampByte(shadeOut.fg[0] + lr * 0.5 * 255);
     shadeOut.fg[1] = clampByte(shadeOut.fg[1] + lg * 0.5 * 255);

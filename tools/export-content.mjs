@@ -53,6 +53,7 @@ export const CLASSIC_SCRIPTS = [
   'design/models/voxel_props.js',
   'design/models/voxel_tower.js',
   'design/models/voxel_world.js', // US-026a-S6: waystone, mirrors game/index.html
+  'design/models/buildings_voxel.js', // BLD-01 own buildings, mirrors game/index.html
   'design/models/voxel_tower_crown.js', // CH1-D1b towerCrown, mirrors game/index.html
   'design/models/far_tower.js',
   'design/models/ferrum_lights.js',

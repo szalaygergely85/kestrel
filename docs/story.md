@@ -2056,3 +2056,105 @@ Owner: "remove relays, i like waystones". Player text never says "relay": every 
 - `q.burl.waystones` (Burl, after she sees the crystal, `bear.q.ready.5b`): "Wake the waystones. They heal you, / save your path, and beasts fear / their light."
 - `notice.waystone.first` (first wake of any waystone): "Waystone woken: travel (M), heal + save, new task." (the last part only when a task exists)
 - Names: "Bend Waystone", "Ford Waystone", "Palisade Waystone" ... (place.relay.<id> keys keep their ids); prompts "[E] Touch the waystone", "[E] Look at the waystone".
+
+## 2026-10-14 names batch (PC-B writer, owner-authorised)
+
+OB-135 rule: plain, clear names, no poetic names, never raw ids. ASCII only. Counts in brackets.
+
+### 1. Item bases (`design/itemBases.js`, ITEM-03), max 14
+
+Ladder: step 1 = cloth / wood / worn, step 2 = leather / iron, step 3 = steel.
+
+| base | iL 1-3 | iL 4-6 | iL 7-10 |
+|---|---|---|---|
+| `sword` | `Worn Sword` (10) | `Iron Sword` (10) | `Steel Sword` (11) |
+| `axe` | `Hand Axe` (8) | `Battle Axe` (10) | `War Axe` (7) |
+| `spear` | `Short Spear` (11) | `Long Spear` (10) | `War Spear` (9) |
+| `bow` | `Short Bow` (9) | `Long Bow` (8) | `War Bow` (7) |
+| `shield` | `Wood Shield` (11) | `Iron Shield` (11) | `Steel Shield` (12) |
+| `armour.head` | `Leather Cap` (11) | `Iron Helm` (9) | `Steel Helm` (10) |
+| `armour.body` | `Padded Tunic` (12) | `Mail Shirt` (10) | `Plate Armour` (12) |
+| `armour.cloak` | `Linen Cloak` (11) | `Wool Cloak` (10) | `Fur Cloak` (9) |
+| `armour.hands` | `Cloth Gloves` (12) | `Leather Gloves` (14) | `Steel Gauntlet` (14) |
+| `armour.belt` | `Rope Belt` (9) | `Leather Belt` (12) | `Steel Belt` (10) |
+| `armour.legs` | `Cloth Trousers` (14) | `Hide Leggings` (13) | `Steel Greaves` (13) |
+| `armour.feet` | `Soft Boots` (10) | `Leather Boots` (13) | `Steel Boots` (11) |
+
+Notes: `Steel Bow` dropped (bows are not steel). `Trousers -> Greaves` read as a jump; leggings sit between. `Warden Cloak` moved out so "Warden" stays the tier-5 word (section 4).
+
+### 2. Points of interest (`game/js/life/poiTable.js`, POI-01/03)
+
+Name <= 20 (also the toast: `Found: <name>`), look line <= 60 (`poi.<key>.text`).
+
+| key | name / toast | look line |
+|---|---|---|
+| `poi.riverFarm` | `River Farm` (10) | `A low farmhouse by the water. Smoke from the chimney.` (53) |
+| `poi.boarWallow` | `Boar Wallow` (11) | `Churned mud. Tusk marks on every trunk. They come back.` (55) |
+| `poi.flowerMeadow` | `Flower Meadow` (13) | `Flowers to the knee. Bees, and nothing else for a mile.` (55) |
+| `poi.bridgePiers` | `Old Bridge Piers` (16) | `Three stone piers, no bridge. A glyph on the middle one.` (56) |
+| `poi.charcoalBurners` | `Charcoal Burners` (16) | `Turf kilns, still smoking. Cut sacks of charcoal.` (49) |
+| `poi.hollowOak` | `Hollow Oak` (10) | `A split oak, hollow inside. Room to stand up in it.` (51) |
+| `poi.hunterLodge` | `Hunter's Lodge` (14) | `A log lodge, the door hanging. Antlers above it.` (48) |
+| `poi.mossShrine` | `Moss Shrine` (11) | `Moss over old stone. Under it, a glyph, faintly teal.` (53) |
+| `poi.woodcutters` | `Woodcutters' Camp` (17) | `Stacked logs, an axe in the stump. The fire is warm.` (52) |
+| `poi.orchard` | `The Orchard` (11) | `Old apple trees, leaning one way. Windfalls in the grass.` (57) |
+| `poi.gooseFarm` | `Goose Farm` (10) | `Geese hiss behind a wattle fence. A fire burns low.` (51) |
+| `poi.barleyFarm` | `Barley Farm` (11) | `Barley to the waist. A scarecrow watches the gate.` (50) |
+| `poi.northLook` | `North Look` (10) | `Wind and long grass. The land falls away to the north.` (54) |
+| `poi.steppingStones` | `Stepping Stones` (15) | `Flat stones across the ford. Wet, green, and slippery.` (54) |
+
+Earned chests (OB-152), one idea each for the three that lost theirs:
+- Hollow Oak: two wolves den in the hollow; drive them out and the chest is inside.
+- Hunter's Lodge: three goblins hold the lodge; clear it, the chest is by the hearth.
+- Barley Farm: boars come for the barley at dusk; drive off three, the farmer leaves a chest at the gate.
+
+### 3. Ford Waystone, glass missing (OB-159, `mq.ford.mirror`), max 50
+
+Replaces `hint.relay.nocrystal` at the Ford Waystone only (the "hands" line is for the crystal and is wrong here).
+
+| key | when | text |
+|---|---|---|
+| `hint.ford.noglass` | quest not taken | `Cold stone. Its glass is gone. Ask Rook.` (40) |
+| `hint.ford.glassquest` | quest active, no `relay.mirror` in pack | `The mount is empty. The glass is in Rook's nest.` (48) |
+
+Rook gives his name in `mq.bend.call`, before the Ford, so naming him here is fine.
+
+### 4. OB-135 plain names, current -> proposed
+
+Item name max 14, desc max 38. Rows marked "keep" just lose their NEEDS WRITER tag.
+
+| id / place | current | proposed |
+|---|---|---|
+| `orb.hp` name | `Herb Flask` | `Health Orb` (10) |
+| `orb.hp` desc | `Bitter herbs under red wax. Heals.` | `A drop of red light. Heals on touch.` (36) |
+| `orb.mp` name | `Cold Shard` | `Mana Orb` (8) |
+| `orb.mp` desc | `A sliver of teal light. Restores MP.` | keep (36) |
+| `spell.fireball` name | `Ember` | `Fireball` (8) |
+| `sword` name | `Ruin Steel` | `Ruin Sword` (10) |
+| `bomb` name | `Blast Pot` | `Bomb` (4) |
+| `berry.blue` name | `Blue Sprig` | `Blueberries` (11) |
+| `redcap` name | `Red Cap` | `Red Mushroom` (12) |
+| `emberpod` name | `Emberpod` | `Fire Pod` (8) |
+| `lantern` name | `Kestrel Lamp` | `Ship Lantern` (12) |
+| `aetherCrystal` name | `Teal Crystal` | `Aether Crystal` (14), see question |
+| `goblin.trinket` name | `Goblin Trinket` | keep (14); drops the 10-13 `Scrap Charm` idea |
+| `goblin.trinket` desc | `Bent wire and bone. Sells well.` | keep (31) |
+| armour tier 4 prefix | `T4` | `Riveted` (7): `Riveted Jerkin` (14) |
+| armour tier 5 prefix | `T5` | `Warden` (6): `Warden Jerkin` (13) |
+| armour desc, worn | `Worn x. Placeholder copy.` | `Patched and thin. Better than nothing.` (38) |
+| armour desc, sturdy | `Sturdy x. Placeholder copy.` | `Good hide, tight stitches. It holds.` (36) |
+| armour desc, fine | `Fine x. Placeholder copy.` | `Well made. Someone took care over it.` (37) |
+| armour desc, tempered | `T4 x. Placeholder copy.` | `Iron rivets through boiled hide.` (32) |
+| armour desc, warden | `T5 x. Placeholder copy.` | `Old tower make. Older than the Wall.` (36) |
+| `gear.main.sword.tempered` | `T4 Sword` | `Tempered Sword` (14) |
+| `gear.main.sword.warden` | `T5 Sword` | `Warden Sword` (12) |
+| `gear.ranged.bow.tempered` | `T4 Bow` | `Horn Bow` (8) |
+| `gear.ranged.bow.warden` | `T5 Bow` | `Warden Bow` (10) |
+| `gear.off.shield.tempered` | `T4 Shield` | `Kite Shield` (11) |
+| `gear.off.shield.warden` | `T5 Shield` | `Warden Shield` (13) |
+| armour base `Pants` | `Pants` | keep (only 8-char option `Trousers` breaks 14 with `Riveted`) |
+
+Notes:
+- The weapon tier 4-5 descs from "Weapon tiers 4-5" (2026-10-13) stay. Its names (`Quenched Edge`, `Watch Blade` ...) are replaced by this table, and so are the armour `Watch` / `Relay` options.
+- `Kite Shield`, not `Iron Shield`, so the old tier list does not clash with the new item-base names.
+- The `Teal Crystal` desc stays. GDD 3 says Wick "has no word for it" in M1. `Aether Crystal` is the plain name, but it only fits once someone (Burl) has said the word.
