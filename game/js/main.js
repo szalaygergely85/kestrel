@@ -109,6 +109,7 @@ import { createWild } from './wild/wildEnv.js'; // WILD-06: ambient rabbits + de
 import { createGoblinWire } from './life/goblinWire.js'; // GOB-07b
 import { createLifeWire, prepareRaidDefs, createOutwallLife } from './life/lifeWire.js'; // LIFE-HOOKS-01: wolf raids wiring
 import { planWorldLife } from './quest/sim/worldGen.js';
+import { bootPoiWire } from './life/poiWire.js'; // POI-02 (OB-141, D-088)
 import { bootRegionalBeasts } from './quest/sim/regionalBeastsBoot.js'; // WM-12
 import { createBeastDirectorWire } from './quest/beastDirectorWire.js'; import { setDifficultyName } from './ui/difficultyFlag.js'; // BEAST-WIRE-01
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
@@ -1132,6 +1133,7 @@ async function runGame(mode, cinematic = null) {
   try { raidDefs = prepareRaidDefs(await (await fetch('../content/life/raids.json')).json()); } catch (e) { console.warn('[life] raids off:', e && e.message); }
   let regionAmbTable = null, regionAmb = null; // WMP-03: content/life/regionAmbient.json; no audio cue API for birdsong/insects yet -> onCue is a no-op (knownCues [])
   try { regionAmbTable = await (await fetch('../content/life/regionAmbient.json')).json(); } catch (e) { console.warn('[regionAmbient] off:', e && e.message); }
+  let poiWire = null; // POI-02: generated points of interest (world_geo sites), dormant beyond 200 m, state in world.state['poi.v1']
   let goblinWire = null, goblinJson = null; // GOB-07b: goblin camps + enemy spears (content/life/goblinCamps.json)
   try { goblinJson = await (await fetch('../content/life/goblinCamps.json')).json(); } catch (e) { console.warn('[goblins] off:', e && e.message); }
   Object.defineProperty(window.__debug, 'goblinWire', { configurable: true, get: () => goblinWire }); // verify-goblins
@@ -1533,6 +1535,8 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (params.get('bench') === 'combat' || (benchActive && params.get('enemies') === '4')) ensureBenchBoars(world); // COMBAT-BENCH-01
       ensureWolves(world); // WOLF-01: turns MAP-26 anchors wolf1..5 into wolf beasts (no-op while they are absent)
       ensureBears(world); // BEAR-01: blackBear1..3 -> bear beasts
+      if (poiWire) { poiWire.dispose(); poiWire = null; }
+      if (!isCaptureOrBench && mode === 'world' && world.terrainGrid && gridEnabled(params)) poiWire = bootPoiWire(world, window.ASSETS?.levels?.world_geo, worldDef, 12); // POI-02
       if (goblinWire) { goblinWire.dispose(); goblinWire = null; } // GOB-07b: before the new sim (camps add members)
       if (goblinJson && !isCaptureOrBench && mode === 'world') goblinWire = createGoblinWire({ world, events: engine.events, state: world.state, json: goblinJson, terrain: world.terrain, groundAt: (x, y) => world.terrain.groundAt(x, y) });
       // WM-04 (38.59 dec. 3): grid worlds (?grid=1) have no fixed nav.area - the world builds one nav tile per band with the SAME params as the fixed grid
@@ -2125,6 +2129,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       resolveBodyContacts(engine.world, playerHandle.data, engine.physics);
       const simDue = hitStop.due(1000 / 60); // HITSTOP-01: the window gates beasts.step only; the sword freezes by its own hitStopHard counter
       if (beasts && simDue) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); if (beastDir) { forwardOf(look.yawDeg, dirFwd); beastDir.step(1 / 60, pt.x, pt.y, dirFwd[0], dirFwd[1]); } if (beasts.tileMode && (++tileDormTick % 60) === 0) beasts.updateTileDormancy(pt.x, pt.y); } // WM-04: 200 m dormancy at ~1 Hz
+      if (poiWire && simDue) { const pt = playerHandle.data.transform; poiWire.step(pt.x, pt.y); } // POI-02
       if (goblinWire && simDue) { const pt = playerHandle.data.transform; goblinWire.step(engine.world.state['clock.day'] | 0, pt.x, pt.y); } // GOB-07b
       if (lifeWire && simDue) lifeWire.step(clockHour(engine.world.state, clockCfg)); // LIFE-08: raids roll at night
       if (wild) { const pt = playerHandle.data.transform; wild.step(dt, pt.x, pt.y, controls.run, look.yawDeg); if (regionAmb) regionAmb.step(dt, pt.x, pt.y); } // WILD-06: ambient only, never hashed

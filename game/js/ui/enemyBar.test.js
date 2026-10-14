@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { enemyBarModel, createEnemyBars, makeBarResult } from './enemyBar.js';
+import { enemyBarModel, createEnemyBars, makeBarResult, difficultyShift } from './enemyBar.js';
+import { setDifficultyName } from './difficultyFlag.js';
 
 const band = { bandAt: (x, y) => (x < 100 ? 3 : 8) };
 const mk = (o = {}) => ({ id: 'b1', name: 'Boar', x: 1, y: 2, z: 3, spawnX: 10, spawnY: 10, hp: 5, maxHp: 10, dead: false, dist: 8, visible: true, engaged: true, targeted: false, hitAt: -Infinity, level: 0, bossName: '', ...o });
@@ -48,3 +49,12 @@ assert.equal(bars.select(0, () => {}, 0), 0);
 const rec0 = mk(), out = makeBarResult();
 if (global.gc) { global.gc(); const h0 = process.memoryUsage().heapUsed; for (let i = 0; i < 200000; i++) enemyBarModel(rec0, band, i, 3, out); global.gc(); assert.ok(process.memoryUsage().heapUsed - h0 < 200000, 'no per-call alloc'); }
 console.log('enemyBar.test.js ok');
+
+// HPBAR-03: shown level = band + difficulty shift (Easy -1, Normal 0, Hard +1), clamped 1..10
+assert.equal(difficultyShift('easy'), -1); assert.equal(difficultyShift('normal'), 0); assert.equal(difficultyShift('hard'), 1); assert.equal(difficultyShift(undefined), 0);
+const lv = (name, o) => { setDifficultyName(name); return enemyBarModel(mk(o), band, 1, 3).level; };
+assert.equal(lv('normal', { spawnX: 0 }), 3); assert.equal(lv('easy', { spawnX: 0 }), 2); assert.equal(lv('hard', { spawnX: 0 }), 4);
+assert.equal(lv('easy', { level: 1 }), 1); assert.equal(lv('hard', { level: 10 }), 10); assert.equal(lv('hard', { level: 9 }), 10); assert.equal(lv('easy', { level: 2 }), 1);
+setDifficultyName('hard'); assert.equal(enemyBarModel(mk({ level: 4 }), band, 1, 3).tint, 'danger'); // 5 vs player 3 = +2 -> red
+setDifficultyName('normal');
+console.log('HPBAR-03 ok');
