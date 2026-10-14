@@ -182,7 +182,7 @@ const statOpaque = renderStatic(opaqueUnit);
   let mism = 0, solid = 0;
   for (let i = 0; i < target.kind.length; i++) { if (target.kind[i] !== stat.kind[i] || target.depth[i] !== stat.depth[i]) mism++; if (target.kind[i] === KIND_MESH) solid++; }
   ok('masked meshGroup (range 1 leaf included) == N DRAW_STATIC draws', mism === 0 && solid > 1000, `mism=${mism} solid=${solid}`);
-  const big = { ...unitMesh, ranges: Array.from({ length: 9 }, (_, i) => ({ ...unitMesh.ranges[0], part: 'r' + i })), maskRanges: unitMesh.maskRanges || [0] };
+  const big = { ...unitMesh, ranges: Array.from({ length: 17 }, (_, i) => ({ ...unitMesh.ranges[0], part: 'r' + i })), maskRanges: unitMesh.maskRanges || [0] };
   let threw = false; try { new InstanceGroups().meshGroup(big, 1); } catch (e) { threw = true; }
   ok('masked meshGroup with > MAX_VOX_PARTS ranges throws', threw);
 }
