@@ -9,7 +9,7 @@
 // avoided: the field-of-view test below is a horizontal dot product against a `cos(hfovDeg/2)` threshold computed
 // once at create time, not an atan2 per candidate per step.
 import { canSee } from './sim/sight.js';
-import { MAX_TARGETABLES } from './sim/targetables.js'; // OB-076: one shared cap
+import { MAX_TARGETABLES, RESELECT_DIST, createNearestSelector } from './sim/targetables.js'; // OB-076: one shared cap
 import {
   forwardOf, yawFromDelta, shortestArcDeg, DEG2RAD, PHYSICS, SIM_STEP, HFOV_DEG,
 } from '../../../engine/index.js';
@@ -48,17 +48,28 @@ export function createTargeting(world, events, cfg) {
   const cosHalfHfov = Math.cos((C.hfovDeg / 2) * DEG2RAD); // the only hfov-related trig call (once, at create)
 
   /** @type {any[]} plain entity data objects with `components.targetable`, rebuilt on load/add/remove, never per step. */
-  let entities = [];
+  const entities = [];
+  let allEnt = [], focX = 0, focY = 0, selX = 0, selY = 0;
+  const selector = createNearestSelector(maxC); // OB-169: overflow keeps the NEAREST maxC, not the first
 
+  function reselect() {
+    selX = focX; selY = focY;
+    selector.pick(allEnt, focX, focY, entities);
+  }
   function rebuild() {
-    const all = [];
-    world.forEachEntity((e) => { if (e.components && e.components.targetable) all.push(e); });
-    if (all.length > maxC) {
-      console.warn(`createTargeting: ${all.length} targetable entities, only the first ${maxC} are tracked.`);
+    allEnt = [];
+    world.forEachEntity((e) => { if (e.components && e.components.targetable) allEnt.push(e); });
+    if (allEnt.length > maxC) {
+      console.warn(`createTargeting: ${allEnt.length} targetable entities, keeping the ${maxC} nearest.`);
     }
-    const next = [];
-    for (let i = 0; i < all.length && i < maxC; i++) next.push(all[i]);
-    entities = next;
+    reselect();
+  }
+  /** Overflow only: re-pick the nearest maxC once the player moved RESELECT_DIST (called from computeEye). */
+  function focus(x, y) {
+    focX = x; focY = y;
+    if (allEnt.length <= maxC) return;
+    const dx = x - selX, dy = y - selY;
+    if (dx * dx + dy * dy >= RESELECT_DIST * RESELECT_DIST) reselect();
   }
   rebuild();
   const offAdded = events.on('entity:added', rebuild);
@@ -89,6 +100,7 @@ export function createTargeting(world, events, cfg) {
     const body = player.components && player.components.body;
     const eyeH = body && typeof body.eyeH === 'number' ? body.eyeH : PHYSICS.eyeHeight;
     eyeX = t.x; eyeY = t.y; eyeZ = t.z + eyeH;
+    focus(t.x, t.y);
   }
 
   function computeForward(look) {
