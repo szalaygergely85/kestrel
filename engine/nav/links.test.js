@@ -85,7 +85,18 @@ const cell = (x, y) => y * GW + x;
   const down = route(g, 5, 10, 35, 10), up = route(g, 35, 10, 5, 10);
   ok('drop: west (high) -> east (low) works', !down.partial && down.cells.includes(cell(19, 10)) && down.cells.includes(cell(21, 10)));
   ok('drop: east -> west is blocked (one way)', up.partial);
-  // Flow over a one-way drop: the field walks links FORWARD from its seed (flowField.js ~l.303), so seeded below it does not climb back to the upper side; open (ASK ARCHITECT, see lane note).
+  // NAV-FLOW-REV: flow expands links in reverse.
+  ok('drop flow: goal below -> cells above reach it', reachable(g, cell(35, 10), cell(5, 10)));
+  ok('drop flow: goal above -> cells below do NOT route through the drop', !reachable(g, cell(5, 10), cell(35, 10)));
+  const ff = createFlowField(g), o = { x: 0, y: 0 };
+  ff.begin(new Int32Array([cell(35, 10)]), 1); ff.step(1e9);
+  ff.dirAt(19.5, 10.5, o, 3);
+  ok('drop flow: cell at the drop top points over the drop (+x)', o.x > 0.9);
+  ok('drop flow: dir at drop top is a link move', ff.dir[cell(19, 10)] === 253 && ff.next[cell(19, 10)] === cell(21, 10));
+  const ff2 = createFlowField(g), ff3 = createFlowField(g);
+  for (const f of [ff2, ff3]) { f.begin(new Int32Array([cell(35, 10)]), 1); f.step(1e9); }
+  ok('drop flow: deterministic', Buffer.compare(Buffer.from(ff2.integ.buffer), Buffer.from(ff3.integ.buffer)) === 0 && Buffer.compare(Buffer.from(ff2.dir), Buffer.from(ff3.dir)) === 0);
+  // 0 alloc with reverse expansion: covered by layersFlow.test.js (gc-based probe)
 }
 
 // ---- door: stateKey + setLinkOpen --------------------------------------------------------------------------------------
