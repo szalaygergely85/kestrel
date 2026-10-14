@@ -108,9 +108,10 @@ export class GIBake {
     return this.done;
   }
 
-  _surface(x, y, z) {
+  _surface(x, y, z, hit) {
     const s = this._surf;
     s.albedo = this.albedo;
+    if (hit && hit.hasN && !this.surfaceAt) { s.nx = hit.nx; s.ny = hit.ny; s.nz = hit.nz; return s; }
     if (this.surfaceAt) { this.surfaceAt(x, y, z, s); return s; }
     const w = this.world, e = 0.5;
     const gx = (w.groundAt(x + e, y) - w.groundAt(x - e, y)) / (2 * e), gy = (w.groundAt(x, y + e) - w.groundAt(x, y - e)) / (2 * e);
@@ -123,7 +124,19 @@ export class GIBake {
   _clear(px, py, pz, dx, dy, dz, len) {
     const s = this._seg;
     s[0] = px; s[1] = py; s[2] = pz; s[3] = px + dx * len; s[4] = py + dy * len; s[5] = pz + dz * len;
-    return !this.world.raySegmentRay(s, this._hit);
+    return !this._cast(s, this._hit);
+  }
+
+  /** Segment cast: World.rayStaticFirst when the world has it (terrain + colliders, hit normal in hit.n*), else raySegmentRay. */
+  _cast(seg, hit) {
+    const w = this.world;
+    if (!w.rayStaticFirst) { hit.hasN = false; return w.raySegmentRay(seg, hit); }
+    const io = this._io || (this._io = new Float64Array(12));
+    io[0] = seg[0]; io[1] = seg[1]; io[2] = seg[2]; io[3] = seg[3] - seg[0]; io[4] = seg[4] - seg[1]; io[5] = seg[5] - seg[2]; io[6] = 1;
+    if (!w.rayStaticFirst(io)) return false;
+    hit.t = io[7]; hit.x = seg[0] + io[3] * io[7]; hit.y = seg[1] + io[4] * io[7]; hit.z = seg[2] + io[5] * io[7];
+    hit.nx = io[8]; hit.ny = io[9]; hit.nz = io[10]; hit.hasN = true;
+    return true;
   }
 
   _probe(p) {
@@ -137,12 +150,12 @@ export class GIBake {
     for (let d = 0; d < N; d++) {
       const dx = D[d * 3], dy = D[d * 3 + 1], dz = D[d * 3 + 2];
       seg[0] = px; seg[1] = py; seg[2] = pz; seg[3] = px + dx * this.rayLen; seg[4] = py + dy * this.rayLen; seg[5] = pz + dz * this.rayLen;
-      if (!this.world.raySegmentRay(seg, hit)) { // sky
+      if (!this._cast(seg, hit)) { // sky
         skyMean += sc; sx += 2 * sc * dy; sy += 2 * sc * dz; sz += 2 * sc * dx; continue;
       }
       const dist = hit.t * this.rayLen;
       if (dist < 0.05) near++;
-      const surf = this._surface(hit.x, hit.y, hit.z);
+      const surf = this._surface(hit.x, hit.y, hit.z, hit);
       let nx = surf.nx, ny = surf.ny, nz = surf.nz;
       if (nx * dx + ny * dy + nz * dz > 0) { nx = -nx; ny = -ny; nz = -nz; } // face the probe
       const ox = hit.x + nx * 0.05, oy = hit.y + ny * 0.05, oz = hit.z + nz * 0.05, al = surf.albedo;

@@ -43,7 +43,7 @@ export function inputHash(root = ROOT) {
   return h.digest('hex');
 }
 
-/** Bake one zone of `world` (needs groundAt + raySegmentRay) -> .gi.bin bytes. */
+/** Bake one zone of `world` (needs groundAt + raySegmentRay or rayStaticFirst) -> .gi.bin bytes. */
 export function bakeZoneBytes(world, zone, hash, worldId = 'world_m1', cfg = {}) {
   const b = new GIBake(world, { x0: zone.x0, y0: zone.y0, w: zone.w, h: zone.h, ...cfg });
   while (!b.step(1000));
@@ -76,43 +76,8 @@ export async function loadWorld(root) {
   vm.runInNewContext(rd(`design/levels/${def.terrain}.js`), ctx, { filename: def.terrain, timeout: 5000 });
   const levels = Object.fromEntries(Object.entries(bundle.levels).map(([k, l]) => [k, { ...l, props: [], entities: [], interactables: [], triggers: [] }]));
   const assets = new AssetRegistry({ palette: {}, levels, meshes: bundle.meshes, terrain: { [def.terrain]: ctx.window.ASSETS.levels[def.terrain] }, terrainEdits: bundle.terrainEdits });
-  const world = World.load({ ...def, entities: [], props: [], horizon: [], triggers: [], interactables: [], nav: null }, assets);
-  return { def, heightAt: (x, y) => world.heightAt(x, y) };
-}
-
-/**
- * Terrain-only bake world over a cached height grid (res m). World.raySegmentRay re-evaluates the procedural terrain per sample
- * (~0.6 ms/ray, ~30 min/zone), so the tool samples heightAt once per grid node and marches that. Structures/props are NOT in the
- * tool bake yet (needs a collider-only ray API on World; see lane note).
- */
-export function heightfieldWorld(heightAt, x0, y0, x1, y1, res = 2) {
-  const nx = Math.ceil((x1 - x0) / res) + 2, ny = Math.ceil((y1 - y0) / res) + 2, g = new Float32Array(nx * ny);
-  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) g[j * nx + i] = heightAt(x0 + i * res, y0 + j * res);
-  const groundAt = (x, y) => {
-    let u = (x - x0) / res, v = (y - y0) / res;
-    u = u < 0 ? 0 : u > nx - 1.001 ? nx - 1.001 : u; v = v < 0 ? 0 : v > ny - 1.001 ? ny - 1.001 : v;
-    const i = u | 0, j = v | 0, fu = u - i, fv = v - j, k = j * nx + i;
-    return (g[k] * (1 - fu) + g[k + 1] * fu) * (1 - fv) + (g[k + nx] * (1 - fu) + g[k + nx + 1] * fu) * fv;
-  };
-  const STEP = 1;
-  return {
-    groundAt,
-    raySegmentRay(s, o) {
-      const dx = s[3] - s[0], dy = s[4] - s[1], dz = s[5] - s[2], len = Math.hypot(dx, dy, dz), n = Math.max(1, Math.ceil(len / STEP));
-      let prev = 0;
-      for (let q = 1; q <= n; q++) {
-        const t = q / n;
-        if (s[2] + dz * t < groundAt(s[0] + dx * t, s[1] + dy * t)) {
-          let lo = prev, hi = t;
-          for (let b = 0; b < 5; b++) { const m = (lo + hi) / 2; if (s[2] + dz * m < groundAt(s[0] + dx * m, s[1] + dy * m)) hi = m; else lo = m; }
-          o.t = hi; o.x = s[0] + dx * hi; o.y = s[1] + dy * hi; o.z = s[2] + dz * hi;
-          return true;
-        }
-        prev = t;
-      }
-      return false;
-    },
-  };
+  const world = World.load({ ...def, entities: [], props: [], horizon: [], triggers: [], interactables: [], nav: null }, assets, { physics: 'mesh' });
+  return { def, world, heightAt: (x, y) => world.heightAt(x, y) };
 }
 
 async function main() {
@@ -126,12 +91,12 @@ async function main() {
     process.exitCode = r.every((x) => x.status === 'ok') ? 0 : 1;
     return;
   }
-  const { heightAt } = await loadWorld(ROOT), RAY = 48;
+  const { world } = await loadWorld(ROOT), RAY = 48; // GI-PROBE-02c: World.rayStaticFirst = terrain DDA + structure/collider BVH
   fs.mkdirSync(out, { recursive: true });
   console.log('zone      s/zone    MB');
   let tot = 0, totS = 0;
   for (const z of zones) {
-    const t = performance.now(), world = heightfieldWorld(heightAt, z.x0 - RAY, z.y0 - RAY, z.x0 + z.w * CELL_M + RAY, z.y0 + z.h * CELL_M + RAY), bytes = bakeZoneBytes(world, z, hash), s = (performance.now() - t) / 1000;
+    const t = performance.now(); world.prepareStaticRays(z.x0 - RAY, z.y0 - RAY, z.x0 + z.w * CELL_M + RAY, z.y0 + z.h * CELL_M + RAY, 1); const bytes = bakeZoneBytes({ groundAt: (x, y) => world.terrain.groundAt(x, y), rayStaticFirst: (io) => world.rayStaticFirst(io) }, z, hash), s = (performance.now() - t) / 1000;
     fs.writeFileSync(path.join(out, z.id + '.gi.bin'), bytes);
     tot += bytes.length; totS += s;
     console.log(`${z.id.padEnd(8)} ${s.toFixed(1).padStart(7)} ${(bytes.length / 1048576).toFixed(2).padStart(6)}`);
