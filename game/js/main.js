@@ -76,6 +76,8 @@ import { createFarHold } from './farHold.js'; // OB-109: hold boot/world swaps u
 import { createBootStageTimer } from './bootStageTimer.js'; // S8-B1-20: per-stage ms (content/adapter/pipelines/world/meshes)
 import { addAiReserve } from './quest/sim/aiReserve.js'; // ED-AI-06: reserve slots for "Drop pack here" (dev/playtest only)
 import { drawAiLabels } from './dev/aiLabels.js'; // ED-AI-06: ?dev=1 state labels over beast heads
+import { create as createQuestPatchRecv } from './quest/questPatchRecv.js'; // ED-QUEST-07b: editor live quest/dialogue text (dev runs only)
+let questGenCtx = null; // ED-QUEST-07b: { giverDefs, snip } so a patched dialogue is regenerated like at boot
 import { create as createAiPatchRecv, broadcastFactory } from './quest/aiPatchRecv.js'; // ED-AI-RECV: editor live creature edits (dev runs only)
 import { applyPlaytestOverlay } from './dev/playtest.js'; // US-034: editor play-test handoff (docs/architecture.md 24.11)
 import { computeEndCardState, drawEndCard } from './ui/endCard.js';
@@ -553,6 +555,7 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
       const [snip, ...rawList] = await Promise.all([get('../content/dialogue/quest-snippets.json').catch(() => null), ...ids.map((id) => get('../content/dialogue/' + id + '.dialogue.json').catch(() => null))]);
       const raws = {}; ids.forEach((id, i) => { if (rawList[i]) raws[id] = rawList[i]; });
       const gen = generateAll(raws, qb.giverDefs, snip || {});
+      questGenCtx = { giverDefs: qb.giverDefs, snip: snip || {} };
       for (const id of Object.keys(gen)) if (gen[id] !== raws[id]) bundle.dialogues[id] = compileDialogue(gen[id]);
       for (const oid of new Set(qb.giverDefs.filter((d) => d.objectGiver === true && d.giver).map((d) => d.giver.npc))) { // D-087: object givers get an Accept/Exit offer dialogue 'obj.<id>'
         const shell = { kind: 'dialogue', schema: 1, id: 'obj.' + oid, speakers: { obj: { label: 'NOTE' }, you: { label: 'YOU', player: true } }, entry: [{ node: 'obj.none' }], nodes: { 'obj.none': { end: true, lines: ['Nothing more here.'], speaker: 'obj' } } };
@@ -1169,6 +1172,9 @@ async function runGame(mode, cinematic = null) {
   // ED-AI-RECV: editor Creatures tab -> sim.patchArchetype over BroadcastChannel; only editor play-test / ?dev=1, never capture/bench; getSim reads the current sim (survives world reloads)
   const aiDevRun = (params.get('playtest') === '1' || params.get('dev') === '1') && !isCaptureOrBench && params.get('capture') !== '1' && !navigator.webdriver; // ED-AI-06: editor live-test runs only
   if (aiDevRun) createAiPatchRecv(broadcastFactory, () => beasts, () => (dirWire ? dirWire.director : null));
+  if (aiDevRun) createQuestPatchRecv(broadcastFactory, { // ED-QUEST-07b: never in normal play; patched text is memory-only (book.toSave holds state, not defs)
+    getBook: () => (saveRelay ? saveRelay.quest.book : null), getDialogues: () => bundle.dialogues, compile: compileDialogue,
+    regen: (id, raw) => (questGenCtx ? (generateAll({ [id]: raw }, questGenCtx.giverDefs, questGenCtx.snip)[id] || raw) : raw) });
   let vitals = null; // US-080a1/a2 (30.2): rebuilt on every 'world:loaded', below
   let travel = null; // WS1-07b: created once below (after wakeOut)
   let dialogueCtl = null; // DIALOGUE-01b2 (38.28): rebuilt on every 'world:loaded', below

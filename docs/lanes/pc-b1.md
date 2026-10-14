@@ -1128,3 +1128,6 @@ New game/js/quest/sim/directorWire.js (+test): director built after createBeastS
 
 ### ED-AI-05b live areas (kestrel-1, 2026-10-15)
 director.replaceAreas (diff by area id, off-screen-first then forced despawn, spawn next tick, area state never saved) + 'ai-areas'/'ai-ping'/'ai-pong' over kestrel-ai-patch; editor posts at stroke end/Save, "Reload to apply" only when no pong. Tests: spawnAreasLive, aiAreaTool. Limit: area members only parked/spawned if the sim holds that id at that slot (else no-op).
+
+### ED-QUEST-07b (kestrel-1, 2026-10-15) -> po-review
+Editor quest/dialogue edits (debounced, unsaved) go over BroadcastChannel 'kestrel-quest-patch' (tools/editor/quest/liveSend.js, hooked in questPanel redraw) -> game/js/quest/questPatchRecv.js (main.js, aiDevRun only): book.patchText swaps title/returnText/objective text, dialogue table re-generated + recompiled; memory-only (save equal, asserted). Tests questPatchRecv + liveSend PASS; verify-edq-07 9520 PASS (patch send step); game-tab re-talk not browser-checked.
