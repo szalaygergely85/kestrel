@@ -49,13 +49,14 @@ assert.equal(items[a.chestHidden[0].replace(/x1$/, '')].equip.tier, 'fine', 'hid
 const slots = new Set();
 for (let s = 1; s <= 12; s++) slots.add(items[openAll(s).chestHidden[0].replace(/x1$/, '')].equip.slot);
 assert.ok(slots.size > 1, 'hidden chest slot varies with the seed: ' + [...slots]);
-// US-104a: the 4 secret chests = 4 arrows always + a gear roll with chance 0.08 (over many seeds ~8 %)
-let gearN = 0; const N = 400;
-for (let s = 1; s <= N; s++) { const r = openAll(s); for (const id of ['secretRook', 'secretBend', 'secretField', 'secretBank']) { assert.ok(r[id].includes('arrowx4'), id + ': 4 arrows'); if (r[id].some((x) => x.startsWith('gear.'))) gearN++; } }
-assert.ok(gearN / (N * 4) > 0.05 && gearN / (N * 4) < 0.11, 'secret gear chance ~8 %: ' + gearN / (N * 4));
-// US-104b: the 3 Outwall chests = 4 arrows + ~8 % gear, always 'fine' (T3)
-let owN = 0;
-for (let s = 1; s <= N; s++) { const r = openAll(s); for (const id of ['secretOw1', 'secretOw2', 'secretOw3']) { assert.ok(r[id].includes('arrowx4'), id + ': 4 arrows'); for (const x of r[id]) if (x.startsWith('gear.')) { owN++; assert.equal(items[x.replace(/x1$/, '')].equip.tier, 'fine', id + ': T3 gear is fine'); } } }
-assert.ok(owN / (N * 3) > 0.04 && owN / (N * 3) < 0.12, 'outwall gear chance ~8 %: ' + owN / (N * 3));
+// OB-179: merged secrets: secretRook = 16 arrows + a sturdy gear piece; secretOw2 = 12 arrows + a fine gear piece (both guaranteed)
+for (let s = 1; s <= 20; s++) {
+  const r = openAll(s);
+  assert.ok(r.secretRook.includes('arrowx16'), 'secretRook: 16 arrows');
+  assert.equal(items[r.secretRook.find((x) => x.startsWith('gear.')).replace(/x1$/, '')].equip.tier, 'sturdy', 'secretRook: sturdy gear');
+  assert.ok(r.secretOw2.includes('arrowx12'), 'secretOw2: 12 arrows');
+  assert.equal(items[r.secretOw2.find((x) => x.startsWith('gear.')).replace(/x1$/, '')].equip.tier, 'fine', 'secretOw2: fine gear');
+}
+assert.deepEqual(Object.keys(CHEST_TABLES).filter((k) => k.startsWith('secret')).sort(), ['secretOw2', 'secretRook'], 'only the 2 merged secrets remain');
 void c; void countOf;
 console.log('chestDefs.test: ALL PASS');

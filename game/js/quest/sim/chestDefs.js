@@ -6,13 +6,12 @@ import { forwardOf } from '../../../../engine/index.js';
 import { CHEST_DEFAULTS as C } from './lootConfig.js';
 
 const HEART = { fixed: [{ item: 'heart.piece', n: 1 }], weighted: [] };
-// US-104a: the Ch1-2 hidden chests use the loot.json `chest` source: 4 arrows always, a gear roll with chance 0.08 (tier from the band: Ch1-2 = band 1-2 = T1, the plain weighted roll).
-export const SECRET_TABLE = { fixed: [{ item: 'arrow', n: 4 }], weighted: [], gear: { chance: 0.08 } };
-// US-104b: the Outwall track chests: same source, gear tier forced to T3 = 'fine' (US-129a: band 5 -> fine only).
-export const OUTWALL_SECRET_TABLE = { fixed: [{ item: 'arrow', n: 4 }], weighted: [], gear: { chance: 0.08, tier: 'fine' } };
+// OB-179: fewer, bigger chests inside places (the 4 Ch1-2 secrets merged into secretRook in campEast, the 3 Outwall ones into secretOw2 in campNorth).
+// Reward = the merged arrows + a guaranteed gear piece one tier above the old roll (Ch1-2 plain/worn roll -> 'sturdy'; Outwall 8 % 'fine' -> 'fine' always).
+export const SECRET_TABLE = { fixed: [{ item: 'arrow', n: 16 }], weighted: [], gear: { tier: 'sturdy' } };
+export const OUTWALL_SECRET_TABLE = { fixed: [{ item: 'arrow', n: 12 }], weighted: [], gear: { tier: 'fine' } };
 export const CHEST_TABLES = {
-  secretRook: SECRET_TABLE, secretBend: SECRET_TABLE, secretField: SECRET_TABLE, secretBank: SECRET_TABLE,
-  secretOw1: OUTWALL_SECRET_TABLE, secretOw2: OUTWALL_SECRET_TABLE, secretOw3: OUTWALL_SECRET_TABLE,
+  secretRook: SECRET_TABLE, secretOw2: OUTWALL_SECRET_TABLE,
   chestMeadow: HEART,
   chestBend: HEART,
   chestCrossroads: HEART,

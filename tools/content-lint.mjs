@@ -147,7 +147,7 @@ export async function buildContext(opts = {}) {
   for (const e of entities) {
     const b = e.components.brain;
     if (b?.kind === 'beast') guards.push({ x: (b.home || [e.x, e.y])[0], y: (b.home || [e.x, e.y])[1], kind: 'beast' });
-    if (/lever|plate|waystone/i.test(e.id) || e.components.waystone) guards.push({ x: e.x, y: e.y, kind: 'puzzle' });
+    if (/lever|plate|waystone/i.test(e.id) || e.components.waystone) guards.push({ x: e.x, y: e.y, kind: 'puzzle', id: e.id });
     if (e.components.dialogue) guards.push({ x: e.x, y: e.y, kind: 'giver' });
   }
   const far = generateFarCamps({ geo: G, terrain: w.terrain, seed: 12, avoid: guards.map((g) => [g.x, g.y]) });
