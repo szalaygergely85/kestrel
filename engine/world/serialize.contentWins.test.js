@@ -46,5 +46,25 @@ ok('migrated v2 save loads at v3', serialize(w2).version === 3);
   const w3 = deserialize(st, cur, {});
   ok('reload leaves water inputs unset (no stale value)', w3.entity('crate').components.body.waterZ === undefined);
 }
+// REV-S6: content-only changes against a save.
+{
+  const mk2 = (structs, ents) => AssetRegistry.fromJSON({ ...fx, worlds: { w: { name: 'w', structures: structs, entities: ents } } }, codeParts);
+  const rooms = [{ id: 'room', level: 'tiny', origin: { x: 0, y: 0, z: 0 }, yawSteps: 0 }, { id: 'room2', level: 'tiny', origin: { x: 20, y: 0, z: 0 }, yawSteps: 0 }];
+  const chest = (x, y, z) => ({ id: 'chest', type: 'prop', x, y, z, components: { voxel: { model: 'torch', anim: 'closed', frame: 0 }, door: { state: 'closed' } } });
+  const old = mk2(rooms, [chest(5, 5, 0), { id: 'rock', type: 'prop', x: 8, y: 8, z: 0, components: {} }]);
+  const w = World.load(old.world('w'), old, {});
+  const c = w.entity('chest').components;
+  c.voxel.anim = 'open'; c.voxel.frame = 2; c.door.state = 'open'; c.health = { hp: 3 };
+  const sv = JSON.parse(JSON.stringify(serialize(w)));
+  // (a) structure removed, (b) rock re-grounded at the same x/y, (c) chest moved in content
+  const nw = mk2([rooms[0]], [chest(6, 6, 0), { id: 'rock', type: 'prop', x: 8, y: 8, z: 2, components: {} }]);
+  const w2 = deserialize(sv, nw, {});
+  ok('removed-from-content structure is gone after load', !w2.structures.some((s) => s.id === 'room2') && w2.structures.some((s) => s.id === 'room'));
+  ok('same x/y, changed content z takes the content z', w2.entity('rock').transform.z === 2, String(w2.entity('rock').transform.z));
+  const m = w2.entity('chest');
+  ok('moved content entity: content position', m.transform.x === 6 && m.transform.y === 6);
+  ok('moved content entity keeps saved voxel anim/frame', m.components.voxel.anim === 'open' && m.components.voxel.frame === 2);
+  ok('moved content entity keeps saved door state + health', m.components.door.state === 'open' && m.components.health && m.components.health.hp === 3);
+}
 if (fail) { console.error(failures.join('\n')); process.exit(1); }
 console.log(`serialize.contentWins: ${pass} passed`);
