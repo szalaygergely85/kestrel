@@ -436,6 +436,7 @@
         legL2: { box: [3, 22, 0, 11, 34, 4], pivot: [7.5, 29.5, 4], parent: 'legL' },
         legR2: { box: [17, 22, 0, 25, 34, 4], pivot: [20.5, 29.5, 4], parent: 'legR' }
       },
+      lookAt: { part: 'head', yawLimitDeg: 55, pitchLimitDeg: 25, hz: 1.2 }, // ANIM-LOOKAT-01 (38.69): heavy neck, slow follow (Burl + black bear)
       legRig: {   // note 38.67 item 2; gaits == tools/gait-configs.mjs; foot = paw contact point
         body: 'body',
         legs: [   // fore pair then hind pair (= gait phase order FL FR HL HR); foot = paw contact point

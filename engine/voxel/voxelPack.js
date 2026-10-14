@@ -7,6 +7,7 @@ import { assertVoxelModel, PART_STRIDE, MAX_VOX_PARTS } from './VoxelModel.js';
 import { deriveEmissiveLight } from './emissiveLight.js';
 import { packLegRig } from './legRig.js';
 import { packBlend, validateBlend } from './blendPack.js';
+import { packLookAt } from './lookAtPack.js';
 
 /**
  * Packs a validated VoxelModelDef into a PackedVoxelModel (architecture.md
@@ -113,6 +114,7 @@ export function packVoxelModel(def, matIdFor, lightInfo) {
     blend: null,
   };
   pm.blend = packBlend(def, pm, partNames); // ANIM-BLEND-01a: null without def.blend
+  pm.lookAt = packLookAt(def, partNames); // ANIM-LOOKAT-01: null without def.lookAt
   return pm;
 }
 
@@ -255,5 +257,6 @@ function packRiggedModel(def, matIdFor) {
     blend: null,
   };
   pm.blend = packBlend(def, pm, partNames); // ANIM-BLEND-01a
+  pm.lookAt = packLookAt(def, partNames); // ANIM-LOOKAT-01
   return pm;
 }
