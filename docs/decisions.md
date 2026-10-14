@@ -1281,3 +1281,6 @@ Crocodile (owner, same session): **short grab + mash to escape (1.5 s, max 12 % 
 
 ## D-103
 **2026-10-14, owner (PC-B session).** The main story is NOT one long auto-step chain (m1: wake, breach, sword, leave, beasts, follow, waystone, road, bend...). It becomes a chain of **short separate WoW-style quests**, each given and handed in by a character (D-098): e.g. The Tower (note -> hand in to Burl), Boars in the Woods (Burl), The Old Stone (Burl), The Road West (Burl -> Rook at the Bend), then Rook -> Ford -> Smoke -> Tobin ... Each has its own `!`, offer window, objectives, `?`, Complete + reward; gold = main. Story text is kept (writer). PO lists the split first (docs/epics/main-quests-split.md), then code + save migration (a save mid-m1 maps to the matching new quest).
+
+## D-104
+**2026-10-14, owner (PC-B session).** "Quests are chains, separated ones, all of them": every main quest requires exactly the previous main quest done (one linear main chain); a side quest has NO prerequisite; a chained side quest requires the previous quest of its own chain. (Open: how the D-095 river rule is kept for west-bank side quests without a quest prerequisite - PO proposes, owner picks.)
