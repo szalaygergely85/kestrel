@@ -1245,3 +1245,5 @@ Run: 12 suites PASS, validate-content OK, check-deps OK (no model fixes needed).
 
 - BITE-ALLOC (kestrel-3, bitefix): beastSim `sim` top-level keys 162 -> 139 (sub-objects bite{cd,n,done}, pl{died,sink,scrape,throw,alt}, alt{tgt,cd,n,x,y}, goal{on,tx,ty}, sc{ally*,tS,thr*,prey,tmp}, stk{t,ax,ay,fail,st}; tactics.js _ally* -> sim.sc.ally*).
   beast8 own 3.0 B/step (limit < 8). New guard simShape.test.js + simShape.probe.mjs (12 sims %HasFastProperties, keys <= 145). Needs arch glance only if hot-path sub-object loads matter; replay hashes untouched (hash/save code unchanged names).
+
+- BH-A1 (kestrel-3): engine/nav/steer.js new `activateAgent(slot,...)` (addAgent now delegates to it); beastSim `resetSlotSim` uses it so a dead/down slot is re-added at its own index (dormant stays parked). Test game/js/quest/sim/beastResetAll.test.js (5 pass); beast/steer/simShape/vitals/director 21 PASS, check-deps OK, replay hashes unchanged. Status: arch-review (engine/nav).

@@ -1590,8 +1590,8 @@ function resetSlotSim(sim, i) {
   // US-079b: dead steer slots are re-added in ascending order; addAgent hands out the lowest free slot, and the
   // live slots stay active (slots >= count are never used), so the lowest free slot is always the lowest dead one.
   if (!sim.steer.active[i] && !sim.dormant[i]) {
-    const slot = sim.steer.addAgent(sim.homeX[i], sim.homeY[i], sim.cfg.radius, 0, DEFAULT_ACCEL);
-    if (slot !== i) throw new Error(`beastSim.resetAll: re-added dead slot ${i} but addAgent returned ${slot}`);
+    const slot = sim.steer.activateAgent(i, sim.homeX[i], sim.homeY[i], sim.cfg.radius, 0, DEFAULT_ACCEL); // BH-A1: exactly slot i
+    if (slot !== i) throw new Error(`beastSim.resetAll: re-added dead slot ${i} but activateAgent returned ${slot}`);
   }
   const health = sim.entities[i].components.health;
   health.hp = health.max; // US-079b: boars come back alive

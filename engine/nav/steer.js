@@ -291,20 +291,27 @@ export function createSteer(opts) {
   steer.addAgent = function addAgent(x, y, radius, maxSpeed, accel) {
     for (let slot = 0; slot < maxAgents; slot++) {
       if (steer.active[slot]) continue;
-      steer.active[slot] = 1;
-      steer.mode[slot] = MODE_IDLE;
-      steer.x[slot] = x; steer.y[slot] = y; steer.z[slot] = 0;
-      steer.vx[slot] = 0; steer.vy[slot] = 0;
-      steer.radius[slot] = radius;
-      steer.maxSpeed[slot] = maxSpeed;
-      steer.accel[slot] = accel;
-      steer.tx[slot] = x; steer.ty[slot] = y;
-      steer.arriveR[slot] = 0;
-      steer._flowRef[slot] = null;
-      if (slot + 1 > steer._hi) steer._hi = slot + 1;
-      return slot;
+      return steer.activateAgent(slot, x, y, radius, maxSpeed, accel);
     }
     return -1;
+  };
+
+  /** Activates exactly `slot` (must be free) instead of the lowest free one; returns `slot`, or -1 if it is
+   * out of range or already active. Same initial state as addAgent. */
+  steer.activateAgent = function activateAgent(slot, x, y, radius, maxSpeed, accel) {
+    if (slot < 0 || slot >= maxAgents || steer.active[slot]) return -1;
+    steer.active[slot] = 1;
+    steer.mode[slot] = MODE_IDLE;
+    steer.x[slot] = x; steer.y[slot] = y; steer.z[slot] = 0;
+    steer.vx[slot] = 0; steer.vy[slot] = 0;
+    steer.radius[slot] = radius;
+    steer.maxSpeed[slot] = maxSpeed;
+    steer.accel[slot] = accel;
+    steer.tx[slot] = x; steer.ty[slot] = y;
+    steer.arriveR[slot] = 0;
+    steer._flowRef[slot] = null;
+    if (slot + 1 > steer._hi) steer._hi = slot + 1;
+    return slot;
   };
 
   /** Frees `id`'s slot (mode -> idle, fields zeroed) for reuse. No-op if
