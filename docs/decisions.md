@@ -1302,3 +1302,6 @@ Crocodile (owner, same session): **short grab + mash to escape (1.5 s, max 12 % 
 
 ## D-110
 **2026-10-14, owner (PC-B session), Steam alpha plan answers (docs/release/chapter1-alpha-plan.md).** (1) Price: start at **$4.99** in Early Access and raise it later as content grows; Windows-only Electron build; launch target per the plan (2026-12-08, slips if a gate fails). (2) Until launch PAUSE: engine catch-up stages 2-3 (D-090) and the editor tracks EXCEPT the **quest editor** (owner wants to help write quests); KEEP: animal legs (D-101). (3) GitHub repo goes **private** before the paid alpha (shipped JS stays readable - accepted). (4) Chapter I ends with a short **final quest at the Outwall gate + optional Siege Chief boss**, then the end screen; the story vote offers 3-4 writer-made directions + a link to Steam discussions.
+
+## D-111
+**2026-10-14, owner (PC-B session).** Chapter I ending: after the gate quest the **credits roll and the run ends**, closing with **"To be continued... Chapter II is coming"** (plus the story vote, D-110). No free roam after the end card in the alpha. MQ-SPLIT-7 follows this.
