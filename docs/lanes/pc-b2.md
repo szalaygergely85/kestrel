@@ -1101,3 +1101,6 @@ flowField.js `stepLayered` now relaxes links in REVERSE (reverse index = link id
 
 ### GATE-FLAKY-07 (kestrel-3, 2026-10-14)
 navLayers01d.test: per-slice ms = min over 5 fresh bakes (rep 0 = warm-up), budget 2.5 ms kept hard; idle 1.2-1.8 ms, no split needed (1 source = 1 slice). Proof: alone 3x pass, `run-tests --filter sim` 67/67 PASS.
+
+### NAV-LAYERS-01d ford (kestrel-3, 2026-10-14) -> arch-review
+D-103: fordS1..S7 (have colliders) flagged `nav:"floors"`, `navGroup:"fordStones"`; world_m1 `nav.ford:{}` on (wade <0.6 m, cost 4); bridge TODO in beastNav.js now points to D-103. navFord.test 11 (real nav crosses Ford y 1062 where before it was partial; no deep wading; deterministic), navLayers01d flag count 36+7; OB-149 beastStuck still green. Beast routes near the river: ground beasts now cross at the ford (shallow wade + stones) instead of stopping at the bank; deep water elsewhere stays blocked.

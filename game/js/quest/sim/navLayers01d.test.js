@@ -31,7 +31,8 @@ const same = (a, b) => Buffer.compare(bytes(a), bytes(b)) === 0;
 // ---- 1. real world_m1: Rook ruin flagged -> sheets; stairs lead to the roof deck --------------------
 const w = World.load({ ...def0 }, assets, { detail: true, physics: 'mesh' });
 const flagged = w.structures.filter((s) => s.navFloors);
-ok('Rook ruin pieces carry the nav flag (36, group rookRuin)', flagged.length === 36 && flagged.every((s) => s.navGroup === 'rookRuin'), String(flagged.length));
+const rr = flagged.filter((s) => s.navGroup === 'rookRuin'), fs_ = flagged.filter((s) => s.navGroup === 'fordStones');
+ok('Rook ruin pieces carry the nav flag (36, group rookRuin) + 7 ford stones (D-103)', rr.length === 36 && fs_.length === 7 && flagged.length === 43, String(flagged.length));
 const t0 = performance.now();
 const nav = buildBeastNav(w, { ...def0.nav, layers: undefined });
 const msWith = performance.now() - t0;
