@@ -213,6 +213,28 @@ async function openCreaturesTab() {
   try { creaturesHandle = await (await import('./aiPanel.js')).mountCreaturesTab(root, { probe: aiAreaProbe, reload: () => launchPlaytest(doc), onAreasChange: () => frame.markDirty() }); window.__creatures = creaturesHandle; }
   catch (e) { root.textContent = 'Creatures failed to load: ' + e.message; console.error(e); }
 }
+// ---- ED-LOGIC-02b: Logic tab - mounts logicPanel.js once, on first open.
+let logicPanelHandle = null;
+async function openLogicTab() {
+  if (logicPanelHandle) return;
+  const root = document.getElementById('logic-panel');
+  try {
+    const lp = await import('./logicPanel.js'), qp = await import('./questPanel.js'), fl = await import('./quest/flow.js');
+    const schema = await (await fetch('../../content/logic/vocab.schema.json')).json();
+    const A = window.ASSETS || {}, itemDefs = (A.items && A.items.defs) || {};
+    const qfiles = await qp.fetchQuestFiles(), areasObj = JSON.parse(qfiles['areas.json'] || '{"areas":{}}').areas || {};
+    const { loadQuests } = await import('./quest/model.js');
+    const quests = loadQuests('q', qp.memFs({ ...qfiles, 'areas.json': qfiles['areas.json'] || '{"version":1,"areas":{}}' })).quests.map((q) => ({ id: q.id, name: q.title || q.id }));
+    const areaGeo = () => { // area id -> {x, y, r} from the world entity/zone the area points at (quests/areas.json: {trigger})
+      const out = {}, ents = (assets.world(doc.worldId).entities || []);
+      for (const id of Object.keys(areasObj)) { const e = ents.find((x) => x.id === (areasObj[id].trigger || id)); out[id] = e && Number.isFinite(e.x) ? { x: e.x, y: e.y, r: e.radius || e.r || 4 } : {}; }
+      return out;
+    };
+    logicPanelHandle = await lp.mountLogicPanel(root, { schema, loadFiles: () => lp.fetchLogicFiles(), write: lp.downloadLogic, getWorld: () => assets.world(doc.worldId), getAreaGeo: areaGeo,
+      choices: { quest: quests, item: fl.itemChoices(itemDefs) } });
+    window.__logicPanel = logicPanelHandle;
+  } catch (e) { root.textContent = 'Logic failed to load: ' + e.message; console.error(e); }
+}
 
 // ---- US-067: left-dock tabs (Scene Tree / Assets) --------------------------
 leftDockTabsEl.querySelectorAll('.dock-tab').forEach((tab) => {
@@ -223,9 +245,11 @@ leftDockTabsEl.querySelectorAll('.dock-tab').forEach((tab) => {
     treePanelEl.classList.toggle('active', which === 'tree');
     assetsPanelEl.classList.toggle('active', which === 'assets');
     document.getElementById('quests-panel').classList.toggle('active', which === 'quests');
+    document.getElementById('logic-panel').classList.toggle('active', which === 'logic');
     if (which === 'quests') openQuestsTab();
     document.getElementById('creatures-panel').classList.toggle('active', which === 'creatures');
     if (which === 'creatures') openCreaturesTab();
+    if (which === 'logic') openLogicTab();
     if (which === 'assets') renderAssetsList(assetsSearchInput.value);
   });
 });
@@ -234,7 +258,8 @@ leftDockTabsEl.querySelectorAll('.dock-tab').forEach((tab) => {
 // focused tree-search/inspector field so editor keys resume; clicking the
 // viewport already does this via canvas's own mousedown->focus() below.
 const questPickerArmed = () => !!(questPanelHandle && questPanelHandle.picker.armed);
-document.addEventListener('keydown', (e) => { if (questPanelHandle) questPanelHandle.picker.onKey(e); });
+document.addEventListener('keydown', (e) => { if (questPanelHandle) questPanelHandle.picker.onKey(e); if (logicPanelHandle) logicPanelHandle.picker.onKey(e); });
+const logicPickerArmed = () => !!(logicPanelHandle && logicPanelHandle.picker.armed);
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   const a = document.activeElement;
@@ -2313,6 +2338,12 @@ canvas.addEventListener('mousedown', async (e) => {
   if (questPanelHandle && !questPickerArmed()) { // ED-QUEST-04: a click on a quest pin selects that objective in the panel
     const pin = questOverlay.pinAt(col, row);
     if (pin) { questPanelHandle.selectObjective(pin.qid, pin.obj); return; }
+  }
+  if (logicPickerArmed()) { // ED-LOGIC-02b: same pick mechanism, the logic panel decides what the hit means
+    const hit = await pickAt(col, row, pickCtx());
+    if (clickGuard.isStale(tok)) return;
+    logicPanelHandle.picker.handle({ entityId: hit.kind === 'entity' ? hit.entityId : null, point: hit.world && (hit.kind === 'terrain' || hit.kind === 'surface') ? hit.world : null });
+    return;
   }
   if (questPickerArmed()) { // ED-QUEST-03: Pick mode owns the left button; the quest panel decides what the hit means
     const hit = await pickAt(col, row, pickCtx());

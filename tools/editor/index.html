@@ -147,6 +147,12 @@
     /* ED-QUEST-02 quest panel */
     #quests-panel, #creatures-panel { overflow: auto; font-size: 11px; gap: 4px; }
     .ai-row { display: flex; gap: 4px; align-items: center; } .ai-row label { flex: 0 0 120px; } .ai-flag { color: #e8a040; }
+    /* ED-LOGIC-02b logic panel */
+    #logic-panel { overflow: auto; font-size: 11px; gap: 4px; }
+    #logic-panel .lg-bar, #logic-panel .lg-head, #logic-panel .lg-row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+    #logic-panel .lg-block { border: 1px solid #555; padding: 4px; margin: 4px 0; }
+    #logic-panel .lg-sec { margin: 2px 0 2px 8px; }
+    #logic-panel .lg-flash { outline: 2px solid #fc3; }
     .q-bar { display: flex; gap: 4px; } .q-bar input { flex: 1; }
     .q-list { max-height: 30%; overflow: auto; } .q-row { cursor: pointer; padding: 2px 3px; } .q-row.active { background: var(--ed-panel); outline: 1px solid var(--ed-cyan); }
     .q-chip { display: inline-block; width: 3.2em; text-align: center; margin-right: 4px; color: #0D1117; } .q-chip.blue { background: #58A6FF; } .q-chip.gold { background: #E3B341; }
@@ -482,6 +488,7 @@
             <button type="button" class="dock-tab" data-dock-tab="assets">Assets</button>
             <button type="button" class="dock-tab" data-dock-tab="quests">Quests</button>
             <button type="button" class="dock-tab" data-dock-tab="creatures">Creatures</button>
+            <button type="button" class="dock-tab" data-dock-tab="logic">Logic</button>
           </div>
           <button type="button" id="left-dock-collapse" title="Collapse">-</button>
         </div>
@@ -533,6 +540,8 @@
         <div id="quests-panel" class="dock-panel"></div>
         <!-- ED-AI-03: Creatures tab (aiPanel.js mounts into it on first open) -->
         <div id="creatures-panel" class="dock-panel"></div>
+        <!-- ED-LOGIC-02b: Logic tab (logicPanel.js mounts into it on first open) -->
+        <div id="logic-panel" class="dock-panel"></div>
       </div>
 
       <!-- VIEWPORT -->
