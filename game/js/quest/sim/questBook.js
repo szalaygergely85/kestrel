@@ -57,6 +57,9 @@ function deepFreeze(o) { if (o && typeof o === 'object') { for (const k of Objec
 /** saved = {quest: m1 state|null, quests: {id:{quest,accepted,handedIn}}|null}; toSave() returns the same shape. */
 /** OB-155: static part of the main/side rule: `main: true`, `kind: 'main'` or an `mq.*` id (the chain-waits-on flag is checked by book.isMain). */
 export const isMainDef = (d) => !!d && (d.main === true || d.kind === 'main' || (typeof d.id === 'string' && d.id.startsWith('mq.')));
+let talkFlags = {};
+/** D-098: flag id -> npc whose dialogue sets it (quest/talkEnds.js, set once at boot). A flag step with an owner is a TALK step. */
+export function setTalkFlags(map) { talkFlags = map || {}; }
 export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   validateQuestDefinition(mainDef);
   const entries = [{ def: mainDef, giver: null, state: createQuest(mainDef, saved?.quest || null), accepted: true, handedIn: false, seq: 0, prev: ACTIVE }];
@@ -299,7 +302,11 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   // (`quest.<id>.done` as a flag objective, e.g. burl.boars / tower.blade); everything else is a side quest.
   const mainDone = new Set();
   for (const o of entries[0].def.objectives) if (o.when && o.when.type === 'flag' && typeof o.when.id === 'string') mainDone.add(o.when.id);
-  book.isMain = (i) => i === 0 || isMainDef(entries[i].def) || mainDone.has('quest.' + entries[i].def.id + '.done'); // OB-155: ONE rule (questLog uses it too)
+  // OB-155k: transitive - a quest a main quest requires ({quest, done|step}) is main too (tower.blade, mq.river.road, mq.ford.stones)
+  const mainSet = new Set();
+  for (let i = 0; i < n; i++) if (i === 0 || isMainDef(entries[i].def) || mainDone.has('quest.' + entries[i].def.id + '.done')) mainSet.add(i);
+  for (let grew = true; grew;) { grew = false; for (const i of [...mainSet]) for (const r of entries[i].def.requires || []) { const q = r.quest ? byId.get(r.quest) : undefined; if (q !== undefined && !mainSet.has(q)) { mainSet.add(q); grew = true; } } }
+  book.isMain = (i) => mainSet.has(i); // OB-155: ONE rule (questLog uses it too)
   /** Giver marks: `outAvail` ('!') / `outReady` ('?') get the main-chain quests; with the optional `sideAvail` / `sideReady` the side
    *  quests go there instead (OB-125: a different colour), else everything goes to the first two (old behaviour). */
   book.giverMarks = function giverMarks(outAvail, outReady, sideAvail, sideReady) {
@@ -314,12 +321,38 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   };
   /** OB-124b: main-chain step marks (data: objective.mark = {start?, end?}). The CURRENT m1 step shows a gold '!' at `start` while it
    *  has one (step available), else a gold '?' at `end` (step active / where it completes). Appends to the main lists; none when done. */
+    function talkEndOf(o) {
+    const w = o.when; if (!w || w.type !== 'flag') return '';
+    if (o.mark && o.mark.talk === false) return '';
+    if (talkFlags[w.id]) return talkFlags[w.id];
+    const mm = /^quest\.(.+)\.done$/.exec(w.id), qi = mm && byId.get(mm[1]);
+    return qi > 0 ? (entries[qi].turnIn || entries[qi].giver || '') : ''; // finished by handing the quest in: at its hand-in character
+  }
   book.chainMarks = function chainMarks(outAvail, outReady) {
     const st = entries[0].state, o = entries[0].def.objectives[st.completed.length];
-    const m = o && o.mark; if (!m) return;
+    const m = o && o.mark, talk = o && talkEndOf(o);  // D-098: a TALK step (flag set by a dialogue / a quest hand-in) shows the '?' over the CHARACTER
+    if (!m && !talk) return;
+    if (!m) { if (outReady) outReady[outReady.length] = talk; return; }
     // OB-157: optional mark.taken = flag set when the start giver handed the step over -> the '!' is gone, the '?' at `end` shows
     const taken = m.taken && entries[0].state.flags[m.taken];
-    if (m.start && !taken) outAvail[outAvail.length] = m.start; else if (m.end) outReady[outReady.length] = m.end;
+    if (m.start && !taken) outAvail[outAvail.length] = m.start;
+    else if ((m.end || talk) && outReady) outReady[outReady.length] = m.end || talk; // D-098: go/wake/use X -> X itself shows the gold '?' while the step is active
+  };
+  /** D-098: grey '?' = where each ACTIVE (accepted, not yet ready) giver quest is finished (its hand-in place; default the giver). */
+  book.activeMarks = function activeMarks(outGrey) {
+    let g = 0;
+    for (let i = 1; i < n; i++) if (statusOf(i) === ACTIVE && entries[i].turnIn) outGrey[g++] = entries[i].turnIn;
+    outGrey.length = g;
+  };
+  /** OB-155j: ONE marker per world entity. Priority: '?' ready (gold before blue) > gold '!' > blue '!'. Lists are filtered in place;
+   *  keyOf maps a marker id to its entity (default book.entityFor). */
+  book.dedupeMarks = function dedupeMarks(gA, gR, sA, sR, keyOf = book.entityFor, grey) {
+    const seen = new Set();
+    for (const l of [gR, sR, gA, sA, grey]) {
+      if (!l) continue; let k = 0;
+      for (let j = 0; j < l.length; j++) { const e = keyOf(l[j]); if (seen.has(e)) continue; seen.add(e); l[k++] = l[j]; }
+      l.length = k;
+    }
   };
   /** QL-03: index of the tracked giver quest: the player's pick (main flag `ui.tracked`, saved with the main quest) while it is active/ready, else the most recently accepted one, else -1. */
   book.tracked = function tracked() {

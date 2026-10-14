@@ -9,11 +9,11 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const MAX_FLOAT = 0.25, GIVER_MAX_UP = 2.5, GIVER_WALK_R = 3, SMOKE_SRC_R = 3, CHIMNEY_R = 6, CHIMNEY_MIN = 3, CHEST_R = 25;
-export const LEVELS = { R1: 'error', R2: 'error', R3: 'error', R4: 'error', R5: 'error', R6: 'error', R7: 'error', R8: 'warn', R9: 'warn', R10: 'warn', R11: 'error' };
+export const LEVELS = { R1: 'error', R2: 'error', R3: 'error', R4: 'error', R5: 'error', R6: 'error', R7: 'error', R8: 'warn', R9: 'warn', R10: 'warn', R11: 'error', R16: 'error' };
 export const TITLES = {
   R1: 'floating placed prop/tree', R2: 'components.sprite in the world', R3: 'raw id in player text', R4: '"relay" in player text',
   R5: 'giver unreachable', R6: 'smoke without a source', R7: 'chimney outside a building', R8: 'chest with no guard/puzzle/giver nearby',
-  R9: 'early quest objective across the river', R10: 'quest given/returned by an object', R11: 'banned mesh placed',
+  R9: 'early quest objective across the river', R10: 'quest given/returned by an object', R11: 'banned mesh placed', R16: 'quest giver / turn-in data',
 };
 const f1 = (n) => (typeof n === 'number' ? +n.toFixed(1) : n);
 const F = (rule, id, x, y, msg) => ({ rule, level: LEVELS[rule], id, x: f1(x), y: f1(y), msg });
@@ -22,6 +22,7 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 // ---- raw-id detector (R3) ----
 export const RAW_DOTTED = /\b[a-z]{2,}(?:\.[a-zA-Z][a-zA-Z0-9]+)+\b/, RAW_CAMEL = /\b[a-z]{2,}[A-Z][a-zA-Z]+\b/;
 export const rawIn = (s) => (typeof s === 'string' && s.includes(' ') ? (s.match(RAW_DOTTED) || s.match(RAW_CAMEL) || [null])[0] : null);
+export const OBJECT_GIVERS = ['sq.packet', 'sq.wreck.plate', 'sq.post.spare', 'sq.fc.shrine', 'sq.rb.shield', 'sq.ow.parcel'], OBJECT_GIVER_MAX = 0.1;
 const NAMES = new Set(['bear', 'rook', 'hesk', 'dorrin']); // main.js giverName table
 
 // ---- rules ----
@@ -94,6 +95,22 @@ export const RULES = {
     for (const q of c.quests) for (const [role, id] of [['giver', q.giver?.npc], ['turn-in', q.giver?.turnIn]]) {
       if (id && !c.characters.has(id)) { const p = c.pos?.(id); out.push(F('R10', q.id, p?.x ?? '-', p?.y ?? '-', `${role} "${id}" is an object, not a character`)); }
     }
+    return out;
+  },
+  // R16 [D-082/D-087/D-098, QFIX-S5a-1] ctx.questGivers = [{id, giver, turnIn, objectGiver?, pendingNpc?, storyStart?}] (ALL counted quests), ctx.characters
+  R16: (c) => {
+    const qs = c.questGivers; if (!qs) return [];
+    const out = [], isChar = (id) => c.characters.has(id), ok = (q, id) => isChar(id) || q.pendingNpc === true;
+    const f = (q, m) => out.push(F('R16', q.id, '-', '-', m));
+    let objs = 0;
+    for (const q of qs) {
+      if (q.objectGiver) { objs++; if (!OBJECT_GIVERS.includes(q.id)) f(q, 'objectGiver:true is allowed only on ' + OBJECT_GIVERS.join(', ')); }
+      if (!q.turnIn) f(q, 'no turnIn'); else if (!ok(q, q.turnIn)) f(q, `turnIn "${q.turnIn}" is not a placed NPC/animal (object or unknown; add pendingNpc if the NPC is still to come)`);
+      if (!q.giver) { if (!q.storyStart) f(q, 'no giver'); }
+      else if (q.objectGiver) { if (isChar(q.giver)) f(q, `objectGiver but giver "${q.giver}" is a character`); if (!ok(q, q.turnIn)) f(q, 'object giver needs a character turnIn'); }
+      else if (!ok(q, q.giver)) f(q, `giver "${q.giver}" is not a placed NPC/animal (waystone/board/post/stone never give; mark objectGiver or pendingNpc)`);
+    }
+    if (qs.length && objs / qs.length > OBJECT_GIVER_MAX) out.push(F('R16', '-', '-', '-', `object givers ${objs}/${qs.length} = ${(100 * objs / qs.length).toFixed(1)} % (> ${OBJECT_GIVER_MAX * 100} %)`));
     return out;
   },
   // R11 [OB-130/143]
@@ -190,6 +207,11 @@ export async function buildContext(opts = {}) {
   const qdir = path.join(root, 'content/quests');
   const packs = await loadPackQuests(qdir, (await loadDesignAssets()).items?.defs);
   const quests = packs.quests.map((q) => q.def);
+  // R16: raw giverNpc/turnInNpc rows (packs + legacy root quests; m1 story chain is not counted)
+  const questGivers = [];
+  const gv = (r) => questGivers.push({ id: r.id, giver: r.giverNpc, turnIn: r.turnInNpc, objectGiver: r.objectGiver, pendingNpc: r.pendingNpc, storyStart: r.storyStart });
+  for (const p of JSON.parse(fs.readFileSync(path.join(qdir, 'index.json'), 'utf8')).packs) for (const r of JSON.parse(fs.readFileSync(path.join(qdir, p, 'pack.json'), 'utf8')).quests) gv(r);
+  for (const id of JSON.parse(fs.readFileSync(path.join(qdir, 'index.json'), 'utf8')).legacy) if (id !== 'm1') gv(JSON.parse(fs.readFileSync(path.join(qdir, id + '.quest.json'), 'utf8')));
   const texts = [];
   for (const q of quests) texts.push(...proseOf(null, { title: q.title, returnText: q.returnText, lines: q.lines, objectives: q.objectives?.map((o) => ({ text: o.text, journal: o.journal })) }, q.id + ' '));
   for (const f of jsonFiles(path.join(root, 'content/dialogue'))) texts.push(...proseOf(f, JSON.parse(fs.readFileSync(f, 'utf8')), path.relative(root, f) + ' '));
@@ -247,7 +269,7 @@ export async function buildContext(opts = {}) {
   for (const q of qs) for (const id of [q.giver?.npc]) { const p = id && pos(id); if (p) guards.push({ x: p.x, y: p.y, kind: 'giver' }); }
 
   return {
-    entities, structures: def.structures, floating, texts, jsTexts, quests: qs, itemDefs: assets.items?.defs || (await loadDesignAssets()).items?.defs,
+    entities, structures: def.structures, floating, texts, jsTexts, quests: qs, questGivers, itemDefs: assets.items?.defs || (await loadDesignAssets()).items?.defs,
     labelOf, giverIds, pos, groundAt: gz, walkable, characters, chests: entities.filter((e) => /^chest/.test(e.id)), guards,
     riverX: (y) => T.util.riverX(y), riverHalf: 10,
   };

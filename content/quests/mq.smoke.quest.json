@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "id": "mq.smoke",
+  "id": "mq.smoke", "giverNpc": "bear", "turnInNpc": "bear",
   "title": "Smoke in the North",
   "main": true,
   "requires": [{ "quest": "mq.ford.mirror", "done": true }],

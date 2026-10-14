@@ -11,6 +11,9 @@ export const FLAG_ATTUNED = 'aether.attuned';
 export const PROMPT_WAKE = '[E] Hold up the crystal'; // story.md q06 prompt.relay.wake
 export const PROMPT_TOUCH = '[E] Touch the waystone';    // WS1-W1 prompt.relay.touch
 // story.md q06 hint.relay.nocrystal (PC-B writer 2026-10-10, owner-authorised while PC-A offline).
+// OB-165 (writer, owner-authorised): the Ford Waystone is cold until Rook's glass is mounted; the hint depends on whether the quest is taken.
+export const HINT_FORD_NOQUEST = { key: 'hint.ford.noglass', text: 'Cold stone. Its glass is gone. Ask Rook.' };
+export const HINT_FORD_GLASS = { key: 'hint.ford.glassquest', text: "The mount is empty. The glass is in Rook's nest." };
 export const HINT_NO_CRYSTAL = { key: 'hint.relay.nocrystal', text: 'Cold stone. Your hands are not enough.' };
 // Wake notice (story.md q06 notice.relay.title / notice.relay); CH1-04a replaces the toast with the notice view.
 export const NOTICE = ['WAYSTONE AWAKENED', 'Travel unlocked.', 'You can now travel between', 'awakened Waystones.'];
@@ -140,7 +143,7 @@ export function createRelayWake(o) {
       if (!r || r.phase === WAKING) return false;
       if (r.phase === AWAKE) { touch(r); return true; }
       const why = blockedHint(r); if (why) { hint.line = why; hint.left = TOAST_SEC; return false; } // gate: the crystal wakes stones
-      if (r.wsId === FORD_WS && !world.state[FLAG_MIRROR]) { hint.line = HINT_NO_CRYSTAL.text; hint.left = TOAST_SEC; return false; } // mq.ford.mirror: the mount is empty until the player holds relay.mirror
+      if (r.wsId === FORD_WS && !world.state[FLAG_MIRROR]) { hint.line = (o.questActive && o.questActive('mq.ford.mirror') ? HINT_FORD_GLASS : HINT_FORD_NOQUEST).text; hint.left = TOAST_SEC; return false; } // mq.ford.mirror: the mount is empty until the player holds relay.mirror
       const h = world.get(r.entId);
       if (h) h.play('wake');
       hum();

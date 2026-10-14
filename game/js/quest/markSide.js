@@ -3,6 +3,8 @@
 // for an existing palette material (team.teal #30c8f0). No new art, palette untouched; same size, clips and fx as the gold pair.
 export const SIDE_MATS = { C: 'team.teal', S: 'team.teal' }; // body + shine; the outline 'O' stays brass_dark
 export const SIDE_MODELS = { questMark: 'questMarkSide', questMarkReady: 'questMarkReadySide' };
+// D-098: grey '?' = the ready-'?' model with neutral bone-grey (team.a) materials: quest accepted, objectives not done yet.
+export const GREY_MATS = { C: 'team.a', S: 'team.a' };
 
 /** Clone one marker model record with the side materials; returns null when the source is missing. */
 export function sideVariant(def, key, mats = SIDE_MATS) {
@@ -20,5 +22,7 @@ export function addSideMarks(A) {
     const v = sideVariant(A.voxelModels[from], to); if (!v) continue;
     A.voxelModels[to] = v; (A.models = A.models || {})[to] = v; n++;
   }
+  const g = sideVariant(A.voxelModels.questMarkReady, 'questMarkGrey', GREY_MATS);
+  if (g) { A.voxelModels.questMarkGrey = g; (A.models = A.models || {}).questMarkGrey = g; n++; }
   return n;
 }

@@ -1,4 +1,4 @@
-// OB-124b: gold '!' at the start entity / '?' at the end entity of the current main-chain step (m1 objective.mark data).
+// D-098 (was OB-124b/155i): gold '!' at the start entity / '?' at the end entity of the current main-chain step (m1 objective.mark data).
 // OB-137a: pickup prompts use the item def name, never a raw id.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -18,18 +18,18 @@ const feed = (e) => book.feed(e);
 
 // walk the chain up to the waystone step
 feed({ type: 'flag:set', key: 'wake', value: true }); feed({ type: 'area:entered', id: 'breach' }); feed({ type: 'item:got', id: 'sword' });
-assert.deepEqual(marks(), [[], ['doorMarker']], 'leave: ? at the door');
+assert.deepEqual(marks(), [[], ['doorMarker']], 'leave: gold ? on the doorway (D-098)');
 feed({ type: 'area:entered', id: 'towerDoor' }); feed({ type: 'flag:set', key: 'quest.burl.boars.done', value: true }); feed({ type: 'flag:set', key: 'burl.arrived', value: true });
-assert.deepEqual(marks(), [[], ['endMarker']], 'waystone step');
+assert.deepEqual(marks(), [[], ['endMarker']], 'waystone step: gold ? on the waystone itself (D-098)');
 feed({ type: 'flag:set', key: 'waystone.waystone.woken', value: true });
 // road step available: gold ! on Burl
 assert.deepEqual(marks(), [['bear'], []], 'road available -> ! on bear');
 feed({ type: 'flag:set', key: 'burl.departing', value: true }); // OB-157: Burl handed the step over
-assert.deepEqual(marks(), [[], ['relayBend']], 'after the give: no ! on bear, ? on the Bend relay');
+assert.deepEqual(marks(), [[], ['relayBend']], 'after the give: no ! on bear, ? at the bend');
 feed({ type: 'area:entered', id: 'roadWest' });
-assert.deepEqual(marks(), [[], ['relayBend']], 'road taken (relayFound active) -> ? on the Bend relay');
+assert.deepEqual(marks(), [[], ['relayBend']], 'road taken -> ? at the bend');
 feed({ type: 'area:entered', id: 'bendRelay' });
-assert.deepEqual(marks(), [[], ['relayBend']], 'relay1 active -> ? on the Bend relay');
+assert.deepEqual(marks(), [[], ['relayBend']], 'relay1 active -> ? on the bend waystone');
 feed({ type: 'flag:set', key: 'waystone.ws_roadBend.woken', value: true });
 assert.deepEqual(marks(), [[], []], 'chain done -> none');
 // every authored mark names a valid id (no raw junk)

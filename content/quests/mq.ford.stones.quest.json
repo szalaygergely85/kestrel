@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "id": "mq.ford.stones",
+  "id": "mq.ford.stones", "giverNpc": "bear", "turnInNpc": "bear",
   "title": "Stones in the Water",
   "requires": [{ "quest": "mq.river.road", "step": "riverBank" }],
   "objectives": [

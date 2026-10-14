@@ -21,7 +21,8 @@ export const CHART_GLYPHS = Object.freeze({
   road: { glyph: '-', color: 'uiText' }, structure: { glyph: '#', color: 'ferrum' },
   steep: { glyph: '/', color: 'chartInk' },
   relay: { glyph: 'o', color: 'aetherDim' }, waystone: { glyph: 'O', color: 'aether' },
-  quest: { glyph: '!', color: 'gold' }, questReady: { glyph: '?', color: 'gold' }, // QG-04: giver markers (dynamic, setQuestMarkers)
+  quest: { glyph: '!', color: 'gold' }, questReady: { glyph: '?', color: 'gold' }, questGrey: { glyph: '?', color: 'unitNeutral' }, questSide: { glyph: '!', color: 'unitTeal' }, questReadySide: { glyph: '?', color: 'unitTeal' }, // D-098: main gold, side blue (= team.teal marker), grey ? neutral grey; accepted-not-done = // D-098: grey ? = accepted, not done yet
+  // QG-04: giver markers (dynamic, setQuestMarkers)
   player: { glyph: '^', color: 'gold' }, edge: { glyph: '+', color: 'chartEdge' },
   route: { glyph: '*', color: 'pencil' }, print: { glyph: 'N', color: 'chartInk' },
   // MAP-28 world overlay (only used when createChartCard gets `geo`)
@@ -46,7 +47,7 @@ export function createChartCard(chart, palette, { markers = [], glyphs = CHART_G
     || !Number.isInteger(width) || width < 16 || width > 128 || !Number.isInteger(rows) || rows < 8 || rows > 52)
     throw new Error('chart: invalid planes, bounds or card size');
   const colors = {}, codes = {};
-  for (const key of [...chart.categories, 'relay', 'waystone', 'quest', 'questReady', 'player', 'edge', 'route', 'print', ...(geo ? KINDS.slice(1) : [])]) {
+  for (const key of [...chart.categories, 'relay', 'waystone', 'quest', 'questReady', 'questGrey', 'questSide', 'questReadySide', 'player', 'edge', 'route', 'print', ...(geo ? KINDS.slice(1) : [])]) {
     const token = glyphs[key] || (geo && CHART_GLYPHS[key]);
     if (!token || typeof token.glyph !== 'string' || !/^[!-~]$/.test(token.glyph)
       || !/^#[0-9a-f]{6}$/i.test(palette.colors[token.color] || '')) throw new Error('chart: invalid glyph/colour');
@@ -165,7 +166,7 @@ export function createChartCard(chart, palette, { markers = [], glyphs = CHART_G
     for (const i of qCells) { tc[i] = plainCodes[i]; tr[i*3] = plainRgb[i*3]; tr[i*3+1] = plainRgb[i*3+1]; tr[i*3+2] = plainRgb[i*3+2]; markerCells[i] = 0; }
     qCells.length = 0;
     for (const m of list) {
-      if (m.kind !== 'quest' && m.kind !== 'questReady') throw new Error('chart: invalid quest marker');
+      if (m.kind !== 'quest' && m.kind !== 'questReady' && m.kind !== 'questGrey' && m.kind !== 'questSide' && m.kind !== 'questReadySide') throw new Error('chart: invalid quest marker');
       const i = index(m.x, m.y); if (i < 0 || markerCells[i]) continue;
       tc[i] = codes[m.kind]; tr[i*3] = colors[m.kind][0]; tr[i*3+1] = colors[m.kind][1]; tr[i*3+2] = colors[m.kind][2];
       markerCells[i] = 1; qCells.push(i);

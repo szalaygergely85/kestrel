@@ -1,7 +1,7 @@
 // CONTENT-LINT-01: one fixture per rule (finding fires) + a clean control (zero findings). Pure rule functions, no world load.
 // Run: node tools/content-lint.test.mjs
 import assert from 'node:assert/strict';
-import { lint, RULES, LEVELS, line, rawIn } from './content-lint.mjs';
+import { lint, RULES, LEVELS, line, rawIn, OBJECT_GIVERS } from './content-lint.mjs';
 
 const S = (id, mesh, x, y) => ({ id, mesh, origin: { x, y, z: 0 } });
 const E = (id, x, y, z, components = {}) => ({ id, x, y, z, components });
@@ -17,6 +17,7 @@ const clean = () => ({
   giverIds: new Set(['rook']), pos: (id) => (id === 'rook' ? { x: 10, y: 10, z: 1 } : null), groundAt: () => 0, walkable: () => true,
   characters: new Set(['rook']), chests: [{ id: 'chestA', x: 60, y: 55 }], guards: [{ x: 60, y: 60, kind: 'camp' }],
   riverX: () => 1030, riverHalf: 10,
+  questGivers: [{ id: 'q1', giver: 'rook', turnIn: 'rook' }],
 });
 const run = (c) => lint(c);
 assert.deepEqual(run(clean()), [], 'clean control: no findings');
@@ -33,6 +34,7 @@ const cases = {
   R8: (c) => { c.guards = []; },
   R9: (c) => { c.quests[0].targets.push({ id: 'fordWest', x: 1010, y: 1072 }); },
   R10: (c) => { c.quests[0].giver = { npc: 'post' }; },
+  R16: (c) => { c.questGivers[0].turnIn = undefined; },
   R11: (c) => { c.structures.push(S('m1', 'quaternius/Mushroom_Laetiporus', 7, 7)); },
 };
 for (const [rule, mutate] of Object.entries(cases)) {
@@ -47,6 +49,25 @@ for (const [rule, mutate] of Object.entries(cases)) {
 { const c = clean(); c.quests[0].giver = { npc: 'relayBend' }; c.quests[0].reward.items.push({ id: 'gear.feet.boots.sturdy', n: 1 }); assert.equal(RULES.R3(c).length, 2); }
 { const c = clean(); c.texts.push({ where: 'q', text: 'Light the relay at dusk' }); assert.equal(RULES.R4(c).length, 1); }
 { const c = clean(); c.quests[0].early = false; c.quests[0].targets.push({ id: 'x', x: 900, y: 1000 }); assert.equal(RULES.R9(c).length, 0, 'late quests may cross the river'); }
+// R16 cases: object giver, pendingNpc, share cap
+{
+  const fill = Array.from({ length: 30 }, (_, i) => ({ id: 'f' + i, giver: 'rook', turnIn: 'rook' })); // keeps the 10 % cap out of the single-case checks
+  const g = (...qs) => ({ ...clean(), questGivers: [...fill, ...qs] });
+  const n = (c) => RULES.R16(c).length;
+  assert.equal(n(g({ id: 'q', giver: 'owBoard', turnIn: 'rook' })), 1, 'board as giver without objectGiver fails');
+  assert.equal(n(g({ id: 'q', giver: 'rook', turnIn: 'relayBend' })), 1, 'waystone as turn-in fails');
+  assert.equal(n(g({ id: 'q', giver: 'rook' })), 1, 'missing turnIn fails');
+  assert.equal(n(g({ id: 'q', turnIn: 'rook' })), 1, 'missing giver fails');
+  assert.equal(n(g({ id: 'q', turnIn: 'rook', storyStart: true })), 0, 'story start may have no giver');
+  assert.equal(n(g({ id: 'q', giver: 'postKeeper', turnIn: 'postKeeper' })), 2, 'unplaced NPC fails');
+  assert.equal(n(g({ id: 'q', giver: 'postKeeper', turnIn: 'postKeeper', pendingNpc: true })), 0, 'pendingNpc passes');
+  assert.equal(n(g({ id: 'sq.packet', giver: 'packet', turnIn: 'rook', objectGiver: true })), 0, 'listed object giver with character turn-in passes');
+  assert.equal(n(g({ id: 'sq.packet', giver: 'packet', turnIn: 'gondola', objectGiver: true })), 2, 'object giver with object turn-in fails');
+  assert.equal(n(g({ id: 'sq.other', giver: 'packet', turnIn: 'rook', objectGiver: true })), 1, 'objectGiver on an unlisted id fails');
+  const mk = (k, total) => Array.from({ length: total }, (_, i) => (i < k ? { id: OBJECT_GIVERS[i % 6], giver: 'packet', turnIn: 'rook', objectGiver: true } : { id: 'n' + i, giver: 'rook', turnIn: 'rook' }));
+  assert.equal(RULES.R16({ ...clean(), questGivers: mk(6, 82) }).length, 0, '6/82 passes');
+  assert.ok(RULES.R16({ ...clean(), questGivers: mk(9, 82) }).some((f) => /> 10 %/.test(f.msg)), '9/82 fails the 10 % cap');
+}
 assert.equal(rawIn('Reward: gear.feet.boots.sturdy'), 'gear.feet.boots.sturdy'); assert.equal(rawIn('The well. Cold water.'), null); assert.equal(rawIn('signArm'), null);
 assert.ok(Object.values(LEVELS).filter((l) => l === 'warn').length === 3, 'R8 R9 R10 are warn level');
 console.log('content-lint.test: ok (' + Object.keys(cases).length + ' rules + clean control)');

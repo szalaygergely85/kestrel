@@ -7,7 +7,7 @@
   ],
   "quests": [
     {
-      "id": "mq.ow.path",
+      "id": "mq.ow.path", "giverNpc": "hesk", "turnInNpc": "hesk",
       "title": "Cookfire Smoke",
       "main": true,
       "steps": [
@@ -31,7 +31,7 @@
       "abandonable": false
     },
     {
-      "id": "mq.ow.fence",
+      "id": "mq.ow.fence", "giverNpc": "hesk", "turnInNpc": "hesk",
       "title": "Wolves at the Fence",
       "main": true,
       "steps": [
@@ -55,7 +55,7 @@
       "abandonable": false
     },
     {
-      "id": "mq.ow.names",
+      "id": "mq.ow.names", "giverNpc": "hesk", "turnInNpc": "hesk",
       "title": "A Name at the Gate",
       "main": true,
       "site": "hesk",
@@ -101,7 +101,7 @@
       }
     },
     {
-      "id": "mq.ow.relay",
+      "id": "mq.ow.relay", "giverNpc": "hesk", "turnInNpc": "hesk",
       "title": "The Village Waystone",
       "main": true,
       "site": "hesk",
@@ -165,7 +165,7 @@
       }
     },
     {
-      "id": "mq.ow.board",
+      "id": "mq.ow.board", "giverNpc": "hesk", "turnInNpc": "hesk",
       "title": "The Board of the Dead",
       "main": true,
       "site": "owBoard",
@@ -222,7 +222,7 @@
       "abandonable": false
     },
     {
-      "id": "sq.hw.piers",
+      "id": "sq.hw.piers", "giverNpc": "dorrin", "turnInNpc": "dorrin",
       "title": "The Pulled Bridge",
       "site": "pierStone",
       "objectives": [
@@ -266,7 +266,7 @@
       }
     },
     {
-      "id": "sq.fc.sign",
+      "id": "sq.fc.sign", "giverNpc": "postKeeper", "turnInNpc": "postKeeper", "pendingNpc": true,
       "title": "The West Arm",
       "site": "post",
       "steps": [
@@ -309,7 +309,7 @@
       }
     },
     {
-      "id": "sq.ow.wolves",
+      "id": "sq.ow.wolves", "giverNpc": "hesk", "turnInNpc": "hesk",
       "title": "Wolf Bounty",
       "site": "owBoard",
       "steps": [
@@ -356,7 +356,7 @@
       }
     },
     {
-      "id": "sq.ow.boars",
+      "id": "sq.ow.boars", "giverNpc": "hesk", "turnInNpc": "hesk",
       "title": "Boar Bounty",
       "site": "owBoard",
       "steps": [
@@ -394,7 +394,7 @@
       }
     },
     {
-      "id": "sq.ow.parcel",
+      "id": "sq.ow.parcel", "giverNpc": "owBoard", "turnInNpc": "dorrin", "objectGiver": true,
       "title": "Parcel for the Forge",
       "site": "owBoard",
       "steps": [
@@ -437,7 +437,7 @@
       }
     },
     {
-      "id": "sq.ow.ford",
+      "id": "sq.ow.ford", "giverNpc": "dorrin", "turnInNpc": "dorrin",
       "title": "Scout the Far Bank",
       "site": "pierStone",
       "steps": [
@@ -481,7 +481,7 @@
       }
     },
     {
-      "id": "sq.ow.barley",
+      "id": "sq.ow.barley", "giverNpc": "hesk", "turnInNpc": "hesk",
       "title": "Barley Sheaf",
       "site": "owBoard",
       "steps": [
@@ -511,7 +511,7 @@
       }
     },
     {
-      "id": "sq.ow.range",
+      "id": "sq.ow.range", "giverNpc": "hesk", "turnInNpc": "hesk",
       "title": "Track Targets",
       "site": "owBoard",
       "objectives": [
@@ -560,7 +560,7 @@
       "returnText": "Back to the board"
     },
     {
-      "id": "sq.ow.raid",
+      "id": "sq.ow.raid", "giverNpc": "hesk", "turnInNpc": "hesk",
       "title": "Defend the Farm",
       "site": "owBoard",
       "objectives": [

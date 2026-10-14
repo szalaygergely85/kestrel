@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "id": "sq.burl.blue",
+  "id": "sq.burl.blue", "giverNpc": "bear", "turnInNpc": "bear",
   "title": "The Blue Ones",
   "giver": { "npc": "bear" },
   "abandonable": true,
