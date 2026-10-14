@@ -6,8 +6,11 @@
 // level one key per line, objective-like arrays one row per line, everything
 // else inline; pack/sites: JSON.stringify 2-space). Unknown fields stay
 // untouched (a quest's `raw` IS the source row / file object).
-import { readFileSync, writeFileSync, readdirSync, existsSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+// Browser-safe (ED-QUEST-02): node:fs is optional (top-level await + catch), so the editor page can import
+// this module and pass an in-memory fs to loadQuests/saveQuest.
+const nodeFs = await import('node:fs').catch(() => ({}));
+const { readFileSync, writeFileSync, readdirSync, existsSync, statSync } = nodeFs;
+const join = (...p) => p.join('/').replace(/\/+/g, '/');
 
 // Top-level arrays rendered one element per line in legacy files.
 const LEGACY_ROW_ARRAYS = new Set(['objectives', 'sections', 'lines']);

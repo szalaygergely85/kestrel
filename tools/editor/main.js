@@ -174,15 +174,30 @@ drawerTabs.forEach((tab) => {
   });
 });
 
+// ---- ED-QUEST-02: Quests tab - mounts questPanel.js once, on first open.
+let questPanelHandle = null;
+async function openQuestsTab() {
+  if (questPanelHandle) return;
+  const root = document.getElementById('quests-panel');
+  try {
+    const qp = await import('./questPanel.js'), fl = await import('./quest/flow.js');
+    const A = window.ASSETS || {}, itemDefs = (A.items && A.items.defs) || {};
+    questPanelHandle = await qp.mountQuestPanel(root, { names: fl.makeNames({ itemDefs }), itemDefs, loadFiles: () => qp.fetchQuestFiles(), write: qp.downloadWrite });
+    window.__questPanel = questPanelHandle;
+  } catch (e) { root.textContent = 'Quests failed to load: ' + e.message; console.error(e); }
+}
+
 // ---- US-067: left-dock tabs (Scene Tree / Assets) --------------------------
 leftDockTabsEl.querySelectorAll('.dock-tab').forEach((tab) => {
   tab.addEventListener('click', () => {
     leftDockTabsEl.querySelectorAll('.dock-tab').forEach((t) => t.classList.remove('active'));
     tab.classList.add('active');
-    const isTree = tab.dataset.dockTab === 'tree';
-    treePanelEl.classList.toggle('active', isTree);
-    assetsPanelEl.classList.toggle('active', !isTree);
-    if (!isTree) renderAssetsList(assetsSearchInput.value);
+    const which = tab.dataset.dockTab;
+    treePanelEl.classList.toggle('active', which === 'tree');
+    assetsPanelEl.classList.toggle('active', which === 'assets');
+    document.getElementById('quests-panel').classList.toggle('active', which === 'quests');
+    if (which === 'quests') openQuestsTab();
+    if (which === 'assets') renderAssetsList(assetsSearchInput.value);
   });
 });
 
