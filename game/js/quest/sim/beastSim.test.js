@@ -9,6 +9,14 @@
 import {
   World, NavGrid, createRng, createHasher, SIM_STEP, hasLineOfSight, integrate, PHYSICS, NOISE_SPRINT, NOISE_SWING,
 } from '../../../../engine/index.js';
+import { allocProbe } from '../../../../tools/allocProbe.mjs';
+// Retained-heap leak check (gc'd before AND after, min of 3 windows): the original LIFE-07/08 semantics. A raw garbage probe
+// reads ~312 / ~160 B/step here (test stub / goal path) - see docs/lanes/pc-b2.md GATE-FLAKY-06.
+function retainedProbe(run) {
+  let best = Infinity;
+  for (let w = 0; w < 3; w++) { global.gc(); global.gc(); const h0 = process.memoryUsage().heapUsed; run(); global.gc(); global.gc(); best = Math.min(best, process.memoryUsage().heapUsed - h0); }
+  return best;
+}
 import paletteMod from '../../../../design/palette.js';
 import detailPassMod from '../../../../design/detail-pass.js';
 import lanternMod from '../../../../design/models/lantern.js';
@@ -381,11 +389,8 @@ function hashAt(sim, steer, tick, rng) {
   ok('perf: 8-beast step mean/p95 within budget (or PERF_STRICT unset)', strict ? (okMean && okP95) : true, `mean=${mean} p95=${p95}`);
 
   if (global.gc) {
-    const heapBefore = process.memoryUsage().heapUsed;
-    for (let i = 0; i < 10000; i++) sim.step(px, py, pz);
-    global.gc();
-    const heapAfter = process.memoryUsage().heapUsed;
-    ok('zero allocation over 10k steps (--expose-gc heap check)', heapAfter <= heapBefore + 1e6, `before=${heapBefore} after=${heapAfter}`);
+    const d = retainedProbe(() => { for (let i = 0; i < 10000; i++) sim.step(px, py, pz); }); // raw garbage ~1600 B/step (8 chasing beasts)
+    ok('zero allocation over 10k steps (--expose-gc heap check)', d <= 1e6, `retained=${d}`);
   } else {
     console.log('(skip) zero-allocation heap check needs --expose-gc');
   }
@@ -1139,12 +1144,8 @@ const BOAR_R = 0.45;
     const pz = groundZ(world, 1465, 1025);
     for (let i = 0; i < 600; i++) sim.step(1465, 1025, pz);
     if (global.gc) {
-      global.gc();
-      const before = process.memoryUsage().heapUsed;
-      for (let i = 0; i < 10000; i++) { sim.noise = (i & 1) ? NOISE_SPRINT : 1; sim.step(1465 + (i % 7), 1025, pz); }
-      global.gc();
-      const after = process.memoryUsage().heapUsed;
-      ok('P5 zero allocation over 10k steps (perceive + leash adapter)', after <= before + 1e6, `before=${before} after=${after}`);
+      const r = allocProbe((n) => { for (let i = 0; i < n; i++) { sim.noise = (i & 1) ? NOISE_SPRINT : 1; sim.step(1465 + (i % 7), 1025, pz); } }, { n: 10000 });
+      ok('P5 zero allocation over 10k steps (perceive + leash adapter)', r.perCall < 100, `perCall=${r.perCall}`);
     } else console.log('(skip) P5 alloc check needs --expose-gc');
   }
 }
@@ -1219,10 +1220,8 @@ function huntSim(fauna) {
     const fa = stubFauna([{ x: 1700, y: 1700, species: 1, alive: true }]);
     const s2 = huntSim(fa);
     for (let n = 0; n < 600; n++) s2.step(1461, 1090, 0);
-    global.gc(); const b = process.memoryUsage().heapUsed;
-    for (let n = 0; n < 10000; n++) s2.step(1461, 1090, 0);
-    global.gc(); const a = process.memoryUsage().heapUsed;
-    ok('LIFE-07 zero allocation per step with fauna', a <= b + 1e6, `b=${b} a=${a}`);
+    const d = retainedProbe(() => { for (let n = 0; n < 10000; n++) s2.step(1461, 1090, 0); });
+    ok('LIFE-07 zero allocation per step with fauna', d <= 1e6, `retained=${d}`);
   }
 }
 
@@ -1293,10 +1292,8 @@ function goalSim() {
   if (global.gc) {
     const g3 = goalSim(); g3.sim.setGoal(0, 1473, 1033); g3.sim.setAltTargets(1, ax, ay);
     for (let n = 0; n < 600; n++) g3.sim.step(far[0], far[1], 0);
-    global.gc(); const b = process.memoryUsage().heapUsed;
-    for (let n = 0; n < 10000; n++) g3.sim.step(far[0], far[1], 0);
-    global.gc(); const a = process.memoryUsage().heapUsed;
-    ok('LIFE-08 zero allocation per step with goal + alt', a <= b + 1e6, 'b=' + b + ' a=' + a);
+    const d = retainedProbe(() => { for (let n = 0; n < 10000; n++) g3.sim.step(far[0], far[1], 0); });
+    ok('LIFE-08 zero allocation per step with goal + alt', d <= 1e6, 'retained=' + d);
   }
 }
 

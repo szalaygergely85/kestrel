@@ -1,6 +1,7 @@
 // BEAST-06a: group list determinism, respawn timers + never-in-view, save round trip by gid, difficulty, rule 15, 0 alloc.
 // Run: node --expose-gc game/js/quest/sim/spawnDirector.test.js
 import { readFileSync } from 'node:fs';
+import { allocProbe, skipNote } from '../../../../tools/allocProbe.mjs';
 import { buildGroups, createSpawnDirector, RESPAWN_SEC, CAMP_DAYS } from './spawnDirector.js';
 import { DIFFICULTY, resolveDifficulty, applyDifficulty } from './difficulty.js';
 import { createTactics } from './tactics.js';
@@ -69,6 +70,8 @@ ok(!/Math\.random|Date\.now|performance\.now|Math\.(sin|cos|atan2?|tan)\b.*\n?/.
 ok(!/new Map|\.forEach\(|for \(const \w+ of D\./.test(src.slice(src.indexOf('D.step'), src.indexOf('D.save'))), 'no Map iteration in step');
 const da = createSpawnDirector({ groups: G1, los: () => false, onRespawn: () => {} });
 for (let s = 0; s < 600; s++) da.step(1 / 60, 0, 0, 1, 0);
-if (global.gc) { global.gc(); const m0 = process.memoryUsage().heapUsed; for (let s = 0; s < 60000; s++) da.step(1 / 60, 0, 0, 1, 0); const per = (process.memoryUsage().heapUsed - m0) / 60000; ok(per < 8, 'alloc/step ' + per.toFixed(2) + ' B'); }
-else console.log('(run with --expose-gc for the alloc check)');
+{ // min of 5 gc'd windows (single window read heap noise 0-15 B under load)
+  const r = allocProbe((n) => { for (let s = 0; s < n; s++) da.step(1 / 60, 0, 0, 1, 0); }, { n: 60000 });
+  if (!skipNote(r, 'spawnDirector alloc')) ok(r.perCall < 8, 'alloc/step ' + r.perCall.toFixed(2) + ' B');
+}
 console.log(fails ? `spawnDirector: ${fails} FAIL` : 'spawnDirector: all OK'); process.exit(fails ? 1 : 0);

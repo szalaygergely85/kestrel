@@ -42,9 +42,10 @@ ok('LOD1 get returns the LOD0 mesh for a rig pm', cache.get(pm, 'char.0', names,
 }
 
 const cam = { x: 0, y: 40, z: 20, yawDeg: 0, pitchDeg: -20 }, rt = { cols: 160, rows: 80, pxCellW: 1, pxCellH: 2 };
+// integer (Smi) args: a double argument is boxed by the CALLER when the callee is not inlined (344 B/frame on Node 22), not a pool alloc
 const frame = (stage, step) => {
   pool.beginFrame();
-  for (let i = 0, n = (step % 3 === 2) ? 4 : 48; i < n; i++) pool.pushInstance(keys[i % 3], (i % 8) - 4, (i >> 3) * 1.2, 0, (i * 37) % 360, i & 1, 0, (step * 17 + i * 90) % 1000);
+  for (let i = 0, n = (step % 3 === 2) ? 4 : 48; i < n; i++) pool.pushInstance(keys[i % 3], (i % 8) - 4, (i >> 3) * 2, 0, (i * 37) % 360, i & 1, 0, (step * 17 + i * 90) % 1000);
   if (stage >= 1) pool.project(cam, rt);
   if (stage >= 2) pool.projectShadow();
 };
