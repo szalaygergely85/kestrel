@@ -282,7 +282,7 @@
     {
       "id": "sq.fc.sign",
       "title": "The West Arm",
-      "site": "post",
+      "site": "postkeeper",
       "steps": [
         {
           "template": "fetch",
@@ -304,23 +304,7 @@
           }
         ]
       },
-      "returnText": "Bring the sign arm to the ford post",
-      "lines": {
-        "offer": [
-          "A tag on the basket: THE WEST ARM OF THE SIGN FELL.",
-          "IN THE SHALLOWS BY THE FORD. BRING IT BACK."
-        ],
-        "active": [
-          "The tag: WEST ARM. IN THE SHALLOWS."
-        ],
-        "ready": [
-          "You lay the arm in the basket. The wood is river-black.",
-          "Under it, tied with twine: ten arrows."
-        ],
-        "done": [
-          "The tag: WEST POINTS WEST AGAIN. THANK YOU."
-        ]
-      }
+      "returnText": "Bring the sign arm to the post-keeper"
     },
     {
       "id": "sq.ow.wolves",

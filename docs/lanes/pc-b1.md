@@ -1009,3 +1009,9 @@ OB-155s (check only, no change): voxelPool picks the nearest-cap (16 DDA / 48 me
 ### QFIX-TPLFIX (kestrel-1, 2026-10-14)
 templates.test.js: option (a) - its fake index.json lacked mq.bend.call (game index has it; game was fine). Added it to legacy + expected giverDefs, seeded bend.call handedIn, and the river.road/ford.stones flow now uses accept/handIn (they are Rook-given since 53aa6c50). Data untouched. validate-content OK; content-lint R14=21; filter templates,questBook,rookQuests,errands,ch3,questBatch,content-smoke 12/12 PASS.
 mq.ow.path: Hesk (938,930), owPath trigger center (942,925.33) r10 = owGate gap: distance 6.2 < r10, so Hesk stands inside the zone and no walk-back is needed (unchanged).
+
+### QFIX-S5a-3 (kestrel-2, 2026-10-14)
+- post.spare/fc.stores/fc.shrine/fc.sign: site -> postkeeper (giver+return), writer lines removed (generated Accept/Not yet); burl.parcel + packet deliver to postkeeper. objectGiver:true on tower.blade (return bear, main), sq.straw (return rook), sq.wreck.plate (return bear), sq.packet (return postkeeper). Placeholder offers `NEEDS WRITER note.keepLight.offer / note.straw.offer / prompt.gondola.offer / prompt.packet.offer` (2 lines <= 56 chars, in `lines.offer`).
+- templates.js passes `objectGiver`; content-lint: acceptOf true for objectGiver, tower level props count as placed giver (ctx.levelIds). R14 65 -> 47 (none of the 11 ids left). objectGiver count in data = 4. validate-content OK, content-canonical PASS; errands.test.js updated (notePost only; straw handed in at Rook).
+- FAIL not mine: sim/templates.test.js (requires unknown quest mq.bend.call, from S5a-4/5 giverDefs), tower-prop-colliders.test.mjs (doorway reload; not checked on baseline).
+- Not browser-checked: tower.blade note read in main.js still uses the actKey flow (may bypass obj.<id> offer; NEEDS B1-main look), `?` over postkeeper for the 6 quests.
