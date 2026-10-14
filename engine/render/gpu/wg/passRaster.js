@@ -109,7 +109,7 @@ export class WgRasterPass {
     this.structMasks = null; // StructMaskAtlas, built with the terrain pipeline
     this.terrainBind = { uniforms: this.tu, vertexBuffer: null, indexBuffer: null, instanceBuffer: null, extraBuffers: null, textures: this.terrainTex };
     // ENV-02d (38.63): look variant, built lazily on the first world with groundLook (null groundLook = none of this exists, byte-identical path)
-    this.lookActive = false; this.terrainPipeLook = null; this.nearLookTex = null; this.farLookTex = null; this.nearLookDims = [1, 1]; this.farLookDims = [1, 1]; this.nearLookVersion = -1; this.farLookVersion = -1; this.lookWorld = null;
+    this.lookActive = false; this.terrainPipeLook = null; this.nearLookTex = null; this.farLookTex = null; this.nearLookDims = [1, 1]; this.farLookDims = [1, 1]; this.nearLookVersion = -1; this.farLookVersion = -1; this.nearLookWorld = null; this.farLookWorld = null;
     this.terrainTexL = [{ slot: 0, texture: null }, { slot: 1, texture: null }, { slot: 2, texture: null }, { slot: 3, texture: null }, { slot: 4, texture: null }];
     this.terrainBindL = { uniforms: this.tu, vertexBuffer: null, indexBuffer: null, instanceBuffer: null, extraBuffers: null, textures: this.terrainTexL };
     this.nearTex = null; this.farTex = null; this.nearDims = [1, 1]; this.farDims = [1, 1]; this.nearVersion = -1; this.farVersion = -1; this.farWorld = null; this.nearWorld = null;
@@ -325,16 +325,15 @@ export class WgRasterPass {
       this.nearLookTex = this.device.createTexture({ format: 'rg8ui', width: 1, height: 1 });
       this.farLookTex = this.device.createTexture({ format: 'rg8ui', width: 1, height: 1 });
     }
-    if (this.farLookVersion !== this.farVersion || this.lookWorld !== world) {
+    if (this.farLookVersion !== terrain.farVersion || this.farLookWorld !== world) { // set the world only on an actual upload (MAP-12 pattern)
       this.farLookTex = this._uploadLook(this.farLookTex, this.farLookDims, terrain.mapW, terrain.mapH, fl);
-      this.farLookVersion = this.farVersion;
+      this.farLookVersion = terrain.farVersion; this.farLookWorld = world;
     }
     const nl = terrain.nearReady ? terrain.near.look : null;
-    if (nl && (this.nearLookVersion !== terrain.near.version || this.lookWorld !== world)) {
+    if (nl && (this.nearLookVersion !== terrain.near.version || this.nearLookWorld !== world)) {
       this.nearLookTex = this._uploadLook(this.nearLookTex, this.nearLookDims, terrain.near.w, terrain.near.h, nl);
-      this.nearLookVersion = terrain.near.version;
+      this.nearLookVersion = terrain.near.version; this.nearLookWorld = world;
     }
-    this.lookWorld = world;
     const T = this.terrainTexL;
     T[0].texture = this.nearTex; T[1].texture = this.farTex; T[2].texture = this.terrainTex[2].texture; T[3].texture = this.nearLookTex; T[4].texture = this.farLookTex;
     this.lookActive = true;
