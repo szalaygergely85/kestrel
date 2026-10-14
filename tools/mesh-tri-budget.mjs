@@ -12,12 +12,11 @@
 // the forest recipe's `lodCells` (same field the voxel species use). (3) TwistedTree has no content mesh and no LOD1: its LOD0 tri
 // count and bbox are read from design/meshes/quaternius/glTF/TwistedTree_N.gltf and it is reported as LOD0 only. (4) frustum + LOD
 // only: no drawM/fog distance cull, no sun-shadow pass, no terrain/detail/structure triangles.
+import { writeUnitInstance, frameMatrix } from '../engine/index.js';
+import { InstanceGroups, compactGroup, frustumPlanes } from '../engine/dev.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { InstanceGroups, writeUnitInstance, compactGroup } from '../engine/mesh/instances.js';
-import { frustumPlanes } from '../engine/mesh/culling.js';
-import { frameMatrix } from '../engine/render/projection.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const GRID = { cols: 240, rows: 90, pxCellW: 1, pxCellH: 1 }; // GRID_DEFAULT_COLS x round(cols*3/8), the default
@@ -95,7 +94,7 @@ export function forestWalkPose(sc, spawn, groundAt, eyeH) {
 
 /** Mesh table for Pine/CommonTree (content LOD0 + _LOD1 json/bin) and TwistedTree (glTF, LOD0 only). */
 export async function loadMeshTable() {
-  const { meshFromBin } = await import('../engine/mesh/meshBin.js');
+  const { meshFromBin } = await import('../engine/index.js');
   const out = {}, qdir = path.join(ROOT, 'content/meshes/quaternius');
   const read = (n) => {
     const j = path.join(qdir, n + '.mesh.json');

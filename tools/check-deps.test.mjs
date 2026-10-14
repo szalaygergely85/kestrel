@@ -236,6 +236,29 @@ writeFile(tmp, 'game/js/rts/ui/good15.js', `export function f() { return Math.ra
 writeFile(tmp, 'game/js/quest/sim/bad15.js', `export function f() { return Math.random(); }\n`); // US-079a beast sim (29.1)
 writeFile(tmp, 'game/js/quest/beastView.js', `export function f() { return Math.random(); }\n`); // quest/, not quest/sim/: NOT in scope
 
+// ENG-API-01f/01g: tools deep imports are findings (no allowlist); rules 21/22 WARN.
+writeFile(tmp, 'tools/bench-deep.mjs', `import { x } from '../engine/mesh/DrawList.js';
+export const y = x;
+`);
+writeFile(tmp, 'tools/bench-shadow.mjs', `import { x } from '../engine/mesh/DrawList.js';
+export const y = x;
+`); // formerly allowlisted
+writeFile(tmp, 'engine/api-1.0.json', JSON.stringify({ version: '1.0', names: [{ name: 'oldThing', area: 'core', tier: 'deprecated', replacedBy: 'newThing' }, { name: 'OK', area: 'core', tier: 'stable' }] }));
+writeFile(tmp, 'game/js/bad21.js', `import { oldThing } from '../../engine/index.js';
+export const a = oldThing;
+`);
+writeFile(tmp, 'game/js/good21.js', `import { OK, newThing } from '../../engine/index.js';
+export const a = [OK, newThing];
+`);
+writeFile(tmp, 'game/js/bad22.js', `/** @type {import('../../engine/render/Deep22.js').Deep22} */
+export const a = null;
+`);
+writeFile(tmp, 'game/js/good22.js', `/** @type {import('../../engine/index.js').Thing} */
+export const a = null;
+`);
+writeFile(tmp, 'engine/render/inside22.js', `/** @type {import('./Deep22.js').Deep22} */
+export const a = null;
+`);
 // Control: a fully clean engine file and a clean game file (importing index.js only).
 writeFile(tmp, 'engine/index.js', `export const OK = 1;\n`);
 writeFile(tmp, 'engine/dev.js', `export const DEV_OK = 1;\n`);
@@ -253,6 +276,14 @@ try {
 }
 
 ok('exits non-zero when violations exist', exitCode !== 0, `exitCode=${exitCode}`);
+ok('ENG-API-01f: deep tools import flagged', /bench-deep\.mjs.*deep import/.test(output), output);
+ok('ENG-API-01f: formerly allowlisted tool path no longer exempt', /bench-shadow\.mjs.*deep import/.test(output), output);
+ok('rule 21: deprecated name import WARNs (with replacement)', /WARN game\/js\/bad21\.js.*deprecated "oldThing" \(use newThing\)/.test(output), output);
+ok('rule 21: non-deprecated import NOT flagged', !/good21\.js/.test(output), output);
+ok('rule 22: deep JSDoc type path outside engine/ WARNs', /WARN game\/js\/bad22\.js.*rule 22/.test(output), output);
+ok('rule 22: JSDoc path to engine/index.js NOT flagged', !/good22\.js/.test(output), output);
+ok('rule 22: JSDoc import inside engine/ NOT flagged', !/inside22\.js/.test(output), output);
+ok('rule 22 is a WARN, not a finding', !/^game\/js\/bad22/m.test(output), output);
 ok('rule 1: bare specifier flagged', /bad1\.js.*bare specifier "node:fs"/.test(output), output);
 ok('rule 1: outside-engine import flagged', /bad1\.js.*resolves outside engine\//.test(output), output);
 ok('rule 2: forbidden global flagged', /bad2\.js.*window\.ASSETS/.test(output), output);
@@ -271,10 +302,6 @@ ok('rule 20: tools/export test importing node:zlib + png-read NOT flagged', !/go
 ok('rule 20: tools/export node: built-in flagged', /bad19a\.js.*rule 20/.test(output), output);
 ok('rule 20: tools/export importing another tools file flagged', /bad19b\.js.*rule 20/.test(output), output);
 ok('rule 20: tools/export deep engine import flagged', /bad19c\.js.*rule 20/.test(output), output);
-ok('rule 21: vendor/three inside tools/chargen NOT flagged', !/good20\.js/.test(output), output);
-ok('rule 21: vendor/three from tools/ root flagged', /bad20a\.js.*rule 21/.test(output), output);
-ok('rule 21: vendor/three from engine flagged', /bad20b\.js.*rule 21/.test(output), output);
-ok('rule 21: vendor/three from game flagged', /bad20c\.js.*rule 21/.test(output), output);
 ok('rule 8: engine/test/assert.js import from a game .test.js NOT flagged', !/good8\.test\.js/.test(output), output);
 ok('rule 8: engine/test/assert.js import from a tools/editor .test.mjs NOT flagged', !/good8\.test\.mjs/.test(output), output);
 ok('rule 8: engine/test/assert.js import from a non-test file flagged', /bad8\.js.*deep import/.test(output), output);

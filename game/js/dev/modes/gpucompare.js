@@ -3,12 +3,12 @@ import {
   meshFromJSON, meshFromBin, composeCharacter, meshCharacter, collapseRig, riggedModelDef, buildMeshFromTris, MaskAtlas, buildMaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
   bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks, sunPathFrom, applySunPair, blendLook, createAtmosState, mixAtmos, applyAtmosToPalette, gradeCells, createPostState, composePost, postCells,
   bakeImpostor, enableGroupImpostor, resolveGroupLod1, createInstanceBuffer,
-  createRipples, defineWadeSplash, wadeSplashAt, validateCarpetConfig, makeUnderState,
+  createRipples, defineWadeSplash, wadeSplashAt, validateCarpetConfig, makeUnderState, pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG,
 } from '../../../../engine/index.js';
 import {
   runGpuCompare, compareCells, meshCellCap, compareGeometry, compareLight, describeCellNormals, poisonAllCells, unpackReadback,
   terrainMeshSetFor, runStableRow, compareGlow, emisFromPacked,
-  computeDerivatives, shadeSurfaces, edgePass, pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG, createShadowParityRunner,
+  computeDerivatives, shadeSurfaces, edgePass, createShadowParityRunner,
 } from '../../../../engine/dev.js';
 import { quadruped16, makeRowGI } from '../../../../engine/dev.js'; // VOX-PARTS-16b: 12-part fixture for the `vox12` row
 import { POSES as GPU_COMPARE_POSES, GATE_POSES } from '../../../../content/dev-poses.js';
