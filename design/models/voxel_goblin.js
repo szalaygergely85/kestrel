@@ -543,6 +543,7 @@
         additive: { hit: { clip: 'hitAdd', parts: ['body', 'chest', 'head', 'armL', 'armR'], inMs: 40, outMs: 160, gain: 1 } }
       },
       // ANIM-B-01d: knee rig (forward knee at z5); walk / run legs = tools/gait-configs.mjs goblin.walk / goblin.run (gait-b.test checks the numbers)
+      lookAt: { part: 'head', yawLimitDeg: 75, pitchLimitDeg: 35, hz: 2.5 }, // ANIM-LOOKAT-01 (38.69)
       legRig: {
         body: 'body',
         legs: [{ upper: 'legL', lower: 'legL2', foot: [9, 11.5, 0], bend: 'front' }, { upper: 'legR', lower: 'legR2', foot: [13, 11.5, 0], bend: 'front' }],
