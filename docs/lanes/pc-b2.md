@@ -1101,3 +1101,6 @@ flowField.js `stepLayered` now relaxes links in REVERSE (reverse index = link id
 
 ### GATE-FLAKY-07 (kestrel-3, 2026-10-14)
 navLayers01d.test: per-slice ms = min over 5 fresh bakes (rep 0 = warm-up), budget 2.5 ms kept hard; idle 1.2-1.8 ms, no split needed (1 source = 1 slice). Proof: alone 3x pass, `run-tests --filter sim` 67/67 PASS.
+
+### WMP-10-APPLY (kestrel-3, 2026-10-14)
+Applied: banner names roadWest/outwall, 10 region journals (pack.json), RELAY_WAKE.ws_highPastures, travel header + TOAST_NONE/UNKNOWN/LOCKED consts (travel.js, not yet wired into main.js), regionAmbient.json cueNames labels. Tests updated: regionBanner (fixture blanks the 2 names, limit 17), mapCard header; 12 suites PASS, canonical/validate OK.

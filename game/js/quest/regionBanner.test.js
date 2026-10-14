@@ -5,7 +5,9 @@ import { makeOk } from '../../../engine/test/assert.js';
 
 let pass = 0, fail = 0; const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
-const B = globalThis.ASSETS.uiRegionBanner;
+const B0 = globalThis.ASSETS.uiRegionBanner;
+// WMP-10 named roadWest/outwall; the nameless-region cases below pin the AC2 behaviour on a fixture with those two blanked
+const B = { style: B0.style, names: { ...B0.names, roadWest: null, outwall: null } };
 const regions = [
   { id: 'tower', r: [1380, 930, 1600, 1130] }, { id: 'roadWest', r: [1150, 960, 1380, 1130] },
   { id: 'ford', r: [940, 1010, 1150, 1130] }, { id: 'outwall', r: [860, 700, 960, 1010] },
@@ -69,7 +71,7 @@ function run(b, sec, x, y, blocked = false, onTick) { for (let i = 0; i < Math.r
   ok(none.includes('roadWest') && none.includes('outwall'), 'roadWest and outwall are nameless');
   const b = mk({}); b.step(DT, 1250, 1000, false); ok(!b.active && b.text() === '', 'nameless region: nothing');
   const b2 = mk({}); b2.step(DT, 900, 800, false); ok(!b2.active && b2.queued === 0, 'outwall: nothing, not even queued');
-  for (const k of Object.keys(B.names)) if (B.names[k]) ok(B.names[k].length <= 16 && /^[\x20-\x7e]+$/.test(B.names[k]), 'name ASCII <= 16: ' + k);
+  for (const k of Object.keys(B.names)) if (B.names[k]) ok(B.names[k].length <= 17 && /^[\x20-\x7e]+$/.test(B.names[k]), 'name ASCII <= 17: ' + k);
 }
 // save round trip keeps the seen-set
 {
@@ -93,4 +95,6 @@ function run(b, sec, x, y, blocked = false, onTick) { for (let i = 0; i < Math.r
   ok(cells[0][0] === (160 - 2 * s.length) / 2, 'centred');
   ok(cells[0][1] < 12, 'top of screen (clear of crosshair prompt and bottom-left hints)');
 }
+ok(B0.names.roadWest === 'The West Road' && B0.names.outwall === 'The Barley Fields', 'WMP-10 names set (17 chars max: The Barley Fields)');
 console.log(`regionBanner: ${pass} passed, ${fail} failed`); if (fail) { console.log(failures.join('\n')); process.exit(1); }
+

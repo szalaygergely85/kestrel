@@ -34,7 +34,7 @@ function inPoly(P, x, y) {
 
 /** @param {Object} geo world_geo (bounds, coast, regions)  @param {Object} names region id -> approved name | null
  *  @param {Object} palette {colors}  @param {{getSeen:function():string[]|undefined, w:number, h:number, travel?:Object, travelHeader?:string}} o */
-export function createWorldMapCard(geo, names, palette, { getSeen, w, h, travel = null, travelHeader = 'Travel: press a number', lockUnseen = false }) {
+export function createWorldMapCard(geo, names, palette, { getSeen, w, h, travel = null, travelHeader = 'Travel: 1-9, or arrows and Enter', lockUnseen = false }) {
   const box = worldBox(geo), innerW = w - 2, innerH = h - 2, N = innerW * innerH, spanX = box.x1 - box.x0, spanY = box.y1 - box.y0;
   const col = (k, g = 1) => { const c = hexToRgb(palette.colors[k] || '#888888'); return [c[0] * g, c[1] * g, c[2] * g]; };
   const C = { edge: col('chartEdge', 0.8), land: col('pencil', 0.8), fog: col('chartInk', 0.28), sea: col('aetherDim', 0.7), bound: col('ferrum'),
