@@ -160,4 +160,4 @@ outside combat; damage/AI knobs apply at once, HP/group size on the next spawn; 
 2. Undead (skeletons, wisps, bats) at night and human bandits on the roads - fit the world? **Owner 2026-10-14: yes.**
 3. Difficulty changeable any time (outside combat), or fixed at new game? **Owner 2026-10-14: any time (outside combat).**
 4. Respawn in real minutes (3-20 min) and camps 3 in-game days - OK, or longer? **Owner 2026-10-14: OK.**
-5. Crocodile grab + roll (mash a key to escape, ~25 % HP on Normal) - fun or too harsh? **Owner 2026-10-14: too harsh** -> PO to propose a softer croc attack (D-087).
+5. Crocodile grab + roll (mash a key to escape, ~25 % HP on Normal) - fun or too harsh? **Owner 2026-10-14: too harsh** -> PO to propose a softer croc attack (D-094).
