@@ -22,7 +22,7 @@ import { makeFrame, localToWorld, localDirToWorld, QUARTER_COS, QUARTER_SIN, fra
 import { gridLocal } from './gridLocal.js';
 import { buildWorldColliders, buildStaticMeshCollider, buildTrunkCollider, buildDetailCollider, buildPropCollider, buildKinematicCollider, moveKinematicPrism, refitDynCollider } from './colliders.js';
 import { cosSinDeg } from '../voxel/voxelPose.js';
-import { moveCircleMesh, moveSphereMesh, probeSupport, meshSupportSector, raycastCollidersRay, FLOOR_NONE } from '../physics/meshCollide.js';
+import { moveCircleMesh, moveSphereMesh, probeSupport, probeSupportQ, meshSupportSector, meshSupportSectorQ, raycastCollidersRay, FLOOR_NONE } from '../physics/meshCollide.js';
 import { pointBlocked, resolvePropPicks } from './interaction.js';
 import { createWind } from './wind.js';
 import { createClothSystem, collectClothDefs } from './cloths.js';
@@ -390,6 +390,8 @@ export class World {
 
     this._entities = new Map();   // id -> plain entity data
     this._grid = { x: 0, y: 0, z: 0 }; // gridLocal scratch (rule 9)
+    this._supportQ = new Float64Array(3); this._terrainQ = new Float64Array(4);
+    this._lq = new Float64Array(3); // NAV-ALLOC-01 LOS point scratch
     this._handles = new Map();    // id -> EntityHandle (cached, same object until remove)
     this._listeners = new Map();  // id -> Map<event, Set<fn>>
     this._eventRing = new EventRing(256);
@@ -1106,6 +1108,25 @@ export class World {
    * `terrain.groundAt`, or null with no terrain (= `SOLID_OUTSIDE`: solid). Skips the normal/type/material work.
    * undefined when `outsideSector` is overridden on this instance (test fixtures): the caller then asks the full query.
    */
+  /**
+   * NAV-ALLOC-01 (LOS hot path): point (x, y, z) read from `_lq[0..2]`, no arguments. 1 = blocked outside any structure (below
+   * ground / no terrain), 0 = free, -1 = inside a grid structure footprint or -2 = `outsideSector` overridden (caller uses the full
+   * `pointBlocked`). Same answers as `pointBlocked` outside structures.
+   */
+  losPointQ() {
+    const q = this._lq, x = q[0], y = q[1];
+    const gs = this._gridStructures();
+    for (let i = 0; i < gs.length; i++) {
+      const b = gs[i].bbox;
+      if (x >= b.x0 && x < b.x1 && y >= b.y0 && y < b.y1) return -1;
+    }
+    if (this.outsideSector !== World.prototype.outsideSector) return -2;
+    const t = this.terrain;
+    if (!t) return 1;
+    const g = t._gq; g[0] = x; g[1] = y; g[2] = q[2];
+    return t.groundBelowQ();
+  }
+
   outsideFloorH(x, y) {
     if (this.outsideSector !== World.prototype.outsideSector) return undefined;
     return this.terrain ? this.terrain.groundAt(x, y) : null;
@@ -1694,17 +1715,35 @@ export class World {
    * structure occludes terrain across its bbox, same gate as sectorAt/floorAt.
    */
   supportAt(x, y, footZ, grounded, opts) {
-    probeSupport(this.colliders, this.colliders.length, x, y, footZ, grounded, opts, this._meshSupportScratch);
-    let terrainZ = NaN, tnx = 0, tny = 0, tnz = 0;
-    if (this.terrain && !this.structureAt(x, y)) {
-      terrainZ = this.terrain.groundAt(x, y);
-      // MESH-PHYS-02: the normal is read only when terrain wins (meshSupportSector's `terrainZ >= floorZ`); on a mesh floor it is dead.
-      if (terrainZ >= this._meshSupportScratch.floorZ) {
-        const n = this.terrain.groundNormalAt(x, y, this._meshTerrainNormalScratch);
-        tnx = n.x; tny = n.y; tnz = n.z;
+    const q = this._supportQ; q[0] = x; q[1] = y; q[2] = footZ;
+    return this.supportAtQ(q, grounded, opts);
+  }
+
+  /** NAV-ALLOC-01: `supportAt` with `q` = Float64Array [x, y, footZ] (caller-owned; per-tick callers, arch 38.61 2b). Same result object. */
+  supportAtQ(q, grounded, opts) {
+    const x = q[0], y = q[1];
+    probeSupportQ(this.colliders, this.colliders.length, q, grounded, opts, this._meshSupportScratch);
+    const tq = this._terrainQ; // [terrainZ, tnx, tny, tnz]
+    tq[0] = NaN; tq[1] = 0; tq[2] = 0; tq[3] = 0;
+    const tr = this.terrain;
+    let inStructure = false;
+    if (tr) {
+      const gs = this._gridStructures();
+      for (let i = 0; i < gs.length; i++) {
+        const bb = gs[i].bbox;
+        if (x >= bb.x0 && x < bb.x1 && y >= bb.y0 && y < bb.y1) { inStructure = true; break; }
       }
     }
-    return meshSupportSector(this._meshSupportScratch, terrainZ, tnx, tny, tnz, this._meshSectorScratch);
+    if (tr && !inStructure) {
+      tr._gq[0] = x; tr._gq[1] = y; tr._groundQ(); tq[0] = tr._gz[0];
+      // MESH-PHYS-02: the normal is read only when terrain wins (meshSupportSector's `terrainZ >= floorZ`); on a mesh floor it is dead.
+      if (tq[0] >= this._meshSupportScratch.floorZ) {
+        tr._gq[0] = x; tr._gq[1] = y;
+        const n = tr.groundNormalQ(this._meshTerrainNormalScratch);
+        tq[1] = n.x; tq[2] = n.y; tq[3] = n.z;
+      }
+    }
+    return meshSupportSectorQ(this._meshSupportScratch, tq, this._meshSectorScratch);
   }
 
   // ---- water query (US-055a1, architecture.md 32.2) ---------------------------

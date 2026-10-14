@@ -115,6 +115,7 @@ export class Terrain {
     // Reused output object for `groundNormalAt` central-difference reads of
     // `groundAt` (rule 9: no per-call allocation on the query path).
     this._groundNormalScratch = { x: 0, y: 0, z: 1 };
+    this._gz = new Float64Array(1); this._gq = new Float64Array(3); // NAV-ALLOC-01 groundAt result + query scratch
   }
 
   /** The recipe's edit layer is module-global: re-bind THIS terrain's layer before any call into the recipe (two Terrains, one recipe). */
@@ -531,20 +532,53 @@ export class Terrain {
    * the band; within 0.01 m of `heightAt` at the band edge (23.7 AC).
    */
   groundAt(x, y) {
+    this._gq[0] = x; this._gq[1] = y; this._groundQ();
+    return this._gz[0];
+  }
+
+  /**
+   * NAV-ALLOC-01: groundAt on scratch: reads (x, y) from `_gq[0..1]`, writes the height to `_gz[0]`. No arguments and no return, so
+   * nothing boxes on a non-inlined call (groundNormalAt x4 and supportAt per beast per step). Same bilinear expression as the
+   * recipe's `gridHeight`; outside the near band it falls back to the analytic `heightAt` (cold, allocates).
+   */
+  _groundQ() {
+    const x = this._gq[0], y = this._gq[1];
     if (this.nearReady) {
-      const h = this.util.gridHeight(this.near, x, y);
-      if (h !== null) return h;
+      const G = this.near;
+      const fx = (x - (G.x0 || 0)) / G.cell - 0.5, fy = (y - (G.y0 || 0)) / G.cell - 0.5;
+      const i = Math.floor(fx), j = Math.floor(fy);
+      if (i >= 0 && j >= 0 && i < G.w - 1 && j < G.h - 1) {
+        const u = fx - i, v = fy - j, W = G.w, H0 = G.height;
+        const ha = H0[i + j * W], hb = H0[i + 1 + j * W], hc = H0[i + (j + 1) * W], hd = H0[i + 1 + (j + 1) * W];
+        this._gz[0] = ha + (hb - ha) * u + (hc - ha) * v + (ha - hb - hc + hd) * u * v;
+        return;
+      }
     }
-    return this.heightAt(x, y);
+    this._gz[0] = this.heightAt(x, y);
+  }
+
+  /** NAV-ALLOC-01: 1 if `_gq[2]` (z) < ground at (`_gq[0]`, `_gq[1]`) else 0. Scratch in, small int out: LOS calls this ~20x per query. */
+  groundBelowQ() {
+    this._groundQ();
+    return this._gq[2] < this._gz[0] ? 1 : 0;
   }
 
   /** `groundAt`'s surface normal via a 2 m central difference, written into the caller-owned `out` (no allocation - mirrors `normalAt`). */
   groundNormalAt(x, y, out) {
+    this._gq[0] = x; this._gq[1] = y;
+    return this.groundNormalQ(out);
+  }
+
+  /** NAV-ALLOC-01: `groundNormalAt` for the point in `_gq[0..1]` (scratch in: no boxed double args). */
+  groundNormalQ(out) {
+    const x = this._gq[0], y = this._gq[1];
     const e = 2;
-    const hL = this.groundAt(x - e, y);
-    const hR = this.groundAt(x + e, y);
-    const hD = this.groundAt(x, y - e);
-    const hU = this.groundAt(x, y + e);
+    const gz = this._gz;
+    const gq = this._gq;
+    gq[0] = x - e; gq[1] = y; this._groundQ(); const hL = gz[0];
+    gq[0] = x + e; gq[1] = y; this._groundQ(); const hR = gz[0];
+    gq[0] = x; gq[1] = y - e; this._groundQ(); const hD = gz[0];
+    gq[0] = x; gq[1] = y + e; this._groundQ(); const hU = gz[0];
     const dhdx = (hR - hL) / (2 * e);
     const dhdy = (hU - hD) / (2 * e);
     const len = Math.sqrt(dhdx * dhdx + dhdy * dhdy + 1);

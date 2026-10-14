@@ -364,6 +364,20 @@ export function moveCircleMesh(colliders, count, x, y, dx, dy, radius, footZ, gr
  * @returns {MeshSupport}
  */
 export function probeSupport(colliders, count, x, y, footZ, grounded, opts, out) {
+  const q = _supportQ; q[0] = x; q[1] = y; q[2] = footZ;
+  probeSupportQ(colliders, count, q, grounded, opts, out);
+}
+
+const _supportQ = new Float64Array(3); // scratch for the scalar-arg wrappers (probeSupport, meshSupportSector)
+const _sectorQ = new Float64Array(4);
+
+/**
+ * NAV-ALLOC-01 (arch 38.61 2b): `probeSupport` for a per-tick caller: `q` = Float64Array [x, y, footZ] (caller-owned), so no
+ * double boxes at the call boundary. Same results.
+ * @param {Float64Array} q
+ */
+export function probeSupportQ(colliders, count, q, grounded, opts, out) {
+  const x = q[0], y = q[1], footZ = q[2];
   // BUG-GONDOLA-FALL: a body may opt in (opts.airStepUp, integrate.js sets it) to probe up to that far above the feet while
   // airborne. A depenetration squeeze (prop box face vs a stepped tower wall, gap < capsule width) can leave the feet a
   // few cm BELOW a floor top they stand in; with up = SKIN that floor was missed and the player fell out of the world.
@@ -447,6 +461,13 @@ export function probeSupport(colliders, count, x, y, footZ, grounded, opts, out)
  * @returns {MeshSector}
  */
 export function meshSupportSector(sup, terrainZ, tnx, tny, tnz, out) {
+  const q = _sectorQ; q[0] = terrainZ; q[1] = tnx; q[2] = tny; q[3] = tnz;
+  return meshSupportSectorQ(sup, q, out);
+}
+
+/** NAV-ALLOC-01: `meshSupportSector` with `tq` = Float64Array [terrainZ, tnx, tny, tnz] (no boxed double args). */
+export function meshSupportSectorQ(sup, tq, out) {
+  const terrainZ = tq[0], tnx = tq[1], tny = tq[2], tnz = tq[3];
   const terrain = terrainZ >= sup.floorZ;
   const floorH = Number.isNaN(terrainZ) ? sup.floorZ : Math.max(sup.floorZ, terrainZ);
   const slope = !terrain && sup.floorHit;
