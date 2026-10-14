@@ -5,6 +5,8 @@
 import { loadQuests, saveQuest, makeStack } from './quest/model.js';
 import { questRows, filterRows, buildFlow, itemChoices, objText, objJournal } from './quest/flow.js';
 import * as ed from './quest/edit.js';
+import { applyPick } from './quest/targets.js';
+import { createQuestPicker } from './questPick.js';
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 
@@ -22,11 +24,21 @@ function memFs(files) {
 }
 
 export async function mountQuestPanel(root, opts) {
-  const { names, itemDefs, loadFiles, write } = opts;
+  const { names, itemDefs, loadFiles, write, getWorld = () => ({ entities: [] }), floorAt } = opts;
   const files = await loadFiles();
   const model = loadQuests('q', memFs(files));
   const stack = makeStack();
-  let current = null, filter = '';
+  let current = null, filter = '', pickMsg = '';
+  const sites = (model.files.get('sites.json') || { obj: {} }).obj.sites || {};
+  // ED-QUEST-03: Pick mode. A hit from the viewport sets the armed slot via one undoable command.
+  const picker = createQuestPicker({
+    onState: () => redraw(),
+    onHit: (slot, hit) => {
+      const r = applyPick(current, slot, hit, getWorld(), { sites, floorAt });
+      if (r.error) { pickMsg = r.error; redraw(); return false; }
+      pickMsg = ''; run(r.cmd); return true;
+    },
+  });
 
   root.textContent = '';
   const bar = el('div', 'q-bar');
@@ -65,6 +77,15 @@ export async function mountQuestPanel(root, opts) {
     const flow = el('pre', 'q-flow'); flow.id = 'quest-flow';
     flow.textContent = buildFlow(q, names).map((n) => n.label + (n.detail ? '\n    ' + n.detail : '')).join('\n  v\n');
     detail.append(flow);
+    const pickBtn = (slot, label) => {
+      const b = el('button', 'ed-btn' + (picker.slot === slot || (picker.slot && slot && picker.slot.obj === slot.obj && slot.obj !== undefined) ? ' active' : ''), 'Pick');
+      b.title = 'Pick ' + label + ' in the 3D view (Esc cancels)'; b.dataset.pick = typeof slot === 'string' ? slot : 'obj' + slot.obj;
+      b.addEventListener('click', () => { pickMsg = ''; picker.armed && picker.slot === slot ? picker.cancel() : picker.arm(slot); });
+      return b;
+    };
+    const slotRow = (label, slot) => { const w = el('div', 'q-field'); w.append(el('span', null, label), pickBtn(slot, label)); return w; };
+    detail.append(slotRow('Giver', 'giver'), slotRow('Return to', 'return'));
+    const pm = el('div', 'q-msg', picker.armed ? 'Click in the 3D view (Esc cancels)' : pickMsg); pm.id = 'quest-pick-msg'; detail.append(pm);
     detail.append(field('Title', q.title, (v) => run(ed.setTitle(q, v))));
     detail.append(field('Offer (Accept / Exit text, one line each)', ((q.lines && q.lines.offer) || []).join('\n'), (v) => run(ed.setOfferLines(q, v.split('\n'))), true));
     q.objectives.forEach((o, i) => {
@@ -76,7 +97,7 @@ export async function mountQuestPanel(root, opts) {
       up.addEventListener('click', () => run(ed.moveStep(q, i, i - 1)));
       dn.addEventListener('click', () => run(ed.moveStep(q, i, i + 1)));
       del.addEventListener('click', () => run(ed.deleteStep(q, i)));
-      box.append(up, dn, del); detail.append(box);
+      box.append(pickBtn({ obj: i }, 'the target of step ' + (i + 1)), up, dn, del); detail.append(box);
     });
     const add = el('button', 'ed-btn', 'Add step'); add.addEventListener('click', () => run(ed.addStep(q)));
     detail.append(add);
@@ -106,7 +127,7 @@ export async function mountQuestPanel(root, opts) {
   search.addEventListener('input', () => { filter = search.value; renderList(); });
   newBtn.addEventListener('click', () => { const c = ed.newSideQuest(model); stack.run(c); current = c.quest; redraw(); });
   redraw();
-  return { model, stack, select: (id) => { current = model.quests.find((x) => x.id === id); redraw(); } };
+  return { model, stack, picker, select: (id) => { current = model.quests.find((x) => x.id === id); redraw(); } };
 }
 
 /** Default loader: content/quests/index.json lists packs + legacy files; plain fetch from the page's server. */
