@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 export * from './content-lint-rules.js';
-import { MAX_FLOAT, GIVER_MAX_UP, GIVER_WALK_R, ENT_MAX_FLOAT, BURY_MIN, BURY_MAX, OBJECT_GIVER_MAX, SMOKE_SRC_R, CHIMNEY_R, CHIMNEY_MIN, CHEST_R, RULES, LEVELS, TITLES, RAW_DOTTED, RAW_CAMEL, rawIn, r5One, r10Quest, r12One, r14Quest, lint, line } from './content-lint-rules.js';
+import { MAX_FLOAT, GIVER_MAX_UP, GIVER_WALK_R, ENT_MAX_FLOAT, BURY_MIN, BURY_MAX, OBJECT_GIVER_MAX, SMOKE_SRC_R, CHIMNEY_R, CHIMNEY_MIN, CHEST_R, RULES, LEVELS, TITLES, RAW_DOTTED, RAW_CAMEL, rawIn, r5One, r10Quest, r12One, r14Quest, meshTopAt, lint, line } from './content-lint-rules.js';
 
 // ---- real-content context (heavy: loads the world like the existing probes) ----
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -162,7 +162,12 @@ export async function buildContext(opts = {}) {
     let support = -Infinity, above = null;
     for (const [dx, dy] of [[0, 0], [0.3, 0], [-0.3, 0], [0, 0.3], [0, -0.3]]) {
       const x = e.x + dx, y = e.y + dy; support = Math.max(support, gz(x, y));
-      for (const b of boxes) if (b.x0 <= x && b.x1 >= x && b.y0 <= y && b.y1 >= y) { if (b.z1 <= base + BURY_MIN) support = Math.max(support, b.z1); else if (b.z1 <= base + BURY_MAX) above = Math.max(above ?? 0, b.z1 - base); }
+      { const fl = w.floorAt(x, y); if (typeof fl === 'number' && fl <= base + BURY_MAX && fl > support) support = fl; } // level/structure floor (tower interior levels)
+      for (const b of boxes) if (b.x0 <= x && b.x1 >= x && b.y0 <= y && b.y1 >= y) {
+        const top = meshTopAt(b.mesh, b.s, x, y, b.z1); // exact triangle top under this footprint sample (stairs, bevelled slabs), not the coarse AABB top
+        if (top === null) continue;
+        if (top <= base + BURY_MIN) support = Math.max(support, top); else if (top <= base + BURY_MAX && dx === 0 && dy === 0) above = Math.max(above ?? 0, top - base);
+      }
     }
     return { id: e.id, x: e.x, y: e.y, base, support, floorAbove: above };
   });

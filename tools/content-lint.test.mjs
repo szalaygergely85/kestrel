@@ -1,7 +1,7 @@
 // CONTENT-LINT-01: one fixture per rule (finding fires) + a clean control (zero findings). Pure rule functions, no world load.
 // Run: node tools/content-lint.test.mjs
 import assert from 'node:assert/strict';
-import { lint, RULES, LEVELS, line, rawIn } from './content-lint.mjs';
+import { lint, RULES, LEVELS, line, rawIn, meshTopAt } from './content-lint.mjs';
 
 import { LOGIC_VOCAB as LV } from '../game/js/logic/vocab.js';
 const S = (id, mesh, x, y) => ({ id, mesh, origin: { x, y, z: 0 } });
@@ -57,6 +57,17 @@ for (const [rule, mutate] of Object.entries(cases)) {
 { const c = clean(); c.texts.push({ where: 'q', text: 'Light the relay at dusk' }); assert.equal(RULES.R4(c).length, 1); }
 { const c = clean(); c.quests[0].early = false; c.quests[0].targets.push({ id: 'x', x: 900, y: 1000 }); assert.equal(RULES.R9(c).length, 0, 'late quests may cross the river'); }
 { const c = clean(); c.entSupport.push({ id: 'b1', x: 1, y: 1, base: 0, support: 0, floorAbove: 0.4 }); assert.equal(RULES.R12(c).length, 1, 'buried'); }
+// R12 level floor: support = the level floor under the entity (tower interior): on floor = ok, floating above it = error
+{ const c = clean(); c.entSupport.push({ id: 'tower.crate', x: 1, y: 1, base: 5.7, support: 5.7, floorAbove: null }); assert.equal(RULES.R12(c).length, 0, 'on the level floor'); }
+{ const c = clean(); c.entSupport.push({ id: 'tower.crate', x: 1, y: 1, base: 6.4, support: 5.7, floorAbove: null }); assert.equal(RULES.R12(c).length, 1, 'floating above the level floor'); }
+// meshTopAt: exact stair top (two steps: z 0.2 for x<1, z 0.4 for 1<=x<2), not the AABB top 0.4
+{
+  const q = (x0, x1, z) => [x0, 0, z, x1, 0, z, x1, 2, z, x0, 0, z, x1, 2, z, x0, 2, z];
+  const stair = { pos: new Float32Array([...q(0, 1, 0.2), ...q(1, 2, 0.4)]), idx: null }, st = { origin: { x: 10, y: 20, z: 0 } };
+  assert.ok(Math.abs(meshTopAt(stair, st, 10.5, 21, 9) - 0.2) < 1e-6, 'lower step top');
+  assert.ok(Math.abs(meshTopAt(stair, st, 11.5, 21, 9) - 0.4) < 1e-6, 'upper step top');
+  assert.equal(meshTopAt(stair, st, 15, 21, 9), null, 'outside the mesh');
+}
 { const c = clean(); c.quests[0].giver = { npc: 'post' }; c.pos = () => ({ x: 1, y: 1, z: 0 }); assert.ok(RULES.R14(c).some((f) => /not a character/.test(f.msg))); c.quests[0].objectGiver = true; assert.equal(RULES.R14(c).length, 2, 'giver allowed; return is an object + share > 10 %'); assert.ok(RULES.R14(c).some((f) => f.id === '*' || /return/.test(f.msg))); }
 { const c = clean(); c.quests[0].giver = { npc: 'ghost' }; assert.ok(RULES.R14(c).some((f) => /does not resolve|not a character/.test(f.msg))); }
 { const c = clean(); c.quests[0].auto = true; assert.ok(RULES.R14(c).some((f) => /auto hand-in/.test(f.msg))); c.quests[0].auto = false; c.quests[0].giver = {}; assert.ok(RULES.R14(c).some((f) => /no giver/.test(f.msg))); }
