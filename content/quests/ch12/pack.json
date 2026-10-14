@@ -652,10 +652,10 @@
           "params": {
             "item": "boar.meat",
             "count": 2,
-            "to": "post"
+            "to": "postkeeper"
           },
-          "objText": "Leave the meat in the post basket",
-          "journal": "Burl gave you two pieces of meat. Leave them in the post basket."
+          "objText": "Bring the meat to the post-keeper",
+          "journal": "Burl gave you two pieces of meat. Bring them to the post-keeper."
         }
       ],
       "requires": [
@@ -680,7 +680,7 @@
         ]
       },
       "band": 2,
-      "returnText": "Put the meat in the trade post basket",
+      "returnText": "Give the meat to the post-keeper",
       "lines": {
         "offer": [
           "There's a basket on a post, by the crossroads.",
@@ -703,17 +703,17 @@
     {
       "id": "sq.post.spare",
       "title": "Leave What You Can Spare",
-      "site": "post",
+      "site": "postkeeper",
       "steps": [
         {
           "template": "deliver",
           "params": {
             "item": "arrow",
             "count": 3,
-            "to": "notePost"
+            "to": "postkeeper"
           },
-          "objText": "Carry three arrows to the note post",
-          "journal": "The post asks travellers to leave what they can. Carry three arrows to it."
+          "objText": "Take 3 arrows to the post-keeper",
+          "journal": "The post-keeper asks travellers to spare a little. Bring three arrows."
         }
       ],
       "requires": [
@@ -738,24 +738,7 @@
         ]
       },
       "band": 4,
-      "returnText": "Leave the arrows at the note post",
-      "lines": {
-        "offer": [
-          "A second tag, tied under the first:",
-          "THREE ARROWS TO THE NOTE POST. FOR PRACTICE.",
-          "Three arrows lie beside it, set apart."
-        ],
-        "active": [
-          "The tag sways: THREE ARROWS TO THE NOTE POST."
-        ],
-        "ready": [
-          "A clip on the post. You leave the three arrows in it.",
-          "In the clip already: a red draught, stoppered."
-        ],
-        "done": [
-          "The basket waits. The tags turn in the wind."
-        ]
-      }
+      "returnText": "Give the arrows to the post-keeper"
     },
     {
       "id": "sq.straw",
@@ -776,7 +759,7 @@
         ]
       },
       "band": 5,
-      "turnIn": "notePost",
+      "turnIn": "rook",
       "objectives": [
         {
           "id": "t1",
@@ -809,23 +792,20 @@
           "journal": "Two down. One straw man still stands. Hit the third."
         }
       ],
-      "returnText": "Take the bundle from the note post",
+      "returnText": "Tell Rook the straw men are down",
       "lines": {
         "offer": [
-          "Three straw men. Three arrows. Three hits.",
-          "The bundle under the post is for whoever can."
+          "NEEDS WRITER note.straw.offer:",
+          "Three straw men, three arrows. Try your aim?"
         ],
         "active": [
           "Three straw men. Three hits. The bundle waits."
         ],
-        "ready": [
-          "Three hits. Under the post, a bundle of arrows.",
-          "Twenty, tied with twine. Fresh knots."
-        ],
         "done": [
           "A new line on the tally. Yours, this time."
         ]
-      }
+      },
+      "objectGiver": true
     },
     {
       "id": "sq.rb.shield",
@@ -1587,7 +1567,7 @@
     {
       "id": "sq.fc.stores",
       "title": "Boars in the Stores",
-      "site": "post",
+      "site": "postkeeper",
       "steps": [
         {
           "template": "kill",
@@ -1612,23 +1592,7 @@
         "table": "gear.t2"
       },
       "band": 5,
-      "returnText": "Take what the post left for you",
-      "lines": {
-        "offer": [
-          "A tag on the basket: BOARS BROKE THE CROCK.",
-          "TWO. SOUTH OF THE POST. DRIVE THEM OFF."
-        ],
-        "active": [
-          "The tag: TWO BOARS, SOUTH OF THE POST."
-        ],
-        "ready": [
-          "The grain crock is whole again. The boars are gone.",
-          "In the basket, new, tied with twine: a bundle."
-        ],
-        "done": [
-          "The tag is turned over. It reads: THANK YOU."
-        ]
-      }
+      "returnText": "Tell the post-keeper the boars are gone"
     },
     {
       "id": "sq.fc.caps",
@@ -1732,7 +1696,7 @@
     {
       "id": "sq.fc.shrine",
       "title": "The Fallen Shrine",
-      "site": "notePost",
+      "site": "postkeeper",
       "steps": [
         {
           "template": "explore",
@@ -1741,7 +1705,7 @@
               "shrine"
             ]
           },
-          "objText": "Look at the fallen shrine by the post",
+          "objText": "Look at the fallen shrine",
           "journal": "A shrine lies fallen by the note post. Go and look at it."
         }
       ],
@@ -1764,23 +1728,7 @@
         ]
       },
       "band": 4,
-      "returnText": "Read the note post",
-      "lines": {
-        "offer": [
-          "A fresh scrap pinned on the post, in a careful hand:",
-          "THE SHRINE EAST OF HERE FELL. TELL ME WHICH WAY."
-        ],
-        "active": [
-          "The note: THE SHRINE EAST FELL. WHICH WAY?"
-        ],
-        "ready": [
-          "You look. The pillar leans WEST, toward the water.",
-          "A new line on the note, and ten arrows tied below."
-        ],
-        "done": [
-          "The note: WEST. THANK YOU. IT WAS ALWAYS WEST."
-        ]
-      }
+      "returnText": "Tell the post-keeper which way it fell"
     },
     {
       "id": "sq.fc.jetty",
@@ -2000,23 +1948,21 @@
       },
       "abandonable": true,
       "band": 2,
-      "returnText": "Bring the hide to the wrecked airship",
+      "returnText": "Bring the hide to Burl",
       "lines": {
         "offer": [
-          "The side plate hangs by one rivet.",
-          "Bent round. Light. A strap would hold it."
+          "NEEDS WRITER prompt.gondola.offer:",
+          "A bent plate hangs here. Make a shield of it?"
         ],
         "active": [
           "A plate and a strap. Boar hide would do."
         ],
-        "ready": [
-          "Hide strap, brass plate. A buckler now.",
-          "Hold right mouse to block."
-        ],
         "done": [
           "The wreck creaks. The plate is yours now."
         ]
-      }
+      },
+      "turnIn": "burl",
+      "objectGiver": true
     },
     {
       "id": "sq.honey",
@@ -2128,10 +2074,10 @@
           "template": "deliver",
           "params": {
             "item": "packet",
-            "to": "post"
+            "to": "postkeeper"
           },
-          "objText": "Leave the packet at the ford post",
-          "journal": "You found an oilcloth packet. Leave it at the ford post."
+          "objText": "Bring the packet to the post-keeper",
+          "journal": "You found an oilcloth packet. Bring it to the post-keeper."
         }
       ],
       "opensAfter": [
@@ -2147,25 +2093,20 @@
       },
       "abandonable": true,
       "band": 3,
-      "returnText": "Leave the packet at the ford post",
+      "returnText": "Hand the packet to the post-keeper",
       "lines": {
         "offer": [
-          "Oilcloth, tied with twine.",
-          "Stitched on the cloth: FOR THE FORD POST.",
-          "It has waited here a long time."
+          "NEEDS WRITER prompt.packet.offer:",
+          "An oilcloth packet. Take it to the post-keeper?"
         ],
         "active": [
           "The packet. The ford post, by the crossroads."
         ],
-        "ready": [
-          "A basket on a post. Arrows inside, and a tag:",
-          "TAKEN. LEAVE WHAT YOU CAN SPARE.",
-          "Packet left. Arrows taken. Fair trade."
-        ],
         "done": [
           "The basket waits. The tags turn in the wind."
         ]
-      }
+      },
+      "objectGiver": true
     },
     {
       "id": "sq.burl.fire",

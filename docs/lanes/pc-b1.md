@@ -974,3 +974,9 @@ OB-155s (check only, no change): voxelPool picks the nearest-cap (16 DDA / 48 me
 - R14: 89 -> 65 (R12 stays 12, none mine). validate-content OK, content-canonical ALL PASS, 13 filtered suites PASS.
 - NOT done: the 10 region errands sq.reg.* (relay_<region> givers) are not in these 12; waystone touch no longer offers errands. NEEDS WRITER: postkeeper.* (hello + every qs.sq.rb/fc.* offer/active/ready; old TICK lines are in git).
 - NEEDS B1-main: none expected (generateAll picks postkeeper from giverDefs); `?` marks over him not browser-checked.
+
+### QFIX-S5a-3 (kestrel-2, 2026-10-14)
+- post.spare/fc.stores/fc.shrine/fc.sign: site -> postkeeper (giver+return), writer lines removed (generated Accept/Not yet); burl.parcel + packet deliver to postkeeper. objectGiver:true on tower.blade (return bear, main), sq.straw (return rook), sq.wreck.plate (return bear), sq.packet (return postkeeper). Placeholder offers `NEEDS WRITER note.keepLight.offer / note.straw.offer / prompt.gondola.offer / prompt.packet.offer` (2 lines <= 56 chars, in `lines.offer`).
+- templates.js passes `objectGiver`; content-lint: acceptOf true for objectGiver, tower level props count as placed giver (ctx.levelIds). R14 65 -> 47 (none of the 11 ids left). objectGiver count in data = 4. validate-content OK, content-canonical PASS; errands.test.js updated (notePost only; straw handed in at Rook).
+- FAIL not mine: sim/templates.test.js (requires unknown quest mq.bend.call, from S5a-4/5 giverDefs), tower-prop-colliders.test.mjs (doorway reload; not checked on baseline).
+- Not browser-checked: tower.blade note read in main.js still uses the actKey flow (may bypass obj.<id> offer; NEEDS B1-main look), `?` over postkeeper for the 6 quests.

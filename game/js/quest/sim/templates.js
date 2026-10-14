@@ -145,6 +145,7 @@ export function expandQuest(src, ctx = {}) {
   const reward = expandReward(src, ctx, src.band ?? pack.band);
   if (reward) def.reward = reward;
   def.main = src.main === true;
+  if (src.objectGiver === true) def.objectGiver = true; // D-087: object giver (Accept/Exit at the object, hand-in at a character)
   def.abandonable = !def.main && !!def.giver && src.abandonable !== false;
   const band = src.band !== undefined ? src.band : pack.band;
   if (band !== undefined) def.band = band;

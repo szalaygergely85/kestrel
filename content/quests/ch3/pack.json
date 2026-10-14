@@ -39,7 +39,13 @@
           "template": "kill",
           "params": {
             "kind": "wolf",
-"ids": ["wolf1","wolf2","wolf3","wolf4","wolf5"],
+            "ids": [
+              "wolf1",
+              "wolf2",
+              "wolf3",
+              "wolf4",
+              "wolf5"
+            ],
             "count": 5
           },
           "objText": "Drive the wolves from the goose pen",
@@ -268,7 +274,7 @@
     {
       "id": "sq.fc.sign",
       "title": "The West Arm",
-      "site": "post",
+      "site": "postkeeper",
       "steps": [
         {
           "template": "fetch",
@@ -290,23 +296,7 @@
           }
         ]
       },
-      "returnText": "Bring the sign arm to the ford post",
-      "lines": {
-        "offer": [
-          "A tag on the basket: THE WEST ARM OF THE SIGN FELL.",
-          "IN THE SHALLOWS BY THE FORD. BRING IT BACK."
-        ],
-        "active": [
-          "The tag: WEST ARM. IN THE SHALLOWS."
-        ],
-        "ready": [
-          "You lay the arm in the basket. The wood is river-black.",
-          "Under it, tied with twine: ten arrows."
-        ],
-        "done": [
-          "The tag: WEST POINTS WEST AGAIN. THANK YOU."
-        ]
-      }
+      "returnText": "Bring the sign arm to the post-keeper"
     },
     {
       "id": "sq.ow.wolves",
@@ -317,7 +307,13 @@
           "template": "kill",
           "params": {
             "kind": "wolf",
-"ids": ["wolf1","wolf2","wolf3","wolf4","wolf5"],
+            "ids": [
+              "wolf1",
+              "wolf2",
+              "wolf3",
+              "wolf4",
+              "wolf5"
+            ],
             "count": 3
           },
           "objText": "Drive three wolves from the goose pen",
@@ -364,7 +360,10 @@
           "template": "kill",
           "params": {
             "kind": "boar",
-"ids": ["boarF1","boarF2"],
+            "ids": [
+              "boarF1",
+              "boarF2"
+            ],
             "count": 2
           },
           "objText": "Drive off two boars on the west bank",
