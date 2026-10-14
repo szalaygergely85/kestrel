@@ -14,6 +14,8 @@ import { POSES as GPU_COMPARE_POSES, GATE_POSES } from '../../../../content/dev-
 import { fillUnitGrid, placeholderTeamSpec } from '../unitsHarness.js'; // RE-06: instanced-units pose helpers
 import { placeCompareSprites } from '../spriteDev.js'; // US-030c: the synthetic 3-prop set for non-`real` compare poses
 import { buildGroundLookConfig } from '../../look/groundLookConfig.js'; // ENV-02d: look rows
+import { buildAtmosConfig } from '../../look/atmosConfig.js'; // ENV-03c: atmos rows
+import { createAtmosState, mixAtmos, applyAtmosToPalette, applyAtmosGrade } from '../../../../engine/index.js';
 
 export const name = 'gpucompare';
 
@@ -329,6 +331,17 @@ function buildCompareRuns(ctx) {
     lookPose('lookMeadow (ENV-02d ground look: meadow, pitched first person at (1470, 1035))', 1470, 1035, 235, -12);
     lookPose('lookForestEdge (ENV-02d ground look: forest/glade blend at (1788, 1276))', 1788, 1276, 0, -12);
     lookPose('lookBorder0 (ENV-02d ground look: look-0 / meadow border at (1884, 1012))', 1884, 1012, 270, -12);
+  }
+
+  // ENV-03c (38.65 point 5): atmosphere rows with FIXED driver weights (no driver). `atmos: { a, b?, w2?, tod: [day, dusk, night] }` = biomeLook entry names;
+  // the loop installs fog (live P.fog.far + liveFogVersion), sky/water haze and the sprite-pass grade on BOTH twins, and removes them before the next pose.
+  // Existing rows run with atmos null = unchanged. Skipped without BIOME_LOOK or with `?atmos=0`.
+  if (globalThis.BIOME_LOOK && globalThis.BIOME_LOOK.atmosMap && params.get('atmos') !== '0') {
+    const atmosPose = (name, x, y, yaw, atmos, hour) => runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: ' + name, real: true, meshOnly: true, pitchedDefault: true, atmos, hour,
+      cam: { x, y, z: (worldM1.terrain ? worldM1.terrain.groundAt(x, y) : 0) + engine.physics.eyeHeight, yawDeg: yaw, pitchDeg: -12 } });
+    atmosPose('atmosForestDay (ENV-03c: forest atmosphere, day, at (1788, 1276))', 1788, 1276, 0, { a: 'forest', tod: [1, 0, 0] }, 12);
+    atmosPose('atmosMeadowDusk (ENV-03c: meadow atmosphere, dusk, at (1470, 1035))', 1470, 1035, 235, { a: 'meadow', tod: [0, 1, 0] }, 19);
+    atmosPose('atmosBorderNight (ENV-03c: meadow/fields w = 0.5, night, at (1884, 1012))', 1884, 1012, 270, { a: 'meadow', b: 'fields', w2: 0.5, tod: [0, 0, 1] }, 23);
   }
 
   // US-068b3b (38.19 item 2): ortho ISO pose over the roadSouth area (look-at 20 m along the roadSouth view, yaw 240).
@@ -1034,7 +1047,24 @@ async function runGpuCompareSceneMode(ctx) {
   // e.g. `?gpucompare=1&renderer=mesh&pose=water pond`. No filter = every pose.
   const poseQ = (params.get('pose') || '').toLowerCase();
   const poseRuns = poseQ ? runs.filter((r) => r.name.toLowerCase().includes(poseQ)) : runs;
-  for (const { world, lights, name: poseName, cam, fade, dim, real, before, spritesExtra, needK8, meshOnly, maskPose, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, hour: poseHour, instAssert, vmAssert, decalAssert, timeSec: poseTime, carpet: carpetPose, under: underPose } of poseRuns) {
+  // ENV-03c: fixed-weight atmosphere per pose (see the atmos rows); state lives for one pose only.
+  const atmosSt = createAtmosState(), atmosDrv = { w: null, wNone: 0, tod: new Float32Array(3), on: true };
+  let atmosCfg = null, atmosInstalled = false;
+  const setAtmosPose = (spec) => {
+    const P = assets.palette;
+    if (!spec) { if (atmosInstalled) { applyAtmosToPalette(P, null); atmosInstalled = false; } fbCompare.atmos = null; return; }
+    atmosCfg = atmosCfg || buildAtmosConfig(globalThis.BIOME_LOOK);
+    const w = atmosDrv.w = new Float32Array(atmosCfg.n);
+    const ia = atmosCfg.names.indexOf(spec.a), ib = spec.b ? atmosCfg.names.indexOf(spec.b) : -1;
+    if (ia < 0 || (spec.b && ib < 0)) throw new Error('atmos pose: unknown entry ' + spec.a + '/' + spec.b);
+    const w2 = ib >= 0 ? spec.w2 : 0; w[ia] += 1 - w2; if (ib >= 0) w[ib] += w2;
+    atmosDrv.wNone = 0; atmosDrv.tod.set(spec.tod); atmosDrv.on = true;
+    const f = P.fog.farBase || P.fog.far;
+    mixAtmos(atmosCfg, atmosDrv, { nearRGB: P.rgb[f.color], farRGB: P.rgb[f.colorFar], start: f.start, full: f.full, curve: f.curve }, atmosSt);
+    applyAtmosToPalette(P, atmosSt); atmosInstalled = true; fbCompare.atmos = atmosSt;
+  };
+  for (const { atmos: atmosSpec, world, lights, name: poseName, cam, fade, dim, real, before, spritesExtra, needK8, meshOnly, maskPose, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, hour: poseHour, instAssert, vmAssert, decalAssert, timeSec: poseTime, carpet: carpetPose, under: underPose } of poseRuns) {
+    setAtmosPose(atmosSpec); // ENV-03c: install (or clear) the fixed-weight atmosphere for this pose
     if (world.carpet || world._carpetCtx) { world._carpetCtx = null; world.carpet = null; wg.setCarpet(null, null, 0); } // D2e: carpet poses only
     if (restoreSun) { restoreSun(); restoreSun = null; }
     if (meshOnly && renderer !== 'mesh') { console.log(`[gpucompare] SKIP ${poseName} (mesh renderer only)`); continue; }
@@ -1180,6 +1210,7 @@ async function runGpuCompareSceneMode(ctx) {
       applySceneFade(fbCompare.rt, fbCompare.sceneFade, fbCompare.fadeLut);
     }
     applySceneDim(fbCompare.rt, compareSceneDim);
+    if (fbCompare.atmos) applyAtmosGrade(fbCompare.rt, fbCompare.atmos); // ENV-03c: JS twin grade, after fade/dim, before the overlay
     rt.gpuActive = wasActive;
     if (overlayOps) engine.overlay.renderCpu(cam, rt.cells, depthBuffer.depth); // JS twin composite (WebGPU: judged by the final cell row)
 

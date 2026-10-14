@@ -363,6 +363,7 @@ export class WgCellPipeline {
       sp.sceneFade = typeof fb.sceneFade === 'number' ? fb.sceneFade : 1;
       if (fb.fadeLut) sp.setFadeLut(fb.fadeLut);
       if (fb.sceneDim) sp.setSceneDim(fb.sceneDim);
+      sp.atmos = fb.atmos || null; // ENV-03c: AtmosState or null = no grade (UI overlay is never graded)
     }
     this._fb = fb; this._light = light; this._cam = cam || null; this._world = world || null;
     if (this._waterPass && this._world) this._waterPass.bindWorld(this._world);

@@ -14,6 +14,7 @@ import { EDGE_BLOCK, EDGE_WGSL, EDGE_TEXTURES } from '../wgsl/edge.wgsl.js';
 import { packMaterialTable } from '../ShadeTextures.js';
 import { packTerrainTextures } from '../TerrainTextures.js';
 import { SKY_LUT_N } from '../wgsl/skyLut.js';
+import { applySkyHaze } from '../../atmos.js'; // ENV-03c
 import { sunFromWorld } from '../../lighting.js';
 import { skylineFor, grassTableFor, packGrassTable, makeFarGrass, farGrassFill } from '../../terrainShade.js'; // MAP-06b: same record as the JS twin's ctx.skyline
 import { PROJ_HFOV_DEG } from '../../projection.js';
@@ -92,7 +93,7 @@ export class WgShadePass {
     this.skyElevTop = 0;
     this.table = null; this.palette = null; this.uniforms = null; this.packed = null;
     this.tableDirty = false; this.nRec = 0;
-    this.skyPalette = null; this.skyTime = null; this.skyLiveVer = -1; // DN-02: liveLookVersion of the last bake (-1 = baked from the static look)
+    this.skyPalette = null; this.skyTime = null; this.skyLiveVer = -1; this.skyFogVer = 0; this.fogLiveVer = 0; // DN-02: liveLookVersion of the last bake (-1 = baked from the static look)
     this.terrainWorld = null; this.terrainVersion = -1;
     this.terrainU = { bandNear: 0, bandMid: 0, fogOn: false, fogStart: 0, fogFull: 0, fogCurve: 1, nearRGB: null, farRGB: null, nearDetail: false, handover: null, closeBand: 0 };
     this.sunScratch = { dirX: 0, dirY: 0, dirZ: 0, ambientI: 0, sunI: 0 };
@@ -156,7 +157,7 @@ export class WgShadePass {
   /** DN-02: the sky LUT needs a (re)bake: new palette / default time, or liveLookVersion changed (-1 = no live look = frozen path). */
   _skyStale() {
     const P = this.palette;
-    return this.skyPalette !== P || this.skyTime !== P.defaultTime || this.skyLiveVer !== (P.liveLook ? (P.liveLookVersion | 0) : -1);
+    return this.skyPalette !== P || this.skyTime !== P.defaultTime || this.skyLiveVer !== (P.liveLook ? (P.liveLookVersion | 0) : -1) || this.skyFogVer !== (P.liveFogVersion | 0); // ENV-03c: + biome haze (liveFogVersion)
   }
 
   // GL _bakeSkyLUT twin (flat gradient, SKY_LUT_N samples over elevation [0, elevTop]); re-baked when the palette / time of day changes.
@@ -164,7 +165,7 @@ export class WgShadePass {
     const P = this.palette;
     this.skyPalette = P; this.skyTime = P ? P.defaultTime : null;
     const live = P && P.liveLook; // DN-02: day/night look (blendLook); unset = the frozen path, byte-identical to before
-    this.skyLiveVer = live ? (P.liveLookVersion | 0) : -1;
+    this.skyLiveVer = live ? (P.liveLookVersion | 0) : -1; this.skyFogVer = P ? (P.liveFogVersion | 0) : 0;
     const rec = P && P.materials && P.materials.sky;
     if (!rec || !P.timeOfDay) return;
     const stops = (live || P.timeOfDay[P.defaultTime]).sky;
@@ -181,40 +182,45 @@ export class WgShadePass {
       data[i * 4 + 2] = a[2] + (b[2] - a[2]) * kk;
       data[i * 4 + 3] = 0;
     }
+    if (P.atmosLive) applySkyHaze(data, SKY_LUT_N, P.atmosLive); // ENV-03c: horizon haze (twin: fastShadeSky hazeSky), JS only maths
     this.device.writeTexture(this.texSky, data);
     this.skyElevTop = rec.elevTop;
     this.stats.skyBakes++;
+  }
+
+  /** Terrain fog scalars + colours into the shade/edge uniforms (ENV-03c: also re-run when P.liveFogVersion changes). */
+  _writeFog() {
+    const P = this.palette, fogRec = P && P.fog && P.fog.far, tu = this.terrainU, su = this.su, eu = this.eu;
+    this.fogLiveVer = P ? (P.liveFogVersion | 0) : 0;
+    tu.fogOn = !!(fogRec && P.rgb);
+    if (!tu.fogOn) return;
+    tu.fogStart = fogRec.start; tu.fogFull = fogRec.full; tu.fogCurve = fogRec.curve || 1;
+    tu.nearRGB = P.rgb[fogRec.color] || null; tu.farRGB = P.rgb[fogRec.colorFar] || null;
+    su[S_TFOG_START] = tu.fogStart; su[S_TFOG_FULL] = tu.fogFull; su[S_TFOG_CURVE] = tu.fogCurve;
+    if (tu.nearRGB) for (let k = 0; k < 3; k++) su[S_TFOG_NEAR + k] = tu.nearRGB[k];
+    if (tu.farRGB) for (let k = 0; k < 3; k++) su[S_TFOG_FAR + k] = tu.farRGB[k];
+    eu[E_TFOG_START] = tu.fogStart; eu[E_TFOG_FULL] = tu.fogFull; eu[E_TFOG_CURVE] = tu.fogCurve;
   }
 
   // GL _ensureTerrainTextures + _uploadTerrainUniforms (shade/edge part) twin: TLOOK + band/fog/near-detail constants, only on a new far bake.
   _ensureTerrain(world) {
     const terrain = world && world.terrain;
     if (!terrain || !terrain.farReady || !this.palette) return;
-    if (this.terrainVersion === terrain.farVersion && this.terrainWorld === world) return;
+    if (this.terrainVersion === terrain.farVersion && this.terrainWorld === world) { if (this.fogLiveVer !== (this.palette.liveFogVersion | 0)) this._writeFog(); return; } // ENV-03c: fog follows liveFogVersion
     const packed = packTerrainTextures(terrain, this.palette);
     this.texTlook = this._recreate(this.texTlook, 'rgba32f', packed.tlookWidth, Math.max(1, packed.tlookHeight));
     this.device.writeTexture(this.texTlook, packed.tlook);
     this.terrainVersion = terrain.farVersion; this.terrainWorld = world;
     this.stats.terrainUploads++;
-    const recipe = terrain.recipe, P = this.palette, fogRec = P && P.fog && P.fog.far, tu = this.terrainU;
+    const recipe = terrain.recipe, tu = this.terrainU;
     tu.bandNear = recipe && recipe.bands ? recipe.bands.near : tu.bandNear;
     tu.bandMid = recipe && recipe.bands ? recipe.bands.mid : tu.bandMid;
-    tu.fogOn = !!(fogRec && P.rgb);
-    if (tu.fogOn) {
-      tu.fogStart = fogRec.start; tu.fogFull = fogRec.full; tu.fogCurve = fogRec.curve || 1;
-      tu.nearRGB = P.rgb[fogRec.color] || null; tu.farRGB = P.rgb[fogRec.colorFar] || null;
-    }
+    this._writeFog();
     const nl = recipe && recipe.nearLOD;
     tu.nearDetail = !!(nl && nl.bands && nl.handover);
     if (tu.nearDetail) { tu.handover = nl.handover; tu.closeBand = nl.bands.close; }
-    const su = this.su, si = this.si, eu = this.eu;
+    const su = this.su, si = this.si;
     su[S_BAND_NEAR] = tu.bandNear; su[S_BAND_MID] = tu.bandMid;
-    if (tu.fogOn) {
-      su[S_TFOG_START] = tu.fogStart; su[S_TFOG_FULL] = tu.fogFull; su[S_TFOG_CURVE] = tu.fogCurve;
-      if (tu.nearRGB) for (let k = 0; k < 3; k++) su[S_TFOG_NEAR + k] = tu.nearRGB[k];
-      if (tu.farRGB) for (let k = 0; k < 3; k++) su[S_TFOG_FAR + k] = tu.farRGB[k];
-      eu[E_TFOG_START] = tu.fogStart; eu[E_TFOG_FULL] = tu.fogFull; eu[E_TFOG_CURVE] = tu.fogCurve;
-    }
     // OB-104b2 (38.55): cliff look = recipe rock type id (twin: makeTerrainShadeCtx ctx.cliffType; y = 0 -> off)
     const rk = recipe && recipe.terrain && recipe.terrain.rock;
     su[S_CLIFF] = rk ? rk.id : 0; su[S_CLIFF + 1] = rk ? 1 : 0;

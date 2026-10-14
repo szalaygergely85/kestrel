@@ -22,9 +22,11 @@
 // Deviations from the GL pass (flagged): (1) [fixed] ATLAS is 'rgba8ui' (uploaded as is, no widening); the WGSL reads .r/.g/.b/.a as u32 either way. (2) [fixed] the particle layer uploads only the dirty rect (rows + columns, rect.stride = layer width) via writeTexture's dataOffset. (3) Sprite rows upload `pool.spr` with rect h = count (no subarray).
 import { SPRITES_BLOCK, SPRITES_WGSL, SPRITES_TEXTURES } from '../wgsl/sprites.wgsl.js';
 import { MAX_SPRITES, SPR_TEXELS } from '../../sprites.js';
+import { writeAtmosGradeUniform } from '../../atmos.js';
 
 const F = (n) => SPRITES_BLOCK.field(n).word;
 const W_COUNT = F('count'), W_FADE = F('sceneFade'), W_MING = F('fadeMinGain'), W_RAMP = F('fadeRampLen');
+const W_ATMOS = F('atmosLift');
 const W_DIMALL = F('dimAll'), W_DIMN = F('dimCount'), W_DIMMUL = F('dimMul'), W_DIMRECT = F('dimRect');
 
 export const ATLAS_FORMAT = 'rgba8ui';
@@ -46,6 +48,7 @@ export class WgSpritesPass {
     this._rowRect = { x: 0, y: 0, w: 0, h: 0, stride: 0 }; // reused dirty-row rect for writeTexture (no per-frame allocation)
     this.sceneFade = 1; this.fadeMinGain = 0; this.fadeRampLen = 1;
     this.dimAll = 1; this.dimCount = 0;
+    this.atmos = null; // ENV-03c: AtmosState (engine/render/atmos.js) or null = no grade
     this.dimRect = new Float32Array(16); this.dimMul = new Float32Array(4);
     this.u = new Float32Array(SPRITES_BLOCK.sizeWords); this.ui = new Int32Array(this.u.buffer);
     this.outFg = null; this.outBg = null; this.target = null;
@@ -182,6 +185,7 @@ export class WgSpritesPass {
     ui[W_COUNT] = count; u[W_FADE] = this.sceneFade; u[W_MING] = this.fadeMinGain; ui[W_RAMP] = this.fadeRampLen;
     u[W_DIMALL] = this.dimAll; ui[W_DIMN] = this.dimCount;
     u.set(this.dimMul, W_DIMMUL); u.set(this.dimRect, W_DIMRECT);
+    writeAtmosGradeUniform(u, W_ATMOS, this.atmos);
     const tx = this.tex;
     tx[0].texture = inp.gi; tx[1].texture = inp.depth; tx[2].texture = inp.edgeFg; tx[3].texture = inp.edgeBg;
     tx[4].texture = this.texSpr; tx[5].texture = this.texAtlas; tx[6].texture = this.texPal;

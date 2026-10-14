@@ -67,6 +67,7 @@ import { applyLocalOverlay } from './localOverlay.js';
 import { createBootCard, createLandCard } from './bootCard.js';
 import { createFarHold } from './farHold.js'; // OB-109: hold boot/world swaps until the far terrain is baked // boot loading card + ASCII progress bar
 import { buildGroundLookConfig } from './look/groundLookConfig.js'; // ENV-02d
+import { createAtmosRuntime } from './look/atmosRuntime.js'; // ENV-03c
 import { createBootStageTimer } from './bootStageTimer.js'; // S8-B1-20: per-stage ms (content/adapter/pipelines/world/meshes)
 import { applyPlaytestOverlay } from './dev/playtest.js'; // US-034: editor play-test handoff (docs/architecture.md 24.11)
 import { computeEndCardState, drawEndCard } from './ui/endCard.js';
@@ -1315,6 +1316,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
   let waterfallHooks = null;
   let ambientMotes = null;
   let lightSet = null; // US-006: built from the loaded world's level.def.lights, below
+  let atmos = null; // ENV-03c: biome atmosphere runtime (null = off / `?atmos=0`)
   let clockDriver = null; // DN-03: step-quantised sun/look/ambient driver, rebuilt on every 'world:loaded'
   let clockTimeApplied = false; // DN-03: ?time= seeds the clock once, not on every restart
   let worldSunPath = null; // US-122a: fit the load-time sun before static/cinematic hour writes.
@@ -1464,6 +1466,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         // force it off - `setSun` is the only writer of `on`.
         if (!sunEnabled) lightSet.setSun({ elevation: lightSet.sun.elevation, azimuth: lightSet.sun.azimuth, on: false });
       }
+      atmos = createAtmosRuntime(window.BIOME_LOOK, assets.palette, world, params.get('atmos') === '0'); // ENV-03c (resets the palette fog first)
       clockDriver = null;
       if (!clockFrozen && assets.palette.daySchedule) {
         // DN-03 (38.39 item 4/7): hour from world.state (restored by the save relay above); a forced step makes the first frame right.
@@ -1512,6 +1515,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       // to both of this load's targetable lists.
       applyPropTargetables(world);
       applyPropEmitters(world); // US-053c: content `emitters` -> components.emitters, same timing rule as applyPropTargetables above
+      if (atmos) { atmos.dispose(); atmos = null; } // ENV-03c
       if (particleHooks) particleHooks.dispose();
       if (hitSparkWire) hitSparkWire.dispose();
       hitSparkWire = wireHitSparks(engine.events, engine.particles, () => (playerHandle && playerHandle.transform), hitSparksEnabled(params, isCaptureOrBench)); // HIT-SPARK-WIRE
@@ -2057,7 +2061,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (paused) { duckAudio(); if (hands) hands.disarm(); } else { unduckAudio(); resetSimAccumulator(engine); } // HANDS-01b: the sim does not step while paused, so disarm at once
     }
     if (mode === 'world' && playerHandle && !paused) {
-      if (clockDriver && !titleMenuActive) { const w = engine.world; tickClock(w.state, dt, clockCfg); clockDriver.update(w.state[CLOCK_KEY]); } // DN-03: stops on title/pause (this block), runs through respawn/restart/travel
+      if (clockDriver && !titleMenuActive) { const w = engine.world; tickClock(w.state, dt, clockCfg); clockDriver.update(w.state[CLOCK_KEY]); }; if (atmos && !titleMenuActive) atmos.step(playerHandle.data.transform, clockDriver ? clockHour(engine.world.state, clockCfg) : assets.palette.defaultTime, dt); // DN-03 + ENV-03c: stops on title/pause (this block), runs through respawn/restart/travel
       if (ending || uiLocked || vLocked() || isNoteOpen()) { // OB-057 (owner): no movement while a note is open
         controls.forward = 0; controls.strafe = 0; controls.run = false; controls.jump = false;
       } else {
@@ -2433,6 +2437,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       // cells right after its own sprite loop).
       engine.particleLayer.build(engine.particles, cam, rt, fb.lights, engine.world, assets.palette, renderer);
       sprites.render(fb, engine.world, cam, fbView ? (handFxOn ? handFbExtra : fbView.extra) : undefined); // US-030c (ARCH CHANGES item 1): after the surfaces, before present()
+      if (atmos) atmos.apply(fb); // ENV-03c: biome colour grade right after the sprites, before any UI cell (GPU: fb.atmos -> sprite pass uniform)
       // US-017 ARCH CHANGES #1 item 2: CPU-path scene fade, moved here from
       // compositor.js so sprites fade too (oracle parity with the GPU
       // composite pass, which fades every non-mask cell in one pass). Skips

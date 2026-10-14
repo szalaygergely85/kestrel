@@ -3,6 +3,7 @@
 // Schlick fresnel). JS twin of the reflect block in gpu/wgsl/waterComposite.wgsl.js (same expression order, D-039).
 // All numbers live in WATER_REFLECT; the WGSL interpolates them. Zero alloc: results go into a caller scratch (Float64Array(4)).
 import { SKY_LUT_N } from './gpu/wgsl/skyLut.js';
+import { applySkyHaze } from './atmos.js';
 
 export const WATER_REFLECT = Object.freeze({
   f0: 0.06,        // fresnel at normal incidence (looking straight down: mostly see into the water)
@@ -27,6 +28,7 @@ export function skyLutFromPalette(P, out) {
     out[i * 4 + 2] = a[2] + (b[2] - a[2]) * kk;
     out[i * 4 + 3] = 0;
   }
+  if (P.atmosLive) applySkyHaze(out, SKY_LUT_N, P.atmosLive); // ENV-03b haze
   return rec.elevTop;
 }
 

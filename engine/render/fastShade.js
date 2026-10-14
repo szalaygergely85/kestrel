@@ -32,6 +32,7 @@
 // `out.glyph`. `shadeTest.js` (a UI/test path, exempt from the allocation
 // rules) turns that back into a character for its printed comparison.
 
+import { hazeWeight } from './atmos.js'; // ENV-03b
 const GAIN_POW_LUT_SIZE = 256;
 const SPEC_POW_LUT_SIZE = 256;
 
@@ -323,7 +324,9 @@ export function fastShadeSky(P, az, elev, timeKey, out) {
   if (i >= stops.length - 1) i = stops.length - 2;
   const a = P.rgb[stops[i].c], bcol = P.rgb[stops[i + 1].c];
   const kk = (t - stops[i].t) / ((stops[i + 1].t - stops[i].t) || 1);
-  const bgR = a[0] + (bcol[0] - a[0]) * kk, bgG = a[1] + (bcol[1] - a[1]) * kk, bgB = a[2] + (bcol[2] - a[2]) * kk;
+  let bgR = a[0] + (bcol[0] - a[0]) * kk, bgG = a[1] + (bcol[1] - a[1]) * kk, bgB = a[2] + (bcol[2] - a[2]) * kk;
+  const AT = P.atmosLive; // ENV-03b: biome horizon haze (null/undefined = off, frames unchanged)
+  if (AT && AT.hazeK > 0) { const hk = hazeWeight(AT, t), hz = AT.haze; bgR += (hz[0] - bgR) * hk; bgG += (hz[1] - bgG) * hk; bgB += (hz[2] - bgB) * hk; }
 
   const tex = rec.texture;
   let tu = Math.floor(az * tex.scaleU) % tex.w; if (tu < 0) tu += tex.w;
