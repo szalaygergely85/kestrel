@@ -97,7 +97,7 @@ export function spawnItemDrop(world, itemId, x, y, z, tier = 'worn') {
   slots[slot] = id;
   world.spawn('pickup', { x, y, z, yawDeg: 0, pitchDeg: 0 }, {
     pickup: { kind: 'item', itemId, amount: 1, life: PICKUP_LIFE, baseZ: z },
-    voxel: { model: pickupModel(itemId, itemSlot(itemId)), anim: 'idle', loop: true },
+    voxel: { model: pickupModel(itemId, itemSlot(itemId)), anim: 'idle', loop: true, priority: true },
   }, id);
   return id;
 }

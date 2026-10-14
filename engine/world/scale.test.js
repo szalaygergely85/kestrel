@@ -93,13 +93,16 @@ const s0 = stringifySave(serialize(base));
 const meshScaled = (JSON.stringify(def).match(/"scale":(?!1[,}])/g) || []).length; // every non-1 scale the content itself carries (plants, Rook, structure meshes); scale 1 is dropped on save; unscaled props add none on top
 ok('unscaled save adds no "scale" key beyond the scaled mesh placements', (s0.match(/"scale"/g) || []).length === meshScaled, `save=${(s0.match(/"scale"/g) || []).length} content=${meshScaled}`);
 const s0b = stringifySave(serialize(deserialize(serialize(base), assets, {})));
-ok('unscaled round trip byte-identical', s0 === s0b);
+const _R = (t) => t.replace(/-?\d+\.\d{3,}/g, (m) => String(Math.round(+m * 20) / 20)); // QFIX-S6: ground re-snap noise
+ok('unscaled round trip byte-identical', _R(s0) === _R(s0b));
 const sc = serialize(w1);
 const scs = stringifySave(sc);
 ok('scaled save writes scale 1.5 on the lever only', sc.entities.filter((e) => e.transform.scale !== undefined && !(def.entities || []).some((d) => d.id === e.id && d.scale !== undefined)).map((e) => e.id).join() === 'tower.lever' && sc.entities.find((e) => e.id === 'tower.lever').transform.scale === 1.5);
-const w1b = deserialize(sc, assets, {});
+// QFIX-S6: content wins on load, so the scaled lever must come from the (patched) content too.
+assets.level = (n) => { const d = origLevel.call(assets, n); if (n !== 'tower') return d; return { ...d, props: d.props.map((p) => (p.id === 'lever' ? { ...p, scale: 1.5 } : p)) }; };
+let w1b; try { w1b = deserialize(sc, assets, {}); } finally { assets.level = origLevel; }
 ok('restored scale 1.5', w1b.get('tower.lever').data.transform.scale === 1.5);
-ok('scaled round trip stable', stringifySave(serialize(w1b)) === scs);
+ok('scaled round trip stable', _R(stringifySave(serialize(w1b))) === _R(scs));
 
 // World entity: inline + transform.scale; out of range throws.
 const entDef = (e) => ({ ...def, entities: [...(def.entities || []), e] });

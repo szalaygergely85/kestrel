@@ -5,7 +5,7 @@
 // error rather than a silent best-effort pass.
 
 /** Highest `WorldState.version` this engine writes/understands. */
-export const LATEST_VERSION = 2;
+export const LATEST_VERSION = 3;
 
 /**
  * Best-effort `parent` for an entity id, from the `<structId>.` id-prefix
@@ -39,6 +39,10 @@ export const MIGRATIONS = [
     }));
     return state;
   },
+  // v2 -> v3 (QFIX-S6, OB-155g): no data change. From v3 on `deserialize` lets current CONTENT win for content-owned
+  // structures and static content props (a save keeps player state, flags, removed ids, dynamic/sim entities); the bump
+  // marks the save as written under that rule so old saves are known to carry stale content-owned fields.
+  (state) => state,
 ];
 
 /**

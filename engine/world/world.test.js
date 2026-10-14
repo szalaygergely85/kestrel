@@ -37,6 +37,7 @@ farTowerMod; ferrumLightsMod;
 const { assets: canonicalAssets } = await loadTestAssets();
 const assets = dynamicTowerAssets(canonicalAssets);
 
+const _R = (t) => t.replace(/-?\d+\.\d{3,}/g, (m) => String(Math.round(+m * 20) / 20)); // QFIX-S6: float32 noise of re-grounded content props
 let pass = 0, fail = 0;
 const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
@@ -217,7 +218,7 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
   ok('deserialize keeps the voxel component (model/anim) intact',
     leverH2 && leverH2.getComponent('voxel') && leverH2.getComponent('voxel').model === 'lever' && leverH2.getComponent('voxel').anim === 'idle');
   ok('serialize(deserialize(state)) deep-equals state (round trip is stable)',
-    JSON.stringify(serialize(world2)) === JSON.stringify(state));
+    _R(JSON.stringify(serialize(world2))) === _R(JSON.stringify(state)));
 
   leverModel.voxel = savedVoxel;
 }

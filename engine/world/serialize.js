@@ -125,8 +125,10 @@ export function deserialize(state, assets, opts = {}) {
   // from content entirely, loads exactly as before this story).
   const useContentRule = state.contentVersion != null && assets && typeof assets.has === 'function' && assets.has('world', state.world);
   let keptSavedEntities = state.entities; // state shape: {id,type,transform,components,fromContent?}
+  let respawned = new Map();
   let appendedContentEntities = []; // raw content shape (may use x/y/z or spawn, not transform)
   const removedSet = new Set(state.removed || []);
+  const liveStructures = contentWinsStructures(state, assets, state.contentVersion != null && assets && typeof assets.has === 'function' && assets.has('world', state.world));
 
   if (useContentRule) {
     if (state.contentVersion !== assets.contentVersion) {
@@ -138,7 +140,7 @@ export function deserialize(state, assets, opts = {}) {
     // from `assets`, never from `state` (a stale save must not decide
     // what's "current content").
     const currentContentIds = new Set();
-    for (const s of state.structures) {
+    for (const s of liveStructures) {
       if (s.mesh || !assets.has('level', s.level)) continue;
       for (const p of assets.level(s.level).props || []) {
         if (typeof p.model === 'string' && p.model.indexOf('decal:') === 0) continue;
@@ -155,6 +157,9 @@ export function deserialize(state, assets, opts = {}) {
     const dropped = [];
     keptSavedEntities = state.entities.filter((e) => {
       if (e.fromContent && !currentContentIds.has(e.id)) { dropped.push(e.id); return false; }
+      // QFIX-S6 (OB-155g): a static content entity (sprite/voxel only) is owned by CONTENT - drop the saved copy so
+      // World.load / the append loop below respawns it from current content (position, model, ground snap).
+      if (e.fromContent && isStaticContentEntity(e)) { respawned.set(e.id, e); return false; }
       return true; // rule 3: a runtime-spawned entity (no fromContent) is always kept
     });
     if (dropped.length) {
@@ -191,7 +196,7 @@ export function deserialize(state, assets, opts = {}) {
     ...(state.terrainBands ? { terrainBands: state.terrainBands, bandSwitch: state.bandSwitch } : {}),
     triggers: state.triggers || [],
     time: state.time && state.time.timeOfDay,
-    structures: state.structures.map((s) => s.mesh
+    structures: liveStructures.map((s) => s.mesh
       ? { id: s.id, mesh: s.mesh, origin: s.origin, yawDeg: s.yawDeg, scale: s.scale, collide: s.collide }
       : { id: s.id, level: s.level, origin: s.origin, yawSteps: s.yawSteps }),
     entities: [
@@ -207,6 +212,22 @@ export function deserialize(state, assets, opts = {}) {
 
   const world = World.load(def, assets, { ...opts, skipIds: useContentRule ? removedSet : opts.skipIds });
   if (useContentRule) world._removedContent = new Set(removedSet);
+  // QFIX-S6: respawned content entities were created late; restore the saved iteration order (stable saves, deterministic sim).
+  if (respawned.size) {
+    const ordered = new Map();
+    for (const e of state.entities) { const live = world._entities.get(e.id); if (live) ordered.set(e.id, live); }
+    for (const [id, live] of world._entities) if (!ordered.has(id)) ordered.set(id, live);
+    world._entities = ordered;
+  }
+  // QFIX-S6: keep the saved animation state of respawned content entities when the model is unchanged.
+  for (const [id, se] of respawned) {
+    const live = world._entities.get(id);
+    if (!live) continue;
+    for (const k of ['sprite', 'voxel']) {
+      const sv = se.components && se.components[k], fv = live.components[k];
+      if (sv && fv && sv.model === fv.model) live.components[k] = structuredClone(sv);
+    }
+  }
 
   // Re-apply dynamics AFTER load (World.load's own structures[].dynamics
   // handling already does this from `def.structures[i].dynamics`, but that
@@ -237,6 +258,31 @@ export function deserialize(state, assets, opts = {}) {
   // US-143a (35.8 "Save"): restored BEFORE the first step, so the bob is continuous across a load.
   if (state.waterState != null) world.water.loadState(state.waterState);
   return world;
+}
+
+// QFIX-S6: components that carry no sim state - an entity with only these is a plain content prop.
+const STATIC_COMPONENTS = new Set(['sprite', 'voxel']);
+function isStaticContentEntity(e) {
+  if (e.type !== 'prop') return false;
+  const keys = Object.keys(e.components || {});
+  return keys.length > 0 && keys.every((k) => STATIC_COMPONENTS.has(k));
+}
+
+// QFIX-S6 (OB-155g): structures come from CURRENT content (origin, yaw, mesh/level); the save only contributes
+// `dynamics` (applied after load).
+function contentWinsStructures(state, assets, useContentRule) {
+  if (!useContentRule) return state.structures;
+  const cur = assets.world(state.world).structures;
+  if (!Array.isArray(cur)) return state.structures;
+  const saved = new Map(state.structures.map((s) => [s.id, s]));
+  const out = cur.map((c) => {
+    const sv = saved.get(c.id);
+    return c.mesh
+      ? { id: c.id, mesh: c.mesh, origin: c.origin, yawDeg: c.yawDeg, scale: c.scale, collide: c.collide, dynamics: sv && sv.dynamics }
+      : { id: c.id, level: c.level, origin: c.origin, yawSteps: c.yawSteps, dynamics: sv && sv.dynamics };
+  });
+  // a saved structure that current content no longer has is dropped (content removed it; structures are never runtime-added)
+  return out;
 }
 
 /**

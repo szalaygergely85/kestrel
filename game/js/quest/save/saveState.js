@@ -70,7 +70,7 @@ export function validateLook(look, path = 'player.look') {
 
 export function validateSave(save) {
   if (!save || !SAVE_READ_VERSIONS.includes(save.saveVersion)) throw new Error('save: unsupported saveVersion');
-  if (!save.world || ![1,2].includes(save.world.version) || !Array.isArray(save.world.entities) || !Array.isArray(save.world.structures)) throw new Error('save: invalid WorldState');
+  if (!save.world || ![1,2,3].includes(save.world.version) || !Array.isArray(save.world.entities) || !Array.isArray(save.world.structures)) throw new Error('save: invalid WorldState');
   if (!save.game || !save.meta || typeof save.meta.playerName !== 'string' || typeof save.meta.place !== 'string'
     || !Number.isFinite(save.meta.playTimeSec) || save.meta.playTimeSec < 0
     || (save.meta.savedAt !== undefined && !(Number.isFinite(save.meta.savedAt) && save.meta.savedAt >= 0))) throw new Error('save: invalid metadata');

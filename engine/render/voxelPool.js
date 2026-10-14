@@ -300,7 +300,9 @@ export class VoxelPool {
       if (ents[i].components.voxel.hidden === true) continue;
       const t = ents[i].transform;
       const dx = t.x - cx, dy = t.y - cy, dz = t.z - cz;
-      const d2 = dx * dx + dy * dy + dz * dz;
+      let d2 = dx * dx + dy * dy + dz * dz;
+      // QFIX-S6 (OB-155s): `voxel.priority === true` (quest markers/objects) outranks every non-priority entity, nearest-first among themselves.
+      if (ents[i].components.voxel.priority === true) d2 -= 1e12;
       if (count < ecap) {
         let j = count - 1;
         while (j >= 0 && dist[j] > d2) { dist[j + 1] = dist[j]; idx[j + 1] = idx[j]; j--; }

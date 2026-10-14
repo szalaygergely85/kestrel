@@ -568,7 +568,7 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
       const id = 'questMark_' + (markN++); let w = null, ent = null, hidden = true, scale = 1, anim = 'idle', x = 0, y = 0, z = 0;
       const cur = () => {
         const mw = markWorld; if (!mw) return null;
-        if (w !== mw || !ent || !ent.alive) { w = mw; ent = mw.get(id) || mw.spawn('prop', { x, y, z, yawDeg: 0, scale }, { voxel: { model, anim, loop: true, hidden } }, id); }
+        if (w !== mw || !ent || !ent.alive) { w = mw; ent = mw.get(id) || mw.spawn('prop', { x, y, z, yawDeg: 0, scale }, { voxel: { model, anim, loop: true, hidden, priority: true } }, id); }
         return ent.data;
       };
       const push = () => { const d = cur(); if (!d) return; Object.assign(d.transform, { x, y, z }); d.transform.scale = scale; d.components.voxel.hidden = hidden; d.components.voxel.anim = anim; w.renderVersion++; };
