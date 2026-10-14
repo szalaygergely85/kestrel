@@ -962,3 +962,7 @@ Left: wiring into the editor undo stack/UI (later ED-QUEST items). Note: tester/
 Done: `engine/core/logic.js` (compileLogic/createLogic/validateLogic/LOGIC_LIMITS; export line in engine/index.js) + `logic.test.js` (38 checks, fake vocab, Node only; ambush shape, chaining, `after`, caps, determinism, save/load mid-pending, migration, 12 validate fixtures, alloc 256 B/4000 steps = probe noise). check-deps OK.
 Choices to ratify: conds `not` = `{is:'not',cond:{...}}`; event key = first declared arg present (else wildcard), game pushes `program.kindId(name)` + `program.argId(argName,value)` (resolve at load, argId allocs a string); maxPerStep defers whole blocks (resume index); save also carries queued events `e` (not in 38.70 save shape) and an opaque game section `g` (`logic.groups`); validator arg types: int|bool|text|ref:*|enum "a|b", trailing `?` = optional.
 Not done: 512-block perf budget probe (warn-only) - add when 01c wires the real vocab.
+
+### ED-LOGIC-01b (kestrel-4, 2026-10-14) -> arch-review
+Done: `updateTriggers` emits `trigger:entered/left {key,id}` for every zone incl. area-only (module-level reused payloads, 0 alloc, 7a probe); `area:left` in `EVENT_NAMES` + payload; `bridgeEngineEvents` maps trigger:entered/left -> area:entered/area:left. Tests: triggers.test.js block 7 (alloc first, overlap sequence, still, determinism, used-key), gameHooks.test.js bridge.
+Note: payloads are module-level (shared across worlds; receivers copy). Bridge now makes area:entered fire from engine zones too (new source of that event for quests).

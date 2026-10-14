@@ -62,6 +62,12 @@ bus.emit('interaction:fired', { key: 'lever1', name: 'lever' });
 assert.equal(H3.payload('prop:touched').id, 'lever1'); assert.equal(H3.payload('prop:touched').kind, 'lever');
 assert.deepEqual([H3.payload('prop:touched').x, H3.payload('prop:touched').y, H3.payload('prop:touched').z], [0, 0, 0]);
 
+// ED-LOGIC-01b: trigger:entered/left -> area:entered / area:left
+{ const B = { m: {}, on(n, f) { (this.m[n] ||= []).push(f); return () => {}; }, emit(n, p) { for (const f of this.m[n] || []) f(p); } };
+  const HB = createGameHooks(); const g = []; HB.register({ onEvent: (n, d) => g.push(n + ':' + d.id) });
+  bridgeEngineEvents(B, HB); B.emit('trigger:entered', { key: 's.z', id: 'z' }); B.emit('trigger:left', { key: 's.z', id: 'z' });
+  assert.deepEqual(g, ['area:entered:z', 'area:left:z']); assert.ok(EVENT_NAMES.includes('area:left')); }
+
 // no per-call allocation on the hot path (tick / emitSimple / drawHud with 3 handlers)
 const H4 = createGameHooks(); let n4 = 0; const hud = {};
 for (let i = 0; i < 3; i++) H4.register({ onTick: () => n4++, onEvent: () => n4++, drawHud: () => n4++ });
