@@ -6,7 +6,7 @@
 | ID | Slot | AC (short) | Status |
 |---|---|---|---|
 | LIFE-DET-01 | kestrel-3 | beastSim replay-hash test with `fauna: null` covering the hunt/EAT paths (38.56 CHANGES 1). | todo |
-| BEAST-08b-PIN | with BEAST-08b | croc GRAB = a movement-only pin, never an input lock (D-064), unless the owner grants an exception first. | todo (gate on 08b) |
+| BEAST-08b-PIN | with BEAST-08b | D-088 (owner: pin): croc GRAB = movement-only pin (camera, attack, block, items still work), never an input lock (D-064); amend the 38.64 item 5 text in the same commit. | todo (with 08b) |
 | SIM-RULE15-01 | kestrel-3 | `game/js/quest/sim/regionalBeasts.js` Math.hypot/cos/sin in sim code (check-deps rule 15): use integer/literal tables or move it to create time. | todo |
 | WMP-03-PROBE | kestrel-4 | WMP-03 retained-heap check -> `tools/allocProbe.mjs` per 38.61 (2a). | todo |
 | QPIPE-LINT-01 | kestrel-4 (fold into QFIX-S2 R14) | a quest giver/turnIn must resolve to an NPC/animal on walkable ground (D-082, OB-147); an object giver only with `objectGiver: true`, and those are <= 10 % of all givers (D-087). | todo |
