@@ -517,6 +517,8 @@
     if (torch) anims.walk = { durations: anims.carryTorch.durations, loop: true, frames: carry }; // torch held up while walking
     anims.windup = anims.attack;         // aliases: the unchanged boar view (STATE_CLIPS) still plays something sensible
     anims.charge = anims.run;
+    // ANIM-BLEND-02: additive hit (38.68): frame 0 = identity (delta 0), the two hurt keys, back to identity
+    anims.hitAdd = { durations: [40, 50, 70, 100], loop: false, frames: [P({}), hurt[0], hurt[1], P({})] };
     return anims;
   }
 
@@ -528,6 +530,18 @@
     var v = {
       version: 1, meshOnly: true, cellM: 0.05, size: G.size, anchor: [11, 11, 0], mats: MATS, layers: G.layers,
       parts: G.parts, animations: clips(torch),
+      // ANIM-BLEND-02 (38.68; OB-150): walk 1.6 -> run 2.6 m/s (legRig tunedMps). attack / throw snap in (60) after the idle/walk/run
+      // blend; the attack's cocked key is reached at 500 ms (= sim windup); recovering to run / walk / carry / idle takes 200 ms.
+      blend: {
+        sets: { locomotion: { param: 'speed', clips: [{ clip: 'walk', at: 1.6 }, { clip: 'run', at: 2.6 }] } },
+        fades: {
+          default: 150,
+          into: { attack: 60, windup: 60, throw: 60 },
+          pairs: { 'attack>run': 200, 'attack>walk': 200, 'attack>carryTorch': 200, 'attack>idle': 200,
+                   'throw>run': 200, 'throw>walk': 200, 'throw>carryTorch': 200, 'throw>idle': 200 }
+        },
+        additive: { hit: { clip: 'hitAdd', parts: ['body', 'chest', 'head', 'armL', 'armR'], inMs: 40, outMs: 160, gain: 1 } }
+      },
       // ANIM-B-01d: knee rig (forward knee at z5); walk / run legs = tools/gait-configs.mjs goblin.walk / goblin.run (gait-b.test checks the numbers)
       legRig: {
         body: 'body',

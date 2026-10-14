@@ -301,6 +301,8 @@
   };
   animations.windup = animations.crouch;           // aliases: the boar view (beastView / beastAnim) works unchanged
   animations.charge = animations.run;
+  // ANIM-BLEND-02: additive hit (architecture.md 38.68): frame 0 = REST (delta 0), jolt = the two hurt keys, back to REST. Masked to body/head/jaw/tail.
+  animations.hitAdd = { durations: [40, 50, 70, 100], loop: false, frames: [REST, animations.hurt.frames[0], animations.hurt.frames[1], REST] };
 
   A.models.wolf = {
     name: 'wolf',
@@ -356,6 +358,17 @@
         stand: ['idle', 'crouch']
       },
       animations: animations,
+      // ANIM-BLEND-02 (38.68; OB-150 readable wind-up / recover). Sets use legRig tunedMps. crouch (500 ms, last key held from 400) fades in
+      // <= 25 %; leap / bite snap in (60 ms); recovering to run / walk / idle takes >= 150 ms (200) so the wolf visibly settles.
+      blend: {
+        sets: { locomotion: { param: 'speed', clips: [{ clip: 'walk', at: 1.1 }, { clip: 'run', at: 2.4 }] } },
+        fades: {
+          default: 150,
+          into: { crouch: 100, windup: 100, leap: 60, bite: 60 },
+          pairs: { 'crouch>leap': 60, 'leap>run': 200, 'leap>walk': 200, 'leap>idle': 200, 'bite>run': 200, 'bite>walk': 200, 'bite>idle': 200 }
+        },
+        additive: { hit: { clip: 'hitAdd', parts: ['body', 'head', 'jaw', 'tail'], inMs: 40, outMs: 160, gain: 1 } }
+      },
       // grid coords, rest pose. Same names / parts as the boar (notice / forefeet / hit / loot on `body`) + `mouth`.
       mounts: {
         notice:   { at: [5, 6, 24], part: 'body' },      // 1.2 m: 0.25 m over the ear tips
