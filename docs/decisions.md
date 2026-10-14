@@ -1284,3 +1284,6 @@ Crocodile (owner, same session): **short grab + mash to escape (1.5 s, max 12 % 
 
 ## D-104
 **2026-10-14, owner (PC-B session).** "Quests are chains, separated ones, all of them": every main quest requires exactly the previous main quest done (one linear main chain); a side quest has NO prerequisite; a chained side quest requires the previous quest of its own chain. (Open: how the D-095 river rule is kept for west-bank side quests without a quest prerequisite - PO proposes, owner picks.)
+
+## D-105
+**2026-10-14, owner (PC-B session).** The river rule (D-095) means **character level 5**, not the fireball quest: "I get the fireball around level 5". West-bank quests get a WoW-style **minimum level 5** (shown as "Requires level 5", no quest prerequisite, D-104); the fireball is a reward the player gets around level 5. Replaces the sq.burl.fire gating from OB-136/OB-136b. Character level = PLAYER-LEVEL-01 (ep-items-stats section 9 formula, owner OK pending).
