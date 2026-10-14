@@ -192,7 +192,7 @@ export { createUiLayer, clampUiCols, UI_GRID_ASPECT } from './ui/uiLayer.js';
 // (check-deps rule 14); World is passed into buildFromWorld duck-typed.
 export { NavGrid } from './nav/NavGrid.js';
 export { createAStar, findPath, findPathCells, smoothPath, pathCrossesRect, planPath } from './nav/astar.js';
-export { bakeSheets, createSheetBaker, buildLayersFromArrays } from './nav/sheets.js'; // NAV-LAYERS-01b/d
+export { bakeSheets, createSheetBaker, buildLayersFromArrays, validateLinks, addAuthoredLinks } from './nav/sheets.js'; // NAV-LAYERS-01b/d
 
 // ---- interaction (US-012) ------------------------------------------------------
 export { findInteractTarget, updateInteraction, hasLineOfSight } from './world/interaction.js';
