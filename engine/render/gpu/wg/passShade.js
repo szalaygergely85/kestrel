@@ -14,6 +14,7 @@ import { EDGE_BLOCK, EDGE_WGSL, EDGE_TEXTURES } from '../wgsl/edge.wgsl.js';
 import { packMaterialTable } from '../ShadeTextures.js';
 import { packTerrainTextures } from '../TerrainTextures.js';
 import { SKY_LUT_N } from '../wgsl/skyLut.js';
+import { applySkyHaze } from '../../atmos.js'; // ENV-03c
 import { sunFromWorld } from '../../lighting.js';
 import { skylineFor, grassTableFor, packGrassTable, makeFarGrass, farGrassFill } from '../../terrainShade.js'; // MAP-06b: same record as the JS twin's ctx.skyline
 import { PROJ_HFOV_DEG } from '../../projection.js';
@@ -92,6 +93,7 @@ export class WgShadePass {
     this.skyElevTop = 0;
     this.table = null; this.palette = null; this.uniforms = null; this.packed = null;
     this.tableDirty = false; this.nRec = 0;
+    this.skyFogVer = 0; this.terrainFogVer = 0; // ENV-03c: liveFogVersion of the last sky bake / terrain fog upload
     this.skyPalette = null; this.skyTime = null; this.skyLiveVer = -1; // DN-02: liveLookVersion of the last bake (-1 = baked from the static look)
     this.terrainWorld = null; this.terrainVersion = -1;
     this.terrainU = { bandNear: 0, bandMid: 0, fogOn: false, fogStart: 0, fogFull: 0, fogCurve: 1, nearRGB: null, farRGB: null, nearDetail: false, handover: null, closeBand: 0 };
@@ -156,7 +158,7 @@ export class WgShadePass {
   /** DN-02: the sky LUT needs a (re)bake: new palette / default time, or liveLookVersion changed (-1 = no live look = frozen path). */
   _skyStale() {
     const P = this.palette;
-    return this.skyPalette !== P || this.skyTime !== P.defaultTime || this.skyLiveVer !== (P.liveLook ? (P.liveLookVersion | 0) : -1);
+    return this.skyPalette !== P || this.skyTime !== P.defaultTime || this.skyLiveVer !== (P.liveLook ? (P.liveLookVersion | 0) : -1) || this.skyFogVer !== (P.liveFogVersion | 0);
   }
 
   // GL _bakeSkyLUT twin (flat gradient, SKY_LUT_N samples over elevation [0, elevTop]); re-baked when the palette / time of day changes.
@@ -165,6 +167,7 @@ export class WgShadePass {
     this.skyPalette = P; this.skyTime = P ? P.defaultTime : null;
     const live = P && P.liveLook; // DN-02: day/night look (blendLook); unset = the frozen path, byte-identical to before
     this.skyLiveVer = live ? (P.liveLookVersion | 0) : -1;
+    this.skyFogVer = P ? (P.liveFogVersion | 0) : 0;
     const rec = P && P.materials && P.materials.sky;
     if (!rec || !P.timeOfDay) return;
     const stops = (live || P.timeOfDay[P.defaultTime]).sky;
@@ -181,6 +184,7 @@ export class WgShadePass {
       data[i * 4 + 2] = a[2] + (b[2] - a[2]) * kk;
       data[i * 4 + 3] = 0;
     }
+    if (P.atmos) applySkyHaze(data, SKY_LUT_N, P.atmos); // ENV-03c: horizon haze (no-op when off), same rule as the JS LUT bakes
     this.device.writeTexture(this.texSky, data);
     this.skyElevTop = rec.elevTop;
     this.stats.skyBakes++;
@@ -190,12 +194,17 @@ export class WgShadePass {
   _ensureTerrain(world) {
     const terrain = world && world.terrain;
     if (!terrain || !terrain.farReady || !this.palette) return;
-    if (this.terrainVersion === terrain.farVersion && this.terrainWorld === world) return;
-    const packed = packTerrainTextures(terrain, this.palette);
-    this.texTlook = this._recreate(this.texTlook, 'rgba32f', packed.tlookWidth, Math.max(1, packed.tlookHeight));
-    this.device.writeTexture(this.texTlook, packed.tlook);
-    this.terrainVersion = terrain.farVersion; this.terrainWorld = world;
-    this.stats.terrainUploads++;
+    const fogVer = this.palette.liveFogVersion | 0; // ENV-03c: the fog uniforms also follow the live atmosphere record
+    const newBake = this.terrainVersion !== terrain.farVersion || this.terrainWorld !== world;
+    if (!newBake && this.terrainFogVer === fogVer) return;
+    this.terrainFogVer = fogVer;
+    if (newBake) { // tlook pack + upload only on a new far bake (a fog-only bump rewrites just the uniforms below, 0 alloc)
+      const packed = packTerrainTextures(terrain, this.palette);
+      this.texTlook = this._recreate(this.texTlook, 'rgba32f', packed.tlookWidth, Math.max(1, packed.tlookHeight));
+      this.device.writeTexture(this.texTlook, packed.tlook);
+      this.terrainVersion = terrain.farVersion; this.terrainWorld = world;
+      this.stats.terrainUploads++;
+    }
     const recipe = terrain.recipe, P = this.palette, fogRec = P && P.fog && P.fog.far, tu = this.terrainU;
     tu.bandNear = recipe && recipe.bands ? recipe.bands.near : tu.bandNear;
     tu.bandMid = recipe && recipe.bands ? recipe.bands.mid : tu.bandMid;

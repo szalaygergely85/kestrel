@@ -67,7 +67,7 @@ export class WgWaterPass {
     this.wu = new Float32Array(WATER_BLOCK.sizeWords); this.wi = new Int32Array(this.wu.buffer); this.wb = new Uint32Array(this.wu.buffer);
     this.cu = new Float32Array(WATER_COMPOSITE_BLOCK.sizeWords); this.ci = new Int32Array(this.cu.buffer);
     this._rip32 = new Float32Array(RIPPLE_SLOTS * 4); // S8-B2-13b (38.14): packInto scratch, allocated once
-    this._lut = new Float32Array(4 * SKY_LUT_N); this._lutPal = null; this._lutTime = null; this._lutVer = 0; this._lutBakes = 0; this._lutTop = 0; // AUD-42: sky LUT bake cache
+    this._lut = new Float32Array(4 * SKY_LUT_N); this._lutPal = null; this._lutTime = null; this._lutVer = 0; this._lutFogVer = 0; this._lutBakes = 0; this._lutTop = 0; // AUD-42: sky LUT bake cache
     this.projMode = 0; this.view = null; // the raster pass's f64 viewProj (set by prepare)
     this.clearOpts = { clear: { color: [[WATER_CLEAR_X, 0, 0, 0]], depth: 1 } };
     this.waterTex = [{ slot: 0, texture: null }];
@@ -240,8 +240,8 @@ export class WgWaterPass {
     }
     cu.set(this.wlTable, C_WL); cu.set(this.wfog, C_WFOG);
     const pal = p._palette; // AUD-42: re-bake only when the palette / time of day changes
-    if (pal !== this._lutPal || (pal && (pal.defaultTime !== this._lutTime || (pal.liveLookVersion | 0) !== this._lutVer))) { // DN-02: also on liveLookVersion (twin: waterComposite.js)
-      this._lutBakes++; this._lutPal = pal; this._lutTime = pal ? pal.defaultTime : null; this._lutVer = pal ? (pal.liveLookVersion | 0) : 0; this._lutTop = skyLutFromPalette(pal, this._lut);
+    if (pal !== this._lutPal || (pal && (pal.defaultTime !== this._lutTime || (pal.liveLookVersion | 0) !== this._lutVer || (pal.liveFogVersion | 0) !== this._lutFogVer))) { // ENV-03c: + liveFogVersion (haze) // DN-02: also on liveLookVersion (twin: waterComposite.js)
+      this._lutBakes++; this._lutPal = pal; this._lutTime = pal ? pal.defaultTime : null; this._lutVer = pal ? (pal.liveLookVersion | 0) : 0; this._lutFogVer = pal ? (pal.liveFogVersion | 0) : 0; this._lutTop = skyLutFromPalette(pal, this._lut);
       cu.set(this._lut, C_SKYLUT);
     }
     cu[C_REFLECT] = this._lutTop;

@@ -10,6 +10,8 @@ import { CellBuffer } from './CellBuffer.js';
 import { fillSky } from './sky.js';
 import { skyLutFromPalette } from './waterReflect.js';
 import { atmosFogFitError, createAtmosState, mixAtmos, applyAtmosToPalette, gradeRGB, gradeCells, applySkyHaze, ATMOS_GRADE_WGSL } from './atmos.js';
+import { compileFn, shims } from './gpu/wgsl/wgslProbe.js';
+import { SPRITES_WGSL } from './gpu/wgsl/sprites.wgsl.js';
 import { ensureGcChild, heapGrowth } from '../test/allocGate.js';
 ensureGcChild();
 globalThis.window = globalThis.window || globalThis; paletteMod; detailPassMod;
@@ -98,7 +100,9 @@ for (const wv of [0.25, 0.5, 0.8]) {
 
 // ---- grade vs look-lib L.grade, within 1/255 (cell LUT path and gradeRGB)
 const stg = createAtmosState();
-let maxD = 0, maxC = 0;
+let maxD = 0, maxC = 0, maxW = 0, nW = 0;
+const wgslCh = compileFn(ATMOS_GRADE_WGSL, 'atmosGradeCh', { pow: Math.pow });
+const wgslGrade = compileFn(ATMOS_GRADE_WGSL, 'atmosGrade', { atmosGradeCh: wgslCh, vec3f: shims.vec3f });
 for (const s of [{ w: [1, 0], t: [1, 0, 0] }, { w: [0.4, 0.6], t: [0.2, 0.3, 0.5] }, { w: [0, 1], t: [0, 0, 1] }, { w: [0.3, 0.3], t: [0.5, 0.5, 0] }]) {
   mixAtmos(table, { w: Float32Array.from(s.w), wNone: 1 - s.w[0] - s.w[1], tod: Float32Array.from(s.t), version: 1 }, base, stg);
   const gr = { lift: Array.from(stg.lift), gamma: Array.from(stg.invGamma, (x) => 1 / x), gain: Array.from(stg.gain), sat: stg.sat };
@@ -110,6 +114,10 @@ for (const s of [{ w: [1, 0], t: [1, 0, 0] }, { w: [0.4, 0.6], t: [0.2, 0.3, 0.5
   for (let i = 0; i < src.length; i += 4) {
     const ref = LL.grade([src[i] / 255, src[i + 1] / 255, src[i + 2] / 255], gr);
     tmp[0] = src[i]; tmp[1] = src[i + 1]; tmp[2] = src[i + 2]; gradeRGB(tmp, stg);
+    { // ENV-03c: the WGSL atmosGrade (JS-evaluated) vs gradeRGB, 0..1 vs 0..255
+      const o = wgslGrade({ x: src[i] / 255, y: src[i + 1] / 255, z: src[i + 2] / 255 }, { x: stg.lift[0], y: stg.lift[1], z: stg.lift[2] }, { x: stg.invGamma[0], y: stg.invGamma[1], z: stg.invGamma[2] }, { x: stg.gain[0], y: stg.gain[1], z: stg.gain[2] }, stg.sat);
+      nW++; maxW = Math.max(maxW, Math.abs(o.x * 255 - tmp[0]) / 255, Math.abs(o.y * 255 - tmp[1]) / 255, Math.abs(o.z * 255 - tmp[2]) / 255);
+    }
     for (let c = 0; c < 3; c++) {
       maxC = Math.max(maxC, Math.abs(rt.fg[i + c] / 255 - Math.min(1, Math.max(0, ref[c]))));
       maxD = Math.max(maxD, Math.abs(tmp[c] / 255 - ref[c]));
@@ -118,6 +126,13 @@ for (const s of [{ w: [1, 0], t: [1, 0, 0] }, { w: [0.4, 0.6], t: [0.2, 0.3, 0.5
 }
 assert.ok(maxD <= 1 / 255, 'gradeRGB vs L.grade ' + maxD); assert.ok(maxC <= 1 / 255, 'gradeCells vs L.grade ' + maxC);
 assert.ok(ATMOS_GRADE_WGSL.includes('fn atmosGrade(c: vec3f'));
+assert.ok(nW >= 3000 * 4 && maxW <= 1 / 255, 'WGSL atmosGrade vs gradeRGB ' + maxW + ' over ' + nW);
+{ // splice + uniform append + skip-when-off + mutation
+  assert.ok(SPRITES_WGSL.includes(ATMOS_GRADE_WGSL) && SPRITES_WGSL.includes("if (su.atmosLift.w > 0.5)"), "sprites splice");
+  assert.ok(!/%|\bround\s*\(|\bmix\s*\(|dpdx|fwidth/.test(ATMOS_GRADE_WGSL), "WGSL lint");
+  const bad = compileFn(ATMOS_GRADE_WGSL.replace('(1.0 - x)', '(1.0 + x)'), 'atmosGradeCh', { pow: Math.pow });
+  assert.ok(Math.abs(bad(0.5, 0.1, 1, 1) - wgslCh(0.5, 0.1, 1, 1)) > 0.01, 'mutation caught');
+}
 { const rt = new CellBuffer(8, 8); for (let i = 0; i < 64; i++) rt.glyphIdx[i] = i; const g0 = new Uint8Array(rt.glyphIdx); const f3 = rt.fg[3]; gradeCells(rt, stg); assert.deepEqual(rt.glyphIdx, g0, 'glyphs unchanged'); assert.equal(rt.fg[3], f3); }
 
 // ---- 0 alloc: mix + apply + LUT haze + grade (after warm-up)

@@ -26,6 +26,7 @@ import { MAX_SPRITES, SPR_TEXELS } from '../../sprites.js';
 const F = (n) => SPRITES_BLOCK.field(n).word;
 const W_COUNT = F('count'), W_FADE = F('sceneFade'), W_MING = F('fadeMinGain'), W_RAMP = F('fadeRampLen');
 const W_DIMALL = F('dimAll'), W_DIMN = F('dimCount'), W_DIMMUL = F('dimMul'), W_DIMRECT = F('dimRect');
+const W_ALIFT = F('atmosLift'), W_AIG = F('atmosInvGamma'), W_AGAIN = F('atmosGain'); // ENV-03c
 
 export const ATLAS_FORMAT = 'rgba8ui';
 
@@ -182,6 +183,13 @@ export class WgSpritesPass {
     ui[W_COUNT] = count; u[W_FADE] = this.sceneFade; u[W_MING] = this.fadeMinGain; ui[W_RAMP] = this.fadeRampLen;
     u[W_DIMALL] = this.dimAll; ui[W_DIMN] = this.dimCount;
     u.set(this.dimMul, W_DIMMUL); u.set(this.dimRect, W_DIMRECT);
+    const A = this.palette && this.palette.atmos; // ENV-03c: published by applyAtmosToPalette; absent/off/identity = w 0 (shader skips)
+    if (A && A.on && !A.gradeId) {
+      const l = A.lift, ig = A.invGamma, g = A.gain;
+      u[W_ALIFT] = l[0]; u[W_ALIFT + 1] = l[1]; u[W_ALIFT + 2] = l[2]; u[W_ALIFT + 3] = 1;
+      u[W_AIG] = ig[0]; u[W_AIG + 1] = ig[1]; u[W_AIG + 2] = ig[2]; u[W_AIG + 3] = A.sat;
+      u[W_AGAIN] = g[0]; u[W_AGAIN + 1] = g[1]; u[W_AGAIN + 2] = g[2];
+    } else u[W_ALIFT + 3] = 0;
     const tx = this.tex;
     tx[0].texture = inp.gi; tx[1].texture = inp.depth; tx[2].texture = inp.edgeFg; tx[3].texture = inp.edgeBg;
     tx[4].texture = this.texSpr; tx[5].texture = this.texAtlas; tx[6].texture = this.texPal;

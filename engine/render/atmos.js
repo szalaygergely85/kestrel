@@ -174,10 +174,18 @@ export function gradeCells(rt, state) {
   }
 }
 
-/** WGSL twin of gradeRGB (0..1). Uniform fields are ENV-03c's (atmosLift/atmosInvGamma/atmosGain .xyz, sat in atmosInvGamma.w). */
-export const ATMOS_GRADE_WGSL = `fn atmosGrade(c: vec3f, lift: vec3f, invGamma: vec3f, gain: vec3f, sat: f32) -> vec3f {
-  let v = pow(max(gain * (c + lift * (vec3f(1.0) - c)), vec3f(0.0)), invGamma);
-  let y = dot(v, vec3f(${ATMOS_LUMA[0]}, ${ATMOS_LUMA[1]}, ${ATMOS_LUMA[2]}));
-  return vec3f(y) + (v - vec3f(y)) * sat;
+/**
+ * WGSL twin of gradeRGB (0..1), generated from ATMOS_LUMA. Per-channel scalar helper + vec3 wrapper (scalar form so the Node probe
+ * can evaluate it). Uniform words live at the END of SpritesU (sprites.wgsl.js): atmosLift.xyz + on, atmosInvGamma.xyz + sat, atmosGain.xyz.
+ */
+export const ATMOS_GRADE_WGSL = `fn atmosGradeCh(x: f32, l: f32, ig: f32, g: f32) -> f32 {
+  return pow(max(g * (x + l * (1.0 - x)), 0.0), ig);
+}
+fn atmosGrade(c: vec3f, lift: vec3f, invGamma: vec3f, gain: vec3f, sat: f32) -> vec3f {
+  let r = atmosGradeCh(c.x, lift.x, invGamma.x, gain.x);
+  let g = atmosGradeCh(c.y, lift.y, invGamma.y, gain.y);
+  let b = atmosGradeCh(c.z, lift.z, invGamma.z, gain.z);
+  let y = ${ATMOS_LUMA[0]} * r + ${ATMOS_LUMA[1]} * g + ${ATMOS_LUMA[2]} * b;
+  return vec3f(y + (r - y) * sat, y + (g - y) * sat, y + (b - y) * sat);
 }
 `;
