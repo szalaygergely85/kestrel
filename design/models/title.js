@@ -278,7 +278,7 @@
     // story.md 5 narrative hints (writer), same hint style. `when` = the US-015 programmer AC wording; `on` = the same rule as data.
     // Zones: levelPatch.towerHints below (append to tower.js triggers[]). `skipIfState`: never shown if that world.state key is true.
     storyHints: [
-      { id: 'hint.farm.ambush', text: 'The gate slams shut. Goblins!', keys: [],
+      { id: 'hint.farm.ambush', text: 'The gate slams behind you. Three goblins step out.', keys: [],
         when: 'ED-LOGIC-01d logic action hint (farm.ambush). NEEDS WRITER: placeholder text, <= 56 chars',
         on: { type: 'logic' }, doneOn: 'timeout only' },
       { id: 'burner', text: 'The burner ticks. The Kestrel is done.', keys: [],
