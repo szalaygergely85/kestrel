@@ -1269,3 +1269,6 @@ Crocodile (owner, same session): **short grab + mash to escape (1.5 s, max 12 % 
 
 ## D-099
 **2026-10-14, owner (PC-B session).** "Fireball shouldn't be an item... it will be a spellbook." Spells are NOT pack items: `spell.fireball` (and later spells) leave the inventory/pack and live in a **spellbook** (own screen/tab, learned spells + tiers, cast from the quick bar or a spell key). Mana potions stay items. Follow-up: the OB-162 "locked slot" case for spells disappears with this. Also (OB-167): the no-sprite rule (OB-132) is about items/props only; fire and flame effects stay animated sprites.
+
+## D-100
+**2026-10-14, owner (PC-B session).** Spells live **only in the hands** (Diablo style): a learned spell is put into a hand slot from the spellbook and cast with that hand's mouse button, like a weapon. The quick bar 1-4 is for potions/consumables only - no spells on it.
