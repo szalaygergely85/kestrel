@@ -36,11 +36,14 @@ try {
 
   const variants = (process.argv[4] || 'base,gi=0,atmos=0,post=0,look=0,imp=0').split(',');
   for (const pose of (process.env.POSES || 'roadSouth').split(';')) for (const v of variants) {
-    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?dev=1&title=0&backend=webgpu&${pose.startsWith('at=') ? pose : 'pose=' + pose}&quality=extreme${v === 'base' ? '' : '&' + v}` });
+    // CLOCK=h: live (unfrozen) clock at hour h, no ?pose/?at, teleport via TELE="x,y,z,yawDeg" -> biome atmosphere ON like the owner's play
+    const live = process.env.CLOCK ? `time=${process.env.CLOCK}` : (pose.startsWith('at=') ? pose : 'pose=' + pose);
+    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?dev=1&title=0&backend=webgpu&${live}&quality=extreme${v === 'base' ? '' : '&' + v}` });
     await waitReady();
     await evaluate(cdp, `(()=>{const l=__debug.look; try{Object.defineProperty(l,'locked',{get:()=>true,configurable:true})}catch(e){}})()`); await pause(4000); // headless: pointer never locks -> pause menu freezes the sim (and the ENV-03 atmos driver); fake the lock
+    if (process.env.TELE) { const [x, y, z, yaw] = process.env.TELE.split(',').map(Number); await evaluate(cdp, `(()=>{const t=__debug.playerHandle.data.transform;t.x=${x};t.y=${y};t.z=${z};t.yawDeg=${yaw};})()`); await pause(6000); }
     if (process.env.PROBE) console.log(pose, v, await evaluateAsync(cdp, process.env.PROBE));
-    await shot('ob175-' + pose.replace(/[^a-z0-9]/gi,'_') + '-' + v.replace('=', ''));
+    await shot('ob175-' + (process.env.CLOCK ? 'clk' + process.env.CLOCK : pose.replace(/[^a-z0-9]/gi,'_')) + '-' + v.replace('=', ''));
   }
   console.log('OB-175 stills saved', JSON.stringify(errors.map((e) => e.text)));
 } finally {
