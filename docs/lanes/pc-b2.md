@@ -907,3 +907,6 @@ Not done (scope): slopes C-03, pool plumbing C-04.
 - WMP-03-PROBE: `regionAmbient.test.js` uses `allocProbe` (strict, < 1 B/step). It measured 24 B/step (closure doubles boxed), so `regionAmbient.js` fadeT/checkT now live in a Float64Array; now 0.
 - FERRUM-NOSPRITE-01: gen-ferrum-far.mjs no longer builds/pushes the ferrumGlow entity (still strips a stale one); ferrum_lights.js `world` size dropped + D-086 note; arch 38.46 heading marked; `tools/ferrum-nosprite.test.mjs` (no ferrumGlow/ferrumLights entity, horizon[] empty, no billboard in generator). World json had none already; model file kept (tests/preview load it).
 - Gates: filtered suites PASS, validate-content OK, check-deps OK. No main.js edit needed.
+### QL-19-FIX (kestrel-4, 2026-10-14)
+No code change needed: the River Boots wet-stone passive is already wired. `createWetStones(worldDef.structures)` + `wetStones.step(...)` run before `integrate` in game/js/main.js (~l.1568, ~l.2090; commit e8353fc7), scaling controls by 0.4 for 0.4 s on sprint onto a `fordS*`/`wet:true` stone without boots, plus splash fx.
+`wetStones.test.js` covers boots x sprint x wet table (boots -> no slow, no boots + sprint + wet -> 0.4), plus the main.js wiring assert; wetStones + equipmentPassives PASS, check-deps OK. The PO reject (2026-10-14 batch) predates/missed that commit: re-submit QL-19 for PO review.
