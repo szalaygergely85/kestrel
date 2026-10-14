@@ -453,6 +453,7 @@ export class World {
       w.terrain = opts.terrain && opts.terrain.recipe === recipe ? opts.terrain : new Terrain(recipe, { edits: terrainEditsFor(assets, def.terrain) });
       // Keep the old canopy until the recipe supplies real-tree content.
       w.terrain.realTrees = opts.realTrees === true && !!recipe.recipe?.forest?.trees;
+      if (opts.groundLook !== undefined && !(opts.terrain && opts.terrain === w.terrain)) w.terrain.setGroundLook(opts.groundLook || null); // ENV-02c (38.63): look bytes, null/absent = off (bytes unchanged)
       if (w.terrain.realTrees) { // TREES-LP-b (37.15 item 5): resolve `species[i].mesh` once; a missing id throws naming the species
         const sp = recipe.recipe.forest.trees.species;
         w.scatterMeshes = null;

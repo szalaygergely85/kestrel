@@ -23,6 +23,7 @@ import {
 export const MAX_SUB = 16; // 4x4, matches resolve.wgsl.js's cap
 import { SKY_LUT_N } from './skyLut.js';
 import { MAX_LEVELS } from '../ShadeTextures.js';
+import { GROUND_LOOK_WGSL, LOOK_BLOCK_FIELDS, LOOK_GA_HI_SHIFT, LOOK_GA_W_SHIFT } from '../../groundLook.js'; // ENV-02d
 import { TLOOK_WIDTH, MAX_FEATURES_PER_TYPE } from '../TerrainTextures.js';
 import { KIND_TERRAIN, KIND_MODEL, KIND_MESH, KIND_GRASS, FACE_PACKED } from '../../GBuffer.js';
 import { WET_DARK, WET_SPEC } from '../../detailShade.js';
@@ -36,7 +37,7 @@ import { CLIFF_NZ, FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TR
 
 
 
-export const SHADE_BLOCK = defineUniformBlock('ShadeU', [
+const SHADE_FIELDS = [
   { name: 'fogFg', type: 'vec3' }, { name: 'fogStart', type: 'f32' },
   { name: 'fogBg', type: 'vec3' }, { name: 'fogFull', type: 'f32' },
   { name: 'sunDir', type: 'vec3' }, { name: 'ambientI', type: 'f32' },
@@ -77,7 +78,10 @@ export const SHADE_BLOCK = defineUniformBlock('ShadeU', [
   { name: 'fgP', type: 'vec4' }, // G2 + P3 (D-075 step 4), APPENDED: far grass tier. x = on, y = startM (carpet radius), z = fadeM, w = colour mix (terrainShade.js farGrassFill)
   { name: 'fgW', type: 'vec4' }, // far grass gust phase: dirX, dirY, cycles per second, 1 / travel (m/s)
   { name: 'fgT', type: 'vec4', count: FG_TYPES }, // far grass per ground type id: rgb bytes (carpet ramp middle), w = strength (0 = type has no far grass)
-]);
+];
+export const SHADE_BLOCK = defineUniformBlock('ShadeU', SHADE_FIELDS);
+/** ENV-02d: ShadeU + look table (appended: earlier word offsets unchanged); look pipelines only. */
+export const SHADE_LOOK_BLOCK = defineUniformBlock('ShadeU', [...SHADE_FIELDS, ...LOOK_BLOCK_FIELDS]);
 
 export const SHADE_TEXTURES = Object.freeze([
   'uint', 'uint', 'uint', 'uint', 'uint', 'uint', 'float', 'float', 'float', 'float', 'sint', 'sint', 'float', 'float', 'uint', 'float',
@@ -109,7 +113,7 @@ fn tsPatchNoise(u: f32, v: f32, fp: f32, v8: f32) -> f32 {
 `;
 
 // glsl/terrain.frag.js TERRAIN_SHADE_GLSL (shadeTerrain), literal twin of terrainShade.js shadeTerrain.
-export const TERRAIN_SHADE_WGSL = `
+const terrainShadeWgsl = (LK) => `
 const MAX_FEATURES_PER_TYPE: i32 = ${MAX_FEATURES_PER_TYPE};
 // ME-06b: literal twin of terrainShade.js's faceMode (0 surface, 1 canopy face, 2 foot row).
 const FOREST_FACE_NZ: f32 = ${FOREST_FACE_NZ.toFixed(4)};
@@ -130,7 +134,7 @@ ${TS_PATCH_NOISE_WGSL}
 struct TerrainOut { fr: f32, fg: f32, fb: f32, br: f32, bg: f32, bb: f32, glyph: i32, fgw: f32 };
 
 ${SKYLINE_FOG_WGSL}
-fn shadeTerrain(t: f32, typeIdIn: i32, b: f32, uIn: f32, vIn: f32, timeSec: f32, faceMode: i32, z: f32, nrm: vec3f) -> TerrainOut {
+fn shadeTerrain(t: f32, typeIdIn: i32, b: f32, uIn: f32, vIn: f32, timeSec: f32, faceMode: i32, z: f32, nrm: vec3f${LK ? ', lookLo: i32, lookHi: i32, lookW: f32' : ''}) -> TerrainOut {
   // OB-104b (38.55) cliff: steep cell (N.z < CLIFF_NZ) of a type without forest-face glyphs -> rock type, (u, v) = (horizontal axis along the wall, z). Twin: terrainShade.js shadeTerrain, same 4 lines.
   var typeId = typeIdIn; var u = uIn; var v = vIn;
   if (su.cliff.y > 0.5 && nrm.z < ${CLIFF_NZ.toFixed(4)} && !(textureLoad(uTlook, vec2i(3, typeIdIn), 0).w > 0.0)) {
@@ -140,8 +144,12 @@ fn shadeTerrain(t: f32, typeIdIn: i32, b: f32, uIn: f32, vIn: f32, timeSec: f32,
   }
   // OB-073: band-limited smooth value noise for the patch tier + 0.25 m glyph cell with one per-point switch (twin: terrainShade.js).
   let fp = tsFootprint(t);
-  let v8 = tsValueNoise(u * ${(1 / NOISE_CELLS[0]).toFixed(4)}, v * ${(1 / NOISE_CELLS[0]).toFixed(4)}, ${NOISE_SALT});
-  let nP = tsPatchNoise(u, v, fp, v8);
+  ${LK ? `var lk: LookOut;
+  let lookOn = (lookLo | lookHi) != 0;
+  var nP = 0.0;
+  if (lookOn) { lk = lkShade(u, v, fp, t, timeSec, lookLo, lookHi, lookW); nP = 2.0 * lk.tone - 1.0; } // ENV-02d: look tone replaces the patch noise (twin: shadeTerrain lookOn)
+  else { nP = tsPatchNoise(u, v, fp, tsValueNoise(u * ${(1 / NOISE_CELLS[0]).toFixed(4)}, v * ${(1 / NOISE_CELLS[0]).toFixed(4)}, ${NOISE_SALT})); }` : `let v8 = tsValueNoise(u * ${(1 / NOISE_CELLS[0]).toFixed(4)}, v * ${(1 / NOISE_CELLS[0]).toFixed(4)}, ${NOISE_SALT});
+  let nP = tsPatchNoise(u, v, fp, v8);`}
   // OB-073 calm ground: colour tier only from the smooth noise (no per-cell dither dice); ONE glyph per type (no hash, no band/close/glint).
   let off = clamp(i32(floor(nP * ${PATCH_K.toFixed(4)} + 0.5)), -1, 1);
 
@@ -186,7 +194,8 @@ fn shadeTerrain(t: f32, typeIdIn: i32, b: f32, uIn: f32, vIn: f32, timeSec: f32,
   let gT = textureLoad(uTlook, vec2i(4, base), 0);
   let packedX = i32(gT.x); let packedCount = i32(gT.y);
   var code = pickCodeFromPacked(packedX, packedCount, packedCount >> 1u);
-
+${LK ? `  if (lookOn) { fr = lk.fr * 255.0 * gain; fgc = lk.fg * 255.0 * gain; fbc = lk.fb * 255.0 * gain; br = lk.br * 255.0 * gain; bgc = lk.bg * 255.0 * gain; bbc = lk.bb * 255.0 * gain; code = lk.code; }
+` : ''}
   // G2 + P3 far grass tier (twin: terrainShade.js shadeTerrain, same lines). fgw = weight, > 0 = stable level 254.
   var fgw = 0.0; var fgAnimW = 0.0;
   if (su.fgP.x > 0.5 && (!close || su.fgP.x > 1.0)) { // OB-121b: fgP.x = on * (1 + underlay)
@@ -203,11 +212,18 @@ fn shadeTerrain(t: f32, typeIdIn: i32, b: f32, uIn: f32, vIn: f32, timeSec: f32,
           tri = 1.0 - abs(2.0 * ph - 1.0); tri = tri * tri * (3.0 - 2.0 * tri);
         }
         let sg = clamp(nP * ${FG_SLOPE.toFixed(4)} + (tri - 0.5) * ${FG_GUST.toFixed(4)}, -1.0, 1.0);
-        if (fgw > 0.5 - 0.4 * sg) { code = select(select(${FG_CODES[1]}, ${FG_CODES[2]}, sg > 0.33), ${FG_CODES[0]}, sg < -0.33); }
+${LK ? `        if (fgw > 0.5 - 0.4 * sg) { code = select(select(${FG_CODES[1]}, ${FG_CODES[2]}, sg > 0.33), ${FG_CODES[0]}, sg < -0.33); if (lookOn) { code = select(select(lk.g1, lk.g2, sg > 0.33), lk.g0, sg < -0.33); } }
+        let km = fgw * su.fgP.w * (1.0 + ${FG_MOD.toFixed(4)} * sg);
+        if (lookOn) { fr += (lk.tr * 255.0 * gain - fr) * km; fgc += (lk.tg * 255.0 * gain - fgc) * km; fbc += (lk.tb * 255.0 * gain - fbc) * km; }
+        else {
+          fr += (su.fgT[typeId].x * gain - fr) * km; fgc += (su.fgT[typeId].y * gain - fgc) * km; fbc += (su.fgT[typeId].z * gain - fbc) * km;
+          br = fr * 0.3; bgc = fgc * 0.3; bbc = fbc * 0.3;
+        }
+` : `        if (fgw > 0.5 - 0.4 * sg) { code = select(select(${FG_CODES[1]}, ${FG_CODES[2]}, sg > 0.33), ${FG_CODES[0]}, sg < -0.33); }
         let km = fgw * su.fgP.w * (1.0 + ${FG_MOD.toFixed(4)} * sg);
         fr += (su.fgT[typeId].x * gain - fr) * km; fgc += (su.fgT[typeId].y * gain - fgc) * km; fbc += (su.fgT[typeId].z * gain - fbc) * km;
         br = fr * 0.3; bgc = fgc * 0.3; bbc = fbc * 0.3;
-      }
+`}      }
     }
   }
 
@@ -245,7 +261,7 @@ fn shadeTerrain(t: f32, typeIdIn: i32, b: f32, uIn: f32, vIn: f32, timeSec: f32,
   if (f > 0.85) { code = 0; }
 
   var o: TerrainOut;
-  o.fr = fr; o.fg = fgc; o.fb = fbc; o.br = br; o.bg = bgc; o.bb = bbc; o.glyph = code; o.fgw = fgAnimW;
+  o.fr = fr; o.fg = fgc; o.fb = fbc; o.br = br; o.bg = bgc; o.bb = bbc; o.glyph = code; o.fgw = ${LK ? 'select(fgAnimW, 1.0, lookOn && lk.anim > 0.0)' : 'fgAnimW'};
   return o;
 }
 // OB-073 D2e: kind-10 carpet blade (twin: terrainShade.js shadeGrass). No skyline cap, glyph by h01 / lean, colour = ramp(h01 + tint).
@@ -294,11 +310,14 @@ fn shadeGrass(t: f32, variant: i32, h01: f32, lean: f32, tint: f32, b: f32, gx: 
   return o;
 }
 `;
+export const TERRAIN_SHADE_WGSL = terrainShadeWgsl(false);
+/** ENV-02d: shadeTerrain with the look splice (+ GROUND_LOOK_WGSL); only used by the look pipelines. */
+export const TERRAIN_SHADE_LOOK_WGSL = GROUND_LOOK_WGSL + terrainShadeWgsl(true);
 
 // US-073b (38.25): the stable-glyph variant adds one r8uint target `lvl` (@location(2)) = the ramp level of the picked glyph (255 = none /
 // passthrough / terrain / line / fog stipple). `L` holds the four text splices; with withLevel=false every splice is '' and the
 // string is byte-identical to the pre-073b shader (asserted by sha in shade.wgsl.test.js).
-function buildShadeWgsl(withLevel) {
+function buildShadeWgsl(withLevel, look = false) {
   const L = withLevel
     ? {
       field: `
@@ -316,7 +335,7 @@ function buildShadeWgsl(withLevel) {
     }
     : { field: '', init: '', vars: '', set: '', stip: '', out: '', terr: '', grass: '' };
   return `
-${SHADE_BLOCK.wgsl}
+${look ? SHADE_LOOK_BLOCK.wgsl : SHADE_BLOCK.wgsl}
 @group(0) @binding(0) var uGI: texture_2d<u32>;    // resolved: x = planeId, y = kind|face|mask|cov|mat, z = packed normal (terrain)
 @group(0) @binding(1) var uGA: texture_2d<u32>;    // bitcast u, v, z, aoD - resolved (nearest-centre winner sample)
 @group(0) @binding(2) var uGD: texture_2d<u32>;    // bitcast dudx, dvdx, dudy, dvdy - resolved, shared over a cell's sub-samples
@@ -391,7 +410,7 @@ fn fogScaleCell(row: i32, rows: i32) -> f32 {
 }
 fn faceK(face: i32) -> f32 { return su.faceK[u32(face) >> 2u][u32(face) & 3u]; }
 
-${TERRAIN_SHADE_WGSL}
+${look ? TERRAIN_SHADE_LOOK_WGSL : TERRAIN_SHADE_WGSL}
 
 ${SKY_GLOW_WGSL}
 ${FOG_SHAPE_WGSL}
@@ -749,7 +768,7 @@ fn shadeCell(frag: vec4f) -> FO {
         if (giKind(giDn.y) == ${KIND_TERRAIN}u && i32(giMat(giDn.y)) == typeId && unpackNormalOct(giDn.z).z < FOREST_FACE_NZ) { faceModeT = 1; }
       }
     }
-    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceModeT, bitcast<f32>(gaT.z), Nt);
+${look ? `    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceModeT, bitcast<f32>(gaT.z), Nt, i32(gaT.w & 15u), i32((gaT.w >> ${LOOK_GA_HI_SHIFT}u) & 15u), f32((gaT.w >> ${LOOK_GA_W_SHIFT}u) & 255u) * (1.0 / 255.0));` : `    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceModeT, bitcast<f32>(gaT.z), Nt);`}
     let frQ = floor(clamp(to.fr, 0.0, 255.0) + 0.5);
     let fgQ = floor(clamp(to.fg, 0.0, 255.0) + 0.5);
     let fbQ = floor(clamp(to.fb, 0.0, 255.0) + 0.5);
@@ -953,5 +972,8 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
 
 export const SHADE_WGSL = buildShadeWgsl(false);
 export const SHADE_LEVEL_WGSL = buildShadeWgsl(true);
+/** ENV-02d: ShadeU + the look table (uniform), look pipelines only; the plain SHADE_WGSL / SHADE_LEVEL_WGSL stay byte-identical. */
+export const SHADE_LOOK_WGSL = buildShadeWgsl(false, true);
+export const SHADE_LEVEL_LOOK_WGSL = buildShadeWgsl(true, true);
 export const SHADE_LEVEL_TARGETS = Object.freeze(['rgba8', 'rgba8', 'r8ui']);
 
