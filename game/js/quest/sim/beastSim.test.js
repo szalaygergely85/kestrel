@@ -1226,6 +1226,30 @@ function huntSim(fauna) {
   }
 }
 
+{ // LIFE-DET-01: replay hash, same seed + inputs -> equal state hash every step (fauna null, and a hunt that ends in EAT)
+  const run = (mkFauna, steps) => {
+    const world = buildWorld([wolfEnt("w1", 1461, 1031)]);
+    const nav = buildBeastNav(world, NAV_CFG);
+    const { events } = makeEvents();
+    const rng = createRng(3);
+    const fauna = mkFauna();
+    const sim = createBeastSim(world, { nav, rng, events, fauna });
+    const hs = []; let eat = -1;
+    for (let n = 0; n < steps; n++) {
+      sim.step(1461, 1090, 0);
+      if (sim.state[0] === STATE_EAT && eat < 0) eat = n;
+      const h = createHasher(); h.u32(n); rng.hashInto(h); sim.hashInto(h); hs.push(h.value());
+    }
+    return { hs, eat, fauna };
+  };
+  const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+  const n1 = run(() => null, 600), n2 = run(() => null, 600);
+  ok("LIFE-DET-01 fauna null: per-step hashes equal across two runs", same(n1.hs, n2.hs) && n1.eat < 0);
+  const mk = () => stubFauna([{ x: 1466, y: 1031, species: 1, alive: true }]);
+  const h1 = run(mk, 900), h2 = run(mk, 900);
+  ok("LIFE-DET-01 hunt -> EAT: per-step hashes equal across two runs", same(h1.hs, h2.hs) && h1.eat >= 0 && h1.eat === h2.eat, "eat=" + h1.eat);
+}
+
 // ---- LIFE-08 (38.56 d): setGoal / clearGoal / setAltTargets ----------------------------------------------------
 function goalSim() {
   const world = buildWorld([wolfEnt('w1', 1461, 1031)]);
