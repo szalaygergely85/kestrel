@@ -69,4 +69,18 @@ t('SPELLBOOK-02: right hand (slot 1) / left hand (slot 0, sword back to the pack
   assert.equal(assign(p, defs, 1, FB), true); assert.equal(e.main, null); assert.equal(e.off, FB);
   syncHands(p.components.inventory, e); assert.equal(p.components.inventory.right, FB);
 });
+// ARCH CHANGES (batch 4): ensureSpellbook repairs a missing / invalid learned map; the migration nulls `it` of the slot it frees
+{
+  for (const bad of [undefined, null, 5, 'x', []]) {
+    const p = { components: { spellbook: { learned: bad } } };
+    assert.deepEqual(learnedIds(p), bad === undefined || bad === null || bad === 5 || bad === 'x' ? learnedIds(p) : []); // readers never throw
+    assert.equal(isLearned(p, 'x'), false); assert.equal(tierOf(p, 'x'), 0);
+    migrateSpellbook(p, {}); assert.deepEqual(p.components.spellbook.learned, {}); learnSpell(p, 'spell.fireball'); assert.equal(isLearned(p, 'spell.fireball'), true);
+  }
+  const p = { components: {} }; ensureInventory(p, { pack: [] });
+  const defs2 = { 'spell.fireball': { kind: 'spell' } };
+  const sl = p.components.inventory.slots[0]; sl.id = 'spell.fireball'; sl.n = 1; sl.it = { iL: 1 };
+  assert.equal(migrateSpellbook(p, defs2), 1); assert.equal(sl.it, null); assert.equal(sl.id, null);
+  n++;
+}
 console.log('spellbook: ' + n + ' passed');

@@ -40,6 +40,7 @@ export function createSaveRelay({ storage, questDef, giverDefs = [], slot: slot0
     get openedChests() { return [...chests]; },
     get deadBeasts() { return [...dead]; },
     get playTimeSec() { return playSec; },
+    get playerName() { return playerName; }, // ITEM-02c: save id seed
     /** PAUSE-MENU-01: true when play time has passed since the last save/load (asks "Save first?"). */
     get dirty() { return sinceSave > 0; },
     get lastResult() { return lastResult; },

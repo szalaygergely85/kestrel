@@ -14,6 +14,7 @@ export const combatMods = {
   drawMul: 1, blockStamMul: 1, fireMul: 1, armour: 0, hp: 100, mana: 100, moveSpeed: 0,
 };
 export const hitOut = { dmg: 0, crit: 0, life: 0 };
+let lastCache = null, lastRecomputes = -1;
 let rng = createStatsRng(0xC0FFEE);
 /** Re-seed the combat roll stream (new game / tests). */
 export function seedCombat(seed) { rng = createStatsRng(seed >>> 0); }
@@ -21,8 +22,11 @@ export function seedCombat(seed) { rng = createStatsRng(seed >>> 0); }
 /** @param {any} cache createStatsCache() @param {any} eq player.components.equipment (or null) @param {Record<string,any>} defs */
 export function refreshCombat(cache, eq, defs) {
   const m = combatMods;
-  if (!eq) { m.active = 0; m.speedRate = 0; m.reachAdd = 0; m.drawMul = 1; m.blockStamMul = 1; m.armour = 0; m.lifeOnHit = 0; return m; }
+  if (!eq) { lastCache = null; m.active = 0; m.speedRate = 0; m.reachAdd = 0; m.drawMul = 1; m.blockStamMul = 1; m.armour = 0; m.lifeOnHit = 0; return m; }
   const t = refreshTotals(cache, eq, defs);
+  // nothing changed since the last fill (same cache, same recompute count): skip the ~25 field writes (they box doubles)
+  if (m.active === 1 && lastCache === cache && lastRecomputes === cache.recomputes) return m;
+  lastCache = cache; lastRecomputes = cache.recomputes;
   const b = cache.viewEq.main ? ITEM_BASES[cache.viewEq.main.type] : null;
   m.active = 1;
   m.mainMin = t.mainMax > 0 ? t.mainMin : FIST[0] * (1 + t.dmgPct); m.mainMax = t.mainMax > 0 ? t.mainMax : FIST[1] * (1 + t.dmgPct);

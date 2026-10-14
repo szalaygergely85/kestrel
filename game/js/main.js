@@ -1642,7 +1642,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (!window.__fbEquipHooked) window.__fbEquipHooked = true, engine.events.on('magic.unlocked', () => { if (playerHandle && itemDefs) learnAndEquip(playerHandle.data, itemDefs, 'spell.fireball'); }); // SPELLBOOK-01: learn into the book + free off hand // FB-01/03 fix: the unlock puts the spell into the free off hand (RMB); hands are derived from equipment, so inventory.right alone never held it
       if (world.state['tower.sword.taken'] && itemDefs) migrateSword(playerHandle.data.components.inventory, itemDefs);
       if (itemDefs) migrateEquipment(playerHandle.data, itemDefs); // EQ-02: old saves sword->main, shield->off (before initialState)
-      if (itemDefs) migrateItems(playerHandle.data, itemDefs, ensureSaveId(world.state, 'Wick', saveRelay ? saveRelay.playTimeSec : 0)); // ITEM-02c: v1 gear ids -> instances once (before initialState)
+      if (itemDefs) migrateItems(playerHandle.data, itemDefs, ensureSaveId(world.state, (saveRelay && saveRelay.playerName) || 'Wick', saveRelay ? saveRelay.playTimeSec : 0)); // ITEM-02c: v1 gear ids -> instances once (before initialState)
       if (itemDefs) syncSpellbook(playerHandle.data, itemDefs, 'spell.fireball', fireballOn(engine.world, FEATURES)); // SPELLBOOK-01: old pack spell -> spellbook, pack slot freed
       // US-091a2 (37.16.3): corpse loot + toast. Own RNG stream (nav seed ^ salt) so the beast wander RNG is never
       // perturbed; `beast.loot` (quest/index.js) reaches this load's sim through setLootApi.

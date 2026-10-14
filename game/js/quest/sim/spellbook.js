@@ -6,12 +6,14 @@ import { equipSpell } from './equipment.js';
 
 export function ensureSpellbook(player) {
   const c = player.components || (player.components = {});
-  return c.spellbook || (c.spellbook = { learned: {} });
+  const b = c.spellbook || (c.spellbook = { learned: {} });
+  if (!b.learned || typeof b.learned !== 'object' || Array.isArray(b.learned)) b.learned = {}; // repair a missing / invalid map (hand-edited or corrupt save)
+  return b;
 }
-export function isLearned(player, id) { const b = player.components && player.components.spellbook; return !!(b && b.learned[id]); }
+export function isLearned(player, id) { const b = player.components && player.components.spellbook; return !!(b && b.learned && b.learned[id]); }
 /** Learned spell ids in learn order. */
-export function learnedIds(player) { const b = player.components && player.components.spellbook; return b ? Object.keys(b.learned) : []; }
-export function tierOf(player, id) { const b = player.components && player.components.spellbook; return b && b.learned[id] || 0; }
+export function learnedIds(player) { const b = player.components && player.components.spellbook; return b && b.learned ? Object.keys(b.learned) : []; }
+export function tierOf(player, id) { const b = player.components && player.components.spellbook; return b && b.learned && b.learned[id] || 0; }
 export function learnSpell(player, id, tier = 1) { const b = ensureSpellbook(player); if (!b.learned[id] || b.learned[id] < tier) b.learned[id] = tier; return b; }
 
 /**
@@ -25,7 +27,7 @@ export function migrateSpellbook(player, defs) {
   if (!inv) return n;
   for (let i = 0; i < SLOTS; i++) {
     const s = inv.slots[i], d = s.id && defs[s.id];
-    if (d && d.kind === 'spell') { learnSpell(player, s.id, 1); s.id = null; s.n = 0; n++; }
+    if (d && d.kind === 'spell') { learnSpell(player, s.id, 1); s.id = null; s.n = 0; s.it = null; n++; }
   }
   return n;
 }

@@ -10,6 +10,9 @@ import swordMod from '../../../../design/models/sword.js';
 import { makeOk } from '../../../../engine/test/assert.js';
 import { createHitStop } from '../../fx/hitStop.js';
 import { SWORD_CFG } from '../swordConfig.js';
+import { allocProbe } from '../../../../tools/allocProbe.mjs';
+import { combatMods as cmA, refreshCombat as refreshA } from './combatMods.js';
+import { createStatsCache as cacheA } from './itemInst.js';
 import { createSwordSim, ST_IDLE, ST_HOLD, ST_CHARGE, ST_LIGHT, ST_HARD, ST_REST, SPARK_CLINK, SPARK_HIT_HEAVY } from './sword.js';
 
 let pass = 0, fail = 0;
@@ -135,40 +138,40 @@ const FWD = [0, 1]; // (fx, fy) facing +y
 // ---------------------------------------------------------------------------------------------------------------
 {
   const p = player();
-  const hooks = makeManaHook(10);
+  const hooks = makeManaHook(100);
   const { sim } = freshSim([p], null, hooks);
   sim.step(p, ...FWD, true);
   stepN(sim, p, ...FWD, true, 24); // -> charge
   sim.step(p, ...FWD, false); // release with mana -> hard
   ok('release in charge with mana -> hard', sim.state === ST_HARD, `state=${sim.state}`);
   ok('mana spent exactly once', hooks.callCount === 1, `calls=${hooks.callCount}`);
-  ok('mp reduced by hard.mana', hooks.mp === 10 - SWORD_CFG.hard.mana, `mp=${hooks.mp}`);
+  ok('mp reduced by hard.mana', hooks.mp === 100 - SWORD_CFG.hard.mana, `mp=${hooks.mp}`);
 }
 {
   const p = player();
-  const hooks = makeManaHook(3); // < hard.mana (4)
+  const hooks = makeManaHook(SWORD_CFG.hard.mana - 1); // < hard.mana
   const { sim } = freshSim([p], null, hooks);
   sim.step(p, ...FWD, true);
   stepN(sim, p, ...FWD, true, 24);
   sim.step(p, ...FWD, false);
   ok('hard with insufficient mana -> light instead', sim.state === ST_LIGHT, `state=${sim.state}`);
-  ok('mp unchanged on a short spend', hooks.mp === 3, `mp=${hooks.mp}`);
+  ok('mp unchanged on a short spend', hooks.mp === SWORD_CFG.hard.mana - 1, `mp=${hooks.mp}`);
   ok('spendMana called once (feedback hook already flags the flash)', hooks.callCount === 1);
 }
 {
   // mana spent once on release, ALSO on a miss (swing at empty air).
   const p = player();
-  const hooks = makeManaHook(10);
+  const hooks = makeManaHook(100);
   const { sim } = freshSim([p], null, hooks);
   sim.step(p, ...FWD, true);
   stepN(sim, p, ...FWD, true, 24);
   sim.step(p, ...FWD, false); // release, no target anywhere -> a miss, mana still spent once
-  ok('mana spent once even on a miss', hooks.callCount === 1 && hooks.mp === 10 - SWORD_CFG.hard.mana);
+  ok('mana spent once even on a miss', hooks.callCount === 1 && hooks.mp === 100 - SWORD_CFG.hard.mana);
 }
 {
   // never checked/spent during charge itself (only on release).
   const p = player();
-  const hooks = makeManaHook(10);
+  const hooks = makeManaHook(100);
   const { sim } = freshSim([p], null, hooks);
   sim.step(p, ...FWD, true);
   stepN(sim, p, ...FWD, true, 50); // long charge, never released
@@ -269,7 +272,7 @@ const FWD = [0, 1]; // (fx, fy) facing +y
 }
 {
   const p = player();
-  const hooks = makeManaHook(10);
+  const hooks = makeManaHook(100);
   const { world, sim } = freshSim([p], null, hooks);
   world.state['tower.sword.taken'] = true;
   sim.step(p, ...FWD, true);
@@ -280,7 +283,7 @@ const FWD = [0, 1]; // (fx, fy) facing +y
 }
 {
   const p = player();
-  const hooks = makeManaHook(10);
+  const hooks = makeManaHook(100);
   const { world, sim } = freshSim([p], null, hooks);
   world.state['tower.sword.taken'] = true;
   sim.step(p, ...FWD, true);
@@ -444,7 +447,7 @@ for (const hand of ['left', 'right', undefined]) {
 }
 {
   const p = player();
-  const hooks = makeManaHook(10);
+  const hooks = makeManaHook(100);
   const tgt = target('t1', 0, 1.0, 0.9);
   const { world, sim, hits } = freshSim([p, tgt], null, hooks);
   world.state['tower.sword.taken'] = true;
@@ -484,7 +487,7 @@ for (const hard of [false, true]) {
 }
 {
   const p = player();
-  const hooks = makeManaHook(10);
+  const hooks = makeManaHook(100);
   const tgt = target('t1', 0, 1.0, 0.9, true); // has components.body
   const { world, sim, hits } = freshSim([p, tgt], null, hooks);
   world.state['tower.sword.taken'] = true;
@@ -556,7 +559,7 @@ function scriptedInputs(stepIdx) {
 function runReplay() {
   const p = player();
   const tgt = target('t1', 0, 1.0, 0.9);
-  const hooks = makeManaHook(10);
+  const hooks = makeManaHook(100);
   const { world, sim } = freshSim([p, tgt], null, hooks);
   world.state['tower.sword.taken'] = true;
   const h = createHasher();
@@ -593,6 +596,21 @@ if (typeof global.gc === 'function') {
   ok('zero allocation over 10k steps', after - before < 64 * 1024, `delta=${after - before} hitCount=${hitCount}`);
 } else {
   console.log('(skip) zero-allocation heap check needs --expose-gc');
+}
+
+// ITEM-04: the same sim step with gear wired (combatMods.active = 1: rolls, crit, life, speedRate, reach) must stay flat.
+if (typeof global.gc === 'function') {
+  const events = { on() { return () => {}; }, emit() {} };
+  const p = player(), tgt = target('t1', 0, 1.0, 0.9);
+  const world = makeWorld([p, tgt], null);
+  world.state['tower.sword.taken'] = true;
+  const eqA = { rev: 1, main: 'gen.spear', ranged: null, off: null, head: null, body: null, cloak: null, hands: null, belt: null, legs: null, feet: null, it: { main: { iL: 5, r: 2, a: [['A1', 0.2], ['A5', 0.1], ['A13', 3]] } } };
+  const cA = cacheA(), defsA = {};
+  const sim = createSwordSim(world, events, SWORD_CFG, null);
+  let k = 0; const fx0 = FWD[0], fy0 = FWD[1];
+  const r = allocProbe((n) => { for (let i = 0; i < n; i++, k++) { refreshA(cA, eqA, defsA); sim.step(p, fx0, fy0, (k % 50) < 10); } }, { n: 5000 });
+  ok('combat step with gear (refreshCombat + rolls + sword.step) alloc < 24 B/step (16 B is the harness baseline, gear adds ~1)', cmA.active === 1 && r.perCall < 24, r.perCall.toFixed(2));
+  cmA.active = 0;
 }
 
 // ---------------------------------------------------------------------------------------------------------------

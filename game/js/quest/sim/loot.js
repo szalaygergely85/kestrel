@@ -21,9 +21,9 @@ import { GEAR_DROP, RARITY_BY_SIDE, FAR_BAND, WEAPON_SHARE, WEAPON_TYPES, ARMOUR
 
 /** Tiny seeded stream (mulberry32; state is one uint32). Merged here from weaponLoot.js (ITEM-06); stats.js re-exports it. */
 export function weaponRng(seed) {
-  let a = seed >>> 0;
+  let a = seed | 0; // int32 state (a uint32 > 2^31 would be boxed on every write); same stream
   return () => {
-    a = (a + 0x6D2B79F5) >>> 0;
+    a = (a + 0x6D2B79F5) | 0;
     let t = a;
     t = Math.imul(t ^ (t >>> 15), t | 1);
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
@@ -316,7 +316,7 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
   setItemPickupSink((itemId, n) => {
     const inv = inventoryOf();
     if (!inv) return 0;
-    const got = addDrop(inv, items, itemId, n, saveIdOf ? saveIdOf() : null, 2000 + pickN++, gotId); // returns the count really stored: partial adds are reported, never duplicated
+    const got = addDrop(inv, items, itemId, n, saveIdOf ? saveIdOf() : null, 'pick', gotId); // returns the count really stored: partial adds are reported, never duplicated
     if (got <= 0) return 0;
     loot._added.id = gotId.id; loot._added.n = got;
     events.emit('inventory:added', loot._added);
@@ -343,7 +343,7 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
 // S8-C-06: the chest branch shares createLoot and inventory transfer rather than a second loot service.
 // A table contains fixed [{item,n}] plus one optional weighted pick [{item,n,weight}].
 // Roll once at create with a chest-owned stream. claim is all-or-nothing so openedChests is sufficient to save it.
-function buildChestLoot(events, {items, table, rng, inventoryOf, saveIdOf = null, bandIL = 1}) {
+function buildChestLoot(events, {items, table, rng, inventoryOf, saveIdOf = null, bandIL = 1, srcId = ''}) {
   // EQ-10: optional table.gear = {tier?} -> one gear roll at create (2 draws, after the weighted pick); tier fixed or rolled.
   if (!table || !Array.isArray(table.fixed) || !Array.isArray(table.weighted)) throw new Error('chest loot: invalid table');
   const ids = [], counts = [], caps = [];
@@ -394,7 +394,7 @@ function buildChestLoot(events, {items, table, rng, inventoryOf, saveIdOf = null
     claim() {
       const inv = inventoryOf();
       if (claimed || !fits(inv)) return false;
-      for (let i = 0; i < ids.length; i++) addDrop(inv, items, ids[i], counts[i], saveIdOf ? saveIdOf() : null, 3000 + i, { id: '' }); // ITEM-02c
+      for (let i = 0; i < ids.length; i++) addDrop(inv, items, ids[i], counts[i], saveIdOf ? saveIdOf() : null, srcId + '#' + i, { id: '' }); // ITEM-02c
       for (let i = 0; i < insts.length; i++) addInstance(inv, items, insts[i]);
       claimed = true;
       return true;

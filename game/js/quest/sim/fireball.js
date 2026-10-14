@@ -136,7 +136,8 @@ export function createFireballSim(world, events, cfg, targets, hooks) {
     slots.serial[s] = ++serialNo; slots.age[s] = 0;
     slots.x[s] = ox; slots.y[s] = oy; slots.z[s] = oz;
     slots.dx[s] = dx; slots.dy[s] = dy; slots.dz[s] = dz;
-    slots.speed[s] = C.speed; slots.radius[s] = C.radius; slots.damage[s] = combatMods.active ? rollRange(C.dmgMin, C.dmgMax) * combatMods.fireMul : C.damage; // ITEM-04 slots.knock[s] = C.knock;
+    slots.speed[s] = C.speed; slots.radius[s] = C.radius; slots.damage[s] = combatMods.active ? rollRange(C.dmgMin, C.dmgMax) * combatMods.fireMul : C.damage; // ITEM-04
+    slots.knock[s] = C.knock;
     slots.travelled[s] = 0; slots.charged[s] = isCharged ? 1 : 0; slots.hand[s] = hand === 'left' ? 0 : 1;
 
     // point-blank sweep eye -> origin: a wall/boar in the way bursts at once
