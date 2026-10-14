@@ -117,7 +117,7 @@ const RING = [[0.6, 0], [0.424, 0.424], [0, 0.6], [-0.424, 0.424], [-0.6, 0], [-
  * EQ-23: a leftover stack (pack full / partly full) lands at the player's feet as a world pickup {itemId, amount}.
  * `questReward` drops never despawn; loot leftovers use the normal life. Same-id drops at the spot merge.
  */
-export function spawnLeftoverDrop(world, itemId, n, x, y, z, questReward = false) {
+export function spawnLeftoverDrop(world, itemId, n, x, y, z, questReward = false, groundFn = null) {
   let best = 0, bestD = -1;
   for (let k = 0; k < RING.length; k++) {
     const px = x + RING[k][0], py = y + RING[k][1];
@@ -131,7 +131,9 @@ export function spawnLeftoverDrop(world, itemId, n, x, y, z, questReward = false
     if (nearest > 0.09) { best = k; bestD = nearest; break; }
     if (nearest > bestD) { bestD = nearest; best = k; }
   }
-  const id = spawnItemDrop(world, itemId, x + RING[best][0], y + RING[best][1], z);
+  const gx = x + RING[best][0], gy = y + RING[best][1];
+  const gz = groundFn ? groundFn(gx, gy) : z; // OB-155f: baseZ from the ring point's own ground, not the player's z
+  const id = spawnItemDrop(world, itemId, gx, gy, Number.isFinite(gz) ? gz : z);
   const p = world.entity(id).components.pickup;
   p.amount = n;
   if (questReward) p.questReward = true;
