@@ -83,7 +83,7 @@ r.checkSections(); r.feed({ type: 'item:got', id: 'sword' }); expectToasts(0, 'n
 }
 
 // q04 follow -> arrive
-r.questFlag('burl.arrived'); expectToasts(1, 'q04 toast on arrival');
+r.questFlag('burl.arrived'); r.questFlag('quest.burl.follow.done'); /* handed in at the stone (m1FollowChain.test.js drives the real talk) */ expectToasts(1, 'q04 toast on arrival');
 // q05: wake stone
 r.questFlag('waystone.waystone.woken'); expectToasts(2, 'q05 toast after stone wake');
 assert.equal(r.world.state['waystone.waystone.woken'], true, 'questFlag writes world.state');

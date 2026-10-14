@@ -19,7 +19,7 @@ const feed = (e) => book.feed(e);
 // walk the chain up to the waystone step
 feed({ type: 'flag:set', key: 'wake', value: true }); feed({ type: 'area:entered', id: 'breach' }); feed({ type: 'item:got', id: 'sword' });
 assert.deepEqual(marks(), [[], []], 'leave: no early ? waypoint (OB-155i)');
-feed({ type: 'area:entered', id: 'towerDoor' }); feed({ type: 'flag:set', key: 'quest.burl.boars.done', value: true }); feed({ type: 'flag:set', key: 'burl.arrived', value: true });
+feed({ type: 'area:entered', id: 'towerDoor' }); feed({ type: 'flag:set', key: 'quest.burl.boars.done', value: true }); feed({ type: 'flag:set', key: 'quest.burl.follow.done', value: true });
 assert.deepEqual(marks(), [[], []], 'waystone step: no ? waypoint');
 feed({ type: 'flag:set', key: 'waystone.waystone.woken', value: true });
 // road step available: gold ! on Burl

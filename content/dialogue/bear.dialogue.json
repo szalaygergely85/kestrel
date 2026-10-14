@@ -14,10 +14,11 @@
     {"node": "bear.home", "requires": "s.burl.home"},
     {"node": "bear.departing", "requires": "s.burl.departing"},
     {"node": "bear.woken.1", "requires": "s.waystone.waystone.woken"},
+    {"node": "bear.stone.offer", "requires": "q.burl.stone.available"},
     {"node": "bear.stone.again", "requires": "bear.stone.told"},
     {"node": "bear.stone.1", "requires": "s.burl.arrived"},
     {"node": "bear.following", "requires": "s.burl.follow"},
-    {"node": "bear.follow.1", "requires": "q.burl.boars.done"},
+    {"node": "bear.follow.1", "requires": "q.burl.follow.available"},
     {"node": "bear.q.ready.1", "requires": "q.burl.boars.ready"},
     {"node": "bear.q.active", "requires": "q.burl.boars.active"},
     {"node": "bear.q.offer.1", "requires": "q.burl.boars.available"},
@@ -148,10 +149,16 @@
     "bear.follow.2": {"lines": [
       "You're coming with me?"
     ], "next": "bear.follow.3", "speaker": "you"},
-    "bear.follow.3": {"end": true, "lines": [
+    "bear.follow.3": {"choices": [{"next": "bear.follow.go", "setFlag": "q.burl.follow.accept", "text": "Lead on."}, {"next": "bear.follow.later", "text": "Not yet."}], "lines": [
       "Wouldn't want you getting lost.",
       "You already fell out of the sky once."
+    ], "speaker": "burl"},
+    "bear.follow.go": {"end": true, "lines": [
+      "This way, sky-cub."
     ], "setFlag": "s.burl.follow", "speaker": "burl"},
+    "bear.follow.later": {"end": true, "lines": [
+      "Take your time. I know the way."
+    ], "speaker": "burl"},
     "bear.stone.1": {"lines": [
       "There we are.",
       "The Waystone."
@@ -184,18 +191,28 @@
     ], "next": "bear.stone.9", "speaker": "you"},
     "bear.stone.9": {"lines": [
       "That's the idea."
-    ], "next": "bear.stone.10", "speaker": "burl"},
+    ], "next": "bear.stone.10", "setFlag": "q.burl.follow.handin", "speaker": "burl"},
     "bear.stone.10": {"lines": [
       "That's impossible."
-    ], "next": "bear.stone.11", "speaker": "you"},
+    ], "next": "bear.stone.11", "setFlag": "bear.stone.told", "speaker": "you"},
     "bear.stone.again": {"end": true, "lines": [
       "The stone won't wake itself, sky-cub.",
       "Hold that crystal up to the carved mark."
     ], "speaker": "burl"},
-    "bear.stone.11": {"end": true, "lines": [
+    "bear.stone.11": {"choices": [{"next": "bear.stone.go", "setFlag": "q.burl.stone.accept", "text": "I'll wake it."}, {"next": "bear.stone.later", "text": "Not yet."}], "lines": [
       "You've said that before.",
       "Hold that crystal up to the carved mark."
-    ], "setFlag": "bear.stone.told", "speaker": "burl"},
+    ], "speaker": "burl"},
+    "bear.stone.offer": {"choices": [{"next": "bear.stone.go", "setFlag": "q.burl.stone.accept", "text": "I'll wake it."}, {"next": "bear.stone.later", "text": "Not yet."}], "lines": [
+      "The stone won't wake itself, sky-cub.",
+      "Hold that crystal up to the carved mark."
+    ], "speaker": "burl"},
+    "bear.stone.go": {"end": true, "lines": [
+      "Go on. It is waiting."
+    ], "speaker": "burl"},
+    "bear.stone.later": {"end": true, "lines": [
+      "It will keep. Stones do."
+    ], "speaker": "burl"},
     "bear.woken.1": {"lines": [
       "What is that?"
     ], "next": "bear.woken.2", "speaker": "you"},
@@ -210,7 +227,7 @@
       "Well done, sky-cub.",
       "The next stone lies west, by the road bend.",
       "Follow the old road and your chart."
-    ], "next": "bear.woken.5", "speaker": "burl"},
+    ], "next": "bear.woken.5", "setFlag": "q.burl.stone.handin", "speaker": "burl"},
     "bear.woken.5": {"lines": [
       "You're not coming?"
     ], "next": "bear.woken.6", "speaker": "you"},

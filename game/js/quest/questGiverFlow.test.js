@@ -9,6 +9,7 @@ import { applySave, collectSave } from './save/saveState.js';
 
 const rd = (p) => JSON.parse(readFileSync(new URL('../../../' + p, import.meta.url), 'utf8'));
 const m1 = rd('content/quests/m1.quest.json'), burl = rd('content/quests/burl.boars.quest.json'), blade = rd('content/quests/tower.blade.quest.json');
+const GD = [blade, burl, rd('content/quests/burl.follow.quest.json'), rd('content/quests/burl.stone.quest.json')];
 const dialogues = { bear: compileDialogue(rd('content/dialogue/bear.dialogue.json')) };
 const BOARS = burl.objectives[0].when.ids;
 const assets = new AssetRegistry({ palette: {} });
@@ -38,7 +39,7 @@ function setup(relay) {
   }
   return { ctl, state, flagsOut, talk };
 }
-const mkRelay = (saved, sq) => createQuestRelay(m1, saved, [blade, burl], sq);
+const mkRelay = (saved, sq) => createQuestRelay(m1, saved, [blade, burl, rd('content/quests/burl.follow.quest.json'), rd('content/quests/burl.stone.quest.json')], sq);
 const toSword = (r) => { for (const e of [{ type: 'flag:set', key: 'wake', value: true }, { type: 'area:entered', id: 'breach' }, { type: 'item:got', id: 'sword' }, { type: 'area:entered', id: 'towerDoor' }]) r.feed(e);  r.book.accept('tower.blade'); r.book.handIn('tower.blade'); }; // note read + turned in: Burl's boar quest is on offer
 const kill = (r, n) => { for (let i = 0; i < n; i++) r.feed({ type: 'beast:died', id: BOARS[i] }); };
 
@@ -68,8 +69,8 @@ const kill = (r, n) => { for (let i = 0; i < n; i++) r.feed({ type: 'beast:died'
   assert.equal(r.book.statusOf('burl.boars'), 4);
   assert.ok(ev.includes('quest:done:burl.boars'));
   assert.ok(r.state.completed.includes('beasts'), 'm1 beasts completed by the done flag');
-  assert.equal(r.objectiveText(), m1.objectives[5].text, 'HUD back to m1 (waystone)');
-  assert.equal(t.talk()[0], 'Come along, sky-cub.', 'done -> follow offer (entry 4) comes before bear.talked');
+  assert.equal(r.objectiveText(), 'Follow Burl', 'D-105/OB-178: the follow offer was accepted in the hand-in talk -> its step on the HUD');
+  assert.equal(t.talk()[0], 'Back again? The berries are still mine. Mostly.', 'follow already accepted in the hand-in talk: no second offer (OB-178)');
   assert.equal(Object.keys(t.state).filter((k) => k.includes('q.')).length, 0, 'q.* never stored in world.state');
 }
 // ---- chain: note '!' -> climb, sword, leave -> '?' over Burl -> first talk turns in -> Burl '!' -> accept ----
@@ -110,8 +111,8 @@ const kill = (r, n) => { for (let i = 0; i < n; i++) r.feed({ type: 'beast:died'
   const r = mkRelay(), t = setup(r); toSword(r); t.talk(0); kill(r, 2);
   const sv = r.book.toSave();
   assert.equal(sv.quests['burl.boars'].accepted, true);
-  const save = collectSave(world0, { quest: r.state, questDef: m1, quests: sv.quests, giverDefs: [blade, burl], deadBeasts: BOARS.slice(0, 2) });
-  const a = applySave(save, assets, { questDef: m1, giverDefs: [blade, burl] });
+  const save = collectSave(world0, { quest: r.state, questDef: m1, quests: sv.quests, giverDefs: GD, deadBeasts: BOARS.slice(0, 2) });
+  const a = applySave(save, assets, { questDef: m1, giverDefs: GD });
   const r2 = mkRelay(a.quest, a.quests);
   assert.equal(r2.book.statusOf('burl.boars'), 2);
   assert.equal(r2.book.questState(2).deadBeasts.length, 2);
@@ -124,11 +125,11 @@ const kill = (r, n) => { for (let i = 0; i < n; i++) r.feed({ type: 'beast:died'
   for (const e of [{ type: 'flag:set', key: 'wake', value: true }, { type: 'item:got', id: 'lantern' }, { type: 'area:entered', id: 'breach' }, { type: 'item:got', id: 'sword' }]) rOld.feed(e); for (let i = 0; i < 3; i++) rOld.feed({ type: 'beast:died', id: BOARS[i] });
   const migrate = () => {
     const save = collectSave(world0, { quest: rOld.state, questDef: oldM1, deadBeasts: BOARS.slice(0, rOld.state.deadBeasts.length) });
-    return applySave(save, assets, { questDef: oldM1, giverDefs: [blade, burl] });
+    return applySave(save, assets, { questDef: oldM1, giverDefs: GD });
   };
   const mid = migrate();
   assert.equal(mid.quests['burl.boars'].accepted, true, 'mid-fight old save -> accepted');
-  const r3 = createQuestRelay(oldM1, rOld.state && mid.quest, [blade, burl], mid.quests);
+  const r3 = createQuestRelay(oldM1, rOld.state && mid.quest, GD, mid.quests);
   assert.equal(r3.book.statusOf('burl.boars'), 2); assert.equal(r3.book.questState(2).deadBeasts.length, 3);
   for (let i = 3; i < 5; i++) rOld.feed({ type: 'beast:died', id: BOARS[i] });
   const fin = migrate();

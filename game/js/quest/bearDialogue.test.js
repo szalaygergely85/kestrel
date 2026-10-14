@@ -46,21 +46,21 @@ const you = (t) => 'YOU: ' + t;
 // 2 woken
 { const f = mk('s.waystone.waystone.woken', 's.burl.arrived'); const w = walk(f, 0);
   ok('2 woken: starts with the player asking, 13 lines', first(w) === you('What is that?') && w.said.length === 13, w.said.length);
-  ok('2 woken: last node sets s.burl.depart (only new flag)', lastOf(w) === burl('The world is wider than your Wall.') && f.s.has('s.burl.depart') && f.s.size === 3); }
+  ok('2 woken: last node sets s.burl.depart (only new flag)', lastOf(w) === burl('The world is wider than your Wall.') && f.s.has('s.burl.depart') && f.s.size === 4); }
 // 3 arrived (the stone talk)
 { const f = mk('s.burl.arrived', 'q.burl.boars.done', 's.burl.follow'); const w = walk(f, 0);
-  ok('3 arrived: stone talk, 18 lines, ends on the crystal line', first(w) === burl('There we are.') && w.said.length === 18 && lastOf(w) === burl('Hold that crystal up to the carved mark.'), w.said.length);
+  ok('3 arrived: stone talk, 18 lines, ends on the crystal line', first(w) === burl('There we are.') && w.said.length === 19 && lastOf(w) === burl('Go on. It is waiting.'), w.said.length);
   ok('3 arrived: sets bear.stone.told, no lamp', f.s.has('bear.stone.told') && !w.said.some((l) => /lamp/i.test(l))); }
 // 3b following (CH1-07): no follow offer replay, no flags, one line; arrived wins
 { const f = mk('q.burl.boars.done', 's.burl.follow', 'bear.talked'); const w = walk(f, 0);
   ok('3b following: one placeholder line, no offer, no new flags', w.said.length === 1 && !w.said[0].includes('Come along') && f.s.size === 3, w.said.join('|')); }
 // 4 done -> follow offer
-{ const f = mk('q.burl.boars.done'); const w = walk(f, 0);
-  ok('4 done: follow offer (5 lines) sets s.burl.follow', first(w) === burl('Come along, sky-cub.') && w.said.length === 5 && f.s.has('s.burl.follow'), w.said.length); }
+{ const f = mk('q.burl.follow.available'); const w = walk(f, 0);
+  ok('4 offered: follow offer (5 lines + go line); Accept sets s.burl.follow', first(w) === burl('Come along, sky-cub.') && w.said.length === 6 && f.s.has('s.burl.follow') && f.s.has('q.burl.follow.accept'), w.said.length); }
 // 5 ready -> thanks -> follow
 { const f = mk('q.burl.boars.ready'); const w = walk(f, 0);
-  ok('5 ready: 10 after-five lines, thanks (hand-in), then the 5 follow lines', w.said.length === 10 + 1 + 5 && w.said[10] === burl("You've done an old bear a kindness.") && w.said[11] === burl('Come along, sky-cub.'), w.said.length + ' ' + w.said[7]);
-  ok('5 ready: hand-in flag then s.burl.follow', ids(w.events.filter((e) => e.startsWith('flag:'))) === ids(['flag:q.burl.boars.handin', 'flag:s.burl.follow']), w.events.join());
+  ok('5 ready: 10 after-five lines, thanks (hand-in), then the 5 follow lines', w.said.length === 10 + 1 + 6 && w.said[10] === burl("You've done an old bear a kindness.") && w.said[11] === burl('Come along, sky-cub.'), w.said.length + ' ' + w.said[7]);
+  ok('5 ready: hand-in flag then s.burl.follow', ids(w.events.filter((e) => e.startsWith('flag:'))) === ids(['flag:q.burl.boars.handin', 'flag:q.burl.follow.accept', 'flag:s.burl.follow']), w.events.join());
   ok('5 ready: wave clip on the thanks node', w.clips.includes('wave'));
   const g = mk('q.burl.boars.ready'); const r = createDialogueRunner({}); r.open(comp, g);
   for (let i = 0; i < 40 && !g.s.has('q.burl.boars.handin'); i++) r.press();
@@ -101,12 +101,12 @@ const R = 'q.tower.blade.ready';
   const reach = new Set(), st = comp.entry.map((e) => e.node);
   while (st.length) { const i = st.pop(); if (reach.has(i)) continue; reach.add(i); const n = comp.nodes[i]; if (n.next != null && n.next >= 0) st.push(n.next); for (const c of n.choices) st.push(c.next); }
   ok(`every node reachable (${reach.size}/${comp.nodes.length})`, reach.size === comp.nodes.length);
-  ok('13 entries, last is unconditional', comp.entry.length === 18 && comp.entry[17].requires === null);
+  ok('13 entries, last is unconditional', comp.entry.length === 19 && comp.entry[18].requires === null);
   const long = comp.nodes.flatMap((n) => n.lines).filter((l) => l.length > 56);
   ok('every line <= 56 chars', long.length === 0, long.join('|'));
   ok('D-013: no player name in the lines', !comp.nodes.flatMap((n) => n.lines).some((l) => /\bWick\b/.test(l)));
   const flags = new Set(comp.nodes.flatMap((n) => [n.setFlag, ...n.choices.map((c) => c.setFlag)]).filter(Boolean));
-  ok('flags set by the graph', ids([...flags].sort()) === ids(['bear.stone.told', 'bear.talked', 'q.burl.boars.accept', 'q.burl.boars.handin', 'q.sq.burl.blue.accept', 'q.sq.burl.blue.handin', 'q.tower.blade.handin', 's.burl.depart', 's.burl.follow', 's.burl.home.met']), [...flags].join());
+  ok('flags set by the graph', ids([...flags].sort()) === ids(['bear.stone.told', 'bear.talked', 'q.burl.boars.accept', 'q.burl.boars.handin', 'q.burl.follow.accept', 'q.burl.follow.handin', 'q.burl.stone.accept', 'q.burl.stone.handin', 'q.sq.burl.blue.accept', 'q.sq.burl.blue.handin', 'q.tower.blade.handin', 's.burl.depart', 's.burl.follow', 's.burl.home.met']), [...flags].join());
 }
 // barks file shape
 {
