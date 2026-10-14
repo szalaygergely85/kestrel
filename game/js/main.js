@@ -10,7 +10,8 @@ import { applyImpostorBoot, reapplyRememberedImpostors } from './ui/impostorPres
 import { groundLookFromParams } from './look/groundLookConfig.js'; // ENV-02d
 import { buildAtmosConfig } from './look/atmosConfig.js'; import { createAtmosDriver } from './look/atmosDriver.js'; // ENV-03
 import { createAtmosState, mixAtmos, applyAtmosToPalette, gradeCells, createPostState, composePost, postCells } from '../../engine/index.js';
-import { resolveGI, createGIWire } from './look/giWire.js'; // GI-PROBE-06
+import { resolveGI, createGIWire, giLoadOptions } from './look/giWire.js';
+import { resolveFootIk, createFootIkWire } from './look/footIkWire.js'; // ANIM-IK-01b: kit character foot placement (?footik=0 off) // GI-PROBE-06
 import { sceneOf } from './look/sceneFlag.js'; import { resolvePost } from './look/postConfig.js'; // POST-STACK-01c // ENV-03: `?atmos=0` = no driver, palette untouched
 import { parseDecorMode, buildDecorConfig, guardDecorRun } from './decorHost.js'; // ENV-01-WIRE
 import { loadPresets, resolveQuality, saveQuality, knobsFor, dropStaleOverrides, carpetQualityFor, carpetBuildFor } from './ui/gfxPresets.js';
@@ -186,7 +187,7 @@ import { PHYSICS, createUnderState, setApiWarnings } from '../../engine/index.js
 if (new URLSearchParams(window.location.search).get('debug') === '1') setApiWarnings(true); // ENG-API-01h: dev flag only - deprecated engine names warn once
 import { meshFeedStats, MAX_MESH_DRAWS, MAX_DRAW_ITEMS } from '../../engine/index.js'; // OB-039: F3 mesh draw cap line
 import { createModelPreview, createCharCache } from '../../engine/index.js'; // EQ-03/04: Character tab model preview
-import { composeCharacter, meshCharacter, collapseRig, riggedModelDef } from '../../engine/index.js'; // OB-086: the kit character in the world
+import { composeCharacter, meshCharacter, collapseRig, riggedModelDef, HUMANOID_SPLIT_LEG_RIG, createFootIk, voxelPointWorld } from '../../engine/index.js'; // OB-086: the kit character in the world
 import { drawArrowCount, drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
 import { ensureInventory, validateItemDefs, migrateSword, addItem } from './quest/sim/inventory.js'; // US-091a1 (37.16.4)
@@ -918,8 +919,9 @@ if (handDef && handDef.variants && handLookDef) {
 registerRiggedChars(assets, bundle.models); // RIG-03w: char.<id> from package .glb, before bind
 // OB-086 (owner 2026-10-12: "import 1 char into the game, i wanna see"): the default kit character (human kit v8 shapes) as a
 // world model, stood 2 m east of Burl on every world load (entity id demo.kitChar: never saved, see saveState TRANSIENT_ENTITY).
+let kitFootCells = null; // ANIM-IK-01b: foot cells of the kit legRig (footIkWire)
 if (window.__charKit && !assets.has('model', 'char.kit')) {
-  try { const K = window.__charKit; const grid = composeCharacter(K, K.defaults); const sw = window.ASSETS.chargenSwimClips; if (sw) Object.assign(grid.clips, sw.clips); /* SWIM-ASSETS-01: swim/tread/dive, in-game player only */ assets.add('model', 'char.kit', riggedModelDef(collapseRig(meshCharacter(grid), K.partMap))); }
+  try { const K = window.__charKit; const grid = composeCharacter(K, K.defaults); const sw = window.ASSETS.chargenSwimClips; if (sw) Object.assign(grid.clips, sw.clips); /* SWIM-ASSETS-01: swim/tread/dive, in-game player only */ const kitDef = riggedModelDef(collapseRig(meshCharacter(grid), K.partMap), { legRig: HUMANOID_SPLIT_LEG_RIG }); kitFootCells = kitDef.voxel.legRig ? kitDef.voxel.legRig.legs.map((l) => l.foot) : null; /* ANIM-IK-01b: split-leg rig */ assets.add('model', 'char.kit', kitDef); }
   catch (e) { console.warn('[char.kit] ' + e.message); }
 }
 if (assets.has('model', 'char.kit')) engine.events.on('world:loaded', ({ world: kw }) => {
@@ -1152,6 +1154,7 @@ async function runGame(mode, cinematic = null) {
   const entityTintTable = createEntityTintTable(); // TELEGRAPH-WIRE-01 part 2: one table, reused
   let telegraphWire = null; // TELEGRAPH-WIRE-01: rebuilt on 'world:loaded'
   let beastLegs = null; const beastLegsOn = params.get('legik') !== '0'; // ANIM-C-05
+  let footIkWire = null; const footIkOn = resolveFootIk(params, isCaptureOrBench); // ANIM-IK-01b: created after world load (needs world.terrain)
   let beastBlend = null; const animblend = params.get('animblend') !== '0'; // ANIM-BLEND-03
   let beastLook = null; const lookatOn = params.get('lookat') !== '0'; // ANIM-LOOKAT-01
   let beastAnim = null; const beastAnimOn = params.get('beastanim') === '1'; // ANIM-STATE-WIRE-01: default OFF (wander/return would use the walk clip)
@@ -1508,7 +1511,8 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
         if (lightSet && aoStrength > 0) lightSet.ao = { ...AO_DEFAULTS, strength: aoStrength }; // S8-B2-20 NEEDS B1 item (1)
         if (lightSet) lightSet.emissive = !isGpuCompareMode && !params.get('gpucompare') && !(resolvedQuality && resolvedQuality.name === 'low'); // EMIS-01b (38.12): glowing voxels light the scene; off on Low and every gpucompare mode
         window.__debug.lights = lightSet; // EMIS-01b: test hook (derivedStats)
-        giWire = giCfg && lightSet ? createGIWire(giCfg, world, lightSet) : null; if (giWire && world.loadGI) world.loadGI({}).catch(() => {}); // GI-PROBE-06: no expectHash (the bake tool writes no manifest; the runtime cannot hash); missing files = quiet null
+        footIkWire = footIkOn && kitFootCells && world.terrain ? createFootIkWire({ pool: gameVoxelPool, createFootIk, voxelPointWorld, footCells: kitFootCells, ground: world, offFor: (e) => { if (!playerHandle || e !== playerHandle.data) return false; const b = e.components && e.components.body; return !!b && (b.swimming || b.grounded === false); } }) : null; // ANIM-IK-01b
+        giWire = giCfg && lightSet ? createGIWire(giCfg, world, lightSet) : null; if (giWire && world.loadGI) giLoadOptions((u) => fetch(u).then((r) => (r.ok ? r.text() : null))).then((o) => world.loadGI(o)).catch(() => {}); // GI-PROBE-07: manifest hashes, missing = quiet {} // GI-PROBE-06: no expectHash (the bake tool writes no manifest; the runtime cannot hash); missing files = quiet null
         // `?sun=0`: keep the sun's direction/color (F6/F7 still readable) but
         // force it off - `setSun` is the only writer of `on`.
         if (!sunEnabled) lightSet.setSun({ elevation: lightSet.sun.elevation, azimuth: lightSet.sun.azimuth, on: false });
@@ -2490,6 +2494,7 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
       // needs its own explicit `.project()` before `renderWorld` reads
       // `fb.voxelPool.list` (compositor.js).
       gameVoxelPool.collect(engine.world, cam);
+      if (footIkWire) footIkWire.step(cam.dtMs || 1000 / 60); // ANIM-IK-01b: LegPose on kit characters (flat ground = w 0 = today's pose)
       if (telegraphWire && beasts) { fillEntityTints(entityTintTable, beasts.entities, gameVoxelPool, performance.now()); fb.entityTints = entityTintTable; } else if (fb.entityTints) fb.entityTints = undefined; // TELEGRAPH-WIRE-01 part 2
       if (!fb.gpu) gameVoxelPool.project(cam, rt, renderer); // ME-19a: CPU reference uses the same mesh camera.
       lap(SEC.voxel);
