@@ -123,7 +123,7 @@ test('realistic sizes: rabbit ~0.4 m long, ~0.22 m back; deer ~1.6 m long, ~1.0 
   assert.ok(rb >= 0.18 && rb <= 0.26, 'rabbit back ' + rb);
   assert.ok(dl >= 1.5 && dl <= 1.7, 'deer length ' + dl);
   assert.ok(db >= 0.95 && db <= 1.05, 'deer withers ' + db);
-  for (const k of KEYS) { const T = R[k].posed(null); for (const n of LIMBS) assert.ok(Math.abs(R[k].lowest(T, n)) < 1e-9, `${k} ${n} on z 0`); }
+  for (const k of KEYS) { const T = R[k].posed(null); for (const n of LIMBS) assert.ok(Math.abs(R[k].lowest(T, R[k].DEF.parts[n + '2'] ? n + '2' : n)) < 1e-9, `${k} ${n} on z 0`); }
 });
 
 test('clips: names, frames name every part, durations whole 60 Hz steps (multiples of 50 ms)', () => {
@@ -148,7 +148,7 @@ test('all fours: idle keeps all 4 feet within 2 cm; graze / alert keep >= 3 (one
       continue;
     }
     for (const c of ['graze', 'alert']) C[c].frames.forEach((f, i) => {
-      const T = r.posed(f), lows = LIMBS.map((n) => r.lowest(T, n));
+      const T = r.posed(f), lows = LIMBS.map((n) => r.lowest(T, r.DEF.parts[n + '2'] ? n + '2' : n));   // B-01b/c: knee rigs have the sole on <leg>2
       assert.ok(lows.filter((m) => within(m, 0.02)).length >= 3, `${k} ${c}[${i}] grounded ${lows.map((m) => m.toFixed(3))}`);
     });
   }

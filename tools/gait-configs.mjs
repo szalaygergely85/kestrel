@@ -9,6 +9,7 @@ import '../design/models/voxel_bear_cub.js';
 import '../design/models/voxel_beast.js';
 import '../design/models/voxel_wildlife.js';
 import '../design/models/voxel_wolf.js';
+import '../design/models/voxel_goat.js';
 
 const M = () => globalThis.ASSETS.models;
 const QUAD = { FL: 'armL', FR: 'armR', HL: 'legL', HR: 'legR' };
@@ -44,3 +45,13 @@ CONFIGS.push(
   Object.assign({ id: 'fox.trot', mark: 'fox.trot', clip: 'trot', gait: 'diagonal', keys: 6, tailBase: 16, G: { T: 300, v: 1.0, beta: 0.5, bobM: 0.01, liftM: 0.0875, pitch: 1.5, nod: 2, roll: 1, yaw: 1, tail: 4, heel: 6, foldF: 35, foldH: 30 } }, FOX),
   Object.assign({ id: 'fox.run', mark: 'fox.run', clip: 'run', gait: 'gallop', keys: 8, tailBase: 22, G: { T: 400, v: 1.3, beta: 0.35, bobM: 0.02, liftM: 0.05, pitch: 4, nod: 3, roll: 1.5, yaw: 1.5, tail: 4, heel: 6, foldF: 25, foldH: 15 } }, FOX));
 export function defOf(cfg) { return M()[cfg.model].voxel; }
+// ANIM-B-01c knee rigs: deer (doe + buck share buildDeer; clips are generated once) + goat. Deer 'gallop' = the flee clip.
+const DEER_LEGS = { FL: K('legFL', 'legFL2', 'fore'), FR: K('legFR', 'legFR2', 'fore'), HL: K('legBL', 'legBL2', 'hind'), HR: K('legBR', 'legBR2', 'hind') };
+const DEER = { model: 'deer', from: 'function buildDeer', file: 'voxel_wildlife.js', body: 'body', head: 'head', tail: 'tail', ears: 'ears', legs: DEER_LEGS };
+CONFIGS.push(
+  Object.assign({ id: 'deer.walk', mark: 'deer.walk', clip: 'walk', gait: 'lateral', keys: 10, tailBase: 0, G: { T: 1000, v: 0.75, beta: 0.65, bobM: 0.006, liftM: 0.05, pitch: 0.6, nod: 3, roll: 1, yaw: 1.5, tail: 3, heel: 10, foldF: 30, foldH: 25 } }, DEER),
+  Object.assign({ id: 'deer.trot', mark: 'deer.trot', clip: 'trot', gait: 'diagonal', keys: 12, tailBase: 15, G: { T: 600, v: 2.4, beta: 0.5, bobM: 0.012, liftM: 0.075, pitch: 0.8, nod: 2, roll: 1, yaw: 0.5, tail: 3, heel: 10, foldF: 35, foldH: 30 } }, DEER),
+  Object.assign({ id: 'deer.gallop', mark: 'deer.gallop', clip: 'gallop', gait: 'gallop', keys: 8, tailBase: 70, G: { T: 400, v: 4.2, beta: 0.35, bobM: 0.03, liftM: 0.05, pitch: 4, nod: 3, roll: 1.5, yaw: 1.5, tail: 4, heel: 10, foldF: 25, foldH: 15 } }, DEER));
+CONFIGS.push(
+  { id: 'goat.walk', mark: 'goat.walk', model: 'goat', file: 'voxel_goat.js', clip: 'walk', body: 'body', head: 'head', ears: 'ears', legs: { FL: K('legFL', 'legFL2', 'fore'), FR: K('legFR', 'legFR2', 'fore'), HL: K('legBL', 'legBL2', 'hind'), HR: K('legBR', 'legBR2', 'hind') },
+    gait: 'lateral', keys: 8, G: { T: 800, v: 0.6, beta: 0.7, bobM: 0.004, liftM: 0.02, pitch: 1, nod: 1.5, roll: 1.5, yaw: 1.5, heel: 8, foldF: 25, foldH: 20 } });
