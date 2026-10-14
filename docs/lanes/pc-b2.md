@@ -1205,3 +1205,7 @@ REV-BEASTALLOC-2: beastSim.test.js (22 s) -> nav cached per physics mode (NavGri
 - ANIM-BLEND-02b (programmer half, kestrel-2 / animblend02b): gait-configs bear.charge file -> voxel_bear.js (gen-gait stable, frames byte-identical). beastView: bearBlack STATE_RECOVER -> blackBearFx.clipFor.state.recover
   (bite/lunge NOT mapped: beastSim has no such states, add when bearBrain gets a bite state). Tests: voxel-bear, voxel-bear-black, bearKnee (run in legacy skip),
   anim-blend-02 (+bearBlack windup/attack/recover case, +Burl sets/additive). 14 suites PASS, check-deps OK, validate-content OK. Not committed.
+
+### WGSL-LINT-SWEEP (kestrel-2, 2026-10-15) -> arch ratify
+New engine/render/gpu/wgsl/wgsl.lintall.test.js: scans `*.wgsl.js` (25 modules), imports every `*_WGSL` string (72), applies the repo's inline lint rules (raw %, round/dpdx/dpdy/fwidth, frag_depth, keyword identifiers, TODO/FIXME, brace/paren balance with // comments stripped); 155 ms, no GPU.
+No standalone lint helper exists (only inline asserts in index.test.js/groundLook.wgsl.test.js), so the rules were copied from them. One KNOWN_EXCEPTIONS entry: IMP_CARD_WGSL / frag_depth (index.test.js R6c); a stale exception fails the test. No shaders touched; all other modules pass.
