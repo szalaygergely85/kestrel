@@ -10,6 +10,7 @@ import {
   terrainMeshSetFor, runStableRow, compareGlow, emisFromPacked,
   computeDerivatives, shadeSurfaces, edgePass, pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG, createShadowParityRunner,
 } from '../../../../engine/dev.js';
+import { quadruped16 } from '../../../../engine/dev.js'; // VOX-PARTS-16b: 12-part fixture for the `vox12` row
 import { POSES as GPU_COMPARE_POSES, GATE_POSES } from '../../../../content/dev-poses.js';
 import { fillUnitGrid, placeholderTeamSpec } from '../unitsHarness.js'; // RE-06: instanced-units pose helpers
 import { placeCompareSprites } from '../spriteDev.js'; // US-030c: the synthetic 3-prop set for non-`real` compare poses
@@ -229,6 +230,14 @@ function buildCompareRuns(ctx) {
     const gcKit = ctx.gcKit; // fetched in the async scene-mode entry
     assets.add('model', 'char.gc', riggedModelDef(collapseRig(meshCharacter(composeCharacter(gcKit, gcKit.defaults)), gcKit.partMap)));
   } catch (e) { console.warn('[gpucompare] char.gc not built:', e && e.message); }
+  // VOX-PARTS-16b (38.67 section 1): `vox12` registers the 12-part fixture (meshOnly, mats remapped to palette keys) with a `splay` clip
+  // that rotates the lower-leg parts 8..11 by 30-60 deg, so the 4th part bit (flat0 bit 17) is set on every vertex of parts 8..11.
+  try {
+    const q16 = JSON.parse(JSON.stringify(quadruped16));
+    q16.mats = { '#': 'wood', 'o': 'woodLight', 'e': 'ironLight' };
+    q16.animations.splay = { fps: 1, loop: true, frames: [{ legFL2: { rot: [30, 0, 0] }, legFR2: { rot: [45, 0, 0] }, legBL2: { rot: [60, 0, 0] }, legBR2: { rot: [-40, 0, 0] } }] };
+    assets.add('model', 'vox12', { voxel: q16 });
+  } catch (e) { console.warn('[gpucompare] vox12 not registered:', e && e.message); }
   const compareVoxelPool = new VoxelPool();
   compareVoxelPool.renderer = ctx.renderer;
   compareVoxelPool.bind(assets, matTable);
@@ -267,6 +276,16 @@ function buildCompareRuns(ctx) {
     // "voxel over terrain" NOT added - see this story's Programmer notes
     // (pre-existing terrain/sun-visibility parity gap, not a voxel-pass bug).
   );
+
+  // VOX-PARTS-16b: 12-part mesh-only instances (parts 8..11 posed), ~2 m from the camera, sun shadow pose (az 135 el 30).
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: vox12 (VOX-PARTS-16b, 12-part voxel model, lower legs 30-60 deg, sun az 135 el 30)',
+    cam: { x: LANTERN_X - 2.0, y: LANTERN_Y, z: engine.physics.eyeHeight, yawDeg: 90, pitchDeg: 20 }, meshOnly: true, sun: { azimuth: 135, elevation: 30 },
+    before: () => {
+      const pm = compareVoxelPool.models.get('vox12');
+      const ci = pm && pm.clipIndex.splay !== undefined ? pm.clipIndex.splay : -1;
+      compareVoxelPool.pushInstance('vox12', LANTERN_X - 0.2, LANTERN_Y, LANTERN_Z, 90, ci, 0, 0);
+      compareVoxelPool.pushInstance('vox12', LANTERN_X + 0.4, LANTERN_Y + 1.2, LANTERN_Z, 200, ci, 0, 0);
+    } });
 
   // RE-02a (28.1 A2 item 8): mesh-only pitched poses, RTS view of the world_m1 hillside west of the tower.
   // Focus-driven eye exactly like `engine/core/rtsCamera.js` (dist = widthM * zoom / (2 tanHalfX), widthM 30),
