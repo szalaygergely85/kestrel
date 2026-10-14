@@ -116,6 +116,8 @@ import { createGoblinWire } from './life/goblinWire.js'; // GOB-07b
 import { createLifeWire, prepareRaidDefs, createOutwallLife } from './life/lifeWire.js'; // LIFE-HOOKS-01: wolf raids wiring
 import { planWorldLife } from './quest/sim/worldGen.js';
 import { bootRegionalBeasts } from './quest/sim/regionalBeastsBoot.js'; // WM-12
+import { createLogicWire } from './logic/logicWire.js'; // ED-LOGIC-01c
+import { loadDecorPaint } from './decorPaintLoad.js'; // ED-FOLIAGE-04
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
 import { ensureWolves } from './quest/sim/wolfBrain.js'; // WOLF-01
 import { ensureBears } from './quest/sim/bearBrain.js'; // BEAR-01 (D-069): black bears in Thornwood
@@ -1123,6 +1125,7 @@ async function runGame(mode, cinematic = null) {
     if (worldLoadOpts.carpet && gm) worldLoadOpts.carpet.mask = grassMaskFromJSON(gm);
     if (worldLoadOpts.carpet) engine.events.on('world:loaded', (e) => { const w = (e && e.world) || engine.world; if (w && w.setCarpetQuality) w.setCarpetQuality(carpetQualityFor(resolvedQuality && resolvedQuality.knobs, params.get('carpet'))); }); // OB-103b: preset knob -> world (Settings quality change: settings.js applyQuality)
   }
+  { const dp = await loadDecorPaint('overworld_far', grassMaskFromJSON); if (dp) worldLoadOpts.decorPaint = dp; } // ED-FOLIAGE-04: painted decor density (none = unchanged world)
   if (params.get('debug') === '1' || params.get('f3') === '1') overlay.toggle(); // per CLAUDE.md `?debug=1`; ME-08c `?f3=1` = F3 pass times at start
   // US-020a: arms the (one-shot) first-gesture listeners only - creates
   // nothing yet, so there is no autoplay warning and no sound before input.
@@ -1141,6 +1144,7 @@ async function runGame(mode, cinematic = null) {
   let beastAnim = null; const beastAnimOn = params.get('beastanim') === '1'; // ANIM-STATE-WIRE-01: default OFF (wander/return would use the walk clip)
   // WMP-05: map travel is refused in combat (aggro beast within 40 m or the hit-invuln window is up); same sim the hp-regen gate reads.
   const mapTravelBlocked = () => { const t = playerHandle && playerHandle.data.transform; return !!((vitals && vitals.invuln > 0) || (beasts && t && beasts.aggroNear(t.x, t.y, 40))); };
+  let logicWire = null, logicUnreg = null; // ED-LOGIC-01c: rebuilt with the beast sim on every 'world:loaded'
   let beasts = null; // US-079a (29.1): rebuilt on every 'world:loaded', below
   let vitals = null; // US-080a1/a2 (30.2): rebuilt on every 'world:loaded', below
   let travel = null; // WS1-07b: created once below (after wakeOut)
@@ -1570,6 +1574,15 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
         goblinWire.addFarCamps(planWorldLife(world, window.ASSETS?.levels?.world_geo, 12).camps); // WMP-09: authored-only avoid, same defs on Continue
       }
       beasts = createBeastSim(world, { tileNav: !!gridNav, nav: (lifeNav = gridNav || (worldDef.nav && buildBeastNav(world, worldDef.nav))), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events, band: worldBand, fauna: wild ? wild.fauna : null }); // LIFE-07: predators hunt the ambient fauna
+      // ED-LOGIC-01c: logic wire, rebuilt with every sim; no blocks (01d loads them) = nothing registered, nothing written
+      if (logicUnreg) { logicUnreg(); logicUnreg = null; } logicWire = null;
+      { const lb = (window.ASSETS && window.ASSETS.logicBlocks) || []; // 01d: content/logic/*.logic.json blocks; hint/sound callbacks wired with 01d
+        if (lb.length && saveRelay) {
+          try {
+            logicWire = createLogicWire({ world, blocks: lb, book: saveRelay.quest.book, inventory: playerHandle && playerHandle.data.components.inventory, sim: beasts, nav: world.nav, hooks: gameHooks, feed: (e) => saveRelay.quest.feed(e), player: () => playerHandle && playerHandle.data.transform });
+            logicUnreg = gameHooks.register(logicWire.handlers()); logicWire.onWorldLoaded();
+          } catch (err) { console.warn('[logic] wire failed:', err && err.message); logicWire = null; }
+        } }
       combatHud.setSim(beasts); // HPBAR-02 + DMGNUM-01
       if (goblinWire) goblinWire.attach(beasts, { onClank: () => playShieldClank() }); // GOB-07b: camps + spear sim + view
       if (lifeWire) { lifeWire.dispose(); lifeWire = null; } // LIFE-08: night raids (content/life/raids.json), rebuilt with every beast sim
@@ -1695,6 +1708,7 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
         saveRelay.quest.onSection = (title) => { if (tv && msg) tv.say('Quest complete: ' + title, msg.fg); const ws = world.state; if (chapterCard && saveRelay.quest.done && ws['waystone.waystone.woken'] && ws['waystone.ws_roadBend.woken']) chapterCard.trigger(); /* PO-CH1-08: card only after the meadow stone AND the relay */ }; // CH1-02: live section completion only
         saveRelay.quest.book.onChange = (name, id) => {
           gameHooks.emitSimple(name, id);
+          if (logicWire && (name === 'quest:accepted' || name === 'quest:done')) logicWire.notify(name === 'quest:accepted' ? 'quest.accepted' : 'quest.done', 'quest', id); // ED-LOGIC-01c
           if (name === 'quest:accepted') actionSig.questAccepted = true; // FS-01: first accepted quest -> [J] Journal hint
           if (name === 'quest:ready' && id === 'burl.boars' && crystal) crystal.check('ready'); // CH1-03
           if (name === 'quest:ready' && id === 'burl.boars' && dialogueCtl && dialogueCtl.open) burlReopen = true; // PO-CH1-07: boars were already dead when accepted -> Burl speaks again (the hand-in) once this box closes

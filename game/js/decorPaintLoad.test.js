@@ -1,0 +1,13 @@
+import { decorPaintUrl, decorPaintFromJSON, loadDecorPaint } from './decorPaintLoad.js';
+import assert from 'node:assert/strict';
+const mk = (j) => { if (!j.ok) throw new Error('bad'); return { layer: j }; };
+assert.equal(decorPaintUrl('overworld_far'), '../content/terrain/overworld_far.decorPaint.json');
+assert.equal(decorPaintFromJSON(null, mk), null);
+assert.equal(decorPaintFromJSON({ version: 1 }, mk), null);
+assert.equal(decorPaintFromJSON({ layers: {} }, mk), null);
+const o = decorPaintFromJSON({ layers: { a: { ok: 1 }, b: { ok: 0 } } }, mk);
+assert.deepEqual(Object.keys(o), ['a']);
+assert.equal(await loadDecorPaint('k', mk, async () => ({ ok: false })), null);
+assert.equal(await loadDecorPaint('k', mk, async () => { throw new Error('net'); }), null);
+assert.deepEqual(Object.keys(await loadDecorPaint('k', mk, async () => ({ ok: true, json: async () => ({ layers: { g: { ok: 1 } } }) }))), ['g']);
+console.log('decorPaintLoad: ok');

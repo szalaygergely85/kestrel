@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "palettes": {
+    "forest_edge": {
+      "place": [
+        { "mesh": "quaternius/CommonTree_1", "w": 3, "gapM": 3.5, "scale": [0.8, 1.3], "maxSlopeDeg": 30 },
+        { "mesh": "quaternius/CommonTree_2", "w": 3, "gapM": 3.5, "scale": [0.8, 1.3], "maxSlopeDeg": 30 },
+        { "mesh": "quaternius/CommonTree_3", "w": 2, "gapM": 3.5, "scale": [0.8, 1.3], "maxSlopeDeg": 30 },
+        { "mesh": "quaternius/Pine_1", "w": 2, "gapM": 3, "scale": [0.8, 1.3], "maxSlopeDeg": 35 },
+        { "mesh": "quaternius/Pine_2", "w": 2, "gapM": 3, "scale": [0.8, 1.3], "maxSlopeDeg": 35 },
+        { "mesh": "quaternius/DeadTree_1", "w": 1, "gapM": 3, "scale": [0.8, 1.2], "maxSlopeDeg": 30 }
+      ]
+    },
+    "rock_field": {
+      "place": [
+        { "mesh": "quaternius/Rock_Medium_1", "w": 1, "gapM": 1.8, "scale": [0.6, 1.5], "maxSlopeDeg": 45 },
+        { "mesh": "quaternius/Rock_Medium_2", "w": 1, "gapM": 1.8, "scale": [0.6, 1.5], "maxSlopeDeg": 45 },
+        { "mesh": "quaternius/Rock_Medium_3", "w": 1, "gapM": 1.8, "scale": [0.6, 1.5], "maxSlopeDeg": 45 }
+      ]
+    }
+  }
+}

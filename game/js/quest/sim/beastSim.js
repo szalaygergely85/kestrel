@@ -103,6 +103,7 @@ function astarFor(cur, grid) {
   return createAStar(grid);
 }
 
+const EMPTY_SLOTS = Object.freeze([]);
 export function createBeastSim(world, opts) {
   const { nav, rng, events } = opts;
   const band = opts.band || null; // US-129a: optional createBand() result; absent = every beast tier 1 (x1)
@@ -171,6 +172,7 @@ export function createBeastSim(world, opts) {
     _losFn: null,
     entities: beastEntities.slice(0, count),
     ids: beastEntities.slice(0, count).map((e) => e.id),
+    grp: beastEntities.slice(0, count).map((e) => (e.components.brain && typeof e.components.brain.group === 'string' ? e.components.brain.group : '')), // ED-LOGIC-01c: logic group name per slot ('' = none)
 
     spdMul: new Float64Array(MAX_BEASTS).fill(1), // US-129a: per-slot tier speed multiplier (set once at create)
     tier: new Uint8Array(MAX_BEASTS),
@@ -484,6 +486,24 @@ export function createBeastSim(world, opts) {
   sim.isDead = function isDead(slot) { return deadSt(sim.state[slot]); };
   /** US-079b: the slot index for a boar id, or -1 when not tracked. */
   sim.slotOf = function slotOf(id) { const i = idSlot[id]; return i === undefined ? -1 : i; };
+
+  // ED-LOGIC-01c: logic groups. brain.group = name, brain.reserve = true -> the slot starts down (STATE_GONE) until a logic block spawns the group.
+  /** @type {Object<string, number[]>} group name -> slots in slot order */
+  sim.groups = {};
+  for (let i = 0; i < count; i++) { const g = sim.grp[i]; if (g) (sim.groups[g] || (sim.groups[g] = [])).push(i); }
+  /** Slots of a group (slot order), [] when unknown. */
+  sim.groupSlots = function groupSlots(name) { return sim.groups[name] || EMPTY_SLOTS; };
+  /** Group name of a slot ('' none). */
+  sim.groupOf = function groupOf(slot) { return slot >= 0 && slot < count ? sim.grp[slot] : ''; };
+  /** Reserve group -> alive at the authored home (setDown off for every slot, slot order). Returns slots touched. */
+  sim.spawnGroup = function spawnGroup(name) { const l = sim.groupSlots(name); for (let k = 0; k < l.length; k++) sim.setDown(l[k], false); return l.length; };
+  /** Group back into reserve (down). */
+  sim.despawnGroup = function despawnGroup(name) { const l = sim.groupSlots(name); for (let k = 0; k < l.length; k++) sim.setDown(l[k], true); return l.length; };
+  /** True when the group has slots and every one is dead or down. */
+  sim.groupDead = function groupDead(name) { const l = sim.groupSlots(name); if (!l.length) return false; for (let k = 0; k < l.length; k++) if (!sim.down[l[k]] && !deadSt(sim.state[l[k]])) return false; return true; };
+  /** Number of live (not dead, not down) slots in a group. */
+  sim.groupAlive = function groupAlive(name) { const l = sim.groupSlots(name); let n = 0; for (let k = 0; k < l.length; k++) if (!sim.down[l[k]] && !deadSt(sim.state[l[k]])) n++; return n; };
+  for (let i = 0; i < count; i++) { const b = sim.entities[i].components.brain; if (b && b.reserve === true && sim.grp[i]) sim.setDown(i, true); }
 
   // arch fix (WM-04): a grid world's nav IS a tile -> tile dormancy applies from creation, not only after the first swap (opts.spawn optional: without it only the out-of-tile rule runs)
   if (opts.tileNav) { sim.tileMode = true; sim.updateTileDormancy(opts.spawn ? opts.spawn.x : NaN, opts.spawn ? opts.spawn.y : NaN); }

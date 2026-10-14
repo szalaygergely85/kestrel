@@ -247,6 +247,7 @@ export { createRtsCamera, update as updateRtsCamera, zoomBy as zoomRtsCamera } f
 // ---- RE-14 deterministic sim: commands/rng/hash/replay + loop STEP --------
 export { createCommandQueue } from './core/commands.js';
 export { createRng } from './core/rng.js';
+export { compileLogic, createLogic, validateLogic, LOGIC_LIMITS } from './core/logic.js'; // ED-LOGIC-01a
 export { createHasher } from './core/hash.js';
 export { createRecorder, createPlayer as createReplayPlayer } from './core/replay.js';
 export { STEP as SIM_STEP } from './core/loop.js'; // architect RE-EXP review: not a bare STEP next to STEP_MIN/KIND_STEP
