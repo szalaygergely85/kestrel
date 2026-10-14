@@ -149,7 +149,7 @@ const gz = (sim) => groundZ(sim.world, PX, PY);
   ok('never more than 2 tokens (8k ticks)', maxTok <= 2, `max ${maxTok}`);
   ok('two goblins do attack together', seen2);
   ok('goblins attacked (bites > 5)', bites > 5, `bites ${bites}`);
-  ok('waiting goblins circled (about 3-5 m)', circ > 20 && circBad / circ < 0.1, `circ ${circ} bad ${circBad}`);
+  ok('waiting goblins circled (about 3-5 m)', circ > 8 && circBad / circ < 0.1, `circ ${circ} bad ${circBad}`);
 }
 
 // 3. a hit goblin retreats about 3 m

@@ -74,6 +74,8 @@ const DEFAULT_ACCEL = 12;   // m/s^2
 const CHARGE_ACCEL = 70;    // m/s^2 (29.1 "Charge: waypoint pos + cd*20, accel 70")
 const WANDER_MAX_NODES = 500;
 const TRAVEL_MAX_NODES = 3000;
+const CHASE_MAX_NODES = 800;  // BEAST-06c: the chase target is <= loseR away, so a smaller A* budget is enough
+const REPATH_STAGGER = 8;     // BEAST-06c: slot % 8 extra steps on the repath timer spreads chasers' repath ticks
 const WAYPOINT_ARRIVE = 0.5;     // m, setWaypoint's slow-down radius (29.1 step 4)
 const WAYPOINT_ADVANCE_D2 = 0.36; // m^2 (0.6 m, 29.1 step 4 "advance to the next one within 0.6 m")
 const CONTACT_PAD = 0.1;         // m (29.1 step 6 "dist2D <= radius + PHYSICS.radius + 0.1")
@@ -241,7 +243,8 @@ export function createBeastSim(world, opts) {
 
     tick: 0,
     lastServed: -1,
-    stats: { astar: 0, astarNodes: 0 },
+    stats: { astar: 0, astarNodes: 0, direct: 0 },
+    _losPath: new Int32Array(3), _losXY: new Float64Array(6),
 
     // Scratch (zero allocation after create): findPath's `outPath` must hold >= grid.w*grid.h entries (astar.js
     // contract); smoothPath's output is at most that many waypoints before truncation to PATH_SLOTS.
@@ -1097,11 +1100,13 @@ function updatePathRequests(sim, px, py) {
     if (st === STATE_CHASE) {
       if (sim.waiting[i]) continue; // US-079c: a waiter holds position (no path into the player)
       if (sim.pathLen[i] === 0 || sim.pathIdx[i] >= sim.pathLen[i]) {
-        sim.goalX[i] = px; sim.goalY[i] = py; sim.pathReq[i] = 1;
+        sim.goalX[i] = px; sim.goalY[i] = py;
+        if (!directChase(sim, i, px, py)) sim.pathReq[i] = 1;
       } else if (sim.repathT[i] <= 0) {
         const dx = px - sim.goalX[i], dy = py - sim.goalY[i];
         if (dx * dx + dy * dy > cfg.repathMoveM * cfg.repathMoveM) {
-          sim.goalX[i] = px; sim.goalY[i] = py; sim.pathReq[i] = 1;
+          sim.goalX[i] = px; sim.goalY[i] = py;
+          if (!directChase(sim, i, px, py)) sim.pathReq[i] = 1;
         }
       }
     } else if (st === STATE_RETURN) {
@@ -1110,6 +1115,23 @@ function updatePathRequests(sim, px, py) {
       if (sim.pathLen[i] === 0 || sim.pathIdx[i] >= sim.pathLen[i]) sim.pathReq[i] = 1;
     }
   }
+}
+
+/** BEAST-06c: when the straight line (nav-grid supercover, no corner cutting) to the target is clear, steer direct:
+ * a 1-waypoint path to the target, no A*. The engine LOS test is reached through `smoothPath` on the 3-cell path
+ * [a, a, b]: it returns 2 waypoints iff a->b is in sight (the middle cell is only kept when the line is blocked). */
+function directChase(sim, i, px, py) {
+  const grid = sim.grid, steer = sim.steer, cp = sim._losPath;
+  const a = grid.cellY(steer.y[i]) * grid.w + grid.cellX(steer.x[i]);
+  const b = grid.cellY(py) * grid.w + grid.cellX(px);
+  cp[0] = a; cp[1] = a; cp[2] = b;
+  if (smoothPath(grid, cp, 3, sim._losXY) !== 2) return false;
+  const base = i * PATH_SLOTS * 2;
+  sim.path[base] = px; sim.path[base + 1] = py;
+  sim.pathLen[i] = 1; sim.pathIdx[i] = 0;
+  sim.repathT[i] = sim.cfgSteps.repath + (i % REPATH_STAGGER);
+  sim.stats.direct = (sim.stats.direct || 0) + 1;
+  return true;
 }
 
 /** At most one `findPath` per tick, round robin from the slot after the last one served (29.1 step 3). */
@@ -1122,7 +1144,7 @@ function servePathRequest(sim, px, py) {
     if (sim.pathReq[i] && !sim.dormant[i] && !deadSt(sim.state[i])) {
       computePath(sim, i);
       sim.pathReq[i] = 0;
-      sim.repathT[i] = sim.cfgSteps.repath;
+      sim.repathT[i] = sim.cfgSteps.repath + (i % REPATH_STAGGER);
       sim.lastServed = i; sim.pathServes++;
       return;
     }
@@ -1133,7 +1155,8 @@ function computePath(sim, i) {
   const grid = sim.grid, astar = sim.astar, steer = sim.steer;
   const sx = grid.cellX(steer.x[i]), sy = grid.cellY(steer.y[i]);
   const gx = grid.cellX(sim.goalX[i]), gy = grid.cellY(sim.goalY[i]);
-  const maxNodes = sim.state[i] === STATE_WANDER && !sim.goalOn[i] ? WANDER_MAX_NODES : TRAVEL_MAX_NODES;
+  const st = sim.state[i];
+  const maxNodes = st === STATE_CHASE ? CHASE_MAX_NODES : st === STATE_WANDER && !sim.goalOn[i] ? WANDER_MAX_NODES : TRAVEL_MAX_NODES;
   const len = findPath(astar, sx, sy, gx, gy, sim._cellPath, { maxNodes });
   sim.stats.astar++;
   sim.stats.astarNodes += len; // approximation: findPath does not expose expanded-node count (see report deviations)
