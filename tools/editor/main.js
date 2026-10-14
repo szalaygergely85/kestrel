@@ -15,6 +15,7 @@ import { createOverlayTarget } from './overlayTarget.js';
 import { makePickGuard } from './pickGuard.js';
 import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose, applyViewPreset, toggleOrtho, adjustOrthoHalfH, lookAlongAxis } from './camera.js';
 import { createAxisGizmo } from './axisGizmo.js';
+import { createQuestOverlay } from './questOverlay.js';
 import { unprojectCell, rayPoint, projectPoint, screenCentreGroundHit } from './ray.js';
 import { pickAt, pickMarkers } from './pick.js';
 import { resolveMeshClick } from './meshClick.js';
@@ -182,7 +183,7 @@ async function openQuestsTab() {
   try {
     const qp = await import('./questPanel.js'), fl = await import('./quest/flow.js');
     const A = window.ASSETS || {}, itemDefs = (A.items && A.items.defs) || {};
-    questPanelHandle = await qp.mountQuestPanel(root, { names: fl.makeNames({ itemDefs }), itemDefs, loadFiles: () => qp.fetchQuestFiles(), write: qp.downloadWrite, getWorld: () => assets.world(doc.worldId), floorAt: (x, y) => world.floorAt(x, y) });
+    questPanelHandle = await qp.mountQuestPanel(root, { names: fl.makeNames({ itemDefs }), itemDefs, loadFiles: () => qp.fetchQuestFiles(), write: qp.downloadWrite, getWorld: () => assets.world(doc.worldId), floorAt: (x, y) => world.floorAt(x, y), onMarkers: () => frame.markDirty() });
     window.__questPanel = questPanelHandle;
   } catch (e) { root.textContent = 'Quests failed to load: ' + e.message; console.error(e); }
 }
@@ -2144,6 +2145,10 @@ canvas.addEventListener('mousedown', async (e) => {
   const tok = clickGuard.begin();
   if (col < 0 || col >= rt.cols || row < 0 || row >= rt.rows) return;
 
+  if (questPanelHandle && !questPickerArmed()) { // ED-QUEST-04: a click on a quest pin selects that objective in the panel
+    const pin = questOverlay.pinAt(col, row);
+    if (pin) { questPanelHandle.selectObjective(pin.qid, pin.obj); return; }
+  }
   if (questPickerArmed()) { // ED-QUEST-03: Pick mode owns the left button; the quest panel decides what the hit means
     const hit = await pickAt(col, row, pickCtx());
     if (clickGuard.isStale(tok)) return;
@@ -2731,8 +2736,11 @@ function drawAssetGhost() {
 
 const overlayPlate = createOverlayTarget(engine.ui, rt);
 const overlayGlyph = createOverlayTarget(engine.ui, rt, { glyphOnly: true });
+const questOverlay = createQuestOverlay({ rt, getCam: () => cam, getWorld: () => assets.world(doc.worldId), floorAt: (x, y) => world.floorAt(x, y), renderer: RENDERER,
+  getAreasFile: () => (questPanelHandle && questPanelHandle.areasFile) || null });
 function drawOverlay(fb) {
   const selection = primarySelection();
+  if (questPanelHandle) questOverlay.draw(overlayPlate, questPanelHandle.markerState());   // ED-QUEST-04
   if (markersOn) drawMarkers(overlayPlate, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets.palette, selection, RENDERER, groupDrag?.previewItems);
   for (const item of sel.items) drawSelectionHighlight(overlayPlate, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets, doc, item, '#ffd24a', RENDERER, groupDrag?.previewItems);
   if (boxDrag?.moved) drawMeshHighlightRect(overlayPlate,boxDrag.rect,'#ffd24a');

@@ -26,9 +26,11 @@ function memFs(files) {
 export async function mountQuestPanel(root, opts) {
   const { names, itemDefs, loadFiles, write, getWorld = () => ({ entities: [] }), floorAt } = opts;
   const files = await loadFiles();
+  let areasFile = null;   // ED-QUEST-04: content/quests/areas.json (named areas -> world trigger zones); optional
+  if (files['areas.json']) { try { areasFile = JSON.parse(files['areas.json']); } catch (e) { /* ignore */ } delete files['areas.json']; }
   const model = loadQuests('q', memFs(files));
   const stack = makeStack();
-  let current = null, filter = '', pickMsg = '';
+  let current = null, filter = '', pickMsg = '', selObj = -1, showAll = false;   // ED-QUEST-04: selObj = step highlighted in the view
   const sites = (model.files.get('sites.json') || { obj: {} }).obj.sites || {};
   // ED-QUEST-03: Pick mode. A hit from the viewport sets the armed slot via one undoable command.
   const picker = createQuestPicker({
@@ -45,11 +47,15 @@ export async function mountQuestPanel(root, opts) {
   const search = el('input'); search.type = 'text'; search.placeholder = 'filter title / id / giver...'; search.id = 'quest-filter';
   const newBtn = el('button', 'ed-btn', 'New quest'); newBtn.id = 'quest-new';
   bar.append(search, newBtn);
+  const allLbl = el('label', 'q-field'); const allCb = el('input'); allCb.type = 'checkbox'; allCb.id = 'quest-show-all';
+  allLbl.append(allCb, el('span', null, ' Show all quest markers'));
+  allCb.addEventListener('change', () => { showAll = allCb.checked; opts.onMarkers && opts.onMarkers(); });
+  bar.append(allLbl);
   const list = el('div', 'q-list'); list.id = 'quest-list';
   const detail = el('div', 'q-detail'); detail.id = 'quest-detail';
   root.append(bar, list, detail);
 
-  const redraw = () => { renderList(); renderDetail(); };
+  const redraw = () => { renderList(); renderDetail(); opts.onMarkers && opts.onMarkers(); };
   const run = (cmd) => { stack.run(cmd); redraw(); };
 
   function renderList() {
@@ -58,7 +64,7 @@ export async function mountQuestPanel(root, opts) {
       const row = el('div', 'q-row' + (current && current.id === r.id ? ' active' : ''));
       row.dataset.qid = r.id;
       row.append(el('span', 'q-chip ' + r.chip, r.side ? 'side' : 'main'), el('span', 'q-title', r.title), el('span', 'q-meta', ` ${r.id} - ${r.region}`));
-      row.addEventListener('click', () => { current = model.quests.find((x) => x.id === r.id); redraw(); });
+      row.addEventListener('click', () => { current = model.quests.find((x) => x.id === r.id); selObj = -1; redraw(); });
       list.append(row);
     }
   }
@@ -89,7 +95,8 @@ export async function mountQuestPanel(root, opts) {
     detail.append(field('Title', q.title, (v) => run(ed.setTitle(q, v))));
     detail.append(field('Offer (Accept / Exit text, one line each)', ((q.lines && q.lines.offer) || []).join('\n'), (v) => run(ed.setOfferLines(q, v.split('\n'))), true));
     q.objectives.forEach((o, i) => {
-      const box = el('div', 'q-obj'); box.append(el('b', null, `Step ${i + 1}`));
+      const box = el('div', 'q-obj' + (selObj === i ? ' active' : '')); box.dataset.obj = i; box.append(el('b', null, `Step ${i + 1}`));
+      box.addEventListener('click', () => { if (selObj !== i) { selObj = i; opts.onMarkers && opts.onMarkers(); box.classList.add('active'); } });
       box.append(field('Text', objText(o), (v) => run(ed.setObjectiveField(q, i, 'text', v))));
       box.append(field('Journal', objJournal(o), (v) => run(ed.setObjectiveField(q, i, 'journal', v)), true));
       const up = el('button', 'ed-btn', 'Up'), dn = el('button', 'ed-btn', 'Down'), del = el('button', 'ed-btn', 'Delete');
@@ -127,7 +134,12 @@ export async function mountQuestPanel(root, opts) {
   search.addEventListener('input', () => { filter = search.value; renderList(); });
   newBtn.addEventListener('click', () => { const c = ed.newSideQuest(model); stack.run(c); current = c.quest; redraw(); });
   redraw();
-  return { model, stack, picker, select: (id) => { current = model.quests.find((x) => x.id === id); redraw(); } };
+  return {
+    model, stack, picker, areasFile, select: (id) => { current = model.quests.find((x) => x.id === id); selObj = -1; redraw(); },
+    /** ED-QUEST-04: what the view draws - the open quest, or every quest when "Show all" is on. */
+    markerState: () => ({ quests: showAll ? model.quests : (current ? [current] : []), all: showAll, selObj, sites }),
+    selectObjective: (id, i) => { current = model.quests.find((x) => x.id === id) || current; selObj = i; redraw(); },
+  };
 }
 
 /** Default loader: content/quests/index.json lists packs + legacy files; plain fetch from the page's server. */
@@ -135,6 +147,7 @@ export async function fetchQuestFiles(base = '../../content/quests/') {
   const get = async (p) => { const r = await fetch(base + p); if (!r.ok) throw new Error(p + ' ' + r.status); return r.text(); };
   const idx = JSON.parse(await get('index.json'));
   const files = { 'sites.json': await get('sites.json') };
+  try { files['areas.json'] = await get('areas.json'); } catch (e) { /* optional */ }
   for (const n of idx.legacy) files[n + '.quest.json'] = await get(n + '.quest.json');
   for (const p of idx.packs) files[p + '/pack.json'] = await get(p + '/pack.json');
   return files;
