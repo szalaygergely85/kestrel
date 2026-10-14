@@ -1213,6 +1213,8 @@ async function main() {
   try { // GI-PROBE-02b: baked GI probe files are optional; missing / stale = warning only (GI stays off in that zone)
     const gi = await import('./bake-gi.mjs'), def = JSON.parse(readFileSync(new URL('../content/worlds/world_m1.world.json', import.meta.url), 'utf8'));
     for (const r of gi.checkGIDir(fileURLToPath(new URL('../content/gi', import.meta.url)), gi.zonesOf(def), gi.inputHash())) if (r.status !== 'ok') warnings.push(`content/gi/${r.id}.gi.bin: ${r.status} GI file (run node tools/bake-gi.mjs; GI stays off in this zone)`);
+    const mf = fileURLToPath(new URL('../content/gi/manifest.json', import.meta.url)); // GI-PROBE-07: manifest vs current inputs
+    if (existsSync(mf)) { const cur = gi.inputHash(), m = JSON.parse(readFileSync(mf, 'utf8')); for (const [id, h] of Object.entries(m)) if (h !== cur) warnings.push(`content/gi/manifest.json: zone ${id} is stale (inputs changed; run node tools/bake-gi.mjs, GI is ignored at runtime)`); }
   } catch (e) { warnings.push(`content/gi: GI check skipped (${e.message})`); }
   allErrors.push(...lootFile.errors);
   allErrors.push(...recipeFile.errors);

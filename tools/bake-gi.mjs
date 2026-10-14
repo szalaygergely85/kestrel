@@ -43,6 +43,11 @@ export function inputHash(root = ROOT) {
   return h.digest('hex');
 }
 
+/** GI-PROBE-07: content/gi/manifest.json text {zoneId: inputHash} (canonical: sorted keys, 2-space, trailing newline). Not binary data. */
+export function manifestText(zones, hash) {
+  return JSON.stringify(Object.fromEntries(zones.map((z) => z.id).sort().map((id) => [id, hash])), null, 2) + '\n';
+}
+
 /** Bake one zone of `world` (needs groundAt + raySegmentRay or rayStaticFirst) -> .gi.bin bytes. */
 export function bakeZoneBytes(world, zone, hash, worldId = 'world_m1', cfg = {}) {
   const b = new GIBake(world, { x0: zone.x0, y0: zone.y0, w: zone.w, h: zone.h, ...cfg });
@@ -85,6 +90,10 @@ async function main() {
   const out = path.resolve(ROOT, arg('--out') || GI_DIR), hash = inputHash(ROOT);
   const def = JSON.parse(fs.readFileSync(path.join(ROOT, 'content', WORLD_FILE), 'utf8'));
   const zones = zonesOf(def).filter((z) => !arg('--zone') || z.id === arg('--zone'));
+  if (args.includes('--manifest')) { // hash only, no bake needed
+    fs.mkdirSync(out, { recursive: true }); fs.writeFileSync(path.join(out, 'manifest.json'), manifestText(zonesOf(def), hash)); console.log('manifest.json written (hash ' + hash.slice(0, 12) + ')');
+    return;
+  }
   if (args.includes('--check')) {
     const r = checkGIDir(out, zones, hash);
     for (const x of r) console.log(`${x.id}: ${x.status}`);
@@ -101,6 +110,7 @@ async function main() {
     tot += bytes.length; totS += s;
     console.log(`${z.id.padEnd(8)} ${s.toFixed(1).padStart(7)} ${(bytes.length / 1048576).toFixed(2).padStart(6)}`);
   }
+  if (!arg('--zone')) fs.writeFileSync(path.join(out, 'manifest.json'), manifestText(zonesOf(def), hash));
   console.log(`total    ${totS.toFixed(1).padStart(7)} ${(tot / 1048576).toFixed(2).padStart(6)}  (hash ${hash.slice(0, 12)})`);
 }
 
