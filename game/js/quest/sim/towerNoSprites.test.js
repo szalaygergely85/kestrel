@@ -20,6 +20,6 @@ w.forEachEntity((e) => {
 });
 assert.ok(towers >= 25 && voxels === towers, 'tower entities ' + towers + ' voxel ' + voxels);
 for (const id of ['tower.rigging', 'tower.gondola', 'tower.pallet']) assert.ok(w.entity(id) && w.entity(id).components.voxel, id + ' is voxel');
-for (const id of ['tower.lampFlame', 'tower.keeperLampFlame', 'tower.stairLampFlame', 'tower.swordLampFlame']) assert.ok(!w.entity(id), id + ' removed (flame baked into the lamp voxel)');
+for (const id of ['tower.lampFlame', 'tower.keeperLampFlame', 'tower.stairLampFlame', 'tower.swordLampFlame']) assert.ok(w.entity(id) && w.entity(id).components.sprite, id + ' is the fx flame billboard (OB-180/D-104)');
 assert.ok(fxs >= 1 && w.entity('tower.burnerFire').components.sprite, 'burnerFire is the fx billboard');
 console.log('towerNoSprites ok', towers, voxels, fxs);

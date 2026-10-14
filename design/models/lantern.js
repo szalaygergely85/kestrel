@@ -90,7 +90,7 @@
     name: 'lampFlame',
     desc: 'OWN-REQ-006: small steady brass-lamp flame in the voxel lamp cage (emissive core, swaying glyph tips).',
     size: { w: 3, h: 3 }, anchor: { x: 1, y: 2 }, world: { w: 0.09, h: 0.13 },
-    directions: ['S'], billboard: true,
+    directions: ['S'], billboard: true, fx: true,   // OB-180/D-104: fire is a billboard, exempt from lint R2
     keys: FL_KEYS,
     mountOn: { model: 'lantern', mount: 'flame', clip: 'lit',
                note: 'spawn only while the VOXEL lamp shows `lit`; remove on lanternTake (clip -> empty)' },
