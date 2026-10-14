@@ -69,6 +69,9 @@
     },
     "relay_whitecombs": {
       "entity": "relay_whitecombs"
+    },
+    "postkeeper": {
+      "entity": "postkeeper"
     }
   }
 }

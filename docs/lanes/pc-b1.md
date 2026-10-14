@@ -988,3 +988,15 @@ OB-155s (check only, no change): voxelPool picks the nearest-cap (16 DDA / 48 me
 - main.js (+10 lines): driver/table built in `world:loaded` inside the running-clock branch (needs BIOME_LOOK + world_geo.biomes + overworld_far.util.biomeBlend + P.fog; `?atmos=0` or frozen clock/capture/bench/gpucompare = no driver, so no double-apply); per unpaused step next to clockDriver: `driver.step(player x,y, clockHour, dt, true)` then mixAtmos + applyAtmosToPalette on version change; `if (atmosState.on) gradeCells(rt, atmosState)` after sprites.render.
 - Limits: `outdoor` is always true (no interior/underwater flag wired); no explicit snap on teleport (driver self-snaps on jumps > 50 m). Node: --check OK, filtered suites PASS.
 - Main session to run: gpucompare rows atmosForestDay/atmosMeadowDusk/atmosBorderNight, `node tools/capture-browser.mjs --mode gpucompare --backend webgpu --port 95xx` (9500-9574), plus one `?atmos=0` frame vs today.
+
+### QFIX-S5a-4 + S5a-5 (kestrel-1, 2026-10-14)
+- mq.river.road / mq.ford.stones / mq.smoke: `giver: rook`, `main: true`, `returnText`; river.road now requires bend.call done (chain: call -> road -> stones -> mirror -> smoke, each Accept/Not yet + hand-in talk at Rook). errands.js MQ list extended (mainSync flags); rook.dialogue.json entries + nodes added; rookQuests.test.js walks the chain. R14: 92 -> 89 (the three ids gone). Filtered suites + validate-content PASS.
+- OB-165: relayWake HINT_NO_CRYSTAL text -> "Its glass is gone from the mount." (mirror flow already gates the mount; 1-line fix).
+- NEEDS WRITER: rook.road.1/.2/.active/.ready/.ready2, rook.stones.* (same suffixes), rook.smoke.* (placeholder Rook lines written by me). Not done: `m1` still giverless (spine quest, not in these rows); the queue rows S5a-4/5 were not in this clone's pc-b-queue.md, worked from the prompt.
+
+### QFIX-S5a-2 (kestrel-2, 2026-10-14)
+- New NPC `postkeeper` (lowercase: dialogue file id regex; char.kit) at (996.9, 1059.6) beside the trade post basket, yaw 90 (not checked visually; facing/clearance NEEDS B1 look). `content/dialogue/postkeeper.dialogue.json` (label POST-KEEPER, placeholder hello line) in manifest; site `postkeeper` in sites.json.
+- The 12 bend/ford errands (sq.rb.* x6, sq.fc.ford/smoke/cross/again/jetty/cog) in ch12/pack.json: site -> postkeeper, turnIn removed, returnText/deliver texts reworded (no "relay"), writer `lines` removed so generateAll writes Accept/Not yet snippets; smoke + cross objText shortened (56-char dialogue cap). Tests updated: errands.test.js (sec 4 via book.accept/handIn), questBatch1.test.js.
+- R14: 89 -> 65 (R12 stays 12, none mine). validate-content OK, content-canonical ALL PASS, 13 filtered suites PASS.
+- NOT done: the 10 region errands sq.reg.* (relay_<region> givers) are not in these 12; waystone touch no longer offers errands. NEEDS WRITER: postkeeper.* (hello + every qs.sq.rb/fc.* offer/active/ready; old TICK lines are in git).
+- NEEDS B1-main: none expected (generateAll picks postkeeper from giverDefs); `?` marks over him not browser-checked.

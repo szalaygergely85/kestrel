@@ -9,8 +9,17 @@
   "entry": [
     {"node": "rook.mirror.done.1", "requires": "s.mq.ford.mirror.ready"},
     {"node": "rook.call.ready.1", "requires": "s.mq.bend.call.ready"},
+    {"node": "rook.road.ready", "requires": "s.mq.river.road.ready"},
+    {"node": "rook.stones.ready", "requires": "s.mq.ford.stones.ready"},
+    {"node": "rook.smoke.ready", "requires": "s.mq.smoke.ready"},
     {"node": "rook.call.active", "requires": "s.mq.bend.call.active"},
+    {"node": "rook.road.active", "requires": "s.mq.river.road.active"},
+    {"node": "rook.stones.active", "requires": "s.mq.ford.stones.active"},
     {"node": "rook.mirror.active", "requires": "s.mq.ford.mirror.active"},
+    {"node": "rook.smoke.active", "requires": "s.mq.smoke.active"},
+    {"node": "rook.smoke.1", "requires": "s.mq.smoke.available"},
+    {"node": "rook.road.1", "requires": "s.mq.river.road.available"},
+    {"node": "rook.stones.1", "requires": "s.mq.ford.stones.available"},
     {"node": "rook.ford.1", "requires": "s.mq.ford.mirror.available"},
     {"node": "rook.ford.repeat2", "requires": "s.mq.smoke.done"},
     {"node": "rook.ford.repeat", "requires": "s.mq.ford.mirror.done"},
@@ -18,6 +27,51 @@
     {"node": "rook.meet.1"}
   ],
   "nodes": {
+    "rook.road.1": {"choices": [{"next": "rook.road.2", "setFlag": "s.mq.river.road.accept", "text": "I'll walk it."}, {"next": "rook.later", "text": "Not yet."}], "lines": [
+      "West. The road runs to the river. Walk it."
+    ], "speaker": "rook"},
+    "rook.road.2": {"end": true, "lines": [
+      "Water at the end. Do not drown."
+    ], "speaker": "rook"},
+    "rook.stones.1": {"choices": [{"next": "rook.stones.2", "setFlag": "s.mq.ford.stones.accept", "text": "I'll cross."}, {"next": "rook.later", "text": "Not yet."}], "lines": [
+      "Stones in the water. Hop them. Wet boots, maybe."
+    ], "speaker": "rook"},
+    "rook.stones.2": {"end": true, "lines": [
+      "Hop, hop, hop. Slow walker."
+    ], "speaker": "rook"},
+    "rook.smoke.1": {"choices": [{"next": "rook.smoke.2", "setFlag": "s.mq.smoke.accept", "text": "I'll look."}, {"next": "rook.later", "text": "Not yet."}], "lines": [
+      "The stone has a mark. Look. Then north, smoke."
+    ], "speaker": "rook"},
+    "rook.smoke.2": {"end": true, "lines": [
+      "Mark first. Smoke after."
+    ], "speaker": "rook"},
+    "rook.road.active": {"end": true, "lines": [
+      "Road west. River at the end."
+    ], "speaker": "rook"},
+    "rook.stones.active": {"end": true, "lines": [
+      "Stones. Hop them. West bank."
+    ], "speaker": "rook"},
+    "rook.smoke.active": {"end": true, "lines": [
+      "The mark on the stone. Then north."
+    ], "speaker": "rook"},
+    "rook.road.ready": {"lines": [
+      "You found the river. Good. Loud, yes?"
+    ], "next": "rook.road.ready2", "speaker": "rook"},
+    "rook.road.ready2": {"end": true, "lines": [
+      "Next, the stones. I will be there first."
+    ], "setFlag": "s.mq.river.road.handin", "speaker": "rook"},
+    "rook.stones.ready": {"lines": [
+      "Dry boots? No. Never mind. You crossed."
+    ], "next": "rook.stones.ready2", "speaker": "rook"},
+    "rook.stones.ready2": {"end": true, "lines": [
+      "Now the stone here. Its glass is gone."
+    ], "setFlag": "s.mq.ford.stones.handin", "speaker": "rook"},
+    "rook.smoke.ready": {"lines": [
+      "You saw the mark. You saw the smoke."
+    ], "next": "rook.smoke.ready2", "speaker": "rook"},
+    "rook.smoke.ready2": {"end": true, "lines": [
+      "Fires. People, maybe. Go see."
+    ], "setFlag": "s.mq.smoke.handin", "speaker": "rook"},
     "rook.meet.1": {"clip": "caw", "lines": [
       "Ha. The fell-bird walks."
     ], "next": "rook.meet.2", "speaker": "rook"},

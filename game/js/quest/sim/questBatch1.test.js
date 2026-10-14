@@ -101,7 +101,7 @@ assert.deepEqual(nub.giveOnTalk, [{ id: 'bow', n: 1 }, { id: 'arrow', n: 10 }]);
 assert.equal(nub.giver.npc, 'bear');
 assert.equal(nub.abandonable, false);
 const sh = packDefs.find((d) => d.id === 'sq.rb.shield');
-assert.deepEqual(sh.giveOnTalk, [{ id: 'shield', n: 1 }]); assert.equal(sh.giver.npc, 'relayBend'); assert.deepEqual(sh.requireEquipped, ['shield']);
+assert.deepEqual(sh.giveOnTalk, [{ id: 'shield', n: 1 }]); assert.equal(sh.giver.npc, 'postkeeper'); assert.deepEqual(sh.requireEquipped, ['shield']);
 {
   const b = newBook(); openGates(b); b.feed({ type: 'flag:set', key: 'burl.home', value: true });
   assert.ok(b.accept('sq.burl.meat')); pack.clear();

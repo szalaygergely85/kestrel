@@ -9,6 +9,7 @@
     "dialogue/rook.dialogue.json",
     "dialogue/hesk.dialogue.json",
     "dialogue/dorrin.dialogue.json",
+    "dialogue/postkeeper.dialogue.json",
     "levels/tower.level.json",
     "levels/test_room.level.json",
     "levels/waterfall_cliff.level.json",
