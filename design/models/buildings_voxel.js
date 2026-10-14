@@ -360,6 +360,9 @@
       });
       b.paint(r2(x0), OY0, r2(top - 0.1), r2(x0 + 0.1), OY1, r2(top), 'W');              // tread nosing
       steps.push('s' + i);
+      // collider-only half riser in front of the tread: the walker's support ray is its centre, radius 0.3 = tread depth, so
+      // without it the circle meets the next face (rise 0.5 > stepUpMax+0.05) before the centre is on this tread (BLD-01)
+      b.col('h' + i, 'step', r2(x0 - 0.15), OY0, 0.2, r2(x0), OY1, r2(top - 0.125));
     }
     b.solid('landing', 'landing', OX1, OY0, 0.2, W - t, OY1, z1, function (xm, ym, zm, x, y, z) {
       return zm > z1 - 0.2 ? plankX(xm, ym, zm, x, y, z) : st(xm, ym, zm, x, y, z);
@@ -646,6 +649,7 @@
         return ym < y0 + 0.1 ? 'T' : 'W';
       });
       steps.push('s' + i);
+      b.col('h' + i, 'step', -1.2, r2(y0 - 0.15), 0, 0, y0, r2(top - 0.125)); // collider-only half riser (see bldHouseTwo)
     }
     b.solid('landing', 'landing', -1.2, 1.9, 0, 0, 3.3, PZ, function (xm, ym, zm, x, y, z) {
       if (zm > PZ - 0.2) return plankX(xm, ym, zm, x, y);
@@ -683,4 +687,17 @@
   })();
 
   A.buildingsVoxel = { version: 1, story: 'OB-139', status: 'proposal', ids: IDS, materialKeys: KEY };
+  // BLD-01: registry keys (like attachCrown in voxel_tower_crown.js): a model joins ASSETS.models only when every
+  // material is merged in palette + detail-pass. World.rebuildPropColliders reads its `colliders` boxes (placed entities).
+  A.buildingsVoxel.attach = function attachBuildings() {
+    var P = A.palette, DP = A.detailPass, n = 0;
+    if (!P || !DP || !A.models) return 0;
+    IDS.forEach(function (id) {
+      var vox = A.voxelModels[id].voxel, k, ok = !A.models[id];
+      for (k in vox.mats) if (!P.materials[vox.mats[k]] || !DP.materials[vox.mats[k]]) ok = false;
+      if (ok) { A.models[id] = A.voxelModels[id]; n++; }
+    });
+    return n;
+  };
+  A.buildingsVoxel.attach();
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -570,6 +570,27 @@ export function buildDetailCollider(detail) {
 }
 
 /**
+ * BLD-01 (OB-139): appends one static box shape per `{id, kind, box:[x0,y0,z0,x1,y1,z1]}` (metres, anchor-relative,
+ * y south, design/models/buildings_voxel.js) of a placed building to `shapes` (input of `buildPropCollider`),
+ * rotated by the transform's yawDeg like level-prop boxes. 'roof' boxes are blockers only (nothing stands on them).
+ * @param {Array} shapes @param {Array<{id:string,kind:string,box:number[]}>} boxes
+ * @param {{x:number,y:number,z:number,yawDeg?:number,scale?:number}} t
+ */
+export function buildingBoxShapes(shapes, boxes, t, label = '?') {
+  const yaw = (t.yawDeg || 0) * Math.PI / 180, c = Math.cos(yaw), s = Math.sin(yaw), k = t.scale || 1;
+  for (const d of boxes) {
+    const b = d.box;
+    if (!Array.isArray(b) || b.length !== 6 || !b.every(Number.isFinite) || b[3] <= b[0] || b[4] <= b[1] || b[5] <= b[2]) {
+      throw new Error(`World.load: entity "${label}" invalid building collider "${d.id}"`);
+    }
+    const cx = (b[0] + b[3]) / 2, cy = (b[1] + b[4]) / 2;
+    shapes.push({ kind: 0, x: t.x + (c * cx - s * cy) * k, y: t.y + (s * cx + c * cy) * k, zc: t.z + (b[2] + b[5]) / 2 * k,
+      hx: (b[3] - b[0]) / 2 * k, hy: (b[4] - b[1]) / 2 * k, hz: (b[5] - b[2]) / 2 * k, r: 0, h: 0, yawRad: yaw });
+  }
+  return shapes;
+}
+
+/**
  * PROP-COLLIDE-01 (37.10): one closed, static prop BVH in world metres.
  * @param {Array<{kind:number,x:number,y:number,zc:number,hx:number,hy:number,hz:number,r:number,h:number,yawRad:number}>} shapes
  * @param {number} count

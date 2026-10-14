@@ -20,7 +20,7 @@ import { buildTriggers } from './triggers.js';
 import { clamp01 } from '../core/math.js';
 import { makeFrame, localToWorld, localDirToWorld, QUARTER_COS, QUARTER_SIN, frameBBox } from '../core/transform.js';
 import { gridLocal } from './gridLocal.js';
-import { buildWorldColliders, buildStaticMeshCollider, buildTrunkCollider, buildDetailCollider, buildPropCollider, buildKinematicCollider, moveKinematicPrism, refitDynCollider } from './colliders.js';
+import { buildWorldColliders, buildStaticMeshCollider, buildTrunkCollider, buildDetailCollider, buildPropCollider, buildingBoxShapes, buildKinematicCollider, moveKinematicPrism, refitDynCollider } from './colliders.js';
 import { cosSinDeg } from '../voxel/voxelPose.js';
 import { moveCircleMesh, moveSphereMesh, probeSupport, meshSupportSector, raycastCollidersRay, FLOOR_NONE } from '../physics/meshCollide.js';
 import { pointBlocked, resolvePropPicks } from './interaction.js';
@@ -1168,6 +1168,14 @@ export class World {
     // NPC-BEAR-01: a world-level entity may carry `components.collider = {r, h}` (metres): one static upright prism
     // at its transform (feet on transform.z). Re-run on ground snaps, so it follows the terrain re-bake.
     for (const [id, e] of this._entities) {
+      // BLD-01 (OB-139): a world-level prop whose voxel model lists `colliders: [{id, kind, box:[x0,y0,z0,x1,y1,z1]}]`
+      // (metres, anchor-relative, y south; design/models/buildings_voxel.js) gets one static box per entry, yawed
+      // with the entity like the level-prop boxes above. Level props (ids "struct.prop") use the {type,c,half} form.
+      const vx = e.type === 'prop' && e.components && e.components.voxel;
+      const bd = vx && this.assets.has('model', vx.model) ? this.assets.model(vx.model).colliders : null;
+      if (Array.isArray(bd) && bd.length && bd[0].box) {
+        buildingBoxShapes(shapes, bd, e.transform, id);
+      }
       const cc = e.components && e.components.collider;
       if (!cc || e.type === 'prop') continue;
       if (!Number.isFinite(cc.r) || cc.r <= 0 || !Number.isFinite(cc.h) || cc.h <= 0) throw new Error(`World.load: entity "${id}" invalid collider {r,h}`);
