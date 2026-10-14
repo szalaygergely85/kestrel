@@ -54,8 +54,8 @@ function script(b, legs, blend, rec) {
   const b = mk('wolf');
   const res = allocProbe((n) => { for (let i = 0; i < n; i++) { if (i % 200 === 0) hit(b); frame(b, legs, blend, (i % 300) / 85, (i % 400) < 300 ? STATE_CHASE : STATE_WINDUP); } }, { n: 60000 });
   if (res.skipped) console.log('SKIP alloc (no --expose-gc)');
-  // OPEN: ~40 B/frame measured (no-blend baseline < 8); bisected to the per-frame `v.animLayers = bl.layersOf(slot)` store path, source not found (ANIM-BLEND-03 lane note). Cap 48 until fixed.
-  else ok(`B/frame blend + legs through presentBeasts <= 48: ${res.perCall.toFixed(3)}`, res.perCall <= 48);
+  // was ~40 B/frame: an arrow fn capturing `pm` in drive() allocated a function context per call (fixed: nameClips()). Baseline w/o blend ~7.
+  else ok(`B/frame blend + legs through presentBeasts <= 8: ${res.perCall.toFixed(3)}`, res.perCall <= 8);
 }
 
 // ---- 1. requests per state, no pops, hit stays additive (wolf, boar, goblin)

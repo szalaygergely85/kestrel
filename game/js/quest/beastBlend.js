@@ -74,7 +74,7 @@ export function createBeastBlend(opts) {
       const s = bl.attach(pm);
       if (s < 0) return false;
       slot[k] = s; ent[k] = e; mod[k] = pm; api.stats.attached++; fresh = true;
-      if (!pm.clipNames) pm.clipNames = Object.keys(pm.clipIndex).sort((a, b) => pm.clipIndex[a] - pm.clipIndex[b]);
+      if (!pm.clipNames) nameClips(pm);
     }
     if (measure(k, t, fresh)) fresh = true;
     const idx = pm.clipIndex[clip], b = pm.blend;
@@ -90,6 +90,8 @@ export function createBeastBlend(opts) {
     v.anim = pm.clipNames[io[6] | 0]; // dominant clip: the leg driver's gait + footfall pattern
     return true;
   }
+  // Cold, own function: an arrow capturing `pm` inside drive() forced a 40 B context allocation on EVERY drive() call (ANIM-BLEND-03b)
+  function nameClips(pm) { pm.clipNames = Object.keys(pm.clipIndex).sort((a, b) => pm.clipIndex[a] - pm.clipIndex[b]); }
   // Measured speed (m/s) from the transform delta, smoothed in spd[k]; true on first sight / teleport (the blender then resets, no fade).
   // Typed-array maths in its own small function (38.61: no boxed doubles on the hot path).
   function measure(k, t, fresh) {
