@@ -1466,6 +1466,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         // force it off - `setSun` is the only writer of `on`.
         if (!sunEnabled) lightSet.setSun({ elevation: lightSet.sun.elevation, azimuth: lightSet.sun.azimuth, on: false });
       }
+      if (atmos) { atmos.dispose(); atmos = null; } // ENV-03c: dispose the previous world's runtime before building the next
       atmos = createAtmosRuntime(window.BIOME_LOOK, assets.palette, world, params.get('atmos') === '0'); // ENV-03c (resets the palette fog first)
       clockDriver = null;
       if (!clockFrozen && assets.palette.daySchedule) {
@@ -1515,7 +1516,6 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       // to both of this load's targetable lists.
       applyPropTargetables(world);
       applyPropEmitters(world); // US-053c: content `emitters` -> components.emitters, same timing rule as applyPropTargetables above
-      if (atmos) { atmos.dispose(); atmos = null; } // ENV-03c
       if (particleHooks) particleHooks.dispose();
       if (hitSparkWire) hitSparkWire.dispose();
       hitSparkWire = wireHitSparks(engine.events, engine.particles, () => (playerHandle && playerHandle.transform), hitSparksEnabled(params, isCaptureOrBench)); // HIT-SPARK-WIRE

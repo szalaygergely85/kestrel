@@ -1,5 +1,12 @@
 // BEAST-03b: LAYERS dispatch + per-archetype perception (notice, near bubble, aggro modes) and leash / lose-sight, determinism,
 // 0 alloc per sim.step. Run: node --expose-gc game/js/quest/sim/beastLayers.test.js
+import { supportAtOld } from '../../../../tools/testing/supportAtOld.mjs';
+// NAV-ALLOC-01: the alloc gate needs a real gc -> re-run this file in an --expose-gc child (same as engine/test/allocGate.js ensureGcChild;
+// inlined because game/ may not deep-import engine/)
+if (typeof globalThis.gc !== 'function' && !process.env.ALLOC_GATE_CHILD) {
+  const { spawnSync } = await import('node:child_process');
+  process.exit(spawnSync(process.execPath, ['--expose-gc', ...process.argv.slice(1)], { stdio: 'inherit', env: { ...process.env, ALLOC_GATE_CHILD: '1' } }).status ?? 1);
+}
 import { World, NavGrid, createRng, createHasher, pointBlocked } from '../../../../engine/index.js';
 import paletteMod from '../../../../design/palette.js';
 import detailPassMod from '../../../../design/detail-pass.js';
@@ -107,8 +114,8 @@ ok('10k steps: same seed -> identical state', a === b && a.length > 4, a + ' vs 
   const r = allocProbe((n) => { for (let t = 0; t < n; t++, k++) { const ph = (k % 400) / 400, tri = ph < 0.5 ? ph * 2 : 2 - ph * 2; sim.step(HX + 30 * tri, HY - 8 - 6 * tri, zz); } }, { n: 2000 });
   const ctx = sim._ctx; let acc = 0; const rl = allocProbe((n) => { for (let t = 0; t < n; t++) acc += LAYERS[sim.archIdx[t & 3]](sim, t & 3, ctx) ? 1 : 0; }, { n: 50000 });
   if (!rl.skipped) ok('LAYERS dispatch alloc < 1 B/call', rl.perCall < 1, rl.perCall.toFixed(2));
-  if (r.skipped) console.log('SKIP alloc (no --expose-gc)');
-  else { console.log('beastSim.step alloc: ' + r.perCall.toFixed(1) + ' B/step'); ok('alloc/step through real sim.step < ' + ALLOC_MAX + ' B', r.perCall < ALLOC_MAX, r.perCall.toFixed(1)); } }
+  ok('alloc gate ran (gc available)', !r.skipped);
+  if (!r.skipped) { console.log('beastSim.step alloc: ' + r.perCall.toFixed(1) + ' B/step'); ok('alloc/step through real sim.step < ' + ALLOC_MAX + ' B', r.perCall < ALLOC_MAX, r.perCall.toFixed(1)); } }
 // NAV-ALLOC-01 golden: scratch fast paths answer exactly like the scalar originals (corpus: 6000 points around the tower + terrain)
 { const { world } = mk(['troll']); const T = world.terrain; let bad = 0, nb = 0, g = 0, rng = 12345;
   const rnd = () => { rng = (Math.imul(rng, 1664525) + 1013904223) >>> 0; return rng / 4294967296; };
@@ -117,8 +124,10 @@ ok('10k steps: same seed -> identical state', a === b && a.length > 4, a + ' vs 
     world._lq[0] = x; world._lq[1] = y; world._lq[2] = z;
     const q = world.losPointQ(); if (q >= 0) { nb += q; if ((q === 1) !== pointBlocked(world, x, y, z)) bad++; }
     const gh = T.util.gridHeight(T.near, x, y); if (gh !== null && T.groundAt(x, y) !== gh) g++;
-    const sa = world.supportAt(x, y, z, true, { height: 0, stepUpMax: 1, walkCos: -1 }).floorH;
-    if (!(sa === world.supportAtQ(Float64Array.of(x, y, z), true, { height: 0, stepUpMax: 1, walkCos: -1 }).floorH)) bad++;
+    const o = { height: 0, stepUpMax: 1, walkCos: -1 };
+    const sa = supportAtOld(world, x, y, z, true, o).floorH;
+    if (!Object.is(sa, world.supportAt(x, y, z, true, o).floorH)) bad++;
+    if (!Object.is(sa, world.supportAtQ(Float64Array.of(x, y, z), true, o).floorH)) bad++;
   }
   ok('losPointQ == pointBlocked, supportAt == supportAtQ (6000 pts)', bad === 0, 'bad=' + bad);
   ok('groundAt bit-equal to util.gridHeight in the band', g === 0, 'diff=' + g);

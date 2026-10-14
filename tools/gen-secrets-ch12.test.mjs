@@ -3,23 +3,34 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { stringifyContent } from '../engine/index.js';
+import { anchorChests, MOVE } from './anchor-chests.mjs';
 import { buildSecrets, SECRET_IDS, PATH, segNear } from './gen-secrets-ch12.mjs';
 import { staticReach } from './reach-check.mjs';
 import { CHEST_TABLES, SECRET_TABLE } from '../game/js/quest/sim/chestDefs.js';
 
+// OB-152: anchored chests lie inside their camp (leashR) and >= 3 m from every goblin member spot
+function checkAnchored(e) {
+  const camps = JSON.parse(readFileSync(new URL('../content/life/goblinCamps.json', import.meta.url), 'utf8')).camps;
+  const c = camps.find((q) => Math.hypot(q.at[0] - e.x, q.at[1] - e.y) <= q.leashR);
+  assert.ok(c, e.id + ' inside a camp radius');
+  for (const m of c.members) assert.ok(Math.hypot(c.at[0] + m.at[0] - e.x, c.at[1] + m.at[1] - e.y) >= 3, `${e.id} >= 3 m from ${m.id}`);
+}
+const ANCHORED = (e) => Object.hasOwn(MOVE, e.id);
 const file = new URL('../content/worlds/world_m1.world.json', import.meta.url);
 const w = JSON.parse(readFileSync(file, 'utf8'));
 const a = await buildSecrets(w), b = await buildSecrets(w);
 assert.equal(stringifyContent(a.data), stringifyContent(b.data), 'deterministic: same seed = byte-identical json');
 // OB-152: the world json was patched by tools/anchor-chests.mjs (3 chests removed, secretRook moved into campEast): no byte-equality / count / road-distance checks
-if (0) assert.equal(stringifyContent(a.data), stringifyContent(w), 'committed world_m1 == generator output (rerun tools/gen-secrets-ch12.mjs)');
+assert.equal(stringifyContent(anchorChests(a.data)), stringifyContent(w), 'generator + anchor-chests reproduces the committed world_m1');
+assert.equal(stringifyContent(anchorChests(w)), stringifyContent(w), 'anchor-chests is idempotent');
 assert.deepEqual(a.log.map((l) => l.id), SECRET_IDS);
 const ent = w.entities.filter((e) => SECRET_IDS.includes(e.id));
 assert.equal(ent.length, 1, 'OB-152: only secretRook is left');
 for (const e of ent) {
   assert.equal(e.components.voxel.model, 'chestSmall', e.id + ' existing chest model');
   assert.equal(e.z, 'ground', e.id + ' on the ground');
-  const road = segNear(e.x, e.y, PATH); if (0) assert.ok(road.d >= 8 && road.d <= 25, `${e.id} ${road.d.toFixed(1)} m from the road`);
+  if (ANCHORED(e)) checkAnchored(e);
+  else { const road = segNear(e.x, e.y, PATH); assert.ok(road.d >= 8 && road.d <= 25, `${e.id} ${road.d.toFixed(1)} m from the road`); }
   for (const o of [...w.entities.filter((q) => q.id !== e.id && typeof q.x === 'number'), ...w.structures.filter((s) => s.origin && !/Grass|Flower|Clover|Fern|Plant_|Pebble|Mushroom/.test(s.mesh || ''))]) {
     const ox = o.origin ? o.origin.x : o.x, oy = o.origin ? o.origin.y : o.y;
     assert.ok(Math.hypot(ox - e.x, oy - e.y) >= 3, `${e.id} >= 3 m from ${o.id}`);

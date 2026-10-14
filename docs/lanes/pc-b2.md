@@ -1027,3 +1027,8 @@ New `tools/verify-wm-regions.mjs <port>` (10 stills -> docs/test-reports/wm-regi
 - astar findPath was already alloc-free; sources were: boxed double args/returns (hasLineOfSight 7 args, supportAt, groundNormalAt, groundAt `number|null` gridHeight) and `{maxNodes}` per computePath. Fix: scratch forms `hasLineOfSightRay`, `canSeeRay`, `World.losPointQ/supportAtQ`, `Terrain._groundQ/groundNormalQ/groundBelowQ`, `probeSupportQ/meshSupportSectorQ`; old scalar APIs kept as wrappers (same answers; golden in beastLayers.test.js, 6000 pts). LOS 364 -> 0.9 B/call.
 - Gate in beastLayers.test.js: ALLOC_MAX 1500 -> 160 B/step. NOT 0: left over ~25 B/slot = boxed double args to non-inlined sim internals (sim.step px/py, setWaypoint x,y,z, transitionOne px,py; sampling profiler). ASK ARCHITECT: accept <160 or want the arg-scratch pass in beastSim (separate step)? analytic heightAt (out of near band, ~425 B/call) untouched. Tool-call cap hit.
 -> arch-review
+## arch3-fixes: ENV-03c fix + NAV-ALLOC-01 part + OB-152 tests (kestrel-2)
+- main.js: atmos dispose moved BEFORE createAtmosRuntime (atmosRuntime.test: x-dependent mock biome, state == new target 1 step after 200 m jump; 11 checks OK).
+- beastLayers.test: re-runs itself in an --expose-gc child (ALLOC_MAX 160 now enforced, ~96 B/step); supportAt/supportAtQ golden vs frozen old body (tools/testing/supportAtOld.mjs; engine/dev.js now also exports meshSupportSector).
+- anchor-chests.mjs: pure `anchorChests(world)` + main guard; ch12/outwall tests: `if (0)`/`|| 1` removed, pipeline stringify(anchorChests(outwall(ch12(w)))) === w and idempotence asserted; anchored chests in camp leashR and >= 3 m from members, road 8-25 m for un-anchored only. check-deps OK.
+-> arch re-review
