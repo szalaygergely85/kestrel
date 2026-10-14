@@ -1245,3 +1245,7 @@ Run: 12 suites PASS, validate-content OK, check-deps OK (no model fixes needed).
 
 - BITE-ALLOC (kestrel-3, bitefix): beastSim `sim` top-level keys 162 -> 139 (sub-objects bite{cd,n,done}, pl{died,sink,scrape,throw,alt}, alt{tgt,cd,n,x,y}, goal{on,tx,ty}, sc{ally*,tS,thr*,prey,tmp}, stk{t,ax,ay,fail,st}; tactics.js _ally* -> sim.sc.ally*).
   beast8 own 3.0 B/step (limit < 8). New guard simShape.test.js + simShape.probe.mjs (12 sims %HasFastProperties, keys <= 145). Needs arch glance only if hot-path sub-object loads matter; replay hashes untouched (hash/save code unchanged names).
+
+### BH-S1/S2/S3 (kestrel-4, 2026-10-15) - dev done, Node only
+- S1 saveState.js: collectSave + applySave copy `seq` (accept order survives the relay path). S2 questBook.js abandon: replays known-dead `when.ids` beasts (new `deadSeen` mirror + old state.deadBeasts). S3 migrateQuestSave legacy path sets `flags.kk` for kind-kill quests (no second seeding).
+- Test: game/js/quest/save/bughuntSave.test.js (3 round trips; each fails on HEAD, passes now). check-deps OK. Suites save/quest/errand/serialize: only navLayers01d + navTile fail (not touched; unrelated). No main.js change needed.
