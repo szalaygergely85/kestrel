@@ -18,7 +18,7 @@ export function createFootIkWire(deps) {
       const n = pool._rawCount;
       for (let i = 0; i < n; i++) {
         const inst = pool.raw[i], pm = inst.model, ent = inst.entity;
-        if (!pm || !pm.legRig || !ent) continue;
+        if (!pm || !pm.legRig || !ent || pm.legRig.n !== footCells.length) continue; // kit rigs only: D-101 animals (4 legs) have their own leg drivers
         let rec = slots.get(ent);
         if (!rec || rec.pm !== pm) {
           if (rec) drv.release(rec.slot);
