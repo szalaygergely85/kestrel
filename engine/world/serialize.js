@@ -127,6 +127,7 @@ export function deserialize(state, assets, opts = {}) {
   // from content entirely, loads exactly as before this story).
   const useContentRule = state.contentVersion != null && assets && typeof assets.has === 'function' && assets.has('world', state.world);
   let keptSavedEntities = state.entities; // state shape: {id,type,transform,components,fromContent?}
+  const runtimeOverlay = []; // saved content entities that respawn from content; their RUNTIME state is overlaid after load
   let appendedContentEntities = []; // raw content shape (may use x/y/z or spawn, not transform)
   const removedSet = new Set(state.removed || []);
 
@@ -160,7 +161,7 @@ export function deserialize(state, assets, opts = {}) {
       // QFIX-S6 (OB-155g): content wins. A still-current content entity is NOT restored from the
       // save (it respawns from content below / in World.load's prop loop) unless the sim owns it:
       // the player or anything with a body. Taken/killed ones stay out via `removed`.
-      if (e.fromContent && e.type !== 'player' && !(e.components && e.components.body)) return false;
+      if (e.fromContent && e.type !== 'player' && !(e.components && e.components.body)) { runtimeOverlay.push(e); return false; }
       return true; // rule 3: a runtime-spawned entity (no fromContent) is always kept
     });
     if (dropped.length) {
@@ -213,6 +214,35 @@ export function deserialize(state, assets, opts = {}) {
 
   const world = World.load(def, assets, { ...opts, skipIds: useContentRule ? removedSet : opts.skipIds });
   if (useContentRule) world._removedContent = new Set(removedSet);
+
+  // QFIX-S6b: content-vs-save split for a still-current content entity (respawned from content above).
+  //   CONTENT wins (authored): transform x/y/z/yaw/pitch, which model/sprite/voxel/mesh it is (a component whose kind
+  //     content no longer has is dropped; its `model` id is always the content's), removed/added props, structures.
+  //   SAVE wins (runtime): every other field of a component content also has (voxel/sprite anim, frame, t, playing,
+  //     speed; door/lever/structure state ...), components content has not at all except sprite/voxel/mesh
+  //     (health, flags, inventory ...), z when x/y are unchanged (ground snap), and a runtime-changed transform.scale (saved scale != 1 while content is 1/unset).
+  const IDENT = { sprite: 1, voxel: 1, mesh: 1 };
+  for (const se of runtimeOverlay) {
+    const live = world.entity(se.id);
+    if (!live) continue;
+    const sc = se.components || {};
+    live.components = live.components || {};
+    for (const k of Object.keys(sc)) {
+      const cur = live.components[k];
+      if (cur && typeof cur === 'object' && typeof sc[k] === 'object' && sc[k]) {
+        const keep = cur.model;
+        Object.assign(cur, structuredClone(sc[k]));
+        if (keep !== undefined) cur.model = keep;
+      } else if (!cur && !IDENT[k]) live.components[k] = structuredClone(sc[k]);
+    }
+    // ground-snapped z is derived from authored x/y: unchanged x/y -> keep the saved z (exact round trip), else content's.
+    const st = se.transform;
+    if (st && Math.abs(st.x - live.transform.x) < 1e-6 && Math.abs(st.y - live.transform.y) < 1e-6) live.transform.z = st.z;
+    const ss = se.transform && se.transform.scale;
+    if (ss > 0 && ss !== 1 && !(live.transform.scale > 0 && live.transform.scale !== 1)) live.transform.scale = ss;
+  }
+  // colliders were built from the content variants (e.g. door open/closed): rebuild now the saved runtime state is on.
+  if (runtimeOverlay.length && world.rebuildPropColliders) world.rebuildPropColliders();
 
   // Re-apply dynamics AFTER load (World.load's own structures[].dynamics
   // handling already does this from `def.structures[i].dynamics`, but that
