@@ -12,6 +12,7 @@
 | QPIPE-LINT-01 | kestrel-4 (fold into QFIX-S2 R14) | a quest giver/turnIn must resolve to an NPC/animal on walkable ground (D-082, OB-147), never `kind:'prop'`. | todo |
 | PLAYER-TEXT-RELAY-01 | kestrel-4 | lint player-facing strings for "relay" (D-080). | todo |
 | SWIM-SAVE-01 | kestrel-2 with QFIX-S6 (PC-A track, PC-A reviews) | `waterZ/waterFloorZ` out of serialized body state (scratch or finite sentinel); inline `clamp` in swim.js (physics stand-alone); physics + save round-trip tests. | todo |
+| PLAYER-LEVEL-01 | PO (sonnet) first, then kestrel-3 | D-084: PO writes the story + formula proposal in docs/epics/ep-items-stats.md (level from spell tiers + equipped item levels, no XP), owner OKs the numbers; then a pure `playerLevel(spells, equipped)` + test, character view / HUD shows it, D-069 fireball gate reads it. | todo (owner numbers) |
 | ARCH-DOC-RATIFY-01 | PC-A main session (doc only) | 38.56 + 38.31 item 10 supersede text, 38.60 frag_depth answer, 38.62 ASK answers + DECOR_MAX_ROWS 16384, "superseded by" marks in 38.28 item 4. | todo |
 
 ## PC-B queue 2026-10-14 (quest + item audit, OB-155/156) (PC-A main session, owner 2026-10-14)
