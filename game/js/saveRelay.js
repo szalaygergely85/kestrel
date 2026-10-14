@@ -51,6 +51,7 @@ export function createSaveRelay({ storage, questDef, giverDefs = [], slot: slot0
     bindEvents(events) {
       const offs = [
         events.on('chest:opened', (p) => { if (p && typeof p.id === 'string') chests.add(p.id); }),
+        events.on('beast:respawned', (p) => { if (p && typeof p.id === 'string') dead.delete(p.id); }), // BH-S5: a respawned beast must not be re-killed on Continue
       ];
       return () => { for (const off of offs) off(); };
     },
