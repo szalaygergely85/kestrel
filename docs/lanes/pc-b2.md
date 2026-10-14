@@ -1104,3 +1104,6 @@ navLayers01d.test: per-slice ms = min over 5 fresh bakes (rep 0 = warm-up), budg
 
 ### WMP-10-APPLY (kestrel-3, 2026-10-14)
 Applied: banner names roadWest/outwall, 10 region journals (pack.json), RELAY_WAKE.ws_highPastures, travel header + TOAST_NONE/UNKNOWN/LOCKED consts (travel.js, not yet wired into main.js), regionAmbient.json cueNames labels. Tests updated: regionBanner (fixture blanks the 2 names, limit 17), mapCard header; 12 suites PASS, canonical/validate OK.
+
+### JOURNAL-GIVER-NAMES (kestrel-3, 2026-10-14)
+Wardens + postkeeper display names (Lin, Brenna, Ewan, Tull, Edda, Ivo, Nell, Orla, Kit, Sten, Bram) added to the single LABELS table in game/js/quest/errands.js (labelOf, used by main.js giverName fallback + lint R3). R3 = 0.
