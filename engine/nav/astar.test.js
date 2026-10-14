@@ -1,16 +1,12 @@
 // engine/nav/astar.test.js (RE-05, docs/architecture.md 28.2). Zero-alloc
 // gate needs --expose-gc: re-runs itself when missing (same pattern as
 // engine/mesh/culling.test.js). Run: node engine/nav/astar.test.js
-import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import { NavGrid } from './NavGrid.js';
 import { createAStar, findPath, smoothPath, pathCrossesRect, planPath, nearestReachable } from './astar.js';
 import { makeOk } from '../test/assert.js';
+import { ensureGcChild, heapGrowth } from '../test/allocGate.js';
 
-if (typeof global.gc !== 'function') {
-  const res = spawnSync(process.execPath, ['--expose-gc', fileURLToPath(import.meta.url)], { stdio: 'inherit' });
-  process.exit(res.status ?? 1);
-}
+ensureGcChild(); // re-runs under --expose-gc (never skips the alloc checks)
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -338,12 +334,20 @@ function pathCost(grid, path, len) {
   ok('island: nearest reachable cell is outside the ring, adjacent to it', ci === 3 * 12 + 7 && a2.partial, 'ci=' + ci);
   const capped = nearestReachable(astar, 1, 3, 10, 3, out, { maxNodes: 5 });
   ok('maxNodes cap still returns a reachable cell', capped >= 0 && grid.cost[capped] > 0);
-  if (global.gc) {
-    global.gc(); const b0 = process.memoryUsage().heapUsed; let sink = 0;
-    for (let i = 0; i < 2000; i++) sink += nearestReachable(astar, 1, 3, 10, 3, out);
-    global.gc(); const grew = process.memoryUsage().heapUsed - b0;
-    ok('nearestReachable: zero alloc over 2000 queries', grew < 64 * 1024, 'grew ' + grew + ' sink=' + sink);
-  }
+  const grew = heapGrowth(() => { let sink = 0; for (let i = 0; i < 2000; i++) sink += nearestReachable(astar, 1, 3, 10, 3, out); return sink; });
+  ok('nearestReachable: zero alloc over 2000 queries', grew < 64 * 1024, 'grew ' + grew);
+  // astar.capped: set only when maxNodes ended the search; unreachable (search exhausted) is partial but NOT capped
+  nearestReachable(astar, 1, 3, 10, 3, out, { maxNodes: 5 });
+  ok('capped: maxNodes hit -> partial && capped', astar.partial && astar.capped);
+  nearestReachable(astar, 1, 3, 10, 3, out);
+  ok('unreachable with enough budget -> partial, not capped', astar.partial && !astar.capped);
+  findPath(astar, 1, 3, 3, 5, out);
+  ok('exact path -> neither flag', !astar.partial && !astar.capped);
+  const og = openGrid(40, 40), oa = createAStar(og), oo = new Int32Array(1600);
+  findPath(oa, 0, 0, 39, 39, oo, { maxNodes: 3 });
+  ok('far reachable goal with a tiny budget: capped (not "unreachable")', oa.partial && oa.capped);
+  findPath(oa, 0, 0, 39, 39, oo);
+  ok('flags reset on the next query', !oa.partial && !oa.capped);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

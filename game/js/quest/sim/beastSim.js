@@ -242,6 +242,7 @@ export function createBeastSim(world, opts) {
     _throwPayload: { id: '', slot: 0, x: 0, y: 0, z: 0, tx: 0, ty: 0, tz: 0 }, // GOB-02: ONE preallocated beast:throw payload (reused)
     _pz: 0, _px: 0, _py: 0, _tmp: { x: 0, y: 0 },
     unreach: new Uint16Array(MAX_BEASTS),    // NAV-REACH-01: steps a chaser has stood at the end of a partial (target unreachable) path
+    cappedP: new Uint8Array(MAX_BEASTS),     // NAV-REACH-01: the partial path hit the A* node cap (target may still be reachable: repath from its end at once, never give up)
     partialP: new Uint8Array(MAX_BEASTS),    // NAV-REACH-01: last path was only to the nearest reachable cell (derived, not saved)
     waiting: new Uint8Array(MAX_BEASTS),     // US-079c: CHASE boar holding while another boar is the charger (derived, not saved)
 
@@ -922,7 +923,7 @@ function enterNotice(sim, i) {
 function enterChase(sim, i) {
   sim.state[i] = STATE_CHASE;
   sim.waiting[i] = 0; // US-079c: a fresh chase is not waiting for the charger
-  sim.unreach[i] = 0; sim.partialP[i] = 0;
+  sim.unreach[i] = 0; sim.partialP[i] = 0; sim.cappedP[i] = 0;
   sim.pathLen[i] = 0; sim.pathIdx[i] = 0;
   sim.repathT[i] = 0;
   sim.unseen[i] = 0;
@@ -1132,8 +1133,9 @@ function updatePathRequests(sim, px, py) {
     const st = sim.state[i];
     if (st === STATE_CHASE) {
       if (sim.waiting[i]) continue; // US-079c: a waiter holds position (no path into the player)
-      if (sim.partialP[i] && sim.pathLen[i] > 0 && unreachGiveUp(sim, i)) continue;
-      if (sim.pathLen[i] === 0 || sim.pathIdx[i] >= sim.pathLen[i]) {
+      const heldEnd = sim.partialP[i] && !sim.cappedP[i] && sim.pathLen[i] > 0; // end of a truly unreachable partial path
+      if (heldEnd && unreachGiveUp(sim, i)) continue;
+      if (sim.pathLen[i] === 0 || (sim.pathIdx[i] >= sim.pathLen[i] && !heldEnd) || (sim.cappedP[i] && atPathEnd(sim, i))) {
         sim.goalX[i] = px; sim.goalY[i] = py;
         if (!directChase(sim, i, px, py)) sim.pathReq[i] = 1;
       } else if (sim.repathT[i] <= 0) {
@@ -1151,6 +1153,14 @@ function updatePathRequests(sim, px, py) {
   }
 }
 
+/** NAV-REACH-01: standing on the last waypoint of the current path (within 1.5 m). */
+function atPathEnd(sim, i) {
+  const steer = sim.steer, base = i * PATH_SLOTS * 2, last = sim.pathLen[i] - 1;
+  if (last < 0 || sim.pathIdx[i] < last) return false;
+  const dx = sim.path[base + last * 2] - steer.x[i], dy = sim.path[base + last * 2 + 1] - steer.y[i];
+  return dx * dx + dy * dy <= 2.25;
+}
+
 const UNREACH_GIVEUP_STEPS = 180; // NAV-REACH-01: 3 s standing at the nearest reachable spot -> RETURN (leash rules still apply)
 /** NAV-REACH-01: a chaser whose path only reaches the nearest reachable cell waits there (idle, facing the player) and
  * gives up after UNREACH_GIVEUP_STEPS; true = it switched to RETURN. */
@@ -1159,7 +1169,7 @@ function unreachGiveUp(sim, i) {
   const dx = sim.path[base + last * 2] - steer.x[i], dy = sim.path[base + last * 2 + 1] - steer.y[i];
   if (sim.pathIdx[i] < last || dx * dx + dy * dy > 2.25) { sim.unreach[i] = 0; return false; }
   if (++sim.unreach[i] < UNREACH_GIVEUP_STEPS) return false;
-  sim.unreach[i] = 0; sim.partialP[i] = 0;
+  sim.unreach[i] = 0; sim.partialP[i] = 0; sim.cappedP[i] = 0;
   enterReturn(sim, i);
   return true;
 }
@@ -1175,7 +1185,7 @@ function directChase(sim, i, px, py) {
   if (smoothPath(grid, cp, 3, sim._losXY) !== 2) return false;
   const base = i * PATH_SLOTS * 2;
   sim.path[base] = px; sim.path[base + 1] = py;
-  sim.pathLen[i] = 1; sim.pathIdx[i] = 0; sim.partialP[i] = 0;
+  sim.pathLen[i] = 1; sim.pathIdx[i] = 0; sim.partialP[i] = 0; sim.cappedP[i] = 0;
   sim.repathT[i] = sim.cfgSteps.repath + (i % REPATH_STAGGER);
   sim.stats.direct = (sim.stats.direct || 0) + 1;
   return true;
@@ -1209,6 +1219,8 @@ function computePath(sim, i) {
   sim.stats.astar++;
   sim.stats.astarNodes += len; // approximation: findPath does not expose expanded-node count (see report deviations)
   const wn = len > 0 ? smoothPath(grid, sim._cellPath, len, sim._xy) : 0;
+  // capped = the 800-node budget ended the search: keep repathing from the end ONLY while it still makes progress (a capped path that ends on the start cell is as good as unreachable)
+  sim.cappedP[i] = astar.partial && astar.capped && len > 1 && sim._cellPath[len - 1] !== sim._cellPath[0] ? 1 : 0;
   sim.partialP[i] = astar.partial ? 1 : 0; // NAV-REACH-01: findPath already ends at the nearest reachable cell
   storePath(sim, i, wn);
 }

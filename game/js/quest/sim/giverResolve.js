@@ -26,3 +26,8 @@ export function turnInOf(def) {
   if (usable(def, def.turnInNpc)) return def.turnInNpc;
   return g.turnIn || g.npc;
 }
+/** True when `to` is a valid hand-in id for a deliver objective of `def`: the resolved turn-in, or the legacy ids (giver.turnIn || giver.npc, turnInNpc) that older saves / content still name. */
+export function isTurnInTarget(def, to) {
+  const g = def.giver; if (!g) return false;
+  return to === turnInOf(def) || to === (g.turnIn || g.npc) || to === def.turnInNpc;
+}

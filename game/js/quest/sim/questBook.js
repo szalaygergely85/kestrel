@@ -1,7 +1,7 @@
 // QG-01 (38.35): giver quests on top of quest.js (unchanged). Pure sim: no world/DOM/clock/random.
 // Status is derived from facts + two booleans; facts count before accept (boars stay dead).
 import { createQuest, applyQuestEvent, questObjectives, stringifyQuest, questHash, validateQuestDefinition, applyKindKill, kindOf } from './quest.js';
-import { giverOf, turnInOf } from './giverResolve.js';
+import { giverOf, turnInOf, isTurnInTarget } from './giverResolve.js';
 
 export const UNAVAILABLE = 0, AVAILABLE = 1, ACTIVE = 2, READY = 3, DONE = 4;
 export const STATUS_NAMES = Object.freeze(['unavailable', 'available', 'active', 'ready', 'done']);
@@ -31,7 +31,7 @@ export function validateGiverQuest(def) {
     if (!Array.isArray(def.requires)) throw new Error('quest: requires must be an array');
     for (const r of def.requires) if (!r || (typeof r.flag === 'string' ? !r.flag : typeof r.quest !== 'string' || (r.done !== true && typeof r.step !== 'string'))) throw new Error('quest: invalid requires entry'); // QL-05: {flag} = main quest flag set (Burl home)
   }
-  for (const o of def.objectives) if (def.giver && o.when.type === 'deliver' && o.when.to !== (def.giver.turnIn || def.giver.npc) && o.when.to !== def.turnInNpc) throw new Error('quest: deliver.to must be the hand-in npc (giver.turnIn or giver.npc)');
+  for (const o of def.objectives) if (def.giver && o.when.type === 'deliver' && !isTurnInTarget(def, o.when.to)) throw new Error('quest: deliver.to must be the hand-in npc (giver.turnIn or giver.npc)');
   if (def.abandonable !== undefined && typeof def.abandonable !== 'boolean') throw new Error('quest: invalid abandonable');
   if (def.returnText !== undefined && typeof def.returnText !== 'string') throw new Error('quest: invalid returnText');
   if (def.giver) for (const k of ['entity', 'turnInEntity', 'text', 'turnInText', 'refuseText']) if (def.giver[k] !== undefined && (typeof def.giver[k] !== 'string' || !def.giver[k])) throw new Error('quest: invalid giver.' + k); // QL-04: object givers (inspect props)
@@ -211,15 +211,10 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   /** Returns the frozen reward ({items:[]} when none) or null unless the quest is ready. The game grants it. */
   book.handIn = function handIn(id) {
     const i = byId.get(id);
-    if (i === undefined || i === 0 || statusOf(i) !== READY) return null;
+    if (i === undefined || i === 0 || !canHandIn(i)) return null; // one rule for plan and act: READY + requireItem / requireEquipped / deliver counts
     const e = entries[i];
-    // EQ-13: hand-in needs the item in the pack (requireItem, kept) and the gear worn (requireEquipped; packOps.equipped(id) is set by the game)
-    if (e.def.requireItem && (!book.packOps || book.packOps.count(e.def.requireItem) < 1)) return null;
-    if (e.def.requireEquipped && (!book.packOps || !book.packOps.equipped || !e.def.requireEquipped.every(id => book.packOps.equipped(id)))) return null;
     const dl = e.def.objectives.filter(o => o.when.type === 'deliver').map(o => o.when);
     if (dl.length) { // QUESTS-01: items must still be in the pack; they leave it at hand-in
-      if (!book.packOps) return null;
-      for (const w of dl) if (book.packOps.count(w.id) < w.count) return null;
       for (const w of dl) { book.packOps.remove(w.id, w.count); book.feed({ type: 'item:count', id: w.id, n: Math.max(0, book.packOps.count(w.id)) }); }
     }
     if (e.def.requireItem) { book.packOps.remove(e.def.requireItem, 1); book.feed({ type: 'item:count', id: e.def.requireItem, n: Math.max(0, book.packOps.count(e.def.requireItem)) }); } // D-098: the handed-over item leaves the pack
