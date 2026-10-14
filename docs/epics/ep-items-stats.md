@@ -116,7 +116,7 @@ quests/bosses. Type pick: weapons 30 % (sword/axe/spear/bow/shield even), armour
 
 ## 5. Save / migration
 - Rolled items need **instances**: slot = `{id: base id, n: 1, it: {iL, r, a: [[affix, value], ...]}}`; stackables and
-  uniques stay plain. Shape + save version bump = **ARCH-NOTE NEEDED** (inventory.js, equipment.js, save; game/ only).
+  uniques stay plain. Shape + save version bump: **architecture.md 38.66** (ITEM-02a..c rows in docs/pc-b-queue.md; PC-B architect opus 2026-10-14, PC-A to ratify).
 - Old ids `gear.<slot>.<base>.<tier>` migrate once: worn -> iL1 Common, sturdy -> iL2 Magic, fine -> iL4 Magic,
   tempered -> iL6 Rare, warden -> iL8 Rare; bonus lines rolled from seed = hash(save id, slot index) (same save ->
   same items). Base sword/bow/shield -> iL1 Common. Old defs stay registered read-only for one release.
