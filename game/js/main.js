@@ -218,7 +218,7 @@ import { createSpriteSystem, spawnTestSprites } from './dev/spriteDev.js';
 import { validateBehaviours, createRipples, defineWadeSplash, createEntityTintTable, fillEntityTints, localToWorld } from '../../engine/index.js';
 import { selectHints, createHintSet, pulseStep, buildHintColors, HINT_GLYPH } from './quest/useHints.js'; // INT-HL-01
 import './quest/index.js';
-import { giverOf, turnInOf } from './quest/sim/giverResolve.js'; import { installGiverNpcs, GIVER_NAMES } from './quest/giverNpcs.js'; // D-098: Tobin + region givers
+import { giverOf, turnInOf } from './quest/sim/giverResolve.js'; import { installGiverNpcs, GIVER_NAMES, registerGiverLooks } from './quest/giverNpcs.js'; // D-098: Tobin + region givers
 import { parseDemo, filterDemoParams, demoStorage, blockFKeys, createEndCard, drawDemoBuildLine } from './demoMode.js';
 // ---- end US-010 ----
 
@@ -905,6 +905,7 @@ if (window.__charKit && !assets.has('model', 'char.kit')) {
   try { const K = window.__charKit; const grid = composeCharacter(K, K.defaults); const sw = window.ASSETS.chargenSwimClips; if (sw) Object.assign(grid.clips, sw.clips); /* SWIM-ASSETS-01: swim/tread/dive, in-game player only */ assets.add('model', 'char.kit', riggedModelDef(collapseRig(meshCharacter(grid), K.partMap))); }
   catch (e) { console.warn('[char.kit] ' + e.message); }
 }
+if (window.__charKit && window.ASSETS.npcLooks) registerGiverLooks(assets, window.__charKit, window.ASSETS.npcLooks, { compose: composeCharacter, mesh: meshCharacter, collapse: collapseRig, rigged: riggedModelDef }); // NPC-LOOKS-01
 if (assets.has('model', 'char.kit')) engine.events.on('world:loaded', ({ world: kw }) => {
   const b = kw.get('bear'), bt = b && b.data && b.data.transform; if (!bt || kw.get('demo.kitChar')) return;
   const gz = kw.floorAt(bt.x + 2, bt.y);

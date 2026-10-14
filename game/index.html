@@ -75,7 +75,7 @@
        edge rules) - loaded right after palette.js, same classic-script
        reasoning; AssetRegistry.fromGlobals reads window.ASSETS.detailPass. -->
   <script src="../design/detail-pass.js"></script>
-  <script src="../design/models/pickups_voxel.js"></script><!-- OB-132 voxel pickups + floorLanternVox -->
+  <script src="../design/models/pickups_voxel.js"></script><script src="../design/models/marker_props_voxel.js"></script><!-- NPC-LOOKS-01 markerPost / standingStone --><!-- OB-132 voxel pickups + floorLanternVox -->
   <!-- US-055a2c (Q12 item 8): water look table (window.ASSETS.waterLooks), same classic-script load-order
        reasoning as palette.js/detail-pass.js above - resolved once via resolveWaterLooks (engine/index.js). -->
   <script src="../design/water-looks.js"></script>
@@ -147,6 +147,7 @@
   <script src="../design/models/voxel_wildlife.js"></script> <!-- WILD-06: ASSETS.models.rabbit/deer/deerBuck + ASSETS.wildlifeFx -->
   <script src="../design/models/voxel_eat_clips.js"></script> <!-- SWIM-ASSETS-01: eat clips for fox/wolf/bear/bearBlack, AFTER the four model files -->
   <script src="../design/models/voxel_seamonster.js"></script> <!-- SWIM-ASSETS-01: ASSETS.models.seaMonster + ASSETS.seaMonsterFx -->
+  <script src="../design/chargen/npc_looks.js"></script><!-- NPC-LOOKS-01 -->
   <script src="../design/chargen/human_kit_swim.js"></script> <!-- SWIM-ASSETS-01: ASSETS.chargenSwimClips (swim/tread/dive; merged into the player grid in main.js) -->
   <!-- S8-A-06: treasure chests chestSmall / chestBig + ASSETS.chestFx (merged materials only; design/README.md 16). -->
   <script src="../design/models/chest.js"></script>

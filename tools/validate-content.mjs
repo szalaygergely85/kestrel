@@ -13,7 +13,8 @@ try {
     for (const a of pkg.manifest.assets || []) if (/^model\.(rigged|static)$/.test(a.type) && a.id) addonChars.add('char.' + a.id);
   }
 } catch { /* no index = no add-ons */ }
-addonChars.add('char.kit'); // OB-086: the default kit character is registered at boot by main.js (Ch3 Hesk / Dorrin use it)
+addonChars.add('char.kit');
+for (const id of ['npcPostKeeper', 'npcGlasswater', 'npcNorthwood', 'npcHighPastures', 'npcAshMile', 'npcDowns', 'npcSignalHill', 'npcHeath', 'npcReedmire', 'npcStrand', 'npcWhitecombs']) addonChars.add('char.' + id); // NPC-LOOKS-01: registered at boot by giverNpcs.js // OB-086: the default kit character is registered at boot by main.js (Ch3 Hesk / Dorrin use it)
 // tools/validate-content.mjs (US-058, docs/backlog.md row 30b).
 //
 // Cross-reference checker for the designer's design/ content pack: catches
@@ -79,6 +80,7 @@ const CLASSIC_SCRIPTS = [
   '../design/models/menu_ui.js',
   '../design/models/lantern.js',
   '../design/models/pickups_voxel.js',
+  '../design/models/marker_props_voxel.js', // NPC-LOOKS-01 (game/index.html: same tag after pickups_voxel.js)
   '../design/models/brazier.js',
   '../design/models/lever.js',
   '../design/models/boulder.js',
