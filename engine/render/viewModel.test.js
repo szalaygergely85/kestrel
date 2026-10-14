@@ -232,8 +232,10 @@ function worldTipFromList(list) {
     vm.show(h, swingLR, 80, false); vm.capture(h);
     vm.show(h, swingLR, tMs, true); vm.setBob(1.3, amount);
     const list = vm.buildList(c, pitched);
-    hash.update(new Uint8Array(list.items[0].partMatrices.buffer));
-    hash.update(new Uint8Array(list.items[0].partFlags.buffer));
+    // VOX-PARTS-16a: the part buffers are sized for MAX_VOX_PARTS 16; hash only the first 8 parts (the old size) so the pinned digest still proves 8-part output is byte-identical
+    const pm = list.items[0].partMatrices.subarray(0, 8 * 12), pf = list.items[0].partFlags.subarray(0, 8);
+    hash.update(new Uint8Array(pm.buffer, pm.byteOffset, pm.byteLength));
+    hash.update(new Uint8Array(pf.buffer, pf.byteOffset, pf.byteLength));
     if (pitched) { pitchedTerms(c, grid, pt); M.set(pt.M); }
     else { projTerms(c, grid, terms); shearProjection(terms, M); }
     target.kind.fill(0); clearRasterDepth(target);

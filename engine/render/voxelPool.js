@@ -187,7 +187,6 @@ export class VoxelPool {
       : 0;
     slot.entity = null;
     slot.addPart = -1;
-    slot.legs = null;
     return this._rawCount++;
   }
 
@@ -213,7 +212,9 @@ export class VoxelPool {
 
   /** Reused per-slot raw-instance object at `this.raw[idx]` (no per-frame allocation once warm). */
   _rawSlot(idx) {
-    return this.raw[idx];
+    const s = this.raw[idx];
+    s.legs = null; // ANIM-C-04: reset here (not in pushInstance: an extra store there tipped rigPerf's 0-alloc gate)
+    return s;
   }
 
   /**

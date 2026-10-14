@@ -918,3 +918,7 @@ Option A gait as clip data: otter `walk`, tortoise `walk`, cub `walk` + `trot`, 
 Generator: tools/gait-lib.mjs + tools/gait-configs.mjs + tools/gen-gait.mjs (re-run rewrites the `// GAIT-A BEGIN/END` blocks in design/models/voxel_{otter,tortoise,bear_cub,beast,wildlife}.js); test tools/gait-a.test.mjs (planted error keys 0.04 mm, interpolated max 5.95 mm boar / <= 5.1 others, limit 12; shipped == generated).
 Old tests updated: clip frame counts (voxel-otter/tortoise/bear-cub), rabbit clip list (voxel-wildlife), ground checks skip `walk` (pitch-only FK there ignores body tilt; gait-a.test covers it). Not changed: otter `lope` (a bound, not a walk), rabbit hop/run (bounds). Boar stub legs swing 49 deg at 1.5 m/s.
 Owner look: design/preview/ pages for otter/tortoise/cub/boar (walk clip) at 1x speed; no browser run by me.
+
+### VOX-REGFIX (kestrel-base, 2026-10-14) -> arch-review
+- rigPerf FIXED: the extra `slot.legs = null` store in VoxelPool.pushInstance tipped it to 344 B/frame (JIT quirk, removing the line gave 0); reset moved into `_rawSlot()` (engine/render/voxelPool.js) -> 1.3 B/frame, all legs suites pass.
+- viewModel NOT changed, ASK ARCHITECT: the test hashes the whole `partMatrices.buffer` / `partFlags.buffer`; with MAX_VOX_PARTS 16 they are 2x longer (zero tail), so the digest moves by design. Hashing only the first 8 parts (8*12 doubles, 8 flags) passes with the ORIGINAL digest (115 passed) = 8-part content is byte-identical. Needs a test edit (slice to 8 parts) or a re-pin: architect's call.
