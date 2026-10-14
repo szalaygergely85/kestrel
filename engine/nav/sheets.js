@@ -152,6 +152,21 @@ const MAX_FLOORS = 4;
  * @returns {{layers:any, stats:{id:string|number, ms:number, cells:number, sheets:number}[], dropped:number}}
  */
 export function bakeSheets(grid, sources, probe, opts = {}) {
+  const baker = createSheetBaker(grid, sources, probe, opts);
+  while (baker.stepSource());
+  return baker.finish();
+}
+
+/**
+ * Sliceable form of bakeSheets (NAV-LAYERS-01d, tile phase): `stepSource()` bakes ONE source (floors + flood fill + sheets, returns false when
+ * none is left), `finish()` runs links + pruning + install and returns the bakeSheets result. Sources with `key` (+ optional `zBase`) are
+ * cached in `opts.cache` (Map) by (key, size, cell phase): the same (def, yaw) placed again reuses the probed floors, translated by zBase.
+ * @param {import('./NavGrid.js').NavGrid} grid
+ * @param {any[]} sources
+ * @param {(x:number, y:number, footZ:number, out:{z:number, nz:number}) => boolean} probe
+ * @param {any} [opts]
+ */
+export function createSheetBaker(grid, sources, probe, opts = {}) {
   const maxStepM = opts.maxStepM ?? 0.5;
   const agentH = opts.agentHeight ?? 1.6;
   const minNz = Math.cos((opts.maxSlopeDeg ?? 50) * Math.PI / 180);
@@ -164,18 +179,28 @@ export function bakeSheets(grid, sources, probe, opts = {}) {
   const hit = { z: 0, nz: 1 };
   let totalCells = 0;
 
-  for (const src of srcs) {
+  let nextSrc = 0;
+  /** Bakes the next source; false when all are done. */
+  function stepSource() {
+    if (nextSrc >= srcs.length) return false;
+    const src = srcs[nextSrc++];
     const t0 = now();
     const cell = src.cell ?? opts.cell ?? grid.cell;
     const gx0 = grid.x0 + Math.floor((src.x0 - grid.x0) / cell) * cell;
     const gy0 = grid.y0 + Math.floor((src.y0 - grid.y0) / cell) * cell;
     const W = Math.ceil((src.x1 - gx0) / cell - 1e-9), H = Math.ceil((src.y1 - gy0) / cell - 1e-9);
-    if (W <= 0 || H <= 0) { stats.push({ id: src.id, ms: 0, cells: 0, sheets: 0 }); continue; }
+    if (W <= 0 || H <= 0) { stats.push({ id: src.id, ms: 0, cells: 0, sheets: 0 }); return true; }
     const nC = W * H;
     // 1. floors per cell (descending z), slope + headroom filtered.
-    const fz = new Float32Array(nC * MAX_FLOORS), fn = new Uint8Array(nC);
+    let fz = new Float32Array(nC * MAX_FLOORS), fn = new Uint8Array(nC);
     const zs = [], nzs = [];
-    for (let c = 0; c < nC; c++) {
+    const zBase = src.zBase || 0, cache = opts.cache;
+    const ckey = cache && src.key != null ? `${src.key}|${W}x${H}|${cell}|${((src.x0 - gx0) / cell).toFixed(3)},${((src.y0 - gy0) / cell).toFixed(3)}|${(src.zTop - zBase).toFixed(3)}` : null;
+    const hitC = ckey ? cache.get(ckey) : undefined;
+    if (hitC) {
+      fn = hitC.fn;
+      for (let i = 0; i < fz.length; i++) fz[i] = hitC.fz[i] + zBase;
+    } else for (let c = 0; c < nC; c++) {
       const px = gx0 + ((c % W) + 0.5) * cell, py = gy0 + (((c / W) | 0) + 0.5) * cell;
       zs.length = 0; nzs.length = 0;
       let foot = src.zTop;
@@ -191,6 +216,7 @@ export function bakeSheets(grid, sources, probe, opts = {}) {
       }
       fn[c] = k;
     }
+    if (ckey && !hitC) { const rel = new Float32Array(fz.length); for (let i = 0; i < rel.length; i++) rel[i] = fz[i] - zBase; cache.set(ckey, { fz: rel, fn }); }
     // 2. flood fill nodes (cell, floor) into components; a component never holds two floors of one cell.
     const comp = new Int16Array(nC * MAX_FLOORS).fill(-1);
     const occ = new Int32Array(nC); // comp id + 1 occupying the cell
@@ -243,8 +269,11 @@ export function bakeSheets(grid, sources, probe, opts = {}) {
       if (totalCells > maxCells) throw new Error(`bakeSheets: source "${src.id}" pushes sheets past maxSheetCells ${maxCells}`);
       sheets.push({ src: src.id, x0: gx0 + minX * cell, y0: gy0 + minY * cell, w, h, cell, cost, height });
     }
-    stats.push({ id: src.id, ms: now() - t0, cells, sheets: compNodes.length });
+    stats.push({ id: src.id, ms: now() - t0, cells, sheets: compNodes.length, cached: !!hitC });
+    return true;
   }
+
+  function finish() {
 
   // 4. auto links (step both ways, optional one-way drops) between sheets and to ground.
   const finest = Math.min(grid.cell, ...sheets.map((s) => s.cell));
@@ -319,4 +348,6 @@ export function bakeSheets(grid, sources, probe, opts = {}) {
   if (outSheets.length === 0) return { layers: null, stats, dropped };
   const layers = buildLayersFromArrays(grid, { sheets: outSheets, links }, { maxStepM, maxSheetCells: maxCells, maxLinks: opts.maxLinks });
   return { layers, stats, dropped };
+  }
+  return { stepSource, finish, get pending() { return srcs.length - nextSrc; }, stats };
 }
