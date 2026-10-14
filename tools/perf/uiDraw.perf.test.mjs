@@ -46,7 +46,7 @@ import { performance } from 'node:perf_hooks';
 import { AssetRegistry, createUiLayer, createFadeLut, createSceneDim,
   resetSceneDim, applySceneDim, drawCrosshair, buildPanelArt, createPanel, drawPanel,
 } from '../../engine/index.js';
-import { CellBuffer } from '../../engine/dev.js';
+import { CellBuffer } from '../../engine/index.js';
 import paletteMod from '../../design/palette.js';
 import titleMod from '../../design/models/title.js';
 import { loadTestAssets } from '../testing/content-node.mjs';

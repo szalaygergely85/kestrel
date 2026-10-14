@@ -57,8 +57,10 @@ export function scanAreas(src) {
 export async function currentExports() {
   const E = await import(pathToFileURL(INDEX).href);
   const { areas, stars } = scanAreas(fs.readFileSync(INDEX, 'utf8'));
+  let old = new Map(); try { old = new Map(readManifest().names.map((n) => [n.name, n.area])); } catch { /* first run */ }
   return Object.keys(E).filter((n) => n !== 'default').sort().map((name) => {
-    const area = areas.get(name) || (stars.length === 1 ? stars[0] : null);
+    // `export const x = deprecated(...)` aliases (ENG-API-01b) are not in the static scan: keep the manifest area
+    const area = areas.get(name) || old.get(name) || (stars.length === 1 ? stars[0] : null);
     if (!area) throw new Error(`cannot place export "${name}" in an area`);
     return { name, area };
   });
