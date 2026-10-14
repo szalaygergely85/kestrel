@@ -10,6 +10,7 @@ import { wrapNoteLines } from './noteRead.js';
 import { gearRecipe } from './gearLook.js';
 import { createPreviewYaw } from './previewYaw.js';
 import { itemDisplayName } from './sim/inventory.js';
+import { itemName, rarityOf } from './sim/itemInst.js';
 
 // Panel-relative layout (panel 100 x 29). Slot boxes are the style's 9x5 boxes, pitch from `uiStyle.inventory.grid`.
 export const LAYOUT = Object.freeze({
@@ -52,6 +53,7 @@ export function createInventoryScreen(o) {
   const disabledSlot = S.states ? styleAt(S.states.slot.disabled) : slotCfg.disabled;
   const slotDisabled = (i) => !!o.isSlotDisabled && o.isSlotDisabled(i);
   const charKey = o.characterKey !== false;
+  const rarityFg = [C.uiText, C.heroGreen, C.gold, C.ember, C.ember]; // ITEM-02a placeholder colours per rarity (common..unique); UI redesign is a later story
   const tierFg = { worn: C.uiHint, sturdy: C.heroGreen, fine: C.gold, tempered: C.gold, warden: C.gold };
   const tierName = { worn: 'Worn', sturdy: 'Sturdy', fine: 'Fine', tempered: 'T4', warden: 'T5' };
   const slotLabel = {}, slotTag = {}; for (const s of L.slots) { slotLabel[s[0]] = s[3]; slotTag[s[0]] = s[3].length < 7 ? s[3] + ' ' : s[3]; }
@@ -100,8 +102,12 @@ export function createInventoryScreen(o) {
     if (input.pressed('KeyS') || input.pressed('ArrowDown')) spCur = Math.min(ids.length - 1, spCur + 1);
     const id = ids[spCur];
     if (!id) return;
-    if (input.pressed('KeyE') || input.pressed('Enter')) { if (o.spellbook.equip(id)) { say(defs[id].name + ' in your right hand', C.heroGreen); if (o.onHandsChanged) o.onHandsChanged(); } else say('Cannot be placed there', C.ember); }
-    for (let n = 0; n < 4; n++) if (input.pressed(DIGIT_CODES[n])) { if (o.spellbook.assign(n, id)) say('Quick slot ' + (n + 1) + ': ' + defs[id].name, C.heroGreen); else say('Cannot be placed on the quick bar', C.ember); }
+    // SPELLBOOK-02 (D-100): spells live only in the hands. E / Enter = right hand, Shift+E / Q = left hand (no quick-bar keys).
+    const e = input.pressed('KeyE') || input.pressed('Enter'), q = input.pressed('KeyQ');
+    if (e || q) {
+      const left = q || (input.isDown && (input.isDown('ShiftLeft') || input.isDown('ShiftRight')));
+      if (o.spellbook.equip(id, left ? 'left' : 'right')) { say(defs[id].name + (left ? ' in your left hand' : ' in your right hand'), C.heroGreen); if (o.onHandsChanged) o.onHandsChanged(); } else say('Cannot be placed there', C.ember);
+    }
   }
   function drawSpellbook() {
     for (let y = 2; y < 27; y++) for (let x = 1; x < L.sepCol; x++) put(x, y, 32, C.uiText, bg);
@@ -114,7 +120,7 @@ export function createInventoryScreen(o) {
       text(L.pack.x + 2, y + 1, 'Mana ' + (sp.mana || '-'), C.uiHint, bg);
       text(L.pack.x + 2, y + 2, sp.blurb || d.desc || '', C.uiDim, bg);
     }
-    text(L.pack.x, 25, 'E: right hand    1-4: quick bar', C.uiHint, bg);
+    text(L.pack.x, 25, 'E: right hand    Shift+E / Q: left hand    drag onto a hand slot', C.uiHint, bg);
   }
 
   function wornId(slot) { const e = eq(); if (!e) return null; if (slot === 'quiver') return e.quiver ? e.quiver.id : null; return e[slot] || null; }
@@ -281,7 +287,9 @@ export function createInventoryScreen(o) {
     const d = id && defs[id];
     if (!d) { add(node.kind === 0 ? 'Empty ' + slotLabel[node.slot].toLowerCase() + ' slot' : 'Empty', C.uiDim); return; }
     const q = d.equip, tier = q ? q.tier : null;
-    add(itemDisplayName(d), tier && tierFg[tier] ? tierFg[tier] : C.uiText);
+    const ent = node.kind === 2 && inv() ? inv().slots[node.i] : { id, it: null }; // pack slot may hold an instance
+    const rar = ent.it != null ? rarityOf(ent, defs) : -1;
+    add(itemName(ent, defs), rar >= 0 ? rarityFg[rar] : tier && tierFg[tier] ? tierFg[tier] : C.uiText);
     if (lockText) { add(lockText, C.uiDim); return; }
     if (q) {
       add((tierName[tier] || '') + ' ' + (slotLabel[q.slot] || q.slot).toLowerCase() + (q.def > 0 ? '  -  Defence ' + q.def : '') + (q.stats && q.stats.dmgMul ? '  -  Damage x' + q.stats.dmgMul : ''), C.uiHint);
@@ -308,7 +316,7 @@ export function createInventoryScreen(o) {
     /** the node under the cursor (kind 0 gear / 1 Wick / 2 pack) */
     get node() { return nodes[cur]; },
     /** item id under the cursor (worn piece or pack item), null on Wick / an empty cell; QB drag source */
-    get hoverItemId() { return isOpen ? idAt(nodes[cur]) : null; },
+    get hoverItemId() { return isOpen ? (page === 1 ? spIds()[spCur] || null : idAt(nodes[cur])) : null; }, // page 1: the spell row under the pointer (SPELLBOOK-02 drag source)
     open() { if (!isOpen) doOpen(); },
     close() { if (isOpen) doClose(); },
 
@@ -318,6 +326,7 @@ export function createInventoryScreen(o) {
       pxLast = px; pyLast = py; rx = px - ox; ry = py - oy;
       if (turning) { if (rxLast >= 0) dragPx += rx - rxLast; rxLast = rx; return; }
       rxLast = rx;
+      if (page === 1) { const r = Math.floor((ry - 3) / 6); if (r >= 0 && r < spIds().length) spCur = r; return; } // spell rows are 6 lines apart from y 3
       const k = hit(rx, ry); lockHover = k >= 0 ? -1 : lockedAt(rx, ry);
       if (k >= 0 && !(k < N_EQ && !eq())) { if (k !== cur && dragSrc >= 0) dragMoved = true; cur = k; }
     },

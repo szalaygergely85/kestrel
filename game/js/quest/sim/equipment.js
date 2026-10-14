@@ -87,8 +87,10 @@ export function equip(inv, eq, defs, id) {
 function isSpell(defs, id) { return !!(defs[id] && defs[id].kind === 'spell'); }
 
 /** SPELLBOOK-01: a learned spell goes into its hand slot straight from the book (the caller checked it is learned). A displaced pack item returns to the pack. */
-export function equipSpell(inv, eq, defs, id) {
-  const slot = slotOf(defs, id);
+export function equipSpell(inv, eq, defs, id, hand) { // SPELLBOOK-02 (D-100): hand 'main' = left, 'off' = right (default)
+  const slot = hand === 'main' ? 'main' : 'off';
+  if (!isSpell(defs, id) || (eq.set === 'ranged' && slot === 'main' && eq.ranged)) return false; // a drawn bow owns the left hand
+  if (slot === 'off' && eq.main === id) eq.main = null; else if (slot === 'main' && eq.off === id) eq.off = null; // one hand per spell
   if (slot === null || !(slot in eq) || eq[slot] === id) return false;
   const old = eq[slot];
   if (old !== null && !isSpell(defs, old) && addItem(inv, defs, old, 1) === 0) return false;

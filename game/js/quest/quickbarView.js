@@ -94,6 +94,7 @@ export function createQuickbarView(o) {
           put(ui, x, y, '.', DIM, bg); put(ui, x + SLOT_W - 1, y, '.', DIM, bg); put(ui, x, y + SLOT_H - 1, '.', DIM, bg); put(ui, x + SLOT_W - 1, y + SLOT_H - 1, '.', DIM, bg);
         }
         put(ui, x, y, LABELS[i], hand ? HAND_TXT : id ? GOLD : DIM, bg);
+        if (hand && id && !lk && defs[id] && defs[id].kind === 'spell' && defs[id].name) { const nm = defs[id].name.slice(0, SLOT_W - 2); for (let k = 0; k < nm.length; k++) put(ui, x + 2 + k, y, nm[k], HAND_TXT, bg); } // SPELLBOOK-02: the spell name on the hand box
       }
     },
   };
