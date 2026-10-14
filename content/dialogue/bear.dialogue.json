@@ -209,7 +209,7 @@
     ], "speaker": "burl"},
     "bear.stone.go": {"end": true, "lines": [
       "Go on. It is waiting."
-    ], "speaker": "burl"},
+    ], "setFlag": "bear.stone.told", "speaker": "burl"},
     "bear.stone.later": {"end": true, "lines": [
       "It will keep. Stones do."
     ], "speaker": "burl"},
