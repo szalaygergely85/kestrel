@@ -1202,3 +1202,7 @@ REV-BEASTALLOC-2: beastSim.test.js (22 s) -> nav cached per physics mode (NavGri
 ### OB152-DENSITY + NAME-LINT (kestrel-4, branch ob152lint, 2026-10-14) -> PA to ratify
 OB152-DENSITY: tools/chest-enemy-density.mjs (+ .test.mjs, 3-region fixture exact): per region chests/guarded/loose/groups/puzzles/chests-per-group, `--max-loose N` exits 1; real run twice identical. Real: 8 chests, 2 loose (ford 1, glasswater 1); 18 regions.
 NAME-LINT: content-lint R16 (WARN) = badName(): raw `sq.`/`mq.`, `_`, camelCase, Placeholder/TODO, bare T1-T9; checks resolved names (item defs, quest titles, region names, NPC labels), 4 broken fixtures + clean control in content-lint.test.mjs. Real content: 0 hits (writer list empty). Not covered: prop display names, story.md key resolution (no key->name table in lint ctx).
+
+### OB-135 tier names (kestrel-4, ob152lint, 2026-10-14)
+design/items.js:491 + itemsWeapons.js:23: T4/T5 -> Tempered/Warden (comment: OB-135 plain names). content-lint R16=0, exit 0; item/gear/loot/equip suites 7/7 PASS.
+validate-content: 3 findings, "Tempered Jerkin/Gloves/Shield" = 15 chars > MAX_ITEM_NAME 14 -> needs owner/PA call (shorter prefix or limit 15).
