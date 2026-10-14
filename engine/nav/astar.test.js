@@ -4,7 +4,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { NavGrid } from './NavGrid.js';
-import { createAStar, findPath, smoothPath, pathCrossesRect, planPath } from './astar.js';
+import { createAStar, findPath, smoothPath, pathCrossesRect, planPath, nearestReachable } from './astar.js';
 import { makeOk } from '../test/assert.js';
 
 if (typeof global.gc !== 'function') {
@@ -312,6 +312,38 @@ function pathCost(grid, path, len) {
   global.gc();
   const grew = process.memoryUsage().heapUsed - b0;
   ok('planPath: zero alloc over 2000 plans', grew < 64 * 1024, `grew ${grew} (sink=${sink})`);
+}
+
+// ---- NAV-REACH-01: nearestReachable (OB-149/150) ----------------------------
+{
+  const grid = openGrid(12, 7);
+  for (let y = 0; y < 7; y++) for (let x = 5; x <= 6; x++) grid.terrainCost[y * 12 + x] = 0; // river x=5..6
+  grid._recomputeCost();
+  const astar = createAStar(grid);
+  const out = new Int32Array(84);
+  const c = nearestReachable(astar, 1, 3, 10, 3, out);
+  ok('river: ends on the near bank next to the target row', c === 3 * 12 + 4 && astar.partial === true, 'c=' + c);
+  const c2 = nearestReachable(astar, 1, 3, 10, 3, out);
+  ok('deterministic: same cell every run', c2 === c);
+  const r = nearestReachable(astar, 1, 3, 3, 5, out);
+  const len = findPath(astar, 1, 3, 3, 5, out);
+  ok('reachable target: goal cell, not partial, same as findPath', r === 5 * 12 + 3 && astar.partial === false && out[len - 1] === r);
+  ok('invalid start -> -1', nearestReachable(astar, -1, 0, 3, 3, out) === -1);
+  // island: ring of walls around (9,3), target on it
+  const g2 = openGrid(12, 7);
+  for (let y = 2; y <= 4; y++) for (let x = 8; x <= 10; x++) if (x !== 9 || y !== 3) g2.terrainCost[y * 12 + x] = 0;
+  g2._recomputeCost();
+  const a2 = createAStar(g2);
+  const ci = nearestReachable(a2, 1, 3, 9, 3, out);
+  ok('island: nearest reachable cell is outside the ring, adjacent to it', ci === 3 * 12 + 7 && a2.partial, 'ci=' + ci);
+  const capped = nearestReachable(astar, 1, 3, 10, 3, out, { maxNodes: 5 });
+  ok('maxNodes cap still returns a reachable cell', capped >= 0 && grid.cost[capped] > 0);
+  if (global.gc) {
+    global.gc(); const b0 = process.memoryUsage().heapUsed; let sink = 0;
+    for (let i = 0; i < 2000; i++) sink += nearestReachable(astar, 1, 3, 10, 3, out);
+    global.gc(); const grew = process.memoryUsage().heapUsed - b0;
+    ok('nearestReachable: zero alloc over 2000 queries', grew < 64 * 1024, 'grew ' + grew + ' sink=' + sink);
+  }
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

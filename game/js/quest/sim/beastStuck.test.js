@@ -39,14 +39,15 @@ for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) {
 }
 const sim = createBeastSim(world, { nav, rng: createRng(1), events: { emit() {}, on() {} } });
 const z = world.terrain.heightAt(PX, PY);
-let sawChase = false, gaveUp = false, walkInPlace = 0, maxRun = 0, run = 0;
+let minDx = 1e9, gaveT = -1, sawChase = false, gaveUp = false, walkInPlace = 0, maxRun = 0, run = 0;
 const ov = { bar() {} }, ids = { beastNotice: 0 };
 for (let t = 0; t < 1200; t++) {
   sim.step(PX, PY, z);
   presentBeasts(sim, world, ov, ids);
   const st = sim.state[0];
   if (st === STATE_CHASE) sawChase = true;
-  if (sawChase && (st === STATE_RETURN || st === STATE_WANDER)) gaveUp = true;
+  if (st === STATE_CHASE) minDx = Math.min(minDx, PX - 3 - sim.steer.x[0]);
+  if (sawChase && (st === STATE_RETURN || st === STATE_WANDER)) { gaveUp = true; if (gaveT < 0) gaveT = t; }
   const clip = sim.entities[0].components.voxel.anim;
   const gait = clip !== 'idle' && /walk|run|charge|flee|carry/.test(clip) && (st === STATE_CHASE);
   if (gait && sim.mv[0] < 0.15) { run++; if (run > maxRun) maxRun = run; } else run = 0;
@@ -54,6 +55,9 @@ for (let t = 0; t < 1200; t++) {
 }
 ok('goblin chased the player at some point', sawChase);
 ok('goblin gave up the unreachable target', gaveUp);
+// NAV-REACH-01 (OB-149/150): it walks to the near bank (band starts at PX-6) before giving up, within ~7 s
+ok('goblin reached the bank (within 3.5 m of the band edge)', minDx < 0 || minDx - 3 < 3.5, 'minDx=' + minDx);
+ok('goblin gave up within 420 steps', gaveT >= 0 && gaveT < 420, 'gaveT=' + gaveT);
 ok('no walk clip while < 0.15 m/s for > 0.2 s (12 steps)', maxRun <= 12, 'maxRun=' + maxRun + ' total=' + walkInPlace);
 console.log(`beastStuck: ${pass} pass, ${fail} fail`); for (const f of failures) console.log('  FAIL ' + f);
 if (fail) process.exit(1);
