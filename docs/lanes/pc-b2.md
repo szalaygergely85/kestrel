@@ -1165,3 +1165,6 @@ NEEDS B1-main (main.js line ~920 `riggedModelDef(collapseRig(...))`): pass `{leg
 ### GATE-FIX-7 (kestrel-4, 2026-10-14)
 All four were stale tests, no code change: actionHints (storyHints now starts with logic hint hint.farm.ambush, ED-LOGIC-01d), boarPlacement (farmGob1-3 reserve goblins counted as boars; filter goblin species), swimWire (main.js now `under: createUnderState()`; gate/gear/fb.under behaviour intact), content-smoke (gi/manifest.json known standalone).
 Filtered run 25/25 PASS, check-deps OK.
+
+### REV-LOGIC (kestrel-base, 2026-10-15) -> arch re-review
+engine/core/logic.js + logic.test.js: items 1-4 done (events saved [kind,argName,value]; pending rows carry rev; `r: blockId` resume; todo snapshot before phase 1); old saves migrate. logic/logicWire/farmAmbush/gameHooks green, check-deps OK.

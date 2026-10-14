@@ -178,6 +178,47 @@ function replay(saveAt) {
   ok('save keyed by block id', !!s.b.keep && !!s.b.bumped && !('gone' in s.b));
 }
 
+// ---- 6b) review fixes: index-free event save, rev-checked pending, resume by id, delayed-push snapshot
+{
+  const mkB = (id, n0, extra) => ({ id, rev: 1, when: { on: 'ping' }, do: Array.from({ length: 8 }, (_, i) => ({ act: 'mark', n: n0 + i })), ...extra });
+  const five = [0, 1, 2, 3, 4].map((i) => mkB('m' + i, i * 8));
+  const t = mk(five);
+  t.logic.push(evId('ping'), 0); t.logic.step(t.ctx);
+  const s = JSON.parse(JSON.stringify(t.logic.save()));
+  ok('resume: saved by block id after deferral', t.ctx.log.length === 32 && s.r === 'm4' && s.e.length === 1, JSON.stringify(s.r));
+  const u = mk(five); u.logic.load(s); u.logic.step(u.ctx);
+  ok('resume: load runs only the unhandled blocks (no refire)', u.ctx.log.length === 8 && u.ctx.log[0] === 32 && u.logic.queued === 0, u.ctx.log.join());
+  t.logic.step(t.ctx);
+  ok('resume: matches uninterrupted run', t.ctx.log.slice(32).join() === u.ctx.log.join() && t.ctx.log.length === 40);
+  // events are saved by names, not intern ids
+  const q = mk([{ id: 'e1', rev: 1, when: { on: 'enter', area: 'z' }, do: [{ act: 'mark', n: 1 }] }]);
+  q.logic.push(evId('enter'), q.program.argId('area', 'z'));
+  const qs = JSON.parse(JSON.stringify(q.logic.save()));
+  ok('events: saved as [kind, argName, value]', JSON.stringify(qs.e) === '[["enter","area","z"]]', JSON.stringify(qs.e));
+  const q2 = mk([{ id: 'pre', rev: 1, when: { on: 'enter', area: 'other' }, do: [{ act: 'mark', n: 9 }] }, { id: 'e1', rev: 1, when: { on: 'enter', area: 'z' }, do: [{ act: 'mark', n: 1 }] }]);
+  q2.logic.load(qs); q2.logic.step(q2.ctx);
+  ok('events: survive content renumbering', q2.ctx.log.join() === '1', q2.ctx.log.join());
+  const old = mk([{ id: 'e1', rev: 1, when: { on: 'enter', area: 'z' }, do: [{ act: 'mark', n: 1 }] }]);
+  old.logic.load({ v: 1, b: {}, p: [['e1', 0, 1]], e: [['enter', 1], ['ping', 0]] });
+  ok('migrate: old-format event with an intern id is dropped, no crash', old.logic.queued === 1 && old.logic.pending === 1);
+  // rev change drops the block's pending rows
+  const d = (rev) => mk([{ id: 'dl', rev, when: { on: 'ping' }, do: [{ act: 'mark', n: 1 }, { act: 'mark', n: 2, after: 5 }] }]);
+  const d1 = d(1); d1.logic.push(evId('ping'), 0); d1.logic.step(d1.ctx);
+  const ds = JSON.parse(JSON.stringify(d1.logic.save()));
+  const same = d(1); same.logic.load(ds);
+  const bumped = d(2); bumped.logic.load(ds);
+  ok('rev: pending kept when rev matches, dropped when it changed', same.logic.pending === 1 && bumped.logic.pending === 0);
+  // events pushed by a delayed action wait for the next step
+  const x = mk([
+    { id: 'd', rev: 1, when: { on: 'ping' }, do: [{ act: 'raise', k: evId('a'), a: 0, after: 1 }] },
+    { id: 'ha', rev: 1, when: { on: 'a' }, do: [{ act: 'mark', n: 7 }] },
+  ]);
+  x.logic.push(evId('ping'), 0); x.logic.step(x.ctx); x.logic.step(x.ctx);
+  const same2 = x.ctx.log.length === 0 && x.logic.queued === 1;
+  x.logic.step(x.ctx);
+  ok('delayed push: handled on the next step, not the same one', same2 && x.ctx.log.join() === '7');
+}
+
 // ---- 7) validateLogic: one plain-text error per broken fixture
 {
   const good = { id: 'g', rev: 1, when: { on: 'enter', area: 'x' }, if: [{ is: 'flag', flag: 'f', eq: true }], do: [{ act: 'mark', n: 1 }] };
