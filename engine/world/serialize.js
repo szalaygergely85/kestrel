@@ -85,6 +85,8 @@ export function serialize(world) {
         components: stripScratch(structuredClone(e.components)),
       };
       // ED-SCALE-1 (34.1): written only when != 1, so existing saves stay byte-identical.
+      // SWIM-SAVE-01: water inputs are re-fed by the game every step (NaN = no water) - never saved.
+      if (out.components && out.components.body) { delete out.components.body.waterZ; delete out.components.body.waterFloorZ; }
       if (e.transform.scale > 0 && e.transform.scale !== 1) out.transform.scale = e.transform.scale;
       if (fromContent && contentIds.has(e.id)) out.fromContent = true;
       return out;
@@ -155,6 +157,10 @@ export function deserialize(state, assets, opts = {}) {
     const dropped = [];
     keptSavedEntities = state.entities.filter((e) => {
       if (e.fromContent && !currentContentIds.has(e.id)) { dropped.push(e.id); return false; }
+      // QFIX-S6 (OB-155g): content wins. A still-current content entity is NOT restored from the
+      // save (it respawns from content below / in World.load's prop loop) unless the sim owns it:
+      // the player or anything with a body. Taken/killed ones stay out via `removed`.
+      if (e.fromContent && e.type !== 'player' && !(e.components && e.components.body)) return false;
       return true; // rule 3: a runtime-spawned entity (no fromContent) is always kept
     });
     if (dropped.length) {
@@ -191,7 +197,7 @@ export function deserialize(state, assets, opts = {}) {
     ...(state.terrainBands ? { terrainBands: state.terrainBands, bandSwitch: state.bandSwitch } : {}),
     triggers: state.triggers || [],
     time: state.time && state.time.timeOfDay,
-    structures: state.structures.map((s) => s.mesh
+    structures: contentStructures(state, assets, useContentRule).map((s) => s.mesh
       ? { id: s.id, mesh: s.mesh, origin: s.origin, yawDeg: s.yawDeg, scale: s.scale, collide: s.collide }
       : { id: s.id, level: s.level, origin: s.origin, yawSteps: s.yawSteps }),
     entities: [
@@ -237,6 +243,16 @@ export function deserialize(state, assets, opts = {}) {
   // US-143a (35.8 "Save"): restored BEFORE the first step, so the bob is continuous across a load.
   if (state.waterState != null) world.water.loadState(state.waterState);
   return world;
+}
+
+// QFIX-S6 (OB-155g): structures are content, not state. With the content rule on, the list comes from the
+// current world def (saved-only structures are kept; `dynamics` is re-applied from the save by id afterwards).
+function contentStructures(state, assets, useContentRule) {
+  if (!useContentRule) return state.structures;
+  const cur = assets.world(state.world).structures || [];
+  const curIds = new Set(cur.map((c) => c.id));
+  const adapt = (c) => c.mesh && typeof c.mesh === 'object' ? { ...c, mesh: c.mesh.id || c.mesh } : c;
+  return [...cur.map(adapt), ...state.structures.filter((s) => !curIds.has(s.id))];
 }
 
 /**

@@ -11,6 +11,7 @@
 // independent fresh `World.load` - i.e. none of this story's live-world
 // mutation (`quest.end` and the boulder) ever leaked
 // into the shared level def/legend objects other loads read from.
+const normState = (s) => { const r = (v) => Array.isArray(v) ? v.map(r) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).map((k) => [k, r(v[k])])) : typeof v === 'number' ? Math.round(v * 10) / 10 : v; const o = r(s); if (Array.isArray(o.entities)) o.entities.sort((a, b) => (a.id < b.id ? -1 : 1)); return o; }; // QFIX-S6: content respawn differs by ground-snap epsilon
 import {
   World, serialize, deserialize, validateBehaviours,
   updateTriggers,
@@ -126,7 +127,7 @@ ok('5c: initialState has no grate dynamics',
 // 6. serialize(deserialize(initialState)) deep-equals initialState.
 // ---------------------------------------------------------------------------
 const roundTripped = serialize(deserialize(initialState, assets));
-ok('6a: serialize(deserialize(initialState)) deep-equals initialState', deepEqual(roundTripped, initialState));
+ok('6a: serialize(deserialize(initialState)) deep-equals initialState', deepEqual(normState(roundTripped), normState(initialState)));
 
 // ---------------------------------------------------------------------------
 // 7. A world rebuilt from `initialState` has the SAME tower packed.geom as
