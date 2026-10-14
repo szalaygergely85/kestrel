@@ -28,6 +28,8 @@ function typeTables(look) {
   return { names, floor };
 }
 
+import { LookBaker, assertBlendM } from './lookBake.js';
+
 function now() {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
@@ -97,6 +99,7 @@ export class Terrain {
     // hard-coded - architecture.md 14.4 item 10 "recipe constants arrive
     // through TLOOK/uniforms from the registry", same principle in JS).
     this._forestTypeId = this.typeNames.indexOf('forest');
+    this.groundLook = null; this.farLook = null; // ENV-02c: LookBaker + far RG8 look bytes (null = feature off, bytes unchanged)
     this._canopyM = (recipe.recipe && recipe.recipe.forest && recipe.recipe.forest.canopy) || 0;
 
     // Chunk geometry (AUD-04: the dormant 3x3 resident ring was removed; the near band is the only near truth).
@@ -233,6 +236,7 @@ export class Terrain {
       height: G.height, type: G.type, hDraw, minH, maxH,
       version: (this.near ? this.near.version : 0) + 1,
     };
+    if (this.groundLook) { this.near.look = new Uint8Array(w * h * 2); this._fillNearLook(this.near); }
     this.nearReady = true;
   }
 
@@ -252,6 +256,27 @@ export class Terrain {
   }
 
   /**
+   * ENV-02c (arch 38.63): turns the per-texel look bytes on (cfg = World opt `groundLook`) or off (null). Call before the bakes; an
+   * already baked far grid / near band is filled at once. `cfg.blendM` (smallest biome blend, m), when given, must be >= 3 far texels.
+   */
+  setGroundLook(cfg) {
+    if (!cfg) { this.groundLook = null; this.farLook = null; if (this.near) delete this.near.look; return; }
+    if (cfg.blendM !== undefined) assertBlendM(cfg.blendM, this.mapCell);
+    this.groundLook = new LookBaker(cfg, this.util);
+    this.farLook = new Uint8Array(this.mapW * this.mapH * 2);
+    if (this.farReady) this._fillFarLook();
+    if (this.nearReady) { const g = this.near; g.look = new Uint8Array(g.w * g.h * 2); this._fillNearLook(g); g.version++; }
+  }
+  _fillFarLook() {
+    const L = this.groundLook, w = this.mapW, c = this.mapCell;
+    for (let j = 0; j < this.mapH; j++) for (let i = 0; i < w; i++) L.bakeCell(this.mapX0 + (i + 0.5) * c, this.mapY0 + (j + 0.5) * c, this.farType[i + j * w], this.farLook, i + j * w);
+  }
+  _fillNearLook(g) {
+    const L = this.groundLook, c = g.cell;
+    for (let j = 0; j < g.h; j++) for (let i = 0; i < g.w; i++) L.bakeCell(g.x0 + (i + 0.5) * c, g.y0 + (j + 0.5) * c, g.type[i + j * g.w], g.look, i + j * g.w);
+  }
+
+  /**
    * OB109-B1 (38.58): the back-band state of `beginNearBand`, WITHOUT touching `_bb` / `near`. `src` = band to copy the
    * overlap from (`terrain.near`, a cached bundle's near, or null = bake every cell; per-cell pure so bytes are identical).
    * Drive it with `stepBandState`, finish with `finishBandState`.
@@ -262,6 +287,7 @@ export class Terrain {
     const w = cw * n, h = ch * n, x0 = cx0 * this.chunkSize, y0 = cy0 * this.chunkSize;
     const HC = cur ? cur.height.constructor : Float32Array, TC = cur ? cur.type.constructor : Uint8Array, DC = cur ? cur.hDraw.constructor : Float32Array;
     const b = { x0, y0, w, h, cell: this.nearCell, height: new HC(w * h), type: new TC(w * h), hDraw: new DC(w * h), minH: 0, maxH: 0, version: 0 };
+    if (this.groundLook) b.look = new Uint8Array(w * h * 2); // ENV-02c: (lo | hi << 4, w_hi) per texel
     // overlap in new-band cell coords [ox0,ox1) x [oy0,oy1)
     let ox0 = 0, ox1 = 0, oy0 = 0, oy1 = 0;
     // AUD-31: minH/maxH accumulated while copying/baking (same formula swapNearBand used in its own full pass)
@@ -308,6 +334,10 @@ export class Terrain {
         b.height.set(cur.height.subarray(s0, s0 + len), d0);
         b.type.set(cur.type.subarray(s0, s0 + len), d0);
         b.hDraw.set(cur.hDraw.subarray(s0, s0 + len), d0);
+        if (b.look) {
+          if (cur.look) b.look.set(cur.look.subarray(s0 * 2, (s0 + len) * 2), d0 * 2);
+          else { const L = this.groundLook, ey = b.y0 + (j + 0.5) * cell; for (let q = 0; q < len; q++) L.bakeCell(b.x0 + (st.ox0 + q + 0.5) * cell, ey, b.type[d0 + q], b.look, d0 + q); } // source baked before the look was on
+        }
         let mn = st.mn, mx = st.mx;
         for (let i = d0, e = d0 + len; i < e; i++) { const v = b.height[i] + (b.type[i] === fid ? can : 0); if (v < mn) mn = v; if (v > mx) mx = v; }
         st.mn = mn; st.mx = mx;
@@ -336,6 +366,7 @@ export class Terrain {
           const hv = G.height[i];
           b.height[o + i] = hv; b.type[o + i] = G.type[i];
           b.hDraw[o + i] = hv + (G.type[i] === forestId ? canopy : 0);
+          if (b.look) this.groundLook.bakeCell(b.x0 + (cs + i + 0.5) * cell, b.y0 + (r + 0.5) * cell, G.type[i], b.look, o + i);
           const v = b.height[o + i] + (b.type[o + i] === st.fid ? st.canopy : 0);
           if (v < st.mn) st.mn = v; if (v > st.mx) st.mx = v;
         }
@@ -424,6 +455,7 @@ export class Terrain {
               g.height[k] = util.heightAt(x, y);
             }
             g.type[k] = t;
+            if (g.look) this.groundLook.bakeCell(x, y, t, g.look, k);
             const hv = g.height[k] + (t === forestId ? canopy : 0); // float32 height, double sum like bakeNearBand
             g.hDraw[k] = hv;
             if (hv < minH) minH = hv;
@@ -451,6 +483,7 @@ export class Terrain {
             const t = util.typeAt(x, y);
             if (rowH && i >= hi0 && i <= hi1) this.farH[k] = util.heightAt(x, y);
             this.farType[k] = t;
+            if (this.farLook) this.groundLook.bakeCell(x, y, t, this.farLook, k);
             const hv = this.farH[k] + (t === forestId ? canopy : 0);
             this.farHDraw[k] = hv;
             if (hv > this.farMaxH) this.farMaxH = hv;
@@ -538,6 +571,7 @@ export class Terrain {
     const G = this.util.generate();
     this.farH.set(G.height);
     this.farType.set(G.type);
+    if (this.groundLook) this._fillFarLook();
     this._bakeRow = this.mapH;
     this._bakeCol = 0;
     this._finishBake();
@@ -567,6 +601,7 @@ export class Terrain {
         const x = this.mapX0 + (col + 0.5) * cell;
         this.farH[rowBase + col] = this.util.heightAt(x, y);
         this.farType[rowBase + col] = this.util.typeAt(x, y);
+        if (this.farLook) this.groundLook.bakeCell(x, y, this.farType[rowBase + col], this.farLook, rowBase + col);
         col++;
         if ((col & (BAKE_CHECK_COLS - 1)) === 0 && now() - t0 >= msBudget) {
           this._bakeCol = col;
@@ -614,6 +649,7 @@ export class Terrain {
       h ^= this.farType[i];
       h = Math.imul(h, 0x01000193);
     }
+    if (this.farLook) for (let i = 0; i < this.farLook.length; i++) { h ^= this.farLook[i]; h = Math.imul(h, 0x01000193); } // ENV-02c: only with looks on
     return h >>> 0;
   }
 }
