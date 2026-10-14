@@ -1141,3 +1141,6 @@ Wardens + postkeeper display names (Lin, Brenna, Ewan, Tull, Edda, Ivo, Nell, Or
 
 ### ENG-API-01a (kestrel-2, 2026-10-14) -> arch-review
 engine/api-1.0.json (551 names, tier experimental, area from group comment/module path) + tools/gen-api-manifest.mjs (`--write`, idempotent, preserves hand-edited tiers) + engine/api.test.js (replaces index.exports.test.js; dummy export fails it). Names via import+Object.keys (follows `export *`); area via static scan. dev.js not in manifest.
+
+### ENG-API-01c (kestrel-2, 2026-10-14) -> arch-review
+Manifest tiers by grep of game/ + tools/editor (named + `import * as` + JSDoc imports): stable 276 (render 83, anim 44, core 36, world 34, ui 21, nav 19, fx 13, content 12, physics 7, sim 7), deprecated 5 (makeFrame, makeGrid, makeLightBuffer, makeTerrainShadeCtx, makeUnderState -> createFrame, createBandGrid, createLightBuffer, createTerrainShadeCtx, createUnderState), experimental 276. New exports: RenderTarget (value), `Minimap` + `FaunaEnv` typedefs (index.js end). Not renamed: lowercase objects ambientL, meshFeedStats, pointShadowInfo (left experimental/stable as-is). gen script + api.test handle `replacedBy`; README has API section.

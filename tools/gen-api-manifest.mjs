@@ -68,14 +68,14 @@ export function readManifest() { return JSON.parse(fs.readFileSync(MANIFEST, 'ut
 
 /** Canonical JSON: sorted by name, one entry per line, trailing newline. */
 export function canonical(names) {
-  const rows = names.map((n) => '    ' + JSON.stringify({ name: n.name, area: n.area, tier: n.tier }));
+  const rows = names.map((n) => '    ' + JSON.stringify(n.replacedBy ? { name: n.name, area: n.area, tier: n.tier, replacedBy: n.replacedBy } : { name: n.name, area: n.area, tier: n.tier }));
   return '{\n  "version": "1.0",\n  "names": [\n' + rows.join(',\n') + '\n  ]\n}\n';
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   if (!process.argv.includes('--write')) { console.log('usage: node tools/gen-api-manifest.mjs --write'); process.exit(0); }
   const old = new Map(); try { for (const n of readManifest().names) old.set(n.name, n); } catch { /* first run */ }
-  const names = (await currentExports()).map(({ name, area }) => ({ name, area, tier: old.get(name)?.tier || 'experimental' }));
+  const names = (await currentExports()).map(({ name, area }) => ({ name, area, tier: old.get(name)?.tier || 'experimental', replacedBy: old.get(name)?.replacedBy }));
   fs.writeFileSync(MANIFEST, canonical(names));
   console.log(`engine/api-1.0.json: ${names.length} names`);
 }

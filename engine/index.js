@@ -21,6 +21,7 @@ export {
   rotateVec2, dirFromAzEl, makeFrame, localToWorld, worldToLocal, localDirToWorld, localYawToWorld,
   worldYawToLocal, frameBBox, rotatedSize, localCellToWorld, frameEquals, transformPoint,
 } from './core/transform.js';
+export { makeFrame as createFrame } from './core/transform.js'; // ENG-API-01c: makeFrame deprecated
 
 // ---- content ------------------------------------------------------------
 export { AssetRegistry } from './core/assets.js';
@@ -42,6 +43,7 @@ export { World, stepSectorAnims, PROP_SCALE_MIN, PROP_SCALE_MAX } from './world/
 export { GIBake, encodeRaw as encodeGIBake } from './world/giBake.js'; // GI-PROBE-02b
 export { writeGIFile, readGIFile, readGIHeader, isGIFileFresh } from './world/giFile.js';
 export { makeGrid, zoneAt, zoneId, CHUNK as BAND_CHUNK } from './world/bandGrid.js';
+export { makeGrid as createBandGrid } from './world/bandGrid.js'; // ENG-API-01c: makeGrid deprecated (generic word, area prefix)
 export { validateCarpetConfig, buildCarpetClassMap, CARPET_MAX_VARIANTS, CARPET_DEFAULTS } from './world/carpet.js';
 export { scatterTrees, validateScatterConfig, scatterDetail, validateDetailConfig, hash2 } from './world/scatter.js';
 export { Terrain } from './world/Terrain.js';
@@ -63,6 +65,7 @@ export { AO_DEFAULTS } from './render/horizonAo.js'; // host `?ao=` reads the en
 export { swayOffset, packWindUniforms, windSwayOn, INST_FLAG_SWAY, SWAY_K, SWAY_MAX } from './mesh/sway.js'; // S8-B2-06
 export { packDecorLayers, DEFAULT_DENSITY_Q8 } from './mesh/decorScatter.js'; // ENV-01-WIRE: main.js builds the WgDecorPass config (38.62)
 export { shadeTerrain, makeTerrainShadeCtx } from './render/terrainShade.js';
+export { makeTerrainShadeCtx as createTerrainShadeCtx } from './render/terrainShade.js'; // ENG-API-01c: makeTerrainShadeCtx deprecated
 export { packTerrainTextures, TLOOK_WIDTH } from './render/gpu/TerrainTextures.js';
 export { drawSprites, SpritePool, MAX_SPRITES } from './render/sprites.js';
 export { validatePost, createPostState, composePost, postCells } from './render/post.js'; // POST-STACK-01a (38.73): per-cell finish chain, JS twin
@@ -139,6 +142,7 @@ export {
   makeLightBuffer, MAX_LIGHTS, setLook, OUTDOOR_SHIFT,
 } from './render/lighting.js';
 
+export { makeLightBuffer as createLightBuffer } from './render/lighting.js'; // ENG-API-01c: makeLightBuffer deprecated
 // ---- ART-01a look + roof map (docs/architecture.md 37.18 items 2/3) ----------
 export { resolveLook, validateLook, blendLook } from './render/look.js';
 export { buildRoofMap, outdoorAt, MAX_ROOF_BOXES } from './render/roofMap.js';
@@ -149,6 +153,7 @@ export { createGpuDevice, selfTestDevice } from './render/gpu/device/createGpuDe
 export { createRenderer } from './render/createRenderer.js'; // WG-1c2
 export { WG_PASS_NAMES } from './render/gpu/wg/WgCellPipeline.js'; // S8-B1-07: WgCellPipeline's real per-pass GPU timer names
 export { RenderTargetWebGPU } from './render/RenderTargetWebGPU.js'; // WG-1c1
+export { RenderTarget } from './render/RenderTarget.js'; // ENG-API-01c: CPU Canvas2D target factory (38.74)
 export { CellBuffer } from './render/CellBuffer.js'; // WG-1c1 (present test page)
 export { WGSL_MODULES, summarizeCompilation } from './render/gpu/wgsl/index.js'; // WG-1c1
 export { resolveWaterLooks } from './render/waterLook.js'; // US-055a2c Q12 item 8: main.js's fb.waterLooks (JS twin)
@@ -291,5 +296,15 @@ export { createFauna } from './fauna/fauna.js'; // WILD-06
 export { createFaunaFeed, WILD_DRAW_MAX } from './fauna/feed.js';
 export { createSpawner, FAUNA_MAX, CELL_M as FAUNA_CELL_M } from './fauna/spawner.js';
 export { makeUnderState, updateUnderState, UNDER_DEFAULT } from './render/underwater.js'; // SWIM-04c (38.54)
+export { makeUnderState as createUnderState } from './render/underwater.js'; // ENG-API-01c: createX naming; makeUnderState deprecated
 export { createAnimBlender } from './entities/animBlend.js'; // ANIM-BLEND-01b (38.68)
 export { createLookAt } from './entities/lookAt.js'; // ANIM-LOOKAT-01 (38.69 lane note)
+
+// ---- public typedefs (ENG-API-01c, 38.74; types only, no runtime export) -------
+/** @typedef {import('./render/minimap.js').Minimap} Minimap */
+/**
+ * Injected world adapter of the ambient fauna (createFauna(def, env, ...)); game-side impl: game/js/wild/wildEnv.js.
+ * @typedef {Object} FaunaEnv
+ * @property {Function} groundAt @property {Function} slopeZ @property {Function} habitatAt @property {Function} blocked
+ * @property {Function} moveCircle @property {Function} perchNear @property {Function} [trunkNear]
+ */

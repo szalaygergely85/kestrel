@@ -21,6 +21,10 @@ for (const n of m.names) {
   if (!TIERS.includes(n.tier)) fails.push(`${n.name}: bad tier ${n.tier}`);
   if (eset.has(n.name) && E[n.name] === undefined) fails.push(`${n.name}: exported but undefined`);
 }
+for (const n of m.names) {
+  if (n.tier === 'deprecated' && !(n.replacedBy && lset.has(n.replacedBy))) fails.push(`${n.name}: deprecated needs a replacedBy that exists in the manifest`);
+  if (n.replacedBy && n.tier !== 'deprecated') fails.push(`${n.name}: replacedBy only on deprecated names`);
+}
 // canonical form: sorted, and a re-write of the same data is byte-identical (idempotent --write)
 if (canonical(m.names) !== fs.readFileSync(MANIFEST, 'utf8')) fails.push('manifest is not canonical (run --write)');
 const cur = await currentExports();
