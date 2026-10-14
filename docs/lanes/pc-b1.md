@@ -1070,3 +1070,6 @@ Root cause: lintQuest.js imported tools/content-lint.mjs (node:fs + python http.
 
 ### ED-LOGIC-02a (kestrel-1, 2026-10-14)
 tools/editor/logic/model.js (+ model.test.mjs): load/save byte-identical (original text kept until edited, canonical 2-space after), undoable add/move/delete block/item, setWhen/setArg/setBlockField, rev +1 only on When/If change, validateAll via engine validateLogic (+ cross-file ids). Schema content/logic/vocab.schema.json (editor-readable) + parity test tools/logic-vocab-parity.test.mjs vs game vocab; example content/logic/example.logic.json (not loaded: nothing lists it). check-deps + validate-content OK. Status: arch-review not needed (tools only) -> po-review pending main session.
+
+### ED-LOGIC-02b (kestrel-1, 2026-10-14)
+Logic tab: tools/editor/logicPanel.js (DOM) + logic/view.js (pure: labels, defaults, 3D pick -> ref, live lint = validateLogic + R15 refs/double-spawn/flag-loop with Go to) + view.test.mjs; vocab.schema.json got `label` per entry + `argLabels` (parity green); content/logic/index.json lists files for the editor; tab wired in index.html/main.js (pick via questPick). tools/verify-edl-02.mjs <port> written, NOT run (Node-only); engine content-lint R15 for logic stays with 01d. Status: po-review.
