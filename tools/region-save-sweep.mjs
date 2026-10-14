@@ -78,7 +78,14 @@ export async function runSweep() {
     const A = createSaveRelay({ storage, questDef, giverDefs }); A.onWorldLoaded(); A.quest.world = w1;
     const flag = `waystone.ws_${g.errand}.woken`;
     w1.state[flag] = true; A.quest.feed({ type: 'flag:set', key: flag, value: true });
-    ok(A.quest.book.accept(qid), g.errand + ': accept after wake');
+    if (!A.quest.book.hasKey('q.' + qid + '.accept')) { // D-095: the west-bank errands sit behind sq.burl.fire (opens after mq.river.road): play that gate first
+      const bk = A.quest.book, f = (e) => A.quest.feed(e);
+      for (const o of questDef.objectives) { const w = o.when; if (w.type === 'flag') f({ type: 'flag:set', key: w.id, value: true }); else if (w.type === 'area') f({ type: 'area:entered', id: w.id }); else if (w.type === 'item') f({ type: 'item:got', id: w.id }); else if (w.type === 'beasts') for (const id of w.ids) f({ type: 'beast:died', id }); }
+      f({ type: 'area:entered', id: 'riverBank' }); bk.actKey('q.sq.burl.fire.accept');
+      for (let i = 1; i <= 3; i++) A.quest.feed({ type: 'item:count', id: 'emberpod', n: i });
+      bk.actKey('q.sq.burl.fire.handin');
+    }
+    ok(A.quest.book.actKey('q.' + qid + '.accept'), g.errand + ': accept after wake'); // D-098: the giver window accept
     const victim = gen.list.find((b) => b.species === kind) || { id: kind + 'R0' };
     A.handlers().onEvent('beast:died', { id: victim.id });
     { const v = w1.get(victim.id); if (v && v.data.components.health) v.data.components.health.hp = 0; } // what beastSim does on a kill; the sim state itself is not saved
