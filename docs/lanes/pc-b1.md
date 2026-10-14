@@ -1181,3 +1181,9 @@ NEEDS: `sim.parkSlot/unparkSlot(slot)` in beastSim.js: setDown(true) on an inact
 - game/js/quest/sim/quest.js `advance` + `catchUp`: when the current step is an `area` step and a later `flag` step is already met (only area steps between), the skipped areas are recorded and the chain advances (m1: Bend stone woken off the road -> road, relayFound, relay1 done). talk/kill/item/flag steps are never skipped. Runs on feed AND on load (createQuest), so stuck saves catch up on Continue.
 - Tests: questBook.test.js (stone woken without areas, flag step pending is not skipped, stuck-save load). quest/questBook/markD098/ch1Walkthrough/saveRelay/questBatch1 PASS. templates.test.js fails on "requires unknown quest sq.burl.fire" (not touched by this change). tools/verify-ob170.mjs now prints CATCHUP OK/FAIL after the real E press (main session runs it).
 -> owner look
+
+### ITEM-07 item card + compare (D-081/D-091)
+- New game/js/quest/sim/itemCard.js (pure): buildCard(entry, defs, {worn, totals}) -> framed 34-wide rows (itemLooks frames/tags/ornaments) + coloured lines (palette keys from ASSETS.itemLooks.card.text/rarity); per-stat compare green/red/grey, empty slot all green, weapons avg damage incl. bonuses, Needs line red if unmet. Wired in inventoryScreen.buildTip (pack hover, 2 columns in the 6-row details pane; tip cache now also keyed on instance + eq.rev) and itemGetCard.push(entry) (kind row = slot/level/tag, base row, bonus row). game/index.html: +1 script tag (design/itemLooks.js).
+- Tests: itemCard.test (golden Common/Magic/Rare/Unique, compare colours, empty slot), inventoryScreen (63), itemGetCard, itemInst, equipAt PASS; validate-content OK, check-deps OK.
+- Limits: details pane is 6 rows, so a 3-bonus Epic clips; worn plain (non-instance) gear counts as an empty slot in the compare; the item-get card shows bonuses joined on one row (panel has no free rows). Long worn names drop "worn" in the compare head.
+-> owner look

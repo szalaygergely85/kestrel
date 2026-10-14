@@ -10,7 +10,8 @@ import { wrapNoteLines } from './noteRead.js';
 import { gearRecipe } from './gearLook.js';
 import { createPreviewYaw } from './previewYaw.js';
 import { itemDisplayName } from './sim/inventory.js';
-import { itemName, rarityOf, reqOf, createStatsCache, refreshTotals } from './sim/itemInst.js';
+import { itemName, rarityOf, reqOf, createStatsCache, refreshTotals, wornIt } from './sim/itemInst.js';
+import { buildCard } from './sim/itemCard.js';
 
 // Panel-relative layout (panel 100 x 29). Slot boxes are the style's 9x5 boxes, pitch from `uiStyle.inventory.grid`.
 export const LAYOUT = Object.freeze({
@@ -85,7 +86,7 @@ export function createInventoryScreen(o) {
   let turning = false, dragPx = 0, rxLast = -1, dtAcc = 0, yawAcc = 0;
   let dragSrc = -1, dragMoved = false; // item drag (pack <-> gear)
   const flash = { node: -1, kind: 0, until: 0 };
-  let sHp = -1, sMax = -1, sDef = -1, sArr = -1, sDmg = -1, stat1 = '', stat2 = '', tipCur = -1, tipId = null, tipWorn = null, tipDef = -1, tipLines = [], tipFg = [];
+  let sHp = -1, sMax = -1, sDef = -1, sArr = -1, sDmg = -1, stat1 = '', stat2 = '', tipCur = -1, tipId = null, tipWorn = null, tipDef = -1, tipLines = [], tipFg = [], tipX = [], tipY = [], tipIt = null, tipRev = -1;
   const EMPTY_EQ = {};
 
   const inv = () => o.inventoryOf();
@@ -290,9 +291,24 @@ export function createInventoryScreen(o) {
     return -1;
   }
 
+  /** ITEM-07: card lines into the 6-row details pane, two columns (22 + 24 cells); the framed 34-wide rows are for the item-get card / tests. */
+  function addCard(card) {
+    const W = 24, X2 = 25; let y = 0, y2 = 0, right = false;
+    const col = (kind) => kind === 'req' || kind === 'reqBad' || kind === 'divider' || kind === 'head' || kind === 'better' || kind === 'worse' || kind === 'same';
+    for (const l of card.lines) {
+      if (l.kind === 'divider') { right = true; continue; }
+      if (!right && col(l.kind)) right = true;
+      let t = l.t;
+      if (l.tag) t = t.padEnd(W - l.tag.length - 1, ' ').slice(0, W - l.tag.length - 1) + ' ' + l.tag;
+      if (l.kind === 'head' && t.length > W) t = t.replace(/ \(.*$/, '').slice(0, W);
+      const fg = o.rgb[l.c] || C.uiText;
+      if (right) { if (y2 < L.details.rows) tipLines.push(t), tipFg.push(fg), tipX.push(X2), tipY.push(y2++); } else if (y < L.details.rows) tipLines.push(t), tipFg.push(fg), tipX.push(0), tipY.push(y++);
+    }
+  }
+
   function buildTip(node, id, worn, lockText) {
-    tipLines = []; tipFg = [];
-    const add = (s, fg) => { tipLines.push(s); tipFg.push(fg); };
+    tipLines = []; tipFg = []; tipX = []; tipY = [];
+    const add = (s, fg, x = 0, y = tipLines.length) => { tipLines.push(s); tipFg.push(fg); tipX.push(x); tipY.push(y); };
     if (node.kind === 1) { add('Wick', C.uiText); add('Drag a piece onto him to wear it. Turn him with A / D or the mouse.', C.uiDim); return; }
     const d = id && defs[id];
     if (!d) { add(node.kind === 0 ? 'Empty ' + slotLabel[node.slot].toLowerCase() + ' slot' : 'Empty', C.uiDim); return; }
@@ -301,6 +317,12 @@ export function createInventoryScreen(o) {
     const rar = ent.it != null ? rarityOf(ent, defs) : -1;
     add(itemName(ent, defs), rar >= 0 ? rarityFg[rar] : tier && tierFg[tier] ? tierFg[tier] : C.uiText);
     if (lockText) { add(lockText, C.uiDim); return; }
+    if (ent.it != null || q) { // ITEM-07: rolled / unique gear gets the item card (left column: the item, right column: requirement + compare)
+      const e = eq(), t = e ? refreshTotals(statsCache, e, defs) : null, slot = q ? q.slot : null;
+      const wid = e && node.kind === 2 && slot ? e[slot] : null;
+      const card = buildCard(ent, defs, { totals: t, worn: node.kind === 2 && slot ? (wid != null ? { id: wid, it: wornIt(e, slot, defs) } : null) : undefined });
+      if (card) { addCard(card); return; }
+    }
     if (q) {
       add((tierName[tier] || '') + ' ' + (slotLabel[q.slot] || q.slot).toLowerCase() + (q.def > 0 ? '  -  Defence ' + q.def : '') + (q.stats && q.stats.dmgMul ? '  -  Damage x' + q.stats.dmgMul : ''), C.uiHint);
       if (node.kind === 2) { // compare with what is worn in that slot
@@ -472,8 +494,9 @@ export function createInventoryScreen(o) {
       if (lk >= 0 && (tipLock !== lk || tipCur !== -3)) { tipLock = lk; tipCur = -3; tipId = null; buildTip(nodes[lk], idAt(nodes[lk]), null, o.slotLockText ? o.slotLockText(nodes[lk].i) : 'Locked'); }
       else if (lk < 0) tipLock = -2;
       const node = nodes[cur], id = idAt(node), worn = node.kind === 2 && id && defs[id] && defs[id].equip ? wornId(defs[id].equip.slot) : null;
-      if (lk < 0 && (cur !== tipCur || id !== tipId || worn !== tipWorn || def !== tipDef)) { tipCur = cur; tipId = id; tipWorn = worn; tipDef = def; buildTip(node, id, worn); }
-      for (let i = 0; i < tipLines.length; i++) text(L.details.x, L.details.y + i, tipLines[i], tipFg[i], bg);
+      const tit = node.kind === 2 && inv() && inv().slots[node.i] ? inv().slots[node.i].it : null, eqv = eq() ? eq().rev : 0;
+      if (lk < 0 && (cur !== tipCur || id !== tipId || worn !== tipWorn || def !== tipDef || tit !== tipIt || eqv !== tipRev)) { tipCur = cur; tipId = id; tipWorn = worn; tipDef = def; tipIt = tit; tipRev = eqv; buildTip(node, id, worn); }
+      for (let i = 0; i < tipLines.length; i++) text(L.details.x + tipX[i], L.details.y + tipY[i], tipLines[i], tipFg[i], bg);
       // the dragged icon rides the pointer
       if (dragSrc >= 0 && dragMoved) { const did = idAt(nodes[dragSrc]); if (did) iconAt(rx - 2, ry - 1, did, slotCfg.selected.innerBg); }
       if (page === 1) drawSpellbook(); // over the pack grid + details

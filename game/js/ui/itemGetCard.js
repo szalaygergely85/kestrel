@@ -1,6 +1,7 @@
 // S8-C-07: cached item-get card. Host owns input routing/pause and calls step even while gameplay is paused.
 // Formatting happens at create/push; draw/step reuse the queue, layout, colours and payload-free state.
 import { itemName } from '../quest/sim/itemInst.js';
+import { buildCard } from '../quest/sim/itemCard.js'; // ITEM-07: rolled gear shows the item card text
 const TIER_KEY={worn:'uiHint',sturdy:'heroGreen',fine:'gold'}; // keys of uiStyle.itemGetCard.hex
 export function createItemGetCard(adapter, {style:S, items, rgb, reduceMotion=false, dev=false}) {
   const reduced=()=>typeof reduceMotion==='function'?!!reduceMotion():!!reduceMotion; // bool or live getter
@@ -50,10 +51,21 @@ export function createItemGetCard(adapter, {style:S, items, rgb, reduceMotion=fa
       if(!info[id] || !Number.isSafeInteger(n) || n<1 || !Number.isSafeInteger(count) || count<0)throw new Error('item card: invalid reward');
       let inf=info[id];
       if(entry&&entry.it!=null){const nm=itemName(entry,items.defs);inf=Object.assign({},inf,{nameLen:nm.length,title:S.titleBar.decor[0]+nm+S.titleBar.decor[1]});}
+      let cardInf=null; // ITEM-07: slot + level + tag, base stats and bonus lines in the rarity colours (compare lives on the pack hover)
+      const card=entry&&entry.it!=null ? buildCard(entry,items.defs,{}) : null;
+      if(card){
+        const nm=card.lines[0], pick=(k)=>card.lines.filter(l=>l.kind===k).map(l=>l.t);
+        const key=nm.c; colours[key]=colours[key]||colour(key);
+        const bonus=pick('bonus').concat(pick('unique')), tail=card.tag;
+        cardInf={tierKey:key,kind:(card.lines[1].t+'  '+tail).slice(0,S.desc.w),desc:pick('base').join('  ').slice(0,S.desc.w),
+          bonusLine:bonus.join(', ').slice(0,S.desc.w),bonusKey:card.lines.find(l=>l.kind==='bonus'||l.kind==='unique')?.c};
+        if(cardInf.bonusKey)colours[cardInf.bonusKey]=colours[cardInf.bonusKey]||colour(cardInf.bonusKey);
+        inf=Object.assign({},inf,{tierKey:key,kind:cardInf.kind,desc:cardInf.desc});
+      }
       const progress=S.count.progress[id];
-      queue.push({id,n,info:inf,countLine:packFull ? S.count.full.text : progress ? progress.format.replace('{n}',String(count))
+      queue.push({id,n,info:inf,countLine:packFull ? S.count.full.text : cardInf ? cardInf.bonusLine : progress ? progress.format.replace('{n}',String(count))
         : inf.def.stackMax>1 && count>=2 ? S.count.format.replace('{n}',String(count)) : inf.defLine,
-        countFg:packFull ? fullFg : colours[progress ? progress.fg : inf.defLine&&inf.tierKey ? inf.tierKey : S.count.fg],queueLine:''});
+        countFg:packFull ? fullFg : cardInf&&cardInf.bonusKey ? colours[cardInf.bonusKey] : colours[progress ? progress.fg : inf.defLine&&inf.tierKey ? inf.tierKey : S.count.fg],queueLine:''});
       for(let i=0;i<queue.length;i++)queue[i].queueLine=queue.length>1 ? S.footer.queue.format.replace('{i}',String(i+1)).replace('{n}',String(queue.length)) : '';
       if(phase==='idle'){phase='show';age=0;index=0;paused(true);}
     },

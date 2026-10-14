@@ -2,12 +2,14 @@
 import { makeOk } from '../../../engine/test/assert.js';
 import paletteMod from '../../../design/palette.js';
 import itemsMod from '../../../design/items.js';
+import looksMod from '../../../design/itemLooks.js';
+import { registerGenDefs } from './sim/itemInst.js';
 import invStyleMod from '../../../design/models/inventory_ui.js';
 import { createInventoryScreen, LAYOUT } from './inventoryScreen.js';
 import { ensureInventory, addItem } from './sim/inventory.js';
 import { ensureEquipment, defenceOf } from './sim/equipment.js';
 
-paletteMod; itemsMod; invStyleMod;
+paletteMod; itemsMod; looksMod; invStyleMod;
 const A = globalThis.ASSETS, style = A.uiStyle.inventory, items = A.items, defs = items.defs, P = style.panel;
 const rgb = A.palette.rgb;
 let pass = 0, fail = 0; const failures = [];
@@ -151,6 +153,18 @@ for (const k of ['KeyI', 'KeyC', 'Tab']) {
   ok('spellbook (D-100): digits do nothing, E = right hand, Q = left hand', JSON.stringify(bar) === JSON.stringify([['right', 'spell.fireball'], ['left', 'spell.fireball']]));
   ok('spellbook: hoverItemId is the selected spell (drag source)', r.view.hoverItemId === 'spell.fireball');
   r.step('KeyB'); ok('B again returns to the pack', /PACK/.test(r.draw()));
+}
+{ // ITEM-07: rolled gear shows the item card (name + tag, bonus line, compare against the worn piece, empty slot = green)
+  registerGenDefs(defs);
+  const r = rig();
+  r.inv.slots[3] = { id: 'gen.sword', n: 1, it: { iL: 5, r: 2, a: [['A1', 0.18], ['A8', 4]], req: { str: 5 } } };
+  r.step('KeyI'); packPtr(r, 3); const t = r.draw();
+  ok('item card: name + rarity tag, level, bonus lines', /Iron Sword +\[Rare\]/.test(t) && /Main hand {2}- {2}Level 5/.test(t) && /\+18 % damage/.test(t) && /\+4 STR/.test(t));
+  ok('item card: empty slot -> compare in the right column', /vs empty slot/.test(t) && /Avg damage \+/.test(t));
+  ok('item card: no Esc text', !/Esc/.test(t));
+  r.eq.rev = (r.eq.rev | 0) + 1; r.eq.main = 'gen.sword'; r.eq.it = r.eq.it || {}; r.eq.it.main = { iL: 3, r: 1, a: [['A3', 0.02]] };
+  const t2 = r.draw();
+  ok('item card: vs worn piece, worse stat shown', /vs Worn Sword|vs worn Worn Sword/.test(t2) && /Crit chance -2 %/.test(t2) && /Avg damage \+/.test(t2));
 }
 if (global.gc) {
   const r = rig(); r.step('KeyI'); r.draw(); for (let i = 0; i < 100; i++) r.view.draw(r.ui);

@@ -24,6 +24,18 @@ assert.equal(large.view.isOpen,false,'large dt drains all phases/queued cards');
 const ui=createUiLayer({cols:160}), drawn=rig(true).view;drawn.push('shield');drawn.step(0.3);drawn.draw(ui);
 function line(y,x,n){let out='';for(let i=0;i<n;i++)out+=String.fromCharCode(ui.cells.glyphIdx[y*ui.cols+x+i]+32);return out;}
 const P=style.panel;
+{ // ITEM-07: a rolled instance shows slot + level + tag, base stats and its bonus lines
+  const {registerGenDefs}=await import('../quest/sim/itemInst.js');await import('../../../design/itemLooks.js');
+  registerGenDefs(A.items.defs);
+  const g=createItemGetCard({setPaused(){}},{style,items:A.items,rgb,reduceMotion:true});
+  g.push('gen.sword',1,{entry:{id:'gen.sword',n:1,it:{iL:5,r:2,a:[['A1',0.18]]}}});g.step(0.3);
+  const u=createUiLayer({cols:160});g.draw(u);
+  const row=(y,x,n)=>{let o='';for(let i=0;i<n;i++)o+=String.fromCharCode(u.cells.glyphIdx[y*u.cols+x+i]+32);return o;};
+  assert.ok(row(P.y+1,P.x,P.w).includes('Iron Sword'));
+  assert.ok(row(P.y+6,P.x+15,38).includes('Main hand  -  Level 5  [Rare]'));
+  assert.ok(row(P.y+4,P.x+15,38).startsWith('Damage 15-24   (avg 20)'),'base stats line');
+  assert.ok(row(P.y+7,P.x+15,38).includes('+18 % damage'),'bonus line');
+}
 assert.ok(line(P.y+1,P.x,P.w).includes('Brass Buckler'));
 assert.ok(line(P.y+4,P.x+15,38).startsWith('Gondola plate, bent round a strap.'));
 assert.ok(line(P.y+6,P.x+15,38).startsWith('Shield - either hand'));
