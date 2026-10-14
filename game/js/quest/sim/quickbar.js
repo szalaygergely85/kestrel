@@ -66,6 +66,7 @@ export function ensureQuickbar(player, defs) {
     }
   }
   if (!c.quickbarSeen) c.quickbarSeen = {};
+  for (let i = HAND_SLOTS; i < QB_SLOTS; i++) { const q = c.quickbar[i]; if (q && (defs && defs[q] ? defs[q].kind === 'spell' : q.startsWith('spell.'))) c.quickbar[i] = null; } // SPELLBOOK-02 (D-100): spells live only in the hands; the spell stays in the book / hand
   syncHandSlots(player);
   return c.quickbar;
 }
@@ -91,12 +92,14 @@ const NOT_BAR_KINDS = { gear: 1, material: 1, currency: 1, ammo: 1 };
 export function assign(player, defs, slot, id) {
   const d = defs[id];
   if (!d || slot < 0 || slot >= QB_SLOTS || NOT_BAR_KINDS[d.kind]) return false;
+  if (d.kind === 'spell' && slot >= HAND_SLOTS) return false; // SPELLBOOK-02 (D-100): keys 1-4 take potions / consumables only
   const qb = ensureQuickbar(player, defs), c = player.components;
   if (slot < HAND_SLOTS) {
     const es = d.equip && d.equip.slot, inv = c.inventory, eq = c.equipment;
-    if (!inv || !eq || !(slot === LMB ? (es === 'main' || es === 'ranged') : es === 'off')) return false;
-    if (eq[es] !== id && !(d.kind === 'spell' ? c.spellbook && c.spellbook.learned[id] && equipSpell(inv, eq, defs, id) : equip(inv, eq, defs, id))) return false; // SPELLBOOK-01: spells come from the book
-    if (es === 'main') eq.set = 'melee'; else if (es === 'ranged') eq.set = 'ranged';
+    const sp = d.kind === 'spell', hand = slot === LMB ? 'main' : 'off';
+    if (!inv || !eq || !(sp || (slot === LMB ? (es === 'main' || es === 'ranged') : es === 'off'))) return false;
+    if (sp ? !(c.spellbook && c.spellbook.learned[id] && (eq[hand] === id || equipSpell(inv, eq, defs, id, hand))) : (eq[es] !== id && !equip(inv, eq, defs, id))) return false; // SPELLBOOK-01/02: spells come from the book, into either hand
+    if (sp) eq.set = 'melee'; else if (es === 'main') eq.set = 'melee'; else if (es === 'ranged') eq.set = 'ranged';
     for (let i = HAND_SLOTS; i < QB_SLOTS; i++) if (qb[i] === id) qb[i] = null;
     c.quickbarSeen[id] = 1;
     syncHandSlots(player);

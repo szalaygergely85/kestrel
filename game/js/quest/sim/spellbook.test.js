@@ -4,7 +4,7 @@ import itemsMod from '../../../../design/items.js';
 import { ensureInventory, addItem, countOf } from './inventory.js';
 import { ensureEquipment, migrateEquipment, syncHands } from './equipment.js';
 import { createQuickbar, assign, ensureQuickbar } from './quickbar.js';
-import { migrateSpellbook, learnAndEquip, syncSpellbook, isLearned, learnedIds, tierOf } from './spellbook.js';
+import { migrateSpellbook, learnSpell, learnAndEquip, syncSpellbook, isLearned, learnedIds, tierOf } from './spellbook.js';
 itemsMod;
 const defs = globalThis.ASSETS.items.defs, FB = 'spell.fireball';
 const mk = (start) => { const p = { components: { health: { hp: 10, max: 10 } } }; ensureInventory(p, start); ensureEquipment(p); return p; };
@@ -42,7 +42,31 @@ t('quick bar: hand assign needs a learned spell, casts via the off hand; shield 
   assert.equal(assign(p, defs, 1, 'shield'), true);
   assert.equal(countOf(p.components.inventory, FB), 0, 'spell not dropped into the pack');
   assert.ok(isLearned(p, FB), 'still in the book');
-  const qb = createQuickbar(defs); assign(p, defs, 2, FB);
-  assert.equal(qb.press(p, 0), 'shield_on'); assert.equal(p.components.equipment.off, FB);
+});
+t('SPELLBOOK-02: quick-bar keys refuse a spell (hands only)', () => {
+  const p = mk({ pack: [], left: null, right: null }); learnAndEquip(p, defs, FB); ensureQuickbar(p, defs);
+  for (let s = 2; s < 6; s++) assert.equal(assign(p, defs, s, FB), false);
+  assert.ok(p.components.quickbar.slice(2).every((x) => x === null));
+});
+t('SPELLBOOK-02: old save with a spell on the bar -> cleared, spell kept in book and hand', () => {
+  const p = mk({ pack: [], left: null, right: null }); learnAndEquip(p, defs, FB);
+  p.components.quickbar = [null, null, FB, 'potion.hp', null, null]; p.components.quickbarSeen = {};
+  ensureQuickbar(p, defs);
+  assert.equal(p.components.quickbar[2], null); assert.equal(p.components.quickbar[3], 'potion.hp');
+  assert.ok(isLearned(p, FB)); assert.equal(p.components.equipment.off, FB);
+  p.components.quickbar = [null, null, null, null]; p.components.quickbar[1] = FB; // old 4-slot shape
+  ensureQuickbar(p, defs); assert.ok(p.components.quickbar.slice(2).every((x) => x !== FB)); assert.ok(isLearned(p, FB));
+});
+t('SPELLBOOK-02: right hand (slot 1) / left hand (slot 0, sword back to the pack); cast hand derived', () => {
+  const p = mk({ pack: [{ id: 'sword', n: 1 }], left: null, right: null });
+  learnSpell(p, FB); ensureQuickbar(p, defs);
+  assert.equal(assign(p, defs, 1, FB), true); assert.equal(p.components.equipment.off, FB);
+  p.components.equipment.main = 'sword'; p.components.inventory.slots[0].id = null;
+  assert.equal(assign(p, defs, 0, FB), true);
+  const e = p.components.equipment; assert.equal(e.main, FB); assert.equal(e.off, null, 'one hand per spell');
+  assert.equal(countOf(p.components.inventory, 'sword'), 1, 'sword returned to the pack');
+  syncHands(p.components.inventory, e); assert.equal(p.components.inventory.left, FB);
+  assert.equal(assign(p, defs, 1, FB), true); assert.equal(e.main, null); assert.equal(e.off, FB);
+  syncHands(p.components.inventory, e); assert.equal(p.components.inventory.right, FB);
 });
 console.log('spellbook: ' + n + ' passed');

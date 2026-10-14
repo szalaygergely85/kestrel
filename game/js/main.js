@@ -1717,7 +1717,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       invView = itemDefs && window.ASSETS.uiStyle.inventory ? createInventoryScreen({
         style: window.ASSETS.uiStyle.inventory, tabOpens: false, items: window.ASSETS.items, rgb: assets.palette.rgb, toast: toasts,
         inventoryOf: () => (playerHandle && playerHandle.data.components.inventory) || null,
-        spellbook: itemDefs ? { ids: () => (playerHandle ? learnedIds(playerHandle.data) : []), tierOf: (id) => tierOf(playerHandle.data, id), equip: (id) => qbAssign(playerHandle.data, itemDefs, 1, id), assign: (n, id) => (fbOn || !FB_LOCKED_IDS[id]) && qbAssign(playerHandle.data, itemDefs, n + HAND_SLOTS, id) } : undefined, // SPELLBOOK-01
+        spellbook: itemDefs ? { ids: () => (playerHandle ? learnedIds(playerHandle.data) : []), tierOf: (id) => tierOf(playerHandle.data, id), equip: (id, hand) => qbAssign(playerHandle.data, itemDefs, hand === 'left' ? 0 : 1, id) } : undefined, // SPELLBOOK-01/02: spells only in the hands
         slotLockText: () => 'Locked - learn fire first', // OB-156
         isSlotDisabled: (i) => { if (fbOn || !playerHandle) return false; const inv = playerHandle.data.components.inventory, sl = inv && inv.slots[i]; return !!(sl && sl.id && FB_LOCKED_IDS[sl.id]); }, // FB-01: spell + mana potion cells show as locked until unlocked (Items + Character tabs)
         healthOf: () => (playerHandle && playerHandle.data.components.health) || null,

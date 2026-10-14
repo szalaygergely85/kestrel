@@ -141,14 +141,15 @@ for (const k of ['KeyI', 'KeyC', 'Tab']) {
 // ---- SPELLBOOK-01: B opens the spellbook page; learned spells only ----
 {
   const learned = [], bar = [];
-  const r = rig({ spellbook: { ids: () => learned, tierOf: () => 1, equip: (id) => { bar.push(['hand', id]); return true; }, assign: (n, id) => { bar.push([n, id]); return true; } } });
+  const r = rig({ spellbook: { ids: () => learned, tierOf: () => 1, equip: (id, hand) => { bar.push([hand, id]); return true; } } });
   r.step('KeyI'); r.step('KeyB');
   ok('spellbook page: empty book says so', /SPELLBOOK/.test(r.draw()) && /No spells learned/.test(r.draw()) && !/Fireball/.test(r.draw()));
   learned.push('spell.fireball');
   const t = r.draw();
   ok('spellbook page lists name, tier, mana, blurb', /Fireball {3}Tier 1/.test(t) && /Mana 5 . 10/.test(t) && /Tap to throw/.test(t));
-  r.step('Digit2'); r.step('KeyE');
-  ok('spellbook: 1-4 assigns to the bar, E to the hand', JSON.stringify(bar) === JSON.stringify([[1, 'spell.fireball'], ['hand', 'spell.fireball']]));
+  r.step('Digit2'); r.step('KeyE'); r.step('KeyQ');
+  ok('spellbook (D-100): digits do nothing, E = right hand, Q = left hand', JSON.stringify(bar) === JSON.stringify([['right', 'spell.fireball'], ['left', 'spell.fireball']]));
+  ok('spellbook: hoverItemId is the selected spell (drag source)', r.view.hoverItemId === 'spell.fireball');
   r.step('KeyB'); ok('B again returns to the pack', /PACK/.test(r.draw()));
 }
 if (global.gc) {
