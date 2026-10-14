@@ -1131,3 +1131,5 @@ director.replaceAreas (diff by area id, off-screen-first then forced despawn, sp
 
 ### ED-QUEST-07b (kestrel-1, 2026-10-15) -> po-review
 Editor quest/dialogue edits (debounced, unsaved) go over BroadcastChannel 'kestrel-quest-patch' (tools/editor/quest/liveSend.js, hooked in questPanel redraw) -> game/js/quest/questPatchRecv.js (main.js, aiDevRun only): book.patchText swaps title/returnText/objective text, dialogue table re-generated + recompiled; memory-only (save equal, asserted). Tests questPatchRecv + liveSend PASS; verify-edq-07 9520 PASS (patch send step); game-tab re-talk not browser-checked.
+### ED-QUEST-05-FIX (kestrel-2, 2026-10-15) -> po-review
+buildLintCtx now feeds floorAt (groundAt), slope-test walkable (no nav grid in editor), and support (structure tops via getMesh) so R5/R12 fire live; wire.test roof/floating/ground cases PASS, check-deps OK, verify-edq-05 9600 PASS.

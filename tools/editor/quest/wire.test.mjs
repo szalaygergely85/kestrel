@@ -19,6 +19,17 @@ assert.deepEqual(liveLint(m, null, ctx), []);
 // a giver that is an object is flagged with a giver target
 const bad = { ...q, raw: { ...q.raw, giver: { ...q.raw.giver, npc: 'crate' } }, giver: 'crate' };
 assert.ok(liveLint({ quests: [bad] }, bad, ctx).some((x) => x.target.kind === 'giver'));
+// ED-QUEST-05-FIX: R5/R12 live from floorAt + structure tops + slope walkable. Fixture: flat ground z=0, a roof mesh (top z=2.6) over x 20..24.
+const roofMesh = { pos: [0, 0, 0, 4, 0, 2.6, 4, 4, 2.6, 0, 4, 0] };
+const rworld = { entities: [{ id: 'hutman', type: 'npc', x: 22, y: 22, z: 2.2, components: { dialogue: {} } }, { id: 'sky', type: 'npc', x: 40, y: 40, z: 3, components: { dialogue: {} } }, { id: 'okman', type: 'npc', x: 60, y: 60, z: 0, components: { dialogue: {} } }], structures: [{ id: 'hut', mesh: 'hutRoof', origin: { x: 20, y: 20, z: 0 } }] };
+const rctx = buildLintCtx({ world: rworld, itemDefs: {}, names: makeNames({}), floorAt: () => 0, getMesh: (k) => (k === 'hutRoof' ? roofMesh : null) });
+assert.equal(typeof rctx.walkable, 'function'); assert.equal(typeof rctx.support, 'function');
+assert.ok(rctx.support('hutman').floorAbove > 0, 'roof top lies above the base'); assert.equal(rctx.support('okman').floorAbove, null);
+const withGiver = (id) => ({ ...q, raw: { ...q.raw, giver: { ...q.raw.giver, npc: id, turnIn: id } }, giver: id });
+const msgs = (id) => { const b = withGiver(id); return liveLint({ quests: [b] }, b, rctx); };
+assert.ok(msgs('hutman').some((x) => x.rule === 'R12'), 'roof target: R12 in the panel list: ' + JSON.stringify(msgs('hutman').map((x) => x.rule)));
+assert.ok(msgs('sky').some((x) => x.rule === 'R5' || x.rule === 'R12'), 'floating giver flagged');
+assert.ok(!msgs('okman').some((x) => x.rule === 'R5' || x.rule === 'R12'), 'ground giver clean');
 // presets + URL round trip through the game's parser
 const opts = presetOptions(q); assert.equal(opts[0].value, 'notStarted'); assert.equal(opts.at(-1).value, 'readyToReturn');
 for (const o of opts) {

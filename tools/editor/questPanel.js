@@ -96,7 +96,7 @@ export async function mountQuestPanel(root, opts) {
   function lintBox(q) {
     const box = el('div', 'q-lint'); box.id = 'quest-lint';
     let msgs = [];
-    try { msgs = liveLint(model, q, buildLintCtx({ world: getWorld(), itemDefs, names, floorAt, sites })); } catch (e) { msgs = [{ rule: 'R0', severity: 'warn', text: 'Lint failed: ' + (e && e.message), target: { kind: 'field', id: 'title' } }]; }
+    try { msgs = liveLint(model, q, buildLintCtx({ world: getWorld(), itemDefs, names, floorAt, sites, getMesh: opts.getMesh })); } catch (e) { msgs = [{ rule: 'R0', severity: 'warn', text: 'Lint failed: ' + (e && e.message), target: { kind: 'field', id: 'title' } }]; }
     box.append(el('b', null, msgs.length ? 'Problems (' + msgs.length + ')' : 'No problems'));
     for (const m of msgs) {
       const row = el('div', 'q-lint-row ' + m.severity); row.dataset.rule = m.rule;
