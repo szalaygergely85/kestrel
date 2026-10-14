@@ -71,6 +71,7 @@ export function createDialogueCtl(opt) {
     /** true while the box is open and for the rest of the step in which it closed. */
     locked: false,
     get open() { return runner.state !== 'idle' && runner.state !== 'ended'; },
+    get speaker() { return npcId; }, // ANIM-LOOKAT-01 AC3: entity id of the NPC being talked to (null for object offers)
     _closing: false,
     escGrace: createEscGrace(), // OB-049: Esc under pointer lock closes the box only; main.js keeps pause down while .active
 
