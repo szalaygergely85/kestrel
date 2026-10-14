@@ -1,5 +1,20 @@
 # PC-B queue
 
+## Editor: quests, foliage brush, AI forms, logic blocks (owner 2026-10-14, D-092) (PC-A main session)
+Part of D-090 stage 3 (EDITOR-PATH-01 is split into these). Order: ED-FOLIAGE and ED-QUEST start right after the animal-legs work (D-091); ED-AI and ED-LOGIC after that. Each starts with its note/PO step. Editor = `tools/editor/` (grassBrush.js, groupOps, commands/undo, autosave, livepatch); content = `content/quests`, `dialogue`, `beasts`, `life`, `masks`, `grassmask`. Engine parts end in arch-review on PC-A.
+
+| ID | Slot | What (ACs in its note) | Deps | Status |
+|---|---|---|---|---|
+| ED-FOLIAGE-NOTE | 5th agent (architect opus) | Foliage brush on top of grassBrush.js: big species (trees/rocks/logs) -> real placements with ids + colliders, small decor -> paints the ENV-01 decor/biome mask; brush size/falloff/density/erase, snap to ground always (OB-155), per-zone MB/triangle budget meter (WMP-08 caps), undo, save format. Split <= 1 d. | ENV-01b mask | ARCH-NOTE NEEDED |
+| ED-FOLIAGE-01..n | kestrel-1 (editor) + kestrel-3 (mask/bake) | per the note; owner try: paint a forest edge + flower glade, check the budget meter and that nothing floats. | note | todo |
+| ED-QUEST-PO | PO (sonnet) | Story rows + ACs: quest panel (list, flow giver -> objectives -> return, Accept/Exit, reward), pick giver/return NPC and objective targets in the 3D view, markers + target areas drawn, live lint (OB-156 rule, D-082/D-087 givers, reachable ground, no raw ids), dialogue editing, "play from here" with the quest state preset. | QFIX-S2 lint rules | todo |
+| ED-QUEST-01..n | kestrel-1 + kestrel-4 (lint/validators) | per the PO rows; owner try: build one side quest end to end in the editor and play it. | ED-QUEST-PO | todo |
+| ED-AI-PO | PO (sonnet) | Rows + ACs: archetype form (38.64 data: notice/aggro/leash/speeds/role/attacks) with sliders + live patch, spawn-area painting (type, count, respawn, day/night), live test (drop a pack, state labels over heads). No code authoring. | BEAST-03b/04/05 | todo |
+| ED-AI-01..n | kestrel-1 + kestrel-3 | per the PO rows; validators for archetype data; same result every run kept. | ED-AI-PO | todo |
+| ED-LOGIC-NOTE | 5th agent (architect opus) | "Logic blocks" (When -> If -> Do) as content data on the existing trigger + gameHooks events: event/condition/action vocabulary, a small deterministic interpreter, save-safe state, validation, limits; list editor first, node-graph view later on the SAME data. Split <= 1 d. | none | ARCH-NOTE NEEDED |
+| ED-LOGIC-01..n | kestrel-3 (interpreter) + kestrel-1 (editor list UI) | per the note; first use: a gate that closes + 3 goblins spawn when the player enters an area with quest X active. | note | todo |
+| ED-LOGIC-GRAPH (PARKED) | later | Node-graph (blueprint-style) view over the same logic data. | ED-LOGIC-01..n | parked |
+
 ## Animal legs: A now, B rig, C ASAP (owner 2026-10-14, D-091) (PC-A main session)
 Source: `design/preview/animal-look-options.html` + `design/animal-look-options.md`. Priority (owner: "reach C as soon as possible"): start right after the QFIX blockers (S3, S4, S6), ahead of ENV, NAV-LAYERS and the rest of D-090 stage 2. PC-A architect is writing the note now (38.x "Voxel knees + runtime leg solve").
 
