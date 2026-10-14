@@ -30,7 +30,8 @@ export const RULES = {
   // R1 [OB-131/143] ctx.floating = [{id, kind:'prop'|'tree'|'scatter', x, y, gap}]
   R1: (c) => (c.floating || []).filter((p) => p.gap > MAX_FLOAT).map((p) => F('R1', p.id, p.x, p.y, `${p.kind} floats ${p.gap} m above the ground (> ${MAX_FLOAT})`)),
   // R2 [OB-132] ctx.entities = [{id, x, y, z, components}]
-  R2: (c) => c.entities.filter((e) => e.components?.sprite).map((e) => F('R2', e.id, e.x, e.y, 'has components.sprite (' + (e.components.sprite.model || '?') + '): use a voxel model')),
+  // owner 2026-10-14 (OB-167): the no-sprite rule is about ITEMS/props; fire + flame effects stay animated sprites
+  R2: (c) => c.entities.filter((e) => e.components?.sprite && !/fire|flame/i.test(e.components.sprite.model || e.id || '')).map((e) => F('R2', e.id, e.x, e.y, 'has components.sprite (' + (e.components.sprite.model || '?') + '): use a voxel model')),
   // R3 [OB-137] ctx.texts = [{where, text}], ctx.quests, ctx.itemDefs, ctx.labelOf
   R3: (c) => {
     const out = [];

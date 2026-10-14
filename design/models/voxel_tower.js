@@ -1327,7 +1327,7 @@
   }
   function sq(v) { return v * v; }
   var gBF = buildBurnerFire();
-  A.voxelModels.burnerFire = {
+  var burnerFireVoxelUnused = { // OB-167 (owner 2026-10-14): fire stays the animated sprite; this voxel flame is NOT registered
     name: 'burnerFire',
     desc: 'OB-132b voxel burner fire: emissive white-yellow bed, orange body, leaning flame tongues with tips; the upper ' +
           'parts sway in the `burn` clip. Replaces the burnerFire billboard (same level prop, same anchor, z 1.05).',
@@ -1381,7 +1381,7 @@
   // ===================================================================================================================
   var TARGETS = { boulder: ['boulder'], rubble0: ['rubble', 0], rubble1: ['rubble', 1], rubble2: ['rubble', 2],
                   canvasHeap: ['canvasHeap'], gondola: ['gondola'], strut: ['strut'], envelopeHeap: ['envelopeHeap'],
-                  relay: ['relay'], burner: ['burner'], ropeTether: ['ropeTether'], burnerFire: ['burnerFire'], rigging: ['rigging'] };
+                  relay: ['relay'], burner: ['burner'], ropeTether: ['ropeTether'], rigging: ['rigging'] };
   A.voxelModels.batch2 = Object.keys(TARGETS);
   A.voxelModels.attachTower = function attachTower() {
     var P = A.palette, DP = A.detailPass, M = A.models, done = [], n, t, def, vox, k, ok;

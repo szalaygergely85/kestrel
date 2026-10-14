@@ -1,4 +1,4 @@
-// OB-132b: the tower level (spawned inside world_m1) has no sprite component left; flame props are baked / voxel.
+// OB-132b: the tower level (spawned inside world_m1) has no ITEM/prop sprite left. Owner 2026-10-14 (OB-167): fire + flame effects stay animated sprites.
 import assert from 'node:assert/strict';
 await import('../../../../design/palette.js');
 await import('../../../../design/detail-pass.js');
@@ -14,10 +14,11 @@ let towers = 0, voxels = 0;
 w.forEachEntity((e) => {
   if (!String(e.id).startsWith('tower.')) return;
   towers++;
-  assert.ok(!(e.components && e.components.sprite), 'sprite left on ' + e.id);
+  const fx = /fire|flame/i.test((e.components && e.components.sprite && e.components.sprite.model) || e.id);
+  assert.ok(fx || !(e.components && e.components.sprite), 'sprite left on ' + e.id);
   if (e.components && e.components.voxel) voxels++;
 });
-assert.ok(towers >= 25 && voxels === towers, 'tower entities ' + towers + ' voxel ' + voxels);
-for (const id of ['tower.burnerFire', 'tower.rigging', 'tower.gondola', 'tower.pallet']) assert.ok(w.entity(id) && w.entity(id).components.voxel, id + ' is voxel');
-for (const id of ['tower.lampFlame', 'tower.keeperLampFlame', 'tower.stairLampFlame', 'tower.swordLampFlame']) assert.ok(!w.entity(id), id + ' removed (flame baked into the lamp voxel)');
+assert.ok(towers >= 25 && voxels === towers - 5, 'tower entities (5 fire sprites, OB-167) ' + towers + ' voxel ' + voxels);
+for (const id of ['tower.gondola', 'tower.pallet']) assert.ok(w.entity(id) && w.entity(id).components.voxel, id + ' is voxel');
+for (const id of ['tower.burnerFire', 'tower.lampFlame', 'tower.keeperLampFlame', 'tower.stairLampFlame', 'tower.swordLampFlame']) assert.ok(w.entity(id) && w.entity(id).components.sprite, id + ' is an animated fire sprite (OB-167)');
 console.log('towerNoSprites ok', towers, voxels);

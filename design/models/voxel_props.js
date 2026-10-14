@@ -109,8 +109,7 @@
   };
 
   var MATS = { R: 'brass_light', H: 'brass_hot', b: 'brass_dark', i: 'iron_light', d: 'iron_dark' };
-  var LANTERN_MATS = { R: 'brass_light', H: 'brass_hot', b: 'brass_dark', i: 'iron_light', d: 'iron_dark', W: 'brass_glint',
-                       N: 'ember_core', G: 'ember_glow', J: 'flame_tip' };   // OB-132b: the flame is baked into the cage (lamp part)
+  var LANTERN_MATS = { R: 'brass_light', H: 'brass_hot', b: 'brass_dark', i: 'iron_light', d: 'iron_dark', W: 'brass_glint' };
 
   // ===================================================================================================================
   // 2. LEVER  15 x 8 x 22 voxels at 0.05 m = 0.75 m wide x 0.40 m deep x 1.10 m tall. Parts (15.3 item 3): plate (root,
@@ -242,14 +241,6 @@
   var Z3 = ['.bbbbbb.', 'bb....bb', 'b......b', 'b..dd..b', 'b..dd..b', 'b......b', 'bb....bb', '.bbbbbb.'];
   var Z4 = ['.R....R.', 'RR....RR', e, '...dd...', '...dd...', e, 'RR....RR', '.R....R.'];
   var ZP = ['.R....R.', 'RR....RR', e, e, e, e, 'RR....RR', '.R....R.'];
-  // OB-132b: cage layer with a flame stub in the centre (x3..4). ZF('NN') = 2x2 (rows y3+y4), ZF('GG',1) = rows y3 only,
-  // ZF('J',2) = one voxel. The flame sits in the lamp part: it leaves with the lamp (clip empty) and is lit by lights.lanternHook.
-  function ZF(c, n) {
-    var r = ZP.slice(), a = '...' + c + '........'.slice(0, 5 - c.length);
-    r[3] = a;
-    if (!n) r[4] = a;
-    return r;
-  }
   var Z10 = ['.bbbbbb.', 'bb....bb', 'b......b', 'b......b', 'b......b', 'b......b', 'bb....bb', '.bbbbbb.'];
   var Z11 = ['.RRRRRR.', 'RRbbbbRR', 'RbbbbbbR', 'RbbbbbbR', 'RbbbbbbR', 'RbbbbbbR', 'RRbbbbRR', '.RRRRRR.'];
   var Z12 = [e, e, '...RR...', '.iRRRRi.', '.iRRRRi.', '...RR...', e, e];
@@ -268,11 +259,11 @@
     /* z2  */ cat(Z2, NONE5),
     /* z3  */ cat(Z3, NONE5),
     /* z4  */ cat(Z4, NONE5),
-    /* z5  */ cat(ZF('NN'), NONE5),   // OB-132b: baked flame (was the lampFlame billboard): white core, glow, tip
-    /* z6  */ cat(ZF('NN'), NONE5),
-    /* z7  */ cat(ZF('GG'), NONE5),
-    /* z8  */ cat(ZF('GG', 1), NONE5),
-    /* z9  */ cat(ZF('J', 2), NONE5),
+    /* z5  */ cat(ZP, NONE5),
+    /* z6  */ cat(ZP, NONE5),
+    /* z7  */ cat(ZP, NONE5),
+    /* z8  */ cat(ZP, NONE5),
+    /* z9  */ cat(ZP, NONE5),
     /* z10 */ cat(Z10, [e, e, e, e, PL0]),
     /* z11 */ cat(Z11, [e, e, e, e, PLH]),
     /* z12 */ cat(Z12, [e, e, e, e, PLB]),
