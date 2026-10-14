@@ -19,7 +19,7 @@ const DEF = {
   choices: { firstRow: 7, max: 3, markerCol: 1, numberCol: 3, textCol: 6, bandFrom: 1, bandTo: 94,
     number: { fg: 'uiDim', focusFg: 'brassLight' }, normal: { fg: 'uiText' },
     focus: { fg: 'gold', marker: '>', markerFg: 'gold' }, seen: { fg: 'uiHint' }, disabled: { fg: 'uiDim', suffix: ' (locked)' } },
-  keyHints: { fg: 'uiDim', keyFg: 'gold', text: 'E: next   Up/Down: choose' },
+  keyHints: { fg: 'uiDim', keyFg: 'gold', text: 'E: next   Up/Down: choose   Q: close' },
 };
 // Last-resort colours when neither the palette nor the key resolves.
 const FB = { brass: [201, 160, 74], brassLight: [240, 210, 122], brassHot: [255, 240, 180], heroGreen: [79, 214, 106], uiText: [232, 226, 208],
@@ -78,9 +78,10 @@ export function createDialogueView(opt = {}) {
   const period = num(mo.blink.periodSec, 0.8) > 0 ? num(mo.blink.periodSec, 0.8) : 0.8, duty = num(mo.blink.duty, 0.6);
 
   // Key hints: precomputed text + per-char "is key" flag (the part before each ':'), with / without the choose part.
-  function hintOf(withChoose) {
+  function hintOf(withChoose, accept) {
     let t = typeof kh.text === 'string' ? kh.text : DEF.keyHints.text;
     if (!withChoose) t = t.split('   ').filter((p) => p.indexOf('Up/Down') !== 0).join('   ');
+    if (accept) t = t.replace('E: next', 'E: accept'); // OB-174: quest offer
     const key = new Uint8Array(t.length);
     let k = 1;
     for (let i = 0; i < t.length; i++) {
@@ -90,7 +91,8 @@ export function createDialogueView(opt = {}) {
     }
     return { t, key };
   }
-  const HINT_NEXT = hintOf(false), HINT_CHOOSE = hintOf(true);
+  const HINT_NEXT = hintOf(false), HINT_CHOOSE = hintOf(true), HINT_ACCEPT = hintOf(true, true);
+  const isOffer = (r) => { for (let i = 0; i < r.choiceCount; i++) { const f = r.choiceFlag ? r.choiceFlag(i) : null; if (typeof f === 'string' && /\.accept$/.test(f)) return true; } return false; };
 
   // The typing speed the runner should be created with (style typeOn.cps).
   const cps = num(tx.typeOn.cps, 28) > 0 ? num(tx.typeOn.cps, 28) : 28;
@@ -177,7 +179,7 @@ export function createDialogueView(opt = {}) {
         cx++;
       }
       // key hints (right-aligned, ending left of the `more` marker)
-      const hint = choosing ? HINT_CHOOSE : HINT_NEXT;
+      const hint = choosing ? (isOffer(r) ? HINT_ACCEPT : HINT_CHOOSE) : HINT_NEXT;
       const hy = y1 - 1, markX = x1 - (num(mo.col, 4) | 0) + 1;
       const hx = markX - hint.t.length;
       if (hx > x0 + 2) for (let i = 0; i < hint.t.length; i++) put(hx + i, hy, hint.t.charCodeAt(i), hint.key[i] ? C.hintKey : C.hint, plate);

@@ -155,7 +155,7 @@ export function createDialogueCtl(opt) {
       ctl._jaw(dt);
       if (!ctl.open) { if (ctl.locked && !ctl._closing) ctl.locked = false; return; } // DIALOGUE-LOCK-01: never stay locked without an open box. runner.state is read-only here ('ended' already counts as closed)
       if (lookLocked === false) { ctl.close(); return; }
-      if (input.pressed('Escape')) { ctl.close(); return; }
+      if (input.pressed('Escape') || input.pressed('KeyQ')) { if (input.consumePressed) input.consumePressed(); ctl.close(); return; } // OB-174: Q = close too; the press is used up so it does not toggle lock-on
       let digit = false;
       if (runner.state === 'choosing') {
         if (input.pressed('ArrowUp')) runner.move(-1);

@@ -49,7 +49,9 @@ const kill = (r, n) => { for (let i = 0; i < n; i++) r.feed({ type: 'beast:died'
   toSword(r);
   assert.equal(r.book.statusOf('burl.boars'), 1);
   assert.equal(r.objectiveText(), 'Help Burl with the boars');
+  { const gA = [], gR = [], sA = [], sR = []; r.book.markLists(gA, gR, sA, sR); assert.deepEqual([gA, gR], [['bear'], []], "OB-173: offer pending -> '!' over Burl"); }
   const offer = t.talk(0);
+  { const gA = [], gR = [], sA = [], sR = []; r.book.markLists(gA, gR, sA, sR); assert.deepEqual([gA, gR, sA, sR], [[], [], [], []], "OB-173: accepted -> Burl's '!' is off (no marker of any colour)"); }
   assert.equal(offer[0], "If you're heading west, mind the woods.");
   assert.equal(offer.at(-1), 'Mind their tusks, sky-cub.');
   assert.equal(r.book.statusOf('burl.boars'), 2, 'Accept -> active');

@@ -187,3 +187,12 @@ console.log('dialogueCtl s. route ok');
   c.close(); f.press('Digit2'); c.step(DT, f.input, true);
   assert.equal(f.input.pressed('Digit2'), true, 'AC4: no dialogue open -> the edge stays for the quick bar');
 }
+
+// OB-174: Q closes like Esc and the press is consumed (so lock-on does not also toggle)
+{
+  const f = fake(), c = mk(f); let consumed = 0;
+  f.input.consumePressed = () => { consumed++; };
+  c.openFor('bear'); f.press('KeyQ'); c.step(DT, f.input, true);
+  assert.equal(c.open, false, 'Q closes the box'); assert.equal(consumed, 1, 'Q press consumed');
+  console.log('dialogueCtl OB-174: Q closes + consumed PASS');
+}
