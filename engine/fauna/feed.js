@@ -11,7 +11,7 @@
 // min(drawMax, pool.cap - pool.rawCount - spare) are drawn, so `spare` pool slots stay free for gameplay pushes.
 // Zero allocation after createFaunaFeed. Imports engine/fauna/** + engine/entities/clipPlayer.js only.
 
-import { clipFromW } from '../entities/clipPlayer.js';
+import { clipFromW, clipSetPhase } from '../entities/clipPlayer.js';
 import { createLegDriver } from '../entities/legDriver.js';
 
 export const WILD_DRAW_MAX = 20;
@@ -53,6 +53,7 @@ export function createFaunaFeed(def, slots, opts) {
   const legStamp = new Uint32Array(slots.length);
   const legModel = new Array(slots.length).fill(null);
   let frameNo = 0;
+  const scratch = { clip: -1, frame: 0, tMs: 0 }; // ANIM-C-04b: clipSetPhase target (0 alloc)
 
   function feed(pool, cam) {
     stats.drawn = 0; stats.candidates = 0; stats.legs = 0;
@@ -101,7 +102,7 @@ export function createFaunaFeed(def, slots, opts) {
       }
       if (r >= 0) {
         stats.drawn++;
-        if (driver) legPass(pool, cam, s, si, key, cp, yawDeg, r);
+        if (driver) { if (driver.io) driver.io[3] = yawDeg; legPass(pool, cam, s, si, key, cp, r); } // yaw via the typed io (no boxed double arg)
       }
     }
     if (driver) {
@@ -112,17 +113,25 @@ export function createFaunaFeed(def, slots, opts) {
     return stats.drawn;
   }
   /** Attach (first draw) / update the driver of spawner slot `si`, then hand its LegPose to the pool. Inert without a legRig. */
-  function legPass(pool, cam, s, si, key, cp, yawDeg, r) {
+  function legPass(pool, cam, s, si, key, cp, r) {
     const pm = pool.models.get(key);
     if (!pm || !pm.legRig) return;
     if (legSlot[si] >= 0 && legModel[si] !== pm) { driver.release(legSlot[si]); legSlot[si] = -1; } // model swap
     if (legSlot[si] < 0) { legSlot[si] = driver.attach(pm); legModel[si] = pm; if (legSlot[si] < 0) return; }
     legStamp[si] = frameNo;
     const io = driver.io;
-    io[0] = s.x; io[1] = s.y; io[2] = s.z; io[3] = yawDeg; io[4] = cam.dtMs || 1000 / 60; io[5] = cam.x; io[6] = cam.y;
+    io[0] = s.x; io[1] = s.y; io[2] = s.z; io[4] = cam.dtMs || 1000 / 60; io[5] = cam.x; io[6] = cam.y;
     driver.update(legSlot[si], pm, cp ? cp.clip : -1, ground);
     const pose = driver.poseOf(legSlot[si]);
-    if (pose[0] > 0) { pool.legInstance(r, pose); stats.legs++; }
+    if (pose[0] > 0) {
+      pool.legInstance(r, pose); stats.legs++;
+      // ANIM-C-04b (38.67 Clips): a gait clip's position follows the driver's Phi, so head/tail/bob stay in phase with the solved legs
+      const lr = pm.legRig, ci = cp ? cp.clip : -1;
+      if (ci >= 0 && ci < lr.gaitClip.length && lr.gaitClip[ci] >= 0) {
+        scratch.clip = ci; clipSetPhase(scratch, pm, io[8]);
+        const ins = pool.raw[r]; ins.frame = scratch.frame; ins.tMs = scratch.tMs;
+      }
+    }
   }
   return { feed, stats, drawMax, spare, legDriver: driver };
 }

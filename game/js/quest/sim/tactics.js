@@ -86,8 +86,8 @@ export function tacticsSteer(sim, i, S) {
     if (T.tick % TACT_TUNING.strafeEvery === 0) T.strafeDir[i] = (hashU(T.seed, i, T.tick) & 1) ? 1 : -1;
     o.x = st.x[i] + (-dy / d) * T.strafeDir[i] * TACT_TUNING.strafeM; o.y = st.y[i] + (dx / d) * T.strafeDir[i] * TACT_TUNING.strafeM; o.speed = 0.4; return true;
   }
-  if (role === TACT_CASTER && sim._allyN > 0) { // behind the allies: centroid + norm(centroid - player) * 6
-    const cx = sim._allyX / sim._allyN, cy = sim._allyY / sim._allyN, ax = cx - px, ay = cy - py, al = Math.sqrt(ax * ax + ay * ay) || 1;
+  if (role === TACT_CASTER && sim.sc.allyN > 0) { // behind the allies: centroid + norm(centroid - player) * 6
+    const cx = sim.sc.allyX / sim.sc.allyN, cy = sim.sc.allyY / sim.sc.allyN, ax = cx - px, ay = cy - py, al = Math.sqrt(ax * ax + ay * ay) || 1;
     o.x = cx + (ax / al) * TACT_TUNING.casterBehindM; o.y = cy + (ay / al) * TACT_TUNING.casterBehindM; o.speed = 0.8; return true;
   }
   return false;
@@ -112,5 +112,5 @@ export function tacticsAllies(sim, i) {
     const dx = st.x[k] - st.x[i], dy = st.y[k] - st.y[i];
     if (dx * dx + dy * dy <= r2) { n++; sx += st.x[k]; sy += st.y[k]; }
   }
-  sim._allyN = n; sim._allyX = sx; sim._allyY = sy;
+  sim.sc.allyN = n; sim.sc.allyX = sx; sim.sc.allyY = sy;
 }

@@ -15,6 +15,7 @@ import { FACE_PACKED, KIND_TERRAIN, KIND_MESH, KIND_GRASS } from '../../GBuffer.
 import { SUN_N_SHIFT, CLOUD_Q_SHIFT } from '../../shadowSun.js';
 import { AO_MAX } from '../../horizonAo.js';
 import { PSH_NEAR } from '../../shadowPoint.js';
+import { GI_SAMPLE_WGSL, giBindingWgsl } from '../../giGpu.js';
 
 export const PSH_MAX_SLOTS = 6;
 
@@ -405,3 +406,13 @@ fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
   return vec4u(bitcast<vec3u>(L), u32(sunlit) | (u32(litCount) << 8u) | (u32(sunN) << SUN_N_SHIFT) | cloudBits);
 }
 `;
+
+// GI-PROBE-05 (arch 38.72): GI variant of the light pass = LIGHT_WGSL with the ambient replaced by the baked probe sample (storage buffer
+// binding 8, after the 8 textures). Built by exact text replacement so LIGHT_WGSL (GI off) stays byte-identical. Twin: lighting.js lightAtScratch.
+function giReplace(src, from, to) { if (!src.includes(from)) throw new Error('light.wgsl GI splice: anchor missing: ' + from); return src.replace(from, to); }
+let giSrc = giReplace(LIGHT_WGSL, '@group(1) @binding(0) var<uniform> u: LightU;', '@group(1) @binding(0) var<uniform> u: LightU;\n' + giBindingWgsl(8) + '\n' + GI_SAMPLE_WGSL);
+giSrc = giReplace(giSrc, '  var litCount = 0;', '  let Lamb = giSample(P.x, P.z, P.y, N.x, N.z, N.y); // engine z-up -> giProbe y-up (lightAtScratch)\n  L = Lamb;\n  var litCount = 0;');
+giSrc = giReplace(giSrc, 'L -= u.ambient * (1.0 - aoF);', 'L -= Lamb * (1.0 - aoF); // GI: AO multiplies the GI ambient part only');
+export const LIGHT_GI_WGSL = giSrc;
+/** Texture slots + the one read-only storage buffer of the GI light pipeline (WgGiBuffer, wg/giUpload.js). */
+export const LIGHT_GI_BUFFERS = Object.freeze(['read']);

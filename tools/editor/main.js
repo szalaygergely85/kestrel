@@ -187,7 +187,7 @@ async function openQuestsTab() {
   try {
     const qp = await import('./questPanel.js'), fl = await import('./quest/flow.js');
     const A = window.ASSETS || {}, itemDefs = (A.items && A.items.defs) || {};
-    questPanelHandle = await qp.mountQuestPanel(root, { names: fl.makeNames({ itemDefs }), itemDefs, loadFiles: () => qp.fetchQuestFiles(), loadDialogueFiles: () => qp.fetchDialogueFiles(), write: qp.downloadWrite, getWorld: () => assets.world(doc.worldId), floorAt: (x, y) => world.floorAt(x, y), onMarkers: () => frame.markDirty(),
+    questPanelHandle = await qp.mountQuestPanel(root, { names: fl.makeNames({ itemDefs }), itemDefs, loadFiles: () => qp.fetchQuestFiles(), loadDialogueFiles: () => qp.fetchDialogueFiles(), write: qp.downloadWrite, getWorld: () => assets.world(doc.worldId), floorAt: (x, y) => world.floorAt(x, y), getMesh: (k) => assets.mesh(k), onMarkers: () => frame.markDirty(),
       worldId: doc.worldId, // ED-QUEST-WIRE: applyPick needs model + worldId (areas.json world field)
       saveWorld: () => { const f = doc.files.get(fileKey('world', doc.worldId)); if (f) { f.dirty = true; saveFile(f).then(() => refreshIoStatus(), (e) => flash('world save failed: ' + (e && e.message))); } }, // 03b: area-only zones land in the world json
       getCamGround: () => ({ x: cam.x, y: cam.y, z: world.floorAt(cam.x, cam.y) }), // 07: Play from here
@@ -634,6 +634,7 @@ const foliageToolbarEl = document.getElementById('foliage-toolbar');
 const flEl = (id) => document.getElementById(id);
 async function loadFoliageData() {
   try { fl.json = await (await fetch('../../content/editor/foliage.json')).json(); fl.st = FP.createFoliageState(fl.json); } catch { fl.json = null; }
+  FB.configureFoliageCap(fl.json);
   try { // quest files -> externalRefs so erase refuses quest-referenced placements
     const base = '../../content/quests/', idx = await (await fetch(base + 'index.json')).json(), texts = {};
     const names = [...(idx.packs || []).map((n) => `${n}/pack.json`), ...(idx.legacy || []).map((n) => `${n}.quest.json`)];
@@ -669,6 +670,7 @@ function updateFoliageToolbar() {
   flEl('fl-radius').nextElementSibling.textContent = `${fl.st.radius} m`;
   flEl('fl-density').nextElementSibling.textContent = `${fl.st.density}/100m2`;
   flEl('fl-status').textContent = fl.json ? `palette "${fl.st.palette}"` : 'content/editor/foliage.json not loaded';
+  if (FB.foliageCapWarning) flEl('fl-status').textContent += ` - ${FB.foliageCapWarning}`;
   updateFoliageMeter();
   frame.markDirty();
 }

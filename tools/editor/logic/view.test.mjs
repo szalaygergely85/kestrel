@@ -28,7 +28,7 @@ assert.ok(refFromPick('quest', {}, world).error);
 const m = loadLogic(dir), f = m.files.get('example.logic.json');
 assert.deepEqual(lintLogic(m, schema), []);
 const refs = buildRefs({ world, areas: { yard: {} }, quests: ['q1'], itemDefs: {} });
-const bad = lintLogic(m, schema, refs);   // example ids do not exist -> R15 errors with a target
+const bad = lintLogic(m, schema, refs).filter((x) => x.target.file === 'example.logic.json'); // 01d: farm.logic.json is real content, not part of this fixture   // example ids do not exist -> R15 errors with a target
 assert.ok(bad.length >= 3 && bad.every((x) => x.rule === 'R15' && x.target.id === 'example.ambush'), JSON.stringify(bad));
 assert.ok(bad.some((x) => x.target.sec === 'do' && x.target.idx >= 0));
 // spawn twice without once + flag loop

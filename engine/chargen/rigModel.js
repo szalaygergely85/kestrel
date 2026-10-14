@@ -55,12 +55,27 @@ export function riggedModelDef(partRig, opts = {}) {
     mounts[name] = { at: m.map((c, a) => c - anchorCells[a] + G[a]), part };
   }
 
+  // legRig (ANIM-IK-01b): opts.legRig = {body, legs:[{upper, lower, footBone, bend}]} -> def.legRig (foot = footBone joint in local cells)
+  let legRig;
+  if (opts.legRig) {
+    legRig = {
+      body: opts.legRig.body, gaits: {}, stand: [],
+      legs: opts.legRig.legs.map((l) => {
+        const b = partRig.boneJoints.find((j) => j.name === l.footBone);
+        if (!b) throw new Error(`riggedModelDef: legRig foot bone "${l.footBone}" is not a bone`);
+        return { upper: l.upper, lower: l.lower, bend: l.bend, foot: b.jointCells.map((c, a) => c - anchorCells[a] + G[a]) };
+      }),
+    };
+  }
+
   return {
     voxel: {
       version: 1, cellM, size, anchor: G.slice(), mats: {}, layers: [], meshOnly: true,
       parts: defParts,
       animations: partRig.clips,
       mounts,
+      ...(legRig ? { legRig } : {}),
+      ...(opts.lookAt ? { lookAt: opts.lookAt } : {}), // ANIM-LOOKAT-01: {part,yawLimitDeg,pitchLimitDeg,hz?}; kit head part = 'head'
       rig: { quads: mesh.quads, pos, nrm: mesh.nrm, mat: mesh.mat, ranges: mesh.ranges, matKeys: partRig.matKeys.slice() },
     },
   };

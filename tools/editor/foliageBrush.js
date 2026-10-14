@@ -17,7 +17,7 @@ const PLACE_KEYS = ['mesh', 'w', 'gapM', 'scale', 'maxSlopeDeg', 'collide', 'sha
 export function validateFoliagePalettes(json, { assets }) {
   const errors = [], fin = v => typeof v === 'number' && Number.isFinite(v);
   if (!json || typeof json !== 'object') return ['foliage: not an object'];
-  for (const k of Object.keys(json)) if (!['version', 'palettes'].includes(k)) errors.push(`foliage.${k}: unknown key`);
+  for (const k of Object.keys(json)) if (!['version', 'triCap', 'palettes'].includes(k)) errors.push(`foliage.${k}: unknown key`);
   if (json.version !== 1) errors.push('foliage.version: must be 1');
   if (!json.palettes || typeof json.palettes !== 'object' || Array.isArray(json.palettes)) return [...errors, 'foliage.palettes: must be an object'];
   for (const [id, pal] of Object.entries(json.palettes)) {

@@ -18,7 +18,7 @@ export const FLAG_STONE_TOLD = 'dlg.bear.stone.told'; // set by Burl's stone tal
 export const PROMPT_STONE = '[E] Hold up the crystal';
 // OB-145: while the wake is blocked the prompt is plain, and E names the missing step (story.md q06, NEEDS WRITER to polish).
 export const PROMPT_LOOK = '[E] Look at the waystone';
-export const HINT_NEED_CRYSTAL = "You need Burl's crystal.", HINT_NEED_WAYSTONE = 'Wake the Waystone by the tower first.', HINT_NEED_TALK = 'Ask Burl about the stone.';
+export const HINT_NEED_CRYSTAL = "The stone stays dark. Burl's crystal might wake it.", HINT_NEED_WAYSTONE = 'Dark. Wake the waystone by the tower first.', HINT_NEED_TALK = 'The stone is cold. Ask Burl about it.';
 export const RADIUS = 2.2;
 // D-080 / OB-146: the first wake of any waystone shows what it unlocked (the task part only when a task waits there).
 export const CARD_BASE = 'Waystone woken: travel (M), heal + save', CARD_TASK = ', new task.';

@@ -39,6 +39,7 @@ import { pointShadowTaps } from './shadowPoint.js';
 import { resolveLook } from './look.js'; // ART-01a (37.18 item 3)
 import { cloudShadeQP } from './cloudShadow.js'; // S8-B2-12c (38.13)
 import { cloudDriftOffset } from './sky.js';
+import { sampleGIBuf } from './giProbe.js'; // GI-PROBE-04
 import { aoTapOcc, aoFactor, aoTapCells, AO_DEFAULTS, AO_MAX } from './horizonAo.js'; // S8-B2-20 (38.17)
 
 // RE-02a: scratch for lightSurfaces' pitched branch (zero allocation per frame).
@@ -169,6 +170,7 @@ export class LightSet {
     // light pass samples for indoor/outdoor (null until a look needs it, set by
     // the game's per-frame roof bind in ART-01b).
     this.timeBuf = new Float64Array(1); // FRAME-ALLOC-01: unboxed time hand-off for updateBuffered
+    this.gi = null; // GI-PROBE-04: a giProbe state (createGIState + field) or null = flat ambient, byte-identical old path
     this.hemi = { on: false, sky: new Float32Array(3), ground: new Float32Array(3), tint: new Float32Array(3), tintK: 0 };
     this.roof = null;
     this.cloud = null; // S8-B2-12c: null | {strength, scale, cover, soft, deckH, seed, wind} (setLook from look.clouds.shadow)
@@ -788,9 +790,18 @@ export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCou
   return lightAtScratch(lights, world, out, idxList, idxCount, skipSun, sunMap);
 }
 /** LIGHT-ALLOC-01: `lightAt` body reading P/N from the lightP/lightN scratch (6 double args would be boxed per call, ~48 B/cell). */
+const giIo = new Float64Array(6), giAmb = new Float32Array(3);
 function lightAtScratch(lights, world, out, idxList, idxCount, skipSun, sunMap) {
   const x = lightP[0], y = lightP[1], z = lightP[2], nx = lightN[0], ny = lightN[1], nz = lightN[2];
-  out[0] = lights.ambient[0]; out[1] = lights.ambient[1]; out[2] = lights.ambient[2];
+  const gi = lights.gi;
+  if (gi != null && gi.on && gi.field != null) {
+    // GI-PROBE-04: sky/bounce ambient from the probe field. Engine z is up, giProbe y is up -> swap y/z.
+    giIo[0] = x; giIo[1] = z; giIo[2] = y; giIo[3] = nx; giIo[4] = nz; giIo[5] = ny;
+    sampleGIBuf(gi, giIo, giAmb);
+    out[0] = giAmb[0]; out[1] = giAmb[1]; out[2] = giAmb[2];
+  } else {
+    out[0] = lights.ambient[0]; out[1] = lights.ambient[1]; out[2] = lights.ambient[2];
+  }
   let litCount = 0;
   const n = idxList ? idxCount : lights.count;
   for (let k = 0; k < n; k++) {
@@ -1301,7 +1312,10 @@ export function lightSurfaces(fb, lights, cam, world) {
         // ME-20c (38.18): baked vertex AO on kind-9 cells. min (not product): both estimate the same ambient visibility, so they never double-darken.
         if (kind[i] === KIND_MESH) { const va = gbuf.vao[i]; aoF = Math.min(aoF, 1 - ao.strength * AO_MAX * (1 - (va < 0 ? 0 : va > 1 ? 1 : va))); }
         const k = 1 - aoF;
-        rgb[o] -= lights.ambient[0] * k; rgb[o + 1] -= lights.ambient[1] * k; rgb[o + 2] -= lights.ambient[2] * k;
+        if (lights.gi != null && lights.gi.on && lights.gi.field != null) { // GI: AO multiplies the GI ambient part only
+          giIo[0] = px; giIo[1] = pz; giIo[2] = py; giIo[3] = nx; giIo[4] = nz; giIo[5] = ny; sampleGIBuf(lights.gi, giIo, giAmb);
+          rgb[o] -= giAmb[0] * k; rgb[o + 1] -= giAmb[1] * k; rgb[o + 2] -= giAmb[2] * k;
+        } else { rgb[o] -= lights.ambient[0] * k; rgb[o + 1] -= lights.ambient[1] * k; rgb[o + 2] -= lights.ambient[2] * k; }
       }
     }
   }

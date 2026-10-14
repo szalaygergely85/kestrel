@@ -7,7 +7,7 @@
 // mesh data and building one BVH per mesh exactly like the old colliders.js did.
 import fs from 'node:fs';
 import { readMeshJSON } from './mesh-file.mjs';
-import { meshFromJSON, makeFrame, PHYSICS, World } from '../engine/index.js';
+import { meshFromJSON, createFrame, PHYSICS, World } from '../engine/index.js';
 import { buildWorldColliders, moveCircleMesh, probeSupport, buildBvhFromMesh, frameMatrix12 } from '../engine/dev.js';
 
 const world = JSON.parse(fs.readFileSync('content/worlds/world_m1.world.json', 'utf8'));
@@ -21,7 +21,7 @@ function setup(strip) {
     if (!strip) return m;
     const c = { ...m }; delete c.collider; delete c.collide; return c;
   };
-  const structs = placed.map((s) => ({ id: s.id, mesh: asset(s.mesh), origin: s.origin, frame: makeFrame(s.origin.x, s.origin.y, s.origin.z, 0, s.yawDeg || 0) }));
+  const structs = placed.map((s) => ({ id: s.id, mesh: asset(s.mesh), origin: s.origin, frame: createFrame(s.origin.x, s.origin.y, s.origin.z, 0, s.yawDeg || 0) }));
   if (!strip) return buildWorldColliders({ structures: structs, assets: { mesh: asset } });
   // old path: one collider (BVH over the render tris) per mesh
   return structs.map((s) => {

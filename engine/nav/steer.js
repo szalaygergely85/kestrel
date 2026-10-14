@@ -36,6 +36,8 @@
 //   *receives* full-strength separation from moving neighbours and can be
 //   nudged out of the way, which is what avoids permanent gap deadlock.
 
+import { LQ } from './NavGrid.js';
+
 const MODE_IDLE = 0;
 const MODE_WAYPOINT = 1;
 const MODE_FLOW = 2;
@@ -67,9 +69,11 @@ function cellWalkable(grid, x, y) {
 
 /**
  * NAV-LAYERS-01c: walkability at (x,y) for an agent at height z on a layered grid. A sheet cell within 1.0 m of z
- * decides (cost 0 = blocked, even if the ground below is open); otherwise the ground cell. Zero allocation.
+ * decides (cost 0 = blocked, even if the ground below is open); otherwise the ground cell. Zero allocation: the query
+ * (x, y, z) is passed in the NavGrid scratch `LQ` so no double is boxed.
  */
-function walkableAtZ(grid, x, y, z) {
+function walkableQ(grid) {
+  const x = LQ[0], y = LQ[1], z = LQ[2];
   const L = grid.layers;
   for (let s = 0; s < L.count; s++) {
     const c = L.cell[s];
@@ -116,7 +120,8 @@ function computeDesired(steer, slot, grid, out) {
     if (!ff) { out.vx = 0; out.vy = 0; out.stopped = true; return; }
     const x = steer.x[slot], y = steer.y[slot];
     const fo = steer._flowOut;
-    ff.dirAt(x, y, fo, steer.z[slot]);
+    if (grid.layers !== null && ff.dirAtQ !== undefined) { LQ[0] = x; LQ[1] = y; LQ[2] = steer.z[slot]; ff.dirAtQ(fo); }
+    else ff.dirAt(x, y, fo, steer.z[slot]);
     if (fo.x === 0 && fo.y === 0) { out.vx = 0; out.vy = 0; out.stopped = true; return; }
 
     // Arrive slowdown (28.2 doesn't pin this down for flow-follow; without
@@ -133,7 +138,8 @@ function computeDesired(steer, slot, grid, out) {
     if (arriveR > 0) {
       const cx = grid.cellX(x), cy = grid.cellY(y);
       if (grid.layers !== null) {
-        const li = grid.locate(x, y, steer.z[slot]);
+        LQ[0] = x; LQ[1] = y; LQ[2] = steer.z[slot];
+        const li = grid.locateQ();
         if (li >= 0) {
           const thresh = (arriveR / grid.layers.finest) * FLOW_STRAIGHT_COST;
           const integ = ff.integ[li];
@@ -476,11 +482,14 @@ export function createSteer(opts) {
         // (a stair link end puts the agent on the next level; the game may overwrite z from supportAt).
         const z = steer.z[i];
         let moved = false;
-        if (walkableAtZ(grid, nx, ny, z)) { steer.x[i] = nx; steer.y[i] = ny; moved = true; }
-        else if (walkableAtZ(grid, nx, oldY, z)) { steer.x[i] = nx; moved = true; }
-        else if (walkableAtZ(grid, oldX, ny, z)) { steer.y[i] = ny; moved = true; }
+        LQ[0] = nx; LQ[1] = ny; LQ[2] = z;
+        if (walkableQ(grid)) { steer.x[i] = nx; steer.y[i] = ny; moved = true; }
+        else { LQ[0] = nx; LQ[1] = oldY;
+          if (walkableQ(grid)) { steer.x[i] = nx; moved = true; }
+          else { LQ[0] = oldX; LQ[1] = ny; if (walkableQ(grid)) { steer.y[i] = ny; moved = true; } } }
         if (moved) {
-          const li = grid.locate(steer.x[i], steer.y[i], z);
+          LQ[0] = steer.x[i]; LQ[1] = steer.y[i]; LQ[2] = z;
+          const li = grid.locateQ();
           if (li >= 0) steer.z[i] = grid.cellZ(li);
         }
       }

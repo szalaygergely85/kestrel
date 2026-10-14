@@ -1,3 +1,9 @@
 {
-  "files": ["example.logic.json"]
+  "files": [
+    "farm.logic.json"
+  ],
+  "examples": [
+    "example.logic.json"
+  ],
+  "props": "props.json"
 }

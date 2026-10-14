@@ -8,6 +8,7 @@ import { loadLevel, isTerrainFloor } from './Level.js';
 import { Terrain } from './Terrain.js';
 import { BandBakeJob, buildNavTile, NavTileFill } from './bandBake.js';
 import { BandCache } from './bandCache.js';
+import { GILoader } from './giLoader.js';
 import { aheadOrder, bestOverlap } from './bandAhead.js';
 import { validateCarpetConfig, buildCarpetClassMap, buildCarpetMask, CarpetMaskJob } from './carpet.js';
 import { scatterTrees, scatterDetail, TreeScatterJob, DetailScatterJob, decorRootCm } from './scatter.js';
@@ -264,6 +265,16 @@ const _rayArg = new Float64Array(7);
 const _raySeg = new Float64Array(6);
 /** Sample point handed to _rayBlocked (module scratch: no boxed double args). */
 const _rayP = new Float64Array(3);
+const _sgIo = new Float64Array(4);
+/** Current DDA cell for _sgF: [cellX, cellY, res, h00, h10, h01, h11] (module scratch: no 10-double arg boxing). */
+const _sgC = new Float64Array(7);
+/** z above the bilinear patch (cell origin cx, cy; size res; corner heights h00 h10 h01 h11) at (x, y, z). */
+function _sgF(x, y, z) {
+  const cx = _sgC[0], cy = _sgC[1], res = _sgC[2], h00 = _sgC[3], h10 = _sgC[4], h01 = _sgC[5], h11 = _sgC[6];
+  let fu = (x - cx) / res, fv = (y - cy) / res;
+  fu = fu < 0 ? 0 : fu > 1 ? 1 : fu; fv = fv < 0 ? 0 : fv > 1 ? 1 : fv;
+  return z - ((h00 * (1 - fu) + h10 * fu) * (1 - fv) + (h01 * (1 - fu) + h11 * fu) * fv);
+}
 const _rayHit = { t: 0, tri: -1, u: 0, v: 0, nx: 0, ny: 0, nz: 0, collider: -1 };
 
 /** scatterDetail + the baked decor masks (job.decor) on the result; opts null = plain scatterDetail (byte-identical, no `decor`). */
@@ -315,7 +326,7 @@ export class World {
     // `null` (unbounded - every world before this story). Content, not
     // state; set once by `World.load` from `def.bounds`.
     this.bounds = null;
-    this.terrainBands = null; this.bandSwitch = { prefetchM: 176, switchM: 112 }; this._bandCur = -1; this._bandPend = -1; this._bandJob = null; this.bandCache = new BandCache(); this._bandKeys = []; this._bandKeysC = []; this._evBand = { from: null, to: null, nav: null }; this._maskJob = null; this._maskBack = null; this.lastSwapMs = 0; this.bandMisses = 0; this._ahead = null; this._zoneKeys = new Map(); this._pinKeys = null; this._aheadOrd = []; this._aheadRects = new Float64Array(4 * 64); this._aheadSrc = []; this._aheadPose = null; this._aheadIdle = -1; this._aheadIdleVer = -1; this.bandId = null; // WS2-01/02
+    this.terrainBands = null; this.bandSwitch = { prefetchM: 176, switchM: 112 }; this._bandCur = -1; this._bandPend = -1; this._bandJob = null; this.bandCache = new BandCache(); this._bandKeys = []; this._bandKeysC = []; this._evBand = { from: null, to: null, nav: null }; this._maskJob = null; this._maskBack = null; this.lastSwapMs = 0; this.bandMisses = 0; this._ahead = null; this._zoneKeys = new Map(); this._pinKeys = null; this._aheadOrd = []; this._aheadRects = new Float64Array(4 * 64); this._aheadSrc = []; this._aheadPose = null; this._aheadIdle = -1; this._aheadIdleVer = -1; this.bandId = null; this.giField = null; this.giVersion = 0; this.giLoader = null; // WS2-01/02; GI-PROBE-03: baked probe field of the current band
     this.aheadLateMax = 0; this.navLate = 0; this._navFill = null; this._navQ = null;
     this.nav = null; this.navTiles = null; // WM-03: live nav tile + {create,maxSlopeDeg,maxStepM,blockedTypes,typeCost} (see setNavTiles)
     this.terrainGrid = null; this._gridPick = { i: 0, j: 0 }; // MAP-10 (38.43): generated zone grid; terrainBands = 2 reusable slot zones
@@ -1298,7 +1309,7 @@ export class World {
         pb.job = BandBakeJob.create(this, z.cx0, z.cy0, z.cw, z.ch, this.terrain.near);
       }
       if (pb.job.step(Math.max(0, msBudget - (now() - t0)))) {
-        const b = pb.job.bundle(); b.key = this._bandKey(pb.k); b.zone = pb.k;
+        const b = pb.job.bundle(); b.key = this._bandKey(pb.k); b.zone = pb.k; b.giId = this.terrainBands[pb.k].id; b.gi = this._giFor(b.giId);
         this.bandCache.put(b, this._bandKey(this._bandCur)); this.bandCache.pin(b.key, true);
         pb.job = null;
       }
@@ -1375,7 +1386,7 @@ export class World {
     const stepped = a.job.step(Math.max(0.2, msBudget - 0.4));
     if (a.job.st.late > this.aheadLateMax) this.aheadLateMax = a.job.st.late; // units started after the budget ran out (deterministic, test asserts <= 1)
     if (!stepped) return true; // 0.4 ms reserve: one 32-cell slice overshoots by ~0.15-0.3 ms
-    const b = a.job.bundle(); b.key = a.key; b.zone = a.i * this.terrainGrid.nj + a.j;
+    const b = a.job.bundle(); b.key = a.key; b.zone = a.i * this.terrainGrid.nj + a.j; b.giId = zoneId(a.i, a.j); b.gi = this._giFor(b.giId);
     this._ahead = null;
     cache.put(b, this._bandKey(this._bandCur), this._bandPend >= 0 ? this._bandKey(this._bandPend) : null);
     if (this._gridPinKeys().has(b.key)) cache.pin(b.key, true);
@@ -1385,7 +1396,30 @@ export class World {
   /** Bundle of the current terrain state as a cache entry (key/zone set by the caller). */
   _currentBundle(key, zone) {
     const col = (id) => { for (let i = 0; i < this.colliders.length; i++) if (this.colliders[i].id === id) return this.colliders[i]; return null; };
-    return { key, zone, near: this.terrain.near, scatter: this.scatter, detail: this.detail, trunks: col('scatter:trunks'), detailCol: col('scatter:detail'), nav: this.nav, classMap: null, bytes: 0, pinned: false, lastUse: 0 };
+    const giId = this.terrainBands ? this.terrainBands[zone].id : null;
+    return { key, zone, giId, gi: this._giFor(giId), near: this.terrain.near, scatter: this.scatter, detail: this.detail, trunks: col('scatter:trunks'), detailCol: col('scatter:detail'), nav: this.nav, classMap: null, bytes: 0, pinned: false, lastUse: 0 };
+  }
+
+  /** GI-PROBE-03: loaded probe field of a zone id, or null (no loader / missing / stale / not yet arrived). */
+  _giFor(id) { return this.giLoader && id ? this.giLoader.get(id) : null; }
+
+  /**
+   * GI-PROBE-03: attaches a GILoader and fetches `.gi.bin` for every authored zone (grid zones load on demand via `loadGIZone`).
+   * Quiet: missing files are the normal case (null, one fetch per zone). Never bakes. Resolves when all requests settled.
+   */
+  loadGI(opts = {}) {
+    const loader = this.giLoader = new GILoader({ ...opts, onLoad: (id, f) => this._giArrived(id, f) });
+    for (const b of this.bandCache.map.values()) if (b.giId && !b.gi) { const f = loader.get(b.giId); if (f) this._giArrived(b.giId, f); }
+    return loader.loadAll(this.terrainBands && !this.terrainGrid ? this.terrainBands.map((z) => z.id) : []);
+  }
+  /** Idle-time fetch of one grid zone's field (e.g. zones in the bake-ahead ring). */
+  loadGIZone(id) { return this.giLoader ? this.giLoader.load(id) : Promise.resolve(null); }
+
+  /** A field arrived after its bundle was cached: attach, re-count the bytes, and flip `giField` when it is the current band. */
+  _giArrived(id, field) {
+    const cur = this._bandCur >= 0 ? this._bandKey(this._bandCur) : null, pend = this._bandPend >= 0 ? this._bandKey(this._bandPend) : null;
+    for (const b of this.bandCache.map.values()) if (b.giId === id && !b.gi) { b.gi = field; this.bandCache.regrow(b, cur, pend); }
+    if (this.bandId === id) { this.giField = field; this.giVersion++; }
   }
 
   /** Stores `b` and pins authored (non-grid) zones. */
@@ -1445,7 +1479,8 @@ export class World {
       this._setCollider('scatter:trunks', hit ? hit.trunks : j.trunks);
       this._setCollider('scatter:detail', hit ? hit.detailCol : j.detailCol);
     }
-    if (!hit) { bundle = { key, zone: to, near: terrain.near, scatter: j.scatter, detail: j.detailSet, decor: (j.detail && j.detail.decor) || null, trunks: j.trunks, detailCol: j.detailCol, nav: j.nav, classMap: null, bytes: 0, pinned: false, lastUse: 0 }; this._cachePut(bundle); }
+    if (!hit) { bundle = { key, zone: to, giId: z.id, gi: this._giFor(z.id), near: terrain.near, scatter: j.scatter, detail: j.detailSet, decor: (j.detail && j.detail.decor) || null, trunks: j.trunks, detailCol: j.detailCol, nav: j.nav, classMap: null, bytes: 0, pinned: false, lastUse: 0 }; this._cachePut(bundle); }
+    this.giField = bundle.gi || null; // GI-PROBE-03: pointer flip (hit or miss path); null = ambient only
     if (this.navTiles) { // WM-03: nav tile swaps with the band (pointer flip; a bundle without one = legacy/cached before setNavTiles -> built once)
       let nv = src.nav;
       if (!nv) { this.navLate++; nv = buildNavTile(this, terrain.near); src.nav = nv; if (bundle) bundle.nav = nv; } // counted fallback (should stay 0 in play)
@@ -1932,6 +1967,117 @@ export class World {
     out.t = bestT;
     out.x = ax + dx * bestT; out.y = ay + dy * bestT; out.z = az + dz * bestT;
     return true;
+  }
+
+  // ---- static-only ray for offline bakes (GI-PROBE-02c) ---------------------
+
+  /**
+   * Caches the terrain height on a regular lattice (node (i,j) at x0 + i*res, y0 + j*res) so `rayStaticFirst` can walk it
+   * with a cell DDA. Without it the DDA runs on a 1 m lattice and reads `groundAtBuf` per corner (slower, same result).
+   * @param {number} x0 @param {number} y0 @param {number} x1 @param {number} y1 @param {number} [res=1]
+   */
+  prepareStaticRays(x0, y0, x1, y1, res = 1) {
+    if (!this.terrain) { this._sg = null; return; }
+    const nx = Math.ceil((x1 - x0) / res) + 2, ny = Math.ceil((y1 - y0) / res) + 2, g = new Float32Array(nx * ny), b = _sgIo;
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { b[0] = x0 + i * res; b[1] = y0 + j * res; this.terrain.groundAtBuf(b); g[j * nx + i] = b[3]; }
+    this._sg = { x0, y0, res, nx, ny, g };
+  }
+
+  /**
+   * First STATIC hit of a ray: terrain heightfield (cell DDA over the `prepareStaticRays` lattice, bilinear per cell) + the
+   * merged trimesh collider BVHs (`raycastCollidersRay`); no dynamic bodies, no props without colliders. Zero alloc.
+   * Terrain is ignored inside a structure footprint (as `raySegmentRay`). io layout (Float64Array(12)):
+   * in: [0..2] origin, [3..5] direction (need not be unit), [6] maxT (in direction units);
+   * out: [7] t, [8..10] surface normal (unit, NOT flipped to face the ray), [11] flags (1 terrain, 2 collider).
+   * @param {Float64Array} io @returns {boolean} true on a hit (out slots filled; untouched on a miss)
+   */
+  rayStaticFirst(io) {
+    const ox = io[0], oy = io[1], oz = io[2], dx = io[3], dy = io[4], dz = io[5];
+    let best = io[6], flags = 0, nx = 0, ny = 0, nz = 1;
+    if (this.terrain) {
+      const sg = this._sg, gg = sg ? sg.g : null, gnx = sg ? sg.nx : 0, gny = sg ? sg.ny : 0, res = sg ? sg.res : 1, ax = sg ? sg.x0 : 0, ay = sg ? sg.y0 : 0;
+      const u0 = (ox - ax) / res, v0 = (oy - ay) / res, du = dx / res, dv = dy / res;
+      let ci = Math.floor(u0), cj = Math.floor(v0);
+      const sx = du > 0 ? 1 : -1, sy = dv > 0 ? 1 : -1;
+      const tdx = du !== 0 ? Math.abs(1 / du) : Infinity, tdy = dv !== 0 ? Math.abs(1 / dv) : Infinity;
+      let tnx = du !== 0 ? ((du > 0 ? ci + 1 : ci) - u0) / du : Infinity, tny = dv !== 0 ? ((dv > 0 ? cj + 1 : cj) - v0) / dv : Infinity;
+      let ta = 0, guard = 0;
+      while (ta < best && guard++ < 100000) {
+        const tb = Math.min(tnx, tny, best);
+        // corner heights of cell (ci, cj)
+        for (let k = 0; k < 4; k++) {
+          const i = ci + (k & 1), j = cj + (k >> 1);
+          if (gg !== null && i >= 0 && j >= 0 && i < gnx && j < gny) _sgC[3 + k] = gg[j * gnx + i];
+          else { this._sgHOut(i, j); _sgC[3 + k] = _sgIo[3]; }
+        }
+        const h00 = _sgC[3], h10 = _sgC[4], h01 = _sgC[5], h11 = _sgC[6];
+        _sgC[0] = ax + ci * res; _sgC[1] = ay + cj * res; _sgC[2] = res; _sgC[3] = h00; _sgC[4] = h10; _sgC[5] = h01; _sgC[6] = h11;
+        const fa = _sgF(ox + dx * ta, oy + dy * ta, oz + dz * ta);
+        let tHit = -1;
+        if (fa < 0) tHit = ta;
+        else if (_sgF(ox + dx * tb, oy + dy * tb, oz + dz * tb) < 0) {
+          let lo = ta, hi = tb;
+          for (let k = 0; k < 14; k++) {
+            const m = 0.5 * (lo + hi);
+            if (_sgF(ox + dx * m, oy + dy * m, oz + dz * m) < 0) hi = m; else lo = m;
+          }
+          tHit = hi;
+        }
+        if (tHit >= 0) {
+          const hx = ox + dx * tHit, hy = oy + dy * tHit;
+          if (!(_sgIo[0] = hx, _sgIo[1] = hy, this._inFootprint())) {
+            const fu = Math.min(1, Math.max(0, (hx - (ax + ci * res)) / res)), fv = Math.min(1, Math.max(0, (hy - (ay + cj * res)) / res));
+            const gx = ((h10 - h00) * (1 - fv) + (h11 - h01) * fv) / res, gy = ((h01 - h00) * (1 - fu) + (h11 - h10) * fu) / res;
+            const il = 1 / Math.sqrt(gx * gx + gy * gy + 1);
+            best = tHit; flags = 1; nx = -gx * il; ny = -gy * il; nz = il;
+            break;
+          }
+          // Below-ground hit inside a structure footprint (terrain ignored there): the first point past the footprint edge that is
+          // still below ground counts (as raySegmentRay's march). 8 samples along the rest of the cell, 8 bisections on the edge.
+          let prev = tHit, found = -1;
+          for (let k = 1; k <= 8 && found < 0; k++) {
+            const t = tHit + (tb - tHit) * k / 8;
+            if (_sgF(ox + dx * t, oy + dy * t, oz + dz * t) >= 0) break;
+            if (!(_sgIo[0] = ox + dx * t, _sgIo[1] = oy + dy * t, this._inFootprint())) found = t; else prev = t;
+          }
+          if (found >= 0) {
+            let lo = prev, hi = found;
+            for (let k = 0; k < 8; k++) { const m = 0.5 * (lo + hi); if ((_sgIo[0] = ox + dx * m, _sgIo[1] = oy + dy * m, this._inFootprint())) lo = m; else hi = m; }
+            const hx2 = ox + dx * hi, hy2 = oy + dy * hi;
+            const fu = Math.min(1, Math.max(0, (hx2 - (ax + ci * res)) / res)), fv = Math.min(1, Math.max(0, (hy2 - (ay + cj * res)) / res));
+            const gx = ((h10 - h00) * (1 - fv) + (h11 - h01) * fv) / res, gy = ((h01 - h00) * (1 - fu) + (h11 - h10) * fu) / res;
+            const il = 1 / Math.sqrt(gx * gx + gy * gy + 1);
+            best = hi; flags = 1; nx = -gx * il; ny = -gy * il; nz = il;
+            break;
+          }
+        }
+        ta = tb;
+        if (tnx < tny) { ci += sx; tnx += tdx; } else { cj += sy; tny += tdy; }
+      }
+    }
+    if (this.physicsMode === 'mesh') {
+      _rayArg[0] = ox; _rayArg[1] = oy; _rayArg[2] = oz; _rayArg[3] = dx; _rayArg[4] = dy; _rayArg[5] = dz; _rayArg[6] = best;
+      if (raycastCollidersRay(this.colliders, this.colliders.length, _rayArg, _rayHit)) {
+        best = _rayHit.t; flags = 2; nx = _rayHit.nx; ny = _rayHit.ny; nz = _rayHit.nz;
+      }
+    }
+    if (!flags) return false;
+    io[7] = best; io[8] = nx; io[9] = ny; io[10] = nz; io[11] = flags;
+    return true;
+  }
+
+  /** True when (_sgIo[0], _sgIo[1]) is inside a grid-structure footprint (scratch args: no boxed doubles). */
+  _inFootprint() {
+    const gs = this._gridStructures(), x = _sgIo[0], y = _sgIo[1];
+    for (let i = 0; i < gs.length; i++) { const b = gs[i].bbox; if (x >= b.x0 && x < b.x1 && y >= b.y0 && y < b.y1) return true; }
+    return false;
+  }
+
+  /** Lattice node (i, j) height for `rayStaticFirst` outside the cached grid: written to `_sgIo[3]` (no boxed return). */
+  _sgHOut(i, j) {
+    const sg = this._sg, b = _sgIo;
+    b[0] = (sg ? sg.x0 : 0) + i * (sg ? sg.res : 1); b[1] = (sg ? sg.y0 : 0) + j * (sg ? sg.res : 1);
+    this.terrain.groundAtBuf(b);
   }
 
   /**

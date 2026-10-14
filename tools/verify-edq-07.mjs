@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
-import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, connectCdp, evaluate, killTree } from './capture-browser.mjs';
+import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, connectCdp, evaluate, evaluateAsync, killTree } from './capture-browser.mjs';
 
 const port = Number(process.argv[2] || 9500);
 validatePort(port);
@@ -47,10 +47,15 @@ try {
   assert.equal(urls.length, opts.length);
   urls.forEach((u, i) => { assert.ok(u.includes('game/index.html?at='), u); assert.ok(u.includes('qstate=' + encodeURIComponent('sq.burl.blue:' + opts[i][0])), u); });
   // 2. Game side (pure parse + preset in the page): every preset parses and applies without touching localStorage saves.
-  const r = JSON.parse(await ev(`import('/game/js/quest/statePreset.js').then(m => JSON.stringify(${JSON.stringify(opts.map((o) => o[0]))}.map((v) => m.parseQstateParam('?qstate=' + encodeURIComponent('sq.burl.blue:' + v)))))`));
+  const r = JSON.parse(await evaluateAsync(cdp, `import('/game/js/quest/statePreset.js').then(m => JSON.stringify(${JSON.stringify(opts.map((o) => o[0]))}.map((v) => m.parseQstateParam('?qstate=' + encodeURIComponent('sq.burl.blue:' + v)))))`));
   assert.ok(r.every((x) => x && x.questId === 'sq.burl.blue'), 'all presets parse');
   // 3. Normal play unchanged: no ?qstate -> null.
-  assert.equal(await ev("import('/game/js/quest/statePreset.js').then(m => m.parseQstateParam('?at=1,2,3'))"), null);
+  assert.equal(await evaluateAsync(cdp, "import('/game/js/quest/statePreset.js').then(m => m.parseQstateParam('?at=1,2,3'))"), null);
+  // 4. ED-QUEST-07b: an unsaved edit is pushed (debounced) over 'kestrel-quest-patch'; a listener on the same channel sees it.
+  await ev("window.__lp = []; window.__lpCh = new BroadcastChannel('kestrel-quest-patch'); window.__lpCh.onmessage = (e) => window.__lp.push(e.data); window.__questPanel.model.quests.find((x) => x.id === 'sq.burl.blue').title = 'LIVE TITLE'; window.__questPanel.select('sq.burl.blue')");
+  let got = [];
+  for (let i = 0; i < 20 && !got.length; i++) { await pause(150); got = JSON.parse(await ev('JSON.stringify(window.__lp.filter((m) => m.type === "quest-patch"))')); }
+  assert.ok(got.length && got[got.length - 1].def.title === 'LIVE TITLE' && got[got.length - 1].id === 'sq.burl.blue', 'live patch not sent: ' + JSON.stringify(got));
   assert.deepEqual(errors, [], 'page errors: ' + JSON.stringify(errors));
   console.log('verify-edq-07 PASS');
 } finally {

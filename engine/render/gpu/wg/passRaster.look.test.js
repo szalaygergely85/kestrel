@@ -19,6 +19,14 @@ assert.deepEqual(pass.terrainTexL.map((t) => t.slot), [0, 1, 2, 3, 4]); assert.d
 const w1 = tw; for (let i = 0; i < 10; i++) pass._terrainTextures(world);
 assert.equal(tw, w1, 'no re-upload while versions are unchanged'); assert.equal(pipes, 1, 'pipeline built once');
 terrain.near.version = 2; pass._terrainTextures(world); assert.equal(tw, w1 + 2, 'near type + near look on a near.version change');
+// swap to a new world with the same near.version: its near look must be uploaded (REV-ENV02D 1)
+const t2 = { ...terrain, near: { ...terrain.near, look: new Uint8Array(18).fill(7) }, farLook: new Uint8Array(32) }, world2 = { terrain: t2 };
+const ou = pass._uploadLook; const ups = []; pass._uploadLook = function (tex, dims, w, h, data) { ups.push(data); return ou.call(this, tex, dims, w, h, data); };
+pass._terrainTextures(world2); assert.ok(ups.includes(t2.near.look) && ups.includes(t2.farLook), 'new world, same versions: both looks re-uploaded');
+// near band not ready on the new world: lookWorld must not advance, so the later ready frame still uploads
+const t3 = { ...t2, nearReady: false, near: { ...t2.near, look: new Uint8Array(18).fill(9) } }, world3 = { terrain: t3 }; ups.length = 0;
+pass._terrainTextures(world3); assert.ok(!ups.includes(t3.near.look)); t3.nearReady = true; pass._terrainTextures(world3);
+assert.ok(ups.includes(t3.near.look), 'near look uploaded once ready (not skipped by an early world mark)'); pass._uploadLook = ou;
 terrain.groundLook = null; pass._terrainTextures(world); assert.equal(pass.lookActive, false, 'off again = plain path');
 pass.dispose(); assert.equal(mock.liveCount(), 0);
 console.log('passRaster.look.test.js: all checks passed.');

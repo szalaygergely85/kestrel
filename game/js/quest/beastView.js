@@ -8,7 +8,7 @@
 // so `playing` is false and the engine's `stepAnimations` never double-advances them; `hurt`/`flinch`/state clips
 // are let to play normally (playing true). `hidden` hides the instance at STATE_GONE (the US-079b0 voxel-pool skip).
 import { yawFromDelta } from '../../../engine/index.js';
-import { STATE_WANDER, STATE_EAT, STATE_WINDUP, STATE_RECOVER, STATE_NOTICE, STATE_RETURN, STATE_CHASE, STATE_FLINCH, STATE_DYING, STATE_CORPSE, STATE_SINK, STATE_GONE } from './sim/beastSim.js';
+import { STATE_WANDER, STATE_EAT, STATE_WINDUP, STATE_RECOVER, STATE_BITE, STATE_NOTICE, STATE_RETURN, STATE_CHASE, STATE_FLINCH, STATE_DYING, STATE_CORPSE, STATE_SINK, STATE_GONE } from './sim/beastSim.js';
 
 const STEP_MS = 1000 / 60; // one fixed sim step in ms (die/sink clip t is derived from sim step counters)
 const HURT_STEPS = 10;     // 37.16.2: the view shows `hurt` while hurtT < 10 (the flash + follow-through window)
@@ -125,6 +125,12 @@ export function presentBeasts(sim, world, overlay, styleIds, anim, legs, cam, bl
     if (sim.moving && !sim.moving[i] && (st === STATE_WANDER || st === STATE_CHASE || st === STATE_RETURN)
         && clip !== 'hurt' && clip !== 'flinch') { clip = 'idle'; vst = STATE_EAT; }
     if (v.model === 'wolf') clip = wolfClip(clip, vst, sim.fleeing[i]); // WOLF-D1: wolfFx.clipFor names
+    if (v.model === 'bearBlack' && st === STATE_BITE) { // BEAR-BITE: blackBearFx.clipFor.state.bite -> attack
+      const bf = globalThis.ASSETS && globalThis.ASSETS.blackBearFx; clip = (bf && bf.clipFor.state.bite) || 'attack';
+    }
+    if (v.model === 'bearBlack' && st === STATE_RECOVER && clip !== 'hurt' && clip !== 'flinch') { // ANIM-BLEND-02b: blackBearFx.clipFor.state.recover
+      const bf = globalThis.ASSETS && globalThis.ASSETS.blackBearFx; clip = (bf && bf.clipFor.state.recover) || clip; // bite/lunge: no such sim state yet
+    }
 
     if (v.model === 'goblin' || v.model === 'goblinTorch') { // GOB-07a: goblinFx.clipFor (death / sink / dead stay as decided)
       if (st !== STATE_DYING && st !== STATE_CORPSE && st !== STATE_SINK) clip = goblinClip(clip, vst, i, sim, v);

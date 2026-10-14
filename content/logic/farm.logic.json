@@ -1,0 +1,51 @@
+[
+  {
+    "id": "farm.ambush",
+    "rev": 1,
+    "name": "Farm gate ambush",
+    "once": true,
+    "when": {
+      "on": "area.enter",
+      "area": "farmGate"
+    },
+    "if": [
+      {
+        "is": "quest",
+        "quest": "sq.he.farm",
+        "state": "active"
+      }
+    ],
+    "do": [
+      {
+        "act": "prop.state",
+        "prop": "farmGateLeaf",
+        "state": "closed"
+      },
+      {
+        "act": "beasts.spawn",
+        "group": "farm.goblins"
+      },
+      {
+        "act": "hint",
+        "text": "hint.farm.ambush",
+        "after": 30
+      }
+    ]
+  },
+  {
+    "id": "farm.ambush.won",
+    "rev": 1,
+    "name": "Farm gate opens again",
+    "when": {
+      "on": "group.cleared",
+      "group": "farm.goblins"
+    },
+    "do": [
+      {
+        "act": "prop.state",
+        "prop": "farmGateLeaf",
+        "state": "open"
+      }
+    ]
+  }
+]

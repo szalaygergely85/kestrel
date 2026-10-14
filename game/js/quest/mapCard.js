@@ -33,7 +33,7 @@ export const CHART_GLYPHS = Object.freeze({
 /** Load-time raster of the baked semantic planes. Pose updates touch two cells,
  * retaining the marker underneath; no per-frame lists, strings or allocations.
  */
-export function createChartCard(chart, palette, { markers = [], glyphs = CHART_GLYPHS, width = 96, rows = 40, fog = null, geo = null, travel = null, travelHeader = 'Travel: press a number' } = {}) {
+export function createChartCard(chart, palette, { markers = [], glyphs = CHART_GLYPHS, width = 96, rows = 40, fog = null, geo = null, travel = null, travelHeader = 'Travel: 1-9, or arrows and Enter' } = {}) {
   const bounds = chart?.bounds;
   if (chart?.chartVersion !== 1 || !Number.isInteger(chart.width) || chart.width < 1
     || !Number.isInteger(chart.rows) || chart.rows < 1 || chart.width * chart.rows > 524288

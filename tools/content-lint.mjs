@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 export * from './content-lint-rules.js';
-import { MAX_FLOAT, GIVER_MAX_UP, GIVER_WALK_R, ENT_MAX_FLOAT, BURY_MIN, BURY_MAX, OBJECT_GIVER_MAX, SMOKE_SRC_R, CHIMNEY_R, CHIMNEY_MIN, CHEST_R, RULES, LEVELS, TITLES, RAW_DOTTED, RAW_CAMEL, rawIn, r5One, r10Quest, r12One, r14Quest, lint, line } from './content-lint-rules.js';
+import { MAX_FLOAT, GIVER_MAX_UP, GIVER_WALK_R, ENT_MAX_FLOAT, BURY_MIN, BURY_MAX, OBJECT_GIVER_MAX, SMOKE_SRC_R, CHIMNEY_R, CHIMNEY_MIN, CHEST_R, RULES, LEVELS, TITLES, RAW_DOTTED, RAW_CAMEL, rawIn, r5One, r10Quest, r12One, r14Quest, meshTopAt, lint, line } from './content-lint-rules.js';
 
 // ---- real-content context (heavy: loads the world like the existing probes) ----
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -162,7 +162,12 @@ export async function buildContext(opts = {}) {
     let support = -Infinity, above = null;
     for (const [dx, dy] of [[0, 0], [0.3, 0], [-0.3, 0], [0, 0.3], [0, -0.3]]) {
       const x = e.x + dx, y = e.y + dy; support = Math.max(support, gz(x, y));
-      for (const b of boxes) if (b.x0 <= x && b.x1 >= x && b.y0 <= y && b.y1 >= y) { if (b.z1 <= base + BURY_MIN) support = Math.max(support, b.z1); else if (b.z1 <= base + BURY_MAX) above = Math.max(above ?? 0, b.z1 - base); }
+      { const fl = w.floorAt(x, y); if (typeof fl === 'number' && fl <= base + BURY_MAX && fl > support) support = fl; } // level/structure floor (tower interior levels)
+      for (const b of boxes) if (b.x0 <= x && b.x1 >= x && b.y0 <= y && b.y1 >= y) {
+        const top = meshTopAt(b.mesh, b.s, x, y, b.z1); // exact triangle top under this footprint sample (stairs, bevelled slabs), not the coarse AABB top
+        if (top === null) continue;
+        if (top <= base + BURY_MIN) support = Math.max(support, top); else if (top <= base + BURY_MAX && dx === 0 && dy === 0) above = Math.max(above ?? 0, top - base);
+      }
     }
     return { id: e.id, x: e.x, y: e.y, base, support, floorAbove: above };
   });
@@ -175,8 +180,30 @@ export async function buildContext(opts = {}) {
     nearVisual: (def.structures || []).some((s) => s.origin && Math.hypot(s.origin.x - e.x, s.origin.y - e.y) <= 1) || entities.some((o) => o !== e && hasModel(o) && Math.hypot(o.x - e.x, o.y - e.y) <= 1),
   }));
 
+  // R15 inputs (ED-LOGIC-01d): the real content/logic/*.logic.json files + the real vocab; refs from the world (areas = trigger ids, groups = reserve beasts)
+  const logic = await (async () => {
+    const { LOGIC_VOCAB } = await import('../game/js/logic/vocab.js');
+    const dir = path.join(root, 'content/logic'), blocks = [];
+    for (const n of fs.readdirSync(dir).filter((x) => x.endsWith('.logic.json')).sort()) {
+      if (/^example./.test(n)) continue; // placeholder ids, not loaded by the game
+      for (const b of JSON.parse(fs.readFileSync(path.join(dir, n), 'utf8'))) blocks.push({ ...b, file: n });
+    }
+    const props = JSON.parse(fs.readFileSync(path.join(dir, 'props.json'), 'utf8'));
+    const tower = JSON.parse(fs.readFileSync(path.join(root, 'content/levels/tower.level.json'), 'utf8'));
+    const groups = new Set(entities.filter((e) => e.components.brain && e.components.brain.reserve === true && e.components.brain.group).map((e) => e.components.brain.group));
+    const propIds = new Set([...Object.keys(props), ...(tower.props || []).map((p) => 'tower.' + p.id)]);
+    const propStates = {}; for (const [id, d] of Object.entries(props)) propStates[id] = new Set(Object.keys(d).filter((k) => k !== 'initial'));
+    return { blocks, vocab: LOGIC_VOCAB, propStates, refs: { area: new Set(trig.keys()), quest: new Set(qs.map((q) => q.id)), prop: propIds, group: groups } };
+  })();
+  // R16 inputs (NAME-LINT): resolved player-facing names (item defs, quest titles, region names, NPC labels), not the keys
+  const nameList = [];
+  const r16Items = assets.items?.defs || (await loadDesignAssets()).items?.defs || {};
+  for (const [id, d] of Object.entries(r16Items)) if (d.name) nameList.push({ where: id, kind: 'item', name: d.name });
+  for (const q of quests) if (q.title) nameList.push({ where: q.id, kind: 'quest', name: q.title });
+  for (const r of G.regions) if (r.name) nameList.push({ where: r.id, kind: 'region', name: r.name });
+  for (const id of characters) { const l = labelOf(id); nameList.push({ where: id, kind: 'npc', name: l.charAt(0).toUpperCase() + l.slice(1) }); }
   return {
-    entSupport, anchors, entities, structures: def.structures, floating, texts, jsTexts, quests: qs, itemDefs: assets.items?.defs || (await loadDesignAssets()).items?.defs,
+    names: nameList, logic, entSupport, anchors, entities, structures: def.structures, floating, texts, jsTexts, quests: qs, itemDefs: assets.items?.defs || (await loadDesignAssets()).items?.defs,
     labelOf, giverIds, pos, groundAt: gz, walkable, characters, levelIds: new Set((JSON.parse(fs.readFileSync(path.join(root, 'content/levels/tower.level.json'), 'utf8')).props || []).map((p) => p.id)), chests: entities.filter((e) => /^chest/.test(e.id)), guards,
     riverX: (y) => T.util.riverX(y), riverHalf: 10,
   };

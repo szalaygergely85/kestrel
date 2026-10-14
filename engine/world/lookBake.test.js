@@ -27,6 +27,13 @@ const CFG = { lookMap: [{ look: 2, ground: [1], biomes: null }, { look: 1, groun
 const R = makeRecipe(), mk = (cfg) => { const t = new Terrain(R); if (cfg !== undefined) t.setGroundLook(cfg); return t; };
 const bakeBand = (t, cx0, cy0, cw, ch, src) => { const st = t.newBandState(cx0, cy0, cw, ch, src || null); t.stepBandState(st, Infinity); return t.finishBandState(st); };
 
+// 0. REV-ENV02D: runtime toggle on a baked far grid bumps farVersion (GPU re-uploads FARLOOK); before the bake it does not
+{
+  const t = mk(); t.bakeFarSync(); const v0 = t.farVersion;
+  t.setGroundLook(CFG); ok('toggle on: farVersion bumped, farLook filled', t.farVersion === v0 + 1 && t.farLook && t.farLook.length === t.mapW * t.mapH * 2);
+  t.setGroundLook(null); ok('toggle off: farVersion bumped, farLook null', t.farVersion === v0 + 2 && t.farLook === null);
+  const u = mk(CFG); const w0 = u.farVersion; u.bakeFarSync(); ok('set before bake: no extra bump from setGroundLook', u.farVersion >= w0);
+}
 // 1. null -> bytes and hashes unchanged, no look arrays
 {
   const a = mk(), b = mk(null);

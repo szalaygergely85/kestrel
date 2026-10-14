@@ -27,8 +27,8 @@ const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 const bytes = (a) => Buffer.from(a.buffer, a.byteOffset, a.byteLength);
 const w = World.load({ ...def0 }, assets, { detail: true, physics: 'mesh' });
-const base = buildBeastNav(w, { ...def0.nav, layers: undefined });
-const base2 = buildBeastNav(w, { ...def0.nav, layers: undefined });
+const base = buildBeastNav(w, { ...def0.nav, layers: undefined, ford: undefined });
+const base2 = buildBeastNav(w, { ...def0.nav, layers: undefined, ford: undefined });
 ok('no ford option: build twice -> identical bytes', Buffer.compare(bytes(base.grid.terrainCost), bytes(base2.grid.terrainCost)) === 0);
 const fnav = buildBeastNav(w, { ...def0.nav, layers: undefined, ford: { maxDepth: 0.6, cost: 4 } });
 const g = fnav.grid, g0 = base.grid;
@@ -60,5 +60,14 @@ for (const c of rd.cells) if (dnav.grid.terrainCost[c] === 4) { w.waterAt(dnav.g
 ok('deep route only wades cells shallower than its maxDepth', deepMax < 0.05, `deepMax=${deepMax}`);
 const r1b = route(buildBeastNav(w, { ...def0.nav, layers: undefined, ford: { maxDepth: 0.6, cost: 4 } }), 1010, 1062, 1042, 1062);
 ok('same route every run', JSON.stringify(r1.cells) === JSON.stringify(r1b.cells));
+// D-103: world_m1 nav block now carries `ford` + the 7 flagged stones; the real config crosses the river at the ford, deep water stays blocked.
+const real = buildBeastNav(w, def0.nav);
+const rr1 = route(real, 1010, 1062, 1042, 1062);
+ok('world_m1 nav (ford on): beast route crosses the river at the ford', def0.nav.ford && !rr1.partial && rr1.n > 0, `n=${rr1.n} partial=${rr1.partial}`);
+const rr2 = route(real, 1010, 1062, 1042, 1062);
+ok('world_m1 nav route deterministic', JSON.stringify(rr1.cells) === JSON.stringify(rr2.cells));
+let deepWade = 0;
+for (const c of rr1.cells) { const x = real.grid.cellCenterX(c % real.grid.w), y = real.grid.cellCenterY((c / real.grid.w) | 0); if (w.waterAt(x, y, wq) && wq.depth >= 0.6 && real.grid.terrainCost[c] !== 0) deepWade++; }
+ok('world_m1 route never wades deep (>= 0.6 m) water', deepWade === 0, `deep=${deepWade}`);
 console.log(`navFord: ${pass} passed, ${fail} failed`);
 if (fail) { console.log(failures.join(String.fromCharCode(10))); process.exit(1); }

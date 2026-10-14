@@ -9,7 +9,7 @@
 // per path: JS (CPU, `renderWorld` with `fb.gpu = false`) and GPU at
 // whatever `rays` this page loaded with.
 import {
-  loadLevel, bindLevel, World, repackMaterials, renderWorld, ambientL, buildLightSet, makeLightBuffer,
+  loadLevel, bindLevel, World, repackMaterials, renderWorld, ambientL, buildLightSet, createLightBuffer,
 } from '../../../../engine/index.js';
 import { runRow } from './flickerMeasure.js';
 import { decodeBundle, createDiag, addPair } from './stableDiag.js'; // STABLE-DIAG-01
@@ -45,7 +45,7 @@ export async function run(ctx) {
   // flicker, which is what the US-073 stable pass removes (ambient-only has none).
   const lit = params.get('lit') === '1';
   const lights = lit ? buildLightSet(world, assets.palette) : null;
-  if (lit) { fbCompare.lights = lights; fbCompare.light = makeLightBuffer(rt.cols, rt.rows); }
+  if (lit) { fbCompare.lights = lights; fbCompare.light = createLightBuffer(rt.cols, rt.rows); }
 
   // `&stepm=<m>&stepdeg=<deg>`: slower pan (the US-073 stable pass only reuses history within 0.5/detail of the same surface point)
   const STEPS = 30, STEP_M = Number(params.get('stepm')) || 0.02, STEP_DEG = Number(params.get('stepdeg')) || 0.1;

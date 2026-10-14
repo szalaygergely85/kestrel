@@ -9,6 +9,7 @@ import * as ed from './quest/edit.js';
 import { applyPick } from './quest/targets.js';
 import { createQuestPicker } from './questPick.js';
 import { renderLineEditor } from './questDialogue.js';
+import { createLiveSender, browserChannel } from './quest/liveSend.js';
 import { loadDialogues, saveDialogues, captureBaseline } from './quest/lines.js';
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -64,7 +65,8 @@ export async function mountQuestPanel(root, opts) {
   const detail = el('div', 'q-detail'); detail.id = 'quest-detail';
   root.append(bar, list, detail);
 
-  const redraw = () => { renderList(); renderDetail(); opts.onMarkers && opts.onMarkers(); };
+  const live = createLiveSender({ channel: opts.liveChannel !== undefined ? opts.liveChannel : browserChannel() }); // ED-QUEST-07b: unsaved edits -> running game tab
+  const redraw = () => { renderList(); renderDetail(); opts.onMarkers && opts.onMarkers(); live.schedule(current, dm); };
   const run = (cmd) => { stack.run(cmd); redraw(); };
 
   function renderList() {
@@ -94,7 +96,7 @@ export async function mountQuestPanel(root, opts) {
   function lintBox(q) {
     const box = el('div', 'q-lint'); box.id = 'quest-lint';
     let msgs = [];
-    try { msgs = liveLint(model, q, buildLintCtx({ world: getWorld(), itemDefs, names, floorAt, sites })); } catch (e) { msgs = [{ rule: 'R0', severity: 'warn', text: 'Lint failed: ' + (e && e.message), target: { kind: 'field', id: 'title' } }]; }
+    try { msgs = liveLint(model, q, buildLintCtx({ world: getWorld(), itemDefs, names, floorAt, sites, getMesh: opts.getMesh })); } catch (e) { msgs = [{ rule: 'R0', severity: 'warn', text: 'Lint failed: ' + (e && e.message), target: { kind: 'field', id: 'title' } }]; }
     box.append(el('b', null, msgs.length ? 'Problems (' + msgs.length + ')' : 'No problems'));
     for (const m of msgs) {
       const row = el('div', 'q-lint-row ' + m.severity); row.dataset.rule = m.rule;

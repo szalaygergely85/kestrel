@@ -66,7 +66,7 @@ assert.equal(st('mq.ford.mirror'), 1);
 er.mainSync(0);
 assert.equal(st('mq.ford.mirror'), 1);
 assert.match(talk()[0], /Wet boots/); assert.equal(st('mq.ford.mirror'), 2);
-assert.match(talk()[0], /Look inside/);
+assert.match(talk()[0], /Look on the floor/);
 assert.ok(!state['mq.ford.mirror.glass']);
 pack.set('relay.mirror', 1); book.feed({ type: 'item:got', id: 'relay.mirror' }); er.mainSync(0);
 assert.ok(state['mq.ford.mirror.glass'], 'gate flag follows the pack');

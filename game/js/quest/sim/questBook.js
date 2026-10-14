@@ -159,6 +159,17 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   book.STATUS_NAMES = STATUS_NAMES;
   book.index = id => byId.has(id) ? byId.get(id) : -1;
   book.def = i => entries[i].def;
+  // ED-QUEST-07b (dev/playtest only): swap the DISPLAY text of one quest def (title, returnText, objective text/journal by id). Structure, conditions and state are untouched; saves hold state only, so nothing patched is ever saved.
+  book.patchText = function patchText(id, t) {
+    const e = entries.find(x => x.def.id === id);
+    if (!e || !t) return false;
+    const str = v => (typeof v === 'string' ? v : undefined), by = new Map((Array.isArray(t.objectives) ? t.objectives : []).map(o => [o && o.id, o]));
+    const d = { ...e.def };
+    if (str(t.title) !== undefined) d.title = t.title;
+    if (str(t.returnText) !== undefined) d.returnText = t.returnText;
+    d.objectives = e.def.objectives.map(o => { const p = by.get(o.id); if (!p) return o; const n = { ...o }; if (str(p.text) !== undefined) n.text = p.text; if (str(p.journal) !== undefined) n.journal = p.journal; return n; });
+    e.def = d; return true;
+  };
   book.giverOf = i => entries[i].giver; // QL-03: npc id that offers quest i
   book.questState = i => entries[i].state;
   book.status = i => statusOf(i);

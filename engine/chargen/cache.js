@@ -3,7 +3,7 @@
 // then served from an LRU keyed by fnv1a32 of the recipe's canonical JSON (sorted keys). Never call per frame: a hit is a Map lookup.
 import { composeCharacter } from './compose.js';
 import { meshCharacter } from './mesh.js';
-import { collapseRig, HUMANOID_PART_MAP } from './collapse.js';
+import { collapseRig, HUMANOID_PART_MAP, HUMANOID_SPLIT_LEG_RIG } from './collapse.js';
 import { riggedModelDef } from './rigModel.js';
 import { CHAR_GAME_MAX_QUADS } from './recipe.js';
 
@@ -33,7 +33,7 @@ export function createCharCache(kit, max = 4) {
       const t0 = now();
       const part = collapseRig(meshCharacter(composeCharacter(kit, recipe)), kit.partMap || HUMANOID_PART_MAP);
       if (part.mesh.quads > CHAR_GAME_MAX_QUADS) throw new Error(`charCache: ${part.mesh.quads} quads > CHAR_GAME_MAX_QUADS ${CHAR_GAME_MAX_QUADS}`);
-      const def = riggedModelDef(part);
+      const def = riggedModelDef(part, part.parts.some((p) => p.name === 'legLowL') ? { legRig: HUMANOID_SPLIT_LEG_RIG } : {});
       stats.lastMs = now() - t0;
       stats.misses++;
       map.delete(key);

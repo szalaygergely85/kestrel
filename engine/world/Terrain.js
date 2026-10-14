@@ -262,11 +262,12 @@ export class Terrain {
    * already baked far grid / near band is filled at once. `cfg.blendM` (smallest biome blend, m), when given, must be >= 3 far texels.
    */
   setGroundLook(cfg) {
-    if (!cfg) { this.groundLook = null; this.farLook = null; if (this.near) delete this.near.look; return; }
+    // farVersion bump (arch REV-ENV02D): hosts key FARLOOK on it; smaller than a new lookVersion (same set of consumers re-key, toggle is rare/editor-only)
+    if (!cfg) { this.groundLook = null; this.farLook = null; if (this.near) delete this.near.look; if (this.farReady) this.farVersion++; return; }
     if (cfg.blendM !== undefined) assertBlendM(cfg.blendM, this.mapCell);
     this.groundLook = new LookBaker(cfg, this.util);
     this.farLook = new Uint8Array(this.mapW * this.mapH * 2);
-    if (this.farReady) this._fillFarLook();
+    if (this.farReady) { this._fillFarLook(); this.farVersion++; }
     if (this.nearReady) { const g = this.near; g.look = new Uint8Array(g.w * g.h * 2); this._fillNearLook(g); g.version++; }
   }
   _fillFarLook() {

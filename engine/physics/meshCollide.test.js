@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { buildBvh } from './bvh.js';
 import {
   moveCircleMesh, probeSupport, meshSupportSector, moveSphereMesh,
-  MESH_CAND_MAX, FLOOR_NONE,
+  MESH_CAND_MAX, FLOOR_NONE, probeSupportIo,
 } from './meshCollide.js';
 import { allocProbe } from '../../tools/allocProbe.mjs';
 import { PHYSICS_DEFAULTS } from './config.js';
@@ -564,6 +564,32 @@ if (VERBOSE) console.log(`MESH_CAND_MAX=${MESH_CAND_MAX}`);
     ok(`probeSupport varying x/y: ALLOC_EXEMPT cap ${ALLOC_EXEMPT.cap} B/call`, pr.perCall <= ALLOC_EXEMPT.cap && nHitA[0] > 0, `${pr.perCall.toFixed(3)} B/call, hits ${nHitA[0]}`);
   }
 
+}
+
+// ---------------------------------------------------------------------------
+// BEAST-ALLOC-02 parity: probeSupportIo (duplicated body) must equal probeSupport bit-for-bit
+// ---------------------------------------------------------------------------
+{
+  const cols = [
+    buildCollider('par-a', [[[-6, -6, 0], [6, -6, 0.2], [6, 6, 0.5], [-6, 6, 0.1]], [[-2, -2, 1.5], [3, -2, 1.5], [3, 3, 1.8], [-2, 3, 1.6]]]),
+    buildCollider('par-b', [[[0, 0, 3], [8, 0, 3.2], [8, 8, 3], [0, 8, 3.4]], [[-9, -9, -4], [-1, -9, -4], [-1, -1, -3], [-9, -1, -4]]]),
+  ];
+  let seed = 12345;
+  const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+  const io = new Float64Array(3), a = freshSupport(), b = freshSupport();
+  const modes = [['grounded', true, OPTS], ['airborne', false, OPTS], ['airStepUp', false, { ...OPTS, airStepUp: 0.4 }]];
+  let bad = 0, hits = 0, n = 0;
+  for (const [, grounded, opts] of modes) {
+    for (let i = 0; i < 1200; i++) {
+      const x = -10 + rnd() * 20, y = -10 + rnd() * 20, z = -5 + rnd() * 10;
+      io[0] = x; io[1] = y; io[2] = z;
+      probeSupport(cols, cols.length, x, y, z, grounded, opts, a);
+      probeSupportIo(cols, cols.length, io, grounded, opts, b);
+      n++; if (a.floorHit) hits++;
+      for (const k of Object.keys(a)) if (!Object.is(a[k], b[k])) { bad++; break; }
+    }
+  }
+  ok('probeSupportIo === probeSupport (3600 random points: grounded, airborne, airStepUp)', bad === 0 && hits > 200, `mismatch ${bad}/${n}, floor hits ${hits}`);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

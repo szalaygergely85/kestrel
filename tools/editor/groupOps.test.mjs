@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { makeFrame } from '../../engine/index.js';
+import { createFrame } from '../../engine/index.js';
 import { itemToWorld } from './doc.js';
 import { applyEdit, invert } from './commands.js';
 import { createStack } from './undo.js';
@@ -10,7 +10,7 @@ const file=(kind,def)=>({kind,def,meta:{nextId:1},dirty:false});
 const level=file('level',{props:[{id:'a',model:'crate',x:1,y:2,z:3,facing:10},{id:'b',model:'crate',x:3,y:2,z:3}],lights:[{id:'l',x:2,y:2,z:4,preset:'lantern'}]});
 const worldFile=file('world',{entities:[{id:'w',type:'prop',model:'crate',x:7,y:8,z:1,yawDeg:270}]});
 const doc={worldId:'fixture',files:new Map([['level/tower',level],['world/fixture',worldFile]])};
-const frame=makeFrame(10,20,2,1), world={frameOf:()=>frame};
+const frame=createFrame(10,20,2,1), world={frameOf:()=>frame};
 const item=(collection,id)=>({fileId:'level/tower',collection,id,structId:'tower'});
 const items=[item('props','a'),item('lights','l'),{fileId:'world/fixture',collection:'entities',id:'w',structId:null}];
 const defs=()=>JSON.stringify([...doc.files.values()].map(f=>f.def));

@@ -20,7 +20,7 @@ const main = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
 const iW = main.indexOf('wading.before('), iF = main.indexOf('swimWire.before('), iI = main.indexOf('integrate(playerHandle.data, dt, controls');
 ok('main.js: wading.before < swimWire.before < integrate', iW > 0 && iW < iF && iF < iI, [iW, iF, iI]);
 ok('main.js: no wading.after / wadeRescue / wadeDeep', !/wading\.after\(|wadeRescue|wadeDeep/.test(main.replace(/\/\/.*$/gm, '')));
-ok('main.js: gate shut while swimming + gear views hidden + fb.under', /gateOpen = .*swimWire\.active/.test(main) && /!swimGear && engine\.world\.state\['tower\.sword\.taken'\]/.test(main) && /under: makeUnderState\(\)/.test(main));
+ok('main.js: gate shut while swimming + gear views hidden + fb.under', /gateOpen = .*swimWire\.active/.test(main) && /!swimGear && engine\.world\.state\['tower\.sword\.taken'\]/.test(main) && /under: (make|create)UnderState\(\)/ /* main.js now calls createUnderState (SWIM-04b) */.test(main));
 const U = globalThis.ASSETS.levels.overworld_far.util;
 const data = JSON.parse(fs.readFileSync(new URL('../../../content/worlds/world_m1.world.json', import.meta.url), 'utf8'));
 const { assets } = await loadTestAssets();

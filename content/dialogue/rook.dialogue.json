@@ -143,16 +143,16 @@
       "It fell. I found it. Then it was mine."
     ], "next": "rook.ford.6", "speaker": "rook"},
     "rook.ford.6": {"lines": [
-      "Old house by the crossing. Inside."
+      "Old house by the crossing. Inside, on the floor."
     ], "next": "rook.ford.7", "speaker": "rook"},
     "rook.ford.7": {"choices": [{"next": "rook.ford.8", "setFlag": "s.mq.ford.mirror.accept", "text": "I'll fetch it."}, {"next": "rook.later", "text": "Not yet."}], "lines": [
       "I have other shinies. Many."
     ], "speaker": "rook"},
     "rook.ford.8": {"end": true, "lines": [
-      "Old house by the crossing. Inside."
+      "Old house by the crossing. Inside, on the floor."
     ], "speaker": "rook"},
     "rook.mirror.active": {"end": true, "lines": [
-      "Old house by the crossing. Look inside."
+      "Old house by the crossing. Look on the floor."
     ], "speaker": "rook"},
     "rook.mirror.done.1": {"clip": "caw", "lines": [
       "Blink, blink. Bend, Ford, the far one. Three."

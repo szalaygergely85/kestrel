@@ -37,7 +37,9 @@ const fresh = () => { const doc = createDoc(assets, bundle), f = doc.files.get(f
 const L = (bytes, tris = 0) => B.meterLevel({ bytes, tris });
 assert.equal(L(1 * B.MB), 'green'); assert.equal(L(B.BUNDLE_TARGET_BYTES), 'amber'); assert.equal(L(5 * B.MB), 'amber');
 assert.equal(L(B.BUNDLE_HARD_BYTES), 'red'); assert.equal(L(0, B.FOLIAGE_TRI_CAP), 'red'); assert.equal(L(0, B.FOLIAGE_TRI_TARGET), 'amber');
-assert.equal(B.FOLIAGE_TRI_CAP, 1.5e6);
+assert.equal(B.FOLIAGE_TRI_CAP, 1.5e6, 'default before configure');
+assert.equal(json.triCap, 1500000);
+assert.deepEqual(B.configureFoliageCap(json), { cap: 1500000, warning: '' }); assert.equal(B.FOLIAGE_TRI_CAP, 1.5e6);
 
 // ---- checkBudget + hard-cap refusal through the controller ----
 const flat = { structureAt: () => null, sectorAt: () => null, floorAt: () => 0 };
@@ -107,3 +109,19 @@ const flat = { structureAt: () => null, sectorAt: () => null, floorAt: () => 0 }
   assert.equal(resnapFoliage(ctx, [0, 0, 10, 10]), null, 'far rect: nothing');
 }
 console.log('foliageBudget.test.mjs OK');
+
+// ---- FOLIAGE-CAP-CONFIG: cap comes from the json; bad values fall back with a warning; lowered cap refuses at the new number ----
+{
+  for (const bad of [undefined, null, {}, { triCap: 0 }, { triCap: -5 }, { triCap: 'x' }, { triCap: NaN }]) {
+    const r = B.configureFoliageCap(bad);
+    assert.equal(r.cap, B.FOLIAGE_TRI_CAP_DEFAULT); assert.ok(/triCap/.test(r.warning) && B.foliageCapWarning === r.warning);
+  }
+  B.configureFoliageCap({ triCap: 1000 });
+  assert.equal(B.FOLIAGE_TRI_CAP, 1000); assert.equal(B.foliageCapWarning, '');
+  const reg = { mesh: () => ({ triCount: 600, collider: new Float32Array(9) }) };
+  const at = (x) => ({ id: 'i' + x, mesh: 'm', origin: { x, y: 1, z: 0 } });
+  assert.equal(B.meterLevel({ bytes: 0, tris: 1000 }), 'red'); assert.equal(B.meterLevel({ bytes: 0, tris: 700 }), 'amber');
+  assert.ok(B.checkBudget([], reg, [at(1)]).ok, '600 tris under 1000');
+  const c = B.checkBudget([at(1)], reg, [at(2)]); assert.ok(!c.ok && /triangles/.test(c.reason), '1200 tris over 1000');
+  B.configureFoliageCap(json); assert.equal(B.FOLIAGE_TRI_CAP, 1.5e6);
+}

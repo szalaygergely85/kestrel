@@ -6,14 +6,14 @@ import { LOGIC_VOCAB } from './vocab.js';
 import { createPropStates } from './propState.js';
 
 /**
- * @param {{world:any, blocks:any[], book?:any, inventory?:any, sim?:any, nav?:any, hooks?:any, feed?:(e:any)=>void,
+ * @param {{world:any, blocks:any[], meshStates?:any, book?:any, inventory?:any, sim?:any, nav?:any, hooks?:any, feed?:(e:any)=>void,
  *   hint?:(id:string)=>void, sound?:(id:string)=>void, refs?:any, player?:()=>any}} o
  */
 export function createLogicWire(o) {
   const { world, blocks } = o;
   const program = compileLogic(blocks, LOGIC_VOCAB, { refs: o.refs });
   const logic = createLogic(program);
-  const props = createPropStates(world, { nav: o.nav, player: o.player });
+  const props = createPropStates(world, { nav: o.nav, player: o.player, meshStates: o.meshStates });
   const ctx = { world, book: o.book || null, inventory: o.inventory || null, sim: o.sim || null, props, logic, hooks: o.hooks || null, feed: o.feed || null, hint: o.hint || null, sound: o.sound || null };
   let dirty = false, clearCheck = false, warnedDt = false;
 

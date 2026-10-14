@@ -28,6 +28,7 @@ const DIR_VX = [0, 1, 0, -1, INV_SQRT2, INV_SQRT2, -INV_SQRT2, -INV_SQRT2];
 const DIR_VY = [-1, 0, 1, 0, -INV_SQRT2, INV_SQRT2, INV_SQRT2, -INV_SQRT2];
 
 import { firstLink, sheetOfLocal } from './sheets.js';
+import { LQ } from './NavGrid.js';
 
 /** True if a diagonal step from (cx,cy) to (cx+dx,cy+dy) does not cut a
  * corner: both orthogonal cells between them must be walkable. Same rule as
@@ -278,9 +279,12 @@ export function createFlowField(grid) {
    * the link target's centre.
    * @param {number} x @param {number} y @param {{x:number,y:number}} out2 @param {number} [z]
    */
+  /** Layered grids only: `dirAt` with the query (x, y, z) already in the NavGrid scratch `LQ` (no boxed doubles; steer's hot path). */
+  ff.dirAtQ = function dirAtQ(out2) { return dirAtLayered(ff, out2); };
+
   ff.dirAt = function dirAt(x, y, out2, z) {
     const g = ff.grid;
-    if (g.layers !== null) return dirAtLayered(ff, x, y, z === undefined ? -1e9 : z, out2);
+    if (g.layers !== null) { LQ[0] = x; LQ[1] = y; LQ[2] = z === undefined ? -1e9 : z; return dirAtLayered(ff, out2); }
     const cx = g.cellX(x);
     const cy = g.cellY(y);
     if (cx < 0 || cy < 0 || cx >= g.w || cy >= g.h) {
@@ -413,9 +417,10 @@ function stepLayered(ff, cellBudget) {
   return heap.length === 0;
 }
 
-function dirAtLayered(ff, x, y, z, out2) {
+function dirAtLayered(ff, out2) {
   const g = ff.grid;
-  const idx = g.locate(x, y, z);
+  const x = LQ[0], y = LQ[1];
+  const idx = g.locateQ();
   if (idx < 0) { out2.x = 0; out2.y = 0; return out2; }
   const d = ff.dir[idx];
   if (d === DIR_LINK) {

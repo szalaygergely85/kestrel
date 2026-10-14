@@ -43,7 +43,7 @@ export function supportBoxes(structs, meshes) {
     const m = s.mesh && meshes[s.mesh];
     if (!m || !m.pos || m.lazy || /Tree|Pine|Bush|Grass|Fern|Plant|Flower|Clover|Mushroom|Pebble/.test(s.mesh)) continue;
     const sc = s.scale || 1, a = ((s.yawDeg || 0) * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a), p = m.pos;
-    const b = { id: s.id, x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity, z1: -Infinity };
+    const b = { mesh: m, s, id: s.id, x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity, z1: -Infinity };
     for (let i = 0; i < p.length; i += 3) {
       const x = p[i] * sc, y = p[i + 1] * sc, wx = c * x - sn * y + s.origin.x, wy = sn * x + c * y + s.origin.y, z = p[i + 2] * sc + s.origin.z;
       if (wx < b.x0) b.x0 = wx; if (wx > b.x1) b.x1 = wx; if (wy < b.y0) b.y0 = wy; if (wy > b.y1) b.y1 = wy; if (z > b.z1) b.z1 = z;

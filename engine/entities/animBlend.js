@@ -21,7 +21,7 @@ const RATE_LO = 0.6, RATE_HI = 1.6;
 const NONE16 = 0xFFFF;
 
 
-// total clip length (ms), cached on the clip object at attach() (cold) so the hot path reads a field, no summing / call result boxing
+// total clip length (ms): normally set at pack time (voxelPack / blendPack); this fills it only for hand-built clips (cold) so the hot path reads a field, no summing / call result boxing
 function cacheTotals(pm) {
   const all = pm.blend ? pm.clips.concat(pm.blend.addClips) : pm.clips;
   for (const c of all) if (c.totMs === undefined) { let t = 0; for (let i = 0; i < c.n; i++) t += c.durMs[i]; c.totMs = t; }
@@ -38,7 +38,7 @@ function place(clip, S, si, L, li) {
   L[li] = f; L[li + 1] = t;
 }
 // Advances S[si] by dtMs (looping: phase01 wrap; else ms capped at the clip length).
-const _dt = new Float64Array(2); // [0] scaled dt (ms), [1] start phase for enter(): typed so no call boxes a double (38.61)
+const _dt = new Float64Array(3); // [0] scaled dt (ms), [1] start phase for enter(): typed so no call boxes a double (38.61) [2] fadeMs() result
 function step(clip, S, si) {
   const dtMs = _dt[0];
   if (clip.loop) { const p = S[si] + dtMs / clip.totMs; S[si] = p - Math.floor(p); }
@@ -98,13 +98,13 @@ export function createAnimBlender(capacity = 64) {
     S[o + S_W2] = u * u * (3 - 2 * u);
   }
   function domClip(o) { return S[o + S_W2] < 0.5 || S[o + S_B] < 0 ? S[o + S_A] | 0 : S[o + S_B] | 0; } // clip index (int: no boxing)
-  function fadeMs(pm, from, to) {
+  function fadeMs(pm, from, to) { // result in _dt[2] (typed scratch: no boxed double return)
     const b = pm.blend;
-    if (!b) return 150;
+    if (!b) { _dt[2] = 150; return; }
     const n = pm.clips.length;
-    if (from >= 0 && to >= 0) { const p = b.fadePair[from * n + to]; if (p !== NONE16) return p; }
-    if (to >= 0) { const i = b.fadeInto[to]; if (i !== NONE16) return i; }
-    return b.fadeDefault;
+    if (from >= 0 && to >= 0) { const p = b.fadePair[from * n + to]; if (p !== NONE16) { _dt[2] = p; return; } }
+    if (to >= 0) { const i = b.fadeInto[to]; if (i !== NONE16) { _dt[2] = i; return; } }
+    _dt[2] = b.fadeDefault;
   }
 
   function update(slot, pm, dtMs, driverIo) {
@@ -153,7 +153,7 @@ export function createAnimBlender(capacity = 64) {
         const fA = S[o + S_FA], fB = S[o + S_FB], fW2 = S[o + S_FW2], fPA = S[o + S_FPA], fPB = S[o + S_FPB], fromW = S[o + S_FROMW];
         _dt[1] = ph >= 0 ? ph : 0; enter(slot, pm, req);
         S[o + S_REQ] = req;
-        const ms = fadeMs(pm, oldDom, domClip(o));
+        fadeMs(pm, oldDom, domClip(o)); const ms = _dt[2];
         if (ms > 0) {
           if (midFade) { // {current dominant, old-from dominant} @ fromW: exact for single-clip sources
             const cA = oW < 0.5 || oB < 0 ? oA : oB;

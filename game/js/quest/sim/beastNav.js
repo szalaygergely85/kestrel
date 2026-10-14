@@ -3,9 +3,7 @@
 // NAV-LAYERS-01d (38.71): structures flagged `nav: "floors"` bake sheets (ruin rooms, floors, stairs) on top of the ground layer.
 import { NavGrid, createAStar, createSheetBaker } from '../../../../engine/index.js';
 
-// TODO(owner question, NAV-LAYERS-01d): the two BRIDGES are not flagged `nav: "floors"` yet - owner has not said which "both bridges" are
-// meant; flag their placements (+ `navGroup`) in content/worlds/world_m1.world.json once decided. The 2-storey house (OB-139 building epic)
-// has no placement in world_m1 yet; flag its pieces the same way when it lands.
+// D-103: world_m1 has no walkable bridge; the only crossing is the ford (stones fordS1..7 flagged nav:"floors" + nav.ford wading). The 2-storey house (OB-139) is flagged the same way when it lands.
 
 /**
  * Sheet sources of the flagged structures that touch `rect`: placements sharing a `navGroup` (default: own id) form ONE source whose
@@ -88,4 +86,62 @@ export function buildBeastNav(world, navCfg) {
   if (typeof world.navFloorProbe === 'function') { const bk = createLayerBaker(world, grid, navCfg.layers); if (bk) while (!bk.step(1e9)); }
   const astar = createAStar(grid);
   return { grid, astar };
+}
+
+// BEAST-08a (architecture.md 38.64 item 5): per-nav-tile water mask + swim grids. Load-time only (may allocate).
+export const WATER_DEEP_M = 0.6; // mask 1 = depth >= this (a swimmer's pool; shallower is wading, see nav.ford)
+export const WATER_BANK_M = 4;   // mask 2 = non-deep cell within this distance of a mask-1 cell
+
+/**
+ * Water mask over `grid`'s rect, ONE `waterAt` call per cell (cell centre): 1 = depth >= 0.6 m, 2 = bank band (<= 4 m from a mask-1 cell),
+ * 0 = else. `surf[i]` = water surface z of every wet cell (0 elsewhere). Deterministic (row-major scans only).
+ * @param {any} world engine World (needs waterAt)
+ * @param {any} grid NavGrid (only x0,y0,w,h,cell are read)
+ * @param {{deep?:number, bank?:number}} [o]
+ */
+export function buildWaterMask(world, grid, o = {}) {
+  const deep = o.deep ?? WATER_DEEP_M, bank = o.bank ?? WATER_BANK_M, w = grid.w, h = grid.h, n = w * h;
+  const mask = new Uint8Array(n), surf = new Float32Array(n);
+  const wq = { surfaceZ: 0, flatZ: 0, depth: 0, region: '', index: 0, look: 0 };
+  for (let cy = 0; cy < h; cy++) for (let cx = 0; cx < w; cx++) {
+    if (world.waterAt(grid.cellCenterX(cx), grid.cellCenterY(cy), wq)) {
+      const i = cy * w + cx;
+      surf[i] = wq.surfaceZ;
+      if (wq.depth >= deep) mask[i] = 1;
+    }
+  }
+  const r = Math.ceil(bank / grid.cell), r2 = (bank / grid.cell) * (bank / grid.cell);
+  const band = new Uint8Array(n);
+  for (let cy = 0; cy < h; cy++) for (let cx = 0; cx < w; cx++) {
+    if (mask[cy * w + cx] !== 1) continue;
+    for (let dy = -r; dy <= r; dy++) {
+      const y = cy + dy; if (y < 0 || y >= h) continue;
+      for (let dx = -r; dx <= r; dx++) {
+        const x = cx + dx; if (x < 0 || x >= w || dx * dx + dy * dy > r2) continue;
+        band[y * w + x] = 1;
+      }
+    }
+  }
+  for (let i = 0; i < n; i++) if (mask[i] === 0 && band[i]) mask[i] = 2;
+  return { mask, surf };
+}
+
+/** NavGrid + A* whose walkable cells are the ones where `keep(mask[i])` is true (cost 1). Height = water surface. */
+function maskNav(base, mask, surf, keep) {
+  const n = mask.length, ok = new Uint8Array(n);
+  for (let i = 0; i < n; i++) ok[i] = keep(mask[i]) ? 1 : 0;
+  const grid = new NavGrid({ x0: base.x0, y0: base.y0, w: base.w, h: base.h, cell: base.cell });
+  grid.buildFromArrays(surf, ok, new Uint8Array(n), { blockedTypes: [], typeNames: [''] });
+  return { grid, astar: createAStar(grid) };
+}
+
+/**
+ * Water nav for swimmers: `mask`/`surf` plus `swim` (walkable = mask 1) and `croc` (mask 1 or 2) grids with their A*.
+ * @param {any} world
+ * @param {any} grid the land NavGrid (same rect)
+ * @param {{deep?:number, bank?:number}} [o]
+ */
+export function buildWaterNav(world, grid, o) {
+  const { mask, surf } = buildWaterMask(world, grid, o);
+  return { mask, surf, grid, swim: maskNav(grid, mask, surf, (m) => m === 1), croc: maskNav(grid, mask, surf, (m) => m === 1 || m === 2) };
 }

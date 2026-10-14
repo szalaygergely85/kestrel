@@ -105,6 +105,6 @@ assert.equal(keyLabel('Mouse0'), 'LMB'); assert.equal(keyLabel('Mouse2'), 'RMB')
 
 // ---- AC3: M1 hints unchanged (golden ids + order + text) ----
 assert.deepEqual(uiStyle.hints.slice(0, 4).map((h) => h.id), ['move', 'run', 'jump', 'capture']);
-assert.deepEqual(uiStyle.storyHints.map((h) => h.id), ['burner', 'climb', 'chart', 'grate', 'exit', 'stone', 'combatDodge', 'boundsEdge']);
+assert.deepEqual(uiStyle.storyHints.map((h) => h.id), ['hint.farm.ambush', /* ED-LOGIC-01d logic-raised hint row, added first */ 'burner', 'climb', 'chart', 'grate', 'exit', 'stone', 'combatDodge', 'boundsEdge']);
 assert.deepEqual(uiStyle.hints[0].keys, ['WASD', 'Mouse']); assert.equal(uiStyle.hints[2].text, '[Space] Jump');
 console.log('actionHints.test: PASS');

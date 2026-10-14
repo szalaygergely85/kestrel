@@ -50,6 +50,13 @@ const pm = packVoxelModel(def.voxel, matId);
 ok('rig pm: no atlas, rig set, partCount', pm.vox.length === 0 && pm.rig === def.voxel.rig && pm.partCount === 4 && pm.emissiveLight === null);
 ok('all local vertex coords are integers >= 0', def.voxel.rig.pos.every((v) => v >= 0 && Number.isInteger(v)));
 ok('matIds resolved via matIdFor', pm.matIds[1] === 10 && pm.matIds[2] === 11);
+// ANIM-LOOKAT-01: opts.lookAt -> def.voxel.lookAt -> pm.lookAt (head part idx); absent -> no key, pm.lookAt null (byte-identical)
+{
+  const dl = riggedModelDef(partRig, { lookAt: { part: 'head', yawLimitDeg: 60, pitchLimitDeg: 25, hz: 2 } });
+  const pl = packVoxelModel(dl.voxel, matId);
+  ok('rigged lookAt: packs with the head part', pl.lookAt && pl.lookAt.part === Object.keys(dl.voxel.parts).indexOf('head') && pl.lookAt.yawLimit === 60 && pl.lookAt.pitchLimit === 25, JSON.stringify(pl.lookAt));
+  ok('rigged no lookAt: key absent, pm.lookAt null', !('lookAt' in def.voxel) && pm.lookAt === null);
+}
 ok('mount parts: nearest joint (hand_r -> armL, mouth -> jaw)', def.voxel.mounts.hand_r.part === 'armL' && def.voxel.mounts.mouth.part === 'jaw');
 
 const qmulv = (q, v) => { // rotate v by quaternion q (x,y,z,w)
@@ -178,9 +185,9 @@ ok(`pose equivalence FORWARD vs rigid FK (arm x/z, jaw, head, hips pos) max ${wo
   const off = { ...partRig, mesh: { ...partRig.mesh, pos: partRig.mesh.pos.map((v, i) => (i === 0 ? v + 0.4 * partRig.cellM : v)) } };
   let msg = ''; try { riggedModelDef(off); } catch (e) { msg = e.message; }
   ok('off-grid vertex throws "not a voxel-grid mesh"', /not a voxel-grid mesh/.test(msg), msg);
-  const many = { ...partRig, parts: Array.from({ length: 9 }, (_, i) => ({ ...partRig.parts[0], name: 'p' + i })) };
+  const many = { ...partRig, parts: Array.from({ length: 17 }, (_, i) => ({ ...partRig.parts[0], name: 'p' + i })) };
   msg = ''; try { riggedModelDef(many); } catch (e) { msg = e.message; }
-  ok('> 8 parts throws', /max 8/.test(msg), msg);
+  ok('> 16 parts throws', /max 16/.test(msg), msg);
   const bad = { ...def.voxel, rig: { ...def.voxel.rig, ranges: [] } };
   msg = ''; try { packVoxelModel(bad, matId); } catch (e) { msg = e.message; }
   ok('malformed rig header throws a clear message', /packVoxelModel \(rig\)/.test(msg), msg);

@@ -6,7 +6,7 @@
 // Imports only engine/index.js (check-deps rule 3).
 import {
   AssetRegistry, loadContentPack, createEngine, clampGrid, bindShading, bindLevel, repackMaterials, GBuffer,
-  createRenderer, VoxelPool, buildLightSet, makeLightBuffer,
+  createRenderer, VoxelPool, buildLightSet, createLightBuffer,
   createRtsCamera, updateRtsCamera, createPitchedTerms, pitchedTerms, screenRay, pickNearest, selectInRect, worldToCell, rayTerrain,
   WG_PASS_NAMES,
 } from '../../../engine/index.js';
@@ -127,7 +127,7 @@ ov.setGroundFn(groundAt);
 
 const fb = {
   rt, depth: engine.depthBuffer, palette: P, lights: lightSet,
-  light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0, gbuf, matTable, detailPass: assets.detailPass,
+  light: createLightBuffer(rt.cols, rt.rows), timeSec: 0, gbuf, matTable, detailPass: assets.detailPass,
   voxelPool, instances: engine.instances, viewModel: engine.viewModel, gpu: true, renderer: 'mesh', cpuLightCap: false, sceneFade: 1, terrainEnabled: true,
 };
 
