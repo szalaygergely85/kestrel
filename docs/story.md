@@ -2430,3 +2430,31 @@ These are the names and a one-line brief for the audio stub. The cue ids stay as
 Proposal for the audio/designer pass (not text, no data edit here): reedmire, strand, signalHill and westHeath have no table row. Suggested cues are `reeds` (Reeds, "dry hiss, now and then a plop") for the Reedmire and `shoreWash` (Shore, "slow waves, long gaps") for the Long Strand and the Shearcliffs. Signal Hill can use `windLoop`.
 
 Note: the `westHeath` banner says `The Shearcliffs`, but its waystone and errand say "Heath". Both fit, because the coast is cliffs and the inland part is heather. If the owner wants one word, rename the waystone to `Shearcliff Waystone` and leave the errand as it is.
+
+## Text batch 3 (2026-10-14)
+
+PC-B writer. This covers the farm ambush hint and the NEEDS WRITER keys from 2026-10-14 that the two sections above do not cover (pc-b1 OB-145 and the OB-152 follow-up). There were none in pc-b2. Every line is <= 56 chars and ASCII only, and none uses "relay".
+
+### Plates for Three (`sq.he.farm`)
+
+| key | line |
+|---|---|
+| hint.farm.ambush | The gate slams behind you. Three goblins step out. |
+
+### Waystone look/blocked hints (OB-145, `relayWake.js`)
+
+| key | line |
+|---|---|
+| prompt.waystone.look (`PROMPT_LOOK`, keep) | [E] Look at the waystone |
+| hint.waystone.needCrystal (`HINT_NEED_CRYSTAL`) | The stone stays dark. Burl's crystal might wake it. |
+| hint.waystone.needWaystone (`HINT_NEED_WAYSTONE`) | Dark. Wake the waystone by the tower first. |
+| hint.waystone.needTalk (`HINT_NEED_TALK`) | The stone is cold. Ask Burl about it. |
+
+### Rook's glass, now on the floor (OB-152 follow-up)
+
+The nest no longer sits on the roof, so the player should never be told to climb. No current player string says "roof" or "Climb". These replace the Rook lines so that they point at the floor:
+
+| key | line |
+|---|---|
+| rook.ford (6) | Old house by the crossing. Inside, on the floor. |
+| rook.mirror.active | Old house by the crossing. Look on the floor. |
