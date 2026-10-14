@@ -1165,3 +1165,7 @@ NEEDS B1-main (main.js line ~920 `riggedModelDef(collapseRig(...))`): pass `{leg
 ### GATE-FIX-7 (kestrel-4, 2026-10-14)
 All four were stale tests, no code change: actionHints (storyHints now starts with logic hint hint.farm.ambush, ED-LOGIC-01d), boarPlacement (farmGob1-3 reserve goblins counted as boars; filter goblin species), swimWire (main.js now `under: createUnderState()`; gate/gear/fb.under behaviour intact), content-smoke (gi/manifest.json known standalone).
 Filtered run 25/25 PASS, check-deps OK.
+
+- ANIM-BLEND-02b (programmer half, kestrel-2 / animblend02b): gait-configs bear.charge file -> voxel_bear.js (gen-gait stable, frames byte-identical). beastView: bearBlack STATE_RECOVER -> blackBearFx.clipFor.state.recover
+  (bite/lunge NOT mapped: beastSim has no such states, add when bearBrain gets a bite state). Tests: voxel-bear, voxel-bear-black, bearKnee (run in legacy skip),
+  anim-blend-02 (+bearBlack windup/attack/recover case, +Burl sets/additive). 14 suites PASS, check-deps OK, validate-content OK. Not committed.

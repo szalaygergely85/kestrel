@@ -1,12 +1,14 @@
 // node tools/anim-blend-02.test.mjs - ANIM-BLEND-02 (architecture.md 38.68 step 02): `blend` blocks + `hitAdd` clips of wolf, boar,
 // goblin, goblinTorch. Validator passes, hitAdd frame 0 = delta 0, set speeds monotone + equal legRig tunedMps, OB-150 windup rule.
-// Player rig (charkit, idle/walk only) and bear (walk only, no run/attack/hurt) have nothing to blend yet: see docs/lanes/pc-b2.md.
+// ANIM-BLEND-02b: bearBlack (full) and bear/Burl (friendly: sets + additive only, no windup) are covered below. Player rig has no clips (first person).
 import assert from 'node:assert';
 import '../design/palette.js';
 import '../design/detail-pass.js';
 import '../design/models/voxel_beast.js';
 import '../design/models/voxel_wolf.js';
 import '../design/models/voxel_goblin.js';
+import '../design/models/voxel_bear.js';
+import '../design/models/voxel_bear_black.js';
 import { validateVoxelModel, packVoxelModel } from '../engine/index.js';
 
 let passed = 0;
@@ -17,6 +19,7 @@ const CASES = {
   wolf:           { windup: 'crouch', held: 2, windupMs: 500, attack: ['leap', 'bite'], recover: ['run', 'walk', 'idle'] },
   boarPlaceholder:{ windup: 'windup', held: 7, windupMs: 500, attack: ['charge'], recover: ['idle', 'walk'] },
   goblin:         { windup: 'attack', held: 3, windupMs: 500, attack: ['attack', 'throw'], recover: ['run', 'walk', 'idle'] },
+  bearBlack:      { windup: 'windup', held: 6, windupMs: 800, attack: ['swipe', 'attack'], recover: ['recover', 'idle', 'walk', 'charge'] },
   goblinTorch:    { windup: 'attack', held: 3, windupMs: 500, attack: ['attack', 'throw'], recover: ['run', 'walk', 'carryTorch', 'idle'] }
 };
 const sum = (a, n) => a.slice(0, n).reduce((s, v) => s + v, 0);
@@ -49,6 +52,20 @@ for (const [name, c] of Object.entries(CASES)) {
       assert.ok(into[a] <= 80, `into[${a}]`);
       for (const r of c.recover) if (pairs[`${a}>${r}`] !== undefined || a !== 'charge') assert.ok(pairs[`${a}>${r}`] >= 150, `${a}>${r}`);
     }
+  });
+}
+// Burl (friendly bear): no windup / attack, so only the packing, additive hit and locomotion set checks apply.
+{
+  const def = M.bear.voxel, B = def.blend, A = def.animations;
+  test('bear (Burl): validate ok, hitAdd frame 0 = rest, set speeds = legRig tunedMps', () => {
+    assert.deepStrictEqual(validateVoxelModel(def, {}).errors, []);
+    const pm = packVoxelModel(def, () => 1), add = pm.blend.addClips[0];
+    assert.strictEqual(A.hitAdd.loop, false);
+    assert.ok(add.keys.slice(0, pm.partCount * 6).every((v) => v === 0) && add.keys.some((v) => v !== 0));
+    const clips = B.sets.locomotion.clips;
+    for (let i = 1; i < clips.length; i++) assert.ok(clips[i].at > clips[i - 1].at);
+    for (const k of clips) if (def.legRig.gaits[k.clip]) assert.strictEqual(k.at, def.legRig.gaits[k.clip].tunedMps, k.clip);
+    assert.ok(!A.windup && !A.attack && !A.swipe, 'friendly: no attack clips');
   });
 }
 console.log(`anim-blend-02: ${passed} passed`);

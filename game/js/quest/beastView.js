@@ -125,6 +125,9 @@ export function presentBeasts(sim, world, overlay, styleIds, anim, legs, cam, bl
     if (sim.moving && !sim.moving[i] && (st === STATE_WANDER || st === STATE_CHASE || st === STATE_RETURN)
         && clip !== 'hurt' && clip !== 'flinch') { clip = 'idle'; vst = STATE_EAT; }
     if (v.model === 'wolf') clip = wolfClip(clip, vst, sim.fleeing[i]); // WOLF-D1: wolfFx.clipFor names
+    if (v.model === 'bearBlack' && st === STATE_RECOVER && clip !== 'hurt' && clip !== 'flinch') { // ANIM-BLEND-02b: blackBearFx.clipFor.state.recover
+      const bf = globalThis.ASSETS && globalThis.ASSETS.blackBearFx; clip = (bf && bf.clipFor.state.recover) || clip; // bite/lunge: no such sim state yet
+    }
 
     if (v.model === 'goblin' || v.model === 'goblinTorch') { // GOB-07a: goblinFx.clipFor (death / sink / dead stay as decided)
       if (st !== STATE_DYING && st !== STATE_CORPSE && st !== STATE_SINK) clip = goblinClip(clip, vst, i, sim, v);
