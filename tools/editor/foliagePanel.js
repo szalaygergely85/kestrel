@@ -4,13 +4,20 @@
 
 import { FOLIAGE_RADIUS_RANGE, FOLIAGE_DENSITY_RANGE, paletteSpecies, beginFoliageStroke } from './foliageBrush.js';
 
-export const FOLIAGE_OPS = ['paint', 'erase'];
+export const FOLIAGE_OPS = ['paint', 'erase', 'reset']; // 'reset' is decor-only
+export const FOLIAGE_MODES = ['place', 'decor'];
+/** Detail layer names the palettes offer in decor mode. */
+export function decorLayerNames(json) {
+  const out = new Set();
+  for (const p of Object.values((json && json.palettes) || {})) for (const d of p.decor || []) out.add(d.layer);
+  return [...out].sort();
+}
 export const FOLIAGE_FALLOFFS = ['smooth', 'hard'];
 const clamp = (v, [lo, hi]) => Math.max(lo, Math.min(hi, Number.isFinite(v) ? v : lo));
 
 export function createFoliageState(json) {
   const ids = Object.keys((json && json.palettes) || {}).filter((id) => json.palettes[id].place?.length);
-  return { ids, palette: ids[0] || null, op: 'paint', radius: 8, falloff: 'smooth', density: 6, seed: 1, shift: false };
+  return { ids, palette: ids[0] || null, op: 'paint', radius: 8, falloff: 'smooth', density: 6, seed: 1, shift: false, mode: 'place', decorLayers: decorLayerNames(json), decorLayer: decorLayerNames(json)[0] || null, target: 2 };
 }
 /** Clamp + validate one UI param; returns the stored value. */
 export function setFoliageParam(st, k, v) {
@@ -20,6 +27,9 @@ export function setFoliageParam(st, k, v) {
   else if (k === 'op') { if (FOLIAGE_OPS.includes(v)) st.op = v; }
   else if (k === 'falloff') { if (FOLIAGE_FALLOFFS.includes(v)) st.falloff = v; }
   else if (k === 'palette') { if (st.ids.includes(v)) st.palette = v; }
+  else if (k === 'mode') { if (FOLIAGE_MODES.includes(v)) { st.mode = v; if (v === 'place' && st.op === 'reset') st.op = 'paint'; } }
+  else if (k === 'decorLayer') { if (st.decorLayers.includes(v)) st.decorLayer = v; }
+  else if (k === 'target') st.target = clamp(Number(v), [0, 2]);
   else if (k === 'shift') st.shift = !!v;
   return st[k];
 }
