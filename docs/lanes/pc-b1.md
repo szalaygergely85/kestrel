@@ -1067,3 +1067,7 @@ markers.js now mirrors MARK_MARGIN/MARK_DEFAULT_TOP/markZ locally (no game/ impo
 
 ### ANIM-BLEND-03 main hook (kestrel-1, 2026-10-14)
 main.js: import createBeastBlend; `animblend = params.get('animblend') !== '0'` (default ON, also in capture/bench); lazy `createBeastBlend({pool: gameVoxelPool})` passed as 8th arg of presentBeasts; `?animblend=0` -> undefined = old path. Player `stepEntity(PLAYER_KEY,...)` NOT wired (player rig has no blend clips; no per-frame cost added). Syntax check OK. Owner look: walk -> run ramp, hit while running, boar windup (OB-150).
+
+### ED-AI-03 (kestrel-1, 2026-10-14)
+Creatures tab: tools/editor/aiPanel.js (pure createCreatures + thin DOM + mountCreaturesTab), ai/form.js (specs), ai/patchBridge.js (100 ms debounce; msg {type:'ai-patch',name,fields} -> reply {type:'ai-patch-result',name,ok,refused[]} over BroadcastChannel 'kestrel-ai-patch'), index.html/main.js tab wiring, form.test.mjs, tools/verify-edai-03.mjs. Node only, not browser-checked; uses the model's makeStack (own undo list, not the scene record stack). Save = download via model (like Quests).
+NEEDS B1-main: game side must listen on BroadcastChannel 'kestrel-ai-patch' and call sim.patchArchetype (no receiver exists; touches game/js/main.js).
