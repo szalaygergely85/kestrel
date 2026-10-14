@@ -10,7 +10,7 @@ import '../design/models/rubble.js'; import '../design/models/wreckage.js'; impo
 import '../design/models/sword.js'; import '../design/models/m3_props.js'; import '../design/models/far_tower.js';
 import '../design/models/ferrum_lights.js'; import '../design/models/voxel_beast.js'; import '../design/models/voxel_bear.js';
 import { loadTestAssets } from './testing/content-node.mjs';
-import { spawnRegionalBeasts, inPolygon } from '../game/js/quest/sim/regionalBeasts.js';
+import { spawnRegionalBeasts, inPolygon, safeSpots, COVER_R } from '../game/js/quest/sim/regionalBeasts.js';
 import { generateFarCamps } from '../game/js/life/farCamps.js';
 import { activeCamps } from '../game/js/life/goblinCamps.js';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -60,5 +60,29 @@ const near = (p, list, d) => list.some((q) => Math.hypot(q[0] - p.x, q[1] - p.y)
 const open = chests.filter((c) => !near(c, threats, 25) && !near(c, puzzles, 25));
 md += `## Chests in the open (no beast home, goblin camp, relay or lever within 25 m): ${open.length} of ${chests.length}\n\n`;
 for (const c of open) md += `- ${c.id} (${c.x}, ${c.y}) in ${regionOf(c.x, c.y)}\n`;
+// OB-185 walk test: longest stretch along the roads (inside the bounds) with no enemy group home within COVER_R (60 m).
+export const DENSITY_FLOOR = 50, MAX_EMPTY_M = 250;
+const homesAll = threats.slice();
+let longest = 0, longestAt = null;
+for (const road of G.roads) {
+  let run = 0, start = null;
+  for (let i = 0; i + 1 < road.pts.length; i++) {
+    const a = road.pts[i], b = road.pts[i + 1], dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
+    for (let s = 0; s < len; s += 5) {
+      const x = a[0] + dx / len * s, y = a[1] + dy / len * s;
+      if (!inPolygon(G.bounds.pts, x, y)) { run = 0; continue; }
+      if (homesAll.some((q) => Math.hypot(q[0] - x, q[1] - y) < COVER_R)) { run = 0; continue; }
+      if (run === 0) start = [Math.round(x), Math.round(y)];
+      run += 5; if (run > longest) { longest = run; longestAt = `${road.id} from ${start}`; }
+    }
+  }
+}
+md += `
+## Walk test: longest road stretch with no enemy home within ${COVER_R} m = ${longest} m (${longestAt}); goal <= ${MAX_EMPTY_M} m
+`;
+const low = G.regions.filter((r) => { const t = T[r.id]; return t.area >= 20000 && (t.boars + t.wolves + t.bears + t.goblins) / (t.area / 1e6) < DENSITY_FLOOR; }).map((r) => r.id);
+md += `Regions below ${DENSITY_FLOOR}/km2 (walkable >= 0.02 km2): ${low.length ? low.join(', ') : 'none'}
+`;
 console.log(md);
+globalThis.__density = { longest, low, threats: homesAll.length };
 if (process.argv.includes('--write')) writeFileSync(new URL('../docs/test-reports/ob152-density.md', import.meta.url), md);
