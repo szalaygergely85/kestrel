@@ -1,7 +1,8 @@
 // game/js/dev/webgpuProbe.js - WG-1a/WG-1b2. Runs the engine's probeWebGpu() and (WG-1b2) createGpuDevice +
 // selfTestDevice; publishes window.__webgpuProbe (the probe JSON plus `.selfTest`), window.__webgpuSelfTest
 // (read by tools/capture-browser.mjs).
-import { probeWebGpu, createGpuDevice, selfTestDevice } from '../../../engine/index.js';
+import { probeWebGpu, createGpuDevice } from '../../../engine/index.js';
+import { selfTestDevice } from '../../../engine/dev.js';
 
 const out = document.getElementById('out');
 try {

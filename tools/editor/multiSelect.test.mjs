@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { makeFrame } from '../../engine/index.js';
+import { createFrame } from '../../engine/index.js';
 import { projectPoint } from './ray.js';
 import { sameSelectionItem, selectionContains, replaceSelection, toggleSelection, renameSelection, canMultiSelect, selectionCandidates, boxSelection } from './multiSelect.js';
 
@@ -50,7 +50,7 @@ assert.deepEqual(boxSelection([{item:a,point:{x:50,y:-1,z:1}}],{startCol:-100000
 const level = { props:[{id:'crate',x:1,y:2,z:3}], lights:[{id:'lamp',x:2,y:1,z:4}], triggers:[{id:'skip'}] };
 const worldDef = { entities:[{id:'rock',type:'prop',x:2,y:-5,z:0},{id:'player',type:'player',x:0,y:0,z:0}], structures:[{id:'mesh',mesh:'rock'}] };
 const doc = { worldId:'m1', files:new Map([['level/tower',{def:level}],['level/unplaced',{def:level}],['world/m1',{def:worldDef}]]) };
-const frames = { tower:makeFrame(10,20,1),copy:makeFrame(30,40,2,1) };
+const frames = { tower:createFrame(10,20,1),copy:createFrame(30,40,2,1) };
 const world = {structures:[{id:'tower',level:{name:'tower'}},{id:'copy',level:{name:'tower'}},{id:'mesh',kind:'mesh'}],frameOf:id=>frames[id]};
 const before = JSON.stringify([level,worldDef]);
 const list = selectionCandidates(doc,world);

@@ -27,7 +27,7 @@
  */
 
 /**
- * @param {import('../../../../engine/render/minimap.js').Minimap} mm
+ * @param {import('../../../../engine/index.js').Minimap} mm
  * @param {MinimapViewOptions} [opts]
  */
 export function createMinimapView(mm, opts = {}) {

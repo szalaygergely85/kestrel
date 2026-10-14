@@ -112,7 +112,7 @@ export function beaconLight(ctx) {
  * is woken and every step after its own ramp is done, same as `stepEnd`'s
  * `endT < 0` guard.
  * @param {import('../../../engine/index.js').World} world
- * @param {import('../../../engine/render/lighting.js').LightSet|null} lights - `main.js`'s own `lightSet` (may not exist yet, e.g. `?lights=0`)
+ * @param {import('../../../engine/index.js').LightSet|null} lights - `main.js`'s own `lightSet` (may not exist yet, e.g. `?lights=0`)
  * @param {number} dt - seconds
  * @param {Object} [palette] - `ASSETS.palette` (`lights[lightId]`'s hue/radius/grow duration)
  */

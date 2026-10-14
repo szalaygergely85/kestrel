@@ -51,7 +51,7 @@
 //   16. (US-053a, architecture.md 32.0) engine/fx/** leaf: non-test imports only
 //       engine/fx/** + engine/core/**; tests may add engine/test/**; physics/nav
 //       may never import engine/fx/**. engine/fx/particles.js joins rule 15.
-//   21/22. (ENG-API-01g, WARN, tools/game only) 21: importing a name tier=deprecated in engine/api-1.0.json from engine/index.js;
+//   21/22. (ENG-API-01g, tools/game only; 21 WARN, 22 finding since 01h) 21: importing a name tier=deprecated in engine/api-1.0.json from engine/index.js;
 //       22: deep JSDoc import('..engine/<internal>') type path outside engine/ (inside engine/ is fine). tools/ no longer has an allowlist (rule 3).
 //   13. (CO-1b) coordinate-math WARN rule, see COORD_ALLOW below.
 //   14. (RE-05, docs/architecture.md 28.2) engine/nav/**/*.js (non-test) may
@@ -323,7 +323,7 @@ function checkApiWarnRules(file, src) {
     const line = src.slice(0, m2.index).split('\n').length;
     // real (non-comment) imports are rule 3's business; this rule is for JSDoc type paths only
     if (realImports.some((i) => i.spec === m2[1] && i.line === line)) continue;
-    warnings.push(`${rel(file)}:${line}: JSDoc type path "${m2[1]}" is a deep engine path - use engine/index.js (rule 22, architecture.md 38.74)`);
+    findings.push(`${rel(file)}:${line}: JSDoc type path "${m2[1]}" is a deep engine path - use engine/index.js (rule 22, architecture.md 38.74)`);
   }
 }
 

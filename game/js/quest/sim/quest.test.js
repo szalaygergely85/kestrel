@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createQuest, applyQuestEvent, questObjectives, stringifyQuest, questHash, validateQuestDefinition } from './quest.js';
-import {makeFrame,localToWorld} from '../../../../engine/index.js';
+import {createFrame,localToWorld} from '../../../../engine/index.js';
 import {createSaveRelay} from '../../saveRelay.js';
 const def=JSON.parse(readFileSync(new URL('./fixtures/m1.legacy.quest.json',import.meta.url)));
 def.objectives[4].when={type:'beasts',ids:['boar1','boar2','boar3','boar4','boar5'],count:5}; // legacy m1 shape (QG-03 moved the boar fight to burl.boars); quest.js semantics are what is tested here
@@ -94,7 +94,7 @@ assert.deepEqual(m3.completed,def.objectives.map(o=>o.id));
 
 // S8-C-13b: exercise the shipped marker resolver/poller, not a second trigger.
 const structure=worldDef.structures.find(s=>s.id===target.structure);
-const frame=makeFrame(structure.origin.x,structure.origin.y,structure.origin.z,structure.yawSteps);
+const frame=createFrame(structure.origin.x,structure.origin.y,structure.origin.z,structure.yawSteps);
 const marker=towerDef.markers[target.marker], markerWorld={x:0,y:0,z:0};
 localToWorld(frame,marker.x,marker.y,marker.z,markerWorld);
 const proximityWorld={state:{'tower.lantern.taken':true},

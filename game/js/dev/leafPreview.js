@@ -1,6 +1,6 @@
 // LEAF-PREVIEW-01: standalone alphaLeaves fixture, public engine API only.
 import { AssetRegistry, createRenderer, createEngine, GBuffer, bindShading,
-  renderWorld, makeLightBuffer, ambientL, MaskAtlas,
+  renderWorld, createLightBuffer, ambientL, MaskAtlas,
   buildMeshFromTris, SpritePool, buildSpriteAtlas } from '../../../engine/index.js';
 
 async function start() {
@@ -68,7 +68,7 @@ async function start() {
   let soft = true, far = false;
   const fb = {rt, depth: engine.depthBuffer, palette: assets.palette,
     gbuf: new GBuffer(rt.cols, rt.rows), matTable: table, detailPass: assets.detailPass,
-    lights: null, light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0, gpu: true,
+    lights: null, light: createLightBuffer(rt.cols, rt.rows), timeSec: 0, gpu: true,
     renderer: 'mesh', terrainEnabled: false, sceneFade: 1, frameNo: 0};
   document.querySelector('#soft').onclick = event => {
     soft = !soft;

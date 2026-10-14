@@ -1,9 +1,9 @@
 import {
   bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
-  meshFromJSON, meshFromBin, composeCharacter, meshCharacter, collapseRig, riggedModelDef, buildMeshFromTris, MaskAtlas, buildMaskAtlas, writeUnitInstance, buildLightSet, makeLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
+  meshFromJSON, meshFromBin, composeCharacter, meshCharacter, collapseRig, riggedModelDef, buildMeshFromTris, MaskAtlas, buildMaskAtlas, writeUnitInstance, buildLightSet, createLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
   bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks, sunPathFrom, applySunPair, blendLook, createAtmosState, mixAtmos, applyAtmosToPalette, gradeCells, createPostState, composePost, postCells,
   bakeImpostor, enableGroupImpostor, resolveGroupLod1, createInstanceBuffer,
-  createRipples, defineWadeSplash, wadeSplashAt, validateCarpetConfig, makeUnderState, pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG,
+  createRipples, defineWadeSplash, wadeSplashAt, validateCarpetConfig, createUnderState, pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG,
 } from '../../../../engine/index.js';
 import {
   runGpuCompare, compareCells, meshCellCap, compareGeometry, compareLight, describeCellNormals, poisonAllCells, unpackReadback,
@@ -51,7 +51,7 @@ async function runGpuCompareShadeMode(ctx) {
     timeSec: 0, light: ambientL, jsShade: shadeSurfaces, jsEdge: edgePass,
   };
 
-  const sceneFb = { ...fbCompare, renderer: 'mesh', light: makeLightBuffer(rt.cols, rt.rows) };
+  const sceneFb = { ...fbCompare, renderer: 'mesh', light: createLightBuffer(rt.cols, rt.rows) };
 
   function castFrame(pose) {
     const cam = { x: pose.x, y: pose.y, z: pose.z, yawDeg: pose.yawDeg, pitchDeg: pose.pitchDeg };
@@ -1043,7 +1043,7 @@ async function runGpuCompareSceneMode(ctx) {
 
   const fbCompare = {
     rt, depth: depthBuffer, palette: assets.palette, gbuf, matTable, detailPass,
-    lights: null, light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0, gpu: false,
+    lights: null, light: createLightBuffer(rt.cols, rt.rows), timeSec: 0, gpu: false,
     renderer, terrainEnabled,
     fadeLut, sceneFade: 1,
     voxelPool: compareVoxelPool,
@@ -1124,7 +1124,7 @@ async function runGpuCompareSceneMode(ctx) {
       compareSceneDim.rects.set(dim.rects.subarray(0, dim.n * 5));
     }
     fbCompare.sceneDim = compareSceneDim;
-    fbCompare.under = underPose ? makeUnderState() : null; // SWIM-04c: underwater look state (both twins read fb.under; null = dry, untouched frame)
+    fbCompare.under = underPose ? createUnderState() : null; // SWIM-04c: underwater look state (both twins read fb.under; null = dry, untouched frame)
     fbCompare.timeSec = poseTime || 0; // US-141a: frozen per-pose clock (flow streaks); 0 for every other pose
     fbCompare.lights = lights;
     if (poseAtmos) atmosOn(poseAtmos); // ENV-03c: before the first frame so both twins see the same live fog/haze/grade

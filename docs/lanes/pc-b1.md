@@ -1105,3 +1105,6 @@ No new code: postkeeper hello.1 now `setFlag: met.postkeeper` (saved in world.st
 
 ### GI-PROBE-03 (kestrel-1, 2026-10-14) -> arch-review
 New engine/world/giLoader.js (quiet once-per-zone fetch, missing/stale/non-gi -> null, 1 warn per stale), `World.loadGI(opts)` / `loadGIZone`, `bundle.gi`+`giId` at every put site, `world.giField` flipped in `_publishBand` (+ late-arrival attach with `regrow`), `bundleBytes` counts gi. engine/world/giFile.js is a VERBATIM copy of kestrel-4's uncommitted 02b file (merge: keep one). Test giLoader.test.js 19 PASS (0 GIBake steps, 100 hit swaps < 64 KB); main.js not wired (GI-PROBE-06 passes `expectHash`, runtime cannot compute the sha).
+
+### ENG-API-01h (kestrel-1, 2026-10-14) -> arch-review
+6 JSDoc paths -> engine/index.js, 14 deprecated imports renamed (selfTestDevice now from engine/dev.js), main.js `setApiWarnings(true)` under `?debug=1`; check-deps rule 22 is now a finding (rule 21 stays WARN), fixtures updated; 0 rule-21/22 warnings, suites green.

@@ -116,7 +116,7 @@ function meshHit(g, x, y, r) {
   return false;
 }
 
-/** @returns {import('../../../engine/fauna/fauna.js').FaunaEnv-like} allocation-free FaunaEnv over a loaded world. */
+/** @returns {import('../../../engine/index.js').FaunaEnv-like} allocation-free FaunaEnv over a loaded world. */
 /** perchByModel ring for a scatter species: pine / birch / oak (mesh CommonTree = oak), small or large by trunk radius. */
 function perchRing(sp, rings) {
   const n = String(sp.model || sp.mesh || '').toLowerCase();

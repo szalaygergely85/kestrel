@@ -280,10 +280,10 @@ ok('ENG-API-01f: deep tools import flagged', /bench-deep\.mjs.*deep import/.test
 ok('ENG-API-01f: formerly allowlisted tool path no longer exempt', /bench-shadow\.mjs.*deep import/.test(output), output);
 ok('rule 21: deprecated name import WARNs (with replacement)', /WARN game\/js\/bad21\.js.*deprecated "oldThing" \(use newThing\)/.test(output), output);
 ok('rule 21: non-deprecated import NOT flagged', !/good21\.js/.test(output), output);
-ok('rule 22: deep JSDoc type path outside engine/ WARNs', /WARN game\/js\/bad22\.js.*rule 22/.test(output), output);
+ok('rule 22: deep JSDoc type path outside engine/ is a finding', /game\/js\/bad22\.js.*rule 22/.test(output), output);
 ok('rule 22: JSDoc path to engine/index.js NOT flagged', !/good22\.js/.test(output), output);
 ok('rule 22: JSDoc import inside engine/ NOT flagged', !/inside22\.js/.test(output), output);
-ok('rule 22 is a WARN, not a finding', !/^game\/js\/bad22/m.test(output), output);
+ok('rule 22 is not downgraded to a WARN', !/WARN game\/js\/bad22/.test(output), output);
 ok('rule 1: bare specifier flagged', /bad1\.js.*bare specifier "node:fs"/.test(output), output);
 ok('rule 1: outside-engine import flagged', /bad1\.js.*resolves outside engine\//.test(output), output);
 ok('rule 2: forbidden global flagged', /bad2\.js.*window\.ASSETS/.test(output), output);
