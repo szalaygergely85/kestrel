@@ -1,5 +1,6 @@
 // ME-06c1 (architecture.md 37.2): derived, load-time tree placements.
 import { buildCarpetClassMap } from "./carpet.js";
+import { paintAt } from "./grassMask.js";
 import { decorHash, jitterCm, K_JX, K_JY } from "../mesh/decorScatter.js";
 export function hash2(ix, iy, seed) {
   let h = Math.imul(ix | 0, 0x8da6b343) ^ Math.imul(iy | 0, 0xd8163841) ^ seed;
@@ -342,7 +343,7 @@ export class DetailScatterJob {
     const bio = compileBiomes(terrain.recipe, null);
     Object.assign(this, { bio, terrain, cfg, g, x1, y1, tx0, ty0, tilesX, tilesY, structureTiles, speciesDefs, layers,
       points: [], trees, _treeGrid: null, exclusions: cfg.exclude.concat(keepOut), layer: 0, iy: 0, rowInit: false, result: null,
-      decorGpu: !!(opts && opts.decorGpu), carpet: null, decor: null, _mask: null });
+      decorGpu: !!(opts && opts.decorGpu), decorPaint: (opts && opts.decorPaint) || null, carpet: null, decor: null, _mask: null });
     if (this.decorGpu) {
       this.decor = { layers: [] };
       // ENV-01b fix: the band's OWN class map (never world.carpet, which is the live near band and is rewritten in place)
@@ -370,6 +371,7 @@ export class DetailScatterJob {
     const { terrain, cfg, g, x1, y1, tx0, ty0, tilesX, structureTiles, points, exclusions, bio } = this;
     const { l, speciesByType } = this.layers[layer];
     const u = (ix, iy2, k) => hash2(ix, iy2, l.seed + k) / 4294967296;
+    const paint = this.decorPaint !== null && this.decorPaint[l.name] ? this.decorPaint[l.name] : null;
     for (let ix = Math.floor(g.x0 / l.cellM); ix < Math.ceil(x1 / l.cellM); ix++) {
       const x = (ix + 0.5) * l.cellM + (u(ix, iy, 1) * 2 - 1) * l.jitter;
       const y = (iy + 0.5) * l.cellM + (u(ix, iy, 2) * 2 - 1) * l.jitter;
@@ -378,6 +380,7 @@ export class DetailScatterJob {
         const d = bio.detail[bio.biomeAt(x, y)];
         if (d !== undefined && d[l.name] !== undefined) fill = Math.min(1, l.fill * d[l.name]);
       }
+      if (paint !== null) fill = Math.min(1, fill * paintAt(paint, x, y));   // ED-FOLIAGE-03: decor paint multiplier (38.69), absent layer = old bytes
       if (u(ix, iy, 0) >= fill) continue;
       if (x < g.x0 || y < g.y0 || x >= x1 || y >= y1) continue;
       const t = terrain.groundTypeAt(x, y), type = terrain.typeName(t), list = l.ground[type];
@@ -415,6 +418,7 @@ export class DetailScatterJob {
   _maskRow(layer, iy) {
     const { terrain, cfg, g, x1, y1, tx0, ty0, tilesX, structureTiles, exclusions, bio } = this;
     const { l } = this.layers[layer];
+    const paint = this.decorPaint !== null && this.decorPaint[l.name] ? this.decorPaint[l.name] : null;
     const cellCm = Math.round(l.cellM * 100), jitCm = Math.round(l.jitter * 100);
     const ix0 = Math.floor(g.x0 / l.cellM), ix1 = Math.ceil(x1 / l.cellM), iy0 = Math.floor(g.y0 / l.cellM);
     let m = this._mask;
@@ -431,6 +435,7 @@ export class DetailScatterJob {
         const d = bio.detail[bio.biomeAt(x, y)];
         if (d !== undefined && d[l.name] !== undefined) fill = Math.min(1, l.fill * d[l.name]);
       }
+      if (paint !== null) fill = Math.min(1, fill * paintAt(paint, x, y));   // ED-FOLIAGE-03: decor paint multiplier (38.69), absent layer = old bytes
       const prob = Math.round(fill * 127);
       if (prob === 0) continue;
       if (x < g.x0 || y < g.y0 || x >= x1 || y >= y1) continue;
