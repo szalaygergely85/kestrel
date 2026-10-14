@@ -1232,3 +1232,6 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 
 ## D-089
 **2026-10-14, owner (PC-B session).** Crocodile: option B "short grab" (grab, 1.5 s to escape by mashing a key, max 12 % HP total) - CROC-SOFT unblocked for BEAST-08. Gear attribute requirements: HARD rule - an item whose STR/DEX/INT requirement is not met cannot be equipped (not the PO's -50 % proposal); ITEM-09 ACs follow this.
+
+## D-090
+**2026-10-14, owner (PC-B session), writer questions.** The fireball spell is named **Fireball** (not Ember). The teal crystal shows as "Teal Crystal" until Burl names it, then **"Aether Crystal"** (story canon: Wick has no word for it at first). Item names: the ITEM-03 item bases replace the old fixed tier table (D-081), so the writer's base names are the final ones once ITEM-04/06 land. GPU gate: PC-B pauses its agents ~30 min per batch to run gpucompare on an idle laptop (owner).
