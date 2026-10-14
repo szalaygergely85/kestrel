@@ -1031,3 +1031,11 @@ OPEN, ASK ARCHITECT: beastSim.test P5 (2 beasts, leash, cap < 100 B/step) now fa
 
 ### BEAST-ALLOC-02b (kestrel-2, 2026-10-14) -> arch-review
 meshCollide: probeSupport/probeSupportIo now share no wrapper (body duplicated; the wrapper boxed doubles, 11.4 -> within 2.4 B/call cap, 65/65). P5 real source was hasLineOfSight (not inlining): per-sample pointBlocked(x,y,z) + outsideFloorH/groundAt boxed doubles (~20 samples x 2 beasts). Fix: interaction.js pointBlockedBuf (Float64Array) + World.outsideFloorHBuf (-> terrain._groundCore, bit-identical); P5 1396 -> <100, beast8/LIFE-07/08 still ~0.1.
+
+### NAV-LAYERS-01a (kestrel-3, 2026-10-14) -> arch-review
+engine/nav: `sheets.js` (buildLayersFromArrays, link table sorted by (from,to), kinds 0/1/3 mirrored, caps 32k cells/4k links, cost>=bound check), NavGrid (`layers`/`totalCells` null-default, cellZ/cellPos/locate/setLinkOpen), astar.js (`findPathCells` layered A*; `findPath` dispatches when layers set; ground-only code path untouched). `sheets.test.js`: bridge deck, stair->floor+back, step rule, partial path, door/drop, 0 alloc, determinism, 6 B/sheet cell; nav/beast/flow suites + check-deps green.
+Notes: costs in finest-cell units (ground u=cell/finest, so bridge row of 30 = 600 when a 0.5 m sheet exists); `smoothPath` with layers returns unsmoothed centres (01c); layers not in `hashInto`/`block` sheet arg (later); dirty rect for setLinkOpen = whole ground grid.
+
+### NAV-LAYERS-01b (kestrel-3, 2026-10-14) -> arch-review
+engine/nav: `bakeSheets(grid, sources, probe, opts)` at the end of `sheets.js` (probe(x,y,footZ,out{z,nz}) callback, up to 4 floors/cell, slope + headroom cut, 4-nbr flood fill by maxStepM, one sheet per component, auto step links to ground/sheets, `autoDrops` one-way drops, unreachable sheets (wall/roof tops) dropped unless `keepIsolated`, cap error names the source, sorted -> identical bytes); `NavGrid.hashInto` now mixes layers (ground-only unchanged). `sheetsBake.test.js` (22 checks: house stair+1 m door, bridge, ruin, determinism); nav/beast/flow + check-deps green. Bake (cold JIT): house 12x10 m @0.5 = 3.4 ms (over the 2 ms slice - slice by source in 01d), ruin 1 ms, bridge 0.1 ms.
+Open: sources are axis-aligned bboxes (caller folds yaw); (def,yaw) bake cache not done (needs translation reuse, 01d); no agent-radius clearance from walls in the sheet cells.
