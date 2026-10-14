@@ -39,7 +39,7 @@ export function decodeGIChannel(f, probe, c) { return f.bias[c] + f.data[probe *
 
 export function createGIState() {
   return { on: false, field: null, skyRGB: new Float32Array(3), sunRGB: new Float32Array(3), k0: 0, k1: 0, kf: 0,
-    emisK: 1, skyFloor: 0.15, version: 0 };
+    emisK: 1, skyFloor: 0.15, version: 0, cache: null };
 }
 
 /** Cyclic key lerp: writes st.k0/k1/kf for a clock hour (night: pass hour + 12 for the moon key). */
@@ -86,6 +86,36 @@ export function sampleGIBuf(st, io, out) {
   let x = io[0], y = io[1], z = io[2]; const nx = io[3], ny = io[4], nz = io[5];
   if (!f) { out[0] = st.skyRGB[0]; out[1] = st.skyRGB[1]; out[2] = st.skyRGB[2]; return false; }
   x += nx * GI_NORMAL_OFFSET; y += ny * GI_NORMAL_OFFSET; z += nz * GI_NORMAL_OFFSET;   // world: x,z horizontal, y up
+  // PERF (GI-PROBE-04-perf): the trilinear + key-lerp coefficient set (28 floats, normal-independent) is memoised per
+  // snapped position (GI_SNAP per probe cell = 0.5 m at cellM 8; GPU twin must snap identically) in a direct-mapped
+  // cache that lives on the state and is flushed on version / field change. Only the 4-term SH eval runs per cell.
+  const sn = GI_SNAP / f.cellM, qx = Math.floor(x * sn), qy = Math.floor(y * sn), qz = Math.floor(z * sn);
+  let c = st.cache;
+  if (c === null) c = st.cache = { n: GI_CACHE, keys: new Int32Array(GI_CACHE * 3), stamp: new Int32Array(GI_CACHE), ok: new Uint8Array(GI_CACHE), coef: new Float32Array(GI_CACHE * 28), field: null, ver: -1, gen: 1 };
+  if (c.field !== f || c.ver !== st.version) { c.field = f; c.ver = st.version; c.gen++; }
+  const slot = (Math.imul(qx, 73856093) ^ Math.imul(qz, 19349663) ^ Math.imul(qy, 83492791)) & (GI_CACHE - 1), k3 = slot * 3, co = slot * 28;
+  if (c.stamp[slot] !== c.gen || c.keys[k3] !== qx || c.keys[k3 + 1] !== qy || c.keys[k3 + 2] !== qz) {
+    gp[0] = (qx + 0.5) / sn; gp[1] = (qy + 0.5) / sn; gp[2] = (qz + 0.5) / sn;   // scratch: doubles as args would box per miss
+    const ok = giCoef(st, f);
+    c.stamp[slot] = c.gen; c.keys[k3] = qx; c.keys[k3 + 1] = qy; c.keys[k3 + 2] = qz; c.ok[slot] = ok ? 1 : 0;
+    for (let i = 0; i < 28; i++) c.coef[co + i] = acc[i];
+  }
+  if (c.ok[slot] === 0) { out[0] = st.skyRGB[0]; out[1] = st.skyRGB[1]; out[2] = st.skyRGB[2]; return false; }
+  const cf = c.coef, b1 = Y1 * ny, b2 = Y1 * nz, b3 = Y1 * nx;
+  let vis = cf[co] * Y0 + cf[co + 1] * b1 + cf[co + 2] * b2 + cf[co + 3] * b3; if (vis < st.skyFloor) vis = st.skyFloor;
+  for (let ch = 0; ch < 3; ch++) {
+    const q = ch * 4;
+    let sun = cf[co + 4 + q] * Y0 + cf[co + 5 + q] * b1 + cf[co + 6 + q] * b2 + cf[co + 7 + q] * b3; if (sun < 0) sun = 0;
+    let em = cf[co + 16 + q] * Y0 + cf[co + 17 + q] * b1 + cf[co + 18 + q] * b2 + cf[co + 19 + q] * b3; if (em < 0) em = 0;
+    out[ch] = st.skyRGB[ch] * vis + sun * st.sunRGB[ch] + em * st.emisK;
+  }
+  return true;
+}
+export const GI_SNAP = 16, GI_CACHE = 65536;   // snap steps per probe cell; cache slots (power of 2)
+/** Fill `acc` (normalised by wsum) with the interpolated sky4 / sun12 / emis12 coefficients at (x,y,z); false = all probes invalid. */
+const gp = new Float64Array(3);
+function giCoef(st, f) {
+  const x = gp[0], y = gp[1], z = gp[2];
   const w = f.w, h = f.h, inv = 1 / f.cellM;
   let gx = (x - f.x0) * inv - 0.5, gz = (z - f.y0) * inv - 0.5;
   if (gx < 0) gx = 0; else if (gx > w - 1) gx = w - 1;
@@ -117,14 +147,7 @@ export function sampleGIBuf(st, io, out) {
       acc[16 + c] += wt * (B[GI_EMIS0 + c] + D[o + GI_EMIS0 + c] / 255 * S[GI_EMIS0 + c]);
     }
   }
-  if (wsum <= 1e-9) { out[0] = st.skyRGB[0]; out[1] = st.skyRGB[1]; out[2] = st.skyRGB[2]; return false; }
-  const r = 1 / wsum, b1 = Y1 * ny, b2 = Y1 * nz, b3 = Y1 * nx;
-  let vis = (acc[0] * Y0 + acc[1] * b1 + acc[2] * b2 + acc[3] * b3) * r; if (vis < st.skyFloor) vis = st.skyFloor;
-  for (let c = 0; c < 3; c++) {
-    const q = c * 4;
-    let sun = (acc[4 + q] * Y0 + acc[5 + q] * b1 + acc[6 + q] * b2 + acc[7 + q] * b3) * r; if (sun < 0) sun = 0;
-    let em = (acc[16 + q] * Y0 + acc[17 + q] * b1 + acc[18 + q] * b2 + acc[19 + q] * b3) * r; if (em < 0) em = 0;
-    out[c] = st.skyRGB[c] * vis + sun * st.sunRGB[c] + em * st.emisK;
-  }
+  if (wsum <= 1e-9) return false;
+  const r = 1 / wsum; for (let i = 0; i < 28; i++) acc[i] *= r;
   return true;
 }

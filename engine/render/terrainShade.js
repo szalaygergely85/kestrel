@@ -740,7 +740,13 @@ function ensureGroundLookCtx(ctx, terrain, world) {
   return ctx.groundLook;
 }
 
-const giShIo = new Float64Array(6), giShOut = new Float32Array(3);
+const giShIo = new Float64Array(6), giShOut = new Float32Array(3), giK = new Float64Array(1);
+/** GI ambient / flat-sky ratio -> giK[0] (scratch out: a returned double would be boxed per cell in the unoptimised loop). */
+function giTerrainK(gi, gbuf, i, invSky) {
+  giShIo[0] = gbuf.u[i]; giShIo[1] = gbuf.z[i]; giShIo[2] = gbuf.v[i]; giShIo[3] = shadeNrm[0]; giShIo[4] = shadeNrm[2]; giShIo[5] = shadeNrm[1];
+  sampleGIBuf(gi, giShIo, giShOut);
+  giK[0] = (giShOut[0] + giShOut[1] + giShOut[2]) * invSky;
+}
 export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0) {
   if (!terrain || !terrain.farReady || !fb.gbuf) return;
   const gbuf = fb.gbuf, palette = fb.palette;
@@ -779,12 +785,9 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
     // strength 0 or when the light set carries no per-cell byte at all) scales the whole analytic sun term too.
     const cF = (light && !light.uniform && light.cloudQ) ? 1 - light.cloudQ[i] * (1 / 255) : 1;
     // GI-PROBE-04: ambientI x (GI ambient / flat sky colour) = ambientI * skyVis + bounce (grey); null/off = old term exactly.
-    let ambK = 1;
-    if (giOn) {
-      giShIo[0] = u; giShIo[1] = gbuf.z[i]; giShIo[2] = v; giShIo[3] = shadeNrm[0]; giShIo[4] = shadeNrm[2]; giShIo[5] = shadeNrm[1];
-      sampleGIBuf(gi, giShIo, giShOut);
-      ambK = (giShOut[0] + giShOut[1] + giShOut[2]) * giInvSky;
-    }
+    giK[0] = 1;
+    if (giOn) giTerrainK(gi, gbuf, i, giInvSky);
+    const ambK = giK[0];
     const b = sun.ambientI * ambK * (isG ? GRASS_AO_LO + (1 - GRASS_AO_LO) * u : 1) + sun.sunI * Math.max(0, ndotl) * (sunMapOn ? light.sunN[i] * 0.25 : 1) * cF;
     let lr = 0, lg = 0, lb = 0;
     if (light && !light.uniform) {
