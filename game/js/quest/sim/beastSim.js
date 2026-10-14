@@ -97,8 +97,11 @@ function preyMaskOf(fauna, names) {
 }
 
 const TILE_DORMANT_R = 200; // WM-04: grid worlds - home farther than this from the player (or outside the live nav tile) = dormant
-const _astarCache = new WeakMap(); // WM-04: one A* per nav tile grid; WeakMap keyed by the grid -> freed when BandCache evicts the bundle (and rebindNav moved on), no extra eviction code
-function astarFor(grid) { let a = _astarCache.get(grid); if (!a) { a = createAStar(grid); _astarCache.set(grid, a); } return a; }
+/** WM-04: one A* per sim; a same-size nav tile swap only rebinds `astar.grid` (stamps/heap are per-cell scratch, valid for any grid of that size). */
+function astarFor(cur, grid) {
+  if (cur && cur.grid && cur.grid.w === grid.w && cur.grid.h === grid.h) { cur.grid = grid; return cur; }
+  return createAStar(grid);
+}
 
 export function createBeastSim(world, opts) {
   const { nav, rng, events } = opts;
@@ -403,7 +406,7 @@ export function createBeastSim(world, opts) {
     if (!navGrid || navGrid === sim.grid) return;
     sim.tileMode = true;
     sim.grid = navGrid;
-    sim.astar = astarFor(navGrid);
+    sim.astar = astarFor(sim.astar, navGrid);
     if (sim._cellPath.length < navGrid.w * navGrid.h) { sim._cellPath = new Int32Array(navGrid.w * navGrid.h); sim._xy = new Float64Array(navGrid.w * navGrid.h * 2); }
     sim.steer.bounds.x0 = navGrid.x0; sim.steer.bounds.y0 = navGrid.y0;
     for (let i = 0; i < sim.count; i++) {

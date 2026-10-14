@@ -90,6 +90,13 @@ ok('save/load round trip: hunter state + west state identical', sim.state[W] ===
   ok('tileNav: east (outside tile A) dormant before any swap, hunter + west awake', s2.dormTile[e2] === 1 && s2.dormant[e2] === 1 && s2.dormTile[h2] === 0 && s2.dormTile[w2] === 0);
   ok('default (no tileNav) stays out of tile mode', createBeastSim(world, { nav: { grid: A, astar: createAStar(A) }, rng: createRng(1), events }).tileMode === false);
 }
+// --- one A* rebound per same-size tile (no per-tile allocation)
+{
+  const s3 = createBeastSim(world, { nav: { grid: A, astar: createAStar(A) }, rng: createRng(1), events, tileNav: true, spawn: { x: 1480, y: 1000 } });
+  const a0 = s3.astar, B2 = { ...A, x0: A.x0 + 100 };
+  s3.rebindNav(B2, 1480, 1000);
+  ok('same-size tile swap reuses the A* object and rebinds its grid', s3.astar === a0 && s3.astar.grid === B2);
+}
 // --- fixed-area sim never in tile mode
 ok('tileMode only after rebindNav', sim.tileMode === true);
 console.log(failures.join('\n') || ''); console.log(`beastTile: ${pass} pass, ${fail} fail`); process.exit(fail ? 1 : 0);
