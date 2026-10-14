@@ -1,5 +1,15 @@
 # PC-B queue
 
+## Animal legs: A now, B rig, C ASAP (owner 2026-10-14, D-091) (PC-A main session)
+Source: `design/preview/animal-look-options.html` + `design/animal-look-options.md`. Priority (owner: "reach C as soon as possible"): start right after the QFIX blockers (S3, S4, S6), ahead of ENV, NAV-LAYERS and the rest of D-090 stage 2. PC-A architect is writing the note now (38.x "Voxel knees + runtime leg solve").
+
+| ID | Slot | What (AC in the note) | Deps | Status |
+|---|---|---|---|---|
+| ANIM-A-01 | designer + kestrel-4 (content only) | Option A gait (stance/swing split, planted feet, lift + plant, bob/pitch/roll, head counter-nod) on boar, otter, tortoise, cub, rabbit: clip data in their model files from the preview's gait generator; planted-foot error <= 12 mm (the preview's check) as a Node test. | none | todo (can start now) |
+| VOX-PARTS-16 | kestrel-3 (engine, cross-track; PC-A arch-review) | MAX_VOX_PARTS 8 -> 16 per the note: VoxelModel const + validator, voxelPose/voxelPool scratch, DrawList partMatrices/partFlags, voxelMesh part index 3 -> 4 bits in the JS twin AND WGSL decode, raster/shadow part uniforms, instances masked ranges, chargen MAX_PARTS decoupled or raised; 8-part models byte-identical; gpucompare rows unchanged + one 12-part row; 0 alloc. | note | ARCH-NOTE (PC-A writing) |
+| ANIM-B-01 | designer + kestrel-4 | Knee rigs (upper + lower leg, hind legs bend backwards) for bear, black bear, wolf, deer, goat, heron, goblin, fox, same voxels as today (preview check: voxel count equal); walk/run/idle clips from the gait generator; owner look per animal. | VOX-PARTS-16 | todo |
+| ANIM-C-01..n | kestrel-3 (+ kestrel-1 wiring) | Runtime leg solve per the note: 2-bone solve per leg, terrain height per foot, gait rate from real speed (no foot slide at any speed), body pitch/roll on slopes; deterministic where the sim needs it; 0 alloc; budget inside D-085; split in the note. | ANIM-B-01 (bear first) | todo |
+
 ## PO batch 2026-10-14 follow-ups (`docs/test-reports/po-batch-2026-10-14-pca.md`) (PC-A main session)
 
 | ID | Slot | AC (short) | Status |
