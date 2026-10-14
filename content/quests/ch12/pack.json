@@ -2221,10 +2221,10 @@
           "template": "deliver",
           "params": {
             "item": "honeycomb",
-            "to": "rook"
+            "to": "relayBend"
           },
-          "objText": "Bring Burl's honeycomb to Rook",
-          "journal": "Burl sent honeycomb for the crow. Bring it to Rook."
+          "objText": "Leave the comb on the Bend stone",
+          "journal": "Burl sent honeycomb for the crow. Leave it on the Bend stone."
         }
       ],
       "opensAfter": [
@@ -2244,7 +2244,7 @@
       },
       "abandonable": true,
       "band": 3,
-      "returnText": "Bring Burl's honeycomb to Rook",
+      "returnText": "Leave the comb on the Bend stone",
       "lines": {
         "offer": [
           "That crow on the old stone. Loud thing.",
@@ -2254,7 +2254,7 @@
           "The comb is for the crow. Do not lick it."
         ],
         "ready": [
-          "Sticky. From the bear? Hm. Square, then.",
+          "Sticky. Hm. Square, then. (NEEDS WRITER)",
           "Sticks with feathers. Hunters lose them.",
           "And this. On a branch. Fits a fell-bird."
         ],
@@ -2324,8 +2324,8 @@
             "item": "packet",
             "to": "post"
           },
-          "objText": "Leave the packet at the ford post",
-          "journal": "You found an oilcloth packet. Leave it at the ford post."
+          "objText": "Leave the packet at the trade post",
+          "journal": "You found an oilcloth packet. Leave it at the trade post."
         }
       ],
       "opensAfter": [
@@ -2341,15 +2341,15 @@
       },
       "abandonable": true,
       "band": 3,
-      "returnText": "Leave the packet at the ford post",
+      "returnText": "Leave the packet at the trade post",
       "lines": {
         "offer": [
           "Oilcloth, tied with twine.",
-          "Stitched on the cloth: FOR THE FORD POST.",
+          "Stitched on the cloth: FOR THE TRADE POST.",
           "It has waited here a long time."
         ],
         "active": [
-          "The packet. The ford post, by the crossroads."
+          "The packet. The trade post, by the tower stone."
         ],
         "ready": [
           "A basket on a post. Arrows inside, and a tag:",
@@ -2377,7 +2377,7 @@
         }
       ],
       "opensAfter": [
-        "mq.ford.mirror"
+        "mq.river.road"
       ],
       "reward": {
         "items": [

@@ -20,7 +20,8 @@
     { base: 'shield', baseId: 'shield', slot: 'off', held: 'shield', name: 'Shield', def: 2 }
   ];
   var TIERS = { sturdy: { key: 'v', c: 'verdigris', prefix: 'Sturdy', mul: 2 }, fine: { key: 'Y', c: 'gold', prefix: 'Fine', mul: 3 },
-    tempered: { key: 'i', c: 'iron', prefix: 'T4', mul: 4 }, warden: { key: 's', c: 'ironLight', prefix: 'T5', mul: 5 } }; // T4/T5 names = NEEDS WRITER (as armour, EQ-21)
+    tempered: { key: 'i', c: 'iron', prefix: 'Tempered', mul: 4 }, warden: { key: 's', c: 'ironLight', prefix: 'Warden', mul: 5 } }; // OB-135 writer names
+  var T4NAME = { sword: 'Tempered Sword', bow: 'Horn Bow', shield: 'Kite Shield' }; // bow/shield tier 4 names
   var ids = [];
   BASES.forEach(function (b) {
     var src = I.defs[b.baseId];
@@ -28,8 +29,8 @@
       var t = TIERS[tier], id = 'gear.' + b.slot + '.' + b.base + '.' + tier;
       var fg = src.icon.fg.map(function (r) { return r.replace(/[^ ]/g, t.key); });
       I.defs[id] = {
-        id: id, name: t.prefix + ' ' + b.name, kind: src.kind, stackMax: 1, hand: true, inPack: true,
-        desc: t.prefix + ' ' + b.name.toLowerCase() + '. Placeholder copy.',
+        id: id, name: tier === 'tempered' ? T4NAME[b.base] : t.prefix + ' ' + b.name, kind: src.kind, stackMax: 1, hand: true, inPack: true,
+        desc: (tier === 'tempered' ? T4NAME[b.base] : t.prefix + ' ' + b.name).toLowerCase() + '. Placeholder copy.', // NEEDS WRITER: weapon tier 4-5 descs (2026-10-13)
         glyph: { ch: src.glyph.ch, c: t.c },
         icon: { w: 5, h: 3, glyphs: src.icon.glyphs.slice(), fg: fg },
         equip: { slot: b.slot, tier: tier, def: b.def === 0 ? 0 : b.def + t.mul - 1, held: b.held, stats: STATS[b.base][tier] }

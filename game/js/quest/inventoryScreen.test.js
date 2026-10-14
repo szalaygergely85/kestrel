@@ -126,7 +126,7 @@ for (const k of ['KeyI', 'KeyC', 'Tab']) {
   const rl = rig({ slotLockText: () => 'Locked - learn fire first' }); rl.locked.add(0); rl.locked.add(23); rl.step('KeyI');
   ok('locked item icon still drawn', /Sword/i.test('Sword') && rl.draw().length > 0);
   packPtr(rl, 0); const tip = rl.draw();
-  ok('hovering a locked item shows its name + lock line', /Ruin Steel/.test(tip) && /Locked - learn fire first/.test(tip), 'tip');
+  ok('hovering a locked item shows its name + lock line', /Ruin Sword/.test(tip) && /Locked - learn fire first/.test(tip), 'tip');
   ok('cursor still refuses the locked cell', rl.view.cursor !== 12);
 }
 // ---- Wick turns: A/D held on the model, mouse drag ----
