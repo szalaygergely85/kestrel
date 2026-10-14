@@ -43,7 +43,7 @@ export { validateCarpetConfig, buildCarpetClassMap, CARPET_MAX_VARIANTS, CARPET_
 export { scatterTrees, validateScatterConfig, scatterDetail, validateDetailConfig, hash2 } from './world/scatter.js';
 export { Terrain } from './world/Terrain.js';
 export { createEditLayer, editLayerFromJSON, editLayerToJSON, applyDab, editHeightAt, heightDelta, typePaint, sampleDh, sampleType, setSampleDh, setSampleType, NO_PAINT } from './world/terrainEdits.js'; // ED-TERRAIN-1a
-export { createGrassMask, maskAt as grassMaskAt, sampleAt as grassSampleAt, setSample as setGrassSample, grassMaskFromJSON, grassMaskToJSON, bakeAreasToMask } from './world/grassMask.js'; // MASK-a (OB-096)
+export { createGrassMask, maskAt as grassMaskAt, sampleAt as grassSampleAt, setSample as setGrassSample, grassMaskFromJSON, grassMaskToJSON, bakeAreasToMask, paintAt as decorPaintAt } from './world/grassMask.js'; // MASK-a (OB-096)
 export { Level } from './world/Level.js';
 export { serialize, deserialize } from './world/serialize.js';
 

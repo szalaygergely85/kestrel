@@ -10,7 +10,7 @@ import { BandBakeJob, buildNavTile, NavTileFill } from './bandBake.js';
 import { BandCache } from './bandCache.js';
 import { aheadOrder, bestOverlap } from './bandAhead.js';
 import { validateCarpetConfig, buildCarpetClassMap, buildCarpetMask, CarpetMaskJob } from './carpet.js';
-import { scatterTrees, scatterDetail, TreeScatterJob, DetailScatterJob } from './scatter.js';
+import { scatterTrees, scatterDetail, TreeScatterJob, DetailScatterJob, decorRootCm } from './scatter.js';
 import { packLevel, updateAnimatedSector } from './packed.js';
 import { Entity } from '../entities/Entity.js';
 import { EntityHandle } from '../entities/EntityHandle.js';
@@ -275,6 +275,12 @@ function scatterDetailD(terrain, structures, keepOut, cfg, trees, opts) {
   return job.result;
 }
 
+/** Detail-scatter opts: null (plain, byte-identical) unless decorGpu or decor paint is on. */
+function detailOpts(w) {
+  if (!w.decorGpu && !w.decorPaint) return null;
+  return { decorGpu: w.decorGpu, carpetCtx: w._carpetCtx, decorPaint: w.decorPaint };
+}
+
 export class World {
   constructor() {
     this.terrain = null;
@@ -287,6 +293,7 @@ export class World {
     this.detail = null; // ENV-01a1: derived ground detail, never serialized.
     this.decor = null; // ENV-01: baked GPU-decor masks {layers:[{name,mask,ix0,iy0,w,h}]} of the current band (null = decorGpu off), never serialized
     this.decorGpu = false;
+    this.decorPaint = null; // ED-FOLIAGE-03 (38.69): {layerName: GrassMaskLayer(neutral 128)} density multipliers, never serialized; null = no paint
     this._kinCollider = null;
     this._kinSlot = new Map(); // CH1-E2: kinematic entity id -> prism slot in 'npcs:kinematic'
     this._groundSnap = []; // ED-TERRAIN-1b: [{id, x, y}] of `z: 'ground'` props/entities, re-snapped after a terrain stroke.
@@ -588,6 +595,7 @@ export class World {
       }
     }
 
+    w.decorPaint = opts.decorPaint || null;
     w.decorGpu = !!opts.decorGpu; // ENV-01: GPU decor layers (no CPU points, mask baked instead); off = byte-identical
     if (w.terrain?.realTrees && w.terrain.nearReady) w.scatter = scatterTrees(w.terrain, w.structures);
     if (opts.carpet && w.terrain) {
@@ -612,7 +620,7 @@ export class World {
         if (!assets || !assets.has('mesh', sp.mesh)) throw new Error(`World.load: detail species references unknown mesh "${sp.mesh}"`);
         (w.detailMeshes || (w.detailMeshes = {}))[sp.mesh] = assets.mesh(sp.mesh);
       }
-      w.detail = scatterDetailD(w.terrain, w.structures, keepOut, cfg, w.scatter || null, w.decorGpu ? { decorGpu: true, carpetCtx: w._carpetCtx } : null);
+      w.detail = scatterDetailD(w.terrain, w.structures, keepOut, cfg, w.scatter || null, detailOpts(w));
       w.decor = w.detail.decor || null;
     }
     if (w.physicsMode === 'mesh' && w.scatter) {
@@ -1630,6 +1638,45 @@ export class World {
   }
 
   /**
+   * ED-FOLIAGE-03 (arch 38.69): re-bake the near-band detail scatter after decor paint changed inside `rect`
+   * ({x0,y0,x1,y1} world m). Decor mask bytes are overwritten ONLY for lattice cells of `rect` (arrays keep identity),
+   * then `decor.version` and `renderVersion` bump (passDecor re-uploads on version). Editor-time, not per frame.
+   * @returns {{cells:number}} mask cells rewritten
+   */
+  rebuildDecor(rect) {
+    if (!this._detailCtx || !this.terrain || !this.terrain.nearReady) return { cells: 0 };
+    const fresh = scatterDetailD(this.terrain, this.structures, this._detailCtx.keepOut, this._detailCtx.cfg, this.scatter || null, detailOpts(this));
+    const old = this.decor, nd = fresh.decor || null;
+    let cells = 0;
+    if (old && nd && old.layers.length === nd.layers.length) {
+      const cfgLayers = this._detailCtx.cfg.layers;
+      for (let k = 0; k < nd.layers.length; k++) {
+        const a = old.layers[k], b = nd.layers[k];
+        if (a.name !== b.name || a.w !== b.w || a.h !== b.h || a.ix0 !== b.ix0 || a.iy0 !== b.iy0) { old.layers[k] = b; continue; }
+        const cl = cfgLayers.find((l) => l.name === a.name), cm = cl ? cl.cellM : 1, jit = cl ? cl.jitter : 0;
+        const i0 = Math.max(a.ix0, Math.floor((rect.x0 - jit) / cm)), i1 = Math.min(a.ix0 + a.w - 1, Math.floor((rect.x1 + jit) / cm));
+        const j0 = Math.max(a.iy0, Math.floor((rect.y0 - jit) / cm)), j1 = Math.min(a.iy0 + a.h - 1, Math.floor((rect.y1 + jit) / cm));
+        const cCm = Math.round(cm * 100), jCm = Math.round(jit * 100), seed = cl ? cl.seed : 0;
+        for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+          const r = decorRootCm(i, j, seed, cCm, jCm), x = r[0] / 100, y = r[1] / 100; // only cells whose ROOT lies in rect
+          if (x < rect.x0 || x > rect.x1 || y < rect.y0 || y > rect.y1) continue;
+          a.mask[(j - a.iy0) * a.w + i - a.ix0] = b.mask[(j - a.iy0) * a.w + i - a.ix0]; cells++;
+        }
+      }
+      fresh.decor = old;
+    } else this.decor = nd;
+    this.detail = fresh;
+    if (this.decor) this.decor.version = (this.decor.version | 0) + 1;
+    if (this.physicsMode === 'mesh') {
+      const col = this.detail ? buildDetailCollider(this.detail) : null;
+      const i = this.colliders.findIndex((c) => c.id === 'scatter:detail');
+      if (i >= 0) { if (col) this.colliders[i] = col; else this.colliders.splice(i, 1); } else if (col) this.colliders.push(col);
+    }
+    this.renderVersion++;
+    return { cells };
+  }
+
+  /**
    * ED-TERRAIN-1b (arch 37.12): the stroke-end rebuild after live terrain edits (`Terrain.rebakeRect` per dab).
    * Recomputes the exact height bounds, re-runs the tree and ground-detail scatter, replaces their trunk/detail
    * colliders (same slot in `colliders`), re-snaps `z: 'ground'` props/entities to `groundAt` and rebuilds the
@@ -1642,7 +1689,7 @@ export class World {
     if (!terrain || !terrain.nearReady) return { ms: 0, trees: 0, detail: 0, snapped: 0 };
     terrain.recomputeBounds();
     if (terrain.realTrees) this.scatter = scatterTrees(terrain, this.structures);
-    if (this._detailCtx) this.detail = scatterDetailD(terrain, this.structures, this._detailCtx.keepOut, this._detailCtx.cfg, this.scatter || null, this.decorGpu ? { decorGpu: true, carpetCtx: this._carpetCtx } : null);
+    if (this._detailCtx) this.detail = scatterDetailD(terrain, this.structures, this._detailCtx.keepOut, this._detailCtx.cfg, this.scatter || null, detailOpts(this));
     if (this._detailCtx) this.decor = this.detail.decor || null;
     this._rebuildCarpet();
     if (this.physicsMode === 'mesh') {
