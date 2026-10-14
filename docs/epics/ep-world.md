@@ -33,9 +33,9 @@
 Rules: every new mesh pack -> `docs/licences.md` + `THIRD_PARTY_NOTICES.md` entry first; imports keep MESH-SIMP-01 budgets, UVMAP materials and proxy colliders; no owner-art reshaping (preview options first).
 
 ## Open questions for the owner
-1. **Bridge B rule:** locked (key/quest), guarded (beat a level-5 beast), or broken (repair with crafted parts)? Manager lean: broken + repaired via a quest at level 5 (teaches crafting, no invisible gate). **Owner 2026-10-14: open - you can go over, the beasts there are just harder; show an enemy health bar + the beast's level (D-086).**
+1. **Bridge B rule:** locked (key/quest), guarded (beat a level-5 beast), or broken (repair with crafted parts)? Manager lean: broken + repaired via a quest at level 5 (teaches crafting, no invisible gate). **Owner 2026-10-14: open - you can go over, the beasts there are just harder; show an enemy health bar + the beast's level (D-093).**
 2. **Far-side depth:** how big is the far side vs the near side (manager lean: about equal area, ~10-15 min walk across the valley)? **Owner 2026-10-14: asked how big it is now** - today (whole map, river x_r ~1120 +- 155): far/west side ~1.1 km (x ~0-1120), near/east side ~1 km (x ~1120-2100), north-south ~1.8 km (Whitecombs to the coast); about equal already.
-3. **How are spells upgraded?** (scrolls in chests / shrines-altars / boss drops / NPC) - owner leaning towards shrines. **Owner 2026-10-14: shrines and altars, and quests (D-086).**
+3. **How are spells upgraded?** (scrolls in chests / shrines-altars / boss drops / NPC) - owner leaning towards shrines. **Owner 2026-10-14: shrines and altars, and quests (D-093).**
 4. Can the river be swum or waded anywhere, or only crossed at bridges? **ANSWERED (owner 2026-10-09): no hard wall. The far side is reachable, it is just guarded by stronger beasts; only a quest sends you there once your item level is enough. Gear tier is the gate, not a lock.**
 
 ## Owner approvals 2026-10-09
