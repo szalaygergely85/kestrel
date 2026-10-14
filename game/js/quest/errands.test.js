@@ -107,18 +107,18 @@ assert.equal(er.load(fw), 2, 'post + notePost only');
 assert.deepEqual(fw.interactables.map((r) => [r.key, r.name, r.def.objectId]).sort(), [['qi.notePost', 'quest.inspect', 'notePost'], ['qi.post', 'quest.inspect', 'post']]);
 assert.equal(er.load(fw), 0, 'idempotent: no duplicates'); // second world:loaded on the same fake list
 er.onEvent('prop:touched', { id: 'ws_roadBend', kind: 'relay' }); /* OB-126: a relay with an available errand only offers on the 1st touch */ assert.deepEqual(inspected, [], 'first touch offers only, no inspect'); er.onEvent('prop:touched', { id: 'ws_roadBend', kind: 'relay' }); er.onEvent('prop:touched', { id: 'ws_roadBend', kind: 'waystone' }); er.onEvent('prop:touched', { id: 'nope', kind: 'relay' });
-assert.deepEqual(inspected, ['relayBend'], 'relay touch -> inspect(relayBend) only');
+assert.deepEqual(inspected, [], 'QFIX-S5a-2: no errand is given at a relay any more (the post-keeper gives them)');
 
 // 4. real inspect flow: shield at the Bend relay (giveOnTalk), requireEquipped hand-in at the Ford relay
 assert.equal(book.statusOf('sq.rb.shield'), AVAILABLE);
-const acc = book.inspect('relayBend'); assert.equal(acc.action, 'accept'); assert.equal(pack.get('shield'), 1, 'shield given on accept');
+assert.ok(book.accept('sq.rb.shield'), 'QFIX-S5a-2: accepted at the post-keeper dialogue'); assert.equal(pack.get('shield'), 1, 'shield given on accept');
 feed({ type: 'area:entered', id: 'fordWest' });
 assert.equal(book.statusOf('sq.rb.shield'), READY);
-assert.equal(book.inspect('relayFord').action, 'refuse', 'shield not worn -> refused');
+assert.equal(book.handIn('sq.rb.shield'), null, 'shield not worn -> refused');
 eq.off = 'shield'; assert.equal(isWorn(eq, 'shield'), true); assert.equal(isWorn({ off: { id: 'shield' } }, 'shield'), true); assert.equal(isWorn(null, 'x'), false);
-const hi = book.inspect('relayFord'); assert.equal(hi.action, 'handin'); assert.deepEqual(hi.reward.items, [{ id: 'potion.hp', n: 1 }]);
+const hiS = book.handIn('sq.rb.shield'); assert.deepEqual(hiS.items, [{ id: 'potion.hp', n: 1 }]);
 // banner rows from the writer lines
-const d = book.def(book.index('sq.rb.shield'));
+const d = book.def(book.index('sq.fc.stores'));
 const rows = bannerLines(d, 'accept', wrapText); assert.ok(rows && rows.length && rows.every((r) => r.length <= 38), 'wrapped offer rows');
 assert.deepEqual(bannerLines(d, 'handin', wrapText), bannerLines(d, 'handin', wrapText));
 assert.equal(bannerLines({}, 'accept', wrapText), null); assert.equal(bannerLines(d, 'nonsense', wrapText), null);
