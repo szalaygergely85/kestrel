@@ -22,7 +22,7 @@ import { LEVEL_NONE, LEVEL_ANIM } from './temporalStable.js';
 import { STEP } from '../core/loop.js';
 import { skylineFogF } from './skyline.js';
 import { resolveLook } from './look.js';
-import { shadeLookCell } from './groundLook.js'; // ENV-02b (38.63); circular with this file but only called at runtime
+import { shadeLookCell, makeGroundLook, packLookTable, LOOK_TABLE_WORDS } from './groundLook.js'; // ENV-02b (38.63); circular with this file but only called at runtime
 
 // US-026a (23.4): exported so terrainCaster.js's near-sampling dither uses
 // the SAME avalanche mix (never a second, drifting copy) - the dither must
@@ -661,6 +661,31 @@ function terrainShadingFor(matTable, ctx) {
   return ctx._mtShading;
 }
 
+// ENV-02d: the look bytes of the texel the GPU terrain raster samples (near band first, else the far grid; twin of terrainLookAt in terrainRaster.wgsl.js).
+// Result in lkLo / lkHi / lkW (module scratch, no alloc). Off-grid = look 0.
+let lkLo = 0, lkHi = 0, lkW = 0;
+function lookBytesAt(terrain, x, y) {
+  lkLo = 0; lkHi = 0; lkW = 0;
+  const g = terrain.nearReady ? terrain.near : null;
+  if (g && g.look) {
+    const ix = Math.floor((x - g.x0) / g.cell), iy = Math.floor((y - g.y0) / g.cell);
+    if (ix >= 0 && iy >= 0 && ix < g.w && iy < g.h) { const o = 2 * (ix + iy * g.w), r = g.look[o]; lkLo = r & 15; lkHi = r >> 4; lkW = g.look[o + 1] * (1 / 255); return; }
+  }
+  const c = terrain.mapCell, fx = Math.floor((x - terrain.mapX0) / c), fy = Math.floor((y - terrain.mapY0) / c);
+  if (fx < 0 || fy < 0 || fx >= terrain.mapW || fy >= terrain.mapH) return;
+  const o = 2 * (fx + fy * terrain.mapW), r = terrain.farLook[o]; lkLo = r & 15; lkHi = r >> 4; lkW = terrain.farLook[o + 1] * (1 / 255);
+}
+
+// ENV-02d: ctx.groundLook for this frame, or null (look off / bytes missing: same condition as the GPU raster host's lookActive). Table packed once per cfg.
+function groundLookFor(ctx, terrain, world) {
+  const bk = terrain.groundLook;
+  if (!bk || !terrain.farLook || (terrain.nearReady && !(terrain.near && terrain.near.look))) { ctx.groundLook = null; return null; }
+  if (!ctx._lookGL || ctx._lookCfg !== bk.cfg) { const tbl = new Float32Array(LOOK_TABLE_WORDS); packLookTable(bk.cfg, tbl); ctx._lookGL = makeGroundLook(tbl); ctx._lookCfg = bk.cfg; }
+  const wp = world && world.wind && world.wind.params; // wind01: same clamp as passShade._bindLook
+  ctx._lookGL.wind01 = wp && wp.amp > 0 ? (wp.amp < 1 ? wp.amp : 1) : 0;
+  return ctx.groundLook = ctx._lookGL;
+}
+
 function ensureShadeCtx(terrain, palette) {
   if (terrain._shadeCtx && terrain._shadeCtxVersion === terrain.farVersion) {
     // ENV-03b: atmosphere fog follows the live `P.fog.far` record (cached scalars re-read on a liveFogVersion change)
@@ -710,6 +735,7 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
   // v2 MaterialTable is bound, else keep `palette.shading` + Math.pow.
   ctx.shading = terrainShadingFor(fb.matTable, ctx);
   ctx.skyline = skylineFor(terrain, palette);
+  const GLk = groundLookFor(ctx, terrain, world); // ENV-02d: null = look off, output byte-identical
   const sun = sunFromWorld(world, palette);
   const cells = fb.rt.cells || fb.rt;
   const n = gbuf.cols * gbuf.rows;
@@ -741,7 +767,10 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
     }
     const bT = b + Math.max(lr, Math.max(lg, lb));
     if (isG) shadeGrass(t, gbuf.mat[i], u, v, gbuf.vao[i], bT, grassTab, ctx, shadeOut, gbuf.grassX[i], sun.sunI);
-    else shadeTerrain(t, gbuf.mat[i], bT, u, v, timeSec, ctx, shadeOut, forestFaceMode(gbuf, alias, ctx, i, t), gbuf.z[i], shadeNrm[0], shadeNrm[1], shadeNrm[2]); // MAP-06b: z = the rasterised surface height (kind 7: zBase/zRef 0), same value as the GPU's GA.z
+    else {
+      if (GLk) lookBytesAt(terrain, u, v);
+      shadeTerrain(t, gbuf.mat[i], bT, u, v, timeSec, ctx, shadeOut, forestFaceMode(gbuf, alias, ctx, i, t), gbuf.z[i], shadeNrm[0], shadeNrm[1], shadeNrm[2], GLk ? lkLo : 0, GLk ? lkHi : 0, GLk ? lkW : 0); // MAP-06b: z = the rasterised surface height (kind 7: zBase/zRef 0), same value as the GPU's GA.z
+    }
     gbuf.fogF[i] = terrainFogF(t, ctx.fog); // edge pass gate (BUG-GPU-005): never a stale value
     shadeOut.fg[0] = clampByte(shadeOut.fg[0] + lr * 0.5 * 255);
     shadeOut.fg[1] = clampByte(shadeOut.fg[1] + lg * 0.5 * 255);

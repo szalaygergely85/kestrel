@@ -66,6 +66,7 @@ import { loadBootBundle } from './packBoot.js';
 import { applyLocalOverlay } from './localOverlay.js';
 import { createBootCard, createLandCard } from './bootCard.js';
 import { createFarHold } from './farHold.js'; // OB-109: hold boot/world swaps until the far terrain is baked // boot loading card + ASCII progress bar
+import { buildGroundLookConfig } from './look/groundLookConfig.js'; // ENV-02d
 import { createBootStageTimer } from './bootStageTimer.js'; // S8-B1-20: per-stage ms (content/adapter/pipelines/world/meshes)
 import { applyPlaytestOverlay } from './dev/playtest.js'; // US-034: editor play-test handoff (docs/architecture.md 24.11)
 import { computeEndCardState, drawEndCard } from './ui/endCard.js';
@@ -1085,6 +1086,8 @@ async function runGame(mode, cinematic = null) {
   const worldLoadOpts = { physics,
     realTrees: renderer === 'mesh' && physics === 'mesh' && params.get('trees') !== '0',
     detail: renderer === 'mesh' && physics === 'mesh' && params.get('scatter') !== '0' }; // ENV-01a2: `?scatter=0` (not `?detail=0`, that is the US-028 v1-shading switch)
+  { const BL = window.BIOME_LOOK, rt = window.ASSETS.levels.overworld_far && window.ASSETS.levels.overworld_far.terrain; // ENV-02d: ground look bytes, `?look=0` = off (null)
+    if (BL && rt && params.get('look') !== '0') { const T = {}; for (const [k, v] of Object.entries(rt)) T[k] = v.id; try { worldLoadOpts.groundLook = buildGroundLookConfig(BL, T); } catch (e) { console.warn('[look] off:', e.message); } } }
   // ENV-01-WIRE (38.62): GPU decor scatter, only on the WebGPU mesh renderer with the GPU cull; `?decor=cpu` keeps today's CPU layers (decorGpu false = byte-identical)
   let decorPass = null; const decorDbg = { total: 0, frameErrors: 0, bad: false };
   { const dl = ((window.ASSETS.levels.overworld_far?.recipe?.detail?.layers) || []).some((l) => l.gpu); // every early-out names its reason once (?decor=cpu is silent)
