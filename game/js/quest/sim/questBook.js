@@ -57,6 +57,9 @@ function deepFreeze(o) { if (o && typeof o === 'object') { for (const k of Objec
 /** saved = {quest: m1 state|null, quests: {id:{quest,accepted,handedIn}}|null}; toSave() returns the same shape. */
 /** OB-155: static part of the main/side rule: `main: true`, `kind: 'main'` or an `mq.*` id (the chain-waits-on flag is checked by book.isMain). */
 export const isMainDef = (d) => !!d && (d.main === true || d.kind === 'main' || (typeof d.id === 'string' && d.id.startsWith('mq.')));
+let talkFlags = {};
+/** D-098: flag id -> npc whose dialogue sets it (quest/talkEnds.js, set once at boot). A flag step with an owner is a TALK step. */
+export function setTalkFlags(map) { talkFlags = map || {}; }
 export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   validateQuestDefinition(mainDef);
   const entries = [{ def: mainDef, giver: null, state: createQuest(mainDef, saved?.quest || null), accepted: true, handedIn: false, seq: 0, prev: ACTIVE }];
@@ -318,13 +321,22 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   };
   /** OB-124b: main-chain step marks (data: objective.mark = {start?, end?}). The CURRENT m1 step shows a gold '!' at `start` while it
    *  has one (step available), else a gold '?' at `end` (step active / where it completes). Appends to the main lists; none when done. */
+    function talkEndOf(o) {
+    const w = o.when; if (!w || w.type !== 'flag') return '';
+    if (o.mark && o.mark.talk === false) return '';
+    if (talkFlags[w.id]) return talkFlags[w.id];
+    const mm = /^quest\.(.+)\.done$/.exec(w.id), qi = mm && byId.get(mm[1]);
+    return qi > 0 ? (entries[qi].turnIn || entries[qi].giver || '') : ''; // finished by handing the quest in: at its hand-in character
+  }
   book.chainMarks = function chainMarks(outAvail, outReady) {
     const st = entries[0].state, o = entries[0].def.objectives[st.completed.length];
-    const m = o && o.mark; if (!m) return;
+    const m = o && o.mark, talk = o && talkEndOf(o);  // D-098: a TALK step (flag set by a dialogue / a quest hand-in) shows the '?' over the CHARACTER
+    if (!m && !talk) return;
+    if (!m) { if (outReady) outReady[outReady.length] = talk; return; }
     // OB-157: optional mark.taken = flag set when the start giver handed the step over -> the '!' is gone, the '?' at `end` shows
     const taken = m.taken && entries[0].state.flags[m.taken];
     if (m.start && !taken) outAvail[outAvail.length] = m.start;
-    else if (m.end && outReady) outReady[outReady.length] = m.end; // D-098: go/wake/use X -> X itself shows the gold '?' while the step is active
+    else if ((m.end || talk) && outReady) outReady[outReady.length] = m.end || talk; // D-098: go/wake/use X -> X itself shows the gold '?' while the step is active
   };
   /** D-098: grey '?' = where each ACTIVE (accepted, not yet ready) giver quest is finished (its hand-in place; default the giver). */
   book.activeMarks = function activeMarks(outGrey) {

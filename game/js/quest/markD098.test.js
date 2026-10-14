@@ -3,6 +3,8 @@
 import assert from 'node:assert/strict';
 import { createQuestBook } from './sim/questBook.js';
 import { addSideMarks } from './markSide.js';
+import { setTalkFlags } from './sim/questBook.js';
+import { dialogueFlagOwners } from './talkEnds.js';
 import { trackerLines } from '../ui/questTracker.js';
 import { loadDesignAssets, loadQuestFiles, loadPackQuests } from '../../../tools/validate-content.mjs';
 import { fileURLToPath } from 'node:url';
@@ -64,6 +66,27 @@ assert.ok(nAvail >= 30 && nActive >= 30, 'walked: avail ' + nAvail + ' active ' 
   }
   assert.ok(seen);
   const t = trackerLines(createQuestBook(m1, rest)); assert.ok(t.length >= 2 && t[0].kind === 'title' && t.some(x => x.kind === 'active'), 'tracker shows title + active objective');
+}
+// D-098 (QUEST-WOW-01b): TALK steps (flag set by a dialogue / a quest hand-in) show the '?' over the CHARACTER; place steps keep the target
+{
+  const raw = JSON.parse((await import('node:fs')).readFileSync(fileURLToPath(new URL('../../../content/dialogue/bear.dialogue.json', import.meta.url)), 'utf8'));
+  const owners = dialogueFlagOwners({ bear: raw });
+  assert.equal(owners['q.burl.boars.handin'], 'bear', 'dialogue flag -> its npc');
+  setTalkFlags(owners);
+  const b = createQuestBook(m1, rest); const ends = {};
+  for (const o of m1.objectives) {
+    const a = [], r = []; b.chainMarks(a, r); ends[o.id] = r.join(',');
+    const w = o.when;
+    if (w.type === 'flag') b.feed({ type: 'flag:set', key: w.id, value: w.equals !== undefined ? w.equals : true });
+    else if (w.type === 'area') b.feed({ type: 'area:entered', id: w.id });
+    else if (w.type === 'item') b.feed({ type: 'item:got', id: w.id });
+  }
+  assert.equal(ends.beasts, 'bear', 'talk step (quest.burl.boars.done = hand-in to Burl): ? over Burl');
+  assert.equal(ends.waystone, 'endMarker', 'place step keeps the ? on the target');
+  assert.equal(ends.leave, 'doorMarker'); assert.equal(ends.relayFound, 'relayBend');
+  setTalkFlags({ 'burl.arrived': 'bear' }); // a dialogue-set flag directly
+  const c = createQuestBook(m1, rest); for (const o of m1.objectives) { if (o.id === 'follow') break; const w = o.when; if (w.type === 'flag') c.feed({ type: 'flag:set', key: w.id, value: true }); else if (w.type === 'area') c.feed({ type: 'area:entered', id: w.id }); else if (w.type === 'item') c.feed({ type: 'item:got', id: w.id }); }
+  const a = [], r = []; c.chainMarks(a, r); assert.deepEqual(r, ['bear'], 'dialogue-flag step: ? over the npc'); setTalkFlags({});
 }
 // grey model exists once the side marks are registered
 { const A = { voxelModels: { questMark: assets.voxelModels.questMark, questMarkReady: assets.voxelModels.questMarkReady } }; if (A.voxelModels.questMarkReady) { addSideMarks(A); assert.equal(A.voxelModels.questMarkGrey.voxel.mats.C, 'team.a'); } }

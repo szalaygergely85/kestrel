@@ -101,7 +101,7 @@ function makeWorld(state) { return { state }; }
 {
   const assets = makeAssets();
   assets.palette.colors = { pencil: '#808080', aetherDim: '#336699', chartInk: '#555555', uiText: '#ffffff', ferrum: '#996633',
-    gold: '#ffcc00', chartEdge: '#444444', aether: '#66ccff' };
+    gold: '#ffcc00', chartEdge: '#444444', aether: '#66ccff', unitTeal: '#30c8f0', unitNeutral: '#cfc9ba' };
   const W = 96, R = 16;
   const chart = { chartVersion: 1, width: W, rows: R, shadeLevels: 16, bounds: { x0: 0, y0: 0, x1: 400, y1: 160 },
     categories: ['grass'], glyphs: Array(R).fill('0'.repeat(W)), shades: Array(R).fill('8'.repeat(W)) };
@@ -135,6 +135,12 @@ function makeWorld(state) { return { state }; }
   ok('setMarker off-map false', cv.setMarker(-5, 5, 'waystone') === false);
   cv.setQuestMarkers([{ kind: 'quest', x: 200, y: 40 }]);
   ok('quest marker still drawn', cellAt(200, 40) === '!');
+  // D-098: main gold, side blue, grey ? grey (palette keys unitTeal / unitNeutral)
+  { const rgbAt = (x, y) => { const i = (1 + Math.floor(y * 14 / 160)) * 96 + 1 + Math.floor(x * 94 / 400); return [art.rgb[i*3], art.rgb[i*3+1], art.rgb[i*3+2]].join(','); };
+    cv.setQuestMarkers([{ kind: 'quest', x: 200, y: 40 }, { kind: 'questSide', x: 220, y: 40 }, { kind: 'questReady', x: 240, y: 80 }, { kind: 'questReadySide', x: 260, y: 80 }, { kind: 'questGrey', x: 280, y: 120 }]);
+    ok('map: main ! gold, side ! blue', cellAt(200, 40) === '!' && rgbAt(200, 40) === '255,204,0' && cellAt(220, 40) === '!' && rgbAt(220, 40) === '48,200,240');
+    ok('map: main ? gold, side ? blue, grey ? grey', rgbAt(240, 80) === '255,204,0' && cellAt(260, 80) === '?' && rgbAt(260, 80) === '48,200,240' && cellAt(280, 120) === '?' && rgbAt(280, 120) === '207,201,186');
+    cv.setQuestMarkers([{ kind: 'quest', x: 200, y: 40 }]); }
   cv.setMarker(300, 80, 'waystone');
   ok('setMarker relay->O', cellAt(300, 80) === 'O' && cellAt(200, 40) === '!');
   cv.setQuestMarkers([]); cv.setTravelPoints(pts);
