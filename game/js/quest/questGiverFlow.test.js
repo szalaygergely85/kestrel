@@ -52,7 +52,8 @@ const kill = (r, n) => { for (let i = 0; i < n; i++) r.feed({ type: 'beast:died'
   const offer = t.talk(0);
   assert.equal(offer[0], "If you're heading west, mind the woods.");
   assert.equal(offer.at(-1), 'Mind their tusks, sky-cub.');
-  assert.equal(r.book.statusOf('burl.boars'), 2, 'Accept -> active');
+  assert.equal(r.book.statusOf('burl.boars'), 1, 'D-098: the story talk alone accepts nothing');
+  assert.equal(r.book.actKey('q.burl.boars.accept'), true); assert.equal(r.book.statusOf('burl.boars'), 2, 'Accept button -> active');
   assert.deepEqual(ev.filter((e) => e.endsWith('burl.boars')), ['quest:accepted:burl.boars']);
   assert.equal(r.objectiveText(), 'Kill boars 0/5', 'HUD follows the tracked quest (OB-099 count on kills)');
   assert.deepEqual(t.talk(), ['Still hearing those greedy snouts.', 'Five boars. No need to chase the whole herd.'], 'active -> reminder');
@@ -63,7 +64,8 @@ const kill = (r, n) => { for (let i = 0; i < n; i++) r.feed({ type: 'beast:died'
   assert.equal(r.state.completed.length, 4, 'm1 beasts still open before the hand-in');
   const handIn = t.talk(); // CH1-05: after-five lines, thanks (hand-in), then flows into the follow offer
   assert.equal(handIn[0], 'Ah! I can smell the berries again!'); { const k = handIn.indexOf("You've done an old bear a kindness."); assert.ok(k > 0, 'thanks line present'); assert.equal(handIn[k + 1], 'Come along, sky-cub.'); assert.ok(handIn.includes('Wake the waystones. They heal you,'), 'D-080 waystone explanation in the hand-in'); }
-  assert.equal(r.book.statusOf('burl.boars'), 4);
+  assert.equal(r.book.statusOf('burl.boars'), 3, 'D-098: the story alone does not hand in');
+  assert.equal(r.book.actKey('q.burl.boars.handin'), true); assert.equal(r.book.statusOf('burl.boars'), 4, 'Complete button hands in');
   assert.ok(ev.includes('quest:done:burl.boars'));
   assert.ok(r.state.completed.includes('beasts'), 'm1 beasts completed by the done flag');
   assert.equal(r.objectiveText(), m1.objectives[5].text, 'HUD back to m1 (waystone)');
@@ -86,7 +88,8 @@ const kill = (r, n) => { for (let i = 0; i < n; i++) r.feed({ type: 'beast:died'
   r.book.giverMarks(A, R); assert.deepEqual([A, R], [[], ['bear']], "left the tower: '?' over Burl");
   const meet = t.talk(1, -1); // choice 1 = 'I'm going west' -> flows into the boar offer, then 'Not yet'
   assert.equal(meet[0], 'Quite a fall you took, sky-cub.');
-  assert.equal(r.book.statusOf('tower.blade'), 4, 'the meet turned the blade quest in');
+  assert.equal(r.book.statusOf('tower.blade'), 3, 'the meet story alone does not hand in (D-098)');
+  r.book.actKey('q.tower.blade.handin'); assert.equal(r.book.statusOf('tower.blade'), 4, 'Complete button turns the blade quest in');
   assert.ok(ev.includes('quest:done:tower.blade'));
   assert.equal(r.book.statusOf('burl.boars'), 1);
   r.book.giverMarks(A, R); assert.deepEqual([A, R], [['bear'], []], "turned in: Burl shows '!' for the boars");
@@ -94,18 +97,18 @@ const kill = (r, n) => { for (let i = 0; i < n; i++) r.feed({ type: 'beast:died'
 // ---- Later keeps it available; boars before accept count; Esc on the ready line hands in nothing ----
 {
   const r = mkRelay(), t = setup(r); toSword(r);
-  assert.equal(t.talk(1).at(-1), 'Then sit a while. The boars will still be rude.');
+  assert.equal(t.talk(1).at(-1), 'Mind their tusks, sky-cub.'); // no inline Not-yet choice any more: the window offers Decline
   assert.equal(r.book.statusOf('burl.boars'), 1, 'Later keeps it available');
   kill(r, 5);
   assert.equal(r.book.statusOf('burl.boars'), 1, 'boars killed before accept: still needs Accept');
-  t.talk(0); assert.equal(r.book.statusOf('burl.boars'), 2, 'OB-115: accept with 5 dead -> still active (pre-accept kills do not count)'); kill(r, 5); assert.equal(r.book.statusOf('burl.boars'), 3, 'kills after accept -> ready');
+  t.talk(0); r.book.actKey('q.burl.boars.accept'); assert.equal(r.book.statusOf('burl.boars'), 2, 'OB-115: accept with 5 dead -> still active (pre-accept kills do not count)'); kill(r, 5); assert.equal(r.book.statusOf('burl.boars'), 3, 'kills after accept -> ready');
   t.talk(0, 1); assert.equal(r.book.statusOf('burl.boars'), 3, 'Esc on the first ready line: nothing handed in');
   assert.equal(r.state.completed.includes('beasts'), false);
-  t.talk(); assert.equal(r.book.statusOf('burl.boars'), 4);
+  t.talk(); r.book.actKey('q.burl.boars.handin'); assert.equal(r.book.statusOf('burl.boars'), 4);
 }
 // ---- save/load mid-quest ----
 {
-  const r = mkRelay(), t = setup(r); toSword(r); t.talk(0); kill(r, 2);
+  const r = mkRelay(), t = setup(r); toSword(r); t.talk(0); r.book.actKey('q.burl.boars.accept'); kill(r, 2);
   const sv = r.book.toSave();
   assert.equal(sv.quests['burl.boars'].accepted, true);
   const save = collectSave(world0, { quest: r.state, questDef: m1, quests: sv.quests, giverDefs: [blade, burl], deadBeasts: BOARS.slice(0, 2) });

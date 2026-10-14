@@ -31,13 +31,13 @@ function walk(f) {
 const R = (t) => 'ROOK: ' + t;
 
 { const f = mk(); const w = walk(f);
-  ok('meet: 8 lines, YOU answers on 2 and 6, caw clip, sets the quest accept', w.said.length === 8 && w.said[0] === R('Ha. The fell-bird walks.') && w.said[1] === 'YOU: ...You talk too.' && w.said[5].startsWith('YOU: ') && w.clips[0] === 'caw' && f.s.has('s.mq.bend.call.accept') && f.s.size === 1, w.said.length); }
+  ok('meet: 8 lines, YOU answers on 2 and 6, caw clip, sets NO accept flag (the window accepts, D-098)', w.said.length === 8 && w.said[0] === R('Ha. The fell-bird walks.') && w.said[1] === 'YOU: ...You talk too.' && w.said[5].startsWith('YOU: ') && w.clips[0] === 'caw' && !f.s.has('s.mq.bend.call.accept') && f.s.size === 0, w.said.length); }
 { const w = walk(mk('s.mq.bend.call.active')); ok('active: one line', w.said.length === 1 && w.said[0] === R('Count the blinks. Then the knot. Then me.')); }
 { const f = mk('s.mq.bend.call.ready', 's.mq.bend.call.active'); const w = walk(f);
-  ok('ready: 6 lines, hand-in flag, ready wins over active', w.said.length === 6 && w.said[3] === R('Here. Paper. River on it. Not shiny.') && f.s.has('s.mq.bend.call.handin')); }
+  ok('ready: 6 lines, no hand-in flag (window), ready wins over active', w.said.length === 6 && w.said[3] === R('Here. Paper. River on it. Not shiny.') && !f.s.has('s.mq.bend.call.handin')); }
 { const w = walk(mk('s.mq.bend.call.done')); ok('repeat at the Bend', w.said.length === 1 && w.said[0] === R('River. West. Do not drown, fell-bird.')); }
 { const f = mk('s.mq.bend.call.done', 's.mq.ford.mirror.available'); const w = walk(f);
-  ok('ford: 7 lines, accept flag, wins over bend.done', w.said.length === 7 && w.said[0] === R('Slow walker. Wet boots?') && f.s.has('s.mq.ford.mirror.accept')); }
+  ok('ford: 7 lines, no accept flag (window), wins over bend.done', w.said.length === 7 && w.said[0] === R('Slow walker. Wet boots?') && !f.s.has('s.mq.ford.mirror.accept')); }
 { const w = walk(mk('s.mq.bend.call.done', 's.mq.ford.mirror.active')); ok('mirror active hint', w.said.length === 1 && /Look inside/.test(w.said[0])); }
 { const f = mk('s.mq.bend.call.done', 's.waystone.ws_ford.woken'); const w1 = walk(f);
   ok('mirror done: 2 lines once, sets rook.mirror.told', w1.said.length === 2 && f.s.has('rook.mirror.told'));
