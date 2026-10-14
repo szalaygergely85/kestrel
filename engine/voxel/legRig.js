@@ -87,6 +87,11 @@ export function validateLegRig(def, partNames, errors) {
     });
   }
   const nLegs = Array.isArray(lr.legs) ? lr.legs.length : 0;
+  // the driver (stand-step pairs k >> 1, body pitch) assumes 4 legs ordered fore pair, then hind pair (fore = smaller foot y, head at y0)
+  if (nLegs === 4 && lr.legs.every((l) => l && Array.isArray(l.foot) && isNum(l.foot[1]))) {
+    const fy = lr.legs.map((l) => l.foot[1]);
+    if (!(Math.max(fy[0], fy[1]) < Math.min(fy[2], fy[3]))) errors.push(`${P}.legs: 4 legs must be ordered fore pair (legs 0,1) then hind pair (legs 2,3), fore = smaller foot y, head at y0`);
+  }
 
   if (lr.gaits === null || typeof lr.gaits !== 'object' || Array.isArray(lr.gaits)) {
     errors.push(`${P}.gaits: expected an object`);

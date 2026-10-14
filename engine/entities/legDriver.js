@@ -1,6 +1,6 @@
 // engine/entities/legDriver.js - ANIM-C-02 (architecture.md 38.67 section 3 "Driver"): per-frame, view-only leg planner.
 // Reads the root position the sim already produced and writes only a LegPose (Float64Array(16) per slot, read by the in-pose solve in
-// voxelPose.js): [w, bodyRx, bodyRy, bodyZcells, (tx,ty,tz) x 4 world metres]. Flat-ground core: no body tilt (C-03), no pool wiring (C-04).
+// voxelPose.js): [w, bodyRx, bodyRy, bodyZcells, (tx,ty,tz) x 4 world metres]. Body pitch/roll/drop from the foot heights (C-03); no pool wiring (C-04).
 // Imports nothing. No Math.random, no wall clock; state is one struct-of-arrays Float64Array, 0 allocation per update.
 //
 // Model frame: +y forward, +x right, z up; world = Rz(yawDeg) * model, so forward in the world is (-sin yaw, cos yaw).
@@ -17,14 +17,20 @@ const STAND_V = 0.15;       // m/s below which the driver stands still
 const STEP_TIME = 0.25;     // s, one stand step
 const FLAT_TOL = 0.25;      // m, |groundAt - rootZ| beyond which the flat fallback is used
 const POSE_STRIDE = 16;
-const HDR = 16, FOOT = 16, MAX_FEET = 4, STATE_STRIDE = HDR + FOOT * MAX_FEET;
+const HDR = 24, FOOT = 16, MAX_FEET = 4, STATE_STRIDE = HDR + FOOT * MAX_FEET;
 // header
 const H_INIT = 0, H_LX = 1, H_LY = 2, H_VX = 3, H_VY = 4, H_PHI = 5, H_W = 6, H_VALID = 7, H_D2 = 8, H_USED = 9, H_SOLVED = 10;
+// body tilt state (value, velocity): pitch deg, roll deg, drop metres
+const H_PIT = 11, H_ROL = 13, H_DRP = 15;
+const TILT_TAU = 0.12;      // s, critical damping of pitch / roll / drop
+const DROP_MAX = 0.35;      // x leg length
 // per foot
 const F_MODE = 0, F_PX = 1, F_LX = 4, F_GX = 7, F_T = 10, F_REPLAN = 11; // px,py,pz / lift-off / landing triples
 const M_STANCE = 0, M_SWING = 1, M_STEP = 2;
 
 const _land = new Float64Array(3); // scratch return of landing()
+const _lift = new Float64Array(4); // swing lift of each foot this frame (removed from the foot height for the body plane)
+const DEG = 180 / Math.PI;
 
 function smooth(q) { return q * q * (3 - 2 * q); }
 
@@ -162,6 +168,7 @@ export function createLegDriver(capacity = 48) {
     const t0 = P + 4;
     for (let k = 0; k < n; k++) {
       const F = S + HDR + k * FOOT, o = k * 12, T = t0 + k * 3;
+      _lift[k] = 0;
       const zOff = (restZ(geo, o) - anc[2]) * cm;
       const mx = (geo[o + 11] - anc[0]) * cm, my = (restY(geo, o) - anc[1]) * cm;
       const rx = x + cs * mx - sn * my, ry = y + sn * mx + cs * my; // rest point, world xy
@@ -174,7 +181,7 @@ export function createLegDriver(capacity = 48) {
       if (mode === M_STEP) {
         const tm = state[F + F_T] + dt;
         if (tm >= STEP_TIME) { plant(state, F); mode = state[F + F_MODE] = M_STANCE; }
-        else { state[F + F_T] = tm; swingPos(state, F, tm / STEP_TIME, lift, poses, T, zOff); continue; }
+        else { state[F + F_T] = tm; _lift[k] = swingPos(state, F, tm / STEP_TIME, lift, poses, T, zOff); continue; }
       }
       if (standMode) {
         if (mode === M_STANCE) {
@@ -189,7 +196,7 @@ export function createLegDriver(capacity = 48) {
               const gz = groundZ(ground, rx, ry, z);
               state[F + F_GX] = rx; state[F + F_GX + 1] = ry; state[F + F_GX + 2] = gz;
               state[F + F_T] = 0; state[F + F_MODE] = M_STEP;
-              swingPos(state, F, 0, lift, poses, T, zOff);
+              _lift[k] = swingPos(state, F, 0, lift, poses, T, zOff);
               continue;
             }
           }
@@ -213,11 +220,62 @@ export function createLegDriver(capacity = 48) {
           landing(ground, dirx, diry, x, y, z, cs, sn, mx, my, 1 - phi, stride, duty);
           state[F + F_GX] = _land[0]; state[F + F_GX + 1] = _land[1]; state[F + F_GX + 2] = _land[2];
         }
-        swingPos(state, F, q, lift, poses, T, zOff);
+        _lift[k] = swingPos(state, F, q, lift, poses, T, zOff);
       } else {
         poses[T] = state[F + F_PX]; poses[T + 1] = state[F + F_PX + 1]; poses[T + 2] = state[F + F_PX + 2] + zOff;
       }
     }
+    bodyTilt(S, P, lr, pm, z, dt, w, didReset);
+  }
+
+  // ANIM-C-03: body pitch / roll / drop from the foot ground heights (38.67 section 3 "Body on slopes").
+  // Order assumption (validated by validateLegRig): legs 0,1 are the fore pair, 2,3 the hind pair. Bipeds: roll only, pitch 0.
+  // On a flat fallback frame the targets are 0 (the body eases back to level).
+  function bodyTilt(S, P, lr, pm, rootZ, dt, w, snap) {
+    const n = lr.n, cm = pm.cellM, anc = pm.anchor, geo = lr.geo, t0 = P + 4;
+    let tPit = 0, tRol = 0, tDrp = 0;
+    if (!flatFrame) {
+      let mxs = 0, legM = 0;
+      for (let k = 0; k < n; k++) { mxs += (geo[k * 12 + 11] - anc[0]) * cm; const l = (geo[k * 12 + 6] + geo[k * 12 + 7]) * cm; if (l > legM) legM = l; }
+      mxs /= n;
+      let hF = 0, hH = 0, yF = 0, yH = 0, nF = 0, nH = 0, hL = 0, hR = 0, xL = 0, xR = 0, nL = 0, nR = 0;
+      for (let k = 0; k < n; k++) {
+        const o = k * 12, mx = (geo[o + 11] - anc[0]) * cm, my = (restY(geo, o) - anc[1]) * cm;
+        const g = poses[t0 + k * 3 + 2] - (restZ(geo, o) - anc[2]) * cm - _lift[k] - rootZ;
+        if (n > 2 && k >= 2) { hH += g; yH += my; nH++; } else { hF += g; yF += my; nF++; }
+        if (mx < mxs) { hL += g; xL += mx; nL++; } else { hR += g; xR += mx; nR++; }
+      }
+      if (nH > 0 && nF > 0) {
+        const lfh = yH / nH - yF / nF; // model front = smaller y (head at y0, rx+ = nose down)
+        if (lfh > 1e-3) tPit = -Math.atan2(hF / nF - hH / nH, lfh) * DEG;
+      }
+      if (nL > 0 && nR > 0) {
+        const wd = xR / nR - xL / nL;
+        if (wd > 1e-3) tRol = 0.5 * Math.atan2(hL / nL - hR / nR, wd) * DEG;
+      }
+      if (tPit > lr.maxPitch) tPit = lr.maxPitch; else if (tPit < -lr.maxPitch) tPit = -lr.maxPitch;
+      if (tRol > lr.maxRoll) tRol = lr.maxRoll; else if (tRol < -lr.maxRoll) tRol = -lr.maxRoll;
+      // drop: lowest foot below the tilted plane. Plane height at a foot = tan(pitch) * y - tan(roll) * x (body-local metres).
+      const tp = Math.tan(tPit / DEG), tr = Math.tan(tRol / DEG);
+      let low = 0;
+      for (let k = 0; k < n; k++) {
+        const o = k * 12, mx = (geo[o + 11] - anc[0]) * cm, my = (restY(geo, o) - anc[1]) * cm;
+        const g = poses[t0 + k * 3 + 2] - (restZ(geo, o) - anc[2]) * cm - _lift[k] - rootZ;
+        const r = g - (tp * my - tr * mx);
+        if (r < low) low = r;
+      }
+      tDrp = low < -DROP_MAX * legM ? -DROP_MAX * legM : low;
+    }
+    // critical damping (semi-implicit), snapped on reset
+    if (snap) {
+      state[S + H_PIT] = tPit; state[S + H_PIT + 1] = 0; state[S + H_ROL] = tRol; state[S + H_ROL + 1] = 0; state[S + H_DRP] = tDrp; state[S + H_DRP + 1] = 0;
+    } else if (dt > 0) {
+      const d = dt > 0.05 ? 0.05 : dt, om = 1 / TILT_TAU;
+      damp(state, S + H_PIT, tPit, om, d); damp(state, S + H_ROL, tRol, om, d); damp(state, S + H_DRP, tDrp, om, d);
+    }
+    poses[P + 1] = state[S + H_PIT] * w;
+    poses[P + 2] = state[S + H_ROL] * w;
+    poses[P + 3] = state[S + H_DRP] / cm * w;
   }
 
   // Landing point after `dPhi` more cycle: predicted root + yaw-rotated rest foot + forward * duty*S/2; ONE groundAt (-> _land).
@@ -233,6 +291,11 @@ export function createLegDriver(capacity = 48) {
 function restY(geo, o) { return geo[o] + geo[o + 2] + geo[o + 4]; }   // foot y = hipY + u.y + w.y (model cells)
 function restZ(geo, o) { return geo[o + 1] + geo[o + 3] + geo[o + 5]; } // foot z
 
+function damp(st, i, target, om, d) {
+  const a = om * om * (target - st[i]) - 2 * om * st[i + 1];
+  st[i + 1] += a * d; st[i] += st[i + 1] * d;
+}
+
 function plant(state, F) {
   state[F + F_PX] = state[F + F_GX]; state[F + F_PX + 1] = state[F + F_GX + 1]; state[F + F_PX + 2] = state[F + F_GX + 2];
 }
@@ -243,5 +306,7 @@ function swingPos(state, F, q, lift, poses, T, zOff) {
   const s = smooth(q);
   poses[T] = state[F + F_LX] + (state[F + F_GX] - state[F + F_LX]) * s;
   poses[T + 1] = state[F + F_LX + 1] + (state[F + F_GX + 1] - state[F + F_LX + 1]) * s;
-  poses[T + 2] = state[F + F_LX + 2] + (state[F + F_GX + 2] - state[F + F_LX + 2]) * q + lift * Math.sin(Math.PI * q) + zOff;
+  const lf = lift * Math.sin(Math.PI * q);
+  poses[T + 2] = state[F + F_LX + 2] + (state[F + F_GX + 2] - state[F + F_LX + 2]) * q + lf + zOff;
+  return lf;
 }

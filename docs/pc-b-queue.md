@@ -25,7 +25,7 @@ Source: `design/preview/animal-look-options.html` + `design/animal-look-options.
 | ANIM-B-01 | designer + kestrel-4 | Knee rigs (upper + lower leg, hind legs bend backwards) for bear, black bear, wolf, deer, goat, heron, goblin, fox, same voxels as today (preview check: voxel count equal); walk/run/idle clips from the gait generator; owner look per animal. | VOX-PARTS-16 | todo |
 | ANIM-C-01 | kestrel-3 (engine; PC-A arch-review) | Arch 38.67 item 3: `legRig` validator + `packLegRig` + in-pose 2-bone solve (`inst.legs` LegPose); oracle test vs the preview FK, bit-identical when null, 0 alloc. | VOX-PARTS-16a | todo |
 | ANIM-C-02 | kestrel-3 (engine; PC-A arch-review) | `legDriver` flat-ground core: speed EMA, gait phase, stance/swing planting, `groundAt` cache, stand mode, reset, w fades, LOD cap 16 / 35 m; foot slide <= 12 mm at 0.5x/1x/1.5x, determinism, 0 alloc. | ANIM-C-01 | todo |
-| ANIM-C-03 | kestrel-3 (engine; PC-A arch-review) | Slopes: body pitch/roll/drop, damping, clamps, flat fallback; tests on a 20 deg slope + a step. | ANIM-C-02 | todo |
+| ANIM-C-03 | kestrel-3 (engine; PC-A arch-review) | Slopes: body pitch/roll/drop, damping, clamps, flat fallback; tests on a 20 deg slope + a step. | ANIM-C-02 | arch-review |
 | ANIM-C-04 | kestrel-3 (engine; PC-A arch-review) | VoxelPool `legs` plumbing + `legInstance`, fauna feed wiring (deer/fox/goat), `?legik=0`, bench-life 30 animals (JS p95 within D-007). | ANIM-C-03 | todo |
 | ANIM-C-05 | kestrel-1 (game wiring) | `beastView` wiring, bear first (then wolf/goblin): attach/release, gait clip time from phase, `legPose`; owner walk on a hill with Burl. | ANIM-C-04, ANIM-B-01 (bear) | todo |
 

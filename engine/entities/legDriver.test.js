@@ -107,6 +107,72 @@ for (const m of [0.5, 1, 1.5]) {
   ok('null ground works', Number.isFinite(d4.poseOf(s4)[6]));
 }
 
+// ---- ANIM-C-03: slopes. Model front (nose) = smaller model y (head at y0), world +y at yaw 180; rx+ = nose down. (The driver moves toward model +y, so this fixture walks tail first; pitch is pure geometry and unaffected.)
+{
+  const cm = pm.cellM, geo = lr.geo, anc = pm.anchor;
+  const my = (k) => (geo[k * 12] + geo[k * 12 + 2] + geo[k * 12 + 4] - anc[1]) * cm;
+  const lfh = (my(2) + my(3) - my(0) - my(1)) / 2;
+  const T20 = Math.tan(20 * Math.PI / 180);
+  const hill = { n: 0, groundAt(x, y) { this.n++; return y * T20; } }; // rises toward world +y = the nose at yaw 180
+  const runSlope = (g, steps, dir) => {
+    const d = createLegDriver(2), s = d.attach(pm), pose = d.poseOf(s);
+    let y = 5, maxFootErr = 0, minPit = 99, maxPit = -99, finite = true, maxSlide = 0;
+    const sy = [0, 0, 0, 0], sx = [0, 0, 0, 0], inSt = [false, false, false, false];
+    for (let f = 0; f < steps; f++) {
+      y += dir * tuned / 60;
+      setIo(d, 5, y, g.groundAt(5, y), 180); d.update(s, pm, WALK, g);
+      if (!pose.every(Number.isFinite)) finite = false;
+      if (f < 120) continue;
+      minPit = Math.min(minPit, pose[1]); maxPit = Math.max(maxPit, pose[1]);
+      const Phi = d.io[8];
+      for (let k = 0; k < 4; k++) {
+        let phi = Phi - GAIT[4 + k]; phi -= Math.floor(phi);
+        if (phi >= duty) { inSt[k] = false; continue; }
+        const T = 4 + k * 3;
+        maxFootErr = Math.max(maxFootErr, Math.abs(pose[T + 2] - zOff - g.groundAt(pose[T], pose[T + 1])));
+        if (!inSt[k]) { inSt[k] = true; sx[k] = pose[T]; sy[k] = pose[T + 1]; }
+        maxSlide = Math.max(maxSlide, Math.hypot(pose[T] - sx[k], pose[T + 1] - sy[k]));
+      }
+    }
+    return { pose, maxFootErr, minPit, maxPit, finite, maxSlide, d };
+  };
+  const up = runSlope(hill, 480, -1); // walking toward -y = uphill
+  ok('20 deg slope: pitch settles at -20 deg (nose up, clamp 20), within 1.5 deg', up.minPit > -21 && up.maxPit < -18.5, up.minPit.toFixed(2) + ' .. ' + up.maxPit.toFixed(2));
+  ok('20 deg slope: stance feet on the ground within 1 cm', up.maxFootErr < 0.01, (up.maxFootErr * 1000).toFixed(2) + ' mm');
+  ok('20 deg slope: stance slide <= 12 mm', up.maxSlide <= 0.012, (up.maxSlide * 1000).toFixed(2) + ' mm');
+  ok('20 deg slope: finite, roll ~ 0, drop small', up.finite && Math.abs(up.pose[2]) < 0.5 && Math.abs(up.pose[3] * cm) < 0.03, up.pose[2] + ' ' + up.pose[3] * cm);
+  const down = runSlope({ n: 0, groundAt(x, y) { return -y * T20; } }, 480, -1); // falls toward the nose
+  ok('downhill: nose down +, near +20 deg', down.maxPit > 18.5 && down.minPit > 0 && down.finite, down.minPit.toFixed(2) + ' .. ' + down.maxPit.toFixed(2));
+  ok('slope walk is deterministic (bit-equal LegPose)', Array.from(runSlope(hill, 300, -1).pose).every((v, i) => Object.is(v, runSlope(hill, 300, -1).pose[i])));
+
+  // cross slope: ground rises toward +x (right) -> body leans left (ry < 0), roll clamp 8 deg
+  const side = { n: 0, groundAt(x, y) { return (x - 5) * 0.1; } };
+  { const d = createLegDriver(1), s = d.attach(pm); for (let i = 0; i < 90; i++) { setIo(d, 5, 5, 0, 0); d.update(s, pm, IDLE, side); }
+    const r = d.poseOf(s)[2]; const wd = (-(geo[11] - anc[0]) + (geo[23] - anc[0])) * cm; // leg0 is left (smaller x)
+    ok('cross slope: roll tilts the top away from the high side, within clamp', r < -1 && r >= -lr.maxRoll - 1e-9, r); void wd; }
+
+  // step: fore pair on a 0.24 m step, hind pair on the flat, stationary -> pitch clamps at 20 deg, body drops
+  { const stepH = 0.24, edge = (my(0) + my(2)) / 2 + 5; // between fore (smaller y) and hind rest feet
+    const g = { n: 0, groundAt(x, y) { return y < edge ? stepH : 0; } };
+    const d = createLegDriver(1), s = d.attach(pm), p = d.poseOf(s);
+    let prev = 0, monotone = true;
+    for (let i = 0; i < 180; i++) { setIo(d, 5, 5, 0, 0); d.update(s, pm, IDLE, g); if (i > 0 && p[1] > prev + 1e-9) monotone = false; prev = p[1]; }
+    const wantPit = -Math.min(20, Math.atan2(stepH, lfh) * 180 / Math.PI);
+    ok('step: pitch = clamp(-atan(h / L)) within 0.5 deg, no overshoot', Math.abs(p[1] - wantPit) < 0.5 && monotone, p[1].toFixed(3) + ' want ' + wantPit.toFixed(3));
+    // expected drop: lowest foot below the tilted plane
+    const tp = Math.tan(p[1] * Math.PI / 180); let low = 0;
+    for (let k = 0; k < 4; k++) { const gk = k < 2 ? stepH : 0; const rk = gk - tp * my(k); if (rk < low) low = rk; }
+    ok('step: drop matches the lowest foot below the plane (+-1 cm), clamped >= -0.35 leg', Math.abs(p[3] * cm - low) < 0.01 && p[3] * cm >= -0.35 * (lr.geo[6] + lr.geo[7]) * cm - 1e-9, (p[3] * cm).toFixed(4) + ' vs ' + low.toFixed(4));
+    ok('step: feet planted on their own height', Math.abs(p[6] - zOff - stepH) < 1e-9 && Math.abs(p[12] - zOff) < 1e-9, p[6] + ' ' + p[12]);
+  }
+  // flat fallback: ground missing -> tilt eases to 0
+  { const d = createLegDriver(1), s = d.attach(pm); for (let i = 0; i < 60; i++) { setIo(d, 5, 5, 5 * T20, 180); d.update(s, pm, IDLE, hill); }
+    const before = d.poseOf(s)[1];
+    for (let i = 0; i < 1; i++) { setIo(d, 5, 5, 5 * T20, 180); d.update(s, pm, IDLE, null); }
+    d.reset(s); for (let i = 0; i < 60; i++) { setIo(d, 5, 5, 5 * T20, 180); d.update(s, pm, IDLE, null); }
+    ok('flat fallback: missing ground -> level body', Math.abs(before) > 5 && Math.abs(d.poseOf(s)[1]) < 1e-6 && Math.abs(d.poseOf(s)[3]) < 1e-9, before + ' -> ' + d.poseOf(s)[1]); }
+}
+
 // ---- attach / release / no legRig
 {
   const d = createLegDriver(2);

@@ -218,6 +218,12 @@ ok('bit-identical pose + FORWARD with legs null / w = 0 (garbage content) / mode
   ok('0 alloc: 50000 solved poses leave the heap flat (< 100 KB)', dh < 1e5, dh + ' B');
 }
 
+// ANIM-C-03: 4 legs must be ordered fore pair, then hind pair (the driver's stand-step pairs and body pitch rely on it)
+{
+  const sw = { ...quadruped16, legRig: { ...quadruped16.legRig, legs: [quadruped16.legRig.legs[0], quadruped16.legRig.legs[2], quadruped16.legRig.legs[1], quadruped16.legRig.legs[3]] } };
+  ok('legs order: fore pair first is enforced', has(sw, 'fore pair'), JSON.stringify(errs(sw)));
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');
