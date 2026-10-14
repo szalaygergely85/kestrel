@@ -437,6 +437,7 @@
   }
   A.models.burnerFire = {
     name: 'burnerFire',
+    fx: true,                                  // OB-172/D-104: fire is a billboard, exempt from lint R2
     desc: 'US-053c / 36.2: the burner\'s fire body, Build-engine style - a white-yellow core low in the mouth, ' +
           'orange licking tongues with ragged red tips and detached flicks, over a bed of embers. All emissive. ' +
           'Particles add embers + smoke above it.',
