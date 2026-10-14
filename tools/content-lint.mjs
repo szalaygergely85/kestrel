@@ -175,8 +175,23 @@ export async function buildContext(opts = {}) {
     nearVisual: (def.structures || []).some((s) => s.origin && Math.hypot(s.origin.x - e.x, s.origin.y - e.y) <= 1) || entities.some((o) => o !== e && hasModel(o) && Math.hypot(o.x - e.x, o.y - e.y) <= 1),
   }));
 
+  // R15 inputs (ED-LOGIC-01d): the real content/logic/*.logic.json files + the real vocab; refs from the world (areas = trigger ids, groups = reserve beasts)
+  const logic = await (async () => {
+    const { LOGIC_VOCAB } = await import('../game/js/logic/vocab.js');
+    const dir = path.join(root, 'content/logic'), blocks = [];
+    for (const n of fs.readdirSync(dir).filter((x) => x.endsWith('.logic.json')).sort()) {
+      if (/^example./.test(n)) continue; // placeholder ids, not loaded by the game
+      for (const b of JSON.parse(fs.readFileSync(path.join(dir, n), 'utf8'))) blocks.push({ ...b, file: n });
+    }
+    const props = JSON.parse(fs.readFileSync(path.join(dir, 'props.json'), 'utf8'));
+    const tower = JSON.parse(fs.readFileSync(path.join(root, 'content/levels/tower.level.json'), 'utf8'));
+    const groups = new Set(entities.filter((e) => e.components.brain && e.components.brain.reserve === true && e.components.brain.group).map((e) => e.components.brain.group));
+    const propIds = new Set([...Object.keys(props), ...(tower.props || []).map((p) => 'tower.' + p.id)]);
+    const propStates = {}; for (const [id, d] of Object.entries(props)) propStates[id] = new Set(Object.keys(d).filter((k) => k !== 'initial'));
+    return { blocks, vocab: LOGIC_VOCAB, propStates, refs: { area: new Set(trig.keys()), quest: new Set(qs.map((q) => q.id)), prop: propIds, group: groups } };
+  })();
   return {
-    entSupport, anchors, entities, structures: def.structures, floating, texts, jsTexts, quests: qs, itemDefs: assets.items?.defs || (await loadDesignAssets()).items?.defs,
+    logic, entSupport, anchors, entities, structures: def.structures, floating, texts, jsTexts, quests: qs, itemDefs: assets.items?.defs || (await loadDesignAssets()).items?.defs,
     labelOf, giverIds, pos, groundAt: gz, walkable, characters, levelIds: new Set((JSON.parse(fs.readFileSync(path.join(root, 'content/levels/tower.level.json'), 'utf8')).props || []).map((p) => p.id)), chests: entities.filter((e) => /^chest/.test(e.id)), guards,
     riverX: (y) => T.util.riverX(y), riverHalf: 10,
   };

@@ -1,13 +1,15 @@
 // ED-QUEST-BROWSER: the pure content-lint rules (no node imports) so the editor page can import them over HTTP
 // (python's http.server serves .mjs as text/plain, which browsers refuse). tools/content-lint.mjs re-exports this file.
 
+import { validateLogic } from '../engine/index.js';
 export const MAX_FLOAT = 0.25, GIVER_MAX_UP = 2.5, GIVER_WALK_R = 3, ENT_MAX_FLOAT = 0.15, BURY_MIN = 0.1, BURY_MAX = 0.9, OBJECT_GIVER_MAX = 0.1, SMOKE_SRC_R = 3, CHIMNEY_R = 6, CHIMNEY_MIN = 3, CHEST_R = 25;
-export const LEVELS = { R1: 'error', R2: 'error', R3: 'error', R4: 'error', R5: 'error', R6: 'error', R7: 'error', R8: 'warn', R9: 'warn', R10: 'warn', R11: 'error', R12: 'error', R13: 'error', R14: 'error' };
+export const LEVELS = { R1: 'error', R2: 'error', R3: 'error', R4: 'error', R5: 'error', R6: 'error', R7: 'error', R8: 'warn', R9: 'warn', R10: 'warn', R11: 'error', R12: 'error', R13: 'error', R14: 'error', R15: 'error' };
 export const TITLES = {
   R1: 'floating placed prop/tree', R2: 'components.sprite in the world', R3: 'raw id in player text', R4: '"relay" in player text',
   R5: 'giver unreachable', R6: 'smoke without a source', R7: 'chimney outside a building', R8: 'chest with no guard/puzzle/giver nearby',
   R9: 'early quest objective across the river', R10: 'quest given/returned by an object', R11: 'banned mesh placed',
   R12: 'entity not supported by ground/structure (floating or buried)', R13: 'prompt/marker anchor has no visible model', R14: 'quest flow (OB-156): character giver, Accept/Exit, character return',
+  R15: 'logic blocks (ED-LOGIC-01d): refs exist, group spawned by one block, no flag loop',
 };
 const f1 = (n) => (typeof n === 'number' ? +n.toFixed(1) : n);
 const F = (rule, id, x, y, msg) => ({ rule, level: LEVELS[rule], id, x: f1(x), y: f1(y), msg });
@@ -130,6 +132,7 @@ export const RULES = {
   R13: (c) => (c.anchors || []).filter((a) => !a.hasModel && !a.nearVisual).map((a) => F('R13', a.id, a.x, a.y, 'prompt/marker anchor with no model and no visible mesh/voxel within 1 m')),
   // R14 [OB-156/OB-155r, D-082, D-087, QPIPE-LINT-01] ctx.quests (packs + legacy) with .giver {npc, turnIn}, .accept (Accept/Exit dialogue exists),
   // .auto (handed in without a line), .objectGiver; ctx.characters, ctx.pos, ctx.groundAt, ctx.walkable
+  R15: (c) => r15(c),
   R14: (c) => {
     const out = [];
     let givers = 0, objGivers = 0;
@@ -143,6 +146,32 @@ export const RULES = {
     return out;
   },
 };
+
+// R15 [ED-LOGIC-01d, arch 38.70] ctx.logic = { blocks: [{...block, file}], vocab, refs: {area,quest,prop,group,item: Set}, propStates: {propId: Set(states)} }
+const unlimited = (b) => !b.once && !(b.max > 0);
+export function r15(c) {
+  const L = c.logic; if (!L || !L.blocks.length) return [];
+  const out = [], at = (b) => b.id;
+  for (const msg of validateLogic(L.blocks.map(({ file, ...b }) => b), L.vocab, L.refs)) out.push(F('R15', msg.split(/[ :]/)[0] || '*', '-', '-', msg));
+  const by = new Map(L.blocks.map((b) => [b.id, b]));
+  for (const b of L.blocks) for (const a of b.do || []) {
+    if (a.act === 'prop.state' && L.propStates && L.propStates[a.prop] && !L.propStates[a.prop].has(a.state)) out.push(F('R15', at(b), '-', '-', `prop "${a.prop}" has no state "${a.state}"`));
+  }
+  const spawners = {}; // group -> blocks that spawn it
+  for (const b of L.blocks) for (const a of b.do || []) if (a.act === 'beasts.spawn') (spawners[a.group] ||= new Set()).add(b);
+  for (const [g, set] of Object.entries(spawners)) if (set.size > 1 && [...set].some(unlimited)) out.push(F('R15', [...set].map(at).join('+'), '-', '-', `group "${g}" is spawned by ${set.size} blocks without once/max`));
+  // flag loops: block A sets flag F, block B reacts to flag.set F ... back to A, all without once/max
+  const next = (b) => L.blocks.filter((o) => o.when && o.when.on === 'flag.set' && (b.do || []).some((a) => a.act === 'flag.set' && a.flag === o.when.flag));
+  const state = new Map();
+  const dfs = (b, path) => {
+    if (!unlimited(b)) return;
+    if (state.get(b.id) === 1) { out.push(F('R15', b.id, '-', '-', `flag loop: ${[...path.slice(path.indexOf(b.id)), b.id].join(' -> ')} (add once/max)`)); return; }
+    if (state.get(b.id) === 2) return;
+    state.set(b.id, 1); for (const n of next(b)) dfs(n, [...path, b.id]); state.set(b.id, 2);
+  };
+  for (const b of L.blocks) dfs(b, []);
+  return out;
+}
 
 /** Runs the rules (all, or opts.only = ['R1',..]); returns findings sorted by rule order. */
 export function lint(ctx, opts = {}) {

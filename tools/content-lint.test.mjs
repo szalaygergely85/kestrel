@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { lint, RULES, LEVELS, line, rawIn } from './content-lint.mjs';
 
+import { LOGIC_VOCAB as LV } from '../game/js/logic/vocab.js';
 const S = (id, mesh, x, y) => ({ id, mesh, origin: { x, y, z: 0 } });
 const E = (id, x, y, z, components = {}) => ({ id, x, y, z, components });
 const labelOf = (id) => ({ post: 'trade basket' }[id] || String(id).replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase());
@@ -18,6 +19,8 @@ const clean = () => ({
   characters: new Set(['rook']), chests: [{ id: 'chestA', x: 60, y: 55 }], guards: [{ x: 60, y: 60, kind: 'camp' }],
   riverX: () => 1030, riverHalf: 10,
   entSupport: [{ id: 'chestA', x: 60, y: 55, base: 0.05, support: 0, floorAbove: null }, { id: 'tower.lantern', x: 1, y: 1, base: 4, support: 0, floorAbove: null }],
+  logic: { vocab: LV, propStates: { gate: new Set(['open', 'closed']) }, refs: { area: new Set(['yard']), quest: new Set(['q1']), prop: new Set(['gate']), group: new Set(['gobs']) },
+    blocks: [{ id: 'a.ambush', rev: 1, once: true, when: { on: 'area.enter', area: 'yard' }, if: [{ is: 'quest', quest: 'q1', state: 'active' }], do: [{ act: 'prop.state', prop: 'gate', state: 'closed' }, { act: 'beasts.spawn', group: 'gobs' }] }] },
   anchors: [{ id: 'sign1', x: 2, y: 2, hasModel: true, nearVisual: false }, { id: 'knot', x: 3, y: 3, hasModel: false, nearVisual: true }],
 });
 const run = (c) => lint(c);
@@ -38,6 +41,7 @@ const cases = {
   R12: (c) => { c.entSupport.push({ id: 'pineChest', x: 1, y: 1, base: 0.8, support: 0, floorAbove: null }); },
   R13: (c) => { c.anchors.push({ id: 'notePost', x: 4, y: 4, hasModel: false, nearVisual: false }); },
   R14: (c) => { c.quests[0].accept = false; },
+  R15: (c) => { c.logic.blocks[0].when.area = 'nowhere'; }, // missing ref
   R11: (c) => { c.structures.push(S('m1', 'quaternius/Mushroom_Laetiporus', 7, 7)); },
 };
 for (const [rule, mutate] of Object.entries(cases)) {
@@ -58,5 +62,13 @@ for (const [rule, mutate] of Object.entries(cases)) {
 { const c = clean(); c.quests[0].auto = true; assert.ok(RULES.R14(c).some((f) => /auto hand-in/.test(f.msg))); c.quests[0].auto = false; c.quests[0].giver = {}; assert.ok(RULES.R14(c).some((f) => /no giver/.test(f.msg))); }
 { const c = clean(); c.texts.push({ where: 'legacy.m1 lines[0]', text: 'Wake the Relay stone.' }); assert.equal(RULES.R4(c).length, 1, 'PLAYER-TEXT-RELAY-01: legacy quest text is scanned'); }
 assert.equal(rawIn('Reward: gear.feet.boots.sturdy'), 'gear.feet.boots.sturdy'); assert.equal(rawIn('The well. Cold water.'), null); assert.equal(rawIn('signArm'), null);
-assert.ok(Object.values(LEVELS).filter((l) => l === 'warn').length === 3, 'R8 R9 R10 are warn level (R12 R13 R14 errors)');
+// R15: the other hand-broken fixtures (each fires exactly R15)
+for (const mut of [
+  (L) => { L.blocks[0].do[1].group = 'ghosts'; },                                  // group ref missing
+  (L) => { L.blocks[0].do[0].state = 'ajar'; },                                    // prop has no such state
+  (L) => { L.blocks[0].once = false; L.blocks.push({ id: 'b.again', rev: 1, once: false, when: { on: 'area.enter', area: 'yard' }, do: [{ act: 'beasts.spawn', group: 'gobs' }] }); }, // two spawners, no once
+  (L) => { L.blocks = [{ id: 'l1', rev: 1, when: { on: 'flag.set', flag: 'f1' }, do: [{ act: 'flag.set', flag: 'f2', value: true }] }, { id: 'l2', rev: 1, when: { on: 'flag.set', flag: 'f2' }, do: [{ act: 'flag.set', flag: 'f1', value: true }] }]; }, // loop
+]) { const c = clean(); mut(c.logic); const found = run(c); assert.ok(found.length >= 1 && found.every((f) => f.rule === 'R15'), 'R15 fixture: ' + found.map(line).join(' | ')); }
+{ const c = clean(); c.logic.blocks = [{ id: 'l1', rev: 1, once: true, when: { on: 'flag.set', flag: 'f1' }, do: [{ act: 'flag.set', flag: 'f1', value: true }] }]; assert.deepEqual(run(c), [], 'self-loop with once is allowed'); }
+assert.ok(Object.values(LEVELS).filter((l) => l === 'warn').length === 3, 'R8 R9 R10 are warn level (R12 R13 R14 R15 errors)');
 console.log('content-lint.test: ok (' + Object.keys(cases).length + ' rules + clean control)');

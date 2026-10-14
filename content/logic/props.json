@@ -1,0 +1,13 @@
+{
+  "farmGateLeaf": {
+    "initial": "open",
+    "closed": {
+      "yawDeg": 0,
+      "collide": true
+    },
+    "open": {
+      "yawDeg": 90,
+      "collide": false
+    }
+  }
+}

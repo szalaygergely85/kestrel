@@ -87,7 +87,7 @@ import { noteRead, resetNoteRead, stepNoteRead, isNoteOpen, getOpenNoteId, isNot
 import { createNoteOffer } from './quest/objectOffer.js'; // QFIX-S5-CLOSE: keep-light note close -> Accept/Exit offer
 import { wakeFrame, drawEyelid, applyWakeOnLoad } from './quest/wake.js';
 import { initMapCard, stepMapCard, isMapOpen, getMapPanel, getMapChart, drawMapCard } from './quest/mapCard.js';
-import { resetHints, stepHints, drawHints, pushHintDim, setPaletteColors as setHintPaletteColors } from './quest/hints.js';
+import { request as requestHint, resetHints, stepHints, drawHints, pushHintDim, setPaletteColors as setHintPaletteColors } from './quest/hints.js';
 import { hooks as gameHooks, bridgeEngineEvents } from './gameHooks.js'; // D-050: the one seam to game content
 import { createWaystoneTouch } from './waystoneTouch.js'; // WAYSTONE-TOUCH-01
 import { createWaystoneWire } from './quest/wire/waystone.js'; // WAYSTONE-01w
@@ -1169,6 +1169,13 @@ async function runGame(mode, cinematic = null) {
   try { regionAmbTable = await (await fetch('../content/life/regionAmbient.json')).json(); } catch (e) { console.warn('[regionAmbient] off:', e && e.message); }
   let goblinWire = null, goblinJson = null; // GOB-07b: goblin camps + enemy spears (content/life/goblinCamps.json)
   try { goblinJson = await (await fetch('../content/life/goblinCamps.json')).json(); } catch (e) { console.warn('[goblins] off:', e && e.message); }
+  // ED-LOGIC-01d: content/logic/index.json {files:[*.logic.json], props:'props.json'} -> ASSETS.logicBlocks (content order) + ASSETS.logicProps (mesh-prop states)
+  try {
+    const dir = '../content/logic/', idx = await (await fetch(dir + 'index.json')).json(), blocks = [];
+    for (const n of idx.files || []) blocks.push(...await (await fetch(dir + n)).json());
+    window.ASSETS.logicBlocks = blocks;
+    window.ASSETS.logicProps = idx.props ? await (await fetch(dir + idx.props)).json() : {};
+  } catch (e) { console.warn('[logic] content off:', e && e.message); }
   Object.defineProperty(window.__debug, 'goblinWire', { configurable: true, get: () => goblinWire }); // verify-goblins
   let tileDormTick = 0; // WM-04
   let wild = null; // WILD-06: ambient fauna, rebuilt on every 'world:loaded' (= reset on load / new game / restart)
@@ -1595,7 +1602,7 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
       { const lb = (window.ASSETS && window.ASSETS.logicBlocks) || []; // 01d: content/logic/*.logic.json blocks; hint/sound callbacks wired with 01d
         if (lb.length && saveRelay) {
           try {
-            logicWire = createLogicWire({ world, blocks: lb, book: saveRelay.quest.book, inventory: playerHandle && playerHandle.data.components.inventory, sim: beasts, nav: world.nav, hooks: gameHooks, feed: (e) => saveRelay.quest.feed(e), player: () => playerHandle && playerHandle.data.transform });
+            logicWire = createLogicWire({ world, blocks: lb, book: saveRelay.quest.book, inventory: playerHandle && playerHandle.data.components.inventory, sim: beasts, nav: world.nav, hooks: gameHooks, meshStates: window.ASSETS.logicProps, hint: (id) => requestHint(world, assets.uiStyle, id), feed: (e) => saveRelay.quest.feed(e), player: () => playerHandle && playerHandle.data.transform });
             logicUnreg = gameHooks.register(logicWire.handlers()); logicWire.onWorldLoaded();
           } catch (err) { console.warn('[logic] wire failed:', err && err.message); logicWire = null; }
         } }
