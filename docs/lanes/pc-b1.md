@@ -1042,3 +1042,6 @@ Verify (not run): `node tools/verify-edq-05.mjs {port}`, `node tools/verify-edq-
 
 ### ED-QUEST-DEPS (kestrel-1, 2026-10-14)
 markers.js now mirrors MARK_MARGIN/MARK_DEFAULT_TOP/markZ locally (no game/ import); parity test tools/quest-editor-markers-parity.test.mjs. sideQuest.test.mjs moved to tools/quest-editor-sidequest.test.mjs (cross-layer, tools/ may import game/). check-deps OK.
+### ANIM-C-05b foot slide (kestrel-1, 2026-10-14)
+- Cause: the 18.9 mm was a MEASUREMENT artifact. verify-legs counted a foot as planted when its target was < 2 cm above ground, which includes swing feet near lift-off/touchdown (still low, still moving). Node twin: true stance feet (by gait phase) slide 0.0 mm at steady/7-16-33 ms/30 fps frames, 1.0-1.1 m/s; the old metric reproduces 10-20 mm even with steady dt.
+- Fix: tools/verify-legs.mjs stance = target height frozen 2 frames; main.js (+3 lines) now feeds the real frame time to `beastLegs.dtMs` (was fixed 16.7 ms). New test game/js/quest/beastLegsSlide.test.js (6 checks, jittery dt + both metrics). No engine change. Main session: `node tools/verify-legs.mjs {port}` (9500-9574).

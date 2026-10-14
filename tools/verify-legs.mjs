@@ -54,9 +54,9 @@ try {
         setCount++;
         maxPitchDeg = Math.max(maxPitchDeg, Math.abs(lp[1]) * 180 / Math.PI);
         for (let k = 0; k < 4; k++) {
-          const fx = lp[4 + k * 3], fy = lp[5 + k * 3], fz = lp[6 + k * 3], on = fz - g.groundAt(fx, fy) < 0.02; // foot target on the ground = stance
-          if (on && feet[k] && feet[k].on) { const m = Math.hypot(fx - feet[k].x, fy - feet[k].y) * 1000; if (m < 1) planted++; else if (m < 20) maxSlideMm = Math.max(maxSlideMm, m); } // < 1 mm = fixed; 1..20 mm = slide; larger = a lift-off/landing jump, not counted
-          feet[k] = { x: fx, y: fy, on };
+          const fx = lp[4 + k * 3], fy = lp[5 + k * 3], fz = lp[6 + k * 3], on = !!feet[k] && Math.abs(fz - feet[k].z) < 0.0001 && feet[k].zs; // stance = target height frozen for 2 frames (a swing foot near lift-off/touchdown also sits low but its height still changes; ANIM-C-05b)
+          if (on && feet[k].on) { const m = Math.hypot(fx - feet[k].x, fy - feet[k].y) * 1000; if (m < 1) planted++; else if (m < 20) maxSlideMm = Math.max(maxSlideMm, m); } // < 1 mm = fixed; 1..20 mm = slide; larger = a lift-off/landing jump, not counted
+          feet[k] = { x: fx, y: fy, z: fz, on, zs: !!feet[k] && Math.abs(fz - feet[k].z) < 0.0001 };
         }
       }
     }

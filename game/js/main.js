@@ -2371,8 +2371,10 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
     terrainEnabled,
   };
 
+  let legRenderT = 0, legDtMs = 1000 / 60;
   function render(alpha) {
     const renderStart = performance.now();
+    { const lt = legRenderT; legRenderT = renderStart; legDtMs = lt > 0 ? Math.min(50, Math.max(1, renderStart - lt)) : 1000 / 60; } // ANIM-C-05b: real frame time for the leg driver
     const bootFirst = !bootPrinted;
     if (farHold.active) { // OB-109: Continue/Load/back-to-menu swapped in a fresh Terrain: bake at full speed behind a card, no world render
       if (!farHold.step() && landCard) { landCard.remove(); landCard = null; } else if (landCard) landCard.set(farHold.frac);
@@ -2480,7 +2482,7 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
       engine.overlay.clear();
       drawDecals(decalBind, engine.overlay, cam, fb.lights, engine.world);
       if (goblinWire) goblinWire.update(); // GOB-07b: spear view
-      if (beasts && !cinematic) presentBeasts(beasts, engine.world, engine.overlay, ovlStyles, beastAnimOn ? (beastAnim || (beastAnim = createBeastAnim(16))) : undefined, beastLegsOn ? (beastLegs || (beastLegs = createBeastLegs({ pool: gameVoxelPool }))) : undefined, cam); // ANIM-C-05
+      if (beastLegs) beastLegs.dtMs = legDtMs; if (beasts && !cinematic) presentBeasts(beasts, engine.world, engine.overlay, ovlStyles, beastAnimOn ? (beastAnim || (beastAnim = createBeastAnim(16))) : undefined, beastLegsOn ? (beastLegs || (beastLegs = createBeastLegs({ pool: gameVoxelPool }))) : undefined, cam); // ANIM-C-05
       if (beastLegsOn && !cinematic && mode === 'world') { const bh = engine.world.get('bear'), bv = bh && bh.data.components && bh.data.components.voxel; if (bv) (beastLegs || (beastLegs = createBeastLegs({ pool: gameVoxelPool }))).stepNpc('bear', bh.data, bv, cam.x, cam.y, engine.world.terrain); } // ANIM-C-05: Burl (scripted NPC bear)
       if (targeting && !cinematic) targeting.present(engine.overlay, ovlStyles); // US-128b (29.2)
       // US-078d (30.1): hidden until the sword is actually taken (US-078a review note); no eyeFeel/bobPhase
