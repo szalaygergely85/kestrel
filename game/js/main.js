@@ -97,7 +97,7 @@ import { watchDeviceLost } from './deviceLost.js'; // S8-B1-10 (38.10c): device-
 import { createQuestPickups, itemLabel } from './questPickups.js'; // QUESTS-01
 import { setInspectSink, wrapText } from './quest/questInspect.js'; // QL-04
 import { createErrands, labelOf, gateOnMeet, isWorn, bannerLines } from './quest/errands.js'; // QL-WIRE: Ch1-2 errands
-import { openQuestWindow, npcQuestTalk } from './quest/questWindow.js'; // QFIX-S4: D-098 offer / hand-in windows
+import { openQuestWindow, npcQuestTalk, takeGiverOnAccept } from './quest/questWindow.js'; // QFIX-S4: D-098 offer / hand-in windows
 import { generateAll } from './quest/questSnippets.js'; // QL-T4: generated q.<id>.* dialogue routes
 import { createHeartHook } from './heartHook.js'; // QL-08: heart pieces -> max HP
 import { createChestHook } from './chestHook.js'; // S8-B1-04: chest sim + item-get card, through the seam only
@@ -1700,6 +1700,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         saveRelay.quest.onSection = (title) => { if (tv && msg) tv.say('Quest complete: ' + title, msg.fg); const ws = world.state; if (chapterCard && saveRelay.quest.done && ws['waystone.waystone.woken'] && ws['waystone.ws_roadBend.woken']) chapterCard.trigger(); /* PO-CH1-08: card only after the meadow stone AND the relay */ }; // CH1-02: live section completion only
         saveRelay.quest.book.onChange = (name, id) => {
           gameHooks.emitSimple(name, id);
+          if (name === 'quest:accepted') takeGiverOnAccept(saveRelay.quest.book, world, id); // D-098: packet-style giver items leave the world on Accept
           if (name === 'quest:accepted') actionSig.questAccepted = true; // FS-01: first accepted quest -> [J] Journal hint
           if (name === 'quest:ready' && id === 'burl.boars' && crystal) crystal.check('ready'); // CH1-03
           if (name === 'quest:ready' && id === 'burl.boars' && dialogueCtl && dialogueCtl.open) burlReopen = true; // PO-CH1-07: boars were already dead when accepted -> Burl speaks again (the hand-in) once this box closes

@@ -147,7 +147,8 @@ export function expandQuest(src, ctx = {}) {
   for (const k of ['giverNpc', 'turnInNpc']) if (typeof src[k] === 'string' && src[k]) def[k] = src[k]; // QFIX-S5a-2 (D-098)
   for (const k of ['objectGiver', 'pendingNpc', 'storyStart']) if (src[k] === true) def[k] = true;
   def.main = src.main === true;
-  def.abandonable = !def.main && !!def.giver && src.abandonable !== false;
+  if (src.takeGiverOnAccept === true) def.takeGiverOnAccept = true; // D-098/OB-155: the giver is a pickup-able item: Accept puts it in the pack and removes it from the world
+  def.abandonable = !def.main && !!def.giver && src.abandonable !== false && !def.takeGiverOnAccept; // the taken giver cannot be put back, so no abandon
   const band = src.band !== undefined ? src.band : pack.band;
   if (band !== undefined) def.band = band;
   if (pack.region !== undefined) def.region = pack.region;

@@ -2323,7 +2323,7 @@
       }
     },
     {
-      "id": "sq.packet", "giverNpc": "packet", "turnInNpc": "postKeeper", "objectGiver": true, "pendingNpc": true,
+      "id": "sq.packet", "giverNpc": "packet", "turnInNpc": "postKeeper", "objectGiver": true, "pendingNpc": true, "takeGiverOnAccept": true,
       "title": "The Oilcloth Packet",
       "site": "packet",
       "steps": [

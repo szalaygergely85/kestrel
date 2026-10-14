@@ -77,3 +77,15 @@ export function npcQuestTalk({ book, ctl, compile, nameOf, npcId, state }) {
     if (!ok) offerNext();
   } }, win));
 }
+/**
+ * D-098 / OB-155 "This item begins a quest": on `quest:accepted` of a `takeGiverOnAccept` quest the giver item (already in the pack through
+ * giveOnAccept) leaves the world for good (world.remove is content-aware: stays gone across save/load) and its [E] prompt goes with it.
+ * Boards / notes never set the flag. Returns true when it took the entity.
+ */
+export function takeGiverOnAccept(book, world, id) {
+  const def = book.def(book.index(id)); if (!def || !def.takeGiverOnAccept || !def.giver || !def.giver.npc) return false;
+  const ent = book.entityFor(def.giver.npc);
+  if (!world.get || !world.get(ent)) return false;
+  world.remove(ent); if (world.removeInteractable) world.removeInteractable('qi.' + ent);
+  return true;
+}
