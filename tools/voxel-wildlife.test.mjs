@@ -127,7 +127,7 @@ test('realistic sizes: rabbit ~0.4 m long, ~0.22 m back; deer ~1.6 m long, ~1.0 
 });
 
 test('clips: names, frames name every part, durations whole 60 Hz steps (multiples of 50 ms)', () => {
-  assert.deepStrictEqual(Object.keys(R.rabbit.DEF.animations).sort(), ['alert', 'graze', 'hop', 'idle', 'run', 'sitUp']);
+  assert.deepStrictEqual(Object.keys(R.rabbit.DEF.animations).sort(), ['alert', 'graze', 'hop', 'idle', 'run', 'sitUp', 'walk']);
   for (const k of ['deer', 'deerBuck']) assert.deepStrictEqual(Object.keys(R[k].DEF.animations).sort(), ['alert', 'gallop', 'graze', 'idle', 'trot', 'walk']);
   for (const k of KEYS) {
     const C = R[k].DEF.animations;
