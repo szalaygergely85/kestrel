@@ -48,7 +48,10 @@ try {
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 700, deviceScaleFactor: 1, mobile: false });
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?dev=1&title=0&backend=${backend}&at=${ax},${ay},0,270,-12` });
   let ready = false;
-  for (let i = 0; i < 200; i++) { await pause(300); if (await evaluate(cdp, '!!(window.__debug && window.__debug.playerHandle && window.__debug.look && window.__debug.world && window.__debug.world.terrain && window.__debug.world.terrain.nearReady)')) { ready = true; break; } }
+  // ENV-GATEFIX: ready = world + player + look (as verify-wmp05); terrain.nearReady is a soft wait (WALK falls back to farLook)
+  for (let i = 0; i < 200; i++) { await pause(300); if (await evaluate(cdp, '!!(window.__debug && window.__debug.playerHandle && window.__debug.look && window.__debug.world)')) { ready = true; break; } }
+  if (ready) for (let i = 0; i < 100; i++) { if (await evaluate(cdp, '!!(window.__debug.world.terrain && window.__debug.world.terrain.nearReady)')) break; await pause(300); }
+  if (ready) console.log('terrain', await evaluate(cdp, 'JSON.stringify({t: !!window.__debug.world.terrain, near: !!(window.__debug.world.terrain && window.__debug.world.terrain.nearReady), gl: !!(window.__debug.world.terrain && window.__debug.world.terrain.groundLook)})'));
   if (!ready) throw new Error('boot failed or terrain not ready');
   await evaluate(cdp, 'window.__debug.look.locked = true'); await pause(2000);
   const r = JSON.parse(await evaluateAsync(cdp, `${WALK}.then(JSON.stringify)`));
