@@ -28,7 +28,7 @@ import {
   WG_PASS_NAMES,
   VoxelPool, bindDecals, drawDecals,
   PITCH_CLAMP_PITCHED_DEG,
-  createPitchedTerms, pitchedTermsInto, worldToCell, resolveProjection, hasLineOfSight, // INT-HL-01
+  createPitchedTerms, pitchedTermsInto, worldToCell, resolveProjection, hasLineOfSight, HFOV_DEG, // INT-HL-01
   ambientL, World, repackMaterials,
   updateInteraction, drawCrosshair,
   buildLightSet, syncEntityLights, createLightBuffer, attachedLightPos, sunPathFrom, applySunHours, applySunPair, setWorldSun, blendLook,
@@ -124,6 +124,8 @@ import { planWorldLife } from './quest/sim/worldGen.js';
 import { bootRegionalBeasts } from './quest/sim/regionalBeastsBoot.js'; // WM-12
 import { createLogicWire } from './logic/logicWire.js'; // ED-LOGIC-01c
 import { loadDecorPaint } from './decorPaintLoad.js'; // ED-FOLIAGE-04
+import { createDirectorWire } from './quest/sim/directorWire.js'; // BEAST-06a main hook
+import { spawnRegionalBeasts } from './quest/sim/regionalBeasts.js';
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
 import { ensureWolves } from './quest/sim/wolfBrain.js'; // WOLF-01
 import { ensureBears } from './quest/sim/bearBrain.js'; // BEAR-01 (D-069): black bears in Thornwood
@@ -522,6 +524,7 @@ engine.events.on('magic.unlocked', () => startMpFade(fb ? fb.timeSec : 0)); // F
 // pages and automated browsers never load or save unless `?save=1` forces it (the headless reload check does).
 const saveEnabled = params.get('save') !== '0' && (params.get('save') === '1' || !(isCaptureOrBench || params.get('capture') === '1' || params.has('at') || navigator.webdriver)); // `?at` = dev pose: never autosave it into slot 0
 let saveRelay = null;
+let dirWire = null; // BEAST-06a: regional respawn director wire (rebuilt with every beast sim)
 let qstateItems = null; // ED-QUEST-07: pack items granted by the ?qstate preset (new-game boot only)
 let markWorld = null; // QUEST-MARK-01w: the current World (set per load before gameHooks.boot)
 let titleMenuActive = true; // S8-B1-10: mirrors menuHost.active each frame (true until the first frame says otherwise); gates the loss autosave
@@ -570,7 +573,7 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
   saveRelay.bindEvents(engine.events);
   gameHooks.register(saveRelay.handlers());
   saveRelay.quest.onPoll = (name, a, b) => gameHooks.emitSimple(name, a, b);
-  gameHooks.onSaveRequest(() => { if (saveRelay && gameHooks.ctx.world) saveRelay.save(gameHooks.ctx.world, { ending: gameHooks.ctx.state.ending }); });
+  gameHooks.onSaveRequest(() => { if (saveRelay && gameHooks.ctx.world) { if (dirWire) dirWire.save(gameHooks.ctx.world.state); } if (saveRelay && gameHooks.ctx.world) saveRelay.save(gameHooks.ctx.world, { ending: gameHooks.ctx.state.ending }); });
   // QUEST-MARK-01w: '!' markers over available take steps (patch docs/patches/QUEST-MARK-01w.diff). Off in capture/bench/?save=0.
   if (saveEnabled && window.ASSETS && window.ASSETS.questMarkFx) {
     const qm = createQuestMarkers(questDef, [ // CH1-02 (38.37 item 1): flag/area steps only; item steps (sword) and wake/breach get no marker. doorMarker/roadWest resolve to their area trigger (markResolve)
@@ -1599,7 +1602,8 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
         world.setNavTiles({ create: (x0, y0, w, h, cell) => new NavGrid({ x0, y0, w, h, cell }), maxSlopeDeg: nc.maxSlopeDeg ?? 30, maxStepM: nc.maxStepM ?? Infinity, blockedTypes: nc.blockedTypes ?? ['water'] });
       }
       const gridNav = world.terrainGrid && world.nav ? { grid: world.nav, astar: createAStar(world.nav) } : null;
-      bootRegionalBeasts(world, window.ASSETS?.levels?.world_geo, params, isCaptureOrBench); // WM-12: regional herds, after World.load, before the sim
+      let regionalList = null; // BEAST-06a: the spawned herd list feeds the spawn director
+      bootRegionalBeasts(world, window.ASSETS?.levels?.world_geo, params, isCaptureOrBench, (w, g, sd) => (regionalList = spawnRegionalBeasts(w, g, sd))); // WM-12: regional herds, after World.load, before the sim
       if (goblinWire && world.terrainGrid && gridEnabled(params)) { // WMP-02: far goblin camps, last in slot order (authored, regional, far camps)
         goblinWire.addFarCamps(planWorldLife(world, window.ASSETS?.levels?.world_geo, 12).camps); // WMP-09: authored-only avoid, same defs on Continue
       }
@@ -1614,6 +1618,8 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
             logicUnreg = gameHooks.register(logicWire.handlers()); logicWire.onWorldLoaded();
           } catch (err) { console.warn('[logic] wire failed:', err && err.message); logicWire = null; }
         } }
+      if (dirWire) { dirWire.dispose(); dirWire = null; } // BEAST-06a: regional respawn director (off in capture/bench like the herds)
+      if (regionalList && regionalList.length && !isCaptureOrBench) { try { dirWire = createDirectorWire({ sim: beasts, list: regionalList, seed: worldDef.nav?.seed ?? 1, dayLenSec: clockCfg.dayLenS, hfovDeg: HFOV_DEG, los: (ax, ay, bx, by) => hasLineOfSight(world, ax, ay, world.terrain.heightAt(ax, ay) + 1.6, bx, by, world.terrain.heightAt(bx, by) + 1), events: engine.events, state: world.state }); } catch (err) { console.warn('[director] wire failed:', err && err.message); dirWire = null; } }
       combatHud.setSim(beasts); // HPBAR-02 + DMGNUM-01
       if (goblinWire) goblinWire.attach(beasts, { onClank: () => playShieldClank() }); // GOB-07b: camps + spear sim + view
       if (lifeWire) { lifeWire.dispose(); lifeWire = null; } // LIFE-08: night raids (content/life/raids.json), rebuilt with every beast sim
@@ -2192,7 +2198,7 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
       stepAnimations(engine.world, dt * 1000);
       resolveBodyContacts(engine.world, playerHandle.data, engine.physics);
       const simDue = hitStop.due(1000 / 60); // HITSTOP-01: the window gates beasts.step only; the sword freezes by its own hitStopHard counter
-      if (beasts && simDue) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); if (beasts.tileMode && (++tileDormTick % 60) === 0) beasts.updateTileDormancy(pt.x, pt.y); } // WM-04: 200 m dormancy at ~1 Hz
+      if (beasts && simDue) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); if (dirWire) { forwardOf(look.yawDeg, swordFwd); dirWire.step(dt, pt.x, pt.y, swordFwd[0], swordFwd[1]); } if (beasts.tileMode && (++tileDormTick % 60) === 0) beasts.updateTileDormancy(pt.x, pt.y); } // WM-04: 200 m dormancy at ~1 Hz
       if (goblinWire && simDue) { const pt = playerHandle.data.transform; goblinWire.step(engine.world.state['clock.day'] | 0, pt.x, pt.y); } // GOB-07b
       if (lifeWire && simDue) lifeWire.step(clockHour(engine.world.state, clockCfg)); // LIFE-08: raids roll at night
       if (wild) { const pt = playerHandle.data.transform; wild.step(dt, pt.x, pt.y, controls.run, look.yawDeg); if (regionAmb) regionAmb.step(dt, pt.x, pt.y); } // WILD-06: ambient only, never hashed

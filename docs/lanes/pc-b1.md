@@ -1118,3 +1118,6 @@ Applied story.md text batch 3 (farm ambush, 3 waystone hints, rook.ford.6/.8 + r
 
 ### B1-MAIN hooks 3 (kestrel-1, 2026-10-14)
 main.js: kit def gets `{legRig: HUMANOID_SPLIT_LEG_RIG}`; new game/js/look/footIkWire.js (after pool.collect: per kit instance clip feet -> footIk -> pool.legInstance; off while player airborne/swimming; `?footik=0` and capture/bench = never created); GI manifest via giLoadOptions (quiet). engine/index.js +createFootIk,+voxelPointWorld (api-1.0.json 565). The player has no body in first person, so it acts on char.kit NPC/demo props (player when drawn). Node only: main.js --check OK, 23 suites PASS; owner look: kit NPC/Hesk feet on a hill/stairs.
+
+### BEAST-06a main hook (kestrel-1, 2026-10-14)
+New game/js/quest/sim/directorWire.js (+test): director built after createBeastSim from the regional list, beast:died -> memberDied, resetSlot on respawn; main.js steps it after beasts.step, saves into world.state["beast.v1"] on save request, loads at create; off in capture/bench. Node only (unverified in browser: world.state must persist the object key).

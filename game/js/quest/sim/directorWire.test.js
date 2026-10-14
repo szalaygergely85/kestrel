@@ -1,0 +1,20 @@
+import { createDirectorWire } from './directorWire.js';
+import assert from 'node:assert';
+const list = [];
+for (let i = 0; i < 3; i++) list.push({ id: `boar.north.${i}`, species: 'boar', region: 'north', group: 0, x: 100 + i, y: 100 });
+const ids = list.map((b) => b.id), reset = [];
+const sim = { count: 8, slotOf: (id) => { const i = ids.indexOf(id); return i; }, resetSlot: (s) => reset.push(s) };
+const handlers = {}; const events = { on: (n, f) => { handlers[n] = f; return () => { delete handlers[n]; }; } };
+const w = createDirectorWire({ sim, list, seed: 1, dayLenSec: 1200, hfovDeg: 75, los: () => false, events });
+assert.strictEqual(w.dir.groups.length, 1);
+assert.deepStrictEqual([...w.groupOfSlot.slice(0, 4)], [0, 0, 0, -1]);
+for (const id of ids) handlers['beast:died']({ id });
+assert.strictEqual(w.dir.dead[0], 1);
+const st = {}; w.save(st); assert.ok(st['beast.v1'].g[w.dir.groups[0].gid]);
+// run past the respawn time, player far away facing away -> reset all 3 slots
+for (let i = 0; i < 600 * 60 * 2; i += 30) w.step(1, 0, 0, -1, 0);
+assert.deepStrictEqual(reset.sort(), [0, 1, 2]);
+const w2 = createDirectorWire({ sim, list, seed: 1, dayLenSec: 1200, state: st });
+assert.strictEqual(w2.dir.dead[0], 1);
+w.dispose(); assert.ok(!handlers['beast:died']);
+console.log('directorWire ok');
