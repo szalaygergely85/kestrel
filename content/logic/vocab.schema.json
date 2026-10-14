@@ -1,0 +1,125 @@
+{
+  "events": {
+    "area.enter": {
+      "args": {
+        "area": "ref:area"
+      }
+    },
+    "area.leave": {
+      "args": {
+        "area": "ref:area"
+      }
+    },
+    "prop.touched": {
+      "args": {
+        "prop": "ref:prop"
+      }
+    },
+    "beast.died": {
+      "args": {
+        "kind": "ref:beastKind?",
+        "group": "ref:group?"
+      }
+    },
+    "group.cleared": {
+      "args": {
+        "group": "ref:group"
+      }
+    },
+    "item.got": {
+      "args": {
+        "item": "ref:item"
+      }
+    },
+    "flag.set": {
+      "args": {
+        "flag": "ref:flag"
+      }
+    },
+    "quest.accepted": {
+      "args": {
+        "quest": "ref:quest"
+      }
+    },
+    "quest.done": {
+      "args": {
+        "quest": "ref:quest"
+      }
+    },
+    "player.died": {
+      "args": {}
+    }
+  },
+  "conds": {
+    "quest": {
+      "args": {
+        "quest": "ref:quest",
+        "state": "available|active|ready|done|activeOrReady"
+      }
+    },
+    "flag": {
+      "args": {
+        "flag": "ref:flag",
+        "eq": "bool"
+      }
+    },
+    "item": {
+      "args": {
+        "item": "ref:item",
+        "atLeast": "int"
+      }
+    },
+    "group": {
+      "args": {
+        "group": "ref:group",
+        "state": "reserve|alive|cleared"
+      }
+    },
+    "prop": {
+      "args": {
+        "prop": "ref:prop",
+        "state": "text"
+      }
+    }
+  },
+  "acts": {
+    "prop.state": {
+      "args": {
+        "prop": "ref:prop",
+        "state": "text"
+      }
+    },
+    "beasts.spawn": {
+      "args": {
+        "group": "ref:group"
+      }
+    },
+    "beasts.despawn": {
+      "args": {
+        "group": "ref:group"
+      }
+    },
+    "flag.set": {
+      "args": {
+        "flag": "ref:flag",
+        "value": "bool"
+      }
+    },
+    "hint": {
+      "args": {
+        "text": "ref:textId"
+      }
+    },
+    "sound": {
+      "args": {
+        "id": "text"
+      }
+    },
+    "quest.feed": {
+      "args": {
+        "quest": "ref:quest",
+        "event": "text"
+      }
+    }
+  }
+}

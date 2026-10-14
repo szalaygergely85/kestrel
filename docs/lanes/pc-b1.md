@@ -1067,3 +1067,6 @@ markers.js now mirrors MARK_MARGIN/MARK_DEFAULT_TOP/markZ locally (no game/ impo
 
 ### ED-QUEST-BROWSER (kestrel-1, 2026-10-14)
 Root cause: lintQuest.js imported tools/content-lint.mjs (node:fs + python http.server serves .mjs as text/plain) so questPanel.js never loaded in a browser. Pure rules moved to tools/content-lint-rules.js (content-lint.mjs re-exports); verify-edq-02..07 now re-click the tab until mounted (lazy main.js boot race); verify-edq-04 had two script bugs fixed. New tools/editor/questBrowserLoad.test.js (fetch-stub parity + no node:/.mjs in panel import graph). verify-edq-02 PASS, 04 PASS (port 9520).
+
+### ED-LOGIC-02a (kestrel-1, 2026-10-14)
+tools/editor/logic/model.js (+ model.test.mjs): load/save byte-identical (original text kept until edited, canonical 2-space after), undoable add/move/delete block/item, setWhen/setArg/setBlockField, rev +1 only on When/If change, validateAll via engine validateLogic (+ cross-file ids). Schema content/logic/vocab.schema.json (editor-readable) + parity test tools/logic-vocab-parity.test.mjs vs game vocab; example content/logic/example.logic.json (not loaded: nothing lists it). check-deps + validate-content OK. Status: arch-review not needed (tools only) -> po-review pending main session.

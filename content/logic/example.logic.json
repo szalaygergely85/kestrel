@@ -1,0 +1,35 @@
+[
+  {
+    "id": "example.ambush",
+    "rev": 1,
+    "name": "Example ambush (placeholder ids, not loaded by the game)",
+    "once": true,
+    "when": {
+      "on": "area.enter",
+      "area": "example.yard"
+    },
+    "if": [
+      {
+        "is": "quest",
+        "quest": "example.quest",
+        "state": "active"
+      }
+    ],
+    "do": [
+      {
+        "act": "prop.state",
+        "prop": "example.gate",
+        "state": "closed"
+      },
+      {
+        "act": "beasts.spawn",
+        "group": "example.goblins"
+      },
+      {
+        "act": "hint",
+        "text": "hint.example.ambush",
+        "after": 30
+      }
+    ]
+  }
+]
