@@ -94,6 +94,7 @@ import { createTitleMenuHost, withRelock } from './titleMenuHost.js'; // US-090w
 import { createStorageAdapter } from './quest/save/saveState.js';
 import { retintHand, lookOrDefault } from './quest/look/handLook.js'; // CHARGEN-16
 import { createQuitSave } from './quest/quitSave.js'; // OB-079
+import { parseQstateParam, applyQuestPreset } from './quest/statePreset.js'; // ED-QUEST-07
 import { createSaveRelay } from './saveRelay.js'; // US-089w/US-096w: save + autosave + quest event hook
 import { parseOccl, createHzbInvalidator } from './occlGate.js'; // OCCL-MAIN-01
 import { watchDeviceLost } from './deviceLost.js'; // S8-B1-10 (38.10c): device-lost card
@@ -507,6 +508,7 @@ engine.events.on('magic.unlocked', () => startMpFade(fb ? fb.timeSec : 0)); // F
 // pages and automated browsers never load or save unless `?save=1` forces it (the headless reload check does).
 const saveEnabled = params.get('save') !== '0' && (params.get('save') === '1' || !(isCaptureOrBench || params.get('capture') === '1' || params.has('at') || navigator.webdriver)); // `?at` = dev pose: never autosave it into slot 0
 let saveRelay = null;
+let qstateItems = null; // ED-QUEST-07: pack items granted by the ?qstate preset (new-game boot only)
 let markWorld = null; // QUEST-MARK-01w: the current World (set per load before gameHooks.boot)
 let titleMenuActive = true; // S8-B1-10: mirrors menuHost.active each frame (true until the first frame says otherwise); gates the loss autosave
 let deviceLostFrozen = false; // S8-B1-10 (38.10c): set once by watchDeviceLost's `freeze` hook below; gates `paused` in the frame loop
@@ -545,7 +547,11 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
   if (qb.errors.length) showBootErrors(document, qb.errors);
   if (qb.questDef && qb.giverDefs && qb.charKit) { try {
   const { questDef, giverDefs, charKit } = qb;
-  saveRelay = createSaveRelay({ storage: saveStorage(), questDef, giverDefs, enabled: saveEnabled, defaultLook: charKit.defaults });
+  saveRelay = createSaveRelay({ storage: saveStorage(), questDef, giverDefs, enabled: saveEnabled, defaultLook: charKit.defaults,
+    freshPreset: () => { // ED-QUEST-07: editor "Play from here" `?qstate=<questId>:<preset>`; fresh run only, ignored in capture/bench, never writes a slot
+      const qs = (isCaptureOrBench || params.get('capture') === '1') ? null : parseQstateParam(location.search); if (!qs) return null;
+      try { const r = applyQuestPreset({ main: questDef, givers: giverDefs }, qs.questId, qs.preset); qstateItems = r.items; return r.save; } catch (err) { console.warn('[qstate] preset failed:', err && err.message); return null; }
+    } });
   window.__charKit = charKit;
   saveRelay.bindEvents(engine.events);
   gameHooks.register(saveRelay.handlers());
@@ -1623,6 +1629,7 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
       ensureInventory(playerHandle.data, startFor(params.get('demo') !== '0', fireballOn(engine.world, FEATURES))); // startConfig.js (fireball locked -> empty right hand)
       if (!window.__fbEquipHooked) window.__fbEquipHooked = true, engine.events.on('magic.unlocked', () => { const c = playerHandle && playerHandle.data.components; if (c && c.inventory && c.equipment && itemDefs && c.equipment.off === null && c.equipment.set !== 'ranged') equipItem(c.inventory, c.equipment, itemDefs, 'spell.fireball'); }); // FB-01/03 fix: the unlock puts the spell into the free off hand (RMB); hands are derived from equipment, so inventory.right alone never held it
       if (world.state['tower.sword.taken'] && itemDefs) migrateSword(playerHandle.data.components.inventory, itemDefs);
+      if (qstateItems && itemDefs) { for (const it of qstateItems) addItem(playerHandle.data.components.inventory, itemDefs, it.id, it.n); qstateItems = null; } // ED-QUEST-07: preset grants
       if (itemDefs) migrateEquipment(playerHandle.data, itemDefs); // EQ-02: old saves sword->main, shield->off (before initialState)
       // US-091a2 (37.16.3): corpse loot + toast. Own RNG stream (nav seed ^ salt) so the beast wander RNG is never
       // perturbed; `beast.loot` (quest/index.js) reaches this load's sim through setLootApi.

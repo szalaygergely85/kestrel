@@ -2,7 +2,8 @@
 // mountQuestPanel(root, { names, itemDefs, loadFiles, write }):
 //   loadFiles() -> Promise<{ 'm1.quest.json': text, 'ch12/pack.json': text, 'sites.json': text, ... }>
 //   write(relPath, text) persists one quest file (editor supplies its own io; default = download).
-import { loadQuests, saveQuest, makeStack } from './quest/model.js';
+import { loadQuests, saveQuest, saveAll, applyZones, makeStack } from './quest/model.js';
+import { buildLintCtx, liveLint, presetOptions, playUrl } from './quest/wire.js';
 import { questRows, filterRows, buildFlow, itemChoices, objText, objJournal } from './quest/flow.js';
 import * as ed from './quest/edit.js';
 import { applyPick } from './quest/targets.js';
@@ -28,9 +29,10 @@ function memFs(files) {
 export async function mountQuestPanel(root, opts) {
   const { names, itemDefs, loadFiles, write, getWorld = () => ({ entities: [] }), floorAt } = opts;
   const files = await loadFiles();
-  let areasFile = null;   // ED-QUEST-04: content/quests/areas.json (named areas -> world trigger zones); optional
-  if (files['areas.json']) { try { areasFile = JSON.parse(files['areas.json']); } catch (e) { /* ignore */ } delete files['areas.json']; }
+  // ED-QUEST-03b: areas.json stays in the model (area picks write it; Save writes it back); the overlay reads the same object
+  if (!files['areas.json']) files['areas.json'] = JSON.stringify({ version: 1, areas: {} }, null, 2) + String.fromCharCode(10);
   const model = loadQuests('q', memFs(files));
+  const areasFile = model.files.get('areas.json').obj;
   // ED-QUEST-06: dialogue files ({ 'rook.dialogue.json': text }) are optional; line edits write them back via write('dialogue/<name>')
   const dfiles = opts.loadDialogueFiles ? await opts.loadDialogueFiles() : {};
   const dm = loadDialogues('d', memFs(dfiles));
@@ -43,7 +45,7 @@ export async function mountQuestPanel(root, opts) {
   const picker = createQuestPicker({
     onState: () => redraw(),
     onHit: (slot, hit) => {
-      const r = applyPick(current, slot, hit, getWorld(), { sites, floorAt });
+      const r = applyPick(current, slot, hit, getWorld(), { sites, floorAt, model, worldId: opts.worldId });
       if (r.error) { pickMsg = r.error; redraw(); return false; }
       pickMsg = ''; run(r.cmd); return true;
     },
@@ -77,10 +79,29 @@ export async function mountQuestPanel(root, opts) {
   }
 
   function field(label, value, onCommit, multiline) {
-    const wrap = el('label', 'q-field'); wrap.append(el('span', null, label));
+    const wrap = el('label', 'q-field'); wrap.append(el('span', null, label)); wrap.dataset.field = label === 'Title' ? 'title' : label === 'Return text' ? 'returnText' : label.startsWith('Offer') ? 'lines' : '';
     const inp = el(multiline ? 'textarea' : 'input'); inp.value = value;
     inp.addEventListener('change', () => onCommit(inp.value));   // blur/enter = one undo step
     wrap.append(inp); return wrap;
+  }
+
+  // ED-QUEST-05: live lint list, rebuilt on every redraw (every edit goes through run()/redraw)
+  function goTo(t) {
+    if (t.kind === 'objective') { const i = current.objectives.findIndex((o) => o.id === t.id); if (i >= 0) { selObj = i; redraw(); const b = detail.querySelector('[data-obj="' + i + '"]'); if (b && b.scrollIntoView) b.scrollIntoView({ block: 'nearest' }); } }
+    else if (t.kind === 'giver' || t.kind === 'return') { opts.onFocus && t.id && opts.onFocus(t.id); const b = detail.querySelector('[data-pick="' + t.kind + '"]'); if (b && b.focus) b.focus(); }
+    else { const f = detail.querySelector(t.kind === 'reward' ? '#quest-reward' : '[data-field="' + t.id + '"] input, [data-field="' + t.id + '"] textarea') || detail.querySelector('[data-field="title"] input'); if (f && f.focus) f.focus(); }
+  }
+  function lintBox(q) {
+    const box = el('div', 'q-lint'); box.id = 'quest-lint';
+    let msgs = [];
+    try { msgs = liveLint(model, q, buildLintCtx({ world: getWorld(), itemDefs, names, floorAt, sites })); } catch (e) { msgs = [{ rule: 'R0', severity: 'warn', text: 'Lint failed: ' + (e && e.message), target: { kind: 'field', id: 'title' } }]; }
+    box.append(el('b', null, msgs.length ? 'Problems (' + msgs.length + ')' : 'No problems'));
+    for (const m of msgs) {
+      const row = el('div', 'q-lint-row ' + m.severity); row.dataset.rule = m.rule;
+      const go = el('button', 'ed-btn', 'Go to'); go.addEventListener('click', () => goTo(m.target));
+      row.append(el('span', null, m.text + ' '), go); box.append(row);
+    }
+    return box;
   }
 
   function renderDetail() {
@@ -90,6 +111,7 @@ export async function mountQuestPanel(root, opts) {
     const flow = el('pre', 'q-flow'); flow.id = 'quest-flow';
     flow.textContent = buildFlow(q, names).map((n) => n.label + (n.detail ? '\n    ' + n.detail : '')).join('\n  v\n');
     detail.append(flow);
+    detail.append(lintBox(q));
     const pickBtn = (slot, label) => {
       const b = el('button', 'ed-btn' + (picker.slot === slot || (picker.slot && slot && picker.slot.obj === slot.obj && slot.obj !== undefined) ? ' active' : ''), 'Pick');
       b.title = 'Pick ' + label + ' in the 3D view (Esc cancels)'; b.dataset.pick = typeof slot === 'string' ? slot : 'obj' + slot.obj;
@@ -135,10 +157,21 @@ export async function mountQuestPanel(root, opts) {
     const msg = el('span', 'q-msg');
     save.addEventListener('click', () => {
       const r = saveQuest(model, q, { writeFileSync: (p, t) => write(p.replace(/^q\//, ''), t) });
+      // ED-QUEST-03b: areas.json (game format) + the world json's area-only zones are saved with the quest
+      const aw = r.ok ? saveAll(model, { writeFileSync: (p, t) => write(p.replace(/^q\//, ''), t) }) : { written: [] };
+      const zones = r.ok && model.zones.length && opts.saveWorld ? (applyZones(model, getWorld()), opts.saveWorld(), 'world') : null;
       const dw = r.ok ? saveDialogues(dm, { writeFileSync: (p2, t) => write('dialogue/' + p2.replace(/^d\//, ''), t) }) : [];
-      msg.textContent = r.ok ? 'Saved ' + [r.file, ...dw.map((n) => 'dialogue/' + n)].join(', ') : r.errors.join('; ');
+      msg.textContent = r.ok ? 'Saved ' + [r.file, ...aw.written.filter((n) => n !== r.file), ...(zones ? ['world'] : []), ...dw.map((n) => 'dialogue/' + n)].join(', ') : r.errors.join('; ');
     });
-    tools.append(undo, redo, save, msg); detail.append(tools);
+    // ED-QUEST-07: Play from here - new tab at the editor camera ground position with ?qstate=<questId>:<preset>
+    const pSel = el('select'); pSel.id = 'quest-play-preset';
+    for (const o of presetOptions(q)) pSel.append(new Option(o.label, o.value));
+    const play = el('button', 'ed-btn', 'Play from here'); play.id = 'quest-play';
+    play.addEventListener('click', () => {
+      const c = opts.getCamGround ? opts.getCamGround() : null; if (!c) { msg.textContent = 'No camera position'; return; }
+      window.open(playUrl('../../game/index.html', c, q.id, pSel.value), '_blank');
+    });
+    tools.append(undo, redo, save, pSel, play, msg); detail.append(tools);
   }
 
   search.addEventListener('input', () => { filter = search.value; renderList(); });

@@ -42,7 +42,7 @@ import {
 import { findUnusedAssets, planAssetDelete, serializePendingDeletes } from './assetRefs.js';
 import { nextScale, fineScale, clampScale } from './scale.js';
 import { applySnapshot, snapshotDiffers, formatAge, startAutosave, getSnapshot, clearSnapshot } from './autosave.js';
-import { validateDoc, saveAll, loadFile, launchPlaytest, anyDirty, pickBinaryFile, saveTerrainEdits, saveGrassMask } from './io.js';
+import { validateDoc, saveAll, saveFile, loadFile, launchPlaytest, anyDirty, pickBinaryFile, saveTerrainEdits, saveGrassMask } from './io.js';
 import * as ENG from '../../engine/index.js';
 import * as GB from './grassBrush.js';
 import {
@@ -183,7 +183,11 @@ async function openQuestsTab() {
   try {
     const qp = await import('./questPanel.js'), fl = await import('./quest/flow.js');
     const A = window.ASSETS || {}, itemDefs = (A.items && A.items.defs) || {};
-    questPanelHandle = await qp.mountQuestPanel(root, { names: fl.makeNames({ itemDefs }), itemDefs, loadFiles: () => qp.fetchQuestFiles(), loadDialogueFiles: () => qp.fetchDialogueFiles(), write: qp.downloadWrite, getWorld: () => assets.world(doc.worldId), floorAt: (x, y) => world.floorAt(x, y), onMarkers: () => frame.markDirty() });
+    questPanelHandle = await qp.mountQuestPanel(root, { names: fl.makeNames({ itemDefs }), itemDefs, loadFiles: () => qp.fetchQuestFiles(), loadDialogueFiles: () => qp.fetchDialogueFiles(), write: qp.downloadWrite, getWorld: () => assets.world(doc.worldId), floorAt: (x, y) => world.floorAt(x, y), onMarkers: () => frame.markDirty(),
+      worldId: doc.worldId, // ED-QUEST-WIRE: applyPick needs model + worldId (areas.json world field)
+      saveWorld: () => { const f = doc.files.get(fileKey('world', doc.worldId)); if (f) { f.dirty = true; saveFile(f).then(() => refreshIoStatus(), (e) => flash('world save failed: ' + (e && e.message))); } }, // 03b: area-only zones land in the world json
+      getCamGround: () => ({ x: cam.x, y: cam.y, z: world.floorAt(cam.x, cam.y) }), // 07: Play from here
+      onFocus: (id) => { const e = (assets.world(doc.worldId).entities || []).find((x) => x.id === id); if (e && Number.isFinite(e.x)) { cam = createCameraPose({ ...cam, x: e.x, y: e.y - 6, z: world.floorAt(e.x, e.y) + 6, yawDeg: 0, pitchDeg: -40 }); frame.markDirty(); } } }); // 05: lint "Go to"
     window.__questPanel = questPanelHandle;
   } catch (e) { root.textContent = 'Quests failed to load: ' + e.message; console.error(e); }
 }
