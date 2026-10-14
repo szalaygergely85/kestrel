@@ -10,12 +10,21 @@ const MOVE = { // id -> [x, y] inside campNorth (925,905) / campEast (965,975), 
   chestCrossroads: [956, 977], secretOw1: [955, 982], secretRook: [966, 966],
 };
 const REMOVE = ['secretBend', 'secretField', 'secretBank']; // Ch1-2 arrow stashes: no camp near, cut (OB-152)
-const w = JSON.parse(fs.readFileSync(F, 'utf8'));
-w.entities = w.entities.filter((e) => !REMOVE.includes(e.id));
-for (const e of w.entities) if (MOVE[e.id]) {
-  [e.x, e.y] = MOVE[e.id];
-  if (typeof e.z === 'number') e.z = 'ground'; // crossroads sat on a stair platform; the camp spot is flat ground
-  if (!/OB-152/.test(e.note)) e.note += ' | OB-152: moved into a goblin camp (earned, not loose)';
+/** Pure + idempotent: returns a patched copy of `world` (loose chests moved into camps / removed). */
+export function anchorChests(world) {
+  const w = JSON.parse(JSON.stringify(world));
+  w.entities = w.entities.filter((e) => !REMOVE.includes(e.id));
+  for (const e of w.entities) if (MOVE[e.id]) {
+    [e.x, e.y] = MOVE[e.id];
+    if (typeof e.z === 'number') e.z = 'ground'; // crossroads sat on a stair platform; the camp spot is flat ground
+    if (!/OB-152/.test(e.note)) e.note += ' | OB-152: moved into a goblin camp (earned, not loose)';
+  }
+  return w;
 }
-fs.writeFileSync(F, stringifyContent(w));
-console.log('anchor-chests: moved', Object.keys(MOVE).length, 'removed', REMOVE.length);
+export { MOVE, REMOVE };
+
+if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(new URL(import.meta.url))) { // CLI only
+  const w = anchorChests(JSON.parse(fs.readFileSync(F, 'utf8')));
+  fs.writeFileSync(F, stringifyContent(w));
+  console.log('anchor-chests: moved', Object.keys(MOVE).length, 'removed', REMOVE.length);
+}

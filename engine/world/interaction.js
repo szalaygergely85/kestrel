@@ -39,6 +39,7 @@ const INSIDE_COS = Math.cos(35 * Math.PI / 180); // OB-084: eye inside a pick bo
 const LOS_BACKOFF = 0.05;       // LOS is checked to just in front of the hit point (a note sits flush on a wall)
 const LOS_STEP = 0.1;
 const LOS_MAX_SAMPLES = 20;
+const losRay = new Float64Array(6); // scratch for the scalar-arg hasLineOfSight wrapper
 const losGrid = { x: 0, y: 0, z: 0 }; // gridLocal scratch (rule 9)
 
 /**
@@ -95,7 +96,18 @@ export function pointBlocked(world, x, y, z) {
  * later by AI) - `outsideSector` writes into a scratch object.
  */
 export function hasLineOfSight(world, ax, ay, az, bx, by, bz) {
-  const dx = bx - ax, dy = by - ay, dz = bz - az;
+  const r = losRay; r[0] = ax; r[1] = ay; r[2] = az; r[3] = bx; r[4] = by; r[5] = bz;
+  return hasLineOfSightRay(world, r);
+}
+
+/**
+ * NAV-ALLOC-01: `hasLineOfSight` for a per-tick caller. `r` = Float64Array [ax,ay,az,bx,by,bz] (caller-owned; 7 double args box at the
+ * call boundary, arch 38.61 2b). Identical sampling and answers to `hasLineOfSight`.
+ */
+export function hasLineOfSightRay(world, r) {
+  const ax = r[0], ay = r[1], az = r[2];
+  const dx = r[3] - ax, dy = r[4] - ay, dz = r[5] - az;
+  const lq = world._lq || null;
   const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
   if (dist < 1e-9) return true;
   let steps = Math.ceil(dist / LOS_STEP);
@@ -105,6 +117,12 @@ export function hasLineOfSight(world, ax, ay, az, bx, by, bz) {
     const t = i / steps;
     const x = ax + dx * t, y = ay + dy * t, z = az + dz * t;
 
+    if (lq) { // NAV-ALLOC-01: World fast path on scratch (no boxed double args)
+      lq[0] = x; lq[1] = y; lq[2] = z;
+      const b = world.losPointQ();
+      if (b === 1) return false;
+      if (b === 0) continue;
+    }
     if (pointBlocked(world, x, y, z)) return false;
   }
   return true;

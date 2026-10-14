@@ -1,6 +1,13 @@
 // BEAST-03b: LAYERS dispatch + per-archetype perception (notice, near bubble, aggro modes) and leash / lose-sight, determinism,
 // 0 alloc per sim.step. Run: node --expose-gc game/js/quest/sim/beastLayers.test.js
-import { World, NavGrid, createRng, createHasher } from '../../../../engine/index.js';
+import { supportAtOld } from '../../../../tools/testing/supportAtOld.mjs';
+// NAV-ALLOC-01: the alloc gate needs a real gc -> re-run this file in an --expose-gc child (same as engine/test/allocGate.js ensureGcChild;
+// inlined because game/ may not deep-import engine/)
+if (typeof globalThis.gc !== 'function' && !process.env.ALLOC_GATE_CHILD) {
+  const { spawnSync } = await import('node:child_process');
+  process.exit(spawnSync(process.execPath, ['--expose-gc', ...process.argv.slice(1)], { stdio: 'inherit', env: { ...process.env, ALLOC_GATE_CHILD: '1' } }).status ?? 1);
+}
+import { World, NavGrid, createRng, createHasher, pointBlocked } from '../../../../engine/index.js';
 import paletteMod from '../../../../design/palette.js';
 import detailPassMod from '../../../../design/detail-pass.js';
 import terrainMod from '../../../../design/levels/overworld_far.js';
@@ -22,6 +29,7 @@ import { LAYERS } from './brains/layers.js';
 import { allocProbe } from '../../../../tools/allocProbe.mjs';
 import { toSteps } from './beastConfig.js';
 
+
 lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; m3PropsMod; paletteMod; detailPassMod; terrainMod; boarMod; NavGrid;
 const { assets } = await loadTestAssets();
 let pass = 0, fail = 0; const failures = [];
@@ -29,7 +37,7 @@ const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 const NAV_CFG = { area: { x0: 1400, y0: 928, w: 192, h: 192 }, cell: 1, maxSlopeDeg: 30, maxStepM: 1, blockedTypes: ['water'] };
 // Whole-step residual is pre-existing engine garbage (findPath, hasLineOfSight, terrain gridHeight: ~180 B/slot, same for
 // legacy boars; owner of the fix = architect, see lane note). The dispatch itself is asserted at < 1 B/call below.
-const ALLOC_MAX = Number(process.env.ALLOC_MAX || 1500);
+const ALLOC_MAX = Number(process.env.ALLOC_MAX || 160);
 const HX = 1461, HY = 1031;
 const orig = console.warn; console.warn = () => {};
 function mk(kinds, seed = 1) {
@@ -106,8 +114,24 @@ ok('10k steps: same seed -> identical state', a === b && a.length > 4, a + ' vs 
   const r = allocProbe((n) => { for (let t = 0; t < n; t++, k++) { const ph = (k % 400) / 400, tri = ph < 0.5 ? ph * 2 : 2 - ph * 2; sim.step(HX + 30 * tri, HY - 8 - 6 * tri, zz); } }, { n: 2000 });
   const ctx = sim._ctx; let acc = 0; const rl = allocProbe((n) => { for (let t = 0; t < n; t++) acc += LAYERS[sim.archIdx[t & 3]](sim, t & 3, ctx) ? 1 : 0; }, { n: 50000 });
   if (!rl.skipped) ok('LAYERS dispatch alloc < 1 B/call', rl.perCall < 1, rl.perCall.toFixed(2));
-  if (r.skipped) console.log('SKIP alloc (no --expose-gc)');
-  else { console.log('beastSim.step alloc: ' + r.perCall.toFixed(1) + ' B/step'); ok('alloc/step through real sim.step < ' + ALLOC_MAX + ' B', r.perCall < ALLOC_MAX, r.perCall.toFixed(1)); } }
+  ok('alloc gate ran (gc available)', !r.skipped);
+  if (!r.skipped) { console.log('beastSim.step alloc: ' + r.perCall.toFixed(1) + ' B/step'); ok('alloc/step through real sim.step < ' + ALLOC_MAX + ' B', r.perCall < ALLOC_MAX, r.perCall.toFixed(1)); } }
+// NAV-ALLOC-01 golden: scratch fast paths answer exactly like the scalar originals (corpus: 6000 points around the tower + terrain)
+{ const { world } = mk(['troll']); const T = world.terrain; let bad = 0, nb = 0, g = 0, rng = 12345;
+  const rnd = () => { rng = (Math.imul(rng, 1664525) + 1013904223) >>> 0; return rng / 4294967296; };
+  for (let n = 0; n < 6000; n++) {
+    const x = 1400 + rnd() * 192, y = 928 + rnd() * 192, z = T.heightAt(x, y) + (rnd() - 0.5) * 3;
+    world._lq[0] = x; world._lq[1] = y; world._lq[2] = z;
+    const q = world.losPointQ(); if (q >= 0) { nb += q; if ((q === 1) !== pointBlocked(world, x, y, z)) bad++; }
+    const gh = T.util.gridHeight(T.near, x, y); if (gh !== null && T.groundAt(x, y) !== gh) g++;
+    const o = { height: 0, stepUpMax: 1, walkCos: -1 };
+    const sa = supportAtOld(world, x, y, z, true, o).floorH;
+    if (!Object.is(sa, world.supportAt(x, y, z, true, o).floorH)) bad++;
+    if (!Object.is(sa, world.supportAtQ(Float64Array.of(x, y, z), true, o).floorH)) bad++;
+  }
+  ok('losPointQ == pointBlocked, supportAt == supportAtQ (6000 pts)', bad === 0, 'bad=' + bad);
+  ok('groundAt bit-equal to util.gridHeight in the band', g === 0, 'diff=' + g);
+  ok('corpus has blocked and free points', nb > 100 && nb < 5900, 'blocked=' + nb); }
 console.warn = orig;
 console.log(`beastLayers: ${pass} pass, ${fail} fail`); for (const f of failures) console.log('  FAIL ' + f);
 if (fail) process.exit(1);

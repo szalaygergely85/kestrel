@@ -64,7 +64,7 @@ export { pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG } from './render/projection.
 
 // ---- mesh-collision bench internals (MESH-PHYS-01, tools/bench-mesh-collide.mjs) ----
 export { buildWorldColliders } from './world/colliders.js';
-export { moveCircleMesh, probeSupport } from './physics/meshCollide.js';
+export { moveCircleMesh, probeSupport, meshSupportSector } from './physics/meshCollide.js';
 export { buildBvhFromMesh } from './physics/bvh.js';
 export { frameMatrix12 } from './mesh/DrawList.js';
 export { packWaterLook, packRiverLook, riverAlpha, riverStreakHit, WL_STRIDE } from './render/waterLook.js'; // OB-062 test (tools/ob062-river-look.test.mjs)
