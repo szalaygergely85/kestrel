@@ -2458,3 +2458,137 @@ The nest no longer sits on the roof, so the player should never be told to climb
 |---|---|
 | rook.ford (6) | Old house by the crossing. Inside, on the floor. |
 | rook.mirror.active | Old house by the crossing. Look on the floor. |
+
+## Quest chain v2 lines (2026-10-15, DRAFT - owner to approve)
+
+Writer, for `docs/sprints/quest-chain-plan-2026-10-15.md` "Version 2" (D-106). Offer lines end in a clear ask; the choices are `Accept` / `Not now`. Hand-in lines name the reward plainly and say who gives the next quest and where. Quest titles are exactly as in the plan table. Every line is ASCII and <= 56 chars. Nobody says "Wick" (Burl: "sky-cub", Rook: "fell-bird"), and no line uses "relay". Keys are left to the programmer.
+
+### 1. Find a Blade (note on the tower wall -> Burl, outside the door)
+
+Offer (note, written):
+- `Steel lies at the top of the stair.`
+- `Scavengers pick at the wreck up there.`
+- `Don't walk out of here bare-handed.`
+- `Climb. Take the blade. Then out the door.`
+
+Hand-in (BURL, outside the door):
+- `Out of the sky and up the stairs. Busy cub.`
+- `Here, a Health Potion. Drink it when you bleed.`
+- `Don't run off yet. I have work for that blade.`
+
+### 2. Boars in the Woods (Burl)
+
+Offer (BURL):
+- `The boars in my woods have gone strange.`
+- `They tear the bushes and charge at shadows.`
+- `Drive off five of them for me. Will you?`
+
+Hand-in (BURL):
+- `Quiet again. Listen. You can hear the birds.`
+- `Leather Armour. A hunter left it here. He ran.`
+- `Talk to me again. I'll take you to the meadow stone.`
+
+### 3. Follow the Bear (Burl -> Burl at the meadow stone)
+
+Offer (BURL):
+- `There is an old stone down in the meadow.`
+- `I'd like you to see it. I walk slow; keep up.`
+- `Will you come along, sky-cub?`
+
+Walk talk (BURL, in order, one bark per stretch of path):
+1. `I saw you fall, you know. Fire in the sky.`
+2. `A burning bird, I thought. Then it hit the tower.`
+3. `The woods are changing. Paths close up overnight.`
+4. `Old trees groan at night now. They never used to.`
+5. `And the boars. Boars don't charge at nothing.`
+6. `Something frightens them. Something we can't see.`
+
+Wait (BURL stops and turns back): `I'll wait. Old bears are good at waiting.`
+
+Wolves attack (BURL): `Wolves! Stay close, sky-cub. Show them the blade.`
+
+Hand-in (BURL, at the meadow stone):
+- `Here it is. Older than the loud hill.`
+- `A Heart Piece. Keep it; it makes you harder to fell.`
+- `Now talk to me here. Let's see if the stone knows you.`
+
+### 4. Wake the Stone (Burl at the meadow stone)
+
+Offer (BURL):
+- `Touch the carved mark. Let it wake.`
+- `Waking is loud, though. The woods will hear it.`
+- `Hold them back until it shines. Ready?`
+
+Hand-in (BURL):
+- `There. It knows you now.`
+- `Here, 15 coin. Shiny things fall out of trees.`
+- `Talk to me before you go. I'll point the way.`
+
+### 5. The Stone at the Bend (Burl -> Rook at the Bend stone)
+
+Offer (BURL, her farewell):
+- `Follow the road west. There is another stone.`
+- `At the bend. Goblins squat on it, last I smelled.`
+- `These paws stay here. Will you go, sky-cub?`
+
+Event on waking (stage note: a bright pulse shoots into the sky; a black bird drops onto the stone, shakes the light off its feathers):
+- ROOK: `Well, that's unfortunate.`
+- YOU: `What is?`
+- ROOK: `You. You woke it.`
+- ROOK: `That light? Everything for miles saw it.`
+- ROOK: `Waking stones draws eyes, fell-bird. Old eyes.`
+- ROOK: `And you can't even shoot. Talk to me.`
+
+Hand-in (ROOK, `?` over him; grudging):
+- `Here. A bow, and arrows. Don't make me sorry.`
+- `You'll need reach. What comes, comes fast.`
+- `Talk to me again. We walk to the river together.`
+
+### 6. The River Road (Rook at the Bend -> Rook at the ford ruin)
+
+Offer (ROOK, suspicious):
+- `Waking stones draws eyes. Walk with me; I'll watch you.`
+- `Road to the river. Stones across the ford.`
+- `Something long and green sleeps in the shallows.`
+- `Well? Are you coming?`
+
+Hand-in (ROOK, at the ford ruin):
+- `Still in one piece. I'm almost impressed.`
+- `Two Health Potions. I don't drink them. You do.`
+- `Look at the stone here. Then talk to me.`
+
+### 7. The Missing Glass (Rook at the ford)
+
+Cracked stone (look text, before the glass):
+- `Cracked through. The glass mount is empty.`
+- `No light in it. It cannot wake like this.`
+
+Offer (ROOK):
+- `Its glass? I kept it. Kept, not stole.`
+- `It's in my old nest. Old house by the crossing.`
+- `A bear moved in. A big black one. Rude.`
+- `Fetch it back? I'll supervise. From up here.`
+
+Glass set (stage text, as the first spell wakes):
+- `The glass clicks home. Light runs along the crack.`
+- `The stone hums, and something warm wakes in your hands.`
+
+Hand-in (ROOK):
+- `Mended. My glass, your stone. A fair loan.`
+- `The stone gave you Spark. Take this Heart Piece too.`
+- `Talk to me again. I'll tell you something. A little.`
+
+### 8. Smoke in the North (Rook at the ford)
+
+Offer (ROOK, trusting a little; the two hint lines first):
+- `Years ago, someone else woke these stones.`
+- `Then the eyes came, and the stones went dark.`
+- `Look at the mark on the stone. Then go north.`
+- `Goblins are burning a farm. Will you drive them off?`
+
+Hand-in (ROOK):
+- `Fire's out. People live out here. Fancy that.`
+- `Here, a shield. Stop catching things with your face.`
+- `Rest at the stone. Then find me here, at the ford.`
+
+Notes: Quest 8's hint lines say no names, no builder, and nothing about the signal. They leave room for the knot / Maren hook (section 9) and the deferred M4 reveal. "The eyes" is never explained in chapter 1. Burl's "Leather Armour" and Rook's "Spark" are plain item names (canon: Spark is the first spell). The quest 5 event replaces `rook.meet` for this chain, and the quest 7 lines replace `rook.ford` / `rook.mirror.*` once the owner approves.
