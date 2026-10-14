@@ -580,6 +580,7 @@ for (const [name, breakFixture, finding] of areaCases) {
   const dir = mkdtempSync(join(tmpdir(), 'vc-dialogue-'));
   try {
     const bear = JSON.parse(readFileSync(new URL('../content/dialogue/bear.dialogue.json', import.meta.url), 'utf8'));
+    { const n0 = Object.values(bear.nodes)[0]; n0.clip = 'laugh'; } // the real bear file no longer uses a laugh clip; keep one node using it so the check is exercised
     const mk = (animNames) => ({ bear: { voxel: { animations: Object.fromEntries(animNames.map((n) => [n, {}])) } } });
     const all = ['idle', 'talk', 'listen', 'wave', 'laugh'];
     writeFileSync(join(dir, 'bear.dialogue.json'), JSON.stringify(bear));
