@@ -1126,3 +1126,6 @@ engine/render/giProbe.js (+ giProbe.test.js): 88-channel uint8 probe (sky4, sun6
 
 ### GI-PROBE-02c (kestrel-4, 2026-10-14) -> arch-review
 `World.prepareStaticRays(rect,res)` + `World.rayStaticFirst(io)` (Float64Array(12): terrain cell DDA over cached bilinear lattice + merged collider BVH, hit normal, structure-footprint skip as raySegmentRay); GIBake `_cast` uses it when present (normal from hit), tools/bake-gi uses World (mesh physics, structures in; props still none: loadWorld loads props []). Test engine/world/rayStatic.test.js: 500 rays == raySegmentRay (<=2 bad, t<=1 cm), 0.0012 ms/ray, roofed fixture darkens; world_m1 bake 16-20 s/zone (89.9 s total, 1 m lattice), 1.00 MB/zone, bins deleted (written to temp). OPEN (ASK ARCHITECT): ~113 B/ray alloc is all bvh.raycastRay boxed doubles (engine/physics, known).
+
+### ITEM-09 (kestrel-3, 2026-10-14) -> po-review
+statsConfig.js REQ_* + stats.js `reqValue/itemReqAttr/itemReqValue/meetsReq(totals,item)/reqMul (0.5 unmet, no block)/reqHint -> {text:'Needs DEX 12',met}`; new statsReq.test.js (table 5,5,6..13, 2000-kit reachability iL3-10 all >= 90 %, table not lowered). Not found: design/itemBases.js, ITEM-03 generator, ITEM-07 card do not exist yet -> they call reqMul/reqHint when built; legacy hard `meetsRequirement` kept (stats.test) but superseded.
