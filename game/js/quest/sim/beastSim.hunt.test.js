@@ -828,6 +828,46 @@ for (const physics of ['grid', 'mesh']) {
   ok(`supportAtOut == supportAt bit for bit (${physics} physics, ${n} points, ${water} water, ${bandEdge} band-edge)`, bad === 0 && n > 1000, `mismatches ${bad}`);
 }
 
+// BH-A2 / BH-A3 / BH-A4 (bug hunt 2026-10-15)
+{ // A2: setGoal ends a hunt in progress; the wolf then travels to the goal
+  const rab = { x: 1469, y: 1031, species: 0, alive: true };
+  const fa = stubFauna([rab]);
+  const sim = huntSim(fa);
+  const far = [1461, 1100];
+  let n = 0; for (; n < 300 && !sim.hunt[0]; n++) sim.step(far[0], far[1], 0);
+  ok('BH-A2 setup: wolf is hunting', sim.hunt[0] === 1, 'n=' + n);
+  sim.setGoal(0, 1473, 1033);
+  ok('BH-A2 setGoal clears hunt at once', sim.hunt[0] === 0);
+  let arrived = -1;
+  for (let k = 0; k < 1200 && arrived < 0; k++) { sim.step(far[0], far[1], 0); if (sim.atGoal(0)) arrived = k; }
+  ok('BH-A2 hunting wolf reaches the raid goal', arrived >= 0 && sim.hunt[0] === 0, `arrived=${arrived} hunt=${sim.hunt[0]}`);
+}
+{ // A3: perceive's LOS write must not feed the charge wall-slow streak
+  const { sim } = goalSim();
+  const far = [1461, 1100];
+  sim.step(far[0], far[1], 0);
+  sim.state[0] = STATE_CHARGE; sim.cdx[0] = 0; sim.cdy[0] = 0; // waypoint = own position -> every step is a slow step
+  sim.timer[0] = sim.ssteps[0].chargeMax - 5; sim.unseen[0] = 7; if (sim.stk.wall) sim.stk.wall[0] = 0;
+  sim.step(far[0], far[1], 0);
+  ok('BH-A3 one slow charge step with unseen=7 is not a wall hit', sim.state[0] === STATE_CHARGE && (sim.stk.wall ? sim.stk.wall[0] === 1 : false), `state=${sim.state[0]} wall=${sim.stk.wall[0]}`);
+  sim.step(far[0], far[1], 0);
+  ok('BH-A3 two slow steps in a row end the charge (wall recover)', sim.state[0] === STATE_RECOVER, `state=${sim.state[0]}`);
+}
+{ // A4: two overlapping beasts on a sheet (ground cells cost 0 under it) are pushed apart
+  const world = buildWorld([wolfEnt('a', 1461, 1031), wolfEnt('b', 1461.2, 1031)]);
+  const nav = navFor(world);
+  const g = nav.grid;
+  for (let y = 1027; y < 1036; y++) for (let x = 1457; x < 1466; x++) g.cost[g.index(g.cellX(x), g.cellY(y))] = 0;
+  const cw = 18 * 4, base = 0;
+  g.layers = { count: 1, nLinks: 0, cell: new Float64Array([0.5]), x0: new Float64Array([1457]), y0: new Float64Array([1027]), w: new Int32Array([18]), h: new Int32Array([18]), base: new Int32Array([base]), cost: new Uint8Array(18 * 18).fill(1), height: new Float32Array(18 * 18).fill(0), finest: 0.5 };
+  void cw;
+  const sim = createBeastSim(world, { nav: { grid: g, astar: nav.astar }, rng: createRng(3), events: makeEvents().events });
+  for (const i of [0, 1]) sim.steer.z[i] = 0;
+  sim.step(1461, 1100, 0);
+  const d = Math.hypot(sim.steer.x[1] - sim.steer.x[0], sim.steer.y[1] - sim.steer.y[0]);
+  ok('BH-A4 overlapping beasts on a nav sheet are pushed apart', d >= sim.steer.radius[0] + sim.steer.radius[1] - 0.02, `d=${d.toFixed(3)}`);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

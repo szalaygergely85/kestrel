@@ -103,8 +103,8 @@ export function createPropStates(world, opts = {}) {
     /** Ask for a state; applied now unless the player blocks it (then kept pending, retried by step()). */
     request(id, state) {
       if (!known(id)) return false;
-      if (current(id) === state && world.state[propKey(id)] === state) { delete want[id]; const i = wantIds.indexOf(id); if (i >= 0) wantIds.splice(i, 1); return true; }
-      if (apply(id, state, false)) { delete want[id]; const i = wantIds.indexOf(id); if (i >= 0) wantIds.splice(i, 1); return true; }
+      if (current(id) === state && world.state[propKey(id)] === state) { delete want[id]; delete world.state[propKey(id) + '.want']; const i = wantIds.indexOf(id); if (i >= 0) wantIds.splice(i, 1); return true; }
+      if (apply(id, state, false)) { delete want[id]; delete world.state[propKey(id) + '.want']; const i = wantIds.indexOf(id); if (i >= 0) wantIds.splice(i, 1); return true; }
       if (want[id] === undefined) wantIds.push(id);
       want[id] = state; world.state[propKey(id) + '.want'] = state;
       return false;

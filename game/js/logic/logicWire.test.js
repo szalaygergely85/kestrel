@@ -125,6 +125,17 @@ E.reapply();
 ok('5e: a deferred want is restored from world.state (pending 1, still open)', E.pending === 1 && gateVariant(D.w) === 'open', `${E.pending} ${gateVariant(D.w)}`);
 D.player.x = gt.x + 10; E.step();
 ok('5f: restored want applies once the gateway is clear', E.pending === 0 && gateVariant(D.w) === 'closed');
+// BH-S4: a cancelled deferred request must not survive in the save (gate must not close by itself after Continue)
+{
+  const F = createPropStates(D.w, { player: () => D.player });
+  F.request(GATE, 'open'); D.player.x = gt.x; D.player.y = gt.y;
+  F.request(GATE, 'closed'); // deferred: player inside
+  F.request(GATE, 'open');   // cancels it (already open)
+  ok('5g: cancelled request leaves no .want key in world.state', F.pending === 0 && D.w.state[propKey(GATE) + '.want'] === undefined, JSON.stringify(D.w.state));
+  const G = createPropStates(D.w, { player: () => D.player });
+  G.reapply(); D.player.x = gt.x + 10; G.step();
+  ok('5h: after Continue the gate stays open', G.pending === 0 && gateVariant(D.w) === 'open');
+}
 
 // ---- 6) wrong dt warns once, determinism of hashes is covered by engine/core/logic.test.js
 console.log(`${pass} passed, ${fail} failed.`);

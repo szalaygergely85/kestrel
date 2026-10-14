@@ -474,9 +474,9 @@ function emitHeavyHit(events, targetId, dirX, dirY) {
   sim.steer.x[0] = bx; sim.steer.y[0] = by;
   sim.state[0] = STATE_CHARGE;
   sim.timer[0] = sim.cfgSteps.chargeMax;
-  sim.unseen[0] = 1; // one slow-charge step already counted toward the wall-recover streak
+  sim.stk.wall[0] = 1; // one slow-charge step already counted toward the wall-recover streak
   emitHeavyHit(events, 'b1', 1, 0);
-  ok('entering stagger clears the reused wall-streak counter (unseen)', sim.unseen[0] === 0, `unseen=${sim.unseen[0]}`);
+  ok('entering stagger clears the reused wall-streak counter (unseen)', sim.stk.wall[0] === 0, `wall=${sim.stk.wall[0]}`);
 }
 
 {
@@ -617,11 +617,11 @@ for (const manaShort of [false, true]) {
 {
   const { sim, events } = freshSim([beastEntity('b1', 1461, 1031)], 81, 'mesh');
   for (let state = STATE_WANDER; state <= STATE_STAGGER; state++) {
-    sim.state[0] = state; sim.timer[0] = 7; sim.unseen[0] = 1;
+    sim.state[0] = state; sim.timer[0] = 7; sim.stk.wall[0] = 1;
     sim.steer.vx[0] = -7; sim.steer.vy[0] = 5; sim.steer.accel[0] = 70;
     emitHeavyHit(events, 'b1', 0.6, 0.8);
     ok(`state ${state}: heavy restarts stagger and clears charge wall counter`, sim.state[0] === STATE_STAGGER
-      && sim.timer[0] === 36 && sim.unseen[0] === 0 && sim.steer.vx[0] === 2.4
+      && sim.timer[0] === 36 && sim.stk.wall[0] === 0 && sim.steer.vx[0] === 2.4
       && sim.steer.vy[0] === 3.2 && sim.steer.accel[0] === 12);
   }
   for (let i = 0; i < 35; i++) sim.step(1e6, 1e6, 0);
