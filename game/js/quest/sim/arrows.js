@@ -4,6 +4,7 @@
 // Rule 15 (sim/**): no Math.random, no trig, integer step counters, zero allocation in `step`. Transient: not saved.
 import { SIM_STEP } from '../../../../engine/index.js';
 import { addItem } from './inventory.js';
+import { combatMods } from './combatMods.js'; // ITEM-04
 import { riverWaterAt } from './wading.js';
 import { sweepSegment, TARGET_HIT, NO_HIT } from './sweep.js';
 
@@ -73,7 +74,7 @@ export function createArrowSim(world, events, cfg, targets, onWaterHit = null, o
   const fv = [0, 0], rk = { lat: 0, hw: 0, tx: 0, ty: 0, v: 0, z: 0 };
 
   const flying = {
-    n: NF, alive: new Uint8Array(NF), age: new Int32Array(NF), damage: new Float64Array(NF),
+    n: NF, alive: new Uint8Array(NF), age: new Int32Array(NF), damage: new Float64Array(NF), crit: new Uint8Array(NF),
     x: new Float64Array(NF), y: new Float64Array(NF), z: new Float64Array(NF),
     vx: new Float64Array(NF), vy: new Float64Array(NF), vz: new Float64Array(NF),
     src: new Array(NF).fill(null), // GOB-03: the thrower id (enemy mode)
@@ -84,7 +85,7 @@ export function createArrowSim(world, events, cfg, targets, onWaterHit = null, o
     dx: new Float64Array(NS), dy: new Float64Array(NS), dz: new Float64Array(NS), // unit flight direction (the view orients from it)
   };
   const hit = { kind: NO_HIT, t: 0, idx: -1, x: 0, y: 0, z: 0 };
-  const payload = { source: 'player', target: null, damage: 0, heavy: 0, cause: 'arrow', dirX: 0, dirY: 0, px: 0, py: 0, pz: 0 };
+  const payload = { source: 'player', target: null, damage: 0, crit: 0, life: 0, heavy: 0, cause: 'arrow', dirX: 0, dirY: 0, px: 0, py: 0, pz: 0 };
 
   const ePayload = { source: null, target: 'player', damage: 0, heavy: 0, cause: 'spear', ranged: 1, blocked: 0, dirX: 0, dirY: 0, px: 0, py: 0, pz: 0 };
 
@@ -136,13 +137,13 @@ export function createArrowSim(world, events, cfg, targets, onWaterHit = null, o
     get stuckCount() { return stuckCount; },
     get tick() { return tick; },
     /** Launch an arrow along the unit direction (fx,fy,fz). false = flying pool full (caller keeps the arrow). */
-    fire(x, y, z, fx, fy, fz, draw, damage) {
+    fire(x, y, z, fx, fy, fz, draw, damage, crit) {
       if (flyingCount >= NF) return false;
       let s = 0;
       while (flying.alive[s] === 1) s++;
       const d = draw < 0 ? 0 : draw > 1 ? 1 : draw;
       const v = cfg.vMin + (cfg.vMax - cfg.vMin) * d;
-      flying.alive[s] = 1; flyingCount++; flying.age[s] = 0; flying.damage[s] = damage;
+      flying.alive[s] = 1; flyingCount++; flying.age[s] = 0; flying.damage[s] = damage; flying.crit[s] = crit ? 1 : 0;
       flying.x[s] = x; flying.y[s] = y; flying.z[s] = z;
       flying.vx[s] = fx * v; flying.vy[s] = fy * v; flying.vz[s] = fz * v;
       return true;
@@ -152,16 +153,16 @@ export function createArrowSim(world, events, cfg, targets, onWaterHit = null, o
       if (flyingCount >= NF) return false;
       let s = 0;
       while (flying.alive[s] === 1) s++;
-      flying.alive[s] = 1; flyingCount++; flying.age[s] = 0; flying.damage[s] = damage; flying.src[s] = srcId;
+      flying.alive[s] = 1; flyingCount++; flying.age[s] = 0; flying.damage[s] = damage; flying.crit[s] = 0; flying.src[s] = srcId;
       flying.x[s] = x; flying.y[s] = y; flying.z[s] = z;
       flying.vx[s] = vx; flying.vy[s] = vy; flying.vz[s] = vz;
       return true;
     },
     /** Quiver-aware shot: refuses at 0 arrows, takes one only when the arrow really flew. eq = equipment {quiver:{id,n}|null}. */
-    shoot(eq, x, y, z, fx, fy, fz, draw, damage) {
+    shoot(eq, x, y, z, fx, fy, fz, draw, damage, crit) {
       const q = eq && eq.quiver;
       if (!q || !(q.n > 0)) return false;
-      if (!sim.fire(x, y, z, fx, fy, fz, draw, damage)) return false;
+      if (!sim.fire(x, y, z, fx, fy, fz, draw, damage, crit)) return false;
       q.n--;
       return true;
     },
@@ -196,7 +197,7 @@ export function createArrowSim(world, events, cfg, targets, onWaterHit = null, o
             const e = targets.ent[hit.idx];
             const hl = Math.sqrt(vx * vx + vy * vy) || 1;
             const p = payload;
-            p.target = e.id; p.damage = flying.damage[s]; p.dirX = vx / hl; p.dirY = vy / hl;
+            p.target = e.id; p.damage = flying.damage[s]; p.crit = flying.crit[s]; p.life = combatMods.active ? combatMods.lifeOnHit : 0; p.dirX = vx / hl; p.dirY = vy / hl;
             p.px = hit.x; p.py = hit.y; p.pz = hit.z;
             kill(s);
             events.emit('combat:hit', p); // v1: the arrow is gone (none stuck in beasts)

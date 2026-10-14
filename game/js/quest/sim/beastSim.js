@@ -10,6 +10,7 @@
 // from `world.supportAt` (the beast always stands on the ground/mesh, no vertical physics).
 import { createAStar, findPath, smoothPath, createSteer, PHYSICS, SIM_STEP } from '../../../../engine/index.js';
 import { BEAST_DEFAULTS, toSteps } from './beastConfig.js';
+import { ENEMY_HP } from './beastConfig.js';
 import { tierMult } from './band.js';
 import { canSeeRay } from './sight.js';
 import { BEAR_TUNING, bearOverrides, isBearEntity } from './bearBrain.js'; // BEAR-01
@@ -319,7 +320,7 @@ export function createBeastSim(world, opts) {
     const tier = band ? band.beastTierAt(e.transform.x, e.transform.y, br && br.tier) : ((br && br.tier >= 1 && br.tier <= 3) ? br.tier | 0 : 1);
     const m = tierMult(tier);
     sim.tier[i] = tier; sim.spdMul[i] = m.speed; sim._hitPayload[i].damage = sim.bear[i] ? BEAR_TUNING.swipeHearts : m.damage; // BEAR-01: swipe is a fixed 2 hearts
-    const maxHp = Math.round(sim.scfg[i].hp * m.hp);
+    const maxHp = Math.round(sim.scfg[i].hp * m.hp * ENEMY_HP.mul);
     e.components.health = { hp: maxHp, max: maxHp, invuln: 0 };
     steer.addAgent(e.transform.x, e.transform.y, cfg.radius, 0, DEFAULT_ACCEL);
   }

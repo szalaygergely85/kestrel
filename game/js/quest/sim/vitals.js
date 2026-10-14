@@ -12,6 +12,8 @@
 // only (not serialized - a reload always comes back alive, same as the "respawn never touches world.state" rule).
 
 import { applyDefence } from './equipment.js'; // EQ-02
+import { combatMods } from './combatMods.js'; // ITEM-04
+import { armourReduction } from './stats.js';
 
 /** @param {any} player plain entity data (`world.get('player').data`-shaped: `{transform, components}`) */
 function ensureHealth(player, cfg) {
@@ -123,14 +125,16 @@ export function createVitals(world, events, cfg, hooks) {
   }
 
   function onHit(p) {
+    if (p && p.source === 'player' && p.life > 0 && health && !sim.dead) { health.hp = Math.min(health.max, health.hp + p.life); return; } // ITEM-04 life on hit
     if (!p || p.target !== 'player' || !player || !health) return;
     const scale = p.source !== 'player' ? cfg.beastDamageScale : 1;
     let n = Math.round((p.damage || 0) * scale);
-    let dirX, dirY;
+    let dirX, dirY, lvl = p.level > 0 ? p.level : 1;
     if (p.source != null) {
       const srcHandle = world.get(p.source);
       const srcData = srcHandle && srcHandle.data;
       if (srcData && srcData.transform && player.transform) {
+        if (!(p.level > 0) && typeof h.levelAt === 'function') lvl = h.levelAt(srcData.transform.x, srcData.transform.y) || 1; // ITEM-04 attacker level (zone band)
         const dx = player.transform.x - srcData.transform.x;
         const dy = player.transform.y - srcData.transform.y;
         const d = Math.sqrt(dx * dx + dy * dy);
@@ -153,7 +157,9 @@ export function createVitals(world, events, cfg, hooks) {
       return;
     }
     // EQ-02: worn gear reduces the damage taken; `h.defence()` = total defence points (equipment.defenceOf).
-    if (typeof h.defence === 'function') n = applyDefence(n, h.defence(), typeof h.defenceBonus === 'function' ? h.defenceBonus() : 0); // QL-19: night cloak
+    if (combatMods.active) { // ITEM-04: A/(A+40+20L), cap 60 %, L = attacker level (payload.level, else 1)
+      if (n > 0) { n = Math.round(n * (1 - armourReduction(combatMods.armour, lvl))); if (n < 1) n = 1; }
+    } else if (typeof h.defence === 'function') n = applyDefence(n, h.defence(), typeof h.defenceBonus === 'function' ? h.defenceBonus() : 0); // QL-19: night cloak
     applyDamage(n, dirX, dirY);
   }
   const offCombatHit = events.on('combat:hit', onHit);
@@ -215,6 +221,10 @@ export function createVitals(world, events, cfg, hooks) {
     player = p;
     health = ensureHealth(player, cfg);
     mana = ensureMana(player, cfg);
+    if (combatMods.active) { // ITEM-04: gear raises max HP / mana (current value kept, never above max)
+      if (health.max !== combatMods.hp) { health.max = combatMods.hp; if (health.hp > health.max) health.hp = health.max; }
+      if (mana.max !== combatMods.mana) { mana.max = combatMods.mana; if (mana.mp > mana.max) mana.mp = mana.max; }
+    }
     if (!spawnDefault && player.transform) {
       const t = player.transform;
       spawnDefault = { x: t.x, y: t.y, z: t.z, yawDeg: t.yawDeg };

@@ -9,7 +9,8 @@ import { World, createHasher, serialize, deserialize } from '../../../../engine/
 import { loadTestAssets } from '../../../../tools/testing/content-node.mjs';
 import { makeOk } from '../../../../engine/test/assert.js';
 import { createVitals } from './vitals.js';
-import { VITALS_DEFAULTS as CFG } from './vitalsConfig.js';
+import { VITALS_DEFAULTS as V_NOW } from './vitalsConfig.js';
+const CFG = { ...V_NOW, startHp: 30, maxHp: 30, startMp: 20, maxMp: 20 }; // ITEM-04: live base is 100 / 100; these asserts keep the 30 / 20 scale
 
 const { assets } = await loadTestAssets();
 
@@ -400,7 +401,7 @@ function scriptedRun() {
   const player = world.get('player').data;
   const run = (n) => { for (let i = 0; i < n; i++) vitals.step(player, false); };
   vitals.step(player, false);
-  events.emit('combat:hit', { source: 'b1', target: 'player', damage: 2 }); // -10 -> 20
+  events.emit('combat:hit', { source: 'b1', target: 'player', damage: (CFG.maxHp - 20) / 5 }); // -> 20 hp (ITEM-04: max 100)
   run(CFG.hpRegenDelaySteps - 1);
   ok('OB-077: no regen before the 8 s delay', vitals.hp === 20, `hp=${vitals.hp}`);
   run(CFG.hpRegenSteps + 1);

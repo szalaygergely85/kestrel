@@ -6,7 +6,8 @@
 import { swapSet } from './sim/equipment.js';
 import { createBowDraw, BOW_SHOT, BOW_DRY } from './sim/bowDraw.js';
 import { arrowDamage } from './sim/arrows.js';
-import { refreshWeaponMods, weaponMods } from './sim/weaponStats.js'; // EQ-20
+import { combatMods, refreshCombat, rollBow } from './sim/combatMods.js'; // ITEM-04
+import { createStatsCache } from './sim/itemInst.js';
 
 export const SWAP_STEPS = 18;       // 0.3 s lower/raise
 export const PICKUP_RADIUS = 1.1;   // walk-over reach (m)
@@ -26,7 +27,7 @@ export function registerGearItems(hands, defs, stub) {
  */
 export function createEquipPlay(o) {
   const { hands, shield, arrows, defs } = o;
-  const bow = createBowDraw(o.bowCfg);
+  const bow = createBowDraw(o.bowCfg), statsCache = o.statsCache || createStatsCache();
   const bag = { inv: null, eq: null, defs };
   let swapT = 0, pickTick = 0;
   const api = {
@@ -50,9 +51,9 @@ export function createEquipPlay(o) {
     /** After hands.step. c = {gate, fx, fy, fz (unit look), ex, ey, ez (eye), px, py, pz (feet), interact} */
     post(player, c) {
       const comp = player.components, eq = comp && comp.equipment;
-      if (!eq) { refreshWeaponMods(null, defs); shield.step(false, false, c.fx, c.fy); api.swordDown = hands.downOf('sword'); arrows.step(); return; }
-      refreshWeaponMods(eq, defs); // EQ-20: tier multipliers of what is equipped
-      bow.setDrawMul(weaponMods.drawMul);
+      if (!eq) { refreshCombat(statsCache, null, defs); shield.step(false, false, c.fx, c.fy); api.swordDown = hands.downOf('sword'); arrows.step(); return; }
+      refreshCombat(statsCache, eq, defs); // ITEM-04: totals of what is worn (cached on eq.rev)
+      bow.setDrawMul(combatMods.drawMul);
       const melee = eq.set === 'melee';
       const hasShield = melee && eq.off !== null && swapT === 0;
       const sDown = hasShield && c.gate && eq.off !== null && hands.downOf(eq.off);
@@ -66,8 +67,9 @@ export function createEquipPlay(o) {
       const bDown = ranged && c.gate && hands.downOf(eq.ranged);
       const ev = bow.step(bDown, ranged && c.gate, eq.quiver ? eq.quiver.n : 0);
       if (ev === BOW_SHOT) {
-        const dmg = arrowDamage(o.swordDamage * weaponMods.bowDmgMul, bow.shotFrac);
-        arrows.shoot(eq, c.ex + c.fx * EYE_FWD, c.ey + c.fy * EYE_FWD, c.ez + c.fz * EYE_FWD, c.fx, c.fy, c.fz, bow.shotFrac, dmg);
+        const r = combatMods.active ? rollBow() : null; // ITEM-04: rolled bow damage x draw factor
+        const dmg = arrowDamage(r ? r.dmg : o.swordDamage, bow.shotFrac);
+        arrows.shoot(eq, c.ex + c.fx * EYE_FWD, c.ey + c.fy * EYE_FWD, c.ez + c.fz * EYE_FWD, c.fx, c.fy, c.fz, bow.shotFrac, dmg, r ? r.crit : 0);
       } else if (ev === BOW_DRY) o.say('No arrows');
 
       arrows.step();

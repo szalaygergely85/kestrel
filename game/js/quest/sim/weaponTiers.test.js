@@ -5,7 +5,8 @@ import '../../../../design/palette.js';
 import '../../../../design/items.js';
 import { ensureInventory, addItem } from './inventory.js';
 import { ensureEquipment, equip, unequip, defenceOf } from './equipment.js';
-import { weaponMods, refreshWeaponMods } from './weaponStats.js';
+import { combatMods, refreshCombat } from './combatMods.js';
+import { createStatsCache } from './itemInst.js';
 import { WEAPON_LOOT, weaponRng, rollWolfWeapon, rollChestWeapon } from './weaponLoot.js';
 import { createBowDraw, BOW_SHOT } from './bowDraw.js';
 import { BOW_CFG } from '../bowConfig.js';
@@ -32,12 +33,12 @@ ok(I.equipTiers.includes('sturdy') && I.equipTiers.includes('fine'), 'tiers');
   addItem(inv, defs, 'gear.main.sword.fine', 1); addItem(inv, defs, 'gear.ranged.bow.sturdy', 1); addItem(inv, defs, 'gear.off.shield.fine', 1);
   ok(equip(inv, eq, defs, 'gear.main.sword.fine') && eq.main === 'gear.main.sword.fine', 'equip fine sword');
   ok(equip(inv, eq, defs, 'gear.ranged.bow.sturdy') && equip(inv, eq, defs, 'gear.off.shield.fine'), 'equip bow + shield');
-  refreshWeaponMods(eq, defs);
-  ok(weaponMods.dmgMul === 1.5 && weaponMods.bowDmgMul === 1.25 && weaponMods.drawMul === 1.15 && weaponMods.blockStamMul === 0.7, JSON.stringify(weaponMods));
+  const sc = createStatsCache(); refreshCombat(sc, eq, defs); // ITEM-04: tier multipliers retired; old tier items carry no instance numbers -> fist fallback
+  ok(combatMods.active === 1 && combatMods.mainMax > 0 && combatMods.drawMul >= 1, JSON.stringify(combatMods));
   ok(defenceOf(eq, defs) >= 4, 'shield def counts');
   ok(unequip(inv, eq, defs, 'main') && eq.main === null, 'unequip sword');
-  refreshWeaponMods(eq, defs); ok(weaponMods.dmgMul === 1, 'no sword -> x1');
-  refreshWeaponMods(null, defs); ok(weaponMods.blockStamMul === 1, 'no equipment -> x1');
+  refreshCombat(sc, eq, defs); ok(combatMods.mainMax > 0, 'no sword -> fists');
+  refreshCombat(sc, null, defs); ok(combatMods.active === 0 && combatMods.blockStamMul === 1, 'no equipment -> inactive');
 }
 
 // bow draw speed

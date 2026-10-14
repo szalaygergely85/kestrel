@@ -70,3 +70,6 @@ export const COMBAT_TARGETS = Object.freeze({
 export function toSteps(sec) {
   return Math.round(sec / SIM_STEP);
 }
+
+// ITEM-04 (OB-150): player damage is x10; enemy HP is multiplied here ONCE until ITEM-05 rescales the configs.
+export const ENEMY_HP = { mul: 1 }; // main.js sets 10 (until ITEM-05); tests keep 1

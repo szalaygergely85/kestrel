@@ -3,6 +3,7 @@
 // burst (explosionHits), `combat:hit` damage + knockback for beasts, knockback only (no damage) for the player.
 // Rule 15 (sim/**): no Math.random, no trig, no wall clock, integer step counters, zero allocation in `step`.
 // The sim is transient (like the sword): not saved; a reload has no balls in flight.
+import { combatMods, rollRange } from './combatMods.js'; // ITEM-04
 import { explosionHits, applyImpulse, PHYSICS, SIM_STEP } from '../../../../engine/index.js';
 import { MAX_TARGETABLES } from './targetables.js';
 import { sweepSegment, NO_HIT, WORLD_HIT, TARGET_HIT } from './sweep.js';
@@ -135,7 +136,7 @@ export function createFireballSim(world, events, cfg, targets, hooks) {
     slots.serial[s] = ++serialNo; slots.age[s] = 0;
     slots.x[s] = ox; slots.y[s] = oy; slots.z[s] = oz;
     slots.dx[s] = dx; slots.dy[s] = dy; slots.dz[s] = dz;
-    slots.speed[s] = C.speed; slots.radius[s] = C.radius; slots.damage[s] = C.damage; slots.knock[s] = C.knock;
+    slots.speed[s] = C.speed; slots.radius[s] = C.radius; slots.damage[s] = combatMods.active ? rollRange(C.dmgMin, C.dmgMax) * combatMods.fireMul : C.damage; // ITEM-04 slots.knock[s] = C.knock;
     slots.travelled[s] = 0; slots.charged[s] = isCharged ? 1 : 0; slots.hand[s] = hand === 'left' ? 0 : 1;
 
     // point-blank sweep eye -> origin: a wall/boar in the way bursts at once
