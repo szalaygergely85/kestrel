@@ -8,12 +8,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-export const MAX_FLOAT = 0.25, GIVER_MAX_UP = 2.5, GIVER_WALK_R = 3, SMOKE_SRC_R = 3, CHIMNEY_R = 6, CHIMNEY_MIN = 3, CHEST_R = 25;
-export const LEVELS = { R1: 'error', R2: 'error', R3: 'error', R4: 'error', R5: 'error', R6: 'error', R7: 'error', R8: 'warn', R9: 'warn', R10: 'warn', R11: 'error' };
+export const MAX_FLOAT = 0.25, GIVER_MAX_UP = 2.5, GIVER_WALK_R = 3, SMOKE_SRC_R = 3, CHIMNEY_R = 6, CHIMNEY_MIN = 3, CHEST_R = 25, LOOSE_CHEST_R = 15;
+export const LEVELS = { R1: 'error', R2: 'error', R3: 'error', R4: 'error', R5: 'error', R6: 'error', R7: 'error', R8: 'warn', R9: 'warn', R10: 'warn', R11: 'error', R15: 'error' };
 export const TITLES = {
   R1: 'floating placed prop/tree', R2: 'components.sprite in the world', R3: 'raw id in player text', R4: '"relay" in player text',
   R5: 'giver unreachable', R6: 'smoke without a source', R7: 'chimney outside a building', R8: 'chest with no guard/puzzle/giver nearby',
-  R9: 'early quest objective across the river', R10: 'quest given/returned by an object', R11: 'banned mesh placed',
+  R9: 'early quest objective across the river', R10: 'quest given/returned by an object', R11: 'banned mesh placed', R15: 'loose chest (no camp/fight/puzzle/quest owner within 15 m)',
 };
 const f1 = (n) => (typeof n === 'number' ? +n.toFixed(1) : n);
 const F = (rule, id, x, y, msg) => ({ rule, level: LEVELS[rule], id, x: f1(x), y: f1(y), msg });
@@ -80,6 +80,8 @@ export const RULES = {
   },
   // R8 [OB-152] ctx.chests = [{id,x,y}], ctx.guards = [{x,y,kind}] (beast homes, camps, puzzles, givers)
   R8: (c) => c.chests.filter((ch) => !c.guards.some((g) => dist(g, ch) < CHEST_R)).map((ch) => F('R8', ch.id, ch.x, ch.y, `no enemy/camp/puzzle/giver within ${CHEST_R} m (open-field chest)`)),
+  // R15 [OB-152] chests are earned: ctx.allChests = [{id,x,y}] (every chestSmall prop), ctx.owners = [{x,y,kind}] camp|beast|puzzle|quest
+  R15: (c) => c.allChests.filter((ch) => !c.owners.some((g) => dist(g, ch) < LOOSE_CHEST_R)).map((ch) => F('R15', ch.id, ch.x, ch.y, `loose chest: no camp/fight/puzzle/quest owner within ${LOOSE_CHEST_R} m`)),
   // R9 [OB-136] ctx.quests with .targets=[{id,x,y}], .early (opens before the level-5 flag), ctx.riverX(y) + half width
   R9: (c) => {
     const out = [];
@@ -246,8 +248,14 @@ export async function buildContext(opts = {}) {
   for (const c of [...activeCamps(camps), ...far]) guards.push({ x: c.at[0], y: c.at[1], kind: 'camp' });
   for (const q of qs) for (const id of [q.giver?.npc]) { const p = id && pos(id); if (p) guards.push({ x: p.x, y: p.y, kind: 'giver' }); }
 
+  // R15 owners = R8 guards minus the generic 'giver' kind (quest givers count only when they hand out a quest: q.giver) plus swim/clue puzzles
+  const owners = guards.filter((g) => g.kind !== 'giver');
+  for (const q of qs) for (const id of [q.giver?.npc, q.giver?.turnIn]) { const p = id && pos(id); if (p) owners.push({ x: p.x, y: p.y, kind: 'quest' }); }
+  for (const e of entities) if (e.id === 'chestBed' || e.id === 'hiddenScrawl') owners.push({ x: e.x, y: e.y, kind: 'puzzle' }); // lake-bed dive, scrawl clue
+  const allChests = entities.filter((e) => e.components.voxel?.model === 'chestSmall');
+
   return {
-    entities, structures: def.structures, floating, texts, jsTexts, quests: qs, itemDefs: assets.items?.defs || (await loadDesignAssets()).items?.defs,
+    allChests, owners, entities, structures: def.structures, floating, texts, jsTexts, quests: qs, itemDefs: assets.items?.defs || (await loadDesignAssets()).items?.defs,
     labelOf, giverIds, pos, groundAt: gz, walkable, characters, chests: entities.filter((e) => /^chest/.test(e.id)), guards,
     riverX: (y) => T.util.riverX(y), riverHalf: 10,
   };
