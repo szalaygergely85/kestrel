@@ -8,6 +8,7 @@
 
 import { validateLegRig } from './legRig.js';
 import { validateBlend } from './blendPack.js';
+import { validateLookAt } from './lookAtPack.js';
 
 // ---- constants ---------------------------------------------------------
 // KIND_MODEL/FACE_PACKED now live in ../render/GBuffer.js (US-040, 15.2
@@ -405,6 +406,8 @@ export function validateVoxelModel(def, opts) {
   if (def.legRig !== undefined) validateLegRig(def, partNames, errors);
   // ---- blend (ANIM-BLEND-01a, 38.68 item 2): optional clip sets / fades / additive layers ----
   if (def.blend !== undefined) validateBlend(def, partNames, errors);
+  // ---- lookAt (ANIM-LOOKAT-01): optional head look-at limits ----
+  if (def.lookAt !== undefined) validateLookAt(def, partNames, errors);
 
   // ---- mounts (rule 7, US-041a 15.3 item 5) ----------------------------------
   if (def.mounts !== undefined) {

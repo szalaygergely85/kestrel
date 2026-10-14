@@ -62,6 +62,7 @@ export { packDecorLayers, DEFAULT_DENSITY_Q8 } from './mesh/decorScatter.js'; //
 export { shadeTerrain, makeTerrainShadeCtx } from './render/terrainShade.js';
 export { packTerrainTextures, TLOOK_WIDTH } from './render/gpu/TerrainTextures.js';
 export { drawSprites, SpritePool, MAX_SPRITES } from './render/sprites.js';
+export { validatePost, createPostState, composePost, postCells } from './render/post.js'; // POST-STACK-01a (38.73): per-cell finish chain, JS twin
 export { createAtmosState, mixAtmos, applyAtmosToPalette, gradeCells, gradeRGB, ATMOS_FOG_FIT } from './render/atmos.js'; // ENV-03c: biome atmosphere (game driver = ENV-03a)
 // ---- US-030c GPU sprite pass + atlas + parity harness ----------------------
 export { buildSpriteAtlas } from './render/gpu/spritesAtlas.js';
@@ -190,7 +191,8 @@ export { createUiLayer, clampUiCols, UI_GRID_ASPECT } from './ui/uiLayer.js';
 // Leaf module (engine/nav/**): never imports render/mesh/ui/world
 // (check-deps rule 14); World is passed into buildFromWorld duck-typed.
 export { NavGrid } from './nav/NavGrid.js';
-export { createAStar, findPath, smoothPath, pathCrossesRect, planPath } from './nav/astar.js';
+export { createAStar, findPath, findPathCells, smoothPath, pathCrossesRect, planPath } from './nav/astar.js';
+export { bakeSheets, createSheetBaker, buildLayersFromArrays, validateLinks, addAuthoredLinks } from './nav/sheets.js'; // NAV-LAYERS-01b/d
 
 // ---- interaction (US-012) ------------------------------------------------------
 export { findInteractTarget, updateInteraction, hasLineOfSight } from './world/interaction.js';
@@ -287,3 +289,4 @@ export { createFaunaFeed, WILD_DRAW_MAX } from './fauna/feed.js';
 export { createSpawner, FAUNA_MAX, CELL_M as FAUNA_CELL_M } from './fauna/spawner.js';
 export { makeUnderState, updateUnderState, UNDER_DEFAULT } from './render/underwater.js'; // SWIM-04c (38.54)
 export { createAnimBlender } from './entities/animBlend.js'; // ANIM-BLEND-01b (38.68)
+export { createLookAt } from './entities/lookAt.js'; // ANIM-LOOKAT-01 (38.69 lane note)

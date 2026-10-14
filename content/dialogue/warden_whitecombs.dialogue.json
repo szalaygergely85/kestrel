@@ -3,7 +3,7 @@
   "schema": 1,
   "id": "warden_whitecombs",
   "speakers": {
-    "warden": {"label": "WARDEN"},
+    "warden": {"label": "STEN"},
     "you": {"label": "YOU", "player": true}
   },
   "entry": [
@@ -11,7 +11,7 @@
   ],
   "nodes": {
     "warden.hello": {"end": true, "lines": [
-      "I keep this light. Nothing more to ask of me today."
+      "Sten. Cold up here. The light doesn't mind."
     ], "speaker": "warden"}
   }
 }

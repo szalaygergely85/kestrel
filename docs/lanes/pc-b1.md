@@ -1067,3 +1067,38 @@ markers.js now mirrors MARK_MARGIN/MARK_DEFAULT_TOP/markZ locally (no game/ impo
 
 ### ED-QUEST-BROWSER (kestrel-1, 2026-10-14)
 Root cause: lintQuest.js imported tools/content-lint.mjs (node:fs + python http.server serves .mjs as text/plain) so questPanel.js never loaded in a browser. Pure rules moved to tools/content-lint-rules.js (content-lint.mjs re-exports); verify-edq-02..07 now re-click the tab until mounted (lazy main.js boot race); verify-edq-04 had two script bugs fixed. New tools/editor/questBrowserLoad.test.js (fetch-stub parity + no node:/.mjs in panel import graph). verify-edq-02 PASS, 04 PASS (port 9520).
+### ANIM-BLEND-03 main hook (kestrel-1, 2026-10-14)
+main.js: import createBeastBlend; `animblend = params.get('animblend') !== '0'` (default ON, also in capture/bench); lazy `createBeastBlend({pool: gameVoxelPool})` passed as 8th arg of presentBeasts; `?animblend=0` -> undefined = old path. Player `stepEntity(PLAYER_KEY,...)` NOT wired (player rig has no blend clips; no per-frame cost added). Syntax check OK. Owner look: walk -> run ramp, hit while running, boar windup (OB-150).
+
+### ED-AI-03 (kestrel-1, 2026-10-14)
+Creatures tab: tools/editor/aiPanel.js (pure createCreatures + thin DOM + mountCreaturesTab), ai/form.js (specs), ai/patchBridge.js (100 ms debounce; msg {type:'ai-patch',name,fields} -> reply {type:'ai-patch-result',name,ok,refused[]} over BroadcastChannel 'kestrel-ai-patch'), index.html/main.js tab wiring, form.test.mjs, tools/verify-edai-03.mjs. Node only, not browser-checked; uses the model's makeStack (own undo list, not the scene record stack). Save = download via model (like Quests).
+NEEDS B1-main: game side must listen on BroadcastChannel 'kestrel-ai-patch' and call sim.patchArchetype (no receiver exists; touches game/js/main.js).
+
+### ED-AI-RECV (kestrel-1, 2026-10-14)
+game/js/quest/aiPatchRecv.js (create(channelFactory,getSim); BroadcastChannel kestrel-ai-patch -> sim.patchArchetype -> ai-patch-result with plain refusal text) + aiPatchRecv.test.js; wired in game/js/main.js after `let beasts` only with ?playtest=1 or ?dev=1 and not capture/bench/webdriver (getSim = () => beasts, survives reloads). Suites + check-deps pass; tools/verify-edai-recv.mjs is --check only (needs puppeteer + CHROME_PATH), not run; browser untested.
+
+### ED-AI-05 + 06 editor (kestrel-1, 2026-10-14)
+Creatures tab "Spawn areas": tools/editor/aiAreaTool.js (pure: disc drag/polygon, ground probe, refuse "Can't spawn here.", undo via model, invalid() marks, Save, drop msg 'ai-drop'/'ai-clear') + aiAreaOverlay.js + aiPanel.js UI + editor main.js viewport hooks; Live apply = "Reload to apply" (relaunches playtest tab; architect decision pending). Game: aiPatchRecv.js handles ai-drop/ai-clear -> aiTest.dropPack/clearTest; sim/aiReserve.js (12 reserve slots per boar/wolf/bear, only ?dev=1/?playtest=1); dev/aiLabels.js state+distance labels (?dev=1, ui.setGlyph); regionalBeasts MODEL/BODY now exported.
+Node only (tests: aiAreaTool, aiPatchRecv, aiLabels; verify-edai-05 = --check + tests); browser untested. Not done: token-holder mark in labels, hit-testing of area handles in the viewport (select via list), Esc cancel for polygon.
+
+### ED-LOGIC-02a (kestrel-1, 2026-10-14)
+tools/editor/logic/model.js (+ model.test.mjs): load/save byte-identical (original text kept until edited, canonical 2-space after), undoable add/move/delete block/item, setWhen/setArg/setBlockField, rev +1 only on When/If change, validateAll via engine validateLogic (+ cross-file ids). Schema content/logic/vocab.schema.json (editor-readable) + parity test tools/logic-vocab-parity.test.mjs vs game vocab; example content/logic/example.logic.json (not loaded: nothing lists it). check-deps + validate-content OK. Status: arch-review not needed (tools only) -> po-review pending main session.
+
+### ED-LOGIC-02b (kestrel-1, 2026-10-14)
+Logic tab: tools/editor/logicPanel.js (DOM) + logic/view.js (pure: labels, defaults, 3D pick -> ref, live lint = validateLogic + R15 refs/double-spawn/flag-loop with Go to) + view.test.mjs; vocab.schema.json got `label` per entry + `argLabels` (parity green); content/logic/index.json lists files for the editor; tab wired in index.html/main.js (pick via questPick). tools/verify-edl-02.mjs <port> written, NOT run (Node-only); engine content-lint R15 for logic stays with 01d. Status: po-review.
+
+### POST-STACK-01c (kestrel-1, 2026-10-14) -> po-review
+design/look/post.js (window.POST_LOOK, classic script, in game/index.html) + game/js/look/postConfig.js (resolvePost: preset x scene, `?post=0` null, gpucompare modes null, bloom = parseGlow so `?emissive=` kept; outdoor mist off) + postConfig.test (table low..ultra, ?post=0); main.js +4 lines: composePost on atmosV change, `_spritesPass.post = postState`, `postCells(rt, fb.depth.depth, ...)` replaces gradeCells; design/preview/post.html (day/dusk/interior off vs on, JS twin). Open: scene is always 'outdoor' (no interior flag in main yet), glow option still read from parseGlow at the renderer (not moved); in-game stills + gpucompare not run (main session).
+
+### SCENE-INTERIOR (kestrel-1, 2026-10-14)
+- New `game/js/look/sceneFlag.js` `sceneOf(world, p, scratch, dt)`: engine roof map (`outdoorAt` at feet+1 m; roof map rebuilt every 16 calls, version-checked) -> 'interior'|'outdoor', 0.5 s hysteresis, 0 alloc after warm-up; `sceneFlag.test.js` (tower in/out, doorway jitter, alloc). main.js: scene passed as `outdoor` to atmosDriver.step and `resolvePost(..., scene)` re-run on change only (`?post=0`/gpucompare stay null).
+- Limits: mesh structures (`kind==='mesh'`) are skipped by the roof map, so a mesh-built interior reads outdoor until it stamps a roof box; underwater not wired. NEEDS main/PO walk: enter tower + a house, confirm mist fades and scene grade switches. Node only; check-deps OK, filtered suites PASS.
+
+### SCENE-INTERIOR-2 (kestrel-1, 2026-10-14)
+- `sceneOf(world, p, scratch, dt, body)`: + static mesh cover (5 upward `world.supportAtOut` rays at eye+-1.5 m, ceiling <= 6 m, >= 3 of 5, every 8 ticks, 0 alloc) -> 'interior'; `body.diving` -> third value 'underwater' (atmos treats it as non-outdoor; `design/look/post.js` scenes.underwater mist off). Tests in sceneFlag.test (roof/canopy/far/underwater/alloc). main.js passes the player body.
+- Untuned on real meshes (Rook ruin room / meshed house: needs a main-session walk; COVER_M/SPREAD exported-const tunables). Node only; check-deps OK.
+
+### ANIM-LOOKAT-01 main hook (kestrel-1, 2026-10-14)
+main.js: createBeastLook (lazy, `?lookat=0` off, on in capture/bench) -> 9th arg of presentBeasts; setTarget(player x,y,z+1.5) each frame before it. check passes, 5 suites PASS; turn direction (rx+/rz+) still needs the owner look.
+### DLG-REPEAT (kestrel-1, 2026-10-14)
+No new code: postkeeper hello.1 now `setFlag: met.postkeeper` (saved in world.state dlg.*), entry `postkeeper.hello.2` `requires` it. Only postkeeper has a .hello.2 in story.md. Test game/js/quest/postkeeperDialogue.test.js 5 pass; canonical + validate-content OK. Status: po-review.

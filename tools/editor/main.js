@@ -16,6 +16,7 @@ import { makePickGuard } from './pickGuard.js';
 import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose, applyViewPreset, toggleOrtho, adjustOrthoHalfH, lookAlongAxis } from './camera.js';
 import { createAxisGizmo } from './axisGizmo.js';
 import { createQuestOverlay } from './questOverlay.js';
+import { createAreaOverlay } from './aiAreaOverlay.js'; // ED-AI-05
 import { unprojectCell, rayPoint, projectPoint, screenCentreGroundHit } from './ray.js';
 import { pickAt, pickMarkers } from './pick.js';
 import { resolveMeshClick } from './meshClick.js';
@@ -195,6 +196,46 @@ async function openQuestsTab() {
   } catch (e) { root.textContent = 'Quests failed to load: ' + e.message; console.error(e); }
 }
 
+// ---- ED-AI-03: Creatures tab - mounts aiPanel.js once, on first open.
+let creaturesHandle = null;
+// ED-AI-05: ground snap + walkable test for the spawn-area tool (floor under the point, not in water deeper than a wade).
+const aiWaterScratch = { surfaceZ: 0, flatZ: 0, depth: 0, region: '', index: 0, look: 0 };
+function aiAreaProbe(x, y) {
+  const z = world.floorAt(x, y);
+  if (!(z === z) || z === null || z <= -1e6) return { z: 0, walkable: false };
+  const wet = world.waterAt && world.waterAt(x, y, aiWaterScratch) && aiWaterScratch.depth > 0.6;
+  return { z, walkable: !wet };
+}
+const aiTool = () => (creaturesHandle && creaturesHandle.areaTool) || null;
+async function openCreaturesTab() {
+  if (creaturesHandle) return;
+  const root = document.getElementById('creatures-panel');
+  try { creaturesHandle = await (await import('./aiPanel.js')).mountCreaturesTab(root, { probe: aiAreaProbe, reload: () => launchPlaytest(doc), onAreasChange: () => frame.markDirty() }); window.__creatures = creaturesHandle; }
+  catch (e) { root.textContent = 'Creatures failed to load: ' + e.message; console.error(e); }
+}
+// ---- ED-LOGIC-02b: Logic tab - mounts logicPanel.js once, on first open.
+let logicPanelHandle = null;
+async function openLogicTab() {
+  if (logicPanelHandle) return;
+  const root = document.getElementById('logic-panel');
+  try {
+    const lp = await import('./logicPanel.js'), qp = await import('./questPanel.js'), fl = await import('./quest/flow.js');
+    const schema = await (await fetch('../../content/logic/vocab.schema.json')).json();
+    const A = window.ASSETS || {}, itemDefs = (A.items && A.items.defs) || {};
+    const qfiles = await qp.fetchQuestFiles(), areasObj = JSON.parse(qfiles['areas.json'] || '{"areas":{}}').areas || {};
+    const { loadQuests } = await import('./quest/model.js');
+    const quests = loadQuests('q', qp.memFs({ ...qfiles, 'areas.json': qfiles['areas.json'] || '{"version":1,"areas":{}}' })).quests.map((q) => ({ id: q.id, name: q.title || q.id }));
+    const areaGeo = () => { // area id -> {x, y, r} from the world entity/zone the area points at (quests/areas.json: {trigger})
+      const out = {}, ents = (assets.world(doc.worldId).entities || []);
+      for (const id of Object.keys(areasObj)) { const e = ents.find((x) => x.id === (areasObj[id].trigger || id)); out[id] = e && Number.isFinite(e.x) ? { x: e.x, y: e.y, r: e.radius || e.r || 4 } : {}; }
+      return out;
+    };
+    logicPanelHandle = await lp.mountLogicPanel(root, { schema, loadFiles: () => lp.fetchLogicFiles(), write: lp.downloadLogic, getWorld: () => assets.world(doc.worldId), getAreaGeo: areaGeo,
+      choices: { quest: quests, item: fl.itemChoices(itemDefs) } });
+    window.__logicPanel = logicPanelHandle;
+  } catch (e) { root.textContent = 'Logic failed to load: ' + e.message; console.error(e); }
+}
+
 // ---- US-067: left-dock tabs (Scene Tree / Assets) --------------------------
 leftDockTabsEl.querySelectorAll('.dock-tab').forEach((tab) => {
   tab.addEventListener('click', () => {
@@ -204,7 +245,11 @@ leftDockTabsEl.querySelectorAll('.dock-tab').forEach((tab) => {
     treePanelEl.classList.toggle('active', which === 'tree');
     assetsPanelEl.classList.toggle('active', which === 'assets');
     document.getElementById('quests-panel').classList.toggle('active', which === 'quests');
+    document.getElementById('logic-panel').classList.toggle('active', which === 'logic');
     if (which === 'quests') openQuestsTab();
+    document.getElementById('creatures-panel').classList.toggle('active', which === 'creatures');
+    if (which === 'creatures') openCreaturesTab();
+    if (which === 'logic') openLogicTab();
     if (which === 'assets') renderAssetsList(assetsSearchInput.value);
   });
 });
@@ -213,7 +258,8 @@ leftDockTabsEl.querySelectorAll('.dock-tab').forEach((tab) => {
 // focused tree-search/inspector field so editor keys resume; clicking the
 // viewport already does this via canvas's own mousedown->focus() below.
 const questPickerArmed = () => !!(questPanelHandle && questPanelHandle.picker.armed);
-document.addEventListener('keydown', (e) => { if (questPanelHandle) questPanelHandle.picker.onKey(e); });
+document.addEventListener('keydown', (e) => { if (questPanelHandle) questPanelHandle.picker.onKey(e); if (logicPanelHandle) logicPanelHandle.picker.onKey(e); });
+const logicPickerArmed = () => !!(logicPanelHandle && logicPanelHandle.picker.armed);
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   const a = document.activeElement;
@@ -2293,10 +2339,27 @@ canvas.addEventListener('mousedown', async (e) => {
     const pin = questOverlay.pinAt(col, row);
     if (pin) { questPanelHandle.selectObjective(pin.qid, pin.obj); return; }
   }
+  if (logicPickerArmed()) { // ED-LOGIC-02b: same pick mechanism, the logic panel decides what the hit means
+    const hit = await pickAt(col, row, pickCtx());
+    if (clickGuard.isStale(tok)) return;
+    logicPanelHandle.picker.handle({ entityId: hit.kind === 'entity' ? hit.entityId : null, point: hit.world && (hit.kind === 'terrain' || hit.kind === 'surface') ? hit.world : null });
+    return;
+  }
   if (questPickerArmed()) { // ED-QUEST-03: Pick mode owns the left button; the quest panel decides what the hit means
     const hit = await pickAt(col, row, pickCtx());
     if (clickGuard.isStale(tok)) return;
     questPanelHandle.picker.handle({ entityId: hit.kind === 'entity' ? hit.entityId : null, point: hit.world && (hit.kind === 'terrain' || hit.kind === 'surface') ? hit.world : null });
+    return;
+  }
+  if (aiTool() && (aiTool().st.armed || aiTool().st.dropArmed)) { // ED-AI-05/06: the Creatures tab owns the left button (paint area / drop pack)
+    const hit = await pickAt(col, row, pickCtx());
+    if (clickGuard.isStale(tok)) return;
+    if (hit.kind === 'terrain' && hit.world) {
+      const t = aiTool();
+      if (t.st.dropArmed) { t.dropPack(hit.world.x, hit.world.y); t.st.dropArmed = false; t.arm(t.st.armed); }
+      else t.pointerDown(hit.world.x, hit.world.y);
+      frame.markDirty();
+    } else flash("Can't spawn here.");
     return;
   }
   if (toolMode === 'terrain') { // ED-TERRAIN-1c: the brush owns the left button
@@ -2566,6 +2629,7 @@ window.addEventListener('mouseup', (e) => {
     if(rec) commit(rec);
     return;
   }
+  if (aiTool() && aiTool().st.draft && aiTool().st.draft.type === 'disc') { aiTool().pointerUp(); frame.markDirty(); return; }
   if (tb.stroke) { terrainStrokeEnd(false); return; }
   if (gb.stroke) { grassStrokeEnd(false); return; }
   if ((fl.ctl && fl.ctl.active) || dp.stroke) { foliageStrokeEnd(false); return; }
@@ -2647,12 +2711,14 @@ window.addEventListener('mouseup', (e) => {
 
 // ED-TERRAIN-1c: cursor ring + stroke dabs follow the pointer over the terrain.
 canvas.addEventListener('mousemove', async (e) => {
-  if (toolMode !== 'terrain' && toolMode !== 'grass' && toolMode !== 'foliage') return;
+  const aiDrag = aiTool() && aiTool().st.draft && aiTool().st.draft.type === 'disc';
+  if (toolMode !== 'terrain' && toolMode !== 'grass' && toolMode !== 'foliage' && !aiDrag) return;
   const { col, row } = computeMouseCell(e);
   const tok = hoverGuard.begin();
   if (col < 0 || col >= rt.cols || row < 0 || row >= rt.rows) return;
   const hit = await pickAt(col, row, pickCtx());
   if (hoverGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+  if (aiDrag && hit.kind === 'terrain' && hit.world) { aiTool().pointerMove(hit.world.x, hit.world.y); frame.markDirty(); return; }
   if (hit.kind === 'terrain' && hit.world) {
     if (toolMode === 'foliage') { fl.hover = { x: hit.world.x, y: hit.world.y }; { const z = FB.zoneOf(fl.hover.x, fl.hover.y), k = FB.zoneKey(z.cx, z.cy); if (k !== fl.zoneKey) { fl.zoneKey = k; updateFoliageMeter(); } } if (dp.stroke) decorStrokeMove(fl.hover); else if (fl.ctl && fl.ctl.active) fl.ctl.move(fl.hover); frame.markDirty(); return; }
     if (toolMode === 'grass') { gb.hover = { x: hit.world.x, y: hit.world.y }; if (gb.stroke) grassStrokeMove(gb.hover); frame.markDirty(); return; }
@@ -2891,11 +2957,13 @@ function drawAssetGhost() {
 
 const overlayPlate = createOverlayTarget(engine.ui, rt);
 const overlayGlyph = createOverlayTarget(engine.ui, rt, { glyphOnly: true });
+const aiAreaOverlay = createAreaOverlay({ rt, getCam: () => cam, floorAt: (x, y) => world.floorAt(x, y), renderer: RENDERER, names: (k) => (aiTool() && aiTool().model && creaturesHandle.kindName ? creaturesHandle.kindName(k) : k) });
 const questOverlay = createQuestOverlay({ rt, getCam: () => cam, getWorld: () => assets.world(doc.worldId), floorAt: (x, y) => world.floorAt(x, y), renderer: RENDERER,
   getAreasFile: () => (questPanelHandle && questPanelHandle.areasFile) || null });
 function drawOverlay(fb) {
   const selection = primarySelection();
   if (questPanelHandle) questOverlay.draw(overlayPlate, questPanelHandle.markerState());   // ED-QUEST-04
+  if (aiTool()) aiAreaOverlay.draw(overlayPlate, aiTool());   // ED-AI-05
   if (markersOn) drawMarkers(overlayPlate, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets.palette, selection, RENDERER, groupDrag?.previewItems);
   for (const item of sel.items) drawSelectionHighlight(overlayPlate, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets, doc, item, '#ffd24a', RENDERER, groupDrag?.previewItems);
   if (boxDrag?.moved) drawMeshHighlightRect(overlayPlate,boxDrag.rect,'#ffd24a');

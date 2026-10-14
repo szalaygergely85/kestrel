@@ -243,6 +243,14 @@ function samplePose(pm, inst) {
     _rotOut[bi + 1] += lg[2];
     _posOut[bi + 2] += lg[3];
   }
+  // ANIM-LOOKAT-01: head look-at rotation [on, part, rx, ry, rz] (deg), after the layers + leg body tilt, before addPart and the leg solve.
+  const lk = inst.look;
+  if (lk && lk[0] === 1) {
+    const lp = lk[1] * 3;
+    _rotOut[lp] += lk[2];
+    _rotOut[lp + 1] += lk[3];
+    _rotOut[lp + 2] += lk[4];
+  }
   const ap = inst.addPart;
   if (ap >= 0 && ap < pm.partCount) {
     _rotOut[3 * ap] += inst.addRx;

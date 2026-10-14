@@ -26,7 +26,7 @@
   ],
   "nodes": {
     "hesk.names.1": {"lines": [
-      "Stop there. Hands where I can see them.",
+      "Stop there. Now, before the gate opens:",
       "You came over the river. Nobody comes over the river."
     ], "next": "hesk.names.2", "speaker": "hesk"},
     "hesk.names.2": {"lines": [
@@ -74,52 +74,52 @@
       "Keep your blade low, Wick."
     ], "speaker": "hesk"},
     "hesk.path.1": {"lines": [
-      "Smoke on the wind, and a stranger on the track.",
-      "Walk back toward the smoke, Wick. See what is there."
+      "That's close enough. You followed our smoke.",
+      "Walk the last of the track to the gate. Slowly."
     ], "next": "hesk.path.2", "speaker": "hesk"},
     "hesk.path.2": {"choices": [{"next": "hesk.path.3", "setFlag": "s.mq.ow.path.accept", "text": "I will look."}, {"next": "hesk.later", "text": "Not yet."}], "lines": [
-      "Go and look. Then tell me."
+      "Slowly. So I can see your hands."
     ], "speaker": "hesk"},
     "hesk.path.3": {"end": true, "lines": [
-      "The track, toward the smoke. Come back and tell me."
+      "The track, to the gate. I'm watching."
     ], "speaker": "hesk"},
     "hesk.fence.1": {"lines": [
-      "Wolves at the goose pen. Every night, more of them."
+      "Wolves at our goose pen. Every night, more."
     ], "next": "hesk.fence.2", "speaker": "hesk"},
     "hesk.fence.2": {"choices": [{"next": "hesk.fence.3", "setFlag": "s.mq.ow.fence.accept", "text": "I will do it."}, {"next": "hesk.later", "text": "Not yet."}], "lines": [
-      "Five of them. Drive them off, and we will talk."
+      "Drive them off the pen. Then we'll talk."
     ], "speaker": "hesk"},
     "hesk.fence.3": {"end": true, "lines": [
-      "The pen, past the fence. Five wolves."
+      "The goose pen, along the fence. Go on."
     ], "speaker": "hesk"},
     "hesk.path.active.1": {"end": true, "lines": [
-      "The track, toward the smoke. Come back and tell me."
+      "The gate. Walk to it. Slowly."
     ], "speaker": "hesk"},
     "hesk.fence.active.1": {"end": true, "lines": [
-      "The pen, past the fence. Five wolves."
+      "The goose pen. The wolves. Then me."
     ], "speaker": "hesk"},
     "hesk.path.done.1": {"end": true, "lines": [
-      "You saw the smoke. Good. Now the wolves."
+      "You walk straight. Good. Stay there a moment."
     ], "setFlag": "s.mq.ow.path.handin", "speaker": "hesk"},
     "hesk.fence.done.1": {"end": true, "lines": [
-      "The wolves are gone. I watched from the wall.",
+      "I watched from the wall. You didn't run.",
       "Come to the gate."
     ], "setFlag": "s.mq.ow.fence.handin", "speaker": "hesk"},
     "hesk.board.2": {"choices": [{"next": "hesk.board.3", "setFlag": "s.mq.ow.board.accept", "text": "I will read it."}, {"next": "hesk.later", "text": "Not yet."}], "lines": [
-      "Read the names. Then come back to me."
+      "Read every name. Then come back to me."
     ], "speaker": "hesk"},
     "hesk.board.3": {"end": true, "lines": [
-      "The board by the gate. Read it."
+      "Take your time. They waited long enough."
     ], "speaker": "hesk"},
     "hesk.board.1": {"lines": [
-      "The board by the gate. Read it.",
-      "That is who we are."
+      "The board by the gate. Read it, Wick.",
+      "That's who we are. What Ferrum says we are."
     ], "next": "hesk.board.2", "speaker": "hesk"},
     "hesk.board.active.1": {"end": true, "lines": [
-      "The board by the gate. Read it, then come back to me."
+      "The board, Wick. Read it, then come back."
     ], "speaker": "hesk"},
     "hesk.board.done.1": {"end": true, "lines": [
-      "You read it. Now you know who we are. Good."
+      "Now you know us. Dead, all of us. And here."
     ], "setFlag": "s.mq.ow.board.handin", "speaker": "hesk"}
   }
 }

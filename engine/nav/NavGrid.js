@@ -481,7 +481,7 @@ export class NavGrid {
    * an in-grid 8-neighbour whose height differs by more than `maxStepM` -
    * see `_applyMaxStepM`.
    * @param {{terrain: {heightAt(x:number,y:number):number, normalAt(x:number,y:number,out:{x:number,y:number,z:number}):void, typeAt(x:number,y:number):number, typeName(id:number):string}, structureAt?: (x:number,y:number)=>boolean}} world
-   * @param {{maxSlopeDeg?:number, minNormalZ?:number, blockedTypes?:string[], typeCost?:Record<string,number>, mask?:Uint8Array|null, maxStepM?:number}} [opts]
+   * @param {{maxSlopeDeg?:number, minNormalZ?:number, blockedTypes?:string[], typeCost?:Record<string,number>, mask?:Uint8Array|null, maxStepM?:number, ford?:{depthAt:(x:number,y:number)=>number, maxDepth?:number, cost?:number}}} [opts]
    */
   buildFromWorld(world, opts = {}) {
     const cosThresh = opts.minNormalZ ?? minNormalZFromSlopeDeg(opts.maxSlopeDeg ?? 30);
@@ -489,6 +489,11 @@ export class NavGrid {
     const typeCost = opts.typeCost ?? {};
     const mask = opts.mask ?? null;
     const maxStepM = opts.maxStepM ?? Infinity;
+    // NAV-LINKS-01b (38.71): ford wade. `opts.ford = {depthAt(x,y) -> m (<0 = no water region), maxDepth (default 0.6), cost (default typeCost.ford ?? 4)}`:
+    // a cell blocked ONLY by its water terrain type is walkable at the ford cost when the water there is shallower than maxDepth. No `ford` = unchanged.
+    const ford = opts.ford ?? null;
+    const fordMax = ford ? (ford.maxDepth ?? 0.6) : 0;
+    const fordCost = ford ? (ford.cost ?? typeCost.ford ?? 4) : 1;
     const terrain = world.terrain;
     const normal = { x: 0, y: 0, z: 0 };
     // NAV-PERF-01: when the cell size equals the terrain's normal/slope step, the +-step heights ARE the neighbour cell centres: sample
@@ -523,10 +528,13 @@ export class NavGrid {
         }
         const typeName = terrain.typeName(typeId);
         let unwalkable = normal.z < cosThresh;
-        if (!unwalkable && blockedTypes.indexOf(typeName) !== -1) unwalkable = true;
+        let wade = false;
+        if (!unwalkable && blockedTypes.indexOf(typeName) !== -1) {
+          if (ford) { const d = ford.depthAt(x, y); if (d >= 0 && d < fordMax) wade = true; else unwalkable = true; } else unwalkable = true;
+        }
         if (!unwalkable && world.structureAt && world.structureAt(x, y)) unwalkable = true;
         if (!unwalkable && mask && mask[i]) unwalkable = true;
-        this.terrainCost[i] = unwalkable ? 0 : (typeCost[typeName] ?? 1);
+        this.terrainCost[i] = unwalkable ? 0 : (wade ? fordCost : (typeCost[typeName] ?? 1));
       }
     }
     this._applyMaxStepM(maxStepM);

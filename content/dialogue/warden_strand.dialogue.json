@@ -3,7 +3,7 @@
   "schema": 1,
   "id": "warden_strand",
   "speakers": {
-    "warden": {"label": "WARDEN"},
+    "warden": {"label": "KIT"},
     "you": {"label": "YOU", "player": true}
   },
   "entry": [
@@ -11,7 +11,7 @@
   ],
   "nodes": {
     "warden.hello": {"end": true, "lines": [
-      "I keep this light. Nothing more to ask of me today."
+      "Kit. Sea on one side, the stone on the other."
     ], "speaker": "warden"}
   }
 }

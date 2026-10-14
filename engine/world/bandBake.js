@@ -20,6 +20,12 @@ function fillNavRow(w, b, cfg, v, r) {
   }
 }
 
+/**
+ * NAV-LAYERS-01d: `cfg.layers(world, grid)` (game side, engine/world never imports engine/nav) returns null or a baker `{step(ms) -> done}` that
+ * installs sheets into the tile grid, one source per `step` call. The ground layer of the tile is final before it runs.
+ */
+function startLayers(w, cfg, grid) { return cfg.layers ? cfg.layers(w, grid) : null; }
+
 function finishNavTile(w, b, cfg, v) {
   const grid = cfg.create(b.x0, b.y0, b.w, b.h, b.cell);
   grid.buildFromArrays(b.height, v.slopeOk, b.type, { typeNames: w.terrain.typeNames, mask: v.mask, blockedTypes: cfg.blockedTypes ?? ['water'], typeCost: cfg.typeCost ?? {}, maxStepM: cfg.maxStepM ?? Infinity });
@@ -30,7 +36,9 @@ function finishNavTile(w, b, cfg, v) {
 export function buildNavTile(world, near) {
   const cfg = world.navTiles, v = { slopeOk: new Uint8Array(near.w * near.h), mask: new Uint8Array(near.w * near.h) };
   for (let r = 0; r < near.h; r++) fillNavRow(world, near, cfg, v, r);
-  return finishNavTile(world, near, cfg, v);
+  const grid = finishNavTile(world, near, cfg, v), bk = startLayers(world, cfg, grid);
+  if (bk) while (!bk.step(1e9));
+  return grid;
 }
 
 /** Row-sliced nav tile for an already cached bundle (WM-03 arch fix: setNavTiles fills these during idle frames, never on a swap). */
@@ -40,7 +48,9 @@ export class NavTileFill {
   step(ms) {
     const w = this.world, b = this.bundle.near, cfg = w.navTiles, v = this.v, t0 = now();
     while (v.row < b.h) { fillNavRow(w, b, cfg, v, v.row++); if (now() - t0 >= ms) return false; }
-    this.bundle.nav = finishNavTile(w, b, cfg, v);
+    if (!this.grid) { this.grid = finishNavTile(w, b, cfg, v); this.baker = startLayers(w, cfg, this.grid); }
+    if (this.baker && !this.baker.step(ms)) return false;
+    this.bundle.nav = this.grid;
     return true;
   }
 }
@@ -104,7 +114,9 @@ export class BandBakeJob {
       fillNavRow(w, b, cfg, v, v.row++);
       if (now() - t0 >= ms) return false;
     }
-    this.nav = finishNavTile(w, b, cfg, v); this._nv = null;
+    if (!this._ng) { this._ng = finishNavTile(w, b, cfg, v); this._nb = startLayers(w, cfg, this._ng); return !this._nb && ((this.nav = this._ng), (this._ng = null), (this._nv = null), true); }
+    if (!this._nb.step(ms)) return false;
+    this.nav = this._ng; this._ng = this._nb = null; this._nv = null;
     return true;
   }
 

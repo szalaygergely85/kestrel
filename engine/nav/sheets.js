@@ -31,7 +31,7 @@ export function sheetCellIndex(grid, s, lx, ly) {
 function linkLowerBound(grid, a, b, minCost) {
   const pa = { x: 0, y: 0, z: 0 }, pb = { x: 0, y: 0, z: 0 };
   grid.cellPos(a, pa); grid.cellPos(b, pb);
-  const f = grid.layers.finest;
+  const f = grid.layers ? grid.layers.finest : grid.cell;
   const dx = Math.abs(pa.x - pb.x) / f, dy = Math.abs(pa.y - pb.y) / f;
   return Math.floor(minCost * (10 * Math.max(dx, dy) + 4 * Math.min(dx, dy)) + 1e-6);
 }
@@ -152,6 +152,21 @@ const MAX_FLOORS = 4;
  * @returns {{layers:any, stats:{id:string|number, ms:number, cells:number, sheets:number}[], dropped:number}}
  */
 export function bakeSheets(grid, sources, probe, opts = {}) {
+  const baker = createSheetBaker(grid, sources, probe, opts);
+  while (baker.stepSource());
+  return baker.finish();
+}
+
+/**
+ * Sliceable form of bakeSheets (NAV-LAYERS-01d, tile phase): `stepSource()` bakes ONE source (floors + flood fill + sheets, returns false when
+ * none is left), `finish()` runs links + pruning + install and returns the bakeSheets result. Sources with `key` (+ optional `zBase`) are
+ * cached in `opts.cache` (Map) by (key, size, cell phase): the same (def, yaw) placed again reuses the probed floors, translated by zBase.
+ * @param {import('./NavGrid.js').NavGrid} grid
+ * @param {any[]} sources
+ * @param {(x:number, y:number, footZ:number, out:{z:number, nz:number}) => boolean} probe
+ * @param {any} [opts]
+ */
+export function createSheetBaker(grid, sources, probe, opts = {}) {
   const maxStepM = opts.maxStepM ?? 0.5;
   const agentH = opts.agentHeight ?? 1.6;
   const minNz = Math.cos((opts.maxSlopeDeg ?? 50) * Math.PI / 180);
@@ -164,18 +179,28 @@ export function bakeSheets(grid, sources, probe, opts = {}) {
   const hit = { z: 0, nz: 1 };
   let totalCells = 0;
 
-  for (const src of srcs) {
+  let nextSrc = 0;
+  /** Bakes the next source; false when all are done. */
+  function stepSource() {
+    if (nextSrc >= srcs.length) return false;
+    const src = srcs[nextSrc++];
     const t0 = now();
     const cell = src.cell ?? opts.cell ?? grid.cell;
     const gx0 = grid.x0 + Math.floor((src.x0 - grid.x0) / cell) * cell;
     const gy0 = grid.y0 + Math.floor((src.y0 - grid.y0) / cell) * cell;
     const W = Math.ceil((src.x1 - gx0) / cell - 1e-9), H = Math.ceil((src.y1 - gy0) / cell - 1e-9);
-    if (W <= 0 || H <= 0) { stats.push({ id: src.id, ms: 0, cells: 0, sheets: 0 }); continue; }
+    if (W <= 0 || H <= 0) { stats.push({ id: src.id, ms: 0, cells: 0, sheets: 0 }); return true; }
     const nC = W * H;
     // 1. floors per cell (descending z), slope + headroom filtered.
-    const fz = new Float32Array(nC * MAX_FLOORS), fn = new Uint8Array(nC);
+    let fz = new Float32Array(nC * MAX_FLOORS), fn = new Uint8Array(nC);
     const zs = [], nzs = [];
-    for (let c = 0; c < nC; c++) {
+    const zBase = src.zBase || 0, cache = opts.cache;
+    const ckey = cache && src.key != null ? `${src.key}|${W}x${H}|${cell}|${((src.x0 - gx0) / cell).toFixed(3)},${((src.y0 - gy0) / cell).toFixed(3)}|${(src.zTop - zBase).toFixed(3)}` : null;
+    const hitC = ckey ? cache.get(ckey) : undefined;
+    if (hitC) {
+      fn = hitC.fn;
+      for (let i = 0; i < fz.length; i++) fz[i] = hitC.fz[i] + zBase;
+    } else for (let c = 0; c < nC; c++) {
       const px = gx0 + ((c % W) + 0.5) * cell, py = gy0 + (((c / W) | 0) + 0.5) * cell;
       zs.length = 0; nzs.length = 0;
       let foot = src.zTop;
@@ -191,6 +216,7 @@ export function bakeSheets(grid, sources, probe, opts = {}) {
       }
       fn[c] = k;
     }
+    if (ckey && !hitC) { const rel = new Float32Array(fz.length); for (let i = 0; i < rel.length; i++) rel[i] = fz[i] - zBase; cache.set(ckey, { fz: rel, fn }); }
     // 2. flood fill nodes (cell, floor) into components; a component never holds two floors of one cell.
     const comp = new Int16Array(nC * MAX_FLOORS).fill(-1);
     const occ = new Int32Array(nC); // comp id + 1 occupying the cell
@@ -243,8 +269,11 @@ export function bakeSheets(grid, sources, probe, opts = {}) {
       if (totalCells > maxCells) throw new Error(`bakeSheets: source "${src.id}" pushes sheets past maxSheetCells ${maxCells}`);
       sheets.push({ src: src.id, x0: gx0 + minX * cell, y0: gy0 + minY * cell, w, h, cell, cost, height });
     }
-    stats.push({ id: src.id, ms: now() - t0, cells, sheets: compNodes.length });
+    stats.push({ id: src.id, ms: now() - t0, cells, sheets: compNodes.length, cached: !!hitC });
+    return true;
   }
+
+  function finish() {
 
   // 4. auto links (step both ways, optional one-way drops) between sheets and to ground.
   const finest = Math.min(grid.cell, ...sheets.map((s) => s.cell));
@@ -319,4 +348,98 @@ export function bakeSheets(grid, sources, probe, opts = {}) {
   if (outSheets.length === 0) return { layers: null, stats, dropped };
   const layers = buildLayersFromArrays(grid, { sheets: outSheets, links }, { maxStepM, maxSheetCells: maxCells, maxLinks: opts.maxLinks });
   return { layers, stats, dropped };
+  }
+  return { stepSource, finish, get pending() { return srcs.length - nextSrc; }, stats };
+}
+
+// ---- NAV-LINKS-01a (38.71): authored links from content ---------------------------------------------------------------
+// Data shape (world def `nav.links`, array): { id: string, kind: 'ladder'|'drop'|'door'|'authored', from:{x,y,z}, to:{x,y,z},
+//   cost?: integer (finest-cell units, default = admissible lower bound), stateKey?: string (doors only, REQUIRED there; the game
+//   opens/closes it with grid.setLinkOpen(stateKeys.indexOf(key), on)), open?: boolean (door start state, default closed) }.
+// ladder + door are two-way, drop + authored one-way (from -> to). Ends are world positions; `locate(x, y, z)` picks sheet or ground.
+const LINK_KIND_OF = { ladder: LINK_LADDER, drop: LINK_DROP, door: LINK_DOOR, authored: LINK_AUTHORED };
+const isPt = (p) => !!p && Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z);
+
+/**
+ * Plain-string errors for authored link defs; shape checks always, grid checks (ends walkable, cost bound, drop dz) when `grid` is given.
+ * @param {any[]} defs @param {import('./NavGrid.js').NavGrid|null} [grid] @param {{maxStepM?:number}} [opts]
+ * @returns {string[]}
+ */
+export function validateLinks(defs, grid = null, opts = {}) {
+  const errs = [];
+  if (!Array.isArray(defs)) return ['links must be an array'];
+  const ids = new Set();
+  const maxStepM = opts.maxStepM ?? (grid && grid.layers ? grid.layers.maxStepM : 0.5);
+  for (let k = 0; k < defs.length; k++) {
+    const d = defs[k], tag = `link ${d && d.id !== undefined ? '"' + d.id + '"' : '#' + k}`;
+    if (!d || typeof d !== 'object') { errs.push(`${tag}: must be an object`); continue; }
+    if (typeof d.id !== 'string' || !d.id) errs.push(`${tag}: id must be a non-empty string`);
+    else if (ids.has(d.id)) errs.push(`${tag}: duplicate id`);
+    else ids.add(d.id);
+    if (!Object.hasOwn(LINK_KIND_OF, d.kind)) { errs.push(`${tag}: kind must be ladder, drop, door or authored, got ${JSON.stringify(d.kind)}`); continue; }
+    const fromOk = isPt(d.from), toOk = isPt(d.to);
+    if (!fromOk) errs.push(`${tag}: from needs finite x, y, z`);
+    if (!toOk) errs.push(`${tag}: to needs finite x, y, z`);
+    if (d.kind === 'door') { if (typeof d.stateKey !== 'string' || !d.stateKey) errs.push(`${tag}: a door needs a stateKey string`); }
+    else if (d.stateKey !== undefined) errs.push(`${tag}: stateKey is only for doors`);
+    if (d.open !== undefined && (d.kind !== 'door' || typeof d.open !== 'boolean')) errs.push(`${tag}: open must be a boolean and only on doors`);
+    if (d.cost !== undefined && !(Number.isInteger(d.cost) && d.cost >= 1 && d.cost <= 65535)) errs.push(`${tag}: cost must be an integer 1..65535`);
+    if (!fromOk || !toOk) continue;
+    if (d.kind === 'drop' && !(d.from.z - d.to.z > maxStepM)) errs.push(`${tag}: a drop must fall more than maxStepM (${maxStepM} m): from.z ${d.from.z} to.z ${d.to.z}`);
+    if (!grid) continue;
+    const a = grid.locate(d.from.x, d.from.y, d.from.z), b = grid.locate(d.to.x, d.to.y, d.to.z);
+    const walk = (i) => i >= 0 && (i < grid.w * grid.h ? grid.cost[i] : grid.layers.cost[i - grid.w * grid.h]) !== 0;
+    if (!walk(a)) errs.push(`${tag}: from end is off the grid or not walkable`);
+    if (!walk(b)) errs.push(`${tag}: to end is off the grid or not walkable`);
+    if (!walk(a) || !walk(b)) continue;
+    if (a === b) { errs.push(`${tag}: both ends are the same cell`); continue; }
+    if (d.cost !== undefined) {
+      const lb = linkLowerBound(grid, a, b, Math.min(grid.layers ? grid.layers.minCost : 255, grid.minCost));
+      if (d.cost < lb) errs.push(`${tag}: cost ${d.cost} is below the admissible bound ${lb}`);
+    }
+
+  }
+  return errs;
+}
+
+/**
+ * Adds authored links to a built grid (after the sheets bake; creates an empty layers block on a ground-only grid). Throws with the
+ * validateLinks errors. Deterministic: table re-sorted by (from, to, input order). Returns `stateKeys`: door `stateIdx` = index in it.
+ * @param {import('./NavGrid.js').NavGrid} grid @param {any[]} defs @returns {{stateKeys: string[]}}
+ */
+export function addAuthoredLinks(grid, defs, opts = {}) {
+  const stateKeys = [];
+  if (!defs || !defs.length) return { stateKeys };
+  if (!grid.layers) buildLayersFromArrays(grid, { sheets: [] }, opts);
+  const errs = validateLinks(defs, grid, opts);
+  if (errs.length) throw new Error('nav links: ' + errs.join('; '));
+  const L = grid.layers, recs = [];
+  for (let k = 0; k < L.nLinks; k++) recs.push({ a: L.from[k], b: L.to[k], cost: L.lcost[k], kind: L.kind[k], flags: L.flags[k], si: L.stateIdx[k], ord: k });
+  const minCost = Math.min(L.minCost, grid.minCost);
+  for (const d of defs) {
+    const a = grid.locate(d.from.x, d.from.y, d.from.z), b = grid.locate(d.to.x, d.to.y, d.to.z);
+    const kind = LINK_KIND_OF[d.kind];
+    const cost = d.cost ?? Math.max(1, linkLowerBound(grid, a, b, minCost));
+    let si = -1, flags = LINK_OPEN;
+    if (kind === LINK_DOOR) {
+      si = stateKeys.indexOf(d.stateKey);
+      if (si < 0) { si = stateKeys.length; stateKeys.push(d.stateKey); }
+      flags = d.open ? LINK_OPEN : 0;
+    }
+    recs.push({ a, b, cost, kind, flags, si, ord: recs.length });
+    if (kind !== LINK_DROP && kind !== LINK_AUTHORED) recs.push({ a: b, b: a, cost, kind, flags, si, ord: recs.length });
+  }
+  if (recs.length > MAX_LINKS) throw new Error(`links: ${recs.length} exceed maxLinks`);
+  recs.sort((p, q) => p.a - q.a || p.b - q.b || p.ord - q.ord);
+  const K = recs.length;
+  L.nLinks = K;
+  L.from = new Int32Array(K); L.to = new Int32Array(K); L.lcost = new Uint16Array(K);
+  L.kind = new Uint8Array(K); L.flags = new Uint8Array(K); L.stateIdx = new Int16Array(K);
+  for (let k = 0; k < K; k++) {
+    const r = recs[k];
+    L.from[k] = r.a; L.to[k] = r.b; L.lcost[k] = r.cost; L.kind[k] = r.kind; L.flags[k] = r.flags; L.stateIdx[k] = r.si;
+    L.linkFlag[r.a] = 1;
+  }
+  grid.version++;
+  return { stateKeys };
 }
