@@ -131,21 +131,9 @@
   var EARS_BACK = [-26, 0, 0];
   var DEAD_O = { free: true, b: [0, 90, 0, 0, 0, groundZ(90)], h: [-4, 8, 0], j: 8, e: [-10, 0, 0],
                  aL: -24, aR: -14, lL: 26, lR: 16 };
-  // charge: fast bounding lope (rotary gallop), 0.4 s loop, ~6 m/s; fronts land one after the other, hinds swing through
-  anim.charge = clip([
-    [50,  { b: [-4, 0, 0, 0, 0, 1.2], h: [6, 0, 0], e: EARS_BACK, j: 6, aL: -40, aR: -30, lL: 30, lR: 25,
-            lift: { aL: 2, aR: 2.5, lL: 1.5, lR: 1.5 } }],                                  // stretched flight
-    [100, { b: [2, 0, 1, 0, 0, 0.3], h: [12, 0, 0], e: EARS_BACK, j: 8, aL: -18, aR: -10, lL: 15, lR: 10,
-            lift: { aR: 1.5, lL: 2, lR: 2 } }],                                             // lead fore lands
-    [50,  { b: [5, 0, 0, 0, 0, -0.3], h: [15, 0, 0], e: EARS_BACK, j: 6, aL: 12, aR: 4, lL: -20, lR: -10,
-            lift: { lL: 2.5, lR: 2.5 } }],                                                  // both fores down, hump up
-    [50,  { b: [3, 0, -1, 0, 0, 0.2], h: [11, 0, 0], e: EARS_BACK, j: 4, aL: 28, aR: 20, lL: -28, lR: -22,
-            lift: { aL: 2, aR: 1.5 } }],                                                    // gathered: hinds plant forward
-    [100, { b: [-2, 0, 0, 0, 0, 0.8], h: [8, 0, 0], e: EARS_BACK, j: 6, aL: 4, aR: -6, lL: 6, lR: -4,
-            lift: { aL: 3, aR: 3 } }],                                                      // hind push-off
-    [50,  { b: [-4, 0, 1, 0, 0, 1.0], h: [6, 0, 0], e: EARS_BACK, j: 8, aL: -28, aR: -20, lL: 24, lR: 20,
-            lift: { aL: 2.5, aR: 2.5, lL: 1, lR: 1 } }]                                     // fores reach again
-  ], true);
+  // charge (ANIM-B-01a): run gait from the knee-rig generator (design/models/voxel_bear.js ASSETS.bearGait), rotary-gallop phases, 0.5 s loop,
+  // planted feet at tunedMps 3.0 (legRig.gaits.charge); the old hand-keyed 0.4 s lope is replaced
+  anim.charge = A.bearGait.gaitClip(A.bearGait.GAIT.charge);
   // windup 0.8 s: the black bear's bluff tell on ALL FOURS - head drops, ears pin, weight rocks back, right then left
   // front-paw stomp with a huff (jaw pop), last key = coiled, head low, weight back (held until the charge starts)
   anim.windup = clip([
@@ -209,7 +197,7 @@
     displayName: 'black bear',
     desc: 'BEAR-D1 wild American black bear: Burl\'s bear v2 rig + voxels (1.1 m at the hump, 1.7 m nose to rump, all ' +
           'fours), recoloured: near-black coat with glossy lit guard-hair tips, darkest legs and dorsal ridge, tan muzzle ' +
-          'and chin under a dark face, small pale chest blaze, dark claws, amber eyes. 8 parts; clips idle, walk, turn ' +
+          'and chin under a dark face, small pale chest blaze, dark claws, amber eyes. 12 parts (knee rig); clips idle, walk, turn ' +
           '(Burl) + BEAR-D2 fight clips on all fours: charge (lope), windup (bluff stomp + huff), swipe, hurt, flinch, ' +
           'die (slump to the right side), dead, sink.',
     voxel: {
@@ -222,6 +210,7 @@
       mats: mats,
       layers: layers,
       parts: clone(SV.parts),
+      legRig: (function () { var r = clone(SV.legRig); r.gaits.charge = A.bearGait.gaitSpec(A.bearGait.GAIT.charge); return r; })(),
       animations: anim,
       mounts: mounts           // eyes, mouth, pawR (grid coords, follow their part)
     }

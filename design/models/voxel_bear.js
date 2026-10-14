@@ -313,6 +313,122 @@
   function W(o) { return addO(WAVE_B, o); }
   var PIN = [-22, 0, 0];                                        // ears pinned back (laugh)
 
+  // ---- ANIM-B-01a knee rig: gait generator (ported from design/preview/animal-look-options.html, option B) ----
+  // Each leg = upper part (keeps today's name + pivot) + lower part `<name>2` (elbow / ankle pivot). Voxels are only re-assigned
+  // by the box split; every older clip leaves the lower parts unkeyed (rot 0) so it poses exactly as before.
+  // GAIT = the ONE source for the generator AND `legRig.gaits` (tunedMps = v, duty = beta, liftM = H cells * cellM).
+  var D2R_ = Math.PI / 180, CELL_M = 0.05;
+  var LEGS = {   // u = hip -> joint rest offset (dy,dz), w = joint -> foot rest offset (voxels); the hind ankle sits BEHIND the hip-foot line
+    FL: { upper: 'armL', lower: 'armL2', x: 7.5,  u: [1, -7],  w: [-1, -9], k: 0.5,  kind: 'fore' },
+    FR: { upper: 'armR', lower: 'armR2', x: 20.5, u: [1, -7],  w: [-1, -9], k: 0.5,  kind: 'fore' },
+    HL: { upper: 'legL', lower: 'legL2', x: 7.5,  u: [2, -11], w: [-2, -4], k: 0.35, kind: 'hind' },
+    HR: { upper: 'legR', lower: 'legR2', x: 20.5, u: [2, -11], w: [-2, -4], k: 0.35, kind: 'hind' }
+  };
+  var LEG_ORDER = ['FL', 'FR', 'HL', 'HR'];               // = legRig.legs order = phase[] order
+  var GAIT = {
+    walk:   { T: 800, v: 1.0, beta: 0.65, bob: 0.5, pitch: 1.5, nod: 1.5, ears: 3, heel: 28, foldF: 32, foldH: 12, H: 1.4, roll: 5, yaw: 4,
+              phase: { FL: 0.12, FR: 0.62, HL: 0, HR: 0.5 }, keys: 16 },
+    charge: { T: 500, v: 3.0, beta: 0.45, bob: 1.5, pitch: 4, nod: 3, ears: 0, heel: 20, foldF: 40, foldH: 20, H: 3.0, roll: 2, yaw: 2,
+              phase: { FL: 0, FR: 0.1, HL: 0.5, HR: 0.6 }, keys: 10 }
+  };
+  function gaitSpec(g) { return { tunedMps: g.v, duty: g.beta, phase: LEG_ORDER.map(function (k) { return g.phase[k]; }), liftM: Math.round(g.H * CELL_M * 1000) / 1000 }; }
+  function gSmooth(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
+  function fkY(leg, r1, r2) {
+    var c1 = Math.cos(r1), s1 = Math.sin(r1), ky = c1 * leg.u[0] - s1 * leg.u[1];
+    var a = r1 + r2;
+    return ky + Math.cos(a) * leg.w[0] - Math.sin(a) * leg.w[1] - (leg.u[0] + leg.w[0]);
+  }
+  function solveR1(leg, Ty, extra) {
+    var lo = -85 * D2R_, hi = 85 * D2R_, i, m;
+    function f(r) { return fkY(leg, r, -(1 - leg.k) * r + extra) - Ty; }
+    if (f(lo) > 0) return lo;
+    if (f(hi) < 0) return hi;
+    for (i = 0; i < 40; i++) { m = (lo + hi) / 2; if (f(m) < 0) lo = m; else hi = m; }
+    return (lo + hi) / 2;
+  }
+  // rest-pose foot contact row of a lower part: [[x,y0,z],[x,y1+1,z]] at its lowest solid layer
+  function footPts(b, px) {
+    var z, y, x, y0, y1;
+    for (z = b[2]; z < b[5]; z++) {
+      y0 = 1e9; y1 = -1;
+      for (y = b[1]; y < b[4]; y++) for (x = b[0]; x < b[3]; x++) if (G[z][y][x] !== '.') { if (y < y0) y0 = y; if (y > y1) y1 = y; }
+      if (y1 >= 0) return [[px, y0, z], [px, y1 + 1, z]];
+    }
+    return [[px, b[1], b[2]], [px, b[4], b[2]]];
+  }
+  function mul3(a, b) {
+    var o = [], r, c;
+    for (r = 0; r < 3; r++) for (c = 0; c < 3; c++) o.push(a[r * 3] * b[c] + a[r * 3 + 1] * b[3 + c] + a[r * 3 + 2] * b[6 + c]);
+    return o;
+  }
+  function rotM(rx, ry, rz) {
+    var cx = Math.cos(rx * D2R_), sx = Math.sin(rx * D2R_), cy = Math.cos(ry * D2R_), sy = Math.sin(ry * D2R_), cz = Math.cos(rz * D2R_), sz = Math.sin(rz * D2R_);
+    return mul3([cz, -sz, 0, sz, cz, 0, 0, 0, 1], mul3([cy, 0, sy, 0, 1, 0, -sy, 0, cy], [1, 0, 0, 0, cx, -sx, 0, sx, cx]));
+  }
+  function mulV(a, v) { return [a[0] * v[0] + a[1] * v[1] + a[2] * v[2], a[3] * v[0] + a[4] * v[1] + a[5] * v[2], a[6] * v[0] + a[7] * v[1] + a[8] * v[2]]; }
+  var PART_PIVOT = { body: [14, 21, 12], armL: [7.5, 14.5, 16], armR: [20.5, 14.5, 16], legL: [7.5, 27.5, 15], legR: [20.5, 27.5, 15],
+                     armL2: [7.5, 15.5, 9], armR2: [20.5, 15.5, 9], legL2: [7.5, 29.5, 4], legR2: [20.5, 29.5, 4] };
+  var LOWER_BOX = { FL: [3, 10, 0, 11, 18, 9], FR: [17, 10, 0, 25, 18, 9], HL: [3, 22, 0, 11, 34, 4], HR: [17, 22, 0, 25, 34, 4] };
+  // rest point -> model space for the chain body -> upper -> lower of one leg (engine rule: l = piv + pos - R piv; A = Aparent R; b = Aparent l + bparent)
+  function chainPoint(fr, key, pt) {
+    var names = ['body', LEGS[key].upper, LEGS[key].lower], A = [], B = [], i, t;
+    for (i = 0; i < 3; i++) {
+      var f = fr[names[i]] || {}, rot = f.rot || [0, 0, 0], pos = f.pos || [0, 0, 0], R = rotM(rot[0] || 0, rot[1] || 0, rot[2] || 0), pv = PART_PIVOT[names[i]];
+      var rv = mulV(R, pv), l = [pv[0] + (pos[0] || 0) - rv[0], pv[1] + (pos[1] || 0) - rv[1], pv[2] + (pos[2] || 0) - rv[2]];
+      if (i === 0) { A[0] = R; B[0] = l; } else { A[i] = mul3(A[i - 1], R); t = mulV(A[i - 1], l); B[i] = [t[0] + B[i - 1][0], t[1] + B[i - 1][1], t[2] + B[i - 1][2]]; }
+    }
+    var p = mulV(A[2], pt);
+    return [p[0] + B[2][0], p[1] + B[2][1], p[2] + B[2][2]];
+  }
+  var FOOT_PTS = {};
+  function footMinZ(fr, key) {                              // lowest foot z (cells) and mean foot y of a posed leg
+    var pts = FOOT_PTS[key], mz = 1e9, ys = 0, i, w;
+    for (i = 0; i < pts.length; i++) { w = chainPoint(fr, key, pts[i]); if (w[2] < mz) mz = w[2]; ys += w[1]; }
+    return { z: mz, y: ys / pts.length };
+  }
+  function r3(v) { var r = Math.round(v * 1000) / 1000; return r === 0 ? 0 : r; }
+  function gaitFrame(g, p) {
+    var S = g.v * (g.T / 1000) * g.beta / CELL_M, TWO = 4 * Math.PI;
+    var bob = g.bob * Math.cos(TWO * (p - 0.08)), pitch = g.pitch * Math.sin(TWO * p + 0.6);
+    var roll = -g.roll * Math.sin(2 * Math.PI * (p - 0.2)), yaw = g.yaw * Math.sin(2 * Math.PI * p);
+    var fr = { body: { rot: [pitch, roll, yaw], pos: [0, 0, bob] },
+               head: { rot: [-pitch * 1.3 + g.nod * Math.sin(TWO * p + 0.6), 0, -yaw * 0.8] },
+               jaw: { rot: [0, 0, 0] }, ears: { rot: [g.ears * Math.sin(TWO * p + 2.0), 0, 0] } };
+    var lifts = {}, i, it;
+    for (i = 0; i < 4; i++) {
+      var key = LEG_ORDER[i], leg = LEGS[key], ph = (p - g.phase[key]) % 1, Ty, lift = 0, extra;
+      if (ph < 0) ph += 1;
+      if (ph < g.beta) {                                    // stance: foot travels back under the body
+        var s = ph / g.beta; Ty = -S / 2 + S * s;
+        extra = (leg.kind === 'hind' ? g.heel * gSmooth((s - 0.7) / 0.3) : g.heel * 0.4 * gSmooth((s - 0.8) / 0.2)) * D2R_;
+      } else {                                              // swing: lifted + folded, back -> front
+        var q = (ph - g.beta) / (1 - g.beta);
+        Ty = S / 2 - S * gSmooth(q); lift = g.H * Math.sin(Math.PI * q);
+        extra = (leg.kind === 'fore' ? g.foldF : g.foldH) * Math.sin(Math.PI * q) * D2R_;
+      }
+      var r1 = solveR1(leg, Ty, extra);
+      fr[leg.upper] = { rot: [r1 / D2R_, 0, 0], pos: [0, 0, 0] };
+      fr[leg.lower] = { rot: [(-(1 - leg.k) * r1 + extra) / D2R_, 0, 0] };
+      lifts[key] = lift;
+    }
+    for (it = 0; it < 3; it++) for (i = 0; i < 4; i++) {    // ground snap: upper part pos z so the lowest foot voxel sits on ground + lift
+      var k2 = LEG_ORDER[i], m = footMinZ(fr, k2);
+      fr[LEGS[k2].upper].pos[2] += lifts[k2] - m.z;
+    }
+    var out = {};
+    Object.keys(fr).forEach(function (n) {
+      var f = fr[n]; out[n] = { rot: [r3(f.rot[0]), r3(f.rot[1]), r3(f.rot[2])] };
+      if (f.pos) out[n].pos = [r3(f.pos[0]), r3(f.pos[1]), r3(f.pos[2])];
+    });
+    return out;
+  }
+  LEG_ORDER.forEach(function (k) { FOOT_PTS[k] = footPts(LOWER_BOX[k], LEGS[k].x); });
+  function gaitClip(g) {
+    var d = [], f = [], i;
+    for (i = 0; i < g.keys; i++) { d.push(g.T / g.keys); f.push(gaitFrame(g, i / g.keys)); }
+    return { durations: d, loop: true, frames: f };
+  }
+
   var animations = {
     idle: clip([
       [800, {}],
@@ -359,17 +475,8 @@
       [300, { h: [-16, 0, 0], j: 3, e: [-4, 0, 0] }],
       [300, { h: [-22, 0, 0] }]
     ], false),
-    // diagonal pairs (left fore + right hind) reach / pass, trunk yaw + bob lumber, head swings opposite
-    walk: clip([
-      // reach keys: the reaching pair is lifted 7-8 cm; the stance pair gets a small lift that cancels the toe dip of
-      // a limb swung back about its high shoulder / hip pivot (so no paw sinks into the ground)
-      [200, { b: [0, 0, 2, 0, 0, 0], h: [3, 0, -3], aL: -14, aR: 10, lL: 12, lR: -12,
-              lift: { aL: 1.4, aR: 0.6, lL: 0.9, lR: 1.6 } }],
-      [150, { b: [0, 0, 0, 0, 0, 0.4], aL: -3, aR: 3, lL: 2, lR: -2 }],
-      [200, { b: [0, 0, -2, 0, 0, 0], h: [3, 0, 3], aL: 10, aR: -14, lL: -12, lR: 12,
-              lift: { aL: 0.6, aR: 1.4, lL: 1.6, lR: 0.9 } }],
-      [150, { b: [0, 0, 0, 0, 0, 0.4], aL: 3, aR: -3, lL: -2, lR: 2 }]
-    ], true),
+    // ANIM-B-01a: amble (lateral couplets) from the knee-rig gait generator, planted feet at ~1.0 m/s, 0.8 s loop
+    walk: gaitClip(GAIT.walk),
     // in-place shuffle while the game turns the yaw: diagonal pairs lift 5 cm and step
     turn: clip([
       [150, { lift: { aL: 1, lR: 1 }, aL: -6, lR: -4, b: [0, 0, 2, 0, 0, 0], h: [2, 0, 5] }],
@@ -386,7 +493,7 @@
           'rounded barrel trunk with a heavy shoulder hump and a sloping back, low-carried head with a long tan muzzle, ' +
           'dark nose, small eyes and small round ears, big tapered forearms on wide rounded paws with pale claws, big ' +
           'rounded haunches over long plantigrade feet; dark legs, grizzled hump. Talks with head, jaw and ' +
-          'ears. 8 parts (body, head, jaw, ears, 2 front, 2 hind limbs): idle, talk, listen, wave (paw raise on three ' +
+          'ears. 12 parts (body, head, jaw, ears, 4 upper + 4 lower limbs = knee rig): idle, talk, listen, wave (paw raise on three ' +
           'legs), laugh, walk, turn.',
     voxel: {
       version: 1,
@@ -416,10 +523,21 @@
         head: { box: [8, 0, 10, 20, 10, 18], pivot: [14, 9, 14], parent: 'body' }, // v1.53: owns the neck slice y9
         jaw:  { box: [11, 0, 8, 17, 7, 10], pivot: [14, 7, 10], parent: 'head' },
         ears: { box: [9, 5, 18, 19, 9, 20], pivot: [14, 7, 18], parent: 'head' },
-        armL: { box: [3, 10, 0, 11, 18, 19], pivot: [7.5, 14.5, 16], parent: 'body' },
-        armR: { box: [17, 10, 0, 25, 18, 19], pivot: [20.5, 14.5, 16], parent: 'body' },
-        legL: { box: [3, 22, 0, 11, 34, 21], pivot: [7.5, 27.5, 15], parent: 'body' },
-        legR: { box: [17, 22, 0, 25, 34, 21], pivot: [20.5, 27.5, 15], parent: 'body' }
+        armL: { box: [3, 10, 9, 11, 18, 19], pivot: [7.5, 14.5, 16], parent: 'body' },
+        armR: { box: [17, 10, 9, 25, 18, 19], pivot: [20.5, 14.5, 16], parent: 'body' },
+        legL: { box: [3, 22, 4, 11, 34, 21], pivot: [7.5, 27.5, 15], parent: 'body' },
+        legR: { box: [17, 22, 4, 25, 34, 21], pivot: [20.5, 27.5, 15], parent: 'body' },
+        // ANIM-B-01a lower parts (appended: indices 0-7 unchanged). elbow z9, ankle z4; hind ankle pivot y29.5 = behind the hip-foot line
+        armL2: { box: [3, 10, 0, 11, 18, 9], pivot: [7.5, 15.5, 9], parent: 'armL' },
+        armR2: { box: [17, 10, 0, 25, 18, 9], pivot: [20.5, 15.5, 9], parent: 'armR' },
+        legL2: { box: [3, 22, 0, 11, 34, 4], pivot: [7.5, 29.5, 4], parent: 'legL' },
+        legR2: { box: [17, 22, 0, 25, 34, 4], pivot: [20.5, 29.5, 4], parent: 'legR' }
+      },
+      legRig: {   // note 38.67 item 2; gaits derive from GAIT (one source); foot = paw contact point
+        body: 'body',
+        legs: LEG_ORDER.map(function (k) { return { upper: LEGS[k].upper, lower: LEGS[k].lower, foot: [LEGS[k].x, k.charAt(0) === 'F' ? 14.5 : 27.5, 0], bend: 'back' }; }),
+        gaits: { walk: gaitSpec(GAIT.walk) },
+        stand: ['idle']
       },
       animations: animations,
       // grid coords, rest pose; they follow their part's animated pose (raising the head lifts `speech` and `eyes`)
@@ -436,6 +554,7 @@
   // ===================================================================================================================
   // ASSETS.bearFx - presentation data for the NPC view + the dialogue box (no game logic here).
   // ===================================================================================================================
+  A.bearGait = { GAIT: GAIT, LEGS: LEGS, LEG_ORDER: LEG_ORDER, gaitClip: gaitClip, gaitFrame: gaitFrame, gaitSpec: gaitSpec, footMinZ: footMinZ };
   A.bearFx = {
     version: 2,
     model: 'bear',
