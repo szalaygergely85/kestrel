@@ -45,7 +45,7 @@ let sceneMul = 0.35;      // uiStyle.note.sceneDim.bgMul (whole scene while open
 let noteRender = null; // { id, rows, h, panelX, panelY, titleLine, footerLine, textLines, titleX, footerStartX }
 
 const WALK_AWAY_ON = false;
-export const FOOTER_TEXT = '[E] Close'; // OB-056: say the key (was '<< CLOSE >>'); OB-048a: clickable close line (owner: never print an Esc hint; E / Esc / click all close)
+export const FOOTER_TEXT = '[Q] Close'; // OB-056: say the key (was '<< CLOSE >>'); OB-048a: clickable close line (owner: never print an Esc hint; E / Esc / click all close)
 export const WALK_AWAY_MARGIN = 0.5; // OB-048b: note closes past min(radius, interact reach 1.8) + this (m)
 const INTERACT_REACH = 1.8; // engine/world/interaction.js DEFAULT_REACH
 let srcX = 0, srcY = 0, srcZ = 0, srcLimit = -1; // source interactable pos + close distance (-1 = no source: no walk-away)
@@ -166,7 +166,7 @@ export function stepNoteRead(dt, input, locked, eye) {
     noteA -= fadeOut > 0 ? dt / fadeOut : 1;
     if (noteA <= 0) { noteA = 0; noteState = 'closed'; noteId = null; }
   }
-  if (noteState === 'open' && input && (input.pressed('KeyE') || input.pressed('Escape') || input.pressed('Mouse0'))) { // OB-048a: click closes too
+  if (noteState === 'open' && input && (input.pressed('KeyE') || input.pressed('KeyQ') || input.pressed('Escape') || input.pressed('Mouse0'))) { // OB-048a: click closes too
     if (input.consumePressed) input.consumePressed();
     noteState = 'closing';
   }
@@ -203,7 +203,7 @@ export function pushNoteDim(dim) {
  * Geometry (uiStyle.note.panel/frame/title/rule/text/footer): a 64-wide sheet
  * centred on `ui.cols`, height `8 + wrapped rows` clamped [minH, maxH], torn
  * top/bottom edges, `|` sides, a drop shadow, centred title, a rule, the
- * wrapped body, and the right-aligned "[E] / [Esc] close" footer. Fade: fg is
+ * wrapped body, and the right-aligned "[Q] Close" footer. Fade: fg is
  * scaled by `noteA` (the paper/edge/shadow backgrounds stay opaque - the same
  * "bg stays, fg fades" shape engine/ui/panel.js uses). No allocation per frame
  * (rule 9): the wrap + RichLine compile happens once per open, cached.

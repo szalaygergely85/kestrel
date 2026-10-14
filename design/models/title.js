@@ -457,7 +457,7 @@
       keys: '1-3 pick directly; W/S or arrows move; E / Enter choose; mouse hover = focus, click = choose'
     },
     keyHints: { row: 'h-2', align: 'right', colEnd: 'w-4', fg: 'uiDim', keyFg: 'gold',
-                text: 'E: next   Up/Down: choose', keys: ['E', 'Up/Down'],
+                text: 'E: next   Up/Down: choose   Q: close', keys: ['E', 'Up/Down', 'Q'],
                 note: 'drawn left of the `more` marker; "W/S: choose" only while choices are shown' },
     prompt: { text: '[E] Talk', note: 'world prompt = uiStyle.prompt (gold [E]); aim = the speaker mount `interact`' },
     speechMark: { glyph: '...', fg: 'uiHint', mount: 'speech',

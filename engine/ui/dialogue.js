@@ -181,6 +181,8 @@ export function createDialogueRunner({ cps = 30, holdSec = 0.12, onEvent, pageCh
   const r = {
     state: 'idle', speakerKey: '', speakerLabel: '', isPlayer: false, line: '', visibleChars: 0,
     choiceCount: 0, selected: 0, clip: null,
+    /** OB-174: the flag a choice sets when picked (null = none); lets the view show 'E: accept' on a quest offer. */
+    choiceFlag(i) { return node && i >= 0 && i < node.choices.length ? node.choices[i].setFlag : null; },
     choiceText(i) { return node && i >= 0 && i < node.choices.length ? node.choices[i].text : ''; },
 
     open(compiled, flagAdapter) {

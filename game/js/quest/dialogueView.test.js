@@ -141,3 +141,12 @@ for (const [c, r] of [[160, 60], [240, 90], [400, 150], [480, 180], [40, 15], [3
   }
 }
 console.log('dialogueView: ok');
+
+// OB-174: hint line says Q close; quest offers say E accept
+{
+  const g = grid(160, 60); view.draw(g, run({ state: 'waiting' }), 0);
+  assert.ok(g.row(Y8 + 6).includes('E: next   Q: close'), g.row(Y8 + 6));
+  const g2 = grid(160, 60); view.draw(g2, run({ state: 'choosing', choiceCount: 2, choiceFlag: (i) => (i === 0 ? 'q.burl.boars.accept' : null) }), 0);
+  assert.ok(g2.row(Y12 + 10).includes('E: accept   Up/Down: choose   Q: close'), g2.row(Y12 + 10));
+  console.log('dialogueView OB-174 hints PASS');
+}
