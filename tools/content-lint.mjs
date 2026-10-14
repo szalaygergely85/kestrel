@@ -129,7 +129,7 @@ export async function buildContext(opts = {}) {
   const { World } = await import('../engine/index.js');
   const { BandBakeJob } = await import('../engine/dev.js');
   await import('../design/palette.js'); await import('../design/detail-pass.js'); await import('../design/levels/overworld_far.js'); await import('../design/levels/world_geo.js');
-  for (const m of ['lantern', 'lever', 'boulder', 'rubble', 'wreckage', 'relay', 'sword', 'm3_props', 'far_tower', 'ferrum_lights', 'voxel_beast', 'voxel_bear']) await import(`../design/models/${m}.js`);
+  for (const m of ['lantern', 'lever', 'boulder', 'rubble', 'wreckage', 'relay', 'voxel_props', 'voxel_tower', 'pickups_voxel', 'sword', 'm3_props', 'far_tower', 'ferrum_lights', 'voxel_beast', 'voxel_bear']) await import(`../design/models/${m}.js`);
   const { loadTestAssets } = await import('./testing/content-node.mjs');
   const { spawnRegionalBeasts, inPolygon } = await import('../game/js/quest/sim/regionalBeasts.js');
   const { generateFarCamps } = await import('../game/js/life/farCamps.js');
