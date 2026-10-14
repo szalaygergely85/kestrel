@@ -1,0 +1,93 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "postkeeper",
+  "speakers": {
+    "postKeeper": {"label": "TOBIN"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "postKeeper.thanks.1", "requires": "postKeeper.after.sq.straw"},
+    {"node": "postKeeper.notReady", "requires": "q.sq.straw.active"},
+    {"node": "postKeeper.offer.post", "requires": "q.sq.straw.available"},
+    {"node": "postKeeper.thanks.2", "requires": "postKeeper.after.sq.fc.stores"},
+    {"node": "postKeeper.notReady.2", "requires": "q.sq.fc.stores.active"},
+    {"node": "postKeeper.offer.post", "requires": "q.sq.fc.stores.available"},
+    {"node": "postKeeper.thanks.1", "requires": "postKeeper.after.sq.post.spare"},
+    {"node": "postKeeper.notReady", "requires": "q.sq.post.spare.active"},
+    {"node": "postKeeper.offer.post", "requires": "q.sq.post.spare.available"},
+    {"node": "postKeeper.thanks.packet", "requires": "postKeeper.after.sq.packet"},
+    {"node": "postKeeper.notReady.2", "requires": "q.sq.packet.active"},
+    {"node": "postKeeper.offer.post", "requires": "q.sq.packet.available"},
+    {"node": "postKeeper.thanks.sign", "requires": "postKeeper.after.sq.fc.sign"},
+    {"node": "postKeeper.notReady", "requires": "q.sq.fc.sign.active"},
+    {"node": "postKeeper.offer.post", "requires": "q.sq.fc.sign.available"},
+    {"node": "postKeeper.thanks.shrine", "requires": "postKeeper.after.sq.fc.shrine"},
+    {"node": "postKeeper.notReady.2", "requires": "q.sq.fc.shrine.active"},
+    {"node": "postKeeper.offer.post", "requires": "q.sq.fc.shrine.available"},
+    {"node": "postKeeper.thanks.1", "requires": "postKeeper.after.sq.fc.ford"},
+    {"node": "postKeeper.notReady", "requires": "q.sq.fc.ford.active"},
+    {"node": "postKeeper.offer.ford", "requires": "q.sq.fc.ford.available"},
+    {"node": "postKeeper.thanks.2", "requires": "postKeeper.after.sq.fc.smoke"},
+    {"node": "postKeeper.notReady.2", "requires": "q.sq.fc.smoke.active"},
+    {"node": "postKeeper.offer.ford", "requires": "q.sq.fc.smoke.available"},
+    {"node": "postKeeper.thanks.1", "requires": "postKeeper.after.sq.fc.cross"},
+    {"node": "postKeeper.notReady", "requires": "q.sq.fc.cross.active"},
+    {"node": "postKeeper.offer.ford", "requires": "q.sq.fc.cross.available"},
+    {"node": "postKeeper.thanks.2", "requires": "postKeeper.after.sq.fc.again"},
+    {"node": "postKeeper.notReady.2", "requires": "q.sq.fc.again.active"},
+    {"node": "postKeeper.offer.ford", "requires": "q.sq.fc.again.available"},
+    {"node": "postKeeper.thanks.1", "requires": "postKeeper.after.sq.fc.jetty"},
+    {"node": "postKeeper.notReady", "requires": "q.sq.fc.jetty.active"},
+    {"node": "postKeeper.offer.ford", "requires": "q.sq.fc.jetty.available"},
+    {"node": "postKeeper.thanks.2", "requires": "postKeeper.after.sq.fc.cog"},
+    {"node": "postKeeper.notReady.2", "requires": "q.sq.fc.cog.active"},
+    {"node": "postKeeper.offer.ford", "requires": "q.sq.fc.cog.available"},
+    {"node": "postKeeper.thanks.shield", "requires": "postKeeper.after.sq.rb.shield"},
+    {"node": "postKeeper.notReady", "requires": "q.sq.rb.shield.active"},
+    {"node": "postKeeper.offer.bend", "requires": "q.sq.rb.shield.available"},
+    {"node": "postKeeper.greet", "requires": "postKeeper.met"},
+    {"node": "postKeeper.greet.first"}
+  ],
+  "nodes": {
+    "postKeeper.offer.post": {"end": true, "lines": [
+      "There's work at the post, if you've the time."
+    ], "speaker": "postKeeper"},
+    "postKeeper.offer.ford": {"end": true, "lines": [
+      "The ford wants walking. Nobody's checked it in years."
+    ], "speaker": "postKeeper"},
+    "postKeeper.offer.bend": {"end": true, "lines": [
+      "Bend stone needs an errand run. My knees say no."
+    ], "speaker": "postKeeper"},
+    "postKeeper.notReady": {"end": true, "lines": [
+      "Not yet. The road's still waiting on you."
+    ], "speaker": "postKeeper"},
+    "postKeeper.notReady.2": {"end": true, "lines": [
+      "Done already? Your boots say otherwise."
+    ], "speaker": "postKeeper"},
+    "postKeeper.thanks.1": {"end": true, "lines": [
+      "Good. I'll put it on the tally. Take this."
+    ], "speaker": "postKeeper"},
+    "postKeeper.thanks.2": {"end": true, "lines": [
+      "Well walked. The post pays what it can."
+    ], "speaker": "postKeeper"},
+    "postKeeper.thanks.packet": {"end": true, "lines": [
+      "Oilcloth, still sealed. You didn't look. Good."
+    ], "speaker": "postKeeper"},
+    "postKeeper.thanks.shield": {"end": true, "lines": [
+      "That buckler found you at the Bend. Keep it."
+    ], "speaker": "postKeeper"},
+    "postKeeper.thanks.sign": {"end": true, "lines": [
+      "My west arm. The river had it. Thank you."
+    ], "speaker": "postKeeper"},
+    "postKeeper.thanks.shrine": {"end": true, "lines": [
+      "You looked at the shrine? Good. Someone should."
+    ], "speaker": "postKeeper"},
+    "postKeeper.greet": {"end": true, "lines": [
+      "Back again. The basket's lighter than it was."
+    ], "speaker": "postKeeper"},
+    "postKeeper.greet.first": {"end": true, "lines": [
+      "Leave what you can spare. Take what you need."
+    ], "setFlag": "postKeeper.met", "speaker": "postKeeper"}
+  }
+}

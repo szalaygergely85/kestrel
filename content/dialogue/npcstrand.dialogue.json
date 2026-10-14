@@ -1,0 +1,29 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "npcstrand",
+  "speakers": {
+    "npcStrand": {"label": "NELL"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "npcStrand.thanks", "requires": "npcStrand.after.sq.reg.strand"},
+    {"node": "npcStrand.notReady", "requires": "q.sq.reg.strand.active"},
+    {"node": "npcStrand.offer", "requires": "q.sq.reg.strand.available"},
+    {"node": "npcStrand.greet"}
+  ],
+  "nodes": {
+    "npcStrand.greet": {"end": true, "lines": [
+      "Salt wind. The sea brings things in, now and then."
+    ], "speaker": "npcStrand"},
+    "npcStrand.offer": {"end": true, "lines": [
+      "The Downs are short of arrows. Carry five inland?"
+    ], "speaker": "npcStrand"},
+    "npcStrand.notReady": {"end": true, "lines": [
+      "Five arrows, to the Downs waystone. Inland."
+    ], "speaker": "npcStrand"},
+    "npcStrand.thanks": {"end": true, "lines": [
+      "The Downs light blinked back. Thank you. Take these."
+    ], "speaker": "npcStrand"}
+  }
+}

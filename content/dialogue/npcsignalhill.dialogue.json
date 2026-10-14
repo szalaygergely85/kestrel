@@ -1,0 +1,29 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "npcsignalhill",
+  "speakers": {
+    "npcSignalHill": {"label": "JORY"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "npcSignalHill.thanks", "requires": "npcSignalHill.after.sq.reg.signalHill"},
+    {"node": "npcSignalHill.notReady", "requires": "q.sq.reg.signalHill.active"},
+    {"node": "npcSignalHill.offer", "requires": "q.sq.reg.signalHill.available"},
+    {"node": "npcSignalHill.greet"}
+  ],
+  "nodes": {
+    "npcSignalHill.greet": {"end": true, "lines": [
+      "Short, long, short. I watch the stone all day."
+    ], "speaker": "npcSignalHill"},
+    "npcSignalHill.offer": {"end": true, "lines": [
+      "Wolves on the slope. When they're near, it stutters."
+    ], "speaker": "npcSignalHill"},
+    "npcSignalHill.notReady": {"end": true, "lines": [
+      "It stutters still. They're close."
+    ], "speaker": "npcSignalHill"},
+    "npcSignalHill.thanks": {"end": true, "lines": [
+      "Listen. It runs clean again. Arrows, take them."
+    ], "speaker": "npcSignalHill"}
+  }
+}

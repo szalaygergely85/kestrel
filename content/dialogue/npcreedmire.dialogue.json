@@ -1,0 +1,29 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "npcreedmire",
+  "speakers": {
+    "npcReedmire": {"label": "OSK"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "npcReedmire.thanks", "requires": "npcReedmire.after.sq.reg.reedmire"},
+    {"node": "npcReedmire.notReady", "requires": "q.sq.reg.reedmire.active"},
+    {"node": "npcReedmire.offer", "requires": "q.sq.reg.reedmire.available"},
+    {"node": "npcReedmire.greet"}
+  ],
+  "nodes": {
+    "npcReedmire.greet": {"end": true, "lines": [
+      "Keep to the planks. The black water keeps what it takes."
+    ], "speaker": "npcReedmire"},
+    "npcReedmire.offer": {"end": true, "lines": [
+      "Three boars wallow in the reeds. They broke my punt."
+    ], "speaker": "npcReedmire"},
+    "npcReedmire.notReady": {"end": true, "lines": [
+      "Still wallowing. Still loud."
+    ], "speaker": "npcReedmire"},
+    "npcReedmire.thanks": {"end": true, "lines": [
+      "Quiet water. Take these arrows. Dry ones."
+    ], "speaker": "npcReedmire"}
+  }
+}

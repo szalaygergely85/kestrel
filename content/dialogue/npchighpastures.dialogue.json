@@ -1,0 +1,29 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "npchighpastures",
+  "speakers": {
+    "npcHighPastures": {"label": "ILSA"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "npcHighPastures.thanks", "requires": "npcHighPastures.after.sq.reg.highPastures"},
+    {"node": "npcHighPastures.notReady", "requires": "q.sq.reg.highPastures.active"},
+    {"node": "npcHighPastures.offer", "requires": "q.sq.reg.highPastures.available"},
+    {"node": "npcHighPastures.greet"}
+  ],
+  "nodes": {
+    "npcHighPastures.greet": {"end": true, "lines": [
+      "Up here the wind does the talking."
+    ], "speaker": "npcHighPastures"},
+    "npcHighPastures.offer": {"end": true, "lines": [
+      "Two bears in the high grass. My flock won't graze."
+    ], "speaker": "npcHighPastures"},
+    "npcHighPastures.notReady": {"end": true, "lines": [
+      "Still bears in the grass. The flock knows."
+    ], "speaker": "npcHighPastures"},
+    "npcHighPastures.thanks": {"end": true, "lines": [
+      "They're grazing again. Here. For your hurts."
+    ], "speaker": "npcHighPastures"}
+  }
+}
