@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "id": "mq.ford.mirror",
+  "id": "mq.ford.mirror", "giverNpc": "rook", "turnInNpc": "rook",
   "title": "The Missing Glass",
   "giver": { "npc": "rook" },
   "main": true,

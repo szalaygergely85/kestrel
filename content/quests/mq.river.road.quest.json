@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "id": "mq.river.road",
+  "id": "mq.river.road", "giverNpc": "rook", "turnInNpc": "rook",
   "title": "The River Road",
   "requires": [{ "quest": "m1", "step": "relay1" }],
   "objectives": [

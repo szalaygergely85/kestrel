@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "id": "burl.boars",
+  "id": "burl.boars", "giverNpc": "bear", "turnInNpc": "bear",
   "title": "Boars in the Woods",
   "giver": { "npc": "bear" },
   "requires": [{ "quest": "tower.blade", "done": true }],

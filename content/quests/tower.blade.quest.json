@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "id": "tower.blade",
+  "id": "tower.blade", "storyStart": true, "turnInNpc": "bear",
   "title": "Not Safe",
   "giver": { "npc": "noteKeepLight", "turnIn": "bear" },
   "objectives": [

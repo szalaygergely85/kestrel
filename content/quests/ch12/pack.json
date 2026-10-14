@@ -7,7 +7,7 @@
   ],
   "quests": [
     {
-      "id": "sq.tm.nub",
+      "id": "sq.tm.nub", "giverNpc": "bear", "turnInNpc": "bear",
       "title": "Where's Nub?",
       "site": "burl",
       "steps": [
@@ -94,7 +94,7 @@
       }
     },
     {
-      "id": "sq.burl.boars.n",
+      "id": "sq.burl.boars.n", "giverNpc": "bear", "turnInNpc": "bear",
       "title": "The North Boars",
       "site": "burl",
       "steps": [
@@ -149,7 +149,7 @@
       }
     },
     {
-      "id": "sq.burl.boars.w",
+      "id": "sq.burl.boars.w", "giverNpc": "bear", "turnInNpc": "bear",
       "title": "The West Boars",
       "site": "burl",
       "steps": [
@@ -207,7 +207,7 @@
       }
     },
     {
-      "id": "sq.burl.boars.s",
+      "id": "sq.burl.boars.s", "giverNpc": "bear", "turnInNpc": "bear",
       "title": "The South Boars",
       "site": "burl",
       "steps": [
@@ -261,7 +261,7 @@
       }
     },
     {
-      "id": "sq.burl.meat",
+      "id": "sq.burl.meat", "giverNpc": "bear", "turnInNpc": "bear",
       "title": "Meat for Winter",
       "site": "burl",
       "steps": [
@@ -311,7 +311,7 @@
       }
     },
     {
-      "id": "sq.burl.stone",
+      "id": "sq.burl.stone", "giverNpc": "bear", "turnInNpc": "bear",
       "title": "Check on the Stone",
       "site": "burl",
       "steps": [
@@ -363,7 +363,7 @@
       }
     },
     {
-      "id": "sq.burl.hint",
+      "id": "sq.burl.hint", "giverNpc": "bear", "turnInNpc": "bear",
       "title": "The Hill Path",
       "site": "burl",
       "steps": [
@@ -419,7 +419,7 @@
       }
     },
     {
-      "id": "sq.burl.tower",
+      "id": "sq.burl.tower", "giverNpc": "bear", "turnInNpc": "bear",
       "title": "Look at the Tower Door",
       "site": "burl",
       "steps": [
@@ -471,7 +471,7 @@
       }
     },
     {
-      "id": "sq.burl.scout",
+      "id": "sq.burl.scout", "giverNpc": "bear", "turnInNpc": "bear",
       "title": "Scout the River",
       "site": "burl",
       "steps": [
@@ -538,7 +538,7 @@
       }
     },
     {
-      "id": "sq.burl.ask",
+      "id": "sq.burl.ask", "giverNpc": "bear", "turnInNpc": "bear",
       "title": "Word from the Crossroads",
       "site": "burl",
       "steps": [
@@ -592,7 +592,7 @@
       }
     },
     {
-      "id": "sq.burl.walk",
+      "id": "sq.burl.walk", "giverNpc": "bear", "turnInNpc": "bear",
       "title": "Walk Burl to the Bend",
       "site": "burl",
       "steps": [
@@ -643,7 +643,7 @@
       }
     },
     {
-      "id": "sq.burl.parcel",
+      "id": "sq.burl.parcel", "giverNpc": "bear", "turnInNpc": "bear",
       "title": "Meat for the Basket",
       "site": "burl",
       "steps": [
@@ -701,7 +701,7 @@
       }
     },
     {
-      "id": "sq.post.spare",
+      "id": "sq.post.spare", "giverNpc": "post", "turnInNpc": "postKeeper", "objectGiver": true, "pendingNpc": true,
       "title": "Leave What You Can Spare",
       "site": "post",
       "steps": [
@@ -758,7 +758,7 @@
       }
     },
     {
-      "id": "sq.straw",
+      "id": "sq.straw", "giverNpc": "postKeeper", "turnInNpc": "postKeeper", "pendingNpc": true,
       "title": "Three Straw Men",
       "site": "notePost",
       "requires": [
@@ -828,7 +828,7 @@
       }
     },
     {
-      "id": "sq.rb.shield",
+      "id": "sq.rb.shield", "giverNpc": "relayBend", "turnInNpc": "postKeeper", "objectGiver": true, "pendingNpc": true,
       "title": "Left at the Bend",
       "site": "relayBend",
       "steps": [
@@ -889,7 +889,7 @@
       }
     },
     {
-      "id": "sq.rb.regards",
+      "id": "sq.rb.regards", "giverNpc": "rook", "turnInNpc": "rook",
       "title": "Word for Burl",
       "site": "relayBend",
       "steps": [
@@ -940,7 +940,7 @@
       }
     },
     {
-      "id": "sq.rb.road",
+      "id": "sq.rb.road", "giverNpc": "rook", "turnInNpc": "rook",
       "title": "Down the Road West",
       "site": "relayBend",
       "steps": [
@@ -1003,7 +1003,7 @@
       }
     },
     {
-      "id": "sq.fc.ford",
+      "id": "sq.fc.ford", "giverNpc": "postKeeper", "turnInNpc": "postKeeper", "pendingNpc": true,
       "title": "Wet Boots",
       "site": "relayFord",
       "steps": [
@@ -1060,7 +1060,7 @@
       }
     },
     {
-      "id": "sq.fc.smoke",
+      "id": "sq.fc.smoke", "giverNpc": "postKeeper", "turnInNpc": "postKeeper", "pendingNpc": true,
       "title": "North Watch",
       "site": "relayFord",
       "steps": [
@@ -1113,7 +1113,7 @@
       }
     },
     {
-      "id": "sq.fc.cross",
+      "id": "sq.fc.cross", "giverNpc": "postKeeper", "turnInNpc": "postKeeper", "pendingNpc": true,
       "title": "The Crossroads Report",
       "site": "relayFord",
       "steps": [
@@ -1166,7 +1166,7 @@
       }
     },
     {
-      "id": "sq.fc.again",
+      "id": "sq.fc.again", "giverNpc": "postKeeper", "turnInNpc": "postKeeper", "pendingNpc": true,
       "title": "Back Across",
       "site": "relayFord",
       "steps": [
@@ -1219,7 +1219,7 @@
       }
     },
     {
-      "id": "sq.tm.gap",
+      "id": "sq.tm.gap", "giverNpc": "bear", "turnInNpc": "bear",
       "title": "The Open Gate",
       "site": "burl",
       "steps": [
@@ -1271,7 +1271,7 @@
       }
     },
     {
-      "id": "sq.tm.wood",
+      "id": "sq.tm.wood", "giverNpc": "bear", "turnInNpc": "bear",
       "title": "The Woodcutter's Corner",
       "site": "burl",
       "steps": [
@@ -1327,7 +1327,7 @@
       }
     },
     {
-      "id": "sq.tm.cart",
+      "id": "sq.tm.cart", "giverNpc": "bear", "turnInNpc": "bear",
       "title": "The Cart on the Road",
       "site": "burl",
       "steps": [
@@ -1383,7 +1383,7 @@
       }
     },
     {
-      "id": "sq.rb.lamps",
+      "id": "sq.rb.lamps", "giverNpc": "rook", "turnInNpc": "rook",
       "title": "Lamps on the Verge",
       "site": "relayBend",
       "steps": [
@@ -1432,7 +1432,7 @@
       }
     },
     {
-      "id": "sq.rb.rocks",
+      "id": "sq.rb.rocks", "giverNpc": "rook", "turnInNpc": "rook",
       "title": "Rocks at the Forest Edge",
       "site": "relayBend",
       "steps": [
@@ -1485,7 +1485,7 @@
       }
     },
     {
-      "id": "sq.rb.parcel",
+      "id": "sq.rb.parcel", "giverNpc": "rook", "turnInNpc": "rook",
       "title": "Brass for the Ford",
       "site": "relayBend",
       "steps": [
@@ -1538,7 +1538,7 @@
       }
     },
     {
-      "id": "sq.he.wallow",
+      "id": "sq.he.wallow", "giverNpc": "rook", "turnInNpc": "rook",
       "title": "The Boar Wallow",
       "site": "rook",
       "steps": [
@@ -1583,7 +1583,7 @@
       }
     },
     {
-      "id": "sq.he.farm",
+      "id": "sq.he.farm", "giverNpc": "bear", "turnInNpc": "bear",
       "title": "Plates for Three",
       "site": "burl",
       "steps": [
@@ -1634,7 +1634,7 @@
       }
     },
     {
-      "id": "sq.dw.bees",
+      "id": "sq.dw.bees", "giverNpc": "bear", "turnInNpc": "bear",
       "title": "Where the Bees Go",
       "site": "burl",
       "steps": [
@@ -1690,7 +1690,7 @@
       }
     },
     {
-      "id": "sq.dw.stones",
+      "id": "sq.dw.stones", "giverNpc": "bear", "turnInNpc": "bear",
       "title": "The Standing Stones",
       "site": "burl",
       "steps": [
@@ -1747,7 +1747,7 @@
       }
     },
     {
-      "id": "sq.fc.stores",
+      "id": "sq.fc.stores", "giverNpc": "postKeeper", "turnInNpc": "postKeeper", "pendingNpc": true,
       "title": "Boars in the Stores",
       "site": "post",
       "steps": [
@@ -1793,7 +1793,7 @@
       }
     },
     {
-      "id": "sq.fc.caps",
+      "id": "sq.fc.caps", "giverNpc": "rook", "turnInNpc": "rook",
       "title": "Red Caps",
       "site": "rook",
       "steps": [
@@ -1843,7 +1843,7 @@
       }
     },
     {
-      "id": "sq.fc.well",
+      "id": "sq.fc.well", "giverNpc": "rook", "turnInNpc": "rook",
       "title": "The Dry Well",
       "site": "rook",
       "steps": [
@@ -1892,7 +1892,7 @@
       }
     },
     {
-      "id": "sq.fc.shrine",
+      "id": "sq.fc.shrine", "giverNpc": "notePost", "turnInNpc": "postKeeper", "objectGiver": true, "pendingNpc": true,
       "title": "The Fallen Shrine",
       "site": "notePost",
       "steps": [
@@ -1945,7 +1945,7 @@
       }
     },
     {
-      "id": "sq.fc.jetty",
+      "id": "sq.fc.jetty", "giverNpc": "postKeeper", "turnInNpc": "postKeeper", "pendingNpc": true,
       "title": "Rotten Planks",
       "site": "relayFord",
       "steps": [
@@ -1998,7 +1998,7 @@
       }
     },
     {
-      "id": "sq.fc.cog",
+      "id": "sq.fc.cog", "giverNpc": "postKeeper", "turnInNpc": "postKeeper", "pendingNpc": true,
       "title": "A Cog for the Bend",
       "site": "relayFord",
       "steps": [
@@ -2051,7 +2051,7 @@
       }
     },
     {
-      "id": "sq.fc.ask",
+      "id": "sq.fc.ask", "giverNpc": "rook", "turnInNpc": "rook",
       "title": "Ask the Bear",
       "site": "rook",
       "steps": [
@@ -2105,7 +2105,7 @@
       }
     },
     {
-      "id": "sq.rook.gift",
+      "id": "sq.rook.gift", "giverNpc": "rook", "turnInNpc": "rook",
       "title": "A Gift for the Bear",
       "site": "rook",
       "steps": [
@@ -2165,7 +2165,7 @@
       }
     },
     {
-      "id": "sq.wreck.plate",
+      "id": "sq.wreck.plate", "giverNpc": "gondola", "turnInNpc": "rook", "objectGiver": true,
       "title": "Gondola Plate",
       "site": "gondola",
       "steps": [
@@ -2213,7 +2213,7 @@
       }
     },
     {
-      "id": "sq.honey",
+      "id": "sq.honey", "giverNpc": "bear", "turnInNpc": "bear",
       "title": "Honey for a Crow",
       "site": "burl",
       "steps": [
@@ -2264,7 +2264,7 @@
       }
     },
     {
-      "id": "sq.rook.shiny",
+      "id": "sq.rook.shiny", "giverNpc": "rook", "turnInNpc": "rook",
       "title": "Shiny Things",
       "site": "rook",
       "steps": [
@@ -2314,7 +2314,7 @@
       }
     },
     {
-      "id": "sq.packet",
+      "id": "sq.packet", "giverNpc": "packet", "turnInNpc": "postKeeper", "objectGiver": true, "pendingNpc": true,
       "title": "The Oilcloth Packet",
       "site": "packet",
       "steps": [
@@ -2362,7 +2362,7 @@
       }
     },
     {
-      "id": "sq.burl.fire",
+      "id": "sq.burl.fire", "giverNpc": "bear", "turnInNpc": "bear",
       "title": "Burl's Ember",
       "site": "burl",
       "steps": [
