@@ -1100,3 +1100,5 @@ design/look/post.js (window.POST_LOOK, classic script, in game/index.html) + gam
 
 ### ANIM-LOOKAT-01 main hook (kestrel-1, 2026-10-14)
 main.js: createBeastLook (lazy, `?lookat=0` off, on in capture/bench) -> 9th arg of presentBeasts; setTarget(player x,y,z+1.5) each frame before it. check passes, 5 suites PASS; turn direction (rx+/rz+) still needs the owner look.
+### DLG-REPEAT (kestrel-1, 2026-10-14)
+No new code: postkeeper hello.1 now `setFlag: met.postkeeper` (saved in world.state dlg.*), entry `postkeeper.hello.2` `requires` it. Only postkeeper has a .hello.2 in story.md. Test game/js/quest/postkeeperDialogue.test.js 5 pass; canonical + validate-content OK. Status: po-review.
