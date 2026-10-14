@@ -5,7 +5,10 @@
 // ctx = { sites, floorAt(x,y), topAt(entity)->model top in m (default MARK_DEFAULT_TOP), areaPos(name)->{x,y,z?,r?}|null }
 // Marker height = entity base z + model top + margin (game/js/quest/markTop.js, QFIX-S3) - never the terrain/structure
 // top under it, so a marker never lands on a roof; area rings sit on the terrain (floorAt).
-import { MARK_MARGIN, MARK_DEFAULT_TOP, markZ } from '../../../game/js/quest/markTop.js';
+// Mirrors game/js/quest/markTop.js (editor must not import game/; parity checked by tools/quest-editor-markers-parity.test.mjs).
+export const MARK_MARGIN = 0.1;
+export const MARK_DEFAULT_TOP = 1.55;
+const markZ = (t, top) => t.z + top + MARK_MARGIN;
 import { isSide } from './flow.js';
 import { resolveTarget, AREA_RADIUS } from './targets.js';
 

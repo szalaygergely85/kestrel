@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadQuests } from './model.js';
 import { questMarkers, questPath, stepAreas, makeAreaPos, GOLD, BLUE } from './markers.js';
-import { MARK_MARGIN, MARK_DEFAULT_TOP } from '../../../game/js/quest/markTop.js';
+import { MARK_MARGIN, MARK_DEFAULT_TOP } from './markers.js';
 
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '../../..');
 const world = JSON.parse(readFileSync(join(root, 'content/worlds/world_m1.world.json'), 'utf8'));

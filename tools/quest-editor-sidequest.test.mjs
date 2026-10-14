@@ -5,14 +5,14 @@ import { cpSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:f
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { loadQuests, saveAll, applyZones, makeStack } from './model.js';
-import { applyPick } from './targets.js';
-import { applyQuestPreset } from '../../../game/js/quest/statePreset.js';
-import { createQuestBook } from '../../../game/js/quest/sim/questBook.js';
-import { loadDesignAssets, loadQuestFiles, loadPackQuests } from '../../validate-content.mjs';
-import { r14Quest } from '../../content-lint.mjs';
+import { loadQuests, saveAll, applyZones, makeStack } from './editor/quest/model.js';
+import { applyPick } from './editor/quest/targets.js';
+import { applyQuestPreset } from '../game/js/quest/statePreset.js';
+import { createQuestBook } from '../game/js/quest/sim/questBook.js';
+import { loadDesignAssets, loadQuestFiles, loadPackQuests } from './validate-content.mjs';
+import { r14Quest } from './content-lint.mjs';
 
-const root = join(fileURLToPath(new URL('.', import.meta.url)), '../../..');
+const root = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const tmp = mkdtempSync(join(tmpdir(), 'edq03b-'));
 try {
   const dir = join(tmp, 'quests'); cpSync(join(root, 'content/quests'), dir, { recursive: true });

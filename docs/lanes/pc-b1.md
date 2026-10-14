@@ -1039,3 +1039,6 @@ Limits: pack `lines` keys are offer/active/ready/done (shown Offer/Progress/Hand
 ### ED-QUEST-WIRE (kestrel-1, 2026-10-14)
 Done (Node only): panel passes `model`+`worldId` to applyPick, keeps areas.json in the model; Save also writes areas.json + (zones -> `applyZones` + world json via `saveFile`). Live lint list (`quest/wire.js` buildLintCtx/liveLint, test `wire.test.mjs`, <50 ms) with Go to (objective/field/giver/return/reward). "Play from here" + preset dropdown -> `game/index.html?at=x,y,z,0,0&qstate=<id>:<preset>`; game: `saveRelay` `freshPreset` hook (fresh run only) + `main.js` parseQstateParam/applyQuestPreset, items granted into the pack, ignored in capture/bench.
 Verify (not run): `node tools/verify-edq-05.mjs {port}`, `node tools/verify-edq-07.mjs {port}` ({port} 9500-9574). Limits: lint skips R5/R12 (editor has no walkable grid) and flowOf/hasFlag; Go to giver/return only moves the camera; check-deps still lists the pre-existing markers/sideQuest editor->game imports.
+
+### ED-QUEST-DEPS (kestrel-1, 2026-10-14)
+markers.js now mirrors MARK_MARGIN/MARK_DEFAULT_TOP/markZ locally (no game/ import); parity test tools/quest-editor-markers-parity.test.mjs. sideQuest.test.mjs moved to tools/quest-editor-sidequest.test.mjs (cross-layer, tools/ may import game/). check-deps OK.
