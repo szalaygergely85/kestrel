@@ -1129,3 +1129,6 @@ engine/render/giProbe.js (+ giProbe.test.js): 88-channel uint8 probe (sky4, sun6
 
 ### ITEM-09 (kestrel-3, 2026-10-14) -> po-review
 statsConfig.js REQ_* + stats.js `reqValue/itemReqAttr/itemReqValue/meetsReq(totals,item)/reqMul (0.5 unmet, no block)/reqHint -> {text:'Needs DEX 12',met}`; new statsReq.test.js (table 5,5,6..13, 2000-kit reachability iL3-10 all >= 90 %, table not lowered). Not found: design/itemBases.js, ITEM-03 generator, ITEM-07 card do not exist yet -> they call reqMul/reqHint when built; legacy hard `meetsRequirement` kept (stats.test) but superseded.
+
+### NAV-LAYERS-01d ford (kestrel-3, 2026-10-14) -> arch-review
+D-103: fordS1..S7 (have colliders) flagged `nav:"floors"`, `navGroup:"fordStones"`; world_m1 `nav.ford:{}` on (wade <0.6 m, cost 4); bridge TODO in beastNav.js now points to D-103. navFord.test 11 (real nav crosses Ford y 1062 where before it was partial; no deep wading; deterministic), navLayers01d flag count 36+7; OB-149 beastStuck still green. Beast routes near the river: ground beasts now cross at the ford (shallow wade + stones) instead of stopping at the bank; deep water elsewhere stays blocked.
