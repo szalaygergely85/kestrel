@@ -5,6 +5,7 @@
 import assert from 'node:assert';
 import { validateVoxelModel } from '../engine/index.js';
 import { CONFIGS, defOf } from './gait-configs.mjs';
+import { plantedError } from './gait-lib.mjs';
 
 let passed = 0;
 const test = (name, fn) => { try { fn(); passed++; console.log(`ok - ${name}`); } catch (e) { console.error(`not ok - ${name}\n${e.stack}`); process.exitCode = 1; } };
@@ -51,4 +52,49 @@ for (const key of ['wolf', 'fox', 'deer', 'goat']) {
       for (const f of c.frames) for (const u of ['legFL2', 'legFR2', 'legBL2', 'legBR2']) assert.ok(!f[u] || (f[u].rot || [0, 0, 0]).every((v) => v === 0), cn + ' ' + u);
   });
 }
+
+// ---- ANIM-B-01d: biped knee rigs (heron: ankle bends back; goblin: forward knee). 10 parts, split boxes, planted feet <= 12 mm ----
+const OLDB = {
+  heron: { legL: [1, 18, 0, 6, 27, 21], legR: [7, 18, 0, 12, 27, 21] },
+  goblin: { legL: [7, 7, 0, 11, 14, 9], legR: [11, 7, 0, 15, 14, 9] }
+};
+for (const key of ['heron', 'goblin', 'goblinTorch']) {
+  const def = defOf({ model: key }), names = Object.keys(def.parts), cfgs = CONFIGS.filter((c) => c.model === key), base = key === 'goblinTorch' ? 'goblin' : key;
+  test(`${key}: validates incl. legRig (2 legs, ${base === 'heron' ? 'bend back' : 'bend front'}); 10 parts, legL2 / legR2 appended with parent = upper`, () => {
+    assert.deepStrictEqual(validateVoxelModel(def, {}).errors, []);
+    assert.strictEqual(names.length, 10); assert.deepStrictEqual(names.slice(8), ['legL2', 'legR2']);
+    assert.deepStrictEqual(def.legRig.legs.map((l) => l.bend), base === 'heron' ? ['back', 'back'] : ['front', 'front']);
+    assert.strictEqual(def.parts.legL2.parent, 'legL'); assert.strictEqual(def.parts.legR2.parent, 'legR');
+  });
+  test(`${key}: voxel identity (leg cells only change owner upper -> lower; the boxes tile the old leg box)`, () => {
+    const o = owners(def, Object.entries(OLDB[base]));
+    const n = new Map(), seq = names.filter((x) => x === 'legL' || x === 'legR' || x === 'legL2' || x === 'legR2');
+    for (const [k, v] of owners(def, seq.map((x) => [x, def.parts[x].box]))) n.set(k, v);
+    assert.strictEqual(o.size, n.size);
+    for (const [k, [p, ch]] of o) { const w = n.get(k); assert.ok(w && w[1] === ch && (w[0] === p || w[0] === p + '2'), k); }
+  });
+  test(`${key}: legRig.gaits == tools/gait-configs.mjs (biped phase 0 / 0.5)`, () => {
+    for (const c of key === 'goblinTorch' ? CONFIGS.filter((x) => x.model === 'goblin') : cfgs) {
+      const g = def.legRig.gaits[c.clip];
+      assert.ok(g, c.clip); assert.strictEqual(g.tunedMps, c.G.v); assert.strictEqual(g.duty, c.G.beta); assert.deepStrictEqual(g.phase, [0, 0.5]); assert.strictEqual(g.liftM, c.G.liftM);
+    }
+  });
+}
+for (const cfg of CONFIGS.filter((c) => c.gait === 'biped' && c.model !== 'goblinTorch')) {
+  const def = defOf(cfg);
+  test(`${cfg.id}: planted feet <= 12 mm (keys + interpolated) on the shipped clip`, () => {
+    const k = plantedError(def, cfg, def.animations[cfg.clip], 1) * 1000, i = plantedError(def, cfg, def.animations[cfg.clip], 4) * 1000;
+    console.log(`   ${cfg.id}: keys ${k.toFixed(2)} mm, interpolated ${i.toFixed(2)} mm, tuned ${cfg.G.v} m/s`);
+    assert.ok(k <= 12 && i <= 12, `${k} / ${i}`);
+  });
+}
+test('goblinTorch: walk + carryTorch legs/body = the generated goblin.walk; run legs = goblin.run', () => {
+  const t = defOf({ model: 'goblinTorch' }), g = defOf({ model: 'goblin' });
+  const legs = ['body', 'legL', 'legL2', 'legR', 'legR2'];
+  for (const [a, b] of [['walk', 'walk'], ['carryTorch', 'walk'], ['run', 'run']]) for (const m of [t, g]) {
+    if (m === t && a === 'walk') { /* torch walk == carryTorch */ }
+    const ref = g.animations[b].frames;
+    m.animations[a === 'walk' && m === t ? 'carryTorch' : a].frames.forEach((f, i) => legs.forEach((n) => assert.deepStrictEqual(f[n].rot, ref[i][n].rot, `${a} ${n} ${i}`)));
+  }
+});
 console.log(`${passed} passed`);

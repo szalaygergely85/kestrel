@@ -23,13 +23,14 @@ for (const cfg of CONFIGS) {
     assert.ok(k <= 12 && s <= 12, `${k} / ${s} mm`);
   });
   test(`${cfg.id}: legs swing and the feet lift`, () => {
-    const rots = clip.frames.map((f) => f[up(cfg.legs.FL)].rot[0]);
+    const rots = clip.frames.map((f) => f[up(cfg.legs[cfg.gait === 'biped' ? 'HL' : 'FL'])].rot[0]);
     assert.ok(Math.max(...rots) - Math.min(...rots) > 10, 'front-left leg barely swings');
     const lifts = clip.frames.map((f) => f[up(cfg.legs.HR)].pos[2]);
     assert.ok(Math.max(...lifts) - Math.min(...lifts) > 0.3, 'no foot lift');
   });
   test(`${cfg.id}: shipped clip equals the generator output (re-run node tools/gen-gait.mjs if this fails)`, () => {
-    assert.deepStrictEqual(JSON.parse(JSON.stringify(clip)), JSON.parse(JSON.stringify(genGait(def, cfg).clip)));
+    const pick = (c) => (cfg.only ? { frames: c.frames.map((f) => Object.fromEntries(cfg.only.map((n) => [n, f[n]]))) } : c);   // goblin (B-01d): only body + legs are generated
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(pick(clip))), JSON.parse(JSON.stringify(pick(genGait(def, cfg).clip))));
   });
 }
 console.log(`${passed} passed`);
