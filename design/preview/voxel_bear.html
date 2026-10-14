@@ -125,7 +125,11 @@ const SEQS = {
   'greet: wave -> idle': [['wave', 1800], ['idle', 2500]],
   'move: walk -> turn -> idle': [['walk', 2800], ['turn', 1200], ['idle', 1500]],
   'chat: talk -> listen': [['talk', 3200], ['listen', 2400]],
-  'joke: talk -> laugh -> listen': [['talk', 1600], ['laugh', 1600], ['listen', 2400]]
+  'joke: talk -> laugh -> listen': [['talk', 1600], ['laugh', 1600], ['listen', 2400]],
+  // ANIM-BLEND-02b (hard cuts here; the game's blender cross-fades them per DEF.blend, see the checks list)
+  'hurry: walk -> run (gallop) -> walk -> idle': [['walk', 1600], ['run', 2000], ['walk', 1400], ['idle', 1500]],
+  'hit: walk -> hurt -> walk': [['walk', 1400], ['hurt', 300], ['walk', 1400]],
+  'hit (additive part only): hitAdd -> idle': [['hitAdd', 600], ['idle', 1200]]
 };
 for (const c of CLIPS) SEQS['clip: ' + c] = [[c, 0]];
 for (const k of Object.keys(SEQS)) { const o = document.createElement('option'); o.value = k; o.textContent = k; $('seq').appendChild(o); }
@@ -420,7 +424,7 @@ function runChecks() {
   for (const c of ['talk', 'listen', 'wave', 'laugh']) ok(!!DEF.animations[c], 'clip `' + c + '` (dialogue contract)');
   // ground contact on all fours: lowest posed limb-box corner (engine FORWARD transforms; box corners, so a few cm of
   // slack vs tools/voxel-bear.test.mjs, which checks the real voxels of every key)
-  for (const [cn, fr] of [['idle', 1], ['talk', 5], ['listen', 1], ['laugh', 1], ['walk', 1], ['walk', 3]]) {
+  for (const [cn, fr] of [['idle', 1], ['talk', 5], ['listen', 1], ['laugh', 1], ['walk', 1], ['walk', 3], ['hurt', 0], ['hitAdd', 1]]) {
     computeVoxelPose(PM, { x: 0, y: 0, z: 0, yawDeg: 0, scale: 1, clip: PM.clipIndex[cn], frame: fr, tMs: 0 }, POSE);
     const mins = ['armL', 'armR', 'legL', 'legR'].map((n) => {
       const k = PARTS.indexOf(n), b = DEF.parts[n].box, f = k * 12; let m = Infinity;
@@ -434,6 +438,14 @@ function runChecks() {
       return FORWARD[f + 6] * e[0] + FORWARD[f + 7] * e[1] + FORWARD[f + 8] * e[2] + FORWARD[f + 11]; };
     info('eye height: rest ' + eyeZ(-1).toFixed(2) + ' m (head carried low), talk ' + eyeZ(PM.clipIndex.talk).toFixed(2) + ' m (head raised toward the player eye 1.6 m)'); }
   info(DEF.size.join(' x ') + ' @ ' + DEF.cellM + ' m, meshOnly ' + DEF.meshOnly + ', clips: ' + CLIPS.map((c) => c + ' ' + clipTotal(c) + ' ms').join(', '));
+  if (DEF.blend) {   // ANIM-BLEND-02b
+    const B = DEF.blend, S = B.sets.locomotion.clips, H = B.additive.hit;
+    ok(S.every((s) => DEF.legRig.gaits[s.clip] && DEF.legRig.gaits[s.clip].tunedMps === s.at), 'blend set ' + S.map((s) => s.clip + ' @ ' + s.at + ' m/s').join(' -> ') + ' (= legRig tunedMps)');
+    const f0 = DEF.animations[H.clip].frames, z0 = JSON.stringify(f0[0]) === JSON.stringify(f0[f0.length - 1]);
+    ok(z0, 'additive `hit` = ' + H.clip + ' on ' + H.parts.join(' / ') + ' (in ' + H.inMs + ' / out ' + H.outMs + ' ms), frame 0 = last = rest');
+    info('blend fades: default ' + B.fades.default + ' ms, into ' + JSON.stringify(B.fades.into) + ', pairs ' + JSON.stringify(B.fades.pairs) +
+         '. The preview plays hard cuts; the game blender cross-fades. Burl has no windup / attack (friendly); the player rig needs no clips (first person, body never drawn).');
+  }
   const host = $('checks'); host.innerHTML = '';
   for (const [c, m] of out) { const d = document.createElement('div'); d.className = c; d.textContent = m; host.appendChild(d); }
 }

@@ -80,7 +80,7 @@ const matId = (k) => { let i = matKeys.indexOf(k); if (i < 0) { matKeys.push(k);
 const MODELS = ['bear', 'bearBlack'];
 const PMS = {};
 for (const k of MODELS) PMS[k] = packVoxelModel(A.models[k].voxel, matId);
-const CLIPS = Object.keys(A.models.bearBlack.voxel.animations);   // idle, walk, turn (shared) + BEAR-D2 fight clips (black only; Burl shows idle)
+const CLIPS = Object.keys(A.models.bearBlack.voxel.animations);   // idle, walk, turn, run, hurt, hitAdd (shared) + fight clips (black only; Burl shows idle)
 let sel = CLIPS[0], selT0 = performance.now();
 
 // ------------------------------------------------------------------ controls
@@ -314,13 +314,23 @@ function runChecks() {
   const DA = A.models.bearBlack.voxel.animations;
   const info = (t, c) => { const d = document.createElement('div'); d.className = c || 'info'; d.textContent = t; mh.appendChild(d); };
   if (!Object.keys(FX.missingClips).length) info('PASS no missing clips (BEAR-D2)', 'pass');
-  for (const k of ['charge', 'windup', 'swipe', 'hurt', 'flinch', 'die', 'dead', 'sink']) {
+  for (const k of ['charge', 'run', 'windup', 'swipe', 'attack', 'recover', 'hurt', 'hitAdd', 'flinch', 'die', 'dead', 'sink']) {
     const c = DA[k];
     info(k + ': ' + c.frames.length + ' keys, ' + c.durations.reduce((a, b) => a + b, 0) + ' ms' + (c.loop ? ' loop' : ' once'));
   }
+  // ANIM-BLEND-02b: blend block + OB-150 windup rule (same numbers as tools/anim-blend-02.test.mjs)
+  const BD = A.models.bearBlack.voxel.blend, W = DA.windup, wTot = W.durations.reduce((a, b) => a + b, 0);
+  const held = W.durations.slice(0, W.durations.length - 1).reduce((a, b) => a + b, 0);
+  info('blend set ' + BD.sets.locomotion.clips.map((s) => s.clip + ' @ ' + s.at + ' m/s').join(' -> ') + '; additive hit = ' + BD.additive.hit.clip + ' on ' + BD.additive.hit.parts.join(' / '),
+       BD.sets.locomotion.clips.every((s) => A.models.bearBlack.voxel.legRig.gaits[s.clip].tunedMps === s.at) ? 'pass' : 'fail');
+  info('OB-150: into[windup] ' + BD.fades.into.windup + ' ms <= 25 % of ' + wTot + '; last windup key reached at ' + held + ' ms <= telegraph ' + FX.telegraph.ms +
+       ' ms; into swipe / attack ' + BD.fades.into.swipe + ' / ' + BD.fades.into.attack + ' ms; swipe>recover ' + BD.fades.pairs['swipe>recover'] + ', attack>recover ' + BD.fades.pairs['attack>recover'] + ' ms',
+       (BD.fades.into.windup <= 0.25 * wTot && held <= FX.telegraph.ms && BD.fades.into.attack <= 80 && BD.fades.pairs['attack>recover'] >= 150) ? 'pass' : 'fail');
+  info('attack = lunge-bite on all fours: jaws widest ' + FX.bite.hitMs.join('..') + ' ms, snap key ' + FX.bite.snapKey + ' at ' + FX.bite.snapMs +
+       ' ms; recover ' + FX.recover.ms + ' ms. The preview plays each clip alone (hard cuts); the game blender cross-fades.');
   info('windup = all-fours bluff tell (owner: no rear-up, style-guide 0.2): head low, ears back, weight back, stomps at ' +
        FX.telegraph.stompMs.join(' / ') + ' ms. swipe hit key ' + FX.swipe.hitKey + ' (' + FX.swipe.hitMs.join('..') + ' ms). ' +
-       'die thud key ' + FX.death.thudKey + '. sink = dead pose lowered ' + FX.death.sink.depthM + ' m (after death). Burl has no fight clips: he plays idle while one is selected.');
+       'die thud key ' + FX.death.thudKey + '. sink = dead pose lowered ' + FX.death.sink.depthM + ' m (after death). Burl shares run / hurt / hitAdd; he has no fight clips (plays idle while windup / swipe / attack / recover is selected).');
 }
 try { runChecks(); } catch (err) { $('checks').innerHTML = '<div class="fail">checks threw: ' + err.message + '</div>'; console.error(err); }
 frame();

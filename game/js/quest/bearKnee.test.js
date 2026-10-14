@@ -45,7 +45,7 @@ for (const key of ['bear', 'bearBlack']) {
   }
   ok(`${key}: voxel identity (${oldO.size} voxels, same cells + materials, owners only split upper/lower)`, same, bad);
   // legacy clips leave the lower parts unkeyed -> rigid with the upper part (all old clips pose every voxel as before)
-  const legacy = Object.keys(def.animations).filter((c) => c !== 'walk' && c !== 'charge');
+  const legacy = Object.keys(def.animations).filter((c) => c !== 'walk' && c !== 'charge' && c !== 'run');
   const unkeyed = legacy.every((c) => def.animations[c].frames.every((f) => !f.armL2 && !f.armR2 && !f.legL2 && !f.legR2));
   ok(`${key}: legacy clips (${legacy.join(',')}) leave the lower parts unkeyed`, unkeyed);
   ok(`${key}: legRig stand = idle, walk gait = GAIT.walk`, def.legRig.stand[0] === 'idle' && def.legRig.gaits.walk.tunedMps === CFG.walk.G.v && def.legRig.legs.length === 4);

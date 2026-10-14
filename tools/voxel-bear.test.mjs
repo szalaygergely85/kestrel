@@ -104,10 +104,10 @@ test('realistic quadruped rest pose: hump 1.0 .. 1.2 m, 1.5 .. 1.8 m long, head 
 
 test('clips: names kept (talk / listen / wave / laugh for the dialogue data), frames name every part, jaw 0..max', () => {
   const C = DEF.animations;
-  assert.deepStrictEqual(Object.keys(C).sort(), ['idle', 'laugh', 'listen', 'talk', 'turn', 'walk', 'wave']);
+  assert.deepStrictEqual(Object.keys(C).sort(), ['hitAdd', 'hurt', 'idle', 'laugh', 'listen', 'run', 'talk', 'turn', 'walk', 'wave']);
   for (const n of Object.keys(C)) for (const f of C[n].frames) {
     // legacy clips key the 8 base parts (lower parts unkeyed = rigid); the generated walk keys all 12
-    assert.deepStrictEqual(Object.keys(f).sort(), (n === 'walk' ? PARTS : PARTS.slice(0, 8)).slice().sort(), n);
+    assert.deepStrictEqual(Object.keys(f).sort(), (n === 'walk' || n === 'run' ? PARTS : PARTS.slice(0, 8)).slice().sort(), n);
     assert.ok(f.jaw.rot[0] >= 0 && f.jaw.rot[0] <= FX.talk.jawMaxDeg, n + ' jaw');
   }
   for (const n of Object.keys(C)) for (const d of C[n].durations) assert.strictEqual(d % 50, 0, n + ' durations whole 60 Hz steps');

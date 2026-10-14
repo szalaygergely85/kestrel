@@ -72,6 +72,14 @@
  *   walk    loop 0.7 s   diagonal pairs reach (lifted) / pass, the trunk yaws and bobs (bear lumber), the head swings
  *                        opposite; tuned for ~1.0 m/s.
  *   turn    loop 0.6 s   in-place shuffle: diagonal pairs lift 5 cm and step while the game turns the yaw.
+ *   run     loop 0.5 s   ANIM-BLEND-02b: rotary GALLOP from tools/gen-gait.mjs (config bear.charge; the generated block
+ *                        BEAR_CHARGE sits in this file and the black bear's `charge` clones it), planted feet at 3.0 m/s.
+ *   hurt    once 0.1 s   2 step keys: recoil, head up, bawl, ears pinned (shared with the black bear).
+ *   hitAdd  once 0.25 s  ADDITIVE hit (frame 0 = rest): head snap + grunt + small trunk flinch, back to rest.
+ *   blend   (38.68)      locomotion set walk @ 1.0 -> run @ 3.0 m/s (= legRig tunedMps), fades (run -> idle / talk 250
+ *                        ms so he visibly settles), additive `hit` on body / head / jaw / ears. No windup / attack: Burl is
+ *                        friendly; the fight clips (windup, swipe, attack lunge-bite, recover) are the black bear's.
+ *   (The PLAYER rig needs none of this: the game is first person and the player body is never drawn.)
  *   (v1's drop / rise / sit / sitTalk / standUp are REMOVED: no upright or seated poses, style-guide 0.2.)
  *
  * Clip -> state map (ASSETS.bearFx.clipFor; view-only, the NPC view sets components.voxel.anim):
@@ -312,6 +320,25 @@
   var WAVE_B = { h: [-20, 0, 0], e: [6, 0, 0], b: [0, 0, 0, -0.4, 0, 0] };   // head up, weight onto the left side
   function W(o) { return addO(WAVE_B, o); }
   var PIN = [-22, 0, 0];                                        // ears pinned back (laugh)
+  var EARS_BACK = [-26, 0, 0];                                  // ears pinned (hurt / hit)
+
+  // ANIM-BLEND-02b: the knee-rig GALLOP (tools/gen-gait.mjs config bear.charge, rotary gallop, 0.5 s loop, planted feet at
+  // tunedMps 3.0) now lives HERE so Burl (`run`) and the black bear (`charge`, cloned in voxel_bear_black.js) share ONE
+  // generated block. Programmer: tools/gait-configs.mjs bear.charge `file:` -> 'voxel_bear.js' (model / clip / var unchanged).
+  // GAIT-A BEGIN bear.charge (tools/gen-gait.mjs: legs of gallop gait, duty 0.45, tuned 3 m/s, 10 keys; re-run, do not hand-edit)
+  var BEAR_CHARGE = { durations: [50,50,50,50,50,50,50,50,50,50], frames: [
+      { body: { rot: [2.259,1.902,0], pos: [0,0,0.804] }, head: { rot: [-1.242,0,0], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, ears: { rot: [0,0,0], pos: [0,0,0] }, armL: { rot: [-34.42,0,0], pos: [0,0,-0.97] }, armR: { rot: [-46.098,0,0], pos: [0,0,0.108] }, legL: { rot: [30.075,0,0], pos: [0,0,-1.046] }, legR: { rot: [20.294,0,0], pos: [0,0,0.171] }, armL2: { rot: [17.21,0,0], pos: [0,0,0] }, armR2: { rot: [44.674,0,0], pos: [0,0,0] }, legL2: { rot: [-13.914,0,0], pos: [0,0,0] }, legR2: { rot: [0.611,0,0], pos: [0,0,0] } },
+      { body: { rot: [3.838,1.176,1.176], pos: [0,0,1.453] }, head: { rot: [-2.111,0,-0.94], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, ears: { rot: [0,0,0], pos: [0,0,0] }, armL: { rot: [-18.72,0,0], pos: [0,0,-0.926] }, armR: { rot: [-34.42,0,0], pos: [0,0,-1.011] }, legL: { rot: [14.948,0,0], pos: [0,0,1.746] }, legR: { rot: [30.075,0,0], pos: [0,0,-1.572] }, armL2: { rot: [9.36,0,0], pos: [0,0,0] }, armR2: { rot: [17.21,0,0], pos: [0,0,0] }, legL2: { rot: [5.399,0,0], pos: [0,0,0] }, legR2: { rot: [-13.914,0,0], pos: [0,0,0] } },
+      { body: { rot: [0.113,0,1.902], pos: [0,0,0.094] }, head: { rot: [-0.062,0,-1.522], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, ears: { rot: [0,0,0], pos: [0,0,0] }, armL: { rot: [-3.731,0,0], pos: [0,0,0.04] }, armR: { rot: [-18.72,0,0], pos: [0,0,0.157] }, legL: { rot: [-2.525,0,0], pos: [0,0,5.163] }, legR: { rot: [14.948,0,0], pos: [0,0,3.632] }, armL2: { rot: [1.865,0,0], pos: [0,0,0] }, armR2: { rot: [9.36,0,0], pos: [0,0,0] }, legL2: { rot: [21.438,0,0], pos: [0,0,0] }, legR2: { rot: [5.399,0,0], pos: [0,0,0] } },
+      { body: { rot: [-3.768,-1.176,1.902], pos: [0,0,-1.395] }, head: { rot: [2.072,0,-1.522], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, ears: { rot: [0,0,0], pos: [0,0,0] }, armL: { rot: [11.335,0,0], pos: [0,0,1.094] }, armR: { rot: [-3.731,0,0], pos: [0,0,1.116] }, legL: { rot: [-18.287,0,0], pos: [0,0,5.655] }, legR: { rot: [-2.525,0,0], pos: [0,0,6.651] }, armL2: { rot: [-5.668,0,0], pos: [0,0,0] }, armR2: { rot: [1.865,0,0], pos: [0,0,0] }, legL2: { rot: [30.079,0,0], pos: [0,0,0] }, legR2: { rot: [21.438,0,0], pos: [0,0,0] } },
+      { body: { rot: [-2.442,-1.902,1.176], pos: [0,0,-0.956] }, head: { rot: [1.343,0,-0.94], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, ears: { rot: [0,0,0], pos: [0,0,0] }, armL: { rot: [24.402,0,0], pos: [0,0,1.024] }, armR: { rot: [11.335,0,0], pos: [0,0,0.518] }, legL: { rot: [-29.173,0,0], pos: [0,0,2.565] }, legR: { rot: [-18.287,0,0], pos: [0,0,4.91] }, armL2: { rot: [-8.865,0,0], pos: [0,0,0] }, armR2: { rot: [-5.668,0,0], pos: [0,0,0] }, legL2: { rot: [29.775,0,0], pos: [0,0,0] }, legR2: { rot: [30.079,0,0], pos: [0,0,0] } },
+      { body: { rot: [2.259,-1.902,0], pos: [0,0,0.804] }, head: { rot: [-1.242,0,0], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, ears: { rot: [0,0,0], pos: [0,0,0] }, armL: { rot: [24.211,0,0], pos: [0,0,0.825] }, armR: { rot: [24.402,0,0], pos: [0,0,-0.711] }, legL: { rot: [-31.401,0,0], pos: [0,0,-0.935] }, legR: { rot: [-29.173,0,0], pos: [0,0,0.426] }, armL2: { rot: [-0.836,0,0], pos: [0,0,0] }, armR2: { rot: [-8.865,0,0], pos: [0,0,0] }, legL2: { rot: [20.41,0,0], pos: [0,0,0] }, legR2: { rot: [29.775,0,0], pos: [0,0,0] } },
+      { body: { rot: [3.838,-1.176,-1.176], pos: [0,0,1.453] }, head: { rot: [-2.111,0,0.94], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, ears: { rot: [0,0,0], pos: [0,0,0] }, armL: { rot: [-1.959,0,0], pos: [0,0,2.902] }, armR: { rot: [24.211,0,0], pos: [0,0,-0.073] }, legL: { rot: [-17.197,0,0], pos: [0,0,-1.497] }, legR: { rot: [-31.401,0,0], pos: [0,0,-2.065] }, armL2: { rot: [31.209,0,0], pos: [0,0,0] }, armR2: { rot: [-0.836,0,0], pos: [0,0,0] }, legL2: { rot: [11.178,0,0], pos: [0,0,0] }, legR2: { rot: [20.41,0,0], pos: [0,0,0] } },
+      { body: { rot: [0.113,0,-1.902], pos: [0,0,0.094] }, head: { rot: [-0.062,0,1.522], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, ears: { rot: [0,0,0], pos: [0,0,0] }, armL: { rot: [-26.245,0,0], pos: [0,0,4.123] }, armR: { rot: [-1.959,0,0], pos: [0,0,3.755] }, legL: { rot: [-3.453,0,0], pos: [0,0,0.038] }, legR: { rot: [-17.197,0,0], pos: [0,0,0.231] }, armL2: { rot: [52.715,0,0], pos: [0,0,0] }, armR2: { rot: [31.209,0,0], pos: [0,0,0] }, legL2: { rot: [2.244,0,0], pos: [0,0,0] }, legR2: { rot: [11.178,0,0], pos: [0,0,0] } },
+      { body: { rot: [-3.768,1.176,-1.902], pos: [0,0,-1.395] }, head: { rot: [2.072,0,1.522], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, ears: { rot: [0,0,0], pos: [0,0,0] }, armL: { rot: [-42.976,0,0], pos: [0,0,2.994] }, armR: { rot: [-26.245,0,0], pos: [0,0,5.075] }, legL: { rot: [10.589,0,0], pos: [0,0,1.383] }, legR: { rot: [-3.453,0,0], pos: [0,0,2.33] }, armL2: { rot: [57.874,0,0], pos: [0,0,0] }, armR2: { rot: [52.715,0,0], pos: [0,0,0] }, legL2: { rot: [-6.883,0,0], pos: [0,0,0] }, legR2: { rot: [2.244,0,0], pos: [0,0,0] } },
+      { body: { rot: [-2.442,1.902,-1.176], pos: [0,0,-0.956] }, head: { rot: [1.343,0,0.94], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, ears: { rot: [0,0,0], pos: [0,0,0] }, armL: { rot: [-46.098,0,0], pos: [0,0,0.616] }, armR: { rot: [-42.976,0,0], pos: [0,0,3.226] }, legL: { rot: [20.294,0,0], pos: [0,0,2.042] }, legR: { rot: [10.589,0,0], pos: [0,0,1.217] }, armL2: { rot: [44.674,0,0], pos: [0,0,0] }, armR2: { rot: [57.874,0,0], pos: [0,0,0] }, legL2: { rot: [0.611,0,0], pos: [0,0,0] }, legR2: { rot: [-6.883,0,0], pos: [0,0,0] } }
+  ] };
+  // GAIT-A END bear.charge
 
   var animations = {
     idle: clip([
@@ -386,8 +413,27 @@
       [150, { b: [0, 0, 0, 0, 0, -0.15] }],
       [150, { lift: { aR: 1, lL: 1 }, aR: -6, lL: -4, b: [0, 0, -2, 0, 0, 0], h: [2, 0, -5] }],
       [150, { b: [0, 0, 0, 0, 0, -0.15] }]
-    ], true)
+    ], true),
+    // ANIM-BLEND-02b: run = the generated rotary gallop above (planted feet at 3.0 m/s; legRig.gaits.run). Same frames as
+    // the black bear's `charge` (one source). Keys all 12 parts (knee rig), like walk.
+    run: { durations: BEAR_CHARGE.durations, loop: true, frames: BEAR_CHARGE.frames },
+    // hurt 0.1 s (6 steps, step interp; = the black bear's BEAR-D2 hurt, now shared from here): recoil - head jerks up
+    // and back, bawl, ears pinned, trunk rocks back 0.1 m, all four paws stay planted. Full clip = knock-down / big hit.
+    hurt: clip([
+      [50, { b: [-6, 0, 0, 0, 2.0, 0.6], h: [-12, 0, 0], e: [-28, 0, 0], j: 18, aL: 6, aR: 6, lL: 4, lR: 4 }],
+      [50, { b: [-4, 0, 0, 0, 1.6, 0.4], h: [-8, 0, 0], e: [-24, 0, 0], j: 12, aL: 4, aR: 4, lL: 3, lR: 3 }]
+    ], false),
+    // hitAdd (ANIM-BLEND-02b, additive; architecture.md 38.68): frame 0 = REST (delta 0), a short jolt (head snaps up,
+    // ears pin, a grunt, the trunk flinches back 3 cm and nose-up 4 deg), eases back to REST. Masked to body / head / jaw /
+    // ears in blend.additive.hit, so it rides on walk / run / attack without touching the planted legs.
+    hitAdd: clip([
+      [50, {}],
+      [50, { b: [-4, 0, 0, 0, 0.6, 0.3], h: [-12, 0, 0], e: EARS_BACK, j: 16 }],
+      [50, { b: [-3, 0, 0, 0, 0.45, 0.2], h: [-8, 0, 3], e: [-20, 0, 0], j: 10 }],
+      [100, {}]
+    ], false)
   };
+  animations.hurt.interp = 'step';
 
   A.models.bear = {
     name: 'bear',
@@ -397,7 +443,7 @@
           'dark nose, small eyes and small round ears, big tapered forearms on wide rounded paws with pale claws, big ' +
           'rounded haunches over long plantigrade feet; dark legs, grizzled hump. Talks with head, jaw and ' +
           'ears. 12 parts (body, head, jaw, ears, 4 upper + 4 lower limbs = knee rig): idle, talk, listen, wave (paw raise on three ' +
-          'legs), laugh, walk, turn.',
+          'legs), laugh, walk, turn, run (gallop), hurt + hitAdd (additive), blend block (ANIM-BLEND-02b).',
     voxel: {
       version: 1,
       meshOnly: true,
@@ -442,10 +488,22 @@
         legs: [   // fore pair then hind pair (= gait phase order FL FR HL HR); foot = paw contact point
           { upper: 'armL', lower: 'armL2', foot: [7.5, 14.5, 0], bend: 'back' }, { upper: 'armR', lower: 'armR2', foot: [20.5, 14.5, 0], bend: 'back' },
           { upper: 'legL', lower: 'legL2', foot: [7.5, 27.5, 0], bend: 'back' }, { upper: 'legR', lower: 'legR2', foot: [20.5, 27.5, 0], bend: 'back' }],
-        gaits: { walk: { tunedMps: 1, duty: 0.65, phase: [0.12, 0.62, 0, 0.5], liftM: 0.07 } },   // == tools/gait-configs.mjs bear.walk (gait-b.test)
+        gaits: { walk: { tunedMps: 1, duty: 0.65, phase: [0.12, 0.62, 0, 0.5], liftM: 0.07 },   // == tools/gait-configs.mjs bear.walk (gait-b.test)
+                 run: { tunedMps: 3, duty: 0.45, phase: [0, 0.1, 0.5, 0.6], liftM: 0.15 } },    // ANIM-BLEND-02b: == bear.charge (same gallop frames)
         stand: ['idle']
       },
       animations: animations,
+      // ANIM-BLEND-02b (38.68 data format, same rules as wolf / boar / goblin in ANIM-BLEND-02). Set speeds = legRig tunedMps
+      // (walk 1.0 amble, run 3.0 gallop). Burl is friendly: no windup / attack (those are the black bear's); hit = additive.
+      blend: {
+        sets: { locomotion: { param: 'speed', clips: [{ clip: 'walk', at: 1 }, { clip: 'run', at: 3 }] } },
+        fades: {
+          default: 150,
+          into: { hurt: 50, turn: 120 },
+          pairs: { 'run>idle': 250, 'run>turn': 200, 'run>talk': 250, 'run>listen': 250, 'walk>talk': 200, 'hurt>idle': 200 }
+        },
+        additive: { hit: { clip: 'hitAdd', parts: ['body', 'head', 'jaw', 'ears'], inMs: 50, outMs: 200, gain: 1 } }
+      },
       // grid coords, rest pose; they follow their part's animated pose (raising the head lifts `speech` and `eyes`)
       mounts: {
         speech:   { at: [14, 6, 23], part: 'head' },     // ~0.15 m over the ears: speech bubble / name tag anchor
@@ -466,9 +524,12 @@
     clipFor: {
       state: { idle: 'idle', greet: 'wave', talk: 'talk', listen: 'listen', laugh: 'laugh', move: 'walk', turn: 'turn' },
       once: { wave: 'idle', laugh: 'listen' },
-      move: { start: 'walk', loop: 'walk', stop: 'idle' },
+      move: { start: 'walk', loop: 'walk', stop: 'idle', fast: 'run' },
+      hurt: 'hurt', hitAdditive: 'hit',
       note: 'once = non-loop clips and what follows them at animEnd. Every clip is on four legs (style-guide 0.2); ' +
-            'the v1 seated / upright clips (drop, rise, sit, sitTalk, standUp) are gone. The walk is tuned for ~1.0 m/s.'
+            'the v1 seated / upright clips (drop, rise, sit, sitTalk, standUp) are gone. The walk is tuned for ~1.0 m/s, ' +
+            'the run (gallop) for 3.0 m/s; with the ANIM-BLEND blender request the `locomotion` set by speed instead. ' +
+            'hitAdditive = the blend.additive name (small hits ride on top); `hurt` = the full clip for big hits.'
     },
     talk: {
       jawPart: 'jaw', jawAxis: 'rx', jawOpenSign: 1, jawMaxDeg: JAW_MAX, jawPivot: [14, 7, 10],

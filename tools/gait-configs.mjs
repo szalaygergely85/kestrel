@@ -74,5 +74,5 @@ const BEAR_LEGS = { FL: { ...K('armL', 'armL2', 'fore'), k: 0.5 }, FR: { ...K('a
 CONFIGS.push(
   { id: 'bear.walk', mark: 'bear.walk', model: 'bear', file: 'voxel_bear.js', clip: 'walk', body: 'body', head: 'head', ears: 'ears', legs: BEAR_LEGS,
     gait: 'amble', keys: 16, G: { T: 800, v: 1.0, beta: 0.65, bobM: 0.025, liftM: 0.07, pitch: 1.5, nod: 1.5, ears: 3, roll: 5, yaw: 4, heel: 28, heelF: 11.2, foldF: 32, foldH: 12, hindSign: 1 } },
-  { id: 'bear.charge', mark: 'bear.charge', model: 'bearBlack', file: 'voxel_bear_black.js', clip: 'charge', var: 'BEAR_CHARGE', body: 'body', head: 'head', ears: 'ears', legs: BEAR_LEGS,
+  { id: 'bear.charge', mark: 'bear.charge', model: 'bearBlack', file: 'voxel_bear.js', clip: 'charge', var: 'BEAR_CHARGE', body: 'body', head: 'head', ears: 'ears', legs: BEAR_LEGS,
     gait: 'gallop', keys: 10, G: { T: 500, v: 3.0, beta: 0.45, bobM: 0.075, liftM: 0.15, pitch: 4, nod: 3, ears: 0, roll: 2, yaw: 2, heel: 20, heelF: 8, foldF: 40, foldH: 20, hindSign: 1 } });

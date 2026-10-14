@@ -1201,3 +1201,7 @@ REV-BEASTALLOC-2: beastSim.test.js (22 s) -> nav cached per physics mode (NavGri
 - ANIM-C-04b (branch animc04b): engine/fauna/feed.js legPass now drives gait-clip frame/t from the leg driver's Phi (`clipSetPhase` on a feed-owned scratch, written onto pool.raw[r]; cp untouched, so fades/non-gait/attack clips/outside-LOD keep their own clock; 0 alloc).
   Test: engine/voxel/feedLegs.test.js section 6 (gait frame/t == clipSetPhase(io[8]); non-gait clip and legIk:false keep own clock). Alloc probe (node --expose-gc) still < 32 KB delta.
   Suites feedLegs,faunaFeed,legDriver,animBlendLegs,beastLegs PASS; check-deps OK. Uncommitted. Open: crossfade from-clip still on own clock (same as beastView).
+
+- ANIM-BLEND-02b (programmer half, kestrel-2 / animblend02b): gait-configs bear.charge file -> voxel_bear.js (gen-gait stable, frames byte-identical). beastView: bearBlack STATE_RECOVER -> blackBearFx.clipFor.state.recover
+  (bite/lunge NOT mapped: beastSim has no such states, add when bearBrain gets a bite state). Tests: voxel-bear, voxel-bear-black, bearKnee (run in legacy skip),
+  anim-blend-02 (+bearBlack windup/attack/recover case, +Burl sets/additive). 14 suites PASS, check-deps OK, validate-content OK. Not committed.
