@@ -26,6 +26,47 @@ export const rawIn = (s) => (typeof s === 'string' && s.includes(' ') ? (s.match
 const WALL_MOUNTED = /(^|\.)(lantern|keeperLamp|stairLamp|swordLamp)$|^note/i; // wall-mounted on purpose (audit OB-155c)
 const NAMES = new Set(['bear', 'rook', 'hesk', 'dorrin']); // main.js giverName table
 
+
+// ---- per-item rule bodies, shared by RULES and tools/editor/quest/lintQuest.js (ED-QUEST-05) ----
+/** R5 for one giver/turn-in entity id. */
+export function r5One(c, id) {
+  const p = c.pos(id); if (!p) return [];
+  const up = p.z - c.groundAt(p.x, p.y);
+  if (up > GIVER_MAX_UP) return [F('R5', id, p.x, p.y, `giver is ${up.toFixed(1)} m above the ground (> ${GIVER_MAX_UP})`)];
+  if (!c.walkable(p.x, p.y, p.z)) return [F('R5', id, p.x, p.y, `no walkable point within ${GIVER_WALK_R} m`)];
+  return [];
+}
+/** R10 for one quest. */
+export function r10Quest(c, q) {
+  const out = [];
+  for (const [role, id] of [['giver', q.giver?.npc], ['turn-in', q.giver?.turnIn]]) {
+    if (id && !c.characters.has(id)) { const p = c.pos?.(id); out.push(F('R10', q.id, p?.x ?? '-', p?.y ?? '-', `${role} "${id}" is an object, not a character`)); }
+  }
+  return out;
+}
+/** R12 for one entSupport record (wall-mounted lamps/notes allow-listed). */
+export function r12One(e) {
+  if (WALL_MOUNTED.test(e.id)) return [];
+  const gap = e.base - e.support, out = [];
+  if (gap > ENT_MAX_FLOAT) out.push(F('R12', e.id, e.x, e.y, `base floats ${gap.toFixed(2)} m above its support (> ${ENT_MAX_FLOAT})`));
+  if (e.floorAbove != null && e.floorAbove >= BURY_MIN && e.floorAbove <= BURY_MAX) out.push(F('R12', e.id, e.x, e.y, `buried: a floor surface lies ${e.floorAbove.toFixed(2)} m above its base`));
+  return out;
+}
+/** R14 for one quest (opts.skipChar: the "is not a character" line is left to R10). */
+export function r14Quest(c, q, opts = {}) {
+  const out = [], g = q.giver?.npc, r = q.giver?.turnIn || g;
+  if (!g) return [F('R14', q.id, '-', '-', 'quest has no giver: needs a character giver with Accept/Exit')];
+  for (const [role, id] of [['giver', g], ['return', r]]) {
+    const isChar = c.characters.has(id);
+    if (!opts.skipChar && !isChar && !(q.objectGiver && role === 'giver')) out.push(F('R14', q.id, '-', '-', `${role} "${id}" is not a character (set objectGiver: true to allow)`));
+    if (!c.pos?.(id)) out.push(F('R14', q.id, '-', '-', `${role} "${id}" does not resolve to a placed entity`));
+    // walkable ground / height: R5 checks every giver + turn-in entity (buildContext adds them to giverIds)
+  }
+  if (!q.accept) out.push(F('R14', q.id, '-', '-', 'no Accept/Exit choice at the giver'));
+  if (q.auto) out.push(F('R14', q.id, '-', '-', 'auto hand-in: needs a `?` at the return character'));
+  return out;
+}
+
 // ---- rules ----
 export const RULES = {
   // R1 [OB-131/143] ctx.floating = [{id, kind:'prop'|'tree'|'scatter', x, y, gap}]
@@ -50,16 +91,7 @@ export const RULES = {
   // R4 [D-080] ctx.texts + ctx.jsTexts
   R4: (c) => [...c.texts, ...(c.jsTexts || [])].filter((t) => /relay/i.test(t.text)).map((t) => F('R4', t.where, '-', '-', `"relay" in "${t.text.slice(0, 60)}"`)),
   // R5 [OB-147/D-082] ctx.giverIds = Set of ids, ctx.pos(id)->{x,y,z}|null, ctx.groundAt, ctx.walkable(x,y,z)
-  R5: (c) => {
-    const out = [];
-    for (const id of c.giverIds) {
-      const p = c.pos(id); if (!p) continue;
-      const up = p.z - c.groundAt(p.x, p.y);
-      if (up > GIVER_MAX_UP) out.push(F('R5', id, p.x, p.y, `giver is ${up.toFixed(1)} m above the ground (> ${GIVER_MAX_UP})`));
-      else if (!c.walkable(p.x, p.y, p.z)) out.push(F('R5', id, p.x, p.y, `no walkable point within ${GIVER_WALK_R} m`));
-    }
-    return out;
-  },
+  R5: (c) => [...c.giverIds].flatMap((id) => r5One(c, id)),
   // R6 [OB-148] smoke emitter needs a fire/chimney/brazier source (entity id/model/light or structure mesh) within 3 m
   R6: (c) => {
     const SRC = /fire|chimney|brazier|campfire|torch|hearth|forge|kiln|stove/i, out = [];
@@ -91,24 +123,13 @@ export const RULES = {
     return out;
   },
   // R10 [D-082] quests given/returned by an object (no dialogue)
-  R10: (c) => {
-    const out = [];
-    for (const q of c.quests) for (const [role, id] of [['giver', q.giver?.npc], ['turn-in', q.giver?.turnIn]]) {
-      if (id && !c.characters.has(id)) { const p = c.pos?.(id); out.push(F('R10', q.id, p?.x ?? '-', p?.y ?? '-', `${role} "${id}" is an object, not a character`)); }
-    }
-    return out;
-  },
+  R10: (c) => c.quests.flatMap((q) => r10Quest(c, q)),
   // R11 [OB-130/143]
   R11: (c) => (c.structures || []).filter((s) => /Mushroom_Laetiporus/.test(s.mesh) || (/Prop_Support/.test(s.mesh) && !/^strand/.test(s.id)))
     .map((s) => F('R11', s.id, s.origin.x, s.origin.y, `banned mesh ${s.mesh}`)),
   // R12 [OB-155a-c] ctx.entSupport = [{id,x,y,base,support,floorAbove}]: base = z + model bottom x scale, support = max(ground, structure top)
   // floorAbove = height of a floor surface above base within 0.1..0.9 m (buried) or null. Wall-mounted lamps/notes are allow-listed.
-  R12: (c) => (c.entSupport || []).filter((e) => !WALL_MOUNTED.test(e.id)).flatMap((e) => {
-    const gap = e.base - e.support, out = [];
-    if (gap > ENT_MAX_FLOAT) out.push(F('R12', e.id, e.x, e.y, `base floats ${gap.toFixed(2)} m above its support (> ${ENT_MAX_FLOAT})`));
-    if (e.floorAbove != null && e.floorAbove >= BURY_MIN && e.floorAbove <= BURY_MAX) out.push(F('R12', e.id, e.x, e.y, `buried: a floor surface lies ${e.floorAbove.toFixed(2)} m above its base`));
-    return out;
-  }),
+  R12: (c) => (c.entSupport || []).flatMap(r12One),
   // R13 [OB-155d] ctx.anchors = [{id,x,y,hasModel,nearVisual}]: a prompt/marker anchor needs a model or a visible mesh/voxel within 1 m
   R13: (c) => (c.anchors || []).filter((a) => !a.hasModel && !a.nearVisual).map((a) => F('R13', a.id, a.x, a.y, 'prompt/marker anchor with no model and no visible mesh/voxel within 1 m')),
   // R14 [OB-156/OB-155r, D-082, D-087, QPIPE-LINT-01] ctx.quests (packs + legacy) with .giver {npc, turnIn}, .accept (Accept/Exit dialogue exists),
@@ -117,19 +138,9 @@ export const RULES = {
     const out = [];
     let givers = 0, objGivers = 0;
     for (const q of c.quests) {
-      const g = q.giver?.npc, r = q.giver?.turnIn || g;
-      if (!g) { out.push(F('R14', q.id, '-', '-', 'quest has no giver: needs a character giver with Accept/Exit')); continue; }
-      givers++;
-      for (const [role, id] of [['giver', g], ['return', r]]) {
-        const isChar = c.characters.has(id);
-        if (!isChar && !(q.objectGiver && role === 'giver')) out.push(F('R14', q.id, '-', '-', `${role} "${id}" is not a character (set objectGiver: true to allow)`));
-        const p = c.pos?.(id);
-        if (!p) { out.push(F('R14', q.id, '-', '-', `${role} "${id}" does not resolve to a placed entity`)); continue; }
-        // walkable ground / height: R5 checks every giver + turn-in entity (buildContext adds them to giverIds)
-      }
-      if (q.objectGiver) objGivers++;
-      if (!q.accept) out.push(F('R14', q.id, '-', '-', 'no Accept/Exit choice at the giver'));
-      if (q.auto) out.push(F('R14', q.id, '-', '-', 'auto hand-in: needs a `?` at the return character'));
+      if (q.giver?.npc) givers++;
+      if (q.giver?.npc && q.objectGiver) objGivers++;
+      out.push(...r14Quest(c, q));
     }
     if (givers && objGivers / givers > OBJECT_GIVER_MAX) out.push(F('R14', '*', '-', '-', `${objGivers}/${givers} givers are objects (> ${OBJECT_GIVER_MAX * 100} %)`));
     return out;
