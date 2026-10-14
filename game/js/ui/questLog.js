@@ -1,5 +1,6 @@
 // S8-C-12: cached objective HUD/log view over the shipped quest sim.
 import { drawText } from '../../../engine/index.js';
+import { isMainDef } from '../quest/sim/questBook.js';
 import { validateQuestDefinition, questObjectives } from '../quest/sim/quest.js';
 
 const ascii = value => value.replace(/[^\x20-\x7e]/g, '?');
@@ -85,7 +86,7 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
   let open = false, built = -1, sel = 0, top = 0, quests = [], names = [], doneFrom = 0, right = [], sure = false;
 
   /** MAIN = the chapter quest (index 0), `mq.*` ids, or def.kind === 'main'. */
-  const isMain = i => { const d = book.def(i); return i === 0 || d.kind === 'main' || (typeof d.id === 'string' && d.id.startsWith('mq.')); };
+  const isMain = i => typeof book.isMain === 'function' ? book.isMain(i) : (i === 0 || isMainDef(book.def(i))); // OB-155: shared rule
   // OB-099: counts only on item / kill steps (row.counted); go / talk / explore steps show none
   const cnt = (row) => (row.counted ? '  ' + row.progress + '/' + row.target : '');
   /** OB-099: the m1 chain is NOT a quest of its own. While a step belongs to a `silent` section (covered by a giver quest) it is

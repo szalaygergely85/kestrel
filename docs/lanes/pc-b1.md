@@ -1108,3 +1108,9 @@ NEEDS B1-main: in game/js/main.js right after World.load of the grid world and B
 
 - DECOR-ON-01 (kestrel-1, OB-119 follow-up): GPU decor default ON again (decorHost.parseDecorMode: only `?decor=cpu` / `?decor=0` turn it off; `?decor=gpu` still works); decorHost.test updated. tools/verify-decor.mjs runs without ?decor=gpu, does a +350/-350 m player trip (band swaps) and fails on any console line "used in submit while destroyed" (trip axis is transform.x: unverified in a browser, adjust if no swap shows).
   Verify (not run): `node tools/verify-decor.mjs {port}` with port 9500-9574 (port+1 = CDP). -> owner look
+
+### OB-155 / OB-156 / OB-157 (kestrel-1, ob155-156) - done in Node
+- OB-155: one rule `isMainDef` + `book.isMain` (entry 0, main:true, kind:'main', `mq.*`, chain-waits flag) in questBook.js; questLog.js uses book.isMain. New game/js/quest/mainRule.test.js over real content (10 mq.* main, 70 sq.* side).
+- OB-156: inventoryScreen.js draws a locked cell WITH its item dimmed + disabled border, no x (empty locked cells unchanged); mouse-hover shows name + `o.slotLockText(i)` ("Locked - learn fire first", set in main.js). Cursor/drag refusal unchanged. Tests extended.
+- OB-157: generic optional `mark.taken` flag in book.chainMarks; m1 step `road` uses `burl.departing` (set by burlEscort when Burl hands it over) -> '?' at relayBend, no '!'. chainMarks.test.js extended.
+- Suites pass (questBook, questLog*, offerMarks, chainMarks, inventoryScreen, mainRule). -> owner look
