@@ -518,7 +518,8 @@ function stepSim(sim, px, py, pz) {
   for (let i = 0; i < n; i++) if (live(sim, i)) setSteerTarget(sim, i);
   sim.steer.step(SIM_STEP, sim.grid);
   deOverlap(sim); // US-079c (BUG-BOAR-OVERLAP): hard pairwise push-apart, after the soft steer step, before post
-  for (let i = 0; i < n; i++) if (live(sim, i)) postOne(sim, i, px, py, pz);
+  _pp[0] = px; _pp[1] = py; _pp[2] = pz; // BEAST-ALLOC-01: player pos via scratch (double args box per non-inlined call)
+  for (let i = 0; i < n; i++) if (live(sim, i)) postOne(sim, i);
   sim.tick++;
 }
 
@@ -1257,8 +1258,9 @@ function advanceWaypoint(sim, i) {
 
 // ---- post (29.1 step 6) ----------------------------------------------------------------------------------------
 
-function postOne(sim, i, px, py, pz) {
-  const steer = sim.steer, cfg = sim.cfg, world = sim.world;
+const _pp = new Float64Array(3);
+function postOne(sim, i) {
+  const steer = sim.steer, cfg = sim.cfg, world = sim.world, px = _pp[0], py = _pp[1];
 
   if (sim.state[i] === STATE_CHARGE) chargePost(sim, i, px, py);
 
@@ -1329,10 +1331,13 @@ function walkable(grid, x, y) {
   return grid.inBounds(cx, cy) && grid.cost[grid.index(cx, cy)] !== 0;
 }
 
-/** Applies a proposed (nx,ny) with the same axis-sliding wall clamp as steer.step: full move if walkable, else the
+// Proposed position handed to applyPush through a module scratch (BEAST-ALLOC-01: double args box at a non-inlined call).
+const _push = new Float64Array(2);
+
+/** Applies the proposed `_push` (nx,ny) with the same axis-sliding wall clamp as steer.step: full move if walkable, else the
  * x or y axis alone if that stays walkable, else stay put (no tunnelling through a cost-0 cell). */
-function applyPush(steer, grid, slot, nx, ny) {
-  const ox = steer.x[slot], oy = steer.y[slot];
+function applyPush(steer, grid, slot) {
+  const ox = steer.x[slot], oy = steer.y[slot], nx = _push[0], ny = _push[1];
   if (walkable(grid, nx, ny)) { steer.x[slot] = nx; steer.y[slot] = ny; }
   else if (walkable(grid, nx, oy)) { steer.x[slot] = nx; }
   else if (walkable(grid, ox, ny)) { steer.y[slot] = ny; }
@@ -1365,8 +1370,8 @@ function deOverlap(sim) {
       const mi = steer.radius[i] * steer.radius[i];
       const mj = steer.radius[j] * steer.radius[j];
       const inv = 1 / (mi + mj);
-      applyPush(steer, grid, i, steer.x[i] - ux * overlap * mj * inv, steer.y[i] - uy * overlap * mj * inv);
-      applyPush(steer, grid, j, steer.x[j] + ux * overlap * mi * inv, steer.y[j] + uy * overlap * mi * inv);
+      _push[0] = steer.x[i] - ux * overlap * mj * inv; _push[1] = steer.y[i] - uy * overlap * mj * inv; applyPush(steer, grid, i);
+      _push[0] = steer.x[j] + ux * overlap * mi * inv; _push[1] = steer.y[j] + uy * overlap * mi * inv; applyPush(steer, grid, j);
     }
   }
 }
