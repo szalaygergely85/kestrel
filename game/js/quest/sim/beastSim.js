@@ -188,6 +188,9 @@ export function createBeastSim(world, opts) {
     moving: new Uint8Array(MAX_BEASTS),     // BEAST-01: hysteresis flag (on > 0.15 m/s, off < 0.05 m/s)
     stkT: new Int32Array(MAX_BEASTS),       // BEAST-01: steps spent wanting to move without leaving the anchor
     stkAx: new Float64Array(MAX_BEASTS), stkAy: new Float64Array(MAX_BEASTS),
+    bankT: new Int32Array(MAX_BEASTS),      // NAV-REACH-01: steps a chaser has held at the nearest reachable cell (partial path) before giving up
+    bankHold: new Uint8Array(MAX_BEASTS),   // 1 while holding at that cell (speed 0, faces the player)
+    partialGoal: new Uint8Array(MAX_BEASTS),// last A* for this slot was partial (goal unreachable)
     stkFail: new Uint8Array(MAX_BEASTS),    // failed re-plans in a row
     stkSt: new Uint8Array(MAX_BEASTS),
     prevX: new Float64Array(MAX_BEASTS),
@@ -827,6 +830,7 @@ function enterNotice(sim, i) {
 function enterChase(sim, i) {
   sim.state[i] = STATE_CHASE;
   sim.waiting[i] = 0; // US-079c: a fresh chase is not waiting for the charger
+  sim.bankT[i] = 0; sim.partialGoal[i] = 0; sim.bankHold[i] = 0; // NAV-REACH-01
   sim.pathLen[i] = 0; sim.pathIdx[i] = 0;
   sim.repathT[i] = 0;
   sim.unseen[i] = 0;
@@ -1034,8 +1038,23 @@ function updatePathRequests(sim, px, py) {
     if (sim.repathT[i] > 0) sim.repathT[i]--;
     if (sim.pathReq[i]) continue;
     const st = sim.state[i];
+    sim.bankHold[i] = 0;
     if (st === STATE_CHASE) {
       if (sim.waiting[i]) continue; // US-079c: a waiter holds position (no path into the player)
+      // NAV-REACH-01: target unreachable -> walk to the nearest reachable cell, hold there facing it, give up after REACH_GIVEUP_STEPS
+      if (sim.partialGoal[i] && sim.pathLen[i] > 0 && sim.pathIdx[i] >= sim.pathLen[i] - 1) {
+        const b = i * PATH_SLOTS * 2 + (sim.pathLen[i] - 1) * 2;
+        const ex = sim.path[b] - sim.steer.x[i], ey = sim.path[b + 1] - sim.steer.y[i];
+        if (ex * ex + ey * ey < 1) {
+          if (++sim.bankT[i] >= REACH_GIVEUP_STEPS) { sim.bankT[i] = 0; sim.partialGoal[i] = 0; enterReturn(sim, i); continue; }
+          sim.bankHold[i] = 1;
+          if (sim.repathT[i] <= 0) {
+            const dx = px - sim.goalX[i], dy = py - sim.goalY[i];
+            if (dx * dx + dy * dy > cfg.repathMoveM * cfg.repathMoveM) { sim.goalX[i] = px; sim.goalY[i] = py; sim.pathReq[i] = 1; }
+          }
+          continue;
+        }
+      }
       if (sim.pathLen[i] === 0 || sim.pathIdx[i] >= sim.pathLen[i]) {
         sim.goalX[i] = px; sim.goalY[i] = py; sim.pathReq[i] = 1;
       } else if (sim.repathT[i] <= 0) {
@@ -1076,6 +1095,8 @@ function computePath(sim, i) {
   const maxNodes = sim.state[i] === STATE_WANDER && !sim.goalOn[i] ? WANDER_MAX_NODES : TRAVEL_MAX_NODES;
   const len = findPath(astar, sx, sy, gx, gy, sim._cellPath, { maxNodes });
   sim.stats.astar++;
+  sim.partialGoal[i] = sim.state[i] === STATE_CHASE && astar.partial ? 1 : 0;
+  if (!sim.partialGoal[i]) sim.bankT[i] = 0;
   sim.stats.astarNodes += len; // approximation: findPath does not expose expanded-node count (see report deviations)
   const wn = len > 0 ? smoothPath(grid, sim._cellPath, len, sim._xy) : 0;
   storePath(sim, i, wn);
@@ -1105,6 +1126,7 @@ function storePath(sim, i, wn) {
 
 // ---- steer targets (29.1 step 4) -----------------------------------------------------------------------------
 
+const REACH_GIVEUP_STEPS = 180; // NAV-REACH-01: 3 s holding at the bank, then RETURN
 const STUCK_STEPS = 90;      // BEAST-01: 1.5 s
 const STUCK_MOVE_M = 0.1;
 /** BEAST-01: measured speed (displacement of the last step, EMA) + stuck rule. Runs before prevX is overwritten. */
@@ -1118,6 +1140,7 @@ function measureAndUnstick(sim, i, st) {
   if (m > 0.5) sim.stkFail[i] = 0;
   // wants to move: walking wander / chase not waiting / return, and not already at its goal
   let want = (st === STATE_WANDER && sim.timer[i] === WALKING) || st === STATE_RETURN || (st === STATE_CHASE && !sim.waiting[i]);
+  if (sim.bankHold[i]) want = false; // NAV-REACH-01: deliberate hold at the bank
   if (want) {
     const gx = st === STATE_CHASE ? sim._px : sim.goalX[i], gy = st === STATE_CHASE ? sim._py : sim.goalY[i];
     const ex = gx - steer.x[i], ey = gy - steer.y[i];
@@ -1199,7 +1222,7 @@ function setSteerTarget(sim, i) {
   }
 
   // US-079c: a CHASE boar waiting its turn (another boar is the charger) holds position at ~windup range.
-  if (st === STATE_CHASE && sim.waiting[i]) {
+  if (st === STATE_CHASE && (sim.waiting[i] || sim.bankHold[i])) {
     steer.setWaypoint(i, steer.x[i], steer.y[i], 0);
     steer.maxSpeed[i] = 0;
     return;
@@ -1252,7 +1275,7 @@ function postOne(sim, i, px, py, pz) {
   if (sim.state[i] === STATE_STAGGER) {
     // frozen
   } else if (sim.state[i] === STATE_NOTICE || sim.state[i] === STATE_WINDUP
-             || (sim.state[i] === STATE_CHASE && sim.waiting[i])) {
+             || (sim.state[i] === STATE_CHASE && (sim.waiting[i] || sim.bankHold[i]))) {
     // US-079c: a waiting boar faces the player while holding (so it reads as aware, like notice/windup).
     const ddx = px - steer.x[i], ddy = py - steer.y[i];
     const d = Math.sqrt(ddx * ddx + ddy * ddy);

@@ -39,14 +39,15 @@ for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) {
 }
 const sim = createBeastSim(world, { nav, rng: createRng(1), events: { emit() {}, on() {} } });
 const z = world.terrain.heightAt(PX, PY);
-let sawChase = false, gaveUp = false, walkInPlace = 0, maxRun = 0, run = 0;
+let sawChase = false, gaveUp = false, holdSteps = 0, faced = 0, gaveAt = -1, walkInPlace = 0, maxRun = 0, run = 0;
 const ov = { bar() {} }, ids = { beastNotice: 0 };
 for (let t = 0; t < 1200; t++) {
   sim.step(PX, PY, z);
   presentBeasts(sim, world, ov, ids);
   const st = sim.state[0];
   if (st === STATE_CHASE) sawChase = true;
-  if (sawChase && (st === STATE_RETURN || st === STATE_WANDER)) gaveUp = true;
+  if (sawChase && (st === STATE_RETURN || st === STATE_WANDER)) { gaveUp = true; if (gaveAt < 0) gaveAt = t; }
+  if (sim.bankHold[0]) { holdSteps++; const dx = PX - sim.steer.x[0], dy = PY - sim.steer.y[0], d = Math.hypot(dx, dy); if ((sim.fx[0] * dx + sim.fy[0] * dy) / d > 0.9) faced++; }
   const clip = sim.entities[0].components.voxel.anim;
   const gait = clip !== 'idle' && /walk|run|charge|flee|carry/.test(clip) && (st === STATE_CHASE);
   if (gait && sim.mv[0] < 0.15) { run++; if (run > maxRun) maxRun = run; } else run = 0;
@@ -55,5 +56,7 @@ for (let t = 0; t < 1200; t++) {
 ok('goblin chased the player at some point', sawChase);
 ok('goblin gave up the unreachable target', gaveUp);
 ok('no walk clip while < 0.15 m/s for > 0.2 s (12 steps)', maxRun <= 12, 'maxRun=' + maxRun + ' total=' + walkInPlace);
+ok('NAV-REACH-01: held at the bank (>= 1 s) and faced the player', holdSteps >= 60 && faced >= holdSteps * 0.9, `hold=${holdSteps} faced=${faced}`);
+ok('NAV-REACH-01: gave up within ~6 s of chase start', gaveAt > 0 && gaveAt < 600, 'gaveAt=' + gaveAt);
 console.log(`beastStuck: ${pass} pass, ${fail} fail`); for (const f of failures) console.log('  FAIL ' + f);
 if (fail) process.exit(1);
