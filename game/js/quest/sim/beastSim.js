@@ -18,6 +18,7 @@ import { GOBLIN_TUNING, goblinOverrides, isGoblinEntity } from './goblinBrain.js
 import { KINDS, kindIndex, kindOfEntity } from './beastKinds.js'; // BEAST-03a
 import { ARCHETYPES } from "./archetypes.js";
 import { LAYERS } from './brains/layers.js'; // BEAST-03b: LAYERS[archIdx](sim, i, ctx)
+import { createTactics, tacticsSync, tacticsSteer, tacticsBand, tacticsAllies, TACT_MELEE, TACT_RANGED, TACT_CASTER, TACT_SWARM, TOK_M, TOK_R, TOK_S } from './tactics.js'; // BEAST-04
 import { archIndex } from './archetypes.js';
 import { perceive, leashState, returnTarget, LEASH_HOME, LEASH_ENGAGE, LEASH_RETURN, LEASH_GIVEUP } from '../../../../engine/index.js';
 
@@ -51,6 +52,7 @@ export const STATE_SUBMERGED = 20; // water: eyes-only approach
 export const STATE_GRAB = 21;      // croc hold + roll
 export const STATE_AIRBORNE = 22;  // flyer cruise / circle
 export const STATE_CAST = 23;      // caster / healer cast (a hit cancels)
+const TACT_ROLE_OF = Object.freeze({ melee: TACT_MELEE, ranged: TACT_RANGED, caster: TACT_CASTER, swarm: TACT_SWARM }); // archetype role -> tactical role (BEAST-04)
 const ARCH_AGGRO_IDX = Object.freeze({ hostile: 0, whenHit: 1, never: 2, near: 3 });
 const FIRST_DEAD_STATE = STATE_DYING;
 const deadSt = (st) => st >= FIRST_DEAD_STATE && st <= STATE_GONE; // EAT (13) is alive
@@ -209,6 +211,8 @@ export function createBeastSim(world, opts) {
     pNear: new Float64Array(MAX_BEASTS).fill(cfg.nearR), pCone: new Float64Array(MAX_BEASTS).fill(cfg.coneCos), // BEAST-03b per-slot perception
     pAggro: new Uint8Array(MAX_BEASTS),      // 0 hostile 1 whenHit 2 never 3 near (ARCH_AGGRO order)
     _ctx: { px: 0, py: 0 },
+    tactOn: new Uint8Array(MAX_BEASTS), tactRole: new Uint8Array(MAX_BEASTS), tactBand: new Float64Array(MAX_BEASTS * 3), // BEAST-04 (tactics.js)
+    tactics: createTactics(MAX_BEASTS, (opts && opts.seed) || 0x9e3779b1), _allyN: 0, _allyX: 0, _allyY: 0, _tS: { CHASE: STATE_CHASE, WINDUP: STATE_WINDUP, CHARGE: STATE_CHARGE, RECOVER: STATE_RECOVER },
     archIdx: new Uint8Array(MAX_BEASTS),     // BEAST-03a: index into ARCH_NAMES (archetypes.js)
     bear: new Uint8Array(MAX_BEASTS),        // BEAR-01: brain.species==='bear' (per-slot cfg, fixed 2-heart swipe, light hits don't cancel windup)
     goblin: new Uint8Array(MAX_BEASTS),      // GOB-01: brain.species==='goblin'
@@ -286,6 +290,12 @@ export function createBeastSim(world, opts) {
       sim.scfg.push(ac);
       sim.ssteps.push({ ...sim.cfgSteps, notice: toSteps(ac.noticeSec), loseSight: toSteps(ac.loseSightSec) });
       sim.pNear[i] = A.nearR; sim.pCone[i] = A.coneCos; sim.pAggro[i] = ARCH_AGGRO_IDX[A.aggro];
+      const tr = TACT_ROLE_OF[A.role]; // BEAST-04: tactical roles (melee pack / swarm / ranged / caster); others stay on the ground layer
+      if (tr !== undefined) {
+        const kk = KINDS[e.components.brain.beastKind];
+        sim.tactOn[i] = 1; sim.tactRole[i] = tr; sim.tactics.tg[i] = 0;
+        sim.tactBand[i * 3] = kk.keepMin !== undefined ? kk.keepMin : A.keepMin; sim.tactBand[i * 3 + 1] = kk.keepMax !== undefined ? kk.keepMax : A.keepMax; sim.tactBand[i * 3 + 2] = A.backOffR;
+      }
     } else { sim.scfg.push(cfg); sim.ssteps.push(sim.cfgSteps); }
     if (sim.fauna && (sim.wolf[i] || sim.bear[i])) sim.preyMask[i] = preyMaskOf(sim.fauna, HUNT_PREY[sim.wolf[i] ? 'wolf' : 'bear']);
     sim.wary[i] = e.components.brain && e.components.brain.temperament === 'wary' ? 1 : 0;
@@ -495,6 +505,7 @@ function stepSim(sim, px, py, pz) {
   if (sim.fauna) huntPass(sim);
   for (let i = 0; i < n; i++) if (live(sim, i)) { perceiveOne(sim, i, px, py, pz); leashOne(sim, i, px, py); }
   sim._ctx.px = px; sim._ctx.py = py;
+  tacticsSync(sim, sim._tS); // BEAST-04: token release + flank re-assign
   for (let i = 0; i < n; i++) if (live(sim, i)) { if (!LAYERS[sim.archIdx[i]](sim, i, sim._ctx)) transitionOne(sim, i, px, py); }
   updatePathRequests(sim, px, py);
   servePathRequest(sim, px, py);
@@ -701,6 +712,7 @@ function checkChaseExit(sim, i, px, py) {
   if (lm === LEASH_RETURN || lm === LEASH_GIVEUP) { sim.waiting[i] = 0; enterReturn(sim, i); return; }
   if ((sim.wolf[i] || sim.goblin[i]) && shouldFlee(sim, i)) { enterFlee(sim, i, px, py); return; } // WOLF-01
   if (sim.ranged[i] && rangedChase(sim, i, px, py, d2)) return; // GOB-02
+  if (sim.tactOn[i] && (sim.tactRole[i] === TACT_RANGED || sim.tactRole[i] === TACT_CASTER) && tacticsBand(sim, i, d2)) return; // BEAST-04
   const wr = sim.scfg[i].windupR;
   if (!sim.ranged[i] && d2 <= wr * wr && sim.seen[i]) {
     // US-079c: only one boar winds up/charges at a time - the first eligible (lowest slot) wins; the rest hold.
@@ -748,6 +760,7 @@ function emitThrow(sim, i, px, py) {
 
 /** US-079c: true while any slot is in WINDUP or CHARGE (the single active charger). */
 function hasActiveCharger(sim, me) {
+  if (sim.tactOn[me]) return !sim.tactics.request(me, sim.tactRole[me] === TACT_SWARM ? TOK_S : TOK_M); // BEAST-04: token pools replace the single-charger rule
   let held = 0;
   for (let k = 0; k < sim.count; k++) {
     if (k === me || sim.group[k] !== sim.group[me]) continue; // WOLF-01/GOB-01: the token is per group (wolves never block boars)
@@ -1154,6 +1167,10 @@ function setSteerTarget(sim, i) {
     return;
   }
 
+  if (sim.tactOn[i] && st === STATE_CHASE) { // BEAST-04: flank slot / band / behind-allies waypoint
+    if (sim.tactRole[i] === TACT_CASTER) tacticsAllies(sim, i);
+    if (tacticsSteer(sim, i, sim._tS)) { const o = sim.tactics.out; steer.setWaypoint(i, o.x, o.y, 0); steer.maxSpeed[i] = sim.scfg[i].chase * o.speed * sim.spdMul[i]; return; }
+  }
   if (sim.ranged[i] && st === STATE_CHASE && sim.waiting[i] === 2) { // GOB-02: back off from the player
     awayTarget(steer.x[i], steer.y[i], sim._px, sim._py, GOBLIN_TUNING.backoffM, sim._tmp);
     steer.setWaypoint(i, sim._tmp.x, sim._tmp.y, 0); steer.maxSpeed[i] = sim.scfg[i].chase * GOBLIN_TUNING.backoffSpeedMul * sim.spdMul[i]; return;
