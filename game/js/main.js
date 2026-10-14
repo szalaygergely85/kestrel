@@ -193,6 +193,7 @@ import { createQuestMarkers } from './quest/sim/questMarkers.js'; // QUEST-MARK-
 import { registerQuestMarks } from './quest/wire/questMarks.js';
 import { createQuestLogScreen, QUEST_LOG_KEYS } from './ui/questLog.js'; // QG-05
 import { createCompassHud } from './ui/compassHud.js'; // COMPASS-02 (D-061)
+import { createCombatHud } from './ui/combatHud.js'; import { setEnemyBarsOn, setDamageNumbersOn } from './ui/combatHudFlags.js'; // HPBAR-02 + DMGNUM-01 (D-086)
 import { createCrafting } from './quest/sim/crafting.js'; // MAIN-WIRE-01: crafting list on C
 import { createCraftView } from './ui/craftView.js';
 import { drawDemoScene } from './dev/demoScene.js';
@@ -266,6 +267,7 @@ const hitStop = createHitStop({ enabled: hitStopEnabled(params, isCaptureOrBench
 let deathRespawnDue = false; // DEATH-FLOW-01: fade finished -> next vitals.step gets a virtual [E] (its normal respawn path, pose logic untouched)
 const deathFlow = createDeathFlow({ enabled: deathFlowEnabled(params, isCaptureOrBench), onRespawn: () => { deathRespawnDue = true; } });
 setReduceMotion(savedSettings.reduceMotion); // SETTINGS-APPLY-01: read at boot, the Settings panel updates it live
+setEnemyBarsOn(savedSettings.enemyBars); setDamageNumbersOn(savedSettings.dmgNumbers); // HPBAR-02 / DMGNUM-01: Combat HUD switches (default On)
 const hurtFx = createHurtFx({ enabled: hurtFxEnabled(params, isCaptureOrBench), reduceMotion: isReduceMotion }); // HURT-FX-01: off in capture/bench/compare and ?fx=0
 const bootOpts = resolveBootOptions({ params, resolved: resolvedQuality, savedSettings, captureLike: isCaptureOrBench, geometryCompare: isGeometryCompare,
   defaultCols: GRID_DEFAULT_COLS, shadowLevel: resolveShadowLevel });
@@ -1166,6 +1168,7 @@ async function runGame(mode, cinematic = null) {
     const t = e && e.data && e.data.transform; if (!t) return false;
     out.x = t.x; out.y = t.y; out.z = t.z; return true;
   } };
+  const combatHud = createCombatHud({ events: engine.events, rgb: assets.palette.rgb, band: worldBand }); // HPBAR-02 + DMGNUM-01: enemy bars + damage numbers
   window.__debug.compass = compass; window.__debug.compassRetarget = () => { const b = saveRelay && saveRelay.quest.book; return b ? compass.target(b, compassResolver) : null; }; window.__debug.compassHidden = () => compassHide; // tools/verify-compass.mjs
   function compassFindMarker(w, markerId) { // structure marker -> world position (same lookup as audio/ambient.js; load-time-ish, cached)
     const o = { x: 0, y: 0, z: 0 };
@@ -1541,6 +1544,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         goblinWire.addFarCamps(planWorldLife(world, window.ASSETS?.levels?.world_geo, 12).camps); // WMP-09: authored-only avoid, same defs on Continue
       }
       beasts = createBeastSim(world, { tileNav: !!gridNav, nav: (lifeNav = gridNav || (worldDef.nav && buildBeastNav(world, worldDef.nav))), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events, band: worldBand, fauna: wild ? wild.fauna : null }); // LIFE-07: predators hunt the ambient fauna
+      combatHud.setSim(beasts); // HPBAR-02 + DMGNUM-01
       if (goblinWire) goblinWire.attach(beasts, { onClank: () => playShieldClank() }); // GOB-07b: camps + spear sim + view
       if (lifeWire) { lifeWire.dispose(); lifeWire = null; } // LIFE-08: night raids (content/life/raids.json), rebuilt with every beast sim
       if (raidDefs && !isCaptureOrBench && mode === 'world') lifeWire = createLifeWire({ ...raidDefs, campDefs: goblinWire ? goblinWire.campDefs : undefined, sim: beasts, events: engine.events, state: world.state, world, book: () => (saveRelay ? saveRelay.quest.book : null) });
@@ -2557,6 +2561,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
           deathFlow.draw(ui, ui.cols, ui.rows); // DEATH-FLOW-01
           presentPickups(engine.world, assets.pickupStyle, fb.timeSec); // US-080b
           compass.setHidden(compassHide); compass.draw(ui, ui.cols, ui.rows, fb.timeSec); // COMPASS-02 (D-061)
+          if (!isCaptureOrBench && playerHandle) { const hp = playerHandle.data.transform; combatHud.frame(cam, fb.rt, ui, hp.x, hp.y, targeting ? targeting.targetId : null, fb.timeSec); combatHud.draw(ui, vitals.dead || wakeOut.inputLocked || isMapOpen() || isSettingsOpen() || pauseResume.soft || pauseResume.active || ending || !!(invView && invView.isOpen)); } // HPBAR-02 + DMGNUM-01
           if (toasts && !vitals.dead && !wakeOut.inputLocked && !isMapOpen()) toasts.draw(ui, fb.timeSec); // US-091a2 loot toast
         }
       }
