@@ -104,15 +104,18 @@ export function authoredHomes(world) {
   return avoid;
 }
 
+/** One generated beast entity (skipped when a restored save already holds it, WMP-09). POI-05b reuses it for the POI fight members. */
+export function spawnBeastEntity(world, id, species, x, y, wary = true) {
+  if (world.get(id)) return;
+  const brain = { kind: 'beast', home: [x, y], temperament: wary ? 'wary' : 'bold' };
+  if (species !== 'boar') brain.species = species;
+  world.spawn('beast', { x, y, z: world.terrain.heightAt(x, y) },
+    { voxel: { anim: 'idle', loop: true, model: MODEL[species] }, brain, targetable: { ...BODY[species] } }, id);
+}
+
 export function spawnRegionalBeasts(world, geo, seed) {
   const avoid = authoredHomes(world);
   const list = generateRegionalBeasts({ geo, terrain: world.terrain, seed, avoid });
-  for (const b of list) {
-    if (world.get(b.id)) continue; // WMP-09: a world restored from a save already holds the herd (saves keep all entities) - spawn only the missing ones
-    const brain = { kind: 'beast', home: [b.x, b.y], temperament: 'wary' };
-    if (b.species !== 'boar') brain.species = b.species;
-    world.spawn('beast', { x: b.x, y: b.y, z: world.terrain.heightAt(b.x, b.y) },
-      { voxel: { anim: 'idle', loop: true, model: MODEL[b.species] }, brain, targetable: { ...BODY[b.species] } }, b.id);
-  }
+  for (const b of list) spawnBeastEntity(world, b.id, b.species, b.x, b.y);
   return list;
 }

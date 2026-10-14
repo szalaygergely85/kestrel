@@ -1,10 +1,10 @@
-// game/js/life/poiFights.js (POI-05, OB-141, D-088): POI mini fights with MIXED respawn.
-//   const pf = createPoiFights({ wire, spawner, events, ringR? });  per sim step: pf.step(px, py, dayIndex);  dispose().
-// - Entering TRIGGER_R (15 m) of a POI with `fight` (and the fight is active per poiWire.fightActive) spawns its members (deterministic ring
-//   slots) through `spawner.spawn(def, k, x, y, guardian) -> entity id | null`; `spawner.despawn(id)` on leave/dispose.
-// - All members dead (`beast:died` {id}): small fight -> wire.markFightCleared(id, day) (comes back after RESPAWN_DAYS = 3, camp rule);
-//   guardian fight (def.guardian) -> wire.markGuardianDead(id): saved in poi.v1, never returns. Either unlocks the POI chest (poiWire).
-// - Member ids are not saved: a half-fought fight restarts when the POI becomes active again (same as camps).
+// game/js/life/poiFights.js (POI-05 + POI-05b, OB-141, D-088): POI mini fights on STATIC beast slots (poiBeasts.js reserves them at boot).
+//   const pf = createPoiFights({ wire, sim, dir, groups, events });  per sim step: pf.step(px, py, dayIndex);  dispose().
+// - The members sit parked (sim.setDown) until the player is within TRIGGER_R (15 m) of the POI AND the spawn-director group is alive
+//   (dir.dead[g] === 0): then they are unparked (reset at home, alive). Leaving beyond LEAVE_R re-parks them (a half-fought fight restarts).
+// - All members dead (`beast:died`): small fight -> wire.markFightCleared(id, day) (the director's camp timer brings it back after 3 days),
+//   guardian (def.guardian, boss class) -> wire.markGuardianDead(id) (never returns; saved in beast.v1 and poi.v1). Either unlocks the chest.
+// - A fight with no sim slot (cut by MAX_BEASTS) or no sim at all counts as cleared at once, so a chest never stays locked for good.
 export const TRIGGER_R = 15, LEAVE_R = 60;
 
 /** Deterministic member positions: n points on a ring (literal offsets, no trig) around the POI centre. */
@@ -15,39 +15,54 @@ export function fightSlots(def, ringR = 4) {
   return out;
 }
 
-export function createPoiFights({ wire, spawner, events = null, ringR = 4 }) {
-  const live = new Map(); // poi id -> { ids:Set, day }
-  const owner = new Map(); // entity id -> poi id
+/** Exact-slot steer re-activation (what beastSim.respawnSlot does; addAgent's lowest-free rule throws for any other slot). */
+function activate(sim, s) { if (!sim.steer.active[s]) { sim.steer.active[s] = 1; sim.steer.radius[s] = sim.cfg.radius; if (s + 1 > sim.steer._hi) sim.steer._hi = s + 1; } }
+/** Park: STATE_GONE via setDown, but keep the steer agent ACTIVE at home - an inactive, non-dormant slot makes sim.resetAll() throw
+ *  (it re-adds every slot with addAgent). GONE slots are skipped by step/dormancy, so the ghost agent is inert.
+ *  NEEDS: sim.parkSlot / sim.unparkSlot(slot) in beastSim.js (lane note) - then drop activate(). */
+function park(sim, s) { sim.setDown(s, true); if (!sim.steer.active[s]) { activate(sim, s); sim.steer.x[s] = sim.homeX[s]; sim.steer.y[s] = sim.homeY[s]; } }
+function unpark(sim, s) { if (sim.unparkSlot) sim.unparkSlot(s); else { activate(sim, s); sim.setDown(s, false); } }
+
+export function createPoiFights({ wire, sim = null, dir = null, groups = null, events = null }) {
+  const gOf = {}; // poi id -> { slots, g (index in the director, -1 without one) }
+  if (sim && groups) for (const gr of groups) { const gi = dir ? dir.groups.indexOf(gr) : -1; gOf[gr.poiId] = { slots: gr.slots, g: gi }; }
+  const live = new Map(); // poi id -> { left:Set(slot), day }
+  const slotPoi = {};      // slot -> poi id
+  for (const id of Object.keys(gOf)) for (const s of gOf[id].slots) slotPoi[s] = id;
+  const parkAll = () => { for (const id of Object.keys(gOf)) for (const s of gOf[id].slots) park(sim, s); live.clear(); };
+  if (sim) parkAll(); // boot: every POI member starts parked
   let spawns = 0;
-  const finish = (poiId, entry) => {
+  const finish = (poiId, day) => {
     const d = wire.defs.find((x) => x.id === poiId);
-    if (d && d.guardian) wire.markGuardianDead(poiId); else wire.markFightCleared(poiId, entry.day);
+    if (d && d.guardian) wire.markGuardianDead(poiId); else wire.markFightCleared(poiId, day);
     live.delete(poiId);
   };
   const off = events ? events.on('beast:died', (p) => {
-    const poiId = p && owner.get(p.id); if (poiId === undefined) return;
-    owner.delete(p.id);
+    const slot = p && sim ? sim.slotOf(p.id) : -1, poiId = slot >= 0 ? slotPoi[slot] : undefined; if (poiId === undefined) return;
     const e = live.get(poiId); if (!e) return;
-    e.ids.delete(p.id);
-    if (e.ids.size === 0) finish(poiId, e);
+    e.left.delete(slot);
+    if (e.left.size === 0) finish(poiId, e.day);
   }) : null;
-  const clear = (poiId) => { const e = live.get(poiId); if (!e) return; for (const id of e.ids) { owner.delete(id); if (spawner.despawn) spawner.despawn(id); } live.delete(poiId); };
+  const offReset = events ? events.on('beasts:reset', () => { if (sim) parkAll(); }) : null; // resetAll() un-downs every slot
   const pf = {
     step(px, py, day) {
       for (const d of wire.defs) {
         if (!d.fight) continue;
-        const dist = Math.hypot(d.at[0] - px, d.at[1] - py), e = live.get(d.id);
-        if (e) { if (dist > LEAVE_R) clear(d.id); continue; }
-        if (dist > TRIGGER_R || !wire.isLive(d.id) || !wire.fightActive(d.id, day)) continue;
-        const ids = new Set(), pts = fightSlots(d, ringR);
-        for (let k = 0; k < pts.length; k++) { const id = spawner.spawn(d, k, pts[k][0], pts[k][1], !!d.guardian && k === 0); if (id != null) { ids.add(id); owner.set(id, d.id); spawns++; } }
-        // no spawn path for this fight (spawner returned nothing): treat as cleared so the chest never stays locked for good
-        const e2 = { ids, day }; if (ids.size) live.set(d.id, e2); else finish(d.id, e2);
+        const dist = Math.hypot(d.at[0] - px, d.at[1] - py), e = live.get(d.id), m = gOf[d.id];
+        if (e) { if (dist > LEAVE_R) { for (const s of m.slots) park(sim, s); live.delete(d.id); } continue; }
+        if (m && d.guardian && m.g >= 0 && dir.dead[m.g] && !wire.guardianDead(d.id)) wire.markGuardianDead(d.id); // beast.v1 -> poi.v1 (load)
+        if (dist > TRIGGER_R || !wire.isLive(d.id)) continue;
+        if (!m) { if (wire.fightActive(d.id, day)) finish(d.id, day); continue; } // no slots: treat as cleared (chest must open)
+        if (m.g >= 0 ? dir.dead[m.g] : !wire.fightActive(d.id, day)) continue;      // cleared and not respawned yet
+        if (wire.guardianDead(d.id)) continue;
+        if (m.g >= 0) dir.alive[m.g] = m.slots.length; // a restarted half-fight counts all members again
+        const left = new Set(); for (const s of m.slots) { unpark(sim, s); left.add(s); spawns++; }
+        live.set(d.id, { left, day });
       }
     },
     isFighting(id) { return live.has(id); },
     get spawns() { return spawns; },
-    dispose() { for (const id of Array.from(live.keys())) clear(id); if (typeof off === 'function') off(); },
+    dispose() { if (sim && live.size) for (const id of Array.from(live.keys())) for (const s of gOf[id].slots) park(sim, s); live.clear(); if (typeof off === 'function') off(); if (typeof offReset === 'function') offReset(); },
   };
   return pf;
 }

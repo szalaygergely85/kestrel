@@ -29,18 +29,18 @@ export function terrainLos(terrain) {
 }
 
 /**
- * o: { sim, members (generateRegionalBeasts output: {id,species,region,x,y,group}), seed, state (world.state), events, terrain,
+ * o: { sim, extraGroups? (POI-05b: ready groups; `park` groups respawn as parked and poiFights unparks them), members (generateRegionalBeasts output: {id,species,region,x,y,group}), seed, state (world.state), events, terrain,
  *      dayLenSec (the game's real day length), hfovRad? (full camera hfov, rad; default 1.2), los? }
  * Returns { dir, step(dt, px, py, fx, fy), save(), setDifficulty(name)->bool, dispose() }.
  */
 export function createBeastDirectorWire(o) {
   const { sim, state } = o, ms = [];
   for (const m of o.members) { const slot = sim.slotOf(m.id); if (slot >= 0) ms.push({ ...m, kind: m.species, key: m.region, slot }); }
-  const groups = buildGroups(ms, o.seed || 12, null), gOfSlot = Object.create(null);
+  const groups = buildGroups(ms, o.seed || 12, null).concat(o.extraGroups || []), gOfSlot = Object.create(null);
   for (let g = 0; g < groups.length; g++) for (const s of groups[g].slots) gOfSlot[s] = g;
   const dir = createSpawnDirector({
     groups, dayLenSec: o.dayLenSec, viewCos: viewCosFor(o.hfovRad || 1.2), los: o.los || (o.terrain ? terrainLos(o.terrain) : null),
-    onRespawn: (g, gr) => { for (const s of gr.slots) { if (sim.isDown && sim.isDown(s)) sim.setDown(s, false); else sim.respawnSlot(s); } wire.save(); },
+    onRespawn: (g, gr) => { if (gr.park) { for (const s of gr.slots) sim.setDown(s, true); wire.save(); return; } for (const s of gr.slots) { if (sim.isDown && sim.isDown(s)) sim.setDown(s, false); else sim.respawnSlot(s); } wire.save(); },
   });
   dir.setDifficulty(resolveDifficulty(difficultyName()));
   if (sim.tactics && sim.tactics.setDifficulty) applyDifficulty(sim, difficultyName(), dir);

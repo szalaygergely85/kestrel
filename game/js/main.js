@@ -111,7 +111,7 @@ import { createLifeWire, prepareRaidDefs, createOutwallLife } from './life/lifeW
 import { planWorldLife } from './quest/sim/worldGen.js';
 import { bootPoiWire } from './life/poiWire.js'; // POI-02 (OB-141, D-088)
 import { createPoiDiscover } from './ui/poiDiscover.js'; // POI-03
-import { createPoiFights } from './life/poiFights.js'; // POI-05: spawner is a stub until a runtime beast-slot pool exists (lane note)
+import { createPoiFights } from './life/poiFights.js'; import { spawnPoiBeasts, poiGroups } from './life/poiBeasts.js'; // POI-05/05b: fight members = static parked beast slots
 import { bootRegionalBeasts } from './quest/sim/regionalBeastsBoot.js'; // WM-12
 import { HFOV_DEG } from '../../engine/index.js'; import { createBeastDirectorWire } from './quest/beastDirectorWire.js'; import { setDifficultyName } from './ui/difficultyFlag.js'; // BEAST-WIRE-01
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
@@ -1540,7 +1540,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       ensureWolves(world); // WOLF-01: turns MAP-26 anchors wolf1..5 into wolf beasts (no-op while they are absent)
       ensureBears(world); // BEAR-01: blackBear1..3 -> bear beasts
       if (poiWire) { if (poiFights) poiFights.dispose(); poiFights = null; poiWire.dispose(); poiWire = null; poiDiscover = null; if (chestHook) chestHook.setExtraDefs([]); }
-      if (!isCaptureOrBench && mode === 'world' && world.terrainGrid && gridEnabled(params)) { poiWire = bootPoiWire(world, window.ASSETS?.levels?.world_geo, worldDef, 12, { openedOf: () => (saveRelay ? saveRelay.openedChests : []), onChange: (l) => { if (chestHook) chestHook.setExtraDefs(l); } }); if (poiWire) window.__debug.poi = { get wire() { return poiWire; }, get discover() { return poiDiscover; } }; if (poiWire) poiDiscover = createPoiDiscover({ wire: poiWire, say: (t) => { if (lootToast) lootToast.say(t, [226, 214, 176]); } }); } if (poiWire) poiFights = createPoiFights({ wire: poiWire, spawner: { spawn: () => null }, events: engine.events }); // POI-02/03/05 + POI-CHEST-01
+      if (!isCaptureOrBench && mode === 'world' && world.terrainGrid && gridEnabled(params)) { poiWire = bootPoiWire(world, window.ASSETS?.levels?.world_geo, worldDef, 12, { openedOf: () => (saveRelay ? saveRelay.openedChests : []), onChange: (l) => { if (chestHook) chestHook.setExtraDefs(l); } }); if (poiWire) window.__debug.poi = { get wire() { return poiWire; }, get discover() { return poiDiscover; } }; if (poiWire) poiDiscover = createPoiDiscover({ wire: poiWire, say: (t) => { if (lootToast) lootToast.say(t, [226, 214, 176]); } }); } // POI-02/03 + POI-CHEST-01 (fights: POI-05b below)
       if (goblinWire) { goblinWire.dispose(); goblinWire = null; } // GOB-07b: before the new sim (camps add members)
       if (goblinJson && !isCaptureOrBench && mode === 'world') goblinWire = createGoblinWire({ world, events: engine.events, state: world.state, json: goblinJson, terrain: world.terrain, groundAt: (x, y) => world.terrain.groundAt(x, y) });
       // WM-04 (38.59 dec. 3): grid worlds (?grid=1) have no fixed nav.area - the world builds one nav tile per band with the SAME params as the fixed grid
@@ -1555,9 +1555,12 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (goblinWire && world.terrainGrid && gridEnabled(params)) { // WMP-02: far goblin camps, last in slot order (authored, regional, far camps)
         goblinWire.addFarCamps(planWorldLife(world, window.ASSETS?.levels?.world_geo, 12).camps); // WMP-09: authored-only avoid, same defs on Continue
       }
+      const poiMembers = poiWire ? spawnPoiBeasts(world, poiWire.defs) : null; // POI-05b: after far camps, so their slot order is untouched
       beasts = createBeastSim(world, { tileNav: !!gridNav, nav: (lifeNav = gridNav || (worldDef.nav && buildBeastNav(world, worldDef.nav))), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events, band: worldBand, fauna: wild ? wild.fauna : null }); // LIFE-07: predators hunt the ambient fauna
       combatHud.setSim(beasts); // HPBAR-02 + DMGNUM-01
-      if (Array.isArray(regionalList) && mode === 'world') beastDir = createBeastDirectorWire({ sim: beasts, members: regionalList, seed: 12, state: world.state, events: engine.events, terrain: world.terrain, dayLenSec: clockCfg.dayLenS, hfovRad: HFOV_DEG * Math.PI / 180 }); // BEAST-WIRE-01 (D-083/D-087)
+      const poiGr = poiMembers ? poiGroups(beasts, poiMembers, poiWire.defs) : [];
+      if (Array.isArray(regionalList) && mode === 'world') beastDir = createBeastDirectorWire({ extraGroups: poiGr, sim: beasts, members: regionalList, seed: 12, state: world.state, events: engine.events, terrain: world.terrain, dayLenSec: clockCfg.dayLenS, hfovRad: HFOV_DEG * Math.PI / 180 }); // BEAST-WIRE-01 (D-083/D-087)
+      if (poiWire) poiFights = createPoiFights({ wire: poiWire, sim: beasts, dir: beastDir ? beastDir.dir : null, groups: poiGr, events: engine.events }); // POI-05b
       if (goblinWire) goblinWire.attach(beasts, { onClank: () => playShieldClank() }); // GOB-07b: camps + spear sim + view
       if (lifeWire) { lifeWire.dispose(); lifeWire = null; } // LIFE-08: night raids (content/life/raids.json), rebuilt with every beast sim
       if (raidDefs && !isCaptureOrBench && mode === 'world') lifeWire = createLifeWire({ ...raidDefs, campDefs: goblinWire ? goblinWire.campDefs : undefined, sim: beasts, events: engine.events, state: world.state, world, book: () => (saveRelay ? saveRelay.quest.book : null) });
