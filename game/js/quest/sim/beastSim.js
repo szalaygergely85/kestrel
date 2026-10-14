@@ -22,7 +22,8 @@ import { createTactics, tacticsSync, tacticsSteer, tacticsBand, tacticsAllies, T
 import { archIndex } from './archetypes.js';
 import { perceive, leashState, returnTarget, LEASH_HOME, LEASH_ENGAGE, LEASH_RETURN, LEASH_GIVEUP } from '../../../../engine/index.js';
 
-export const MAX_BEASTS = 96; // GOB-01: boars + wolves + bears + goblin camps (was 32; loot.js MAX_SLOTS must match)
+export const MAX_BEASTS = 160; // BEAST-06b (38.64 (8)): was 96 (GOB-01), 32 before; loot.js MAX_SLOTS must match
+export const ACTIVE_CAP = 48, ENGAGED_CAP = 12; // BEAST-06b: <= 48 simulated slots (nearest), <= 12 of them prioritised as engaged
 const PATH_SLOTS = 64; // waypoints kept per beast path (truncated, final = the exact goal - see `storePath`)
 
 // ---- states -----------------------------------------------------------------------------------------------------
@@ -55,6 +56,7 @@ export const STATE_CAST = 23;      // caster / healer cast (a hit cancels)
 const TACT_ROLE_OF = Object.freeze({ melee: TACT_MELEE, ranged: TACT_RANGED, caster: TACT_CASTER, swarm: TACT_SWARM }); // archetype role -> tactical role (BEAST-04)
 const ARCH_AGGRO_IDX = Object.freeze({ hostile: 0, whenHit: 1, never: 2, near: 3 });
 const FIRST_DEAD_STATE = STATE_DYING;
+const isEngaged = (st) => st === STATE_NOTICE || st === STATE_CHASE || st === STATE_WINDUP || st === STATE_CHARGE || st === STATE_RECOVER || st === STATE_CIRCLE || st === STATE_CAST || st === STATE_GRAB || st === STATE_FLEE;
 const deadSt = (st) => st >= FIRST_DEAD_STATE && st <= STATE_GONE; // EAT (13) is alive
 const HUNT_PREY = { wolf: ['rabbit', 'deer'], bear: ['deer'] }; // LIFE-07: species-filtered prey (38.56 c)
 const GOAL_ARRIVE_R = 3, ALT_R = 14, ALT_HIT_R = 1.4, ALT_COOLDOWN_S = 6, MAX_ALT = 8; // LIFE-08 (38.56 d): raid goal + villager alt targets
@@ -72,6 +74,8 @@ const DEFAULT_ACCEL = 12;   // m/s^2
 const CHARGE_ACCEL = 70;    // m/s^2 (29.1 "Charge: waypoint pos + cd*20, accel 70")
 const WANDER_MAX_NODES = 500;
 const TRAVEL_MAX_NODES = 3000;
+const CHASE_MAX_NODES = 800;  // BEAST-06c: the chase target is <= loseR away, so a smaller A* budget is enough
+const REPATH_STAGGER = 8;     // BEAST-06c: slot % 8 extra steps on the repath timer spreads chasers' repath ticks
 const WAYPOINT_ARRIVE = 0.5;     // m, setWaypoint's slow-down radius (29.1 step 4)
 const WAYPOINT_ADVANCE_D2 = 0.36; // m^2 (0.6 m, 29.1 step 4 "advance to the next one within 0.6 m")
 const CONTACT_PAD = 0.1;         // m (29.1 step 6 "dist2D <= radius + PHYSICS.radius + 0.1")
@@ -212,7 +216,7 @@ export function createBeastSim(world, opts) {
     pAggro: new Uint8Array(MAX_BEASTS),      // 0 hostile 1 whenHit 2 never 3 near (ARCH_AGGRO order)
     _ctx: { px: 0, py: 0 },
     tactOn: new Uint8Array(MAX_BEASTS), tactRole: new Uint8Array(MAX_BEASTS), tactBand: new Float64Array(MAX_BEASTS * 3), // BEAST-04 (tactics.js)
-    tactics: createTactics(MAX_BEASTS, (opts && opts.seed) || 0x9e3779b1), _allyN: 0, _allyX: 0, _allyY: 0, _tS: { CHASE: STATE_CHASE, WINDUP: STATE_WINDUP, CHARGE: STATE_CHARGE, RECOVER: STATE_RECOVER },
+    tactics: createTactics(MAX_BEASTS, (opts && opts.seed) || 0x9e3779b1), _allyN: 0, _allyX: 0, _allyY: 0, _tS: { CIRCLE: STATE_CIRCLE, CHASE: STATE_CHASE, WINDUP: STATE_WINDUP, CHARGE: STATE_CHARGE, RECOVER: STATE_RECOVER },
     archIdx: new Uint8Array(MAX_BEASTS),     // BEAST-03a: index into ARCH_NAMES (archetypes.js)
     bear: new Uint8Array(MAX_BEASTS),        // BEAR-01: brain.species==='bear' (per-slot cfg, fixed 2-heart swipe, light hits don't cancel windup)
     goblin: new Uint8Array(MAX_BEASTS),      // GOB-01: brain.species==='goblin'
@@ -222,6 +226,7 @@ export function createBeastSim(world, opts) {
     packer: new Uint8Array(MAX_BEASTS),      // GOB-01: wolf or melee goblin (circle while waiting, retreat after the strike)
     down: new Uint8Array(MAX_BEASTS),        // GOB-01b: setDown(slot, true) -> STATE_GONE until setDown(slot, false) (not hashed/saved)
     dormCamp: new Uint8Array(MAX_BEASTS), dormTile: new Uint8Array(MAX_BEASTS), tileMode: false, // WM-04 reasons
+    dormCap: new Uint8Array(MAX_BEASTS), capMark: new Uint8Array(MAX_BEASTS), capIdx: new Int16Array(ACTIVE_CAP), capD: new Float64Array(ACTIVE_CAP), activeN: 0, engagedN: 0, engNow: 0, pathServes: 0, // BEAST-06b: active-cap reason
     dormant: new Uint8Array(MAX_BEASTS),     // GOB-01: setDormant(slot, true) -> skipped like GONE, state kept
     fleeing: new Uint8Array(MAX_BEASTS),     // WOLF-01: STATE_RETURN that runs away from the player first
     hunt: new Uint8Array(MAX_BEASTS),        // LIFE-07: 1 = STATE_WANDER leg chasing a fauna prey slot (huntSlot)
@@ -238,7 +243,8 @@ export function createBeastSim(world, opts) {
 
     tick: 0,
     lastServed: -1,
-    stats: { astar: 0, astarNodes: 0 },
+    stats: { astar: 0, astarNodes: 0, direct: 0 },
+    _losPath: new Int32Array(3), _losXY: new Float64Array(6),
 
     // Scratch (zero allocation after create): findPath's `outPath` must hold >= grid.w*grid.h entries (astar.js
     // contract); smoothPath's output is at most that many waypoints before truncation to PATH_SLOTS.
@@ -379,7 +385,7 @@ export function createBeastSim(world, opts) {
   /** GOB-01: a dormant slot is skipped like GONE (no perceive/path/steer/post, steer agent parked) but keeps its state.
    *  WM-04: two independent reasons (camp distance, nav tile / player distance); a slot is dormant while either is set. */
   function applyDormant(slot) {
-    const d = (sim.dormCamp[slot] | sim.dormTile[slot]) ? 1 : 0;
+    const d = (sim.dormCamp[slot] | sim.dormTile[slot] | sim.dormCap[slot]) ? 1 : 0;
     if (sim.dormant[slot] === d || deadSt(sim.state[slot])) return;
     sim.dormant[slot] = d;
     sim.steer.vx[slot] = 0; sim.steer.vy[slot] = 0;
@@ -390,6 +396,36 @@ export function createBeastSim(world, opts) {
     if (slot < 0 || slot >= sim.count) return;
     sim.dormCamp[slot] = on ? 1 : 0;
     applyDormant(slot);
+  };
+  /** BEAST-06b (38.64 (8)): active cap. Of the non-dead, tile-awake slots the <= ENGAGED_CAP nearest engaged ones (notice/chase/windup/
+   *  charge/recover/circle/cast/grab/flee) are picked first, then the nearest others up to ACTIVE_CAP; every other slot gets the third
+   *  dormancy reason (one compare per slot). Insertion select into preallocated arrays: no allocation. Call ~every 30-60 steps. */
+  function capSelect(from, maxN, px, py, engagedOnly) {
+    let n = 0;
+    const idx = sim.capIdx, dd = sim.capD;
+    for (let i = 0; i < sim.count; i++) {
+      if (sim.capMark[i] || deadSt(sim.state[i]) || sim.dormTile[i] || sim.dormCamp[i] || sim.down[i]) continue;
+      if (engagedOnly && !isEngaged(sim.state[i])) continue;
+      const dx = sim.steer.x[i] - px, dy = sim.steer.y[i] - py, d = dx * dx + dy * dy;
+      if (n >= maxN && d >= dd[from + maxN - 1]) continue;
+      let j = n < maxN ? n++ : maxN - 1;
+      while (j > 0 && dd[from + j - 1] > d) { dd[from + j] = dd[from + j - 1]; idx[from + j] = idx[from + j - 1]; j--; }
+      dd[from + j] = d; idx[from + j] = i;
+    }
+    return n;
+  }
+  sim.updateActiveSet = function updateActiveSet(px, py) {
+    sim.capMark.fill(0);
+    const ne = capSelect(0, ENGAGED_CAP, px, py, true);
+    for (let j = 0; j < ne; j++) sim.capMark[sim.capIdx[j]] = 1;
+    const no = capSelect(ne, ACTIVE_CAP - ne, px, py, false);
+    for (let j = 0; j < no; j++) sim.capMark[sim.capIdx[ne + j]] = 1;
+    sim.activeN = ne + no; sim.engagedN = ne;
+    for (let i = 0; i < sim.count; i++) {
+      if (deadSt(sim.state[i])) continue;
+      sim.dormCap[i] = sim.capMark[i] || sim.dormTile[i] || sim.dormCamp[i] || sim.down[i] ? 0 : 1;
+      applyDormant(i);
+    }
   };
   /** WM-04: nav-tile / 200 m dormancy (separate reason from the camp's, so a camp wake never wakes a tile-dormant beast). */
   sim.setTileDormant = function setTileDormant(slot, on) {
@@ -423,6 +459,7 @@ export function createBeastSim(world, opts) {
       const out = hx < g.x0 || hy < g.y0 || hx >= x1 || hy >= y1 || dx * dx + dy * dy > r2;
       sim.setTileDormant(i, out);
     }
+    sim.updateActiveSet(px, py); // BEAST-06b
   };
   /** GOB-01b: on -> slot goes to STATE_GONE (steer agent dropped, hidden, skipped); off -> back alive at home, hp max. */
   sim.setDown = function setDown(slot, on) {
@@ -513,6 +550,9 @@ function stepSim(sim, px, py, pz) {
   for (let i = 0; i < n; i++) if (live(sim, i)) { perceiveOne(sim, i, px, py, pz); leashOne(sim, i, px, py); }
   sim._ctx.px = px; sim._ctx.py = py;
   tacticsSync(sim, sim._tS); // BEAST-04: token release + flank re-assign
+  let eng = 0; // BEAST-06b: per-step count of chasing slots (engaged except NOTICE); NOTICE -> CHASE is allowed while < ENGAGED_CAP
+  for (let i = 0; i < n; i++) { const st = sim.state[i]; if (st !== STATE_NOTICE && isEngaged(st) && !sim.dormant[i]) eng++; }
+  sim.engNow = eng;
   for (let i = 0; i < n; i++) if (live(sim, i)) { if (!LAYERS[sim.archIdx[i]](sim, i, sim._ctx)) transitionOne(sim, i, px, py); }
   updatePathRequests(sim, px, py);
   servePathRequest(sim, px, py);
@@ -619,6 +659,7 @@ function transitionOne(sim, i, px, py) {
     case STATE_EAT: eatStep(sim, i, px, py); break;
     case STATE_NOTICE: noticeStep(sim, i); break;
     case STATE_CHASE: checkChaseExit(sim, i, px, py); break;
+    case STATE_CIRCLE: circleStep(sim, i, px, py); break; // BEAST-04
     case STATE_WINDUP: windupStep(sim, i, px, py); break;
     case STATE_CHARGE: /* handled in postOne (needs the post-steer position) */ break;
     case STATE_RECOVER: recoverStep(sim, i, px, py); break;
@@ -707,9 +748,27 @@ function pickWanderTarget(sim, i) {
 }
 
 function noticeStep(sim, i) {
-  sim.timer[i]--;
-  if (sim.timer[i] <= 0) enterChase(sim, i);
+  if (sim.timer[i] > 0) sim.timer[i]--;
+  if (sim.timer[i] <= 0) {
+    if (sim.engNow >= ENGAGED_CAP) return; // BEAST-06b: engaged cap - hold in NOTICE (faces the player) until a chaser frees up
+    sim.engNow++; enterChase(sim, i);
+  }
 }
+
+/** BEAST-04: sticky token-less waiter (melee/swarm tactical slots). Each step: leash/lose rules, else ask for the token
+ *  again; granted -> WINDUP. Movement = flank ring waypoint (tacticsSteer). No state change while it waits. */
+function circleStep(sim, i, px, py) {
+  const steer = sim.steer, dx = px - steer.x[i], dy = py - steer.y[i], d2 = dx * dx + dy * dy;
+  const lm = sim._lagents[i].leashMode;
+  if (lm === LEASH_RETURN || lm === LEASH_GIVEUP) { sim.tactics.release(i); enterReturn(sim, i); return; }
+  if ((sim.wolf[i] || sim.goblin[i]) && shouldFlee(sim, i)) { sim.tactics.release(i); enterFlee(sim, i, px, py); return; }
+  const lr = sim.scfg[i].loseR;
+  if (d2 > lr * lr || sim.unseen[i] >= sim.ssteps[i].loseSight) { sim.tactics.release(i); enterReturn(sim, i); return; }
+  const wr = sim.scfg[i].windupR;
+  if (d2 <= wr * wr && sim.seen[i] && sim.tactics.request(i, sim.tactRole[i] === TACT_SWARM ? TOK_S : TOK_M)) enterWindup(sim, i);
+}
+
+function enterCircle(sim, i) { sim.state[i] = STATE_CIRCLE; sim.waiting[i] = 0; sim.pathLen[i] = 0; sim.pathIdx[i] = 0; }
 
 function checkChaseExit(sim, i, px, py) {
   const cfg = sim.cfg, steer = sim.steer;
@@ -721,6 +780,10 @@ function checkChaseExit(sim, i, px, py) {
   if (sim.ranged[i] && rangedChase(sim, i, px, py, d2)) return; // GOB-02
   if (sim.tactOn[i] && (sim.tactRole[i] === TACT_RANGED || sim.tactRole[i] === TACT_CASTER) && tacticsBand(sim, i, d2)) return; // BEAST-04
   const wr = sim.scfg[i].windupR;
+  if (sim.tactOn[i] && !sim.ranged[i] && d2 <= wr * wr && sim.seen[i]) { // BEAST-04: token or sticky CIRCLE (no waiting flag flip-flop)
+    if (hasActiveCharger(sim, i)) enterCircle(sim, i); else { sim.waiting[i] = 0; enterWindup(sim, i); }
+    return;
+  }
   if (!sim.ranged[i] && d2 <= wr * wr && sim.seen[i]) {
     // US-079c: only one boar winds up/charges at a time - the first eligible (lowest slot) wins; the rest hold.
     if (hasActiveCharger(sim, i)) sim.waiting[i] = 1;
@@ -1037,18 +1100,20 @@ function stepDead(sim, i) {
 function updatePathRequests(sim, px, py) {
   const n = sim.count, cfg = sim.cfg;
   for (let i = 0; i < n; i++) {
-    if (deadSt(sim.state[i])) continue; // US-079b: dead slots don't path
+    if (sim.dormant[i] || deadSt(sim.state[i])) continue; // US-079b: dead slots don't path; BEAST-06b: a dormant slot is one compare
     if (sim.repathT[i] > 0) sim.repathT[i]--;
     if (sim.pathReq[i]) continue;
     const st = sim.state[i];
     if (st === STATE_CHASE) {
       if (sim.waiting[i]) continue; // US-079c: a waiter holds position (no path into the player)
       if (sim.pathLen[i] === 0 || sim.pathIdx[i] >= sim.pathLen[i]) {
-        sim.goalX[i] = px; sim.goalY[i] = py; sim.pathReq[i] = 1;
+        sim.goalX[i] = px; sim.goalY[i] = py;
+        if (!directChase(sim, i, px, py)) sim.pathReq[i] = 1;
       } else if (sim.repathT[i] <= 0) {
         const dx = px - sim.goalX[i], dy = py - sim.goalY[i];
         if (dx * dx + dy * dy > cfg.repathMoveM * cfg.repathMoveM) {
-          sim.goalX[i] = px; sim.goalY[i] = py; sim.pathReq[i] = 1;
+          sim.goalX[i] = px; sim.goalY[i] = py;
+          if (!directChase(sim, i, px, py)) sim.pathReq[i] = 1;
         }
       }
     } else if (st === STATE_RETURN) {
@@ -1059,6 +1124,23 @@ function updatePathRequests(sim, px, py) {
   }
 }
 
+/** BEAST-06c: when the straight line (nav-grid supercover, no corner cutting) to the target is clear, steer direct:
+ * a 1-waypoint path to the target, no A*. The engine LOS test is reached through `smoothPath` on the 3-cell path
+ * [a, a, b]: it returns 2 waypoints iff a->b is in sight (the middle cell is only kept when the line is blocked). */
+function directChase(sim, i, px, py) {
+  const grid = sim.grid, steer = sim.steer, cp = sim._losPath;
+  const a = grid.cellY(steer.y[i]) * grid.w + grid.cellX(steer.x[i]);
+  const b = grid.cellY(py) * grid.w + grid.cellX(px);
+  cp[0] = a; cp[1] = a; cp[2] = b;
+  if (smoothPath(grid, cp, 3, sim._losXY) !== 2) return false;
+  const base = i * PATH_SLOTS * 2;
+  sim.path[base] = px; sim.path[base + 1] = py;
+  sim.pathLen[i] = 1; sim.pathIdx[i] = 0;
+  sim.repathT[i] = sim.cfgSteps.repath + (i % REPATH_STAGGER);
+  sim.stats.direct = (sim.stats.direct || 0) + 1;
+  return true;
+}
+
 /** At most one `findPath` per tick, round robin from the slot after the last one served (29.1 step 3). */
 function servePathRequest(sim, px, py) {
   void px; void py;
@@ -1066,11 +1148,11 @@ function servePathRequest(sim, px, py) {
   if (n === 0) return;
   for (let k = 1; k <= n; k++) {
     const i = (sim.lastServed + k) % n;
-    if (sim.pathReq[i] && !deadSt(sim.state[i])) {
+    if (sim.pathReq[i] && !sim.dormant[i] && !deadSt(sim.state[i])) {
       computePath(sim, i);
       sim.pathReq[i] = 0;
-      sim.repathT[i] = sim.cfgSteps.repath;
-      sim.lastServed = i;
+      sim.repathT[i] = sim.cfgSteps.repath + (i % REPATH_STAGGER);
+      sim.lastServed = i; sim.pathServes++;
       return;
     }
   }
@@ -1080,7 +1162,8 @@ function computePath(sim, i) {
   const grid = sim.grid, astar = sim.astar, steer = sim.steer;
   const sx = grid.cellX(steer.x[i]), sy = grid.cellY(steer.y[i]);
   const gx = grid.cellX(sim.goalX[i]), gy = grid.cellY(sim.goalY[i]);
-  const maxNodes = sim.state[i] === STATE_WANDER && !sim.goalOn[i] ? WANDER_MAX_NODES : TRAVEL_MAX_NODES;
+  const st = sim.state[i];
+  const maxNodes = st === STATE_CHASE ? CHASE_MAX_NODES : st === STATE_WANDER && !sim.goalOn[i] ? WANDER_MAX_NODES : TRAVEL_MAX_NODES;
   const len = findPath(astar, sx, sy, gx, gy, sim._cellPath, { maxNodes });
   sim.stats.astar++;
   sim.stats.astarNodes += len; // approximation: findPath does not expose expanded-node count (see report deviations)
@@ -1174,7 +1257,7 @@ function setSteerTarget(sim, i) {
     return;
   }
 
-  if (sim.tactOn[i] && st === STATE_CHASE) { // BEAST-04: flank slot / band / behind-allies waypoint
+  if (sim.tactOn[i] && (st === STATE_CHASE || st === STATE_CIRCLE)) { // BEAST-04: flank slot / band / behind-allies waypoint
     if (sim.tactRole[i] === TACT_CASTER) tacticsAllies(sim, i);
     if (tacticsSteer(sim, i, sim._tS)) { const o = sim.tactics.out; steer.setWaypoint(i, o.x, o.y, 0); steer.maxSpeed[i] = sim.scfg[i].chase * o.speed * sim.spdMul[i]; return; }
   }

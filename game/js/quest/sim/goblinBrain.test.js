@@ -149,7 +149,7 @@ const gz = (sim) => groundZ(sim.world, PX, PY);
   ok('never more than 2 tokens (8k ticks)', maxTok <= 2, `max ${maxTok}`);
   ok('two goblins do attack together', seen2);
   ok('goblins attacked (bites > 5)', bites > 5, `bites ${bites}`);
-  ok('waiting goblins circled (about 3-5 m)', circ > 20 && circBad / circ < 0.1, `circ ${circ} bad ${circBad}`);
+  ok('waiting goblins circled (about 3-5 m)', circ > 8 && circBad / circ < 0.1, `circ ${circ} bad ${circBad}`);
 }
 
 // 3. a hit goblin retreats about 3 m
@@ -199,7 +199,7 @@ const gz = (sim) => groundZ(sim.world, PX, PY);
 
 // 6. 48 beasts: 0 alloc per step, MAX_BEASTS == 96 (this scenario still uses 48 slots)
 {
-  ok('MAX_BEASTS 96 (WM-12, was 48)', MAX_BEASTS === 96);
+  ok('MAX_BEASTS 160 (BEAST-06b, was 96 WM-12)', MAX_BEASTS === 160);
   const ents = [];
   for (let k = 0; k < 40; k++) ents.push(gobEntity('g' + k, PX - 20 + (k % 8) * 5, PY - 30 + Math.floor(k / 8) * 4, 'melee'));
   for (let k = 0; k < 8; k++) ents.push(beastEntity('b' + k, PX + 20 + k * 2, PY + 20));

@@ -46,6 +46,7 @@ paletteMod; terrainDef; geoMod; detailPassMod; lanternMod; leverMod; voxelPropsM
 
 const STEPS_PER_HOUR = 18000; // 300 s per game hour at 60 Hz (D-064: 2 real hours per day)
 const PLAZA = [915, 945];
+const CAPS_RING = +(process.env.CAPS_RING || 155), CAPS_ENGAGED = 12; // BEAST-06b: caps-full scene = MAX_BEASTS slots, <= 48 active, 12 engaged
 const GOBLINS_AWAKE = 20, THROWERS = 6, SPEARS_FLYING = 8; // GOB-08 (38.57 (6))
 // WM-06 (38.59): whole-map poses, same systems at a far-region pose on the default world; JS (life+fauna+beast p95 sum) <= 8 ms (D-007)
 export const POSES = [['glasswater', 1200, 600], ['northwood', 1660, 600], ['highPastures', 650, 600], ['ashMile', 1780, 1100], ['downs', 1580, 1430],
@@ -64,7 +65,7 @@ function parseArgs(argv) {
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--strict') o.strict = true; else if (a === '--json') o.json = true; else if (a === '--quiet') o.quiet = true;
-    else if (a === '--poses') o.poses = true; else if (a === '--no-goblin') o.goblin = false; else if (a === '--scenarios') o.scenarios = +argv[++i]; else if (a === '--hours') o.hours = +argv[++i]; else if (a === '--start') o.start = +argv[++i];
+    else if (a === '--poses') o.poses = true; else if (a === '--no-goblin') o.goblin = false; else if (a === '--no-caps') o.caps = false; else if (a === '--scenarios') o.scenarios = +argv[++i]; else if (a === '--hours') o.hours = +argv[++i]; else if (a === '--start') o.start = +argv[++i];
   }
   return o;
 }
@@ -83,7 +84,7 @@ function summarize(t, n) {
 }
 
 /** Builds the whole living world once per scenario (fresh state, same seeds). */
-async function build(assets, goblin = false, grid = false) {
+async function build(assets, goblin = false, grid = false, caps = false) {
   const events = new Events();
   let wdef = assets.world('world_m1');
   if (grid) { const geo = globalThis.ASSETS.levels.world_geo; if (geo && geo.util) geo.util.installGeo(globalThis.ASSETS.levels.overworld_far.util); if (!(wdef.terrainGrid && wdef.bounds && wdef.bounds.shape === 'polygon')) wdef = gridVariant(wdef, geo); }
@@ -119,8 +120,15 @@ async function build(assets, goblin = false, grid = false) {
     let seen = 0; world.forEachEntity((e) => { const b = e.components && e.components.brain; if (b && b.species === 'goblin' && b.role === 'thrower' && ++seen > THROWERS) b.role = 'melee'; });
   }
   const pad = found.filter((e) => !(e.components.brain.species === 'goblin'));
-  for (let n = found.length + goblinCount; n < BENCH_BEASTS && pad.length; n++) {
+  // BEAST-06b caps-full: pad to MAX_BEASTS around the plaza; the first CAPS_ENGAGED clones sit 8-20 m from the player (they aggro = engaged), the rest in rings out to 180 m
+  const target = caps ? MAX_BEASTS : BENCH_BEASTS;
+  for (let n = found.length + goblinCount; n < target && pad.length; n++) {
     const src = pad[n % pad.length], t = src.transform;
+    if (caps) {
+      const k = n - found.length, a = k * 2.399963, r = k < CAPS_ENGAGED ? 8 + k : 25 + ((k * 37) % CAPS_RING);
+      world.spawn(src.type, { ...t, x: PLAZA[0] + r * Math.cos(a), y: PLAZA[1] + r * Math.sin(a) }, JSON.parse(JSON.stringify(src.components)), `benchBeast${n}`);
+      continue;
+    }
     world.spawn(src.type, { ...t, x: t.x + 2 * n, y: t.y + 1 }, JSON.parse(JSON.stringify(src.components)), `benchBeast${n}`);
   }
   const nav = buildBeastNav(world, wdef.nav);
@@ -135,8 +143,8 @@ async function build(assets, goblin = false, grid = false) {
   return { warmMs, campDefs, goblinCount, events, world, nav, fauna, beasts, life, pushOut, realBeasts, groundAt: (x, y) => world.terrain.groundAt(x, y) };
 }
 
-async function runScenario(assets, name, dist, opt, goblin = false, at = null) {
-  const S = await build(assets, goblin, !!at);
+async function runScenario(assets, name, dist, opt, goblin = false, at = null, caps = false) {
+  const S = await build(assets, goblin, !!at, caps);
   const nav = S.nav;
   const px = at ? at[0] : PLAZA[0] + dist, py = at ? at[1] : PLAZA[1];
   if (at) S.world.ensureBandFor(px, py); // pose band baked at load, as the game does behind the fade
@@ -172,6 +180,7 @@ async function runScenario(assets, name, dist, opt, goblin = false, at = null) {
   const total = Math.round(opt.hours * STEPS_PER_HOUR), WARM = Math.min(600, total >> 2);
   const ta = new Float64Array(total), tv = new Float64Array(total), tr = new Float64Array(total), tf = new Float64Array(total), tb = new Float64Array(total);
   const pz = S.groundAt(px, py);
+  const tbp = new Float64Array(total); let nPath = 0;
   let alive = 0, aliveSamples = 0, heap0 = 0, flyMax = 0;
   const gc = globalThis.gc;
   for (let k = 0; k < total; k++) {
@@ -184,9 +193,12 @@ async function runScenario(assets, name, dist, opt, goblin = false, at = null) {
     t0 = performance.now(); tr[k] = t0 - t1;
     S.fauna.update(1 / 60, player, cam);
     t1 = performance.now(); tf[k] = t1 - t0;
+    const served0 = S.beasts.pathServes;
+    if (caps && k % 30 === 0) S.beasts.updateActiveSet(px, py); // director cadence (38.64 (8): every 30 steps)
     S.beasts.step(px, py, pz);
     if (goblin) camps.step(day, px, py); // camp dormancy checks count as beastSim goblin extras
     t0 = performance.now(); tb[k] = t0 - t1;
+    if (S.beasts.pathServes !== served0) { nPath++; tbp[nPath - 1] = tb[k]; }
     if (goblin) {
       // top the pool up to 8 in flight: 10 m lobs from the thrower slots around the player (worst case, regardless of the brains' reload)
       const sx = px + 10 * Math.cos(k * 0.1), sy = py + 10 * Math.sin(k * 0.1);
@@ -211,7 +223,7 @@ async function runScenario(assets, name, dist, opt, goblin = false, at = null) {
     scenario: name, dist, steps: total, beasts: S.beasts.count, realBeasts: S.realBeasts, villagers: vill.n, packSize: pack.length,
     raidStarts, goblins: S.goblinCount, throwers: throwers.length, flyMax, faunaAliveAvg: aliveSamples ? +(alive / aliveSamples).toFixed(1) : 0, raidSeen: raids.isActive(0) || null,
     warmMs: +S.warmMs.toFixed(1), heapGrowthBytes: heapGrowth, spearHeap, astar: vill.stats.astar, maxAstarPerStep: vill.stats.maxPerStep,
-    sys: { villagers: summarize(sub(tv), n), raids: summarize(sub(tr), n), life: summarize(sub(life), n), fauna: summarize(sub(tf), n), beast: summarize(sub(tb), n), ...(goblin ? { spears: summarize(sub(ta), n) } : {}) },
+    pathSteps: nPath, pathStepP50: nPath ? summarize(tbp, nPath).p50 : 0, activeN: S.beasts.activeN, engagedN: S.beasts.engagedN, sys: { villagers: summarize(sub(tv), n), raids: summarize(sub(tr), n), life: summarize(sub(life), n), fauna: summarize(sub(tf), n), beast: summarize(sub(tb), n), ...(goblin ? { spears: summarize(sub(ta), n) } : {}) },
   };
   if (S.world.dispose) S.world.dispose();
   return res;
@@ -225,9 +237,22 @@ export async function runBench(opt) {
   // GOB-08: 48 beasts, 20 goblins awake (2 camps + torch raid), 6 throwers, 8 spears in flight, player in Outwall
   let gob = null;
   if (opt.goblin !== false) { gob = await runScenario(assets, 'goblins 48 beasts', 0, { ...opt, hours: opt.goblinHours ?? opt.hours }, true); results.push(gob); }
+  // BEAST-06b: caps-full scene (160 slots, 48 active, 12 engaged), player in Outwall
+  let capsRes = null;
+  if (opt.caps !== false) { capsRes = await runScenario(assets, 'caps-full 160/48/12', 0, { ...opt, hours: opt.capsHours ?? opt.hours }, false, null, true); results.push(capsRes); }
   const rows = [];
   for (const r of results) {
     if (r === gob) continue;
+    if (r === capsRes) {
+      const sc = r.scenario, b = r.sys.beast, tot = r.sys.life.p95 + r.sys.fauna.p95 + b.p95;
+      const row = (label, value, cap, verdict) => rows.push({ scenario: sc, label, value, cap, verdict: verdict ?? (cap == null ? 'INFO' : value <= cap ? 'PASS' : 'FLAG') });
+      row(`setup: ${r.beasts} slots, ${r.activeN} active, ${r.engagedN} engaged`, r.beasts, null, r.beasts === MAX_BEASTS && r.activeN <= 48 && r.engagedN <= 12 ? 'PASS' : 'FLAG');
+      row('beastSim incl. layers JS p95 per step (ms, 38.64 (12))', b.p95, 1.2);
+      row(`A* steps (${r.pathSteps}/${r.steps - 0} steps; median beast cost on those steps ms)`, r.pathStepP50, null);
+      row('caps-full total life+fauna+beast JS p95 sum (ms, D-007)', tot, 8);
+      row('caps-full heap growth after warm-up (bytes; engine astar/LOS ~180 B/slot is a known separate issue)', r.heapGrowthBytes, null, r.heapGrowthBytes == null ? 'INFO (run with --expose-gc)' : 'INFO');
+      continue;
+    }
     if (r.scenario.startsWith('pose ')) { const v = r.sys.life.p95 + r.sys.fauna.p95 + r.sys.beast.p95; rows.push({ scenario: r.scenario, label: 'WM-06 life+fauna+beast JS p95 sum (ms, cap 8 = D-007)', value: v, cap: 8, verdict: v <= 8 ? 'PASS' : 'FLAG' }); continue; }
     for (const b of BUDGETS) {
       const v = r.sys[b.sys][b.stat];
