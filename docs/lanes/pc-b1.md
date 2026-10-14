@@ -1031,3 +1031,7 @@ mq.ow.path: Hesk (938,930), owPath trigger center (942,925.33) r10 = owGate gap:
 ### ED-FOLIAGE-04 (kestrel-1, 2026-10-14)
 - `grassBrush.js` decor mode: `applyDecorDab` (paint toward target*128, erase toward 0, reset to 128), `beginDecorStroke`/`endStroke` -> `{kind:'decor', layer, rect, entries}`, `applyDecorSide`, `rebuildDecor(world, rect)` (rect only), `decorPaintText` (canonical, only painted layers) / `parseDecorPaint` / `decorWorldOpt`; `decorPaint.test.mjs` (26 checks); io `saveDecorPaint`; Foliage tab: Mode button, decor layer, target, Reset; undo/redo, Ctrl+S saves it, editor World.load gets `decorPaint` opt + loads `content/terrain/<key>.decorPaint.json`. validate-content has no terrain-file kinds: nothing added. Not run in a browser: `tools/verify-edfol-04.mjs` (stub, prints console steps).
 - NEEDS B1-main: game/js/main.js must fetch `content/terrain/<key>.decorPaint.json` and pass `decorPaint: GB-style {layer: grassMaskFromJSON(j)}` in worldLoadOpts (none exists today = unchanged world).
+
+### B1-MAIN logic + decorPaint (kestrel-1, 2026-10-14)
+- main.js: `createLogicWire` built after the beast sim each 'world:loaded' (only when `ASSETS.logicBlocks` non-empty = 01d loader; none today = no handler, no events, no save state), unregisters old handler, book `quest:accepted/done` -> `logicWire.notify`. hint/sound callbacks left unwired until 01d.
+- decorPaint: new `game/js/decorPaintLoad.js` (+ test) fetches `content/terrain/overworld_far.decorPaint.json` quietly (missing = null) -> `worldLoadOpts.decorPaint`.
