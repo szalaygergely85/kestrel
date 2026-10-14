@@ -26,6 +26,10 @@ const clean = () => ({
 });
 const run = (c) => lint(c);
 assert.deepEqual(run(clean()), [], 'clean control: no findings');
+// OB-172/D-104: an fx:true billboard (fire) passes R2, a non-fx sprite is still flagged
+{ const c = clean(); c.fxModels = new Set(['burnerFire']); c.entities.push(E('fire', 1, 1, 0, { sprite: { model: 'burnerFire' } }), E('berry', 2, 2, 0, { sprite: { model: 'berrySprig' } }));
+  const f = run(c).filter((x) => x.rule === 'R2' || x.id); assert.equal(f.filter((x) => String(x.id || x.where).includes('berry')).length >= 1, true, 'non-fx sprite flagged');
+  assert.equal(f.some((x) => String(x.id || x.where) === 'fire'), false, 'fx sprite allowed'); }
 
 // each fixture breaks exactly one thing and must produce a finding of that rule only
 const cases = {
