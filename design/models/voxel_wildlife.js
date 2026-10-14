@@ -1027,10 +1027,15 @@
       head:  { box: [1, 0, 10, 9, 11, 17], pivot: [5, 11, 12.5], parent: 'body' },
       ears:  { box: [1, 4, 17, 9, 8, 21], pivot: [5, 5.5, 17], parent: 'head' },
       tail:  { box: [1, 27, 2, 9, 44, 17], pivot: [5, 27, 12.6], parent: 'body' },
-      legFL: { box: [1, 9, 0, 5, 16, 9], pivot: [3.5, 12.5, 10], parent: 'body' },
-      legFR: { box: [5, 9, 0, 9, 16, 9], pivot: [6.5, 12.5, 10], parent: 'body' },
-      legBL: { box: [1, 20, 0, 5, 28, 9], pivot: [3.5, 24, 10], parent: 'body' },
-      legBR: { box: [5, 20, 0, 9, 28, 9], pivot: [6.5, 24, 10], parent: 'body' }
+      legFL: { box: [1, 9, 5, 5, 16, 9], pivot: [3.5, 12.5, 10], parent: 'body' },
+      legFR: { box: [5, 9, 5, 9, 16, 9], pivot: [6.5, 12.5, 10], parent: 'body' },
+      legBL: { box: [1, 20, 5, 5, 28, 9], pivot: [3.5, 24, 10], parent: 'body' },
+      legBR: { box: [5, 20, 5, 9, 28, 9], pivot: [6.5, 24, 10], parent: 'body' },
+      // ANIM-B-01b lower leg parts (appended: indices 0-7 unchanged). Split z5 (elbow / hock); hind hock pivot y25.5 = behind the hip-foot line
+      legFL2: { box: [1, 9, 0, 5, 16, 5], pivot: [3.5, 12.5, 5], parent: 'legFL' },
+      legFR2: { box: [5, 9, 0, 9, 16, 5], pivot: [6.5, 12.5, 5], parent: 'legFR' },
+      legBL2: { box: [1, 20, 0, 5, 28, 5], pivot: [3.5, 25.5, 5], parent: 'legBL' },
+      legBR2: { box: [5, 20, 0, 9, 28, 5], pivot: [6.5, 25.5, 5], parent: 'legBR' }
     };
     var ORDER = Object.keys(PARTS), PIV = {};
     for (i = 0; i < ORDER.length; i++) PIV[ORDER[i]] = PARTS[ORDER[i]].pivot;
@@ -1080,30 +1085,40 @@
         [200, sn([58, 0, 0], null, { FL: { dy: -1.8, lift: 1 } })],
         [300, SN]
       ], true),
-      walk: clip(gaitKeys(LIMBS, { n: 12, T: 600, beta: 0.62, A: 5, H: 2.5, phase: { BL: 0, FL: 0.75, BR: 0.5, FR: 0.25 },
-        dropK: 0.6, bounce: 0.15, pitch: 0.6, yaw: 1.5,
-        rot: function (t) { return R3([10 + 3 * Math.sin(4 * Math.PI * t + 1.57), 0, -Math.sin(2 * Math.PI * t)], [4, 0, 0], [6, 0, 6 * Math.sin(2 * Math.PI * t)]); } }), true),
-      trot: clip(gaitKeys(LIMBS, { n: 8, T: 400, beta: 0.42, A: 6.5, H: 3.5, phase: { FL: 0, BR: 0, FR: 0.5, BL: 0.5 },
-        dropK: 0.6, bounce: -0.4, pitch: 0.8, yaw: 0,
-        rot: function (t) { return R3([14 + 2 * Math.sin(4 * Math.PI * t), 0, 0], [-4, 0, 0], [16, 0, 4 * Math.sin(2 * Math.PI * t)]); } }), true),
-      run: clip([
-        [50, { b: [-5, 0, 0, 0, 0, 0], rot: R3([12, 0, 0], [-28, 0, 0], [22, 0, 0]),
-               BL: { dy: 3 }, BR: { dy: -3.5 }, FL: { free: [-10, 0, 0], up: 2 }, FR: { free: [35, 0, 0], up: 1.5 } }],
-        [50, { b: [-7, 0, 0, 0, 0, 0.1], rot: R3([10, 0, 0], [-28, 0, 0], [22, 0, 0]),
-               BL: { free: [35, 0, 0], up: 0.5 }, BR: { dy: 3 }, FL: { free: [-40, 0, 0], up: 1 }, FR: { free: [-15, 0, 0], up: 2 } }],
-        [50, { b: [-2, 0, 0, 0, 0, 2.5], rot: R3([12, 0, 0], [-30, 0, 0], [20, 0, 0]),
-               BL: { free: [45, 0, 0] }, BR: { free: [40, 0, 0], up: 0.5 }, FL: { free: [-50, 0, 0] }, FR: { free: [-45, 0, 0], up: 0.5 } }],
-        [50, { b: [4, 0, 0, 0, 0, 2.0], rot: R3([16, 0, 0], [-28, 0, 0], [18, 0, 0]),
-               BL: { free: [25, 0, 0], up: 1.5 }, BR: { free: [45, 0, 0] }, FL: { free: [-35, 0, 0] }, FR: { free: [-48, 0, 0] } }],
-        [50, { b: [7, 0, 0, 0, 0, 0.3], rot: R3([18, 0, 0], [-26, 0, 0], [18, 0, 0]),
-               BL: { free: [-10, 0, 0], up: 2 }, BR: { free: [20, 0, 0], up: 1.5 }, FL: { dy: -3.5 }, FR: { free: [-30, 0, 0], up: 0.5 } }],
-        [50, { b: [9, 0, 0, 0, 0, -0.2], rot: R3([16, 0, 0], [-26, 0, 0], [20, 0, 0]),
-               BL: { free: [-35, 0, 0], up: 1.5 }, BR: { free: [-15, 0, 0], up: 2 }, FL: { dy: 3 }, FR: { dy: -3.5 } }],
-        [50, { b: [5, 0, 0, 0, 0, -0.2], rot: R3([12, 0, 0], [-28, 0, 0], [22, 0, 0]),
-               BL: { free: [-40, 0, 0], up: 0.5 }, BR: { free: [-38, 0, 0], up: 1.5 }, FL: { free: [30, 0, 0], up: 1 }, FR: { dy: 3 } }],
-        [50, { b: [0, 0, 0, 0, 0, 0], rot: R3([10, 0, 0], [-28, 0, 0], [22, 0, 0]),
-               BL: { dy: -3.5 }, BR: { free: [-35, 0, 0], up: 0.5 }, FL: { free: [40, 0, 0], up: 1.5 }, FR: { free: [30, 0, 0], up: 1 } }]
-      ], true),
+      // GAIT-A BEGIN fox.walk (tools/gen-gait.mjs: option A, lateral gait, duty 0.625, tuned 0.45 m/s, 8 keys x 50 ms; re-run, do not hand-edit)
+      walk: { durations: [50,50,50,50,50,50,50,50], loop: true, frames: [
+          { body: { rot: [0.565,1.427,0], pos: [0,0,0.086] }, head: { rot: [0.395,0,0], pos: [0,0,0] }, ears: { rot: [2.728,0,0], pos: [0,0,0] }, tail: { rot: [8.524,0,5.592], pos: [0,0,0] }, legFL: { rot: [-8.727,0,0], pos: [0,0,2.248] }, legFR: { rot: [-3.439,0,0], pos: [0,0,0.014] }, legBL: { rot: [-16.959,0,0], pos: [0,0,0.065] }, legBR: { rot: [9.422,0,0], pos: [0,0,-0.295] }, legFL2: { rot: [30.344,0,0], pos: [0,0,0] }, legFR2: { rot: [1.72,0,0], pos: [0,0,0] }, legBL2: { rot: [8.479,0,0], pos: [0,0,0] }, legBR2: { rot: [-3.155,0,0], pos: [0,0,0] } },
+          { body: { rot: [0.825,0.681,1.061], pos: [0,0,0.135] }, head: { rot: [0.578,0,-0.849], pos: [0,0,0] }, ears: { rot: [-1.248,0,0], pos: [0,0,0] }, tail: { rot: [7.621,0,5.492], pos: [0,0,0] }, legFL: { rot: [-26.121,0,0], pos: [0,0,1.839] }, legFR: { rot: [3.439,0,0], pos: [0,0,0.023] }, legBL: { rot: [-10.203,0,0], pos: [0,0,-0.025] }, legBR: { rot: [17.865,0,0], pos: [0,0,-0.753] }, legFL2: { rot: [39.041,0,0], pos: [0,0,0] }, legFR2: { rot: [-1.72,0,0], pos: [0,0,0] }, legBL2: { rot: [5.101,0,0], pos: [0,0,0] }, legBR2: { rot: [-8.932,0,0], pos: [0,0,0] } },
+          { body: { rot: [-0.565,-0.464,1.5], pos: [0,0,-0.086] }, head: { rot: [-0.395,0,-1.2], pos: [0,0,0] }, ears: { rot: [-2.728,0,0], pos: [0,0,0] }, tail: { rot: [3.476,0,2.174], pos: [0,0,0] }, legFL: { rot: [-17.388,0,0], pos: [0,0,-0.195] }, legFR: { rot: [10.355,0,0], pos: [0,0,0.041] }, legBL: { rot: [-3.422,0,0], pos: [0,0,0.255] }, legBR: { rot: [24.031,0,0], pos: [0,0,1.286] }, legFL2: { rot: [8.694,0,0], pos: [0,0,0] }, legFR2: { rot: [-5.178,0,0], pos: [0,0,0] }, legBL2: { rot: [1.711,0,0], pos: [0,0,0] }, legBR2: { rot: [-33.666,0,0], pos: [0,0,0] } },
+          { body: { rot: [-0.825,-1.337,1.061], pos: [0,0,-0.135] }, head: { rot: [-0.578,0,-0.849], pos: [0,0,0] }, ears: { rot: [1.248,0,0], pos: [0,0,0] }, tail: { rot: [4.379,0,-2.417], pos: [0,0,0] }, legFL: { rot: [-10.355,0,0], pos: [0,0,0.003] }, legFR: { rot: [17.388,0,0], pos: [0,0,-0.046] }, legBL: { rot: [3.457,0,0], pos: [0,0,0.187] }, legBR: { rot: [5.582,0,0], pos: [0,0,2.069] }, legFL2: { rot: [5.178,0,0], pos: [0,0,0] }, legFR2: { rot: [-8.694,0,0], pos: [0,0,0] }, legBL2: { rot: [-1.728,0,0], pos: [0,0,0] }, legBR2: { rot: [-24.442,0,0], pos: [0,0,0] } },
+          { body: { rot: [0.565,-1.427,0], pos: [0,0,0.086] }, head: { rot: [0.395,0,0], pos: [0,0,0] }, ears: { rot: [2.728,0,0], pos: [0,0,0] }, tail: { rot: [8.524,0,-5.592], pos: [0,0,0] }, legFL: { rot: [-3.439,0,0], pos: [0,0,0.014] }, legFR: { rot: [-8.727,0,0], pos: [0,0,2.248] }, legBL: { rot: [9.422,0,0], pos: [0,0,-0.295] }, legBR: { rot: [-16.959,0,0], pos: [0,0,0.065] }, legFL2: { rot: [1.72,0,0], pos: [0,0,0] }, legFR2: { rot: [30.344,0,0], pos: [0,0,0] }, legBL2: { rot: [-3.155,0,0], pos: [0,0,0] }, legBR2: { rot: [8.479,0,0], pos: [0,0,0] } },
+          { body: { rot: [0.825,-0.681,-1.061], pos: [0,0,0.135] }, head: { rot: [0.578,0,0.849], pos: [0,0,0] }, ears: { rot: [-1.248,0,0], pos: [0,0,0] }, tail: { rot: [7.621,0,-5.492], pos: [0,0,0] }, legFL: { rot: [3.439,0,0], pos: [0,0,0.023] }, legFR: { rot: [-26.121,0,0], pos: [0,0,1.839] }, legBL: { rot: [17.865,0,0], pos: [0,0,-0.753] }, legBR: { rot: [-10.203,0,0], pos: [0,0,-0.025] }, legFL2: { rot: [-1.72,0,0], pos: [0,0,0] }, legFR2: { rot: [39.041,0,0], pos: [0,0,0] }, legBL2: { rot: [-8.932,0,0], pos: [0,0,0] }, legBR2: { rot: [5.101,0,0], pos: [0,0,0] } },
+          { body: { rot: [-0.565,0.464,-1.5], pos: [0,0,-0.086] }, head: { rot: [-0.395,0,1.2], pos: [0,0,0] }, ears: { rot: [-2.728,0,0], pos: [0,0,0] }, tail: { rot: [3.476,0,-2.174], pos: [0,0,0] }, legFL: { rot: [10.355,0,0], pos: [0,0,0.041] }, legFR: { rot: [-17.388,0,0], pos: [0,0,-0.195] }, legBL: { rot: [24.031,0,0], pos: [0,0,1.286] }, legBR: { rot: [-3.422,0,0], pos: [0,0,0.255] }, legFL2: { rot: [-5.178,0,0], pos: [0,0,0] }, legFR2: { rot: [8.694,0,0], pos: [0,0,0] }, legBL2: { rot: [-33.666,0,0], pos: [0,0,0] }, legBR2: { rot: [1.711,0,0], pos: [0,0,0] } },
+          { body: { rot: [-0.825,1.337,-1.061], pos: [0,0,-0.135] }, head: { rot: [-0.578,0,0.849], pos: [0,0,0] }, ears: { rot: [1.248,0,0], pos: [0,0,0] }, tail: { rot: [4.379,0,2.417], pos: [0,0,0] }, legFL: { rot: [17.388,0,0], pos: [0,0,-0.046] }, legFR: { rot: [-10.355,0,0], pos: [0,0,0.003] }, legBL: { rot: [5.582,0,0], pos: [0,0,2.069] }, legBR: { rot: [3.457,0,0], pos: [0,0,0.187] }, legFL2: { rot: [-8.694,0,0], pos: [0,0,0] }, legFR2: { rot: [5.178,0,0], pos: [0,0,0] }, legBL2: { rot: [-24.442,0,0], pos: [0,0,0] }, legBR2: { rot: [-1.728,0,0], pos: [0,0,0] } }
+      ] },
+      // GAIT-A END fox.walk
+      // GAIT-A BEGIN fox.trot (tools/gen-gait.mjs: option A, diagonal gait, duty 0.5, tuned 1 m/s, 6 keys x 50 ms; re-run, do not hand-edit)
+      trot: { durations: [50,50,50,50,50,50], loop: true, frames: [
+          { body: { rot: [0.847,0.951,0], pos: [0,0,0.214] }, head: { rot: [0.028,0,0], pos: [0,0,0] }, ears: { rot: [2.728,0,0], pos: [0,0,0] }, tail: { rot: [17.683,0,3.728], pos: [0,0,0] }, legFL: { rot: [-23.403,0,0], pos: [0,0,-0.523] }, legFR: { rot: [23.403,0,0], pos: [0,0,-0.33] }, legBL: { rot: [24.305,0,0], pos: [0,0,-1.218] }, legBR: { rot: [-22.623,0,0], pos: [0,0,-0.058] }, legFL2: { rot: [11.701,0,0], pos: [0,0,0] }, legFR2: { rot: [-11.701,0,0], pos: [0,0,0] }, legBL2: { rot: [-12.152,0,0], pos: [0,0,0] }, legBR2: { rot: [11.311,0,0], pos: [0,0,0] } },
+          { body: { rot: [0.649,0.208,0.866], pos: [0,0,0.185] }, head: { rot: [0.022,0,-0.693], pos: [0,0,0] }, ears: { rot: [-2.445,0,0], pos: [0,0,0] }, tail: { rot: [16.094,0,3.119], pos: [0,0,0] }, legFL: { rot: [-7.657,0,0], pos: [0,0,-0.135] }, legFR: { rot: [-8.605,0,0], pos: [0,0,3.018] }, legBL: { rot: [30.77,0,0], pos: [0,0,1.28] }, legBR: { rot: [-7.573,0,0], pos: [0,0,-0.072] }, legFL2: { rot: [3.828,0,0], pos: [0,0,0] }, legFR2: { rot: [34.613,0,0], pos: [0,0,0] }, legBL2: { rot: [-41.366,0,0], pos: [0,0,0] }, legBR2: { rot: [3.786,0,0], pos: [0,0,0] } },
+          { body: { rot: [-1.496,-0.743,0.866], pos: [0,0,-0.4] }, head: { rot: [-0.05,0,-0.693], pos: [0,0,0] }, ears: { rot: [-0.283,0,0], pos: [0,0,0] }, tail: { rot: [14.223,0,-0.609], pos: [0,0,0] }, legFL: { rot: [7.657,0,0], pos: [0,0,0.276] }, legFR: { rot: [-32.265,0,0], pos: [0,0,2.605] }, legBL: { rot: [5.288,0,0], pos: [0,0,3.218] }, legBR: { rot: [7.744,0,0], pos: [0,0,0.374] }, legFL2: { rot: [-3.828,0,0], pos: [0,0,0] }, legFR2: { rot: [46.443,0,0], pos: [0,0,0] }, legBL2: { rot: [-28.625,0,0], pos: [0,0,0] }, legBR2: { rot: [-3.872,0,0], pos: [0,0,0] } },
+          { body: { rot: [0.847,-0.951,0], pos: [0,0,0.214] }, head: { rot: [0.028,0,0], pos: [0,0,0] }, ears: { rot: [2.728,0,0], pos: [0,0,0] }, tail: { rot: [17.683,0,-3.728], pos: [0,0,0] }, legFL: { rot: [23.403,0,0], pos: [0,0,-0.33] }, legFR: { rot: [-23.403,0,0], pos: [0,0,-0.523] }, legBL: { rot: [-22.623,0,0], pos: [0,0,-0.058] }, legBR: { rot: [24.305,0,0], pos: [0,0,-1.218] }, legFL2: { rot: [-11.701,0,0], pos: [0,0,0] }, legFR2: { rot: [11.701,0,0], pos: [0,0,0] }, legBL2: { rot: [11.311,0,0], pos: [0,0,0] }, legBR2: { rot: [-12.152,0,0], pos: [0,0,0] } },
+          { body: { rot: [0.649,-0.208,-0.866], pos: [0,0,0.185] }, head: { rot: [0.022,0,0.693], pos: [0,0,0] }, ears: { rot: [-2.445,0,0], pos: [0,0,0] }, tail: { rot: [16.094,0,-3.119], pos: [0,0,0] }, legFL: { rot: [-8.605,0,0], pos: [0,0,3.018] }, legFR: { rot: [-7.657,0,0], pos: [0,0,-0.135] }, legBL: { rot: [-7.573,0,0], pos: [0,0,-0.072] }, legBR: { rot: [30.77,0,0], pos: [0,0,1.28] }, legFL2: { rot: [34.613,0,0], pos: [0,0,0] }, legFR2: { rot: [3.828,0,0], pos: [0,0,0] }, legBL2: { rot: [3.786,0,0], pos: [0,0,0] }, legBR2: { rot: [-41.366,0,0], pos: [0,0,0] } },
+          { body: { rot: [-1.496,0.743,-0.866], pos: [0,0,-0.4] }, head: { rot: [-0.05,0,0.693], pos: [0,0,0] }, ears: { rot: [-0.283,0,0], pos: [0,0,0] }, tail: { rot: [14.223,0,0.609], pos: [0,0,0] }, legFL: { rot: [-32.265,0,0], pos: [0,0,2.605] }, legFR: { rot: [7.657,0,0], pos: [0,0,0.276] }, legBL: { rot: [7.744,0,0], pos: [0,0,0.374] }, legBR: { rot: [5.288,0,0], pos: [0,0,3.218] }, legFL2: { rot: [46.443,0,0], pos: [0,0,0] }, legFR2: { rot: [-3.828,0,0], pos: [0,0,0] }, legBL2: { rot: [-3.872,0,0], pos: [0,0,0] }, legBR2: { rot: [-28.625,0,0], pos: [0,0,0] } }
+      ] },
+      // GAIT-A END fox.trot
+      // GAIT-A BEGIN fox.run (tools/gen-gait.mjs: option A, gallop gait, duty 0.35, tuned 1.3 m/s, 8 keys x 50 ms; re-run, do not hand-edit)
+      run: { durations: [50,50,50,50,50,50,50,50], loop: true, frames: [
+          { body: { rot: [2.259,1.427,0], pos: [0,0,0.429] }, head: { rot: [-1.242,0,0], pos: [0,0,0] }, ears: { rot: [2.728,0,0], pos: [0,0,0] }, tail: { rot: [23.683,0,3.728], pos: [0,0,0] }, legFL: { rot: [-28.697,0,0], pos: [0,0,-0.746] }, legFR: { rot: [-33.235,0,0], pos: [0,0,0.094] }, legBL: { rot: [29.184,0,0], pos: [0,0,-0.716] }, legBR: { rot: [31.979,0,0], pos: [0,0,-1.61] }, legFL2: { rot: [14.349,0,0], pos: [0,0,0] }, legFR2: { rot: [28.236,0,0], pos: [0,0,0] }, legBL2: { rot: [-24.539,0,0], pos: [0,0,0] }, legBR2: { rot: [-19.579,0,0], pos: [0,0,0] } },
+          { body: { rot: [3.301,0.681,1.061], pos: [0,0,0.675] }, head: { rot: [-1.816,0,-0.849], pos: [0,0,0] }, ears: { rot: [-1.248,0,0], pos: [0,0,0] }, tail: { rot: [23.081,0,3.661], pos: [0,0,0] }, legFL: { rot: [-7.964,0,0], pos: [0,0,-0.336] }, legFR: { rot: [-24.382,0,0], pos: [0,0,-0.607] }, legBL: { rot: [16.659,0,0], pos: [0,0,0.163] }, legBR: { rot: [27.324,0,0], pos: [0,0,-0.792] }, legFL2: { rot: [3.982,0,0], pos: [0,0,0] }, legFR2: { rot: [12.191,0,0], pos: [0,0,0] }, legBL2: { rot: [-22.894,0,0], pos: [0,0,0] }, legBR2: { rot: [-24.89,0,0], pos: [0,0,0] } },
+          { body: { rot: [-2.259,-0.464,1.5], pos: [0,0,-0.429] }, head: { rot: [1.242,0,-1.2], pos: [0,0,0] }, ears: { rot: [-2.728,0,0], pos: [0,0,0] }, tail: { rot: [20.317,0,1.449], pos: [0,0,0] }, legFL: { rot: [11.983,0,0], pos: [0,0,0.198] }, legFR: { rot: [-3.975,0,0], pos: [0,0,0.152] }, legBL: { rot: [-0.437,0,0], pos: [0,0,2.509] }, legBR: { rot: [13.428,0,0], pos: [0,0,2.221] }, legFL2: { rot: [-5.991,0,0], pos: [0,0,0] }, legFR2: { rot: [1.987,0,0], pos: [0,0,0] }, legBL2: { rot: [-13.807,0,0], pos: [0,0,0] }, legBR2: { rot: [-21.605,0,0], pos: [0,0,0] } },
+          { body: { rot: [-3.301,-1.337,1.061], pos: [0,0,-0.675] }, head: { rot: [1.816,0,-0.849], pos: [0,0,0] }, ears: { rot: [1.248,0,0], pos: [0,0,0] }, tail: { rot: [20.919,0,-1.611], pos: [0,0,0] }, legFL: { rot: [26.311,0,0], pos: [0,0,0.381] }, legFR: { rot: [16.047,0,0], pos: [0,0,0.242] }, legBL: { rot: [-16.913,0,0], pos: [0,0,2.205] }, legBR: { rot: [-3.938,0,0], pos: [0,0,2.745] }, legFL2: { rot: [-10.142,0,0], pos: [0,0,0] }, legFR2: { rot: [-8.023,0,0], pos: [0,0,0] }, legBL2: { rot: [-0.065,0,0], pos: [0,0,0] }, legBR2: { rot: [-11.313,0,0], pos: [0,0,0] } },
+          { body: { rot: [2.259,-1.427,0], pos: [0,0,0.429] }, head: { rot: [-1.242,0,0], pos: [0,0,0] }, ears: { rot: [2.728,0,0], pos: [0,0,0] }, tail: { rot: [23.683,0,-3.728], pos: [0,0,0] }, legFL: { rot: [9.595,0,0], pos: [0,0,1.262] }, legFR: { rot: [23.506,0,0], pos: [0,0,-0.023] }, legBL: { rot: [-27.515,0,0], pos: [0,0,-0.433] }, legBR: { rot: [-19.69,0,0], pos: [0,0,0.446] }, legFL2: { rot: [11.78,0,0], pos: [0,0,0] }, legFR2: { rot: [-5.77,0,0], pos: [0,0,0] }, legBL2: { rot: [13.758,0,0], pos: [0,0,0] }, legBR2: { rot: [2.874,0,0], pos: [0,0,0] } },
+          { body: { rot: [3.301,-0.681,-1.061], pos: [0,0,0.675] }, head: { rot: [-1.816,0,0.849], pos: [0,0,0] }, ears: { rot: [-1.248,0,0], pos: [0,0,0] }, tail: { rot: [23.081,0,-3.661], pos: [0,0,0] }, legFL: { rot: [-9.597,0,0], pos: [0,0,1.817] }, legFR: { rot: [5.754,0,0], pos: [0,0,1.28] }, legBL: { rot: [-7.874,0,0], pos: [0,0,-0.843] }, legBR: { rot: [-23.535,0,0], pos: [0,0,-0.758] }, legFL2: { rot: [29.072,0,0], pos: [0,0,0] }, legFR2: { rot: [15.836,0,0], pos: [0,0,0] }, legBL2: { rot: [3.937,0,0], pos: [0,0,0] }, legBR2: { rot: [11.767,0,0], pos: [0,0,0] } },
+          { body: { rot: [-2.259,0.464,-1.5], pos: [0,0,-0.429] }, head: { rot: [1.242,0,1.2], pos: [0,0,0] }, ears: { rot: [-2.728,0,0], pos: [0,0,0] }, tail: { rot: [20.317,0,-1.449], pos: [0,0,0] }, legFL: { rot: [-25.558,0,0], pos: [0,0,1.616] }, legFR: { rot: [-13.218,0,0], pos: [0,0,2.208] }, legBL: { rot: [12.174,0,0], pos: [0,0,0.368] }, legBR: { rot: [-3.952,0,0], pos: [0,0,0.792] }, legFL2: { rot: [36.154,0,0], pos: [0,0,0] }, legFR2: { rot: [31.426,0,0], pos: [0,0,0] }, legBL2: { rot: [-6.047,0,0], pos: [0,0,0] }, legBR2: { rot: [1.976,0,0], pos: [0,0,0] } },
+          { body: { rot: [-3.301,1.337,-1.061], pos: [0,0,-0.675] }, head: { rot: [1.816,0,0.849], pos: [0,0,0] }, ears: { rot: [1.248,0,0], pos: [0,0,0] }, tail: { rot: [20.919,0,1.611], pos: [0,0,0] }, legFL: { rot: [-33.104,0,0], pos: [0,0,0.445] }, legFR: { rot: [-27.894,0,0], pos: [0,0,1.489] }, legBL: { rot: [31.338,0,0], pos: [0,0,0.061] }, legBR: { rot: [15.576,0,0], pos: [0,0,0.683] }, legFL2: { rot: [30.754,0,0], pos: [0,0,0] }, legFR2: { rot: [36.084,0,0], pos: [0,0,0] }, legBL2: { rot: [-17.477,0,0], pos: [0,0,0] }, legBR2: { rot: [-6.599,0,0], pos: [0,0,0] } }
+      ] },
+      // GAIT-A END fox.run
       alert: clip([
         [900, AL],
         [300, al([-14, 0, 0], [12, 0, 14])],
@@ -1159,6 +1174,22 @@
         },
         layers: g.layers(),
         parts: PARTS,
+        // ANIM-B-01b (note 38.67 item 2): walk / trot / run are generated by tools/gen-gait.mjs (fox.walk/trot/run in tools/gait-configs.mjs); keep these numbers = that config
+        legRig: {
+          body: 'body',
+          legs: [
+            { upper: 'legFL', lower: 'legFL2', foot: [3.5, 12.5, 0], bend: 'front' },
+            { upper: 'legFR', lower: 'legFR2', foot: [6.5, 12.5, 0], bend: 'front' },
+            { upper: 'legBL', lower: 'legBL2', foot: [3.5, 24.5, 0], bend: 'back' },
+            { upper: 'legBR', lower: 'legBR2', foot: [6.5, 24.5, 0], bend: 'back' }
+          ],
+          gaits: {
+            walk: { tunedMps: 0.45, duty: 0.625, phase: [0.25, 0.75, 0, 0.5], liftM: 0.0625 },
+            trot: { tunedMps: 1, duty: 0.5, phase: [0, 0.5, 0.5, 0], liftM: 0.0875 },
+            run: { tunedMps: 1.3, duty: 0.35, phase: [0, 0.1, 0.5, 0.6], liftM: 0.05 }
+          },
+          stand: ['idle', 'alert']
+        },
         animations: animations,
         mounts: {
           eyes:    { at: [5, 4, 14.5], part: 'head' },

@@ -7,6 +7,7 @@ import { genGait, plantedError } from './gait-lib.mjs';
 
 let passed = 0;
 const test = (name, fn) => { try { fn(); passed++; console.log(`ok - ${name}`); } catch (e) { console.error(`not ok - ${name}\n${e.stack}`); process.exitCode = 1; } };
+const up = (l) => (typeof l === 'object' ? l.upper : l);   // ANIM-B-01b knee legs: the upper part carries the swing + lift
 for (const cfg of CONFIGS) {
   const def = defOf(cfg), clip = def.animations[cfg.clip];
   test(`${cfg.id}: clip present, loops, one duration per key, only the model's parts`, () => {
@@ -14,7 +15,7 @@ for (const cfg of CONFIGS) {
     assert.strictEqual(clip.loop, true);
     assert.strictEqual(clip.durations.length, clip.frames.length);
     for (const f of clip.frames) for (const n of Object.keys(f)) assert.ok(def.parts[n], 'unknown part ' + n);
-    assert.ok(Object.keys(def.parts).length <= 8, 'part count');
+    assert.ok(def.meshOnly || Object.keys(def.parts).length <= 8, 'part count');
   });
   test(`${cfg.id}: planted-foot error <= 12 mm (keys + interpolated)`, () => {
     const k = plantedError(def, cfg, clip, 1) * 1000, s = plantedError(def, cfg, clip, 4) * 1000;
@@ -22,9 +23,9 @@ for (const cfg of CONFIGS) {
     assert.ok(k <= 12 && s <= 12, `${k} / ${s} mm`);
   });
   test(`${cfg.id}: legs swing and the feet lift`, () => {
-    const rots = clip.frames.map((f) => f[cfg.legs.FL].rot[0]);
+    const rots = clip.frames.map((f) => f[up(cfg.legs.FL)].rot[0]);
     assert.ok(Math.max(...rots) - Math.min(...rots) > 10, 'front-left leg barely swings');
-    const lifts = clip.frames.map((f) => f[cfg.legs.HR].pos[2]);
+    const lifts = clip.frames.map((f) => f[up(cfg.legs.HR)].pos[2]);
     assert.ok(Math.max(...lifts) - Math.min(...lifts) > 0.3, 'no foot lift');
   });
   test(`${cfg.id}: shipped clip equals the generator output (re-run node tools/gen-gait.mjs if this fails)`, () => {

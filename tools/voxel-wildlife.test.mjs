@@ -142,7 +142,7 @@ const within = (m, tol) => Math.abs(m) <= tol;
 test('all fours: idle keeps all 4 feet within 2 cm; graze / alert keep >= 3 (one forefoot may step / stamp)', () => {
   for (const k of KEYS) {
     const r = R[k], C = r.DEF.animations;
-    C.idle.frames.forEach((f, i) => { const T = r.posed(f); for (const n of LIMBS) assert.ok(within(r.lowest(T, n), 0.02), `${k} idle[${i}] ${n} ${r.lowest(T, n).toFixed(3)}`); });
+    C.idle.frames.forEach((f, i) => { const T = r.posed(f); for (const n of LIMBS) assert.ok(within(r.lowest(T, (r.DEF.parts[n + '2'] ? n + '2' : n)), 0.02), `${k} idle[${i}] ${n} ${r.lowest(T, (r.DEF.parts[n + '2'] ? n + '2' : n)).toFixed(3)}`); });
     if (k === 'rabbit') {
       C.graze.frames.forEach((f, i) => { const T = r.posed(f); for (const n of LIMBS) assert.ok(within(r.lowest(T, n), 0.02), `rabbit graze[${i}] ${n} ${r.lowest(T, n).toFixed(3)}`); });
       continue;
@@ -249,8 +249,9 @@ test('v1.58 models: valid, budgets, clip names, whole 50 ms keys, every frame na
 test('v1.58 fox / squirrel stand on all fours in idle (feet within 2 cm); squirrel climb is pitched -90', () => {
   for (const k of ['fox', 'squirrel']) {
     const r = rig(k);
-    for (const n of LIMBS) assert.ok(Math.abs(r.lowest(r.posed(null), n)) < 1e-9, `${k} ${n} rest on z 0`);
-    r.DEF.animations.idle.frames.forEach((f, i) => { const T = r.posed(f); for (const n of LIMBS) assert.ok(within(r.lowest(T, n), 0.02), `${k} idle[${i}] ${n} ${r.lowest(T, n).toFixed(3)}`); });
+    const sole = (n) => (r.DEF.parts[n + '2'] ? n + '2' : n);   // ANIM-B-01b: the fox sole is on the lower leg part
+    for (const n of LIMBS) assert.ok(Math.abs(r.lowest(r.posed(null), sole(n))) < 1e-9, `${k} ${n} rest on z 0`);
+    r.DEF.animations.idle.frames.forEach((f, i) => { const T = r.posed(f); for (const n of LIMBS) assert.ok(within(r.lowest(T, sole(n)), 0.02), `${k} idle[${i}] ${n} ${r.lowest(T, sole(n)).toFixed(3)}`); });
   }
   for (const f of A.models.squirrel.voxel.animations.climb.frames) assert.ok(f.body.rot[0] <= -85, 'climb body pitch');
 });

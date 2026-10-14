@@ -8,8 +8,22 @@ const smooth = (t) => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
 export const GAITS = {
   amble:    { phase: { HL: 0, FL: 0.12, HR: 0.5, FR: 0.62 }, roll: 5, yaw: 4 },       // bear roll (lateral couplets)
   lateral:  { phase: { HL: 0, FL: 0.25, HR: 0.5, FR: 0.75 }, roll: 3, yaw: 3 },       // lateral-sequence walk LH LF RH RF
-  diagonal: { phase: { HL: 0.5, FL: 0, HR: 0, FR: 0.5 }, roll: 1.5, yaw: 2 }         // trot
+  diagonal: { phase: { HL: 0.5, FL: 0, HR: 0, FR: 0.5 }, roll: 1.5, yaw: 2 },        // trot
+  gallop:   { phase: { FL: 0, FR: 0.1, HL: 0.5, HR: 0.6 }, roll: 2, yaw: 2 }          // ANIM-B-01b: bounding couplets (knee rigs)
 };
+// ---- ANIM-B-01b knee rigs: a leg is { upper, lower, kind: 'fore'|'hind', k? } (2 segments, yz plane; u = hip -> knee, w = knee -> foot, from the def) ----
+function gSmooth(t) { return smooth(t); }
+function fkY(L, r1, r2) {                          // foot y offset from rest (voxels) for upper rot r1 + lower rot r2 (radians)
+  const c1 = Math.cos(r1), s1 = Math.sin(r1), a = r1 + r2;
+  return c1 * L.u[0] - s1 * L.u[1] + Math.cos(a) * L.w[0] - Math.sin(a) * L.w[1] - (L.u[0] + L.w[0]);
+}
+function solveR1(L, Ty, extra) {                   // bisection: upper rot so that the foot is at Ty, lower follows -(1-k) r1 + extra
+  let lo = -85 * D2R, hi = 85 * D2R;
+  const f = (r) => fkY(L, r, -(1 - L.k) * r + extra) - Ty;
+  if (f(lo) > 0 || f(hi) < 0) return null;
+  for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (f(m) < 0) lo = m; else hi = m; }
+  return (lo + hi) / 2;
+}
 function rotM(rx, ry, rz) {
   const cx = Math.cos(rx * D2R), sx = Math.sin(rx * D2R), cy = Math.cos(ry * D2R), sy = Math.sin(ry * D2R), cz = Math.cos(rz * D2R), sz = Math.sin(rz * D2R);
   return mul3([cz, -sz, 0, sz, cz, 0, 0, 0, 1], mul3([cy, 0, sy, 0, 1, 0, -sy, 0, cy], [1, 0, 0, 0, cx, -sx, 0, sx, cx]));
@@ -53,14 +67,20 @@ export function footMinZ(F, part, pts) {            // lowest world z (m) of the
 export function legInfo(def, cfg) {
   const L = {};
   for (const k of Object.keys(cfg.legs)) {
-    const part = cfg.legs[k], fp = footPts(def, part), piv = def.parts[part].pivot;
+    const c = cfg.legs[k];
+    if (typeof c === 'object') {                                   // knee rig leg: sole points on the lower part, ground-snap moves the upper part
+      const H = def.parts[c.upper].pivot, K = def.parts[c.lower].pivot, F = def.legRig.legs.find((l) => l.upper === c.upper).foot, fp = footPts(def, c.lower);
+      L[k] = { knee: true, snap: c.upper, part: c.lower, upper: c.upper, pts: fp.pts, kind: c.kind, k: c.k ?? 0.5, u: [K[1] - H[1], K[2] - H[2]], w: [F[1] - K[1], F[2] - K[2]] };
+      continue;
+    }
+    const part = c, fp = footPts(def, part), piv = def.parts[part].pivot;
     L[k] = { part, pts: fp.pts, len: piv[2] - fp.z };              // pendulum length in voxels (pivot -> sole)
   }
   return L;
 }
 const r3 = (v) => { const r = Math.round(v * 1000) / 1000; return r === 0 ? 0 : r; };
 export function genGait(def, cfg) {
-  const g = GAITS[cfg.gait], G = Object.assign({ beta: 0.65, bobM: 0.01, pitch: 1.5, nod: 1.5, liftM: 0.02, tail: 3, ears: 3 }, g, cfg.G);
+  const g = GAITS[cfg.gait], G = Object.assign({ beta: 0.65, bobM: 0.01, pitch: 1.5, nod: 1.5, liftM: 0.02, tail: 3, ears: 3, heel: 15, heelF: 0, foldF: 25, foldH: 25, hindSign: -1 }, g, cfg.G);
   const n = cfg.keys, legs = legInfo(def, cfg), cm = def.cellM, S = G.v * (G.T / 1000) * G.beta / cm;   // stance travel, voxels
   const names = Object.keys(def.parts), frames = [], durations = [], info = { maxRot: 0 };
   for (let i = 0; i < n; i++) {
@@ -75,9 +95,21 @@ export function genGait(def, cfg) {
     const lift = {};
     for (const k of Object.keys(legs)) {
       const lg = legs[k]; let ph = (p - G.phase[k]) % 1; if (ph < 0) ph += 1;
-      let Ty, lf = 0;
-      if (ph < G.beta) Ty = -S / 2 + S * (ph / G.beta);              // stance: the foot moves front -> back under the body
-      else { const q = (ph - G.beta) / (1 - G.beta); Ty = S / 2 - S * smooth(q); lf = G.liftM / cm * Math.sin(Math.PI * q); }
+      let Ty, lf = 0, extra = 0;
+      if (ph < G.beta) {                                             // stance: the foot moves front -> back under the body
+        const s = ph / G.beta; Ty = -S / 2 + S * s;
+        if (lg.knee) extra = (lg.kind === 'hind' ? G.heel * gSmooth((s - 0.7) / 0.3) : G.heelF * gSmooth((s - 0.8) / 0.2)) * D2R;
+      } else {
+        const q = (ph - G.beta) / (1 - G.beta); Ty = S / 2 - S * smooth(q); lf = G.liftM / cm * Math.sin(Math.PI * q);
+        if (lg.knee) extra = (lg.kind === 'hind' ? G.hindSign * G.foldH : G.foldF) * Math.sin(Math.PI * q) * D2R;   // swing: fold (hind hock flexes foot FORWARD)
+      }
+      if (lg.knee) {
+        const r1 = solveR1(lg, Ty, extra);
+        if (r1 === null) throw new Error(`${cfg.id}: leg ${k} stride ${Ty.toFixed(1)} vox out of reach (lower v / T / beta)`);
+        info.maxRot = Math.max(info.maxRot, Math.abs(r1 / D2R));
+        fr[lg.upper].rot = [r1 / D2R, 0, 0]; fr[lg.part].rot = [(-(1 - lg.k) * r1 + extra) / D2R, 0, 0]; lift[k] = lf;
+        continue;
+      }
       if (Math.abs(Ty / lg.len) > 0.85) throw new Error(`${cfg.id}: leg ${k} stride ${Ty.toFixed(1)} vox too long for pendulum ${lg.len} (lower v / T / beta)`);
       const r = Math.asin(Ty / lg.len) / D2R;                        // single segment: foot y = len * sin(r)
       info.maxRot = Math.max(info.maxRot, Math.abs(r));
@@ -86,7 +118,7 @@ export function genGait(def, cfg) {
     // ground-snap: leg pos z (parent frame) so the sole sits on ground + lift (3 passes: body tilt couples in)
     for (let it = 0; it < 3; it++) {
       const F = poseF(def, fr);
-      for (const k of Object.keys(legs)) { const lg = legs[k]; fr[lg.part].pos[2] += (lift[k] * cm - footMinZ(F, lg.part, lg.pts)) / cm; }
+      for (const k of Object.keys(legs)) { const lg = legs[k]; fr[lg.snap || lg.part].pos[2] += (lift[k] * cm - footMinZ(F, lg.part, lg.pts)) / cm; }
     }
     if (cfg.mirror) for (const [dst, src] of Object.entries(cfg.mirror)) fr[dst] = { rot: fr[src].rot.slice(), pos: [fr[src].pos[0], fr[src].pos[1], fr[src].pos[2] + (cfg.mirrorDz || 0)] };
     for (const nm of Object.keys(fr)) { fr[nm].rot = fr[nm].rot.map(r3); fr[nm].pos = fr[nm].pos.map(r3); }
