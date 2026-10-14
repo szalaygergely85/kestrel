@@ -15,6 +15,7 @@ import { createOverlayTarget } from './overlayTarget.js';
 import { makePickGuard } from './pickGuard.js';
 import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose, applyViewPreset, toggleOrtho, adjustOrthoHalfH, lookAlongAxis } from './camera.js';
 import { createAxisGizmo } from './axisGizmo.js';
+import { createQuestOverlay } from './questOverlay.js';
 import { unprojectCell, rayPoint, projectPoint, screenCentreGroundHit } from './ray.js';
 import { pickAt, pickMarkers } from './pick.js';
 import { resolveMeshClick } from './meshClick.js';
@@ -41,7 +42,7 @@ import {
 import { findUnusedAssets, planAssetDelete, serializePendingDeletes } from './assetRefs.js';
 import { nextScale, fineScale, clampScale } from './scale.js';
 import { applySnapshot, snapshotDiffers, formatAge, startAutosave, getSnapshot, clearSnapshot } from './autosave.js';
-import { validateDoc, saveAll, loadFile, launchPlaytest, anyDirty, pickBinaryFile, saveTerrainEdits, saveGrassMask } from './io.js';
+import { validateDoc, saveAll, saveFile, loadFile, launchPlaytest, anyDirty, pickBinaryFile, saveTerrainEdits, saveGrassMask } from './io.js';
 import * as ENG from '../../engine/index.js';
 import * as GB from './grassBrush.js';
 import {
@@ -174,21 +175,42 @@ drawerTabs.forEach((tab) => {
   });
 });
 
+// ---- ED-QUEST-02: Quests tab - mounts questPanel.js once, on first open.
+let questPanelHandle = null;
+async function openQuestsTab() {
+  if (questPanelHandle) return;
+  const root = document.getElementById('quests-panel');
+  try {
+    const qp = await import('./questPanel.js'), fl = await import('./quest/flow.js');
+    const A = window.ASSETS || {}, itemDefs = (A.items && A.items.defs) || {};
+    questPanelHandle = await qp.mountQuestPanel(root, { names: fl.makeNames({ itemDefs }), itemDefs, loadFiles: () => qp.fetchQuestFiles(), loadDialogueFiles: () => qp.fetchDialogueFiles(), write: qp.downloadWrite, getWorld: () => assets.world(doc.worldId), floorAt: (x, y) => world.floorAt(x, y), onMarkers: () => frame.markDirty(),
+      worldId: doc.worldId, // ED-QUEST-WIRE: applyPick needs model + worldId (areas.json world field)
+      saveWorld: () => { const f = doc.files.get(fileKey('world', doc.worldId)); if (f) { f.dirty = true; saveFile(f).then(() => refreshIoStatus(), (e) => flash('world save failed: ' + (e && e.message))); } }, // 03b: area-only zones land in the world json
+      getCamGround: () => ({ x: cam.x, y: cam.y, z: world.floorAt(cam.x, cam.y) }), // 07: Play from here
+      onFocus: (id) => { const e = (assets.world(doc.worldId).entities || []).find((x) => x.id === id); if (e && Number.isFinite(e.x)) { cam = createCameraPose({ ...cam, x: e.x, y: e.y - 6, z: world.floorAt(e.x, e.y) + 6, yawDeg: 0, pitchDeg: -40 }); frame.markDirty(); } } }); // 05: lint "Go to"
+    window.__questPanel = questPanelHandle;
+  } catch (e) { root.textContent = 'Quests failed to load: ' + e.message; console.error(e); }
+}
+
 // ---- US-067: left-dock tabs (Scene Tree / Assets) --------------------------
 leftDockTabsEl.querySelectorAll('.dock-tab').forEach((tab) => {
   tab.addEventListener('click', () => {
     leftDockTabsEl.querySelectorAll('.dock-tab').forEach((t) => t.classList.remove('active'));
     tab.classList.add('active');
-    const isTree = tab.dataset.dockTab === 'tree';
-    treePanelEl.classList.toggle('active', isTree);
-    assetsPanelEl.classList.toggle('active', !isTree);
-    if (!isTree) renderAssetsList(assetsSearchInput.value);
+    const which = tab.dataset.dockTab;
+    treePanelEl.classList.toggle('active', which === 'tree');
+    assetsPanelEl.classList.toggle('active', which === 'assets');
+    document.getElementById('quests-panel').classList.toggle('active', which === 'quests');
+    if (which === 'quests') openQuestsTab();
+    if (which === 'assets') renderAssetsList(assetsSearchInput.value);
   });
 });
 
 // ---- US-066: keyboard focus (design/editor-ui.md AC 6) - Esc blurs a
 // focused tree-search/inspector field so editor keys resume; clicking the
 // viewport already does this via canvas's own mousedown->focus() below.
+const questPickerArmed = () => !!(questPanelHandle && questPanelHandle.picker.armed);
+document.addEventListener('keydown', (e) => { if (questPanelHandle) questPanelHandle.picker.onKey(e); });
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   const a = document.activeElement;
@@ -2127,6 +2149,16 @@ canvas.addEventListener('mousedown', async (e) => {
   const tok = clickGuard.begin();
   if (col < 0 || col >= rt.cols || row < 0 || row >= rt.rows) return;
 
+  if (questPanelHandle && !questPickerArmed()) { // ED-QUEST-04: a click on a quest pin selects that objective in the panel
+    const pin = questOverlay.pinAt(col, row);
+    if (pin) { questPanelHandle.selectObjective(pin.qid, pin.obj); return; }
+  }
+  if (questPickerArmed()) { // ED-QUEST-03: Pick mode owns the left button; the quest panel decides what the hit means
+    const hit = await pickAt(col, row, pickCtx());
+    if (clickGuard.isStale(tok)) return;
+    questPanelHandle.picker.handle({ entityId: hit.kind === 'entity' ? hit.entityId : null, point: hit.world && (hit.kind === 'terrain' || hit.kind === 'surface') ? hit.world : null });
+    return;
+  }
   if (toolMode === 'terrain') { // ED-TERRAIN-1c: the brush owns the left button
     const hit = await pickAt(col, row, pickCtx());
     if (clickGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
@@ -2708,8 +2740,11 @@ function drawAssetGhost() {
 
 const overlayPlate = createOverlayTarget(engine.ui, rt);
 const overlayGlyph = createOverlayTarget(engine.ui, rt, { glyphOnly: true });
+const questOverlay = createQuestOverlay({ rt, getCam: () => cam, getWorld: () => assets.world(doc.worldId), floorAt: (x, y) => world.floorAt(x, y), renderer: RENDERER,
+  getAreasFile: () => (questPanelHandle && questPanelHandle.areasFile) || null });
 function drawOverlay(fb) {
   const selection = primarySelection();
+  if (questPanelHandle) questOverlay.draw(overlayPlate, questPanelHandle.markerState());   // ED-QUEST-04
   if (markersOn) drawMarkers(overlayPlate, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets.palette, selection, RENDERER, groupDrag?.previewItems);
   for (const item of sel.items) drawSelectionHighlight(overlayPlate, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets, doc, item, '#ffd24a', RENDERER, groupDrag?.previewItems);
   if (boxDrag?.moved) drawMeshHighlightRect(overlayPlate,boxDrag.rect,'#ffd24a');

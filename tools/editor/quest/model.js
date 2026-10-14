@@ -6,8 +6,11 @@
 // level one key per line, objective-like arrays one row per line, everything
 // else inline; pack/sites: JSON.stringify 2-space). Unknown fields stay
 // untouched (a quest's `raw` IS the source row / file object).
-import { readFileSync, writeFileSync, readdirSync, existsSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+// Browser-safe (ED-QUEST-02): node:fs is optional (top-level await + catch), so the editor page can import
+// this module and pass an in-memory fs to loadQuests/saveQuest.
+const nodeFs = await import('node:fs').catch(() => ({}));
+const { readFileSync, writeFileSync, readdirSync, existsSync, statSync } = nodeFs;
+const join = (...p) => p.join('/').replace(/\/+/g, '/');
 
 // Top-level arrays rendered one element per line in legacy files.
 const LEGACY_ROW_ARRAYS = new Set(['objectives', 'sections', 'lines']);
@@ -105,8 +108,10 @@ export function loadQuests(dir, fs = REAL_FS) {
   for (const n of fs.readdirSync(dir).sort()) {
     if (n.endsWith('.quest.json')) {
       const text = rd(n), obj = JSON.parse(text);
-      files.set(n, { kind: 'legacy', obj, text });
+      files.set(n, { kind: 'legacy', obj, text, snap: JSON.stringify(obj) });
       quests.push(normalize(obj, 'legacy', n, null));
+    } else if (n === 'areas.json') {
+      const text = rd(n); files.set(n, { kind: 'areas', obj: JSON.parse(text), text });
     } else if (n === 'sites.json') {
       const text = rd(n); files.set(n, { kind: 'sites', obj: JSON.parse(text), text });
     } else if (fs.statSync(join(dir, n)).isDirectory() && fs.existsSync(join(dir, n, 'pack.json'))) {
@@ -115,7 +120,7 @@ export function loadQuests(dir, fs = REAL_FS) {
       (obj.quests || []).forEach((row, i) => quests.push(normalize(row, 'pack', rel, i)));
     }
   }
-  return { dir, quests, files, errors: validate(quests) };
+  return { dir, quests, files, zones: [], errors: validate(quests) };
 }
 
 /** Error list: missing id/title, duplicate ids. */
@@ -134,7 +139,7 @@ export function validate(quests) {
 
 /** Text a file would be saved as. */
 export function fileText(f) {
-  return f.kind === 'legacy' ? stringifyLegacy(f.obj) : f.kind === 'pack' ? packText(f) : stringifyPack(f.obj);
+  return f.kind === 'legacy' ? (f.snap !== undefined && f.text !== undefined && JSON.stringify(f.obj) === f.snap ? f.text : stringifyLegacy(f.obj)) : f.kind === 'pack' ? packText(f) : stringifyPack(f.obj);
 }
 
 /** Writes the quest's ORIGINAL file only. Nothing is written on validation errors. */
@@ -143,7 +148,7 @@ export function saveQuest(model, q, fs = { writeFileSync }) {
   if (errors.length) return { ok: false, errors };
   const f = model.files.get(q.file);
   const text = fileText(f);
-  if (text !== f.text) { fs.writeFileSync(join(model.dir, q.file), text); f.text = text; }
+  if (text !== f.text) { fs.writeFileSync(join(model.dir, q.file), text); f.text = text; if (f.kind === 'legacy') f.snap = JSON.stringify(f.obj); }
   return { ok: true, errors: [], file: q.file };
 }
 
@@ -154,7 +159,7 @@ export function saveAll(model, fs = { writeFileSync }) {
   const written = [];
   for (const [rel, f] of model.files) {
     const text = fileText(f);
-    if (text !== f.text) { fs.writeFileSync(join(model.dir, rel), text); f.text = text; written.push(rel); }
+    if (text !== f.text) { fs.writeFileSync(join(model.dir, rel), text); f.text = text; if (f.kind === 'legacy') f.snap = JSON.stringify(f.obj); written.push(rel); }
   }
   return { ok: true, errors: [], written };
 }
@@ -196,6 +201,47 @@ export function moveObjective(q, from, to) {
 }
 export function removeObjective(q, at) {
   return makeCmd('remove objective', q, () => { objList(q).splice(at, 1); });
+}
+
+/**
+ * ED-QUEST-03b: one undo step that (re)defines a named area the GAME reads - content/quests/areas.json `areas[id] = {world, trigger}`
+ * plus the area-only world zone `{id, r, shape:'circle', x, y}` (model.zones, merged into the world json by applyZones) - and
+ * runs `mutate(raw)` on the quest (the step that references the area id).
+ */
+export function setAreaCmd(model, q, areaId, spot, mutate, worldId = 'world_m1') {
+  const af = model.files.get('areas.json');
+  let before = null, after = null;
+  const snap = () => ({ raw: structuredClone(q.raw), area: structuredClone(af.obj.areas[areaId]), zone: structuredClone(model.zones.find((z) => z.id === areaId)) });
+  const put = (st) => {
+    for (const k of Object.keys(q.raw)) delete q.raw[k];
+    Object.assign(q.raw, structuredClone(st.raw)); refresh(q);
+    if (st.area) af.obj.areas[areaId] = structuredClone(st.area); else delete af.obj.areas[areaId];
+    model.zones = model.zones.filter((z) => z.id !== areaId);
+    if (st.zone) model.zones.push(structuredClone(st.zone));
+  };
+  return {
+    label: 'set area', questId: q.id,
+    apply() {
+      if (!before) {
+        before = snap();
+        af.obj.areas[areaId] = { world: worldId, trigger: areaId };
+        model.zones = model.zones.filter((z) => z.id !== areaId);
+        model.zones.push({ id: areaId, note: 'ED-QUEST-03b area-only zone for ' + q.id, r: spot.r, shape: 'circle', x: spot.x, y: spot.y });
+        mutate(q.raw); refresh(q); after = snap();
+      } else put(after);
+    },
+    undo() { put(before); },
+  };
+}
+
+/** Merges the model's pending area zones into a world json object (`triggers`, replace by id). Returns the number merged. */
+export function applyZones(model, world) {
+  world.triggers = world.triggers || [];
+  for (const z of model.zones) {
+    const i = world.triggers.findIndex((t) => t.id === z.id);
+    if (i >= 0) world.triggers[i] = { ...z }; else world.triggers.push({ ...z });
+  }
+  return model.zones.length;
 }
 
 /** Minimal undo/redo stack for model commands. */

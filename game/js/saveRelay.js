@@ -21,7 +21,7 @@ export function savedSpawn(save) {
   return t && Number.isFinite(t.x) && Number.isFinite(t.y) ? { x: t.x, y: t.y } : null;
 }
 
-export function createSaveRelay({ storage, questDef, giverDefs = [], slot: slot0 = 0, enabled = true, autosaveSec = AUTOSAVE_SEC, playerName = 'Wick', place = 'Kestrel', defaultLook = null }) {
+export function createSaveRelay({ storage, questDef, giverDefs = [], slot: slot0 = 0, enabled = true, autosaveSec = AUTOSAVE_SEC, playerName = 'Wick', place = 'Kestrel', defaultLook = null, freshPreset = null }) {
   let slot = slot0; // US-090w: the title menu picks the slot (setSlot)
   const adapter = storage ? createStorageAdapter(storage) : null;
   const quest = createQuestRelay(questDef, null, giverDefs);
@@ -102,7 +102,7 @@ export function createSaveRelay({ storage, questDef, giverDefs = [], slot: slot0
         playSec = pending.meta.playTimeSec;
         look = pending.look || defaultLook;
         pending = null;
-      } else { quest.reset(null); playSec = 0; look = defaultLook; }
+      } else { const fp = freshPreset ? freshPreset() : null; if (fp) quest.reset(fp.quest || null, fp.quests); else quest.reset(null); playSec = 0; look = defaultLook; } // ED-QUEST-07: ?qstate preset only on a fresh run, never from/to a slot
     },
 
     /** After createBeastSim: restored dead beasts stay gone (the sim made them alive again). */
