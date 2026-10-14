@@ -1102,3 +1102,6 @@ design/look/post.js (window.POST_LOOK, classic script, in game/index.html) + gam
 main.js: createBeastLook (lazy, `?lookat=0` off, on in capture/bench) -> 9th arg of presentBeasts; setTarget(player x,y,z+1.5) each frame before it. check passes, 5 suites PASS; turn direction (rx+/rz+) still needs the owner look.
 ### DLG-REPEAT (kestrel-1, 2026-10-14)
 No new code: postkeeper hello.1 now `setFlag: met.postkeeper` (saved in world.state dlg.*), entry `postkeeper.hello.2` `requires` it. Only postkeeper has a .hello.2 in story.md. Test game/js/quest/postkeeperDialogue.test.js 5 pass; canonical + validate-content OK. Status: po-review.
+
+### GI-PROBE-03 (kestrel-1, 2026-10-14) -> arch-review
+New engine/world/giLoader.js (quiet once-per-zone fetch, missing/stale/non-gi -> null, 1 warn per stale), `World.loadGI(opts)` / `loadGIZone`, `bundle.gi`+`giId` at every put site, `world.giField` flipped in `_publishBand` (+ late-arrival attach with `regrow`), `bundleBytes` counts gi. engine/world/giFile.js is a VERBATIM copy of kestrel-4's uncommitted 02b file (merge: keep one). Test giLoader.test.js 19 PASS (0 GIBake steps, 100 hit swaps < 64 KB); main.js not wired (GI-PROBE-06 passes `expectHash`, runtime cannot compute the sha).
