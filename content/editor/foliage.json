@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "triCap": 1500000,
   "palettes": {
     "forest_edge": {
       "place": [
