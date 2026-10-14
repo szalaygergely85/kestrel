@@ -151,22 +151,36 @@
     {
       "name": "legL",
       "bones": [
-        "LeftUpperLeg",
-        "LeftLowerLeg",
-        "LeftFoot",
-        "LeftToes"
+        "LeftUpperLeg"
       ],
       "parent": "body"
     },
     {
+      "name": "legLowL",
+      "bones": [
+        "LeftLowerLeg",
+        "LeftFoot",
+        "LeftToes"
+      ],
+      "parent": "legL",
+      "rigid": true
+    },
+    {
       "name": "legR",
       "bones": [
-        "RightUpperLeg",
+        "RightUpperLeg"
+      ],
+      "parent": "body"
+    },
+    {
+      "name": "legLowR",
+      "bones": [
         "RightLowerLeg",
         "RightFoot",
         "RightToes"
       ],
-      "parent": "body"
+      "parent": "legR",
+      "rigid": true
     }
   ],
   "regions": {

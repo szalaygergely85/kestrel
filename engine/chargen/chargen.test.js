@@ -144,8 +144,8 @@ const has = (r, re) => r.errors.some((e) => re.test(e));
   ok('partMap: parent listed after', has(withPm(m4), /parent "armL" is unknown or listed after/));
   const m5 = good(); m5[2].parent = 'head';
   ok('partMap: root bone parent not in parent part', has(withPm(m5), /first bone "LeftUpperArm" has its parent bone in part "body", not in parent "head"/), withPm(m5).errors.join('; '));
-  const m6 = []; for (let i = 0; i < 9; i++) m6.push({ name: 'p' + i, bones: ['Hips'], parent: null });
-  ok('partMap: more than 8 parts', has(withPm(m6), /9 parts/));
+  const m6 = []; for (let i = 0; i < 17; i++) m6.push({ name: 'p' + i, bones: ['Hips'], parent: null });
+  ok('partMap: more than 16 parts', has(withPm(m6), /17 parts/));
 }
 {
   const k = makeKit(); k.shells[0].slot = 'cape'; k.attachments[0].anchor = 'nowhere';

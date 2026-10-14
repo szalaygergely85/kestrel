@@ -181,9 +181,9 @@ ok('hips translation channel present', json.animations[0].channels.some((c) => c
 
 // ---- extras
 const ex = json.extras.kestrel;
-ok('extras.kestrel format 1, matKeys, array partMap, mounts, recipe', ex.format === 1 && JSON.stringify(ex.matKeys) === JSON.stringify(rigged.matKeys) && Array.isArray(ex.partMap) && ex.partMap.length === 8 && ex.mounts.head_top && Math.abs(ex.mounts.head_top[2] - 1.74) < 0.03 && ex.recipe.base === 'm_avg');
+ok('extras.kestrel format 1, matKeys, array partMap, mounts, recipe', ex.format === 1 && JSON.stringify(ex.matKeys) === JSON.stringify(rigged.matKeys) && Array.isArray(ex.partMap) && ex.partMap.length === 10 && ex.mounts.head_top && Math.abs(ex.mounts.head_top[2] - 1.74) < 0.03 && ex.recipe.base === 'm_avg');
 ok('matKeys[i] = palette texel i (first colours match)', rigged.matKeys.every((k, i) => { const c = rgbOf(k); return [0, 1, 2].every((ch) => png.data[4 * i + ch] === Math.round(c[ch])); }));
-ok('extras partMap collapses the rig (collapseRig accepts it)', collapseRig(rigged, ex.partMap).parts.length === 8);
+ok('extras partMap collapses the rig (collapseRig accepts it)', collapseRig(rigged, ex.partMap).parts.length === 10);
 
 // ---- determinism + options
 const again = buildGlb(kit, JSON.parse(JSON.stringify(recipe)), { clips: DEMO_CLIPS }).glb;
@@ -206,7 +206,7 @@ try { exportGlb(rigged, { rgbOf: () => null }); } catch { threw++; }
 ok('missing rgbOf / object partMap / missing colour throw', threw === 3);
 
 // golden: pinned hash of the default recipe, demo clips (changes only when the format intentionally changes)
-const GOLDEN = '907f1ca6a8449f00dcdaec55adbea966b4af246812b558ac9bb87c28cf667b71'; // 2026-10-12: OB-092 grip hands (was b64e307e...); OB-083 shapes kit v8 (was 4c3700bf...); 2026-10-11: OB-069 default head res 2 (was 04daa61c...); OB-065 human kit v5 flat male chest + face (was e8cfbe67...); update on an intended kit/format change
+const GOLDEN = 'c4645e2d69376978e114b5799bfbc426501b95e9b16bbff7bddf53443912a032'; // 2026-10-14: ANIM-IK-01b split-leg partMap in extras (was 907f1ca6...); 2026-10-12: OB-092 grip hands (was b64e307e...); OB-083 shapes kit v8 (was 4c3700bf...); 2026-10-11: OB-069 default head res 2 (was 04daa61c...); OB-065 human kit v5 flat male chest + face (was e8cfbe67...); update on an intended kit/format change
 if (sha(glb) !== GOLDEN) console.log('golden sha256 now:', sha(glb));
 ok('real kit validates (array partMap)', validateKit(JSON.parse(JSON.stringify(kit)), globalThis.ASSETS.palette.materials).errors.length === 0);
 ok('golden SHA-256 of the default recipe (demo clips)', sha(glb) === GOLDEN);

@@ -255,6 +255,7 @@ function packRiggedModel(def, matIdFor) {
     emissiveLight: null, // v1: deriveEmissiveLight reads layers
     rig: def.rig,
     blend: null,
+    legRig: packLegRig(def, partNames), // ANIM-IK-01b: split-leg rigs (null without def.legRig)
   };
   pm.blend = packBlend(def, pm, partNames); // ANIM-BLEND-01a
   pm.lookAt = packLookAt(def, partNames); // ANIM-LOOKAT-01

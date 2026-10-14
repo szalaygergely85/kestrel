@@ -178,9 +178,9 @@ ok(`pose equivalence FORWARD vs rigid FK (arm x/z, jaw, head, hips pos) max ${wo
   const off = { ...partRig, mesh: { ...partRig.mesh, pos: partRig.mesh.pos.map((v, i) => (i === 0 ? v + 0.4 * partRig.cellM : v)) } };
   let msg = ''; try { riggedModelDef(off); } catch (e) { msg = e.message; }
   ok('off-grid vertex throws "not a voxel-grid mesh"', /not a voxel-grid mesh/.test(msg), msg);
-  const many = { ...partRig, parts: Array.from({ length: 9 }, (_, i) => ({ ...partRig.parts[0], name: 'p' + i })) };
+  const many = { ...partRig, parts: Array.from({ length: 17 }, (_, i) => ({ ...partRig.parts[0], name: 'p' + i })) };
   msg = ''; try { riggedModelDef(many); } catch (e) { msg = e.message; }
-  ok('> 8 parts throws', /max 8/.test(msg), msg);
+  ok('> 16 parts throws', /max 16/.test(msg), msg);
   const bad = { ...def.voxel, rig: { ...def.voxel.rig, ranges: [] } };
   msg = ''; try { packVoxelModel(bad, matId); } catch (e) { msg = e.message; }
   ok('malformed rig header throws a clear message', /packVoxelModel \(rig\)/.test(msg), msg);

@@ -124,10 +124,12 @@
     { name: 'jaw', bones: ['Jaw'], parent: 'head' },
     { name: 'armL', bones: ['LeftUpperArm', 'LeftLowerArm', 'LeftHand'], parent: 'chest' },
     { name: 'armR', bones: ['RightUpperArm', 'RightLowerArm', 'RightHand'], parent: 'chest' },
-    { name: 'legL', bones: ['LeftUpperLeg', 'LeftLowerLeg', 'LeftFoot', 'LeftToes'], parent: 'body' },
-    { name: 'legR', bones: ['RightUpperLeg', 'RightLowerLeg', 'RightFoot', 'RightToes'], parent: 'body' }
+    { name: 'legL', bones: ['LeftUpperLeg'], parent: 'body' },
+    { name: 'legLowL', bones: ['LeftLowerLeg', 'LeftFoot', 'LeftToes'], parent: 'legL', rigid: true }, // ANIM-IK-01b: split leg, rotation 0 (follows the upper part)
+    { name: 'legR', bones: ['RightUpperLeg'], parent: 'body' },
+    { name: 'legLowR', bones: ['RightLowerLeg', 'RightFoot', 'RightToes'], parent: 'legR', rigid: true }
   ];
-  var MAX_PARTS = 8;
+  var MAX_PARTS = 16;
 
   // ===================================================================================================================
   // 2. SLOTS (layer char -> group + shade, or a fixed material) and GROUPS (which recipe field picks the ramp id)
