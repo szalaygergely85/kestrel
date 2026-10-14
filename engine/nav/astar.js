@@ -315,12 +315,15 @@ function hasLineOfSight(grid, ia, ib) {
  * Writes `outXY` (Float64Array, caller-owned, >= 2*len entries) as
  * [x0,y0,x1,y1,...] and returns the waypoint count. Never produces a
  * segment that crosses a `cost === 0` cell.
+ * With `grid.layers` (NAV-LAYERS-01c) the pull runs per run of cells in one space (ground or one sheet) joined by
+ * ordinary moves; a space switch or a link keeps both its end cells as waypoints. Optional `outZ` (>= len entries)
+ * receives each waypoint's cell z (layered grids only).
  * @param {import('./NavGrid.js').NavGrid} grid
- * @param {Int32Array} path @param {number} len @param {Float64Array} outXY
+ * @param {Int32Array} path @param {number} len @param {Float64Array} outXY @param {Float64Array} [outZ]
  */
-export function smoothPath(grid, path, len, outXY) {
+export function smoothPath(grid, path, len, outXY, outZ) {
   if (len === 0) return 0;
-  if (grid.layers !== null) return rawWaypoints(grid, path, len, outXY); // smoothing across levels is NAV-LAYERS-01c
+  if (grid.layers !== null) return smoothLayered(grid, path, len, outXY, outZ);
   const w = grid.w;
   let count = 0;
   const first = path[0];
@@ -391,12 +394,76 @@ export function planPath(grid, astar, sx, sy, gx, gy, outBuf, maxNodes = 1500) {
   return count;
 }
 
-// NAV-LAYERS-01a placeholder until 01c: one waypoint per path cell (centre x,y), no line-of-sight pulling.
-const _pos = { x: 0, y: 0, z: 0 };
-function rawWaypoints(grid, path, len, outXY) {
-  for (let i = 0; i < len; i++) {
-    grid.cellPos(path[i], _pos);
-    outXY[i * 2] = _pos.x; outXY[i * 2 + 1] = _pos.y;
+// ---- NAV-LAYERS-01c: smoothing across sheets / links ----
+const _sp = { x: 0, y: 0, z: 0 };
+
+/** True if path cells a -> b are one ordinary 8-neighbour move inside one space (not a link). */
+function plainMove(grid, a, b) {
+  const n = grid.w * grid.h, L = grid.layers;
+  if (a < n && b < n) {
+    const dx = (b % grid.w) - (a % grid.w), dy = ((b / grid.w) | 0) - ((a / grid.w) | 0);
+    return dx >= -1 && dx <= 1 && dy >= -1 && dy <= 1;
   }
-  return len;
+  if (a < n || b < n) return false;
+  const s = sheetOfLocal(L, a - n);
+  if (sheetOfLocal(L, b - n) !== s) return false;
+  const sw = L.w[s], la = a - n - L.base[s], lb = b - n - L.base[s];
+  const dx = (lb % sw) - (la % sw), dy = ((lb / sw) | 0) - ((la / sw) | 0);
+  return dx >= -1 && dx <= 1 && dy >= -1 && dy <= 1;
+}
+
+/** Line of sight inside one sheet: cost > 0, |dz| <= maxStepM per cell step, no corner cutting. */
+function sheetLineOfSight(grid, ia, ib) {
+  const n = grid.w * grid.h, L = grid.layers;
+  const s = sheetOfLocal(L, ia - n), b = L.base[s], sw = L.w[s], maxStep = L.maxStepM;
+  const la = ia - n - b, lb = ib - n - b;
+  const x0 = la % sw, y0 = (la / sw) | 0, x1 = lb % sw, y1 = (lb / sw) | 0;
+  const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+  const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  let err = dx - dy, x = x0, y = y0;
+  while (x !== x1 || y !== y1) {
+    const e2 = 2 * err;
+    let stepX = 0, stepY = 0;
+    if (e2 > -dy) { err -= dy; stepX = sx; }
+    if (e2 < dx) { err += dx; stepY = sy; }
+    const px = x, py = y;
+    if (stepX !== 0 && stepY !== 0) {
+      const o1 = b + y * sw + (x + stepX), o2 = b + (y + stepY) * sw + x;
+      if (L.cost[o1] === 0 || L.cost[o2] === 0) return false;
+      const z0 = L.height[b + py * sw + px];
+      if (Math.abs(L.height[o1] - z0) > maxStep || Math.abs(L.height[o2] - z0) > maxStep) return false;
+    }
+    x += stepX; y += stepY;
+    const c = b + y * sw + x;
+    if (L.cost[c] === 0) return false;
+    if (Math.abs(L.height[c] - L.height[b + py * sw + px]) > maxStep) return false;
+  }
+  return true;
+}
+
+function emitWaypoint(grid, idx, outXY, outZ, count) {
+  grid.cellPos(idx, _sp);
+  outXY[count * 2] = _sp.x; outXY[count * 2 + 1] = _sp.y;
+  if (outZ) outZ[count] = _sp.z;
+}
+
+function smoothLayered(grid, path, len, outXY, outZ) {
+  let count = 0, a = 0;
+  while (a < len) {
+    // run [a..b]: consecutive path cells joined by plain moves in one space
+    let b = a;
+    while (b + 1 < len && plainMove(grid, path[b], path[b + 1])) b++;
+    emitWaypoint(grid, path[a], outXY, outZ, count++);
+    if (b > a) {
+      const ground = path[a] < grid.w * grid.h;
+      let anchor = a;
+      for (let i = a + 1; i < b; i++) {
+        const los = ground ? hasLineOfSight(grid, path[anchor], path[i + 1]) : sheetLineOfSight(grid, path[anchor], path[i + 1]);
+        if (!los) { emitWaypoint(grid, path[i], outXY, outZ, count++); anchor = i; }
+      }
+      emitWaypoint(grid, path[b], outXY, outZ, count++);
+    }
+    a = b + 1;
+  }
+  return count;
 }
