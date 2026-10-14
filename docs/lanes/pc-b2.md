@@ -1067,3 +1067,9 @@ New `tools/verify-wm-regions.mjs <port>` (10 stills -> docs/test-reports/wm-regi
 - beastLayers.test: re-runs itself in an --expose-gc child (ALLOC_MAX 160 now enforced, ~96 B/step); supportAt/supportAtQ golden vs frozen old body (tools/testing/supportAtOld.mjs; engine/dev.js now also exports meshSupportSector).
 - anchor-chests.mjs: pure `anchorChests(world)` + main guard; ch12/outwall tests: `if (0)`/`|| 1` removed, pipeline stringify(anchorChests(outwall(ch12(w)))) === w and idempotence asserted; anchored chests in camp leashR and >= 3 m from members, road 8-25 m for un-anchored only. check-deps OK.
 -> arch re-review
+
+### BEAST-PARK-01/04 fix + BEAST-07/07b arch changes (kestrel-3)
+- beastSim: CIRCLE cooldown after RECOVER only while another same-token-class slot waits in CIRCLE (`otherWaiterSameClass`); `enterCircle` zeroes timer; exported `sim.isEngaged(s)`; beastRoutes/difficulty use it (beastDirectorWire had no own set; its test stub + beastRoutes.test stub got `isEngaged`).
+- beastRoutes.init parks night groups at any hour (active=0); test in beastRoutes.test.js (hour 22 load).
+- beastTactics.test: lone wolf easy never CIRCLE + >=3 windups/1800 steps; assignRoutes boot with reach 12 groups = 11.7 ms (<= 50). Tests green: beastTactics 32, beastPark 243, beastRoutes, beastDirectorWire, spawnDirector, beastDirect, poiFights 20. e2e split and beastLayers untouched.
+-> arch re-review

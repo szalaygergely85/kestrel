@@ -28,7 +28,7 @@ assert.equal(routeFor({ gid: 'x.y.1', cls: 'common', home: [10, 10] }, 12, () =>
 // 2. stub sim: slots walk to their goal at their own speed (0.8-1.4 m/s), 60 Hz
 const mkSim = () => {
   const n = members.length, sim = {
-    count: n, state: new Uint8Array(n), steer: { x: new Float64Array(n), y: new Float64Array(n) }, goalOn: new Uint8Array(n), goalTX: new Float64Array(n), goalTY: new Float64Array(n),
+    count: n, state: new Uint8Array(n), isEngaged(s) { return [1, 2, 3, 4, 5, 16, 18, 21, 23].includes(sim.state[s]); }, steer: { x: new Float64Array(n), y: new Float64Array(n) }, goalOn: new Uint8Array(n), goalTX: new Float64Array(n), goalTY: new Float64Array(n),
     downs: new Set(), speed: [1.4, 1.1, 0.8, 1.3, 0.9, 1.4, 1.0],
     setGoal(s, x, y) { sim.goalOn[s] = 1; sim.goalTX[s] = x; sim.goalTY[s] = y; }, hasGoal: (s) => sim.goalOn[s] === 1,
     atGoal: (s) => sim.goalOn[s] === 1 && Math.hypot(sim.goalTX[s] - sim.steer.x[s], sim.goalTY[s] - sim.steer.y[s]) <= 1.5,
@@ -78,6 +78,13 @@ const setup = (hourFn) => {
   assert.equal(f.active[nightG], 1, 'dawn but in view: no pop-out'); assert.equal(sim.downs.size, 0);
   for (let i = 0; i < 300; i++) f.step(300 - 70, 600, -1, 0);
   assert.equal(f.active[nightG], 0, 'dawn, unseen -> fades'); assert.equal(sim.downs.size, 2);
+}
+// BEAST-07 arch: init parks night groups at ANY hour (a night load must not leave them standing live untracked)
+{
+  const { sim, groups, f } = setup(() => 22);
+  const nightG = groups.findIndex((g) => g.when === 'night');
+  assert.ok(nightG >= 0 && f.active[nightG] === 0, 'night group inactive after a night-time load');
+  for (const s of groups[nightG].slots) assert.ok(sim.downs.has(s), 'night slot ' + s + ' parked after a night-time load');
 }
 assert.ok(isNightHour(20) && isNightHour(3) && !isNightHour(5) && !isNightHour(19.99));
 console.log('beastRoutes OK');

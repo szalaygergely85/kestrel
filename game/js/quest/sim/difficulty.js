@@ -2,8 +2,7 @@
 // applyDifficulty pushes them to tactics (tokM) and the spawn director (timers). HP/group size apply on the next spawn.
 // A setting change is refused while anything is engaged. TODO (BEAST-05/06b): per-slot notice/leash/windup step counts in beastSim,
 // and the player-damage hook (playerDmg) in the game's damage entry.
-// engaged = NOTICE CHASE WINDUP CHARGE RECOVER FLEE CIRCLE GRAB CAST (state numbers of beastSim; this file must not import it)
-const ENGAGED_STATES = new Set([1, 2, 3, 4, 5, 16, 18, 21, 23]);
+// engaged = sim.isEngaged(slot) (beastSim owns the state list)
 const D = (o) => Object.freeze(o);
 export const DIFFICULTY = D({
   easy: D({ name: 'easy', hp: 0.7, dmg: 0.6, playerDmg: 0.75, noticeR: 0.8, noticeSec: 1.0, windup: 1.25, tokM: 1, flank: 0, leash: 0.7, groupDelta: -1, eliteChance: 0, respawn: 1.5, gear: 1.0 }),
@@ -18,7 +17,7 @@ export function resolveDifficulty(name) { return DIFFICULTY[name] || DIFFICULTY.
 export function applyDifficulty(sim, name, director) {
   const d = resolveDifficulty(name);
   if (sim && sim.tactics && (sim.tactics.nM > 0 || sim.tactics.nR > 0)) return false; // token holders
-  if (sim && sim.state) for (let i = 0; i < sim.count; i++) { if (!sim.dormant[i] && ENGAGED_STATES.has(sim.state[i])) return false; } // BEAST-06b: legacy wolves/boars hold no tokens (O(n), rare call)
+  if (sim && sim.state) for (let i = 0; i < sim.count; i++) { if (!sim.dormant[i] && sim.isEngaged(i)) return false; } // BEAST-06b: legacy wolves/boars hold no tokens (O(n), rare call)
   if (sim && sim.tactics && sim.tactics.setDifficulty) sim.tactics.setDifficulty(d.name);
   if (sim) sim.difficulty = d;
   if (director) director.setDifficulty(d);

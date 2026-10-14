@@ -16,6 +16,7 @@ import m3PropsMod from '../../../../design/models/m3_props.js';
 import { loadTestAssets } from '../../../../tools/testing/content-node.mjs';
 import { makeOk } from '../../../../engine/test/assert.js';
 import { buildBeastNav } from './beastNav.js';
+import { assignRoutes, reachFor } from '../beastRoutes.js';
 import { createBeastSim, STATE_WANDER, STATE_RETURN, STATE_CHASE, STATE_WINDUP, STATE_CHARGE, STATE_RECOVER, STATE_STAGGER, STATE_CIRCLE } from './beastSim.js';
 import { KINDS } from './beastKinds.js';
 import { COMBAT_TARGETS, toSteps } from './beastConfig.js';
@@ -154,6 +155,22 @@ function run(seed, steps) {
       if (last[k] === STATE_CIRCLE && s !== STATE_CIRCLE && s !== STATE_WINDUP) flips++; // a waiter only leaves CIRCLE by winning the token (leash/lose aside)
       last[k] = s; } }
   ok('600 steps: token-less waiters do not flip-flop (CIRCLE exits other than to WINDUP: ' + flips + ', circle slot-steps ' + circled + ')', circled > 0 && flips <= 2, 'flips=' + flips);
+}
+
+// BEAST-04 fix: a lone wolf (no waiter) keeps its attack interval - no CIRCLE cooldown, several windups in 1800 steps
+{ const { world, sim } = mk(['grey_wolf']); sim.tactics.setDifficulty('easy');
+  const px = HX + 4, py = HY - 8, z = world.terrain.heightAt(px, py); let circ = 0, windups = 0, prev = -1;
+  for (let t = 0; t < 1800; t++) { sim.step(px, py, z); const s = sim.state[0]; if (s === STATE_CIRCLE) circ++; if (s === STATE_WINDUP && prev !== STATE_WINDUP) windups++; prev = s; }
+  ok('lone wolf easy: never CIRCLE (' + circ + '), windups ' + windups, circ === 0 && windups >= 3, `circ=${circ} windups=${windups}`);
+  ok('sim.isEngaged covers chase/windup/circle', sim.isEngaged && (sim.state[0] = STATE_WINDUP, sim.isEngaged(0)) && (sim.state[0] = STATE_CIRCLE, sim.isEngaged(0)) && (sim.state[0] = STATE_WANDER, !sim.isEngaged(0)));
+}
+// BEAST-07 arch: assignRoutes boot time with the A* reach (<= 50 ms)
+{ const { sim: s0 } = mk(['grey_wolf']); void s0;
+  const world0 = mk(['grey_wolf']).world, nav = buildBeastNav(world0, NAV_CFG), reach = reachFor(nav);
+  const gs = []; for (let g = 0; g < 12; g++) gs.push({ gid: 'r.t.' + g, cls: 'common', region: 'r', home: [HX + (g % 4) * 6, HY + Math.floor(g / 4) * 6] });
+  const t0 = performance.now(); assignRoutes(gs, 7, () => true, { reach, rectOf: () => null }); const ms = performance.now() - t0;
+  console.log('assignRoutes boot (12 groups, reach): ' + ms.toFixed(1) + ' ms');
+  ok('assignRoutes boot with reach <= 50 ms (' + ms.toFixed(1) + ')', !!reach && ms <= 50, ms.toFixed(1));
 }
 console.warn = orig;
 console.log(`beastTactics: ${pass} pass, ${fail} fail`); for (const f of failures) console.log('  FAIL ' + f);

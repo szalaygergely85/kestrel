@@ -10,7 +10,6 @@ import { hashU } from '../life/schedule.js';
 
 export const HOLD_DIST = 6, COHESION = 8, CHECK_STEPS = 30, NIGHT_FROM = 20, NIGHT_TO = 5;
 const REPLAN_M = 1.5, RING = 1.5; // BEAST-07b: ring+arrive (3 m, beastSim GOAL_ARRIVE_R) must stay < HOLD_DIST or the leader waits forever on a follower that "arrived"
-const ENGAGED = new Set([2, 3, 4, 5, 18]); // beastSim chase/windup/charge/recover/circle: combat owns the slot
 // 16 literal unit directions (no trig: deterministic everywhere)
 const D16 = [[1, 0], [0.9239, 0.3827], [0.7071, 0.7071], [0.3827, 0.9239], [0, 1], [-0.3827, 0.9239], [-0.7071, 0.7071], [-0.9239, 0.3827],
   [-1, 0], [-0.9239, -0.3827], [-0.7071, -0.7071], [-0.3827, -0.9239], [0, -1], [0.3827, -0.9239], [0.7071, -0.7071], [0.9239, -0.3827]];
@@ -99,7 +98,7 @@ export function createRouteFollower(o) {
   const F = {
     active, wp, isNight: () => isNightHour(hourNow),
     /** Start-up: night groups wait parked until 20:00. */
-    init() { hourNow = o.hour(); for (let g = 0; g < N; g++) if (isNightGroup[g] && !(isNightHour(hourNow))) park(g, true); },
+    init() { hourNow = o.hour(); for (let g = 0; g < N; g++) if (isNightGroup[g]) { park(g, true); active[g] = 0; } }, // any hour: step() brings them in (unseen) once it is night
     step(px, py, fx, fy) {
       if (++tick % CHECK_STEPS !== 0 || !sim.steer) return;
       hourNow = o.hour();
@@ -126,7 +125,7 @@ export function createRouteFollower(o) {
       for (let i = 0; i < slots.length; i++) {
         const s = slots[i];
         if (!usable(s)) continue;
-        if (ENGAGED.has(sim.state[s])) return; // someone is fighting: combat owns the group
+        if (sim.isEngaged(s)) return; // someone is fighting: combat owns the group
         if (leader < 0) leader = s;
       }
       if (leader < 0) return;
