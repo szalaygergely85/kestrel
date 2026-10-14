@@ -115,6 +115,8 @@ export class Terrain {
     // Reused output object for `groundNormalAt` central-difference reads of
     // `groundAt` (rule 9: no per-call allocation on the query path).
     this._groundNormalScratch = { x: 0, y: 0, z: 1 };
+    // BEAST-ALLOC-02 (arch 38.61): caller-owned *Out forms write doubles into Float64Arrays (no boxed returns).
+    this._gOut4 = new Float64Array(4);
   }
 
   /** The recipe's edit layer is module-global: re-bind THIS terrain's layer before any call into the recipe (two Terrains, one recipe). */
@@ -536,6 +538,50 @@ export class Terrain {
       if (h !== null) return h;
     }
     return this.heightAt(x, y);
+  }
+
+  /**
+   * Buffer core of `groundAt` (BEAST-ALLOC-02, arch 38.61 2b): reads b[0]=x, b[1]=y, writes b[2]=height. Same value bit for bit as
+   * `groundAt`: the near-band bilinear is the recipe's `util.gridHeight` formula inlined (design contract: bilinear on a baked grid,
+   * cell centres at +0.5); outside the band the analytic `heightAt`. No double args / boxed returns cross the call.
+   */
+  _groundCore(b) {
+    const x = b[0], y = b[1];
+    if (this.nearReady) {
+      const G = this.near;
+      const fx = (x - (G.x0 || 0)) / G.cell - 0.5, fy = (y - (G.y0 || 0)) / G.cell - 0.5;
+      const i = Math.floor(fx), j = Math.floor(fy);
+      if (!(i < 0 || j < 0 || i >= G.w - 1 || j >= G.h - 1)) {
+        const u = fx - i, v = fy - j, W = G.w, H0 = G.height;
+        const a = H0[i + j * W], c0 = H0[i + 1 + j * W], c = H0[i + (j + 1) * W], d = H0[i + 1 + (j + 1) * W];
+        b[2] = a + (c0 - a) * u + (c - a) * v + (a - c0 - c + d) * u * v;
+        return;
+      }
+    }
+    b[2] = this.heightAt(x, y);
+  }
+
+  /** `groundAt` for caller buffer `io`: in io[0]=x, io[1]=y; out io[3]=height (io[2] is left alone). */
+  groundAtBuf(io) {
+    const t = this._gOut4;
+    t[0] = io[0]; t[1] = io[1];
+    this._groundCore(t);
+    io[3] = t[2];
+  }
+
+  /** `groundNormalAt` for caller buffer `io`: in io[0]=x, io[1]=y; out io[4..6]=(nx, ny, nz); bit-identical to it. */
+  groundNormalAtBuf(io) {
+    const e = 2, t = this._gOut4, x = io[0], y = io[1];
+    t[0] = x - e; t[1] = y; this._groundCore(t); const hL = t[2];
+    t[0] = x + e; t[1] = y; this._groundCore(t); const hR = t[2];
+    t[0] = x; t[1] = y - e; this._groundCore(t); const hD = t[2];
+    t[0] = x; t[1] = y + e; this._groundCore(t); const hU = t[2];
+    const dhdx = (hR - hL) / (2 * e);
+    const dhdy = (hU - hD) / (2 * e);
+    const len = Math.sqrt(dhdx * dhdx + dhdy * dhdy + 1);
+    io[4] = -dhdx / len;
+    io[5] = -dhdy / len;
+    io[6] = 1 / len;
   }
 
   /** `groundAt`'s surface normal via a 2 m central difference, written into the caller-owned `out` (no allocation - mirrors `normalAt`). */

@@ -22,7 +22,7 @@ import { makeFrame, localToWorld, localDirToWorld, QUARTER_COS, QUARTER_SIN, fra
 import { gridLocal } from './gridLocal.js';
 import { buildWorldColliders, buildStaticMeshCollider, buildTrunkCollider, buildDetailCollider, buildPropCollider, buildKinematicCollider, moveKinematicPrism, refitDynCollider } from './colliders.js';
 import { cosSinDeg } from '../voxel/voxelPose.js';
-import { moveCircleMesh, moveSphereMesh, probeSupport, meshSupportSector, raycastCollidersRay, FLOOR_NONE } from '../physics/meshCollide.js';
+import { moveCircleMesh, moveSphereMesh, probeSupport, probeSupportIo, meshSupportSector, raycastCollidersRay, FLOOR_NONE } from '../physics/meshCollide.js';
 import { pointBlocked, resolvePropPicks } from './interaction.js';
 import { createWind } from './wind.js';
 import { createClothSystem, collectClothDefs } from './cloths.js';
@@ -410,7 +410,7 @@ export class World {
     this._meshSupportScratch = { floorZ: 0, floorHit: false, fnx: 0, fny: 0, fnz: 0, floorCollider: -1, floorTri: -1, ceilZ: 0, ceilHit: false };
     this._meshSectorScratch = { floorH: 0, ceilH: 'sky', solid: false, terrain: false, slope: false, nx: 0, ny: 0, nz: 1 };
     this._meshTerrainNormalScratch = { x: 0, y: 0, z: 1 };
-    this.eventsDropped = 0;
+        this.eventsDropped = 0;
 
     // Item 5a (architect review #1): bound once here, not re-created (a
     // fresh closure) on every `flushEvents()`/sim-step call.
@@ -1119,6 +1119,19 @@ export class World {
     return this.terrain ? this.terrain.groundAt(x, y) : null;
   }
 
+  /**
+   * `outsideFloorH` with the point in a caller buffer (BEAST-ALLOC-02b: no double args / boxed return per LOS sample): b[0]=x, b[1]=y;
+   * returns 1 and writes b[2]=floor (bit-identical to `terrain.groundAt`), 0 = no terrain (solid outside), -1 = unavailable (ask the full query).
+   */
+  outsideFloorHBuf(b) {
+    if (this.outsideSector !== World.prototype.outsideSector) return -1;
+    const t = this.terrain;
+    if (!t) return 0;
+    if (typeof t._groundCore !== 'function') return -1;
+    t._groundCore(b);
+    return 1;
+  }
+
   // ---- mesh physics (ME-11a, 27.18) ------------------------------------------
 
   /** `moveCircleMesh` over `world.colliders` (empty on 'grid' - always a well-defined, if trivial, call). */
@@ -1752,6 +1765,31 @@ export class World {
       }
     }
     return meshSupportSector(this._meshSupportScratch, terrainZ, tnx, tny, tnz, this._meshSectorScratch);
+  }
+
+  /**
+   * Caller-owned `supportAt` (BEAST-ALLOC-02, arch 38.61): same results bit for bit, no boxed returns/scratch objects.
+   * `io` (Float64Array >= 10, arch 38.61 2b: no double args cross the call): in [0] x, [1] y, [2] footZ; out [3] floorH, [4] nx, [5] ny, [6] nz, [7] terrain (0/1), [8] slope (0/1), [9] ceilH (NaN = sky).
+   */
+  supportAtOut(grounded, opts, io) {
+    const x = io[0], y = io[1], out = io;
+    const sup = this._meshSupportScratch;
+    probeSupportIo(this.colliders, this.colliders.length, io, grounded, opts, sup);
+    let terrainZ = NaN, tnx = 0, tny = 0, tnz = 0;
+    if (this.terrain && !this.structureAt(x, y)) {
+      this.terrain.groundAtBuf(io);
+      terrainZ = io[3];
+      if (terrainZ >= sup.floorZ) {
+        this.terrain.groundNormalAtBuf(io);
+        tnx = io[4]; tny = io[5]; tnz = io[6];
+      }
+    }
+    const terrain = terrainZ >= sup.floorZ;
+    out[3] = terrainZ !== terrainZ ? sup.floorZ : Math.max(sup.floorZ, terrainZ);
+    out[7] = terrain ? 1 : 0;
+    out[8] = !terrain && sup.floorHit ? 1 : 0;
+    out[9] = sup.ceilHit ? sup.ceilZ : NaN;
+    if (terrain) { out[4] = tnx; out[5] = tny; out[6] = tnz; } else { out[4] = sup.fnx; out[5] = sup.fny; out[6] = sup.fnz; }
   }
 
   // ---- water query (US-055a1, architecture.md 32.2) ---------------------------

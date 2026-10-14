@@ -421,6 +421,70 @@ export function probeSupport(colliders, count, x, y, footZ, grounded, opts, out)
   return out;
 }
 
+/**
+ * `probeSupport` with the query point in a caller-owned buffer (BEAST-ALLOC-02, arch 38.61 2b): io[0]=x, io[1]=y, io[2]=footZ.
+ * No double args cross the call, so a per-tick caller (beast sim via World.supportAtOut) allocates nothing. Same results.
+ */
+// NOTE: body duplicated from probeSupport on purpose - a wrapper boxed doubles (11 B/call); keep the two in sync.
+export function probeSupportIo(colliders, count, io, grounded, opts, out) {
+  const x = io[0], y = io[1], footZ = io[2];
+  // BUG-GONDOLA-FALL: a body may opt in (opts.airStepUp, integrate.js sets it) to probe up to that far above the feet while
+  // airborne. A depenetration squeeze (prop box face vs a stepped tower wall, gap < capsule width) can leave the feet a
+  // few cm BELOW a floor top they stand in; with up = SKIN that floor was missed and the player fell out of the world.
+  // Grid twin: airborne z <= floorH lands. Other callers (null opts, water, AI) keep the strict airborne probe.
+  const up = (grounded ? opts.stepUpMax : (opts && opts.airStepUp) || 0) + SKIN;
+  const originZ = footZ + up;
+  const tMaxDrop = up + MESH_PROBE_DROP + SKIN;
+
+  let floorHit = false;
+  let floorT = tMaxDrop;
+  let floorCollider = -1;
+  let floorTri = -1;
+  let fnx = 0, fny = 0, fnz = 0;
+
+  for (let ci = 0; ci < count; ci++) {
+    const c = colliders[ci];
+    if (!c.enabled || c.kind !== 'trimesh') continue;
+    const min = c.min, max = c.max;
+    if (x < min[0] || x > max[0] || y < min[1] || y > max[1]) continue;
+    _floorArg[0] = x; _floorArg[1] = y; _floorArg[2] = originZ; _floorArg[3] = 0; _floorArg[4] = 0; _floorArg[5] = -1; _floorArg[6] = floorT;
+    if (raycastRay(c.bvh, _floorArg, _floorRay)) {
+      floorHit = true;
+      floorT = _floorRay.t;
+      floorCollider = ci;
+      floorTri = _floorRay.tri;
+      fnx = _floorRay.nx; fny = _floorRay.ny; fnz = _floorRay.nz;
+    }
+  }
+  if (floorHit && fnz < 0) { fnx = -fnx; fny = -fny; fnz = -fnz; }
+  const floorZ = floorHit ? originZ - floorT : FLOOR_NONE;
+
+  const ceilOriginZ = Math.max(footZ, floorZ) + SKIN; // floorZ = FLOOR_NONE when !floorHit -> footZ wins
+  let ceilHit = false;
+  let ceilT = MESH_PROBE_RISE;
+  for (let ci = 0; ci < count; ci++) {
+    const c = colliders[ci];
+    if (!c.enabled || c.kind !== 'trimesh') continue;
+    const min = c.min, max = c.max;
+    if (x < min[0] || x > max[0] || y < min[1] || y > max[1]) continue;
+    _ceilArg[0] = x; _ceilArg[1] = y; _ceilArg[2] = ceilOriginZ; _ceilArg[3] = 0; _ceilArg[4] = 0; _ceilArg[5] = 1; _ceilArg[6] = ceilT;
+    if (raycastRay(c.bvh, _ceilArg, _ceilRay)) {
+      ceilHit = true;
+      ceilT = _ceilRay.t;
+    }
+  }
+  const ceilZ = ceilHit ? ceilOriginZ + ceilT : Infinity;
+
+  out.floorZ = floorZ;
+  out.floorHit = floorHit;
+  out.fnx = fnx; out.fny = fny; out.fnz = fnz;
+  out.floorCollider = floorCollider;
+  out.floorTri = floorTri;
+  out.ceilZ = ceilZ;
+  out.ceilHit = ceilHit;
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // meshSupportSector
 // ---------------------------------------------------------------------------
