@@ -1223,3 +1223,6 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 
 ## D-086
 **2026-10-14, owner (PC-A session; answers ratify conflict C4).** No Ferrum glow billboard: "sprites looked bad". D-078 "never a horizon sprite" stands. The `ferrumGlow` part of 38.46 is dropped. Ferrum on the horizon may only show as real geometry or lights (voxel/mesh), never as a sprite card.
+
+## D-087
+**2026-10-14, owner (PC-A session; answers ratify conflict C5, amends D-082).** "some notes can stay. some items too but like 5-10 out of 100 quest givers". Characters stay the rule for givers and returns. A small share of quests (about 5-10 % of all givers) may start from an OBJECT: a note, a letter, a found item. Such an object giver still follows OB-156: a marker you can see, Accept / Exit on read or pick-up, and a `?` at the return. The return goes to a CHARACTER unless the quest text says otherwise. Waystones, notice boards and posts are not on the allowed list by default; each object giver is chosen on purpose and flagged `objectGiver: true` in the quest data. The lint (QFIX-S2 R14 / QPIPE-LINT-01) allows flagged object givers and fails when they pass 10 % of all givers.
