@@ -45,13 +45,6 @@ function hexRgb(h) { return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5)
  * @param {{style?: object, palette?: object}} [opt] style = ASSETS.uiStyle.dialogue; palette = ASSETS.palette
  *   ({colors:{key:'#rrggbb'}} or {rgb:{key:[r,g,b]}}); defaults to globalThis.ASSETS.palette.
  */
-/** OB-186: an Accept/Exit offer = exactly 2 choices, one whose flag ends `.accept`. Returns {accept, decline} indices or null. */
-export function offerIndices(r) {
-  if (!r || r.choiceCount !== 2 || !r.choiceFlag) return null;
-  for (let i = 0; i < 2; i++) { const f = r.choiceFlag(i); if (typeof f === 'string' && /\.accept$/.test(f)) return { accept: i, decline: 1 - i }; }
-  return null;
-}
-
 export function createDialogueView(opt = {}) {
   const S = merge(DEF, opt.style);
   const P = opt.palette || (globalThis.ASSETS && globalThis.ASSETS.palette) || null;
@@ -88,7 +81,7 @@ export function createDialogueView(opt = {}) {
   function hintOf(withChoose, accept) {
     let t = typeof kh.text === 'string' ? kh.text : DEF.keyHints.text;
     if (!withChoose) t = t.split('   ').filter((p) => p.indexOf('Up/Down') !== 0).join('   ');
-    if (accept) t = t.replace('E: next', 'E: accept').replace('Q: close', 'Q: not now'); // OB-174/186: quest offer
+    if (accept) t = t.replace('E: next', 'E: accept'); // OB-174: quest offer
     const key = new Uint8Array(t.length);
     let k = 1;
     for (let i = 0; i < t.length; i++) {
@@ -98,8 +91,8 @@ export function createDialogueView(opt = {}) {
     }
     return { t, key };
   }
-  const HINT_NEXT = hintOf(false), HINT_CHOOSE = hintOf(true), HINT_ACCEPT = hintOf(false, true);
-  const isOffer = (r) => offerIndices(r) !== null;
+  const HINT_NEXT = hintOf(false), HINT_CHOOSE = hintOf(true), HINT_ACCEPT = hintOf(true, true);
+  const isOffer = (r) => { for (let i = 0; i < r.choiceCount; i++) { const f = r.choiceFlag ? r.choiceFlag(i) : null; if (typeof f === 'string' && /\.accept$/.test(f)) return true; } return false; };
 
   // The typing speed the runner should be created with (style typeOn.cps).
   const cps = num(tx.typeOn.cps, 28) > 0 ? num(tx.typeOn.cps, 28) : 28;
@@ -193,7 +186,7 @@ export function createDialogueView(opt = {}) {
       // `more` marker: line complete, no choices
       if (r.state === 'waiting' && (timeSec % period) / period < duty) put(markX, hy, markCode, C.more, plate);
       // choices
-      if (choosing && !isOffer(r)) { // OB-186: an offer shows only the text + 'E: accept   Q: not now'
+      if (choosing) {
         const cnt = r.choiceCount < MAX_CH ? r.choiceCount : MAX_CH;
         const inset = num(sp.inset, 3) | 0, sepY = y0 + (num(sp.row, 6) | 0);
         if (sepY < y1) for (let x = x0 + inset; x <= x1 - inset; x++) put(x, sepY, sepCode, C.sep, plate);

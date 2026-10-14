@@ -11,7 +11,6 @@ const rd = (p) => JSON.parse(readFileSync(new URL('../../../' + p, import.meta.u
 const m1 = rd('content/quests/m1.quest.json'), burl = rd('content/quests/burl.boars.quest.json'), blade = rd('content/quests/tower.blade.quest.json');
 const GD = [blade, burl, rd('content/quests/burl.follow.quest.json'), rd('content/quests/burl.stone.quest.json')];
 const dialogues = { bear: compileDialogue(rd('content/dialogue/bear.dialogue.json')) };
-import { offerIndices } from './dialogueView.js';
 const BOARS = burl.objectives[0].when.ids;
 const assets = new AssetRegistry({ palette: {} });
 const world0 = World.load({ name: 'qg', terrain: null, structures: [], entities: [] }, assets, {});
@@ -31,7 +30,7 @@ function setup(relay) {
     assert.equal(ctl.openFor('bear'), true);
     for (let i = 0; i < 300 && ctl.open; i++) {
       if (i === esc) { tick('Escape'); break; }
-      if (ctl.runner.state === 'choosing') { if (offerIndices(ctl.runner)) { tick(pick > 0 ? 'KeyQ' : 'KeyE'); continue; } /* OB-186: offer = E accept / Q not now */ for (let k = 0; k < pick; k++) tick('ArrowDown'); tick('KeyE'); continue; }
+      if (ctl.runner.state === 'choosing') { for (let k = 0; k < pick; k++) tick('ArrowDown'); tick('KeyE'); continue; }
       if (ctl.runner.state === 'typing' && said.at(-1) !== ctl.runner.line) said.push(ctl.runner.line);
       tick('KeyE');
     }
