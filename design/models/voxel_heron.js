@@ -184,8 +184,11 @@
     jaw:   { box: [5, 0, 41, 8, 8, 43], pivot: [6.5, 6.5, 43], parent: 'head' },
     wingL: { box: [1, 14, 22, 4, 38, 36], pivot: [2.5, 15, 34], parent: 'body' },
     wingR: { box: [9, 14, 22, 12, 38, 36], pivot: [10.5, 15, 34], parent: 'body' },
-    legL:  { box: [1, 18, 0, 6, 27, 21], pivot: [4.5, 25, 19.5], parent: 'body' },
-    legR:  { box: [7, 18, 0, 12, 27, 21], pivot: [8.5, 25, 19.5], parent: 'body' }
+    legL:  { box: [1, 18, 11, 6, 27, 21], pivot: [4.5, 25, 19.5], parent: 'body' },
+    legR:  { box: [7, 18, 11, 12, 27, 21], pivot: [8.5, 25, 19.5], parent: 'body' },
+    // ANIM-B-01d (D-101 option B): the ankle (z11) is the 'knee' - lower leg = tarsus + toes; appended idx 8, 9; the bend is backward
+    legL2: { box: [1, 18, 0, 6, 27, 11], pivot: [4.5, 24.5, 11], parent: 'legL' },
+    legR2: { box: [7, 18, 0, 12, 27, 11], pivot: [8.5, 24.5, 11], parent: 'legR' }
   };
   var PNAMES = Object.keys(parts);
   function ownerOf(px, py, pz) {
@@ -199,7 +202,7 @@
   Object.keys(LIMB_PART).forEach(function (k) {
     var pn = LIMB_PART[k], seen = {}, list = [];
     for (z = 0; z < SZ; z++) for (y = 0; y < SY; y++) for (x = 0; x < SX; x++) {
-      if (layers[z][y].charAt(x) === '.' || ownerOf(x, y, z) !== pn || seen[y + ',' + z]) continue;
+      if (layers[z][y].charAt(x) === '.' || (ownerOf(x, y, z) !== pn && ownerOf(x, y, z) !== pn + '2') || seen[y + ',' + z]) continue;
       seen[y + ',' + z] = 1; list.push([y, z]);
     }
     LIMB_YZ[k] = list;
@@ -269,14 +272,20 @@
       [400, { b: [0, 0, 0, 0, 0, 0.15] }],                                           // a breath
       [500, {}]
     ], true),
-    stalk: clip([
-      [300, { lL: -6, lR: 6 }],                                                      // both down, left ahead
-      [400, { lL: 4, lR: -10, lift: { lR: 5 }, b: [2, 0, 0, 0, 0, 0], n: [3, 0, 0], h: [-5, 0, 0] }],   // right foot lifted high
-      [300, { lL: 6, lR: -8, lift: { lR: 2 }, b: [1, 0, 0, 0, 0, 0], n: [2, 0, 0], h: [-3, 0, 0] }],    // set down slowly
-      [300, { lL: 6, lR: -6 }],                                                      // both down, right ahead
-      [400, { lL: -10, lR: 4, lift: { lL: 5 }, b: [2, 0, 0, 0, 0, 0], n: [3, 0, 0], h: [-5, 0, 0] }],
-      [300, { lL: -8, lR: 6, lift: { lL: 2 }, b: [1, 0, 0, 0, 0, 0], n: [2, 0, 0], h: [-3, 0, 0] }]
-    ], true),
+    // GAIT-A BEGIN heron.stalk (tools/gen-gait.mjs: option A, biped gait, duty 0.7, tuned 0.1 m/s, 10 keys x 200 ms; re-run, do not hand-edit)
+    stalk: { durations: [200,200,200,200,200,200,200,200,200,200], loop: true, frames: [
+        { body: { rot: [0.565,0.951,0], pos: [0,0,0.054] }, neck: { rot: [0.96,0,0], pos: [0,0,0] }, head: { rot: [0,0,0], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, wingL: { rot: [0,0,0], pos: [0,0,0] }, wingR: { rot: [0,0,0], pos: [0,0,0] }, legL: { rot: [-21.547,0,0], pos: [0,0,-0.773] }, legR: { rot: [8.948,0,0], pos: [0,0,0.073] }, legL2: { rot: [19.392,0,0], pos: [0,0,0] }, legR2: { rot: [-8.053,0,0], pos: [0,0,0] } },
+        { body: { rot: [0.959,0.588,0.294], pos: [0,0,0.097] }, neck: { rot: [1.631,0,-0.235], pos: [0,0,0] }, head: { rot: [0,0,0], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, wingL: { rot: [0,0,0], pos: [0,0,0] }, wingR: { rot: [0,0,0], pos: [0,0,0] }, legL: { rot: [-15.183,0,0], pos: [0,0,-0.488] }, legR: { rot: [14.969,0,0], pos: [0,0,-0.051] }, legL2: { rot: [13.665,0,0], pos: [0,0,0] }, legR2: { rot: [-13.472,0,0], pos: [0,0,0] } },
+        { body: { rot: [0.028,0,0.476], pos: [0,0,0.006] }, neck: { rot: [0.048,0,-0.38], pos: [0,0,0] }, head: { rot: [0,0,0], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, wingL: { rot: [0,0,0], pos: [0,0,0] }, wingR: { rot: [0,0,0], pos: [0,0,0] }, legL: { rot: [-9.023,0,0], pos: [0,0,-0.152] }, legR: { rot: [21.107,0,0], pos: [0,0,-0.2] }, legL2: { rot: [8.121,0,0], pos: [0,0,0] }, legR2: { rot: [-18.997,0,0], pos: [0,0,0] } },
+        { body: { rot: [-0.942,-0.588,0.476], pos: [0,0,-0.093] }, neck: { rot: [-1.601,0,-0.38], pos: [0,0,0] }, head: { rot: [0,0,0], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, wingL: { rot: [0,0,0], pos: [0,0,0] }, wingR: { rot: [0,0,0], pos: [0,0,0] }, legL: { rot: [-2.989,0,0], pos: [0,0,0.117] }, legR: { rot: [30.487,0,0], pos: [0,0,3.821] }, legL2: { rot: [2.691,0,0], pos: [0,0,0] }, legR2: { rot: [-44.759,0,0], pos: [0,0,0] } },
+        { body: { rot: [-0.61,-0.951,0.294], pos: [0,0,-0.064] }, neck: { rot: [-1.038,0,-0.235], pos: [0,0,0] }, head: { rot: [0,0,0], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, wingL: { rot: [0,0,0], pos: [0,0,0] }, wingR: { rot: [0,0,0], pos: [0,0,0] }, legL: { rot: [2.981,0,0], pos: [0,0,0.125] }, legR: { rot: [9.41,0,0], pos: [0,0,4.59] }, legL2: { rot: [-2.683,0,0], pos: [0,0,0] }, legR2: { rot: [-25.79,0,0], pos: [0,0,0] } },
+        { body: { rot: [0.565,-0.951,0], pos: [0,0,0.054] }, neck: { rot: [0.96,0,0], pos: [0,0,0] }, head: { rot: [0,0,0], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, wingL: { rot: [0,0,0], pos: [0,0,0] }, wingR: { rot: [0,0,0], pos: [0,0,0] }, legL: { rot: [8.948,0,0], pos: [0,0,0.073] }, legR: { rot: [-21.547,0,0], pos: [0,0,-0.773] }, legL2: { rot: [-8.053,0,0], pos: [0,0,0] }, legR2: { rot: [19.392,0,0], pos: [0,0,0] } },
+        { body: { rot: [0.959,-0.588,-0.294], pos: [0,0,0.097] }, neck: { rot: [1.631,0,0.235], pos: [0,0,0] }, head: { rot: [0,0,0], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, wingL: { rot: [0,0,0], pos: [0,0,0] }, wingR: { rot: [0,0,0], pos: [0,0,0] }, legL: { rot: [14.969,0,0], pos: [0,0,-0.051] }, legR: { rot: [-15.183,0,0], pos: [0,0,-0.488] }, legL2: { rot: [-13.472,0,0], pos: [0,0,0] }, legR2: { rot: [13.665,0,0], pos: [0,0,0] } },
+        { body: { rot: [0.028,0,-0.476], pos: [0,0,0.006] }, neck: { rot: [0.048,0,0.38], pos: [0,0,0] }, head: { rot: [0,0,0], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, wingL: { rot: [0,0,0], pos: [0,0,0] }, wingR: { rot: [0,0,0], pos: [0,0,0] }, legL: { rot: [21.107,0,0], pos: [0,0,-0.2] }, legR: { rot: [-9.023,0,0], pos: [0,0,-0.152] }, legL2: { rot: [-18.997,0,0], pos: [0,0,0] }, legR2: { rot: [8.121,0,0], pos: [0,0,0] } },
+        { body: { rot: [-0.942,0.588,-0.476], pos: [0,0,-0.093] }, neck: { rot: [-1.601,0,0.38], pos: [0,0,0] }, head: { rot: [0,0,0], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, wingL: { rot: [0,0,0], pos: [0,0,0] }, wingR: { rot: [0,0,0], pos: [0,0,0] }, legL: { rot: [30.487,0,0], pos: [0,0,3.821] }, legR: { rot: [-2.989,0,0], pos: [0,0,0.117] }, legL2: { rot: [-44.759,0,0], pos: [0,0,0] }, legR2: { rot: [2.691,0,0], pos: [0,0,0] } },
+        { body: { rot: [-0.61,0.951,-0.294], pos: [0,0,-0.064] }, neck: { rot: [-1.038,0,0.235], pos: [0,0,0] }, head: { rot: [0,0,0], pos: [0,0,0] }, jaw: { rot: [0,0,0], pos: [0,0,0] }, wingL: { rot: [0,0,0], pos: [0,0,0] }, wingR: { rot: [0,0,0], pos: [0,0,0] }, legL: { rot: [9.41,0,0], pos: [0,0,4.59] }, legR: { rot: [2.981,0,0], pos: [0,0,0.125] }, legL2: { rot: [-25.79,0,0], pos: [0,0,0] }, legR2: { rot: [-2.683,0,0], pos: [0,0,0] } }
+    ] },
+    // GAIT-A END heron.stalk
     stillHunt: clip([
       [1000, {}],
       [600, { h: [1, 0, -2] }],                                                      // micro-shift, then frozen again
@@ -367,6 +376,13 @@
       layers: layers,
       parts: parts,
       animations: animations,
+      // ANIM-B-01d: stalk is generated by tools/gen-gait.mjs (heron.stalk); keep these numbers = tools/gait-configs.mjs
+      legRig: {
+        body: 'body',
+        legs: [{ upper: 'legL', lower: 'legL2', foot: [4.5, 24, 0], bend: 'back' }, { upper: 'legR', lower: 'legR2', foot: [8.5, 24, 0], bend: 'back' }],
+        gaits: { stalk: { tunedMps: 0.1, duty: 0.7, phase: [0, 0.5], liftM: 0.1 } },
+        stand: ['idle', 'stillHunt', 'listen', 'preen', 'talk', 'nod']
+      },
       mounts: {
         speech:   { at: [6.5, 9, 50], part: 'head' },     // speech bubble / name tag anchor (~8 cm over the crown)
         eyes:     { at: [6.5, 7.5, 44.5], part: 'head' }, // dialogue camera look-at (between the eyes)

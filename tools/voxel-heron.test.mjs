@@ -40,11 +40,12 @@ function minZ(f, n) {
   const chain = chainOf(n); let m = Infinity;
   for (const [y, z] of YZ[n].values()) for (const cy of [0, 1]) for (const cz of [0, 1]) {
     let p = [y + cy, z + cz];
-    for (const k of chain) p = rotYZ(p, DEF.parts[k].pivot, f[k].rot[0], f[k].pos);
+    for (const k of chain) { const fk = f[k] || { rot: [0], pos: [0, 0, 0] }; p = rotYZ(p, DEF.parts[k].pivot, fk.rot[0], fk.pos || [0, 0, 0]); }   // B-01d: unkeyed lower legs = rigid
     if (p[1] < m) m = p[1];
   }
   return m;
 }
+const minLeg = (f, l) => Math.min(minZ(f, l), minZ(f, l + '2'));   // ANIM-B-01d: leg = upper + lower part
 function tris(D, id) {
   const ids = [];
   const PM = packVoxelModel(D, (k) => { let i = ids.indexOf(k); if (i < 0) { ids.push(k); i = ids.length - 1; } return i + 1; });
@@ -62,9 +63,9 @@ test('validateVoxelModel: no errors / warnings against palette + detail-pass mat
   for (const m of Object.values(DEF.mats)) assert.ok(P.materials[m] && DP.materials[m], 'material ' + m);
 });
 
-test('rig: <= 8 parts incl. neck, jaw (child of head) + folded wings, every part box sx+sy+sz <= 48', () => {
-  assert.ok(NAMES.length <= 8, NAMES.length + ' parts');
-  assert.deepStrictEqual(NAMES, ['body', 'neck', 'head', 'jaw', 'wingL', 'wingR', 'legL', 'legR']);
+test('rig: 10 parts (8 + the ankle halves legL2 / legR2, ANIM-B-01d) incl. neck, jaw (child of head) + folded wings, every part box sx+sy+sz <= 48', () => {
+  assert.ok(NAMES.length === 10, NAMES.length + ' parts');
+  assert.deepStrictEqual(NAMES, ['body', 'neck', 'head', 'jaw', 'wingL', 'wingR', 'legL', 'legR', 'legL2', 'legR2']);
   assert.strictEqual(DEF.parts.jaw.parent, 'head'); assert.strictEqual(DEF.parts.head.parent, 'neck');
   for (const [k, p] of Object.entries(DEF.parts)) {
     const b = p.box; assert.ok(b[3] - b[0] + b[4] - b[1] + b[5] - b[2] <= 48, k + ' box size');
@@ -81,7 +82,7 @@ test('size: ~0.95 m tall, slim (<= 0.26 m wide), taller than long', () => {
 });
 
 // clips: [frames, total ms, loop]
-const SPEC = { idle: [7, 4000, true], stalk: [6, 2000, true], stillHunt: [4, 3000, true], strike: [5, 900, false],
+const SPEC = { idle: [7, 4000, true], stalk: [10, 2000, true], stillHunt: [4, 3000, true], strike: [5, 900, false],
                talk: [12, 2000, true], listen: [4, 3000, true], preen: [9, 3000, true], nod: [3, 900, false] };
 const MOVING = new Set(['stalk']);
 test('clips: exact set, frame counts, total ms, loop, durations multiples of 50, every part keyed', () => {
@@ -92,7 +93,7 @@ test('clips: exact set, frame counts, total ms, loop, durations multiples of 50,
     assert.strictEqual(c.durations.reduce((a, b) => a + b, 0), ms, k + ' total ms');
     assert.strictEqual(!!c.loop, loop, k + ' loop');
     for (const d of c.durations) assert.strictEqual(d % 50, 0, k + ' duration ' + d);
-    c.frames.forEach((f, i) => assert.deepStrictEqual(Object.keys(f).sort(), [...NAMES].sort(), k + ' key ' + i));
+    c.frames.forEach((f, i) => assert.deepStrictEqual(Object.keys(f).sort(), (k === 'stalk' ? NAMES : NAMES.slice(0, 8)).slice().sort(), k + ' key ' + i));   // only the generated stalk keys the lower legs
   }
   for (const k of Object.values(FX.clipFor.state)) assert.ok(DEF.animations[k], 'clipFor ' + k);
   for (const [k, next] of Object.entries(FX.clipFor.once)) { assert.strictEqual(DEF.animations[k].loop, false, k); assert.ok(DEF.animations[next], next); }
@@ -111,7 +112,7 @@ test('feet planted: x/y fixed every key; no foot below the ground; both down sta
       assert.strictEqual(f[l].pos[0], -f.body.pos[0] || 0, k + ' ' + l + ' x planted');
       assert.strictEqual(f[l].pos[1], -f.body.pos[1] || 0, k + ' ' + l + ' y planted');
     }
-    const z = LEGS.map((l) => minZ(f, l));
+    const z = LEGS.map((l) => minLeg(f, l));
     z.forEach((v, j) => assert.ok(v >= -EPS, `${k} key ${i} ${LEGS[j]} below ground ${v.toFixed(2)}`));
     const down = z.filter((v) => v <= EPS).length;
     if (MOVING.has(k)) { assert.ok(down >= 1, `${k} key ${i}: no foot down`); maxLift = Math.max(maxLift, ...z); }

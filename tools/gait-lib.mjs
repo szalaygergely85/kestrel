@@ -9,6 +9,7 @@ export const GAITS = {
   amble:    { phase: { HL: 0, FL: 0.12, HR: 0.5, FR: 0.62 }, roll: 5, yaw: 4 },       // bear roll (lateral couplets)
   lateral:  { phase: { HL: 0, FL: 0.25, HR: 0.5, FR: 0.75 }, roll: 3, yaw: 3 },       // lateral-sequence walk LH LF RH RF
   diagonal: { phase: { HL: 0.5, FL: 0, HR: 0, FR: 0.5 }, roll: 1.5, yaw: 2 },        // trot
+  biped:    { phase: { HL: 0, HR: 0.5 }, roll: 2, yaw: 2 },                  // ANIM-B-01d: 2 legs (heron stalk, goblin walk / run)
   gallop:   { phase: { FL: 0, FR: 0.1, HL: 0.5, HR: 0.6 }, roll: 2, yaw: 2 }          // ANIM-B-01b: bounding couplets (knee rigs)
 };
 // ---- ANIM-B-01b knee rigs: a leg is { upper, lower, kind: 'fore'|'hind', k? } (2 segments, yz plane; u = hip -> knee, w = knee -> foot, from the def) ----
@@ -84,7 +85,7 @@ export function genGait(def, cfg) {
   const n = cfg.keys, legs = legInfo(def, cfg), cm = def.cellM, S = G.v * (G.T / 1000) * G.beta / cm;   // stance travel, voxels
   const names = Object.keys(def.parts), frames = [], durations = [], info = { maxRot: 0 };
   for (let i = 0; i < n; i++) {
-    const p = i / n, fr = {};
+    const p = i / n; let fr = {};
     for (const nm of names) fr[nm] = { rot: [0, 0, 0], pos: [0, 0, 0] };
     const bob = (G.bobM / cm) * Math.cos(4 * Math.PI * (p - 0.08));
     const pitch = G.pitch * Math.sin(4 * Math.PI * p + 0.6), roll = -G.roll * Math.sin(2 * Math.PI * (p - 0.2)), yaw = G.yaw * Math.sin(2 * Math.PI * p);
@@ -122,6 +123,7 @@ export function genGait(def, cfg) {
     }
     if (cfg.mirror) for (const [dst, src] of Object.entries(cfg.mirror)) fr[dst] = { rot: fr[src].rot.slice(), pos: [fr[src].pos[0], fr[src].pos[1], fr[src].pos[2] + (cfg.mirrorDz || 0)] };
     for (const nm of Object.keys(fr)) { fr[nm].rot = fr[nm].rot.map(r3); fr[nm].pos = fr[nm].pos.map(r3); }
+    if (cfg.only) { const o = {}; for (const nm of cfg.only) o[nm] = fr[nm]; fr = o; }   // legs + body only (goblin: arms / chest / spear stay hand-keyed)
     frames.push(fr); durations.push(Math.round(G.T / n));
   }
   info.legs = legs; info.G = G; info.S = S;

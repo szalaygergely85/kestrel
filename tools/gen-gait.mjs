@@ -25,6 +25,8 @@ function clipText(cfg, clip, info, ind) {
   const G = info.G, fm = (o) => JSON.stringify(o).replace(/"/g, '');
   const lines = clip.frames.map((f) => ind + '    { ' + Object.keys(f).map((n) => n + ': { rot: ' + JSON.stringify(f[n].rot) + ', pos: ' + JSON.stringify(f[n].pos) + ' }').join(', ') + ' }');
   const mk = cfg.mark || cfg.clip;     // marker key: cfg.mark when several models share a file (fox.walk vs rabbit walk)
+  if (cfg.var) return [`${ind}// GAIT-A BEGIN ${cfg.mark} (tools/gen-gait.mjs: legs of ${cfg.gait} gait, duty ${G.beta}, tuned ${G.v} m/s, ${clip.frames.length} keys; re-run, do not hand-edit)`,
+    `${ind}var ${cfg.var} = { durations: ${JSON.stringify(clip.durations)}, frames: [`, lines.join(',\n'), `${ind}] };`, `${ind}// GAIT-A END ${cfg.mark}`, ''].join('\n');
   return `${ind}// GAIT-A BEGIN ${mk} (tools/gen-gait.mjs: option A, ${cfg.gait} gait, duty ${G.beta}, tuned ${G.v} m/s, ${clip.frames.length} keys x ${clip.durations[0]} ms; re-run, do not hand-edit)\n` +
     `${ind}${cfg.clip}: { durations: ${JSON.stringify(clip.durations)}, loop: true, frames: [\n${lines.join(',\n')}\n${ind}] },\n${ind}// GAIT-A END ${mk}\n`;
 }
