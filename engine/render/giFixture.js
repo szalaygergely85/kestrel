@@ -30,3 +30,24 @@ export function makeFb(cols, rows) {
   return { gbuf: { kind, face, aoD: new Float32Array(n), cols, rows }, depth: { depth }, rt: { pxCellW: 1, pxCellH: 1 }, light, timeSec: 3 };
 }
 export function fnv(f32) { const u = new Uint32Array(f32.buffer, f32.byteOffset, f32.length); let h = 0x811c9dc5; for (let i = 0; i < u.length; i++) { h ^= u[i]; h = Math.imul(h, 0x01000193) >>> 0; } return h >>> 0; }
+
+/**
+ * GI-PROBE-05 gpucompare rows: a small analytic field over the world_m1 band around the Bend / tower (stands in for a Node bake until the
+ * baked .gi.bin files land). o: {groundAt(x,y), hour, lights (LightSet: ambient + sun.col), room:[x,y,r] dark interior, lamps:[x,y,r] emissive}.
+ */
+export function makeRowGI(o) {
+  const W = 48, H = 48, LY = 3, x0 = 1240, y0 = 1000, n = W * H * LY, pr = new Float32Array(n * GI_CHANNELS), base = new Float32Array(W * H), vld = new Uint8Array(n).fill(1);
+  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) base[r * W + c] = o.groundAt ? o.groundAt(x0 + (c + 0.5) * 8, y0 + (r + 0.5) * 8) : 0;
+  const near = (a, x, y) => (a ? Math.max(0, 1 - Math.hypot(x - a[0], y - a[1]) / a[2]) : 0);
+  for (let l = 0; l < LY; l++) for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
+    const px = x0 + (c + 0.5) * 8, py = y0 + (r + 0.5) * 8, q = ((l * H + r) * W + c), p = q * GI_CHANNELS;
+    const room = near(o.room, px, py) > 0.2 ? 1 : 0, lamp = near(o.lamps, px, py), g = 1 + 0.25 * Math.sin(c * 0.7 + r * 0.5 + l);
+    pr[p] = room ? 0.2 : 1.8 * g; pr[p + 1] = room ? 0.04 : 0.9; pr[p + 2] = 0.2 * Math.cos(r * 0.3); pr[p + 3] = 0.15 * Math.sin(c * 0.4);
+    for (let k = 0; k < 6; k++) { const s = p + 4 + k * 12; pr[s] = room ? 0.04 : 0.18 * g; pr[s + 4] = 0.09 * g; pr[s + 8] = 0.04 * g; pr[s + 1] = 0.05 * Math.sin(c + k); }
+    pr[p + 76] = 0.6 * lamp; pr[p + 80] = 0.3 * lamp; pr[p + 84] = 0.08 * lamp; pr[p + 77] = 0.1 * lamp * Math.sin(r); // warm emissive
+  }
+  const st = createGIState(); st.field = encodeGIField({ x0, y0, cellM: 8, w: W, h: H, layers: LY, probes: pr, valid: vld, base }); st.on = true;
+  const L = o.lights, hour = o.hour, night = hour >= 19.5 || hour < 5;
+  mixGIState(st, hour, [L.ambient[0], L.ambient[1], L.ambient[2]], [L.sun.col[0], L.sun.col[1], L.sun.col[2]], { night, skyFloor: 0.15, emisK: o.emisK === undefined ? 1 : o.emisK });
+  return st;
+}

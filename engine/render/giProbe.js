@@ -5,7 +5,7 @@
 export const GI_CHANNELS = 88, GI_NKEYS = 6, GI_SKY0 = 0, GI_SUN0 = 4, GI_EMIS0 = 76;
 export const GI_KEY_HOURS = [6, 9, 12, 15, 18, 20];
 export const GI_NORMAL_OFFSET = 0.5;           // m along N before sampling (light-leak guard)
-const Y0 = 0.282095, Y1 = 0.488603;            // L1 SH basis constants: [Y0, Y1*y, Y1*z, Y1*x]
+export const GI_Y0 = 0.282095, GI_Y1 = 0.488603; const Y0 = GI_Y0, Y1 = GI_Y1;            // L1 SH basis constants: [Y0, Y1*y, Y1*z, Y1*x]
 
 /**
  * Encode float probes into a GIField. probes = Float32Array(w*h*layers*88) (index ((l*h+row)*w+col)*88+c),
