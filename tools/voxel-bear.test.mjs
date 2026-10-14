@@ -47,9 +47,9 @@ if (DEF) {
     if (n) OWN[n].push([x, y, z]);
   } }));
 }
-function lowest(T, part) {    // lowest bottom-face corner of a part's voxels, metres
+function lowest(T, part) {    // lowest bottom-face corner of a limb's voxels (upper part + its `<name>2` lower part, ANIM-B-01a), metres
   let m = Infinity;
-  for (const [x, y, z] of OWN[part]) for (const dx of [0, 1]) for (const dy of [0, 1]) m = Math.min(m, worldZ(T, [x + dx, y + dy, z]));
+  for (const pn of [part, part + '2']) if (OWN[pn]) for (const [x, y, z] of OWN[pn]) for (const dx of [0, 1]) for (const dy of [0, 1]) m = Math.min(m, worldZ(T[pn], [x + dx, y + dy, z]));
   return m;
 }
 function highest(T, part) {
@@ -69,7 +69,8 @@ test('validateVoxelModel: no errors against palette + detail-pass materials', ()
 
 test('parts: <= MAX_VOX_PARTS, parents earlier, names, every part owns voxels', () => {
   assert.ok(PARTS.length <= MAX_VOX_PARTS);
-  assert.deepStrictEqual(PARTS, ['body', 'head', 'jaw', 'ears', 'armL', 'armR', 'legL', 'legR']);
+  // ANIM-B-01a: knee rig, 8 -> 12 parts (4 lower parts appended)
+  assert.deepStrictEqual(PARTS, ['body', 'head', 'jaw', 'ears', 'armL', 'armR', 'legL', 'legR', 'armL2', 'armR2', 'legL2', 'legR2']);
   PARTS.forEach((n, i) => { const p = DEF.parts[n].parent; if (p) assert.ok(PARTS.indexOf(p) < i, n + ' parent ' + p); });
   assert.strictEqual(DEF.parts.jaw.parent, 'head');
   for (const n of PARTS) assert.ok(OWN[n].length > 0, n + ' owns voxels');
@@ -98,14 +99,15 @@ test('realistic quadruped rest pose: hump 1.0 .. 1.2 m, 1.5 .. 1.8 m long, head 
   const len = (y1 + 1 - y0) * CM;
   assert.ok(len >= 1.5 && len <= 1.8, 'length ' + len);
   assert.ok(len / hump >= 1.4, 'longer than tall: ' + (len / hump).toFixed(2));
-  for (const n of LIMBS) assert.ok(Math.abs(lowest(T[n], n)) < 1e-9, n + ' on z 0');
+  for (const n of LIMBS) assert.ok(Math.abs(lowest(T, n)) < 1e-9, n + ' on z 0');
 });
 
 test('clips: names kept (talk / listen / wave / laugh for the dialogue data), frames name every part, jaw 0..max', () => {
   const C = DEF.animations;
   assert.deepStrictEqual(Object.keys(C).sort(), ['idle', 'laugh', 'listen', 'talk', 'turn', 'walk', 'wave']);
   for (const n of Object.keys(C)) for (const f of C[n].frames) {
-    assert.deepStrictEqual(Object.keys(f).sort(), PARTS.slice().sort(), n);
+    // legacy clips key the 8 base parts (lower parts unkeyed = rigid); the generated walk keys all 12
+    assert.deepStrictEqual(Object.keys(f).sort(), (n === 'walk' ? PARTS : PARTS.slice(0, 8)).slice().sort(), n);
     assert.ok(f.jaw.rot[0] >= 0 && f.jaw.rot[0] <= FX.talk.jawMaxDeg, n + ' jaw');
   }
   for (const n of Object.keys(C)) for (const d of C[n].durations) assert.strictEqual(d % 50, 0, n + ' durations whole 60 Hz steps');
@@ -127,31 +129,31 @@ test('bearFx clip names all exist', () => {
 test('all fours: every key of idle / talk / listen / laugh has all 4 paws within 2 cm of the ground', () => {
   for (const c of ['idle', 'talk', 'listen', 'laugh']) DEF.animations[c].frames.forEach((f, i) => {
     const T = posed(f);
-    for (const n of LIMBS) { const m = lowest(T[n], n); assert.ok(Math.abs(m) <= 0.02, `${c}[${i}] ${n} lowest ${m.toFixed(3)} m`); }
+    for (const n of LIMBS) { const m = lowest(T, n); assert.ok(Math.abs(m) <= 0.02, `${c}[${i}] ${n} lowest ${m.toFixed(3)} m`); }
   });
 });
 
 test('wave = paw raise on three legs: 3 paws planted every key, the right front paw >= 0.1 m up on keys 2..5', () => {
   DEF.animations.wave.frames.forEach((f, i) => {
     const T = posed(f);
-    for (const n of ['armL', 'legL', 'legR']) { const m = lowest(T[n], n); assert.ok(Math.abs(m) <= 0.03, `wave[${i}] ${n} ${m.toFixed(3)}`); }
-    if (i >= 2 && i <= 5) assert.ok(lowest(T.armR, 'armR') >= 0.1, `wave[${i}] armR ${lowest(T.armR, 'armR').toFixed(3)}`);
+    for (const n of ['armL', 'legL', 'legR']) { const m = lowest(T, n); assert.ok(Math.abs(m) <= 0.03, `wave[${i}] ${n} ${m.toFixed(3)}`); }
+    if (i >= 2 && i <= 5) assert.ok(lowest(T, 'armR') >= 0.1, `wave[${i}] armR ${lowest(T, 'armR').toFixed(3)}`);
   });
 });
 
 test('walk / turn: passing keys all 4 paws within 2 cm; no paw deeper than 5 cm; turn keeps >= 2 paws planted', () => {
+  // ANIM-B-01a: amble from the gait generator (duty 0.65): no paw sinks, >= 2 paws planted (30 mm: the foot rolls with the body roll) in every key
   DEF.animations.walk.frames.forEach((f, i) => {
     const T = posed(f);
-    for (const n of LIMBS) {
-      const m = lowest(T[n], n);
-      if (i % 2) assert.ok(Math.abs(m) <= 0.02, `walk[${i}] ${n} ${m.toFixed(3)}`); else assert.ok(m >= -0.05, `walk[${i}] ${n} ${m.toFixed(3)}`);
-    }
+    const ms = LIMBS.map((n) => lowest(T, n));
+    ms.forEach((m, k) => assert.ok(m >= -0.03, `walk[${i}] ${LIMBS[k]} ${m.toFixed(3)}`));
+    assert.ok(ms.filter((m) => Math.abs(m) <= 0.03).length >= 2, `walk[${i}] planted`);
   });
   DEF.animations.turn.frames.forEach((f, i) => {
     const T = posed(f);
-    const grounded = LIMBS.filter((n) => Math.abs(lowest(T[n], n)) <= 0.02).length;
+    const grounded = LIMBS.filter((n) => Math.abs(lowest(T, n)) <= 0.02).length;
     assert.ok(grounded >= 2, `turn[${i}] grounded ${grounded}`);
-    for (const n of LIMBS) assert.ok(lowest(T[n], n) >= -0.03, `turn[${i}] ${n}`);
+    for (const n of LIMBS) assert.ok(lowest(T, n) >= -0.03, `turn[${i}] ${n}`);
   });
 });
 

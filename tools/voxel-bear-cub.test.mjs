@@ -46,7 +46,8 @@ test('validateVoxelModel: no errors / warnings against palette + detail-pass mat
 });
 
 test('same rig names / parents as Burl (8 parts), every part box sx+sy+sz <= 48', () => {
-  assert.deepStrictEqual(Object.keys(DEF.parts), Object.keys(BURL.parts));
+  // ANIM-B-01a: Burl is a 12-part knee rig now, the cub keeps the 8 base parts (cub knees = later)
+  assert.deepStrictEqual(Object.keys(DEF.parts), Object.keys(BURL.parts).slice(0, 8));
   for (const [k, p] of Object.entries(DEF.parts)) {
     assert.strictEqual(p.parent, BURL.parts[k].parent, k + ' parent');
     const b = p.box; assert.ok(b[3] - b[0] + b[4] - b[1] + b[5] - b[2] <= 48, k + ' box size');
