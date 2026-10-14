@@ -1138,3 +1138,6 @@ Applied: banner names roadWest/outwall, 10 region journals (pack.json), RELAY_WA
 
 ### JOURNAL-GIVER-NAMES (kestrel-3, 2026-10-14)
 Wardens + postkeeper display names (Lin, Brenna, Ewan, Tull, Edda, Ivo, Nell, Orla, Kit, Sten, Bram) added to the single LABELS table in game/js/quest/errands.js (labelOf, used by main.js giverName fallback + lint R3). R3 = 0.
+
+### ENG-API-01a (kestrel-2, 2026-10-14) -> arch-review
+engine/api-1.0.json (551 names, tier experimental, area from group comment/module path) + tools/gen-api-manifest.mjs (`--write`, idempotent, preserves hand-edited tiers) + engine/api.test.js (replaces index.exports.test.js; dummy export fails it). Names via import+Object.keys (follows `export *`); area via static scan. dev.js not in manifest.
