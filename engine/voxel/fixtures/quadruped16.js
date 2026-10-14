@@ -41,8 +41,18 @@ const quadruped16 = {
   layers,
   meshOnly: true,
   parts,
-  legRig: legs.map((l) => ({ upper: l, lower: l + '2', hip: quadruped12.parts[l].pivot.slice(), knee: [quadruped12.parts[l].pivot[0], quadruped12.parts[l].pivot[1], KNEE_Z] })),
+  // 38.67 item 2 shape. Legs are straight at rest (hip z3, knee z1, foot 2 cells below the knee), so 'bend' is explicit: fore 'front', hind 'back'.
+  legRig: {
+    body: 'body',
+    legs: legs.map((l) => {
+      const pv = quadruped12.parts[l].pivot;
+      return { upper: l, lower: l + '2', foot: [pv[0], pv[1], -1], bend: l.charAt(3) === 'F' ? 'front' : 'back' };
+    }),
+    gaits: { walk: { tunedMps: 1.0, duty: 0.6, phase: [0, 0.5, 0.5, 0], liftM: 0.1 } },
+    stand: ['idle'],
+  },
   animations: {
+    idle: { fps: 2, loop: true, frames: [{}, { body: { pos: [0, 0, 0.5] } }] },
     walk: {
       fps: 8,
       loop: true,

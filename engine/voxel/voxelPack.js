@@ -5,6 +5,7 @@
 
 import { assertVoxelModel, PART_STRIDE, MAX_VOX_PARTS } from './VoxelModel.js';
 import { deriveEmissiveLight } from './emissiveLight.js';
+import { packLegRig } from './legRig.js';
 
 /**
  * Packs a validated VoxelModelDef into a PackedVoxelModel (architecture.md
@@ -107,6 +108,7 @@ export function packVoxelModel(def, matIdFor, lightInfo) {
     clipIndex,
     mounts,
     emissiveLight: lightInfo ? deriveEmissiveLight(def, lightInfo.matInfo, lightInfo.presetInfo, lightInfo.override) : null,
+    legRig: packLegRig(def, partNames), // ANIM-C-01: null without def.legRig
   };
 }
 

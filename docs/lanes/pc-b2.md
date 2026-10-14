@@ -836,3 +836,9 @@ MAX_VOX_PARTS 16; validator uses the const + new rule "> 8 parts needs meshOnly"
 Fixture `engine/voxel/fixtures/quadruped16.js` = 12 parts (note's "6+4 split = 12" is 10; added tail + jaw), meshOnly, `legRig` array (shape is my guess; ANIM-C-01 defines the real one; validator ignores it).
 New `engine/voxel/parts16.test.js`: validator rules, 8-part pack+mesh sha256 pin (verified equal on HEAD), 12-part pack/pose/mesh/DrawList, 0 alloc (20000 frames, flat). Edited rasterInstancedMask.test (9 -> 17 ranges), voxel.test (ME-22 case), chargen mesh.test (<=).
 Suites (voxel,mesh,chargen,DrawList,compositor,instances,parts16) 100/100 PASS, check-deps OK. Not done: 16b (gpucompare vox12, 30-animal bench). NEEDS B1-main: none.
+
+### ANIM-C-01 (kestrel-3, 2026-10-14) -> arch-review
+New `engine/voxel/legRig.js` (`validateLegRig`, `packLegRig`; called from VoxelModel.js validator and packVoxelModel, `pm.legRig` null without def.legRig). Note-3 shape, extra pack fields `upperOf`/`lowerOf` (Int8Array(partCount), leg index lookup for the pose loop); maxPitch/maxRoll stored in degrees; gait T in seconds.
+In-pose solve in `voxelPose.js` (`legOverride` in the part loop + body tilt/drop in `samplePose`), runs only when `pm.legRig && inst.legs && legs[0] > 0`; r1 recomputed after the r2 limit clamp. Fixture quadruped16: real legRig (straight legs, foot z -1 so |w| = 2, explicit bend) + idle clip.
+Tests `engine/voxel/legRig.test.js` (41): validator, pack, target within 0.05 cell (4 yaws, body pitch), oracle = preview poseLocal copy fed the recovered angles (1e-9), branch/limits, w=0.5, bit-identical null/w=0/no-legRig, 0 alloc. Suites + check-deps OK.
+Not done (per scope): legDriver, slopes, pool plumbing (`inst.legs` is not a pool field yet; undefined reads as off). Open: legs rotate about x only (lateral foot error from body roll accepted, per note).
