@@ -158,6 +158,7 @@ const unaccountedFor = allJsonFiles.filter((rel) => {
   if (rel === 'beasts/tiers.json') return false; // US-129a: data mirror of game/js/quest/sim/band.js BAND_TABLE (band.test.js keeps them equal), not a manifest content file
   if (rel.endsWith('.barks.json')) return false; // CH1-05/CH1-06 bark lines, fetched by main.js (no loadPack kind), checked by validate-content.mjs
   if (rel.startsWith('life/')) return false; // LIFE-*: life/raids.json + *.life.json have no `kind` (not loadPack content), fetched by game/js/main.js, schema-checked by game/js/life/*.test.js
+  if (rel === 'gi/manifest.json') return false; // GI-PROBE-07 bake hash manifest, read by giWire/validate-content
   if (rel === 'items/loot.json') return false; // EQ-11 data only, schema/refs checked by validate-content.mjs
   if (rel === 'items/recipes.json') return false; // RECIPES-01 data only, schema/refs checked by validate-content.mjs
   if (rel === 'loot/weapons.json') return false; // EQ-20 data only, mirrored + checked by game/js/quest/sim/weaponTiers.test.js
