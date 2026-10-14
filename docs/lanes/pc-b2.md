@@ -1109,3 +1109,7 @@ engine/render/giProbe.js (+ giProbe.test.js): 88-channel uint8 probe (sky4, sun6
 
 ### GI-PROBE-04 perf (kestrel-2, 2026-10-14) -> arch-review
 `sampleGIBuf` now memoises the interpolated 28-coef set (sky4/sun12/emis12) per snapped position (GI_SNAP=16 per probe cell = 0.5 m, 65536-slot direct-mapped cache on the state, flushed on version/field change; GPU twin must snap identically; this is a parity contract change for 05); only the SH eval runs per cell, 0 alloc. `gi.bench.mjs` (+ giFixture.js, non-uniform field; giLighting.test pins gi-on hashes, room/outdoor 0.17): lightSurfaces delta p50 480x180 +26 -> ~+1.5..5 ms, 240x90 ~+0.9 ms (budget 2 met); shadeTerrainCells delta 240x90 ~+3 ms (NOT met, ~0.14 us/cell hit path), 480x180 ~+13..27 ms; machine noise high. Alloc: GI adds 0 B (terrain baseline ~54 KB/frame is pre-existing).
+
+### GI-PROBE-04b terrain perf (kestrel-3, 2026-10-14) -> arch-review
+giProbe.js: opt-in per-frame memo (giMemoBegin/End, called by shadeTerrainCells): same snapped cell + same normal reuses the last output; same cell, other normal skips the cache lookup (bit-identical, 0 alloc, gi null untouched; giLighting/giProbe/terrainShade tests + check-deps green).
+Bench 5x median p50 delta: 240x90 +2.4 ms (was ~3; target 2 NOT quite met, noisy), 480x180 ~+9 ms (was 13..27). Remaining cost is the per-cell SH eval + unpackNormalOct; next step would be GPU-twin-style quantised-normal key.
