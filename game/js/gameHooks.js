@@ -10,14 +10,15 @@
 // `interactRaw` is the ungated E edge (S8-B1-04: lets a handler's own modal, e.g. the item-get card, consume the
 // E key to dismiss itself even though its own `isOpen` is what makes `interactPressed` false this same tick).
 // Events (payloads are REUSED objects from payload(name): receivers copy what they keep):
-//   area:entered {id}  area:left {id}  prop:touched {id, kind, x, y, z}  beast:died {id}  item:got {id, n}  player:died {x, y, z}  flag:set {key, value}
+//   area:entered {id}  zone:entered {id}  zone:left {id}  prop:touched {id, kind, x, y, z}  beast:died {id}  item:got {id, n}  player:died {x, y, z}  flag:set {key, value}
 // onRespawn() returns {x, y, z, yawDeg} or null; the first non-null wins (null = today's spawn / save point).
 
-export const EVENT_NAMES = ['area:entered', 'area:left', 'prop:touched', 'beast:died', 'item:got', 'player:died', 'flag:set'];
+export const EVENT_NAMES = ['area:entered', 'zone:entered', 'zone:left', 'prop:touched', 'beast:died', 'item:got', 'player:died', 'flag:set'];
 
 const payloads = {
   'area:entered': { id: '' },
-  'area:left': { id: '' },
+  'zone:entered': { id: '' },
+  'zone:left': { id: '' },
   'prop:touched': { id: '', kind: '', x: 0, y: 0, z: 0 },
   'beast:died': { id: '' },
   'item:got': { id: '', n: 1 },
@@ -110,13 +111,15 @@ export function createGameHooks() {
   return api;
 }
 
-/** Engine event bus -> seam events (beast:died, inventory:added -> item:got). Returns an unsubscribe. */
+/** ED-LOGIC-01c: engine trigger enter/leave -> zone:entered/left (logic blocks ONLY). area:entered keeps its old sources (questRelay/saveRelay polls),
+ *  so quests never get a second feed or events for zones they never listened to.
+ *  Engine event bus -> seam events (beast:died, inventory:added -> item:got). Returns an unsubscribe. */
 export function bridgeEngineEvents(events, hooks) {
   const offs = [
     events.on('beast:died', (p) => { if (p && typeof p.id === 'string') hooks.emitSimple('beast:died', p.id); }),
     events.on('inventory:added', (p) => { if (p && typeof p.id === 'string') hooks.emitSimple('item:got', p.id, p.n || 1); }),
-    events.on('trigger:entered', (p) => { if (p && typeof p.id === 'string') hooks.emitSimple('area:entered', p.id); }),
-    events.on('trigger:left', (p) => { if (p && typeof p.id === 'string') hooks.emitSimple('area:left', p.id); }),
+    events.on('trigger:entered', (p) => { if (p && typeof p.id === 'string') hooks.emitSimple('zone:entered', p.id); }),
+    events.on('trigger:left', (p) => { if (p && typeof p.id === 'string') hooks.emitSimple('zone:left', p.id); }),
     // interaction:fired {key, name} carries no position (interaction.js:191) -> no 4th arg, coords default to 0,0,0.
     events.on('interaction:fired', (p) => { if (p && typeof p.key === 'string') hooks.emitSimple('prop:touched', p.key, p.name); }),
   ];
