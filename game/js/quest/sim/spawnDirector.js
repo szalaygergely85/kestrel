@@ -14,6 +14,18 @@ const R_BOSS = 0, R_TIMED = 1, R_CAMP = 2;
 
 function strHash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
 
+/** BEAST-06a-WIRE: generateRegionalBeasts() output -> buildGroups members. kind = KINDS name of the species, key = region, slot = sim slot of
+ * the spawned entity (`slotOf(id)`, e.g. sim.slotOf). Members the sim does not track (-1) are dropped. Cold path. */
+export const SPECIES_KIND = Object.freeze({ boar: 'boar', wolf: 'grey_wolf', bear: 'black_bear' });
+export function regionalMembers(list, slotOf) {
+  const out = [];
+  for (let i = 0; i < list.length; i++) {
+    const b = list[i], slot = slotOf(b.id); if (slot < 0) continue;
+    out.push({ id: b.id, kind: SPECIES_KIND[b.species] || b.species, key: b.region, group: b.group, x: b.x, y: b.y, slot });
+  }
+  return out;
+}
+
 /**
  * Pure, deterministic. `members`: [{ kind|species, key (region), group (index), x, y, slot? }] (generateRegionalBeasts output order).
  * Returns groups [{ gid '<kind>.<key>.<n>', kind, region, cls, slots[], members[], home:[x,y], route:[[x,y]x3..6] }]. Same seed + members -> same list.
@@ -22,9 +34,9 @@ function strHash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h
 export function buildGroups(members, seed, walkable, areas = SPAWN_AREAS) {
   const order = [], byKey = {}; // insertion order = input order (no Map iteration)
   for (let i = 0; i < members.length; i++) {
-    const m = members[i], kind = m.kind || m.species, k = kind + '|' + m.key + '|' + m.group;
+    const m = members[i], kind = m.kind || m.species, region = m.key !== undefined ? m.key : m.region, k = kind + '|' + region + '|' + m.group;
     let g = byKey[k];
-    if (!g) { g = byKey[k] = { kind, region: m.key, members: [], slots: [], gi: m.group }; order.push(g); }
+    if (!g) { g = byKey[k] = { kind, region, members: [], slots: [], gi: m.group }; order.push(g); }
     g.members.push(m); g.slots.push(m.slot === undefined ? i : m.slot);
   }
   const perRegion = {}, out = [];
