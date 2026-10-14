@@ -40,7 +40,7 @@ import boarMod from '../../../../design/models/voxel_beast.js';
 import { loadTestAssets } from '../../../../tools/testing/content-node.mjs';
 import { makeOk } from '../../../../engine/test/assert.js';
 import { buildBeastNav } from './beastNav.js';
-import { createAStar } from '../../../../engine/nav/astar.js';
+import { createAStar } from '../../../../engine/index.js';
 import { canSee } from './sight.js';
 import { SWORD_CFG } from '../swordConfig.js';
 import { createSwordSim, ST_HARD } from './sword.js';
