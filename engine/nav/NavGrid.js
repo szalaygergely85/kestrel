@@ -410,6 +410,15 @@ export class NavGrid {
     const blockCount = this.blockCount;
     for (let i = 0; i < blockCount.length; i++) h.u32(blockCount[i]);
     h.u8Array(this.cost, 0, this.cost.length);
+    // NAV-LAYERS-01b: sheets + links (incl. door open flags) join the hash; ground-only grids hash as before.
+    const L = this.layers;
+    if (L) {
+      h.u32(L.count); h.u32(L.nLinks);
+      h.u8Array(L.cost, 0, L.cost.length);
+      h.u8Array(new Uint8Array(L.height.buffer, L.height.byteOffset, L.height.byteLength), 0, L.height.byteLength);
+      for (let k = 0; k < L.nLinks; k++) { h.u32(L.from[k]); h.u32(L.to[k]); h.u32(L.lcost[k]); }
+      h.u8Array(L.kind, 0, L.nLinks); h.u8Array(L.flags, 0, L.nLinks);
+    }
   }
 
   /**
