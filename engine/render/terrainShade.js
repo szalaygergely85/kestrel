@@ -10,6 +10,7 @@
 // `glsl/common.js`'s `HASH_FAST` (same avalanche constants), so a cell's
 // colour/glyph pick never drifts between the two languages.
 
+import { refreshFogCtx } from './atmos.js'; // ENV-03b
 import { samplePowLUT } from './fastShade.js';
 import { KIND_TERRAIN, KIND_GRASS } from './GBuffer.js';
 import { packTerrainTextures } from './gpu/TerrainTextures.js';
@@ -661,10 +662,14 @@ function terrainShadingFor(matTable, ctx) {
 }
 
 function ensureShadeCtx(terrain, palette) {
-  if (terrain._shadeCtx && terrain._shadeCtxVersion === terrain.farVersion) return terrain._shadeCtx;
+  if (terrain._shadeCtx && terrain._shadeCtxVersion === terrain.farVersion) {
+    // ENV-03b: atmosphere fog follows the live `P.fog.far` record (cached scalars re-read on a liveFogVersion change)
+    if (terrain._fogSeen !== (palette.liveFogVersion | 0)) { refreshFogCtx(terrain._shadeCtx, palette, -1); terrain._fogSeen = palette.liveFogVersion | 0; }
+    return terrain._shadeCtx;
+  }
   const packed = packTerrainTextures(terrain, palette);
   terrain._shadeCtx = makeTerrainShadeCtx(terrain.recipe, packed, palette);
-  terrain._shadeCtxVersion = terrain.farVersion;
+  terrain._shadeCtxVersion = terrain.farVersion; terrain._fogSeen = palette.liveFogVersion | 0;
   return terrain._shadeCtx;
 }
 
