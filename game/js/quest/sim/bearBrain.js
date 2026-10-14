@@ -24,7 +24,18 @@ export const BEAR_TUNING = Object.freeze({
   chargeMaxSec: 1.4, // s -> up to 8.4 m, a straight line
   recoverSec: 1.5,
   recoverWallSec: 2.0,
+  // BEAR-BITE: close-range lunge-bite, mirrors blackBearFx.bite (design/models/voxel_bear_black.js; the test pins equality)
+  biteReachR: 1.6,   // m (centre to centre) the bear may start a bite from
+  biteMs: 550,       // clip `attack` length
+  biteHitMs: 200,    // jaws snap = the ONE damage moment
+  biteCdSec: 3.0,    // s between bites
 });
+
+/** Deterministic bite-vs-swipe pick: n-th decision of slot i (no rng draw, so other traces never shift). */
+export function bearPicksBite(i, n) {
+  let h = Math.imul((i + 1) * 0x9e3779b1 ^ n, 0x85ebca6b); h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16;
+  return (h & 1) === 1;
+}
 
 export function bearOverrides(base = BEAST_DEFAULTS) {
   const T = BEAR_TUNING;
