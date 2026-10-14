@@ -22,7 +22,7 @@ function hslToHex(h, s, l) {
 
 /**
  * Draws the animated gradient + glyph-ramp strip into a RenderTarget.
- * @param {import('../../../engine/render/RenderTarget.js').RenderTarget} rt
+ * @param {import('../../../engine/index.js').RenderTarget} rt
  * @param {number} t - elapsed seconds, used to animate the gradient
  * @param {string} [ramp] - brightness ramp string; defaults to the D-002 base ramp
  */

@@ -24,7 +24,7 @@ async function fetchText(url) {
 async function fetchBytes(url) { return readFile(new URL(url)); } // MESH-BIN-01
 
 /**
- * @returns {Promise<{globals: Object, bundle: Object, assets: import('../../engine/core/assets.js').AssetRegistry}>}
+ * @returns {Promise<{globals: Object, bundle: Object, assets: import('../../engine/index.js').AssetRegistry}>}
  *   `globals` is `globalThis.ASSETS` (whatever design/*.js classic scripts
  *   the CALLING test already side-effect-imported - palette, models,
  *   overworld_far.js - plus `.levels.tower`/`.levels.test_room`/

@@ -1,6 +1,6 @@
 // ED-MESH-1g: async mesh selection with a mock frame.readSurface: right structure, stale dropped, sky clears.
 import { makeOk } from '../../engine/test/assert.js';
-import { makeFrame } from '../../engine/index.js';
+import { createFrame } from '../../engine/index.js';
 import { makePickGuard } from './pickGuard.js';
 import { resolveMeshClick } from './meshClick.js';
 import { unprojectCell } from './ray.js';
@@ -15,7 +15,7 @@ const ray = unprojectCell(cam, 9, 5, 8, 16, 4, 2, 'mesh');
 const mk = (id, d) => {
   const cx = ray.ox + ray.dx * d, cy = ray.oy + ray.dy * d, cz = ray.oz + ray.dz * d;
   const pos = new Float32Array([cx-1,cy-1,cz-1, cx+1,cy-1,cz-1, cx,cy+1,cz+1]);
-  return { id, kind: 'mesh', bbox: { x0:cx-1, x1:cx+1, y0:cy-1, y1:cy+1, z0:cz-1, z1:cz+1 }, frame: makeFrame(0,0,0,0), scale: 1, mesh: { pos } };
+  return { id, kind: 'mesh', bbox: { x0:cx-1, x1:cx+1, y0:cy-1, y1:cy+1, z0:cz-1, z1:cz+1 }, frame: createFrame(0,0,0,0), scale: 1, mesh: { pos } };
 };
 const MESH = 9;
 let surf = { kind: MESH, face: 0, mat: 0, planeId: 12345 /* arbitrary: ids must NOT come from here */, depth: 5 };

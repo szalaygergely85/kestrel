@@ -30,7 +30,7 @@ import {
   createPitchedTerms, pitchedTermsInto, worldToCell, resolveProjection, hasLineOfSight, // INT-HL-01
   ambientL, World, repackMaterials,
   updateInteraction, drawCrosshair,
-  buildLightSet, syncEntityLights, makeLightBuffer, attachedLightPos, sunPathFrom, applySunHours, applySunPair, setWorldSun, blendLook,
+  buildLightSet, syncEntityLights, createLightBuffer, attachedLightPos, sunPathFrom, applySunHours, applySunPair, setWorldSun, blendLook,
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
   createSceneDim, resetSceneDim, applySceneDim,
   loadContentPack, grassMaskFromJSON, createRng, prebuildTerrainMesh, hitSparks,
@@ -182,7 +182,8 @@ import { wireHitSparks, hitSparksEnabled } from './fx/hitSparkWire.js'; // HIT-S
 import { parsePointShadows, presetPointShadowsOn } from './pointShadowOpt.js'; // ME-16e: ?pointshadows=0|N
 import { parseGlow } from './glowOpt.js'; // EMIS-03/04: bleed + halo knob
 import { setReduceMotion, isReduceMotion, eyeZ, gateKick, textSizeCols } from './ui/comfort.js'; // SETTINGS-APPLY-01
-import { PHYSICS, makeUnderState } from '../../engine/index.js';
+import { PHYSICS, createUnderState, setApiWarnings } from '../../engine/index.js';
+if (new URLSearchParams(window.location.search).get('debug') === '1') setApiWarnings(true); // ENG-API-01h: dev flag only - deprecated engine names warn once
 import { meshFeedStats, MAX_MESH_DRAWS, MAX_DRAW_ITEMS } from '../../engine/index.js'; // OB-039: F3 mesh draw cap line
 import { createModelPreview, createCharCache } from '../../engine/index.js'; // EQ-03/04: Character tab model preview
 import { composeCharacter, meshCharacter, collapseRig, riggedModelDef } from '../../engine/index.js'; // OB-086: the kit character in the world
@@ -1032,7 +1033,7 @@ engine.events.on('grid:changed', ({ cols, rows }) => {
   engine.attachMaterialTable(matTable); // RE-06: re-applies engine.teamSpec to the new table
   if (wgActive && wgPipeline.ready) wgPipeline.bind(matTable, assets.palette); // grid resize itself ran inside engine.applyGrid
   if (engine.world) for (const s of engine.world.structures) { if (s.kind === 'mesh') continue; bindLevel(matTable, s.level); repackMaterials(s.packed, s.level, matTable); }
-  if (fb) { fb.depth = engine.depthBuffer; fb.gbuf = gbuf; fb.matTable = matTable; fb.light = makeLightBuffer(cols, rows); }
+  if (fb) { fb.depth = engine.depthBuffer; fb.gbuf = gbuf; fb.matTable = matTable; fb.light = createLightBuffer(cols, rows); }
 });
 
 // Internal hook for manual/automated smoke-testing in a console - not part
@@ -2382,13 +2383,13 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
   // grid-sized fields (`depth`/`gbuf`/`matTable`/`light`) in place.
   fb = {
     rt, depth: depthBuffer, palette: assets.palette, lights: lightSet,
-    light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0,
+    light: createLightBuffer(rt.cols, rt.rows), timeSec: 0,
     gbuf, matTable, detailPass, // US-028
     voxelPool: gameVoxelPool, // US-041a (15.3 item 1)
     instances: engine.instances, // RE-06 (28.6)
     viewModel: engine.viewModel, // US-078a (30.1): the held sword; both mesh twins draw it when shown
     waterLooks: resolveWaterLooks(window.ASSETS.waterLooks), // US-055a2c (Q12 item 8): JS twin, same table as wgPipeline.setWaterLooks
-    under: makeUnderState(), // SWIM-04b/c: compositor + passShade call updateUnderState(eye vs surface) each frame
+    under: createUnderState(), // SWIM-04b/c: compositor + passShade call updateUnderState(eye vs surface) each frame
     ripples, // S8-B2-13b NEEDS B1-main (38.14): duck-typed {packInto} read by waterComposite.js; owned by the module-scope singleton above
     // US-030a: true once a ready GPU pipeline owns casting - `renderWorld`
     // (compositor.js) reads this and skips its whole CPU sequence; kept in
@@ -2886,7 +2887,7 @@ function runVoxelBenchMode() {
 
   const fb = {
     rt, depth: depthBuffer, palette: assets.palette, gbuf, matTable, detailPass,
-    lights, light: makeLightBuffer(rt.cols, rt.rows), timeSec: 0, gpu: true, renderer: 'mesh', voxelPool: pool,
+    lights, light: createLightBuffer(rt.cols, rt.rows), timeSec: 0, gpu: true, renderer: 'mesh', voxelPool: pool,
     ripples, // S8-B2-13b NEEDS B1-main (38.14): absent would be fine too (duck-typed), set for consistency with the gameplay fb
   };
 

@@ -4,6 +4,18 @@ Reusable ASCII 3D engine (D-006). `index.js` is the only public entry point -
 `game/` and `tools/` import exactly `engine/index.js`, never a deep path
 (enforced by `node tools/check-deps.mjs`, rule 3).
 
+## Public API (engine 1.0)
+
+Every name exported by `index.js` is listed in [`api-1.0.json`](api-1.0.json) with an `area` (core, content, world,
+render, physics, nav, anim, ui, sim, fx, editor), a `tier` and, for deprecated names, `replacedBy`:
+
+- `stable`: frozen for 1.x (never renamed/removed; signatures only grow by optional trailing args).
+- `experimental`: exported, may change in a minor release.
+- `deprecated`: still exported for one release; use the `replacedBy` name.
+
+`node engine/api.test.js` keeps index.js and the manifest identical; `node tools/gen-api-manifest.mjs --write` adds
+new names as `experimental`. Details and naming rules: docs/architecture.md section 38.74.
+
 ## Folder map
 
 - `core/` - bootstrap: `engine.js` (`createEngine`), `loop.js`, `input.js`,

@@ -8,7 +8,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { GIBake, encodeGIBake as encodeRaw, writeGIFile, isGIFileFresh, makeGrid, zoneAt, zoneId, BAND_CHUNK as CHUNK } from '../engine/index.js';
+import { GIBake, encodeGIBake as encodeRaw, writeGIFile, isGIFileFresh, createBandGrid, zoneAt, zoneId, BAND_CHUNK as CHUNK } from '../engine/index.js';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 export const GI_DIR = 'content/gi', WORLD_FILE = 'worlds/world_m1.world.json', CELL_M = 8;
@@ -17,7 +17,7 @@ const SOURCES = ['engine/world/giBake.js', 'engine/render/giProbe.js', 'engine/w
 
 /** Pinned zones of the world def: [{id, x0, y0, w, h}] (w/h in 8 m probe columns). */
 export function zonesOf(def, cellM = CELL_M) {
-  const g = makeGrid(def.terrainGrid), out = [];
+  const g = createBandGrid(def.terrainGrid), out = [];
   for (const [i, j] of g.pin) {
     const z = zoneAt(g, i, j, {});
     out.push({ id: zoneId(i, j), x0: z.cx0 * CHUNK, y0: z.cy0 * CHUNK, w: z.cw * CHUNK / cellM, h: z.ch * CHUNK / cellM });

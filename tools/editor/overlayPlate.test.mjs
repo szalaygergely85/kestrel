@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { CellBuffer, makeFrame } from '../../engine/index.js';
+import { CellBuffer, createFrame } from '../../engine/index.js';
 import { drawHighlightRect, drawHoverOutline, drawMarkers, drawSelectionHighlight } from './select.js';
 import { EDITOR_PLATE_BG } from './overlayStyle.js';
 import '../../design/items.js';
@@ -18,7 +18,7 @@ drawHighlightRect(rt, { minCol: 25, maxCol: 30, minRow: 10, maxRow: 15 }, '#ffd2
 drawHoverOutline(rt, 40, 20, '#7cfc7c');
 assert.deepEqual(Array.from(cb.bg.slice((20 * 80 + 40) * 4, (20 * 80 + 40) * 4 + 4)), [10, 11, 16, 255]);
 const cam = { x: 0, y: 0, z: 1, yawDeg: 0, pitchDeg: 0, projection: 'pitched' };
-const frame = makeFrame(0, 0, 0, 0);
+const frame = createFrame(0, 0, 0, 0);
 const point = { id: 'lamp', x: 0, y: -4, z: 1 };
 const world = {
   structures: [{ id: 'tower', frame, level: { name: 'tower', def: { lights: [point], interactables: [{...point,id:'note'}] } } }],

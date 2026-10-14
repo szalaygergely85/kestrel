@@ -5,11 +5,11 @@
 // Frustum cull only (engine/mesh/culling.js classifyAABB on the mesh bbox grown by yaw), no distance/fog cull, no LOD (props have none).
 // Prints, per pose: in-view props + triangles for the "before" set (mdw rows removed), the "after" set (all rows), and the delta.
 globalThis.window = globalThis.window || globalThis;
+import { frameMatrix } from '../engine/index.js';
+import { frustumPlanes, classifyAABB, CULL_OUT } from '../engine/dev.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { frustumPlanes, classifyAABB, CULL_OUT } from '../engine/mesh/culling.js';
-import { frameMatrix } from '../engine/render/projection.js';
 import { GRID } from './mesh-tri-budget.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
