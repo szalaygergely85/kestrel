@@ -4,6 +4,7 @@ import { compileFaunaDef } from '../fauna/faunaDef.js';
 import { createFaunaFeed } from '../fauna/feed.js';
 import { FIXTURE_FX, fixtureModels } from '../fauna/wildlifeFx.fixture.js';
 import { VoxelPool } from '../render/voxelPool.js';
+import { allocProbe } from '../../tools/allocProbe.mjs';
 import { packVoxelModel } from './voxelPack.js';
 import { computeVoxelPose } from './voxelPose.js';
 import quadruped12 from './fixtures/quadruped12.js';
@@ -33,6 +34,19 @@ function run(pm, opts, frames) {
     pool.beginFrame(); f.feed(pool, cam);
   }
   return { slots, pool, f };
+}
+
+// 0. allocation first (before other sections warm the shared driver/feed code with other shapes: polymorphic feedback boxes doubles)
+{
+  if (typeof globalThis.gc === 'function') {
+    const heap = (opts) => {
+      const R = run(pmRig, opts, 90);
+      const r = allocProbe((n) => { for (let k = 0; k < n; k++) { for (const s of R.slots) s.y -= 1.4 / 60; R.pool.beginFrame(); R.f.feed(R.pool, cam); } }, { n: 1500, warm: 8, windows: 6 });
+      return r.bytes;
+    };
+    const base = heap({ legIk: false }), withLegs = heap({ ground: flat });
+    ok(withLegs - base < 32 * 1024, 'driver adds ~0 B/frame over the plain feed, allocProbe min of 5 (' + (withLegs - base) + ' B / 1500 frames; base ' + base + ')');
+  }
 }
 
 // 1. pool plumbing
@@ -97,17 +111,6 @@ function run(pm, opts, frames) {
 {
   const A = run(pmRig, { ground: flat, }, 90), B = run(pmRig, { ground: flat }, 90);
   ok(Buffer.compare(Buffer.from(A.pool.raw[0].legs.buffer, A.pool.raw[0].legs.byteOffset, 128), Buffer.from(B.pool.raw[0].legs.buffer, B.pool.raw[0].legs.byteOffset, 128)) === 0, 'deterministic');
-  if (typeof globalThis.gc === 'function') {
-    const heap = (opts) => {
-      const R = run(pmRig, opts, 90);
-      for (let k = 0; k < 1500; k++) { for (const s of R.slots) s.y -= 1.4 / 60; R.pool.beginFrame(); R.f.feed(R.pool, cam); }
-      globalThis.gc(); const h0 = process.memoryUsage().heapUsed;
-      for (let k = 0; k < 1500; k++) { for (const s of R.slots) s.y -= 1.4 / 60; R.pool.beginFrame(); R.f.feed(R.pool, cam); }
-      globalThis.gc(); return process.memoryUsage().heapUsed - h0;
-    };
-    const base = heap({ legIk: false }), withLegs = heap({ ground: flat });
-    ok(withLegs - base < 32 * 1024, 'driver adds ~0 B/frame over the plain feed (' + (withLegs - base) + ' B / 1500 frames; base ' + base + ')');
-  }
 }
 console.log(`feedLegs.test: ${pass} pass, ${fail} fail`);
 process.exit(fail ? 1 : 0);

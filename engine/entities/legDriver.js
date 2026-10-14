@@ -30,6 +30,10 @@ const F_MODE = 0, F_PX = 1, F_LX = 4, F_GX = 7, F_T = 10, F_REPLAN = 11, F_PAT =
 const M_STANCE = 0, M_SWING = 1, M_STEP = 2;
 
 const _land = new Float64Array(3); // scratch return of landing()
+const _gz = new Float64Array(1);   // scratch return of groundZ()
+const _lf = new Float64Array(1);   // scratch return of swingPos() (lift)
+const _sp = new Float64Array(3);   // swingPos args: q, lift, zOff (typed: no boxed double args)
+const _li = new Float64Array(12);  // landing args, see call sites
 const _lift = new Float64Array(4); // swing lift of each foot this frame (removed from the foot height for the body plane)
 const DEG = 180 / Math.PI;
 
@@ -74,12 +78,12 @@ export function createLegDriver(capacity = 48) {
 
   /** Ground height under (x,y) for a foot; falls back to the root height when the query fails or is far off (swim, odd floor). */
   let flatFrame = false; // set by a fallback: no more queries until the next update
-  function groundZ(ground, x, y, rootZ) {
-    if (flatFrame) return rootZ;
+  function groundZ(ground, x, y, rootZ) { // result in _gz[0]
+    if (flatFrame) { _gz[0] = rootZ; return; }
     drv.queries++;
     const h = ground ? ground.groundAt(x, y) : null;
-    if (h === null || h === undefined || !(Math.abs(h - rootZ) <= FLAT_TOL)) { flatFrame = true; return rootZ; }
-    return h;
+    if (h === null || h === undefined || !(Math.abs(h - rootZ) <= FLAT_TOL)) { flatFrame = true; _gz[0] = rootZ; return; }
+    _gz[0] = h;
   }
 
   function update(slot, pm, clipIdx, ground) {
@@ -159,7 +163,7 @@ export function createLegDriver(capacity = 48) {
         const F = S + HDR + k * FOOT, o = k * 12;
         const mx = (geo[o + 11] - anc[0]) * cm, my = (restY(geo, o) - anc[1]) * cm;
         const px = x + cs * mx - sn * my, py = y + sn * mx + cs * my;
-        const gz = groundZ(ground, px, py, z);
+        groundZ(ground, px, py, z); const gz = _gz[0];
         state[F + F_MODE] = M_STANCE; state[F + F_PX] = px; state[F + F_PX + 1] = py; state[F + F_PX + 2] = gz;
         state[F + F_REPLAN] = 0; state[F + F_PAT] = 0;
       }
@@ -183,7 +187,7 @@ export function createLegDriver(capacity = 48) {
       if (mode === M_STEP) {
         const tm = state[F + F_T] + dt;
         if (tm >= STEP_TIME) { plant(state, F); mode = state[F + F_MODE] = M_STANCE; }
-        else { state[F + F_T] = tm; _lift[k] = swingPos(state, F, tm / STEP_TIME, lift, poses, T, zOff); continue; }
+        else { state[F + F_T] = tm; _sp[0] = tm / STEP_TIME; _sp[1] = lift; _sp[2] = zOff; swingPos(state, F, poses, T); _lift[k] = _lf[0]; continue; }
       }
       if (standMode) {
         if (mode === M_STANCE) {
@@ -195,10 +199,10 @@ export function createLegDriver(capacity = 48) {
             for (let m = k0; m < k0 + 2 && m < n; m++) if (m !== k && state[S + HDR + m * FOOT + F_MODE] === M_STEP) busy = true;
             if (!busy) {
               state[F + F_LX] = state[F + F_PX]; state[F + F_LX + 1] = state[F + F_PX + 1]; state[F + F_LX + 2] = state[F + F_PX + 2];
-              const gz = groundZ(ground, rx, ry, z);
+              groundZ(ground, rx, ry, z); const gz = _gz[0];
               state[F + F_GX] = rx; state[F + F_GX + 1] = ry; state[F + F_GX + 2] = gz;
               state[F + F_T] = 0; state[F + F_MODE] = M_STEP;
-              _lift[k] = swingPos(state, F, 0, lift, poses, T, zOff);
+              _sp[0] = 0; _sp[1] = lift; _sp[2] = zOff; swingPos(state, F, poses, T); _lift[k] = _lf[0];
               continue;
             }
           }
@@ -217,7 +221,7 @@ export function createLegDriver(capacity = 48) {
       }
       else if (mode === M_STANCE && phi >= lr.gait[gk + 1]) {
         state[F + F_LX] = state[F + F_PX]; state[F + F_LX + 1] = state[F + F_PX + 1]; state[F + F_LX + 2] = state[F + F_PX + 2];
-        landing(ground, dirx, diry, x, y, z, cs, sn, mx, my, 1 - phi, stride, lr.gait[gk + 1]);
+        _li[0] = dirx; _li[1] = diry; _li[2] = mx; _li[3] = my; _li[4] = 1 - phi; _li[5] = stride; _li[6] = lr.gait[gk + 1]; _li[7] = x; _li[8] = y; _li[9] = z; _li[10] = cs; _li[11] = sn; landing(ground);
         state[F + F_GX] = _land[0]; state[F + F_GX + 1] = _land[1]; state[F + F_GX + 2] = _land[2];
         state[F + F_REPLAN] = 0; mode = state[F + F_MODE] = M_SWING;
       }
@@ -225,10 +229,10 @@ export function createLegDriver(capacity = 48) {
         const dutyK = lr.gait[gk + 1], q = (phi - dutyK) / (1 - dutyK);
         if (q >= 0.5 && state[F + F_REPLAN] === 0) {
           state[F + F_REPLAN] = 1;
-          landing(ground, dirx, diry, x, y, z, cs, sn, mx, my, 1 - phi, stride, dutyK);
+          _li[0] = dirx; _li[1] = diry; _li[2] = mx; _li[3] = my; _li[4] = 1 - phi; _li[5] = stride; _li[6] = dutyK; _li[7] = x; _li[8] = y; _li[9] = z; _li[10] = cs; _li[11] = sn; landing(ground);
           state[F + F_GX] = _land[0]; state[F + F_GX + 1] = _land[1]; state[F + F_GX + 2] = _land[2];
         }
-        _lift[k] = swingPos(state, F, q, lr.gait[gk + 2], poses, T, zOff);
+        _sp[0] = q; _sp[1] = lr.gait[gk + 2]; _sp[2] = zOff; swingPos(state, F, poses, T); _lift[k] = _lf[0];
       } else {
         poses[T] = state[F + F_PX]; poses[T + 1] = state[F + F_PX + 1]; poses[T + 2] = state[F + F_PX + 2] + zOff;
       }
@@ -287,10 +291,11 @@ export function createLegDriver(capacity = 48) {
   }
 
   // Landing point after `dPhi` more cycle: predicted root + yaw-rotated rest foot + forward * duty*S/2; ONE groundAt (-> _land).
-  function landing(ground, dx, dy, x, y, z, cs, sn, mx, my, dPhi, stride, duty) {
-    const adv = dPhi * stride + duty * stride * 0.5;
-    const lx = x + cs * mx - sn * my + dx * adv, ly = y + sn * mx + cs * my + dy * adv;
-    _land[0] = lx; _land[1] = ly; _land[2] = groundZ(ground, lx, ly, z);
+  function landing(ground) {
+    const dx = _li[0], dy = _li[1], mx = _li[2], my = _li[3], stride = _li[5], cs = _li[10], sn = _li[11];
+    const adv = _li[4] * stride + _li[6] * stride * 0.5;
+    const lx = _li[7] + cs * mx - sn * my + dx * adv, ly = _li[8] + sn * mx + cs * my + dy * adv;
+    _land[0] = lx; _land[1] = ly; groundZ(ground, lx, ly, _li[9]); _land[2] = _gz[0];
   }
 
   return drv;
@@ -309,12 +314,13 @@ function plant(state, F) {
 }
 
 // Swing / step target at q in [0, 1]: xy smoothstep lift-off -> landing, z linear + liftM * sin(pi q). zOff = rest foot height above the ground.
-function swingPos(state, F, q, lift, poses, T, zOff) {
+function swingPos(state, F, poses, T) { // args q, lift, zOff in _sp; lift result in _lf[0]
+  let q = _sp[0]; const lift = _sp[1], zOff = _sp[2];
   if (q < 0) q = 0; else if (q > 1) q = 1;
   const s = smooth(q);
   poses[T] = state[F + F_LX] + (state[F + F_GX] - state[F + F_LX]) * s;
   poses[T + 1] = state[F + F_LX + 1] + (state[F + F_GX + 1] - state[F + F_LX + 1]) * s;
   const lf = lift * Math.sin(Math.PI * q);
   poses[T + 2] = state[F + F_LX + 2] + (state[F + F_GX + 2] - state[F + F_LX + 2]) * q + lf + zOff;
-  return lf;
+  _lf[0] = lf;
 }

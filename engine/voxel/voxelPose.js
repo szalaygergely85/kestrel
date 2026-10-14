@@ -141,18 +141,21 @@ function setRotFromPose(base, out) {
   _ang[0] = _rotOut[base]; _ang[1] = _rotOut[base + 1]; _ang[2] = _rotOut[base + 2];
   buildRot(out);
 }
-function sampleInto(pm, clipIdx, frameIn, tMs, rotOut, posOut) {
+// Sample args pass through the typed scratch _sa [clip, frame, tMs] (no boxed double args when these are not inlined; ANIM-BLEND-01a).
+const _sa = new Float64Array(3);
+function sampleInto(pm, rotOut, posOut) {
+  const clipIdx = _sa[0];
   const partCount = pm.partCount;
-  if (clipIdx === undefined || clipIdx < 0 || !pm.clips || clipIdx >= pm.clips.length) {
+  if (!(clipIdx >= 0) || !pm.clips || clipIdx >= pm.clips.length) {
     for (let i = 0; i < partCount * 3; i++) { rotOut[i] = 0; posOut[i] = 0; }
     return;
   }
-  sampleClipObj(partCount, pm.clips[clipIdx], frameIn, tMs, rotOut, posOut);
+  sampleClipObj(partCount, pm.clips[clipIdx], rotOut, posOut);
 }
 // Shared body (also samples the packed additive delta clips of ANIM-BLEND-01a): one clip object {n, loop, step, durMs, keys}.
-function sampleClipObj(partCount, clip, frameIn, tMs, rotOut, posOut) {
-  const n = clip.n;
-  let frame = frameIn | 0;
+function sampleClipObj(partCount, clip, rotOut, posOut) {
+  const n = clip.n, tMs = _sa[2];
+  let frame = _sa[1] | 0;
   if (frame < 0) frame = 0;
   if (frame >= n) frame = n - 1;
   const alpha = clip.step ? 0 : Math.max(0, Math.min(1, tMs / clip.durMs[frame]));
@@ -175,10 +178,12 @@ function sampleClipObj(partCount, clip, frameIn, tMs, rotOut, posOut) {
 const _fromRot = new Float64Array(MAX_VOX_PARTS * 3);
 const _fromPos = new Float64Array(MAX_VOX_PARTS * 3);
 function sampleClip(pm, inst) {
-  sampleInto(pm, inst.clip, inst.frame, inst.tMs, _rotOut, _posOut);
+  _sa[0] = inst.clip; _sa[1] = inst.frame; _sa[2] = inst.tMs;
+  sampleInto(pm, _rotOut, _posOut);
   const fw = inst.fromW;
   if (fw > 0 && inst.fromClip >= 0) {
-    sampleInto(pm, inst.fromClip, inst.fromFrame, inst.fromTMs, _fromRot, _fromPos);
+    _sa[0] = inst.fromClip; _sa[1] = inst.fromFrame; _sa[2] = inst.fromTMs;
+    sampleInto(pm, _fromRot, _fromPos);
     const n3 = pm.partCount * 3;
     for (let i = 0; i < n3; i++) {
       _rotOut[i] = _rotOut[i] + (_fromRot[i] - _rotOut[i]) * fw;
@@ -194,10 +199,12 @@ const _tmpRot = new Float64Array(MAX_VOX_PARTS * 3);
 const _tmpPos = new Float64Array(MAX_VOX_PARTS * 3);
 // One source (A + (B - A) * w2) whose 7 numbers start at L[off]; written to rotOut/posOut. Uses _tmpRot/_tmpPos as B scratch.
 function sampleSource(pm, L, off, rotOut, posOut) {
-  sampleInto(pm, L[off], L[off + 1], L[off + 2], rotOut, posOut);
+  _sa[0] = L[off]; _sa[1] = L[off + 1]; _sa[2] = L[off + 2];
+  sampleInto(pm, rotOut, posOut);
   const w2 = L[off + 6];
   if (w2 > 0 && L[off + 3] >= 0) {
-    sampleInto(pm, L[off + 3], L[off + 4], L[off + 5], _tmpRot, _tmpPos);
+    _sa[0] = L[off + 3]; _sa[1] = L[off + 4]; _sa[2] = L[off + 5];
+    sampleInto(pm, _tmpRot, _tmpPos);
     const n3 = pm.partCount * 3;
     for (let i = 0; i < n3; i++) {
       rotOut[i] = rotOut[i] + (_tmpRot[i] - rotOut[i]) * w2;
@@ -218,7 +225,8 @@ function sampleLayers(pm, L) {
   }
   const aw = L[19], ai = L[16] | 0, bl = pm.blend;
   if (aw !== 0 && L[16] >= 0 && bl && ai < bl.addClips.length) {
-    sampleClipObj(pm.partCount, bl.addClips[ai], L[17], L[18], _tmpRot, _tmpPos);
+    _sa[1] = L[17]; _sa[2] = L[18];
+    sampleClipObj(pm.partCount, bl.addClips[ai], _tmpRot, _tmpPos);
     const mask = bl.addMask[ai];
     for (let p = 0; p < pm.partCount; p++) {
       if ((mask & (1 << p)) === 0) continue;

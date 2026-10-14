@@ -101,7 +101,7 @@ export function createFaunaFeed(def, slots, opts) {
       }
       if (r >= 0) {
         stats.drawn++;
-        if (driver) legPass(pool, cam, s, si, key, cp, yawDeg, r);
+        if (driver) { if (driver.io) driver.io[3] = yawDeg; legPass(pool, cam, s, si, key, cp, r); } // yaw via the typed io (no boxed double arg)
       }
     }
     if (driver) {
@@ -112,14 +112,14 @@ export function createFaunaFeed(def, slots, opts) {
     return stats.drawn;
   }
   /** Attach (first draw) / update the driver of spawner slot `si`, then hand its LegPose to the pool. Inert without a legRig. */
-  function legPass(pool, cam, s, si, key, cp, yawDeg, r) {
+  function legPass(pool, cam, s, si, key, cp, r) {
     const pm = pool.models.get(key);
     if (!pm || !pm.legRig) return;
     if (legSlot[si] >= 0 && legModel[si] !== pm) { driver.release(legSlot[si]); legSlot[si] = -1; } // model swap
     if (legSlot[si] < 0) { legSlot[si] = driver.attach(pm); legModel[si] = pm; if (legSlot[si] < 0) return; }
     legStamp[si] = frameNo;
     const io = driver.io;
-    io[0] = s.x; io[1] = s.y; io[2] = s.z; io[3] = yawDeg; io[4] = cam.dtMs || 1000 / 60; io[5] = cam.x; io[6] = cam.y;
+    io[0] = s.x; io[1] = s.y; io[2] = s.z; io[4] = cam.dtMs || 1000 / 60; io[5] = cam.x; io[6] = cam.y;
     driver.update(legSlot[si], pm, cp ? cp.clip : -1, ground);
     const pose = driver.poseOf(legSlot[si]);
     if (pose[0] > 0) { pool.legInstance(r, pose); stats.legs++; }
