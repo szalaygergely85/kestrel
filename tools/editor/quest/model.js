@@ -108,7 +108,7 @@ export function loadQuests(dir, fs = REAL_FS) {
   for (const n of fs.readdirSync(dir).sort()) {
     if (n.endsWith('.quest.json')) {
       const text = rd(n), obj = JSON.parse(text);
-      files.set(n, { kind: 'legacy', obj, text });
+      files.set(n, { kind: 'legacy', obj, text, snap: JSON.stringify(obj) });
       quests.push(normalize(obj, 'legacy', n, null));
     } else if (n === 'sites.json') {
       const text = rd(n); files.set(n, { kind: 'sites', obj: JSON.parse(text), text });
@@ -137,7 +137,7 @@ export function validate(quests) {
 
 /** Text a file would be saved as. */
 export function fileText(f) {
-  return f.kind === 'legacy' ? stringifyLegacy(f.obj) : f.kind === 'pack' ? packText(f) : stringifyPack(f.obj);
+  return f.kind === 'legacy' ? (f.snap !== undefined && f.text !== undefined && JSON.stringify(f.obj) === f.snap ? f.text : stringifyLegacy(f.obj)) : f.kind === 'pack' ? packText(f) : stringifyPack(f.obj);
 }
 
 /** Writes the quest's ORIGINAL file only. Nothing is written on validation errors. */
@@ -146,7 +146,7 @@ export function saveQuest(model, q, fs = { writeFileSync }) {
   if (errors.length) return { ok: false, errors };
   const f = model.files.get(q.file);
   const text = fileText(f);
-  if (text !== f.text) { fs.writeFileSync(join(model.dir, q.file), text); f.text = text; }
+  if (text !== f.text) { fs.writeFileSync(join(model.dir, q.file), text); f.text = text; if (f.kind === 'legacy') f.snap = JSON.stringify(f.obj); }
   return { ok: true, errors: [], file: q.file };
 }
 
@@ -157,7 +157,7 @@ export function saveAll(model, fs = { writeFileSync }) {
   const written = [];
   for (const [rel, f] of model.files) {
     const text = fileText(f);
-    if (text !== f.text) { fs.writeFileSync(join(model.dir, rel), text); f.text = text; written.push(rel); }
+    if (text !== f.text) { fs.writeFileSync(join(model.dir, rel), text); f.text = text; if (f.kind === 'legacy') f.snap = JSON.stringify(f.obj); written.push(rel); }
   }
   return { ok: true, errors: [], written };
 }

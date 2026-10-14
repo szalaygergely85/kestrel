@@ -957,3 +957,11 @@ Tests: gait-b.test +13 (validate, identity, gaits==config, planted <= 12 mm, tor
 ### ED-QUEST-01 (kestrel-4, 2026-10-14)
 Done: `tools/editor/quest/model.js` (+ `model.test.mjs`, `tools/verify-edq-01.mjs {port}` 9725-9799, Node only). `loadQuests(dir)` -> 83 quests / 17 files; `saveQuest`/`saveAll` rewrite only changed original files; legacy style (inline rows) regenerated, pack rows keep their ORIGINAL text until edited (packs mix compact/expanded styles); byte-identical for all files. Undoable cmds: setQuestField/addObjective/moveObjective/removeObjective + makeStack (own small stack, not commands.js records: those are doc-collection based). Errors (dup id, missing id/title) block writes.
 Left: wiring into the editor undo stack/UI (later ED-QUEST items). Note: tester/PO to run `node tools/verify-edq-01.mjs 9725`.
+
+### ED-QUEST-05 core (kestrel-4, 2026-10-14)
+Done: `tools/editor/quest/lintQuest.js` `lintQuest(model, questId, ctx)` -> `{rule, severity, text, target:{kind,id}}` (kinds giver/return/objective/field/requires/reward); R10/R14/R5/R12 reuse new exports in content-lint (`r10Quest r14Quest r5One r12One`, RULES now call them; `node tools/content-lint.mjs` output identical). Extra rules: R3 (raw id/placeholder/empty), R15 (requires), R16 (reward item). ctx is injected (characters, pos, groundAt, walkable, support, labelOf, itemDefs, hasFlag, flowOf for OB-156 accept/exit/mark flags): kestrel-1 builds it from buildContext.
+Test: `lintQuest.test.mjs` (4 broken sq.burl.blue copies + requires/reward, 0.02 ms/quest). Left: panel + tools/verify-edq-05.mjs (row names it; not created here, kestrel-1 part).
+
+### ED-QUEST-05 merge + model round trip (kestrel-4, 2026-10-14)
+- content-lint.mjs conflict resolved: r14Quest now also skips umbrellas (call site) and level-prop object givers (c.levelIds); acceptOf setFlag rule kept. R14=0, merge committed.
+- model.js: legacy files keep original text until edited (snap compare, like pack rows; snap refreshed on save) -> all current files round-trip byte-identically; no content files changed. model, lintQuest, content-canonical, validate-content pass.
