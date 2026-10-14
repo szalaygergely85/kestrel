@@ -76,7 +76,14 @@ const ci = new Int32Array(4), cw = new Float64Array(4), cl0 = new Int32Array(4),
  * Invalid probes are skipped and weights renormalised; all invalid / no field -> out = skyRGB (ambient), returns false.
  */
 export function sampleGI(st, x, y, z, nx, ny, nz, out) {
+  giIo[0] = x; giIo[1] = y; giIo[2] = z; giIo[3] = nx; giIo[4] = ny; giIo[5] = nz;
+  return sampleGIBuf(st, giIo, out);
+}
+const giIo = new Float64Array(6);
+/** 0-alloc hot-path variant (GI-PROBE-04): io = Float64Array [x,y,z,nx,ny,nz] (doubles as args would box per call). Axes: y = up. */
+export function sampleGIBuf(st, io, out) {
   const f = st.field;
+  let x = io[0], y = io[1], z = io[2]; const nx = io[3], ny = io[4], nz = io[5];
   if (!f) { out[0] = st.skyRGB[0]; out[1] = st.skyRGB[1]; out[2] = st.skyRGB[2]; return false; }
   x += nx * GI_NORMAL_OFFSET; y += ny * GI_NORMAL_OFFSET; z += nz * GI_NORMAL_OFFSET;   // world: x,z horizontal, y up
   const w = f.w, h = f.h, inv = 1 / f.cellM;

@@ -1095,3 +1095,6 @@ OPEN / ASK ARCHITECT: flowField walks links forward from the seed, so a field se
 
 ### GI-PROBE-01 (kestrel-2, 2026-10-14) -> arch-review
 engine/render/giProbe.js (+ giProbe.test.js): 88-channel uint8 probe (sky4, sun6x12, emis12), `encodeGIField`/`decodeGIChannel`, `createGIState`, `mixGIState(st,hour,sky,sun,{night,emisK,skyFloor})`, `giKeyWeights` (cyclic, midnight wrap, moon = hour+12), `sampleGI(st,x,y,z,nx,ny,nz,out)` (manual trilinear, invalid renormalise, +0.5 m normal offset). Tests: const field 1e-6, round trip <=1/255, invalid renormalise, key continuity incl. moon, 0 alloc. giVolumes + GI_SAMPLE_WGSL left to 05.
+
+### GI-PROBE-04 (kestrel-2, 2026-10-14) -> arch-review
+`LightSet.gi` (null = old path; hashes pinned vs HEAD, 3 poses, null and on=false) -> `lightAtScratch` ambient = `sampleGIBuf` (new 0-alloc Float64Array-io variant in giProbe.js, `sampleGI` delegates; engine z-up swapped to giProbe y-up at call site), AO subtracts the GI ambient; `shadeTerrainCells` scales `ambientI` by lum(GI)/lum(skyRGB). Test `giLighting.test.js`: room/outdoor 0.142 (<0.3), alloc ~580 B/frame at 480x180 (noise), bench 480x180 lightSurfaces off 5.0 ms -> on 31.5 ms (+26 ms, ~0.3 us/cell: over the 2 ms @240x90 budget, needs a cheaper sampler/cell-cache). Not done: shadeTerrainCells GI alloc/bench, mixGIState hookup (06).
