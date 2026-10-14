@@ -11,7 +11,7 @@
 import { createAStar, findPath, smoothPath, createSteer, PHYSICS, SIM_STEP } from '../../../../engine/index.js';
 import { BEAST_DEFAULTS, toSteps } from './beastConfig.js';
 import { tierMult } from './band.js';
-import { canSee } from './sight.js';
+import { canSeeRay } from './sight.js';
 import { BEAR_TUNING, bearOverrides, isBearEntity } from './bearBrain.js'; // BEAR-01
 import { WOLF_TUNING, wolfOverrides, isWolfEntity, circleTarget, awayTarget } from './wolfBrain.js'; // WOLF-01
 import { GOBLIN_TUNING, goblinOverrides, isGoblinEntity } from './goblinBrain.js'; // GOB-01
@@ -559,11 +559,10 @@ function perceiveOne(sim, i, px, py, pz) {
     sim.seen[i] = 0;
   } else if (sim.tick % cfg.losEvery === i % cfg.losEvery) {
     const bz = pz; // ground z of the player is close enough to feet; targetZ offset below is what matters
-    const ok = canSee(
-      sim.world,
-      steer.x[i], steer.y[i], zOf(sim, i) + cfg.eyeZ,
-      px, py, bz + cfg.targetZ,
-    ) ? 1 : 0;
+    const ray = sim._seeRay || (sim._seeRay = new Float64Array(6)); // NAV-ALLOC-01: per-sim ray scratch
+    ray[0] = steer.x[i]; ray[1] = steer.y[i]; ray[2] = zOf(sim, i) + cfg.eyeZ;
+    ray[3] = px; ray[4] = py; ray[5] = bz + cfg.targetZ;
+    const ok = canSeeRay(sim.world, ray) ? 1 : 0;
     sim.seen[i] = ok;
     sim.unseen[i] = ok ? 0 : sim.unseen[i] + cfg.losEvery;
   }
@@ -1074,7 +1073,8 @@ function computePath(sim, i) {
   const sx = grid.cellX(steer.x[i]), sy = grid.cellY(steer.y[i]);
   const gx = grid.cellX(sim.goalX[i]), gy = grid.cellY(sim.goalY[i]);
   const maxNodes = sim.state[i] === STATE_WANDER && !sim.goalOn[i] ? WANDER_MAX_NODES : TRAVEL_MAX_NODES;
-  const len = findPath(astar, sx, sy, gx, gy, sim._cellPath, { maxNodes });
+  const po = sim._pathOpts || (sim._pathOpts = { maxNodes: 0 }); po.maxNodes = maxNodes; // NAV-ALLOC-01: reused opts object
+  const len = findPath(astar, sx, sy, gx, gy, sim._cellPath, po);
   sim.stats.astar++;
   sim.stats.astarNodes += len; // approximation: findPath does not expose expanded-node count (see report deviations)
   const wn = len > 0 ? smoothPath(grid, sim._cellPath, len, sim._xy) : 0;
@@ -1265,12 +1265,14 @@ function postOne(sim, i, px, py, pz) {
 
   // Ground: supportAt reads the floor under the beast (terrain or mesh collider); z never integrates gravity.
   const t = sim.entities[i].transform;
-  const support = world.supportAt(steer.x[i], steer.y[i], t.z + 0.6, true, _supportOpts);
+  const sq = _supportQ; sq[0] = steer.x[i]; sq[1] = steer.y[i]; sq[2] = t.z + 0.6; // NAV-ALLOC-01: scratch args (no boxing)
+  const support = world.supportAtQ(sq, true, _supportOpts);
   t.x = steer.x[i];
   t.y = steer.y[i];
   t.z = support.floorH;
 }
 
+const _supportQ = new Float64Array(3);
 const _supportOpts = { height: 0, stepUpMax: 1.0, walkCos: -1 };
 
 function chargePost(sim, i, px, py) {
