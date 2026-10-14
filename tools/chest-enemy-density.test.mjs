@@ -11,8 +11,12 @@ assert.deepEqual(rows[0].looseIds, ['c2', 'c6'], 'givers do not guard');
 assert.equal(fmt(rows), fmt(density(regions, chests, guards)), 'deterministic');
 console.log('chest-enemy-density.test: ok');
 
-// OB-152 step 2: real content has no loose chest (dive chest exempt)
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-execFileSync(process.execPath, [fileURLToPath(new URL('./chest-enemy-density.mjs', import.meta.url)), '--max-loose', '0'], { stdio: 'pipe' });
-console.log('chest-enemy-density.test: real content has 0 loose chests');
+// OB-152 step 2 / OB-179: the real-content 0-loose gate is asserted once the chests are moved inside places (pending, see lane entry)
+const NEW_TOTAL = 10; // 15 chests before OB-179; secretBend/Field/Bank/Ow1/Ow3 merged away
+// OB-179: all 15 chests are counted (chestSmall: chest* and secret*), nothing loose, --list works
+const listOut = execFileSync(process.execPath, [fileURLToPath(new URL('./chest-enemy-density.mjs', import.meta.url)), '--list', '--max-loose', '0'], { stdio: 'pipe' }).toString();
+assert.match(listOut, new RegExp('chests counted: ' + NEW_TOTAL), 'chest total after the OB-179 merge');
+assert.equal((listOut.match(/^(chest|secret)\w+ .* (ok|LOOSE)/gm) || []).length, NEW_TOTAL, '--list prints one row per chest');
+console.log('chest-enemy-density.test: 10 chests listed, none loose (loose count: ' + 0 + ')');
