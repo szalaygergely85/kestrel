@@ -62,7 +62,7 @@
   var defs = {
     // ---------------- hand items ----------------
     sword: {
-      id: 'sword', name: 'Ruin Steel', kind: 'weapon', stackMax: 1, hand: true, inPack: true,
+      id: 'sword', name: 'Ruin Sword', kind: 'weapon', stackMax: 1, hand: true, inPack: true,
       desc: 'Old watch steel. Nicked, still true.',
       glyph: { ch: '/', c: 'mirror' },
       //  .        cross-guard top
@@ -73,7 +73,7 @@
       equip: { slot: 'main', tier: 'worn', def: 0, held: 'sword' }   // EQ-01
     },
     'spell.fireball': {
-      id: 'spell.fireball', name: 'Ember', kind: 'spell', stackMax: 1, hand: true, inPack: true,
+      id: 'spell.fireball', name: 'Fireball', kind: 'spell', stackMax: 1, hand: true, inPack: true,
       equip: { slot: 'off', tier: 'worn', def: 0 }, // FB-01 fix: hands are derived from equipment (OB-017); without an off-slot the spell could never reach a hand
       desc: 'A coal that answers the hand.',
       glyph: { ch: '*', c: 'flameMid' },
@@ -141,8 +141,8 @@
     },
     // ---------------- ground orbs (US-080b drops; NOT stored: used on touch) ----------------
     'orb.hp': {
-      id: 'orb.hp', name: 'Herb Flask', kind: 'pickup', stackMax: 0, hand: false, inPack: false,
-      desc: 'Bitter herbs under red wax. Heals.',
+      id: 'orb.hp', name: 'Health Orb', kind: 'pickup', stackMax: 0, hand: false, inPack: false,
+      desc: 'A drop of red light. Heals on touch.',
       use: { heal: 10, onTouch: true, note: 'existing pickups.js kind hp (PICKUP_AMOUNT 10); def is for the toast only' },
       glyph: { ch: '+', c: 'vital' },
       sprite: 'pickupHp',
@@ -150,7 +150,7 @@
                  [' cPc ', 'gLWLG', ' GGG '])
     },
     'orb.mp': {
-      id: 'orb.mp', name: 'Cold Shard', kind: 'pickup', stackMax: 0, hand: false, inPack: false,
+      id: 'orb.mp', name: 'Mana Orb', kind: 'pickup', stackMax: 0, hand: false, inPack: false,
       desc: 'A sliver of teal light. Restores MP.',
       use: { mana: 10, onTouch: true, note: 'existing pickups.js kind mp (PICKUP_AMOUNT 10); def is for the toast only' },
       glyph: { ch: '*', c: 'manaLight' },
@@ -186,7 +186,7 @@
     equip: { slot: 'off', tier: 'worn', def: 2, held: 'shield' }   // EQ-01 (shield counts x2)
   };
   defs.lantern = {
-    id: 'lantern', name: 'Kestrel Lamp', kind: 'tool', stackMax: 1, hand: true, inPack: true,
+    id: 'lantern', name: 'Ship Lantern', kind: 'tool', stackMax: 1, hand: true, inPack: true,
     desc: "The gondola's lamp. It still burns.",
     note: 'quest item id (M1 objective `lantern`); today lantern.take sets a flag, S8-C-08 decides if it also adds this item',
     glyph: { ch: '#', c: 'lantern' },
@@ -219,7 +219,7 @@
     equip: { slot: 'ranged', tier: 'worn', def: 0, held: 'bow' }   // EQ-01
   };
   defs.bomb = {
-    id: 'bomb', name: 'Blast Pot', kind: 'tool', stackMax: 10, hand: true, inPack: true,
+    id: 'bomb', name: 'Bomb', kind: 'tool', stackMax: 10, hand: true, inPack: true,
     desc: 'Clay, black powder, a short fuse.',
     use: { note: 'throw: a later story (no sim yet)' },
     glyph: { ch: 'o', c: 'copper' },
@@ -230,7 +230,7 @@
                [' FpDE', 'FpDpo', 'oopoo'])
   };
   defs['berry.blue'] = {
-    id: 'berry.blue', name: 'Blue Sprig', kind: 'material', stackMax: 20, hand: false, inPack: true,
+    id: 'berry.blue', name: 'Blueberries', kind: 'material', stackMax: 20, hand: false, inPack: true,
     desc: 'Blue berries. Burl is counting.',
     use: { none: 'Material - quest errand (sq.burl.blue)' },
     glyph: { ch: 'o', c: 'manaLight' },
@@ -241,7 +241,7 @@
                [' qQq ', 'qQqQq', '  h  '])
   };
   defs.redcap = {
-    id: 'redcap', name: 'Red Cap', kind: 'material', stackMax: 10, hand: false, inPack: true,
+    id: 'redcap', name: 'Red Mushroom', kind: 'material', stackMax: 10, hand: false, inPack: true,
     desc: 'East-bank mushroom. Rook wants some.',
     use: { none: 'Material - quest errand (sq.rook.caps)' },
     glyph: { ch: 'n', c: 'goreRed' },
@@ -268,7 +268,7 @@
                [' bbb ', ' bbb ', 'bbbbb'])
   };
   defs.emberpod = {
-    id: 'emberpod', name: 'Emberpod', kind: 'material', stackMax: 3, hand: false, inPack: true,
+    id: 'emberpod', name: 'Fire Pod', kind: 'material', stackMax: 3, hand: false, inPack: true,
     desc: 'A dry red pod. Warm as a held coal.',
     use: { none: 'Material - quest item (sq.burl.fire, FB-02; handed to Burl)' },
     glyph: { ch: 'o', c: 'goreRed' },
@@ -372,7 +372,7 @@
   keys.N = { c: 'aether', e: true };  keys.I = { c: 'aetherLight', e: true };
   keys.x = { c: 'aetherCore', e: true }; keys['1'] = { c: 'aetherMid', e: true };
   defs.aetherCrystal = {
-    id: 'aetherCrystal', name: 'Teal Crystal', kind: 'key', stackMax: 1, hand: false, inPack: true,
+    id: 'aetherCrystal', name: 'Teal Crystal', /* NEEDS: OB-135 renames it 'Aether Crystal' once Burl says the word; no name-after-flag support yet */ kind: 'key', stackMax: 1, hand: false, inPack: true,
     desc: 'Warm, and it hums like the old stones.',
     use: { none: 'not used from the pack', note: 'proof of aether.attuned (game/js/quest/crystal.js grants it); ' +
            'held up at a stone by relayWake.js, never consumed' },
@@ -488,7 +488,8 @@
   // ==================================================================================================================
   var EQUIP_SLOTS = ['head', 'body', 'cloak', 'hands', 'belt', 'legs', 'feet', 'main', 'off', 'ranged', 'quiver'];
   var EQUIP_TIERS = ['worn', 'sturdy', 'fine', 'tempered', 'warden'];
-  var tierPrefix = { worn: 'Worn', sturdy: 'Sturdy', fine: 'Fine', tempered: 'T4', warden: 'T5' }; // T4/T5 names = NEEDS WRITER (final names + desc)
+  var tierPrefix = { worn: 'Worn', sturdy: 'Sturdy', fine: 'Fine', tempered: 'Riveted', warden: 'Warden' }; // OB-135 writer names
+  var tierDesc = { worn: 'Patched and thin. Better than nothing.', sturdy: 'Good hide, tight stitches. It holds.', fine: 'Well made. Someone took care over it.', tempered: 'Iron rivets through boiled hide.', warden: 'Old tower make. Older than the Wall.' };
   var tierKey = { worn: 'h', sturdy: 'v', fine: 'Y', tempered: 'i', warden: 's' }; // placeholder icon colour per tier (wood / verdigris / gold / iron / light iron)
   var tierGlyphC = { worn: 'wood', sturdy: 'verdigris', fine: 'gold', tempered: 'iron', warden: 'ironLight' };
   var gearBases = [
@@ -506,7 +507,7 @@
       var fg = b.rows.map(function (r) { return r.replace(/[^ ]/g, k); });
       defs[id] = {
         id: id, name: tierPrefix[tier] + ' ' + b.name, kind: 'gear', stackMax: 1, hand: false, inPack: true,
-        desc: tierPrefix[tier] + ' ' + b.name.toLowerCase() + '. Placeholder copy.',
+        desc: tierDesc[tier],
         glyph: { ch: b.ch, c: tierGlyphC[tier] },
         icon: icon(b.rows, fg),
         equip: { slot: b.slot, tier: tier, def: (ti + 1) * (b.slot === 'body' ? 2 : 1), shell: b.shell }

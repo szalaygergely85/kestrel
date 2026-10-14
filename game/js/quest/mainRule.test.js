@@ -13,6 +13,7 @@ let nMain = 0, nSide = 0;
 for (let i = 1; i < 1000; i++) {
   let d; try { d = book.def(i); } catch { break; } if (!d) break;
   if (d.id.startsWith('mq.')) { assert.equal(book.isMain(i), true, d.id + ' must be main'); nMain++; }
+  else if (d.id === 'sq.burl.fire') { assert.equal(book.isMain(i), true, 'sq.burl.fire gates the west-bank chain (OB-136): main'); }
   else if (d.id.startsWith('sq.')) { assert.equal(book.isMain(i), false, d.id + ' must be side'); nSide++; }
 }
 assert.ok(nMain >= 5 && nSide >= 1, 'real content has both kinds: ' + nMain + '/' + nSide);
