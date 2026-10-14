@@ -209,7 +209,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     const i = byId.get(id);
     if (i === undefined || i === 0 || statusOf(i) !== READY) return null;
     const e = entries[i];
-    // EQ-13: hand-in needs the item in the pack (requireItem, kept) and the gear worn (requireEquipped; packOps.equipped(id) is set by the game)
+    // EQ-13: hand-in needs the item in the pack (requireItem, consumed at hand-in) and the gear worn (requireEquipped; packOps.equipped(id) is set by the game)
     if (e.def.requireItem && (!book.packOps || book.packOps.count(e.def.requireItem) < 1)) return null;
     if (e.def.requireEquipped && (!book.packOps || !book.packOps.equipped || !e.def.requireEquipped.every(id => book.packOps.equipped(id)))) return null;
     const dl = e.def.objectives.filter(o => o.when.type === 'deliver').map(o => o.when);
@@ -218,6 +218,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
       for (const w of dl) if (book.packOps.count(w.id) < w.count) return null;
       for (const w of dl) { book.packOps.remove(w.id, w.count); book.feed({ type: 'item:count', id: w.id, n: Math.max(0, book.packOps.count(w.id)) }); }
     }
+    if (e.def.requireItem && book.packOps.remove) { book.packOps.remove(e.def.requireItem, 1); book.feed({ type: 'item:count', id: e.def.requireItem, n: Math.max(0, book.packOps.count(e.def.requireItem)) }); } // OB-155p: the item is consumed at hand-in
     e.handedIn = true; book.version++;
     const reward = e.def.reward ? deepFreeze(structuredClone(e.def.reward)) : NO_REWARD;
     book.lastReward = reward;
@@ -279,19 +280,23 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
    * (nothing to do here). 'refuse' = a quest of this object is active but its items are not in the pack.
    */
   book.inspect = function inspect(objectId) {
+    // OB-155o: READY hand-ins first (an AVAILABLE offer or an ACTIVE quest of the same object never blocks one), then accept, then refuse.
+    let refuse = null;
+    for (let i = 1; i < n; i++) {
+      const e = entries[i];
+      if (e.turnIn !== objectId || statusOf(i) !== READY) continue;
+      const reward = book.handIn(e.def.id);
+      if (reward) return { action: 'handin', id: e.def.id, text: e.def.giver.turnInText || '', reward };
+      if (!refuse) refuse = { action: 'refuse', id: e.def.id, text: e.def.giver.refuseText || '' }; // items left the pack since
+    }
     for (let i = 1; i < n; i++) {
       const e = entries[i];
       if (e.giver === objectId && statusOf(i) === AVAILABLE && book.accept(e.def.id)) return { action: 'accept', id: e.def.id, text: e.def.giver.text || '' };
     }
+    if (refuse) return refuse;
     for (let i = 1; i < n; i++) {
-      const e = entries[i], s = statusOf(i);
-      if (e.turnIn !== objectId) continue;
-      if (s === READY) {
-        const reward = book.handIn(e.def.id);
-        if (reward) return { action: 'handin', id: e.def.id, text: e.def.giver.turnInText || '', reward };
-        return { action: 'refuse', id: e.def.id, text: e.def.giver.refuseText || '' }; // items left the pack since
-      }
-      if (s === ACTIVE) return { action: 'refuse', id: e.def.id, text: e.def.giver.refuseText || '' };
+      const e = entries[i];
+      if (e.turnIn === objectId && statusOf(i) === ACTIVE) return { action: 'refuse', id: e.def.id, text: e.def.giver.refuseText || '' };
     }
     return null;
   };

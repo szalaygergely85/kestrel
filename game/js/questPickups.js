@@ -27,10 +27,11 @@ export function itemLabel(defs, id) {
 export function createQuestPickups({ getBook, feed, defs, isWorn }) {
   let ctx = null, props = [], tick = 0, ops = null, opsInv = null;
 
+  const groundFn = () => (ctx && ctx.world && ctx.world.terrain ? (x, y) => ctx.world.terrain.groundAt(x, y) : null);
   function pack() { return (ctx && ctx.inventory) || null; }
   function leftover(id, n) { // same as grantReward's leftover: ground drop at the player's feet (never despawns) + inventory:full
     const t = ctx && ctx.player && ctx.player.transform, canDrop = !!(t && ctx.world && ctx.world.spawn);
-    if (canDrop) spawnLeftoverDrop(ctx.world, id, n, t.x, t.y, t.z, true);
+    if (canDrop) spawnLeftoverDrop(ctx.world, id, n, t.x, t.y, t.z, true, groundFn());
     if (ctx && ctx.events) ctx.events.emit('inventory:full', { id, n, dropped: canDrop });
   }
   function sync() {
@@ -42,6 +43,10 @@ export function createQuestPickups({ getBook, feed, defs, isWorn }) {
         return k; }, // QL-04: add = giveOnAccept
       equipped: (id) => !!(isWorn && ctx && ctx.player && isWorn(ctx.player.components && ctx.player.components.equipment, id)) }; } // QL-WIRE: EQ-13 requireEquipped
     if (book.packOps !== ops) book.packOps = ops;
+    for (let i = props.length - 1; i >= 0; i--) { // accepted another way (E on the object): the packet leaves the world too
+      const pr = props[i];
+      if (pr.acceptQuest && ctx.world.entity(pr.id) && book.statusOf(pr.acceptQuest) > 1) { ctx.world.remove(pr.id); if (ctx.world.removeInteractable) ctx.world.removeInteractable('qp.' + pr.id); props.splice(i, 1); }
+    }
     for (const id of book.countedItems()) feed({ type: 'item:count', id, n: countOf(inv, id) });
   }
 
@@ -57,7 +62,7 @@ export function createQuestPickups({ getBook, feed, defs, isWorn }) {
       });
       c.world.forEachEntity((e, id) => {
         const q = e.components && e.components.questPickup; if (!q || !e.transform) return;
-        props.push({ id, tr: e.transform, item: q.item, n: q.n || 1 });
+        props.push({ id, tr: e.transform, item: q.item, n: q.n || 1, acceptQuest: q.acceptQuest || null });
         // QL-05: "[E] Pick" prompt (the take itself stays in onTick; the behaviour 'pickup.take' is a no-op that only shows the prompt)
         if (!c.world.addInteractable) return;
         c.world.removeInteractable('qp.' + id);
@@ -77,7 +82,10 @@ export function createQuestPickups({ getBook, feed, defs, isWorn }) {
       }
       if (best < 0) return;
       const pr = props[best];
-      if (addItem(inv, defs, pr.item, pr.n) < 1) return; // pack full: stays in the world
+      if (pr.acceptQuest) { // OB-155p: the pickup IS the accept; the quest's giveOnAccept puts the item in the pack (no second copy)
+        const b = getBook();
+        if (!b || !b.accept(pr.acceptQuest)) return; // not available yet / already taken: stays
+      } else if (addItem(inv, defs, pr.item, pr.n) < 1) return; // pack full: stays in the world
       ctx.world.remove(pr.id); if (ctx.world.removeInteractable) ctx.world.removeInteractable('qp.' + pr.id);
       props.splice(best, 1);
       if (ctx.events) ctx.events.emit('inventory:added', { id: pr.item, n: pr.n });
@@ -95,7 +103,7 @@ export function createQuestPickups({ getBook, feed, defs, isWorn }) {
         if (got < it.n) {
           // EQ-23: ... and put the leftover on the ground at the player's feet (never despawns).
           const t = ctx.player && ctx.player.transform, canDrop = !!(t && ctx.world && ctx.world.spawn);
-          if (canDrop) spawnLeftoverDrop(ctx.world, it.id, it.n - got, t.x, t.y, t.z, true);
+          if (canDrop) spawnLeftoverDrop(ctx.world, it.id, it.n - got, t.x, t.y, t.z, true, groundFn());
           if (ctx.events) ctx.events.emit('inventory:full', { id: it.id, n: it.n - got, dropped: canDrop });
         }
       }
