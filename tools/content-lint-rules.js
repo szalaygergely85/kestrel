@@ -2,33 +2,16 @@
 // (python's http.server serves .mjs as text/plain, which browsers refuse). tools/content-lint.mjs re-exports this file.
 
 import { validateLogic } from '../engine/index.js';
-import { formatProblems } from './editor/quest/format.js';
 export const MAX_FLOAT = 0.25, GIVER_MAX_UP = 2.5, GIVER_WALK_R = 3, ENT_MAX_FLOAT = 0.15, BURY_MIN = 0.1, BURY_MAX = 0.9, OBJECT_GIVER_MAX = 0.1, SMOKE_SRC_R = 3, CHIMNEY_R = 6, CHIMNEY_MIN = 3, CHEST_R = 25;
-export const LEVELS = { R1: 'error', R2: 'error', R3: 'error', R4: 'error', R5: 'error', R6: 'error', R7: 'error', R8: 'warn', R9: 'warn', R10: 'warn', R11: 'error', R12: 'error', R13: 'error', R14: 'error', R15: 'error', R16: 'warn', R17: 'error' };
+export const LEVELS = { R1: 'error', R2: 'error', R3: 'error', R4: 'error', R5: 'error', R6: 'error', R7: 'error', R8: 'warn', R9: 'warn', R10: 'warn', R11: 'error', R12: 'error', R13: 'error', R14: 'error', R15: 'error', R16: 'warn' };
 export const TITLES = {
   R1: 'floating placed prop/tree', R2: 'components.sprite in the world', R3: 'raw id in player text', R4: '"relay" in player text',
   R5: 'giver unreachable', R6: 'smoke without a source', R7: 'chimney outside a building', R8: 'chest with no guard/puzzle/giver nearby',
   R9: 'early quest objective across the river', R10: 'quest given/returned by an object', R11: 'banned mesh placed',
   R12: 'entity not supported by ground/structure (floating or buried)', R13: 'prompt/marker anchor has no visible model', R14: 'quest flow (OB-156): character giver, Accept/Exit, character return',
   R15: 'logic blocks (ED-LOGIC-01d): refs exist, group spawned by one block, no flag loop',
-  R17: 'quest format (D-106): begin, end, rewards, max 3 objectives, known next/requires ids, no xp',
   R16: 'player-facing name looks like an id / placeholder / bare tier tag (OB-135 plain names)',
 };
-/** Legacy quests that do not follow the D-106 format yet: WARN instead of ERROR "until the D-106 chain rewrite". Every other id is an ERROR. */
-export const R17_LEGACY = new Set([ // each id: until the D-106 chain rewrite
-  'm1',
-  'tower.blade',
-  'burl.boars',
-  'burl.follow',
-  'burl.stone',
-  'mq.ow.path',
-  'mq.ow.fence',
-  'mq.ow.relay',
-  'mq.ford.mirror',
-  'mq.ford.stones',
-  'mq.river.road',
-  'mq.smoke',
-]);
 const f1 = (n) => (typeof n === 'number' ? +n.toFixed(1) : n);
 const F = (rule, id, x, y, msg) => ({ rule, level: LEVELS[rule], id, x: f1(x), y: f1(y), msg });
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -190,11 +173,6 @@ export const RULES = {
   R15: (c) => r15(c),
   // R16 [OB-135, NAME-LINT] ctx.names = [{where, kind, name}]: resolved display names (item, quest, NPC, region, prop); warn level until the writer has cleaned the real list
   R16: (c) => (c.names || []).flatMap((n) => { const why = badName(n.name); return why ? [F('R16', n.where, '-', '-', `${n.kind} name "${n.name}": ${why}`)] : []; }),
-  // R17 [QUEST-FORMAT, D-106] ctx.formatQuests = every quest def (legacy or new shape). ERROR, except the ids in R17_LEGACY (WARN until the chain rewrite).
-  R17: (c) => {
-    const defs = c.formatQuests || [], ids = new Set(defs.map((q) => q.id));
-    return defs.flatMap((q) => formatProblems(q, ids).map((p) => ({ ...F('R17', q.id, '-', '-', p), level: R17_LEGACY.has(q.id) ? 'warn' : 'error' })));
-  },
   R14: (c) => {
     const out = [];
     let givers = 0, objGivers = 0;

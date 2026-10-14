@@ -48,7 +48,7 @@ export function createQuestLog(def, {hudWidth=60,width=72,fg='#e8e2d0',bg='#0a0b
 // (title, story summary from the active objective's `journal`, objectives with counts). Strings are rebuilt only on open,
 // key input and a changed book.version; draw() never formats or allocates.
 export const QUEST_LOG_KEYS = ['ArrowUp', 'ArrowDown', 'KeyW', 'KeyS', 'ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD', 'Tab', 'KeyE', 'Backspace', 'Enter', 'KeyJ', 'Escape', 'KeyX', 'KeyT'];
-export const QUEST_LOG_TEXT = Object.freeze({ header: 'PENCIL NOTES', empty: 'Nothing yet. Not nothing.', paneL: 'QUESTS', abandon: '[X] Abandon quest', track: '[T] Track this quest', tracked: '[T] Tracked (compass + objective)', talkTo: 'Talk to ', abandonSure: '[X] again to abandon (progress resets)', finished: 'All done. Nothing left to do here.', footer: 'W/S select  T track  X abandon  J close', footerDone: 'W/S select  Enter re-read  J close', giver: 'Given by: ', returnTo: 'Return to ', next: 'Next: ', reward: 'Reward: ', objectives: 'Objectives' });
+export const QUEST_LOG_TEXT = Object.freeze({ header: 'PENCIL NOTES', empty: 'Nothing yet. Not nothing.', paneL: 'QUESTS', abandon: '[X] Abandon quest', track: '[T] Track this quest', tracked: '[T] Tracked (compass + objective)', talkTo: 'Talk to ', abandonSure: '[X] again to abandon (progress resets)', finished: 'All done. Nothing left to do here.', footer: 'W/S select  T track  X abandon  J close', footerDone: 'W/S select  Enter re-read  J close', giver: 'Given by: ', reward: 'Reward: ', objectives: 'Objectives' });
 const AVAILABLE = 1, READY = 3, DONE = 4, LIST_TOP = 6, LIST_ROWS = 14, LEFT_X = 4, LEFT_W = 22, DIV_X = 27, RIGHT_X = 29, RIGHT_W = 40;
 
 /** Word wrap into at most `max` lines of `w` chars (last line ellipsised). Rebuild-time only. */
@@ -108,7 +108,6 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
     }
     mainAct.sort((a, b) => (a === 0 ? -1 : b === 0 ? 1 : b - a)); act.sort((a, b) => b - a);
     // OB-100 (owner): a quest shows only once it is picked up (accepted) - offered / unlocked quests are not listed
-    for (let i = 1; i < n; i++) if (book.status(i) === DONE && book.def(i).format) done.push(i); // QUEST-FORMAT: finished format quests stay listed below the active ones
     if (book.status(0) === DONE) done.push(0); // OB-099: handed-in giver quests disappear; only the finished chapter row (CH1-09 re-read) stays
     for (const i of mainAct) quests.push(i);
     for (const i of act) quests.push(i);
@@ -131,15 +130,11 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
     // story summary: the active step's `journal` (fallback: its objective text); READY -> returnText; AVAILABLE -> talk to the giver
     let summary = '';
     if (s === AVAILABLE) summary = T.talkTo + String(giverName(book.giverOf ? book.giverOf(i) : ''));
-    else if (s === READY) summary = def.format && book.turnInOf ? T.returnTo + String(giverName(book.turnInOf(i))) : def.returnText || T.finished; // QUEST-FORMAT: 'Return to <name>' when all objectives are done
+    else if (s === READY) summary = def.returnText || T.finished;
     else if (isDone) summary = T.finished;
     else for (let r = 0; r < rows.length; r++) if (rows[r].status === 'active') { summary = rows[r].journal || rows[r].text; break; }
     for (const l of wrap(ascii(summary), RIGHT_W, 3)) right.push({ kind: 'text', text: l });
     right.push({ kind: 'blank', text: '' });
-    if (isDone && def.format && book.nextOffers) { // QUEST-FORMAT: the follow-up waits at its giver (plain text, nothing auto-starts)
-      const o = book.nextOffers().find(x => x.from === def.id);
-      if (o) { right.push({ kind: 'head', text: clipped(T.next + ascii(String(giverName(o.giver))) + (o.hint ? ' - ' + ascii(o.hint) : ''), RIGHT_W) }); right.push({ kind: 'blank', text: '' }); }
-    }
     if (s !== AVAILABLE) {
       right.push({ kind: 'head', text: T.objectives });
       for (let r = 0; r < rows.length; r++) {
