@@ -1,5 +1,24 @@
 # PC-B queue
 
+## Engine catch-up (owner 2026-10-14, D-090: EP-ENGINE-CATCHUP) (PC-A main session)
+Order: stage 1 = QFIX + NAV-REACH + ENV-02/03 (queued above) -> **stage 2 "alive and lit"** -> **stage 3 "engine release prep"**. Start stage 2 only when the QFIX blockers (S3, S4, S6) are done. Every engine row starts with an ARCH-NOTE (PC-B 5th agent, architect opus) and ends in arch-review on PC-A. The JS twin + gpucompare (D-017/D-039), 0 alloc (38.61) and the GPU budget (D-085: 8 ms RTX, 10 ms Intel high) apply to all of them.
+
+| ID | Stage | Slot | What (AC in its note) | Deps | Status |
+|---|---|---|---|---|---|
+| ANIM-BLEND-NOTE | 2 | 5th agent (architect opus) | Clip blending on voxel + rigged models (RIG-00 38.32): blend by a parameter (walk->run by speed), cross-fade on state change, additive hit reaction; data format for blend sets; cost per entity. Split into <= 1 d stories. | none | ARCH-NOTE NEEDED |
+| ANIM-BLEND-01 | 2 | kestrel-3 | Per the note: walk/run blend by real speed for player + beasts, cross-fade on every state change (no pops), readable wind-up/recover (OB-150); Node tests on sampled poses; 0 alloc. | NOTE | todo |
+| ANIM-IK-01 | 2 | kestrel-3 | Foot IK on slopes/steps (2-bone, ground ray per foot, pelvis offset) for player + 4-legged beasts; off = byte-identical; slope test poses. | ANIM-BLEND-01 | todo |
+| ANIM-LOOKAT-01 | 2 | kestrel-1 (wiring) + kestrel-3 | Head/eye look-at with angle limits: NPCs turn to the player while talking, beasts look at their target; smooth in/out. | ANIM-BLEND-01 | todo |
+| MAT-RESPONSE-01 | 2 | designer + kestrel-2 | A material response table instead of full PBR: matte / shiny / wet / metal / glowing -> specular glyph + colour response in the light pass; designer preview first, owner picks; per-material data in content. | designer preview | design |
+| GI-PROBE-NOTE | 2 | 5th agent (architect opus) | Baked bounce light: coarse probe grid (or per-zone SH probes) baked per band, blended with day/night + emissive lights; bake time, MB per zone, streaming with BandCache (38.58), twin + gpucompare plan. | none | ARCH-NOTE NEEDED |
+| GI-PROBE-01..n | 2 | kestrel-2 (+ kestrel-4 bake tool) | Per the note (split there). Owner look: before/after stills at meadow, forest, ruin interior, dusk. | NOTE | todo |
+| POST-STACK-01 | 2 | kestrel-2 | One engine post-effects module configured by data: colour grade (shares ENV-03 data), bloom on emissive cells, vignette, depth fog; per-preset on/off; budget inside D-085. | ENV-03 | todo |
+| EDITOR-PATH-01 | 3 | PO (sonnet) then kestrel-1 | Editor "golden path" story set: place/move/rotate meshes + prefabs, paint biomes, place NPCs + quests (D-082/D-087 rules), playtest from the editor and back; PO writes the rows + ACs first. | QFIX done | todo (PO) |
+| ENG-API-01 | 3 | 5th agent (architect opus) then kestrel-2/3 | Clean public API: everything a game needs is reachable from `engine/index.js` (render, world, physics, nav, anim, ui); no game imports of engine internals (check-deps rule); stable names list for 1.0. | stage 2 | todo |
+| ENGINE-GUIDE-01 | 3 | writer + architect (opus) | Short public engine guide (`docs/engine-guide/`): getting started, the API, content formats (`.kestrel`, meshes, levels), one small sample game folder that runs. | ENG-API-01 | todo |
+| ENG-PHYS-EXT-01 | 3 | see the Navigation section | rigid bodies + hinge + triggers (D-089). | QFIX done | parked |
+| DEMO-DEVLOG (PARKED) | later | owner | Demo / devlog / community. **Blocked by D-053 "no public demo"**; only the owner can reopen it. | owner | parked |
+
 ## Navigation + physics extensions (owner 2026-10-14, D-089) (PC-A main session)
 Own `engine/nav` (NavGrid 2 m tiles, astar, flowField, steer) is kept; no Recast/NavMesh or PhysX library (D-089). The NAV rows are engine work (cross-track): an ARCH-NOTE comes first where marked, and each ends in arch-review on PC-A. Start NAV-REACH-01 now (it fixes what the owner feels, OB-149/150); NAV-LAYERS/LINKS after their note.
 
