@@ -1287,3 +1287,6 @@ Crocodile (owner, same session): **short grab + mash to escape (1.5 s, max 12 % 
 
 ## D-105
 **2026-10-14, owner (PC-B session).** The river rule (D-095) means **character level 5**, not the fireball quest: "I get the fireball around level 5". West-bank quests get a WoW-style **minimum level 5** (shown as "Requires level 5", no quest prerequisite, D-104); the fireball is a reward the player gets around level 5. Replaces the sq.burl.fire gating from OB-136/OB-136b. Character level = PLAYER-LEVEL-01 (ep-items-stats section 9 formula, owner OK pending). Owner (same day): any side quest may have a level requirement (`minLevel`); quest prerequisites stay only for chains (D-104).
+
+## D-106
+**2026-10-14, owner (PC-B session).** Character level = the PLAYER-LEVEL-01 formula from GEAR (ep-items-stats section 9; OK'd), but it is **hidden**: never shown to the player (no "Level N" on screen, no "Requires level 5" text). It is only our internal power measure to decide when to let the player into places/quests: a quest with `minLevel` above the hidden level shows no `!` and is not offered (the giver may say a "come back when you're stronger" line). Enemy levels on the health bar (D-093) are a separate thing and stay.
