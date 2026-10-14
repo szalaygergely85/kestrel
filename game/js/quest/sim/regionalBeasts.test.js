@@ -53,8 +53,10 @@ for (const b of list1) {
 }
 ok('every home walkable, inside its region rect and the bounds polygon', bad.length === 0, bad.join(','));
 const perRegion = {}; for (const b of list1) perRegion[b.region] = (perRegion[b.region] || 0) + 1;
-const wrongCount = REGION_RULES.filter((r) => (perRegion[r.region] || 0) !== r.groups * r.size).map((r) => `${r.region}:${perRegion[r.region] || 0}`);
-ok('count per region matches its rule', wrongCount.length === 0 && list1.length === REGIONAL_BEAST_COUNT, wrongCount.join(',') + ' total ' + list1.length);
+// BEAST-09a: water (croc) rules produce nothing without a water probe, so counts here cover the land rules only (crocs: crocSpawn.test.js)
+const landTotal = REGION_RULES.filter((r) => !r.water).reduce((n, r) => n + r.groups * r.size, 0);
+const wrongCount = REGION_RULES.filter((r) => !r.water).filter((r) => (perRegion[r.region] || 0) !== r.groups * r.size).map((r) => `${r.region}:${perRegion[r.region] || 0}`);
+ok('count per region matches its rule', wrongCount.length === 0 && list1.length === landTotal && REGIONAL_BEAST_COUNT >= landTotal, wrongCount.join(',') + ' total ' + list1.length);
 ok('strand has none', !perRegion.strand);
 ok('authored + generated fit MAX_BEASTS', avoid.length + list1.length <= MAX_BEASTS, `${avoid.length}+${list1.length} / ${MAX_BEASTS}`);
 const band = createBand(G.regions);
@@ -66,10 +68,10 @@ const events = { emit() {}, on() { return () => {}; } };
 const mkSim = (w) => createBeastSim(w, { nav: nav(w), rng: createRng(1), events, band, tileNav: true, spawn: { x: 1480, y: 1030 } });
 const simA = quiet(() => mkSim(wA));
 const wB = mkWorld();
-const gen = quiet(() => spawnRegionalBeasts(wB, G, 12));
+const genAll = quiet(() => spawnRegionalBeasts(wB, G, 12)), gen = genAll.filter((b) => b.species !== 'croc'); // BEAST-09a: crocs are checked in crocSpawn.test.js
 ok('spawn adds the same list as generate', gen.length === list1.length && gen.every((b, i) => b.id === list1[i].id && b.x === list1[i].x));
 const simB = quiet(() => mkSim(wB));
-ok('sim B has authored + generated slots', simB.count === simA.count + gen.length, `${simA.count} -> ${simB.count}`);
+ok('sim B has authored + generated slots', simB.count === simA.count + genAll.length, `${simA.count} -> ${simB.count}`);
 const far = gen.map((b) => simB.slotOf(b.id));
 ok('all generated slots exist + dormant (far from player)', far.every((s) => s >= 0 && simB.isDormant(s)), far.filter((s) => s < 0 || !simB.isDormant(s)).length + ' not dormant');
 const timeSteps = (sim, n) => { for (let i = 0; i < 200; i++) sim.step(1480, 1030, 0); const t0 = performance.now(); for (let i = 0; i < n; i++) sim.step(1480, 1030, 0); return (performance.now() - t0) / n; };

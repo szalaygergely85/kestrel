@@ -25,8 +25,8 @@ quiet(() => spawnRegionalBeasts(w, G, 12));
 const camps = JSON.parse(readFileSync(new URL('../content/life/goblinCamps.json', import.meta.url), 'utf8'));
 
 const regionOf = (x, y) => { for (const r of G.regions) if (x >= r.r[0] && x < r.r[2] && y >= r.r[1] && y < r.r[3]) return r.id; return G.regions[G.regions.length - 1].id; };
-const kindOf = (e) => { const m = JSON.stringify(e.components?.voxel?.model || e.model || '') + e.id; return /boar/i.test(m) ? 'boars' : /wolf/i.test(m) ? 'wolves' : /bear/i.test(m) ? 'bears' : 'other'; };
-const row = () => ({ chests: 0, boars: 0, wolves: 0, bears: 0, goblins: 0, other: 0, area: 0 });
+const kindOf = (e) => { const m = JSON.stringify(e.components?.voxel?.model || e.model || '') + e.id; return /boar/i.test(m) ? 'boars' : /wolf/i.test(m) ? 'wolves' : /croc/i.test(m) ? 'crocs' : /bear/i.test(m) ? 'bears' : 'other'; };
+const row = () => ({ chests: 0, boars: 0, wolves: 0, bears: 0, crocs: 0, goblins: 0, other: 0, area: 0 });
 const T = {}; for (const r of G.regions) T[r.id] = row();
 const chests = [], threats = [], puzzles = [];
 
@@ -47,15 +47,15 @@ for (let x = 4; x < 2048; x += 8) for (let y = 4; y < 1720; y += 8) if (inPolygo
 const f1 = (n) => n.toFixed(1);
 let md = '# OB-152 enemy / chest density per region (tools/density-report.mjs)\n\n';
 md += 'Chests = `chest*` entities of world_m1 (= chestDefs keys). Beasts = authored + WM-12 regional herds; goblins = authored camps + far camps (seed 12). km2 = walk-bounds area by 8 m sampling (first-match region rect).\n\n';
-md += '| region | chests | boars | wolves | bears | goblins | km2 | chests/km2 | enemies/km2 |\n|---|---|---|---|---|---|---|---|---|\n';
+md += '| region | chests | boars | wolves | bears | crocs | goblins | km2 | chests/km2 | enemies/km2 |\n|---|---|---|---|---|---|---|---|---|---|\n';
 const tot = row();
 for (const r of G.regions) {
-  const t = T[r.id]; if (!t.area && !t.chests && !t.boars && !t.wolves && !t.bears && !t.goblins) continue;
-  const km = t.area / 1e6, en = t.boars + t.wolves + t.bears + t.goblins;
-  md += `| ${r.id} | ${t.chests} | ${t.boars} | ${t.wolves} | ${t.bears} | ${t.goblins} | ${f1(km)} | ${km ? f1(t.chests / km) : '-'} | ${km ? f1(en / km) : '-'} |\n`;
+  const t = T[r.id]; if (!t.area && !t.chests && !t.boars && !t.wolves && !t.bears && !t.crocs && !t.goblins) continue;
+  const km = t.area / 1e6, en = t.boars + t.wolves + t.bears + t.crocs + t.goblins;
+  md += `| ${r.id} | ${t.chests} | ${t.boars} | ${t.wolves} | ${t.bears} | ${t.crocs} | ${t.goblins} | ${f1(km)} | ${km ? f1(t.chests / km) : '-'} | ${km ? f1(en / km) : '-'} |\n`;
   for (const k of Object.keys(tot)) tot[k] += t[k];
 }
-md += `| TOTAL | ${tot.chests} | ${tot.boars} | ${tot.wolves} | ${tot.bears} | ${tot.goblins} | ${f1(tot.area / 1e6)} | ${f1(tot.chests / (tot.area / 1e6))} | ${f1((tot.boars + tot.wolves + tot.bears + tot.goblins) / (tot.area / 1e6))} |\n\n`;
+md += `| TOTAL | ${tot.chests} | ${tot.boars} | ${tot.wolves} | ${tot.bears} | ${tot.crocs} | ${tot.goblins} | ${f1(tot.area / 1e6)} | ${f1(tot.chests / (tot.area / 1e6))} | ${f1((tot.boars + tot.wolves + tot.bears + tot.crocs + tot.goblins) / (tot.area / 1e6))} |\n\n`;
 const near = (p, list, d) => list.some((q) => Math.hypot(q[0] - p.x, q[1] - p.y) < d);
 const open = chests.filter((c) => !near(c, threats, 25) && !near(c, puzzles, 25));
 md += `## Chests in the open (no beast home, goblin camp, relay or lever within 25 m): ${open.length} of ${chests.length}\n\n`;

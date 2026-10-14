@@ -23,7 +23,7 @@ export const SPECIES_KIND = Object.freeze({ boar: 'boar', wolf: 'grey_wolf', bea
 export function regionalMembers(list, slotOf) {
   const out = [];
   for (let i = 0; i < list.length; i++) {
-    const b = list[i], slot = slotOf(b.id); if (slot < 0) continue;
+    const b = list[i], slot = slotOf(b.id); if (slot < 0 || b.species === 'croc') continue; // BEAST-09a: water slots are run by waterBrain, never patrolled by the director
     out.push({ id: b.id, kind: SPECIES_KIND[b.species] || b.species, key: b.region, group: b.group, x: b.x, y: b.y, slot });
   }
   return out;
