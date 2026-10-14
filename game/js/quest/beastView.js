@@ -90,8 +90,9 @@ export function frameTFromElapsed(elapsed, durations, out) {
  * @param {ReturnType<import('./beastLegs.js').createBeastLegs>} [legs] ANIM-C-05: leg IK wiring (omit = ?legik=0, today's behaviour)
  * @param {{x:number,y:number}} [cam] camera (driver LOD)
  * @param {ReturnType<import('./beastBlend.js').createBeastBlend>} [blend] ANIM-BLEND-03: clip blender (omit = ?animblend=0, today's behaviour)
+ * @param {ReturnType<import('./beastLook.js').createBeastLook>} [look] ANIM-LOOKAT-01: head look-at at the player (omit = off, today's bytes)
  */
-export function presentBeasts(sim, world, overlay, styleIds, anim, legs, cam, blend) {
+export function presentBeasts(sim, world, overlay, styleIds, anim, legs, cam, blend, look) {
   if (!sim) return;
   for (let i = 0; i < sim.count; i++) {
     const e = sim.entities[i];
@@ -101,7 +102,7 @@ export function presentBeasts(sim, world, overlay, styleIds, anim, legs, cam, bl
     const v = e.components.voxel;
     if (!v) continue; // defensive: beast entities always carry a voxel component in the game
 
-    if (st === STATE_GONE) { v.hidden = true; if (legs) legs.release(i, v); if (blend) blend.release(i, v); continue; } // US-079b: hidden at GONE (voxel-pool skip)
+    if (st === STATE_GONE) { v.hidden = true; if (legs) legs.release(i, v); if (blend) blend.release(i, v); if (look) look.release(i, v); continue; } // US-079b: hidden at GONE (voxel-pool skip)
     v.hidden = false;
 
     // US-079b ARCH (37.16.1 amendment): decide the clip, then reset the pose on every clip change (a clip entered
@@ -143,6 +144,10 @@ export function presentBeasts(sim, world, overlay, styleIds, anim, legs, cam, bl
     }
 
     if (blended) blend.step(i, sim, e, v, clip, legs); // ANIM-BLEND-03: BEFORE legs.step (blender.update, then driver.update; sets v.animLayers, v.anim = dominant clip)
+
+    if (look) { // ANIM-LOOKAT-01: head follows the player while aware; dead beasts release (record off)
+      if (st === STATE_DYING || st === STATE_CORPSE || st === STATE_SINK) look.release(i, v); else look.step(i, sim, e, v);
+    }
 
     if (legs) { // ANIM-C-05: leg driver (bear/black bear; models without a legRig stay inert); gait clip time from the phase
       if (st === STATE_DYING || st === STATE_CORPSE || st === STATE_SINK) legs.release(i, v);

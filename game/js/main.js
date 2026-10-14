@@ -9,7 +9,8 @@
 import { applyImpostorBoot, reapplyRememberedImpostors } from './ui/impostorPreset.js'; // R6-WIRE
 import { groundLookFromParams } from './look/groundLookConfig.js'; // ENV-02d
 import { buildAtmosConfig } from './look/atmosConfig.js'; import { createAtmosDriver } from './look/atmosDriver.js'; // ENV-03
-import { createAtmosState, mixAtmos, applyAtmosToPalette, gradeCells } from '../../engine/index.js'; // ENV-03: `?atmos=0` = no driver, palette untouched
+import { createAtmosState, mixAtmos, applyAtmosToPalette, gradeCells, createPostState, composePost, postCells } from '../../engine/index.js';
+import { sceneOf } from './look/sceneFlag.js'; import { resolvePost } from './look/postConfig.js'; // POST-STACK-01c // ENV-03: `?atmos=0` = no driver, palette untouched
 import { parseDecorMode, buildDecorConfig, guardDecorRun } from './decorHost.js'; // ENV-01-WIRE
 import { loadPresets, resolveQuality, saveQuality, knobsFor, dropStaleOverrides, carpetQualityFor, carpetBuildFor } from './ui/gfxPresets.js';
 import { loadQuestFiles, showBootErrors } from './questBoot.js';
@@ -130,6 +131,7 @@ const fbS = { fbOn: false, hand: null, casting: false, manaFlashTick: 0 }; // FB
 import { buildBeastNav } from './quest/sim/beastNav.js';
 import { presentBeasts } from './quest/beastView.js';
 import { createBeastLegs } from './quest/beastLegs.js'; // ANIM-C-05: leg IK for beasts (?legik=0 off)
+import { createBeastLook } from './quest/beastLook.js'; // ANIM-LOOKAT-01: beast head look-at (?lookat=0 off)
 import { createBeastBlend } from './quest/beastBlend.js'; // ANIM-BLEND-03: clip blending for beasts (?animblend=0 off)
 import { createBeastAnim } from './quest/beastAnim.js'; // ANIM-STATE-WIRE-01
 import { questOverlayStyles } from './quest/overlayStyles.js';
@@ -1149,6 +1151,7 @@ async function runGame(mode, cinematic = null) {
   let telegraphWire = null; // TELEGRAPH-WIRE-01: rebuilt on 'world:loaded'
   let beastLegs = null; const beastLegsOn = params.get('legik') !== '0'; // ANIM-C-05
   let beastBlend = null; const animblend = params.get('animblend') !== '0'; // ANIM-BLEND-03
+  let beastLook = null; const lookatOn = params.get('lookat') !== '0'; // ANIM-LOOKAT-01
   let beastAnim = null; const beastAnimOn = params.get('beastanim') === '1'; // ANIM-STATE-WIRE-01: default OFF (wander/return would use the walk clip)
   // WMP-05: map travel is refused in combat (aggro beast within 40 m or the hit-invuln window is up); same sim the hp-regen gate reads.
   const mapTravelBlocked = () => { const t = playerHandle && playerHandle.data.transform; return !!((vitals && vitals.invuln > 0) || (beasts && t && beasts.aggroNear(t.x, t.y, 40))); };
@@ -1349,6 +1352,7 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
   let ambientMotes = null;
   let lightSet = null; // US-006: built from the loaded world's level.def.lights, below
   let atmosDrv = null, atmosCfg = null, atmosV = -1, atmosBase = null; const atmosState = createAtmosState(); // ENV-03: biome atmosphere driver (null = off)
+  const postQ = resolvedQuality && resolvedQuality.name, postCfg0 = resolvePost(window.POST_LOOK, params, postQ, 'outdoor'), postState = createPostState(); let postCfg = postCfg0, postV = -2; const sceneScratch = {}; let sceneNow = 'outdoor'; // SCENE-INTERIOR: sceneOf() flag; postCfg re-resolved only on change // POST-STACK-01c: `?post=0` = null = today's frames; scene stays 'outdoor' until an interior flag exists
   let clockDriver = null; // DN-03: step-quantised sun/look/ambient driver, rebuilt on every 'world:loaded'
   let clockTimeApplied = false; // DN-03: ?time= seeds the clock once, not on every restart
   let worldSunPath = null; // US-122a: fit the load-time sun before static/cinematic hour writes.
@@ -2108,7 +2112,7 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
     }
     if (mode === 'world' && playerHandle && !paused) {
       if (clockDriver && !titleMenuActive) { const w = engine.world; tickClock(w.state, dt, clockCfg); clockDriver.update(w.state[CLOCK_KEY]);
-        if (atmosDrv) { const t = playerHandle.data.transform; atmosDrv.step(t.x, t.y, clockHour(w.state, clockCfg), dt, true); if (atmosDrv.out.version !== atmosV) { atmosV = atmosDrv.out.version; mixAtmos(atmosCfg.table, atmosDrv.active ? atmosDrv.out : null, atmosBase, atmosState); applyAtmosToPalette(assets.palette, atmosState); } } } // ENV-03 // DN-03: stops on title/pause (this block), runs through respawn/restart/travel
+        if (atmosDrv) { const t = playerHandle.data.transform; const sceneNow2 = sceneOf(w, t, sceneScratch, dt, playerHandle.data.components.body); if (sceneNow2 !== sceneNow) { sceneNow = sceneNow2; if (postCfg0) { postCfg = resolvePost(window.POST_LOOK, params, postQ, sceneNow); postV = -2; } } atmosDrv.step(t.x, t.y, clockHour(w.state, clockCfg), dt, sceneNow === 'outdoor'); if (atmosDrv.out.version !== atmosV) { atmosV = atmosDrv.out.version; mixAtmos(atmosCfg.table, atmosDrv.active ? atmosDrv.out : null, atmosBase, atmosState); applyAtmosToPalette(assets.palette, atmosState); } } } // ENV-03 // DN-03: stops on title/pause (this block), runs through respawn/restart/travel
       if (ending || uiLocked || vLocked() || isNoteOpen()) { // OB-057 (owner): no movement while a note is open
         controls.forward = 0; controls.strafe = 0; controls.run = false; controls.jump = false;
       } else {
@@ -2487,7 +2491,8 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
       // cells right after its own sprite loop).
       engine.particleLayer.build(engine.particles, cam, rt, fb.lights, engine.world, assets.palette, renderer);
       sprites.render(fb, engine.world, cam, fbView ? (handFxOn ? handFbExtra : fbView.extra) : undefined); // US-030c (ARCH CHANGES item 1): after the surfaces, before present()
-      if (atmosState.on) gradeCells(rt, atmosState); // ENV-03c: JS-path grade (the GPU sprite pass grades itself)
+      if (postCfg) { if (postV !== atmosV) { postV = atmosV; composePost(atmosState, postCfg, postState); } if (wgPipeline && wgPipeline._spritesPass) wgPipeline._spritesPass.post = postState; postCells(rt, fb.depth && fb.depth.depth, postState); } // POST-STACK-01c: finish chain incl. the grade (GPU sprite pass reads the same state)
+      else if (atmosState.on) gradeCells(rt, atmosState); // ENV-03c: JS-path grade (the GPU sprite pass grades itself)
       // US-017 ARCH CHANGES #1 item 2: CPU-path scene fade, moved here from
       // compositor.js so sprites fade too (oracle parity with the GPU
       // composite pass, which fades every non-mask cell in one pass). Skips
@@ -2508,7 +2513,7 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
       engine.overlay.clear();
       drawDecals(decalBind, engine.overlay, cam, fb.lights, engine.world);
       if (goblinWire) goblinWire.update(); // GOB-07b: spear view
-      if (beastLegs) beastLegs.dtMs = legDtMs; if (beasts && !cinematic) presentBeasts(beasts, engine.world, engine.overlay, ovlStyles, beastAnimOn ? (beastAnim || (beastAnim = createBeastAnim(16))) : undefined, beastLegsOn ? (beastLegs || (beastLegs = createBeastLegs({ pool: gameVoxelPool }))) : undefined, cam, animblend ? (beastBlend || (beastBlend = createBeastBlend({ pool: gameVoxelPool }))) : undefined); // ANIM-C-05, ANIM-BLEND-03
+      if (beastLegs) beastLegs.dtMs = legDtMs; if (lookatOn && beastLook && playerHandle) { const lt = playerHandle.data.transform; beastLook.setTarget(lt.x, lt.y, lt.z + 1.5); } if (beasts && !cinematic) presentBeasts(beasts, engine.world, engine.overlay, ovlStyles, beastAnimOn ? (beastAnim || (beastAnim = createBeastAnim(16))) : undefined, beastLegsOn ? (beastLegs || (beastLegs = createBeastLegs({ pool: gameVoxelPool }))) : undefined, cam, animblend ? (beastBlend || (beastBlend = createBeastBlend({ pool: gameVoxelPool }))) : undefined, lookatOn ? (beastLook || (beastLook = createBeastLook({ pool: gameVoxelPool }))) : undefined); // ANIM-C-05, ANIM-BLEND-03, ANIM-LOOKAT-01
       if (beastLegsOn && !cinematic && mode === 'world') { const bh = engine.world.get('bear'), bv = bh && bh.data.components && bh.data.components.voxel; if (bv) (beastLegs || (beastLegs = createBeastLegs({ pool: gameVoxelPool }))).stepNpc('bear', bh.data, bv, cam.x, cam.y, engine.world.terrain); } // ANIM-C-05: Burl (scripted NPC bear)
       if (targeting && !cinematic) targeting.present(engine.overlay, ovlStyles); // US-128b (29.2)
       // US-078d (30.1): hidden until the sword is actually taken (US-078a review note); no eyeFeel/bobPhase

@@ -282,6 +282,7 @@
       animations: animations,
       // ANIM-BLEND-02 (38.68; OB-150). walk (spare trot, tuned 1.5 m/s) -> charge gallop (4 m/s, estimate: hand-keyed 200 ms loop). windup
       // (525 ms, held scrape pose from 500) fades in <= 25 %; the charge snaps in (60); charge>idle recover takes 200 ms.
+      lookAt: { part: 'head', yawLimitDeg: 40, pitchLimitDeg: 20, hz: 1.8 }, // ANIM-LOOKAT-01 (38.69): boar, short neck
       blend: {
         sets: { locomotion: { param: 'speed', clips: [{ clip: 'walk', at: 1.5 }, { clip: 'charge', at: 4 }] } },
         fades: { default: 150, into: { windup: 100, charge: 60 }, pairs: { 'windup>charge': 60, 'charge>idle': 200, 'charge>walk': 200 } },
