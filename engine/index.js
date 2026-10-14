@@ -40,6 +40,7 @@ export { readZip, writeZip, crc32, checkZipPath, ZIP_LIMITS } from './content/zi
 // ---- world ----------------------------------------------------------------
 export { World, stepSectorAnims, PROP_SCALE_MIN, PROP_SCALE_MAX } from './world/World.js';
 export { GIBake, encodeRaw as encodeGIBake } from './world/giBake.js'; // GI-PROBE-02b
+export { createGIState, mixGIState } from './render/giProbe.js'; // GI-PROBE-06
 export { writeGIFile, readGIFile, readGIHeader, isGIFileFresh } from './world/giFile.js';
 export { makeGrid, zoneAt, zoneId, CHUNK as BAND_CHUNK } from './world/bandGrid.js';
 export { validateCarpetConfig, buildCarpetClassMap, CARPET_MAX_VARIANTS, CARPET_DEFAULTS } from './world/carpet.js';
