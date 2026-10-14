@@ -1,5 +1,6 @@
 // GI-PROBE-02a: sliced GI bake core on fixture worlds. Run: node engine/world/giBake.test.js
 import { GIBake, bakeAll, evalSH, encodeRaw, fibonacciDirs } from './giBake.js';
+import { createGIState, mixGIState, sampleGI } from '../render/giProbe.js';
 import { makeOk } from '../test/assert.js';
 
 let pass = 0, fail = 0;
@@ -62,7 +63,7 @@ const P = (cfg, col, layer) => layer * cfg.w * cfg.h + col;
   const same = (x, y) => Buffer.compare(Buffer.from(x.buffer, x.byteOffset, x.byteLength), Buffer.from(y.buffer, y.byteOffset, y.byteLength)) === 0;
   ok('two runs (different slicing) byte-identical', same(a.sky, c.sky) && same(a.sun, c.sun) && same(a.emis, c.emis) && same(a.valid, c.valid));
   const ea = encodeRaw(a), ec = encodeRaw(c);
-  ok('encoded bytes identical', same(ea.sky.data, ec.sky.data) && same(ea.sun.data, ec.sun.data));
+  ok('encoded bytes identical', same(ea.data, ec.data) && same(ea.scale, ec.scale) && same(ea.bias, ec.bias));
 }
 { // 4x4 m roof over the probe at (4,4), probe z=1
   const boxes = [[2, 2, 1.6, 6, 6, 1.8]]; // canopy 0.6 m over the probe (a 4x4 roof at 2 m blocks only ~50% of cosine sky)
@@ -106,6 +107,29 @@ const P = (cfg, col, layer) => layer * cfg.w * cfg.h + col;
   const t = performance.now();
   bakeAll(new Fixture(boxes), { x0: 0, y0: 0, w: 8, h: 8, keyHours: [6, 9, 12, 15, 18, 20], surfaceAt: boxSurface(boxes) });
   console.log(`bake 64x64 m fixture (192 probes, 6 keys): ${(performance.now() - t).toFixed(0)} ms`);
+}
+
+{ // bake -> encode (giProbe.js) -> sampleGI matches the raw SH (bake z-up -> giProbe y-up) within 1/255
+  const cfg = { x0: 0, y0: 0, w: 8, h: 8, lights: [{ x: 20, y: 20, z: 4, r: 1, g: 0.5, b: 0.2, range: 30 }] };
+  const b = bakeAll(new Fixture(), cfg), raw = b.raw(), f = encodeRaw(raw);
+  const st = createGIState(); st.field = f;
+  mixGIState(st, 12, [1, 1, 1], [1, 1, 1], { emisK: 1, skyFloor: 0 });
+  const out = new Float32Array(3), cols = raw.w * raw.h;
+  let worst = 0;
+  for (const [ci, cj] of [[3, 3], [4, 4], [2, 5]]) {
+    const p = cj * raw.w + ci, cx = raw.x0 + ci * raw.cellM + raw.cellM / 2, cy = raw.y0 + cj * raw.cellM + raw.cellM / 2;
+    for (const [X, Y] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { // horizontal normals: the +0.5 m offset stays inside a flat field
+      sampleGI(st, cx, raw.layerDz[0], cy, X, 0, Y, out); // giProbe world: (x, up, y)
+      const sky = evalSH(raw.sky, p * 4, X, Y, 0), k0 = st.k0, k1 = st.k1, kf = st.kf;
+      for (let c = 0; c < 3; c++) {
+        const so = (q, k) => Math.max(0, evalSH(raw.sun, (q * raw.nKeys + k) * 12 + c * 4, X, Y, 0));
+        const sun = so(p, k0) + (so(p, k1) - so(p, k0)) * kf, em = Math.max(0, evalSH(raw.emis, p * 12 + c * 4, X, Y, 0));
+        worst = Math.max(worst, Math.abs(out[c] - (sky + sun + em)));
+      }
+    }
+  }
+  ok('bake -> encode -> sampleGI within 1/255 of raw SH', worst <= 1 / 255, `worst ${worst}`);
+  ok('encoded field has 88 channels/probe + valid bits', f.data.length === cols * raw.layers * 88 && f.valid.length === cols * raw.layers);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

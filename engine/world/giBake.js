@@ -2,11 +2,13 @@
 // Per probe: 64 fixed Fibonacci-sphere rays (no RNG). Miss -> sky visibility; hit -> one bounce of the sun
 // (per hour key) and of static emissive lights, both x albedo(hit). L1 SH, stored PRE-CONVOLVED so that
 // value(n) = c0 + c1*n.y + c2*n.z + c3*n.x  (cosine-weighted irradiance / pi; open sky up = 1).
-// Raw output is plain Float32 arrays; `encodeRaw` (last step) is the ONE function to swap for giProbe.js's encoder.
+// Raw output is plain Float32 arrays; `encodeRaw` encodes through giProbe.js `encodeGIField`.
 //
 // world interface (World satisfies it): raySegmentRay(seg:Float64Array(6), out:{t,x,y,z}) -> bool, and
 // groundAt(x,y). Surface at a hit (albedo + normal) comes from cfg.surfaceAt(x,y,z,out{nx,ny,nz,albedo}) or
 // the default: terrain-gradient normal from groundAt + cfg.albedo.
+
+import { encodeGIField, GI_CHANNELS, GI_SKY0, GI_SUN0, GI_EMIS0 } from '../render/giProbe.js';
 
 export const GI_DIRS = 64;
 export const GI_KEY_HOURS = Float32Array.of(6, 9, 12, 15, 18, 20);
@@ -183,19 +185,22 @@ export class GIBake {
 export function evalSH(arr, off, nx, ny, nz) { return arr[off] + arr[off + 1] * ny + arr[off + 2] * nz + arr[off + 3] * nx; }
 
 /**
- * SWAP POINT: raw floats -> byte field. Placeholder until engine/render/giProbe.js (GI-PROBE-01) lands:
- * per-array min/max scale+bias to uint8 (the header format of 38.72 section 1 is giProbe.js's to define).
+ * Raw floats -> GIField via giProbe.js `encodeGIField` (88 uint8 channels). The bake's pre-convolved SH
+ * (value = c0 + c1*n.y + c2*n.z + c3*n.x, z up) is remapped to giProbe's basis (Y0*g0 + Y1*(ny*g1 + nz*g2 + nx*g3), y up):
+ * g0 = c0/Y0, g1 (up) = c2/Y1, g2 (world y) = c1/Y1, g3 = c3/Y1, so `sampleGI` reproduces `evalSH`.
  */
+const Y0 = 0.282095, Y1 = 0.488603;
+function mapSH(dst, o, src, s) { dst[o] = src[s] / Y0; dst[o + 1] = src[s + 2] / Y1; dst[o + 2] = src[s + 1] / Y1; dst[o + 3] = src[s + 3] / Y1; }
 export function encodeRaw(raw) {
-  const q = (a) => {
-    let lo = Infinity, hi = -Infinity;
-    for (let i = 0; i < a.length; i++) { const v = a[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
-    if (!(hi > lo)) hi = lo + 1;
-    const out = new Uint8Array(a.length), s = 255 / (hi - lo);
-    for (let i = 0; i < a.length; i++) out[i] = Math.round((a[i] - lo) * s);
-    return { data: out, bias: lo, scale: (hi - lo) / 255 };
-  };
-  return { sky: q(raw.sky), sun: q(raw.sun), emis: q(raw.emis), valid: raw.valid };
+  const n = raw.w * raw.h * raw.layers, nK = raw.nKeys, probes = new Float32Array(n * GI_CHANNELS);
+  for (let p = 0; p < n; p++) {
+    const o = p * GI_CHANNELS;
+    mapSH(probes, o + GI_SKY0, raw.sky, p * 4);
+    for (let k = 0; k < nK; k++) for (let c = 0; c < 3; c++) mapSH(probes, o + GI_SUN0 + k * 12 + c * 4, raw.sun, (p * nK + k) * 12 + c * 4);
+    for (let c = 0; c < 3; c++) mapSH(probes, o + GI_EMIS0 + c * 4, raw.emis, p * 12 + c * 4);
+  }
+  return encodeGIField({ x0: raw.x0, y0: raw.y0, cellM: raw.cellM, w: raw.w, h: raw.h, layers: raw.layers, layerDz: raw.layerDz,
+    base: raw.base, keyHours: raw.keyHours, probes, valid: raw.valid });
 }
 
 /** Run a whole bake synchronously (tests / tools). */
