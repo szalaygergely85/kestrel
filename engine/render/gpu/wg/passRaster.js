@@ -1,7 +1,7 @@
 // WG-2b/2c: device-only mesh + terrain raster (kind 7, ME-06 twin); cell shading stays on the CPU until WG-3c.
 import { MeshBuffers, CLOTH_DYN_LAYOUT, CLOTH_UV_LAYOUT, CLOTH_STRIDE_BYTES, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, MASK_UV_LAYOUT, MASK_UV_STRIDE_BYTES, VAO_LAYOUT, VAO_STRIDE_BYTES, TERRAIN_VERTEX_LAYOUT, TERRAIN_STRIDE_BYTES, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES } from '../MeshBuffers.js';
 import { RASTER_BLOCK, RASTER_BASE_BLOCK, RASTER_MASK_BLOCK, RASTER_MASK_WGSL, RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL, RASTER_INSTANCED_MASK_BLOCK, RASTER_INSTANCED_MASK_WGSL, RASTER_FLAG_VAO, rasterWgsl } from '../wgsl/raster.wgsl.js';
-import { TERRAIN_BLOCK, TERRAIN_RASTER_WGSL, TERRAIN_TEXTURES, SKIRT_MAX } from '../wgsl/terrainRaster.wgsl.js';
+import { TERRAIN_BLOCK, TERRAIN_RASTER_WGSL, TERRAIN_RASTER_LOOK_WGSL, TERRAIN_LOOK_TEXTURES, TERRAIN_TEXTURES, SKIRT_MAX } from '../wgsl/terrainRaster.wgsl.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
 import { StructMaskAtlas } from '../StructMaskAtlas.js';
 import { DrawList, LevelMeshCache, MeshDrawCache, addStructures, addMeshStructures, addCloths, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, DRAW_INSTANCED, DRAW_CLOTH, DRAW_FLAG_NO_CULL, MAX_DRAW_ITEMS } from '../../../mesh/DrawList.js';
@@ -109,6 +109,12 @@ export class WgRasterPass {
     this.structMasks = null; // StructMaskAtlas, built with the terrain pipeline
     this.terrainBind = { uniforms: this.tu, vertexBuffer: null, indexBuffer: null, instanceBuffer: null, extraBuffers: null, textures: this.terrainTex };
     this.nearTex = null; this.farTex = null; this.nearDims = [1, 1]; this.farDims = [1, 1]; this.nearVersion = -1; this.farVersion = -1; this.farWorld = null; this.nearWorld = null;
+    // ENV-02d: look raster (NEARLOOK/FARLOOK rg8uint, slots 3/4), built lazily the first time a world with groundLook bytes is drawn. Look off never touches any of it.
+    /** set by _terrainTextures: true = the look pipeline runs and GA.w carries the look word (passShade reads it) */ this.lookActive = false;
+    this.terrainLookPipe = null; this.nearLookTex = null; this.farLookTex = null; this.nearLookDims = [1, 1]; this.farLookDims = [1, 1];
+    this.nearLookRef = null; this.nearLookVer = -1; this.nearLookWorld = null; this.farLookRef = null; this.farLookVer = -1; this.farLookWorld = null; this.lookUploads = 0;
+    this.terrainTexL = [{ slot: 0, texture: null }, { slot: 1, texture: null }, { slot: 2, texture: null }, { slot: 3, texture: null }, { slot: 4, texture: null }];
+    this.terrainBindL = { uniforms: this.tu, vertexBuffer: null, indexBuffer: null, instanceBuffer: null, extraBuffers: null, textures: this.terrainTexL };
     try {
       this.nearTex = device.createTexture({ format: 'r8ui', width: 1, height: 1 });
       this.farTex = device.createTexture({ format: 'r8ui', width: 1, height: 1 });
@@ -285,8 +291,8 @@ export class WgRasterPass {
   }
 
   // Replace a 1-channel r8ui texture by a (w x h) one when the size differs (rare: bake changes), then upload `data`.
-  _uploadType(tex, dims, w, h, data) {
-    if (dims[0] !== w || dims[1] !== h) { this.device.dispose(tex); tex = this.device.createTexture({ format: 'r8ui', width: w, height: h }); dims[0] = w; dims[1] = h; }
+  _uploadType(tex, dims, w, h, data, fmt = 'r8ui') {
+    if (dims[0] !== w || dims[1] !== h) { this.device.dispose(tex); tex = this.device.createTexture({ format: fmt, width: w, height: h }); dims[0] = w; dims[1] = h; }
     this.device.writeTexture(tex, data);
     return tex;
   }
@@ -304,6 +310,32 @@ export class WgRasterPass {
       this.nearVersion = terrain.near.version; this.nearWorld = world;
     }
     this.terrainTex[0].texture = this.nearTex; this.terrainTex[1].texture = this.farTex;
+    this._lookTextures(world, terrain);
+  }
+
+  // ENV-02d: look bytes -> rg8uint textures, same cadence as the type textures (near.version | far ref | world); lookActive only when the bytes exist.
+  _lookTextures(world, terrain) {
+    const fl = terrain.groundLook ? terrain.farLook : null, nr = terrain.nearReady ? terrain.near : null, nl = nr && nr.look ? nr.look : null;
+    if (!fl || (nr && !nl)) { this.lookActive = false; return; }
+    if (!this.terrainLookPipe) {
+      const d = this.device;
+      this.nearLookTex = d.createTexture({ format: 'rg8ui', width: 1, height: 1 }); this.farLookTex = d.createTexture({ format: 'rg8ui', width: 1, height: 1 });
+      this.terrainLookPipe = d.createPipeline({ vertex: { src: { wgsl: TERRAIN_RASTER_LOOK_WGSL }, layout: TERRAIN_VERTEX_LAYOUT, strideBytes: TERRAIN_STRIDE_BYTES },
+        fragment: { src: { wgsl: TERRAIN_RASTER_LOOK_WGSL }, targets: 3 }, bindings: { uniformBytes: TERRAIN_BLOCK.sizeBytes, textures: TERRAIN_LOOK_TEXTURES.slice() },
+        targetFormats: ['rgba32ui', 'rgba32ui', 'r32ui'], depthFormat: 'depth24', depth: { test: true, write: true }, cull: 'none', frontFace: 'cw' });
+      this.pipes.push(this.terrainLookPipe);
+    }
+    if (this.farLookRef !== fl || this.farLookVer !== terrain.farVersion || this.farLookWorld !== world) {
+      this.farLookTex = this._uploadType(this.farLookTex, this.farLookDims, terrain.mapW, terrain.mapH, fl, 'rg8ui');
+      this.farLookRef = fl; this.farLookVer = terrain.farVersion; this.farLookWorld = world; this.lookUploads++;
+    }
+    if (nl && (this.nearLookRef !== nl || this.nearLookVer !== nr.version || this.nearLookWorld !== world)) {
+      this.nearLookTex = this._uploadType(this.nearLookTex, this.nearLookDims, nr.w, nr.h, nl, 'rg8ui');
+      this.nearLookRef = nl; this.nearLookVer = nr.version; this.nearLookWorld = world; this.lookUploads++;
+    }
+    const tl = this.terrainTexL;
+    tl[0].texture = this.nearTex; tl[1].texture = this.farTex; tl[2].texture = this.structMasks.tex; tl[3].texture = this.nearLookTex; tl[4].texture = this.farLookTex;
+    this.lookActive = true;
   }
 
   // ALPHA-01c: the R8UI mask atlas texture, re-uploaded only when the atlas object or its version changes (never per frame). Placeholder 1x1 until a world carries masks.
@@ -351,7 +383,8 @@ export class WgRasterPass {
 
   _terrain(list) {
     let draws = 0;
-    const b = this.terrainBind, tu = this.tu;
+    const lk = this.lookActive && this.terrainLookPipe, b = lk ? this.terrainBindL : this.terrainBind, tu = this.tu, tpipe = lk ? this.terrainLookPipe : this.terrainPipe;
+    if (lk) this.terrainTexL[2].texture = this.structMasks.tex; // synced by _terrainUniforms after _terrainTextures
     for (let i = 0; i < list.count; i++) {
       const item = list.items[i];
       if (item.type !== DRAW_TERRAIN || !item.mesh || item.rangeCount <= 0) continue;
@@ -366,7 +399,7 @@ export class WgRasterPass {
       tu[r + 12] = TERRAIN_REBASE ? mm[9] - this.ox : mm[9]; tu[r + 13] = TERRAIN_REBASE ? mm[10] - this.oy : mm[10]; tu[r + 14] = mm[11]; tu[r + 15] = 1;
       this.tbits[T_OBJECT] = item.objectId;
       b.vertexBuffer = entry.vertexBuffer; b.indexBuffer = entry.indexBuffer;
-      this.device.bind(this.terrainPipe, b); this.device.draw(item.rangeCount * 3, item.rangeFirst * 3, 1);
+      this.device.bind(tpipe, b); this.device.draw(item.rangeCount * 3, item.rangeFirst * 3, 1);
       draws++;
     }
     return draws;
@@ -401,6 +434,7 @@ export class WgRasterPass {
     this.gpuN = 0; this.meshDrawArg.gpu = this.cull ? this._gpuHook : null;
     if (this.levelCache) addStructures(list, world, cam, this.levelCache, 2000);
     if (this.strictMatIdFor) addMeshStructuresBatched(list, world, cam, this.meshCache, this.strictMatIdFor, 2000, this.meshGroups, this.planes);
+    this.lookActive = false; // ENV-02d: re-set by _terrainTextures each frame
     if (p.terrainEnabled && world.terrain) {
       this._terrainTextures(world); this._terrainUniforms(world);
       const set = terrainMeshSetFor(world.terrain); if (!p.terrainStepExternal) set.step(2); // AUD-34: the host may step it at frame start (shared budget with bakeFarStep)
@@ -632,6 +666,9 @@ export class WgRasterPass {
     this.maskTex = null;
     if (this.nearTex) this.device.dispose(this.nearTex);
     if (this.farTex) this.device.dispose(this.farTex);
+    if (this.nearLookTex) this.device.dispose(this.nearLookTex);
+    if (this.farLookTex) this.device.dispose(this.farLookTex);
+    this.nearLookTex = this.farLookTex = null;
     this.nearTex = this.farTex = null;
     if (this.decor) { this.decor.dispose(); this.decor = null; }
     if (this.cull) { this.cull.dispose(); this.cull = null; }

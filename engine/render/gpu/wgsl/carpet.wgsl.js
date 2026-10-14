@@ -15,7 +15,7 @@ import {
   NMAX, ROOT_JITTER, LEAN_CAP, LEAN_PER_MS, PATCH_LO, PATCH_RANGE, GUST_LO, GUST_RANGE, MINW_CELLS, LOD_CUT, RING,
   SALT_JX, SALT_JY, SALT_RANK, SALT_SHAPE, SALT_ROT, SALT_H, SALT_TUFT, SALT_W, WMAX_CELLS, W_JIT_LO, W_JIT_RANGE, SALT_CJX, SALT_CJY, SALT_PATCH, SALT_GUST, MAX_VARIANTS, SALT_TINT, MASK_CELL, MASK_MIN,
 } from '../../carpet.js';
-import { NOISE_CELLS, NOISE_SALT, PATCH_K, GRASS_GX_HAS } from '../../terrainShade.js';
+import { NOISE_CELLS, NOISE_SALT, PATCH_K, GRASS_GX_HAS, GRASS_LOOK_SALT } from '../../terrainShade.js';
 import { TS_PATCH_NOISE_WGSL } from './shade.wgsl.js';
 import { FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX } from '../../terrainShade.js';
 
@@ -392,6 +392,15 @@ struct FO {
   @location(2) depth: vec4u,
 };
 
+// ENV-02e (twin: terrainShade.js grassLookId): the terrain hit's look word (GA.w < 65536 = look pipeline; else 0) -> the blade's dithered look id 0..15.
+fn grassLookPick(word: u32, fu: f32, fv: f32) -> u32 {
+  if (word >= 65536u) { return 0u; }
+  var lo = word & 15u; var hi = (word >> 4u) & 15u; var wb = (word >> 8u) & 255u;
+  if ((lo | hi) == 0u) { return 0u; }
+  if (lo == 0u) { lo = hi; wb = 0u; } else if (hi == 0u) { hi = lo; wb = 0u; } else if (lo == hi) { wb = 0u; }
+  let h24 = hashFastU(i32(floor(fu * 4.0)), i32(floor(fv * 4.0)), ${GRASS_LOOK_SALT}) >> 8u;
+  return select(lo, hi, wb * 16777216u > h24 * 255u);
+}
 @fragment
 fn fs_main(@builtin(position) frag: vec4f) -> FO {
   let cell = vec2i(floor(frag.xy));
@@ -420,6 +429,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
     let v8 = tsValueNoise(fu * ${(1 / NOISE_CELLS[0]).toFixed(4)}, fv * ${(1 / NOISE_CELLS[0]).toFixed(4)}, ${NOISE_SALT});
     let offT = clamp(i32(floor(tsPatchNoise(fu, fv, kFp, v8) * ${PATCH_K.toFixed(4)} + 0.5)), -1, 1);
     gx = ${GRASS_GX_HAS}u + (u32(offT + 1) << 24u) + (mat0 << 16u);
+    gx += grassLookPick(ga.w, fu, fv) << 28u; // ENV-02e (twin: carpet.js writeBlade)
   } else {
     let invN = 1.0 / sqrt(kLx * kLx + kLy * kLy + 1.0);
     nrm = packNormalOct(vec3f(kLx * invN, kLy * invN, invN));

@@ -23,7 +23,7 @@ import {
 export const MAX_SUB = 16; // 4x4, matches resolve.wgsl.js's cap
 import { SKY_LUT_N } from './skyLut.js';
 import { MAX_LEVELS } from '../ShadeTextures.js';
-import { GROUND_LOOK_WGSL, LOOK_BLOCK_FIELDS, LOOK_GA_HI_SHIFT, LOOK_GA_W_SHIFT } from '../../groundLook.js'; // ENV-02d
+import { GROUND_LOOK_WGSL, LOOK_ROWS, LOOK_BLOCK_FIELDS, LOOK_GA_HI_SHIFT, LOOK_GA_W_SHIFT } from '../../groundLook.js'; // ENV-02d
 import { TLOOK_WIDTH, MAX_FEATURES_PER_TYPE } from '../TerrainTextures.js';
 import { KIND_TERRAIN, KIND_MODEL, KIND_MESH, KIND_GRASS, FACE_PACKED } from '../../GBuffer.js';
 import { WET_DARK, WET_SPEC } from '../../detailShade.js';
@@ -284,7 +284,10 @@ fn shadeGrass(t: f32, variant: i32, h01: f32, lean: f32, tint: f32, b: f32, gx: 
   if ((gx & ${GRASS_GX_HAS}u) != 0u) {
     let gt = textureLoad(uTlook, vec2i(i32((gx >> 24u) & 3u), i32((gx >> 16u) & 255u)), 0);
     let w = clamp(h01 / su.grass[gb + 4].z, 0.0, 1.0);
-    cr = gt.r * 255.0 + (cr - gt.r * 255.0) * w; cg = gt.g * 255.0 + (cg - gt.g * 255.0) * w; cb = gt.b * 255.0 + (cb - gt.b * 255.0) * w;
+    var gr0 = gt.r * 255.0; var gg0 = gt.g * 255.0; var gb0 = gt.b * 255.0;
+${LK ? `    let lid = i32(gx >> 28u); // ENV-02e: the blade's look id (gx bits 28..31): root colour = the look's ramp at tone 0.5 (twin: terrainShade.js shadeGrass)
+    if (lid != 0) { let la = lid * ${LOOK_ROWS * 4}; gr0 = (lkT(la + 4) + (lkT(la + 8) - lkT(la + 4)) * 0.5) * 255.0; gg0 = (lkT(la + 5) + (lkT(la + 9) - lkT(la + 5)) * 0.5) * 255.0; gb0 = (lkT(la + 6) + (lkT(la + 10) - lkT(la + 6)) * 0.5) * 255.0; }
+` : ''}    cr = gr0 + (cr - gr0) * w; cg = gg0 + (cg - gg0) * w; cb = gb0 + (cb - gb0) * w;
   }
   var fr = cr * gain; var fgc = cg * gain; var fbc = cb * gain;
   let bl = f32((gx >> 8u) & 255u) * (1.0 / 255.0);

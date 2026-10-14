@@ -6,7 +6,7 @@
 //
 // The class/variant lookup is a plain data shape (D2a builds it in engine/world/carpet.js):
 //   carpet = { cfg: CarpetConfig, classMap: Uint8Array, x0, y0, w, h }   (classMap cell = cfg.classCellM, 0 = none, id 1..15 = cfg.variants[id-1])
-import { hashFast24, footprintK, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX, groundTierOffset, GRASS_TINT_AMP, GRASS_GX_HAS } from './terrainShade.js';
+import { hashFast24, footprintK, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX, groundTierOffset, GRASS_TINT_AMP, GRASS_GX_HAS, lookWordAt, grassLookId, groundLookActive } from './terrainShade.js';
 import { CARPET_DEFAULTS, TUFT_DEFAULT_P, TUFT_DEFAULT_MUL } from '../world/carpet.js';
 import { buildTuftAtlas } from './tuftAtlas.js';
 const INV_2_24 = 1 / 16777216; // 24-bit integer hash scaled at the call site: no double crosses a call (alloc rule)
@@ -516,6 +516,7 @@ export function carpetCtxFor(world) {
     _worldCtx.set(world, ctx);
   }
   applyCarpetQuality(ctx, world.carpetQuality); // OB-103
+  ctx.lookT = groundLookActive(world.terrain) ? world.terrain : null; // ENV-02e
   ctx.classMap = c.classMap; ctx.cx0 = c.x0; ctx.cy0 = c.y0; ctx.cw = c.w; ctx.ch = c.h;
   setCarpetMask(ctx, c.mask); // MASK-c: re-read after every change (ping-pong result object)
   return ctx;
@@ -530,12 +531,14 @@ export function carpetCtxFor(world) {
 function groundTierOffsetQ(ctx) { const q = ctx.q, s = ctx.s; q[0] = s[S_RX]; q[1] = s[S_RY]; q[2] = s[S_FP]; return groundTierOffset(q); }
 function writeBlade(gbuf, alias, ctx, out, i, sun) {
   const s = ctx.s, inp = ctx.inp;
-  const under = gbuf.kind[i], mat0 = gbuf.mat[i];
+  const under = gbuf.kind[i], mat0 = gbuf.mat[i], ou = gbuf.u[i], ov = gbuf.v[i]; // ou / ov = the terrain hit (world xy) before the blade overwrites them
   gbuf.kind[i] = KIND_GRASS; gbuf.mat[i] = out.variant; gbuf.u[i] = out.h01; gbuf.v[i] = out.lean; gbuf.face[i] = FACE_U;
   gbuf.z[i] = out.z;
   let gx = 0;
   if (under === KIND_TERRAIN && mat0 < 256) {
     gx = GRASS_GX_HAS + (groundTierOffsetQ(ctx) + 1) * 16777216 + mat0 * 65536;
+    // ENV-02e: the look id of this blade (ctx.lookT = terrain when the ground look is active; twin carpet.wgsl.js reads GA.w of the terrain hit)
+    if (ctx.lookT) gx += grassLookId(lookWordAt(ctx.lookT, ou, ov), s[S_RX], s[S_RY]) * 268435456;
   } else {
     const lx = s[S_LX], ly = s[S_LY], inv = 1 / Math.sqrt(lx * lx + ly * ly + 1);
     alias[i] = packNormalOct(lx * inv, ly * inv, inv);

@@ -13,6 +13,7 @@ import {
 import { POSES as GPU_COMPARE_POSES, GATE_POSES } from '../../../../content/dev-poses.js';
 import { fillUnitGrid, placeholderTeamSpec } from '../unitsHarness.js'; // RE-06: instanced-units pose helpers
 import { placeCompareSprites } from '../spriteDev.js'; // US-030c: the synthetic 3-prop set for non-`real` compare poses
+import { buildGroundLookConfig } from '../../look/groundLookConfig.js'; // ENV-02d: look rows
 
 export const name = 'gpucompare';
 
@@ -312,6 +313,23 @@ function buildCompareRuns(ctx) {
       ] }, tr.typeNames), recipe: tr.recipe };
       worldM1._rebuildCarpet();
     } });
+
+  // ENV-02d (38.63): ground-look rows. A SECOND world_m1 with groundLook on (the rows above keep the look-less worldM1, byte-identical); skipped when no
+  // BIOME_LOOK is loaded or `?look=0`. JS twin: shadeTerrainCells passes the same look bytes; GPU: NEARLOOK/FARLOOK + the look shade pipeline.
+  // lookMeadow = pure meadow (look 1) at the tower; lookForestEdge = forest/glade blend (2|3, w ~ 0.5); lookBorder0 = look-0 / meadow border (the far map has no
+  // shore-look cells, ids by BIOME_LOOK.order: 1 meadow 2 forest 3 glade 4 fields 5 foothills 6 shore).
+  if (globalThis.BIOME_LOOK && params.get('look') !== '0') {
+    const T = {}; for (const [k, v] of Object.entries(globalThis.ASSETS.levels.overworld_far.terrain)) T[k] = v.id;
+    const worldLook = loadCompareWorld(assets.world('world_m1'), { groundLook: buildGroundLookConfig(globalThis.BIOME_LOOK, T) });
+    if (worldLook.terrain) worldLook.terrain.bakeFarSync();
+    const lookLights = lightsEnabled ? buildLightSet(worldLook, assets.palette) : null;
+    if (lookLights && !sunEnabled) lookLights.setSun({ elevation: lookLights.sun.elevation, azimuth: lookLights.sun.azimuth, on: false });
+    const lookPose = (name, x, y, yawDeg, pitchDeg) => runs.push({ world: worldLook, lights: lookLights, name: 'world_m1: ' + name, real: true, meshOnly: true, pitchedDefault: true,
+      cam: { x, y, z: (worldLook.terrain ? worldLook.terrain.groundAt(x, y) : 0) + engine.physics.eyeHeight, yawDeg, pitchDeg } });
+    lookPose('lookMeadow (ENV-02d ground look: meadow, pitched first person at (1470, 1035))', 1470, 1035, 235, -12);
+    lookPose('lookForestEdge (ENV-02d ground look: forest/glade blend at (1788, 1276))', 1788, 1276, 0, -12);
+    lookPose('lookBorder0 (ENV-02d ground look: look-0 / meadow border at (1884, 1012))', 1884, 1012, 270, -12);
+  }
 
   // US-068b3b (38.19 item 2): ortho ISO pose over the roadSouth area (look-at 20 m along the roadSouth view, yaw 240).
   // Eye = focus - 500 m*F (ORTHO_BACK_M), halfH 20 m. NEW row: JS twin (meshPitched path) vs WG under the pitched gate rules.
