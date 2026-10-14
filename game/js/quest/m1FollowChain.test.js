@@ -86,3 +86,31 @@ talk(1); assert.equal(r.book.statusOf(ST), 1, 'Exit keeps q05 offered');
 talk(0); assert.equal(r.book.statusOf(ST), 2, 'q05 accepted -> active');
 assert.equal(r.book.tracked(), r.book.tracked());
 console.log('m1FollowChain: hand-in -> follow active -> Burl walks ' + steps + ' steps -> burl.arrived -> waystone active PASS');
+
+// OB-188: the meadow stone itself - real relayWake on the real endMarker entity, crystal from the real boar hand-in path
+{
+  const { createRelayWake } = await import('./relayWake.js');
+  const { createCrystalGrant } = await import('./crystal.js');
+  const wEnt = rd('content/worlds/world_m1.world.json').entities.find((e) => e.id === 'endMarker');
+  const sEnt = { id: 'endMarker', transform: { x: wEnt.x, y: wEnt.y, z: 0 }, components: JSON.parse(JSON.stringify(wEnt.components)) };
+  assert.ok(sEnt.components.collider && sEnt.components.collider.r > 0, 'OB-188: the meadow stone is solid (collider)');
+  const model = { voxel: { animations: { wake: { durations: [125, 125, 125, 125], events: { glowOn: 2 }, loop: false }, awake: { loop: true } } } };
+  const recs = [], emits = [];
+  const sw = { state, assets: { has: () => true, model: () => model }, forEachEntity: (fn) => fn(sEnt, sEnt.id),
+    get: () => ({ data: sEnt, play(a) { sEnt.components.voxel.anim = a; } }), addInteractable: (s) => { const q = { ...s }; recs.push(q); return q; } };
+  const rw = createRelayWake({ world: sw, palette: { lights: {} }, notice: { push: () => true }, hum() {}, emit: (id, kind) => emits.push([id, kind]), questFlag: (k) => r.questFlag(k) });
+  assert.equal(recs.length, 1, 'stone interactable registered');
+  // the crystal flag comes from the boar quest (CH1-03); here the real grant
+  createCrystalGrant({ world: sw, addItem() {}, questFlag: (k) => r.questFlag(k), burst() {}, toast() {} }).check(r.book.statusOf('burl.boars'));
+  assert.ok(state['aether.attuned'], 'crystal attuned after the boar hand-in');
+  assert.ok(state['dlg.bear.stone.told'], 'stone talk told');
+  assert.equal(rw.interact('waystone'), true, 'E wakes the stone (crystal + told)');
+  assert.ok(state['waystone.waystone.woken'], 'woken flag set');
+  assert.deepEqual(emits[0], ['waystone', 'waystone'], 'touch emitted');
+  r.checkSections();
+  assert.equal(r.book.statusOf(ST), 3, 'burl.stone objective done -> ready (? over Burl)');
+  assert.ok(marks().ask.includes('bear'), 'gold ? over Burl after the wake');
+  talk(0);
+  assert.equal(r.book.statusOf(ST), 4, 'burl.stone handed in');
+  console.log('m1FollowChain: stone wake -> burl.stone ready -> ? -> hand-in PASS');
+}
