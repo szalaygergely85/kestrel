@@ -2,7 +2,7 @@
 // Order per cell (fixed): mist -> grade (biome grade composed with the preset grade into ONE set) -> vignette. fg and bg, glyph never changes.
 // The grade stage IS gradeCells (atmos.js) fed with the composed values, so identity post + atmos is bit-equal to gradeCells alone.
 // Colours in cfg/state (mist.rgb, vignette.rgb) are 0..1. 01b adds POST_WGSL from the same constants.
-import { gradeCells } from './atmos.js';
+import { ATMOS_LUMA } from './atmos.js';
 
 /** @typedef {{ bloom: null|{radius:number,gain:number,haloBg:number,haloMin:number},
  *   grade: null|{lift:ArrayLike<number>,gamma:ArrayLike<number>,gain:ArrayLike<number>,sat:number},
@@ -52,6 +52,7 @@ export function createPostState() {
     lift: new Float32Array(3), invGamma: new Float32Array([1, 1, 1]), gain: new Float32Array([1, 1, 1]), sat: 1,
     vig: new Float32Array(4), vigRGB: new Float32Array(3),   // vig = (k, r0, r1, on)
     mist: new Float32Array(4), mistRGB: new Float32Array(3), // mist = (density, start, heightK, on)
+    _vigTab: null, _vigKey: null,
   };
 }
 
@@ -91,50 +92,109 @@ const b8 = (x) => (x < 0 ? 0 : x > 255 ? 255 : x);
 /**
  * JS twin of the per-cell chain on a real RenderTarget (fg/bg in rt.cells) or a bare CellBuffer. Replaces the gradeCells call site.
  * depthF32: per-cell scene depth (cols*rows, world units) for mist, or null (mist skipped); zF32: optional per-cell world height for heightK.
- * Nothing active -> buffers untouched. 0 alloc.
+ * ONE fused pass (mist -> grade -> vignette per cell); stage results are truncated to bytes between stages exactly like the old
+ * three-pass version, so output is bit-identical to it (post.test keeps that reference). Grade LUT shared with gradeCells (state._lut);
+ * vignette factors are a per-cell Float64 table rebuilt on resize / vignette change only. Nothing active -> untouched. 0 alloc per frame.
  */
 export function postCells(rt, depthF32, state, zF32 = null) {
   const cb = rt.cells || rt;
-  if (state.mist[3] > 0 && depthF32) mistPass(cb, depthF32, zF32, state);
-  if (state.gradeOn) gradeCells(rt, state);
-  if (state.vig[3] > 0) vignettePass(rt, cb, state);
-}
-
-function mistPass(cb, depth, z, s) {
-  const dens = s.mist[0], start = s.mist[1], hk = s.mist[2];
-  const mr = s.mistRGB[0] * 255, mg = s.mistRGB[1] * 255, mb = s.mistRGB[2] * 255;
-  const fg = cb.fg, bg = cb.bg, n = Math.min(depth.length, fg.length >> 2);
-  for (let c = 0; c < n; c++) {
-    const e = depth[c] - start;
-    if (!(e > 0)) continue; // d <= start (or NaN): no mist
-    let f = 1 - Math.exp(-dens * e);
-    if (hk > 0 && z) f *= Math.exp(-hk * z[c]);
-    if (f <= 0) continue;
+  const doMist = state.mist[3] > 0 && !!depthF32, doGrade = state.gradeOn && !state.gradeId, doVig = state.vig[3] > 0;
+  if (!doMist && !doGrade && !doVig) return;
+  const fg = cb.fg, bg = cb.bg;
+  const nCells = fg.length >> 2;
+  let lut = null, sat = 1, la = 0, lb = 0, ld = 0;
+  if (doGrade) { lut = gradeLut(state); sat = state.sat; la = ATMOS_LUMA[0]; lb = ATMOS_LUMA[1]; ld = ATMOS_LUMA[2]; }
+  const vf = doVig ? vigTable(rt, cb, state) : null;
+  const dens = state.mist[0], start = state.mist[1], hk = state.mist[2], useZ = hk > 0 && !!zF32;
+  const mr = state.mistRGB[0] * 255, mg = state.mistRGB[1] * 255, mb = state.mistRGB[2] * 255;
+  const vr = state.vigRGB[0] * 255, vg = state.vigRGB[1] * 255, vb = state.vigRGB[2] * 255;
+  let lastE = -1, lastF = 0; // depth runs (sky, flat floors) repeat: reuse f when e is unchanged
+  // grade memo: last input colour -> last output (runs of equal cells are common; exact, it is the same function of the same input)
+  let gfi = -1, gfo = 0, gbi = -1, gbo = 0;
+  const nMist = doMist ? Math.min(depthF32.length, nCells) : 0;
+  for (let c = 0; c < nCells; c++) {
     const o = c << 2;
-    fg[o] = b8(fg[o] + (mr - fg[o]) * f + 0.5); fg[o + 1] = b8(fg[o + 1] + (mg - fg[o + 1]) * f + 0.5); fg[o + 2] = b8(fg[o + 2] + (mb - fg[o + 2]) * f + 0.5);
-    bg[o] = b8(bg[o] + (mr - bg[o]) * f + 0.5); bg[o + 1] = b8(bg[o + 1] + (mg - bg[o + 1]) * f + 0.5); bg[o + 2] = b8(bg[o + 2] + (mb - bg[o + 2]) * f + 0.5);
+    let fr = fg[o], fgg = fg[o + 1], fb = fg[o + 2], br = bg[o], bgg = bg[o + 1], bb = bg[o + 2];
+    if (c < nMist) {
+      const e = depthF32[c] - start;
+      if (e > 0) { // d <= start (or NaN): no mist
+        let f;
+        if (e === lastE && !useZ) f = lastF;
+        else { f = 1 - Math.exp(-dens * e); lastE = e; lastF = f; if (useZ) { f *= Math.exp(-hk * zF32[c]); lastE = -1; } }
+        if (f > 0) {
+          fr = b8(fr + (mr - fr) * f + 0.5) | 0; fgg = b8(fgg + (mg - fgg) * f + 0.5) | 0; fb = b8(fb + (mb - fb) * f + 0.5) | 0;
+          br = b8(br + (mr - br) * f + 0.5) | 0; bgg = b8(bgg + (mg - bgg) * f + 0.5) | 0; bb = b8(bb + (mb - bb) * f + 0.5) | 0;
+        }
+      }
+    }
+    if (doGrade) {
+      const ki = fr | (fgg << 8) | (fb << 16);
+      if (ki === gfi) { fr = gfo & 255; fgg = (gfo >> 8) & 255; fb = gfo >>> 16; }
+      else {
+        gfi = ki;
+        const r = lut[fr], g = lut[256 + fgg], b = lut[512 + fb], y = la * r + lb * g + ld * b;
+        let q = (y + (r - y) * sat) * 255 + 0.5; fr = (q < 0 ? 0 : q > 255 ? 255 : q) | 0;
+        q = (y + (g - y) * sat) * 255 + 0.5; fgg = (q < 0 ? 0 : q > 255 ? 255 : q) | 0;
+        q = (y + (b - y) * sat) * 255 + 0.5; fb = (q < 0 ? 0 : q > 255 ? 255 : q) | 0;
+        gfo = fr | (fgg << 8) | (fb << 16);
+      }
+      const kb = br | (bgg << 8) | (bb << 16);
+      if (kb === gbi) { br = gbo & 255; bgg = (gbo >> 8) & 255; bb = gbo >>> 16; }
+      else {
+        gbi = kb;
+        const r = lut[br], g = lut[256 + bgg], b = lut[512 + bb], y = la * r + lb * g + ld * b;
+        let q = (y + (r - y) * sat) * 255 + 0.5; br = (q < 0 ? 0 : q > 255 ? 255 : q) | 0;
+        q = (y + (g - y) * sat) * 255 + 0.5; bgg = (q < 0 ? 0 : q > 255 ? 255 : q) | 0;
+        q = (y + (b - y) * sat) * 255 + 0.5; bb = (q < 0 ? 0 : q > 255 ? 255 : q) | 0;
+        gbo = br | (bgg << 8) | (bb << 16);
+      }
+    }
+    if (doVig) {
+      const f = vf[c];
+      if (f > 0) {
+        fr = b8(fr + (vr - fr) * f + 0.5); fgg = b8(fgg + (vg - fgg) * f + 0.5); fb = b8(fb + (vb - fb) * f + 0.5);
+        br = b8(br + (vr - br) * f + 0.5); bgg = b8(bgg + (vg - bgg) * f + 0.5); bb = b8(bb + (vb - bb) * f + 0.5);
+      }
+    }
+    fg[o] = fr; fg[o + 1] = fgg; fg[o + 2] = fb; bg[o] = br; bg[o + 1] = bgg; bg[o + 2] = bb;
   }
 }
 
-// r = aspect-corrected radius, 1 at the corners: |(x * aspect, y)| / |(aspect, 1)|, x,y in -1..1; aspect = displayed picture ratio.
-function vignettePass(rt, cb, s) {
+// Grade LUT = gradeCells' (same state._lut / _lutStamp), built only when the composed grade changed.
+function gradeLut(state) {
+  let lut = state._lut;
+  if (!lut) lut = state._lut = new Float32Array(768);
+  if (state._lutStamp !== state.gradeStamp) {
+    state._lutStamp = state.gradeStamp;
+    for (let c = 0; c < 3; c++) {
+      const l = state.lift[c], g = state.gain[c], ig = state.invGamma[c];
+      for (let i = 0; i < 256; i++) { const x = i / 255, v = g * (x + l * (1 - x)); lut[c * 256 + i] = Math.pow(v > 0 ? v : 0, ig); }
+    }
+  }
+  return lut;
+}
+
+// Per-cell vignette factor k * smoothstep(r0, r1, r), r = aspect-corrected radius, 1 at the corners:
+// |(x * aspect, y)| / |(aspect, 1)|, x,y in -1..1; aspect = displayed picture ratio. Float64 (not 32) to stay bit-identical.
+// Rebuilt only when cols/rows/aspect/k/r0/r1 change; ny^2 and nx^2 are per-row / per-column, one sqrt per cell at build time only.
+function vigTable(rt, cb, s) {
   const cols = cb.cols, rows = cb.rows;
   const aspect = (cols * (rt.pxCellW || 1)) / (rows * (rt.pxCellH || 1));
-  const inv = 1 / Math.sqrt(aspect * aspect + 1);
-  const k = s.vig[0], r0 = s.vig[1], r1 = s.vig[2], ir = 1 / (r1 - r0);
-  const vr = s.vigRGB[0] * 255, vg = s.vigRGB[1] * 255, vb = s.vigRGB[2] * 255;
-  const fg = cb.fg, bg = cb.bg;
+  const k = s.vig[0], r0 = s.vig[1], r1 = s.vig[2];
+  const key = s._vigKey || (s._vigKey = new Float64Array(6));
+  let tab = s._vigTab;
+  if (tab && tab.length === cols * rows && key[0] === cols && key[1] === rows && key[2] === aspect && key[3] === k && key[4] === r0 && key[5] === r1) return tab;
+  if (!tab || tab.length !== cols * rows) tab = s._vigTab = new Float64Array(cols * rows);
+  key[0] = cols; key[1] = rows; key[2] = aspect; key[3] = k; key[4] = r0; key[5] = r1;
+  const inv = 1 / Math.sqrt(aspect * aspect + 1), ir = 1 / (r1 - r0);
   for (let y = 0; y < rows; y++) {
     const ny = ((y + 0.5) / rows) * 2 - 1;
     for (let x = 0; x < cols; x++) {
       const nx = (((x + 0.5) / cols) * 2 - 1) * aspect;
       let t = (Math.sqrt(nx * nx + ny * ny) * inv - r0) * ir;
       t = t < 0 ? 0 : t > 1 ? 1 : t;
-      const f = k * t * t * (3 - 2 * t); // k * smoothstep(r0, r1, r)
-      if (f <= 0) continue;
-      const o = (y * cols + x) << 2;
-      fg[o] = b8(fg[o] + (vr - fg[o]) * f + 0.5); fg[o + 1] = b8(fg[o + 1] + (vg - fg[o + 1]) * f + 0.5); fg[o + 2] = b8(fg[o + 2] + (vb - fg[o + 2]) * f + 0.5);
-      bg[o] = b8(bg[o] + (vr - bg[o]) * f + 0.5); bg[o + 1] = b8(bg[o + 1] + (vg - bg[o + 1]) * f + 0.5); bg[o + 2] = b8(bg[o + 2] + (vb - bg[o + 2]) * f + 0.5);
+      tab[y * cols + x] = k * t * t * (3 - 2 * t);
     }
   }
+  return tab;
 }

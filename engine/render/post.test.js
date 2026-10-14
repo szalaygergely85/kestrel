@@ -96,6 +96,49 @@ for (const [name, cfg] of bad) assert.throws(() => validatePost(cfg), /validateP
   postCells(A, d, full); const m = composePost(null, { mist: { rgb: [0.8, 0.8, 0.9], density: 0.02, start: 4, heightK: 0 } }, createPostState()); postCells(B, d, m); gradeCells(B, atm);
   assert.deepEqual(A.cells.fg, B.cells.fg, 'chain == mist then grade'); }
 
+// Bit-equality: fused postCells vs the original three-pass implementation (kept here as the reference), 3 poses x 4 configs, +/- zF32
+function refMist(cb, depth, z, s) {
+  const b8 = (x) => (x < 0 ? 0 : x > 255 ? 255 : x);
+  const dens = s.mist[0], start = s.mist[1], hk = s.mist[2], mr = s.mistRGB[0] * 255, mg = s.mistRGB[1] * 255, mb = s.mistRGB[2] * 255;
+  const fg = cb.fg, bg = cb.bg, n = Math.min(depth.length, fg.length >> 2);
+  for (let c = 0; c < n; c++) {
+    const e = depth[c] - start; if (!(e > 0)) continue;
+    let f = 1 - Math.exp(-dens * e); if (hk > 0 && z) f *= Math.exp(-hk * z[c]); if (f <= 0) continue;
+    const o = c << 2;
+    fg[o] = b8(fg[o] + (mr - fg[o]) * f + 0.5); fg[o + 1] = b8(fg[o + 1] + (mg - fg[o + 1]) * f + 0.5); fg[o + 2] = b8(fg[o + 2] + (mb - fg[o + 2]) * f + 0.5);
+    bg[o] = b8(bg[o] + (mr - bg[o]) * f + 0.5); bg[o + 1] = b8(bg[o + 1] + (mg - bg[o + 1]) * f + 0.5); bg[o + 2] = b8(bg[o + 2] + (mb - bg[o + 2]) * f + 0.5);
+  }
+}
+function refVig(rt, cb, s) {
+  const b8 = (x) => (x < 0 ? 0 : x > 255 ? 255 : x);
+  const cols = cb.cols, rows = cb.rows, aspect = (cols * (rt.pxCellW || 1)) / (rows * (rt.pxCellH || 1)), inv = 1 / Math.sqrt(aspect * aspect + 1);
+  const k = s.vig[0], r0 = s.vig[1], r1 = s.vig[2], ir = 1 / (r1 - r0), vr = s.vigRGB[0] * 255, vg = s.vigRGB[1] * 255, vb = s.vigRGB[2] * 255, fg = cb.fg, bg = cb.bg;
+  for (let y = 0; y < rows; y++) { const ny = ((y + 0.5) / rows) * 2 - 1;
+    for (let x = 0; x < cols; x++) {
+      const nx = (((x + 0.5) / cols) * 2 - 1) * aspect; let t = (Math.sqrt(nx * nx + ny * ny) * inv - r0) * ir; t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const f = k * t * t * (3 - 2 * t); if (f <= 0) continue; const o = (y * cols + x) << 2;
+      fg[o] = b8(fg[o] + (vr - fg[o]) * f + 0.5); fg[o + 1] = b8(fg[o + 1] + (vg - fg[o + 1]) * f + 0.5); fg[o + 2] = b8(fg[o + 2] + (vb - fg[o + 2]) * f + 0.5);
+      bg[o] = b8(bg[o] + (vr - bg[o]) * f + 0.5); bg[o + 1] = b8(bg[o + 1] + (vg - bg[o + 1]) * f + 0.5); bg[o + 2] = b8(bg[o + 2] + (vb - bg[o + 2]) * f + 0.5); } }
+}
+function refPost(rt, depth, s, z) {
+  const cb = rt.cells || rt;
+  if (s.mist[3] > 0 && depth) refMist(cb, depth, z, s);
+  if (s.gradeOn) gradeCells(rt, s);
+  if (s.vig[3] > 0) refVig(rt, cb, s);
+}
+{ const D = new Float32Array(96 * 48), Z = new Float32Array(96 * 48); for (let i = 0; i < D.length; i++) { D[i] = (i * 7919) % 200; Z[i] = (i % 13) * 0.7; }
+  const G = { lift: [0.01, 0.02, 0], gamma: [1.1, 1, 0.9], gain: [0.9, 1, 1.1], sat: 0.8 };
+  const CFGS = [
+    [null, { vignette: okVig }], [atm, { grade: G, vignette: okVig }], [atm, { mist: { ...okMist, heightK: 0.1 } }],
+    [atm, { grade: G, vignette: { k: 0.5, r0: 0.2, r1: 0.8, rgb: [0.1, 0, 0.2] }, mist: okMist }],
+  ];
+  for (const [a, cfg] of CFGS) for (const pose of POSES) for (const z of [null, Z]) {
+    const s1 = composePost(a, cfg, createPostState()), s2 = composePost(a, cfg, createPostState());
+    const x = sky(mkRT(96, 48), pose), y = sky(mkRT(96, 48), pose);
+    postCells(x, D, s1, z); refPost(y, D, s2, z); postCells(x, D, s1, z); refPost(y, D, s2, z); // twice: also exercises the cached LUT / vignette table
+    assert.deepEqual(snap(x), snap(y), 'fused == three-pass reference');
+  } }
+
 // 0 alloc per frame with everything on (compose only on change, not per frame)
 { const rt = mkRT(160, 60); const d = new Float32Array(160 * 60).fill(90);
   const ps = composePost(atm, { grade: okGrade, vignette: okVig, mist: okMist }, createPostState());
