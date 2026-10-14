@@ -1,5 +1,6 @@
 // S8-C-07: cached item-get card. Host owns input routing/pause and calls step even while gameplay is paused.
 // Formatting happens at create/push; draw/step reuse the queue, layout, colours and payload-free state.
+import { itemName } from '../quest/sim/itemInst.js';
 const TIER_KEY={worn:'uiHint',sturdy:'heroGreen',fine:'gold'}; // keys of uiStyle.itemGetCard.hex
 export function createItemGetCard(adapter, {style:S, items, rgb, reduceMotion=false, dev=false}) {
   const reduced=()=>typeof reduceMotion==='function'?!!reduceMotion():!!reduceMotion; // bool or live getter
@@ -45,9 +46,11 @@ export function createItemGetCard(adapter, {style:S, items, rgb, reduceMotion=fa
   }
   return {
     get isOpen(){return phase!=='idle';},
-    push(id,n=1,{count=n,packFull=false}={}) {
+    push(id,n=1,{count=n,packFull=false,entry=null}={}) { // entry = {id, it}: a rolled instance is named through itemInst
       if(!info[id] || !Number.isSafeInteger(n) || n<1 || !Number.isSafeInteger(count) || count<0)throw new Error('item card: invalid reward');
-      const inf=info[id], progress=S.count.progress[id];
+      let inf=info[id];
+      if(entry&&entry.it!=null){const nm=itemName(entry,items.defs);inf=Object.assign({},inf,{nameLen:nm.length,title:S.titleBar.decor[0]+nm+S.titleBar.decor[1]});}
+      const progress=S.count.progress[id];
       queue.push({id,n,info:inf,countLine:packFull ? S.count.full.text : progress ? progress.format.replace('{n}',String(count))
         : inf.def.stackMax>1 && count>=2 ? S.count.format.replace('{n}',String(count)) : inf.defLine,
         countFg:packFull ? fullFg : colours[progress ? progress.fg : inf.defLine&&inf.tierKey ? inf.tierKey : S.count.fg],queueLine:''});
@@ -91,7 +94,7 @@ export function createItemGetCard(adapter, {style:S, items, rgb, reduceMotion=fa
       const tx=(P.w-inf.title.length)>>1;
       text(tx,title.row,inf.title,colours[age<title.pop.sec&&phase==='show' ? title.pop.fg : inf.tierKey||title.fg],colours[title.bg]);
       text(tx,title.row,title.decor[0],colours[title.decorFg],colours[title.bg]);
-      text(tx+title.decor[0].length+inf.def.name.length,title.row,title.decor[1],colours[title.decorFg],colours[title.bg]);
+      text(tx+title.decor[0].length+(inf.nameLen??inf.def.name.length),title.row,title.decor[1],colours[title.decorFg],colours[title.bg]);
       for(let x=S.separator.from;x<=S.separator.to;x++)put(x,S.separator.row,S.separator.glyph.charCodeAt(0),colours[S.separator.fg],plate);
       const pulse=!reduced() && Math.sin(age*6.283185307179586/B.pulse.periodSec)>0.5 ? 1 : 0;
       const iconBg=colours[B.pulse.innerBg[pulse]];

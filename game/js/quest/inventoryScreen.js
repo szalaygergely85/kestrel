@@ -10,6 +10,7 @@ import { wrapNoteLines } from './noteRead.js';
 import { gearRecipe } from './gearLook.js';
 import { createPreviewYaw } from './previewYaw.js';
 import { itemDisplayName } from './sim/inventory.js';
+import { itemName, rarityOf } from './sim/itemInst.js';
 
 // Panel-relative layout (panel 100 x 29). Slot boxes are the style's 9x5 boxes, pitch from `uiStyle.inventory.grid`.
 export const LAYOUT = Object.freeze({
@@ -52,6 +53,7 @@ export function createInventoryScreen(o) {
   const disabledSlot = S.states ? styleAt(S.states.slot.disabled) : slotCfg.disabled;
   const slotDisabled = (i) => !!o.isSlotDisabled && o.isSlotDisabled(i);
   const charKey = o.characterKey !== false;
+  const rarityFg = [C.uiText, C.heroGreen, C.gold, C.ember, C.ember]; // ITEM-02a placeholder colours per rarity (common..unique); UI redesign is a later story
   const tierFg = { worn: C.uiHint, sturdy: C.heroGreen, fine: C.gold, tempered: C.gold, warden: C.gold };
   const tierName = { worn: 'Worn', sturdy: 'Sturdy', fine: 'Fine', tempered: 'T4', warden: 'T5' };
   const slotLabel = {}, slotTag = {}; for (const s of L.slots) { slotLabel[s[0]] = s[3]; slotTag[s[0]] = s[3].length < 7 ? s[3] + ' ' : s[3]; }
@@ -281,7 +283,9 @@ export function createInventoryScreen(o) {
     const d = id && defs[id];
     if (!d) { add(node.kind === 0 ? 'Empty ' + slotLabel[node.slot].toLowerCase() + ' slot' : 'Empty', C.uiDim); return; }
     const q = d.equip, tier = q ? q.tier : null;
-    add(itemDisplayName(d), tier && tierFg[tier] ? tierFg[tier] : C.uiText);
+    const ent = node.kind === 2 && inv() ? inv().slots[node.i] : { id, it: null }; // pack slot may hold an instance
+    const rar = ent.it != null ? rarityOf(ent, defs) : -1;
+    add(itemName(ent, defs), rar >= 0 ? rarityFg[rar] : tier && tierFg[tier] ? tierFg[tier] : C.uiText);
     if (lockText) { add(lockText, C.uiDim); return; }
     if (q) {
       add((tierName[tier] || '') + ' ' + (slotLabel[q.slot] || q.slot).toLowerCase() + (q.def > 0 ? '  -  Defence ' + q.def : '') + (q.stats && q.stats.dmgMul ? '  -  Damage x' + q.stats.dmgMul : ''), C.uiHint);
