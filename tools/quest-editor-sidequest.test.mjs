@@ -11,6 +11,7 @@ import { applyQuestPreset } from '../game/js/quest/statePreset.js';
 import { createQuestBook } from '../game/js/quest/sim/questBook.js';
 import { loadDesignAssets, loadQuestFiles, loadPackQuests } from './validate-content.mjs';
 import { r14Quest } from './content-lint.mjs';
+import { lintQuest } from './editor/quest/lintQuest.js';
 
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const tmp = mkdtempSync(join(tmpdir(), 'edq03b-'));
@@ -64,7 +65,7 @@ try {
   assert.ok(zone && zone.x === 1400 && zone.y === 1030 && zone.r === 4);
   // R14 on the result: character giver/return resolve to placed entities, accept offered
   const chars = new Set(world.entities.filter((e) => e.type === 'npc' || (e.components && e.components.dialogue)).map((e) => e.id));
-  const f = r14Quest({ characters: chars, pos: (id) => world.entities.find((e) => e.id === id) }, { ...def, accept: true });
-  assert.deepEqual(f, [], 'R14: ' + JSON.stringify(f));
+  const f = lintQuest(loadQuests(dir), ID, { characters: chars, pos: (id) => world.entities.find((e) => e.id === id), sites, flowOf: () => ({ accept: true }) }).filter((x) => x.severity === 'error' && (x.rule === 'R10' || x.rule === 'R14')); // R14/R10 only: pack steps carry no journal text yet (R3)
+  assert.deepEqual(f, [], 'lintQuest: ' + JSON.stringify(f));
   console.log('sideQuest.test PASS');
 } finally { rmSync(tmp, { recursive: true, force: true }); }

@@ -6,6 +6,7 @@
 //   characters:Set<id>, pos(id)->{x,y,z}|null, groundAt(x,y), walkable(x,y,z), support(id)->R12 record|null,
 //   labelOf(id)->plain name, itemDefs:{id:{name}}, hasFlag(name)->bool,
 //   flowOf(quest)->{accept, exit, markLeft, pickupsKept, earlyReturn} (OB-156 data from dialogue/errand files).
+import { resolveGiver } from '../../../game/js/quest/sim/templates.js';
 import { r5One, r10Quest, r12One, r14Quest, rawIn } from '../../content-lint.mjs';
 
 const ID_LIKE = /\b(?:sq|mq|heart)\.[A-Za-z][\w.]*/, PLACEHOLDER = /\{[^}]*\}/;
@@ -19,16 +20,24 @@ function objectiveSpots(o) {
   return ids;
 }
 
+/** Giver {npc, turnIn?}: legacy `giver`, or a pack row's `site` resolved through ctx.sites exactly like templates.js (unknown site -> none). */
+function giverOf(q, ctx) {
+  if (q.raw.giver) return q.raw.giver;
+  if (q.raw.site === undefined || !ctx.sites) return {};
+  const step = (q.raw.steps || []).find((st) => st.template === 'deliver') || (q.raw.template === 'deliver' ? q.raw : null);
+  try { return resolveGiver(q.raw, ctx, step ? (step.params || step).to : undefined); } catch { return {}; }
+}
+
 export function lintQuest(model, questId, ctx = {}) {
   const q = model.quests.find((x) => x.id === questId);
   if (!q) return [{ rule: 'R0', severity: 'error', text: 'Quest not found', target: { kind: 'field', id: 'id' } }];
   const name = (id) => (ctx.labelOf ? ctx.labelOf(id) : id), out = [];
   const add = (rule, severity, text, kind, id) => out.push({ rule, severity, text, target: { kind, id } });
   const lvl = (f) => (f.level === 'warn' ? 'warn' : 'error');
-  const g = q.raw.giver || {}, giver = g.npc || null, ret = g.turnIn || giver;
+  const g = giverOf(q, ctx), giver = g.npc || null, ret = g.turnIn || giver;
   const flow = ctx.flowOf ? ctx.flowOf(q) || {} : {};
   const rq = { id: q.id, giver: g, objectGiver: !!q.raw.objectGiver, accept: flow.accept ?? true, auto: !!flow.auto };
-  const c = { characters: ctx.characters || new Set(), pos: ctx.pos, groundAt: ctx.groundAt, walkable: ctx.walkable };
+  const c = { characters: ctx.characters || new Set(), pos: ctx.pos, groundAt: ctx.groundAt, walkable: ctx.walkable, levelIds: ctx.levelIds };
 
   // R10 / D-082 / D-087: giver and return are characters, not objects
   if (ctx.characters) {

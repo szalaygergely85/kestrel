@@ -8,7 +8,9 @@ import '../../../design/models/voxel_bear_black.js';
 let pass = 0, fail = 0;
 const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
-const A = globalThis.ASSETS, BG = A.bearGait;
+import { CONFIGS, defOf } from '../../../tools/gait-configs.mjs';
+import { plantedError, genGait } from '../../../tools/gait-lib.mjs';
+const A = globalThis.ASSETS, CFG = Object.fromEntries(CONFIGS.filter((c) => c.id.startsWith('bear.')).map((c) => [c.clip, c]));   // ANIM-B-01 follow-up: generator = tools/gen-gait.mjs
 
 // the 8-part boxes of the shipped bear before the split (voxel_bear.js v1.53)
 const OLD = {
@@ -46,26 +48,16 @@ for (const key of ['bear', 'bearBlack']) {
   const legacy = Object.keys(def.animations).filter((c) => c !== 'walk' && c !== 'charge');
   const unkeyed = legacy.every((c) => def.animations[c].frames.every((f) => !f.armL2 && !f.armR2 && !f.legL2 && !f.legR2));
   ok(`${key}: legacy clips (${legacy.join(',')}) leave the lower parts unkeyed`, unkeyed);
-  ok(`${key}: legRig stand = idle, walk gait = GAIT.walk`, def.legRig.stand[0] === 'idle' && def.legRig.gaits.walk.tunedMps === BG.GAIT.walk.v && def.legRig.legs.length === 4);
+  ok(`${key}: legRig stand = idle, walk gait = GAIT.walk`, def.legRig.stand[0] === 'idle' && def.legRig.gaits.walk.tunedMps === CFG.walk.G.v && def.legRig.legs.length === 4);
 }
-ok('black bear: charge gait declared + clip regenerated', A.models.bearBlack.voxel.legRig.gaits.charge.tunedMps === BG.GAIT.charge.v && A.models.bearBlack.voxel.animations.charge.frames.length === BG.GAIT.charge.keys);
+ok('black bear: charge gait declared + clip regenerated', A.models.bearBlack.voxel.legRig.gaits.charge.tunedMps === CFG.charge.G.v && A.models.bearBlack.voxel.animations.charge.frames.length === CFG.charge.keys);
 
-// planted feet: lowest foot voxel on the ground (<= 12 mm) AND the stance travel (model-space foot y, first -> last stance key) = the tuned stride
+// planted feet (<= 12 mm over stance, tools/gait-lib plantedError) + shipped clip == generated (gen-gait is the only source)
 for (const gname of ['walk', 'charge']) {
-  const G = BG.GAIT[gname], clip = BG.gaitClip(G), cell = 0.05, S = G.v * (G.T / 1000) * G.beta / cell;
-  let worstZ = 0, worstTravel = 0;
-  for (const k of BG.LEG_ORDER) {
-    const run = [];   // [stance phase 0..beta, foot y]
-    clip.frames.forEach((fr, i) => {
-      let ph = (i / G.keys - G.phase[k]) % 1; if (ph < 0) ph += 1;
-      if (ph < G.beta) { const mz = BG.footMinZ(fr, k); worstZ = Math.max(worstZ, Math.abs(mz.z) * cell); run.push([ph, mz.y]); }
-    });
-    run.sort((a, b) => a[0] - b[0]);
-    const want = S * (run[run.length - 1][0] - run[0][0]) / G.beta, got = run[0][1] - run[run.length - 1][1] === 0 ? 0 : Math.abs(run[run.length - 1][1] - run[0][1]);
-    worstTravel = Math.max(worstTravel, Math.abs(got - want));
-  }
-  ok(`${gname}: planted foot z <= 12 mm over stance (worst ${(worstZ * 1000).toFixed(2)} mm)`, worstZ <= 0.012);
-  ok(`${gname}: stance travel = ${S.toFixed(1)} cells (v ${G.v} m/s x T x duty) within 1.5 cells (worst dev ${worstTravel.toFixed(2)})`, worstTravel <= 1.5, String(worstTravel));
+  const cfg = CFG[gname], def = defOf(cfg), shipped = def.animations[gname], gen = genGait(def, cfg).clip;
+  const worst = plantedError(def, cfg, shipped, 4);
+  ok(`${gname}: planted foot z <= 12 mm over stance (worst ${(worst * 1000).toFixed(2)} mm)`, worst <= 0.012);
+  ok(`${gname}: shipped clip == tools/gen-gait.mjs output`, JSON.stringify(shipped.frames) === JSON.stringify(gen.frames) && JSON.stringify(shipped.durations) === JSON.stringify(gen.durations));
 }
 console.log(`bearKnee: ${pass} pass, ${fail} fail`);
 if (fail) { console.error(failures.join('\n')); process.exit(1); }
