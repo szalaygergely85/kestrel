@@ -147,7 +147,10 @@ function sampleInto(pm, clipIdx, frameIn, tMs, rotOut, posOut) {
     for (let i = 0; i < partCount * 3; i++) { rotOut[i] = 0; posOut[i] = 0; }
     return;
   }
-  const clip = pm.clips[clipIdx];
+  sampleClipObj(partCount, pm.clips[clipIdx], frameIn, tMs, rotOut, posOut);
+}
+// Shared body (also samples the packed additive delta clips of ANIM-BLEND-01a): one clip object {n, loop, step, durMs, keys}.
+function sampleClipObj(partCount, clip, frameIn, tMs, rotOut, posOut) {
   const n = clip.n;
   let frame = frameIn | 0;
   if (frame < 0) frame = 0;
@@ -184,10 +187,54 @@ function sampleClip(pm, inst) {
   }
 }
 
+// ---- ANIM-BLEND-01a (38.68 item 1): pose layers. `inst.layers` (Float64Array(20), null/[0]=0 = off = today's bytes):
+// [on, clip,frame,tMs, clip2,frame2,tMs2, w2, fClip,fFrame,fTMs, fClip2,fFrame2,fTMs2, fW2, fromW, addIdx,addFrame,addTMs,addW]
+// base source = clip A lerped toward clip B by w2; from source (same shape, offset 8) lerped in by fromW; additive delta on a part mask.
+const _tmpRot = new Float64Array(MAX_VOX_PARTS * 3);
+const _tmpPos = new Float64Array(MAX_VOX_PARTS * 3);
+// One source (A + (B - A) * w2) whose 7 numbers start at L[off]; written to rotOut/posOut. Uses _tmpRot/_tmpPos as B scratch.
+function sampleSource(pm, L, off, rotOut, posOut) {
+  sampleInto(pm, L[off], L[off + 1], L[off + 2], rotOut, posOut);
+  const w2 = L[off + 6];
+  if (w2 > 0 && L[off + 3] >= 0) {
+    sampleInto(pm, L[off + 3], L[off + 4], L[off + 5], _tmpRot, _tmpPos);
+    const n3 = pm.partCount * 3;
+    for (let i = 0; i < n3; i++) {
+      rotOut[i] = rotOut[i] + (_tmpRot[i] - rotOut[i]) * w2;
+      posOut[i] = posOut[i] + (_tmpPos[i] - posOut[i]) * w2;
+    }
+  }
+}
+function sampleLayers(pm, L) {
+  sampleSource(pm, L, 1, _rotOut, _posOut);
+  const n3 = pm.partCount * 3;
+  const fw = L[15];
+  if (fw > 0 && L[8] >= 0) {
+    sampleSource(pm, L, 8, _fromRot, _fromPos);
+    for (let i = 0; i < n3; i++) {
+      _rotOut[i] = _rotOut[i] + (_fromRot[i] - _rotOut[i]) * fw;
+      _posOut[i] = _posOut[i] + (_fromPos[i] - _posOut[i]) * fw;
+    }
+  }
+  const aw = L[19], ai = L[16] | 0, bl = pm.blend;
+  if (aw !== 0 && L[16] >= 0 && bl && ai < bl.addClips.length) {
+    sampleClipObj(pm.partCount, bl.addClips[ai], L[17], L[18], _tmpRot, _tmpPos);
+    const mask = bl.addMask[ai];
+    for (let p = 0; p < pm.partCount; p++) {
+      if ((mask & (1 << p)) === 0) continue;
+      for (let c = p * 3; c < p * 3 + 3; c++) {
+        _rotOut[c] += aw * _tmpRot[c];
+        _posOut[c] += aw * _tmpPos[c];
+      }
+    }
+  }
+}
+
 // TALK-E1 (38.28 item 7): optional extra rotation (degrees, part-local) added on top of the clip rotation
 // of one part (`inst.addPart` = part index, `addRx/Ry/Rz`). Undefined/-1 addPart -> byte-identical output.
 function samplePose(pm, inst) {
-  sampleClip(pm, inst);
+  const L = inst.layers;
+  if (L && L[0] === 1) sampleLayers(pm, L); else sampleClip(pm, inst);
   // ANIM-C-01: leg driver body tilt/drop (weighted by the driver), only while the leg solve is on.
   const lg = inst.legs, lr = pm.legRig;
   if (lr && lg && lg[0] > 0) {

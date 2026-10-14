@@ -6,6 +6,7 @@
 import { assertVoxelModel, PART_STRIDE, MAX_VOX_PARTS } from './VoxelModel.js';
 import { deriveEmissiveLight } from './emissiveLight.js';
 import { packLegRig } from './legRig.js';
+import { packBlend, validateBlend } from './blendPack.js';
 
 /**
  * Packs a validated VoxelModelDef into a PackedVoxelModel (architecture.md
@@ -91,7 +92,7 @@ export function packVoxelModel(def, matIdFor, lightInfo) {
   const mounts = packMounts(def, partNames);
   const partIndex = packPartIndex(partNames, partCount);
 
-  return {
+  const pm = {
     sx, sy, sz,
     cellM: def.cellM,
     partCount,
@@ -109,7 +110,10 @@ export function packVoxelModel(def, matIdFor, lightInfo) {
     mounts,
     emissiveLight: lightInfo ? deriveEmissiveLight(def, lightInfo.matInfo, lightInfo.presetInfo, lightInfo.override) : null,
     legRig: packLegRig(def, partNames), // ANIM-C-01: null without def.legRig
+    blend: null,
   };
+  pm.blend = packBlend(def, pm, partNames); // ANIM-BLEND-01a: null without def.blend
+  return pm;
 }
 
 // ---- shared with the rig branch (RIG-02b): clips / mounts / partIndex are packed by the same code ----
@@ -206,6 +210,11 @@ function checkRiggedHeader(def) {
     if (!Array.isArray(cd.frames) || !cd.frames.length || !Array.isArray(cd.durations) || cd.durations.length !== cd.frames.length) fail('clip ' + cn + ' malformed');
     for (const fr of cd.frames) for (const pn of Object.keys(fr)) if (!(pn in def.parts)) fail('clip ' + cn + ' names unknown part ' + pn);
   }
+  if (def.blend !== undefined) {
+    const errs = [];
+    validateBlend(def, names, errs);
+    if (errs.length) fail(errs.join('; '));
+  }
   for (const [mn, m] of Object.entries(def.mounts || {})) {
     if (!Array.isArray(m.at) || m.at.length !== 3 || (m.part !== undefined && !(m.part in def.parts))) fail('mount ' + mn + ' malformed');
   }
@@ -228,7 +237,7 @@ function packRiggedModel(def, matIdFor) {
   const matIds = new Uint16Array(matKeys.length + 1);
   for (let i = 1; i <= matKeys.length; i++) matIds[i] = matIdFor(matKeys[i - 1]);
   const { clips, clipIndex } = packClips(def, partNames, partCount);
-  return {
+  const pm = {
     sx: def.size[0], sy: def.size[1], sz: def.size[2],
     cellM: def.cellM,
     partCount,
@@ -243,5 +252,8 @@ function packRiggedModel(def, matIdFor) {
     mounts: packMounts(def, partNames),
     emissiveLight: null, // v1: deriveEmissiveLight reads layers
     rig: def.rig,
+    blend: null,
   };
+  pm.blend = packBlend(def, pm, partNames); // ANIM-BLEND-01a
+  return pm;
 }

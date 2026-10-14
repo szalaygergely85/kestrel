@@ -25,7 +25,8 @@ const H_PIT = 11, H_ROL = 13, H_DRP = 15;
 const TILT_TAU = 0.12;      // s, critical damping of pitch / roll / drop
 const DROP_MAX = 0.35;      // x leg length
 // per foot
-const F_MODE = 0, F_PX = 1, F_LX = 4, F_GX = 7, F_T = 10, F_REPLAN = 11; // px,py,pz / lift-off / landing triples
+const F_MODE = 0, F_PX = 1, F_LX = 4, F_GX = 7, F_T = 10, F_REPLAN = 11, F_PAT = 12; // F_PAT: footfall pattern (gait index + 1, 0 = unset), blender mode only
+// // px,py,pz / lift-off / landing triples
 const M_STANCE = 0, M_SWING = 1, M_STEP = 2;
 
 const _land = new Float64Array(3); // scratch return of landing()
@@ -40,7 +41,7 @@ export function createLegDriver(capacity = 48) {
   const poseViews = [];
   for (let i = 0; i < capacity; i++) poseViews.push(poses.subarray(i * POSE_STRIDE, (i + 1) * POSE_STRIDE));
   for (let i = 0; i < capacity; i++) state[i * STATE_STRIDE + H_D2] = Infinity;
-  // io: [x, y, z, yawDeg, dtMs, camX, camY, (7 spare), phase01, speed, active]
+  // io: [x, y, z, yawDeg, dtMs, camX, camY, (4 spare), phase01, speed, active, blendStride (m; ANIM-BLEND-01c, 0 = own formula)]
   const io = new Float64Array(16);
   const drv = { io, queries: 0, capacity, attach, release, reset, poseOf, update };
 
@@ -127,12 +128,13 @@ export function createLegDriver(capacity = 48) {
 
     // ---- gait phase
     let Phi = state[S + H_PHI];
+    const bs = io[11]; // blender stride (m); > 0 also switches the footfall pattern per foot at touchdown
     let tuned = 1, duty = 0.6, lift = 0.05, stride = 1;
     const gO = gIdx * gs;
     if (gIdx >= 0) {
       tuned = lr.gait[gO]; duty = lr.gait[gO + 1]; lift = lr.gait[gO + 2];
-      let f = Math.sqrt(v / tuned); if (f < 0.8) f = 0.8; else if (f > 1.25) f = 1.25;
-      stride = tuned * lr.gait[gO + 3] * f;
+      if (bs > 0) stride = bs; // ANIM-BLEND-01c: the blender's blended stride (m) replaces the per-gait formula
+      else { let f = Math.sqrt(v / tuned); if (f < 0.8) f = 0.8; else if (f > 1.25) f = 1.25; stride = tuned * lr.gait[gO + 3] * f; }
       Phi += v * dt / stride;
       Phi -= Math.floor(Phi);
       state[S + H_PHI] = Phi;
@@ -159,7 +161,7 @@ export function createLegDriver(capacity = 48) {
         const px = x + cs * mx - sn * my, py = y + sn * mx + cs * my;
         const gz = groundZ(ground, px, py, z);
         state[F + F_MODE] = M_STANCE; state[F + F_PX] = px; state[F + F_PX + 1] = py; state[F + F_PX + 2] = gz;
-        state[F + F_REPLAN] = 0;
+        state[F + F_REPLAN] = 0; state[F + F_PAT] = 0;
       }
     }
     const standMode = isStand || gi < 0 || v < STAND_V;
@@ -205,22 +207,28 @@ export function createLegDriver(capacity = 48) {
         continue;
       }
       // gait: stance / swing from the phase
-      let phi = Phi - lr.gait[gO + 4 + k]; phi -= Math.floor(phi);
-      if (mode === M_SWING && phi < duty) { plant(state, F); mode = state[F + F_MODE] = M_STANCE; } // touchdown (no query)
-      else if (mode === M_STANCE && phi >= duty) {
+      // footfall pattern of this foot: the dominant gait now, or (blender mode) the one adopted at its last touchdown
+      let gk = gO;
+      if (bs > 0 && gIdx >= 0) { if (state[F + F_PAT] === 0) state[F + F_PAT] = gIdx + 1; gk = (state[F + F_PAT] - 1) * gs; } else state[F + F_PAT] = 0;
+      let phi = Phi - lr.gait[gk + 4 + k]; phi -= Math.floor(phi);
+      if (mode === M_SWING && phi < lr.gait[gk + 1]) {
+        plant(state, F); mode = state[F + F_MODE] = M_STANCE; // touchdown (no query)
+        if (bs > 0 && gIdx >= 0) { state[F + F_PAT] = gIdx + 1; gk = gO; phi = Phi - lr.gait[gk + 4 + k]; phi -= Math.floor(phi); } // new pattern from here
+      }
+      else if (mode === M_STANCE && phi >= lr.gait[gk + 1]) {
         state[F + F_LX] = state[F + F_PX]; state[F + F_LX + 1] = state[F + F_PX + 1]; state[F + F_LX + 2] = state[F + F_PX + 2];
-        landing(ground, dirx, diry, x, y, z, cs, sn, mx, my, 1 - phi, stride, duty);
+        landing(ground, dirx, diry, x, y, z, cs, sn, mx, my, 1 - phi, stride, lr.gait[gk + 1]);
         state[F + F_GX] = _land[0]; state[F + F_GX + 1] = _land[1]; state[F + F_GX + 2] = _land[2];
         state[F + F_REPLAN] = 0; mode = state[F + F_MODE] = M_SWING;
       }
       if (mode === M_SWING) {
-        const q = (phi - duty) / (1 - duty);
+        const dutyK = lr.gait[gk + 1], q = (phi - dutyK) / (1 - dutyK);
         if (q >= 0.5 && state[F + F_REPLAN] === 0) {
           state[F + F_REPLAN] = 1;
-          landing(ground, dirx, diry, x, y, z, cs, sn, mx, my, 1 - phi, stride, duty);
+          landing(ground, dirx, diry, x, y, z, cs, sn, mx, my, 1 - phi, stride, dutyK);
           state[F + F_GX] = _land[0]; state[F + F_GX + 1] = _land[1]; state[F + F_GX + 2] = _land[2];
         }
-        _lift[k] = swingPos(state, F, q, lift, poses, T, zOff);
+        _lift[k] = swingPos(state, F, q, lr.gait[gk + 2], poses, T, zOff);
       } else {
         poses[T] = state[F + F_PX]; poses[T + 1] = state[F + F_PX + 1]; poses[T + 2] = state[F + F_PX + 2] + zOff;
       }

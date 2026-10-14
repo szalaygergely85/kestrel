@@ -10,12 +10,19 @@ import {
   World, NavGrid, createRng, createHasher, SIM_STEP, hasLineOfSight, integrate, PHYSICS, NOISE_SPRINT, NOISE_SWING,
 } from '../../../../engine/index.js';
 import { allocProbe } from '../../../../tools/allocProbe.mjs';
-// Retained-heap leak check (gc'd before AND after, min of 3 windows): the original LIFE-07/08 semantics. A raw garbage probe
-// reads ~312 / ~160 B/step here (test stub / goal path) - see docs/lanes/pc-b2.md GATE-FLAKY-06.
-function retainedProbe(run) {
-  let best = Infinity;
-  for (let w = 0; w < 3; w++) { global.gc(); global.gc(); const h0 = process.memoryUsage().heapUsed; run(); global.gc(); global.gc(); best = Math.min(best, process.memoryUsage().heapUsed - h0); }
-  return best;
+// BEAST-ALLOC-01 (arch 38.61): per-step garbage via allocProbe (min of 5 windows). The sim's OWN garbage is measured with a stub
+// floor (world.supportAt boxes its double args at a non-inlined boundary: engine/world, open ASK ARCHITECT in docs/lanes/pc-b2.md)
+// stays within ownPerBeast (the 48 B/beast left is the 3 boxed doubles of the supportAt CALL itself); the real-floor figure is asserted against an explicit per-beast cap (ALLOC_EXEMPT, ref arch 38.61).
+const ALLOC_EXEMPT = { capPerBeast: 200, ownPerBeast: 56, /* = 3 boxed doubles at the supportAt call */ reason: 'World.supportAt/Terrain.groundAt boxed doubles (engine, ASK ARCHITECT)', ref: 'arch 38.61' };
+function stepAlloc(f, world, tag) {
+  const run = (n) => { for (let i = 0; i < n; i++) f(); };
+  const real = world.supportAt, sup = { floorH: 0 };
+  world.supportAt = () => sup;
+  const own = allocProbe(run, { n: 5000 }).perCall;
+  world.supportAt = real;
+  const full = allocProbe(run, { n: 5000 }).perCall;
+  console.log(`  [alloc] ${tag}: own ${own.toFixed(1)} B/step, with real floor ${full.toFixed(1)} B/step`);
+  return { own, full };
 }
 import paletteMod from '../../../../design/palette.js';
 import detailPassMod from '../../../../design/detail-pass.js';
@@ -389,8 +396,8 @@ function hashAt(sim, steer, tick, rng) {
   ok('perf: 8-beast step mean/p95 within budget (or PERF_STRICT unset)', strict ? (okMean && okP95) : true, `mean=${mean} p95=${p95}`);
 
   if (global.gc) {
-    const d = retainedProbe(() => { for (let i = 0; i < 10000; i++) sim.step(px, py, pz); }); // raw garbage ~1600 B/step (8 chasing beasts)
-    ok('zero allocation over 10k steps (--expose-gc heap check)', d <= 1e6, `retained=${d}`);
+    const r = stepAlloc(() => sim.step(px, py, pz), sim.world, 'beast8');
+    ok('zero allocation per step, 8 chasing beasts (sim own <= 56 B/beast, floor <= 200 B/beast)', r.own < 8 * ALLOC_EXEMPT.ownPerBeast && r.full < 8 * ALLOC_EXEMPT.capPerBeast, `own=${r.own} full=${r.full}`);
   } else {
     console.log('(skip) zero-allocation heap check needs --expose-gc');
   }
@@ -1170,7 +1177,7 @@ const BOAR_R = 0.45;
 // LIFE-07: a wolf hunts and eats a deer (stub fauna: same surface as engine/fauna: def.species, slots, nearestPrey, kill, setThreats).
 function stubFauna(preys) {
   const f = { def: { species: [{ name: 'rabbit' }, { name: 'deer' }] }, slots: preys, thr: 0, killed: [], thrX: [] };
-  f.setThreats = (n, xs) => { f.thr = n; f.thrX.length = 0; for (let i = 0; i < n; i++) f.thrX.push(xs[i]); };
+  f.setThreats = (n, xs) => { f.thr = n; for (let i = 0; i < n; i++) f.thrX[i] = xs[i]; f.thrX.length = n; }; // no per-step push/length churn (boxed doubles)
   f.nearestPrey = (x, y, r, out, mask) => {
     for (let i = 0; i < preys.length; i++) {
       const q = preys[i]; if (!q.alive || !((mask >> q.species) & 1)) continue;
@@ -1220,8 +1227,8 @@ function huntSim(fauna) {
     const fa = stubFauna([{ x: 1700, y: 1700, species: 1, alive: true }]);
     const s2 = huntSim(fa);
     for (let n = 0; n < 600; n++) s2.step(1461, 1090, 0);
-    const d = retainedProbe(() => { for (let n = 0; n < 10000; n++) s2.step(1461, 1090, 0); });
-    ok('LIFE-07 zero allocation per step with fauna', d <= 1e6, `retained=${d}`);
+    const r = stepAlloc(() => s2.step(1461, 1090, 0), s2.world, 'life07');
+    ok('LIFE-07 zero allocation per step with fauna (own <= 56 B, floor <= 200 B)', r.own < ALLOC_EXEMPT.ownPerBeast && r.full < ALLOC_EXEMPT.capPerBeast, `own=${r.own} full=${r.full}`);
   }
 }
 
@@ -1292,8 +1299,8 @@ function goalSim() {
   if (global.gc) {
     const g3 = goalSim(); g3.sim.setGoal(0, 1473, 1033); g3.sim.setAltTargets(1, ax, ay);
     for (let n = 0; n < 600; n++) g3.sim.step(far[0], far[1], 0);
-    const d = retainedProbe(() => { for (let n = 0; n < 10000; n++) g3.sim.step(far[0], far[1], 0); });
-    ok('LIFE-08 zero allocation per step with goal + alt', d <= 1e6, 'retained=' + d);
+    const r = stepAlloc(() => g3.sim.step(far[0], far[1], 0), g3.sim.world, 'life08');
+    ok('LIFE-08 zero allocation per step with goal + alt (own <= 56 B, floor <= 200 B)', r.own < ALLOC_EXEMPT.ownPerBeast && r.full < ALLOC_EXEMPT.capPerBeast, `own=${r.own} full=${r.full}`);
   }
 }
 
