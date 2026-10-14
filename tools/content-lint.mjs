@@ -195,8 +195,15 @@ export async function buildContext(opts = {}) {
     const propStates = {}; for (const [id, d] of Object.entries(props)) propStates[id] = new Set(Object.keys(d).filter((k) => k !== 'initial'));
     return { blocks, vocab: LOGIC_VOCAB, propStates, refs: { area: new Set(trig.keys()), quest: new Set(qs.map((q) => q.id)), prop: propIds, group: groups } };
   })();
+  // R16 inputs (NAME-LINT): resolved player-facing names (item defs, quest titles, region names, NPC labels), not the keys
+  const nameList = [];
+  const r16Items = assets.items?.defs || (await loadDesignAssets()).items?.defs || {};
+  for (const [id, d] of Object.entries(r16Items)) if (d.name) nameList.push({ where: id, kind: 'item', name: d.name });
+  for (const q of quests) if (q.title) nameList.push({ where: q.id, kind: 'quest', name: q.title });
+  for (const r of G.regions) if (r.name) nameList.push({ where: r.id, kind: 'region', name: r.name });
+  for (const id of characters) { const l = labelOf(id); nameList.push({ where: id, kind: 'npc', name: l.charAt(0).toUpperCase() + l.slice(1) }); }
   return {
-    logic, entSupport, anchors, entities, structures: def.structures, floating, texts, jsTexts, quests: qs, itemDefs: assets.items?.defs || (await loadDesignAssets()).items?.defs,
+    names: nameList, logic, entSupport, anchors, entities, structures: def.structures, floating, texts, jsTexts, quests: qs, itemDefs: assets.items?.defs || (await loadDesignAssets()).items?.defs,
     labelOf, giverIds, pos, groundAt: gz, walkable, characters, levelIds: new Set((JSON.parse(fs.readFileSync(path.join(root, 'content/levels/tower.level.json'), 'utf8')).props || []).map((p) => p.id)), chests: entities.filter((e) => /^chest/.test(e.id)), guards,
     riverX: (y) => T.util.riverX(y), riverHalf: 10,
   };

@@ -488,7 +488,7 @@
   // ==================================================================================================================
   var EQUIP_SLOTS = ['head', 'body', 'cloak', 'hands', 'belt', 'legs', 'feet', 'main', 'off', 'ranged', 'quiver'];
   var EQUIP_TIERS = ['worn', 'sturdy', 'fine', 'tempered', 'warden'];
-  var tierPrefix = { worn: 'Worn', sturdy: 'Sturdy', fine: 'Fine', tempered: 'T4', warden: 'T5' }; // T4/T5 names = NEEDS WRITER (final names + desc)
+  var tierPrefix = { worn: 'Worn', sturdy: 'Sturdy', fine: 'Fine', tempered: 'Elite', warden: 'Warden' }; // OB-135 plain names
   var tierKey = { worn: 'h', sturdy: 'v', fine: 'Y', tempered: 'i', warden: 's' }; // placeholder icon colour per tier (wood / verdigris / gold / iron / light iron)
   var tierGlyphC = { worn: 'wood', sturdy: 'verdigris', fine: 'gold', tempered: 'iron', warden: 'ironLight' };
   var gearBases = [

@@ -3,13 +3,14 @@
 
 import { validateLogic } from '../engine/index.js';
 export const MAX_FLOAT = 0.25, GIVER_MAX_UP = 2.5, GIVER_WALK_R = 3, ENT_MAX_FLOAT = 0.15, BURY_MIN = 0.1, BURY_MAX = 0.9, OBJECT_GIVER_MAX = 0.1, SMOKE_SRC_R = 3, CHIMNEY_R = 6, CHIMNEY_MIN = 3, CHEST_R = 25;
-export const LEVELS = { R1: 'error', R2: 'error', R3: 'error', R4: 'error', R5: 'error', R6: 'error', R7: 'error', R8: 'warn', R9: 'warn', R10: 'warn', R11: 'error', R12: 'error', R13: 'error', R14: 'error', R15: 'error' };
+export const LEVELS = { R1: 'error', R2: 'error', R3: 'error', R4: 'error', R5: 'error', R6: 'error', R7: 'error', R8: 'warn', R9: 'warn', R10: 'warn', R11: 'error', R12: 'error', R13: 'error', R14: 'error', R15: 'error', R16: 'warn' };
 export const TITLES = {
   R1: 'floating placed prop/tree', R2: 'components.sprite in the world', R3: 'raw id in player text', R4: '"relay" in player text',
   R5: 'giver unreachable', R6: 'smoke without a source', R7: 'chimney outside a building', R8: 'chest with no guard/puzzle/giver nearby',
   R9: 'early quest objective across the river', R10: 'quest given/returned by an object', R11: 'banned mesh placed',
   R12: 'entity not supported by ground/structure (floating or buried)', R13: 'prompt/marker anchor has no visible model', R14: 'quest flow (OB-156): character giver, Accept/Exit, character return',
   R15: 'logic blocks (ED-LOGIC-01d): refs exist, group spawned by one block, no flag loop',
+  R16: 'player-facing name looks like an id / placeholder / bare tier tag (OB-135 plain names)',
 };
 const f1 = (n) => (typeof n === 'number' ? +n.toFixed(1) : n);
 const F = (rule, id, x, y, msg) => ({ rule, level: LEVELS[rule], id, x: f1(x), y: f1(y), msg });
@@ -25,6 +26,17 @@ const R12_OK = new Map([['towerCrown', 'ring hung on the 10-14 m tower walls, no
 const R8_OK = new Set(['chestBed']); // lake-bed chest: guarded by the dive itself (SWIM-04d, onBottom)
 const NAMES = new Set(['bear', 'rook', 'hesk', 'dorrin']); // main.js giverName table
 
+
+// ---- plain-name detector (R16) ----
+export function badName(s) {
+  if (typeof s !== 'string') return null;
+  if (/(^|[^A-Za-z0-9])(sq|mq)./i.test(s)) return 'raw quest id';
+  if (/_/.test(s)) return 'underscore (raw id)';
+  if (/(^|[^A-Za-z0-9])[a-z]{2,}[A-Z][a-zA-Z]*($|[^A-Za-z0-9])/.test(s)) return 'camelCase (raw id)';
+  if (/placeholder|todo/i.test(s)) return 'placeholder / TODO';
+  if (/(^|[^A-Za-z0-9])T[1-9](?![A-Za-z0-9])/.test(s)) return 'bare tier tag';
+  return null;
+}
 
 // ---- per-item rule bodies, shared by RULES and tools/editor/quest/lintQuest.js (ED-QUEST-05) ----
 /** R5 for one giver/turn-in entity id. */
@@ -159,6 +171,8 @@ export const RULES = {
   // R14 [OB-156/OB-155r, D-082, D-087, QPIPE-LINT-01] ctx.quests (packs + legacy) with .giver {npc, turnIn}, .accept (Accept/Exit dialogue exists),
   // .auto (handed in without a line), .objectGiver; ctx.characters, ctx.pos, ctx.groundAt, ctx.walkable
   R15: (c) => r15(c),
+  // R16 [OB-135, NAME-LINT] ctx.names = [{where, kind, name}]: resolved display names (item, quest, NPC, region, prop); warn level until the writer has cleaned the real list
+  R16: (c) => (c.names || []).flatMap((n) => { const why = badName(n.name); return why ? [F('R16', n.where, '-', '-', `${n.kind} name "${n.name}": ${why}`)] : []; }),
   R14: (c) => {
     const out = [];
     let givers = 0, objGivers = 0;

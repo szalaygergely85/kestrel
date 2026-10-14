@@ -21,6 +21,7 @@ const clean = () => ({
   entSupport: [{ id: 'chestA', x: 60, y: 55, base: 0.05, support: 0, floorAbove: null }, { id: 'tower.lantern', x: 1, y: 1, base: 4, support: 0, floorAbove: null }],
   logic: { vocab: LV, propStates: { gate: new Set(['open', 'closed']) }, refs: { area: new Set(['yard']), quest: new Set(['q1']), prop: new Set(['gate']), group: new Set(['gobs']) },
     blocks: [{ id: 'a.ambush', rev: 1, once: true, when: { on: 'area.enter', area: 'yard' }, if: [{ is: 'quest', quest: 'q1', state: 'active' }], do: [{ act: 'prop.state', prop: 'gate', state: 'closed' }, { act: 'beasts.spawn', group: 'gobs' }] }] },
+  names: [{ where: 'arrow', kind: 'item', name: 'Arrow' }, { where: 'r1', kind: 'region', name: "Ferrum's Wall (off-limits)" }, { where: 'q1', kind: 'quest', name: 'The Old Waystone' }],
   anchors: [{ id: 'sign1', x: 2, y: 2, hasModel: true, nearVisual: false }, { id: 'knot', x: 3, y: 3, hasModel: false, nearVisual: true }],
 });
 const run = (c) => lint(c);
@@ -42,6 +43,7 @@ const cases = {
   R13: (c) => { c.anchors.push({ id: 'notePost', x: 4, y: 4, hasModel: false, nearVisual: false }); },
   R14: (c) => { c.quests[0].accept = false; },
   R15: (c) => { c.logic.blocks[0].when.area = 'nowhere'; }, // missing ref
+  R16: (c) => { c.names.push({ where: 'i1', kind: 'item', name: 'Gear_Boots' }); },
   R11: (c) => { c.structures.push(S('m1', 'quaternius/Mushroom_Laetiporus', 7, 7)); },
 };
 for (const [rule, mutate] of Object.entries(cases)) {
@@ -81,5 +83,8 @@ for (const mut of [
   (L) => { L.blocks = [{ id: 'l1', rev: 1, when: { on: 'flag.set', flag: 'f1' }, do: [{ act: 'flag.set', flag: 'f2', value: true }] }, { id: 'l2', rev: 1, when: { on: 'flag.set', flag: 'f2' }, do: [{ act: 'flag.set', flag: 'f1', value: true }] }]; }, // loop
 ]) { const c = clean(); mut(c.logic); const found = run(c); assert.ok(found.length >= 1 && found.every((f) => f.rule === 'R15'), 'R15 fixture: ' + found.map(line).join(' | ')); }
 { const c = clean(); c.logic.blocks = [{ id: 'l1', rev: 1, once: true, when: { on: 'flag.set', flag: 'f1' }, do: [{ act: 'flag.set', flag: 'f1', value: true }] }]; assert.deepEqual(run(c), [], 'self-loop with once is allowed'); }
-assert.ok(Object.values(LEVELS).filter((l) => l === 'warn').length === 3, 'R8 R9 R10 are warn level (R12 R13 R14 R15 errors)');
+// R16: four more hand-broken names, each fires exactly R16 (warn); good names stay clean
+for (const [kind, name] of [['quest', 'sq.burl.blue'], ['npc', 'wardenOrla'], ['item', 'Placeholder sword'], ['item', 'Iron Ring T4']]) { const c = clean(); c.names.push({ where: 'x', kind, name }); const f = run(c); assert.ok(f.length === 1 && f[0].rule === 'R16' && f[0].level === 'warn', 'R16 ' + name + ': ' + f.map(line).join(' | ')); }
+assert.equal(RULES.R16({ names: [{ where: 'a', kind: 'item', name: 'Health Potion' }, { where: 'b', kind: 'npc', name: 'Burl' }, { where: 'c', kind: 'item', name: 'Tier T4 mark' }] }).length, 1, 'T4 only as a bare tag');
+assert.ok(Object.values(LEVELS).filter((l) => l === 'warn').length === 4, 'R8 R9 R10 R16 are warn level (R12 R13 R14 R15 errors)');
 console.log('content-lint.test: ok (' + Object.keys(cases).length + ' rules + clean control)');

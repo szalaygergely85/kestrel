@@ -20,7 +20,7 @@
     { base: 'shield', baseId: 'shield', slot: 'off', held: 'shield', name: 'Shield', def: 2 }
   ];
   var TIERS = { sturdy: { key: 'v', c: 'verdigris', prefix: 'Sturdy', mul: 2 }, fine: { key: 'Y', c: 'gold', prefix: 'Fine', mul: 3 },
-    tempered: { key: 'i', c: 'iron', prefix: 'T4', mul: 4 }, warden: { key: 's', c: 'ironLight', prefix: 'T5', mul: 5 } }; // T4/T5 names = NEEDS WRITER (as armour, EQ-21)
+    tempered: { key: 'i', c: 'iron', prefix: 'Elite', mul: 4 }, warden: { key: 's', c: 'ironLight', prefix: 'Warden', mul: 5 } }; // OB-135 plain names
   var ids = [];
   BASES.forEach(function (b) {
     var src = I.defs[b.baseId];
