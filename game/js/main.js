@@ -217,7 +217,7 @@ import { createSpriteSystem, spawnTestSprites } from './dev/spriteDev.js';
 import { validateBehaviours, createRipples, defineWadeSplash, createEntityTintTable, fillEntityTints, localToWorld } from '../../engine/index.js';
 import { selectHints, createHintSet, pulseStep, buildHintColors, HINT_GLYPH } from './quest/useHints.js'; // INT-HL-01
 import './quest/index.js';
-import { giverOf, turnInOf } from './quest/sim/giverResolve.js';
+import { giverOf, turnInOf } from './quest/sim/giverResolve.js'; import { installGiverNpcs, GIVER_NAMES } from './quest/giverNpcs.js'; // D-098: Tobin + region givers
 import { parseDemo, filterDemoParams, demoStorage, blockFKeys, createEndCard, drawDemoBuildLine } from './demoMode.js';
 // ---- end US-010 ----
 
@@ -1158,6 +1158,7 @@ async function runGame(mode, cinematic = null) {
   let outLife = null, lifeNav = null, lifeData = null; // LIFE-04: Outwall villagers + chat
   Object.defineProperty(window.__debug, 'outLife', { configurable: true, get: () => outLife }); // LIFE-04: tools/verify-outwall-life.mjs
   try { lifeData = { life: await (await fetch('../content/life/outwall.life.json')).json(), barks: await (await fetch('../content/dialogue/life.barks.json')).json() }; } catch (e) { console.warn('[life] villagers off:', e && e.message); }
+  let giverNpcs = null; // D-098: placed quest-giver NPCs (Tobin gated on mq.smoke)
   let outwall = null; // OUT-01: Hesk/Dorrin facing + met flags, rebuilt on 'world:loaded'
   let bearTurn = null; // NPC-BEAR-01: Burl's turn-to-player, rebuilt on every 'world:loaded'
   // COMPASS-02 (D-061): golden pocket compass, bottom-right. Resolver maps quest targets to world positions; hide rules are set in update(), drawn in render().
@@ -1661,7 +1662,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (bearTurn) dialogueCtl.addNpc('bear');
       dialogueCtl.addNpc('rook'); // Rook the crow: no-op until the entity exists in the world
       outwall = saveEnabled && saveRelay ? createOutwall({ world, questFlag: (k) => saveRelay.quest.questFlag(k) }) : null;
-      dialogueCtl.addNpc('hesk'); dialogueCtl.addNpc('dorrin'); // Ch3 Outwall NPCs (world_m1 entities, char.kit model registered at boot; both share the default kit look, no tint)
+      giverNpcs = installGiverNpcs({ world, ctl: dialogueCtl }); dialogueCtl.addNpc('hesk'); dialogueCtl.addNpc('dorrin'); // Ch3 Outwall NPCs (world_m1 entities, char.kit model registered at boot; both share the default kit look, no tint)
       if (outLife) outLife.dispose(); // LIFE-04: villagers replace the OUT-02 spawn hook; only with saves live (same gate as OUT-01), never in capture/bench
       outLife = lifeData && outwall && lifeNav && mode === 'world' ? createOutwallLife({ world, life: lifeData.life, nav: lifeNav, tileNav: !!(world.terrainGrid && world.nav && lifeNav === world.nav), events: engine.events, state: world.state, outwall, dialogue: dialogueCtl, barksData: lifeData.barks, style: window.ASSETS.uiStyle.dialogue, hour: clockHour(world.state, clockCfg) }) : null;
       crystal = barks = chapterCard = chapterCard2 = escort = null;
@@ -1700,6 +1701,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
         saveRelay.quest.onSection = (title) => { if (tv && msg) tv.say('Quest complete: ' + title, msg.fg); const ws = world.state; if (chapterCard && saveRelay.quest.done && ws['waystone.waystone.woken'] && ws['waystone.ws_roadBend.woken']) chapterCard.trigger(); /* PO-CH1-08: card only after the meadow stone AND the relay */ }; // CH1-02: live section completion only
         saveRelay.quest.book.onChange = (name, id) => {
           gameHooks.emitSimple(name, id);
+          if (name === 'quest:done' && id === 'mq.smoke' && giverNpcs) giverNpcs.refresh(true); // Tobin steps out
           if (name === 'quest:accepted') takeGiverOnAccept(saveRelay.quest.book, world, id); // D-098: packet-style giver items leave the world on Accept
           if (name === 'quest:accepted') actionSig.questAccepted = true; // FS-01: first accepted quest -> [J] Journal hint
           if (name === 'quest:ready' && id === 'burl.boars' && crystal) crystal.check('ready'); // CH1-03
@@ -2011,7 +2013,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       } else if (gameKeys.questLog && input.pressed(gameKeys.questLog) && !invOpen0 && !ending && !isMapOpen() && !isSettingsOpen() && !isNoteOpen() && !!look && look.locked
         && !(vitals && (vitals.dead || vLocked())) && !(questUiActive && wakeOut.inputLocked) && !(dialogueCtl && dialogueCtl.open)) {
         const bk = saveRelay.quest.book;
-        if (!qlView || qlBook !== bk) { qlBook = bk; qlView = createQuestLogScreen(bk, { style: window.ASSETS.uiStyle && window.ASSETS.uiStyle.menu, giverName: (id) => { const n = { bear: 'Burl', rook: 'Rook', hesk: 'Hesk', dorrin: 'Dorrin' }[id]; if (n) return n; const l = labelOf(id); return l.charAt(0).toUpperCase() + l.slice(1); }, itemName: (id) => { const d = window.ASSETS.items && window.ASSETS.items.defs[id]; return d && d.name ? d.name : itemLabel(null, id); }, onJournal: () => noteRead({ world: engine.world, def: { noteId: engine.world.state['chapter.ch2.done'] ? 'journalCh2' : 'journalCh1' } }) }); }
+        if (!qlView || qlBook !== bk) { qlBook = bk; qlView = createQuestLogScreen(bk, { style: window.ASSETS.uiStyle && window.ASSETS.uiStyle.menu, giverName: (id) => { const n = { bear: 'Burl', rook: 'Rook', hesk: 'Hesk', dorrin: 'Dorrin', ...GIVER_NAMES }[id]; if (n) return n; const l = labelOf(id); return l.charAt(0).toUpperCase() + l.slice(1); }, itemName: (id) => { const d = window.ASSETS.items && window.ASSETS.items.defs[id]; return d && d.name ? d.name : itemLabel(null, id); }, onJournal: () => noteRead({ world: engine.world, def: { noteId: engine.world.state['chapter.ch2.done'] ? 'journalCh2' : 'journalCh1' } }) }); }
         qlWasLocked = look.locked; qlView.open(); input.consumePressed();
       }
     }

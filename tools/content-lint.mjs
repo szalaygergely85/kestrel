@@ -23,7 +23,7 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 export const RAW_DOTTED = /\b[a-z]{2,}(?:\.[a-zA-Z][a-zA-Z0-9]+)+\b/, RAW_CAMEL = /\b[a-z]{2,}[A-Z][a-zA-Z]+\b/;
 export const rawIn = (s) => (typeof s === 'string' && s.includes(' ') ? (s.match(RAW_DOTTED) || s.match(RAW_CAMEL) || [null])[0] : null);
 export const OBJECT_GIVERS = ['sq.packet', 'sq.wreck.plate', 'sq.post.spare', 'sq.fc.shrine', 'sq.rb.shield', 'sq.ow.parcel'], OBJECT_GIVER_MAX = 0.1;
-const NAMES = new Set(['bear', 'rook', 'hesk', 'dorrin']); // main.js giverName table
+const NAMES = new Set(['bear', 'rook', 'hesk', 'dorrin', 'postKeeper', 'npcGlasswater', 'npcNorthwood', 'npcHighPastures', 'npcAshMile', 'npcDowns', 'npcSignalHill', 'npcHeath', 'npcReedmire', 'npcStrand', 'npcWhitecombs']); // main.js giverName table
 
 // ---- rules ----
 export const RULES = {
@@ -280,7 +280,7 @@ export async function buildContext(opts = {}) {
   return {
     allChests, owners, entities, structures: def.structures, floating, texts, jsTexts, quests: qs, questGivers, itemDefs: assets.items?.defs || (await loadDesignAssets()).items?.defs,
     labelOf, giverIds, pos, groundAt: gz, walkable, characters, chests: entities.filter((e) => /^chest/.test(e.id)), guards,
-    riverX: (y) => T.util.riverX(y), riverHalf: 10,
+    riverX: (y) => T.util.riverX(y), riverHalf: 10, world: w,
   };
 }
 

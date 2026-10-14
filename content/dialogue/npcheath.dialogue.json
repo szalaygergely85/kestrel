@@ -1,0 +1,29 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "npcheath",
+  "speakers": {
+    "npcHeath": {"label": "TANSY"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "npcHeath.thanks", "requires": "npcHeath.after.sq.reg.heath"},
+    {"node": "npcHeath.notReady", "requires": "q.sq.reg.heath.active"},
+    {"node": "npcHeath.offer", "requires": "q.sq.reg.heath.available"},
+    {"node": "npcHeath.greet"}
+  ],
+  "nodes": {
+    "npcHeath.greet": {"end": true, "lines": [
+      "Heather to the knee. Bees, mostly. And me."
+    ], "speaker": "npcHeath"},
+    "npcHeath.offer": {"end": true, "lines": [
+      "Three boars tear up the heather. The bees go hungry."
+    ], "speaker": "npcHeath"},
+    "npcHeath.notReady": {"end": true, "lines": [
+      "Still rooting. I can hear them from here."
+    ], "speaker": "npcHeath"},
+    "npcHeath.thanks": {"end": true, "lines": [
+      "The heather will grow back. Here, two draughts."
+    ], "speaker": "npcHeath"}
+  }
+}

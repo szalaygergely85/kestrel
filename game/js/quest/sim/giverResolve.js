@@ -3,8 +3,12 @@
 // `pendingNpc` quests use the new ids only once that NPC is registered as placed (setPlacedNpcs); until then: old behaviour + one warning.
 let placed = null, warned = false;
 export function setPlacedNpcs(ids) { placed = ids ? new Set(ids) : null; }
+/** NPCs that exist but are not out yet (e.g. Tobin before mq.smoke): their quests keep the old ids even without pendingNpc. */
+let hiddenIds = null;
+export function setHiddenNpcs(ids) { hiddenIds = ids && ids.length ? new Set(ids) : null; }
 function usable(def, id) {
   if (typeof id !== 'string' || !id) return false;
+  if (hiddenIds && hiddenIds.has(id)) return false;
   if (def.pendingNpc !== true) return true;
   if (placed && placed.has(id)) return true;
   if (!warned) { warned = true; if (typeof console !== 'undefined') console.warn('quest givers: pendingNpc NPC "' + id + '" (' + def.id + ' ...) not placed yet, old giver/turnIn used'); }

@@ -1,0 +1,29 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "npcashmile",
+  "speakers": {
+    "npcAshMile": {"label": "COLL"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "npcAshMile.thanks", "requires": "npcAshMile.after.sq.reg.ashMile"},
+    {"node": "npcAshMile.notReady", "requires": "q.sq.reg.ashMile.active"},
+    {"node": "npcAshMile.offer", "requires": "q.sq.reg.ashMile.available"},
+    {"node": "npcAshMile.greet"}
+  ],
+  "nodes": {
+    "npcAshMile.greet": {"end": true, "lines": [
+      "Ash on your boots already. It never washes out."
+    ], "speaker": "npcAshMile"},
+    "npcAshMile.offer": {"end": true, "lines": [
+      "Two boars dig in the burn. They'll find my kilns next."
+    ], "speaker": "npcAshMile"},
+    "npcAshMile.notReady": {"end": true, "lines": [
+      "Still digging. I hear the tusks on stone."
+    ], "speaker": "npcAshMile"},
+    "npcAshMile.thanks": {"end": true, "lines": [
+      "The ash settles. Arrows, for your trouble."
+    ], "speaker": "npcAshMile"}
+  }
+}

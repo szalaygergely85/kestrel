@@ -267,7 +267,7 @@
       }
     },
     {
-      "id": "sq.fc.sign", "giverNpc": "postKeeper", "turnInNpc": "postKeeper", "pendingNpc": true,
+      "id": "sq.fc.sign", "giverNpc": "postKeeper", "turnInNpc": "postKeeper",
       "title": "The West Arm",
       "site": "post",
       "steps": [

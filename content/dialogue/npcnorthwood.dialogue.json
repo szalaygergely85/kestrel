@@ -1,0 +1,29 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "npcnorthwood",
+  "speakers": {
+    "npcNorthwood": {"label": "GARROW"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "npcNorthwood.thanks", "requires": "npcNorthwood.after.sq.reg.northwood"},
+    {"node": "npcNorthwood.notReady", "requires": "q.sq.reg.northwood.active"},
+    {"node": "npcNorthwood.offer", "requires": "q.sq.reg.northwood.available"},
+    {"node": "npcNorthwood.greet"}
+  ],
+  "nodes": {
+    "npcNorthwood.greet": {"end": true, "lines": [
+      "Quiet. The pines hear everything."
+    ], "speaker": "npcNorthwood"},
+    "npcNorthwood.offer": {"end": true, "lines": [
+      "Three wolves circle the stone at night. Too many for me."
+    ], "speaker": "npcNorthwood"},
+    "npcNorthwood.notReady": {"end": true, "lines": [
+      "I still hear them. Three voices."
+    ], "speaker": "npcNorthwood"},
+    "npcNorthwood.thanks": {"end": true, "lines": [
+      "Only the wind now. Take my spare arrows."
+    ], "speaker": "npcNorthwood"}
+  }
+}

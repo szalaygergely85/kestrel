@@ -1,0 +1,29 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "npcglasswater",
+  "speakers": {
+    "npcGlasswater": {"label": "ANSEL"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "npcGlasswater.thanks", "requires": "npcGlasswater.after.sq.reg.glasswater"},
+    {"node": "npcGlasswater.notReady", "requires": "q.sq.reg.glasswater.active"},
+    {"node": "npcGlasswater.offer", "requires": "q.sq.reg.glasswater.available"},
+    {"node": "npcGlasswater.greet"}
+  ],
+  "nodes": {
+    "npcGlasswater.greet": {"end": true, "lines": [
+      "Still water today. Mind your step on the stones."
+    ], "speaker": "npcGlasswater"},
+    "npcGlasswater.offer": {"end": true, "lines": [
+      "Boars came down to drink. Now they won't leave."
+    ], "speaker": "npcGlasswater"},
+    "npcGlasswater.notReady": {"end": true, "lines": [
+      "Still mud in the water. Still boars."
+    ], "speaker": "npcGlasswater"},
+    "npcGlasswater.thanks": {"end": true, "lines": [
+      "Clear again. Here, two draughts for the road."
+    ], "speaker": "npcGlasswater"}
+  }
+}

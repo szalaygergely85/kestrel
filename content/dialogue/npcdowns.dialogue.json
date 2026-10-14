@@ -1,0 +1,29 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "npcdowns",
+  "speakers": {
+    "npcDowns": {"label": "PETRA"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "npcDowns.thanks", "requires": "npcDowns.after.sq.reg.downs"},
+    {"node": "npcDowns.notReady", "requires": "q.sq.reg.downs.active"},
+    {"node": "npcDowns.offer", "requires": "q.sq.reg.downs.available"},
+    {"node": "npcDowns.greet"}
+  ],
+  "nodes": {
+    "npcDowns.greet": {"end": true, "lines": [
+      "Long green, long sky. You see weather coming."
+    ], "speaker": "npcDowns"},
+    "npcDowns.offer": {"end": true, "lines": [
+      "Four boars loose on the downs. I've counted twice."
+    ], "speaker": "npcDowns"},
+    "npcDowns.notReady": {"end": true, "lines": [
+      "Some still loose. I keep counting."
+    ], "speaker": "npcDowns"},
+    "npcDowns.thanks": {"end": true, "lines": [
+      "None left to count. Take these, and thank you."
+    ], "speaker": "npcDowns"}
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "npcwhitecombs",
+  "speakers": {
+    "npcWhitecombs": {"label": "KETTIL"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "npcWhitecombs.thanks", "requires": "npcWhitecombs.after.sq.reg.whitecombs"},
+    {"node": "npcWhitecombs.notReady", "requires": "q.sq.reg.whitecombs.active"},
+    {"node": "npcWhitecombs.offer", "requires": "q.sq.reg.whitecombs.available"},
+    {"node": "npcWhitecombs.greet"}
+  ],
+  "nodes": {
+    "npcWhitecombs.greet": {"end": true, "lines": [
+      "Cold up here. The snow keeps everything quiet."
+    ], "speaker": "npcWhitecombs"},
+    "npcWhitecombs.offer": {"end": true, "lines": [
+      "Two bears den on the rock below. I can't get past."
+    ], "speaker": "npcWhitecombs"},
+    "npcWhitecombs.notReady": {"end": true, "lines": [
+      "Still denned. I can smell them from here."
+    ], "speaker": "npcWhitecombs"},
+    "npcWhitecombs.thanks": {"end": true, "lines": [
+      "The rock is clear. Three draughts. You'll need them."
+    ], "speaker": "npcWhitecombs"}
+  }
+}
