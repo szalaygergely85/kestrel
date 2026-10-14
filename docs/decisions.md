@@ -1299,3 +1299,6 @@ Crocodile (owner, same session): **short grab + mash to escape (1.5 s, max 12 % 
 
 ## D-109
 **2026-10-14, owner (PC-B session).** **Chapter I ends at the gate (Outwall), reached around (hidden) level 10 - nothing after it.** Goal: release Chapter I as an **alpha on Steam** (paid, to earn money) and ask the players how the story should go on. This reopens D-053 ("no public demo") for the Steam alpha. Needs a manager plan: Chapter I content-complete list, quality bar ("playable, looks right"), Steam packaging of a browser game (desktop wrapper), store page, licences check, feedback channel for the story vote.
+
+## D-110
+**2026-10-14, owner (PC-B session), Steam alpha plan answers (docs/release/chapter1-alpha-plan.md).** (1) Price: start at **$4.99** in Early Access and raise it later as content grows; Windows-only Electron build; launch target per the plan (2026-12-08, slips if a gate fails). (2) Until launch PAUSE: engine catch-up stages 2-3 (D-090) and the editor tracks EXCEPT the **quest editor** (owner wants to help write quests); KEEP: animal legs (D-101). (3) GitHub repo goes **private** before the paid alpha (shipped JS stays readable - accepted). (4) Chapter I ends with a short **final quest at the Outwall gate + optional Siege Chief boss**, then the end screen; the story vote offers 3-4 writer-made directions + a link to Steam discussions.
