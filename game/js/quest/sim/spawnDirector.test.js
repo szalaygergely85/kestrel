@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { allocProbe, skipNote } from '../../../../tools/allocProbe.mjs';
 import { buildGroups, createSpawnDirector, RESPAWN_SEC, CAMP_DAYS } from './spawnDirector.js';
+import { createDirectorWire } from './directorWire.js';
 import { DIFFICULTY, resolveDifficulty, applyDifficulty } from './difficulty.js';
 import { createTactics } from './tactics.js';
 let fails = 0; const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } };
@@ -12,7 +13,7 @@ add('boar', 'downs', 0, 3, 500, 500); add('boar', 'downs', 1, 3, 900, 500); add(
 const G1 = buildGroups(mem, 12), G2 = buildGroups(mem, 12), G3 = buildGroups(mem, 99);
 ok(JSON.stringify(G1) === JSON.stringify(G2), 'same seed -> same group list');
 ok(JSON.stringify(G1) !== JSON.stringify(G3), 'other seed -> other routes');
-ok(G1.map((g) => g.gid).join() === 'boar.downs.1,boar.downs.2,grey_wolf.northwood.1,deer.downs.1', 'gids ' + G1.map((g) => g.gid));
+ok(G1.map((g) => g.gid).join() === 'downs/0,downs/1,northwood/0,downs/0:deer', 'gids ' + G1.map((g) => g.gid));
 ok(G1.every((g) => g.route.length >= 3 && g.route.length <= 6 && g.slots.length === g.members.length), 'route 3..6, static slots');
 
 // respawn timer + never in view
@@ -51,12 +52,29 @@ for (let k = 0; k < 4; k++) dir.memberDied(wolf);
 db.memberDied(0);
 const st = {}; dir.save(st); db.save(st); // second save overwrites key: keep per-director states separate
 const s1 = {}; dir.save(s1); const sv = JSON.parse(JSON.stringify(s1));
-ok(Object.keys(sv['beast.v1'].g).join() === 'grey_wolf.northwood.1' && sv['beast.v1'].diff === 'hard', 'only groups with something to remember ' + JSON.stringify(sv));
-sv['beast.v1'].g['nope.zz.9'] = { dead: 1, at: 5 };
+ok(Object.keys(sv).join() === 'spawnDirector.v1' && !('beast.v1' in sv) && Object.keys(sv['spawnDirector.v1']).join() === 'northwood/0', 'own key, only groups with something to remember ' + JSON.stringify(sv));
+sv['spawnDirector.v1']['nope/9'] = { dead: 1, respawnAt: 5 };
 const d2 = createSpawnDirector({ groups: G1 }); d2.setDifficulty(hard);
-ok(d2.load(sv) && d2.dead[wolf] === 1 && d2.alive[wolf] === 0 && Math.abs(d2.dueAt(wolf) - dir.dueAt(wolf)) < 1e-9, 'round trip keeps timer; unknown gid ignored');
+ok(d2.load(sv) && d2.dead[wolf] === 1 && d2.alive[wolf] === 0 && Math.abs(d2.dueAt(wolf) - d2.t - sv['spawnDirector.v1']['northwood/0'].respawnAt) < 1e-9, 'round trip keeps remaining timer; unknown gid ignored');
+ok(createSpawnDirector({ groups: G1 }).load({ 'beast.v1': { t: 5 } }) === false && createSpawnDirector({ groups: G1 }).load({}) === false, 'old save without the key loads fine');
 const sb = {}; db.save(sb); const d3 = createSpawnDirector({ groups: bg, dayLenSec: 100 }); d3.load(JSON.parse(JSON.stringify(sb)));
 ok(d3.dead[0] === 1, 'boss stays dead after load');
+// bind + slotDied + wire (fake sim)
+{
+  const ids = mem.map((_, i) => 'm' + i); mem.forEach((m, i) => { m.id = ids[i]; });
+  const G = buildGroups(mem, 12), d = createSpawnDirector({ groups: G, los: () => false });
+  const reset = [], handlers = {};
+  const fake = { count: mem.length, slotOf: (id) => ids.indexOf(id), resetSlot: (sl) => reset.push(sl) };
+  const w = createDirectorWire({ director: d, sim: fake, events: { on: (n, f) => { handlers[n] = f; return () => { delete handlers[n]; }; } } });
+  ok(d.groupOfSlot instanceof Int16Array && d.groupOfSlot[0] === 0 && d.groupOfSlot[3] === 1 && d.groupOfSlot[6] === 2, 'slot -> group map');
+  for (let k = 6; k < 10; k++) handlers['beast:died']({ id: 'm' + k });
+  ok(d.dead[2] === 1 && d.dead[0] === 0, 'beast:died -> group dead');
+  const st = {}; w.save(st); ok(JSON.stringify(st).includes('northwood/0'), 'wire save');
+  w.dispose(); ok(!handlers['beast:died'], 'dispose');
+  const d4 = createSpawnDirector({ groups: G, los: () => false, onRespawn: (gi, g) => w.respawn(gi, g) });
+  d4.bind(fake); d4.load(st); for (let s = 0; s < 60 * 500; s++) d4.step(1 / 60, -9999, 0, -1, 0);
+  ok(reset.join() === '6,7,8,9', 'respawn resets members via resetSlot ' + reset);
+}
 // applyDifficulty -> tactics
 const sim = { tactics: createTactics(8, 1) };
 ok(applyDifficulty(sim, 'hard', dir) && sim.tactics.tokM === 3 && applyDifficulty(sim, 'easy') && sim.tactics.tokM === 1, 'applyDifficulty sets tokM');

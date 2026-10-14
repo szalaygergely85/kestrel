@@ -1,5 +1,5 @@
 // BEAST-06a (arch 38.64 items 8, 10, 11): spawn director. Deterministic group list from the regional rules, per-group respawn
-// timers in GAME seconds (the caller passes dt only while unpaused), never-in-view rule, save state['beast.v1'] keyed by gid.
+// timers in GAME seconds (the caller passes dt only while unpaused), never-in-view rule, own save key 'spawnDirector.v1' keyed by gid (never by slot, not inside 'beast.v1').
 // Rule 15 in step: no Math.random / trig / wall clock / Map iteration, integer step counters, 0 alloc (typed arrays + callbacks).
 // Not wired yet: regionalBeasts/goblinCamps keep their own respawn until BEAST-06b/13 (NEEDS B1-main: see lanes/pc-b2.md).
 import { KINDS } from './beastKinds.js';
@@ -10,13 +10,14 @@ export const RESPAWN_SEC = Object.freeze({ grazer: 180, common: 360, pack: 480, 
 export const CAMP_DAYS = 3, DEFAULT_DAY_SEC = 1200; // dayLenSec is an option: pass the game's real day length
 export const SPAWN_MIN_DIST = 60, VIEW_MARGIN_RAD = 0.2617993877991494 /* 15 deg */, RETRY_STEPS = 300, CHECK_STEPS = 30;
 const DIRS = [[1, 0], [0.7071, 0.7071], [0, 1], [-0.7071, 0.7071], [-1, 0], [-0.7071, -0.7071], [0, -1], [0.7071, -0.7071]]; // literal table: no trig
+export const SAVE_KEY = 'spawnDirector.v1';
 const R_BOSS = 0, R_TIMED = 1, R_CAMP = 2;
 
 function strHash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
 
 /**
  * Pure, deterministic. `members`: [{ kind|species, key (region), group (index), x, y, slot? }] (generateRegionalBeasts output order).
- * Returns groups [{ gid '<kind>.<key>.<n>', kind, region, cls, slots[], members[], home:[x,y], route:[[x,y]x3..6] }]. Same seed + members -> same list.
+ * Returns groups [{ gid '<region>/<group>', kind, region, cls, slots[], members[], home:[x,y], route:[[x,y]x3..6] }]. Same seed + members -> same list.
  * `walkable(x,y)` optional (route points fall back to home when blocked).
  */
 export function buildGroups(members, seed, walkable, areas = SPAWN_AREAS) {
@@ -27,7 +28,7 @@ export function buildGroups(members, seed, walkable, areas = SPAWN_AREAS) {
     if (!g) { g = byKey[k] = { kind, region: m.key, members: [], slots: [], gi: m.group }; order.push(g); }
     g.members.push(m); g.slots.push(m.slot === undefined ? i : m.slot);
   }
-  const perRegion = {}, out = [];
+  const perRegion = {}, out = [], seenGid = Object.create(null);
   for (const g of order) {
     const rk = g.kind + '.' + g.region, n = (perRegion[rk] = (perRegion[rk] || 0) + 1);
     let cx = 0, cy = 0; for (const m of g.members) { cx += m.x; cy += m.y; } cx /= g.members.length; cy /= g.members.length;
@@ -39,7 +40,8 @@ export function buildGroups(members, seed, walkable, areas = SPAWN_AREAS) {
       const x = Math.round((cx + d[0] * r) * 2) / 2, y = Math.round((cy + d[1] * r) * 2) / 2;
       route.push(!walkable || walkable(x, y) ? [x, y] : [cx, cy]);
     }
-    out.push({ gid: `${rk}.${n}`, kind: g.kind, region: g.region, cls, slots: g.slots, members: g.members, home: [cx, cy], route });
+    let gid = `${g.region}/${g.gi}`; if (seenGid[gid]) gid += ':' + g.kind; seenGid[gid] = 1; // answer c: stable '<region>/<group>' from the generator data (kind suffix only when two kinds share a group index)
+    out.push({ gid, kind: g.kind, region: g.region, cls, slots: g.slots, members: g.members, home: [cx, cy], route });
   }
   // ED-AI-04: painted spawn areas (content/beasts/spawnAreas.json) after the regional rules; none -> identical output.
   if (areas && areas.length) {
@@ -97,25 +99,39 @@ export function createSpawnDirector(opts) {
       if (opts.onRespawn) opts.onRespawn(g, groups[g]); // caller resetSlot()s each member at home
     }
   };
-  /** Save (item 10): only groups with something to remember. boss: { [region]: 1 } for dead bosses. */
-  D.save = (state) => {
-    const g = {}, boss = {};
-    for (let i = 0; i < N; i++) {
-      if (!D.dead[i]) continue;
-      if (D.rule[i] === R_BOSS) boss[groups[i].region] = 1; else g[groups[i].gid] = { dead: 1, at: D.dueAt(i) };
+  /** Slot -> group map, built ONCE at bind (answer c): sim.slotOf(member.id) (or member.slot) -> Int16Array -> group index. */
+  D.groupOfSlot = new Int16Array(0);
+  D.bind = (sim) => {
+    let max = sim && sim.count ? sim.count : 0;
+    for (let g = 0; g < N; g++) for (let k = 0; k < groups[g].slots.length; k++) if (groups[g].slots[k] + 1 > max) max = groups[g].slots[k] + 1;
+    D.groupOfSlot = new Int16Array(max).fill(-1);
+    for (let g = 0; g < N; g++) {
+      const gr = groups[g];
+      for (let k = 0; k < gr.slots.length; k++) {
+        const m = gr.members[k], id = m && m.id, s = sim && id !== undefined && sim.slotOf ? sim.slotOf(id) : -1, slot = s >= 0 ? s : gr.slots[k];
+        if (slot >= 0 && slot < max) D.groupOfSlot[slot] = g;
+        gr.slots[k] = slot; // keep slots in step with the live sim
+      }
     }
-    state['beast.v1'] = { diff: D.diffName, t: D.t, g, boss };
-    return state['beast.v1'];
+    return D;
   };
-  /** Load; unknown gid ignored. `at` is absolute game sec, so diedAt is rebuilt from it with the current multiplier. */
+  /** beast:died by slot: 0 alloc. Returns the group index or -1. */
+  D.slotDied = (slot) => { const g = slot >= 0 && slot < D.groupOfSlot.length ? D.groupOfSlot[slot] : -1; if (g >= 0) D.memberDied(g); return g; };
+  /** Save (item 10) under the director's OWN key (answer c), keyed by gid: { [gid]: { dead, respawnAt } }; respawnAt = game seconds REMAINING at save time (director clock D.t restarts per session); bosses: -1 (never). */
+  D.save = (state) => {
+    const o = {};
+    for (let i = 0; i < N; i++) if (D.dead[i]) o[groups[i].gid] = { dead: 1, respawnAt: D.rule[i] === R_BOSS ? -1 : Math.max(0, D.dueAt(i) - D.t) };
+    state[SAVE_KEY] = o;
+    return o;
+  };
+  /** Load; unknown gid ignored; a save without the key loads fine (returns false). respawnAt is seconds remaining, re-based on the current D.t and difficulty. */
   D.load = (state) => {
-    const s = state && state['beast.v1']; if (!s) return false;
-    D.t = s.t || 0;
-    for (const gid of Object.keys(s.g || {})) {
-      const i = D.idx[gid], e = s.g[gid]; if (i === undefined || !e || !e.dead) continue;
-      D.dead[i] = 1; D.alive[i] = 0; D.diedAt[i] = e.at - D.base[i] * D.mult; D.nextTry[i] = 0;
+    const s = state && state[SAVE_KEY]; if (!s) return false;
+    for (const gid of Object.keys(s)) {
+      const i = D.idx[gid], e = s[gid]; if (i === undefined || !e || !e.dead) continue;
+      D.dead[i] = 1; D.alive[i] = 0; D.nextTry[i] = 0;
+      if (D.rule[i] !== R_BOSS) D.diedAt[i] = D.t + e.respawnAt - D.base[i] * D.mult;
     }
-    for (let i = 0; i < N; i++) if (D.rule[i] === R_BOSS && s.boss && s.boss[groups[i].region]) { D.dead[i] = 1; D.alive[i] = 0; }
     return true;
   };
   return D;

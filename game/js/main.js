@@ -1115,7 +1115,7 @@ async function runGame(mode, cinematic = null) {
   const worldLoadOpts = { physics,
     realTrees: renderer === 'mesh' && physics === 'mesh' && params.get('trees') !== '0',
     detail: renderer === 'mesh' && physics === 'mesh' && params.get('scatter') !== '0',
-    groundLook: groundLookFromParams(params, window.BIOME_LOOK, window.ASSETS.levels.overworld_far) }; // ENV-02d (ENV-02d-LIVE: the LEVEL def holds .terrain, not its inner .recipe): `?look=0` -> null // ENV-01a2: `?scatter=0` (not `?detail=0`, that is the US-028 v1-shading switch)
+    groundLook: wgActive ? groundLookFromParams(params, window.BIOME_LOOK, window.ASSETS.levels.overworld_far) : null }; // ENV-02d (REV-MAIN: WebGPU path only - the JS twin costs +12 ms at 480x180, oracle/Node only) (ENV-02d-LIVE: the LEVEL def holds .terrain, not its inner .recipe): `?look=0` -> null // ENV-01a2: `?scatter=0` (not `?detail=0`, that is the US-028 v1-shading switch)
   // ENV-01-WIRE (38.62): GPU decor scatter, only on the WebGPU mesh renderer with the GPU cull; `?decor=cpu` keeps today's CPU layers (decorGpu false = byte-identical)
   let decorPass = null; const decorDbg = { total: 0, frameErrors: 0, bad: false };
   { const dl = ((window.ASSETS.levels.overworld_far?.recipe?.detail?.layers) || []).some((l) => l.gpu); // every early-out names its reason once (?decor=cpu is silent)
@@ -1361,7 +1361,8 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
   let ambientMotes = null;
   let lightSet = null; let giWire = null; const giCfg = resolveGI(params, resolvedQuality && resolvedQuality.name); // GI-PROBE-06: baked bounce light; `?gi=0` = null = today's frames
   // US-006: built from the loaded world's level.def.lights, below
-  let atmosDrv = null, atmosCfg = null, atmosV = -1, atmosBase = null; const atmosState = createAtmosState(); // ENV-03: biome atmosphere driver (null = off)
+  const atmosLast = { w: null }; engine.events.on('world:loaded', () => { atmosLast.w = null; }); // REV-MAIN: forces a snap on the next atmosphere step
+   let atmosDrv = null, atmosCfg = null, atmosV = -1, atmosBase = null; const atmosState = createAtmosState(); // ENV-03: biome atmosphere driver (null = off)
   const postQ = resolvedQuality && resolvedQuality.name, postCfg0 = resolvePost(window.POST_LOOK, params, postQ, 'outdoor'), postState = createPostState(); let postCfg = postCfg0, postV = -2; const sceneScratch = {}; let sceneNow = 'outdoor'; // SCENE-INTERIOR: sceneOf() flag; postCfg re-resolved only on change // POST-STACK-01c: `?post=0` = null = today's frames; scene stays 'outdoor' until an interior flag exists
   let clockDriver = null; // DN-03: step-quantised sun/look/ambient driver, rebuilt on every 'world:loaded'
   let clockTimeApplied = false; // DN-03: ?time= seeds the clock once, not on every restart
@@ -2123,7 +2124,7 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
     }
     if (mode === 'world' && playerHandle && !paused) {
       if (clockDriver && !titleMenuActive) { const w = engine.world; tickClock(w.state, dt, clockCfg); clockDriver.update(w.state[CLOCK_KEY]);
-        if (atmosDrv) { const t = playerHandle.data.transform; const sceneNow2 = sceneOf(w, t, sceneScratch, dt, playerHandle.data.components.body); if (sceneNow2 !== sceneNow) { sceneNow = sceneNow2; if (postCfg0) { postCfg = resolvePost(window.POST_LOOK, params, postQ, sceneNow); postV = -2; } } atmosDrv.step(t.x, t.y, clockHour(w.state, clockCfg), dt, sceneNow === 'outdoor'); if (atmosDrv.out.version !== atmosV) { atmosV = atmosDrv.out.version; mixAtmos(atmosCfg.table, atmosDrv.active ? atmosDrv.out : null, atmosBase, atmosState); applyAtmosToPalette(assets.palette, atmosState); } } } // ENV-03 // DN-03: stops on title/pause (this block), runs through respawn/restart/travel
+        if (atmosDrv) { const t = playerHandle.data.transform; const sceneNow2 = sceneOf(w, t, sceneScratch, dt, playerHandle.data.components.body); if (sceneNow2 !== sceneNow) { sceneNow = sceneNow2; if (postCfg0) { postCfg = resolvePost(window.POST_LOOK, params, postQ, sceneNow); postV = -2; } } atmosDrv.step(t.x, t.y, clockHour(w.state, clockCfg), dt, sceneNow === 'outdoor' && !!w.terrain /* REV-MAIN ENV-03 #3: only the overworld terrain world is outdoor */); if (atmosLast.w !== w) { atmosDrv.snap(); atmosLast.w = w; } /* #2: new world (world:loaded / respawn / restart / travel) -> snap now; teleports > 50 m snap inside the driver (atmosDriver.js) */ if (atmosDrv.out.version !== atmosV) { atmosV = atmosDrv.out.version; mixAtmos(atmosCfg.table, atmosDrv.active ? atmosDrv.out : null, atmosBase, atmosState); applyAtmosToPalette(assets.palette, atmosState); } } } // ENV-03 // DN-03: stops on title/pause (this block), runs through respawn/restart/travel
       if (ending || uiLocked || vLocked() || isNoteOpen()) { // OB-057 (owner): no movement while a note is open
         controls.forward = 0; controls.strafe = 0; controls.run = false; controls.jump = false;
       } else {
@@ -2503,8 +2504,7 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
       // cells right after its own sprite loop).
       engine.particleLayer.build(engine.particles, cam, rt, fb.lights, engine.world, assets.palette, renderer);
       sprites.render(fb, engine.world, cam, fbView ? (handFxOn ? handFbExtra : fbView.extra) : undefined); // US-030c (ARCH CHANGES item 1): after the surfaces, before present()
-      if (postCfg) { if (postV !== atmosV) { postV = atmosV; composePost(atmosState, postCfg, postState); } if (wgPipeline && wgPipeline._spritesPass) wgPipeline._spritesPass.post = postState; postCells(rt, fb.depth && fb.depth.depth, postState); } // POST-STACK-01c: finish chain incl. the grade (GPU sprite pass reads the same state)
-      else if (atmosState.on) gradeCells(rt, atmosState); // ENV-03c: JS-path grade (the GPU sprite pass grades itself)
+      if (postCfg && postV !== atmosV) { postV = atmosV; composePost(atmosState, postCfg, postState); } if (postCfg && wgPipeline && wgPipeline._spritesPass) wgPipeline._spritesPass.post = postState; // POST-STACK-01c: compose for both paths (the GPU sprite pass reads the same state); the JS finish runs below, after the fade
       // US-017 ARCH CHANGES #1 item 2: CPU-path scene fade, moved here from
       // compositor.js so sprites fade too (oracle parity with the GPU
       // composite pass, which fades every non-mask cell in one pass). Skips
@@ -2521,6 +2521,7 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
         clearMaskForSceneFade(fb.rt);
         applySceneFade(fb.rt, fb.sceneFade, fb.fadeLut);
       }
+      if (!fb.gpu) { if (postCfg) postCells(rt, fb.depth && fb.depth.depth, postState); else if (atmosState.on) gradeCells(rt, atmosState); } // REV-MAIN ENV-03 #1: JS-path finish incl. the grade ONLY off the GPU path, AFTER the CPU fade/dim (the GPU grades after fade too)
       // US-079a (29.1): beast notice markers, recorded fresh every frame, right before the overlay flush below.
       engine.overlay.clear();
       drawDecals(decalBind, engine.overlay, cam, fb.lights, engine.world);
