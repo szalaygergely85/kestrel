@@ -481,7 +481,7 @@
         var f = ((a / (Math.PI / 2)) % 1 + 1) % 1;
         if (rho > 2.3 && Math.abs(f - 0.5) < 0.16) return 'b';
         if (!lit) return rho <= 0.8 && z <= 7 ? 'X' : 'M';
-        return (rho <= 1.2 && z >= 7 && z <= 9) ? 'e' : (rho <= 1.0 && z === 10) ? 'T' : 'g';
+        return null;   // OB-180 (D-104): lit = empty cage; the flame/glow is the lampFlame billboard (fx), not a voxel slab
       }
       if (z === 13) return rho <= 2.4 ? 'B' : null;
       if (z === 14) return rho <= 1.3 ? 'H' : null;

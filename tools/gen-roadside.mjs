@@ -22,7 +22,7 @@ import { plantScaleFor, treeScaleFor } from './plant-scale.mjs';
 const dry = process.argv.includes('--dry-run');
 const FILE = 'content/worlds/world_m1.world.json';
 const data = JSON.parse(fs.readFileSync(FILE, 'utf8'));
-const rsRe = /^rs\d+$/, entRe = /^(rs(Lamp|Smoke)\d+|rsInspect[A-Z]\w*)$/;
+const rsRe = /^rs\d+$/, entRe = /^(rs(Lamp|LampFlame|Smoke)\d+|rsInspect[A-Z]\w*)$/;
 data.structures = data.structures.filter((s) => !rsRe.test(s.id));
 data.entities = data.entities.filter((e) => !entRe.test(e.id));
 const { assets } = await loadTestAssets();
@@ -105,6 +105,7 @@ for (const [dx, dy, yw, dz, sc] of [[0, 0, 5, 0, 0.9], [1.0, 0.1, 340, 0, 0.8], 
 [[1280, 1052], [1246, 1053.5]].forEach(([x, y], i) => {
   const st = put('Prop_Crate', x, y, 15 + i * 40, { scale: 0.5, ext: 0.4 });
   ents.push({ id: 'rsLamp' + (i + 1), type: 'prop', x, y, z: +(st.origin.z + 0.53 + 0.04).toFixed(2), components: { light: { preset: 'lanternHook', on: true, offset: { down: -0.3 } }, voxel: { anim: 'lit', loop: true, model: 'floorLanternVox' } }, note: 'M4 lived-in: brass lamp on a crate post at the Bend (gen-roadside.mjs); OB-031: lit with the existing lanternHook point light' });
+  ents.push({ id: 'rsLampFlame' + (i + 1), type: 'prop', x: x, y: y, z: +((st.origin.z + 0.53 + 0.04) + 0.15).toFixed(2), components: { sprite: { model: 'lampFlame', anim: 'burn', loop: true } }, note: 'OB-180 (D-104): billboard flame in the lamp cage (fx)' });
   put('Rock_Medium_3', x + 1.6, y + 0.9, i * 90, { ext: 0.9 });
 });
 // 7. rotten jetty at the ford's east bank: broken planks running to the water's edge, two mooring bricks, a stuck log

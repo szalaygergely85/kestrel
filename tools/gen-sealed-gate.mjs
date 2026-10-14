@@ -23,7 +23,7 @@ const dry = process.argv.includes('--dry-run');
 const FILE = 'content/worlds/world_m1.world.json';
 const data = JSON.parse(fs.readFileSync(FILE, 'utf8'));
 data.structures = data.structures.filter((s) => !/^sg\d+$/.test(s.id));
-data.entities = data.entities.filter((e) => !/^sgLamp\d+$/.test(e.id) && e.id !== 'sealedGate');
+data.entities = data.entities.filter((e) => !/^sgLamp(Flame)?\d+$/.test(e.id) && e.id !== 'sealedGate');
 const { assets } = await loadTestAssets();
 const world = World.load(data, assets, { physics: 'mesh' });
 const T = world.terrain;
@@ -104,6 +104,7 @@ const ents = [];
 [[-5, -5], [-5, 5], [5, -5], [5, 5], [-5, -30], [-5, 30]].forEach(([dx, dy], i) => {
   const x = X0 + dx, y = Y0 + dy;
   ents.push({ id: 'sgLamp' + (i + 1), type: 'prop', x, y, z: +(gz(x, y) + 0.04).toFixed(2), components: { voxel: { anim: 'lit', loop: true, model: 'floorLanternVox' } }, note: 'MAP-09 lantern at the Sealed Gate (static, no light)' });
+  ents.push({ id: 'sgLampFlame' + (i + 1), type: 'prop', x: x, y: y, z: +((gz(x, y) + 0.04) + 0.15).toFixed(2), components: { sprite: { model: 'lampFlame', anim: 'burn', loop: true } }, note: 'OB-180 (D-104): billboard flame in the lamp cage (fx)' });
 });
 ents.push({ id: 'sealedGate', type: 'prop', x: X0 - 2.6, y: Y0, z: 'ground', components: { inspect: { text: 'note.sealedGate', requireItem: 'gate.key' } },
   note: 'MAP-09 the Sealed Gate: [E] Look at the gate (errands.js qi.sealedGate, story.md Sealed Gate texts). requireItem gate.key = the LAST quest reward; the hook always refuses (Part II after release, not built)' });
