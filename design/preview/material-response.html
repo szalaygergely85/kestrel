@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - material response (MAT-RESPONSE-01, owner pick)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:13px/1.45 Consolas, "Courier New", monospace; margin:0; padding:14px 18px 40px; }
+  h1 { font-size:18px; color:#ffd24a; margin:0 0 4px; }
+  h2 { font-size:15px; color:#ffd24a; margin:18px 0 6px; }
+  h3 { font-size:13px; color:#e8dcc0; margin:0; }
+  .sub { color:#8a8678; max-width:1100px; }
+  .bar { display:flex; flex-wrap:wrap; gap:14px; align-items:center; background:#10121a; border:1px solid #23283a; padding:8px 10px; margin:10px 0; position:sticky; top:0; z-index:5; }
+  .bar label { color:#b8b2a0; }
+  .bar input[type=range] { width:180px; vertical-align:middle; }
+  .val { color:#ffd24a; display:inline-block; min-width:44px; }
+  .tabs { display:flex; gap:4px; margin:10px 0 0; flex-wrap:wrap; }
+  .tab { background:#141724; color:#b8b2a0; border:1px solid #2a3046; padding:5px 12px; cursor:pointer; font:inherit; }
+  .tab.on { background:#2a2414; color:#ffd24a; border-color:#6a5420; }
+  .card { background:#0c0e15; border:1px solid #1d2232; padding:8px 10px 10px; margin:10px 0; }
+  .card.rec { border-color:#4a6a3a; }
+  .card .head { display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; margin-bottom:4px; }
+  .badge { font-size:11px; padding:0 6px; border:1px solid #4a6a3a; color:#9fd080; }
+  .badge.pick { border-color:#6a5420; color:#ffd24a; }
+  .desc { color:#9a9484; max-width:1100px; margin:2px 0 6px; }
+  .chips { color:#6f8aa8; font-size:11px; margin-bottom:6px; word-break:break-all; }
+  .row { display:flex; align-items:center; gap:8px; margin:2px 0; }
+  .tlabel { width:52px; color:#8a8678; text-align:right; }
+  .scn { display:flex; margin-left:60px; color:#6a6658; font-size:11px; }
+  .scn span { display:inline-block; overflow:hidden; white-space:nowrap; }
+  canvas { display:block; image-rendering:pixelated; }
+  button.pk { background:#1a1c26; color:#d8d2c0; border:1px solid #3a3f56; font:inherit; font-size:11px; padding:1px 8px; cursor:pointer; }
+  button.pk.on { background:#3a2e10; color:#ffd24a; border-color:#8a6a20; }
+  select { background:#141724; color:#d8d2c0; border:1px solid #2a3046; font:inherit; }
+  table { border-collapse:collapse; margin:6px 0 12px; }
+  td, th { border:1px solid #23283a; padding:3px 8px; vertical-align:top; text-align:left; }
+  th { color:#ffd24a; background:#10121a; font-weight:normal; }
+  td.k { color:#e8dcc0; white-space:nowrap; }
+  .sw { display:inline-block; width:12px; height:12px; vertical-align:middle; margin-right:4px; border:1px solid #333; }
+  textarea { width:100%; max-width:1100px; height:220px; background:#0c0e15; color:#b8d0a0; border:1px solid #23283a; font:12px Consolas, monospace; }
+  .note { color:#8a8678; font-size:12px; max-width:1100px; }
+</style>
+</head>
+<body>
+<h1>Material response - MAT-RESPONSE-01 (designer preview, owner pick)</h1>
+<div class="sub">A small response table instead of full PBR: every material names one of five response types (matte, shiny, wet, metal, glowing).
+Each type has options A / B / C for how a lit surface answers: highlight glyphs and threshold, highlight colour (light colour vs material colour),
+rim / fresnel edge, wet darkening + sheen, glowing self-light. Same five scenes at noon, dusk and night (palette <code>timeOfDay</code> values).
+Rotate the light with the slider. The carried hand fire is on by default (the hand always burns), it is the main highlight source at night.
+Pick one option per type (two picks for matte and metal); picks are saved in this browser and shown in the Summary tab with a JSON export.</div>
+
+<div class="bar">
+  <label>light azimuth <input id="az" type="range" min="-180" max="180" value="-45"> <span class="val" id="azv"></span></label>
+  <label><input id="spin" type="checkbox"> rotate</label>
+  <label>sun elevation <input id="el" type="range" min="-1" max="85" value="-1"> <span class="val" id="elv"></span></label>
+  <label><input id="hand" type="checkbox" checked> hand fire (carried light)</label>
+  <label>cells <select id="cell"><option value="7x12">7x12</option><option value="9x15">9x15</option></select></label>
+</div>
+
+<div class="tabs" id="tabs"></div>
+<div id="view"></div>
+
+<script src="../palette.js"></script>
+<script src="look-lib.js"></script>
+<script>
+(function () {
+  'use strict';
+  var P = ASSETS.palette, LL = LOOKLIB, SHD = P.shading;
+
+  // ------------------------------------------------------------------------------------------------
+  // 1. THE PROPOSAL: response presets (one row per type x option). These numbers are the data the
+  //    light pass would read; the per-material entry only names the type (+ soft / aniso / spec / tint).
+  // ------------------------------------------------------------------------------------------------
+  var TYPES = ['matte', 'shiny', 'wet', 'metal', 'glow'];
+  var TYPE_NAME = { matte: 'Matte', shiny: 'Shiny / polished', wet: 'Wet', metal: 'Metal', glow: 'Glowing' };
+  var OPTS = {
+    matte: {
+      A: { name: 'Plain (today)', desc: 'Lambert only, no highlight, no rim. What the light pass does now. Hard shadow terminator.',
+           p: {} },
+      B: { name: 'Soft wrap', desc: 'Light wraps 30 % past the terminator: softer, rounder shading, no highlight. Reads "organic" on rock and cloth.',
+           p: { wrap: 0.30 } },
+      C: { name: 'Soft wrap + fuzz rim', desc: 'Wrap 0.2 plus a soft edge glow from the light behind (fur, skin, leaves, moss catch the light at the silhouette). Glyph unchanged.',
+           p: { wrap: 0.20, rim: 0.40, rimTint: 0.6 } }
+    },
+    shiny: {
+      A: { name: 'Pin glint', desc: 'One tight highlight cell: glyph * in pure light colour above a high threshold. Crisp, very ASCII, can flicker as the light moves.',
+           p: { spec: 1.0, power: 70, hi: '*', hiThr: [0.45], tint: 0 } },
+      B: { name: 'Two-step sheen', desc: 'A wider highlight in two glyph steps \' then *, slightly tinted by the material, plus a faint cool rim. Smooth, stable under motion.',
+           p: { spec: 0.85, power: 28, hi: "'*", hiThr: [0.22, 0.55], tint: 0.25, rim: 0.12, rimTint: 0 } },
+      C: { name: 'Colour sheen, no glyph', desc: 'Highlight only pushes colour (glyph stays the ramp glyph) plus a sky-coloured fresnel edge. Calmest, least "game-y".',
+           p: { spec: 0.75, power: 28, hi: '', tint: 0.2, rim: 0.25, rimTint: 0, env: 0.30, f0: 0.04 } }
+    },
+    wet: {
+      A: { name: 'Dark + streak', desc: 'Albedo x0.58, darker bg, and a sharp light-coloured highlight that steps - ~ = (a horizontal streak on puddles). Cheapest.',
+           p: { wetDark: 0.42, wetBg: 0.5, spec: 0.9, power: 45, hi: '-~=', hiThr: [0.15, 0.35, 0.6], tint: 0 } },
+      B: { name: 'Dark + sky mirror', desc: 'Darkened like A, plus a fresnel sky reflection (the live sky colour at the reflected angle) and a ~ = highlight. Puddles show the sky: blue noon, pink-orange dusk, near black at night.',
+           p: { wetDark: 0.45, wetBg: 0.55, spec: 0.8, power: 60, hi: '~=', hiThr: [0.25, 0.55], tint: 0, env: 1.5, f0: 0.06 } },
+      C: { name: 'Dark + sparkle', desc: 'Darkened, weak broad sheen, and lit wet cells twinkle with \' and * (cell hash x time, 4 Hz). Lively in rain, noisy when everything is wet.',
+           p: { wetDark: 0.38, wetBg: 0.45, spec: 0.55, power: 22, hi: "'", hiThr: [0.3], tint: 0, sparkle: 0.18 } }
+    },
+    metal: {
+      A: { name: 'Tinted glint', desc: 'Dark diffuse (x0.55), strong highlight tinted 75 % by the metal colour (brass glints gold, steel white-blue), top glyphs # M.',
+           p: { diffuse: 0.55, spec: 1.0, power: 30, hi: '#M', hiThr: [0.35, 0.7], tint: 0.75 } },
+      B: { name: 'Edge streak (anisotropic)', desc: 'Highlight stretched along the long axis (blade, pipe, brushed plate); the glyph follows the axis: - / | \\. Needs a per-cell tangent.',
+           p: { diffuse: 0.55, spec: 1.0, power: 36, aniso: 1, hi: '@d', hiThr: [0.3], tint: 0.5, rim: 0.1, rimTint: 0.5 } },
+      C: { name: 'Sky bands', desc: 'Metal mirrors a fake sky: bright above the reflected horizon, dark below, a bright = band on the horizon line. Polished-armour look, strongest at dusk.',
+           p: { diffuse: 0.45, spec: 0.7, power: 30, hi: 'M', hiThr: [0.6], tint: 0.6, env: 0.8, f0: 0.55, bands: 1 } }
+    },
+    glow: {
+      A: { name: 'Flat emissive (today)', desc: 'Emissive colour ignores light; the glyph comes from the material ramp at the glow level, a white-hot mix in the brightest cells.',
+           p: { emit: 0.9, hot: 0.5 } },
+      B: { name: 'Emissive + halo + breathe', desc: 'As A, plus a coloured bg halo on the 2 cells around (the existing glow pass) and a slow 0.7 Hz breathing of 12 %. Core cells get *.',
+           p: { emit: 0.9, hot: 0.6, pulse: 0.12, halo: 0.45, glyphK: 0.75, coreGlyph: '*' } },
+      C: { name: 'Lit from inside', desc: 'Brightest where the surface faces you, darker at the edges (subsurface look), the surface still takes outside light and a small * glint. Crystals, coals, lamp glass.',
+           p: { emit: 0.75, hot: 0.8, inner: 1, spec: 0.35, power: 30, hi: '*', hiThr: [0.5], tint: 0, halo: 0.2 } }
+    }
+  };
+  // picks: matte has hard + soft, metal has general + blade
+  var PICK_SLOTS = { matte: ['matte', 'matteSoft'], shiny: ['shiny'], wet: ['wet'], metal: ['metal', 'metalBlade'], glow: ['glow'] };
+  var SLOT_NAME = { matte: 'hard (stone, wood)', matteSoft: 'soft (skin, fur, leaves, cloth)', shiny: '', wet: '', metal: 'all metal', metalBlade: 'blades / brushed', glow: '' };
+  var REC = { matte: 'A', matteSoft: 'C', shiny: 'B', wet: 'B', metal: 'A', metalBlade: 'B', glow: 'B' };
+  var SLOT_TYPE = { matte: 'matte', matteSoft: 'matte', shiny: 'shiny', wet: 'wet', metal: 'metal', metalBlade: 'metal', glow: 'glow' };
+
+  // proposed mapping of existing palette materials (unlisted keys -> matte, hard)
+  var MAP_LISTS = {
+    'matte': ['stone', 'stone_moss', 'stone_scorched', 'stone_ivy', 'floor', 'ash', 'wood', 'wood_cut', 'timber_old', 'rubble', 'rock', 'rock_soft',
+              'block_light', 'block_dark', 'granite_light', 'granite_dark', 'waystone_light', 'waystone', 'waystone_dark', 'canvas', 'canvas_light',
+              'canvas_dark', 'canvas_burnt', 'rope', 'straw_light', 'straw', 'straw_dark', 'patina', 'gore_red', 'gore_red_dark', 'linen_light', 'linen',
+              'linen_dark', 'balloon_light', 'balloon', 'balloon_dark', 'balloon_red_light', 'balloon_red', 'balloon_red_dark', 'tarp_light', 'tarp',
+              'tarp_dark', 'cloth.canvas', 'cloth.banner', 'cloth.flag', 'cloth.linen', 'team.a', 'team.teal', 'team.red', 'team.gold', 'team.violet'],
+    'matte soft': ['grass', 'moss_top', 'moss_cap', 'leaf', 'leaf_dark', 'leaf_light', 'petal_yellow', 'petal_white', 'petal_pink', 'skin', 'skin_light',
+                   'skin_shade', 'skin_flush', 'skin_deep', 'skin_vein', 'skin_char', 'hair_dark', 'leather', 'fur_agouti', 'fur_agouti_dark',
+                   'fur_agouti_light', 'fur_cream', 'fur_roe', 'fur_roe_dark', 'fur_roe_light', 'antler'],
+    'shiny': ['crystal_dead', 'mirror_dark', 'skin_nail', 'mushroom_cap'],
+    'metal': ['iron', 'grate', 'iron_light', 'iron_dark', 'brass', 'brass_light', 'brass_dark', 'copper', 'bronze_light', 'bronze'],
+    'metal aniso': ['steel_edge', 'steel_old'],
+    'glow': ['crystal_lit', 'waystone_mark', 'ember_core', 'ember_glow', 'flame_tip', 'flame_mid', 'skin_glow', 'brass_hot', 'brass_glint', 'steel_glint',
+             'mark_gold', 'mark_shine', 'hit_flash']
+  };
+  var WET_NEW = [
+    ['stone_wet', 'stone', 'rain-wet wall stone, river-bank boulders'],
+    ['floor_wet', 'floor', 'wet flagstones / cobbles around puddles'],
+    ['mud_wet', 'wood (dark soil base)', 'shore mud, the ford banks'],
+    ['water_puddle', 'new (dark water)', 'standing puddles on stone and paths']
+  ];
+
+  // ------------------------------------------------------------------------------------------------
+  // 2. helpers
+  // ------------------------------------------------------------------------------------------------
+  function C(k) { var c = P.rgb[k]; return c ? [c[0] / 255, c[1] / 255, c[2] / 255] : [1, 0, 1]; }
+  function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+  function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
+  function mx(a) { return Math.max(a[0], a[1], a[2]); }
+  function lum(a) { return 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2]; }
+  function hueOf(a) { var m = mx(a); return m > 1e-6 ? [a[0] / m, a[1] / m, a[2] / m] : [1, 1, 1]; }
+  function mix(a, b, t) { return LL.mix(a, b, t); }
+  function sc(a, k) { return [a[0] * k, a[1] * k, a[2] * k]; }
+  function add(a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
+  function cl(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+  var ss = LL.ss;
+
+  var MATCACHE = {};
+  function MI(key) {
+    if (MATCACHE[key]) return MATCACHE[key];
+    var m = P.materials[key] || P.materials.stone;
+    var r = { key: key, base: C(m.base), ramp: P.ramps[m.ramp] || P.ramps['default'], albedo: m.albedo || 0.8,
+              bgK: (m.bg && m.bg.k) || 0.15, spec: m.spec || 0, emissive: m.emissive || 0, rampGamma: m.rampGamma };
+    return (MATCACHE[key] = r);
+  }
+  var WATER = { key: 'water_puddle', base: [0.20, 0.25, 0.30], ramp: P.ramps.water, albedo: 0.7, bgK: 0.2, spec: 0.6, emissive: 0 };
+
+  // ------------------------------------------------------------------------------------------------
+  // 3. SCENES (static geometry: role, normal N, tangent T, position, texture shade). Ortho view, V = +z.
+  //    x = cell column * ASP, y = -row (units are square on screen at 7x12 cells).
+  // ------------------------------------------------------------------------------------------------
+  var ASP = 7 / 12, SW = 24, SH = 14, GAP = 1, SCENES = ['rock', 'wall', 'blade', 'puddle', 'lamp'];
+  var SCENE_NAME = { rock: 'rock', wall: 'wall corner', blade: 'sword blade', puddle: 'puddle on stone', lamp: 'lamp' };
+  var TW = SCENES.length * SW + (SCENES.length - 1) * GAP;
+  var UPN = norm([0, 0.9, 0.42]);
+  function XY(c, r) { return [(c + 0.5) * ASP, -(r + 0.5)]; }
+  var GEO = {}, SELF = {};
+
+  (function buildRock() {
+    var g = [], cx = SW * ASP / 2, cy = -6.6, R = 5.2;
+    var occ = { c: [cx, cy, 0], r: R };
+    for (var r = 0; r < SH; r++) for (var c = 0; c < SW; c++) {
+      var p = XY(c, r), dx = p[0] - cx, dy = p[1] - cy, th = Math.atan2(dy, dx);
+      var rr = R * (1 + 0.07 * Math.sin(3 * th + 0.6) + 0.04 * Math.cos(5 * th)), d = Math.hypot(dx, dy), s = null;
+      if (d < rr) {
+        var z = Math.sqrt(rr * rr - d * d), n1 = LL.vnoise(p[0] * 0.9, p[1] * 0.9, 5) - 0.5, n2 = LL.vnoise(p[0] * 0.9 + 9, p[1] * 0.9, 6) - 0.5;
+        var N = norm([dx / rr + n1 * 0.55, dy / rr + n2 * 0.55, z / rr]);
+        var tex = 0.88 + LL.vnoise(p[0] * 2.2, p[1] * 2.2, 7) * 0.2;
+        if (Math.abs(LL.vnoise(p[0] * 0.6, p[1] * 1.3, 8) - 0.5) < 0.035) tex = 0.55;
+        s = { role: 'subject', N: N, T: norm([-N[2], 0, N[0]]), pos: [p[0], p[1], z], tex: tex };
+      } else if (r >= 11) {
+        s = { role: 'ground', N: UPN, pos: [p[0], cy - R * 0.92, (r - 10.5) * 1.8], tex: 0.85 + LL.hash(c, r, 3) * 0.2, occ: occ };
+      }
+      g.push(s);
+    }
+    GEO.rock = g; SELF.rock = { pos: [cx, cy, R + 1.2], I: 0.8, r: 11 };
+  })();
+
+  var RUNE = [' /^\\ ', '<-o->', ' \\_/ '];
+  (function buildWall() {
+    var g = [], xc = 12 * ASP;
+    for (var r = 0; r < SH; r++) for (var c = 0; c < SW; c++) {
+      var p = XY(c, r), s = null;
+      if (r >= 1 && r <= 11) {
+        var left = p[0] < xc, u = Math.abs(p[0] - xc), wu = u / 0.83;
+        var nF = left ? [-0.55, 0, 0.83] : [0.55, 0, 0.83];
+        var course = Math.floor((r - 1) / 3), rin = (r - 1) % 3, off = (course % 2) * 1.6, jp = (wu + off) % 3.2;
+        var brick = Math.floor((wu + off) / 3.2), N, tex;
+        if (rin === 2) { N = norm(add(nF, [0, -0.35, 0.2])); tex = 0.55; }
+        else if (jp < 0.38) { N = norm(add(nF, [left ? 0.3 : -0.3, 0, 0])); tex = 0.6; }
+        else { N = norm(add(nF, [0, rin === 0 ? 0.28 : -0.08, 0])); tex = 0.86 + LL.hash(course, brick + (left ? 0 : 50), 9) * 0.16; }
+        if (u < 0.35) N = norm(add(N, [0, 0, 0.9]));
+        s = { role: 'subject', N: N, T: norm([left ? 0.83 : -0.83, 0, left ? 0.55 : 0.55]), pos: [p[0], p[1], -u * 0.66], tex: tex };
+        var rr = r - 4, rc = c - 3;
+        if (rr >= 0 && rr < 3 && rc >= 0 && rc < 5 && RUNE[rr].charAt(rc) !== ' ') { s.role = 'rune'; s.gl = RUNE[rr].charAt(rc); s.tex = 0.62; }
+      } else if (r >= 12) {
+        s = { role: 'ground', N: UPN, pos: [p[0], -12, (r - 11.5) * 1.8], tex: 0.85 + LL.hash(c, r, 4) * 0.2 };
+      }
+      g.push(s);
+    }
+    GEO.wall = g; SELF.wall = { pos: [5 * ASP, -5.5, 1.5], I: 0.45, r: 6 };
+  })();
+
+  (function buildBlade() {
+    var g = [], a = norm([1, 0.62, 0]), pr = [-a[1], a[0], 0], o = [4.0, -10.6], nb = norm([0, 0.35, 0.94]), Lb = 10.5;
+    for (var r = 0; r < SH; r++) for (var c = 0; c < SW; c++) {
+      var p = XY(c, r), dx = p[0] - o[0], dy = p[1] - o[1], u = dx * a[0] + dy * a[1], v = dx * pr[0] + dy * pr[1], s = null;
+      var w = u < Lb - 3 ? 1.25 : 1.25 * cl((Lb - u) / 3);
+      if (u >= 0 && u <= Lb && Math.abs(v) <= w && w > 0.05) {
+        var q = v / w, N, tex = 1;
+        if (Math.abs(q) > 0.62) N = norm(add(nb, sc(pr, (q > 0 ? 1 : -1) * 0.8)));
+        else if (Math.abs(q) < 0.18) { N = norm(add(nb, sc(pr, -q * 2.2))); tex = 0.8; }
+        else N = norm(add(nb, sc(pr, q * 0.12)));
+        s = { role: 'subject', N: N, T: a, pos: [p[0], p[1], 0.5], tex: tex };
+      } else if (u < 0 && u >= -0.7 && Math.abs(v) <= 3.0) {
+        s = { role: 'guard', N: norm(add(nb, add(sc(pr, v / 3.0 * 0.4), sc(a, -0.3)))), T: pr, pos: [p[0], p[1], 0.6], tex: 1 };
+      } else if (u < -0.7 && u >= -2.9 && Math.abs(v) <= 0.6) {
+        s = { role: 'grip', N: norm(add(nb, sc(pr, v / 0.6 * 0.9))), T: a, pos: [p[0], p[1], 0.5], tex: (Math.floor(-u * 2.2) % 2) ? 0.8 : 1 };
+      } else if (u < -2.9 && u >= -3.6 && Math.abs(v) <= 0.85) {
+        s = { role: 'guard', N: norm(add(nb, add(sc(pr, v / 0.85 * 0.7), sc(a, (u + 3.25) * 1.2)))), T: pr, pos: [p[0], p[1], 0.6], tex: 1 };
+      }
+      g.push(s);
+    }
+    GEO.blade = g; SELF.blade = { pos: [9 * ASP * 1.2, -7.5, 2.5], I: 0.5, r: 8 };
+  })();
+
+  (function buildPuddle() {
+    var g = [];
+    for (var r = 0; r < SH; r++) for (var c = 0; c < SW; c++) {
+      var p = XY(c, r), s = null;
+      if (r >= 2) {
+        var gx = p[0] * 1.25, gz = r * 0.8, ix = Math.floor(gx), iz = Math.floor(gz), d1 = 9, d2 = 9, fx = 0, fz = 0, id = 0;
+        for (var j = -1; j <= 1; j++) for (var i = -1; i <= 1; i++) {
+          var cx = ix + i, cz = iz + j, px = cx + 0.2 + 0.6 * LL.hash(cx, cz, 1), pz = cz + 0.2 + 0.6 * LL.hash(cx, cz, 2);
+          var d = Math.hypot(gx - px, gz - pz);
+          if (d < d1) { d2 = d1; d1 = d; fx = px; fz = pz; id = cx * 31 + cz; } else if (d < d2) d2 = d;
+        }
+        var N, tex;
+        if (d2 - d1 < 0.16) { N = UPN; tex = 0.5; }
+        else { var ex = gx - fx, ez = gz - fz; N = norm([UPN[0] + ex * 0.6, UPN[1] - ez * 0.15, UPN[2] + ez * 0.5]); tex = 0.85 + LL.hash(id, 0, 5) * 0.18; }
+        var e = Math.pow((c + 0.5 - 12) / 8.5, 2) + Math.pow((r + 0.5 - 8.4) / 2.6, 2) + (LL.vnoise(c * 0.4, r * 0.6, 9) - 0.5) * 0.5;
+        var zg = (r - 13) * 1.5, pos = [p[0], p[1] * 0.3, zg];
+        if (e < 1) s = { role: 'water', N: norm([0, 0.97, 0.24]), T: [1, 0, 0], pos: pos, tex: 0.95 + LL.hash(c, r, 12) * 0.1 };
+        else if (e < 1.5) s = { role: 'margin', N: N, T: [1, 0, 0], pos: pos, tex: tex };
+        else s = { role: 'subject', N: N, T: [1, 0, 0], pos: pos, tex: tex };
+      }
+      g.push(s);
+    }
+    GEO.puddle = g; SELF.puddle = { pos: [12 * ASP, -8.4 * 0.3 + 1.0, -5.5], I: 0.7, r: 10 };
+  })();
+
+  var LAMP = ['   (_)   ', ' /=====\\ ', ' |.....| ', ' |..^..| ', ' |.*%*.| ', ' |.%@%.| ', ' |..=..| ', ' [=====] ', '  o   o  '];
+  var FLAME_LV = { '^': [0.7, 'flameOuter'], '*': [0.88, 'flameMid'], '%': [0.95, 'flameMid'], '@': [1.05, 'flameCore'] };
+  (function buildLamp() {
+    var g = [], lc = 12;
+    for (var r = 0; r < SH; r++) for (var c = 0; c < SW; c++) {
+      var p = XY(c, r), s;
+      if (r <= 10) {
+        var bl = (r % 3 === 2) || ((c + (Math.floor(r / 3) % 2) * 3) % 6 === 0);
+        s = { role: 'subject', N: bl ? norm([0, 0.3, 1]) : [0, 0, 1], T: [1, 0, 0], pos: [p[0], p[1], 0], tex: bl ? 0.58 : 0.86 + LL.hash(c >> 2, r, 6) * 0.16 };
+      } else s = { role: 'subject', N: UPN, T: [1, 0, 0], pos: [p[0], -11, (r - 10.5) * 1.8], tex: 0.85 + LL.hash(c, r, 7) * 0.18 };
+      var mr = r - 1, mc = c - (lc - 4);
+      if (mr >= 0 && mr < LAMP.length && mc >= 0 && mc < 9) {
+        var ch = LAMP[mr].charAt(mc);
+        if (ch !== ' ') {
+          var nx = (c - lc) / 4.6, N = norm([nx, 0.1, Math.sqrt(Math.max(0.05, 1 - nx * nx))]), pos = [p[0], p[1], 1.6];
+          if (ch === '.') s = { role: 'glass', N: N, T: [0, 1, 0], pos: pos, tex: 1 };
+          else if (FLAME_LV[ch] && !(ch === '*' && mr === 0)) s = { role: 'flame', N: [0, 0, 1], pos: pos, tex: 1, lv: FLAME_LV[ch][0], fc: FLAME_LV[ch][1], gl: ch };
+          else s = { role: 'frame', N: N, T: [0, 1, 0], pos: pos, tex: 1, gl: ch, keep: 1 };
+        }
+      }
+      g.push(s);
+    }
+    GEO.lamp = g; SELF.lamp = null;
+  })();
+  var LAMP_LIGHT = { pos: [12.5 * ASP, -5.8, 1.9], col: C('lantern'), I: 1.0, r: 8.5 };
+
+  // ------------------------------------------------------------------------------------------------
+  // 4. picks + subjects
+  // ------------------------------------------------------------------------------------------------
+  var PK = {};
+  try { PK = JSON.parse(localStorage.getItem('kestrel.matRespPick') || '{}'); } catch (e) { PK = {}; }
+  Object.keys(REC).forEach(function (k) { if (!PK[k] || !OPTS[SLOT_TYPE[k]][PK[k]]) PK[k] = REC[k]; });
+  function savePK() { try { localStorage.setItem('kestrel.matRespPick', JSON.stringify(PK)); } catch (e) {} }
+  var SUBJ = { matte: 'stone', shiny: 'crystal_dead', wet: 'stone', metal: 'steel_old', glow: 'crystal_lit' };
+  function O(type, id) { return OPTS[type][id].p; }
+
+  // role -> { m: material info, p: preset params, wet: 0..1, specMul }
+  function resolve(scene, s, tab, opt) {
+    var role = s.role, subj = SUBJ[tab];
+    var matteHard = O('matte', PK.matte);
+    switch (role) {
+      case 'ground': return { m: MI('floor'), p: matteHard };
+      case 'grip': return { m: MI('leather'), p: O('matte', PK.matteSoft) };
+      case 'guard': return { m: MI('bronze'), p: O('metal', tab === 'metal' ? opt : PK.metal), sm: true };
+      case 'frame': return { m: MI('iron'), p: O('metal', tab === 'metal' ? opt : PK.metal), sm: true };
+      case 'glass': return { m: MI('mirror_dark'), p: O('shiny', tab === 'shiny' ? opt : PK.shiny), glass: 1 };
+      case 'flame': return { m: { base: C(s.fc), ramp: P.ramps.fire, albedo: 1, bgK: 0.3 }, p: O('glow', tab === 'glow' ? opt : PK.glow), lv: s.lv };
+    }
+    if (tab === 'all') {
+      if (scene === 'rock') return { m: MI('rock'), p: matteHard };
+      if (scene === 'blade') return { m: MI('steel_old'), p: O('metal', PK.metalBlade), sm: true };
+      if (role === 'water') return { m: WATER, p: O('wet', PK.wet), wet: 1 };
+      if (role === 'margin') return { m: MI('floor'), p: O('wet', PK.wet), wet: 0.55 };
+      return { m: MI(scene === 'puddle' ? 'floor' : 'stone'), p: matteHard };
+    }
+    if (tab === 'glow') {
+      if (scene === 'rock' || scene === 'blade' || role === 'rune' || role === 'water') return { m: MI(subj), p: O('glow', opt) };
+      if (role === 'margin') return { m: MI('floor'), p: matteHard };
+      return { m: MI(scene === 'puddle' ? 'floor' : 'stone'), p: matteHard };
+    }
+    if (role === 'water') return { m: WATER, p: O('wet', tab === 'wet' ? opt : PK.wet), wet: 1 };
+    if (tab === 'wet') {
+      if (role === 'margin') return { m: MI(subj), p: O('wet', opt), wet: 0.55 };
+      if (scene === 'puddle') return { m: MI(subj), p: matteHard };
+      return { m: MI(subj), p: O('wet', opt), wet: 1 };
+    }
+    if (role === 'margin') return { m: MI(subj), p: O('wet', PK.wet), wet: 0.55, base: O(tab, opt) };
+    return { m: MI(subj), p: O(tab, opt), sm: tab === 'metal' || tab === 'shiny' };
+  }
+
+  // ------------------------------------------------------------------------------------------------
+  // 5. LIGHT + RESPONSE (one function for every type; the preset numbers make the difference)
+  // ------------------------------------------------------------------------------------------------
+  var TOD = { noon: P.timeOfDay.noon, dusk: P.timeOfDay.dusk, night: P.timeOfDay.night };
+  var SKYK = { noon: 1.0, dusk: 0.85, night: 0.7 };
+  function skyAt(tod, y) {
+    if (y < 0) return sc(C(tod.ambient), 0.35);
+    var st = tod.sky, i = 0;
+    while (i < st.length - 2 && y > st[i + 1].t) i++;
+    var a = st[i], b = st[i + 1];
+    return mix(C(a.c), C(b.c), cl((y - a.t) / (b.t - a.t)));
+  }
+  function occluded(pos, d, oc) {
+    var o = [pos[0] - oc.c[0], pos[1] - oc.c[1], pos[2] - oc.c[2]], b = dot(o, d), q = dot(o, o) - oc.r * oc.r, disc = b * b - q;
+    return disc > 0 && (-b - Math.sqrt(disc)) > 0;
+  }
+  function dirGlyph(T) { var a = Math.atan2(T[1], T[0]) * 180 / Math.PI; a = ((a % 180) + 180) % 180; return a < 22.5 || a >= 157.5 ? '-' : a < 67.5 ? '/' : a < 112.5 ? '|' : '\\'; }
+
+  function shade(s, R, env, t, cid, out) {
+    var p = R.p, m = R.m, wet = R.wet || 0, N = s.N, nz = Math.max(0, N[2]), wrap = p.wrap || 0;
+    var Ld = env.amb.slice(), S = [0, 0, 0], sMax = 0, specK = (p.spec || 0) * (R.sm && m.spec ? Math.min(1.5, Math.max(0.3, m.spec / 0.6)) : 1);
+    var T = s.T || [1, 0, 0], sunLit = 0;
+    for (var i = 0; i < env.lights.length; i++) {
+      var l = env.lights[i], Ldir, I = l.I;
+      if (l.dir) { Ldir = l.dir; if (s.occ && occluded(s.pos, Ldir, s.occ)) I *= 0.1; }
+      else {
+        var dv = [l.pos[0] - s.pos[0], l.pos[1] - s.pos[1], l.pos[2] - s.pos[2]], dist = Math.hypot(dv[0], dv[1], dv[2]);
+        if (dist >= l.r) continue;
+        Ldir = sc(dv, 1 / (dist || 1)); var f = 1 - (dist / l.r) * (dist / l.r); I *= f * f;
+      }
+      var ndl = dot(N, Ldir), dd = (ndl + wrap) / (1 + wrap);
+      if (dd > 0) { Ld[0] += l.col[0] * I * dd; Ld[1] += l.col[1] * I * dd; Ld[2] += l.col[2] * I * dd; }
+      if (l.dir && ndl > 0) sunLit = Math.max(sunLit, I * ndl);
+      if (specK > 0 && ndl > 0) {
+        var H = norm([Ldir[0], Ldir[1], Ldir[2] + 1]), x;
+        if (p.aniso) { var th = dot(T, H); x = Math.sqrt(Math.max(0, 1 - th * th)); } else x = Math.max(0, dot(N, H));
+        var sp = Math.pow(x, p.power || 20) * specK * I * Math.min(1, ndl * 4);
+        S[0] += l.col[0] * sp; S[1] += l.col[1] * sp; S[2] += l.col[2] * sp; sMax += sp;
+        if (!l.dir) sunLit = Math.max(sunLit, I * ndl * 0.8);
+      }
+    }
+    var Lm = mx(Ld), bh = hueOf(m.base);
+    var b = Lm * m.albedo * (p.diffuse || 1) * (s.tex || 1) * (1 - (p.wetDark || 0) * wet);
+    var lh = hueOf(Ld), k = SHD.tint, bc = b < 0 ? 0 : b;
+    var gain = SHD.fgMin + (1 - SHD.fgMin) * Math.pow(Math.min(1, bc), SHD.fgGamma);
+    if (bc > 1) gain = Math.min(SHD.fgMaxGain, gain + (bc - 1) * 0.5);
+    var col = [m.base[0] * (1 + (lh[0] - 1) * k) * gain, m.base[1] * (1 + (lh[1] - 1) * k) * gain, m.base[2] * (1 + (lh[2] - 1) * k) * gain];
+    if (wet > 0) col = mix(col, [col[0] * 0.88, col[1] * 0.95, col[2] * 1.08], wet * 0.6);
+    if (bc > 1) col = mix(col, lh, Math.min(SHD.overbrightMax, (bc - 1) * SHD.overbright));
+    var g = null, ec = null, em = 0;
+
+    // specular highlight colour: light colour (tint 0) .. light x material colour (tint 1)
+    if (sMax > 0.01) {
+      var hl = hueOf(S), hc = mix(hl, [hl[0] * bh[0], hl[1] * bh[1], hl[2] * bh[2]], p.tint || 0);
+      col = mix(col, sc(hc, Math.min(1.15, 0.85 + sMax * 0.3)), Math.min(0.92, sMax * (wet ? Math.max(wet, 0.5) : 1)));
+      b += sMax * 0.6;
+    }
+    // environment (sky) reflection with fresnel
+    var Ry = 0;
+    if (p.env) {
+      Ry = 2 * N[2] * N[1];
+      var sky = sc(skyAt(env.tod, Ry), env.skyK), F = (p.f0 || 0.04) + (1 - (p.f0 || 0.04)) * Math.pow(1 - nz, 5);
+      var ek = p.env * F * (p.wetDark ? Math.max(wet, 0) : 1);
+      if (p.bands) { sky = Ry > 0.06 ? sky : sc(sky, 0.15); sky = [sky[0] * (0.4 + 0.6 * bh[0]), sky[1] * (0.4 + 0.6 * bh[1]), sky[2] * (0.4 + 0.6 * bh[2])]; ek = p.env * F; }
+      col = add(col, sc(sky, ek)); b += lum(sky) * ek;
+      if (p.bands && Math.abs(Ry - 0.06) < 0.09 && N[2] > 0.2) { col = add(col, sc(C(env.tod.sky[0].c), 0.35)); g = '='; }
+    }
+    // rim / fresnel edge
+    if (p.rim) {
+      var rr = p.rim * Math.pow(1 - nz, 2.2), back = Math.max(0.25, -env.sunDir[2] * 1.2 + 0.25);
+      var rs = add(sc(env.sunCol, env.sunI * back), sc(env.amb, 2));
+      var rc = mix(hueOf(rs), [bh[0], bh[1], bh[2]], p.rimTint || 0);
+      col = add(col, sc(rc, rr * Math.min(1, lum(rs) * 1.4))); b += rr * 0.3 * lum(rs);
+    }
+    // emissive / glowing
+    if (p.emit) {
+      em = p.emit * (1 + (p.pulse || 0) * Math.sin(t * 2 * Math.PI * 0.7 + (s.pos[0] * 0.3))) * (R.lv || 1);
+      if (p.inner) em *= 0.3 + 0.7 * Math.pow(nz, 1.3);
+      var hot = (p.hot || 0) * ss(0.6, 1.05, em);
+      ec = mix(m.base, [1, 0.98, 0.9], hot);
+      col = mix(col, sc(ec, Math.min(1.15, 0.5 + em * 0.6)), Math.min(1, em * 1.1));
+      b = em + b * (p.inner ? 0.5 : 0.1);
+    }
+    if (R.glass) { var gk = 0.28; col = mix(col, C('flameMid'), gk); b += 0.2; }
+
+    // glyph: ramp at brightness, texture glyph, then highlight glyph steps
+    var gb = em > 0 ? b * (p.glyphK || 1) * (0.9 + 0.1 * (s.tex || 1)) : b;
+    var ramp = m.ramp, idx = gb < SHD.cutoff ? 0 : P.util.rampIndex(ramp.length, Math.min(1, gb), m.rampGamma);
+    if (g === null) g = ramp.charAt(idx);
+    if (s.gl && (idx >= 2 || s.keep || R.lv)) g = s.gl;
+    if (p.hi && sMax > 0 && !s.keep && !(s.role === 'rune' && !p.emit)) {
+      var thr = p.hiThr || [0.5];
+      for (var hI = thr.length - 1; hI >= 0; hI--) if (sMax >= thr[hI]) { g = p.hi === '@d' ? dirGlyph(T) : p.hi.charAt(hI); break; }
+    }
+    if (p.coreGlyph && em > 0.88 && (s.tex || 1) > 1.0 && !s.gl) g = p.coreGlyph;
+    if (p.sparkle && wet > 0) {
+      var hs = LL.hash(cid, Math.floor(t * 4), 77), lit = Math.min(1, sunLit);
+      if (hs < p.sparkle * lit * wet) { g = hs < p.sparkle * lit * wet * 0.3 ? '*' : "'"; col = mix(col, hueOf(env.sunCol), 0.75); }
+    }
+    var bgk = m.bgK * (1 - (p.wetBg || 0) * wet);
+    var bg = sc(col, bgk);
+    if (em > 0) bg = mix(bg, sc(ec, 0.28), Math.min(1, em));
+    out.g = g; out.f = col; out.b = bg; out.em = em; out.ec = ec; out.halo = p.halo || 0;
+  }
+
+  // ------------------------------------------------------------------------------------------------
+  // 6. panels
+  // ------------------------------------------------------------------------------------------------
+  var CWH = [7, 12], panels = [], curTab = 'matte';
+  function lightsFor(scene, time, tab, t) {
+    var tod = TOD[time], az = +document.getElementById('az').value * Math.PI / 180, elS = +document.getElementById('el').value;
+    var el = (elS < 0 ? tod.sunElev : elS) * Math.PI / 180;
+    var dir = [Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)];
+    var sunCol = C(tod.sun), L = [{ dir: dir, col: sunCol, I: tod.sunI }];
+    if (document.getElementById('hand').checked) {
+      var fl = 1 + 0.12 * Math.sin(t * 11.3) + 0.07 * Math.sin(t * 17.1 + 1);
+      L.push({ pos: [SW * ASP * 0.88, -SH * 0.95, 7], col: C('torch'), I: 0.7 * fl, r: 15 });
+    }
+    if (scene === 'lamp') { var lf = 1 + 0.05 * Math.sin(t * 7.3); L.push({ pos: LAMP_LIGHT.pos, col: LAMP_LIGHT.col, I: LAMP_LIGHT.I * lf, r: LAMP_LIGHT.r }); }
+    if (tab === 'glow' && SELF[scene]) { var sl = SELF[scene]; L.push({ pos: sl.pos, col: hueOf(MI(SUBJ.glow).base), I: sl.I, r: sl.r }); }
+    return { tod: tod, amb: sc(C(tod.ambient), tod.ambientI), lights: L, sunDir: dir, sunCol: sunCol, sunI: tod.sunI, skyK: SKYK[time] };
+  }
+  var OUT = { g: ' ', f: null, b: null, em: 0, ec: null, halo: 0 };
+  var BUF = new Array(SW * SH);
+  function renderPanel(pn, t) {
+    var tod = TOD[pn.time];
+    for (var si = 0; si < SCENES.length; si++) {
+      var scene = SCENES[si], geo = GEO[scene], env = lightsFor(scene, pn.time, pn.tab, t), ox = si * (SW + GAP), maxHalo = 0;
+      for (var i = 0; i < geo.length; i++) {
+        var s = geo[i], r = (i / SW) | 0, c = i % SW, cell;
+        if (!s) {
+          var sk = sc(skyAt(tod, 0.15 + (1 - r / SH) * 0.7), 0.22 * SKYK[pn.time]);
+          var star = pn.time === 'night' && LL.hash(c + si * 40, r, 11) < 0.025 ? '.' : ' ';
+          cell = { g: star, f: [0.6, 0.65, 0.8], b: sk, em: 0 };
+        } else {
+          shade(s, resolve(scene, s, pn.tab, pn.opt), env, t, i + si * 1000, OUT);
+          cell = { g: OUT.g, f: OUT.f, b: OUT.b, em: OUT.em, ec: OUT.ec, halo: OUT.halo };
+          if (OUT.em > 0.3 && OUT.halo > maxHalo) maxHalo = OUT.halo;
+        }
+        BUF[i] = cell;
+      }
+      if (maxHalo > 0) { // preview stand-in for the existing glow pass (bg bleed around emissive cells)
+        for (var j = 0; j < BUF.length; j++) {
+          var cj = BUF[j]; if (cj.em > 0.3) continue;
+          var rj = (j / SW) | 0, cjc = j % SW, best = 0, bc = null;
+          for (var dy = -2; dy <= 2; dy++) for (var dx = -3; dx <= 3; dx++) {
+            var rr2 = rj + dy, cc2 = cjc + dx; if (rr2 < 0 || rr2 >= SH || cc2 < 0 || cc2 >= SW) continue;
+            var nb = BUF[rr2 * SW + cc2]; if (!(nb.em > 0.3)) continue;
+            var w = nb.halo * (1 - Math.hypot(dx * ASP, dy) / 2.6); if (w > best) { best = w; bc = nb.ec; }
+          }
+          if (best > 0) { cj.b = add(cj.b, sc(bc, best * 0.5)); cj.f = add(cj.f, sc(bc, best * 0.25)); }
+        }
+      }
+      for (var k2 = 0; k2 < BUF.length; k2++) {
+        var q = BUF[k2]; pn.panel.put(ox + k2 % SW, (k2 / SW) | 0, q.g, LL.css(q.f), LL.css(q.b));
+      }
+      if (si < SCENES.length - 1) for (var gr = 0; gr < SH; gr++) pn.panel.put(ox + SW, gr, ' ', '#000', '#07080c');
+    }
+  }
+
+  // ------------------------------------------------------------------------------------------------
+  // 7. DOM
+  // ------------------------------------------------------------------------------------------------
+  var TABS = TYPES.concat(['summary']);
+  var tabsEl = document.getElementById('tabs'), view = document.getElementById('view');
+  TABS.forEach(function (id) {
+    var b = document.createElement('button'); b.className = 'tab'; b.textContent = id === 'summary' ? 'Summary + picks' : TYPE_NAME[id];
+    b.onclick = function () { curTab = id; build(); }; b.dataset.id = id; tabsEl.appendChild(b);
+  });
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+  function chips(p) { return Object.keys(p).length ? esc(JSON.stringify(p)) : '{} (no extra terms)'; }
+  function scnHeader() {
+    return '<div class="scn">' + SCENES.map(function (s, i) {
+      return '<span style="width:' + ((SW + (i < SCENES.length - 1 ? GAP : 0)) * CWH[0]) + 'px">' + SCENE_NAME[s] + '</span>';
+    }).join('') + '</div>';
+  }
+  function addStrips(container, tab, opt) {
+    ['noon', 'dusk', 'night'].forEach(function (time) {
+      var row = document.createElement('div'); row.className = 'row';
+      row.innerHTML = '<div class="tlabel">' + time + '</div>';
+      var cv = document.createElement('canvas'); row.appendChild(cv); container.appendChild(row);
+      panels.push({ panel: new LL.Panel(cv, TW, SH, CWH[0], CWH[1]), tab: tab, opt: opt, time: time });
+    });
+  }
+  function build() {
+    panels = []; view.innerHTML = '';
+    Array.prototype.forEach.call(tabsEl.children, function (b) { b.classList.toggle('on', b.dataset.id === curTab); });
+    if (curTab === 'summary') { buildSummary(); return; }
+    var type = curTab;
+    var sel = document.createElement('div'); sel.className = 'note';
+    var keys = Object.keys(P.materials).filter(function (k) { return k !== 'sky'; }).sort();
+    sel.innerHTML = 'Subject material (rock, wall, blade, cobbles, lamp wall' + (type === 'glow' ? '; glowing: rock, blade, wall rune, puddle spring' : '') +
+      '): <select id="subj">' + keys.map(function (k) { return '<option' + (k === SUBJ[type] ? ' selected' : '') + '>' + k + '</option>'; }).join('') + '</select>' +
+      ' &nbsp; Supporting parts use the current picks: ground/lamp wall = matte, guard + lamp frame = metal, lamp glass = shiny, puddle water = wet, flame = glowing.';
+    view.appendChild(sel);
+    sel.querySelector('select').onchange = function (e) { SUBJ[type] = e.target.value; };
+    ['A', 'B', 'C'].forEach(function (id) {
+      var o = OPTS[type][id], card = document.createElement('div');
+      var recSlots = PICK_SLOTS[type].filter(function (sl) { return REC[sl] === id; });
+      card.className = 'card' + (recSlots.length ? ' rec' : '');
+      var btns = PICK_SLOTS[type].map(function (sl) {
+        return '<button class="pk' + (PK[sl] === id ? ' on' : '') + '" data-sl="' + sl + '" data-id="' + id + '">pick' + (SLOT_NAME[sl] ? ' for ' + SLOT_NAME[sl] : '') + '</button>';
+      }).join(' ');
+      card.innerHTML = '<div class="head"><h3>' + type + ' ' + id + ' - ' + esc(o.name) + '</h3>' +
+        recSlots.map(function (sl) { return '<span class="badge">recommended' + (SLOT_NAME[sl] ? ' (' + SLOT_NAME[sl] + ')' : '') + '</span>'; }).join(' ') +
+        ' ' + btns + '</div><div class="desc">' + esc(o.desc) + '</div><div class="chips">' + chips(o.p) + '</div>' + scnHeader();
+      view.appendChild(card);
+      addStrips(card, type, id);
+    });
+    view.querySelectorAll('button.pk').forEach(function (b) {
+      b.onclick = function () { PK[b.dataset.sl] = b.dataset.id; savePK(); build(); };
+    });
+  }
+
+  function buildSummary() {
+    var h = '';
+    h += '<h2>All picks together</h2><div class="note">rock = rock (matte hard), wall = stone (matte hard), blade = steel_old (metal blade pick) with bronze guard + leather grip, ' +
+      'puddle = floor cobbles + wet pick, lamp = iron frame (metal) + glass (shiny) + flame (glowing) on a stone wall.</div>';
+    h += '<div class="card" id="allcard">' + scnHeader() + '</div>';
+    h += '<h2>Current picks</h2><table><tr><th>slot</th><th>pick</th><th>recommended</th><th>preset</th></tr>';
+    Object.keys(REC).forEach(function (sl) {
+      var ty = SLOT_TYPE[sl], o = OPTS[ty][PK[sl]];
+      h += '<tr><td class="k">' + sl + (SLOT_NAME[sl] ? ' <span style="color:#8a8678">(' + SLOT_NAME[sl] + ')</span>' : '') + '</td><td>' + ty + ' ' + PK[sl] + ' - ' + esc(o.name) +
+        '</td><td>' + REC[sl] + (PK[sl] === REC[sl] ? '' : ' <span style="color:#d67040">(changed)</span>') + '</td><td class="chips">' + chips(o.p) + '</td></tr>';
+    });
+    h += '</table>';
+    h += '<h2>Proposed per-material fields (palette.js materials[key])</h2><table><tr><th>field</th><th>values</th><th>meaning</th></tr>' +
+      '<tr><td class="k">resp</td><td>matte | shiny | wet | metal | glow</td><td>response type; the light pass uses that type\'s picked preset row (table above). Missing = matte.</td></tr>' +
+      '<tr><td class="k">soft</td><td>true / false</td><td>matte only: use the soft preset (skin, fur, leaves, moss, cloth, leather).</td></tr>' +
+      '<tr><td class="k">aniso</td><td>true / false</td><td>metal only: use the blade preset (highlight streak along the long axis; needs a tangent).</td></tr>' +
+      '<tr><td class="k">spec (existing)</td><td>0..1</td><td>highlight strength multiplier for shiny / metal: 0.6 = the preset as shown, 0.3 = half, 0.9 = x1.5. Existing values keep their meaning.</td></tr>' +
+      '<tr><td class="k">hiTint</td><td>0..1 (optional)</td><td>override the preset tint: 0 = highlight in the light colour, 1 = light x material colour (brass gold glint).</td></tr>' +
+      '<tr><td class="k">hiGlyphs</td><td>ASCII string (optional)</td><td>override the highlight glyph steps, low to high (e.g. "\'*", "#M", "-~="). "@d" = direction glyph - / | \\.</td></tr>' +
+      '<tr><td class="k">wet</td><td>0..1 (optional)</td><td>blend the wet preset on top of the base response (rain, shore band, splash). Also wanted per cell / per zone from weather.</td></tr>' +
+      '<tr><td class="k">emissive (existing)</td><td>0..1</td><td>glow level; with resp glow the glow preset (halo, breathe, inner) applies.</td></tr></table>';
+    h += '<h2>Preset fields (one row per type x option)</h2><table><tr><th>field</th><th>meaning</th></tr>' +
+      [['wrap', 'diffuse wrap past the terminator (0 = Lambert)'], ['rim, rimTint', 'fresnel edge glow strength; colour 0 = light/sky, 1 = material'],
+       ['spec, power', 'Blinn highlight strength and tightness'], ['hi, hiThr', 'highlight glyph steps and their spec thresholds'],
+       ['tint', 'highlight colour: 0 light colour .. 1 light x material'], ['aniso', 'stretch the highlight along the tangent'],
+       ['env, f0, bands', 'sky reflection strength, fresnel base, hard horizon band'], ['diffuse', 'diffuse albedo multiplier (metals are dark)'],
+       ['wetDark, wetBg', 'albedo and bg darkening when wet'], ['sparkle', 'chance per lit wet cell per 1/4 s of a \' / * twinkle'],
+       ['emit, hot, pulse, halo, inner, coreGlyph', 'self-light level, white-hot core mix, breathing, bg halo, centre-bright subsurface, core glyph']]
+        .map(function (r) { return '<tr><td class="k">' + r[0] + '</td><td>' + r[1] + '</td></tr>'; }).join('') + '</table>';
+    h += '<h2>Existing palette materials -> response type (proposal)</h2><table><tr><th>type</th><th>materials (swatch = base colour, existing spec / emissive)</th></tr>';
+    var seen = {};
+    Object.keys(MAP_LISTS).forEach(function (ty) {
+      h += '<tr><td class="k">' + ty + '</td><td>' + MAP_LISTS[ty].filter(function (k) { return P.materials[k]; }).map(function (k) {
+        seen[k] = 1; var m = P.materials[k], cc = P.rgb[m.base] || [255, 0, 255];
+        return '<span style="white-space:nowrap"><span class="sw" style="background:rgb(' + cc.join(',') + ')"></span>' + k +
+          (m.spec ? ' <span style="color:#6f8aa8">s' + m.spec + '</span>' : '') + (m.emissive ? ' <span style="color:#d6a040">e' + m.emissive + '</span>' : '') + '</span>';
+      }).join(' &nbsp; ') + '</td></tr>';
+    });
+    var rest = Object.keys(P.materials).filter(function (k) { return !seen[k] && k !== 'sky'; });
+    h += '<tr><td class="k">matte (default)</td><td style="color:#8a8678">' + (rest.length ? rest.join(', ') : '-') + ' &nbsp; (unlisted; sky stays emissive, no response)</td></tr>';
+    h += '<tr><td class="k">wet (new keys)</td><td>' + WET_NEW.map(function (w) { return '<b>' + w[0] + '</b> (from ' + w[1] + ': ' + w[2] + ')'; }).join('<br>') + '</td></tr></table>';
+    h += '<h2>Export (for the programmer, after the owner picks)</h2><textarea readonly id="exp"></textarea>';
+    h += '<div class="note">Engine needs (for the PO / architect): a per-cell view vector (camera to cell) for N.H and fresnel; the live sky colour stops in the light pass ' +
+      '(liveLook already has them) for sky mirror / sky bands; a per-cell tangent for the blade streak (mesh axis or a per-part constant); a highlight glyph channel ' +
+      'from the light pass into the shade pass (glyph steps override the ramp glyph); cell hash + time for sparkle. Halo = the existing glow pass. ' +
+      'Notes: design/material-response.md.</div>';
+    view.innerHTML = h;
+    addStrips(document.getElementById('allcard'), 'all', null);
+    var exp = { version: 1, presets: {}, materials: {} };
+    Object.keys(REC).forEach(function (sl) { exp.presets[sl] = Object.assign({ option: PK[sl] }, OPTS[SLOT_TYPE[sl]][PK[sl]].p); });
+    Object.keys(MAP_LISTS).forEach(function (ty) {
+      MAP_LISTS[ty].forEach(function (k) {
+        if (!P.materials[k]) return;
+        var e = { resp: ty.split(' ')[0] }; if (ty === 'matte soft') e.soft = true; if (ty === 'metal aniso') e.aniso = true;
+        if (ty !== 'matte') exp.materials[k] = e;
+      });
+    });
+    document.getElementById('exp').value = '// MAT-RESPONSE picks (unlisted materials = { resp: "matte" })\n' + JSON.stringify(exp, null, 1);
+  }
+
+  // ------------------------------------------------------------------------------------------------
+  // 8. loop
+  // ------------------------------------------------------------------------------------------------
+  var az = document.getElementById('az'), el = document.getElementById('el');
+  function labels() {
+    document.getElementById('azv').textContent = az.value + ' deg';
+    document.getElementById('elv').textContent = +el.value < 0 ? 'auto' : el.value + ' deg';
+  }
+  az.oninput = labels; el.oninput = labels;
+  document.getElementById('cell').onchange = function (e) { CWH = e.target.value.split('x').map(Number); build(); };
+  labels(); build();
+  var last = 0;
+  function frame(ms) {
+    requestAnimationFrame(frame);
+    if (ms - last < 50) return;
+    var dt = (ms - last) / 1000; last = ms;
+    if (document.getElementById('spin').checked) {
+      var v = +az.value + dt * 30; if (v > 180) v -= 360; az.value = Math.round(v); labels();
+    }
+    var t = ms / 1000;
+    for (var i = 0; i < panels.length; i++) renderPanel(panels[i], t);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
