@@ -130,6 +130,8 @@ export function deserialize(state, assets, opts = {}) {
   const runtimeOverlay = []; // saved content entities that respawn from content; their RUNTIME state is overlaid after load
   let appendedContentEntities = []; // raw content shape (may use x/y/z or spawn, not transform)
   const removedSet = new Set(state.removed || []);
+  // REV-S6: under the content rule the structure list is the CURRENT world's (saved-only ones are dropped).
+  const structs = contentStructures(state, assets, useContentRule);
 
   if (useContentRule) {
     if (state.contentVersion !== assets.contentVersion) {
@@ -141,7 +143,7 @@ export function deserialize(state, assets, opts = {}) {
     // from `assets`, never from `state` (a stale save must not decide
     // what's "current content").
     const currentContentIds = new Set();
-    for (const s of state.structures) {
+    for (const s of structs) {
       if (s.mesh || !assets.has('level', s.level)) continue;
       for (const p of assets.level(s.level).props || []) {
         if (typeof p.model === 'string' && p.model.indexOf('decal:') === 0) continue;
@@ -198,7 +200,7 @@ export function deserialize(state, assets, opts = {}) {
     ...(state.terrainBands ? { terrainBands: state.terrainBands, bandSwitch: state.bandSwitch } : {}),
     triggers: state.triggers || [],
     time: state.time && state.time.timeOfDay,
-    structures: contentStructures(state, assets, useContentRule).map((s) => s.mesh
+    structures: structs.map((s) => s.mesh
       ? { id: s.id, mesh: s.mesh, origin: s.origin, yawDeg: s.yawDeg, scale: s.scale, collide: s.collide }
       : { id: s.id, level: s.level, origin: s.origin, yawSteps: s.yawSteps }),
     entities: [
@@ -220,7 +222,7 @@ export function deserialize(state, assets, opts = {}) {
   //     content no longer has is dropped; its `model` id is always the content's), removed/added props, structures.
   //   SAVE wins (runtime): every other field of a component content also has (voxel/sprite anim, frame, t, playing,
   //     speed; door/lever/structure state ...), components content has not at all except sprite/voxel/mesh
-  //     (health, flags, inventory ...), z when x/y are unchanged (ground snap), and a runtime-changed transform.scale (saved scale != 1 while content is 1/unset).
+  //     (health, flags, inventory ...), z when x/y are unchanged and |dz| <= 0.05 (ground snap), and a runtime-changed transform.scale (saved scale != 1 while content is 1/unset).
   const IDENT = { sprite: 1, voxel: 1, mesh: 1 };
   for (const se of runtimeOverlay) {
     const live = world.entity(se.id);
@@ -237,7 +239,8 @@ export function deserialize(state, assets, opts = {}) {
     }
     // ground-snapped z is derived from authored x/y: unchanged x/y -> keep the saved z (exact round trip), else content's.
     const st = se.transform;
-    if (st && Math.abs(st.x - live.transform.x) < 1e-6 && Math.abs(st.y - live.transform.y) < 1e-6) live.transform.z = st.z;
+    if (st && Math.abs(st.x - live.transform.x) < 1e-6 && Math.abs(st.y - live.transform.y) < 1e-6
+      && Math.abs(st.z - live.transform.z) <= 0.05) live.transform.z = st.z; // a bigger z delta is a content fix: content wins
     const ss = se.transform && se.transform.scale;
     if (ss > 0 && ss !== 1 && !(live.transform.scale > 0 && live.transform.scale !== 1)) live.transform.scale = ss;
   }
@@ -253,7 +256,7 @@ export function deserialize(state, assets, opts = {}) {
   for (const s of state.structures) {
     if (!s.dynamics) continue;
     const placed = world.structures.find((p) => p.id === s.id);
-    if (!placed) continue;
+    if (!placed) continue; // removed from content: nothing to restore
     for (const tag of Object.keys(s.dynamics)) {
       world._restoreDynamics(placed, tag, s.dynamics[tag]);
     }
@@ -276,13 +279,17 @@ export function deserialize(state, assets, opts = {}) {
 }
 
 // QFIX-S6 (OB-155g): structures are content, not state. With the content rule on, the list comes from the
-// current world def (saved-only structures are kept; `dynamics` is re-applied from the save by id afterwards).
+// current world def (saved-only structures are dropped; `dynamics` is re-applied from the save by id afterwards).
 function contentStructures(state, assets, useContentRule) {
   if (!useContentRule) return state.structures;
   const cur = assets.world(state.world).structures || [];
   const curIds = new Set(cur.map((c) => c.id));
   const adapt = (c) => c.mesh && typeof c.mesh === 'object' ? { ...c, mesh: c.mesh.id || c.mesh } : c;
-  return [...cur.map(adapt), ...state.structures.filter((s) => !curIds.has(s.id))];
+  const gone = state.structures.filter((s) => !curIds.has(s.id)).map((s) => s.id);
+  if (gone.length) {
+    console.warn(`[World] deserialize: dropped ${gone.length} saved structure${gone.length === 1 ? '' : 's'} no longer in content: ${gone.slice(0, 5).join(', ')}`);
+  }
+  return cur.map(adapt);
 }
 
 /**
