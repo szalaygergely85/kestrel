@@ -87,6 +87,7 @@ export {
 // the gpucompare harness needs them.
 export { validateVoxelModel, assertVoxelModel, MAX_VOX_PARTS, MAX_VOX_INSTANCES, MAX_VOX_INSTANCES_MESH, MESH_ONLY_MAX_DIM, MESH_ONLY_MAX_CELLS } from './voxel/VoxelModel.js';
 export { packVoxelModel } from './voxel/voxelPack.js';
+export { validateBlend, packBlend, BLEND_FADE_DEFAULT_MS, BLEND_FADE_MAX_MS } from './voxel/blendPack.js'; // ANIM-BLEND-01a (38.68)
 export { deriveEmissiveLight, EMISSIVE_LIGHT_MIN } from './voxel/emissiveLight.js';
 export { buildVoxelMesh, MESH_ONLY_MAX_QUADS } from './mesh/voxelMesh.js';
 export { prebuildTerrainMesh } from './mesh/terrainMesh.js'; // ED-MESH-1a
