@@ -1165,3 +1165,6 @@ NEEDS B1-main (main.js line ~920 `riggedModelDef(collapseRig(...))`): pass `{leg
 ### GATE-FIX-7 (kestrel-4, 2026-10-14)
 All four were stale tests, no code change: actionHints (storyHints now starts with logic hint hint.farm.ambush, ED-LOGIC-01d), boarPlacement (farmGob1-3 reserve goblins counted as boars; filter goblin species), swimWire (main.js now `under: createUnderState()`; gate/gear/fb.under behaviour intact), content-smoke (gi/manifest.json known standalone).
 Filtered run 25/25 PASS, check-deps OK.
+
+### BENCH-LIFE-GOB08 (kestrel-2, 2026-10-15)
+Cause: ED-LOGIC-01d added 3 reserve farm goblins to world_m1 -> bench built 49 beasts (cap 48). tools/bench-life.mjs now removes brain.reserve entities before the sim (down in game, not worst case); test passes, no engine change.
