@@ -8,7 +8,7 @@ const handlers = {}, hs = {}, events = { on: (n, f) => { (hs[n] = hs[n] || []).p
 const members = [];
 for (let k = 0; k < 3; k++) members.push({ id: 'boar.downs.' + (k + 1), species: 'boar', region: 'downs', group: 0, x: 500 + k, y: 500 });
 for (let k = 0; k < 2; k++) members.push({ id: 'grey_wolf.nw.' + (k + 1), species: 'grey_wolf', region: 'nw', group: 0, x: 900 + k, y: 900 });
-const mkSim = () => { const resets = [], downs = new Set(); return { resets, downs, count: 5, state: new Uint8Array(8), setDown: (s, on) => { if (on) downs.add(s); else { downs.delete(s); resets.push(s); } }, isDown: (s) => downs.has(s), tactics: createTactics(8, 1), slotOf: (id) => members.findIndex((m) => m.id === id), respawnSlot: (s) => { resets.push(s); return true; } }; };
+const mkSim = () => { const resets = [], downs = new Set(); return { resets, downs, count: 5, state: new Uint8Array(8), dormant: new Uint8Array(8), parkSlot: (s) => { downs.add(s); }, unparkSlot: (s) => { if (!downs.has(s)) return false; downs.delete(s); resets.push(s); return true; }, setDown: (s, on) => { if (on) downs.add(s); else { downs.delete(s); resets.push(s); } }, isDown: (s) => downs.has(s), tactics: createTactics(8, 1), slotOf: (id) => members.findIndex((m) => m.id === id), respawnSlot: (s) => { resets.push(s); return true; } }; };
 const flat = { heightAt: () => 0 };
 const mk = (sim, state) => createBeastDirectorWire({ sim, members, seed: 12, state, events, terrain: flat, dayLenSec: 600, los: () => false });
 

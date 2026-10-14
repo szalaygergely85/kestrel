@@ -90,7 +90,7 @@ export function createRouteFollower(o) {
   for (let g = 0; g < N; g++) if (groups[g].when === 'night') { isNightGroup[g] = 1; active[g] = 0; }
   // A tile-dormant slot has no live steer agent, so setDown would mark it down=1 and the later unpark would re-add the agent in the WRONG slot (addAgent = lowest free).
   // Wake it first (clears both dormancy reasons, re-activates the agent) so setDown parks it as down=2 and unparking is exact; tile dormancy re-applies on the next tile update.
-  const park = (g, on) => { for (const s of groups[g].slots) { if (!sim.setDown) continue; if (on && sim.isDormant && sim.isDormant(s)) { if (sim.setDormant) sim.setDormant(s, false); if (sim.setTileDormant) sim.setTileDormant(s, false); } sim.setDown(s, on); } };
+  const park = (g, on) => { for (const s of groups[g].slots) { if (!sim.parkSlot) continue; if (on) sim.parkSlot(s); else sim.unparkSlot(s); } };
   const usable = (s) => !(sim.isDown && sim.isDown(s)) && !(sim.isDormant && sim.isDormant(s));
   const goalTo = (s, x, y) => { // re-plan only when the target moved: setGoal restarts the path
     if (sim.hasGoal ? sim.hasGoal(s) : true) { const dx = sim.goalTX ? sim.goalTX[s] - x : 99, dy = sim.goalTY ? sim.goalTY[s] - y : 99; if (dx * dx + dy * dy < REPLAN_M * REPLAN_M) return; }

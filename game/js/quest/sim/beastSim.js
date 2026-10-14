@@ -56,6 +56,7 @@ export const STATE_CAST = 23;      // caster / healer cast (a hit cancels)
 const TACT_ROLE_OF = Object.freeze({ melee: TACT_MELEE, ranged: TACT_RANGED, caster: TACT_CASTER, swarm: TACT_SWARM }); // archetype role -> tactical role (BEAST-04)
 const ARCH_AGGRO_IDX = Object.freeze({ hostile: 0, whenHit: 1, never: 2, near: 3 });
 const FIRST_DEAD_STATE = STATE_DYING;
+const CIRCLE_COOLDOWN_STEPS = 90; // BEAST-04: a wolf that just finished an attack waits this long before asking for the token again
 const isEngaged = (st) => st === STATE_NOTICE || st === STATE_CHASE || st === STATE_WINDUP || st === STATE_CHARGE || st === STATE_RECOVER || st === STATE_CIRCLE || st === STATE_CAST || st === STATE_GRAB || st === STATE_FLEE;
 const deadSt = (st) => st >= FIRST_DEAD_STATE && st <= STATE_GONE; // EAT (13) is alive
 const HUNT_PREY = { wolf: ['rabbit', 'deer'], bear: ['deer'] }; // LIFE-07: species-filtered prey (38.56 c)
@@ -461,31 +462,36 @@ export function createBeastSim(world, opts) {
     }
     sim.updateActiveSet(px, py); // BEAST-06b
   };
-  /** GOB-01b: on -> slot goes to STATE_GONE (steer agent dropped, hidden, skipped); off -> back alive at home, hp max. */
-  sim.setDown = function setDown(slot, on) {
+  /** BEAST-PARK-01: park ANY slot (live/dead/dormant), idempotent: STATE_GONE, token released, path/pending cleared, steer agent inactive + still.
+   *  Parked slots (sim.down, not saved/hashed) are skipped by resetAll and never hold a steer agent. */
+  sim.parkSlot = function parkSlot(slot) {
     if (slot < 0 || slot >= sim.count) return;
-    if (on) {
-      if (sim.down[slot]) return;
-      sim.down[slot] = 1; sim.dormant[slot] = 0; sim.dormCamp[slot] = 0; sim.dormTile[slot] = 0;
-      // park (not remove) a live agent: removeAgent/addAgent hands out the lowest free slot, parking keeps slot ids stable
-      if (sim.steer.active[slot]) { sim.steer.vx[slot] = 0; sim.steer.vy[slot] = 0; sim.steer.active[slot] = 0; sim.down[slot] = 2; }
-      sim.state[slot] = STATE_GONE; sim.pendingDied[slot] = 0; sim.despawnReq[slot] = 0;
-      sim.pathLen[slot] = 0; sim.pathIdx[slot] = 0; sim.pathReq[slot] = 0; sim.seen[slot] = 0; sim.goalOn[slot] = 0;
-    } else if (sim.down[slot]) {
-      if (sim.down[slot] === 2) sim.steer.active[slot] = 1;
-      sim.down[slot] = 0; sim.dormant[slot] = 0; sim.dormCamp[slot] = 0; sim.dormTile[slot] = 0;
-      resetSlotSim(sim, slot);
-      resyncLeash(sim);
-    }
+    const wasGone = sim.state[slot] === STATE_GONE;
+    sim.down[slot] = 1; sim.dormant[slot] = 0; sim.dormCamp[slot] = 0; sim.dormTile[slot] = 0; sim.dormCap[slot] = 0;
+    if (sim.tactics && sim.tactics.release && !wasGone) sim.tactics.release(slot);
+    sim.steer.vx[slot] = 0; sim.steer.vy[slot] = 0; sim.steer.active[slot] = 0;
+    sim.state[slot] = STATE_GONE; sim.pendingDied[slot] = 0; sim.despawnReq[slot] = 0;
+    sim.pathLen[slot] = 0; sim.pathIdx[slot] = 0; sim.pathReq[slot] = 0; sim.seen[slot] = 0; sim.goalOn[slot] = 0;
   };
-  /** BEAST-WIRE-01: spawn-director respawn of ONE dead slot at home (any order: re-activates this exact steer slot, unlike addAgent's lowest-free rule). */
-  sim.respawnSlot = function respawnSlot(slot) {
-    if (slot < 0 || slot >= sim.count || sim.down[slot] || !deadSt(sim.state[slot])) return false;
-    if (!sim.steer.active[slot] && !sim.dormant[slot]) { sim.steer.active[slot] = 1; sim.steer.radius[slot] = sim.cfg.radius; if (slot + 1 > sim.steer._hi) sim.steer._hi = slot + 1; }
+  sim.isParked = function isParked(slot) { return slot >= 0 && slot < sim.count && sim.down[slot] === 1; };
+  /** BEAST-PARK-01: exact-slot re-activation at home (never addAgent), alive, wander; emits beast:respawned. */
+  sim.unparkSlot = function unparkSlot(slot) {
+    if (slot < 0 || slot >= sim.count || !sim.down[slot]) return false;
+    sim.down[slot] = 0;
     resetSlotSim(sim, slot); resyncLeash(sim); sim.events.emit('beast:respawned', { id: sim.entities[slot].id, slot });
     return true;
   };
-  sim.isDown = function isDown(slot) { return slot >= 0 && slot < sim.count && sim.down[slot] === 1; };
+  /** GOB-01b (kept as a thin alias): on -> parkSlot, off -> unparkSlot. */
+  sim.setDown = function setDown(slot, on) { if (on) sim.parkSlot(slot); else sim.unparkSlot(slot); };
+  /** BEAST-PARK-01: slots currently engaged (as counted by the last updateActiveSet). */
+  sim.engagedCount = function engagedCount() { let n = 0; for (let i = 0; i < sim.count; i++) if (!sim.down[i] && isEngaged(sim.state[i])) n++; return n; };
+  /** BEAST-WIRE-01: spawn-director respawn of ONE dead slot at home (any order: re-activates this exact steer slot, unlike addAgent's lowest-free rule). */
+  sim.respawnSlot = function respawnSlot(slot) {
+    if (slot < 0 || slot >= sim.count || sim.down[slot] || !deadSt(sim.state[slot])) return false;
+    resetSlotSim(sim, slot); resyncLeash(sim); sim.events.emit('beast:respawned', { id: sim.entities[slot].id, slot });
+    return true;
+  };
+  sim.isDown = function isDown(slot) { return slot >= 0 && slot < sim.count && sim.down[slot] === 1; }; // = isParked
   /** GOB-01b: a live slot runs away from the player (last stepped position) like a low-hp wolf/goblin flee. */
   sim.flee = function flee(slot) {
     if (slot < 0 || slot >= sim.count || sim.down[slot] || sim.dormant[slot] || deadSt(sim.state[slot])) return;
@@ -765,7 +771,12 @@ function circleStep(sim, i, px, py) {
   const lr = sim.scfg[i].loseR;
   if (d2 > lr * lr || sim.unseen[i] >= sim.ssteps[i].loseSight) { sim.tactics.release(i); enterReturn(sim, i); return; }
   const wr = sim.scfg[i].windupR;
-  if (d2 <= wr * wr && sim.seen[i] && sim.tactics.request(i, sim.tactRole[i] === TACT_SWARM ? TOK_S : TOK_M)) enterWindup(sim, i);
+  if (sim.timer[i] > 0) { sim.timer[i]--; return; } // just attacked: let the other waiters have the token first
+  if (!sim.seen[i]) return;
+  if (sim.tactics.request(i, sim.tactRole[i] === TACT_SWARM ? TOK_S : TOK_M)) {
+    if (d2 <= wr * wr * 1.5625) enterWindup(sim, i); // 1.25 x windupR: the ring waits just outside windupR
+    else { sim.tactics.release(i); enterChase(sim, i); } // BEAST-04 fix: a waiter outside windupR (ring sits at ~windupR) closes in; CHASE asks again inside windupR
+  }
 }
 
 function enterCircle(sim, i) { sim.state[i] = STATE_CIRCLE; sim.waiting[i] = 0; sim.pathLen[i] = 0; sim.pathIdx[i] = 0; }
@@ -871,6 +882,9 @@ function recoverStep(sim, i, px, py) {
   void px; void py;
   sim.timer[i]--;
   if (sim.timer[i] <= 0) {
+    if (sim.tactOn[i] && (sim.tactRole[i] === TACT_MELEE || sim.tactRole[i] === TACT_SWARM)) { // BEAST-04 fix: rotate the token - release, sit out CIRCLE_COOLDOWN_STEPS as a waiter
+      sim.tactics.release(i); enterCircle(sim, i); sim.timer[i] = CIRCLE_COOLDOWN_STEPS; return;
+    }
     enterChase(sim, i);
     checkChaseExit(sim, i, px, py); // 29.1: "chase's lose checks apply on its first step"
   }
@@ -1528,19 +1542,19 @@ function resyncLeash(sim) {
 }
 
 function resetAllSim(sim) {
-  for (let i = 0; i < sim.count; i++) { sim.down[i] = 0; resetSlotSim(sim, i); }
+  for (let i = 0; i < sim.count; i++) { if (sim.down[i]) continue; resetSlotSim(sim, i); } // parked slots stay parked
   resyncLeash(sim);
   sim.events.emit('beasts:reset'); // US-079b: loot clears its corpse state on this
 }
 
+/** BEAST-PARK-01: re-activate steer slot i itself (active, radius, _hi); position is set by the caller. */
+function activateExact(sim, i) {
+  const st = sim.steer; st.active[i] = 1; st.radius[i] = sim.cfg.radius; if (i + 1 > st._hi) st._hi = i + 1;
+}
+
 /** One slot back to home, alive, state wander (shared by resetAll and setDown(slot, false)). */
 function resetSlotSim(sim, i) {
-  // US-079b: dead steer slots are re-added in ascending order; addAgent hands out the lowest free slot, and the
-  // live slots stay active (slots >= count are never used), so the lowest free slot is always the lowest dead one.
-  if (!sim.steer.active[i] && !sim.dormant[i]) {
-    const slot = sim.steer.addAgent(sim.homeX[i], sim.homeY[i], sim.cfg.radius, 0, DEFAULT_ACCEL);
-    if (slot !== i) throw new Error(`beastSim.resetAll: re-added dead slot ${i} but addAgent returned ${slot}`);
-  }
+  if (!sim.steer.active[i] && !sim.dormant[i]) activateExact(sim, i); // BEAST-PARK-01: exact slot, never addAgent's lowest-free rule
   const health = sim.entities[i].components.health;
   health.hp = health.max; // US-079b: boars come back alive
   sim.goalOn[i] = 0; sim.altTgt[i] = -1; sim.altCd[i] = 0; // LIFE-08: raids restart next night

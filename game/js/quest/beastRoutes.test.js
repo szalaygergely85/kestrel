@@ -32,7 +32,7 @@ const mkSim = () => {
     downs: new Set(), speed: [1.4, 1.1, 0.8, 1.3, 0.9, 1.4, 1.0],
     setGoal(s, x, y) { sim.goalOn[s] = 1; sim.goalTX[s] = x; sim.goalTY[s] = y; }, hasGoal: (s) => sim.goalOn[s] === 1,
     atGoal: (s) => sim.goalOn[s] === 1 && Math.hypot(sim.goalTX[s] - sim.steer.x[s], sim.goalTY[s] - sim.steer.y[s]) <= 1.5,
-    setDown(s, on) { if (on) sim.downs.add(s); else sim.downs.delete(s); }, isDown: (s) => sim.downs.has(s), isDormant: () => false,
+    parkSlot(s) { sim.downs.add(s); }, unparkSlot(s) { return sim.downs.delete(s); }, setDown(s, on) { if (on) sim.downs.add(s); else sim.downs.delete(s); }, isDown: (s) => sim.downs.has(s), isDormant: () => false,
     tick(dt) { for (let s = 0; s < n; s++) { if (sim.downs.has(s) || !sim.goalOn[s]) continue; const dx = sim.goalTX[s] - sim.steer.x[s], dy = sim.goalTY[s] - sim.steer.y[s], d = Math.hypot(dx, dy); if (d < 0.05) continue; const v = Math.min(d, sim.speed[s] * dt); sim.steer.x[s] += dx / d * v; sim.steer.y[s] += dy / d * v; } },
   };
   members.forEach((m, i) => { sim.steer.x[i] = m.x; sim.steer.y[i] = m.y; });

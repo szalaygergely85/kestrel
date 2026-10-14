@@ -1,6 +1,6 @@
 // game/js/life/poiFights.js (POI-05 + POI-05b, OB-141, D-088): POI mini fights on STATIC beast slots (poiBeasts.js reserves them at boot).
 //   const pf = createPoiFights({ wire, sim, dir, groups, events });  per sim step: pf.step(px, py, dayIndex);  dispose().
-// - The members sit parked (sim.setDown) until the player is within TRIGGER_R (15 m) of the POI AND the spawn-director group is alive
+// - The members sit parked (sim.parkSlot) until the player is within TRIGGER_R (15 m) of the POI AND the spawn-director group is alive
 //   (dir.dead[g] === 0): then they are unparked (reset at home, alive). Leaving beyond LEAVE_R re-parks them (a half-fought fight restarts).
 // - All members dead (`beast:died`): small fight -> wire.markFightCleared(id, day) (the director's camp timer brings it back after 3 days),
 //   guardian (def.guardian, boss class) -> wire.markGuardianDead(id) (never returns; saved in beast.v1 and poi.v1). Either unlocks the chest.
@@ -15,13 +15,9 @@ export function fightSlots(def, ringR = 4) {
   return out;
 }
 
-/** Exact-slot steer re-activation (what beastSim.respawnSlot does; addAgent's lowest-free rule throws for any other slot). */
-function activate(sim, s) { if (!sim.steer.active[s]) { sim.steer.active[s] = 1; sim.steer.radius[s] = sim.cfg.radius; if (s + 1 > sim.steer._hi) sim.steer._hi = s + 1; } }
-/** Park: STATE_GONE via setDown, but keep the steer agent ACTIVE at home - an inactive, non-dormant slot makes sim.resetAll() throw
- *  (it re-adds every slot with addAgent). GONE slots are skipped by step/dormancy, so the ghost agent is inert.
- *  NEEDS: sim.parkSlot / sim.unparkSlot(slot) in beastSim.js (lane note) - then drop activate(). */
-function park(sim, s) { sim.setDown(s, true); if (!sim.steer.active[s]) { activate(sim, s); sim.steer.x[s] = sim.homeX[s]; sim.steer.y[s] = sim.homeY[s]; } }
-function unpark(sim, s) { if (sim.unparkSlot) sim.unparkSlot(s); else { activate(sim, s); sim.setDown(s, false); } }
+/** Park / unpark through the sim API (BEAST-PARK-01): exact-slot, no direct steer writes. */
+const park = (sim, s) => sim.parkSlot(s);
+const unpark = (sim, s) => sim.unparkSlot(s);
 
 export function createPoiFights({ wire, sim = null, dir = null, groups = null, events = null }) {
   const gOf = {}; // poi id -> { slots, g (index in the director, -1 without one) }
@@ -43,7 +39,7 @@ export function createPoiFights({ wire, sim = null, dir = null, groups = null, e
     e.left.delete(slot);
     if (e.left.size === 0) finish(poiId, e.day);
   }) : null;
-  const offReset = events ? events.on('beasts:reset', () => { if (sim) parkAll(); }) : null; // resetAll() un-downs every slot
+  const offReset = events ? events.on('beasts:reset', () => { if (sim) parkAll(); }) : null; // resetAll() resets every non-parked slot
   const pf = {
     step(px, py, day) {
       for (const d of wire.defs) {
