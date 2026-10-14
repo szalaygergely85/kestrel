@@ -1296,3 +1296,6 @@ Crocodile (owner, same session): **short grab + mash to escape (1.5 s, max 12 % 
 
 ## D-108
 **2026-10-14, owner (PC-B session), main story split answers.** (1) Tobin is in the MAIN chain (after Smoke); the **Outwall quests are the LAST main quests of the chapter** - the player should reach them around (hidden) level 10 and finish Chapter 1 there. (2) The few side quests that assume a main-story meeting may require their main quest (exception to D-104). (3) Rook moves along the story (Bend -> east bank -> west bank) to take hand-ins where they happen.
+
+## D-109
+**2026-10-14, owner (PC-B session).** **Chapter I ends at the gate (Outwall), reached around (hidden) level 10 - nothing after it.** Goal: release Chapter I as an **alpha on Steam** (paid, to earn money) and ask the players how the story should go on. This reopens D-053 ("no public demo") for the Steam alpha. Needs a manager plan: Chapter I content-complete list, quality bar ("playable, looks right"), Steam packaging of a browser game (desktop wrapper), store page, licences check, feedback channel for the story vote.
