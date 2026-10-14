@@ -10,6 +10,7 @@
 import { World } from './World.js';
 import { Visibility } from './Visibility.js';
 import { serialize, deserialize, stringifySave } from './serialize.js';
+import { normState } from '../test/normState.js';
 import paletteMod from '../../design/palette.js';
 import detailPassMod from '../../design/detail-pass.js';
 import terrainDef from '../../design/levels/overworld_far.js';
@@ -52,8 +53,8 @@ function ok(name, cond, detail) {
   const world2 = deserialize(JSON.parse(JSON.stringify(state)), assets, {});
   ok('1c: deserialize leaves visibility null when the key is absent', world2.visibility === null);
 
-  const text1 = stringifySave(state);
-  const text2 = stringifySave(serialize(world2));
+  const text1 = stringifySave(normState(state));
+  const text2 = stringifySave(normState(serialize(world2)));
   ok('1d: stringifySave round trip byte-identical with no visibility set', text1 === text2);
   ok('1e: stringifySave text has no "visibility" line', !/"visibility"/.test(text1));
 }
@@ -88,13 +89,13 @@ function ok(name, cond, detail) {
   ok('2h: re-serialized state.visibility equals the original (explored bits preserved)',
     JSON.stringify(state.visibility) === JSON.stringify(state2.visibility));
 
-  const text1 = stringifySave(state);
-  const text2 = stringifySave(state2);
+  const text1 = stringifySave(normState(state));
+  const text2 = stringifySave(normState(state2));
   ok('2i: stringifySave round trip byte-identical with visibility set', text1 === text2);
 
   // A third independent round trip, to rule out ordering flakiness.
   const world3 = deserialize(JSON.parse(JSON.stringify(state2)), assets, {});
-  const text3 = stringifySave(serialize(world3));
+  const text3 = stringifySave(normState(serialize(world3)));
   ok('2j: a third round trip is still byte-identical', text1 === text3);
 }
 

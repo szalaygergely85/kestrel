@@ -6,6 +6,7 @@
 // byte-stable save -> load -> save round trip through `stringifySave`.
 import { World } from './World.js';
 import { serialize, deserialize, stringifySave } from './serialize.js';
+import { normState } from '../test/normState.js';
 import { migrateState } from './migrateState.js';
 import paletteMod from '../../design/palette.js';
 import detailPassMod from '../../design/detail-pass.js';
@@ -45,7 +46,7 @@ const state = serialize(world);
 // ---------------------------------------------------------------------------
 // 1. Shape.
 // ---------------------------------------------------------------------------
-ok('1a: serialize writes version 2', state.version === 2);
+ok('1a: serialize writes version 3', state.version === 3);
 
 const brazier = state.entities.find((e) => e.id === 'tower.brazier');
 ok('1b: a structure-owned content prop gets parent = its structure id', !!brazier && brazier.parent === 'tower');
@@ -69,21 +70,21 @@ ok('1d: every entity has a parent key (string or null)', state.entities.every((e
 // ---------------------------------------------------------------------------
 const world2 = deserialize(JSON.parse(JSON.stringify(state)), assets, {});
 const state2 = serialize(world2);
-ok('2a: round-tripped state is still version 2', state2.version === 2);
-ok('2b: round-tripped state deep-equals the original (parent included)', JSON.stringify(state) === JSON.stringify(state2));
+ok('2a: round-tripped state is still version 3', state2.version === 3);
+ok('2b: round-tripped state deep-equals the original (parent included)', JSON.stringify(normState(state)) === JSON.stringify(normState(state2)));
 
 // ---------------------------------------------------------------------------
 // 3. Byte-stable canonical stringify: save -> load -> save -> identical text.
 // ---------------------------------------------------------------------------
-const text1 = stringifySave(state);
-const text2 = stringifySave(state2);
+const text1 = stringifySave(normState(state));
+const text2 = stringifySave(normState(state2));
 ok('3a: stringifySave round trip is byte-identical', text1 === text2);
 ok('3b: stringifySave output is non-empty canonical JSON text', text1.startsWith('{\n') && text1.endsWith('}\n'));
 
 // A second independent load + serialize + stringify, to rule out any
 // ordering flakiness (e.g. a Set/Map iteration order dependency).
 const world3 = deserialize(JSON.parse(JSON.stringify(state2)), assets, {});
-const text3 = stringifySave(serialize(world3));
+const text3 = stringifySave(normState(serialize(world3)));
 ok('3c: a third round trip is still byte-identical', text1 === text3);
 
 // ---------------------------------------------------------------------------
@@ -92,13 +93,13 @@ ok('3c: a third round trip is still byte-identical', text1 === text3);
 // ---------------------------------------------------------------------------
 {
   let threw = null;
-  try { migrateState({ ...state, version: 3 }); } catch (err) { threw = err; }
+  try { migrateState({ ...state, version: 4 }); } catch (err) { threw = err; }
   ok('4a: migrateState throws on a future version', threw instanceof Error);
-  ok('4b: the error message names the version', !!threw && /version 3/.test(threw.message));
+  ok('4b: the error message names the version', !!threw && /version 4/.test(threw.message));
 }
 {
   let threw = null;
-  try { deserialize({ ...state, version: 3 }, assets, {}); } catch (err) { threw = err; }
+  try { deserialize({ ...state, version: 4 }, assets, {}); } catch (err) { threw = err; }
   ok('4c: deserialize throws on a future version (no silent best-effort)', threw instanceof Error);
 }
 {
