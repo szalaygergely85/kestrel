@@ -1,6 +1,7 @@
 // WMP-03 test (suite filter: ambient, region). Run: node --expose-gc game/js/quest/regionAmbient.test.js
 import { readFileSync } from 'node:fs';
 import { createRegionAmbient, FADE_S } from './regionAmbient.js';
+import { allocProbe, skipNote } from '../../../tools/allocProbe.mjs';
 
 let failed = 0;
 const ok = (n, c) => { if (!c) { failed++; console.error('FAIL:', n); } };
@@ -39,16 +40,11 @@ const ra2 = createRegionAmbient({ regions, table, species: mk(), knownCues: ['wi
 for (let i = 0; i < 90; i++) ra2.step(dt, 150, 50);
 ok('known cue sent, unknown not', sink2.length > 0 && sink2.every((e) => e[0] === 'windLoop') && Math.abs(ra2.vol('windLoop') - 0.7) < 1e-9);
 
-// 0 alloc after warm-up
-if (global.gc) {
+// 0 alloc after warm-up: shared probe (tools/allocProbe.mjs, arch 38.61 (2a)), strict per call (< 8 B), min of 5 windows
+{
   const ra3 = createRegionAmbient({ regions, table, species: mk(), knownCues: ['windLoop'], onCue: () => {} });
-  for (let i = 0; i < 3000; i++) ra3.step(dt, i % 240 < 120 ? 150 : 250, 50);
-  // window 1 absorbs one-off JIT/OSR cost; window 2 (steady state, 20000 steps) must stay under 20 KB total (<1 B/step)
-  const win = () => { global.gc(); global.gc(); const h0 = process.memoryUsage().heapUsed;
-    for (let i = 0; i < 20000; i++) ra3.step(dt, i % 240 < 120 ? 150 : 250, 50);
-    global.gc(); global.gc(); return process.memoryUsage().heapUsed - h0; };
-  win(); const d = win();
-  ok('0 alloc (' + d + ' B)', d < 20000);
+  const r = allocProbe((n) => { for (let i = 0; i < n; i++) ra3.step(dt, i % 240 < 120 ? 150 : 250, 50); });
+  if (!skipNote(r, 'regionAmbient 0 alloc')) ok('0 alloc (' + r.perCall.toFixed(3) + ' B/step)', r.perCall < 8);
 }
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('regionAmbient ok');

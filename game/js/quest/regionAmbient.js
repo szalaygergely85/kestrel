@@ -27,7 +27,8 @@ export function createRegionAmbient({ regions, table, species, knownCues = [], o
   const vol = new Float64Array(cN), volFrom = new Float64Array(cN), volTo = new Float64Array(cN);
   const cueKnown = new Uint8Array(cN);
   for (let i = 0; i < cN; i++) cueKnown[i] = known.has(cueIds[i]) ? 1 : 0;
-  let curRegion = null, fadeT = FADE_S, checkT = CHECK_S; // checkT starts full: the first step resolves the region
+  let curRegion = null;
+  const T = new Float64Array([FADE_S, CHECK_S]); // [fadeT, checkT] in a typed array: closure doubles would box (arch 38.61 2a); checkT starts full: the first step resolves the region
 
   // precomputed per-region targets (retarget allocates nothing)
   const tg = new Map();
@@ -44,7 +45,7 @@ export function createRegionAmbient({ regions, table, species, knownCues = [], o
     const m = t ? t.m : ONES, v = t ? t.v : ZEROS;
     for (let i = 0; i < spN; i++) { mulFrom[i] = mul[i]; mulTo[i] = m[i]; }
     for (let i = 0; i < cN; i++) { volFrom[i] = vol[i]; volTo[i] = v[i]; }
-    fadeT = 0;
+    T[0] = 0;
   }
 
   function apply() {
@@ -55,15 +56,15 @@ export function createRegionAmbient({ regions, table, species, knownCues = [], o
 
   return {
     step(dt, px, py) {
-      checkT += dt;
-      if (checkT >= CHECK_S) {
-        checkT = 0;
+      T[1] += dt;
+      if (T[1] >= CHECK_S) {
+        T[1] = 0;
         const rid = regionIdAt(regions, px, py);
         if (rid !== curRegion) { curRegion = rid; retarget(rid); }
       }
-      if (fadeT >= FADE_S) return; // settled
-      fadeT += dt;
-      const k = fadeT >= FADE_S ? 1 : fadeT / FADE_S;
+      if (T[0] >= FADE_S) return; // settled
+      T[0] += dt;
+      const k = T[0] >= FADE_S ? 1 : T[0] / FADE_S;
       for (let i = 0; i < spN; i++) mul[i] = k === 1 ? mulTo[i] : mulFrom[i] + (mulTo[i] - mulFrom[i]) * k;
       for (let i = 0; i < cN; i++) vol[i] = k === 1 ? volTo[i] : volFrom[i] + (volTo[i] - volFrom[i]) * k;
       apply();

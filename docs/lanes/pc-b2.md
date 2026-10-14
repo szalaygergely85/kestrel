@@ -902,3 +902,8 @@ Not done (scope): slopes C-03, pool plumbing C-04.
 - NEEDS B1-main: createWild call (main.js ~1527) add `legIk: new URLSearchParams(location.search).get('legik') !== '0'`. Not done by feed: gait clip time from Phi (brain owns cp; C-05 does it for beastView); feed uses `cam.dtMs` (default 1000/60) - wildEnv could set it.
 - bench `node --expose-gc tools/bench-life.mjs --legs 30` (fixture x30, synthetic hills, feed only): off p95 0.003 ms; on p95 0.07-0.12 ms (16 solved, LOD cap), max 0.6-1.3 ms; D-007 8 ms OK.
 - Suites 89 PASS (filtered), check-deps OK.
+### CHARGEN-22c-FIX + WMP-03-PROBE + FERRUM-NOSPRITE-01 (kestrel-4, 2026-10-14)
+- CHARGEN-22c-FIX: `chargen-build-kit.mjs --check` now also prints the "per level:" quad stats (write mode already did); new `tools/chargen-buildkit-stats.test.mjs` (1384/1514 quads for body1/head1, head2).
+- WMP-03-PROBE: `regionAmbient.test.js` uses `allocProbe` (strict, < 1 B/step). It measured 24 B/step (closure doubles boxed), so `regionAmbient.js` fadeT/checkT now live in a Float64Array; now 0.
+- FERRUM-NOSPRITE-01: gen-ferrum-far.mjs no longer builds/pushes the ferrumGlow entity (still strips a stale one); ferrum_lights.js `world` size dropped + D-086 note; arch 38.46 heading marked; `tools/ferrum-nosprite.test.mjs` (no ferrumGlow/ferrumLights entity, horizon[] empty, no billboard in generator). World json had none already; model file kept (tests/preview load it).
+- Gates: filtered suites PASS, validate-content OK, check-deps OK. No main.js edit needed.
