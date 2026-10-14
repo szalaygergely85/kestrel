@@ -21,3 +21,16 @@ assert.equal(flips, 0, 'doorway jitter no flicker');
 // 0 alloc (heap delta tiny over many calls)
 if (global.gc) { for (let i = 0; i < 1e5; i++) sceneOf(null, p, sc); global.gc(); const h0 = process.memoryUsage().heapUsed; for (let i = 0; i < 1e5; i++) sceneOf(null, p, sc); const d = process.memoryUsage().heapUsed - h0; assert.ok(d < 200000, 'alloc ' + d); }
 console.log('sceneFlag OK');
+// SCENE-INTERIOR-2: mesh cover / canopy / underwater (fake supportAtOut: ceiling height by x-range)
+{
+  const mk = (ceilFn) => ({ structVersion: 1, structures: [], supportAtOut(g, o, io) { io[9] = ceilFn(io[0], io[1]); } });
+  const run = (w, body, n = 90) => { const s = {}, q = { x: 50, y: 50, z: 0 }; let r; for (let i = 0; i < n; i++) r = sceneOf(i === 0 ? w : null, q, s, 1 / 60, body); return r; };
+  assert.equal(run(mk(() => 3.5), null), 'interior', 'mesh roof 3.5 m up -> interior');
+  assert.equal(run(mk(() => NaN), null), 'outdoor', 'open sky');
+  assert.equal(run(mk((x, y) => (x === 50 && y === 50 ? 5 : NaN)), null), 'outdoor', 'canopy over 1 of 5 points -> outdoor');
+  assert.equal(run(mk(() => 30), null), 'outdoor', 'far overhead (cliff/bridge) -> outdoor');
+  assert.equal(run(mk(() => NaN), { diving: true }), 'underwater', 'diving -> underwater');
+  assert.equal(run(mk(() => 3), { diving: true }), 'underwater', 'underwater wins');
+  if (global.gc) { const w = { structVersion: 1, structures: [], supportAtOut(g, o, io) { io[9] = 3.5; } }, s = {}, q = { x: 1, y: 1, z: 0 }, b = { diving: false }; sceneOf(w, q, s, 1 / 60, b); for (let i = 0; i < 3e5; i++) sceneOf(null, q, s, 1 / 60, b); global.gc(); const h0 = process.memoryUsage().heapUsed; for (let i = 0; i < 3e5; i++) sceneOf(null, q, s, 1 / 60, b); const d = process.memoryUsage().heapUsed - h0; assert.ok(d < 200000, 'cover alloc ' + d); }
+}
+console.log('sceneFlag2 OK');

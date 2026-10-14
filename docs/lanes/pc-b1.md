@@ -1093,3 +1093,7 @@ design/look/post.js (window.POST_LOOK, classic script, in game/index.html) + gam
 ### SCENE-INTERIOR (kestrel-1, 2026-10-14)
 - New `game/js/look/sceneFlag.js` `sceneOf(world, p, scratch, dt)`: engine roof map (`outdoorAt` at feet+1 m; roof map rebuilt every 16 calls, version-checked) -> 'interior'|'outdoor', 0.5 s hysteresis, 0 alloc after warm-up; `sceneFlag.test.js` (tower in/out, doorway jitter, alloc). main.js: scene passed as `outdoor` to atmosDriver.step and `resolvePost(..., scene)` re-run on change only (`?post=0`/gpucompare stay null).
 - Limits: mesh structures (`kind==='mesh'`) are skipped by the roof map, so a mesh-built interior reads outdoor until it stamps a roof box; underwater not wired. NEEDS main/PO walk: enter tower + a house, confirm mist fades and scene grade switches. Node only; check-deps OK, filtered suites PASS.
+
+### SCENE-INTERIOR-2 (kestrel-1, 2026-10-14)
+- `sceneOf(world, p, scratch, dt, body)`: + static mesh cover (5 upward `world.supportAtOut` rays at eye+-1.5 m, ceiling <= 6 m, >= 3 of 5, every 8 ticks, 0 alloc) -> 'interior'; `body.diving` -> third value 'underwater' (atmos treats it as non-outdoor; `design/look/post.js` scenes.underwater mist off). Tests in sceneFlag.test (roof/canopy/far/underwater/alloc). main.js passes the player body.
+- Untuned on real meshes (Rook ruin room / meshed house: needs a main-session walk; COVER_M/SPREAD exported-const tunables). Node only; check-deps OK.

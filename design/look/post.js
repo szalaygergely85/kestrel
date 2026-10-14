@@ -19,6 +19,7 @@
   scenes: {
     outdoor:  { mist: false },
     interior: { mist: true },
+    underwater: { mist: false }, // SCENE-INTERIOR-2: water tint/fog is the atmos job; no extra mist
   },
   };
   root.POST_LOOK = POST_LOOK;
