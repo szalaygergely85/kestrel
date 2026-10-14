@@ -839,3 +839,9 @@ New `tools/verify-wm-regions.mjs <port>` (10 stills -> docs/test-reports/wm-regi
 - OB-155o: `questBook.inspect` = READY hand-in first, then accept, then refuse (active never blocks). OB-155p: `handIn` consumes requireItem; packet entity (world_m1.world.json) is a questPickup with `acceptQuest:'sq.packet'` (pickup = accept, giveOnAccept gives the item once; `questPickups.js` also removes it when accepted via E). OB-155f: `pickupsView.js` item drops = baseZ, no hover/bob; `spawnLeftoverDrop(..., groundFn)` takes ground z (questPickups passes terrain.groundAt). OB-155q: `questSnippets.js` `itemName()` (explicit defs, else ASSETS.items.defs, else humanised) in `{reward}`.
 - Tests: new `game/js/quest/sim/questHandIn.test.js`; filtered suites (quest*, errands*, pickups*, snippets, ch*, saveRelay, check-deps) all PASS.
 - Open: abandoning sq.packet does not respawn the packet entity. Optional B1-main (not required, global ASSETS fallback works): pass itemDefs as 4th arg `generateAll(raws, qb.giverDefs, snip || {}, itemDefs)` at main.js:529.
+
+### QFIX-S1 (kestrel-4, 2026-10-14)
+- Pines: meshClass/floatingTrees.test/probe-floating now `/Tree|Pine/`; `resnap-rocks --trees` lowered 60 trees (R1 57 -> 0). Edited content/worlds/world_m1.world.json only (canonical via stringifyContent).
+- OB-155b chestCrossroads on stair top (z -85.14, y +0.85, from stair mesh top 0.82); OB-155d posts qfix001 (notePost), qfix002 (knot) = Prop_WoodenFence_Single, qfix003 = Rock_Medium_2 (pierStone); OB-155e gondola anchor moved onto tower.gondola (1495.4,1026.7).
+- Buried: endMarker z 0.78, relayBend/relayFord z on their base slabs, chestForge y 934.4 (was inside an anvil/table box).
+- Lint R1/R12/R13: 57/12/6 -> 0/10/3. Left: 8 R12 tower/sea (level floor not sampled, known false positives), chestCrossroads (coarse stair AABB, known), R13 hiddenScrawl, fordMark, sealedGate (not in scope; need posts).
