@@ -2056,3 +2056,313 @@ Owner: "remove relays, i like waystones". Player text never says "relay": every 
 - `q.burl.waystones` (Burl, after she sees the crystal, `bear.q.ready.5b`): "Wake the waystones. They heal you, / save your path, and beasts fear / their light."
 - `notice.waystone.first` (first wake of any waystone): "Waystone woken: travel (M), heal + save, new task." (the last part only when a task exists)
 - Names: "Bend Waystone", "Ford Waystone", "Palisade Waystone" ... (place.relay.<id> keys keep their ids); prompts "[E] Touch the waystone", "[E] Look at the waystone".
+
+## Quest-giver lines (QFIX-S5, 2026-10-14)
+
+PC-B writer (owner-authorised). This replaces the NEEDS WRITER placeholders from QFIX-S5a/b/c (lanes pc-b1/pc-b2, 2026-10-14). Dialogue lines are <= 56 chars, object offers <= 120 in total, and everything is ASCII. "Relay" is never used (D-080). Item names are plain ("health potion", never "red vial"). Keys: dialogue nodes use their node id. Pack quests use `<questId>.<field>` for `lines.{offer,active,ready,done}`. `(1)`/`(2)` = line order inside one node/field. `ready` plays at the hand-in NPC, and the other fields play at the giver. Accept / Not yet choices stay generated.
+
+**Names (proposed, owner OK needed, quest-roadmap 2b):** post-keeper **Bram** (label `BRAM`). Wardens (label = name): Glasswater **Lin**, Northwood **Brenna**, High Pastures **Ewan**, Ash Mile **Tull**, Downs **Edda**, Signal Hill **Ivo**, Heath **Nell**, Reedmire **Orla**, Strand **Kit** (he), Whitecombs **Sten**. They are short, plain names that sit with Hesk, Dorrin, Tam and Ama, and none clashes with an existing name. HUD/returnText can keep "post-keeper" / "the Downs warden" until the names are approved.
+
+Canon guards: Bram and the wardens are exiles who keep a post or a light. They **never say "Wick"** (GDD 3: the exiles' first use of his name is Hesk's beat, and these NPCs can be met before it). They never name the village and never explain the signal. Bram calls Wick "flier" once, because he saw the ship come down. The tags on the basket are "not my hand. Older." (the TAKEN tag stays Tam's, per quest-roadmap). Hesk's path/fence lines come before `mq.ow.names`, so they say "stranger" and never "Wick". Her Outwall errand lines also avoid "Wick", because they can open before the name beat.
+
+### Rook (`rook.dialogue.json`)
+
+| key | line |
+|---|---|
+| rook.road.1 | Paper says river. River says west. Follow the road. |
+| rook.road.2 | Road west, to the loud water. I fly ahead. |
+| rook.road.active | Road west. Walk till the ground gets wet. |
+| rook.road.ready | Loud water. You found it. Wet feet? Not yet. |
+| rook.road.ready2 | Stones cross it. I counted them twice. Next. |
+| rook.stones.1 | Stones in the water. Hop them to the west bank. |
+| rook.stones.2 | Hop. Hop. Hop. Do not stop to count fish. |
+| rook.stones.active | The stones. Hop them. West bank, then me. |
+| rook.stones.ready | Across. Boots wet. I said so. I always say so. |
+| rook.stones.ready2 | Now look at the stone here. Cold. Very cold. |
+| rook.mirror.done.1 | Blink, blink. Bend, Ford, the far one. Three. |
+| rook.mirror.done.2 | My glass, your stone. A loan. I keep count. |
+| rook.smoke.1 (1) | A mark on the Ford stone. Cut, not scratched. |
+| rook.smoke.1 (2) | Read it. Then the footpath north. Smoke there. |
+| rook.smoke.2 | Mark first. Smoke after. I keep away from fire. |
+| rook.smoke.active | The mark on the Ford stone. Then north, to smoke. |
+| rook.smoke.ready | Smoke means fire. Fire means hands. Many hands. |
+| rook.smoke.ready2 | People. Go see. I stay. People throw stones. |
+| sq.straw.ready (1) (optional, hand-in at Rook) | Three hits. I counted. Crows always count. |
+| sq.straw.ready (2) | Twenty sticks from the bundle. Feathered. Yours. |
+
+`rook.stones.ready2` is the sly lead-in to `rook.ford.1..8` ("Gone? No. Kept."), so it must not say the glass is gone.
+
+### Hesk (`hesk.dialogue.json`, before the name beat: no "Wick")
+
+| key | line |
+|---|---|
+| hesk.path.1 (1) | That's close enough. You followed our smoke. |
+| hesk.path.1 (2) | Walk the last of the track to the gate. Slowly. |
+| hesk.path.2 | Slowly. So I can see your hands. |
+| hesk.path.3 | The track, to the gate. I'm watching. |
+| hesk.path.active.1 | The gate. Walk to it. Slowly. |
+| hesk.path.done.1 | You walk straight. Good. Stay there a moment. |
+| hesk.fence.1 | Wolves at our goose pen. Every night, more. |
+| hesk.fence.2 | Drive them off the pen. Then we'll talk. |
+| hesk.fence.3 | The goose pen, along the fence. Go on. |
+| hesk.fence.active.1 | The goose pen. The wolves. Then me. |
+| hesk.fence.done.1 (1) | I watched from the wall. You didn't run. |
+| hesk.fence.done.1 (2) | Come to the gate. |
+
+`mq.ow.board` comes after the name beat, so "Wick" is allowed here:
+
+| key | line |
+|---|---|
+| hesk.board.1 (1) | The board by the gate. Read it, Wick. |
+| hesk.board.1 (2) | That's who we are. What Ferrum says we are. |
+| hesk.board.2 | Read every name. Then come back to me. |
+| hesk.board.3 | Take your time. They waited long enough. |
+| hesk.board.active.1 | The board, Wick. Read it, then come back. |
+| hesk.board.done.1 | Now you know us. Dead, all of us. And here. |
+
+Order note: `hesk.names.1` still opens with "Stop there. Hands where I can see them." That reads oddly after path/fence, because she has already spoken to him. Suggested swap for `hesk.names.1` (1): `Stop there. Now, before the gate opens:` (39). The second line is unchanged.
+
+### Hesk's Outwall errands (pack `lines`, giver Hesk; no "Wick")
+
+| key | line |
+|---|---|
+| sq.ow.wolves.offer (1) | Wolves still circle the goose pen. |
+| sq.ow.wolves.offer (2) | Drive three off. I pay in arrows. |
+| sq.ow.wolves.active | Three wolves. The goose pen. Go. |
+| sq.ow.wolves.ready (1) | Three gone. The geese can sleep. |
+| sq.ow.wolves.ready (2) | Arrows, and a health potion. Fair pay. |
+| sq.ow.wolves.done | Geese counted. All there. |
+| sq.ow.boars.offer (1) | Two boars rooting on the west bank. |
+| sq.ow.boars.offer (2) | Drive them off. Mind the tusks. |
+| sq.ow.boars.active | Two boars. West bank. Mind the tusks. |
+| sq.ow.boars.ready (1) | The bank's quiet. Good. |
+| sq.ow.boars.ready (2) | Take this. Old gear, but oiled. |
+| sq.ow.boars.done | A quiet bank. A quiet night. Rare out here. |
+| sq.ow.barley.offer (1) | The barley gate owes us a sheaf. |
+| sq.ow.barley.offer (2) | Bring it here before the crows find it. |
+| sq.ow.barley.active | The sheaf. At the barley gate. |
+| sq.ow.barley.ready (1) | A good sheaf. Bread for a week. |
+| sq.ow.barley.ready (2) | Arrows, and a health potion. For the carrying. |
+| sq.ow.barley.done | Bread tonight. Thank the barley, not me. |
+| sq.ow.range.offer (1) | Three targets stand along the track. Can you shoot? |
+| sq.ow.range.offer (2) | Hit all three. I'll be counting. |
+| sq.ow.range.active | Three targets, along the track. Hit them all. |
+| sq.ow.range.ready (1) | Three. I counted. You can shoot. |
+| sq.ow.range.ready (2) | More arrows. Waste them on targets, not on us. |
+| sq.ow.range.done | You shoot like you mean it. Good. |
+| sq.ow.raid.offer (1) | The pack comes back after dark. For the geese. |
+| sq.ow.raid.offer (2) | Stand at the goose pen tonight. Drive them off. |
+| sq.ow.raid.active | After dark. The goose pen. Hold it. |
+| sq.ow.raid.ready (1) | The pen held. You held. Thank you. |
+| sq.ow.raid.ready (2) | Two health potions, and arrows. Sleep now. |
+| sq.ow.raid.done | Geese counted. All here. Again. |
+| sq.ow.bears.offer (1) | Black bears in the fields. Two too many. |
+| sq.ow.bears.offer (2) | Drive two off. Big as doors, and hungry. |
+| sq.ow.bears.active | Two black bears. The fields. Careful. |
+| sq.ow.bears.ready (1) | Gone? Good. The fields are ours again. |
+| sq.ow.bears.ready (2) | Two health potions. For the claw marks. |
+| sq.ow.bears.done | The fields are quiet. For now. |
+| sq.ow.parcel.offer (1) | This parcel goes to the forge. For the smith. |
+| sq.ow.parcel.offer (2) | Don't open it. It's his. |
+| sq.ow.parcel.active | The parcel. The smith, at the forge. |
+| sq.ow.parcel.done | He got it? Then he'll be up all night. |
+
+The `sq.ow.wolves/boars/raid` QL-22/LIFE-09 board-voice lines are retired with this change. The board notice text (`note.owBoard` style) can stay as what the board says when read.
+
+### Dorrin (pack `lines`; `ready` at Dorrin)
+
+| key | line |
+|---|---|
+| sq.ow.parcel.ready (1) | About time. Don't ask what's in it. |
+| sq.ow.parcel.ready (2) | Here. Hesk would want you paid. |
+| sq.ow.ford.offer (1) | Nobody's looked at the far bank in a while. |
+| sq.ow.ford.offer (2) | Cross the ford. Look around. Come back. |
+| sq.ow.ford.active | Ford. Far bank. Look, then back here. |
+| sq.ow.ford.ready (1) | Quiet over there? Good. Quiet is good. |
+| sq.ow.ford.ready (2) | Arrows. Don't lose them all at once. |
+| sq.ow.ford.done | Far bank's quiet. I'll sleep, then. |
+| sq.hw.piers.ready (1) | The bridge stone. Aye. Pulled down, not washed out. |
+| sq.hw.piers.ready (2) | Not my work. Older than me. Here, arrows. |
+
+`sq.hw.piers` offer/active/done stay in the stone's own voice (QL-21). Dorrin does not say who pulled the bridge (GDD 3 keeps the reason for M4).
+
+### Post-keeper Bram (`postkeeper.dialogue.json` + ch12/ch3 pack `lines`, giver and hand-in Bram)
+
+| key | line |
+|---|---|
+| postkeeper.hello.1 (1) (first talk) | Saw your ship come down. Loud, for a bird. |
+| postkeeper.hello.1 (2) | I'm Bram. I keep the post. Leave what you can. |
+| postkeeper.hello.2 (repeat, optional) | Post's open. Take what you need. |
+| sq.rb.shield.offer (1) | Someone left this buckler by the Bend Waystone. |
+| sq.rb.shield.offer (2) | Wear it down to the ford. Then show me. |
+| sq.rb.shield.active | Buckler on your arm. Down to the ford, then back. |
+| sq.rb.shield.ready (1) | Fits you. Nobody came back for it. |
+| sq.rb.shield.ready (2) | Keep it. And a health potion, for the knocks. |
+| sq.rb.shield.done | A buckler on a flier. Now I've seen it all. |
+| sq.rb.regards.offer (1) | Tell Burl, up on the tower hill: the road's clear. |
+| sq.rb.regards.offer (2) | She asks after it. Don't ask me how. |
+| sq.rb.regards.active | Burl. Tower hill. The road's clear. That's all. |
+| sq.rb.regards.ready (1) | She heard? Good. She worries, for a bear. |
+| sq.rb.regards.ready (2) | Five arrows. Straight ones. |
+| sq.rb.regards.done | Road's clear, and the bear knows. Quiet day. |
+| sq.rb.road.offer (1) | Walk the road back toward your tower, would you? |
+| sq.rb.road.offer (2) | Then on to the Bend Waystone. Tell me what moves. |
+| sq.rb.road.active | Back along the road. Then the Bend Waystone. |
+| sq.rb.road.ready (1) | Nothing moving? Good. Nothing is good news. |
+| sq.rb.road.ready (2) | Five arrows. Fair, for a walk. |
+| sq.rb.road.done | Road walked. I'll sleep easier. |
+| sq.rb.lamps.offer (1) | Old lamps stand along the road. Dark, mostly. |
+| sq.rb.lamps.offer (2) | Walk the line of them. See if any still burn. |
+| sq.rb.lamps.active | The lamps by the road. Walk the whole line. |
+| sq.rb.lamps.ready (1) | All dark? Thought so. Someone trimmed them, once. |
+| sq.rb.lamps.ready (2) | A health potion, for the walk. |
+| sq.rb.lamps.done | Dark lamps. Nobody left to trim them. |
+| sq.rb.rocks.offer (1) | Rocks piled at the forest edge. Too neat for chance. |
+| sq.rb.rocks.offer (2) | Go and look. Tell me what you make of them. |
+| sq.rb.rocks.active | The rocks at the forest edge. Look close. |
+| sq.rb.rocks.ready (1) | Stacked, like a cairn? Old way-marks, then. |
+| sq.rb.rocks.ready (2) | Five arrows. Mind the edge after dark. |
+| sq.rb.rocks.done | Way-marks. Someone walked this road before us. |
+| sq.rb.parcel.offer (1) | The basket lid hangs on string. Brass would hold. |
+| sq.rb.parcel.offer (2) | Bring me a brass scrap. Your ship dropped plenty. |
+| sq.rb.parcel.active | One brass scrap. From your wreck, or anywhere. |
+| sq.rb.parcel.ready (1) | Good brass. The lid will hold now. |
+| sq.rb.parcel.ready (2) | Ten arrows. Brass is worth that, out here. |
+| sq.rb.parcel.done | Lid holds. The crow can't open it now. |
+| sq.fc.ford.offer (1) | The ford's past the bend. Wet boots are the price. |
+| sq.fc.ford.offer (2) | Cross to the west bank, then come back to me. |
+| sq.fc.ford.active | Down to the river. Across to the west bank. |
+| sq.fc.ford.ready | Wet to the knee. Here. Dry boots. Better ones. |
+| sq.fc.ford.done | Dry feet. Out here, that's half of living. |
+| sq.fc.smoke.offer (1) | There's a lookout north of the ford. High rocks. |
+| sq.fc.smoke.offer (2) | Climb it. Look north. Tell me what you see. |
+| sq.fc.smoke.active | The lookout, north of the ford. Climb. Look. |
+| sq.fc.smoke.ready (1) | Smoke, you say? Cookfires, or trouble. |
+| sq.fc.smoke.ready (2) | Ten arrows. Either way, you'll want them. |
+| sq.fc.smoke.done | North's watched. Somebody had to. |
+| sq.fc.cross.offer (1) | Past the ford, the west road meets a crossroads. |
+| sq.fc.cross.offer (2) | Walk out to it. Tell me which ways still go. |
+| sq.fc.cross.active | The west road. Out to the crossroads. |
+| sq.fc.cross.ready (1) | All still go? Good. Roads forget slowly. |
+| sq.fc.cross.ready (2) | A health potion. Roads are long. |
+| sq.fc.cross.done | Every road goes somewhere. Most go west. |
+| sq.fc.again.offer (1) | One more crossing. Back to the river bank. |
+| sq.fc.again.offer (2) | See the stones hold both ways. Then me. |
+| sq.fc.again.active | Back to the river bank. Mind the moss. |
+| sq.fc.again.ready (1) | Both ways, then. The ford's sound. |
+| sq.fc.again.ready (2) | Ten arrows. For the wet boots. |
+| sq.fc.again.done | Ford's sound. You're sound. Good day's work. |
+| sq.fc.jetty.offer (1) | An old jetty runs out over the water. Rotten. |
+| sq.fc.jetty.offer (2) | Walk out on it, slowly. Tell me if it holds. |
+| sq.fc.jetty.active | The jetty. Step light. Plank by plank. |
+| sq.fc.jetty.ready (1) | It held? Half of it, anyway. Good to know. |
+| sq.fc.jetty.ready (2) | Five arrows. Dry ones, at least. |
+| sq.fc.jetty.done | Half a jetty. Better than none. |
+| sq.fc.cog.offer (1) | The Bend Waystone's mount is short one cog. |
+| sq.fc.cog.offer (2) | Bring me a brass cog. I'll fit it myself. |
+| sq.fc.cog.active | One brass cog. You'll have one somewhere. |
+| sq.fc.cog.ready (1) | That'll do. It'll turn smooth now. |
+| sq.fc.cog.ready (2) | Ten arrows. Fair trade. |
+| sq.fc.cog.done | You won't see the cog turn. I will. |
+| sq.post.spare.offer (1) | The basket runs low. Arrows go first, always. |
+| sq.post.spare.offer (2) | Spare me three? Others walk this road too. |
+| sq.post.spare.active | Three arrows, when you can spare them. |
+| sq.post.spare.ready (1) | Three. Someone will need these. Thank you. |
+| sq.post.spare.ready (2) | Here. A health potion. The basket gives back. |
+| sq.post.spare.done | Leave what you can spare. You did. |
+| sq.fc.stores.offer (1) | Two boars broke into my stores. Right there. |
+| sq.fc.stores.offer (2) | Drive them off before they eat the winter. |
+| sq.fc.stores.active | The two boars, in my stores. Go on. |
+| sq.fc.stores.ready (1) | Gone, and only one sack torn. Good. |
+| sq.fc.stores.ready (2) | Take something off the shelf. You earned it. |
+| sq.fc.stores.done | Stores whole. Boars elsewhere. Good. |
+| sq.fc.shrine.offer (1) | A shrine lies fallen by the notice post. |
+| sq.fc.shrine.offer (2) | Go and look. Tell me which way it fell. |
+| sq.fc.shrine.active | The fallen shrine, by the notice post. |
+| sq.fc.shrine.ready (1) | West? It fell west. Of course it did. |
+| sq.fc.shrine.ready (2) | Ten arrows. Odd thing to ask, I know. |
+| sq.fc.shrine.done | Always west, out here. Even the stones. |
+| sq.fc.sign.offer (1) | My signpost lost its west arm in high water. |
+| sq.fc.sign.offer (2) | It's in the shallows somewhere. Find it for me? |
+| sq.fc.sign.active | The sign's west arm. Somewhere in the shallows. |
+| sq.fc.sign.ready (1) | That's it. West points west again. |
+| sq.fc.sign.ready (2) | Arrows. For your wet sleeves. |
+| sq.fc.sign.done | West points west. As it should. |
+| sq.burl.parcel.ready (1) (at Bram) | Boar meat, from Burl? She always sends too much. |
+| sq.burl.parcel.ready (2) | In the basket it goes. Arrows for you. Basket's rule. |
+| sq.packet.ready (1) (at Bram) | FOR THE FORD POST. That's here. Long road for it. |
+| sq.packet.ready (2) | Not my hand on it. Older. I'll keep it safe. |
+| sq.packet.ready (3) | Twenty arrows. It waited longer than you did. |
+
+Text fixes that go with these lines (HUD <= 38):
+- `sq.rb.regards` objText `Carry the waystone's word to Burl` -> `Tell Burl the road is clear` (27). Journal: `The post-keeper has word for Burl: the road is clear. Carry it up her hill.` (79).
+- `sq.fc.shrine`: the "west" lines assume the shrine lies pointing west, which matches the shrine note "IT WAS ALWAYS WEST". If the model points elsewhere, ready (1) becomes `That way? Hm. Not west. Odd.` (28) and the done line becomes `Even the stones forget, out here.` (33).
+- `sq.packet` "Not my hand" keeps Tam's later reveal (`sq.ow.taken`) open.
+
+### Region wardens (`warden_<region>.dialogue.json` hello + regions pack `lines`)
+
+| key | line |
+|---|---|
+| warden_glasswater: warden.hello | Lin. I keep this waystone. The water keeps me. |
+| sq.reg.glasswater.offer (1) | The light shows boars in the shallows. Three. |
+| sq.reg.glasswater.offer (2) | Drive them out of the water, then come back. |
+| sq.reg.glasswater.active | Three boars, in the Glasswater shallows. |
+| sq.reg.glasswater.done | Still water again. See how the light sits on it. |
+| warden_northwood: warden.hello | Brenna. I keep the light. The pines keep the dark. |
+| sq.reg.northwood.offer (1) | Three wolves circle the stones, under the pines. |
+| sq.reg.northwood.offer (2) | Drive them off, then come back to me. |
+| sq.reg.northwood.active | Three wolves. Under the pines, near the stone. |
+| sq.reg.northwood.done | The pines are quiet. Listen. Nothing. |
+| warden_highpastures: warden.hello | Ewan. Long grass, long wind. I keep the light. |
+| sq.reg.highPastures.offer (1) | Two bears, out in the high grass. Too close. |
+| sq.reg.highPastures.offer (2) | Drive both off, then come back to me. |
+| sq.reg.highPastures.active | Two bears in the high grass. Both of them. |
+| sq.reg.highPastures.done | Grass lies flat. The bears went over the hill. |
+| warden_ashmile: warden.hello | Tull. Ash on everything here. Even on the light. |
+| sq.reg.ashMile.offer (1) | Two boars, rooting in the black ash. |
+| sq.reg.ashMile.offer (2) | Drive them off and come back. Mind the dust. |
+| sq.reg.ashMile.active | Two boars in the black ash. Go on. |
+| sq.reg.ashMile.done | The ash settles. The light burns a bit brighter. |
+| warden_downs: warden.hello | Edda. The downs are wide. I watch all of them. |
+| sq.reg.downs.offer (1) | Four boars loose on the green. Four. |
+| sq.reg.downs.offer (2) | Drive them off the downs, then come back. |
+| sq.reg.downs.active | Four boars, on the long green. Go. |
+| sq.reg.downs.done | Quiet green. Four fewer mouths on it. |
+| warden_signalhill: warden.hello | Ivo. This hill talks all night. I listen. |
+| sq.reg.signalHill.offer (1) | Three wolves on the slope below. The light stutters. |
+| sq.reg.signalHill.offer (2) | Drive them off, then come back up to me. |
+| sq.reg.signalHill.active | Three wolves, on the slope below the hill. |
+| sq.reg.signalHill.done | The light runs clean. The hill answers again. |
+| warden_heath: warden.hello | Nell. Heather and boars, and the heather's winning. |
+| sq.reg.heath.offer (1) | Three boars tearing up the heather by the stone. |
+| sq.reg.heath.offer (2) | Drive them off, then come back here. |
+| sq.reg.heath.active | Three boars in the heather. Near the stone. |
+| sq.reg.heath.done | The heather springs back. It always does. |
+| warden_reedmire: warden.hello | Orla. Mind your feet. The mire keeps what it takes. |
+| sq.reg.reedmire.offer (1) | Three boars, wallowing in the black water. |
+| sq.reg.reedmire.offer (2) | Drive them out of the reeds, then come back. |
+| sq.reg.reedmire.active | Three boars in the black water. In the reeds. |
+| sq.reg.reedmire.done | Reeds hiss, water stills. That's peace, here. |
+| warden_strand: warden.hello | Kit. Sea on one side, the stone on the other. |
+| sq.reg.strand.offer (1) | The Downs warden is short of arrows. Edda. |
+| sq.reg.strand.offer (2) | Carry five to her, at the Downs Waystone, inland. |
+| sq.reg.strand.active | Five arrows to Edda, at the Downs Waystone. |
+| sq.reg.strand.ready (1) (at Edda) | Arrows, from the Strand? Kit remembered. |
+| sq.reg.strand.ready (2) | Go back and tell Kit. He'll want to know. |
+| sq.reg.strand.done | Far inland, the Downs light blinks back. She has them. |
+| warden_whitecombs: warden.hello | Sten. Cold up here. The light doesn't mind. |
+| sq.reg.whitecombs.offer (1) | Two bears den on the bare rock, below the snow. |
+| sq.reg.whitecombs.offer (2) | Drive them off, then come back to me. |
+| sq.reg.whitecombs.active | Two bears, on the bare rock below the snow. |
+| sq.reg.whitecombs.done | Rock's clear. Hear it? The light rings like glass. |
+
+The WMP-01 bowl-image offer/done lines are retired. The wardens now say what the light showed. The speaker label `WARDEN` becomes the name once the names are approved. Until then, keep `WARDEN` and drop the name word from the hello line (for example `I keep this waystone. The water keeps me.`). For the Strand, use `The Downs warden` in place of "Edda"/"her", and "the Strand warden" in place of "Kit".
+
+### Object-giver offers (`lines.offer`, 2 lines, <= 120 total)
+
+| key | line (1) / line (2) | total |
+|---|---|---|
+| note.keepLight.offer (`tower.blade`) | Pinned to the wall: Do not stay down here. / Climb the tower stair and find the blade? | 83 |
+| note.straw.offer (`sq.straw`) | Three straw men stand by the notice post. / Hit all three, then tell Rook the crow? | 79 |
+| prompt.gondola.offer (`sq.wreck.plate`) | A bent plate hangs off the wreck. Shield-sized. / Bring boar hide to Burl so she can strap it? | 91 |
+| prompt.packet.offer (`sq.packet`) | An oilcloth packet, stitched: FOR THE FORD POST. / Carry it to the post-keeper by the crossroads? | 94 |
