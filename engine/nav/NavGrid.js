@@ -36,6 +36,9 @@ import { buildLayersFromArrays, sheetOfLocal, LINK_OPEN } from './sheets.js';
 
 const DIRTY_RING_SIZE = 8;
 
+/** Scratch query vector for locateQ / steer walkableQ (zero-alloc layered lookups). */
+export const LQ = new Float64Array(3);
+
 export class NavGrid {
   /** @param {{x0:number, y0:number, w:number, h:number, cell?:number, maxBlockers?:number, maxFootprintCells?:number}} opts */
   constructor({ x0, y0, w, h, cell = 1, maxBlockers = 1024, maxFootprintCells = 1024 }) {
@@ -122,6 +125,14 @@ export class NavGrid {
   /** Cell index for a world position: first walkable sheet cell holding (x,y) with |height - z| <= 1.0, else the
    * ground cell, else -1 (off grid). Zero allocation. */
   locate(x, y, z) {
+    LQ[0] = x; LQ[1] = y; LQ[2] = z;
+    return this.locateQ();
+  }
+
+  /** Same as `locate` with the query in the module scratch `LQ` ([x, y, z]); hot callers fill LQ so no double is boxed
+   * across the (non-inlined) call. */
+  locateQ() {
+    const x = LQ[0], y = LQ[1], z = LQ[2];
     const L = this.layers, n = this.w * this.h;
     if (L) {
       for (let s = 0; s < L.count; s++) {
