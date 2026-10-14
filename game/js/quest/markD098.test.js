@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createQuestBook } from './sim/questBook.js';
 import { addSideMarks } from './markSide.js';
 import { setTalkFlags } from './sim/questBook.js';
-import { dialogueFlagOwners } from './talkEnds.js';
+import { dialogueFlagOwners, handInFlagOwners } from './talkEnds.js';
 import { trackerLines } from '../ui/questTracker.js';
 import { loadDesignAssets, loadQuestFiles, loadPackQuests } from '../../../tools/validate-content.mjs';
 import { fileURLToPath } from 'node:url';
@@ -71,7 +71,9 @@ assert.ok(nAvail >= 30 && nActive >= 30, 'walked: avail ' + nAvail + ' active ' 
 {
   const raw = JSON.parse((await import('node:fs')).readFileSync(fileURLToPath(new URL('../../../content/dialogue/bear.dialogue.json', import.meta.url)), 'utf8'));
   const owners = dialogueFlagOwners({ bear: raw });
-  assert.equal(owners['q.burl.boars.handin'], 'bear', 'dialogue flag -> its npc');
+  assert.equal(owners['bear.talked'], 'bear', 'dialogue flag -> its npc');
+  const bd = JSON.parse((await import('node:fs')).readFileSync(fileURLToPath(new URL('../../../content/quests/burl.boars.quest.json', import.meta.url)), 'utf8'));
+  Object.assign(owners, handInFlagOwners([bd])); assert.equal(owners['quest.burl.boars.done'], 'bear', 'hand-in flag -> the hand-in npc');
   setTalkFlags(owners);
   const b = createQuestBook(m1, rest); const ends = {};
   for (const o of m1.objectives) {

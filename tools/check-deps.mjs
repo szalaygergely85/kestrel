@@ -266,7 +266,7 @@ function checkConsumerFile(file, src) {
       const testAssertPath = path.join(ENGINE_DIR, 'test', 'assert.js').replace(/\\/g, '/');
       if (normalized === indexPath) {
         // OK: the stable surface, open to every game/tools consumer.
-      } else if (normalized === testAssertPath && /\.test\.(js|mjs)$/.test(relPath)) {
+      } else if ((normalized === testAssertPath || normalized === testAssertPath.replace('assert.js', 'allocGate.js')) && /(\.test\.(js|mjs)|Harness\.js)$/.test(relPath)) {
         // Rule 8 (US-050): the shared test-assertion kit, open to every
         // *.test.js/*.test.mjs file (including tools/editor/**'s tests) -
         // it is test-only tooling, not part of engine's stable API surface.

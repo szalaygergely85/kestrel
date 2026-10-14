@@ -10,3 +10,10 @@ export function dialogueFlagOwners(rawByNpc) {
   for (const npc of Object.keys(rawByNpc || {})) walk(npc, rawByNpc[npc]);
   return out;
 }
+
+/** D-098 / QFIX-S4b: hand-ins happen in the quest window now (no setFlag in the dialogue); the flag `quest.<id>.done` belongs to the hand-in character. */
+export function handInFlagOwners(defs) {
+  const out = {};
+  for (const d of defs || []) { const g = d && d.giver; if (g && d.id && (g.turnIn || g.npc)) out['quest.' + d.id + '.done'] = g.turnIn || g.npc; }
+  return out;
+}

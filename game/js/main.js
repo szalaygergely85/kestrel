@@ -186,7 +186,7 @@ import { createRelayWake, setRelayWakeApi } from './quest/relayWake.js'; // WS1-
 import { createDialogueCtl, setDialogueApi } from './quest/dialogueCtl.js'; // DIALOGUE-01b2 (38.28)
 import { createCrystalGrant } from './quest/crystal.js'; // CH1-MOUNT: CH1-03 aether crystal after the boars
 import { createNpcWalk } from './quest/npcWalk.js'; // CH1-07
-import { setTalkFlags } from './quest/sim/questBook.js'; import { dialogueFlagOwners } from './quest/talkEnds.js';
+import { setTalkFlags } from './quest/sim/questBook.js'; import { dialogueFlagOwners, handInFlagOwners } from './quest/talkEnds.js';
 import { createBurlEscort } from './quest/burlEscort.js'; // CH1-07
 import { createNubFollow } from './quest/nubFollow.js'; // NUB-01: Burl's cub follows her
 import { createBarks } from './quest/barks.js'; // CH1-MOUNT: CH1-06 bark one-liners (Burl)
@@ -537,7 +537,7 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
       const [snip, ...rawList] = await Promise.all([get('../content/dialogue/quest-snippets.json').catch(() => null), ...ids.map((id) => get('../content/dialogue/' + id + '.dialogue.json').catch(() => null))]);
       const raws = {}; ids.forEach((id, i) => { if (rawList[i]) raws[id] = rawList[i]; });
       const gen = generateAll(raws, qb.giverDefs, snip || {});
-      setTalkFlags(dialogueFlagOwners(raws)); // D-098: talk steps show the '?' over the character that finishes them
+      setTalkFlags(Object.assign(dialogueFlagOwners(raws), handInFlagOwners(qb.giverDefs))); // D-098: talk steps show the '?' over the character that finishes them
       for (const id of Object.keys(gen)) if (gen[id] !== raws[id]) bundle.dialogues[id] = compileDialogue(gen[id]);
     } catch (e) { console.warn('[QL-T4] quest dialogue off:', e && e.message); }
   }
