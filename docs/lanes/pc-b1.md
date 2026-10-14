@@ -1067,3 +1067,16 @@ markers.js now mirrors MARK_MARGIN/MARK_DEFAULT_TOP/markZ locally (no game/ impo
 
 ### ED-QUEST-BROWSER (kestrel-1, 2026-10-14)
 Root cause: lintQuest.js imported tools/content-lint.mjs (node:fs + python http.server serves .mjs as text/plain) so questPanel.js never loaded in a browser. Pure rules moved to tools/content-lint-rules.js (content-lint.mjs re-exports); verify-edq-02..07 now re-click the tab until mounted (lazy main.js boot race); verify-edq-04 had two script bugs fixed. New tools/editor/questBrowserLoad.test.js (fetch-stub parity + no node:/.mjs in panel import graph). verify-edq-02 PASS, 04 PASS (port 9520).
+### ANIM-BLEND-03 main hook (kestrel-1, 2026-10-14)
+main.js: import createBeastBlend; `animblend = params.get('animblend') !== '0'` (default ON, also in capture/bench); lazy `createBeastBlend({pool: gameVoxelPool})` passed as 8th arg of presentBeasts; `?animblend=0` -> undefined = old path. Player `stepEntity(PLAYER_KEY,...)` NOT wired (player rig has no blend clips; no per-frame cost added). Syntax check OK. Owner look: walk -> run ramp, hit while running, boar windup (OB-150).
+
+### ED-AI-03 (kestrel-1, 2026-10-14)
+Creatures tab: tools/editor/aiPanel.js (pure createCreatures + thin DOM + mountCreaturesTab), ai/form.js (specs), ai/patchBridge.js (100 ms debounce; msg {type:'ai-patch',name,fields} -> reply {type:'ai-patch-result',name,ok,refused[]} over BroadcastChannel 'kestrel-ai-patch'), index.html/main.js tab wiring, form.test.mjs, tools/verify-edai-03.mjs. Node only, not browser-checked; uses the model's makeStack (own undo list, not the scene record stack). Save = download via model (like Quests).
+NEEDS B1-main: game side must listen on BroadcastChannel 'kestrel-ai-patch' and call sim.patchArchetype (no receiver exists; touches game/js/main.js).
+
+### ED-AI-RECV (kestrel-1, 2026-10-14)
+game/js/quest/aiPatchRecv.js (create(channelFactory,getSim); BroadcastChannel kestrel-ai-patch -> sim.patchArchetype -> ai-patch-result with plain refusal text) + aiPatchRecv.test.js; wired in game/js/main.js after `let beasts` only with ?playtest=1 or ?dev=1 and not capture/bench/webdriver (getSim = () => beasts, survives reloads). Suites + check-deps pass; tools/verify-edai-recv.mjs is --check only (needs puppeteer + CHROME_PATH), not run; browser untested.
+
+### ED-AI-05 + 06 editor (kestrel-1, 2026-10-14)
+Creatures tab "Spawn areas": tools/editor/aiAreaTool.js (pure: disc drag/polygon, ground probe, refuse "Can't spawn here.", undo via model, invalid() marks, Save, drop msg 'ai-drop'/'ai-clear') + aiAreaOverlay.js + aiPanel.js UI + editor main.js viewport hooks; Live apply = "Reload to apply" (relaunches playtest tab; architect decision pending). Game: aiPatchRecv.js handles ai-drop/ai-clear -> aiTest.dropPack/clearTest; sim/aiReserve.js (12 reserve slots per boar/wolf/bear, only ?dev=1/?playtest=1); dev/aiLabels.js state+distance labels (?dev=1, ui.setGlyph); regionalBeasts MODEL/BODY now exported.
+Node only (tests: aiAreaTool, aiPatchRecv, aiLabels; verify-edai-05 = --check + tests); browser untested. Not done: token-holder mark in labels, hit-testing of area handles in the viewport (select via list), Esc cancel for polygon.

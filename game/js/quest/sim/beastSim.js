@@ -19,7 +19,8 @@ import { KINDS, kindIndex, kindOfEntity } from './beastKinds.js'; // BEAST-03a
 import { ARCHETYPES } from "./archetypes.js";
 import { LAYERS } from './brains/layers.js'; // BEAST-03b: LAYERS[archIdx](sim, i, ctx)
 import { createTactics, tacticsSync, tacticsSteer, tacticsBand, tacticsAllies, TACT_MELEE, TACT_RANGED, TACT_CASTER, TACT_SWARM, TOK_M, TOK_R, TOK_S } from './tactics.js'; // BEAST-04
-import { archIndex } from './archetypes.js';
+import { archIndex, ARCH_NAMES } from './archetypes.js';
+import { validateArchetype } from './archetypeRules.js';
 import { perceive, leashState, returnTarget, LEASH_HOME, LEASH_ENGAGE, LEASH_RETURN, LEASH_GIVEUP } from '../../../../engine/index.js';
 
 export const MAX_BEASTS = 96; // GOB-01: boars + wolves + bears + goblin camps (was 32; loot.js MAX_SLOTS must match)
@@ -221,6 +222,7 @@ export function createBeastSim(world, opts) {
     _ctx: { px: 0, py: 0 },
     tactOn: new Uint8Array(MAX_BEASTS), tactRole: new Uint8Array(MAX_BEASTS), tactBand: new Float64Array(MAX_BEASTS * 3), // BEAST-04 (tactics.js)
     tactics: createTactics(MAX_BEASTS, (opts && opts.seed) || 0x9e3779b1), _allyN: 0, _allyX: 0, _allyY: 0, _tS: { CHASE: STATE_CHASE, WINDUP: STATE_WINDUP, CHARGE: STATE_CHARGE, RECOVER: STATE_RECOVER },
+    ap: { slot: new Uint8Array(MAX_BEASTS), tab: Object.fromEntries(Object.keys(ARCHETYPES).map((k) => [k, { ...ARCHETYPES[k] }])), q: [], n: 0 }, // ED-AI-02: slot = 1 where config comes from the archetype row; tab = per-sim mutable copy of the frozen table; q/n = pending patches ({arch, fields}), applied before the next step
     archIdx: new Uint8Array(MAX_BEASTS),     // BEAST-03a: index into ARCH_NAMES (archetypes.js)
     bear: new Uint8Array(MAX_BEASTS),        // BEAR-01: brain.species==='bear' (per-slot cfg, fixed 2-heart swipe, light hits don't cancel windup)
     goblin: new Uint8Array(MAX_BEASTS),      // GOB-01: brain.species==='goblin'
@@ -293,17 +295,11 @@ export function createBeastSim(world, opts) {
       sim.ssteps.push({ ...sim.cfgSteps, windup: toSteps(bc.windupSec), chargeMax: toSteps(bc.chargeMaxSec), recover: toSteps(bc.recoverSec), recoverWall: toSteps(bc.recoverWallSec) });
     } else if (typeof e.components.brain.beastKind === 'string' && KINDS[e.components.brain.beastKind] && e.components.brain.beastKind !== 'boar') {
       // BEAST-03b: any other explicit kind takes perception/leash/speeds from its archetype row (boar + the 3 legacy species keep today's numbers)
-      const A = ARCHETYPES[KINDS[e.components.brain.beastKind].arch];
-      const ac = { ...cfg, noticeR: A.noticeR, nearR: A.nearR, coneCos: A.coneCos, noticeSec: A.noticeSec, loseR: A.loseR, loseSightSec: A.loseSightSec, leashR: A.leashR, walk: A.walk, chase: A.run };
-      sim.scfg.push(ac);
-      sim.ssteps.push({ ...sim.cfgSteps, notice: toSteps(ac.noticeSec), loseSight: toSteps(ac.loseSightSec) });
-      sim.pNear[i] = A.nearR; sim.pCone[i] = A.coneCos; sim.pAggro[i] = ARCH_AGGRO_IDX[A.aggro];
-      const tr = TACT_ROLE_OF[A.role]; // BEAST-04: tactical roles (melee pack / swarm / ranged / caster); others stay on the ground layer
-      if (tr !== undefined) {
-        const kk = KINDS[e.components.brain.beastKind];
-        sim.tactOn[i] = 1; sim.tactRole[i] = tr; sim.tactics.tg[i] = 0;
-        sim.tactBand[i * 3] = kk.keepMin !== undefined ? kk.keepMin : A.keepMin; sim.tactBand[i * 3 + 1] = kk.keepMax !== undefined ? kk.keepMax : A.keepMax; sim.tactBand[i * 3 + 2] = A.backOffR;
-      }
+      const A = sim.ap.tab[KINDS[e.components.brain.beastKind].arch];
+      sim.scfg.push({ ...cfg });
+      sim.ssteps.push({ ...sim.cfgSteps });
+      sim.ap.slot[i] = 1;
+      deriveArchSlot(sim, i, A);
     } else { sim.scfg.push(cfg); sim.ssteps.push(sim.cfgSteps); }
     if (sim.fauna && (sim.wolf[i] || sim.bear[i])) sim.preyMask[i] = preyMaskOf(sim.fauna, HUNT_PREY[sim.wolf[i] ? 'wolf' : 'bear']);
     sim.wary[i] = e.components.brain && e.components.brain.temperament === 'wary' ? 1 : 0;
@@ -357,7 +353,22 @@ export function createBeastSim(world, opts) {
   }
   const offCombatHit = events.on('combat:hit', onCombatHit);
 
-  sim.step = function step(px, py, pz) { stepSim(sim, px, py, pz); };
+  sim.step = function step(px, py, pz) { if (sim.ap.n > 0) applyArchPatches(sim); stepSim(sim, px, py, pz); };
+  /** ED-AI-02: queue a live archetype patch (cold path; may allocate). Applied between steps. Returns { ok, errors } - invalid = refused, nothing changes. */
+  sim.patchArchetype = function patchArchetype(id, fields) {
+    if (!Object.prototype.hasOwnProperty.call(sim.ap.tab, id)) return { ok: false, errors: [`Archetype "${id}" does not exist.`] };
+    if (!fields || typeof fields !== 'object' || Array.isArray(fields)) return { ok: false, errors: ['The patch must be an object of fields.'] };
+    const errors = [];
+    for (const k of Object.keys(fields)) if (!Object.prototype.hasOwnProperty.call(sim.ap.tab[id], k)) errors.push(`Archetype "${id}": "${k}" is not an archetype field.`);
+    if (errors.length) return { ok: false, errors };
+    // validate against the row AS IT WILL BE after every earlier pending patch of the same archetype
+    let base = { ...sim.ap.tab[id] };
+    for (let q = 0; q < sim.ap.n; q++) if (sim.ap.q[q].arch === id) base = { ...base, ...sim.ap.q[q].fields };
+    const v = validateArchetype({ ...base, ...fields }, id);
+    if (v.length) return { ok: false, errors: v };
+    sim.ap.q[sim.ap.n++] = { arch: id, fields: { ...fields } };
+    return { ok: true, errors: [] };
+  };
   sim.dispose = function dispose() { offCombatHit(); };
   sim.hashInto = function hashInto(h) { hashSim(sim, h); };
   sim.save = function save() { return saveSim(sim); };
@@ -515,6 +526,34 @@ export function createBeastSim(world, opts) {
 
 /** GOB-01: a slot that perceives, paths, steers and posts (not dead/GONE, not dormant). */
 const live = (sim, i) => !deadSt(sim.state[i]) && sim.dormant[i] === 0;
+
+/** ED-AI-02 (shared by create and patch): perception / leash / speeds / tactical role+band of one archetype-driven slot, written in place (no alloc). */
+function deriveArchSlot(sim, i, A) {
+  const ac = sim.scfg[i], st = sim.ssteps[i];
+  ac.noticeR = A.noticeR; ac.nearR = A.nearR; ac.coneCos = A.coneCos; ac.noticeSec = A.noticeSec; ac.loseR = A.loseR;
+  ac.loseSightSec = A.loseSightSec; ac.leashR = A.leashR; ac.walk = A.walk; ac.chase = A.run;
+  st.notice = toSteps(A.noticeSec); st.loseSight = toSteps(A.loseSightSec);
+  sim.pNear[i] = A.nearR; sim.pCone[i] = A.coneCos; sim.pAggro[i] = ARCH_AGGRO_IDX[A.aggro];
+  const tr = TACT_ROLE_OF[A.role]; // BEAST-04: tactical roles (melee pack / swarm / ranged / caster); others stay on the ground layer
+  if (tr !== undefined) {
+    const kk = KINDS[sim.entities[i].components.brain.beastKind];
+    if (!sim.tactOn[i]) sim.tactics.tg[i] = 0;
+    sim.tactOn[i] = 1; sim.tactRole[i] = tr;
+    sim.tactBand[i * 3] = kk.keepMin !== undefined ? kk.keepMin : A.keepMin; sim.tactBand[i * 3 + 1] = kk.keepMax !== undefined ? kk.keepMax : A.keepMax; sim.tactBand[i * 3 + 2] = A.backOffR;
+  } else sim.tactOn[i] = 0;
+}
+
+/** ED-AI-02: apply every queued patch, then re-derive each archetype-driven slot of the touched archetypes. Only runs when something is queued. */
+function applyArchPatches(sim) {
+  const pn = sim.ap.n;
+  for (let q = 0; q < pn; q++) {
+    const p = sim.ap.q[q], row = sim.ap.tab[p.arch], ai = ARCH_NAMES.indexOf(p.arch);
+    for (const k in p.fields) row[k] = p.fields[k];
+    for (let i = 0; i < sim.count; i++) if (sim.ap.slot[i] === 1 && sim.archIdx[i] === ai) deriveArchSlot(sim, i, row);
+    sim.ap.q[q] = null;
+  }
+  sim.ap.n = 0;
+}
 
 function stepSim(sim, px, py, pz) {
   const n = sim.count;
