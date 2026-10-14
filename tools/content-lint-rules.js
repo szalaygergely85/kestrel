@@ -19,6 +19,14 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 export const RAW_DOTTED = /\b[a-z]{2,}(?:\.[a-zA-Z][a-zA-Z0-9]+)+\b/, RAW_CAMEL = /\b[a-z]{2,}[A-Z][a-zA-Z]+\b/;
 export const rawIn = (s) => (typeof s === 'string' && s.includes(' ') ? (s.match(RAW_DOTTED) || s.match(RAW_CAMEL) || [null])[0] : null);
 const WALL_MOUNTED = /(^|\.)(lantern|keeperLamp|stairLamp|swordLamp)$|^note/i; // wall-mounted on purpose (audit OB-155c)
+// R12 owner-verified / coarse-AABB exceptions (id -> reason); the lint samples slab AABB tops and misses these supports
+const R12_OK = new Map([
+  ['endMarker', 'owner-verified on its slab (coarse slab AABB)'], ['relayBend', 'owner-verified on relayBendBase (coarse slab AABB)'], ['relayFord', 'owner-verified on the ford base (coarse slab AABB)'],
+  ['chestCrossroads', 'sits on the 1 m stair-block platform behind the Wall_Arch (MAP-25, coarse AABB)'], ['seaMonster', 'swims at the sea surface, not ground-supported'],
+  ['towerCrown', 'tower level prop, supported by the tower mesh (not sampled)'],
+]);
+const R12_OK_RE = /^tower\./; // tower level props stand on the tower floors (not sampled)
+const R8_OK = new Set(['chestBed']); // lake-bed chest: guarded by the dive itself (SWIM-04d, onBottom)
 const NAMES = new Set(['bear', 'rook', 'hesk', 'dorrin']); // main.js giverName table
 
 
@@ -35,13 +43,13 @@ export function r5One(c, id) {
 export function r10Quest(c, q) {
   const out = [];
   for (const [role, id] of [['giver', q.giver?.npc], ['turn-in', q.giver?.turnIn]]) {
-    if (id && !c.characters.has(id)) { const p = c.pos?.(id); out.push(F('R10', q.id, p?.x ?? '-', p?.y ?? '-', `${role} "${id}" is an object, not a character`)); }
+    if (id && !c.characters.has(id) && !(role === 'giver' && q.objectGiver)) { const p = c.pos?.(id); out.push(F('R10', q.id, p?.x ?? '-', p?.y ?? '-', `${role} "${id}" is an object, not a character`)); }
   }
   return out;
 }
 /** R12 for one entSupport record (wall-mounted lamps/notes allow-listed). */
 export function r12One(e) {
-  if (WALL_MOUNTED.test(e.id)) return [];
+  if (WALL_MOUNTED.test(e.id) || R12_OK.has(e.id) || R12_OK_RE.test(e.id)) return [];
   const gap = e.base - e.support, out = [];
   if (gap > ENT_MAX_FLOAT) out.push(F('R12', e.id, e.x, e.y, `base floats ${gap.toFixed(2)} m above its support (> ${ENT_MAX_FLOAT})`));
   if (e.floorAbove != null && e.floorAbove >= BURY_MIN && e.floorAbove <= BURY_MAX) out.push(F('R12', e.id, e.x, e.y, `buried: a floor surface lies ${e.floorAbove.toFixed(2)} m above its base`));
@@ -111,7 +119,7 @@ export const RULES = {
     return out;
   },
   // R8 [OB-152] ctx.chests = [{id,x,y}], ctx.guards = [{x,y,kind}] (beast homes, camps, puzzles, givers)
-  R8: (c) => c.chests.filter((ch) => !c.guards.some((g) => dist(g, ch) < CHEST_R)).map((ch) => F('R8', ch.id, ch.x, ch.y, `no enemy/camp/puzzle/giver within ${CHEST_R} m (open-field chest)`)),
+  R8: (c) => c.chests.filter((ch) => !R8_OK.has(ch.id) && !c.guards.some((g) => dist(g, ch) < CHEST_R)).map((ch) => F('R8', ch.id, ch.x, ch.y, `no enemy/camp/puzzle/giver within ${CHEST_R} m (open-field chest)`)),
   // R9 [OB-136] ctx.quests with .targets=[{id,x,y}], .early (opens before the level-5 flag), ctx.riverX(y) + half width
   R9: (c) => {
     const out = [];

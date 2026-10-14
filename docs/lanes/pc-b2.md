@@ -1165,3 +1165,7 @@ NEEDS B1-main (main.js line ~920 `riggedModelDef(collapseRig(...))`): pass `{leg
 ### GATE-FIX-7 (kestrel-4, 2026-10-14)
 All four were stale tests, no code change: actionHints (storyHints now starts with logic hint hint.farm.ambush, ED-LOGIC-01d), boarPlacement (farmGob1-3 reserve goblins counted as boars; filter goblin species), swimWire (main.js now `under: createUnderState()`; gate/gear/fb.under behaviour intact), content-smoke (gi/manifest.json known standalone).
 Filtered run 25/25 PASS, check-deps OK.
+
+### LINT-WARN-01 (kestrel-4, 2026-10-14)
+Before -> after: R8 1->0, R10 6->0, R12 13->0, R13 3->0 (R9 76 unchanged). tools/content-lint-rules.js: R10 skips giver with objectGiver:true (R14 allows it), R8 exception chestBed (dive-guarded), R12 exception map with reasons (endMarker/relayBend/relayFord slabs, chestCrossroads stair platform, seaMonster, towerCrown, tower.*). R13: 3 Rock_Medium_1 structures (lintAnchorScrawl/Ford/Gate) beside hiddenScrawl/fordMark/sealedGate in world_m1.
+R9 for PO (not changed): top quests sq.ow.wolves 6, sq.ow.night 6, mq.ow.fence 6, sq.ow.trail 4, sq.ow.bears 4, sq.ow.boars 3; early targets west of river e.g. fordWest, postkeeper (sq.burl.scout/parcel, sq.post.spare).
