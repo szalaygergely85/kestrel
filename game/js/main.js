@@ -8,6 +8,8 @@
 
 import { applyImpostorBoot, reapplyRememberedImpostors } from './ui/impostorPreset.js'; // R6-WIRE
 import { groundLookFromParams } from './look/groundLookConfig.js'; // ENV-02d
+import { buildAtmosConfig } from './look/atmosConfig.js'; import { createAtmosDriver } from './look/atmosDriver.js'; // ENV-03
+import { createAtmosState, mixAtmos, applyAtmosToPalette, gradeCells } from '../../engine/index.js'; // ENV-03: `?atmos=0` = no driver, palette untouched
 import { parseDecorMode, buildDecorConfig, guardDecorRun } from './decorHost.js'; // ENV-01-WIRE
 import { loadPresets, resolveQuality, saveQuality, knobsFor, dropStaleOverrides, carpetQualityFor, carpetBuildFor } from './ui/gfxPresets.js';
 import { loadQuestFiles, showBootErrors } from './questBoot.js';
@@ -120,6 +122,7 @@ import { startMpFade } from './quest/vitalsView.js'; // FB-03: MP bar fades in o
 const fbS = { fbOn: false, hand: null, casting: false, manaFlashTick: 0 }; // FB-03: reused hint input
 import { buildBeastNav } from './quest/sim/beastNav.js';
 import { presentBeasts } from './quest/beastView.js';
+import { createBeastLegs } from './quest/beastLegs.js'; // ANIM-C-05: leg IK for beasts (?legik=0 off)
 import { createBeastAnim } from './quest/beastAnim.js'; // ANIM-STATE-WIRE-01
 import { questOverlayStyles } from './quest/overlayStyles.js';
 import { createVitals } from './quest/sim/vitals.js'; // US-080a1/a2 (architecture.md 30.2)
@@ -1127,6 +1130,7 @@ async function runGame(mode, cinematic = null) {
   let decalBind = null; // DECAL-01: refreshed on load/restart.
   const entityTintTable = createEntityTintTable(); // TELEGRAPH-WIRE-01 part 2: one table, reused
   let telegraphWire = null; // TELEGRAPH-WIRE-01: rebuilt on 'world:loaded'
+  let beastLegs = null; const beastLegsOn = params.get('legik') !== '0'; // ANIM-C-05
   let beastAnim = null; const beastAnimOn = params.get('beastanim') === '1'; // ANIM-STATE-WIRE-01: default OFF (wander/return would use the walk clip)
   // WMP-05: map travel is refused in combat (aggro beast within 40 m or the hit-invuln window is up); same sim the hp-regen gate reads.
   const mapTravelBlocked = () => { const t = playerHandle && playerHandle.data.transform; return !!((vitals && vitals.invuln > 0) || (beasts && t && beasts.aggroNear(t.x, t.y, 40))); };
@@ -1321,6 +1325,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
   let waterfallHooks = null;
   let ambientMotes = null;
   let lightSet = null; // US-006: built from the loaded world's level.def.lights, below
+  let atmosDrv = null, atmosCfg = null, atmosV = -1, atmosBase = null; const atmosState = createAtmosState(); // ENV-03: biome atmosphere driver (null = off)
   let clockDriver = null; // DN-03: step-quantised sun/look/ambient driver, rebuilt on every 'world:loaded'
   let clockTimeApplied = false; // DN-03: ?time= seeds the clock once, not on every restart
   let worldSunPath = null; // US-122a: fit the load-time sun before static/cinematic hour writes.
@@ -1491,6 +1496,10 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
           if (lightSet) { const hu = P.hue[L.ambient]; lightSet.ambient[0] = hu[0] * L.ambientI; lightSet.ambient[1] = hu[1] * L.ambientI; lightSet.ambient[2] = hu[2] * L.ambientI; }
         });
         clockDriver.update(clockHour(world.state, clockCfg), true);
+        { const G = window.ASSETS.levels.world_geo, far = window.ASSETS.levels.overworld_far, f = P.fog && (P.fog.farBase || P.fog.far); // ENV-03: only with BIOME_LOOK + geo biomes + terrain (and a running clock: capture/gpucompare never get a driver)
+          if (!atmosDrv && params.get('atmos') !== '0' && window.BIOME_LOOK && G && G.biomes && far && far.util && far.util.biomeBlend && f) {
+            atmosCfg = buildAtmosConfig(window.BIOME_LOOK, G.biomes); atmosBase = { start: f.start, full: f.full, curve: f.curve || 1, near: P.rgb[f.color], far: P.rgb[f.colorFar] };
+            atmosDrv = createAtmosDriver({ nEntries: atmosCfg.table.n, biomeToEntry: atmosCfg.biomeToEntry, biomeBlend: (x, y, o) => far.util.biomeBlend(x, y, o), schedule: P.daySchedule, slotOf: { morning: 0, noon: 0, dusk: 1, night: 2 }, frozenSlot: 0 }); } }
       } else if (Number.isFinite(timeHour)) { if (!clockTimeApplied) { seedClockFromParam(world.state, timeHour); clockTimeApplied = true; } applySunHours(world, lightSet, timeHour, worldSunPath, sunEnabled); } // frozen clock: the NPC schedules still read the ?time= hour
       // Architect review 1 item 7 (tech notes item 8): `?lights=8` test-only -
       // 7 synthetic extra lights (torch preset) spread 2-4 m around the
@@ -1533,7 +1542,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (wild && wild.dispose) wild.dispose();
       wild = null; regionAmb = null; engine.feedVoxels = null; // WILD-06: off in capture/bench/compare/cinematic, `?at=`/`?pose=` dev poses and `?fauna=0`
       if (mode === 'world' && !cinematic && params.get('fauna') !== '0' && !isCaptureOrBench && params.get('capture') !== '1' && !params.has('at') && !params.has('pose')) {
-        try { wild = createWild({ world, pool: gameVoxelPool, fx: window.ASSETS.wildlifeFx, seed: 0x5EED, events: engine.events }); if (wild) engine.feedVoxels = wild.feed; regionAmb = bootRegionAmbient({ table: regionAmbTable, geo: window.ASSETS.levels && window.ASSETS.levels.world_geo, wild }); } catch (err) { console.warn('[wild] fauna off:', err && err.message); }
+        try { wild = createWild({ world, pool: gameVoxelPool, fx: window.ASSETS.wildlifeFx, seed: 0x5EED, events: engine.events, legIk: new URLSearchParams(location.search).get('legik') !== '0' }); if (wild) engine.feedVoxels = wild.feed; regionAmb = bootRegionAmbient({ table: regionAmbTable, geo: window.ASSETS.levels && window.ASSETS.levels.world_geo, wild }); } catch (err) { console.warn('[wild] fauna off:', err && err.message); }
       }
       if (beasts) beasts.dispose();
       if (params.get('bench') === 'combat' || (benchActive && params.get('enemies') === '4')) ensureBenchBoars(world); // COMBAT-BENCH-01
@@ -2063,7 +2072,8 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       if (paused) { duckAudio(); if (hands) hands.disarm(); } else { unduckAudio(); resetSimAccumulator(engine); } // HANDS-01b: the sim does not step while paused, so disarm at once
     }
     if (mode === 'world' && playerHandle && !paused) {
-      if (clockDriver && !titleMenuActive) { const w = engine.world; tickClock(w.state, dt, clockCfg); clockDriver.update(w.state[CLOCK_KEY]); } // DN-03: stops on title/pause (this block), runs through respawn/restart/travel
+      if (clockDriver && !titleMenuActive) { const w = engine.world; tickClock(w.state, dt, clockCfg); clockDriver.update(w.state[CLOCK_KEY]);
+        if (atmosDrv) { const t = playerHandle.data.transform; atmosDrv.step(t.x, t.y, clockHour(w.state, clockCfg), dt, true); if (atmosDrv.out.version !== atmosV) { atmosV = atmosDrv.out.version; mixAtmos(atmosCfg.table, atmosDrv.active ? atmosDrv.out : null, atmosBase, atmosState); applyAtmosToPalette(assets.palette, atmosState); } } } // ENV-03 // DN-03: stops on title/pause (this block), runs through respawn/restart/travel
       if (ending || uiLocked || vLocked() || isNoteOpen()) { // OB-057 (owner): no movement while a note is open
         controls.forward = 0; controls.strafe = 0; controls.run = false; controls.jump = false;
       } else {
@@ -2439,6 +2449,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       // cells right after its own sprite loop).
       engine.particleLayer.build(engine.particles, cam, rt, fb.lights, engine.world, assets.palette, renderer);
       sprites.render(fb, engine.world, cam, fbView ? (handFxOn ? handFbExtra : fbView.extra) : undefined); // US-030c (ARCH CHANGES item 1): after the surfaces, before present()
+      if (atmosState.on) gradeCells(rt, atmosState); // ENV-03c: JS-path grade (the GPU sprite pass grades itself)
       // US-017 ARCH CHANGES #1 item 2: CPU-path scene fade, moved here from
       // compositor.js so sprites fade too (oracle parity with the GPU
       // composite pass, which fades every non-mask cell in one pass). Skips
@@ -2459,7 +2470,8 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       engine.overlay.clear();
       drawDecals(decalBind, engine.overlay, cam, fb.lights, engine.world);
       if (goblinWire) goblinWire.update(); // GOB-07b: spear view
-      if (beasts && !cinematic) presentBeasts(beasts, engine.world, engine.overlay, ovlStyles, beastAnimOn ? (beastAnim || (beastAnim = createBeastAnim(16))) : undefined);
+      if (beasts && !cinematic) presentBeasts(beasts, engine.world, engine.overlay, ovlStyles, beastAnimOn ? (beastAnim || (beastAnim = createBeastAnim(16))) : undefined, beastLegsOn ? (beastLegs || (beastLegs = createBeastLegs({ pool: gameVoxelPool }))) : undefined, cam); // ANIM-C-05
+      if (beastLegsOn && !cinematic && mode === 'world') { const bh = engine.world.get('bear'), bv = bh && bh.data.components && bh.data.components.voxel; if (bv) (beastLegs || (beastLegs = createBeastLegs({ pool: gameVoxelPool }))).stepNpc('bear', bh.data, bv, cam.x, cam.y, engine.world.terrain); } // ANIM-C-05: Burl (scripted NPC bear)
       if (targeting && !cinematic) targeting.present(engine.overlay, ovlStyles); // US-128b (29.2)
       // US-078d (30.1): hidden until the sword is actually taken (US-078a review note); no eyeFeel/bobPhase
       // system exists yet in this codebase, so `simTime` stands in as the walk-bob phase (cosmetic only).

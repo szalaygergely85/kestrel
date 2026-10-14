@@ -258,6 +258,9 @@
     { look: 'foothills', biomes: [9], ground: ['grass', 'rock'] },
     { look: 'meadow', ground: ['grass'], biomes: [0] }
   ];
+  // ENV-03a (arch 38.65): which biome id (geo.biomes ids, 0 = start meadow) gets which atmosphere entry (a name in order; atmos by pick.atmos).
+  // Ids not listed (3 twistedWood, 4 ashMile) = today's atmosphere. Picks = the preview default (A everywhere); the owner may change them later.
+  BIOME_LOOK.atmosMap = { 0: 'meadow', 1: 'forest', 2: 'forest', 5: 'glade', 6: 'fields', 9: 'foothills', 7: 'shore', 8: 'shore' };
   root.BIOME_LOOK = BIOME_LOOK;
   if (typeof module !== 'undefined' && module.exports) module.exports = BIOME_LOOK;
 })(typeof window !== 'undefined' ? window : globalThis);
