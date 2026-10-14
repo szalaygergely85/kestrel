@@ -8,7 +8,7 @@
 // Position lives in the RE-09 steer SoA (steer.x/steer.y), not duplicated here - this file only adds the fields
 // the state machine itself needs (29.1's field list). z is written straight into `entity.transform.z` every step
 // from `world.supportAt` (the beast always stands on the ground/mesh, no vertical physics).
-import { createAStar, findPath, smoothPath, createSteer, PHYSICS, SIM_STEP } from '../../../../engine/index.js';
+import { createAStar, findPath, findPathCells, smoothPath, createSteer, PHYSICS, SIM_STEP } from '../../../../engine/index.js';
 import { BEAST_DEFAULTS, toSteps } from './beastConfig.js';
 import { tierMult } from './band.js';
 import { canSee } from './sight.js';
@@ -250,8 +250,8 @@ export function createBeastSim(world, opts) {
 
     // Scratch (zero allocation after create): findPath's `outPath` must hold >= grid.w*grid.h entries (astar.js
     // contract); smoothPath's output is at most that many waypoints before truncation to PATH_SLOTS.
-    _cellPath: new Int32Array(grid.w * grid.h),
-    _xy: new Float64Array(grid.w * grid.h * 2),
+    _cellPath: new Int32Array(grid.totalCells || grid.w * grid.h), // NAV-LAYERS-01d: sheet cells count too (totalCells = w*h without layers)
+    _xy: new Float64Array((grid.totalCells || grid.w * grid.h) * 2),
     // US-079c: a charge contact emits `damage: 1`; vitals scales it by `beastDamageScale` (5) -> 5 HP per charge
     // hit (the AC's "6 hits from 30 HP kill"). Verified end-to-end in beastSim.test.js.
     _hitPayload: beastEntities.slice(0, count).map((e) => ({ source: e.id, target: 'player', damage: 1, blocked: 0 })),
@@ -412,7 +412,7 @@ export function createBeastSim(world, opts) {
     sim.tileMode = true;
     sim.grid = navGrid;
     sim.astar = astarFor(sim.astar, navGrid);
-    if (sim._cellPath.length < navGrid.w * navGrid.h) { sim._cellPath = new Int32Array(navGrid.w * navGrid.h); sim._xy = new Float64Array(navGrid.w * navGrid.h * 2); }
+    if (sim._cellPath.length < (navGrid.totalCells || navGrid.w * navGrid.h)) { sim._cellPath = new Int32Array(navGrid.totalCells || navGrid.w * navGrid.h); sim._xy = new Float64Array((navGrid.totalCells || navGrid.w * navGrid.h) * 2); }
     sim.steer.bounds.x0 = navGrid.x0; sim.steer.bounds.y0 = navGrid.y0;
     for (let i = 0; i < sim.count; i++) {
       if (deadSt(sim.state[i])) continue;
@@ -1117,7 +1117,10 @@ function computePath(sim, i) {
   const sx = grid.cellX(steer.x[i]), sy = grid.cellY(steer.y[i]);
   const gx = grid.cellX(sim.goalX[i]), gy = grid.cellY(sim.goalY[i]);
   const maxNodes = sim.state[i] === STATE_WANDER && !sim.goalOn[i] ? WANDER_MAX_NODES : TRAVEL_MAX_NODES;
-  const len = findPath(astar, sx, sy, gx, gy, sim._cellPath, { maxNodes });
+  // NAV-LAYERS-01d: with sheets the start/goal are located by z (goal z = sim.goalZ[i] when a caller provides one, else the ground cell); ground-only grids take the unchanged path
+  const len = grid.layers
+    ? findPathCells(astar, grid.locate(steer.x[i], steer.y[i], zOf(sim, i)), grid.locate(sim.goalX[i], sim.goalY[i], sim.goalZ ? sim.goalZ[i] : NaN), sim._cellPath, { maxNodes })
+    : findPath(astar, sx, sy, gx, gy, sim._cellPath, { maxNodes });
   sim.stats.astar++;
   sim.partialGoal[i] = sim.state[i] === STATE_CHASE && astar.partial ? 1 : 0;
   if (!sim.partialGoal[i]) sim.bankT[i] = 0;

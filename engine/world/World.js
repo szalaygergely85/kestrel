@@ -508,6 +508,7 @@ export class World {
       const placed = s.mesh
         ? w.placeMesh(assets.mesh(s.mesh), s.origin, s.id, s.yawDeg ?? 0, s.castShadow, s.scale === undefined ? 1 : readScale(s.scale, `mesh placement "${s.id}"`), s.collide)
         : w.placeStructure(assets.level(s.level), s.origin, s.id, s.yawSteps || 0);
+      if (s.nav === 'floors') { placed.navFloors = true; if (typeof s.navGroup === 'string') placed.navGroup = s.navGroup; } // NAV-LAYERS-01d: content flag (read by game/js/quest/sim/beastNav.js)
       if (placed.kind !== 'mesh' && s.dynamics) {
         for (const tag of Object.keys(s.dynamics)) {
           w._restoreDynamics(placed, tag, s.dynamics[tag]);
@@ -1790,6 +1791,23 @@ export class World {
     out[8] = !terrain && sup.floorHit ? 1 : 0;
     out[9] = sup.ceilHit ? sup.ceilZ : NaN;
     if (terrain) { out[4] = tnx; out[5] = tny; out[6] = tnz; } else { out[4] = sup.fnx; out[5] = sup.fny; out[6] = sup.fnz; }
+  }
+
+  /**
+   * NAV-LAYERS-01d (arch 38.71): floor probe for `bakeSheets` over the STATIC mesh colliders only (never terrain `groundAt`, never
+   * scatter/detail/door/gate prop colliders). Returns `probe(x, y, footZ, out{z,nz}) -> boolean`: highest surface at or below footZ
+   * (gaps over `maxGapM` = no floor, so a deck over a canyon does not pick up the canyon floor). Uses the 0-alloc `probeSupportIo`.
+   */
+  navFloorProbe(maxGapM = 12) {
+    const cols = this.colliders.filter((c) => c.kind === 'trimesh' && c.enabled !== false && !/^(scatter|detail|prop|door|gate)/.test(String(c.id)) && !/:(door|gate)/.test(String(c.id)));
+    const io = new Float64Array(10), sup = this._meshSupportScratch, opts = { height: 1.6, stepUpMax: 0, walkCos: 0 };
+    return (x, y, footZ, out) => {
+      io[0] = x; io[1] = y; io[2] = footZ;
+      probeSupportIo(cols, cols.length, io, false, opts, sup);
+      if (!sup.floorHit || footZ - sup.floorZ > maxGapM) return false;
+      out.z = sup.floorZ; out.nz = sup.fnz;
+      return true;
+    };
   }
 
   // ---- water query (US-055a1, architecture.md 32.2) ---------------------------
