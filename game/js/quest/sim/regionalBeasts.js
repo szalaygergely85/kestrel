@@ -16,8 +16,28 @@ export const REGION_RULES = Object.freeze([
   { region: 'westHeath', key: 'heath', species: 'boar', groups: 1, size: 3 },
   { region: 'reedmire', key: 'reedmire', species: 'boar', groups: 2, size: 2 },
   { region: 'whitecombs', key: 'whitecombsFoot', species: 'bear', groups: 2, size: 1, rect: [0, 200, 2048, 330] },
-  // strand: none (open beach, ambient fauna only)
+  // OB-185: density floor 50 enemies/km2 per region (more in forests). Extra groups (key suffix keeps ids/rng streams apart).
+  { region: 'whitecombs', key: 'whitecombsBears', species: 'bear', groups: 8, size: 2, slope: 0.6, rect: [0, 0, 2048, 330] },
+  { region: 'whitecombs', key: 'whitecombsWolves', species: 'wolf', groups: 8, size: 3, slope: 0.6, rect: [0, 0, 2048, 330] },
+  { region: 'westFells', key: 'westFells', species: 'wolf', groups: 9, size: 3 },
+  { region: 'northwood', key: 'northwoodPack', species: 'wolf', groups: 3, size: 4 },
+  { region: 'glasswater', key: 'glasswaterBoars', species: 'boar', groups: 3, size: 3 },
+  { region: 'glasswater', key: 'glasswaterWolves', species: 'wolf', groups: 1, size: 3 },
+  { region: 'alpine', key: 'highPasturesBears', species: 'bear', groups: 3, size: 2, slope: 0.6 },
+  { region: 'alpine', key: 'highPasturesWolves', species: 'wolf', groups: 3, size: 3, slope: 0.6 },
+  { region: 'thornwood', key: 'thornwood', species: 'wolf', groups: 2, size: 3 },
+  { region: 'downs', key: 'downsMore', species: 'boar', groups: 3, size: 2 },
+  { region: 'reedmire', key: 'reedmireMore', species: 'boar', groups: 3, size: 2 },
+  { region: 'strand', key: 'strand', species: 'boar', groups: 1, size: 3 },
+  { region: 'heartland', key: 'heartlandBoars', species: 'boar', groups: 5, size: 3 },
+  { region: 'heartland', key: 'heartlandWolves', species: 'wolf', groups: 3, size: 3, rect: [0, 330, 1000, 1700] },
 ]);
+
+/** OB-185: species of the roadside groups per region (default boar). Roads get a group wherever the walk would go > ROAD_GAP m without one. */
+export const ROAD_SPECIES = Object.freeze({ whitecombs: 'wolf', westFells: 'wolf', northwood: 'wolf', thornwood: 'wolf', alpine: 'wolf', signalHill: 'wolf' });
+export const ROAD_SLOPE = 0.85, ROAD_GAP = 140, COVER_R = 60, SAFE_R = 40, GROUP_GAP = 120;
+/** Fixed safe spots [x, y, r] besides npc/relay/post entities: the tower interior + start meadow. */
+export const FIXED_SAFE = Object.freeze([[1497, 1027, 70]]);
 
 export const REGIONAL_BEAST_COUNT = REGION_RULES.reduce((n, r) => n + r.groups * r.size, 0);
 
@@ -26,7 +46,7 @@ export const MODEL = { boar: 'boarPlaceholder', wolf: WOLF_MODEL, bear: 'bearBla
 export const BODY = { boar: { height: 0.7, radius: 0.45 }, wolf: { height: 0.7, radius: 0.45 }, bear: { height: 1.1, radius: 0.7 } };
 // 32 literal unit directions (rule 15: no trig in sim code); same 2 rng draws per try as the old angle pick.
 const DIRS = [[1,0],[0.980785,0.19509],[0.92388,0.382683],[0.83147,0.55557],[0.707107,0.707107],[0.55557,0.83147],[0.382683,0.92388],[0.19509,0.980785],[0,1],[-0.19509,0.980785],[-0.382683,0.92388],[-0.55557,0.83147],[-0.707107,0.707107],[-0.83147,0.55557],[-0.92388,0.382683],[-0.980785,0.19509],[-1,0],[-0.980785,-0.19509],[-0.92388,-0.382683],[-0.83147,-0.55557],[-0.707107,-0.707107],[-0.55557,-0.83147],[-0.382683,-0.92388],[-0.19509,-0.980785],[0,-1],[0.19509,-0.980785],[0.382683,-0.92388],[0.55557,-0.83147],[0.707107,-0.707107],[0.83147,-0.55557],[0.92388,-0.382683],[0.980785,-0.19509]];
-const EDGE = 12, MIN_GROUP_GAP = 45, AUTHORED_GAP = 40, MAX_SLOPE = 0.3, TRIES = 600;
+const EDGE = 12, AUTHORED_GAP = 40, MAX_SLOPE = 0.3, TRIES = 600;
 
 function mulberry32(a) { return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 function strHash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
@@ -42,14 +62,14 @@ export function inPolygon(pts, x, y) {
 }
 
 /** Walkable ground: inside the bounds polygon (EDGE m clear of it is the caller's job via the rect), not water, gentle slope. */
-export function makeWalkable(terrain, bounds) {
+export function makeWalkable(terrain, bounds, maxSlope = MAX_SLOPE) {
   const e = 2;
   return (x, y) => {
     if (bounds && !inPolygon(bounds.pts, x, y)) return false;
     if (terrain.typeAt(x, y) === 2) return false; // TYPE_IDS.water
     const dx = (terrain.heightAt(x + e, y) - terrain.heightAt(x - e, y)) / (2 * e);
     const dy = (terrain.heightAt(x, y + e) - terrain.heightAt(x, y - e)) / (2 * e);
-    return dx * dx + dy * dy <= MAX_SLOPE * MAX_SLOPE; // squared: no Math.hypot (rule 15)
+    return dx * dx + dy * dy <= maxSlope * maxSlope; // squared: no Math.hypot (rule 15)
   };
 }
 
@@ -59,37 +79,77 @@ export function makeWalkable(terrain, bounds) {
  * @returns {Array<{id:string, species:string, region:string, x:number, y:number, group:number}>}
  */
 export function generateRegionalBeasts(o) {
-  const { geo, terrain } = o, seed = o.seed ?? 12, avoid = o.avoid || [];
-  const walkable = makeWalkable(terrain, geo.bounds);
-  const out = [], centres = [];
+  const { geo, terrain } = o, seed = o.seed ?? 12, avoid = o.avoid || [], safe = o.safe || FIXED_SAFE;
+  const walkable = makeWalkable(terrain, geo.bounds), walkRoad = makeWalkable(terrain, geo.bounds, ROAD_SLOPE); // roads climb: roadside groups accept slopes up to ROAD_SLOPE
+  const out = [], centres = [], nextGroup = {}, G2 = GROUP_GAP * GROUP_GAP;
+  const regionAt = (x, y) => { for (const g of geo.regions) if (x >= g.r[0] && x < g.r[2] && y >= g.r[1] && y < g.r[3]) return g.id; return geo.regions[geo.regions.length - 1].id; };
+  const nearSafe = (x, y) => { for (const s of safe) { const d = SAFE_R + (s[2] || 0); if ((s[0] - x) * (s[0] - x) + (s[1] - y) * (s[1] - y) < d * d) return true; } return false; };
+  const clearOf = (x, y) => { // group gap to other regional groups + authored gap + safe spots/givers
+    for (const p of centres) if ((p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y) < G2) return false;
+    for (const p of avoid) if ((p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y) < AUTHORED_GAP * AUTHORED_GAP) return false;
+    return !nearSafe(x, y);
+  };
+  const emit = (rule, region, r, c, rng, n0) => { // members 3-7 m from the group centre; fall back to the centre if no walkable spot
+    const g = nextGroup[region] || 0; nextGroup[region] = g + 1; centres.push(c);
+    let n = n0;
+    for (let k = 0; k < rule.size; k++) {
+      let hx = c[0], hy = c[1];
+      if (k > 0) {
+        for (let t = 0; t < 40; t++) {
+          const dir = DIRS[(rng() * 32) | 0], d = 3 + rng() * 4, x = Math.round((c[0] + dir[0] * d) * 2) / 2, y = Math.round((c[1] + dir[1] * d) * 2) / 2;
+          if (x > r[0] && x < r[2] && y > r[1] && y < r[3] && walkable(x, y) && !nearSafe(x, y)) { hx = x; hy = y; break; }
+        }
+      }
+      out.push({ id: `${rule.species}.${rule.key}.${++n}`, species: rule.species, region, x: hx, y: hy, group: g });
+    }
+    return n;
+  };
   for (const rule of REGION_RULES) {
     const reg = geo.regions.find((g) => g.id === rule.region);
     if (!reg) continue;
     const r = rule.rect || reg.r;
-    const rng = mulberry32(seed ^ strHash(rule.key));
+    const rng = mulberry32(seed ^ strHash(rule.key)), wk = rule.slope ? makeWalkable(terrain, geo.bounds, rule.slope) : walkable;
     let n = 0;
     for (let g = 0; g < rule.groups; g++) {
       let c = null;
       for (let t = 0; t < TRIES && !c; t++) {
         const x = Math.round((r[0] + EDGE + rng() * (r[2] - r[0] - 2 * EDGE)) * 2) / 2;
         const y = Math.round((r[1] + EDGE + rng() * (r[3] - r[1] - 2 * EDGE)) * 2) / 2;
-        if (!walkable(x, y)) continue;
-        let clear = true;
-        for (const p of centres) if ((p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y) < MIN_GROUP_GAP * MIN_GROUP_GAP) { clear = false; break; }
-        for (const p of avoid) if (clear && (p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y) < AUTHORED_GAP * AUTHORED_GAP) clear = false;
-        if (clear) c = [x, y];
+        if (!wk(x, y) || regionAt(x, y) !== rule.region || !clearOf(x, y)) continue;
+        c = [x, y];
       }
       if (!c) continue; // a region with no valid ground simply gets fewer groups (never an unwalkable home)
-      centres.push(c);
-      for (let k = 0; k < rule.size; k++) {
-        let hx = c[0], hy = c[1];
-        if (k > 0) { // members 3-7 m from the group centre; fall back to the centre if no walkable spot
-          for (let t = 0; t < 40; t++) {
-            const dir = DIRS[(rng() * 32) | 0], d = 3 + rng() * 4, x = Math.round((c[0] + dir[0] * d) * 2) / 2, y = Math.round((c[1] + dir[1] * d) * 2) / 2;
-            if (x > r[0] && x < r[2] && y > r[1] && y < r[3] && walkable(x, y)) { hx = x; hy = y; break; }
-          }
+      n = emit(rule, rule.region, r, c, rng, n);
+    }
+  }
+  // OB-185: roadside groups. Walk every road every 10 m; a point is covered when any home is within COVER_R. After ROAD_GAP m uncovered, put a pair
+  // 25-50 m beside the road (both sides tried, deterministic order). All homes so far (authored + generated) count as cover.
+  const homes = avoid.slice(); for (const o2 of out) homes.push([o2.x, o2.y]);
+  const covered = (x, y) => { for (const p of homes) if ((p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y) < COVER_R * COVER_R) return true; return false; };
+  const roadN = {};
+  for (const road of geo.roads || []) {
+    let run = 0, px = null, py = null;
+    for (let i = 0; i + 1 < road.pts.length; i++) {
+      const a = road.pts[i], b = road.pts[i + 1], dx = b[0] - a[0], dy = b[1] - a[1], len = Math.sqrt(dx * dx + dy * dy), ux = dx / len, uy = dy / len;
+      for (let s = 0; s < len; s += 10) {
+        const x = a[0] + ux * s, y = a[1] + uy * s;
+        if (!inPolygon(geo.bounds.pts, x, y)) { run = 0; continue; }
+        if (px !== null) run += Math.sqrt((x - px) * (x - px) + (y - py) * (y - py));
+        px = x; py = y;
+        if (covered(x, y)) { run = 0; continue; }
+        if (run < ROAD_GAP) continue;
+        const region = regionAt(x, y); if (region === 'east') continue;
+        let c = null;
+        for (let k = 0; k < 8 && !c; k++) { // lateral offsets 25..50 m, alternating sides
+          const off = (25 + (k >> 1) * 8) * (k & 1 ? -1 : 1), cx = Math.round((x - uy * off) * 2) / 2, cy = Math.round((y + ux * off) * 2) / 2;
+          if (walkRoad(cx, cy) && clearOf(cx, cy)) c = [cx, cy];
         }
-        out.push({ id: `${rule.species}.${rule.key}.${++n}`, species: rule.species, region: rule.region, x: hx, y: hy, group: g });
+        if (!c) { continue; }
+        const sp = ROAD_SPECIES[region] || 'boar', key = 'road' + region[0].toUpperCase() + region.slice(1);
+        const rule = { species: sp, key, size: sp === 'boar' ? 2 : 3 };
+        const rg = (geo.regions.find((q) => q.id === region) || {}).r || [0, 0, 2048, 2048];
+        roadN[key] = emit(rule, region, rg, c, mulberry32(seed ^ strHash(key + out.length)), roadN[key] || 0);
+        homes.push(c); run = 0;
       }
     }
   }
@@ -106,9 +166,16 @@ export function authoredHomes(world) {
   return avoid;
 }
 
+/** OB-185: [x, y, r] of npcs / givers / relays (waystones) / the post, plus FIXED_SAFE; regional groups keep SAFE_R clear of them. */
+export function safeSpots(world) {
+  const out = FIXED_SAFE.slice();
+  world.forEachEntity((e) => { const t = e.transform || e; if (typeof t.x === 'number' && (e.type === 'npc' || /^(relay|post|nest|warden|hesk|dorrin|rook|notePost)/.test(String(e.id)))) out.push([t.x, t.y, 0]); });
+  return out;
+}
+
 export function spawnRegionalBeasts(world, geo, seed) {
   const avoid = authoredHomes(world);
-  const list = generateRegionalBeasts({ geo, terrain: world.terrain, seed, avoid });
+  const list = generateRegionalBeasts({ geo, terrain: world.terrain, seed, avoid, safe: safeSpots(world) });
   for (const b of list) {
     if (world.get(b.id)) continue; // WMP-09: a world restored from a save already holds the herd (saves keep all entities) - spawn only the missing ones
     const brain = { kind: 'beast', home: [b.x, b.y], temperament: 'wary' };
