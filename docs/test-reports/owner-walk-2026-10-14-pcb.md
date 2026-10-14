@@ -67,3 +67,16 @@ Start: tower.
 - [ ] Nav floors: "both bridges" question - one bridge or both usable by beasts?
 - [ ] ANIM-IK-01 stays player-only (animals use the runtime leg solve, D-101 C) - OK?
 - [ ] Armour naming Watch vs Relay (story.md option A is Watch) - OK?
+
+## F. New since this list was written (2026-10-15, pc-b 0b5df6d5)
+- [ ] **Boot:** the game starts without errors. pc-b 45706a14 and earlier threw every frame at boot (foot IK); if the owner tree on 8000 was on that, hard-reload now.
+- [ ] **Black bear bite:** at close range (< 1.6 m) the black bear sometimes lunge-bites instead of the swipe: jaws snap ~0.2 s in, 2 hearts, then it backs off (recover). At most one bite every 3 s. Burl (friendly) never bites.
+- [ ] **Bear clips:** both bears run, flinch when hit (small additive jolt) and play hurt; black bear has a recover huff after a charge.
+- [ ] **NPC look-at:** a character-kit NPC turns its head to you while you talk to it (limits 60 deg left/right, 25 deg up/down) and turns back after; nobody else's head moves. Flag: `?lookat=0` to compare.
+- [ ] **Deer / fox / goat:** head, ears, tail and bob move in step with the legs (no drifting out of sync while walking/running).
+- [ ] **Item names:** the top two gear tiers are now "Elite ..." and "Warden ..." (was "T4 ..." / "T5 ..."). OK, or other names? (max 14 letters with the item word)
+- [ ] **Ford chests:** the two ford boars stand a few metres closer to Rook's chest (974, 1058) so the chest is guarded. Fight feels fair? Boars not stuck on rocks?
+- [ ] **Lake-bed chest** still opens only by diving; nothing else changed there.
+- [ ] **Crocodile preview** (`/design/preview/crocodile.html`): shape (2.9 m, 4 sprawled legs, 3-part tail), olive hide colours, clips idle/walk/run/swim/attack/grab/hurt/die/sink. OK? Should it float with eyes + nostrils above the water (designer: 0.30 m deep instead of 0.4)?
+- [ ] **Crocodiles in the world:** NOT in this build yet (spawns at ford/river are being made). When they are: 0.7 s warning, lunge up to 4 m, grab 1.5 s (max 12 % HP), mash move/jump keys to break free early; while grabbed you can still look and attack but not walk.
+- [ ] **Editor (`/tools/editor/`):** (1) Foliage tab budget line follows the cap in content/editor/foliage.json (`triCap`, default 1.5 M) - change it and reload to see. (2) Edit a quest's text with a game tab open from the editor's play-test: re-talk to the NPC shows the new text without reload, and it is NOT saved.
