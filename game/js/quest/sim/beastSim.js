@@ -16,6 +16,8 @@ import { BEAR_TUNING, bearOverrides, isBearEntity } from './bearBrain.js'; // BE
 import { WOLF_TUNING, wolfOverrides, isWolfEntity, circleTarget, awayTarget } from './wolfBrain.js'; // WOLF-01
 import { GOBLIN_TUNING, goblinOverrides, isGoblinEntity } from './goblinBrain.js'; // GOB-01
 import { KINDS, kindIndex, kindOfEntity } from './beastKinds.js'; // BEAST-03a
+import { ARCHETYPES } from "./archetypes.js";
+import { LAYERS } from './brains/layers.js'; // BEAST-03b: LAYERS[archIdx](sim, i, ctx)
 import { archIndex } from './archetypes.js';
 import { perceive, leashState, returnTarget, LEASH_HOME, LEASH_ENGAGE, LEASH_RETURN, LEASH_GIVEUP } from '../../../../engine/index.js';
 
@@ -49,6 +51,7 @@ export const STATE_SUBMERGED = 20; // water: eyes-only approach
 export const STATE_GRAB = 21;      // croc hold + roll
 export const STATE_AIRBORNE = 22;  // flyer cruise / circle
 export const STATE_CAST = 23;      // caster / healer cast (a hit cancels)
+const ARCH_AGGRO_IDX = Object.freeze({ hostile: 0, whenHit: 1, never: 2, near: 3 });
 const FIRST_DEAD_STATE = STATE_DYING;
 const deadSt = (st) => st >= FIRST_DEAD_STATE && st <= STATE_GONE; // EAT (13) is alive
 const HUNT_PREY = { wolf: ['rabbit', 'deer'], bear: ['deer'] }; // LIFE-07: species-filtered prey (38.56 c)
@@ -203,6 +206,9 @@ export function createBeastSim(world, opts) {
     knockV: new Float64Array(MAX_BEASTS),    // US-079b: per-slot stagger clamp speed (replaces shared cfg.staggerKnock)
     wolf: new Uint8Array(MAX_BEASTS),        // WOLF-01: brain.species==='wolf' (per-slot cfg below, pack token, circle, flee)
     kindIdx: new Uint8Array(MAX_BEASTS),     // BEAST-03a: index into KIND_NAMES (beastKinds.js); data only so far
+    pNear: new Float64Array(MAX_BEASTS).fill(cfg.nearR), pCone: new Float64Array(MAX_BEASTS).fill(cfg.coneCos), // BEAST-03b per-slot perception
+    pAggro: new Uint8Array(MAX_BEASTS),      // 0 hostile 1 whenHit 2 never 3 near (ARCH_AGGRO order)
+    _ctx: { px: 0, py: 0 },
     archIdx: new Uint8Array(MAX_BEASTS),     // BEAST-03a: index into ARCH_NAMES (archetypes.js)
     bear: new Uint8Array(MAX_BEASTS),        // BEAR-01: brain.species==='bear' (per-slot cfg, fixed 2-heart swipe, light hits don't cancel windup)
     goblin: new Uint8Array(MAX_BEASTS),      // GOB-01: brain.species==='goblin'
@@ -273,6 +279,13 @@ export function createBeastSim(world, opts) {
       const bc = { ...cfg, ...bearOverrides(cfg) };
       sim.scfg.push(bc);
       sim.ssteps.push({ ...sim.cfgSteps, windup: toSteps(bc.windupSec), chargeMax: toSteps(bc.chargeMaxSec), recover: toSteps(bc.recoverSec), recoverWall: toSteps(bc.recoverWallSec) });
+    } else if (typeof e.components.brain.beastKind === 'string' && KINDS[e.components.brain.beastKind] && e.components.brain.beastKind !== 'boar') {
+      // BEAST-03b: any other explicit kind takes perception/leash/speeds from its archetype row (boar + the 3 legacy species keep today's numbers)
+      const A = ARCHETYPES[KINDS[e.components.brain.beastKind].arch];
+      const ac = { ...cfg, noticeR: A.noticeR, nearR: A.nearR, coneCos: A.coneCos, noticeSec: A.noticeSec, loseR: A.loseR, loseSightSec: A.loseSightSec, leashR: A.leashR, walk: A.walk, chase: A.run };
+      sim.scfg.push(ac);
+      sim.ssteps.push({ ...sim.cfgSteps, notice: toSteps(ac.noticeSec), loseSight: toSteps(ac.loseSightSec) });
+      sim.pNear[i] = A.nearR; sim.pCone[i] = A.coneCos; sim.pAggro[i] = ARCH_AGGRO_IDX[A.aggro];
     } else { sim.scfg.push(cfg); sim.ssteps.push(sim.cfgSteps); }
     if (sim.fauna && (sim.wolf[i] || sim.bear[i])) sim.preyMask[i] = preyMaskOf(sim.fauna, HUNT_PREY[sim.wolf[i] ? 'wolf' : 'bear']);
     sim.wary[i] = e.components.brain && e.components.brain.temperament === 'wary' ? 1 : 0;
@@ -481,7 +494,8 @@ function stepSim(sim, px, py, pz) {
   }
   if (sim.fauna) huntPass(sim);
   for (let i = 0; i < n; i++) if (live(sim, i)) { perceiveOne(sim, i, px, py, pz); leashOne(sim, i, px, py); }
-  for (let i = 0; i < n; i++) if (live(sim, i)) transitionOne(sim, i, px, py);
+  sim._ctx.px = px; sim._ctx.py = py;
+  for (let i = 0; i < n; i++) if (live(sim, i)) { if (!LAYERS[sim.archIdx[i]](sim, i, sim._ctx)) transitionOne(sim, i, px, py); }
   updatePathRequests(sim, px, py);
   servePathRequest(sim, px, py);
   for (let i = 0; i < n; i++) if (live(sim, i)) setSteerTarget(sim, i);
@@ -556,10 +570,14 @@ function noticedOf(sim, i, px, py) {
   a.x = steer.x[i]; a.y = steer.y[i]; a.fx = sim.fx[i]; a.fy = sim.fy[i];
   t.x = px; t.y = py; t.noise = sim.noise;
   const calm = sim.wary[i] === 1 && sim.provoked[i] === 0; // DRESS-01b: unprovoked ambient boar = short notice only
-  a.range = calm ? sim.cfg.calmNoticeR : sim.scfg[i].noticeR; /* BEAR-01: per-slot */ a.hearR = calm ? sim.cfg.calmNearR : sim.cfg.nearR;
+  a.range = calm ? sim.cfg.calmNoticeR : sim.scfg[i].noticeR; /* BEAR-01: per-slot */ a.hearR = calm ? sim.cfg.calmNearR : sim.pNear[i]; a.coneCos = sim.pCone[i];
   sim._slot = i;
   const o = perceive(a, t, sim._losFn, sim._po);
-  return o.hears || o.sees;
+  const ag = sim.pAggro[i]; // BEAST-03b: aggro mode (0 hostile = today's behaviour)
+  if (ag === 0) return o.hears || o.sees;
+  if (ag === 1) return sim.provoked[i] === 1 && (o.hears || o.sees);
+  if (ag === 3) return o.hears;
+  return false;
 }
 
 /** BEAST-PERCEIVE-01w: keep the engine leash mode in step with the brain state, then advance it (engaged states only). */
@@ -692,7 +710,7 @@ function checkChaseExit(sim, i, px, py) {
   }
   sim.waiting[i] = 0;
   const lr = sim.scfg[i].loseR; // BEAR-01
-  if (d2 > lr * lr || sim.unseen[i] >= sim.cfgSteps.loseSight) enterReturn(sim, i);
+  if (d2 > lr * lr || sim.unseen[i] >= sim.ssteps[i].loseSight) enterReturn(sim, i);
 }
 
 /** GOB-02: thrower distance band. waiting 2 = backing off (< bandMin), 1 = holding in the band (faces the player).
@@ -790,7 +808,7 @@ function returnStep(sim, i, px, py) {
 
 function enterNotice(sim, i) {
   sim.state[i] = STATE_NOTICE;
-  sim.timer[i] = sim.cfgSteps.notice;
+  sim.timer[i] = sim.ssteps[i].notice;
 }
 
 function enterChase(sim, i) {
