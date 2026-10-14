@@ -135,7 +135,8 @@ import { ensureBears } from './quest/sim/bearBrain.js'; // BEAR-01 (D-069): blac
 import { stepFireballHints, resetFireballHints } from './quest/fireballHints.js'; // FB-03
 import { startMpFade } from './quest/vitalsView.js'; // FB-03: MP bar fades in on unlock
 const fbS = { fbOn: false, hand: null, casting: false, manaFlashTick: 0 }; // FB-03: reused hint input
-import { buildBeastNav } from './quest/sim/beastNav.js';
+import { buildBeastNav, buildWaterNav } from './quest/sim/beastNav.js';
+import { createGrabPin } from './quest/grabPin.js'; import { createNpcLook } from './quest/npcLook.js'; // BEAST-08b pin (D-088) / ANIM-LOOKAT-01 AC3
 import { presentBeasts } from './quest/beastView.js';
 import { createBeastLegs } from './quest/beastLegs.js'; // ANIM-C-05: leg IK for beasts (?legik=0 off)
 import { createBeastLook } from './quest/beastLook.js'; // ANIM-LOOKAT-01: beast head look-at (?lookat=0 off)
@@ -928,7 +929,7 @@ registerRiggedChars(assets, bundle.models); // RIG-03w: char.<id> from package .
 // world model, stood 2 m east of Burl on every world load (entity id demo.kitChar: never saved, see saveState TRANSIENT_ENTITY).
 let kitFootCells = null; // ANIM-IK-01b: foot cells of the kit legRig (footIkWire)
 if (window.__charKit && !assets.has('model', 'char.kit')) {
-  try { const K = window.__charKit; const grid = composeCharacter(K, K.defaults); const sw = window.ASSETS.chargenSwimClips; if (sw) Object.assign(grid.clips, sw.clips); /* SWIM-ASSETS-01: swim/tread/dive, in-game player only */ const kitDef = riggedModelDef(collapseRig(meshCharacter(grid), K.partMap), { legRig: HUMANOID_SPLIT_LEG_RIG }); kitFootCells = kitDef.voxel.legRig ? kitDef.voxel.legRig.legs.map((l) => l.foot) : null; /* ANIM-IK-01b: split-leg rig */ assets.add('model', 'char.kit', kitDef); }
+  try { const K = window.__charKit; const grid = composeCharacter(K, K.defaults); const sw = window.ASSETS.chargenSwimClips; if (sw) Object.assign(grid.clips, sw.clips); /* SWIM-ASSETS-01: swim/tread/dive, in-game player only */ const kitDef = riggedModelDef(collapseRig(meshCharacter(grid), K.partMap), { legRig: HUMANOID_SPLIT_LEG_RIG, lookAt: { part: 'head', yawLimitDeg: 60, pitchLimitDeg: 25, hz: 2 } }); kitFootCells = kitDef.voxel.legRig ? kitDef.voxel.legRig.legs.map((l) => l.foot) : null; /* ANIM-IK-01b: split-leg rig */ assets.add('model', 'char.kit', kitDef); }
   catch (e) { console.warn('[char.kit] ' + e.message); }
 }
 if (assets.has('model', 'char.kit')) engine.events.on('world:loaded', ({ world: kw }) => {
@@ -1163,6 +1164,7 @@ async function runGame(mode, cinematic = null) {
   let beastLegs = null; const beastLegsOn = params.get('legik') !== '0'; // ANIM-C-05
   let footIkWire = null; const footIkOn = resolveFootIk(params, isCaptureOrBench); // ANIM-IK-01b: created after world load (needs world.terrain)
   let beastBlend = null; const animblend = params.get('animblend') !== '0'; // ANIM-BLEND-03
+  const grabPin = createGrabPin(() => beasts); engine.events.on('beast:grab', grabPin.onGrab); engine.events.on('world:loaded', grabPin.reset); let npcLook = null; // BEAST-08b: croc pin = movement-only
   let beastLook = null; const lookatOn = params.get('lookat') !== '0'; // ANIM-LOOKAT-01
   let beastAnim = null; const beastAnimOn = params.get('beastanim') === '1'; // ANIM-STATE-WIRE-01: default OFF (wander/return would use the walk clip)
   // WMP-05: map travel is refused in combat (aggro beast within 40 m or the hit-invuln window is up); same sim the hp-regen gate reads.
@@ -1616,7 +1618,7 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
         goblinWire.addFarCamps(planWorldLife(world, window.ASSETS?.levels?.world_geo, 12).camps); // WMP-09: authored-only avoid, same defs on Continue
       }
       if (aiDevRun) addAiReserve(world, 12, [0, 0]); // ED-AI-06: parked test creatures (never in normal play)
-      beasts = createBeastSim(world, { tileNav: !!gridNav, nav: (lifeNav = gridNav || (worldDef.nav && buildBeastNav(world, worldDef.nav))), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events, band: worldBand, fauna: wild ? wild.fauna : null }); // LIFE-07: predators hunt the ambient fauna
+      beasts = createBeastSim(world, { tileNav: !!gridNav, nav: (lifeNav = gridNav || (worldDef.nav && buildBeastNav(world, worldDef.nav))), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events, band: worldBand, fauna: wild ? wild.fauna : null, playerMaxHp: VITALS_DEFAULTS.maxHp, hpPerDamage: VITALS_DEFAULTS.beastDamageScale, waterNav: gridNav ? (() => { try { return buildWaterNav(world, gridNav.grid); } catch (e) { return null; } })() : null }); // LIFE-07: predators hunt the ambient fauna
       // ED-LOGIC-01c: logic wire, rebuilt with every sim; no blocks (01d loads them) = nothing registered, nothing written
       if (logicUnreg) { logicUnreg(); logicUnreg = null; } logicWire = null;
       { const lb = (window.ASSETS && window.ASSETS.logicBlocks) || []; // 01d: content/logic/*.logic.json blocks; hint/sound callbacks wired with 01d
@@ -2161,6 +2163,7 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
         controls.jump = input.isDown(gameKeys.jump) || input.pressed(gameKeys.jump);
         { const sb = playerHandle && playerHandle.data.components.body; controls.swimUp = swimUpOf(controls.jump, input.isDown(gameKeys.dive), sb); controls.jump = jumpOf(controls.jump, sb); } // SWIM-04d: Space = swim up / Left Ctrl = dive in water, jump on land
       }
+      grabPin.apply(controls, input.pressed(gameKeys.forward) || input.pressed(gameKeys.backward) || input.pressed(gameKeys.left) || input.pressed(gameKeys.right) || input.pressed(gameKeys.jump)); // BEAST-08b: croc pin blocks movement only
       if (ending) {
         // Arch review 1: `integrate` copies controls.yaw/pitch onto the
         // transform every step, so once `stepEnd`'s walk phase is over the
@@ -2550,6 +2553,7 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
       drawDecals(decalBind, engine.overlay, cam, fb.lights, engine.world);
       if (goblinWire) goblinWire.update(); // GOB-07b: spear view
       if (beastLegs) beastLegs.dtMs = legDtMs; if (lookatOn && beastLook && playerHandle) { const lt = playerHandle.data.transform; beastLook.setTarget(lt.x, lt.y, lt.z + 1.5); } if (beasts && !cinematic) presentBeasts(beasts, engine.world, engine.overlay, ovlStyles, beastAnimOn ? (beastAnim || (beastAnim = createBeastAnim(16))) : undefined, beastLegsOn ? (beastLegs || (beastLegs = createBeastLegs({ pool: gameVoxelPool }))) : undefined, cam, animblend ? (beastBlend || (beastBlend = createBeastBlend({ pool: gameVoxelPool }))) : undefined, lookatOn ? (beastLook || (beastLook = createBeastLook({ pool: gameVoxelPool }))) : undefined); // ANIM-C-05, ANIM-BLEND-03, ANIM-LOOKAT-01
+      if (beastLook) (npcLook || (npcLook = createNpcLook(beastLook, () => (dialogueCtl && dialogueCtl.open ? dialogueCtl.speaker : null), () => 'player'))).step(engine.world); // ANIM-LOOKAT-01 AC3: NPC head follows only during dialogue
       if (beastLegsOn && !cinematic && mode === 'world') { const bh = engine.world.get('bear'), bv = bh && bh.data.components && bh.data.components.voxel; if (bv) (beastLegs || (beastLegs = createBeastLegs({ pool: gameVoxelPool }))).stepNpc('bear', bh.data, bv, cam.x, cam.y, engine.world.terrain); } // ANIM-C-05: Burl (scripted NPC bear)
       if (targeting && !cinematic) targeting.present(engine.overlay, ovlStyles); // US-128b (29.2)
       // US-078d (30.1): hidden until the sword is actually taken (US-078a review note); no eyeFeel/bobPhase
