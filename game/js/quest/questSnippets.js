@@ -25,9 +25,16 @@ export function kindOf(def) {
   }
 }
 
-function slotValues(def, giver) {
+/** OB-155q: reward item name = item def `name` (explicit defs, else ASSETS.items.defs), never a raw id. */
+export function itemName(id, itemDefs) {
+  const d = (itemDefs && itemDefs[id]) || (globalThis.ASSETS && globalThis.ASSETS.items && globalThis.ASSETS.items.defs && globalThis.ASSETS.items.defs[id]);
+  if (d && typeof d.name === 'string' && d.name) return d.name;
+  const h = String(id).replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[._]+/g, ' ').trim().toLowerCase();
+  return h.charAt(0).toUpperCase() + h.slice(1);
+}
+function slotValues(def, giver, itemDefs) {
   const ob = def.objectives && def.objectives[0], w = (ob && ob.when) || {};
-  const rw = def.reward && Array.isArray(def.reward.items) ? def.reward.items.map((i) => (i.n > 1 ? i.n + ' ' : '') + i.id).join(', ') : 'my thanks';
+  const rw = def.reward && Array.isArray(def.reward.items) ? def.reward.items.map((i) => (i.n > 1 ? i.n + ' ' : '') + itemName(i.id, itemDefs)).join(', ') : 'my thanks';
   const target = w.to || (Array.isArray(w.ids) ? w.ids[0] : w.id) || '';
   const count = w.count || (Array.isArray(w.ids) ? w.ids.length : 1);
   return { title: def.title || def.id, objective: ob ? ob.text : def.title || def.id, giver, reward: rw, count: String(count), target: String(target) };
@@ -35,14 +42,14 @@ function slotValues(def, giver) {
 const fill = (line, v) => line.replace(/\{(\w+)\}/g, (m, k) => (k in v ? v[k] : m));
 
 /** Lines for one state (ready | available | active): writer lines win, else the snippet of the quest's kind, then the generic one. */
-export function linesFor(def, state, snippets, giver) {
+export function linesFor(def, state, snippets, giver, itemDefs) {
   const L = def.lines || {};
   const set = state === 'ready' ? (L.ready && L.ready.length ? [...L.ready, ...(L.done || [])] : null) : L[state === 'available' ? 'offer' : state];
   if (Array.isArray(set) && set.length) return set.map((l) => cap(l));
   if (state === 'active' && L.offer && L.offer.length) return [cap(L.offer[L.offer.length - 1])]; // writer wrote an offer only: repeat its ask
   const sn = snippets || {}, key = state === 'available' ? 'offer' : state, kind = sn.byKind && sn.byKind[kindOf(def)];
   const grp = (kind && kind[key]) || (sn.generic && sn.generic[key]) || (key === 'ready' ? ['Well done.'] : [def.title || def.id]);
-  const v = slotValues(def, giver);
+  const v = slotValues(def, giver, itemDefs);
   return grp.map((l) => cap(fill(l, v)));
 }
 
@@ -70,17 +77,17 @@ export function generateForNpc(raw, npcId, defs, snippets, opts = {}) {
     const add = (state) => {
       if (hand.has('q.' + d.id + '.' + state)) return; // hand-written route wins
       if (state === 'ready') {
-        nodes[k + '.ready'] = mk(linesFor(d, 'ready', sn, giverName), { end: true, setFlag: 'q.' + d.id + '.handin' });
+        nodes[k + '.ready'] = mk(linesFor(d, 'ready', sn, giverName, opts.itemDefs), { end: true, setFlag: 'q.' + d.id + '.handin' });
         rows.ready.push({ node: k + '.ready', requires: 'q.' + d.id + '.ready' });
       } else if (state === 'available') {
-        const off = linesFor(d, 'available', sn, giverName), last = off[off.length - 1];
+        const off = linesFor(d, 'available', sn, giverName, opts.itemDefs), last = off[off.length - 1];
         const choices = [{ next: k + '.accepted', setFlag: 'q.' + d.id + '.accept', text: cap(ch.accept || "I'll do it.", 40) }, { next: laterId, text: cap(ch.later || 'Not yet.', 40) }];
         if (off.length > 1) { nodes[k + '.offer.1'] = mk(off.slice(0, -1), { next: k + '.offer.2' }); nodes[k + '.offer.2'] = mk([last], { choices }); } else nodes[k + '.offer.1'] = mk([last], { choices });
-        nodes[k + '.accepted'] = mk(linesFor(d, 'active', sn, giverName), { end: true });
+        nodes[k + '.accepted'] = mk(linesFor(d, 'active', sn, giverName, opts.itemDefs), { end: true });
         usedLater = true;
         rows.available.push({ node: k + '.offer.1', requires: 'q.' + d.id + '.available' });
       } else {
-        nodes[k + '.active'] = mk(linesFor(d, 'active', sn, giverName), { end: true });
+        nodes[k + '.active'] = mk(linesFor(d, 'active', sn, giverName, opts.itemDefs), { end: true });
         rows.active.push({ node: k + '.active', requires: 'q.' + d.id + '.active' });
       }
     };
@@ -103,8 +110,8 @@ export function generateForNpc(raw, npcId, defs, snippets, opts = {}) {
 export const ANCHORS = { bear: 'bear.home.again', rook: 'rook.ford.repeat2' };
 
 /** raws = {npcId: rawDialogue} -> same keys with generated routes. */
-export function generateAll(raws, defs, snippets) {
+export function generateAll(raws, defs, snippets, itemDefs) {
   const out = {};
-  for (const id of Object.keys(raws)) out[id] = generateForNpc(raws[id], id, defs, snippets, { before: ANCHORS[id] });
+  for (const id of Object.keys(raws)) out[id] = generateForNpc(raws[id], id, defs, snippets, { before: ANCHORS[id], itemDefs });
   return out;
 }
