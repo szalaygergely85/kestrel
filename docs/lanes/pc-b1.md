@@ -1125,3 +1125,6 @@ main.js: kit def gets `{legRig: HUMANOID_SPLIT_LEG_RIG}`; new game/js/look/footI
 
 ### BEAST-06a main hook (kestrel-1, 2026-10-14)
 New game/js/quest/sim/directorWire.js (+test): director built after createBeastSim from the regional list, beast:died -> memberDied, resetSlot on respawn; main.js steps it after beasts.step, saves into world.state["beast.v1"] on save request, loads at create; off in capture/bench. Node only (unverified in browser: world.state must persist the object key).
+
+### ED-AI-05b live areas (kestrel-1, 2026-10-15)
+director.replaceAreas (diff by area id, off-screen-first then forced despawn, spawn next tick, area state never saved) + 'ai-areas'/'ai-ping'/'ai-pong' over kestrel-ai-patch; editor posts at stroke end/Save, "Reload to apply" only when no pong. Tests: spawnAreasLive, aiAreaTool. Limit: area members only parked/spawned if the sim holds that id at that slot (else no-op).

@@ -1168,7 +1168,7 @@ async function runGame(mode, cinematic = null) {
   let beasts = null; // US-079a (29.1): rebuilt on every 'world:loaded', below
   // ED-AI-RECV: editor Creatures tab -> sim.patchArchetype over BroadcastChannel; only editor play-test / ?dev=1, never capture/bench; getSim reads the current sim (survives world reloads)
   const aiDevRun = (params.get('playtest') === '1' || params.get('dev') === '1') && !isCaptureOrBench && params.get('capture') !== '1' && !navigator.webdriver; // ED-AI-06: editor live-test runs only
-  if (aiDevRun) createAiPatchRecv(broadcastFactory, () => beasts);
+  if (aiDevRun) createAiPatchRecv(broadcastFactory, () => beasts, () => (dirWire ? dirWire.director : null));
   let vitals = null; // US-080a1/a2 (30.2): rebuilt on every 'world:loaded', below
   let travel = null; // WS1-07b: created once below (after wakeOut)
   let dialogueCtl = null; // DIALOGUE-01b2 (38.28): rebuilt on every 'world:loaded', below
@@ -1622,8 +1622,9 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
         } }
       if (dirWire) { dirWire.dispose(); dirWire = null; } // BEAST-06a: regional respawn director (off in capture/bench like the herds)
       if (regionalList && regionalList.length && !isCaptureOrBench) { try { // answer c: groups '<region>/<group>', bind(sim) slot->group, beast:died -> slotDied(slot), state 'spawnDirector.v1'
-        const dirGroups = buildGroups(regionalMembers(regionalList, (id) => beasts.slotOf(id)), worldDef.nav?.seed ?? 1);
-        let dw = null; const dir = createSpawnDirector({ groups: dirGroups, dayLenSec: clockCfg.dayLenS, viewHalfRad: HFOV_DEG * Math.PI / 360, los: (ax, ay, bx, by) => hasLineOfSight(world, ax, ay, world.terrain.heightAt(ax, ay) + 1.6, bx, by, world.terrain.heightAt(bx, by) + 1), onRespawn: (gi, g) => dw.respawn(gi, g) });
+        const dirSeed = worldDef.nav?.seed ?? 1, dirMembers = regionalMembers(regionalList, (id) => beasts.slotOf(id)), dirGroups = buildGroups(dirMembers, dirSeed);
+        let dw = null; const dir = createSpawnDirector({ groups: dirGroups, dayLenSec: clockCfg.dayLenS, viewHalfRad: HFOV_DEG * Math.PI / 360, los: (ax, ay, bx, by) => hasLineOfSight(world, ax, ay, world.terrain.heightAt(ax, ay) + 1.6, bx, by, world.terrain.heightAt(bx, by) + 1), onRespawn: (gi, g) => dw.respawn(gi, g), seed: dirSeed, firstSlot: dirMembers.length, // ED-AI-05b: live area edits park members only when the sim really holds that id at that slot
+          onDespawn: (g, k) => { const m = g.members[k], sl = g.slots[k]; if (m && beasts.slotOf(m.id) === sl && beasts.setDown) beasts.setDown(sl, true); } });
         dw = createDirectorWire({ director: dir, sim: beasts, events: engine.events }); dw.load(world.state); dirWire = dw;
       } catch (err) { console.warn('[director] wire failed:', err && err.message); dirWire = null; } }
       combatHud.setSim(beasts); // HPBAR-02 + DMGNUM-01

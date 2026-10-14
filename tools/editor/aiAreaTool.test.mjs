@@ -55,9 +55,21 @@ t.remove('boar-1'); assert.equal(model.areas.length, 1); t.undo(); assert.equal(
 assert.ok(t.st.dirtyLive); t.reloadToApply(); assert.equal(reloads, 1); assert.equal(t.st.dirtyLive, false);
 
 // ED-AI-06: drop pack message
-assert.equal(t.dropPack(700, 0, 'wolf', 3), false); assert.equal(sent.length, 0);
+assert.equal(t.dropPack(700, 0, 'wolf', 3), false); assert.equal(sent.filter((m) => m.type === DROP_MSG).length, 0);
 assert.deepEqual(t.dropPack(40, 50, 'wolf', 3), { type: DROP_MSG, kind: 'wolf', count: 3, x: 40, y: 50, seed: 7 });
-assert.equal(t.dropPack(40, 50, 'wolf', 99).count, 12); assert.equal(sent.length, 2);
-t.clearTest(); assert.deepEqual(sent[2], { type: 'ai-clear' });
+assert.equal(t.dropPack(40, 50, 'wolf', 99).count, 12); assert.equal(sent.filter((m) => m.type === DROP_MSG).length, 2);
+t.clearTest(); assert.deepEqual(sent[sent.length - 1], { type: 'ai-clear' });
 assert.ok(changes > 10);
 console.log('aiAreaTool OK');
+// ED-AI-05b: stroke end / Save post 'ai-areas'; Reload-to-apply only when no pong
+{
+  const sent2 = []; const timers = [];
+  const m2 = loadSpawnAreas('content/beasts', fs);
+  const t2 = createAreaTool({ model: m2, kinds, stack: makeStack(), probe, channel: { post: (m) => sent2.push(m) }, setTimer: (f) => timers.push(f) });
+  t2.arm(true); t2.pointerDown(10, 10); t2.pointerUp(10, 10);
+  const am = sent2.filter((m) => m.type === 'ai-areas'); assert.ok(am.length >= 1, 'ai-areas posted at stroke end'); assert.equal(am[am.length - 1].areas.length, m2.areas.length);
+  assert.ok(sent2.some((m) => m.type === 'ai-ping')); assert.equal(t2.st.connected, null);
+  timers.forEach((f) => f()); assert.equal(t2.st.connected, false, 'no pong -> Reload to apply');
+  t2.ping(); t2.onPong(); assert.equal(t2.st.connected, true);
+  console.log('areaTool live OK');
+}

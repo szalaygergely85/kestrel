@@ -5,7 +5,7 @@ import { dropPack, clearTest } from './sim/aiTest.js';
 export const AI_PATCH_CHANNEL = 'kestrel-ai-patch';
 
 /** channelFactory(name) -> channel ({postMessage, onmessage, close?}) or null; getSim() -> current sim (read per message). */
-export function create(channelFactory, getSim) {
+export function create(channelFactory, getSim, getDirector = () => null) {
   let ch = null;
   try { ch = channelFactory ? channelFactory(AI_PATCH_CHANNEL) : null; } catch (e) { ch = null; }
   if (!ch) return { active: false, close() {} };
@@ -23,6 +23,13 @@ export function create(channelFactory, getSim) {
   ch.onmessage = (ev) => {
     const m = ev && ev.data;
     if (m && (m.type === 'ai-drop' || m.type === 'ai-clear')) return handleDrop(m);
+    if (m && m.type === 'ai-ping') return ch.postMessage({ type: 'ai-pong' }); // ED-AI-05b: tells the editor a game page is connected
+    if (m && m.type === 'ai-areas') { // ED-AI-05b: live-apply of painted spawn areas; the director diffs by area id (state never saved)
+      const dir = getDirector();
+      if (!dir || typeof dir.replaceAreas !== 'function') return ch.postMessage({ type: 'ai-areas-result', ok: false, text: 'game has no spawn director loaded yet' });
+      try { const r = dir.replaceAreas(Array.isArray(m.areas) ? m.areas : []); ch.postMessage({ type: 'ai-areas-result', ok: true, ...r }); } catch (e) { ch.postMessage({ type: 'ai-areas-result', ok: false, text: 'apply failed: ' + (e && e.message || e) }); }
+      return;
+    }
     if (!m || m.type !== 'ai-patch') return;
     const name = String(m.name);
     const sim = getSim();

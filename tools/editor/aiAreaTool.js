@@ -6,6 +6,7 @@ import { addSpawnArea, removeSpawnArea, setSpawnAreaField, saveSpawnAreas } from
 import { validateSpawnAreas, AREA_MAX_COUNT } from './ai/spawnAreas.js';
 
 export const DROP_MSG = 'ai-drop';
+export const AREAS_MSG = 'ai-areas', PING_MSG = 'ai-ping', PONG_MSG = 'ai-pong';
 export const BRUSH_R_MIN = 6, BRUSH_R_MAX = 60;
 export const REFUSE_TEXT = "Can't spawn here.";
 /** "Comes back after" choices (plain words -> seconds). */
@@ -27,17 +28,20 @@ export function areaOutline(a, n = 40) {
   return out;
 }
 
-export function createAreaTool({ model, kinds, stack, probe, channel = null, reload = () => {}, onChange = () => {}, seed = () => 1 }) {
+export function createAreaTool({ model, kinds, stack, probe, channel = null, reload = () => {}, onChange = () => {}, seed = () => 1, setTimer = setTimeout, pingMs = 400 }) {
   const firstKind = Object.keys(kinds)[0];
   const st = {
     armed: false, mode: 'disc', radius: 20,
     brush: { kind: firstKind, count: 3, respawnSec: 300, when: 'both' },
     draft: null,      // { type:'disc', x, y, r } while dragging | { type:'poly', pts:[[x,y]..] }
-    sel: null, msg: '', dirtyLive: false, dropKind: firstKind, dropCount: 0,
+    sel: null, msg: '', dirtyLive: false, connected: null /* null = unknown/pinging, true = a game page answered */, dropKind: firstKind, dropCount: 0,
   };
   const idFor = (kind) => { let n = 1; const used = new Set(model.areas.map((a) => a.id)); while (used.has(`${kind}-${n}`)) n++; return `${kind}-${n}`; };
   const snap = (x, y) => { const p = probe(x, y); if (!p || !p.walkable) { st.msg = REFUSE_TEXT; return null; } st.msg = ''; return { x: r1(x), y: r1(y), z: p.z }; };
-  const touched = () => { st.dirtyLive = true; onChange(); };
+  // ED-AI-05b: live-apply. Every finished edit (stroke end) and Save posts the whole area list; a ping tells whether any game page listens.
+  const pushAreas = () => { if (channel) channel.post({ type: AREAS_MSG, areas: JSON.parse(JSON.stringify(model.areas)) }); };
+  const ping = () => { st.connected = null; if (!channel) { st.connected = false; return; } channel.post({ type: PING_MSG }); setTimer(() => { if (st.connected === null) { st.connected = false; onChange(); } }, pingMs); };
+  const touched = () => { st.dirtyLive = true; pushAreas(); ping(); onChange(); };
   const commit = (shape) => {
     const b = st.brush, a = { id: idFor(b.kind), ...shape, kind: b.kind, count: b.count, respawnSec: b.respawnSec, when: b.when };
     stack.run(addSpawnArea(model, a)); st.sel = a.id; st.draft = null; touched(); return a;
@@ -93,7 +97,10 @@ export function createAreaTool({ model, kinds, stack, probe, channel = null, rel
     },
     undo() { const r = stack.undo(); if (r) touched(); return r; },
     redo() { const r = stack.redo(); if (r) touched(); return r; },
-    save(fs) { return saveSpawnAreas(model, fs); },
+    save(fs) { const r = saveSpawnAreas(model, fs); pushAreas(); return r; },
+    ping, pushAreas,
+    /** The game page answered the ping (glue calls this on an 'ai-pong' message or any areas result). */
+    onPong() { st.connected = true; st.dirtyLive = false; onChange(); },
     /** Architect decision pending (live director rebuild vs reload): the editor only offers "Reload to apply". */
     reloadToApply() { st.dirtyLive = false; reload(); onChange(); },
     /** ED-AI-06: "Drop pack here" at a ground point. Message for the running game tab; never saved. */

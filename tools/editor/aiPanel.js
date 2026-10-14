@@ -107,7 +107,7 @@ export function mountAiPanel(root, { model, fs, channel, areaTool = null }) {
     if (S.mode === 'polygon') mk('Finish polygon', () => t.finish());
     mk('Undo', () => t.undo()); mk('Redo', () => t.redo());
     mk('Save areas', () => { const r = t.save(fs); const bad = Object.keys(t.invalid()).length; status.textContent = `saved ${r.written.join(', ') || '(no changes)'}` + (bad ? ` - ${bad} area(s) marked, check them` : ''); });
-    mk('Reload to apply', () => t.reloadToApply());
+    if (S.connected !== true) mk('Reload to apply', () => t.reloadToApply()); // only when no game page answered the ping
     box.append(bar);
     row('Creature', sel(names.map((k) => [model.kinds[k].name, k]), S.brush.kind, (v) => t.setBrush('kind', v)));
     const cnt = h('input'); cnt.type = 'number'; cnt.min = 1; cnt.max = 12; cnt.value = S.brush.count; cnt.style.width = '64px'; cnt.onchange = () => t.setBrush('count', Number(cnt.value)); row('How many', cnt);
@@ -115,7 +115,7 @@ export function mountAiPanel(root, { model, fs, channel, areaTool = null }) {
     row('Active', sel(WHEN_CHOICES, S.brush.when, (v) => t.setBrush('when', v)));
     const rad = h('input'); rad.type = 'range'; rad.min = BRUSH_R_MIN; rad.max = BRUSH_R_MAX; rad.value = S.radius; rad.oninput = () => { S.radius = Number(rad.value); }; row(`Brush radius (m)`, rad);
     if (S.msg) box.append(h('div', 'ai-flag', S.msg));
-    if (S.dirtyLive) box.append(h('i', '', 'Changes show in the game after "Reload to apply".'));
+    if (S.dirtyLive && S.connected === false) box.append(h('i', '', 'Changes show in the game after "Reload to apply".'));
     const bad = t.invalid();
     t.model.areas.forEach((a) => {
       const line = h('div', 'ai-row'), b = h('button', 'ed-btn' + (a.id === S.sel ? ' active' : ''), `${model.kinds[a.kind] ? model.kinds[a.kind].name : a.kind} x${a.count} (${a.id})`); b.type = 'button'; b.onclick = () => t.select(a.id);
@@ -177,7 +177,7 @@ export async function mountCreaturesTab(root, deps = {}) {
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([t], { type: 'application/json' })); a.download = p.split('/').pop(); a.click(); } };
   const { loadArchetypes } = await import('./ai/model.js');
   const bc = new BroadcastChannel('kestrel-ai-patch');
-  const channel = { post: (m) => bc.postMessage(m), set onmessage(fn) { bc.onmessage = (e) => fn(e.data); } };
+  const channel = { post: (m) => bc.postMessage(m), set onmessage(fn) { bc.onmessage = (e) => { const d = e.data; if (d && (d.type === 'ai-pong' || d.type === 'ai-areas-result') && d.ok !== false) { if (handle && handle.areaTool) handle.areaTool.onPong(); } fn(e.data); }; } };
   const { loadSpawnAreas, makeStack: mkStack } = await import('./ai/model.js');
   const { createAreaTool } = await import('./aiAreaTool.js');
   const model = loadArchetypes('content/beasts', fs);

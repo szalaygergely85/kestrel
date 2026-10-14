@@ -6,6 +6,8 @@ import { KINDS } from './beastKinds.js';
 import { hashU } from '../../life/schedule.js';
 import { SPAWN_AREAS, areaGid, areaGroupSpecs } from './spawnAreas.js';
 
+export const DESPAWN_GRACE_STEPS = 300; // ED-AI-05b: a replaced area's members wait this many steps for the player to look away, then vanish at once
+
 export const RESPAWN_SEC = Object.freeze({ grazer: 180, common: 360, pack: 480, swarm: 480, elite: 1200 }); // camp/boss handled apart
 export const CAMP_DAYS = 3, DEFAULT_DAY_SEC = 1200; // dayLenSec is an option: pass the game's real day length
 export const SPAWN_MIN_DIST = 60, VIEW_MARGIN_RAD = 0.2617993877991494 /* 15 deg */, RETRY_STEPS = 300, CHECK_STEPS = 30;
@@ -60,7 +62,7 @@ export function buildGroups(members, seed, walkable, areas = SPAWN_AREAS) {
     for (const { area, members: am } of areaGroupSpecs(areas, seed, members.length, walkable)) {
       let cx = 0, cy = 0; for (const m of am) { cx += m.x; cy += m.y; } cx /= am.length; cy /= am.length;
       const spec = KINDS[area.kind], cls = (spec && spec.respawn) || 'common';
-      out.push({ gid: areaGid(area), kind: area.kind, region: area.id, cls, slots: am.map((m) => m.slot), members: am, home: [cx, cy], route: [[cx, cy]], area: area.id, when: area.when, respawnSec: area.respawnSec });
+      out.push({ gid: areaGid(area), kind: area.kind, region: area.id, cls, slots: am.map((m) => m.slot), members: am, home: [cx, cy], route: [[cx, cy]], area: area.id, sig: JSON.stringify(area), when: area.when, respawnSec: area.respawnSec });
     }
   }
   return out;
@@ -74,20 +76,24 @@ export function buildGroups(members, seed, walkable, areas = SPAWN_AREAS) {
 function cosPoly(x) { const x2 = x * x; return 1 - x2 / 2 + x2 * x2 / 24 - x2 * x2 * x2 / 720 + x2 * x2 * x2 * x2 / 40320 - x2 * x2 * x2 * x2 * x2 / 3628800; }
 
 export function createSpawnDirector(opts) {
-  const groups = opts.groups, N = groups.length, dayLen = opts.dayLenSec || DEFAULT_DAY_SEC;
+  let groups = opts.groups, N = groups.length; const dayLen = opts.dayLenSec || DEFAULT_DAY_SEC;
   const viewCos = cosPoly((opts.viewHalfRad || 0.5236) + VIEW_MARGIN_RAD); // create-time only
   const D = {
     groups, t: 0, tick: 0, mult: 1, diffName: 'normal',
     alive: new Int16Array(N), rule: new Uint8Array(N), base: new Float64Array(N), diedAt: new Float64Array(N), dead: new Uint8Array(N),
     nextTry: new Int32Array(N), idx: Object.create(null), respawns: 0, deferred: 0,
   };
-  for (let g = 0; g < N; g++) {
+  const initGroup = (g) => {
     const gr = groups[g], cls = gr.cls;
     D.alive[g] = gr.slots.length; D.idx[gr.gid] = g;
     if (cls === 'boss') D.rule[g] = R_BOSS;
     else if (cls === 'camp') { D.rule[g] = R_CAMP; D.base[g] = CAMP_DAYS * dayLen; }
     else { D.rule[g] = R_TIMED; D.base[g] = gr.respawnSec || RESPAWN_SEC[cls] || RESPAWN_SEC.common; }
-  }
+  };
+  for (let g = 0; g < N; g++) initGroup(g);
+  D.pend = []; // ED-AI-05b: replaced-area groups waiting to be despawned [{ group, deadline }]; empty -> step costs one length check
+  let px0 = 0, py0 = 0, fx0 = 1, fy0 = 0; // last player pose from step (replaceAreas runs between ticks)
+  let boundSim = null;
   D.setDifficulty = (d) => { D.mult = d.respawn; D.diffName = d.name; };
   /** A member died: when the last one dies the group timer starts (bosses: dead for good). */
   D.memberDied = (g) => { if (D.dead[g] || D.alive[g] <= 0) return; if (--D.alive[g] === 0) { D.dead[g] = 1; D.diedAt[g] = D.t; D.nextTry[g] = 0; } };
@@ -101,8 +107,9 @@ export function createSpawnDirector(opts) {
   };
   /** Advance by dt GAME seconds (0 while paused). Checks every CHECK_STEPS steps; a blocked respawn retries after RETRY_STEPS. */
   D.step = (dt, px, py, fx, fy) => {
-    D.t += dt; const tick = ++D.tick;
+    D.t += dt; const tick = ++D.tick; px0 = px; py0 = py; fx0 = fx; fy0 = fy;
     if (tick % CHECK_STEPS !== 0) return;
+    if (D.pend.length) runPending();
     for (let g = 0; g < N; g++) {
       if (!D.dead[g] || D.rule[g] === R_BOSS || tick < D.nextTry[g] || D.t < D.diedAt[g] + D.base[g] * D.mult) continue;
       const h = groups[g].home;
@@ -114,6 +121,7 @@ export function createSpawnDirector(opts) {
   /** Slot -> group map, built ONCE at bind (answer c): sim.slotOf(member.id) (or member.slot) -> Int16Array -> group index. */
   D.groupOfSlot = new Int16Array(0);
   D.bind = (sim) => {
+    boundSim = sim;
     let max = sim && sim.count ? sim.count : 0;
     for (let g = 0; g < N; g++) for (let k = 0; k < groups[g].slots.length; k++) if (groups[g].slots[k] + 1 > max) max = groups[g].slots[k] + 1;
     D.groupOfSlot = new Int16Array(max).fill(-1);
@@ -129,10 +137,74 @@ export function createSpawnDirector(opts) {
   };
   /** beast:died by slot: 0 alloc. Returns the group index or -1. */
   D.slotDied = (slot) => { const g = slot >= 0 && slot < D.groupOfSlot.length ? D.groupOfSlot[slot] : -1; if (g >= 0) D.memberDied(g); return g; };
+
+  // ---- ED-AI-05b: live-apply of painted spawn areas (arch answer d) ----
+  const offScreen = (gr, k) => { // member k off-screen: outside the view cone + margin, or no line of sight (uses the live slot position when given)
+    const m = gr.members[k]; let x = m.x, y = m.y;
+    if (opts.slotPos) { const p = opts.slotPos(gr.slots[k]); if (p) { x = p[0]; y = p[1]; } }
+    const dx = x - px0, dy = y - py0, d2 = dx * dx + dy * dy;
+    if (d2 > 0 && (dx * fx0 + dy * fy0) > viewCos * Math.sqrt(d2) && !(opts.los && !opts.los(px0, py0, x, y))) return false;
+    return true;
+  };
+  function despawnGroup(gr, force) { // cold path: park every member that is off-screen (all when force); returns true when none is left
+    let left = 0; const done = gr.parked || (gr.parked = []);
+    for (let k = 0; k < gr.slots.length; k++) {
+      if (done[k]) continue;
+      if (force || offScreen(gr, k)) { done[k] = 1; if (opts.onDespawn) opts.onDespawn(gr, k); } else left++;
+    }
+    return left === 0;
+  }
+  function runPending() { // every CHECK_STEPS ticks, only while something is queued
+    const list = D.pend;
+    for (let i = list.length - 1; i >= 0; i--) { if (despawnGroup(list[i].group, D.tick >= list[i].deadline)) list.splice(i, 1); }
+  }
+  /** Diff by area id against the live groups: unchanged untouched; changed/removed despawn their members (off-screen now, the rest after the grace or when
+   * they look away); added/changed areas spawn on the next director tick that passes the never-in-view rule. Deterministic; cold path. Returns { added, changed, removed, kept }. */
+  D.replaceAreas = (areas) => {
+    const sigOf = Object.create(null); // id -> sig of the currently live area groups
+    for (let i = 0; i < N; i++) if (groups[i].area) sigOf[groups[i].area] = groups[i].sig;
+    const want = Object.create(null), sorted = [];
+    for (const a of areas || []) { want[a.id] = JSON.stringify(a); sorted.push(a); }
+    const res = { added: 0, changed: 0, removed: 0, kept: 0 }, keep = [], fresh = [];
+    let maxSlot = opts.firstSlot !== undefined ? opts.firstSlot - 1 : -1;
+    for (let i = 0; i < N; i++) {
+      const gr = groups[i];
+      if (gr.area && (want[gr.area] === undefined || want[gr.area] !== gr.sig)) { // removed or changed: despawn
+        if (want[gr.area] === undefined) res.removed++; else res.changed++;
+        gr.parked = null; if (!despawnGroup(gr, false)) D.pend.push({ group: gr, deadline: D.tick + DESPAWN_GRACE_STEPS });
+        continue;
+      }
+      if (gr.area) res.kept++;
+      for (let k = 0; k < gr.slots.length; k++) if (gr.slots[k] > maxSlot) maxSlot = gr.slots[k];
+      keep.push(gr);
+    }
+    for (let i = 0; i < D.pend.length; i++) { const sl = D.pend[i].group.slots; for (let k = 0; k < sl.length; k++) if (sl[k] > maxSlot) maxSlot = sl[k]; } // pending slots stay reserved
+    const todo = sorted.filter((a) => sigOf[a.id] !== want[a.id]);
+    for (const { area, members } of areaGroupSpecs(todo, opts.seed || 1, maxSlot + 1, opts.walkable)) {
+      let cx = 0, cy = 0; for (const m of members) { cx += m.x; cy += m.y; } if (members.length) { cx /= members.length; cy /= members.length; }
+      const spec = KINDS[area.kind], cls = (spec && spec.respawn) || 'common';
+      if (sigOf[area.id] === undefined) res.added++;
+      fresh.push({ gid: areaGid(area), kind: area.kind, region: area.id, cls, slots: members.map((m) => m.slot), members, home: [cx, cy], route: [[cx, cy]], area: area.id, sig: want[area.id], when: area.when, respawnSec: area.respawnSec });
+    }
+    if (!res.added && !res.changed && !res.removed) return res; // nothing changed: state untouched
+    // carry per-group state by gid, then re-lay the arrays
+    const old = { alive: D.alive, dead: D.dead, diedAt: D.diedAt, nextTry: D.nextTry }, oldIdx = D.idx, oldN = N;
+    void oldN;
+    groups = keep.concat(fresh); D.groups = groups; N = groups.length;
+    D.alive = new Int16Array(N); D.rule = new Uint8Array(N); D.base = new Float64Array(N); D.diedAt = new Float64Array(N); D.dead = new Uint8Array(N); D.nextTry = new Int32Array(N);
+    D.idx = Object.create(null);
+    for (let g = 0; g < N; g++) {
+      initGroup(g); const o = oldIdx[groups[g].gid];
+      if (o !== undefined && g < keep.length) { D.alive[g] = old.alive[o]; D.dead[g] = old.dead[o]; D.diedAt[g] = old.diedAt[o]; D.nextTry[g] = old.nextTry[o]; }
+      else { D.alive[g] = 0; D.dead[g] = 1; D.diedAt[g] = D.t - D.base[g] * D.mult - 1; D.nextTry[g] = 0; groups[g].parked = null; despawnGroup(groups[g], true); } // park now, spawn on the next tick
+    }
+    if (boundSim) D.bind(boundSim); else D.groupOfSlot = new Int16Array(0);
+    return res;
+  };
   /** Save (item 10) under the director's OWN key (answer c), keyed by gid: { [gid]: { dead, respawnAt } }; respawnAt = game seconds REMAINING at save time (director clock D.t restarts per session); bosses: -1 (never). */
   D.save = (state) => {
     const o = {};
-    for (let i = 0; i < N; i++) if (D.dead[i]) o[groups[i].gid] = { dead: 1, respawnAt: D.rule[i] === R_BOSS ? -1 : Math.max(0, D.dueAt(i) - D.t) };
+    for (let i = 0; i < N; i++) if (D.dead[i] && !(groups[i].area && !opts.persistAreas)) o[groups[i].gid] = { dead: 1, respawnAt: D.rule[i] === R_BOSS ? -1 : Math.max(0, D.dueAt(i) - D.t) };
     state[SAVE_KEY] = o;
     return o;
   };
@@ -140,7 +212,7 @@ export function createSpawnDirector(opts) {
   D.load = (state) => {
     const s = state && state[SAVE_KEY]; if (!s) return false;
     for (const gid of Object.keys(s)) {
-      const i = D.idx[gid], e = s[gid]; if (i === undefined || !e || !e.dead) continue;
+      const i = D.idx[gid], e = s[gid]; if (i === undefined || !e || !e.dead || (groups[i].area && !opts.persistAreas)) continue;
       D.dead[i] = 1; D.alive[i] = 0; D.nextTry[i] = 0;
       if (D.rule[i] !== R_BOSS) D.diedAt[i] = D.t + e.respawnAt - D.base[i] * D.mult;
     }
