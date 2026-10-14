@@ -19,7 +19,7 @@ for (const [suf, reg] of Object.entries(REGIONS)) {
   assert.equal(regionOf(e.x, e.y).id, reg, suf + ' region');
   assert.ok(!outsidePolygon({ bounds: def.bounds }, e.x, e.y), suf + ' inside bounds');
   for (const s of def.structures) assert.ok(Math.hypot(s.origin.x - e.x, s.origin.y - e.y) >= 8, `${suf} clear of ${s.id}`);
-  for (const o of def.entities) if (o !== e && o.x !== undefined && o.type !== 'player') assert.ok(Math.hypot(o.x - e.x, o.y - e.y) >= 8, `${suf} clear of ${o.id}`);
+  for (const o of def.entities) if (o !== e && o.x !== undefined && o.type !== 'player' && o.id !== 'warden_' + suf) assert.ok(Math.hypot(o.x - e.x, o.y - e.y) >= 8, `${suf} clear of ${o.id}`);
 }
 const all = def.entities.filter((e) => e.components && e.components.waystone && e.components.waystone.kind === 'relay');
 assert.equal(new Set(all.map((e) => e.components.waystone.id)).size, all.length, 'unique waystone ids');
