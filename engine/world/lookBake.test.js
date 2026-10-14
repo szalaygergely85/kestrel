@@ -83,10 +83,16 @@ const bakeBand = (t, cx0, cy0, cw, ch, src) => { const st = t.newBandState(cx0, 
 {
   const L = new LookBaker(CFG, R.util), out = new Uint8Array(2);
   for (let i = 0; i < 20000; i++) L.bakeCell(i * 0.1, 5, i & 1, out, 0);
-  if (globalThis.gc) globalThis.gc();
+  // Retained heap, not raw delta: un-collected young garbage made the raw delta swing 0..2 MB between runs. With --expose-gc: gc after each of two
+  // 1M-call rounds and compare retained heap (a leak of even 1 B/call = 1 MB per round, bound 128 KB). Without gc: round delta < 8 MB (leak >= 8 B/call).
+  const gcf = globalThis.gc, round = () => { for (let i = 0; i < 1000000; i++) L.bakeCell((i % 1000) * 0.37, 5, i & 1, out, 0); };
+  if (gcf) gcf();
   const h0 = process.memoryUsage().heapUsed;
-  for (let i = 0; i < 2000000; i++) L.bakeCell((i % 1000) * 0.37, 5, i & 1, out, 0);
-  const d = process.memoryUsage().heapUsed - h0;
-  ok('bakeCell 2M calls: heap delta < 1 MB', d < 1048576, d + ' B');
+  round(); if (gcf) gcf();
+  const h1 = process.memoryUsage().heapUsed;
+  round(); if (gcf) gcf();
+  const h2 = process.memoryUsage().heapUsed;
+  const grow = gcf ? Math.max(h1 - h0, h2 - h1) : h2 - h0;
+  ok('bakeCell 2M calls: retained heap growth ' + (gcf ? '< 128 KB per 1M-call round' : '< 8 MB (no --expose-gc)'), grow < (gcf ? 131072 : 8388608), grow + ' B');
 }
 console.log(`lookBake.test.js: ${n} checks passed`);

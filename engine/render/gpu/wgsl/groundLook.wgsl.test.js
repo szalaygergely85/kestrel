@@ -3,8 +3,9 @@
 import assert from 'node:assert/strict';
 import { SHADE_WGSL, SHADE_LEVEL_WGSL, SHADE_LOOK_WGSL, SHADE_LEVEL_LOOK_WGSL, SHADE_BLOCK, SHADE_LOOK_BLOCK, TERRAIN_SHADE_WGSL } from './shade.wgsl.js';
 import { compileFn, makeTex, textureLoad as texLoad, shims } from './wgslProbe.js';
-import { shadeTerrain, makeFarGrass, FOREST_FACE_NZ, FG_TYPES } from '../../terrainShade.js';
+import { shadeGrass, grassTableFor, packGrassTable, grassLookId, GRASS_GX_HAS, shadeTerrain, makeFarGrass, FOREST_FACE_NZ, FG_TYPES } from '../../terrainShade.js';
 import { packLookTable, makeGroundLook, shadeLookCell, LOOK_MAX, LOOK_ROWS, LOOK_TABLE_WORDS, GROUND_LOOK_WGSL } from '../../groundLook.js';
+import { CARPET_WGSL } from './carpet.wgsl.js';
 import { TLOOK_WIDTH, MAX_FEATURES_PER_TYPE } from '../TerrainTextures.js';
 
 // --- look off: nothing of the look leaks into the plain shaders ---
@@ -146,5 +147,38 @@ assert.ok(r1.blend > 500 && r1.anim > 100 && r1.lean > 50, `coverage blend ${r1.
   assert.ok(run(mc('select(lo, hi, w > h4)', 'select(lo, hi, w < h4)'), 250, null).bad > 5, 'mutation: border dither side caught');
   assert.ok(run(mc('let dith = 1.0 - df * df * (3.0 - 2.0 * df);', 'let dith = 1.0;'), 250, null).bad > 5, 'mutation: dither fade caught');
   assert.ok(run(mc('hashFast(cx, cy, 71)', 'hashFast(cx, cy, 72)'), 250, null).bad > 5, 'mutation: colour dice salt caught');
+}
+
+// ENV-02e: carpet look: (1) grassLookPick (carpet.wgsl) == grassLookId (JS) on 4000 random words / roots; (2) shadeGrass look-id root colour JS == WGSL on 2400 blades (0 mismatches)
+{
+  const pick = compileFn(CARPET_WGSL, 'grassLookPick', { ...shims, ...mkHash(CARPET_WGSL) });
+  let badP = 0, nP = 0, hiN = 0, loN = 0;
+  for (let i = 0; i < 4000; i++) {
+    const lo = rLo(), hi = rLo(), wb = rand() < 0.15 ? 0 : Math.floor(rand() * 256), off = i % 17 === 0, word = off ? 0x7149F2CA : lo | (hi << 4) | (wb << 8);
+    const rx = Math.fround(rand() * 600 - 100), ry = Math.fround(rand() * 600 - 100);
+    const js = off ? 0 : grassLookId(word, rx, ry), g = pick(word, rx, ry); nP++; if (g !== js) badP++; if (lo && hi && lo !== hi) { if (js === hi) hiN++; else loN++; }
+  }
+  assert.equal(badP, 0, `grassLookPick vs grassLookId: ${badP}/${nP}`);
+  assert.ok(hiN > 300 && loN > 300, `dither covers both sides (${loN} lo / ${hiN} hi)`);
+  const cfgG = { variants: [{ ramp: [[10, 40, 10], [60, 160, 40], [180, 230, 90]] }, { ramp: [[30, 20, 5], [200, 170, 60]] }] };
+  const tab = grassTableFor(cfgG), packed = packGrassTable(tab, new Float32Array(80 * 4));
+  const grass = []; for (let k = 0; k < 80; k++) { const x = packed[k * 4], y = packed[k * 4 + 1], z = packed[k * 4 + 2], w = packed[k * 4 + 3]; grass.push({ x, y, z, w, xyz: { x, y, z } }); }
+  const su = { ...makeSu(0, 0, null), grass };
+  const { base } = compileAll(LOOKSRC, su);
+  base.wetGain = compileFn(SHADE_WGSL, 'wetGain', base);
+  const sg = compileFn(LOOKSRC, 'shadeGrass', base);
+  const ctxG = { fog, shading: { ...shadingT, wetness: 0, floorLum: 0 }, tlook, tlookWidth: TLOOK_WIDTH, groundLook: GL };
+  let badG = 0, nG = 0, ids = 0;
+  for (let t = 0; t < 2400; t++) {
+    const variant = 1 + (t & 1), tt = rand() < 0.5 ? rand() * 60 : rand() * 1700, b = rand() * 1.3, h01 = rand(), lean = rand() * 2 - 1, tint = (rand() * 2 - 1) * 0.08, lid = t % 8 === 0 ? 0 : 1 + Math.floor(rand() * 6);
+    const gx = GRASS_GX_HAS + Math.floor(rand() * 3) * 16777216 + Math.floor(rand() * 4) * 65536 + Math.floor(rand() * 256) * 256 + lid * 268435456, sunI = rand() * 1.5;
+    const o = { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3), level: 0 };
+    shadeGrass(tt, variant, h01, lean, tint, b, grassTableFor(cfgG), ctxG, o, gx, sunI);
+    const g = sg(tt, variant, h01, lean, tint, b, gx >>> 0, sunI); nG++; if (lid) ids++;
+    if (g.glyph !== o.glyph || q(g.fr) !== o.fg[0] || q(g.fg) !== o.fg[1] || q(g.fb) !== o.fg[2] || q(g.br) !== o.bg[0] || q(g.bg) !== o.bg[1] || q(g.bb) !== o.bg[2]) { badG++; if (badG < 4) console.error('grass look', lid, h01, g.fr, o.fg[0]); }
+  }
+  assert.equal(badG, 0, `shadeGrass look-id vs JS: ${badG}/${nG} differ`);
+  assert.ok(!/lkT\(la/.test(SHADE_WGSL), 'look off: no look in the plain shadeGrass');
+  console.log(`ENV-02e carpet look: ${nP} pick probes + ${nG} shadeGrass probes (${ids} with a look id) vs JS twin, 0 mismatches`);
 }
 console.log(`groundLook.wgsl.test.js: look off byte-identical, ${r1.n + r2.n} shadeTerrain probes (looks 0..6, ${r1.blend + r2.blend} blends, wind 0/1.5) + ${r1.lkN + r2.lkN} lkShade probes vs JS twin, max float err ${Math.max(r1.maxErr, r2.maxErr).toExponential(1)}, mutations caught.`);

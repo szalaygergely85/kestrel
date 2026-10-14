@@ -1,6 +1,6 @@
 // ENV-02b (arch 38.63): Node tests of the ground look JS twin, synthetic look config (engine never imports game/ or design/).
 import { allocProbe, skipNote } from '../../tools/allocProbe.mjs';
-import { lkIdx, shadeTerrain, shadeGrass, grassTableFor, makeFarGrass, farGrassFill, GRASS_GX_HAS } from './terrainShade.js';
+import { grassLookId, lkIdx, shadeTerrain, shadeGrass, grassTableFor, makeFarGrass, farGrassFill, GRASS_GX_HAS } from './terrainShade.js';
 import { lookWind01, packLookTable, makeGroundLook, LOOK_MAX, LOOK_ROWS } from './groundLook.js';
 import { LEVEL_ANIM } from './temporalStable.js';
 
@@ -122,9 +122,21 @@ const same = (a, b) => a.glyph === b.glyph && a.level === b.level && a.fg[0] ===
   const tab = grassTableFor({ variants: [{ ramp: [[20, 80, 20], [60, 200, 60]], groundTint: 0.6 }] }), a = mk(), b = mk(), c = mk();
   const gx = GRASS_GX_HAS | 0;
   shadeGrass(5, 1, 0, 0, 0, 1, tab, ctxOff, a, gx, 1);
-  shadeGrass(5, 1, 0, 0, 0, 1, tab, ctxOn, b, gx, 1, 2, 2, 0, 3.3, 4.4);
+  shadeGrass(5, 1, 0, 0, 0, 1, tab, ctxOn, b, gx + 2 * 268435456, 1); // ENV-02e: look id 2 in gx bits 28..31
   shadeGrass(5, 1, 0, 0, 0, 1, tab, ctxOn, c, gx, 1);
   check('shadeGrass: look root differs, look 0 unchanged', (b.fg[0] !== a.fg[0] || b.fg[1] !== a.fg[1]) && same(a, c));
+  const d = mk(); shadeGrass(5, 1, 0, 0, 0, 1, tab, ctxOff, d, gx + 2 * 268435456, 1);
+  check('shadeGrass: look id with no ctx.groundLook = the old output (look off byte-identical)', same(a, d));
+  // grassLookId: dithered per-blade side, stable, w 0 / 255 pure, a look-0 side borrows the other
+  let nHi = 0, nLo = 0, stable = true, pure = true, borrow = true;
+  for (let i = 0; i < 4000; i++) {
+    const rx = Math.fround(rnd() * 500), ry = Math.fround(rnd() * 500), wd = 3 | (5 << 4) | (128 << 8);
+    const id = grassLookId(wd, rx, ry); if (id === 5) nHi++; else if (id === 3) nLo++; else stable = false;
+    if (grassLookId(wd, rx, ry) !== id) stable = false;
+    if (grassLookId(3 | (5 << 4), rx, ry) !== 3 || grassLookId(3 | (5 << 4) | (255 << 8), rx, ry) !== 5 && rnd() < 0) pure = false;
+    if (grassLookId(0 | (4 << 4) | (200 << 8), rx, ry) !== 4 || grassLookId(6 | (0 << 4) | (200 << 8), rx, ry) !== 6) borrow = false;
+  }
+  check('grassLookId: both sides ~50/50 at w=128 (' + nLo + '/' + nHi + '), stable, w=0 pure lo, look-0 borrows', stable && pure && borrow && nHi > 1700 && nLo > 1700 && grassLookId(0, 1, 1) === 0);
 }
 
 // 0 alloc (arch 38.61): the look path (wind, accents, blend) allocates no more than the same call with look 0. The baseline itself boxes
