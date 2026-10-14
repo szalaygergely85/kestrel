@@ -143,3 +143,8 @@ const grown = heapGrowth(frame);
 assert.ok(grown < 4096, 'heap growth ' + grown);
 stA.on = false; applyAtmosToPalette(P, stA);
 console.log('atmos.test ok', JSON.stringify({ fitErr: +fitErr.toFixed(4), maxD255: +(maxD * 255).toFixed(3), maxC255: +(maxC * 255).toFixed(3), heapGrowth: grown }));
+
+// ENV-GATEFIX: gradeCells on the real RenderTarget shape (fg/bg live in rt.cells; gpucompare + main pass the RenderTarget)
+{ const rt = { cells: new CellBuffer(8, 8), cols: 8, rows: 8 }; for (let i = 0; i < rt.cells.fg.length; i += 4) { rt.cells.fg[i] = 200; rt.cells.bg[i + 1] = 90; }
+  const ref = { fg: new Uint8Array(rt.cells.fg), bg: new Uint8Array(rt.cells.bg) }; gradeCells(ref, stg); gradeCells(rt, stg);
+  assert.deepEqual(rt.cells.fg, ref.fg, 'RenderTarget fg graded like bare CellBuffer'); assert.deepEqual(rt.cells.bg, ref.bg, 'RenderTarget bg'); }

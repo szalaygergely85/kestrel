@@ -238,7 +238,7 @@ function buildCompareRuns(ctx) {
   // that rotates the lower-leg parts 8..11 by 30-60 deg, so the 4th part bit (flat0 bit 17) is set on every vertex of parts 8..11.
   try {
     const q16 = JSON.parse(JSON.stringify(quadruped16));
-    q16.mats = { '#': 'wood', 'o': 'woodLight', 'e': 'ironLight' };
+    q16.mats = { '#': 'wood', 'o': 'wood_cut', 'e': 'iron_light' }; // ENV-GATEFIX: real material keys (woodLight/ironLight are palette colours, fastShade threw)
     q16.animations.splay = { fps: 1, loop: true, frames: [{ legFL2: { rot: [30, 0, 0] }, legFR2: { rot: [45, 0, 0] }, legBL2: { rot: [60, 0, 0] }, legBR2: { rot: [-40, 0, 0] } }] };
     assets.add('model', 'vox12', { voxel: q16 });
   } catch (e) { console.warn('[gpucompare] vox12 not registered:', e && e.message); }
@@ -1186,7 +1186,7 @@ async function runGpuCompareSceneMode(ctx) {
     const wasActive = rt.gpuActive;
     rt.gpuActive = false;
     fbCompare.gpu = false;
-    renderWorld(fbCompare, world, cam);
+    try { renderWorld(fbCompare, world, cam); } catch (e) { e.message += ' [pose: ' + poseName + ']'; throw e; } // ENV-GATEFIX: name the failing pose
     // BUG-VM-001 (item 5): the JS/mesh twin's own `buildList` call (compositor.js's `renderWorldMesh`), right
     // after `renderWorld` above runs it - before anything else touches `engine.viewModel.stats`.
     const vmItemsJs = engine.viewModel ? engine.viewModel.stats.items : 0;

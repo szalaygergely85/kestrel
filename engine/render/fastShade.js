@@ -134,6 +134,7 @@ function resolveMaterial(P, key) {
   if (rec) return rec;
 
   const m = P.materials[key];
+  if (!m) throw new Error('fastShade: unknown material ' + JSON.stringify(key)); // ENV-GATEFIX: name the key instead of 'reading ramp'
   const ramp = P.ramps[m.ramp];
   const rampCodes = new Uint8Array(ramp.length);
   for (let i = 0; i < ramp.length; i++) rampCodes[i] = ramp.charCodeAt(i);

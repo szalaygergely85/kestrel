@@ -149,9 +149,10 @@ export function gradeRGB(rgb, state) {
   return rgb;
 }
 
-/** Grade every cell of a CellBuffer-like { fg, bg } (RGBA bytes, 4/cell) in place; glyphs never change. LUT per channel + sat per cell. */
+/** Grade every cell in place; `rt` is a RenderTarget (has .cells, like applySceneDim) or a bare CellBuffer ({ fg, bg }, RGBA bytes, 4/cell); glyphs never change. LUT per channel + sat per cell. */
 export function gradeCells(rt, state) {
   if (!state.on || state.gradeId) return;
+  const cb = rt.cells || rt; // ENV-GATEFIX: real RenderTarget keeps fg/bg in .cells
   let lut = state._lut;
   if (!lut) lut = state._lut = new Float32Array(768);
   if (state._lutStamp !== state.gradeStamp) {
@@ -163,7 +164,7 @@ export function gradeCells(rt, state) {
   }
   const s = state.sat, a = ATMOS_LUMA[0], b = ATMOS_LUMA[1], d = ATMOS_LUMA[2];
   for (let pass = 0; pass < 2; pass++) {
-    const buf = pass ? rt.bg : rt.fg;
+    const buf = pass ? cb.bg : cb.fg;
     for (let i = 0; i < buf.length; i += 4) {
       const r = lut[buf[i]], g = lut[256 + buf[i + 1]], bl = lut[512 + buf[i + 2]];
       const y = a * r + b * g + d * bl;
