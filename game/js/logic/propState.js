@@ -44,8 +44,32 @@ export function createPropStates(world, opts = {}) {
   const nav = () => opts.nav || world.nav || null;
   const playerPos = () => { if (opts.player) return opts.player(); const p = world.get('player'); return p && (p.transform || (p.data && p.data.transform)) || null; };
 
+  // ED-LOGIC-01d: a placed mesh (no voxel variants) can be a stateful prop too: opts.meshStates = { '<structure id>': { initial, <state>: {yawDeg, collide} } }.
+  // A state turns the placement (yaw) and its per-placement collide flag, then rebuildMeshColliders (door rule and nav block as for voxel props).
+  const mstates = opts.meshStates || {};
+  function meshOf(id) { if (!mstates[id]) return null; for (const s of world.structures || []) if (s.kind === 'mesh' && s.id === id) return s; return null; }
+  const known = (id) => !!(entity(id) || meshOf(id));
+  function applyMesh(id, s, state, force) {
+    const d = mstates[id][state]; if (!d) return false;
+    const solid = d.collide !== false, o = s.origin, b = s.bbox;
+    if (solid && !force && current(id) !== state) {
+      const p = playerPos(), pad = PLAYER_R + 0.3;
+      if (p && p.x > b.x0 - pad && p.x < b.x1 + pad && p.y > b.y0 - pad && p.y < b.y1 + pad && p.z > o.z - 1.2 && p.z < o.z + 3) return false;
+    }
+    world.setMeshPlacement(id, { x: o.x, y: o.y, z: o.z, yawDeg: d.yawDeg, scale: s.scale });
+    s.collide = solid;
+    world.state[propKey(id)] = state;
+    if (world.rebuildMeshColliders) world.rebuildMeshColliders();
+    const g = nav();
+    if (g && g.blockWorldRect) {
+      if (solid && navOwner[id] === undefined) { navOwner[id] = NAV_OWNER_BASE + (nextOwner++); g.blockWorldRect(navOwner[id], b.x0, b.y0, b.x1, b.y1); }
+      else if (!solid && navOwner[id] !== undefined) { g.unblock(navOwner[id]); delete navOwner[id]; }
+    }
+    return true;
+  }
+
   function entity(id) { const e = world.get(id); return e && e.getComponent && e.getComponent('voxel') ? e : null; }
-  function current(id) { const e = entity(id); const c = e && e.getComponent('voxel'); return c ? (c.variant !== undefined ? c.variant : (propDef(world, id) || {}).variant || '') : ''; }
+  function current(id) { if (mstates[id]) return world.state[propKey(id)] || mstates[id].initial || 'open'; const e = entity(id); const c = e && e.getComponent('voxel'); return c ? (c.variant !== undefined ? c.variant : (propDef(world, id) || {}).variant || '') : ''; }
 
   function syncNav(id, e, def, solid) {
     const g = nav(); if (!g || !g.blockWorldRect) return;
@@ -57,6 +81,7 @@ export function createPropStates(world, opts = {}) {
 
   /** Apply now (no overlap check for non-solid targets). Returns true when applied, false when deferred/unknown. */
   function apply(id, state, force) {
+    { const ms = meshOf(id); if (ms) return applyMesh(id, ms, state, force); }
     const e = entity(id); if (!e) return false;
     const def = propDef(world, id), solid = !(def && def.colliderOffVariant === state);
     if (solid && !force) {
@@ -77,7 +102,7 @@ export function createPropStates(world, opts = {}) {
   return {
     /** Ask for a state; applied now unless the player blocks it (then kept pending, retried by step()). */
     request(id, state) {
-      if (!entity(id)) return false;
+      if (!known(id)) return false;
       if (current(id) === state && world.state[propKey(id)] === state) { delete want[id]; const i = wantIds.indexOf(id); if (i >= 0) wantIds.splice(i, 1); return true; }
       if (apply(id, state, false)) { delete want[id]; const i = wantIds.indexOf(id); if (i >= 0) wantIds.splice(i, 1); return true; }
       if (want[id] === undefined) wantIds.push(id);
@@ -99,10 +124,10 @@ export function createPropStates(world, opts = {}) {
       for (const k of Object.keys(navOwner)) delete navOwner[k]; // a fresh world/nav: owners restart
       for (const key of Object.keys(world.state)) {
         if (!key.startsWith('prop.')) continue;
-        if (key.endsWith('.state')) { const id = key.slice(5, -6); if (entity(id)) apply(id, world.state[key], true); }
+        if (key.endsWith('.state')) { const id = key.slice(5, -6); if (known(id)) apply(id, world.state[key], true); }
       }
       for (const key of Object.keys(world.state)) {
-        if (key.startsWith('prop.') && key.endsWith('.state.want')) { const id = key.slice(5, -11); if (entity(id)) { want[id] = world.state[key]; wantIds.push(id); } }
+        if (key.startsWith('prop.') && key.endsWith('.state.want')) { const id = key.slice(5, -11); if (known(id)) { want[id] = world.state[key]; wantIds.push(id); } }
       }
     },
     get pending() { return wantIds.length; },
