@@ -125,7 +125,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     for (let k = 0; k < r.length; k++) {
       const q = entries[r[k].qi];
       if (r[k].si === -2) { if (q.state.flags[r[k].flag] !== true) return false; continue; }
-      if (r[k].si < 0 ? !q.handedIn : q.state.completed.length <= r[k].si) return false;
+      if (r[k].si < 0 ? !(q.handedIn || (q.auto && statusOf(r[k].qi) === DONE)) : q.state.completed.length <= r[k].si) return false;
     }
     return true;
   }

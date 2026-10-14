@@ -62,6 +62,7 @@ function openGates(b) {
   for (const id of ['tower.blade', 'burl.boars', 'sq.burl.blue']) { b.accept(id); gate(id); if (id === 'sq.burl.blue') pack.set('berry.blue', 6); b.handIn(id); }
   gate('mq.river.road'); gate('mq.ford.stones');
   b.accept('mq.bend.call'); gate('mq.bend.call'); b.handIn('mq.bend.call'); // M4 story quests (sq.honey / rook.shiny / packet) open after mq.bend.call is DONE
+
   b.accept('mq.ford.mirror'); gate('mq.ford.mirror'); b.handIn('mq.ford.mirror'); // FB-02 prereq
 }
 openGates(book);
