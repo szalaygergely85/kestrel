@@ -634,6 +634,7 @@ const foliageToolbarEl = document.getElementById('foliage-toolbar');
 const flEl = (id) => document.getElementById(id);
 async function loadFoliageData() {
   try { fl.json = await (await fetch('../../content/editor/foliage.json')).json(); fl.st = FP.createFoliageState(fl.json); } catch { fl.json = null; }
+  FB.configureFoliageCap(fl.json);
   try { // quest files -> externalRefs so erase refuses quest-referenced placements
     const base = '../../content/quests/', idx = await (await fetch(base + 'index.json')).json(), texts = {};
     const names = [...(idx.packs || []).map((n) => `${n}/pack.json`), ...(idx.legacy || []).map((n) => `${n}.quest.json`)];
@@ -669,6 +670,7 @@ function updateFoliageToolbar() {
   flEl('fl-radius').nextElementSibling.textContent = `${fl.st.radius} m`;
   flEl('fl-density').nextElementSibling.textContent = `${fl.st.density}/100m2`;
   flEl('fl-status').textContent = fl.json ? `palette "${fl.st.palette}"` : 'content/editor/foliage.json not loaded';
+  if (FB.foliageCapWarning) flEl('fl-status').textContent += ` - ${FB.foliageCapWarning}`;
   updateFoliageMeter();
   frame.markDirty();
 }

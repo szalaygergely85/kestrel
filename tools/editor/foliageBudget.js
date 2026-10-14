@@ -8,8 +8,21 @@ export const BUNDLE_TARGET_BYTES = 4 * MB;   // WMP-08 target: bar turns amber a
 export const BUNDLE_HARD_BYTES = 6 * MB;     // WMP-08 hard cap: red, strokes refused
 export const MESH_RADIUS_M = 64, MESH_RADIUS_MAX = 60; // meshPlace warning (not enforced here)
 // UNCONFIRMED GUESS (architecture.md 38.69 open item): owner to confirm. LOD0 triangles of placed meshes per zone.
-export const FOLIAGE_TRI_CAP = 1.5e6;
-export const FOLIAGE_TRI_TARGET = 1.0e6;     // amber from here (same guess, owner to confirm)
+// The cap lives in content/editor/foliage.json (`triCap`); configureFoliageCap() applies it. Default below is only the fallback.
+export const FOLIAGE_TRI_CAP_DEFAULT = 1500000;
+export let FOLIAGE_TRI_CAP = FOLIAGE_TRI_CAP_DEFAULT;
+export let FOLIAGE_TRI_TARGET = FOLIAGE_TRI_CAP * 2 / 3;   // amber from 2/3 of the cap (1.0 M at the default)
+export let foliageCapWarning = '';
+
+/** Apply `triCap` of the foliage json. Missing / non-positive / non-finite -> default + a plain warning (never throws). */
+export function configureFoliageCap(json) {
+  const v = json && json.triCap;
+  const ok = typeof v === 'number' && Number.isFinite(v) && v > 0;
+  FOLIAGE_TRI_CAP = ok ? v : FOLIAGE_TRI_CAP_DEFAULT;
+  FOLIAGE_TRI_TARGET = FOLIAGE_TRI_CAP * 2 / 3;
+  foliageCapWarning = ok ? '' : `foliage.json has no valid triCap, using ${FOLIAGE_TRI_CAP_DEFAULT.toLocaleString('en-US')} triangles per zone.`;
+  return { cap: FOLIAGE_TRI_CAP, warning: foliageCapWarning };
+}
 
 export const zoneOf = (x, y) => ({ cx: Math.floor(x / ZONE_M), cy: Math.floor(y / ZONE_M) });
 export const zoneKey = (cx, cy) => `${cx},${cy}`;
