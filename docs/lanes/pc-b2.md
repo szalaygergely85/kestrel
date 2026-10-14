@@ -1222,3 +1222,8 @@ validate-content: 3 findings, "Tempered Jerkin/Gloves/Shield" = 15 chars > MAX_I
 `beastNav.js` +`buildWaterMask`/`buildWaterNav` (1 waterAt per cell: mask 1 = depth >= 0.6, 2 = bank <= 4 m, `surf`, swim grid = mask 1, croc grid = 1|2, each with createAStar). New `brains/water.js` (`createSwimmers/spawnSwimmer/stepSwimmers`: hashed wander target -> A* -> cell-centre follow; z = surf - 0.4). Test `sim/waterNav.test.js` (fixture lake, 12 asserts: mask == depth, 10k steps no slot leaves its mask, z, byte-determinism, alloc).
 Alloc: ~0.7 B/step after 60 warm windows (probe floor, tier-up noise; threshold 1.5). Not passing `maxNodes` to findPath (it boxes, +6 B/call).
 NOT done: wiring into beastSim LAYERS/STATE_SUBMERGED slots (water.js is a standalone pool 08b plugs attacks into); real world_m1 mask check (fixture only). Pre-existing check-deps FAIL: beastSim.core/hunt.test.js deep-import engine/nav/astar.js (REV-BEASTALLOC-2).
+
+### BEAST-D1-CROC programmer half (kestrel-2, branch beastd1croc) -> po-review
+palette.js: colours crocHide/crocSeam/crocMottle + materials scale_croc/_dark/_light (before granite_light); detail-pass.js: same 3 (seeds 1226-1228). Croc now on FINAL mats (crocFx.finalMats true).
+`tools/voxel-crocodile.test.mjs` (8 asserts: validate 0/0, LOD0 2718 tris <= 3500, 13 clips, snap key 200 ms jaw shut, blend==legRig speeds, clipFor targets, FINAL mats); croc added to validate-content.mjs model list.
+Run: 12 suites PASS, validate-content OK, check-deps OK (no model fixes needed). Not in game/index.html yet (BEAST-09 spawns).

@@ -155,7 +155,7 @@
     "name": "River Crocodile",
     "arch": "waterAmbusher",
     "model": "crocodile",
-    "todo": "designer D1: crocodile model",
+    "todo": "",
     "lv": [4, 7],
     "hpF": 2.5,
     "dmgF": 2,
