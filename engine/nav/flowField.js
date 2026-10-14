@@ -179,6 +179,7 @@ export function createFlowField(grid) {
     /** NAV-LAYERS-01c: link target per cell (only when grid.layers). */
     next: grid.layers !== null ? new Int32Array(n).fill(-1) : null,
     cellsDone: 0,
+    rvFlag: null, rvOrder: null, // NAV-FLOW-REV reverse link index (layers only), refreshed in begin()
     heap: /** @type {FlowFieldHeap} */ (/** @type {unknown} */ (null)),
   };
   ff.heap = new FlowFieldHeap(n);
@@ -197,6 +198,7 @@ export function createFlowField(grid) {
     ff.dir.fill(DIR_NONE);
     ff.heap.clear();
     ff.cellsDone = 0;
+    if (grid.layers !== null) { const rv = reverseLinks(grid.layers, n); ff.rvFlag = rv.flag; ff.rvOrder = rv.order; }
     if (ff.next !== null) ff.next.fill(-1);
     for (let i = 0; i < count; i++) {
       const g = goalCells[i];
@@ -300,8 +302,8 @@ export function createFlowField(grid) {
 
 // ---- NAV-LAYERS-01c: Dijkstra over ground + sheets + links (docs/architecture.md 38.71) ----
 // Edge cost = cost of the entered cell * (10 | 14) * unit of that cell's grid (finest-cell units, as astar.js); a link
-// costs its `lcost`. Links are walked forward from the settled cell (mirrored kinds 0/1/3 are in the table both ways;
-// a one-way drop only lets the HIGH side reach the low side, so a field seeded below a drop does not climb it).
+// costs its `lcost`. NAV-FLOW-REV: links are expanded in REVERSE (from link.to back to link.from), so a one-way drop
+// lets cells above it flow to the drop top when the goal is below, and cells below never route through it.
 const _fp = { x: 0, y: 0, z: 0 };
 
 function relaxLayered(ff, nIdx, tentative) {
@@ -313,11 +315,47 @@ function relaxLayered(ff, nIdx, tentative) {
   }
 }
 
+// Reverse link index (links sorted by `to`, plus a per-cell flag), cached on the layers object; rebuilt only when the
+// link table arrays are replaced (addAuthoredLinks/bake). Door open/close changes flags only, read live above.
+const _revCache = new WeakMap(); // keyed by layers object (keeps L's hidden class untouched)
+function reverseLinks(L, total) {
+  let rv = _revCache.get(L);
+  if (rv !== undefined && rv.from === L.from && rv.to === L.to && rv.n === L.nLinks) return rv;
+  const K = L.nLinks, order = new Int32Array(K), flag = new Uint8Array(total);
+  for (let k = 0; k < K; k++) order[k] = k;
+  order.sort((a, b) => (L.to[a] - L.to[b]) || (a - b));
+  for (let k = 0; k < K; k++) flag[L.to[k]] = 1;
+  rv = { from: L.from, to: L.to, n: K, order, flag }; _revCache.set(L, rv);
+  return rv;
+}
+
+function firstRev(order, to, n, idx) {
+  let lo = 0, hi = n;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (to[order[mid]] < idx) lo = mid + 1; else hi = mid;
+  }
+  return lo;
+}
+
+function relaxReverse(ff, g, L, order, idx, selfInteg) {
+  const N = g.w * g.h;
+  for (let r = firstRev(order, L.to, L.nLinks, idx); r < L.nLinks; r++) {
+    const j = order[r];
+    if (L.to[j] !== idx) break;
+    if (L.kind[j] === 1 && (L.flags[j] & 1) === 0) continue; // closed door
+    const fIdx = L.from[j];
+    if ((fIdx < N ? g.cost[fIdx] : L.cost[fIdx - N]) === 0) continue;
+    relaxLayered(ff, fIdx, selfInteg + L.lcost[j]);
+  }
+}
+
 function stepLayered(ff, cellBudget) {
   const g = ff.grid, L = g.layers;
   const N = g.w * g.h, w = g.w, h = g.h;
   const integ = ff.integ, dir = ff.dir, next = ff.next, heap = ff.heap;
   const gU = L.groundU, maxStep = L.maxStepM;
+  const rvFlag = ff.rvFlag, rvOrder = ff.rvOrder;
   let budget = cellBudget;
   while (heap.length > 0 && budget > 0) {
     const idx = heap.pop();
@@ -355,15 +393,18 @@ function stepLayered(ff, cellBudget) {
         relaxLayered(ff, nIdx, selfInteg + (dx !== 0 && dy !== 0 ? DIAG_COST : STRAIGHT_COST) * L.cost[nl] * u);
       }
     }
-    if (L.linkFlag[idx] !== 0) {
+    // Forward links (idx -> to) only choose this cell's direction; they never relax (the field grows from the goal).
+    if (needsDir && L.linkFlag[idx] !== 0) {
       for (let j = firstLink(L, idx); j < L.nLinks && L.from[j] === idx; j++) {
         if (L.kind[j] === 1 && (L.flags[j] & 1) === 0) continue; // closed door
         const nIdx = L.to[j];
         if ((nIdx < N ? g.cost[nIdx] : L.cost[nIdx - N]) === 0) continue;
-        if (needsDir) { const v = integ[nIdx]; if (v < bestInteg) { bestInteg = v; bestK = DIR_LINK; bestLink = nIdx; } }
-        relaxLayered(ff, nIdx, selfInteg + L.lcost[j]);
+        const v = integ[nIdx]; if (v < bestInteg) { bestInteg = v; bestK = DIR_LINK; bestLink = nIdx; }
       }
     }
+    // NAV-FLOW-REV: relax REVERSE links (every j with to === idx pulls its `from` cell in at integ + lcost), so a
+    // one-way drop is only expanded from its low end back to its high end; two-way kinds are in the table both ways.
+    if (rvFlag[idx] !== 0) relaxReverse(ff, g, L, rvOrder, idx, selfInteg);
     if (needsDir) {
       dir[idx] = bestK === -1 ? DIR_NONE : bestK;
       next[idx] = bestLink;
