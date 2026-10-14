@@ -137,10 +137,10 @@ function sheetIdx(L, local) { let s = 0; while (s + 1 < L.count && L.base[s + 1]
   ok('partial: unreachable water goal ends on the bank', a.partial === true && end < GW * GH && end % GW === 25, `end=${end % GW},${(end / GW) | 0}`);
   const l2 = findPath(a, 5, 3, 35, 4, path, { maxNodes: 40 }); // goal inside the house hole, tiny budget
   ok('partial: maxNodes cut still returns a path', l2 > 0 && a.partial === true);
-  // planPath (free-target helper) works with sheets (unsmoothed waypoints for now)
+  // planPath (free-target helper) works with sheets (smoothed per space since 01c; link ends are kept)
   const buf = new Float64Array(64);
   const n = planPath(g, a, 5.5, 9.5, 35.5, 9.5, buf, 4000);
-  ok('planPath over layers returns waypoints', n > 10 && !a.partial, `n=${n}`);
+  ok('planPath over layers returns smoothed waypoints incl. link ends', n >= 5 && n <= 10 && !a.partial, `n=${n}`);
 }
 
 // ---- 4. ground-only byte identity + determinism --------------------------------

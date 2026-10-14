@@ -1063,3 +1063,7 @@ content/beasts/spawnAreas.json ({"areas":[]} shipped) + game/js/quest/sim/spawnA
 
 ### ED-AI-04 (kestrel-4, 2026-10-14)
 content/beasts/spawnAreas.json ({"areas":[]} shipped) + game/js/quest/sim/spawnAreas.js (loader) + tools/editor/ai/spawnAreas.js (validator, wired into validate-content) + model.js load/save/add/remove/set commands. buildGroups(members, seed, walkable, areas=SPAWN_AREAS) appends one group per area (gid kind.area.<hex hash of area id>, slots after members, respawnSec honored by the director); empty = identical. Tests: game/js/quest/sim/spawnAreas.test.js, tools/editor/ai/spawnAreas.test.mjs.
+
+### NAV-LAYERS-01c (kestrel-3, 2026-10-14) -> arch-review
+engine/nav: flowField.js layered Dijkstra (ground+sheets+links, `next` Int32Array, dir 253 = link, `dirAt(x,y,out,z)` via `locate`), astar.js `smoothPath(..., outZ?)` per-space runs (ground / sheet LOS, link + space switch keep both ends), steer.js `z` field + `setZ`, `walkableAtZ` (cost-0 sheet cell blocks even over open ground; z follows the located cell), half-cell guard uses `finest`. New `layersFlow.test.js` (17: flow over bridge+stair both ways, link ends kept, ground-only smoothing identical, steer never in cost-0 cell, 0 B alloc after JIT warm-up, determinism); sheets.test planPath assertion updated (now smoothed); nav/beast suites + check-deps green, ground-only outputs unchanged.
+Limits: flow goes forward over links only (a one-way drop is not climbed by a field seeded below it); steer `z` not in `hash()`; steer arrive uses `finest` units on layered grids.
