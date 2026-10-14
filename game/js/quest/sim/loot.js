@@ -10,6 +10,7 @@
 // the whole page). The corpse counts are runtime-only: boars always come back alive on a load (37.16.2), so a stale
 // `loot.*` flag from a save is deleted at create rather than restored.
 import { addItem } from './inventory.js';
+import { addDrop } from './itemMigrate.js'; // ITEM-02c
 import { setItemPickupSink, PICKUP_AMOUNT } from './pickups.js';
 import { BAND_TABLE } from './band.js';
 import { LOOT_PROMPT, LOOT_TABLE, LOOT_TIERS, LOOT_SLOTS } from './lootConfig.js';
@@ -84,7 +85,8 @@ export function createLoot(world, events, opts) {
   return buildLoot(world, events, opts);
 }
 
-function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band, goblinTable = LOOT_TABLE.goblin }) {
+function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band, goblinTable = LOOT_TABLE.goblin, saveIdOf = null }) {
+  const gotId = { id: '' }; let pickN = 0; // ITEM-02c: gear drops enter as instances when saveIdOf() is set
   const count = beasts.count;
   const ids = beasts.ids;
   for (const t of [table, goblinTable]) {
@@ -216,12 +218,12 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
     }
     const gh = loot.gearHeld[i]; // OB-064 (reopened): held gear goes INTO THE PACK on the same E like meat; pack full -> stays in the corpse
     if (gh) {
-      const added = inv ? addItem(inv, items, gh, 1) : 0; // tier lives in the item def (equip.tier), so it is kept
+      const added = inv ? addDrop(inv, items, gh, 1, saveIdOf ? saveIdOf() : null, 1000 + i, gotId) : 0; // ITEM-02c: an instance (zone band iL) when the save id is known
       if (added > 0) {
         loot.gearHeld[i] = null;
-        loot._added.id = gh; loot._added.n = added;
+        loot._added.id = gotId.id; loot._added.n = added;
         events.emit('inventory:added', loot._added);
-        loot._gear.id = gh; loot._gear.n = added;
+        loot._gear.id = gotId.id; loot._gear.n = added;
         events.emit('gear:got', loot._gear);
       } else {
         left += 1; if (!leftId) { leftId = gh; loot._full.n = 1; }
@@ -276,11 +278,11 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
   setItemPickupSink((itemId, n) => {
     const inv = inventoryOf();
     if (!inv) return 0;
-    const got = addItem(inv, items, itemId, n); // returns the count really stored: partial adds are reported, never duplicated
+    const got = addDrop(inv, items, itemId, n, saveIdOf ? saveIdOf() : null, 2000 + pickN++, gotId); // returns the count really stored: partial adds are reported, never duplicated
     if (got <= 0) return 0;
-    loot._added.id = itemId; loot._added.n = got;
+    loot._added.id = gotId.id; loot._added.n = got;
     events.emit('inventory:added', loot._added);
-    gearGot.id = itemId; gearGot.n = got;
+    gearGot.id = gotId.id; gearGot.n = got;
     events.emit('gear:got', gearGot); // chestHook shows the item-get card
     return got;
   });
@@ -303,7 +305,7 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
 // S8-C-06: the chest branch shares createLoot and inventory transfer rather than a second loot service.
 // A table contains fixed [{item,n}] plus one optional weighted pick [{item,n,weight}].
 // Roll once at create with a chest-owned stream. claim is all-or-nothing so openedChests is sufficient to save it.
-function buildChestLoot(events, {items, table, rng, inventoryOf}) {
+function buildChestLoot(events, {items, table, rng, inventoryOf, saveIdOf = null}) {
   // EQ-10: optional table.gear = {tier?} -> one gear roll at create (2 draws, after the weighted pick); tier fixed or rolled.
   if (!table || !Array.isArray(table.fixed) || !Array.isArray(table.weighted)) throw new Error('chest loot: invalid table');
   const ids = [], counts = [], caps = [];
@@ -366,7 +368,7 @@ function buildChestLoot(events, {items, table, rng, inventoryOf}) {
     claim() {
       const inv = inventoryOf();
       if (claimed || !fits(inv)) return false;
-      for (let i = 0; i < ids.length; i++) addItem(inv, items, ids[i], counts[i]);
+      for (let i = 0; i < ids.length; i++) addDrop(inv, items, ids[i], counts[i], saveIdOf ? saveIdOf() : null, 3000 + i, { id: '' }); // ITEM-02c
       claimed = true;
       return true;
     },

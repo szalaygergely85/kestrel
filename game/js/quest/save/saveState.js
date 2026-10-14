@@ -4,7 +4,8 @@ import { createQuest } from '../sim/quest.js';
 import { migrateQuestSave } from '../sim/questBook.js';
 import { toQuestSaveV2, fromQuestSaveV2, validateQuestSaveV2 } from '../sim/questSaveV2.js';
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2; // ITEM-02c: v2 = item instances (pack `it`, equipment.it); v1 is still read and migrated by sim/itemMigrate.js
+export const SAVE_READ_VERSIONS = [1, 2];
 export const SAVE_SLOTS = 3;
 const KEY_PREFIX = 'kestrel.save.slot.';
 const validId = id => typeof id === 'string' && /^[A-Za-z][A-Za-z0-9_.-]*$/.test(id);
@@ -68,7 +69,7 @@ export function validateLook(look, path = 'player.look') {
 }
 
 export function validateSave(save) {
-  if (!save || save.saveVersion !== SAVE_VERSION) throw new Error('save: unsupported saveVersion');
+  if (!save || !SAVE_READ_VERSIONS.includes(save.saveVersion)) throw new Error('save: unsupported saveVersion');
   if (!save.world || ![1,2].includes(save.world.version) || !Array.isArray(save.world.entities) || !Array.isArray(save.world.structures)) throw new Error('save: invalid WorldState');
   if (!save.game || !save.meta || typeof save.meta.playerName !== 'string' || typeof save.meta.place !== 'string'
     || !Number.isFinite(save.meta.playTimeSec) || save.meta.playTimeSec < 0
@@ -146,7 +147,7 @@ export function applySave(save, assets, { questDef = null, giverDefs = null, wor
       if (Array.isArray(raw[id].given) && raw[id].given.length) quests[id].given = raw[id].given.map(g => ({ id: g.id, n: g.n }));
     }
   }
-  return { world,quest,quests,openedChests:ids(save.game.openedChests),deadBeasts:ids(save.game.deadBeasts),look:save.player && save.player.look ? canonical(save.player.look) : defaultLook,meta:canonical(save.meta) };
+  return { saveVersion:save.saveVersion,world,quest,quests,openedChests:ids(save.game.openedChests),deadBeasts:ids(save.game.deadBeasts),look:save.player && save.player.look ? canonical(save.player.look) : defaultLook,meta:canonical(save.meta) };
 }
 
 export function stringifyGameSave(save) { validateSave(save); return JSON.stringify(canonical(save)); }
