@@ -39,12 +39,13 @@ for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) {
 }
 const sim = createBeastSim(world, { nav, rng: createRng(1), events: { emit() {}, on() {} } });
 const z = world.terrain.heightAt(PX, PY);
-let minDx = 1e9, gaveT = -1, sawChase = false, gaveUp = false, walkInPlace = 0, maxRun = 0, run = 0;
+let holdServes0 = -1, holdServes1 = -1, minDx = 1e9, gaveT = -1, sawChase = false, gaveUp = false, walkInPlace = 0, maxRun = 0, run = 0;
 const ov = { bar() {} }, ids = { beastNotice: 0 };
 for (let t = 0; t < 1200; t++) {
   sim.step(PX, PY, z);
   presentBeasts(sim, world, ov, ids);
   const st = sim.state[0];
+  if (t === 260) holdServes0 = sim.pathServes; if (gaveT < 0 && sim.state[0] !== STATE_CHASE) holdServes1 = sim.pathServes;
   if (st === STATE_CHASE) sawChase = true;
   if (st === STATE_CHASE) minDx = Math.min(minDx, PX - 3 - sim.steer.x[0]);
   if (sawChase && (st === STATE_RETURN || st === STATE_WANDER)) { gaveUp = true; if (gaveT < 0) gaveT = t; }
@@ -58,6 +59,9 @@ ok('goblin gave up the unreachable target', gaveUp);
 // NAV-REACH-01 (OB-149/150): it walks to the near bank (band starts at PX-6) before giving up, within ~7 s
 ok('goblin reached the bank (within 3.5 m of the band edge)', minDx < 0 || minDx - 3 < 3.5, 'minDx=' + minDx);
 ok('goblin gave up within 420 steps', gaveT >= 0 && gaveT < 420, 'gaveT=' + gaveT);
+// NAV-REACH-01 arch fix: at the end of an unreachable partial path it holds and repaths only by the repath period (not every tick)
+{ const win = Math.max(1, gaveT - 260), per = sim.cfgSteps.repath;
+  ok('hold at the bank: path serves <= 1 per repath period', holdServes1 - holdServes0 <= Math.ceil(win / per) + 1, `serves ${holdServes1 - holdServes0} in ${win} steps, period ${per}`); }
 ok('no walk clip while < 0.15 m/s for > 0.2 s (12 steps)', maxRun <= 12, 'maxRun=' + maxRun + ' total=' + walkInPlace);
 console.log(`beastStuck: ${pass} pass, ${fail} fail`); for (const f of failures) console.log('  FAIL ' + f);
 if (fail) process.exit(1);

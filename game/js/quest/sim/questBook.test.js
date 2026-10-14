@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createQuestBook, validateGiverQuest, validateSections, migrateM1Ch1, migrateQuestSave, STATUS_NAMES, UNAVAILABLE, AVAILABLE, ACTIVE, READY, DONE } from './questBook.js';
-import { questObjectives } from './quest.js';
+import { isTurnInTarget, giverOf } from './giverResolve.js';
+import { takeGiverOnAccept } from '../questWindow.js';
+import { questObjectives, createQuest, applyQuestEvent } from './quest.js';
 const rd = p => JSON.parse(readFileSync(new URL('../../../../content/quests/' + p, import.meta.url)));
 const burlReal = rd('burl.boars.quest.json'), blade = rd('tower.blade.quest.json');
 // generic step-requirement fixture: the real quest used to require m1 step `sword` (kept to cover the {quest, step} form)
@@ -189,5 +191,32 @@ if (global.gc) {
   // load of a stuck save (flag set, chain stuck at road) catches up on Continue
   const b3 = mk(upTo, { 'waystone.ws_roadBend.woken': true });
   assert.equal(b3.main.completed.length, 10, 'stuck save catches up on load');
+}
+// OB-170 arch fix: an area chain is ordered by default; only `when.catchUp: true` lets a later met area vouch for earlier ones
+{
+  const mkDef = (opt) => ({ version: 1, id: 'chain', title: 'c', objectives: [
+    { id: 'a', text: 'A', when: { type: 'area', id: 'aa' } }, { id: 'b', text: 'B', when: opt ? { type: 'area', id: 'bb', catchUp: true } : { type: 'area', id: 'bb' } }] });
+  const run = (def) => { const st = createQuest(def); applyQuestEvent(st, { type: 'area:entered', id: 'bb' }, def); return st; };
+  assert.deepEqual(run(mkDef(false)).completed, [], 'A,B area chain, B first: A stays open');
+  assert.deepEqual(run(mkDef(true)).completed, ['a', 'b'], 'opt-in catchUp: B first completes A, B');
+}
+// arch fix: one giver/turn-in resolution (giverResolve) for the validator and takeGiverOnAccept; handIn = canHandIn + act
+{
+  const d = { id: 'x', giver: { npc: 'old', turnIn: 'oldTurn' }, giverNpc: 'newG', turnInNpc: 'newT', takeGiverOnAccept: true };
+  assert.ok(isTurnInTarget(d, 'newT') && isTurnInTarget(d, 'oldTurn') && !isTurnInTarget(d, 'zz'), 'deliver.to: resolved or legacy turn-in only');
+  assert.ok(!isTurnInTarget({ id: 'y' }, 'a'), 'giverless: no valid turn-in');
+  const removed = [], book = { def: () => d, index: () => 0, entityFor: (id) => 'ent_' + id };
+  const world = { get: (e) => e === 'ent_' + giverOf(d), remove: (e) => removed.push(e) };
+  assert.equal(takeGiverOnAccept(book, world, 'x'), true);
+  assert.deepEqual(removed, ['ent_' + giverOf(d)], 'takeGiverOnAccept removes the RESOLVED giver (giverOf), not def.giver.npc');
+  // handIn refuses (null, no state change) exactly when plan would not offer the hand-in: requireItem missing from the pack
+  const qd = { version: 1, id: 'hq', title: 'h', giver: { npc: 'g' }, requireItem: 'thing', objectives: [{ id: 'o', text: 'O', when: { type: 'flag', id: 'f', equals: true } }] };
+  const bk = createQuestBook(rd('m1.quest.json'), [qd], { quest: null, quests: null });
+  bk.packOps = { count: () => 0, add: () => 0, remove() {} };
+  bk.accept('hq'); bk.feed({ type: 'flag:set', key: 'f', value: true });
+  assert.equal(bk.handIn('hq'), null, 'READY but the required item is not in the pack: handIn null');
+  assert.notEqual(bk.plan('g') && bk.plan('g').action, 'handin', 'and plan does not offer the hand-in');
+  bk.packOps = { count: () => 1, add: () => 1, remove() {} };
+  assert.ok(bk.handIn('hq') !== null, 'with the item: hand-in works');
 }
 console.log('questBook.test OK');

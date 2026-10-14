@@ -86,13 +86,16 @@ function advance(state, def) {
   }
 }
 
-/** OB-170 / D-098: a later flag step already met (stone woken off the road) finishes the skipped "go to" (area) steps before it; talk/kill/item/flag steps are never skipped. */
+/** OB-170 / D-098: a later flag step already met (stone woken off the road) finishes the skipped "go to" (area) steps before it; talk/kill/item/flag steps are never skipped.
+ * A later AREA step vouches for the earlier waypoints only with the opt-in `when.catchUp: true` (arch review: area chains are ordered by default). */
 function catchUp(state, def) {
   const objs = def.objectives, c = state.completed.length;
   if (c >= objs.length || objs[c].when.type !== 'area') return false;
-  let j = c; // first met step after only area steps; an area met out of order (bendRelay) vouches for the earlier waypoints too
+  let j = c; // first met step after only unmet area steps
   while (j < objs.length && objs[j].when.type === 'area' && progress(state, objs[j].when) < (objs[j].when.count ?? 1)) j++;
-  if (j === c || j >= objs.length || (objs[j].when.type !== 'area' && objs[j].when.type !== 'flag') || progress(state, objs[j].when) < (objs[j].when.count ?? 1)) return false; // only a met flag/area vouches for the skipped waypoints
+  if (j === c || j >= objs.length) return false;
+  const w = objs[j].when;
+  if (!(w.type === 'flag' || (w.type === 'area' && w.catchUp === true)) || progress(state, w) < (w.count ?? 1)) return false;
   for (let k = c; k < j; k++) { const id = objs[k].when.id; if (!state.areas.includes(id)) state.areas.push(id); }
   state.areas.sort();
   return true;

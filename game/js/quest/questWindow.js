@@ -1,6 +1,7 @@
 // game/js/quest/questWindow.js (QFIX-S4, D-098 rule 4). WoW-style quest windows built as ordinary dialogues, so the existing
 // dialogue box (typing, choices, keys, lock) is the UI. OFFER = title + text + objectives + rewards, [Accept] [Decline];
 // HAND-IN = text + rewards, [Complete]. Accept / Complete are `q.<id>.accept|handin` flags (questBook.actKey). Pure data here.
+import { giverOf } from './sim/giverResolve.js';
 const MAXL = 54;
 const ascii = (t) => String(t == null ? '' : t).replace(/[^\x20-\x7e]/g, '?');
 function wrap(text, out) {
@@ -83,8 +84,8 @@ export function npcQuestTalk({ book, ctl, compile, nameOf, npcId, state }) {
  * Boards / notes never set the flag. Returns true when it took the entity.
  */
 export function takeGiverOnAccept(book, world, id) {
-  const def = book.def(book.index(id)); if (!def || !def.takeGiverOnAccept || !def.giver || !def.giver.npc) return false;
-  const ent = book.entityFor(def.giver.npc);
+  const def = book.def(book.index(id)); if (!def || !def.takeGiverOnAccept || !giverOf(def)) return false;
+  const ent = book.entityFor(giverOf(def));
   if (!world.get || !world.get(ent)) return false;
   world.remove(ent); if (world.removeInteractable) world.removeInteractable('qi.' + ent);
   return true;

@@ -40,6 +40,7 @@ export function createAStar(grid) {
     closedStamp: new Uint32Array(n),
     generation: 0,
     partial: false,
+    capped: false, // NAV-REACH-01: the last findPath stopped at opts.maxNodes (a partial path that may still be reachable), not because the goal is unreachable
     scratch: new Int32Array(n), // planPath's cell path (LIFE-01)
     heap: /** @type {IndexHeap} */ (/** @type {unknown} */ (null)),
   };
@@ -60,7 +61,7 @@ export function createAStar(grid) {
  * is unreachable/unwalkable/out of bounds, or `opts.maxNodes` expansions
  * are hit first, returns the path to the best closed cell instead (smallest
  * h, then smallest g, then smallest index) and sets `astar.partial = true`
- * (`false` on an exact path to the goal).
+ * (`false` on an exact path to the goal). `astar.capped` is true only when the maxNodes limit ended the search.
  * @param {ReturnType<typeof createAStar>} astar
  * @param {number} sx @param {number} sy @param {number} gx @param {number} gy
  * @param {Int32Array} outPath
@@ -70,6 +71,7 @@ export function findPath(astar, sx, sy, gx, gy, outPath, opts = EMPTY_OPTS) {
   const grid = astar.grid;
   const w = grid.w, gh = grid.h;
   astar.partial = false;
+  astar.capped = false;
   if (sx < 0 || sy < 0 || sx >= w || sy >= gh || gx < 0 || gy < 0 || gx >= w || gy >= gh) return 0;
   const si = sy * w + sx;
   const gi = gy * w + gx;
@@ -108,7 +110,7 @@ export function findPath(astar, sx, sy, gx, gy, outPath, opts = EMPTY_OPTS) {
     if (idx === gi) { reachedGoal = true; break; }
 
     nodesExpanded++;
-    if (nodesExpanded > maxNodes) break;
+    if (nodesExpanded > maxNodes) { astar.capped = true; break; }
 
     for (let k = 0; k < 8; k++) {
       const dx = NEI_DX[k], dy = NEI_DY[k];

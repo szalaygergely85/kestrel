@@ -60,10 +60,18 @@ export function resolvePropPicks(world) {
   }
 }
 
+const pbQ = new Float64Array(3); // scratch for pointBlocked -> structureBlockedQ (one structure rule)
+
 export function pointBlocked(world, x, y, z) {
   const s = world.structureAt(x, y);
   let floorH, ceilH, solid;
   if (s) {
+    // the structure rule lives in structureBlockedQ (used by the LOS fast path too); only valid for grid structures it can see
+    if (world._gridStructures) {
+      pbQ[0] = x; pbQ[1] = y; pbQ[2] = z;
+      const r = structureBlockedQ(world, pbQ);
+      if (r !== -1) return r === 1;
+    }
     const g = gridLocal(s, x, y, losGrid);
     const sector = s.level.sectorAt(g.x, g.y);
     if (!sector) return true;
@@ -71,8 +79,6 @@ export function pointBlocked(world, x, y, z) {
     floorH = sector.floorH + g.z;
     ceilH = typeof sector.ceilH === 'number' ? sector.ceilH + g.z : sector.ceilH;
   } else {
-    // MESH-PHYS-02: LOS only needs floor/solid; `outsideSector` also computes the ground normal (4 more groundAt) + type + material.
-    // `outsideFloorH` answers undefined when unavailable (not a World, or `outsideSector` overridden) -> the full query.
     const f = world.outsideFloorH ? world.outsideFloorH(x, y) : undefined;
     if (f !== undefined) return f === null || z < f; // null = no terrain = solid outside; ceiling is 'sky'
     const sector = world.outsideSector(x, y);

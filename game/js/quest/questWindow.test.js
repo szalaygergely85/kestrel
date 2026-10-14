@@ -5,6 +5,7 @@ import { compileDialogue, createDialogueRunner } from '../../../engine/index.js'
 import { createQuestBook, ACTIVE, READY, DONE, AVAILABLE } from './sim/questBook.js';
 import { loadDesignAssets, loadQuestFiles, loadPackQuests } from '../../../tools/validate-content.mjs';
 import { questWindowDialogue, openQuestWindow, rewardText } from './questWindow.js';
+import { turnInOf } from './sim/giverResolve.js';
 
 let pass = 0, fail = 0; const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
@@ -20,7 +21,7 @@ const packOps = { count: id => pack.get(id) || 0, remove: (id, n) => pack.set(id
 // 1) hand-in beats offer + an active quest at the same entity never blocks a hand-in (sq.packet at the post while sq.fc.stores is active)
 const stores = clone('sq.fc.stores'), packet = clone('sq.packet');
 const b = createQuestBook(all.find(d => d.id === 'm1'), [stores, packet]); b.packOps = packOps;
-const postOf = d => (d.giver.turnIn || d.giver.npc);
+const postOf = d => turnInOf(d); // QFIX-S5a-2: resolved turn-in (giverResolve), not the legacy field
 ok(postOf(stores) === 'post' && postOf(packet) === 'post' || b.entityFor(postOf(packet)) === b.entityFor(postOf(stores)), 'packet + stores share the post: ' + postOf(stores) + '/' + postOf(packet));
 b.accept('sq.fc.stores'); b.accept('sq.packet');
 ok(b.statusOf('sq.fc.stores') === ACTIVE && b.statusOf('sq.packet') === ACTIVE, 'both active');

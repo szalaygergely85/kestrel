@@ -9,7 +9,7 @@
 // serialize round trip) needs the real engine + design assets, since
 // `world.state`/`components.light` round-tripping is `serialize.js`'s job,
 // not this story's.
-import { findInteractTarget, updateInteraction, hasLineOfSight, resolvePropPicks } from './interaction.js';
+import { findInteractTarget, updateInteraction, hasLineOfSight, hasLineOfSightRay, pointBlocked, resolvePropPicks } from './interaction.js';
 import { World, serialize, deserialize } from '../index.js';
 import paletteMod from '../../design/palette.js';
 // US-027b: test_room moved to content/levels/test_room.level.json.
@@ -391,6 +391,32 @@ const pick = (w, eye, cfg) => { const o = fresh(); findInteractTarget(w, eye, cf
   const at = (x, y) => pick(w, { x: 0, y: 0, z: 1.6, yawDeg: Math.atan2(x, -y) * 180 / Math.PI, pitchDeg: 0 }, { reach: 3 }).targetKey;
   ok('OB-088: aiming at either post (one rotated) picks the prop', at(-1, -2) === 'qi.wreck' && at(1, -2) === 'qi.wreck' && at(1.12, -2) === 'qi.wreck');
   ok('OB-088: aiming into the gap inside the union box does not', at(0, -2) === null && at(0.5, -2) === null);
+}
+
+{ // green-up 2: pointBlocked (structure branch) and the LOS fast path share structureBlockedQ; points INSIDE a grid structure
+  const cell = (x, y) => (x === 2 ? { solid: true, floorH: 0, ceilH: 3 } : x === 4 ? null : y === 3 ? { solid: false, floorH: 1, ceilH: 2.5 } : { solid: false, floorH: 0, ceilH: 'sky' });
+  const st = { origin: { x: 10, y: 20, z: 5 }, bbox: { x0: 10, x1: 20, y0: 20, y1: 30 }, level: { sectorAt: (lx, ly) => cell(Math.floor(lx), Math.floor(ly)) } };
+  const lq = new Float64Array(3);
+  const w = { structures: [st], _lq: lq, _gridStructures() { return this.structures; }, structureAt(x, y) { return (x >= 10 && x < 20 && y >= 20 && y < 30) ? st : null; },
+    losPointQ() { return (lq[0] >= 10 && lq[0] < 20 && lq[1] >= 20 && lq[1] < 30) ? -1 : 0; }, outsideFloorH: () => -1e9 };
+  // independent oracle (the rule written out once more, in the test only)
+  const oracle = (x, y, z) => { const sc = cell(Math.floor(x - 10), Math.floor(y - 20)); if (!sc || sc.solid) return true; if (z < sc.floorH + 5) return true; return typeof sc.ceilH === 'number' && z > sc.ceilH + 5; };
+  let bad = 0, n = 0; const cases = [];
+  for (let x = 10.5; x < 20; x += 1) for (let y = 20.5; y < 30; y += 1) for (const z of [4.9, 5.5, 6.2, 7.2, 8.6, 9.9]) {
+    n++; if (pointBlocked(w, x, y, z) !== oracle(x, y, z)) { bad++; cases.push([x, y, z]); }
+  }
+  ok('pointBlocked inside a structure == oracle (solid / null / under floor / above ceiling / free)', bad === 0, `${bad}/${n} ${JSON.stringify(cases.slice(0, 3))}`);
+  // LOS vs per-sample oracle on random segments inside the structure
+  const r = new Float64Array(6); let seed = 7; const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+  let lbad = 0, blocked = 0, freeN = 0;
+  for (let i = 0; i < 400; i++) {
+    r[0] = 10 + rnd() * 10; r[1] = 20 + rnd() * 10; r[2] = 5.1 + rnd() * 4; r[3] = 10 + rnd() * 10; r[4] = 20 + rnd() * 10; r[5] = 5.1 + rnd() * 4;
+    const dx = r[3] - r[0], dy = r[4] - r[1], dz = r[5] - r[2], steps = Math.min(Math.ceil(Math.hypot(dx, dy, dz) / 0.1), 20) || 1;
+    let exp = true; for (let k = 1; k <= steps; k++) { const t = k / steps; if (oracle(r[0] + dx * t, r[1] + dy * t, r[2] + dz * t)) { exp = false; break; } }
+    exp ? freeN++ : blocked++;
+    if (hasLineOfSightRay(w, r) !== exp) lbad++;
+  }
+  ok('hasLineOfSightRay inside a structure == per-sample oracle', lbad === 0 && blocked > 20 && freeN > 20, `bad ${lbad}, blocked ${blocked}, free ${freeN}`);
 }
 console.log(`interaction.test.js: ${pass} passed, ${fail} failed`);
 if (fail) { console.log('FAILURES:\n' + failures.join('\n')); process.exit(1); }
