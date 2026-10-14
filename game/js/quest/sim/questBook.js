@@ -299,7 +299,11 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   // (`quest.<id>.done` as a flag objective, e.g. burl.boars / tower.blade); everything else is a side quest.
   const mainDone = new Set();
   for (const o of entries[0].def.objectives) if (o.when && o.when.type === 'flag' && typeof o.when.id === 'string') mainDone.add(o.when.id);
-  book.isMain = (i) => i === 0 || isMainDef(entries[i].def) || mainDone.has('quest.' + entries[i].def.id + '.done'); // OB-155: ONE rule (questLog uses it too)
+  // OB-155k: transitive - a quest a main quest requires ({quest, done|step}) is main too (tower.blade, mq.river.road, mq.ford.stones)
+  const mainSet = new Set();
+  for (let i = 0; i < n; i++) if (i === 0 || isMainDef(entries[i].def) || mainDone.has('quest.' + entries[i].def.id + '.done')) mainSet.add(i);
+  for (let grew = true; grew;) { grew = false; for (const i of [...mainSet]) for (const r of entries[i].def.requires || []) { const q = r.quest ? byId.get(r.quest) : undefined; if (q !== undefined && !mainSet.has(q)) { mainSet.add(q); grew = true; } } }
+  book.isMain = (i) => mainSet.has(i); // OB-155: ONE rule (questLog uses it too)
   /** Giver marks: `outAvail` ('!') / `outReady` ('?') get the main-chain quests; with the optional `sideAvail` / `sideReady` the side
    *  quests go there instead (OB-125: a different colour), else everything goes to the first two (old behaviour). */
   book.giverMarks = function giverMarks(outAvail, outReady, sideAvail, sideReady) {
@@ -319,7 +323,18 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     const m = o && o.mark; if (!m) return;
     // OB-157: optional mark.taken = flag set when the start giver handed the step over -> the '!' is gone, the '?' at `end` shows
     const taken = m.taken && entries[0].state.flags[m.taken];
-    if (m.start && !taken) outAvail[outAvail.length] = m.start; else if (m.end) outReady[outReady.length] = m.end;
+    // OB-155i: no early '?' waypoint - chain steps are flag/area steps with no hand-in, so only the start '!' shows (mark.end stays data for compass/HUD)
+    if (m.start && !taken) outAvail[outAvail.length] = m.start;
+  };
+  /** OB-155j: ONE marker per world entity. Priority: '?' ready (gold before blue) > gold '!' > blue '!'. Lists are filtered in place;
+   *  keyOf maps a marker id to its entity (default book.entityFor). */
+  book.dedupeMarks = function dedupeMarks(gA, gR, sA, sR, keyOf = book.entityFor) {
+    const seen = new Set();
+    for (const l of [gR, sR, gA, sA]) {
+      if (!l) continue; let k = 0;
+      for (let j = 0; j < l.length; j++) { const e = keyOf(l[j]); if (seen.has(e)) continue; seen.add(e); l[k++] = l[j]; }
+      l.length = k;
+    }
   };
   /** QL-03: index of the tracked giver quest: the player's pick (main flag `ui.tracked`, saved with the main quest) while it is active/ready, else the most recently accepted one, else -1. */
   book.tracked = function tracked() {

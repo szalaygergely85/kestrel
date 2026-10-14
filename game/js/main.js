@@ -191,6 +191,7 @@ import { createToastView } from './quest/toastView.js';
 import { createInventoryScreen } from './quest/inventoryScreen.js'; // US-091b + OB-112: one inventory screen (I / C / Tab)
 import { createQuestMarkers } from './quest/sim/questMarkers.js'; // QUEST-MARK-01w
 import { registerQuestMarks } from './quest/wire/questMarks.js';
+import { markHeight, structureTop, MARK_MARGIN } from './quest/markTop.js';
 import { createQuestLogScreen, QUEST_LOG_KEYS } from './ui/questLog.js'; // QG-05
 import { createCompassHud } from './ui/compassHud.js'; // COMPASS-02 (D-061)
 import { createCombatHud } from './ui/combatHud.js'; import { setEnemyBarsOn, setDamageNumbersOn } from './ui/combatHudFlags.js'; // HPBAR-02 + DMGNUM-01 (D-086)
@@ -546,7 +547,7 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
       { objectiveId: 'leave', targets: ['doorMarker'] }, /* MARK-FOLLOW-01: no mark while following Burl (owner) */ { objectiveId: 'waystone', targets: ['endMarker'] },
       { objectiveId: 'road', targets: ['roadWest'] }, { objectiveId: 'relayFound', targets: ['relayBend'] }, { objectiveId: 'relay1', targets: ['relayBend'] }]);
     const MARK_AREA = { doorMarker: 'towerDoor', roadWest: 'roadWest' }; const MARK_AT = { doorMarker: { x: 1495.5, y: 1030.5 } }; // owner 2026-10-10: the leave marker hangs in the open SW doorway (cell Q), not at the area centre (that sat in the wall) // marker id -> world area trigger id (no entity)
-    const MARK_TOP = { endMarker: 3.0, bear: 1.1, noteKeepLight: 0.14 }; const MARK_DY = { noteKeepLight: -0.03 }; const MARK_SCALE = { noteKeepLight: 0.4 }; // OB-095 (owner: too big, should almost touch the note + wall): the page is z 0.80-1.04 on the wall; a 0.4-scale '!' (0.31 m glyph, 0.14 m float) puts its bottom ~4 cm above the page top, centre 0.1 m off the wall (clears it while spinning). // QUEST-CHAIN-Q-01: the page sits ON the tower wall (y 10.0 local, interior = smaller y): hang the '!' 0.55 m inside so it is not half in / through the wall // prop top above its base z (waystone 24 voxels x 0.125 m; bear 22 voxels x 0.05 m = 1.1 m, glyph floats 0.35 m above); notes would use z + 1.55 (owner 2026-10-10: "!" too high)
+    const MARK_TOP = { noteKeepLight: 0.14 }; /* OB-155h: only overrides; everything else = model top + margin (markTop.js) */ const MARK_DY = { noteKeepLight: -0.03 }; const MARK_SCALE = { noteKeepLight: 0.4 }; // OB-095 (owner: too big, should almost touch the note + wall): the page is z 0.80-1.04 on the wall; a 0.4-scale '!' (0.31 m glyph, 0.14 m float) puts its bottom ~4 cm above the page top, centre 0.1 m off the wall (clears it while spinning). // QUEST-CHAIN-Q-01: the page sits ON the tower wall (y 10.0 local, interior = smaller y): hang the '!' 0.55 m inside so it is not half in / through the wall // prop top above its base z (waystone 24 voxels x 0.125 m; bear 22 voxels x 0.05 m = 1.1 m, glyph floats 0.35 m above); notes would use z + 1.55 (owner 2026-10-10: "!" too high)
     gameHooks.setQuestSource((out) => { const st = saveRelay.quest.state; out.done = saveRelay.quest.done; out.id = out.done ? '' : questDef.objectives[st.completed.length].id; out.targets = qm.markerTargets(st); });
     let markN = 0;
     const markHandle = (model) => { // entity handle for one marker; re-spawns itself when a world reload dropped the entity
@@ -564,8 +565,8 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
         setPos(a, b, c) { x = a; y = b; z = c; push(); },
       };
     };
-    const MARK_ENT = { noteKeepLight: 'tower.noteKeepLight' }; // level props are world entities '<placementId>.<propId>'
-    const markResolve = (id, out) => { const h = markWorld && markWorld.get(MARK_ENT[id] || (saveRelay.quest.book ? saveRelay.quest.book.entityFor(id) : id)), t = h && h.data && h.data.transform; if (!t) { const a = MARK_AREA[id], tr = a && markWorld && areaTrigger(markWorld, a); if (!tr) return false; const at = MARK_AT[id] || tr, gz = markWorld.heightAt(at.x, at.y); out.x = at.x; out.y = at.y; out.z = (gz == null ? 0 : gz) + 2.2; return true; } out.x = t.x; out.y = t.y + (MARK_DY[id] || 0); out.z = t.z + (MARK_TOP[id] || 1.55); out.s = MARK_SCALE[id] || 1; return true; };
+    const MARK_BOARD_MARGIN = 0.05; const MARK_ENT = { noteKeepLight: 'tower.noteKeepLight' }; // level props are world entities '<placementId>.<propId>'
+    const markResolve = (id, out) => { const h = markWorld && markWorld.get(MARK_ENT[id] || (saveRelay.quest.book ? saveRelay.quest.book.entityFor(id) : id)), t = h && h.data && h.data.transform; if (!t) { const sid = MARK_ENT[id] || (saveRelay.quest.book ? saveRelay.quest.book.entityFor(id) : id), sb = markWorld && markWorld.structures && markWorld.structures.find((q) => q.id === sid); if (sb && sb.bbox) { out.x = (sb.bbox.x0 + sb.bbox.x1) / 2; out.y = (sb.bbox.y0 + sb.bbox.y1) / 2; out.z = sb.bbox.z1 + MARK_BOARD_MARGIN; out.s = 1; return true; } /* OB-155h: a mesh placement (Outwall board): hang above its bbox top */ const a = MARK_AREA[id], tr = a && markWorld && areaTrigger(markWorld, a); if (!tr) return false; const at = MARK_AT[id] || tr, gz = markWorld.heightAt(at.x, at.y); out.x = at.x; out.y = at.y; out.z = (gz == null ? 0 : gz) + 2.2; return true; } out.x = t.x; out.y = t.y + (MARK_DY[id] || 0); const nm = !(h.data.components && (h.data.components.voxel || h.data.components.mesh)) && MARK_TOP[id] === undefined ? structureTop(markWorld.structures, t.x, t.y, t.z) : null; out.z = t.z + (nm !== null ? nm + MARK_MARGIN : markHeight(h.data, window.ASSETS, MARK_TOP[id])); out.s = MARK_SCALE[id] || 1; return true; };
     // MARK-GIVER-ONLY-01 (owner), amended OB-124b: objective steps get no per-step waypoint mark here; instead book.chainMarks (m1 objective.mark data) adds gold '!' at the start entity / '?' at the end entity of the current main step (below). Flip to re-enable if a distinct waypoint symbol is designed.
     const OBJECTIVE_MARKS = false;
     if (OBJECTIVE_MARKS) registerQuestMarks(gameHooks, { fx: window.ASSETS.questMarkFx, resolve: markResolve, create: () => markHandle('questMark') });
@@ -573,7 +574,7 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
     const gAvail = [], gReady = [], sAvail = [], sReady = []; // OB-125: main chain = gold, side quests = light blue (book.isMain, from quest data)
     for (const [model, list] of [['questMark', gAvail], ['questMarkReady', gReady], ['questMarkSide', sAvail], ['questMarkReadySide', sReady]]) {
       registerQuestMarks(gameHooks, { fx: window.ASSETS.questMarkFx, resolve: markResolve, create: () => markHandle(model),
-        source: (out) => { const b = saveRelay.quest.book; b.giverMarks(gAvail, gReady, sAvail, sReady); b.chainMarks(gAvail, gReady); out.done = false; out.targets = list; } });
+        source: (out) => { const b = saveRelay.quest.book; b.giverMarks(gAvail, gReady, sAvail, sReady); b.chainMarks(gAvail, gReady); b.dedupeMarks(gAvail, gReady, sAvail, sReady); out.done = false; out.targets = list; } });
     }
   }
   } catch (e) { console.error('[save] relay setup failed:', e); window.__debug.bootErrors.push({ file: 'save relay', message: String(e && e.message) }); showBootErrors(document, [{ file: 'save relay', message: '' }]); }
