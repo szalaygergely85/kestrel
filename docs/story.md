@@ -2158,3 +2158,116 @@ Notes:
 - The weapon tier 4-5 descs from "Weapon tiers 4-5" (2026-10-13) stay. Its names (`Quenched Edge`, `Watch Blade` ...) are replaced by this table, and so are the armour `Watch` / `Relay` options.
 - `Kite Shield`, not `Iron Shield`, so the old tier list does not clash with the new item-base names.
 - The `Teal Crystal` desc stays. GDD 3 says Wick "has no word for it" in M1. `Aether Crystal` is the plain name, but it only fits once someone (Burl) has said the word.
+
+## 2026-10-14 quest-giver NPCs (PC-B writer, owner-authorised)
+
+D-098: quests are given and returned by characters. Source: `docs/epics/qfix-s5-givers.md`, `content/quests/regions/pack.json`. Plain names (OB-135), ASCII only, no "relay" in player text (say waystone), nobody says "Wick". Limits: name <= 14, greeting / offer / thanks <= 60, not-ready <= 50. `design/chargen/npc_looks.js` was not found in any clone, so roles follow the epic's body variants (hunter, herder, ferryman / shore-walker); if a look differs, only the who-line changes.
+
+### 1. The Post-keeper (`npcPostKeeper`)
+
+Who: Tobin, an old, careful man who keeps the crossroads trade post. His is the fresh, unsigned caps hand on the TAKEN tags. He counts everything and asks nothing.
+
+| key | text | chars |
+|---|---|---|
+| `npc.postKeeper.name` | `Tobin` | 5 |
+| `npc.postKeeper.greet.first` | `Leave what you can spare. Take what you need.` | 45 |
+| `npc.postKeeper.greet` | `Back again. The basket's lighter than it was.` | 45 |
+| `npc.postKeeper.offer.post` (post, notePost) | `There's work at the post, if you've the time.` | 45 |
+| `npc.postKeeper.offer.ford` (relayFord errands) | `The ford wants walking. Nobody's checked it in years.` | 53 |
+| `npc.postKeeper.offer.bend` (only if the Bend errands move to him) | `Bend stone needs an errand run. My knees say no.` | 48 |
+| `npc.postKeeper.notReady` | `Not yet. The road's still waiting on you.` | 41 |
+| `npc.postKeeper.notReady.2` | `Done already? Your boots say otherwise.` | 39 |
+| `npc.postKeeper.thanks` | `Good. I'll put it on the tally. Take this.` | 42 |
+| `npc.postKeeper.thanks.2` | `Well walked. The post pays what it can.` | 39 |
+| `npc.postKeeper.thanks.packet` (sq.packet) | `Oilcloth, still sealed. You didn't look. Good.` | 46 |
+| `npc.postKeeper.thanks.shield` (sq.rb.shield) | `That buckler found you at the Bend. Keep it.` | 44 |
+| `npc.postKeeper.thanks.sign` (sq.fc.sign) | `My west arm. The river had it. Thank you.` | 41 |
+| `npc.postKeeper.thanks.shrine` (sq.fc.shrine) | `You looked at the shrine? Good. Someone should.` | 47 |
+| `npc.postKeeper.talk.1` | `The tags are mine. Caps read better in rain.` | 44 |
+| `npc.postKeeper.talk.2` | `A bear left berries once. I liked them. Tell her.` | 49 |
+| `npc.postKeeper.talk.3` | `I don't ask where walkers come from. Don't ask me.` | 50 |
+
+Notes:
+- `talk.2` answers Burl's `sq.burl.ask` done line ("I hope they like berries"). `talk.3` keeps him from naming Wick, Ferrum or the exiles' village.
+- The ford errands (`sq.fc.ford/smoke/cross/again/jetty/cog`) still carry FORD RELAY "TICK" lines in the pack. If Tobin gives them, they need a short pass in his voice (not done here).
+- ESCALATE TO MANAGER: a person standing at the crossroads before `mq.smoke` undercuts `bark.wick.smoke` ("Smoke. Cookfires. Out here?") and the TAKEN tag as "the second sign of people". Proposal: Tobin stands at the post only once `mq.smoke` is done. Before that the post works as now (tags, basket, no keeper), and his errands open after it.
+
+### 2. Region givers (one beside each waystone)
+
+| id | name | who |
+|---|---|---|
+| `npcGlasswater` | `Ansel` (5) | Ferryman. Poles a raft across the still water. |
+| `npcNorthwood` | `Garrow` (6) | Hunter. Sits under the pines and listens. |
+| `npcHighPastures` | `Ilsa` (4) | Herder. Keeps a small flock on the high grass. |
+| `npcAshMile` | `Coll` (4) | Charcoal burner. Ash to the elbows. |
+| `npcDowns` | `Petra` (5) | Herder. Counts everything on the long green twice. |
+| `npcSignalHill` | `Jory` (4) | Hunter. Watches the waystone blink all day. |
+| `npcHeath` | `Tansy` (5) | Herder and beekeeper among the heather. |
+| `npcReedmire` | `Osk` (3) | Ferryman. Punts the black water on planks and poles. |
+| `npcStrand` | `Nell` (4) | Shore-walker. Picks up what the sea brings in. |
+| `npcWhitecombs` | `Kettil` (6) | Hunter in furs, at the foot of the snow. |
+
+| key | text | chars |
+|---|---|---|
+| `npc.glasswater.greet` | `Still water today. Mind your step on the stones.` | 48 |
+| `npc.glasswater.offer` | `Boars came down to drink. Now they won't leave.` | 47 |
+| `npc.glasswater.notReady` | `Still mud in the water. Still boars.` | 36 |
+| `npc.glasswater.thanks` | `Clear again. Here, two draughts for the road.` | 45 |
+| `npc.northwood.greet` | `Quiet. The pines hear everything.` | 33 |
+| `npc.northwood.offer` | `Three wolves circle the stone at night. Too many for me.` | 56 |
+| `npc.northwood.notReady` | `I still hear them. Three voices.` | 32 |
+| `npc.northwood.thanks` | `Only the wind now. Take my spare arrows.` | 40 |
+| `npc.highPastures.greet` | `Up here the wind does the talking.` | 34 |
+| `npc.highPastures.offer` | `Two bears in the high grass. My flock won't graze.` | 50 |
+| `npc.highPastures.notReady` | `Still bears in the grass. The flock knows.` | 42 |
+| `npc.highPastures.thanks` | `They're grazing again. Here. For your hurts.` | 44 |
+| `npc.ashMile.greet` | `Ash on your boots already. It never washes out.` | 47 |
+| `npc.ashMile.offer` | `Two boars dig in the burn. They'll find my kilns next.` | 54 |
+| `npc.ashMile.notReady` | `Still digging. I hear the tusks on stone.` | 41 |
+| `npc.ashMile.thanks` | `The ash settles. Arrows, for your trouble.` | 42 |
+| `npc.downs.greet` | `Long green, long sky. You see weather coming.` | 45 |
+| `npc.downs.offer` | `Four boars loose on the downs. I've counted twice.` | 50 |
+| `npc.downs.notReady` | `Some still loose. I keep counting.` | 34 |
+| `npc.downs.thanks` | `None left to count. Take these, and thank you.` | 46 |
+| `npc.signalHill.greet` | `Short, long, short. I watch the stone all day.` | 46 |
+| `npc.signalHill.offer` | `Wolves on the slope. When they're near, it stutters.` | 52 |
+| `npc.signalHill.notReady` | `It stutters still. They're close.` | 33 |
+| `npc.signalHill.thanks` | `Listen. It runs clean again. Arrows, take them.` | 47 |
+| `npc.heath.greet` | `Heather to the knee. Bees, mostly. And me.` | 42 |
+| `npc.heath.offer` | `Three boars tear up the heather. The bees go hungry.` | 52 |
+| `npc.heath.notReady` | `Still rooting. I can hear them from here.` | 41 |
+| `npc.heath.thanks` | `The heather will grow back. Here, two draughts.` | 47 |
+| `npc.reedmire.greet` | `Keep to the planks. The black water keeps what it takes.` | 56 |
+| `npc.reedmire.offer` | `Three boars wallow in the reeds. They broke my punt.` | 52 |
+| `npc.reedmire.notReady` | `Still wallowing. Still loud.` | 28 |
+| `npc.reedmire.thanks` | `Quiet water. Take these arrows. Dry ones.` | 41 |
+| `npc.strand.greet` | `Salt wind. The sea brings things in, now and then.` | 50 |
+| `npc.strand.offer` | `The Downs are short of arrows. Carry five inland?` | 49 |
+| `npc.strand.notReady` | `Five arrows, to the Downs waystone. Inland.` | 43 |
+| `npc.strand.thanks` | `The Downs light blinked back. Thank you. Take these.` | 52 |
+| `npc.whitecombs.greet` | `Cold up here. The snow keeps everything quiet.` | 46 |
+| `npc.whitecombs.offer` | `Two bears den on the rock below. I can't get past.` | 50 |
+| `npc.whitecombs.notReady` | `Still denned. I can smell them from here.` | 41 |
+| `npc.whitecombs.thanks` | `The rock is clear. Three draughts. You'll need them.` | 52 |
+
+Notes:
+- Play order at the giver: `offer` (spoken), then the pack's existing `lines.offer` (what the bowl shows). At the hand-in: `thanks`, then the pack's `lines.done`. The pack lines stay as they are.
+- Thanks lines match the pack rewards (draughts = `potion.hp`, arrows = `arrow`; Whitecombs gives 3).
+- All lines fit the epic's 56-char rule as well as the 60 limit.
+
+### 3. Rook, end of `mq.river.road` (D-095)
+
+| key | text | chars |
+|---|---|---|
+| `rook.road.stronger` | `Far side bites, fell-bird. Grow claws. Then come back.` | 54 |
+
+### 4. Weapon tier 4-5 desc (`design/itemsWeapons.js`, one desc per tier)
+
+The file builds desc in one loop, so these are tier-wide and fit sword, bow and shield (<= 38, MAX_ITEM_DESC). The per-item descs in "Weapon tiers 4-5" (2026-10-13) are still valid if the programmer prefers a per-item map.
+
+| key | text | chars |
+|---|---|---|
+| `item.gear.*.tempered.desc` | `Oil-quenched iron. Takes a beating.` | 35 |
+| `item.gear.*.warden.desc` | `Old tower make. Older than the Wall.` | 36 |
+
+The warden line is the same as the armour warden desc, so both tier-5 sets read as one make.
