@@ -6,7 +6,7 @@
 //    `item:count` (idempotent: save/load, drops, deliveries and re-picks never double count). Also installs book.packOps
 //    so a `deliver` objective can check and remove the items at hand-in.
 //  - grantReward(reward): puts a hand-in reward ({items:[{id,n}]}) in the pack.
-import { addItem, removeItem, countOf } from './quest/sim/inventory.js';
+import { addItem, removeItem, countOf, itemDisplayName } from './quest/sim/inventory.js';
 import { unlockFireball } from './quest/features.js';
 import { spawnLeftoverDrop, setStackPickupSink } from './quest/sim/pickups.js';
 
@@ -16,7 +16,7 @@ export const REACH = 2.2, REACH_DZ = 3, POLL_STEPS = 10;
 const warnedIds = new Set();
 export function itemLabel(defs, id) {
   const d = defs && defs[id];
-  if (d && typeof d.name === 'string' && d.name) return d.name;
+  if (d && typeof d.name === 'string' && d.name) return itemDisplayName(d);
   const h = String(id).replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[._]+/g, ' ').trim().toLowerCase();
   const out = h.charAt(0).toUpperCase() + h.slice(1);
   if (!warnedIds.has(id)) { warnedIds.add(id); console.warn('[pickup] no item def name for', id, '- using', out); }

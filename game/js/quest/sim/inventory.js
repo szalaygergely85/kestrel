@@ -48,6 +48,17 @@ export function ensureInventory(player, start) {
 export const EQUIP_SLOTS = ['head', 'body', 'cloak', 'hands', 'belt', 'legs', 'feet', 'main', 'off', 'ranged', 'quiver'];
 export const EQUIP_TIERS = ['worn', 'sturdy', 'fine', 'tempered', 'warden']; // EQ-21: T4/T5
 
+// D-097: an item def may carry `nameAfter: {flag, name}`; once world flag `flag` is true the UI shows `name` (Teal Crystal -> Aether Crystal).
+let flagReader = null;
+/** The game registers a reader (key => boolean) once; without one the base name is shown. */
+export function setItemFlagReader(fn) { flagReader = typeof fn === 'function' ? fn : null; }
+/** The one place item names are resolved for UI (toasts, inventory, pickup prompts). */
+export function itemDisplayName(def) {
+  if (!def) return '';
+  const na = def.nameAfter;
+  return na && flagReader && flagReader(na.flag) ? na.name : def.name;
+}
+
 /**
  * Validates every item def once at load (id/name/kind/stackMax/icon); throws naming the bad id. Called by
  * main.js at boot. This checks the fields the inventory code actually depends on (the designer's own
@@ -61,6 +72,7 @@ export function validateItemDefs(defs) {
     const d = defs[id];
     if (!d || d.id !== id) throw new Error(`[items] bad def "${id}": id mismatch`);
     if (typeof d.name !== 'string' || !d.name) throw new Error(`[items] bad def "${id}": name`);
+    if (d.nameAfter !== undefined && (!d.nameAfter || typeof d.nameAfter.flag !== 'string' || typeof d.nameAfter.name !== 'string')) throw new Error(`[items] bad def "${id}": nameAfter`);
     if (!KINDS[d.kind]) throw new Error(`[items] bad def "${id}": kind "${d.kind}"`);
     if (typeof d.stackMax !== 'number' || !(d.stackMax >= 0)) throw new Error(`[items] bad def "${id}": stackMax`);
     if (!d.icon || !Array.isArray(d.icon.glyphs) || !Array.isArray(d.icon.fg) || d.icon.glyphs.length !== 3 || d.icon.fg.length !== 3) {

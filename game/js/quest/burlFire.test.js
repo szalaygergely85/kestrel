@@ -47,10 +47,9 @@ ok(!fireballOn(world, null), 'locked before the reward');
 qp.grantReward(reward); qp.grantReward(reward);
 ok(world.state[FIREBALL_FLAG] === true && fireballOn(world, null), 'flag set after the reward');
 ok(unlocks === 1, 'magic.unlocked emitted exactly once on a double grant (' + unlocks + ')');
-console.log(`burlFire: ${pass} pass, ${fail} fail`); for (const f of failures) console.log('  FAIL ' + f);
-process.exit(fail ? 1 : 0);
-
 // OB-136 order: the west-bank chain needs the fireball beat (sq.burl.fire done); mirror/smoke hang off stones
 ok(get('mq.ford.stones').requires.some(r => r.quest === 'sq.burl.fire' && r.done === true), 'mq.ford.stones requires sq.burl.fire done');
 ok(get('mq.ford.mirror').requires.some(r => r.quest === 'mq.ford.stones') && get('mq.smoke').requires.some(r => r.quest === 'mq.ford.mirror'), 'mirror/smoke chained behind stones');
 ok(get('sq.burl.fire').requires.some(r => r.quest === 'mq.river.road'), 'sq.burl.fire opens after mq.river.road');
+console.log(`burlFire: ${pass} pass, ${fail} fail`); for (const f of failures) console.log('  FAIL ' + f);
+process.exit(fail ? 1 : 0);

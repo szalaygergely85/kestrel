@@ -34,9 +34,9 @@
       "The boars trampled half my bushes, sky-cub.",
       "The blue sprigs by the north trees still stand."
     ], "next": "bear.blue.offer.2", "speaker": "burl"},
-    "bear.blue.offer.2": {"next": "bear.blue.accepted", "lines": [
+    "bear.blue.offer.2": {"lines": [
       "Six would do. Don't eat any. I'll know."
-    ], "speaker": "burl"},
+    ], "next": "bear.blue.accepted", "speaker": "burl"},
     "bear.blue.accepted": {"end": true, "lines": [
       "Blue ones. North trees."
     ], "speaker": "burl"},
@@ -95,11 +95,11 @@
     "bear.q.offer.4": {"lines": [
       "A light. It blinks in the distance."
     ], "next": "bear.q.offer.5", "speaker": "you"},
-    "bear.q.offer.5": {"next": "bear.q.accepted", "lines": [
+    "bear.q.offer.5": {"lines": [
       "Ah. The far light.",
       "There is an old Waystone past the trees.",
       "Might guide you. But first, those boars need moving."
-    ], "speaker": "burl"},
+    ], "next": "bear.q.accepted", "speaker": "burl"},
     "bear.q.accepted": {"end": true, "lines": [
       "Five ought to convince the others.",
       "Mind their tusks, sky-cub."

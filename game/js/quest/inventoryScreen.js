@@ -9,6 +9,7 @@ import { SLOTS as PACK_SLOTS, assignHand, removeItem } from './sim/inventory.js'
 import { wrapNoteLines } from './noteRead.js';
 import { gearRecipe } from './gearLook.js';
 import { createPreviewYaw } from './previewYaw.js';
+import { itemDisplayName } from './sim/inventory.js';
 
 // Panel-relative layout (panel 100 x 29). Slot boxes are the style's 9x5 boxes, pitch from `uiStyle.inventory.grid`.
 export const LAYOUT = Object.freeze({
@@ -140,7 +141,7 @@ export function createInventoryScreen(o) {
     h.hp = Math.min(h.max, h.hp + d.use.heal);
     removeItem(v, id, 1);
     setFlash(n, F_USE, slotCfg.flash.use.ms);
-    say('Ate ' + d.name + '  +' + d.use.heal + ' HP', C.heroGreen);
+    say('Ate ' + itemDisplayName(d) + '  +' + d.use.heal + ' HP', C.heroGreen);
   }
   /** Spells and other hand-only items (no gear slot): Q = left hand, E / click = right hand; again = empty it. */
   function toHand(n, id, hand) {
@@ -252,7 +253,7 @@ export function createInventoryScreen(o) {
     const d = id && defs[id];
     if (!d) { add(node.kind === 0 ? 'Empty ' + slotLabel[node.slot].toLowerCase() + ' slot' : 'Empty', C.uiDim); return; }
     const q = d.equip, tier = q ? q.tier : null;
-    add(d.name, tier && tierFg[tier] ? tierFg[tier] : C.uiText);
+    add(itemDisplayName(d), tier && tierFg[tier] ? tierFg[tier] : C.uiText);
     if (lockText) { add(lockText, C.uiDim); return; }
     if (q) {
       add((tierName[tier] || '') + ' ' + (slotLabel[q.slot] || q.slot).toLowerCase() + (q.def > 0 ? '  -  Defence ' + q.def : '') + (q.stats && q.stats.dmgMul ? '  -  Damage x' + q.stats.dmgMul : ''), C.uiHint);

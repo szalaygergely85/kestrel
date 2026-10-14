@@ -507,7 +507,8 @@
         {
           "quest": "sq.burl.boars.s",
           "done": true
-        }
+        },
+        { "quest": "sq.burl.fire", "done": true }
       ],
       "reward": {
         "gear": {
@@ -847,7 +848,8 @@
         {
           "quest": "m1",
           "step": "relay1"
-        }
+        },
+        { "quest": "sq.burl.fire", "done": true }
       ],
       "reward": {
         "items": [
@@ -1032,7 +1034,8 @@
         {
           "quest": "mq.river.road",
           "step": "riverBank"
-        }
+        },
+        { "quest": "sq.burl.fire", "done": true }
       ],
       "reward": {
         "gear": {
@@ -1508,7 +1511,8 @@
         {
           "quest": "sq.rb.rocks",
           "done": true
-        }
+        },
+        { "quest": "sq.burl.fire", "done": true }
       ],
       "reward": {
         "items": [
@@ -1557,7 +1561,8 @@
         {
           "quest": "mq.river.road",
           "step": "riverBank"
-        }
+        },
+        { "quest": "sq.burl.fire", "done": true }
       ],
       "reward": {
         "table": "gear.t1"
@@ -1813,7 +1818,8 @@
         {
           "quest": "mq.river.road",
           "step": "riverBank"
-        }
+        },
+        { "quest": "sq.burl.fire", "done": true }
       ],
       "reward": {
         "items": [
@@ -1862,7 +1868,8 @@
         {
           "quest": "mq.river.road",
           "step": "riverBank"
-        }
+        },
+        { "quest": "sq.burl.fire", "done": true }
       ],
       "reward": {
         "items": [
@@ -2075,7 +2082,8 @@
         },
         {
           "flag": "burl.home"
-        }
+        },
+        { "quest": "sq.burl.fire", "done": true }
       ],
       "reward": {
         "items": [
@@ -2279,7 +2287,8 @@
         }
       ],
       "opensAfter": [
-        "mq.bend.call"
+        "mq.bend.call",
+        "sq.burl.fire"
       ],
       "reward": {
         "items": [

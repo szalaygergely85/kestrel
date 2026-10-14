@@ -8,6 +8,8 @@
 // Time is render time: a line's birth is stamped at the first draw after its event (the event fires inside a sim
 // step, which has no clock), and its age in 60 Hz steps is `(timeSec - born) * 60`.
 
+import { itemDisplayName } from './sim/inventory.js';
+
 const STEP_HZ = 60;
 
 /**
@@ -48,7 +50,7 @@ export function createToastView(events, style, defs, rgb) {
     } else {
       L = nextLine();
       L.kind = 1; L.id = p.id; L.n = p.n;
-      L.text = def.name;
+      L.text = itemDisplayName(def);
       L.glyph = def.glyph ? def.glyph.ch.charCodeAt(0) : 0;
       L.glyphRgb = def.glyph && rgb[def.glyph.c] ? rgb[def.glyph.c] : style.colors.name;
     }
@@ -60,7 +62,7 @@ export function createToastView(events, style, defs, rgb) {
     const msg = style.messages.packFull;
     // OB-042: a hand-in reward leftover carries {id, n}: name it. (Loot/chest events carry only an id: generic line.)
     const def = p && p.n > 0 ? defs[p.id] : null;
-    if (def) { say(msg.text + ' - ' + def.name + ' x' + p.n + (p.dropped ? ' left on the ground' : ' not added'), msg.fg); return; }
+    if (def) { say(msg.text + ' - ' + itemDisplayName(def) + ' x' + p.n + (p.dropped ? ' left on the ground' : ' not added'), msg.fg); return; }
     let L = findLine(2, 'packFull');
     if (!L) {
       L = nextLine();

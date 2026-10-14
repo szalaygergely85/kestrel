@@ -372,7 +372,7 @@
   keys.N = { c: 'aether', e: true };  keys.I = { c: 'aetherLight', e: true };
   keys.x = { c: 'aetherCore', e: true }; keys['1'] = { c: 'aetherMid', e: true };
   defs.aetherCrystal = {
-    id: 'aetherCrystal', name: 'Teal Crystal', /* NEEDS: OB-135 renames it 'Aether Crystal' once Burl says the word; no name-after-flag support yet */ kind: 'key', stackMax: 1, hand: false, inPack: true,
+    id: 'aetherCrystal', name: 'Teal Crystal', nameAfter: { flag: 'burl.home', name: 'Aether Crystal' }, /* D-097: renamed once Burl is home (she names it) */ kind: 'key', stackMax: 1, hand: false, inPack: true,
     desc: 'Warm, and it hums like the old stones.',
     use: { none: 'not used from the pack', note: 'proof of aether.attuned (game/js/quest/crystal.js grants it); ' +
            'held up at a stone by relayWake.js, never consumed' },

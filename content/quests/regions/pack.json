@@ -4,60 +4,60 @@
     10
   ],
   "quests": [
-    {"id": "sq.reg.glasswater", "giverNpc": "npcGlasswater", "turnInNpc": "npcGlasswater", "pendingNpc": true, "lines": {"done": [
+    {"id": "sq.reg.glasswater", "giverNpc": "npcGlasswater", "lines": {"done": [
       "The water goes still. The bowl glows clear and steady."
     ], "offer": [
       "The bowl flickers: three boars, mud in the still water."
-    ]}, "requires": [{"flag": "waystone.ws_glasswater.woken"}], "returnText": "Back to the Glasswater waystone", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "relay_glasswater", "steps": [{"journal": "The Glasswater bowl showed boars churning the shallows. Drive off three, then come back to the light.", "objText": "Drive off 3 boars", "params": {"count": 3, "kind": "boar"}, "template": "kill"}], "title": "Tusks at the Water"},
-    {"id": "sq.reg.northwood", "giverNpc": "npcNorthwood", "turnInNpc": "npcNorthwood", "pendingNpc": true, "lines": {"done": [
+    ]}, "pendingNpc": true, "requires": [{"flag": "waystone.ws_glasswater.woken"}, {"done": true, "quest": "sq.burl.fire"}], "returnText": "Back to the Glasswater waystone", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "relay_glasswater", "steps": [{"journal": "The Glasswater bowl showed boars churning the shallows. Drive off three, then come back to the light.", "objText": "Drive off 3 boars", "params": {"count": 3, "kind": "boar"}, "template": "kill"}], "title": "Tusks at the Water", "turnInNpc": "npcGlasswater"},
+    {"id": "sq.reg.northwood", "giverNpc": "npcNorthwood", "lines": {"done": [
       "The pines are quiet. The waystone hums one long, even note."
     ], "offer": [
       "Teal shapes in the bowl: three wolves, low among the",
       "pines."
-    ]}, "requires": [{"flag": "waystone.ws_northwood.woken"}], "returnText": "Back to the Northwood waystone", "reward": {"items": [{"id": "arrow", "n": 15}]}, "site": "relay_northwood", "steps": [{"journal": "Northwood Waystone showed three wolves circling its stones. Drive them off, then return to the waystone.", "objText": "Drive off 3 wolves", "params": {"count": 3, "kind": "wolf"}, "template": "kill"}], "title": "Wolves Under the Pines"},
-    {"id": "sq.reg.highPastures", "giverNpc": "npcHighPastures", "turnInNpc": "npcHighPastures", "pendingNpc": true, "lines": {"done": [
+    ]}, "pendingNpc": true, "requires": [{"flag": "waystone.ws_northwood.woken"}], "returnText": "Back to the Northwood waystone", "reward": {"items": [{"id": "arrow", "n": 15}]}, "site": "relay_northwood", "steps": [{"journal": "Northwood Waystone showed three wolves circling its stones. Drive them off, then return to the waystone.", "objText": "Drive off 3 wolves", "params": {"count": 3, "kind": "wolf"}, "template": "kill"}], "title": "Wolves Under the Pines", "turnInNpc": "npcNorthwood"},
+    {"id": "sq.reg.highPastures", "giverNpc": "npcHighPastures", "lines": {"done": [
       "The grass lies flat and still. The hum settles, warm."
     ], "offer": [
       "Wind moves in the bowl, and two heavy shapes move",
       "through it."
-    ]}, "requires": [{"flag": "waystone.ws_highPastures.woken"}], "returnText": "Back to the Pasture waystone", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "relay_highPastures", "steps": [{"journal": "The Pasture Waystone flickered with two bears in the high grass. Drive both off, then return.", "objText": "Drive off 2 bears", "params": {"count": 2, "kind": "bear"}, "template": "kill"}], "title": "Bears in the High Grass"},
-    {"id": "sq.reg.ashMile", "giverNpc": "npcAshMile", "turnInNpc": "npcAshMile", "pendingNpc": true, "lines": {"done": [
+    ]}, "pendingNpc": true, "requires": [{"flag": "waystone.ws_highPastures.woken"}, {"done": true, "quest": "sq.burl.fire"}], "returnText": "Back to the Pasture waystone", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "relay_highPastures", "steps": [{"journal": "The Pasture Waystone flickered with two bears in the high grass. Drive both off, then return.", "objText": "Drive off 2 bears", "params": {"count": 2, "kind": "bear"}, "template": "kill"}], "title": "Bears in the High Grass", "turnInNpc": "npcHighPastures"},
+    {"id": "sq.reg.ashMile", "giverNpc": "npcAshMile", "lines": {"done": [
       "The ash settles. The bowl burns a little brighter."
     ], "offer": [
       "Grey light in the bowl: two boars, tusks deep in the",
       "ash."
-    ]}, "requires": [{"flag": "waystone.ws_ashMile.woken"}], "returnText": "Back to the Ash Mile waystone", "reward": {"items": [{"id": "arrow", "n": 15}]}, "site": "relay_ashMile", "steps": [{"journal": "Two boars root through the black ash near Ash Mile Waystone. Drive them off and come back to the light.", "objText": "Drive off 2 boars", "params": {"count": 2, "kind": "boar"}, "template": "kill"}], "title": "Rooting in the Ash"},
-    {"id": "sq.reg.downs", "giverNpc": "npcDowns", "turnInNpc": "npcDowns", "pendingNpc": true, "lines": {"done": [
+    ]}, "pendingNpc": true, "requires": [{"flag": "waystone.ws_ashMile.woken"}], "returnText": "Back to the Ash Mile waystone", "reward": {"items": [{"id": "arrow", "n": 15}]}, "site": "relay_ashMile", "steps": [{"journal": "Two boars root through the black ash near Ash Mile Waystone. Drive them off and come back to the light.", "objText": "Drive off 2 boars", "params": {"count": 2, "kind": "boar"}, "template": "kill"}], "title": "Rooting in the Ash", "turnInNpc": "npcAshMile"},
+    {"id": "sq.reg.downs", "giverNpc": "npcDowns", "lines": {"done": [
       "Four short pulses, then one long. The downs are quiet."
     ], "offer": [
       "Four short pulses. Four dark shapes on the long green."
-    ]}, "requires": [{"flag": "waystone.ws_downs.woken"}], "returnText": "Back to the Downs waystone", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "relay_downs", "steps": [{"journal": "The Downs Waystone pulsed four times: four boars loose on the green. Drive them off, then return.", "objText": "Drive off 4 boars", "params": {"count": 4, "kind": "boar"}, "template": "kill"}], "title": "Four on the Downs"},
-    {"id": "sq.reg.signalHill", "giverNpc": "npcSignalHill", "turnInNpc": "npcSignalHill", "pendingNpc": true, "lines": {"done": [
+    ]}, "pendingNpc": true, "requires": [{"flag": "waystone.ws_downs.woken"}], "returnText": "Back to the Downs waystone", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "relay_downs", "steps": [{"journal": "The Downs Waystone pulsed four times: four boars loose on the green. Drive them off, then return.", "objText": "Drive off 4 boars", "params": {"count": 4, "kind": "boar"}, "template": "kill"}], "title": "Four on the Downs", "turnInNpc": "npcDowns"},
+    {"id": "sq.reg.signalHill", "giverNpc": "npcSignalHill", "lines": {"done": [
       "The pattern runs clean again. The hill answers."
     ], "offer": [
       "The pattern breaks. Three wolves on the slope below."
-    ]}, "requires": [{"flag": "waystone.ws_signalHill.woken"}], "returnText": "Back to the Signal Hill waystone", "reward": {"items": [{"id": "arrow", "n": 20}]}, "site": "relay_signalHill", "steps": [{"journal": "Wolves prowl Signal Hill and its waystone stutters. Drive off three of them, then return to it.", "objText": "Drive off 3 wolves", "params": {"count": 3, "kind": "wolf"}, "template": "kill"}], "title": "The Hill Pack"},
-    {"id": "sq.reg.heath", "giverNpc": "npcHeath", "turnInNpc": "npcHeath", "pendingNpc": true, "lines": {"done": [
+    ]}, "pendingNpc": true, "requires": [{"flag": "waystone.ws_signalHill.woken"}, {"done": true, "quest": "sq.burl.fire"}], "returnText": "Back to the Signal Hill waystone", "reward": {"items": [{"id": "arrow", "n": 20}]}, "site": "relay_signalHill", "steps": [{"journal": "Wolves prowl Signal Hill and its waystone stutters. Drive off three of them, then return to it.", "objText": "Drive off 3 wolves", "params": {"count": 3, "kind": "wolf"}, "template": "kill"}], "title": "The Hill Pack", "turnInNpc": "npcSignalHill"},
+    {"id": "sq.reg.heath", "giverNpc": "npcHeath", "lines": {"done": [
       "The heather springs back. The hum bends with it."
     ], "offer": [
       "The heather shakes in the bowl. Three boars, rooting."
-    ]}, "requires": [{"flag": "waystone.ws_heath.woken"}], "returnText": "Back to the Heath waystone", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "relay_heath", "steps": [{"journal": "Three boars are tearing up the heather by Heath Waystone. Drive them off, then come back.", "objText": "Drive off 3 boars", "params": {"count": 3, "kind": "boar"}, "template": "kill"}], "title": "Boars in the Heather"},
-    {"id": "sq.reg.reedmire", "giverNpc": "npcReedmire", "turnInNpc": "npcReedmire", "pendingNpc": true, "lines": {"done": [
+    ]}, "pendingNpc": true, "requires": [{"flag": "waystone.ws_heath.woken"}, {"done": true, "quest": "sq.burl.fire"}], "returnText": "Back to the Heath waystone", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "relay_heath", "steps": [{"journal": "Three boars are tearing up the heather by Heath Waystone. Drive them off, then come back.", "objText": "Drive off 3 boars", "params": {"count": 3, "kind": "boar"}, "template": "kill"}], "title": "Boars in the Heather", "turnInNpc": "npcHeath"},
+    {"id": "sq.reg.reedmire", "giverNpc": "npcReedmire", "lines": {"done": [
       "The reeds hiss and settle. The black water goes still."
     ], "offer": [
       "The reeds thrash in the bowl. Three boars, deep in the",
       "mire."
-    ]}, "requires": [{"flag": "waystone.ws_reedmire.woken"}], "returnText": "Back to the Reedmire waystone", "reward": {"items": [{"id": "arrow", "n": 20}]}, "site": "relay_reedmire", "steps": [{"journal": "Boars wallow in the black water near Reedmire Waystone. Drive off three of them, then return.", "objText": "Drive off 3 boars", "params": {"count": 3, "kind": "boar"}, "template": "kill"}], "title": "Boars in the Reeds"},
-    {"id": "sq.reg.strand", "giverNpc": "npcStrand", "turnInNpc": "npcStrand", "pendingNpc": true, "lines": {"done": [
+    ]}, "pendingNpc": true, "requires": [{"flag": "waystone.ws_reedmire.woken"}], "returnText": "Back to the Reedmire waystone", "reward": {"items": [{"id": "arrow", "n": 20}]}, "site": "relay_reedmire", "steps": [{"journal": "Boars wallow in the black water near Reedmire Waystone. Drive off three of them, then return.", "objText": "Drive off 3 boars", "params": {"count": 3, "kind": "boar"}, "template": "kill"}], "title": "Boars in the Reeds", "turnInNpc": "npcReedmire"},
+    {"id": "sq.reg.strand", "giverNpc": "npcStrand", "lines": {"done": [
       "Far inland, the Downs light blinks back. The sea hums."
     ], "offer": [
       "The bowl draws five thin lines, all pointing inland."
-    ]}, "requires": [{"flag": "waystone.ws_strand.woken"}], "returnText": "Back to the Strand waystone", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "relay_strand", "steps": [{"journal": "The Strand light points inland, where the boars run. Carry five arrows to the Downs Waystone.", "objText": "Carry the arrows to the Downs waystone", "params": {"count": 5, "item": "arrow", "to": "relay_downs"}, "template": "deliver"}], "title": "Arrows for the Downs"},
-    {"id": "sq.reg.whitecombs", "giverNpc": "npcWhitecombs", "turnInNpc": "npcWhitecombs", "pendingNpc": true, "lines": {"done": [
+    ]}, "pendingNpc": true, "requires": [{"flag": "waystone.ws_strand.woken"}], "returnText": "Back to the Strand waystone", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "relay_strand", "steps": [{"journal": "The Strand light points inland, where the boars run. Carry five arrows to the Downs Waystone.", "objText": "Carry the arrows to the Downs waystone", "params": {"count": 5, "item": "arrow", "to": "relay_downs"}, "template": "deliver"}], "title": "Arrows for the Downs", "turnInNpc": "npcStrand"},
+    {"id": "sq.reg.whitecombs", "giverNpc": "npcWhitecombs", "lines": {"done": [
       "The rock is clear. The bowl rings like cold glass."
     ], "offer": [
       "Snow light in the bowl. Two bears on the rock below it."
-    ]}, "requires": [{"flag": "waystone.ws_whitecombs.woken"}], "returnText": "Back to the Combfoot waystone", "reward": {"items": [{"id": "potion.hp", "n": 3}]}, "site": "relay_whitecombs", "steps": [{"journal": "Two bears den on the bare rock below the Whitecombs. Drive them off and return to Combfoot Waystone.", "objText": "Drive off 2 bears", "params": {"count": 2, "kind": "bear"}, "template": "kill"}], "title": "Bears Below the Snow"}
+    ]}, "pendingNpc": true, "requires": [{"flag": "waystone.ws_whitecombs.woken"}, {"done": true, "quest": "sq.burl.fire"}], "returnText": "Back to the Combfoot waystone", "reward": {"items": [{"id": "potion.hp", "n": 3}]}, "site": "relay_whitecombs", "steps": [{"journal": "Two bears den on the bare rock below the Whitecombs. Drive them off and return to Combfoot Waystone.", "objText": "Drive off 2 bears", "params": {"count": 2, "kind": "bear"}, "template": "kill"}], "title": "Bears Below the Snow", "turnInNpc": "npcWhitecombs"}
   ],
   "region": "regions",
   "version": 1
