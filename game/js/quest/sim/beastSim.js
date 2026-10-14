@@ -441,6 +441,13 @@ export function createBeastSim(world, opts) {
       resyncLeash(sim);
     }
   };
+  /** BEAST-WIRE-01: spawn-director respawn of ONE dead slot at home (any order: re-activates this exact steer slot, unlike addAgent's lowest-free rule). */
+  sim.respawnSlot = function respawnSlot(slot) {
+    if (slot < 0 || slot >= sim.count || sim.down[slot] || !deadSt(sim.state[slot])) return false;
+    if (!sim.steer.active[slot] && !sim.dormant[slot]) { sim.steer.active[slot] = 1; sim.steer.radius[slot] = sim.cfg.radius; if (slot + 1 > sim.steer._hi) sim.steer._hi = slot + 1; }
+    resetSlotSim(sim, slot); resyncLeash(sim); sim.events.emit('beast:respawned', { id: sim.entities[slot].id, slot });
+    return true;
+  };
   sim.isDown = function isDown(slot) { return slot >= 0 && slot < sim.count && sim.down[slot] === 1; };
   /** GOB-01b: a live slot runs away from the player (last stepped position) like a low-hp wolf/goblin flee. */
   sim.flee = function flee(slot) {
