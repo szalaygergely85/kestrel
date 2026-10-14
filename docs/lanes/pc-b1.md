@@ -1073,3 +1073,6 @@ main.js: import createBeastBlend; `animblend = params.get('animblend') !== '0'` 
 ### ED-AI-03 (kestrel-1, 2026-10-14)
 Creatures tab: tools/editor/aiPanel.js (pure createCreatures + thin DOM + mountCreaturesTab), ai/form.js (specs), ai/patchBridge.js (100 ms debounce; msg {type:'ai-patch',name,fields} -> reply {type:'ai-patch-result',name,ok,refused[]} over BroadcastChannel 'kestrel-ai-patch'), index.html/main.js tab wiring, form.test.mjs, tools/verify-edai-03.mjs. Node only, not browser-checked; uses the model's makeStack (own undo list, not the scene record stack). Save = download via model (like Quests).
 NEEDS B1-main: game side must listen on BroadcastChannel 'kestrel-ai-patch' and call sim.patchArchetype (no receiver exists; touches game/js/main.js).
+
+### ED-AI-RECV (kestrel-1, 2026-10-14)
+game/js/quest/aiPatchRecv.js (create(channelFactory,getSim); BroadcastChannel kestrel-ai-patch -> sim.patchArchetype -> ai-patch-result with plain refusal text) + aiPatchRecv.test.js; wired in game/js/main.js after `let beasts` only with ?playtest=1 or ?dev=1 and not capture/bench/webdriver (getSim = () => beasts, survives reloads). Suites + check-deps pass; tools/verify-edai-recv.mjs is --check only (needs puppeteer + CHROME_PATH), not run; browser untested.
