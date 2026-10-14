@@ -50,6 +50,7 @@ def main():
     a = ap.parse_args()
     handler = functools.partial(NoCacheHandler, directory=a.directory)
     http.server.ThreadingHTTPServer.allow_reuse_address = True
+    http.server.ThreadingHTTPServer.request_queue_size = 128  # default 5: a cold page load fires ~200 script requests at once and Windows refuses the overflow (ERR_CONNECTION_REFUSED)
     with http.server.ThreadingHTTPServer(('', a.port), handler) as httpd:
         print(f'Serving {a.directory} on http://localhost:{a.port}/ (no-store)')
         httpd.serve_forever()
