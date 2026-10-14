@@ -73,6 +73,10 @@ export const GATE_POSES = [
   // MAP-07: meadow looking south-west at the sea line + sea skirt (MAP-06b skyline), still for docs/test-reports/MAP-geo.md.
   { slug: 'meadowSea', name: 'meadow looking south-west at the sea line (MAP-07 still)', cam: { x: 1460, y: 1030, z: 1.7, yawDeg: 235, pitchDeg: 0, groundEye: true } },
   { slug: 'fordDetail', name: 'ford bank looking west (perf 2026-10-11)', cam: { x: 1040, y: 1068, z: 1.7, yawDeg: 270, pitchDeg: 0, groundEye: true } },
+  // ENV-02d gpucompare look poses (ground look on the GPU vs the JS twin; need a world with `groundLook` on). Positions are reused gate spots, retune once the biome edges are known.
+  { slug: 'lookMeadow', name: 'ground look: meadow grass (ENV-02d)', cam: { x: 1450, y: 1035, z: 1.7, yawDeg: 102, pitchDeg: -12, groundEye: true } },
+  { slug: 'lookForestEdge', name: 'ground look: ford bank at the forest edge (ENV-02d)', cam: { x: 1040, y: 1068, z: 1.7, yawDeg: 270, pitchDeg: -12, groundEye: true } },
+  { slug: 'lookShore', name: 'ground look: lake shore (ENV-02d)', cam: { x: 1215, y: 556, z: 1.7, yawDeg: 0, pitchDeg: -15, groundEye: true } },
   { slug: 'roadLeft', name: 'walk-out road, looking south-west across the left (south) verge scatter roadL### (tools/gen-roadside-meshes.mjs)', cam: { x: 1440, y: 1030, z: 1.7, yawDeg: 215, pitchDeg: 4, groundEye: true } },
   { slug: 'hillside', name: 'hillside outside (owner pose A)', cam: { x: 1464.33, y: 1045.50, z: 3.92, yawDeg: 54, pitchDeg: 19 } },
   // waystoneLookBack: eye 2 m back along -forward from (1428, 1040) so it is not inside the model

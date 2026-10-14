@@ -21,7 +21,7 @@ import { LEVEL_NONE, LEVEL_ANIM } from './temporalStable.js';
 import { STEP } from '../core/loop.js';
 import { skylineFogF } from './skyline.js';
 import { resolveLook } from './look.js';
-import { shadeLookCell } from './groundLook.js'; // ENV-02b (38.63); circular with this file but only called at runtime
+import { shadeLookCell, packLookTable, makeGroundLook, LOOK_TABLE_WORDS } from './groundLook.js'; // ENV-02b (38.63); circular with this file but only called at runtime
 
 // US-026a (23.4): exported so terrainCaster.js's near-sampling dither uses
 // the SAME avalanche mix (never a second, drifting copy) - the dither must
@@ -695,10 +695,41 @@ function ensureShadeCtx(terrain, palette) {
  * @param {number} [timeSec]
  * @param {number} [hashCell] BUG-RTS-001: pitched-view hash cell (m), 0 = off
  */
+// ENV-02d: look bytes of the texel the type comes from (twin of the raster's terrainLookAt: near band when inside, else far grid, else 0).
+// Results in module scratch (no object / array per cell); w is the GPU's f32(w8) * f32(1/255).
+let lkLo = 0, lkHi = 0, lkW = 0;
+const F32_1_255 = Math.fround(1 / 255);
+function lookAtXY(terrain, x, y) {
+  lkLo = 0; lkHi = 0; lkW = 0;
+  let L = null, k = 0;
+  const g = terrain.nearReady ? terrain.near : null;
+  if (g && g.look) {
+    const i = Math.floor((x - g.x0) / g.cell), j = Math.floor((y - g.y0) / g.cell);
+    if (i >= 0 && j >= 0 && i < g.w && j < g.h) { L = g.look; k = (i + j * g.w) * 2; }
+  }
+  if (!L) {
+    L = terrain.farLook; if (!L) return;
+    const i = Math.floor((x - terrain.mapX0) / terrain.mapCell), j = Math.floor((y - terrain.mapY0) / terrain.mapCell);
+    if (i < 0 || j < 0 || i >= terrain.mapW || j >= terrain.mapH) return;
+    k = (j * terrain.mapW + i) * 2;
+  }
+  const bt = L[k]; lkLo = bt & 15; lkHi = bt >> 4; lkW = Math.fround(L[k + 1] * F32_1_255);
+}
+// ctx.groundLook for a world with `terrain.groundLook`: packed table cached per cfg object; wind01 as the GPU host (world.wind.params.amp clamped 0..1).
+function ensureGroundLookCtx(ctx, terrain, world) {
+  const cfg = terrain.groundLook ? terrain.groundLook.cfg : null;
+  if (!cfg) { ctx.groundLook = null; ctx._glCfg = null; return null; }
+  if (ctx._glCfg !== cfg) { ctx.groundLook = makeGroundLook(packLookTable(cfg, new Float32Array(LOOK_TABLE_WORDS))); ctx._glCfg = cfg; }
+  const wp = world && world.wind && world.wind.params;
+  ctx.groundLook.wind01 = wp && wp.amp > 0 ? (wp.amp < 1 ? wp.amp : 1) : 0;
+  return ctx.groundLook;
+}
+
 export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0) {
   if (!terrain || !terrain.farReady || !fb.gbuf) return;
   const gbuf = fb.gbuf, palette = fb.palette;
   const ctx = ensureShadeCtx(terrain, palette);
+  const GLK = ensureGroundLookCtx(ctx, terrain, world); // ENV-02d: null (groundLook off) = the old path, bit-exact
   ctx.hashCell = hashCell; // BUG-RTS-001 (28.11a): per-frame, 0 = fixed 2/8 m cell
   // BUG-GPU-005: the GPU terrain branch takes fgMin/fgMaxGain + the gain LUT
   // from `MaterialTable.shading` (design/detail-pass.js); match it whenever a
@@ -736,6 +767,7 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
     }
     const bT = b + Math.max(lr, Math.max(lg, lb));
     if (isG) shadeGrass(t, gbuf.mat[i], u, v, gbuf.vao[i], bT, grassTab, ctx, shadeOut, gbuf.grassX[i], sun.sunI);
+    else if (GLK) { lookAtXY(terrain, u, v); shadeTerrain(t, gbuf.mat[i], bT, u, v, timeSec, ctx, shadeOut, forestFaceMode(gbuf, alias, ctx, i, t), gbuf.z[i], shadeNrm[0], shadeNrm[1], shadeNrm[2], lkLo, lkHi, lkW); } // ENV-02d: u,v = world x,y of a terrain cell
     else shadeTerrain(t, gbuf.mat[i], bT, u, v, timeSec, ctx, shadeOut, forestFaceMode(gbuf, alias, ctx, i, t), gbuf.z[i], shadeNrm[0], shadeNrm[1], shadeNrm[2]); // MAP-06b: z = the rasterised surface height (kind 7: zBase/zRef 0), same value as the GPU's GA.z
     gbuf.fogF[i] = terrainFogF(t, ctx.fog); // edge pass gate (BUG-GPU-005): never a stale value
     shadeOut.fg[0] = clampByte(shadeOut.fg[0] + lr * 0.5 * 255);
