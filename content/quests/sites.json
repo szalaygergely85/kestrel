@@ -40,6 +40,9 @@
     "dorrin": {
       "entity": "dorrin"
     },
+    "warden_glasswater": {
+      "entity": "warden_glasswater"
+    },
     "relay_glasswater": {
       "entity": "relay_glasswater"
     },

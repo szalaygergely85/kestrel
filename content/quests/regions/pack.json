@@ -8,7 +8,7 @@
       "The water goes still. The bowl glows clear and steady."
     ], "offer": [
       "The bowl flickers: three boars, mud in the still water."
-    ]}, "requires": [{"flag": "waystone.ws_glasswater.woken"}], "returnText": "Back to the Glasswater waystone", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "relay_glasswater", "steps": [{"journal": "The Glasswater bowl showed boars churning the shallows. Drive off three, then come back to the light.", "objText": "Drive off 3 boars", "params": {"count": 3, "kind": "boar"}, "template": "kill"}], "title": "Tusks at the Water"},
+    ]}, "requires": [{"flag": "waystone.ws_glasswater.woken"}], "returnText": "Back to the Glasswater warden", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "warden_glasswater", "steps": [{"journal": "The Glasswater bowl showed boars churning the shallows. Drive off three, then come back to the light.", "objText": "Drive off 3 boars", "params": {"count": 3, "kind": "boar"}, "template": "kill"}], "title": "Tusks at the Water"},
     {"id": "sq.reg.northwood", "lines": {"done": [
       "The pines are quiet. The waystone hums one long, even note."
     ], "offer": [
