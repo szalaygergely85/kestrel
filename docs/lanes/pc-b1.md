@@ -1086,3 +1086,6 @@ tools/editor/logic/model.js (+ model.test.mjs): load/save byte-identical (origin
 
 ### ED-LOGIC-02b (kestrel-1, 2026-10-14)
 Logic tab: tools/editor/logicPanel.js (DOM) + logic/view.js (pure: labels, defaults, 3D pick -> ref, live lint = validateLogic + R15 refs/double-spawn/flag-loop with Go to) + view.test.mjs; vocab.schema.json got `label` per entry + `argLabels` (parity green); content/logic/index.json lists files for the editor; tab wired in index.html/main.js (pick via questPick). tools/verify-edl-02.mjs <port> written, NOT run (Node-only); engine content-lint R15 for logic stays with 01d. Status: po-review.
+
+### POST-STACK-01c (kestrel-1, 2026-10-14) -> po-review
+design/look/post.js (window.POST_LOOK, classic script, in game/index.html) + game/js/look/postConfig.js (resolvePost: preset x scene, `?post=0` null, gpucompare modes null, bloom = parseGlow so `?emissive=` kept; outdoor mist off) + postConfig.test (table low..ultra, ?post=0); main.js +4 lines: composePost on atmosV change, `_spritesPass.post = postState`, `postCells(rt, fb.depth.depth, ...)` replaces gradeCells; design/preview/post.html (day/dusk/interior off vs on, JS twin). Open: scene is always 'outdoor' (no interior flag in main yet), glow option still read from parseGlow at the renderer (not moved); in-game stills + gpucompare not run (main session).

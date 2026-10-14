@@ -9,7 +9,8 @@
 import { applyImpostorBoot, reapplyRememberedImpostors } from './ui/impostorPreset.js'; // R6-WIRE
 import { groundLookFromParams } from './look/groundLookConfig.js'; // ENV-02d
 import { buildAtmosConfig } from './look/atmosConfig.js'; import { createAtmosDriver } from './look/atmosDriver.js'; // ENV-03
-import { createAtmosState, mixAtmos, applyAtmosToPalette, gradeCells } from '../../engine/index.js'; // ENV-03: `?atmos=0` = no driver, palette untouched
+import { createAtmosState, mixAtmos, applyAtmosToPalette, gradeCells, createPostState, composePost, postCells } from '../../engine/index.js';
+import { resolvePost } from './look/postConfig.js'; // POST-STACK-01c // ENV-03: `?atmos=0` = no driver, palette untouched
 import { parseDecorMode, buildDecorConfig, guardDecorRun } from './decorHost.js'; // ENV-01-WIRE
 import { loadPresets, resolveQuality, saveQuality, knobsFor, dropStaleOverrides, carpetQualityFor, carpetBuildFor } from './ui/gfxPresets.js';
 import { loadQuestFiles, showBootErrors } from './questBoot.js';
@@ -1349,6 +1350,7 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
   let ambientMotes = null;
   let lightSet = null; // US-006: built from the loaded world's level.def.lights, below
   let atmosDrv = null, atmosCfg = null, atmosV = -1, atmosBase = null; const atmosState = createAtmosState(); // ENV-03: biome atmosphere driver (null = off)
+  const postCfg = resolvePost(window.POST_LOOK, params, resolvedQuality && resolvedQuality.name, 'outdoor'), postState = createPostState(); let postV = -2; // POST-STACK-01c: `?post=0` = null = today's frames; scene stays 'outdoor' until an interior flag exists
   let clockDriver = null; // DN-03: step-quantised sun/look/ambient driver, rebuilt on every 'world:loaded'
   let clockTimeApplied = false; // DN-03: ?time= seeds the clock once, not on every restart
   let worldSunPath = null; // US-122a: fit the load-time sun before static/cinematic hour writes.
@@ -2487,7 +2489,8 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
       // cells right after its own sprite loop).
       engine.particleLayer.build(engine.particles, cam, rt, fb.lights, engine.world, assets.palette, renderer);
       sprites.render(fb, engine.world, cam, fbView ? (handFxOn ? handFbExtra : fbView.extra) : undefined); // US-030c (ARCH CHANGES item 1): after the surfaces, before present()
-      if (atmosState.on) gradeCells(rt, atmosState); // ENV-03c: JS-path grade (the GPU sprite pass grades itself)
+      if (postCfg) { if (postV !== atmosV) { postV = atmosV; composePost(atmosState, postCfg, postState); } if (wgPipeline && wgPipeline._spritesPass) wgPipeline._spritesPass.post = postState; postCells(rt, fb.depth && fb.depth.depth, postState); } // POST-STACK-01c: finish chain incl. the grade (GPU sprite pass reads the same state)
+      else if (atmosState.on) gradeCells(rt, atmosState); // ENV-03c: JS-path grade (the GPU sprite pass grades itself)
       // US-017 ARCH CHANGES #1 item 2: CPU-path scene fade, moved here from
       // compositor.js so sprites fade too (oracle parity with the GPU
       // composite pass, which fades every non-mask cell in one pass). Skips
