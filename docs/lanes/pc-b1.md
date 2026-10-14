@@ -1176,3 +1176,8 @@ NEEDS: `sim.parkSlot/unparkSlot(slot)` in beastSim.js: setDown(true) on an inact
 
 - OB-170 (kestrel-1, no engine change): NOT a regression. verify-ob170 stood 3 m from the Bend stone; the pick edge is ~2.0 m out and the default interact reach is 1.8 m from the eye, so no prompt there. At 2.5 m: prompt + targetKey 'relay.ws_roadBend', E wakes it (waystone.ws_roadBend.woken true). m1 steps road/relayFound are area triggers (roadWest x1340, bendRelay r12); entering them late completes road+relayFound+relay1 ([] left), so the chain works in either order.
   Tool: OFF env (default 2.5 m), DIAG line, late-area feed; relayWake.test OB-170 block (Bend + Ford pickable at 2.5/1.5 m, default reach). Cause of the owner's report unknown: ask for the exact pose/save (was bendRelay/roadWest entered? is the first stone woken?). -> owner look
+
+### OB-170 (D-098): reaching the goal finishes skipped waypoints
+- game/js/quest/sim/quest.js `advance` + `catchUp`: when the current step is an `area` step and a later `flag` step is already met (only area steps between), the skipped areas are recorded and the chain advances (m1: Bend stone woken off the road -> road, relayFound, relay1 done). talk/kill/item/flag steps are never skipped. Runs on feed AND on load (createQuest), so stuck saves catch up on Continue.
+- Tests: questBook.test.js (stone woken without areas, flag step pending is not skipped, stuck-save load). quest/questBook/markD098/ch1Walkthrough/saveRelay/questBatch1 PASS. templates.test.js fails on "requires unknown quest sq.burl.fire" (not touched by this change). tools/verify-ob170.mjs now prints CATCHUP OK/FAIL after the real E press (main session runs it).
+-> owner look

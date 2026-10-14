@@ -81,6 +81,8 @@ try {
   // a second E (touch) in case the first E only starts the wake
   await key('KeyE', 'e'); await pause(1200);
   const after2 = await snap('AFTER 2nd E (bend)'); await shot('bend-after-e2');
+  // OB-170 / D-098 catch-up: the stone was woken WITHOUT feeding roadWest/bendRelay -> road, relayFound, relay1 must be done now
+  { const left = after2.nextObjectives.filter((x) => ['road', 'relayFound', 'relay1'].includes(x)); console.log('CATCHUP ' + (after2.state['waystone.ws_roadBend.woken'] ? (left.length ? 'FAIL still pending ' + JSON.stringify(left) : 'OK chain advanced past road/relayFound/relay1') : 'SKIP (stone not woken)')); if (after2.state['waystone.ws_roadBend.woken'] && left.length) process.exitCode = 1; }
   await ev("(() => { const q = window.__debug.saveRelay.quest; q.feed({ type: 'area:entered', id: 'roadWest' }); q.feed({ type: 'area:entered', id: 'bendRelay' }); return true; })()"); await pause(500);
   const after3 = await snap('AFTER entering road+bend areas late'); console.log('LATE-AREAS nextObjectives ' + JSON.stringify(after3.nextObjectives));
   console.log('SUMMARY ' + JSON.stringify({

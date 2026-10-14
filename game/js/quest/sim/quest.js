@@ -76,11 +76,26 @@ function progress(state, when) {
 }
 
 function advance(state, def) {
-  while (state.completed.length < def.objectives.length) {
-    const objective = def.objectives[state.completed.length];
-    if (progress(state, objective.when) < (objective.when.count ?? 1)) break;
-    state.completed.push(objective.id);
+  for (;;) {
+    while (state.completed.length < def.objectives.length) {
+      const objective = def.objectives[state.completed.length];
+      if (progress(state, objective.when) < (objective.when.count ?? 1)) break;
+      state.completed.push(objective.id);
+    }
+    if (!catchUp(state, def)) return;
   }
+}
+
+/** OB-170 / D-098: a later flag step already met (stone woken off the road) finishes the skipped "go to" (area) steps before it; talk/kill/item/flag steps are never skipped. */
+function catchUp(state, def) {
+  const objs = def.objectives, c = state.completed.length;
+  if (c >= objs.length || objs[c].when.type !== 'area') return false;
+  let j = c;
+  while (j < objs.length && objs[j].when.type === 'area' && progress(state, objs[j].when) < (objs[j].when.count ?? 1)) j++;
+  if (j >= objs.length || objs[j].when.type !== 'flag' || progress(state, objs[j].when) < (objs[j].when.count ?? 1)) return false; // only a met flag (stone woken, quest handed in) vouches for the skipped waypoints
+  for (let k = c; k < j; k++) { const id = objs[k].when.id; if (!state.areas.includes(id)) state.areas.push(id); }
+  state.areas.sort();
+  return true;
 }
 
 /** Restore validates a completed prefix; facts received early remain available to later objectives. */
