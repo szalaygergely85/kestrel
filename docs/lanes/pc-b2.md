@@ -1147,3 +1147,7 @@ Manifest tiers by grep of game/ + tools/editor (named + `import * as` + JSDoc im
 
 ### ENG-API-01b (kestrel-2, 2026-10-14) -> arch-review
 engine/core/deprecate.js (+test: once/off/return/alloc) ; index.js: 5 make* + selfTestDevice now `deprecated()` wrappers (selfTestDevice tier deprecated, replacedBy "engine/dev.js", also exported from dev.js; fixtures/harnesses were already in dev.js); 3 overlaps (CellBuffer, pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG) dropped from dev.js, so 2 import lines had to move to index.js (gpucompare.js, uiDraw.perf.test.mjs); api.test checks overlap + engine/ replacedBy; gen script keeps area of const exports. api/deprecate/check-deps green.
+
+### ENG-API-01d..01g (kestrel-2, 2026-10-14) -> arch-review
+dev.js +26 internal re-exports (10 tool names already in index.js stay there, no overlap) + engine/dev.test.js (36 names, via dev or index); 5 tools now import dev.js (before/after: mesh-tri, mesh-place, compare-detail output identical, bench-vox-parts within noise; bench-shadow has pre-existing heap-jitter FAIL, compare-detail-export FAIL pre-existing); RULE3_TOOL_ALLOWLIST deleted; fixed content/dev-poses.js (imported pitchedEyeFromFocus from dev.js after 01b, broke 3 tools -> index.js).
+Rules 21/22 WARN added (numbers per story; rules 20/21 also name the export rules, ids clash); check-deps OK, 101 warnings (20 new: 14 rule 21 deprecated imports, 6 rule 22 JSDoc paths = the 5 in 01h + tools/testing/content-node.mjs). Fixture test 90 pass.

@@ -1,16 +1,10 @@
 // ME-19b: retained ME-15d sun-shadow CPU benchmark, moved from bench-cast.
 // Run: node --expose-gc tools/bench-shadow.mjs --gc [--frames N].
 import { performance } from 'node:perf_hooks';
-import { World, dirFromAzEl } from '../engine/index.js';
-import { createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, shadowInputHash, SUN_SHADOW_DEFAULTS } from '../engine/render/shadowSun.js';
-import { createShadowList, buildShadowList, shadowWorldZ } from '../engine/mesh/shadowList.js';
-import { LevelMeshCache } from '../engine/mesh/DrawList.js';
+import { World, dirFromAzEl, SUN_SHADOW_DEFAULTS } from '../engine/index.js';
+import { createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, shadowInputHash, createShadowList, buildShadowList, shadowWorldZ, LevelMeshCache, DrawList, addStructures, makeMockGpuDevice, WgShadowPass, WgPointShadowPass } from '../engine/dev.js';
 import { loadTestAssets } from './testing/content-node.mjs';
 import { POSES } from './bench-poses.js';
-import { DrawList, addStructures } from '../engine/mesh/DrawList.js';
-import { makeMockGpuDevice } from '../engine/test/assert.js';
-import { WgShadowPass } from '../engine/render/gpu/wg/passShadow.js';
-import { WgPointShadowPass } from '../engine/render/gpu/wg/passPointShadow.js';
 
 const WARMUP_FRAMES = 120;
 // ME-16: point-shadow CPU row (WgPointShadowPass on the device mock, real World). Lights sit at the first POSES positions (+0.4 m up) and hop 0.5 m

@@ -51,6 +51,8 @@
 //   16. (US-053a, architecture.md 32.0) engine/fx/** leaf: non-test imports only
 //       engine/fx/** + engine/core/**; tests may add engine/test/**; physics/nav
 //       may never import engine/fx/**. engine/fx/particles.js joins rule 15.
+//   21/22. (ENG-API-01g, WARN, tools/game only) 21: importing a name tier=deprecated in engine/api-1.0.json from engine/index.js;
+//       22: deep JSDoc import('..engine/<internal>') type path outside engine/ (inside engine/ is fine). tools/ no longer has an allowlist (rule 3).
 //   13. (CO-1b) coordinate-math WARN rule, see COORD_ALLOW below.
 //   14. (RE-05, docs/architecture.md 28.2) engine/nav/**/*.js (non-test) may
 //       import only engine/nav/** and engine/core/** - never render/mesh/ui/
@@ -224,16 +226,6 @@ function checkEngineFile(file, src) {
   }
 }
 
-// ME-19b: the retained shadow CPU benchmark and detail export comparison
-// are tool-only exceptions for mesh/shadow pass internals (rule 3).
-const RULE3_TOOL_ALLOWLIST = new Set([
-  'tools/bench-shadow.mjs',
-  'tools/bench-vox-parts.mjs', // VOX-PARTS-16b: 30-animal draw bench (DrawList + raster/shadow pass encode on the device mock)
-  'tools/compare-detail-export.mjs',
-  'tools/mesh-tri-budget.mjs', // MESH-QA-01: runs the runtime's own compactGroup/frustum/projection (not in engine/index.js)
-  'tools/mesh-place-budget.mjs', // MESH-PLACE-01: same frustum helpers as mesh-tri-budget (not in engine/index.js)
-].map((p) => p.split('/').join(path.sep)));
-
 const EDITOR_DIR = path.join(ROOT, 'tools', 'editor');
 const GL_ONLY_RE = /(GpuCellPipeline|GpuDeviceGL2|GpuDeviceWebGL2|GpuSpritePass|overlayPass|RenderTargetGL|editorRenderer)(\.js)?$|\/glsl\//;
 
@@ -254,7 +246,6 @@ function checkConsumerFile(file, src) {
   filesScanned++;
   const relPath = path.relative(ROOT, file);
   const isEditorFile = file.startsWith(EDITOR_DIR + path.sep) || file === EDITOR_DIR;
-  if (RULE3_TOOL_ALLOWLIST.has(relPath)) return;
   const stripped = stripComments(src);
   for (const { spec, line } of findImports(stripped)) {
     if (isBareSpecifier(spec)) continue; // not this checker's concern for game/tools
@@ -289,6 +280,50 @@ function checkConsumerFile(file, src) {
     if (isEditorFile && (resolved.startsWith(GAME_DIR + path.sep) || resolved === GAME_DIR)) {
       findings.push(`${rel(file)}:${line}: import "${spec}" resolves into game/ - tools/editor/** must not depend on game/`);
     }
+  }
+}
+
+// ENG-API-01g (architecture.md 38.74). Rule numbers follow the story; 21/20 are also used above by the export rules.
+// Rule 21 (WARN): game/ and tools/ importing a name the API manifest marks "deprecated" from engine/index.js.
+let deprecatedNames = null;
+function loadDeprecated() {
+  if (deprecatedNames) return deprecatedNames;
+  deprecatedNames = new Map();
+  try {
+    const man = JSON.parse(fs.readFileSync(path.join(ENGINE_DIR, 'api-1.0.json'), 'utf8'));
+    for (const n of man.names || []) if (n.tier === 'deprecated') deprecatedNames.set(n.name, n.replacedBy || '');
+  } catch { /* no manifest: rule inactive */ }
+  return deprecatedNames;
+}
+function checkApiWarnRules(file, src) {
+  const dep = loadDeprecated();
+  const stripped = stripComments(src);
+  if (dep.size) {
+    const re = /import\s*\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/g;
+    let m;
+    while ((m = re.exec(stripped))) {
+      if (isBareSpecifier(m[2])) continue;
+      if (path.resolve(path.dirname(file), m[2]) !== path.join(ENGINE_DIR, 'index.js')) continue;
+      const line = stripped.slice(0, m.index).split('\n').length;
+      for (const part of m[1].split(',')) {
+        const name = part.trim().split(/\s+as\s+/)[0];
+        if (dep.has(name)) warnings.push(`${rel(file)}:${line}: imports deprecated "${name}"${dep.get(name) ? ` (use ${dep.get(name)})` : ''} (rule 21, architecture.md 38.74)`);
+      }
+    }
+  }
+  // Rule 22 (WARN): JSDoc type path (import('...')) into engine internals from outside engine/ - use engine/index.js.
+  const realImports = findImports(stripped);
+  const re2 = /import\(\s*['"]([^'"]+)['"]\s*\)/g;
+  let m2;
+  while ((m2 = re2.exec(src))) {
+    if (isBareSpecifier(m2[1])) continue;
+    const resolved = path.resolve(path.dirname(file), m2[1]);
+    if (!resolved.startsWith(ENGINE_DIR + path.sep)) continue;
+    if (resolved === path.join(ENGINE_DIR, 'index.js') || resolved === path.join(ENGINE_DIR, 'dev.js')) continue;
+    const line = src.slice(0, m2.index).split('\n').length;
+    // real (non-comment) imports are rule 3's business; this rule is for JSDoc type paths only
+    if (realImports.some((i) => i.spec === m2[1] && i.line === line)) continue;
+    warnings.push(`${rel(file)}:${line}: JSDoc type path "${m2[1]}" is a deep engine path - use engine/index.js (rule 22, architecture.md 38.74)`);
   }
 }
 
@@ -567,12 +602,15 @@ for (const file of walk(path.join(ROOT, 'engine'))) {
 for (const file of walk(path.join(ROOT, 'game'))) {
   const src = fs.readFileSync(file, 'utf8');
   checkConsumerFile(file, src);
+  checkApiWarnRules(file, src);
   if (!/\.test\.m?js$/.test(file)) checkCoordMath(file, src);
   checkDeterminismWarnRule(file, src);
 }
 for (const file of walk(path.join(ROOT, 'tools'))) {
   if (path.resolve(file) === path.resolve(__filename)) continue;
-  checkConsumerFile(file, fs.readFileSync(file, 'utf8'));
+  const tsrc = fs.readFileSync(file, 'utf8');
+  checkConsumerFile(file, tsrc);
+  checkApiWarnRules(file, tsrc);
 }
 for (const file of [...walk(path.join(ROOT, 'engine')), ...walk(GAME_DIR), ...walk(path.join(ROOT, 'tools'))]) {
   if (path.resolve(file) === path.resolve(__filename)) continue;

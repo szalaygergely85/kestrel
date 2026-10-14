@@ -2,15 +2,9 @@
 // 30 voxel instances of the 12-part fixture (and, as a reference, the 8-part quadruped12), pose + DrawList fill (addVoxelInstances) + the
 // WgRasterPass voxel encode + the WgShadowPass sun caster encode, on the device mock (JS-twin path, no GPU). Reports ms p50/p95 and heap bytes/frame.
 // Run: node --expose-gc tools/bench-vox-parts.mjs [--frames N]
+import { packVoxelModel } from '../engine/index.js';
+import { makeMockGpuDevice, VoxelMeshCache, addVoxelInstances, DrawList, WgRasterPass, WgShadowPass, quadruped12, quadruped16 } from '../engine/dev.js';
 import { performance } from 'node:perf_hooks';
-import { makeMockGpuDevice } from '../engine/test/assert.js';
-import { packVoxelModel } from '../engine/voxel/voxelPack.js';
-import { VoxelMeshCache, addVoxelInstances } from '../engine/mesh/voxelMesh.js';
-import { DrawList } from '../engine/mesh/DrawList.js';
-import { WgRasterPass } from '../engine/render/gpu/wg/passRaster.js';
-import { WgShadowPass } from '../engine/render/gpu/wg/passShadow.js';
-import quadruped12 from '../engine/voxel/fixtures/quadruped12.js';
-import quadruped16 from '../engine/voxel/fixtures/quadruped16.js';
 
 const args = process.argv.slice(2), fi = args.indexOf('--frames');
 const FRAMES = fi >= 0 ? Number(args[fi + 1]) : 2000, WARM = 300, N = 30;

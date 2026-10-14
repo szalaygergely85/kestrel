@@ -24,7 +24,7 @@ export const EYE_H = 1.60;
 // unlike every other GATE_POSES entry, `cam` here is a function of
 // `(rt, world)`, not a static object. `main.js`'s one `gatePose.cam` call
 // site resolves either shape.
-import { pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG } from '../engine/dev.js';
+import { pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG } from '../engine/index.js';
 const RTS_HILL_FX = 1440, RTS_HILL_FY = 1040, RTS_HILL_YAW = 20, RTS_HILL_PITCH = -58, RTS_HILL_WIDTH_M = 30;
 
 export const POSES = [

@@ -84,3 +84,18 @@ export { bundleBytes } from './world/bandCache.js';
 
 // ---- GI-PROBE-05 gpucompare rows (analytic probe field standing in for a baked .gi.bin) -------------
 export { makeRowGI } from './render/giFixture.js';
+
+// ---- ENG-API-01d: internals used by tools/bench-shadow, bench-vox-parts, compare-detail-export, mesh-tri-budget, mesh-place-budget ----
+export { createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, shadowInputHash } from './render/shadowSun.js';
+export { createShadowList, buildShadowList, shadowWorldZ } from './mesh/shadowList.js';
+export { LevelMeshCache, DrawList, addStructures } from './mesh/DrawList.js';
+export { VoxelMeshCache, addVoxelInstances } from './mesh/voxelMesh.js';
+export { InstanceGroups, compactGroup } from './mesh/instances.js';
+export { frustumPlanes, classifyAABB, CULL_OUT } from './mesh/culling.js';
+
+export { default as quadruped12 } from './voxel/fixtures/quadruped12.js';
+export { WgShadowPass } from './render/gpu/wg/passShadow.js';
+export { WgPointShadowPass } from './render/gpu/wg/passPointShadow.js';
+export { WgRasterPass } from './render/gpu/wg/passRaster.js';
+
+export { makeMockGpuDevice } from './test/assert.js'; // mock GPU device for CPU-side pass benches
