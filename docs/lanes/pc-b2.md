@@ -1174,3 +1174,5 @@ passRaster: separate nearLookWorld/farLookWorld, set only on an actual upload (+
 
 ### BENCH-LIFE-GOB08 (kestrel-2, 2026-10-15)
 Cause: ED-LOGIC-01d added 3 reserve farm goblins to world_m1 -> bench built 49 beasts (cap 48). tools/bench-life.mjs now removes brain.reserve entities before the sim (down in game, not worst case); test passes, no engine change.
+### ENGINE-GUIDE-01 (kestrel-2, 2026-10-14) -> po-review
+Done: docs/engine-guide/ (README, getting-started, content-formats, samples/hello-world 82 lines, stable names only), tools/engine-guide.test.mjs, tools/verify-engine-sample.mjs (node --check only, not run; sample not browser-tested, voxel model + lights checked in Node). No check-deps exemption needed.
