@@ -10,3 +10,9 @@ assert.deepEqual(rows.map((r) => [r.id, r.chests, r.guarded, r.loose, r.groups, 
 assert.deepEqual(rows[0].looseIds, ['c2', 'c6'], 'givers do not guard');
 assert.equal(fmt(rows), fmt(density(regions, chests, guards)), 'deterministic');
 console.log('chest-enemy-density.test: ok');
+
+// OB-152 step 2: real content has no loose chest (dive chest exempt)
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+execFileSync(process.execPath, [fileURLToPath(new URL('./chest-enemy-density.mjs', import.meta.url)), '--max-loose', '0'], { stdio: 'pipe' });
+console.log('chest-enemy-density.test: real content has 0 loose chests');

@@ -3,6 +3,7 @@
 // "guarded" chest = an enemy group (beast home / goblin camp) or puzzle prop within RADIUS m; otherwise "loose".
 import { pathToFileURL } from 'node:url';
 export const RADIUS = 25;
+export const DIVE_GUARDED = new Set(['chestBed']); // lake-bed chest: earned by the dive itself (SWIM-04d, same as content-lint R8_OK)
 const inRect = (r, x, y) => x >= r[0] && x < r[2] && y >= r[1] && y < r[3];
 /** regions: [{id,r:[x0,y0,x1,y1]}] (first match wins, like regionAt); chests [{id,x,y}]; guards [{x,y,kind:'beast'|'camp'|'puzzle'}]. Returns one row per region. */
 export function density(regions, chests, guards, radius = RADIUS) {
@@ -30,7 +31,7 @@ async function main() {
   const { buildContext } = await import('./content-lint.mjs');
   const ctx = await buildContext({});
   const regions = globalThis.ASSETS.levels.world_geo.regions;
-  const rows = density(regions, ctx.chests, ctx.guards.filter((g) => g.kind !== 'giver'));
+  const rows = density(regions, ctx.chests.filter((c) => !DIVE_GUARDED.has(c.id)), ctx.guards.filter((g) => g.kind !== 'giver'));
   console.log(fmt(rows));
   const over = max === null ? [] : rows.filter((r) => r.loose > max);
   for (const r of over) console.log(`loose > ${max}: ${r.id} (${r.loose}): ${r.looseIds.join(' ')}`);
