@@ -4,13 +4,13 @@
 // and his stats (HP / DEF / DMG) under him. Equip by drag (pack -> slot or Wick), unequip by drag (worn -> pack), or the
 // click / E path. Layout, colours, glyphs and flash states come from `ASSETS.uiStyle.inventory`; numbers are UI-layer cells.
 // `draw` only walks cached strings and writes `ui.setCellRGB`. No text mentions Esc (owner rule).
-import { equip as eqEquip, unequip as eqUnequip, syncHands, defenceOf, reductionOf } from './sim/equipment.js';
+import { equipAt, unequipSlot, OK as EQ_OK, NEEDS as EQ_NEEDS, BREAKS as EQ_BREAKS, PACK_FULL as EQ_FULL, syncHands, defenceOf, reductionOf } from './sim/equipment.js';
 import { SLOTS as PACK_SLOTS, assignHand, removeItem } from './sim/inventory.js';
 import { wrapNoteLines } from './noteRead.js';
 import { gearRecipe } from './gearLook.js';
 import { createPreviewYaw } from './previewYaw.js';
 import { itemDisplayName } from './sim/inventory.js';
-import { itemName, rarityOf } from './sim/itemInst.js';
+import { itemName, rarityOf, reqOf, createStatsCache, refreshTotals } from './sim/itemInst.js';
 
 // Panel-relative layout (panel 100 x 29). Slot boxes are the style's 9x5 boxes, pitch from `uiStyle.inventory.grid`.
 export const LAYOUT = Object.freeze({
@@ -149,13 +149,22 @@ export function createInventoryScreen(o) {
   }
 
   // ---- actions ----
+  const statsCache = o.statsCache || createStatsCache(), why = { attr: '', need: 0, have: 0, blockerSlot: '', blockerId: null };
+  /** Plain-words refusal from an equipAt / unequipSlot code + `why` (38.66 s4). */
+  function refusalText(rc) {
+    if (rc === EQ_NEEDS) return 'Needs ' + why.attr.toUpperCase() + ' ' + why.need;
+    if (rc === EQ_BREAKS) { const b = why.blockerId && defs[why.blockerId]; return (b ? itemDisplayName(b) : 'Another piece') + ' needs ' + why.attr.toUpperCase() + ' ' + why.need; }
+    if (rc === EQ_FULL) return 'Pack is full';
+    return 'Cannot wear that now';
+  }
   /** Wear the pack item at node n (`dropSlot` = the slot it was dropped on, or null for click / E). */
   function wear(n, dropSlot) {
     const node = nodes[n], v = inv(), e = eq(), id = idAt(node), rf = slotCfg.flash.refuse.ms;
     if (!v || !e || !id || slotDisabled(node.i) || !defs[id] || !defs[id].equip) { setFlash(n, F_REFUSE, rf); return false; }
     const slot = defs[id].equip.slot;
     if (dropSlot && dropSlot !== slot) { setFlash(n, F_REFUSE, rf); say('Does not fit there', C.ember); return false; }
-    if (!eqEquip(v, e, defs, id)) { setFlash(n, F_REFUSE, rf); say('Cannot wear that now', C.ember); return false; }
+    const rc = node.kind === 2 ? equipAt(v, e, defs, node.i, statsCache, why) : 99;
+    if (rc !== EQ_OK) { setFlash(n, F_REFUSE, rf); say(refusalText(rc), C.ember); return false; }
     for (let k = 0; k < N_EQ; k++) if (nodes[k].slot === slot) setFlash(k, F_OK, slotCfg.flash.assign.ms);
     changed();
     return true;
@@ -163,7 +172,8 @@ export function createInventoryScreen(o) {
   function takeOff(n) {
     const node = nodes[n], v = inv(), e = eq();
     if (!v || !e || !wornId(node.slot)) { setFlash(n, F_REFUSE, slotCfg.flash.refuse.ms); return false; }
-    if (!eqUnequip(v, e, defs, node.slot)) { setFlash(n, F_REFUSE, slotCfg.flash.refuse.ms); say('Pack is full', C.ember); return false; }
+    const rc = unequipSlot(v, e, defs, node.slot, statsCache, why);
+    if (rc !== EQ_OK) { setFlash(n, F_REFUSE, slotCfg.flash.refuse.ms); say(refusalText(rc), C.ember); return false; }
     setFlash(n, F_OK, slotCfg.flash.cleared.ms);
     changed();
     return true;
@@ -300,6 +310,11 @@ export function createInventoryScreen(o) {
       } else add('Worn  -  drag it to the pack, or press E', C.uiDim);
     } else if (d.kind === 'food' && d.use && d.use.heal) add('Food  -  E eats it (+' + d.use.heal + ' HP)', C.uiHint);
     else if (d.hand === true) add('Hand item  -  Q left hand, E right hand', C.uiHint);
+    const rq = reqOf(ent, defs); // requirement line, red when the hero cannot meet it right now
+    if (rq && node.kind === 2) {
+      const e = eq(), t = e ? refreshTotals(statsCache, e, defs) : null, bad = t && (t.str < (rq.str || 0) || t.dex < (rq.dex || 0) || t.int < (rq.int || 0));
+      add('Needs ' + [rq.str ? 'STR ' + rq.str : '', rq.dex ? 'DEX ' + rq.dex : '', rq.int ? 'INT ' + rq.int : ''].filter(Boolean).join('  '), bad ? RED : C.uiDim);
+    }
     const inf = info[id];
     for (let i = 0; i < inf.lines.length && tipLines.length < L.details.rows; i++) add(inf.lines[i], C.uiText);
     while (tipLines.length > 0 && tipLines[tipLines.length - 1] === '') { tipLines.pop(); tipFg.pop(); }

@@ -8,6 +8,9 @@
 // Item def shape (EQ-01): `defs[id].equip = {slot, tier, def, shell?, held?}`.
 // Rule 15 (game/js/quest/sim/**): no Math.random, no trig, no wall clock; the per-step functions allocate nothing.
 import { SLOTS as PACK_SLOTS, addItem, removeItem, countOf } from './inventory.js';
+import { ALL_SLOTS } from './statsConfig.js';
+import { computeTotals } from './stats.js';
+import { createStatsCache, fillView, fillWornViews, wornIt } from './itemInst.js';
 
 export const EQUIP_SLOTS = Object.freeze(['head', 'body', 'cloak', 'hands', 'belt', 'legs', 'feet', 'main', 'off', 'ranged', 'quiver']);
 export const DEF_PER_POINT = 0.03; // owner question 4: 3 % less damage per defence point
@@ -17,7 +20,7 @@ export const DEF_CAP = 0.6;        // ... capped at 60 %
 export function ensureEquipment(player) {
   const c = player.components || (player.components = {});
   if (!c.equipment) {
-    const eq = { set: 'melee' };
+    const eq = { set: 'melee', it: {}, rev: 0 };
     for (let i = 0; i < EQUIP_SLOTS.length; i++) eq[EQUIP_SLOTS[i]] = null;
     c.equipment = eq;
   }
@@ -45,11 +48,97 @@ function packHasRoom(inv, defs, id, n) {
   return room >= n;
 }
 
+// ---- ITEM-02b (architecture.md 38.66 s4): equip by pack index with the hard requirement (D-096). ----
+export const OK = 0, NO_SLOT = 1, EMPTY = 2, NEEDS = 3, PACK_FULL = 4, BREAKS = 5;
+const REQ_KEYS = ['str', 'dex', 'int'];
+let sharedCache = null, sharedWhy = null; // the legacy wrappers (quickbar, tests) have no cache of their own
+
+function touch(eq) { if (!eq.it) eq.it = {}; eq.rev = (eq.rev | 0) + 1; }
+
+/** True (and fills why.attr/need/have) when `req` is not met by totals `t`. */
+function unmet(req, t, why) {
+  for (let i = 0; i < 3; i++) {
+    const k = REQ_KEYS[i], need = req[k] || 0;
+    if (t[k] < need) { why.attr = k; why.need = need; why.have = t[k]; return true; }
+  }
+  return false;
+}
+
+/** After a change, is another worn item's requirement unmet (own lines never count)? Fills why.blocker*; true = breaks. */
+function breaksWorn(cache, eq, defs, changed, why) {
+  for (let i = 0; i < ALL_SLOTS.length; i++) {
+    const w = ALL_SLOTS[i];
+    if (w === changed || eq[w] == null) continue;
+    const it = wornIt(eq, w, defs);
+    if (!it || !it.req) continue;
+    const saved = cache.viewEq[w];
+    cache.viewEq[w] = null;
+    computeTotals(cache.viewEq, cache.scratch);
+    cache.viewEq[w] = saved;
+    if (unmet(it.req, cache.scratch, why)) { why.blockerSlot = w; why.blockerId = eq[w]; return true; }
+  }
+  return false;
+}
+
 /**
- * Moves one piece (for the quiver: the pack's stack of arrows) from the pack to its slot. The previous piece goes
- * back to the pack. Refuses (returns false, nothing changes) when the item is not in the pack, has no `equip`, or
- * the displaced piece does not fit back (full pack).
- * @returns {boolean}
+ * Wears the pack item at `packIdx`. The instance moves by reference pack -> eq.it[slot]; the previous piece takes
+ * the freed pack cell. Refusal changes nothing. why = reused {attr, need, have, blockerSlot, blockerId}.
+ * @returns {number} OK | NO_SLOT | EMPTY | NEEDS | BREAKS (PACK_FULL only from unequipSlot)
+ */
+export function equipAt(inv, eq, defs, packIdx, cache, why) {
+  cache = cache || (sharedCache || (sharedCache = createStatsCache()));
+  why = why || (sharedWhy || (sharedWhy = { attr: '', need: 0, have: 0, blockerSlot: '', blockerId: null }));
+  const ps = inv.slots[packIdx];
+  if (!ps || ps.id === null) return EMPTY;
+  const d = defs[ps.id], slot = d && d.equip && typeof d.equip.slot === 'string' ? d.equip.slot : null;
+  if (slot === null || slot === 'set' || slot === 'quiver' || !(slot in eq) || !(slot in cache.viewEq)) return NO_SLOT;
+  if (eq[slot] === ps.id && ps.it == null) return NO_SLOT;
+  const it = ps.it != null ? ps.it : (d.equip.it || null);
+  fillWornViews(cache, eq, defs);
+  const keep = cache.viewEq[slot];
+  if (it && it.req) { // the target slot emptied: the outgoing piece's lines and the item's own lines never count
+    cache.viewEq[slot] = null;
+    computeTotals(cache.viewEq, cache.scratch);
+    if (unmet(it.req, cache.scratch, why)) { cache.viewEq[slot] = keep; return NEEDS; }
+  }
+  cache.viewEq[slot] = fillView(cache.cand, ps.id, it, defs);
+  const broke = breaksWorn(cache, eq, defs, slot, why);
+  cache.viewEq[slot] = keep;
+  if (broke) return BREAKS;
+  const old = eq[slot], oldIt = eq.it ? eq.it[slot] : null;
+  touch(eq);
+  eq[slot] = ps.id; eq.it[slot] = ps.it != null ? ps.it : null;
+  if (old !== null && !isSpell(defs, old)) { ps.id = old; ps.n = 1; ps.it = oldIt != null ? oldIt : null; } // a spell lives in the spellbook, never the pack
+  else { ps.id = null; ps.n = 0; ps.it = null; }
+  return OK;
+}
+
+/** Takes the piece in `slot` back to the first free pack cell. @returns {number} OK | NO_SLOT | EMPTY | PACK_FULL | BREAKS */
+export function unequipSlot(inv, eq, defs, slot, cache, why) {
+  cache = cache || (sharedCache || (sharedCache = createStatsCache()));
+  why = why || (sharedWhy || (sharedWhy = { attr: '', need: 0, have: 0, blockerSlot: '', blockerId: null }));
+  if (slot === 'set' || slot === 'quiver' || !(slot in eq) || !(slot in cache.viewEq)) return NO_SLOT;
+  const id = eq[slot];
+  if (id === null) return EMPTY;
+  const spell = isSpell(defs, id);
+  let at = -1;
+  if (!spell) { for (let i = 0; i < PACK_SLOTS; i++) if (inv.slots[i].id === null) { at = i; break; } if (at < 0) return PACK_FULL; }
+  fillWornViews(cache, eq, defs);
+  const keep = cache.viewEq[slot];
+  cache.viewEq[slot] = null;
+  const broke = breaksWorn(cache, eq, defs, slot, why);
+  cache.viewEq[slot] = keep;
+  if (broke) return BREAKS;
+  const it = eq.it ? eq.it[slot] : null;
+  touch(eq);
+  eq[slot] = null; eq.it[slot] = null;
+  if (!spell) { const ps = inv.slots[at]; ps.id = id; ps.n = 1; ps.it = it != null ? it : null; }
+  return OK;
+}
+
+/**
+ * Legacy wrapper (quickbar, migrations): wear the first pack cell holding `id`; the quiver keeps its own stack logic.
+ * Goes through the same requirement checks. Returns true on OK.
  */
 export function equip(inv, eq, defs, id) {
   const slot = slotOf(defs, id);
@@ -63,7 +152,7 @@ export function equip(inv, eq, defs, id) {
       const add = Math.min(inv.slots[at].n, defs[id].stackMax - q.n);
       if (add <= 0) return false;
       removeItem(inv, id, add);
-      q.n += add;
+      q.n += add; touch(eq);
       return true;
     }
     const take = inv.slots[at].n;
@@ -72,16 +161,10 @@ export function equip(inv, eq, defs, id) {
       addItem(inv, defs, id, take);
       return false;
     }
-    eq.quiver = { id, n: take };
+    eq.quiver = { id, n: take }; touch(eq);
     return true;
   }
-
-  const old = eq[slot];
-  if (old === id) return false;
-  removeItem(inv, id, 1);
-  if (old !== null && !isSpell(defs, old) && addItem(inv, defs, old, 1) === 0) { addItem(inv, defs, id, 1); return false; } // a spell lives in the spellbook, never the pack
-  eq[slot] = id;
-  return true;
+  return equipAt(inv, eq, defs, at, null, null) === OK;
 }
 
 function isSpell(defs, id) { return !!(defs[id] && defs[id].kind === 'spell'); }
@@ -94,26 +177,21 @@ export function equipSpell(inv, eq, defs, id, hand) { // SPELLBOOK-02 (D-100): h
   if (slot === null || !(slot in eq) || eq[slot] === id) return false;
   const old = eq[slot];
   if (old !== null && !isSpell(defs, old) && addItem(inv, defs, old, 1) === 0) return false;
-  eq[slot] = id;
+  eq[slot] = id; touch(eq);
   return true;
 }
 
-/** Moves the piece in `slot` back into the pack. Refuses on a full pack (nothing changes). */
+/** Moves the piece in `slot` back into the pack. Refuses on a full pack or a broken requirement (nothing changes). */
 export function unequip(inv, eq, defs, slot) {
   if (slot === 'set' || !(slot in eq)) return false;
   if (slot === 'quiver') {
     const q = eq.quiver;
     if (!q || !packHasRoom(inv, defs, q.id, q.n)) return false;
     addItem(inv, defs, q.id, q.n);
-    eq.quiver = null;
+    eq.quiver = null; touch(eq);
     return true;
   }
-  const id = eq[slot];
-  if (id === null) return false;
-  if (isSpell(defs, id)) { eq[slot] = null; return true; } // back into the spellbook, not the pack
-  if (addItem(inv, defs, id, 1) === 0) return false;
-  eq[slot] = null;
-  return true;
+  return unequipSlot(inv, eq, defs, slot, null, null) === OK;
 }
 
 /** Weapon-set swap: sword + shield <-> bow. Refuses to go ranged without a bow. Returns the new set. */

@@ -3,7 +3,8 @@
 // (stackables, plain items, uniques). No other file reads `.it` / `.a` / `.req` of an entry - they call these.
 // Rule 15: pure, no Math.random / trig / clock. itOf / hashIt / fillView allocate nothing.
 import { ITEM_BASES, BASE_TYPES, baseName, baseStatsInto, affixesFor, typeOfId } from './itemGen.js';
-import { AFFIX, IL_MIN, IL_MAX } from './statsConfig.js';
+import { AFFIX, IL_MIN, IL_MAX, ALL_SLOTS } from './statsConfig.js';
+import { createTotals, computeTotals } from './stats.js';
 import { itemDisplayName } from './inventory.js'; // import cycle with inventory.js (hashIt): function-only use, safe
 
 const isGenId = (id) => typeof id === 'string' && id.startsWith('gen.');
@@ -148,4 +149,39 @@ export function registerGenDefs(defs) {
     };
   }
   return defs;
+}
+
+// ---- ITEM-02b (38.66 s5): totals cache, one per player. Recomputes computeTotals only when eq.rev (or the eq object) changes. ----
+/** @returns {object} `{rev, eq, totals, scratch, cand, views, viewEq, recomputes}`; not saved. */
+export function createStatsCache() {
+  const views = {}, viewEq = {};
+  for (let i = 0; i < ALL_SLOTS.length; i++) { views[ALL_SLOTS[i]] = createView(); viewEq[ALL_SLOTS[i]] = null; }
+  return { rev: -1, eq: null, totals: createTotals(), scratch: createTotals(), cand: createView(), views, viewEq, recomputes: 0 };
+}
+
+/** The instance part of what is worn in `slot`: eq.it[slot], else the unique's fixed lines from the def. */
+export function wornIt(eq, slot, defs) {
+  const id = eq[slot];
+  if (id == null) return null;
+  const it = eq.it ? eq.it[slot] : null;
+  if (it != null) return it;
+  const d = defs[id];
+  return d && d.equip && d.equip.it ? d.equip.it : null;
+}
+
+/** Fills cache.viewEq[slot] for every stat slot from the current equipment (reused view objects, 0 alloc). */
+export function fillWornViews(cache, eq, defs) {
+  for (let i = 0; i < ALL_SLOTS.length; i++) {
+    const s = ALL_SLOTS[i], id = eq[s];
+    cache.viewEq[s] = id == null ? null : fillView(cache.views[s], id, wornIt(eq, s, defs), defs);
+  }
+}
+
+/** Recomputes cache.totals only when eq.rev changed (an int compare otherwise). Returns cache.totals. */
+export function refreshTotals(cache, eq, defs) {
+  if (cache.rev === eq.rev && cache.eq === eq) return cache.totals;
+  fillWornViews(cache, eq, defs);
+  computeTotals(cache.viewEq, cache.totals);
+  cache.rev = eq.rev; cache.eq = eq; cache.recomputes++;
+  return cache.totals;
 }

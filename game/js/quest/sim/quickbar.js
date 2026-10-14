@@ -92,7 +92,7 @@ const NOT_BAR_KINDS = { gear: 1, material: 1, currency: 1, ammo: 1 };
 export function assign(player, defs, slot, id) {
   const d = defs[id];
   if (!d || slot < 0 || slot >= QB_SLOTS || NOT_BAR_KINDS[d.kind]) return false;
-  if (d.kind === 'spell' && slot >= HAND_SLOTS) return false; // SPELLBOOK-02 (D-100): keys 1-4 take potions / consumables only
+  if (slot >= HAND_SLOTS && (d.kind === 'spell' || d.gen || id.startsWith('gen.'))) return false; // ITEM-02b: a gen.* id is ambiguous between instances // SPELLBOOK-02 (D-100): keys 1-4 take potions / consumables only
   const qb = ensureQuickbar(player, defs), c = player.components;
   if (slot < HAND_SLOTS) {
     const es = d.equip && d.equip.slot, inv = c.inventory, eq = c.equipment;
