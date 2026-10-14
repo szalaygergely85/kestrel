@@ -1165,3 +1165,6 @@ NEEDS B1-main (main.js line ~920 `riggedModelDef(collapseRig(...))`): pass `{leg
 ### GATE-FIX-7 (kestrel-4, 2026-10-14)
 All four were stale tests, no code change: actionHints (storyHints now starts with logic hint hint.farm.ambush, ED-LOGIC-01d), boarPlacement (farmGob1-3 reserve goblins counted as boars; filter goblin species), swimWire (main.js now `under: createUnderState()`; gate/gear/fb.under behaviour intact), content-smoke (gi/manifest.json known standalone).
 Filtered run 25/25 PASS, check-deps OK.
+
+### GATE-FLAKY-08 (kestrel-3, 2026-10-14)
+carpetCells AC6: single 600-frame heap delta -> allocProbe (min of 5 gc'd windows x 60 frames, warm 8), bound 2 KB -> 128 B/frame; real residual 37-92 B/frame is the test caller's boxed double time arg (cast+carpetCells themselves alloc-free); frames 1200 -> ~600 total. Alone 3x ok, run-tests --filter engine/render ok.
