@@ -7160,3 +7160,138 @@ POST_WGSL                                // fn postFinish(c, cellUV, depth) gene
 | POST-STACK-01b | kestrel-2 | sprites.wgsl.js, passSprites.js, gpucompare rows | `POST_WGSL` splice in the section 2 order, `SpritesU` append, composed grade in the atmos slots. AC: compileFn probes within 1/255; WGSL lint; existing rows unchanged (main session runs); 4 new rows pass; budget bench within section 4; 0 alloc per frame. |
 | POST-STACK-01c | kestrel-4 + kestrel-1 | design/look/post.js, game/js/look/postConfig.js + test, glowOpt.js, main.js (<= 6 lines), design/preview/post.html | Preset/scene resolution, `?post=0`, glow via post. AC: low..ultra table test; existing glowOpt tests green (`?emissive=`, gpucompare forcing); JS path calls `postCells` instead of `gradeCells`. Owner look: preview + in-game stills day/dusk/interior. Ends: po-review. |
 **Do not:** add a second grade anywhere (passShade, compositor, overlay); grade or vignette the overlay/UI; change glyphs; let a preset change effect parameters; add a full-screen pass for per-cell ops; import design/ in engine.
+
+### 38.74 ENG-API-01: clean public API for engine 1.0 (D-090 stage 3) (PC-B architect opus 2026-10-14, PC-A to ratify)
+**Facts (2026-10-14, pc-b `1b6b03dd`).**
+
+`engine/index.js` has 162 `export` lines exporting **551 names**, in ~38 `// ----` groups: bootstrap, coords, content, world, render passes, GPU, voxel, lighting, physics, entities/anim, ui, nav, RTS layer, sim, fx, water, fauna.
+
+`engine/dev.js` exports 52 names: parity harnesses, pass internals, fixtures and glue code. **3 names are exported from both files.**
+
+`engine/index.exports.test.js` checks only 38 of the RTS names. `node tools/check-deps.mjs` passes with 81 WARN.
+
+check-deps rules already in force:
+- **Rule 3:** game/ and tools/ may import only `engine/index.js`.
+- **Rule 5:** JSDoc `import()` paths are ignored.
+- **Rule 6:** the editor never imports from game/.
+- **Rule 7:** `engine/dev.js` may be imported only from game/js/dev/**, game/js/main.js and tools/** (but not tools/editor/**).
+- **Rule 8:** tests may also import `engine/test/assert.js` (128 import lines today).
+
+Deep imports today:
+- **game/ runtime: 0.**
+- **game/ JSDoc type paths into engine internals: 5.** They are in dev/demoScene (RenderTarget), quest/beacon and quest/lantern (LightSet), rts/ui/minimapView (Minimap) and wild/wildEnv (FaunaEnv). `RenderTarget` and `Minimap` are not exported from index.js.
+- **tools/ runtime: 24 import lines in 5 files**, all on `RULE3_TOOL_ALLOWLIST`:
+  - bench-shadow: 6
+  - bench-vox-parts: 7
+  - compare-detail-export: 6
+  - mesh-tri-budget: 3
+  - mesh-place-budget: 2
+
+  They reach these engine modules:
+  - render: shadowSun, GBuffer, MaterialTable, detailShade, edgePass, sky, projection
+  - mesh: shadowList, DrawList, voxelMesh, culling, instances
+  - gpu/wg: passShadow, passPointShadow, passRaster
+  - voxel: voxelPack and its fixtures
+  - world: Level
+- The hits in check-deps.test.mjs and wg5a-plan.test.mjs are fixture strings, not real imports.
+
+So the main work is cataloguing and freezing the 551 names. There is very little import migration to do.
+
+**1.0 surface.** Each exported name gets one area (the manifest `area` field):
+
+| Area | What it covers |
+|---|---|
+| `core` | createEngine, loop/STEP, bootMarks, coordinate math. Input/events stay in dev.js. |
+| `content` | pack loader, asset registry, validators |
+| `world` | World, Level, terrain, water, collider build, roof/look maps |
+| `render` | RenderTarget, quality presets, lighting, shadows, sprites, post, GI, minimap, projection/picking |
+| `physics` | capsule, moveCircleMesh, BVH, config |
+| `nav` | NavGrid, A*, flow field, steer, visibility |
+| `anim` | voxel models, rig, animState/clips, fauna |
+| `ui` | UI layer, panels, rich text, DebugOverlay |
+| `sim` | command queue, rng, hasher, replay |
+| `fx` | particles, fire, ripples |
+| `editor` | helpers the editor needs: picking, serialize, validators |
+
+Each name also gets one tier:
+- `stable`: frozen for 1.x. Never renamed or removed. A signature may only grow by optional trailing args or fields.
+- `experimental`: exported from index.js, but may change in a minor release (with a changelog line).
+- `deprecated`: still re-exported for one release, then removed.
+
+**Naming rules.**
+- Factories are `createX`.
+- Classes are PascalCase.
+- Constants are UPPER_SNAKE.
+- Pure functions are verbNoun.
+- Generic words get an area prefix (`anim*`, `rts*`, `minimap*`), following the RE-13/RE-03 precedent.
+- No default exports.
+- index.js never has two names for the same symbol, except a `deprecated` alias.
+
+**What stays internal or moves to dev.js.**
+- Stays internal: pass encoders (`pass*`), WGSL/GLSL modules, DrawList internals, the G-buffer.
+- Moves to dev.js:
+  - parity/compare harnesses (`run*Compare`, `*Parity*`, `selfTestDevice`, the shade tests)
+  - fixtures (`quadruped*`, `FIXTURE_FX`, `fixtureModels`, `makeRowGI`)
+  - bench helpers
+
+Rule of thumb: a name used only by tools, benches or tests belongs in dev.js. A name a game or the editor needs belongs in index.js. To move a name out of index.js, keep it in index.js as `deprecated` for one release and add the real export to dev.js.
+
+**Deprecation path.**
+- New `engine/core/deprecate.js`:
+  - `deprecated(fn, oldName, newName)` returns a wrapper.
+  - The wrapper calls `console.warn` once per name, and only after `setApiWarnings(true)` has been called.
+- The engine never reads `location` (rule 2), so game/js/main.js turns the warnings on under its own dev flag.
+- Classes and constants cannot warn at runtime. For them, new check-deps rule **21** (WARN) flags any game/ or tools/ import of a name marked `deprecated` in the manifest.
+- Deprecated names are removed in the minor release after the one that deprecated them.
+
+**Manifest and test.**
+
+`engine/api-1.0.json` has this shape, with sorted keys and one name per line so diffs stay readable:
+
+```json
+{ "version": "1.0.0", "names": { "<name>": { "area", "tier", "since", "replacedBy"? } } }
+```
+
+`engine/api.test.js` replaces index.exports.test.js. It checks that:
+- `Object.keys(index)` equals the manifest keys exactly;
+- every `replacedBy` target exists;
+- no name is exported from both index.js and dev.js unless it is `deprecated`;
+- every `stable` name is still defined (`!== undefined`) and keeps the same `typeof`.
+
+`api.test.js --write` adds missing names as `experimental`, taking the area from the index.js group comment. It never changes existing entries.
+
+So adding an export needs a manifest line in the same commit, and removing or renaming a stable name fails the test.
+
+**check-deps after this work.**
+- The rule 3 allowlist is emptied, then deleted.
+- Rule 7 is unchanged: tools/ may import index.js and dev.js.
+- New rule **22**: a JSDoc `import('...engine/...')` path in game/** or tools/editor/** that is not index.js or dev.js. It is a WARN after 01g and becomes a finding in 01h.
+- Rule 5 keeps ignoring JSDoc imports inside engine/ itself.
+
+**Story split.** Each story is at most 1 programmer-day and has Node ACs. Engine stories end in arch-review.
+
+| ID | Slot | Files | AC (Node) | Deps |
+|---|---|---|---|---|
+| ENG-API-01a | kestrel-2 | engine/api-1.0.json, engine/api.test.js; delete index.exports.test.js | Manifest seeded with all 551 names (area from the group comment, tier `experimental`). Test passes. Adding a dummy export to index.js makes it fail. `--write` is idempotent. | - |
+| ENG-API-01b | kestrel-3 | engine/core/deprecate.js + test, engine/dev.js, engine/index.js, manifest | `deprecated()` warns once per name, only when enabled, and returns the wrapped function's result. Fixtures, harnesses and `selfTestDevice` are exported from dev.js; index.js keeps them as `deprecated`. The 3 overlaps are resolved. api.test is green. | 01a |
+| ENG-API-01c | kestrel-2 | engine/index.js, manifest, engine/README.md | Tier triage: names used by game/editor become `stable`, the rest stay `experimental`; the commit message lists them, based on grep. `RenderTarget`, `Minimap` and the `FaunaEnv` typedef are exported. Each name that breaks a naming rule gets a `deprecated` alias with `replacedBy`. README lists the areas and links the manifest. | 01b |
+| ENG-API-01d | kestrel-3 | engine/dev.js only | dev.js re-exports every internal the 5 allowlisted tools use (list in Facts). A Node test imports each one through dev.js and asserts it is defined (`!== undefined`). | 01b |
+| ENG-API-01e | kestrel-4 | tools/bench-shadow.mjs, bench-vox-parts.mjs, compare-detail-export.mjs | Imports switched to engine/dev.js. Each tool runs with its usual flags and gives the same output as before (numbers within noise). | 01d |
+| ENG-API-01f | kestrel-4 | tools/mesh-tri-budget.mjs, mesh-place-budget.mjs, tools/check-deps.mjs (+ test) | Imports switched. `RULE3_TOOL_ALLOWLIST` deleted. A fixture test shows a deep tools import is a finding. check-deps OK. | 01e |
+| ENG-API-01g | kestrel-4 | tools/check-deps.mjs, check-deps.test.mjs | Rule 21 reads engine/api-1.0.json and WARNs on a deprecated-name import. Rule 22 WARNs on a deep JSDoc type path. Fixture cases for both, including a JSDoc import inside engine/ that is not flagged. | 01b |
+| ENG-API-01h | kestrel-1 | game/js/dev/demoScene.js, quest/beacon.js, quest/lantern.js, rts/ui/minimapView.js, wild/wildEnv.js, game/js/main.js (<= 3 lines) | The 5 JSDoc paths point to `engine/index.js`. main.js calls `setApiWarnings(true)` under its dev flag. Rule 22 becomes a finding. All suites and check-deps green with 0 rule-21/22 WARN. | 01c, 01g |
+
+Order within each slot:
+- kestrel-2: 01a, then 01c.
+- kestrel-3: 01b, then 01d.
+- kestrel-4: 01e, then 01f, then 01g.
+- kestrel-1: 01h, last.
+
+No two stories edit the same file at the same time. Only 01b and 01c touch index.js, and 01c runs after 01b.
+
+**Do not:**
+- rename a stable-bound name without a `deprecated` alias;
+- add logic to index.js or dev.js (the `deprecated()` wrapper calls are the only exception);
+- let tools/editor import dev.js;
+- put the manifest under docs/ (the test must read it from engine/);
+- freeze GPU pass internals as `stable`.

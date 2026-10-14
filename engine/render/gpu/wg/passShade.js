@@ -8,7 +8,8 @@
 // (twin: edgePass.js).
 import { meshOutdoorFog } from '../../fogShape.js'; // OB-089
 import { updateUnderState } from '../../underwater.js'; // SWIM-04c
-import { SHADE_BLOCK, SHADE_WGSL, SHADE_LEVEL_WGSL, SHADE_TEXTURES, SHADE_LOOK_BLOCK, SHADE_LOOK_WGSL, SHADE_LEVEL_LOOK_WGSL } from '../wgsl/shade.wgsl.js';
+import { SHADE_BLOCK, SHADE_WGSL, SHADE_LEVEL_WGSL, SHADE_TEXTURES, SHADE_LOOK_BLOCK, SHADE_LOOK_WGSL, SHADE_LEVEL_LOOK_WGSL, SHADE_GI_WGSL, SHADE_LEVEL_GI_WGSL, SHADE_LOOK_GI_WGSL, SHADE_LEVEL_LOOK_GI_WGSL, SHADE_GI_BUFFERS } from '../wgsl/shade.wgsl.js';
+import { giBufferFor } from './giUpload.js'; // GI-PROBE-05
 import { packLookTable, LOOK_TABLE_WORDS } from '../../groundLook.js'; // ENV-02d
 import { EDGE_BLOCK, EDGE_WGSL, EDGE_TEXTURES } from '../wgsl/edge.wgsl.js';
 import { packMaterialTable } from '../ShadeTextures.js';
@@ -67,6 +68,8 @@ export class WgShadePass {
     });
     // ENV-02d (38.63): look variant of the shade pipeline (ShadeU + the look table), built lazily the first time a world with groundLook is drawn.
     // Look off (no groundLook) never touches any of this: pipeline, uniforms and binds stay exactly as before.
+    // GI-PROBE-05: GI variants (lazy, one storage buffer after the 16 textures); GI off never builds or binds them.
+    this.pipeShadeGI = null; this.pipeShadeLookGI = null; this.shBindG = null; this.shBindLG = null;
     this.pipeShadeLook = null; this.suL = null; this.suL32 = null; this.shBindL = null; this.lookCfg = null;
     this.pipeEdge = device.createPipeline({
       vertex: { src: { wgsl: EDGE_WGSL } }, fragment: { src: { wgsl: EDGE_WGSL }, targets: 2 },
@@ -319,7 +322,7 @@ export class WgShadePass {
     tx[SH.SETI].texture = this.texSetI; tx[SH.SETF].texture = this.texSetF; tx[SH.GAIN].texture = this.texGain;
     tx[SH.LIGHT].texture = t.texLight; tx[SH.TLOOK].texture = this.texTlook;
     wgSpanBegin(p, WG_PASS_SLOT.shade);
-    try { d.beginPass(this.stable ? t.targetShadeLevel : t.targetShade); if (lkCfg) this._bindLook(lkCfg, p._world); else d.bind(this.pipeShade, this.shBind); d.draw(3); d.endPass(); } finally { wgSpanEnd(p); }
+    try { d.beginPass(this.stable ? t.targetShadeLevel : t.targetShade); const gsto = p._light && p._light.gi ? giBufferFor(d).sync(p._light.gi) : null; if (lkCfg) this._bindLook(lkCfg, p._world, gsto); else if (gsto) this._bindGI(gsto); else d.bind(this.pipeShade, this.shBind); d.draw(3); d.endPass(); } finally { wgSpanEnd(p); }
     // WG-3e: water composite between shade and edge (GL order); a no-op when the layer is inactive
     if (water && water.active) {
       wgSpanBegin(p, WG_PASS_SLOT.water);
@@ -340,7 +343,7 @@ export class WgShadePass {
   }
 
   /** ENV-02d: bind the look pipeline. The plain su words are copied bit-exact into the bigger look block (no alloc), the table is packed only on a new cfg, wind01 written per frame. */
-  _bindLook(cfg, world) {
+  _bindLook(cfg, world, gsto = null) {
     const d = this.device;
     if (!this.pipeShadeLook) {
       const src = this.stable ? SHADE_LEVEL_LOOK_WGSL : SHADE_LOOK_WGSL;
@@ -357,12 +360,29 @@ export class WgShadePass {
     this.suL32.set(this.su32);
     const wp = world.wind && world.wind.params; // wind01: strength 0..1 of the world wind (0 = calm = look output is time-independent)
     this.suL[this.lookPW] = wp && wp.amp > 0 ? (wp.amp < 1 ? wp.amp : 1) : 0;
-    d.bind(this.pipeShadeLook, this.shBindL);
+    if (gsto) this._bindLookGI(gsto); else d.bind(this.pipeShadeLook, this.shBindL);
+  }
+
+  // GI-PROBE-05: GI variants of the plain / look shade pipelines (same uniform block + textures, plus the probe storage buffer).
+  _giPipe(src) {
+    return this.device.createPipeline({
+      vertex: { src: { wgsl: src } }, fragment: { src: { wgsl: src }, targets: this.stable ? 3 : 2 },
+      bindings: { uniformBytes: (src === SHADE_LOOK_GI_WGSL || src === SHADE_LEVEL_LOOK_GI_WGSL ? SHADE_LOOK_BLOCK : SHADE_BLOCK).sizeBytes, textures: SHADE_TEXTURES.slice(), buffers: SHADE_GI_BUFFERS.slice() },
+      targetFormats: this.stable ? ['rgba8', 'rgba8', 'r8ui'] : ['rgba8', 'rgba8'],
+    });
+  }
+  _bindGI(gsto) {
+    if (!this.pipeShadeGI) { this.pipeShadeGI = this._giPipe(this.stable ? SHADE_LEVEL_GI_WGSL : SHADE_GI_WGSL); this.shBindG = { uniforms: this.su, textures: this.shTex, storageBuffers: gsto }; }
+    this.device.bind(this.pipeShadeGI, this.shBindG);
+  }
+  _bindLookGI(gsto) {
+    if (!this.pipeShadeLookGI) { this.pipeShadeLookGI = this._giPipe(this.stable ? SHADE_LEVEL_LOOK_GI_WGSL : SHADE_LOOK_GI_WGSL); this.shBindLG = { uniforms: this.suL, textures: this.shTex, storageBuffers: gsto }; }
+    this.device.bind(this.pipeShadeLookGI, this.shBindLG);
   }
 
   dispose() {
     const d = this.device;
-    for (const k of ['pipeShade', 'pipeShadeLook', 'pipeEdge', 'texMatF', 'texMatI', 'texSetI', 'texSetF', 'texGain', 'texSky', 'texTlook', 'texWaterDummy']) {
+    for (const k of ['pipeShade', 'pipeShadeLook', 'pipeShadeGI', 'pipeShadeLookGI', 'pipeEdge', 'texMatF', 'texMatI', 'texSetI', 'texSetF', 'texGain', 'texSky', 'texTlook', 'texWaterDummy']) {
       if (this[k]) { try { d.dispose(this[k]); } catch (_) { /* best effort */ } this[k] = null; }
     }
   }

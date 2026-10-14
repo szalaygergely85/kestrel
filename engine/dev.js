@@ -78,3 +78,6 @@ export { BandBakeJob } from './world/bandBake.js';
 export { bundleBytes } from './world/bandCache.js';
 
 // ---- VOX-PARTS-16b: 12-part test fixture for the gpucompare `vox12` row (game/js/dev/modes/gpucompare.js) ----
+
+// ---- GI-PROBE-05 gpucompare rows (analytic probe field standing in for a baked .gi.bin) -------------
+export { makeRowGI } from './render/giFixture.js';

@@ -10,7 +10,7 @@ import {
   terrainMeshSetFor, runStableRow, compareGlow, emisFromPacked,
   computeDerivatives, shadeSurfaces, edgePass, pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG, createShadowParityRunner,
 } from '../../../../engine/dev.js';
-import { quadruped16 } from '../../../../engine/dev.js'; // VOX-PARTS-16b: 12-part fixture for the `vox12` row
+import { quadruped16, makeRowGI } from '../../../../engine/dev.js'; // VOX-PARTS-16b: 12-part fixture for the `vox12` row
 import { POSES as GPU_COMPARE_POSES, GATE_POSES } from '../../../../content/dev-poses.js';
 import { fillUnitGrid, placeholderTeamSpec } from '../unitsHarness.js'; // RE-06: instanced-units pose helpers
 import { groundLookFromParams } from '../../look/groundLookConfig.js'; // ENV-02d-LIVE
@@ -226,6 +226,21 @@ function buildCompareRuns(ctx) {
     for (const [what, x, y, yawDeg, pitchDeg] of [['Bend lamps', 1268, 1040, 135, -2], ['tower', 1470, 1025, 90, 8]]) {
       runs.push({ world: worldM1, lights: worldM1Lights, name: `world_m1: ${tag} ${what} (DN-04b)`, hour,
         cam: { x, y, z: (worldM1.terrain ? worldM1.terrain.groundAt(x, y) : 0) + engine.physics.eyeHeight, yawDeg, pitchDeg }, real: true });
+    }
+  }
+
+  // GI-PROBE-05 (arch 38.72 item 6): 4 rows with the baked-GI path on (light + terrain shade read lights.gi); every other row runs with gi null = unchanged.
+  // Hour is pinned like the DN-04b rows; the field is analytic (makeRowGI) until the baked .gi.bin files exist. Command (do not run on PC-B): see docs/lanes/pc-b2.md GI-PROBE-05.
+  {
+    const gz = (x, y) => (worldM1.terrain ? worldM1.terrain.groundAt(x, y) : 0), eh = engine.physics.eyeHeight;
+    for (const [n, hour, x, y, yawDeg, pitchDeg, gi] of [
+      ['giMeadowNoon', 12, 1470, 1035, 235, -12, { }],
+      ['giForestDusk', 18.5, 1268, 1040, 135, -2, { }],
+      ['giRuinInterior', 12, 1470, 1025, 90, 8, { room: [1470, 1025, 14] }],
+      ['giEmisNight', 23, 1268, 1040, 135, -2, { lamps: [1268, 1052, 18], emisK: 1.6 }],
+    ]) {
+      runs.push({ world: worldM1, lights: worldM1Lights, name: `world_m1: ${n} (GI-PROBE-05 baked bounce light)`, hour, gi: { ...gi, groundAt: gz },
+        cam: { x, y, z: gz(x, y) + eh, yawDeg, pitchDeg }, real: true });
     }
   }
 
@@ -1070,13 +1085,15 @@ async function runGpuCompareSceneMode(ctx) {
   // e.g. `?gpucompare=1&renderer=mesh&pose=water pond`. No filter = every pose.
   const poseQ = (params.get('pose') || '').toLowerCase();
   const poseRuns = poseQ ? runs.filter((r) => r.name.toLowerCase().includes(poseQ)) : runs;
-  for (const { world, lights, name: poseName, cam, fade, dim, real, before, spritesExtra, needK8, meshOnly, maskPose, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, hour: poseHour, atmos: poseAtmos, post: posePost, instAssert, vmAssert, decalAssert, timeSec: poseTime, carpet: carpetPose, under: underPose } of poseRuns) {
+  for (const { world, lights, name: poseName, cam, fade, dim, real, before, spritesExtra, needK8, meshOnly, maskPose, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, hour: poseHour, atmos: poseAtmos, post: posePost, instAssert, vmAssert, decalAssert, timeSec: poseTime, carpet: carpetPose, gi: poseGi, under: underPose } of poseRuns) {
     if (world.carpet || world._carpetCtx) { world._carpetCtx = null; world.carpet = null; wg.setCarpet(null, null, 0); } // D2e: carpet poses only
     if (restoreSun) { restoreSun(); restoreSun = null; }
+  for (const r of runs) if (r.lights) r.lights.gi = null; // GI-PROBE-05: leave no probe field on the shared light sets
     atmosOff(); // ENV-03c: previous pose's atmosphere off (one palette bump)
     if (meshOnly && renderer !== 'mesh') { console.log(`[gpucompare] SKIP ${poseName} (mesh renderer only)`); continue; }
     if (sunOverride) restoreSun = applySunOverride(world, lights, sunOverride);
     else if (Number.isFinite(poseHour)) restoreSun = applyHourOverride(world, lights, assets.palette, poseHour, ctx.sunEnabled); // DN-04b
+    if (lights) lights.gi = poseGi && lights ? makeRowGI({ ...poseGi, hour: poseHour, lights }) : null; // GI-PROBE-05: only the gi* rows carry a probe field
     // US-053b (32.1): cleared before EVERY pose (not just the ones that never touch
     // particles) - only the `particles` pose's own `before()` hook repopulates it, so a
     // pose that runs after it never inherits stray live particles from a previous pose.

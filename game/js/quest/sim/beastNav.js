@@ -3,9 +3,7 @@
 // NAV-LAYERS-01d (38.71): structures flagged `nav: "floors"` bake sheets (ruin rooms, floors, stairs) on top of the ground layer.
 import { NavGrid, createAStar, createSheetBaker } from '../../../../engine/index.js';
 
-// TODO(owner question, NAV-LAYERS-01d): the two BRIDGES are not flagged `nav: "floors"` yet - owner has not said which "both bridges" are
-// meant; flag their placements (+ `navGroup`) in content/worlds/world_m1.world.json once decided. The 2-storey house (OB-139 building epic)
-// has no placement in world_m1 yet; flag its pieces the same way when it lands.
+// D-103: world_m1 has no walkable bridge; the only crossing is the ford (stones fordS1..7 flagged nav:"floors" + nav.ford wading). The 2-storey house (OB-139) is flagged the same way when it lands.
 
 /**
  * Sheet sources of the flagged structures that touch `rect`: placements sharing a `navGroup` (default: own id) form ONE source whose

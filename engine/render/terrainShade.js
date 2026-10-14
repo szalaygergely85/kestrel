@@ -20,6 +20,7 @@ import { WET_DARK, wetGain } from './detailShade.js';
 import { LEVEL_NONE, LEVEL_ANIM } from './temporalStable.js';
 import { STEP } from '../core/loop.js';
 import { skylineFogF } from './skyline.js';
+import { sampleGIBuf, giMemoBegin, giMemoEnd } from './giProbe.js'; // GI-PROBE-04
 import { resolveLook } from './look.js';
 import { shadeLookCell, packLookTable, makeGroundLook, LOOK_TABLE_WORDS } from './groundLook.js'; // ENV-02b (38.63); circular with this file but only called at runtime
 
@@ -739,6 +740,13 @@ function ensureGroundLookCtx(ctx, terrain, world) {
   return ctx.groundLook;
 }
 
+const giShIo = new Float64Array(6), giShOut = new Float32Array(3), giK = new Float64Array(1);
+/** GI ambient / flat-sky ratio -> giK[0] (scratch out: a returned double would be boxed per cell in the unoptimised loop). */
+function giTerrainK(gi, gbuf, i, invSky) {
+  giShIo[0] = gbuf.u[i]; giShIo[1] = gbuf.z[i]; giShIo[2] = gbuf.v[i]; giShIo[3] = shadeNrm[0]; giShIo[4] = shadeNrm[2]; giShIo[5] = shadeNrm[1];
+  sampleGIBuf(gi, giShIo, giShOut);
+  giK[0] = (giShOut[0] + giShOut[1] + giShOut[2]) * invSky;
+}
 export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0) {
   if (!terrain || !terrain.farReady || !fb.gbuf) return;
   const gbuf = fb.gbuf, palette = fb.palette;
@@ -762,6 +770,10 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
     if (!ctx.farGrass) ctx.farGrass = makeFarGrass();
     farGrassFill(ctx.farGrass, world.carpet.cfg, terrain.typeNames, world.carpetQuality, world.wind && world.wind.params ? world.wind.params : null);
   } else if (ctx.farGrass) ctx.farGrass.on = 0;
+  const gi = fb.lights ? fb.lights.gi : null;
+  const giOn = !!gi && gi.on && gi.field !== null;
+  const giInvSky = giOn ? 1 / Math.max(1e-6, gi.skyRGB[0] + gi.skyRGB[1] + gi.skyRGB[2]) : 0;
+  if (giOn) giMemoBegin(gi);
   for (let i = 0; i < n; i++) {
     const kd = gbuf.kind[i];
     if (kd !== KIND_TERRAIN && !(kd === KIND_GRASS && grassTab !== null)) continue; // OB-073 D2c: kind 10 only with a carpet table
@@ -773,7 +785,11 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
     // S8-B2-12b (38.13): cloud-darkening byte (`light.cloudQ[i]`, the JS-side copy of LIGHT.w bits 24..31, 0 at
     // strength 0 or when the light set carries no per-cell byte at all) scales the whole analytic sun term too.
     const cF = (light && !light.uniform && light.cloudQ) ? 1 - light.cloudQ[i] * (1 / 255) : 1;
-    const b = sun.ambientI * (isG ? GRASS_AO_LO + (1 - GRASS_AO_LO) * u : 1) + sun.sunI * Math.max(0, ndotl) * (sunMapOn ? light.sunN[i] * 0.25 : 1) * cF;
+    // GI-PROBE-04: ambientI x (GI ambient / flat sky colour) = ambientI * skyVis + bounce (grey); null/off = old term exactly.
+    giK[0] = 1;
+    if (giOn) giTerrainK(gi, gbuf, i, giInvSky);
+    const ambK = giK[0];
+    const b = sun.ambientI * ambK * (isG ? GRASS_AO_LO + (1 - GRASS_AO_LO) * u : 1) + sun.sunI * Math.max(0, ndotl) * (sunMapOn ? light.sunN[i] * 0.25 : 1) * cF;
     let lr = 0, lg = 0, lb = 0;
     if (light && !light.uniform) {
       const o = i * 3; lr = light.rgb[o]; lg = light.rgb[o + 1]; lb = light.rgb[o + 2];
@@ -791,4 +807,5 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
     const x = i % gbuf.cols, y = (i / gbuf.cols) | 0;
     cells.setCellRGB(x, y, shadeOut.glyph, shadeOut.fg[0], shadeOut.fg[1], shadeOut.fg[2], shadeOut.bg[0], shadeOut.bg[1], shadeOut.bg[2]);
   }
+  if (giOn) giMemoEnd(gi);
 }

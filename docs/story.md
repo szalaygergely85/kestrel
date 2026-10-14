@@ -2366,3 +2366,95 @@ The WMP-01 bowl-image offer/done lines are retired. The wardens now say what the
 | note.straw.offer (`sq.straw`) | Three straw men stand by the notice post. / Hit all three, then tell Rook the crow? | 79 |
 | prompt.gondola.offer (`sq.wreck.plate`) | A bent plate hangs off the wreck. Shield-sized. / Bring boar hide to Burl so she can strap it? | 91 |
 | prompt.packet.offer (`sq.packet`) | An oilcloth packet, stitched: FOR THE FORD POST. / Carry it to the post-keeper by the crossroads? | 94 |
+
+## Region text batch (WMP-10, 2026-10-14)
+
+PC-B writer. This closes the open text keys from WMP-01/03/05/06. Already done in content and not repeated here: errand titles, objTexts, returnTexts and offer/active/ready/done lines (`content/quests/regions/pack.json` = QFIX-S5 warden lines above), waystone names and wake lines (`RELAY_TITLES` / `RELAY_WAKE`), the 16 named regions in `design/ui-region-banner.js`, and the travel lines `Already here.` / `Not with enemies near.`. ASCII only. "Relay" is never used (D-080). Warden names stay out of the text until the owner approves them.
+
+### Region enter names (WMP-06 / REGION-01, `ASSETS.uiRegionBanner.names`)
+
+| key | text |
+|---|---|
+| roadWest | The West Road |
+| outwall | The Barley Fields |
+
+- `roadWest` is the road from the tower down past the Bend Waystone to the ford, so the name is the plain road name. Alt: `The Bend`.
+- `outwall` names the land, not the village (GDD 3: the village has no name on screen, and "Outwall" is only a working name). The fields, the barley gate and the goose pen are all things the player can see there. If the owner fixes "Outwall" as the name, the banner can switch to `Outwall` after `mq.ow.names` is done. Alt: `The Palisade Fields`.
+
+### Region errand journals (WMP-01, step `journal`, <= 120)
+
+The current journals still say the giver is the waystone, and Glasswater still says "bowl". The QFIX-S5 wardens are the givers now, so these journals replace them. The objTexts and titles stay as they are.
+
+| key | text |
+|---|---|
+| sq.reg.glasswater.journal | The Glasswater warden saw boars churning the shallows. Drive off three, then go back to the warden. |
+| sq.reg.northwood.journal | Wolves circle the Northwood Waystone, under the pines. Drive off three, then go back to the warden. |
+| sq.reg.highPastures.journal | Two bears roam the high grass too near the Pasture Waystone. Drive both off, then go back to the warden. |
+| sq.reg.ashMile.journal | Two boars root through the black ash by the Ash Mile Waystone. Drive them off, then go back to the warden. |
+| sq.reg.downs.journal | Four boars are loose on the long green of the Downs. Drive them off, then go back to the warden. |
+| sq.reg.signalHill.journal | Wolves prowl the slope below Signal Hill, and its waystone stutters. Drive off three, then climb back to the warden. |
+| sq.reg.heath.journal | Three boars are tearing up the heather by the Heath Waystone. Drive them off, then go back to the warden. |
+| sq.reg.reedmire.journal | Boars wallow in the black water near the Reedmire Waystone. Drive off three, then go back to the warden. |
+| sq.reg.strand.journal | The Downs warden is short of arrows. Carry five inland to the Downs Waystone, then come back. |
+| sq.reg.whitecombs.journal | Two bears den on the bare rock below the Whitecombs snow. Drive them off, then go back to the warden. |
+
+One wake line fix to match the waystone model (it has no bowl):
+
+| key | text |
+|---|---|
+| RELAY_WAKE.ws_highPastures | Wind combs the high grass. The stone hums with it. |
+
+### Waystone travel text (WMP-05, M map)
+
+| key | text |
+|---|---|
+| toast.travel.header (`travelHeader`) | Travel: 1-9, or arrows and Enter |
+| toast.travel.none (no woken waystone yet) | Wake a waystone to travel. |
+| toast.travel.unknown (`'unknown'` / `'bounds'`) | That waystone is out of reach. |
+| toast.travel.locked (point in an unseen region) | You have not walked that far yet. |
+| toast.travel.blocked (keep) | Not with enemies near. |
+| toast.travel.here (keep) | Already here. |
+
+`locked` is only needed if a locked point is ever shown. Today, `lockUnseen` hides it.
+
+### Ambient cue names (WMP-03, `content/life/regionAmbient.json`)
+
+These are the names and a one-line brief for the audio stub. The cue ids stay as they are.
+
+| cue id | name | brief |
+|---|---|---|
+| birdsong | Birdsong | Small birds, far apart. Never a full chorus. |
+| insects | Grass insects | Slow dry clicking in warm grass. |
+| windLoop | Wind | Low wind over open ground. No whistle. |
+
+Proposal for the audio/designer pass (not text, no data edit here): reedmire, strand, signalHill and westHeath have no table row. Suggested cues are `reeds` (Reeds, "dry hiss, now and then a plop") for the Reedmire and `shoreWash` (Shore, "slow waves, long gaps") for the Long Strand and the Shearcliffs. Signal Hill can use `windLoop`.
+
+Note: the `westHeath` banner says `The Shearcliffs`, but its waystone and errand say "Heath". Both fit, because the coast is cliffs and the inland part is heather. If the owner wants one word, rename the waystone to `Shearcliff Waystone` and leave the errand as it is.
+
+## Text batch 3 (2026-10-14)
+
+PC-B writer. This covers the farm ambush hint and the NEEDS WRITER keys from 2026-10-14 that the two sections above do not cover (pc-b1 OB-145 and the OB-152 follow-up). There were none in pc-b2. Every line is <= 56 chars and ASCII only, and none uses "relay".
+
+### Plates for Three (`sq.he.farm`)
+
+| key | line |
+|---|---|
+| hint.farm.ambush | The gate slams behind you. Three goblins step out. |
+
+### Waystone look/blocked hints (OB-145, `relayWake.js`)
+
+| key | line |
+|---|---|
+| prompt.waystone.look (`PROMPT_LOOK`, keep) | [E] Look at the waystone |
+| hint.waystone.needCrystal (`HINT_NEED_CRYSTAL`) | The stone stays dark. Burl's crystal might wake it. |
+| hint.waystone.needWaystone (`HINT_NEED_WAYSTONE`) | Dark. Wake the waystone by the tower first. |
+| hint.waystone.needTalk (`HINT_NEED_TALK`) | The stone is cold. Ask Burl about it. |
+
+### Rook's glass, now on the floor (OB-152 follow-up)
+
+The nest no longer sits on the roof, so the player should never be told to climb. No current player string says "roof" or "Climb". These replace the Rook lines so that they point at the floor:
+
+| key | line |
+|---|---|
+| rook.ford (6) | Old house by the crossing. Inside, on the floor. |
+| rook.mirror.active | Old house by the crossing. Look on the floor. |
