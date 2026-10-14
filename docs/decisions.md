@@ -1026,7 +1026,7 @@ Architect batch 16 (opus) on d20c5f6 (BUG-MESH-MISSING-01, grouped placements un
 Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays the same" on the mesh renderer + mesh physics (ME-12 GO already recorded 2026-10-01, D-030); "ok, do that" to closing both milestones today.
 - **M1.5 DONE:** US-031..034, US-063, US-064, US-066 done (owner walk-through); US-067 asset library done (closed with the milestone). US-068 (gizmo + ortho views, P2) stays queued for PC-B (architect note first). **US-046 closed as written:** the editor shipped with its own copy of the frame setup (`tools/editor/frame.js`, "US-046 workaround"), which only drives the WebGL2 `GpuCellPipeline`. The real need is now **ED-WG-01** (new): the editor renders through an engine-owned frame renderer on the WebGPU path and `tools/editor/frame.js` is deleted. ED-WG-01 is a **hard prerequisite of WG-5** (no WebGL2/GLSL deletion while the editor still needs it) and shares one architect note with ED-MESH-1.
 - **M2 DONE:** exit test met (owner walk wake -> breach -> hillside -> waystone on mesh renderer + mesh physics; mesh is the default, `main.js` `renderer = 'mesh'`; suites 370/370, check-deps + typecheck green on 2026-10-09). **Moved to M3 (no longer M2 exit items):** ME-12b leftovers (dev pages/bench/gpucompare defaults), BUG-FP-001 remainder (spawn black for the first frames), US-026b streaming + CO-6, BUG-COORD-001 (a)/(b) re-check. Mesh phase 3 (ME-14..21) continues in M3 as planned; ME-15/16 rows to be verified (sun shadow maps are default per D-043).
-- PC-A to ratify the row moves at the next review batch.
+- Row moves ratified PC-A 2026-10-14.
 
 ## D-053 - WG-4c OK: WebGL2 is dropped (WG-5 go); boar telegraph stays WebGPU-only; per-cell glyphs on stone (owner, 2026-10-09; recorded by the PC-B main session)
 - Owner walked WG-4c on WebGPU (ultra on RTX 4060) and gave "WG-4c OK": WG-5 (delete the WebGL2 backend + GLSL) may merge after its own gates (ED-WG-01 done, D-052 prerequisite met). Branch `wip/wg5` (kestrel-4).
@@ -1053,7 +1053,7 @@ Owner (chat, 2026-10-09): editor walk-through PASS and the M2 walk-test "plays t
 
 ## D-055 - Chargen head at a finer grid (owner, 2026-10-10; recorded by the PC-B main session)
 - Owner on face v2: "if we make smaller cubes? wouldnt be better? i dont like the eyes and lips". Options shown: finer head only / whole body 2x finer / same cubes + redesign. **Owner pick: finer head only** - the Head (+ Jaw) bones use 1.25 cm cells (2x the 2.5 cm body grid, face ~20 cells wide); the body stays 2.5 cm.
-- Architect note first (architecture 38.34: per-bone cell size in the kit, compose/mesh/collapse/riggedModelDef grid snap, exports, in-game cost), then a programmer, then the designer redraws the head. PC-A to ratify.
+- Architect note first (architecture 38.34: per-bone cell size in the kit, compose/mesh/collapse/riggedModelDef grid snap, exports, in-game cost), then a programmer, then the designer redraws the head. Ratified PC-A 2026-10-14.
 
 ## D-056 - M3 "Steel and Hush" closed (owner, 2026-10-10; recorded by the PC-B main session)
 - Owner: "m3 done". M3 exit accepted by the owner walk on PC-B (laptop). Open M3 rows that are not bugs move to M4 or stay parked (BEAST-TUNING-01 dodge = design question).

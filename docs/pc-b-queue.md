@@ -1,5 +1,19 @@
 # PC-B queue
 
+## Follow-ups from the PC-A ratify pass 2026-10-14 (`docs/test-reports/pca-ratify-2026-10-14.md`)
+41 ratified, 36 ratified with a note, 2 CHANGES (38.56 (c) fauna/camera determinism, 38.64 item 5 croc grab locks input vs D-064). Owner questions C1-C5 are listed in the report.
+
+| ID | Slot | AC (short) | Status |
+|---|---|---|---|
+| LIFE-DET-01 | kestrel-3 | beastSim replay-hash test with `fauna: null` covering the hunt/EAT paths (38.56 CHANGES 1). | todo |
+| BEAST-08b-PIN | with BEAST-08b | croc GRAB = a movement-only pin, never an input lock (D-064), unless the owner grants an exception first. | todo (gate on 08b) |
+| SIM-RULE15-01 | kestrel-3 | `game/js/quest/sim/regionalBeasts.js` Math.hypot/cos/sin in sim code (check-deps rule 15): use integer/literal tables or move it to create time. | todo |
+| WMP-03-PROBE | kestrel-4 | WMP-03 retained-heap check -> `tools/allocProbe.mjs` per 38.61 (2a). | todo |
+| QPIPE-LINT-01 | kestrel-4 (fold into QFIX-S2 R14) | a quest giver/turnIn must resolve to an NPC/animal on walkable ground (D-082, OB-147), never `kind:'prop'`. | todo |
+| PLAYER-TEXT-RELAY-01 | kestrel-4 | lint player-facing strings for "relay" (D-080). | todo |
+| SWIM-SAVE-01 | kestrel-2 with QFIX-S6 (PC-A track, PC-A reviews) | `waterZ/waterFloorZ` out of serialized body state (scratch or finite sentinel); inline `clamp` in swim.js (physics stand-alone); physics + save round-trip tests. | todo |
+| ARCH-DOC-RATIFY-01 | PC-A main session (doc only) | 38.56 + 38.31 item 10 supersede text, 38.60 frag_depth answer, 38.62 ASK answers + DECOR_MAX_ROWS 16384, "superseded by" marks in 38.28 item 4. | todo |
+
 ## PC-B queue 2026-10-14 (quest + item audit, OB-155/156) (PC-A main session, owner 2026-10-14)
 Source: `docs/test-reports/quest-item-audit-2026-10-14.md` (findings OB-155a..s + an 82-quest table). Owner rule OB-156: a `!` over a CHARACTER where the quest starts (gold = main, blue = side) -> Accept / Exit -> once ALL objectives are done, a `?` in the same colour at the return character -> each mark disappears after accept / return; picked-up quest objects disappear. D-082: givers and returns are characters. Do these BEFORE new feature rows; S3 + S4 first (they are the blockers the owner sees).
 
