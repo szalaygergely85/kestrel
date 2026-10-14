@@ -353,8 +353,7 @@ ok('player world position == level.start + origin', Math.abs(player.data.transfo
   // -- z:'ground' world entity (endMarker/waystone) resolves through terrain.groundAt (23.2) --
   const endMarker = world.get('endMarker');
   ok('endMarker world entity spawned', !!endMarker);
-  // QFIX-S1 (OB-155): content now pins endMarker at an explicit z on its base slab (it was buried at z:'ground'); check it is not below the terrain
-  ok('endMarker z sits on or above terrain.groundAt (QFIX-S1 explicit z)', Number.isFinite(endMarker.data.transform.z) && endMarker.data.transform.z >= world.terrain.groundAt(1428, 1040) - 0.05);
+  ok('endMarker z resolves through terrain.groundAt (z:"ground")', endMarker.data.transform.z === world.terrain.groundAt(1428, 1040));
 
   // -- serialize/deserialize round-trips bounds/triggers (content, not state) --
   {
