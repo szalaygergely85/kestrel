@@ -3,7 +3,7 @@
 // keeps state['beast.v1'] in world.state (the save blob already carries world.state) and owns the Settings difficulty applier.
 import { buildGroups, createSpawnDirector, VIEW_MARGIN_RAD } from './sim/spawnDirector.js';
 import { applyDifficulty, resolveDifficulty } from './sim/difficulty.js';
-import { assignRoutes, walkableFor, createRouteFollower, isNightHour } from './beastRoutes.js'; // BEAST-07
+import { assignRoutes, walkableFor, regionRectOf, reachFor, createRouteFollower, isNightHour } from './beastRoutes.js'; // BEAST-07
 import { setDifficultyApplier, difficultyName } from '../ui/difficultyFlag.js';
 
 const EYE = 1.7, LOS_STEP = 4, SAVE_STEPS = 300;
@@ -40,7 +40,7 @@ export function createBeastDirectorWire(o) {
   const groups = buildGroups(ms, o.seed || 12, null).concat(o.extraGroups || []), gOfSlot = Object.create(null);
   for (let g = 0; g < groups.length; g++) for (const s of groups[g].slots) gOfSlot[s] = g;
   for (const gr of groups) if (gr.when === undefined && gr.members && gr.members[0] && gr.members[0].when) gr.when = gr.members[0].when; // BEAST-07: night set
-  assignRoutes(groups, o.seed || 12, o.walkable || walkableFor(o.terrain)); // BEAST-07: seeded walkable 3-6 waypoint loops
+  assignRoutes(groups, o.seed || 12, o.walkable || walkableFor(o.terrain), { rectOf: o.geo ? regionRectOf(o.geo) : null, reach: reachFor(o.nav) }); // BEAST-07b: clamp to the region rect + legs reachable on the real nav // BEAST-07: seeded walkable 3-6 waypoint loops
   const hourNow = () => (o.hour ? o.hour() : ((o.startHour === undefined ? 8 : o.startHour) + (dir.t / (o.dayLenSec || 1200)) * 24) % 24);
   const dir = createSpawnDirector({
     groups, dayLenSec: o.dayLenSec, viewCos: viewCosFor(o.hfovRad || 1.2), los: o.los || (o.terrain ? terrainLos(o.terrain) : null),

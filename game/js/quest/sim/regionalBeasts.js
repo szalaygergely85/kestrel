@@ -16,6 +16,10 @@ export const REGION_RULES = Object.freeze([
   { region: 'westHeath', key: 'heath', species: 'boar', groups: 1, size: 3 },
   { region: 'reedmire', key: 'reedmire', species: 'boar', groups: 2, size: 2 },
   { region: 'whitecombs', key: 'whitecombsFoot', species: 'bear', groups: 2, size: 1, rect: [0, 200, 2048, 330] },
+  // BEAST-07b (D-087: undead at night = yes). NIGHT-PLACEHOLDER: wolf packs stand in for the undead (`placeholderFor: 'undead'`) until undead models exist;
+  // `when: 'night'` -> parked by day, roam 20:00-05:00 only out of view (beastRoutes.js). Far regions only, 9 slots (inside MAX_BEASTS headroom).
+  { region: 'westFells', key: 'westFellsNight', species: 'wolf', groups: 2, size: 3, when: 'night', placeholderFor: 'undead' },
+  { region: 'thornwood', key: 'thornNight', species: 'wolf', groups: 1, size: 3, when: 'night', placeholderFor: 'undead' },
   // strand: none (open beach, ambient fauna only)
 ]);
 

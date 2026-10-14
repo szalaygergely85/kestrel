@@ -4,11 +4,12 @@
 // - createRouteFollower: leader walks the loop, the others follow it; the leader holds when one lags > HOLD_DIST (cohesion <= 8 m).
 // - Night set: groups with `when: 'night'` are parked by day, unparked at 20:00 and parked again from 05:00, each only while
 //   out of view (director.canSpawnAt, the never-in-view rule). NIGHT-PLACEHOLDER: night groups use today's kinds until undead models exist.
-import { makeWalkable } from './sim/regionalBeasts.js';
+import { makeWalkable, REGION_RULES } from './sim/regionalBeasts.js';
+import { findPath } from '../../../engine/index.js';
 import { hashU } from '../life/schedule.js';
 
 export const HOLD_DIST = 6, COHESION = 8, CHECK_STEPS = 30, NIGHT_FROM = 20, NIGHT_TO = 5;
-const REPLAN_M = 1.5, RING = 2.5;
+const REPLAN_M = 1.5, RING = 1.5; // BEAST-07b: ring+arrive (3 m, beastSim GOAL_ARRIVE_R) must stay < HOLD_DIST or the leader waits forever on a follower that "arrived"
 const ENGAGED = new Set([2, 3, 4, 5, 18]); // beastSim chase/windup/charge/recover/circle: combat owns the slot
 // 16 literal unit directions (no trig: deterministic everywhere)
 const D16 = [[1, 0], [0.9239, 0.3827], [0.7071, 0.7071], [0.3827, 0.9239], [0, 1], [-0.3827, 0.9239], [-0.7071, 0.7071], [-0.9239, 0.3827],
@@ -24,18 +25,45 @@ function legWalkable(walkable, ax, ay, bx, by) {
   return true;
 }
 
-/** Pure + deterministic in (seed, gid, home, walkable). Returns [[x,y] x3..6], first leg starts at home. */
-export function routeFor(group, seed, walkable) {
+/** BEAST-07b: region rect [x0,y0,x1,y1] of a region id (generator rule override first, e.g. Whitecombs foot), or null. */
+export function regionRectOf(geo) {
+  return (id) => { const rule = REGION_RULES.find((r) => r.region === id && r.rect); if (rule) return rule.rect; const g = geo && geo.regions && geo.regions.find((r) => r.id === id); return g ? g.r : null; };
+}
+
+/**
+ * BEAST-07b: reach(ax,ay,bx,by) over the REAL beast nav ({grid, astar} from buildBeastNav / the band tile): an exact A* path (not partial)
+ * within the sim's TRAVEL_MAX_NODES. Points outside the grid (a far group while another band tile is live) are trusted: the sim re-plans on tile swap.
+ */
+export function reachFor(nav) {
+  if (!nav || !nav.grid || !nav.astar) return null;
+  const grid = nav.grid, buf = new Int32Array(grid.w * grid.h);
+  return (ax, ay, bx, by) => {
+    const sx = grid.cellX(ax), sy = grid.cellY(ay), gx = grid.cellX(bx), gy = grid.cellY(by);
+    if (!grid.inBounds(sx, sy) || !grid.inBounds(gx, gy)) return true;
+    if (sx === gx && sy === gy) return true;
+    return findPath(nav.astar, sx, sy, gx, gy, buf, { maxNodes: 3000 }) > 0 && !nav.astar.partial;
+  };
+}
+
+/**
+ * Pure + deterministic in (seed, gid, home, walkable, opt). Returns [[x,y] x3..6], first leg starts at home.
+ * opt: { rect?: [x0,y0,x1,y1] (waypoints clamped 2 m inside), reach?: (ax,ay,bx,by)=>bool (every leg incl. the closing one must be reachable; an
+ * unreachable candidate is replaced by the next seeded retry) }.
+ */
+export function routeFor(group, seed, walkable, opt) {
+  const rect = opt && opt.rect, reach = opt && opt.reach;
+  const cl = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
   const gh = strHash(group.gid), home = group.home, np = 3 + (hashU(seed, gh, 7) % 4);
   const radius = group.cls === 'grazer' ? 40 : 90; // arch: grazer loop 40-120 m, packs patrol; keep inside the region
   const route = [];
   let px = home[0], py = home[1];
   for (let p = 0; p < np; p++) {
     let found = null;
-    for (let t = 0; t < 12 && !found; t++) { // retries shrink the radius so a lake-side group still finds ground
-      const h = hashU(seed ^ 0x51ed, gh + p * 131, t + 1), d = D16[h & 15], r = radius * (0.4 + ((h >>> 4) & 255) / 255 * 0.8) * (1 - t * 0.06);
-      const x = Math.round((home[0] + d[0] * r) * 2) / 2, y = Math.round((home[1] + d[1] * r) * 2) / 2;
-      if (walkable(x, y) && legWalkable(walkable, px, py, x, y)) found = [x, y];
+    for (let t = 0; t < 24 && !found; t++) { // retries shrink the radius so a lake-side group still finds ground
+      const h = hashU(seed ^ 0x51ed, gh + p * 131, t + 1), d = D16[h & 15], r = radius * (0.4 + ((h >>> 4) & 255) / 255 * 0.8) * (1 - t * 0.035);
+      let x = Math.round((home[0] + d[0] * r) * 2) / 2, y = Math.round((home[1] + d[1] * r) * 2) / 2;
+      if (rect) { x = cl(x, rect[0] + 2, rect[2] - 2); y = cl(y, rect[1] + 2, rect[3] - 2); }
+      if (walkable(x, y) && legWalkable(walkable, px, py, x, y) && (!reach || (reach(px, py, x, y) && (p < np - 1 || reach(x, y, route[0] ? route[0][0] : home[0], route[0] ? route[0][1] : home[1]))))) found = [x, y];
     }
     if (found) { route.push(found); px = found[0]; py = found[1]; }
   }
@@ -44,8 +72,8 @@ export function routeFor(group, seed, walkable) {
 }
 
 /** Replace route on every non-parked group (POI fight groups stay put). Returns the groups. */
-export function assignRoutes(groups, seed, walkable) {
-  for (const g of groups) if (!g.park) g.route = routeFor(g, seed, walkable);
+export function assignRoutes(groups, seed, walkable, opt) {
+  for (const g of groups) if (!g.park) g.route = routeFor(g, seed, walkable, opt && { rect: opt.rectOf ? opt.rectOf(g.region) : null, reach: opt.reach || null });
   return groups;
 }
 
@@ -60,7 +88,9 @@ export function createRouteFollower(o) {
   const wp = new Int16Array(N), holdUntil = new Int32Array(N), active = new Uint8Array(N).fill(1), isNightGroup = new Uint8Array(N);
   let tick = 0, hourNow = 12;
   for (let g = 0; g < N; g++) if (groups[g].when === 'night') { isNightGroup[g] = 1; active[g] = 0; }
-  const park = (g, on) => { for (const s of groups[g].slots) if (sim.setDown) sim.setDown(s, on); };
+  // A tile-dormant slot has no live steer agent, so setDown would mark it down=1 and the later unpark would re-add the agent in the WRONG slot (addAgent = lowest free).
+  // Wake it first (clears both dormancy reasons, re-activates the agent) so setDown parks it as down=2 and unparking is exact; tile dormancy re-applies on the next tile update.
+  const park = (g, on) => { for (const s of groups[g].slots) { if (!sim.setDown) continue; if (on && sim.isDormant && sim.isDormant(s)) { if (sim.setDormant) sim.setDormant(s, false); if (sim.setTileDormant) sim.setTileDormant(s, false); } sim.setDown(s, on); } };
   const usable = (s) => !(sim.isDown && sim.isDown(s)) && !(sim.isDormant && sim.isDormant(s));
   const goalTo = (s, x, y) => { // re-plan only when the target moved: setGoal restarts the path
     if (sim.hasGoal ? sim.hasGoal(s) : true) { const dx = sim.goalTX ? sim.goalTX[s] - x : 99, dy = sim.goalTY ? sim.goalTY[s] - y : 99; if (dx * dx + dy * dy < REPLAN_M * REPLAN_M) return; }
