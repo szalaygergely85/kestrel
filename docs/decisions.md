@@ -1293,3 +1293,6 @@ Crocodile (owner, same session): **short grab + mash to escape (1.5 s, max 12 % 
 
 ## D-107
 **2026-10-14, owner (PC-B session).** Quest windows (D-098 rule 4): **E = Accept / Complete**, **Q = Decline / Close** (also on the hand-in window and NPC talk). Mouse buttons keep working.
+
+## D-108
+**2026-10-14, owner (PC-B session), main story split answers.** (1) Tobin is in the MAIN chain (after Smoke); the **Outwall quests are the LAST main quests of the chapter** - the player should reach them around (hidden) level 10 and finish Chapter 1 there. (2) The few side quests that assume a main-story meeting may require their main quest (exception to D-104). (3) Rook moves along the story (Bend -> east bank -> west bank) to take hand-ins where they happen.
