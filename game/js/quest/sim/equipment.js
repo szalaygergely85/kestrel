@@ -79,7 +79,19 @@ export function equip(inv, eq, defs, id) {
   const old = eq[slot];
   if (old === id) return false;
   removeItem(inv, id, 1);
-  if (old !== null && addItem(inv, defs, old, 1) === 0) { addItem(inv, defs, id, 1); return false; }
+  if (old !== null && !isSpell(defs, old) && addItem(inv, defs, old, 1) === 0) { addItem(inv, defs, id, 1); return false; } // a spell lives in the spellbook, never the pack
+  eq[slot] = id;
+  return true;
+}
+
+function isSpell(defs, id) { return !!(defs[id] && defs[id].kind === 'spell'); }
+
+/** SPELLBOOK-01: a learned spell goes into its hand slot straight from the book (the caller checked it is learned). A displaced pack item returns to the pack. */
+export function equipSpell(inv, eq, defs, id) {
+  const slot = slotOf(defs, id);
+  if (slot === null || !(slot in eq) || eq[slot] === id) return false;
+  const old = eq[slot];
+  if (old !== null && !isSpell(defs, old) && addItem(inv, defs, old, 1) === 0) return false;
   eq[slot] = id;
   return true;
 }
@@ -96,6 +108,7 @@ export function unequip(inv, eq, defs, slot) {
   }
   const id = eq[slot];
   if (id === null) return false;
+  if (isSpell(defs, id)) { eq[slot] = null; return true; } // back into the spellbook, not the pack
   if (addItem(inv, defs, id, 1) === 0) return false;
   eq[slot] = null;
   return true;

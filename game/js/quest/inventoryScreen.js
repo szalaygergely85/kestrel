@@ -28,7 +28,7 @@ export const DIGIT_CODES = ['Digit1', 'Digit2', 'Digit3', 'Digit4'];
 const RED = [230, 80, 70];
 const N_EQ = 11, VIEW = N_EQ, PACK0 = N_EQ + 1;
 const F_REFUSE = 1, F_OK = 2, F_USE = 3;
-const HINTS = [['W/A/S/D', true], [' select   ', false], ['E', true], [' use / wear   ', false], ['drag', true], [' equip   ', false], ['A/D', true], [' turn   ', false], ['I', true], [' close', false]];
+const HINTS = [['W/A/S/D', true], [' select   ', false], ['E', true], [' use / wear   ', false], ['drag', true], [' equip   ', false], ['A/D', true], [' turn   ', false], ['B', true], [' spellbook   ', false], ['I', true], [' close', false]];
 
 /**
  * @param {object} o
@@ -39,6 +39,7 @@ const HINTS = [['W/A/S/D', true], [' select   ', false], ['E', true], [' use / w
  * @param {(i:number)=>string} [o.slotLockText] OB-156: detail line for a locked cell that holds an item
  * @param {(i:number)=>boolean} [o.isSlotDisabled] host-owned pack locks @param {boolean} [o.characterKey] false: C belongs to crafting
  * @param {{assign:(n:number,id:string)=>boolean}} [o.quickbar] 1-4 over an item
+ * @param {{ids:()=>string[], tierOf:(id:string)=>number, equip:(id:string)=>boolean, assign:(n:number,id:string)=>boolean}} [o.spellbook] SPELLBOOK-01: B toggles the SPELLBOOK page (learned spells only); E = right hand, 1-4 = quick bar
  * @param {object} [o.character] {equipmentOf, createPreview, charCache, getLook, kit, onGearChanged}; absent = no gear slots / model
  * @param {object} [o.layout] overrides for LAYOUT
  */
@@ -89,6 +90,33 @@ export function createInventoryScreen(o) {
   const eq = () => (ch.equipmentOf ? ch.equipmentOf() : null);
   const say = (text, fg) => { if (o.toast && o.toast.say) o.toast.say(text, fg); };
   const setFlash = (n, kind, ms) => { flash.node = n; flash.kind = kind; flash.until = t + ms / 1000; };
+  // ---- SPELLBOOK page (SPELLBOOK-01, D-099): learned spells only, replaces the pack grid while shown ----
+  let page = 0, spCur = 0; // page 1 = spellbook
+  const spIds = () => (o.spellbook ? o.spellbook.ids() : []);
+  function spellStep(input) {
+    const ids = spIds();
+    if (spCur >= ids.length) spCur = Math.max(0, ids.length - 1);
+    if (input.pressed('KeyW') || input.pressed('ArrowUp')) spCur = Math.max(0, spCur - 1);
+    if (input.pressed('KeyS') || input.pressed('ArrowDown')) spCur = Math.min(ids.length - 1, spCur + 1);
+    const id = ids[spCur];
+    if (!id) return;
+    if (input.pressed('KeyE') || input.pressed('Enter')) { if (o.spellbook.equip(id)) { say(defs[id].name + ' in your right hand', C.heroGreen); if (o.onHandsChanged) o.onHandsChanged(); } else say('Cannot be placed there', C.ember); }
+    for (let n = 0; n < 4; n++) if (input.pressed(DIGIT_CODES[n])) { if (o.spellbook.assign(n, id)) say('Quick slot ' + (n + 1) + ': ' + defs[id].name, C.heroGreen); else say('Cannot be placed on the quick bar', C.ember); }
+  }
+  function drawSpellbook() {
+    for (let y = 2; y < 27; y++) for (let x = 1; x < L.sepCol; x++) put(x, y, 32, C.uiText, bg);
+    text(L.pack.x + 1, L.titleRow, ' SPELLBOOK ', slotCfg.selected.fg, bg);
+    const ids = spIds();
+    if (!ids.length) { text(L.pack.x + 2, 5, 'No spells learned yet.', C.uiDim, bg); return; }
+    for (let i = 0; i < ids.length; i++) {
+      const d = defs[ids[i]], sp = d.spellbook || {}, y = 3 + i * 6, sel = i === spCur;
+      text(L.pack.x, y, (sel ? '> ' : '  ') + d.name + '   Tier ' + o.spellbook.tierOf(ids[i]), sel ? slotCfg.selected.fg : C.uiText, bg);
+      text(L.pack.x + 2, y + 1, 'Mana ' + (sp.mana || '-'), C.uiHint, bg);
+      text(L.pack.x + 2, y + 2, sp.blurb || d.desc || '', C.uiDim, bg);
+    }
+    text(L.pack.x, 25, 'E: right hand    1-4: quick bar', C.uiHint, bg);
+  }
+
   function wornId(slot) { const e = eq(); if (!e) return null; if (slot === 'quiver') return e.quiver ? e.quiver.id : null; return e[slot] || null; }
   function idAt(node) {
     if (node.kind === 0) return wornId(node.slot);
@@ -207,7 +235,7 @@ export function createInventoryScreen(o) {
     yaw.reset(); subj.yawDeg = 180; flash.kind = 0; tipCur = -1; refreshModel();
     if (o.onOpen) o.onOpen();
   }
-  function doClose() { isOpen = false; turning = false; dragSrc = -1; if (o.onClose) o.onClose(); }
+  function doClose() { isOpen = false; page = 0; turning = false; dragSrc = -1; if (o.onClose) o.onClose(); }
 
   // ---- drawing helpers (hoisted: draw() must not create closures per frame) ----
   let U = null;
@@ -303,6 +331,8 @@ export function createInventoryScreen(o) {
         return;
       }
       if (input.pressed('Escape') || kI || kC || kTab) { doClose(); if (input.consumePressed) input.consumePressed(); return; }
+      if (input.pressed('KeyB') && o.spellbook) { page ^= 1; if (input.consumePressed) input.consumePressed(); return; }
+      if (page === 1) { spellStep(input); if (input.consumePressed) input.consumePressed(); return; }
       // 1-4 while an item is hovered / selected assigns it to that quick-bar slot
       if (o.quickbar) {
         for (let n = 0; n < 4; n++) {
@@ -422,11 +452,14 @@ export function createInventoryScreen(o) {
       for (let i = 0; i < tipLines.length; i++) text(L.details.x, L.details.y + i, tipLines[i], tipFg[i], bg);
       // the dragged icon rides the pointer
       if (dragSrc >= 0 && dragMoved) { const did = idAt(nodes[dragSrc]); if (did) iconAt(rx - 2, ry - 1, did, slotCfg.selected.innerBg); }
-      // key hints (gold keys); no Esc text anywhere
+      if (page === 1) drawSpellbook(); // over the pack grid + details
+      drawHints();
+    },
+  };
+  function drawHints() { // key hints (gold keys); no Esc text anywhere
       let hl = 0; for (let i = 0; i < HINTS.length; i++) hl += HINTS[i][0].length;
       let hx = (P.w - hl) >> 1;
       for (let i = 0; i < HINTS.length; i++) { text(hx, L.hintRow, HINTS[i][0], HINTS[i][1] ? S.keyHints.keyFg : S.keyHints.fg, bg); hx += HINTS[i][0].length; }
-    },
-  };
+  }
   return view;
 }

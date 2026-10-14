@@ -8,7 +8,7 @@
 // Keys act per item kind: sword -> main + melee set; bow -> ranged set; shield -> toggles `off`; potion/food -> use one.
 // A sip (potion) takes SIP_STEPS but NEVER locks movement (owner rule): it only blocks a second drink meanwhile.
 // Rule 15 (sim/**): no Math.random, no trig, no wall clock; nothing allocates per step.
-import { equip, unequip } from './equipment.js';
+import { equip, unequip, equipSpell } from './equipment.js';
 import { countOf, removeItem } from './inventory.js';
 
 export const QB_SLOTS = 6, HAND_SLOTS = 2, KEY_SLOTS = 4, LMB = 0, RMB = 1;
@@ -21,6 +21,7 @@ export const POTION_ID = 'potion.hp';
 export function owns(player, id) {
   const c = player.components || {}, inv = c.inventory, eq = c.equipment;
   if (inv && countOf(inv, id) > 0) return true;
+  if (c.spellbook && c.spellbook.learned[id]) return true; // SPELLBOOK-01
   if (!eq) return false;
   for (const k of Object.keys(eq)) { if (k === 'set') continue; const v = eq[k]; if (v === id || (v && v.id === id)) return true; }
   return false;
@@ -94,7 +95,7 @@ export function assign(player, defs, slot, id) {
   if (slot < HAND_SLOTS) {
     const es = d.equip && d.equip.slot, inv = c.inventory, eq = c.equipment;
     if (!inv || !eq || !(slot === LMB ? (es === 'main' || es === 'ranged') : es === 'off')) return false;
-    if (eq[es] !== id && !equip(inv, eq, defs, id)) return false;
+    if (eq[es] !== id && !(d.kind === 'spell' ? c.spellbook && c.spellbook.learned[id] && equipSpell(inv, eq, defs, id) : equip(inv, eq, defs, id))) return false; // SPELLBOOK-01: spells come from the book
     if (es === 'main') eq.set = 'melee'; else if (es === 'ranged') eq.set = 'ranged';
     for (let i = HAND_SLOTS; i < QB_SLOTS; i++) if (qb[i] === id) qb[i] = null;
     c.quickbarSeen[id] = 1;
@@ -162,7 +163,7 @@ export function createQuickbar(defs, hpPerHeart = HP_PER_HEART) {
       else if (s === 'ranged') { if (eq.ranged === id || equip(inv, eq, defs, id)) { eq.set = 'ranged'; res = 'bow'; } }
       else if (s === 'off') {
         if (eq.off === id) res = unequip(inv, eq, defs, 'off') ? 'shield_off' : 'refuse';
-        else if (equip(inv, eq, defs, id)) { eq.set = 'melee'; res = 'shield_on'; }
+        else if (d.kind === 'spell' ? c.spellbook && c.spellbook.learned[id] && equipSpell(inv, eq, defs, id) : equip(inv, eq, defs, id)) { eq.set = 'melee'; res = 'shield_on'; } // SPELLBOOK-01: a spell comes from the book
       }
       syncHandSlots(player);
       return res;

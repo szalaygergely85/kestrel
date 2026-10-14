@@ -174,7 +174,7 @@ function stepAll(hands, items, p, l, r, gate) {
 }
 // ---- save/load round trip of the hands + start states ---------------------------------------------------------
 {
-  ok('START_DEMO shape', START_DEMO.right === 'spell.fireball' && START_DEMO.left === null && START_DEMO.pack.length === 1);
+  ok('START_DEMO shape', START_DEMO.right === 'spell.fireball' && START_DEMO.left === null && START_DEMO.pack.length === 0);
   ok('START_FULL empty', START_FULL.pack.length === 0 && START_FULL.left === null && START_FULL.right === null);
   const world = new World({ assets });
   world.addEntity({ id: 'player', transform: { x: 1, y: 1, z: 0, yawDeg: 0 }, components: {} });

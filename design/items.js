@@ -73,7 +73,8 @@
       equip: { slot: 'main', tier: 'worn', def: 0, held: 'sword' }   // EQ-01
     },
     'spell.fireball': {
-      id: 'spell.fireball', name: 'Fireball', kind: 'spell', stackMax: 1, hand: true, inPack: true,
+      id: 'spell.fireball', name: 'Fireball', kind: 'spell', stackMax: 1, hand: true, inPack: false, // SPELLBOOK-01 (D-099): lives in the spellbook, never in the pack
+      spellbook: { tier: 1, mana: '5 / 10', blurb: 'Tap to throw, hold to charge.' },
       equip: { slot: 'off', tier: 'worn', def: 0 }, // FB-01 fix: hands are derived from equipment (OB-017); without an off-slot the spell could never reach a hand
       desc: 'A coal that answers the hand.',
       glyph: { ch: '*', c: 'flameMid' },

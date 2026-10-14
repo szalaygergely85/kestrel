@@ -138,6 +138,19 @@ for (const k of ['KeyI', 'KeyC', 'Tab']) {
   ptr(r4, 80, 10); r4.view.step(1 / 60, r4.input, true);
   ok('mouse drag of 10 px turns ~6 deg', Math.abs(r4.view.yawDeg - 186) < 0.5, String(r4.view.yawDeg));
 }
+// ---- SPELLBOOK-01: B opens the spellbook page; learned spells only ----
+{
+  const learned = [], bar = [];
+  const r = rig({ spellbook: { ids: () => learned, tierOf: () => 1, equip: (id) => { bar.push(['hand', id]); return true; }, assign: (n, id) => { bar.push([n, id]); return true; } } });
+  r.step('KeyI'); r.step('KeyB');
+  ok('spellbook page: empty book says so', /SPELLBOOK/.test(r.draw()) && /No spells learned/.test(r.draw()) && !/Fireball/.test(r.draw()));
+  learned.push('spell.fireball');
+  const t = r.draw();
+  ok('spellbook page lists name, tier, mana, blurb', /Fireball {3}Tier 1/.test(t) && /Mana 5 . 10/.test(t) && /Tap to throw/.test(t));
+  r.step('Digit2'); r.step('KeyE');
+  ok('spellbook: 1-4 assigns to the bar, E to the hand', JSON.stringify(bar) === JSON.stringify([[1, 'spell.fireball'], ['hand', 'spell.fireball']]));
+  r.step('KeyB'); ok('B again returns to the pack', /PACK/.test(r.draw()));
+}
 if (global.gc) {
   const r = rig(); r.step('KeyI'); r.draw(); for (let i = 0; i < 100; i++) r.view.draw(r.ui);
   global.gc(); const before = process.memoryUsage().heapUsed;

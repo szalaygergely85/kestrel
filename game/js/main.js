@@ -150,6 +150,7 @@ import { createShore } from './quest/seaEdge.js'; // SWIM-HOOKS-01
 import { createSafeSpots } from './quest/sim/safeSpots.js'; // OB-140
 import { createWading } from './quest/sim/wading.js'; // RIVER-04 (38.45 (3)): river wading around the player's integrate
 import { BOW_CFG } from './quest/bowConfig.js'; // EQ-09
+import { learnAndEquip, syncSpellbook, learnedIds, tierOf } from './quest/sim/spellbook.js'; // SPELLBOOK-01
 import { createQuickbar, ensureQuickbar, autoFill, assign as qbAssign, clearSlot as qbClear, syncHandSlots, HAND_SLOTS } from './quest/sim/quickbar.js'; // EQ-12 + QB-6
 import { createQuickbarDrag } from './quest/quickbarDrag.js'; // QB-6: drag and drop onto the bar while the menu is open
 import { createQuickbarView } from './quest/quickbarView.js'; // EQ-12 + D-068
@@ -232,7 +233,7 @@ const saveStorage = () => (demo.on ? demoStorage(getSaveStorage()) : getSaveStor
 // ME-19a: mesh GPU versus the rasterJS twin; one geometry-parity mode.
 const FEATURES = featuresFromParams(new URLSearchParams(window.location.search)); // not via filterDemoParams: dev flag
 let fbOn = false; // FB-01 (38.53): fireball usable (dev override or world.state['magic.fireball']); one live read per sim step + per present, never captured at boot
-const FB_LOCKED_IDS = { 'spell.fireball': 1, 'potion.mp': 1 }; // hidden/refused while locked
+const FB_LOCKED_IDS = { 'potion.mp': 1 }; // hidden/refused while locked
 const isGeometryCompare = (params.get('gpucompare') === '1' || params.get('gpucompare') === 'emissive');
 // ME-06 diagnostic: `&voxels=0` on either compare page empties the voxel
 // instance queue on both sides after each pose's feed, so a mesh-vs-oracle
@@ -1632,9 +1633,10 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       // adds it to the pack + left hand), so the demo pack holds the fireball only. `?demo=0` = empty pack.
       // An old save whose sword flag is already set migrates: sword in the pack + left hand.
       ensureInventory(playerHandle.data, startFor(params.get('demo') !== '0', fireballOn(engine.world, FEATURES))); // startConfig.js (fireball locked -> empty right hand)
-      if (!window.__fbEquipHooked) window.__fbEquipHooked = true, engine.events.on('magic.unlocked', () => { const c = playerHandle && playerHandle.data.components; if (c && c.inventory && c.equipment && itemDefs && c.equipment.off === null && c.equipment.set !== 'ranged') equipItem(c.inventory, c.equipment, itemDefs, 'spell.fireball'); }); // FB-01/03 fix: the unlock puts the spell into the free off hand (RMB); hands are derived from equipment, so inventory.right alone never held it
+      if (!window.__fbEquipHooked) window.__fbEquipHooked = true, engine.events.on('magic.unlocked', () => { if (playerHandle && itemDefs) learnAndEquip(playerHandle.data, itemDefs, 'spell.fireball'); }); // SPELLBOOK-01: learn into the book + free off hand // FB-01/03 fix: the unlock puts the spell into the free off hand (RMB); hands are derived from equipment, so inventory.right alone never held it
       if (world.state['tower.sword.taken'] && itemDefs) migrateSword(playerHandle.data.components.inventory, itemDefs);
       if (itemDefs) migrateEquipment(playerHandle.data, itemDefs); // EQ-02: old saves sword->main, shield->off (before initialState)
+      if (itemDefs) syncSpellbook(playerHandle.data, itemDefs, 'spell.fireball', fireballOn(engine.world, FEATURES)); // SPELLBOOK-01: old pack spell -> spellbook, pack slot freed
       // US-091a2 (37.16.3): corpse loot + toast. Own RNG stream (nav seed ^ salt) so the beast wander RNG is never
       // perturbed; `beast.loot` (quest/index.js) reaches this load's sim through setLootApi.
       if (loot) loot.dispose();
@@ -1713,6 +1715,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
       invView = itemDefs && window.ASSETS.uiStyle.inventory ? createInventoryScreen({
         style: window.ASSETS.uiStyle.inventory, tabOpens: false, items: window.ASSETS.items, rgb: assets.palette.rgb, toast: toasts,
         inventoryOf: () => (playerHandle && playerHandle.data.components.inventory) || null,
+        spellbook: itemDefs ? { ids: () => (playerHandle ? learnedIds(playerHandle.data) : []), tierOf: (id) => tierOf(playerHandle.data, id), equip: (id) => qbAssign(playerHandle.data, itemDefs, 1, id), assign: (n, id) => (fbOn || !FB_LOCKED_IDS[id]) && qbAssign(playerHandle.data, itemDefs, n + HAND_SLOTS, id) } : undefined, // SPELLBOOK-01
         slotLockText: () => 'Locked - learn fire first', // OB-156
         isSlotDisabled: (i) => { if (fbOn || !playerHandle) return false; const inv = playerHandle.data.components.inventory, sl = inv && inv.slots[i]; return !!(sl && sl.id && FB_LOCKED_IDS[sl.id]); }, // FB-01: spell + mana potion cells show as locked until unlocked (Items + Character tabs)
         healthOf: () => (playerHandle && playerHandle.data.components.health) || null,
