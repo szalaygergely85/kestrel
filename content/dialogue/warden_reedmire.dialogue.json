@@ -3,7 +3,7 @@
   "schema": 1,
   "id": "warden_reedmire",
   "speakers": {
-    "warden": {"label": "WARDEN"},
+    "warden": {"label": "ORLA"},
     "you": {"label": "YOU", "player": true}
   },
   "entry": [
@@ -11,7 +11,7 @@
   ],
   "nodes": {
     "warden.hello": {"end": true, "lines": [
-      "I keep this light. Nothing more to ask of me today."
+      "Orla. Mind your feet. The mire keeps what it takes."
     ], "speaker": "warden"}
   }
 }

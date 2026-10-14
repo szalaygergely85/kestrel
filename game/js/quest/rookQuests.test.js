@@ -54,7 +54,7 @@ const ready = talk(); assert.equal(ready.length, 6);
 assert.equal(st('mq.bend.call'), 4, 'handed in via dialogue'); assert.deepEqual(book.lastReward.items, [{ id: 'chart.river', n: 1 }]);
 assert.ok(state['mq.bend.call.done']);
 // OB-156 (QFIX-S5a-4): river road + stones are Rook's Accept/Not yet + hand-in talks too
-assert.equal(st('mq.river.road'), 1); assert.match(talk()[0], /road runs to the river/); assert.equal(st('mq.river.road'), 2, 'accepted via dialogue');
+assert.equal(st('mq.river.road'), 1); assert.match(talk()[0], /Paper says river/); assert.equal(st('mq.river.road'), 2, 'accepted via dialogue');
 book.feed({ type: 'area:entered', id: 'riverBank' }); er.mainSync(0); assert.equal(st('mq.river.road'), 3);
 talk(); assert.equal(st('mq.river.road'), 4, 'handed in via dialogue'); assert.equal(st('mq.ford.stones'), 1);
 assert.match(talk()[0], /Stones in the water/); assert.equal(st('mq.ford.stones'), 2);

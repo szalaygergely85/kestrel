@@ -3,7 +3,7 @@
   "schema": 1,
   "id": "warden_heath",
   "speakers": {
-    "warden": {"label": "WARDEN"},
+    "warden": {"label": "NELL"},
     "you": {"label": "YOU", "player": true}
   },
   "entry": [
@@ -11,7 +11,7 @@
   ],
   "nodes": {
     "warden.hello": {"end": true, "lines": [
-      "I keep this light. Nothing more to ask of me today."
+      "Nell. Heather and boars, and the heather's winning."
     ], "speaker": "warden"}
   }
 }

@@ -268,8 +268,8 @@
           "The stone by the track. Read it up close."
         ],
         "ready": [
-          "Bridge stone. Pulled down from the west bank.",
-          "Behind it, in the grass, ten arrows tied with twine."
+          "The bridge stone. Aye. Pulled down, not washed out.",
+          "Not my work. Older than me. Here, arrows."
         ],
         "done": [
           "The stone stands. The river runs where the bridge was."
@@ -304,7 +304,23 @@
           }
         ]
       },
-      "returnText": "Bring the sign arm to the post-keeper"
+      "returnText": "Bring the sign arm to the post-keeper",
+      "lines": {
+        "offer": [
+          "My signpost lost its west arm in high water.",
+          "It's in the shallows somewhere. Find it for me?"
+        ],
+        "active": [
+          "The sign's west arm. Somewhere in the shallows."
+        ],
+        "ready": [
+          "That's it. West points west again.",
+          "Arrows. For your wet sleeves."
+        ],
+        "done": [
+          "West points west. As it should."
+        ]
+      }
     },
     {
       "id": "sq.ow.wolves",
@@ -343,7 +359,23 @@
           }
         ]
       },
-      "returnText": "Back to Hesk"
+      "returnText": "Back to Hesk",
+      "lines": {
+        "offer": [
+          "Wolves still circle the goose pen.",
+          "Drive three off. I pay in arrows."
+        ],
+        "active": [
+          "Three wolves. The goose pen. Go."
+        ],
+        "ready": [
+          "Three gone. The geese can sleep.",
+          "Arrows, and a health potion. Fair pay."
+        ],
+        "done": [
+          "Geese counted. All there."
+        ]
+      }
     },
     {
       "id": "sq.ow.boars",
@@ -370,7 +402,23 @@
       "reward": {
         "table": "gear.t2"
       },
-      "returnText": "Back to Hesk"
+      "returnText": "Back to Hesk",
+      "lines": {
+        "offer": [
+          "Two boars rooting on the west bank.",
+          "Drive them off. Mind the tusks."
+        ],
+        "active": [
+          "Two boars. West bank. Mind the tusks."
+        ],
+        "ready": [
+          "The bank's quiet. Good.",
+          "Take this. Old gear, but oiled."
+        ],
+        "done": [
+          "A quiet bank. A quiet night. Rare out here."
+        ]
+      }
     },
     {
       "id": "sq.ow.parcel",
@@ -398,7 +446,23 @@
           }
         ]
       },
-      "returnText": "Take it to Dorrin"
+      "returnText": "Take it to Dorrin",
+      "lines": {
+        "offer": [
+          "This parcel goes to the forge. For the smith.",
+          "Don't open it. It's his."
+        ],
+        "active": [
+          "The parcel. The smith, at the forge."
+        ],
+        "ready": [
+          "About time. Don't ask what's in it.",
+          "Here. Hesk would want you paid."
+        ],
+        "done": [
+          "He got it? Then he'll be up all night."
+        ]
+      }
     },
     {
       "id": "sq.ow.ford",
@@ -427,7 +491,23 @@
           }
         ]
       },
-      "returnText": "Back to Dorrin"
+      "returnText": "Back to Dorrin",
+      "lines": {
+        "offer": [
+          "Nobody's looked at the far bank in a while.",
+          "Cross the ford. Look around. Come back."
+        ],
+        "active": [
+          "Ford. Far bank. Look, then back here."
+        ],
+        "ready": [
+          "Quiet over there? Good. Quiet is good.",
+          "Arrows. Don't lose them all at once."
+        ],
+        "done": [
+          "Far bank's quiet. I'll sleep, then."
+        ]
+      }
     },
     {
       "id": "sq.ow.barley",
@@ -458,7 +538,23 @@
           }
         ]
       },
-      "returnText": "Back to Hesk"
+      "returnText": "Back to Hesk",
+      "lines": {
+        "offer": [
+          "The barley gate owes us a sheaf.",
+          "Bring it here before the crows find it."
+        ],
+        "active": [
+          "The sheaf. At the barley gate."
+        ],
+        "ready": [
+          "A good sheaf. Bread for a week.",
+          "Arrows, and a health potion. For the carrying."
+        ],
+        "done": [
+          "Bread tonight. Thank the barley, not me."
+        ]
+      }
     },
     {
       "id": "sq.ow.range",
@@ -507,7 +603,23 @@
           }
         ]
       },
-      "returnText": "Back to Hesk"
+      "returnText": "Back to Hesk",
+      "lines": {
+        "offer": [
+          "Three targets stand along the track. Can you shoot?",
+          "Hit all three. I'll be counting."
+        ],
+        "active": [
+          "Three targets, along the track. Hit them all."
+        ],
+        "ready": [
+          "Three. I counted. You can shoot.",
+          "More arrows. Waste them on targets, not on us."
+        ],
+        "done": [
+          "You shoot like you mean it. Good."
+        ]
+      }
     },
     {
       "id": "sq.ow.raid",
@@ -540,7 +652,23 @@
           }
         ]
       },
-      "returnText": "Back to Hesk"
+      "returnText": "Back to Hesk",
+      "lines": {
+        "offer": [
+          "The pack comes back after dark. For the geese.",
+          "Stand at the goose pen tonight. Drive them off."
+        ],
+        "active": [
+          "After dark. The goose pen. Hold it."
+        ],
+        "ready": [
+          "The pen held. You held. Thank you.",
+          "Two health potions, and arrows. Sleep now."
+        ],
+        "done": [
+          "Geese counted. All here. Again."
+        ]
+      }
     }
   ]
 }

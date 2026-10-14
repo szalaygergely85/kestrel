@@ -4,59 +4,88 @@
     10
   ],
   "quests": [
-    {"id": "sq.reg.glasswater", "lines": {"done": [
-      "The water goes still. The bowl glows clear and steady."
+    {"id": "sq.reg.glasswater", "lines": {"active": [
+      "Three boars, in the Glasswater shallows."
+    ], "done": [
+      "Still water again. See how the light sits on it."
     ], "offer": [
-      "The light flickers: three boars, mud in the still water."
+      "The light shows boars in the shallows. Three.",
+      "Drive them out of the water, then come back."
     ]}, "requires": [{"flag": "waystone.ws_glasswater.woken"}], "returnText": "Back to the Glasswater warden", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "warden_glasswater", "steps": [{"journal": "The Glasswater bowl showed boars churning the shallows. Drive off three, then come back to the light.", "objText": "Drive off 3 boars", "params": {"count": 3, "kind": "boar"}, "template": "kill"}], "title": "Tusks at the Water"},
-    {"id": "sq.reg.northwood", "lines": {"done": [
-      "The pines are quiet. The waystone hums one long, even note."
+    {"id": "sq.reg.northwood", "lines": {"active": [
+      "Three wolves. Under the pines, near the stone."
+    ], "done": [
+      "The pines are quiet. Listen. Nothing."
     ], "offer": [
-      "Teal shapes in the light: three wolves, low among the",
-      "pines."
+      "Three wolves circle the stones, under the pines.",
+      "Drive them off, then come back to me."
     ]}, "requires": [{"flag": "waystone.ws_northwood.woken"}], "returnText": "Back to the Northwood warden", "reward": {"items": [{"id": "arrow", "n": 15}]}, "site": "warden_northwood", "steps": [{"journal": "Northwood Waystone showed three wolves circling its stones. Drive them off, then return to the waystone.", "objText": "Drive off 3 wolves", "params": {"count": 3, "kind": "wolf"}, "template": "kill"}], "title": "Wolves Under the Pines"},
-    {"id": "sq.reg.highPastures", "lines": {"done": [
-      "The grass lies flat and still. The hum settles, warm."
+    {"id": "sq.reg.highPastures", "lines": {"active": [
+      "Two bears in the high grass. Both of them."
+    ], "done": [
+      "Grass lies flat. The bears went over the hill."
     ], "offer": [
-      "Wind moves in the light, and two heavy shapes move",
-      "through it."
+      "Two bears, out in the high grass. Too close.",
+      "Drive both off, then come back to me."
     ]}, "requires": [{"flag": "waystone.ws_highPastures.woken"}], "returnText": "Back to the Pasture warden", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "warden_highPastures", "steps": [{"journal": "The Pasture Waystone flickered with two bears in the high grass. Drive both off, then return.", "objText": "Drive off 2 bears", "params": {"count": 2, "kind": "bear"}, "template": "kill"}], "title": "Bears in the High Grass"},
-    {"id": "sq.reg.ashMile", "lines": {"done": [
-      "The ash settles. The bowl burns a little brighter."
+    {"id": "sq.reg.ashMile", "lines": {"active": [
+      "Two boars in the black ash. Go on."
+    ], "done": [
+      "The ash settles. The light burns a bit brighter."
     ], "offer": [
-      "Grey light on the ground: two boars, tusks deep in the",
-      "ash."
+      "Two boars, rooting in the black ash.",
+      "Drive them off and come back. Mind the dust."
     ]}, "requires": [{"flag": "waystone.ws_ashMile.woken"}], "returnText": "Back to the Ash Mile warden", "reward": {"items": [{"id": "arrow", "n": 15}]}, "site": "warden_ashMile", "steps": [{"journal": "Two boars root through the black ash near Ash Mile Waystone. Drive them off and come back to the light.", "objText": "Drive off 2 boars", "params": {"count": 2, "kind": "boar"}, "template": "kill"}], "title": "Rooting in the Ash"},
-    {"id": "sq.reg.downs", "lines": {"done": [
-      "Four short pulses, then one long. The downs are quiet."
+    {"id": "sq.reg.downs", "lines": {"active": [
+      "Four boars, on the long green. Go."
+    ], "done": [
+      "Quiet green. Four fewer mouths on it."
     ], "offer": [
-      "Four short pulses. Four dark shapes on the long green."
+      "Four boars loose on the green. Four.",
+      "Drive them off the downs, then come back."
     ]}, "requires": [{"flag": "waystone.ws_downs.woken"}], "returnText": "Back to the Downs warden", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "warden_downs", "steps": [{"journal": "The Downs Waystone pulsed four times: four boars loose on the green. Drive them off, then return.", "objText": "Drive off 4 boars", "params": {"count": 4, "kind": "boar"}, "template": "kill"}], "title": "Four on the Downs"},
-    {"id": "sq.reg.signalHill", "lines": {"done": [
-      "The pattern runs clean again. The hill answers."
+    {"id": "sq.reg.signalHill", "lines": {"active": [
+      "Three wolves, on the slope below the hill."
+    ], "done": [
+      "The light runs clean. The hill answers again."
     ], "offer": [
-      "The pattern breaks. Three wolves on the slope below."
+      "Three wolves on the slope below. The light stutters.",
+      "Drive them off, then come back up to me."
     ]}, "requires": [{"flag": "waystone.ws_signalHill.woken"}], "returnText": "Back to the Signal Hill warden", "reward": {"items": [{"id": "arrow", "n": 20}]}, "site": "warden_signalHill", "steps": [{"journal": "Wolves prowl Signal Hill and its waystone stutters. Drive off three of them, then return to it.", "objText": "Drive off 3 wolves", "params": {"count": 3, "kind": "wolf"}, "template": "kill"}], "title": "The Hill Pack"},
-    {"id": "sq.reg.heath", "lines": {"done": [
-      "The heather springs back. The hum bends with it."
+    {"id": "sq.reg.heath", "lines": {"active": [
+      "Three boars in the heather. Near the stone."
+    ], "done": [
+      "The heather springs back. It always does."
     ], "offer": [
-      "The heather shakes in the light. Three boars, rooting."
+      "Three boars tearing up the heather by the stone.",
+      "Drive them off, then come back here."
     ]}, "requires": [{"flag": "waystone.ws_heath.woken"}], "returnText": "Back to the Heath warden", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "warden_heath", "steps": [{"journal": "Three boars are tearing up the heather by Heath Waystone. Drive them off, then come back.", "objText": "Drive off 3 boars", "params": {"count": 3, "kind": "boar"}, "template": "kill"}], "title": "Boars in the Heather"},
-    {"id": "sq.reg.reedmire", "lines": {"done": [
-      "The reeds hiss and settle. The black water goes still."
+    {"id": "sq.reg.reedmire", "lines": {"active": [
+      "Three boars in the black water. In the reeds."
+    ], "done": [
+      "Reeds hiss, water stills. That's peace, here."
     ], "offer": [
-      "The reeds thrash in the light. Three boars, deep in the",
-      "mire."
+      "Three boars, wallowing in the black water.",
+      "Drive them out of the reeds, then come back."
     ]}, "requires": [{"flag": "waystone.ws_reedmire.woken"}], "returnText": "Back to the Reedmire warden", "reward": {"items": [{"id": "arrow", "n": 20}]}, "site": "warden_reedmire", "steps": [{"journal": "Boars wallow in the black water near Reedmire Waystone. Drive off three of them, then return.", "objText": "Drive off 3 boars", "params": {"count": 3, "kind": "boar"}, "template": "kill"}], "title": "Boars in the Reeds"},
-    {"id": "sq.reg.strand", "lines": {"done": [
-      "Far inland, the Downs light blinks back. The sea hums."
+    {"id": "sq.reg.strand", "lines": {"active": [
+      "Five arrows to Edda, at the Downs Waystone."
+    ], "done": [
+      "Far inland, the Downs light blinks back. She has them."
     ], "offer": [
-      "The light draws five thin lines, all pointing inland."
+      "The Downs warden is short of arrows. Edda.",
+      "Carry five to her, at the Downs Waystone, inland."
+    ], "ready": [
+      "Arrows, from the Strand? Kit remembered.",
+      "Go back and tell Kit. He'll want to know."
     ]}, "requires": [{"flag": "waystone.ws_strand.woken"}], "returnText": "Back to the Strand warden", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "warden_strand", "steps": [{"journal": "The Strand light points inland, where the boars run. Carry five arrows to the Downs warden.", "objText": "Carry the arrows to the Downs warden", "params": {"count": 5, "item": "arrow", "to": "warden_downs"}, "template": "deliver"}], "title": "Arrows for the Downs"},
-    {"id": "sq.reg.whitecombs", "lines": {"done": [
-      "The rock is clear. The bowl rings like cold glass."
+    {"id": "sq.reg.whitecombs", "lines": {"active": [
+      "Two bears, on the bare rock below the snow."
+    ], "done": [
+      "Rock's clear. Hear it? The light rings like glass."
     ], "offer": [
-      "Snow light on the rock. Two bears on the rock below it."
+      "Two bears den on the bare rock, below the snow.",
+      "Drive them off, then come back to me."
     ]}, "requires": [{"flag": "waystone.ws_whitecombs.woken"}], "returnText": "Back to the Combfoot warden", "reward": {"items": [{"id": "potion.hp", "n": 3}]}, "site": "warden_whitecombs", "steps": [{"journal": "Two bears den on the bare rock below the Whitecombs. Drive them off and return to Combfoot Waystone.", "objText": "Drive off 2 bears", "params": {"count": 2, "kind": "bear"}, "template": "kill"}], "title": "Bears Below the Snow"}
   ],
   "region": "regions",

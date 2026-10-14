@@ -32,12 +32,12 @@ const talk = (npc) => {
 const st = (id) => book.statusOf(id);
 book.feed({ type: 'flag:set', key: 'lore.fordMark.read', value: true }); book.feed({ type: 'area:entered', id: 'northLook' });
 // path + fence are Hesk's main quests now: Accept at Hesk, do, hand in at Hesk
-assert.equal(st('mq.ow.path'), 1); assert.match(talk('hesk')[0], /Smoke on the wind/); assert.equal(st('mq.ow.path'), 2, 'path accepted at Hesk');
+assert.equal(st('mq.ow.path'), 1); assert.match(talk('hesk')[0], /close enough/); assert.equal(st('mq.ow.path'), 2, 'path accepted at Hesk');
 book.feed({ type: 'area:entered', id: 'owPath' }); er.mainSync(0); assert.equal(st('mq.ow.path'), 3); talk('hesk'); assert.equal(st('mq.ow.path'), 4, 'path handed in at Hesk');
 assert.equal(st('mq.ow.fence'), 1); talk('hesk'); assert.equal(st('mq.ow.fence'), 2, 'fence accepted at Hesk');
 for (const id of ['wolf1', 'wolf2', 'wolf3', 'wolf4', 'wolf5']) book.feed({ type: 'beast:died', id });
 er.mainSync(0); assert.equal(st('mq.ow.fence'), 3); talk('hesk'); assert.equal(st('mq.ow.fence'), 4, 'fence handed in at Hesk'); assert.equal(st('mq.ow.names'), 1, 'names open after the fence');
-assert.match(talk('hesk')[0], /Hands where I can see them/);
+assert.match(talk('hesk')[0], /Now, before the gate opens/);
 assert.equal(st('mq.ow.names'), 3, 'accept + talk in ONE conversation = READY, no auto hand-in'); assert.match(talk('hesk')[0], /^Wick./); assert.equal(st('mq.ow.names'), 4, 'handed in by talking to Hesk again');
 assert.ok(book.lastReward.items.some((i) => /^gear\./.test(i.id)), 'gear T3 reward');
 assert.equal(st('mq.ow.relay'), 1); talk('hesk'); assert.equal(st('mq.ow.relay'), 2, 'Hesk gives the relay job');
