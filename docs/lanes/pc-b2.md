@@ -1237,3 +1237,7 @@ NEEDS B1-main: pass `waterNav: buildWaterNav(world, nav.grid)` + real `playerMax
 Tests: lookat/look/blend/dialog/rig 24/24 PASS, check-deps OK.
 - OB-152 step 2 (ob152c, kestrel-4): loose chests 2 -> 0. chestRook (974,1058) stays; guard boars moved boarF1 (958,1078)->(961,1075), boarF2 (962,1081)->(962,1074) (now ~21/20 m from it; also in tools/gen-poi-props.mjs). chestBed (lake-bed, 1240,505) not moved: dive-guarded, exempt in chest-enemy-density.mjs (DIVE_GUARDED, like lint R8_OK).
 - Check: `node tools/chest-enemy-density.mjs --max-loose 0` exit 0 (now in chest-enemy-density.test.mjs). Walk: ford boars now sit ~20 m SW of the Rook ruin chest.
+### BEAST-D1-CROC programmer half (kestrel-2, branch beastd1croc) -> po-review
+palette.js: colours crocHide/crocSeam/crocMottle + materials scale_croc/_dark/_light (before granite_light); detail-pass.js: same 3 (seeds 1226-1228). Croc now on FINAL mats (crocFx.finalMats true).
+`tools/voxel-crocodile.test.mjs` (8 asserts: validate 0/0, LOD0 2718 tris <= 3500, 13 clips, snap key 200 ms jaw shut, blend==legRig speeds, clipFor targets, FINAL mats); croc added to validate-content.mjs model list.
+Run: 12 suites PASS, validate-content OK, check-deps OK (no model fixes needed). Not in game/index.html yet (BEAST-09 spawns).

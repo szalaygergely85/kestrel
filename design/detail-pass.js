@@ -563,6 +563,33 @@
       face: { set: 'rubbleFace', mid: 'rubbleFace', far: 'rubbleFace' },
       lod: { mid: 12, far: 25, dither: 3 }
     },
+    scale_croc: {
+      v1: 'scale_croc', seed: 1226,
+      desc: 'VOXEL BEASTS (crocodile). Scaled hide material.',
+      albedo: 0.62, bgK: 0.12, detail: 32, jitter: 0.06,
+      tones: [['crocHide', 3], ['crocSeam', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'rubbleFace', mid: 'rubbleFace', far: 'rubbleFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    scale_croc_dark: {
+      v1: 'scale_croc_dark', seed: 1227,
+      desc: 'VOXEL BEASTS (crocodile). Scaled hide material.',
+      albedo: 0.45, bgK: 0.12, detail: 32, jitter: 0.06,
+      tones: [['crocSeam', 3], ['crocSeam', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'rubbleFace', mid: 'rubbleFace', far: 'rubbleFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    scale_croc_light: {
+      v1: 'scale_croc_light', seed: 1228,
+      desc: 'VOXEL BEASTS (crocodile). Scaled hide material.',
+      albedo: 0.80, bgK: 0.12, detail: 32, jitter: 0.06,
+      tones: [['crocMottle', 3], ['crocSeam', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'rubbleFace', mid: 'rubbleFace', far: 'rubbleFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
     granite_light: {
       v1: 'granite_light', seed: 217,
       desc: 'VOXEL PROPS (boulder). The upper band of the boulder under its moss cap: cool pale granite with bright ' +

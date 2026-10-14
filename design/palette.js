@@ -135,6 +135,9 @@
     brick:          '#9a4a36',
     brickDark:      '#6c3226',
     mossLight:      '#93ad4c',
+    crocHide:       '#4a5030', // BEAST-D1-CROC scale_croc: dark olive-brown hide
+    crocSeam:       '#262b1c', // scale_croc_dark: near-black seams
+    crocMottle:     '#7d7a45', // scale_croc_light: olive-tan mottles
     fogV2:          '#1f2638', // v2 interior fog: bg target (dark cool)
     fogV2Glyph:     '#5a6a90', // v2 interior fog: fg target (lighter haze, glyphs stay visible)
     // --- D-011 "Kestrel" reskin (v1.9). Fantasy first: magic = aether teal; brass / copper ONLY on machines. ---
@@ -984,6 +987,27 @@
     base: 'stoneDark', albedo: 0.62, ramp: 'stone', bg: { mode: 'darken', k: 0.12 }, textureFade: [4, 12],
     texture: { w: 4, h: 4, scale: [16, 16], key: {
       a: { shade: 1.00 }, c: { shade: 0.70, tint: 'ashDark', amount: 0.5 }, x: { shade: 0.55, glyph: ',' }
+    }, rows: ['aaca', 'caaa', 'aaxa', 'acaa'] }
+  };
+  materials.scale_croc = {
+    desc: 'VOXEL BEASTS (crocodile). Base hide: dark olive-brown scales.',
+    base: 'crocHide', albedo: 0.62, ramp: 'stone', bg: { mode: 'darken', k: 0.12 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, c: { shade: 0.70, tint: 'crocSeam', amount: 0.5 }, x: { shade: 0.55, glyph: ',' }
+    }, rows: ['aaca', 'caaa', 'aaxa', 'acaa'] }
+  };
+  materials.scale_croc_dark = {
+    desc: 'VOXEL BEASTS (crocodile). Scute seams, keels, tail bands: near-black.',
+    base: 'crocSeam', albedo: 0.45, ramp: 'stone', bg: { mode: 'darken', k: 0.12 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, c: { shade: 0.70, tint: 'crocSeam', amount: 0.5 }, x: { shade: 0.55, glyph: ',' }
+    }, rows: ['aaca', 'caaa', 'aaxa', 'acaa'] }
+  };
+  materials.scale_croc_light = {
+    desc: 'VOXEL BEASTS (crocodile). Olive-tan mottles and lit keel tips.',
+    base: 'crocMottle', albedo: 0.80, ramp: 'stone', bg: { mode: 'darken', k: 0.12 }, textureFade: [4, 12],
+    texture: { w: 4, h: 4, scale: [16, 16], key: {
+      a: { shade: 1.00 }, c: { shade: 0.70, tint: 'crocSeam', amount: 0.5 }, x: { shade: 0.55, glyph: ',' }
     }, rows: ['aaca', 'caaa', 'aaxa', 'acaa'] }
   };
   materials.granite_light = {
