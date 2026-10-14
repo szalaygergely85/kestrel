@@ -5,6 +5,9 @@
 
 export const TRAVEL_FADE_SEC = 0.35;
 export const TRAVEL_MIN_DIST_M = 6;
+export const TOAST_NONE = 'Wake a waystone to travel.'; // WMP-10 toast.travel.none
+export const TOAST_UNKNOWN = 'That waystone is out of reach.'; // toast.travel.unknown ('unknown'/'bounds')
+export const TOAST_LOCKED = 'You have not walked that far yet.'; // toast.travel.locked
 export const TOAST_HERE = 'Already here.'; // docs/story.md toast.travel.here
 export const TOAST_SEC = 2.5;
 

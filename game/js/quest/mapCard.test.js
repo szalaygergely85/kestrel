@@ -117,9 +117,9 @@ function makeWorld(state) { return { state }; }
   cv.onTravel = (id) => got.push(id);
   input._press('KeyM'); stepMapCard(world, assets, 1 / 60, input, 100, 0);
   ok('open: one woken point shows digit 1, relay stays o', cellAt(100, 80) === '1' && cellAt(300, 80) === 'o' && cv.travelLine.includes('1 The Waystone'));
-  ok('travel line has header and no second entry', cv.travelLine.startsWith('Travel: press a number') && !cv.travelLine.includes('Bend'));
+  ok('travel line has header and no second entry', cv.travelLine.startsWith('Travel: 1-9, or arrows and Enter') && !cv.travelLine.includes('Bend'));
   let bottom = ''; for (let x = 0; x < 96; x++) bottom += String.fromCharCode(art.codes[15 * 96 + x]);
-  ok('travel line drawn on the bottom row', bottom.includes('Travel: press a number'));
+  ok('travel line drawn on the bottom row', bottom.includes('Travel: 1-9, or arrows and Enter'));
   input._clearFrame(); input._press('Digit2'); stepMapCard(world, assets, 1 / 60, input, 100, 0);
   ok('digit without target = normal close, no travel', got.length === 0 && getMapPanel().state === 'closing');
   for (let i = 0; i < 40; i++) stepMapCard(world, assets, 1 / 60, input, 100, 0);

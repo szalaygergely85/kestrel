@@ -1132,3 +1132,9 @@ statsConfig.js REQ_* + stats.js `reqValue/itemReqAttr/itemReqValue/meetsReq(tota
 
 ### NAV-LAYERS-01d ford (kestrel-3, 2026-10-14) -> arch-review
 D-103: fordS1..S7 (have colliders) flagged `nav:"floors"`, `navGroup:"fordStones"`; world_m1 `nav.ford:{}` on (wade <0.6 m, cost 4); bridge TODO in beastNav.js now points to D-103. navFord.test 11 (real nav crosses Ford y 1062 where before it was partial; no deep wading; deterministic), navLayers01d flag count 36+7; OB-149 beastStuck still green. Beast routes near the river: ground beasts now cross at the ford (shallow wade + stones) instead of stopping at the bank; deep water elsewhere stays blocked.
+
+### WMP-10-APPLY (kestrel-3, 2026-10-14)
+Applied: banner names roadWest/outwall, 10 region journals (pack.json), RELAY_WAKE.ws_highPastures, travel header + TOAST_NONE/UNKNOWN/LOCKED consts (travel.js, not yet wired into main.js), regionAmbient.json cueNames labels. Tests updated: regionBanner (fixture blanks the 2 names, limit 17), mapCard header; 12 suites PASS, canonical/validate OK.
+
+### JOURNAL-GIVER-NAMES (kestrel-3, 2026-10-14)
+Wardens + postkeeper display names (Lin, Brenna, Ewan, Tull, Edda, Ivo, Nell, Orla, Kit, Sten, Bram) added to the single LABELS table in game/js/quest/errands.js (labelOf, used by main.js giverName fallback + lint R3). R3 = 0.
