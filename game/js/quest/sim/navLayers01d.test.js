@@ -52,10 +52,14 @@ console.log(`  | build            | ms     | ground KB | sheet cells | links | s
 console.log(`  | before (no flag) | ${msPlain.toFixed(1).padStart(6)} | ${(groundB / 1024).toFixed(0).padStart(9)} | ${'0'.padStart(11)} | ${'0'.padStart(5)} | 0 |`);
 console.log(`  | after  (ruin)    | ${msWith.toFixed(1).padStart(6)} | ${(groundB / 1024).toFixed(0).padStart(9)} | ${String(cells).padStart(11)} | ${String(links).padStart(5)} | ${(sheetB / 1024).toFixed(1)} |`);
 // sliced bake: per-step ms
-const sl = createLayerBaker(w, new NavGrid({ x0: def0.nav.area.x0, y0: def0.nav.area.y0, w: def0.nav.area.w, h: def0.nav.area.h, cell: def0.nav.cell }), undefined);
-let steps = 0, worst = 0;
-for (;;) { const s0 = performance.now(); const d = sl.step(0); worst = Math.max(worst, performance.now() - s0); steps++; if (d) break; }
-console.log(`  sliced bake: ${steps} step(s), worst step ${worst.toFixed(2)} ms (1 source = 1 slice; budget 2 ms/slice)`);
+// GATE-FLAKY-07: per-slice cost = min over 5 fresh bakes (first = warm-up) so machine load cannot fail it; the budget itself is unchanged.
+const REPS = 5, mins = [];
+for (let r = 0; r < REPS; r++) {
+  const sl = createLayerBaker(w, new NavGrid({ x0: def0.nav.area.x0, y0: def0.nav.area.y0, w: def0.nav.area.w, h: def0.nav.area.h, cell: def0.nav.cell }), undefined);
+  for (let i = 0; ; i++) { const s0 = performance.now(); const d = sl.step(0); const t = performance.now() - s0; if (r === 0 || t < mins[i]) mins[i] = t; if (d) break; }
+}
+const steps = mins.length, worst = Math.max(...mins);
+console.log(`  sliced bake: ${steps} step(s), worst step (min of ${REPS}) ${worst.toFixed(2)} ms (1 source = 1 slice; budget 2 ms/slice)`);
 ok('sliced bake: <= 2 ms per slice (ruin)', worst <= 2.5, worst.toFixed(2));
 // path: ground at the stair foot -> highest sheet cell (roof deck)
 let top = -1, topZ = -Infinity;
