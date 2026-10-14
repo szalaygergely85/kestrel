@@ -6,6 +6,7 @@
 // cells); `findPath`/`smoothPath`/`pathCrossesRect` allocate nothing.
 
 import { IndexHeap } from './heap.js';
+import { firstLink, sheetOfLocal } from './sheets.js';
 
 // Fixed neighbour order (28.2): N, E, S, W, then the 4 diagonals.
 const NEI_DX = [0, 1, 0, -1, 1, 1, -1, -1];
@@ -29,7 +30,7 @@ function octile(dx, dy, minCost) {
  * grid.w*grid.h cells): no per-query allocation afterwards. Reuse one
  * instance for every query against that grid. */
 export function createAStar(grid) {
-  const n = grid.w * grid.h;
+  const n = grid.totalCells; // = w*h without layers (NAV-LAYERS-01a)
   const astar = {
     grid,
     g: new Int32Array(n),
@@ -40,6 +41,8 @@ export function createAStar(grid) {
     closedStamp: new Uint32Array(n),
     generation: 0,
     partial: false,
+    gxm: 0, gym: 0, // layered search: goal in metres
+    gen: 0, gIdx: 0,
     scratch: new Int32Array(n), // planPath's cell path (LIFE-01)
     heap: /** @type {IndexHeap} */ (/** @type {unknown} */ (null)),
   };
@@ -73,6 +76,7 @@ export function findPath(astar, sx, sy, gx, gy, outPath, opts = EMPTY_OPTS) {
   if (sx < 0 || sy < 0 || sx >= w || sy >= gh || gx < 0 || gy < 0 || gx >= w || gy >= gh) return 0;
   const si = sy * w + sx;
   const gi = gy * w + gx;
+  if (grid.layers !== null) return findPathCells(astar, si, gi, outPath, opts);
   if (grid.cost[si] === 0) return 0;
 
   const maxNodes = opts.maxNodes ?? Infinity;
@@ -156,6 +160,125 @@ export function findPath(astar, sx, sy, gx, gy, outPath, opts = EMPTY_OPTS) {
   return count;
 }
 
+// ---- NAV-LAYERS-01a: A* over ground + sheets + links (docs/architecture.md 38.71) ----
+// Step costs are in finest-cell units: straight 10*cost*u, diagonal 14*cost*u, u = cell/finestCell.
+// Heuristic = floor(minCost * octile(metres/finest)); integer link/step costs keep it consistent.
+const _p = { x: 0, y: 0, z: 0 };
+
+function cellCostL(grid, i) {
+  const n = grid.w * grid.h;
+  return i < n ? grid.cost[i] : grid.layers.cost[i - n];
+}
+
+function heuristicL(astar, idx) {
+  const grid = astar.grid;
+  grid.cellPos(idx, _p);
+  const L = grid.layers;
+  const adx = Math.abs(_p.x - astar.gxm) / L.finest, ady = Math.abs(_p.y - astar.gym) / L.finest;
+  const mx = adx > ady ? adx : ady, mn = adx < ady ? adx : ady;
+  const mc = grid.minCost < L.minCost ? grid.minCost : L.minCost;
+  return Math.floor(mc * (STRAIGHT_COST * mx + 4 * mn) + 1e-6);
+}
+
+/** Relax edge idx -> nIdx with integer step cost (shared by ground / sheet / link moves). */
+function relaxL(astar, idx, nIdx, stepCost) {
+  const { g, h, f, parent, openStamp, heap } = astar;
+  const tentativeG = g[idx] + stepCost;
+  const isOpen = openStamp[nIdx] === astar.gen;
+  if (!isOpen || tentativeG < g[nIdx]) {
+    g[nIdx] = tentativeG;
+    parent[nIdx] = idx;
+    if (!isOpen) h[nIdx] = heuristicL(astar, nIdx);
+    f[nIdx] = g[nIdx] + h[nIdx];
+    if (!isOpen) { openStamp[nIdx] = astar.gen; heap.push(nIdx); } else heap.decreaseKey(nIdx);
+  }
+}
+
+/**
+ * Layered A* between global cell indices (ground 0..N-1, sheet cells N..). Same contract as `findPath`
+ * (partial path to the closest closed cell when the goal is unreachable / maxNodes hit). Used by `findPath`
+ * itself whenever `grid.layers` is set; call it directly to start/end on a sheet cell (`grid.locate`).
+ * @param {ReturnType<typeof createAStar>} astar
+ * @param {number} si @param {number} gi @param {Int32Array} outPath
+ * @param {{maxNodes?: number}} [opts]
+ */
+export function findPathCells(astar, si, gi, outPath, opts = EMPTY_OPTS) {
+  const grid = astar.grid, L = grid.layers;
+  astar.partial = false;
+  const N = grid.w * grid.h, total = grid.totalCells;
+  if (si < 0 || gi < 0 || si >= total || gi >= total) return 0;
+  if (cellCostL(grid, si) === 0) return 0;
+  grid.cellPos(gi, _p);
+  astar.gxm = _p.x; astar.gym = _p.y;
+
+  const maxNodes = opts.maxNodes ?? Infinity;
+  const { g, h, parent, openStamp, closedStamp, heap } = astar;
+  const gen = ++astar.generation;
+  astar.gen = gen;
+  heap.clear();
+  g[si] = 0; h[si] = heuristicL(astar, si); astar.f[si] = h[si]; parent[si] = -1;
+  openStamp[si] = gen; heap.push(si);
+
+  let bestClosed = si, bestH = h[si], bestG = 0;
+  let reachedGoal = si === gi, nodesExpanded = 0;
+  const w = grid.w, gh = grid.h, maxStep = L.maxStepM, gU = L.groundU;
+
+  while (heap.length > 0 && !reachedGoal) {
+    const idx = heap.pop();
+    closedStamp[idx] = gen;
+    if (h[idx] < bestH || (h[idx] === bestH && g[idx] < bestG) || (h[idx] === bestH && g[idx] === bestG && idx < bestClosed)) {
+      bestClosed = idx; bestH = h[idx]; bestG = g[idx];
+    }
+    if (idx === gi) { reachedGoal = true; break; }
+    nodesExpanded++;
+    if (nodesExpanded > maxNodes) break;
+
+    if (idx < N) {
+      const cx = idx % w, cy = (idx / w) | 0;
+      for (let k = 0; k < 8; k++) {
+        const dx = NEI_DX[k], dy = NEI_DY[k];
+        const nx = cx + dx, ny = cy + dy;
+        if (nx < 0 || ny < 0 || nx >= w || ny >= gh) continue;
+        const nIdx = ny * w + nx;
+        if (grid.cost[nIdx] === 0 || closedStamp[nIdx] === gen) continue;
+        if (dx !== 0 && dy !== 0 && (grid.cost[cy * w + nx] === 0 || grid.cost[ny * w + cx] === 0)) continue;
+        relaxL(astar, idx, nIdx, (dx !== 0 && dy !== 0 ? DIAG_COST : STRAIGHT_COST) * grid.cost[nIdx] * gU);
+      }
+    } else {
+      const local = idx - N, s = sheetOfLocal(L, local), b = L.base[s], sw = L.w[s], sh = L.h[s], u = L.u[s];
+      const l = local - b, cx = l % sw, cy = (l / sw) | 0, z0 = L.height[local];
+      for (let k = 0; k < 8; k++) {
+        const dx = NEI_DX[k], dy = NEI_DY[k];
+        const nx = cx + dx, ny = cy + dy;
+        if (nx < 0 || ny < 0 || nx >= sw || ny >= sh) continue;
+        const nl = b + ny * sw + nx;
+        const nIdx = N + nl;
+        if (L.cost[nl] === 0 || closedStamp[nIdx] === gen) continue;
+        const dz = L.height[nl] - z0;
+        if (dz > maxStep || dz < -maxStep) continue;
+        if (dx !== 0 && dy !== 0 && (L.cost[b + cy * sw + nx] === 0 || L.cost[b + ny * sw + cx] === 0)) continue;
+        relaxL(astar, idx, nIdx, (dx !== 0 && dy !== 0 ? DIAG_COST : STRAIGHT_COST) * L.cost[nl] * u);
+      }
+    }
+
+    if (L.linkFlag[idx] !== 0) {
+      for (let j = firstLink(L, idx); j < L.nLinks && L.from[j] === idx; j++) {
+        if (L.kind[j] === 1 && (L.flags[j] & 1) === 0) continue; // closed door
+        const nIdx = L.to[j];
+        if (closedStamp[nIdx] === gen || cellCostL(grid, nIdx) === 0) continue;
+        relaxL(astar, idx, nIdx, L.lcost[j]);
+      }
+    }
+  }
+
+  const final = reachedGoal ? gi : bestClosed;
+  astar.partial = !reachedGoal;
+  let count = 0, cur = final;
+  while (cur !== -1) { outPath[count++] = cur; cur = parent[cur]; }
+  for (let a = 0, b2 = count - 1; a < b2; a++, b2--) { const t = outPath[a]; outPath[a] = outPath[b2]; outPath[b2] = t; }
+  return count;
+}
+
 /** Bresenham supercover line of sight between two cells, `cost > 0` only,
  * same no-corner-cutting rule as `findPath` (a diagonal step past two
  * blocked orthogonal neighbours is never "in sight"). Zero allocation. */
@@ -197,6 +320,7 @@ function hasLineOfSight(grid, ia, ib) {
  */
 export function smoothPath(grid, path, len, outXY) {
   if (len === 0) return 0;
+  if (grid.layers !== null) return rawWaypoints(grid, path, len, outXY); // smoothing across levels is NAV-LAYERS-01c
   const w = grid.w;
   let count = 0;
   const first = path[0];
@@ -265,4 +389,14 @@ export function planPath(grid, astar, sx, sy, gx, gy, outBuf, maxNodes = 1500) {
     count = cap;
   }
   return count;
+}
+
+// NAV-LAYERS-01a placeholder until 01c: one waypoint per path cell (centre x,y), no line-of-sight pulling.
+const _pos = { x: 0, y: 0, z: 0 };
+function rawWaypoints(grid, path, len, outXY) {
+  for (let i = 0; i < len; i++) {
+    grid.cellPos(path[i], _pos);
+    outXY[i * 2] = _pos.x; outXY[i * 2 + 1] = _pos.y;
+  }
+  return len;
 }

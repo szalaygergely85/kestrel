@@ -1010,3 +1010,7 @@ NOT done: player rig (charkit: bone clips idle/walk/swim only, no run/attack/hur
 
 ### ED-QUEST-DEPS-2 (kestrel-3, 2026-10-14)
 lintQuest no longer imports game/: local resolveGiver mirror (ctx.resolveGiver overrides) + tools/quest-editor-resolvegiver-parity.test.mjs (all pack quests). check-deps OK; lintQuest/lintAgree/sidequest/wire/content-lint/markers+resolvegiver parity PASS.
+
+### NAV-LAYERS-01a (kestrel-3, 2026-10-14) -> arch-review
+engine/nav: `sheets.js` (buildLayersFromArrays, link table sorted by (from,to), kinds 0/1/3 mirrored, caps 32k cells/4k links, cost>=bound check), NavGrid (`layers`/`totalCells` null-default, cellZ/cellPos/locate/setLinkOpen), astar.js (`findPathCells` layered A*; `findPath` dispatches when layers set; ground-only code path untouched). `sheets.test.js`: bridge deck, stair->floor+back, step rule, partial path, door/drop, 0 alloc, determinism, 6 B/sheet cell; nav/beast/flow suites + check-deps green.
+Notes: costs in finest-cell units (ground u=cell/finest, so bridge row of 30 = 600 when a 0.5 m sheet exists); `smoothPath` with layers returns unsmoothed centres (01c); layers not in `hashInto`/`block` sheet arg (later); dirty rect for setLinkOpen = whole ground grid.
