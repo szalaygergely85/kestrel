@@ -1272,3 +1272,9 @@ Crocodile (owner, same session): **short grab + mash to escape (1.5 s, max 12 % 
 
 ## D-100
 **2026-10-14, owner (PC-B session).** Spells live **only in the hands** (Diablo style): a learned spell is put into a hand slot from the spellbook and cast with that hand's mouse button, like a weapon. The quick bar 1-4 is for potions/consumables only - no spells on it.
+
+## D-101
+**2026-10-14, owner (PC-A session; written as D-091 on pc-a, renumbered at the PC-B merge because PC-B's D-091..D-098 were pushed first; answers `design/animal-look-options.md`).** Animal legs: option **B** (knees: upper + lower leg, 12-13 parts) is the standard rig for long-legged animals (bear, black bear, wolf, deer, goat, heron, goblin, fox). Option **A** (better gait, 8 parts, content only) goes on the short-legged ones now (boar, otter, tortoise, cub, rabbit). Option **C** (runtime leg solve: speed-driven gait + foot planting on slopes, = the D-090 foot IK) is the target, **as soon as possible**. It moves ahead of the rest of D-090 stage 2 and is built on B's rig data. Engine work: MAX_VOX_PARTS 8 -> 16 (architect note first).
+
+## D-102
+**2026-10-14, owner (PC-A session; written as D-092 on pc-a, renumbered at the PC-B merge).** Editor scope for content without code (D-090 stage 3; EDITOR-PATH-01 is split into four tracks): (1) foliage brush (big species = real placements, small decor = the GPU decor mask; budget meter; snap to ground); (2) quest editor (giver -> objectives -> return flow, pick in the 3D view, live lint of OB-156 / D-082 / D-087, play from here); (3) animal/AI data forms + spawn-area painting + live test (38.64 data, no code); (4) "logic blocks" When -> If -> Do as content data on triggers/gameHooks with a small deterministic interpreter. No full Blueprint system first; a node-graph view comes later on the same data. Order: foliage + quests right after the animal-legs work (D-101), then AI, then logic. Rows: `docs/pc-b-queue.md` "Editor".

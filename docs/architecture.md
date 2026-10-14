@@ -6835,3 +6835,149 @@ export function unequipSlot(inv, eq, defs, slot, cache, why) {}   // OK | PACK_F
 - Old gear defs stay registered (read-only) for one release. Any legacy gear id that still enters the pack after migration (old quest/chest data until ITEM-06) is converted at entry by the same table, seed `fnv(saveId, slotIdx)`.
 
 **7. Risks / do not.** (a) No shape checks outside itemInst.js (review rule: grep `.it` / `.a[` reads outside it). (b) Do not clone `it` on equip/unequip: that breaks identity and doubles memory; move references. (c) No per-hit `computeTotals` or `itemView` (it allocates) in combat. (d) Affix values are floats: saved as JSON doubles (exact round trip), hashed quantised. (e) The ITEM-09 row text still describes the -50 % soft mode; the D-096 hard rule wins, and the PO updates the row. (f) Grandfathered migrated items without req are a balance hole for one release only (iL <= 8). If the owner wants req on them too, it is a one-line change in itemMigrate.js plus a "move an unmet worn item to the pack" step. (g) The `gen.*` defs must exist before `validateItemDefs` and before any save load.
+
+### 38.67 Voxel knees + runtime leg solve (D-101) (architect, PC-A, 2026-10-14)
+Scope: D-101 (B = knee rigs, C = runtime leg solve ASAP), `design/animal-look-options.md` + its preview (reference maths: `packLocal`/`poseLocal`/`gaitFrame`), RIG-00 38.32, alloc 38.61, beasts 38.64, D-017/D-039/D-053/D-085. Conventions: cells, x east, y south (model front = -y), z up; part rot in degrees, Rz*Ry*Rx; Rx: `y' = c*y - s*z, z' = s*y + c*z` (rx + = foot back).
+
+**Facts that shape this note (checked in code).**
+1. WebGPU draws a voxel instance as **one draw per part range**, with ONE model matrix in the per-draw uniform (`passRaster._voxels`, `passShadow` "one draw per part"). There is no `8 x 12` uniform array, so nothing on the GPU side doubles.
+2. `flat0`'s part index is **never decoded**. Every WGSL and JS consumer only ORs it (`planeId = aFlat.x | planeIdOr | slot<<24`) and compares planeIds for equality (`deriv.wgsl`). **No WGSL change.**
+3. The voxel slot bits 24-27 (`planeIdOr`) sit right above the part field, so the 4th part bit cannot go to bit 24.
+
+#### 1. VOX-PARTS-16: MAX_VOX_PARTS 8 -> 16
+| File | Change |
+|---|---|
+| `engine/voxel/VoxelModel.js` | `MAX_VOX_PARTS = 16`. The validator's hard-coded `1..8` / `> 8` messages use the const. **New rule:** `parts > 8` requires `meshOnly: true` (error `voxel.parts: > 8 parts needs meshOnly (no DDA atlas)`). Doc comment `0..7` -> `0..15`. |
+| `engine/voxel/voxelPose.js`, `engine/render/voxelPool.js`, `engine/render/viewModel.js`, `engine/mesh/instances.js` (`makeParts`, `_poseScratch`), `engine/mesh/voxelMesh.js` (`_poseScratch`), `engine/mesh/fixtures/voxelFrame.js`, `design/preview/lib/voxelMarch.js` (`_pose`) | They follow the const; no code change. |
+| `engine/mesh/DrawList.js` | Import the const: `partMatrices: new Float64Array(MAX_VOX_PARTS * 12)`, `partFlags: new Uint8Array(MAX_VOX_PARTS)`. In `_addInstancesCore`, loop `p < 8` -> `p < MAX_VOX_PARTS`. `resetDrawItem`'s `fill(0)` stays (a memset of 1.5 KB; <= 30 us/frame at 512 items, check it in the bench). JSDoc `8*12` -> `MAX_VOX_PARTS*12`. |
+| `engine/mesh/voxelMesh.js` `emitFaceQuad` | `flat0 = (0xF<<28) \| ((p & 7) << 21) \| ((face & 7) << 18) \| (((p >> 3) & 1) << 17) \| (layer & 0x1FFFF)`, plus `if (layer > 0x1FFFF) throw` (MESH_ONLY_MAX_DIM 256 keeps layers far below that). Bit-identical for every part < 8, so for every shipped model. Use the same formula in `design/preview/lib/voxelMarch.js` line 339 (the DDA oracle). |
+| `engine/mesh/meshGroups.js` | **Pin** a local `MAX_GROUP_RANGES = 8`, so today's grouping set does not change: meshes with 9-16 ranges stay single draws. |
+| `engine/render/gpu/VoxelTextures.js` | **Pin** `DDA_MAX_PARTS = 8` for `VOXINST_ROWS_PER_INSTANCE` (DDA only, texture size unchanged). The meshOnly rule above keeps > 8-part models out of it. |
+| `engine/mesh/instances.js` `meshGroup` | The masked-range limit follows the const (it only gets looser). |
+| `engine/chargen` | **Decoupled.** `MAX_PARTS` / `MAX_PARTS_KIT` stay 8 (humanoid v0). `mesh.test.js` pins `MAX_PARTS <= MAX_VOX_PARTS` instead of `===`. |
+| `tools/voxParse.js`, `tools/vox-import.mjs` doc line | The message and the doc follow the const. |
+- **Byte-identical:** every shipped model's pack, mesh (`flat`, ranges), pose, DrawList and frame.
+- **gpucompare:** every existing row unchanged (same numbers), plus ONE new row `vox12`. It uses the 12-part test fixture (below) with parts 8-11 rotated 30-60 deg, close enough to fill >= 400 cells, with the sun shadow on.
+- **Fixture:** `engine/voxel/fixtures/quadruped16.js` (no GDD words). It is `quadruped12.js` with each leg split into an upper part and a lower part `<name>2` (12 parts), plus a `legRig` block (section 2).
+- **Cost:**
+  - 8-part models pay nothing per frame: pose loops run `partCount`, draw loops run `ranges.length`.
+  - A 12-part instance: the pose adds 4 chained 3x3 products (~+0.3 us per `computeVoxelPose`), and **+4 draws in every pass that sees it** (raster, sun shadow, point shadow slots), at <= 2 us JS encode each (38.4 budget). The split seams add ~4 % quads.
+  - 30 knee animals, all drawn and shadowed: ~+0.5-0.7 ms JS encode, GPU ~+0.1-0.3 ms (Intel high). This fits inside D-007 / D-085 but is not free. If the 30-animal bench shows more, the fix is a later "one draw per voxel instance" story (part matrices in a storage buffer), not a cap.
+- **0 alloc:** no new per-frame objects. Probe `addVoxelInstances` + `passRaster` with a 12-part instance (38.61 recipe).
+
+#### 2. Rig data for B (knee rigs)
+- **Part naming:**
+  - The upper part **keeps today's name and pivot** (`armL`, `legFL`, `legBR`, ...; pivot at the shoulder/hip).
+  - The lower part is named **`<upper>2`** (`armL2`, `legBR2`). Its parent is its upper part, and its pivot is the knee/elbow/hock/ankle centre.
+  - The tail stays `tail`.
+  - New parts are **appended after index 7**, so indices 0-7 do not change: partIndex, `partRot`, mounts and existing ids keep working.
+- **Conversion = a box split only.**
+  - The upper box keeps `z >= split`; the lower box takes `z < split` over the same x/y range.
+  - Because the first box claims a voxel, only ownership moves; the voxels and materials do not change.
+  - Every existing clip stays valid: an unkeyed lower part has rot 0, so it is rigid with its upper part, and **all old clips pose every voxel exactly as before**.
+  - Test per converted model: the owned-voxel count and the per-voxel material equal the old def; posed voxel centres are equal (1e-9) for every clip x frame.
+  - Visible difference: seam quads at the split, inside the leg at rest.
+  - Risk: the two parts get different planeIds, so the edge pass may draw a thin line at the knee seam at rest. The designer checks it in the owner look.
+- **Bend direction:** the rest pose decides.
+  - `sigma = sign(wrap(atan2(w) - atan2(u)))`, with `u = K - H` and `w = F - K` in (y, z) (H = upper pivot, K = lower pivot, F = foot point).
+  - `sigma = +1`: the joint apex points to the front (-y). `-1`: it points to the back (+y).
+  - Digitigrade hind legs (wolf, deer, goat, fox) and the heron are drawn with the hock behind the hip-foot line (`-1`). The bear's plantigrade hind split at the ankle comes out `+1`, which is correct for its rig.
+  - `legRig.legs[i].bend: 'front'|'back'` may state the direction explicitly. It must agree with the rest pose when the rest bend is > 2 deg, and it is **required** when the rest leg is straight (< 2 deg).
+- **`def.voxel.legRig`** (optional; plain JSON; cold, read once by `packVoxelModel`):
+```js
+/** @typedef {{
+ *   body: string,                                  // root part that gets slope pitch/roll/drop
+ *   legs: {upper: string, lower: string, foot: [x,y,z], bend?: 'front'|'back'}[],   // 2..4, foot = paw contact point, model cells
+ *   gaits: {[clip: string]: {tunedMps: number, duty: number, phase: number[], liftM: number}},  // phase[i] per leg, 0..1
+ *   stand: string[],                               // clips where the feet plant at stride 0 (idle, eat, notice ...)
+ *   maxPitchDeg?: number, maxRollDeg?: number      // default 20 / 8
+ * }} LegRigDef */
+```
+- **Validator (`validateVoxelModel`):**
+  - `upper` and `lower` exist, and `lower.parent === upper`.
+  - The foot point is inside the lower box, +-1 cell.
+  - |u| and |w| are >= 2 cells.
+  - The bend rule above holds.
+  - Every `gaits` key and every `stand` entry is a clip of the model.
+  - `duty` is 0.3..0.9; `phase.length === legs.length`, each value in [0, 1); `tunedMps > 0`; `liftM` is 0..0.5.
+  - There are 2..4 legs.
+  - Unknown keys are an error.
+- **Clips address parts by name** (format unchanged, `n x partCount x 6` keys).
+  - Gait clips (walk, run/charge) are generated with the preview's `gaitFrame`, using the SAME `duty`/`phase`/`tunedMps` that go into `legRig.gaits`. One source of truth in the model file: a `const GAIT = {...}` used by both.
+  - The clip length T sets the stride: `strideM = tunedMps * T`.
+  - The Node test: planted-foot error <= 12 mm over stance (the preview's check).
+
+#### 3. C: runtime leg solve
+- **Where: view-only.**
+  - It reads the positions and speed the sim already produced, and writes only pose data.
+  - beastSim, fauna brains, colliders and saves are untouched. `beastGolden` and the fauna fixtures stay byte-identical (AC).
+  - Its state is not serialized; a reset on spawn/load rebuilds it.
+- **Rig packing:** `engine/voxel/legRig.js` `packLegRig(def, partNames) -> PackedLegRig|null` (load time, called from `packVoxelModel`) sets:
+  - `pm.legRig = {bodyIdx, n, upper: Uint8Array, lower: Uint8Array, geo, gaitClip, standClip, gait, maxPitch, maxRoll}`, where
+  - `geo: Float64Array(n*12)` = `[Hy,Hz, uy,uz, wy,wz, a, b, phiU, phiW, sigma, footX]`,
+  - `gaitClip: Int16Array(clipCount)` maps clip -> gait index (-1 = none), `standClip: Uint8Array(clipCount)`,
+  - `gait: Float64Array(g*(4+n))` = `[tunedMps, duty, liftM, T, phase...]`.
+  - `null` when there is no `legRig`, which leaves everything byte-identical.
+- **The 2-bone solve runs inside `computeVoxelPose`.** That is where the exact parent transform is, so planting stays exact under clip bob/pitch, and `instanceRect`, mounts and shadows see the same pose.
+  - **Input** on the pool instance: `inst.legs`, a `LegPose` Float64Array(16) `[w, bodyRx, bodyRy, bodyZcells, (tx,ty,tz) x 4 world m]`, or `null`. `null` (the default) or `w === 0` gives today's output, bit-identical.
+  - **Body:** in `samplePose`, after the crossfade and before `addPart`: `_rotOut[body] += bodyRx, bodyRy` and `_posOut[body].z += bodyZ`. The driver has already weighted these.
+  - **Target to parent space:** in the part loop, when `p` is a leg's upper part (its parent is already done): `c = RzYaw^T (T - bw) / cellM`, `x = Ak_par^T (c - bk_par)`.
+  - **Solve:** `d = (x.y - Hy, x.z - Hz)`. `D = |d|`, clamped to `[|a-b| + 0.01(a+b), a + b - 0.01(a+b)]`. `cK = clamp((D^2 - a^2 - b^2) / (2ab), -1, 1)`. `r2 = phiU - phiW + sigma * acos(cK)`. `r1 = atan2(d) - atan2(u + rot(r2) w)`.
+  - **Limits:** clamp `sigma*r2` to [-10, 150] deg and `r1` to [-80, 80] deg.
+  - **Write:** upper `rx = clip + wrap(r1deg - clip) * w`; `ry, rz -> clip * (1 - w)`; upper pos -> `clip * (1 - w)`. Do the same for the lower part with `r2` (the loop reaches it later).
+  - Legs rotate about x only. The lateral foot error from body roll is accepted (roll <= 8 deg).
+  - **Oracle (D-017):** a Node test runs the preview's FK (a `poseLocal` copy in the test) and checks four things: the posed foot point hits a reachable target within 0.05 cell; the branch matches the rest sign; the limits hold; `w = 0` is bit-identical. C changes nothing on the GPU, so it gets no new gpucompare row.
+- **Driver** `engine/entities/legDriver.js` (per frame, view):
+  - API: `createLegDriver(capacity = 48)`; `attach(pm) -> slot` (-1 when `pm.legRig` is null or the driver is full; cold); `release(slot)`; `reset(slot)`; `poseOf(slot) -> LegPose` (a subarray made at create); `update(slot, pm, clipIdx, ground)`.
+  - Inputs go in `driver.io` (Float64Array, 38.61 2b): `[x, y, z, yawDeg, dtMs, camX, camY]`. Outputs come back in `io[8..10]`: `[phase01, speed, active]`.
+  - `ground` = anything with `groundAt(x, y) -> number|null` (`World.groundAt`: terrain band or structure floor).
+  - State: one struct-of-arrays Float64Array per slot (Phi, speed EMA, w, and per foot the planted, lift-off and landing xyz, plus flags). No objects per frame.
+  - **Speed and rate:**
+    - `v` = EMA of the root xy displacement per update (`alpha = 1 - exp(-dt/0.15 s)`, the BEAST-01 smoothing). A root jump > 1.5 m is a teleport -> `reset`.
+    - The gait is `pm.legRig.gaitClip[clipIdx]`. `S = tunedMps * T * clamp(sqrt(v / tunedMps), 0.8, 1.25)`, and `Phi += v * dt / S`.
+    - Below 0.15 m/s, or on a `stand` clip, the driver is in stand mode (stride 0).
+  - **Feet:**
+    - `phi_k = frac(Phi - phase_k)`.
+    - Stance (`phi_k < duty`): the target is the planted point, a fixed world xyz, so **there is no slide at any speed, by construction**.
+    - Swing start: lift-off = the planted point. Landing = the predicted root at touchdown + the yaw-rotated rest foot xy + forward * `duty*S/2`. Make ONE `groundAt` there. At q = 0.5, re-predict and make ONE more `groundAt`.
+    - Swing target: `xy = lerp(liftOff, landing, smoothstep(q))`, `z = lerp(zLift, zLand, q) + liftM * sin(pi*q)`.
+    - Touchdown plants the landing point (no query).
+    - Stand mode: the feet stay planted. A foot more than `max(0.25*(a+b)*cellM, 0.15 m)` from its rest point takes a 0.25 s step there (one foot per pair at a time).
+    - Reset: all feet go to their rest points (4 queries, once).
+  - **Queries and cache:** 2 `groundAt` per foot per stride (~0.2 per animal per frame at a walk), at most 5 in one frame (on reset). If `|groundAt(root) - z| > 0.25 m` (swimming, an odd floor), the driver uses flat ground at `z` and makes no further queries that frame.
+  - **Body on slopes:**
+    - From the heights of the 4 foot targets: `pitch = -atan2(hFront - hHind, LfH)` (nose up when going uphill; on `body`, rx + = nose down), and `roll = 0.5 * atan2(hL - hR, width)` (ry + = top to the right/east).
+    - Clamp them to `maxPitchDeg` / `maxRollDeg` and damp them critically (tau 0.12 s).
+    - `bodyZ` = the lowest foot's residual below the tilted body plane, clamped to [-0.35 * leg length, 0], so the downhill feet stay in reach.
+    - Bipeds (2 legs): pitch 0, roll only.
+  - **Clips:**
+    - While a gait clip runs, the view drives its time from Phi (`playing = false`; frame/t via the `clipSetPhase` maths on a scratch). Head nod, ears, tail and body bob stay authored and in phase; the solve overrides only the legs.
+    - The `w` target is 1 on gait and stand clips within LOD, else 0. So attack, windup, hurt, flinch, die, dead, sink and any clip not listed keep the authored legs.
+    - `w` moves linearly at 1/0.15 s, so attacks and deaths fade the legs back to the clip in 150 ms.
+  - **LOD:** solve only for the nearest `SOLVE_MAX = 16` attached animals within `SOLVE_R = 35 m` of the camera (hysteresis +3 m). The others fade `w` to 0 and keep the Phi-driven clip time (plain clips, rate from speed). The pool already skips off-screen culled instances.
+  - **Wiring:**
+    - `VoxelPool` gets a slot field `legs`: reset to null in `pushInstance`/`_queueEntity`, copied in both projection copies (lines ~355/397), and `_idInst.legs = null`.
+    - Entity path: `components.voxel.legPose` (a LegPose reference, set by the game view). Feed path: `pool.legInstance(i, legPose)` (like `blendInstance`).
+    - The engine fauna feed (deer/fox/goat) and the game `beastView` (bear, wolf, goblin) each own a driver.
+    - Kill switch `?legik=0`: the driver never attaches.
+- **Determinism:** no Math.random, no wall clock; the same inputs give the same LegPose (test). Trig is allowed (view only, so rule 15 does not apply).
+- **Budget:**
+  - JS (D-007): the driver costs ~1.5 us per solved animal per frame. The in-pose solve costs ~0.15 us per leg per `computeVoxelPose` call, and there are <= 3 calls per frame. Together that is ~3.5 us per solved animal, ~0.06 ms for 16 solved. Add section 1's draw cost for 30 knee animals (~0.5-0.7 ms).
+  - GPU (D-085): only section 1's +4 draws per animal per pass.
+  - **0 B per frame** after warm-up, measured through the real present path (38.61 probe).
+- **Do not:** move leg IK into the sim; store LegPose in saves; query the ground every frame per foot; solve beyond the LOD cap; add game kinds or model names to `engine/`; change the WGSL; let a missing `legRig` change anything.
+
+#### 4. Stories (each <= 1 programmer-day; E = engine, PC-A arch-review)
+| ID | E | What | Deps | Parallel with |
+|---|---|---|---|---|
+| VOX-PARTS-16a | E | The section 1 table: const, validator (+ the meshOnly rule), DrawList, flat0 bit 17 (+ voxelMarch), the pins (meshGroups, VoxelTextures), the chargen decouple. The `quadruped16` fixture (parts + `legRig` block). Tests: byte-identical pack/mesh/pose for every shipped model, 12-part pose/mesh, 0 alloc. | note | ANIM-A-01 |
+| VOX-PARTS-16b | E | gpucompare `vox12` row, with the existing rows unchanged. A 30-animal draw/JS-encode bench (12-part fixture x 30, sun shadow), reported against section 1's estimate. | 16a | ANIM-B-01a, ANIM-C-01 |
+| ANIM-B-01a | - | Bear + black bear: box split (the upper part keeps its name, `<name>2` appended), voxel-identity test, `legRig` block, walk / charge / idle-stand clips from the generator, planted-foot test. Owner look (including the seam line). | 16a | 16b, C-01 |
+| ANIM-B-01b..d | - | The same for wolf + fox (b), deer + goat (c), heron + goblin (d: 2 legs, 10 parts). | 16a | C-01..C-05 |
+| ANIM-C-01 | E | `legRig` validator, `packLegRig`, and the in-pose 2-bone solve (`inst.legs`, LegPose). Tests: oracle vs the preview FK, bit-identical when null, 0 alloc. | 16a | B-01a |
+| ANIM-C-02 | E | `legDriver` core on flat ground: speed EMA, Phi, stance/swing planning, plant/landing cache + `groundAt`, stand mode + stand steps, teleport reset, w fades, LOD cap. Tests: foot slide <= 12 mm over stance at 0.5x/1x/1.5x tuned, query count, determinism, 0 alloc. | C-01 | B-01b..d |
+| ANIM-C-03 | E | Slopes: body pitch/roll/drop + damping + clamps + flat fallback. Tests on a synthetic 20 deg slope and a step (feet on the ground +-1 cm, downhill reach). | C-02 | B-01b..d |
+| ANIM-C-04 | E | Pool plumbing (`legs` slot field, `legInstance`, projection copies), engine fauna feed wiring (deer/fox/goat), `?legik=0`, bench-life with 30 animals (JS p95 within D-007, report). | C-03 | - |
+| ANIM-C-05 | - (kestrel-1, game) | `beastView` wiring, bear first (then wolf/goblin): driver attach/release on spawn/death, gait clip time from Phi, `legPose` on the voxel component. Owner walk on a hill with Burl. | C-04, B-01a | - |
+
+Order: 16a -> {16b, B-01a, C-01} -> C-02 -> C-03 -> C-04 -> C-05 (bear first). B-01b..d run alongside C-02..C-04. Each animal gets C as soon as its B data and C-04 exist (one wiring line + an owner look).
