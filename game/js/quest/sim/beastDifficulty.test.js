@@ -44,18 +44,19 @@ function mk(kinds, diff, seed = 1) {
 const one = (diff) => mk(['grey_wolf'], diff);
 // notice radius: farthest distance (north of the beast, which faces north) at which a fresh beast leaves WANDER within 10 steps
 function noticeReach(diff, live) {
-  let far = 0;
-  for (let d = 4; d <= 40; d++) {
+  const hit = (d) => { // does a fresh beast d metres north leave WANDER within 10 steps?
     const { world, sim } = one(live ? 'normal' : diff); if (live) sim.setDifficulty(diff);
     const px = HX, py = HY - d, z = world.terrain.heightAt(px, py);
     for (let t = 0; t < 10; t++) sim.step(px, py, z);
-    if (sim.state[0] !== STATE_WANDER) far = d;
-  }
-  return far;
+    return sim.state[0] !== STATE_WANDER;
+  };
+  // coarse 4 m descent to the first hit, then a 1 m scan of the 3 m above it (same answer as a full 1 m scan, ~1/3 of the sim builds)
+  for (let c = 40; c >= 4; c -= 4) if (hit(c)) { for (let d = Math.min(40, c + 3); d >= c; d--) if (hit(d)) return d; }
+  return 0;
 }
-const reach = { easy: noticeReach('easy'), normal: noticeReach('normal'), hard: noticeReach('hard') };
+const reach = { easy: noticeReach('easy'), normal: noticeReach('normal'), hard: noticeReach('hard') }, reachLive = { hard: noticeReach('hard', true), easy: noticeReach('easy', true) };
 ok(`notice radius Easy < Normal < Hard (${reach.easy}/${reach.normal}/${reach.hard} m)`, reach.easy < reach.normal && reach.normal < reach.hard);
-ok('live switch rescales an existing beast notice radius', noticeReach('hard', true) === reach.hard && noticeReach('easy', true) === reach.easy, `${noticeReach('hard', true)} ${noticeReach('easy', true)}`);
+ok('live switch rescales an existing beast notice radius', reachLive.hard === reach.hard && reachLive.easy === reach.easy, `${reachLive.hard} ${reachLive.easy}`);
 
 // windup length (steps in STATE_WINDUP) with the player inside windup range
 function windupSteps(diff, live) {
