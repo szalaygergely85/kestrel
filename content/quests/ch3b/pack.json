@@ -5,14 +5,14 @@
   "quests": [
     {
       "id": "sq.ow.night", "title": "The Night Fence", "site": "hesk",
-      "steps": [{ "template": "kill", "params": { "kind": "wolf", "ids": ["wolf1", "wolf2", "wolf3", "wolf4", "wolf5"], "count": 5 }, "objText": "Clear all five wolves off the farm", "journal": "NEEDS WRITER: the wolf pack raids the goose farm after dark. Hesk asks you to help defend it." }],
+      "steps": [{ "template": "kill", "params": { "kind": "wolf", "ids": ["wolf1", "wolf2", "wolf3", "wolf4", "wolf5"], "count": 5 }, "objText": "Clear all five wolves off the farm", "journal": "The wolf pack raids the goose farm after dark. Hesk asks you to help defend it." }],
       "opensAfter": ["sq.ow.wolves"],
       "reward": { "items": [{ "id": "potion.hp", "n": 2 }, { "id": "arrow", "n": 15 }] },
       "returnText": "Back to Hesk"
     },
     {
       "id": "sq.ow.bears", "title": "Black Bears", "site": "hesk",
-      "steps": [{ "template": "kill", "params": { "ids": ["blackBear1", "blackBear2", "blackBear3"], "count": 2 }, "objText": "Drive off two black bears", "journal": "NEEDS WRITER: black bears prowl the fields by the settlement. Drive off two." }],
+      "steps": [{ "template": "kill", "params": { "ids": ["blackBear1", "blackBear2", "blackBear3"], "count": 2 }, "objText": "Drive off two black bears", "journal": "Black bears prowl the fields by the settlement. Drive off two." }],
       "opensAfter": ["sq.ow.night"],
       "reward": { "items": [{ "id": "potion.hp", "n": 2 }] },
       "returnText": "Back to Hesk",
@@ -20,27 +20,27 @@
     },
     {
       "id": "sq.ow.letters", "title": "Letters Down the Line", "site": "hesk",
-      "steps": [{ "template": "deliver", "params": { "item": "arrow", "count": 5, "to": "dorrin" }, "objText": "Take Hesk's arrows to Dorrin", "journal": "NEEDS WRITER: Hesk sends a bundle of arrows to the forge by hand." }],
+      "steps": [{ "template": "deliver", "params": { "item": "arrow", "count": 5, "to": "dorrin" }, "objText": "Take Hesk's arrows to Dorrin", "journal": "Hesk sends a bundle of arrows to the forge by hand." }],
       "opensAfter": ["mq.ow.names"],
       "reward": { "items": [{ "id": "arrow", "n": 20 }] }
     },
     {
       "id": "sq.ow.song", "title": "The Ones Before", "site": "hesk",
-      "steps": [{ "template": "talk", "params": { "to": "dorrin" }, "objText": "Ask Dorrin for the old song", "journal": "NEEDS WRITER: ask Dorrin at the forge for the song nobody wrote down." }],
+      "steps": [{ "template": "talk", "params": { "to": "dorrin" }, "objText": "Ask Dorrin for the old song", "journal": "Ask Dorrin at the forge for the song nobody wrote down." }],
       "opensAfter": ["mq.ow.board"],
       "reward": { "items": [{ "id": "potion.hp", "n": 1 }] },
       "returnText": "Tell Hesk what Dorrin said"
     },
     {
       "id": "sq.ow.trail", "title": "Walk the Track", "site": "owBoard", "turnIn": "hesk", "objectGiver": true,
-      "steps": [{ "template": "explore", "params": { "areas": ["owPath", "crossroads"] }, "objText": "Walk the track to the crossroads", "journal": "NEEDS WRITER: scout the west-bank track from the settlement path to the crossroads." }],
+      "steps": [{ "template": "explore", "params": { "areas": ["owPath", "crossroads"] }, "objText": "Walk the track to the crossroads", "journal": "Scout the west-bank track from the settlement path to the crossroads." }],
       "opensAfter": ["mq.ford.mirror"],
       "reward": { "items": [{ "id": "arrow", "n": 15 }] },
       "returnText": "Back to Hesk"
     },
     {
       "id": "sq.ow.news", "title": "Word for Rook", "site": "dorrin",
-      "steps": [{ "template": "talk", "params": { "to": "rook" }, "objText": "Tell Rook the forge is lit", "journal": "NEEDS WRITER: Dorrin asks you to tell the trader Rook the Outwall forge is lit again." }],
+      "steps": [{ "template": "talk", "params": { "to": "rook" }, "objText": "Tell Rook the forge is lit", "journal": "Dorrin asks you to tell the trader Rook the Outwall forge is lit again." }],
       "opensAfter": ["mq.ow.relay"],
       "reward": { "items": [{ "id": "potion.hp", "n": 1 }, { "id": "arrow", "n": 10 }] },
       "returnText": "Tell Dorrin"

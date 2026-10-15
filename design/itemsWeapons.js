@@ -1,7 +1,7 @@
 /* design/itemsWeapons.js - EQ-20: sword / bow / shield in `sturdy` + `fine` + EQ-20b `tempered` + `warden` (12 ids). Stats only; held visuals reuse the
  * existing sword / bow / shield models. Icons = the base icon recoloured with the existing keys v (sturdy) / Y (fine).
  * Classic script (check-deps rule 4). Node: items.js requires it at its end; browser: tag after items.js (NEEDS B1-main).
- * NEEDS WRITER: final names + desc (names <= 14 chars). No new palette entries.
+ * Names + desc are plain (OB-135). No new palette entries.
  * equip.stats read by game/js/quest/sim/weaponStats.js: sword { dmgMul }, bow { dmgMul, drawMul (draw speed) },
  * shield { blockStamMul } (stamina cost of a block; the stamina system itself is not in the game yet). Worn = 1 / 1 / 1. */
 (function (root) {
@@ -29,7 +29,7 @@
       var fg = src.icon.fg.map(function (r) { return r.replace(/[^ ]/g, t.key); });
       I.defs[id] = {
         id: id, name: t.prefix + ' ' + b.name, kind: src.kind, stackMax: 1, hand: true, inPack: true,
-        desc: t.prefix + ' ' + b.name.toLowerCase() + '. Placeholder copy.',
+        desc: 'A ' + t.prefix.toLowerCase() + ' ' + b.name.toLowerCase() + '.',
         glyph: { ch: src.glyph.ch, c: t.c },
         icon: { w: 5, h: 3, glyphs: src.icon.glyphs.slice(), fg: fg },
         equip: { slot: b.slot, tier: tier, def: b.def === 0 ? 0 : b.def + t.mul - 1, held: b.held, stats: STATS[b.base][tier] }
