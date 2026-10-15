@@ -789,7 +789,9 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
     giK[0] = 1;
     if (giOn) giTerrainK(gi, gbuf, i, giInvSky);
     const ambK = giK[0];
-    const b = sun.ambientI * ambK * (isG ? GRASS_AO_LO + (1 - GRASS_AO_LO) * u : 1) + sun.sunI * Math.max(0, ndotl) * (sunMapOn ? light.sunN[i] * 0.25 : 1) * cF;
+    // CONTACT-AO-01a (38.78): contact-AO byte (light.caoQ, 0 = none -> factor exactly 1) multiplies the ambient part only.
+    const caoF = (light && !light.uniform && light.caoQ && light.caoQ[i] !== 0) ? (127 - light.caoQ[i]) * (1 / 127) : 1;
+    const b = sun.ambientI * ambK * caoF * (isG ? GRASS_AO_LO + (1 - GRASS_AO_LO) * u : 1) + sun.sunI * Math.max(0, ndotl) * (sunMapOn ? light.sunN[i] * 0.25 : 1) * cF;
     let lr = 0, lg = 0, lb = 0;
     if (light && !light.uniform) {
       const o = i * 3; lr = light.rgb[o]; lg = light.rgb[o + 1]; lb = light.rgb[o + 2];

@@ -1320,3 +1320,5 @@ Contradiction check: no plain-name, env-mesh, chest, D-105, D-106 or "Esc to clo
   NEEDS B1: beastView never requests `attack` (melee active window) and fleeing deer/fox show idle (map to `charge`); see beastClipsFx.clipFor.
 - CLIP-WIRE (OB-153 follow-up, programmer): beastView.beastClipsClip maps deer/fox/goat/tortoise (beastClipsFx.models): CHARGE state -> attack, chase/fleeing -> charge via beastClipsFx.clipFor; other kinds unchanged. Test: beastView.test.js (21 pass).
 - CAPTURE-NOPAUSE (nopause2): `?nopause=1` now also fakes look.locked=true (main.js after PlayerLook ctor) so headless captures show no pause menu; verify-ob189/175 use it (focus/lock shims dropped), verify-ob188 unchanged. Checked: ob189 forestFloor high 1717x790 clean.
+
+- CONTACT-AO-01a (kestrel-3, branch contactao01a): arch-review. engine/render/contactAO.js (+ contactAO.test.js) JS module + twin in lightSurfaces (lights.cao, lb.caoQ = occlusion byte, LIGHT.w bits 1..7 twin, 0 = none) and terrainShade ambient. n=0 byte-identical, 0 B/frame. Bench: build 0.012 ms (500 placements), eval 240x90 n=32 about 1.4 ms worst-case (budget 0.5: ARCH to judge). 01b = WGSL + game wiring.
