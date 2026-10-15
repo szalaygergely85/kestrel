@@ -1292,6 +1292,7 @@ function shouldFlee(sim, i) {
 }
 /** WOLF-01: run WOLF_TUNING.fleeM straight away from the player (falls back to going home if that spot is a wall). */
 function enterFlee(sim, i, px, py) {
+  sim.stk.cf[i] = 0; // SPELL-ARCH8: a stale calm-flee count must not cut a later flee short (calmFlee re-sets it after sim.flee)
   const steer = sim.steer, t = sim.sc.tmp, S = 0.7071067811865476;
   awayTarget(steer.x[i], steer.y[i], px, py, fleeMOf(sim, i), t);
   // try straight away, then +-45 deg (vector rotation, no trig), then half distance; else just go home
@@ -1819,6 +1820,8 @@ function hashSim(sim, h) {
   h.u32Array(sim.hurtT, 0, n);
   h.u32Array(sim.unseen, 0, n);
   h.u8Array(sim.stk.wall, 0, n);
+  h.u32Array(sim.stk.cf, 0, n); // SPELL-ARCH8: calm-flee steps and the Light Orb zone change beast behaviour
+  { const c = sim.stk.calm; h.i32(c.on); h.f64(c.x); h.f64(c.y); h.f64(c.r2); h.i32(c.lv); }
   h.u32Array(sim.repathT, 0, n);
   for (let i = 0; i < n; i++) {
     h.f64(sim.homeX[i]); h.f64(sim.homeY[i]); h.f64(sim.homeZ[i]);

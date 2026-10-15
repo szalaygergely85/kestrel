@@ -20,7 +20,7 @@ for (const t of [1, 2, 3]) { // tier numbers: range edge, knock, dmg, mana, cd
   const row = SPELL_DEFS.gust.tiers[t - 1];
   const ents = [tgt('in', row.range - 0.5, 0), tgt('far', row.range + 1, 0)];
   const R = rig(t, { ents }); R.go();
-  assert.deepEqual(R.hits.map((h) => h.target), ['in']); assert.equal(R.hits[0].knock, row.knock); assert.equal(R.hits[0].damage, row.dmg); assert.equal(R.hits[0].heavy, 1);
+  assert.deepEqual(R.hits.map((h) => h.target), ['in']); assert.equal(R.hits[0].knock, row.knock); assert.equal(R.hits[0].damage, row.dmg); assert.equal(R.hits[0].heavy, 1); assert.equal(R.hits[0].stunSec, row.stagger); // SPELL-ARCH8
   assert.equal(R.m.mp, 100 - row.mana); assert.equal(R.g.cooldown, Math.round(row.cd * 60));
   R.go(); assert.equal(R.hits.length, 1, 'cooldown: second cast does nothing'); assert.equal(R.m.mp, 100 - row.mana);
 }

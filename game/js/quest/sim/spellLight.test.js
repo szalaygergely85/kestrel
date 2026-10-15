@@ -147,6 +147,12 @@ for (const t of [1, 2, 3]) {
   assert.equal(a.beasts.fleeing[a.sl], 0, 'flee ends after ~2 s');
   assert.equal(aggroAfter(2, 1, true, 5).beasts.fleeing[0], 0, 'tier 2 does not flee');
 }
+{ // SPELL-ARCH8: a calm-flee that ended early (enterFlee via another path) leaves no stale cf to shorten a later WOLF-01 flee
+  const a = aggroAfter(3, 1, true, 5); const sl = a.sl;
+  assert.ok(a.beasts.stk.cf[sl] > 0); a.beasts.stk.cf[sl] = 10_000; // stale count left from an ended calm-flee
+  a.beasts.flee(sl); // sim.flee -> enterFlee
+  assert.equal(a.beasts.stk.cf[sl], 0, 'enterFlee zeroes stk.cf');
+}
 { // Spark stun: a combat:hit with stunSec staggers for exactly round(stun*60) steps; plain hit keeps the default timer
   for (const t of [1, 2, 3]) {
     const beasts = mkBeasts(); const sl = beasts.slotOf('a'); const hl = beasts.entities[sl].components.health; hl.hp = hl.max = 99;

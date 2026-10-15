@@ -27,7 +27,7 @@ ok('wind hit puffs leaves', live() >= 5 && view.stats.puffs === 1, 'live=' + liv
 const f = { x: 0, y: 0, z: 1, fx: 1, fy: 0, range: 7 }, h = { cause: 'wind', px: 3, py: 0, pz: 1, dirX: 1, dirY: 0 };
 const pump = (n) => { for (let i = 0; i < n; i++) { if (i % 40 === 0) { events.emit('gust:cast', f); events.emit('combat:hit', h); } view.stepFx(); particles.step(); } };
 pump(8000); global.gc && global.gc(); const h0 = process.memoryUsage().heapUsed; pump(8000); global.gc && global.gc();
-ok('gust view allocates ~nothing', process.memoryUsage().heapUsed - h0 < 200000, String(process.memoryUsage().heapUsed - h0));
+if (global.gc) ok('gust view allocates ~nothing', process.memoryUsage().heapUsed - h0 < 200000, String(process.memoryUsage().heapUsed - h0)); // SPELL-ARCH8: needs --expose-gc
 view.dispose();
 events.emit('gust:cast', f); view.stepFx(); ok('dispose unhooks', view.stats.casts > 0 && live() >= 0);
 // Fire Ring burst visual through the real fireball view

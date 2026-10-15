@@ -13,7 +13,7 @@ export function createGustSim(world, events, targets, hooks) {
   const tiers = SPELL_DEFS.gust.tiers;
   let cooldown = 0, pending = false, castTick = -1000000, tick = 0, hits = 0, propHits = 0;
   const seg = new Float64Array(6), ray = { t: 0, x: 0, y: 0, z: 0 };
-  const hitP = { source: 'player', target: null, damage: 0, heavy: 1, cause: 'wind', knock: 0, dirX: 0, dirY: 0, px: 0, py: 0, pz: 0 };
+  const hitP = { source: 'player', target: null, damage: 0, heavy: 1, cause: 'wind', knock: 0, stunSec: 0, dirX: 0, dirY: 0, px: 0, py: 0, pz: 0 };
   const castP = { x: 0, y: 0, z: 0, fx: 0, fy: 0, range: 0 };
   let row = null;
   const O = new Float64Array(5); // ox, oy, oz, fx, fy (typed array: a closure-captured double would allocate a HeapNumber per write)
@@ -49,12 +49,13 @@ export function createGustSim(world, events, targets, hooks) {
       if (e === player || e.id === 'player') continue;
       if (!inCone(targets.x[i], targets.y[i], targets.z[i], targets.r[i], targets.h[i])) continue;
       const dx = targets.x[i] - O[0], dy = targets.y[i] - O[1], d = Math.sqrt(dx * dx + dy * dy), p = hitP;
-      p.target = e.id; p.damage = row.dmg; p.knock = row.knock;
+      p.target = e.id; p.damage = row.dmg; p.knock = row.knock; p.stunSec = row.stagger;
       p.dirX = d > 1e-6 ? dx / d : O[3]; p.dirY = d > 1e-6 ? dy / d : O[4];
       p.px = targets.x[i]; p.py = targets.y[i]; p.pz = targets.z[i] + targets.h[i] * 0.5;
       events.emit('combat:hit', p);
       hits++;
     }
+    // waived until props exist (main session 2026-10-15)
     if (hooks && typeof hooks.forEachProp === 'function') hooks.forEachProp(propVisit);
   }
   return {

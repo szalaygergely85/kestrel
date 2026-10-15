@@ -31,6 +31,6 @@ export function createWardSim(hooks) {
     },
     step() { if (cooldown > 0) cooldown--; if (timer > 0) { timer--; if (timer === 0) left = 0; } },
     reset() { left = 0; timer = 0; cooldown = 0; },
-    hashInto(h) { h.u32(left | 0); h.u32(timer); h.u32(cooldown); },
+    hashInto(h) { h.f64(left); h.u32(timer); h.u32(cooldown); },
   };
 }
