@@ -13,6 +13,9 @@ export const guardsFor = (guards, sites = [], extra = []) => [
 ];
 const reach = (g, radius) => g.kind === 'puzzle' ? PUZZLE_R : g.kind === 'poi' ? POI_R : radius;
 export const DIVE_GUARDED = new Set(['chestBed']); // lake-bed chest: earned by the dive itself (SWIM-04d, same as content-lint R8_OK)
+// OB-152: a chest in an underground structure (Ford cellar, cemetery crypt: keepTerrain levels, entity z far below the surface) is hidden/hard to reach = earned
+export const UNDERGROUND_Z = -20;
+export const isUnderground = (e) => typeof e.z === 'number' && e.z < UNDERGROUND_Z;
 export const isChest = (e) => e.components?.voxel?.model === 'chestSmall' || /^(chest|secret)[A-Z]/.test(e.id || ''); // any chest model / chest id
 const inRect = (r, x, y) => x >= r[0] && x < r[2] && y >= r[1] && y < r[3];
 /** regions: [{id,r:[x0,y0,x1,y1]}] (first match wins, like regionAt); chests [{id,x,y}]; guards [{x,y,kind:'beast'|'camp'|'puzzle'}]. Returns one row per region. */
@@ -46,8 +49,8 @@ export function listChests(regions, chests, guards, roads, radius = RADIUS) {
   return chests.map((c) => {
     let g = [Infinity, '-']; for (const q of gs) { const d = Math.hypot(q.x - c.x, q.y - c.y); if (d < g[0]) g = [d, q.kind]; }
     const rd = roadDist(roads, c), ri = regions.find((r) => inRect(r.r, c.x, c.y));
-    const dive = DIVE_GUARDED.has(c.id), ok = dive || gs.some((q) => Math.hypot(q.x - c.x, q.y - c.y) <= reach(q, radius));
-    return { id: c.id, x: c.x, y: c.y, region: ri ? ri.id : '-', guardKind: g[1], guardM: g[0], roadM: rd[0], road: rd[1], visible: rd[0] < ROAD_VISIBLE, verdict: dive ? 'ok (dive)' : ok ? 'ok' : 'LOOSE' };
+    const dive = DIVE_GUARDED.has(c.id), ok = dive || c.z < UNDERGROUND_Z || gs.some((q) => Math.hypot(q.x - c.x, q.y - c.y) <= reach(q, radius));
+    return { id: c.id, x: c.x, y: c.y, z: c.z, region: ri ? ri.id : '-', guardKind: g[1], guardM: g[0], roadM: rd[0], road: rd[1], visible: rd[0] < ROAD_VISIBLE, verdict: dive ? 'ok (dive)' : c.z < UNDERGROUND_Z ? 'ok (underground)' : ok ? 'ok' : 'LOOSE' };
   });
 }
 async function main() {
@@ -58,7 +61,7 @@ async function main() {
   const G0 = globalThis.ASSETS.levels.world_geo;
   const scrawls = ctx.entities.filter((e) => e.id === 'hiddenScrawl').map((e) => ({ x: e.x, y: e.y, kind: 'puzzle', id: 'lever-scrawl' })); // chestHidden: the scrawl hint is its puzzle (within PUZZLE_R)
   const all = ctx.entities.filter(isChest); // every chest model (chestSmall: chest*, secret*), not just ids named chest*
-  const rows = density(regions, all.filter((c) => !DIVE_GUARDED.has(c.id)), guardsFor(ctx.guards, G0.sites, scrawls));
+  const rows = density(regions, all.filter((c) => !DIVE_GUARDED.has(c.id) && !isUnderground(c)), guardsFor(ctx.guards, G0.sites, scrawls));
   if (argv.includes('--list')) {
     const G = globalThis.ASSETS.levels.world_geo, l = listChests(regions, all, guardsFor(ctx.guards, G0.sites, scrawls), [...(G.roads || []), ...(G.paths || [])]);
     for (const r of l) console.log(`${r.id.padEnd(16)} ${r.region.padEnd(10)} (${r.x},${r.y}) guard ${r.guardKind} ${Number.isFinite(r.guardM) ? r.guardM.toFixed(0) : '-'}m  road ${r.roadM.toFixed(0)}m (${r.road})${r.visible ? ' VISIBLE' : ''}  ${r.verdict}`);
