@@ -69,8 +69,9 @@ function shadeSkyAndWrite(rt, x, y, ctx, azimuthDeg, elevDeg, tag) {
     // NIGHT-SKY-01: stars + moon disc (weight 0 by day -> untouched). Twin of WGSL skyNight; sky cells only, cloud glyph cells keep their glyph.
     if (sun.sunI < 0.7) {
     dirFromAzEl(azimuthDeg, elevDeg, cloudDir);
+    const f0 = glowFg[0], f1 = glowFg[1], f2 = glowFg[2];
     const sg = applySkyNight(glowBg, glowFg, cloudDir[0], cloudDir[1], cloudDir[2], elevDeg, sun.dirX, sun.dirY, sun.dirZ, sun.sunI, ctx.timeSec);
-    if (sg > 0 && glyphIdx === 0) glyphIdx = sg;
+    if (sg > 0) { if (glyphIdx === 0) glyphIdx = sg; else { glowFg[0] = f0; glowFg[1] = f1; glowFg[2] = f2; } } // cloud cover hides stars (GPU twin); the moon disc (sg 0) still covers
     }
   }
   rt.setCellRGB(x, y, glyphIdx, clampByte(fg[0]), clampByte(fg[1]), clampByte(fg[2]),
@@ -99,6 +100,21 @@ export function cloudSunTerms(sunI, out) {
   out.rimK = smoothstep01(0.3, 0.55, sunI) * (1 - smoothstep01(0.65, 0.95, sunI));
   return out;
 }
+/**
+ * CLOUD-LIVE-01 twin: the day/night blend (`live` = P.liveLook) carries the cloud colours; both fillSky and passShade._bakeSky read
+ * them through this so GPU and JS agree at every hour. Returns `base` untouched when there is no live blend; otherwise a record
+ * inheriting `base` with own lit/shade, reused through `cache` (no allocation after the first call for a given `base`).
+ */
+export function liveCloudsRecord(base, live, cache) {
+  if (!base || !live || !live.cloudsLit) return base;
+  if (cache.base !== base) {
+    cache.base = base;
+    cache.rec = Object.create(base, { lit: { value: null, writable: true, enumerable: true }, shade: { value: null, writable: true, enumerable: true } });
+  }
+  cache.rec.lit = live.cloudsLit; cache.rec.shade = live.cloudsShade;
+  return cache.rec;
+}
+const liveCloudCache = { base: null, rec: null };
 function clamp01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
 function smoothstep01(a, b, x) { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); }
 
@@ -233,7 +249,7 @@ export function fillSky(fb, cam, sun = null) {
   // frame") and thread the resolved record + band through to `cloudAt` below.
   // Absent block -> `clouds`/`off`/`band` are null and today's path runs verbatim.
   const look = resolveLook(P);
-  const clouds = look ? look.clouds : null;
+  const clouds = liveCloudsRecord(look ? look.clouds : null, P.liveLook, liveCloudCache); // CLOUD-LIVE twin of passShade._bakeSky
   const off = clouds ? cloudDriftOffset(clouds, fb.timeSec || 0, cloudOff) : null;
   const band = clouds ? P.materials.sky.cloudBand : null;
 

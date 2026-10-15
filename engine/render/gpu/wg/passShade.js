@@ -18,6 +18,7 @@ import { SKY_LUT_N } from '../wgsl/skyLut.js';
 import { applySkyHaze } from '../../atmos.js'; // ENV-03c
 import { sunFromWorld } from '../../lighting.js';
 import { resolveLook } from '../../look.js';
+import { liveCloudsRecord } from '../../sky.js';
 import { skylineFor, grassTableFor, packGrassTable, makeFarGrass, farGrassFill } from '../../terrainShade.js'; // MAP-06b: same record as the JS twin's ctx.skyline
 import { PROJ_HFOV_DEG } from '../../projection.js';
 import { orthoHashCell } from '../../projection.js'; // US-068b2
@@ -190,7 +191,7 @@ export class WgShadePass {
     const look0 = P ? resolveLook(P) : null; // CLOUD-FLUFF-01b: cached for _writeClouds
     this.skyClouds = look0 ? look0.clouds : null;
     // CLOUD-LIVE-01: live day/night blend carries the cloud colours (shallow copy so the cached look stays frozen)
-    if (this.skyClouds && live && live.cloudsLit) this.skyClouds = Object.assign({}, this.skyClouds, { lit: live.cloudsLit, shade: live.cloudsShade });
+    this.skyClouds = liveCloudsRecord(this.skyClouds, live, this._cloudCache || (this._cloudCache = { base: null, rec: null })); // shared with sky.js fillSky (reused record, no alloc)
     this.skyCloudBand = this.skyClouds && rec ? rec.cloudBand : null; this.skyCloudWind = this.skyClouds ? this.skyClouds.wind : null;
     if (this.su) this._bakeClouds(this.su, this.skyClouds, this.skyCloudBand);
     if (!rec || !P.timeOfDay) return;

@@ -2,6 +2,8 @@
 import assert from 'node:assert/strict';
 import { SKY_NIGHT, applySkyNight, SKY_NIGHT_WGSL, nightWeight } from './skyNight.js';
 import { dirFromAzEl } from '../core/transform.js';
+import { compileVecFn } from './gpu/wgsl/wgslVec.js';
+import { SKY_GLOW_WGSL } from './skyGlow.js';
 
 const d = [0, 0, 0], moonAz = 140, moonEl = 35, sm = dirFromAzEl(moonAz, moonEl, [0, 0, 0]);
 function cell(az, el, sunI, t, bgIn = [12, 16, 40]) {
@@ -37,6 +39,38 @@ assert.deepEqual(outM.bg, [12, 16, 40]);
 // dusk fade: bright sky luma kills stars
 let dusk = 0; for (let az = 0; az < 360; az += 0.2) for (let el = 1; el < 85; el += 0.5) if (cell(az, el, 0.25, 0, [200, 160, 120]).g) dusk++;
 assert.equal(dusk, 0);
+
+// WGSL skyNight (compileVecFn probe) vs applySkyNight: >= 3000 dirs x sunI {0.25, 0.5, 0.8} x 2 times; glyph exact, colours within 1e-6
+// (both f64 here; f32/GPU parity is gpucompare's job). Covers nightHash == h01 (the star lattice) and the moon-mirror branch (sun z < 0).
+{
+  const skyGlowSm = compileVecFn(SKY_GLOW_WGSL, 'skyGlowSm');
+  const nightHash = compileVecFn(SKY_NIGHT_WGSL, 'nightHash');
+  const skyNightW = compileVecFn(SKY_NIGHT_WGSL, 'skyNight', { skyGlowSm, nightHash });
+  let seed = 99; const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+  const sunDirs = [sm, dirFromAzEl(30, -20, [0, 0, 0]).slice(), dirFromAzEl(250, 55, [0, 0, 0]).slice()];
+  let n = 0, stars = 0, moons = 0, worst = 0;
+  for (let i = 0; i < 3500; i++) {
+    const az = rnd() * 360, el = i % 7 === 0 ? -10 + rnd() * 10 : rnd() * 88;
+    const dir = dirFromAzEl(az, el, [0, 0, 0]);
+    const sdv = i % 11 === 0 ? sunDirs[1] : i % 13 === 0 ? sunDirs[2] : sunDirs[0];
+    const near = i % 5 === 0; // aim some samples at the moon disc
+    const dd = near ? dirFromAzEl(moonAz + (rnd() - 0.5) * 8, moonEl + (rnd() - 0.5) * 8, [0, 0, 0]) : dir;
+    const bgIn = [8 + rnd() * 30, 10 + rnd() * 30, 30 + rnd() * 40];
+    for (const sunI of [0.25, 0.5, 0.8]) for (const t of [0, 7.3]) {
+      const bg = [...bgIn], fg = [...bgIn];
+      const g = applySkyNight(bg, fg, dd[0], dd[1], dd[2], near ? moonEl : el, sdv[0], sdv[1], sdv[2], sunI, t);
+      const o = skyNightW({ x: bgIn[0], y: bgIn[1], z: bgIn[2] }, { x: dd[0], y: dd[1], z: dd[2] }, near ? moonEl : el, { x: sdv[0], y: sdv[1], z: sdv[2] }, sunI, t);
+      assert.equal(o.g, g, 'glyph ' + [az, el, sunI, t]);
+      for (const [k, i2] of [['x', 0], ['y', 1], ['z', 2]]) {
+        const d = Math.max(Math.abs(o.bg[k] - bg[i2]), Math.abs(o.fg[k] - fg[i2])); worst = Math.max(worst, d);
+        assert.ok(d < 1e-6, 'colour ' + [az, el, sunI, t, d]);
+      }
+      n++; if (g) stars++; if (bg[2] !== bgIn[2] && !g) moons++;
+    }
+  }
+  assert.ok(stars > 200 && moons > 20, 'probe covers stars ' + stars + ' and moon ' + moons);
+  console.log('skyNight WGSL probe OK', n, 'samples, stars', stars, 'moon', moons, 'worst', worst);
+}
 // WGSL consts
 for (const lit of ['0.3', '0.7', '2.2', '0.03', '3.2', '0.0004', '0x27d4eb2du', 'vec3f(159.0, 180.0, 224.0)']) assert.ok(SKY_NIGHT_WGSL.includes(lit), 'WGSL ' + lit);
 console.log('skyNight OK, stars', a.size, 'twinkled', changed);
