@@ -1,6 +1,6 @@
 import { PROJ_NEAR, PROJ_FAR } from '../../projection.js';
 import { STEP } from '../../../core/loop.js';
-import { WIND_K_SIZE } from '../../../world/wind.js';
+import { WIND_K_SIZE, GUST_BAND_AMP, GUST_BAND_V0, GUST_BAND_VK, GUST_BAND_L1, GUST_BAND_L2, GUST_BAND_LC } from '../../../world/wind.js';
 
 // WG-3a (docs/architecture.md 38.5): WGSL twins of the shared GLSL snippets in glsl/common.js that more than one
 // module needs. Pure strings, no GPU globals. No raw `%` anywhere (38.5 item 1); add fmodGlsl/imod/umod here when a
@@ -248,7 +248,17 @@ fn windAt(x: f32, y: f32, t: f32, dirX: f32, dirY: f32, speed: f32, amp: f32, pe
   let k1 = select(u32(m1), 0u, m1 >= WIND_K_SIZE);
   let a = windKnot(k0);
   let g = a + (windKnot(k1) - a) * s;
-  let sp = speed * max(0.0, 1.0 + amp * (2.0 * g - 1.0));
+  var sp = speed * max(0.0, 1.0 + amp * (2.0 * g - 1.0));
+  if (speed > 0.0) { // WIND-GUST-01: travelling gust bands (twin of wind.js gustBandMul)
+    let gu = x * dirX + y * dirY - (${GUST_BAND_V0} + ${GUST_BAND_VK} * speed) * t;
+    let gc = y * dirX - x * dirY;
+    let a1 = gu / ${GUST_BAND_L1}.0;
+    let a2 = gu / ${GUST_BAND_L2}.0 + gc / ${GUST_BAND_LC}.0;
+    let f1 = abs(a1 - floor(a1) - 0.5) * 2.0;
+    let f2 = abs(a2 - floor(a2) - 0.5) * 2.0;
+    let gb = 0.65 * (f1 * f1 * (3.0 - 2.0 * f1)) + 0.35 * (f2 * f2 * (3.0 - 2.0 * f2));
+    sp = sp * (1.0 + ${GUST_BAND_AMP} * (2.0 * gb - 1.0));
+  }
   return vec2f(dirX * sp, dirY * sp);
 }
 `;

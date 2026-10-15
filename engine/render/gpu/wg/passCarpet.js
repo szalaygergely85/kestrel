@@ -14,6 +14,7 @@ import { makeCarpetCtx, setCarpetBounds, applyCarpetQuality, MAX_VARIANTS } from
 import { CARPET_DEFAULTS } from '../../../world/carpet.js';
 import { footprintK } from '../../terrainShade.js';
 import { sunFromWorld } from '../../lighting.js';
+import { GUST_BAND_AMP } from '../../../world/wind.js';
 
 const W = (n) => CARPET_BLOCK.field(n).word;
 const W_COLS = W('gridCols'), W_ROWS = W('gridRows'), W_SEED = W('seed'), W_WINDON = W('windOn');
@@ -169,7 +170,7 @@ export class WgCarpetPass {
     const bc = this._bctx, wp = this.windParams;
     if (bc) {
       applyCarpetQuality(bc, qual); f[W_RAD] = bc.radiusM; f[W_DSC] = bc.densScale; f[W_MINW] = bc.minWCells;
-      bc.fpK = fpk; bc.wind = wp ? NOOP_GROUND : null; bc.windMax = wp ? wp.speed * (1 + wp.amp) : 0;
+      bc.fpK = fpk; bc.wind = wp ? NOOP_GROUND : null; bc.windMax = wp ? wp.speed * (1 + wp.amp) * (1 + GUST_BAND_AMP) : 0;
       setCarpetBounds(bc, cam.x, cam.y);
       f[W_MAXHN] = bc.maxHNear; f[W_TFADE] = bc.tFade < 1e30 ? bc.tFade : 1e30; f[W_LEANR] = bc.leanMaxR;
       this.ui[W_WINDON] = bc.leanOn ? 1 : 0;
