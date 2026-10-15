@@ -1309,3 +1309,6 @@ Owner 2026-10-15 (later): "Make those priority" - D-107 stories (pc-b-queue sect
 
 ## D-112
 **2026-10-15, owner (PC-B session): no stamina system.** Owner: "i dont think we need [stamina] right?" - no combat stamina bar and no shared sprint/swim/shield bar. The shield keeps today's behaviour: raised + frontal (+-60 deg) = melee and arrows fully blocked, no drain. SHIELD-STAMINA-01 sim code stays inert (only active if stamina is ever attached); SHIELD-STAMINA-WIRE is cancelled. A dodge roll, if wanted later, uses a cooldown, not stamina. Swim/dive breath is unchanged.
+
+## D-113
+**2026-10-15, owner (PC-B session): no dodge roll for now.** Owner: "I dont wannt rolling for now". COMBAT-DODGE-ROLL-01 parked. The CROC-SOFT "break free by a dodge roll" rule needs another escape (e.g. attack or mash) when croc work resumes; the `combatDodge` hint text must not promise a roll.
