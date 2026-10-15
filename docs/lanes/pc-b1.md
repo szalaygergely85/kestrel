@@ -1198,3 +1198,7 @@ Browser check (main session): `node tools/capture-browser.mjs --port {port} --ur
 
 - LOD-RESET-01 + OB-155 (kestrel-1, lodwire): main.js createHzbInvalidator now gets {onCut: engine.instances.resetLodHistory()} (GPU side via occlGate pipeline.resetLodHistory); occlGate+lodDither PASS, main.js syntax OK.
   OB-155 small floats: rs454/rs461/rs467/rs509 z lowered 0.18-0.22 m in world_m1.world.json; probe float 0 m (rs461 no longer listed; rs454/467/509 only steep-slope flag remains).
+
+- OB-142 (slot kestrel-1, branch ob142): main.js:1600 ambient fauna (rabbits/deer) no longer skipped for plain `?at=`/`?pose=` (still off in capture/bench/cinematic/`?fauna=0`).
+  Probe: beasts near Ford relay (992,1079): 2 within 80 m, 9 within 120/150 m (authored boarF1/F2 + heartland boars/bear) - no new region rule needed.
+  New test game/js/quest/sim/riverFauna.test.js (>= 3 within 120 m, PASS). Likely owner cause = `?at=` skipping wild fauna; ask owner to retest.
