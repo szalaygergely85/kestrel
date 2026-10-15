@@ -70,6 +70,7 @@ export const FIXED_SAFE = Object.freeze([[1497, 1027, 70]]);
 
 export const REGIONAL_BEAST_COUNT = REGION_RULES.reduce((n, r) => n + r.groups * r.size, 0);
 
+import { resolveDifficulty } from './difficulty.js';
 import { WOLF_MODEL } from './wolfBrain.js';
 import { UNDER_SITES, CEMETERY_TIER } from './underSkeletons.js'; // UNDER-01
 export const MODEL = { boar: 'boarPlaceholder', wolf: WOLF_MODEL, bear: 'bearBlack', croc: 'crocodile', deer: 'deer', fox: 'fox', turtle: 'tortoise', goat: 'goat', whitewolf: WOLF_MODEL, cavebear: 'bearBlack', archer: 'goblin', shaman: 'goblin', chief: 'goblin', torch: 'goblinTorch', skelwar: 'skeleton', skelarch: 'skeletonArcher', lynx: 'lynx', aurochs: 'aurochs' }; // BEAST-02: wolf packs use the real voxel_wolf model ('wolf')
@@ -116,6 +117,12 @@ export function makeWalkable(terrain, bounds, maxSlope = MAX_SLOPE) {
  *   water = BEAST-09a probe for `water` rules (deep(x,y) = deep water here, area = metres rect the home must lie in); absent -> water rules produce nothing.
  * @returns {Array<{id:string, species:string, region:string, x:number, y:number, group:number}>}
  */
+/** BH2-G1 groupDelta (D-083): Easy -1 / Hard +1 member for land groups of 2+ (singles - bears, chief, crocs - stay 1); min 1. Normal = the rule size. */
+export function groupSize(rule, difficulty) {
+  const d = resolveDifficulty(typeof difficulty === 'string' ? difficulty : difficulty && difficulty.name);
+  if (rule.water || rule.size < 2 || !d.groupDelta) return rule.size;
+  return Math.max(1, rule.size + d.groupDelta);
+}
 export function generateRegionalBeasts(o) {
   const { geo, terrain } = o, seed = o.seed ?? 12, avoid = o.avoid || [], safe = o.safe || FIXED_SAFE;
   const wat = o.water, wa = wat && wat.area;
@@ -136,7 +143,8 @@ export function generateRegionalBeasts(o) {
   const emit = (rule, region, r, c, rng, n0) => { // members 3-7 m from the group centre; fall back to the centre if no walkable spot
     const ng = rule.water ? nextWGroup : nextGroup, g = ng[region] || 0; ng[region] = g + 1; (rule.water ? wcentres : centres).push(c); // BEAST-09a: crocs never shift land groups (land list is the same with or without a water probe)
     let n = n0;
-    for (let k = 0; k < rule.size; k++) {
+    const size = groupSize(rule, o.difficulty);
+    for (let k = 0; k < size; k++) {
       let hx = c[0], hy = c[1];
       if (k > 0) {
         for (let t = 0; t < 40; t++) {
@@ -223,9 +231,9 @@ export function safeSpots(world) {
   return out;
 }
 
-export function spawnRegionalBeasts(world, geo, seed, navArea) {
+export function spawnRegionalBeasts(world, geo, seed, navArea, difficulty) { // difficulty (name, optional): BH2-G1 groupDelta
   const avoid = authoredHomes(world);
-  const list = generateRegionalBeasts({ geo, terrain: world.terrain, seed, avoid, safe: safeSpots(world), water: typeof world.waterAt === 'function' ? worldWaterProbe(world, navArea) : undefined });
+  const list = generateRegionalBeasts({ geo, terrain: world.terrain, seed, difficulty, avoid, safe: safeSpots(world), water: typeof world.waterAt === 'function' ? worldWaterProbe(world, navArea) : undefined });
   for (const b of list) {
     if (world.get(b.id)) continue; // WMP-09: a world restored from a save already holds the herd (saves keep all entities) - spawn only the missing ones
     const brain = { kind: 'beast', home: [b.x, b.y], temperament: 'wary' };

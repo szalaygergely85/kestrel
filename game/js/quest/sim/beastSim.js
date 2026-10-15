@@ -13,6 +13,7 @@ import { BEAST_DEFAULTS, toSteps } from './beastConfig.js';
 import { tierMult } from './band.js';
 import { levelScale, LEVEL_TABLE, kindFactors } from './beastLevels.js';
 import { resolveDifficulty, DIFFICULTY, WINDUP_FLOOR_SEC } from './difficulty.js'; // DIFF-MENU
+import { hashU } from '../../life/schedule.js';
 import { canSee } from './sight.js';
 import { BEAR_TUNING, BEAR_MODEL, bearOverrides, bearPicksBite, isBearEntity } from './bearBrain.js'; // BEAR-01, BEAR-BITE
 import { WOLF_TUNING, wolfOverrides, isWolfEntity, circleTarget, awayTarget } from './wolfBrain.js'; // WOLF-01
@@ -28,6 +29,7 @@ import { perceive, leashState, returnTarget, LEASH_HOME, LEASH_ENGAGE, LEASH_RET
 
 export const POOL = 128; // BEAST-POOL-b: live (bound) slots; records beyond it sleep unbound
 export const MAX_RECORDS = 1024; // BEAST-POOL-a (37.16.5): the public slot IS the record index 0..MAX_RECORDS-1 (stable for the run); loot.js imports this
+export const ELITE_LEVELS = 2; // BH2-G1: an elite beast counts as zone level + 2 (hp/damage via beastLevels)
 export const MAX_BEASTS = MAX_RECORDS; // legacy alias of MAX_RECORDS (tests / tools still import it)
 const PATH_SLOTS = 64; // waypoints kept per beast path (truncated, final = the exact goal - see `storePath`)
 
@@ -228,6 +230,7 @@ export function createBeastSim(world, opts) {
     cause: new Uint8Array(MAX_RECORDS),       // US-079b: 0 sword, 1 fire (indexes CAUSE_STR)
     knockV: new Float64Array(MAX_RECORDS),    // US-079b: per-slot stagger clamp speed (replaces shared cfg.staggerKnock)
     wolf: new Uint8Array(MAX_RECORDS),        // WOLF-01: brain.species==='wolf' (per-slot cfg below, pack token, circle, flee)
+    elite: new Uint8Array(MAX_RECORDS),       // BH2-G1: 1 = rolled elite at create (difficulty.eliteChance); name-tag hook, not hashed
     wat: new Uint8Array(MAX_RECORDS),         // BEAST-08b: 1 = water slot, run by brains/waterBrain.js (live() skips it)
     wb: null,
     kindIdx: new Uint8Array(MAX_RECORDS),     // BEAST-03a: index into KIND_NAMES (beastKinds.js); data only so far
@@ -335,7 +338,10 @@ export function createBeastSim(world, opts) {
     const m = tierMult(tier);
     // OB-150: hp/damage scale with the zone LEVEL (band 1-10, placed tier override -> representative level) and difficulty (beastLevels.js)
     const lv = (br && br.tier >= 1 && br.tier <= 3) ? LEVEL_TABLE.tierLevel[br.tier | 0] : (band ? band.bandAt(e.transform.x, e.transform.y) : 1);
-    const ls = levelScale(lv, opts.difficulty);
+    // BH2-G1 eliteChance: no elite concept existed, so the simplest one: a seeded per-slot roll (Normal 0 = never) -> +ELITE_LEVELS levels; sim.elite[i] is the name-tag hook.
+    const ec = resolveDifficulty(opts.difficulty).eliteChance;
+    sim.elite[i] = (ec > 0 && !sim.wat[i] && (hashU(((opts && opts.seed) || 0) >>> 0, i, 0xE11E) % 10000) < ec * 10000) ? 1 : 0;
+    const ls = levelScale(lv + (sim.elite[i] ? ELITE_LEVELS : 0), opts.difficulty);
     // KINDS-F (OB-153): kinds.json hpF/dmgF (x boar, missing = 1) multiply the level result. Wolf/bear slots already carry their own
     // tuning (WOLF_TUNING/BEAR_TUNING hpMul, swipe hearts) so they are skipped here to avoid double counting.
     const kf = kindFactors(e, sim.wolf[i] || sim.bear[i]);
@@ -471,6 +477,7 @@ export function createBeastSim(world, opts) {
   /** GOB-01b: on -> slot goes to STATE_GONE (steer agent dropped, hidden, skipped); off -> back alive at home, hp max. */
   // DIFF-MENU (D-083): live difficulty change from the Settings screen. Rescales live beasts' damage by the dmg ratio only;
   // hp / spawn tuning apply to the next created beast (opts.difficulty is read at create).
+  if (opts && opts.difficulty) sim.tactics.setDifficulty(resolveDifficulty(opts.difficulty).name); // BH2-G1: tokM + flank follow the create-time difficulty too
   sim.setDifficulty = function setDifficulty(name) {
     const was = resolveDifficulty(opts.difficulty).dmg, now = resolveDifficulty(name);
     opts.difficulty = now.name;
