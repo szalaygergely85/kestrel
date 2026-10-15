@@ -176,7 +176,7 @@ import { createQuickbarView } from './quest/quickbarView.js'; // EQ-12 + D-068
 import { createEquipPlay, registerGearItems } from './quest/equipPlay.js'; // EQ-07/09: LMB/RMB/Q routing, bow draw, pick-up
 import { createStubItemSim } from './quest/sim/hands.js'; // EQ-07: no-op sims so the router arms shield / bow
 import { EQUIP_VIEW_MODELS, loadShieldView, presentShield, loadBowView, presentBow, drawBlockSpark, createArrowView } from './quest/equipView.js'; // EQ-07/09
-import { playShieldClank, playBowShot } from './audio/sfx.js'; // EQ-07/09
+import { playShieldClank, playBowShot, playRelayHum } from './audio/sfx.js'; // EQ-07/09
 import { createTargetables } from './quest/sim/targetables.js';
 import { FIREBALL_CFG } from './quest/spellConfig.js';
 import { featuresFromParams, fireballOn } from './quest/features.js'; // D-065: fireball off unless ?fireball=1
@@ -185,6 +185,8 @@ import { createPracticeTarget, applyPropTargetables } from './quest/practiceTarg
 import { createParticleHooks, applyPropEmitters } from './quest/particleHooks.js'; // US-053c
 import { createWaterfallHooks } from './quest/waterfallHooks.js';
 import { createAmbientMotes } from './quest/ambient.js';
+import { createFireflies, fireflyProbes } from './fx/fireflyWire.js'; // FIREFLY-NIGHT-01
+import { createUnderCreep, applyCreepLights, creepMistDensity, createFirstEntry } from './quest/under/creep.js'; // UNDER-LIGHT-CREEP-01
 import { VITALS_DEFAULTS } from './quest/sim/vitalsConfig.js';
 import { createHitStop, hitStopEnabled } from './fx/hitStop.js'; // HITSTOP-01 (lane B1)
 import { createDeathFlow, deathFlowEnabled } from './fx/deathFade.js'; // DEATH-FLOW-01 part 1 (lane B1)
@@ -220,6 +222,8 @@ import { createInventoryScreen } from './quest/inventoryScreen.js'; // US-091b +
 import { createQuestMarkers } from './quest/sim/questMarkers.js'; // QUEST-MARK-01w
 import { registerQuestMarks } from './quest/wire/questMarks.js';
 import { createQuestLogScreen, QUEST_LOG_KEYS } from './ui/questLog.js'; // QG-05
+import { GIVER_INFO } from './questNext.js'; // QUEST-NEXT-GIVER-01
+import { createOfferToast } from './quest/offerToast.js'; // new derived offer -> "New quest" toast
 import { createCompassHud } from './ui/compassHud.js'; // COMPASS-02 (D-061)
 import { createCombatHud } from './ui/combatHud.js'; import { setEnemyBarsOn, setDamageNumbersOn } from './ui/combatHudFlags.js'; // HPBAR-02 + DMGNUM-01 (D-086)
 import { createCrafting } from './quest/sim/crafting.js'; // MAIN-WIRE-01: crafting list on C
@@ -1266,6 +1270,7 @@ async function runGame(mode, cinematic = null) {
   const safeWa = { surfaceZ: 0, flatZ: 0, depth: 0, region: '', index: -1, look: 0 };
   const safeSpots = createSafeSpots(); // OB-140: last safe grounded spots for pause-menu Unstuck
   let wading = null; // RIVER-04: rebuilt on every 'world:loaded' (beasts keep their own nav block, depth >= 0.6: not wired here)
+  let offerToast = null, offerToastMsg = null; // toast once per new book.nextOffers() entry
   let equipPlay = null, shieldSim = null, arrowSim = null; // EQ-07/09: rebuilt on every 'world:loaded'
   let quickbar = null, qbView = null, qbTick = 0, qbBlocked = false; // EQ-12: sim rebuilt per world, view per page
   let fireball = null, fbTargets = null; // SPELL-01a (37.14): rebuilt with the sword sim on every 'world:loaded'
@@ -1390,7 +1395,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
   }
   let invWasLocked = false; // pointer lock state when the pack opened (re-lock on close)
   let waterfallHooks = null;
-  let ambientMotes = null;
+  const creepFirst = createFirstEntry(); let underCreep = null, creepSt = { amb: 1, fl: 1 }, creepMistBase = 0; let ambientMotes = null, fireflies = null; // FIREFLY-NIGHT-01: night-only, same flag as ambientMotes (off on Low), indoor/underground probe inside
   const fxHook = createFxHook(resolveFx(params, rt.backend, resolvedQuality && resolvedQuality.knobs)); window.__debug.fxHook = fxHook; // CONTACT-AO-01c / CANOPY-SHAFT-01c: lights.cao / lights.shaft only on WebGPU high+ (null otherwise)
   let lightSet = null; let giWire = null; const giCfg = resolveGI(params, resolvedQuality && resolvedQuality.name, wgActive); // GI-PROBE-06: baked bounce light; `?gi=0` = null = today's frames
   // US-006: built from the loaded world's level.def.lights, below
@@ -1566,7 +1571,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
           shadowHour = ((shadowHour % 24) + 24) % 24;
           const gMoon = applySunPair(world, lightSet, shadowHour, hq, worldSunPath, sunEnabled); if (giWire) giWire.clock(hq, gMoon); // GI-PROBE-06: mix on hour step only // AUD2-02: ONE sun/moon decision for the stepped light/shadow sun and the smooth world.sun
           const L = blendLook(P, hq, P.daySchedule);
-          if (lightSet) { const hu = P.hue[L.ambient]; lightSet.ambient[0] = hu[0] * L.ambientI; lightSet.ambient[1] = hu[1] * L.ambientI; lightSet.ambient[2] = hu[2] * L.ambientI; }
+          if (lightSet) { const hu = P.hue[L.ambient]; lightSet.ambient[0] = hu[0] * L.ambientI; lightSet.ambient[1] = hu[1] * L.ambientI; lightSet.ambient[2] = hu[2] * L.ambientI; creepSt.amb = 1; }
         });
         clockDriver.update(clockHour(world.state, clockCfg), true);
         { const G = window.ASSETS.levels.world_geo, far = window.ASSETS.levels.overworld_far, f = P.fog && (P.fog.farBase || P.fog.far); // ENV-03: only with BIOME_LOOK + geo biomes + terrain (and a running clock: capture/gpucompare never get a driver)
@@ -1607,8 +1612,11 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       if (waterfallHooks) waterfallHooks.dispose();
       waterfallHooks = waterfallPreset ? createWaterfallHooks(world, engine.particles, waterfallPreset) : null;
       if (ambientMotes) ambientMotes.dispose();
+      if (fireflies) fireflies.dispose();
+      if (underCreep) underCreep.dispose(); creepSt = { amb: 1, fl: 1 }; underCreep = createUnderCreep(engine.particles, { enabled: params.get('creep') !== '0' && !isCaptureOrBench && params.get('capture') !== '1', quality: resolvedQuality && resolvedQuality.name, rgb: assets.palette.rgb }); // UNDER-LIGHT-CREEP-01
       // S8-B1-18 (closes US-019): ambient dust motes, off with ?ambient=0 and on the Low preset.
       ambientMotes = createAmbientMotes(world, engine.particles, { enabled: params.get('ambient') !== '0' && !isCaptureOrBench && params.get('capture') !== '1' && !(resolvedQuality && resolvedQuality.name === 'low'), rgb: assets.palette.rgb, palette: assets.palette });
+      fireflies = createFireflies(fireflyProbes(world, assets.palette), engine.particles, { enabled: params.get('ambient') !== '0' && !isCaptureOrBench && params.get('capture') !== '1' && !(resolvedQuality && resolvedQuality.name === 'low') }); // FIREFLY-NIGHT-01
       // US-079a (29.1): rebuilt on every load/restart, same precedent as lightSet above.
       // US-078d: beastSim now owns a `combat:hit` listener (the stagger behaviour) - drop the old world's one
       // before creating the next, same "dispose before re-create" precedent as targeting/vitals below.
@@ -1786,6 +1794,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       if (saveRelay) { // QG-03: book events -> seam + toasts (the reward, if any, is granted from book.lastReward; Burl's quest has none - owner pick)
         const tv = toasts, msg = window.ASSETS.items.toast && window.ASSETS.items.toast.messages && window.ASSETS.items.toast.messages.packFull;
         saveRelay.quest.onSection = (title) => { if (tv && msg) tv.say('Quest complete: ' + title, msg.fg); const ws = world.state; if (chapterCard && saveRelay.quest.done && ws['waystone.waystone.woken'] && ws['waystone.ws_roadBend.woken']) chapterCard.trigger(); /* PO-CH1-08: card only after the meadow stone AND the relay */ }; // CH1-02: live section completion only
+        offerToast = createOfferToast(saveRelay.quest.book, (g) => GIVER_INFO[g] ? GIVER_INFO[g].name : g.charAt(0).toUpperCase() + g.slice(1)); offerToast.seed(); offerToastMsg = msg; // QUEST-NEXT-GIVER-01 (compass: compassHud.target)
         saveRelay.quest.book.onChange = (name, id) => {
           gameHooks.emitSimple(name, id);
           if (logicWire && (name === 'quest:accepted' || name === 'quest:done')) logicWire.notify(name === 'quest:accepted' ? 'quest.accepted' : 'quest.done', 'quest', id); // ED-LOGIC-01c
@@ -2320,7 +2329,9 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       if (particleHooks) particleHooks.step(playerHandle.data);
       if (waterfallHooks) waterfallHooks.step();
       { const pt = playerHandle.data.transform; leafFall.step(engine.world.scatter, engine.world.wind, pt.x, pt.y, clothTick); } // WIND-GUST-01b
-      if (ambientMotes) { const pt = playerHandle.data.transform; ambientMotes.step(pt.x, pt.y, pt.z); } // S8-B1-18: position lives on .transform
+      if (ambientMotes) { const pt = playerHandle.data.transform; ambientMotes.step(pt.x, pt.y, pt.z); if (fireflies) fireflies.step(pt.x, pt.y); } // S8-B1-18: position lives on .transform
+      if (underCreep && playerHandle) { const pt = playerHandle.data.transform, st = world.structureAt(pt.x, pt.y); const amb = (st && st.level && st.level.ambience) || null; underCreep.step(amb, pt.x, pt.y, pt.z); if (amb && underCreep.out.w > 0 && creepFirst.first(st.id || st.name || amb)) playRelayHum(); // chill cue, once per site per session
+        applyCreepLights(lightSet, underCreep.out, creepSt); } // UNDER-LIGHT-CREEP-01
       entityEmitters.sync(); engine.particles.step();
       if (waterfallHooks) waterfallHooks.afterStep();
       lap(SEC.physics);
@@ -2380,6 +2391,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         hintSignals.jump = input.pressed(gameKeys.jump);
         hintSignals.pointerLocked = look.locked;
         hintSignals.mPressed = mPressedEdge;
+        if (offerToast && toasts && offerToastMsg) for (const line of offerToast.poll()) toasts.say(line, offerToastMsg.fg); // derived next offer after a hand-in / main step
         { // FS-01: M4 action hints; done-actions read from the live sims (swing/block/shot/swap/slot key/windows)
           actionSig.invOpen = !!(invView && invView.isOpen); actionSig.journalOpen = qlIsOpen();
           actionSig.swing = !!(sword && sword.state >= ST_LIGHT && sword.state <= ST_HARD);
@@ -2563,7 +2575,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       // cells right after its own sprite loop).
       engine.particleLayer.build(engine.particles, cam, rt, fb.lights, engine.world, assets.palette, renderer);
       sprites.render(fb, engine.world, cam, fbView ? (handFxOn ? handFbExtra : fbView.extra) : undefined); // US-030c (ARCH CHANGES item 1): after the surfaces, before present()
-      if (postCfg && postV !== atmosV) { postV = atmosV; composePost(atmosState, postCfg, postState); } if (postCfg && wgPipeline && wgPipeline._spritesPass) wgPipeline._spritesPass.post = postState; // POST-STACK-01c: compose for both paths (the GPU sprite pass reads the same state); the JS finish runs below, after the fade
+      if (postCfg && postV !== atmosV) { postV = atmosV; composePost(atmosState, postCfg, postState); creepMistBase = postState.mist[3] > 0 ? postState.mist[0] : 0; } if (postCfg && underCreep && creepMistBase > 0) postState.mist[0] = creepMistDensity(creepMistBase, underCreep.out.mist); if (postCfg && wgPipeline && wgPipeline._spritesPass) wgPipeline._spritesPass.post = postState; // POST-STACK-01c: compose for both paths (the GPU sprite pass reads the same state); the JS finish runs below, after the fade
       // US-017 ARCH CHANGES #1 item 2: CPU-path scene fade, moved here from
       // compositor.js so sprites fade too (oracle parity with the GPU
       // composite pass, which fades every non-mask cell in one pass). Skips
