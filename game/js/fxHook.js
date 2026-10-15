@@ -3,7 +3,16 @@
 // Presets data drive it (knobs.contactAO, knobs.shaftSteps). `?cao=0` / `?shafts=0` switch off; `?shafts=<k>` sets the strength.
 import { createContactAO, setDynamicBlobs, buildContactBlobs, CAO_MAX, SHAFT_DEFAULTS } from '../../engine/index.js';
 
-export const SHAFT_K_DEFAULT = 0.25; // used when the atmos state carries no shaftK (forest ~0.35, meadow ~0.08 come with the look data)
+export const SHAFT_K_DEFAULT = 0.25;
+// FX-TUNE-01 (D-107): shaft strength follows sun elevation (strong at low sun, ~0 at noon) and forest density. Data: look field wins.
+export const SHAFT_LOOK = { kMax: 0.7, kNoon: 0.06, elevLow: 12, elevHigh: 55, pw: 2.5, treesFull: 40 };
+/** Pure: k for a sun elevation (deg) and the tree count in the candidate cache; kOver (URL ?shafts=) wins. */
+export function shaftKFor(elevDeg, trees, kOver, L = SHAFT_LOOK) {
+  if (kOver > 0) return kOver;
+  const t = Math.min(1, Math.max(0, (L.elevHigh - elevDeg) / (L.elevHigh - L.elevLow)));
+  const f = 0.5 + 0.5 * Math.min(1, trees / L.treesFull);
+  return (L.kNoon + (L.kMax - L.kNoon) * t * t * (3 - 2 * t)) * f;
+} // used when the atmos state carries no shaftK (forest ~0.35, meadow ~0.08 come with the look data)
 export const TREE_TRUNK_M = 0.3, TREE_K = 2.5; // 38.78 item 2: trunk radius x treeK, never the crown
 const REFRESH_M = 4, CAND_MAX = 512, STATIC_R = 24, PROP_K = 0.6, PROP_MAX_SPAN = 12;
 
@@ -14,7 +23,7 @@ export function resolveFx(params, backend, knobs) {
   const sp = params.get('shafts');
   const steps = gpu && sp !== '0' ? knobs.shaftSteps | 0 : 0;
   const kOver = sp !== null && sp !== '' && Number.isFinite(+sp) && +sp > 0 ? +sp : 0;
-  return { cao, shaft: steps > 0 ? { steps, k: kOver || SHAFT_K_DEFAULT } : null };
+  return { cao, shaft: steps > 0 ? { steps, k: kOver || SHAFT_K_DEFAULT, kOver } : null };
 }
 
 /** Fixed parallel arrays (the staticSrc / dynamic list shape of contactAO.js). */
@@ -31,9 +40,9 @@ function put(l, i, x, y, z, rx, ry, h, k, id) { l.x[i] = x; l.y[i] = y; l.zBase[
 export function createFxHook(cfg) {
   const cao = cfg.cao ? createContactAO() : null;
   const cand = mkList(CAND_MAX), dyn = mkList(CAO_MAX), beasts = [];
-  const shaft = cfg.shaft ? { steps: cfg.shaft.steps, k: cfg.shaft.k, iso: SHAFT_DEFAULTS.iso, pw: SHAFT_DEFAULTS.pw, maxM: SHAFT_DEFAULTS.maxM } : null;
+  const kOver = cfg.shaft && cfg.shaft.kOver || 0, shaft = cfg.shaft ? { steps: cfg.shaft.steps, k: cfg.shaft.k, iso: SHAFT_DEFAULTS.iso, pw: SHAFT_LOOK.pw, maxM: SHAFT_DEFAULTS.maxM } : null;
   const camP = { x: 0, y: 0 }, OPTS = { radius: STATIC_R };
-  let lx = 0, ly = 0, lw = null, gridVer = -1;
+  let lx = 0, ly = 0, lw = null, gridVer = -1, nTrees = 0;
 
   function gather(world, cx, cy) {
     let n = 0; const R2 = (STATIC_R + REFRESH_M) * (STATIC_R + REFRESH_M);
@@ -45,13 +54,13 @@ export function createFxHook(cfg) {
       if (dx * dx + dy * dy > R2) continue;
       put(cand, n, x, y, b.z0, sx * 0.5, sy * 0.5, b.z1 - b.z0, PROP_K, g.activeList[i]); n++;
     }
-    const t = world.scatter;
+    const nProps = n, t = world.scatter;
     if (t && t.count > 0) for (let i = 0; i < t.count && n < CAND_MAX; i++) {
       const dx = t.x[i] - cx, dy = t.y[i] - cy;
       if (dx * dx + dy * dy > R2) continue;
       put(cand, n, t.x[i], t.y[i], t.z[i], TREE_TRUNK_M * TREE_K, TREE_TRUNK_M * TREE_K, 3, PROP_K, 0x40000000 + i); n++;
     }
-    cand.count = n;
+    cand.count = n; nTrees = t && t.count > 0 ? n - nProps : 0;
     beasts.length = 0; // refresh cost only: rare
     const ents = world._entities;
     if (ents) for (const e of ents.values()) if (e.type === 'beast' && beasts.length < CAO_MAX - 1) beasts.push(e);
@@ -62,7 +71,7 @@ export function createFxHook(cfg) {
     /** Per frame: lights = LightSet (or null), world, player transform/radius. Returns the occluder count. 0 allocation after warm-up. */
     update(lights, world, px, py, pz, pr, camX, camY) {
       if (!lights) return 0;
-      if (shaft) lights.shaft = shaft; else if (lights.shaft) lights.shaft = null;
+      if (shaft) { const sun = world.sun; if (sun && sun.elevation !== undefined) shaft.k = shaftKFor(sun.elevation, nTrees, kOver); lights.shaft = shaft; } else if (lights.shaft) lights.shaft = null;
       if (!cao) { if (lights.cao) lights.cao = null; return 0; }
       const gv = world.placementGrid ? world.placementGrid.version : 0;
       if (world !== lw || gv !== gridVer || (camX - lx) * (camX - lx) + (camY - ly) * (camY - ly) > REFRESH_M * REFRESH_M) {

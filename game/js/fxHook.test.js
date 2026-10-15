@@ -1,5 +1,5 @@
 // CONTACT-AO-01c / CANOPY-SHAFT-01c: on/off per preset+backend, occluder cap + ordering, 0 alloc.
-import { resolveFx, createFxHook } from './fxHook.js';
+import { resolveFx, createFxHook, shaftKFor } from './fxHook.js';
 import { loadPresets, knobsFor } from './ui/gfxPresets.js';
 import { readFileSync } from 'node:fs';
 let bad = 0; const ok = (c, m) => { if (!c) { bad++; console.log('FAIL ' + m); } };
@@ -35,5 +35,7 @@ for (let i = 0; i < 20000; i++) hook.update(lights, world, 0.001 * i, 0, 0, 0.35
 const d = process.memoryUsage().heapUsed - m0; if (global.gc) ok(d < 200000, 'alloc per 20000 frames ' + d);
 const off = createFxHook(resolveFx(P(''), 'canvas2d', knobsFor('high'))); const l2 = { cao: {}, shaft: {} };
 off.update(l2, world, 0, 0, 0, 0.35, 0, 0); ok(l2.cao === null || l2.cao === undefined || true, 'off hook');
+// FX-TUNE-01: k strong at low sun, ~0 at noon, weaker out of forest, override wins
+ok(shaftKFor(12, 40) > 0.65 && shaftKFor(75, 40) < 0.1 && shaftKFor(12, 0) < shaftKFor(12, 40) && shaftKFor(30, 40, 0.9) === 0.9, 'shaftKFor curve');
 console.log(bad ? 'fxHook FAIL ' + bad : 'fxHook ok');
 process.exit(bad ? 1 : 0);
