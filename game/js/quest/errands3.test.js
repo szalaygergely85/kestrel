@@ -39,6 +39,21 @@ for (const id of IDS) {
   ok(b.statusOf('sq.ow.wolves') === READY, 'ready after 3 wolves');
   ok(!!b.handIn('sq.ow.wolves') && done(b, 'sq.ow.wolves'), 'wolves handed in at the board');
 }
+{ // SOFTLOCK-01: all 5 wolves dead BEFORE the accept -> completable at once, no respawn wait
+  const { b } = mk(); b.livingOfKind = () => 0; // game hook: no wolf alive
+  for (const id of ['wolf1', 'wolf2', 'wolf3', 'wolf4', 'wolf5']) b.feed({ type: 'beast:died', id });
+  ok(b.accept('sq.ow.wolves'), 'wolf quest accepted after the pack is dead');
+  ok(b.statusOf('sq.ow.wolves') === READY, 'pre-accept kills make it ready without new kills');
+  ok(!!b.handIn('sq.ow.wolves') && done(b, 'sq.ow.wolves'), 'handed in with no respawn');
+}
+{ // SOFTLOCK-01: another kind-kill quest (regions boars, 3 needed), kills made earlier
+  const def = [...files.quests, ...packs.quests].map(q => q.def).find(d => d.objectives.some(o => o.when.type === 'beasts' && o.when.kind === 'boar' && o.when.count === 3));
+  ok(!!def, 'a 3-boar kind quest exists');
+  const b = createQuestBook(get('m1'), [{ ...def, requires: undefined }]); b.livingOfKind = (k) => 0;
+  for (const id of ['boarX1', 'boarX2', 'boarX3']) b.feed({ type: 'beast:died', id });
+  ok(b.accept(def.id), 'boar quest accepted');
+  ok(b.statusOf(def.id) === READY, 'earlier boar kills count');
+}
 { // boars: both west-bank boars
   const { b } = mk();
   ok(b.accept('sq.ow.boars'), 'boar quest accepted');

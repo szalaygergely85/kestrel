@@ -10,7 +10,7 @@ import { createJawSync } from './jawSync.js';
 
 export const CLOSE_FAR_M = 6.5;
 const CONFIRM_KEYS = ['KeyE', 'Enter'];
-const NPC_NAMES = { bear: 'Burl', rook: 'Rook', hesk: 'Hesk', dorrin: 'Dorrin' }; // OB-054b: prompt names the NPC (id as fallback)
+const NPC_NAMES = { bear: 'Burl', rook: 'Rook', hesk: 'Hesk', dorrin: 'Dorrin', warden_ashmile: 'Tull', warden_downs: 'Edda', warden_glasswater: 'Lin', warden_heath: 'Nell', warden_highpastures: 'Ewan', warden_northwood: 'Brenna', warden_reedmire: 'Orla', warden_signalhill: 'Ivo', warden_strand: 'Kit', warden_whitecombs: 'Sten' }; // OB-054b: prompt names the NPC (id as fallback)
 // DIALOGUE-LOCK-01 (PO REJECT): movement stays live, so W/S are NOT read here; choose with arrows / wheel / digits 1-4.
 const DIGIT_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4'];
 
@@ -29,7 +29,7 @@ export function npcTalk(ctx) {
  *   dialogues = bundle.dialogues (compiled). events: listens to 'combat:hit' on the player (damage closes).
  */
 /** QL-06: models whose idle/listen clips have other names (Rook the crow: perch / tilt; talk is shared). */
-const NPC_CLIP_ALIAS = { crow: { idle: 'perch', listen: 'perch' } };
+const NPC_CLIP_ALIAS = { crow: { idle: 'perch', listen: 'perch' }, 'char.kit': { talk: 'idle', listen: 'idle' } }; // QWALK-KIT-CLIPS: Hesk / Dorrin / wardens (char.kit) have no talk/listen clips -> console.error per talk
 
 export function createDialogueCtl(opt) {
   const { world, dialogues } = opt;
