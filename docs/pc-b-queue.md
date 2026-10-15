@@ -1,5 +1,16 @@
 # PC-B queue
 
+## Bug hunt round 2 (2026-10-15, PC-A, 3 fable architects, 10 min; reports `docs/test-reports/bughunt-2026-10-15b-*.md`)
+5 confirmed. Do BH2-E1 together with BH-A1 (both in resetAll). Engine fixes end in arch-review on PC-A.
+
+| ID | Slot | Bug (fix in the report) | Status |
+|---|---|---|---|
+| BH2-E1 | kestrel-3 | **(P1)** `resetAllSim` (beastSim.js:1861) sets `down[i]=0` and revives every slot incl. logic-reserve groups; logicWire has no `beasts:reset` listener -> map travel / Unstuck (main.js:1427) wakes the cemetery trio, aireserve.* and cleared groups while `logic.groups` says 0/2. Fix: logicWire listens to `beasts:reset` and re-runs spawnGroup/despawnGroup; test: reserve group + resetAll -> groupAlive 0. | todo |
+| BH2-R1 | kestrel-2 | After a runtime `setGroundLook`, a cache-hit band swap (World.js:1529) publishes a near without `look`; passRaster `_lookTextures` (332-339) keeps the PREVIOUS band's NEARLOOK bound with lookActive=true (probe). Fix: bake look for cached bundles on toggle (or clear bandCache) + host guard `nearReady && !near.look -> lookActive=false`; extend lookBake.test. Editor/debug path. Engine: PC-A arch-review. | todo |
+| BH2-G1 | kestrel-3 (+ PO) | Settings > Difficulty mostly dead: only d.hp/d.dmg (read once at create) and d.respawn are used; playerDmg/windup/noticeR/noticeSec/leash/groupDelta/eliteChance/gear/flank have no consumers, applyDifficulty never called, live change does not rescale beasts. Fix: wire playerDmg into vitals.onHit + rescale on setDifficulty, or hide Easy/Hard until BEAST-06b (PO decides). | todo |
+| BH2-E2 | kestrel-3 | logicWire.js:66 calls `logic.save()` (allocating JSON round trip) every fixed step while `pending > 0` (up to 3600 steps for one `after:3600`). Fix: save only when the pending queue changed. | todo |
+| BH2-E3 | kestrel-3 | `hashInto` (logic.js:259) omits `resume` though save() persists it. Fix: `h.u32(resume)`. | todo |
+
 ## Bug hunt 2026-10-15 fixes (PC-A, 3 fable architects; reports `docs/test-reports/bughunt-2026-10-15-*.md`) - do BH-A1 FIRST (crash)
 12 confirmed bugs (probe or code trace in the reports) + suspects listed there. Engine fixes end in arch-review on PC-A.
 
