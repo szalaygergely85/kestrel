@@ -13,6 +13,10 @@ export const RISE_MS = 1200, WAKE_R = 30, NO_POP_R = 8, SAME_STRUCT_DZ = 3, VIEW
 export const UNDER_SITES = Object.freeze([
   Object.freeze({ id: 'cemetery', anchor: [1644, 1372], night: true, group: 'under.cemetery', members: Object.freeze([
     ['skelwar.cemetery.1', 'skelwar', -3, 1], ['skelwar.cemetery.2', 'skelwar', 3, 2], ['skelarch.cemetery.1', 'skelarch', 0, -3]]) }),
+  // UNDER-02: the crypt under the cemetery (any time of day; z = crypt floor, so the spawner's |dz| < 3 m rule keeps them apart from the surface cemetery)
+  Object.freeze({ id: 'crypt', anchor: [1674.5, 1357.5], z: -56.8, night: false, group: '', members: Object.freeze([
+    ['skelwar.crypt.1', 'skelwar', -2, 4.5], ['skelarch.crypt.1', 'skelarch', 2, 6], // room 2
+    ['skelwar.crypt.2', 'skelwar', -2, -4], ['skelwar.crypt.3', 'skelwar', 2, -6], ['skelarch.crypt.2', 'skelarch', 0, -5]]) }), // room 3
   // existing OB-141 ruin POI ob141r06 (whitecombs arch at 1740,200, far side, zone band 5 = level 5)
   Object.freeze({ id: 'ruinWhite', anchor: [1740, 200], night: false, group: '', members: Object.freeze([
     ['skelwar.ruinWhite.1', 'skelwar', -2, 2], ['skelarch.ruinWhite.1', 'skelarch', 2, 3]]) }),

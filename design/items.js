@@ -283,6 +283,14 @@
     icon: icon(['.---.', '|=+=|', "'---'"],
                ['hhhhh', 'hAfAh', 'hhhhh'])
   };
+  defs['key.crypt'] = {
+    id: 'key.crypt', name: 'Crypt Key', kind: 'key', stackMax: 1, hand: false, inPack: true,
+    desc: 'Old black iron. Opens the crypt door.',
+    use: { opens: 'lock', note: 'UNDER-02: opens the cemetery crypt door (game/js/quest/under/crypt.js); given by Bram in UNDER-07' },
+    glyph: { ch: 'F', c: 'ironLight' },
+    icon: icon([',-.  ', '(o)=E', "`-'  "],
+               ['sss  ', 'sKUiU', 'iUi  '])
+  };
   defs['heart.piece'] = {
     id: 'heart.piece', name: 'Heart Piece', kind: 'upgrade', stackMax: 3, hand: false, inPack: true,
     desc: 'A warm red stone. Four make a heart.',

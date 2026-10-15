@@ -244,6 +244,6 @@ export function spawnUnderSkeletons(world) {
     if (world.get(m[0])) continue; // restored from a save: already there
     const x = site.anchor[0] + m[2], y = site.anchor[1] + m[3], brain = { kind: 'beast', home: [x, y], temperament: 'wary', beastKind: KIND_OF[m[1]] };
     if (site.night) { brain.group = site.group; brain.reserve = true; brain.tier = CEMETERY_TIER; }
-    world.spawn('beast', { x, y, z: world.terrain.heightAt(x, y) }, { voxel: { anim: 'idle', loop: true, model: MODEL[m[1]] }, brain, targetable: { ...BODY[m[1]] } }, m[0]);
+    world.spawn('beast', { x, y, z: site.z !== undefined ? site.z : world.terrain.heightAt(x, y) }, { voxel: { anim: 'idle', loop: true, model: MODEL[m[1]] }, brain, targetable: { ...BODY[m[1]] } }, m[0]);
   }
 }

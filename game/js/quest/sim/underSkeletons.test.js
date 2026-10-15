@@ -36,7 +36,7 @@ function mk() {
   const sim = quiet(() => createBeastSim(w, { nav: buildBeastNav(w, def.nav), rng: createRng(1), events, band, tileNav: true, spawn: { x: 1644, y: 1372 } }));
   return { w, sim };
 }
-const cem = UNDER_SITES[0], ruin = UNDER_SITES[1];
+const cem = UNDER_SITES.find((s) => s.id === 'cemetery'), ruin = UNDER_SITES.find((s) => s.id === 'ruinWhite');
 const { w, sim } = mk();
 const slotsOf = (s, site) => site.members.map((m) => s.slotOf(m[0]));
 const cs = slotsOf(sim, cem), rs = slotsOf(sim, ruin);
