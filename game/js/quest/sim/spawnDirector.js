@@ -3,6 +3,7 @@
 // Rule 15 in step: no Math.random / trig / wall clock / Map iteration, integer step counters, 0 alloc (typed arrays + callbacks).
 // Not wired yet: regionalBeasts/goblinCamps keep their own respawn until BEAST-06b/13 (NEEDS B1-main: see lanes/pc-b2.md).
 import { KINDS } from './beastKinds.js';
+import { KIND_OF } from './regionalBeasts.js'; // OB-153
 import { hashU } from '../../life/schedule.js';
 import { SPAWN_AREAS, areaGid, areaGroupSpecs } from './spawnAreas.js';
 
@@ -24,7 +25,7 @@ export function regionalMembers(list, slotOf) {
   const out = [];
   for (let i = 0; i < list.length; i++) {
     const b = list[i], slot = slotOf(b.id); if (slot < 0) continue;
-    out.push({ id: b.id, kind: SPECIES_KIND[b.species] || b.species, key: b.region, group: b.group, x: b.x, y: b.y, slot });
+    out.push({ id: b.id, kind: SPECIES_KIND[b.species] || KIND_OF[b.species] || b.species, key: b.region, group: b.group, x: b.x, y: b.y, slot });
   }
   return out;
 }

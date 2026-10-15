@@ -51,11 +51,11 @@ md += '| region | chests | boars | wolves | bears | goblins | km2 | chests/km2 |
 const tot = row();
 for (const r of G.regions) {
   const t = T[r.id]; if (!t.area && !t.chests && !t.boars && !t.wolves && !t.bears && !t.goblins) continue;
-  const km = t.area / 1e6, en = t.boars + t.wolves + t.bears + t.goblins;
+  const km = t.area / 1e6, en = t.boars + t.wolves + t.bears + t.goblins + t.other;
   md += `| ${r.id} | ${t.chests} | ${t.boars} | ${t.wolves} | ${t.bears} | ${t.goblins} | ${f1(km)} | ${km ? f1(t.chests / km) : '-'} | ${km ? f1(en / km) : '-'} |\n`;
   for (const k of Object.keys(tot)) tot[k] += t[k];
 }
-md += `| TOTAL | ${tot.chests} | ${tot.boars} | ${tot.wolves} | ${tot.bears} | ${tot.goblins} | ${f1(tot.area / 1e6)} | ${f1(tot.chests / (tot.area / 1e6))} | ${f1((tot.boars + tot.wolves + tot.bears + tot.goblins) / (tot.area / 1e6))} |\n\n`;
+md += `| TOTAL | ${tot.chests} | ${tot.boars} | ${tot.wolves} | ${tot.bears} | ${tot.goblins} | ${f1(tot.area / 1e6)} | ${f1(tot.chests / (tot.area / 1e6))} | ${f1((tot.boars + tot.wolves + tot.bears + tot.goblins + tot.other) / (tot.area / 1e6))} |\n\n`;
 const near = (p, list, d) => list.some((q) => Math.hypot(q[0] - p.x, q[1] - p.y) < d);
 const open = chests.filter((c) => !near(c, threats, 25) && !near(c, puzzles, 25));
 md += `## Chests in the open (no beast home, goblin camp, relay or lever within 25 m): ${open.length} of ${chests.length}\n\n`;
