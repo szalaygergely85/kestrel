@@ -63,6 +63,6 @@ import('./quest/sim/inventory.js').then(async ({ addItem }) => {
   assert.deepEqual(readBooks(null, b2, s2), ['You learn Telekinesis.']); assert.deepEqual(readBooks(null, b2, s2), []);
   Object.assign(s2, w('ws_highPastures')); assert.deepEqual(readBooks(null, b2, s2), [], 'a far waystone teaches nothing');
   const reload = createSpellBook(JSON.parse(JSON.stringify(s2))); assert.deepEqual(readBooks(null, reload, s2), [], 'Continue: no second grant');
-  { const h = { freeze: 'Look into the dry well.', telekinesis: 'Wake more waystones.', teleport: 'Help Rook at the ford.', fireball: 'Ask Burl.' }; for (const k in h) if (learnHint(k) !== h[k]) throw new Error('learnHint ' + k + ' = ' + learnHint(k)); if (/esc/i.test(Object.keys(h).map(learnHint).join(' '))) throw new Error('hint mentions Esc'); }
+  { const h = { freeze: 'Find the old well.', telekinesis: 'Wake more waystones.', teleport: 'Help Rook at the ford.', fireball: 'Ask Burl.' }; for (const k in h) if (learnHint(k) !== h[k]) throw new Error('learnHint ' + k + ' = ' + learnHint(k)); if (/esc/i.test(Object.keys(h).map(learnHint).join(' '))) throw new Error('hint mentions Esc'); }
   console.log('spellBooks.test ok');
 });

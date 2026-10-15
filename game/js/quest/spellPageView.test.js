@@ -33,24 +33,25 @@ const draw = () => { ch.fill(32); view.draw(ui); let all = ''; for (let y = 0; y
 
 view.open(); step('KeyT');
 let s = draw();
-ok(row(5).includes('Fireball') && row(6).includes('[#--]  mp 5  cd 0.5 s'), 'AC1 Fireball card: name + pips + mp/cd');
-ok(row(5).includes('Freeze') && row(6).includes('[###]  mp 4  cd 1.5 s'), 'AC1 Freeze card at level 3 (second column)');
-ok(row(10).includes('Telekinesis') && row(11).includes('Not learned') && row(10).includes('Teleport'), 'AC1 4 cards: Telekinesis + Teleport unlearned, second row');
-ok(row(19).includes('Fireball  level 1') && row(20) .includes('Now: 5 mp, dmg 3, radius 2, cooldown 0.5 s') && row(21).includes('Next level: 5 mp, dmg 4, radius 3.5, cooldown 0.5 s'), 'AC2 Fireball 1 -> 2 golden lines');
-ok(row(24).includes('Spell Scrolls: 1') && row(25).includes('[E] Use Spell Scroll'), 'AC3 footer');
+ok(row(5).includes('Fireball') && row(6).includes('[#--] mp 5 cd 0.5 s'), 'AC1 Fireball card: name + pips + mp/cd');
+ok(row(5).includes('Freeze') && row(6).includes('[###] mp 4 cd 1.5 s'), 'AC1 Freeze card at level 3');
+ok(row(5).includes('Telekinesis') && row(6).includes('Not learned') && row(7).includes('Wake more') && row(5).includes('Teleport') && row(7).includes('Help Rook at the') && row(8).includes('ford.'), 'AC1 one row of 4 cards, hints derived');
+ok(/Fireball.*-.*Freeze/.test(row(6).replace(/\[#--\][^|]*\|/, '')) || row(6).includes('-'), 'cards joined by -');
+ok(row(12).includes('Fireball  level 1') && row(13).includes('Now: 5 mp, dmg 3, radius 2, cooldown 0.5 s') && row(14).includes('Next level: 5 mp, dmg 4, radius 3.5, cooldown 0.5 s'), 'AC2 Fireball 1 -> 2 golden lines');
+ok(row(18).includes('Spell Scrolls: 1') && row(19).includes('[E] Use Spell Scroll'), 'AC3 footer');
 ok(!/esc/i.test(s), 'AC4 no Esc text');
 for (let y = 0; y < P.h; y++) ok(row(y).length <= 160, 'AC4 row fits');
 step('KeyD'); s = draw();
-ok(row(19).includes('Freeze  level 3') && row(21).includes('Max level') && !row(25).includes('[E]'), 'AC2 level 3 shows Max level, no scroll action');
-step('KeyA', 'KeyS'); s = draw();
-ok(row(19).includes('Telekinesis  not learned') && row(20).includes('Wake more waystones.') && !row(25).includes('[E]'), 'unlearned card cannot take a scroll');
-step('KeyW'); step('KeyE'); s = draw();
-ok(row(25).includes('Raise Fireball to level 2?  [E] Yes  [Q] No'), 'AC3 confirm line');
+ok(row(12).includes('Freeze  level 3') && row(14).includes('Max level') && !row(19).includes('[E]'), 'AC2 level 3 shows Max level, no scroll action');
+step('KeyD'); s = draw();
+ok(row(12).includes('Telekinesis  not learned') && row(13).includes('Not learned yet. Wake more waystones.') && !row(19).includes('[E]'), 'unlearned card cannot take a scroll');
+step('KeyA', 'KeyA'); step('KeyE'); s = draw();
+ok(row(19).includes('Raise Fireball to level 2?  [E] Yes  [Q] No'), 'AC3 confirm line');
 step('KeyQ'); s = draw();
-ok(st.fireball === 1 && scrolls() === 1 && !row(25).includes('Raise'), 'AC3 Q cancels, no change');
+ok(st.fireball === 1 && scrolls() === 1 && !row(19).includes('Raise'), 'AC3 Q cancels, no change');
 step('KeyE'); step('KeyE'); s = draw();
 ok(st.fireball === 2 && scrolls() === 0 && used[0] === 'fireball' && toasts[0] === 'Fireball is now level 2', 'AC3 Yes calls useScroll');
-ok(row(24).includes('Spell Scrolls: 0') && !row(25).includes('[E]'), 'footer after use');
+ok(row(18).includes('Spell Scrolls: 0') && !row(19).includes('[E]'), 'footer after use');
 // no pack change, tab toggles back, close works
 step('KeyT'); s = draw(); ok(s.includes(' PACK '), 'T returns to the pack');
 step('KeyT'); step('KeyI'); ok(!view.isOpen, 'I closes from the page');

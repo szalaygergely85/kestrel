@@ -1,12 +1,11 @@
 // game/js/quest/spellPageView.js (SPELL-03, docs/epics/ep-spells.md section 3): the "Spells" page of the inventory screen.
-// Four cards (D-021: Fireball, Freeze, Telekinesis, Teleport) in a 2x2 grid in learn order; SPELL-R5 lays them out as one row. Pure view: spell data and the book are injected, strings are prebuilt
+// Four cards (D-021: Fireball, Freeze, Telekinesis, Teleport) in one row in learn order, joined by '-' (SPELL-R5). Pure view: spell data and the book are injected, strings are prebuilt
 // at construct time, `draw` only walks them (0 alloc). No text mentions Esc (owner rule).
 // Injected API (SPELL-01/02): defs = SPELL_DEFS (object keyed by id, or an array with ids) { name, glyph, color, tiers:[{mana, cd, dmg?, r?, ...} x3] };
 // book = createSpellBook (tier(id) 0..3, canRaise(id)); scrolls() = Spell Scroll count; useScroll(id) = new level or 0 (main wraps spellScroll.useScroll).
 const DEFAULT_RGB = [90, 220, 205];
-const COLS = 2;
 import { learnHint } from './sim/spellBooks.js';
-export const CARD = Object.freeze({ x0: 2, pitch: 33, w: 31, h: 4, y0: 4, gap: 1, detailY: 19, footY: 24, titleRow: 3 });
+export const CARD = Object.freeze({ x0: 2, pitch: 24, w: 23, h: 6, y0: 4, detailY: 12, footY: 18, hintW: 19 });
 let PUT = null, PW = 0; // draw-time put/width, so `text` is not a per-frame closure
 function text(x, y, s, fg) { for (let j = 0; j < s.length && x + j < PW; j++) PUT(x + j, y, s.charCodeAt(j), fg); }
 const NUM = (n) => String(Math.round(n * 100) / 100);
@@ -26,6 +25,13 @@ export function tierText(row) {
   return p.join(', ');
 }
 
+/** Word-wrap to at most 2 lines of w chars (construct time only). */
+function wrap(s, w) {
+  const out = ['', '']; let l = 0;
+  for (const word of s.split(' ')) { if (out[l] && out[l].length + 1 + word.length > w && l < 1) l++; out[l] = out[l] ? out[l] + ' ' + word : word; }
+  return out;
+}
+
 /** @param {object} o {defs, book, scrolls, useScroll, rgb?, colors:{text,dim,hint,gold,frame}, say?} */
 export function createSpellPageView(o) {
   const list = Array.isArray(o.defs) ? o.defs : Object.keys(o.defs).map((id) => ({ id, ...o.defs[id] }));
@@ -35,33 +41,24 @@ export function createSpellPageView(o) {
   const pips = ['[---]', '[#--]', '[##-]', '[###]'];
   {
     shown.forEach((d, i) => {
-      const ci = i % COLS, ri = (i / COLS) | 0;
+      const ci = i;
       const rgbk = (o.rgb && o.rgb[d.color || d.colour]) || DEFAULT_RGB;
       const stat = [], now = [], next = [], plain = [], conf = [];
       for (let t = 0; t < 4; t++) {
-        stat.push(t ? pips[t] + '  mp ' + d.tiers[t - 1].mana + '  cd ' + NUM(d.tiers[t - 1].cd) + ' s' : '');
+        stat.push(t ? pips[t] + ' mp ' + d.tiers[t - 1].mana + ' cd ' + NUM(d.tiers[t - 1].cd) + ' s' : '');
         now.push(t ? 'Now: ' + tierText(d.tiers[t - 1]) : '');
         next.push(t === 0 ? '' : t >= 3 ? 'Max level' : 'Next level: ' + tierText(d.tiers[t]));
         plain.push(d.name + (t ? '  level ' + t : '  not learned'));
         conf.push(t >= 3 ? '' : 'Raise ' + d.name + ' to level ' + (t + 1) + '?  [E] Yes  [Q] No');
       }
-      cards.push({ hint: learnHint(d.id) || '', d, ci, ri, x: CARD.x0 + ci * CARD.pitch, y: CARD.y0 + ri * (CARD.h + CARD.gap), rgb: rgbk, name: d.name, stat, now, next, head: plain, conf, glyph: (d.glyph || '*').charCodeAt(0) });
+      cards.push({ hint: learnHint(d.id) || '', hl: wrap(learnHint(d.id) || '', CARD.hintW), d, ci, x: CARD.x0 + ci * CARD.pitch, y: CARD.y0, rgb: rgbk, name: d.name, stat, now, next, head: plain, conf, glyph: (d.glyph || '*').charCodeAt(0) });
     });
   }
   const scrollStr = []; const getScroll = (n) => scrollStr[n] || (scrollStr[n] = 'Spell Scrolls: ' + n);
     let sel = 0, confirm = false;
 
-  function at(ci, ri) { for (const c of cards) if (c.ci === ci && c.ri === ri) return c; return null; }
-  function move(dc, dr) {
-    const c = cards[sel];
-    if (dr) { const n = at(c.ci, c.ri + dr); if (n) sel = cards.indexOf(n); }
-    if (dc) {
-      for (let k = 1; k < COLS; k++) {
-        const ci = (c.ci + dc * k + COLS) % COLS, n = at(ci, c.ri) || at(ci, 0);
-        if (n) { sel = cards.indexOf(n); break; }
-      }
-    }
-  }
+  const n = cards.length;
+  function move(dc) { if (dc) sel = (sel + dc + n) % n; }
   const anyRaisable = () => { for (let i = 0; i < cards.length; i++) if (book.canRaise(cards[i].d.id)) return true; return false; };
   const canRaise = (c) => o.scrolls() > 0 && !!book.canRaise(c.d.id);
   const view = {
@@ -80,10 +77,8 @@ export function createSpellPageView(o) {
         } else if (input.pressed('KeyQ') || input.pressed('Backspace')) confirm = false;
         return true;
       }
-      if (input.pressed('KeyW') || input.pressed('ArrowUp')) move(0, -1);
-      if (input.pressed('KeyS') || input.pressed('ArrowDown')) move(0, 1);
-      if (input.pressed('KeyA') || input.pressed('ArrowLeft')) move(-1, 0);
-      if (input.pressed('KeyD') || input.pressed('ArrowRight')) move(1, 0);
+      if (input.pressed('KeyA') || input.pressed('ArrowLeft')) move(-1);
+      if (input.pressed('KeyD') || input.pressed('ArrowRight')) move(1);
       if ((input.pressed('KeyE') || input.pressed('Enter') || input.pressed('NumpadEnter')) && canRaise(c)) confirm = true;
       return true;
     },
@@ -92,13 +87,14 @@ export function createSpellPageView(o) {
       PUT = put; PW = W;
       for (let i = 0; i < cards.length; i++) {
         const c = cards[i], t = book.tier(c.d.id) | 0, s = i === sel, fg = s ? K.gold : K.frame, w = CARD.w;
-        for (let x = 1; x < w - 1; x++) { put(c.x + x, c.y, 45, fg); put(c.x + x, c.y + 3, 45, fg); }
-        for (let y = 1; y < 3; y++) { put(c.x, c.y + y, 124, fg); put(c.x + w - 1, c.y + y, 124, fg); }
-        put(c.x, c.y, 43, fg); put(c.x + w - 1, c.y, 43, fg); put(c.x, c.y + 3, 43, fg); put(c.x + w - 1, c.y + 3, 43, fg);
+        for (let x = 1; x < w - 1; x++) { put(c.x + x, c.y, 45, fg); put(c.x + x, c.y + CARD.h - 1, 45, fg); }
+        for (let y = 1; y < CARD.h - 1; y++) { put(c.x, c.y + y, 124, fg); put(c.x + w - 1, c.y + y, 124, fg); }
+        put(c.x, c.y, 43, fg); put(c.x + w - 1, c.y, 43, fg); put(c.x, c.y + CARD.h - 1, 43, fg); put(c.x + w - 1, c.y + CARD.h - 1, 43, fg);
+        if (i < cards.length - 1) put(c.x + w, c.y + 2, 45, K.frame); // tree link
         const dim = t === 0;
         put(c.x + 2, c.y + 1, c.glyph, dim ? K.dim : c.rgb);
         text(c.x + 4, c.y + 1, c.name, dim ? K.dim : K.text);
-        if (dim) text(c.x + 2, c.y + 2, 'Not learned', K.dim); else text(c.x + 2, c.y + 2, c.stat[t], K.text);
+        if (dim) { text(c.x + 2, c.y + 2, 'Not learned', K.dim); text(c.x + 2, c.y + 3, c.hl[0], K.dim); text(c.x + 2, c.y + 4, c.hl[1], K.dim); } else text(c.x + 2, c.y + 2, c.stat[t], K.text);
       }
       const c = cards[sel]; if (!c) return;
       const t = book.tier(c.d.id) | 0;

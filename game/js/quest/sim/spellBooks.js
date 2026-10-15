@@ -10,7 +10,7 @@ export const spellOfBook = (itemId) => (typeof itemId === 'string' && itemId.sta
 /** The single planned learn source per spell. kind: 'chest' (CHEST_TABLES id) | 'quest' (quest id, reward item) | 'wake' (see WAKE) | 'burl' | 'unplaced'. */
 export const PLACEMENTS = Object.freeze({
   fireball: { kind: 'burl' },
-  freeze: { kind: 'unplaced', hint: 'Look into the dry well.' }, // SPELL-R6: the dry well north of the post
+  freeze: { kind: 'unplaced', hint: 'Find the old well.' }, // SPELL-R6: the dry well north of the post
   telekinesis: { kind: 'wake', rule: 'thirdNear' }, // the 3rd near-side Waystone
   teleport: { kind: 'unplaced', hint: 'Help Rook at the ford.' }, // SPELL-R6: mq.ford.mirror hand-in
 });
