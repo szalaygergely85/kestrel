@@ -77,6 +77,7 @@ export const GATE_POSES = [
   { slug: 'lookMeadow', name: 'ground look: meadow grass (ENV-02d)', cam: { x: 1450, y: 1035, z: 1.7, yawDeg: 102, pitchDeg: -12, groundEye: true } },
   { slug: 'lookForestEdge', name: 'ground look: ford bank at the forest edge (ENV-02d)', cam: { x: 1040, y: 1068, z: 1.7, yawDeg: 270, pitchDeg: -12, groundEye: true } },
   { slug: 'lookShore', name: 'ground look: lake shore (ENV-02d)', cam: { x: 1215, y: 556, z: 1.7, yawDeg: 0, pitchDeg: -15, groundEye: true } },
+  { slug: 'forestFloor', name: 'forest floor in Northwood (OB-184 undergrowth, saplings, ground look D)', cam: { x: 1550.75, y: 550.66, z: 1.7, yawDeg: 155, pitchDeg: -14, groundEye: true } },
   { slug: 'roadLeft', name: 'walk-out road, looking south-west across the left (south) verge scatter roadL### (tools/gen-roadside-meshes.mjs)', cam: { x: 1440, y: 1030, z: 1.7, yawDeg: 215, pitchDeg: 4, groundEye: true } },
   { slug: 'hillside', name: 'hillside outside (owner pose A)', cam: { x: 1464.33, y: 1045.50, z: 3.92, yawDeg: 54, pitchDeg: 19 } },
   // waystoneLookBack: eye 2 m back along -forward from (1428, 1040) so it is not inside the model
