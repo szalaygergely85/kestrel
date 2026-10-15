@@ -2,7 +2,7 @@
 // stable pass on; the JS twin (temporalStable.js) is fed the GPU's OWN read-back inputs of B plus A's read-back output as history,
 // and its output must equal the GPU's B output: 0 mismatches outside the tie mask, ties <= 0.5 % of the grid.
 // `compareStableRow` is pure (Node-testable); `runStableRow` does the device calls (async readbacks) around two caller-supplied frames.
-import { beginFrame, stabilize, createStableState, createStableBuffers, edgeMaskFromShade, waterMaskFromLayer } from '../../temporalStable.js';
+import { beginFrame, stabilize, createStableState, createStableBuffers, edgeMaskFromShade, waterMaskFromLayer, levelOfByte, covOfByte } from '../../temporalStable.js';
 
 export const STABLE_TIE_MAX_FRAC = 0.005;
 /** STABLE-GATE-TEST-01 liveness floor: the twin must take history on at least this share of the non-sky cells (a reject-everything bug cannot pass). */
@@ -24,17 +24,17 @@ export function compareStableRow(a) {
   const histValid = beginFrame(st, a.camB, a.grid, { invalidate: false });
   const inp = {
     cols, rows, kind: new Uint8Array(n), planeId: new Int32Array(n), mat: new Uint16Array(n), u: new Float32Array(n), v: new Float32Array(n), vd: new Float32Array(n),
-    level: new Uint8Array(n), glyph: new Uint16Array(n), fg: new Uint32Array(n), bg: new Uint32Array(n), edge: null, water: null,
+    level: new Uint8Array(n), cov: new Uint8Array(n), objectId: new Uint32Array(n), glyph: new Uint16Array(n), fg: new Uint32Array(n), bg: new Uint32Array(n), edge: null, water: null,
   };
   const hist = createStableBuffers(cols, rows), out = createStableBuffers(cols, rows);
   const shFg = new Uint32Array(n), shBg = new Uint32Array(n), shGl = new Uint16Array(n), wx = new Uint32Array(n), ww = new Uint32Array(n);
   for (let i = 0; i < n; i++) {
     inp.kind[i] = B.GI[i * 4 + 1] & 255; inp.planeId[i] = B.GI[i * 4] | 0; inp.mat[i] = (B.GI[i * 4 + 1] >>> 16) & 0xffff;
     inp.u[i] = bitsToF(B.GA[i * 4]); inp.v[i] = bitsToF(B.GA[i * 4 + 1]); inp.vd[i] = bitsToF(B.depth[i]);
-    inp.level[i] = B.level[i]; inp.glyph[i] = B.finalFg[i * 4 + 3]; inp.fg[i] = rgb(B.finalFg, i); inp.bg[i] = rgb(B.finalBg, i);
+    /* AA-07: decode the shade level byte */ inp.level[i] = levelOfByte(B.level[i]); inp.cov[i] = covOfByte(B.level[i]); inp.objectId[i] = B.GI[i * 4 + 3] >>> 0; inp.glyph[i] = B.finalFg[i * 4 + 3]; inp.fg[i] = rgb(B.finalFg, i); inp.bg[i] = rgb(B.finalBg, i);
     shFg[i] = rgb(B.shadeFg, i); shBg[i] = rgb(B.shadeBg, i); shGl[i] = B.shadeFg[i * 4 + 3];
     hist.planeId[i] = A.hist[i * 4] | 0; hist.u[i] = bitsToF(A.hist[i * 4 + 1]); hist.v[i] = bitsToF(A.hist[i * 4 + 2]);
-    hist.level[i] = A.hist[i * 4 + 3] & 255; hist.kind[i] = (A.hist[i * 4 + 3] >> 8) & 255; hist.mat[i] = (A.hist[i * 4 + 3] >>> 16) & 0xffff;
+    hist.level[i] = A.hist[i * 4 + 3] & 255; hist.kind[i] = (A.hist[i * 4 + 3] >> 8) & 15; hist.vm[i] = (A.hist[i * 4 + 3] >> 12) & 15; hist.mat[i] = (A.hist[i * 4 + 3] >>> 16) & 0xffff;
     hist.glyph[i] = A.outFg[i * 4 + 3]; hist.fg[i] = rgb(A.outFg, i); hist.bg[i] = rgb(A.outBg, i);
     if (B.water) { wx[i] = B.water[i * 4]; ww[i] = B.water[i * 4 + 3]; } else { wx[i] = 0x7f800000; ww[i] = 0; }
   }

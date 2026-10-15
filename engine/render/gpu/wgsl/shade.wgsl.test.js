@@ -538,12 +538,13 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   assert.ok(/@location\(2\) lvl: u32,/.test(SHADE_LEVEL_WGSL), 'level target @location(2)');
   assert.ok(SHADE_LEVEL_WGSL.includes('var o: FO; o.lvl = 255u;'), 'every early return defaults to level 255 (none / passthrough / terrain / sky)');
   assert.ok(SHADE_LEVEL_WGSL.includes('lvOut = u32(levelFromThresholds(setIdPick, t0.z, gbAvg, su.cutoff));'), 'ramp pick sets the level');
-  assert.ok(SHADE_LEVEL_WGSL.includes('glyphCode = select(code1, code0, idx == 0); lvOut = 255u;'), 'fog stipple glyph resets to 255');
+  assert.ok(SHADE_LEVEL_WGSL.includes('glyphCode = select(code1, code0, idx == 0); lvOut = 255u; lvStip = 1u;'), 'fog stipple glyph resets to 255');
   assert.ok(SHADE_LEVEL_WGSL.includes('o.lvl = lvOut;'));
   // the variant minus its splices is exactly the stable-off shader
   const stripped = SHADE_LEVEL_WGSL
-    .replace('\n  @location(2) lvl: u32,', '').replace(' o.lvl = 255u;', '').replace('\n  var lvOut = 255u;', '')
-    .replace('\n    lvOut = u32(levelFromThresholds(setIdPick, t0.z, gbAvg, su.cutoff));', '').replace(' lvOut = 255u;', '').replace(' o.lvl = lvOut;', '')
+    .replace('\n  @location(2) lvl: u32,', '').replace(' o.lvl = 255u;', '').replace('\n  var lvOut = 255u; var lvStip = 0u;', '')
+    .replace('\n    lvOut = u32(levelFromThresholds(setIdPick, t0.z, gbAvg, su.cutoff));', '').replace(' lvOut = 255u; lvStip = 1u;', '')
+    .replace(/\n  \{ \/\/ AA-07b[\s\S]*?\n  \}\n  o\.lvl = lvOut;/, '') // AA-07b coverage block + the level store
     .replace(' o.lvl = select(255u, 254u, to.fgw > 0.0);', '').replace(' o.lvl = gLv;', ''); // G2 + P3: the terrain splice is the 254 far-grass select // + the D2e kind-10 level splice
   assert.equal(stripped, SHADE_WGSL, 'level variant == off shader + the 7 splices');
   assert.ok(SHADE_LEVEL_WGSL.includes('o.lvl = select(255u, 254u, to.fgw > 0.0);\n    return o;'), 'G2: terrain writes level 255, or 254 (animated) on far-grass cells');

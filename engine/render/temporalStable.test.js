@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import v8 from 'node:v8';
-import { beginFrame, stabilize, createStableState, createStableBuffers, CHANNEL_SNAP, LEVEL_ANIM, LEVEL_NONE, UV_LIM_TEXELS, DEFAULT_DETAIL, uvDriftLimit } from './temporalStable.js';
+import { encodeLevelByte, levelOfByte, covOfByte, vmTagOf, beginFrame, stabilize, createStableState, createStableBuffers, CHANNEL_SNAP, LEVEL_ANIM, LEVEL_NONE, UV_LIM_TEXELS, DEFAULT_DETAIL, uvDriftLimit } from './temporalStable.js';
 import { KIND_NONE, KIND_WALL, KIND_MODEL, KIND_MESH } from './GBuffer.js';
 import { makeOk } from '../test/assert.js';
 
@@ -312,6 +312,60 @@ function run(st, cam, inpFn, hist, flags) {
 }
 
 console.log(`${pass} passed, ${fail} failed.`);
+// AA-07a: view-model cells (kind 8, GI.w >= 0xFFF8) take history from the SAME cell, key objectId + mat; the +-1 level hold applies
+{
+  const st = createStableState();
+  beginFrame(st, cam0, GRID); const a = wallInput(st); a.kind.fill(KIND_MODEL);
+  const n = COLS * ROWS, VM = 0xFFFF - 2; // hand 2
+  const h = colHist(a); h.vm.fill(vmTagOf(VM)); h.mat.fill(7);
+  beginFrame(st, { ...cam0, yawDeg: 0.5, x: 0.2 }, GRID); // the camera moves a little: the view model must NOT be reprojected
+  const mk = (oid, mat, lvl) => { const b = wallInput(st); b.kind.fill(KIND_MODEL); b.objectId = new Uint32Array(n).fill(oid); b.mat = new Uint16Array(n).fill(mat); b.level.fill(lvl);
+    b.u.set(a.u); b.v.set(a.v); b.fg.set(a.fg); return b; };
+  const at = 10 * COLS + 20;
+  let out = createStableBuffers(COLS, ROWS); stabilize(mk(VM, 7, 6), h, out, st);
+  ok('AA-07a: view-model cell, level +1, same object/mat -> held (history glyph, history level)', out.fresh[at] === 0 && out.glyph[at] === 100 + 20 && out.level[at] === 5 && out.hsrc[at] === at);
+  ok('AA-07a: view-model history is tagged', out.vm[at] === vmTagOf(VM) && vmTagOf(VM) === 3 && vmTagOf(100) === 0);
+  out = createStableBuffers(COLS, ROWS); stabilize(mk(VM + 1, 7, 6), h, out, st);
+  ok('AA-07a: a different object drops the history', out.fresh[at] === 1 && out.glyph[at] === 7);
+  out = createStableBuffers(COLS, ROWS); stabilize(mk(VM, 8, 6), h, out, st);
+  ok('AA-07a: a different material drops the history', out.fresh[at] === 1);
+  out = createStableBuffers(COLS, ROWS); stabilize(mk(VM, 7, 8), h, out, st);
+  ok('AA-07a: level +3 switches', out.fresh[at] === 0 && out.glyph[at] === 7);
+  st.aaVm = false; out = createStableBuffers(COLS, ROWS); stabilize(mk(VM, 7, 6), h, out, st);
+  ok('AA-07a: ?aavm=0 -> kind 8 always fresh', out.fresh[at] === 1 && out.vm[at] === 0);
+}
+// AA-07a: a world kind-8 prop (no view-model id) uses the material key across a plane change, with the normal reprojection
+{
+  const st = createStableState();
+  beginFrame(st, cam0, GRID); const a = wallInput(st); a.kind.fill(KIND_MODEL);
+  const h = colHist(a); h.mat.fill(4);
+  beginFrame(st, cam0, GRID);
+  const b = wallInput(st); b.kind.fill(KIND_MODEL); b.planeId.fill(9); b.mat = new Uint16Array(COLS * ROWS).fill(4); b.objectId = new Uint32Array(COLS * ROWS).fill(77);
+  const out = createStableBuffers(COLS, ROWS); stabilize(b, h, out, st);
+  ok('AA-07a: world kind-8 prop keeps history across a planeId change (same mat)', out.fresh[10 * COLS + 20] === 0);
+  b.mat.fill(5); const o2 = createStableBuffers(COLS, ROWS); stabilize(b, h, o2, st);
+  ok('AA-07a: world kind-8 prop with another mat -> fresh', o2.fresh[10 * COLS + 20] === 1);
+}
+// AA-07b: a line<->ramp mismatch is held while the joint coverage is 1/4..3/4
+{
+  const st = createStableState();
+  beginFrame(st, cam0, GRID); const a = wallInput(st);
+  const h = colHist(a); h.level.fill(LEVEL_NONE); // history = a line cell
+  beginFrame(st, cam0, GRID);
+  const at = 10 * COLS + 20, n = COLS * ROWS;
+  const run2 = (cov) => { const b = wallInput(st); b.level.fill(5); b.cov = new Uint8Array(n).fill(cov); const o = createStableBuffers(COLS, ROWS); stabilize(b, h, o, st); return o; };
+  let o = run2(2);
+  ok('AA-07b: coverage 2/4 + line->ramp mismatch -> history glyph held, history level kept', o.fresh[at] === 0 && o.glyph[at] === 120 && o.level[at] === LEVEL_NONE);
+  ok('AA-07b: coverage 1/4 and 3/4 hold too', run2(1).fresh[at] === 0 && run2(3).fresh[at] === 0);
+  ok('AA-07b: coverage 0/4 switches (fresh)', run2(0).fresh[at] === 1 && run2(0).glyph[at] === 7);
+  ok('AA-07b: coverage 4/4 -> encoded as 0 (no info) switches', run2(4).fresh[at] === 1);
+  st.aaJoint = false; ok('AA-07b: ?aajoint=0 -> mismatch always fresh', run2(2).fresh[at] === 1); st.aaJoint = true;
+  // encoding round trip (shade.wgsl.js writes it, stable.wgsl.js / stableCompare.js read it)
+  ok('AA-07b: level byte codec', levelOfByte(encodeLevelByte(5, 2, false)) === 5 && covOfByte(encodeLevelByte(5, 2, false)) === 2
+    && levelOfByte(encodeLevelByte(255, 3, true)) === 255 && covOfByte(encodeLevelByte(255, 3, true)) === 3
+    && encodeLevelByte(5, 0, false) === 5 && encodeLevelByte(5, 4, false) === 5 && encodeLevelByte(255, 2, false) === 255 && encodeLevelByte(254, 2, false) === 254
+    && covOfByte(255) === 0 && covOfByte(254) === 0 && levelOfByte(254) === 254);
+}
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');
 
