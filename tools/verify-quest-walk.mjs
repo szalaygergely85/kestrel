@@ -301,6 +301,7 @@ try {
     check('sq.burl.meat done after hand-in', await talkUntil('bear', 'sq.burl.meat', 4), await state('sq.burl.meat'));
     await markCheck('sR', 'bear', false, "blue '?' gone from Burl after the hand-in");
   });
+  if (process.argv.includes('--next')) { const m = await import('./quest-walk-next.mjs'); await m.run({ check, beat, talk, talkUntil, ev, evA, pause, key, pressE, stOf, state, flag, markCheck, needleCheck, momentStill, goIx, goTrig, tpA, emitHit, still, give, marks, waitFor, YES, lastLog: () => lastLog }); }
   curBeat = 'end'; check('no console errors', errors.length === 0, JSON.stringify(errors.slice(0, 3)));
 } catch (e) { console.error('FATAL', e && e.message || e); rows.push({ beat: curBeat, name: 'fatal: ' + (e && e.message), ok: false }); }
 finally {
