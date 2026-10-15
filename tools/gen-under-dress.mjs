@@ -55,7 +55,7 @@ dress('Cellar', 'fordCellar', cel, [[1000.5, 1058.6], [1000.5, 1062.2], [999.4, 
 
 // strand sea cave (origin 1606,1700; chamber 1613..1624 x 1722..1730, mouth in the south wall at x 1616..1621)
 const cave = lvl('strand_cave');
-if (cave) dress('Cave', 'strandCave', cave, [[1618.5, 1731], [1618.5, 1723.5]], [{ x: 1623.2 - 1606, y: 1726.5 - 1700, z: 1.5 }], [
+if (cave) dress('Cave', 'strandCave', cave, [[1618.5, 1731], [1618.5, 1723.5]], [{ x: 1623.2 - 1611, y: 1726.5 - 1720, z: 1.5 }], [
   ['Prop_Crate', 1622.9, 1728.6, 0, 20, 0.8], ['Prop_Crate', 1623.2, 1727.3, 0, 100, 0.7], ['Prop_Crate', 1622.9, 1728.6, 0.8, 60, 0.6], ['Mushroom_Common', 1613.9, 1728.9, 0, 0, 1],
   ['Mushroom_Common', 1614.5, 1729.2, 0, 90, 0.8], ['Mushroom_Common', 1623.2, 1723.0, 0, 40, 0.9], ['Mushroom_Common', 1622.6, 1722.8, 0, 200, 0.7], ['Pebble_Round_2', 1614.2, 1727.6, 0, 10, 1],
   ['Pebble_Square_5', 1623.4, 1725.8, 0, 130, 1], ['Rock_Medium_2', 1622.3, 1725.0, 0, 80, 0.6], ['Rock_Medium_1', 1614.6, 1728.2, 0, 300, 0.5], ['Prop_Brick1', 1623.0, 1724.1, 0, 15, 1],
