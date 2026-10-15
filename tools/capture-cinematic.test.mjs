@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { parseArgs, hashCells, ffmpegArgs, captureCinematic } from './capture-cinematic.mjs';
+import { parseArgs, hashCells, ffmpegArgs, captureCinematic, sizes, buildQuery } from './capture-cinematic.mjs';
 import { mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { ROOT } from './capture-browser.mjs';
@@ -14,7 +14,26 @@ assert.notEqual(hashCells(frame), hashCells({ ...frame, bg: [5, 6, 8, 255] }));
 assert.match(ffmpegArgs(['a', 'b'], 30, 'mp4', 'out.mp4').join(' '), /hstack=inputs=2:shortest=1/);
 assert.match(ffmpegArgs(['a'], 30, 'gif', 'out.gif').join(' '), /palettegen/);
 assert.ok(ffmpegArgs(['a'], 30, 'mp4', 'out.mp4').includes('yuv420p'));
-console.log('capture-cinematic: 18 assertions PASS');
+// teaser options: --size/--portrait/--hour/--clean
+const base = ['--cinematic', 'tower', '--port', '9650'];
+assert.equal(args.size, '1280x720'); assert.equal(args.clean, false); assert.equal(args.hour, undefined);
+assert.equal(buildQuery(args, 'tower'), 'renderer=mesh&cinematic=tower&capture=1&grid=240x90&timefreeze=1&time=8'); // default URL unchanged
+const pt = parseArgs([...base, '--portrait']);
+assert.equal(pt.size, '1080x1920'); assert.equal(pt.grid, '480x180');
+assert.equal(parseArgs([...base, '--portrait', '--grid', '320x120']).grid, '320x120');
+assert.equal(parseArgs([...base, '--size', '1920x1080']).size, '1920x1080');
+assert.throws(() => parseArgs([...base, '--size', '10']));
+assert.deepEqual(sizes('1280x720'), { out: { w: 1280, h: 720 }, view: { w: 1280, h: 720 }, crop: false });
+const ps = sizes('1080x1920');
+assert.deepEqual(ps.out, { w: 1080, h: 1920 }); assert.equal(ps.crop, true); assert.equal(ps.view.w % 2, 0); assert.equal(ps.view.h, 1440); assert.equal(ps.view.w, 2560);
+const hq = buildQuery(parseArgs([...base, '--hour', '22.5', '--clean']), 'tower');
+assert.match(hq, /&cinehour=22\.5&clean=1&timefreeze=1&time=22\.5$/);
+assert.match(buildQuery(parseArgs([...base, '--hour=3', '--time=5']), 'tower'), /cinehour=3.*&time=5$/);
+assert.throws(() => parseArgs([...base, '--hour', '25']));
+const pf = ffmpegArgs(['a'], 30, 'mp4', 'out.mp4', '1080x1920').join(' ');
+assert.match(pf, /crop='min\(iw,ih\*1080\/1920\)':ih,scale=1080:1920/); assert.match(pf, /pad=ceil\(iw\/2\)\*2/);
+assert.equal(ffmpegArgs(['a'], 30, 'mp4', 'out.mp4').join(' '), ffmpegArgs(['a'], 30, 'mp4', 'out.mp4', '1280x720').join(' ')); // 16:9 = no crop
+console.log('capture-cinematic: 36 assertions PASS');
 
 // Opt-in real-GPU regression: CINE_BROWSER_PORT=9650 node tools/capture-cinematic.test.mjs.
 // Normal suite discovery stays Node-only. Generated camera keys are test data, not showcase assets.

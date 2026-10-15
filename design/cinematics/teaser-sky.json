@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "id": "teaser-sky",
+  "fps": 30,
+  "note": "TEASER (owner 2026-10-15, TikTok 9:16, capture --portrait: VFOV ~47, ~27 deg horizontal after the crop): camera 1.5 m over the open south sea (sea z -96, seabed <= -97.5) at (1560, 1880), 140+ m off the coast, pitched UP 44 -> 50 and panning slowly 230 -> 262 (the format has no roll) toward the dusk glow. The frame spans ~20..74 deg elevation, so there is no ground, sea or coast at all. Pitch ends at 50, not 75: palette materials.sky.cloudBand = [2, 35, 55] (clouds full up to 35, gone by 55 deg) and the format clamps pitch to +-60; at 44..50 the clouds fill the lower half and the dusk gradient the upper half. Cloud drift = palette clouds.wind over sim time plus the pan. Hour 19:00 (dusk palette record).",
+  "keys": [
+    { "t": 0,    "x": 1560.0, "y": 1880.0, "z": -94.5, "yawDeg": 230, "pitchDeg": 44,   "ease": "linear" },
+    { "t": 3.5,  "x": 1559.5, "y": 1880.0, "z": -94.5, "yawDeg": 237, "pitchDeg": 45.5, "ease": "linear" },
+    { "t": 7,    "x": 1558.8, "y": 1880.0, "z": -94.5, "yawDeg": 246, "pitchDeg": 47,   "ease": "linear" },
+    { "t": 10.5, "x": 1558.1, "y": 1880.0, "z": -94.5, "yawDeg": 255, "pitchDeg": 48.5, "ease": "linear" },
+    { "t": 14,   "x": 1557.6, "y": 1880.0, "z": -94.5, "yawDeg": 262, "pitchDeg": 50,   "ease": "linear" }
+  ]
+}

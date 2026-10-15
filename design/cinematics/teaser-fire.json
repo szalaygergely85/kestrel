@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "id": "teaser-fire",
+  "fps": 30,
+  "note": "TEASER (owner 2026-10-15, TikTok 9:16, capture --portrait: VFOV ~47, ~27 deg horizontal after the crop): tight push-in on the Kestrel burner inside the tower (brazier world 1498.5, 1024.5; fire body z 1.05), from 2.4 m to 0.84 m, always aimed at the flame (yaw 70.8 -> 72.6), eye 1.30 -> 1.15 m over floor 0, then tilting up -6 -> +18 to follow smoke and sparks. Camera stays on the floor-0 cells x 1496..1498, y 1024.5..1025.3 (same cells as the towerInterior pose and fire.json, south of the stairwell draft zone y <= 1023.5). Night hour 22:00 so only the fire lights the walls; the narrow crop and the +18 cap keep the room layout and stairwell out of frame.",
+  "keys": [
+    { "t": 0,  "x": 1496.2,   "y": 1025.3,  "z": 1.30, "yawDeg": 70.8, "pitchDeg": -6, "ease": "linear" },
+    { "t": 3,  "x": 1496.65,  "y": 1025.135,"z": 1.24, "yawDeg": 71.1, "pitchDeg": -4, "ease": "linear" },
+    { "t": 6,  "x": 1497.1,   "y": 1024.97, "z": 1.18, "yawDeg": 71.4, "pitchDeg": 0,  "ease": "linear" },
+    { "t": 9,  "x": 1497.475, "y": 1024.83, "z": 1.15, "yawDeg": 72.2, "pitchDeg": 8,  "ease": "linear" },
+    { "t": 12, "x": 1497.7,   "y": 1024.75, "z": 1.15, "yawDeg": 72.6, "pitchDeg": 18, "ease": "linear" }
+  ]
+}
