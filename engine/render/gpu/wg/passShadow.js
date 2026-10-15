@@ -111,6 +111,9 @@ export class WgShadowPass {
     } catch (e) { this.dispose(); throw e; }
   }
 
+  /** LOD-RESET-01: the shadow cull's `lodPrev` slot holds the shadow band - zero it on a camera cut like the main cull's. */
+  resetLodHistory() { if (this.cull) this.cull.resetLodHistory(); }
+
   // Vertex stage from the raster module; fragment stage omitted (depth only) unless `fragEntry` names one (terrain carve).
   _pipeline(code, layout, stride, cull, block, instanced = false, extraLayouts = null, fragEntry = null, textures = []) {
     const vertex = { src: { wgsl: code }, layout, strideBytes: stride };

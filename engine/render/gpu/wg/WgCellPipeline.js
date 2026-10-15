@@ -441,7 +441,7 @@ export class WgCellPipeline {
   /** S8-B2-10c: camera cut / teleport - the next frame's cull phase 1 runs with hzbOn 0 (no-op with occl off). */
   invalidateHzb() { if (this._rasterPass) this._rasterPass.invalidateHzb(); }
   /** LOD-RESET-01: camera cut / world load - cull LOD hysteresis reset (GPU twin of `MeshGroupSet.resetLodHistory`). */
-  resetLodHistory() { if (this._rasterPass) this._rasterPass.resetLodHistory(); }
+  resetLodHistory() { if (this._rasterPass) this._rasterPass.resetLodHistory(); if (this._shadowPass) this._shadowPass.resetLodHistory(); } // + the shadow cull's band buffer
   /** US-073c: camera cut / teleport / world load - the next frame's stable pass copies fresh cells instead of blending history. No-op with stable off. */
   /**
    * OB-073-D2d: grass carpet (38.52). carpet = world.carpet or null (off: no pass object, nothing encoded); nearH = {data,w,h,x0,y0,cell}; version bumps on a
