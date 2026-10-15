@@ -74,7 +74,7 @@ export function saveDialogues(dm, fs) {
 // ---------- which dialogue nodes belong to a quest ----------
 /** [{ file, node, stage }] for quest id: entries gated on `s.<id>.<state>` plus their `next` chain and the accept choice. */
 export function questNodes(dm, qid) {
-  const out = [], pre = 's.' + qid + '.';
+  const out = [], pre = 's.' + qid + '.', preQ = 'q.' + qid + '.'; // hand-written routes use s.<id>.<state> (legacy) or q.<id>.<state> (quest book)
   for (const f of dm.files.values()) {
     const seen = new Set();
     const walk = (id, stage) => {
@@ -83,10 +83,10 @@ export function questNodes(dm, qid) {
       seen.add(id);
       if (Array.isArray(n.lines)) out.push({ file: f.name, node: id, stage });
       if (n.next) walk(n.next, stage);
-      for (const c of n.choices || []) if (c.setFlag === pre + 'accept' && c.next) walk(c.next, 'accept');
+      for (const c of n.choices || []) if ((c.setFlag === pre + 'accept' || c.setFlag === preQ + 'accept') && c.next) walk(c.next, 'accept');
     };
     for (const e of f.obj.entry || []) {
-      const m = e.requires && e.requires.startsWith(pre) ? STATE_KEY[e.requires.slice(pre.length)] : null;
+      const m = e.requires && (e.requires.startsWith(pre) || e.requires.startsWith(preQ)) ? STATE_KEY[e.requires.slice(pre.length)] : null;
       if (m) walk(e.node, m);
     }
   }

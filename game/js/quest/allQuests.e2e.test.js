@@ -17,6 +17,7 @@ import { offerIndices } from './dialogueView.js';
 import { generateAll, generateForNpc } from './questSnippets.js';
 import { gateOnMeet, isWorn } from './errands.js';
 import { createQuestPickups } from '../questPickups.js';
+import { createNoteOffer } from './objectOffer.js';
 import { ensureInventory, countOf } from './sim/inventory.js';
 import { AVAILABLE, ACTIVE, READY, DONE, STATUS_NAMES } from './sim/questBook.js';
 import { loadDesignAssets } from '../../../tools/validate-content.mjs';
@@ -100,6 +101,17 @@ function talk(who, wantFlag) {
   return out;
 }
 
+// The pinned keep-light page is read through the note UI (note.read): its Accept/Exit is the note panel's offer (objectOffer.js), not an 'obj.' dialogue.
+const noteOffer = createNoteOffer({ getBook: () => relay.book, inspect: () => {} });
+/** Read the note `noteId` of object `oid`: returns {opened, offers, accepted, lines} like talk(); the player presses Accept only when `accept`. */
+function readNote(oid, accept) {
+  const o = noteOffer.offerFor(oid === 'noteKeepLight' ? 'keepLight' : null);
+  if (!o) return { opened: false, offers: 0, accepted: 0, lines: [] };
+  if (accept) o.accept();
+  return { opened: true, offers: 1, accepted: accept ? 1 : 0, lines: [o.title] };
+}
+const noteGiver = (id) => id === 'noteKeepLight';
+
 // ---------------------------------------------------------------- per-quest run
 const lists = () => { const gA = [], gR = [], sA = [], sR = []; relay.book.markLists(gA, gR, sA, sR); return { gA, gR, sA, sR }; };
 const idx = (id) => relay.book.index(id);
@@ -144,7 +156,7 @@ function runQuest(def) {
   if (!skipOffer) {
   // 2. '!' over a CHARACTER in the right colour
   if (!objectGiver && !isChar(giver)) fail('2 giver-character', "giver '" + giver + "' is not a character (no dialogue) and the quest is not objectGiver");
-  if (objectGiver && !def.main && dialogues['obj.' + giver] === undefined) fail('2 giver-character', "objectGiver '" + giver + "' has no generated offer dialogue");
+  if (objectGiver && !def.main && dialogues['obj.' + giver] === undefined && !noteGiver(giver)) fail('2 giver-character', "objectGiver '" + giver + "' has no generated offer dialogue");
   if (!isChar(turnIn)) fail('2 giver-character', "hand-in '" + turnIn + "' is not a character (no dialogue): '?' must sit over a character");
   { const L = lists(); const mine = side ? L.sA : L.gA, other = side ? L.gA : L.sA;
     if (!mine.includes(giver) && !((otherAt('avail', giver, def.id) || (side && L.gA.includes(giver))) && (L.gA.includes(giver) || L.sA.includes(giver)))) fail('2 mark-offer', "no " + colour + " '!' over giver '" + giver + "'" + (other.includes(giver) ? ' (wrong colour)' : '')); }
@@ -152,14 +164,14 @@ function runQuest(def) {
   // 3. talk -> Accept / Exit; Exit keeps it available
   const who = objectGiver ? 'obj:' + giver : giver;
   const notePanel = objectGiver && def.main; // main object givers (tower.blade): offer + accept through the note panel (objectOffer.offerFor -> book.accept)
-  const exit = notePanel ? { opened: true, offers: 1, lines: [] } : talk(who, null);
+  const exit = notePanel ? { opened: true, offers: 1, lines: [] } : (objectGiver && noteGiver(giver) ? readNote(giver, false) : talk(who, null));
   if (!exit.opened) fail('3 talk-offer', 'cannot open a conversation with ' + who);
   else if (exit.offers < 1) fail('3 talk-offer', 'no Accept/Exit offer shown by ' + who + ' (' + (exit.lines[0] || 'no lines').slice(0, 40) + ')');
   if (st() !== AVAILABLE) fail('3 exit-keeps-available', 'Exit changed the status to ' + STATUS_NAMES[st()]);
   else if (exit.offers) { const L = lists(); if (!(side ? L.sA : L.gA).includes(giver) && !otherAt('avail', giver, def.id)) fail('3 exit-keeps-available', "'!' vanished after Exit"); }
 
   // 4. Accept -> '!' gone, tracked
-  let acc = null; for (let n = 0; n < 4 && st() === AVAILABLE; n++) acc = notePanel ? (b0().accept(def.id), { opened: true, offers: 1, lines: [] }) : talk(who, 'q.' + def.id + '.accept'); // a player talks again if another quest's offer came first
+  let acc = null; for (let n = 0; n < 4 && st() === AVAILABLE; n++) acc = notePanel ? (b0().accept(def.id), { opened: true, offers: 1, lines: [] }) : (objectGiver && noteGiver(giver) ? readNote(giver, true) : talk(who, 'q.' + def.id + '.accept')); // a player talks again if another quest's offer came first
   if (st() === AVAILABLE) { fail('4 accept', 'talk with ' + who + ' did not accept (opened ' + (acc && acc.opened) + ', offers ' + (acc && acc.offers) + ', first line: ' + String(acc && acc.lines[0]).slice(0, 36) + ')'); b0().accept(def.id); }
   { const L = lists(); if ((side ? L.sA : L.gA).includes(giver) && !otherAt('avail', giver, def.id)) fail('4 accept', "'!' still shows after Accept"); }
   if (b0().tracked() !== I) fail('4 accept', 'accepted quest is not the tracked one');

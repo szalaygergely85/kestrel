@@ -7,8 +7,8 @@
     "you": {"label": "YOU", "player": true}
   },
   "entry": [
-    {"node": "dorrin.done.1", "requires": "s.mq.ow.relay.done"},
-    {"node": "dorrin.relay.1", "requires": "s.mq.ow.relay.active"},
+    {"node": "dorrin.done.1", "requires": "q.mq.ow.relay.done"},
+    {"node": "dorrin.relay.1", "requires": "q.mq.ow.relay.active"},
     {"node": "dorrin.meet.1"}
   ],
   "nodes": {
