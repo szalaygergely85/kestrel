@@ -410,6 +410,51 @@ function decode(buf, vertCount) {
   b0.dispose();
 }
 
+// ---- VOX-MESH-CACHE-01: per-id identity chain (alt), no thrash, stale frees, cap 4 ----
+{
+  const mkv = (id, ver = 1) => ({ id, layout: 'static', meshVersion: ver, triCount: 1, pos: new Float32Array(9), uv: new Float32Array(6), nrm: new Uint32Array(3),
+    flat: new Uint32Array([0, 9, 0, 9, 0, 9]), aux: new Float32Array(24) });
+  // (1) alternating two objects per id, 3 ids, 1000 frames: 6 builds, no growth
+  {
+    const mock = makeMockGpuDevice(), bufs = new MeshBuffers(mock.device);
+    const objs = ['a', 'b', 'c'].map((id) => [mkv(id), mkv(id)]);
+    for (let f = 0; f < 1000; f++) for (const [o0, o1] of objs) bufs.getVoxel(f % 2 ? o0 : o1);
+    ok('VMC-01 alternating: exactly 6 builds', bufs.voxelBuilds === 6, String(bufs.voxelBuilds));
+    ok('VMC-01 alternating: no buffer growth (6 x 2 live)', mock.liveCount() === 12 && mock.createCount === 12, `${mock.liveCount()}/${mock.createCount}`);
+    // (3b) dispose leaves nothing
+    bufs.dispose(); ok('VMC-01 dispose(): nothing live', mock.liveCount() === 0, String(mock.liveCount()));
+  }
+  // (2) meshVersion bump on one id: one rebuild, every stale entry freed; other ids untouched
+  {
+    const mock = makeMockGpuDevice(), bufs = new MeshBuffers(mock.device);
+    const a0 = mkv('a'), a1 = mkv('a'), b0 = mkv('b');
+    const ea0 = bufs.getVoxel(a0), ea1 = bufs.getVoxel(a1), eb = bufs.getVoxel(b0);
+    const builds = bufs.voxelBuilds;
+    a0.meshVersion = 2; a1.meshVersion = 2;
+    const na0 = bufs.getVoxel(a0); bufs.getVoxel(a1); bufs.getVoxel(a0); bufs.getVoxel(a1);
+    ok('VMC-01 bump: one rebuild per object (2)', bufs.voxelBuilds === builds + 2, String(bufs.voxelBuilds - builds));
+    const stale = [ea0, ea1].every((e) => e.vertexBuffer._disposed && e.indexBuffer._disposed);
+    ok('VMC-01 bump: every stale entry freed', stale && na0 !== ea0);
+    ok('VMC-01 bump: other id untouched', !eb.vertexBuffer._disposed);
+    ok('VMC-01 bump: live = 2 new a + 1 b (x2 buffers)', mock.liveCount() === 6, String(mock.liveCount()));
+    // (3a) release(id-holder) leaves nothing for that id
+    bufs.release(a0); ok('VMC-01 release(): id a fully freed', mock.liveCount() === 2 && !bufs.voxelCache.has('a'), String(mock.liveCount()));
+    bufs.release(b0); ok('VMC-01 release(): nothing live', mock.liveCount() === 0, String(mock.liveCount()));
+  }
+  // (4) cap 4: 5th distinct object evicts the oldest and frees it
+  {
+    const mock = makeMockGpuDevice(), bufs = new MeshBuffers(mock.device);
+    const o = [0, 1, 2, 3, 4].map(() => mkv('z'));
+    const es = o.slice(0, 4).map((m) => bufs.getVoxel(m));
+    ok('VMC-01 cap: 4 entries live', mock.liveCount() === 8, String(mock.liveCount()));
+    const e4 = bufs.getVoxel(o[4]);
+    ok('VMC-01 cap: oldest evicted + freed', es[0].vertexBuffer._disposed && es[0].indexBuffer._disposed);
+    ok('VMC-01 cap: the 3 newer survive, still 4 live entries', es.slice(1).every((e) => !e.vertexBuffer._disposed) && !e4.vertexBuffer._disposed && mock.liveCount() === 8, String(mock.liveCount()));
+    const b = bufs.voxelBuilds; bufs.getVoxel(o[1]); ok('VMC-01 cap: survivor still a cache hit', bufs.voxelBuilds === b);
+    bufs.dispose(); ok('VMC-01 cap: dispose frees all', mock.liveCount() === 0, String(mock.liveCount()));
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed.`);
 if (fail > 0) {
   console.log('Failures:');
