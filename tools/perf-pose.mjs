@@ -57,7 +57,7 @@ try {
   if (process.env.CAP_LOG) cdp.onEvent((m, p) => { if (m === 'Runtime.consoleAPICalled') console.error('[page]', (p.args || []).map((a) => a.value ?? a.description ?? '').join(' ').slice(0, 300)); if (m === 'Runtime.exceptionThrown') console.error('[exc]', JSON.stringify(p.exceptionDetails).slice(0, 400)); });
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 3840, height: 2160, deviceScaleFactor: 1, mobile: false });
   for (const c of configs) for (const pose of poses) for (const t of trees) {
-    const q = `quality=${c.q}&f3=1&autoquality=0&${poseQuery(pose)}${t === 'voxel' ? '&trees=voxel' : ''}`;
+    const q = `quality=${c.q}&f3=1&autoquality=0&nopause=1&${poseQuery(pose)}${t === 'voxel' ? '&trees=voxel' : ''}`;
     await evaluate(cdp, 'window.__perfOld = 1; true'); // marker: the NEW document has no __perfOld
     const loaded = new Promise((res) => cdp.onEvent((m) => { if (m === 'Page.loadEventFired') res(); }));
     await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(q, parseTimeArg(args.time))}` });
