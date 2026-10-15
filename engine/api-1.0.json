@@ -274,6 +274,7 @@
     {"name":"createFaunaFeed","area":"anim","tier":"stable"},
     {"name":"createFireGrid","area":"fx","tier":"experimental"},
     {"name":"createFlowField","area":"nav","tier":"experimental"},
+    {"name":"createFogHour","area":"render","tier":"experimental"},
     {"name":"createFootIk","area":"anim","tier":"experimental"},
     {"name":"createFrame","area":"core","tier":"stable"},
     {"name":"createFrameRenderer","area":"anim","tier":"stable"},
