@@ -103,6 +103,14 @@
       "radius": 2.2,
       "entities": ["cellarNote"]
     },
+    "note.smugglers": {
+      "note": "Writer 2026-10-15 (UNDER-05): smugglers' voice; hints Ford cellar + crypt (scraped names), no spoilers.",
+      "prompt": "[E] Read the note",
+      "title": "A note under a crate",
+      "lines": ["Low tide only. By high water this floor is sea.", "Salt and oil go to the cellar under the Ford.", "Nothing more goes by the graves. Not after dark.", "Names off the walls down there. We never did that."],
+      "radius": 2.2,
+      "entities": ["strandCaveNote"]
+    },
     "note.fordMark": {
       "prompt": "[E] Look at the mark",
       "title": "A mark cut in the base",
