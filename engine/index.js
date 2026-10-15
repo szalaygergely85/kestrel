@@ -26,6 +26,7 @@ export { makeFrame as createFrame } from './core/transform.js'; // ENG-API-01c: 
 // ---- content ------------------------------------------------------------
 export { AssetRegistry } from './core/assets.js';
 export { loadLevel } from './world/Level.js';
+export { validateUnder, validateUnderSite } from './world/validateUnder.js'; // UNDER-00c
 
 // ---- US-027a JSON content pack loader (architecture.md 21) ----------------
 export { LATEST_SCHEMA, ID_COLLECTIONS, REF_FIELDS, KEY_ORDER, ORDERED_MAPS, ENVELOPE_KEYS } from './content/schema.js';

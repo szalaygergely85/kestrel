@@ -550,6 +550,8 @@
     {"name":"validatePost","area":"render","tier":"stable"},
     {"name":"validateRecipe","area":"anim","tier":"stable"},
     {"name":"validateScatterConfig","area":"world","tier":"experimental"},
+    {"name":"validateUnder","area":"content","tier":"experimental"},
+    {"name":"validateUnderSite","area":"content","tier":"experimental"},
     {"name":"validateVoxelModel","area":"anim","tier":"stable"},
     {"name":"voxelPointWorld","area":"anim","tier":"experimental"},
     {"name":"wadeSplashAt","area":"fx","tier":"stable"},

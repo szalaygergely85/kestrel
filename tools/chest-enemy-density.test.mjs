@@ -14,7 +14,8 @@ console.log('chest-enemy-density.test: ok');
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 // OB-152 step 2 / OB-179: the real-content 0-loose gate is asserted once the chests are moved inside places (pending, see lane entry)
-const NEW_TOTAL = 11; // 15 chests before OB-179; secretBend/Field/Bank/Ow1/Ow3 merged away = 10; OB-141 chestWest (in campSouthWest) = 11
+const NEW_TOTAL = 14; // UNDER-03: +3 cellar crates (fordCellar INTERIOR)
+const _OLD_TOTAL = 11; // 15 chests before OB-179; secretBend/Field/Bank/Ow1/Ow3 merged away = 10; OB-141 chestWest (in campSouthWest) = 11
 // OB-179: all 15 chests are counted (chestSmall: chest* and secret*), nothing loose, --list works
 const listOut = execFileSync(process.execPath, [fileURLToPath(new URL('./chest-enemy-density.mjs', import.meta.url)), '--list', '--max-loose', '0'], { stdio: 'pipe' }).toString();
 assert.match(listOut, new RegExp('chests counted: ' + NEW_TOTAL), 'chest total after the OB-179 merge');
@@ -22,4 +23,4 @@ assert.equal((listOut.match(/^(chest|secret)\w+ .* (ok|LOOSE)/gm) || []).length,
 console.log('chest-enemy-density.test: 10 chests listed, none loose (loose count: ' + 0 + ')');
 // OB-152: "every chest is earned" - no LOOSE row in --list, and the total never grows past the OB-179/OB-141 count
 assert.equal((listOut.match(/ LOOSE/g) || []).length, 0, 'every chest is earned (guard/camp/ruin/puzzle within reach)');
-assert.ok(NEW_TOTAL <= 11, 'chest total cap');
+assert.ok(NEW_TOTAL <= 14, 'chest total cap');

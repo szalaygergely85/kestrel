@@ -27,6 +27,10 @@ const src = { biomeAt: null, hour: null };
 /** Wire the inputs. biomeAt(x,y)->id, hour()->0..24 (game clock). Called once from main (see lane entry). */
 export function setForestAmbienceSources({ biomeAt = null, hour = null } = {}) { src.biomeAt = biomeAt; src.hour = hour; }
 
+let suppressed = false;
+/** UNDER-08: another bed owns the mix -> forest fades out (one bed at a time). */
+export function setForestSuppressed(v) { suppressed = !!v; }
+
 export function isForestBiome(id) { return id === 1 || id === 2 || id === 3; }
 export function isNightHour(h) { return h >= NIGHT_START_H || h < NIGHT_END_H; }
 /** Seconds to the next call, uniform in [CALL_MIN_S, CALL_MAX_S]. */
@@ -124,7 +128,7 @@ export function stepForestAmbience(playerEntity) {
   if (!ctx || !master || !src.biomeAt || !playerEntity || !playerEntity.transform) return;
   if (!g) { g = build(ctx, master); nextCallAt = ctx.currentTime + nextCallDelay(); }
   const tr = playerEntity.transform;
-  const forest = isForestBiome(src.biomeAt(tr.x, tr.y)) ? 1 : 0;
+  const forest = !suppressed && isForestBiome(src.biomeAt(tr.x, tr.y)) ? 1 : 0;
   const night = src.hour && isNightHour(src.hour()) ? 1 : 0;
   const now = ctx.currentTime;
   if (forest !== lastForest || night !== lastNight) { // targets only change on a state switch: no per-frame param churn

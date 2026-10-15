@@ -186,7 +186,8 @@ export function stepWaterBrain(wb, px, py) {
   const sim = wb.sim, s = wb.s, g = s.nav.grid, st = sim.steer;
   s.tick++;
   const pc = g.inBounds(g.cellX(px), g.cellY(py)) ? s.nav.mask[g.cellY(py) * g.w + g.cellX(px)] : 0, pDeep = pc === 1;
-  for (let i = 0; i < wb.n; i++) {
+  for (let q = 0, rec = sim.pool.rec, pn = sim.pool.n; q < pn; q++) {
+    const i = rec[q];
     if (sim.wat[i] === 0 || sim.dormant[i] !== 0) continue;
     const state = sim.state[i];
     if (state >= 9 && state <= 12) { if (wb.grabSlot === i) emitGrab(wb, i, 0); continue; } // dying / dead: drop the pin

@@ -68,6 +68,8 @@ import '../design/models/voxel_wildlife.js'; // QL-06: ASSETS.models.crow (world
 import '../design/models/m3_props.js'; // US-078d: content/levels/tower.level.json prop "practiceTarget"
 import '../design/models/far_tower.js';
 import '../design/models/ferrum_lights.js';
+import '../design/models/voxel_skeleton.js'; // OB-191: skeleton, skeletonArcher
+import '../design/models/sb_objects.js'; // OB-191: gravestones (cemetery)
 // Optional local third-party pack (git-ignored design/local/, licence unverified): only if present.
 if ((await import('node:fs')).existsSync(new URL('../design/local/voxel_pack.js', import.meta.url))) await import('../design/local/voxel_pack.js');
 import '../design/levels/overworld_far.js'; // terrain RECIPE, still a design/ classic script (US-027b)
@@ -307,7 +309,7 @@ function checkTriggerBehaviours(worldKey, world) {
 
 for (const worldKey of assets.keys('world')) {
   const worldDef = assets.world(worldKey);
-  const { result: world, threw, error, warnings } = captured(() => World.load(worldDef, assets, {}));
+  const { result: world, threw, error, warnings } = captured(() => World.load(worldDef, assets, { physics: 'mesh' }));
   ok(`world "${worldKey}" loads through World.load with no throw`, !threw, error && error.message);
   ok(`world "${worldKey}" loads through World.load with no console warning`, warnings.length === 0, warnings.join(' | '));
   if (threw || !world) continue;

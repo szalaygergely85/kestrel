@@ -4,7 +4,7 @@
 // for the build order this follows.
 import { validatePolygon, compilePolygon } from '../physics/bounds.js';
 import { makeGrid, zoneAt, zoneId, best as bandBest, pick as bandPick, marginX as bandMarginX, marginY as bandMarginY } from './bandGrid.js';
-import { loadLevel, isTerrainFloor } from './Level.js';
+import { loadLevel, isTerrainFloor, isKeepTerrain } from './Level.js';
 import { Terrain } from './Terrain.js';
 import { BandBakeJob, buildNavTile, NavTileFill } from './bandBake.js';
 import { BandCache } from './bandCache.js';
@@ -124,13 +124,31 @@ function buildCarveMask(level) {
   let mask = null;
   for (let r = 0; r < h; r++) {
     for (let c = 0; c < w; c++) {
-      if (!isTerrainFloor(level.sectorAt(c + 0.5, r + 0.5))) continue;
+      const sec = level.sectorAt(c + 0.5, r + 0.5);
+      if (!isTerrainFloor(sec) && !isKeepTerrain(sec)) continue; // UNDER-00b: keepTerrain cells are not carved either
       if (!mask) mask = new Uint8Array(w * h).fill(1);
       mask[r * w + c] = 0;
     }
   }
   return mask;
 }
+
+/** UNDER-00b: per-cell keepTerrain mask (Uint8Array w*h, 1 = keepTerrain); null when the level has no flagged cell. */
+function buildKeepMask(level) {
+  const w = level.width, h = level.height;
+  let mask = null;
+  for (let r = 0; r < h; r++) {
+    for (let c = 0; c < w; c++) {
+      if (!isKeepTerrain(level.sectorAt(c + 0.5, r + 0.5))) continue;
+      if (!mask) mask = new Uint8Array(w * h);
+      mask[r * w + c] = 1;
+    }
+  }
+  return mask;
+}
+
+/** UNDER-00b: terrain is a support candidate this far below the surface only (feet >= groundAt - this). */
+const KEEP_TERRAIN_SUPPORT_DROP = 0.6;
 
 /** Fill `bbox` with the world AABB of `mesh`'s local bbox under `frame` and uniform scale `k`. */
 function fillMeshBbox(bbox, mesh, frame, k) {
@@ -519,6 +537,7 @@ export class World {
       const placed = s.mesh
         ? w.placeMesh(assets.mesh(s.mesh), s.origin, s.id, s.yawDeg ?? 0, s.castShadow, s.scale === undefined ? 1 : readScale(s.scale, `mesh placement "${s.id}"`), s.collide)
         : w.placeStructure(assets.level(s.level), s.origin, s.id, s.yawSteps || 0);
+      if (!placed) continue; // keepTerrain site skipped under grid physics
       if (s.nav === 'floors') { placed.navFloors = true; if (typeof s.navGroup === 'string') placed.navGroup = s.navGroup; } // NAV-LAYERS-01d: content flag (read by game/js/quest/sim/beastNav.js)
       if (placed.kind !== 'mesh' && s.dynamics) {
         for (const tag of Object.keys(s.dynamics)) {
@@ -929,6 +948,14 @@ export class World {
     const bbox = frameBBox(frame, level.width, level.height, { x0: 0, y0: 0, x1: 0, y1: 0 });
     const packed = packLevel(level, null);
     const carveMask = buildCarveMask(level); // GS-01a: null = carve the whole bbox
+    const keepMask = buildKeepMask(level); // UNDER-00b: null = no keepTerrain cell
+    // UNDER-00c (38.75 note b): grid physics (floorAt/sectorAt/outsideSector) has no keepTerrain gate -> unsupported, fail loud.
+    // Decision (main session, UNDER-03): skip the site with ONE warn per level id instead of throwing, so grid-physics loads of a world that holds a site still work.
+    if (keepMask && this.physicsMode !== 'mesh') {
+      const warned = (World._keepWarned ||= new Set());
+      if (!warned.has(levelDef.name)) { warned.add(levelDef.name); console.warn(`World.placeStructure: level "${levelDef.name}" uses keepTerrain, which needs physics: 'mesh' - site skipped under grid physics`); }
+      return null;
+    }
     // US-014 tech note 1: a tag -> legend-char Map built once here, instead
     // of `animateSector` scanning `Object.keys(level.legend)` on every call
     // (an interaction/save-load call, but also every `stepSectorAnims` tick
@@ -940,7 +967,7 @@ export class World {
     }
     // CO-2: `frame` = the authored placement (content items convert through
     // it); `origin`/`bbox` = the baked grid (equal to the frame while yawSteps = 0).
-    const placed = { id: structId, level, frame, origin: { x: origin.x, y: origin.y, z: origin.z || 0 }, yawSteps, bbox, packed, structSeq, dynamics: {}, tagMap, carveMask };
+    const placed = { id: structId, level, frame, origin: { x: origin.x, y: origin.y, z: origin.z || 0 }, yawSteps, bbox, packed, structSeq, dynamics: {}, tagMap, carveMask, keepMask };
     this.structures.push(placed);
 
     if (structSeq < 8) {
@@ -1058,6 +1085,37 @@ export class World {
       if (x >= b.x0 && x < b.x1 && y >= b.y0 && y < b.y1) return s;
     }
     return null;
+  }
+
+  /** UNDER-00b: keepMask lookup for an already-resolved structure `s` (one structureAt per query, UNDER-00c). */
+  _keepCell(s, x, y) {
+    if (!s || !s.keepMask) return false;
+    const g = gridLocal(s, x, y, this._grid);
+    const c = Math.floor(g.x), r = Math.floor(g.y), w = s.level.width;
+    return c >= 0 && r >= 0 && c < w && r < s.level.height && s.keepMask[r * w + c] === 1;
+  }
+
+  /** UNDER-00b: true when (x, y) lies on a `keepTerrain` cell of a placed grid structure (terrain above it is a normal field). */
+  keepTerrainAt(x, y) {
+    return this._keepCell(this.structureAt(x, y), x, y);
+  }
+
+  /** UNDER-00b: terrain counts as a support at (x, y, footZ): outside every structure, or on a keepTerrain cell with the feet near/above the surface. */
+  _terrainSupports(x, y, footZ) {
+    const s = this.structureAt(x, y);
+    if (!s) return true;
+    if (!this._keepCell(s, x, y)) return false;
+    return footZ >= this.terrain.groundAt(x, y) - KEEP_TERRAIN_SUPPORT_DROP;
+  }
+
+  /**
+   * UNDER-00c: true when the world point (x, y, z) is "outside" (terrain floor + sky) although it lies in a structure bbox:
+   * a keepTerrain cell with z >= groundAt - 0.6 (same gate as `_terrainSupports`). Used by line-of-sight / ray queries.
+   * Cheap for levels without the flag (keepMask null). `s` = the structure at (x, y).
+   */
+  keepTerrainOpen(s, x, y, z) {
+    if (!s || !s.keepMask || !this.terrain || !this._keepCell(s, x, y)) return false;
+    return z >= this.terrain.groundAt(x, y) - KEEP_TERRAIN_SUPPORT_DROP;
   }
 
   sectorAt(x, y) {
@@ -1792,7 +1850,7 @@ export class World {
   supportAt(x, y, footZ, grounded, opts) {
     probeSupport(this.colliders, this.colliders.length, x, y, footZ, grounded, opts, this._meshSupportScratch);
     let terrainZ = NaN, tnx = 0, tny = 0, tnz = 0;
-    if (this.terrain && !this.structureAt(x, y)) {
+    if (this.terrain && this._terrainSupports(x, y, footZ)) {
       terrainZ = this.terrain.groundAt(x, y);
       // MESH-PHYS-02: the normal is read only when terrain wins (meshSupportSector's `terrainZ >= floorZ`); on a mesh floor it is dead.
       if (terrainZ >= this._meshSupportScratch.floorZ) {
@@ -1808,11 +1866,11 @@ export class World {
    * `io` (Float64Array >= 10, arch 38.61 2b: no double args cross the call): in [0] x, [1] y, [2] footZ; out [3] floorH, [4] nx, [5] ny, [6] nz, [7] terrain (0/1), [8] slope (0/1), [9] ceilH (NaN = sky).
    */
   supportAtOut(grounded, opts, io) {
-    const x = io[0], y = io[1], out = io;
+    const x = io[0], y = io[1], out = io, footZ = io[2];
     const sup = this._meshSupportScratch;
     probeSupportIo(this.colliders, this.colliders.length, io, grounded, opts, sup);
     let terrainZ = NaN, tnx = 0, tny = 0, tnz = 0;
-    if (this.terrain && !this.structureAt(x, y)) {
+    if (this.terrain && this._terrainSupports(x, y, footZ)) {
       this.terrain.groundAtBuf(io);
       terrainZ = io[3];
       if (terrainZ >= sup.floorZ) {
@@ -2097,7 +2155,9 @@ export class World {
   _rayBlocked(mesh) {
     const x = _rayP[0], y = _rayP[1], z = _rayP[2];
     if (!mesh) return pointBlocked(this, x, y, z);
-    if (!this.terrain || this.structureAt(x, y)) return false;
+    if (!this.terrain) return false;
+    const s = this.structureAt(x, y);
+    if (s && !this.keepTerrainOpen(s, x, y, z)) return false; // UNDER-00c: keepTerrain cell above the room = terrain
     const g = this.terrain.groundAt(x, y);
     return g === g && z < g; // NaN-safe
   }

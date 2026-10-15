@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 export const RADIUS = 15; // OB-179: enemy group (beast home / camp) must be this close; 25 m let roadside chests count as guarded
 export const PUZZLE_R = 10, POI_R = 12; // lever/plate within PUZZLE_R; a ruin/camp site within POI_R (waystones and relays do not guard)
 /** G.sites ruins/camps -> guards (kind 'poi'); waystone/relay 'puzzle' guards are dropped (they only light a path, they do not defend a chest) */
-export const INTERIORS = [{ id: 'forge', x: 912.5, y: 935 }]; // Outwall forge house (ow171..190 footprint 908-917 x 932-937): a chest inside a structure is earned
+export const INTERIORS = [{ id: 'forge', x: 912.5, y: 935 }, { id: 'fordCellar', x: 1001, y: 1061 }]; // Outwall forge house (ow171..190 footprint 908-917 x 932-937): a chest inside a structure is earned
 export const guardsFor = (guards, sites = [], extra = []) => [
   ...extra,
   ...guards.filter((g) => g.kind === 'beast' || g.kind === 'camp' || (g.kind === 'puzzle' && /lever|plate/i.test(g.id || ''))),

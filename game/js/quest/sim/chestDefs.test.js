@@ -17,7 +17,8 @@ const defs = buildChestDefs(fake);
 assert.deepEqual(defs.map((d) => d.id).sort(), Object.keys(CHEST_TABLES).sort(), 'all anchors become chests');
 for (const d of defs) {
   assert.equal(byId.get(d.id).components.voxel.model, 'chestSmall', d.id + ' carries the chest model');
-  if (!d.id.startsWith('secret')) assert.ok(Math.abs(d.frontY - 1) < 1e-9 && Math.abs(d.frontX) < 1e-9, 'yaw 180 -> front +y');
+  if (!d.id.startsWith('secret') && !d.id.startsWith('chestCellar')) // UNDER-03: cellar crates face the room (yaw 90/270)
+    assert.ok(Math.abs(d.frontY - 1) < 1e-9 && Math.abs(d.frontX) < 1e-9, 'yaw 180 -> front +y');
 }
 
 function openAll(seed) {
