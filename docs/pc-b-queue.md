@@ -9,6 +9,12 @@ The rule is FIXED (OB-156, D-082, D-087, D-108; no owner questions, no PO round 
 | QUEST-HANDIN-ALL | kestrel-1 + kestrel-3 + writer | Make QUEST-E2E-ALL pass for every quest: give each quest/chain step that completes without a hand-in (start with the opening chain: tower door, road west, Bend waystone; any `mark.taken` / place-reached / auto completion) a character turnIn (Burl, Rook, post-keeper Bram, the wardens, Hesk...), a READY `?` and a hand-in talk; writer adds the lines (`NEEDS WRITER` placeholders allowed for one day). Add content-lint rule R18: every quest has a character turnIn (objectGiver quests too); real content 0. | todo, after the test exists (can start in parallel on the opening chain) |
 | QUEST-WALK-OWNER | main session (PC-B) | When QUEST-E2E-ALL is green: one browser route walk of the opening chain + 3 side quests (accept, complete, hand in) with stills of `!`, `?`, needle; then owner walk. | todo |
 
+## FOLIAGE-CAP-BENCH (owner 2026-10-15: runs it TONIGHT on his machines) (PC-A main session) - small, do right after the current item, ready by evening
+
+| ID | Slot | AC | Status |
+|---|---|---|---|
+| FOLIAGE-CAP-BENCH | kestrel-4 (tools only) + kestrel-2 (GPU timing hook if missing) | `node tools/bench-foliage-cap.mjs [--gpu rtx|intel] [--quality high|ultra]`: headless (own server, PC-B port 95xx / PC-A 90xx, never 8000), opens the default world at a forest pose, fills ONE zone with editor foliage (the ED-FOLIAGE placement path, same species mix as the forest biome) at 0.5 / 1.0 / 1.5 / 2.0 / 3.0 M LOD0 triangles, and for each step measures GPU ms p50/p95 + JS ms p95 over a fixed 10 s camera orbit (reuse bench-presets / capture-browser timing). Prints one table and the largest step that stays inside D-085 (8 ms RTX at every preset, 10 ms Intel at high), and writes `docs/test-reports/foliage-cap-<gpu>-<date>.md`. A one-line "how to run" in tools/README or the script header; Node unit test for the table/verdict logic. The owner runs it tonight on the RTX desktop and the Intel laptop; PC-B then sets FOLIAGE_TRI_CAP from the smaller result. | todo, START TODAY |
+
 ## PC-A review 2026-10-15b fixes (PC-A PO; reports `docs/test-reports/batch-review-2026-10-15-pca-C.md` / `-pca-D.md`, `po-batch-2026-10-15b-pca.md`)
 Each row = the numbered fix of the report's ARCH CHANGES (C = report C, D = report D) or a PO reject. Alloc gates must pass on PC-A's Node 24.21 AND Node 22; never raise a threshold or shorten a probe (D-039). Test files <= ~5 s each. Re-review: architect opus with the diff + the report only.
 
