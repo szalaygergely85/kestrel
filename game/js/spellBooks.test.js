@@ -11,7 +11,7 @@ import { createChests } from './quest/sim/chest.js';
 import { ensureInventory, countOf } from './quest/sim/inventory.js';
 import { createSpellBook } from './quest/sim/spellBook.js';
 import { SPELL_IDS } from './quest/spellDefs.js';
-import { lintSpellPlacements, PLACEMENTS, NEAR_SIDE, FAR_REGION, wakeGrants, bookId, spellOfBook } from './quest/sim/spellBooks.js';
+import { lintSpellPlacements, PLACEMENTS, NEAR_SIDE, FAR_REGION, wakeGrants, bookId, spellOfBook, learnHint } from './quest/sim/spellBooks.js';
 import { readBooks } from './spellBookHook.js';
 
 const items = globalThis.ASSETS.items.defs;
@@ -62,5 +62,6 @@ import('./quest/sim/inventory.js').then(async ({ addItem }) => {
   assert.deepEqual(readBooks(null, b2, s2), ['You learn Spark.']); assert.deepEqual(readBooks(null, b2, s2), []);
   Object.assign(s2, w('ws_highPastures')); assert.deepEqual(readBooks(null, b2, s2), ['You learn Gust.']);
   const reload = createSpellBook(JSON.parse(JSON.stringify(s2))); assert.deepEqual(readBooks(null, reload, s2), [], 'Continue: no second grant');
+  { const h = { fireRing: 'Find its Spell Book.', lightOrb: 'Find its Spell Book.', spark: 'Wake more waystones.', gust: 'Wake a waystone across the river.', ward: 'Help Rook at the ford.', updraft: null }; for (const k in h) if (learnHint(k) !== h[k]) throw new Error('learnHint ' + k + ' = ' + learnHint(k)); if (/esc/i.test(Object.keys(h).map(learnHint).join(' '))) throw new Error('hint mentions Esc'); }
   console.log('spellBooks.test ok');
 });

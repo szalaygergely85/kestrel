@@ -37,3 +37,10 @@ const ring = createFireRingSim(fb, { tier: () => 2 });
 ring.cast({ transform: { x: 1, y: 2, z: 0 } });
 ok('fire ring bursts at the player with the tier radius', calls.length === 1 && calls[0][0] === 1 && calls[0][1] === 2 && calls[0][3] === 3.5, JSON.stringify(calls));
 console.log(`gustView: ${pass} pass, ${fail} fail`); if (fail) { console.log(failures.join('\n')); process.exit(1); }
+
+{ // palette key 'gust' drives the streak colours
+  const P = createParticles({}); defineGustFx(P, { gust: [100, 150, 200] });
+  const ev = bus(); const v = createGustView({ particles: P, events: ev });
+  ev.emit('gust:cast', { x: 0, y: 0, z: 1.2, fx: 1, fy: 0, range: 6 }); v.stepFx(); P.step();
+  console.log('gustView palette key accepted, live=' + P.stats.live);
+}

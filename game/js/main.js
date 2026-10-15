@@ -115,6 +115,7 @@ import { createUnderHook } from './underHook.js'; // B1-MAIN hooks 7: Ford cella
 import { createSpellBook } from './quest/sim/spellBook.js'; // EP-SPELLS
 import { computeTotals, createTotals } from './quest/sim/stats.js'; // SPELL-04: INT -> fireball damage
 const fbTotals = createTotals();
+import { applyDevSpells } from './quest/sim/devSpells.js'; // SPELL-DEV-01
 import { raisable, useScroll as useSpellScroll, SCROLL_ID as SPELL_SCROLL_ID } from './quest/sim/spellScroll.js';
 import { SPELL_DEFS } from './quest/spellDefs.js';
 import { countOf as invCountOf } from './quest/sim/inventory.js';
@@ -546,7 +547,7 @@ bootSpan('createEngine', tCE);
 const ripples = createRipples();
 const wadeFx = createWadeFx(engine.particles, ripples); // US-055a: wade splash + leg rings + arrow water hit
 defineWadeSplash(engine.particles, {});
-defineGustFx(engine.particles); defineLeafFall(engine.particles, {}); const leafFall = createLeafFall(engine.particles, gustBand); // WIND-GUST-01b: leaves shed under travelling gust bands
+defineGustFx(engine.particles, assets.palette.rgb); defineLeafFall(engine.particles, {}); const leafFall = createLeafFall(engine.particles, gustBand); // WIND-GUST-01b: leaves shed under travelling gust bands
 const worldBand = window.ASSETS.levels.world_geo ? createBand(window.ASSETS.levels.world_geo.regions) : null; // US-129a (null = tier 1)
 const wadeArrowHit = (x, y, z) => wadeFx.arrowHit(x, y, z, fb ? fb.timeSec : 0); // one closure, not per frame
 engine.events.on('magic.unlocked', () => startMpFade(fb ? fb.timeSec : 0)); // FB-03: the MP bar fades in (same clock drawVitals gets)
@@ -1713,7 +1714,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       // SPELL-06/07 registrations (learned-only: the dispatcher answers 'locked' at tier 0)
       wardSim = createWardSim({ spendMana: (n) => vitals && vitals.spendMana(n), tier: () => spellBook.tier('ward') || 1 }); spellCaster.register('ward', () => wardSim.cast());
       fireRingSim = createFireRingSim(fireball, { spendMana: (n) => vitals && vitals.spendMana(n), tier: () => spellBook.tier('fireRing') || 1, damageMul: () => { const c = playerHandle && playerHandle.data.components; return computeTotals(c && c.rolledGear || null, fbTotals).fireDmgMul; } }); spellCaster.register('fireRing', () => fireRingSim.cast(playerHandle.data));
-      gustSim = createGustSim(world, engine.events, fbTargets, { spendMana: (n) => vitals && vitals.spendMana(n), tier: () => spellBook.tier('gust') || 1 }); spellCaster.register('gust', () => gustSim.requestCast());
+      gustSim = createGustSim(world, engine.events, fbTargets, { spendMana: (n) => vitals && vitals.spendMana(n), tier: () => spellBook.tier('gust') || 1, damageMul: () => { const c = playerHandle && playerHandle.data.components; return computeTotals(c && c.rolledGear || null, fbTotals).fireDmgMul; } }); spellCaster.register('gust', () => gustSim.requestCast());
       if (gustView) gustView.dispose(); gustView = isCaptureOrBench ? null : createGustView({ particles: engine.particles, events: engine.events }); // SPELL-07b: wind streaks + hit puff (off in capture/bench)
       if (sparkSim) sparkSim.dispose(); if (lightOrbSim) lightOrbSim.dispose();
       { const sm = (n) => vitals && vitals.spendMana(n), dm = () => { const c = playerHandle && playerHandle.data.components; return computeTotals(c && c.rolledGear || null, fbTotals).fireDmgMul; }; // SPELL-05: Spark + Light Orb (learned-only: dispatcher locks tier 0)
@@ -1767,6 +1768,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       if (!window.__fbEquipHooked) window.__fbEquipHooked = true, engine.events.on('magic.unlocked', () => { const c = playerHandle && playerHandle.data.components; if (c && c.inventory && c.equipment && itemDefs && c.equipment.off === null && c.equipment.set !== 'ranged') equipItem(c.inventory, c.equipment, itemDefs, 'spell.fireball'); }); // FB-01/03 fix: the unlock puts the spell into the free off hand (RMB); hands are derived from equipment, so inventory.right alone never held it
       if (world.state['tower.sword.taken'] && itemDefs) migrateSword(playerHandle.data.components.inventory, itemDefs);
       if (qstateItems && itemDefs) { for (const it of qstateItems) addItem(playerHandle.data.components.inventory, itemDefs, it.id, it.n); qstateItems = null; } // ED-QUEST-07: preset grants
+      if (params.get('spells') === '1' && spellBook) applyDevSpells(spellBook, playerHandle.data.components.inventory, itemDefs); // SPELL-DEV-01: dev override (all spells but Updraft at level 1 + 2 Spell Scrolls); in memory only
       if (itemDefs) migrateEquipment(playerHandle.data, itemDefs); // EQ-02: old saves sword->main, shield->off (before initialState)
       // US-091a2 (37.16.3): corpse loot + toast. Own RNG stream (nav seed ^ salt) so the beast wander RNG is never
       // perturbed; `beast.loot` (quest/index.js) reaches this load's sim through setLootApi.

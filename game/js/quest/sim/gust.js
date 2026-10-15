@@ -43,13 +43,14 @@ export function createGustSim(world, events, targets, hooks) {
     const t = player.transform;
     O[0] = t.x; O[1] = t.y; O[2] = t.z + EYE;
     targets.refresh();
+    const dmgMul = hooks && typeof hooks.damageMul === 'function' ? hooks.damageMul() : 1; // INT boosts every damage spell
     for (let i = 0; i < targets.count; i++) {
       if (targets.r[i] < 0) continue;
       const e = targets.ent[i];
       if (e === player || e.id === 'player') continue;
       if (!inCone(targets.x[i], targets.y[i], targets.z[i], targets.r[i], targets.h[i])) continue;
       const dx = targets.x[i] - O[0], dy = targets.y[i] - O[1], d = Math.sqrt(dx * dx + dy * dy), p = hitP;
-      p.target = e.id; p.damage = row.dmg; p.knock = row.knock; p.stunSec = row.stagger;
+      p.target = e.id; p.damage = row.dmg * dmgMul; p.knock = row.knock; p.stunSec = row.stagger;
       p.dirX = d > 1e-6 ? dx / d : O[3]; p.dirY = d > 1e-6 ? dy / d : O[4];
       p.px = targets.x[i]; p.py = targets.y[i]; p.pz = targets.z[i] + targets.h[i] * 0.5;
       events.emit('combat:hit', p);

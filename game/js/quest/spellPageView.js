@@ -6,6 +6,7 @@
 export const BRANCHES = Object.freeze(['fire', 'light', 'wind']);
 const TITLES = { fire: ' FIRE ', light: ' LIGHT ', wind: ' WIND ' }; // prebuilt padded (0 alloc in draw)
 const DEFAULT_RGB = { fire: [235, 120, 60], light: [90, 220, 205], wind: [205, 215, 205] };
+import { learnHint } from './sim/spellBooks.js';
 export const CARD = Object.freeze({ x0: 2, pitch: 33, w: 31, h: 4, y0: 4, gap: 1, detailY: 19, footY: 24, titleRow: 3 });
 let PUT = null, PW = 0; // draw-time put/width, so `text` is not a per-frame closure
 function text(x, y, s, fg) { for (let j = 0; j < s.length && x + j < PW; j++) PUT(x + j, y, s.charCodeAt(j), fg); }
@@ -30,7 +31,7 @@ export function tierText(row) {
 export function createSpellPageView(o) {
   const list = Array.isArray(o.defs) ? o.defs : Object.keys(o.defs).map((id) => ({ id, ...o.defs[id] }));
   const col = { fire: [], light: [], wind: [] };
-  for (const d of list) if (col[d.branch]) col[d.branch].push(d);
+  for (const d of list) if (col[d.branch] && (learnHint(d.id) !== null || (o.book.tier(d.id) | 0) > 0)) col[d.branch].push(d); // no source yet (Updraft) and not learned: card hidden
   for (const b of BRANCHES) col[b].sort((a, c) => (c.root ? 1 : 0) - (a.root ? 1 : 0));
   const K = o.colors, book = o.book;
   const cards = []; // flat, column-major; each prebuilt
@@ -46,7 +47,7 @@ export function createSpellPageView(o) {
         plain.push(d.name + (t ? '  level ' + t : '  not learned'));
         conf.push(t >= 3 ? '' : 'Raise ' + d.name + ' to level ' + (t + 1) + '?  [E] Yes  [Q] No');
       }
-      cards.push({ d, ci, ri, x: CARD.x0 + ci * CARD.pitch, y: CARD.y0 + ri * (CARD.h + CARD.gap), rgb: rgbk, name: d.name, stat, now, next, head: plain, conf, glyph: (d.glyph || '*').charCodeAt(0) });
+      cards.push({ hint: learnHint(d.id) || '', d, ci, ri, x: CARD.x0 + ci * CARD.pitch, y: CARD.y0 + ri * (CARD.h + CARD.gap), rgb: rgbk, name: d.name, stat, now, next, head: plain, conf, glyph: (d.glyph || '*').charCodeAt(0) });
     });
   }
   const scrollStr = []; const getScroll = (n) => scrollStr[n] || (scrollStr[n] = 'Spell Scrolls: ' + n);
@@ -105,7 +106,7 @@ export function createSpellPageView(o) {
       const c = cards[sel]; if (!c) return;
       const t = book.tier(c.d.id) | 0;
       text(CARD.x0, CARD.detailY, c.head[t], c.rgb);
-      if (t === 0) text(CARD.x0, CARD.detailY + 1, 'Not learned yet. Find its Spell Book.', K.dim);
+      if (t === 0) text(CARD.x0, CARD.detailY + 1, 'Not learned yet. ' + c.hint, K.dim);
       else { text(CARD.x0, CARD.detailY + 1, c.now[t], K.text); text(CARD.x0, CARD.detailY + 2, c.next[t], t >= 3 ? K.dim : K.good); }
       const n = o.scrolls() | 0;
       text(CARD.x0, CARD.footY, getScroll(n), K.text);

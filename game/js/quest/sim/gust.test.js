@@ -6,13 +6,13 @@ import { SPELL_DEFS } from '../spellDefs.js';
 
 const deg = (d) => d * Math.PI / 180;
 const tgt = (id, x, y) => ({ id, transform: { x, y, z: 0 }, components: { targetable: { radius: 0.3, height: 1.6 }, health: { hp: 4, max: 4 } } });
-function rig(tier, { wx = null, ents = [], props = [], mp = 100 } = {}) {
+function rig(tier, { wx = null, ents = [], props = [], mp = 100, dmul } = {}) {
   const player = { id: 'player', transform: { x: 0, y: 0, z: 0 }, components: {} };
   const all = [player, ...ents];
   const world = { state: {}, forEachEntity: (fn) => all.forEach(fn), raySegmentRay(s, out) { if (wx === null) return false; const dx = s[3] - s[0]; if (Math.abs(dx) < 1e-9) return false; const t = (wx - s[0]) / dx; if (t <= 0 || t > 1) return false; out.t = t; return true; } };
   const hits = [], bus = { mute: false, on() { return () => {}; }, emit(n, p) { if (!bus.mute && n === 'combat:hit') hits.push({ ...p }); } };
   const m = { mp };
-  const g = createGustSim(world, bus, createTargetables(world, bus), { spendMana: (n) => (m.mp < n ? false : (m.mp -= n, true)), tier: () => tier, forEachProp: (fn) => props.forEach(fn) });
+  const g = createGustSim(world, bus, createTargetables(world, bus), { spendMana: (n) => (m.mp < n ? false : (m.mp -= n, true)), tier: () => tier, forEachProp: (fn) => props.forEach(fn), damageMul: dmul === undefined ? undefined : () => dmul });
   return { g, hits, m, player, bus, go: () => { g.requestCast(); g.step(player, 1, 0); } };
 }
 const at = (r, a) => [Math.cos(deg(a)) * r, Math.sin(deg(a)) * r];
@@ -47,4 +47,5 @@ for (const t of [1, 2, 3]) { // tier numbers: range edge, knock, dmg, mana, cd
   const h0 = process.memoryUsage().heapUsed; loop(3000); if (global.gc) global.gc();
   const dh = process.memoryUsage().heapUsed - h0; assert.ok(dh < 100000, '0 alloc ' + dh);
 }
+{ const R = rig(2, { ents: [tgt('a', 3, 0)], dmul: 1.15 }); R.go(); assert.equal(R.hits[0].damage, SPELL_DEFS.gust.tiers[1].dmg * 1.15, 'INT multiplier applies to Gust'); }
 console.log('gust.test.js OK');

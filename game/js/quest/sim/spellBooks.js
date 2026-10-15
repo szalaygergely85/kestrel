@@ -32,6 +32,16 @@ export function wakeGrants(st) {
   for (const id of PLACED_IDS) { const p = PLACEMENTS[id]; if (p.kind === 'wake' && ((p.rule === 'thirdNear' && near >= 3) || (p.rule === 'firstFar' && far))) out.push(id); }
   return out;
 }
+/** One plain hint line for an unlearned spell, derived from PLACEMENTS (no per-id text). null = no source yet (hide the card). */
+export function learnHint(spellId) {
+  const p = PLACEMENTS[spellId];
+  if (!p || p.kind === 'unplaced') return null;
+  if (p.kind === 'burl') return 'Ask Burl.';
+  if (p.kind === 'chest') return 'Find its Spell Book.';
+  if (p.kind === 'quest') return 'Help Rook at the ford.';
+  if (p.kind === 'wake') return p.rule === 'firstFar' ? 'Wake a waystone across the river.' : 'Wake more waystones.';
+  return 'Find its Spell Book.';
+}
 export const learnLine = (spellId) => 'You learn ' + SPELL_DEFS[spellId].name + '.';
 export const knownLine = (spellId) => 'You already know ' + SPELL_DEFS[spellId].name + '.';
 
