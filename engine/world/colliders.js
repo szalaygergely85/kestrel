@@ -555,9 +555,10 @@ export function buildDetailCollider(detail) {
     if (!c) continue;
     const shape = c.prism || c.box;
     const yaw = detail.yawDeg[i] * Math.PI / 180;
-    const zb = detail.z[i] - 0.5, zt = detail.z[i] + shape.h;
+    const sc = detail.scale ? detail.scale[i] : 1;   // SAPLINGS: collider follows the instance scale
+    const zb = detail.z[i] - 0.5, zt = detail.z[i] + shape.h * sc;
     const ring = colliderRing(detail.x[i], detail.y[i], yaw, !!c.prism,
-      c.prism ? c.prism.r : 0, c.box ? c.box.hx : 0, c.box ? c.box.hy : 0);
+      c.prism ? c.prism.r * sc : 0, c.box ? c.box.hx * sc : 0, c.box ? c.box.hy * sc : 0);
     o = emitColliderFaces(pos, o, ring, detail.x[i], detail.y[i], zb, zt, !!c.prism, false);
   }
   const bvh = buildBvh(pos, null, null);

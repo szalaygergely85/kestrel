@@ -3003,6 +3003,15 @@ export function feedDetail(binding, eyeX, eyeY, force) // -> fed count
 4. **Fold-in (ME-06c3 review note):** in `bindScatterInstances` remove the `previous` groups **before** the validation that can throw, so a failed bind leaves 0 stale groups bound to the new world.
 5. **Tests (add to `scatterFeed.test.js`):** two species with the same model in two layers or ground types share one group and its fed set equals the brute force grouped by key; the same model with different `shadow` gives two groups; `groupOf` covers every species with placements; a canonical `world_m1` bind (Node, synthetic pool with the 19 keys) prints and asserts 19 detail groups.
 
+#### 37.4.1 SAPLINGS: per-instance scale on the CPU detail path (PC-B architect, 2026-10-15)
+- **Pick per-instance, not per-layer.** Both cost the same matrix write; per-instance gives a range (0.3-0.5) and matches the GPU decor layers, which already have per-species `scaleMin/scaleMax` (decor.wgsl.js / decorScatter.js).
+- **Zero-engine route first:** if saplings may be no-collider + `shadow:false`, author them as a `gpu: true` decor layer with `scaleMin 0.3, scaleMax 0.5`: content only, done.
+- **CPU route (collider and/or shadow wanted):** species field `scale: [min, max]` (validated in scatter.js `validateDetailConfig`: 0 < min <= max <= 2). `DetailScatterJob._row` draws it from a NEW hash slot `u(ix, iy, 6)` (existing slots 0..5 untouched, so every other placement stays bit-identical). Result `detail.scale` Float32Array, filled with 1 when no species has `scale`. Deterministic, derived, never serialized.
+- **Instance rows:** `instances.js` adds `writeScaledInstance(ib, i, x, y, z, yawDeg, s, objectId, team)` (the 3x3 times s; `writeUnitInstance` = s 1, no copy-paste). `scatterFeed.js bindDetailInstances` calls it. `feedDetail` copies words verbatim, so the JS raster and the GPU cull/raster read the same rows: no WGSL change, parity by construction.
+- **Bounds:** the group radius must cover the largest scale: `group R *= max species scale` (only matters for s > 1). LOD/shadow bands stay distance-based.
+- **Colliders:** `colliders.js` (detail at ~557) multiplies prism r/h and box hx/hy/hz by `detail.scale[i]`.
+- **Tests:** scatter: no `scale` -> placements and `u` draws identical to before (hash of x/y/yaw/species arrays); with `scale` all values in [min,max]. instances: `writeScaledInstance(s=1)` == `writeUnitInstance` word for word. colliders: scaled prism radius. One story (~1 day), files: engine/world/scatter.js, engine/mesh/instances.js, engine/mesh/scatterFeed.js, engine/world/colliders.js, design/levels/overworld_far.js.
+
 ### 37.5 Sprites for ground details? (owner question; architect, 2026-10-04)
 
 **Decision: no billboard sprites for scatter. 37.4 stays as written (voxel instances); there is no `kind: 'sprite'` species.** Reasons, from the code:

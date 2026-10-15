@@ -1,5 +1,5 @@
 // ENV-01a2 (37.4). Load-time master words; camera-local, allocation-free feed.
-import { createInstanceBuffer, writeUnitInstance, touchInstances, INSTANCE_STRIDE, INST_FLAGS, INST_OBJECT_ID,
+import { createInstanceBuffer, writeUnitInstance, writeScaledInstance, touchInstances, INSTANCE_STRIDE, INST_FLAGS, INST_OBJECT_ID,
   MAX_INSTANCE_GROUPS, MAX_INSTANCES_PER_FRAME } from './instances.js';
 import { resolveGfxKnobs, keepPlacement } from './gfxKnobs.js';
 import { INST_FLAG_SWAY } from './sway.js';
@@ -16,10 +16,20 @@ export function bindDetailInstances(detail, instances, cfg, treeInstances = 0, g
   }
   if (!Number.isFinite(refeedM) || refeedM <= 0) throw new Error('bindDetailInstances: detail.refeedM');
   const counts = new Uint32Array(detail.speciesDefs.length);
-  const keep = knobs.scatterDensity < 1 ? new Uint8Array(detail.count) : null; // GFX-03: thinned by a per-placement hash (null = keep all)
-  let maxR2 = 0;
+  // OB-166: a species whose voxel model / mesh is not registered is SKIPPED (one warn below), never aborts World.load
+  const present = new Uint8Array(counts.length), missingSp = new Uint8Array(counts.length), missingIds = [];
+  for (let i = 0; i < detail.count; i++) present[detail.species[i]] = 1;
+  for (let s = 0; s < counts.length; s++) {
+    if (!present[s]) continue;
+    const def = detail.speciesDefs[s];
+    const ok = def.mesh !== undefined ? !!meshes?.[def.mesh] : !!instances.pool?.models.has(def.model);
+    if (!ok) { missingSp[s] = 1; const id = def.mesh !== undefined ? 'mesh:' + def.mesh : def.model; if (!missingIds.includes(id)) missingIds.push(id); }
+  }
+  const keep = knobs.scatterDensity < 1 || missingIds.length ? new Uint8Array(detail.count) : null; // GFX-03: thinned by a per-placement hash (null = keep all)
+  let skipped = 0, maxR2 = 0;
   for (let i = 0; i < detail.count; i++) {
-    if (keep) { if (!keepPlacement(detail.x[i], detail.y[i], i, knobs.scatterDensity)) continue; keep[i] = 1; }
+    if (missingSp[detail.species[i]]) { skipped++; continue; }
+    if (keep) { if (knobs.scatterDensity < 1 && !keepPlacement(detail.x[i], detail.y[i], i, knobs.scatterDensity)) continue; keep[i] = 1; }
     counts[detail.species[i]]++;
     if (detail.r2[i] > maxR2) maxR2 = detail.r2[i];
   }
@@ -28,9 +38,6 @@ export function bindDetailInstances(detail, instances, cfg, treeInstances = 0, g
   for (let s = 0; s < counts.length; s++) {
     if (!counts[s]) continue;
     const def = detail.speciesDefs[s];
-    if (def.mesh !== undefined) { // TREES-LP-c: kind-9 mesh species (World.load resolved it into world.detailMeshes)
-      if (!meshes?.[def.mesh]) throw new Error(`bindDetailInstances: unresolved mesh ${def.mesh}`);
-    } else if (!instances.pool?.models.has(def.model)) throw new Error(`bindDetailInstances: missing voxel model ${def.model}`);
     const key = (def.mesh !== undefined ? 'mesh:' + def.mesh : def.model) + '|' + def.shadow + '|' + def.lodCells + '|' + (def.maxDistM || 0);
     let g = renderKeys.get(key);
     if (g === undefined) {
@@ -39,6 +46,7 @@ export function bindDetailInstances(detail, instances, cfg, treeInstances = 0, g
     }
     groupOf[s] = g; groupCounts[g] += counts[s];
   }
+  if (missingIds.length) console.warn(`bindDetailInstances: skipped ${skipped} detail instances, missing models/meshes: ${missingIds.join(', ')}`);
   if (instances.groups.length + defs.length > MAX_INSTANCE_GROUPS) {
     throw new Error(`bindDetailInstances: detail.layers needs ${defs.length} deduped groups (${instances.groups.length + defs.length} total), over ${MAX_INSTANCE_GROUPS} groups`);
   }
@@ -64,9 +72,16 @@ export function bindDetailInstances(detail, instances, cfg, treeInstances = 0, g
     group.castShadow = def.shadow;
     groups.push(group);
   }
+  if (detail.scale) { // SAPLINGS: cull radius follows the largest per-instance scale of each group (1 = unchanged)
+    for (let i = 0; i < detail.count; i++) {
+      if (keep && !keep[i]) continue;
+      const grp = groups[groupOf[detail.species[i]]], sc = detail.scale[i];
+      if (sc > grp.radiusScale) grp.radiusScale = sc;
+    }
+  }
   for (let i = 0; i < detail.count; i++) {
     if (keep && !keep[i]) continue;
-    writeUnitInstance(master, i, detail.x[i], detail.y[i], detail.z[i], detail.yawDeg[i], DETAIL_OBJECT_BASE | i, 0);
+    writeScaledInstance(master, i, detail.x[i], detail.y[i], detail.z[i], detail.yawDeg[i], detail.scale ? detail.scale[i] : 1, DETAIL_OBJECT_BASE | i, 0);
     // FOLIAGE-SWAY-01 part 2: per-species sway bit, OR'd in after writeUnitInstance (keeps aligned/team bits already written).
     // feedDetail copies every word (incl. INST_FLAGS) verbatim per frame, so the bit survives the per-frame re-feed for free.
     if (detail.speciesDefs[detail.species[i]].sway) {
@@ -76,7 +91,7 @@ export function bindDetailInstances(detail, instances, cfg, treeInstances = 0, g
     }
   }
   touchInstances(master); // one bump for the whole batch of raw-word ORs above (writeUnitInstance already bumped per changed row)
-  return { detail, groups, groupOf, master, offsetX, offsetY, maxDraw, keep, drawR2Scale: drawScale * drawScale,
+  return { detail, groups, groupOf, skipped, missingIds, master, offsetX, offsetY, maxDraw, keep, drawR2Scale: drawScale * drawScale,
     maxDrawR2: maxDrawM * maxDrawM, refeedR2: refeedM * refeedM, lastX: NaN, lastY: NaN, fed: 0 };
 }
 
