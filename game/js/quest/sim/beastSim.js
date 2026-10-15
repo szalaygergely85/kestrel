@@ -283,7 +283,7 @@ export function createBeastSim(world, opts) {
       died: beastEntities.slice(0, count).map((e) => ({ id: e.id, x: 0, y: 0, z: 0, cause: 'sword' })),
       sink: beastEntities.slice(0, count).map((e) => ({ id: e.id, x: 0, y: 0, z: 0 })),
       scrape: beastEntities.slice(0, count).map((e) => ({ id: e.id, x: 0, y: 0, z: 0, dirX: 0, dirY: 0, dirZ: 0 })),
-      throw: { id: '', slot: 0, x: 0, y: 0, z: 0, tx: 0, ty: 0, tz: 0 }, // GOB-02: ONE preallocated beast:throw payload (reused)
+      throw: { id: '', slot: 0, dmgF: 1, x: 0, y: 0, z: 0, tx: 0, ty: 0, tz: 0 }, // GOB-02: ONE preallocated beast:throw payload (reused)
       alt: beastEntities.slice(0, count).map((e, k) => ({ slot: k, alt: 0, id: e.id })),
     },
   };
@@ -322,7 +322,7 @@ export function createBeastSim(world, opts) {
       const A = sim.ap.tab[KINDS[e.components.brain.beastKind].arch];
       sim.scfg.push({ ...cfg });
       { const kd = KINDS[e.components.brain.beastKind], ts = kd.telegraphSec, va = kd.arch === 'ranged' && kd.attacks && kd.attacks[0] && kd.attacks[0].type === 'projectile' ? kd.attacks[0] : null;
-        if (va) { const w = toSteps(va.windupSec); sim.ssteps.push({ ...sim.cfgSteps, windup: w, recover: Math.max(1, toSteps(va.cooldownSec) - w), volley: true }); } // SKEL-ARCHER-CADENCE-01: shot-to-shot gap = the kind's cooldownSec (windup + recover)
+        if (va) { const w = toSteps(va.windupSec); sim.ssteps.push({ ...sim.cfgSteps, windup: w, recover: Math.max(1, toSteps(va.cooldownSec) - w), volley: true, dmgF: va.dmgF }); } // SKEL-ARCHER-CADENCE-01: shot-to-shot gap = the kind's cooldownSec (windup + recover)
         else sim.ssteps.push(ts > 0 ? { ...sim.cfgSteps, windup: toSteps(ts) } : { ...sim.cfgSteps }); } // UNDER-SKEL-VARIETY-01: brute telegraph 0.8 s
       sim.ap.slot[i] = 1;
       deriveArchSlot(sim, i, A);
@@ -1060,7 +1060,7 @@ function rangedChase(sim, i, px, py, d2) {
 /** GOB-02: the one `beast:throw` at windup end: hand = eye + handUp, target = the player's chest now (no lead). */
 function emitThrow(sim, i, px, py, ev = 'beast:throw') {
   const p = sim.pl.throw, steer = sim.steer;
-  p.id = sim.ids[i]; p.slot = i;
+  p.id = sim.ids[i]; p.slot = i; p.dmgF = ev === 'beast:shoot' && sim.ssteps[i].dmgF > 0 ? sim.ssteps[i].dmgF : 1; // archer volley carries the kind's dmgF
   p.x = steer.x[i]; p.y = steer.y[i]; p.z = zOf(sim, i) + sim.cfg.eyeZ + GOBLIN_TUNING.handUp;
   p.tx = px; p.ty = py; p.tz = sim._pz + sim.cfg.targetZ;
   sim.events.emit(ev, p);
@@ -1086,7 +1086,7 @@ function windupStep(sim, i, px, py) {
   if (!sim.goblin[i] && (!sim.wolf[i] && elapsed === SCRAPE_KICKS[0] || elapsed === SCRAPE_KICKS[1] || elapsed === SCRAPE_KICKS[2])) emitScrape(sim, i);
   if (sim.timer[i] <= 0) {
     if (sim.ranged[i]) { emitThrow(sim, i, px, py); enterRecover(sim, i, false); } // GOB-02: release, then the reload
-    else if (sim.ssteps[i].volley) { emitThrow(sim, i, px, py, 'beast:shoot'); enterRecover(sim, i, false); } // SKEL-ARCHER-CADENCE-01: skeleton archer volley (no listener yet: the cadence is the sim's)
+    else if (sim.ssteps[i].volley) { emitThrow(sim, i, px, py, 'beast:shoot'); enterRecover(sim, i, false); } // SKEL-ARCHER-CADENCE-01: skeleton archer volley (goblinWire fires the arrow)
     else enterCharge(sim, i, px, py);
   }
 }

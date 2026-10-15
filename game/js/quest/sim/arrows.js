@@ -76,6 +76,7 @@ export function createArrowSim(world, events, cfg, targets, onWaterHit = null, o
     n: NF, alive: new Uint8Array(NF), age: new Int32Array(NF), damage: new Float64Array(NF),
     x: new Float64Array(NF), y: new Float64Array(NF), z: new Float64Array(NF),
     vx: new Float64Array(NF), vy: new Float64Array(NF), vz: new Float64Array(NF),
+    isArrow: new Uint8Array(NF), // archer volley: hits with cause 'arrow' (shield rule) instead of 'spear'
     src: new Array(NF).fill(null), // GOB-03: the thrower id (enemy mode)
   };
   const stuck = {
@@ -148,11 +149,11 @@ export function createArrowSim(world, events, cfg, targets, onWaterHit = null, o
       return true;
     },
     /** GOB-03: launch with an explicit velocity (enemy spear; lobVelocity gives it). false = pool full. */
-    fireVel(x, y, z, vx, vy, vz, damage, srcId) {
+    fireVel(x, y, z, vx, vy, vz, damage, srcId, asArrow = false) {
       if (flyingCount >= NF) return false;
       let s = 0;
       while (flying.alive[s] === 1) s++;
-      flying.alive[s] = 1; flyingCount++; flying.age[s] = 0; flying.damage[s] = damage; flying.src[s] = srcId;
+      flying.alive[s] = 1; flyingCount++; flying.age[s] = 0; flying.damage[s] = damage; flying.src[s] = srcId; flying.isArrow[s] = asArrow ? 1 : 0;
       flying.x[s] = x; flying.y[s] = y; flying.z[s] = z;
       flying.vx[s] = vx; flying.vy[s] = vy; flying.vz[s] = vz;
       return true;
@@ -184,7 +185,7 @@ export function createArrowSim(world, events, cfg, targets, onWaterHit = null, o
           if (hit.kind === TARGET_HIT && enemy) {
             const hl = Math.sqrt(vx * vx + vy * vy) || 1;
             const p = ePayload;
-            p.source = flying.src[s]; p.damage = flying.damage[s]; p.dirX = vx / hl; p.dirY = vy / hl; p.blocked = 0;
+            p.cause = flying.isArrow[s] === 1 ? 'arrow' : 'spear'; p.source = flying.src[s]; p.damage = flying.damage[s]; p.dirX = vx / hl; p.dirY = vy / hl; p.blocked = 0;
             p.px = hit.x; p.py = hit.y; p.pz = hit.z;
             kill(s);
             events.emit('combat:hit', p);
