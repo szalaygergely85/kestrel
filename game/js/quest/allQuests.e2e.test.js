@@ -41,9 +41,9 @@ const snip = rd('content/dialogue/quest-snippets.json');
 const gen = generateAll(raws, defs, snip, itemDefs);
 const dialogues = {};
 for (const id of Object.keys(raws)) dialogues[id] = compileDialogue(gen[id] || raws[id]);
-for (const oid of new Set(defs.filter((d) => d.objectGiver === true && d.giver).map((d) => d.giver.npc))) { // D-087 (main.js): object givers get 'obj.<id>'
+for (const oid of new Set(qb.giverDefs.filter((d) => d.objectGiver === true && d.giver).map((d) => d.giver.npc))) { // D-087 (main.js): object givers get 'obj.<id>'
   const shell = { kind: 'dialogue', schema: 1, id: 'obj.' + oid, speakers: { obj: { label: 'NOTE' }, you: { label: 'YOU', player: true } }, entry: [{ node: 'obj.none' }], nodes: { 'obj.none': { end: true, lines: ['Nothing more here.'], speaker: 'obj' } } };
-  const g = generateForNpc(shell, oid, defs, snip);
+  const g = generateForNpc(shell, oid, qb.giverDefs, snip);
   if (g !== shell) dialogues['obj.' + oid] = compileDialogue(g);
 }
 const areaIds = new Set(Object.keys(rd('content/quests/areas.json').areas || {}));
@@ -144,21 +144,22 @@ function runQuest(def) {
   if (!skipOffer) {
   // 2. '!' over a CHARACTER in the right colour
   if (!objectGiver && !isChar(giver)) fail('2 giver-character', "giver '" + giver + "' is not a character (no dialogue) and the quest is not objectGiver");
-  if (objectGiver && dialogues['obj.' + giver] === undefined) fail('2 giver-character', "objectGiver '" + giver + "' has no generated offer dialogue");
+  if (objectGiver && !def.main && dialogues['obj.' + giver] === undefined) fail('2 giver-character', "objectGiver '" + giver + "' has no generated offer dialogue");
   if (!isChar(turnIn)) fail('2 giver-character', "hand-in '" + turnIn + "' is not a character (no dialogue): '?' must sit over a character");
   { const L = lists(); const mine = side ? L.sA : L.gA, other = side ? L.gA : L.sA;
     if (!mine.includes(giver) && !((otherAt('avail', giver, def.id) || (side && L.gA.includes(giver))) && (L.gA.includes(giver) || L.sA.includes(giver)))) fail('2 mark-offer', "no " + colour + " '!' over giver '" + giver + "'" + (other.includes(giver) ? ' (wrong colour)' : '')); }
 
   // 3. talk -> Accept / Exit; Exit keeps it available
   const who = objectGiver ? 'obj:' + giver : giver;
-  const exit = talk(who, null);
+  const notePanel = objectGiver && def.main; // main object givers (tower.blade): offer + accept through the note panel (objectOffer.offerFor -> book.accept)
+  const exit = notePanel ? { opened: true, offers: 1, lines: [] } : talk(who, null);
   if (!exit.opened) fail('3 talk-offer', 'cannot open a conversation with ' + who);
   else if (exit.offers < 1) fail('3 talk-offer', 'no Accept/Exit offer shown by ' + who + ' (' + (exit.lines[0] || 'no lines').slice(0, 40) + ')');
   if (st() !== AVAILABLE) fail('3 exit-keeps-available', 'Exit changed the status to ' + STATUS_NAMES[st()]);
   else if (exit.offers) { const L = lists(); if (!(side ? L.sA : L.gA).includes(giver) && !otherAt('avail', giver, def.id)) fail('3 exit-keeps-available', "'!' vanished after Exit"); }
 
   // 4. Accept -> '!' gone, tracked
-  let acc = null; for (let n = 0; n < 4 && st() === AVAILABLE; n++) acc = talk(who, 'q.' + def.id + '.accept'); // a player talks again if another quest's offer came first
+  let acc = null; for (let n = 0; n < 4 && st() === AVAILABLE; n++) acc = notePanel ? (b0().accept(def.id), { opened: true, offers: 1, lines: [] }) : talk(who, 'q.' + def.id + '.accept'); // a player talks again if another quest's offer came first
   if (st() === AVAILABLE) { fail('4 accept', 'talk with ' + who + ' did not accept (opened ' + (acc && acc.opened) + ', offers ' + (acc && acc.offers) + ', first line: ' + String(acc && acc.lines[0]).slice(0, 36) + ')'); b0().accept(def.id); }
   { const L = lists(); if ((side ? L.sA : L.gA).includes(giver) && !otherAt('avail', giver, def.id)) fail('4 accept', "'!' still shows after Accept"); }
   if (b0().tracked() !== I) fail('4 accept', 'accepted quest is not the tracked one');
