@@ -23,14 +23,14 @@ assert.equal(countOf(inv, SCROLL_ID), 1); assert.equal(countOf(inv, 'potion.hp')
 const st = {}, book = createSpellBook(st);
 assert.deepEqual(raisable(book), []);
 assert.deepEqual(useScroll(inv, book, 'fireball'), { ok: false, reason: 'notLearned' }); assert.equal(countOf(inv, SCROLL_ID), 1);
-book.learn('gust'); book.learn('fireball');
-assert.deepEqual(raisable(book).map((q) => q.id), ['fireball', 'gust'], 'tree order');
-assert.deepEqual(useScroll(inv, book, 'gust'), { ok: true, level: 2 });
-assert.equal(countOf(inv, SCROLL_ID), 0); assert.equal(book.tier('fireball'), 1); assert.equal(book.tier('gust'), 2);
-assert.deepEqual(useScroll(inv, book, 'gust'), { ok: false, reason: 'none' });
+book.learn('telekinesis'); book.learn('fireball');
+assert.deepEqual(raisable(book).map((q) => q.id), ['fireball', 'telekinesis'], 'tree order');
+assert.deepEqual(useScroll(inv, book, 'telekinesis'), { ok: true, level: 2 });
+assert.equal(countOf(inv, SCROLL_ID), 0); assert.equal(book.tier('fireball'), 1); assert.equal(book.tier('telekinesis'), 2);
+assert.deepEqual(useScroll(inv, book, 'telekinesis'), { ok: false, reason: 'none' });
 addItem(inv, items, SCROLL_ID, 3);
-assert.equal(useScroll(inv, book, 'gust').level, 3);
-assert.deepEqual(useScroll(inv, book, 'gust'), { ok: false, reason: 'max' }); assert.equal(countOf(inv, SCROLL_ID), 2);
+assert.equal(useScroll(inv, book, 'telekinesis').level, 3);
+assert.deepEqual(useScroll(inv, book, 'telekinesis'), { ok: false, reason: 'max' }); assert.equal(countOf(inv, SCROLL_ID), 2);
 assert.equal(useScroll(inv, book, 'fireball').level, 2);
 assert.deepEqual(useScroll(inv, book, 'nope'), { ok: false, reason: 'notLearned' });
 // AC4 no random in the scroll path

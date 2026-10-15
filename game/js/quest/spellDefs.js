@@ -24,7 +24,7 @@ export const SPELL_DEFS = Object.freeze({
   }),
   // Telekinesis: push/pull; level 3 adds lift-and-throw (hold up to `hold` s, throw at `throwSpeed`, impact `throwDmg`; SPELL-R7).
   telekinesis: Object.freeze({
-    name: 'Telekinesis', glyph: '~', color: 'gust', maxTier: 3,
+    name: 'Telekinesis', glyph: '~', color: 'aether', maxTier: 3,
     tiers: T([
       { mana: 4, cd: 1.5, range: 8, knock: 12, stagger: 0.5, dmg: 0, wallDmg: 0, hold: 0, throwSpeed: 0, throwDmg: 0 },
       { mana: 4, cd: 1.2, range: 12, knock: 16, stagger: 0.8, dmg: 0, wallDmg: 3, hold: 0, throwSpeed: 0, throwDmg: 0 },
