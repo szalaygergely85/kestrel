@@ -1,69 +1,80 @@
-# EP-SPELLS - Spell tree (PC-B PO, 2026-10-15; owner to OK)
+# EP-SPELLS - Fireball, Freeze, Telekinesis, Teleport (PC-B PO opus, 2026-10-15; owner to OK)
 
-Source: owner 2026-10-15 "Not fireball, a random choosen one, you can add a spelltree" (D-114 amended) and the **owner correction the same day: Spell Scrolls are NOT random - the player CHOOSES which learned spell to upgrade, one spell per scroll.** (The D-114 amendment line in docs/decisions.md still says "randomly chosen"; the main session should correct it to "player-chosen".)
-Reads: D-069 (Burl gives the fireball, gate = gearLevel, 38.53), D-078 (no XP; spells tiers are a progression path), D-084 (level = spells + items), D-114, ep-items-stats.md "PLAYER-LEVEL-01 proposal" (spell bonus = min(2, 0.25 x sum of tiers)), GDD section 3 (Aether = magic of light; "every spell is a light verb"; Spark stuns; Gust, Ward named as later spells; beasts fear waystone light; upgrades are found or earned, never bought).
+**Replaces** the 2026-10-15 draft (Spark / Light Orb / Ward / Fire Ring / Gust / Updraft), which ignored D-021. Owner D-115: "we already said what spells can be".
+Reads: D-021 (the four spells; beacons, wells, quests; small skill tree; Teleport needs an architect note), D-115, D-114 + corrections (Spell Scroll: the player CHOOSES the learned spell, one per scroll, cancel keeps it), D-078 / D-084 (no XP; player level is derived from spell tiers + item levels), D-081 / D-091 (INT from gear only), D-112 (no stamina), D-113 (no dodge roll), D-018 (physics carry/throw - **not built**: there is no `engine/physics/rigid.js`; loose physics props today = `roller` bodies, e.g. `tower.boulder`), D-069 (Burl gives the Fireball), D-080 (beacons = Waystones), docs/owner-ideas/2026-09-24-story-and-progression.md.
 
 ## 1. Rules
-- **No XP, no random upgrades.** Every spell is learned from a fixed, placed source and every upgrade is a player choice.
-- **7 spells, 3 branches, max level 3 each** (tier 0 = not learned, 1..3). Tier sum max 21.
-- **Learn = Spell Book** (one per spell, plain name "<Spell> Spell Book", e.g. "Gust Spell Book"), or a character's quest reward, or a Waystone wake. Reading it teaches the spell at level 1 at once (item-get card "New spell: Gust"). Burl's Fireball stays the first spell (D-069, unchanged).
-- **Upgrade = Spell Scroll** (plain name "Spell Scroll", item id `scroll.spell`, stacks, max 9). Found only in earned places (guarded chests, dungeon ends, bosses, quest hand-ins). The scroll goes into the bag; the player spends it on the spell page by choosing ONE learned spell below level 3 -> that spell +1 level. Confirm line: "Raise Fireball to level 2?  [E] Yes  [Q] No". If no learned spell can rise (none learned, or all at 3), the scroll stays in the bag and the page says "No spell can learn from this yet."
-- **The tree is a guide, not a lock.** Each branch has a root (listed first). Content places the root before the others, but a book read out of order still teaches its spell (no lost items, no dead ends).
-- **INT** keeps its D-081 role: +3 % spell damage per INT point above 5 (today `fireDmgPct`, renamed to apply to all damage spells), +2 max mana and +1 % mana regen per point.
-- **Mana:** today max 20, +1 per 2 s, 3 s pause after a cast. See owner question Q3.
-- Effects use only what exists: fireball projectile + burst (`sim/fireball.js`), point lights (lighting.js), particles.js, beast stagger (`staggerSec`, knockback), shield/vitals damage hooks, the player jump impulse. No new art beyond glyph + colour; no new environment meshes.
+- **Exactly four spells:** Fireball, Freeze, Telekinesis, Teleport. Each has level 0 (not learned) and levels 1..3. Tier sum max 12.
+- **Learn** at a Waystone (beacon), at a well, or by finishing a character's quest (D-021, D-082). Burl's Fireball stays the first (D-069, `sq.burl.fire`, unchanged). No Spell Books, no shop, no XP.
+- **Upgrade = Spell Scroll** (plain name, item `scroll.spell`, stack 9; D-114 as corrected): spent on the spell page on ONE learned spell below level 3 that the player chooses. Confirm: "Raise Freeze to level 2?  [E] Yes  [Q] No". Q cancels and keeps the scroll. No random choice anywhere.
+- **The tree** = each spell's three levels, shown as four cards in learn order (section 3). No cross-locks between spells: a scroll can go to any learned spell (owner Q1 offers an optional lock).
+- **Mana** stays as today (D-0xx sets nothing else): max 20, +1 per 2 s, 3 s regen pause after a cast (`vitalsConfig.js`); INT gear adds +2 max mana per point (D-081); hard sword swing still costs 4. No stamina (D-112).
+- **INT** damage bonus (`fireDmgMul`) applies to every damage spell (Fireball, Freeze, Telekinesis throw impact).
+- Visuals reuse what exists: fireball view, `spellLightView.js` (recoloured), `gustView.js` (recoloured), particles, point lights, glyph + colour only. No new art, no new meshes, no new palette keys (designer picks existing keys).
+- Every sim: no Math.random (seeded), 0 alloc per step, deterministic hash twice equal.
 
-## 2. The tree
+## 2. The four spells (numbers per level)
 
-Colours: Fire = existing ember orange/red; Light = aether teal (GDD 6, reserved for magic); Wind = pale grey-green (white `~`).
-
-### Fire (damage)
-| Spell | Lv1 | Lv2 | Lv3 |
+### Fireball (attack; first spell) - unchanged from today's `spellDefs.js`
+| Lv | tap: mana / dmg / radius | charged (hold 0.6 s): mana / dmg / radius | cd |
 |---|---|---|---|
-| **Fireball** (root, today's sim) - tap: fast ball; hold 0.6 s: charged ball. Cooldown 0.5 s. | tap 5 mp dmg 3 r2.0; charged 10 mp dmg 5 r3.0 (= today) | tap dmg 4; charged dmg 7, r3.5 | tap dmg 5; charged 9 mp, dmg 9, r4.0 |
-| **Fire Ring** - a burst centred on Wick (re-uses the fireball burst at the player, player takes no damage or knock), ring of `*` particles, 0.3 s orange flash light r6. | 8 mp, r3.0, dmg 4, knock 8 m/s, cd 4 s | 8 mp, r3.5, dmg 6, cd 3.5 s | 7 mp, r4.0, dmg 8, knock 10, cd 3 s |
+| 1 | 5 / 3 / 2.0 m | 10 / 5 / 3.0 m (= today) | 0.5 s |
+| 2 | 5 / 4 / 2.0 m | 10 / 7 / 3.5 m | 0.5 s |
+| 3 | 5 / 5 / 2.0 m | 9 / 9 / 4.0 m | 0.5 s |
 
-### Light (control + safety)
-| Spell | Lv1 | Lv2 | Lv3 |
-|---|---|---|---|
-| **Spark** (root; GDD's "Spark stuns") - straight teal bolt `+`, speed 30 m/s, range 20 m, first beast hit is staggered (existing stagger state). | 4 mp, dmg 1, stun 0.8 s, cd 1.5 s | 4 mp, dmg 2, stun 1.2 s, cd 1.2 s | 3 mp, dmg 3, stun 1.6 s, cd 1.0 s |
-| **Light Orb** - a teal point light hovers 2.2 m above Wick and follows him (one alive; recast refreshes). Beasts treat it like woken Waystone light (no aggro start inside it). Made for the crypt, caves and night. | 6 mp, 30 s, light r8, beasts level <= 3 keep out | 6 mp, 45 s, r10, beasts <= 5 keep out | 5 mp, 60 s, r12, beasts <= 7 keep out; beasts inside when cast flee 2 s |
-| **Ward** - a teal ring of `o` glyphs around the screen edge + soft teal light on Wick; absorbs incoming damage until used up or timed out (vitals damage hook, before armour). | 8 mp, absorbs 10 hp, 8 s, cd 12 s | 8 mp, 18 hp, 8 s, cd 10 s | 7 mp, 26 hp, 10 s, cd 8 s |
+### Freeze (control) - reuse the Spark sim
+A pale ice bolt (`+` / `*`, existing pale blue/white keys, e.g. skyHorizon / aetherCore) flies straight; the first beast hit takes damage and is frozen: `combat:hit` with `stunSec` = freeze time (the beastSim stun path Spark already uses), knock 0. A frozen beast does not move or attack; a white-blue frost glyph puff sits on it for the duration. Walls stop the bolt.
+| Lv | mana | cd | speed / range | dmg | freeze | extra |
+|---|---|---|---|---|---|---|
+| 1 | 5 | 2.0 s | 24 m/s / 18 m | 1 | 1.5 s | - |
+| 2 | 5 | 1.8 s | 24 m/s / 20 m | 2 | 2.5 s | - |
+| 3 | 4 | 1.5 s | 24 m/s / 22 m | 3 | 3.5 s | also freezes up to 2 more beasts within 2.5 m of the hit (same time) |
+- Bosses and beasts above zone level 7 freeze for half the time (no perma-lock).
+- A crocodile that has the player in a grab (D-088 pin) lets go when frozen: this is the croc escape that replaces the dodge roll (D-113).
+- Re-freezing a frozen beast refreshes the timer, never stacks above the level's time.
 
-### Wind (movement + physics)
-| Spell | Lv1 | Lv2 | Lv3 |
-|---|---|---|---|
-| **Gust** (root) - a 60 degree cone of white `~` particles; beasts in it get knockback + stagger; loose physics props (crates, barrels) in it get an impulse. | 5 mp, 6 m, knock 10 m/s, dmg 0, stagger 0.4 s, cd 2 s | 5 mp, 7 m, knock 13, dmg 1, stagger 0.6 s, cd 1.8 s | 4 mp, 8 m, knock 16, dmg 2, stagger 0.8 s, cd 1.5 s |
-| **Updraft** - an upward push from the ground (works only when standing or within 0.3 s of leaving a ledge), then slow fall; reaches ledges a jump cannot (tool gating, GDD 3: "new spells and gear open new parts of the map"). Not a dodge (D-113). | 6 mp, +4 m height, fall gravity x0.4 for 1.5 s, cd 5 s | 5 mp, +5 m, 1.8 s, cd 4 s | 4 mp, +6 m, 2.2 s, cd 3 s |
+### Telekinesis (physics) - reuse the Gust push/impulse code
+Glyph `~` in aether teal (magic of light). Aim with the camera; acts on the nearest valid target in a 30 deg cone (LOS required, nothing behind a wall).
+| Lv | mana | cd | range | what it does |
+|---|---|---|---|---|
+| 1 | 4 | 1.5 s | 8 m | **Push** (tap): beast knock 12 m/s + stagger 0.5 s, dmg 0; roller props impulse 8 m/s. **Pull** (hold >= 0.4 s, release): the same toward the player, stops 1.5 m short. |
+| 2 | 4 | 1.2 s | 12 m | Push/Pull knock 16 m/s, stagger 0.8 s; a pushed beast that hits a wall within 0.5 s takes 3 dmg. |
+| 3 | 6 + 1/s held | 3.0 s | 12 m | **Lift and throw:** hold grabs one small/medium beast (not bear, croc, boss) or a roller prop, floats it 2.5 m in front at eye height for up to 3 s; release (or 3 s) throws it along the aim at 14 m/s; impact dmg 6 to the thrown beast and to a beast it hits. |
+- Push/Pull use Gust's `applyImpulse` path for rollers (`hooks.forEachProp`), and the beast knock via `combat:hit`.
+- Level 3 hold needs an ARCH-NOTE (kinematic hold of a beast / roller body for up to 3 s, release velocity, no tunnelling into walls). When D-018 US-052 carry/throw lands, its loose props join the target list with no new spell code.
 
-Root rule summary: Fire root Fireball -> Fire Ring; Light root Spark -> Light Orb, Ward; Wind root Gust -> Updraft.
+### Teleport (movement; the "one big spell") - ARCH-NOTE NEEDED
+A short blink along the camera aim to a collision-safe spot. Glyph `*` burst in moon / aetherCore at both ends, 0.12 s white fade on the camera. Not a dodge (D-113): no invulnerability frames, it is a cooldown spell.
+| Lv | mana | cd | max distance | extra |
+|---|---|---|---|---|
+| 1 | 8 | 6 s | 8 m | flat or down only (target ground up to 0.6 m higher) |
+| 2 | 7 | 5 s | 12 m | target up to 1.5 m higher |
+| 3 | 6 | 4 s | 16 m | target up to 3 m higher (ledges); beasts within 6 m of the start lose track for 2 s |
+- **Safe target** (architect note decides the method): eye-ray to the aim point capped at the level distance; never through a wall/ceiling/closed door/grate; the player capsule must fit at the target; back off along the ray in 0.5 m steps until it fits; ground must be within 1.5 m below; never into deep water (swim depth), never out of the world bounds or into a locked area. No valid spot -> refused, no mana spent, toast "No room to blink." Camera: eye snaps with the capsule, no lerp through geometry.
 
 ## 3. How it shows
-- **Spell page:** a "Spells" tab in the character view (`inventoryScreen.js`). Three columns titled Fire / Light / Wind; one card per spell: glyph in branch colour, plain name, level pips `[##-]`, mana + cooldown. Not learned: dim card "Not learned". The selected card shows "Now" and "Next level" lines (numbers from the tier table). Footer: "Spell Scrolls: N" and, when N > 0 and the card can rise, "[E] Use Spell Scroll". No "Esc to close" text.
-- **Quickbar:** spells are hand items like `spell.fireball` today: drag a learned spell to [L]/[R] (cast on the mouse button; Fireball keeps hold-to-charge) or to keys 1-4 (key = tap cast). Unlearned spells cannot be placed (generalises FB_LOCKED_IDS).
-- **Cards/toasts:** learn -> item-get card "New spell: Spark" + one plain line of what it does; upgrade -> "Fireball is now level 2".
-- **Level (PLAYER-LEVEL-01):** `spellBook.tiers()` returns the map spellId -> tier that `playerLevel(spells, equipped)` already takes. Learning or upgrading recomputes the HUD "Lv N" (flash on rise). Note: with the proposed cap (+2 at tier sum 8) a player who learns all 7 spells and reads 1 scroll is already capped; the owner OKs that number in PLAYER-LEVEL-01.
+- **Spell page** (character view "Spells" tab, today's `spellPageView.js`): four cards in one row in learn order Fireball -> Freeze -> Telekinesis -> Teleport, joined by `-` lines (the tree). Card: glyph in its colour, plain name, level pips `[#--]`..`[###]`, "mp N  cd N s". Not learned: dim card, "Not learned" + one hint line ("Ask Burl." / "Look into the dry well." / "Wake three waystones." / "Help Rook at the ford."). Selected card: "Now" + "Next level" lines from spellDefs; level 3 = "Max level". Footer "Spell Scrolls: N"; "[E] Use Spell Scroll" when N > 0 and the card can rise. No "Esc" text.
+- **Quickbar:** `spell.<id>` hand items as today (L/R mouse or keys 1-4); tier-0 spells cannot be placed.
+- **Cards/toasts:** learn -> item-get card "New spell: Freeze" + one plain line; scroll -> "Freeze is now level 2".
+- **Player level (D-084):** `spellBook.tiers()` feeds `playerLevel(spells, equipped)`. With 4 spells the PLAYER-LEVEL-01 cap (+2 at tier sum 8) is reached with all four learned and 4 upgrades; the owner OKs that number in PLAYER-LEVEL-01.
 
-## 4. Placement in today's content (first pass)
-| Source | Gives | Why there |
+## 4. Where spells come from (existing content only)
+| Source (existing) | Gives | Notes |
 |---|---|---|
-| Burl, level 5 beat (D-069) | Fireball | unchanged, first spell |
-| Crypt chest (UNDER-02 AC4, D-114) | 1 Spell Scroll + 40-60 coins + Health Potion | D-114 as corrected; if no spell is learned yet the scroll waits in the bag |
-| Bear den stash (UNDER-04) | +1 Spell Scroll (added to the existing stash) | earned (behind the bear) |
-| Sea cave locked chest (UNDER-05) | Light Orb Spell Book | a dark cave; key on the strand = earned |
-| Goblin tunnel (UNDER-06), a stash at the midpoint guarded by the 2 patrol goblins (existing chest prop) | Fire Ring Spell Book | fire vs goblin torches |
-| Waking the 3rd Waystone on the near side | Spark | canon: light jumps from the stone to his hand; a wake reward, not a quest giver (D-082) |
-| Rook's chain end (mq.bend, ford ruin) - writer confirms the giver | Ward | a character quest reward |
-| Waking the first far-side (foothills) Waystone | Gust Spell Book | wind on the open fields |
-| A far-side character quest (writer picks the giver) | Updraft Spell Book + 1 Spell Scroll | late, after Gust |
-| Future bosses / dungeon ends | 1 Spell Scroll each | the main upgrade source |
+| Burl, `sq.burl.fire` hand-in (D-069) | **Fireball** | unchanged, first spell |
+| The dry well north of the post (`rsInspectWell`, area `well`, x 994 y 1051.5); Rook's `sq.fc.well` sends you there | **Freeze** | the WELL: inspecting it the first time ("cold light rises from the dry well") teaches Freeze once, quest or not; the quest still hands in to Rook (D-082) |
+| Waking the **3rd near-side Waystone** (`wakeGrants` thirdNear rule, spellBooks.js) | **Telekinesis** | the BEACON |
+| Rook, `mq.ford.mirror` hand-in at the ford ruin | **Teleport** | the QUEST (mirror -> blink) |
+| Crypt chest (UNDER-02 AC4, D-114) | 1 Spell Scroll + 40-60 coins + Health Potion | scroll waits in the bag if nothing is learned |
+| Bear den stash (UNDER-04) | +1 Spell Scroll | earned (behind the bear) |
+| Waking the **6th and 9th** Waystone (any side) | +1 Spell Scroll each | beacons keep giving magic (D-021) |
+| Future bosses / dungeon ends | +1 Spell Scroll each | main later source |
+Alpha supply: 4 scrolls (crypt, bear den, 6th + 9th waystone) vs 8 possible upgrades, so the choice matters.
 
-Alpha supply: 3 Spell Scrolls now (crypt, bear den, far-side quest) + 1 per future boss/dungeon, about 8 by the end of the alpha vs 14 possible upgrades, so choosing matters.
-
-## 5. Owner questions
-- **Q1 (tree):** 7 spells in Fire / Light / Wind - Fireball, Fire Ring | Spark, Light Orb, Ward | Gust, Updraft - OK? (Alternative: drop Updraft, keep 6.)
-- **Q2 (scrolls):** a Spell Scroll goes into the bag and is spent any time on the spell page on a spell you choose (PO default), or must you choose right when you open the chest? Supply about 8 scrolls in the alpha (you cannot max everything) OK?
-- **Q3 (mana):** max mana is 20 today (a charged fireball costs 10). PO default: raise base max to 30 and regen to +1 per 1.5 s so two or three spells can be mixed; INT gear still adds +2 per point. Or keep 20 and let gear carry it?
+## 5. Owner questions (max 3)
+- **Q1 (tree lock):** default = no cross-locks (any learned spell can take a scroll). Or: a spell's level 3 needs another spell at level 2?
+- **Q2 (sources):** Freeze at the dry well, Telekinesis at the 3rd Waystone, Teleport from Rook's `mq.ford.mirror` - OK, or should Teleport (the big spell) come later, e.g. the first far-side Waystone?
+- **Q3 (Telekinesis level 3):** lift-and-throw beasts and the boulder now (needs an architect note), or wait for the D-018 carry/throw props and stop at Push/Pull for the alpha?
 
 ## 6. Stories
-Rows in docs/pc-b-queue.md section "K. EP-SPELLS". Order: SPELL-01 data -> SPELL-02 scroll hook + crypt -> SPELL-03 spell page -> SPELL-04 cast dispatcher + Fireball tiers -> SPELL-05..08 spells -> SPELL-09 placement -> SPELL-10 level wire.
+Rows SPELL-R1..R8 in docs/pc-b-queue.md section "K. EP-SPELLS (D-021)". Code base: kestrel-4 branch `spellsall` (not merged to pc-b). Order: R1 retire -> R2 Freeze / R3 Telekinesis 1-2 / R5 page in parallel -> R4 Teleport (after the arch note) -> R6 placement -> R7 Telekinesis 3 -> R8 level wire.
