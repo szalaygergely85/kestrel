@@ -112,7 +112,8 @@
     "preset": "ambient"
   },
   "lights": [
-    {"id": "lantern", "on": true, "preset": "lanternHook", "x": 2.9, "y": 3, "z": 4.39}
+    {"id": "lantern", "on": true, "preset": "lanternHook", "x": 2.9, "y": 3, "z": 4.39},
+    {"id": "dressTorch1", "on": true, "preset": "torch", "x": 17.200000000000045, "y": 26.5, "z": 1.5}
   ],
   "props": [],
   "interactables": [],
