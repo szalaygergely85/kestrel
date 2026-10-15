@@ -148,6 +148,18 @@ ok('5f: restored want applies once the gateway is clear', E.pending === 0 && gat
   ok('E1c: cleared group (2) stays down after resetAll', alive(R0.sim) === 0);
 }
 
+// ---- BH2-E1: N reloads on one shared event bus -> exactly one live beasts:reset handler (dispose unsubscribes)
+{
+  const live = new Set();
+  const bus = { on: (n, f) => { if (n === 'beasts:reset') live.add(f); return () => live.delete(f); }, emit() {} };
+  const mk = () => createLogicWire({ world: {}, blocks: [], book: { statusOf: () => -1 }, sim: { events: bus }, hooks: {} });
+  let wire = null;
+  for (let i = 0; i < 5; i++) { if (wire) wire.dispose(); wire = mk(); }
+  ok('5 reloads -> 1 live beasts:reset handler', live.size === 1, String(live.size));
+  wire.dispose(); wire.dispose();
+  ok('dispose is idempotent and leaves 0', live.size === 0);
+}
+
 // ---- 6) wrong dt warns once, determinism of hashes is covered by engine/core/logic.test.js
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }

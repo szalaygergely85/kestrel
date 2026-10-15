@@ -88,8 +88,10 @@ export function createLogicWire(o) {
       else { const l = sim.groupSlots(g); if (l.length && l.every((i) => sim.entities[i].components.brain.reserve)) sim.despawnGroup(g); }
     }
   }
-  if (o.sim && o.sim.events && o.sim.events.on) o.sim.events.on('beasts:reset', reapplyGroups);
+  let offReset = null; // BH2-E1: keep the unsubscribe so a reload does not leak a handler on the shared events bus
+  if (o.sim && o.sim.events && o.sim.events.on) offReset = o.sim.events.on('beasts:reset', reapplyGroups) || null;
+  function dispose() { if (offReset) { offReset(); offReset = null; } }
 
   function handlers() { return { onEvent, onTick }; }
-  return { program, logic, props, ctx, push, notify, onEvent, onTick, onWorldLoaded, handlers };
+  return { program, logic, props, ctx, push, notify, onEvent, onTick, onWorldLoaded, handlers, dispose };
 }

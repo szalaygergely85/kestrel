@@ -47,7 +47,7 @@ for (const keep of [false, true]) {
   ok(w._ahead === null, 'ahead job dropped');
   ok(w._zoneKey(ai, aj) !== kA0, `zone under the structure gets a new key (keep=${keep})`);
   ok(w._zoneKey(ai, aj).includes('bhr1:'), 'new zone key folds the structure');
-  ok(w._bandKey(w._bandCur) === bk0 || !w._bandKey(w._bandCur).includes('bhr1:') || true, 'live band key recomputed without throwing');
+  ok(typeof w._bandKey(w._bandCur) === 'string' && w._bandKey(w._bandCur).length > 0, 'live band key recomputed without throwing');
   ok(!cache.map.has(fa.key), 'cached bundle under the structure dropped');
   ok(cache.map.has(fb.key), 'unrelated cached bundle kept');
   if (keep) ok(placed.keepMask && placed.keepMask.length === 36, 'keepMask on the placed structure (read by the next bake)');
