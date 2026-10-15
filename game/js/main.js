@@ -141,7 +141,8 @@ import { createSpawnDirector, buildGroups, regionalMembers } from './quest/sim/s
 import { spawnRegionalBeasts } from './quest/sim/regionalBeasts.js';
 import { setForestAmbienceSources } from './audio/forestAmbience.js'; // OB-184
 import { setUndergroundSources } from './audio/undergroundAmbience.js'; import { createUnderSpawner, UNDER_SITES } from './quest/sim/underSkeletons.js'; // UNDER-01 / UNDER-08
-import { createBeastSim, isBeastDeadState } from './quest/sim/beastSim.js';
+import { createBeastSim, isBeastDeadState, loseTrack } from './quest/sim/beastSim.js';
+import { createTeleport } from './quest/sim/teleport.js'; // SPELL-R4
 import { kindOf } from './quest/sim/quest.js'; // US-079a (architecture.md 29.1)
 import { ensureWolves } from './quest/sim/wolfBrain.js'; // WOLF-01
 import { ensureBears } from './quest/sim/bearBrain.js'; // BEAR-01 (D-069): black bears in Thornwood
@@ -1287,6 +1288,7 @@ async function runGame(mode, cinematic = null) {
   let offerToast = null, offerToastMsg = null; // toast once per new book.nextOffers() entry
   let equipPlay = null, shieldSim = null, arrowSim = null; // EQ-07/09: rebuilt on every 'world:loaded'
   let quickbar = null, qbView = null, qbTick = 0, qbBlocked = false; // EQ-12: sim rebuilt per world, view per page
+  let teleport = null; const tpEye = new Float64Array(3), tpAim = new Float64Array(3); // SPELL-R4
   let fireball = null, fbTargets = null, spellBook = null, spellCaster = null; // SPELL-01a (37.14): rebuilt with the sword sim on every 'world:loaded'
   // US-091b: pack-screen mouse. Hover -> UI cell under the pointer; a click while open must not re-lock the pointer
   // (PlayerLook's own canvas click handler), so a capture listener on window swallows it first.
@@ -1707,6 +1709,9 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       spellBook = createSpellBook(world.state); spellCaster = createSpellDispatcher((id) => spellBook.tier(id) || (id === 'fireball' && fbOn ? 1 : 0)); // SPELL-04
       fireball = createFireballSim(world, engine.events, FIREBALL_CFG, fbTargets, { spendMana: (n) => vitals && vitals.spendMana(n), isEnabled: () => fireballOn(world, FEATURES), tier: () => spellBook.tier('fireball') || 1, damageMul: () => { const c = playerHandle && playerHandle.data.components; return computeTotals(c && c.rolledGear || null, fbTotals).fireDmgMul; } }); // INT: stats fireDmgMul at cast (rolled gear: rolledGear.js)
       hands.register('spell.fireball', fireball); spellCaster.register('fireball', () => fireball.requestTap());
+      teleport = createTeleport(world, { spendMana: (n) => vitals && vitals.spendMana(n), say: (t) => toasts && toasts.say(t, [226, 214, 176]), loseTrack: (x, y, r, s) => beasts && loseTrack(beasts, x, y, r, s), // SPELL-R4
+        blink: (x, y, z) => { const d = playerHandle.data, t = d.transform, b = d.components.body, bd = engine.particles.defIdOf('fireballBurst'); engine.particles.burstAt(bd, t.x, t.y, t.z + 1, 24, 0, 0, 1); t.x = x; t.y = y; t.z = z; b.vx = b.vy = b.vz = 0; b.fallDistance = 0; b.peakZ = z; b.grounded = true; if (b.feel) b.feel.stepOffset = 0; hzb.invalidate('blink'); ensureBand(engine.world, t); engine.particles.burstAt(bd, x, y, z + 1, 24, 0, 0, 1); } });
+      spellCaster.register('teleport', (pl) => { const t = pl.transform, pr = look.pitchDeg * Math.PI / 180, cp = Math.cos(pr); tpEye[0] = t.x; tpEye[1] = t.y; tpEye[2] = t.z; forwardOf(look.yawDeg, tpAim); tpAim[0] *= cp; tpAim[1] *= cp; tpAim[2] = Math.sin(pr); return teleport.cast(spellBook.tier('teleport'), tpEye, tpAim) === 0 ? 'cast' : 'busy'; }); // SPELL-R4
       // SPELL-R1 (D-115): only Fireball is registered; spell.freeze / telekinesis / teleport answer 'notImplemented' until SPELL-R2..R4
       // EQ-07/09 (38.41): shield sim + arrow sim + the routing glue; shield/bow items get no-op sims so the router arms them (RMB -> left hand, LMB -> right hand)
       shieldSim = createShieldSim();
@@ -2335,6 +2340,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
             if (!choosing) for (let n = 0; n < 4; n++) if (input.pressed('Digit' + (n + 1))) { qbToast(LOCKED[pl.components.quickbar[n + HAND_SLOTS]] ? 'empty' : quickbar.press(pl, n)); break; } // FB-01: a locked mana potion key does nothing
           }
         }
+        if (teleport) teleport.step(); // SPELL-R4
         if (fireball) { // SPELL-01a: aim = unit 3D look vector (pitch > 0 = up); trig stays here, outside sim/
           forwardOf(look.yawDeg, swordFwd);
           const pr = look.pitchDeg * DEG2RAD, cp = Math.cos(pr);

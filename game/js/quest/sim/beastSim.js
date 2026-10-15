@@ -259,6 +259,7 @@ export function createBeastSim(world, opts) {
     dormCamp: new Uint8Array(MAX_RECORDS), dormTile: new Uint8Array(MAX_RECORDS), tileMode: false, // WM-04 reasons
     dormant: new Uint8Array(MAX_RECORDS),     // GOB-01: setDormant(slot, true) -> skipped like GONE, state kept
     fleeing: new Uint8Array(MAX_RECORDS),     // WOLF-01: STATE_RETURN that runs away from the player first
+    spell: { blindT: new Uint16Array(MAX_RECORDS) }, // SPELL-R4 (38.80/38.81): ONE key for all spell per-slot data; blindT = steps a beast cannot perceive (Teleport lv3)
     hunt: new Uint8Array(MAX_RECORDS),        // LIFE-07: 1 = STATE_WANDER leg chasing a fauna prey slot (huntSlot)
     huntSlot: new Int32Array(MAX_RECORDS), huntT: new Int32Array(MAX_RECORDS), preyMask: new Int32Array(MAX_RECORDS),
     goal: { on: new Uint8Array(MAX_RECORDS), tx: new Float64Array(MAX_RECORDS), ty: new Float64Array(MAX_RECORDS) }, // LIFE-08: setGoal override
@@ -871,6 +872,7 @@ function huntStep(sim, i, px, py) {
 
 function perceiveOne(sim, i, px, py, pz) {
   const steer = sim.steer, cfg = sim.cfg;
+  if (sim.spell.blindT[i] > 0) { sim.spell.blindT[i]--; sim.seen[i] = 0; sim.unseen[i] = 0; return; } // SPELL-R4: blinded (lost track)
   const dx = px - steer.x[i], dy = py - steer.y[i];
   const d2 = dx * dx + dy * dy;
   const loseR2 = sim.scfg[i].loseR * sim.scfg[i].loseR; // BEAR-01: per-slot (same as cfg for boars/wolves)
@@ -894,6 +896,7 @@ function zOf(sim, i) {
 }
 
 function noticedOf(sim, i, px, py) {
+  if (sim.spell.blindT[i] > 0) return false; // SPELL-R4
   const cz = sim.stk.calm; // SPELL-05: Light Orb keep-out (the 'woken waystone light' rule): no aggro START inside the light
   if (cz.on === 1 && sim.stk.lv[i] <= cz.lv) { const cx = sim.steer.x[i] - cz.x, cy = sim.steer.y[i] - cz.y; if (cx * cx + cy * cy <= cz.r2) return false; }
   // BEAST-PERCEIVE-01w: engine/nav/perceive through a thin adapter. hearing = the "nearR" any-direction bubble
@@ -1835,6 +1838,7 @@ function hashSim(sim, h) {
   h.u32Array(sim.pathLen, 0, n);
   h.u32Array(sim.pathIdx, 0, n);
   for (let i = 0; i < n; i++) h.i32(sim.pool.lv[i]); // BEAST-POOL-b: binding state
+  { const bt = sim.spell.blindT; let any = false; for (let i = 0; i < n; i++) if (bt[i]) { any = true; break; } if (any) h.u32Array(bt, 0, n); } // SPELL-R4: only while someone is blind (golden hash unchanged)
   h.u8Array(sim.seen, 0, n);
   h.u8Array(sim.pathReq, 0, n);
   h.u8Array(sim.pendingDied, 0, n);
@@ -1923,8 +1927,25 @@ function resetAllSim(sim) {
   sim.events.emit('beasts:reset'); // US-079b: loot clears its corpse state on this
 }
 
+/** SPELL-R4 (38.80): Teleport lv3. Live beasts in an aggro state within r m (2D) of (x, y) go to STATE_WANDER and cannot perceive for `sec` s. -> count. Cold path. */
+export function loseTrack(sim, x, y, r, sec) {
+  const r2 = r * r, steps = Math.min(65535, Math.round(sec / SIM_STEP));
+  let n = 0;
+  for (let i = 0; i < sim.count; i++) {
+    const st = sim.state[i];
+    if (FREE_ST[st] || st === STATE_RETURN || deadSt(st) || st === STATE_GONE) continue;
+    const dx = sim.steer.x[i] - x, dy = sim.steer.y[i] - y;
+    if (dx * dx + dy * dy > r2) continue;
+    sim.spell.blindT[i] = steps; sim.seen[i] = 0; sim.unseen[i] = 0; sim.fleeing[i] = 0;
+    sim.state[i] = STATE_WANDER; sim.timer[i] = sim.cfgSteps.pauseMin; sim.pathLen[i] = 0; sim.pathIdx[i] = 0; sim.pathReq[i] = 0;
+    sim.steer.setIdle(i); n++;
+  }
+  return n;
+}
+
 /** One slot back to home, alive, state wander (shared by resetAll and setDown(slot, false)). */
 function resetSlotSim(sim, i) {
+  sim.spell.blindT[i] = 0; // SPELL-R4
   sim.bite.cd[i] = 0; sim.bite.n[i] = 0; sim.bite.done[i] = 0; // BEAR-BITE
   // US-079b: dead steer slots are re-added in ascending order; addAgent hands out the lowest free slot, and the
   // live slots stay active (slots >= count are never used), so the lowest free slot is always the lowest dead one.
