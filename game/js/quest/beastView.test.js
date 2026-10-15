@@ -104,6 +104,30 @@ const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
   ok('goblin: death timeline unchanged', clipAt(dying, STATE_DYING) === 'die');
 }
 
+// ---- OB-171: real-game voxel pressure - an attacking wolf at 10 m survives 218 entities vs the cap ----
+{
+  const { VoxelPool } = await import('../../../engine/index.js');
+  const { beastVoxelPriority } = await import('./beastView.js');
+  const pool = new VoxelPool(); pool.cap = 36; pool.reserve = 0; // ecap 36 as in the owner log
+  const queued = new Set(); pool._queueEntity = (e) => { queued.add(e.transform.x); }; // selection only; no model binding needed
+  const cam = { x: 0, y: 0, z: 0 };
+  const ents = [];
+  const mk = (id, x, pr) => { const e = { id, components: { voxel: { model: 'bear', frame: 0, t: 0, playing: true, priority: pr } }, transform: { x, y: 0, z: 0, yawDeg: 0 } }; ents.push(e); return e; };
+  for (let i = 0; i < 40; i++) mk('crit' + i, 1 + i * 0.2, 0);          // 40 nearer ambient critters
+  const wolf = mk('wolf', 10, beastVoxelPriority(STATE_CHASE, 0, { x: 10, y: 0 }, cam)); // attacking wolf at 10 m
+  const idle = mk('idleWolf', 20, beastVoxelPriority(STATE_WANDER, 0, { x: 20, y: 0 }, cam)); // hostile, wandering, 20 m
+  const far = mk('farWolf', 60, beastVoxelPriority(STATE_WANDER, 0, { x: 60, y: 0 }, cam));
+  const giver = mk('giver', 90, 1), marker = mk('marker', 200, 2);
+  for (let i = 0; i < 173; i++) mk('prop' + i, 5 + i * 0.5, 0);
+  const world = { renderVersion: 1, forEachEntity: (fn) => ents.forEach(fn) };
+  pool.collect(world, { x: 0, y: 0, z: 0 });
+  ok('OB-171: ' + ents.length + ' entities > cap, pool capped', ents.length >= 218 && queued.size <= 36);
+  ok('OB-171: attacking wolf (10 m, behind 40 nearer critters) renders', queued.has(10), [...queued].join());
+  ok('OB-171: quest marker + giver render', queued.has(200) && queued.has(90));
+  ok('OB-171: hostile within 25 m renders, tier 0 far wolf does not', queued.has(20) && !queued.has(60));
+  ok('OB-171: tiers', wolf.components.voxel.priority === 2 && idle.components.voxel.priority === 1 && far.components.voxel.priority === 0 && beastVoxelPriority(STATE_WANDER, 2, { x: 1, y: 0 }, cam) === 0);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { console.log('FAILURES:\n' + failures.map((f) => '  - ' + f).join('\n')); process.exit(1); }
 console.log('ALL PASS');

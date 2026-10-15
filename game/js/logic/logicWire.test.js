@@ -43,7 +43,7 @@ const BLOCKS = [
 
 function build(world, status, nav) {
   const w = world || World.load(DEF(), assets, { physics: 'mesh' });
-  const sim = createBeastSim(w, { nav: buildBeastNav(w, NAV_CFG), rng: createRng(1), events: { on: () => () => {}, emit() {} } });
+  const sim = createBeastSim(w, { nav: buildBeastNav(w, NAV_CFG), rng: createRng(1), events: ((L) => ({ on: (n, f) => { (L[n] = L[n] || []).push(f); return () => {}; }, emit(n, d) { (L[n] || []).forEach((f) => f(d)); } }))({}) });
   const player = { x: PX, y: PY, z: 0 };
   const emitted = [];
   const wire = createLogicWire({ world: w, blocks: BLOCKS, book: { statusOf: (id) => (id in status ? status[id] : -1) }, sim, nav, player: () => player,
@@ -135,6 +135,40 @@ ok('5f: restored want applies once the gateway is clear', E.pending === 0 && gat
   const G = createPropStates(D.w, { player: () => D.player });
   G.reapply(); D.player.x = gt.x + 10; G.step();
   ok('5h: after Continue the gate stays open', G.pending === 0 && gateVariant(D.w) === 'open');
+
+}
+// ---- BH2-E1: beasts.resetAll() must not wake reserve / cleared groups
+{
+  const R0 = build(null, status);
+  R0.sim.resetAll();
+  ok('E1a: reserve group (logic 0/unset) stays down after resetAll', alive(R0.sim) === 0);
+  R0.wire.logic.groups.goblins = 1; R0.sim.spawnGroup('goblins'); R0.sim.resetAll();
+  ok('E1b: active group (1) is alive after resetAll', alive(R0.sim) === 3);
+  R0.wire.logic.groups.goblins = 2; R0.sim.resetAll();
+  ok('E1c: cleared group (2) stays down after resetAll', alive(R0.sim) === 0);
+}
+
+// ---- BH2-E2: logic.save() only when the pending queue changed (or once per second while timers run)
+{
+  const W = build(null, status).wire;
+  let saves = 0; const realSave = W.logic.save; W.logic.save = () => { saves++; return realSave(); };
+  for (let i = 0; i < 100; i++) W.onTick(SIM_STEP);
+  ok('E2a: idle steps never save', saves === 0, String(saves));
+  Object.defineProperty(W.logic, 'pending', { get: () => 1, configurable: true });
+  for (let i = 0; i < 120; i++) W.onTick(SIM_STEP);
+  ok('E2b: pending>0 saves on change + 1/s, not every step', saves >= 1 && saves <= 4, String(saves));
+}
+
+// ---- BH2-E1: N reloads on one shared event bus -> exactly one live beasts:reset handler (dispose unsubscribes)
+{
+  const live = new Set();
+  const bus = { on: (n, f) => { if (n === 'beasts:reset') live.add(f); return () => live.delete(f); }, emit() {} };
+  const mk = () => createLogicWire({ world: {}, blocks: [], book: { statusOf: () => -1 }, sim: { events: bus }, hooks: {} });
+  let wire = null;
+  for (let i = 0; i < 5; i++) { if (wire) wire.dispose(); wire = mk(); }
+  ok('5 reloads -> 1 live beasts:reset handler', live.size === 1, String(live.size));
+  wire.dispose(); wire.dispose();
+  ok('dispose is idempotent and leaves 0', live.size === 0);
 }
 
 // ---- 6) wrong dt warns once, determinism of hashes is covered by engine/core/logic.test.js

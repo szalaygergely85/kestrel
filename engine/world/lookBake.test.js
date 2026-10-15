@@ -81,6 +81,24 @@ const bakeBand = (t, cx0, cy0, cw, ch, src) => { const st = t.newBandState(cx0, 
   const before = A.look.slice(); t.rebakeRect && t.rebakeRect(10, 10, 20, 20);
   ok('rebakeRect leaves unchanged cells identical', Buffer.compare(Buffer.from(A.look), Buffer.from(before)) === 0);
 }
+// 2b. BH2-R1: cached band baked before a runtime setGroundLook gets its look on publish
+{
+  const t = mk(); const A = bakeBand(t, 0, 0, 3, 3); t.publishBand(A);
+  const B = bakeBand(t, 1, 0, 3, 3); t.publishBand(B);
+  t.setGroundLook(CFG); ok('live band got look', !!B.look && !A.look);
+  t.publishBand(A); ok('cache-hit publish bakes look', !!A.look && A.look.length === A.w * A.h * 2);
+}
+// 2c. BH2-R1: a second setGroundLook with a NEW config refills cached bands
+{
+  const t = mk(); const A = bakeBand(t, 0, 0, 3, 3); t.publishBand(A);
+  const B = bakeBand(t, 1, 0, 3, 3); t.publishBand(B);
+  t.setGroundLook(CFG); t.publishBand(A);
+  const old = A.look, src = A.lookSrc;
+  t.setGroundLook({ ...CFG }); t.publishBand(B); t.publishBand(A);
+  ok('new config -> cached band refilled', A.look !== old && A.lookSrc === t._lookGen && A.lookSrc !== src);
+  const cur = A.look; t.publishBand(B); t.publishBand(A);
+  ok('same config -> band look kept', A.look === cur);
+}
 // 3. blendM assert
 {
   let threw = false; try { mk({ ...CFG, blendM: 23 }); } catch (e) { threw = /blendM/.test(e.message); }

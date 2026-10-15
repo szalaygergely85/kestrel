@@ -7,7 +7,7 @@
 //       distance, anchor, fadeIn/fadeOut, newTarget, swing, near } - needle states are relative to the VIEW (up = ahead, clockwise), N mark rides round the glass.
 //   (b) FALLBACK_COMPASS_STYLE (tests / no design pack): { sectors, face: string[], faceFg, faceBg, needle:{glyphs,pos,fg}, text:{fg,gap}, margin:{right,bottom} }.
 import { yawFromDelta } from '../../../engine/index.js';
-import { ACTIVE } from '../quest/sim/questBook.js';
+import { ACTIVE, READY } from '../quest/sim/questBook.js';
 
 export const FALLBACK_COMPASS_STYLE = Object.freeze({
   sectors: 8,
@@ -56,11 +56,13 @@ function compileDesigner(style) {
   };
 }
 
+const SIDE_BLUE = [120, 190, 255]; // D-108: side-quest '?'/'!' in the label (main = the style's gold)
+
 export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
   const D = style.faces ? compileDesigner(style) : null;
   const N = D ? D.dirs : (style.sectors | 0 || 8);
   const face = D ? null : style.face, faceW = D ? D.w : Math.max(...face.map(r => r.length)), faceH = D ? D.h : face.length;
-  const tmp = { x: 0, y: 0, z: NaN }, tgt = { x: 0, y: 0, z: NaN, kind: 0 };   // kind: 0 none, 1 ready giver, 2 step, 3 available giver
+  const tmp = { x: 0, y: 0, z: NaN }, tgt = { x: 0, y: 0, z: NaN, kind: 0, side: false };   // kind: 0 none, 1 ready giver, 2 step, 3 available giver
   const npcA = [], npcR = [];
   let hasTarget = false, hidden = false;
   let sector = 0, sectorOk = false, metres = 0, label = '', labelKey = '', labelCols = [], northIdx = 0, dz = 0;
@@ -87,22 +89,28 @@ export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
     hasTarget = false;
     if (!book || !world) return null;
     tmp.z = NaN;
-    book.giverMarks(npcA, npcR, npcSA, npcSR); for (let i = 0; i < npcSR.length; i++) npcR.push(npcSR[i]);   // OB-183: main offers first, side offers after
-    let kind = 0;
-    if (resolveGiver(world, npcR)) kind = 1;
-    else {
-      const ti = book.tracked();
-      const qi = ti >= 0 ? ti : 0;                       // tracked giver quest, else the main quest
-      const def = book.def(qi), st = book.questState(qi);
-      if (book.status(qi) === ACTIVE) {
-        const idx = st.completed.length;
-        if (idx < def.objectives.length && stepPos(def.objectives[idx].when, st, world)) kind = 2;
-        else if (def.giver && def.giver.npc && world.resolve('giver', def.giver.npc, tmp)) kind = 2;   // COMPASS-QUEST-01: unresolvable step -> point at the quest's giver instead of hiding
-      }
-      if (!kind && (resolveGiver(world, npcA) || resolveGiver(world, npcSA))) kind = 3;
+    let kind = 0, side = false;
+    // COMPASS-TRACK-01 (D-108): the needle follows the TRACKED quest only (else the main quest). READY -> its hand-in character
+    // (book.turnInOf, data-driven), ACTIVE -> its current step; nothing tracked/active -> OB-183 nearest available giver.
+    const ti = book.tracked();
+    const qi = ti >= 0 ? ti : 0;
+    const def = book.def(qi), st = book.questState(qi), stt = book.status(qi);
+    if (stt === READY && book.turnInOf && book.turnInOf(qi) && world.resolve('giver', book.turnInOf(qi), tmp)) { kind = 1; side = !book.isMain(qi); }
+    else if (stt === ACTIVE) {
+      const idx = st.completed.length;
+      if (idx < def.objectives.length && stepPos(def.objectives[idx].when, st, world)) kind = 2;
+      else if (def.giver && def.giver.npc && world.resolve('giver', def.giver.npc, tmp)) kind = 2;   // COMPASS-QUEST-01: unresolvable step -> point at the quest's giver instead of hiding
+    }
+    if (!kind) {
+      book.giverMarks(npcA, npcR, npcSA, npcSR);
+      if (resolveGiver(world, npcA)) kind = 3; else if (resolveGiver(world, npcSA)) { kind = 3; side = true; }
+    }
+    if (!kind && book.nextOffers && book.tracked() < 0) {   // QUEST-NEXT-GIVER-01: after a hand-in the follow-up giver is the target until the player accepts/tracks something (D-108 tracked quest still wins)
+      const offers = book.nextOffers();
+      for (let i = 0; i < offers.length; i++) if (offers[i].giver && world.resolve('giver', offers[i].giver, tmp)) { kind = 3; break; }
     }
     if (!kind) return null;
-    tgt.x = tmp.x; tgt.y = tmp.y; tgt.z = tmp.z; tgt.kind = kind; hasTarget = true;
+    tgt.x = tmp.x; tgt.y = tmp.y; tgt.z = tmp.z; tgt.kind = kind; tgt.side = side; hasTarget = true;
     if (kind !== lastKind || Math.abs(tgt.x - lastX) > 0.5 || Math.abs(tgt.y - lastY) > 0.5) { flashPending = true; sectorOk = false; }   // moving beast = small drift, no re-flash
     lastKind = kind; lastX = tgt.x; lastY = tgt.y;
     return tgt;
@@ -137,14 +145,14 @@ export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
   // text under the face: "[! |? ]42 m[ ^|v]" / "1.2 km" / "here"; rebuilt only when the key changes (strings allocate then, not per frame)
   function buildLabel() {
     const hm = Math.abs(dz) >= D.heightFromM ? (dz > 0 ? 1 : 2) : 0;
-    const key = (metres <= D.nearM ? 'h' : metres) + '|' + tgt.kind + '|' + hm;
+    const key = (metres <= D.nearM ? 'h' : metres) + '|' + tgt.kind + '|' + hm + (tgt.side ? 's' : '');
     if (key === labelKey) return;
     labelKey = key;
     const cols = [];
     let s = '';
     if (metres <= D.nearM) { s = D.hereText; for (let i = 0; i < s.length; i++) cols.push(4); }
     else {
-      if (tgt.kind === 1 || tgt.kind === 3) { s = (tgt.kind === 1 ? '?' : '!') + ' '; cols.push(0, 0); }
+      if (tgt.kind === 1 || tgt.kind === 3) { s = (tgt.kind === 1 ? '?' : '!') + ' '; cols.push(tgt.side ? 5 : 0, tgt.side ? 5 : 0); }
       const num = metres >= 1000 ? (metres / 1000).toFixed(1) : String(metres), unit = metres >= 1000 ? ' km' : ' m';
       for (let i = 0; i < num.length; i++) cols.push(1);
       for (let i = 0; i < unit.length; i++) cols.push(2);
@@ -206,7 +214,7 @@ export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
     putA(ui, tx - 1, yRow, 32, D.plate, D.plate, a); putA(ui, tx + len, yRow, 32, D.plate, D.plate, a);
     for (let i = 0; i < len; i++) {
       const c = labelCols[i];
-      putA(ui, tx + i, yRow, label.charCodeAt(i), c === 0 || c === 4 ? (c === 0 ? D.markFg : D.hereFg) : c === 1 ? D.numFg : c === 2 ? D.unitFg : D.heightFg, D.plate, a);
+      putA(ui, tx + i, yRow, label.charCodeAt(i), c === 0 || c === 4 || c === 5 ? (c === 0 ? D.markFg : c === 5 ? SIDE_BLUE : D.hereFg) : c === 1 ? D.numFg : c === 2 ? D.unitFg : D.heightFg, D.plate, a);
     }
   }
 
@@ -238,6 +246,7 @@ export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
     get hidden() { return hidden; },
     get visible() { return hasTarget && !hidden; },
     get sector() { return sector; },
+    get side() { return hasTarget && tgt.side; },
     get metres() { return metres; },
     get label() { return D ? label : metres + ' m'; },
     get sectors() { return N; },

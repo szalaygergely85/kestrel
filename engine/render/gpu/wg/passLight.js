@@ -62,6 +62,8 @@ export class WgLightPass {
     this.pipeGI = null; this.bindDescGI = null;
     this.visBox = new Float32Array(4 * MAX_LIGHTS);
     this.timeBuf = new Float64Array(1);
+    // passCell hands `cam` to shadePass.run (horizonRow/planeDistY); GATE-FLAKY-02b dropped it, so shade kept stale values (breach etc. colour fails). Doubles live in a Float64Array, getters read them (no boxed fields).
+    this.cam = { horizonRow: 0.5, planeDistY: 0.5 }; // double fields (non-Smi init) are updated in place, no per-frame garbage
     this.caoFor = null; this.caoVer = -1;
   }
 
@@ -77,7 +79,8 @@ export class WgLightPass {
     const lu = this.lu;
     lu[W_POSX] = cam.x; lu[W_POSY] = cam.y; lu[W_EYEH] = cam.z; lu[W_DIRX] = dirX; lu[W_DIRY] = dirY;
     lu[W_PLANEX] = -dirY * tanHalfHFov; lu[W_PLANEY] = dirX * tanHalfHFov;
-    lu[W_HORIZON] = rows / 2 + Math.tan(pitchRad) * planeDistY; lu[W_PLANEDY] = planeDistY;
+    const horizon = rows / 2 + Math.tan(pitchRad) * planeDistY;
+    lu[W_HORIZON] = horizon; lu[W_PLANEDY] = planeDistY; this.cam.horizonRow = horizon; this.cam.planeDistY = planeDistY;
   }
 
   // world atlas upload: full on a different World / structVersion bump, else only the dirty rows (GL twin _ensureWorldTextures)

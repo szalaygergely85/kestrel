@@ -261,7 +261,7 @@ function firstLive(p) { for (let i = 0; i < p.cap; i++) if (p.alive[i]) return i
   ok('zero dir', throwsMsg(() => p.defineEmitter('x8', mk({ dir: [0, 0, 0] })), /"x8".*"dir"/));
   const id = p.defineEmitter('ok', mk({ drag: 2, accelZ: 1 }));
   ok('define returns id; same key redefines in place', p.defineEmitter('ok', mk({})) === id && p.defIdOf('ok') === id && p.defIdOf('nope') === -1);
-  let n = 1; for (let i = 0; i < 40 && n; i++) { try { p.defineEmitter('k' + i, mk({})); } catch (e) { n = 0; ok('33rd def throws', /more than 32/.test(e.message)); } }
+  let n = 1; for (let i = 0; i < 80 && n; i++) { try { p.defineEmitter('k' + i, mk({})); } catch (e) { n = 0; ok('65th def throws', /more than 64/.test(e.message)); } }
   ok('createEmitter unknown defId throws', throwsMsg(() => p.createEmitter(99, 0, 0, 0), /unknown defId/));
   // compile: ramp stretched, seconds -> steps
   const q = createParticles(); const qi = q.defineEmitter('r', mk({ life: [0.5, 1], glyphs: 'ab', colors: [[1, 2, 3], [4, 5, 6], [7, 8, 9]] }));

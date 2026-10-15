@@ -55,17 +55,17 @@
     "warden_heath": {
       "entity": "warden_heath"
     },
-    "warden_signalHill": {
-      "entity": "warden_signalHill"
+    "warden_signalhill": {
+      "entity": "warden_signalhill"
     },
     "warden_downs": {
       "entity": "warden_downs"
     },
-    "warden_ashMile": {
-      "entity": "warden_ashMile"
+    "warden_ashmile": {
+      "entity": "warden_ashmile"
     },
-    "warden_highPastures": {
-      "entity": "warden_highPastures"
+    "warden_highpastures": {
+      "entity": "warden_highpastures"
     },
     "warden_northwood": {
       "entity": "warden_northwood"
@@ -102,6 +102,9 @@
     },
     "postkeeper": {
       "entity": "postkeeper"
+    },
+    "joss": {
+      "entity": "joss"
     }
   }
 }

@@ -54,6 +54,8 @@ function diagonalOk(cost, w, cx, cy, dx, dy, nx, ny) {
 // never recomputes it, so key[i] always equals integ[heap[i]]. Ties break by
 // item index, exactly like IndexHeap's closure did, inlined too. Zero
 // allocation after construction.
+// Scratch for the heap key (a double travelling through non-inlined calls is boxed on Node 24; a typed-array slot is not).
+const _T = new Float64Array(1);
 class FlowFieldHeap {
   /** @param {number} capacity */
   constructor(capacity) {
@@ -81,12 +83,15 @@ class FlowFieldHeap {
   }
 
   /** @param {number} item @param {number} k - current integ[item] */
-  push(item, k) {
+  push(item, k) { _T[0] = k; this.pushT(item); }
+
+  /** push with the key already in `_T[0]` (no boxed double crosses the call). */
+  pushT(item) {
     const i = this.size++;
     this.heap[i] = item;
-    this.key[i] = k;
+    this.key[i] = _T[0];
     this.heapPos[item] = i;
-    this._siftUp(i, item, k);
+    this._siftUpT(i, item);
   }
 
   /** Removes and returns the top (highest-priority) item. Undefined if empty. */
@@ -108,12 +113,17 @@ class FlowFieldHeap {
 
   /** Call after `item`'s priority has improved (integ[item] got smaller).
    * @param {number} item @param {number} k - current integ[item] */
-  decreaseKey(item, k) {
+  decreaseKey(item, k) { _T[0] = k; this.decreaseKeyT(item); }
+
+  decreaseKeyT(item) {
     const i = this.heapPos[item];
-    if (i >= 0) { this.key[i] = k; this._siftUp(i, item, k); }
+    if (i >= 0) { this.key[i] = _T[0]; this._siftUpT(i, item); }
   }
 
-  _siftUp(i, item, k) {
+  _siftUp(i, item, k) { _T[0] = k; this._siftUpT(i, item); }
+
+  _siftUpT(i, item) {
+    const k = _T[0];
     const heap = this.heap, key = this.key, heapPos = this.heapPos;
     while (i > 0) {
       const parent = (i - 1) >> 1;
@@ -181,6 +191,7 @@ export function createFlowField(grid) {
     next: grid.layers !== null ? new Int32Array(n).fill(-1) : null,
     cellsDone: 0,
     rvFlag: null, rvOrder: null, // NAV-FLOW-REV reverse link index (layers only), refreshed in begin()
+    rvL: null, rvFrom: null, rvTo: null, rvN: -1, // the layers / link arrays rvFlag was built for (begin's 0-alloc cache check)
     heap: /** @type {FlowFieldHeap} */ (/** @type {unknown} */ (null)),
   };
   ff.heap = new FlowFieldHeap(n);
@@ -199,7 +210,12 @@ export function createFlowField(grid) {
     ff.dir.fill(DIR_NONE);
     ff.heap.clear();
     ff.cellsDone = 0;
-    if (grid.layers !== null) { const rv = reverseLinks(grid.layers, n); ff.rvFlag = rv.flag; ff.rvOrder = rv.order; }
+    const L = grid.layers;
+    // same freshness key as reverseLinks' cache, checked here first: WeakMap.get boxes ~40 B per call in Maglev (Node 24)
+    if (L !== null && (ff.rvL !== L || ff.rvFrom !== L.from || ff.rvTo !== L.to || ff.rvN !== L.nLinks)) {
+      const rv = reverseLinks(L, n); ff.rvFlag = rv.flag; ff.rvOrder = rv.order;
+      ff.rvL = L; ff.rvFrom = L.from; ff.rvTo = L.to; ff.rvN = L.nLinks;
+    }
     if (ff.next !== null) ff.next.fill(-1);
     for (let i = 0; i < count; i++) {
       const g = goalCells[i];
@@ -310,12 +326,12 @@ export function createFlowField(grid) {
 // lets cells above it flow to the drop top when the goal is below, and cells below never route through it.
 const _fp = { x: 0, y: 0, z: 0 };
 
-function relaxLayered(ff, nIdx, tentative) {
-  const integ = ff.integ, heap = ff.heap;
+function relaxLayered(ff, nIdx) { // tentative cost comes in through _T[0] (no boxed double)
+  const integ = ff.integ, heap = ff.heap, tentative = _T[0];
   if (tentative < integ[nIdx]) {
     integ[nIdx] = tentative;
-    if (heap.has(nIdx)) heap.decreaseKey(nIdx, tentative);
-    else heap.push(nIdx, tentative);
+    if (heap.has(nIdx)) heap.decreaseKeyT(nIdx);
+    else heap.pushT(nIdx);
   }
 }
 
@@ -350,7 +366,7 @@ function relaxReverse(ff, g, L, order, idx, selfInteg) {
     if (L.kind[j] === 1 && (L.flags[j] & 1) === 0) continue; // closed door
     const fIdx = L.from[j];
     if ((fIdx < N ? g.cost[fIdx] : L.cost[fIdx - N]) === 0) continue;
-    relaxLayered(ff, fIdx, selfInteg + L.lcost[j]);
+    _T[0] = selfInteg + L.lcost[j]; relaxLayered(ff, fIdx);
   }
 }
 
@@ -378,7 +394,7 @@ function stepLayered(ff, cellBudget) {
         if (g.cost[nIdx] === 0) continue;
         if (!diagonalOk(g.cost, w, cx, cy, dx, dy, nx, ny)) continue;
         if (needsDir) { const v = integ[nIdx]; if (v < bestInteg) { bestInteg = v; bestK = k; } }
-        relaxLayered(ff, nIdx, selfInteg + (dx !== 0 && dy !== 0 ? DIAG_COST : STRAIGHT_COST) * g.cost[nIdx] * gU);
+        _T[0] = selfInteg + (dx !== 0 && dy !== 0 ? DIAG_COST : STRAIGHT_COST) * g.cost[nIdx] * gU; relaxLayered(ff, nIdx);
       }
     } else {
       const local = idx - N, s = sheetOfLocal(L, local), b = L.base[s], sw = L.w[s], sh = L.h[s], u = L.u[s];
@@ -394,7 +410,7 @@ function stepLayered(ff, cellBudget) {
         if (dx !== 0 && dy !== 0 && (L.cost[b + cy * sw + nx] === 0 || L.cost[b + ny * sw + cx] === 0)) continue;
         const nIdx = N + nl;
         if (needsDir) { const v = integ[nIdx]; if (v < bestInteg) { bestInteg = v; bestK = k; } }
-        relaxLayered(ff, nIdx, selfInteg + (dx !== 0 && dy !== 0 ? DIAG_COST : STRAIGHT_COST) * L.cost[nl] * u);
+        _T[0] = selfInteg + (dx !== 0 && dy !== 0 ? DIAG_COST : STRAIGHT_COST) * L.cost[nl] * u; relaxLayered(ff, nIdx);
       }
     }
     // Forward links (idx -> to) only choose this cell's direction; they never relax (the field grows from the goal).

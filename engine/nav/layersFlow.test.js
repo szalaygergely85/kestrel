@@ -210,16 +210,20 @@ function isWalkableHere(g, x, y, z) {
       steer.step(1 / 60, g);
     }
   };
-  run(3000); // warm-up (JIT)
+  // run() in 10-iteration chunks (same recipe as tools/allocProbe.mjs `chunk`, rule 14 keeps nav tests off tools/): it gets a
+  // regular TurboFan compile. One long run(200) per window was OSR-entered again each window and boxed in Maglev on Node 24
+  // (~15-120 B/iter that was the probe loop, not nav).
+  for (let c = 0; c < 300; c++) run(10); // warm-up (JIT): 3000 iterations as before
   let best = Infinity;
   for (let w = 0; w < 5; w++) {
     global.gc(); global.gc();
     const m0 = process.memoryUsage().heapUsed;
-    run(200);
+    for (let c = 0; c < 20; c++) run(10);
     const d = process.memoryUsage().heapUsed - m0;
     if (d < best) best = d;
   }
   ok('0 alloc: layered flow build + dirAt + smoothPath + steer.step', best < 16 * 1024, `grew ${best} B`);
+  if (process.env.ALLOC_DEBUG) console.log(`  info: layered flow probe ${best} B / 200 iter`);
 
   const sim = () => {
     const s = createSteer({ maxAgents: 2, bounds: { x0: 0, y0: 0, w: GW, h: GH } });

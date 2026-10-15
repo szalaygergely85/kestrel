@@ -2,11 +2,15 @@
 // Pure logic lives in quest/under/fordCellar.js + crypt.js; this file only connects it to ctx (world, player, events, inventory).
 import { stepFordCellar, ladderEnd, ladderPrompt, bindFordCellarFlags, syncFordCellarFlags, FORD_CELLAR } from './quest/under/fordCellar.js';
 import { cryptDoorAction, applyCryptDoor, cryptCleared, bindCryptFlags, syncCryptFlags, CRYPT } from './quest/under/crypt.js';
+import { GOBLIN_TUNNEL, tunnelCleared, bindTunnelFlags, syncTunnelFlags } from './quest/under/goblinTunnel.js';
 import { countOf } from './quest/sim/inventory.js';
+import { underQuestFlags } from './quest/under/underQuestFlags.js';
+import { hooks as seam } from './gameHooks.js';
 
 /** @param {{getBeasts?: () => any, openedChestsOf?: () => string[], afterMove?: ()=>void, notify?: (t:string)=>void}} o */
-export function createUnderHook({ getBeasts = () => null, openedChestsOf = () => [], afterMove = null, notify = null } = {}) {
-  let ctx = null, offs = [], keys = [];
+export function createUnderHook({ getBeasts = () => null, openedChestsOf = () => [], afterMove = null, notify = null, emitFlag = (k) => seam.emitSimple('flag:set', k, true) } = {}) {
+  let ctx = null, qT = 0; const qList = [], qFeet = { x: 0, y: 0, z: 0 };
+  let offs = [], keys = [];
   const ladder = { t: 0, end: null }, feet = { x: 0, y: 0, z: 0 };
   const move = (x, y, z) => { // same world, seamless: just place the body (no fade, no load)
     const t = ctx.player.transform, b = ctx.player.components && ctx.player.components.body;
@@ -17,9 +21,10 @@ export function createUnderHook({ getBeasts = () => null, openedChestsOf = () =>
   return {
     /** Chest gate for chestHook: the crypt chest opens only once room 3 is cleared. */
     canOpenChest(id) {
-      if (!CRYPT.chests.includes(id)) return true;
+      const tun = GOBLIN_TUNNEL.chests.includes(id); // UNDER-06: the goblins' stash opens once the 3 tunnel goblins are dead
+      if (!CRYPT.chests.includes(id) && !tun) return true;
       const b = getBeasts();
-      return !!(ctx && ctx.world && b && cryptCleared(ctx.world, b));
+      return !!(ctx && ctx.world && b && (tun ? tunnelCleared : cryptCleared)(ctx.world, b));
     },
     onBoot(c) {
       ctx = c; ladder.end = null; ladder.t = 0;
@@ -27,9 +32,9 @@ export function createUnderHook({ getBeasts = () => null, openedChestsOf = () =>
       offs = [];
       const w = c.world;
       if (!w || !w.state) return;
-      if (c.events && c.events.on) { offs.push(bindFordCellarFlags(w, c.events), bindCryptFlags(w, c.events)); }
+      if (c.events && c.events.on) { offs.push(bindFordCellarFlags(w, c.events), bindCryptFlags(w, c.events), bindTunnelFlags(w, c.events)); }
       const opened = openedChestsOf() || [];
-      syncFordCellarFlags(w, opened); syncCryptFlags(w, opened);
+      syncFordCellarFlags(w, opened); syncCryptFlags(w, opened); syncTunnelFlags(w, opened);
       applyCryptDoor(w);
       if (w.addInteractable && w.removeInteractable) { // [E] prompt at each ladder end (engine crosshair/reach test; the climb itself is stepFordCellar)
         for (const k of keys) w.removeInteractable(k);
@@ -47,6 +52,7 @@ export function createUnderHook({ getBeasts = () => null, openedChestsOf = () =>
       if (!ctx || !ctx.world || !ctx.player || !ctx.world.state) return;
       const t = ctx.player.transform, w = ctx.world, press = !!ctx.state.interactPressed;
       feet.x = t.x; feet.y = t.y; feet.z = t.z;
+      if ((qT -= dt) <= 0) { qT = 1; const fl = underQuestFlags(w.state, feet, getBeasts(), qList); for (let i = 0; i < fl.length; i++) emitFlag(fl[i]); } // UNDER-07: ~1 Hz quest flags
       if ((press || ladder.end) && stepFordCellar(w, ladder, dt, press, feet, move)) return;
       if (press && !w.state['under.crypt.doorOpen']) { // E at the sealed crypt door
         const d = w.entity && w.entity('cemeteryCryptDoor');

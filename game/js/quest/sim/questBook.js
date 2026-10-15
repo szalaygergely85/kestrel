@@ -182,8 +182,16 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   book.nextOf = i => { const nx = entries[i].def.next; return nx && byId.has(nx) ? byId.get(nx) : -1; };
   /** QUEST-FORMAT: the offer after a hand-in, [{from, id, giver, title, hint}] for every handed-in quest whose `next` is waiting (AVAILABLE) at its giver. */
   book.nextOffers = function nextOffers() {
-    const out = [];
-    for (let i = 1; i < n; i++) { const q = book.nextOf(i); if (q > 0 && entries[i].handedIn && statusOf(q) === AVAILABLE) out.push({ from: entries[i].def.id, id: entries[q].def.id, giver: entries[q].giver, title: entries[q].def.title, hint: entries[i].def.nextHint || null }); }
+    const out = [], seen = new Set();
+    for (let i = 1; i < n; i++) { const q = book.nextOf(i); if (q > 0 && entries[i].handedIn && statusOf(q) === AVAILABLE) { seen.add(q); out.push({ from: entries[i].def.id, id: entries[q].def.id, giver: entries[q].giver, title: entries[q].def.title, hint: entries[i].def.nextHint || null }); } }
+    // Derived (no `next` needed): a character-given quest that is AVAILABLE now and requires a finished quest/step (main steps count) is offered after it.
+    for (let q = 1; q < n; q++) {
+      const e = entries[q];
+      if (seen.has(q) || e.auto || !e.giver || e.def.giver.entity || e.def.objectGiver || statusOf(q) !== AVAILABLE) continue;
+      let from = -1;
+      for (const r of requireSteps[q]) if (r.si !== -2 && (r.qi === 0 || r.si >= 0 || entries[r.qi].handedIn)) { from = r.qi; break; }
+      if (from >= 0) out.push({ from: entries[from].def.id, id: e.def.id, giver: e.giver, title: e.def.title, hint: entries[from].def.nextHint || null });
+    }
     return out;
   };
   book.giverOf = i => entries[i].giver;
@@ -230,6 +238,11 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     const e = entries[i];
     e.accepted = true; e.seq = ++seqCounter; book.version++;
     if (kindListen.size) for (const o of e.def.objectives) if (o.when.type === 'beasts' && o.when.kind !== undefined) e.state.flags.kk = true; // OB-115: marks the count-from-accept rule (old saves lack it and seed from the dead set)
+    // SOFTLOCK-01: if fewer living beasts of the kind remain than still needed (e.g. the pack was killed before the accept), earlier kills (deadSeen = kill record) cover the shortfall. Needs the game's book.livingOfKind(kind); without it OB-115 (count from accept) stays.
+    if (typeof book.livingOfKind === 'function') for (const o of e.def.objectives) if (o.when.type === 'beasts' && o.when.kind !== undefined) {
+      let short = o.when.count - (book.livingOfKind(o.when.kind) | 0);
+      for (const b of deadSeen) { if (short <= 0) break; if (kindOf(b) === o.when.kind && applyKindKill(e.state, o.when.kind, e.def)) short--; }
+    }
     e.given = []; // QL-04: items handed over on accept (taken back on abandon)
     if (book.packOps && book.packOps.add) for (const list of [e.def.giveOnAccept, e.def.giveOnTalk]) if (list) for (const it of list) { const k = book.packOps.add(it.id, it.n); if (k > 0) e.given.push({ id: it.id, n: k }); }
     emit('quest:accepted', id);
@@ -391,6 +404,8 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     return book.feed({ type: 'flag:set', key: 'ui.tracked', value: id || '' });
   };
   book.objectives = (i, out) => questObjectives(entries[i].state, entries[i].def, out);
+  /** R6-FIX C: seed the kill record (SOFTLOCK-01) after a load: the save keeps the global dead-beast ids, the fresh book starts with an empty record. */
+  book.seedDead = function seedDead(ids) { for (const id of ids || []) if (typeof id === 'string') deadSeen.add(id); };
   book.toSave = function toSave() {
     const quests = {};
     for (let i = 1; i < n; i++) {
@@ -465,9 +480,9 @@ export function validateSections(def) {
 }
 
 // Old (pre-CH1) m1 order -> the new step ids each old step implies. `lantern` is dropped.
-const CH1_IMPLIES = { wake: ['wake'], breach: ['breach'], sword: ['sword'], beasts: ['leave', 'beasts'], waystone: ['follow', 'waystone'] };
-const CH1_ORDER = ['wake', 'breach', 'sword', 'leave', 'beasts', 'follow', 'waystone'];
-const CH1_ALL = [...CH1_ORDER, 'road', 'relayFound', 'relay1']; // 'fen' removed (FEN-OFF-01)
+const CH1_IMPLIES = { wake: ['wake'], breach: ['breach'], sword: ['sword'], beasts: ['leave', 'bladeDone', 'beasts'], waystone: ['follow', 'waystone'] };
+const CH1_ORDER = ['wake', 'breach', 'sword', 'leave', 'bladeDone', 'beasts', 'follow', 'waystone'];
+const CH1_ALL = [...CH1_ORDER, 'stoneDone', 'road', 'relayFound', 'relay1', 'bendCall']; // QUEST-HANDIN-ALL: +bladeDone/stoneDone/bendCall hand-in steps // 'fen' removed (FEN-OFF-01)
 
 /**
  * CH1-01 (38.37 item 8). Pure: game = save-like {quest, world?:{state}}; returns game itself when nothing to do,
@@ -483,6 +498,12 @@ export function migrateM1Ch1(game, newIds = null) {
   const hadFen = q.completed.includes('fen');
   const done = hadFen ? q.completed.filter((id) => id !== 'fen') : q.completed;
   if (hadFen && done.every((id, i) => id === ids[i]) && !done.includes('lantern')) return { ...game, quest: { ...q, completed: done } };
+  // QUEST-HANDIN-ALL: a save of the previous (waypoint) shape keeps every step; the hand-in steps are inserted only where the chain already moved past them
+  // (bladeDone before beasts, stoneDone before road). A save that stops right at leave/waystone/relay1 keeps the hand-in pending ('?' visible).
+  if (!done.includes('lantern') && !done.every((id, i) => id === ids[i])) {
+    const ins = []; for (const id of done) { if (id === 'beasts' && !done.includes('bladeDone')) ins.push('bladeDone'); if (id === 'road' && !done.includes('stoneDone')) ins.push('stoneDone'); ins.push(id); }
+    if (ins.length !== done.length && ins.every((id, i) => id === ids[i])) return { ...game, quest: { ...q, completed: ins } };
+  }
   const isPrefix = done.every((id, i) => id === ids[i]);
   if (isPrefix && !done.includes('lantern')) return game;
   const implied = new Set();

@@ -121,10 +121,10 @@
     stoneMid:   [".'`", ".,`'", ",:;'", ":;,+", ";+:x", "+x=%", "x%#+", "%#&x"],
     stoneFar:   [".'`", ".,`'", ",:;'", ":;,+", ";+:x", "+x=%", "x%#&+", "%#&@x"], // GS-01e: top two levels denser than stoneMid so far block tones keep contrast
     chip:       [".", "'", "'`", "`'", "\"'", "%'", "%&", "&%"],
-    moss:       [".", ",", ",'", "\",", "\";", "\"%", "%&", "&@"],
+    moss:       [".'", ",'", ",'", "\",", "\";", "\"%", "%&", "&@"],
     // US-028 D2 (blank share): with lift 0.12 + gamma 0.70 an 8-level set never lands below level 3 when
     // b >= cutoff, so level 3 (and floor level 4) must not contain '.': soot, floor* and woodFar L2 lost their dots.
-    soot:       [".", ".", ",'", ",:", ":;", ";%", "%#", "#&"],
+    soot:       [".'", ".,", ",'", ",:", ":;", ";%", "%#", "#&"],
     // OB-189: near sets level 1-2 carry >=2 equal-density alternates (was a single "."): a close wall/floor with one glyph per
     // level shows as regular horizontal dot rows (light stripes); the per-cell hash now breaks the rows up like stoneFace does.
     brickFace:  [".'", ".,'", ",:", ":=", "=:", "=+", "#=", "#%"],
@@ -164,11 +164,11 @@
     rockFar:    [".'`", ".,:'", ",:;%", ":;%,", ";%#:", "%#;&", "#%&@", "&#@%"],
     // D-011 "Kestrel" reskin (v1.9): ivy, mossy tops, machine brass / copper, balloon canvas. Same rules: 3-4
     // alternates, no '.' at level 3 (walls) / levels 3-4 (floors), ASCII only. Mid / far = the near set (US-028).
-    ivy:        [".", ",", ",'", "\";", ";\",", "%;\"", "&%;", "@&%"],
-    mossTop:    [".", ".'", ",'`", "\",'", ",;\"", ";\"%", "\"%&", "%&@"],
+    ivy:        [".'", ",.", ",'", "\";", ";\",", "%;\"", "&%;", "@&%"],
+    mossTop:    [".'", ".,", ",'`", "\",'", ",;\"", ";\"%", "\"%&", "%&@"],
     brassFace:  [".'", ".:'", ":-;", "-=:~", "=-+:", "+=o-", "o+=#", "#o=*"],
     copperFace: [".'", ".:'", ":-;", "-=:~", "=-+x", "+=x-", "x#+=", "#x%="],
-    verdigris:  [".", ",", ",:", ":%,", "%:;", "%;:", "%&:", "&%"],
+    verdigris:  [".'", ",.", ",:", ":%,", "%:;", "%;:", "%&:", "&%"],
     canvasFace: [".'", ".~'", "~-'", "~)-", ")~(", ")(~", "()~=", "(=)%"],
     glint:      ["'", "'+", "+'", "+*", "*+", "*", "*", "*"],   // v1.14: the voxel lamp's sparkle (emissive, always near the top)
     rune:       ["'", ".'", ":'", ":;", "=:", "=+", "#=", "#"],  // v1.16: the waystone's carved teal mark (emissive: solid cut lines at the top levels)
@@ -184,19 +184,20 @@
     fabricFace: [".'", ".'`", "'`~", "~-'", "~)-(", ")~(-", "()~'", "()~\""],
     woodFar:    [".,", "-,", "-_", "=-", "=_", "=#", "#="],   // no longer referenced (wood / ceiling far = grain sets); kept for old exports
     fog:        [". ", ".:"],     // fog stipple: [0] sparse (f > 0.8), [1] haze
-    grainU: { orient: 'u', dark: ["."], fam: {
-      h:  ["-", "-", "-~", "~=", "=", "="],
-      v:  ["!", "|", "|", "|!", "|", "|"],
+    // OB-189b: bark/wood rows: levels 1-2 of h and v carry equal-density alternates (one "-" per level = regular stripes on a close trunk).
+    grainU: { orient: 'u', dark: [".'"], fam: {
+      h:  ["-_", "-~", "-~_", "~=-", "=-", "=~"],
+      v:  ["!|", "|!", "|'", "|!", "|!", "|!"],
       d1: ["/", "/", "/", "/", "/", "/"],
       d2: ["\\", "\\", "\\", "\\", "\\", "\\"] } },
-    grainV: { orient: 'v', dark: ["."], fam: {
-      h:  ["-", "-", "-~", "~=", "=", "="],
-      v:  ["!", "|", "|", "|!", "|", "|"],
+    grainV: { orient: 'v', dark: [".'"], fam: {
+      h:  ["-_", "-~", "-~_", "~=-", "=-", "=~"],
+      v:  ["!|", "|!", "|'", "|!", "|!", "|!"],
       d1: ["/", "/", "/", "/", "/", "/"],
       d2: ["\\", "\\", "\\", "\\", "\\", "\\"] } },
-    beam: { orient: 'v', dark: ["."], fam: {
-      h:  ["-", "=", "=", "=", "#=", "#"],
-      v:  ["|", "|", "|", "|", "#", "#"],
+    beam: { orient: 'v', dark: [".'"], fam: {
+      h:  ["-_", "=-", "=-", "=~", "#=", "#="],
+      v:  ["|!", "|!", "|!", "|!", "#|", "#|"],
       d1: ["/", "/", "/", "/", "#", "#"],
       d2: ["\\", "\\", "\\", "\\", "#", "#"] } }
   };

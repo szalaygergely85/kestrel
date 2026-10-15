@@ -148,6 +148,7 @@
     aetherMid:      '#1ea596', // reflected glow (mirror), mid sparkle
     aetherDim:      '#12665e', // dormant glint, dead relays on the chart
     aetherDead:     '#56686a', // lit (non-emissive) dead crystal: grey with a teal memory
+    gust:           '#bedcf0', // SPELL-07b: wind branch (Gust, Updraft): pale wind blue; gustView streaks
     // machine metals (the Kestrel, the lamp, the relay mount, later doors / sentinels)
     brassHot:       '#fff0b4', // bright top step / rivet highlight / logo top row
     brassShadow:    '#4a3716', // plate seams, deep brass shadow

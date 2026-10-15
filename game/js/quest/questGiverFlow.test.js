@@ -64,7 +64,7 @@ const kill = (r, n) => { for (let i = 0; i < n; i++) r.feed({ type: 'beast:died'
   kill(r, 5); assert.equal(r.book.statusOf('burl.boars'), 3);
   assert.equal(r.objectiveText(), 'Return to the bear');
   assert.ok(ev.includes('quest:ready:burl.boars'));
-  assert.equal(r.state.completed.length, 4, 'm1 beasts still open before the hand-in');
+  assert.equal(r.state.completed.length, 5, 'm1 beasts still open before the hand-in');
   const handIn = t.talk(); // CH1-05: after-five lines, thanks (hand-in), then flows into the follow offer
   assert.equal(handIn[0], 'Ah! I can smell the berries again!'); { const k = handIn.indexOf("You've done an old bear a kindness."); assert.ok(k > 0, 'thanks line present'); assert.equal(handIn[k + 1], 'Come along, sky-cub.'); assert.ok(handIn.includes('Wake the waystones. They heal you,'), 'D-080 waystone explanation in the hand-in'); }
   assert.equal(r.book.statusOf('burl.boars'), 4);

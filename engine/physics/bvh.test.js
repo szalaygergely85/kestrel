@@ -452,7 +452,7 @@ function checkRaycast(label, pos, idx, matrix12, bvh, ox, oy, oz, dx, dy, dz, tM
   const hit = { t: 0, tri: -1, u: 0, v: 0, nx: 0, ny: 0, nz: 0 };
   let hits = 0, misses = 0;
   const run = (n) => { for (let i = 0; i < n; i++) { if (i & 1 ? raycast(towerBvh, 0, 0, 30, 0.1, 0.05, -1, 200, hit) : raycast(towerBvh, 200, 200, 200, 1, 0, 0, 200, hit)) hits++; else misses++; } };
-  const pr = allocProbe(run, { n: 20000 });
+  const pr = allocProbe(run, { n: 20000, chunk: 1000 });
   if (pr.skipped) console.log('SKIP raycast strict alloc (no --expose-gc)');
   else ok('raycast internals: < 8 B/call (hit + miss)', pr.perCall < 8 && misses > 0, `${pr.perCall.toFixed(2)} B/call, hits ${hits} misses ${misses}`);
 }
@@ -493,7 +493,7 @@ const RAYCAST_WRAPPER_CAP = 0.5; // measured ~0.003 B/call (inlined here); cap =
   const runRay = (n) => { for (let i = 0; i < n; i++) { const o = (i & (N - 1)) * RAY_LEN; for (let k = 0; k < RAY_LEN; k++) ray[k] = rays[o + k]; if (raycastRay(towerBvh, ray, hit)) acc[0]++; } };
   const runAny = (n) => { for (let i = 0; i < n; i++) { const o = (i & (N - 1)) * RAY_LEN; for (let k = 0; k < RAY_LEN; k++) ray[k] = rays[o + k]; if (raycastAnyRay(towerBvh, ray)) acc[0]++; } };
   const runWrap = (n) => { for (let i = 0; i < n; i++) { const o = (i & (N - 1)) * RAY_LEN; if (raycast(towerBvh, rays[o], rays[o + 1], rays[o + 2], rays[o + 3], rays[o + 4], rays[o + 5], rays[o + 6], hit)) acc[0]++; } };
-  const p1 = allocProbe(runRay, { n: 100000 }), p2 = allocProbe(runAny, { n: 100000 }), p3 = allocProbe(runWrap, { n: 100000 });
+  const p1 = allocProbe(runRay, { n: 100000, chunk: 1000 }), p2 = allocProbe(runAny, { n: 100000, chunk: 1000 }), p3 = allocProbe(runWrap, { n: 100000, chunk: 1000 });
   if (p1.skipped) console.log('SKIP raycastRay varying alloc (no --expose-gc)');
   else {
     ok('raycastRay varying rays: <= 0.5 B/call', p1.perCall <= 0.5, `${p1.perCall.toFixed(3)} B/call`);

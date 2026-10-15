@@ -104,3 +104,20 @@ console.log('content-lint.test: ok (' + Object.keys(cases).length + ' rules + cl
   assert.equal(LEVELS.R17, 'error');
 }
 console.log('content-lint.test R17: ok');
+// R19 (QUEST-TEXT-LINT-01): one hand-broken text per sub-check fires exactly R19; allow-list is shrink-only
+{
+  const R19_ALLOW_MAX = 4; // may only go DOWN: lower this number when the writer clears an entry
+  const fs = await import('node:fs'), path = await import('node:path'), url = await import('node:url');
+  const allow = JSON.parse(fs.readFileSync(path.join(path.dirname(url.fileURLToPath(import.meta.url)), 'content-lint-r19-allow.json'), 'utf8')).allow;
+  assert.ok(allow.length <= R19_ALLOW_MAX, 'R19 allow-list grew: ' + allow.length + ' > ' + R19_ALLOW_MAX);
+  const long = 'x'.repeat(30) + ' ' + 'y'.repeat(30);
+  for (const [text, isLine, check] of [['NEEDS WRITER: fill in', false, 'placeholder'], ['Talk to sq.burl.blue now', false, 'rawid'], ['Take the old_key home', false, 'rawid'], ['Open the gateKey door', false, 'rawid'], [long, true, 'long'], ['x'.repeat(19) + ' ' + 'y'.repeat(19), 'objective', 'objective'], ['Press Esc to close', false, 'esc']]) {
+    const c = clean(); c.questTexts = [{ where: 'fx', text, line: isLine === true, objective: isLine === 'objective' }];
+    const f = run(c); assert.ok(f.length === 1 && f[0].rule === 'R19' && f[0].msg.startsWith(check), 'R19 ' + check + ': ' + f.map(line_ => line(line_)).join('|'));
+  }
+  { const c = clean(); c.questTexts = [{ where: 'ok', text: 'Take the key to Burl. He waits by the well.', line: true }]; assert.deepEqual(run(c), [], 'R19 clean text'); }
+  { const c = clean(); c.questTexts = [{ where: 'w', text: 'NEEDS WRITER' }]; c.r19Allow = new Set(['w|placeholder']); assert.deepEqual(run(c), [], 'allow-listed'); }
+  { const c = clean(); c.questTexts = []; c.r19Allow = new Set(['gone|placeholder']); const f = run(c); assert.ok(f.length === 1 && /stale/.test(f[0].msg), 'stale allow entry is an error'); }
+  assert.equal(LEVELS.R19, 'error');
+}
+console.log('content-lint.test R19: ok');

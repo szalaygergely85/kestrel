@@ -60,6 +60,10 @@ export const REGION_RULES = Object.freeze([
   { region: 'westFells', key: 'westFellsLynx', species: 'lynx', groups: 1, size: 2 },
   { region: 'downs', key: 'downsAurochs', species: 'aurochs', groups: 1, size: 4 },
   { region: 'heartland', key: 'heartlandAurochs', species: 'aurochs', groups: 1, size: 3 },
+  // OB-142: river-road groups (Bend -> Ford), 10-50 m south of the road, rects clear of Joss (1262,1030) + Bend Waystone; `gap` = own group gap (the 120 m default would reject two groups 80 m apart).
+  { region: 'roadWest', key: 'riverRoadBoarsA', species: 'boar', groups: 1, size: 3, rect: [1155, 1076, 1215, 1126], gap: 40 },
+  { region: 'roadWest', key: 'riverRoadBoarsB', species: 'boar', groups: 1, size: 2, rect: [1235, 1082, 1295, 1132], gap: 40 },
+  { region: 'ford', key: 'riverRoadDeer', species: 'deer', groups: 1, size: 2, rect: [1100, 1104, 1150, 1150], gap: 40 },
 ]);
 
 /** OB-185: species of the roadside groups per region (default boar). Roads get a group wherever the walk would go > ROAD_GAP m without one. */
@@ -70,13 +74,14 @@ export const FIXED_SAFE = Object.freeze([[1497, 1027, 70]]);
 
 export const REGIONAL_BEAST_COUNT = REGION_RULES.reduce((n, r) => n + r.groups * r.size, 0);
 
+import { resolveDifficulty } from './difficulty.js';
 import { WOLF_MODEL } from './wolfBrain.js';
 import { UNDER_SITES, CEMETERY_TIER } from './underSkeletons.js'; // UNDER-01
-export const MODEL = { boar: 'boarPlaceholder', wolf: WOLF_MODEL, bear: 'bearBlack', croc: 'crocodile', deer: 'deer', fox: 'fox', turtle: 'tortoise', goat: 'goat', whitewolf: WOLF_MODEL, cavebear: 'bearBlack', archer: 'goblin', shaman: 'goblin', chief: 'goblin', torch: 'goblinTorch', skelwar: 'skeleton', skelarch: 'skeletonArcher', lynx: 'lynx', aurochs: 'aurochs' }; // BEAST-02: wolf packs use the real voxel_wolf model ('wolf')
+export const MODEL = { boar: 'boarPlaceholder', wolf: WOLF_MODEL, bear: 'bearBlack', croc: 'crocodile', deer: 'deer', fox: 'fox', turtle: 'tortoise', goat: 'goat', whitewolf: WOLF_MODEL, cavebear: 'bearBlack', archer: 'goblin', shaman: 'goblin', chief: 'goblin', torch: 'goblinTorch', skelwar: 'skeleton', skelarch: 'skeletonArcher', skelbrute: 'skeleton', lynx: 'lynx', aurochs: 'aurochs' }; // BEAST-02: wolf packs use the real voxel_wolf model ('wolf')
 export const BODY = { boar: { height: 0.7, radius: 0.45 }, wolf: { height: 0.7, radius: 0.45 }, bear: { height: 1.1, radius: 0.7 }, croc: { height: 0.5, radius: 0.7 },
-  deer: { height: 1.2, radius: 0.5 }, fox: { height: 0.6, radius: 0.35 }, turtle: { height: 0.5, radius: 0.5 }, goat: { height: 0.9, radius: 0.45 }, whitewolf: { height: 0.8, radius: 0.5 }, cavebear: { height: 1.3, radius: 0.8 }, archer: { height: 1.0, radius: 0.4 }, shaman: { height: 1.0, radius: 0.4 }, chief: { height: 1.3, radius: 0.5 }, torch: { height: 1.0, radius: 0.4 }, skelwar: { height: 1.8, radius: 0.35 }, skelarch: { height: 1.8, radius: 0.35 }, lynx: { height: 0.8, radius: 0.45 }, aurochs: { height: 1.5, radius: 0.8 } };
+  deer: { height: 1.2, radius: 0.5 }, fox: { height: 0.6, radius: 0.35 }, turtle: { height: 0.5, radius: 0.5 }, goat: { height: 0.9, radius: 0.45 }, whitewolf: { height: 0.8, radius: 0.5 }, cavebear: { height: 1.3, radius: 0.8 }, archer: { height: 1.0, radius: 0.4 }, shaman: { height: 1.0, radius: 0.4 }, chief: { height: 1.3, radius: 0.5 }, torch: { height: 1.0, radius: 0.4 }, skelwar: { height: 1.8, radius: 0.35 }, skelarch: { height: 1.8, radius: 0.35 }, skelbrute: { height: 1.8, radius: 0.4 }, lynx: { height: 0.8, radius: 0.45 }, aurochs: { height: 1.5, radius: 0.8 } };
 /** OB-153: id-prefix species -> kinds.json kind for the non-legacy species (boar/wolf/bear keep their legacy brains). */
-export const KIND_OF = Object.freeze({ deer: 'red_deer', fox: 'fox', turtle: 'snapping_turtle', goat: 'mountain_goat', whitewolf: 'white_wolf', cavebear: 'cave_bear', archer: 'goblin_archer', shaman: 'goblin_shaman', chief: 'goblin_chief', torch: 'goblin_torch_bearer', skelwar: 'skeleton_warrior', skelarch: 'skeleton_archer', lynx: 'lynx', aurochs: 'aurochs' });
+export const KIND_OF = Object.freeze({ deer: 'red_deer', fox: 'fox', turtle: 'snapping_turtle', goat: 'mountain_goat', whitewolf: 'white_wolf', cavebear: 'cave_bear', archer: 'goblin_archer', shaman: 'goblin_shaman', chief: 'goblin_chief', torch: 'goblin_torch_bearer', skelwar: 'skeleton_warrior', skelarch: 'skeleton_archer', skelbrute: 'skeleton_brute', lynx: 'lynx', aurochs: 'aurochs' });
 export const SPECIES_BEAST_KIND = { croc: 'river_crocodile' }; // brain.beastKind of species that are not the 3 legacy ones (kindOfEntity)
 /** World_m1 beast nav rect in metres [x0,y0,x1,y1] (nav.area is in cells x cell 2): water slots outside it cannot init (initSwimmer) and would stay land crocs. */
 export const WATER_NAV_AREA = Object.freeze([790, 860, 1700, 1840]);
@@ -116,6 +121,12 @@ export function makeWalkable(terrain, bounds, maxSlope = MAX_SLOPE) {
  *   water = BEAST-09a probe for `water` rules (deep(x,y) = deep water here, area = metres rect the home must lie in); absent -> water rules produce nothing.
  * @returns {Array<{id:string, species:string, region:string, x:number, y:number, group:number}>}
  */
+/** BH2-G1 groupDelta (D-083): Easy -1 / Hard +1 member for land groups of 2+ (singles - bears, chief, crocs - stay 1); min 1. Normal = the rule size. */
+export function groupSize(rule, difficulty) {
+  const d = resolveDifficulty(typeof difficulty === 'string' ? difficulty : difficulty && difficulty.name);
+  if (rule.water || rule.size < 2 || !d.groupDelta) return rule.size;
+  return Math.max(1, rule.size + d.groupDelta);
+}
 export function generateRegionalBeasts(o) {
   const { geo, terrain } = o, seed = o.seed ?? 12, avoid = o.avoid || [], safe = o.safe || FIXED_SAFE;
   const wat = o.water, wa = wat && wat.area;
@@ -128,22 +139,29 @@ export function generateRegionalBeasts(o) {
   const regionAt = (x, y) => { for (const g of geo.regions) if (x >= g.r[0] && x < g.r[2] && y >= g.r[1] && y < g.r[3]) return g.id; return geo.regions[geo.regions.length - 1].id; };
   const nearSafe = (x, y) => { for (const s of safe) { const d = SAFE_R + (s[2] || 0); if ((s[0] - x) * (s[0] - x) + (s[1] - y) * (s[1] - y) < d * d) return true; } return false; };
   const clearOfW = (x, y) => { for (const p of wcentres) if ((p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y) < 40 * 40) return false; return true; };
-  const clearOf = (x, y) => { // group gap to other regional groups + authored gap + safe spots/givers
-    for (const p of centres) if ((p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y) < G2) return false;
+  const clearOf = (x, y, gap) => { // group gap (rule.gap or GROUP_GAP) to other regional groups + authored gap + safe spots/givers
+    const gg = gap ? gap * gap : G2;
+    for (const p of centres) if ((p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y) < gg) return false;
     for (const p of avoid) if ((p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y) < AUTHORED_GAP * AUTHORED_GAP) return false;
     return !nearSafe(x, y);
   };
   const emit = (rule, region, r, c, rng, n0) => { // members 3-7 m from the group centre; fall back to the centre if no walkable spot
     const ng = rule.water ? nextWGroup : nextGroup, g = ng[region] || 0; ng[region] = g + 1; (rule.water ? wcentres : centres).push(c); // BEAST-09a: crocs never shift land groups (land list is the same with or without a water probe)
     let n = n0;
-    for (let k = 0; k < rule.size; k++) {
+    const size = groupSize(rule, o.difficulty);
+    // The shared rng always draws the BASE members (rule.size) so later groups' homes never shift with the difficulty; Easy skips emitting the last ones,
+    // Hard's extra members draw from a per-group sub-rng (seed x rule x group x member).
+    const base = rule.size, total = Math.max(size, base);
+    for (let k = 0; k < total; k++) {
       let hx = c[0], hy = c[1];
+      const mr = k < base ? rng : mulberry32((seed ^ strHash(rule.key + ':' + region + ':' + g + ':' + k)) >>> 0);
       if (k > 0) {
         for (let t = 0; t < 40; t++) {
-          const dir = DIRS[(rng() * 32) | 0], d = 3 + rng() * 4, x = Math.round((c[0] + dir[0] * d) * 2) / 2, y = Math.round((c[1] + dir[1] * d) * 2) / 2;
+          const dir = DIRS[(mr() * 32) | 0], d = 3 + mr() * 4, x = Math.round((c[0] + dir[0] * d) * 2) / 2, y = Math.round((c[1] + dir[1] * d) * 2) / 2;
           if (x > r[0] && x < r[2] && y > r[1] && y < r[3] && (rule.water ? deepHome(x, y) : walkable(x, y)) && !nearSafe(x, y)) { hx = x; hy = y; break; }
         }
       }
+      if (k >= size) continue; // Easy: drawn (to keep the shared rng in step) but not emitted
       out.push({ id: `${rule.species}.${rule.key}.${++n}`, species: rule.species, region, x: hx, y: hy, group: g });
     }
     return n;
@@ -159,7 +177,7 @@ export function generateRegionalBeasts(o) {
       for (let t = 0; t < TRIES && !c; t++) {
         const x = Math.round((r[0] + EDGE + rng() * (r[2] - r[0] - 2 * EDGE)) * 2) / 2;
         const y = Math.round((r[1] + EDGE + rng() * (r[3] - r[1] - 2 * EDGE)) * 2) / 2;
-        if (!(rule.water ? deepHome(x, y) : wk(x, y)) || (!rule.water && regionAt(x, y) !== rule.region) || !(rule.water ? clearOfW(x, y) : clearOf(x, y))) continue;
+        if (!(rule.water ? deepHome(x, y) : wk(x, y)) || (!rule.water && regionAt(x, y) !== rule.region) || !(rule.water ? clearOfW(x, y) : clearOf(x, y, rule.gap))) continue;
         c = [x, y];
       }
       if (!c) continue; // a region with no valid ground simply gets fewer groups (never an unwalkable home)
@@ -223,9 +241,9 @@ export function safeSpots(world) {
   return out;
 }
 
-export function spawnRegionalBeasts(world, geo, seed, navArea) {
+export function spawnRegionalBeasts(world, geo, seed, navArea, difficulty) { // difficulty (name, optional): BH2-G1 groupDelta
   const avoid = authoredHomes(world);
-  const list = generateRegionalBeasts({ geo, terrain: world.terrain, seed, avoid, safe: safeSpots(world), water: typeof world.waterAt === 'function' ? worldWaterProbe(world, navArea) : undefined });
+  const list = generateRegionalBeasts({ geo, terrain: world.terrain, seed, difficulty, avoid, safe: safeSpots(world), water: typeof world.waterAt === 'function' ? worldWaterProbe(world, navArea) : undefined });
   for (const b of list) {
     if (world.get(b.id)) continue; // WMP-09: a world restored from a save already holds the herd (saves keep all entities) - spawn only the missing ones
     const brain = { kind: 'beast', home: [b.x, b.y], temperament: 'wary' };

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { resolveGI, createGIWire, GI_PRESET, giLoadOptions } from './giWire.js';
 const r = (s, q) => resolveGI(new URLSearchParams(s), q);
+assert.equal(resolveGI(new URLSearchParams("gi=1"), "ultra", false), null, "GI-PROBE-06-FIX: !wgActive (Canvas2D/WebGL2) -> null even with ?gi=1"); assert.ok(resolveGI(new URLSearchParams(""), "high", true));
 assert.equal(r('', 'low'), null); for (const q of ['medium', 'high', 'ultra', 'extreme']) assert.ok(r('', q), q);
 assert.equal(r('', undefined), null); assert.ok(r('gi=1', 'low')); assert.equal(r('gi=0', 'ultra'), null); assert.equal(r('gpucompare=1', 'high'), null);
 assert.deepEqual(Object.keys(GI_PRESET), ['low', 'medium', 'high', 'ultra', 'extreme']);

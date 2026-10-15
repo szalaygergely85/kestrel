@@ -1,0 +1,98 @@
+[
+  {
+    "feature": "shaft",
+    "pose": "forestFloor",
+    "budget": 0.4,
+    "on": {
+      "n": 80,
+      "min": 1.475392,
+      "med": 4.10368,
+      "steps": 10
+    },
+    "off": {
+      "n": 79,
+      "min": 1.451872,
+      "med": 4.130464
+    }
+  },
+  {
+    "feature": "shaft",
+    "pose": "lookForestEdge",
+    "budget": 0.4,
+    "on": {
+      "n": 79,
+      "min": 0.662624,
+      "med": 3.50448,
+      "steps": 10
+    },
+    "off": {
+      "n": 79,
+      "min": 0.491936,
+      "med": 3.61936
+    }
+  },
+  {
+    "feature": "water",
+    "pose": "fordDetail",
+    "budget": 0.05,
+    "on": {
+      "n": 79,
+      "min": 0.672608,
+      "med": 4.155712,
+      "steps": 10
+    },
+    "off": {
+      "n": 80,
+      "min": 0.493504,
+      "med": 3.364896
+    }
+  },
+  {
+    "feature": "water",
+    "pose": "lakeEdge",
+    "budget": 0.05,
+    "on": {
+      "n": 79,
+      "min": 0.367616,
+      "med": 1.663456,
+      "steps": 10
+    },
+    "off": {
+      "n": 80,
+      "min": 0.369024,
+      "med": 1.866208
+    }
+  },
+  {
+    "feature": "clouds",
+    "pose": "towerExterior",
+    "budget": null,
+    "on": {
+      "n": 79,
+      "min": 0.646272,
+      "med": 4.241152,
+      "steps": 10
+    },
+    "off": {
+      "n": 79,
+      "min": 0.58496,
+      "med": 4.194432
+    }
+  },
+  {
+    "feature": "clouds",
+    "pose": "meadowSea",
+    "budget": null,
+    "on": {
+      "n": 79,
+      "min": 4.05728,
+      "med": 5.261152,
+      "steps": 10
+    },
+    "off": {
+      "n": 79,
+      "min": 3.805728,
+      "med": 5.149664
+    }
+  }
+]

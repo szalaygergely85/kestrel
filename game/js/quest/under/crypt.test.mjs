@@ -47,10 +47,10 @@ applyCryptDoor(world); ok(door.origin.z < z0 - 2.9, 'applyCryptDoor re-syncs aft
 
 // skeletons: crypt members are in rooms 2/3; the surface cemetery spawner ignores a player inside (dz rule), and vice versa
 const site = UNDER_SITES.find((s) => s.id === 'crypt');
-ok(site && site.members.length >= 4 && site.members.length <= 5 && !site.night && site.z === -56.8, 'crypt site: 4-5 skeletons, any time of day, at the crypt floor');
+ok(site && site.members.length >= 4 && site.members.length <= 6 && !site.night && site.z === -56.8, 'crypt site: 4-6 skeletons, any time of day, at the crypt floor');
 const pos = (m) => [site.anchor[0] + m[2], site.anchor[1] + m[3]];
 ok(site.members.every((m) => { const [x, y] = pos(m); return x > 1671 && x < 1678 && ((y > 1359 && y < 1366) || (y > 1349 && y < 1356)); }), 'every member home is inside room 2 or 3');
-ok(site.members.filter((m) => pos(m)[1] > 1357.5).length === 2, '2 skeletons in room 2, the rest in room 3');
+ok(site.members.filter((m) => pos(m)[1] > 1357.5).length === 3, '3 skeletons in room 2, the rest in room 3');
 const fake = (z) => ({ count: 1, down: [0], state: [0], entities: [{ transform: { z } }], slotOf: () => 0, riseMs: new Float32Array(1), cfgSteps: {}, steer: {}, setDown() {} });
 const cem = UNDER_SITES.find((s) => s.id === 'cemetery');
 const sp = createUnderSpawner({ sim: fake(groundAt(1644, 1372)), site: cem, state: {} });

@@ -9,7 +9,7 @@
 
 import { CellBuffer } from './CellBuffer.js';
 import { computeCellBox, fitCssSize, fitCssRatio } from './glyphMetrics.js';
-import { rasterizeGlyphAtlas, glyphAtlasPixels, blankGlyphs, GLYPH_COUNT } from './glyphAtlas.js';
+import { rasterizeGlyphAtlas, glyphAtlasPixels, blankGlyphs, GLYPH_COUNT, SOFT_ROWS_MAX_H } from './glyphAtlas.js';
 import { PRESENT_WGSL, PRESENT_BLOCK, PRESENT_TEXTURES } from './gpu/wgsl/present.wgsl.js';
 import { FRAME_TIMER_SLOT } from './gpu/device/WebGpuTimer.js';
 
@@ -103,7 +103,7 @@ export class RenderTargetWebGPU {
   }
 
   _rebuildAtlas() {
-    this.atlasTex = this._buildAtlas(this.atlasTex, { pxCellW: this.pxCellW, pxCellH: this.pxCellH, fontPx: this.fontSize, ascent: this.glyphAscent });
+    this.atlasTex = this._buildAtlas(this.atlasTex, { pxCellW: this.pxCellW, pxCellH: this.pxCellH, fontPx: this.fontSize, ascent: this.glyphAscent, softRows: this.pxCellH <= SOFT_ROWS_MAX_H });
   }
 
   // Same math as RenderTargetGL._rebuildUiAtlas (UI cell size = scene cell size * ui.sx/sy).

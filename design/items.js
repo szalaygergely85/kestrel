@@ -302,6 +302,15 @@
     icon: icon(['(#v#)', ' \\#/ ', '  v  '],
                ['LPddd', ' Ldd ', '  d  '])
   };
+  // SPELL-R1 (D-115): no Spell Book items; spells come from Burl, a well, a Waystone or a quest (no pack item).
+  defs['scroll.spell'] = {
+    id: 'scroll.spell', name: 'Spell Scroll', kind: 'upgrade', stackMax: 9, hand: false, inPack: true,
+    desc: 'One of your spells grows stronger.',
+    use: { chooseSpell: true, note: 'D-114: E in the inventory opens a list of learned spells; the pick gains +1 level and the scroll is used (quest/sim/spellBook.js spellBook + spellScroll.js)' },
+    glyph: { ch: '*', c: 'flameMid' },
+    icon: icon([' .^, ', '(*@*)', " `~' "],
+               [' tOt ', 'OMCMO', ' eke '])
+  };
   defs['relay.mirror'] = {
     id: 'relay.mirror', name: 'Waystone Glass', kind: 'key', stackMax: 1, hand: false, inPack: true,
     desc: 'Round, silvered, scratched by claws.',

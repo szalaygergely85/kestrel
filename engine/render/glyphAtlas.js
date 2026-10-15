@@ -27,7 +27,30 @@ export function rasterizeGlyphAtlas(canvas, ctx, m) {
     if (code === 32) continue; // space: leave fully transparent
     ctx.fillText(String.fromCharCode(code), idx * m.pxCellW, m.ascent);
   }
+  if (m.softRows && ctx.putImageData) softenRows(canvas, ctx, m.pxCellW, m.pxCellH);
   return canvas;
+}
+
+/**
+ * OB-189: at tiny cells (<= SOFT_ROWS_MAX_H px) every glyph ink band sits at the same y of every row, so a flat surface shows one
+ * light line per cell row. Vertical [1 2 1]/4 blur of the coverage (inside each cell, no bleed across cells) halves the
+ * stripe contrast; backgrounds are untouched. Pure alpha work on the already rasterized strip.
+ */
+export const SOFT_ROWS_MAX_H = 8;
+export function softenAlpha(a, cw, ch, count = GLYPH_COUNT) {
+  const stride = cw * count; const out = new Uint8ClampedArray(a.length);
+  for (let y = 0; y < ch; y++) {
+    const y0 = Math.max(0, y - 1), y1 = Math.min(ch - 1, y + 1);
+    for (let x = 0; x < stride; x++) out[y * stride + x] = (a[y0 * stride + x] + 2 * a[y * stride + x] + a[y1 * stride + x] + 2) >> 2;
+  }
+  return out;
+}
+function softenRows(canvas, ctx, cw, ch) {
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height); const d = img.data, n = canvas.width * canvas.height;
+  const a = new Uint8ClampedArray(n); for (let i = 0; i < n; i++) a[i] = d[i * 4 + 3];
+  const b = softenAlpha(a, cw, ch);
+  for (let i = 0; i < n; i++) { d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = 255; d[i * 4 + 3] = b[i]; }
+  ctx.putImageData(img, 0, 0);
 }
 
 /**

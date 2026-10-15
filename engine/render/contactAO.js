@@ -2,12 +2,14 @@
 // Pure module, zero alloc after createContactAO(). The WGSL port (01b) mirrors contactAOAt/contactAOQ exactly.
 //
 // Blob record (8 floats, `data[i*8..]`): cx, cy, zBase, rx, ry, h, k, 0 (z is up; footprint = axis-aligned ellipse).
-//   occl_i = k * (1 - smoothstep(0.6, 1.6, dE)) * (1 - smoothstep(0, 0.5*h, Pz - zBase)) * (0.5 + 0.5*max(Nz, 0))
+//   occl_i = k * (1 - smoothstep(0.6, 1.6, dE)) * (1 - smoothstep(0, max(0.5*h, CAO_ZWIN_MIN), Pz - zBase)) * (0.5 + 0.5*max(Nz, 0))
 //   ao = 1 - max_i occl_i      (max, not product: order-free, never double dark)
 // LIGHT.w bits 1..7 (CAO_SHIFT) hold the OCCLUSION byte d = round(occl * 127) (0 = no occlusion, so a zeroed
 // buffer is "off" and n = 0 is byte-identical to today). ao = (127 - d) / 127.
 export const CAO_SHIFT = 1, CAO_MAX = 32, CAO_STRIDE = 8;
 export const CAO_RADIUS_M = 24; // default list radius (opts.radius)
+// 38.78 rev: height window floor (m). Props sit 0.1-0.2 m sunk in the ground; with h 0.2-0.6 a 0.5*h window faded the GROUND under them to ~0.
+export const CAO_ZWIN_MIN = 0.4;
 
 /** @returns {{n:number, data:Float32Array, version:number, dyn:Float32Array, dynN:number}} */
 export function createContactAO() {
@@ -116,7 +118,7 @@ export function contactOcclAt(cao, Px, Py, Pz, Nz) {
     if (e2 >= 2.56) continue; // dE >= 1.6 (sqrt only for blobs that reach this point)
     const dE = Math.sqrt(e2);
     const h = d[o + 5];
-    const v = h > 0 ? 1 - smooth(0, 0.5 * h, Pz - d[o + 2]) : 0;
+    const v = h > 0 ? 1 - smooth(0, Math.max(0.5 * h, CAO_ZWIN_MIN), Pz - d[o + 2]) : 0;
     const w = d[o + 6] * (1 - smooth(0.6, 1.6, dE)) * v * nf;
     if (w > occl) occl = w;
   }
@@ -131,6 +133,11 @@ export function contactAOQ(cao, Px, Py, Pz, Nz) { return Math.round(contactOcclA
 export function caoBits(q) { return q << CAO_SHIFT; }
 /** Ambient multiplier from the stored occlusion byte (exactly 1 at 0). */
 export function caoFactor(q) { return q === 0 ? 1 : (127 - q) / 127; }
+// FX-TUNE-01 / 38.78 rev (2026-10-15): terrain/grass also lose part of the ANALYTIC SUN term in contact zones (ambient-only
+// was ~5 % at noon after the >1 gain cap: invisible). Meshes stay ambient-only (vertex AO covers them). WGSL: same literal.
+export const CAO_SUN_W = 0.6;
+/** Analytic-sun multiplier for terrain/grass from the occlusion byte (exactly 1 at 0). */
+export function caoSunFactor(q) { return q === 0 ? 1 : 1 - CAO_SUN_W * q * (1 / 127); }
 
 // WGSL twin (CONTACT-AO-01b): shared by light.wgsl.js (spliced into LIGHT_WGSL / LIGHT_GI_WGSL, reads the LightU fields
 // `u.caoA.x` = n and `u.caoD[i*2], [i*2+1]` = the 8-float blob record as two vec4) and by the Node parity test, which
@@ -148,7 +155,7 @@ fn contactOcclQ(px: f32, py: f32, pz: f32, nz: f32) -> u32 {
     let ex = (px - b0.x) / b0.w; let ey = (py - b0.y) / b1.x;
     if (abs(ex) >= 1.6 || abs(ey) >= 1.6) { continue; }
     let dE = sqrt(ex * ex + ey * ey);
-    let v = select(0.0, 1.0 - caoSmooth(0.0, 0.5 * b1.y, pz - b0.z), b1.y > 0.0);
+    let v = select(0.0, 1.0 - caoSmooth(0.0, max(0.5 * b1.y, ${CAO_ZWIN_MIN.toFixed(4)}), pz - b0.z), b1.y > 0.0);
     occl = max(occl, b1.z * (1.0 - caoSmooth(0.6, 1.6, dE)) * v * nf);
   }
   return u32(floor(occl * 127.0 + 0.5));

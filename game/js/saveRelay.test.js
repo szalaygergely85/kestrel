@@ -53,6 +53,8 @@ assert.deepEqual(toasts, [], 'q01 is silent (the giver quest owns the toast)');
 assert.equal(A.quest.objectiveText(), OBJ.leave);
 A.quest.feed({ type: 'area:entered', id: 'towerDoor' });
 assert.deepEqual(toasts, []);
+assert.equal(A.quest.objectiveText(), 'Tell Burl you are out'); // QUEST-HANDIN-ALL: the blade is handed in at Burl before the boars
+A.quest.questFlag('quest.tower.blade.done', true);
 assert.equal(A.quest.objectiveText(), OBJ.beasts);
 events.emit('beast:died', { id: 'boar1' });
 events.emit('beast:died', { id: 'boar1' }); // duplicate counts once
@@ -76,11 +78,11 @@ assert.deepEqual(toasts, [], 'q03 silent');
 assert.equal(A.quest.objectiveText(), OBJ.follow);
 assert.equal(A.quest.questFlag('quest.burl.follow.done'), true); assert.equal(world.state['quest.burl.follow.done'], true, 'questFlag writes world.state'); // OB-178/D-105
 assert.equal(A.quest.objectiveText(), OBJ.waystone);
-A.quest.questFlag('waystone.waystone.woken');
+A.quest.questFlag('waystone.waystone.woken'); A.quest.questFlag('quest.burl.stone.done', true);
 assert.equal(A.quest.objectiveText(), OBJ.road);
 A.quest.feed({ type: 'area:entered', id: 'roadWest' }); A.quest.feed({ type: 'area:entered', id: 'bendRelay' });
 assert.equal(A.quest.objectiveText(), OBJ.relay1);
-A.quest.questFlag('waystone.ws_roadBend.woken');
+A.quest.questFlag('waystone.ws_roadBend.woken'); A.quest.questFlag('quest.mq.bend.call.done', true);
 assert.equal(A.quest.done, true, 'scripted sequence completes the chain at the relay (FEN-OFF-01)');
 assert.equal(toasts.length, 3, 'one toast per non-silent section (q04-q06)'); assert.equal(toasts.at(-1), 'The Next Light');
 A.quest.objectiveText();

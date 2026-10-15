@@ -81,10 +81,12 @@ export function generateForNpc(raw, npcId, defs, snippets, opts = {}) {
         rows.ready.push({ node: k + '.ready', requires: 'q.' + d.id + '.ready' });
       } else if (state === 'available') {
         const off = linesFor(d, 'available', sn, giverName, opts.itemDefs), last = off[off.length - 1];
-        const choices = [{ next: k + '.accepted', setFlag: 'q.' + d.id + '.accept', text: cap(ch.accept || "I'll do it.", 40) }, { next: laterId, text: cap(ch.later || 'Not yet.', 40) }];
+        const dec = d.lines && d.lines.decline && d.lines.decline.length ? k + '.later' : null; // writer's per-quest decline reply (optional)
+        if (dec) nodes[dec] = mk(d.lines.decline.map((l) => cap(l)), { end: true });
+        const choices = [{ next: k + '.accepted', setFlag: 'q.' + d.id + '.accept', text: cap(ch.accept || "I'll do it.", 40) }, { next: dec || laterId, text: cap(ch.later || 'Not yet.', 40) }];
         if (off.length > 1) { nodes[k + '.offer.1'] = mk(off.slice(0, -1), { next: k + '.offer.2' }); nodes[k + '.offer.2'] = mk([last], { choices }); } else nodes[k + '.offer.1'] = mk([last], { choices });
-        nodes[k + '.accepted'] = mk(linesFor(d, 'active', sn, giverName, opts.itemDefs), { end: true });
-        usedLater = true;
+        nodes[k + '.accepted'] = mk(d.lines && d.lines.accept && d.lines.accept.length ? d.lines.accept.map((l) => cap(l)) : linesFor(d, 'active', sn, giverName, opts.itemDefs), { end: true });
+        if (!dec) usedLater = true;
         rows.available.push({ node: k + '.offer.1', requires: 'q.' + d.id + '.available' });
       } else {
         nodes[k + '.active'] = mk(linesFor(d, 'active', sn, giverName, opts.itemDefs), { end: true });
@@ -107,7 +109,7 @@ export function generateForNpc(raw, npcId, defs, snippets, opts = {}) {
 
 /** Where generated routes go when a dialogue needs a fixed anchor: Burl's errands sit before his home greeting. */
 // rook: Rook's main-quest hand-in/offer entries (call.ready/active, mirror.active/available) come first so an errand can never hide them (ch12 run beat 13); errands precede his repeat chatter.
-export const ANCHORS = { bear: 'bear.home.again', rook: 'rook.ford.repeat2' };
+export const ANCHORS = { bear: 'bear.home.again', rook: 'rook.ford.repeat2', hesk: 'hesk.after.1', dorrin: 'dorrin.done.1' };
 
 /** raws = {npcId: rawDialogue} -> same keys with generated routes. */
 export function generateAll(raws, defs, snippets, itemDefs) {

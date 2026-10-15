@@ -1,0 +1,9 @@
+{
+  "note": "R19 allow-list (QUEST-TEXT-LINT-01), keys are \"where|check\". SHRINK-ONLY: content-lint.test.mjs fails if it grows (R19_ALLOW_MAX); a stale entry is itself an R19 error. Writer: replace the NEEDS WRITER texts, then delete the entry.",
+  "allow": [
+    "content/worlds/world_m1.world.json.entities[55].note|placeholder",
+    "content/worlds/world_m1.world.json.entities[104].note|placeholder",
+    "content/worlds/world_m1.world.json.entities[109].note|placeholder",
+    "content/dialogue/inspect.json.texts.note.fordCellar.note|placeholder"
+  ]
+}

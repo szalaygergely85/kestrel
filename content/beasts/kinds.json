@@ -300,7 +300,8 @@
     ],
     "when": "night",
     "walk": 1.4,
-    "run": 4
+    "run": 4,
+    "blockF": 0.3
   },
   "skeleton_archer": {
     "name": "Skeleton Archer",
@@ -315,7 +316,9 @@
     "attacks": [
       {"id": "volley", "type": "projectile", "range": 18, "windupSec": 0.7, "activeSec": 0.3, "recoverSec": 1.5, "cooldownSec": 3, "dmgF": 1, "weight": 1}
     ],
-    "when": "night"
+    "when": "night",
+    "keepMin": 8,
+    "keepMax": 12
   },
   "wisp": {
     "name": "Wisp",
@@ -498,5 +501,22 @@
     ],
     "keepMin": 10,
     "keepMax": 14
+  },
+  "skeleton_brute": {
+    "name": "Skeleton Brute",
+    "arch": "packHunter",
+    "model": "skeleton",
+    "todo": "",
+    "lv": [3, 10],
+    "hpF": 2,
+    "dmgF": 1.4,
+    "group": [1, 1],
+    "respawn": "common",
+    "attacks": [
+      {"id": "smash", "type": "melee", "range": 2, "windupSec": 0.8, "activeSec": 0.3, "recoverSec": 1.2, "cooldownSec": 2, "dmgF": 1.4, "weight": 1}
+    ],
+    "when": "night",
+    "spdF": 0.7,
+    "telegraphSec": 0.8
   }
 }

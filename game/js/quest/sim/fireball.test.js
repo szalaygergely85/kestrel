@@ -337,6 +337,22 @@ function rig({ wx = null, targets = [], mp = 100, cfg = FIREBALL_CFG, eyeH = 1.6
   ok(off.alive === 0 && casts === 0 && spent === 0, 'D-065 off: release casts nothing, spends no mana');
 }
 
+// SPELL-ARCH7: INT scales the cast damage via hooks.damageMul (tier 2 at INT 10 = 4 * 1.15; tier 1 at INT 5 unchanged)
+{
+  const ev = { emit() {} };
+  const w0 = { raySegmentRay() { return false; }, raySegment() { return false; } };
+  const tg0 = { count: 0, refresh() {}, r: [], x: [], y: [], z: [], h: [], ent: [] };
+  const mk = (tier, mul) => createFireballSim(w0, ev, FIREBALL_CFG, tg0, { spendMana: () => true, tier: () => tier, damageMul: () => mul });
+  const pl = { transform: { x: 0, y: 0, z: 0 }, components: {} };
+  const dmgOf = (sim) => { sim.step(pl, true, 1, 0, 1, 0, 0); sim.step(pl, false, 1, 0, 1, 0, 0); return sim.slots.damage[0]; };
+  const d1 = dmgOf(mk(1, 1)), d2 = dmgOf(mk(2, 1.15));
+  ok(d1 === FIREBALL_CFG.tiers[1].tap.damage, 'tier 1, INT 5: unchanged ' + d1);
+  ok(Math.abs(d2 - 4 * 1.15) < 1e-9, 'tier 2 at INT 10 = 4 * 1.15 (got ' + d2 + ')');
+  const a = mk(1, 1); a.requestTap();
+  const h = (sim) => { const o = []; sim.hashInto({ u32: (v) => o.push(v), f64: (v) => o.push(v) }); return o.join(','); };
+  ok(h(a) !== h(mk(1, 1)), 'pendingTap is in the hash');
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

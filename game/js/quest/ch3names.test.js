@@ -25,7 +25,7 @@ const small = { kind: 'manifest', schema: 1, id: 't', contentVersion: 1, files: 
 const bundle = await loadContentPack(new URL('content/manifest.json', ROOT).href, { fetchText: async (u) => (u.endsWith('manifest.json') ? JSON.stringify(small) : readFileSync(new URL(u), 'utf8')) });
 const talk = (npc) => {
   er.mainSync(0); const said = [], r = createDialogueRunner({ pageLines: 1 });
-  r.open(bundle.dialogues[npc], { has: (k) => (k.startsWith('s.') ? !!state[k.slice(2)] : state['dlg.' + k] === true), set: (k) => { if (k.startsWith('s.')) questFlag(k.slice(2)); else state['dlg.' + k] = true; } });
+  r.open(bundle.dialogues[npc], { has: (k) => (k.startsWith('q.') ? book.hasKey(k) : k.startsWith('s.') ? !!state[k.slice(2)] : state['dlg.' + k] === true), set: (k) => { if (k.startsWith('q.')) book.actKey(k); else if (k.startsWith('s.')) questFlag(k.slice(2)); else state['dlg.' + k] = true; } });
   for (let g = 0; g < 40 && r.state !== 'ended'; g++) { if (r.state === 'typing') { said.push(r.line); r.press(); } else if (r.state === 'choosing') r.choose(); else r.press(); }
   er.talked(npc); return said;
 };

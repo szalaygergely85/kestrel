@@ -27,7 +27,7 @@
     ], "offer": [
       "Two bears, out in the high grass. Too close.",
       "Drive both off, then come back to me."
-    ]}, "requires": [{"flag": "waystone.ws_highPastures.woken"}], "returnText": "Back to the Pasture warden", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "warden_highPastures", "steps": [{"journal": "Two bears roam the high grass too near the Pasture Waystone. Drive both off, then go back to the warden.", "objText": "Drive off 2 bears", "params": {"count": 2, "kind": "bear"}, "template": "kill"}], "title": "Bears in the High Grass"},
+    ]}, "requires": [{"flag": "waystone.ws_highPastures.woken"}], "returnText": "Back to the Pasture warden", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "warden_highpastures", "steps": [{"journal": "Two bears roam the high grass too near the Pasture Waystone. Drive both off, then go back to the warden.", "objText": "Drive off 2 bears", "params": {"count": 2, "kind": "bear"}, "template": "kill"}], "title": "Bears in the High Grass"},
     {"id": "sq.reg.ashMile", "lines": {"active": [
       "Two boars in the black ash. Go on."
     ], "done": [
@@ -35,7 +35,7 @@
     ], "offer": [
       "Two boars, rooting in the black ash.",
       "Drive them off and come back. Mind the dust."
-    ]}, "requires": [{"flag": "waystone.ws_ashMile.woken"}], "returnText": "Back to the Ash Mile warden", "reward": {"items": [{"id": "arrow", "n": 15}]}, "site": "warden_ashMile", "steps": [{"journal": "Two boars root through the black ash by the Ash Mile Waystone. Drive them off, then go back to the warden.", "objText": "Drive off 2 boars", "params": {"count": 2, "kind": "boar"}, "template": "kill"}], "title": "Rooting in the Ash"},
+    ]}, "requires": [{"flag": "waystone.ws_ashMile.woken"}], "returnText": "Back to the Ash Mile warden", "reward": {"items": [{"id": "arrow", "n": 15}]}, "site": "warden_ashmile", "steps": [{"journal": "Two boars root through the black ash by the Ash Mile Waystone. Drive them off, then go back to the warden.", "objText": "Drive off 2 boars", "params": {"count": 2, "kind": "boar"}, "template": "kill"}], "title": "Rooting in the Ash"},
     {"id": "sq.reg.downs", "lines": {"active": [
       "Four boars, on the long green. Go."
     ], "done": [
@@ -51,7 +51,7 @@
     ], "offer": [
       "Three wolves on the slope below. The light stutters.",
       "Drive them off, then come back up to me."
-    ]}, "requires": [{"flag": "waystone.ws_signalHill.woken"}], "returnText": "Back to the Signal Hill warden", "reward": {"items": [{"id": "arrow", "n": 20}]}, "site": "warden_signalHill", "steps": [{"journal": "Wolves prowl the slope below Signal Hill, and its waystone stutters. Drive off three, then climb back to the warden.", "objText": "Drive off 3 wolves", "params": {"count": 3, "kind": "wolf"}, "template": "kill"}], "title": "The Hill Pack"},
+    ]}, "requires": [{"flag": "waystone.ws_signalHill.woken"}], "returnText": "Back to the Signal Hill warden", "reward": {"items": [{"id": "arrow", "n": 20}]}, "site": "warden_signalhill", "steps": [{"journal": "Wolves prowl the slope below Signal Hill, and its waystone stutters. Drive off three, then climb back to the warden.", "objText": "Drive off 3 wolves", "params": {"count": 3, "kind": "wolf"}, "template": "kill"}], "title": "The Hill Pack"},
     {"id": "sq.reg.heath", "lines": {"active": [
       "Three boars in the heather. Near the stone."
     ], "done": [

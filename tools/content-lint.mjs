@@ -101,6 +101,28 @@ export async function buildContext(opts = {}) {
   { const f = path.join(root, 'content/levels/tower.level.json'); texts.push(...proseOf(f, JSON.parse(fs.readFileSync(f, 'utf8')), path.relative(root, f) + ' ').map((t) => ({ ...t, dev: true }))); }
   const inspect = JSON.parse(fs.readFileSync(path.join(root, 'content/dialogue/inspect.json'), 'utf8'));
   for (const [k, t] of Object.entries(inspect.texts)) { for (const s of [t.title, t.prompt, ...(t.lines || [])]) if (typeof s === 'string') texts.push({ where: 'inspect.json ' + k, text: s }); }
+  // R19 inputs (QUEST-TEXT-LINT-01): every string a player reads in quests + dialogue + inspect, by key whitelist; allow-list = shrink-only file
+  const questTexts = [];
+  {
+    const TEXT_KEYS = /^(title|text|lines|label|prompt|hint|hintTitle|objText|journal|returnText|summary|desc|description)$/;
+    const walk = (v, k, where) => {
+      if (typeof v === 'string') { if (TEXT_KEYS.test(k) && v.trim()) questTexts.push({ where, text: v, line: k === 'lines' || k === 'text', objective: /\.objectives\[\d+\]\.(text)$/.test(where) }); }
+      else if (Array.isArray(v)) v.forEach((x, i) => walk(x, k, where + '[' + i + ']'));
+      else if (v && typeof v === 'object') for (const kk in v) if (kk !== 'speakers' && kk !== 'note') walk(v[kk], kk, where + '.' + kk);
+    };
+    for (const q of quests) walk({ title: q.title, returnText: q.returnText, lines: q.lines, objectives: q.objectives?.map((o) => ({ text: o.text, journal: o.journal })) }, '', q.id);
+    for (const f of jsonFiles(path.join(root, 'content/dialogue'))) walk(JSON.parse(fs.readFileSync(f, 'utf8')), '', path.relative(root, f).split(path.sep).join('/'));
+  }
+  // placeholder markers also count where the unwritten text hides: any string with NEEDS WRITER in the world json and in dev notes of the dialogue json
+  for (const f of [...jsonFiles(path.join(root, 'content/worlds')), ...jsonFiles(path.join(root, 'content/dialogue'))]) {
+    const rel = path.relative(root, f).split(path.sep).join('/');
+    (function rec(v, where) {
+      if (typeof v === 'string') { if (/NEEDS WRITER/i.test(v)) questTexts.push({ where, text: v, only: 'placeholder' }); }
+      else if (Array.isArray(v)) v.forEach((x, i) => rec(x, where + '[' + i + ']'));
+      else if (v && typeof v === 'object') for (const kk in v) rec(v[kk], where + '.' + kk);
+    })(JSON.parse(fs.readFileSync(f, 'utf8')), rel);
+  }
+  const r19Allow = new Set(JSON.parse(fs.readFileSync(path.join(root, 'tools/content-lint-r19-allow.json'), 'utf8')).allow);
   const jsTexts = [];
   {
     const RW = await import('../game/js/quest/relayWake.js'), WS = await import('../game/js/quest/wire/waystone.js'), { NOTICE_TEXT } = await import('../game/js/ui/noticeText.js');
@@ -130,10 +152,10 @@ export async function buildContext(opts = {}) {
     return (q.requires || []).some((r) => (r.flag && LV5.test(r.flag)) || (r.quest && gated(qById.get(r.quest), seen)));
   };
   const posAny = (id) => { const e = pos(id); if (e) return e; const a = areas[id], t = a && trig.get(a.trigger); return t ? { x: t.x, y: t.y } : null; };
-  // R14 inputs: pack quests get Accept/Exit from quest-snippets.json (generated text); legacy ones need a hand-written accept flag/choice in a dialogue file
+  // R14 inputs: pack quests get Accept/Exit from quest-snippets.json (generated text); D-106 files with lines.offer get the generated route too (generateForNpc); other legacy ones need a hand-written accept flag/choice in a dialogue file
   const dlgRaw = jsonFiles(path.join(root, 'content/dialogue')).map((f) => fs.readFileSync(f, 'utf8')).join(' ');
   const MQ_AUTO = new Set(); // OB-155m: MQ_AUTO removed from errands.js (no auto hand-ins)
-  const acceptOf = (q) => !!q.giver?.npc && (packIds.has(q.id) || q.objectGiver ? true : dlgRaw.includes(`s.${q.id}.accept`) || dlgRaw.includes(`"q.${q.id}.accept"`) || new RegExp(String.raw`"(quest|startQuest|accept)"\s*:\s*"` + q.id.replace(/\./g, String.raw`\.`) + '"').test(dlgRaw));
+  const acceptOf = (q) => !!q.giver?.npc && (packIds.has(q.id) || q.objectGiver || q.lines?.offer?.length ? true : dlgRaw.includes(`s.${q.id}.accept`) || dlgRaw.includes(`"q.${q.id}.accept"`) || new RegExp(String.raw`"(quest|startQuest|accept)"\s*:\s*"` + q.id.replace(/\./g, String.raw`\.`) + '"').test(dlgRaw));
   const qs = quests.map((q) => {
     const ids = new Set([q.giver?.npc, q.giver?.turnIn]);
     for (const o of q.objectives || []) { const wn = o.when || {}; if (wn.type === 'area' || wn.type === 'deliver') ids.add(wn.type === 'area' ? wn.id : wn.to); for (const b of wn.ids || []) ids.add(b); }
@@ -204,7 +226,7 @@ export async function buildContext(opts = {}) {
   for (const id of characters) { const l = labelOf(id); nameList.push({ where: id, kind: 'npc', name: l.charAt(0).toUpperCase() + l.slice(1) }); }
   return {
     fxModels: new Set(Object.entries(globalThis.ASSETS.models || {}).filter(([, m]) => m && m.fx === true).map(([k]) => k)),
-    formatQuests: quests, names: nameList, logic, entSupport, anchors, entities, structures: def.structures, floating, texts, jsTexts, quests: qs, itemDefs: assets.items?.defs || (await loadDesignAssets()).items?.defs,
+    formatQuests: quests, questTexts, r19Allow, names: nameList, logic, entSupport, anchors, entities, structures: def.structures, floating, texts, jsTexts, quests: qs, itemDefs: assets.items?.defs || (await loadDesignAssets()).items?.defs,
     labelOf, giverIds, pos, groundAt: gz, walkable, characters, levelIds: new Set((JSON.parse(fs.readFileSync(path.join(root, 'content/levels/tower.level.json'), 'utf8')).props || []).map((p) => p.id)), chests: entities.filter((e) => /^chest/.test(e.id)), guards,
     riverX: (y) => T.util.riverX(y), riverHalf: 10,
   };

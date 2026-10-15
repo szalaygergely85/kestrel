@@ -84,7 +84,6 @@ export { bundleBytes } from './world/bandCache.js';
 
 // ---- GI-PROBE-05 gpucompare rows (analytic probe field standing in for a baked .gi.bin) -------------
 export { makeRowGI } from './render/giFixture.js';
-export { createContactAO, setDynamicBlobs, buildContactBlobs } from './render/contactAO.js'; // CONTACT-AO-01b gpucompare rows
 
 // ---- ENG-API-01d: internals used by tools/bench-shadow, bench-vox-parts, compare-detail-export, mesh-tri-budget, mesh-place-budget ----
 export { createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, shadowInputHash } from './render/shadowSun.js';
