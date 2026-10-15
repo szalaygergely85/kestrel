@@ -166,6 +166,7 @@ import { equip as equipItem, migrateEquipment, stepEquipment, defenceOf, nightBo
 import { refreshRolledGear } from './quest/sim/rolledGear.js'; // ITEM-WIRE-01: equipment.rolled -> components.rolledGear
 import { createHands } from './quest/sim/hands.js'; // HANDS-01b (37.8a)
 import { createFireballSim } from './quest/sim/fireball.js'; // SPELL-01a (37.14)
+import { createGustView, defineGustFx } from './quest/gustView.js'; // SPELL-07b
 import { createFireballView } from './quest/fireballView.js'; // SPELL-01b (37.14 view)
 import { createShieldSim } from './quest/sim/shield.js'; // EQ-07 (38.41 a)
 import { createArrowSim } from './quest/sim/arrows.js'; // EQ-09 (38.41 b)
@@ -541,7 +542,7 @@ bootSpan('createEngine', tCE);
 const ripples = createRipples();
 const wadeFx = createWadeFx(engine.particles, ripples); // US-055a: wade splash + leg rings + arrow water hit
 defineWadeSplash(engine.particles, {});
-defineLeafFall(engine.particles, {}); const leafFall = createLeafFall(engine.particles, gustBand); // WIND-GUST-01b: leaves shed under travelling gust bands
+defineGustFx(engine.particles); defineLeafFall(engine.particles, {}); const leafFall = createLeafFall(engine.particles, gustBand); // WIND-GUST-01b: leaves shed under travelling gust bands
 const worldBand = window.ASSETS.levels.world_geo ? createBand(window.ASSETS.levels.world_geo.regions) : null; // US-129a (null = tier 1)
 const wadeArrowHit = (x, y, z) => wadeFx.arrowHit(x, y, z, fb ? fb.timeSec : 0); // one closure, not per frame
 engine.events.on('magic.unlocked', () => startMpFade(fb ? fb.timeSec : 0)); // FB-03: the MP bar fades in (same clock drawVitals gets)
@@ -1282,7 +1283,7 @@ async function runGame(mode, cinematic = null) {
   let offerToast = null, offerToastMsg = null; // toast once per new book.nextOffers() entry
   let equipPlay = null, shieldSim = null, arrowSim = null; // EQ-07/09: rebuilt on every 'world:loaded'
   let quickbar = null, qbView = null, qbTick = 0, qbBlocked = false; // EQ-12: sim rebuilt per world, view per page
-  let wardSim = null, fireRingSim = null, gustSim = null; // SPELL-06/07 (rebuilt per world)
+  let wardSim = null, fireRingSim = null, gustSim = null, gustView = null; // SPELL-06/07 (rebuilt per world)
   let fireball = null, fbTargets = null, spellBook = null, spellCaster = null; // SPELL-01a (37.14): rebuilt with the sword sim on every 'world:loaded'
   // US-091b: pack-screen mouse. Hover -> UI cell under the pointer; a click while open must not re-lock the pointer
   // (PlayerLook's own canvas click handler), so a capture listener on window swallows it first.
@@ -1707,6 +1708,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       wardSim = createWardSim({ spendMana: (n) => vitals && vitals.spendMana(n), tier: () => spellBook.tier('ward') || 1 }); spellCaster.register('ward', () => wardSim.cast());
       fireRingSim = createFireRingSim(fireball, { spendMana: (n) => vitals && vitals.spendMana(n), tier: () => spellBook.tier('fireRing') || 1, damageMul: () => { const c = playerHandle && playerHandle.data.components; return computeTotals(c && c.rolledGear || null, fbTotals).fireDmgMul; } }); spellCaster.register('fireRing', () => fireRingSim.cast(playerHandle.data));
       gustSim = createGustSim(world, engine.events, fbTargets, { spendMana: (n) => vitals && vitals.spendMana(n), tier: () => spellBook.tier('gust') || 1 }); spellCaster.register('gust', () => gustSim.requestCast());
+      if (gustView) gustView.dispose(); gustView = isCaptureOrBench ? null : createGustView({ particles: engine.particles, events: engine.events }); // SPELL-07b: wind streaks + hit puff (off in capture/bench)
       // EQ-07/09 (38.41): shield sim + arrow sim + the routing glue; shield/bow items get no-op sims so the router arms them (RMB -> left hand, LMB -> right hand)
       shieldSim = createShieldSim();
       arrowSim = createArrowSim(world, engine.events, BOW_CFG, fbTargets, wadeArrowHit);
@@ -2336,7 +2338,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
           forwardOf(look.yawDeg, swordFwd);
           const pr = look.pitchDeg * DEG2RAD, cp = Math.cos(pr);
           fireball.step(playerHandle.data, fbOn && hands.downOf('spell.fireball'), swordFwd[0], swordFwd[1], swordFwd[0] * cp, swordFwd[1] * cp, Math.sin(pr));
-          if (wardSim) wardSim.step(); if (fireRingSim) fireRingSim.step(); if (gustSim) gustSim.step(playerHandle.data, swordFwd[0], swordFwd[1]); // SPELL-06/07
+          if (wardSim) wardSim.step(); if (fireRingSim) fireRingSim.step(); if (gustSim) gustSim.step(playerHandle.data, swordFwd[0], swordFwd[1]); if (gustView) gustView.stepFx(); // SPELL-06/07
           if (fbView) fbView.stepFx(); // SPELL-01b: trail emitters + burst particles (sim side, hashed)
           if (fbOn && handFxOn && spellVmH && !cinematic) { // HAND-WIRE-02 (FB-01: locked = no hand fire): hand embers / ignite / charge sparks, sim side
             const hp = playerHandle.data.transform, hb = playerHandle.data.components.body;

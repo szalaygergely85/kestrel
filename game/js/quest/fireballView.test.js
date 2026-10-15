@@ -99,6 +99,18 @@ const liveEmitters = (p) => { let n = 0; for (let s = 0; s < p.emitters.used.len
   ok('only 3 free lights: flash first, then flight; never over the cap', tight.lights.count === MAX_LIGHTS && tight.view.stats.flashBound === 2 && tight.view.stats.flightBound === 1 && tight.view.stats.emberBound === 0);
 }
 
+// ---- SPELL-07b: Fire Ring burstAt shows the burst + flash light centred on the caster --------------------------------
+{
+  const r = rig();
+  const before = r.particles.stats.spawned;
+  r.sim.burstAt(5, 6, 0.9, 4.0, 8, 8);
+  r.step(false); r.frame(1);
+  ok('ring burst spawns embers + smoke', r.particles.stats.spawned - before >= 40, 'spawned=' + (r.particles.stats.spawned - before));
+  ok('ring burst flashes a bound light at the caster', r.lights.on[r.view.flashLights[0]] === 1 && r.view.flashes.x.includes(5) && r.view.flashes.y.includes(6));
+  const r2 = rig(); r2.sim.burstAt(0, 0, 0.9, 2.0, 4, 8); r2.step(false);
+  ok('bigger ring = bigger burst', r.particles.stats.spawned - before > r2.particles.stats.spawned);
+}
+
 // ---- trail: one persistent emitter per serial, kept while alive, released on death --------------------------------
 {
   const r = rig();

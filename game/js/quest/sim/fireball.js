@@ -89,10 +89,11 @@ export function createFireballSim(world, events, cfg, targets, hooks) {
       }
     }
     const bp = burstPayload;
-    bp.x = cx; bp.y = cy; bp.z = cz; bp.radius = radius; bp.charged = !!charged;
+    bp.x = cx; bp.y = cy; bp.z = cz; bp.radius = radius; bp.charged = !!charged; bp.ring = ringFlag;
     events.emit('fireball:burst', bp);
   }
 
+  let ringFlag = false; // SPELL-07b: payload.ring marks the caster-centred Fire Ring burst (view: no ball slot, upward spray)
   function burstSlot(s, x, y, z, direct) {
     const dx = slots.dx[s], dy = slots.dy[s];
     const r = slots.radius[s], dmg = slots.damage[s], kn = slots.knock[s], ch = slots.charged[s] === 1;
@@ -218,7 +219,7 @@ export function createFireballSim(world, events, cfg, targets, hooks) {
     /** SPELL-04: quickbar key tap (no charge). Returns 'cast' (queued for the next step) or 'busy'. */
     requestTap() { if (state !== FB_IDLE || cooldown > 0 || pendingTap) return 'busy'; pendingTap = true; return 'cast'; },
     /** SPELL-07: Fire Ring - the shared burst centred on the caster; the player is never a candidate (no damage, no knock). */
-    burstAt(x, y, z, radius, damage, knock) { burst(x, y, z, radius, damage, knock, false, -1, 0, 0, null); },
+    burstAt(x, y, z, radius, damage, knock) { ringFlag = true; burst(x, y, z, radius, damage, knock, false, -1, 0, 0, null); ringFlag = false; },
     dispose() {},
     hashInto(h) {
       h.u32(state); h.u32(holdSteps); h.u32(prevDown); h.u32(cooldown); h.u32(castTick & 0x7fffffff); h.u32(hand === 'left' ? 0 : 1); h.u32(pendingTap ? 1 : 0);

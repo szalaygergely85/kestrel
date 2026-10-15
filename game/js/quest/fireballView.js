@@ -40,7 +40,7 @@ export function createFireballView(o) {
 
   // ---- pending bursts (listener -> stepFx) ----
   const pend = { n: 0, x: new Float64Array(MAX_PENDING), y: new Float64Array(MAX_PENDING), z: new Float64Array(MAX_PENDING),
-    dx: new Float64Array(MAX_PENDING), dy: new Float64Array(MAX_PENDING), dz: new Float64Array(MAX_PENDING), ch: new Uint8Array(MAX_PENDING) };
+    dx: new Float64Array(MAX_PENDING), dy: new Float64Array(MAX_PENDING), dz: new Float64Array(MAX_PENDING), ch: new Uint8Array(MAX_PENDING), sc: new Float64Array(MAX_PENDING) };
   // ---- burst records (sprite + kick) and flash ring ----
   const br = { x: new Float64Array(N_BURST), y: new Float64Array(N_BURST), z: new Float64Array(N_BURST), tick: new Float64Array(N_BURST).fill(-1e9), ch: new Uint8Array(N_BURST), next: 0 };
   const fl = { x: new Float64Array(N_FLASH), y: new Float64Array(N_FLASH), z: new Float64Array(N_FLASH), tick: new Float64Array(N_FLASH).fill(-1e9), ch: new Uint8Array(N_FLASH), on: new Uint8Array(N_FLASH), next: 0 };
@@ -59,8 +59,8 @@ export function createFireballView(o) {
     stats.bursts++;
     const sl = sim.slots;
     let s = -1;
-    for (let i = 0; i < N; i++) if (sl.alive[i] === 0 && trailSerial[i] !== 0 && consumed[i] === 0) { s = i; break; } // the ball that just died
-    if (s < 0) { // point-blank cast burst: the slot was never stepped; it is the newest serial among the dead slots
+    if (!p.ring) for (let i = 0; i < N; i++) if (sl.alive[i] === 0 && trailSerial[i] !== 0 && consumed[i] === 0) { s = i; break; } // the ball that just died
+    if (s < 0 && !p.ring) { // point-blank cast burst: the slot was never stepped; it is the newest serial among the dead slots
       let best = -1;
       for (let i = 0; i < N; i++) if (sl.alive[i] === 0 && sl.serial[i] > best) { best = sl.serial[i]; s = i; }
     }
@@ -69,7 +69,8 @@ export function createFireballView(o) {
     if (pend.n < MAX_PENDING) {
       const k = pend.n++;
       pend.x[k] = p.x; pend.y[k] = p.y; pend.z[k] = p.z; pend.ch[k] = ch;
-      pend.dx[k] = s >= 0 ? sl.dx[s] : 0; pend.dy[k] = s >= 0 ? sl.dy[s] : 0; pend.dz[k] = s >= 0 ? sl.dz[s] : -1;
+      pend.dx[k] = s >= 0 ? sl.dx[s] : 0; pend.dy[k] = s >= 0 ? sl.dy[s] : 0; pend.dz[k] = s >= 0 ? sl.dz[s] : p.ring ? -0.4 : -1; // ring: sprays up and out
+      pend.sc[k] = p.ring ? Math.min(2, p.radius / 2) : 1; // burst size scales with the ring radius (2 m = a fireball)
     }
     const t = sim.tick;
     let b = br.next; br.next = (b + 1) % N_BURST;
@@ -139,8 +140,9 @@ export function createFireballView(o) {
       for (let k = 0; k < pend.n; k++) {
         const ch = pend.ch[k] === 1, x = pend.x[k], y = pend.y[k], z = pend.z[k];
         const dx = pend.dx[k], dy = pend.dy[k], dz = pend.dz[k];
-        particles.burstAt(defBurst, x, y, z, ch ? 28 : 20, -dx, -dy, -dz);
-        particles.burstAt(defSmoke, x, y, z, ch ? 12 : 8, 0, 0, 1);
+        const sc = pend.sc[k];
+        particles.burstAt(defBurst, x, y, z, Math.round((ch ? 28 : 20) * sc), -dx, -dy, -dz);
+        particles.burstAt(defSmoke, x, y, z, Math.round((ch ? 12 : 8) * sc), 0, 0, 1);
         if (-dz >= 0.7) particles.burstAt(defCinders, x, y, z + dz * 0.1 + 0.03, ch ? 10 : 6, 0, 0, 1); // ground hit
       }
       pend.n = 0;
