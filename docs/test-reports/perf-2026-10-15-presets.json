@@ -1,0 +1,9 @@
+{
+  "source": "docs/test-reports/perf-2026-10-15-after.md (PERF-MEASURE-03; no -presets.md exists)",
+  "note": "Measured budgets assume these preset settings. Change a preset -> re-measure, then update this file.",
+  "noShafts": ["low", "medium"],
+  "noCaoPost": ["low"],
+  "occlOff": ["low", "medium", "high", "ultra", "extreme"],
+  "keySetHash": "71e52b6c42f6",
+  "cpuP95MsAfter": { "medium": [6.5, 6.5, 6.7, 7.0, 5.8], "high": [8.7, 9.5, 8.5, 8.9, 7.3], "ultra": [8.9, 8.9, 9.6, 10.4, 8.4] }
+}

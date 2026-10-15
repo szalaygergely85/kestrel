@@ -502,7 +502,7 @@ const occlOpt = parseOccl(params, 'webgpu');
 const pointShadowOpt = parsePointShadows(params, resolvedQuality && resolvedQuality.name, presetPointShadowsOn(resolvedQuality, isCaptureOrBench, params)); // ME-16e/AUD-44: ON by preset (high/ultra), `?pointshadows=0|N` overrides
 const tCR = bootNow();
 const { rt: builtRt, pipeline: wgPipeline, device: gpuDevice, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgpu', onWebGpuMissing,
-  force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0', rays, terrainEnabled: params.get('terrain') !== '0',
+  force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0', rays, resolveBandM: bootOpts.raysFarM, terrainEnabled: params.get('terrain') !== '0',
   stable: params.get('stable') !== '0', // US-073c (38.25) + OB-073 D (owner 2026-10-12): temporal glyph stability, default ON (`?stable=0` off); ?gpucompare=1 builds it for the `stable` row (the pass stays off for every other row)
   shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0', occl: occlOpt.occl, pointShadows: pointShadowOpt.pointShadows, pointShadowLevel: pointShadowOpt.pointShadowLevel, glow: parseGlow(params, resolvedQuality && resolvedQuality.name), // EMIS-03/04: emissive bleed + halo (High/Ultra, ?emissive=); OCCL-MAIN-01: `?occl=1` two-phase HZB occlusion, default OFF, WebGPU only
   onCompileProgress: (done, total) => { bootStages.enter('pipelines'); if (bootCard) bootCard.setStageLines(bootStages.cardText()); if (bootProg) bootProg.count('compile', done, total); } }); // WG-4a: `?gpucull=0` = CPU instance cull on WebGPU; WG-3d: the WebGPU pipeline needs the same sun-shadow options as the engine

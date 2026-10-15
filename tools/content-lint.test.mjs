@@ -111,8 +111,8 @@ console.log('content-lint.test R17: ok');
   const allow = JSON.parse(fs.readFileSync(path.join(path.dirname(url.fileURLToPath(import.meta.url)), 'content-lint-r19-allow.json'), 'utf8')).allow;
   assert.ok(allow.length <= R19_ALLOW_MAX, 'R19 allow-list grew: ' + allow.length + ' > ' + R19_ALLOW_MAX);
   const long = 'x'.repeat(30) + ' ' + 'y'.repeat(30);
-  for (const [text, isLine, check] of [['NEEDS WRITER: fill in', false, 'placeholder'], ['Talk to sq.burl.blue now', false, 'rawid'], ['Take the old_key home', false, 'rawid'], ['Open the gateKey door', false, 'rawid'], [long, true, 'long'], ['Press Esc to close', false, 'esc']]) {
-    const c = clean(); c.questTexts = [{ where: 'fx', text, line: isLine }];
+  for (const [text, isLine, check] of [['NEEDS WRITER: fill in', false, 'placeholder'], ['Talk to sq.burl.blue now', false, 'rawid'], ['Take the old_key home', false, 'rawid'], ['Open the gateKey door', false, 'rawid'], [long, true, 'long'], ['x'.repeat(19) + ' ' + 'y'.repeat(19), 'objective', 'objective'], ['Press Esc to close', false, 'esc']]) {
+    const c = clean(); c.questTexts = [{ where: 'fx', text, line: isLine === true, objective: isLine === 'objective' }];
     const f = run(c); assert.ok(f.length === 1 && f[0].rule === 'R19' && f[0].msg.startsWith(check), 'R19 ' + check + ': ' + f.map(line_ => line(line_)).join('|'));
   }
   { const c = clean(); c.questTexts = [{ where: 'ok', text: 'Take the key to Burl. He waits by the well.', line: true }]; assert.deepEqual(run(c), [], 'R19 clean text'); }

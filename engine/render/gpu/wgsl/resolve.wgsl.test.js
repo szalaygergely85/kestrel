@@ -5,6 +5,7 @@ import { RESOLVE_WGSL, RESOLVE_BLOCK, RESOLVE_TEXTURES, RESOLVE_TARGETS } from '
 import { WGSL_MODULES } from './index.js';
 import { compileFn, makeTex, textureLoad, shims } from './wgslProbe.js';
 import { MAX_SUB } from './resolve.wgsl.js';
+import { resolveCellJS } from '../../resolveBand.js';
 
 // string rules (38.5)
 assert.ok(WGSL_MODULES.some((m) => m.name === 'resolve' && m.code === RESOLVE_WGSL), 'registered');
@@ -53,7 +54,7 @@ function oracle(n, subs, mask) {
 }
 
 const fsMain = (tex) => compileFn(RESOLVE_WGSL, 'fs_main', { textureLoad, ...tex, MAX_SUB, ...shims },
-  'const MAX_SUB_ = 16;');
+  'const MAX_SUB_ = 16;', ['farPick', 'finish', 'rg4i', 'rg4j', 'bayer4', 'bandThreshold']);
 let seed = 1234;
 const rand = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 0x100000000; };
 const f2u = (() => { const f = new Float32Array(1), u = new Uint32Array(f.buffer); return (x) => { f[0] = x; return u[0]; }; })();
@@ -74,7 +75,7 @@ for (let round = 0; round < 80; round++) for (let n = 1; n <= 4; n++) {
     sgi.push([s.x, s.y, s.z, s.w]); sga.push(s.ga); sdp.push([s.d, 0, 0, 0]);
   }
   for (let i = 0; i < cols * rows; i++) mask.push([rand() < 0.5 ? 1 : 0, 0, 0, 0]);
-  const run = fsMain({ uSGI: makeTex(sw, sh, sgi), uSGA: makeTex(sw, sh, sga), uSDepth: makeTex(sw, sh, sdp), uMask: makeTex(cols, rows, mask), u: { n } });
+  const run = fsMain({ uSGI: makeTex(sw, sh, sgi), uSGA: makeTex(sw, sh, sga), uSDepth: makeTex(sw, sh, sdp), uMask: makeTex(cols, rows, mask), u: { n, bandM: 0 } });
   for (let cy = 0; cy < rows; cy++) for (let cx = 0; cx < cols; cx++) {
     const subs = [];
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) subs.push(sampleAt[(cy * n + j) * sw + cx * n + i]);
@@ -91,10 +92,49 @@ for (let round = 0; round < 80; round++) for (let n = 1; n <= 4; n++) {
 }
 // n = 1 is a straight copy (US-030a parity): cov = clamp(8/1 - 1) = 7
 {
-  const run = fsMain({ uSGI: makeTex(1, 1, [[5, (3 | (2 << 8) | (9 << 16)) >>> 0, 77, 88]]), uSGA: makeTex(1, 1, [[1, 2, 3, 4]]), uSDepth: makeTex(1, 1, [[f2u(2.5), 0, 0, 0]]), uMask: makeTex(1, 1, [[1, 0, 0, 0]]), u: { n: 1 } });
+  const run = fsMain({ uSGI: makeTex(1, 1, [[5, (3 | (2 << 8) | (9 << 16)) >>> 0, 77, 88]]), uSGA: makeTex(1, 1, [[1, 2, 3, 4]]), uSDepth: makeTex(1, 1, [[f2u(2.5), 0, 0, 0]]), uMask: makeTex(1, 1, [[1, 0, 0, 0]]), u: { n: 1, bandM: 40 } }); // bandM is ignored below n = 4
   const o = run({ x: 0.5, y: 0.5 });
   assert.deepEqual([o.gi.x, o.gi.y >>> 0, o.gi.z, o.gi.w], [5, (3 | (2 << 8) | (1 << 12) | (7 << 13) | (9 << 16)) >>> 0, 77, 88]);
   assert.deepEqual([o.ga.x, o.ga.y, o.ga.z, o.ga.w], [1, 2, 3, 4]);
   assert.equal(o.depth.x, f2u(2.5));
 }
+// RTX-RAYS-BAND-01 (38.79): n = 4 with bandM 0 / 40 / 5, WGSL (probe) == JS twin resolveCellJS, exact (GI/GA/DEPTH words).
+assert.equal(RESOLVE_BLOCK.field('bandM').word, 1);
+let bandCells = 0, farCells = 0;
+{
+  const cols = 8, rows = 6, n = 4, sw = cols * n, sh = rows * n;
+  const out = { idx: 0, cov: 0, far: false };
+  for (const bandM of [0, 40, 5]) for (let round = 0; round < 24; round++) {
+    const sgi = [], sga = [], sdp = [], mask = [], at = [];
+    const lowDepth = round % 3 === 0; // some rounds are all-near so the 16-sample path is exercised under bandM > 0
+    for (let i = 0; i < sw * sh; i++) {
+      const kind = [0, 1, 2, 4, 7][Math.floor(rand() * 5)], pid = Math.floor(rand() * 2), mat = Math.floor(rand() * 2), face = Math.floor(rand() * 6);
+      const y = (kind | (face << 8) | (mat << 16)) >>> 0;
+      const d = Math.fround(rand() < 0.2 ? 30 : lowDepth ? 1 + rand() * 4 : 1 + rand() * 90);
+      const smp = { x: kind ? pid : 0, y, z: Math.floor(rand() * 1e9), w: Math.floor(rand() * 1e6), d: f2u(d), ga: [f2u(rand()), f2u(rand()), f2u(rand() * 10), f2u(rand())], df: d };
+      at.push(smp); sgi.push([smp.x, smp.y, smp.z, smp.w]); sga.push(smp.ga); sdp.push([smp.d, 0, 0, 0]);
+    }
+    for (let i = 0; i < cols * rows; i++) mask.push([rand() < 0.5 ? 1 : 0, 0, 0, 0]);
+    const run = fsMain({ uSGI: makeTex(sw, sh, sgi), uSGA: makeTex(sw, sh, sga), uSDepth: makeTex(sw, sh, sdp), uMask: makeTex(cols, rows, mask), u: { n, bandM } });
+    const sub = { pid: new Int32Array(16), kind: new Uint32Array(16), mat: new Uint32Array(16), depth: new Float32Array(16) };
+    for (let cy = 0; cy < rows; cy++) for (let cx = 0; cx < cols; cx++) {
+      for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) {
+        const smp = at[(cy * 4 + j) * sw + cx * 4 + i], k = j * 4 + i;
+        sub.pid[k] = smp.x; sub.kind[k] = smp.y & 0xff; sub.mat[k] = (smp.y >>> 16) & 0xffff; sub.depth[k] = smp.df;
+      }
+      resolveCellJS(sub, n, bandM, cx, cy, out);
+      const w = at[(cy * 4 + (out.idx >> 2)) * sw + cx * 4 + (out.idx & 3)], m = mask[cy * cols + cx][0], kind = w.y & 0xff;
+      const e = kind === 0 ? { gi: [0, (m << 12) >>> 0, 0, 0], ga: [0, 0, 0, 0], depth: 0x7f800000 }
+        : { gi: [w.x, (kind | (((w.y >>> 8) & 0xf) << 8) | (m << 12) | (out.cov << 13) | (((w.y >>> 16) & 0xffff) << 16)) >>> 0, w.z, w.w], ga: w.ga, depth: w.d };
+      const o = run({ x: cx + 0.5, y: cy + 0.5 });
+      const tag = `bandM=${bandM} cell ${cx},${cy} round ${round}`;
+      assert.deepEqual([o.gi.x, o.gi.y, o.gi.z, o.gi.w].map((v) => v >>> 0), e.gi.map((v) => v >>> 0), 'GI ' + tag);
+      assert.deepEqual([o.ga.x, o.ga.y, o.ga.z, o.ga.w].map((v) => v >>> 0), e.ga.map((v) => v >>> 0), 'GA ' + tag);
+      assert.equal(o.depth.x >>> 0, e.depth >>> 0, 'DEPTH ' + tag);
+      bandCells++; if (out.far) farCells++;
+    }
+  }
+}
+assert.ok(bandCells >= 3000 && farCells > 100, `band probe coverage ${bandCells} cells, ${farCells} far`);
+console.log(`resolve.wgsl.test.js: band probe ${bandCells} cells (${farCells} far path) WGSL == JS twin.`);
 console.log(`resolve.wgsl.test.js: string/layout rules and ${probes} JS-evaluated cells vs the vote-rule oracle passed.`);

@@ -40,6 +40,7 @@ export const shims = {
   floor: (v) => (typeof v === 'object' ? { x: Math.floor(v.x), y: Math.floor(v.y) } : Math.floor(v)),
   clamp: (x, lo, hi) => Math.min(hi, Math.max(lo, x)),
   select: (f, t, c) => (c ? t : f),
+  vec4i: (x, y, z, w) => ({ x, y, z, w }),
   vec2i: (a, b) => (b === undefined ? { x: a.x, y: a.y } : { x: a, y: b }),
   vec4u: (a, b, c, d) => (b === undefined ? { x: a, y: a, z: a, w: a } : { x: a, y: b, z: c, w: d }),
   vec3f: (x, y, z) => (y === undefined ? { x, y: x, z: x } : { x, y, z }),
@@ -50,9 +51,12 @@ export const shims = {
   giMat: (y) => (y >>> 16) & 0xffff,
 };
 
-/** Build a JS function from the named WGSL fn of `src`; `extra` = additional bindings (textureLoad, u, ...). */
-export function compileFn(src, name, extra, prelude = '') {
+/** Build a JS function from the named WGSL fn of `src`; `extra` = additional bindings (textureLoad, u, ...); `helpers` = names of other fns it calls. */
+export function compileFn(src, name, extra, prelude = '', helpers = []) {
   const { params, body } = fnBody(src, name);
+  // RTX-RAYS-BAND-01: helper fns of the same module are compiled as hoisted JS function declarations in the same closure
+  for (const h of helpers) { const hf = fnBody(src, h); prelude += `
+function ${h}(${hf.params.join(',')}){${toJs(hf.body)}}`; }
   const all = { ...shims, ...extra };
   const names = Object.keys(all);
   const f = new Function(...names, `${prelude}\nreturn function(${params.join(',')}){${toJs(body)}};`);

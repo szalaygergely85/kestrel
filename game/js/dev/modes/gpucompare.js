@@ -1372,9 +1372,11 @@ async function runGpuCompareSceneMode(ctx) {
 
   let infoRows = null;
   // WG-3a: with `?rays=2` the WebGPU pipeline also gets the INFO n=2 geometry rows (resolved cell-res set, kind%/holes vs the JS twin, no cells compare yet).
-  if (rayParam === 2) {
+  // RTX-RAYS-BAND-01 (38.79): `?rays=4&raysFarM=40` adds the same INFO rows for the banded n=4 resolve (raysFarM omitted = band off).
+  const infoRays = rayParam === 2 || rayParam === 4 ? rayParam : 0, infoBandM = infoRays === 4 ? Math.max(0, Number(params.get('raysFarM')) || 0) : 0;
+  if (infoRays) {
     const base2 = wg; // same terrain/voxel/view-model/instance inputs as the rays-1 pipeline
-    const pipeline2 = new base2.constructor(rt, { rays: 2, terrainEnabled: base2.terrainEnabled, shadows: base2.shadowOpts, gpuCull: base2.gpuCull });
+    const pipeline2 = new base2.constructor(rt, { rays: infoRays, resolveBandM: infoBandM, terrainEnabled: base2.terrainEnabled, shadows: base2.shadowOpts, gpuCull: base2.gpuCull });
     if (pipeline2.ready) {
       pipeline2.bind(matTable, assets.palette);
       pipeline2.setSource('scene');
@@ -1416,7 +1418,7 @@ async function runGpuCompareSceneMode(ctx) {
         const cmpCells2 = { glyphMatchPct: NaN }; // WebGPU: cells are judged by the main rows
         const cmpGeom2 = compareGeometry(gbuf, depthBuffer.depth, GI2, GA2, Depth2, cols, rows);
         infoRows.push({ pose: poseName, cmpCells: cmpCells2, cmpGeom: cmpGeom2, kindOk: cmpGeom2.kindMatchPct >= 99.5 });
-        console.log(`[gpucompare] INFO n=2 ${poseName}: kind=${cmpGeom2.kindMatchPct.toFixed(2)}%(>=99.5% required) glyph=${cmpCells2.glyphMatchPct.toFixed(2)}%(reported only) holes=${cmpGeom2.holes}`);
+        console.log(`[gpucompare] INFO n=${infoRays}${infoBandM ? `/band${infoBandM}` : ''} ${poseName}: kind=${cmpGeom2.kindMatchPct.toFixed(2)}%(>=99.5% required) glyph=${cmpCells2.glyphMatchPct.toFixed(2)}%(reported only) holes=${cmpGeom2.holes}`);
       }
       // 38.8a 26b: the constructor re-hooked rt.setCellPass; release pipeline2's GPU resources and give the hook back to the rays-1 pipeline
       pipeline2.dispose();
@@ -1445,7 +1447,7 @@ async function runGpuCompareSceneMode(ctx) {
   console.log(`[gpucompare] ${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`);
 
   if (infoRows) {
-    text += `\n\n--- INFO ONLY: n=2 coverage-vote resolve (?rays=2, does not affect ALL PASS/FAILURES above) ---\n`;
+    text += `\n\n--- INFO ONLY: n=${infoRays}${infoBandM ? ` band ${infoBandM} m` : ''} coverage-vote resolve (?rays=${infoRays}, does not affect ALL PASS/FAILURES above) ---\n`;
     for (const r of infoRows) {
       text += `${r.kindOk ? 'OK' : 'FAIL'}  ${r.pose}\n` +
         `  geometry: kind ${r.cmpGeom.kindMatchPct.toFixed(2)}% (must stay >=99.5%)  holes ${r.cmpGeom.holes}\n` +
