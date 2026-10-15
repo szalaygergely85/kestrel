@@ -5,7 +5,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import v8 from 'node:v8';
-import { beginFrame, stabilize, createStableState, createStableBuffers, CHANNEL_SNAP, LEVEL_ANIM, LEVEL_NONE, UV_LIM_TEXELS, DEFAULT_DETAIL } from './temporalStable.js';
+import { beginFrame, stabilize, createStableState, createStableBuffers, CHANNEL_SNAP, LEVEL_ANIM, LEVEL_NONE, UV_LIM_TEXELS, DEFAULT_DETAIL, uvDriftLimit } from './temporalStable.js';
 import { KIND_NONE, KIND_WALL, KIND_MODEL } from './GBuffer.js';
 import { makeOk } from '../test/assert.js';
 
@@ -166,7 +166,7 @@ function run(st, cam, inpFn, hist, flags) {
   ok('UV limit constant is 1.0/detail', UV_LIM_TEXELS === 1 && LIM === 0.0625);
   // setup: static camera, history = frame A exactly; `mut(inp, hist)` edits cells, then one stabilize
   const once = (mut, flags) => {
-    const st = createStableState();
+    const st = createStableState(); st.footK = 0;
     beginFrame(st, cam0, GRID);
     const h = colHist(wallInput(st));
     beginFrame(st, cam0, GRID, flags);
@@ -211,7 +211,7 @@ function run(st, cam, inpFn, hist, flags) {
   ok('hsrc = history cell on a reached lookup, -1 before', o.hsrc[at(2, 3)] === at(2, 3) && r2.out.hsrc[at(2, 6)] === -1);
 
   // slow-moving surface: u advances 0.3*lim per frame; the anchor stays on the first u, so the hold ends after 3 frames
-  const st = createStableState();
+  const st = createStableState(); st.footK = 0;
   beginFrame(st, cam0, GRID);
   const a0 = wallInput(st);
   a0.level.fill(LEVEL_NONE);
@@ -313,3 +313,11 @@ function run(st, cam, inpFn, hist, flags) {
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');
+
+// OB-193: the drift limit grows with the cell footprint (distant walls keep their glyph), ortho keeps the texel limit.
+{
+  const near = uvDriftLimit(1, 0.5, 0.3, 400, 150, 16, false), far = uvDriftLimit(8, 0.5, 0.3, 400, 150, 16, false);
+  ok('OB-193 near wall keeps the texel limit', near === 1 / 16, String(near));
+  ok('OB-193 far wall limit = cell footprint', Math.abs(far - 8 * 2 * 0.5 / 400) < 1e-12 && far > 1 / 16, String(far));
+  ok('OB-193 ortho keeps the texel limit', uvDriftLimit(8, 0.5, 0.3, 400, 150, 16, true) === 1 / 16);
+}
