@@ -1627,9 +1627,10 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       }
       const gridNav = world.terrainGrid && world.nav ? { grid: world.nav, astar: createAStar(world.nav) } : null;
       let regionalList = null; // BEAST-06a: the spawned herd list feeds the spawn director
-      bootRegionalBeasts(world, window.ASSETS?.levels?.world_geo, params, isCaptureOrBench, (w, g, sd) => (regionalList = spawnRegionalBeasts(w, g, sd))); // WM-12: regional herds, after World.load, before the sim
+      bootRegionalBeasts(world, window.ASSETS?.levels?.world_geo, params, isCaptureOrBench, (w, g, sd) => (regionalList = spawnRegionalBeasts(w, g, sd, undefined, loadSettings().difficulty))); // BH2-G1: group size/elites follow the difficulty at world load (a Settings change applies to group size on the NEXT world load; elites/tactics switch live)
+      // // WM-12: regional herds, after World.load, before the sim
       if (goblinWire && world.terrainGrid && gridEnabled(params)) { // WMP-02: far goblin camps, last in slot order (authored, regional, far camps)
-        goblinWire.addFarCamps(planWorldLife(world, window.ASSETS?.levels?.world_geo, 12).camps); // WMP-09: authored-only avoid, same defs on Continue
+        goblinWire.addFarCamps(planWorldLife(world, window.ASSETS?.levels?.world_geo, 12, loadSettings().difficulty).camps); // WMP-09: authored-only avoid, same defs on Continue
       }
       if (aiDevRun) addAiReserve(world, 12, [0, 0]); // ED-AI-06: parked test creatures (never in normal play)
       beasts = createBeastSim(world, { tileNav: !!gridNav, nav: (lifeNav = gridNav || (worldDef.nav && buildBeastNav(world, worldDef.nav))), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events, band: worldBand, fauna: wild ? wild.fauna : null, playerMaxHp: VITALS_DEFAULTS.maxHp, hpPerDamage: VITALS_DEFAULTS.beastDamageScale, difficulty: loadSettings().difficulty /* OB-150: 'easy'|'normal'|'hard'; Settings > Difficulty (DIFF-MENU), read on each world load; live change via beasts.setDifficulty */, waterNav: gridNav ? (() => { try { return buildWaterNav(world, gridNav.grid); } catch (e) { return null; } })() : null }); // LIFE-07: predators hunt the ambient fauna
@@ -1689,6 +1690,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       if (vitals) vitals.dispose(); // Q9 item 1a: drop the old world's `combat:hit` listener before a new one is added below
       hurtFx.reset();
       vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting, block: shieldSim, // EQ-07: hooks.block = the shield sim
+        dmgMul: () => (beasts && beasts.difficulty ? beasts.difficulty.playerDmg : 1), // BH2-G1: sim.difficulty is the resolved row (kept current by applyDifficulty/setDifficulty)
         defence: () => { const c = playerHandle && playerHandle.data.components; return c && c.equipment && itemDefs ? defenceOf(c.equipment, itemDefs) : 0; }, // EQ-02
         defenceBonus: () => { const c = playerHandle && playerHandle.data.components; return c && c.equipment && itemDefs ? nightBonus(c.equipment, itemDefs, clockHour(world.state, clockCfg)) : 0; }, // QL-19: night cloak +10 %
         respawnPose: () => { hzb.invalidate('respawn'); const rp = gameHooks.respawn(); ensureBand(world, rp); return rp; }, // WS2-05: band for the respawn pose // seam onRespawn(): first non-null {x,y,z,yawDeg} wins

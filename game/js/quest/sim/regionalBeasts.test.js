@@ -31,6 +31,18 @@ const wA = mkWorld();
 const avoid = []; wA.forEachEntity((e) => { const b = e.components?.brain; if (b?.kind === 'beast') avoid.push([...b.home]); });
 const list1 = generateRegionalBeasts({ geo: G, terrain: wA.terrain, seed: 12, avoid, safe: safeSpots(wA) });
 const list2 = generateRegionalBeasts({ geo: G, terrain: wA.terrain, seed: 12, avoid, safe: safeSpots(wA) });
+{ // BH2-G1 groupDelta: Normal == default; Easy fewer, Hard more members; min 1, deterministic, within the beast pool
+  const gen = (d) => generateRegionalBeasts({ geo: G, terrain: wA.terrain, seed: 12, avoid, safe: safeSpots(wA), difficulty: d });
+  const n = gen('normal'), e = gen('easy'), h = gen('hard');
+  ok('groupDelta: Normal output == no difficulty (same ids/positions)', JSON.stringify(n) === JSON.stringify(list1));
+  ok(`groupDelta: Easy < Normal < Hard herd size (${e.length}/${n.length}/${h.length})`, e.length < n.length && n.length < h.length);
+  ok('groupDelta: Hard herd fits the beast pool', h.length < MAX_BEASTS);
+  ok('groupDelta: deterministic', JSON.stringify(gen('hard')) === JSON.stringify(h));
+  const sizes = {}; for (const b of e) { const k = b.region + '/' + b.group + '/' + b.species; sizes[k] = (sizes[k] || 0) + 1; }
+  const centres = (l) => { const m = {}; for (const b of l) { if (/.road/.test(b.id)) continue; /* roadside groups legitimately follow cover by the actual members */ const k = b.region + '/' + b.group + '/' + b.species; if (!m[k]) m[k] = b.x + ',' + b.y; } return JSON.stringify(m); };
+  ok('groupDelta: every rule group keeps the same home on Easy/Normal/Hard (no shift)', centres(e) === centres(n) && centres(h) === centres(n));
+  ok('groupDelta: every Easy group has >= 1 member', Object.values(sizes).every((v) => v >= 1));
+}
 { // BEAST-09a follow-up: water rules have their own group counter -> land groups identical with and without a water probe
   const land = (l) => JSON.stringify(l.filter((b) => b.species !== 'croc').map((b) => [b.id, b.x, b.y, b.group]));
   const withW = generateRegionalBeasts({ geo: G, terrain: wA.terrain, seed: 12, avoid, safe: safeSpots(wA), water: { deep: () => true } });

@@ -12,7 +12,8 @@ import { createAStar, findPath, findPathCells, smoothPath, createSteer, PHYSICS,
 import { BEAST_DEFAULTS, toSteps } from './beastConfig.js';
 import { tierMult } from './band.js';
 import { levelScale, LEVEL_TABLE, kindFactors } from './beastLevels.js';
-import { resolveDifficulty } from './difficulty.js'; // DIFF-MENU
+import { resolveDifficulty, DIFFICULTY, WINDUP_FLOOR_SEC } from './difficulty.js'; // DIFF-MENU
+import { hashU } from '../../life/schedule.js';
 import { canSee } from './sight.js';
 import { BEAR_TUNING, BEAR_MODEL, bearOverrides, bearPicksBite, isBearEntity } from './bearBrain.js'; // BEAR-01, BEAR-BITE
 import { WOLF_TUNING, wolfOverrides, isWolfEntity, circleTarget, awayTarget } from './wolfBrain.js'; // WOLF-01
@@ -28,6 +29,7 @@ import { perceive, leashState, returnTarget, LEASH_HOME, LEASH_ENGAGE, LEASH_RET
 
 export const POOL = 128; // BEAST-POOL-b: live (bound) slots; records beyond it sleep unbound
 export const MAX_RECORDS = 1024; // BEAST-POOL-a (37.16.5): the public slot IS the record index 0..MAX_RECORDS-1 (stable for the run); loot.js imports this
+export const ELITE_HP_MUL = 1.5; // BH2-G1 (spec): an elite beast has x1.5 HP
 export const MAX_BEASTS = MAX_RECORDS; // legacy alias of MAX_RECORDS (tests / tools still import it)
 const PATH_SLOTS = 64; // waypoints kept per beast path (truncated, final = the exact goal - see `storePath`)
 
@@ -186,6 +188,8 @@ export function createBeastSim(world, opts) {
     tier: new Uint8Array(MAX_RECORDS),
     state: new Uint8Array(MAX_RECORDS),
     timer: new Int32Array(MAX_RECORDS),
+    wuTot: new Int32Array(MAX_RECORDS), // BH2-G1: the difficulty-scaled windup length of the current windup (for the scrape-kick clock)
+    dm: diffMults(opts && opts.difficulty), // BH2-G1: live difficulty ratios (windup / noticeR / noticeSec / leash), read at use so a live change applies to existing beasts
     unseen: new Int32Array(MAX_RECORDS), // also reused as the charge wall-slow streak counter (charge never needs "unseen")
     repathT: new Int32Array(MAX_RECORDS),
     homeX: new Float64Array(MAX_RECORDS),
@@ -226,6 +230,7 @@ export function createBeastSim(world, opts) {
     cause: new Uint8Array(MAX_RECORDS),       // US-079b: 0 sword, 1 fire (indexes CAUSE_STR)
     knockV: new Float64Array(MAX_RECORDS),    // US-079b: per-slot stagger clamp speed (replaces shared cfg.staggerKnock)
     wolf: new Uint8Array(MAX_RECORDS),        // WOLF-01: brain.species==='wolf' (per-slot cfg below, pack token, circle, flee)
+    elite: new Uint8Array(MAX_RECORDS),       // BH2-G1: 1 = rolled elite at create (difficulty.eliteChance); name-tag hook, not hashed
     wat: new Uint8Array(MAX_RECORDS),         // BEAST-08b: 1 = water slot, run by brains/waterBrain.js (live() skips it)
     wb: null,
     kindIdx: new Uint8Array(MAX_RECORDS),     // BEAST-03a: index into KIND_NAMES (beastKinds.js); data only so far
@@ -333,12 +338,15 @@ export function createBeastSim(world, opts) {
     const m = tierMult(tier);
     // OB-150: hp/damage scale with the zone LEVEL (band 1-10, placed tier override -> representative level) and difficulty (beastLevels.js)
     const lv = (br && br.tier >= 1 && br.tier <= 3) ? LEVEL_TABLE.tierLevel[br.tier | 0] : (band ? band.bandAt(e.transform.x, e.transform.y) : 1);
+    // BH2-G1 eliteChance: no elite concept existed, so the simplest one: a seeded per-slot roll (Normal 0 = never) -> x1.5 HP (ELITE_HP_MUL); sim.elite[i] is the name-tag hook.
+    const ec = resolveDifficulty(opts.difficulty).eliteChance;
+    sim.elite[i] = (ec > 0 && !sim.wat[i] && (hashU(((opts && opts.seed) || 0) >>> 0, i, 0xE11E) % 10000) < ec * 10000) ? 1 : 0;
     const ls = levelScale(lv, opts.difficulty);
     // KINDS-F (OB-153): kinds.json hpF/dmgF (x boar, missing = 1) multiply the level result. Wolf/bear slots already carry their own
     // tuning (WOLF_TUNING/BEAR_TUNING hpMul, swipe hearts) so they are skipped here to avoid double counting.
     const kf = kindFactors(e, sim.wolf[i] || sim.bear[i]);
     sim.tier[i] = tier; sim.spdMul[i] = m.speed; sim._hitPayload[i].damage = (sim.bear[i] ? BEAR_TUNING.swipeHearts : 1) * ls.damage * kf.dmg; // BEAR-01: swipe base is 2 hearts
-    const maxHp = Math.max(1, Math.round(sim.scfg[i].hp * ls.hp * kf.hp));
+    const maxHp = Math.max(1, Math.round(sim.scfg[i].hp * ls.hp * kf.hp * (sim.elite[i] ? ELITE_HP_MUL : 1)));
     e.components.health = { hp: maxHp, max: maxHp, invuln: 0 };
     steer.addAgent(e.transform.x, e.transform.y, cfg.radius, 0, DEFAULT_ACCEL);
   }
@@ -469,9 +477,14 @@ export function createBeastSim(world, opts) {
   /** GOB-01b: on -> slot goes to STATE_GONE (steer agent dropped, hidden, skipped); off -> back alive at home, hp max. */
   // DIFF-MENU (D-083): live difficulty change from the Settings screen. Rescales live beasts' damage by the dmg ratio only;
   // hp / spawn tuning apply to the next created beast (opts.difficulty is read at create).
+  if (opts && opts.difficulty) sim.tactics.setDifficulty(resolveDifficulty(opts.difficulty).name); // BH2-G1: tokM + flank follow the create-time difficulty too
+  sim.difficulty = resolveDifficulty(opts && opts.difficulty); // resolved row, read by the game for playerDmg (kept current by setDifficulty)
   sim.setDifficulty = function setDifficulty(name) {
     const was = resolveDifficulty(opts.difficulty).dmg, now = resolveDifficulty(name);
     opts.difficulty = now.name;
+    // BH2-G1: windup/noticeR/noticeSec/leash are read live from sim.dm; tokM (attack tokens) follows; hp applies to the next created beast.
+    const dm = diffMults(now.name); sim.dm.windup = dm.windup; sim.dm.noticeR = dm.noticeR; sim.dm.noticeSec = dm.noticeSec; sim.dm.leash = dm.leash;
+    sim.difficulty = now; if (sim.tactics.setDifficulty) sim.tactics.setDifficulty(now.name);
     const r = was > 0 ? now.dmg / was : 1;
     if (r !== 1) for (let i = 0; i < sim._hitPayload.length; i++) if (sim._hitPayload[i]) sim._hitPayload[i].damage *= r;
     return now.name;
@@ -857,7 +870,9 @@ function noticedOf(sim, i, px, py) {
   a.x = steer.x[i]; a.y = steer.y[i]; a.fx = sim.fx[i]; a.fy = sim.fy[i];
   t.x = px; t.y = py; t.noise = sim.noise;
   const calm = sim.wary[i] === 1 && sim.provoked[i] === 0; // DRESS-01b: unprovoked ambient boar = short notice only
-  a.range = calm ? sim.cfg.calmNoticeR : sim.scfg[i].noticeR; /* BEAR-01: per-slot */ a.hearR = calm ? sim.cfg.calmNearR : sim.pNear[i]; a.coneCos = sim.pCone[i];
+  a.range = calm ? sim.cfg.calmNoticeR : sim.scfg[i].noticeR * sim.dm.noticeR; // BH2-G1: difficulty scales sight range (BEAR-01: per-slot)
+  a.hearR = calm ? sim.cfg.calmNearR : sim.pNear[i];
+  a.coneCos = sim.pCone[i];
   sim._slot = i;
   const o = perceive(a, t, sim._losFn, sim._po);
   const ag = sim.pAggro[i]; // BEAST-03b: aggro mode (0 hostile = today's behaviour)
@@ -877,7 +892,7 @@ function leashOne(sim, i, px, py) {
   ag.x = sim.steer.x[i]; ag.y = sim.steer.y[i];
   def.homeX = sim.homeX[i]; def.homeY = sim.homeY[i];
   def.aggroR = sim.scfg[i].loseR / sim.cfg.loseScale; // BEAR-01: per-slot (identical for boars/wolves)
-  def.leashR = sim.wary[i] === 1 && sim.provoked[i] === 0 ? sim.cfg.calmLeashR : sim.scfg[i].leashR;
+  def.leashR = sim.wary[i] === 1 && sim.provoked[i] === 0 ? sim.cfg.calmLeashR : sim.scfg[i].leashR * sim.dm.leash; // BH2-G1
   const t = sim._lt; t.x = px; t.y = py;
   leashState(ag, def, t, SIM_STEP);
 }
@@ -1054,7 +1069,7 @@ function windupStep(sim, i, px, py) {
   void px; void py;
   sim.timer[i]--;
   // US-079c: kick a dust burst at the forefeet at 150/300/450 ms into the windup (boarFx.scrape.kickSteps).
-  const elapsed = sim.ssteps[i].windup - sim.timer[i];
+  const elapsed = (sim.wuTot[i] || sim.ssteps[i].windup) - sim.timer[i];
   if (!sim.goblin[i] && (!sim.wolf[i] && elapsed === SCRAPE_KICKS[0] || elapsed === SCRAPE_KICKS[1] || elapsed === SCRAPE_KICKS[2])) emitScrape(sim, i);
   if (sim.timer[i] <= 0) {
     if (sim.ranged[i]) { emitThrow(sim, i, px, py); enterRecover(sim, i, false); } // GOB-02: release, then the reload
@@ -1123,9 +1138,15 @@ function returnStep(sim, i, px, py) {
 
 // ---- state entry ------------------------------------------------------------------------------------------------
 
+/** BH2-G1: difficulty.js row -> sim ratios relative to Normal (noticeSec is absolute in the table; Normal = 0.6 s = ratio 1). */
+function diffMults(name) {
+  const d = resolveDifficulty(name), n = DIFFICULTY.normal;
+  return { windup: d.windup, noticeR: d.noticeR, noticeSec: d.noticeSec / n.noticeSec, leash: d.leash };
+}
+
 function enterNotice(sim, i) {
   sim.state[i] = STATE_NOTICE;
-  sim.timer[i] = sim.ssteps[i].notice;
+  sim.timer[i] = Math.max(1, Math.round(sim.ssteps[i].notice * sim.dm.noticeSec)); // BH2-G1
 }
 
 function enterChase(sim, i) {
@@ -1142,7 +1163,9 @@ function enterWindup(sim, i) {
   if (sim.bear[i]) sim.bite.n[i]++; // BEAR-BITE: the swipe (windup+charge) also consumes one bite-vs-swipe decision
   sim.state[i] = STATE_WINDUP;
   sim.waiting[i] = 0; // US-079c: it is the charger now, not a waiter
-  sim.timer[i] = sim.ssteps[i].windup;
+  const wu = sim.ssteps[i].windup; // BH2-G1: windup ratio (Easy longer / Hard shorter), floored at WINDUP_FLOOR_SEC
+  sim.wuTot[i] = sim.dm.windup === 1 ? wu : Math.max(Math.min(wu, Math.round(WINDUP_FLOOR_SEC / SIM_STEP)), Math.round(wu * sim.dm.windup));
+  sim.timer[i] = sim.wuTot[i];
 }
 
 /** OB-150: a boar/wolf charge is a straight line locked at the end of the wind-up. A player walking straight away (3.5 m/s) used

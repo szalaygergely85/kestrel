@@ -257,7 +257,7 @@ export function createLogic(program, { maxPerStep = 32, ring = 64, pending = 32,
 
   /** h = engine/core/hash.js hasher. Mixes tick, fire counts, event queue and delayed-action table. */
   function hashInto(h) {
-    h.u32(count); h.u32(pCount);
+    h.u32(count); h.u32(pCount); h.u32(resume); // BH2-E3: resume is persisted by save(), so it is hashed
     for (let i = 0; i < nb; i++) h.u32(fired[i]);
     for (let i = 0; i < count; i++) { const t = (head + i) % ring; h.u32(evK[t]); h.u32(evA[t]); }
     for (let i = 0; i < pCount; i++) { h.u32(pB[i]); h.u32(pA[i]); h.u32(pL[i]); }
