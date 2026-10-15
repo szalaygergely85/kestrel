@@ -230,6 +230,32 @@ const drive = (sim, px, py, times = 30) => { for (let m = 0; m < times; m++) sim
   console.log(`  step cost: 128 records ${c128.toFixed(3)} ms, 900 records (pool 128) ${c900.toFixed(3)} ms`);
   ok('900 records / pool 128: step cost <= 2.5x the 128-beast cost and < 0.6 ms', c900 <= c128 * 2.5 + 0.05 && c900 < 0.6, `${c128.toFixed(3)} vs ${c900.toFixed(3)}`);
 }
+{ // ARCH CHANGES 1: kill + off-tile in the same step keeps the slot: one died event, corpse reaches GONE
+  const ents = [beastEntity('k0', 1430, 1000), beastEntity('k1', 1432, 1000)];
+  const world = buildWorld(ents), nav = buildBeastNav(world, NAV_CFG), { events, died } = makeEvents();
+  const sim = createBeastSim(world, { nav, rng: createRng(3), events });
+  sim.tileMode = true;
+  sim.state[0] = STATE_DYING; sim.timer[0] = 3; sim.pendingDied[0] = 1; sim.homeX[0] = -5000; // killed, then its home leaves the tile
+  sim.updateTileDormancy(1430, 1000);
+  ok('kill + off-tile: dying record keeps its slot', bound(sim, 0) && sim.state[0] === STATE_DYING);
+  for (let t = 0; t < 6000 && sim.state[0] !== STATE_GONE; t++) sim.step(1430, 1000, 5);
+  for (let t = 0; t < 70; t++) sim.step(1430, 1000, 5);
+  ok('kill + off-tile: exactly one beast:died, corpse reaches GONE, slot released', died.length === 1 && sim.state[0] === STATE_GONE && !bound(sim, 0), `died ${died.length} st ${sim.state[0]}`);
+}
+{ // ARCH CHANGES 2: in-memory snapshot round trip restores bindings (300 records, pool 128) into a fresh sim
+  const mk = () => lineWorld(300, 0.5);
+  const a = mk();
+  for (let t = 0; t < 900; t++) a.step(1300 + t * 0.15, 1000, 5);
+  const snap = JSON.parse(JSON.stringify(a.save()));
+  const b = mk();
+  for (let t = 0; t < 400; t++) b.step(1400 + t * 0.05, 1000, 5); // different bindings first
+  b.load(snap);
+  const ha = [], hb = [];
+  const hash = (sim) => { let h = 2166136261 >>> 0; const mix = (v) => { h = Math.imul(h ^ (v | 0), 16777619) >>> 0; }; for (let i = 0; i < 300; i++) { mix(sim.pool.lv[i]); mix(sim.state[i]); mix(sim.steer.active[i]); mix(sim.dormant[i]); mix(Math.round(sim.steer.x[i] * 1000)); } mix(sim.pool.n); mix(sim.pool.freeN); return h; };
+  ok('snapshot 300 records: binding hash equal after load into a different sim', hash(a) === hash(b), `${hash(a)} ${hash(b)}`);
+  for (let t = 0; t < 120; t++) { a.step(1435, 1000, 5); b.step(1435, 1000, 5); }
+  ok('snapshot: sims stay in lockstep after load (hashes equal)', hash(a) === hash(b), `${hash(a)} ${hash(b)}`);
+}
 
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }

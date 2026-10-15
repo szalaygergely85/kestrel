@@ -662,6 +662,7 @@ function poolUpdate(sim, px, py) {
   for (let k = 0; k < P.n; k++) { // 1) unbind / release, stable compaction
     const i = rec[k], st = sim.state[i];
     if (sim.down[i] || st === STATE_GONE) { releaseRec(sim, i); continue; }
+    if (deadSt(st) || sim.pendingDied[i] === 1 || sim.despawnReq[i] === 1) { rec[w++] = i; continue; } // 37.16.5: dying/corpse/sink + pending death keep their slot until GONE (any reason)
     const hx = sim.homeX[i], hy = sim.homeY[i];
     let out = tile && (hx < x0 || hy < y0 || hx >= x1 || hy >= y1);
     if (!out && hasP && !protectedRec(sim, i)) {
@@ -1742,6 +1743,12 @@ function saveSim(sim) {
     pendingDied: slice(sim.pendingDied), despawnReq: slice(sim.despawnReq), cause: slice(sim.cause),
     path: Array.from(sim.path.subarray(0, Math.min(n * PATH_SLOTS * 2, sim.path.length))),
     hp,
+    pool: { // in-memory/dev snapshot only (the persistent save is slot-free): the pool-indexed path/steer data needs its bindings back
+      lv: slice(sim.pool.lv), lastX: slice(sim.pool.lastX), lastY: slice(sim.pool.lastY),
+      rec: Array.from(sim.pool.rec.subarray(0, sim.pool.n)), n: sim.pool.n,
+      free: Array.from(sim.pool.free.subarray(0, sim.pool.freeN)), freeN: sim.pool.freeN,
+      dormTile: slice(sim.dormTile), dormant: slice(sim.dormant),
+    },
     steer: {
       x: slice(sim.steer.x), y: slice(sim.steer.y), vx: slice(sim.steer.vx), vy: slice(sim.steer.vy),
       radius: slice(sim.steer.radius), mode: slice(sim.steer.mode), tx: slice(sim.steer.tx), ty: slice(sim.steer.ty),
@@ -1773,6 +1780,12 @@ function loadSim(sim, obj) {
     sim.entities[i].transform.y = sim.steer.y[i];
   }
   sim.path.set(obj.path);
+  if (obj.pool) {
+    const P = sim.pool, o = obj.pool;
+    for (let i = 0; i < n; i++) { P.lv[i] = o.lv[i]; P.lastX[i] = o.lastX[i]; P.lastY[i] = o.lastY[i]; sim.dormTile[i] = o.dormTile[i]; sim.dormant[i] = o.dormant[i]; }
+    P.n = o.n; for (let k = 0; k < o.n; k++) P.rec[k] = o.rec[k];
+    P.freeN = o.freeN; for (let k = 0; k < o.freeN; k++) P.free[k] = o.free[k];
+  }
   resyncLeash(sim);
 }
 
