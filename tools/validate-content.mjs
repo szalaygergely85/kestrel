@@ -67,6 +67,7 @@ addonChars.add('char.kit'); // OB-086: the default kit character is registered a
 // overworld_far's terrain RECIPE - still code, unaffected) already built.
 import { validateVoxelModel, loadContentPack, PROP_SCALE_MIN, PROP_SCALE_MAX, meshFromJSON, meshFromBin, validateMesh, validateUnderSite, validateLinks, validateLook, maskFromJSON, validateDialogue } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
 import { pathToFileURL, fileURLToPath } from 'node:url';
+import { normalizeQuestDef } from '../game/js/quest/sim/questFormat.js'; // UNDER-07: D-106 new-format quest files read as the legacy shape
 import { readFile } from 'node:fs/promises';
 import { validateQuestDefinition } from '../game/js/quest/sim/quest.js';
 import { createCrafting } from '../game/js/quest/sim/crafting.js';
@@ -1122,7 +1123,7 @@ export function loadQuestFiles(dir) {
       const path = `${d}/${entry.name}`;
       if (entry.isDirectory()) walk(path);
       else if (entry.name.endsWith('.quest.json')) {
-        try { quests.push({ path, def: JSON.parse(readFileSync(path, 'utf8')) }); }
+        try { quests.push({ path, def: normalizeQuestDef(JSON.parse(readFileSync(path, 'utf8'))) }); }
         catch (e) { errors.push(`${path}: JSON parse failed: ${e.message}`); }
       }
     }

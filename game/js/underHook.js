@@ -3,10 +3,13 @@
 import { stepFordCellar, ladderEnd, ladderPrompt, bindFordCellarFlags, syncFordCellarFlags, FORD_CELLAR } from './quest/under/fordCellar.js';
 import { cryptDoorAction, applyCryptDoor, cryptCleared, bindCryptFlags, syncCryptFlags, CRYPT } from './quest/under/crypt.js';
 import { countOf } from './quest/sim/inventory.js';
+import { underQuestFlags } from './quest/under/underQuestFlags.js';
+import { hooks as seam } from './gameHooks.js';
 
 /** @param {{getBeasts?: () => any, openedChestsOf?: () => string[], afterMove?: ()=>void, notify?: (t:string)=>void}} o */
-export function createUnderHook({ getBeasts = () => null, openedChestsOf = () => [], afterMove = null, notify = null } = {}) {
-  let ctx = null, offs = [], keys = [];
+export function createUnderHook({ getBeasts = () => null, openedChestsOf = () => [], afterMove = null, notify = null, emitFlag = (k) => seam.emitSimple('flag:set', k, true) } = {}) {
+  let ctx = null, qT = 0; const qList = [], qFeet = { x: 0, y: 0, z: 0 };
+  let offs = [], keys = [];
   const ladder = { t: 0, end: null }, feet = { x: 0, y: 0, z: 0 };
   const move = (x, y, z) => { // same world, seamless: just place the body (no fade, no load)
     const t = ctx.player.transform, b = ctx.player.components && ctx.player.components.body;
@@ -47,6 +50,7 @@ export function createUnderHook({ getBeasts = () => null, openedChestsOf = () =>
       if (!ctx || !ctx.world || !ctx.player || !ctx.world.state) return;
       const t = ctx.player.transform, w = ctx.world, press = !!ctx.state.interactPressed;
       feet.x = t.x; feet.y = t.y; feet.z = t.z;
+      if ((qT -= dt) <= 0) { qT = 1; const fl = underQuestFlags(w.state, feet, getBeasts(), qList); for (let i = 0; i < fl.length; i++) emitFlag(fl[i]); } // UNDER-07: ~1 Hz quest flags
       if ((press || ladder.end) && stepFordCellar(w, ladder, dt, press, feet, move)) return;
       if (press && !w.state['under.crypt.doorOpen']) { // E at the sealed crypt door
         const d = w.entity && w.entity('cemeteryCryptDoor');
