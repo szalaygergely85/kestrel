@@ -2883,7 +2883,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
           : 'no terrain';
         const grounded = playerHandle.data.components.body && playerHandle.data.components.body.grounded;
         extra += `\nworld (${t.x.toFixed(2)}, ${t.y.toFixed(2)}, ${t.z.toFixed(2)}) yaw ${look.yawDeg.toFixed(0)} pitch ${look.pitchDeg.toFixed(0)}` +
-          `${look.locked ? '' : ' [unlocked]'}  grounded: ${grounded}\nstructure: ${struct ? struct.id : '(none)'} sector: '${sectorCh}'${sector ? '' : ' (outside)'}\n${terrainInfo}`;
+          `${look.locked ? '' : ' [unlocked]'}  grounded: ${grounded}\nstructure: ${struct ? struct.id : '(none)'} sector: '${sectorCh}'${sector && !(world.isOutdoorAt && world.isOutdoorAt(t.x, t.y, t.z)) ? '' : ' (outside)'}\n${terrainInfo}`;
       }
       extra += `\nmesh singles ${meshFeedStats.kept}/${meshFeedStats.requested} (cap ${MAX_MESH_DRAWS})${meshFeedStats.dropped ? '  DROPPED ' + meshFeedStats.dropped : ''}  draws ${meshFeedStats.drawItems}/${MAX_DRAW_ITEMS}${meshFeedStats.overflow || meshFeedStats.groupsDropped || meshFeedStats.instDropped ? `  OVERFLOW ${meshFeedStats.overflow} grp ${meshFeedStats.groupsDropped} inst ${meshFeedStats.instDropped}` : ''}`; // OB-039
       { const g = engine.world && engine.world.placementGrid; if (g) extra += `
