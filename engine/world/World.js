@@ -1130,6 +1130,23 @@ export class World {
     return z >= this.terrain.groundAt(x, y) - KEEP_TERRAIN_SUPPORT_DROP;
   }
 
+  /**
+   * OB-205/OB-175: true when the point (x, y, z) is in the open air/terrain: outside every grid structure, on a
+   * `terrainFloor` ring cell, or above a `keepTerrain` cell (cellar walls/room under the surface). Used for the
+   * outdoor-vs-interior fog/ambient choice (the 2D `sectorAt` alone says "inside" for a player standing on grass above a buried level).
+   * `z` omitted/NaN = 2D answer (sector present = inside).
+   */
+  isOutdoorAt(x, y, z) {
+    const s = this.structureAt(x, y);
+    if (!s) return true;
+    const g = gridLocal(s, x, y, this._grid);
+    const sec = s.level.sectorAt(g.x, g.y);
+    if (!sec) return true;
+    if (isTerrainFloor(sec)) return true;
+    if (z === undefined || z !== z || !this.terrain) return false;
+    return this.keepTerrainOpen(s, x, y, z);
+  }
+
   sectorAt(x, y) {
     const s = this.structureAt(x, y);
     if (!s) return null;
