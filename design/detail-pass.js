@@ -125,23 +125,25 @@
     // US-028 D2 (blank share): with lift 0.12 + gamma 0.70 an 8-level set never lands below level 3 when
     // b >= cutoff, so level 3 (and floor level 4) must not contain '.': soot, floor* and woodFar L2 lost their dots.
     soot:       [".", ".", ",'", ",:", ":;", ";%", "%#", "#&"],
-    brickFace:  [".", ".,", ",:", ":=", "=:", "=+", "#=", "#%"],
+    // OB-189: near sets level 1-2 carry >=2 equal-density alternates (was a single "."): a close wall/floor with one glyph per
+    // level shows as regular horizontal dot rows (light stripes); the per-cell hash now breaks the rows up like stoneFace does.
+    brickFace:  [".'", ".,'", ",:", ":=", "=:", "=+", "#=", "#%"],
     brickMid:   [".'`", ".,'", ",:;'", ":=;,", "=:+;", "=+:x", "#=+%", "#%=&"],
     brickFar:   [".'`", ".,'", ",:;'", ":=;,", "=:+;", "=+:x", "#=+%", "#%=&"],
-    floorFace:  [".", ".'", ",`'", ",`:'", ",:;", ":;=", ";=+", "=+*"],
+    floorFace:  [".'", ".'`", ",`'", ",`:'", ",:;", ":;=", ";=+", "=+*"],
     floorMid:   [".`'", ".',`", ",`'", ",`:'", ",:;'", ":;=,", ";=+:", "=+*;"],
     floorFar:   [".`'", ".',`", ",`'", ",`:'", ",:;'", ":;=,", ";=+:", "=+*;"],
     dust:       [".", "'", "'`", "'\"", "\"'", "\"^", "^*", "*"],
     gap:        [".", ".", ",", ",", ",.", ";", ";", ":"],
-    rubbleFace: [".", ".,", ",:o", ":;o", "oO;", "O%o", "%#O", "#&@"],
+    rubbleFace: [".'", ".,'", ",:o", ":;o", "oO;", "O%o", "%#O", "#&@"],
     rubbleMid:  [".,'", ".,:", ",:o;", ":;o,", "oO;:", "O%o;", "%#O&", "#&@%"],
     rubbleFar:  [".,'", ".,:", ",:o;", ":;o,", "oO;:", "O%o;", "%#O&", "#&@%"],
-    grassFace:  [".", ",'", "',\"", "\";,", "\"v;", "v\";", "vw\"", "wv\""],
+    grassFace:  [".'", ",'.", "',\"", "\";,", "\"v;", "v\";", "vw\"", "wv\""],
     grassMid:   [".,'", ",'.", "',\";", "\";,'", "\"v;,", "v\";w", "vw\";", "wv\"v"],
     grassFar:   [".,'", ",'.", "',\";", "\";,'", "\"v;,", "v\";w", "vw\";", "wv\"v"],
     tuft:       ["'", "\"", "\"v", "v\"", "vw", "wv", "w", "w"],
     // v1.33 (owner 2026-10-04): calm TURF ladders for the grass ground (no " v w foliage glyphs; no '.' at levels 3-4)
-    turfFace:   [".", ".,", ",'", "',`", ",';", ";',", ";:'", ";:"],
+    turfFace:   [".'", ".,'", ",'", "',`", ",';", ";',", ";:'", ";:"],
     turfMid:    [".,'", ",'.", "',`,", ",';'", ";',:", ";:',", ":;',", ";:;'"],
     turfFar:    [".,'", ",'.", "',`,", ",';'", ";',:", ";:',", ":;',", ";:;'"],
     knot:       [".", "o", "o", "o", "@", "@", "@"],
