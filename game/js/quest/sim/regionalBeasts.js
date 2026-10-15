@@ -60,6 +60,10 @@ export const REGION_RULES = Object.freeze([
   { region: 'westFells', key: 'westFellsLynx', species: 'lynx', groups: 1, size: 2 },
   { region: 'downs', key: 'downsAurochs', species: 'aurochs', groups: 1, size: 4 },
   { region: 'heartland', key: 'heartlandAurochs', species: 'aurochs', groups: 1, size: 3 },
+  // OB-142: river-road groups (Bend -> Ford), 10-50 m south of the road, rects clear of Joss (1262,1030) + Bend Waystone; `gap` = own group gap (the 120 m default would reject two groups 80 m apart).
+  { region: 'roadWest', key: 'riverRoadBoarsA', species: 'boar', groups: 1, size: 3, rect: [1155, 1076, 1215, 1126], gap: 40 },
+  { region: 'roadWest', key: 'riverRoadBoarsB', species: 'boar', groups: 1, size: 2, rect: [1235, 1082, 1295, 1132], gap: 40 },
+  { region: 'ford', key: 'riverRoadDeer', species: 'deer', groups: 1, size: 2, rect: [1100, 1104, 1150, 1150], gap: 40 },
 ]);
 
 /** OB-185: species of the roadside groups per region (default boar). Roads get a group wherever the walk would go > ROAD_GAP m without one. */
@@ -135,8 +139,9 @@ export function generateRegionalBeasts(o) {
   const regionAt = (x, y) => { for (const g of geo.regions) if (x >= g.r[0] && x < g.r[2] && y >= g.r[1] && y < g.r[3]) return g.id; return geo.regions[geo.regions.length - 1].id; };
   const nearSafe = (x, y) => { for (const s of safe) { const d = SAFE_R + (s[2] || 0); if ((s[0] - x) * (s[0] - x) + (s[1] - y) * (s[1] - y) < d * d) return true; } return false; };
   const clearOfW = (x, y) => { for (const p of wcentres) if ((p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y) < 40 * 40) return false; return true; };
-  const clearOf = (x, y) => { // group gap to other regional groups + authored gap + safe spots/givers
-    for (const p of centres) if ((p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y) < G2) return false;
+  const clearOf = (x, y, gap) => { // group gap (rule.gap or GROUP_GAP) to other regional groups + authored gap + safe spots/givers
+    const gg = gap ? gap * gap : G2;
+    for (const p of centres) if ((p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y) < gg) return false;
     for (const p of avoid) if ((p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y) < AUTHORED_GAP * AUTHORED_GAP) return false;
     return !nearSafe(x, y);
   };
@@ -172,7 +177,7 @@ export function generateRegionalBeasts(o) {
       for (let t = 0; t < TRIES && !c; t++) {
         const x = Math.round((r[0] + EDGE + rng() * (r[2] - r[0] - 2 * EDGE)) * 2) / 2;
         const y = Math.round((r[1] + EDGE + rng() * (r[3] - r[1] - 2 * EDGE)) * 2) / 2;
-        if (!(rule.water ? deepHome(x, y) : wk(x, y)) || (!rule.water && regionAt(x, y) !== rule.region) || !(rule.water ? clearOfW(x, y) : clearOf(x, y))) continue;
+        if (!(rule.water ? deepHome(x, y) : wk(x, y)) || (!rule.water && regionAt(x, y) !== rule.region) || !(rule.water ? clearOfW(x, y) : clearOf(x, y, rule.gap))) continue;
         c = [x, y];
       }
       if (!c) continue; // a region with no valid ground simply gets fewer groups (never an unwalkable home)
