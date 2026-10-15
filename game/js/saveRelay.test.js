@@ -9,6 +9,7 @@ import { HUD_ROW } from './questRelay.js';
 import { createSaveRelay } from './saveRelay.js';
 import { createGameHooks, bridgeEngineEvents } from './gameHooks.js';
 import { DONE_TEXT } from './questRelay.js';
+import { EXPLORE_TEXT } from './questNext.js';
 
 const burl = JSON.parse(readFileSync(new URL('../../content/quests/burl.boars.quest.json', import.meta.url)));
 const blade = JSON.parse(readFileSync(new URL('../../content/quests/tower.blade.quest.json', import.meta.url)));
@@ -83,7 +84,7 @@ A.quest.questFlag('waystone.ws_roadBend.woken');
 assert.equal(A.quest.done, true, 'scripted sequence completes the chain at the relay (FEN-OFF-01)');
 assert.equal(toasts.length, 3, 'one toast per non-silent section (q04-q06)'); assert.equal(toasts.at(-1), 'The Next Light');
 A.quest.objectiveText();
-assert.equal(A.quest.objectiveText(), DONE_TEXT);
+assert.equal(A.quest.objectiveText(), EXPLORE_TEXT, 'OB-183: chain done -> Next/Explore line (DONE_TEXT only if nextLine is empty)');
 assert.equal(DONE_TEXT, 'The pencil line runs on.');
 
 // ---- HUD: the current objective is drawn into the UI layer, top-left ----
@@ -96,7 +97,7 @@ assert.equal(DONE_TEXT, 'The pencil line runs on.');
   assert.equal(row.trim(), ('> ' + OBJ.wake).slice(0, 40).trim(), 'objective line at HUD_ROW');
   A.quest.draw(C); // done quest: plain line
   row = ''; for (let x = 0; x < 40; x++) row += C.cells.get(HUD_ROW * 1000 + x) ?? '';
-  assert.ok(row.includes(DONE_TEXT));
+  assert.ok(row.includes(EXPLORE_TEXT.slice(0, 30)));
 }
 
 // ---- save, reload into a fresh relay + world, save again: byte-stable ----

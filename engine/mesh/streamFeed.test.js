@@ -155,7 +155,7 @@ const poses = [[0, 0], [150, 20], [400, -30], [700, 60], [-90, 90]];
   console.log(`STREAM-01b world_m1 cells by reach class (0..4 from minM): ${Array.from(g0.classCells).join('/')} of ${g0.cellCount}`);
   const cam = camAt(1480, 1018), pl = planesFor(cam);
   const run = (on) => {
-    w.streaming.enabled = on; w.placementGrid = new PlacementGrid(w.structures, { ...g0.opts, reachPerM: Infinity }); w._placementGridVersion = w.structVersion;
+    w.streaming.enabled = on; w.placementGrid = new PlacementGrid(w.structures, { ...g0.opts, reachPerM: Infinity, cutM: 0 }); w._placementGridVersion = w.structVersion;
     const l = new DrawList(); l.begin(); addMeshStructures(l, w, cam, new MeshDrawCache(), idFor, 2000, false, null, null, pl); return l;
   };
   const a = run(false), b = run(true);
