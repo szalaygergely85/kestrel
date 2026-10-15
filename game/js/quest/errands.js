@@ -160,6 +160,7 @@ export function createErrands({ getBook, questFlag, inspect, note, texts }) {
     inspected(id) {
       const f = 'talk.' + siteOf(id);
       if (wants(f)) questFlag(f, true);
+      if (id === 'rsInspectWell') questFlag('lore.well.looked', true); // SPELL-R6: the first look teaches Freeze (spellBooks WELL_FLAG)
       if (id === 'cellarNote') questFlag('under.fordCellar.noteRead', true); // UNDER-03: smugglers tally in the Ford cellar
       if (id === 'fordMark') questFlag('lore.fordMark.read', true); // mq.smoke: the mark cut in the Ford Relay base
       if (id === 'owBoard') questFlag('lore.owBoard.read', true); // mq.ow.board (Ch3)

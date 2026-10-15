@@ -169,7 +169,8 @@ import { equip as equipItem, migrateEquipment, stepEquipment, defenceOf, nightBo
 import { refreshRolledGear } from './quest/sim/rolledGear.js'; // ITEM-WIRE-01: equipment.rolled -> components.rolledGear
 import { createHands } from './quest/sim/hands.js'; // HANDS-01b (37.8a)
 import { createFireballSim } from './quest/sim/fireball.js'; // SPELL-01a (37.14)
-import { defineGustFx } from './quest/gustView.js'; // SPELL-07b (view comes back in SPELL-R3)
+import { defineTelekinesisFx, createTelekinesisView } from './quest/telekinesisView.js'; // SPELL-R3
+import { createTelekinesisSim } from './quest/sim/telekinesis.js'; // SPELL-R3
 import { createFireballView } from './quest/fireballView.js'; // SPELL-01b (37.14 view)
 import { createSpellLightView } from './quest/spellLightView.js'; // SPELL-05b: Spark (Freeze) visuals
 import { createShieldSim } from './quest/sim/shield.js'; // EQ-07 (38.41 a)
@@ -546,7 +547,7 @@ bootSpan('createEngine', tCE);
 const ripples = createRipples();
 const wadeFx = createWadeFx(engine.particles, ripples); // US-055a: wade splash + leg rings + arrow water hit
 defineWadeSplash(engine.particles, {});
-defineGustFx(engine.particles, assets.palette.rgb); defineLeafFall(engine.particles, {}); const leafFall = createLeafFall(engine.particles, gustBand); // WIND-GUST-01b: leaves shed under travelling gust bands
+defineTelekinesisFx(engine.particles, assets.palette.rgb); const tkView = createTelekinesisView({ particles: engine.particles, events: engine.events }); defineLeafFall(engine.particles, {}); const leafFall = createLeafFall(engine.particles, gustBand); // WIND-GUST-01b: leaves shed under travelling gust bands
 const worldBand = window.ASSETS.levels.world_geo ? createBand(window.ASSETS.levels.world_geo.regions) : null; // US-129a (null = tier 1)
 const wadeArrowHit = (x, y, z) => wadeFx.arrowHit(x, y, z, fb ? fb.timeSec : 0); // one closure, not per frame
 engine.events.on('magic.unlocked', () => startMpFade(fb ? fb.timeSec : 0)); // FB-03: the MP bar fades in (same clock drawVitals gets)
@@ -707,7 +708,7 @@ const chestHook = (itemDefs && assets.uiStyle && assets.uiStyle.itemGetCard)
 gameHooks.register(underHook); // B1-MAIN hooks 7
 if (chestHook) gameHooks.register(chestHook);
 if (chestHook) gameHooks.register(createHeartHook({ getCard: () => chestHook.card, notify: (t) => { if (lootToast) lootToast.say(t, [226, 214, 176]); } })); // QL-08; OB-105: heart piece = toast, not the card
-gameHooks.register(createSpellBookHook({ getBook: () => spellBook, notify: (t) => { if (lootToast) lootToast.say(t, [226, 214, 176]); } })); // SPELL-09: Spell Books in the pack + waystone-wake spells learn once (spellBook = the per-world book set on 'world:loaded')
+gameHooks.register(createSpellBookHook({ getBook: () => spellBook, getDefs: () => itemDefs, notify: (t) => { if (lootToast) lootToast.say(t, [226, 214, 176]); } })); // SPELL-09: Spell Books in the pack + waystone-wake spells learn once (spellBook = the per-world book set on 'world:loaded')
 // QUESTS-01: generic world pickup prop + pack counts for collect/deliver objectives + hand-in reward grant (game/js/questPickups.js)
 let questBeastSim = null; // SOFTLOCK-01: the live beast sim for the kill-quest accept rule (set where the sim is built)
 if (saveRelay) saveRelay.quest.setLivingOfKind((kind) => { const s = questBeastSim; if (!s || !s.ids) return 99; let n = 0; for (let i = 0; i < s.ids.length; i++) if (kindOf(s.ids[i]) === kind && !s.down[i] && !isBeastDeadState(s.state[i])) n++; return n; }); // SOFTLOCK-01 + R6-FIX C: installed on every book the relay creates/loads (not lazily in questPickups.sync)
@@ -1290,6 +1291,7 @@ async function runGame(mode, cinematic = null) {
   let equipPlay = null, shieldSim = null, arrowSim = null; // EQ-07/09: rebuilt on every 'world:loaded'
   let quickbar = null, qbView = null, qbTick = 0, qbBlocked = false; // EQ-12: sim rebuilt per world, view per page
   let teleport = null; const tpEye = new Float64Array(3), tpAim = new Float64Array(3); // SPELL-R4
+  let tk = null; const tkEach = (e) => { if (tkVisit && e.components && e.components.roller) tkVisit(e); }; let tkVisit = null; // SPELL-R3
   let fireball = null, fbTargets = null, spellBook = null, spellCaster = null; // SPELL-01a (37.14): rebuilt with the sword sim on every 'world:loaded'
   // US-091b: pack-screen mouse. Hover -> UI cell under the pointer; a click while open must not re-lock the pointer
   // (PlayerLook's own canvas click handler), so a capture listener on window swallows it first.
@@ -1713,7 +1715,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       teleport = createTeleport(world, { spendMana: (n) => vitals && vitals.spendMana(n), say: (t) => toasts && toasts.say(t, [226, 214, 176]), loseTrack: (x, y, r, s) => beasts && loseTrack(beasts, x, y, r, s), // SPELL-R4
         blink: (x, y, z) => { blinkFlash.trigger(performance.now()); const d = playerHandle.data, t = d.transform, b = d.components.body, bd = engine.particles.defIdOf('fireballBurst'); engine.particles.burstAt(bd, t.x, t.y, t.z + 1, 24, 0, 0, 1); t.x = x; t.y = y; t.z = z; b.vx = b.vy = b.vz = 0; b.fallDistance = 0; b.peakZ = z; b.grounded = true; if (b.feel) b.feel.stepOffset = 0; hzb.invalidate('blink'); ensureBand(engine.world, t); engine.particles.burstAt(bd, x, y, z + 1, 24, 0, 0, 1); } });
       spellCaster.register('teleport', (pl) => { const t = pl.transform, pr = look.pitchDeg * Math.PI / 180, cp = Math.cos(pr); tpEye[0] = t.x; tpEye[1] = t.y; tpEye[2] = t.z; forwardOf(look.yawDeg, tpAim); tpAim[0] *= cp; tpAim[1] *= cp; tpAim[2] = Math.sin(pr); return teleport.cast(spellBook.tier('teleport'), tpEye, tpAim) === 0 ? 'cast' : 'busy'; }); // SPELL-R4
-      // SPELL-R1 (D-115): only Fireball is registered; spell.freeze / telekinesis / teleport answer 'notImplemented' until SPELL-R2..R4
+      tk = createTelekinesisSim(world, engine.events, fbTargets, { spendMana: (n) => vitals && vitals.spendMana(n), tier: () => spellBook.tier('telekinesis') || 1, forEachProp: (fn) => { tkVisit = fn; world.forEachEntity(tkEach); tkVisit = null; }, damageMul: () => { const c = playerHandle && playerHandle.data.components; return computeTotals(c && c.rolledGear || null, fbTotals).fireDmgMul; } }); spellCaster.register('telekinesis', () => tk.requestCast()); // SPELL-R3: tap = push, hold >= 0.4 s = pull
       // EQ-07/09 (38.41): shield sim + arrow sim + the routing glue; shield/bow items get no-op sims so the router arms them (RMB -> left hand, LMB -> right hand)
       shieldSim = createShieldSim();
       arrowSim = createArrowSim(world, engine.events, BOW_CFG, fbTargets, wadeArrowHit);
@@ -1834,6 +1836,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         offerToast = createOfferToast(saveRelay.quest.book, (g) => GIVER_INFO[g] ? GIVER_INFO[g].name : g.charAt(0).toUpperCase() + g.slice(1)); offerToast.seed(); offerToastMsg = msg; // QUEST-NEXT-GIVER-01 (compass: compassHud.target)
         saveRelay.quest.book.onChange = (name, id) => {
           gameHooks.emitSimple(name, id);
+          if (name === 'quest:done' && world && world.state) world.state['quest.done.' + id] = true; // SPELL-R6: quest-reward spell sources (spellBooks PLACEMENTS flag)
           if (logicWire && (name === 'quest:accepted' || name === 'quest:done')) logicWire.notify(name === 'quest:accepted' ? 'quest.accepted' : 'quest.done', 'quest', id); // ED-LOGIC-01c
           if (name === 'quest:accepted') actionSig.questAccepted = true; // FS-01: first accepted quest -> [J] Journal hint
           if (name === 'quest:ready' && id === 'burl.boars' && crystal) crystal.check('ready'); // CH1-03
@@ -2346,6 +2349,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
           forwardOf(look.yawDeg, swordFwd);
           const pr = look.pitchDeg * DEG2RAD, cp = Math.cos(pr);
           fireball.step(playerHandle.data, fbOn && hands.downOf('spell.fireball'), swordFwd[0], swordFwd[1], swordFwd[0] * cp, swordFwd[1] * cp, Math.sin(pr));
+          if (tk) { let kd = false; const qb = playerHandle.data.components.quickbar; if (qb) for (let n = 0; n < 4; n++) if (qb[n + HAND_SLOTS] === 'spell.telekinesis' && input.isDown('Digit' + (n + 1))) kd = true; tk.step(playerHandle.data, swordFwd[0], swordFwd[1], kd); tkView.stepFx(); } // SPELL-R3
           if (slView) slView.stepFx(); // SPELL-05b
           if (fbView) fbView.stepFx(); // SPELL-01b: trail emitters + burst particles (sim side, hashed)
           if (fbOn && handFxOn && spellVmH && !cinematic) { // HAND-WIRE-02 (FB-01: locked = no hand fire): hand embers / ignite / charge sparks, sim side

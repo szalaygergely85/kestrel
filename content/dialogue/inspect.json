@@ -58,7 +58,7 @@
     "inspect.well": {
       "prompt": "[E] Look at the well",
       "title": "A dry well",
-      "lines": ["Planks across the mouth. One brick gone.", "You drop a pebble. No splash. No echo.", "The bucket rope was cut, not rotted.", "Someone did not want it used again."]
+      "lines": ["Planks across the mouth. One brick gone.", "You drop a pebble. No splash. No echo.", "The bucket rope was cut, not rotted.", "Someone did not want it used again.", "Cold light rises from the dry well."]
     },
     "inspect.shrine": {
       "prompt": "[E] Look at the shrine",
