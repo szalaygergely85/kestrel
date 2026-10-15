@@ -191,6 +191,7 @@ export function createFlowField(grid) {
     next: grid.layers !== null ? new Int32Array(n).fill(-1) : null,
     cellsDone: 0,
     rvFlag: null, rvOrder: null, // NAV-FLOW-REV reverse link index (layers only), refreshed in begin()
+    rvL: null, rvFrom: null, rvTo: null, rvN: -1, // the layers / link arrays rvFlag was built for (begin's 0-alloc cache check)
     heap: /** @type {FlowFieldHeap} */ (/** @type {unknown} */ (null)),
   };
   ff.heap = new FlowFieldHeap(n);
@@ -209,7 +210,12 @@ export function createFlowField(grid) {
     ff.dir.fill(DIR_NONE);
     ff.heap.clear();
     ff.cellsDone = 0;
-    if (grid.layers !== null) { const rv = reverseLinks(grid.layers, n); ff.rvFlag = rv.flag; ff.rvOrder = rv.order; }
+    const L = grid.layers;
+    // same freshness key as reverseLinks' cache, checked here first: WeakMap.get boxes ~40 B per call in Maglev (Node 24)
+    if (L !== null && (ff.rvL !== L || ff.rvFrom !== L.from || ff.rvTo !== L.to || ff.rvN !== L.nLinks)) {
+      const rv = reverseLinks(L, n); ff.rvFlag = rv.flag; ff.rvOrder = rv.order;
+      ff.rvL = L; ff.rvFrom = L.from; ff.rvTo = L.to; ff.rvN = L.nLinks;
+    }
     if (ff.next !== null) ff.next.fill(-1);
     for (let i = 0; i < count; i++) {
       const g = goalCells[i];

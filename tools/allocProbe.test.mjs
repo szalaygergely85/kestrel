@@ -8,6 +8,10 @@ ok('leaking loop measured > 40 B/call', leak.perCall > 40, `${leak.perCall.toFix
 const buf = new Float64Array(4);
 const clean = allocProbe((n) => { for (let i = 0; i < n; i++) buf[i & 3] += i; }, { n: 20000 });
 ok('clean loop < 1 B/call', clean.perCall < 1, `${clean.perCall.toFixed(2)}`);
+const leakC = allocProbe((n) => { for (let i = 0; i < n; i++) keep.push({ a: i }); if (keep.length > 4000) keep.length = 0; }, { n: 2000, chunk: 100, settle: 5, limit: 1 });
+ok('chunk + settle: a leaking loop is still caught (settle cannot hide steady garbage)', leakC.perCall > 10, `${leakC.perCall.toFixed(1)}`);
+const cleanC = allocProbe((n) => { for (let i = 0; i < n; i++) buf[i & 3] += i; }, { n: 20000, chunk: 1000, settle: 5, limit: 1 });
+ok('chunk: clean loop < 1 B/call, n rounded to chunks', cleanC.perCall < 1 && cleanC.n === 20000, `${cleanC.perCall.toFixed(2)}`);
 const g = globalThis.gc; globalThis.gc = undefined;
 const sk = allocProbe(() => {}); globalThis.gc = g;
 ok('no gc -> skipped', sk.skipped === true);
