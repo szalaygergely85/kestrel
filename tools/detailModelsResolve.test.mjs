@@ -1,10 +1,10 @@
 // OB-166: every ground-detail species model of the overworld recipe resolves in ASSETS.models (the voxel registry the game builds
-// from design scripts). Meshes are checked against content/meshes. Run: node engine/world/detailModelsResolve.test.js
+// from design scripts). Meshes are checked against content/meshes. Run: node tools/detailModelsResolve.test.mjs
 import assert from 'node:assert/strict';
-import '../../design/palette.js';
-import '../../design/detail-pass.js';
-import '../../design/models/ground_detail.js';
-import '../../design/levels/overworld_far.js';
+import '../design/palette.js';
+import '../design/detail-pass.js';
+import '../design/models/ground_detail.js';
+import '../design/levels/overworld_far.js';
 
 const A = globalThis.ASSETS;
 // find every detail layer (an object with `ground` lists) anywhere under ASSETS and collect voxel model ids + mesh ids

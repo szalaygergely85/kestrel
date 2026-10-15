@@ -97,7 +97,7 @@ export function generateRegionalBeasts(o) {
     return wat.deep(x, y) && wat.deep(x + 1, y) && wat.deep(x - 1, y) && wat.deep(x, y + 1) && wat.deep(x, y - 1);
   };
   const walkable = makeWalkable(terrain, geo.bounds), walkRoad = makeWalkable(terrain, geo.bounds, ROAD_SLOPE); // roads climb: roadside groups accept slopes up to ROAD_SLOPE
-  const out = [], centres = [], wcentres = [], nextGroup = {}, G2 = GROUP_GAP * GROUP_GAP;
+  const out = [], centres = [], wcentres = [], nextGroup = {}, nextWGroup = {}, G2 = GROUP_GAP * GROUP_GAP;
   const regionAt = (x, y) => { for (const g of geo.regions) if (x >= g.r[0] && x < g.r[2] && y >= g.r[1] && y < g.r[3]) return g.id; return geo.regions[geo.regions.length - 1].id; };
   const nearSafe = (x, y) => { for (const s of safe) { const d = SAFE_R + (s[2] || 0); if ((s[0] - x) * (s[0] - x) + (s[1] - y) * (s[1] - y) < d * d) return true; } return false; };
   const clearOfW = (x, y) => { for (const p of wcentres) if ((p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y) < 40 * 40) return false; return true; };
@@ -107,7 +107,7 @@ export function generateRegionalBeasts(o) {
     return !nearSafe(x, y);
   };
   const emit = (rule, region, r, c, rng, n0) => { // members 3-7 m from the group centre; fall back to the centre if no walkable spot
-    const g = nextGroup[region] || 0; nextGroup[region] = g + 1; (rule.water ? wcentres : centres).push(c); // BEAST-09a: crocs never shift land groups (land list is the same with or without a water probe)
+    const ng = rule.water ? nextWGroup : nextGroup, g = ng[region] || 0; ng[region] = g + 1; (rule.water ? wcentres : centres).push(c); // BEAST-09a: crocs never shift land groups (land list is the same with or without a water probe)
     let n = n0;
     for (let k = 0; k < rule.size; k++) {
       let hx = c[0], hy = c[1];

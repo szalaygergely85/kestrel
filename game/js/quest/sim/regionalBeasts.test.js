@@ -31,6 +31,11 @@ const wA = mkWorld();
 const avoid = []; wA.forEachEntity((e) => { const b = e.components?.brain; if (b?.kind === 'beast') avoid.push([...b.home]); });
 const list1 = generateRegionalBeasts({ geo: G, terrain: wA.terrain, seed: 12, avoid, safe: safeSpots(wA) });
 const list2 = generateRegionalBeasts({ geo: G, terrain: wA.terrain, seed: 12, avoid, safe: safeSpots(wA) });
+{ // BEAST-09a follow-up: water rules have their own group counter -> land groups identical with and without a water probe
+  const land = (l) => JSON.stringify(l.filter((b) => b.species !== 'croc').map((b) => [b.id, b.x, b.y, b.group]));
+  const withW = generateRegionalBeasts({ geo: G, terrain: wA.terrain, seed: 12, avoid, safe: safeSpots(wA), water: { deep: () => true } });
+  ok('land groups (ids/pos/group) identical with and without water probe', land(withW) === land(list1) && withW.some((b) => b.species === 'croc'));
+}
 const list3 = generateRegionalBeasts({ geo: G, terrain: wA.terrain, seed: 13, avoid, safe: safeSpots(wA) });
 ok('deterministic: same seed -> same ids + homes', JSON.stringify(list1) === JSON.stringify(list2));
 ok('different seed -> different homes', JSON.stringify(list1) !== JSON.stringify(list3));
