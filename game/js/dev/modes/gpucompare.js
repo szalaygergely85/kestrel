@@ -11,7 +11,7 @@ import {
   computeDerivatives, shadeSurfaces, edgePass, createShadowParityRunner, SKY_GLOW,
 } from '../../../../engine/dev.js';
 import { shaftRule8a } from './shaftRule8a.js'; // CANOPY-SHAFT-01b rule 8a
-import { quadruped16, makeRowGI, createContactAO, setDynamicBlobs, buildContactBlobs } from '../../../../engine/dev.js'; // VOX-PARTS-16b: 12-part fixture for the `vox12` row
+import { quadruped16, makeRowGI } from '../../../../engine/dev.js'; import { createContactAO, setDynamicBlobs, buildContactBlobs } from '../../../../engine/index.js'; // VOX-PARTS-16b: 12-part fixture for the `vox12` row
 import { POSES as GPU_COMPARE_POSES, GATE_POSES } from '../../../../content/dev-poses.js';
 import { fillUnitGrid, placeholderTeamSpec } from '../unitsHarness.js'; // RE-06: instanced-units pose helpers
 import { groundLookFromParams } from '../../look/groundLookConfig.js'; // ENV-02d-LIVE

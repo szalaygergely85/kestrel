@@ -85,7 +85,7 @@ wallRocks.forEach(([x, y, s], i) => rock(RM[i % 3], x, y, FLW - 0.1, 37 * i, s))
 [['Pebble_Round_1', XM - 1.5, Y1 - 2.2, 0.9], ['Pebble_Round_3', XM + 2.3, Y1 - 3.0, 1.1], ['Pebble_Square_2', XM + 3.6, Y0 + 2.4, 1.0], ['Pebble_Round_5', XM - 3.3, Y0 + 3.4, 0.9], ['Pebble_Square_4', XM + 0.8, Y0 + 3.1, 1.0]]
   .forEach(([m, x, y, s], i) => mesh('strandCaveRubble' + (i + 1), m, x, y, FLW, 29 * i, s));
 // smugglers' stash: crates stacked against the west wall (one on top), one further south
-[[X0 + 1.1, Y0 + 1.6, 0, 12, 0.9], [X0 + 1.2, Y0 + 2.7, 0, 190, 0.85], [X0 + 2.2, Y0 + 1.2, 0, 95, 0.8], [X0 + 1.1, Y0 + 1.6, 0.85, 40, 0.7], [X0 + 1.6, Y0 + 4.2, 0, 340, 0.8]]
+[[X0 + 1.1, Y0 + 1.6, 0, 12, 0.9], [X0 + 1.2, Y0 + 2.7, 0, 190, 0.85], [X0 + 2.2, Y0 + 1.2, 0, 95, 0.8], [X0 + 1.1, Y0 + 1.6, 0.98, 40, 0.7], [X0 + 1.6, Y0 + 4.2, 0, 340, 0.8]]
   .forEach(([x, y, dz, yaw, s], i) => mesh('strandCaveCrate' + (i + 1), 'Prop_Crate', x, y, FLW + dz, yaw, s));
 const prop = (id, x, y, z, note, comp, yawDeg) => d.entities.push({ id, type: 'prop', x: r2(x), y: r2(y), z, ...(yawDeg !== undefined ? { yawDeg } : {}), components: comp, note });
 prop('strandCaveLamp', LIGHT.x, LIGHT.y, FLW, 'UNDER-05: smugglers lantern (existing floorLanternVox; light = level lights[lantern])', { voxel: { anim: 'lit', loop: true, model: 'floorLanternVox' } });

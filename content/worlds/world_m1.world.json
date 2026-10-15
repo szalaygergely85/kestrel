@@ -2262,7 +2262,7 @@
     {"id": "strandCaveCrate1", "mesh": "quaternius/Prop_Crate", "origin": {"x": 1614.1, "y": 1723.6, "z": -95.31}, "scale": 0.9, "yawDeg": 12},
     {"id": "strandCaveCrate2", "mesh": "quaternius/Prop_Crate", "origin": {"x": 1614.2, "y": 1724.7, "z": -95.31}, "scale": 0.85, "yawDeg": 190},
     {"id": "strandCaveCrate3", "mesh": "quaternius/Prop_Crate", "origin": {"x": 1615.2, "y": 1723.2, "z": -95.31}, "scale": 0.8, "yawDeg": 95},
-    {"id": "strandCaveCrate4", "mesh": "quaternius/Prop_Crate", "origin": {"x": 1614.1, "y": 1723.6, "z": -94.46}, "scale": 0.7, "yawDeg": 40},
+    {"id": "strandCaveCrate4", "mesh": "quaternius/Prop_Crate", "origin": {"x": 1614.1, "y": 1723.6, "z": -94.33}, "scale": 0.7, "yawDeg": 40},
     {"id": "strandCaveCrate5", "mesh": "quaternius/Prop_Crate", "origin": {"x": 1614.6, "y": 1726.2, "z": -95.31}, "scale": 0.8, "yawDeg": 340},
     {"id": "goblinTunnelRock1", "mesh": "quaternius/Rock_Medium_1", "origin": {"x": 927.9, "y": 918, "z": -81.47}, "scale": 1, "yawDeg": 0},
     {"id": "goblinTunnelRock2", "mesh": "quaternius/Rock_Medium_2", "origin": {"x": 933.1, "y": 918, "z": -81.97}, "scale": 1, "yawDeg": 90},

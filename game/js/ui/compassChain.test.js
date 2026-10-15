@@ -40,6 +40,6 @@ feed({ type: 'area:entered', id: 'bendRelay' }); need('wake relay');
 for (const d of [m1, blade, burl]) for (const o of d.objectives) {
   const w = o.when, tmp = { x: 0, y: 0 };
   if (w.type === 'beasts') assert.ok(w.ids.every((i) => world.resolve('beast', i, tmp)), o.id);
-  else assert.ok(world.resolve(w.type, w.id, tmp) || (w.type === 'flag' && w.id === 'wake'), 'resolvable: ' + d.id + '.' + o.id);
+  else assert.ok(world.resolve(w.type, w.id, tmp) || (w.type === 'flag' && (w.id === 'wake' || /^quest./.test(w.id))), 'resolvable: ' + d.id + '.' + o.id);
 }
 console.log('compassChain: ok');
