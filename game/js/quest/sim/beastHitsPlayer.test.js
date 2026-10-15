@@ -130,20 +130,20 @@ function kindEntity(kind, id, x, y) {
   return e;
 }
 /** One beast vs one player. mode 'stand' | 'walk' (player walks straight away from the beast at WALK once it has noticed). */
-function duel(kind, mode, dist = 9, maxSec = 14) {
+function duel(kind, mode, dist = 9, maxSec = 14, speed = WALK) {
   const { sim, hits } = freshSim([kindEntity(kind, 'b1', PXX + dist, PYY)]);
   let px = PXX, py = PYY, wind = 0, windFirst = -1, minD = 99;
   const n = Math.round(maxSec * 60);
   for (let t = 0; t < n; t++) {
-    if (mode === 'walk' && sim.state[0] !== STATE_WANDER) {
+    if ((mode === 'walk') && sim.state[0] !== STATE_WANDER) {
       const dx = px - sim.steer.x[0], dy = py - sim.steer.y[0], d = Math.hypot(dx, dy) || 1;
-      px += dx / d * WALK / 60; py += dy / d * WALK / 60;
+      px += dx / d * speed / 60; py += dy / d * speed / 60;
     }
     sim.step(px, py, groundZ(sim.world, px, py));
     const d = Math.hypot(px - sim.steer.x[0], py - sim.steer.y[0]); if (d < minD) minD = d;
     if (sim.state[0] === STATE_WINDUP) { if (windFirst < 0) windFirst = t; wind = t - windFirst + 1; }
     const h = hits.find((q) => q.target === 'player');
-    if (globalThis.TRACE && t % 30 === 0) console.log(kind, (t/60).toFixed(1), "st", sim.state[0], "d", d.toFixed(1), "wait", sim.waiting[0]);
+    if (globalThis.TRACE && t % 30 === 0) console.log(kind, (t/60).toFixed(1), "st", sim.state[0], "d", d.toFixed(1), "mv", sim.mv[0].toFixed(1), "pos", sim.steer.x[0].toFixed(1), sim.steer.y[0].toFixed(1), "pl", px.toFixed(1), py.toFixed(1), "pathLen", sim.pathLen[0], "tact", sim.tactOn[0], sim.tactRole[0], "wait", sim.waiting[0], "bank", sim.bankHold[0]);
     if (h) return { tHit: (t + 1) / 60, dmg: h.damage, wind: wind / 60, minD, d, hit: true };
   }
   return { hit: false, minD, wind: wind / 60 };
@@ -154,7 +154,10 @@ for (const kind of ['boar', 'wolf', 'bear', 'goblin']) {
   const f = (r) => r.hit ? `HIT t=${r.tHit.toFixed(2)}s dmg=${r.dmg} dist=${r.d.toFixed(2)}` : `MISS minDist=${r.minD.toFixed(2)}`;
   console.log(kind.padEnd(7), 'wind', s.wind.toFixed(2), '| stand:', f(s), '| walk-away:', f(w));
   ok(`${kind}: standing player gets hit within 12 s`, s.hit && s.tHit <= 12, f(s));
-  if (kind === 'boar' || kind === 'wolf') ok(`${kind}: walking-away player gets hit`, w.hit, f(w));
+  ok(`${kind}: walking-away player gets hit`, w.hit, f(w));
+  if (kind === 'bear' || kind === 'goblin') ok(`${kind}: walking-away player gets hit within 12 s`, w.hit && w.tHit <= 12, f(w)); // OB-150
+  const r = duel(kind, 'walk', 9, 10, PHYSICS.runSpeed); // OB-150 fairness: a RUNNING player (6 m/s) escapes every type
+  ok(`${kind}: running player (${PHYSICS.runSpeed} m/s) escapes for 10 s`, !r.hit, f(r));
   ok(`${kind}: readable wind-up >= 0.3 s`, s.wind >= 0.3 - 1e-9, String(s.wind));
 }
 console.log(`beastHitsPlayer: ${pass} pass, ${fail} fail`);
