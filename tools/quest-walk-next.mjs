@@ -29,15 +29,16 @@ export async function run(h) {
     const I = await info(id); if (!I) { check(id + ' exists', false, 'unknown quest'); return; }
     const col = I.main ? 'g' : 's', who = I.giver, turn = I.turnIn, colName = I.main ? 'gold' : 'blue';
     const pre = await stOf(id);
+    await ev("(() => { const sl = __t.D.playerHandle.data.components.inventory.slots; for (let i = 0; i < sl.length; i++) sl[i] = null; return true; })()"); // the walk hands out every reward: an overfull pack silently swallows later rewards / collect items (sq.he.wallow jerkin, sq.fc.caps/cog) - start each quest with an empty pack
     if (pre !== 1) { check(id + ' was already ' + (await state(id)) + ' (taken by an earlier talk with the same giver: legit, continuing from there)', pre >= 2, await state(id)); if (pre === 4) return; }
-    else { check(id + ' available', true); await markCheck(col + 'A', who, true, `${colName} '!' over ${who} (${id} offer)`); }
+    else { check(id + ' available', true); if ((await others(id, who, 3, 'turnInOf')) === 0) await markCheck(col + 'A', who, true, `${colName} '!' over ${who} (${id} offer)`); }
     if (pre >= 2) { /* already accepted */ }
     else if (!I.objGiver) {
       await momentStill(who, 'N-' + id + '-bang');
       await talk(who, ['^exit$|not now|later|leave|bye|^no\\b']); // decline path: Exit must not accept
       const chose = lastLog().join(';'); const declined = /-> \d+/.test(chose) && /(exit|not now|later|leave|bye)[^|\]]*\][^|]*$/i.test(chose);
       check(id + ' Exit keeps it available (' + chose.slice(0, 90) + ')', (await stOf(id)) === 1 || !declined, await state(id));
-      if ((await stOf(id)) === 1) await markCheck(col + 'A', who, true, `'!' still over ${who} after Exit`);
+      if ((await stOf(id)) === 1 && (await others(id, who, 3, 'turnInOf')) === 0) await markCheck(col + 'A', who, true, `'!' still over ${who} after Exit`); // a READY '?' of the same character beats the '!' (OB-155j)
       const okA = await talkUntil(who, id, 2, YES);
       if (!okA) console.log('    DIAG ' + await ev(`JSON.stringify({ npc: (() => { try { const e = __t.w.get(${JSON.stringify(who)}); const t = e.data.transform; return [t.x, t.y, t.z, __t.w.floorAt(t.x, t.y)]; } catch (x) { return String(x); } })(), me: [__t.D.playerHandle.data.transform.x, __t.D.playerHandle.data.transform.y, __t.D.playerHandle.data.transform.z], dlg: !!__t.D.dialogue.open, ix: __t.w.interactables.filter((r) => Math.hypot(r.x - __t.D.playerHandle.data.transform.x, r.y - __t.D.playerHandle.data.transform.y) < 8).map((r) => [r.key, r.x, r.y, r.prompt]), comps: (() => { try { return Object.keys(__t.w.get(${JSON.stringify(who)}).data.components); } catch (x) { return 'n/a'; } })(), dlgComp: (() => { try { return JSON.stringify(__t.w.get(${JSON.stringify(who)}).data.components.dialogue); } catch (x) { return 'n/a'; } })() })`));
       check(id + ' accepted via ' + who + ' dialogue', okA, await state(id) + ' ' + lastLog().join(';').slice(0, 200));
