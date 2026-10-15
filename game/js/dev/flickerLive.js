@@ -41,9 +41,14 @@ export function createFlickerLive() {
 }
 
 /** Runs every pose; `capture()` -> { GI, fg, bg } of the frame just presented. `capture()` also returns Depth. Returns { poses: {slug: {totalPct, kindPct, materialPct, glyphOnlyPct, colourOnlyPct, n, excluded, oldTotalPct}}, avg, ... }. */
-export async function runLivePoses(h, { world, wg, cols, rows, pxCellW = 1, pxCellH = 2, capture, poses = POSES, steps = STEPS, settle = 30 }) {
-  const out = {}, res = { poses: {}, steps, stepM: STEP_M };
-  const grid = { cols, rows, pxCellW, pxCellH };
+export async function runLivePoses(h, { world, wg, cols, rows, pxCellW = 1, pxCellH = 2, capture, getGrid = null, poses = POSES, steps = STEPS, settle = 30 }) {
+  const out = {}, res = { poses: {}, steps, stepM: STEP_M, skippedSteps: 0 };
+  // AA-01c: the grid can change mid-run (480x180 after the first frames); `getGrid()` -> {cols,rows,pxCellW,pxCellH} is read at EVERY capture,
+  // the capture carries the grid it was read with, and a step whose two frames have different grids is skipped (the readback stride would be wrong).
+  const cap = async () => { const g = getGrid ? getGrid() : { cols, rows, pxCellW, pxCellH }; const c = await capture(); const g2 = getGrid ? getGrid() : g; c.grid = { cols: g.cols, rows: g.rows, pxCellW: g.pxCellW, pxCellH: g.pxCellH };
+    if (!sameGrid(g, g2)) c.grid.cols = -1; // the grid changed while reading back: never equal to another capture's grid
+    return c; };
+  const sameGrid = (a, b) => a.cols === b.cols && a.rows === b.rows && a.pxCellW === b.pxCellW && a.pxCellH === b.pxCellH;
   const KEYS = ['totalPct', 'kindPct', 'materialPct', 'glyphOnlyPct', 'colourOnlyPct', 'n', 'excluded'];
   const sums = {};
   for (const p of poses) {
@@ -52,19 +57,23 @@ export async function runLivePoses(h, { world, wg, cols, rows, pxCellW = 1, pxCe
     h.cam = cam;
     if (wg && wg.invalidateHistory) wg.invalidateHistory(); // each pose starts with a camera cut
     await h.frames(settle); // streaming (meshes, carpet, shadows) settles
-    let prev = await capture(); prev.cam = { ...cam };
+    let prev = await cap(); prev.cam = { ...cam };
     const acc = { oldTotalPct: 0 }; for (const k of KEYS) acc[k] = 0;
+    let used = 0;
     for (let s = 0; s < steps; s++) {
       cam = stepCam(cam); h.cam = cam;
       await h.frames(2); // the first may be a frame already past beforeRender; the second certainly drew `cam`
-      const cur = await capture();
-      flickerStep(prev.GI, prev.fg, cur.GI, cur.fg, cols, rows, out, prev.bg, cur.bg);
+      const cur = await cap();
+      if (!sameGrid(prev.grid, cur.grid)) { res.skippedSteps++; cur.cam = { ...cam }; prev = cur; continue; } // grid changed between the frames
+      const gcols = cur.grid.cols, grows = cur.grid.rows;
+      flickerStep(prev.GI, prev.fg, cur.GI, cur.fg, gcols, grows, out, prev.bg, cur.bg);
       acc.oldTotalPct += out.totalPct; // same-index metric (measures image motion), kept for reference
-      flickerReprojStep(prev, cur, prev.cam, { ...cam }, grid, out); // motion-compensated (AA-01b)
+      flickerReprojStep(prev, cur, prev.cam, { ...cam }, cur.grid, out); // motion-compensated (AA-01b)
       for (const k of KEYS) acc[k] += out[k];
+      used++;
       cur.cam = { ...cam }; prev = cur;
     }
-    const pr = {}; for (const k of Object.keys(acc)) pr[k] = acc[k] / steps;
+    const pr = {}; for (const k of Object.keys(acc)) pr[k] = acc[k] / Math.max(1, used);
     res.poses[p.slug] = pr;
     for (const k of Object.keys(pr)) sums[k] = (sums[k] || 0) + pr[k];
   }

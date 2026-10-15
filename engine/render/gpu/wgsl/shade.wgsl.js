@@ -333,11 +333,20 @@ function buildShadeWgsl(withLevel, look = false) {
   @location(2) lvl: u32,`,
       init: ' o.lvl = 255u;',
       vars: `
-  var lvOut = 255u;`,
+  var lvOut = 255u; var lvStip = 0u;`,
       set: `
     lvOut = u32(levelFromThresholds(setIdPick, t0.z, gbAvg, su.cutoff));`,
-      stip: ' lvOut = 255u;',
-      out: ' o.lvl = lvOut;',
+      stip: ' lvOut = 255u; lvStip = 1u;',
+      out: `
+  { // AA-07b: joint coverage in quarters into the spare level-byte bits (twin: temporalStable.js encodeLevelByte; 0/4 and 4/4 carry none)
+    let covQ = u32(floor(4.0 * f32(jointN) / f32(count) + 0.5));
+    let isLine = lineWins && onJointLineW >= 0 && gbAvg > 0.0 && lvStip == 0u;
+    if (covQ >= 1u && covQ <= 3u) {
+      if (lvOut == 255u) { if (isLine) { lvOut = 128u | (covQ << 5u); } }
+      else if (lvOut < 32u) { lvOut = lvOut | (covQ << 5u); }
+    }
+  }
+  o.lvl = lvOut;`,
       // OB-073 calm ground: no shimmer branch any more (glint removed), terrain is always level 255 (twin: terrainShade.js LEVEL_NONE)
       terr: ' o.lvl = select(255u, 254u, to.fgw > 0.0);', // G2 + P3: far-grass cells animate (twin: terrainShade.js out.level)
       grass: ' o.lvl = gLv;', // OB-073 D2e: kind-10 stable level = ramp position bucket (twin: shadeGrass out.level)

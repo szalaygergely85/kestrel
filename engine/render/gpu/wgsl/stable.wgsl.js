@@ -86,6 +86,7 @@ struct SCell {
   mat: u32,      // gi mat id (16 bit) -> HIST.w bits 16-31 (AA-04a; read by resolve hysteresis only)
   plane: u32,
   mat: u32,      // OB-198: material id for the history key
+  vm: u32,       // AA-07a: view-model tag (0 = none, else 1 + 0xFFFF - objectId)
   ub: u32,       // f32 bits of this frame's u / v (history always describes THIS frame)
   vb: u32,
   fresh: u32,    // 1 = no history taken
@@ -99,13 +100,17 @@ fn stableCell(cell: vec2i) -> SCell {
   let fgC = textureLoad(uFinalFg, cell, 0);
   let bgC = textureLoad(uFinalBg, cell, 0);
   let kind = giKind(gi.y);
-  let lvC = textureLoad(uLevel, cell, 0).x;
+  let lvRaw = textureLoad(uLevel, cell, 0).x;
+  // AA-07b: shade's level byte carries the joint coverage (twin: temporalStable.js levelOfByte / covOfByte)
+  var lvC = lvRaw; var cov = 0u;
+  if (lvRaw < 254u) { lvC = select(lvRaw & 31u, 255u, (lvRaw & 128u) != 0u); cov = (lvRaw >> 5u) & 3u; }
+  let vmTag = select(0u, 0xFFFFu - gi.w + 1u, kind == 8u && (u.aaFlags & 4) != 0 && gi.w >= 65528u && gi.w <= 65535u); // KIND_MODEL, VM_ID_MIN
   o.fg = packRgb(fgC.x, fgC.y, fgC.z);
   o.bg = packRgb(bgC.x, bgC.y, bgC.z);
   o.glyph = byteOf(fgC.w);
-  o.level = lvC; o.kind = kind; o.plane = gi.x; o.mat = giMat(gi.y); o.ub = ga.x; o.vb = ga.y; o.fresh = 1u;
+  o.level = lvC; o.kind = kind; o.plane = gi.x; o.mat = giMat(gi.y); o.vm = vmTag; o.ub = ga.x; o.vb = ga.y; o.fresh = 1u;
   if (u.histValid == 0) { return o; }
-  if (kind == ${KIND_NONE}u || kind == ${KIND_MODEL}u || lvC == LEVEL_ANIM) { return o; }
+  if (kind == ${KIND_NONE}u || (kind == ${KIND_MODEL}u && (u.aaFlags & 4) == 0) || lvC == LEVEL_ANIM) { return o; }
   // edge cell: final != shade (rgb of fg and bg, glyph in fg.a) -> pass through
   let sf = textureLoad(uShadeFg, cell, 0);
   let sb = textureLoad(uShadeBg, cell, 0);
@@ -116,32 +121,43 @@ fn stableCell(cell: vec2i) -> SCell {
   let vd = bitcast<f32>(textureLoad(uDepth, cell, 0).x);
   if (!(vd > 0.0) || vd > 1.0e38) { return o; }
 
-  let pc = reproject(f32(cell.x), f32(cell.y), vd);
-  if (u.ortho == 0 && pc.z <= 0.0) { return o; }
-  // prefilter (keeps i32() of huge/NaN floats out); the exact cell test follows
-  if (!(pc.x > -2.0 && pc.x < f32(u.gridCols) + 2.0 && pc.y > -2.0 && pc.y < f32(u.gridRows) + 2.0)) { return o; }
-  let hc = i32(floor(pc.x + 0.5)); let hr = i32(floor(pc.y + 0.5));
-  if (hc < 0 || hc >= u.gridCols || hr < 0 || hr >= u.gridRows) { return o; }
-  let hcell = vec2i(hc, hr);
+  var hcell = cell; // AA-07a: the view model's history is the same cell
+  if (vmTag == 0u) {
+    let pc = reproject(f32(cell.x), f32(cell.y), vd);
+    if (u.ortho == 0 && pc.z <= 0.0) { return o; }
+    // prefilter (keeps i32() of huge/NaN floats out); the exact cell test follows
+    if (!(pc.x > -2.0 && pc.x < f32(u.gridCols) + 2.0 && pc.y > -2.0 && pc.y < f32(u.gridRows) + 2.0)) { return o; }
+    let hc = i32(floor(pc.x + 0.5)); let hr = i32(floor(pc.y + 0.5));
+    if (hc < 0 || hc >= u.gridCols || hr < 0 || hr >= u.gridRows) { return o; }
+    hcell = vec2i(hc, hr);
+  }
 
   let hh = textureLoad(uHist, hcell, 0);
-  let hk = (hh.w >> 8u) & 255u;
+  let hk = (hh.w >> 8u) & 15u;
   if (hk != kind) { return o; }
-  if (hh.x != gi.x) {
-    // OB-198 (2): mesh planeIds flip almost every step; the material is the stable key (aaFlags bit 1)
-    if (!((u.aaFlags & 2) != 0 && kind == ${KIND_MESH}u && (hh.w >> 16u) == giMat(gi.y))) { return o; }
+  if (((hh.w >> 12u) & 15u) != vmTag) { return o; } // view-model key = objectId + mat; a different object drops the history
+  let matSame = (hh.w >> 16u) == giMat(gi.y);
+  if (vmTag != 0u) {
+    if (!matSame) { return o; }
+  } else if (hh.x != gi.x) {
+    // OB-198 (2): mesh planeIds flip almost every step; the material is the stable key (aaFlags bit 1); AA-07a: also world kind-8 props (bit 2)
+    if (!(matSame && (((u.aaFlags & 2) != 0 && kind == ${KIND_MESH}u) || ((u.aaFlags & 4) != 0 && kind == ${KIND_MODEL}u)))) { return o; }
   }
   let lvP = hh.w & 255u;
   if (lvP == LEVEL_ANIM) { return o; }
   let c255 = lvC == LEVEL_NONE;
-  if (c255 != (lvP == LEVEL_NONE)) { return o; } // mixed ramp/non-ramp: a real pattern edge, always fresh
-  let du = bitcast<f32>(ga.x) - bitcast<f32>(hh.y);
-  let dv = bitcast<f32>(ga.y) - bitcast<f32>(hh.z);
-  let dUV = sqrt(du * du + dv * dv);
-  // OB-193: limit = max(texel limit, cell footprint at this depth) - twin: temporalStable.js uvDriftLimit
-  var uvLim = ${UV_LIM_TEXELS.toFixed(1)} / u.detailDefault;
-  if (u.ortho == 0) { uvLim = max(uvLim, ${STABLE_FOOT_K.toFixed(4)} * vd * 2.0 * max(u.curA.w / f32(u.gridCols), u.curC.y / f32(u.gridRows))); }
-  if (dUV >= uvLim) { return o; }
+  // AA-07b: line<->ramp mismatch on a 1/4..3/4 joint-coverage cell = the 50 pct joint vote flipping: hold the history glyph (aaFlags bit 3)
+  let jointHold = c255 != (lvP == LEVEL_NONE) && (u.aaFlags & 8) != 0 && cov >= 1u && cov <= 3u;
+  if (c255 != (lvP == LEVEL_NONE) && !jointHold) { return o; } // mixed ramp/non-ramp: a real pattern edge, always fresh
+  if (vmTag == 0u) {
+    let du = bitcast<f32>(ga.x) - bitcast<f32>(hh.y);
+    let dv = bitcast<f32>(ga.y) - bitcast<f32>(hh.z);
+    let dUV = sqrt(du * du + dv * dv);
+    // OB-193: limit = max(texel limit, cell footprint at this depth) - twin: temporalStable.js uvDriftLimit
+    var uvLim = ${UV_LIM_TEXELS.toFixed(1)} / u.detailDefault;
+    if (u.ortho == 0) { uvLim = max(uvLim, ${STABLE_FOOT_K.toFixed(4)} * vd * 2.0 * max(u.curA.w / f32(u.gridCols), u.curC.y / f32(u.gridRows))); }
+    if (dUV >= uvLim) { return o; }
+  }
 
   o.fresh = 0u;
   let hf = textureLoad(uHistFg, hcell, 0);
@@ -149,6 +165,7 @@ fn stableCell(cell: vec2i) -> SCell {
   let fgCur = o.fg;
   o.fg = blendPacked(packRgb(hf.x, hf.y, hf.z), o.fg);
   o.bg = blendPacked(packRgb(hb.x, hb.y, hb.z), o.bg);
+  if (jointHold) { o.glyph = byteOf(hf.w); o.level = lvP; return o; }
   if (c255) {
     // both sides non-ramp (38.25 C.3): hold the texture glyph unless the fg snapped; a hold keeps the HISTORY's anchor u/v (C.4)
     let sa = packRgb(hf.x, hf.y, hf.z);
@@ -177,7 +194,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
   var o: FO;
   o.fg = vec4f(f32((r.fg >> 16u) & 255u) / 255.0, f32((r.fg >> 8u) & 255u) / 255.0, f32(r.fg & 255u) / 255.0, f32(r.glyph) / 255.0);
   o.bg = vec4f(f32((r.bg >> 16u) & 255u) / 255.0, f32((r.bg >> 8u) & 255u) / 255.0, f32(r.bg & 255u) / 255.0, bgA);
-  o.hist = vec4u(r.plane, r.ub, r.vb, r.level | (r.kind << 8u) | (r.mat << 16u));
+  o.hist = vec4u(r.plane, r.ub, r.vb, r.level | (r.kind << 8u) | (r.vm << 12u) | (r.mat << 16u));
   return o;
 }
 `;
