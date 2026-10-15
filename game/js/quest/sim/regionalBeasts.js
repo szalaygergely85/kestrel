@@ -7,6 +7,9 @@
 
 /** Per-region rule. `rect` overrides the geo region rect (Whitecombs foot only); groups x size = count. */
 export const REGION_RULES = Object.freeze([
+  // OB-153: placed first so the rare kinds find ground before the OB-185 filler crowds the region
+  { region: 'alpine', key: 'highPasturesWhite', species: 'whitewolf', groups: 3, size: 3, slope: 0.6 },
+  { region: 'whitecombs', key: 'whitecombsCave', species: 'cavebear', groups: 2, size: 1, slope: 0.6, rect: [0, 0, 2048, 330] },
   { region: 'glasswater', key: 'glasswater', species: 'boar', groups: 1, size: 3 },
   { region: 'northwood', key: 'northwood', species: 'wolf', groups: 1, size: 4 },
   { region: 'alpine', key: 'highPastures', species: 'bear', groups: 2, size: 1 },
@@ -23,20 +26,36 @@ export const REGION_RULES = Object.freeze([
   { region: 'reedmire', key: 'reedmireWater', species: 'croc', groups: 2, size: 1, water: true },
   // strand: none (open beach, ambient fauna only)
   // OB-185: density floor 50 enemies/km2 per region (more in forests). Extra groups (key suffix keeps ids/rng streams apart).
-  { region: 'whitecombs', key: 'whitecombsBears', species: 'bear', groups: 8, size: 2, slope: 0.6, rect: [0, 0, 2048, 330] },
-  { region: 'whitecombs', key: 'whitecombsWolves', species: 'wolf', groups: 8, size: 3, slope: 0.6, rect: [0, 0, 2048, 330] },
+  { region: 'whitecombs', key: 'whitecombsBears', species: 'bear', groups: 6, size: 2, slope: 0.6, rect: [0, 0, 2048, 330] },
+  { region: 'whitecombs', key: 'whitecombsWolves', species: 'wolf', groups: 5, size: 3, slope: 0.6, rect: [0, 0, 2048, 330] },
   { region: 'westFells', key: 'westFells', species: 'wolf', groups: 9, size: 3 },
-  { region: 'northwood', key: 'northwoodPack', species: 'wolf', groups: 3, size: 4 },
-  { region: 'glasswater', key: 'glasswaterBoars', species: 'boar', groups: 3, size: 3 },
+  { region: 'northwood', key: 'northwoodPack', species: 'wolf', groups: 2, size: 4 },
+  { region: 'glasswater', key: 'glasswaterBoars', species: 'boar', groups: 2, size: 3 },
   { region: 'glasswater', key: 'glasswaterWolves', species: 'wolf', groups: 1, size: 3 },
   { region: 'alpine', key: 'highPasturesBears', species: 'bear', groups: 3, size: 2, slope: 0.6 },
   { region: 'alpine', key: 'highPasturesWolves', species: 'wolf', groups: 3, size: 3, slope: 0.6 },
   { region: 'thornwood', key: 'thornwood', species: 'wolf', groups: 2, size: 3 },
   { region: 'downs', key: 'downsMore', species: 'boar', groups: 3, size: 2 },
   { region: 'reedmire', key: 'reedmireMore', species: 'boar', groups: 3, size: 2 },
-  { region: 'strand', key: 'strand', species: 'boar', groups: 1, size: 3 },
-  { region: 'heartland', key: 'heartlandBoars', species: 'boar', groups: 5, size: 3 },
+  { region: 'strand', key: 'strand', species: 'boar', groups: 1, size: 2 },
+  { region: 'heartland', key: 'heartlandBoars', species: 'boar', groups: 2, size: 3 },
   { region: 'heartland', key: 'heartlandWolves', species: 'wolf', groups: 3, size: 3, rect: [0, 330, 1000, 1700] },
+  // OB-153: fantasy bestiary. species = id prefix (letters only), KIND_OF[species] = kinds.json kind (brain.beastKind). Replaces some boars/wolves above.
+  { region: 'downs', key: 'downsDeer', species: 'deer', groups: 2, size: 3 },
+  { region: 'downs', key: 'downsFox', species: 'fox', groups: 2, size: 1 },
+  { region: 'heartland', key: 'heartlandDeer', species: 'deer', groups: 2, size: 3 },
+  { region: 'heartland', key: 'heartlandFox', species: 'fox', groups: 2, size: 2 },
+  { region: 'glasswater', key: 'glasswaterDeer', species: 'deer', groups: 1, size: 3 },
+  { region: 'northwood', key: 'northwoodFox', species: 'fox', groups: 2, size: 2 },
+  { region: 'reedmire', key: 'reedmireTurtle', species: 'turtle', groups: 2, size: 2 },
+  { region: 'strand', key: 'strandTurtle', species: 'turtle', groups: 1, size: 2 },
+  { region: 'alpine', key: 'highPasturesGoats', species: 'goat', groups: 2, size: 2, slope: 0.6 },
+  { region: 'whitecombs', key: 'whitecombsGoats', species: 'goat', groups: 2, size: 3, slope: 0.6, rect: [0, 0, 2048, 330] },
+  { region: 'whitecombs', key: 'whitecombsWhite', species: 'whitewolf', groups: 3, size: 3, slope: 0.6, rect: [0, 0, 2048, 330] },
+  { region: 'westFells', key: 'westFellsArchers', species: 'archer', groups: 2, size: 2 },
+  { region: 'thornwood', key: 'thornwoodShaman', species: 'shaman', groups: 1, size: 2 },
+  { region: 'thornwood', key: 'thornwoodTorch', species: 'torch', groups: 1, size: 2 },
+  { region: 'westHeath', key: 'westHeathChief', species: 'chief', groups: 1, size: 1 },
 ]);
 
 /** OB-185: species of the roadside groups per region (default boar). Roads get a group wherever the walk would go > ROAD_GAP m without one. */
@@ -48,8 +67,11 @@ export const FIXED_SAFE = Object.freeze([[1497, 1027, 70]]);
 export const REGIONAL_BEAST_COUNT = REGION_RULES.reduce((n, r) => n + r.groups * r.size, 0);
 
 import { WOLF_MODEL } from './wolfBrain.js';
-export const MODEL = { boar: 'boarPlaceholder', wolf: WOLF_MODEL, bear: 'bearBlack', croc: 'crocodile' }; // BEAST-02: wolf packs use the real voxel_wolf model ('wolf')
-export const BODY = { boar: { height: 0.7, radius: 0.45 }, wolf: { height: 0.7, radius: 0.45 }, bear: { height: 1.1, radius: 0.7 }, croc: { height: 0.5, radius: 0.7 } };
+export const MODEL = { boar: 'boarPlaceholder', wolf: WOLF_MODEL, bear: 'bearBlack', croc: 'crocodile', deer: 'deer', fox: 'fox', turtle: 'tortoise', goat: 'goat', whitewolf: WOLF_MODEL, cavebear: 'bearBlack', archer: 'goblin', shaman: 'goblin', chief: 'goblin', torch: 'goblinTorch' }; // BEAST-02: wolf packs use the real voxel_wolf model ('wolf')
+export const BODY = { boar: { height: 0.7, radius: 0.45 }, wolf: { height: 0.7, radius: 0.45 }, bear: { height: 1.1, radius: 0.7 }, croc: { height: 0.5, radius: 0.7 },
+  deer: { height: 1.2, radius: 0.5 }, fox: { height: 0.6, radius: 0.35 }, turtle: { height: 0.5, radius: 0.5 }, goat: { height: 0.9, radius: 0.45 }, whitewolf: { height: 0.8, radius: 0.5 }, cavebear: { height: 1.3, radius: 0.8 }, archer: { height: 1.0, radius: 0.4 }, shaman: { height: 1.0, radius: 0.4 }, chief: { height: 1.3, radius: 0.5 }, torch: { height: 1.0, radius: 0.4 } };
+/** OB-153: id-prefix species -> kinds.json kind for the non-legacy species (boar/wolf/bear keep their legacy brains). */
+export const KIND_OF = Object.freeze({ deer: 'red_deer', fox: 'fox', turtle: 'snapping_turtle', goat: 'mountain_goat', whitewolf: 'white_wolf', cavebear: 'cave_bear', archer: 'goblin_archer', shaman: 'goblin_shaman', chief: 'goblin_chief', torch: 'goblin_torch_bearer' });
 export const SPECIES_BEAST_KIND = { croc: 'river_crocodile' }; // brain.beastKind of species that are not the 3 legacy ones (kindOfEntity)
 /** World_m1 beast nav rect in metres [x0,y0,x1,y1] (nav.area is in cells x cell 2): water slots outside it cannot init (initSwimmer) and would stay land crocs. */
 export const WATER_NAV_AREA = Object.freeze([790, 860, 1700, 1840]);
@@ -202,8 +224,8 @@ export function spawnRegionalBeasts(world, geo, seed, navArea) {
   for (const b of list) {
     if (world.get(b.id)) continue; // WMP-09: a world restored from a save already holds the herd (saves keep all entities) - spawn only the missing ones
     const brain = { kind: 'beast', home: [b.x, b.y], temperament: 'wary' };
-    if (SPECIES_BEAST_KIND[b.species]) brain.beastKind = SPECIES_BEAST_KIND[b.species]; // BEAST-09a: water slot via waterBrain (archetype medium 'water')
-    else if (b.species !== 'boar') brain.species = b.species;
+    const bk = SPECIES_BEAST_KIND[b.species] || KIND_OF[b.species]; // BEAST-09a croc water slot (waterBrain) / OB-153 kinds
+    if (bk) brain.beastKind = bk; else if (b.species !== 'boar') brain.species = b.species;
     world.spawn('beast', { x: b.x, y: b.y, z: world.terrain.heightAt(b.x, b.y) },
       { voxel: { anim: 'idle', loop: true, model: MODEL[b.species] }, brain, targetable: { ...BODY[b.species] } }, b.id);
   }
