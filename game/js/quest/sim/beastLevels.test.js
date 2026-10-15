@@ -28,5 +28,12 @@ for (const lv of [1, 5, 10]) {
   ok(`lv${lv} hits to kill player easy >= normal >= hard`, hitsToKillPlayer(1, lv, 'easy') >= hitsToKillPlayer(1, lv, 'normal') && hitsToKillPlayer(1, lv, 'normal') >= hitsToKillPlayer(1, lv, 'hard'));
 }
 ok('unknown difficulty = normal', levelScale(3, 'zzz').hp === levelScale(3, 'normal').hp);
+// KINDS-F: two kinds of one species at the same level differ by their factors; missing factors = base
+import { kindFactors } from './beastLevels.js';
+const ent = (beastKind, species) => ({ components: { brain: { beastKind, species } } });
+const gw = kindFactors(ent('goblin_warrior')), gc = kindFactors(ent('goblin_chief'));
+ok('goblin chief tougher than warrior at same level', gc.hp > gw.hp && gc.dmg > gw.dmg);
+ok('wolf/bear skip (own tuning)', kindFactors(ent('black_bear'), 1).hp === 1);
+ok('unknown/no kind = boar = base', kindFactors({ components: {} }).hp === 1 && kindFactors(ent('nope')).dmg === 1);
 console.log(`beastLevels: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

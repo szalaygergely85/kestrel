@@ -11,7 +11,7 @@
 import { createAStar, findPath, findPathCells, smoothPath, createSteer, PHYSICS, SIM_STEP } from '../../../../engine/index.js';
 import { BEAST_DEFAULTS, toSteps } from './beastConfig.js';
 import { tierMult } from './band.js';
-import { levelScale, LEVEL_TABLE } from './beastLevels.js';
+import { levelScale, LEVEL_TABLE, kindFactors } from './beastLevels.js';
 import { canSee } from './sight.js';
 import { BEAR_TUNING, BEAR_MODEL, bearOverrides, bearPicksBite, isBearEntity } from './bearBrain.js'; // BEAR-01, BEAR-BITE
 import { WOLF_TUNING, wolfOverrides, isWolfEntity, circleTarget, awayTarget } from './wolfBrain.js'; // WOLF-01
@@ -329,8 +329,11 @@ export function createBeastSim(world, opts) {
     // OB-150: hp/damage scale with the zone LEVEL (band 1-10, placed tier override -> representative level) and difficulty (beastLevels.js)
     const lv = (br && br.tier >= 1 && br.tier <= 3) ? LEVEL_TABLE.tierLevel[br.tier | 0] : (band ? band.bandAt(e.transform.x, e.transform.y) : 1);
     const ls = levelScale(lv, opts.difficulty);
-    sim.tier[i] = tier; sim.spdMul[i] = m.speed; sim._hitPayload[i].damage = (sim.bear[i] ? BEAR_TUNING.swipeHearts : 1) * ls.damage; // BEAR-01: swipe base is 2 hearts
-    const maxHp = Math.max(1, Math.round(sim.scfg[i].hp * ls.hp));
+    // KINDS-F (OB-153): kinds.json hpF/dmgF (x boar, missing = 1) multiply the level result. Wolf/bear slots already carry their own
+    // tuning (WOLF_TUNING/BEAR_TUNING hpMul, swipe hearts) so they are skipped here to avoid double counting.
+    const kf = kindFactors(e, sim.wolf[i] || sim.bear[i]);
+    sim.tier[i] = tier; sim.spdMul[i] = m.speed; sim._hitPayload[i].damage = (sim.bear[i] ? BEAR_TUNING.swipeHearts : 1) * ls.damage * kf.dmg; // BEAR-01: swipe base is 2 hearts
+    const maxHp = Math.max(1, Math.round(sim.scfg[i].hp * ls.hp * kf.hp));
     e.components.health = { hp: maxHp, max: maxHp, invuln: 0 };
     steer.addAgent(e.transform.x, e.transform.y, cfg.radius, 0, DEFAULT_ACCEL);
   }
