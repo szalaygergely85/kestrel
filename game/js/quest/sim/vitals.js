@@ -125,7 +125,9 @@ export function createVitals(world, events, cfg, hooks) {
   function onHit(p) {
     if (!p || p.target !== 'player' || !player || !health) return;
     const scale = p.source !== 'player' ? cfg.beastDamageScale : 1;
-    let n = Math.round((p.damage || 0) * scale);
+    // BH2-G1: Settings > Difficulty playerDmg (damage the player takes from non-player sources); hooks.dmgMul() is read per hit so a live change applies
+    const dmul = p.source !== 'player' && typeof h.dmgMul === 'function' ? h.dmgMul() : 1;
+    let n = Math.round((p.damage || 0) * scale * dmul);
     let dirX, dirY;
     if (p.source != null) {
       const srcHandle = world.get(p.source);
