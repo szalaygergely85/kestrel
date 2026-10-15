@@ -16,6 +16,7 @@ import { SUN_N_SHIFT, CLOUD_Q_SHIFT } from '../../shadowSun.js';
 import { AO_MAX } from '../../horizonAo.js';
 import { PSH_NEAR } from '../../shadowPoint.js';
 import { CONTACT_AO_WGSL, CAO_SHIFT, CAO_MAX } from '../../contactAO.js';
+import { LIGHT_SHAFT_WGSL, SHAFT_SHIFT } from '../../lightShaft.js'; // CANOPY-SHAFT-01b (38.76)
 import { GI_SAMPLE_WGSL, giBindingWgsl } from '../../giGpu.js';
 
 export const PSH_MAX_SLOTS = 6;
@@ -60,6 +61,8 @@ export const LIGHT_BLOCK = defineUniformBlock('LightU', [
   // [cx cy zBase rx][ry h k 0] (contactAO.js data layout); copied from LightSet.cao only when its version changes.
   { name: 'caoA', type: 'vec4' },
   { name: 'caoD', type: 'vec4', count: CAO_MAX * 2 },
+  // CANOPY-SHAFT-01b (38.76 item 4): shaft = (steps, maxM, on, 0), appended at the very END. steps 0 = march skipped, LIGHT.w bits 20..23 stay 0 (byte-identical).
+  { name: 'shaft', type: 'vec4' },
 ]);
 
 /** Texture slot kinds for PipelineDesc.bindings.textures. */
@@ -301,14 +304,38 @@ fn sampleVis(i: i32, px: f32, py: f32) -> f32 {
 
 ${CONTACT_AO_WGSL}
 
+${LIGHT_SHAFT_WGSL}
+// CANOPY-SHAFT-01b: view ray through the cell (P1 = the cell's ray at dist 1, linear in dist for shear + pitched), len = min(euclid dist, maxM),
+// sky cells march the full maxM. Shadow-map sun only; ortho (projMode 2) has no shafts. Result is already shifted into bits 20..23.
+fn shaftBitsAt(cell: vec2i, kindU: u32) -> u32 {
+  if (u.sunOn == 0 || u.sunMode != 2 || u.projMode == 2) { return 0u; }
+  let eye = vec3f(u.posX, u.posY, u.eyeH);
+  var P1: vec3f;
+  if (u.projMode == 0) {
+    P1 = cellRayP(vec2f(cell), vec2i(u.gridCols, u.gridRows), u.posX, u.posY, u.eyeH, u.dirX, u.dirY, u.planeX, u.planeY, u.horizonRow, u.planeDistY, 1.0);
+  } else {
+    P1 = cellRayPitched(vec2f(cell), vec2i(u.gridCols, u.gridRows), eye, u.pitchA.xyz, u.pitchB.xy, vec3f(u.pitchB.zw, u.pitchC.x), vec2f(u.pitchA.w, u.pitchC.y), 1.0, false);
+  }
+  let rv = P1 - eye;
+  let rl = max(length(rv), 1e-6);
+  let d = rv / rl;
+  var len = u.shaft.y;
+  if (kindU != 0u) { len = min(bitcast<f32>(textureLoad(uDepth, cell, 0).x) * rl, u.shaft.y); }
+  let q = shaftLitQ(eye.x, eye.y, eye.z, d.x, d.y, d.z, len, i32(u.shaft.x), cell.x, cell.y);
+  return u32(q) << ${SHAFT_SHIFT}u;
+}
+
 @fragment
 fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
   let cell = vec2i(floor(frag.xy));
   let gi = textureLoad(uGI, cell, 0).xy;
   let kindU = giKind(gi.y);
   var L = u.ambient;
+  // CANOPY-SHAFT-01b: march every cell incl. sky before the early return; steps 0 (low/medium, no shaft data) never enters.
+  var shaftBits: u32 = 0u;
+  if (u.shaft.x > 0.0 && u.shaft.z > 0.0) { shaftBits = shaftBitsAt(cell, kindU); }
   if (kindU == 0u) {
-    return vec4u(bitcast<vec3u>(L), 0u);
+    return vec4u(bitcast<vec3u>(L), shaftBits);
   }
   let dist = bitcast<f32>(textureLoad(uDepth, cell, 0).x);
   var P: vec3f;
@@ -419,7 +446,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
     if (caoQ != 0u && !isTer) { L -= u.ambient * (f32(caoQ) * (1.0 / 127.0)); } // CAO_AMB
   }
 
-  return vec4u(bitcast<vec3u>(L), u32(sunlit) | caoBits | (u32(litCount) << 8u) | (u32(sunN) << SUN_N_SHIFT) | cloudBits);
+  return vec4u(bitcast<vec3u>(L), u32(sunlit) | caoBits | (u32(litCount) << 8u) | (u32(sunN) << SUN_N_SHIFT) | shaftBits | cloudBits);
 }
 `;
 

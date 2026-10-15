@@ -24,12 +24,12 @@ try {
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 700, deviceScaleFactor: 1, mobile: false });
   await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
   for (const h of hours) {
-    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?save=0&nopause=1&quality=medium&backend=webgpu&title=0${process.env.EXTRA || ""}&time=${h}` });
+    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?save=0&nopause=1&quality=${process.env.Q||"medium"}&backend=webgpu&title=0${process.env.EXTRA || ""}&time=${h}` });
     let ok = false;
     for (let i = 0; i < 600 && !ok; i++) { await pause(300); try { ok = !!(await evaluate(cdp, '!!(window.__debug && window.__debug.playerHandle && window.__debug.world) && !/Checking your graphics/.test(document.body.innerText||"")')); } catch { /* navigating */ } }
     if (!ok) throw new Error("never ready " + JSON.stringify(await evaluateAsync(cdp, "(async()=>{const a=navigator.gpu&&await navigator.gpu.requestAdapter();return 'adapter='+(a?'ok':String(a))+' '+document.body.innerText.slice(150,700)})()").catch(e=>String(e))));
     await pause(5000);
-    await evaluate(cdp, `(()=>{const t=__debug.playerHandle.data.transform;t.x=${sx};t.y=${sy};if(__debug.vitals&&__debug.vitals.setGodMode)__debug.vitals.setGodMode(true);const gz=__debug.world.terrain.heightAt(${sx},${sy});t.z=(gz==null?${sz}:gz+0.2);t.yawDeg=${syaw};t.pitchDeg=${spitch};})()`);
+    await evaluate(cdp, `(()=>{const t=__debug.playerHandle.data.transform;t.x=${sx};t.y=${sy};if(__debug.vitals&&__debug.vitals.setGodMode)__debug.vitals.setGodMode(true);const gz=(__debug.world.terrain.groundAt||__debug.world.terrain.heightAt).call(__debug.world.terrain,${sx},${sy});t.z=(gz==null?${sz}:gz+0.2);t.yawDeg=${syaw};t.pitchDeg=${spitch};const L=__debug.look;if(L){L.yawDeg=${syaw};L.pitchDeg=${spitch};}})()`);
     await pause(9000);
     const info = await evaluate(cdp, `(()=>{const L=__debug.world.palette&&__debug.world.palette.liveLook;return JSON.stringify({sunI:L&&L.sunI,ambientI:L&&L.ambientI,hasClouds:!!(L&&L.clouds)})})()`);
     console.log('hour', h, info);
