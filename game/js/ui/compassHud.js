@@ -100,6 +100,7 @@ export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
     else if (stt === ACTIVE && !(qi === 0 && book.mainStepGated && book.mainStepGated())) { // OB-199: not-accepted main step -> no needle
       const idx = st.completed.length;
       if (idx < def.objectives.length && stepPos(def.objectives[idx].when, st, world)) kind = 2;
+      else if (def.objectives[idx] && def.objectives[idx].when.type === 'deliver' && deliverTo(def.objectives[idx].when, qi, book, world)) kind = 2; // quest-rules R5: item already in hand (handed over on accept) -> the recipient
       else if (def.objectives[idx] && ITEM_STEP.has(def.objectives[idx].when.type)) noSource = true; // OB-202/OB-207: fetch step with no known source -> no needle at all (never the giver, never an unrelated '!' giver)
       else if (def.giver && def.giver.npc && world.resolve('giver', def.giver.npc, tmp)) kind = 2;   // COMPASS-QUEST-01: unresolvable step -> point at the quest's giver instead of hiding
     }
@@ -117,6 +118,12 @@ export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
     if (kind !== lastKind || Math.abs(tgt.x - lastX) > 0.5 || Math.abs(tgt.y - lastY) > 0.5) { flashPending = true; sectorOk = false; }   // moving beast = small drift, no re-flash
     lastKind = kind; lastX = tgt.x; lastY = tgt.y;
     return tgt;
+  }
+
+  /** Recipient of a deliver step: `to` ('@turnIn' = the quest's turn-in giver) resolved as a giver; writes tmp. */
+  function deliverTo(when, qi, book, world) {
+    const to = when.to === '@turnIn' || !when.to ? (book.turnInOf ? book.turnInOf(qi) : null) : when.to;
+    return !!to && world.resolve('giver', to, tmp);
   }
 
   function stepPos(when, st, world) {

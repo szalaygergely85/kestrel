@@ -174,11 +174,7 @@ import { createQuestLogScreen } from '../ui/questLog.js';
 import { createUiLayer } from '../../../engine/index.js';
 const SHOW_ALL = process.argv.includes('--all');
 /** Known open owner bugs: 'quest|rule' or '*|rule' -> OB id. They print as todo and do not fail the suite. */
-const TODO = {
-  // OB-206 class: a hand-written 'q.<main>.active' dialogue entry sits before the generated 'available' offers (questSnippets.js:104), so an active quest hides another quest's offer at the same giver
-  'sq.burl.blue|R1': 'OB-206', 'mq.river.road|R1': 'OB-206', 'mq.ford.stones|R1': 'OB-206', 'mq.ford.mirror|R1': 'OB-206', 'mq.smoke|R1': 'OB-206', 'mq.ow.path|R1': 'OB-206', 'mq.ow.fence|R1': 'OB-206', 'mq.ow.relay|R1': 'OB-206', 'mq.ow.board|R1': 'OB-206',
-  'sq.post.spare|R5': 'OB-207', 'sq.fc.cog|R5': 'OB-207', 'sq.honey|R5': 'OB-207', 'sq.ow.parcel|R5': 'OB-207', 'sq.reg.strand|R5': 'OB-207', // deliver step, item handed over on accept (sources.json giver:true): compass falls back to an available giver
-  'sq.rook.gift|R6': 'hand-in behind pending offer', 'sq.honey|R6': 'hand-in behind pending offer', 'sq.ow.trail|R6': 'hand-in behind pending offer', // Exit on a pending offer at the turn-in blocks the hand-in
+const TODO = { // empty: every rule passes on all quests (OB-206/207 fixed); add 'quest|rule': 'OB-NNN' only for a logged open bug
 };
 const sources = rd('content/items/sources.json').items || {};
 const ui = createUiLayer({ cols: 160 });
@@ -305,7 +301,9 @@ function audit(def) {
       if (!t) e5.push(tag + ': no compass target');
       else {
         const g = giverAt.get(t.x);
-        if (t.kind === 3) e5.push(tag + ": needle falls back to available giver '" + g + "' (OB-207 class)");
+        const recipient = w.type === 'deliver' && sources[w.id] && sources[w.id].giver ? (w.to === '@turnIn' || !w.to ? (def.giver.turnIn || def.giver.npc) : w.to) : null; // item handed over on accept: the needle goes to whoever receives it
+        if (recipient) { if (t.kind !== 2 || g !== recipient) e5.push(tag + ": deliver needle should point at the recipient '" + recipient + "', got '" + (g || '?') + "'"); }
+        else if (t.kind === 3) e5.push(tag + ": needle falls back to available giver '" + g + "' (OB-207 class)");
         else if (t.kind === 2 && g && g !== giver) e5.push(tag + ": needle points at another quest's giver '" + g + "'");
         else if (t.kind === 2 && g && ITEM.has(w.type)) e5.push(tag + ": needle points at its own giver '" + g + "' while gathering");
       }
