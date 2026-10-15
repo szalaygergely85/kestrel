@@ -66,6 +66,18 @@ function goblinClip(clip, st, i, sim, v) {
   if (v.model === 'goblinTorch' && cf.torchState && cf.torchState[name]) return cf.torchState[name];
   return cf.state[name] || clip;
 }
+// UNDER-01 (OB-191): skeleton / skeletonArcher clips via ASSETS.skeletonFx.clipFor (state map, archerState for windup / charge / recover). `rise`
+// (1.2 s, 7 keys) is played on spawn from sim.riseMs[slot] (set by underSkeletons.createUnderSpawner) and driven manually like die / sink.
+export const RISE_DURATIONS = [150, 150, 200, 200, 200, 150, 150];
+const RISE_TOTAL_MS = 1200;
+export function skeletonClip(clip, st, archer) {
+  if (clip === 'hurt' || clip === 'flinch') return clip;
+  const fx = globalThis.ASSETS && globalThis.ASSETS.skeletonFx, cf = fx && fx.clipFor;
+  if (!cf) return clip;
+  const name = GOBLIN_STATE_NAMES[st];
+  if (archer && cf.archerState && cf.archerState[name]) return cf.archerState[name];
+  return (name && cf.state[name]) || clip;
+}
 // BEAST-09a: waterBrain state ids (ST_WINDUP 3, ST_CHARGE 4, ST_RECOVER 5, ST_FLINCH 8, ST_SUB 20, ST_GRAB 21) -> crocFx.clipFor.state key
 const CROC_STATE_NAME = { 3: 'windup', 4: 'lunge', 5: 'recover', 8: 'stagger', 20: 'swim', 21: 'grab' };
 const CROC_STATE_FALLBACK = { windup: 'idle', lunge: 'attack', recover: 'recover', stagger: 'flinch', swim: 'swim', grab: 'grab' };
@@ -155,12 +167,20 @@ export function presentBeasts(sim, world, overlay, styleIds, anim, legs, cam, bl
       if (st !== STATE_DYING && st !== STATE_CORPSE && st !== STATE_SINK) clip = goblinClip(clip, vst, i, sim, v);
       v.speed = v.model === 'goblinTorch' && (clip === 'carryTorch') && (st === STATE_CHASE || sim.fleeing && sim.fleeing[i] && st === STATE_RETURN) ? 1.6 : 1;
     }
+    let riseMs = 0;
+    if ((v.model === 'skeleton' || v.model === 'skeletonArcher') && st !== STATE_DYING && st !== STATE_CORPSE && st !== STATE_SINK) { // UNDER-01
+      clip = skeletonClip(clip, vst, v.model === 'skeletonArcher');
+      if (sim.riseMs && sim.riseMs[i] > 0) { riseMs = sim.riseMs[i]; clip = 'rise'; playing = false; }
+    }
     if (blend && !blended) blend.release(i, v); // dying / corpse / sink / no blend block: today's manual clips
     if (!blended && clip !== v.anim) { v.anim = clip; v.frame = 0; v.t = 0; v.loop = undefined; }
     if (anim) { v.blendFrom = anim.prevClip[i]; v.blendW = anim.w[i]; } // cross-fade data; renderer does not consume it yet
 
     if (playing) {
       v.playing = true;
+    } else if (riseMs > 0) {
+      frameTFromElapsed(RISE_TOTAL_MS - riseMs, RISE_DURATIONS, v);
+      v.playing = false;
     } else {
       const steps = (st === STATE_DYING) ? sim.cfgSteps.die : sim.cfgSteps.sink;
       const elapsed = (steps - sim.timer[i]) * STEP_MS;
