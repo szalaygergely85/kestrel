@@ -39,7 +39,6 @@
     "note.westStones": {"prompt": "[E] Look at the stones", "title": "A ring of stones", "lines": ["Six stones, set on the hill by hand.", "You can see the ford and the trade post from here.", "Whoever stood here watched the road."]},
     "note.poi.whitecombs.1": {"prompt": "[E] Look at the stones", "title": "A ring of stones", "lines": ["Set upright by hand, long ago.","The grass inside is still short."]},
     "note.poi.whitecombs.2": {"prompt": "[E] Read the marks", "title": "A broken arch", "lines": ["Someone scratched tally marks on the stone.","Forty-one, and then they stop."]},
-    "note.poi.whitecombs.3": {"prompt": "[E] Look at the wreck", "title": "A wrecked wagon", "lines": ["The wheels are gone and the bed is split.","A faded cross is chalked on the tailboard."]},
     "note.poi.westFells.1": {"prompt": "[E] Read the marks", "title": "A broken arch", "lines": ["Someone scratched tally marks on the stone.","Forty-one, and then they stop."]},
     "note.poi.westFells.2": {"prompt": "[E] Look at the stones", "title": "A ring of stones", "lines": ["Set upright by hand, long ago.","The grass inside is still short."]},
     "note.poi.westFells.3": {"prompt": "[E] Look at the wreck", "title": "A wrecked wagon", "lines": ["The wheels are gone and the bed is split.","A faded cross is chalked on the tailboard."]},

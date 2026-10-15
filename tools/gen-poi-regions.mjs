@@ -58,6 +58,7 @@ for (const P of PLAN) {
   let k = 0;
   for (const c of cands) {
     if (k >= P.kinds.length) break; if (near(c.x, c.y, placed) < 90) continue;
+    if (P.kinds[k] === 'wagon') { let lo = 1e9, hi = -1e9; for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) { const h = g(c.x + i * 1.3, c.y + j * 1.3); lo = Math.min(lo, h); hi = Math.max(hi, h); } if (hi - lo > 1.2) continue; } // GATE-FIX-13: wagon + crate must not sit on a >20 deg slope (prop-ground-lint steep rule)
     placed.push([c.x, c.y]); const kind = P.kinds[k], key = 'note.poi.' + P.id + '.' + (k + 1), yaw = (k * 97 + 31) % 360; k++;
     const put = (mesh, lx, ly, yw, o = {}) => { const [dx, dy] = rot(yaw, lx, ly), x = c.x + dx, y = c.y + dy; const st = { id: 'ob141r' + String(n++).padStart(2, '0'), mesh: 'quaternius/' + mesh, origin: { x: +x.toFixed(2), y: +y.toFixed(2), z: +(low(x, y, o.ext ?? 0.8) - 0.04).toFixed(2) }, yawDeg: (yw + yaw) % 360 }; if (o.scale) st.scale = o.scale; if (o.noShadow) st.castShadow = false; data.structures.push(st); };
     if (kind === 'ring') put('Rock_Medium_1', 0, 0, 40, { scale: 0.9, ext: 1 });
