@@ -20,3 +20,6 @@ const listOut = execFileSync(process.execPath, [fileURLToPath(new URL('./chest-e
 assert.match(listOut, new RegExp('chests counted: ' + NEW_TOTAL), 'chest total after the OB-179 merge');
 assert.equal((listOut.match(/^(chest|secret)\w+ .* (ok|LOOSE)/gm) || []).length, NEW_TOTAL, '--list prints one row per chest');
 console.log('chest-enemy-density.test: 10 chests listed, none loose (loose count: ' + 0 + ')');
+// OB-152: "every chest is earned" - no LOOSE row in --list, and the total never grows past the OB-179/OB-141 count
+assert.equal((listOut.match(/ LOOSE/g) || []).length, 0, 'every chest is earned (guard/camp/ruin/puzzle within reach)');
+assert.ok(NEW_TOTAL <= 11, 'chest total cap');
