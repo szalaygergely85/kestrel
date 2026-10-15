@@ -508,7 +508,7 @@
     "model": "skeleton",
     "todo": "",
     "lv": [3, 10],
-    "hpF": 2.0,
+    "hpF": 2,
     "dmgF": 1.4,
     "group": [1, 1],
     "respawn": "common",

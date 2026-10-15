@@ -1222,13 +1222,14 @@ async function runGpuCompareSceneMode(ctx) {
     const gpuFg = rbw ? rbw.fg : null, gpuBg = rbw ? rbw.bg : null;
     if (poseShaft && lights && lights.shaft && rbw && wg) { // CANOPY-SHAFT-01b (38.76 rule 8a): frame B = lift on; hard asserts vs frame A (frame A is what the twin compare below uses)
       const aFg = new Uint8Array(rbw.fg), aBg = new Uint8Array(rbw.bg), lightA = new Uint32Array(await gpuPipeline.readbackLight());
+      const sA = (await wg.readbackShade(new Uint8Array(n * 4), new Uint8Array(n * 4))) || { fg: null, bg: null }; // frame A shade-stage colours (direction check, see shaftRule8a.js)
       lights.shaft.liftOff = false;
-      const r8 = await shaftRule8a({ n, aFg, aBg, lightA, sunI: sunFromWorld(world, assets.palette, {}).sunI, tint: SKY_GLOW.tint,
+      const sunIdbg = sunFromWorld(world, assets.palette, {}).sunI; const r8 = await shaftRule8a({ n, aFg, aBg, aSFg: sA.fg, aSBg: sA.bg, readShade: (f, b) => wg.readbackShade(f, b), lightA, sunI: sunIdbg, tint: SKY_GLOW.tint,
         renderB: () => { fbCompare.gpu = true; renderWorld(fbCompare, world, cam); gpuPipeline.frame(fbCompare, lights, cam, world); engine.overlay.flush(cam); rt.present(); }, // frame B gets FRESH readback arrays (rbw stays frame A)
         readCells: (f, b) => wg.readbackCells(f, b) });
       const okB = r8.ok, { lifted, liftedPct, glyphDiff, nonShaft, wrongDir, maxLift } = r8.stats, fails = r8.fails; overallOk = overallOk && okB;
-      console.log(`[gpucompare] ${okB ? 'PASS' : 'FAIL'} ${poseName} [shaft frame B vs A]: lifted=${liftedPct.toFixed(2)}% (>=1) glyphDiff=${glyphDiff} nonShaftChanged=${nonShaft} wrongDir=${wrongDir} maxLift=${maxLift}${fails.length ? ' :: ' + fails.join('; ') : ''}`);
-      rowsOut.push({ pose: poseName + ' [shaft frame B]', ok: okB, shaftB: { lifted, liftedPct, glyphDiff, nonShaft, wrongDir, maxLift } });
+      console.log(`[gpucompare] ${okB ? 'PASS' : 'FAIL'} ${poseName} [shaft frame B vs A]: lifted=${liftedPct.toFixed(2)}% (>=1) glyphDiff=${glyphDiff} nonShaftChanged=${nonShaft} wrongDir=${wrongDir} maxLift=${maxLift} samples=[${r8.stats.samples}]${fails.length ? ' :: ' + fails.join('; ') : ''}`);
+      rowsOut.push({ pose: poseName + ' [shaft frame B]', ok: okB, shaftB: { lifted, liftedPct, glyphDiff, nonShaft, wrongDir, maxLift, samples: r8.stats.samples, sunI: sunIdbg } });
       lights.shaft.liftOff = true; // restore frame A for the twin compare
       fbCompare.gpu = true; renderWorld(fbCompare, world, cam); gpuPipeline.frame(fbCompare, lights, cam, world); engine.overlay.flush(cam); rt.present();
     }
