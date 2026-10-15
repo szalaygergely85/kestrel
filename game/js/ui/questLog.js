@@ -105,6 +105,7 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
     for (let i = 0; i < n; i++) {
       const s = book.status(i);
       if (i === 0 && s !== DONE && !mainSection(book.def(0), book.objectives(0, mainRows))) continue; // OB-099: covered by a giver quest
+      if (i === 0 && s !== DONE && typeof book.mainStepGated === 'function' && book.mainStepGated()) continue; // OB-201 (rule OB-156/D-082): m1 step owned by a giver quest not accepted yet -> no active entry / objective until accepted
       if (s === 2 || s === READY) (isMain(i) ? mainAct : act).push(i);
     }
     mainAct.sort((a, b) => (a === 0 ? -1 : b === 0 ? 1 : b - a)); act.sort((a, b) => b - a);

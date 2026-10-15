@@ -40,3 +40,22 @@ assert.equal(needle(), true);
 console.log('objectiveGate: ok');
 // OB-200: accepted/active -> no '!' (any colour) over the giver
 { const gA = [], gR = [], sA = [], sR = []; book.markLists(gA, gR, sA, sR); assert.deepEqual([gA, gR, sA, sR], [[], [], [], []], 'stone active: no ! over Burl'); }
+// OB-201: the journal follows the same gate (m1 entry hidden while gated, q01 steps stay), incl. q04 follow
+{
+  const { createQuestLogScreen } = await import('../ui/questLog.js');
+  const { createUiLayer } = await import('../../../engine/index.js');
+  const ui = createUiLayer({ cols: 160 }), b2 = createQuestBook(m1, give), f2 = (e) => b2.feed(e), ac = (id) => assert.ok(b2.accept(id));
+  const log = createQuestLogScreen(b2); log.open();
+  const left = () => { log.draw(ui); return log.snapshot().left.join('|'); };
+  f2({ type: 'flag:set', key: 'wake', value: true });
+  assert.equal(b2.mainStepGated(), false, 'q01 wake stays');
+  ac('tower.blade'); f2({ type: 'area:entered', id: 'breach' }); f2({ type: 'item:got', id: 'sword' }); f2({ type: 'area:entered', id: 'towerDoor' }); b2.handIn('tower.blade');
+  assert.ok(!/Awaken|Follow/.test(left()), 'boars offered: no m1 entry');
+  ac('burl.boars'); for (const x of ['boar1', 'boar2', 'boar3', 'boar4', 'boar5']) f2({ type: 'beast:died', id: x }); b2.handIn('burl.boars');
+  assert.equal(b2.mainStepGated(), true, 'q04 follow offered: gated');
+  assert.equal(left(), '', 'follow offered: journal has no active entry: ' + left());
+  ac('burl.follow'); assert.equal(b2.mainStepGated(), false, 'q04 follow accepted: shown');
+  f2({ type: 'flag:set', key: 'burl.arrived', value: true }); b2.handIn('burl.follow');
+  assert.equal(left(), '', 'stone offered: journal has no m1 entry');
+  ac('burl.stone'); assert.ok(left().length > 0, 'stone accepted: listed (' + left() + ')');
+}
