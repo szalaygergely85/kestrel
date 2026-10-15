@@ -21,6 +21,7 @@
 //         gain are a single global WaterCompositeU uniform now, not a per-slot look field)
 
 import { hashFastU } from './terrainShade.js';
+import { packWaterFinish } from './waterFinish.js';
 import { RIPPLE_SPEED, RIPPLE_W, RIPPLE_LIFE } from '../fx/ripples.js';
 
 export const WL_STRIDE = 56;
@@ -139,10 +140,10 @@ export function packRiverLook(name, look) {
 
 /** Resolves the designer table (`{name: look}`, may be absent) once. @param {Record<string, any>|null|undefined} table @returns {WaterLooks} */
 export function resolveWaterLooks(table) {
-  const byName = new Map(), fallByName = new Map(), riverByName = new Map();
+  const byName = new Map(), fallByName = new Map(), riverByName = new Map(), finishByName = new Map();
   const names = table ? Object.keys(table) : [];
-  for (const n of names) { byName.set(n, packWaterLook(n, table[n])); fallByName.set(n, packWaterLook(n, table[n], true)); riverByName.set(n, packRiverLook(n, table[n])); }
-  return { byName, fallByName, riverByName, fallback: packWaterLook('(default)', null), fallFallback: packWaterLook('(default)', null, true), riverFallback: packRiverLook('(default)', null) };
+  for (const n of names) { byName.set(n, packWaterLook(n, table[n])); fallByName.set(n, packWaterLook(n, table[n], true)); riverByName.set(n, packRiverLook(n, table[n])); finishByName.set(n, packWaterFinish(n, table[n])); }
+  return { byName, fallByName, riverByName, finishByName, finishFallback: packWaterFinish('(default)', null), fallback: packWaterLook('(default)', null), fallFallback: packWaterLook('(default)', null, true), riverFallback: packRiverLook('(default)', null) };
 }
 
 const _defaultLooks = resolveWaterLooks(null);
