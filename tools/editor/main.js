@@ -372,7 +372,9 @@ function startPose() {
   return s ? startPoseForStructure(s.frame, s.level) : createCameraPose({ z: 8, pitchDeg: -15 });
 }
 
-let world = engine.loadWorld(assets.world(doc.worldId));
+const GRASS_MASK_ID = 'overworld_far'; // the game loads content/grassmask/<id>.grassMask.json (main.js MASK-e2)
+let edGrassLayer = null; // one layer for the session, kept across rebuild() (World.load re-reads it from editorCarpetOpt)
+let world = engine.loadWorld(assets.world(doc.worldId), { carpet: editorCarpetOpt() }); // OB-196: grass carpet as in the game
 const saved = loadSavedPose();
 let cam = saved ? createCameraPose(saved) : startPose();
 frame.markDirty();
@@ -550,11 +552,20 @@ const gbRadiusEl = document.getElementById('gb-radius');
 const gbStrengthEl = document.getElementById('gb-strength');
 const gbStatusEl = document.getElementById('gb-status');
 
+// OB-196: the paint layer is the carpet's own mask (world._carpetCtx.cfg.mask, the one buildCarpetMask reads) - it used to be
+// world.grassMask, which nothing in the engine reads, so strokes changed an orphan layer and no grass appeared.
+/** OB-196: the game's carpet config (overworld_far recipe, palette ramps) + the shared paint layer; undefined = no carpet recipe. */
+function editorCarpetOpt() {
+  const lvl = window.ASSETS && window.ASSETS.levels && window.ASSETS.levels.overworld_far, rcp = lvl && lvl.recipe && lvl.recipe.carpet;
+  if (!rcp || !Array.isArray(rcp.variants)) return undefined;
+  if (!edGrassLayer) { const raw = bundle && bundle.grassMasks && bundle.grassMasks[GRASS_MASK_ID]; edGrassLayer = raw ? ENG.grassMaskFromJSON(raw) : ENG.createGrassMask(0.5, 64); }
+  return { ...rcp, mask: edGrassLayer, variants: rcp.variants.map((v) => ({ ...v, ramp: v.ramp.map((k) => Array.from(ENG.hexToRgb(assets.palette.colors[k]))) })) };
+}
 function attachGrass() {
   if (!world) { gb.gm = null; return; }
-  gb.key = world.terrainKey || world.id || 'world';
-  let layer = world.grassMask || null;
-  if (!layer && typeof ENG.createGrassMask === 'function') { layer = ENG.createGrassMask(0.5, 64); world.grassMask = layer; }
+  gb.key = GRASS_MASK_ID;
+  const cfg = world._carpetCtx && world._carpetCtx.cfg;
+  const layer = cfg && cfg.mask && cfg.mask.chunks instanceof Map ? cfg.mask : null;
   if (!layer || typeof ENG.setGrassSample !== 'function') { gb.gm = null; return; }
   if (!gb.gm || gb.gm.layer !== layer) gb.gm = GB.wrapLayer(layer, { sampleAt: ENG.grassSampleAt, setSample: ENG.setGrassSample, grassMaskToJSON: ENG.grassMaskToJSON });
 }
@@ -563,7 +574,7 @@ function updateGrassToolbar() {
   grassToolbarEl.querySelectorAll('.gb-op').forEach((b) => b.classList.toggle('active', b.dataset.op === gb.op));
   gbRadiusEl.nextElementSibling.textContent = `${gb.radius} m`;
   gbStrengthEl.nextElementSibling.textContent = `${gb.pct}%`;
-  if (toolMode === 'grass') { attachGrass(); gbStatusEl.textContent = gb.gm ? `grass mask "${gb.key}"` : 'grass mask layer not available in this engine build'; }
+  if (toolMode === 'grass') { attachGrass(); gbStatusEl.textContent = gb.gm ? `grass mask "${gb.key}" (save to content/grassmask/)` : 'no grass carpet in this world (overworld_far recipe.carpet missing)'; }
   frame.markDirty();
 }
 gbRadiusEl.addEventListener('input', () => { gb.radius = Number(gbRadiusEl.value); updateGrassToolbar(); });
@@ -581,7 +592,7 @@ function rebuildGrass(rect) { GB.rebuildCarpet(world, rect); world.renderVersion
 
 function grassStrokeStart(pt) {
   attachGrass();
-  if (!gb.gm) { flash('grass: no paint layer (engine grassMask missing)'); return; }
+  if (!gb.gm) { flash('grass: no grass carpet in this world'); return; }
   gb.stroke = GB.beginStroke({ gm: gb.gm, key: gb.key }, { op: gb.op, radius: gb.radius, strength: GB.effectiveStrength(gb.pct), x: pt.x, y: pt.y });
   grassStrokeMove(pt);
 }
@@ -1009,7 +1020,7 @@ function snapTo(v, snap) { return normZero(Math.round(v / snap) * snap); }
 /** `engine.setWorld(World.load(...))` - the one mutation path's rebuild (24.8). <= 5 ms budget. */
 function rebuild() {
   const t0 = performance.now();
-  const w = World.load(assets.world(doc.worldId), assets, { events: engine.events, terrain: engine.world && engine.world.terrain, spawn: { x: cam.x, y: cam.y }, decorPaint: dp.layers ? GB.decorWorldOpt(dp.layers) : undefined }); // WS2: start in the band under the camera
+  const w = World.load(assets.world(doc.worldId), assets, { events: engine.events, terrain: engine.world && engine.world.terrain, spawn: { x: cam.x, y: cam.y }, decorPaint: dp.layers ? GB.decorWorldOpt(dp.layers) : undefined, carpet: editorCarpetOpt() }); // OB-196: carpet + paint layer as in the game // WS2: start in the band under the camera
   engine.setWorld(w);
   reapplyVisibility(); // US-067: hide/lock survives this rebuild (in-memory overlay, never in `doc`)
   const ms = performance.now() - t0;
