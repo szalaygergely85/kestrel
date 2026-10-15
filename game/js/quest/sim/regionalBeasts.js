@@ -238,7 +238,7 @@ export function spawnRegionalBeasts(world, geo, seed, navArea) {
 export function spawnUnderSkeletons(world) {
   for (const site of UNDER_SITES) for (const m of site.members) {
     if (world.get(m[0])) continue; // restored from a save: already there
-    const x = site.anchor[0] + m[2], y = site.anchor[1] + m[3], brain = { kind: 'beast', home: [x, y], temperament: 'wary', beastKind: KIND_OF[m[1]] };
+    const x = site.anchor[0] + m[2], y = site.anchor[1] + m[3], brain = { kind: 'beast', home: [x, y], temperament: 'wary' }; if (KIND_OF[m[1]]) brain.beastKind = KIND_OF[m[1]]; else brain.species = m[1]; // UNDER-04: legacy 'bear' keeps its brain.species
     if (site.night) { brain.group = site.group; brain.reserve = true; brain.tier = CEMETERY_TIER; }
     world.spawn('beast', { x, y, z: site.z !== undefined ? site.z : world.terrain.heightAt(x, y) }, { voxel: { anim: 'idle', loop: true, model: MODEL[m[1]] }, brain, targetable: { ...BODY[m[1]] } }, m[0]);
   }

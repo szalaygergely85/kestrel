@@ -75,7 +75,7 @@ const wB = mkWorld();
 const genAll = quiet(() => spawnRegionalBeasts(wB, G, 12)), gen = genAll.filter((b) => b.species !== 'croc'); // BEAST-09a: crocs are checked in crocSpawn.test.js
 ok('spawn adds the same list as generate', gen.length === list1.length && gen.every((b, i) => b.id === list1[i].id && b.x === list1[i].x));
 const simB = quiet(() => mkSim(wB));
-ok('sim B has authored + generated slots', simB.count === simA.count + genAll.length + 5, `${simA.count} -> ${simB.count}`);
+ok('sim B has authored + generated slots', simB.count === simA.count + genAll.length + 11, /* UNDER_SITES members: cemetery 3, crypt 5, ruin 2, bear den 1 */ `${simA.count} -> ${simB.count}`);
 const farB = gen.filter((b) => (b.x - 1480) ** 2 + (b.y - 1030) ** 2 > 200 * 200), far = farB.map((b) => simB.slotOf(b.id)); // OB-185: roadside groups near the tower are inside the 200 m wake radius
 ok('all generated slots exist + dormant (far from player)', far.every((s) => s >= 0 && simB.isDormant(s)), far.filter((s) => s < 0 || !simB.isDormant(s)).length + ' not dormant');
 const timeSteps = (sim, n) => { for (let i = 0; i < 200; i++) sim.step(1480, 1030, 0); const t0 = performance.now(); for (let i = 0; i < n; i++) sim.step(1480, 1030, 0); return (performance.now() - t0) / n; };
