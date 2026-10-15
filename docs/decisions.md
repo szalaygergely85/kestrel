@@ -1318,3 +1318,6 @@ Owner 2026-10-15 (later): "Make those priority" - D-107 stories (pc-b-queue sect
 
 **D-114 amended 2026-10-15 (owner):** "Not fireball, a random choosen one, you can add a spelltree" - the crypt scroll is a **Spell Scroll** that upgrades a randomly chosen learned spell (kept until a spell is learned); a spell tree epic (EP-SPELLS, docs/epics/ep-spells.md) follows.
 **D-114 corrected 2026-10-15 (owner):** "Not randomly. One choosen one" - the player CHOOSES which learned spell the Spell Scroll strengthens (one spell per scroll; cancel keeps the scroll).
+
+## D-115
+**2026-10-15, owner (PC-B session): the spell list is D-021 - "we already said what spells can be".** EP-SPELLS (2026-10-15 PO draft with Spark / Light Orb / Ward / Fire Ring / Gust / Updraft) ignored D-021 and is REPLACED: the spells are exactly **Fireball, Freeze, Telekinesis, Teleport** (D-021), gained at beacons/wells and by finishing quests, in a small skill tree (each spell up to level 3; Spell Scrolls raise a player-chosen learned spell, D-114). The non-D-021 spells built today (kestrel-4 branch spellsall) do NOT ship; their code is reused where it fits (Spark stun -> Freeze, Gust push -> Telekinesis). Teleport needs a short architect note (collision-safe target, camera) per D-021. Process lesson: every new epic must grep docs/decisions.md for the topic first.
