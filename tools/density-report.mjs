@@ -47,15 +47,18 @@ for (let x = 4; x < 2048; x += 8) for (let y = 4; y < 1720; y += 8) if (inPolygo
 const f1 = (n) => n.toFixed(1);
 let md = '# OB-152 enemy / chest density per region (tools/density-report.mjs)\n\n';
 md += 'Chests = `chest*` entities of world_m1 (= chestDefs keys). Beasts = authored + WM-12 regional herds; goblins = authored camps + far camps (seed 12). km2 = walk-bounds area by 8 m sampling (first-match region rect).\n\n';
-md += '| region | chests | boars | wolves | bears | crocs | goblins | km2 | chests/km2 | enemies/km2 |\n|---|---|---|---|---|---|---|---|---|---|\n';
+md += '| region | chests | boars | wolves | bears | crocs | goblins | other | km2 | chests/km2 | enemies/km2 |\n|---|---|---|---|---|---|---|---|---|---|---|\n';
 const tot = row();
 for (const r of G.regions) {
-  const t = T[r.id]; if (!t.area && !t.chests && !t.boars && !t.wolves && !t.bears && !t.crocs && !t.goblins) continue;
-  const km = t.area / 1e6, en = t.boars + t.wolves + t.bears + t.crocs + t.goblins;
-  md += `| ${r.id} | ${t.chests} | ${t.boars} | ${t.wolves} | ${t.bears} | ${t.crocs} | ${t.goblins} | ${f1(km)} | ${km ? f1(t.chests / km) : '-'} | ${km ? f1(en / km) : '-'} |\n`;
+  const t = T[r.id]; if (!t.area && !t.chests && !t.boars && !t.wolves && !t.bears && !t.crocs && !t.goblins && !t.other) continue;
+  const km = t.area / 1e6, en = t.boars + t.wolves + t.bears + t.crocs + t.goblins + t.other;
+  md += `| ${r.id} | ${t.chests} | ${t.boars} | ${t.wolves} | ${t.bears} | ${t.crocs} | ${t.goblins} | ${t.other} | ${f1(km)} | ${km ? f1(t.chests / km) : '-'} | ${km ? f1(en / km) : '-'} |
+`;
   for (const k of Object.keys(tot)) tot[k] += t[k];
 }
-md += `| TOTAL | ${tot.chests} | ${tot.boars} | ${tot.wolves} | ${tot.bears} | ${tot.crocs} | ${tot.goblins} | ${f1(tot.area / 1e6)} | ${f1(tot.chests / (tot.area / 1e6))} | ${f1((tot.boars + tot.wolves + tot.bears + tot.crocs + tot.goblins) / (tot.area / 1e6))} |\n\n`;
+md += `| TOTAL | ${tot.chests} | ${tot.boars} | ${tot.wolves} | ${tot.bears} | ${tot.crocs} | ${tot.goblins} | ${tot.other} | ${f1(tot.area / 1e6)} | ${f1(tot.chests / (tot.area / 1e6))} | ${f1((tot.boars + tot.wolves + tot.bears + tot.crocs + tot.goblins + tot.other) / (tot.area / 1e6))} |
+
+`;
 const near = (p, list, d) => list.some((q) => Math.hypot(q[0] - p.x, q[1] - p.y) < d);
 const open = chests.filter((c) => !near(c, threats, 25) && !near(c, puzzles, 25));
 md += `## Chests in the open (no beast home, goblin camp, relay or lever within 25 m): ${open.length} of ${chests.length}\n\n`;
