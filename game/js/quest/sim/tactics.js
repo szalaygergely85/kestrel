@@ -44,7 +44,8 @@ export function createTactics(maxSlots, seed) {
  *  S = { WINDUP, CHARGE, RECOVER, CHASE } state numbers (passed in: beastSim imports this file, not the reverse). */
 export function tacticsSync(sim, S) {
   const T = sim.tactics; T.tick++;
-  for (let i = 0; i < sim.count; i++) {
+  for (let k = 0, rec = sim.pool.rec, pn = sim.pool.n; k < pn; k++) {
+    const i = rec[k];
     if (!T.held[i]) continue;
     const st = sim.state[i];
     if (sim.dormant[i] || sim.down[i] || (st !== S.WINDUP && st !== S.CHARGE && st !== S.RECOVER) || ++T.heldT[i] > TACT_TUNING.holderTimeout) T.release(i);
@@ -57,7 +58,8 @@ export function tacticsSync(sim, S) {
 function assignFlanks(sim, S) {
   const T = sim.tactics, st = sim.steer, px = sim._px, py = sim._py;
   let rank = 0, anchor = 0;
-  for (let i = 0; i < sim.count; i++) {
+  for (let q = 0, rec = sim.pool.rec, pn = sim.pool.n; q < pn; q++) {
+    const i = rec[q];
     const r = sim.tactRole[i];
     if (!sim.tactOn[i] || r === TACT_RANGED || r === TACT_CASTER || sim.state[i] !== S.CHASE || sim.waiting[i] !== 1) { T.flank[i] = -1; continue; }
     if (rank === 0) { // ring slot facing this beast (max dot with the table)
@@ -107,7 +109,8 @@ export function tacticsBand(sim, i, d2) {
 export function tacticsAllies(sim, i) {
   const st = sim.steer, r2 = TACT_TUNING.allyR * TACT_TUNING.allyR;
   let n = 0, sx = 0, sy = 0;
-  for (let k = 0; k < sim.count; k++) {
+  for (let q = 0, rec = sim.pool.rec, pn = sim.pool.n; q < pn; q++) {
+    const k = rec[q];
     if (k === i || !sim.tactOn[k] || sim.tactRole[k] === TACT_CASTER || sim.dormant[k] || sim.down[k]) continue;
     const dx = st.x[k] - st.x[i], dy = st.y[k] - st.y[i];
     if (dx * dx + dy * dy <= r2) { n++; sx += st.x[k]; sy += st.y[k]; }

@@ -1,4 +1,4 @@
-// game/js/quest/sim/beastGolden.test.js (BEAST-03a). Golden: a seeded mixed scene (boar, wolf, bear, goblins) stepped N times
+// game/js/quest/sim/beastGolden.test.js (BEAST-03a). Golden: a seeded mixed scene (boar, wolf, bear, goblins) stepped N times BEAST-POOL-b re-bless: hash now mixes pool.lv (3981320182 -> 83261736).
 // must hash to the value recorded BEFORE the kind/archetype tables were added (no behaviour change).
 // Run: node game/js/quest/sim/beastGolden.test.js
 //
@@ -123,7 +123,7 @@ const isTok = (s) => s === STATE_WINDUP || s === STATE_CHARGE;
 const gz = (sim) => groundZ(sim.world, PX, PY);
 
 
-const GOLDEN_HASH = 3981320182; // re-recorded OB-150 (step 4: all-species near-field steer, 2 wolf tokens + flank spots; prev 3468276386; step 2 boar/wolf charge; step 3 bear/goblin near-field steer + longer lunge); was 2305245254 / 1491148451 pre-BEAST-03a
+const GOLDEN_HASH = 83261736; // BEAST-POOL-b: re-blessed ONCE, the loop now also mixes sim.pool.lv[i] (binding state; all records bound = identity), old 3981320182 -> new 83261736, no behaviour change; // re-recorded OB-150 (step 4: all-species near-field steer, 2 wolf tokens + flank spots; prev 3468276386; step 2 boar/wolf charge; step 3 bear/goblin near-field steer + longer lunge); was 2305245254 / 1491148451 pre-BEAST-03a
 function ent(id, x, y, species, role) {
   const e = beastEntity(id, x, y);
   if (species) e.components.brain.species = species;
@@ -143,7 +143,7 @@ for (let t = 0; t < STEPS; t++) {
   sim.step(px, py, gz(sim));
   for (let i = 0; i < list.length; i++) {
     const tr = sim.entities[i].transform;
-    mix(sim.state[i]); mix(Math.round(tr.x * 1000)); mix(Math.round(tr.y * 1000)); mix(Math.round(tr.z * 1000)); mix(sim.entities[i].components.health.hp);
+    mix(sim.state[i]); mix(Math.round(tr.x * 1000)); mix(Math.round(tr.y * 1000)); mix(Math.round(tr.z * 1000)); mix(sim.entities[i].components.health.hp); mix(sim.pool.lv[i]);
   }
 }
 const GOLDEN = process.env.GOLDEN_RECORD ? null : GOLDEN_HASH;

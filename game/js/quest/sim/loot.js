@@ -13,11 +13,12 @@ import { addItem } from './inventory.js';
 import { setItemPickupSink, PICKUP_AMOUNT } from './pickups.js';
 import { BAND_TABLE } from './band.js';
 import { LOOT_PROMPT, LOOT_TABLE, LOOT_TIERS, LOOT_SLOTS } from './lootConfig.js';
+import { MAX_RECORDS } from './beastSim.js'; // BEAST-POOL-a: one record-table constant
 import { rollWolfWeapon, rollGoblinWeapon, rollChestWeapon, weaponRng } from './weaponLoot.js'; // EQ-20
 
 // EQ-10: 0..4 rolled entries per corpse (table.fixed + the `give` rolls). Gear is a world pickup, never a column.
 const ITEMS_PER_CORPSE = 4;
-const MAX_SLOTS = 320;      // beastSim MAX_BEASTS (keep equal)
+const MAX_SLOTS = MAX_RECORDS; // BEAST-POOL-a: record table size (single source in beastSim)
 const CORPSE_LIFT = 0.35;   // m above the death z: the interactable sits on the body, not in the ground (37.16.3)
 const LOOT_RADIUS = 1.8;
 
