@@ -106,7 +106,7 @@ export async function buildContext(opts = {}) {
   {
     const TEXT_KEYS = /^(title|text|lines|label|prompt|hint|hintTitle|objText|journal|returnText|summary|desc|description)$/;
     const walk = (v, k, where) => {
-      if (typeof v === 'string') { if (TEXT_KEYS.test(k) && v.trim()) questTexts.push({ where, text: v, line: k === 'lines' || k === 'text' }); }
+      if (typeof v === 'string') { if (TEXT_KEYS.test(k) && v.trim()) questTexts.push({ where, text: v, line: k === 'lines' || k === 'text', objective: /\.objectives\[\d+\]\.(text)$/.test(where) }); }
       else if (Array.isArray(v)) v.forEach((x, i) => walk(x, k, where + '[' + i + ']'));
       else if (v && typeof v === 'object') for (const kk in v) if (kk !== 'speakers' && kk !== 'note') walk(v[kk], kk, where + '.' + kk);
     };

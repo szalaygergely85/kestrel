@@ -8,7 +8,7 @@
 import { sunFromWorld } from '../../../engine/index.js';
 
 export const FIREFLY_PRESET = 'fireflies';
-export const FIREFLY_COUNT = 40;     // emitter maxLive = the cap
+export const FIREFLY_COUNT = 24;     // emitter maxLive = the cap
 export const RECHECK = 30;           // frames between spot re-picks
 const ON_W = 0.2, SUN_LO = 0.3, SUN_HI = 0.7; // night weight = 1 - smoothstep(sunI), the NIGHT-SKY-01 window (skyNight.js)
 const TRIES = 4, R_MIN = 4, R_MAX = 16, HOVER = 1.0;

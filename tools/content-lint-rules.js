@@ -12,7 +12,7 @@ export const TITLES = {
   R12: 'entity not supported by ground/structure (floating or buried)', R13: 'prompt/marker anchor has no visible model', R14: 'quest flow (OB-156): character giver, Accept/Exit, character return',
   R15: 'logic blocks (ED-LOGIC-01d): refs exist, group spawned by one block, no flag loop',
   R17: 'quest format (D-106): begin, end, rewards, max 3 objectives, known next/requires ids, no xp',
-  R19: 'quest/dialogue text (QUEST-TEXT-LINT-01): no NEEDS WRITER, raw id, line > 56 chars, Esc hint',
+  R19: 'quest/dialogue text (QUEST-TEXT-LINT-01): no NEEDS WRITER, raw id, line > 56 chars, objective/journal line > 38 chars, Esc hint',
   R16: 'player-facing name looks like an id / placeholder / bare tier tag (OB-135 plain names)',
 };
 /** Legacy quests that do not follow the D-106 format yet: WARN instead of ERROR "until the D-106 chain rewrite". Every other id is an ERROR. */
@@ -57,6 +57,7 @@ export function badName(s) {
 }
 
 // ---- R19 quest/dialogue text (QUEST-TEXT-LINT-01) ----
+export const R19_OBJ_MAX = 38; // quest-log objective/step line (log pane clips longer)
 export const R19_LINE_MAX = 56; // = engine DIALOGUE_LINE_MAX (ED-QUEST-06)
 const R19_RAW = /(?:^|[^A-Za-z0-9])(?:sq|mq|note|flag|item)\.[A-Za-z][A-Za-z0-9_.]*/, R19_UNDER = /[A-Za-z]+_[A-Za-z_]+/;
 /** The failed sub-checks of one player-visible string: 'placeholder' | 'rawid' | 'long' | 'esc'. */
@@ -65,13 +66,14 @@ export function r19Checks(s, opts = {}) {
   if (/NEEDS WRITER/i.test(s)) out.push('placeholder');
   if (R19_RAW.test(s) || R19_UNDER.test(s) || RAW_CAMEL.test(s)) out.push('rawid');
   if (opts.line && s.length > R19_LINE_MAX) out.push('long');
+  if (opts.objective && s.length > R19_OBJ_MAX) out.push('objective');
   if (/(^|[^A-Za-z])Esc([^A-Za-z]|$)/.test(s)) out.push('esc');
   return out;
 }
 /** R19: ctx.questTexts = [{where, text, line?, only?}]; ctx.r19Allow = Set of "where|check" (shrink-only, tools/content-lint-r19-allow.json). Stale allow entries are errors. */
 function r19(c) {
   const allow = c.r19Allow || new Set(), used = new Set(), out = [];
-  for (const t of c.questTexts || []) for (const k of r19Checks(t.text, { line: t.line }).filter((x) => !t.only || x === t.only)) {
+  for (const t of c.questTexts || []) for (const k of r19Checks(t.text, { line: t.line, objective: t.objective }).filter((x) => !t.only || x === t.only)) {
     const key = t.where + '|' + k;
     if (allow.has(key)) { used.add(key); continue; }
     out.push(F('R19', t.where, '-', '-', `${k}: "${t.text.slice(0, 60)}"`));
