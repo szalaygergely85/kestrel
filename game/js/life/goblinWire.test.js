@@ -35,7 +35,7 @@ function rig(playerX, shieldFront) {
 // ---- camps + entities
 {
   const r = rig(40);
-  ok('active camp defs exposed for createLifeWire, goblins + props spawned', r.gw.campDefs.length === 2 && r.gw.added > 0 && [...r.ents.values()].filter((e) => e.type === 'beast').length === r.gw.added);
+  ok('active camp defs exposed for createLifeWire, goblins + props spawned', r.gw.campDefs.length === 3 && r.gw.added > 0 && [...r.ents.values()].filter((e) => e.type === 'beast').length === r.gw.added);
   ok('spear view pool entities added (goblinSpear)', [...r.ents.values()].filter((e) => e.components.voxel && e.components.voxel.model === 'goblinSpear').length === 16);
   r.gw.step(0, 0, 0); r.gw.update();
   ok('step with the player far away leaves camps dormant-capable and does not throw', r.gw.camps.isDormant(0) === true);
