@@ -12,11 +12,23 @@ const BURL_ENTITY = 'bear';
 const CHART_PIECES = ['chart.river', 'chart.westFells']; // MAP-28 / Ch3: chart-piece items -> world flag chart.<area> (review 12d: module const)
 export const siteOf = (entityId) => (entityId === BURL_ENTITY ? 'burl' : entityId);
 
+/** OB-187 (D-105/D-106): an offer '!' needs its prerequisites. A side quest that only waits on the boar hand-in (e.g. sq.wreck.plate at the gondola)
+ *  showed a blue '!' while the opening chain (follow Burl, wake the waystone) was still running. Such defs now also require burl.stone done.
+ *  The Burl chain quests ('burl.*') and defs that already name a later chain quest are untouched. Returns d or a copy. */
+function gateOnStone(d, hasStone) {
+  if (!hasStone || !d || typeof d.id !== 'string' || d.id.startsWith('burl.') || !Array.isArray(d.requires)) return d;
+  const q = (id) => d.requires.some((r) => r && r.quest === id);
+  if (!q('burl.boars') || q('burl.stone') || q('burl.follow')) return d;
+  return { ...d, requires: [...d.requires, { quest: 'burl.stone', done: true }] };
+}
+
 /** Returns defs where every {flag:'burl.home'} requirement - and every Burl-given errand (sq.*, giver.npc 'bear', e.g. sq.honey / sq.burl.fire, which
  *  open after Rook's quests and have no burl.home flag) - is joined by {flag:'burl.home.met'}, so no errand offer pre-empts his `bear.home` greeting
  *  (BURL-HOME-01). Defs may be frozen: copies, input untouched. */
 export function gateOnMeet(defs) {
+  const hasStone = defs.some((d) => d && d.id === 'burl.stone');
   return defs.map((d) => {
+    d = gateOnStone(d, hasStone);
     const burlErrand = typeof d.id === 'string' && d.id.startsWith('sq.') && d.giver && d.giver.npc === BURL_ENTITY;
     const req = Array.isArray(d.requires) ? d.requires : (burlErrand ? [] : null);
     if (!req || !(burlErrand || req.some((r) => r && r.flag === 'burl.home')) || req.some((r) => r && r.flag === 'burl.home.met')) return d;

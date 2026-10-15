@@ -37,6 +37,7 @@ assert.notEqual(book.statusOf('sq.burl.stone'), AVAILABLE, 'gated until burl.hom
 assert.ok(defs.find((d) => d.id === 'sq.burl.stone').requires.some((r) => r.flag === 'burl.home.met'));
 assert.equal(gateOnMeet(defs).find((d) => d.id === 'sq.burl.stone').requires.filter((r) => r.flag === 'burl.home.met').length, 1, 'idempotent'); assert.equal(defs.find((d) => d.id === 'sq.burl.stone').requires.filter((r) => r.flag === 'burl.home.met').length, 1, 'idempotent');
 for (const id of ['tower.blade', 'burl.boars']) { book.accept(id); for (const o of book.def(book.index(id)).objectives) { const w = o.when; if (w.type === 'beasts') for (const b of w.ids) feed({ type: 'beast:died', id: b }); else if (w.type === 'item') feed({ type: 'item:got', id: w.id }); else if (w.type === 'area') feed({ type: 'area:entered', id: w.id }); else if (w.type === 'flag') flag(w.id); } book.handIn(id); }
+for (const [id, f] of [['burl.follow', 'burl.arrived'], ['burl.stone', 'waystone.waystone.woken']]) { book.accept(id); flag(f); book.handIn(id); } // OB-187: opening chain done before side errands open
 flag('burl.home.met');
 assert.equal(book.statusOf('sq.burl.stone'), AVAILABLE);
 
@@ -183,6 +184,7 @@ for (const order of [['burl.home', 'burl.home.met'], ['burl.home.met', 'burl.hom
   const b = newBook(), f = (k) => b.feed({ type: 'flag:set', key: k, value: true });
   for (const o of files.questDef.objectives) { const w = o.when; if (w.type === 'flag') f(w.id); else if (w.type === 'area') b.feed({ type: 'area:entered', id: w.id }); else if (w.type === 'beasts') for (const id of w.ids) b.feed({ type: 'beast:died', id }); }
   for (const id of ['tower.blade', 'burl.boars']) { b.accept(id); for (const o of b.def(b.index(id)).objectives) { const w = o.when; if (w.type === 'beasts') for (const x of w.ids) b.feed({ type: 'beast:died', id: x }); else if (w.type === 'item') b.feed({ type: 'item:got', id: w.id }); else if (w.type === 'area') b.feed({ type: 'area:entered', id: w.id }); else if (w.type === 'flag') f(w.id); } b.handIn(id); }
+  for (const [id, fl] of [['burl.follow', 'burl.arrived'], ['burl.stone', 'waystone.waystone.woken']]) { b.accept(id); f(fl); b.handIn(id); } // OB-187: opening chain done
   // Ch2 main-quest activity (Rook's mq.bend.call) must not disturb the Ch1 flags
   f('waystone.ws_roadBend.woken'); f('relay.bend.pulseSeen');
   f(order[0]); assert.notEqual(b.statusOf('sq.burl.blue'), AVAILABLE, 'gated until both flags: ' + order[0]);
