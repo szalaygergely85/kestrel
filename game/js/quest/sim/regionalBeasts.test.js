@@ -39,7 +39,7 @@ const list2 = generateRegionalBeasts({ geo: G, terrain: wA.terrain, seed: 12, av
 const list3 = generateRegionalBeasts({ geo: G, terrain: wA.terrain, seed: 13, avoid, safe: safeSpots(wA) });
 ok('deterministic: same seed -> same ids + homes', JSON.stringify(list1) === JSON.stringify(list2));
 ok('different seed -> different homes', JSON.stringify(list1) !== JSON.stringify(list3));
-ok('ids unique + stable shape', new Set(list1.map((b) => b.id)).size === list1.length && list1.every((b) => /^(boar|wolf|bear|deer|fox|turtle|goat|whitewolf|cavebear|archer|shaman|chief|torch)\.[A-Za-z]+\.\d+$/.test(b.id)), list1.map((b) => b.id).join(','));
+ok('ids unique + stable shape', new Set(list1.map((b) => b.id)).size === list1.length && list1.every((b) => /^(boar|wolf|bear|deer|fox|turtle|goat|whitewolf|cavebear|archer|shaman|chief|torch|lynx|aurochs)\.[A-Za-z]+\.\d+$/.test(b.id)), list1.map((b) => b.id).join(','));
 
 // BEAST-02/OB-152: wolf packs spawn in northwood + signalHill with the real wolf model id
 {

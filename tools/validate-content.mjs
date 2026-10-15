@@ -106,6 +106,8 @@ const CLASSIC_SCRIPTS = [
   '../design/models/voxel_wildlife.js', // QL-06: ASSETS.models.crow (Rook, world_m1 entity "rook"), same load position as game/index.html.
   '../design/models/voxel_eat_clips.js', // SWIM-ASSETS-01: eat clips, after the model files, same load position as game/index.html.
   '../design/models/voxel_beast_clips.js', // OB-153: beast combat clips for deer/fox/goat/tortoise, after the eat clips + those models (game/index.html: same order).
+  '../design/models/voxel_lynx.js', // OB-153: ASSETS.models.lynx + ASSETS.lynxFx (stand-alone; after voxel_eat_clips.js: appends 'lynx' to eatFx.models).
+  '../design/models/voxel_aurochs.js', // OB-153: ASSETS.models.aurochs + ASSETS.aurochsFx (stand-alone; after voxel_eat_clips.js: appends 'aurochs' to eatFx.models).
   '../design/models/voxel_seamonster.js', // SWIM-ASSETS-01: ASSETS.models.seaMonster (world_m1 entity "seaMonster").
   '../design/models/sb_objects.js', // OB-191: gravestone1..3(+Weathered) for the cemetery (game/index.html needs the same script tag: shared hot file, main session adds it).
   '../design/models/m3_props.js', // US-078d: the practice target pell (content/levels/tower.level.json prop "practiceTarget"), same load position as game/index.html.
