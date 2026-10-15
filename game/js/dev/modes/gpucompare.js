@@ -1222,7 +1222,7 @@ async function runGpuCompareSceneMode(ctx) {
     const gpuFg = rbw ? rbw.fg : null, gpuBg = rbw ? rbw.bg : null;
     if (poseShaft && lights && lights.shaft && rbw && wg) { // CANOPY-SHAFT-01b (38.76 rule 8a): frame B = lift on; hard asserts vs frame A (frame A is what the twin compare below uses)
       const aFg = new Uint8Array(rbw.fg), aBg = new Uint8Array(rbw.bg), lightA = new Uint32Array(await gpuPipeline.readbackLight());
-      const sA = await wg.readbackShade(new Uint8Array(n * 4), new Uint8Array(n * 4)); // frame A shade-stage colours (direction check, see shaftRule8a.js)
+      const sA = (await wg.readbackShade(new Uint8Array(n * 4), new Uint8Array(n * 4))) || { fg: null, bg: null }; // frame A shade-stage colours (direction check, see shaftRule8a.js)
       lights.shaft.liftOff = false;
       const sunIdbg = sunFromWorld(world, assets.palette, {}).sunI; const r8 = await shaftRule8a({ n, aFg, aBg, aSFg: sA.fg, aSBg: sA.bg, readShade: (f, b) => wg.readbackShade(f, b), lightA, sunI: sunIdbg, tint: SKY_GLOW.tint,
         renderB: () => { fbCompare.gpu = true; renderWorld(fbCompare, world, cam); gpuPipeline.frame(fbCompare, lights, cam, world); engine.overlay.flush(cam); rt.present(); }, // frame B gets FRESH readback arrays (rbw stays frame A)
