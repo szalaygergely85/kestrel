@@ -1,5 +1,5 @@
 // ENV-01a2 (37.4). Load-time master words; camera-local, allocation-free feed.
-import { createInstanceBuffer, writeUnitInstance, touchInstances, INSTANCE_STRIDE, INST_FLAGS, INST_OBJECT_ID,
+import { createInstanceBuffer, writeUnitInstance, writeScaledInstance, touchInstances, INSTANCE_STRIDE, INST_FLAGS, INST_OBJECT_ID,
   MAX_INSTANCE_GROUPS, MAX_INSTANCES_PER_FRAME } from './instances.js';
 import { resolveGfxKnobs, keepPlacement } from './gfxKnobs.js';
 import { INST_FLAG_SWAY } from './sway.js';
@@ -64,9 +64,16 @@ export function bindDetailInstances(detail, instances, cfg, treeInstances = 0, g
     group.castShadow = def.shadow;
     groups.push(group);
   }
+  if (detail.scale) { // SAPLINGS: cull radius follows the largest per-instance scale of each group (1 = unchanged)
+    for (let i = 0; i < detail.count; i++) {
+      if (keep && !keep[i]) continue;
+      const grp = groups[groupOf[detail.species[i]]], sc = detail.scale[i];
+      if (sc > grp.radiusScale) grp.radiusScale = sc;
+    }
+  }
   for (let i = 0; i < detail.count; i++) {
     if (keep && !keep[i]) continue;
-    writeUnitInstance(master, i, detail.x[i], detail.y[i], detail.z[i], detail.yawDeg[i], DETAIL_OBJECT_BASE | i, 0);
+    writeScaledInstance(master, i, detail.x[i], detail.y[i], detail.z[i], detail.yawDeg[i], detail.scale ? detail.scale[i] : 1, DETAIL_OBJECT_BASE | i, 0);
     // FOLIAGE-SWAY-01 part 2: per-species sway bit, OR'd in after writeUnitInstance (keeps aligned/team bits already written).
     // feedDetail copies every word (incl. INST_FLAGS) verbatim per frame, so the bit survives the per-frame re-feed for free.
     if (detail.speciesDefs[detail.species[i]].sway) {

@@ -235,6 +235,12 @@ export function validateDetailConfig(cfg, typeNames = DETAIL_TYPES) {
     for (const k of ['jitter', 'fill', 'maxSlope', 'clearM']) number(l[k], `${key}.${k}`, 0);
     if (l.fill > 1) bad(`${key}.fill`);
     if (l.gpu !== undefined && typeof l.gpu !== 'boolean') bad(`${key}.gpu`); // ENV-01b (arch 38.62): GPU decor layer
+    if (l.cluster !== undefined) {   // OB-184b: undergrowth clustering (JS-only: the gpu mask ignores it)
+      const c = l.cluster;
+      if (!c || typeof c !== 'object' || Array.isArray(c) || l.gpu) bad(`${key}.cluster`);
+      for (const k of Object.keys(c)) number(c[k], `${key}.cluster.${k}`, 0);
+      if (!(c.treeR > 0 && c.treeR <= 8)) bad(`${key}.cluster.treeR`);   // 8 m tree grid searches +-1 cell only
+    }
     if (!l.ground || typeof l.ground !== 'object' || Array.isArray(l.ground)) bad(`${key}.ground`);
     l.ground = {};
     for (const [type, list] of Object.entries(layer.ground)) {
@@ -256,6 +262,11 @@ export function validateDetailConfig(cfg, typeNames = DETAIL_TYPES) {
         integer(species.yawStep, `${skey}.yawStep`, 1, 360);
         if (typeof species.shadow !== 'boolean') bad(`${skey}.shadow`);
         if (species.maxDistM !== undefined) number(species.maxDistM, `${skey}.maxDistM`, 0, false); // PERF-P4: per-species draw distance (m)
+        if (species.scale !== undefined) { // SAPLINGS (arch 37.4.1): per-instance scale range drawn from hash slot 6
+          const sc = species.scale;
+          if (!Array.isArray(sc) || sc.length !== 2 || !(sc[0] > 0) || !(sc[0] <= sc[1]) || !(sc[1] <= 2)) bad(`${skey}.scale (need [min,max], 0 < min <= max <= 2)`);
+          species.scale = [sc[0], sc[1]];
+        }
         if (typeof species.sway !== 'boolean') bad(`${skey}.sway`); // FOLIAGE-SWAY-01 part 2: explicit per-species flag, no name regex
         if (species.grassLike !== undefined && typeof species.grassLike !== 'boolean') bad(`${skey}.grassLike`);
         if (l.gpu && (species.collider !== undefined || species.shadow)) bad(`${skey}: gpu layer species must have no collider and shadow:false`);
@@ -334,7 +345,7 @@ export class DetailScatterJob {
       for (const [type, list] of Object.entries(l.ground)) {
         speciesByType[type] = list.map(s => {
           const index = speciesDefs.length;
-          speciesDefs.push({ model: s.model, mesh: s.mesh, layer, shadow: s.shadow, sway: s.sway, lodCells: l.lodCells, maxDistM: s.maxDistM, collider: s.collider });
+          speciesDefs.push({ model: s.model, mesh: s.mesh, layer, shadow: s.shadow, sway: s.sway, lodCells: l.lodCells, maxDistM: s.maxDistM, collider: s.collider, ...(s.scale ? { scale: s.scale } : null) });
           return index;
         });
       }
@@ -407,6 +418,7 @@ export class DetailScatterJob {
       points.push({ x, y, z: terrain.groundAt(x, y) - s.sinkM,
         yawDeg: Math.floor(u(ix, iy, 4) * 360 / s.yawStep) * s.yawStep,
         species: speciesByType[type][chosen], r2: r * r,
+        scale: s.scale ? s.scale[0] + u(ix, iy, 6) * (s.scale[1] - s.scale[0]) : 1,   // SAPLINGS: NEW slot 6, other draws untouched
         tile });
       if (points.length > cfg.maxPlacements) throw new Error('detail.maxPlacements: placement cap exceeded');
     }
@@ -503,14 +515,7 @@ export class DetailScatterJob {
     if (!c) return false;
     const own = c.prism ? c.prism.r : Math.max(c.box.hx, c.box.hy);
     const t = this.trees, sp = this.terrain.recipe.recipe.forest.trees.species;
-    let grid = this._treeGrid;
-    if (!grid) {
-      grid = this._treeGrid = new Map();
-      for (let i = 0; i < t.count; i++) {
-        const k = Math.floor(t.x[i] / 8) * 100003 + Math.floor(t.y[i] / 8);
-        const a = grid.get(k); if (a) a.push(i); else grid.set(k, [i]);
-      }
-    }
+    const grid = this._treeGridOf();
     const cx = Math.floor(x / 8), cy = Math.floor(y / 8);
     for (let gx = cx - 1; gx <= cx + 1; gx++) for (let gy = cy - 1; gy <= cy + 1; gy++) {
       const a = grid.get(gx * 100003 + gy);
@@ -529,11 +534,11 @@ export class DetailScatterJob {
     for (let i = 1; i < tileStart.length; i++) tileStart[i] += tileStart[i - 1];
     const cursor = tileStart.slice();
     const out = { count, x: new Float64Array(count), y: new Float64Array(count), z: new Float64Array(count),
-      yawDeg: new Int16Array(count), species: new Uint16Array(count), r2: new Float32Array(count),
+      yawDeg: new Int16Array(count), species: new Uint16Array(count), r2: new Float32Array(count), scale: new Float32Array(count),
       speciesDefs, tileM: cfg.tileM, tx0, ty0, tilesX, tilesY, tileStart };
     for (const p of points) {
       const i = cursor[p.tile]++;
-      for (const k of ['x', 'y', 'z', 'yawDeg', 'species', 'r2']) out[k][i] = p[k];
+      for (const k of ['x', 'y', 'z', 'yawDeg', 'species', 'r2', 'scale']) out[k][i] = p[k];
     }
     if (this.decor) out.decorLayerNames = this.decor.layers.map(m => m.name);
     this.result = out; this.points = null; this.structureTiles = null;

@@ -59,5 +59,15 @@ const iC = ugIdx(d), iU = ugIdx(dU), mC = nearest(d, iC), mU = nearest(dU, iU);
 console.log(`undergrowth clustered ${iC.length} (${(iC.length / area * 1e6).toFixed(0)}/km2) mean trunk dist ${mC.toFixed(2)} m; uniform ${iU.length} (${(iU.length / area * 1e6).toFixed(0)}/km2) ${mU.toFixed(2)} m`);
 ok(`clustered mean trunk distance ${mC.toFixed(2)} < uniform ${mU.toFixed(2)}`, mC < mU - 0.3);
 ok('cluster keeps count within +-25% of uniform', Math.abs(iC.length - iU.length) < 0.25 * iU.length);
+// SAPLINGS: young trees in forest tiles, scaled 0.3-0.5, never on paths/water
+{
+  const sap = [];
+  for (let i = 0; i < d.count; i++) { const sd = d.speciesDefs[d.species[i]]; if (sd.scale) sap.push(i); }
+  const inF = sap.filter(i => typeOf(d.x[i], d.y[i]) === 'forest' && FOREST_BIOMES.has(util.biomeAt(d.x[i], d.y[i])));
+  console.log(`saplings ${sap.length} (${(inF.length / area * 100).toFixed(2)} / 100 m2)`);
+  ok('saplings present in forest tiles', inF.length > 50 && inF.length === sap.length);
+  ok('sapling scale within 0.3..0.5', sap.every(i => d.scale[i] >= 0.3 - 1e-6 && d.scale[i] <= 0.5 + 1e-6));
+  ok('no saplings on path / water', sap.every(i => { const ty = typeOf(d.x[i], d.y[i]); return ty !== 'path' && ty !== 'water'; }));
+}
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

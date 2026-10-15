@@ -180,6 +180,13 @@
                                 { mesh: 'quaternius/Flower_4_Single', weight: 1, sinkM: 0.03, shadow: false, sway: true, maxDistM: 30 },
                                 { mesh: 'quaternius/Pebble_Round_1', weight: 1, sinkM: 0.03, shadow: false, maxDistM: 30 },
                                 { mesh: 'quaternius/Pebble_Round_3', weight: 1, sinkM: 0.03, shadow: false, maxDistM: 30 } ] } },
+          // SAPLINGS (OB-184 follow-up, arch 37.4.1): young trees = the smallest existing tree meshes at scale 0.3-0.5 (per-instance `scale`,
+          // hash slot 6; CPU path, shadow off, no collider), forest biomes 1-3 via detail.saplings, clustered near trunks like undergrowth.
+          { name: 'saplings', seed: 38437, cellM: 6, jitter: 2.0, fill: 1, biomeOnly: true, maxSlope: 0.5, clearM: 0.8, drawM: 60, lodCells: 4,
+            cluster: { treeR: 6, near: 1.6, far: 0.3, patchM: 22, patchAmt: 0.4 },
+            ground: { forest: [ { mesh: 'quaternius/Pine_5', weight: 4, sinkM: 0.03, shadow: false, sway: true, maxDistM: 55, scale: [0.3, 0.5] },
+                                { mesh: 'quaternius/CommonTree_5', weight: 3, sinkM: 0.03, shadow: false, sway: true, maxDistM: 55, scale: [0.3, 0.5] },
+                                { mesh: 'quaternius/CommonTree_3', weight: 2, sinkM: 0.03, shadow: false, sway: true, maxDistM: 55, scale: [0.3, 0.5] } ] } },
           // ruin stubs: a low foundation strip (walk-over step) and, rarely, one standing wall fragment (Wall_UnevenBrick_Straight 2 x 0.4 x 3.1 m)
           { name: 'ruins', seed: 38413, cellM: 20, jitter: 6.0, fill: 1, biomeOnly: true, maxSlope: 0.25, clearM: 2.5, drawM: 130, lodCells: 4,
             ground: (function () {
