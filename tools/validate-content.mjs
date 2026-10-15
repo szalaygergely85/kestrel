@@ -104,6 +104,8 @@ const CLASSIC_SCRIPTS = [
   '../design/models/voxel_tortoise.js', // SLATE-D1: ASSETS.models.tortoise + ASSETS.tortoiseFx (Slate, the ancient tortoise of the Glasswater islet; stand-alone). Not in game/index.html / the world yet.
   '../design/models/voxel_wildlife.js', // QL-06: ASSETS.models.crow (Rook, world_m1 entity "rook"), same load position as game/index.html.
   '../design/models/voxel_eat_clips.js', // SWIM-ASSETS-01: eat clips, after the model files, same load position as game/index.html.
+  '../design/models/voxel_lynx.js', // OB-153: ASSETS.models.lynx + ASSETS.lynxFx (stand-alone; after voxel_eat_clips.js: appends 'lynx' to eatFx.models).
+  '../design/models/voxel_aurochs.js', // OB-153: ASSETS.models.aurochs + ASSETS.aurochsFx (stand-alone; after voxel_eat_clips.js: appends 'aurochs' to eatFx.models).
   '../design/models/voxel_seamonster.js', // SWIM-ASSETS-01: ASSETS.models.seaMonster (world_m1 entity "seaMonster").
   '../design/models/m3_props.js', // US-078d: the practice target pell (content/levels/tower.level.json prop "practiceTarget"), same load position as game/index.html.
   '../design/models/far_tower.js',
