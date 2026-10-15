@@ -210,6 +210,7 @@
     {"name":"bootNow","area":"core","tier":"stable"},
     {"name":"bootReport","area":"core","tier":"stable"},
     {"name":"bootSpan","area":"core","tier":"stable"},
+    {"name":"boundsOvershoot","area":"physics","tier":"experimental"},
     {"name":"buildCarpetClassMap","area":"world","tier":"experimental"},
     {"name":"buildContactBlobs","area":"world","tier":"experimental"},
     {"name":"buildHullProxy","area":"render","tier":"experimental"},

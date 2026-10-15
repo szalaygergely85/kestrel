@@ -20,7 +20,7 @@ import { WOLF_TUNING, wolfOverrides, isWolfEntity, circleTarget, awayTarget } fr
 import { GOBLIN_TUNING, goblinOverrides, isGoblinEntity } from './goblinBrain.js'; // GOB-01
 import { KINDS, KIND_NAMES, kindIndex, kindOfEntity } from './beastKinds.js'; // BEAST-03a
 import { ARCHETYPES } from "./archetypes.js";
-import { createWaterBrain, stepWaterBrain, grabMash as wbGrabMash, waterBlocks, waterHit } from './brains/waterBrain.js'; // BEAST-08b
+import { createWaterBrain, stepWaterBrain, grabMash as wbGrabMash, waterBlocks, waterHit, waterFreeze } from './brains/waterBrain.js'; // BEAST-08b
 import { LAYERS } from './brains/layers.js'; // BEAST-03b: LAYERS[archIdx](sim, i, ctx)
 import { createTactics, tacticsSync, tacticsSteer, tacticsBand, tacticsAllies, TACT_MELEE, TACT_RANGED, TACT_CASTER, TACT_SWARM, TOK_M, TOK_R, TOK_S } from './tactics.js'; // BEAST-04
 import { archIndex, ARCH_NAMES } from './archetypes.js';
@@ -212,6 +212,9 @@ export function createBeastSim(world, opts) {
       t: new Int32Array(MAX_RECORDS), ax: new Float64Array(MAX_RECORDS), ay: new Float64Array(MAX_RECORDS),
       fail: new Uint8Array(MAX_RECORDS), st: new Uint8Array(MAX_RECORDS),
       wall: new Uint8Array(MAX_RECORDS), // BH-A3: charge wall-slow streak (was aliased onto `unseen`, which perceiveOne rewrites)
+      lv: new Uint8Array(MAX_RECORDS),   // SPELL-05: zone level (OB-150) per slot, read by the Light Orb keep-out
+      cf: new Int32Array(MAX_RECORDS),   // SPELL-05: steps of calm-flee left (Light Orb Lv3), 0 = none
+      calm: { on: 0, x: 0, y: 0, r2: 0, lv: 0 }, // SPELL-05: Light Orb zone; beasts of level <= lv inside it do not START aggro
     },
     chargeLen: new Uint16Array(MAX_RECORDS), // OB-150: steps this charge may last (nominal chargeMax, longer when the player already backs away)
     bankT: new Int32Array(MAX_RECORDS),      // NAV-REACH-01: steps a chaser has held at the nearest reachable cell (partial path) before giving up
@@ -256,6 +259,7 @@ export function createBeastSim(world, opts) {
     dormCamp: new Uint8Array(MAX_RECORDS), dormTile: new Uint8Array(MAX_RECORDS), tileMode: false, // WM-04 reasons
     dormant: new Uint8Array(MAX_RECORDS),     // GOB-01: setDormant(slot, true) -> skipped like GONE, state kept
     fleeing: new Uint8Array(MAX_RECORDS),     // WOLF-01: STATE_RETURN that runs away from the player first
+    spell: { blindT: new Uint16Array(MAX_RECORDS) }, // SPELL-R4 (38.80/38.81): ONE key for all spell per-slot data; blindT = steps a beast cannot perceive (Teleport lv3)
     hunt: new Uint8Array(MAX_RECORDS),        // LIFE-07: 1 = STATE_WANDER leg chasing a fauna prey slot (huntSlot)
     huntSlot: new Int32Array(MAX_RECORDS), huntT: new Int32Array(MAX_RECORDS), preyMask: new Int32Array(MAX_RECORDS),
     goal: { on: new Uint8Array(MAX_RECORDS), tx: new Float64Array(MAX_RECORDS), ty: new Float64Array(MAX_RECORDS) }, // LIFE-08: setGoal override
@@ -350,6 +354,7 @@ export function createBeastSim(world, opts) {
     // KINDS-F (OB-153): kinds.json hpF/dmgF (x boar, missing = 1) multiply the level result. Wolf/bear slots already carry their own
     // tuning (WOLF_TUNING/BEAR_TUNING hpMul, swipe hearts) so they are skipped here to avoid double counting.
     const kf = kindFactors(e, sim.wolf[i] || sim.bear[i]);
+    sim.stk.lv[i] = lv > 255 ? 255 : lv < 0 ? 0 : lv | 0;
     sim.tier[i] = tier; sim.spdMul[i] = m.speed * kf.spd; sim._hitPayload[i].damage = (sim.bear[i] ? BEAR_TUNING.swipeHearts : 1) * ls.damage * kf.dmg; // BEAR-01: swipe base is 2 hearts
     const maxHp = Math.max(1, Math.round(sim.scfg[i].hp * ls.hp * kf.hp * (sim.elite[i] ? ELITE_HP_MUL : 1)));
     e.components.health = { hp: maxHp, max: maxHp, invuln: 0 };
@@ -516,6 +521,19 @@ export function createBeastSim(world, opts) {
   sim.flee = function flee(slot) {
     if (slot < 0 || slot >= sim.count || sim.down[slot] || sim.dormant[slot] || deadSt(sim.state[slot])) return;
     enterFlee(sim, slot, sim._px, sim._py);
+  };
+  /** SPELL-05: Light Orb zone (x,y,r metres, beasts of level <= lv keep out); on=false clears it. */
+  sim.setCalm = function setCalm(on, x, y, r, lv) { const c = sim.stk.calm; c.on = on ? 1 : 0; c.x = x; c.y = y; c.r2 = r * r; c.lv = lv; };
+  /** SPELL-05: live beasts of level <= lv within r (2D) of (x,y) run away from the player for `steps` steps. Returns how many. */
+  sim.calmFlee = function calmFlee(x, y, r, lv, steps) {
+    let n = 0;
+    for (let i = 0; i < sim.count; i++) {
+      if (sim.down[i] || sim.dormant[i] || deadSt(sim.state[i]) || sim.stk.lv[i] > lv || sim.fleeing[i]) continue;
+      const dx = sim.steer.x[i] - x, dy = sim.steer.y[i] - y;
+      if (dx * dx + dy * dy > r * r) continue;
+      sim.flee(i); if (sim.fleeing[i]) { sim.stk.cf[i] = steps; n++; }
+    }
+    return n;
   };
   sim.isDormant = function isDormant(slot) { return slot >= 0 && slot < sim.count && sim.dormant[slot] === 1; };
   /** LIFE-08: drop the goal override; a wandering beast walks back home (STATE_RETURN). */
@@ -854,6 +872,7 @@ function huntStep(sim, i, px, py) {
 
 function perceiveOne(sim, i, px, py, pz) {
   const steer = sim.steer, cfg = sim.cfg;
+  if (sim.spell.blindT[i] > 0) { sim.spell.blindT[i]--; sim.seen[i] = 0; sim.unseen[i] = 0; return; } // SPELL-R4: blinded (lost track)
   const dx = px - steer.x[i], dy = py - steer.y[i];
   const d2 = dx * dx + dy * dy;
   const loseR2 = sim.scfg[i].loseR * sim.scfg[i].loseR; // BEAR-01: per-slot (same as cfg for boars/wolves)
@@ -877,6 +896,9 @@ function zOf(sim, i) {
 }
 
 function noticedOf(sim, i, px, py) {
+  if (sim.spell.blindT[i] > 0) return false; // SPELL-R4
+  const cz = sim.stk.calm; // SPELL-05: Light Orb keep-out (the 'woken waystone light' rule): no aggro START inside the light
+  if (cz.on === 1 && sim.stk.lv[i] <= cz.lv) { const cx = sim.steer.x[i] - cz.x, cy = sim.steer.y[i] - cz.y; if (cx * cx + cy * cy <= cz.r2) return false; }
   // BEAST-PERCEIVE-01w: engine/nav/perceive through a thin adapter. hearing = the "nearR" any-direction bubble
   // (scaled by the player's noise), sight = noticeR + cone + the cached LOS flag. Same numbers as before at noise 1.
   const steer = sim.steer, a = sim._pa, t = sim._sc.pt;
@@ -1141,6 +1163,7 @@ function recoverStep(sim, i, px, py) {
 
 function returnStep(sim, i, px, py) {
   if (sim.fleeing[i]) { // WOLF-01: keep running until 30 m from where it started / from the player, then walk home
+    if (sim.stk.cf[i] > 0 && --sim.stk.cf[i] === 0) { sim.fleeing[i] = 0; enterReturn(sim, i); return; } // SPELL-05: Light Orb Lv3 flee ends after its seconds
     const dx = px - sim.steer.x[i], dy = py - sim.steer.y[i], gx = sim.goalX[i] - sim.steer.x[i], gy = sim.goalY[i] - sim.steer.y[i];
     if (dx * dx + dy * dy >= fleeMOf(sim, i) * fleeMOf(sim, i) || gx * gx + gy * gy <= 1) { sim.fleeing[i] = 0; enterReturn(sim, i); }
     return;
@@ -1272,6 +1295,7 @@ function shouldFlee(sim, i) {
 }
 /** WOLF-01: run WOLF_TUNING.fleeM straight away from the player (falls back to going home if that spot is a wall). */
 function enterFlee(sim, i, px, py) {
+  sim.stk.cf[i] = 0; // SPELL-ARCH8: a stale calm-flee count must not cut a later flee short (calmFlee re-sets it after sim.flee)
   const steer = sim.steer, t = sim.sc.tmp, S = 0.7071067811865476;
   awayTarget(steer.x[i], steer.y[i], px, py, fleeMOf(sim, i), t);
   // try straight away, then +-45 deg (vector rotation, no trig), then half distance; else just go home
@@ -1301,11 +1325,12 @@ function enterWander(sim, i) {
  * where the damage step was skipped but the physical/visual reaction still applies). `hurtT` was already reset for
  * a damaging hit, so "flash only" below is just "no state change" - the view flashes off `hurtT`. */
 function reactToHit(sim, i, p) {
+  if (p.freezeSec > 0) { applyFreeze(sim, i, p.freezeSec); return; } // SPELL-R2
   if (sim.wat[i] === 1) { waterHit(sim.wb, sim, i, p); return; } // BEAST-08b
   const st = sim.state[i];
   if (p.heavy) {
     const knock = p.knock > 0 ? p.knock : sim.cfg.staggerKnock;
-    if (knock >= 1) { enterStagger(sim, i, p.dirX, p.dirY, Math.min(knock, 12)); return; }
+    if (knock >= 1) { enterStagger(sim, i, p.dirX, p.dirY, Math.min(knock, 12)); if (p.stunSec > 0) sim.timer[i] = Math.round(p.stunSec * 60); return; } // SPELL-05: Spark sets its own stun time
     enterFlinch(sim, i); // fire with a tiny falloff (knock < 1) -> flinch
     return;
   }
@@ -1313,6 +1338,15 @@ function reactToHit(sim, i, p) {
   if (st === STATE_WINDUP && !sim.bear[i]) { enterRecover(sim, i, false); return; } // AC: a light hit cancels the charge
   if (st === STATE_CHARGE || st === STATE_STAGGER || ((st === STATE_WINDUP || st === STATE_BITE) && sim.bear[i])) return; // BEAR-01: an arrow doesn't break the bluff          // D-034: only a hard hit stops a charge
   enterFlinch(sim, i);
+}
+
+/** SPELL-R2 Freeze: stagger with zero knock = no move, no attack, for `sec` s (re-freeze refreshes, never stacks); level > 7 = half time. A croc releases its grab. */
+function applyFreeze(sim, i, sec) {
+  const steps = Math.max(1, Math.round(sec * 60 * (sim.stk.lv[i] > 7 ? 0.5 : 1)));
+  if (sim.wat[i] === 1) { waterFreeze(sim.wb, sim, i, steps); return; }
+  enterStagger(sim, i, 0, 0, 0);
+  sim.timer[i] = steps;
+  sim.steer.vx[i] = 0; sim.steer.vy[i] = 0;
 }
 
 function enterFlinch(sim, i) {
@@ -1799,6 +1833,8 @@ function hashSim(sim, h) {
   h.u32Array(sim.hurtT, 0, n);
   h.u32Array(sim.unseen, 0, n);
   h.u8Array(sim.stk.wall, 0, n);
+  h.u32Array(sim.stk.cf, 0, n); // SPELL-ARCH8: calm-flee steps and the Light Orb zone change beast behaviour
+  { const c = sim.stk.calm; h.i32(c.on); h.f64(c.x); h.f64(c.y); h.f64(c.r2); h.i32(c.lv); }
   h.u32Array(sim.repathT, 0, n);
   for (let i = 0; i < n; i++) {
     h.f64(sim.homeX[i]); h.f64(sim.homeY[i]); h.f64(sim.homeZ[i]);
@@ -1812,6 +1848,7 @@ function hashSim(sim, h) {
   h.u32Array(sim.pathLen, 0, n);
   h.u32Array(sim.pathIdx, 0, n);
   for (let i = 0; i < n; i++) h.i32(sim.pool.lv[i]); // BEAST-POOL-b: binding state
+  { const bt = sim.spell.blindT; let any = false; for (let i = 0; i < n; i++) if (bt[i]) { any = true; break; } if (any) h.u32Array(bt, 0, n); } // SPELL-R4: only while someone is blind (golden hash unchanged)
   h.u8Array(sim.seen, 0, n);
   h.u8Array(sim.pathReq, 0, n);
   h.u8Array(sim.pendingDied, 0, n);
@@ -1900,8 +1937,25 @@ function resetAllSim(sim) {
   sim.events.emit('beasts:reset'); // US-079b: loot clears its corpse state on this
 }
 
+/** SPELL-R4 (38.80): Teleport lv3. Live beasts in an aggro state within r m (2D) of (x, y) go to STATE_WANDER and cannot perceive for `sec` s. -> count. Cold path. */
+export function loseTrack(sim, x, y, r, sec) {
+  const r2 = r * r, steps = Math.min(65535, Math.round(sec / SIM_STEP));
+  let n = 0;
+  for (let i = 0; i < sim.count; i++) {
+    const st = sim.state[i];
+    if (FREE_ST[st] || st === STATE_RETURN || deadSt(st) || st === STATE_GONE) continue;
+    const dx = sim.steer.x[i] - x, dy = sim.steer.y[i] - y;
+    if (dx * dx + dy * dy > r2) continue;
+    sim.spell.blindT[i] = steps; sim.seen[i] = 0; sim.unseen[i] = 0; sim.fleeing[i] = 0;
+    sim.state[i] = STATE_WANDER; sim.timer[i] = sim.cfgSteps.pauseMin; sim.pathLen[i] = 0; sim.pathIdx[i] = 0; sim.pathReq[i] = 0;
+    sim.steer.setIdle(i); n++;
+  }
+  return n;
+}
+
 /** One slot back to home, alive, state wander (shared by resetAll and setDown(slot, false)). */
 function resetSlotSim(sim, i) {
+  sim.spell.blindT[i] = 0; // SPELL-R4
   sim.bite.cd[i] = 0; sim.bite.n[i] = 0; sim.bite.done[i] = 0; // BEAR-BITE
   // US-079b: dead steer slots are re-added in ascending order; addAgent hands out the lowest free slot, and the
   // live slots stay active (slots >= count are never used), so the lowest free slot is always the lowest dead one.

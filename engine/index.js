@@ -169,6 +169,7 @@ export { flickerStep } from './render/gpu/flicker.js';
 // ---- physics ----------------------------------------------------------------
 export { PHYSICS_DEFAULTS, PHYSICS } from './physics/config.js';
 export { moveCapsule, isSectorPassable, sectorOrOutside } from './physics/capsule.js';
+export { boundsOvershoot } from './physics/bounds.js'; // SPELL-R4: blink target bounds test
 export { moveSphere } from './physics/sphere.js';
 export { stepRollers, resolveBodyContacts, rollFrame } from './physics/roller.js';
 export { integrate } from './physics/integrate.js';
