@@ -157,3 +157,47 @@ Order: 01 -> (02, 03) -> 04 -> (05, 06, 07) -> 08; D1 alongside (axe/spear drop 
 3. Rarity names/colours Common white / Magic blue / Rare yellow / Epic purple / Unique orange - OK? **Owner: OK.**
 4. Should gear need attributes (e.g. Steel Bow needs DEX 12), or do attributes only boost? **Owner: yes, gear needs attributes.**
 5. Floating damage numbers over enemies (crits in yellow) - want them? **Owner: yes, with a Settings switch to turn them off.**
+
+## PLAYER-LEVEL-01 proposal (PC-B PO, owner to OK the numbers)
+Source: D-084 (level is derived, no XP, attributes from gear only), D-069 (fireball at level 5), ITEM-09 (req(iL) = 5 + floor(0.9 x (iL-1))), HPBAR-03 (Easy -1 / Hard +1).
+
+**Story.** As a player, I want to see one "Level" number that rises as I find better gear and learn stronger spells, so that I know how ready I am for a zone without grinding XP.
+
+**Pure function** `playerLevel(spells, equipped)` in `game/js/quest/playerLevel.js` (+ `playerLevel.test.js`), no globals, no alloc after load, no Math.random.
+- Slot weights (9 slots, order as `equipment.js`): weapon 3, chest 2, shield 1.5, head 1, hands 1, legs 1, feet 1, ring 0.5, amulet 0.5 (sum 11.5). An empty slot counts as iL 1 (bare = level 1). Missing/unknown slot ids are ignored, never throw.
+- `gear = sum(weight x iL) / 11.5` (range 1..10).
+- `spellBonus = min(2, 0.25 x sum of tiers)`; `spells` = map spellId -> tier (0 = not learned, 1..3 learned/upgraded). Unknown ids count 0.
+- `playerLevel = clamp(floor(gear + spellBonus + 0.5), 1, 10)`.
+- Also export `gearLevel(equipped) = clamp(floor(gear + 0.5), 1, 10)` (spells excluded) for the fireball gate.
+- Why: gear is the main path (weapon and chest matter most); spells add up to +2 so a mage who skips armour still climbs a little, but spells alone never carry you.
+
+**Worked examples** (rounded half up):
+1. Fresh start: sword iL1, rest empty, no spells -> gear 1.00 -> **Level 1**.
+2. After the first chest (iL3 chest, iL1 sword, shield iL1): (3 + 6 + 1.5 + 1+1+1+1 + .5+.5)/11.5 = 1.35 -> **Level 1** (levels move slowly early; the gear card still shows the upgrade).
+3. Mid Ch2 kit: sword 4, chest 4, shield 3, head/hands/legs/feet 3, no jewellery, fireball T1: gear 3.26 + 0.25 = 3.51 -> **Level 4**.
+4. Full Magic iL5 kit (all 9 slots iL5), fireball T1 + two more spell tiers (sum 3): 5.00 + 0.75 = 5.75 -> **Level 6** (gearLevel 5, so the gate is met).
+5. Endgame: all 9 slots iL9, spell tiers sum 8 (bonus capped 2): 9 + 2 = 11 -> clamp **Level 10**.
+
+**Zones.** Bands unchanged (tower side 1-5, far side 5-10; no enemy scaling, D-078). Level is never a lock: the river stays open (D-095). The map/character view shows a plain hint for the zone you stand in: zone level >= playerLevel + 2 -> "Dangerous here" (red); within +-1 -> "Fair"; <= level - 2 -> "Easy".
+
+**Enemy bar (HPBAR-03).** Shown level = clamp(beastLevel + diffShift, 1, 10), shift Easy -1 / Normal 0 / Hard +1 (matches the stat shift of that setting, so the number is honest). Name tint vs playerLevel: shown level <= level-3 grey, -2..-1 green, 0 white, +1..+2 yellow, >= +3 red.
+
+**Item requirements (ITEM-09).** Gear is gated by attributes only (hard rule, D-091 / owner), NOT by player level; req(iL) = 5 + floor(0.9 x (iL-1)) (iL1 5, iL5 8, iL10 13). Player level is a readout of the gear, so a level gate on gear would be circular.
+
+**D-069 fireball gate.** The fireball unlock checks `gearLevel(equipped) >= 5` (or the Burl story beat, 38.53, whichever the quest data names). It uses gearLevel, not playerLevel, because learning the fireball itself adds a spell bonus (no loop).
+
+**Where it shows.** (a) Character view: big "Level N" in the header, small line "Gear X.X + Spells +Y.Y" so the player sees what raises it; (b) HUD: a small "Lv N" next to the hearts/mana, updates on equip/unequip/spell learn, with a brief flash when it goes up ("Level up! 4"). No XP bar anywhere.
+
+**Acceptance criteria (Node-testable)**
+- [ ] `playerLevel` is pure: same input -> same output, input objects not mutated, 0 allocations in a 10k-call loop after warm-up.
+- [ ] The 5 worked examples above give 1 / 1 / 4 / 6 / 10 (fixtures in the test).
+- [ ] Result is always an integer 1..10 for 10k random seeded kits (iL 0..12, tiers 0..5); empty equipment + no spells = 1; empty/undefined args never throw.
+- [ ] Monotonic: raising any slot iL by 1 or any spell tier by 1 never lowers the level; spells alone (all gear empty, any tiers) reach at most level 2.
+- [ ] Spell bonus capped: tier sum 8 and 80 give the same result.
+- [ ] `gearLevel` ignores spells; a kit of all iL5 gives gearLevel 5; the D-069 gate test: sword+chest iL5 only (others empty) gives gearLevel 3 (gate closed), full iL5 kit opens it.
+- [ ] Character view and HUD text come from the same function (golden strings "Level 4", "Gear 3.3 + Spells +0.3" for example 3); HUD value changes after equip, unequip and spell learn; no "XP" text anywhere.
+- [ ] Enemy bar shown-level helper: Easy/Hard shift clamps at 1 and 10; tint bands match the table above.
+- [ ] Zone hint function returns Dangerous / Fair / Easy per the thresholds above for levels 1..10 against bands 1..10.
+- [ ] Save: level is NOT saved (always recomputed); old saves load unchanged.
+
+Owner to OK: slot weights, spell bonus 0.25 per tier (cap 2), rounding, and "gate uses gear level only".
