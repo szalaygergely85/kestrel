@@ -1,5 +1,11 @@
 # PC-B queue
 
+## Compass = tracked quest + hand-in (owner 2026-10-15, D-108) (PC-A main session)
+
+| ID | Slot | AC | Status |
+|---|---|---|---|
+| COMPASS-TRACK-01 | kestrel-1 (compassHud.js / main.js) | D-108: the compass needle points at the TRACKED quest's current target only (one tracked quest at a time; switching tracking switches the needle at once); when the tracked quest is READY, the needle points at the return character and their `?` shows in the quest colour (gold main / blue side); main-story steps without a hand-in = needle only. Today compassHud.js:94-95 falls back to the main quest when nothing is tracked: keep that fallback. Node test per case (tracked objective, tracked ready -> return point, switch tracking, nothing tracked -> main) + owner look. Check after BH-S1 (tracked quest must survive Continue). | todo |
+
 ## Bug hunt round 2 (2026-10-15, PC-A, 3 fable architects, 10 min; reports `docs/test-reports/bughunt-2026-10-15b-*.md`)
 5 confirmed. Do BH2-E1 together with BH-A1 (both in resetAll). Engine fixes end in arch-review on PC-A.
 
