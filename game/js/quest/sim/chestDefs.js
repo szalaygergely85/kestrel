@@ -18,6 +18,10 @@ export const CHEST_TABLES = {
   chestRook: { fixed: [{ item: 'arrow', n: 15 }], weighted: [], gear: { tier: 'sturdy' } },
   chestBoots: { fixed: [{ item: 'gear.feet.riverBoots', n: 1 }], weighted: [] }, // QL-16: River Boots (unique, never rolled)
   chestWest: { fixed: [{ item: 'arrow', n: 10 }], weighted: [], gear: { tier: 'sturdy' } }, // OB-141: the one chest of the west gatehouse ruin
+  // UNDER-03 (OB-191): the three small crates of the Ford trade post cellar (food, a little ammunition, one potion; no coin item exists yet)
+  chestCellar1: { fixed: [{ item: 'berry.blue', n: 3 }, { item: 'honeycomb', n: 1 }], weighted: [] },
+  chestCellar2: { fixed: [{ item: 'boar.meat', n: 2 }, { item: 'arrow', n: 8 }], weighted: [] },
+  chestCellar3: { fixed: [{ item: 'potion.hp', n: 1 }], weighted: [] },
   chestHidden: { fixed: [], weighted: [], gear: { tier: 'fine' } },
   chestBed: { fixed: [{ item: 'arrow', n: 10 }], weighted: [], gear: { tier: 'sturdy' } }, // SWIM-04d: Glasswater lake-bed chest (needsBottom)
   chestForge: { fixed: [{ item: 'gear.main.sword.sturdy', n: 1 }], weighted: [] }, // EQ-20: Outwall forge chest (a sturdy sword). Band 5+ chests: add `weapon: { tier: 'fine' }`.

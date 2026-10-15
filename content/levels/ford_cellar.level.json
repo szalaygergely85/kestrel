@@ -1,0 +1,89 @@
+{
+  "kind": "level",
+  "schema": 1,
+  "id": "ford_cellar",
+  "nextId": 1,
+  "name": "ford_cellar",
+  "title": "Ford Trade Post Cellar",
+  "version": 1,
+  "cellSize": 1,
+  "note": "UNDER-03 / OB-191 (arch 38.75): smugglers cellar under the Ford trade post. 10x10 cells (outer ring = terrainFloor ground reference, then a wall ring), room x 2..7 y 2..7, floor 0, ceiling 2.6, top 2.9; all cells keepTerrain (no carve; the trapdoor is an E ladder, game/js/quest/under/fordCellar.js). Placed at origin (997,1056,-92.5): surface ~-88 so the lint rule ground >= top + 0.3 holds. Mesh physics only.",
+  "size": {
+    "w": 10,
+    "h": 10
+  },
+  "rows": [
+    ",,,,,,,,,,",
+    ",########,",
+    ",#......#,",
+    ",#......#,",
+    ",#......#,",
+    ",#......#,",
+    ",#......#,",
+    ",#......#,",
+    ",########,",
+    ",,,,,,,,,,"
+  ],
+  "legend": {
+    "#": {
+      "ceilH": 2.6,
+      "topH": 2.9,
+      "ceilMat": "stone",
+      "floorH": 2.9,
+      "floorMat": "floor",
+      "wallMat": "stone",
+      "solid": true,
+      "keepTerrain": true,
+      "desc": "cellar wall"
+    },
+    ".": {
+      "ceilH": 2.6,
+      "topH": 2.9,
+      "ceilMat": "stone",
+      "floorH": 0,
+      "floorMat": "floor",
+      "wallMat": "stone",
+      "solid": false,
+      "keepTerrain": true,
+      "desc": "cellar floor",
+      "zone": "cellar"
+    },
+    ",": {
+      "ceilH": "sky",
+      "ceilMat": "sky",
+      "desc": "ground reference ring: terrain (4.5 m above the room floor = surface), not carved",
+      "floorH": 4.5,
+      "floorMat": "grass",
+      "solid": false,
+      "terrainFloor": true,
+      "wallMat": "stone",
+      "zone": "outside"
+    }
+  },
+  "start": {
+    "x": 4.5,
+    "y": 4.5,
+    "facingDeg": 90,
+    "pitchDeg": 0,
+    "eyeH": 1.6,
+    "pose": "standing"
+  },
+  "ambient": {
+    "preset": "ambient"
+  },
+  "lights": [
+    {
+      "id": "lantern",
+      "on": true,
+      "preset": "lanternHook",
+      "x": 4.5,
+      "y": 5.5,
+      "z": 1
+    }
+  ],
+  "props": [],
+  "interactables": [],
+  "triggers": [],
+  "markers": [],
+  "layers": {}
+}

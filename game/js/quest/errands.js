@@ -158,6 +158,7 @@ export function createErrands({ getBook, questFlag, inspect, note, texts }) {
     inspected(id) {
       const f = 'talk.' + siteOf(id);
       if (wants(f)) questFlag(f, true);
+      if (id === 'cellarNote') questFlag('under.fordCellar.noteRead', true); // UNDER-03: smugglers tally in the Ford cellar
       if (id === 'fordMark') questFlag('lore.fordMark.read', true); // mq.smoke: the mark cut in the Ford Relay base
       if (id === 'owBoard') questFlag('lore.owBoard.read', true); // mq.ow.board (Ch3)
       if (id === 'pierStone') questFlag('lore.pierStone.read', true); // sq.hw.piers (QL-21)

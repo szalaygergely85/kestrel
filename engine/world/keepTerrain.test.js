@@ -75,8 +75,13 @@ const segD = new Float64Array([x, y, g + 1, x, y, g - 3]);
 ok(on.raySegmentRay(segD, hit) && hit.z > g - 1.01, 'mesh raySegment into the ground above a crypt hits the terrain surface');
 
 // (f) grid physics is rejected (note b), (g) rotated / cellSize-2 sites are rejected clearly
-assert.throws(() => World.load({ name: 'w', structures: [{ id: 'u', level: 'under', origin: { x: 10, y: 20, z: 0 } }] },
-  new AssetRegistry({ palette: { rgb: {} }, levels: { under: def(true) } }), { physics: 'grid' }), /keepTerrain.*mesh/); checks++;
+{ const warns = [], cw = console.warn; console.warn = (m) => warns.push(String(m));
+  let gw; try { gw = World.load({ name: 'w', structures: [{ id: 'u', level: 'under', origin: { x: 10, y: 20, z: 0 } }] },
+    new AssetRegistry({ palette: { rgb: {} }, levels: { under: def(true) } }), { physics: 'grid' }); } finally { console.warn = cw; }
+  const gw2 = (console.warn = (m) => warns.push(String(m)), World.load({ name: 'w', structures: [{ id: 'u', level: 'under', origin: { x: 10, y: 20, z: 0 } }] }, new AssetRegistry({ palette: { rgb: {} }, levels: { under: def(true) } }), { physics: 'grid' }));
+  console.warn = cw;
+  ok(gw2.structures.length === 0 && !gw2.structures.some((s) => s.id === 'u'), 'second grid load: still skipped');
+  ok(gw.structures.length === 0 && !gw.structures.some((s) => s.id === 'u') && warns.length === 1 && /keepTerrain.*mesh/.test(warns[0]), 'grid physics: keepTerrain site not in world.structures, ONE warn across two loads'); }
 const rot = mk(true, 6); rot.structures[0].yawSteps = 1;
 ok(validateUnder(rot).some((e) => /unrotated/.test(e)), 'validateUnder rejects a rotated site');
 const cs2 = mk(true, 6); cs2.structures[0].level.cellSize = 2;

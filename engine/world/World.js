@@ -537,6 +537,7 @@ export class World {
       const placed = s.mesh
         ? w.placeMesh(assets.mesh(s.mesh), s.origin, s.id, s.yawDeg ?? 0, s.castShadow, s.scale === undefined ? 1 : readScale(s.scale, `mesh placement "${s.id}"`), s.collide)
         : w.placeStructure(assets.level(s.level), s.origin, s.id, s.yawSteps || 0);
+      if (!placed) continue; // keepTerrain site skipped under grid physics
       if (s.nav === 'floors') { placed.navFloors = true; if (typeof s.navGroup === 'string') placed.navGroup = s.navGroup; } // NAV-LAYERS-01d: content flag (read by game/js/quest/sim/beastNav.js)
       if (placed.kind !== 'mesh' && s.dynamics) {
         for (const tag of Object.keys(s.dynamics)) {
@@ -949,7 +950,12 @@ export class World {
     const carveMask = buildCarveMask(level); // GS-01a: null = carve the whole bbox
     const keepMask = buildKeepMask(level); // UNDER-00b: null = no keepTerrain cell
     // UNDER-00c (38.75 note b): grid physics (floorAt/sectorAt/outsideSector) has no keepTerrain gate -> unsupported, fail loud.
-    if (keepMask && this.physicsMode !== 'mesh') throw new Error(`World.placeStructure: level "${levelDef.name}" uses keepTerrain, which needs physics: 'mesh' (grid physics not supported over keepTerrain)`);
+    // Decision (main session, UNDER-03): skip the site with ONE warn per level id instead of throwing, so grid-physics loads of a world that holds a site still work.
+    if (keepMask && this.physicsMode !== 'mesh') {
+      const warned = (World._keepWarned ||= new Set());
+      if (!warned.has(levelDef.name)) { warned.add(levelDef.name); console.warn(`World.placeStructure: level "${levelDef.name}" uses keepTerrain, which needs physics: 'mesh' - site skipped under grid physics`); }
+      return null;
+    }
     // US-014 tech note 1: a tag -> legend-char Map built once here, instead
     // of `animateSector` scanning `Object.keys(level.legend)` on every call
     // (an interaction/save-load call, but also every `stepSectorAnims` tick
