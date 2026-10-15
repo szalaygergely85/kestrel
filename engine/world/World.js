@@ -948,6 +948,8 @@ export class World {
     const packed = packLevel(level, null);
     const carveMask = buildCarveMask(level); // GS-01a: null = carve the whole bbox
     const keepMask = buildKeepMask(level); // UNDER-00b: null = no keepTerrain cell
+    // UNDER-00c (38.75 note b): grid physics (floorAt/sectorAt/outsideSector) has no keepTerrain gate -> unsupported, fail loud.
+    if (keepMask && this.physicsMode !== 'mesh') throw new Error(`World.placeStructure: level "${levelDef.name}" uses keepTerrain, which needs physics: 'mesh' (grid physics not supported over keepTerrain)`);
     // US-014 tech note 1: a tag -> legend-char Map built once here, instead
     // of `animateSector` scanning `Object.keys(level.legend)` on every call
     // (an interaction/save-load call, but also every `stepSectorAnims` tick
@@ -1079,21 +1081,35 @@ export class World {
     return null;
   }
 
-  /** UNDER-00b: true when (x, y) lies on a `keepTerrain` cell of a placed grid structure (terrain above it is a normal field). */
-  keepTerrainAt(x, y) {
-    const s = this.structureAt(x, y);
+  /** UNDER-00b: keepMask lookup for an already-resolved structure `s` (one structureAt per query, UNDER-00c). */
+  _keepCell(s, x, y) {
     if (!s || !s.keepMask) return false;
     const g = gridLocal(s, x, y, this._grid);
     const c = Math.floor(g.x), r = Math.floor(g.y), w = s.level.width;
     return c >= 0 && r >= 0 && c < w && r < s.level.height && s.keepMask[r * w + c] === 1;
   }
 
+  /** UNDER-00b: true when (x, y) lies on a `keepTerrain` cell of a placed grid structure (terrain above it is a normal field). */
+  keepTerrainAt(x, y) {
+    return this._keepCell(this.structureAt(x, y), x, y);
+  }
+
   /** UNDER-00b: terrain counts as a support at (x, y, footZ): outside every structure, or on a keepTerrain cell with the feet near/above the surface. */
   _terrainSupports(x, y, footZ) {
     const s = this.structureAt(x, y);
     if (!s) return true;
-    if (!s.keepMask || !this.keepTerrainAt(x, y)) return false;
+    if (!this._keepCell(s, x, y)) return false;
     return footZ >= this.terrain.groundAt(x, y) - KEEP_TERRAIN_SUPPORT_DROP;
+  }
+
+  /**
+   * UNDER-00c: true when the world point (x, y, z) is "outside" (terrain floor + sky) although it lies in a structure bbox:
+   * a keepTerrain cell with z >= groundAt - 0.6 (same gate as `_terrainSupports`). Used by line-of-sight / ray queries.
+   * Cheap for levels without the flag (keepMask null). `s` = the structure at (x, y).
+   */
+  keepTerrainOpen(s, x, y, z) {
+    if (!s || !s.keepMask || !this.terrain || !this._keepCell(s, x, y)) return false;
+    return z >= this.terrain.groundAt(x, y) - KEEP_TERRAIN_SUPPORT_DROP;
   }
 
   sectorAt(x, y) {
@@ -2133,7 +2149,9 @@ export class World {
   _rayBlocked(mesh) {
     const x = _rayP[0], y = _rayP[1], z = _rayP[2];
     if (!mesh) return pointBlocked(this, x, y, z);
-    if (!this.terrain || this.structureAt(x, y)) return false;
+    if (!this.terrain) return false;
+    const s = this.structureAt(x, y);
+    if (s && !this.keepTerrainOpen(s, x, y, z)) return false; // UNDER-00c: keepTerrain cell above the room = terrain
     const g = this.terrain.groundAt(x, y);
     return g === g && z < g; // NaN-safe
   }

@@ -69,7 +69,8 @@ const losP = new Float64Array(3);
 /** `pointBlocked` with the point in a caller buffer p[0..2] (BEAST-ALLOC-02b: hasLineOfSight samples without boxing 3 doubles per sample). */
 function pointBlockedBuf(world, p) {
   const x = p[0], y = p[1], z = p[2];
-  const s = world.structureAt(x, y);
+  let s = world.structureAt(x, y);
+  if (s && s.keepMask && world.keepTerrainOpen && world.keepTerrainOpen(s, x, y, z)) s = null; // UNDER-00c: terrain/sky above a keepTerrain room
   let floorH, ceilH, solid;
   if (s) {
     const g = gridLocal(s, x, y, losGrid);

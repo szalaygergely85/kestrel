@@ -65,7 +65,7 @@ addonChars.add('char.kit'); // OB-086: the default kit character is registered a
 // loadContentPack (same loader the game uses) and merged onto the
 // `globalThis.ASSETS` the remaining classic scripts (palette, models,
 // overworld_far's terrain RECIPE - still code, unaffected) already built.
-import { validateVoxelModel, loadContentPack, PROP_SCALE_MIN, PROP_SCALE_MAX, meshFromJSON, meshFromBin, validateMesh, validateLinks, validateLook, maskFromJSON, validateDialogue } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
+import { validateVoxelModel, loadContentPack, PROP_SCALE_MIN, PROP_SCALE_MAX, meshFromJSON, meshFromBin, validateMesh, validateUnderSite, validateLinks, validateLook, maskFromJSON, validateDialogue } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import { validateQuestDefinition } from '../game/js/quest/sim/quest.js';
@@ -830,6 +830,7 @@ export function validateContent(ASSETS, opts = {}) {
       check(hasMesh !== hasLevel && !(s.mesh !== undefined && s.level !== undefined), path, 'exactly one of mesh or level is required');
       if (hasMesh) check(Object.hasOwn(meshes, s.mesh), `${path}.mesh`, `mesh "${s.mesh}" not found`);
       if (hasLevel) check(Object.hasOwn(levels, s.level), `${path}.level`, `level "${s.level}" not found`);
+      if (hasLevel && Object.hasOwn(levels, s.level)) for (const e of validateUnderSite(levels[s.level], s)) check(false, `${path}.level`, `UNDER-00c: ${e}`);
       if (s.yawDeg !== undefined) {
         check(hasMesh && Number.isFinite(s.yawDeg), `${path}.yawDeg`, 'finite yawDeg is allowed only for mesh placements');
         check(s.yawSteps === undefined || s.yawSteps === 0, `${path}.yawSteps`, 'cannot combine mesh yawDeg with nonzero yawSteps');
