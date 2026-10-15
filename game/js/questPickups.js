@@ -24,7 +24,7 @@ export function itemLabel(defs, id) {
 }
 
 /** @param {{getBook: () => any, feed: (e:any) => any, defs: Record<string, any>}} o */
-export function createQuestPickups({ getBook, feed, defs, isWorn }) {
+export function createQuestPickups({ getBook, feed, defs, isWorn, livingOfKind }) {
   let ctx = null, props = [], tick = 0, ops = null, opsInv = null, lastAdded = 0;
 
   const groundFn = () => (ctx && ctx.world && ctx.world.terrain ? (x, y) => ctx.world.terrain.groundAt(x, y) : null);
@@ -43,6 +43,7 @@ export function createQuestPickups({ getBook, feed, defs, isWorn }) {
         return k; }, // QL-04: add = giveOnAccept
       equipped: (id) => !!(isWorn && ctx && ctx.player && isWorn(ctx.player.components && ctx.player.components.equipment, id)) }; } // QL-WIRE: EQ-13 requireEquipped
     if (book.packOps !== ops) book.packOps = ops;
+    if (livingOfKind && book.livingOfKind !== livingOfKind) book.livingOfKind = livingOfKind; // SOFTLOCK-01: kill quests accepted after the pack died
     for (let i = props.length - 1; i >= 0; i--) { // accepted another way (E on the object): the packet leaves the world too
       const pr = props[i];
       if (pr.acceptQuest && ctx.world.entity(pr.id) && book.statusOf(pr.acceptQuest) > 1) { ctx.world.remove(pr.id); if (ctx.world.removeInteractable) ctx.world.removeInteractable('qp.' + pr.id); props.splice(i, 1); }

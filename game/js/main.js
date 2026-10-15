@@ -132,7 +132,8 @@ import { createSpawnDirector, buildGroups, regionalMembers } from './quest/sim/s
 import { spawnRegionalBeasts } from './quest/sim/regionalBeasts.js';
 import { setForestAmbienceSources } from './audio/forestAmbience.js'; // OB-184
 import { setUndergroundSources } from './audio/undergroundAmbience.js'; import { createUnderSpawner, UNDER_SITES } from './quest/sim/underSkeletons.js'; // UNDER-01 / UNDER-08
-import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
+import { createBeastSim, STATE_DYING, STATE_GONE, STATE_EAT } from './quest/sim/beastSim.js';
+import { kindOf } from './quest/sim/quest.js'; // US-079a (architecture.md 29.1)
 import { ensureWolves } from './quest/sim/wolfBrain.js'; // WOLF-01
 import { ensureBears } from './quest/sim/bearBrain.js'; // BEAR-01 (D-069): black bears in Thornwood
 import { stepFireballHints, resetFireballHints } from './quest/fireballHints.js'; // FB-03
@@ -687,7 +688,8 @@ gameHooks.register(underHook); // B1-MAIN hooks 7
 if (chestHook) gameHooks.register(chestHook);
 if (chestHook) gameHooks.register(createHeartHook({ getCard: () => chestHook.card, notify: (t) => { if (lootToast) lootToast.say(t, [226, 214, 176]); } })); // QL-08; OB-105: heart piece = toast, not the card
 // QUESTS-01: generic world pickup prop + pack counts for collect/deliver objectives + hand-in reward grant (game/js/questPickups.js)
-const questPickups = (itemDefs && saveRelay) ? createQuestPickups({ getBook: () => saveRelay.quest.book, feed: (e) => saveRelay.quest.feed(e), defs: itemDefs, isWorn }) : null; // QL-WIRE: requireEquipped hand-ins
+let questBeastSim = null; // SOFTLOCK-01: the live beast sim for the kill-quest accept rule (set where the sim is built)
+const questPickups = (itemDefs && saveRelay) ? createQuestPickups({ livingOfKind: (kind) => { const s = questBeastSim; if (!s || !s.ids) return 99; let n = 0; for (let i = 0; i < s.ids.length; i++) if (kindOf(s.ids[i]) === kind && !s.down[i] && !(s.state[i] >= STATE_DYING && s.state[i] <= STATE_GONE && s.state[i] !== STATE_EAT)) n++; return n; }, getBook: () => saveRelay.quest.book, feed: (e) => saveRelay.quest.feed(e), defs: itemDefs, isWorn }) : null; // QL-WIRE: requireEquipped hand-ins
 if (questPickups) gameHooks.register(questPickups);
 // US-090w: title menu before play. Off for `?title=0`, capture/bench/compare/cinematic pages, `?capture=1`, `?at=`/`?pose=` dev poses and bare `?level=` rooms.
 const menuWanted = params.get('title') !== '0' && !isCaptureOrBench && params.get('capture') !== '1' && !params.has('at') && !params.has('pose') && !params.get('level') && !params.get('cinematic');
@@ -1634,6 +1636,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       }
       if (aiDevRun) addAiReserve(world, 12, [0, 0]); // ED-AI-06: parked test creatures (never in normal play)
       beasts = createBeastSim(world, { tileNav: !!gridNav, nav: (lifeNav = gridNav || (worldDef.nav && buildBeastNav(world, worldDef.nav))), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events, band: worldBand, fauna: wild ? wild.fauna : null, playerMaxHp: VITALS_DEFAULTS.maxHp, hpPerDamage: VITALS_DEFAULTS.beastDamageScale, difficulty: loadSettings().difficulty /* OB-150: 'easy'|'normal'|'hard'; Settings > Difficulty (DIFF-MENU), read on each world load; live change via beasts.setDifficulty */, waterNav: gridNav ? (() => { try { return buildWaterNav(world, gridNav.grid); } catch (e) { return null; } })() : null }); // LIFE-07: predators hunt the ambient fauna
+      questBeastSim = beasts;
       // ED-LOGIC-01c: logic wire, rebuilt with every sim; no blocks (01d loads them) = nothing registered, nothing written
       if (logicUnreg) { logicUnreg(); logicUnreg = null; } logicWire = null;
       { const lb = (window.ASSETS && window.ASSETS.logicBlocks) || []; // 01d: content/logic/*.logic.json blocks; hint/sound callbacks wired with 01d

@@ -230,6 +230,11 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     const e = entries[i];
     e.accepted = true; e.seq = ++seqCounter; book.version++;
     if (kindListen.size) for (const o of e.def.objectives) if (o.when.type === 'beasts' && o.when.kind !== undefined) e.state.flags.kk = true; // OB-115: marks the count-from-accept rule (old saves lack it and seed from the dead set)
+    // SOFTLOCK-01: if fewer living beasts of the kind remain than still needed (e.g. the pack was killed before the accept), earlier kills (deadSeen = kill record) cover the shortfall. Needs the game's book.livingOfKind(kind); without it OB-115 (count from accept) stays.
+    if (typeof book.livingOfKind === 'function') for (const o of e.def.objectives) if (o.when.type === 'beasts' && o.when.kind !== undefined) {
+      let short = o.when.count - (book.livingOfKind(o.when.kind) | 0);
+      for (const b of deadSeen) { if (short <= 0) break; if (kindOf(b) === o.when.kind && applyKindKill(e.state, o.when.kind, e.def)) short--; }
+    }
     e.given = []; // QL-04: items handed over on accept (taken back on abandon)
     if (book.packOps && book.packOps.add) for (const list of [e.def.giveOnAccept, e.def.giveOnTalk]) if (list) for (const it of list) { const k = book.packOps.add(it.id, it.n); if (k > 0) e.given.push({ id: it.id, n: k }); }
     emit('quest:accepted', id);
