@@ -1312,3 +1312,6 @@ Owner 2026-10-15 (later): "Make those priority" - D-107 stories (pc-b-queue sect
 
 ## D-113
 **2026-10-15, owner (PC-B session): no dodge roll for now.** Owner: "I dont wannt rolling for now". COMBAT-DODGE-ROLL-01 parked. The CROC-SOFT "break free by a dodge roll" rule needs another escape (e.g. attack or mash) when croc work resumes; the `combatDodge` hint text must not promise a roll.
+
+## D-114
+**2026-10-15, owner (PC-B session): crypt chest = a magic upgrade, not a heart piece.** Owner: "yes you can add a health roll, oooor a magic lvl upgrade roll, health could be upgraded by items paramater". Health already grows through item stats, so the earned crypt chest (UNDER-02 AC4) gives a one-time **Fireball Scroll** (plain name) that raises the fireball spell level by 1 (spell tier = PLAYER-LEVEL-01 spell bonus input), plus coins and a Health Potion. No heart piece in the crypt.
