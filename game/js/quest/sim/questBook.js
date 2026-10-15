@@ -377,6 +377,22 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     if (m.taken && entries[0].state.flags[m.taken]) return;
     outAvail[outAvail.length] = m.start;
   };
+  /** OB-199 (rule OB-156/D-082): true while the current MAIN step is not yet "accepted": (a) a giver quest owns the step (same `when`, or the step waits for
+   *  `quest.<id>.done`) and that quest is still offered (not accepted), or (b) the step's `mark.start` giver has not handed it over (`mark.taken` unset).
+   *  The HUD objective line and the compass needle stay off then; only the giver's '!' shows. Auto quests / steps with no giver quest are never gated. */
+  book.mainStepGated = function mainStepGated() {
+    const st = entries[0].state, o = entries[0].def.objectives[st.completed.length];
+    if (!o) return false;
+    if (o.mark && o.mark.start && o.mark.taken && !st.flags[o.mark.taken]) return true;
+    const w = JSON.stringify(o.when), m = o.when && o.when.type === 'flag' && /^quest.(.+).done$/.exec(o.when.id);
+    for (let i = 1; i < n; i++) {
+      const e = entries[i]; if (e.auto) continue;
+      const s = statusOf(i); if (s !== AVAILABLE && s !== UNAVAILABLE) continue;
+      if (m && e.def.id === m[1]) return true;
+      if (e.def.requires && e.def.requires.length && e.def.objectives.some((x) => JSON.stringify(x.when) === w)) return true;
+    }
+    return false;
+  };
   /** OB-155j: ONE marker per entity. Fills the four lists (gold/blue x '!'/'?') from giverMarks + chainMarks, then keeps each entity only
    *  in its best list: gold '?' > blue '?' > gold '!' > blue '!' (a return beats an offer). */
   const markSeen = new Set(); // reused per call (no per-frame alloc)
