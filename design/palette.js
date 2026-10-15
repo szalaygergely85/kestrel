@@ -453,16 +453,28 @@
   var timeOfDay = {
     morning: { ambient: 'ambient',      ambientI: 0.12, sun: 'sun',     sunI: 1.0,  sunElev: 60,
                sky: [{ t: 0, c: 'skyHorizon' }, { t: 0.35, c: 'skyMid' }, { t: 1, c: 'skyTop' }],
-               cloud: 'cloudLit', fog: 'fog' },
+               cloud: 'cloudLit', fog: 'fog',
+               clouds: { lit: 'cloudWhite', shade: 'cloudShade', ramp: 'sky', scale: 1.6, bias: 0.12, cover: 0.5, puffK: 3.0,
+                         wispCover: 0.58, wispK: 3.0, wind: [0.006, 0.0015], litK: 2.2, litDy: 0.06, bodyK: 0.9, seed: 3,
+                         shadow: { strength: 0.3, scale: 0.005333, cover: 0.5, soft: 0.2, deckH: 300 } } },
     noon:    { ambient: 'ambientNoon',  ambientI: 0.16, sun: 'sunNoon', sunI: 1.1,  sunElev: 75,
                sky: [{ t: 0, c: 'skyHorizon' }, { t: 0.3, c: 'skyMid' }, { t: 1, c: 'skyTop' }],
-               cloud: 'white', fog: 'fog' },
+               cloud: 'white', fog: 'fog',
+               clouds: { lit: 'cloudWhite', shade: 'cloudShade', ramp: 'sky', scale: 1.6, bias: 0.12, cover: 0.5, puffK: 3.0,
+                         wispCover: 0.58, wispK: 3.0, wind: [0.006, 0.0015], litK: 2.2, litDy: 0.06, bodyK: 0.9, seed: 3,
+                         shadow: { strength: 0.35, scale: 0.005333, cover: 0.5, soft: 0.2, deckH: 300 } } },
     dusk:    { ambient: 'ambientDusk',  ambientI: 0.10, sun: 'sunDusk', sunI: 0.8,  sunElev: 10,
                sky: [{ t: 0, c: 'skyDuskHorizon' }, { t: 0.3, c: 'skyDuskMid' }, { t: 1, c: 'skyDuskTop' }],
-               cloud: 'cloudDusk', fog: 'fogDusk' },
+               cloud: 'cloudDusk', fog: 'fogDusk',
+               clouds: { lit: 'cloudEve', shade: 'cloudEveShade', ramp: 'sky', scale: 1.6, bias: 0.12, cover: 0.5, puffK: 3.0,
+                         wispCover: 0.58, wispK: 3.0, wind: [0.006, 0.0015], litK: 2.2, litDy: 0.06, bodyK: 0.9, seed: 3,
+                         shadow: { strength: 0.2, scale: 0.005333, cover: 0.5, soft: 0.2, deckH: 300 } } },
     night:   { ambient: 'ambientNight', ambientI: 0.06, sun: 'moon',    sunI: 0.25, sunElev: 40,
                sky: [{ t: 0, c: 'skyNightHorizon' }, { t: 0.3, c: 'skyNightMid' }, { t: 1, c: 'skyNightTop' }],
-               cloud: 'cloudNight', fog: 'fogNight' },
+               cloud: 'cloudNight', fog: 'fogNight',
+               clouds: { lit: 'cloudNight', shade: 'skyNightMid', ramp: 'sky', scale: 1.6, bias: 0.12, cover: 0.5, puffK: 3.0,
+                         wispCover: 0.58, wispK: 3.0, wind: [0.006, 0.0015], litK: 2.2, litDy: 0.06, bodyK: 0.9, seed: 3,
+                         shadow: { strength: 0, scale: 0.005333, cover: 0.5, soft: 0.2, deckH: 300 } } },
     // ART-02a (v1.38): the two ART-REF-01 looks (architecture.md 37.18 item 2). Base fields as `morning` (read by today's
     // code: sunFromWorld ambientI/sunI, sky gradient, cloud tint); the optional `hemi` / `haze` / `clouds` blocks are read
     // by engine/render/look.js once ART-01/03/04 land (ignored until then). Opt in with `?look=afternoon` / `?look=evening`;
@@ -477,7 +489,8 @@
                            bgK: 0.9, blank: 1.01, thin0: 0.45, thinK: 1.0, edgeMax: 0.5,
                            skyline: { fogMax: 0.55, fromZ: 80, seaFogMax: 0.7 } }, // MAP-06a (38.42)
                  clouds: { lit: 'cloudWhite', shade: 'cloudShade', ramp: 'sky', scale: 1.6, bias: 0.12, cover: 0.5, puffK: 3.0,
-                           wispCover: 0.58, wispK: 3.0, wind: [0.006, 0.0015], litK: 2.2, litDy: 0.06, bodyK: 0.9, seed: 3 } },
+                           wispCover: 0.58, wispK: 3.0, wind: [0.006, 0.0015], litK: 2.2, litDy: 0.06, bodyK: 0.9, seed: 3,
+                           shadow: { strength: 0.35, scale: 0.005333, cover: 0.5, soft: 0.2, deckH: 300 } } },
     evening:   { ambient: 'ambientEvening', ambientI: 0.30, sun: 'sunEvening', sunI: 0.95, sunElev: 12,
                  sky: [{ t: 0, c: 'skyEveHorizon' }, { t: 0.45, c: 'skyEveMid' }, { t: 1, c: 'skyEveTop' }],
                  cloud: 'cloudEve', fog: 'fogDusk',
@@ -487,7 +500,8 @@
                            bgK: 0.9, blank: 1.01, thin0: 0.45, thinK: 1.0, edgeMax: 0.5,
                            skyline: { fogMax: 0.55, fromZ: 80, seaFogMax: 0.7 } }, // MAP-06a (38.42)
                  clouds: { lit: 'cloudEve', shade: 'cloudEveShade', ramp: 'sky', scale: 1.6, bias: 0.12, cover: 0.5, puffK: 3.0,
-                           wispCover: 0.58, wispK: 3.0, wind: [0.006, 0.0015], litK: 2.2, litDy: 0.06, bodyK: 0.9, seed: 3 } }
+                           wispCover: 0.58, wispK: 3.0, wind: [0.006, 0.0015], litK: 2.2, litDy: 0.06, bodyK: 0.9, seed: 3,
+                           shadow: { strength: 0.2, scale: 0.005333, cover: 0.5, soft: 0.2, deckH: 300 } } }
   };
 
   // ---------------------------------------------------------------------------

@@ -29,7 +29,7 @@ letAssign(LIGHT_WGSL, 'LIGHT_WGSL'); letAssign(LIGHT_GI_WGSL, 'LIGHT_GI_WGSL'); 
 
 // uniform layout: appended at the very end of both blocks (no earlier word moves)
 const ls = LIGHT_BLOCK.field('shaft'); assert.equal(ls.word + 4, LIGHT_BLOCK.sizeWords);
-const ss = SHADE_BLOCK.field('shaftA'); assert.equal(ss.word + 4, SHADE_BLOCK.sizeWords);
+const ss = SHADE_BLOCK.field('shaftA'); assert.equal(ss.word, SHADE_BLOCK.field('fgT').word + 64);
 
 // splices: march before the kind-0 early return, bits OR-ed into the final word next to (not over) cao / sunN / cloud
 for (const src of [LIGHT_WGSL, LIGHT_GI_WGSL]) {

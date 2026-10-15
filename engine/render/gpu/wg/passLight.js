@@ -7,7 +7,7 @@ import { LIGHT_BLOCK, LIGHT_WGSL, LIGHT_TEXTURES, LIGHT_GI_WGSL, LIGHT_GI_BUFFER
 import { giBufferFor } from './giUpload.js'; // GI-PROBE-05
 import { MAX_LIGHTS, MAX_VIS_DIM, MAX_VIS_CELLS } from '../../lighting.js';
 import { MAX_STRUCTS, buildWorldTextures, planFrameUpdate, makeFrameUpdatePlan } from '../WorldTextures.js';
-import { packCloudUniforms } from '../../cloudShadow.js';
+import { packCloudUniforms, syncLiveCloudShadow } from '../../cloudShadow.js';
 import { CAO_MAX, CAO_STRIDE } from '../../contactAO.js';
 import { PROJ_HFOV_DEG } from '../../projection.js';
 
@@ -143,6 +143,7 @@ export class WgLightPass {
     }
     lu[W_AMBIENT] = light.ambient[0]; lu[W_AMBIENT + 1] = light.ambient[1]; lu[W_AMBIENT + 2] = light.ambient[2];
     // S8-B2-12c: pack into the preallocated cloud8 (zero alloc), copy to cloudA/cloudB.
+    if (light.cloud) syncLiveCloudShadow(light);
     packCloudUniforms(light.cloud, this.timeBuf[0], this.cloud8); lu.set(this.cloud8, W_CLOUD_A);
     // S8-B2-20 (38.17): `light.ao` -> aoStrength, next to cloud upload above; zero on the no-ao path.
     const ao = light.ao;
