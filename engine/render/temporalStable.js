@@ -12,7 +12,7 @@
 // Zero allocation per frame once `createStableState()` and the buffers exist.
 
 import { createPitchedTerms, pitchedTerms, unprojectPitched, worldToCell } from './projection.js';
-import { KIND_NONE, KIND_MODEL } from './GBuffer.js';
+import { KIND_NONE, KIND_MODEL, KIND_MESH } from './GBuffer.js';
 
 /** Per-channel snap threshold (0-255): bigger jumps skip the blend. */
 export const CHANNEL_SNAP = 48;
@@ -38,6 +38,7 @@ const TIE_EPS_UV = 1e-4;
  * @property {number} rows
  * @property {Uint8Array} kind
  * @property {Int32Array} planeId
+ * @property {Uint16Array} [mat] - OB-198: material id (GI.y >> 16); absent = 0
  * @property {Float32Array} u
  * @property {Float32Array} v
  * @property {Float32Array} vd - view depth per cell (GPU: f32 bits in the depth target)
@@ -53,6 +54,7 @@ const TIE_EPS_UV = 1e-4;
  * @typedef {Object} StableHist  last frame's output (also the shape of StableOut minus `tie`)
  * @property {Uint8Array} kind
  * @property {Int32Array} planeId
+ * @property {Uint16Array} [mat] - OB-198: material id (GI.y >> 16); absent = 0
  * @property {Float32Array} u
  * @property {Float32Array} v
  * @property {Uint8Array} level
@@ -74,7 +76,7 @@ export function createStableBuffers(cols, rows) {
   const n = cols * rows;
   return {
     cols, rows,
-    kind: new Uint8Array(n), planeId: new Int32Array(n),
+    kind: new Uint8Array(n), planeId: new Int32Array(n), mat: new Uint16Array(n),
     u: new Float32Array(n), v: new Float32Array(n),
     level: new Uint8Array(n), glyph: new Uint16Array(n),
     fg: new Uint32Array(n), bg: new Uint32Array(n),
@@ -93,6 +95,8 @@ export function createStableState() {
     dEx: 0, dEy: 0, dEz: 0,
     hasPrev: false,
     histValid: false,
+    aaGlyph: true, // OB-198 (1): glyph hysteresis +-1 level (off = hold only at equal level); ?aaglyph=0
+    aaMesh: true, // OB-198 (2): KIND_MESH history survives a planeId change when the material matches; ?aamesh=0
     footK: STABLE_FOOT_K, // tests may set 0 to isolate the texel limit
     _pcell: new Float64Array(3), _pw: new Float64Array(3), _pc: new Float64Array(3),
   };
@@ -176,7 +180,7 @@ export function stabilize(inp, hist, out, st) {
       const i = row * cols + col;
       // fresh by default; hist fields always describe THIS frame for the next one
       const kind = inp.kind[i], lvC = inp.level[i];
-      out.kind[i] = kind; out.planeId[i] = inp.planeId[i]; out.u[i] = inp.u[i]; out.v[i] = inp.v[i];
+      out.kind[i] = kind; out.planeId[i] = inp.planeId[i]; out.mat[i] = inp.mat ? inp.mat[i] : 0; out.u[i] = inp.u[i]; out.v[i] = inp.v[i];
       out.level[i] = lvC; out.glyph[i] = inp.glyph[i]; out.fg[i] = inp.fg[i]; out.bg[i] = inp.bg[i];
       out.tie[i] = 0; out.fresh[i] = 1; out.hsrc[i] = -1; out.held255[i] = 0;
       if (!valid) continue;
@@ -200,7 +204,11 @@ export function stabilize(inp, hist, out, st) {
       const h = hr * cols + hc;
       out.hsrc[i] = h;
 
-      if (hist.kind[h] !== kind || hist.planeId[h] !== inp.planeId[i]) continue;
+      if (hist.kind[h] !== kind) continue;
+      if (hist.planeId[h] !== inp.planeId[i]) {
+        // OB-198 (2): mesh planeIds flip almost every step; the material is the stable key (the UV drift limit below still guards)
+        if (!(st.aaMesh && kind === KIND_MESH && (hist.mat ? hist.mat[h] : 0) === (inp.mat ? inp.mat[i] : 0))) continue;
+      }
       const lvP = hist.level[h];
       if (lvP === LEVEL_ANIM) continue;
       const c255 = lvC === LEVEL_NONE, p255 = lvP === LEVEL_NONE;
@@ -223,7 +231,7 @@ export function stabilize(inp, hist, out, st) {
         if (!snapped) { out.glyph[i] = hist.glyph[h]; out.u[i] = hist.u[h]; out.v[i] = hist.v[h]; out.held255[i] = 1; }
         continue;
       }
-      const hold = Math.abs(lvC - lvP) <= 1;
+      const hold = st.aaGlyph ? Math.abs(lvC - lvP) <= 1 : lvC === lvP;
       if (hold) { out.glyph[i] = hist.glyph[h]; out.level[i] = lvP; }
     }
   }

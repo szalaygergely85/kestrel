@@ -2,11 +2,12 @@
 // Synthetic wall plane in front of the camera; static / 1-cell pan / cut / tie mask / reject rules / ortho / 0 alloc.
 // Re-spawns itself with the frameAlloc flags (big semi-space, sync tier-up) like horizonAo.alloc.test.js.
 // Run: node engine/render/temporalStable.test.js
+import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import v8 from 'node:v8';
 import { beginFrame, stabilize, createStableState, createStableBuffers, CHANNEL_SNAP, LEVEL_ANIM, LEVEL_NONE, UV_LIM_TEXELS, DEFAULT_DETAIL, uvDriftLimit } from './temporalStable.js';
-import { KIND_NONE, KIND_WALL, KIND_MODEL } from './GBuffer.js';
+import { KIND_NONE, KIND_WALL, KIND_MODEL, KIND_MESH } from './GBuffer.js';
 import { makeOk } from '../test/assert.js';
 
 const SELF = fileURLToPath(import.meta.url);
@@ -321,3 +322,33 @@ console.log('ALL PASS');
   ok('OB-193 far wall limit = cell footprint', Math.abs(far - 8 * 2 * 0.5 / 400) < 1e-12 && far > 1 / 16, String(far));
   ok('OB-193 ortho keeps the texel limit', uvDriftLimit(8, 0.5, 0.3, 400, 150, 16, true) === 1 / 16);
 }
+
+// ---------------- OB-198: glyph hysteresis + mesh material key (synthetic 2-frame cases) ----------------
+{
+  const mk = (kind, mat, plane, lvl) => {
+    const st = createStableState();
+    beginFrame(st, cam0, GRID);
+    const a = wallInput(st);
+    a.kind.fill(kind); a.planeId.fill(1); a.mat = new Uint16Array(COLS * ROWS).fill(5);
+    const h = colHist(a); h.mat = new Uint16Array(COLS * ROWS).fill(5); h.level.fill(5);
+    beginFrame(st, cam0, GRID);
+    const b = wallInput(st);
+    b.kind.fill(kind); b.planeId.fill(plane); b.mat = new Uint16Array(COLS * ROWS).fill(mat); b.level.fill(lvl);
+    const out = createStableBuffers(COLS, ROWS);
+    stabilize(b, h, out, st);
+    return { out, i: 10 * COLS + 20, st, b, h };
+  };
+  // glyph level +1 held, +2 switches (history glyph 100 + col; fresh glyph 7)
+  let r = mk(KIND_WALL, 5, 1, 6); assert.equal(r.out.glyph[r.i], 100 + 20, 'level +1 held');
+  r = mk(KIND_WALL, 5, 1, 7); assert.equal(r.out.glyph[r.i], 7, 'level +2 switches');
+  // aaGlyph off: strict equality only
+  { const st = createStableState(); st.aaGlyph = false; beginFrame(st, cam0, GRID); const a = wallInput(st); const h = colHist(a); beginFrame(st, cam0, GRID);
+    const b = wallInput(st); b.level.fill(6); const out = createStableBuffers(COLS, ROWS); stabilize(b, h, out, st); assert.equal(out.glyph[10 * COLS + 20], 7, 'aaGlyph=0: +1 switches'); }
+  // mesh: planeId flip with same material keeps history, different material drops it
+  r = mk(KIND_MESH, 5, 9, 5); assert.equal(r.out.fresh[r.i], 0, 'mesh planeId flip, same material: history kept');
+  r = mk(KIND_MESH, 6, 9, 5); assert.equal(r.out.fresh[r.i], 1, 'mesh planeId flip, other material: dropped');
+  r = mk(KIND_WALL, 5, 9, 5); assert.equal(r.out.fresh[r.i], 1, 'non-mesh planeId flip still drops');
+  { const st = createStableState(); st.aaMesh = false; beginFrame(st, cam0, GRID); const a = wallInput(st); a.kind.fill(KIND_MESH); const h = colHist(a); beginFrame(st, cam0, GRID);
+    const b = wallInput(st); b.kind.fill(KIND_MESH); b.planeId.fill(9); const out = createStableBuffers(COLS, ROWS); stabilize(b, h, out, st); assert.equal(out.fresh[10 * COLS + 20], 1, 'aaMesh=0: planeId flip drops'); }
+}
+console.log('temporalStable OB-198 cases ok');
