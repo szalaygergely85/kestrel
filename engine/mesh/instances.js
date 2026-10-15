@@ -142,6 +142,16 @@ export function groupRadius(mesh, parts) {
 }
 
 /**
+ * LOD-RESET-01: forget the LOD / shadow-band hysteresis of `g` (camera cut / teleport / world load): the next compactGroup
+ * picks like a freshly made group. GPU twin: `WgCullPass.resetLodHistory`.
+ * @param {InstanceGroup} g
+ */
+export function resetLodHistory(g) {
+  if (g.lodPrev) g.lodPrev.fill(0);
+  if (g.shadowBand) g.shadowBand.fill(0);
+}
+
+/**
  * RE-15a/c (28.13 points 2, 3, 6): compacts the survivors of `classifyAABB(planes,
  * t-R, t+R)` (t = instance translation, words 3/7/11) from `g.ib` (game-owned,
  * never written) into the engine-owned `g.drawIb[0]` (LOD0) / `g.drawIb[1]`

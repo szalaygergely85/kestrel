@@ -1183,3 +1183,7 @@ Browser check (main session): `node tools/capture-browser.mjs --port {port} --ur
   Not touched: questBook.js/main.js. Other sq.* with burl.home flag are covered the same way. Owner to confirm at the waystone (no browser run).
 - npcBear.test.js: Enter on choosing every 2nd step (release tick for offerArmed); no game change.
 - compassChain.test (kestrel-4, uncommitted, test only): D-105 follow is only offered after the boar hand-in; test now adds burl.follow to the book, asserts the compass points at Burl before accept, book.accept('burl.follow') before the follow step, flagMap gets quest.burl.follow.done. Compass code correct, unchanged. compassChain,compass,m1FollowChain PASS.
+
+- LOD-RESET-01 (arch-review): `resetLodHistory(g)` (instances.js; zeroes lodPrev + shadowBand) + `MeshGroupSet.resetLodHistory()`; GPU twin `WgCullPass.resetLodHistory()` (writeBuffer zeros into every non-generated batch's lodPrev; no batch removal) via `passRaster`/`WgCellPipeline.resetLodHistory()`. Hook: `createHzbInvalidator(getPipeline, {onCut})` (game/js/occlGate.js) calls onCut(reason) (JS twin, runs even without pipeline) and `pipeline.resetLodHistory()`.
+  Tests: lodDither.test.js (stale lodPrev changes band picks; reset == fresh), passCull.test.js (mock: lodPrev zeroed), occlGate.test.js. All PASS, check-deps OK.
+  TODO main session: main.js line ~985 pass `{ onCut: () => meshGroups.resetLodHistory() }` (not edited here); gpucompare (not run): see `gpucompare` skill, port 9575-9649, then try sharing a world across look rows.

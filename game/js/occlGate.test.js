@@ -40,6 +40,15 @@ test('invalidator: no pipeline (gl2 / occl off) is a safe no-op', () => {
   assert.equal(inv.count, 0);
 });
 
+test('invalidator: LOD-RESET-01 calls pipeline.resetLodHistory + onCut (even without a pipeline)', () => {
+  const calls = [];
+  const inv = createHzbInvalidator(() => ({ invalidateHzb: () => calls.push('hzb'), resetLodHistory: () => calls.push('lod') }), { onCut: (r) => calls.push('cut:' + r) });
+  inv.invalidate('teleport');
+  assert.deepEqual(calls, ['cut:teleport', 'hzb', 'lod']);
+  const c2 = []; const inv2 = createHzbInvalidator(() => null, { onCut: () => c2.push(1) });
+  assert.equal(inv2.invalidate('x'), false); assert.equal(c2.length, 1);
+});
+
 test('invalidator: also calls invalidateHistory (US-073c stable pass) when the pipeline has it', () => {
   const calls = [];
   const inv = createHzbInvalidator(() => ({ invalidateHzb: () => calls.push('hzb'), invalidateHistory: () => calls.push('hist') }));

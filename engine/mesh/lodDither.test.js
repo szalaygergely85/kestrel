@@ -79,3 +79,17 @@ assert.ok(nBand >= 3, `fixture has band instances (${nBand})`);
   assert.ok(CULL_WGSL.includes('dst0[wa + 13u] = src[o + 13u] | ditherBits(bf, 0u)'));
 }
 console.log('lodDither: ok');
+
+// 3. LOD-RESET-01: stale lodPrev changes the pick inside the hysteresis band; resetLodHistory == a fresh group
+{
+  const { resetLodHistory } = await import('./instances.js');
+  const mk = () => { const g = fakeGroup(ys.length, false); g.shadowBand = new Uint8Array(ys.length); fill(g); return g; };
+  const fresh = mk(); compactGroup(fresh, null, 1, vp, 100);
+  const stale = mk(); stale.lodPrev.fill(1); compactGroup(stale, null, 1, vp, 100);
+  assert.notDeepEqual(Array.from(stale.lodPrev), Array.from(fresh.lodPrev), 'stale lodPrev changes the band picks after a cut');
+  const reset = mk(); reset.lodPrev.fill(1); reset.shadowBand.fill(2); resetLodHistory(reset); compactGroup(reset, null, 1, vp, 100);
+  assert.deepEqual(Array.from(reset.lodPrev), Array.from(fresh.lodPrev), 'after resetLodHistory the first frame LOD == a fresh group');
+  assert.deepEqual(Array.from(reset.drawCount), Array.from(fresh.drawCount));
+  assert.ok(reset.shadowBand.every((v) => v === 0));
+  console.log('lodDither: resetLodHistory ok');
+}
