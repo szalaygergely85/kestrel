@@ -13,6 +13,12 @@ import { createSpearView } from '../quest/spearView.js';
 
 const _lob = { vx: 0, vy: 0, vz: 0 };
 
+/** `beast:shoot` payload -> one enemy arrow (cause 'arrow', damage = the kind's dmgF) in the spear sim's pool; false = pool full. */
+export function fireVolley(spears, p) {
+  lobVelocity(p.x, p.y, p.z, p.tx, p.ty, p.tz, GOBLIN_SPEAR_CFG.speedH, GOBLIN_SPEAR_CFG.g, _lob);
+  return spears.fireVel(p.x, p.y, p.z, _lob.vx, _lob.vy, _lob.vz, p.dmgF, p.id, true);
+}
+
 /**
  * @param {{world:any, events:any, state:object, json:object, terrain?:any, groundAt?:(x:number,y:number)=>number}} o
  *   json = content/life/goblinCamps.json (parsed). `state` = world.state (the saved camp keys live there).
@@ -21,7 +27,7 @@ export function createGoblinWire({ world, events, state, json, terrain, groundAt
   const campDefs = activeCamps(json);
   const added = ensureGoblinCamps(world, campDefs, terrain);
   let allDefs = campDefs; // authored camps; WMP-02 far camps are appended by addFarCamps (after the regional beasts, so their slots come last)
-  let camps = null, spears = null, view = null, offThrow = null, offBlocked = null;
+  let camps = null, spears = null, view = null, offThrow = null, offShoot = null, offBlocked = null;
   const gw = {
     campDefs, added,
     /** WMP-02: far camps (farCamps.generateFarCamps); call after bootRegionalBeasts and BEFORE createBeastSim. campDefs (raids) stays authored-only. */
@@ -36,6 +42,9 @@ export function createGoblinWire({ world, events, state, json, terrain, groundAt
       offThrow = events.on('beast:throw', (p) => { // payload is reused by the sim: read the numbers now
         lobVelocity(p.x, p.y, p.z, p.tx, p.ty, p.tz, sp, g, _lob);
         spears.fireVel(p.x, p.y, p.z, _lob.vx, _lob.vy, _lob.vz, 1, p.id);
+      });
+      offShoot = events.on('beast:shoot', (p) => { // skeleton / bandit archer volley: same projectile pool, cause 'arrow', damage = the kind's dmgF
+        fireVolley(spears, p);
       });
       offBlocked = events.on('beast:spearBlocked', (p) => {
         if (opts.onClank) opts.onClank(p);
@@ -52,9 +61,9 @@ export function createGoblinWire({ world, events, state, json, terrain, groundAt
     /** once per frame, after the step */
     update() { if (view) view.update(); },
     dispose() {
-      if (offThrow) offThrow(); if (offBlocked) offBlocked();
+      if (offThrow) offThrow(); if (offShoot) offShoot(); if (offBlocked) offBlocked();
       if (camps) camps.dispose(); if (view) view.dispose();
-      camps = spears = view = offThrow = offBlocked = null;
+      camps = spears = view = offThrow = offShoot = offBlocked = null;
     },
   };
   return gw;

@@ -283,7 +283,7 @@ export function createBeastSim(world, opts) {
       died: beastEntities.slice(0, count).map((e) => ({ id: e.id, x: 0, y: 0, z: 0, cause: 'sword' })),
       sink: beastEntities.slice(0, count).map((e) => ({ id: e.id, x: 0, y: 0, z: 0 })),
       scrape: beastEntities.slice(0, count).map((e) => ({ id: e.id, x: 0, y: 0, z: 0, dirX: 0, dirY: 0, dirZ: 0 })),
-      throw: { id: '', slot: 0, x: 0, y: 0, z: 0, tx: 0, ty: 0, tz: 0 }, // GOB-02: ONE preallocated beast:throw payload (reused)
+      throw: { id: '', slot: 0, dmgF: 1, x: 0, y: 0, z: 0, tx: 0, ty: 0, tz: 0 }, // GOB-02: ONE preallocated beast:throw payload (reused)
       alt: beastEntities.slice(0, count).map((e, k) => ({ slot: k, alt: 0, id: e.id })),
     },
   };
@@ -321,7 +321,9 @@ export function createBeastSim(world, opts) {
       // BEAST-03b: any other explicit kind takes perception/leash/speeds from its archetype row (boar + the 3 legacy species keep today's numbers)
       const A = sim.ap.tab[KINDS[e.components.brain.beastKind].arch];
       sim.scfg.push({ ...cfg });
-      { const ts = KINDS[e.components.brain.beastKind].telegraphSec; sim.ssteps.push(ts > 0 ? { ...sim.cfgSteps, windup: toSteps(ts) } : { ...sim.cfgSteps }); } // UNDER-SKEL-VARIETY-01: brute telegraph 0.8 s
+      { const kd = KINDS[e.components.brain.beastKind], ts = kd.telegraphSec, va = kd.arch === 'ranged' && kd.attacks && kd.attacks[0] && kd.attacks[0].type === 'projectile' ? kd.attacks[0] : null;
+        if (va) { const w = toSteps(va.windupSec); sim.ssteps.push({ ...sim.cfgSteps, windup: w, recover: Math.max(1, toSteps(va.cooldownSec) - w), volley: true, dmgF: va.dmgF }); } // SKEL-ARCHER-CADENCE-01: shot-to-shot gap = the kind's cooldownSec (windup + recover)
+        else sim.ssteps.push(ts > 0 ? { ...sim.cfgSteps, windup: toSteps(ts) } : { ...sim.cfgSteps }); } // UNDER-SKEL-VARIETY-01: brute telegraph 0.8 s
       sim.ap.slot[i] = 1;
       deriveArchSlot(sim, i, A);
     } else { sim.scfg.push(cfg); sim.ssteps.push(sim.cfgSteps); }
@@ -1016,7 +1018,7 @@ function checkChaseExit(sim, i, px, py) {
   if (lm === LEASH_RETURN || lm === LEASH_GIVEUP) { sim.waiting[i] = 0; enterReturn(sim, i); return; }
   if ((sim.wolf[i] || sim.goblin[i]) && shouldFlee(sim, i)) { enterFlee(sim, i, px, py); return; } // WOLF-01
   if (sim.ranged[i] && rangedChase(sim, i, px, py, d2)) return; // GOB-02
-  if (sim.tactOn[i] && (sim.tactRole[i] === TACT_RANGED || sim.tactRole[i] === TACT_CASTER) && tacticsBand(sim, i, d2)) return; // BEAST-04
+  if (sim.tactOn[i] && (sim.tactRole[i] === TACT_RANGED || sim.tactRole[i] === TACT_CASTER) && tacticsBand(sim, i, d2)) { if (sim.ssteps[i].volley && sim.waiting[i] === 1) enterWindup(sim, i); return; } // BEAST-04; SKEL-ARCHER-CADENCE-01: in the band with LOS -> volley
   if (sim.bear[i] && sim.seen[i] && sim.bite.cd[i] === 0 && sim.entities[i].components.voxel.model === BEAR_MODEL
       && d2 <= BEAR_TUNING.biteReachR * BEAR_TUNING.biteReachR && bearPicksBite(i, sim.bite.n[i])) { enterBite(sim, i); return; } // BEAR-BITE
   const wr = sim.scfg[i].windupR;
@@ -1056,12 +1058,12 @@ function rangedChase(sim, i, px, py, d2) {
 }
 
 /** GOB-02: the one `beast:throw` at windup end: hand = eye + handUp, target = the player's chest now (no lead). */
-function emitThrow(sim, i, px, py) {
+function emitThrow(sim, i, px, py, ev = 'beast:throw') {
   const p = sim.pl.throw, steer = sim.steer;
-  p.id = sim.ids[i]; p.slot = i;
+  p.id = sim.ids[i]; p.slot = i; p.dmgF = ev === 'beast:shoot' && sim.ssteps[i].dmgF > 0 ? sim.ssteps[i].dmgF : 1; // archer volley carries the kind's dmgF
   p.x = steer.x[i]; p.y = steer.y[i]; p.z = zOf(sim, i) + sim.cfg.eyeZ + GOBLIN_TUNING.handUp;
   p.tx = px; p.ty = py; p.tz = sim._pz + sim.cfg.targetZ;
-  sim.events.emit('beast:throw', p);
+  sim.events.emit(ev, p);
 }
 
 /** US-079c: true while any slot is in WINDUP or CHARGE (the single active charger). */
@@ -1084,6 +1086,7 @@ function windupStep(sim, i, px, py) {
   if (!sim.goblin[i] && (!sim.wolf[i] && elapsed === SCRAPE_KICKS[0] || elapsed === SCRAPE_KICKS[1] || elapsed === SCRAPE_KICKS[2])) emitScrape(sim, i);
   if (sim.timer[i] <= 0) {
     if (sim.ranged[i]) { emitThrow(sim, i, px, py); enterRecover(sim, i, false); } // GOB-02: release, then the reload
+    else if (sim.ssteps[i].volley) { emitThrow(sim, i, px, py, 'beast:shoot'); enterRecover(sim, i, false); } // SKEL-ARCHER-CADENCE-01: skeleton archer volley (goblinWire fires the arrow)
     else enterCharge(sim, i, px, py);
   }
 }
