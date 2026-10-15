@@ -36,8 +36,7 @@
     },
     {
       "id": "campSouthWest",
-      "enabled": false,
-      "note": "third camp, disabled until the owner decides 2 vs 3",
+      "note": "third camp (OB-141: enabled so the ground west of the ford has something to find)",
       "at": [880, 1012],
       "leashR": 25,
       "respawnDays": 3,

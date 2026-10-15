@@ -14,7 +14,7 @@ console.log('chest-enemy-density.test: ok');
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 // OB-152 step 2 / OB-179: the real-content 0-loose gate is asserted once the chests are moved inside places (pending, see lane entry)
-const NEW_TOTAL = 10; // 15 chests before OB-179; secretBend/Field/Bank/Ow1/Ow3 merged away
+const NEW_TOTAL = 11; // 15 chests before OB-179; secretBend/Field/Bank/Ow1/Ow3 merged away = 10; OB-141 chestWest (in campSouthWest) = 11
 // OB-179: all 15 chests are counted (chestSmall: chest* and secret*), nothing loose, --list works
 const listOut = execFileSync(process.execPath, [fileURLToPath(new URL('./chest-enemy-density.mjs', import.meta.url)), '--list', '--max-loose', '0'], { stdio: 'pipe' }).toString();
 assert.match(listOut, new RegExp('chests counted: ' + NEW_TOTAL), 'chest total after the OB-179 merge');

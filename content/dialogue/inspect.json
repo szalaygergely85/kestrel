@@ -34,6 +34,8 @@
       "title": "A cart off the road",
       "lines": ["Tipped on its side. The axle snapped clean.", "Crates split open. Straw gone grey. Nothing in them.", "The ruts run east, toward the Wall.", "Nobody came back for it."]
     },
+    "note.westRuin": {"prompt": "[E] Read the scratches", "title": "A gatehouse wall", "lines": ["Tally marks, forty or fifty, then a gap.", "Under them, scratched deep: NOT ALL OF US WENT NORTH.", "The chest behind the arch was left by someone who meant to come back."]},
+    "note.westStones": {"prompt": "[E] Look at the stones", "title": "A ring of stones", "lines": ["Six stones, set on the hill by hand.", "From here you see the ford, the trade post and the smoke beyond.", "Whoever stood here watched the road."]},
     "inspect.well": {
       "prompt": "[E] Look at the well",
       "title": "A dry well",
