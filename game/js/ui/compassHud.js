@@ -101,7 +101,7 @@ export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
       }
       if (!kind && (resolveGiver(world, npcA) || resolveGiver(world, npcSA))) kind = 3;
     }
-    if (kind !== 1 && book.nextOffers && book.tracked() < 0) {   // QUEST-NEXT-GIVER-01: after a hand-in the follow-up giver is the target until the player accepts/tracks something (D-108 tracked quest still wins)
+    if (!kind && book.nextOffers && book.tracked() < 0) {   // QUEST-NEXT-GIVER-01: after a hand-in the follow-up giver is the target until the player accepts/tracks something (D-108 tracked quest still wins)
       const offers = book.nextOffers();
       for (let i = 0; i < offers.length; i++) if (offers[i].giver && world.resolve('giver', offers[i].giver, tmp)) { kind = 3; break; }
     }

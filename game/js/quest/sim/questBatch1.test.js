@@ -115,4 +115,16 @@ for (const id of ['sq.burl.boars.s', 'sq.burl.scout', 'sq.fc.ford']) {
   const d = packDefs.find((x) => x.id === id), g = d.reward.items.find((i) => defsById[i.id].equip);
   assert.ok(g, id + ' gear reward');
 }
+// QUEST-NEXT-GIVER-01: next offers are DERIVED from requires (no `next` fields in content)
+{
+  const b = newBook();
+  assert.ok(!b.nextOffers().some((o) => o.id === 'mq.bend.call'), 'not offered before relay1');
+  for (const o of files.questDef.objectives) { const w = o.when; if (w.type === 'flag') b.feed({ type: 'flag:set', key: w.id, value: w.equals }); else if (w.type === 'area') b.feed({ type: 'area:entered', id: w.id }); else if (w.type === 'item') b.feed({ type: 'item:got', id: w.id }); else if (w.type === 'beasts') for (const id of w.ids.slice(0, w.count)) b.feed({ type: 'beast:died', id }); if (o.id === 'relay1') break; }
+  const o = b.nextOffers().find((x) => x.id === 'mq.bend.call');
+  assert.ok(o && o.giver === 'rook' && o.from === 'm1', 'm1 relay1 -> Rook offers mq.bend.call');
+  assert.ok(b.accept('mq.bend.call')); assert.ok(!b.nextOffers().some((x) => x.id === 'mq.bend.call'), 'accepted -> no longer offered');
+  const c = newBook(); c.accept('tower.blade'); for (const e of feedFor(c.def(c.index('tower.blade')))) c.feed(e); c.handIn('tower.blade');
+  const s = c.nextOffers().find((x) => x.id === 'burl.boars');
+  assert.ok(s && s.from === 'tower.blade' && s.giver, 'side chain: tower.blade handed in -> burl.boars offered');
+}
 console.log('questBatch1 OK: ' + done.size + ' quests completed');

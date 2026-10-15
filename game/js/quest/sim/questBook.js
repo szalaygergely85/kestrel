@@ -182,8 +182,16 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   book.nextOf = i => { const nx = entries[i].def.next; return nx && byId.has(nx) ? byId.get(nx) : -1; };
   /** QUEST-FORMAT: the offer after a hand-in, [{from, id, giver, title, hint}] for every handed-in quest whose `next` is waiting (AVAILABLE) at its giver. */
   book.nextOffers = function nextOffers() {
-    const out = [];
-    for (let i = 1; i < n; i++) { const q = book.nextOf(i); if (q > 0 && entries[i].handedIn && statusOf(q) === AVAILABLE) out.push({ from: entries[i].def.id, id: entries[q].def.id, giver: entries[q].giver, title: entries[q].def.title, hint: entries[i].def.nextHint || null }); }
+    const out = [], seen = new Set();
+    for (let i = 1; i < n; i++) { const q = book.nextOf(i); if (q > 0 && entries[i].handedIn && statusOf(q) === AVAILABLE) { seen.add(q); out.push({ from: entries[i].def.id, id: entries[q].def.id, giver: entries[q].giver, title: entries[q].def.title, hint: entries[i].def.nextHint || null }); } }
+    // Derived (no `next` needed): a character-given quest that is AVAILABLE now and requires a finished quest/step (main steps count) is offered after it.
+    for (let q = 1; q < n; q++) {
+      const e = entries[q];
+      if (seen.has(q) || e.auto || !e.giver || e.def.giver.entity || e.def.objectGiver || statusOf(q) !== AVAILABLE) continue;
+      let from = -1;
+      for (const r of requireSteps[q]) if (r.si !== -2 && (r.qi === 0 || r.si >= 0 || entries[r.qi].handedIn)) { from = r.qi; break; }
+      if (from >= 0) out.push({ from: entries[from].def.id, id: e.def.id, giver: e.giver, title: e.def.title, hint: entries[from].def.nextHint || null });
+    }
     return out;
   };
   book.giverOf = i => entries[i].giver;
