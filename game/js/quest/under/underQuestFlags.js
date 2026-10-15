@@ -1,7 +1,7 @@
 // UNDER-07 (OB-191): quest flags for the Restless Graves / Sealed Crypt chain. The quest book only reads fed `flag:set` events, so this
 // pure helper lists which flags are true RIGHT NOW; underHook emits them (~1 Hz). Transient flags (seen, lastRoom) are not saved: they only
 // count while a quest is active (the book ignores events before accept), so a visit before accepting never completes anything.
-import { UNDER_SITES } from '../sim/underSkeletons.js';
+import { UNDER_SITES, SAME_STRUCT_DZ } from '../sim/underSkeletons.js';
 import { DOOR_FLAG, chestKey, CRYPT } from './crypt.js';
 
 export const SEEN_FLAG = 'under.cemetery.seen', ROOM_FLAG = 'under.crypt.lastRoom';
@@ -15,7 +15,7 @@ export function underQuestFlags(state, p, sim, out) {
   if (state[DOOR_FLAG]) out.push(DOOR_FLAG);
   for (const c of CRYPT.chests) if (state[chestKey(c)]) out.push(chestKey(c));
   if (sim && Math.hypot(p.x - cem.anchor[0], p.y - cem.anchor[1]) <= SEEN_R) { // at the graves while at least one skeleton stands (night)
-    for (const m of cem.members) { const s = sim.slotOf(m[0]); if (s >= 0 && !sim.down[s]) { out.push(SEEN_FLAG); break; } }
+    for (const m of cem.members) { const s = sim.slotOf(m[0]); if (s >= 0 && !sim.down[s] && Math.abs(p.z - sim.entities[s].transform.z) < SAME_STRUCT_DZ) { out.push(SEEN_FLAG); break; } } // same |dz| rule as the spawner: the crypt below does not count
   }
   if (Math.abs(p.z - crypt.z) <= LAST_ROOM.dz && Math.hypot(p.x - LAST_ROOM.x, p.y - LAST_ROOM.y) <= LAST_ROOM.r) out.push(ROOM_FLAG);
   return out;

@@ -31,7 +31,7 @@ const m = marks(); assert.deepEqual([m[0], m[1], m[2], m[3]].map((l) => l.filter
 assert.equal(b.inspect('postkeeper').action, 'accept'); assert.equal(b.status(i1), ACTIVE);
 b.feed({ type: 'flag:set', key: SEEN_FLAG, value: true });
 b.feed({ type: 'beast:died', id: 'skelwar.cemetery.1' }); b.feed({ type: 'beast:died', id: 'skelwar.cemetery.2' }); assert.equal(b.status(i1), ACTIVE, '2/3 not done');
-b.feed({ type: 'beast:died', id: 'skelwar.crypt.1' }); assert.equal(b.status(i1), READY);
+b.feed({ type: 'beast:died', id: 'skelarch.cemetery.1' }); assert.equal(b.status(i1), READY);
 const r = marks(); assert.ok([...r[1], ...r[3]].includes('postkeeper') && ![...r[0], ...r[2]].includes('postkeeper'), '? only, no ! on ready');
 assert.equal(b.inspect('postkeeper').action, 'handin'); assert.equal(b.status(i1), DONE);
 
@@ -43,8 +43,9 @@ assert.equal(b.status(i2), ACTIVE); b.feed({ type: 'flag:set', key: 'under.crypt
 assert.equal(b.inspect('postkeeper').action, 'handin'); assert.equal(b.status(i2), DONE);
 
 // flags helper
-const st = {}, out = [], sim = { slotOf: (id) => (id.startsWith('skelwar.cemetery.1') ? 0 : -1), down: [0] };
+const st = {}, out = [], sim = { slotOf: (id) => (id.startsWith('skelwar.cemetery.1') ? 0 : -1), down: [0], entities: [{ transform: { z: 0 } }] };
 assert.deepEqual(underQuestFlags(st, { x: 1644, y: 1372, z: 0 }, sim, out), [SEEN_FLAG], 'at the graves with a skeleton up');
+assert.deepEqual(underQuestFlags(st, { x: 1644, y: 1372, z: -56.8 }, sim, out), [], 'in the crypt under the graves at night -> not seen');
 sim.down[0] = 1; assert.deepEqual(underQuestFlags(st, { x: 1644, y: 1372, z: 0 }, sim, out), [], 'all down (day) -> not seen');
 assert.deepEqual(underQuestFlags(st, { x: 1000, y: 1000, z: 0 }, sim, out), []);
 assert.deepEqual(underQuestFlags(st, { x: 1674.5, y: 1352, z: -56.8 }, sim, out), [ROOM_FLAG]);

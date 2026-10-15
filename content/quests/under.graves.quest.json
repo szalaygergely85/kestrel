@@ -9,7 +9,7 @@
   "requires": { "quests": ["burl.boars", "burl.stone"] },
   "objectives": [
     { "id": "see", "text": "Visit the graveyard at night", "journal": "Bram says the dead walk at the old graveyard. Go there at night and see.", "when": { "type": "flag", "id": "under.cemetery.seen", "equals": true } },
-    { "id": "kill", "text": "Kill 3 skeletons", "journal": "Bones are standing up among the graves. Put three of them down.", "when": { "type": "beasts", "kind": "skelwar", "count": 3 } }
+    { "id": "kill", "text": "Kill 3 skeletons", "journal": "Bones are standing up among the graves. Put three of them down.", "when": { "type": "beasts", "kind": "skeleton", "count": 3 } }
   ],
   "returnText": "Return to Bram at the post",
   "rewards": { "coin": 20 },

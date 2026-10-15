@@ -45,6 +45,7 @@ export function kindOf(id) {
   if (k === undefined) {
     let n = 0; while (n < id.length) { const c = id.charCodeAt(n); if (c < 97 || c > 122) break; n++; }
     k = id.slice(0, n);
+    if (k === 'skelwar' || k === 'skelarch') k = 'skeleton'; // UNDER-07: warriors and archers count as one quest kind
     if (KIND_OF.size < 8192) KIND_OF.set(id, k);
   }
   return k;

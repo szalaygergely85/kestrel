@@ -130,10 +130,10 @@ export async function buildContext(opts = {}) {
     return (q.requires || []).some((r) => (r.flag && LV5.test(r.flag)) || (r.quest && gated(qById.get(r.quest), seen)));
   };
   const posAny = (id) => { const e = pos(id); if (e) return e; const a = areas[id], t = a && trig.get(a.trigger); return t ? { x: t.x, y: t.y } : null; };
-  // R14 inputs: pack quests get Accept/Exit from quest-snippets.json (generated text); legacy ones need a hand-written accept flag/choice in a dialogue file
+  // R14 inputs: pack quests get Accept/Exit from quest-snippets.json (generated text); D-106 files with lines.offer get the generated route too (generateForNpc); other legacy ones need a hand-written accept flag/choice in a dialogue file
   const dlgRaw = jsonFiles(path.join(root, 'content/dialogue')).map((f) => fs.readFileSync(f, 'utf8')).join(' ');
   const MQ_AUTO = new Set(); // OB-155m: MQ_AUTO removed from errands.js (no auto hand-ins)
-  const acceptOf = (q) => !!q.giver?.npc && (packIds.has(q.id) || q.objectGiver ? true : dlgRaw.includes(`s.${q.id}.accept`) || dlgRaw.includes(`"q.${q.id}.accept"`) || new RegExp(String.raw`"(quest|startQuest|accept)"\s*:\s*"` + q.id.replace(/\./g, String.raw`\.`) + '"').test(dlgRaw));
+  const acceptOf = (q) => !!q.giver?.npc && (packIds.has(q.id) || q.objectGiver || q.lines?.offer?.length ? true : dlgRaw.includes(`s.${q.id}.accept`) || dlgRaw.includes(`"q.${q.id}.accept"`) || new RegExp(String.raw`"(quest|startQuest|accept)"\s*:\s*"` + q.id.replace(/\./g, String.raw`\.`) + '"').test(dlgRaw));
   const qs = quests.map((q) => {
     const ids = new Set([q.giver?.npc, q.giver?.turnIn]);
     for (const o of q.objectives || []) { const wn = o.when || {}; if (wn.type === 'area' || wn.type === 'deliver') ids.add(wn.type === 'area' ? wn.id : wn.to); for (const b of wn.ids || []) ids.add(b); }

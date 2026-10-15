@@ -31,6 +31,7 @@ export function resolveGiver(src, ctx, turnInSite) {
 /** Giver {npc, turnIn?}: legacy `giver`, or a pack row's `site` resolved through ctx.sites exactly like templates.js (unknown site -> none). */
 function giverOf(q, ctx) {
   if (q.raw.giver) return q.raw.giver;
+  if (q.raw.begin || q.raw.end) { const b = q.raw.begin || {}, e = q.raw.end || {}, npc = b.npc !== undefined ? b.npc : b.object; return e.npc !== undefined && e.npc !== npc ? { npc, turnIn: e.npc } : { npc }; } // D-106 format file
   if (q.raw.site === undefined || !ctx.sites) return {};
   const step = (q.raw.steps || []).find((st) => st.template === 'deliver') || (q.raw.template === 'deliver' ? q.raw : null);
   try { return (ctx.resolveGiver || resolveGiver)(q.raw, ctx, step ? (step.params || step).to : undefined); } catch { return {}; }
@@ -98,7 +99,7 @@ export function lintQuest(model, questId, ctx = {}) {
   }
   // requires: existing quest / flag
   const ids = new Set(model.quests.map((x) => x.id));
-  q.requires.forEach((r, i) => {
+  (Array.isArray(q.requires) ? q.requires : (((q.requires && q.requires.quests) || []).map((id) => ({ quest: id })))).forEach((r, i) => {
     if (r.quest && !ids.has(r.quest)) add('R15', 'error', `Needs a quest that does not exist ("${r.quest}").`, 'requires', String(i));
     if (r.flag && ctx.hasFlag && !ctx.hasFlag(r.flag)) add('R15', 'error', `Needs a flag nothing sets ("${r.flag}").`, 'requires', String(i));
     if (r.quest === q.id) add('R15', 'error', 'The quest needs itself.', 'requires', String(i));
