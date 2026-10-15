@@ -188,6 +188,8 @@ import { playShieldClank, playBowShot, playRelayHum } from './audio/sfx.js'; // 
 import { createTargetables } from './quest/sim/targetables.js';
 import { FIREBALL_CFG, refreshLocked } from './quest/spellConfig.js';
 import { createSpellDispatcher } from './quest/sim/spellCast.js'; // SPELL-04
+import { createSparkSim } from './quest/sim/spark.js'; // SPELL-05
+import { createLightOrbSim } from './quest/sim/lightOrb.js'; // SPELL-05
 import { featuresFromParams, fireballOn } from './quest/features.js'; // D-065: fireball off unless ?fireball=1
 import { START_DEMO, START_FULL, startFor } from './quest/startConfig.js';
 import { createPracticeTarget, applyPropTargetables } from './quest/practiceTarget.js';
@@ -1281,7 +1283,7 @@ async function runGame(mode, cinematic = null) {
   let offerToast = null, offerToastMsg = null; // toast once per new book.nextOffers() entry
   let equipPlay = null, shieldSim = null, arrowSim = null; // EQ-07/09: rebuilt on every 'world:loaded'
   let quickbar = null, qbView = null, qbTick = 0, qbBlocked = false; // EQ-12: sim rebuilt per world, view per page
-  let fireball = null, fbTargets = null, spellBook = null, spellCaster = null; // SPELL-01a (37.14): rebuilt with the sword sim on every 'world:loaded'
+  let fireball = null, fbTargets = null, spellBook = null, spellCaster = null, sparkSim = null, lightOrbSim = null; // SPELL-01a (37.14): rebuilt with the sword sim on every 'world:loaded'
   // US-091b: pack-screen mouse. Hover -> UI cell under the pointer; a click while open must not re-lock the pointer
   // (PlayerLook's own canvas click handler), so a capture listener on window swallows it first.
   canvas.addEventListener('mousemove', (e) => {
@@ -1701,6 +1703,11 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       spellBook = createSpellBook(world.state); spellCaster = createSpellDispatcher((id) => spellBook.tier(id) || (id === 'fireball' && fbOn ? 1 : 0)); // SPELL-04
       fireball = createFireballSim(world, engine.events, FIREBALL_CFG, fbTargets, { spendMana: (n) => vitals && vitals.spendMana(n), isEnabled: () => fireballOn(world, FEATURES), tier: () => spellBook.tier('fireball') || 1, damageMul: () => { const c = playerHandle && playerHandle.data.components; return computeTotals(c && c.rolledGear || null, fbTotals).fireDmgMul; } }); // INT: stats fireDmgMul at cast (rolled gear: rolledGear.js)
       hands.register('spell.fireball', fireball); spellCaster.register('fireball', () => fireball.requestTap());
+      if (sparkSim) sparkSim.dispose(); if (lightOrbSim) lightOrbSim.dispose();
+      { const sm = (n) => vitals && vitals.spendMana(n), dm = () => { const c = playerHandle && playerHandle.data.components; return computeTotals(c && c.rolledGear || null, fbTotals).fireDmgMul; }; // SPELL-05: Spark + Light Orb (learned-only: dispatcher locks tier 0)
+        sparkSim = createSparkSim(world, engine.events, fbTargets, { spendMana: sm, tier: () => spellBook.tier('spark') || 1, damageMul: dm });
+        lightOrbSim = createLightOrbSim(engine.events, () => beasts, { spendMana: sm, tier: () => spellBook.tier('lightOrb') || 1 });
+        spellCaster.register('spark', () => sparkSim.requestTap()); spellCaster.register('lightOrb', (pl) => lightOrbSim.cast(pl)); }
       // EQ-07/09 (38.41): shield sim + arrow sim + the routing glue; shield/bow items get no-op sims so the router arms them (RMB -> left hand, LMB -> right hand)
       shieldSim = createShieldSim();
       arrowSim = createArrowSim(world, engine.events, BOW_CFG, fbTargets, wadeArrowHit);
@@ -2330,6 +2337,8 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
           forwardOf(look.yawDeg, swordFwd);
           const pr = look.pitchDeg * DEG2RAD, cp = Math.cos(pr);
           fireball.step(playerHandle.data, fbOn && hands.downOf('spell.fireball'), swordFwd[0], swordFwd[1], swordFwd[0] * cp, swordFwd[1] * cp, Math.sin(pr));
+          if (sparkSim) sparkSim.step(playerHandle.data, swordFwd[0] * cp, swordFwd[1] * cp, Math.sin(pr)); // SPELL-05
+          if (lightOrbSim) lightOrbSim.step(playerHandle.data);
           if (fbView) fbView.stepFx(); // SPELL-01b: trail emitters + burst particles (sim side, hashed)
           if (fbOn && handFxOn && spellVmH && !cinematic) { // HAND-WIRE-02 (FB-01: locked = no hand fire): hand embers / ignite / charge sparks, sim side
             const hp = playerHandle.data.transform, hb = playerHandle.data.components.body;

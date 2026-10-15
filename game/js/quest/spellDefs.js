@@ -22,11 +22,11 @@ export const SPELL_DEFS = Object.freeze({
   }),
   spark: Object.freeze({
     name: 'Spark', branch: 'light', root: true, glyph: '+', color: 'aether', maxTier: 3,
-    tiers: T([{ mana: 4, cd: 1.5, dmg: 1, stun: 0.8, speed: 30, range: 20 }, { mana: 4, cd: 1.2, dmg: 2, stun: 1.2, speed: 30, range: 20 }, { mana: 3, cd: 1.0, dmg: 3, stun: 1.6, speed: 30, range: 20 }]),
+    tiers: T([{ mana: 4, cd: 1.5, dmg: 1, stun: 0.8, speed: 30, range: 20, pad: 0.2, knock: 2, alive: 2 }, { mana: 4, cd: 1.2, dmg: 2, stun: 1.2, speed: 30, range: 20, pad: 0.2, knock: 2, alive: 2 }, { mana: 3, cd: 1.0, dmg: 3, stun: 1.6, speed: 30, range: 20, pad: 0.2, knock: 2, alive: 2 }]),
   }),
   lightOrb: Object.freeze({
     name: 'Light Orb', branch: 'light', root: false, glyph: 'o', color: 'aether', maxTier: 3,
-    tiers: T([{ mana: 6, cd: 1, dur: 30, lightR: 8, keepOutLevel: 3, flee: 0 }, { mana: 6, cd: 1, dur: 45, lightR: 10, keepOutLevel: 5, flee: 0 }, { mana: 5, cd: 1, dur: 60, lightR: 12, keepOutLevel: 7, flee: 2 }]),
+    tiers: T([{ mana: 6, cd: 1, dur: 30, lightR: 8, keepOutLevel: 3, flee: 0, height: 2.2 }, { mana: 6, cd: 1, dur: 45, lightR: 10, keepOutLevel: 5, flee: 0, height: 2.2 }, { mana: 5, cd: 1, dur: 60, lightR: 12, keepOutLevel: 7, flee: 2, height: 2.2 }]),
   }),
   ward: Object.freeze({
     name: 'Ward', branch: 'light', root: false, glyph: 'o', color: 'aether', maxTier: 3,
