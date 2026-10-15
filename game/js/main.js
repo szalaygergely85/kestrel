@@ -167,6 +167,7 @@ import { refreshRolledGear } from './quest/sim/rolledGear.js'; // ITEM-WIRE-01: 
 import { createHands } from './quest/sim/hands.js'; // HANDS-01b (37.8a)
 import { createFireballSim } from './quest/sim/fireball.js'; // SPELL-01a (37.14)
 import { createFireballView } from './quest/fireballView.js'; // SPELL-01b (37.14 view)
+import { createSpellLightView } from './quest/spellLightView.js'; // SPELL-05b: Spark + Light Orb visuals
 import { createShieldSim } from './quest/sim/shield.js'; // EQ-07 (38.41 a)
 import { createArrowSim } from './quest/sim/arrows.js'; // EQ-09 (38.41 b)
 import { createWetStones } from './quest/sim/wetStones.js'; // QL-19: wet ford stones + River Boots sure footing
@@ -1038,6 +1039,7 @@ const swordVmH = swordAssetDef ? (() => {
 // HANDS-01c: second handle (after the sword) = the spell hand's idle view; shown only while the spell item is in a hand.
 // HAND-WIRE-01: when the realistic hand asset is loaded it takes this handle (the glove stays the fallback). `spellVmH.vm/.glow` are shared.
 const handFxOn = !!(handDef && handDef.variants && assets.has('model', handDef.model));
+const slView = (window.ASSETS.spellFx && !isCaptureOrBench) ? createSpellLightView({ particles: engine.particles, palette: assets.palette, events: engine.events }) : null; // SPELL-05b (off in capture/bench)
 const handFbExtra = (pool) => { fbView.extra(pool); pushHandFlame(spellVmH, pool); }; // HAND-FIRE-FX-01: one extra callback, created once
 const spellVmH = handFxOn ? loadHandFireView(engine.viewModel, handDef, gameVoxelPool) // idle-fire variants prebuilt; charge/cast variants build lazily on first use (boot budget)
   : (window.ASSETS && window.ASSETS.viewModels && window.ASSETS.viewModels.spellHand && spellHandLDef
@@ -1719,6 +1721,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       equipPlay = createEquipPlay({ hands, shield: shieldSim, arrows: arrowSim, defs: itemDefs || {}, bowCfg: BOW_CFG, swordDamage: SWORD_CFG.light.damage,
         say: (t) => { if (toasts) toasts.say(t, [226, 214, 176]); } });
       quickbar = itemDefs ? createQuickbar(itemDefs, undefined, (id, pl) => spellCaster ? spellCaster.cast(id, pl) : 'empty') : null; qbTick = 0; // EQ-12: sip timer lives per world
+      if (slView) slView.bind(sparkSim, lightOrbSim, lightSet); window.__debug.spells = { get spark() { return sparkSim; }, get orb() { return lightOrbSim; }, get caster() { return spellCaster; }, get book() { return spellBook; }, view: slView }; // SPELL-05b (+ tools/verify-spell-light.mjs)
       if (fbView) fbView.bind(fireball, lightSet); // SPELL-01b: 4 flight + 2 flash + 1 ember light, never removed
       if (practiceTarget) practiceTarget.dispose();
       practiceTarget = createPracticeTarget(world, engine.events, SWORD_CFG); // US-078d (30.1)
@@ -2339,6 +2342,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
           fireball.step(playerHandle.data, fbOn && hands.downOf('spell.fireball'), swordFwd[0], swordFwd[1], swordFwd[0] * cp, swordFwd[1] * cp, Math.sin(pr));
           if (sparkSim) sparkSim.step(playerHandle.data, swordFwd[0] * cp, swordFwd[1] * cp, Math.sin(pr)); // SPELL-05
           if (lightOrbSim) lightOrbSim.step(playerHandle.data);
+          if (slView) slView.stepFx(); // SPELL-05b
           if (fbView) fbView.stepFx(); // SPELL-01b: trail emitters + burst particles (sim side, hashed)
           if (fbOn && handFxOn && spellVmH && !cinematic) { // HAND-WIRE-02 (FB-01: locked = no hand fire): hand embers / ignite / charge sparks, sim side
             const hp = playerHandle.data.transform, hb = playerHandle.data.components.body;
@@ -2570,6 +2574,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       // handler on every restart - rebind it here, or `fb.lights` would keep
       // pointing at the previous world's LightSet (beacon state etc.).
       fb.lights = lightSet;
+      if (slView) slView.present(alpha); // SPELL-05b
       if (fbView) { // SPELL-01b: ball/flash lights + the spell-hand coal glow, before lights.update below (glow = last frame's, 1 frame lag)
         fbView.present(alpha, cam);
         const sh = hands && !cinematic && fbOn && spellVmH ? hands.handOf(SPELL_HAND_ITEM) : null;
