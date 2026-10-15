@@ -50,11 +50,11 @@ try {
     // NO-PAUSE: ui/pause.js isPaused() = !look.locked; installAutoPause (blur/hidden) only releases pointer lock and no ?nopause flag exists
     // (main.js:1388 skips it only for bench/gpucompare/cinematic, which change other paths). So fake look.locked=true after load (below) AND
     // neutralise the blur/visibility listeners with Emulation focus + a capture-phase stopImmediatePropagation installed before main.js runs.
-    if (!mods.includes('noshim')) await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `for (const [t, tgt] of [['blur', window], ['visibilitychange', document]]) tgt.addEventListener(t, (e) => e.stopImmediatePropagation(), true);` });
+    if (false) await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `for (const [t, tgt] of [['blur', window], ['visibilitychange', document]]) tgt.addEventListener(t, (e) => e.stopImmediatePropagation(), true);` });
     await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
-    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?dev=1&title=0&backend=webgpu&${mods.includes('pose') ? 'pose=crash' : 'time=' + clock}&${qs}` });
+    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?dev=1&title=0&nopause=1&backend=webgpu&${mods.includes('pose') ? 'pose=crash' : 'time=' + clock}&${qs}` });
     await waitReady();
-    if (!mods.includes('nolock')) await evaluate(cdp, `(()=>{const l=__debug.look; try{Object.defineProperty(l,'locked',{get:()=>true,configurable:true})}catch(e){}})()`); await pause(5000);
+    await pause(5000); // CAPTURE-NOPAUSE: ?nopause=1 replaces the look.locked fake
     const t0 = await evaluate(cdp, `(()=>{const t=__debug.playerHandle.data.transform;return [t.x,t.y,t.z].map(v=>+v.toFixed(1)).join(',')})()`);
     if (!mods.includes('notele')) await evaluate(cdp, `(()=>{const t=__debug.playerHandle.data.transform;t.x=${sx};t.y=${sy};t.z=${sz};t.yawDeg=${syaw};})()`); await pause(9000); // step 2: far bands stream in
     if (process.env.PROBE) console.log(cc, 'PROBE', JSON.stringify(await evaluateAsync(cdp, process.env.PROBE)));
