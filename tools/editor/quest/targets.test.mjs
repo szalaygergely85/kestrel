@@ -17,7 +17,7 @@ const q = (id) => m.quests.find((x) => x.id === id);
 // classification over every real entity: npcs with dialogue are characters, brains are enemies, rest objects
 const tally = { character: 0, enemy: 0, object: 0 };
 for (const e of world.entities) tally[classify(e)]++;
-assert.equal(tally.character, 15); assert.ok(tally.enemy >= 20); assert.ok(tally.object >= 80);
+assert.equal(tally.character, 16); assert.ok(tally.enemy >= 20); assert.ok(tally.object >= 80);
 assert.equal(resolveTarget(world, 'bear', ctx).kind, 'character');
 assert.equal(resolveTarget(world, 'hesk', ctx).kind, 'character');
 assert.equal(resolveTarget(world, 'notePost', ctx).kind, 'object');

@@ -33,6 +33,11 @@ state = JSON.parse(JSON.stringify(state));
 const c = talk(state);
 ok('after save/load still hello.2', c.length === 1 && c[0] === b[0], c.join('|'));
 ok('lines <= 56 chars', [...a, ...b].every((l) => l.length <= 56));
+// BEND-NPC-01: an old save with a moved errand open at Bram -> handover line (the quest itself hands in at Joss: allQuests.e2e + questBatch1)
+for (const q of ['sq.rb.shield', 'sq.fc.cog']) for (const s of ['active', 'ready']) {
+  const h = talk({ ['dlg.q.' + q + '.' + s]: true, 'dlg.met.postkeeper': true });
+  ok('handover ' + q + ' ' + s, h.length === 2 && h[0].startsWith('Ask Joss'), h.join('|'));
+}
 console.log(`postkeeperDialogue: ${pass} pass, ${fail} fail`);
 for (const m of failures) console.log('  FAIL ' + m);
 process.exit(fail ? 1 : 0);

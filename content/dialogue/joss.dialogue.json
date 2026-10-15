@@ -1,0 +1,48 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "joss",
+  "speakers": {
+    "joss": {
+      "label": "JOSS"
+    },
+    "you": {
+      "label": "YOU",
+      "player": true
+    }
+  },
+  "entry": [
+    {
+      "node": "joss.hello.2",
+      "requires": "met.joss"
+    },
+    {
+      "node": "joss.hello.1"
+    }
+  ],
+  "nodes": {
+    "joss.hello.1": {
+      "end": true,
+      "lines": [
+        "Mind the ruts. I just filled them.",
+        "I'm Joss. I mend this road. Somebody has to."
+      ],
+      "setFlag": "met.joss",
+      "speaker": "joss"
+    },
+    "joss.hello.2": {
+      "end": true,
+      "lines": [
+        "Road's holding. Mostly."
+      ],
+      "speaker": "joss"
+    },
+    "joss.hello.3": {
+      "end": true,
+      "lines": [
+        "Nothing for you today. The road's quiet."
+      ],
+      "speaker": "joss"
+    }
+  }
+}

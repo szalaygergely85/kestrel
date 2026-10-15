@@ -102,6 +102,9 @@
     },
     "postkeeper": {
       "entity": "postkeeper"
+    },
+    "joss": {
+      "entity": "joss"
     }
   }
 }
