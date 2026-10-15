@@ -37,6 +37,7 @@
     "note.westRuin": {"prompt": "[E] Read the scratches", "title": "A gatehouse wall", "lines": ["Tally marks, forty or fifty, then a gap.", "Under them, scratched deep: NOT ALL OF US WENT NORTH.", "Whoever wrote it meant to come back."]},
     "note.westMeadow": {"prompt": "[E] Look at the cart", "title": "A cart in the grass", "lines": ["Tall grass, and deep hoof prints all round.", "The boars were here before you came."]},
     "note.westStones": {"prompt": "[E] Look at the stones", "title": "A ring of stones", "lines": ["Six stones, set on the hill by hand.", "You can see the ford and the trade post from here.", "Whoever stood here watched the road."]},
+    "note.cemetery.crypt": {"prompt": "[E] Look at the door", "title": "The crypt door", "lines": ["The crypt door is sealed.","Something scratches inside."]},
     "note.poi.whitecombs.1": {"prompt": "[E] Look at the stones", "title": "A ring of stones", "lines": ["Set upright by hand, long ago.","The grass inside is still short."]},
     "note.poi.whitecombs.2": {"prompt": "[E] Read the marks", "title": "A broken arch", "lines": ["Someone scratched tally marks on the stone.","Forty-one, and then they stop."]},
     "note.poi.westFells.1": {"prompt": "[E] Read the marks", "title": "A broken arch", "lines": ["Someone scratched tally marks on the stone.","Forty-one, and then they stop."]},
