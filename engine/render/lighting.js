@@ -40,6 +40,7 @@ import { resolveLook } from './look.js'; // ART-01a (37.18 item 3)
 import { cloudShadeQP } from './cloudShadow.js'; // S8-B2-12c (38.13)
 import { cloudDriftOffset } from './sky.js';
 import { sampleGIBuf } from './giProbe.js'; // GI-PROBE-04
+import { contactOcclAt } from './contactAO.js'; // CONTACT-AO-01a (38.78)
 import { aoTapOcc, aoFactor, aoTapCells, AO_DEFAULTS, AO_MAX } from './horizonAo.js'; // S8-B2-20 (38.17)
 
 // RE-02a: scratch for lightSurfaces' pitched branch (zero allocation per frame).
@@ -177,6 +178,7 @@ export class LightSet {
     this.cloudOff = new Float32Array(2); // per-frame deck drift, set by lightSurfaces from fb.timeSec
     // S8-B2-20b (38.16): null | {strength, radiusM, bias, maxCells} (setLook from look.ao); null = AO off.
     this.ao = null;
+    this.cao = null; // CONTACT-AO-01a (38.78): a contactAO state (createContactAO) or null = off, byte-identical old path
 
     this.count = 0; // active (alive) lights, compacted into [0, count)
     this.pos = new Float32Array(4 * MAX_LIGHTS);   // x, y, z (jittered), radius     -> uLightPos
@@ -1240,6 +1242,10 @@ export function lightSurfaces(fb, lights, cam, world) {
   const horizonRow = rows / 2 + Math.tan(pitchRad) * planeDistY;
 
   const kind = gbuf.kind, face = gbuf.face, rgb = lb.rgb;
+  // CONTACT-AO-01a: per-cell occlusion byte (LIGHT.w bits 1..7 twin); stale bytes cleared once when the feature turns off.
+  const caoOn = lights.cao != null && lights.cao.n > 0 && !!lb.caoQ;
+  if (!caoOn && lb.caoQ && lb.caoDirty) { lb.caoQ.fill(0); lb.caoDirty = false; }
+  if (caoOn) lb.caoDirty = true;
   // ME-15c: the JS sun shadow map (compositor.js, mesh renderer + shadows.sun 'map') replaces the sun DDA; shade reads `lb.sunMapOn`.
   const sunMap = fb.sunMap || null;
   lb.sunMapOn = !!sunMap;
@@ -1317,6 +1323,18 @@ export function lightSurfaces(fb, lights, cam, world) {
           rgb[o] -= giAmb[0] * k; rgb[o + 1] -= giAmb[1] * k; rgb[o + 2] -= giAmb[2] * k;
         } else { rgb[o] -= lights.ambient[0] * k; rgb[o + 1] -= lights.ambient[1] * k; rgb[o + 2] -= lights.ambient[2] * k; }
       }
+      // CONTACT-AO-01a (38.78): blob contact AO, ambient only. Terrain/grass cells only record the byte (shade applies it to b).
+      if (caoOn) {
+        const q = Math.round(contactOcclAt(lights.cao, px, py, pz, nz) * 127);
+        lb.caoQ[i] = q;
+        if (q !== 0 && kind[i] !== KIND_TERRAIN && kind[i] !== KIND_GRASS) {
+          const ck = q * (1 / 127);
+          if (lights.gi != null && lights.gi.on && lights.gi.field != null) {
+            giIo[0] = px; giIo[1] = pz; giIo[2] = py; giIo[3] = nx; giIo[4] = nz; giIo[5] = ny; sampleGIBuf(lights.gi, giIo, giAmb);
+            rgb[o] -= giAmb[0] * ck; rgb[o + 1] -= giAmb[1] * ck; rgb[o + 2] -= giAmb[2] * ck;
+          } else { rgb[o] -= lights.ambient[0] * ck; rgb[o + 1] -= lights.ambient[1] * ck; rgb[o + 2] -= lights.ambient[2] * ck; }
+        }
+      }
     }
   }
 }
@@ -1335,6 +1353,8 @@ export function makeLightBuffer(cols, rows) {
     outdoor: new Uint8Array(cols * rows),
     // S8-B2-12a (38.13): per-cell cloud-darkening byte (`LIGHT.w` bits 24..31 JS twin), 0 at strength 0.
     cloudQ: new Uint8Array(cols * rows),
+    // CONTACT-AO-01a (38.78): per-cell contact-AO occlusion byte (LIGHT.w bits 1..7 JS twin), 0 = none.
+    caoQ: new Uint8Array(cols * rows), caoDirty: false,
   };
 }
 

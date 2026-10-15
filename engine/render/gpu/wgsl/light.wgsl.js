@@ -15,6 +15,7 @@ import { FACE_PACKED, KIND_TERRAIN, KIND_MESH, KIND_GRASS } from '../../GBuffer.
 import { SUN_N_SHIFT, CLOUD_Q_SHIFT } from '../../shadowSun.js';
 import { AO_MAX } from '../../horizonAo.js';
 import { PSH_NEAR } from '../../shadowPoint.js';
+import { CONTACT_AO_WGSL, CAO_SHIFT, CAO_MAX } from '../../contactAO.js';
 import { GI_SAMPLE_WGSL, giBindingWgsl } from '../../giGpu.js';
 
 export const PSH_MAX_SLOTS = 6;
@@ -55,6 +56,10 @@ export const LIGHT_BLOCK = defineUniformBlock('LightU', [
   { name: 'pshA', type: 'vec4' },
   { name: 'pshO', type: 'vec4', count: PSH_MAX_SLOTS },
   { name: 'pshSlot', type: 'vec4', count: MAX_LIGHTS / 4 },
+  // CONTACT-AO-01b (38.78): blob list appended at the very END (no word moves). caoA.x = n (0 = off, loop skipped), caoD = CAO_MAX blobs x 2 vec4
+  // [cx cy zBase rx][ry h k 0] (contactAO.js data layout); copied from LightSet.cao only when its version changes.
+  { name: 'caoA', type: 'vec4' },
+  { name: 'caoD', type: 'vec4', count: CAO_MAX * 2 },
 ]);
 
 /** Texture slot kinds for PipelineDesc.bindings.textures. */
@@ -294,6 +299,8 @@ fn sampleVis(i: i32, px: f32, py: f32) -> f32 {
   return f32(textureLoad(uLVis, vec2i(i32(lx), i * MAX_VIS_DIM + i32(ly)), 0).x) / 255.0;
 }
 
+${CONTACT_AO_WGSL}
+
 @fragment
 fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
   let cell = vec2i(floor(frag.xy));
@@ -403,7 +410,16 @@ fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
     L -= u.ambient * (1.0 - aoF);
   }
 
-  return vec4u(bitcast<vec3u>(L), u32(sunlit) | (u32(litCount) << 8u) | (u32(sunN) << SUN_N_SHIFT) | cloudBits);
+  // CONTACT-AO-01b (38.78): blob contact AO byte -> LIGHT.w bits 1..7 (shade applies it to terrain/carpet ambient); meshes lose ambient here.
+  // n = 0 (u.caoA.x == 0): nothing runs, LIGHT.w bits 1..7 stay 0 (byte-identical).
+  var caoBits: u32 = 0u;
+  if (u.caoA.x > 0.0) {
+    let caoQ = contactOcclQ(P.x, P.y, P.z, N.z);
+    caoBits = caoQ << ${CAO_SHIFT}u;
+    if (caoQ != 0u && !isTer) { L -= u.ambient * (f32(caoQ) * (1.0 / 127.0)); } // CAO_AMB
+  }
+
+  return vec4u(bitcast<vec3u>(L), u32(sunlit) | caoBits | (u32(litCount) << 8u) | (u32(sunN) << SUN_N_SHIFT) | cloudBits);
 }
 `;
 
@@ -412,6 +428,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
 function giReplace(src, from, to) { if (!src.includes(from)) throw new Error('light.wgsl GI splice: anchor missing: ' + from); return src.replace(from, to); }
 let giSrc = giReplace(LIGHT_WGSL, '@group(1) @binding(0) var<uniform> u: LightU;', '@group(1) @binding(0) var<uniform> u: LightU;\n' + giBindingWgsl(8) + '\n' + GI_SAMPLE_WGSL);
 giSrc = giReplace(giSrc, '  var litCount = 0;', '  let Lamb = giSample(P.x, P.z, P.y, N.x, N.z, N.y); // engine z-up -> giProbe y-up (lightAtScratch)\n  L = Lamb;\n  var litCount = 0;');
+giSrc = giReplace(giSrc, 'L -= u.ambient * (f32(caoQ) * (1.0 / 127.0));', 'L -= Lamb * (f32(caoQ) * (1.0 / 127.0));');
 giSrc = giReplace(giSrc, 'L -= u.ambient * (1.0 - aoF);', 'L -= Lamb * (1.0 - aoF); // GI: AO multiplies the GI ambient part only');
 export const LIGHT_GI_WGSL = giSrc;
 /** Texture slots + the one read-only storage buffer of the GI light pipeline (WgGiBuffer, wg/giUpload.js). */

@@ -8,6 +8,7 @@ import { giBufferFor } from './giUpload.js'; // GI-PROBE-05
 import { MAX_LIGHTS, MAX_VIS_DIM, MAX_VIS_CELLS } from '../../lighting.js';
 import { MAX_STRUCTS, buildWorldTextures, planFrameUpdate, makeFrameUpdatePlan } from '../WorldTextures.js';
 import { packCloudUniforms } from '../../cloudShadow.js';
+import { CAO_MAX, CAO_STRIDE } from '../../contactAO.js';
 import { PROJ_HFOV_DEG } from '../../projection.js';
 
 const W = (n) => LIGHT_BLOCK.field(n).word;
@@ -26,6 +27,9 @@ const W_CLOUD_A = W('cloudA');
 const W_AO_STRENGTH = W('aoStrength'), W_AO_P = W('aoP'); // aoP = (radiusM, bias, maxCells, 0)
 // ME-16e (38.22): point shadow words; pshA = (n, res, biasM, normalOffTexels), pshO[slot] = (origin xyz, far), pshSlot[light] = slot + 1
 const W_PSH_A = W('pshA'), W_PSH_O = W('pshO'), W_PSH_SLOT = W('pshSlot');
+
+// CONTACT-AO-01b (38.78): caoA.x = blob count, caoD = blob records (copied only when LightSet.cao.version changes)
+const W_CAO_A = W('caoA'), W_CAO_D = W('caoD');
 
 const NO_CAM = Object.freeze({ x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 });
 
@@ -57,6 +61,7 @@ export class WgLightPass {
     this.pipeGI = null; this.bindDescGI = null;
     this.visBox = new Float32Array(4 * MAX_LIGHTS);
     this.timeBuf = new Float64Array(1);
+    this.caoFor = null; this.caoVer = -1;
   }
 
   /** _computeCamBasis twin (scalars the light pass reads). */
@@ -131,6 +136,7 @@ export class WgLightPass {
       lu[W_AMBIENT] = a[0] || 0; lu[W_AMBIENT + 1] = a[1] || 0; lu[W_AMBIENT + 2] = a[2] || 0;
       li[W_LIGHT_COUNT] = 0; li[W_SUN_ON] = 0; li[W_SUN_MODE] = 0;
       packCloudUniforms(null, 0, this.cloud8); lu.set(this.cloud8, W_CLOUD_A);
+      lu[W_CAO_A] = 0;
       lu[W_AO_STRENGTH] = 0; lu[W_AO_P] = 0; lu[W_AO_P + 1] = 0; lu[W_AO_P + 2] = 0; lu[W_AO_P + 3] = 0;
       return;
     }
@@ -141,6 +147,12 @@ export class WgLightPass {
     const ao = light.ao;
     lu[W_AO_STRENGTH] = ao ? ao.strength : 0;
     lu[W_AO_P] = ao ? ao.radiusM : 0; lu[W_AO_P + 1] = ao ? ao.bias : 0; lu[W_AO_P + 2] = ao ? ao.maxCells : 0; lu[W_AO_P + 3] = 0;
+    // CONTACT-AO-01b: blob list; n = 0 / no cao -> caoA.x = 0 and the shader loop never runs. The 1 KB copy happens only on a version change.
+    const cao = light.cao;
+    if (cao && cao.n > 0) {
+      if (this.caoFor !== cao || this.caoVer !== cao.version) { lu.set(cao.data.subarray(0, cao.n * CAO_STRIDE), W_CAO_D); this.caoFor = cao; this.caoVer = cao.version; }
+      lu[W_CAO_A] = cao.n > CAO_MAX ? CAO_MAX : cao.n;
+    } else lu[W_CAO_A] = 0;
     const sun = light.sun, on = !!(sun && sun.on);
     li[W_SUN_ON] = on ? 1 : 0;
     if (sun) {
