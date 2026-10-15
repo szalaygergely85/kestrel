@@ -113,7 +113,9 @@ import { createErrands, labelOf, gateOnMeet, isWorn, bannerLines } from './quest
 import { generateAll, generateForNpc } from './quest/questSnippets.js'; // QL-T4: generated q.<id>.* dialogue routes
 import { createUnderHook } from './underHook.js'; // B1-MAIN hooks 7: Ford cellar ladder + crypt door/chest
 import { createSpellBook } from './quest/sim/spellBook.js'; // EP-SPELLS
-import { raisable, useScroll as useSpellScroll } from './quest/sim/spellScroll.js';
+import { raisable, useScroll as useSpellScroll, SCROLL_ID as SPELL_SCROLL_ID } from './quest/sim/spellScroll.js';
+import { SPELL_DEFS } from './quest/spellDefs.js';
+import { countOf as invCountOf } from './quest/sim/inventory.js';
 import { createHeartHook } from './heartHook.js'; // QL-08: heart pieces -> max HP
 import { createChestHook } from './chestHook.js'; // S8-B1-04: chest sim + item-get card, through the seam only
 import { createMapFogHook } from './mapFogHook.js'; // S8-B1-16: visited-cell mask feed, through the seam only
@@ -1824,6 +1826,8 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         };
       }
       if (invView && invView.isOpen) invView.close();
+      let sbSt = null, sbBook = null; const liveSpellBook = { tier: (id) => (sbSt !== engine.world.state && (sbBook = createSpellBook(sbSt = engine.world.state)), sbBook.tier(id)), canRaise: (id) => (liveSpellBook.tier(id), sbBook.canRaise(id)) }; // follows a reloaded world state, 0 alloc per call
+      const spendSpellScroll = (id) => { if (!playerHandle) return 0; const r = useSpellScroll(playerHandle.data.components.inventory, createSpellBook(engine.world.state), id); return r.ok ? r.level : 0; }; // ONE scroll spend path (pack overlay + Spells tab)
       invView = itemDefs && window.ASSETS.uiStyle.inventory ? createInventoryScreen({
         style: window.ASSETS.uiStyle.inventory, tabOpens: false, items: window.ASSETS.items, rgb: assets.palette.rgb, toast: toasts,
         inventoryOf: () => (playerHandle && playerHandle.data.components.inventory) || null,
@@ -1832,8 +1836,10 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         healthOf: () => (playerHandle && playerHandle.data.components.health) || null,
         spellChoice: { // D-114: Spell Scroll -> the player chooses a learned spell (the fireball is today's only spell)
           options: () => raisable(createSpellBook(engine.world.state)),
-          pick: (id) => { if (!playerHandle) return 0; const r = useSpellScroll(playerHandle.data.components.inventory, createSpellBook(engine.world.state), id); return r.ok ? r.level : 0; },
+          pick: (id) => spendSpellScroll(id),
         },
+        spellPage: { defs: SPELL_DEFS, book: liveSpellBook, useScroll: (id) => spendSpellScroll(id), // SPELL-03: Spells tab; same spend path as the pack overlay
+          scrolls: () => (playerHandle && playerHandle.data.components.inventory ? invCountOf(playerHandle.data.components.inventory, SPELL_SCROLL_ID) : 0) },
         onHandsChanged: () => { if (hands && playerHandle) hands.step(playerHandle.data, false, false, false); }, // router sees the change now (cancel + setHand + hands:changed)
         quickbar: itemDefs ? { assign: (n, id) => !!playerHandle && !LOCKED[id] && qbAssign(playerHandle.data, itemDefs, n + HAND_SLOTS, id) } : undefined, // EQ-12: 1-4 over an item in the Items / Character tab (key n = bar slot n + 2)
         characterKey: params.get('craft') !== '1', // EQ-03: C opens the Character tab (the crafting list keeps C under ?craft=1)
