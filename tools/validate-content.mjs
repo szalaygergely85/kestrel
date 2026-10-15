@@ -93,6 +93,7 @@ const CLASSIC_SCRIPTS = [
   '../design/models/voxel_beast.js', // US-079a: the placeholder boar (content/worlds/world_m1.world.json entities "boar1"/"boar2"), same load position as game/index.html.
   '../design/models/voxel_wolf.js', // WOLF-D1: the wolf (WOLF_MODEL 'wolf').
   '../design/models/voxel_goblin.js', // GOB-D1/07a: goblin, goblinTorch, goblinSpear + ASSETS.goblinFx (game/index.html tag after voxel_wolf.js).
+  '../design/models/voxel_skeleton.js', // OB-191: skeleton, skeletonArcher + ASSETS.skeletonFx (game/index.html tag after voxel_goblin.js).
   '../design/models/chest.js', // EQ-10: chestSmall on the world_m1 chest* anchors
   '../design/models/voxel_bear.js', // NPC-BEAR-01: ASSETS.models.bear (world_m1 entity "bear", content/dialogue/bear.dialogue.json clips), same load position as game/index.html.
   '../design/models/voxel_bear_black.js', // BEAR-D1: ASSETS.models.bearBlack (clones ASSETS.models.bear -> must follow voxel_bear.js). game/index.html tag: BEAR-01.
