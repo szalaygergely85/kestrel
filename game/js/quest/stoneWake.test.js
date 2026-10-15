@@ -20,8 +20,8 @@ function mk(state = {}) {
 }
 
 // interactable shape + gates
-{ const t = mk(); assert.equal(t.recs.length, 1); assert.equal(t.recs[0].key, 'stone.waystone'); assert.equal(t.recs[0].requires, FLAG_STONE_TOLD);
-  assert.equal(t.rw.interact('waystone'), false, 'no talk, no crystal: nothing');
+{ const t = mk(); assert.equal(t.recs.length, 1); assert.equal(t.recs[0].key, 'stone.waystone'); assert.ok(!t.recs[0].requires, 'OB-188: no requires, stone always pickable');
+  assert.equal(t.rw.interact('waystone'), false, 'no talk, no crystal: blocked with a hint');
   t.state[FLAG_STONE_TOLD] = true; assert.equal(t.rw.interact('waystone'), false, 'talk but no crystal: nothing');
   assert.equal(t.emits.length, 0); assert.equal(t.notice.active, false); }
 

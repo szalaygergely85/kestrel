@@ -121,6 +121,8 @@ async function build(assets, goblin = false, grid = false) {
     // drop the thrower surplus (the authored camps may hold more than 6)
     let seen = 0; world.forEachEntity((e) => { const b = e.components && e.components.brain; if (b && b.species === 'goblin' && b.role === 'thrower' && ++seen > THROWERS) b.role = 'melee'; });
   }
+  // WM-12 regional beasts (29) + 20 goblins exceed the fixed 48-beast worst case: drop the surplus real beasts (last first)
+  for (let k = found.length - 1; k >= 0 && found.length + goblinCount > BENCH_BEASTS; k--) if (found[k].components.brain.species !== 'goblin') { world.removeEntity(found[k].id); found.splice(k, 1); }
   const pad = found.filter((e) => !(e.components.brain.species === 'goblin'));
   for (let n = found.length + goblinCount; n < BENCH_BEASTS && pad.length; n++) {
     const src = pad[n % pad.length], t = src.transform;
