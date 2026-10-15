@@ -312,6 +312,7 @@
       if (!m || A.models[k]) return;
       for (i in m.voxel.mats) if (!A.palette.materials[m.voxel.mats[i]] || !A.detailPass.materials[m.voxel.mats[i]]) ok = false;
       if (ok) A.models[k] = m;
+      else if (typeof console !== 'undefined') console.warn('ground_detail: model ' + k + ' NOT registered (a material is missing from palette.js/detail-pass.js - stale browser cache? hard reload)'); // OB-166
     });
   }
 })(typeof window !== 'undefined' ? window : globalThis);
