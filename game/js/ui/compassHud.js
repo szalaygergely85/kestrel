@@ -58,6 +58,7 @@ function compileDesigner(style) {
 
 const SIDE_BLUE = [120, 190, 255]; // D-108: side-quest '?'/'!' in the label (main = the style's gold)
 
+const ITEM_STEP = new Set(['item', 'collect', 'deliver']); // OB-202 follow-up: every pack-item step gathers via the item source, never the giver
 export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
   const D = style.faces ? compileDesigner(style) : null;
   const N = D ? D.dirs : (style.sectors | 0 || 8);
@@ -99,7 +100,7 @@ export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
     else if (stt === ACTIVE && !(qi === 0 && book.mainStepGated && book.mainStepGated())) { // OB-199: not-accepted main step -> no needle
       const idx = st.completed.length;
       if (idx < def.objectives.length && stepPos(def.objectives[idx].when, st, world)) kind = 2;
-      else if (def.objectives[idx] && def.objectives[idx].when.type === 'item') { /* OB-202: fetch step with no known source -> no needle (never the giver) */ }
+      else if (def.objectives[idx] && ITEM_STEP.has(def.objectives[idx].when.type)) { /* OB-202: fetch step with no known source -> no needle (never the giver) */ }
       else if (def.giver && def.giver.npc && world.resolve('giver', def.giver.npc, tmp)) kind = 2;   // COMPASS-QUEST-01: unresolvable step -> point at the quest's giver instead of hiding
     }
     if (!kind) {
@@ -124,7 +125,7 @@ export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
       for (let i = 0; i < when.ids.length; i++) if (!st.deadBeasts.includes(when.ids[i]) && world.resolve('beast', when.ids[i], tmp)) return true;
       return false;
     }
-    if (when.type === 'item') return world.resolve('item', when.id, tmp) || (world.resolve('source', when.id, tmp)); // OB-202: fetch -> placed pickup, else the nearest known source (host: alive beast of the dropping kind)
+    if (when.type === 'item' || when.type === 'collect' || when.type === 'deliver') return world.resolve('item', when.id, tmp) || (world.resolve('source', when.id, tmp)); // OB-202: fetch -> placed pickup, else the nearest known source (host: alive beast of the dropping kind)
     return world.resolve(when.type, when.id, tmp);
   }
 

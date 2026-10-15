@@ -240,6 +240,7 @@ import { registerQuestMarks } from './quest/wire/questMarks.js';
 import { createQuestLogScreen, QUEST_LOG_KEYS } from './ui/questLog.js'; // QG-05
 import { GIVER_INFO } from './questNext.js'; // QUEST-NEXT-GIVER-01
 import { createOfferToast } from './quest/offerToast.js'; // new derived offer -> "New quest" toast
+import { resolveItemSource } from './ui/itemSource.js';
 import { createCompassHud } from './ui/compassHud.js'; // COMPASS-02 (D-061)
 import { createCombatHud } from './ui/combatHud.js'; import { setEnemyBarsOn, setDamageNumbersOn } from './ui/combatHudFlags.js'; // HPBAR-02 + DMGNUM-01 (D-086)
 import { createCrafting } from './quest/sim/crafting.js'; // MAIN-WIRE-01: crafting list on C
@@ -569,11 +570,12 @@ function areaTrigger(w, id) {
   return t;
 }
 let inspectTexts = null; // content/dialogue/inspect.json
+let itemSources = {}; // OB-202: content/items/sources.json (compass: where to get an item)
 let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the content manifest)
 {
   // AUD2-09: per-file loads; a missing file is logged by name and shown on screen (no silent quest-less game)
   const qb = await loadQuestFiles((u) => fetch(u).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }), { wantBarks: saveEnabled, items: itemDefs ? Object.values(itemDefs).map((d) => ({ id: d.id, slot: d.equip && d.equip.slot, tier: d.equip && d.equip.tier })) : [] }); // QL-WIRE: EQ-13 gear rewards resolve against the design item defs
-  bearBarks = qb.bearBarks;
+  bearBarks = qb.bearBarks; itemSources = qb.itemSources || {};
   inspectTexts = await fetch('../content/dialogue/inspect.json').then((r) => (r.ok ? r.json() : null)).catch(() => null); // QL-T4+: look-at table (errands.js loadTexts)
   if (qb.giverDefs) { // QL-WIRE: errands open after Burl's first greeting; his errand lines become dialogue routes
     qb.giverDefs = gateOnMeet(qb.giverDefs);
@@ -1240,21 +1242,16 @@ async function runGame(mode, cinematic = null) {
   const compass = createCompassHud({ style: window.ASSETS && window.ASSETS.uiStyle && window.ASSETS.uiStyle.compass });
   let compassBookVer = -1, compassTick = 0, compassWorld = null, compassBreach = null, compassHide = true;
   const COMPASS_FLAG = { 'quest.burl.boars.done': 'bear', 'quest.burl.follow.done': 'bear', 'burl.arrived': 'bear', 'waystone.waystone.woken': 'endMarker', 'waystone.ws_roadBend.woken': 'relayBend', 'waystone.ws_ford.woken': 'relayFord' };
-  const COMPASS_ITEM = { sword: 'tower.sword' }; // COMPASS-QUEST-01: item step -> the level prop entity (placementId.propId)
   // PO-CH1-12: giver ids that are level props (placementId.propId) resolve through one helper for compass + map marks.
   const GIVER_ENT = { noteKeepLight: 'tower.noteKeepLight' };
   const giverEntity = (w, id) => w.get(GIVER_ENT[id] || (saveRelay && saveRelay.quest.book ? saveRelay.quest.book.entityFor(id) : id)); // QL-04: object givers / hand-ins resolve through def.giver.entity / turnInEntity
-  const ITEM_SOURCE = { 'boar.hide': 'boar', 'boar.meat': 'boar', 'boar.tusk': 'boar' }; // OB-202: item -> beast kind that drops it (lootBoar: meat/hide/tusk)
-  let srcBest = null, srcBd = 0;
-  const srcVisit = (e, id) => { const d = e.data; if (!d || !d.components || !d.components.brain || typeof id !== 'string' || !id.startsWith(srcKind)) return; const h = d.components && d.components.health; if (h && h.hp <= 0) return; const t = d.transform; if (!t) return; const dd = (t.x - nextCtx.x) ** 2 + (t.y - nextCtx.y) ** 2; if (!srcBest || dd < srcBd) { srcBest = t; srcBd = dd; } };
-  let srcKind = '';
   const compassResolver = { resolve(kind, id, out) {
     const w = compassWorld; if (!w) return false;
     let e = null;
-    if (kind === 'source') { srcKind = ITEM_SOURCE[id]; if (!srcKind) return false; srcBest = null; w.forEachEntity(srcVisit); if (!srcBest) return false; out.x = srcBest.x; out.y = srcBest.y; out.z = srcBest.z; return true; }
+    if (kind === 'source') return resolveItemSource(itemSources, id, w, nextCtx, out, (a, o) => this.resolve('area', a, o));
     if (kind === 'giver') e = giverEntity(w, id);
     else if (kind === 'flag') e = w.get(COMPASS_FLAG[id] || ''); // CH1-02: flag step -> the prop/NPC that sets it (Burl hand-in, bear escort, stone, relay)
-    else if (kind === 'item') e = w.get(COMPASS_ITEM[id] || id);
+    else if (kind === 'item') e = w.get(id);
     else if (kind === 'beast') { e = w.get(id); const h = e && e.data && e.data.components.health; if (h && h.hp <= 0) return false; }
     else if (kind === 'area') {
       if (id === 'breach') { if (!compassBreach) compassBreach = compassFindMarker(w, 'breach'); if (!compassBreach) return false; out.x = compassBreach.x; out.y = compassBreach.y; out.z = compassBreach.z; return true; }
@@ -1794,7 +1791,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       errands.load(world); // QL-WIRE: [E] Inspect on post / notePost
       bearTurn = createNpcTurn(world, 'bear'); // NPC-BEAR-01: null when the world has no bear
       try { // VOX-PRIO-01 (OB-171): quest givers + quest item props rank above plain props when the voxel cap bites (markers are tier 2 in markHandle)
-        const ids = new Set(Object.values(COMPASS_ITEM)); ids.add('bear');
+        const ids = new Set(Object.values(itemSources).map((x) => x.entity).filter(Boolean)); ids.add('bear');
         if (questGenCtx) for (const d of questGenCtx.giverDefs) { if (d && d.giver) { ids.add(d.giver.npc); ids.add(d.giver.turnIn); } }
         for (const id of ids) { const e = id && giverEntity(world, id); const v = e && e.data && e.data.components && e.data.components.voxel; if (v && !(v.priority > 1)) v.priority = 1; }
       } catch (err) { console.warn('[voxprio]', err && err.message); }
