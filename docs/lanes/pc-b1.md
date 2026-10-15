@@ -1487,3 +1487,5 @@ Lane entries + ARCH verdicts only (no code, no browser). "pending owner walk" = 
 - Speed: High and Ultra in the forest and at the ford, pitch down and up; report fps vs yesterday (sprite lights, mesh feed, shadow trim, beast pool); Extreme not in menu.
 - Retests: OB-186 offer (no list, E/Q), OB-187 gondola `!` after stone, OB-188 meadow waystone (1386,1024) wakes + solid, OB-190 tracker row not overdrawn, OB-183, OB-150, OB-189 wall stripes (wreck walls, low res, bark).
 - Also: forest floor (OB-184) mossy litter + ferns + saplings + birds/owls/crickets; New Game once (OB-155).
+
+- BH2-E1 (P1) + BH-A1: BH-A1 was already fixed (a50285f1, activateAgent; beastResetAll.test covers dormant/dead/down orders). BH2-E1: game/js/logic/logicWire.js now listens to `beasts:reset` and re-parks groups (logic 1 spawn, 0/2 despawn, unset reserve-only groups like cemetery trio/aireserve stay down); logicWire.test E1a-c added. Status: arch-review. Note: beastSim.hunt P5 alloc check fails under --expose-gc (pre-existing, unrelated).

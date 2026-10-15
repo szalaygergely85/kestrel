@@ -43,7 +43,7 @@ const BLOCKS = [
 
 function build(world, status, nav) {
   const w = world || World.load(DEF(), assets, { physics: 'mesh' });
-  const sim = createBeastSim(w, { nav: buildBeastNav(w, NAV_CFG), rng: createRng(1), events: { on: () => () => {}, emit() {} } });
+  const sim = createBeastSim(w, { nav: buildBeastNav(w, NAV_CFG), rng: createRng(1), events: ((L) => ({ on: (n, f) => { (L[n] = L[n] || []).push(f); return () => {}; }, emit(n, d) { (L[n] || []).forEach((f) => f(d)); } }))({}) });
   const player = { x: PX, y: PY, z: 0 };
   const emitted = [];
   const wire = createLogicWire({ world: w, blocks: BLOCKS, book: { statusOf: (id) => (id in status ? status[id] : -1) }, sim, nav, player: () => player,
@@ -135,6 +135,17 @@ ok('5f: restored want applies once the gateway is clear', E.pending === 0 && gat
   const G = createPropStates(D.w, { player: () => D.player });
   G.reapply(); D.player.x = gt.x + 10; G.step();
   ok('5h: after Continue the gate stays open', G.pending === 0 && gateVariant(D.w) === 'open');
+
+}
+// ---- BH2-E1: beasts.resetAll() must not wake reserve / cleared groups
+{
+  const R0 = build(null, status);
+  R0.sim.resetAll();
+  ok('E1a: reserve group (logic 0/unset) stays down after resetAll', alive(R0.sim) === 0);
+  R0.wire.logic.groups.goblins = 1; R0.sim.spawnGroup('goblins'); R0.sim.resetAll();
+  ok('E1b: active group (1) is alive after resetAll', alive(R0.sim) === 3);
+  R0.wire.logic.groups.goblins = 2; R0.sim.resetAll();
+  ok('E1c: cleared group (2) stays down after resetAll', alive(R0.sim) === 0);
 }
 
 // ---- 6) wrong dt warns once, determinism of hashes is covered by engine/core/logic.test.js
