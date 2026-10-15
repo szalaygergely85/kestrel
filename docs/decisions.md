@@ -1300,3 +1300,6 @@ Owner 2026-10-15 (later): "Make those priority" - D-107 stories (pc-b-queue sect
 
 ## D-109
 **2026-10-15, owner (PC-A session; answers PC-B question "ANIM-IK-01: player only or drop").** Foot IK for the PLAYER: do it. ANIM-IK-01/01b are built and ARCH OK. The player's feet must stand on the real floor under them (tower floors, bridges, ford stones, crypt stair), not on the terrain below: FOOTIK-WIRE-FIX (pca-D item 7) is required before it ships on. FOLIAGE_TRI_CAP stays 1.5 M until FOLIAGE-CAP-BENCH has run on the RTX desktop and the Intel laptop (owner runs it 2026-10-15 evening); PC-B then sets it from the smaller result.
+
+## D-110
+**2026-10-15, owner (PC-A session; answers PC-B question 6).** Add a second quest NPC near the Bend waystone. They give and take the errands around the Bend, so there is less walking and the quests feel spread out. Post-keeper Bram keeps the trade-post and ford errands. The owner quest rule applies (OB-156 / D-108): `!` over the NPC, Accept/Exit, `?` + hand-in at the NPC.
