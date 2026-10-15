@@ -706,7 +706,7 @@ const chestHook = (itemDefs && assets.uiStyle && assets.uiStyle.itemGetCard)
 gameHooks.register(underHook); // B1-MAIN hooks 7
 if (chestHook) gameHooks.register(chestHook);
 if (chestHook) gameHooks.register(createHeartHook({ getCard: () => chestHook.card, notify: (t) => { if (lootToast) lootToast.say(t, [226, 214, 176]); } })); // QL-08; OB-105: heart piece = toast, not the card
-gameHooks.register(createSpellBookHook({ getBook: () => spellBook, notify: (t) => { if (lootToast) lootToast.say(t, [226, 214, 176]); } })); // SPELL-09: Spell Books in the pack + waystone-wake spells learn once (spellBook = the per-world book set on 'world:loaded')
+gameHooks.register(createSpellBookHook({ getBook: () => spellBook, getDefs: () => itemDefs, notify: (t) => { if (lootToast) lootToast.say(t, [226, 214, 176]); } })); // SPELL-09: Spell Books in the pack + waystone-wake spells learn once (spellBook = the per-world book set on 'world:loaded')
 // QUESTS-01: generic world pickup prop + pack counts for collect/deliver objectives + hand-in reward grant (game/js/questPickups.js)
 let questBeastSim = null; // SOFTLOCK-01: the live beast sim for the kill-quest accept rule (set where the sim is built)
 if (saveRelay) saveRelay.quest.setLivingOfKind((kind) => { const s = questBeastSim; if (!s || !s.ids) return 99; let n = 0; for (let i = 0; i < s.ids.length; i++) if (kindOf(s.ids[i]) === kind && !s.down[i] && !isBeastDeadState(s.state[i])) n++; return n; }); // SOFTLOCK-01 + R6-FIX C: installed on every book the relay creates/loads (not lazily in questPickups.sync)
@@ -1831,6 +1831,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         offerToast = createOfferToast(saveRelay.quest.book, (g) => GIVER_INFO[g] ? GIVER_INFO[g].name : g.charAt(0).toUpperCase() + g.slice(1)); offerToast.seed(); offerToastMsg = msg; // QUEST-NEXT-GIVER-01 (compass: compassHud.target)
         saveRelay.quest.book.onChange = (name, id) => {
           gameHooks.emitSimple(name, id);
+          if (name === 'quest:done' && world && world.state) world.state['quest.done.' + id] = true; // SPELL-R6: quest-reward spell sources (spellBooks PLACEMENTS flag)
           if (logicWire && (name === 'quest:accepted' || name === 'quest:done')) logicWire.notify(name === 'quest:accepted' ? 'quest.accepted' : 'quest.done', 'quest', id); // ED-LOGIC-01c
           if (name === 'quest:accepted') actionSig.questAccepted = true; // FS-01: first accepted quest -> [J] Journal hint
           if (name === 'quest:ready' && id === 'burl.boars' && crystal) crystal.check('ready'); // CH1-03
