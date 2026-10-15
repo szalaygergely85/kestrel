@@ -1320,3 +1320,6 @@ Contradiction check: no plain-name, env-mesh, chest, D-105, D-106 or "Esc to clo
   NEEDS B1: beastView never requests `attack` (melee active window) and fleeing deer/fox show idle (map to `charge`); see beastClipsFx.clipFor.
 - CLIP-WIRE (OB-153 follow-up, programmer): beastView.beastClipsClip maps deer/fox/goat/tortoise (beastClipsFx.models): CHARGE state -> attack, chase/fleeing -> charge via beastClipsFx.clipFor; other kinds unchanged. Test: beastView.test.js (21 pass).
 - CAPTURE-NOPAUSE (nopause2): `?nopause=1` now also fakes look.locked=true (main.js after PlayerLook ctor) so headless captures show no pause menu; verify-ob189/175 use it (focus/lock shims dropped), verify-ob188 unchanged. Checked: ob189 forestFloor high 1717x790 clean.
+
+- WIND-GUST-01 (arch-review, kestrel-3 branch windgust): travelling gust bands, pure fn of (x,y,t,dir,speed), no trig/uniforms: `gustBand/gustBandMul` (engine/world/wind.js, mult 0.4..1.6) applied in `_baseInto` + `WIND_AT_WGSL` (sway, carpet lean); carpet JS twin via `field.gustMul`; sampleInto/pushAt (particles, gameplay) unchanged; carpet windMax bound x1.6. Tests: engine/world/windGust.test.js, wind.wgsl.test.js updated. Leaf-fall emitter not done (out of this brief).
+  gpucompare (re-baseline `swayWindy` once, D-039; other rows unchanged): see main-session commands. Calm worlds bit-identical.
