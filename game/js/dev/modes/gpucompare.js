@@ -259,6 +259,16 @@ function buildCompareRuns(ctx) {
     }
   }
 
+  // CANOPY-SHAFT-01b (arch 38.76): 2 rows with the sun-shaft march on (lights.shaft; every other row has shaft null = steps 0 = byte-identical).
+  // Fixture forest (the giForest spot) at noon, camera looking toward the sun (yaw 135 = sun side at hour 12 in this world; adjust the yaw if the fixture sun moves).
+  {
+    const gz = (x, y) => (worldM1.terrain ? worldM1.terrain.groundAt(x, y) : 0), eh = engine.physics.eyeHeight, x = 1268, y = 1040;
+    for (const [n, steps] of [['shaftForestHigh', 6], ['shaftForestUltra', 10]]) {
+      runs.push({ world: worldM1, lights: worldM1Lights, name: `world_m1: ${n} (CANOPY-SHAFT-01b sun shafts, ${steps} steps)`, hour: 12, shaft: { steps, k: 0.35, iso: 0.25, pw: 4, maxM: 28 },
+        cam: { x, y, z: gz(x, y) + eh, yawDeg: 135, pitchDeg: 4 }, real: true });
+    }
+  }
+
   // US-078a: the view model's held sword (`voxelModels.swordHeld`) is not in ASSETS.models yet (game wiring = US-078d);
   // register a mesh-only copy for this harness so the pool packs it (kept out of the DDA atlas: existing poses unchanged).
   const swordHeldDef = globalThis.ASSETS && globalThis.ASSETS.voxelModels && globalThis.ASSETS.voxelModels.swordHeld;
@@ -1100,15 +1110,16 @@ async function runGpuCompareSceneMode(ctx) {
   // e.g. `?gpucompare=1&renderer=mesh&pose=water pond`. No filter = every pose.
   const poseQ = (params.get('pose') || '').toLowerCase();
   const poseRuns = poseQ ? runs.filter((r) => r.name.toLowerCase().includes(poseQ)) : runs;
-  for (const { world, lights, name: poseName, cam, fade, dim, real, before, spritesExtra, needK8, meshOnly, maskPose, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, hour: poseHour, atmos: poseAtmos, post: posePost, instAssert, vmAssert, decalAssert, timeSec: poseTime, carpet: carpetPose, gi: poseGi, under: underPose, cao: poseCao } of poseRuns) {
+  for (const { world, lights, name: poseName, cam, fade, dim, real, before, spritesExtra, needK8, meshOnly, maskPose, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, hour: poseHour, atmos: poseAtmos, post: posePost, instAssert, vmAssert, decalAssert, timeSec: poseTime, carpet: carpetPose, gi: poseGi, under: underPose, cao: poseCao, shaft: poseShaft } of poseRuns) {
     if (world.carpet || world._carpetCtx) { world._carpetCtx = null; world.carpet = null; wg.setCarpet(null, null, 0); } // D2e: carpet poses only
     if (restoreSun) { restoreSun(); restoreSun = null; }
-  for (const r of runs) if (r.lights) { r.lights.gi = null; r.lights.cao = null; } // GI-PROBE-05: leave no probe field on the shared light sets
+  for (const r of runs) if (r.lights) { r.lights.gi = null; r.lights.cao = null; r.lights.shaft = null; } // GI-PROBE-05: leave no probe field on the shared light sets
     atmosOff(); // ENV-03c: previous pose's atmosphere off (one palette bump)
     if (meshOnly && renderer !== 'mesh') { console.log(`[gpucompare] SKIP ${poseName} (mesh renderer only)`); continue; }
     if (sunOverride) restoreSun = applySunOverride(world, lights, sunOverride);
     else if (Number.isFinite(poseHour)) restoreSun = applyHourOverride(world, lights, assets.palette, poseHour, ctx.sunEnabled); // DN-04b
     if (lights) lights.gi = poseGi && lights ? makeRowGI({ ...poseGi, hour: poseHour, lights }) : null; // GI-PROBE-05: only the gi* rows carry a probe field
+    if (lights) lights.shaft = poseShaft || null; // CANOPY-SHAFT-01b: only the shaft* rows carry march data
     if (lights) { // CONTACT-AO-01b: only the cao* rows carry a blob list (copied into a fixed cao; build once, camera = the pose eye)
       if (poseCao) { const c = createContactAO(), n = poseCao.length, f = (k) => Float32Array.from(poseCao, (b) => b[k]);
         setDynamicBlobs(c, { count: n, x: f('x'), y: f('y'), zBase: f('z'), rx: f('rx'), ry: f('ry'), h: f('h'), k: f('k') });
