@@ -66,7 +66,9 @@ ok('restored beast runs again (agent active)', sim.steer.active[W] === 1);
 
 // --- 200 m rule + camp reason independence
 sim.updateTileDormancy(px + 400, py);
-ok('player > 200 m away: all homes dormant', sim.isDormant(H) && sim.isDormant(W));
+ok('BEAST-POOL-b: player > 180 m away: the idle beast unbinds (dormant), the hunting chaser is protected', sim.isDormant(W) && !sim.isDormant(H));
+sim.setTileDormant(H, true); // nav-tile style forced unbind of the protected chaser
+ok('forced unbind: all dormant', sim.isDormant(H) && sim.isDormant(W));
 sim.updateTileDormancy(px, py);
 ok('player back: awake again', !sim.isDormant(H) && !sim.isDormant(W));
 sim.setDormant(H, true); sim.updateTileDormancy(px, py);

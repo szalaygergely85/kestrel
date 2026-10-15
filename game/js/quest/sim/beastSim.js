@@ -26,7 +26,9 @@ import { archIndex, ARCH_NAMES } from './archetypes.js';
 import { validateArchetype } from './archetypeRules.js';
 import { perceive, leashState, returnTarget, LEASH_HOME, LEASH_ENGAGE, LEASH_RETURN, LEASH_GIVEUP } from '../../../../engine/index.js';
 
-export const MAX_BEASTS = 320; // GOB-01: boars + wolves + bears + goblin camps (was 32; loot.js MAX_SLOTS must match)
+export const POOL = 128; // BEAST-POOL-b: live (bound) slots; records beyond it sleep unbound
+export const MAX_RECORDS = 1024; // BEAST-POOL-a (37.16.5): the public slot IS the record index 0..MAX_RECORDS-1 (stable for the run); loot.js imports this
+export const MAX_BEASTS = MAX_RECORDS; // legacy alias of MAX_RECORDS (tests / tools still import it)
 const PATH_SLOTS = 64; // waypoints kept per beast path (truncated, final = the exact goal - see `storePath`)
 
 // ---- states -----------------------------------------------------------------------------------------------------
@@ -121,9 +123,9 @@ export function createBeastSim(world, opts) {
   });
   if (beastEntities.length === 0) return null;
 
-  const count = Math.min(beastEntities.length, MAX_BEASTS);
-  if (beastEntities.length > MAX_BEASTS) {
-    console.warn(`createBeastSim: ${beastEntities.length} beast entities, only the first ${MAX_BEASTS} get a brain.`);
+  const count = Math.min(beastEntities.length, MAX_RECORDS);
+  if (beastEntities.length > MAX_RECORDS) {
+    console.warn(`createBeastSim: ${beastEntities.length} beast entities, only the first ${MAX_RECORDS} get a brain.`);
   }
 
   // Q9 item 4 nit: a world with beast entities but no `nav` block (main.js only builds one when `worldDef.nav`
@@ -137,7 +139,7 @@ export function createBeastSim(world, opts) {
   const grid = nav.grid;
   const astar = nav.astar || createAStar(grid);
   const steer = createSteer({
-    maxAgents: MAX_BEASTS,
+    maxAgents: MAX_RECORDS,
     bounds: { x0: grid.x0, y0: grid.y0, w: grid.w * grid.cell, h: grid.h * grid.cell },
   });
 
@@ -163,6 +165,7 @@ export function createBeastSim(world, opts) {
       sink: toSteps(cfg.sinkSec),
     },
     count,
+    pool: createPool(count),
     noise: 1, // BEAST-PERCEIVE-01w: hearing multiplier of the player this step (1 walk, NOISE_SPRINT, NOISE_SWING); caller sets it
     // preallocated adapter scratch for engine/nav perceive + leash (zero alloc per step)
     _slot: 0,
@@ -179,80 +182,80 @@ export function createBeastSim(world, opts) {
     ids: beastEntities.slice(0, count).map((e) => e.id),
     grp: beastEntities.slice(0, count).map((e) => (e.components.brain && typeof e.components.brain.group === 'string' ? e.components.brain.group : '')), // ED-LOGIC-01c: logic group name per slot ('' = none)
 
-    spdMul: new Float64Array(MAX_BEASTS).fill(1), // US-129a: per-slot tier speed multiplier (set once at create)
-    tier: new Uint8Array(MAX_BEASTS),
-    state: new Uint8Array(MAX_BEASTS),
-    timer: new Int32Array(MAX_BEASTS),
-    unseen: new Int32Array(MAX_BEASTS), // also reused as the charge wall-slow streak counter (charge never needs "unseen")
-    repathT: new Int32Array(MAX_BEASTS),
-    homeX: new Float64Array(MAX_BEASTS),
-    homeY: new Float64Array(MAX_BEASTS),
-    homeZ: new Float64Array(MAX_BEASTS), // US-079b ARCH: the respawn z (restored by resetAll; a sunk corpse respawns 0.3 m low otherwise)
-    fx: new Float64Array(MAX_BEASTS),
-    fy: new Float64Array(MAX_BEASTS),
-    cdx: new Float64Array(MAX_BEASTS),
-    cdy: new Float64Array(MAX_BEASTS),
-    goalX: new Float64Array(MAX_BEASTS),
-    goalY: new Float64Array(MAX_BEASTS),
-    mv: new Float32Array(MAX_BEASTS),       // BEAST-01: smoothed measured ground speed (m/s), view + stuck rule (not hashed)
-    moving: new Uint8Array(MAX_BEASTS),     // BEAST-01: hysteresis flag (on > 0.15 m/s, off < 0.05 m/s)
+    spdMul: new Float64Array(MAX_RECORDS).fill(1), // US-129a: per-slot tier speed multiplier (set once at create)
+    tier: new Uint8Array(MAX_RECORDS),
+    state: new Uint8Array(MAX_RECORDS),
+    timer: new Int32Array(MAX_RECORDS),
+    unseen: new Int32Array(MAX_RECORDS), // also reused as the charge wall-slow streak counter (charge never needs "unseen")
+    repathT: new Int32Array(MAX_RECORDS),
+    homeX: new Float64Array(MAX_RECORDS),
+    homeY: new Float64Array(MAX_RECORDS),
+    homeZ: new Float64Array(MAX_RECORDS), // US-079b ARCH: the respawn z (restored by resetAll; a sunk corpse respawns 0.3 m low otherwise)
+    fx: new Float64Array(MAX_RECORDS),
+    fy: new Float64Array(MAX_RECORDS),
+    cdx: new Float64Array(MAX_RECORDS),
+    cdy: new Float64Array(MAX_RECORDS),
+    goalX: new Float64Array(MAX_RECORDS),
+    goalY: new Float64Array(MAX_RECORDS),
+    mv: new Float32Array(MAX_RECORDS),       // BEAST-01: smoothed measured ground speed (m/s), view + stuck rule (not hashed)
+    moving: new Uint8Array(MAX_RECORDS),     // BEAST-01: hysteresis flag (on > 0.15 m/s, off < 0.05 m/s)
     // BITE-ALLOC: per-feature clusters are sub-objects so the sim object stays <= ~140 top-level keys (V8 goes dictionary-mode near 160 -> boxed doubles)
     stk: { // BEAST-01: stuck rule: t = steps spent wanting to move without leaving the anchor, ax/ay = anchor, fail = failed re-plans in a row, st
-      t: new Int32Array(MAX_BEASTS), ax: new Float64Array(MAX_BEASTS), ay: new Float64Array(MAX_BEASTS),
-      fail: new Uint8Array(MAX_BEASTS), st: new Uint8Array(MAX_BEASTS),
-      wall: new Uint8Array(MAX_BEASTS), // BH-A3: charge wall-slow streak (was aliased onto `unseen`, which perceiveOne rewrites)
+      t: new Int32Array(MAX_RECORDS), ax: new Float64Array(MAX_RECORDS), ay: new Float64Array(MAX_RECORDS),
+      fail: new Uint8Array(MAX_RECORDS), st: new Uint8Array(MAX_RECORDS),
+      wall: new Uint8Array(MAX_RECORDS), // BH-A3: charge wall-slow streak (was aliased onto `unseen`, which perceiveOne rewrites)
     },
-    chargeLen: new Uint16Array(MAX_BEASTS), // OB-150: steps this charge may last (nominal chargeMax, longer when the player already backs away)
-    bankT: new Int32Array(MAX_BEASTS),      // NAV-REACH-01: steps a chaser has held at the nearest reachable cell (partial path) before giving up
-    bankHold: new Uint8Array(MAX_BEASTS),   // 1 while holding at that cell (speed 0, faces the player)
-    partialGoal: new Uint8Array(MAX_BEASTS),// last A* for this slot was partial (goal unreachable)
-    prevX: new Float64Array(MAX_BEASTS),
-    prevY: new Float64Array(MAX_BEASTS),
-    path: new Float64Array(MAX_BEASTS * PATH_SLOTS * 2),
-    pathLen: new Int32Array(MAX_BEASTS),
-    pathIdx: new Int32Array(MAX_BEASTS),
-    wary: new Uint8Array(MAX_BEASTS),        // DRESS-01b: brain.temperament==='wary' (ambient boars: short notice + leash until hit)
-    provoked: new Uint8Array(MAX_BEASTS),    // DRESS-01b: a wary beast that took damage fights normally until it is back in wander
-    seen: new Uint8Array(MAX_BEASTS),
-    pathReq: new Uint8Array(MAX_BEASTS),
-    dmgCd: new Int32Array(MAX_BEASTS),       // US-079b (37.16.2): steps left in the damage cooldown
-    hurtT: new Int32Array(MAX_BEASTS),       // US-079b: steps since the last damage (view flash window, saturating)
-    deathZ: new Float64Array(MAX_BEASTS),    // US-079b: the z the beast died at (corpse/sink anchor)
-    pendingDied: new Uint8Array(MAX_BEASTS), // US-079b: beast:died is deferred to the next step's start
-    despawnReq: new Uint8Array(MAX_BEASTS),  // US-079b: looted -> sink at the next CORPSE entry
-    cause: new Uint8Array(MAX_BEASTS),       // US-079b: 0 sword, 1 fire (indexes CAUSE_STR)
-    knockV: new Float64Array(MAX_BEASTS),    // US-079b: per-slot stagger clamp speed (replaces shared cfg.staggerKnock)
-    wolf: new Uint8Array(MAX_BEASTS),        // WOLF-01: brain.species==='wolf' (per-slot cfg below, pack token, circle, flee)
-    wat: new Uint8Array(MAX_BEASTS),         // BEAST-08b: 1 = water slot, run by brains/waterBrain.js (live() skips it)
+    chargeLen: new Uint16Array(MAX_RECORDS), // OB-150: steps this charge may last (nominal chargeMax, longer when the player already backs away)
+    bankT: new Int32Array(MAX_RECORDS),      // NAV-REACH-01: steps a chaser has held at the nearest reachable cell (partial path) before giving up
+    bankHold: new Uint8Array(MAX_RECORDS),   // 1 while holding at that cell (speed 0, faces the player)
+    partialGoal: new Uint8Array(MAX_RECORDS),// last A* for this slot was partial (goal unreachable)
+    prevX: new Float64Array(MAX_RECORDS),
+    prevY: new Float64Array(MAX_RECORDS),
+    path: new Float64Array(Math.min(count, POOL) * PATH_SLOTS * 2), // BEAST-POOL: indexed by the pool index lv[i]
+    pathLen: new Int32Array(MAX_RECORDS),
+    pathIdx: new Int32Array(MAX_RECORDS),
+    wary: new Uint8Array(MAX_RECORDS),        // DRESS-01b: brain.temperament==='wary' (ambient boars: short notice + leash until hit)
+    provoked: new Uint8Array(MAX_RECORDS),    // DRESS-01b: a wary beast that took damage fights normally until it is back in wander
+    seen: new Uint8Array(MAX_RECORDS),
+    pathReq: new Uint8Array(MAX_RECORDS),
+    dmgCd: new Int32Array(MAX_RECORDS),       // US-079b (37.16.2): steps left in the damage cooldown
+    hurtT: new Int32Array(MAX_RECORDS),       // US-079b: steps since the last damage (view flash window, saturating)
+    deathZ: new Float64Array(MAX_RECORDS),    // US-079b: the z the beast died at (corpse/sink anchor)
+    pendingDied: new Uint8Array(MAX_RECORDS), // US-079b: beast:died is deferred to the next step's start
+    despawnReq: new Uint8Array(MAX_RECORDS),  // US-079b: looted -> sink at the next CORPSE entry
+    cause: new Uint8Array(MAX_RECORDS),       // US-079b: 0 sword, 1 fire (indexes CAUSE_STR)
+    knockV: new Float64Array(MAX_RECORDS),    // US-079b: per-slot stagger clamp speed (replaces shared cfg.staggerKnock)
+    wolf: new Uint8Array(MAX_RECORDS),        // WOLF-01: brain.species==='wolf' (per-slot cfg below, pack token, circle, flee)
+    wat: new Uint8Array(MAX_RECORDS),         // BEAST-08b: 1 = water slot, run by brains/waterBrain.js (live() skips it)
     wb: null,
-    kindIdx: new Uint8Array(MAX_BEASTS),     // BEAST-03a: index into KIND_NAMES (beastKinds.js); data only so far
-    pNear: new Float64Array(MAX_BEASTS).fill(cfg.nearR), pCone: new Float64Array(MAX_BEASTS).fill(cfg.coneCos), // BEAST-03b per-slot perception
-    pAggro: new Uint8Array(MAX_BEASTS),      // 0 hostile 1 whenHit 2 never 3 near (ARCH_AGGRO order)
+    kindIdx: new Uint8Array(MAX_RECORDS),     // BEAST-03a: index into KIND_NAMES (beastKinds.js); data only so far
+    pNear: new Float64Array(MAX_RECORDS).fill(cfg.nearR), pCone: new Float64Array(MAX_RECORDS).fill(cfg.coneCos), // BEAST-03b per-slot perception
+    pAggro: new Uint8Array(MAX_RECORDS),      // 0 hostile 1 whenHit 2 never 3 near (ARCH_AGGRO order)
     _ctx: { px: 0, py: 0 },
-    tactOn: new Uint8Array(MAX_BEASTS), tactRole: new Uint8Array(MAX_BEASTS), tactBand: new Float64Array(MAX_BEASTS * 3), // BEAST-04 (tactics.js)
-    tactics: createTactics(MAX_BEASTS, (opts && opts.seed) || 0x9e3779b1), 
+    tactOn: new Uint8Array(MAX_RECORDS), tactRole: new Uint8Array(MAX_RECORDS), tactBand: new Float64Array(MAX_RECORDS * 3), // BEAST-04 (tactics.js)
+    tactics: createTactics(MAX_RECORDS, (opts && opts.seed) || 0x9e3779b1), 
     sc: { allyN: 0, allyX: 0, allyY: 0, tS: { CHASE: STATE_CHASE, WINDUP: STATE_WINDUP, CHARGE: STATE_CHARGE, RECOVER: STATE_RECOVER }, prey: { x: 0, y: 0 }, thrX: new Float64Array(16), thrY: new Float64Array(16), tmp: { x: 0, y: 0 } }, // scratch
-    ap: { slot: new Uint8Array(MAX_BEASTS), tab: Object.fromEntries(Object.keys(ARCHETYPES).map((k) => [k, { ...ARCHETYPES[k] }])), q: [], n: 0 }, // ED-AI-02: slot = 1 where config comes from the archetype row; tab = per-sim mutable copy of the frozen table; q/n = pending patches ({arch, fields}), applied before the next step
-    archIdx: new Uint8Array(MAX_BEASTS),     // BEAST-03a: index into ARCH_NAMES (archetypes.js)
-    bite: { cd: new Uint16Array(MAX_BEASTS), n: new Uint16Array(MAX_BEASTS), done: new Uint8Array(MAX_BEASTS) }, // BEAR-BITE
-    bear: new Uint8Array(MAX_BEASTS),        // BEAR-01: brain.species==='bear' (per-slot cfg, fixed 2-heart swipe, light hits don't cancel windup)
-    goblin: new Uint8Array(MAX_BEASTS),      // GOB-01: brain.species==='goblin'
-    group: new Uint8Array(MAX_BEASTS),       // GOB-01: attack-token group 0 boar/bear, 1 wolf, 2 goblin
-    ranged: new Uint8Array(MAX_BEASTS),      // GOB-02: goblin role 'thrower' (distance band, windup -> beast:throw, reload = RECOVER)
-    backT: new Uint16Array(MAX_BEASTS),      // GOB-02: steps a thrower has spent backing off inside cornerR
-    packer: new Uint8Array(MAX_BEASTS),      // GOB-01: wolf or melee goblin (circle while waiting, retreat after the strike)
-    down: new Uint8Array(MAX_BEASTS),        // GOB-01b: setDown(slot, true) -> STATE_GONE until setDown(slot, false) (not hashed/saved)
-    dormCamp: new Uint8Array(MAX_BEASTS), dormTile: new Uint8Array(MAX_BEASTS), tileMode: false, // WM-04 reasons
-    dormant: new Uint8Array(MAX_BEASTS),     // GOB-01: setDormant(slot, true) -> skipped like GONE, state kept
-    fleeing: new Uint8Array(MAX_BEASTS),     // WOLF-01: STATE_RETURN that runs away from the player first
-    hunt: new Uint8Array(MAX_BEASTS),        // LIFE-07: 1 = STATE_WANDER leg chasing a fauna prey slot (huntSlot)
-    huntSlot: new Int32Array(MAX_BEASTS), huntT: new Int32Array(MAX_BEASTS), preyMask: new Int32Array(MAX_BEASTS),
-    goal: { on: new Uint8Array(MAX_BEASTS), tx: new Float64Array(MAX_BEASTS), ty: new Float64Array(MAX_BEASTS) }, // LIFE-08: setGoal override
-    alt: { tgt: new Int32Array(MAX_BEASTS).fill(-1), cd: new Int32Array(MAX_BEASTS), n: 0, x: new Float64Array(MAX_ALT), y: new Float64Array(MAX_ALT) }, // LIFE-08: alt chase index / re-hit cooldown (steps) / targets
+    ap: { slot: new Uint8Array(MAX_RECORDS), tab: Object.fromEntries(Object.keys(ARCHETYPES).map((k) => [k, { ...ARCHETYPES[k] }])), q: [], n: 0 }, // ED-AI-02: slot = 1 where config comes from the archetype row; tab = per-sim mutable copy of the frozen table; q/n = pending patches ({arch, fields}), applied before the next step
+    archIdx: new Uint8Array(MAX_RECORDS),     // BEAST-03a: index into ARCH_NAMES (archetypes.js)
+    bite: { cd: new Uint16Array(MAX_RECORDS), n: new Uint16Array(MAX_RECORDS), done: new Uint8Array(MAX_RECORDS) }, // BEAR-BITE
+    bear: new Uint8Array(MAX_RECORDS),        // BEAR-01: brain.species==='bear' (per-slot cfg, fixed 2-heart swipe, light hits don't cancel windup)
+    goblin: new Uint8Array(MAX_RECORDS),      // GOB-01: brain.species==='goblin'
+    group: new Uint8Array(MAX_RECORDS),       // GOB-01: attack-token group 0 boar/bear, 1 wolf, 2 goblin
+    ranged: new Uint8Array(MAX_RECORDS),      // GOB-02: goblin role 'thrower' (distance band, windup -> beast:throw, reload = RECOVER)
+    backT: new Uint16Array(MAX_RECORDS),      // GOB-02: steps a thrower has spent backing off inside cornerR
+    packer: new Uint8Array(MAX_RECORDS),      // GOB-01: wolf or melee goblin (circle while waiting, retreat after the strike)
+    down: new Uint8Array(MAX_RECORDS),        // GOB-01b: setDown(slot, true) -> STATE_GONE until setDown(slot, false) (not hashed/saved)
+    dormCamp: new Uint8Array(MAX_RECORDS), dormTile: new Uint8Array(MAX_RECORDS), tileMode: false, // WM-04 reasons
+    dormant: new Uint8Array(MAX_RECORDS),     // GOB-01: setDormant(slot, true) -> skipped like GONE, state kept
+    fleeing: new Uint8Array(MAX_RECORDS),     // WOLF-01: STATE_RETURN that runs away from the player first
+    hunt: new Uint8Array(MAX_RECORDS),        // LIFE-07: 1 = STATE_WANDER leg chasing a fauna prey slot (huntSlot)
+    huntSlot: new Int32Array(MAX_RECORDS), huntT: new Int32Array(MAX_RECORDS), preyMask: new Int32Array(MAX_RECORDS),
+    goal: { on: new Uint8Array(MAX_RECORDS), tx: new Float64Array(MAX_RECORDS), ty: new Float64Array(MAX_RECORDS) }, // LIFE-08: setGoal override
+    alt: { tgt: new Int32Array(MAX_RECORDS).fill(-1), cd: new Int32Array(MAX_RECORDS), n: 0, x: new Float64Array(MAX_ALT), y: new Float64Array(MAX_ALT) }, // LIFE-08: alt chase index / re-hit cooldown (steps) / targets
     fauna: opts.fauna || null,
     scfg: [], ssteps: [],                    // WOLF-01: per-slot cfg / cfgSteps (the shared objects for boars)
     _pz: 0, _px: 0, _py: 0,
-    waiting: new Uint8Array(MAX_BEASTS),     // US-079c: CHASE boar holding while another boar is the charger (derived, not saved)
+    waiting: new Uint8Array(MAX_RECORDS),     // US-079c: CHASE boar holding while another boar is the charger (derived, not saved)
 
     tick: 0,
     lastServed: -1,
@@ -286,6 +289,7 @@ export function createBeastSim(world, opts) {
     const home = (e.components.brain && e.components.brain.home) || [e.transform.x, e.transform.y];
     sim.homeX[i] = home[0];
     sim.homeY[i] = home[1];
+    sim.pool.lastX[i] = home[0]; sim.pool.lastY[i] = home[1];
     { const kn = kindOfEntity(e); sim.kindIdx[i] = kindIndex(kn); sim.archIdx[i] = archIndex(KINDS[kn].arch); } // BEAST-03a
     if (isWolfEntity(e)) { // WOLF-01: wolf slot = boar defaults + overrides, own step counts
       sim.wolf[i] = 1; sim.group[i] = 1; sim.packer[i] = 1;
@@ -438,10 +442,9 @@ export function createBeastSim(world, opts) {
     applyDormant(slot);
   };
   /** WM-04: nav-tile / 200 m dormancy (separate reason from the camp's, so a camp wake never wakes a tile-dormant beast). */
-  sim.setTileDormant = function setTileDormant(slot, on) {
+  sim.setTileDormant = function setTileDormant(slot, on) { // BEAST-POOL-b shim: on = unbind now (binding is the binder's job)
     if (slot < 0 || slot >= sim.count) return;
-    sim.dormTile[slot] = on ? 1 : 0;
-    applyDormant(slot);
+    if (on && sim.pool.lv[slot] >= 0) unbindRec(sim, slot);
   };
   /** WM-04: the live nav tile swapped (`world:band` ev.nav). Rebinds grid, A-star and steer bounds, clears paths so live ones re-plan
    *  on the new tile (hunters/travellers request a path at once), then re-evaluates tile dormancy. */
@@ -460,16 +463,8 @@ export function createBeastSim(world, opts) {
     }
     sim.updateTileDormancy(px, py);
   };
-  /** WM-04: dormant when the home is outside the live tile or > TILE_DORMANT_R from the player. Cheap (count <= MAX_BEASTS), call ~1 Hz. */
-  sim.updateTileDormancy = function updateTileDormancy(px, py) {
-    if (!sim.tileMode) return;
-    const g = sim.grid, x1 = g.x0 + g.w * g.cell, y1 = g.y0 + g.h * g.cell, r2 = TILE_DORMANT_R * TILE_DORMANT_R;
-    for (let i = 0; i < sim.count; i++) {
-      const hx = sim.homeX[i], hy = sim.homeY[i], dx = hx - px, dy = hy - py;
-      const out = hx < g.x0 || hy < g.y0 || hx >= x1 || hy >= y1 || dx * dx + dy * dy > r2;
-      sim.setTileDormant(i, out);
-    }
-  };
+  /** WM-04 -> BEAST-POOL-b: the binder (bind < 150 m, unbind > 180 m or off the nav tile). Cheap; stepSim also runs it every 30 steps. */
+  sim.updateTileDormancy = function updateTileDormancy(px, py) { poolUpdate(sim, px, py); };
   /** GOB-01b: on -> slot goes to STATE_GONE (steer agent dropped, hidden, skipped); off -> back alive at home, hp max. */
   // DIFF-MENU (D-083): live difficulty change from the Settings screen. Rescales live beasts' damage by the dmg ratio only;
   // hp / spawn tuning apply to the next created beast (opts.difficulty is read at create).
@@ -490,11 +485,12 @@ export function createBeastSim(world, opts) {
       sim.state[slot] = STATE_GONE; sim.pendingDied[slot] = 0; sim.despawnReq[slot] = 0;
       sim.pathLen[slot] = 0; sim.pathIdx[slot] = 0; sim.pathReq[slot] = 0; sim.seen[slot] = 0; sim.goal.on[slot] = 0;
     } else if (sim.down[slot]) {
-      if (sim.down[slot] === 2) sim.steer.active[slot] = 1;
+      if (sim.down[slot] === 2 && sim.pool.lv[slot] >= 0) sim.steer.active[slot] = 1;
       sim.down[slot] = 0; sim.dormant[slot] = 0; sim.dormCamp[slot] = 0; sim.dormTile[slot] = 0;
       resetSlotSim(sim, slot);
       resyncLeash(sim);
     }
+    if (sim.pool.lv[slot] < 0 && !sim.down[slot]) { sim.dormTile[slot] = 1; sim.dormant[slot] = 1; } // unbound records read as tile-dormant
   };
   sim.isDown = function isDown(slot) { return slot >= 0 && slot < sim.count && sim.down[slot] === 1; };
   /** GOB-01b: a live slot runs away from the player (last stepped position) like a low-hp wolf/goblin flee. */
@@ -552,6 +548,9 @@ export function createBeastSim(world, opts) {
   sim.groupAlive = function groupAlive(name) { const l = sim.groupSlots(name); let n = 0; for (let k = 0; k < l.length; k++) if (!sim.down[l[k]] && !deadSt(sim.state[l[k]])) n++; return n; };
   for (let i = 0; i < count; i++) { const b = sim.entities[i].components.brain; if (b && b.reserve === true && sim.grp[i]) sim.setDown(i, true); }
 
+  for (let i = sim.pool.n; i < count; i++) { // BEAST-POOL-b: records beyond the pool start unbound (parked, tile-dormant)
+    sim.steer.active[i] = 0; sim.steer.vx[i] = 0; sim.steer.vy[i] = 0; sim.dormTile[i] = 1; sim.dormant[i] = 1;
+  }
   // arch fix (WM-04): a grid world's nav IS a tile -> tile dormancy applies from creation, not only after the first swap (opts.spawn optional: without it only the out-of-tile rule runs)
   if (opts.tileNav) { sim.tileMode = true; sim.updateTileDormancy(opts.spawn ? opts.spawn.x : NaN, opts.spawn ? opts.spawn.y : NaN); }
 
@@ -591,39 +590,154 @@ function applyArchPatches(sim) {
   sim.ap.n = 0;
 }
 
+/** BEAST-POOL-a (37.16.5): live-slot pool. Story a binds every record (identity), story b adds the binder. */
+function createPool(count) {
+  const pn = Math.min(count, POOL), lv = new Int16Array(MAX_RECORDS).fill(-1), rec = new Int16Array(Math.max(1, pn)), free = new Int16Array(Math.max(1, pn));
+  for (let i = 0; i < pn; i++) { lv[i] = i; rec[i] = i; } // the first POOL records start bound (identity); the binder swaps from the first update on
+  return {
+    lv, rec, n: pn, free, freeN: 0, cand: new Int16Array(MAX_RECORDS), candD: new Float64Array(MAX_RECORDS),
+    rIn: 150, rOut: 180, every: 30, maxBind: 8, full: 0, evictGap: 20,
+    lastX: new Float64Array(MAX_RECORDS), lastY: new Float64Array(MAX_RECORDS), // last position of an unbound record (BEAST-POOL-b)
+  };
+}
+
+// ---- BEAST-POOL-b (37.16.5): binder ------------------------------------------------------------------------------
+// States that may be unbound by distance: WANDER, EAT, GRAZE, PATROL, HIDDEN, SUBMERGED, AIRBORNE. Everything else (notice..recover, return,
+// flee, circle, grab, bite, cast, dead timelines, ...) is "in combat" and keeps its slot.
+const FREE_ST = new Uint8Array(32);
+for (const st of [STATE_WANDER, STATE_EAT, STATE_GRAZE, STATE_PATROL, STATE_HIDDEN, STATE_SUBMERGED, STATE_AIRBORNE]) FREE_ST[st] = 1;
+const UNBIND_SNAP_M = 30;
+
+/** Protected = never unbound by distance, never evicted. */
+function protectedRec(sim, i) {
+  return FREE_ST[sim.state[i]] === 0 || sim.hunt[i] === 1 || sim.fleeing[i] === 1 || sim.goal.on[i] === 1 || sim.tactics.held[i] !== 0;
+}
+
+/** Unbind carry (no rec edit): WANDER, hp/dead kept, snap home when > 30 m away, steer parked, tokens released, pool index freed. */
+function dropRec(sim, i) {
+  const P = sim.pool, steer = sim.steer, t = sim.entities[i].transform;
+  sim.tactics.release(i); sim.tactics.flank[i] = -1;
+  const dead = deadSt(sim.state[i]);
+  if (!dead) {
+    sim.state[i] = sim.wat[i] ? STATE_SUBMERGED : STATE_WANDER; sim.timer[i] = sim.cfgSteps.pauseMin;
+    sim.hunt[i] = 0; sim.fleeing[i] = 0; sim.waiting[i] = 0;
+    const dx = t.x - sim.homeX[i], dy = t.y - sim.homeY[i];
+    if (dx * dx + dy * dy > UNBIND_SNAP_M * UNBIND_SNAP_M) { t.x = sim.homeX[i]; t.y = sim.homeY[i]; t.z = sim.homeZ[i]; }
+  }
+  P.lastX[i] = t.x; P.lastY[i] = t.y; steer.x[i] = t.x; steer.y[i] = t.y;
+  steer.active[i] = 0; steer.vx[i] = 0; steer.vy[i] = 0;
+  sim.seen[i] = 0; sim.pathReq[i] = 0; sim.pathLen[i] = 0; sim.pathIdx[i] = 0;
+  sim.dormTile[i] = 1; sim.dormant[i] = 1; // unbound reads as tile-dormant for every consumer
+  P.free[P.freeN++] = P.lv[i]; P.lv[i] = -1;
+}
+/** GONE / down records give their pool index back without touching their state. */
+function releaseRec(sim, i) { const P = sim.pool; P.free[P.freeN++] = P.lv[i]; P.lv[i] = -1; }
+function removeFromList(P, i) {
+  const rec = P.rec; let k = 0; while (k < P.n && rec[k] !== i) k++;
+  if (k === P.n) return;
+  for (; k < P.n - 1; k++) rec[k] = rec[k + 1];
+  P.n--;
+}
+function unbindRec(sim, i) { dropRec(sim, i); removeFromList(sim.pool, i); }
+function bindRec(sim, i, pi) {
+  const P = sim.pool, steer = sim.steer, rec = P.rec;
+  P.lv[i] = pi;
+  let k = P.n++; while (k > 0 && rec[k - 1] > i) { rec[k] = rec[k - 1]; k--; } rec[k] = i; // list stays sorted by record index
+  sim.dormTile[i] = 0; sim.dormant[i] = sim.dormCamp[i];
+  sim.pathReq[i] = 0; sim.pathLen[i] = 0; sim.pathIdx[i] = 0; sim.seen[i] = 0;
+  sim.entities[i].transform.x = P.lastX[i]; sim.entities[i].transform.y = P.lastY[i];
+  if (!sim.wat[i]) {
+    if (!sim.dormant[i]) steer.activateAgent(i, P.lastX[i], P.lastY[i], steer.radius[i], steer.maxSpeed[i], steer.accel[i]);
+    else { steer.x[i] = P.lastX[i]; steer.y[i] = P.lastY[i]; }
+  }
+  const ag = sim._lagents[i]; ag.leashT = 0; ag.leashMode = LEASH_HOME;
+}
+
+/** Binder: unbind > rOut or off the nav tile (protected ones only for the tile), bind nearest-first < rIn (max `maxBind`), evict when full. No rng. */
+function poolUpdate(sim, px, py) {
+  const P = sim.pool, rec = P.rec, lv = P.lv, cap = rec.length, g = sim.grid, tile = sim.tileMode === true;
+  const x0 = tile ? g.x0 : 0, y0 = tile ? g.y0 : 0, x1 = tile ? x0 + g.w * g.cell : 0, y1 = tile ? y0 + g.h * g.cell : 0;
+  const hasP = px === px && py === py, rOut2 = P.rOut * P.rOut, rIn2 = P.rIn * P.rIn;
+  let w = 0;
+  for (let k = 0; k < P.n; k++) { // 1) unbind / release, stable compaction
+    const i = rec[k], st = sim.state[i];
+    if (sim.down[i] || st === STATE_GONE) { releaseRec(sim, i); continue; }
+    if (deadSt(st) || sim.pendingDied[i] === 1 || sim.despawnReq[i] === 1) { rec[w++] = i; continue; } // 37.16.5: dying/corpse/sink + pending death keep their slot until GONE (any reason)
+    const hx = sim.homeX[i], hy = sim.homeY[i];
+    let out = tile && (hx < x0 || hy < y0 || hx >= x1 || hy >= y1);
+    if (!out && hasP && !protectedRec(sim, i)) {
+      const t = sim.entities[i].transform, dx = t.x - px, dy = t.y - py;
+      out = dx * dx + dy * dy > rOut2;
+    }
+    if (out) { dropRec(sim, i); continue; }
+    rec[w++] = i;
+  }
+  P.n = w;
+  if (!hasP) return;
+  let nc = 0; // 2) candidates (unbound, alive, in the tile, close or with a goal)
+  for (let r = 0; r < sim.count; r++) {
+    if (lv[r] >= 0 || sim.down[r] || sim.dormCamp[r] || deadSt(sim.state[r])) continue;
+    if (tile) { const hx = sim.homeX[r], hy = sim.homeY[r]; if (hx < x0 || hy < y0 || hx >= x1 || hy >= y1) continue; }
+    const dx = P.lastX[r] - px, dy = P.lastY[r] - py, d2 = dx * dx + dy * dy, pri = sim.goal.on[r] === 1;
+    if (!pri && d2 >= rIn2) continue;
+    P.cand[nc] = r; P.candD[nc] = pri ? -1 : Math.sqrt(d2); nc++;
+  }
+  for (let m = 0; m < P.maxBind && nc > 0; m++) { // 3) nearest first, lower record on a tie (partial selection, no sort)
+    let b = 0;
+    for (let c = 1; c < nc; c++) if (P.candD[c] < P.candD[b] || (P.candD[c] === P.candD[b] && P.cand[c] < P.cand[b])) b = c;
+    const r = P.cand[b], cd = P.candD[b];
+    P.cand[b] = P.cand[nc - 1]; P.candD[b] = P.candD[nc - 1]; nc--;
+    if (P.n >= cap) { // full: evict the farthest unprotected if >= evictGap farther than the candidate
+      let far = -1, fd = -1;
+      for (let k = 0; k < P.n; k++) {
+        const i = rec[k]; if (protectedRec(sim, i)) continue;
+        const t = sim.entities[i].transform, dx = t.x - px, dy = t.y - py, d = Math.sqrt(dx * dx + dy * dy);
+        if (d > fd) { fd = d; far = i; }
+      }
+      if (far < 0 || fd < cd + P.evictGap) { P.full++; break; }
+      unbindRec(sim, far);
+    }
+    bindRec(sim, r, P.free[--P.freeN]);
+  }
+}
+
 function stepSim(sim, px, py, pz) {
-  const n = sim.count;
+  const pool = sim.pool;
   sim._px = px; sim._py = py; sim._pz = pz;
+  if ((sim.tick % pool.every) === 0 && (sim.tileMode || sim.count > POOL)) poolUpdate(sim, px, py); // BEAST-POOL-b: binder, staggered by the step counter
   // US-079b (37.16.2): `beast:died` goes out at the START of the step after the kill (exactly once), so the sword
   // is never mid-iteration when a loot spawn would rebuild its target list.
-  for (let i = 0; i < n; i++) emitPendingDied(sim, i);
+  let rec = pool.rec, n = pool.n; // re-read after poolUpdate
+  for (let k = 0; k < n; k++) emitPendingDied(sim, rec[k]);
   // US-079b: cooldown/hurt timers tick for every slot; dead slots run their own timeline (stepDead).
-  for (let i = 0; i < n; i++) {
+  for (let k = 0; k < n; k++) {
+    const i = rec[k];
     if (sim.dmgCd[i] > 0) sim.dmgCd[i]--;
     if (sim.hurtT[i] < 9999) sim.hurtT[i]++;
     if (deadSt(sim.state[i])) stepDead(sim, i);
   }
   if (sim.fauna) huntPass(sim);
-  for (let i = 0; i < n; i++) if (live(sim, i)) { perceiveOne(sim, i, px, py, pz); leashOne(sim, i, px, py); }
+  for (let k = 0; k < n; k++) { const i = rec[k]; if (live(sim, i)) { perceiveOne(sim, i, px, py, pz); leashOne(sim, i, px, py); } }
   sim._ctx.px = px; sim._ctx.py = py;
   tacticsSync(sim, sim.sc.tS); // BEAST-04: token release + flank re-assign
-  for (let i = 0; i < n; i++) if (live(sim, i)) { if (!LAYERS[sim.archIdx[i]](sim, i, sim._ctx)) transitionOne(sim, i, px, py); }
+  for (let k = 0; k < n; k++) { const i = rec[k]; if (live(sim, i)) { if (!LAYERS[sim.archIdx[i]](sim, i, sim._ctx)) transitionOne(sim, i, px, py); } }
   if (sim.wb) stepWaterBrain(sim.wb, px, py); // BEAST-08b: water slots (own grid, own movement)
   updatePathRequests(sim, px, py);
   servePathRequest(sim, px, py);
-  for (let i = 0; i < n; i++) if (live(sim, i)) setSteerTarget(sim, i);
+  for (let k = 0; k < n; k++) { const i = rec[k]; if (live(sim, i)) setSteerTarget(sim, i) }
   sim.steer.step(SIM_STEP, sim.grid);
   deOverlap(sim); // US-079c (BUG-BOAR-OVERLAP): hard pairwise push-apart, after the soft steer step, before post
   _pp[0] = px; _pp[1] = py; _pp[2] = pz; // BEAST-ALLOC-01: player pos via scratch (double args box per non-inlined call)
-  for (let i = 0; i < n; i++) if (live(sim, i)) postOne(sim, i);
+  for (let k = 0; k < n; k++) { const i = rec[k]; if (live(sim, i)) postOne(sim, i) }
   sim.tick++;
 }
 
 /** LIFE-07: feed live beast positions to fauna as threat points; end hunts that left STATE_WANDER. Only runs with fauna. */
 function huntPass(sim) {
-  const n = sim.count, steer = sim.steer;
+  const n = sim.pool.n, rec = sim.pool.rec, steer = sim.steer;
   let t = 0;
-  for (let i = 0; i < n; i++) {
+  for (let k = 0; k < n; k++) {
+    const i = rec[k];
     if (sim.hunt[i] && sim.state[i] !== STATE_WANDER) sim.hunt[i] = 0;
     if (!deadSt(sim.state[i]) && t < 16) { sim.sc.thrX[t] = steer.x[i]; sim.sc.thrY[t] = steer.y[i]; t++; }
   }
@@ -848,7 +962,7 @@ function rangedChase(sim, i, px, py, d2) {
   sim.backT[i] = 0;
   if (d2 <= T.bandMax * T.bandMax && sim.seen[i]) {
     let winding = 0;
-    for (let k = 0; k < sim.count; k++) if (k !== i && sim.ranged[k] && sim.state[k] === STATE_WINDUP) winding++;
+    for (let q = 0, pr = sim.pool.rec, pn = sim.pool.n; q < pn; q++) { const k = pr[q]; if (k !== i && sim.ranged[k] && sim.state[k] === STATE_WINDUP) winding++; }
     if (winding < T.maxWinding) { sim.waiting[i] = 0; enterWindup(sim, i); } else sim.waiting[i] = 1;
     return true;
   }
@@ -869,7 +983,8 @@ function emitThrow(sim, i, px, py) {
 function hasActiveCharger(sim, me) {
   if (sim.tactOn[me]) return !sim.tactics.request(me, sim.tactRole[me] === TACT_SWARM ? TOK_S : TOK_M); // BEAST-04: token pools replace the single-charger rule
   let held = 0;
-  for (let k = 0; k < sim.count; k++) {
+  for (let q = 0, pr = sim.pool.rec, pn = sim.pool.n; q < pn; q++) {
+    const k = pr[q];
     if (k === me || sim.group[k] !== sim.group[me]) continue; // WOLF-01/GOB-01: the token is per group (wolves never block boars)
     if (sim.state[k] === STATE_WINDUP || sim.state[k] === STATE_CHARGE) held++;
   }
@@ -1045,7 +1160,8 @@ function enterReturn(sim, i) {
 /** WOLF-01: a wolf with no other living wolf within packR. */
 function isLone(sim, i) {
   const st = sim.steer, pr = sim.goblin[i] ? GOBLIN_TUNING.packR : WOLF_TUNING.packR, r2 = pr * pr;
-  for (let k = 0; k < sim.count; k++) {
+  for (let q = 0, pr = sim.pool.rec, pn = sim.pool.n; q < pn; q++) {
+    const k = pr[q];
     if (k === i || sim.group[k] !== sim.group[i] || deadSt(sim.state[k])) continue; // same pack species (group 1 wolf, 2 goblin)
     const dx = st.x[k] - st.x[i], dy = st.y[k] - st.y[i];
     if (dx * dx + dy * dy <= r2) return false;
@@ -1175,8 +1291,9 @@ function stepDead(sim, i) {
 // ---- paths (29.1 step 3) -------------------------------------------------------------------------------------
 
 function updatePathRequests(sim, px, py) {
-  const n = sim.count, cfg = sim.cfg;
-  for (let i = 0; i < n; i++) {
+  const rec = sim.pool.rec, n = sim.pool.n, cfg = sim.cfg;
+  for (let k = 0; k < n; k++) {
+    const i = rec[k];
     if (deadSt(sim.state[i])) continue; // US-079b: dead slots don't path
     if (sim.repathT[i] > 0) sim.repathT[i]--;
     if (sim.pathReq[i]) continue;
@@ -1186,7 +1303,7 @@ function updatePathRequests(sim, px, py) {
       if (sim.waiting[i]) continue; // US-079c: a waiter holds position (no path into the player)
       // NAV-REACH-01: target unreachable -> walk to the nearest reachable cell, hold there facing it, give up after REACH_GIVEUP_STEPS
       if (sim.partialGoal[i] && sim.pathLen[i] > 0 && sim.pathIdx[i] >= sim.pathLen[i] - 1) {
-        const b = i * PATH_SLOTS * 2 + (sim.pathLen[i] - 1) * 2;
+        const b = sim.pool.lv[i] * PATH_SLOTS * 2 + (sim.pathLen[i] - 1) * 2;
         const ex = sim.path[b] - sim.steer.x[i], ey = sim.path[b + 1] - sim.steer.y[i];
         if (ex * ex + ey * ey < 1) {
           if (++sim.bankT[i] >= REACH_GIVEUP_STEPS) { sim.bankT[i] = 0; sim.partialGoal[i] = 0; enterReturn(sim, i); continue; }
@@ -1217,10 +1334,11 @@ function updatePathRequests(sim, px, py) {
 /** At most one `findPath` per tick, round robin from the slot after the last one served (29.1 step 3). */
 function servePathRequest(sim, px, py) {
   void px; void py;
-  const n = sim.count;
+  const n = sim.pool.n, pr = sim.pool.rec;
   if (n === 0) return;
-  for (let k = 1; k <= n; k++) {
-    const i = (sim.lastServed + k) % n;
+  let s0 = 0; while (s0 < n && pr[s0] <= sim.lastServed) s0++; // pool list is sorted by record index: start after the last served record
+  for (let k = 0; k < n; k++) {
+    const i = pr[(s0 + k) % n];
     if (sim.pathReq[i] && !deadSt(sim.state[i])) {
       computePath(sim, i);
       sim.pathReq[i] = 0;
@@ -1249,7 +1367,7 @@ function computePath(sim, i) {
 }
 
 function storePath(sim, i, wn) {
-  const base = i * PATH_SLOTS * 2;
+  const base = sim.pool.lv[i] * PATH_SLOTS * 2;
   if (wn === 0) { sim.pathLen[i] = 0; sim.pathIdx[i] = 0; return; }
   let m = wn;
   if (m > PATH_SLOTS) {
@@ -1388,7 +1506,7 @@ function setSteerTarget(sim, i) {
   let speed = 0;
   if ((st === STATE_WANDER && sim.timer[i] === WALKING) || st === STATE_CHASE || st === STATE_RETURN) {
     advanceWaypoint(sim, i);
-    const base = i * PATH_SLOTS * 2, idx = Math.min(sim.pathIdx[i], Math.max(0, sim.pathLen[i] - 1));
+    const base = sim.pool.lv[i] * PATH_SLOTS * 2, idx = Math.min(sim.pathIdx[i], Math.max(0, sim.pathLen[i] - 1));
     const wx = sim.pathLen[i] > 0 ? sim.path[base + idx * 2] : steer.x[i];
     const wy = sim.pathLen[i] > 0 ? sim.path[base + idx * 2 + 1] : steer.y[i];
     steer.setWaypoint(i, wx, wy, WAYPOINT_ARRIVE);
@@ -1415,9 +1533,10 @@ function straightWalkable(sim, x, y, dx, dy) {
  * from it, `r` m out. Trig-free (fixed sin/cos of 120 deg). Returns false when `i` is the lead / alone (-> plain circle). */
 const FL_C = -0.5, FL_S = 0.8660254;
 function flankTarget(sim, i, r, out) {
-  const g = sim.group[i], n = sim.count;
+  const g = sim.group[i], n = sim.pool.n, pr = sim.pool.rec;
   let lead = -1, alive = 0, rank = 0;
-  for (let k = 0; k < n; k++) {
+  for (let q = 0; q < n; q++) {
+    const k = pr[q];
     if (sim.group[k] !== g || sim.down[k] || deadSt(sim.state[k]) || sim.state[k] === STATE_GONE) continue;
     const dx = sim.steer.x[k] - sim._px, dy = sim.steer.y[k] - sim._py;
     if (dx * dx + dy * dy > 625) continue; // packR
@@ -1434,7 +1553,7 @@ function flankTarget(sim, i, r, out) {
 }
 
 function advanceWaypoint(sim, i) {
-  const steer = sim.steer, base = i * PATH_SLOTS * 2;
+  const steer = sim.steer, base = sim.pool.lv[i] * PATH_SLOTS * 2;
   while (sim.pathIdx[i] < sim.pathLen[i] - 1) {
     const idx = sim.pathIdx[i];
     const dx = sim.path[base + idx * 2] - steer.x[i], dy = sim.path[base + idx * 2 + 1] - steer.y[i];
@@ -1547,10 +1666,12 @@ function applyPush(steer, grid, slot) {
  */
 function deOverlap(sim) {
   const steer = sim.steer, grid = sim.grid;
-  const n = sim.count;
-  for (let i = 0; i < n; i++) {
+  const rec = sim.pool.rec, n = sim.pool.n;
+  for (let a = 0; a < n; a++) {
+    const i = rec[a];
     if (!steer.active[i]) continue; // US-079c ARCH (37.16.2): skip inactive (dead) steer slots
-    for (let j = i + 1; j < n; j++) {
+    for (let b = a + 1; b < n; b++) {
+      const j = rec[b];
       if (!steer.active[j]) continue;
       const dx = steer.x[j] - steer.x[i];
       const dy = steer.y[j] - steer.y[i];
@@ -1594,6 +1715,7 @@ function hashSim(sim, h) {
   }
   h.u32Array(sim.pathLen, 0, n);
   h.u32Array(sim.pathIdx, 0, n);
+  for (let i = 0; i < n; i++) h.i32(sim.pool.lv[i]); // BEAST-POOL-b: binding state
   h.u8Array(sim.seen, 0, n);
   h.u8Array(sim.pathReq, 0, n);
   h.u8Array(sim.pendingDied, 0, n);
@@ -1619,8 +1741,14 @@ function saveSim(sim) {
     deathZ: slice(sim.deathZ), knockV: slice(sim.knockV),
     pathLen: slice(sim.pathLen), pathIdx: slice(sim.pathIdx), seen: slice(sim.seen), pathReq: slice(sim.pathReq),
     pendingDied: slice(sim.pendingDied), despawnReq: slice(sim.despawnReq), cause: slice(sim.cause),
-    path: Array.from(sim.path.subarray(0, n * PATH_SLOTS * 2)),
+    path: Array.from(sim.path.subarray(0, Math.min(n * PATH_SLOTS * 2, sim.path.length))),
     hp,
+    pool: { // in-memory/dev snapshot only (the persistent save is slot-free): the pool-indexed path/steer data needs its bindings back
+      lv: slice(sim.pool.lv), lastX: slice(sim.pool.lastX), lastY: slice(sim.pool.lastY),
+      rec: Array.from(sim.pool.rec.subarray(0, sim.pool.n)), n: sim.pool.n,
+      free: Array.from(sim.pool.free.subarray(0, sim.pool.freeN)), freeN: sim.pool.freeN,
+      dormTile: slice(sim.dormTile), dormant: slice(sim.dormant),
+    },
     steer: {
       x: slice(sim.steer.x), y: slice(sim.steer.y), vx: slice(sim.steer.vx), vy: slice(sim.steer.vy),
       radius: slice(sim.steer.radius), mode: slice(sim.steer.mode), tx: slice(sim.steer.tx), ty: slice(sim.steer.ty),
@@ -1652,6 +1780,12 @@ function loadSim(sim, obj) {
     sim.entities[i].transform.y = sim.steer.y[i];
   }
   sim.path.set(obj.path);
+  if (obj.pool) {
+    const P = sim.pool, o = obj.pool;
+    for (let i = 0; i < n; i++) { P.lv[i] = o.lv[i]; P.lastX[i] = o.lastX[i]; P.lastY[i] = o.lastY[i]; sim.dormTile[i] = o.dormTile[i]; sim.dormant[i] = o.dormant[i]; }
+    P.n = o.n; for (let k = 0; k < o.n; k++) P.rec[k] = o.rec[k];
+    P.freeN = o.freeN; for (let k = 0; k < o.freeN; k++) P.free[k] = o.free[k];
+  }
   resyncLeash(sim);
 }
 
@@ -1675,10 +1809,10 @@ function resetSlotSim(sim, i) {
   sim.bite.cd[i] = 0; sim.bite.n[i] = 0; sim.bite.done[i] = 0; // BEAR-BITE
   // US-079b: dead steer slots are re-added in ascending order; addAgent hands out the lowest free slot, and the
   // live slots stay active (slots >= count are never used), so the lowest free slot is always the lowest dead one.
-  if (!sim.steer.active[i] && !sim.dormant[i]) {
-    const slot = sim.steer.activateAgent(i, sim.homeX[i], sim.homeY[i], sim.cfg.radius, 0, DEFAULT_ACCEL); // BH-A1: exactly slot i
-    if (slot !== i) throw new Error(`beastSim.resetAll: re-added dead slot ${i} but activateAgent returned ${slot}`);
+  if (sim.pool.lv[i] >= 0 && !sim.steer.active[i] && !sim.dormant[i]) { // BEAST-POOL-b: unbound records stay parked; the binder activates them
+    sim.steer.activateAgent(i, sim.homeX[i], sim.homeY[i], sim.cfg.radius, 0, DEFAULT_ACCEL);
   }
+  sim.pool.lastX[i] = sim.homeX[i]; sim.pool.lastY[i] = sim.homeY[i];
   const health = sim.entities[i].components.health;
   health.hp = health.max; // US-079b: boars come back alive
   sim.goal.on[i] = 0; sim.alt.tgt[i] = -1; sim.alt.cd[i] = 0; // LIFE-08: raids restart next night
