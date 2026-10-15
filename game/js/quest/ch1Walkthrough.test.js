@@ -79,19 +79,19 @@ r.checkSections(); r.feed({ type: 'item:got', id: 'sword' }); expectToasts(0, 'n
   r = mkRelay(a.quest, a.quests); r.world = w;
   r.checkSections();
   assert.equal(toasts.length, before, 'restore never toasts');
-  assert.deepEqual(done(r), ['wake', 'breach', 'sword', 'leave', 'beasts'], 'restored progress');
+  assert.deepEqual(done(r), ['wake', 'breach', 'sword', 'leave', 'bladeDone', 'beasts'], 'restored progress');
   assert.equal(r.book.statusOf('burl.boars'), 4);
 }
 
 // q04 follow -> arrive
 r.questFlag('burl.arrived'); r.questFlag('quest.burl.follow.done'); /* handed in at the stone (m1FollowChain.test.js drives the real talk) */ expectToasts(1, 'q04 toast on arrival');
 // q05: wake stone
-r.questFlag('waystone.waystone.woken'); expectToasts(2, 'q05 toast after stone wake');
+r.questFlag('waystone.waystone.woken'); expectToasts(1, 'q05 not before the hand-in at Burl'); r.questFlag('quest.burl.stone.done'); expectToasts(2, 'q05 toast after the stone hand-in');
 assert.equal(r.world.state['waystone.waystone.woken'], true, 'questFlag writes world.state');
 // q06: road -> relay found -> relay woken
 r.feed({ type: 'area:entered', id: 'roadWest' }); expectToasts(2);
 r.feed({ type: 'area:entered', id: 'bendRelay' }); expectToasts(2, 'q06 not before the relay wakes');
-r.questFlag('waystone.ws_roadBend.woken'); expectToasts(3, 'q06 toast after relay wake');
+r.questFlag('waystone.ws_roadBend.woken'); expectToasts(2, 'q06 not before the hand-in at Rook'); r.questFlag('quest.mq.bend.call.done'); expectToasts(3, 'q06 toast after the Rook hand-in');
 assert.equal(r.done, true);
 // FEN-OFF-01: q07 removed; the chain ends at the relay step
 assert.equal(r.done, true, 'chain complete at the relay');

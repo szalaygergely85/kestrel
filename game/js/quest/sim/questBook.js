@@ -465,9 +465,9 @@ export function validateSections(def) {
 }
 
 // Old (pre-CH1) m1 order -> the new step ids each old step implies. `lantern` is dropped.
-const CH1_IMPLIES = { wake: ['wake'], breach: ['breach'], sword: ['sword'], beasts: ['leave', 'beasts'], waystone: ['follow', 'waystone'] };
-const CH1_ORDER = ['wake', 'breach', 'sword', 'leave', 'beasts', 'follow', 'waystone'];
-const CH1_ALL = [...CH1_ORDER, 'road', 'relayFound', 'relay1']; // 'fen' removed (FEN-OFF-01)
+const CH1_IMPLIES = { wake: ['wake'], breach: ['breach'], sword: ['sword'], beasts: ['leave', 'bladeDone', 'beasts'], waystone: ['follow', 'waystone'] };
+const CH1_ORDER = ['wake', 'breach', 'sword', 'leave', 'bladeDone', 'beasts', 'follow', 'waystone'];
+const CH1_ALL = [...CH1_ORDER, 'stoneDone', 'road', 'relayFound', 'relay1', 'bendCall']; // QUEST-HANDIN-ALL: +bladeDone/stoneDone/bendCall hand-in steps // 'fen' removed (FEN-OFF-01)
 
 /**
  * CH1-01 (38.37 item 8). Pure: game = save-like {quest, world?:{state}}; returns game itself when nothing to do,
@@ -483,6 +483,12 @@ export function migrateM1Ch1(game, newIds = null) {
   const hadFen = q.completed.includes('fen');
   const done = hadFen ? q.completed.filter((id) => id !== 'fen') : q.completed;
   if (hadFen && done.every((id, i) => id === ids[i]) && !done.includes('lantern')) return { ...game, quest: { ...q, completed: done } };
+  // QUEST-HANDIN-ALL: a save of the previous (waypoint) shape keeps every step; the hand-in steps are inserted only where the chain already moved past them
+  // (bladeDone before beasts, stoneDone before road). A save that stops right at leave/waystone/relay1 keeps the hand-in pending ('?' visible).
+  if (!done.includes('lantern') && !done.every((id, i) => id === ids[i])) {
+    const ins = []; for (const id of done) { if (id === 'beasts' && !done.includes('bladeDone')) ins.push('bladeDone'); if (id === 'road' && !done.includes('stoneDone')) ins.push('stoneDone'); ins.push(id); }
+    if (ins.length !== done.length && ins.every((id, i) => id === ids[i])) return { ...game, quest: { ...q, completed: ins } };
+  }
   const isPrefix = done.every((id, i) => id === ids[i]);
   if (isPrefix && !done.includes('lantern')) return game;
   const implied = new Set();
