@@ -10,7 +10,7 @@ import {
   terrainMeshSetFor, runStableRow, compareGlow, emisFromPacked,
   computeDerivatives, shadeSurfaces, edgePass, createShadowParityRunner,
 } from '../../../../engine/dev.js';
-import { quadruped16, makeRowGI } from '../../../../engine/dev.js'; // VOX-PARTS-16b: 12-part fixture for the `vox12` row
+import { quadruped16, makeRowGI, createContactAO, setDynamicBlobs, buildContactBlobs } from '../../../../engine/dev.js'; // VOX-PARTS-16b: 12-part fixture for the `vox12` row
 import { POSES as GPU_COMPARE_POSES, GATE_POSES } from '../../../../content/dev-poses.js';
 import { fillUnitGrid, placeholderTeamSpec } from '../unitsHarness.js'; // RE-06: instanced-units pose helpers
 import { groundLookFromParams } from '../../look/groundLookConfig.js'; // ENV-02d-LIVE
@@ -241,6 +241,21 @@ function buildCompareRuns(ctx) {
     ]) {
       runs.push({ world: worldM1, lights: worldM1Lights, name: `world_m1: ${n} (GI-PROBE-05 baked bounce light)`, hour, gi: { ...gi, groundAt: gz },
         cam: { x, y, z: gz(x, y) + eh, yawDeg, pitchDeg }, real: true });
+    }
+  }
+
+  // CONTACT-AO-01b (arch 38.78): 2 rows with the blob contact-AO list on (lights.cao; every other row runs with cao null = byte-identical).
+  // Blobs are fixture data placed ahead of the camera on the meadow: caoPropsMeadow = crates/rocks/tree-trunk ellipses, caoBeastPlayer = wolf + player blobs.
+  {
+    const gz = (x, y) => (worldM1.terrain ? worldM1.terrain.groundAt(x, y) : 0), eh = engine.physics.eyeHeight;
+    const cx = 1470, cy = 1035, yawDeg = 235, pitchDeg = -20, dx = Math.sin(yawDeg * Math.PI / 180), dy = -Math.cos(yawDeg * Math.PI / 180);
+    const at = (f, s, rx, ry, h, k) => { const x = cx + dx * f - dy * s, y = cy + dy * f + dx * s; return { x, y, z: gz(x, y), rx, ry, h, k }; };
+    for (const [n, items] of [
+      ['caoPropsMeadow', [at(2.5, 0, 0.5, 0.5, 1, 0.6), at(3.2, 0.7, 0.45, 0.45, 0.9, 0.6), at(4, -1.2, 0.8, 0.6, 0.8, 0.55), at(5.5, 1.5, 0.25 * 2.5, 0.25 * 2.5, 6, 0.5), at(2, -2, 0.3, 0.3, 0.5, 0.6)]],
+      ['caoBeastPlayer', [at(3, 0, 0.7, 0.35, 0.9, 0.55), at(1.2, 0.8, 0.35, 0.35, 1.7, 0.5), at(4.5, -1, 0.7, 0.35, 0.9, 0.55)]],
+    ]) {
+      runs.push({ world: worldM1, lights: worldM1Lights, name: `world_m1: ${n} (CONTACT-AO-01b blob ambient occlusion)`, hour: 12, cao: items,
+        cam: { x: cx, y: cy, z: gz(cx, cy) + eh, yawDeg, pitchDeg }, real: true });
     }
   }
 
@@ -1085,15 +1100,19 @@ async function runGpuCompareSceneMode(ctx) {
   // e.g. `?gpucompare=1&renderer=mesh&pose=water pond`. No filter = every pose.
   const poseQ = (params.get('pose') || '').toLowerCase();
   const poseRuns = poseQ ? runs.filter((r) => r.name.toLowerCase().includes(poseQ)) : runs;
-  for (const { world, lights, name: poseName, cam, fade, dim, real, before, spritesExtra, needK8, meshOnly, maskPose, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, hour: poseHour, atmos: poseAtmos, post: posePost, instAssert, vmAssert, decalAssert, timeSec: poseTime, carpet: carpetPose, gi: poseGi, under: underPose } of poseRuns) {
+  for (const { world, lights, name: poseName, cam, fade, dim, real, before, spritesExtra, needK8, meshOnly, maskPose, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, hour: poseHour, atmos: poseAtmos, post: posePost, instAssert, vmAssert, decalAssert, timeSec: poseTime, carpet: carpetPose, gi: poseGi, under: underPose, cao: poseCao } of poseRuns) {
     if (world.carpet || world._carpetCtx) { world._carpetCtx = null; world.carpet = null; wg.setCarpet(null, null, 0); } // D2e: carpet poses only
     if (restoreSun) { restoreSun(); restoreSun = null; }
-  for (const r of runs) if (r.lights) r.lights.gi = null; // GI-PROBE-05: leave no probe field on the shared light sets
+  for (const r of runs) if (r.lights) { r.lights.gi = null; r.lights.cao = null; } // GI-PROBE-05: leave no probe field on the shared light sets
     atmosOff(); // ENV-03c: previous pose's atmosphere off (one palette bump)
     if (meshOnly && renderer !== 'mesh') { console.log(`[gpucompare] SKIP ${poseName} (mesh renderer only)`); continue; }
     if (sunOverride) restoreSun = applySunOverride(world, lights, sunOverride);
     else if (Number.isFinite(poseHour)) restoreSun = applyHourOverride(world, lights, assets.palette, poseHour, ctx.sunEnabled); // DN-04b
     if (lights) lights.gi = poseGi && lights ? makeRowGI({ ...poseGi, hour: poseHour, lights }) : null; // GI-PROBE-05: only the gi* rows carry a probe field
+    if (lights) { // CONTACT-AO-01b: only the cao* rows carry a blob list (copied into a fixed cao; build once, camera = the pose eye)
+      if (poseCao) { const c = createContactAO(), n = poseCao.length, f = (k) => Float32Array.from(poseCao, (b) => b[k]);
+        setDynamicBlobs(c, { count: n, x: f('x'), y: f('y'), zBase: f('z'), rx: f('rx'), ry: f('ry'), h: f('h'), k: f('k') });
+        buildContactBlobs(c, cam, null, {}); lights.cao = c; } else lights.cao = null; }
     // US-053b (32.1): cleared before EVERY pose (not just the ones that never touch
     // particles) - only the `particles` pose's own `before()` hook repopulates it, so a
     // pose that runs after it never inherits stray live particles from a previous pose.

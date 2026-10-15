@@ -132,17 +132,24 @@ export function caoBits(q) { return q << CAO_SHIFT; }
 /** Ambient multiplier from the stored occlusion byte (exactly 1 at 0). */
 export function caoFactor(q) { return q === 0 ? 1 : (127 - q) / 127; }
 
-// WGSL twin text for 01b (informative; 01b owns the binding and the compileFn parity probe).
+// WGSL twin (CONTACT-AO-01b): shared by light.wgsl.js (spliced into LIGHT_WGSL / LIGHT_GI_WGSL, reads the LightU fields
+// `u.caoA.x` = n and `u.caoD[i*2], [i*2+1]` = the 8-float blob record as two vec4) and by the Node parity test, which
+// translates this exact text to JS (scalar-only syntax on purpose). Returns the occlusion byte q = round(occl * 127);
+// caller: LIGHT.w |= q << CAO_SHIFT, non-terrain cells L -= ambient * (f32(q) / 127); shade ambient *= caoFactor(q).
+// The abs() pre-reject equals the JS box reject (1.6 radii), so results are identical, only cheaper.
 export const CONTACT_AO_WGSL = /* wgsl */`
 fn caoSmooth(a: f32, b: f32, x: f32) -> f32 { let t = clamp((x - a) / (b - a), 0.0, 1.0); return t * t * (3.0 - 2.0 * t); }
-fn contactOccl(P: vec3<f32>, Nz: f32) -> f32 {
-  let nf = 0.5 + 0.5 * max(Nz, 0.0);
+fn contactOcclQ(px: f32, py: f32, pz: f32, nz: f32) -> u32 {
+  let nf = 0.5 + 0.5 * max(nz, 0.0);
   var occl = 0.0;
-  for (var i = 0u; i < caoN; i = i + 1u) {
-    let b0 = caoData[i * 2u]; let b1 = caoData[i * 2u + 1u]; // (cx,cy,zBase,rx) (ry,h,k,0)
-    let dE = length(vec2<f32>((P.x - b0.x) / b0.w, (P.y - b0.y) / b1.x));
-    let v = select(0.0, 1.0 - caoSmooth(0.0, 0.5 * b1.y, P.z - b0.z), b1.y > 0.0);
+  let n = u32(u.caoA.x);
+  for (var i = 0u; i < n; i = i + 1u) {
+    let b0 = u.caoD[i * 2u]; let b1 = u.caoD[i * 2u + 1u];
+    let ex = (px - b0.x) / b0.w; let ey = (py - b0.y) / b1.x;
+    if (abs(ex) >= 1.6 || abs(ey) >= 1.6) { continue; }
+    let dE = sqrt(ex * ex + ey * ey);
+    let v = select(0.0, 1.0 - caoSmooth(0.0, 0.5 * b1.y, pz - b0.z), b1.y > 0.0);
     occl = max(occl, b1.z * (1.0 - caoSmooth(0.6, 1.6, dE)) * v * nf);
   }
-  return occl;
+  return u32(floor(occl * 127.0 + 0.5));
 }`;
