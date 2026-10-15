@@ -121,3 +121,19 @@ console.log('relayWake.test.js PASS');
   u.world.state['waystone.waystone.woken'] = true; u.rw.step(0.016, null); assert.equal(u.recs[0].prompt, PW, 'gate open: wake prompt');
   assert.equal(u.rw.interact('ws_roadBend'), true); }
 console.log('OB-145 ok');
+
+// OB-188: the dormant meadow stone stays visible/pickable before Burl's talk (no `requires` hiding it); E names the missing step;
+// an accepted burl.stone (old save / skipped talk) counts as told and the stone wakes.
+{
+  const ent = { id: 'endMarker', transform: { x: 1, y: 2, z: 0 }, components: { collider: { h: 2.2, r: 0.9 }, voxel: { model: 'waystone', anim: 'dead' }, waystone: { id: 'waystone', dormant: true, kind: 'stone' } } };
+  const recs = [], state = { [FLAG_ATTUNED]: true };
+  let accepted = false;
+  const world = { state, assets: { has: () => true, model: () => model }, forEachEntity: (fn) => fn(ent, ent.id), get: () => ({ data: ent, play() {} }), addInteractable: (s) => { const r = { ...s }; recs.push(r); return r; } };
+  const rw = createRelayWake({ world, palette, emit() {}, hum() {}, stoneAccepted: () => accepted });
+  assert.ok(!recs[0].requires, 'OB-188: stone has no requires (always pickable)');
+  assert.equal(rw.interact('waystone'), false, 'not told, not accepted: blocked');
+  accepted = true;
+  assert.equal(rw.interact('waystone'), true, 'accepted burl.stone counts as told');
+  assert.ok(state['waystone.waystone.woken']);
+  console.log('relayWake: OB-188 stone pickable + accepted-quest gate PASS');
+}

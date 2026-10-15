@@ -1385,7 +1385,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
   let worldSunPath = null; // US-122a: fit the load-time sun before static/cinematic hour writes.
   const cinematicHours = cinematic && Number.isFinite(cinematic.keys[0].hour);
   let wasPaused = false; // US-062: edge-detects isPaused() to drive duck/resume + accumulator reset once
-  if (mode === 'world' && !isCaptureOrBench) installAutoPause(); // US-062: blur/hidden -> forced pause, never auto-resumed
+  if (mode === 'world' && !isCaptureOrBench && params.get('nopause') !== '1') installAutoPause(); // US-062: blur/hidden -> forced pause, never auto-resumed
 
   // Reused every physics step (architecture.md section 9 rule 9.3: no
   // per-step allocations) - US-009 hoisted this out of update()'s body,
@@ -1705,7 +1705,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         inventoryOf: () => playerHandle.data.components.inventory || null }) : null;
       setLootApi(loot); window.__debug.loot = loot; // OB-064: tools/verify-boar-loot.mjs
       // WS1-06b: one [E] interactable per kind:'relay' point (crystal-gated wake; woken ones restore awake from world.state).
-      relayWake = createRelayWake({ questFlag: saveEnabled && saveRelay ? (k) => saveRelay.quest.questFlag(k) : undefined, world, palette: assets.palette, notice: saveEnabled ? notice : null, emit: (id, kind, p) => gameHooks.emitSimple('prop:touched', id, kind, p) });
+      relayWake = createRelayWake({ stoneAccepted: () => !!(saveRelay && saveRelay.quest.book.statusOf('burl.stone') >= 2), questFlag: saveEnabled && saveRelay ? (k) => saveRelay.quest.questFlag(k) : undefined, world, palette: assets.palette, notice: saveEnabled ? notice : null, emit: (id, kind, p) => gameHooks.emitSimple('prop:touched', id, kind, p) });
       setRelayWakeApi(relayWake); window.__debug.relayWake = relayWake; // tools/verify-relay-wake.mjs
       // DIALOGUE-01b2 (38.28): box + runner; NPCs with a `dialogue` component get an [E] Talk interactable (none until NPC-BEAR-01 places one).
       if (dialogueCtl) dialogueCtl.dispose();

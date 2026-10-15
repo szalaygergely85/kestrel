@@ -85,7 +85,7 @@ export function createRelayWake(o) {
   /** OB-145: the plain-text reason a dormant relay/stone cannot be woken yet, or null when the gate is open. */
   function blockedHint(r) {
     if (!world.state[FLAG_ATTUNED]) return HINT_NEED_CRYSTAL;
-    if (r.stone) return world.state[FLAG_STONE_TOLD] ? null : HINT_NEED_TALK;
+    if (r.stone) return (world.state[FLAG_STONE_TOLD] || (o.stoneAccepted && o.stoneAccepted())) ? null : HINT_NEED_TALK; // OB-188: an accepted burl.stone (old save / skipped talk) counts as told
     return world.state[woken('waystone')] ? null : HINT_NEED_WAYSTONE;
   }
   const pos = { x: 0, y: 0, z: 0 };
@@ -110,7 +110,7 @@ export function createRelayWake(o) {
       const h = world.get(e.id); if (h) h.play('awake');
     }
     r.rec = world.addInteractable({
-      key: stone ? 'stone.' + r.wsId : 'relay.' + r.wsId, requires: r.phase === AWAKE || !stone ? undefined : FLAG_STONE_TOLD, name: 'relay.wake', x: e.transform.x, y: e.transform.y, z: e.transform.z + 1, radius: RADIUS, pick: stonePick(e, model),
+      key: stone ? 'stone.' + r.wsId : 'relay.' + r.wsId, name: 'relay.wake', x: e.transform.x, y: e.transform.y, z: e.transform.z + 1, radius: RADIUS, pick: stonePick(e, model),
       prompt: r.phase === AWAKE ? PROMPT_TOUCH : PROMPT_WAKE, def: { waystoneId: r.wsId, entityId: e.id },
     });
     relays.push(r);
@@ -148,7 +148,6 @@ export function createRelayWake(o) {
       world.state[woken(r.wsId)] = true;
       if (o.questFlag) o.questFlag(woken(r.wsId)); // chain flag (m1 step 'waystone'); BEFORE touch so errands gated on it are offered by the wake touch (WMP-01)
       touch(r);
-      r.rec.requires = undefined; // woken: E = plain touch
       showWakeNotice(r);
       return true;
     },
