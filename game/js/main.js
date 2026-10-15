@@ -2000,7 +2000,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
     if (params.get('stream') === '0' && engine.world) engine.world.streaming.enabled = false; // STREAM-01b: `?stream=0` = all placements resident (def.streaming passes through World.load)
     // BUG-FP-001: on the mesh renderer the terrain mesh needs the far bake (streamed at 1 ms/frame = ~10-15 s) before
     // far tiles exist, so the ground stayed black after spawn. Bake + build the terrain mesh once at load, like rts-test.
-    if (renderer === 'mesh' && engine.world.terrain) {
+    if (renderer === 'mesh' && engine.world && engine.world.terrain) {
       const tb = performance.now();
       engine.world.terrain.bakeFarSync();
       prebuildTerrainMesh(engine.world.terrain);
