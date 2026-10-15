@@ -54,7 +54,7 @@ ok(cd.x > 1580 && cd.x < 1588 && cd.y < by && cd.y > 429.2, 'chest behind the be
 ok(Math.hypot(cd.x - bx, cd.y - by) <= 15, 'chest within 15 m of the bear home (guarded: chest-enemy-density RADIUS)');
 ok(cd.z > UNDERGROUND_Z, 'note: z is above -20, so the earned rule here = bear guard, not depth');
 const t = CHEST_TABLES.chestBearDen;
-ok(t.fixed.length === 2 && t.gear.tier === 'sturdy' && t.fixed.some((f) => f.item === 'potion.hp') && t.fixed.some((f) => f.item === 'arrow'), 'modest stash: arrows + potion + sturdy gear');
+ok(t.fixed.length === 3 && t.fixed.some((f) => f.item === 'scroll.spell') && t.gear.tier === 'sturdy' && t.fixed.some((f) => f.item === 'potion.hp') && t.fixed.some((f) => f.item === 'arrow'), 'modest stash: arrows + potion + sturdy gear');
 // shell rocks exist (outside + inside), all existing meshes
 const rocks = world.structures.filter((s) => /^bearDenRock/.test(s.id));
 ok(rocks.length >= 20 && rocks.every((s) => /^quaternius\/(Rock_Medium_[123])$/.test(s.mesh) || s.mesh), 'rock shell meshes: ' + rocks.length);

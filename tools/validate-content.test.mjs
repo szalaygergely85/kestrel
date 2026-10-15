@@ -630,7 +630,7 @@ for (const [name, breakFixture, finding] of areaCases) {
   ok('m1.quest.json objectives <= 38 chars', !badObj, badObj && `content/quests/m1.quest.json.objectives[${badObj.id}].text (${badObj.text.length})`);
   const { loadDesignAssets } = await import('./validate-content.mjs');
   const defs = (await loadDesignAssets()).items?.defs || {};
-  const badName = Object.entries(defs).find(([, d]) => d.name.length > 14);
+  const badName = Object.entries(defs).find(([id, d]) => d.name.length > (id.startsWith('book.spell.') ? 21 : 14)); // SPELL-09: Spell Book names "Spell Book: <Spell>" <= 21
   ok('item names <= 14 chars', !badName, badName && `items.defs.${badName[0]}.name`);
   const badDesc = Object.entries(defs).find(([, d]) => d.desc.length > 38);
   ok('item descs <= 38 chars', !badDesc, badDesc && `items.defs.${badDesc[0]}.desc`);
