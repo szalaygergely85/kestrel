@@ -72,7 +72,7 @@ fn skyNight(bg: vec3f, dir: vec3f, elevDeg: f32, sunDir: vec3f, sunI: f32, t: f3
   let w = (1.0 - skyGlowSm(${f(SKY_NIGHT.sunILo)}, ${f(SKY_NIGHT.sunIHi)}, sunI)) * (1.0 - skyGlowSm(${f(SKY_NIGHT.lumaLo)}, ${f(SKY_NIGHT.lumaHi)}, luma));
   if (!(w > 0.0)) { return o; }
   let col = ${`vec3f(${SKY_NIGHT.color.map(f).join(', ')})`};
-  let cosA = dot(dir, sunDir); if (sunDir.z < 0.0) { cosA = -cosA; }
+  var cosA = dot(dir, sunDir); if (sunDir.z < 0.0) { cosA = -cosA; }
   let cosR = cos(radians(${f(SKY_NIGHT.moonRadiusDeg)}));
   let m = skyGlowSm(cosR - ${f(SKY_NIGHT.moonEdge)}, cosR + ${f(SKY_NIGHT.moonEdge)}, cosA) * w;
   if (m > 0.0) { o.bg = bg + (col - bg) * m; o.fg = o.bg; return o; }

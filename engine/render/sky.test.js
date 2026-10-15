@@ -201,3 +201,24 @@ function cellsDiffer(Ca, offa, Cb, offb) {
 }
 
 console.log(`sky.test.js: ${pass} passed, 0 failed. ALL PASS`);
+
+// ---- CLOUD-FLUFF-01: cumulus ramp, dome, night/rim -------------------------
+{
+  const dirs = [];
+  for (let az = 0; az < 360; az += 4) for (let el = 4; el < 50; el += 2) dirs.push([az, el]);
+  const seen = new Set(); let maxCore = 0, edge = 0, nightDark = 0, nightN = 0, rimBright = 0, rimN = 0;
+  for (const [az, el] of dirs) {
+    const d = unitDir(az, el);
+    const a = makeCloudOut([100, 110, 125]); cloudAt(d.dx, d.dy, d.dz, el, C, zeroOff, a);
+    if (!a.glyph) continue;
+    seen.add(String.fromCharCode(a.glyph));
+    const n = makeCloudOut([100, 110, 125]); n.dayK = 0; cloudAt(d.dx, d.dy, d.dz, el, C, zeroOff, n);
+    nightN++; if (n.bg[0] + n.bg[1] + n.bg[2] < a.bg[0] + a.bg[1] + a.bg[2]) nightDark++;
+    const rr = makeCloudOut([100, 110, 125]); rr.rimK = 1; cloudAt(d.dx, d.dy, d.dz, el, C, zeroOff, rr);
+    rimN++; if (rr.fg[0] + rr.fg[1] + rr.fg[2] >= a.fg[0] + a.fg[1] + a.fg[2] - 1e-6) rimBright++;
+  }
+  check('CLOUD-FLUFF-01: ramp uses only " .\',-o@#" glyphs and both edge (. \') and core (o@#) appear',
+    [...seen].every((g) => " .',-o@#".includes(g)) && (seen.has('.') || seen.has("'")) && (seen.has('o') || seen.has('@') || seen.has('#')), [...seen].join(''));
+  check('CLOUD-FLUFF-01: night (dayK 0) darkens every cloud cell', nightN > 0 && nightDark === nightN, `${nightDark}/${nightN}`);
+  check('CLOUD-FLUFF-01: dawn/dusk rim never darkens fg', rimN > 0 && rimBright === rimN, `${rimBright}/${rimN}`);
+}
