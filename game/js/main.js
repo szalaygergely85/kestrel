@@ -1376,7 +1376,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
   // True while the pause menu is the thing on screen (same gate the old overlay used, minus Settings which owns the screen).
   function pauseUp() {
     return mode === 'world' && !!look && (!look.locked || pauseResume.soft) && !pauseResume.active && !isMapOpen() && !isNoteOpen() && !isNoteEscGrace() && !(dialogueCtl && dialogueCtl.escGrace.active) && !(invView && invView.isOpen) && !(craftView && craftView.isOpen) && !qlIsOpen() // OB-049: Esc closes the note only
-      && !cinematic && !isWaterfallPreview && !(menuHost && menuHost.active) && !isSettingsOpen();
+      && !cinematic && !isCaptureOrBench && !isWaterfallPreview && !(menuHost && menuHost.active) && !isSettingsOpen();
   }
   // QG-05: quest log (J). Built lazily per book (reset() replaces the book); pauses like the pack via qlOpen in invOpen.
   let qlView = null, qlBook = null, qlWasLocked = false, mapQmChart = null, mapQmVer = -1;
@@ -1676,7 +1676,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       combatHud.setSim(beasts); // HPBAR-02 + DMGNUM-01
       underSpawners = []; try { for (const site of UNDER_SITES) underSpawners.push(createUnderSpawner({ sim: beasts, site, state: world.state, structureAt: (x, y) => world.structureAt(x, y) })); } catch (err) { console.warn('[under] spawner failed:', err && err.message); underSpawners = []; } // UNDER-01
       { const ce = world.entity && world.entity('cemetery1'), cp = ce && (ce.transform || ce); // UNDER-08: no cemetery entity -> module default anchor
-        setUndergroundSources({ anchors: cp && Number.isFinite(cp.x) ? [{ x: cp.x, y: cp.y }] : null, sceneOf: () => underScene, ambienceAt: (x, y) => { const st = world.structureAt(x, y); return (st && st.level && st.level.ambience) || null; }, hour: () => clockHour(world.state, clockCfg) }); }
+        setUndergroundSources({ anchors: cp && Number.isFinite(cp.x) ? [{ x: cp.x, y: cp.y }] : null, sceneOf: () => underScene, ambienceAt: (x, y) => { const st = world.structureAt(x, y); return (st && st.level && (st.level.ambience || (st.level.def && st.level.def.ambience))) || null; }, hour: () => clockHour(world.state, clockCfg) }); }
       if (goblinWire) goblinWire.attach(beasts, { onClank: () => playShieldClank() }); // GOB-07b: camps + spear sim + view
       if (lifeWire) { lifeWire.dispose(); lifeWire = null; } // LIFE-08: night raids (content/life/raids.json), rebuilt with every beast sim
       if (raidDefs && !isCaptureOrBench && mode === 'world') lifeWire = createLifeWire({ ...raidDefs, campDefs: goblinWire ? goblinWire.campDefs : undefined, sim: beasts, events: engine.events, state: world.state, world, book: () => (saveRelay ? saveRelay.quest.book : null) });
@@ -2342,7 +2342,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       if (waterfallHooks) waterfallHooks.step();
       { const pt = playerHandle.data.transform; leafFall.step(engine.world.scatter, engine.world.wind, pt.x, pt.y, clothTick); } // WIND-GUST-01b
       if (ambientMotes) { const pt = playerHandle.data.transform; ambientMotes.step(pt.x, pt.y, pt.z); if (fireflies) fireflies.step(pt.x, pt.y); } // S8-B1-18: position lives on .transform
-      if (underCreep && playerHandle) { const pt = playerHandle.data.transform, st = engine.world.structureAt(pt.x, pt.y); const amb = (st && st.level && st.level.ambience) || null; underCreep.step(amb, pt.x, pt.y, pt.z); if (amb && underCreep.out.w > 0 && creepFirst.first(st.id || st.name || amb)) playRelayHum(); // chill cue, once per site per session
+      if (underCreep && playerHandle) { const pt = playerHandle.data.transform, st = engine.world.structureAt(pt.x, pt.y); const amb = (st && st.level && (st.level.ambience || (st.level.def && st.level.def.ambience))) || null; underCreep.step(amb, pt.x, pt.y, pt.z); if (amb && underCreep.out.w > 0 && creepFirst.first(st.id || st.name || amb)) playRelayHum(); // chill cue, once per site per session
         applyCreepLights(lightSet, underCreep.out, creepSt); } // UNDER-LIGHT-CREEP-01
       entityEmitters.sync(); engine.particles.step();
       if (waterfallHooks) waterfallHooks.afterStep();

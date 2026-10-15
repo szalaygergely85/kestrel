@@ -22,7 +22,7 @@ try {
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?dev=1&save=1&nopause=1&title=0&at=1674.5,1372.5,-56.8,0,0` });
   for (let i = 0; i < 150; i++) { await pause(300); if (await evaluate(cdp, '!!(window.__debug && window.__debug.world && window.__debug.playerHandle)')) break; }
   await pause(4000); // > 0.75 s creep fade-in + a few mote spawns
-  const amb = await evaluate(cdp, `(()=>{const t=window.__debug.playerHandle.data.transform,s=window.__debug.world.structureAt(t.x,t.y);return s&&s.level&&s.level.ambience||null;})()`);
+  const amb = await evaluate(cdp, `(()=>{const t=window.__debug.playerHandle.data.transform,s=window.__debug.world.structureAt(t.x,t.y);return s&&s.level&&(s.level.ambience||(s.level.def&&s.level.def.ambience))||null;})()`);
   console.log('ambience', amb); if (amb !== 'crypt') { console.log('FAIL not in crypt'); code = 1; }
   const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });
   const out = path.join(ROOT, 'docs', 'test-reports', 'creep-crypt.png'); writeFileSync(out, Buffer.from(shot.data, 'base64')); console.log('wrote', out);

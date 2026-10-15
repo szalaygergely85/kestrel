@@ -114,7 +114,7 @@ export function createDialogueCtl(opt) {
       const h = world.get(id), t = h && h.data && h.data.transform;
       if (!t) return null;
       const have = world.interactables && world.interactables.find((r) => r.key === 'npc.' + id); // R6-FIX A: idempotent (generic giver loop + explicit registrations)
-      if (have) return have;
+      if (have) { have.x = t.x; have.y = t.y; have.z = t.z + (o.lift ?? 1); return have; } // refresh the pose: restore() re-registers after an NPC moved/respawned (stale point = 'no dialogue opened')
       return world.addInteractable({
         key: 'npc.' + id, name: 'npc.talk', x: t.x, y: t.y, z: t.z + (o.lift ?? 1), radius: o.radius ?? 2.2,
         prompt: o.prompt ?? ('[E] Talk to ' + (NPC_NAMES[id] || id)).slice(0, 28), def: { npcId: id },
