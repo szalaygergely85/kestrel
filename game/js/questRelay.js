@@ -6,6 +6,7 @@ import { createQuestBook, READY } from './quest/sim/questBook.js'; // QG-03: the
 const BREACH_R2 = 3 * 3, BREACH_DZ = 2.5; // "reached the breach": within 3 m (xy) of the marker and 2.5 m in z
 const scratch = [];
 export const DONE_TEXT = 'The pencil line runs on.';
+export const HUD_ROW = 4; // OB-190: rows 1-2 are the HP/MP bars (vitals layout hpRow 1 / mpRow 2, drawn after this line and covering it); row 4 leaves a gap
 const PLATE = [10, 11, 16], TEXT = [226, 214, 176], DIM = [140, 134, 112];
 
 /**
@@ -124,7 +125,7 @@ export function createQuestRelay(def, saved = null, giverDefs = [], savedQuests 
       const text = relay.objectiveText();
       if (text !== lineFor) { lineFor = text; line = relay.done ? text : '> ' + text; } // rebuilt only when the text changes
       const s = line;
-      const fg = relay.done ? DIM : TEXT, x0 = 2, y = 1;
+      const fg = relay.done ? DIM : TEXT, x0 = 2, y = HUD_ROW;
       for (let j = -1; j <= s.length; j++) put(ui, x0 + j, y, 32, fg, PLATE);
       for (let j = 0; j < s.length; j++) put(ui, x0 + j, y, s.charCodeAt(j), fg, PLATE);
     },
