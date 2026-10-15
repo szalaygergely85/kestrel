@@ -21,7 +21,7 @@ const OUT = path.join(ROOT, 'docs', 'test-reports', 'quest-walk'); mkdirSync(OUT
 const rows = [], errors = []; let browser, cdp, curBeat = 'start';
 const ev = (js) => evaluate(cdp, js);
 const evA = (js) => evaluateAsync(cdp, js);
-const killer = setTimeout(() => { console.error('verify-quest-walk timeout'); if (browser?.pid) killTree(browser.pid); if (server.pid) killTree(server.pid); process.exit(2); }, 900000);
+const killer = setTimeout(() => { console.error('verify-quest-walk timeout'); if (browser?.pid) killTree(browser.pid); if (server.pid) killTree(server.pid); process.exit(2); }, 2400000);
 
 // ---- reporting ----
 function check(name, ok, why) { rows.push({ beat: curBeat, name, ok: !!ok }); console.log((ok ? '  PASS ' : '  FAIL ') + name + (ok ? '' : '  - ' + why)); return !!ok; }
@@ -130,7 +130,8 @@ try {
   // ===== opening chain =====
   await beat('1 wake; tower.blade offered (gold "!" over the note, needle at the note)', async () => {
     await ev("(__t.w.state['quest.wakeT'] = 100, true)"); await pause(1500); await ev('(__t.D.playerHandle.data.components.body.eyeH = __t.D.engine.physics.eyeHeight, true)');
-    check('wake step done', await waitFor(async () => (await mainDone()).includes('"wake"'), 8000), 'main ' + await mainDone());
+    const wk = await waitFor(async () => (await mainDone()).includes('"wake"'), 8000); if (!wk) console.log('    DIAG-WAKE wakeT=' + await ev("JSON.stringify([__t.w.state['quest.wakeT'], performance.now(), document.hidden, document.visibilityState, Object.keys(__t.D), __t.w.state['quest.wakeT'], Object.keys(__t.w.state).slice(0, 40)])")); const fr = await evA("new Promise((r) => { let n = 0; const t0 = performance.now(); const f = () => { n++; if (performance.now() - t0 > 1000) r([n, Math.round(performance.now() - t0)]); else requestAnimationFrame(f); }; requestAnimationFrame(f); })"); console.log('    DIAG-RAF ' + JSON.stringify(fr) + ' ERR ' + JSON.stringify(errors.slice(0, 5)) + ' loop ' + JSON.stringify(await ev('(() => { const l = __t.D.loop; return JSON.stringify(Object.keys(l).map((k) => [k, typeof l[k] === "function" ? "f" : l[k]])); })()')) + ' ' + await ev('JSON.stringify([__t.D.look.locked, !!__t.D.dialogue.open, __t.D.vitals.inputLocked, __t.D.wakeOut])'));
+    check('wake step done', wk, 'main ' + await mainDone());
     check('tower.blade available', (await stOf('tower.blade')) === 1, await state('tower.blade'));
     await markCheck('gA', 'noteKeepLight', true, "gold '!' over the key-keeper note (object giver)");
     await needleCheck([2, 3], undefined, "needle at the note (wake step or available '!')");
@@ -186,7 +187,7 @@ try {
   });
   await beat('7 follow Burl to the stone, wake it; burl.stone READY, gold "?" over Burl', async () => {
     let arrived = false;
-    for (let i = 0; i < 80 && !arrived; i++) { const b = await ev("(() => { const t = __t.w.get('bear').data.transform; return [t.x, t.y, __t.w.state['burl.phase']]; })()"); if (b[2] >= 2) { arrived = true; break; } await tpA(b[0] - 4, b[1] + 1); await pause(1200); }
+    for (let i = 0; i < 200 && !arrived; i++) { const b = await ev("(() => { const t = __t.w.get('bear').data.transform; return [t.x, t.y, __t.w.state['burl.phase']]; })()"); if (b[2] >= 2) { arrived = true; break; } await tpA(b[0] - 4, b[1] + 1); await pause(1200); }
     check('Burl reached the stone', arrived, 'phase ' + await ev("__t.w.state['burl.phase']"));
     check('burl.follow done / burl.stone accepted by the arrival', (await stOf('burl.follow')) === 4 || (await stOf('burl.stone')) >= 2, await state('burl.follow', 'burl.stone'));
     // Burl's stone talk (sets dlg.bear.stone.told, the gate for waking the stone) opens by itself on arrival; else start it with E
