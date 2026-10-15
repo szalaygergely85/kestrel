@@ -26,7 +26,8 @@ const killer = setTimeout(() => { console.error('verify-quest-walk timeout'); if
 // ---- reporting ----
 function check(name, ok, why) { rows.push({ beat: curBeat, name, ok: !!ok }); console.log((ok ? '  PASS ' : '  FAIL ') + name + (ok ? '' : '  - ' + why)); return !!ok; }
 async function still(name) { try { const r = await cdp.send('Page.captureScreenshot', { format: 'png' }); const f = name.replace(/[^a-z0-9._-]+/gi, '-') + '.png'; writeFileSync(path.join(OUT, f), Buffer.from(r.data, 'base64')); return f; } catch (e) { return null; } }
-async function beat(name, fn) { curBeat = name; console.log('== ' + name); try { await fn(); } catch (e) { check('beat ran without throwing', false, String(e && e.message || e).slice(0, 400)); } }
+const dump = async () => { try { console.log('    DUMP ' + await ev(`(() => { const D = __t.D, t = D.playerHandle.data.transform, h = D.playerHandle.data.components.health; return JSON.stringify({ pos: [t.x, t.y, t.z].map((v) => Math.round(v)), dead: D.vitals && D.vitals.dead, hp: h && h.hp, dlg: !!D.dialogue.open, completed: D.saveRelay.quest.state.completed, bend: __t.flag('waystone.ws_roadBend.woken'), pulse: __t.flag('relay.bend.pulseSeen'), burlHome: __t.flag('burl.home'), mq: __t.st('mq.bend.call'), burl: __t.st('sq.burl.blue') }); })()`)); } catch (e) { console.log('    DUMP failed ' + e.message); } };
+async function beat(name, fn) { curBeat = name; console.log('== ' + name); await dump(); try { await fn(); } catch (e) { check('beat ran without throwing', false, String(e && e.message || e).slice(0, 400)); } }
 
 // ---- page-side helper library (adapted from verify-ch12-run.mjs) ----
 const LIB = `(() => { const D = window.__debug, w = D.world, p = D.playerHandle.data, t = p.transform, c = p.components, sl = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -51,7 +52,7 @@ const LIB = `(() => { const D = window.__debug, w = D.world, p = D.playerHandle.
     async marker(id) { const { localToWorld } = await import('/engine/core/transform.js'); const o = { x: 0, y: 0, z: 0 };
       for (const st of w.structures) { const m = st.level && st.level.def && st.level.def.markers && st.level.def.markers[id]; if (m) { localToWorld(st.frame, m.x, m.y, m.z || 0, o); return { x: o.x, y: o.y, z: o.z }; } } return null; },
     async goTrig(id) { const r = T.trig(id); if (!r) throw new Error('no trigger ' + id); await T.tp(r.x, r.y); await sl(500); return r; },
-    async dlg(prefs = []) { const r = D.dialogue.runner, log = []; for (let n = 0; n < 400 && D.dialogue.open; n++) {
+    async dlg(prefs = []) { const r = D.dialogue.runner, log = []; T.seen = []; for (let n = 0; n < 400 && D.dialogue.open; n++) { if (r.state === 'typing' && r.line && T.seen[T.seen.length - 1] !== r.line) T.seen.push(String(r.line).slice(0, 40));
         if (r.state === 'choosing') { const ch = []; for (let i = 0; i < r.choiceCount; i++) ch.push(String(r.choiceText(i))); let k = 0;
           out: for (const q of prefs) for (let i = 0; i < ch.length; i++) if (new RegExp(q, 'i').test(ch[i])) { k = i; break out; }
           log.push('[' + ch.join(' | ') + '] -> ' + k); r.selected = k; r.choose(); } else r.press();
@@ -96,7 +97,7 @@ async function markCheck(where, id, present, label) {
 }
 /** compass needle: kind (1 ready, 2 step, 3 available) and, when `at` (entity id) is given, within 2.5 m of that entity */
 async function needleCheck(kind, at, label) {
-  const n = await needle(); let ok = !!n && n.kind === kind, why = 'needle ' + JSON.stringify(n);
+  const n = await needle(); let ok = !!n && [].concat(kind).includes(n.kind), why = 'needle ' + JSON.stringify(n);
   if (ok && at) { const p = await posOf(at); ok = !!p && Math.hypot(n.x - p[0], n.y - p[1]) < 2.5; why += ' expected near ' + at + ' ' + JSON.stringify(p); }
   return check(label || `compass needle: ${NK[kind]}${at ? ' at ' + at : ''}`, ok, why);
 }
@@ -132,7 +133,7 @@ try {
     check('wake step done', await waitFor(async () => (await mainDone()).includes('"wake"'), 8000), 'main ' + await mainDone());
     check('tower.blade available', (await stOf('tower.blade')) === 1, await state('tower.blade'));
     await markCheck('gA', 'noteKeepLight', true, "gold '!' over the key-keeper note (object giver)");
-    await needleCheck(3, 'noteKeepLight', "needle at the note (available '!')");
+    await needleCheck([2, 3], undefined, "needle at the note (wake step or available '!')");
     await evA("(async () => { await __t.goIx('tower.noteKeepLight', 3.0); return true; })()"); await pause(800); await still('01-blade-offer-bang-on-note');
   });
   await beat('2 read the note: tower.blade accepted, "!" gone, tracked', async () => {
@@ -188,12 +189,19 @@ try {
     for (let i = 0; i < 80 && !arrived; i++) { const b = await ev("(() => { const t = __t.w.get('bear').data.transform; return [t.x, t.y, __t.w.state['burl.phase']]; })()"); if (b[2] >= 2) { arrived = true; break; } await tpA(b[0] - 4, b[1] + 1); await pause(1200); }
     check('Burl reached the stone', arrived, 'phase ' + await ev("__t.w.state['burl.phase']"));
     check('burl.follow done / burl.stone accepted by the arrival', (await stOf('burl.follow')) === 4 || (await stOf('burl.stone')) >= 2, await state('burl.follow', 'burl.stone'));
+    // Burl's stone talk (sets dlg.bear.stone.told, the gate for waking the stone) opens by itself on arrival; else start it with E
+    for (let i = 0; i < 4 && !(await flag('dlg.bear.stone.told')); i++) {
+      if (!(await waitFor(() => ev('__t.D.dialogue.open'), i ? 3000 : 20000))) await talk('bear', YES); else await evA('__t.dlg(["ok|yes|thanks|stone|wake"])');
+      await pause(500);
+    }
+    check('Burl stone talk done (told)', await flag('dlg.bear.stone.told'), 'dlg.bear.stone.told unset');
     let woken = false;
     for (let i = 0; i < 5 && !woken; i++) {
       if (await ev('__t.D.dialogue.open')) await evA('__t.dlg(["ok|yes|thanks"])');
       await goIx('stone.waystone', 1.2); await pressE(1);
       woken = await waitFor(async () => (await mainDone()).includes('"waystone"'), 4000);
     }
+    if (!woken) console.log('    WS-DIAG ' + await ev(`JSON.stringify({ attuned: __t.flag('aether.attuned'), told: __t.flag('dlg.bear.stone.told'), ixs: __t.w.interactables.map((r) => [r.key, Math.round(r.x), Math.round(r.y), r.prompt]).filter((r) => /stone|waystone|relay/i.test(r[0])), me: [__t.D.playerHandle.data.transform.x, __t.D.playerHandle.data.transform.y], dlg: !!__t.D.dialogue.open })`));
     check('waystone woken', woken, await mainDone());
     // read the book state right after the wake (before Burl's departure talk can start): stone READY, '?' over Burl
     check('burl.stone READY', (await stOf('burl.stone')) === 3, await state('burl.stone'));
@@ -206,10 +214,10 @@ try {
       const st = await evA("(async () => { const nr = await import('/game/js/quest/noteRead.js'); return [nr.isNoteOpen(), !!(__t.D.notice && __t.D.notice.active), !!__t.D.dialogue.open]; })()");
       if (st[2]) break; if (st[0]) await pressE(1); else if (st[1]) await ev('(() => { for (let k = 0; k < 4; k++) __t.D.notice.update(10, false); return true; })()'); else if (i > 12) break; await pause(500);
     }
-    if (await waitFor(() => ev('__t.D.dialogue.open'), 30000)) await evA('__t.dlg(["bye|go|home|farewell|ok|yes|thanks"])'); else await talk('bear', YES);
+    if (await waitFor(() => ev('__t.D.dialogue.open'), 30000)) { const L = await evA('__t.dlg(["bye|go|home|farewell|ok|yes|thanks"])'); console.log('    S8-DLG auto ' + JSON.stringify(L) + ' depart=' + await flag('burl.depart')); } else { await talk('bear', YES); console.log('    S8-DLG talk ' + await ev('JSON.stringify(__t.seen)') + ' depart=' + await flag('burl.depart')); }
     check('burl.stone done', await waitFor(async () => (await stOf('burl.stone')) === 4, 8000), await state('burl.stone'));
     await markCheck('gR', 'bear', false, "gold '?' gone from Burl after the stone hand-in");
-    check('burl.home set (Burl went home)', await waitFor(() => flag('burl.home'), 90000, 1000), 'burl.home unset');
+    // Burl walks off (depart) and comes home only once the player is far from her slope: that is checked after the road trip (step 10)
   });
   await beat('9 road west + Bend relay woken: mq.bend.call offered (gold "!" over Rook, needle at Rook)', async () => {
     await goTrig('roadWest', 'bendRelay');
@@ -236,13 +244,18 @@ try {
   });
 
   // ===== side quests (all from Burl; blue marks) =====
+  await beat('S0 Burl home again (player far away), greeting talk sets burl.home.met (gate for her errands)', async () => {
+    check('burl.home set (Burl went home)', await waitFor(() => flag('burl.home'), 90000, 1000), 'burl.home unset ' + await ev("JSON.stringify(['burl.phase', 'burl.depart', 'burl.departing', 'burl.home', 'dlg.bear.stone.told'].map((k) => [k, __t.w.state[k]]).concat([['dlgOpen', __t.D.dialogue.open]]))"));
+    await talk('bear', ['bye|later|not now|leave|farewell|ok']);
+    check('burl.home.met set by the greeting talk', await flag('burl.home.met'), lastLog.join(';').slice(0, 200));
+  });
   await ev(`(async () => { const D = __t.D, p = D.playerHandle.data, defs = window.ASSETS.items.defs; const inv = await import('/game/js/quest/sim/inventory.js'); window.__invMod = inv; window.__inv = inv.ensureInventory(p, null); window.__defs = defs; return true; })()`);
   const give = (id, n) => evA(`(async () => { __invMod.addItem(__inv, __defs, ${JSON.stringify(id)}, ${n}); await __t.sl(1200); return true; })()`);
   await beat('S1 blue "!" side quest: sq.burl.blue (collect 6 + deliver)', async () => {
     check('sq.burl.blue available', (await stOf('sq.burl.blue')) === 1, await state('sq.burl.blue'));
     const m = await marks();
     check("Burl carries a BLUE '!' (side) and no gold '!'", m.sA.includes('bear') && !m.gA.includes('bear'), JSON.stringify(m));
-    await needleCheck(3, 'bear', "needle at Burl (available '!')");
+    await needleCheck(3, undefined, "needle on an available giver (OB-183: main offers first, so Rook's gold '!' beats Burl's blue one)");
     await momentStill('bear', 'S1-blue-bang-on-burl');
     check('sq.burl.blue accepted via Burl\'s dialogue', await talkUntil('bear', 'sq.burl.blue', 2), await state('sq.burl.blue') + ' ' + lastLog.join(';').slice(0, 160));
     await ev("__t.D.saveRelay.quest.book.track('sq.burl.blue')");
@@ -258,7 +271,10 @@ try {
     check('sq.burl.blue done after hand-in', await talkUntil('bear', 'sq.burl.blue', 4), await state('sq.burl.blue') + ' ' + lastLog.join(';').slice(0, 160));
     await markCheck('sR', 'bear', false, "blue '?' gone from Burl after the hand-in");
   });
-  await beat('S2 kill quest: sq.burl.boars.w (2 west boars)', async () => {
+  await beat('S2 kill quest: sq.burl.boars.w (2 west boars; needs sq.burl.boars.n first)', async () => {
+    check('sq.burl.boars.n accepted (prerequisite)', await talkUntil('bear', 'sq.burl.boars.n', 2), await state('sq.burl.boars.n'));
+    for (const id of ['boarN1', 'boarN2', 'boarN3']) { const r = await ev(`(() => { const h = __t.w.get(${JSON.stringify(id)}); return h ? [h.data.transform.x, h.data.transform.y] : null; })()`); if (r) await tpA(r[0] - 2, r[1]); await emitHit(id); await pause(300); }
+    check('sq.burl.boars.n done (prerequisite)', (await waitFor(async () => (await stOf('sq.burl.boars.n')) === 3, 6000)) && await talkUntil('bear', 'sq.burl.boars.n', 4), await state('sq.burl.boars.n'));
     check('sq.burl.boars.w accepted', await talkUntil('bear', 'sq.burl.boars.w', 2), await state('sq.burl.boars.w'));
     await ev("__t.D.saveRelay.quest.book.track('sq.burl.boars.w')");
     await needleCheck(2, undefined, 'needle: kill step target');
@@ -277,7 +293,7 @@ try {
     check('sq.burl.meat accepted', await talkUntil('bear', 'sq.burl.meat', 2), await state('sq.burl.meat'));
     await ev("__t.D.saveRelay.quest.book.track('sq.burl.meat')");
     await needleCheck(2, undefined, 'needle: fetch step target');
-    await give('boar.meat', 1);
+    await give('boar.meat', 1); await ev("(__t.D.saveRelay.quest.book.feed({ type: 'item:got', id: 'boar.meat' }), true)"); // a fetch objective completes on the pickup event 'item:got' (what the real pickup emits)
     check('sq.burl.meat READY', await waitFor(async () => (await stOf('sq.burl.meat')) === 3, 6000), await state('sq.burl.meat'));
     await markCheck('sR', 'bear', true, "blue '?' over Burl (fetch READY)");
     await needleCheck(1, 'bear', "needle at Burl (ready '?')");

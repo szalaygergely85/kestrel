@@ -13,6 +13,7 @@
     {"node": "bear.home.again", "requires": "s.burl.home.met"},
     {"node": "bear.home", "requires": "s.burl.home"},
     {"node": "bear.departing", "requires": "s.burl.departing"},
+    {"node": "bear.woken.1", "requires": "q.burl.stone.ready"},
     {"node": "bear.woken.1", "requires": "s.waystone.waystone.woken"},
     {"node": "bear.stone.offer", "requires": "q.burl.stone.available"},
     {"node": "bear.stone.again", "requires": "bear.stone.told"},
