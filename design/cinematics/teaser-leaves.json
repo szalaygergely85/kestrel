@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "id": "teaser-leaves",
+  "fps": 30,
+  "note": "TEASER (owner 2026-10-15, TikTok 9:16, capture --portrait: VFOV ~47, ~27 deg horizontal after the crop): slow 6.4 m push NW (yaw 312 -> 304) into groveNorthWest (forest paint disc 1460, 1008, r 9: forest-floor detail = ferns/logs/mushrooms/saplings, ~3-6 real trees), eye ~0.85 m over the litter, looking down -38 and tilting up to -18 at the end (frame top just above the horizon) into the trunks and the light between them. Tower, woodpile/Burl's corner and boars are behind the camera (bearings 100-170). Floor estimate 2.35 -> 2.22 (crown skirt; +-0.17 worst case) -> clearance 0.68-1.0. TRUNK HITS NOT CHECKED YET: the end key is 1.4 m from the grove centre; if cine-check reports a trunk, shorten the push (move the last two keys back along yaw 309). Real light shafts (CANOPY-SHAFT-01b lights.shaft) exist only in gpucompare rows today, no page flag. Hour 15:30.",
+  "keys": [
+    { "t": 0,    "x": 1466.0,  "y": 1013.0,  "z": 3.20, "yawDeg": 312, "pitchDeg": -38, "ease": "linear" },
+    { "t": 3.25, "x": 1464.99, "y": 1012.18, "z": 3.17, "yawDeg": 310, "pitchDeg": -34, "ease": "linear" },
+    { "t": 6.5,  "x": 1463.51, "y": 1010.99, "z": 3.12, "yawDeg": 308, "pitchDeg": -29, "ease": "linear" },
+    { "t": 9.75, "x": 1462.04, "y": 1009.79, "z": 3.09, "yawDeg": 306, "pitchDeg": -23, "ease": "linear" },
+    { "t": 13,   "x": 1461.03, "y": 1008.97, "z": 3.07, "yawDeg": 304, "pitchDeg": -18, "ease": "linear" }
+  ]
+}
