@@ -19,6 +19,7 @@ import { getCtx, isMuted, playNoiseBurst, playToneBurst } from './synth.js';
 // US-020b: burner crackle+hiss / breach wind - two looping ambient beds,
 // each driven by distance to a level-data position (game/js/audio/ambient.js).
 import { stepForestAmbience, resetForestAmbience } from './forestAmbience.js';
+import { stepUndergroundAmbience, resetUndergroundAmbience } from './undergroundAmbience.js';
 import { HISS_BED_PEAK, CRACKLE_BURST_PEAK, WIND_BED_PEAK, resetAmbientAudio, stepAmbientAudio } from './ambient.js';
 // US-020c: floor-material -> footstep timbre (stone/wood/iron), game/js/audio/surfaces.js.
 import { surfaceTimbre } from './surfaces.js';
@@ -272,6 +273,7 @@ export function stepGameAudio(playerEntity) {
   if (playerEntity) stepFootstepAudio(playerEntity);
   stepBoulderAudio();
   stepAmbientAudio(playerEntity); // US-020b: burner crackle+hiss / breach wind
+  stepUndergroundAmbience(playerEntity); // UNDER-08: picks the bed first (suppresses forest)
   stepForestAmbience(playerEntity); // OB-184: forest bed / birds / night set
 }
 
@@ -283,6 +285,7 @@ export function resetGameAudio(world) {
   resetFootstepAudio(world);
   resetBoulderAudio(world);
   resetForestAmbience();
+  resetUndergroundAmbience();
   resetAmbientAudio(world); // US-020b: re-reads brazier/breach positions, tears down + will lazily rebuild the two loops
 }
 
