@@ -1365,8 +1365,8 @@ export function sunFromWorld(world, palette, out = _sunScratch) {
   let az = 112.5, elev = T.sunElev;
   let sun = world.sun;
   if (!sun) {
-    const s0 = world.structures.find((s) => s.kind !== 'mesh'); // first LEVEL structure (ME-14c1)
-    sun = s0?.level?.def?.sun;
+    const sts = world.structures; // first LEVEL structure (ME-14c1); plain loop, no per-call closure
+    for (let i = 0; i < sts.length; i++) if (sts[i].kind !== 'mesh') { sun = sts[i]?.level?.def?.sun; break; }
   }
   if (sun && sun.azimuth != null) {
     az = sun.azimuth; elev = sun.elevation;
