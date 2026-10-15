@@ -96,7 +96,7 @@ export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
     const qi = ti >= 0 ? ti : 0;
     const def = book.def(qi), st = book.questState(qi), stt = book.status(qi);
     if (stt === READY && book.turnInOf && book.turnInOf(qi) && world.resolve('giver', book.turnInOf(qi), tmp)) { kind = 1; side = !book.isMain(qi); }
-    else if (stt === ACTIVE) {
+    else if (stt === ACTIVE && !(qi === 0 && book.mainStepGated && book.mainStepGated())) { // OB-199: not-accepted main step -> no needle
       const idx = st.completed.length;
       if (idx < def.objectives.length && stepPos(def.objectives[idx].when, st, world)) kind = 2;
       else if (def.giver && def.giver.npc && world.resolve('giver', def.giver.npc, tmp)) kind = 2;   // COMPASS-QUEST-01: unresolvable step -> point at the quest's giver instead of hiding
