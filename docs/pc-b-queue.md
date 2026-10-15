@@ -1,5 +1,31 @@
 # PC-B queue
 
+## !!! OWNER PRIORITY 1 (2026-10-15): fix ALL quests to the owner rule + an end-to-end test for EVERY quest (PC-A main session) - do this BEFORE everything else below
+The rule is FIXED (OB-156, D-082, D-087, D-108; no owner questions, no PO round needed): every quest, main or side, including the opening main chain: `!` over a CHARACTER (gold main / blue side) -> talk -> Accept / Exit -> objectives (compass needle only, tracked quest only) -> when ALL objectives are done a `?` in the same colour over a CHARACTER -> hand-in talk -> reward -> both marks gone. About 5-10 % object givers allowed (`objectGiver: true`), they still hand in at a character. Any quest that breaks this is a bug.
+
+| ID | Slot | AC | Status |
+|---|---|---|---|
+| QUEST-E2E-ALL | kestrel-4 (tools/tests) | ONE Node test `game/js/quest/allQuests.e2e.test.js` (in run-tests) that loads the REAL content (all quest files, packs, sites, dialogue) and, for EVERY quest id (generated list, no hand-written subset; a new quest file is picked up automatically), drives the real quest runtime (questBook/errands/templates, dialogue runner, inventory, the sim hooks for kill/fetch/deliver/area): (1) before: `!` shows over the giver in the right colour (main gold / side blue), giver is a character unless objectGiver; (2) talk -> Accept/Exit offered (Exit keeps it available); (3) Accept -> `!` gone, tracked; (4) complete every objective (simulate kills/pickups/areas/deliveries through the same events the game uses, not by setting state); (5) `?` shows over the turnIn CHARACTER only after the LAST objective; (6) hand-in talk -> reward given exactly once, quest done, both marks gone; (7) save -> load -> state identical (BH-S1 class). Prints one line per quest PASS/FAIL with the failing step; exits non-zero on any FAIL. Today's failures are the fix list for QUEST-HANDIN-ALL. Runtime < 60 s for all quests. | todo, START NOW |
+| QUEST-HANDIN-ALL | kestrel-1 + kestrel-3 + writer | Make QUEST-E2E-ALL pass for every quest: give each quest/chain step that completes without a hand-in (start with the opening chain: tower door, road west, Bend waystone; any `mark.taken` / place-reached / auto completion) a character turnIn (Burl, Rook, post-keeper Bram, the wardens, Hesk...), a READY `?` and a hand-in talk; writer adds the lines (`NEEDS WRITER` placeholders allowed for one day). Add content-lint rule R18: every quest has a character turnIn (objectGiver quests too); real content 0. | todo, after the test exists (can start in parallel on the opening chain) |
+| QUEST-WALK-OWNER | main session (PC-B) | When QUEST-E2E-ALL is green: one browser route walk of the opening chain + 3 side quests (accept, complete, hand in) with stills of `!`, `?`, needle; then owner walk. | todo |
+
+## Compass = tracked quest + hand-in (owner 2026-10-15, D-108) (PC-A main session)
+
+| ID | Slot | AC | Status |
+|---|---|---|---|
+| COMPASS-TRACK-01 | kestrel-1 (compassHud.js / main.js) | D-108: the compass needle points at the TRACKED quest's current target only (one tracked quest at a time; switching tracking switches the needle at once); when the tracked quest is READY, the needle points at the return character and their `?` shows in the quest colour (gold main / blue side); objectives INSIDE a quest = needle only; every quest ends at a hand-in character (D-108 amended). Today compassHud.js:94-95 falls back to the main quest when nothing is tracked: keep that fallback. Node test per case (tracked objective, tracked ready -> return point, switch tracking, nothing tracked -> main) + owner look. Check after BH-S1 (tracked quest must survive Continue). | todo |
+
+## Bug hunt round 2 (2026-10-15, PC-A, 3 fable architects, 10 min; reports `docs/test-reports/bughunt-2026-10-15b-*.md`)
+5 confirmed. Do BH2-E1 together with BH-A1 (both in resetAll). Engine fixes end in arch-review on PC-A.
+
+| ID | Slot | Bug (fix in the report) | Status |
+|---|---|---|---|
+| BH2-E1 | kestrel-3 | **(P1)** `resetAllSim` (beastSim.js:1861) sets `down[i]=0` and revives every slot incl. logic-reserve groups; logicWire has no `beasts:reset` listener -> map travel / Unstuck (main.js:1427) wakes the cemetery trio, aireserve.* and cleared groups while `logic.groups` says 0/2. Fix: logicWire listens to `beasts:reset` and re-runs spawnGroup/despawnGroup; test: reserve group + resetAll -> groupAlive 0. | todo |
+| BH2-R1 | kestrel-2 | After a runtime `setGroundLook`, a cache-hit band swap (World.js:1529) publishes a near without `look`; passRaster `_lookTextures` (332-339) keeps the PREVIOUS band's NEARLOOK bound with lookActive=true (probe). Fix: bake look for cached bundles on toggle (or clear bandCache) + host guard `nearReady && !near.look -> lookActive=false`; extend lookBake.test. Editor/debug path. Engine: PC-A arch-review. | todo |
+| BH2-G1 | kestrel-3 (+ PO) | Settings > Difficulty mostly dead: only d.hp/d.dmg (read once at create) and d.respawn are used; playerDmg/windup/noticeR/noticeSec/leash/groupDelta/eliteChance/gear/flank have no consumers, applyDifficulty never called, live change does not rescale beasts. Fix: wire playerDmg into vitals.onHit + rescale on setDifficulty, or hide Easy/Hard until BEAST-06b (PO decides). | todo |
+| BH2-E2 | kestrel-3 | logicWire.js:66 calls `logic.save()` (allocating JSON round trip) every fixed step while `pending > 0` (up to 3600 steps for one `after:3600`). Fix: save only when the pending queue changed. | todo |
+| BH2-E3 | kestrel-3 | `hashInto` (logic.js:259) omits `resume` though save() persists it. Fix: `h.u32(resume)`. | todo |
+
 ## Bug hunt 2026-10-15 fixes (PC-A, 3 fable architects; reports `docs/test-reports/bughunt-2026-10-15-*.md`) - do BH-A1 FIRST (crash)
 12 confirmed bugs (probe or code trace in the reports) + suspects listed there. Engine fixes end in arch-review on PC-A.
 

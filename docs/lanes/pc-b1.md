@@ -1454,3 +1454,69 @@ Skeleton spawn anchor: cemetery1 at (1644, 1372), radius 15 m, night. MAIN SESSI
 - UNDER-05 note (writer, kestrel-1): `note.smugglers` placeholder replaced (4 lines <= 50 chars, ASCII; hints Ford cellar + crypt scraped names, no spoiler; prompt "[E] Read the note", title "A note under a crate" kept). Tests not run (writer has no shell): `node game/js/quest/errandsInspect.test.js`, `node tools/validate-content.mjs`.
 - UNDER-06 goblin tunnel (OB-191, kestrel-4, branch under06) dev done, Node only: `tools/gen-goblintunnel.mjs` -> content/levels/goblin_tunnel.level.json (3-wide, keepTerrain, cave ambience, 3 torches, ~75 m) + world_m1 (structure goblinTunnel, ~60 rock meshes, `chestGoblinTunnel`). Links campNorth (925,905) <-> campEast (965,975), 80 m apart: mouth A (930.5,917) south of N, bends (930,939)/(960,939), mouth B (960.5,962) north of E, walk-in 0.3 slopes + boulders/cap rocks; stash room x941-950 y943-949 floor -88.8. Site `goblinTunnel` in UNDER_SITES (2 archer + 1 torch, dz rule), chest EARNED by `quest/under/goblinTunnel.js` (wired in underHook.js canOpenChest/flags). Goblins are static (no camp reinforcement: they are not camp members, so dormancy/respawn untouched; dead ones stay dead via the saveRelay set, BH-S5). Tests: goblinTunnel.test.mjs (1236 checks), under/goblin/chest/regional filters PASS (regionalBeasts +13 reserve slots, chest total cap 16), validate-content OK (only GI-stale warnings), content-lint = baseline 91. NEEDS GI re-bake. Capture poses (x,y,z eye, yaw 180=south): A mouth (930.5,913,-79.4,180), mid (945.5,939.5,-87.2,270), room (941.5,946,-87.2,90), B mouth (960.5,958,-85.5,180).
 - UNDER-03 note (writer, kestrel-1, cellarnote): `note.fordCellar` placeholder replaced (4 lines <= 53 chars, ASCII; smugglers' tally: salt/oil from the strand, graves run off, someone not theirs goes down there; no names). Prompt "[E] Read the tally", title "A tally on a cellar beam". Tests not run (writer has no shell): `node game/js/quest/errandsInspect.test.js`.
+
+### ARCH batch round 4 2026-10-15 (PC-B, opus)
+- CONTACT-AO fix + FX-TUNE + OB-189 alternates (kestrel-4 ob189bark c88d01bc, fe33a754, 54c6730d): **ARCH OK** - zwin max(0.5h, CAO_ZWIN_MIN 0.4) identical in JS + WGSL twin; caoSunFactor/caoSt/caoSg select exactly 1.0 at q=0 (byte-identical off, SHADE_WGSL re-pin documented); meshes stay ambient-only per 38.78 rev; shaftKFor pure game-side; closeWallRows.test now covers all sets.
+- OB-189c softRows (kestrel-1 ob189rows 16974cbb): **ARCH OK** - the atlas is a 95 x 1 strip (height = pxCellH), the [1 2 1]/4 blur is vertical-only with row clamping, so it cannot bleed between cells; gpucompare compares cell fg/bg/glyph codes before present, the atlas only feeds present -> no gpucompare impact; ATLAS-GUARD retry reuses `m` (softRows kept); UI atlas untouched; getImageData only on atlas rebuild (no per-frame cost). Follow-up (not blocking): RenderTargetGL (WebGL2 fallback) has no softRows - pass the same flag there for parity.
+- UNDER-04 bear den (kestrel-4 under04 e3d8198e): **ARCH OK** - validateUnder in test, spawn z = chamber floor (dz rule), keepTerrain + mesh physics, regionalBeasts brain.species fallback is backward-compatible.
+- UNDER-05 sea cave (kestrel-1 under05 f9dc94ef, 5f3cceb9): **ARCH OK** - same pattern (validateUnder, site z = floor, earned chest).
+- UNDER-06 goblin tunnel (kestrel-4 under06 c416d083): **ARCH OK** - goblinTunnel.js pure, underHook gate/flags wired like crypt, site z = stash floor; nit: goblinTunnel.test.mjs line 56 `=== false || true` is a tautology - replace with a real in-tunnel inRange === true check.
+- UNDER-07 graves/crypt quests (kestrel-2 under07 04d0979b): **ARCH CHANGES** - (1) the skelwar/skelarch -> 'skeleton' alias (quest.js kindOf), graves quest kind 'skeleton', lintQuest + test edits are UNCOMMITTED in the kestrel-2 tree; the committed quest still counts kind 'skelwar' only - commit them together. (2) underQuestFlags SEEN check is a 2D 30 m radius around the cemetery - 38.75 item 4 forbids 2D-only: add |p.z - groundAt/cemetery z| < 3 so a player inside the crypt below does not tick "see the skeletons rise"; add a test.
+- Structure cap: after merging all sites the grid structures are tower, fordCellar, crypt, bearDen, strandCave, goblinTunnel = **6 of 8** (no grate structure; hatch/crates/rocks are kind 'mesh' and do not count). 2 more sites fit; a 9th needs an engine story (see 38.75 note).
+
+## PO batch 2 2026-10-15 (PC-B, sonnet)
+Lane entries + ARCH verdicts only (no code, no browser). "pending owner walk" = owner-visible. No plain-name, earned-chest, env-mesh, 4-legged, "Esc to close", D-105/D-106 violation found.
+
+| Item | Verdict | Reason / flag |
+|---|---|---|
+| BEAST-POOL-a / b / c | PO OK | ARCH OK (b re-review OK); pool 128, 0 alloc, golden re-blessed once, kills fire beast:died once. Owner only checks no enemy vanishes near him. |
+| SIM-SPIKE-01 | PO OK | ARCH OK; sliced binder, bench row + cap. |
+| VOX-MESH-CACHE-01 | HOLD (no verdict) | ARCH CHANGES open: commit the regression test (6 builds / no growth / meshVersion bump). Back to programmer. |
+| SPRITE-LIGHT-CACHE-01, MESH-FEED-GRID-01 | PO OK | ARCH OK; perf only, first frame byte-identical. gpucompare + perf pose still a main-session step. |
+| SHADOW-TRIM-01 | PO OK (pending owner walk) | ARCH OK; high shadows reach 16/32 m. Owner: shadows at distance on High still look fine. |
+| HIDE-EXTREME-01 | PO OK | ARCH OK; Extreme gone from menu, saved extreme -> ultra, URL works. |
+| WIND-GUST-01 | PO OK (pending owner walk) | ARCH OK; gameplay wind unchanged; swayWindy gpucompare row to re-baseline once. |
+| WATER-FINISH-01a/b, WATER-ALLOC-01 | PO OK (pending owner walk) | ARCH OK. Keys ON for water/pond/river: all water gpucompare rows re-run once. Add caustic == causticHit assert (non-blocking). |
+| CONTACT-AO-01a/b + fix | PO OK (pending owner walk) | ARCH OK; off = byte-identical. |
+| CONTACT-AO-01c (game hookup) | HOLD | No lane entry found. Must keep lights.cao null on Canvas2D/JS path and at low/medium (ARCH ruling). |
+| CANOPY-SHAFT-01a | PO OK (pending owner walk) | ARCH OK. |
+| CANOPY-SHAFT-01b | HOLD | Second ARCH CHANGES (frame B aliases frame A readback); fix + re-review needed. |
+| CANOPY-SHAFT-01c | HOLD | No entry found. |
+| NIGHT-SKY-01, CLOUD-FLUFF-01 a-d | PO OK (pending owner walk) | ARCH OK on skyfixes (probes exact, 0 alloc, stars proven on screen 23h). Default morning look now has clouds: full gpucompare owed after merge. |
+| OB-189 alternates / bark / softRows | PO OK (pending owner walk) | ARCH OK. Owner confirms wall stripes gone, bark readable. Follow-up: softRows for WebGL2 fallback. |
+| OB-153 kinds spawn + KINDS-F | PO OK (pending owner walk) | 15 kinds, 245 beasts <= 320. Real animals, existing models; plain names. |
+| OB-153 clips (deer/fox/goat/tortoise) + CLIP-WIRE | PO OK (pending owner walk) | 4-legged, death rolls on side. Goat/turtle were invisible (missing script tag) - now added; owner confirms they show. |
+| OB-153 lynx + aurochs models | PO OK (pending owner walk) | Previews exist, 4 legs, existing palette. Needs the 2 index.html tags (verify) + run voxel tests (tri budget unverified). |
+| OB-153 spider / bat models | HOLD | No lane entry (wood_spider, spiderling, dusk_bat still "no voxel model"). |
+| BEAST-09a croc | PO OK (pending owner walk) | ARCH OK (own group counter). Water-only, deep homes. Check model is existing mesh/voxel. |
+| OB-191 cemetery | PO OK (pending owner walk) | 17 graves, fenced, no chest. Needs sb_objects.js tag in index.html (else graves invisible) - verify. |
+| OB-191 skeletons | PO OK (pending owner walk) | Warrior/archer, bone rig, rise 1.2 s, night only; owner preview skeleton.html. Tests were not run by designer. |
+| OB-191 cellar (UNDER-03) | PO OK (pending owner walk) | ARCH OK conditional on UNDER-00c grid-skip rule. Flag: note.fordCellar is a NEEDS WRITER placeholder; chest-enemy-density --max-loose 0 still fails on chestCellar1-3 (they are earned inside the cellar: exempt them in the tool). |
+| OB-191 crypt (UNDER-02) | PO OK (pending owner walk) | Key + all 5 skeletons cleared before chest (earned). key.crypt only via dev giveItem until UNDER-07. |
+| OB-191 bear den, sea cave, goblin tunnel | PO OK (pending owner walk) | ARCH OK each; earned chests. Fix tautology in goblinTunnel.test line 56 (non-blocking). |
+| OB-191 UNDER-07 quests (Bram) | PO REJECT (hold) | ARCH CHANGES: commit skeleton alias + lint edits, add |dz|<3 to the SEEN check + test. Texts still writer DRAFT; owner must approve. Level-gate: keep chain small (D-106), `next` waits on hand-in (D-105). |
+| OB-183 next-quest hint | PO OK (pending owner walk) | Never-stuck "Next: talk to X (place)". Browser not checked. |
+| DIFF-MENU | PO OK (pending owner walk) | Easy/Normal/Hard, persisted, no Esc hint. Hp applies to new enemies only (row note says so). |
+| OB-166 guard | PO OK | ARCH OK (missing species cannot be indexed, one warn). Bug stays open until owner confirms no more load error. |
+| ATLAS-GUARD | PO OK | ARCH OK. |
+| GI-SHIP-01 | PO OK | 5 zones, 4.98 MB baked, gi-fresh test guards staleness. Main session must commit content/gi/*. |
+| OB-150 / OB-171 / OB-175 / OB-184 / OB-189 rows | stay OPEN | OB-150: beastLevels + difficulty wired, owner must feel it. OB-171 info only. OB-175 needs owner info (not reproduced 7-21 h). OB-184: forest floor look D + undergrowth + saplings + ambience done in Node; owner eyeball. |
+
+### Owner walk-test list (2026-10-16)
+- Cemetery (1644,1372), NIGHT (22-4 h), any quality: graves + fence + dead trees; 3 skeletons rise within ~30 m, dawn they sink; bell/wind/crow ambience.
+- Crypt: sealed door in the cemetery facade, stair mouth (1651.5,1373); needs key (dev `?dev=1` giveItem key.crypt); 3 rooms z -56, torches, 5 skeletons, chest only after they are dead.
+- Ford cellar: stall (1000,1060) hatch, E to climb; 3 chests, lamp, note (text may be placeholder).
+- Bear den, sea cave, goblin tunnel: find the entrances (see lane notes UNDER-04/05/06); check lighting, no stuck walls, chest locked behind the fight.
+- Quests (Bram, Restless Graves / Sealed Crypt): offer E/Q, objectives under the MP bar, `?` at hand-in; note OB-183 "Next:" line with no active quest.
+- Wildlife (day, meadow/downs/glasswater/alpine): red deer, fox, goats, turtles, lynx (northwood), aurochs (downs/heartland); 4 legs, flee/attack animations; croc in reedmire water only.
+- Combat feel (OB-150): boar (1020,1144), wolf pack, bear, goblins hit you while walking; level scaling by zone; try Settings > Difficulty Easy/Hard.
+- Clouds: daytime morning (8-10 h) and dusk (18-19 h), High: puffy clouds, cloud shadows drifting on ground, rim light at dawn/dusk.
+- Night sky: 23 h, look up: stars, moon dim and tinted; clouds hide stars.
+- Light shafts + canopy: Northwood forest (~1490,570), 9-11 h, High: shafts through trees (only if 01b/c landed; otherwise skip).
+- Contact AO: High quality, meadow props at (1473,1025): soft dark under rocks/crates/beasts; Low/Medium unchanged.
+- Water: ford (992,1079) and a pond, noon, High: reflections, shallow caustics, no new flicker; Medium is plain.
+- Speed: High and Ultra in the forest and at the ford, pitch down and up; report fps vs yesterday (sprite lights, mesh feed, shadow trim, beast pool); Extreme not in menu.
+- Retests: OB-186 offer (no list, E/Q), OB-187 gondola `!` after stone, OB-188 meadow waystone (1386,1024) wakes + solid, OB-190 tracker row not overdrawn, OB-183, OB-150, OB-189 wall stripes (wreck walls, low res, bark).
+- Also: forest floor (OB-184) mossy litter + ferns + saplings + birds/owls/crickets; New Game once (OB-155).
+
+- BH2-E1 (P1) + BH-A1: BH-A1 was already fixed (a50285f1, activateAgent; beastResetAll.test covers dormant/dead/down orders). BH2-E1: game/js/logic/logicWire.js now listens to `beasts:reset` and re-parks groups (logic 1 spawn, 0/2 despawn, unset reserve-only groups like cemetery trio/aireserve stay down); logicWire.test E1a-c added. Status: arch-review. Note: beastSim.hunt P5 alloc check fails under --expose-gc (pre-existing, unrelated).

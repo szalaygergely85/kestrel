@@ -78,6 +78,18 @@ export function createLogicWire(o) {
     dirty = false; clearCheck = false;
   }
 
+  /** BH2-E1: beasts.resetAll() revives every slot; re-park reserve/cleared groups per logic.groups (undefined = reserve-only groups stay parked). */
+  function reapplyGroups() {
+    const sim = ctx.sim; if (!sim || !sim.groups) return;
+    for (const g of Object.keys(sim.groups)) {
+      const st = logic.groups[g];
+      if (st === 1) sim.spawnGroup(g);
+      else if (st === 0 || st === 2) sim.despawnGroup(g);
+      else { const l = sim.groupSlots(g); if (l.length && l.every((i) => sim.entities[i].components.brain.reserve)) sim.despawnGroup(g); }
+    }
+  }
+  if (o.sim && o.sim.events && o.sim.events.on) o.sim.events.on('beasts:reset', reapplyGroups);
+
   function handlers() { return { onEvent, onTick }; }
   return { program, logic, props, ctx, push, notify, onEvent, onTick, onWorldLoaded, handlers };
 }
