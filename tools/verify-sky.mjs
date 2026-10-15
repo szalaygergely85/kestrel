@@ -31,6 +31,7 @@ try {
     await pause(9000);
     const info = await evaluate(cdp, `(()=>{const L=__debug.world.palette&&__debug.world.palette.liveLook;return JSON.stringify({sunI:L&&L.sunI,ambientI:L&&L.ambientI,hasClouds:!!(L&&L.clouds)})})()`);
     console.log('hour', h, info);
+    if (process.env.PRE) { console.log('PRE', await evaluate(cdp, process.env.PRE)); await pause(1500); } // optional page-side probe/tweak before the still
     const s = await cdp.send('Page.captureScreenshot', { format: 'png' });
     const name = h === 23 ? 'night-sky-23h' : 'clouds-' + String(h).padStart(2, '0');
     writeFileSync(path.join(ROOT, 'docs/test-reports', name + suffix + '.png'), Buffer.from(s.data, 'base64'));
