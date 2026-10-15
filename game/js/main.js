@@ -1568,6 +1568,13 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
           if (!atmosDrv && params.get('atmos') !== '0' && window.BIOME_LOOK && G && G.biomes && far && far.util && far.util.biomeBlend && f) {
             atmosCfg = buildAtmosConfig(window.BIOME_LOOK, G.biomes); atmosBase = { start: f.start, full: f.full, curve: f.curve || 1, near: P.rgb[f.color], far: P.rgb[f.colorFar] };
             atmosDrv = createAtmosDriver({ nEntries: atmosCfg.table.n, biomeToEntry: atmosCfg.biomeToEntry, biomeBlend: (x, y, o) => far.util.biomeBlend(x, y, o), schedule: P.daySchedule, slotOf: { morning: 0, noon: 0, dusk: 1, night: 2 }, frozenSlot: 0 }); } }
+      } else if (cinematic && !cinematicHours && params.has('cinehour') && Number.isFinite(parseFloat(params.get('cinehour'))) && assets.palette.daySchedule) {
+        // capture-cinematic `--hour H` (dev only): clock frozen at H with the FULL live look (sun/moon pair, sky, fog colour, clouds, ambient), like gpucompare's applyHourOverride
+        const P = assets.palette, hr = ((parseFloat(params.get('cinehour')) % 24) + 24) % 24;
+        seedClockFromParam(world.state, hr); clockTimeApplied = true;
+        applySunPair(world, lightSet, hr, hr, worldSunPath, sunEnabled);
+        const L = blendLook(P, hr, P.daySchedule);
+        if (lightSet) { const hu = P.hue[L.ambient]; for (let i = 0; i < 3; i++) lightSet.ambient[i] = hu[i] * L.ambientI; }
       } else if (Number.isFinite(timeHour)) { if (!clockTimeApplied) { seedClockFromParam(world.state, timeHour); clockTimeApplied = true; } applySunHours(world, lightSet, timeHour, worldSunPath, sunEnabled); } // frozen clock: the NPC schedules still read the ?time= hour
       // Architect review 1 item 7 (tech notes item 8): `?lights=8` test-only -
       // 7 synthetic extra lights (torch preset) spread 2-4 m around the
@@ -1589,6 +1596,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       }
 
       playerHandle = world.get('player');
+      if (cinematic && params.get('clean') === '1' && playerHandle) { const pv = playerHandle.data.components.voxel; if (pv) { pv.hidden = true; world.renderVersion++; } } // capture-cinematic --clean: no player body in teaser frames (HUD/hands/markers are already off in cinematic)
       // US-078d Q12 item 1(b): must run BEFORE createSwordSim/createTargeting below - both scan
       // `components.targetable` once at creation (rebuilt only on entity:added/removed after that), so a prop
       // whose `targetable` component gets added here instead of at World.load time would otherwise be invisible
