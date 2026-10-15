@@ -10,6 +10,13 @@ The rule is FIXED (OB-156, D-082, D-087, D-108; no owner questions, no PO round 
 | BEND-NPC-01 | writer (name + lines) + kestrel-4 (content) + kestrel-1 (placement/mount if needed) | D-110: a second quest NPC (char.kit, like the wardens) 2.5-3 m from the Bend waystone on walkable ground; moves the Bend-area errands (the sq.rb.* set and any other errand whose targets are nearer the Bend than the trade post) from post-keeper Bram to this NPC as giver AND turnIn; Bram keeps the trade-post/ford ones. Writer: name, greeting, offer/hand-in lines. Must pass QUEST-E2E-ALL for every moved quest; lint R14/R18 0; owner look. | todo (with QUEST-HANDIN-ALL) |
 | QUEST-WALK-OWNER | main session (PC-B) | When QUEST-E2E-ALL is green: one browser route walk of the opening chain + 3 side quests (accept, complete, hand in) with stills of `!`, `?`, needle; then owner walk. | todo |
 
+## Signal = Morse "ALIVE" (owner 2026-10-15, D-112) (PC-A main session)
+
+| ID | Slot | AC | Status |
+|---|---|---|---|
+| SIGNAL-ALIVE-01 | kestrel-4 (design/models data) + kestrel-1 (relayWake.js) | One shared pattern source (e.g. `design/signal.js` or a field in title.js) = Morse ALIVE `.- .-.. .. ...- .` with the D-012/D-013 timing (dot 0.25 s, dash 0.75 s, 0.25 s intra-letter gap, 0.75 s letter gap, 2.5 s repeat pause), used by: title card signal flourish + chart star pulse (design/models/title.js, currently SOS 180/480/1200 ms frames -> convert to the new sequence), menu_ui.js mark rule, game/js/quest/relayWake.js Bend waystone blink (QL-07, currently 3 short + 3 long x3), far_tower.js pulse note, palette.js comment. Node test: the sequence decodes back to "ALIVE"; title preview frames and relay blink use the shared source; no SOS left (grep). Owner look: title card + Bend wake blink. | todo |
+| SIGNAL-ALIVE-TEXT | writer | docs/story.md: intro v2 captions slide 3 ("Three short. Three long. Three short.") and slides 4-5 ("Factor's Code" -> Morse, Factory stays), the relay-keeper note line in design/models/notes.js ("Three short. Three long. Three short."), any other SOS wording; then the canon text in docs/game-design.md section 3 (D-013 pattern -> D-112). Lines <= 60 chars. | todo |
+
 ## Look checks from PC-A stills 2026-10-15 (before the TikTok teaser recording) (PC-A main session)
 Stills: PC-A local `docs/test-reports/stills-2026-10-15/` (not in git, public repo). Teaser paths: `design/cinematics/teaser-*.json` + README.
 
