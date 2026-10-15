@@ -110,6 +110,7 @@ import { createQuestPickups, itemLabel } from './questPickups.js'; // QUESTS-01
 import { setInspectSink, wrapText } from './quest/questInspect.js'; // QL-04
 import { createErrands, labelOf, gateOnMeet, isWorn, bannerLines } from './quest/errands.js'; // QL-WIRE: Ch1-2 errands
 import { generateAll, generateForNpc } from './quest/questSnippets.js'; // QL-T4: generated q.<id>.* dialogue routes
+import { createUnderHook } from './underHook.js'; // B1-MAIN hooks 7: Ford cellar ladder + crypt door/chest
 import { createHeartHook } from './heartHook.js'; // QL-08: heart pieces -> max HP
 import { createChestHook } from './chestHook.js'; // S8-B1-04: chest sim + item-get card, through the seam only
 import { createMapFogHook } from './mapFogHook.js'; // S8-B1-16: visited-cell mask feed, through the seam only
@@ -647,6 +648,7 @@ watchDeviceLost(gpuDevice, {
 // (tools/verify-device-lost.mjs) without a real GPU crash.
 if (params.get('dev') === '1') {
   window.__kestrel = window.__kestrel || {};
+  window.__kestrel.giveItem = (id, n = 1) => { const ph = window.__debug && window.__debug.playerHandle, inv = ph && ph.data.components.inventory; return inv && itemDefs ? addItem(inv, itemDefs, id, n) : 0; }; // UNDER hooks 7: ?dev=1 only, e.g. giveItem('key.crypt') until UNDER-07
   window.__kestrel.loseDevice = () => { if (gpuDevice && typeof gpuDevice._forceLost === 'function') gpuDevice._forceLost('dev hook'); };
   // S8-B2-13b NEEDS B1-main item (2) (from 38.14): window.__kestrel.ripple(x, y, amp) for the owner look - the
   // passWater composite upload that actually draws the rings is another slot's item. Ripples live in the
@@ -668,14 +670,18 @@ const mapFogHook = chartData ? createMapFogHook(chartData.bounds) : null;
 if (mapFogHook) gameHooks.register(mapFogHook);
 // S8-B1-04: chest sim (quest/sim/chest.js) + item-get card (ui/itemGetCard.js), wired through the seam only - see
 // game/js/chestHook.js. `defs: []` (NEEDS C: no content/chests/*.json / placement yet) - harmless no-op today.
+const underHook = createUnderHook({ getBeasts: () => (window.__debug && window.__debug.beasts) || null, openedChestsOf: () => (saveRelay ? saveRelay.openedChests : []),
+  afterMove: () => { hzb.invalidate('ladder'); }, notify: (t) => { if (lootToast) lootToast.say(t, [226, 214, 176]); } }); // B1-MAIN hooks 7 (UNDER-03/02)
 let lootToast = null; // OB-082: the toast view lives in the boot block below (let toasts); the chest hook reaches it through this
 const chestHook = (itemDefs && assets.uiStyle && assets.uiStyle.itemGetCard)
   ? createChestHook({
     defs: [], items: window.ASSETS.items, style: assets.uiStyle.itemGetCard, rgb: assets.palette.rgb,
     openedChestsOf: () => (saveRelay ? saveRelay.openedChests : []), reduceMotion: isReduceMotion,
+    canOpenGate: (id) => underHook.canOpenChest(id), // UNDER-02: chestCrypt only once room 3 is cleared
     notify: (t) => { if (lootToast) lootToast.say(t, [226, 214, 176]); }, // OB-075 (+ OB-082: was a ReferenceError on every loot): chest / gear loot = a toast line, not the item-get card
   })
   : null;
+gameHooks.register(underHook); // B1-MAIN hooks 7
 if (chestHook) gameHooks.register(chestHook);
 if (chestHook) gameHooks.register(createHeartHook({ getCard: () => chestHook.card, notify: (t) => { if (lootToast) lootToast.say(t, [226, 214, 176]); } })); // QL-08; OB-105: heart piece = toast, not the card
 // QUESTS-01: generic world pickup prop + pack counts for collect/deliver objectives + hand-in reward grant (game/js/questPickups.js)
