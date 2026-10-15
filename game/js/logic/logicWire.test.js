@@ -148,6 +148,17 @@ ok('5f: restored want applies once the gateway is clear', E.pending === 0 && gat
   ok('E1c: cleared group (2) stays down after resetAll', alive(R0.sim) === 0);
 }
 
+// ---- BH2-E2: logic.save() only when the pending queue changed (or once per second while timers run)
+{
+  const W = build(null, status).wire;
+  let saves = 0; const realSave = W.logic.save; W.logic.save = () => { saves++; return realSave(); };
+  for (let i = 0; i < 100; i++) W.onTick(SIM_STEP);
+  ok('E2a: idle steps never save', saves === 0, String(saves));
+  Object.defineProperty(W.logic, 'pending', { get: () => 1, configurable: true });
+  for (let i = 0; i < 120; i++) W.onTick(SIM_STEP);
+  ok('E2b: pending>0 saves on change + 1/s, not every step', saves >= 1 && saves <= 4, String(saves));
+}
+
 // ---- 6) wrong dt warns once, determinism of hashes is covered by engine/core/logic.test.js
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }

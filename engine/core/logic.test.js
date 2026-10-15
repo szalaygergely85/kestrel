@@ -190,6 +190,10 @@ function replay(saveAt) {
   ok('resume: load runs only the unhandled blocks (no refire)', u.ctx.log.length === 8 && u.ctx.log[0] === 32 && u.logic.queued === 0, u.ctx.log.join());
   t.logic.step(t.ctx);
   ok('resume: matches uninterrupted run', t.ctx.log.slice(32).join() === u.ctx.log.join() && t.ctx.log.length === 40);
+  { // BH2-E3: hash covers `resume`
+    const hOf = (snap) => { const x = mk(five); x.logic.load(snap); const hh = createHasher(); x.logic.hashInto(hh); return hh._h; };
+    ok('BH2-E3: hash differs when resume differs', hOf(s) !== hOf({ ...s, r: 'm2' }) && hOf(s) === hOf({ ...s }));
+  }
   // events are saved by names, not intern ids
   const q = mk([{ id: 'e1', rev: 1, when: { on: 'enter', area: 'z' }, do: [{ act: 'mark', n: 1 }] }]);
   q.logic.push(evId('enter'), q.program.argId('area', 'z'));

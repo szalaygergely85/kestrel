@@ -60,13 +60,18 @@ export function createLogicWire(o) {
     }
   }
 
+  let lastPending = 0, pendAge = 0;
   function onTick(dt) {
     if (!warnedDt && dt !== undefined && Math.abs(dt - SIM_STEP) > 1e-6) { warnedDt = true; console.warn(`logic: tick dt ${dt} is not the fixed step ${SIM_STEP}`); }
     props.step();
     if (clearCheck) { clearCheck = false; checkGroups(); }
     const used = logic.step(ctx);
     if (used > 0) dirty = true;
-    if (dirty || logic.pending > 0) { world.state.logic = logic.save(); dirty = false; }
+    // BH2-E2: save() allocates (JSON round trip). While timers run, re-save only when the pending queue changed (count) or once per
+    // second so the persisted remaining `after` countdown stays within 1 s; idle steps with nothing pending and not dirty never save.
+    const pend = logic.pending;
+    if (dirty || pend !== lastPending || (pend > 0 && ++pendAge >= 60)) { world.state.logic = logic.save(); dirty = false; pendAge = 0; }
+    lastPending = pend;
   }
 
   /** After a world load / restart: logic state from world.state.logic, then groups + prop states re-applied. */
