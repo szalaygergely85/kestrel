@@ -35,7 +35,7 @@ if (r.err || !r.sim) console.log('SKIP sim create (needs harness):', r.err && r.
 else {
   const hp = r.ents.map((e) => e.components.health.max);
   ok('hp x1/x2/x3/override3', hp.join() === '4,8,12,12', hp.join());
-  ok('damage payload', r.sim._hitPayload.map((h) => h.damage).join() === '1,1.5,2,2');
+  ok('damage payload (OB-150 level table)', r.sim._hitPayload.map((h) => +h.damage.toFixed(2)).join() === '1,1.48,1.96,1.96', r.sim._hitPayload.map((h) => h.damage).join());
   r.sim.resetAll && r.sim.resetAll();
   ok('respawn does not stack', r.ents.map((e) => e.components.health.max).join() === '4,8,12,12' && r.ents[2].components.health.hp === 12);
   ok('no band = tier 1 unless overridden', (() => { const q = mk([[150, 800], [150, 800, 2]], false); return q.sim && q.ents[0].components.health.max === 4 && q.ents[1].components.health.max === 8; })());
