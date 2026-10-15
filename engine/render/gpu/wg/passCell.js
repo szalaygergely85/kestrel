@@ -38,7 +38,7 @@ export class WgCellPass {
       targetFormats: ['rgba32ui'],
     });
     this.lightPass = new WgLightPass(device, shadowPass);
-    this.shadePass = new WgShadePass(device, opts && opts.stable ? { stable: true } : null); // WG-3c: shade + edge after light
+    this.shadePass = new WgShadePass(device, { stable: !!(opts && opts.stable), aaCov: !(opts && opts.aaCov === false) }); // WG-3c: shade + edge after light
     this.shaded = false; // true when this frame's shade + edge ran (final cells valid)
     this.upload = new WgUploadSource(device);  // WG-3c: `?gpucompare=shade` test source
     this.ru = new Float32Array(RESOLVE_BLOCK.sizeWords); this.ri = new Int32Array(this.ru.buffer);

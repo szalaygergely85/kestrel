@@ -61,6 +61,7 @@ export class WgCellPipeline {
     // S8-B2-10c two-phase HZB occlusion (`?occl=1`), default OFF
     this.gpuCull = opts.gpuCull !== false; // WG-4a compute cull of instance batches (`?gpucull=0` = CPU path)
     // US-073c (38.25): temporal glyph stability, `?stable=1`; absent = no pass, no extra target, frame byte-identical to before
+    this.aaCov = opts.aaCov !== false; // 38.82 A: default ON; main.js maps ?aacov=0 -> aaCov:false
     this.stableOpt = !!opts.stable; this._stablePass = null; this._stableOn = false; this._stableRan = false; this._stInp = { shadeFg: null, shadeBg: null, water: null, waterOn: false };
     // EMIS-03/04 (38.12): emissive bleed + halo, `opts.glow` = {radius, gain, haloBg, haloMin} (High/Ultra); absent = no pass, frame byte-identical to before
     this.glowOpt = opts.glow || null; this._glowPass = null; this._glowRan = false;
@@ -143,7 +144,7 @@ export class WgCellPipeline {
       this._waterPass = new WgWaterPass(this.device);
       this._waterPass.resize(this.cols, this.rows, this.rays);
       bootSpan('pass water (ctor total)', tp); tp = bootNow();
-      this._cellPass = new WgCellPass(this.device, this._shadowPass, this._waterPass, this.stableOpt ? { stable: true } : null);
+      this._cellPass = new WgCellPass(this.device, this._shadowPass, this._waterPass, { stable: this.stableOpt, aaCov: this.aaCov });
       if (this._carpetPass) this._cellPass.carpet = this._carpetPass;
       this._cellPass.lightPass.pointPass = this._pointShadowPass;
       bootSpan('pass cell (ctor total)', tp);

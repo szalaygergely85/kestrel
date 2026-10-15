@@ -59,7 +59,7 @@ const SHADE_FIELDS = [
   { name: 'projMode', type: 'i32' }, { name: 'sunMapOn', type: 'i32' }, { name: 'nearDetailOn', type: 'i32' },
   { name: 'fogSparseAlt', type: 'i32' }, { name: 'fogHazeAlt', type: 'i32' },
   { name: 'fogSparseCode0', type: 'i32' }, { name: 'fogSparseCode1', type: 'i32' }, { name: 'fogHazeCode0', type: 'i32' }, { name: 'fogHazeCode1', type: 'i32' },
-  { name: 'pad1', type: 'i32' }, { name: 'pad2', type: 'i32' },
+  { name: 'aaCov', type: 'i32' }, { name: 'pad2', type: 'i32' }, // aaCov (38.82 A, was pad1): 1 = coverage-weighted colour of same-kind minority materials
   { name: 'pitchA', type: 'vec4' }, // fX, fY, fZ, tanHalfX
   { name: 'pitchB', type: 'vec4' }, // rX, rY, uX, uY
   { name: 'pitchC', type: 'vec4' }, // uZ, tanHalfY, cosP, sinP
@@ -485,6 +485,26 @@ fn bevelShadeK(yv: f32, cov: f32, gv: f32, top: f32, topShade: f32, bottom: f32,
   return 1.0 + tf * (topShade - 1.0) + bf * (bottomShade - 1.0);
 }
 
+// 38.82 CELL-AA A (twin: detailShade.js matFlatColor): flat lit term of a material, 2 uMatF loads (albedo/bgK/emissive here, tone0 in matFlatColor)
+fn matFlatB(matId: i32, face: i32, kind: u32, Lm: f32) -> f32 {
+  let mf0 = textureLoad(uMatF, vec2i(0, matId), 0);
+  let mf1 = textureLoad(uMatF, vec2i(1, matId), 0);
+  var fk = 1.0;
+  if (face >= 1 && face <= 6 && kind != ${KIND_MODEL}u) { fk = faceK(face); }
+  return Lm * mf0.x * fk * (1.0 - ${WET_DARK.toFixed(4)} * su.wetness) + mf1.x + 0.0;
+}
+
+// rgb = fg byte colour (0..255, pre-fog), bgK in the returned .w
+fn matFlatColor(matId: i32, face: i32, kind: u32, Lm: f32, hcol: vec3f) -> vec4f {
+  let bc = max(matFlatB(matId, face, kind, Lm), 0.0);
+  var gain = su.fgMin + (1.0 - su.fgMin) * samplePowLUT(bc);
+  if (bc > 1.0) { gain = min(su.fgMaxGain, gain + (bc - 1.0) * 0.5); }
+  gain = wetGain(gain, bc);
+  let tone = textureLoad(uMatF, vec2i(10, matId), 0).xyz;
+  let rgb = clamp(tone * (1.0 + (hcol - 1.0) * su.tintK) * gain, vec3f(0.0), vec3f(255.0));
+  return vec4f(rgb, textureLoad(uMatF, vec2i(0, matId), 0).y);
+}
+
 struct Core {
   b: f32, gb: f32, cr: f32, cg: f32, cb: f32, bgK: f32, hA: f32, hB: f32,
   onJoint: bool,
@@ -875,6 +895,9 @@ ${look ? `    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceM
   // Item 4: setId/lineCode split by joint membership (nearest ON-JOINT member / nearest NON-joint member).
   var bestJointMag = 1.0e30; var bestNonJointMag = 1.0e30;
   var onJointSetW = 0; var onJointLineW = -1; var nonJointSetW = 0;
+  // 38.82 A: same-kind sub-samples outside the winner group -> mean flat colour (mixed in after fog)
+  let hcolM = select(vec3f(1.0), Lc / Lm, Lm > 1e-6);
+  var mnFg = vec3f(0.0); var mnBg = vec3f(0.0); var mnCount = 0;
 
   for (var j = 0; j < 4; j++) {
     if (j >= su.n) { break; }
@@ -883,8 +906,16 @@ ${look ? `    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceM
       let sc = vec2i(cell.x * su.n + i, cell.y * su.n + j);
       let sgiFull = textureLoad(uSGI, sc, 0).xy;
       if (giKind(sgiFull.y) != kindU) { continue; }
-      if (i32(sgiFull.x) != pidResolved) { continue; }
-      if (giMat(sgiFull.y) != u32(matId)) { continue; }
+      if (i32(sgiFull.x) != pidResolved || giMat(sgiFull.y) != u32(matId)) {
+        if (su.aaCov != 0 && giMat(sgiFull.y) != 0u) {
+          let mm = i32(giMat(sgiFull.y));
+          if (textureLoad(uMatF, vec2i(0, mm), 0).x > 0.0) {
+            let fc = matFlatColor(mm, i32(giFace(sgiFull.y)), kindU, Lm, hcolM);
+            mnFg += fc.xyz; mnBg += fc.xyz * fc.w; mnCount++;
+          }
+        }
+        continue;
+      }
 
       let sgaU = textureLoad(uSGA, sc, 0);
       let uA = bitcast<f32>(sgaU.x); let vA = bitcast<f32>(sgaU.y);
@@ -994,6 +1025,13 @@ ${look ? `    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceM
   if (f > 0.0) {
     rgbF += (fogFgC - rgbF) * f;
     rgbBg += (fogBgC - rgbBg) * f;
+  }
+  if (mnCount > 0) { // 38.82 A (twin: detailShade.js coverageMix): winner x (1-w) + mean(minority flat, fogged) x w
+    let wM = f32(mnCount) / f32(count + mnCount);
+    var mF = mnFg / f32(mnCount); var mB = mnBg / f32(mnCount);
+    mF += (fogFgC - mF) * f; mB += (fogBgC - mB) * f;
+    rgbF = rgbF * (1.0 - wM) + mF * wM;
+    rgbBg = rgbBg * (1.0 - wM) + mB * wM;
   }
   if (su.shaftA.x > 0.0) { // CANOPY-SHAFT-01b: colour lift after fog, before the output pack; glyph never changes
     let sq = shaftQ(cell);

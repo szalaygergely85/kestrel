@@ -34,7 +34,7 @@ const S_TIME = S('timeSec'), S_CELL_ASPECT = S('cellAspect'), S_CUTOFF = S('cuto
 const S_FGMAXGAIN = S('fgMaxGain'), S_TINTK = S('tintK'), S_OVERBRIGHT = S('overbright'), S_OVERBRIGHT_MAX = S('overbrightMax');
 const S_AOR = S('aoR'), S_AOK = S('aoK'), S_STIP0 = S('fogStipple0'), S_STIP1 = S('fogStipple1'), S_SPARSE = S('fogSparse');
 const S_HASHCELL = S('hashCell'), S_CLOSEBAND = S('closeBand'), S_HANDOVER = S('handover');
-const S_N = S('n'), S_GPUSKY = S('gpuSky'), S_PROJ = S('projMode'), S_SUNMAP = S('sunMapOn'), S_NEARDETAIL = S('nearDetailOn');
+const S_N = S('n'), S_GPUSKY = S('gpuSky'), S_PROJ = S('projMode'), S_SUNMAP = S('sunMapOn'), S_NEARDETAIL = S('nearDetailOn'), S_AACOV = S('aaCov');
 const S_SPARSE_ALT = S('fogSparseAlt'), S_HAZE_ALT = S('fogHazeAlt');
 const S_SPARSE_C0 = S('fogSparseCode0'), S_SPARSE_C1 = S('fogSparseCode1'), S_HAZE_C0 = S('fogHazeCode0'), S_HAZE_C1 = S('fogHazeCode1');
 const S_ETA = S('etA'), S_ETID = S('etId'), S_ETC = S('etC'); // 38.23 tint words
@@ -64,6 +64,7 @@ export class WgShadePass {
   constructor(device, opts = null) {
     this.device = device;
     this.stable = !!(opts && opts.stable);
+    this.aaCov = !(opts && opts.aaCov === false); // 38.82 A: coverage-weighted minority colour, default ON (?aacov=0 -> main.js passes false)
     const lvl = this.stable ? SHADE_LEVEL_WGSL : SHADE_WGSL;
     this.pipeShade = device.createPipeline({
       vertex: { src: { wgsl: lvl } }, fragment: { src: { wgsl: lvl }, targets: this.stable ? 3 : 2 },
@@ -254,6 +255,7 @@ export class WgShadePass {
     const rk = recipe && recipe.terrain && recipe.terrain.rock;
     su[S_CLIFF] = rk ? rk.id : 0; su[S_CLIFF + 1] = rk ? 1 : 0;
     si[S_NEARDETAIL] = tu.nearDetail ? 1 : 0;
+    si[S_AACOV] = this.aaCov ? 1 : 0;
     if (tu.nearDetail) { su[S_HANDOVER] = tu.handover[0]; su[S_HANDOVER + 1] = tu.handover[1]; su[S_CLOSEBAND] = tu.closeBand; }
   }
 
