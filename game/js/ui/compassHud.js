@@ -58,6 +58,7 @@ function compileDesigner(style) {
 
 const SIDE_BLUE = [120, 190, 255]; // D-108: side-quest '?'/'!' in the label (main = the style's gold)
 
+const ITEM_STEP = new Set(['item', 'collect', 'deliver']); // OB-202 follow-up: every pack-item step gathers via the item source, never the giver
 export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
   const D = style.faces ? compileDesigner(style) : null;
   const N = D ? D.dirs : (style.sectors | 0 || 8);
@@ -89,18 +90,21 @@ export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
     hasTarget = false;
     if (!book || !world) return null;
     tmp.z = NaN;
-    let kind = 0, side = false;
+    let kind = 0, side = false, noSource = false;
     // COMPASS-TRACK-01 (D-108): the needle follows the TRACKED quest only (else the main quest). READY -> its hand-in character
     // (book.turnInOf, data-driven), ACTIVE -> its current step; nothing tracked/active -> OB-183 nearest available giver.
     const ti = book.tracked();
     const qi = ti >= 0 ? ti : 0;
     const def = book.def(qi), st = book.questState(qi), stt = book.status(qi);
     if (stt === READY && book.turnInOf && book.turnInOf(qi) && world.resolve('giver', book.turnInOf(qi), tmp)) { kind = 1; side = !book.isMain(qi); }
-    else if (stt === ACTIVE) {
+    else if (stt === ACTIVE && !(qi === 0 && book.mainStepGated && book.mainStepGated())) { // OB-199: not-accepted main step -> no needle
       const idx = st.completed.length;
       if (idx < def.objectives.length && stepPos(def.objectives[idx].when, st, world)) kind = 2;
+      else if (def.objectives[idx] && def.objectives[idx].when.type === 'deliver' && deliverTo(def.objectives[idx].when, qi, book, world)) kind = 2; // quest-rules R5: item already in hand (handed over on accept) -> the recipient
+      else if (def.objectives[idx] && ITEM_STEP.has(def.objectives[idx].when.type)) noSource = true; // OB-202/OB-207: fetch step with no known source -> no needle at all (never the giver, never an unrelated '!' giver)
       else if (def.giver && def.giver.npc && world.resolve('giver', def.giver.npc, tmp)) kind = 2;   // COMPASS-QUEST-01: unresolvable step -> point at the quest's giver instead of hiding
     }
+    if (noSource) return null;
     if (!kind) {
       book.giverMarks(npcA, npcR, npcSA, npcSR);
       if (resolveGiver(world, npcA)) kind = 3; else if (resolveGiver(world, npcSA)) { kind = 3; side = true; }
@@ -116,6 +120,12 @@ export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
     return tgt;
   }
 
+  /** Recipient of a deliver step: `to` ('@turnIn' = the quest's turn-in giver) resolved as a giver; writes tmp. */
+  function deliverTo(when, qi, book, world) {
+    const to = when.to === '@turnIn' || !when.to ? (book.turnInOf ? book.turnInOf(qi) : null) : when.to;
+    return !!to && world.resolve('giver', to, tmp);
+  }
+
   function stepPos(when, st, world) {
     if (when.type === 'beasts') {
       // first beast (list order) still alive and placed; the host resolver decides what "placed" means
@@ -123,6 +133,7 @@ export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
       for (let i = 0; i < when.ids.length; i++) if (!st.deadBeasts.includes(when.ids[i]) && world.resolve('beast', when.ids[i], tmp)) return true;
       return false;
     }
+    if (when.type === 'item' || when.type === 'collect' || when.type === 'deliver') return world.resolve('item', when.id, tmp) || (world.resolve('source', when.id, tmp)); // OB-202: fetch -> placed pickup, else the nearest known source (host: alive beast of the dropping kind)
     return world.resolve(when.type, when.id, tmp);
   }
 

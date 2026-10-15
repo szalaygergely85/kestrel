@@ -68,6 +68,7 @@ export function meshOutdoorFog(world, cam, palette) {
   if (!world || !world.terrain || !palette || !palette.timeOfDay || !palette.rgb) return false;
   const fr = palette.fog && palette.fog.far;
   if (!fr || !palette.rgb[fr.color] || !palette.rgb[fr.colorFar]) return false;
+  if (typeof world.isOutdoorAt === 'function') return world.isOutdoorAt(cam.x, cam.y, cam.z); // OB-205: z-aware (above a buried cellar = outside)
   return !(typeof world.sectorAt === 'function' && world.sectorAt(cam.x, cam.y));
 }
 const _dir = [0, 0, 0], _ray = { ox: 0, oy: 0, oz: 0, dx: 0, dy: 0, dz: 0 };

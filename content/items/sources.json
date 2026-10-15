@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "note": "OB-202: where the compass sends the player for an item step (fetch/collect/deliver) before they hold it. item -> exactly one of {beast:'<id prefix>'} nearest live beast whose entity id starts with it | {pickup:true} nearest placed world questPickup of that item | {entity:'<world entity id>'} | {area:'<id in content/quests/areas.json>'} | {giver:true} the quest giver hands it over on accept (no gather step). Audit: game/js/quest/itemStepTargets.test.js",
+  "items": {
+    "boar.hide": { "beast": "boar" },
+    "boar.meat": { "beast": "boar" },
+    "boar.tusk": { "beast": "boar" },
+    "sword": { "entity": "tower.sword" },
+    "relay.mirror": { "pickup": true },
+    "relay.brass": { "pickup": true },
+    "berry.blue": { "pickup": true },
+    "redcap": { "pickup": true },
+    "brass.scrap": { "pickup": true },
+    "emberpod": { "pickup": true },
+    "signArm": { "pickup": true },
+    "barleySheaf": { "pickup": true },
+    "packet": { "pickup": true },
+    "arrow": { "giver": true },
+    "cog": { "giver": true },
+    "honeycomb": { "giver": true },
+    "parcel": { "giver": true }
+  }
+}

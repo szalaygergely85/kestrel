@@ -279,7 +279,12 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   }
   const nP = lookOn ? 2 * GLq[6] - 1 : nN / (nWs > 0.55 ? nWs : 0.55);
   // OB-073 calm ground: colour tier only from the smooth noise (no per-cell dither dice); ONE glyph per type (no hash, no band/close/glint).
-  let off = Math.floor(nP * PATCH_K + 0.5);
+  // OB-208 (AA-08): soft patch edge. offC = k + smoothstep(0.5-w, 0.5+w, frac) is the round() step smeared over +-w (w from the cell
+  // footprint), colour only; interior/outside stay the integer tier (identical to the old hard step). WGSL twin: shadeTerrain.
+  const pk = nP * PATCH_K, pkF = Math.floor(pk);
+  let pw = PATCH_K * fp * (1 / NOISE_CELLS[0]); pw = pw < 0.08 ? 0.08 : pw > 0.5 ? 0.5 : pw;
+  let pq = (pk - pkF - (0.5 - pw)) / (2 * pw); pq = pq < 0 ? 0 : pq > 1 ? 1 : pq;
+  let off = pkF + pq * pq * (3 - 2 * pq);
   off = off < -1 ? -1 : off > 1 ? 1 : off;
 
   // S8-B2-14b wetness (follow-up to S8-B2-14): `ctx.shading.wetness` 0..1

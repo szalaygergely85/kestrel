@@ -93,6 +93,7 @@ export function createQuestRelay(def, saved = null, giverDefs = [], savedQuests 
         return whenCounted(o.when) ? o.text + ' ' + book.objectives(t, scratch)[k].progress + '/' + (o.when.count ?? 1) : o.text;
       }
       if (state.completed.length >= def.objectives.length) return nextLine(book, relay.nextCtx) || def.doneText || DONE_TEXT; // OB-183: never stuck - name the next giver
+      if (book.mainStepGated && book.mainStepGated()) return ''; // OB-199: step not accepted yet -> no HUD line (only the giver's '!')
       const o = def.objectives[state.completed.length];
       return whenCounted(o.when) ? o.text + ' ' + questObjectives(state, def, scratch)[state.completed.length].progress + '/' + (o.when.count ?? 1) : o.text;
     },
@@ -132,6 +133,7 @@ export function createQuestRelay(def, saved = null, giverDefs = [], savedQuests 
      *  TEMPORARY (D-050): lane C's quest HUD replaces this line; until then it is the only objective line (never draw two). */
     draw(ui) {
       const text = relay.objectiveText();
+      if (text === '') return; // OB-199: nothing accepted to show
       if (text !== lineFor) { lineFor = text; line = relay.done && !text.startsWith('Next:') ? text : '> ' + text; } // rebuilt only when the text changes
       const s = line;
       const fg = relay.done && !s.startsWith('> Next:') ? DIM : TEXT, x0 = 2, y = HUD_ROW;

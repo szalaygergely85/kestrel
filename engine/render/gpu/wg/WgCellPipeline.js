@@ -62,6 +62,7 @@ export class WgCellPipeline {
     this.gpuCull = opts.gpuCull !== false; // WG-4a compute cull of instance batches (`?gpucull=0` = CPU path)
     // US-073c (38.25): temporal glyph stability, `?stable=1`; absent = no pass, no extra target, frame byte-identical to before
     this.aaHyst = opts.aaHyst !== false; // AA-04b (38.82 B): resolve winner hysteresis keyed by reprojected world position; needs stable + rays > 1; main.js wires ?aahyst=0
+    this._hystSp = null; this._stEarly = false;
     this.aaGlyph = opts.aaGlyph !== false; this.aaMesh = opts.aaMesh !== false; this.aaVm = opts.aaVm !== false; this.aaJoint = opts.aaJoint !== false; // AA-07: ?aavm=0 / ?aajoint=0 // OB-198: ?aaglyph=0 / ?aamesh=0 -> stable pass options
     this.aaCov = opts.aaCov !== false; // 38.82 A: default ON; main.js maps ?aacov=0 -> aaCov:false
     this.stableOpt = !!opts.stable; this._stablePass = null; this._stableOn = false; this._stableRan = false; this._stInp = { shadeFg: null, shadeBg: null, water: null, waterOn: false };

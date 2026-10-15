@@ -60,12 +60,13 @@ const place = (s, sp, x, y) => { s.alive = true; s.species = sp; s.x = x; s.y = 
   let minOut = 1e9; for (let i = 0; i < 40; i++) { const d = Math.hypot(slots[i].x, slots[i].y); if (d > maxD + 1e-9) minOut = Math.min(minOut, d); }
   ok(minOut >= maxD, 'every undrawn animal is farther than the farthest drawn');
   pool.beginFrame();
-  for (let i = 0; i < 40; i++) pool.pushInstance('rabbit', 0, 0, 0, 0, -1, 0, 0); // 40 gameplay pushes
+  const P = pool.cap - 8; // OB-192: cap-relative (cap was 48 -> 40 pushes); leaves 8 slots: 4 fed + 4 spare
+  for (let i = 0; i < P; i++) pool.pushInstance('rabbit', 0, 0, 0, 0, -1, 0, 0); // gameplay pushes
   const n = f.feed(pool, cam);
-  ok(n === 4, 'cap 48 - 40 pushed - 4 spare = 4 fed, got ' + n);
-  ok(pool._rawCount === 44 && pool.cap - pool._rawCount === 4, '4 slots stay free');
+  ok(n === 4, `cap ${pool.cap} - ${P} pushed - 4 spare = 4 fed, got ` + n);
+  ok(pool._rawCount === P + 4 && pool.cap - pool._rawCount === 4, '4 slots stay free');
   pool.beginFrame();
-  for (let i = 0; i < 45; i++) pool.pushInstance('rabbit', 0, 0, 0, 0, -1, 0, 0);
+  for (let i = 0; i < pool.cap - 3; i++) pool.pushInstance('rabbit', 0, 0, 0, 0, -1, 0, 0);
   ok(f.feed(pool, cam) === 0, 'no room -> 0 drawn');
 }
 // 3. crossfade via blendInstance

@@ -5,7 +5,7 @@
 // click / E path. Layout, colours, glyphs and flash states come from `ASSETS.uiStyle.inventory`; numbers are UI-layer cells.
 // `draw` only walks cached strings and writes `ui.setCellRGB`. No text mentions Esc (owner rule).
 import { equip as eqEquip, unequip as eqUnequip, syncHands, defenceOf, reductionOf } from './sim/equipment.js';
-import { SLOTS as PACK_SLOTS, assignHand, removeItem } from './sim/inventory.js';
+import { SLOTS as PACK_SLOTS, assignHand, removeItem, moveSlot } from './sim/inventory.js';
 import { wrapNoteLines } from './noteRead.js';
 import { gearRecipe } from './gearLook.js';
 import { createPreviewYaw } from './previewYaw.js';
@@ -28,7 +28,7 @@ export const DIGIT_CODES = ['Digit1', 'Digit2', 'Digit3', 'Digit4'];
 const RED = [230, 80, 70];
 const N_EQ = 11, VIEW = N_EQ, PACK0 = N_EQ + 1;
 const F_REFUSE = 1, F_OK = 2, F_USE = 3;
-const HINTS = [['W/A/S/D', true], [' select   ', false], ['E', true], [' use / wear   ', false], ['drag', true], [' equip   ', false], ['A/D', true], [' turn   ', false], ['I', true], [' close', false]];
+const HINTS = [['W/A/S/D', true], [' select   ', false], ['E', true], [' use / wear   ', false], ['drag', true], [' equip / move   ', false], ['A/D', true], [' turn   ', false], ['I', true], [' close', false]];
 
 /**
  * @param {object} o
@@ -171,8 +171,9 @@ export function createInventoryScreen(o) {
   function release(src) {
     const s = nodes[src], dst = nodes[cur];
     if (cur === src || !dragMoved) { activate(src); return; }
-    if (s.kind === 2) { // pack item -> a gear slot or Wick equips; elsewhere does nothing
+    if (s.kind === 2) { // pack item -> a gear slot or Wick equips; -> another pack cell moves / swaps / stacks (OB-203)
       if (dst.kind === 0) wear(src, dst.slot); else if (dst.kind === 1) wear(src, null);
+      else if (dst.kind === 2) { const v = inv(); if (!(v && moveSlot(v, defs, s.i, dst.i))) setFlash(cur, F_REFUSE, slotCfg.flash.refuse.ms); }
     } else if (s.kind === 0 && dst.kind !== 0) takeOff(src); // worn item -> pack / Wick unequips
     else if (s.kind === 0) setFlash(cur, F_REFUSE, slotCfg.flash.refuse.ms);
   }

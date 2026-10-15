@@ -160,7 +160,10 @@ fn shadeTerrain(t: f32, typeIdIn: i32, b: f32, uIn: f32, vIn: f32, timeSec: f32,
   else { nP = tsPatchNoise(u, v, fp, tsValueNoise(u * ${(1 / NOISE_CELLS[0]).toFixed(4)}, v * ${(1 / NOISE_CELLS[0]).toFixed(4)}, ${NOISE_SALT})); }` : `let v8 = tsValueNoise(u * ${(1 / NOISE_CELLS[0]).toFixed(4)}, v * ${(1 / NOISE_CELLS[0]).toFixed(4)}, ${NOISE_SALT});
   let nP = tsPatchNoise(u, v, fp, v8);`}
   // OB-073 calm ground: colour tier only from the smooth noise (no per-cell dither dice); ONE glyph per type (no hash, no band/close/glint).
-  let off = clamp(i32(floor(nP * ${PATCH_K.toFixed(4)} + 0.5)), -1, 1);
+  let pk = nP * ${PATCH_K.toFixed(4)}; let pkF = floor(pk); // OB-208 soft patch edge (twin: terrainShade.js)
+  let pw = clamp(${PATCH_K.toFixed(4)} * fp * ${(1 / NOISE_CELLS[0]).toFixed(10)}, 0.08, 0.5);
+  let pq = clamp((pk - pkF - (0.5 - pw)) / (2.0 * pw), 0.0, 1.0);
+  let off = clamp(pkF + pq * pq * (3.0 - 2.0 * pq), -1.0, 1.0);
 
   // S8-B2-14b wetness: darkens the lit term entering the tier/gain pick, same WET_DARK as detailShade.js/shadeCore
   // (terrain has no emissive term to keep separate - the whole incoming b is the "lit term" here).
@@ -177,13 +180,12 @@ fn shadeTerrain(t: f32, typeIdIn: i32, b: f32, uIn: f32, vIn: f32, timeSec: f32,
 
   var tier = 2;
   if (bEff < 0.45) { tier = 0; } else if (bEff < 0.8) { tier = 1; }
-  var ii = tier + off;
-  ii = clamp(ii, 0, 2);
+  var ii = clamp(f32(tier) + off, 0.0, 2.0);
   // OB-081: far ground blends the tier colours continuously (twin: terrainShade.js FAR_BLEND_FP0/FP1); fw 0 = hard tiers.
-  let sc = clamp(0.5 + (bEff - 0.45) * ${(1 / 0.35).toFixed(10)} + f32(off), 0.0, 2.0);
+  let sc = clamp(0.5 + (bEff - 0.45) * ${(1 / 0.35).toFixed(10)} + off, 0.0, 2.0);
   var fw = clamp((fp - ${FAR_BLEND_FP0.toFixed(4)}) * ${(1 / (FAR_BLEND_FP1 - FAR_BLEND_FP0)).toFixed(10)}, 0.0, 1.0);
   fw = fw * fw * (3.0 - 2.0 * fw);
-  let xf = f32(ii) + (sc - f32(ii)) * fw;
+  let xf = ii + (sc - ii) * fw;
   let i0 = i32(floor(xf)); let i1 = min(i0 + 1, 2); let fxb = xf - f32(i0);
 
   let base = typeId; // TLOOK row = type id (texel x = 0..6, see TerrainTextures.js)
@@ -974,7 +976,7 @@ ${look ? `    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceM
     let oc = su.terrainFogNearRGB + (su.terrainFogFarRGB - su.terrainFogNearRGB) * f;
     fogFgC = oc; fogBgC = oc;
   }
-  if (su.fogView.y > 0.5 && f > 0.0) { // AUD-45: height fog + sun in-scatter (only where f > 0)
+  if (su.fogView.y > 0.5 && su.fogView.z < 0.5 && f > 0.0) { // AUD-45: height fog + sun in-scatter (only where f > 0); OB-204: not for outdoor meshes (terrain has none, so far meshes came out paler than the hills)
     let fd = fogCellDir(cell, gridSize);
     f = fogShapeF(f, dist, su.fogView.x, fd.z * inverseSqrt(max(fd.x * fd.x + fd.y * fd.y, 1e-12)));
     let sw = fogScatterW(dot(fd, su.sunDir), su.sunDir.z, su.sunI);
