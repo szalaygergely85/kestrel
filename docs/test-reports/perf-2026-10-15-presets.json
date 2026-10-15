@@ -4,6 +4,6 @@
   "noShafts": ["low", "medium"],
   "noCaoPost": ["low"],
   "occlOff": ["low", "medium", "high", "ultra", "extreme"],
-  "keySetHash": "71e52b6c42f6",
+  "keySetHash": "e8b24f95867b",
   "cpuP95MsAfter": { "medium": [6.5, 6.5, 6.7, 7.0, 5.8], "high": [8.7, 9.5, 8.5, 8.9, 7.3], "ultra": [8.9, 8.9, 9.6, 10.4, 8.4] }
 }
