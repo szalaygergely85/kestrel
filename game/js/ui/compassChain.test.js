@@ -4,9 +4,9 @@ import { readFileSync } from 'node:fs';
 import { createCompassHud, FALLBACK_COMPASS_STYLE } from './compassHud.js';
 import { createQuestBook } from '../quest/sim/questBook.js';
 const rd = (f) => JSON.parse(readFileSync(new URL('../../../content/quests/' + f, import.meta.url)));
-const m1 = rd('m1.quest.json'), blade = rd('tower.blade.quest.json'), burl = rd('burl.boars.quest.json');
+const m1 = rd('m1.quest.json'), blade = rd('tower.blade.quest.json'), burl = rd('burl.boars.quest.json'), follow = rd('burl.follow.quest.json');
 // host tables copied from main.js intent: every flag/item/area/beast id must map to a world entity
-const flagMap = { 'quest.burl.boars.done': 'bear', 'burl.arrived': 'bear', 'waystone.waystone.woken': 'endMarker', 'waystone.ws_roadBend.woken': 'relayBend', 'waystone.ws_ford.woken': 'relayFord' };
+const flagMap = { 'quest.burl.boars.done': 'bear', 'quest.burl.follow.done': 'bear', 'burl.arrived': 'bear', 'waystone.waystone.woken': 'endMarker', 'waystone.ws_roadBend.woken': 'relayBend', 'waystone.ws_ford.woken': 'relayFord' };
 const ents = { bear: [1, 1], endMarker: [2, 2], relayBend: [3, 3], relayFord: [4, 4], 'tower.sword': [5, 5], noteKeepLight: [6, 6], boar1: [7, 7], boar2: [8, 8], boar3: [9, 9], boar4: [1, 2], boar5: [2, 3] };
 const itemMap = { sword: 'tower.sword' };
 const world = { resolve(kind, id, out) {
@@ -14,7 +14,7 @@ const world = { resolve(kind, id, out) {
   if (kind === 'giver') p = ents[id]; else if (kind === 'flag') p = ents[flagMap[id]]; else if (kind === 'item') p = ents[itemMap[id]];
   else if (kind === 'beast') p = ents[id]; else if (kind === 'area') p = ['breach', 'towerDoor', 'roadWest', 'bendRelay'].includes(id) ? [9, 9] : null;
   if (!p) return false; out.x = p[0]; out.y = p[1]; return true; } };
-const book = createQuestBook(m1, [blade, burl]);
+const book = createQuestBook(m1, [blade, burl, follow]);
 const hud = createCompassHud({ style: FALLBACK_COMPASS_STYLE });
 const need = (label) => assert.ok(hud.target(book, world), 'compass target at: ' + label);
 need('start (note giver)');
@@ -29,7 +29,9 @@ book.handIn('tower.blade'); need('Burl offers boars');
 book.accept('burl.boars'); need('boars (beast step)');
 for (let i = 1; i <= 5; i++) { feed({ type: 'beast:died', id: 'boar' + i }); if (i < 5) need('boar ' + i); }
 need('Burl hand-in (boars ready)');
-book.handIn('burl.boars'); need('follow (burl.arrived) after hand-in');
+book.handIn('burl.boars'); // D-105: the follow quest is only OFFERED (available) now; the compass has no active quest target to show
+assert.deepEqual([hud.target(book, world).x, hud.target(book, world).y], ents.bear, 'before accepting: compass points at Burl (the giver) for the offer');
+book.accept('burl.follow'); need('follow (burl.arrived) after accepting the offer');
 feed({ type: 'flag:set', key: 'burl.arrived', value: true }); need('stone');
 feed({ type: 'flag:set', key: 'waystone.waystone.woken', value: true }); need('road');
 feed({ type: 'area:entered', id: 'roadWest' }); need('relay found');
