@@ -26,6 +26,7 @@ import { archIndex, ARCH_NAMES } from './archetypes.js';
 import { validateArchetype } from './archetypeRules.js';
 import { perceive, leashState, returnTarget, LEASH_HOME, LEASH_ENGAGE, LEASH_RETURN, LEASH_GIVEUP } from '../../../../engine/index.js';
 
+export const POOL = 128; // BEAST-POOL-b: live (bound) slots; records beyond it sleep unbound
 export const MAX_RECORDS = 1024; // BEAST-POOL-a (37.16.5): the public slot IS the record index 0..MAX_RECORDS-1 (stable for the run); loot.js imports this
 export const MAX_BEASTS = MAX_RECORDS; // legacy alias of MAX_RECORDS (tests / tools still import it)
 const PATH_SLOTS = 64; // waypoints kept per beast path (truncated, final = the exact goal - see `storePath`)
@@ -164,7 +165,6 @@ export function createBeastSim(world, opts) {
       sink: toSteps(cfg.sinkSec),
     },
     count,
-    lastX: new Float64Array(MAX_RECORDS), lastY: new Float64Array(MAX_RECORDS), // BEAST-POOL-a: last steer pos of an unbound record (story b)
     pool: createPool(count),
     noise: 1, // BEAST-PERCEIVE-01w: hearing multiplier of the player this step (1 walk, NOISE_SPRINT, NOISE_SWING); caller sets it
     // preallocated adapter scratch for engine/nav perceive + leash (zero alloc per step)
@@ -211,7 +211,7 @@ export function createBeastSim(world, opts) {
     partialGoal: new Uint8Array(MAX_RECORDS),// last A* for this slot was partial (goal unreachable)
     prevX: new Float64Array(MAX_RECORDS),
     prevY: new Float64Array(MAX_RECORDS),
-    path: new Float64Array(count * PATH_SLOTS * 2), // BEAST-POOL-a: indexed by the pool index lv[i] (story a: POOL = count)
+    path: new Float64Array(Math.min(count, POOL) * PATH_SLOTS * 2), // BEAST-POOL: indexed by the pool index lv[i]
     pathLen: new Int32Array(MAX_RECORDS),
     pathIdx: new Int32Array(MAX_RECORDS),
     wary: new Uint8Array(MAX_RECORDS),        // DRESS-01b: brain.temperament==='wary' (ambient boars: short notice + leash until hit)
@@ -289,6 +289,7 @@ export function createBeastSim(world, opts) {
     const home = (e.components.brain && e.components.brain.home) || [e.transform.x, e.transform.y];
     sim.homeX[i] = home[0];
     sim.homeY[i] = home[1];
+    sim.pool.lastX[i] = home[0]; sim.pool.lastY[i] = home[1];
     { const kn = kindOfEntity(e); sim.kindIdx[i] = kindIndex(kn); sim.archIdx[i] = archIndex(KINDS[kn].arch); } // BEAST-03a
     if (isWolfEntity(e)) { // WOLF-01: wolf slot = boar defaults + overrides, own step counts
       sim.wolf[i] = 1; sim.group[i] = 1; sim.packer[i] = 1;
@@ -441,10 +442,9 @@ export function createBeastSim(world, opts) {
     applyDormant(slot);
   };
   /** WM-04: nav-tile / 200 m dormancy (separate reason from the camp's, so a camp wake never wakes a tile-dormant beast). */
-  sim.setTileDormant = function setTileDormant(slot, on) {
+  sim.setTileDormant = function setTileDormant(slot, on) { // BEAST-POOL-b shim: on = unbind now (binding is the binder's job)
     if (slot < 0 || slot >= sim.count) return;
-    sim.dormTile[slot] = on ? 1 : 0;
-    applyDormant(slot);
+    if (on && sim.pool.lv[slot] >= 0) unbindRec(sim, slot);
   };
   /** WM-04: the live nav tile swapped (`world:band` ev.nav). Rebinds grid, A-star and steer bounds, clears paths so live ones re-plan
    *  on the new tile (hunters/travellers request a path at once), then re-evaluates tile dormancy. */
@@ -463,16 +463,8 @@ export function createBeastSim(world, opts) {
     }
     sim.updateTileDormancy(px, py);
   };
-  /** WM-04: dormant when the home is outside the live tile or > TILE_DORMANT_R from the player. Cheap (count <= MAX_RECORDS), call ~1 Hz. */
-  sim.updateTileDormancy = function updateTileDormancy(px, py) {
-    if (!sim.tileMode) return;
-    const g = sim.grid, x1 = g.x0 + g.w * g.cell, y1 = g.y0 + g.h * g.cell, r2 = TILE_DORMANT_R * TILE_DORMANT_R;
-    for (let i = 0; i < sim.count; i++) {
-      const hx = sim.homeX[i], hy = sim.homeY[i], dx = hx - px, dy = hy - py;
-      const out = hx < g.x0 || hy < g.y0 || hx >= x1 || hy >= y1 || dx * dx + dy * dy > r2;
-      sim.setTileDormant(i, out);
-    }
-  };
+  /** WM-04 -> BEAST-POOL-b: the binder (bind < 150 m, unbind > 180 m or off the nav tile). Cheap; stepSim also runs it every 30 steps. */
+  sim.updateTileDormancy = function updateTileDormancy(px, py) { poolUpdate(sim, px, py); };
   /** GOB-01b: on -> slot goes to STATE_GONE (steer agent dropped, hidden, skipped); off -> back alive at home, hp max. */
   // DIFF-MENU (D-083): live difficulty change from the Settings screen. Rescales live beasts' damage by the dmg ratio only;
   // hp / spawn tuning apply to the next created beast (opts.difficulty is read at create).
@@ -493,11 +485,12 @@ export function createBeastSim(world, opts) {
       sim.state[slot] = STATE_GONE; sim.pendingDied[slot] = 0; sim.despawnReq[slot] = 0;
       sim.pathLen[slot] = 0; sim.pathIdx[slot] = 0; sim.pathReq[slot] = 0; sim.seen[slot] = 0; sim.goal.on[slot] = 0;
     } else if (sim.down[slot]) {
-      if (sim.down[slot] === 2) sim.steer.active[slot] = 1;
+      if (sim.down[slot] === 2 && sim.pool.lv[slot] >= 0) sim.steer.active[slot] = 1;
       sim.down[slot] = 0; sim.dormant[slot] = 0; sim.dormCamp[slot] = 0; sim.dormTile[slot] = 0;
       resetSlotSim(sim, slot);
       resyncLeash(sim);
     }
+    if (sim.pool.lv[slot] < 0 && !sim.down[slot]) { sim.dormTile[slot] = 1; sim.dormant[slot] = 1; } // unbound records read as tile-dormant
   };
   sim.isDown = function isDown(slot) { return slot >= 0 && slot < sim.count && sim.down[slot] === 1; };
   /** GOB-01b: a live slot runs away from the player (last stepped position) like a low-hp wolf/goblin flee. */
@@ -555,6 +548,9 @@ export function createBeastSim(world, opts) {
   sim.groupAlive = function groupAlive(name) { const l = sim.groupSlots(name); let n = 0; for (let k = 0; k < l.length; k++) if (!sim.down[l[k]] && !deadSt(sim.state[l[k]])) n++; return n; };
   for (let i = 0; i < count; i++) { const b = sim.entities[i].components.brain; if (b && b.reserve === true && sim.grp[i]) sim.setDown(i, true); }
 
+  for (let i = sim.pool.n; i < count; i++) { // BEAST-POOL-b: records beyond the pool start unbound (parked, tile-dormant)
+    sim.steer.active[i] = 0; sim.steer.vx[i] = 0; sim.steer.vy[i] = 0; sim.dormTile[i] = 1; sim.dormant[i] = 1;
+  }
   // arch fix (WM-04): a grid world's nav IS a tile -> tile dormancy applies from creation, not only after the first swap (opts.spawn optional: without it only the out-of-tile rule runs)
   if (opts.tileNav) { sim.tileMode = true; sim.updateTileDormancy(opts.spawn ? opts.spawn.x : NaN, opts.spawn ? opts.spawn.y : NaN); }
 
@@ -596,16 +592,121 @@ function applyArchPatches(sim) {
 
 /** BEAST-POOL-a (37.16.5): live-slot pool. Story a binds every record (identity), story b adds the binder. */
 function createPool(count) {
-  const lv = new Int16Array(MAX_RECORDS).fill(-1), rec = new Int16Array(Math.max(1, count)), free = new Int16Array(Math.max(1, count));
-  for (let i = 0; i < count; i++) { lv[i] = i; rec[i] = i; }
-  return { lv, rec, n: count, free, freeN: 0, cand: new Int16Array(MAX_RECORDS), candD: new Float64Array(MAX_RECORDS), rIn: 150, rOut: 180, every: 30, maxBind: 8, full: 0 };
+  const pn = Math.min(count, POOL), lv = new Int16Array(MAX_RECORDS).fill(-1), rec = new Int16Array(Math.max(1, pn)), free = new Int16Array(Math.max(1, pn));
+  for (let i = 0; i < pn; i++) { lv[i] = i; rec[i] = i; } // the first POOL records start bound (identity); the binder swaps from the first update on
+  return {
+    lv, rec, n: pn, free, freeN: 0, cand: new Int16Array(MAX_RECORDS), candD: new Float64Array(MAX_RECORDS),
+    rIn: 150, rOut: 180, every: 30, maxBind: 8, full: 0, evictGap: 20,
+    lastX: new Float64Array(MAX_RECORDS), lastY: new Float64Array(MAX_RECORDS), // last position of an unbound record (BEAST-POOL-b)
+  };
+}
+
+// ---- BEAST-POOL-b (37.16.5): binder ------------------------------------------------------------------------------
+// States that may be unbound by distance: WANDER, EAT, GRAZE, PATROL, HIDDEN, SUBMERGED, AIRBORNE. Everything else (notice..recover, return,
+// flee, circle, grab, bite, cast, dead timelines, ...) is "in combat" and keeps its slot.
+const FREE_ST = new Uint8Array(32);
+for (const st of [STATE_WANDER, STATE_EAT, STATE_GRAZE, STATE_PATROL, STATE_HIDDEN, STATE_SUBMERGED, STATE_AIRBORNE]) FREE_ST[st] = 1;
+const UNBIND_SNAP_M = 30;
+
+/** Protected = never unbound by distance, never evicted. */
+function protectedRec(sim, i) {
+  return FREE_ST[sim.state[i]] === 0 || sim.hunt[i] === 1 || sim.fleeing[i] === 1 || sim.goal.on[i] === 1 || sim.tactics.held[i] !== 0;
+}
+
+/** Unbind carry (no rec edit): WANDER, hp/dead kept, snap home when > 30 m away, steer parked, tokens released, pool index freed. */
+function dropRec(sim, i) {
+  const P = sim.pool, steer = sim.steer, t = sim.entities[i].transform;
+  sim.tactics.release(i); sim.tactics.flank[i] = -1;
+  const dead = deadSt(sim.state[i]);
+  if (!dead) {
+    sim.state[i] = sim.wat[i] ? STATE_SUBMERGED : STATE_WANDER; sim.timer[i] = sim.cfgSteps.pauseMin;
+    sim.hunt[i] = 0; sim.fleeing[i] = 0; sim.waiting[i] = 0;
+    const dx = t.x - sim.homeX[i], dy = t.y - sim.homeY[i];
+    if (dx * dx + dy * dy > UNBIND_SNAP_M * UNBIND_SNAP_M) { t.x = sim.homeX[i]; t.y = sim.homeY[i]; t.z = sim.homeZ[i]; }
+  }
+  P.lastX[i] = t.x; P.lastY[i] = t.y; steer.x[i] = t.x; steer.y[i] = t.y;
+  steer.active[i] = 0; steer.vx[i] = 0; steer.vy[i] = 0;
+  sim.seen[i] = 0; sim.pathReq[i] = 0; sim.pathLen[i] = 0; sim.pathIdx[i] = 0;
+  sim.dormTile[i] = 1; sim.dormant[i] = 1; // unbound reads as tile-dormant for every consumer
+  P.free[P.freeN++] = P.lv[i]; P.lv[i] = -1;
+}
+/** GONE / down records give their pool index back without touching their state. */
+function releaseRec(sim, i) { const P = sim.pool; P.free[P.freeN++] = P.lv[i]; P.lv[i] = -1; }
+function removeFromList(P, i) {
+  const rec = P.rec; let k = 0; while (k < P.n && rec[k] !== i) k++;
+  if (k === P.n) return;
+  for (; k < P.n - 1; k++) rec[k] = rec[k + 1];
+  P.n--;
+}
+function unbindRec(sim, i) { dropRec(sim, i); removeFromList(sim.pool, i); }
+function bindRec(sim, i, pi) {
+  const P = sim.pool, steer = sim.steer, rec = P.rec;
+  P.lv[i] = pi;
+  let k = P.n++; while (k > 0 && rec[k - 1] > i) { rec[k] = rec[k - 1]; k--; } rec[k] = i; // list stays sorted by record index
+  sim.dormTile[i] = 0; sim.dormant[i] = sim.dormCamp[i];
+  sim.pathReq[i] = 0; sim.pathLen[i] = 0; sim.pathIdx[i] = 0; sim.seen[i] = 0;
+  sim.entities[i].transform.x = P.lastX[i]; sim.entities[i].transform.y = P.lastY[i];
+  if (!sim.wat[i]) {
+    if (!sim.dormant[i]) steer.activateAgent(i, P.lastX[i], P.lastY[i], steer.radius[i], steer.maxSpeed[i], steer.accel[i]);
+    else { steer.x[i] = P.lastX[i]; steer.y[i] = P.lastY[i]; }
+  }
+  const ag = sim._lagents[i]; ag.leashT = 0; ag.leashMode = LEASH_HOME;
+}
+
+/** Binder: unbind > rOut or off the nav tile (protected ones only for the tile), bind nearest-first < rIn (max `maxBind`), evict when full. No rng. */
+function poolUpdate(sim, px, py) {
+  const P = sim.pool, rec = P.rec, lv = P.lv, cap = rec.length, g = sim.grid, tile = sim.tileMode === true;
+  const x0 = tile ? g.x0 : 0, y0 = tile ? g.y0 : 0, x1 = tile ? x0 + g.w * g.cell : 0, y1 = tile ? y0 + g.h * g.cell : 0;
+  const hasP = px === px && py === py, rOut2 = P.rOut * P.rOut, rIn2 = P.rIn * P.rIn;
+  let w = 0;
+  for (let k = 0; k < P.n; k++) { // 1) unbind / release, stable compaction
+    const i = rec[k], st = sim.state[i];
+    if (sim.down[i] || st === STATE_GONE) { releaseRec(sim, i); continue; }
+    const hx = sim.homeX[i], hy = sim.homeY[i];
+    let out = tile && (hx < x0 || hy < y0 || hx >= x1 || hy >= y1);
+    if (!out && hasP && !protectedRec(sim, i)) {
+      const t = sim.entities[i].transform, dx = t.x - px, dy = t.y - py;
+      out = dx * dx + dy * dy > rOut2;
+    }
+    if (out) { dropRec(sim, i); continue; }
+    rec[w++] = i;
+  }
+  P.n = w;
+  if (!hasP) return;
+  let nc = 0; // 2) candidates (unbound, alive, in the tile, close or with a goal)
+  for (let r = 0; r < sim.count; r++) {
+    if (lv[r] >= 0 || sim.down[r] || sim.dormCamp[r] || deadSt(sim.state[r])) continue;
+    if (tile) { const hx = sim.homeX[r], hy = sim.homeY[r]; if (hx < x0 || hy < y0 || hx >= x1 || hy >= y1) continue; }
+    const dx = P.lastX[r] - px, dy = P.lastY[r] - py, d2 = dx * dx + dy * dy, pri = sim.goal.on[r] === 1;
+    if (!pri && d2 >= rIn2) continue;
+    P.cand[nc] = r; P.candD[nc] = pri ? -1 : Math.sqrt(d2); nc++;
+  }
+  for (let m = 0; m < P.maxBind && nc > 0; m++) { // 3) nearest first, lower record on a tie (partial selection, no sort)
+    let b = 0;
+    for (let c = 1; c < nc; c++) if (P.candD[c] < P.candD[b] || (P.candD[c] === P.candD[b] && P.cand[c] < P.cand[b])) b = c;
+    const r = P.cand[b], cd = P.candD[b];
+    P.cand[b] = P.cand[nc - 1]; P.candD[b] = P.candD[nc - 1]; nc--;
+    if (P.n >= cap) { // full: evict the farthest unprotected if >= evictGap farther than the candidate
+      let far = -1, fd = -1;
+      for (let k = 0; k < P.n; k++) {
+        const i = rec[k]; if (protectedRec(sim, i)) continue;
+        const t = sim.entities[i].transform, dx = t.x - px, dy = t.y - py, d = Math.sqrt(dx * dx + dy * dy);
+        if (d > fd) { fd = d; far = i; }
+      }
+      if (far < 0 || fd < cd + P.evictGap) { P.full++; break; }
+      unbindRec(sim, far);
+    }
+    bindRec(sim, r, P.free[--P.freeN]);
+  }
 }
 
 function stepSim(sim, px, py, pz) {
-  const pool = sim.pool, rec = pool.rec, n = pool.n;
+  const pool = sim.pool;
   sim._px = px; sim._py = py; sim._pz = pz;
+  if ((sim.tick % pool.every) === 0 && (sim.tileMode || sim.count > POOL)) poolUpdate(sim, px, py); // BEAST-POOL-b: binder, staggered by the step counter
   // US-079b (37.16.2): `beast:died` goes out at the START of the step after the kill (exactly once), so the sword
   // is never mid-iteration when a loot spawn would rebuild its target list.
+  let rec = pool.rec, n = pool.n; // re-read after poolUpdate
   for (let k = 0; k < n; k++) emitPendingDied(sim, rec[k]);
   // US-079b: cooldown/hurt timers tick for every slot; dead slots run their own timeline (stepDead).
   for (let k = 0; k < n; k++) {
@@ -632,9 +733,10 @@ function stepSim(sim, px, py, pz) {
 
 /** LIFE-07: feed live beast positions to fauna as threat points; end hunts that left STATE_WANDER. Only runs with fauna. */
 function huntPass(sim) {
-  const n = sim.count, steer = sim.steer;
+  const n = sim.pool.n, rec = sim.pool.rec, steer = sim.steer;
   let t = 0;
-  for (let i = 0; i < n; i++) {
+  for (let k = 0; k < n; k++) {
+    const i = rec[k];
     if (sim.hunt[i] && sim.state[i] !== STATE_WANDER) sim.hunt[i] = 0;
     if (!deadSt(sim.state[i]) && t < 16) { sim.sc.thrX[t] = steer.x[i]; sim.sc.thrY[t] = steer.y[i]; t++; }
   }
@@ -859,7 +961,7 @@ function rangedChase(sim, i, px, py, d2) {
   sim.backT[i] = 0;
   if (d2 <= T.bandMax * T.bandMax && sim.seen[i]) {
     let winding = 0;
-    for (let k = 0; k < sim.count; k++) if (k !== i && sim.ranged[k] && sim.state[k] === STATE_WINDUP) winding++;
+    for (let q = 0, pr = sim.pool.rec, pn = sim.pool.n; q < pn; q++) { const k = pr[q]; if (k !== i && sim.ranged[k] && sim.state[k] === STATE_WINDUP) winding++; }
     if (winding < T.maxWinding) { sim.waiting[i] = 0; enterWindup(sim, i); } else sim.waiting[i] = 1;
     return true;
   }
@@ -880,7 +982,8 @@ function emitThrow(sim, i, px, py) {
 function hasActiveCharger(sim, me) {
   if (sim.tactOn[me]) return !sim.tactics.request(me, sim.tactRole[me] === TACT_SWARM ? TOK_S : TOK_M); // BEAST-04: token pools replace the single-charger rule
   let held = 0;
-  for (let k = 0; k < sim.count; k++) {
+  for (let q = 0, pr = sim.pool.rec, pn = sim.pool.n; q < pn; q++) {
+    const k = pr[q];
     if (k === me || sim.group[k] !== sim.group[me]) continue; // WOLF-01/GOB-01: the token is per group (wolves never block boars)
     if (sim.state[k] === STATE_WINDUP || sim.state[k] === STATE_CHARGE) held++;
   }
@@ -1056,7 +1159,8 @@ function enterReturn(sim, i) {
 /** WOLF-01: a wolf with no other living wolf within packR. */
 function isLone(sim, i) {
   const st = sim.steer, pr = sim.goblin[i] ? GOBLIN_TUNING.packR : WOLF_TUNING.packR, r2 = pr * pr;
-  for (let k = 0; k < sim.count; k++) {
+  for (let q = 0, pr = sim.pool.rec, pn = sim.pool.n; q < pn; q++) {
+    const k = pr[q];
     if (k === i || sim.group[k] !== sim.group[i] || deadSt(sim.state[k])) continue; // same pack species (group 1 wolf, 2 goblin)
     const dx = st.x[k] - st.x[i], dy = st.y[k] - st.y[i];
     if (dx * dx + dy * dy <= r2) return false;
@@ -1229,10 +1333,11 @@ function updatePathRequests(sim, px, py) {
 /** At most one `findPath` per tick, round robin from the slot after the last one served (29.1 step 3). */
 function servePathRequest(sim, px, py) {
   void px; void py;
-  const n = sim.count;
+  const n = sim.pool.n, pr = sim.pool.rec;
   if (n === 0) return;
-  for (let k = 1; k <= n; k++) {
-    const i = (sim.lastServed + k) % n;
+  let s0 = 0; while (s0 < n && pr[s0] <= sim.lastServed) s0++; // pool list is sorted by record index: start after the last served record
+  for (let k = 0; k < n; k++) {
+    const i = pr[(s0 + k) % n];
     if (sim.pathReq[i] && !deadSt(sim.state[i])) {
       computePath(sim, i);
       sim.pathReq[i] = 0;
@@ -1427,9 +1532,10 @@ function straightWalkable(sim, x, y, dx, dy) {
  * from it, `r` m out. Trig-free (fixed sin/cos of 120 deg). Returns false when `i` is the lead / alone (-> plain circle). */
 const FL_C = -0.5, FL_S = 0.8660254;
 function flankTarget(sim, i, r, out) {
-  const g = sim.group[i], n = sim.count;
+  const g = sim.group[i], n = sim.pool.n, pr = sim.pool.rec;
   let lead = -1, alive = 0, rank = 0;
-  for (let k = 0; k < n; k++) {
+  for (let q = 0; q < n; q++) {
+    const k = pr[q];
     if (sim.group[k] !== g || sim.down[k] || deadSt(sim.state[k]) || sim.state[k] === STATE_GONE) continue;
     const dx = sim.steer.x[k] - sim._px, dy = sim.steer.y[k] - sim._py;
     if (dx * dx + dy * dy > 625) continue; // packR
@@ -1608,6 +1714,7 @@ function hashSim(sim, h) {
   }
   h.u32Array(sim.pathLen, 0, n);
   h.u32Array(sim.pathIdx, 0, n);
+  for (let i = 0; i < n; i++) h.i32(sim.pool.lv[i]); // BEAST-POOL-b: binding state
   h.u8Array(sim.seen, 0, n);
   h.u8Array(sim.pathReq, 0, n);
   h.u8Array(sim.pendingDied, 0, n);
@@ -1633,7 +1740,7 @@ function saveSim(sim) {
     deathZ: slice(sim.deathZ), knockV: slice(sim.knockV),
     pathLen: slice(sim.pathLen), pathIdx: slice(sim.pathIdx), seen: slice(sim.seen), pathReq: slice(sim.pathReq),
     pendingDied: slice(sim.pendingDied), despawnReq: slice(sim.despawnReq), cause: slice(sim.cause),
-    path: Array.from(sim.path.subarray(0, n * PATH_SLOTS * 2)),
+    path: Array.from(sim.path.subarray(0, Math.min(n * PATH_SLOTS * 2, sim.path.length))),
     hp,
     steer: {
       x: slice(sim.steer.x), y: slice(sim.steer.y), vx: slice(sim.steer.vx), vy: slice(sim.steer.vy),
@@ -1689,10 +1796,10 @@ function resetSlotSim(sim, i) {
   sim.bite.cd[i] = 0; sim.bite.n[i] = 0; sim.bite.done[i] = 0; // BEAR-BITE
   // US-079b: dead steer slots are re-added in ascending order; addAgent hands out the lowest free slot, and the
   // live slots stay active (slots >= count are never used), so the lowest free slot is always the lowest dead one.
-  if (!sim.steer.active[i] && !sim.dormant[i]) {
-    const slot = sim.steer.activateAgent(i, sim.homeX[i], sim.homeY[i], sim.cfg.radius, 0, DEFAULT_ACCEL); // BH-A1: exactly slot i
-    if (slot !== i) throw new Error(`beastSim.resetAll: re-added dead slot ${i} but activateAgent returned ${slot}`);
+  if (sim.pool.lv[i] >= 0 && !sim.steer.active[i] && !sim.dormant[i]) { // BEAST-POOL-b: unbound records stay parked; the binder activates them
+    sim.steer.activateAgent(i, sim.homeX[i], sim.homeY[i], sim.cfg.radius, 0, DEFAULT_ACCEL);
   }
+  sim.pool.lastX[i] = sim.homeX[i]; sim.pool.lastY[i] = sim.homeY[i];
   const health = sim.entities[i].components.health;
   health.hp = health.max; // US-079b: boars come back alive
   sim.goal.on[i] = 0; sim.alt.tgt[i] = -1; sim.alt.cd[i] = 0; // LIFE-08: raids restart next night
