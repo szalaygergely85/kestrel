@@ -46,6 +46,20 @@ for (const id of IDS) {
   ok(b.statusOf('sq.ow.wolves') === READY, 'pre-accept kills make it ready without new kills');
   ok(!!b.handIn('sq.ow.wolves') && done(b, 'sq.ow.wolves'), 'handed in with no respawn');
 }
+{ // R6-FIX C: kill the pack -> save -> reload -> accept: the kill record survives and the hook is on the freshly loaded book (no sync needed)
+  const { createQuestRelay } = await import('../questRelay.js');
+  const defs = [gate, ...IDS.map(get)], m1 = get('m1');
+  const rel = createQuestRelay(m1, null, defs, null);
+  rel.setLivingOfKind(() => 0); // the authored pack stays dead after a load (saveRelay.applyDeadToBeasts): nothing living of any kind
+  const deadIds = ['wolf1', 'wolf2', 'wolf3', 'wolf4', 'wolf5'];
+  for (const id of deadIds) rel.book.feed({ type: 'beast:died', id });
+  const sv = rel.book.toSave();
+  rel.reset(sv.quest, sv.quests); rel.seedDead(deadIds); // what saveRelay.onWorldLoaded does on Continue
+  const inv = new Map(); rel.book.packOps = { count: (id) => inv.get(id) || 0, remove: () => 0, add: (id, n) => n, equipped: () => true };
+  ok(typeof rel.book.livingOfKind === 'function', 'hook installed on the reloaded book without questPickups.sync');
+  ok(rel.book.accept('sq.ow.wolves'), 'wolf quest accepted after load');
+  ok(rel.book.statusOf('sq.ow.wolves') === READY, 'kills made before the save still count after load (no soft-lock)');
+}
 { // SOFTLOCK-01: another kind-kill quest (regions boars, 3 needed), kills made earlier
   const def = [...files.quests, ...packs.quests].map(q => q.def).find(d => d.objectives.some(o => o.when.type === 'beasts' && o.when.kind === 'boar' && o.when.count === 3));
   ok(!!def, 'a 3-boar kind quest exists');

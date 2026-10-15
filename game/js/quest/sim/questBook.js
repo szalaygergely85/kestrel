@@ -404,6 +404,8 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     return book.feed({ type: 'flag:set', key: 'ui.tracked', value: id || '' });
   };
   book.objectives = (i, out) => questObjectives(entries[i].state, entries[i].def, out);
+  /** R6-FIX C: seed the kill record (SOFTLOCK-01) after a load: the save keeps the global dead-beast ids, the fresh book starts with an empty record. */
+  book.seedDead = function seedDead(ids) { for (const id of ids || []) if (typeof id === 'string') deadSeen.add(id); };
   book.toSave = function toSave() {
     const quests = {};
     for (let i = 1; i < n; i++) {
