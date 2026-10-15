@@ -24,7 +24,7 @@ assert.equal(large.view.isOpen,false,'large dt drains all phases/queued cards');
 const ui=createUiLayer({cols:160}), drawn=rig(true).view;drawn.push('shield');drawn.step(0.3);drawn.draw(ui);
 function line(y,x,n){let out='';for(let i=0;i<n;i++)out+=String.fromCharCode(ui.cells.glyphIdx[y*ui.cols+x+i]+32);return out;}
 const P=style.panel;
-assert.ok(line(P.y+1,P.x,P.w).includes('Brass Buckler'));
+assert.ok(line(P.y+1,P.x,P.w).includes('Brass Shield'));
 assert.ok(line(P.y+4,P.x+15,38).startsWith('Gondola plate, bent round a strap.'));
 assert.ok(line(P.y+6,P.x+15,38).startsWith('Shield - either hand'));
 assert.ok(line(P.y+9,P.x,P.w).includes('- any key -'));

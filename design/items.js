@@ -62,7 +62,7 @@
   var defs = {
     // ---------------- hand items ----------------
     sword: {
-      id: 'sword', name: 'Ruin Steel', kind: 'weapon', stackMax: 1, hand: true, inPack: true,
+      id: 'sword', name: 'Old Sword', kind: 'weapon', stackMax: 1, hand: true, inPack: true,
       desc: 'Old watch steel. Nicked, still true.',
       glyph: { ch: '/', c: 'mirror' },
       //  .        cross-guard top
@@ -73,7 +73,7 @@
       equip: { slot: 'main', tier: 'worn', def: 0, held: 'sword' }   // EQ-01
     },
     'spell.fireball': {
-      id: 'spell.fireball', name: 'Ember', kind: 'spell', stackMax: 1, hand: true, inPack: true,
+      id: 'spell.fireball', name: 'Fireball', kind: 'spell', stackMax: 1, hand: true, inPack: true,
       equip: { slot: 'off', tier: 'worn', def: 0 }, // FB-01 fix: hands are derived from equipment (OB-017); without an off-slot the spell could never reach a hand
       desc: 'A coal that answers the hand.',
       glyph: { ch: '*', c: 'flameMid' },
@@ -132,7 +132,7 @@
     },
     'goblin.trinket': { // GOB-05: a sell item; icon + sprite are the tusk's placeholders (NEEDS DESIGNER)
       id: 'goblin.trinket', name: 'Goblin Trinket', kind: 'material', stackMax: 20, hand: false, inPack: true,
-      desc: 'Bent wire and bone. Sells well.', // placeholder text (NEEDS WRITER)
+      desc: 'Bent wire and bone. Sells well.',
       use: { none: 'Material - sell it' },
       glyph: { ch: '*', c: 'linenLight' },
       sprite: 'lootTusk',
@@ -141,7 +141,7 @@
     },
     // ---------------- ground orbs (US-080b drops; NOT stored: used on touch) ----------------
     'orb.hp': {
-      id: 'orb.hp', name: 'Herb Flask', kind: 'pickup', stackMax: 0, hand: false, inPack: false,
+      id: 'orb.hp', name: 'Health Orb', kind: 'pickup', stackMax: 0, hand: false, inPack: false,
       desc: 'Bitter herbs under red wax. Heals.',
       use: { heal: 10, onTouch: true, note: 'existing pickups.js kind hp (PICKUP_AMOUNT 10); def is for the toast only' },
       glyph: { ch: '+', c: 'vital' },
@@ -150,7 +150,7 @@
                  [' cPc ', 'gLWLG', ' GGG '])
     },
     'orb.mp': {
-      id: 'orb.mp', name: 'Cold Shard', kind: 'pickup', stackMax: 0, hand: false, inPack: false,
+      id: 'orb.mp', name: 'Mana Orb', kind: 'pickup', stackMax: 0, hand: false, inPack: false,
       desc: 'A sliver of teal light. Restores MP.',
       use: { mana: 10, onTouch: true, note: 'existing pickups.js kind mp (PICKUP_AMOUNT 10); def is for the toast only' },
       glyph: { ch: '*', c: 'manaLight' },
@@ -175,7 +175,7 @@
   keys.X = { c: 'lantern', e: true };
 
   defs.shield = {
-    id: 'shield', name: 'Brass Buckler', kind: 'shield', stackMax: 1, hand: true, inPack: true,
+    id: 'shield', name: 'Brass Shield', kind: 'shield', stackMax: 1, hand: true, inPack: true,
     desc: 'Gondola plate, bent round a strap.',
     glyph: { ch: 'O', c: 'brass' },
     // /=o=\     rim + top rivet
@@ -186,7 +186,7 @@
     equip: { slot: 'off', tier: 'worn', def: 2, held: 'shield' }   // EQ-01 (shield counts x2)
   };
   defs.lantern = {
-    id: 'lantern', name: 'Kestrel Lamp', kind: 'tool', stackMax: 1, hand: true, inPack: true,
+    id: 'lantern', name: 'Lantern', kind: 'tool', stackMax: 1, hand: true, inPack: true,
     desc: "The gondola's lamp. It still burns.",
     note: 'quest item id (M1 objective `lantern`); today lantern.take sets a flag, S8-C-08 decides if it also adds this item',
     glyph: { ch: '#', c: 'lantern' },
@@ -219,7 +219,7 @@
     equip: { slot: 'ranged', tier: 'worn', def: 0, held: 'bow' }   // EQ-01
   };
   defs.bomb = {
-    id: 'bomb', name: 'Blast Pot', kind: 'tool', stackMax: 10, hand: true, inPack: true,
+    id: 'bomb', name: 'Bomb', kind: 'tool', stackMax: 10, hand: true, inPack: true,
     desc: 'Clay, black powder, a short fuse.',
     use: { note: 'throw: a later story (no sim yet)' },
     glyph: { ch: 'o', c: 'copper' },
@@ -506,7 +506,7 @@
       var fg = b.rows.map(function (r) { return r.replace(/[^ ]/g, k); });
       defs[id] = {
         id: id, name: tierPrefix[tier] + ' ' + b.name, kind: 'gear', stackMax: 1, hand: false, inPack: true,
-        desc: tierPrefix[tier] + ' ' + b.name.toLowerCase() + '. Placeholder copy.',
+        desc: 'A ' + tierPrefix[tier].toLowerCase() + ' ' + b.name.toLowerCase() + '. Gives ' + (ti + 1) * (b.slot === 'body' ? 2 : 1) + ' defence.',
         glyph: { ch: b.ch, c: tierGlyphC[tier] },
         icon: icon(b.rows, fg),
         equip: { slot: b.slot, tier: tier, def: (ti + 1) * (b.slot === 'body' ? 2 : 1), shell: b.shell }
