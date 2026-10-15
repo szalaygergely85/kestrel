@@ -282,6 +282,25 @@ export function drawHurtEdge(ui, vitals, simTime, style, reduceMotion = false) {
   }
 }
 
+/** SPELL-06: Ward screen-edge ring. One cell wide ragged frame of `o` glyphs, teal; strength follows ward.fraction (0..1). 0 alloc. */
+export const WARD_RING = Object.freeze({ glyph: 'o', fg: Object.freeze([70, 220, 205]), bg: Object.freeze([6, 28, 30]), coverage: 0.7 });
+export function drawWardRing(ui, ward) {
+  if (!ward || !ward.active) return 0;
+  const g = 0.35 + 0.65 * ward.fraction, c = WARD_RING, code = c.glyph.charCodeAt(0) - 32;
+  const fr = (c.fg[0] * g) | 0, fg = (c.fg[1] * g) | 0, fb = (c.fg[2] * g) | 0, br = (c.bg[0] * g) | 0, bg = (c.bg[1] * g) | 0, bb = (c.bg[2] * g) | 0;
+  const cols = ui.cols, rows = ui.rows;
+  let n = 0;
+  for (let x = 0; x < cols; x++) {
+    if (raggedHash100(x, 0) < c.coverage * 100) { ui.setCellRGB(x, 0, code, fr, fg, fb, br, bg, bb); n++; }
+    if (raggedHash100(x, rows - 1) < c.coverage * 100) { ui.setCellRGB(x, rows - 1, code, fr, fg, fb, br, bg, bb); n++; }
+  }
+  for (let y = 1; y < rows - 1; y++) {
+    if (raggedHash100(0, y) < c.coverage * 100) { ui.setCellRGB(0, y, code, fr, fg, fb, br, bg, bb); n++; }
+    if (raggedHash100(cols - 1, y) < c.coverage * 100) { ui.setCellRGB(cols - 1, y, code, fr, fg, fb, br, bg, bb); n++; }
+  }
+  return n;
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Render-eye pitch kick: pure, NEVER written into `look` (architecture 30.2 "do not": the kick is a render-only
 // offset applied at the camera-build call site - `cam.pitchDeg += kickDeg(vitals, simTime)` - after `look` has

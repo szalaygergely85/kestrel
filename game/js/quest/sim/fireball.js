@@ -217,6 +217,8 @@ export function createFireballSim(world, events, cfg, targets, hooks) {
     },
     /** SPELL-04: quickbar key tap (no charge). Returns 'cast' (queued for the next step) or 'busy'. */
     requestTap() { if (state !== FB_IDLE || cooldown > 0 || pendingTap) return 'busy'; pendingTap = true; return 'cast'; },
+    /** SPELL-07: Fire Ring - the shared burst centred on the caster; the player is never a candidate (no damage, no knock). */
+    burstAt(x, y, z, radius, damage, knock) { burst(x, y, z, radius, damage, knock, false, -1, 0, 0, null); },
     dispose() {},
     hashInto(h) {
       h.u32(state); h.u32(holdSteps); h.u32(prevDown); h.u32(cooldown); h.u32(castTick & 0x7fffffff); h.u32(hand === 'left' ? 0 : 1); h.u32(pendingTap ? 1 : 0);

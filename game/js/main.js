@@ -188,6 +188,7 @@ import { playShieldClank, playBowShot, playRelayHum } from './audio/sfx.js'; // 
 import { createTargetables } from './quest/sim/targetables.js';
 import { FIREBALL_CFG, refreshLocked } from './quest/spellConfig.js';
 import { createSpellDispatcher } from './quest/sim/spellCast.js'; // SPELL-04
+import { createWardSim } from './quest/sim/ward.js'; import { createFireRingSim } from './quest/sim/fireRing.js'; import { createGustSim } from './quest/sim/gust.js'; // SPELL-06/07
 import { featuresFromParams, fireballOn } from './quest/features.js'; // D-065: fireball off unless ?fireball=1
 import { START_DEMO, START_FULL, startFor } from './quest/startConfig.js';
 import { createPracticeTarget, applyPropTargetables } from './quest/practiceTarget.js';
@@ -209,7 +210,7 @@ if (new URLSearchParams(window.location.search).get('debug') === '1') setApiWarn
 import { meshFeedStats, MAX_MESH_DRAWS, MAX_DRAW_ITEMS } from '../../engine/index.js'; // OB-039: F3 mesh draw cap line
 import { createModelPreview, createCharCache } from '../../engine/index.js'; // EQ-03/04: Character tab model preview
 import { composeCharacter, meshCharacter, collapseRig, riggedModelDef, HUMANOID_SPLIT_LEG_RIG, createFootIk, voxelPointWorld } from '../../engine/index.js'; // OB-086: the kit character in the world
-import { drawArrowCount, drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
+import { drawArrowCount, drawVitals, drawHurtEdge, drawWardRing, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
 import { ensureInventory, validateItemDefs, migrateSword, addItem } from './quest/sim/inventory.js'; // US-091a1 (37.16.4)
 import { presentPickups } from './quest/pickupsView.js';
@@ -1281,6 +1282,7 @@ async function runGame(mode, cinematic = null) {
   let offerToast = null, offerToastMsg = null; // toast once per new book.nextOffers() entry
   let equipPlay = null, shieldSim = null, arrowSim = null; // EQ-07/09: rebuilt on every 'world:loaded'
   let quickbar = null, qbView = null, qbTick = 0, qbBlocked = false; // EQ-12: sim rebuilt per world, view per page
+  let wardSim = null, fireRingSim = null, gustSim = null; // SPELL-06/07 (rebuilt per world)
   let fireball = null, fbTargets = null, spellBook = null, spellCaster = null; // SPELL-01a (37.14): rebuilt with the sword sim on every 'world:loaded'
   // US-091b: pack-screen mouse. Hover -> UI cell under the pointer; a click while open must not re-lock the pointer
   // (PlayerLook's own canvas click handler), so a capture listener on window swallows it first.
@@ -1701,6 +1703,10 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       spellBook = createSpellBook(world.state); spellCaster = createSpellDispatcher((id) => spellBook.tier(id) || (id === 'fireball' && fbOn ? 1 : 0)); // SPELL-04
       fireball = createFireballSim(world, engine.events, FIREBALL_CFG, fbTargets, { spendMana: (n) => vitals && vitals.spendMana(n), isEnabled: () => fireballOn(world, FEATURES), tier: () => spellBook.tier('fireball') || 1, damageMul: () => { const c = playerHandle && playerHandle.data.components; return computeTotals(c && c.rolledGear || null, fbTotals).fireDmgMul; } }); // INT: stats fireDmgMul at cast (rolled gear: rolledGear.js)
       hands.register('spell.fireball', fireball); spellCaster.register('fireball', () => fireball.requestTap());
+      // SPELL-06/07 registrations (learned-only: the dispatcher answers 'locked' at tier 0)
+      wardSim = createWardSim({ spendMana: (n) => vitals && vitals.spendMana(n), tier: () => spellBook.tier('ward') || 1 }); spellCaster.register('ward', () => wardSim.cast());
+      fireRingSim = createFireRingSim(fireball, { spendMana: (n) => vitals && vitals.spendMana(n), tier: () => spellBook.tier('fireRing') || 1, damageMul: () => { const c = playerHandle && playerHandle.data.components; return computeTotals(c && c.rolledGear || null, fbTotals).fireDmgMul; } }); spellCaster.register('fireRing', () => fireRingSim.cast(playerHandle.data));
+      gustSim = createGustSim(world, engine.events, fbTargets, { spendMana: (n) => vitals && vitals.spendMana(n), tier: () => spellBook.tier('gust') || 1 }); spellCaster.register('gust', () => gustSim.requestCast());
       // EQ-07/09 (38.41): shield sim + arrow sim + the routing glue; shield/bow items get no-op sims so the router arms them (RMB -> left hand, LMB -> right hand)
       shieldSim = createShieldSim();
       arrowSim = createArrowSim(world, engine.events, BOW_CFG, fbTargets, wadeArrowHit);
@@ -1722,7 +1728,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       engine.overlay.setGroundFn(world.terrain ? (x, y) => world.terrain.groundAt(x, y) : null);
       if (vitals) vitals.dispose(); // Q9 item 1a: drop the old world's `combat:hit` listener before a new one is added below
       hurtFx.reset();
-      vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting, block: shieldSim, // EQ-07: hooks.block = the shield sim
+      vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting, block: shieldSim, absorb: (n) => (wardSim ? wardSim.absorb(n) : n), // SPELL-06 absorb hook; EQ-07: hooks.block = the shield sim
         dmgMul: () => (beasts && beasts.difficulty ? beasts.difficulty.playerDmg : 1), // BH2-G1: sim.difficulty is the resolved row (kept current by applyDifficulty/setDifficulty)
         defence: () => { const c = playerHandle && playerHandle.data.components; return c && c.equipment && itemDefs ? defenceOf(c.equipment, itemDefs) : 0; }, // EQ-02
         defenceBonus: () => { const c = playerHandle && playerHandle.data.components; return c && c.equipment && itemDefs ? nightBonus(c.equipment, itemDefs, clockHour(world.state, clockCfg)) : 0; }, // QL-19: night cloak +10 %
@@ -2330,6 +2336,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
           forwardOf(look.yawDeg, swordFwd);
           const pr = look.pitchDeg * DEG2RAD, cp = Math.cos(pr);
           fireball.step(playerHandle.data, fbOn && hands.downOf('spell.fireball'), swordFwd[0], swordFwd[1], swordFwd[0] * cp, swordFwd[1] * cp, Math.sin(pr));
+          if (wardSim) wardSim.step(); if (fireRingSim) fireRingSim.step(); if (gustSim) gustSim.step(playerHandle.data, swordFwd[0], swordFwd[1]); // SPELL-06/07
           if (fbView) fbView.stepFx(); // SPELL-01b: trail emitters + burst particles (sim side, hashed)
           if (fbOn && handFxOn && spellVmH && !cinematic) { // HAND-WIRE-02 (FB-01: locked = no hand fire): hand embers / ignite / charge sparks, sim side
             const hp = playerHandle.data.transform, hb = playerHandle.data.components.body;
@@ -2732,7 +2739,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
           // not just while dead - the end card is already covered by the `!ending` gate around this whole block.
           drawVitals(ui, engine.world, assets.uiStyle.vitals, fb.timeSec, !vitals.dead && !wakeOut.inputLocked && !isMapOpen(), vitals, fbOn);
           if (swimWire) swimWire.draw(ui, assets.uiStyle.vitals, playerHandle.data, fb.timeSec); // SWIM-HOOKS-01
-          drawHurtEdge(ui, vitals, fb.timeSec, assets.uiStyle.vitals, isReduceMotion());
+          drawHurtEdge(ui, vitals, fb.timeSec, assets.uiStyle.vitals, isReduceMotion()); drawWardRing(ui, wardSim); // SPELL-06
           if (equipPlay) { // EQ-07/09: block spark + the arrow count next to the hearts while the bow set is out
             const eqH = engine.world.get('player').data.components.equipment, hudOn = !vitals.dead && !wakeOut.inputLocked && !isMapOpen();
             if (eqH && eqH.set === 'ranged' && eqH.ranged !== null) drawArrowCount(ui, assets.uiStyle.vitals, eqH.quiver ? eqH.quiver.n : 0, hudOn);
