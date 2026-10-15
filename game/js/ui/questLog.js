@@ -1,3 +1,4 @@
+import { nextLine } from '../questNext.js'; // OB-183
 // S8-C-12: cached objective HUD/log view over the shipped quest sim.
 import { drawText } from '../../../engine/index.js';
 import { isMainDef } from '../quest/sim/questBook.js';
@@ -75,7 +76,7 @@ export function humaniseId(id) {
   if (!warnedNames.has(id)) { warnedNames.add(id); console.warn('[journal] no display name for', id); }
   return h.charAt(0).toUpperCase() + h.slice(1);
 }
-export function createQuestLogScreen(book, { style = null, text = {}, width = 72, doneTitle = 'Beyond the Wall', onJournal = null, giverName = humaniseId, itemName = humaniseId } = {}) {
+export function createQuestLogScreen(book, { style = null, text = {}, width = 72, doneTitle = 'Beyond the Wall', onJournal = null, giverName = humaniseId, itemName = humaniseId, nextCtx = null } = {}) {
   const T = { ...QUEST_LOG_TEXT, ...text };
   const colour = key => (style && (style.hex[key] || style.bg[key])) || '#e8e2d0';
   const fg = style ? colour(style.row.normal.fg) : '#e8e2d0', bg = style ? style.bg.plate : '#0a0b10';
@@ -207,6 +208,8 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
     const dim = style ? colour(style.row.disabled.fg) : fg, head = style ? colour(style.sectionLabel.newGame.fg) : fg;
     const doneSel = quests[sel] === 0 && book.status(0) === DONE && !!onJournal;
     drawText(ui, bounds.x + 4, bounds.y + bounds.h - 3, doneSel ? T.footerDone : T.footer, dim, bg);
+    const nx = nextLine(book, typeof nextCtx === 'function' ? nextCtx() : nextCtx); // OB-183: no active main quest -> 'Next: talk to ...'
+    if (nx) drawText(ui, bounds.x + 4, bounds.y + 3, clipped(ascii(nx), bounds.w - 8), head, bg);
     if (!quests.length) { drawText(ui, bounds.x + 4, bounds.y + LIST_TOP + 1, T.empty, fg, bg); return bounds; }
     const div = style ? colour('brassShadow') : fg;
     for (let y = bounds.y + LIST_TOP - 1; y < bounds.y + LIST_TOP + LIST_ROWS; y++) ui.setCell(bounds.x + DIV_X, y, '|', div, bg);

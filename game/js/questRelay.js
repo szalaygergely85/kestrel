@@ -1,6 +1,7 @@
 // US-096w: bridges game events/facts into the lane-C quest sim (quest/sim/quest.js) and exposes the current
 // objective text for the HUD. Pure data + a small UI-layer draw; no world/engine imports, so it runs in Node.
 import { questObjectives, whenCounted } from './quest/sim/quest.js';
+import { nextLine } from './questNext.js'; // OB-183
 import { createQuestBook, READY } from './quest/sim/questBook.js'; // QG-03: the relay's m1 state IS book.main
 
 const BREACH_R2 = 3 * 3, BREACH_DZ = 2.5; // "reached the breach": within 3 m (xy) of the marker and 2.5 m in z
@@ -58,6 +59,8 @@ export function createQuestRelay(def, saved = null, giverDefs = [], savedQuests 
       if (n > seen && relay.onSection) sectionToasts(seen, n);
       seen = n;
     },
+    /** OB-183: optional { resolve(kind,id,out), x, y } (main.js keeps x/y = player) so the 'Next:' line names the NEAREST giver. */
+    nextCtx: null,
     /** World the quest flags are written to (set by saveRelay each step / on boot). */
     world: null,
     /** CH1-02 (38.37 item 1): the one way game code sets a quest flag: world.state[key] = value AND book.feed. */
@@ -83,7 +86,7 @@ export function createQuestRelay(def, saved = null, giverDefs = [], savedQuests 
         const k = Math.min(book.questState(t).completed.length, d.objectives.length - 1), o = d.objectives[k];
         return whenCounted(o.when) ? o.text + ' ' + book.objectives(t, scratch)[k].progress + '/' + (o.when.count ?? 1) : o.text;
       }
-      if (state.completed.length >= def.objectives.length) return def.doneText || DONE_TEXT;
+      if (state.completed.length >= def.objectives.length) return nextLine(book, relay.nextCtx) || def.doneText || DONE_TEXT; // OB-183: never stuck - name the next giver
       const o = def.objectives[state.completed.length];
       return whenCounted(o.when) ? o.text + ' ' + questObjectives(state, def, scratch)[state.completed.length].progress + '/' + (o.when.count ?? 1) : o.text;
     },
@@ -123,9 +126,9 @@ export function createQuestRelay(def, saved = null, giverDefs = [], savedQuests 
      *  TEMPORARY (D-050): lane C's quest HUD replaces this line; until then it is the only objective line (never draw two). */
     draw(ui) {
       const text = relay.objectiveText();
-      if (text !== lineFor) { lineFor = text; line = relay.done ? text : '> ' + text; } // rebuilt only when the text changes
+      if (text !== lineFor) { lineFor = text; line = relay.done && !text.startsWith('Next:') ? text : '> ' + text; } // rebuilt only when the text changes
       const s = line;
-      const fg = relay.done ? DIM : TEXT, x0 = 2, y = HUD_ROW;
+      const fg = relay.done && !s.startsWith('> Next:') ? DIM : TEXT, x0 = 2, y = HUD_ROW;
       for (let j = -1; j <= s.length; j++) put(ui, x0 + j, y, 32, fg, PLATE);
       for (let j = 0; j < s.length; j++) put(ui, x0 + j, y, s.charCodeAt(j), fg, PLATE);
     },
