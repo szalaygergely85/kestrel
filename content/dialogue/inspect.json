@@ -104,10 +104,10 @@
       "entities": ["cellarNote"]
     },
     "note.smugglers": {
-      "note": "NEEDS WRITER (UNDER-05 placeholder, smugglers' voice; story.md to replace). <= 4 lines, <= 56 chars each.",
+      "note": "Writer 2026-10-15 (UNDER-05): smugglers' voice; hints Ford cellar + crypt (scraped names), no spoilers.",
       "prompt": "[E] Read the note",
       "title": "A note under a crate",
-      "lines": ["Tide tally. Four crates for the Ford cellar.", "The rest go up to the stones, then the crypt.", "Chest at the back is ours. Leave the turtles."],
+      "lines": ["Low tide only. By high water this floor is sea.", "Salt and oil go to the cellar under the Ford.", "Nothing more goes by the graves. Not after dark.", "Names off the walls down there. We never did that."],
       "radius": 2.2,
       "entities": ["strandCaveNote"]
     },
