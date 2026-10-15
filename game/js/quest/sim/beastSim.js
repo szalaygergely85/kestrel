@@ -958,11 +958,14 @@ function enterWindup(sim, i) {
  * to outlast the nominal 1.2 s / 0.5 s: the beast stopped 3-6 m short ("they can't touch me"). Run long enough to close the
  * gap to a player jogging off at CHARGE_FLEE_MS (cap 2.5x nominal). Bears / goblins keep their short swipe / lunge. */
 const CHARGE_FLEE_MS = 4.0;
+const BEAR_CATCHUP = 1.3; // OB-150: bear chase 4.0 -> 5.2 m/s (< player run 6.0, > walk 3.5)
 function chargeStepsFor(sim, i, d) {
   const nominal = sim.ssteps[i].chargeMax, v = sim.scfg[i].charge;
-  if (sim.bear[i] || sim.goblin[i] || v <= CHARGE_FLEE_MS + 1) return nominal;
+  if (v <= CHARGE_FLEE_MS + 1) return nominal;
   const need = Math.ceil(((d + 1) / (v - CHARGE_FLEE_MS)) / SIM_STEP);
-  return Math.min(Math.max(nominal, need), Math.round(nominal * 2.5));
+  // OB-150: bear swipe-charge 6 m/s and goblin lunge 8.3 m/s also chase a jogger (goblin dash up to 4x its 0.3 s = 1.2 s);
+  // a RUNNING player (6 m/s) still outpaces the bear and out-closes the goblin dash, and the wind-up stays readable.
+  return Math.min(Math.max(nominal, need), Math.round(nominal * (sim.goblin[i] ? 4 : 2.5)));
 }
 
 function enterCharge(sim, i, px, py) {
@@ -1354,6 +1357,17 @@ function setSteerTarget(sim, i) {
     return;
   }
 
+  // OB-150: a bear/goblin that SEES the player within 10 m steers straight at them instead of at the (up to 3.5 m stale) A* goal,
+  // so a player walking away no longer leaves the chaser stalling at the old waypoint. Near-field only; the NavGrid still blocks.
+  if (st === STATE_CHASE && (sim.bear[i] || sim.goblin[i]) && sim.seen[i] && !sim.partialGoal[i]) {
+    const ddx = sim._px - steer.x[i], ddy = sim._py - steer.y[i];
+    if (ddx * ddx + ddy * ddy < 100) {
+      steer.setWaypoint(i, sim._px, sim._py, 0);
+      steer.maxSpeed[i] = sim.scfg[i].chase * (sim.bear[i] ? BEAR_CATCHUP : 1) * sim.spdMul[i];
+      return;
+    }
+  }
+
   let speed = 0;
   if ((st === STATE_WANDER && sim.timer[i] === WALKING) || st === STATE_CHASE || st === STATE_RETURN) {
     advanceWaypoint(sim, i);
@@ -1361,7 +1375,7 @@ function setSteerTarget(sim, i) {
     const wx = sim.pathLen[i] > 0 ? sim.path[base + idx * 2] : steer.x[i];
     const wy = sim.pathLen[i] > 0 ? sim.path[base + idx * 2 + 1] : steer.y[i];
     steer.setWaypoint(i, wx, wy, WAYPOINT_ARRIVE);
-    speed = (st === STATE_CHASE ? sim.scfg[i].chase : (st === STATE_RETURN ? (sim.fleeing[i] ? sim.scfg[i].chase : cfg.returnSpeed) : sim.scfg[i].walk)) * sim.spdMul[i];
+    speed = (st === STATE_CHASE ? sim.scfg[i].chase * (sim.bear[i] ? BEAR_CATCHUP : 1) : (st === STATE_RETURN ? (sim.fleeing[i] ? sim.scfg[i].chase : cfg.returnSpeed) : sim.scfg[i].walk)) * sim.spdMul[i];
   } else {
     steer.setWaypoint(i, steer.x[i], steer.y[i], 0);
   }
