@@ -16,7 +16,7 @@ export const GOBLIN_TUNING = Object.freeze({
   noticeR: 16,
   leashR: 25,        // default camp leash (brain.leashR overrides per camp)
   windupSec: 0.5,    // telegraph: the raise
-  windupR: 3.5,      // m, the strike starts inside this
+  windupR: 4.5,      // m, the strike starts inside this (OB-150: was 3.5; a 3.5 m/s walker out-walked the short chase before the strike began)
   lungeM: 2.5, lungeSec: 0.3, // charge = lunge distance / duration
   retreatM: 3,       // m, retreat waypoint distance after a strike or a hit
   retreatSec: 0.6,   // s of retreat (about 3 m at the run speed)

@@ -131,12 +131,12 @@ const isTok = (s) => s === STATE_WINDUP || s === STATE_CHARGE;
 
 // 2. token never shared over 10k ticks, telegraph >= 0.5 s, circling band, bites happen, 0 alloc
 {
-  const { sim, hits } = pack();
-  let maxTok = 0, bites = 0, minCrouch = 1e9, crouch = new Int32Array(3), circ = 0, circBad = 0;
+  const { sim, hits } = freshSim([...ring, [ring[0][0] + 2, ring[0][1] + 3]].map(([x, y], k) => wolfEntity('wolf' + (k + 1), x, y))); // OB-150: 4 wolves, 2 tokens -> the others circle
+  let maxTok = 0, bites = 0, minCrouch = 1e9, crouch = new Int32Array(4), circ = 0, circBad = 0;
   for (let t = 0; t < 10000; t++) {
     sim.step(PX, PY, groundZ(sim.world, PX, PY));
     let tok = 0;
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 4; i++) {
       const s = sim.state[i];
       if (isTok(s)) tok++;
       if (s === STATE_WINDUP) crouch[i]++;
@@ -150,7 +150,7 @@ const isTok = (s) => s === STATE_WINDUP || s === STATE_CHARGE;
     // keep wolves from drifting off for good: restart a leashed one is not needed here
   }
   bites = hits.filter((h) => h.target === 'player').length;
-  ok('token never shared (10k ticks)', maxTok <= 1, `max ${maxTok}`);
+  ok('at most 2 tokens (OB-150, 10k ticks)', maxTok <= 2, `max ${maxTok}`);
   ok('wolves attacked (bites > 5)', bites > 5, `bites ${bites}`);
   ok('telegraph (crouch) >= 30 steps (0.5 s)', minCrouch >= 30, `min ${minCrouch}`);
   ok('waiting wolves circled', circ > 20 && circBad / circ < 0.1, `circ ${circ} bad ${circBad}`);
