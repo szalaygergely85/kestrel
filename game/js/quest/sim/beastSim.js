@@ -362,6 +362,7 @@ export function createBeastSim(world, opts) {
     const i = idSlot[p.target];
     if (i === undefined) return;
     if (deadSt(sim.state[i])) return; // 37.16.2 item 1: dead/corpse/sink/gone -> ignore
+    if (sim.pool.lv[i] < 0 && !bindNow(sim, i)) return; // BEAST-POOL-c: a hit on an unbound record binds it first
     if (sim.wat[i] === 1 && waterBlocks(sim.wb, sim, i, p)) return; // BEAST-08b: turtle front block
     const health = sim.entities[i].components.health;
     if (sim.dmgCd[i] > 0) { // 37.16.2 item 2: ignore damage, still flash/flinch; heavy knockback still applies
@@ -651,6 +652,26 @@ function bindRec(sim, i, pi) {
     else { steer.x[i] = P.lastX[i]; steer.y[i] = P.lastY[i]; }
   }
   const ag = sim._lagents[i]; ag.leashT = 0; ag.leashMode = LEASH_HOME;
+}
+
+/** BEAST-POOL-c: a record that takes damage while unbound (arrow/spell/script at range) must be live to run its death timeline: bind it now,
+ *  evicting the farthest unprotected record when the pool is full. False = no slot (the hit is ignored). */
+function bindNow(sim, i) {
+  const P = sim.pool;
+  if (P.lv[i] >= 0) return true;
+  if (sim.down[i] || deadSt(sim.state[i])) return false;
+  if (P.n >= P.rec.length) {
+    let far = -1, fd = -1;
+    for (let k = 0; k < P.n; k++) {
+      const j = P.rec[k]; if (protectedRec(sim, j)) continue;
+      const t = sim.entities[j].transform, dx = t.x - sim._px, dy = t.y - sim._py, d = dx * dx + dy * dy;
+      if (d > fd) { fd = d; far = j; }
+    }
+    if (far < 0) return false;
+    unbindRec(sim, far);
+  }
+  bindRec(sim, i, P.free[--P.freeN]);
+  return true;
 }
 
 /** Binder: unbind > rOut or off the nav tile (protected ones only for the tile), bind nearest-first < rIn (max `maxBind`), evict when full. No rng. */
