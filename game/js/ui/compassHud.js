@@ -90,7 +90,7 @@ export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
     hasTarget = false;
     if (!book || !world) return null;
     tmp.z = NaN;
-    let kind = 0, side = false;
+    let kind = 0, side = false, noSource = false;
     // COMPASS-TRACK-01 (D-108): the needle follows the TRACKED quest only (else the main quest). READY -> its hand-in character
     // (book.turnInOf, data-driven), ACTIVE -> its current step; nothing tracked/active -> OB-183 nearest available giver.
     const ti = book.tracked();
@@ -100,9 +100,10 @@ export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
     else if (stt === ACTIVE && !(qi === 0 && book.mainStepGated && book.mainStepGated())) { // OB-199: not-accepted main step -> no needle
       const idx = st.completed.length;
       if (idx < def.objectives.length && stepPos(def.objectives[idx].when, st, world)) kind = 2;
-      else if (def.objectives[idx] && ITEM_STEP.has(def.objectives[idx].when.type)) { /* OB-202: fetch step with no known source -> no needle (never the giver) */ }
+      else if (def.objectives[idx] && ITEM_STEP.has(def.objectives[idx].when.type)) noSource = true; // OB-202/OB-207: fetch step with no known source -> no needle at all (never the giver, never an unrelated '!' giver)
       else if (def.giver && def.giver.npc && world.resolve('giver', def.giver.npc, tmp)) kind = 2;   // COMPASS-QUEST-01: unresolvable step -> point at the quest's giver instead of hiding
     }
+    if (noSource) return null;
     if (!kind) {
       book.giverMarks(npcA, npcR, npcSA, npcSR);
       if (resolveGiver(world, npcA)) kind = 3; else if (resolveGiver(world, npcSA)) { kind = 3; side = true; }

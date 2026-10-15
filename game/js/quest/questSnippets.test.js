@@ -84,7 +84,10 @@ assert.ok(n >= 30, 'quests covered: ' + n);
   const gr = generateAll({ rook }, defs, snip).rook, at = (n) => gr.entry.findIndex((e) => e.node === n);
   const firstGen = gr.entry.findIndex((e) => /^qs\./.test(e.node));
   assert.ok(firstGen > 0, 'rook has generated errand rows');
-  for (const n of ['rook.call.ready.1', 'rook.call.active', 'rook.mirror.active', 'rook.ford.1']) assert.ok(at(n) >= 0 && at(n) < firstGen, n + ' precedes the errands');
+  const firstGenActive = gr.entry.findIndex((e) => /^qs\./.test(e.node) && /\.active$/.test(e.requires));
+  for (const n of ['rook.call.ready.1']) assert.ok(at(n) >= 0 && at(n) < firstGen, n + ' precedes the errands');
+  // OB-206: an errand OFFER ('!') goes before the mq ACTIVE chatter (else Rook shows '!' but cannot accept); the mq active rows still beat errand ACTIVE rows
+  for (const n of ['rook.call.active', 'rook.mirror.active']) assert.ok(at(n) >= 0 && at(n) < firstGenActive, n + ' precedes the errand active rows');
   assert.ok(at('rook.ford.repeat2') > firstGen, 'repeat chatter comes after the errands');
 }
 

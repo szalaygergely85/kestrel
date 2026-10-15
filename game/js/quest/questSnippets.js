@@ -103,6 +103,12 @@ export function generateForNpc(raw, npcId, defs, snippets, opts = {}) {
   let at = opts.before ? entry.findIndex((e) => e.node === opts.before) : -1;
   if (at < 0) { at = 0; while (at < entry.length && /^q\./.test(entry[at].requires || '')) at++; }
   entry.splice(at, 0, ...gen);
+  // OB-206: a '!' (AVAILABLE) must open its Accept offer: among the q.* rows keep their slots but order ready ('?') < available ('!') < active chatter.
+  const rank = (e) => { const m = /^q\..+\.(ready|available|active)$/.exec(e.requires || ''); return m ? { ready: 0, available: 1, active: 2 }[m[1]] : -1; };
+  const lim = opts.before ? entry.findIndex((e) => e.node === opts.before) : -1; // only the block in front of the anchor
+  const slots = entry.map((e, i) => (rank(e) >= 0 && (lim < 0 || i < lim) ? i : -1)).filter((i) => i >= 0);
+  const sorted = slots.map((i) => entry[i]).map((e, k) => [e, k]).sort((x, y) => rank(x[0]) - rank(y[0]) || x[1] - y[1]).map((x) => x[0]);
+  slots.forEach((i, k) => { entry[i] = sorted[k]; });
   out.entry = entry;
   return out;
 }
