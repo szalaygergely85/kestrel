@@ -1315,7 +1315,7 @@ export class World {
   }
 
   /** MAP-10: fills slot `k` with grid zone (i, j) (the id string allocates; prefetch/swap only). */
-  _gridFill(k, i, j) { const z = this.terrainBands[k]; zoneAt(this.terrainGrid, i, j, z); z.id = zoneId(z.i, z.j); this._bandKeys[k] = null; return z; }
+  _gridFill(k, i, j) { const z = this.terrainBands[k]; zoneAt(this.terrainGrid, i, j, z); z.id = zoneId(z.i, z.j); this._bandKeys[k] = null; const gl = this.giLoader; if (gl && !gl.state.has(z.id)) gl.load(z.id); return z; } // GI-PROBE-03-FIX: grid zones fetch their .gi.bin once (state.has guard = no promise per call)
 
   /** Drops a pending bake and its scatter job. */
   /** WS2-05: index of the terrain band being baked, -1 when none. */
@@ -1468,7 +1468,8 @@ export class World {
   loadGI(opts = {}) {
     const loader = this.giLoader = new GILoader({ ...opts, onLoad: (id, f) => this._giArrived(id, f) });
     for (const b of this.bandCache.map.values()) if (b.giId && !b.gi) { const f = loader.get(b.giId); if (f) this._giArrived(b.giId, f); }
-    return loader.loadAll(this.terrainBands && !this.terrainGrid ? this.terrainBands.map((z) => z.id) : []);
+    // GI-PROBE-03-FIX: grid worlds request the live band's zone now; later zones are requested by _gridFill (one fetch per zone)
+    return loader.loadAll(this.terrainBands ? (this.terrainGrid ? (this.bandId ? [this.bandId] : []) : this.terrainBands.map((z) => z.id)) : []);
   }
   /** Idle-time fetch of one grid zone's field (e.g. zones in the bake-ahead ring). */
   loadGIZone(id) { return this.giLoader ? this.giLoader.load(id) : Promise.resolve(null); }

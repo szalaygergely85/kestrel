@@ -69,6 +69,23 @@ const log = []; const warn = (m) => log.push(m);
   ok('manifest fn: match attached, stale null (one note), unlisted zone unchecked', L.get('a') && L.get('b') === null && L.get('c') && lg.length === 1);
 }
 
+// --- GI-PROBE-03-FIX: a GRID world (terrainGrid kept) fetches the live band's zone; a swap to another zone flips giField
+{
+  const gdef = { ...assets.world('world_m1') }; const gw = World.load(gdef, assets, { detail: true, physics: 'mesh' });
+  const widths = new Map(), gcalls = [];
+  const gopts = { expectHash: HASH, warn, fetchBytes: async (u) => { gcalls.push(u); if (!widths.has(u)) widths.set(u, 6 + widths.size); return fixture(HASH, widths.get(u)); } };
+  ok('grid world has terrainGrid', !!gw.terrainGrid);
+  const id0 = gw.bandId; await gw.loadGI(gopts);
+  ok('grid: start band giField non-null after fetch settles', gw.giField !== null && gw.giField.w === widths.get(`content/gi/${id0}.gi.bin`), String(id0));
+  ok('grid: only the live zone requested so far', gcalls.length === 1 && gcalls[0].includes(id0), gcalls.join());
+  const g = gw.terrainGrid; let moved = false;
+  for (const [x, y] of [[0, 0], [1200, 0], [-1200, 0], [0, 1200], [0, -1200], [2400, 0], [0, 2400], [-2400, 0], [0, -2400], [2400, 2400]]) {
+    gw.ensureBandFor(x, y); if (gw.bandId !== id0) { moved = true; break; }
+  }
+  await new Promise((r) => setTimeout(r, 20));
+  ok('grid: swap to another zone requested its file once and flipped giField', moved && gw.giField !== null && gw.giField.w === widths.get(`content/gi/${gw.bandId}.gi.bin`) && gcalls.length >= 2 && new Set(gcalls).size === gcalls.length, `${moved} ${gw.bandId} ${gcalls.length}`);
+  void g;
+}
 // --- world: swaps, bytes, giField
 const files = { 'content/gi/east.gi.bin': good, 'content/gi/west.gi.bin': fixture(HASH, 10, 4) };
 const calls = [];
