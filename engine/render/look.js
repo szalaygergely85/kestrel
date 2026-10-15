@@ -361,6 +361,15 @@ export function blendLook(P, hour, schedule, out) {
     out.sky[s].t = sa.t + (sb.t - sa.t) * f;
     setLiveColor(P, out.sky[s].c, P.rgb[sa.c], P.rgb[sb.c], f);
   }
+  // CLOUD-LIVE-01: cloud deck colours follow the day/night blend (numbers are identical across stops, so only lit/shade lerp).
+  if (A.clouds && B.clouds) {
+    if (!out.cloudsLit) { out.cloudsLit = new Float32Array(3); out.cloudsShade = new Float32Array(3); }
+    const la = P.rgb[A.clouds.lit], lb = P.rgb[B.clouds.lit], sa2 = P.rgb[A.clouds.shade], sb2 = P.rgb[B.clouds.shade];
+    for (let k = 0; k < 3; k++) {
+      out.cloudsLit[k] = la[k] + (lb[k] - la[k]) * f;
+      out.cloudsShade[k] = sa2[k] + (sb2[k] - sa2[k]) * f;
+    }
+  } else out.cloudsLit = null;
   P.liveLook = out;
   P.liveLookVersion = (P.liveLookVersion | 0) + 1;
   return out;

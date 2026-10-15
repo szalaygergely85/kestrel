@@ -13,7 +13,9 @@ import { DepthBuffer } from './DepthBuffer.js';
 import { GBuffer } from './GBuffer.js';
 import { createPitchedTerms, pitchedTerms, PROJ_HFOV_DEG } from './projection.js';
 import { clampByte } from '../core/math.js';
-import palette from '../../design/palette.js';
+import paletteFull from '../../design/palette.js';
+// CLOUD-LIVE-01: morning now has a clouds block; this suite pins the cloudless fastShadeSky twin, so strip it on a shallow copy.
+const palette = { ...paletteFull, timeOfDay: { ...paletteFull.timeOfDay, morning: { ...paletteFull.timeOfDay.morning, clouds: undefined } } };
 import * as E from '../index.js';
 
 if (typeof global.gc !== 'function') {

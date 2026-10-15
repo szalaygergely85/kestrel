@@ -188,7 +188,10 @@ export class WgShadePass {
     this.skyFogVer = P ? (P.liveFogVersion | 0) : 0;
     const rec = P && P.materials && P.materials.sky;
     const look0 = P ? resolveLook(P) : null; // CLOUD-FLUFF-01b: cached for _writeClouds
-    this.skyClouds = look0 ? look0.clouds : null; this.skyCloudBand = this.skyClouds && rec ? rec.cloudBand : null; this.skyCloudWind = this.skyClouds ? this.skyClouds.wind : null;
+    this.skyClouds = look0 ? look0.clouds : null;
+    // CLOUD-LIVE-01: live day/night blend carries the cloud colours (shallow copy so the cached look stays frozen)
+    if (this.skyClouds && live && live.cloudsLit) this.skyClouds = Object.assign({}, this.skyClouds, { lit: live.cloudsLit, shade: live.cloudsShade });
+    this.skyCloudBand = this.skyClouds && rec ? rec.cloudBand : null; this.skyCloudWind = this.skyClouds ? this.skyClouds.wind : null;
     if (this.su) this._bakeClouds(this.su, this.skyClouds, this.skyCloudBand);
     if (!rec || !P.timeOfDay) return;
     const stops = (live || P.timeOfDay[P.defaultTime]).sky;
