@@ -17,6 +17,8 @@ export const UNDER_SITES = Object.freeze([
   Object.freeze({ id: 'crypt', anchor: [1674.5, 1357.5], z: -56.8, night: false, group: '', members: Object.freeze([
     ['skelwar.crypt.1', 'skelwar', -2, 4.5], ['skelarch.crypt.1', 'skelarch', 2, 6], // room 2
     ['skelwar.crypt.2', 'skelwar', -2, -4], ['skelwar.crypt.3', 'skelwar', 2, -6], ['skelarch.crypt.2', 'skelarch', 0, -5]]) }), // room 3
+  // UNDER-04 (OB-191): the bear den in the northwood hillside (any time of day; z = chamber floor). ONE black bear 'sleeps' = temperament 'wary' (calm: notices at 5 m only, leash 12 m, full aggro once hit; no sleep state in beastSim)
+  Object.freeze({ id: 'bearDen', anchor: [1584, 432], z: 11.76, night: false, group: '', members: Object.freeze([['bear.bearDen.1', 'bear', 0, 0]]) }),
   // existing OB-141 ruin POI ob141r06 (whitecombs arch at 1740,200, far side, zone band 5 = level 5)
   Object.freeze({ id: 'ruinWhite', anchor: [1740, 200], night: false, group: '', members: Object.freeze([
     ['skelwar.ruinWhite.1', 'skelwar', -2, 2], ['skelarch.ruinWhite.1', 'skelarch', 2, 3]]) }),

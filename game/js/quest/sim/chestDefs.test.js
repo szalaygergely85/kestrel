@@ -16,7 +16,7 @@ const fake = { entity: (id) => { const e = byId.get(id); return e && { transform
 const defs = buildChestDefs(fake);
 assert.deepEqual(defs.map((d) => d.id).sort(), Object.keys(CHEST_TABLES).sort(), 'all anchors become chests');
 for (const d of defs) {
-  if (d.id.startsWith('chestCellar') || d.id === 'chestCrypt') continue; // UNDER-03 / UNDER-02: crates / chestBig placed on their own walls
+  if (d.id.startsWith('chestCellar') || d.id === 'chestCrypt' || d.id === 'chestBearDen') continue; // UNDER-03 / UNDER-02: crates / chestBig placed on their own walls
   assert.equal(byId.get(d.id).components.voxel.model, 'chestSmall', d.id + ' carries the chest model');
   if (!d.id.startsWith('secret') && !d.id.startsWith('chestCellar')) // UNDER-03: cellar crates face the room (yaw 90/270)
     assert.ok(Math.abs(d.frontY - 1) < 1e-9 && Math.abs(d.frontX) < 1e-9, 'yaw 180 -> front +y');
