@@ -592,7 +592,7 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
       const id = 'questMark_' + (markN++); let w = null, ent = null, hidden = true, scale = 1, anim = 'idle', x = 0, y = 0, z = 0;
       const cur = () => {
         const mw = markWorld; if (!mw) return null;
-        if (w !== mw || !ent || !ent.alive) { w = mw; ent = mw.get(id) || mw.spawn('prop', { x, y, z, yawDeg: 0, scale }, { voxel: { model, anim, loop: true, hidden } }, id); }
+        if (w !== mw || !ent || !ent.alive) { w = mw; ent = mw.get(id) || mw.spawn('prop', { x, y, z, yawDeg: 0, scale }, { voxel: { model, anim, loop: true, hidden, priority: 2 } }, id); }
         return ent.data;
       };
       const push = () => { const d = cur(); if (!d) return; Object.assign(d.transform, { x, y, z }); d.transform.scale = scale; d.components.voxel.hidden = hidden; d.components.voxel.anim = anim; w.renderVersion++; };
@@ -1718,6 +1718,11 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       setDialogueApi(dialogueCtl); window.__debug.dialogue = dialogueCtl; // tools/verify-ch12-run.mjs: read-only test hook
       errands.load(world); // QL-WIRE: [E] Inspect on post / notePost
       bearTurn = createNpcTurn(world, 'bear'); // NPC-BEAR-01: null when the world has no bear
+      try { // VOX-PRIO-01 (OB-171): quest givers + quest item props rank above plain props when the voxel cap bites (markers are tier 2 in markHandle)
+        const ids = new Set(Object.values(COMPASS_ITEM)); ids.add('bear');
+        if (questGenCtx) for (const d of questGenCtx.giverDefs) { if (d && d.giver) { ids.add(d.giver.npc); ids.add(d.giver.turnIn); } }
+        for (const id of ids) { const e = id && giverEntity(world, id); const v = e && e.data && e.data.components && e.data.components.voxel; if (v && !(v.priority > 1)) v.priority = 1; }
+      } catch (err) { console.warn('[voxprio]', err && err.message); }
       compassWorld = world; compassBreach = null; compassBookVer = -1; compassTick = 0; // COMPASS-02: re-resolve against the new world
       if (bearTurn) dialogueCtl.addNpc('bear');
       dialogueCtl.addNpc('rook'); // Rook the crow: no-op until the entity exists in the world

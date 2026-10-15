@@ -337,6 +337,23 @@ if (global.gc) {
   ok('reserve > cap: no throw, no entity queued, no negative cap', !threw && p._rawCount === 0);
 }
 
+
+// ---- VOX-PRIO-01 (OB-171): priority tier beats distance; hidden still wins ----
+{
+  const fakeWorld = (entities) => ({ renderVersion: 1, forEachEntity(fn) { for (const [id, e] of entities) fn(e, id); } });
+  const pool = new VoxelPool(); pool.renderer = 'dda';
+  pool.bind(registry, table);
+  const m = new Map();
+  for (let i = 0; i < 60; i++) m.set(`e${i}`, { components: { voxel: { model: 'bear', frame: 0, t: 0, playing: true } }, transform: { x: 0, y: i, z: 0, yawDeg: 0 } });
+  m.get('e54').components.voxel.priority = 2; // 55th by distance
+  m.set('hid', { components: { voxel: { model: 'bear', hidden: true, priority: 3 } }, transform: { x: 0, y: 0.1, z: 0, yawDeg: 0 } });
+  pool.collect(fakeWorld(m), { x: 0, y: 0, z: 0 });
+  const ys = []; for (let i = 0; i < pool._rawCount; i++) ys.push(pool.raw[i].y);
+  ok('VOX-PRIO-01: marker ranked 55th (priority 2) still renders, cap respected', ys.includes(54) && pool._rawCount === 16, ys.join(','));
+  ok('VOX-PRIO-01: hidden flag beats priority', !ys.includes(0.1));
+  ok('VOX-PRIO-01: remaining slots are the nearest', ys.filter((y) => y !== 54).sort((a, b) => a - b).join() === '0,1,2,3,4,5,6,7,8,9,10,11,12,13,14', ys.join(','));
+}
+
 console.log(`${pass} pass, ${fail} fail`);
 if (fail) { console.log('FAILURES:\n' + failures.map((f) => '  ' + f).join('\n')); process.exit(1); }
 console.log('ALL PASS');
