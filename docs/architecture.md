@@ -3785,6 +3785,31 @@ The sim is transient: not saved, a reload has no fireballs in flight.
 - persist dead boars or corpse loot in saves;
 - draw loot from the beast wander RNG.
 
+#### 37.16.5 BEAST-POOL: record table + pooled live slots (OB-185 follow-up) (PC-B architect, 2026-10-15; PC-A to ratify)
+**Why:** MAX_BEASTS 320 is near the ~260 regional beasts + camps. Every slot runs the per-step loops, owns a 1 KB path buffer and is only parked by the 200 m tile dormancy.
+**Model.** The public `slot` **becomes the record index `r`** (0..`MAX_RECORDS`-1, `MAX_RECORDS = 1024`). It is stable for the whole run and is what `slotOf(id)` returns. goblinCamps, raids, logicWire, loot, the director's `groupOfSlot`, saveRelay and tactics keep caching it, so none of them change. The current per-slot typed arrays (home xyz, kindIdx/archIdx, tier, wat, state, timer, flags) **are** the record table, resized to MAX_RECORDS. hp stays on `entity.components.health` (one entity per record, as today). Add `lastX/lastY` (Float64).
+**Pool:** one new sub-object (+1 top-level key, BITE-ALLOC cap stays <= 145): `sim.pool = { lv: Int16Array(MAX_RECORDS) /* -1 unbound */, rec: Int16Array(POOL), n, free: Int16Array(POOL), freeN, cand: Int16Array(MAX_RECORDS), candD: Float64Array(MAX_RECORDS), rIn: 150, rOut: 180, every: 30, maxBind: 8, full: 0 }`, `POOL = 128`. The step loops run `for (k < pool.n) i = pool.rec[k]` instead of `0..count`. Only the 1 KB path buffer moves to the pool index (`base = lv[i] * PATH_SLOTS * 2`). The engine steer stays sized MAX_RECORDS: inactive agents cost one branch, so `engine/nav/steer.js` is not touched.
+**Bind/unbind (`poolUpdate(sim, px, py)`, every 30 steps, staggered by the step counter, not wall clock):**
+1. **Unbind** a bound record when its distance to the player is > rOut, or its home is outside the live nav tile. It is **never** unbound while in NOTICE..RECOVER, FLINCH or RETURN, or while it has `hunt`, `fleeing`, `goal.on`, `tactics.held` or a croc grab pin. The nav-tile reason overrides this protection (it cannot path there).
+   - DYING/CORPSE/SINK keep their slot.
+   - GONE/down records release their slot at once.
+2. **Bind** alive, non-GONE, non-down records with distance < rIn (home inside the tile). Order: nearest first, then the lower `r` on a tie. Use a partial selection over `cand/candD` (no `Array.sort`, no closure). At most `maxBind` binds per update.
+3. **Pool full:** evict the farthest *unprotected* bound record if it is >= 20 m farther than the candidate. Otherwise `pool.full++` (debug stat). Never evict a protected record.
+**Carry on unbind:**
+- state -> WANDER (only unprotected records reach here) and timer = pauseMin;
+- `lastX/Y` = steer pos; if more than 30 m from home, snap `lastX/Y` + `transform` to home xyz;
+- `steer.removeAgent(i)`, `pathLen = 0`, release the tactics token/flank, return the pool index to `free`;
+- hp, dead state, tier, provoked = 0 and camp `dormant` stay on the record.
+
+**Bind:** `steer.activateAgent(i, lastX, lastY, ...)`, `mv/moving = 0`, `pathReq = 0`. Remove the BH-A1 "returned slot must equal i" throw for steer (record == agent index still holds because steer is sized MAX_RECORDS).
+**Respawn/reset:** `resetSlotSim` resets the record. It activates steer only if the record is bound; unbound records bind at the next update. The director's SPAWN_MIN_DIST 60 m and never-in-view rules are unchanged. `setGoal` (raids) on an unbound record sets `goal.on`, which forces a priority bind at the next update (it may evict, never a protected one).
+**Water slots (crocs):** same rules; waterBrain iterates the pool list with `wat[i]`. A croc that holds a grab pin is protected.
+**Determinism:** binding reads only player pos, records and the step counter; no rng draws at bind/unbind, so wander rng is consumed by bound records only. `beastGolden` hashes `pool.lv`, and it must stay identical while all records are bound (story a). Re-bless it once in story b, with the reason in the test header.
+**Save:** unchanged and slot-free. Records are rebuilt from world data at create. The saved truth is saveRelay's dead set (by id) and `spawnDirector.v1` (by gid). `applyDeadToBeasts` sets the record GONE (and unbinds it if bound). Never save `lv`, pool indices or `lastX/Y`.
+**Zero-alloc:** all arrays exist from create, there are no per-bind closures or events in the hot path, and `beast:bound/unbound` events are **not** added (consumers key by record). `loot.js` imports `MAX_RECORDS` instead of its own MAX_SLOTS copy.
+**Do not:** compact or renumber records at runtime, key anything by pool index outside beastSim, `world.remove` unbound beasts, or unbind on a timer alone.
+**Stories:** BEAST-POOL-a (records + pool loop, identity), BEAST-POOL-b (binder + hysteresis + carry, POOL 128), BEAST-POOL-c (integrations + real-world bench), rows in `docs/pc-b-queue.md` section F.
+
 ### 37.17 ALPHA-01 alpha-cutout materials for imported meshes (architect, 2026-10-05; D-041 Quaternius Stylized Nature)
 
 **Probe (2026-10-05, Node, `design/meshes/source/quaternius_stylized_nature/glTF/`, all 68 files + 20 PNGs decoded):** every material is `doubleSided`, one sampler (linear/mipmap). `alphaMode MASK @0.2` on: all `Leaves_*` / `Leaf_Pine` (texture alpha 0 on 70-75 %, 255 on 14-43 %, 1-9 % soft in between), `Flowers` (49.5 % alpha 0), `Leaves` (small plants, fern, clover, Flower_* leaves) - **and `Bark_NormalTree`, whose texture is 100 % alpha 255 (a mislabel: it is opaque)**. OPAQUE: `Bark_DeadTree`, `Bark_TwistedTree`, `Grass` (512^2, blades are geometry, UV is a 2 %-wide colour strip), `Mushrooms`, `PathRocks`, `Rocks`. Geometry: CommonTree_1 = 4,345 bark tris + 1,920 leaf tris (960 cards, median 0.54 m^2 => ~1 m cards, crown 4.3 x 4.7 x 4.7 m); Pine_1 = 3,177 + 770 (median 0.08 m^2 => ~0.3 m cards); Bush_Common 900 leaf tris (0.09 m^2); Flower_3_Group leaves are real geometry (0.002 m^2) with 45 petal cards; Petal_* are 13-30-tri cards. Textures 1024^2-2048^2; bark UV v runs to -10 (repeat). The Kenney Nature Kit is **not on disk** (only `Kenney.url`) - the far LOD cannot assume it.
