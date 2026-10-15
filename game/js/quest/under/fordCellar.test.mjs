@@ -1,6 +1,6 @@
 // UNDER-03 / OB-191: Ford trade post cellar (real world_m1, mesh physics). Run: node game/js/quest/under/fordCellar.test.mjs
 import assert from 'node:assert/strict';
-import { validateUnder } from '../../../../engine/world/validateUnder.js';
+import { validateUnder } from '../../../../engine/index.js';
 import { loadM1 } from './loadM1.mjs';
 import { FORD_CELLAR, ladderEnd, ladderPrompt, stepFordCellar, bindFordCellarFlags, syncFordCellarFlags, chestKey, NOTE_KEY, markNoteRead } from './fordCellar.js';
 import { buildChestDefs } from '../sim/chestDefs.js';
