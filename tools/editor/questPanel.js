@@ -6,6 +6,8 @@ import { loadQuests, saveQuest, saveAll, applyZones, makeStack } from './quest/m
 import { buildLintCtx, liveLint, presetOptions, playUrl } from './quest/wire.js';
 import { questRows, filterRows, buildFlow, itemChoices, objText, objJournal } from './quest/flow.js';
 import * as ed from './quest/edit.js';
+import * as fe from './quest/formatEdit.js';
+import { formatView, MAX_OBJECTIVES } from './quest/format.js';
 import { applyPick } from './quest/targets.js';
 import { createQuestPicker } from './questPick.js';
 import { renderLineEditor } from './questDialogue.js';
@@ -28,6 +30,35 @@ export function memFs(files) {
 }
 
 export async function mountQuestPanel(root, opts) {
+  // QUEST-FORMAT (D-106): the fixed fields Begin / End / Requires / Objectives (max 3) / Rewards / Next as dropdowns of existing npcs, objects and quests.
+  const formatBlock = (q) => {
+    const v = formatView(q.raw), ch = fe.formatChoices(model, getWorld(), names), box = el('fieldset', 'q-format'); box.id = 'quest-format';
+    box.append(el('legend', null, 'Quest format'));
+    const sel = (id, label, opts2, value, onChange, none = '(none)') => {
+      const s = el('select'); s.id = id; s.append(new Option(none, ''));
+      for (const o of opts2) s.append(new Option(o.name, o.id));
+      s.value = value || ''; s.addEventListener('change', () => onChange(s.value));
+      const w = el('label', 'q-field'); w.append(el('span', null, label), s); return w;
+    };
+    const bKind = v.begin && v.begin.object !== undefined ? 'object' : 'npc', bId = v.begin ? (v.begin.object !== undefined ? v.begin.object : v.begin.npc) : '';
+    box.append(sel('qf-begin', 'Begin (npc)', ch.npcs, bKind === 'npc' ? bId : '', (id) => run(fe.setBegin(q, 'npc', id))));
+    box.append(sel('qf-begin-obj', 'Begin (object)', ch.objects, bKind === 'object' ? bId : '', (id) => run(fe.setBegin(q, 'object', id))));
+    box.append(sel('qf-end', 'End (hand-in npc)', ch.npcs, v.end && v.end.npc, (id) => run(fe.setEnd(q, id))));
+    const others = ch.quests.filter((x) => x.id !== q.id);
+    const req = (v.requires.quests.length ? v.requires.quests : ['']).concat(v.requires.quests.length ? [''] : []);
+    req.forEach((rid, k) => box.append(sel('qf-req' + k, k ? 'and' : 'Requires', others, rid, (id) => run(fe.setRequires(q, req.map((x, j) => (j === k ? id : x)))))));
+    box.append(el('div', 'q-hint', 'Objectives: ' + v.objectives.length + ' / ' + MAX_OBJECTIVES + (v.objectives.length >= MAX_OBJECTIVES ? ' (full)' : '')));
+    const rw = v.rewards || {}, it = rw.items && rw.items[0];
+    const isel = el('select'); isel.id = 'qf-reward'; isel.append(new Option('(no item)', '')); for (const c of itemChoices(itemDefs)) isel.append(new Option(c.name, c.id)); isel.value = it ? it.id : '';
+    const num = (id, val) => { const i = el('input'); i.type = 'number'; i.min = 0; i.id = id; i.value = val || 0; i.style.width = '4em'; return i; };
+    const cnt = num('qf-reward-n', it ? it.n : 1), coin = num('qf-coin', rw.coin), hp = num('qf-heart', rw.heartPiece);
+    const msg = el('div', 'q-msg'); msg.id = 'qf-msg';
+    const setRw = () => { const c = fe.setRewards(q, { itemId: isel.value, n: Number(cnt.value) || 1, coin: Number(coin.value) || 0, heartPiece: Number(hp.value) || 0 }); if (c) run(c); else msg.textContent = 'Rewards can not be empty.'; };
+    for (const e of [isel, cnt, coin, hp]) e.addEventListener('change', setRw);
+    const rl = el('label', 'q-field'); rl.append(el('span', null, 'Rewards'), isel, cnt, el('span', null, 'coin'), coin, el('span', null, 'heart piece'), hp); box.append(rl, msg);
+    box.append(sel('qf-next', 'Next (offered at the hand-in)', others, v.next, (id) => run(fe.setNext(q, id))));
+    return box;
+  };
   const { names, itemDefs, loadFiles, write, getWorld = () => ({ entities: [] }), floorAt } = opts;
   const files = await loadFiles();
   // ED-QUEST-03b: areas.json stays in the model (area picks write it; Save writes it back); the overlay reads the same object
@@ -139,7 +170,7 @@ export async function mountQuestPanel(root, opts) {
       del.addEventListener('click', () => run(ed.deleteStep(q, i)));
       box.append(pickBtn({ obj: i }, 'the target of step ' + (i + 1)), up, dn, del); detail.append(box);
     });
-    const add = el('button', 'ed-btn', 'Add step'); add.addEventListener('click', () => run(ed.addStep(q)));
+    const add = el('button', 'ed-btn', 'Add step'); add.addEventListener('click', () => { const c = fe.addStepMax(q); if (c) run(c); }); // QUEST-FORMAT: max 3 steps
     detail.append(add);
     detail.append(field('Return text', q.returnText || '', (v) => run(ed.setReturnText(q, v))));
     // reward item: picked by plain name, never a raw id
@@ -152,6 +183,7 @@ export async function mountQuestPanel(root, opts) {
     const setReward = () => run(ed.setRewardItem(q, sel.value, Number(cnt.value) || 1));
     sel.addEventListener('change', setReward); cnt.addEventListener('change', setReward);
     const rw = el('label', 'q-field'); rw.append(el('span', null, 'Reward'), sel, cnt); detail.append(rw);
+    detail.append(formatBlock(q));
     const tools = el('div', 'q-tools');
     const undo = el('button', 'ed-btn', 'Undo'), redo = el('button', 'ed-btn', 'Redo'), save = el('button', 'ed-btn', 'Save'); save.id = 'quest-save';
     undo.addEventListener('click', () => { stack.undo(); redraw(); });
