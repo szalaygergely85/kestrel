@@ -699,7 +699,7 @@ function shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff
  * value itself and this split is a pure reorganisation (proven by
  * bench-cast.mjs's embedded checksums, unchanged by this refactor).
  */
-export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
+export function shadeDetailFast(table, rec, i, gbuf, dist, light, out, minor) {
   const shading = table.shading, cutoff = shading.cutoff, cellAspect = shading.cellAspect;
   const u = gbuf.u[i], v = gbuf.v[i], z = gbuf.z[i];
   const face = gbuf.face[i];
@@ -712,7 +712,58 @@ export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
   const aoD = ((kind === KIND_MODEL || kind === KIND_MESH) && face === FACE_PACKED) ? Infinity : gbuf.aoD[i];
   const dudx = gbuf.dudx[i], dvdx = gbuf.dvdx[i], dudy = gbuf.dudy[i], dvdy = gbuf.dvdy[i];
   const core = shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist, face, kind, light, coreScratch);
-  return shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff, light, out, i);
+  shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff, light, out, i);
+  if (minor !== undefined && minor.count > 0 && minor.nTotal > 1) coverageMix(table, minor, light, out); // 38.82 A
+  return out;
+}
+
+/**
+ * 38.82 CELL-AA mechanism A (OB-198): flat colour of a material at a face under `light`, no hashes/bands/bevel:
+ * tone-0 rgb x tail gain of b = Lm*albedo*faceK*(1 - WET_DARK*wet) + emissive (hue tint like shadeTail). Writes bytes
+ * (0-255, pre-fog, unquantised) into fg[0..2] and bg[0..2] (bg = fg * rec.bgK). WGSL twin: shade.wgsl.js matFlatColor.
+ */
+export function matFlatColor(table, rec, face, kind, light, fg, bg) {
+  const shading = table.shading;
+  const Lm = Math.max(light[0], light[1], light[2]);
+  let hr = 1, hg = 1, hb = 1;
+  if (Lm > 1e-6) { hr = light[0] / Lm; hg = light[1] / Lm; hb = light[2] / Lm; }
+  const fk = kind === KIND_MODEL ? 1 : (table.faceK[face] || 1);
+  const b = Lm * rec.albedo * fk * (1 - WET_DARK * (shading.wetness || 0)) + rec.emissive;
+  const bc = b < 0 ? 0 : b;
+  let gain = shading.fgMin + (1 - shading.fgMin) * samplePowLUT(table.gainLUT, bc);
+  if (bc > 1) gain = Math.min(shading.fgMaxGain, gain + (bc - 1) * 0.5);
+  gain = wetGain(gain, bc, shading.wetness || 0, shading.fgMaxGain);
+  const k = shading.tint, tr = rec.toneRGB;
+  let r = tr[0] * (1 + (hr - 1) * k) * gain, g = tr[1] * (1 + (hg - 1) * k) * gain, bl = tr[2] * (1 + (hb - 1) * k) * gain;
+  if (r > 255) r = 255; if (g > 255) g = 255; if (bl > 255) bl = 255;
+  fg[0] = r; fg[1] = g; fg[2] = bl;
+  bg[0] = r * rec.bgK; bg[1] = g * rec.bgK; bg[2] = bl * rec.bgK;
+}
+
+const _mnFg = [0, 0, 0], _mnBg = [0, 0, 0];
+/**
+ * 38.82 A: `minor` = { count, nTotal, recs[], faces[], kinds[] } - the cell's same-kind sub-samples NOT in the winner
+ * group (nTotal = n*n). out.fg/bg (the winner's shaded, fogged colour) become mix(winner, mean(minority flat), count/nTotal);
+ * minority colours get the same linear fog factor (out.f). Glyph/set stay the winner's. count 0 / nTotal 1 = untouched.
+ */
+function coverageMix(table, minor, light, out) {
+  const n = minor.count, w = n / minor.nTotal, f = out.f, fog = table.fog;
+  let fr = 0, fgc = 0, fb = 0, br = 0, bgc = 0, bb = 0;
+  for (let j = 0; j < n; j++) {
+    matFlatColor(table, minor.recs[j], minor.faces[j], minor.kinds[j], light, _mnFg, _mnBg);
+    fr += _mnFg[0]; fgc += _mnFg[1]; fb += _mnFg[2];
+    br += _mnBg[0]; bgc += _mnBg[1]; bb += _mnBg[2];
+  }
+  const inv = 1 / n;
+  fr *= inv; fgc *= inv; fb *= inv; br *= inv; bgc *= inv; bb *= inv;
+  if (f > 0) {
+    const a = fog.fgRGB, c = fog.bgRGB;
+    fr += (a[0] - fr) * f; fgc += (a[1] - fgc) * f; fb += (a[2] - fb) * f;
+    br += (c[0] - br) * f; bgc += (c[1] - bgc) * f; bb += (c[2] - bb) * f;
+  }
+  const ow = out.fg, ob = out.bg, kw = 1 - w;
+  ow[0] = ow[0] * kw + fr * w; ow[1] = ow[1] * kw + fgc * w; ow[2] = ow[2] * kw + fb * w;
+  ob[0] = ob[0] * kw + br * w; ob[1] = ob[1] * kw + bgc * w; ob[2] = ob[2] * kw + bb * w;
 }
 
 /**
