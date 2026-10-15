@@ -1320,3 +1320,7 @@ Contradiction check: no plain-name, env-mesh, chest, D-105, D-106 or "Esc to clo
   NEEDS B1: beastView never requests `attack` (melee active window) and fleeing deer/fox show idle (map to `charge`); see beastClipsFx.clipFor.
 - CLIP-WIRE (OB-153 follow-up, programmer): beastView.beastClipsClip maps deer/fox/goat/tortoise (beastClipsFx.models): CHARGE state -> attack, chase/fleeing -> charge via beastClipsFx.clipFor; other kinds unchanged. Test: beastView.test.js (21 pass).
 - CAPTURE-NOPAUSE (nopause2): `?nopause=1` now also fakes look.locked=true (main.js after PlayerLook ctor) so headless captures show no pause menu; verify-ob189/175 use it (focus/lock shims dropped), verify-ob188 unchanged. Checked: ob189 forestFloor high 1717x790 clean.
+
+### SHADOW-TRIM-01 + HIDE-EXTREME-01 (kestrel-4, 2026-10-15) - dev, Node green, needs perf-pose
+- Trim: `resolveShadowLevel('high')` (engine/render/shadowSun.js) now meshLod0M 25->16, instCastM 48->32 (= ultra's reach; engine defaults unchanged, tests updated). faceCap left at 12 (passPointShadow tests pin it; no p95 yet). Expected Intel shadow 2.2 -> ~1.4 ms (fable S6). Pose: `node tools/bench-shadow.mjs` / capture `?quality=high&perf=1` ports 9725-9799, before/after.
+- Hide: `extreme` dropped from options.js/settings.js lists + strip labels; URL `?quality=extreme` still works; saved/auto `extreme` -> `ultra` (gfxPresets.js). Test appended to gfxPresets.test.js. Presets JSON untouched.

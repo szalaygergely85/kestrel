@@ -449,7 +449,7 @@ function drawMenuSettingsPanel(ui, assets) {
 // S8-C-04: opt-in full Settings view. The host owns persistence/application;
 // the existing pause-panel exports above remain available to legacy callers.
 const FULL_OPTIONS = [
-  { id: 'quality', values: ['low', 'medium', 'high', 'ultra', 'extreme', 'auto'], default: 'high' },
+  { id: 'quality', values: ['low', 'medium', 'high', 'ultra', 'auto'], default: 'high' },
   { id: 'shadows', values: ['off', 'low', 'mid', 'high', 'ultra'], default: 'high' },
   { id: 'grid', values: ['240x90', '320x120', '400x150', '480x180', '560x210'], default: '400x150' },
   { id: 'volume', type: 'range', min: 0, max: 1, step: 0.1, default: 1 },
@@ -507,7 +507,8 @@ export function createSettingsView(options = {}, { style, controls, quality, rgb
   }
   const state = {};
   for (const opt of optionDefs) {
-    const value = options[opt.id] ?? opt.default;
+    let value = options[opt.id] ?? opt.default;
+    if (opt.id === 'quality' && value === 'extreme') value = 'ultra'; // HIDE-EXTREME-01: stale saved 'extreme' -> ultra
     if (opt.type === 'range' ? typeof value !== 'number' || !Number.isFinite(value) || value < opt.min || value > opt.max : !opt.values.includes(value)) {
       throw new TypeError('Invalid settings option: ' + opt.id);
     }
@@ -565,7 +566,7 @@ export function createSettingsView(options = {}, { style, controls, quality, rgb
   let drawingUi;
   const titleText = settingsTitle(style);
   const titleStart = Math.floor((p.w - titleText.length) / 2);
-  const stripLabels = quality.choices.map(choice => ({choice, normal: ' ' + quality.text[choice] + ' ', current: '[' + quality.text[choice] + ']'}));
+  const stripLabels = quality.choices.filter(c => optionDefs.find(o => o.id === 'quality').values.includes(c)).map(choice => ({choice, normal: ' ' + quality.text[choice] + ' ', current: '[' + quality.text[choice] + ']'}));
   function cell(x, y, ch, fg, backing = bg) {
     if (x < 0 || x >= drawingUi.cols || y < 0 || y >= drawingUi.rows) return;
     const c = rgb[fg];
