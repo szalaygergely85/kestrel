@@ -15,6 +15,12 @@ Wide establishing shot of Ferrum at dusk, seen from a high distance: a walled st
 Style: moody painterly illustration, 16:9, strong contrast, limited palette: deep night blue and navy for sky and shadow, warm amber, orange and brass gold for lamps, fire and metal, a single cold teal for the distant signal light. Bold readable shapes, clear silhouettes, soft glow around lights. Steampunk-fantasy, brass and stone and timber. No text, no letters, no logos, no UI.
 ```
 
+## 1b. Before (owner addition: the sister, before she vanished)
+```
+Dusk on the high skyworks rooftop of a steampunk city, among chimneys, rigging and tall brass lamp posts. A young woman in a worn work coat, seen from behind and in soft silhouette, reaches up to trim the flame of a tall brass street lamp with small shears. Beside her a younger boy, seen from behind, holds up a small brass oil can for her. Warm amber lamplight on their shoulders; below them the glowing tiered city falls away toward the dark wall and the black land beyond. A gentle, warm, happy moment. Faces not visible.
+Style: moody painterly illustration, 16:9, strong contrast, limited palette: deep dusk blue and navy for sky and shadow, warm amber, orange and brass gold for lamps and metal. Bold readable shapes, clear silhouettes, soft glow around lights. Steampunk-fantasy. No text, no logos, no UI.
+```
+
 ## 2. Her lamp
 ```
 Close still life in cold grey morning light through a small window of a poor workers' home: a brass hand-lamp stands on a bare wooden table, its wick neatly trimmed and its shutter closed. Beside it lies a small official paper notice slip with the single printed word "FELL". Dust in the light beam, peeling plaster wall, no people.
