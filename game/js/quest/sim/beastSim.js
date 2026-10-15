@@ -20,7 +20,7 @@ import { WOLF_TUNING, wolfOverrides, isWolfEntity, circleTarget, awayTarget } fr
 import { GOBLIN_TUNING, goblinOverrides, isGoblinEntity } from './goblinBrain.js'; // GOB-01
 import { KINDS, KIND_NAMES, kindIndex, kindOfEntity } from './beastKinds.js'; // BEAST-03a
 import { ARCHETYPES } from "./archetypes.js";
-import { createWaterBrain, stepWaterBrain, grabMash as wbGrabMash, waterBlocks, waterHit } from './brains/waterBrain.js'; // BEAST-08b
+import { createWaterBrain, stepWaterBrain, grabMash as wbGrabMash, waterBlocks, waterHit, waterFreeze } from './brains/waterBrain.js'; // BEAST-08b
 import { LAYERS } from './brains/layers.js'; // BEAST-03b: LAYERS[archIdx](sim, i, ctx)
 import { createTactics, tacticsSync, tacticsSteer, tacticsBand, tacticsAllies, TACT_MELEE, TACT_RANGED, TACT_CASTER, TACT_SWARM, TOK_M, TOK_R, TOK_S } from './tactics.js'; // BEAST-04
 import { archIndex, ARCH_NAMES } from './archetypes.js';
@@ -1325,6 +1325,7 @@ function enterWander(sim, i) {
  * where the damage step was skipped but the physical/visual reaction still applies). `hurtT` was already reset for
  * a damaging hit, so "flash only" below is just "no state change" - the view flashes off `hurtT`. */
 function reactToHit(sim, i, p) {
+  if (p.freezeSec > 0) { applyFreeze(sim, i, p.freezeSec); return; } // SPELL-R2
   if (sim.wat[i] === 1) { waterHit(sim.wb, sim, i, p); return; } // BEAST-08b
   const st = sim.state[i];
   if (p.heavy) {
@@ -1337,6 +1338,15 @@ function reactToHit(sim, i, p) {
   if (st === STATE_WINDUP && !sim.bear[i]) { enterRecover(sim, i, false); return; } // AC: a light hit cancels the charge
   if (st === STATE_CHARGE || st === STATE_STAGGER || ((st === STATE_WINDUP || st === STATE_BITE) && sim.bear[i])) return; // BEAR-01: an arrow doesn't break the bluff          // D-034: only a hard hit stops a charge
   enterFlinch(sim, i);
+}
+
+/** SPELL-R2 Freeze: stagger with zero knock = no move, no attack, for `sec` s (re-freeze refreshes, never stacks); level > 7 = half time. A croc releases its grab. */
+function applyFreeze(sim, i, sec) {
+  const steps = Math.max(1, Math.round(sec * 60 * (sim.stk.lv[i] > 7 ? 0.5 : 1)));
+  if (sim.wat[i] === 1) { waterFreeze(sim.wb, sim, i, steps); return; }
+  enterStagger(sim, i, 0, 0, 0);
+  sim.timer[i] = steps;
+  sim.steer.vx[i] = 0; sim.steer.vy[i] = 0;
 }
 
 function enterFlinch(sim, i) {

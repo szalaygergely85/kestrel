@@ -1,5 +1,6 @@
-// game/js/quest/sim/spark.js (SPELL-05, docs/epics/ep-spells.md section 2 Light/Spark). The Spark: a straight, fast bolt (no gravity).
-// First beast hit: damage + heavy `combat:hit` (existing stagger state) with `stunSec` = the tier's stun time; a wall stops it.
+// game/js/quest/sim/freeze.js (SPELL-R2, docs/epics/ep-spells.md Freeze; was Spark). Freeze: a straight, fast ice bolt (no gravity).
+// First beast hit: damage + `combat:hit` with `freezeSec` (beastSim.applyFreeze: no move/attack, a grabbing croc lets go); a wall stops it.
+// Level 3 also freezes up to `splash` more targets within `splashR` m of the hit (0-damage hits, same time).
 // Reuses the shared swept hit test (sim/sweep.js, the fireball/arrow primitive). All numbers come from spellDefs.js (SPELL_DEFS.freeze.tiers).
 // Key-slot cast like the fireball tap: requestTap() queues, the next step() fires with the aim. Rule 15 (sim/**): no Math.random, no trig,
 // integer step counters, zero allocation in step. Transient (not saved).
@@ -13,17 +14,17 @@ const TIERS = SPELL_DEFS.freeze.tiers, MAXN = TIERS[0].alive;
  * @param {any} world @param {{emit:Function}} events @param {any} targets createTargetables()
  * @param {{spendMana?:(n:number)=>boolean, tier?:()=>number, damageMul?:()=>number, eyeH?:number}} [hooks]
  */
-export function createSparkSim(world, events, targets, hooks) {
+export function createFreezeSim(world, events, targets, hooks) {
   const h = hooks || {};
   const dt = SIM_STEP;
   const slots = { n: MAXN, alive: new Uint8Array(MAXN), serial: new Int32Array(MAXN), age: new Int32Array(MAXN),
     x: new Float64Array(MAXN), y: new Float64Array(MAXN), z: new Float64Array(MAXN),
     dx: new Float64Array(MAXN), dy: new Float64Array(MAXN), dz: new Float64Array(MAXN),
     speed: new Float64Array(MAXN), range: new Float64Array(MAXN), pad: new Float64Array(MAXN), travelled: new Float64Array(MAXN),
-    damage: new Float64Array(MAXN), stun: new Float64Array(MAXN), knock: new Float64Array(MAXN) };
+    splash: new Uint8Array(MAXN), splashR: new Float64Array(MAXN), damage: new Float64Array(MAXN), stun: new Float64Array(MAXN), knock: new Float64Array(MAXN) };
   let alive = 0, cooldown = 0, pendingTap = false, tick = 0, serialNo = 0, castTick = -1000000, refused = 0;
   const hit = { kind: NO_HIT, t: 0, idx: -1, x: 0, y: 0, z: 0 };
-  const hitPayload = { source: 'player', target: null, damage: 0, heavy: 1, cause: 'spark', knock: 0, stunSec: 0, dirX: 0, dirY: 0, px: 0, py: 0, pz: 0 };
+  const hitPayload = { source: 'player', target: null, damage: 0, heavy: 0, cause: 'freeze', knock: 0, freezeSec: 0, dirX: 0, dirY: 0, px: 0, py: 0, pz: 0 };
   const castPayload = { x: 0, y: 0, z: 0, tier: 1 };
   const endPayload = { x: 0, y: 0, z: 0, hitBeast: false };
 
@@ -32,7 +33,7 @@ export function createSparkSim(world, events, targets, hooks) {
   function finish(s, x, y, z, beast) {
     slots.alive[s] = 0; alive--;
     endPayload.x = x; endPayload.y = y; endPayload.z = z; endPayload.hitBeast = beast;
-    events.emit('spark:end', endPayload);
+    events.emit('freeze:end', endPayload);
   }
   function cast(player, ax, ay, az) {
     if (alive >= MAXN) return;
@@ -46,9 +47,24 @@ export function createSparkSim(world, events, targets, hooks) {
     slots.x[s] = ex; slots.y[s] = ey; slots.z[s] = ez; slots.dx[s] = ax; slots.dy[s] = ay; slots.dz[s] = az;
     slots.speed[s] = row.speed; slots.range[s] = row.range; slots.pad[s] = row.pad; slots.travelled[s] = 0;
     const m = h.damageMul ? h.damageMul() : 1;
-    slots.damage[s] = Math.max(1, Math.round(row.dmg * (m > 0 ? m : 1))); slots.stun[s] = row.stun; slots.knock[s] = row.knock;
+    slots.damage[s] = Math.max(1, Math.round(row.dmg * (m > 0 ? m : 1))); slots.stun[s] = row.stun; slots.splash[s] = row.splash; slots.splashR[s] = row.splashR; slots.knock[s] = row.knock;
     castPayload.x = ex; castPayload.y = ey; castPayload.z = ez; castPayload.tier = t0;
-    events.emit('spark:cast', castPayload);
+    events.emit('freeze:cast', castPayload);
+  }
+  /** Level 3: up to `splash` other targets within `splashR` of the hit (2D, load order = deterministic) get a 0-damage freeze. */
+  function splashFreeze(s, primary, hx, hy) {
+    const p = hitPayload, r2 = slots.splashR[s] * slots.splashR[s], mx = slots.dx[s], my = slots.dy[s];
+    let left = slots.splash[s];
+    p.damage = 0; p.px = hx; p.py = hy;
+    for (let k = 0; k < targets.count && left > 0; k++) {
+      const o = targets.ent[k];
+      if (o === primary) continue;
+      const dx = o.transform.x - hx, dy = o.transform.y - hy;
+      if (dx * dx + dy * dy > r2) continue;
+      let hl = Math.sqrt(mx * mx + my * my); if (hl < 1e-6) hl = 1;
+      p.target = o.id; p.dirX = mx / hl; p.dirY = my / hl; left--;
+      events.emit('combat:hit', p);
+    }
   }
   function flight() {
     targets.refresh();
@@ -64,10 +80,11 @@ export function createSparkSim(world, events, targets, hooks) {
       if (hit.kind === TARGET_HIT) {
         const e = targets.ent[hit.idx], p = hitPayload;
         let hl = Math.sqrt(dx * dx + dy * dy); if (hl < 1e-6) hl = 1;
-        p.target = e.id; p.damage = slots.damage[s]; p.knock = slots.knock[s]; p.stunSec = slots.stun[s];
+        p.target = e.id; p.damage = slots.damage[s]; p.knock = 0; p.freezeSec = slots.stun[s];
         p.dirX = dx / hl; p.dirY = dy / hl; p.px = hit.x; p.py = hit.y; p.pz = hit.z;
         finish(s, hit.x, hit.y, hit.z, true);
         events.emit('combat:hit', p);
+        if (slots.splash[s] > 0) splashFreeze(s, e, hit.x, hit.y);
         continue;
       }
       if (hit.kind === WORLD_HIT) { finish(s, hit.x, hit.y, hit.z, false); continue; }

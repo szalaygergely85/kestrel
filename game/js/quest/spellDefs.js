@@ -15,7 +15,7 @@ export const SPELL_DEFS = Object.freeze({
   }),
   // Freeze: ice bolt, `stun` = freeze seconds (beastSim stun path), level 3 also freezes up to `splash` more beasts within `splashR` m.
   freeze: Object.freeze({
-    name: 'Freeze', glyph: '+', color: 'aether', maxTier: 3,
+    name: 'Freeze', glyph: '+', color: 'skyHorizon', maxTier: 3,
     tiers: T([
       { mana: 5, cd: 2.0, dmg: 1, stun: 1.5, speed: 24, range: 18, pad: 0.2, knock: 0, alive: 2, splash: 0, splashR: 0 },
       { mana: 5, cd: 1.8, dmg: 2, stun: 2.5, speed: 24, range: 20, pad: 0.2, knock: 0, alive: 2, splash: 0, splashR: 0 },
