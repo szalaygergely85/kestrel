@@ -12,6 +12,7 @@ import { createAStar, findPath, findPathCells, smoothPath, createSteer, PHYSICS,
 import { BEAST_DEFAULTS, toSteps } from './beastConfig.js';
 import { tierMult } from './band.js';
 import { levelScale, LEVEL_TABLE, kindFactors } from './beastLevels.js';
+import { resolveDifficulty } from './difficulty.js'; // DIFF-MENU
 import { canSee } from './sight.js';
 import { BEAR_TUNING, BEAR_MODEL, bearOverrides, bearPicksBite, isBearEntity } from './bearBrain.js'; // BEAR-01, BEAR-BITE
 import { WOLF_TUNING, wolfOverrides, isWolfEntity, circleTarget, awayTarget } from './wolfBrain.js'; // WOLF-01
@@ -470,6 +471,15 @@ export function createBeastSim(world, opts) {
     }
   };
   /** GOB-01b: on -> slot goes to STATE_GONE (steer agent dropped, hidden, skipped); off -> back alive at home, hp max. */
+  // DIFF-MENU (D-083): live difficulty change from the Settings screen. Rescales live beasts' damage by the dmg ratio only;
+  // hp / spawn tuning apply to the next created beast (opts.difficulty is read at create).
+  sim.setDifficulty = function setDifficulty(name) {
+    const was = resolveDifficulty(opts.difficulty).dmg, now = resolveDifficulty(name);
+    opts.difficulty = now.name;
+    const r = was > 0 ? now.dmg / was : 1;
+    if (r !== 1) for (let i = 0; i < sim._hitPayload.length; i++) if (sim._hitPayload[i]) sim._hitPayload[i].damage *= r;
+    return now.name;
+  };
   sim.setDown = function setDown(slot, on) {
     if (slot < 0 || slot >= sim.count) return;
     if (on) {
