@@ -882,6 +882,12 @@
         ],
         "done": [
           "Left for the next walker. That was you."
+        ],
+        "accept": [
+          "Strap it tight. The ford road bites."
+        ],
+        "decline": [
+          "It'll keep. Nobody else came for it."
         ]
       }
     },
@@ -933,6 +939,12 @@
         ],
         "done": [
           "Road's clear, and the bear knows. Quiet day."
+        ],
+        "accept": [
+          "Up the hill. Say it plain. Bears like plain."
+        ],
+        "decline": [
+          "She'll wait. Bears are good at waiting."
         ]
       }
     },
@@ -996,6 +1008,12 @@
         ],
         "done": [
           "Road walked. I'll sleep easier."
+        ],
+        "accept": [
+          "Watch the verges. Things hide in the long grass."
+        ],
+        "decline": [
+          "Road's not going anywhere. Neither am I."
         ]
       }
     },
@@ -1424,6 +1442,12 @@
         ],
         "done": [
           "Dark lamps. I'll get to them. One day."
+        ],
+        "accept": [
+          "All of them, mind. Not just the near ones."
+        ],
+        "decline": [
+          "They've been dark a while. Another day won't hurt."
         ]
       }
     },
@@ -1477,6 +1501,12 @@
         ],
         "done": [
           "Way-marks. Someone walked this road before us."
+        ],
+        "accept": [
+          "Look, don't move them. Old things mind being moved."
+        ],
+        "decline": [
+          "They've stood this long. They'll stand a bit more."
         ]
       }
     },
@@ -1530,6 +1560,12 @@
         ],
         "done": [
           "Mallet's tight. Listen. Hear it ring?"
+        ],
+        "accept": [
+          "Any scrap. Flat is better. Bent will do."
+        ],
+        "decline": [
+          "I'll tie it with string again. It's held so far."
         ]
       }
     },
@@ -2043,6 +2079,12 @@
         ],
         "done": [
           "You won't see the cog turn. I will."
+        ],
+        "accept": [
+          "Brass, toothed, about so big. You'll know it."
+        ],
+        "decline": [
+          "It'll grind a while longer. I'll hear it."
         ]
       }
     },

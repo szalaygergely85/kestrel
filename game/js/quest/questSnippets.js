@@ -81,10 +81,12 @@ export function generateForNpc(raw, npcId, defs, snippets, opts = {}) {
         rows.ready.push({ node: k + '.ready', requires: 'q.' + d.id + '.ready' });
       } else if (state === 'available') {
         const off = linesFor(d, 'available', sn, giverName, opts.itemDefs), last = off[off.length - 1];
-        const choices = [{ next: k + '.accepted', setFlag: 'q.' + d.id + '.accept', text: cap(ch.accept || "I'll do it.", 40) }, { next: laterId, text: cap(ch.later || 'Not yet.', 40) }];
+        const dec = d.lines && d.lines.decline && d.lines.decline.length ? k + '.later' : null; // writer's per-quest decline reply (optional)
+        if (dec) nodes[dec] = mk(d.lines.decline.map((l) => cap(l)), { end: true });
+        const choices = [{ next: k + '.accepted', setFlag: 'q.' + d.id + '.accept', text: cap(ch.accept || "I'll do it.", 40) }, { next: dec || laterId, text: cap(ch.later || 'Not yet.', 40) }];
         if (off.length > 1) { nodes[k + '.offer.1'] = mk(off.slice(0, -1), { next: k + '.offer.2' }); nodes[k + '.offer.2'] = mk([last], { choices }); } else nodes[k + '.offer.1'] = mk([last], { choices });
-        nodes[k + '.accepted'] = mk(linesFor(d, 'active', sn, giverName, opts.itemDefs), { end: true });
-        usedLater = true;
+        nodes[k + '.accepted'] = mk(d.lines && d.lines.accept && d.lines.accept.length ? d.lines.accept.map((l) => cap(l)) : linesFor(d, 'active', sn, giverName, opts.itemDefs), { end: true });
+        if (!dec) usedLater = true;
         rows.available.push({ node: k + '.offer.1', requires: 'q.' + d.id + '.available' });
       } else {
         nodes[k + '.active'] = mk(linesFor(d, 'active', sn, giverName, opts.itemDefs), { end: true });

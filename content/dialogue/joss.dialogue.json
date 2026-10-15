@@ -13,6 +13,10 @@
   },
   "entry": [
     {
+      "node": "joss.hello.3",
+      "requires": "joss.heard2"
+    },
+    {
       "node": "joss.hello.2",
       "requires": "met.joss"
     },
@@ -35,7 +39,8 @@
       "lines": [
         "Road's holding. Mostly."
       ],
-      "speaker": "joss"
+      "speaker": "joss",
+      "setFlag": "joss.heard2"
     },
     "joss.hello.3": {
       "end": true,
