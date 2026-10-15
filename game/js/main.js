@@ -10,6 +10,7 @@ import { applyImpostorBoot, reapplyRememberedImpostors } from './ui/impostorPres
 import { groundLookFromParams } from './look/groundLookConfig.js'; // ENV-02d
 import { buildAtmosConfig } from './look/atmosConfig.js'; import { createAtmosDriver } from './look/atmosDriver.js'; // ENV-03
 import { createAtmosState, mixAtmos, applyAtmosToPalette, gradeCells, createPostState, composePost, postCells } from '../../engine/index.js';
+import { createFxHook, resolveFx } from './fxHook.js';
 import { resolveGI, createGIWire, giLoadOptions } from './look/giWire.js';
 import { resolveFootIk, createFootIkWire } from './look/footIkWire.js'; // ANIM-IK-01b: kit character foot placement (?footik=0 off) // GI-PROBE-06
 import { sceneOf } from './look/sceneFlag.js'; import { resolvePost } from './look/postConfig.js'; // POST-STACK-01c // ENV-03: `?atmos=0` = no driver, palette untouched
@@ -1381,6 +1382,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
   let invWasLocked = false; // pointer lock state when the pack opened (re-lock on close)
   let waterfallHooks = null;
   let ambientMotes = null;
+  const fxHook = createFxHook(resolveFx(params, rt.backend, resolvedQuality && resolvedQuality.knobs)); // CONTACT-AO-01c / CANOPY-SHAFT-01c: lights.cao / lights.shaft only on WebGPU high+ (null otherwise)
   let lightSet = null; let giWire = null; const giCfg = resolveGI(params, resolvedQuality && resolvedQuality.name); // GI-PROBE-06: baked bounce light; `?gi=0` = null = today's frames
   // US-006: built from the loaded world's level.def.lights, below
   const atmosLast = { w: null }; engine.events.on('world:loaded', () => { atmosLast.w = null; }); // REV-MAIN: forces a snap on the next atmosphere step
@@ -2524,6 +2526,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         if (fb.lights.emissive) gameVoxelPool.offerEmissive(fb.lights, cam); // EMIS-01b: derived slots from last frame's voxel queue, before update() builds their vis
         fb.lights.update(fb.timeSec, engine.world);
         if (giWire) giWire.sync(); // GI-PROBE-06: pointer compare; flips LightSet.gi when world.giField changes
+        if (fxHook.cao || fxHook.shaft) { const pt = playerHandle && playerHandle.data.transform; fxHook.update(fb.lights, engine.world, pt ? pt.x : cam.x, pt ? pt.y : cam.y, pt ? pt.z : 0, 0.35, cam.x, cam.y); } // CONTACT-AO-01c / CANOPY-SHAFT-01c
       }
       lap(SEC.lights);
       // With a WebGPU pipeline owning the frame, `renderWorld` (compositor.js) is a no-op; `rt.gpuActive` guards a lost device.
