@@ -29,7 +29,7 @@ const wgslTypes = { uint: 'texture_2d<u32>', sint: 'texture_2d<i32>', float: 'te
 STABLE_TEXTURES.forEach((k, i) => assert.ok(new RegExp(`@group\\(0\\) @binding\\(${i}\\) var \\w+: ${wgslTypes[k].replace(/[<>]/g, '\\$&')}`).test(STABLE_WGSL), `binding ${i} ${k}`));
 assert.ok(/@group\(1\) @binding\(0\) var<uniform> u: StableU/.test(STABLE_WGSL));
 assert.ok(STABLE_WGSL.includes(`const LEVEL_ANIM: u32 = ${LEVEL_ANIM}u;`) && LEVEL_ANIM === 254, 'LEVEL_ANIM interpolated from the twin');
-assert.ok(STABLE_WGSL.includes('dUV >= 1.0 / u.detailDefault') && UV_LIM_TEXELS === 1, 'UV drift limit 1.0/detail (38.25 B)');
+assert.ok(STABLE_WGSL.includes('1.0 / u.detailDefault') && STABLE_WGSL.includes('if (dUV >= uvLim)') && UV_LIM_TEXELS === 1, 'UV drift limit 1.0/detail (38.25 B)');
 assert.ok(STABLE_WGSL.includes(`const LEVEL_NONE: u32 = ${LEVEL_NONE}u;`) && LEVEL_NONE === 255, 'LEVEL_NONE interpolated from the twin');
 assert.ok(STABLE_WGSL.includes('floor(pc.x + 0.5)') && STABLE_WGSL.includes('floor(pc.y + 0.5)'), 'history cell = floor(x + 0.5)');
 assert.ok(STABLE_WGSL.includes('floor(v * 255.0 + 0.5)'), 'byte quantise floor(v+0.5)');
@@ -247,8 +247,8 @@ const mutations = [
   ['255 cells take the ramp hold rule', 'if (c255) {', 'if (false) {'],
   ['sky/model not rejected', 'if (kind == 0u || kind == 8u || lvC', 'if (lvC'],
   ['kind/plane match dropped', 'if (hk != kind || hh.x != gi.x) { return o; }', ''],
-  ['UV drift window x2', 'dUV >= 1.0 / u.detailDefault', 'dUV >= 2.0 / u.detailDefault'],
-  ['UV drift window back to 0.5', 'dUV >= 1.0 / u.detailDefault', 'dUV >= 0.5 / u.detailDefault'],
+  ['UV drift window x2', 'var uvLim = 1.0 / u.detailDefault', 'var uvLim = 2.0 / u.detailDefault'],
+  ['UV drift window back to 0.5', 'var uvLim = 1.0 / u.detailDefault', 'var uvLim = 0.5 / u.detailDefault'],
   ['dEye.z dropped', 'let wz = pz + u.dEye.z;', 'let wz = pz;'],
   ['ortho branch swapped in prev projection', 'cf = (vx / u.prevA.w + 1.0)', 'cf = (vx / vdP / u.prevA.w + 1.0)'],
   ['perspective divide dropped in rows', 'rf = (1.0 - vy / vdP / u.prevC.y)', 'rf = (1.0 - vy / u.prevC.y)'],

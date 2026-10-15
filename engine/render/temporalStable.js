@@ -27,6 +27,8 @@ export const LEVEL_NONE = 255;
 export const LEVEL_ANIM = 254;
 /** UV drift limit in texels-of-1/detail units (38.25 amendment B). */
 export const UV_LIM_TEXELS = 1.0;
+/** OB-193: the UV drift limit also scales with the cell's own world footprint (x this); a nearest-cell reprojection error is up to ~0.7 cell, so a fixed 1/detail limit (6 cm) rejected history on every wall farther than ~2 m at grid 400 -> the texel hash re-rolled each frame (glyph crawl). */
+export const STABLE_FOOT_K = 1.0;
 const TIE_EPS_CELL = 1e-3;
 const TIE_EPS_UV = 1e-4;
 
@@ -59,6 +61,14 @@ const TIE_EPS_UV = 1e-4;
  * @property {Uint32Array} bg
  */
 
+/** UV drift limit (m) of one cell: max(1/detail, STABLE_FOOT_K * larger cell side at depth vd); ortho keeps the texel limit. Twin: stable.wgsl.js. */
+export function uvDriftLimit(vd, tanHalfX, tanHalfY, cols, rows, detail, ortho, footK = STABLE_FOOT_K) {
+  const lim = UV_LIM_TEXELS / detail;
+  if (ortho) return lim;
+  const foot = footK * vd * 2 * Math.max(tanHalfX / cols, tanHalfY / rows);
+  return foot > lim ? foot : lim;
+}
+
 /** Allocates the buffers of one history/output set (ping-pong two of these). */
 export function createStableBuffers(cols, rows) {
   const n = cols * rows;
@@ -83,6 +93,7 @@ export function createStableState() {
     dEx: 0, dEy: 0, dEz: 0,
     hasPrev: false,
     histValid: false,
+    footK: STABLE_FOOT_K, // tests may set 0 to isolate the texel limit
     _pcell: new Float64Array(3), _pw: new Float64Array(3), _pc: new Float64Array(3),
   };
 }
@@ -197,7 +208,7 @@ export function stabilize(inp, hist, out, st) {
       const detail = (inp.detail ? inp.detail[i] : 0) || DEFAULT_DETAIL;
       const du = inp.u[i] - hist.u[h], dv = inp.v[i] - hist.v[h];
       const dUV = Math.sqrt(du * du + dv * dv);
-      const lim = UV_LIM_TEXELS / detail;
+      const lim = uvDriftLimit(vd, relCur.tanHalfX, relCur.tanHalfY, cols, rows, detail, ortho, st.footK);
       if (Math.abs(dUV - lim) < TIE_EPS_UV) out.tie[i] = 1;
       if (dUV >= lim) continue;
 

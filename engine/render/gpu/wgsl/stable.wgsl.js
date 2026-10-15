@@ -16,7 +16,7 @@
 import { defineUniformBlock } from './uniformBlock.js';
 import { GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL } from './common.wgsl.js';
 import { KIND_NONE, KIND_MODEL } from '../../GBuffer.js';
-import { LEVEL_NONE, LEVEL_ANIM, UV_LIM_TEXELS } from '../../temporalStable.js';
+import { LEVEL_NONE, LEVEL_ANIM, UV_LIM_TEXELS, STABLE_FOOT_K } from '../../temporalStable.js';
 
 export const STABLE_BLOCK = defineUniformBlock('StableU', [
   { name: 'curA', type: 'vec4' },   // current terms: fX, fY, fZ, tanHalfX (halfW when ortho)
@@ -156,7 +156,10 @@ fn stableCell(cell: vec2i) -> SCell {
   let du = bitcast<f32>(ga.x) - bitcast<f32>(hh.y);
   let dv = bitcast<f32>(ga.y) - bitcast<f32>(hh.z);
   let dUV = sqrt(du * du + dv * dv);
-  if (dUV >= ${UV_LIM_TEXELS.toFixed(1)} / u.detailDefault) { return o; }
+  // OB-193: limit = max(texel limit, cell footprint at this depth) - twin: temporalStable.js uvDriftLimit
+  var uvLim = ${UV_LIM_TEXELS.toFixed(1)} / u.detailDefault;
+  if (u.ortho == 0) { uvLim = max(uvLim, ${STABLE_FOOT_K.toFixed(4)} * vd * 2.0 * max(u.curA.w / f32(u.gridCols), u.curC.y / f32(u.gridRows))); }
+  if (dUV >= uvLim) { return o; }
 
   o.fresh = 0u;
   let hf = textureLoad(uHistFg, hcell, 0);
