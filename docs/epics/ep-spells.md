@@ -8,7 +8,7 @@ Reads: D-021 (the four spells; beacons, wells, quests; small skill tree; Telepor
 - **Learn** at a Waystone (beacon), at a well, or by finishing a character's quest (D-021, D-082). Burl's Fireball stays the first (D-069, `sq.burl.fire`, unchanged). No Spell Books, no shop, no XP.
 - **Upgrade = Spell Scroll** (plain name, item `scroll.spell`, stack 9; D-114 as corrected): spent on the spell page on ONE learned spell below level 3 that the player chooses. Confirm: "Raise Freeze to level 2?  [E] Yes  [Q] No". Q cancels and keeps the scroll. No random choice anywhere.
 - **The tree** = each spell's three levels, shown as four cards in learn order (section 3). No cross-locks between spells: a scroll can go to any learned spell (owner Q1 offers an optional lock).
-- **Mana** stays as today (D-0xx sets nothing else): max 20, +1 per 2 s, 3 s regen pause after a cast (`vitalsConfig.js`); INT gear adds +2 max mana per point (D-081); hard sword swing still costs 4. No stamina (D-112).
+- **Mana** stays as today (D-0xx sets nothing else): max 20, +1 per 2 s, 3 s regen pause after a cast (`vitalsConfig.js`); INT gear adds +2 max mana per point (D-081); hard sword swing still costs 4. No stamina (D-117).
 - **INT** damage bonus (`fireDmgMul`) applies to every damage spell (Fireball, Freeze, Telekinesis throw impact).
 - Visuals reuse what exists: fireball view, `spellLightView.js` (recoloured), `gustView.js` (recoloured), particles, point lights, glyph + colour only. No new art, no new meshes, no new palette keys (designer picks existing keys).
 - Every sim: no Math.random (seeded), 0 alloc per step, deterministic hash twice equal.
