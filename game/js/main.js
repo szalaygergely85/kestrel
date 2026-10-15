@@ -933,18 +933,13 @@ if (handDef && handDef.variants && handLookDef) {
   }
 }
 registerRiggedChars(assets, bundle.models); // RIG-03w: char.<id> from package .glb, before bind
-// OB-086 (owner 2026-10-12: "import 1 char into the game, i wanna see"): the default kit character (human kit v8 shapes) as a
-// world model, stood 2 m east of Burl on every world load (entity id demo.kitChar: never saved, see saveState TRANSIENT_ENTITY).
+// The default kit character (human kit v8 shapes) as the `char.kit` world model (player body + NPCs). The OB-086 demo copy that
+// stood 2 m east of Burl (demo.kitChar) was removed on the owner's request 2026-10-15.
 let kitFootCells = null; // ANIM-IK-01b: foot cells of the kit legRig (footIkWire)
 if (window.__charKit && !assets.has('model', 'char.kit')) {
   try { const K = window.__charKit; const grid = composeCharacter(K, K.defaults); const sw = window.ASSETS.chargenSwimClips; if (sw) Object.assign(grid.clips, sw.clips); /* SWIM-ASSETS-01: swim/tread/dive, in-game player only */ const kitDef = riggedModelDef(collapseRig(meshCharacter(grid), K.partMap), { legRig: HUMANOID_SPLIT_LEG_RIG, lookAt: { part: 'head', yawLimitDeg: 60, pitchLimitDeg: 25, hz: 2 } }); kitFootCells = kitDef.voxel.legRig ? kitDef.voxel.legRig.legs.map((l) => l.foot) : null; /* ANIM-IK-01b: split-leg rig */ assets.add('model', 'char.kit', kitDef); }
   catch (e) { console.warn('[char.kit] ' + e.message); }
 }
-if (assets.has('model', 'char.kit')) engine.events.on('world:loaded', ({ world: kw }) => {
-  const b = kw.get('bear'), bt = b && b.data && b.data.transform; if (!bt || kw.get('demo.kitChar')) return;
-  const gz = kw.floorAt(bt.x + 2, bt.y);
-  kw.spawn('prop', { x: bt.x + 2, y: bt.y, z: gz == null ? bt.z : gz, yawDeg: 180, scale: 1 }, { voxel: { model: 'char.kit', anim: 'idle', loop: true } }, 'demo.kitChar');
-});
 const gameVoxelPool = new VoxelPool();
 gameVoxelPool.bind(assets, matTable);
 // RE-02b F1 + review: 'mesh' only when the mesh GpuCellPipeline is really active (CPU fallback renders shear).
