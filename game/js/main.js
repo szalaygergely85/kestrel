@@ -1244,7 +1244,7 @@ async function runGame(mode, cinematic = null) {
   } };
   const nextCtx = { resolve: (k, id, o) => compassResolver.resolve(k, id, o), x: 0, y: 0 }; // OB-183: 'Next:' line + journal name the nearest giver
   if (saveRelay) saveRelay.quest.nextCtx = nextCtx;
-  const combatHud = createCombatHud({ events: engine.events, rgb: assets.palette.rgb, band: worldBand }); // HPBAR-02 + DMGNUM-01: enemy bars + damage numbers
+  const combatHud = createCombatHud({ events: engine.events, rgb: assets.palette.rgb, band: worldBand }); // HPBAR-02 + DMGNUM-01: enemy bars + damage numbers ; combatHud.bars.bars.setDifficulty(savedSettings.difficulty); // HPBAR-03
   window.__debug.compass = compass; window.__debug.compassRetarget = () => { const b = saveRelay && saveRelay.quest.book; return b ? compass.target(b, compassResolver) : null; }; window.__debug.compassHidden = () => compassHide; // tools/verify-compass.mjs
   function compassFindMarker(w, markerId) { // structure marker -> world position (same lookup as audio/ambient.js; load-time-ish, cached)
     const o = { x: 0, y: 0, z: 0 };
@@ -1980,7 +1980,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
             guardLoad(() => engine.setWorld(deserialize(initialState, assets, worldLoadOpts)));
           }
         }, () => relockPointer()),
-        onSettings: () => openSettings({ assets, engine, look, onDifficulty: (d) => { if (beasts && beasts.setDifficulty) beasts.setDifficulty(d); } }),
+        onSettings: () => openSettings({ assets, engine, look, onDifficulty: (d) => { if (beasts && beasts.setDifficulty) beasts.setDifficulty(d); combatHud.bars.bars.setDifficulty(d); } }),
         // CREDITS-MOUNT-01: licence inventory is fetched lazily on first open (menu only, never in capture/bench paths)
         createCredits: () => creditsInv && window.ASSETS?.uiStyle?.menu ? createCreditsView(creditsInv, { style: window.ASSETS.uiStyle.menu }) : null,
       });
@@ -1990,7 +1990,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       adapter: (saveRelay && saveRelay.adapter) || { listSlots: () => [], readSlot: () => ({ ok: true, save: null }) },
       style: window.ASSETS && window.ASSETS.uiStyle ? window.ASSETS.uiStyle.menu : null,
       onResume: () => { if (pauseResume.soft) pauseResume.resume(); else relockPointer(); }, // OB-072: soft pause = lock never lost
-      onSettings: () => openSettings({ assets, engine, look, onDifficulty: (d) => { if (beasts && beasts.setDifficulty) beasts.setDifficulty(d); } }),
+      onSettings: () => openSettings({ assets, engine, look, onDifficulty: (d) => { if (beasts && beasts.setDifficulty) beasts.setDifficulty(d); combatHud.bars.bars.setDifficulty(d); } }),
       onFullscreen: toggleFullscreen, // OB-072
       onUnstuck: isCaptureOrBench || params.get('capture') === '1' ? null : () => { // OB-140: newest safe spot >= 3 m away (always allowed, also in combat)
         const t = playerHandle.data.transform, p = safeSpots.pick(t.x, t.y, t.z);
