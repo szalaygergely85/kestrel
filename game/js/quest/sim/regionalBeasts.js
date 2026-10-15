@@ -97,16 +97,17 @@ export function generateRegionalBeasts(o) {
     return wat.deep(x, y) && wat.deep(x + 1, y) && wat.deep(x - 1, y) && wat.deep(x, y + 1) && wat.deep(x, y - 1);
   };
   const walkable = makeWalkable(terrain, geo.bounds), walkRoad = makeWalkable(terrain, geo.bounds, ROAD_SLOPE); // roads climb: roadside groups accept slopes up to ROAD_SLOPE
-  const out = [], centres = [], nextGroup = {}, G2 = GROUP_GAP * GROUP_GAP;
+  const out = [], centres = [], wcentres = [], nextGroup = {}, G2 = GROUP_GAP * GROUP_GAP;
   const regionAt = (x, y) => { for (const g of geo.regions) if (x >= g.r[0] && x < g.r[2] && y >= g.r[1] && y < g.r[3]) return g.id; return geo.regions[geo.regions.length - 1].id; };
   const nearSafe = (x, y) => { for (const s of safe) { const d = SAFE_R + (s[2] || 0); if ((s[0] - x) * (s[0] - x) + (s[1] - y) * (s[1] - y) < d * d) return true; } return false; };
+  const clearOfW = (x, y) => { for (const p of wcentres) if ((p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y) < 40 * 40) return false; return true; };
   const clearOf = (x, y) => { // group gap to other regional groups + authored gap + safe spots/givers
     for (const p of centres) if ((p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y) < G2) return false;
     for (const p of avoid) if ((p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y) < AUTHORED_GAP * AUTHORED_GAP) return false;
     return !nearSafe(x, y);
   };
   const emit = (rule, region, r, c, rng, n0) => { // members 3-7 m from the group centre; fall back to the centre if no walkable spot
-    const g = nextGroup[region] || 0; nextGroup[region] = g + 1; centres.push(c);
+    const g = nextGroup[region] || 0; nextGroup[region] = g + 1; (rule.water ? wcentres : centres).push(c); // BEAST-09a: crocs never shift land groups (land list is the same with or without a water probe)
     let n = n0;
     for (let k = 0; k < rule.size; k++) {
       let hx = c[0], hy = c[1];
@@ -131,7 +132,7 @@ export function generateRegionalBeasts(o) {
       for (let t = 0; t < TRIES && !c; t++) {
         const x = Math.round((r[0] + EDGE + rng() * (r[2] - r[0] - 2 * EDGE)) * 2) / 2;
         const y = Math.round((r[1] + EDGE + rng() * (r[3] - r[1] - 2 * EDGE)) * 2) / 2;
-        if (!(rule.water ? deepHome(x, y) : wk(x, y)) || (!rule.water && regionAt(x, y) !== rule.region) || !clearOf(x, y)) continue;
+        if (!(rule.water ? deepHome(x, y) : wk(x, y)) || (!rule.water && regionAt(x, y) !== rule.region) || !(rule.water ? clearOfW(x, y) : clearOf(x, y))) continue;
         c = [x, y];
       }
       if (!c) continue; // a region with no valid ground simply gets fewer groups (never an unwalkable home)
@@ -140,7 +141,7 @@ export function generateRegionalBeasts(o) {
   }
   // OB-185: roadside groups. Walk every road every 10 m; a point is covered when any home is within COVER_R. After ROAD_GAP m uncovered, put a pair
   // 25-50 m beside the road (both sides tried, deterministic order). All homes so far (authored + generated) count as cover.
-  const homes = avoid.slice(); for (const o2 of out) homes.push([o2.x, o2.y]);
+  const homes = avoid.slice(); let landCount = 0; for (const o2 of out) if (o2.species !== 'croc') { homes.push([o2.x, o2.y]); landCount++; }
   const covered = (x, y) => { for (const p of homes) if ((p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y) < COVER_R * COVER_R) return true; return false; };
   const roadN = {};
   for (const road of geo.roads || []) {
@@ -164,8 +165,8 @@ export function generateRegionalBeasts(o) {
         const sp = ROAD_SPECIES[region] || 'boar', key = 'road' + region[0].toUpperCase() + region.slice(1);
         const rule = { species: sp, key, size: sp === 'boar' ? 2 : 3 };
         const rg = (geo.regions.find((q) => q.id === region) || {}).r || [0, 0, 2048, 2048];
-        roadN[key] = emit(rule, region, rg, c, mulberry32(seed ^ strHash(key + out.length)), roadN[key] || 0);
-        homes.push(c); run = 0;
+        roadN[key] = emit(rule, region, rg, c, mulberry32(seed ^ strHash(key + landCount)), roadN[key] || 0);
+        homes.push(c); landCount += rule.size; run = 0;
       }
     }
   }
