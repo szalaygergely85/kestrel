@@ -114,3 +114,11 @@ ok([...degenerate.x].every((x, i) => Math.hypot(x, degenerate.y[i]) > 8));
 }
 const start = performance.now(); scatterDetail(flat, [], [], { layers: [layer] }); const ms = performance.now() - start;
 console.log(`scatterDetail synthetic: ${a.count} placements, 2-layer ${two.count}; ${ms.toFixed(3)} ms${ms > 40 ? ' WARN >40ms' : ''}; ${checks} checks ALL PASS`);
+
+{ // OB-184b: cluster validation
+  const cl = { treeR: 5, near: 1.4, far: 0.4, patchM: 18, patchAmt: 0.3 };
+  validateDetailConfig({ layers: [{ ...layer, cluster: cl }] });
+  for (const c of [{ ...cl, treeR: 9 }, { ...cl, treeR: 0 }, { ...cl, near: -1 }, { ...cl, far: NaN }])
+    assert.throws(() => validateDetailConfig({ layers: [{ ...layer, cluster: c }] }), /cluster/);
+  assert.throws(() => validateDetailConfig({ layers: [{ ...layer, gpu: true, cluster: cl }] }), /cluster/);
+}

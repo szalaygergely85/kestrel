@@ -235,6 +235,12 @@ export function validateDetailConfig(cfg, typeNames = DETAIL_TYPES) {
     for (const k of ['jitter', 'fill', 'maxSlope', 'clearM']) number(l[k], `${key}.${k}`, 0);
     if (l.fill > 1) bad(`${key}.fill`);
     if (l.gpu !== undefined && typeof l.gpu !== 'boolean') bad(`${key}.gpu`); // ENV-01b (arch 38.62): GPU decor layer
+    if (l.cluster !== undefined) {   // OB-184b: undergrowth clustering (JS-only: the gpu mask ignores it)
+      const c = l.cluster;
+      if (!c || typeof c !== 'object' || Array.isArray(c) || l.gpu) bad(`${key}.cluster`);
+      for (const k of Object.keys(c)) number(c[k], `${key}.cluster.${k}`, 0);
+      if (!(c.treeR > 0 && c.treeR <= 8)) bad(`${key}.cluster.treeR`);   // 8 m tree grid searches +-1 cell only
+    }
     if (!l.ground || typeof l.ground !== 'object' || Array.isArray(l.ground)) bad(`${key}.ground`);
     l.ground = {};
     for (const [type, list] of Object.entries(layer.ground)) {
@@ -509,14 +515,7 @@ export class DetailScatterJob {
     if (!c) return false;
     const own = c.prism ? c.prism.r : Math.max(c.box.hx, c.box.hy);
     const t = this.trees, sp = this.terrain.recipe.recipe.forest.trees.species;
-    let grid = this._treeGrid;
-    if (!grid) {
-      grid = this._treeGrid = new Map();
-      for (let i = 0; i < t.count; i++) {
-        const k = Math.floor(t.x[i] / 8) * 100003 + Math.floor(t.y[i] / 8);
-        const a = grid.get(k); if (a) a.push(i); else grid.set(k, [i]);
-      }
-    }
+    const grid = this._treeGridOf();
     const cx = Math.floor(x / 8), cy = Math.floor(y / 8);
     for (let gx = cx - 1; gx <= cx + 1; gx++) for (let gy = cy - 1; gy <= cy + 1; gy++) {
       const a = grid.get(gx * 100003 + gy);
