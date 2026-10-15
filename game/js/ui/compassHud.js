@@ -101,6 +101,10 @@ export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
       }
       if (!kind && (resolveGiver(world, npcA) || resolveGiver(world, npcSA))) kind = 3;
     }
+    if (kind !== 1 && book.nextOffers && book.tracked() < 0) {   // QUEST-NEXT-GIVER-01: after a hand-in the follow-up giver is the target until the player accepts/tracks something (D-108 tracked quest still wins)
+      const offers = book.nextOffers();
+      for (let i = 0; i < offers.length; i++) if (offers[i].giver && world.resolve('giver', offers[i].giver, tmp)) { kind = 3; break; }
+    }
     if (!kind) return null;
     tgt.x = tmp.x; tgt.y = tmp.y; tgt.z = tmp.z; tgt.kind = kind; hasTarget = true;
     if (kind !== lastKind || Math.abs(tgt.x - lastX) > 0.5 || Math.abs(tgt.y - lastY) > 0.5) { flashPending = true; sectorOk = false; }   // moving beast = small drift, no re-flash

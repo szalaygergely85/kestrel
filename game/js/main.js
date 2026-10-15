@@ -219,6 +219,7 @@ import { createInventoryScreen } from './quest/inventoryScreen.js'; // US-091b +
 import { createQuestMarkers } from './quest/sim/questMarkers.js'; // QUEST-MARK-01w
 import { registerQuestMarks } from './quest/wire/questMarks.js';
 import { createQuestLogScreen, QUEST_LOG_KEYS } from './ui/questLog.js'; // QG-05
+import { GIVER_INFO } from './questNext.js'; // QUEST-NEXT-GIVER-01
 import { createCompassHud } from './ui/compassHud.js'; // COMPASS-02 (D-061)
 import { createCombatHud } from './ui/combatHud.js'; import { setEnemyBarsOn, setDamageNumbersOn } from './ui/combatHudFlags.js'; // HPBAR-02 + DMGNUM-01 (D-086)
 import { createCrafting } from './quest/sim/crafting.js'; // MAIN-WIRE-01: crafting list on C
@@ -1787,6 +1788,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
           if (name === 'quest:ready' && id === 'burl.boars' && dialogueCtl && dialogueCtl.open) burlReopen = true; // PO-CH1-07: boars were already dead when accepted -> Burl speaks again (the hand-in) once this box closes
           if (name === 'quest:done' && id === 'mq.smoke' && chapterCard2) chapterCard2.trigger(); // QL-17: Ch2 end card + journalCh2
           if (name === 'quest:done' && questPickups) questPickups.grantReward(saveRelay.quest.book.lastReward); // QUESTS-01: hand-in reward -> pack (+ toast)
+          if (name === 'quest:done' && tv && msg && saveRelay.quest.book.nextOffers) { const o = saveRelay.quest.book.nextOffers().find(x => x.from === id); if (o) tv.say('New quest: ' + (GIVER_INFO[o.giver] ? GIVER_INFO[o.giver].name : o.giver.charAt(0).toUpperCase() + o.giver.slice(1)) + ' has work for you', msg.fg); } // QUEST-NEXT-GIVER-01 (compass: compassHud.target)
           if (tv && msg) { const bk = saveRelay.quest.book, qt = (bk.def(bk.index(id)) || {}).title; if (name === 'quest:accepted') tv.say('Quest accepted: ' + qt, msg.fg); else if (name === 'quest:done') tv.say('Quest complete: ' + qt, msg.fg); }
         };
       }
