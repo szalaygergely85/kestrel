@@ -1170,3 +1170,4 @@ Browser check (main session): `node tools/capture-browser.mjs --port {port} --ur
 - dialogueCtl.js step(): an Accept/Exit offer node only accepts E after a step with no confirm press (`offerArmed`); the E that paged into it is swallowed. Q/digits unchanged.
 - Tests: m1FollowChain (asserts paging E leaves burl.follow offered, then release + E accepts / Q declines), ch1Walkthrough + questGiverFlow release before the deliberate press.
 - Suites m1FollowChain,dialogueView,questGiverFlow,ch1Walkthrough,dialogue: 7/7 PASS. Not browser-checked.
+- npcBear.test.js: Enter on choosing every 2nd step (release tick for offerArmed); no game change.
