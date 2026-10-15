@@ -395,7 +395,7 @@ export function makeInstanceGroup(modelKey, capacity) {
     drawCount: /** @type {[number, number]} */ ([0, 0]),
     shadowIb: /** @type {[InstanceBuffer, InstanceBuffer]} */ ([createInstanceBuffer(capacity), createInstanceBuffer(capacity)]),
     shadowCount: /** @type {[number, number]} */ ([0, 0]), shadowBand: new Uint8Array(capacity),
-    lodCells: 0, maxDistM: 0, castShadow: true, lodPrev: new Uint8Array(capacity), _R: 0,
+    lodCells: 0, maxDistM: 0, castShadow: true, lodPrev: new Uint8Array(capacity), _R: 0, radiusScale: 1,
     _memoFrameNo: /** @type {number|null} */ (null),
     // QUAT-LOD-01 part 2: near-LOD0 cap (0 = off) + its scratch, and the lazily-resolved LOD1 registry mesh for `g.mesh` groups.
     // R6b (38.60): tree card impostor, OFF unless the host calls enableGroupImpostor (impostorCard.js). cardIb = engine-owned card bucket.
@@ -542,7 +542,7 @@ export class InstanceGroups {
         if (!memo || g._memoFrameNo !== frameNo) {
           let R = groupRadius(draw, g.parts);
           if (draw1) { const R1 = groupRadius(draw1, g.parts); if (R1 > R) R = R1; }
-          g._R = R;
+          g._R = g.radiusScale > 1 ? R * g.radiusScale : R; // SAPLINGS: per-instance scale > 1 grows the cull radius
           const kept = compactGroup(g, planes, R, draw1 ? viewProj : null, draw1 ? (rows || 0) : 0, this.swayPad, this.eye);
           g._memoFrameNo = frameNo;
           this.stats.instances += kept;
@@ -575,14 +575,14 @@ export class InstanceGroups {
         computeGroupParts(pm, g.pose, g.parts);
         let R = groupRadius(mesh, g.parts);
         if (mesh1) { const R1 = groupRadius(mesh1, g.parts); if (R1 > R) R = R1; }
-        g._R = R;
+        g._R = g.radiusScale > 1 ? R * g.radiusScale : R; // SAPLINGS: per-instance scale > 1 grows the cull radius
         continue;
       }
       if (!memo || g._memoFrameNo !== frameNo) {
         computeGroupParts(pm, g.pose, g.parts);
         let R = groupRadius(mesh, g.parts);
         if (mesh1) { const R1 = groupRadius(mesh1, g.parts); if (R1 > R) R = R1; }
-        g._R = R;
+        g._R = g.radiusScale > 1 ? R * g.radiusScale : R; // SAPLINGS: per-instance scale > 1 grows the cull radius
         const kept = compactGroup(g, planes, R, viewProj || null, rows || 0, this.swayPad, this.eye);
         g._memoFrameNo = frameNo;
         this.stats.instances += kept;

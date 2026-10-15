@@ -64,6 +64,13 @@ export function bindDetailInstances(detail, instances, cfg, treeInstances = 0, g
     group.castShadow = def.shadow;
     groups.push(group);
   }
+  if (detail.scale) { // SAPLINGS: cull radius follows the largest per-instance scale of each group (1 = unchanged)
+    for (let i = 0; i < detail.count; i++) {
+      if (keep && !keep[i]) continue;
+      const grp = groups[groupOf[detail.species[i]]], sc = detail.scale[i];
+      if (sc > grp.radiusScale) grp.radiusScale = sc;
+    }
+  }
   for (let i = 0; i < detail.count; i++) {
     if (keep && !keep[i]) continue;
     writeScaledInstance(master, i, detail.x[i], detail.y[i], detail.z[i], detail.yawDeg[i], detail.scale ? detail.scale[i] : 1, DETAIL_OBJECT_BASE | i, 0);

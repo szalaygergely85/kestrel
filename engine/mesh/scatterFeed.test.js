@@ -217,4 +217,13 @@ const sum = frames();
 global.gc(); const growth = process.memoryUsage().heapUsed - before;
 ok(growth < 64 * 1024 && sum > 0);
 ok(walk.groups.every((g, i) => g.ib.u32 === buffers[i]));
+// SAPLINGS: cull radius follows the largest per-instance scale (> 1 only); unscaled groups keep radiusScale 1
+{
+  ok(bindDetailInstances(detail, registry(), cfg).groups.every(g => g.radiusScale === 1));
+  const sc2 = new Float32Array(detail.count).fill(0.5); sc2[0] = 2;
+  const scaled = bindDetailInstances({ ...detail, scale: sc2 }, registry(), cfg);
+  ok(scaled.groups.some(g => g.radiusScale === 2) && scaled.groups.every(g => g.radiusScale === 1 || g.radiusScale === 2));
+  const small = bindDetailInstances({ ...detail, scale: new Float32Array(detail.count).fill(0.5) }, registry(), cfg);
+  ok(small.groups.every(g => g.radiusScale === 1));
+}
 console.log(`scatterFeed: ${checks} checks PASS (1000 frames, retained heap delta ${growth} bytes)`);
