@@ -8,13 +8,16 @@ export const MAX_BARS = 3;
 
 const DIFF_RED = 2, DIFF_GREY = -2;
 
+/** HPBAR-03: shown-level shift per difficulty name (Easy -1, Normal 0, Hard +1). Unknown / absent -> 0. */
+export function diffShift(name) { return name === 'easy' ? -1 : name === 'hard' ? 1 : 0; }
+
 export function makeBarResult() {
   return { show: false, frac: 0, level: 0, name: '', tint: 'gold', id: '', x: 0, y: 0, z: 0, dist: 0, engaged: false, boss: false };
 }
 const _res = makeBarResult();
 
 /** Fills + returns `out` (default: one shared object - read it before the next call). */
-export function enemyBarModel(beast, band, now, playerBand = 1, out = _res) {
+export function enemyBarModel(beast, band, now, playerBand = 1, out = _res, shift = 0) {
   out.show = false;
   if (!beast || beast.dead || !(beast.hp > 0) || !(beast.maxHp > 0) || !beast.visible || !(beast.dist <= SHOW_RANGE_M)) return out;
   const relevant = beast.engaged || beast.targeted || (now - beast.hitAt) <= HIT_SHOW_SEC;
@@ -25,7 +28,8 @@ export function enemyBarModel(beast, band, now, playerBand = 1, out = _res) {
   if (out.boss) { out.level = 0; out.name = beast.bossName; out.tint = 'danger'; }
   else {
     const lv = beast.level > 0 ? beast.level | 0 : (band ? band.bandAt(beast.spawnX, beast.spawnY) : 1);
-    out.level = lv < 1 ? 1 : lv > 10 ? 10 : lv;
+    const sl = lv + shift; // HPBAR-03: band + difficulty shift, clamped 1..10
+    out.level = sl < 1 ? 1 : sl > 10 ? 10 : sl;
     out.name = beast.name;
     const d = out.level - playerBand;
     out.tint = d >= DIFF_RED ? 'danger' : d <= DIFF_GREY ? 'uiDim' : 'gold';
@@ -37,7 +41,8 @@ export function enemyBarModel(beast, band, now, playerBand = 1, out = _res) {
 
 /** Picks up to MAX_BARS bars from `count` beasts: engaged first, then nearest, ties by id. fill(i, rec) fills the reused record.
  * Returns the number of bars; results live in `bars.list[0..n)` (stable objects, overwritten next call). */
-export function createEnemyBars({ band = null, maxBars = MAX_BARS } = {}) {
+export function createEnemyBars({ band = null, maxBars = MAX_BARS, difficulty = 'normal' } = {}) {
+  let shift = diffShift(difficulty);
   const rec = { id: '', name: '', x: 0, y: 0, z: 0, spawnX: 0, spawnY: 0, hp: 0, maxHp: 0, dead: false, dist: 0, visible: true, engaged: false, targeted: false, hitAt: -Infinity, level: 0, bossName: '' };
   const tmp = makeBarResult();
   const list = [];
@@ -52,7 +57,7 @@ export function createEnemyBars({ band = null, maxBars = MAX_BARS } = {}) {
     n = 0;
     for (let i = 0; i < count; i++) {
       fill(i, rec);
-      enemyBarModel(rec, band, now, playerBand, tmp);
+      enemyBarModel(rec, band, now, playerBand, tmp, shift);
       if (!tmp.show) continue;
       let at = n;
       while (at > 0 && before(tmp, list[at - 1])) at--;
@@ -65,5 +70,5 @@ export function createEnemyBars({ band = null, maxBars = MAX_BARS } = {}) {
     }
     return n;
   }
-  return { select, list, get count() { return n; }, setBand(b) { band = b; } };
+  return { select, list, get count() { return n; }, setBand(b) { band = b; }, setDifficulty(name) { shift = diffShift(name); } };
 }
