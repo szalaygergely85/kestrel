@@ -1,6 +1,7 @@
 // AUD2-09: quest/save boot files, one fetch per file. A missing/bad file is logged by NAME and collected in `errors`
 // (the caller shows an on-screen notice) instead of one silent try/catch giving a quest-less game.
 import { expandAll } from './quest/sim/templates.js';
+import { normalizeQuestDef } from './quest/sim/questFormat.js';
 export const QUEST_FILES = {
   quest: '../content/quests/m1.quest.json',
   barks: '../content/dialogue/bear.barks.json',
@@ -47,6 +48,7 @@ export async function loadQuestFiles(getJson, { wantBarks = true, log = console.
     for (const e of ex.errors) { errors.push({ file: 'pack:' + (e.region || '?') + ':' + e.id, message: e.message }); log('[boot] quest ' + e.id + ': ' + e.message); }
     giverDefs = giverDefs.concat(ex.defs);
   }
+  if (giverDefs) giverDefs = giverDefs.map(normalizeQuestDef); // QUEST-FORMAT (D-106): new-format files read as the legacy shape everywhere
   return { questDef, bearBarks, giverDefs, charKit, errors };
 }
 
