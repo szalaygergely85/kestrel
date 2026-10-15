@@ -21,6 +21,7 @@
     "dialogue/warden_highpastures.dialogue.json",
     "dialogue/warden_northwood.dialogue.json",
     "levels/tower.level.json",
+    "levels/ford_cellar.level.json",
     "levels/test_room.level.json",
     "levels/waterfall_cliff.level.json",
     "worlds/waterfall_test.world.json",

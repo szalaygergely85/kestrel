@@ -543,7 +543,7 @@ export class NavGrid {
         if (!unwalkable && blockedTypes.indexOf(typeName) !== -1) {
           if (ford) { const d = ford.depthAt(x, y); if (d >= 0 && d < fordMax) wade = true; else unwalkable = true; } else unwalkable = true;
         }
-        if (!unwalkable && world.structureAt && world.structureAt(x, y)) unwalkable = true;
+        if (!unwalkable && world.structureAt && world.structureAt(x, y) && !(world.keepTerrainAt && world.keepTerrainAt(x, y))) unwalkable = true; // UNDER-00b: keepTerrain cells stay a normal field
         if (!unwalkable && mask && mask[i]) unwalkable = true;
         this.terrainCost[i] = unwalkable ? 0 : (wade ? fordCost : (typeCost[typeName] ?? 1));
       }

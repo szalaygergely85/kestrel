@@ -18,7 +18,7 @@ paletteMod; detailPassMod; terrainMod; geoMod;
 const G = globalThis.ASSETS.levels.world_geo;
 G.util.installGeo(globalThis.ASSETS.levels.overworld_far.util);
 const { assets } = await loadTestAssets();
-const w = World.load(assets.world('world_m1'), assets, { physics: 'grid' });
+const w = World.load(assets.world('world_m1'), assets, { physics: 'mesh' });
 // boot like main.js: authored goblin camps first (their homes are authored avoid points), then the shared plan (herd -> far camps)
 const goblinJson = JSON.parse(readFileSync(new URL('../content/life/goblinCamps.json', import.meta.url), 'utf8'));
 const warn = console.warn; console.warn = () => {};
