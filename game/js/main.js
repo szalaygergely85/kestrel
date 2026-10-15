@@ -130,6 +130,7 @@ import { createDirectorWire } from './quest/sim/directorWire.js'; // BEAST-06a m
 import { createSpawnDirector, buildGroups, regionalMembers } from './quest/sim/spawnDirector.js';
 import { spawnRegionalBeasts } from './quest/sim/regionalBeasts.js';
 import { setForestAmbienceSources } from './audio/forestAmbience.js'; // OB-184
+import { setUndergroundSources } from './audio/undergroundAmbience.js'; import { createUnderSpawner, UNDER_SITES } from './quest/sim/underSkeletons.js'; // UNDER-01 / UNDER-08
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
 import { ensureWolves } from './quest/sim/wolfBrain.js'; // WOLF-01
 import { ensureBears } from './quest/sim/bearBrain.js'; // BEAR-01 (D-069): black bears in Thornwood
@@ -1172,6 +1173,7 @@ async function runGame(mode, cinematic = null) {
   // WMP-05: map travel is refused in combat (aggro beast within 40 m or the hit-invuln window is up); same sim the hp-regen gate reads.
   const mapTravelBlocked = () => { const t = playerHandle && playerHandle.data.transform; return !!((vitals && vitals.invuln > 0) || (beasts && t && beasts.aggroNear(t.x, t.y, 40))); };
   let logicWire = null, logicUnreg = null; // ED-LOGIC-01c: rebuilt with the beast sim on every 'world:loaded'
+  let underSpawners = []; let underScene = 'outdoor'; // UNDER-01 spawners (rebuilt with the sim); UNDER-08 cached scene flag (written by the DN-03 block)
   let beasts = null; // US-079a (29.1): rebuilt on every 'world:loaded', below
   // ED-AI-RECV: editor Creatures tab -> sim.patchArchetype over BroadcastChannel; only editor play-test / ?dev=1, never capture/bench; getSim reads the current sim (survives world reloads)
   const aiDevRun = (params.get('playtest') === '1' || params.get('dev') === '1') && !isCaptureOrBench && params.get('capture') !== '1' && !navigator.webdriver; // ED-AI-06: editor live-test runs only
@@ -1641,6 +1643,9 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         dw = createDirectorWire({ director: dir, sim: beasts, events: engine.events }); dw.load(world.state); dirWire = dw;
       } catch (err) { console.warn('[director] wire failed:', err && err.message); dirWire = null; } }
       combatHud.setSim(beasts); // HPBAR-02 + DMGNUM-01
+      underSpawners = []; try { for (const site of UNDER_SITES) underSpawners.push(createUnderSpawner({ sim: beasts, site, state: world.state, structureAt: (x, y) => world.structureAt(x, y) })); } catch (err) { console.warn('[under] spawner failed:', err && err.message); underSpawners = []; } // UNDER-01
+      { const ce = world.entity && world.entity('cemetery1'), cp = ce && (ce.transform || ce); // UNDER-08: no cemetery entity -> module default anchor
+        setUndergroundSources({ anchors: cp && Number.isFinite(cp.x) ? [{ x: cp.x, y: cp.y }] : null, sceneOf: () => underScene, ambienceAt: (x, y) => { const st = world.structureAt(x, y); return (st && st.level && st.level.ambience) || null; }, hour: () => clockHour(world.state, clockCfg) }); }
       if (goblinWire) goblinWire.attach(beasts, { onClank: () => playShieldClank() }); // GOB-07b: camps + spear sim + view
       if (lifeWire) { lifeWire.dispose(); lifeWire = null; } // LIFE-08: night raids (content/life/raids.json), rebuilt with every beast sim
       if (raidDefs && !isCaptureOrBench && mode === 'world') lifeWire = createLifeWire({ ...raidDefs, campDefs: goblinWire ? goblinWire.campDefs : undefined, sim: beasts, events: engine.events, state: world.state, world, book: () => (saveRelay ? saveRelay.quest.book : null) });
@@ -2160,7 +2165,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
     }
     if (mode === 'world' && playerHandle && !paused) {
       if (clockDriver && !titleMenuActive) { const w = engine.world; tickClock(w.state, dt, clockCfg); clockDriver.update(w.state[CLOCK_KEY]);
-        if (atmosDrv) { const t = playerHandle.data.transform; const sceneNow2 = sceneOf(w, t, sceneScratch, dt, playerHandle.data.components.body); if (sceneNow2 !== sceneNow) { sceneNow = sceneNow2; if (postCfg0) { postCfg = resolvePost(window.POST_LOOK, params, postQ, sceneNow); postV = -2; } } atmosDrv.step(t.x, t.y, clockHour(w.state, clockCfg), dt, sceneNow === 'outdoor' && !!w.terrain /* REV-MAIN ENV-03 #3: only the overworld terrain world is outdoor */); if (atmosLast.w !== w) { atmosDrv.snap(); atmosLast.w = w; } /* #2: new world (world:loaded / respawn / restart / travel) -> snap now; teleports > 50 m snap inside the driver (atmosDriver.js) */ if (atmosDrv.out.version !== atmosV) { atmosV = atmosDrv.out.version; mixAtmos(atmosCfg.table, atmosDrv.active ? atmosDrv.out : null, atmosBase, atmosState); applyAtmosToPalette(assets.palette, atmosState); } } } // ENV-03 // DN-03: stops on title/pause (this block), runs through respawn/restart/travel
+        if (atmosDrv) { const t = playerHandle.data.transform; const sceneNow2 = sceneOf(w, t, sceneScratch, dt, playerHandle.data.components.body); underScene = sceneNow2; if (sceneNow2 !== sceneNow) { sceneNow = sceneNow2; if (postCfg0) { postCfg = resolvePost(window.POST_LOOK, params, postQ, sceneNow); postV = -2; } } atmosDrv.step(t.x, t.y, clockHour(w.state, clockCfg), dt, sceneNow === 'outdoor' && !!w.terrain /* REV-MAIN ENV-03 #3: only the overworld terrain world is outdoor */); if (atmosLast.w !== w) { atmosDrv.snap(); atmosLast.w = w; } /* #2: new world (world:loaded / respawn / restart / travel) -> snap now; teleports > 50 m snap inside the driver (atmosDriver.js) */ if (atmosDrv.out.version !== atmosV) { atmosV = atmosDrv.out.version; mixAtmos(atmosCfg.table, atmosDrv.active ? atmosDrv.out : null, atmosBase, atmosState); applyAtmosToPalette(assets.palette, atmosState); } } } // ENV-03 // DN-03: stops on title/pause (this block), runs through respawn/restart/travel
       if (ending || uiLocked || vLocked() || isNoteOpen()) { // OB-057 (owner): no movement while a note is open
         controls.forward = 0; controls.strafe = 0; controls.run = false; controls.jump = false;
       } else {
@@ -2226,7 +2231,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       stepAnimations(engine.world, dt * 1000);
       resolveBodyContacts(engine.world, playerHandle.data, engine.physics);
       const simDue = hitStop.due(1000 / 60); // HITSTOP-01: the window gates beasts.step only; the sword freezes by its own hitStopHard counter
-      if (beasts && simDue) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); if (dirWire) { forwardOf(look.yawDeg, swordFwd); dirWire.director.step(dt, pt.x, pt.y, swordFwd[0], swordFwd[1]); } if (beasts.tileMode && (++tileDormTick % 60) === 0) beasts.updateTileDormancy(pt.x, pt.y); } // WM-04: 200 m dormancy at ~1 Hz
+      if (beasts && simDue) { const pt = playerHandle.data.transform; beasts.step(pt.x, pt.y, pt.z); if (underSpawners.length) { forwardOf(look.yawDeg, swordFwd); const uh = clockHour(engine.world.state, clockCfg); for (let i = 0; i < underSpawners.length; i++) underSpawners[i].step(dt, pt.x, pt.y, pt.z, swordFwd[0], swordFwd[1], uh); } if (dirWire) { forwardOf(look.yawDeg, swordFwd); dirWire.director.step(dt, pt.x, pt.y, swordFwd[0], swordFwd[1]); } if (beasts.tileMode && (++tileDormTick % 60) === 0) beasts.updateTileDormancy(pt.x, pt.y); } // WM-04: 200 m dormancy at ~1 Hz
       if (goblinWire && simDue) { const pt = playerHandle.data.transform; goblinWire.step(engine.world.state['clock.day'] | 0, pt.x, pt.y); } // GOB-07b
       if (lifeWire && simDue) lifeWire.step(clockHour(engine.world.state, clockCfg)); // LIFE-08: raids roll at night
       if (wild) { const pt = playerHandle.data.transform; wild.step(dt, pt.x, pt.y, controls.run, look.yawDeg); if (regionAmb) regionAmb.step(dt, pt.x, pt.y); } // WILD-06: ambient only, never hashed
