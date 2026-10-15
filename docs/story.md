@@ -2592,3 +2592,83 @@ Hand-in (ROOK):
 - `Rest at the stone. Then find me here, at the ford.`
 
 Notes: Quest 8's hint lines say no names, no builder, and nothing about the signal. They leave room for the knot / Maren hook (section 9) and the deferred M4 reveal. "The eyes" is never explained in chapter 1. Burl's "Leather Armour" and Rook's "Spark" are plain item names (canon: Spark is the first spell). The quest 5 event replaces `rook.meet` for this chain, and the quest 7 lines replace `rook.ford` / `rook.mirror.*` once the owner approves.
+
+## Restless Graves (UNDER-07, writer DRAFT)
+
+Writer, 2026-10-15, for UNDER-07 (quests) + UNDER-02 (crypt). D-105: offered, then `Accept` / `Exit`; nothing auto-starts. D-106: begin / objectives / end + reward / next. ASCII, every line <= 56 chars, HUD objectives <= 38. Nobody says "Wick" or "relay". Keys and amounts are left to the programmer.
+
+Giver: **Bram, the post-keeper** (`postkeeper`). He keeps what people leave at the post, so an old key fits him; Rook would steal it, not keep it.
+
+### Q1 Restless Graves (Bram)
+
+Offer (BRAM):
+- `There's an old graveyard out along the road.`
+- `At night, something walks there. Bones, standing up.`
+- `I don't go there after dark. Not any more.`
+- `Go and look, after sundown. Will you?`
+
+Choices: `Accept` / `Exit`
+
+Journal (begin): `Bram says the dead walk at the old graveyard. Go there at night and see.`
+
+Objectives (HUD):
+1. `Visit the graveyard at night`
+2. `Kill 3 skeletons (0/3)`
+3. `Return to Bram at the post`
+
+Hand-in (BRAM):
+- `Three of them? And you walked back. Good.`
+- `Here, 20 coins. Grave work should pay.`
+- `There's more to this. Talk to me again.`
+
+Reward (toast): `Reward: 20 coins`
+
+### Q2 The Sealed Crypt (Bram)
+
+Offer (BRAM):
+- `By the graves there's a crypt. Sealed, years back.`
+- `This is its key. I've kept it long enough.`
+- `Go down and end what keeps them walking. Will you?`
+
+Choices: `Accept` / `Exit`
+
+On accept (toast): `Received: Crypt Key`
+
+Journal (begin): `Bram gave you the Crypt Key. Open the crypt by the graves and go down to the last room.`
+
+Objectives (HUD):
+1. `Open the crypt`
+2. `Reach the last room`
+3. `Take what was sealed in`
+4. `Return to Bram at the post`
+
+Hand-in (BRAM):
+- `Quiet down there now? Then it's done.`
+- `Keep what was in the chest. It's yours now.`
+- `And 2 Health Potions. Mind the stairs.`
+
+Reward (toast): `Reward: 2 Health Potions, XP`
+
+Closing line (BRAM, repeat talk after Q2):
+- `That banner down there. A tower with a light on it.`
+- `Like the far one. Folk here watched it too, once.`
+
+### Inside the crypt (inspect, `[E] Look`)
+
+Walls:
+- `Old brick, black with smoke. Names cut in rows.`
+- `Every name scraped off. Someone did not want them read.`
+
+A coffin:
+- `The lid is pushed aside. From the inside.`
+- `Dust and dry earth. Nothing lies in it now.`
+
+An old banner:
+- `A rotted banner. Under the dirt: a tower and a light.`
+- `The light is stitched in thread that is still teal.`
+
+The last chest (before room 3 is clear):
+- `Iron bands and a grey wax seal. Shut tight.`
+- `It will not open while the dead still walk here.`
+
+Notes: no family name on the crypt; the scraped names keep it canon-safe (a family name can be added later if the owner wants one). The banner and Bram's closing line only say that people once watched a light from a tower: no sender, no pattern, no date, so the deferred M4 "Signal Source" reveal stays open. Teal is the canon colour of magic; nothing here explains why the dead walk.
