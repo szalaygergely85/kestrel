@@ -124,6 +124,12 @@ export function waterHit(wb, sim, i, p) {
   sim.state[i] = ST_FLINCH; sim.timer[i] = HIT_FLINCH;
 }
 
+/** SPELL-R2 Freeze: a frozen croc lets go of the player (emits beast:grab off) and holds still `steps` steps (flinch = no movement). */
+export function waterFreeze(wb, sim, i, steps) {
+  if (sim.state[i] === ST_GRAB && wb.grabSlot === i) emitGrab(wb, i, 0);
+  sim.state[i] = ST_FLINCH; sim.timer[i] = steps; wb.mash[i] = 0;
+}
+
 function release(wb, i) {
   const sim = wb.sim;
   if (wb.grabSlot === i) emitGrab(wb, i, 0);

@@ -170,7 +170,7 @@ import { createHands } from './quest/sim/hands.js'; // HANDS-01b (37.8a)
 import { createFireballSim } from './quest/sim/fireball.js'; // SPELL-01a (37.14)
 import { defineGustFx } from './quest/gustView.js'; // SPELL-07b (view comes back in SPELL-R3)
 import { createFireballView } from './quest/fireballView.js'; // SPELL-01b (37.14 view)
-import { createSpellLightView } from './quest/spellLightView.js'; // SPELL-05b: Spark (Freeze) visuals
+import { createFreezeView } from './quest/freezeView.js'; import { createFreezeSim } from './quest/sim/freeze.js'; // SPELL-R2
 import { createShieldSim } from './quest/sim/shield.js'; // EQ-07 (38.41 a)
 import { createArrowSim } from './quest/sim/arrows.js'; // EQ-09 (38.41 b)
 import { createWetStones } from './quest/sim/wetStones.js'; // QL-19: wet ford stones + River Boots sure footing
@@ -1041,7 +1041,7 @@ const swordVmH = swordAssetDef ? (() => {
 // HANDS-01c: second handle (after the sword) = the spell hand's idle view; shown only while the spell item is in a hand.
 // HAND-WIRE-01: when the realistic hand asset is loaded it takes this handle (the glove stays the fallback). `spellVmH.vm/.glow` are shared.
 const handFxOn = !!(handDef && handDef.variants && assets.has('model', handDef.model));
-const slView = (window.ASSETS.spellFx && !isCaptureOrBench) ? createSpellLightView({ particles: engine.particles, palette: assets.palette, events: engine.events }) : null; // SPELL-05b (off in capture/bench)
+const slView = (window.ASSETS.spellFx && !isCaptureOrBench) ? createFreezeView({ particles: engine.particles, palette: assets.palette, events: engine.events }) : null; // SPELL-05b (off in capture/bench)
 const handFbExtra = (pool) => { fbView.extra(pool); pushHandFlame(spellVmH, pool); }; // HAND-FIRE-FX-01: one extra callback, created once
 const spellVmH = handFxOn ? loadHandFireView(engine.viewModel, handDef, gameVoxelPool) // idle-fire variants prebuilt; charge/cast variants build lazily on first use (boot budget)
   : (window.ASSETS && window.ASSETS.viewModels && window.ASSETS.viewModels.spellHand && spellHandLDef
@@ -1287,7 +1287,7 @@ async function runGame(mode, cinematic = null) {
   let offerToast = null, offerToastMsg = null; // toast once per new book.nextOffers() entry
   let equipPlay = null, shieldSim = null, arrowSim = null; // EQ-07/09: rebuilt on every 'world:loaded'
   let quickbar = null, qbView = null, qbTick = 0, qbBlocked = false; // EQ-12: sim rebuilt per world, view per page
-  let fireball = null, fbTargets = null, spellBook = null, spellCaster = null; // SPELL-01a (37.14): rebuilt with the sword sim on every 'world:loaded'
+  let fireball = null, freezeSim = null, fbTargets = null, spellBook = null, spellCaster = null; // SPELL-01a (37.14): rebuilt with the sword sim on every 'world:loaded'
   // US-091b: pack-screen mouse. Hover -> UI cell under the pointer; a click while open must not re-lock the pointer
   // (PlayerLook's own canvas click handler), so a capture listener on window swallows it first.
   canvas.addEventListener('mousemove', (e) => {
@@ -1707,7 +1707,8 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       spellBook = createSpellBook(world.state); spellCaster = createSpellDispatcher((id) => spellBook.tier(id) || (id === 'fireball' && fbOn ? 1 : 0)); // SPELL-04
       fireball = createFireballSim(world, engine.events, FIREBALL_CFG, fbTargets, { spendMana: (n) => vitals && vitals.spendMana(n), isEnabled: () => fireballOn(world, FEATURES), tier: () => spellBook.tier('fireball') || 1, damageMul: () => { const c = playerHandle && playerHandle.data.components; return computeTotals(c && c.rolledGear || null, fbTotals).fireDmgMul; } }); // INT: stats fireDmgMul at cast (rolled gear: rolledGear.js)
       hands.register('spell.fireball', fireball); spellCaster.register('fireball', () => fireball.requestTap());
-      // SPELL-R1 (D-115): only Fireball is registered; spell.freeze / telekinesis / teleport answer 'notImplemented' until SPELL-R2..R4
+      freezeSim = createFreezeSim(world, engine.events, fbTargets, { spendMana: (n) => vitals && vitals.spendMana(n), tier: () => spellBook.tier('freeze') || 1, damageMul: () => { const c = playerHandle && playerHandle.data.components; return computeTotals(c && c.rolledGear || null, fbTotals).fireDmgMul; } }); spellCaster.register('freeze', () => freezeSim.requestTap()); // SPELL-R2
+      // SPELL-R1 (D-115): Fireball + Freeze (R2) registered; spell.freeze / telekinesis / teleport answer 'notImplemented' until SPELL-R2..R4
       // EQ-07/09 (38.41): shield sim + arrow sim + the routing glue; shield/bow items get no-op sims so the router arms them (RMB -> left hand, LMB -> right hand)
       shieldSim = createShieldSim();
       arrowSim = createArrowSim(world, engine.events, BOW_CFG, fbTargets, wadeArrowHit);
@@ -1719,7 +1720,8 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       equipPlay = createEquipPlay({ hands, shield: shieldSim, arrows: arrowSim, defs: itemDefs || {}, bowCfg: BOW_CFG, swordDamage: SWORD_CFG.light.damage,
         say: (t) => { if (toasts) toasts.say(t, [226, 214, 176]); } });
       quickbar = itemDefs ? createQuickbar(itemDefs, undefined, (id, pl) => spellCaster ? spellCaster.cast(id, pl) : 'empty') : null; qbTick = 0; // EQ-12: sip timer lives per world
-      if (slView) slView.bind(null, lightSet); window.__debug.spells = { get caster() { return spellCaster; }, get book() { return spellBook; }, view: slView }; // SPELL-05b (+ tools/verify-spell-light.mjs)
+      if (slView) slView.bind(freezeSim, lightSet); // SPELL-R2
+      window.__debug.spells = { get caster() { return spellCaster; }, get book() { return spellBook; }, view: slView }; // SPELL-05b (+ tools/verify-spell-light.mjs)
       if (fbView) fbView.bind(fireball, lightSet); // SPELL-01b: 4 flight + 2 flash + 1 ember light, never removed
       if (practiceTarget) practiceTarget.dispose();
       practiceTarget = createPracticeTarget(world, engine.events, SWORD_CFG); // US-078d (30.1)
@@ -2339,6 +2341,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
           forwardOf(look.yawDeg, swordFwd);
           const pr = look.pitchDeg * DEG2RAD, cp = Math.cos(pr);
           fireball.step(playerHandle.data, fbOn && hands.downOf('spell.fireball'), swordFwd[0], swordFwd[1], swordFwd[0] * cp, swordFwd[1] * cp, Math.sin(pr));
+          if (freezeSim) freezeSim.step(playerHandle.data, swordFwd[0] * cp, swordFwd[1] * cp, Math.sin(pr)); // SPELL-R2 (aim as the fireball)
           if (slView) slView.stepFx(); // SPELL-05b
           if (fbView) fbView.stepFx(); // SPELL-01b: trail emitters + burst particles (sim side, hashed)
           if (fbOn && handFxOn && spellVmH && !cinematic) { // HAND-WIRE-02 (FB-01: locked = no hand fire): hand embers / ignite / charge sparks, sim side
