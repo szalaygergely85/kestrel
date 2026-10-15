@@ -8,7 +8,7 @@
 // so `playing` is false and the engine's `stepAnimations` never double-advances them; `hurt`/`flinch`/state clips
 // are let to play normally (playing true). `hidden` hides the instance at STATE_GONE (the US-079b0 voxel-pool skip).
 import { yawFromDelta } from '../../../engine/index.js';
-import { STATE_WANDER, STATE_EAT, STATE_WINDUP, STATE_RECOVER, STATE_BITE, STATE_NOTICE, STATE_RETURN, STATE_CHASE, STATE_FLINCH, STATE_DYING, STATE_CORPSE, STATE_SINK, STATE_GONE } from './sim/beastSim.js';
+import { STATE_CHARGE, STATE_WANDER, STATE_EAT, STATE_WINDUP, STATE_RECOVER, STATE_BITE, STATE_NOTICE, STATE_RETURN, STATE_CHASE, STATE_FLINCH, STATE_DYING, STATE_CORPSE, STATE_SINK, STATE_GONE } from './sim/beastSim.js';
 
 const STEP_MS = 1000 / 60; // one fixed sim step in ms (die/sink clip t is derived from sim step counters)
 const HURT_STEPS = 10;     // 37.16.2: the view shows `hurt` while hurtT < 10 (the flash + follow-through window)
@@ -28,6 +28,17 @@ function wolfClip(clip, st, fleeing) {
   const name = WOLF_STATE_NAMES[st];
   if (m && name && m[name]) return m[name];
   return clip === 'charge' ? 'run' : clip === 'windup' ? 'crouch' : clip;
+}
+// CLIP-WIRE (OB-153): ASSETS.beastClipsFx models (deer/fox/goat/tortoise) - CHARGE (melee active window) -> attack, chase / charge /
+// fleeing (return or any alive moving state) -> charge, via beastClipsFx.clipFor.state (fallbacks: attack / charge). Other kinds untouched.
+export function beastClipsClip(model, clip, st, fleeing, moving) {
+  const fx = globalThis.ASSETS && globalThis.ASSETS.beastClipsFx;
+  if (!fx || !fx.models || fx.models.indexOf(model) < 0 || clip === 'hurt' || clip === 'flinch') return clip;
+  const m = (fx.clipFor && fx.clipFor.state) || {};
+  if (st === STATE_CHARGE) return m.attack || 'attack';
+  if (fleeing && (st === STATE_RETURN || st === STATE_CHASE || st === STATE_WANDER) && moving !== false) return m.flee || 'charge';
+  if (st === STATE_CHASE && clip !== 'idle') return m.chase || 'charge';
+  return clip;
 }
 // SWIM-ASSETS-01: ASSETS.eatFx.models (fox/wolf/bear/bearBlack) carry an appended 'eat' clip; other models keep idle.
 function eatClip(model) {
@@ -127,6 +138,7 @@ export function presentBeasts(sim, world, overlay, styleIds, anim, legs, cam, bl
     let vst = st;
     if (sim.moving && !sim.moving[i] && (st === STATE_WANDER || st === STATE_CHASE || st === STATE_RETURN)
         && clip !== 'hurt' && clip !== 'flinch') { clip = 'idle'; vst = STATE_EAT; }
+    if (v.model !== 'wolf') clip = beastClipsClip(v.model, clip, st, sim.fleeing && sim.fleeing[i], sim.moving ? !!sim.moving[i] : undefined); // CLIP-WIRE
     if (v.model === 'wolf') clip = wolfClip(clip, vst, sim.fleeing[i]); // WOLF-D1: wolfFx.clipFor names
     if (v.model === 'crocodile' && clip !== 'hurt' && clip !== 'die' && clip !== 'dead' && clip !== 'sink') { // BEAST-09a: water-slot states (waterBrain ST_*) -> crocFx.clipFor.state
       const cf = globalThis.ASSETS && globalThis.ASSETS.crocFx, nm = CROC_STATE_NAME[st];
