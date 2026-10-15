@@ -22,6 +22,7 @@ export const CHEST_TABLES = {
   chestCellar1: { fixed: [{ item: 'berry.blue', n: 3 }, { item: 'honeycomb', n: 1 }], weighted: [] },
   chestCellar2: { fixed: [{ item: 'boar.meat', n: 2 }, { item: 'arrow', n: 8 }], weighted: [] },
   chestCellar3: { fixed: [{ item: 'potion.hp', n: 1 }], weighted: [] },
+  chestCrypt: { fixed: [{ item: 'arrow', n: 10 }, { item: 'potion.hp', n: 1 }], weighted: [], gear: { tier: 'sturdy' } }, // UNDER-02: the earned crypt chest (opens after room 3's skeletons are dead; modest gear reward)
   chestHidden: { fixed: [], weighted: [], gear: { tier: 'fine' } },
   chestBed: { fixed: [{ item: 'arrow', n: 10 }], weighted: [], gear: { tier: 'sturdy' } }, // SWIM-04d: Glasswater lake-bed chest (needsBottom)
   chestForge: { fixed: [{ item: 'gear.main.sword.sturdy', n: 1 }], weighted: [] }, // EQ-20: Outwall forge chest (a sturdy sword). Band 5+ chests: add `weapon: { tier: 'fine' }`.
