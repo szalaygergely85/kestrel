@@ -9,19 +9,19 @@ import { hashU } from '../../life/schedule.js';
 export const TACT_MELEE = 0, TACT_RANGED = 1, TACT_CASTER = 2, TACT_SWARM = 3; // sim.tactRole values
 export const TOK_NONE = 0, TOK_M = 1, TOK_R = 2, TOK_S = 3;                       // token class held by a slot
 export const TACT_TUNING = Object.freeze({ tokR: 2, tokS: 2, tokMByDifficulty: Object.freeze({ easy: 1, normal: 2, hard: 3 }),
-  holderTimeout: 180, reassignEvery: 30, flankR: 5, swarmR: 2, strafeM: 2, strafeEvery: 120, casterBehindM: 6, allyR: 18 });
+  holderTimeout: 180, reassignEvery: 30, flankR: 5, flankRHard: 4.5, flankREasy: 8, flankByDifficulty: Object.freeze({ easy: 0, normal: 1, hard: 2 }), swarmR: 2, strafeM: 2, strafeEvery: 120, casterBehindM: 6, allyR: 18 });
 // 6 unit vectors, 60 deg apart (literal table, no trig). Slot k sits at angle 60*k.
 export const FLANK_X = Object.freeze([1, 0.5, -0.5, -1, -0.5, 0.5]);
 export const FLANK_Y = Object.freeze([0, 0.8660254037844386, 0.8660254037844386, 0, -0.8660254037844386, -0.8660254037844386]);
 
 export function createTactics(maxSlots, seed) {
   const T = {
-    seed: seed >>> 0, tick: 0, tokM: TACT_TUNING.tokMByDifficulty.normal, // Normal until difficulty.js exists
+    seed: seed >>> 0, tick: 0, tokM: TACT_TUNING.tokMByDifficulty.normal, flankLv: 1, // Normal until difficulty.js exists
     held: new Uint8Array(maxSlots), heldT: new Uint16Array(maxSlots), tg: new Uint8Array(maxSlots), // tg = swarm group id
     flank: new Int8Array(maxSlots).fill(-1), strafeDir: new Int8Array(maxSlots).fill(1),
     nM: 0, nR: 0, nS: new Uint8Array(256), maxMelee: 0, out: { x: 0, y: 0, speed: 1 },
   };
-  T.setDifficulty = (d) => { T.tokM = TACT_TUNING.tokMByDifficulty[d] || 2; };
+  T.setDifficulty = (d) => { T.tokM = TACT_TUNING.tokMByDifficulty[d] || 2; const f = TACT_TUNING.flankByDifficulty[d]; T.flankLv = f === undefined ? 1 : f; }; // flankLv 0 = packs do not flank, 1 = ring r 5, 2 = tighter ring (flankRHard)
   /** true if slot i holds (or just got) a token of class cls */
   T.request = (i, cls) => {
     if (T.held[i]) return true;
@@ -67,6 +67,7 @@ function assignFlanks(sim, S) {
       let best = -1e18;
       for (let k = 0; k < 6; k++) { const d = FLANK_X[k] * dx + FLANK_Y[k] * dy; if (d > best + 1e-9) { best = d; anchor = k; } }
     }
+    if (T.flankLv === 0) { T.flank[i] = anchor; continue; } // Easy: no surround - every waiter holds the same side (anchor) of the ring
     T.flank[i] = rank < 3 ? (anchor + 2 * rank) % 6 : (anchor + 2 * (rank - 3) + 1) % 6;
     rank = (rank + 1) % 6;
   }
@@ -79,7 +80,7 @@ export function tacticsSteer(sim, i, S) {
   const role = sim.tactRole[i], w = sim.waiting[i];
   if (role === TACT_MELEE || role === TACT_SWARM) {
     if (w !== 1 || T.flank[i] < 0) return false;
-    const k = T.flank[i], r = role === TACT_SWARM ? TACT_TUNING.swarmR : TACT_TUNING.flankR;
+    const k = T.flank[i], r = role === TACT_SWARM ? TACT_TUNING.swarmR : (T.flankLv === 2 ? TACT_TUNING.flankRHard : T.flankLv === 0 ? TACT_TUNING.flankREasy : TACT_TUNING.flankR);
     o.x = px + FLANK_X[k] * r; o.y = py + FLANK_Y[k] * r; o.speed = 0.8; return true;
   }
   const dx = st.x[i] - px, dy = st.y[i] - py, d = Math.sqrt(dx * dx + dy * dy) || 1;

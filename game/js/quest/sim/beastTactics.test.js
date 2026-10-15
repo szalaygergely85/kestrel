@@ -81,7 +81,7 @@ for (const [diff, cap] of [['normal', 2], ['easy', 1], ['hard', 3]]) {
 { const dot = (a, b) => FLANK_X[a] * FLANK_X[b] + FLANK_Y[a] * FLANK_Y[b];
   ok('flank table unit vectors', FLANK_X.every((x, k) => Math.abs(x * x + FLANK_Y[k] * FLANK_Y[k] - 1) < 1e-9));
   ok('slots 0/2/4 and 1/3/5 are 120 deg apart (cos -0.5)', [[0, 2], [2, 4], [4, 0], [1, 3], [3, 5], [5, 1]].every(([a, b]) => Math.abs(dot(a, b) + 0.5) < 1e-9)); }
-{ const { world, sim } = mk(Array(6).fill('grey_wolf')); sim.tactics.setDifficulty('easy'); // 1 token -> circlers
+{ const { world, sim } = mk(Array(6).fill('grey_wolf')); sim.tactics.setDifficulty('normal'); // 2 tokens -> 4 circlers (Easy flank=0 stacks them on one side)
   const px = HX + 4, py = HY - 8, z = world.terrain.heightAt(px, py); let okSp = false, got = '';
   const d = (x, y) => Math.abs(FLANK_X[x] * FLANK_X[y] + FLANK_Y[x] * FLANK_Y[y] + 0.5) < 1e-9;
   for (let t = 0; t < 900 && !okSp; t++) { sim.step(px, py, z);

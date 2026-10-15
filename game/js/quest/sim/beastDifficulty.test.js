@@ -83,6 +83,23 @@ ok(`notice time Easy > Normal > Hard (${ns.easy}/${ns.normal}/${ns.hard} steps)`
 { const { sim } = one('normal'); const t0 = sim.tactics.tokM; sim.setDifficulty('hard');
   ok('live switch: leash / tokens / difficulty row', sim.dm.leash === resolveDifficulty('hard').leash && sim.tactics.tokM === 3 && t0 === 2 && sim.difficulty.name === 'hard'); }
 
+// BH2-G1 eliteChance: seeded per-slot roll, Normal/Easy never, Hard some (more hp via +2 levels)
+{
+  const kinds = Array(12).fill('grey_wolf'), cnt = (d, sd) => { const { sim } = mk(kinds, d, sd); let n = 0; for (let i = 0; i < 12; i++) n += sim.elite[i]; return { sim, n }; };
+  const ne = cnt('normal'), ee = cnt('easy'), he = cnt('hard'), he2 = cnt('hard');
+  ok(`elites: Normal/Easy none, Hard some but not all (${ne.n}/${ee.n}/${he.n})`, ne.n === 0 && ee.n === 0 && he.n > 0 && he.n < 12);
+  ok('elites: deterministic (same seed, same slots)', he.sim.elite.join() === he2.sim.elite.join());
+}
+// BH2-G1 flank: Easy = no flank slots, Hard = tighter ring than Normal
+{
+  const f = (d) => { const T = createTactics(4, 1); T.setDifficulty(d); return T; };
+  ok('flank levels: Easy 0 / Normal 1 / Hard 2', f('easy').flankLv === 0 && f('normal').flankLv === 1 && f('hard').flankLv === 2);
+  const run = (d) => { const { world, sim } = mk(Array(6).fill('grey_wolf'), d); const px = HX, py = HY - 6, z = world.terrain.heightAt(px, py); let fl = 0;
+    for (let t = 0; t < 600; t++) { sim.step(px, py, z); let m = 0; for (let i = 0; i < 6; i++) if (sim.tactics.flank[i] >= 0) m |= 1 << sim.tactics.flank[i]; let c = 0; for (; m; m &= m - 1) c++; /* distinct ring slots */ if (c > fl) fl = c; }
+    return fl; };
+  const fe = run('easy'), fn = run('normal'), fh = run('hard');
+  ok(`flank slots used Easy one side, Normal/Hard spread (${fe}/${fn}/${fh})`, fe === 1 && fn > 1 && fh > 1);
+}
 // vitals: playerDmg scales damage the player takes
 function taken(diff) {
   const listeners = []; const events = { on: (n, f) => { listeners.push(f); return () => {}; }, emit() {} };
