@@ -71,6 +71,8 @@
       // later (35.3 / 143b2) + 141a flow (live):
       bands: '-~=~', glintCos: 0.985, crestK: 0.6,
       streak: '-', streakLen: 1.0, streakW: 0.35, streakK: 0.7,
+      // WATER-FINISH-01b (38.77): far-bank reflection + shallow caustic flicker (moderate; 0 = off)
+      reflScreenK: 0.5, reflDim: 0.7, causticK: 0.1, causticDepth: 0.8, causticRGB: [150, 200, 215], causticGlyph: '~',
     },
     // Small still ponds: reed / algae green, shallow bowl, slow drift; scum + reed line at the shore.
     pond: {
@@ -86,6 +88,7 @@
       foamRamp: 'o:.', foamDepth: 0.25, foamFar: 30,
       bands: '-~.~', glintCos: 0.99, crestK: 0.7,
       streak: '-', streakLen: 0.8, streakW: 0.3, streakK: 0.8,
+      reflScreenK: 0.4, reflDim: 0.65, causticK: 0.06, causticDepth: 0.5, causticRGB: [150, 190, 150], causticGlyph: '.', // WATER-FINISH-01b: still pond, subtle
     },
     // Flooded cellars / bog: brown silt, opaque within half a metre, barely moves, dark mud at the edge.
     murky: {
@@ -117,6 +120,7 @@
       streak: '=', streakLen: 2.2, streakW: 0.3, streakK: 0.78, // OB-062: '=' differs from the ramp glyphs, longer along the flow, more of them; // OB-045: 0.8 -> 0.88, fewer pale flow dashes (side-on they read as bands)
       shoreFade: 0.45, // OB-062: alpha fades over the last 0.45 m of depth (was 0.15 = hard edge)
       streakT: 0.8, rapidFoam: 0.7, riverFarM: 1200,
+      reflScreenK: 0.35, reflDim: 0.7, causticK: 0.14, causticDepth: 0.7, causticRGB: [190, 230, 235], causticGlyph: '~', // WATER-FINISH-01b: ford shallows sparkle, bank mirrors faintly
     },
   };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -605,8 +605,8 @@ function buildCompareRuns(ctx) {
       return [x, y, zTop + 0.6 - slope * s, hw, speed];
     });
   };
-  const riverPose = (id, pts, hw, slope, speed) => () => {
-    worldM1.water = createWater(collectWaterDefs({ water: [{ id, shape: 'river', path: riverPath(pts, hw, slope, speed), look: 'water', feather: 1.5 }] }, []));
+  const riverPose = (id, pts, hw, slope, speed, look = 'water') => () => {
+    worldM1.water = createWater(collectWaterDefs({ water: [{ id, shape: 'river', path: riverPath(pts, hw, slope, speed), look, feather: 1.5 }] }, []));
     worldM1.water.setTickForTest(600);
   };
   const bendPts = Array.from({ length: 16 }, (_, i) => [waterEye.x + 6 - 20 * i, waterEye.y + 10 * Math.sin(i * 0.7)]);
@@ -617,6 +617,14 @@ function buildCompareRuns(ctx) {
   runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: riverFord (RIVER-03, shallow reach, grazing, shore foam on the bank contour, tick 600, t 10 s)',
     cam: { x: waterEye.x + 6, y: waterEye.y + 5, z: groundZ(waterEye.x, waterEye.y) + engine.physics.eyeHeight, yawDeg: 250, pitchDeg: -4 }, real: true, meshOnly: true, sun: SUN_135_30, timeSec: 10,
     before: riverPose('cmp.riverFord', fordPts, 5, 0.01, 0.8) });
+  // WATER-FINISH-01b (38.77): the design looks carry reflScreenK / causticK. waterReflectLake: a 14 m-radius lake 22 m ahead seen grazing from the shore (far bank mirrored, shear);
+  // waterCausticFord: the 'river' look ford reach, shallow bed with caustic flicker + faint bank reflection (sun up, t 10 s).
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: waterReflectLake (WATER-FINISH-01b, 28 m lake 8 m ahead, far-bank screen reflection, shear pitch -3, sun az 135 el 30)',
+    cam: { x: waterEye.x, y: waterEye.y, z: groundZ(waterEye.x, waterEye.y) + engine.physics.eyeHeight, yawDeg: 270, pitchDeg: -3 }, real: true, meshOnly: true, sun: SUN_135_30, timeSec: 10,
+    before: waterPose([{ id: 'cmp.reflLake', shape: 'circle', c: [waterEye.x - 22, waterEye.y], r: 14, z: groundZ(waterEye.x - 22, waterEye.y) + 0.9, look: 'water' }]) });
+  runs.push({ world: worldM1, lights: worldM1Lights, name: 'world_m1: waterCausticFord (WATER-FINISH-01b, river look ford, shallow caustics, grazing, tick 600, t 10 s)',
+    cam: { x: waterEye.x + 6, y: waterEye.y + 5, z: groundZ(waterEye.x, waterEye.y) + engine.physics.eyeHeight, yawDeg: 250, pitchDeg: -4 }, real: true, meshOnly: true, sun: SUN_135_30, timeSec: 10,
+    before: riverPose('cmp.riverFordCaustic', fordPts, 5, 0.01, 0.8, 'river') });
   // US-055a (architecture.md 38.47): wade splash droplets (pooled particles) + 3 ripple rings at fixed ages, on the ford reach.
   // Particles are cleared before every pose; fb.ripples is set only for this pose and reset next to that clear().
   const wadeRipples = createRipples();

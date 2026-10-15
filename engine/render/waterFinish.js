@@ -9,6 +9,8 @@ import { hashFastU } from './terrainShade.js';
 /** Slot count of the JS-twin water table (== waterLook.js WF_SLOTS; literal here to avoid an import cycle). */
 export const WF_SLOTS = 14;
 
+/** First river-ribbon slot (== water.js WATER_RIVER_SLOT0; literal here to avoid an import cycle). */
+const RIVER_SLOT0 = 12;
 export const WF_STRIDE = 8;
 export const WF_CAUSTIC_K = 0, WF_CAUSTIC_DEPTH = 1, WF_CAUSTIC_R = 2, WF_CAUSTIC_GLYPH = 5, WF_REFL_K = 6, WF_REFL_DIM = 7;
 /** Reflected cell must lie this far (m) behind the water point, else the sky reflection stays (38.77 A). */
@@ -48,6 +50,11 @@ export function fillWaterFinishTable(sel, world, looks, out) {
     const ri = sel.region[s];
     out.set(byName.get(wt.lookNames[wt.look[ri]]) || fb, s * WF_STRIDE);
   }
+  const rc = sel.riverCount || 0; // WATER-FINISH-01b: river ribbons (slots 12..13, waterLook.js RIVER_SLOT0) take their look's finish row too (ford shallows)
+  for (let k = 0; k < rc && RIVER_SLOT0 + k < WF_SLOTS; k++) {
+    const s = RIVER_SLOT0 + k, ri = sel.region[s];
+    out.set(byName.get(wt.lookNames[wt.look[ri]]) || fb, s * WF_STRIDE);
+  }
   return out;
 }
 
@@ -73,17 +80,32 @@ export function reflAccept(rowM, rows, waterKindM, gKindM, depthM, dW) {
   return rowM >= 0 && rowM < rows && waterKindM !== 1 && gKindM !== 0 && depthM > dW + REFL_MIN_BEHIND;
 }
 
-// WGSL twin text for 01b (informative; 01b owns the binding and the compileFn parity probe). `rowM`/accept/caustic must be exact.
+/** Pitched mirror cell of a water point (38.77 A; twin of waterComposite.js mirrorPitched = projectDirPitched with the mirrored dz). Scalars only. */
+export function pitchedMirrorCol(dx, dy, dz, vd, rX, rY, tanHalfX, cols) {
+  const vx = dx * rX + dy * rY;
+  return Math.floor((vx / vd / tanHalfX + 1) * (cols / 2) - 0.5 + 0.5);
+}
+export function pitchedMirrorRow(dx, dy, dz, vd, uX, uY, uZ, tanHalfY, rows) {
+  const vy = dx * uX + dy * uY + dz * uZ;
+  return Math.floor((1 - vy / vd / tanHalfY) * (rows / 2) + 0.5);
+}
+
+// WGSL twin (WATER-FINISH-01b): interpolated into waterComposite.wgsl.js (needs hashFastU from HASH_FAST_WGSL in scope); parity-probed
+// against the JS fns above in engine/render/gpu/wgsl/waterFinish.wgsl.test.js. Scalars only so compileFn can run them.
 export const WATER_FINISH_WGSL = /* wgsl */`
-// per-slot finish row: fin[slot*2] = (causticK, causticDepth, causticR, causticG) ; fin[slot*2+1] = (causticB, glyphCode, reflScreenK, reflDim)
 fn shearMirrorRow(horizonRow: f32, row: i32) -> i32 { return i32(floor(2.0 * horizonRow - f32(row) + 0.5)); }
+fn pitchedMirrorCol(dx: f32, dy: f32, dz: f32, vd: f32, rX: f32, rY: f32, tanHalfX: f32, cols: i32) -> i32 {
+  let vx = dx * rX + dy * rY;
+  return i32(floor((vx / vd / tanHalfX + 1.0) * (f32(cols) / 2.0) - 0.5 + 0.5));
+}
+fn pitchedMirrorRow(dx: f32, dy: f32, dz: f32, vd: f32, uX: f32, uY: f32, uZ: f32, tanHalfY: f32, rows: i32) -> i32 {
+  let vy = dx * uX + dy * uY + dz * uZ;
+  return i32(floor((1.0 - vy / vd / tanHalfY) * (f32(rows) / 2.0) + 0.5));
+}
 fn reflAccept(rowM: i32, rows: i32, waterKindM: u32, gKindM: u32, depthM: f32, dW: f32) -> bool {
-  return rowM >= 0 && rowM < rows && waterKindM != 1u && gKindM != 0u && depthM > dW + 1.0;
+  return rowM >= 0 && rowM < rows && waterKindM != 1u && gKindM != 0u && depthM > dW + ${REFL_MIN_BEHIND}.0;
 }
 fn causticHit(px: f32, py: f32, t: f32, k: f32) -> bool {
-  let h = hashFastU(i32(floor(px / 0.7)), i32(floor(py / 0.7)), i32(floor(t * 3.0)));
+  let h = hashFastU(i32(floor(px / ${CAUSTIC_CELL})), i32(floor(py / ${CAUSTIC_CELL})), i32(floor(t * ${CAUSTIC_HZ}.0)));
   return f32(h >> 8u) * (1.0 / 16777216.0) > 1.0 - k;
-}
-// caustic: if (!opaque && !sheet && !isSky && !shore && k > 0 && column < depth && sunI > 0 && causticHit(floorP.x, floorP.y, t, k)) {
-//   glyph = glyphCode; fg += rgb * kSun * (1 - a); }   // after the see-through mix, before byte()
-// screen reflection (opaque, reflOn, rK > 0): m = min(1, F * rK); fg/bg += (shadedBg(col,rowM) * dim - c) * m   // after the sky reflection`;
+}`;
