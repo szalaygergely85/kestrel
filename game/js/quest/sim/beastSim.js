@@ -200,6 +200,7 @@ export function createBeastSim(world, opts) {
       fail: new Uint8Array(MAX_BEASTS), st: new Uint8Array(MAX_BEASTS),
       wall: new Uint8Array(MAX_BEASTS), // BH-A3: charge wall-slow streak (was aliased onto `unseen`, which perceiveOne rewrites)
     },
+    chargeLen: new Uint16Array(MAX_BEASTS), // OB-150: steps this charge may last (nominal chargeMax, longer when the player already backs away)
     bankT: new Int32Array(MAX_BEASTS),      // NAV-REACH-01: steps a chaser has held at the nearest reachable cell (partial path) before giving up
     bankHold: new Uint8Array(MAX_BEASTS),   // 1 while holding at that cell (speed 0, faces the player)
     partialGoal: new Uint8Array(MAX_BEASTS),// last A* for this slot was partial (goal unreachable)
@@ -953,6 +954,17 @@ function enterWindup(sim, i) {
   sim.timer[i] = sim.ssteps[i].windup;
 }
 
+/** OB-150: a boar/wolf charge is a straight line locked at the end of the wind-up. A player walking straight away (3.5 m/s) used
+ * to outlast the nominal 1.2 s / 0.5 s: the beast stopped 3-6 m short ("they can't touch me"). Run long enough to close the
+ * gap to a player jogging off at CHARGE_FLEE_MS (cap 2.5x nominal). Bears / goblins keep their short swipe / lunge. */
+const CHARGE_FLEE_MS = 4.0;
+function chargeStepsFor(sim, i, d) {
+  const nominal = sim.ssteps[i].chargeMax, v = sim.scfg[i].charge;
+  if (sim.bear[i] || sim.goblin[i] || v <= CHARGE_FLEE_MS + 1) return nominal;
+  const need = Math.ceil(((d + 1) / (v - CHARGE_FLEE_MS)) / SIM_STEP);
+  return Math.min(Math.max(nominal, need), Math.round(nominal * 2.5));
+}
+
 function enterCharge(sim, i, px, py) {
   const steer = sim.steer;
   const dx = px - steer.x[i], dy = py - steer.y[i];
@@ -960,7 +972,7 @@ function enterCharge(sim, i, px, py) {
   sim.cdx[i] = d > 1e-9 ? dx / d : sim.fx[i];
   sim.cdy[i] = d > 1e-9 ? dy / d : sim.fy[i];
   sim.state[i] = STATE_CHARGE;
-  sim.timer[i] = sim.ssteps[i].chargeMax;
+  sim.timer[i] = sim.chargeLen[i] = chargeStepsFor(sim, i, d);
   sim.stk.wall[i] = 0; // BH-A3: charge wall-slow streak
   steer.accel[i] = CHARGE_ACCEL * (sim.scfg[i].charge / sim.cfg.charge); // WOLF-01: faster leap -> proportionally harder start (ratio 1 for boars)
 }
@@ -1418,7 +1430,7 @@ function chargePost(sim, i, px, py) {
   const steer = sim.steer;
   const dx = steer.x[i] - sim.prevX[i], dy = steer.y[i] - sim.prevY[i];
   const moved2 = dx * dx + dy * dy;
-  const chargeStep = sim.ssteps[i].chargeMax - sim.timer[i];
+  const chargeStep = Math.max(sim.chargeLen[i], sim.ssteps[i].chargeMax) - sim.timer[i]; // OB-150: chargeLen is 0 when a test forces STATE_CHARGE
   const thresh = WALL_SPEED_FRAC * sim.scfg[i].charge * SIM_STEP;
   if (chargeStep >= 4) {
     if (moved2 < thresh * thresh) {

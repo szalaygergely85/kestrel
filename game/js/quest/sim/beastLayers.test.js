@@ -75,7 +75,7 @@ ok('whenHit: provoked goat notices', sees('mountain_goat', 0, -5, (s) => { s.pro
   let px = HX, py = HY - 8, z = world.terrain.heightAt(px, py), chased = false, returned = false;
   for (let t = 0; t < 120; t++) { sim.step(px, py, z); if (sim.state[0] === STATE_CHASE) chased = true; }
   py = HY - 70; z = world.terrain.heightAt(px, py);
-  for (let t = 0; t < 240; t++) { sim.step(px, py, z); if (sim.state[0] === STATE_RETURN || sim.state[0] === STATE_WANDER) returned = true; }
+  for (let t = 0; t < 480; t++) { sim.step(px, py, z); if (sim.state[0] === STATE_RETURN || sim.state[0] === STATE_WANDER) returned = true; }
   ok('tank chased then gave up past loseR', chased && returned, `chased=${chased} returned=${returned}`); }
 // lose-sight: forced unseen count past the per-slot limit
 { const { world, sim } = mk(['skeleton_archer']);

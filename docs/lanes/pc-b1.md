@@ -1183,3 +1183,8 @@ Browser check (main session): `node tools/capture-browser.mjs --port {port} --ur
   Not touched: questBook.js/main.js. Other sq.* with burl.home flag are covered the same way. Owner to confirm at the waystone (no browser run).
 - npcBear.test.js: Enter on choosing every 2nd step (release tick for offerArmed); no game change.
 - compassChain.test (kestrel-4, uncommitted, test only): D-105 follow is only offered after the boar hand-in; test now adds burl.follow to the book, asserts the compass points at Burl before accept, book.accept('burl.follow') before the follow step, flagMap gets quest.burl.follow.done. Compass code correct, unchanged. compassChain,compass,m1FollowChain PASS.
+
+## OB-150 step 2 (enemies hit the player) - kestrel-3, branch ob150
+- Probe+test `game/js/quest/sim/beastHitsPlayer.test.js` (1 beast vs standing / walking-away (3.5 m/s) player). Before: standing player hit by boar 5.1 s, wolf 4.8, bear 5.5, goblin 10.5 (contact 0.9 m, wind-ups 0.5/0.5/0.8/0.5 s, all >= 0.3; enemy reach 0.9 m < sword 2.2 m by design); walking-away: boar MISS (min dist 2.8 m), wolf MISS (3.6 m): charge 1.2 s / 0.5 s ended short of the locked-in target.
+- Fix (`beastSim.js`, new `chargeStepsFor`, `chargeLen`): boar/wolf charge lasts long enough to catch a player fleeing at 4 m/s (cap 2.5x nominal); bear swipe + goblin lunge unchanged. After: boar HIT 12.2 s, wolf HIT 7.6 s walking away. Reach/windup untouched.
+- Re-recorded beastGolden hash, beastLayers loseR window 240 -> 480 ticks. Open: walking-away bear/goblin still miss (by design, later steps). Not engine/ (game/js/quest/sim), no arch-review.
