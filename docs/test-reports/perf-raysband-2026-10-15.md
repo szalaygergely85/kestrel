@@ -1,16 +1,18 @@
-# RTX-RAYS-BAND-01 resolve-pass bench (38.79), 2026-10-15 - NOT MEASURED (blocked)
+# RTX-RAYS-BAND-01 resolve cost, ultra, raysFarM 40 vs 0 (2026-10-15, bench5, RTX, headless)
 
-Goal: ultra resolve pass <= 0.9 ms with raysFarM=40 vs 0 (median of >= 5 flips) at forest / meadow / ford poses, RTX 4060.
+Tool: `PORT=9730 node tools/_bandflip.mjs <poses>`; 6 alternating flips per pose (>= 5), each flip waits 2 s then takes ~3 s of raw per-frame WebGPU timestamp samples (median per flip, median of the 6 flips). `ms`, resolve pass slot 3 and sum of all pass slots.
 
-| pose | resolve ms (raysFarM=40) | resolve ms (raysFarM=0) | verdict |
-|---|---|---|---|
-| forestFloor, hillside, meadowDetail, fordDetail | n/a | n/a | blocked |
+| pose | resolve ms band 40 | resolve ms band 0 | total GPU ms band 40 | total band 0 |
+|---|---|---|---|---|
+| forestFloor | 0.58 | 0.57 | 5.65 | 5.63 |
+| hillside | 0.32 | 1.41 | 2.93 | 6.96 |
+| meadowDetail | 0.41 | 0.45 | 4.05 | 4.10 |
+| fordDetail | 0.44 | 0.54 | 3.82 | 4.36 |
 
-## What happened
-- `tools/bench-presets.mjs 9740 --poses meadowDetail --rays 4 --quality ultra` prints "GPU timestamp queries unavailable" (frame p50 17.6 ms only). Same on bench5 head (integ5).
-- `tools/_bandflip.mjs` (new, flips `wgPipeline.resolveBandM` 40/0 inside one page load, 6 alternating flips x 8 samples, reads `stats.wgPassMsP50[3]`) also gets NaN, even with `--enable-webgpu-developer-features`, `?f3=1`, and `setPassTiming(true)`.
-- Probe in page: `device.timer.available=true`, `_passTimingOn=true`, `offReason=null`, ported passes include resolve, but `timer._serial=0` (no span ever resolved), `stats.drawMs=0`: the headless WG pipeline is not drawing frames (rAF deltas run at ~17 ms), so no timestamps exist. Cause not found (stop rule / 25-call cap).
-- Not measured, so the PO condition (<= 0.9 ms) is neither confirmed nor refuted. Note an `_bandflip` run was done while no other test was known to be running.
+Reading: the band only pays where far geometry dominates (hillside -1.1 ms resolve, -4.0 ms total); close/forest poses are neutral.
 
-## Next
-Find why headless `?pose=...&quality=ultra` shows `drawMs=0` (try headed browser via `--headless=old`/non-headless, or `?gpu=1`), then rerun `node tools/_bandflip.mjs forestFloor,meadowDetail,fordDetail` (ports 9730/9731 hard-coded).
+## Why the earlier bench "did not draw"
+integ5 DID render at first, then the frame loop died after ~55 frames: `ReferenceError: world is not defined` in `update()` (game/js/main.js, UNDER-LIGHT-CREEP-01 wiring from the `creepwire` merge used a bare `world`; fixed to `engine.world`). After that timestamps stop (frame serial frozen), so `drawMs` 0 / frozen P50. Not a GPU or timestamp problem. Note `stats.drawMs` is 0 on gpufix4 as well (WG path never writes it); gpuMsP50 is the number.
+Also `_bandflip.mjs` now logs page exceptions/console errors (`cdp.onEvent(method, params)`).
+
+gpucompare (bench5, rtx4060 baseline): 1 PASS->FAIL `signal tower`, NEW FAIL `shaftForestHigh` (shaft frame B), several NEW PASS; log not committed. Needs a look by the render owner (not bisected).

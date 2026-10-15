@@ -2340,7 +2340,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       if (waterfallHooks) waterfallHooks.step();
       { const pt = playerHandle.data.transform; leafFall.step(engine.world.scatter, engine.world.wind, pt.x, pt.y, clothTick); } // WIND-GUST-01b
       if (ambientMotes) { const pt = playerHandle.data.transform; ambientMotes.step(pt.x, pt.y, pt.z); if (fireflies) fireflies.step(pt.x, pt.y); } // S8-B1-18: position lives on .transform
-      if (underCreep && playerHandle) { const pt = playerHandle.data.transform, st = world.structureAt(pt.x, pt.y); const amb = (st && st.level && st.level.ambience) || null; underCreep.step(amb, pt.x, pt.y, pt.z); if (amb && underCreep.out.w > 0 && creepFirst.first(st.id || st.name || amb)) playRelayHum(); // chill cue, once per site per session
+      if (underCreep && playerHandle) { const pt = playerHandle.data.transform, st = engine.world.structureAt(pt.x, pt.y); const amb = (st && st.level && st.level.ambience) || null; underCreep.step(amb, pt.x, pt.y, pt.z); if (amb && underCreep.out.w > 0 && creepFirst.first(st.id || st.name || amb)) playRelayHum(); // chill cue, once per site per session
         applyCreepLights(lightSet, underCreep.out, creepSt); } // UNDER-LIGHT-CREEP-01
       entityEmitters.sync(); engine.particles.step();
       if (waterfallHooks) waterfallHooks.afterStep();
