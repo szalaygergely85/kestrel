@@ -69,8 +69,13 @@
 
       forest: {
         label: 'Pine / oak forest',
-        pick: { ground: 'A', atmos: 'A' },
+        pick: { ground: 'D', atmos: 'A' },   // OB-184 part 4: D = mossy leaf-litter floor (A was flat dark brown)
         ground: {
+          D: { name: 'Mossy leaf litter', glyphs: ' .,`', ramp: ['#25402a', '#3b5226', '#574428', '#6e5a30'], bg: ['#0f1e12', '#241c12'],   // mossDark / moss + litter browns of A
+               noiseScale: 3, macroScale: 16, contrast: 0.6,
+               shimmer: { amp: 0.05, mode: 'sheen', lean: ' .,`', sheen: 0.1 },
+               accents: [{ g: ',', c: '#5f7a34', d: 0.05, cluster: 0.8, maxDist: 30 },               // moss flecks
+                         { g: '`', c: '#6e5a30', d: 0.03, cluster: 0.5, maxDist: 25 }] },          // dry leaves
           A: { name: 'Needle litter (pine)', glyphs: '.,:;', ramp: ['#3a2e1c', '#574428', '#6e5a30', '#7a7038'], bg: ['#16110a', '#241c12'],
                noiseScale: 2.5, macroScale: 14, contrast: 0.5,
                shimmer: { amp: 0.08, mode: 'sheen', lean: '.,:;', sheen: 0.15 },
