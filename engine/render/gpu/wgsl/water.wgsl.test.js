@@ -80,7 +80,7 @@ assert.deepEqual(['gridCols', 'sunMapOn', 'projMode', 'sunDir', 'ambientI', 'sun
 assert.equal(C.field('wl').count, WL_SLOTS * (WL_STRIDE / 4)); assert.equal(C.field('wfog').count, 5);
 assert.equal(C.field('ripple').count, RIPPLE_SLOTS); // S8-B2-13b (38.14): 8 vec4 rings, appended after rippleGlyph/rippleGain + 2 pad words
 assert.equal(C.field('ripple').offset, 128 + (WL_SLOTS * WL_STRIDE + 5 * 4) * 4 + 16);
-assert.equal(C.sizeBytes, 128 + (WL_SLOTS * (WL_STRIDE / 4) + 5) * 16 + 16 + RIPPLE_SLOTS * 16 + 16 + 32 * 16); // 3568 B (AUD-42: + reflectU vec4 + 32-sample sky LUT; was 3040)
+assert.equal(C.sizeBytes, 128 + (WL_SLOTS * (WL_STRIDE / 4) + 5) * 16 + 16 + RIPPLE_SLOTS * 16 + 16 + 32 * 16 + 28 * 16); // WATER-FINISH-01b: + fin (14 slots x 2 vec4) = 4464 B; was 4016 B (AUD-42: + reflectU vec4 + 32-sample sky LUT; was 3040)
 assert.deepEqual(WATER_COMPOSITE_TEXTURES, ['float', 'float', 'uint', 'uint', 'uint', 'uint']);
 assert.deepEqual(WATER_COMPOSITE_TARGETS, ['rgba8', 'rgba8']);
 const kinds = { float: 'texture_2d<f32>', uint: 'texture_2d<u32>' };
@@ -106,12 +106,12 @@ assert.ok(numericLiterals(wgslC.replaceAll('0.4794', '0.4795')).has(0.4795) && !
 // --- ripples (S8-B2-13b, 38.14, the note of record): WGSL ring-loop twin probe vs waterLook.rippleAccAt + mutation ---
 {
   const rStart = WATER_COMPOSITE_WGSL.indexOf('var acc: f32 = 0.0;');
-  const rEnd = WATER_COMPOSITE_WGSL.indexOf('if (acc >= ', rStart);
+  const rEnd = WATER_COMPOSITE_WGSL.indexOf('return acc;', rStart); // WATER-FINISH-01b: the loop now lives in fn rippleAccAt(px, py)
   assert.ok(rStart > 0 && rEnd > rStart, 'ripple ring loop text found');
   const build = (transform) => {
     let loopText = WATER_COMPOSITE_WGSL.slice(rStart, rEnd).replace('wu.rippleCount', 'cnt').replace('wu.ripple[ri]', 'rip[ri]');
     if (transform) loopText = transform(loopText);
-    const probeSrc = `alias Ring8 = array<vec4f, ${RIPPLE_SLOTS}>;\nfn rippleProbe(cnt: i32, rip: Ring8, P: vec3f) -> f32 {\n${loopText}\nreturn acc;\n}`;
+    const probeSrc = `alias Ring8 = array<vec4f, ${RIPPLE_SLOTS}>;\nfn rippleProbe(cnt: i32, rip: Ring8, P: vec3f) -> f32 {\nlet px = P.x; let py = P.y;\n${loopText}\nreturn acc;\n}`;
     return compileFn(probeSrc, 'rippleProbe', shims);
   };
   const f = build();

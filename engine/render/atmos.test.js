@@ -16,7 +16,9 @@ import { ensureGcChild, heapGrowth } from '../test/allocGate.js';
 ensureGcChild();
 globalThis.window = globalThis.window || globalThis; paletteMod; detailPassMod;
 const { assets } = await loadTestAssets();
-const P = assets.palette;
+// CLOUD-LIVE-01: morning now carries a clouds block; this suite's goldens are the cloudless sky, so strip it on a shallow copy.
+const P0 = assets.palette;
+const P = { ...P0, timeOfDay: { ...P0.timeOfDay, [P0.defaultTime]: { ...P0.timeOfDay[P0.defaultTime], clouds: undefined } } };
 const LL = (() => { const root = {}; new Function('window', readFileSync(new URL('../../design/preview/look-lib.js', import.meta.url), 'utf8'))(root); return root.LOOKLIB; })();
 
 // ---- fog fit

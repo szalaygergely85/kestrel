@@ -15,6 +15,7 @@ import { SUN_N_SHIFT, SUN_N_MASK, CLOUD_Q_SHIFT } from '../../shadowSun.js'; // 
 import { WL_STRIDE, WL_SLOTS, WATER_HASH_SALT, WATER_FLOW_SALT, WATER_FALL_SALT, RIPPLE_SLOTS, RIPPLE_ACC_MIN } from '../../waterLook.js';
 import { SKY_LUT_N } from './skyLut.js';
 import { WATER_REFLECT } from '../../waterReflect.js'; // AUD-42: constants shared with the JS twin
+import { WF_SLOTS, WATER_FINISH_WGSL } from '../../waterFinish.js'; // WATER-FINISH-01b (38.77): finish row + reflection/caustic helpers
 import { RIPPLE_SPEED, RIPPLE_W, RIPPLE_LIFE } from '../../../fx/ripples.js'; // S8-B2-13b (38.14, the note of record)
 
 export const WATER_COMPOSITE_VECS_PER_SLOT = WL_STRIDE / 4;
@@ -37,6 +38,7 @@ export const WATER_COMPOSITE_BLOCK = defineUniformBlock('WaterCompositeU', [
   { name: 'ripple', type: 'vec4', count: RIPPLE_SLOTS }, // x, y, age, amp per live ring, densely packed
   { name: 'reflectU', type: 'vec4' }, // AUD-42: x = sky elevTop (deg; 0 = no sky LUT -> reflection off)
   { name: 'skyLut', type: 'vec4', count: SKY_LUT_N }, // AUD-42: baked sky gradient rgb (0..255), same bake as shade's uSky
+  { name: 'fin', type: 'vec4', count: WF_SLOTS * 2 }, // WATER-FINISH-01b: per-slot finish row (waterFinish.js WF_STRIDE=8 = 2 vec4): (causticK, depth, R, G) (B, glyph, reflK, reflDim); all 0 = off
 ]);
 export const WATER_COMPOSITE_TEXTURES = Object.freeze(['float', 'float', 'uint', 'uint', 'uint', 'uint']);
 export const WATER_COMPOSITE_TARGETS = Object.freeze(['rgba8', 'rgba8']);
@@ -57,6 +59,7 @@ ${BYTE_OUT_WGSL}
 ${CELL_RAY_WGSL}
 ${CELL_RAY_PITCHED_WGSL}
 ${FULLSCREEN_VS_WGSL}
+${WATER_FINISH_WGSL}
 
 fn fogScaleCell(row: i32, rows: i32) -> f32 {
   return select(pitchFogScale(row, rows, wu.pitchC.y, wu.pitchC.z, wu.pitchC.w, wu.projMode == 2), 1.0, wu.projMode == 0);
@@ -68,6 +71,27 @@ fn diamondAngle(dx: f32, dy: f32) -> f32 {
   if (d < 1.0e-9) { return 0.0; }
   let p = dy / d;
   return select(select(p, 4.0 + p, dy < 0.0), 2.0 - p, dx < 0.0);
+}
+
+// splash ripple accumulator at the water point (px, py): fixed 8 with an early break (uniform trip count); shared by the glyph block and the reflection wobble
+fn rippleAccAt(px: f32, py: f32) -> f32 {
+  var acc: f32 = 0.0;
+  for (var ri: i32 = 0; ri < ${RIPPLE_SLOTS}; ri = ri + 1) {
+    if (ri >= wu.rippleCount) { break; }
+    let rp = wu.ripple[ri];
+    let age = rp.z;
+    let amp = rp.w;
+    let r = ${RIPPLE_SPEED} * age;
+    let dx = px - rp.x;
+    let dy = py - rp.y;
+    let d = sqrt(dx * dx + dy * dy);
+    let band = 1.0 - abs(d - r) / ${RIPPLE_W};
+    if (band > 0.0) {
+      let term = amp * band * (1.0 - age / ${RIPPLE_LIFE});
+      acc = max(acc, term);
+    }
+  }
+  return acc;
 }
 
 struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
@@ -93,6 +117,7 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
   let sheet = (w.w & 32u) != 0u;
   let ribbon = (w.w & 64u) != 0u; // RIVER-03 (38.45): river ribbon texel (w = slot | back<<4 | 1<<6 | rapidQ<<8 | e*1000<<16, z = tau)
   let lb = i32(w.w & 15u) * ${WL_STRIDE / 4};
+  let finSlot = min(i32(w.w & 15u), ${WF_SLOTS - 1}); // WATER-FINISH-01b row index (slots >= WF_SLOTS read the last row, which is 0 for river/sheet)
   let r0 = wu.wl[lb]; let r1 = wu.wl[lb + 1]; let r2 = wu.wl[lb + 2]; let r3 = wu.wl[lb + 3];
   let opaqueAt = r0.w; let seeThrough = r1.w; let bgK = r3.y;
   let nGlyph = i32(r3.x);
@@ -106,8 +131,8 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
   else { P = cellRayPitched(vec2f(cell), grid, vec3f(wu.posX, wu.posY, wu.eyeH), wu.pitchA.xyz, wu.pitchB.xy, vec3f(wu.pitchB.zw, wu.pitchC.x), vec2f(wu.pitchA.w, wu.pitchC.y), dW, wu.projMode == 2); }
 
   var column = 1.0e30;
+  var floorP = vec3f(0.0);
   if (!isSky) {
-    var floorP: vec3f;
     if (wu.projMode == 0) { floorP = cellRayP(vec2f(cell), grid, wu.posX, wu.posY, wu.eyeH, wu.dirX, wu.dirY, wu.planeX, wu.planeY, wu.horizonRow, wu.planeDistY, raw); }
     else { floorP = cellRayPitched(vec2f(cell), grid, vec3f(wu.posX, wu.posY, wu.eyeH), wu.pitchA.xyz, wu.pitchB.xy, vec3f(wu.pitchB.zw, wu.pitchC.x), vec2f(wu.pitchA.w, wu.pitchC.y), raw, wu.projMode == 2); }
     column = max(0.0, P.z - floorP.z);
@@ -190,6 +215,34 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
       let rBody = (1.0 - ${WATER_REFLECT.darken} * (1.0 - rF)) * (1.0 - rkS);
       wc = wc * rBody + rsky * rkS;
       wb = wb * rBody + rsky * rkS;
+      let fin1 = wu.fin[finSlot * 2 + 1];
+      if (fin1.z > 0.0) { // WATER-FINISH-01b (38.77 A): screen-space reflection of the far bank (twin of waterComposite.js)
+        var rowM = -1; var colM = cell.x;
+        if (wu.projMode == 0) { rowM = shearMirrorRow(wu.horizonRow, cell.y); }
+        else {
+          let pdx = P.x - wu.posX; let pdy = P.y - wu.posY; let pdz = -(P.z - wu.eyeH);
+          let pvd = pdx * wu.pitchA.x + pdy * wu.pitchA.y + pdz * wu.pitchA.z;
+          if (pvd > 1.0e-9) {
+            colM = pitchedMirrorCol(pdx, pdy, pdz, pvd, wu.pitchB.x, wu.pitchB.y, wu.pitchA.w, wu.gridCols);
+            rowM = pitchedMirrorRow(pdx, pdy, pdz, pvd, wu.pitchB.z, wu.pitchB.w, wu.pitchC.x, wu.pitchC.y, wu.gridRows);
+          }
+        }
+        if (rowM >= 0 && rowM < grid.y && colM >= 0 && colM < grid.x) {
+          if (wu.rippleCount > 0 && rippleAccAt(P.x, P.y) >= ${RIPPLE_ACC_MIN}) { rowM = rowM + select(-1, 1, (cell.x & 1) != 0); } // ripple wobble
+          let mc = vec2i(colM, rowM);
+          if (rowM >= 0 && rowM < grid.y) {
+            let mwx = textureLoad(uWater, mc, 0).x;
+            let mk = giKind(textureLoad(uGI, mc, 0).y);
+            let md = bitcast<f32>(textureLoad(uDepth, mc, 0).r);
+            if (reflAccept(rowM, grid.y, select(0u, 1u, mwx != 0x7f800000u), mk, md, dW)) {
+              let rmm = min(rF * fin1.z, 1.0);
+              let mcol = floor(textureLoad(uShadeBg, mc, 0).rgb * 255.0 + 0.5) * fin1.w;
+              wc = wc + (mcol - wc) * rmm;
+              wb = wb + (mcol - wb) * rmm;
+            }
+          }
+        }
+      }
     }
   }
 
@@ -197,22 +250,7 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
   // glyph); fixed 8 with an early break (uniform control flow) so rippleCount never varies the loop trip count
   // across invocations. glyph/gain are a single global uniform now, not a per-slot look field.
   if (!sheet) {
-    var acc: f32 = 0.0;
-    for (var ri: i32 = 0; ri < ${RIPPLE_SLOTS}; ri = ri + 1) {
-      if (ri >= wu.rippleCount) { break; }
-      let rp = wu.ripple[ri];
-      let age = rp.z;
-      let amp = rp.w;
-      let r = ${RIPPLE_SPEED} * age;
-      let dx = P.x - rp.x;
-      let dy = P.y - rp.y;
-      let d = sqrt(dx * dx + dy * dy);
-      let band = 1.0 - abs(d - r) / ${RIPPLE_W};
-      if (band > 0.0) {
-        let term = amp * band * (1.0 - age / ${RIPPLE_LIFE});
-        acc = max(acc, term);
-      }
-    }
+    let acc = rippleAccAt(P.x, P.y);
     if (acc >= ${RIPPLE_ACC_MIN}) {
       glyph = f32(wu.rippleGlyph);
       wc = wc + (vec3f(255.0) - wc) * (acc * wu.rippleGain);
@@ -262,6 +300,14 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
     let fgOld = floor(sfg.rgb * 255.0 + 0.5); let bgOld = floor(sbg.rgb * 255.0 + 0.5);
     if (!shore) { fgc = fgOld + (fgc - fgOld) * a; }
     bgc = bgOld + (bgc - bgOld) * a;
+  }
+  if (!opaque && !shore && !isSky && !sheet && wu.sunDir.z > 0.0 && wu.sunI > 0.0) { // WATER-FINISH-01b (38.77 B): shallow caustic flicker on the see-through bed
+    let fin0 = wu.fin[finSlot * 2]; let fin1c = wu.fin[finSlot * 2 + 1];
+    if (fin0.x > 0.0 && column < fin0.y && causticHit(floorP.x, floorP.y, wu.timeSec, fin0.x)) {
+      glyph = fin1c.y;
+      let kc = k * (1.0 - a);
+      fgc = fgc + vec3f(fin0.z, fin0.w, fin1c.x) * kc;
+    }
   }
   o.fg = vec4f(toByte01(fgc.r), toByte01(fgc.g), toByte01(fgc.b), toByte01(glyph));
   o.bg = vec4f(toByte01(bgc.r), toByte01(bgc.g), toByte01(bgc.b), 1.0);

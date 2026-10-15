@@ -29,6 +29,7 @@ import {
   WL_STRIDE, WL_SLOTS, WFOG_LEN, RIPPLE_SLOTS, DEFAULT_RIPPLE_GLYPH, DEFAULT_RIPPLE_GAIN,
   defaultWaterLooks, resolveWaterLooks, fillWaterSlotTable, waterFogParams,
 } from '../../waterLook.js';
+import { WF_STRIDE, WF_SLOTS, fillWaterFinishTable } from '../../waterFinish.js'; // WATER-FINISH-01b (38.77)
 import { SKY_LUT_N } from '../wgsl/skyLut.js';
 import { skyLutFromPalette } from '../../waterReflect.js';
 import { sunFromWorld } from '../../lighting.js';
@@ -45,7 +46,7 @@ const C_PA = CF('pitchA'), C_PB = CF('pitchB'), C_PC = CF('pitchC'), C_WL = CF('
 // S8-B2-13b (38.14, the note of record): splash ripples. `rippleCount` (i32), the global `rippleGlyph`/`rippleGain`
 // uniform (fb overrides, else waterLook.js defaults), and `ripple` (8 x vec4: x, y, age, amp per live ring).
 const C_REFLECT = CF('reflectU'), C_SKYLUT = CF('skyLut'); // AUD-42
-const C_UNDER_ON = CF('underOn');
+const C_UNDER_ON = CF('underOn'), C_FIN = CF('fin');
 const C_RIPPLE_COUNT = CF('rippleCount'), C_RIPPLE_GLYPH = CF('rippleGlyph'), C_RIPPLE_GAIN = CF('rippleGain'), C_RIPPLE = CF('ripple');
 
 export class WgWaterPass {
@@ -62,6 +63,7 @@ export class WgWaterPass {
     this.wlTable = new Float32Array(WL_SLOTS * WL_STRIDE);
     this.wfog = new Float32Array(WFOG_LEN);
     this.waterOS = new Float32Array(WL_SLOTS * 2);
+    this.finTable = new Float32Array(WF_SLOTS * WF_STRIDE); this._finCur = new Float32Array(WF_SLOTS * WF_STRIDE); this.finUploads = 0; // WATER-FINISH-01b: own small array, uploaded on change only
     this.sunScratch = { dirX: 0, dirY: 0, dirZ: 1, ambientI: 0, sunI: 0 };
     this.cam = { posX: 0, posY: 0, eyeH: 0, dirX: 0, dirY: 0, planeX: 0, planeY: 0, horizonRow: 0, planeDistY: 0 };
     this.wu = new Float32Array(WATER_BLOCK.sizeWords); this.wi = new Int32Array(this.wu.buffer); this.wb = new Uint32Array(this.wu.buffer);
@@ -140,6 +142,7 @@ export class WgWaterPass {
       const t = this.wlTable, os = this.waterOS;
       fillWaterSlotTable(sel, world, this.looks, t, (p._fb && p._fb.timeSec) || 0);
       waterFogParams(p._table, p._palette, !!world.terrain, this.wfog);
+      fillWaterFinishTable(sel, world, this.looks, this.finTable); // 0 alloc; compared + copied into the UBO in runComposite
       for (let s = 0; s < WL_SLOTS; s++) { os[s * 2] = t[s * WL_STRIDE + 3]; os[s * 2 + 1] = t[s * WL_STRIDE + 7]; }
     } else this.stats.waterDraws = 0;
     return this.active;
@@ -239,6 +242,10 @@ export class WgWaterPass {
       cu[C_PC] = q.uZ; cu[C_PC + 1] = q.tanHalfY; cu[C_PC + 2] = q.cosP; cu[C_PC + 3] = q.sinP;
     }
     cu.set(this.wlTable, C_WL); cu.set(this.wfog, C_WFOG);
+    const ft = this.finTable, fc = this._finCur; // WATER-FINISH-01b: re-copy the finish rows only when a slot's look changed (the UBO keeps the old words otherwise)
+    let finDirty = false;
+    for (let k = 0; k < ft.length; k++) if (ft[k] !== fc[k]) { finDirty = true; break; }
+    if (finDirty) { fc.set(ft); cu.set(ft, C_FIN); this.finUploads++; }
     const pal = p._palette; // AUD-42: re-bake only when the palette / time of day changes
     if (pal !== this._lutPal || (pal && (pal.defaultTime !== this._lutTime || (pal.liveLookVersion | 0) !== this._lutVer || (pal.liveFogVersion | 0) !== this._lutFogVer))) { // ENV-03c: + liveFogVersion (haze) // DN-02: also on liveLookVersion (twin: waterComposite.js)
       this._lutBakes++; this._lutPal = pal; this._lutTime = pal ? pal.defaultTime : null; this._lutVer = pal ? (pal.liveLookVersion | 0) : 0; this._lutFogVer = pal ? (pal.liveFogVersion | 0) : 0; this._lutTop = skyLutFromPalette(pal, this._lut);

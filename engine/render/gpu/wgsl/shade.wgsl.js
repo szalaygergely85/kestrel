@@ -30,6 +30,9 @@ import { WET_DARK, WET_SPEC } from '../../detailShade.js';
 import { VEG_TINT_WGSL } from '../../../mesh/vegTint.js'; // AUD-47
 import { SUN_N_SHIFT, SUN_N_MASK, CLOUD_Q_SHIFT } from '../../shadowSun.js'; // CLOUD_Q_SHIFT: S8-B2-12c (38.13)
 import { SKY_GLOW_WGSL } from '../../skyGlow.js';
+import { SHADE_SHAFT_WGSL, SHAFT_SHIFT, SHAFT_Q } from '../../lightShaft.js'; // CANOPY-SHAFT-01b (38.76)
+import { SKY_NIGHT_WGSL } from '../../skyNight.js'; // NIGHT-SKY-01
+import { SKY_CLOUD_WGSL } from '../../skyCloud.js'; // CLOUD-FLUFF-01b
 import { FOG_SHAPE_WGSL } from '../../fogShape.js';
 import { SKYLINE_FOG_WGSL } from '../../skyline.js'; // MAP-06b (38.42)
 import { UNDER_WGSL } from '../../underwater.js'; // SWIM-04c (38.54)
@@ -79,6 +82,10 @@ const SHADE_FIELDS = [
   { name: 'fgP', type: 'vec4' }, // G2 + P3 (D-075 step 4), APPENDED: far grass tier. x = on, y = startM (carpet radius), z = fadeM, w = colour mix (terrainShade.js farGrassFill)
   { name: 'fgW', type: 'vec4' }, // far grass gust phase: dirX, dirY, cycles per second, 1 / travel (m/s)
   { name: 'fgT', type: 'vec4', count: FG_TYPES }, // far grass per ground type id: rgb bytes (carpet ramp middle), w = strength (0 = type has no far grass)
+  { name: 'shaftA', type: 'vec4' }, // CANOPY-SHAFT-01b (38.76 item 4), APPENDED: (k, iso, pw, maxM); k = 0 skips the whole lift (byte-identical)
+  // CLOUD-FLUFF-01b, APPENDED: GPU sky cloud deck (skyCloud.js). cloudA = on, seed, scale, bias | B = cover, puffK, wispCover, wispK | C = litK, litDy, bodyK, - | D = driftX, driftY, cloudBand0, cloudBand1 | E = cloudBand2 | lit/shade rgb 0..255. All 0 = no clouds.
+  { name: 'cloudA', type: 'vec4' }, { name: 'cloudB', type: 'vec4' }, { name: 'cloudC', type: 'vec4' }, { name: 'cloudD', type: 'vec4' }, { name: 'cloudE', type: 'vec4' },
+  { name: 'cloudLit', type: 'vec4' }, { name: 'cloudShade', type: 'vec4' },
 ];
 export const SHADE_BLOCK = defineUniformBlock('ShadeU', SHADE_FIELDS);
 /** ENV-02d: ShadeU + look table (appended: earlier word offsets unchanged); look pipelines only. */
@@ -414,7 +421,13 @@ fn faceK(face: i32) -> f32 { return su.faceK[u32(face) >> 2u][u32(face) & 3u]; }
 ${look ? TERRAIN_SHADE_LOOK_WGSL : TERRAIN_SHADE_WGSL}
 
 ${SKY_GLOW_WGSL}
+${SKY_NIGHT_WGSL}
+${SKY_CLOUD_WGSL}
 ${FOG_SHAPE_WGSL}
+${SHADE_SHAFT_WGSL}
+// CANOPY-SHAFT-01b: lift colour toward FOG_SUN_TINT * sunI by weight w (oracle lightShaft.js shaftLift: bg w, fg w * 0.5).
+fn shaftLiftC(c: vec3f, w: f32, sunI: f32) -> vec3f { return c + (FOG_SUN_TINT * sunI - c) * w; }
+fn shaftQ(cell: vec2i) -> i32 { return i32((textureLoad(uLightTex, cell, 0).w >> ${SHAFT_SHIFT}u) & ${SHAFT_Q}u); }
 ${UNDER_WGSL}
 // AUD-45: unit view direction of a cell for the standard fog (same rays as the sky: shear basis / pitched / ortho F).
 fn fogCellDir(cell: vec2i, gridSize: vec2i) -> vec3f {
@@ -722,8 +735,26 @@ fn shadeCell(frag: vec4f) -> FO {
         skyDir = normalize(select(pitchedCellDir(vec2f(cell), gridSize), su.pitchA.xyz, su.projMode == 2));
       }
       var col255 = textureLoad(uSky, vec2i(idx, 0), 0).rgb;
-      if (su.skyGlowOn.x > 0.5) { col255 = skyGlow(col255, skyDir, elevDeg, su.sunDir, su.sunI, u32(cell.x), u32(cell.y)); } // gated like compositor.js (sun === null skips glow+haze)
-      o.fg = vec4f(toByte01(col255.r), toByte01(col255.g), toByte01(col255.b), 0.0);
+      var fg255 = col255; var starG = 0;
+      var cloudG = 0;
+      if (su.cloudA.x > 0.5) { // CLOUD-FLUFF-01b (twin: sky.js cloudAt); off = branch skipped = byte-identical
+        let cl = skyCloud(col255, skyDir, elevDeg, select(1.0, su.sunI, su.skyGlowOn.x > 0.5));
+        col255 = cl.bg; fg255 = cl.fg; cloudG = cl.g;
+      }
+      if (su.skyGlowOn.x > 0.5) { // gated like compositor.js (sun === null skips glow+haze)
+        col255 = skyGlow(col255, skyDir, elevDeg, su.sunDir, su.sunI, u32(cell.x), u32(cell.y));
+        if (cloudG != 0) { fg255 = skyGlow(fg255, skyDir, elevDeg, su.sunDir, su.sunI, u32(cell.x), u32(cell.y)); }
+        let sn = skyNight(col255, skyDir, elevDeg, su.sunDir, su.sunI, su.timeSec); // NIGHT-SKY-01 (twin: skyNight.js applySkyNight; day = untouched)
+        if (cloudG == 0) { fg255 = sn.fg; starG = sn.g; }
+        else if (any(sn.bg != col255)) { fg255 = sn.bg; } // moon disc covers cloud fg too; stars never replace a cloud glyph
+        col255 = sn.bg;
+      } else if (cloudG == 0) { fg255 = col255; }
+      if (cloudG != 0) { starG = cloudG; }
+      if (su.shaftA.x > 0.0) { // CANOPY-SHAFT-01b: sky cells get the same lift (len = maxM, f = 0); glyph untouched
+        let sq = shaftQ(cell);
+        if (sq > 0) { let sw = shaftW(sq, su.shaftA.w, dot(skyDir, su.sunDir), su.sunI, su.shaftA.x, su.shaftA.y, su.shaftA.z, su.shaftA.w, 0.0); col255 = shaftLiftC(col255, sw, su.sunI); fg255 = shaftLiftC(fg255, sw * 0.5, su.sunI); }
+      }
+      o.fg = vec4f(toByte01(fg255.r), toByte01(fg255.g), toByte01(fg255.b), f32(starG) / 255.0);
       o.bg = vec4f(toByte01(col255.r), toByte01(col255.g), toByte01(col255.b), 1.0);
     } else {
       o.fg = jsFg;
@@ -948,6 +979,14 @@ ${look ? `    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceM
   if (f > 0.0) {
     rgbF += (fogFgC - rgbF) * f;
     rgbBg += (fogBgC - rgbBg) * f;
+  }
+  if (su.shaftA.x > 0.0) { // CANOPY-SHAFT-01b: colour lift after fog, before the output pack; glyph never changes
+    let sq = shaftQ(cell);
+    if (sq > 0) {
+      let sfd = fogCellDir(cell, gridSize);
+      let sw = shaftW(sq, dist, dot(sfd, su.sunDir), su.sunI, su.shaftA.x, su.shaftA.y, su.shaftA.z, su.shaftA.w, f);
+      rgbBg = shaftLiftC(rgbBg, sw, su.sunI); rgbF = shaftLiftC(rgbF, sw * 0.5, su.sunI);
+    }
   }
 
   o.fg = vec4f(toByte01(rgbF.x), toByte01(rgbF.y), toByte01(rgbF.z), toByte01(f32(glyphCode)));

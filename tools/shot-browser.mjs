@@ -23,7 +23,8 @@ function cleanup() {
 const killer = setTimeout(() => { console.error('shot-browser: overall timeout'); cleanup(); process.exit(2); }, Number(args.timeout || 80) * 1000);
 process.once('SIGINT', () => { cleanup(); process.exit(1); });
 const WAIT = (frames) => `(async () => { for (let i = 0; i < 4000 && !(window.__debug && window.__debug.playerHandle && window.__debug.world); i++) await new Promise((r) => setTimeout(r, 50));
-  const fr = () => new Promise((r) => requestAnimationFrame(r)); for (let i = 0; i < ${frames}; i++) await fr(); return true; })()`;
+  const fr = () => new Promise((r) => requestAnimationFrame(r)); for (let i = 0; i < 1200 && /Checking your graphics/.test(document.body.innerText || ''); i++) await new Promise((r) => setTimeout(r, 50)); /* boot overlay gone */
+  for (let i = 0; i < ${frames}; i++) await fr(); return true; })()`;
 async function evalIn(cdp, expression) {
   const r = await cdp.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true, timeout: 120000 });
   if (r.exceptionDetails) throw new Error('eval threw: ' + JSON.stringify(r.exceptionDetails).slice(0, 2000));

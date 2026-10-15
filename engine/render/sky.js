@@ -9,6 +9,7 @@ import { PROJ_HFOV_DEG as HFOV_DEG, createPitchedTerms, pitchedTerms, screenRay,
 import { hashFast01 } from './terrainShade.js';
 import { resolveLook } from './look.js';
 import { applySkyGlow } from './skyGlow.js';
+import { applySkyNight } from './skyNight.js'; // NIGHT-SKY-01
 import { dirFromAzEl } from '../core/transform.js';
 
 const refOut = { fg: [0, 0, 0], bg: [0, 0, 0], glyph: ' ' };
@@ -48,6 +49,7 @@ function shadeSkyAndWrite(rt, x, y, ctx, azimuthDeg, elevDeg, tag) {
     fastShadeSky(ctx.P, azimuthDeg, elevDeg, ctx.P.defaultTime, fastOut);
     cloudOut.base[0] = fastOut.bg[0]; cloudOut.base[1] = fastOut.bg[1]; cloudOut.base[2] = fastOut.bg[2];
     cloudOut.band = ctx.band;
+    if (ctx.sun) cloudSunTerms(ctx.sun.sunI, cloudOut); else { cloudOut.dayK = 1; cloudOut.rimK = 0; }
     dirFromAzEl(azimuthDeg, elevDeg, cloudDir);
     cloudAt(cloudDir[0], cloudDir[1], cloudDir[2], elevDeg, ctx.clouds, ctx.off, cloudOut);
     glyphIdx = cloudOut.glyph < 32 || cloudOut.glyph > 126 ? 0 : cloudOut.glyph - 32;
@@ -64,6 +66,13 @@ function shadeSkyAndWrite(rt, x, y, ctx, azimuthDeg, elevDeg, tag) {
     glowBg[0] = bg[0]; glowBg[1] = bg[1]; glowBg[2] = bg[2]; glowFg[0] = fg[0]; glowFg[1] = fg[1]; glowFg[2] = fg[2];
     applySkyGlow(glowBg, cosA, elevDeg, sun.dirZ, sun.sunI, x, y); applySkyGlow(glowFg, cosA, elevDeg, sun.dirZ, sun.sunI, x, y);
     fg = glowFg; bg = glowBg;
+    // NIGHT-SKY-01: stars + moon disc (weight 0 by day -> untouched). Twin of WGSL skyNight; sky cells only, cloud glyph cells keep their glyph.
+    if (sun.sunI < 0.7) {
+    dirFromAzEl(azimuthDeg, elevDeg, cloudDir);
+    const f0 = glowFg[0], f1 = glowFg[1], f2 = glowFg[2];
+    const sg = applySkyNight(glowBg, glowFg, cloudDir[0], cloudDir[1], cloudDir[2], elevDeg, sun.dirX, sun.dirY, sun.dirZ, sun.sunI, ctx.timeSec);
+    if (sg > 0) { if (glyphIdx === 0) glyphIdx = sg; else { glowFg[0] = f0; glowFg[1] = f1; glowFg[2] = f2; } } // cloud cover hides stars (GPU twin); the moon disc (sg 0) still covers
+    }
   }
   rt.setCellRGB(x, y, glyphIdx, clampByte(fg[0]), clampByte(fg[1]), clampByte(fg[2]),
     clampByte(bg[0]), clampByte(bg[1]), clampByte(bg[2]));
@@ -81,6 +90,31 @@ function elevAtRow(ctx, row) {
 }
 
 // --- ART-04a (37.18 item 5): JS cloud twin ---------------------------------
+// CLOUD-FLUFF-01 constants (a WGSL twin must use the same numbers). Ramp is engine-side: design/palette.js `ramps.sky` stays the wisp ramp.
+export const CLOUD_RAMP = " .',-o@#";
+export const CLOUD_DOME_LIT = 0.45, CLOUD_NIGHT_DIM = 0.78, CLOUD_MOON_MIX = 0.4, CLOUD_RIM = 0.7;
+const CLOUD_MOON = [159, 180, 224]; // palette.rgb.moon, the same key skyNight.js uses
+/** Day weight (0 night .. 1 day) and dawn/dusk rim weight from the sun intensity; mirrors skyNight's sunI window. */
+export function cloudSunTerms(sunI, out) {
+  out.dayK = smoothstep01(0.3, 0.7, sunI);
+  out.rimK = smoothstep01(0.3, 0.55, sunI) * (1 - smoothstep01(0.65, 0.95, sunI));
+  return out;
+}
+/**
+ * CLOUD-LIVE-01 twin: the day/night blend (`live` = P.liveLook) carries the cloud colours; both fillSky and passShade._bakeSky read
+ * them through this so GPU and JS agree at every hour. Returns `base` untouched when there is no live blend; otherwise a record
+ * inheriting `base` with own lit/shade, reused through `cache` (no allocation after the first call for a given `base`).
+ */
+export function liveCloudsRecord(base, live, cache) {
+  if (!base || !live || !live.cloudsLit) return base;
+  if (cache.base !== base) {
+    cache.base = base;
+    cache.rec = Object.create(base, { lit: { value: null, writable: true, enumerable: true }, shade: { value: null, writable: true, enumerable: true } });
+  }
+  cache.rec.lit = live.cloudsLit; cache.rec.shade = live.cloudsShade;
+  return cache.rec;
+}
+const liveCloudCache = { base: null, rec: null };
 function clamp01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
 function smoothstep01(a, b, x) { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); }
 
@@ -146,30 +180,43 @@ export function cloudAt(dx, dy, dz, elevDeg, C, off, out) {
   const wisp = cloudValueNoise((qx - off[0]) * 0.33 * 1.7 + off[0] + 41.0, (qy - off[1]) * 1.7 + off[1] * 2.0 + 41.0, seed); // CLOUD-WRAP-01: drift term has integer factors (1, 2) so a 256 wrap is seamless
   const cb = out.band;
   const band = smoothstep01(0, cb[0], elevDeg) * (1 - smoothstep01(cb[1], cb[2], elevDeg));
-  const dn = clamp01(Math.max((puff - C.cover) * C.puffK, (wisp - C.wispCover) * C.wispK * 0.55) * band);
+  // CLOUD-FLUFF-01: cumulus puffs. `puff` is the same mass noise cloudShadow.js samples (shadows stay under the visible clouds);
+  // h = height above the cover threshold, r = dome profile (rounded top: sqrt(1-(1-h)^2) -> thin steep rim, fat core).
+  const h = clamp01((puff - C.cover) * C.puffK);
+  const r = Math.sqrt(1 - (1 - h) * (1 - h));
+  const dn = clamp01(Math.max(r, (wisp - C.wispCover) * C.wispK * 0.55) * band);
 
   if (dn > 0.04) {
     const qbx = (dx / (dz + C.bias)) * C.scale; // un-drifted part
     const qby = (dy / (dz + C.bias)) * C.scale;
-    // below minus above: white tops.
-    const lit = clamp01(0.5 + (cloudValueNoise(qbx * (1 + C.litDy) + off[0], qby * (1 + C.litDy) + off[1], seed)
+    // below minus above: sun-facing side white, far side shaded; the dome adds a bright top / grey underside.
+    const lit0 = clamp01(0.5 + (cloudValueNoise(qbx * (1 + C.litDy) + off[0], qby * (1 + C.litDy) + off[1], seed)
       - cloudValueNoise(qbx * (1 - C.litDy) + off[0], qby * (1 - C.litDy) + off[1], seed)) * C.litK);
-    const ccR = C.shade[0] + (C.lit[0] - C.shade[0]) * lit;
-    const ccG = C.shade[1] + (C.lit[1] - C.shade[1]) * lit;
-    const ccB = C.shade[2] + (C.lit[2] - C.shade[2]) * lit;
+    const lit = clamp01(lit0 + (r - 0.5) * CLOUD_DOME_LIT);
+    const dayK = out.dayK === undefined ? 1 : out.dayK, rimK = out.rimK === undefined ? 0 : out.rimK;
+    // moonlit night: dim the deck and pull it toward the moon colour (dayK 1 = day: untouched).
+    const nm = 1 - dayK, dim = 1 - nm * CLOUD_NIGHT_DIM, mk = nm * CLOUD_MOON_MIX;
+    const litR = C.lit[0] * dim + (CLOUD_MOON[0] - C.lit[0] * dim) * mk, litG = C.lit[1] * dim + (CLOUD_MOON[1] - C.lit[1] * dim) * mk, litB = C.lit[2] * dim + (CLOUD_MOON[2] - C.lit[2] * dim) * mk;
+    const shR = C.shade[0] * dim + (CLOUD_MOON[0] * 0.5 - C.shade[0] * dim) * mk, shG = C.shade[1] * dim + (CLOUD_MOON[1] * 0.5 - C.shade[1] * dim) * mk, shB = C.shade[2] * dim + (CLOUD_MOON[2] * 0.5 - C.shade[2] * dim) * mk;
+    const ccR = shR + (litR - shR) * lit;
+    const ccG = shG + (litG - shG) * lit;
+    const ccB = shB + (litB - shB) * lit;
     let body = dn * C.bodyK; if (body > 1) body = 1;
     // bg carries the cloud body.
     out.bg[0] = out.base[0] + (ccR - out.base[0]) * body;
     out.bg[1] = out.base[1] + (ccG - out.base[1]) * body;
     out.bg[2] = out.base[2] + (ccB - out.base[2]) * body;
     const hi = 0.1 * lit;
-    out.fg[0] = ccR + (255 - ccR) * hi;
-    out.fg[1] = ccG + (255 - ccG) * hi;
-    out.fg[2] = ccB + (255 - ccB) * hi;
-    const ramp = C.ramp, N = ramp.length;
-    let idx = 1 + Math.floor(dn * (N - 1.01));
-    if (idx > N - 1) idx = N - 1;
-    out.glyph = ramp.charCodeAt(idx);
+    // dawn/dusk rim: thin edges (small r) glow in the look's lit colour.
+    const rim = rimK * (1 - r) * CLOUD_RIM;
+    const fR = ccR + (255 - ccR) * hi, fG = ccG + (255 - ccG) * hi, fB = ccB + (255 - ccB) * hi;
+    out.fg[0] = fR + (litR * 1.12 - fR) * rim;
+    out.fg[1] = fG + (litG * 1.12 - fG) * rim;
+    out.fg[2] = fB + (litB * 1.12 - fB) * rim;
+    // density glyph ramp: thin edges '.' ''' ',' -> cores 'o' '@' '#'
+    let idx = 1 + Math.floor(dn * (CLOUD_RAMP.length - 1.01));
+    if (idx > CLOUD_RAMP.length - 1) idx = CLOUD_RAMP.length - 1;
+    out.glyph = CLOUD_RAMP.charCodeAt(idx);
   } else {
     out.fg[0] = out.base[0]; out.fg[1] = out.base[1]; out.fg[2] = out.base[2];
     out.bg[0] = out.base[0]; out.bg[1] = out.base[1]; out.bg[2] = out.base[2];
@@ -202,7 +249,7 @@ export function fillSky(fb, cam, sun = null) {
   // frame") and thread the resolved record + band through to `cloudAt` below.
   // Absent block -> `clouds`/`off`/`band` are null and today's path runs verbatim.
   const look = resolveLook(P);
-  const clouds = look ? look.clouds : null;
+  const clouds = liveCloudsRecord(look ? look.clouds : null, P.liveLook, liveCloudCache); // CLOUD-LIVE twin of passShade._bakeSky
   const off = clouds ? cloudDriftOffset(clouds, fb.timeSec || 0, cloudOff) : null;
   const band = clouds ? P.materials.sky.cloudBand : null;
 
@@ -221,7 +268,7 @@ export function fillSky(fb, cam, sun = null) {
   const ctx = {
     P, U: P.util, rows, horizonRow, planeDistY,
     depthBuffer: fb.depth, useReferenceShader: false,
-    clouds, off, band, sun, // AUD-40: sun = {dirX,dirY,dirZ,sunI} (terrain worlds only, like the GPU) or null
+    clouds, off, band, sun, timeSec: fb.timeSec || 0, // AUD-40: sun = {dirX,dirY,dirZ,sunI} (terrain worlds only, like the GPU) or null
   };
 
   // RE-02a (28.1 A2 item 2): the pitched sky twin - per cell the `screenRay` direction gives

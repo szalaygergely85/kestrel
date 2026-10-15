@@ -262,7 +262,7 @@ function transformVertex(mesh, matArr, vIdx, M, outBuf, off) {
   let nx = a00 * lnx + a01 * lny + a02 * lnz;
   let ny = a10 * lnx + a11 * lny + a12 * lnz;
   let nz = a20 * lnx + a21 * lny + a22 * lnz;
-  const nlen = Math.hypot(nx, ny, nz) || 1;
+  const nlen = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
   nx /= nlen; ny /= nlen; nz /= nlen;
 
   let u = 0, v = 0;
@@ -473,7 +473,7 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
         let wnx = (l0 * nx0 * iw0 + l1 * nx1 * iw1 + l2 * nx2 * iw2) * invq;
         let wny = (l0 * ny0 * iw0 + l1 * ny1 * iw1 + l2 * ny2 * iw2) * invq;
         let wnz = (l0 * nz0 * iw0 + l1 * nz1 * iw1 + l2 * nz2 * iw2) * invq;
-        const nlen = Math.hypot(wnx, wny, wnz) || 1;
+        const nlen = Math.sqrt(wnx * wnx + wny * wny + wnz * wnz) || 1;
         wnx /= nlen; wny /= nlen; wnz /= nlen;
         if (info.maskW >= 0) { // ALPHA-01b (37.17 item 3): discard below the cutoff before any G-buffer write (zbuf untouched)
           const mU = (l0 * mu0 * iw0 + l1 * mu1 * iw1 + l2 * mu2 * iw2) * invq;

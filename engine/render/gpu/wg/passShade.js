@@ -17,6 +17,8 @@ import { packTerrainTextures } from '../TerrainTextures.js';
 import { SKY_LUT_N } from '../wgsl/skyLut.js';
 import { applySkyHaze } from '../../atmos.js'; // ENV-03c
 import { sunFromWorld } from '../../lighting.js';
+import { resolveLook } from '../../look.js';
+import { liveCloudsRecord } from '../../sky.js';
 import { skylineFor, grassTableFor, packGrassTable, makeFarGrass, farGrassFill } from '../../terrainShade.js'; // MAP-06b: same record as the JS twin's ctx.skyline
 import { PROJ_HFOV_DEG } from '../../projection.js';
 import { orthoHashCell } from '../../projection.js'; // US-068b2
@@ -38,6 +40,8 @@ const S_SPARSE_C0 = S('fogSparseCode0'), S_SPARSE_C1 = S('fogSparseCode1'), S_HA
 const S_ETA = S('etA'), S_ETID = S('etId'), S_ETC = S('etC'); // 38.23 tint words
 const EMPTY_GRASS = { n: new Uint8Array(1), ramp: new Float64Array(12), glyph: new Uint8Array(5) };
 const S_PITCH_A = S('pitchA'), S_PITCH_B = S('pitchB'), S_PITCH_C = S('pitchC'), S_FACEK = S('faceK'), S_SKYCAM = S('skyCam'), S_FOGVIEW = S('fogView'), S_SKYGLOWON = S('skyGlowOn'), S_SKYLINE = S('skyline'), S_GRASS = S('grass'), S_CLIFF = S('cliff'), S_FGP = S('fgP'), S_FGW = S('fgW'), S_FGT = S('fgT');
+const S_SHAFT = S('shaftA'); // CANOPY-SHAFT-01b: (k, iso, pw, maxM) from light.shaft
+const S_CLOUD = S('cloudA'); // CLOUD-FLUFF-01b: cloudA..cloudShade are 7 contiguous vec4 words
 const S_UNDER = S('under'), S_UNDER_TINT = S('underTint'), S_UNDER_CAM = S('underCam'), S_UNDER_CEIL = S('underCeil'), S_UNDER_CAUS = S('underCaus'), S_UNDER_RB = S('underRampB'), S_UNDER_RC = S('underRampC'); // SWIM-04c
 /** 38.23: copy the tint table (fb.entityTints) into the ShadeU words: etA.x = count, etId (u32 view), etC rgb+k. Zero alloc; count 0 and cleared tail when absent. */
 export function writeEntityTints(su, su32, tints) {
@@ -97,6 +101,7 @@ export class WgShadePass {
     this.table = null; this.palette = null; this.uniforms = null; this.packed = null;
     this.tableDirty = false; this.nRec = 0;
     this.skyFogVer = 0; this.terrainFogVer = 0; // ENV-03c: liveFogVersion of the last sky bake / terrain fog upload
+    this.skyClouds = null; this.skyCloudBand = null; this.skyCloudWind = null; // CLOUD-FLUFF-01b
     this.skyPalette = null; this.skyTime = null; this.skyLiveVer = -1; // DN-02: liveLookVersion of the last bake (-1 = baked from the static look)
     this.terrainWorld = null; this.terrainVersion = -1;
     this.terrainU = { bandNear: 0, bandMid: 0, fogOn: false, fogStart: 0, fogFull: 0, fogCurve: 1, nearRGB: null, farRGB: null, nearDetail: false, handover: null, closeBand: 0 };
@@ -164,6 +169,18 @@ export class WgShadePass {
     return this.skyPalette !== P || this.skyTime !== P.defaultTime || this.skyLiveVer !== (P.liveLook ? (P.liveLookVersion | 0) : -1) || this.skyFogVer !== (P.liveFogVersion | 0);
   }
 
+  /** CLOUD-FLUFF-01b: static GPU sky cloud words (once per look change, from _bakeSky); no block = zeros (off). Twin: sky.js fillSky. */
+  _bakeClouds(su, C, band) {
+    const o = S_CLOUD;
+    if (!C || !band) { for (let i = 0; i < 28; i++) su[o + i] = 0; return; }
+    su[o] = 1; su[o + 1] = C.seed; su[o + 2] = C.scale; su[o + 3] = C.bias;
+    su[o + 4] = C.cover; su[o + 5] = C.puffK; su[o + 6] = C.wispCover; su[o + 7] = C.wispK;
+    su[o + 8] = C.litK; su[o + 9] = C.litDy; su[o + 10] = C.bodyK; su[o + 11] = 0;
+    su[o + 14] = band[0]; su[o + 15] = band[1]; su[o + 16] = band[2];
+    su[o + 20] = C.lit[0]; su[o + 21] = C.lit[1]; su[o + 22] = C.lit[2]; su[o + 23] = 0;
+    su[o + 24] = C.shade[0]; su[o + 25] = C.shade[1]; su[o + 26] = C.shade[2]; su[o + 27] = 0;
+  }
+
   // GL _bakeSkyLUT twin (flat gradient, SKY_LUT_N samples over elevation [0, elevTop]); re-baked when the palette / time of day changes.
   _bakeSky() {
     const P = this.palette;
@@ -172,6 +189,12 @@ export class WgShadePass {
     this.skyLiveVer = live ? (P.liveLookVersion | 0) : -1;
     this.skyFogVer = P ? (P.liveFogVersion | 0) : 0;
     const rec = P && P.materials && P.materials.sky;
+    const look0 = P ? resolveLook(P) : null; // CLOUD-FLUFF-01b: cached for _writeClouds
+    this.skyClouds = look0 ? look0.clouds : null;
+    // CLOUD-LIVE-01: live day/night blend carries the cloud colours (shallow copy so the cached look stays frozen)
+    this.skyClouds = liveCloudsRecord(this.skyClouds, live, this._cloudCache || (this._cloudCache = { base: null, rec: null })); // shared with sky.js fillSky (reused record, no alloc)
+    this.skyCloudBand = this.skyClouds && rec ? rec.cloudBand : null; this.skyCloudWind = this.skyClouds ? this.skyClouds.wind : null;
+    if (this.su) this._bakeClouds(this.su, this.skyClouds, this.skyCloudBand);
     if (!rec || !P.timeOfDay) return;
     const stops = (live || P.timeOfDay[P.defaultTime]).sky;
     const data = this.skyData;
@@ -269,6 +292,7 @@ export class WgShadePass {
     su[S_FOGVIEW + 2] = fogShapeOn && this.terrainU.fogOn && meshOutdoorFog(p._world, p._cam, p._palette) ? 1 : 0; // OB-089: mesh pixels fog like the terrain outdoors
     const liveK = this.palette && this.palette.liveLook; su[S_SKYGLOWON + 1] = liveK && liveK.floorEff > 0 ? liveK.floorEff : 0; // DN-02 night glyph-luminance floor (0 = off)
     su[S_SKYGLOWON] = fogShapeOn ? 1 : 0; // AUD-40: same gate, written every frame (sunDir/sunI are stale outside terrain worlds)
+    if (this.skyClouds) { const o = S_CLOUD + 12, w = this.skyCloudWind; su[o] = (w[0] * tSec) % 256; su[o + 1] = (w[1] * tSec) % 256; } // drift = sky.js cloudDriftOffset (f32 store = fround)
     if (pitched) {
       const q = rp.pitch;
       su[S_PITCH_A] = q.fX; su[S_PITCH_A + 1] = q.fY; su[S_PITCH_A + 2] = q.fZ; su[S_PITCH_A + 3] = q.tanHalfX;
@@ -306,6 +330,10 @@ export class WgShadePass {
       su[S_FGP] = fgr.on * (1 + fgr.under); su[S_FGP + 1] = fgr.startM; su[S_FGP + 2] = fgr.fadeM; su[S_FGP + 3] = fgr.mix;
       su[S_FGW] = fgr.dirX; su[S_FGW + 1] = fgr.dirY; su[S_FGW + 2] = fgr.cyc; su[S_FGW + 3] = fgr.invTravel;
       su.set(fgr.types, S_FGT);
+    }
+    { // CANOPY-SHAFT-01b: lift on only with march steps > 0 and k > 0 and the shadow-map sun (same gate as the light pass); else k = 0 -> shade skips it
+      const shf = p._light && p._light.shaft, on = !!(shf && shf.steps > 0 && shf.k > 0 && si[S_SUNMAP] && !shf.liftOff); // liftOff: dev-only (gpucompare frame A, 38.76 rule 8a): march stays on, lift off
+      su[S_SHAFT] = on ? shf.k : 0; su[S_SHAFT + 1] = on ? shf.iso : 0; su[S_SHAFT + 2] = on ? shf.pw : 0; su[S_SHAFT + 3] = on ? shf.maxM : 0;
     }
     if (useScene && lightCam) { su[S_HORIZON] = lightCam.horizonRow; su[S_PLANEDY] = lightCam.planeDistY; }
     if (useScene && p._world.terrain && this.palette) { // US-026a S5: the sun for the terrain look, per frame (a few trig calls)
