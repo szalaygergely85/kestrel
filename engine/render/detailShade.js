@@ -622,7 +622,7 @@ function shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff
     _fogOut[0] = nr[0] + (fr2[0] - nr[0]) * f; _fogOut[1] = nr[1] + (fr2[1] - nr[1]) * f; _fogOut[2] = nr[2] + (fr2[2] - nr[2]) * f;
     fogFgC = _fogOut; fogBgC = _fogOut;
   } // edge-pass gate (gbuf.fogF): the LINEAR factor - edge.wgsl fogF(dist) recomputes it without the AUD-45 boost
-  if (fogShapeCtx.on && f > 0) { // AUD-45 (twin of the WGSL block in fs_main): height fog + sun in-scatter
+  if (fogShapeCtx.on && !fogShapeCtx.outdoor && f > 0) { // OB-204: outdoor meshes take the plain terrain haze; AUD-45 (twin of the WGSL block in fs_main): height fog + sun in-scatter
     const sc = fogShapeCtx, cols = sc.terms.cols;
     const row = Math.floor(cellIdx / cols), col = cellIdx - row * cols;
     const d = fogCellDirJS(col, row);

@@ -934,7 +934,7 @@ ${look ? `    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceM
     let oc = su.terrainFogNearRGB + (su.terrainFogFarRGB - su.terrainFogNearRGB) * f;
     fogFgC = oc; fogBgC = oc;
   }
-  if (su.fogView.y > 0.5 && f > 0.0) { // AUD-45: height fog + sun in-scatter (only where f > 0)
+  if (su.fogView.y > 0.5 && su.fogView.z < 0.5 && f > 0.0) { // AUD-45: height fog + sun in-scatter (only where f > 0); OB-204: not for outdoor meshes (terrain has none, so far meshes came out paler than the hills)
     let fd = fogCellDir(cell, gridSize);
     f = fogShapeF(f, dist, su.fogView.x, fd.z * inverseSqrt(max(fd.x * fd.x + fd.y * fd.y, 1e-12)));
     let sw = fogScatterW(dot(fd, su.sunDir), su.sunDir.z, su.sunI);
