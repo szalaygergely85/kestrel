@@ -1296,3 +1296,5 @@ Run: 12 suites PASS, validate-content OK, check-deps OK (no model fixes needed).
   Confirm ms: `node tools/perf-pose.mjs --cpuprof --port 9730` (roadBend/meadowDetail/fordDetail), buildMeshTriVertexData should vanish from the top-10. status: arch-review.
 - VOX-MESH-CACHE-01 tests added -> re-review (MeshBuffers.test.js: alternation 6 builds, version-bump frees stale, release/dispose, cap 4; 100 pass)
 - CLOUD-LIVE-01 (cloudfluff): clouds blocks on morning/noon/dusk/night (palette.js), blendLook lerps lit/shade -> passShade._bakeSky uses them; sky.test/atmos.test goldens strip morning clouds; stills clouds-live-09/20; gpucompare row skipped; tests+validate+check-deps OK.
+
+- HUNT-ALLOC-01 (kestrel-2, bh2e1): REAL regression, not a flake. Culprit 8cb3e1b7 (UNDER-00b): World.supportAtOut called _terrainSupports(x,y,footZ) (double args boxed, ~133 B/step; breaks arch 38.61 2b). Fix: inline the structure gate in supportAtOut (engine/world/World.js). run-tests already runs suites with --expose-gc, so the gate did catch it (hunt P5 FAIL); beast/tactics/simShape/keepTerrain suites + check-deps pass.
