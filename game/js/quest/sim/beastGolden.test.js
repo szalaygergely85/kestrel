@@ -123,7 +123,7 @@ const isTok = (s) => s === STATE_WINDUP || s === STATE_CHARGE;
 const gz = (sim) => groundZ(sim.world, PX, PY);
 
 
-const GOLDEN_HASH = 3468276386; // re-recorded OB-150 (step 2 boar/wolf charge; step 3 bear/goblin near-field steer + longer lunge); was 2305245254 / 1491148451 pre-BEAST-03a
+const GOLDEN_HASH = 3981320182; // re-recorded OB-150 (step 4: all-species near-field steer, 2 wolf tokens + flank spots; prev 3468276386; step 2 boar/wolf charge; step 3 bear/goblin near-field steer + longer lunge); was 2305245254 / 1491148451 pre-BEAST-03a
 function ent(id, x, y, species, role) {
   const e = beastEntity(id, x, y);
   if (species) e.components.brain.species = species;

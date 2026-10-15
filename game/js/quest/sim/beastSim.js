@@ -856,7 +856,7 @@ function hasActiveCharger(sim, me) {
     if (k === me || sim.group[k] !== sim.group[me]) continue; // WOLF-01/GOB-01: the token is per group (wolves never block boars)
     if (sim.state[k] === STATE_WINDUP || sim.state[k] === STATE_CHARGE) held++;
   }
-  return held >= (sim.group[me] === 2 ? GOBLIN_TUNING.tokens : 1); // GOB-01: melee goblins share 2 tokens
+  return held >= (sim.group[me] >= 1 ? 2 : 1); // GOB-01 / OB-150: melee goblins AND wolves share 2 tokens (the rest circle)
 }
 
 function windupStep(sim, i, px, py) {
@@ -1336,7 +1336,7 @@ function setSteerTarget(sim, i) {
     }
     if (st === STATE_CHASE && sim.waiting[i]) {
       const CT = sim.goblin[i] ? GOBLIN_TUNING : WOLF_TUNING;
-      circleTarget(steer.x[i], steer.y[i], sim._px, sim._py, (CT.circleMin + CT.circleMax) / 2, (i & 1) ? 1 : -1, tmp);
+      if (!flankTarget(sim, i, 3.5, tmp)) circleTarget(steer.x[i], steer.y[i], sim._px, sim._py, (CT.circleMin + CT.circleMax) / 2, (i & 1) ? 1 : -1, tmp);
       steer.setWaypoint(i, tmp.x, tmp.y, 0); steer.maxSpeed[i] = wc.chase * CT.circleSpeedMul; return;
     }
   }
@@ -1359,9 +1359,9 @@ function setSteerTarget(sim, i) {
 
   // OB-150: a bear/goblin that SEES the player within 10 m steers straight at them instead of at the (up to 3.5 m stale) A* goal,
   // so a player walking away no longer leaves the chaser stalling at the old waypoint. Near-field only; the NavGrid still blocks.
-  if (st === STATE_CHASE && (sim.bear[i] || sim.goblin[i]) && sim.seen[i] && !sim.partialGoal[i]) {
+  if (st === STATE_CHASE && !sim.ranged[i] && !sim.tactOn[i] && sim.seen[i] && !sim.partialGoal[i]) {
     const ddx = sim._px - steer.x[i], ddy = sim._py - steer.y[i];
-    if (ddx * ddx + ddy * ddy < 100) {
+    if (ddx * ddx + ddy * ddy < 256 && straightWalkable(sim, steer.x[i], steer.y[i], ddx, ddy)) {
       steer.setWaypoint(i, sim._px, sim._py, 0);
       steer.maxSpeed[i] = sim.scfg[i].chase * (sim.bear[i] ? BEAR_CATCHUP : 1) * sim.spdMul[i];
       return;
@@ -1380,6 +1380,40 @@ function setSteerTarget(sim, i) {
     steer.setWaypoint(i, steer.x[i], steer.y[i], 0);
   }
   steer.maxSpeed[i] = speed;
+}
+
+/** OB-150: true when every ~1 m sample along (x,y)+(dx,dy) is a walkable nav cell (so steering straight at the player cannot run into a wall/water). */
+function straightWalkable(sim, x, y, dx, dy) {
+  const g = sim.grid; if (!g || !g.cost) return false;
+  const d = Math.sqrt(dx * dx + dy * dy), n = Math.ceil(d);
+  for (let k = 1; k <= n; k++) {
+    const f = k / n, cx = g.cellX(x + dx * f), cy = g.cellY(y + dy * f);
+    if (!g.inBounds(cx, cy) || g.cost[cy * g.w + cx] === 0) return false;
+  }
+  return true;
+}
+
+/** OB-150 group pressure: a waiting wolf/goblin takes a flank spot around the player instead of queueing behind the pack.
+ * The lowest live slot of the group is the lead (its bearing is the reference); the others sit at +-120 deg (3+) or 180 deg (2)
+ * from it, `r` m out. Trig-free (fixed sin/cos of 120 deg). Returns false when `i` is the lead / alone (-> plain circle). */
+const FL_C = -0.5, FL_S = 0.8660254;
+function flankTarget(sim, i, r, out) {
+  const g = sim.group[i], n = sim.count;
+  let lead = -1, alive = 0, rank = 0;
+  for (let k = 0; k < n; k++) {
+    if (sim.group[k] !== g || sim.down[k] || deadSt(sim.state[k]) || sim.state[k] === STATE_GONE) continue;
+    const dx = sim.steer.x[k] - sim._px, dy = sim.steer.y[k] - sim._py;
+    if (dx * dx + dy * dy > 625) continue; // packR
+    if (lead < 0) lead = k;
+    alive++; if (k < i) rank++;
+  }
+  if (lead < 0 || lead === i || alive < 2) return false;
+  let ux = sim.steer.x[lead] - sim._px, uy = sim.steer.y[lead] - sim._py; const d = Math.sqrt(ux * ux + uy * uy) || 1;
+  ux /= d; uy /= d;
+  let c = -1, sn = 0; // 2 members: opposite side
+  if (alive >= 3) { c = FL_C; sn = (rank & 1) ? FL_S : -FL_S; }
+  out.x = sim._px + (ux * c - uy * sn) * r; out.y = sim._py + (ux * sn + uy * c) * r;
+  return true;
 }
 
 function advanceWaypoint(sim, i) {
