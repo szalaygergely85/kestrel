@@ -1242,7 +1242,8 @@ async function runGame(mode, cinematic = null) {
   } };
   const nextCtx = { resolve: (k, id, o) => compassResolver.resolve(k, id, o), x: 0, y: 0 }; // OB-183: 'Next:' line + journal name the nearest giver
   if (saveRelay) saveRelay.quest.nextCtx = nextCtx;
-  const combatHud = createCombatHud({ events: engine.events, rgb: assets.palette.rgb, band: worldBand }); // HPBAR-02 + DMGNUM-01: enemy bars + damage numbers ; combatHud.bars.bars.setDifficulty(savedSettings.difficulty); // HPBAR-03
+  const combatHud = createCombatHud({ events: engine.events, rgb: assets.palette.rgb, band: worldBand }); // HPBAR-02 + DMGNUM-01: enemy bars + damage numbers
+  combatHud.bars.bars.setDifficulty(savedSettings.difficulty); // HPBAR-03: saved Easy/Hard shifts the shown level from the start
   window.__debug.compass = compass; window.__debug.compassRetarget = () => { const b = saveRelay && saveRelay.quest.book; return b ? compass.target(b, compassResolver) : null; }; window.__debug.compassHidden = () => compassHide; // tools/verify-compass.mjs
   function compassFindMarker(w, markerId) { // structure marker -> world position (same lookup as audio/ambient.js; load-time-ish, cached)
     const o = { x: 0, y: 0, z: 0 };
