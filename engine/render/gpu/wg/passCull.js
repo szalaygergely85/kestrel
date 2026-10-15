@@ -56,6 +56,7 @@ export class WgCullPass {
     this.argsBuffer = device.createBuffer({ usage: 'indirect', bytes: this.argsCpu.byteLength });
     /** @type {Map<any, any>} group -> batch state */
     this.batches = new Map();
+    /** @type {Uint32Array|null} LOD-RESET-01 scratch of zeros (grown to the biggest batch) */ this._zeroLod = null;
     this._nextSlot = 0;
     /** @type {Uint32Array} args words of the used slots; rebuilt only when _nextSlot changes (no per-frame subarray, arch 2026-10-08) */
     this._argsView = this.argsCpu.subarray(0, 0);
@@ -122,6 +123,15 @@ export class WgCullPass {
     this.batches.forEach(this._sweepFn); // persistent callback: Map for-of allocates iterator/entry arrays every frame
     const stale = this._stale;
     if (stale) { this._stale = null; for (const g of stale) this.removeBatch(g); }
+  }
+
+  /** LOD-RESET-01: zeroes every batch's `lodPrev` (camera cut / world load) so the next pickLod has no stale hysteresis, like a fresh batch. Between frames only. */
+  resetLodHistory() {
+    for (const b of this.batches.values()) {
+      if (b.generated) continue;
+      if (!this._zeroLod || this._zeroLod.length < b.cap) this._zeroLod = new Uint32Array(b.cap);
+      this.device.writeBuffer(b.lodPrev, new Uint32Array(this._zeroLod.buffer, 0, b.cap), 0); // rare (cuts only): the view alloc is fine
+    }
   }
 
   /** Marks a batch as static (rows uploaded once, then only on `invalidate`). @param {any} group @param {boolean} [on] */

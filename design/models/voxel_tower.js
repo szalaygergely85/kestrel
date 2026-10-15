@@ -1305,50 +1305,13 @@
 
   // ===================================================================================================================
   // 9c. OB-132b (owner rule "no sprites in the world"): the last two tower sprites as voxels.
-  //    burnerFire  10 x 10 x 15 @ 0.05 m = 0.5 x 0.5 x 0.75 m (= the sprite's world box). Emissive: white ember_core bed,
+  //    burnerFire  REMOVED by OB-172 (D-104): the fire is a billboard again. (was 10 x 10 x 15 voxels, emissive.)
   //                ember_glow body, flame_mid tongues, flame_tip points. 3 stacked parts (body static, mid + tip sway) so the
   //                `burn` clip flickers; embers + smoke emitters stay on the brazier entity. Level prop `burnerFire` unchanged.
   //    rigging     22 x 6 x 4 @ 0.04 m = 0.88 x 0.24 x 0.16 m: a fat rope coil (stacked loops) + a snapped stay trailing off.
   // ===================================================================================================================
-  function buildBurnerFire() {
-    var G = new Grid(10, 10, 15), x, y, z, dx, dy, r, rad;
-    for (z = 0; z < 15; z++) for (y = 0; y < 10; y++) for (x = 0; x < 10; x++) {
-      dx = x - 4.5; dy = y - 4.5; r = Math.sqrt(dx * dx + dy * dy);
-      // radius shrinks with height, with a hash-ragged edge; 3 tongues lean off the main body
-      rad = 4.3 - z * 0.27 + (hash(x, y, z, 7) - 0.5) * 1.1;
-      if (z >= 9 && z < 14) {                                 // upper flame = 3 leaning tongues
-        var t = Math.min(Math.sqrt(sq(x - 2.5) + sq(y - 4.5)), Math.sqrt(sq(x - 6.5) + sq(y - 3.5)), Math.sqrt(sq(x - 4.5) + sq(y - 6.5)));
-        if (t > 1.5 - (z - 9) * 0.22) continue;
-      } else if (z === 14) { if (!(x === 4 && y === 4)) continue; }
-      else if (r > rad) continue;
-      G.set(x, y, z, z < 2 ? (r < 2 ? 'N' : 'G') : z < 5 ? (r < 1.8 ? 'N' : 'G') : z < 9 ? (r < 1.6 ? 'G' : 'O') : z < 12 ? 'O' : 'J');
-    }
-    return G;
-  }
+  // OB-172 (D-104): burnerFire is NOT a voxel any more - fire/glow/spark/smoke stay billboards (wreckage.js A.models.burnerFire, fx:true).
   function sq(v) { return v * v; }
-  var gBF = buildBurnerFire();
-  A.voxelModels.burnerFire = {
-    name: 'burnerFire',
-    desc: 'OB-132b voxel burner fire: emissive white-yellow bed, orange body, leaning flame tongues with tips; the upper ' +
-          'parts sway in the `burn` clip. Replaces the burnerFire billboard (same level prop, same anchor, z 1.05).',
-    voxel: {
-      version: 1, cellM: 0.05, size: [10, 10, 15], anchor: [5, 5, 0], mats: matsOf(gBF), layers: gBF.layers(),
-      parts: {
-        body: { box: [0, 0, 0, 10, 10, 5], pivot: [5, 5, 0] },
-        mid:  { box: [0, 0, 5, 10, 10, 10], pivot: [5, 5, 5] },
-        tip:  { box: [0, 0, 10, 10, 10, 15], pivot: [5, 5, 10] }
-      },
-      animations: { burn: { durations: [90, 80, 100, 80], loop: true, interp: 'linear', frames: [
-        { mid: { rot: [2, 3, 0] },   tip: { rot: [4, 6, 10] } },
-        { mid: { rot: [-3, 1, 0] },  tip: { rot: [-5, 3, -12] } },
-        { mid: { rot: [1, -3, 0] },  tip: { rot: [6, -6, 8] } },
-        { mid: { rot: [-2, -1, 0] }, tip: { rot: [-4, -2, -10] } }
-      ] } },
-      mounts: {}
-    },
-    readability: { note: 'Over the burner mouth: reads as a lit fire from the stair and the hall; glow comes from lights.brazier.' }
-  };
-
   function buildRigging() {
     var G = new Grid(22, 6, 4), x, y, z, dx, dy, r;
     for (z = 0; z < 3; z++) for (y = 0; y < 6; y++) for (x = 0; x < 9; x++) {       // coil: 3 stacked loops, hollow centre
@@ -1381,7 +1344,7 @@
   // ===================================================================================================================
   var TARGETS = { boulder: ['boulder'], rubble0: ['rubble', 0], rubble1: ['rubble', 1], rubble2: ['rubble', 2],
                   canvasHeap: ['canvasHeap'], gondola: ['gondola'], strut: ['strut'], envelopeHeap: ['envelopeHeap'],
-                  relay: ['relay'], burner: ['burner'], ropeTether: ['ropeTether'], burnerFire: ['burnerFire'], rigging: ['rigging'] };
+                  relay: ['relay'], burner: ['burner'], ropeTether: ['ropeTether'], rigging: ['rigging'] };
   A.voxelModels.batch2 = Object.keys(TARGETS);
   A.voxelModels.attachTower = function attachTower() {
     var P = A.palette, DP = A.detailPass, M = A.models, done = [], n, t, def, vox, k, ok;

@@ -129,6 +129,12 @@ for (const [lodCells, maxDistM] of [[0, 0], [14, 0], [14, 120]]) {
   assert.equal(cull.argsBuffer._gpu.u32[ents[0].argsOffset / 4 + 1], 300, 'args reset to 0 each frame, then refilled');
   cull.invalidate(g); cull.begin({ planes: null }); cull.add(g, [mesh0, null]); cull.run();
   assert.equal(cull.stats.uploads, 1, 'invalidate -> re-upload');
+  { // LOD-RESET-01: resetLodHistory zeroes every batch's lodPrev (stale hysteresis -> fresh)
+    const b = cull.batches.get(g); b.lodPrev._gpu.u32.fill(1);
+    cull.resetLodHistory();
+    assert.ok(b.lodPrev._gpu.u32.every((v) => v === 0), 'lodPrev zeroed');
+    assert.equal(b.lodPrev._gpu.u32.length, 300);
+  }
   g.count = 0; cull.begin({ planes: null }); cull.add(g, [mesh0, null]); cull.run();
   assert.equal(cull.stats.dispatches, 0, 'empty batch: no dispatch');
   assert.throws(() => cull.add(makeGroup(4, 0), [{ ...mesh0, ranges: [{}, {}] }, null]), /multi-range/);

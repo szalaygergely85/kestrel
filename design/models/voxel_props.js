@@ -268,11 +268,11 @@
     /* z2  */ cat(Z2, NONE5),
     /* z3  */ cat(Z3, NONE5),
     /* z4  */ cat(Z4, NONE5),
-    /* z5  */ cat(ZF('NN'), NONE5),   // OB-132b: baked flame (was the lampFlame billboard): white core, glow, tip
-    /* z6  */ cat(ZF('NN'), NONE5),
-    /* z7  */ cat(ZF('GG'), NONE5),
-    /* z8  */ cat(ZF('GG', 1), NONE5),
-    /* z9  */ cat(ZF('J', 2), NONE5),
+    /* z5  */ cat(ZP, NONE5),   // OB-180 (D-104): no baked flame voxels, the lampFlame billboard props carry it
+    /* z6  */ cat(ZP, NONE5),
+    /* z7  */ cat(ZP, NONE5),
+    /* z8  */ cat(ZP, NONE5),
+    /* z9  */ cat(ZP, NONE5),
     /* z10 */ cat(Z10, [e, e, e, e, PL0]),
     /* z11 */ cat(Z11, [e, e, e, e, PLH]),
     /* z12 */ cat(Z12, [e, e, e, e, PLB]),

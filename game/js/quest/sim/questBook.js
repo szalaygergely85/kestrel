@@ -2,6 +2,7 @@
 // Status is derived from facts + two booleans; facts count before accept (boars stay dead).
 import { createQuest, applyQuestEvent, questObjectives, stringifyQuest, questHash, validateQuestDefinition, applyKindKill, kindOf } from './quest.js';
 
+import { normalizeQuestDef } from './questFormat.js';
 export const UNAVAILABLE = 0, AVAILABLE = 1, ACTIVE = 2, READY = 3, DONE = 4;
 export const STATUS_NAMES = Object.freeze(['unavailable', 'available', 'active', 'ready', 'done']);
 const QUEST_ID = /^[a-z][a-zA-Z0-9_.]*$/;
@@ -20,6 +21,7 @@ function bladeFromMain(def, main, boars) {
 }
 
 export function validateGiverQuest(def) {
+  def = normalizeQuestDef(def); // QUEST-FORMAT: begin/end/requires{quests}/rewards -> the legacy shape below
   validateQuestDefinition(def);
   if (!QUEST_ID.test(def.id)) throw new Error('quest: invalid giver quest id');
   if (def.giver === undefined) { // QL-T1: giverless area quest (objects/areas as objectives): starts when `requires` is met, ends with its last objective
@@ -86,6 +88,11 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     if (si < 0) throw new Error('quest: requires unknown step ' + r.step);
     return { qi, si };
   }));
+  entries.forEach((e, i) => { // QUEST-FORMAT: `next` is offered at the hand-in: the target also waits on this quest being handed in (never auto-started, D-105)
+    const nx = e.def.next; if (nx === undefined || nx === null) return;
+    const qi = byId.get(nx); if (qi === undefined) throw new Error('quest: next unknown quest ' + nx);
+    if (i > 0 && qi > 0 && !requireSteps[qi].some(r => r.qi === i && r.si === -1)) requireSteps[qi].push({ qi: i, si: -1 });
+  });
   const keys = new Map();
   for (let i = 1; i < n; i++) {
     const id = entries[i].def.id;
@@ -117,6 +124,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   const touchWithDeps = i => { touch(i); const d = deps[i]; for (let k = 0; k < d.length; k++) touch(d[k]); };
 
   const book = { main: entries[0].state, version: 0, onChange: null, lastReward: null, count: n, packOps: null /* QUESTS-01: {count(id), remove(id, n), add?(id, n) -> n added} set by the game; deliver needs it */ };
+  const deadSeen = new Set(); // BH-S2: beasts known dead (authored beasts never return; replayed into a quest after abandon)
   const packCounts = new Map(); // last absolute pack count per item id (runtime mirror of item:count, re-applied on abandon)
 
   function met(i) {
@@ -170,12 +178,22 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     d.objectives = e.def.objectives.map(o => { const p = by.get(o.id); if (!p) return o; const n = { ...o }; if (str(p.text) !== undefined) n.text = p.text; if (str(p.journal) !== undefined) n.journal = p.journal; return n; });
     e.def = d; return true;
   };
-  book.giverOf = i => entries[i].giver; // QL-03: npc id that offers quest i
+  /** QUEST-FORMAT: index of quest i's `next` quest, or -1. */
+  book.nextOf = i => { const nx = entries[i].def.next; return nx && byId.has(nx) ? byId.get(nx) : -1; };
+  /** QUEST-FORMAT: the offer after a hand-in, [{from, id, giver, title, hint}] for every handed-in quest whose `next` is waiting (AVAILABLE) at its giver. */
+  book.nextOffers = function nextOffers() {
+    const out = [];
+    for (let i = 1; i < n; i++) { const q = book.nextOf(i); if (q > 0 && entries[i].handedIn && statusOf(q) === AVAILABLE) out.push({ from: entries[i].def.id, id: entries[q].def.id, giver: entries[q].giver, title: entries[q].def.title, hint: entries[i].def.nextHint || null }); }
+    return out;
+  };
+  book.giverOf = i => entries[i].giver;
+  book.turnInOf = i => entries[i].turnIn; // QUEST-FORMAT: the hand-in npc (the quest's `end`) // QL-03: npc id that offers quest i
   book.questState = i => entries[i].state;
   book.status = i => statusOf(i);
   book.statusOf = id => byId.has(id) ? statusOf(byId.get(id)) : -1;
   book.feed = function feed(event) {
     let changed = false;
+    if (event && event.type === 'beast:died' && typeof event.id === 'string') deadSeen.add(event.id);
     if (event && event.type === 'item:count' && typeof event.id === 'string' && Number.isInteger(event.n)) { if (event.n > 0) packCounts.set(event.id, event.n); else packCounts.delete(event.id); }
     if (applyQuestEvent(entries[0].state, event, entries[0].def)) { changed = true; touchWithDeps(0); } // main always takes every fact (flags, ui.tracked)
     const byType = event ? listen.get(event.type) : undefined;
@@ -199,6 +217,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   /** Reference implementation (tests): every quest sees every event, all statuses recomputed. */
   book.feedBrute = function feedBrute(event) {
     let changed = false;
+    if (event && event.type === 'beast:died' && typeof event.id === 'string') deadSeen.add(event.id);
     if (event && event.type === 'item:count' && typeof event.id === 'string' && Number.isInteger(event.n)) { if (event.n > 0) packCounts.set(event.id, event.n); else packCounts.delete(event.id); }
     for (let i = 0; i < n; i++) if (applyQuestEvent(entries[i].state, event, entries[i].def)) changed = true;
     if (event && event.type === 'beast:died' && typeof event.id === 'string') for (let i = 1; i < n; i++) if ((entries[i].accepted || (entries[i].auto && met(i))) && !entries[i].handedIn && kindListen.has(kindOf(event.id)) && kindListen.get(kindOf(event.id)).includes(i) && applyKindKill(entries[i].state, kindOf(event.id), entries[i].def)) changed = true;
@@ -251,9 +270,11 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   book.abandon = function abandon(id) {
     if (!book.canAbandon(id)) return false;
     const e = entries[byId.get(id)];
+    const wasDead = new Set([...deadSeen, ...(e.state.deadBeasts || [])]); // BH-S2
     e.state = createQuest(e.def, null); e.accepted = false; e.seq = 0; e.prev = 0;
     if (e.given.length && book.packOps) for (const g of e.given) book.packOps.remove(g.id, Math.min(g.n, book.packOps.count(g.id))); // QL-03/04: given items go back
     e.given = [];
+    for (const o of e.def.objectives) if (o.when.type === 'beasts' && o.when.ids) for (const b of o.when.ids) if (wasDead.has(b)) applyQuestEvent(e.state, { type: 'beast:died', id: b }, e.def);
     for (const [item, c] of packCounts) if (listen.get('item:count')?.has(item)) applyQuestEvent(e.state, { type: 'item:count', id: item, n: c }, e.def);
     book.version++;
     if (entries[0].state.flags['ui.tracked'] === id) book.feed({ type: 'flag:set', key: 'ui.tracked', value: '' });
@@ -408,6 +429,7 @@ export function migrateQuestSave(game, defs) {
     const q = createQuest(def);
     for (const id of dead) { applyQuestEvent(q, { type: 'beast:died', id }, def); for (const o of def.objectives) if (o.when.type === 'beasts' && o.when.kind !== undefined && kindOf(id) === o.when.kind) applyKindKill(q, o.when.kind, def); } // OB-115: legacy m1 saves seed kind counts from the dead set
     if (done) for (const o of def.objectives) if (o.when.type === 'beasts' && o.when.ids) for (const id of o.when.ids) applyQuestEvent(q, { type: 'beast:died', id }, def);
+    if (def.objectives.some(o => o.when.type === 'beasts' && o.when.kind !== undefined)) q.flags.kk = true; // BH-S3: seeded above, never seed again on the next load
     out[def.id] = { quest: JSON.parse(stringifyQuest(q, def)), accepted: true, handedIn: done };
     any = true;
   }

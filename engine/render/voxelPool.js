@@ -100,6 +100,7 @@ export class VoxelPool {
     // Per-renderer nearest selection; all storage covers the mesh cap once.
     this._nearIdx = new Int32Array(MAX_VOX_INSTANCES_MESH);
     this._nearDist = new Float64Array(MAX_VOX_INSTANCES_MESH);
+    this._nearPri = new Int8Array(MAX_VOX_INSTANCES_MESH); // VOX-PRIO-01: tier of each selected entry
     this._collectWarned = 0;
     this._pushWarned = 0;
   }
@@ -310,26 +311,27 @@ export class VoxelPool {
       warnOnce(this, `VoxelPool.collect: ${n} voxel entities exceed cap (${ecap}); only the nearest ${ecap} render`);
     }
     const cx = cam ? lodCentreX(cam) : 0, cy = cam ? lodCentreY(cam) : 0, cz = cam ? lodCentreZ(cam) : 0;
-    const idx = this._nearIdx, dist = this._nearDist;
+    const idx = this._nearIdx, dist = this._nearDist, pri = this._nearPri;
     let count = 0;
     for (let i = 0; i < n; i++) {
       // US-079b0 (37.16.1 item 1): a hidden entity does not take one of the
       // nearest `cap` slots (checked before the distance sort, so it can't
       // displace a visible entity).
-      if (ents[i].components.voxel.hidden === true) continue;
+      const vc = ents[i].components.voxel;
+      if (vc.hidden === true) continue;
+      // VOX-PRIO-01 (OB-171): higher `priority` tier (0..3, default 0) ranks before any distance; distance breaks ties.
+      const p = vc.priority > 0 ? (vc.priority > 3 ? 3 : vc.priority | 0) : 0;
       const t = ents[i].transform;
       const dx = t.x - cx, dy = t.y - cy, dz = t.z - cz;
       const d2 = dx * dx + dy * dy + dz * dz;
+      let j;
       if (count < ecap) {
-        let j = count - 1;
-        while (j >= 0 && dist[j] > d2) { dist[j + 1] = dist[j]; idx[j + 1] = idx[j]; j--; }
-        dist[j + 1] = d2; idx[j + 1] = i;
-        count++;
-      } else if (d2 < dist[count - 1]) {
-        let j = count - 2;
-        while (j >= 0 && dist[j] > d2) { dist[j + 1] = dist[j]; idx[j + 1] = idx[j]; j--; }
-        dist[j + 1] = d2; idx[j + 1] = i;
-      }
+        j = count - 1; count++;
+      } else if (p > pri[count - 1] || (p === pri[count - 1] && d2 < dist[count - 1])) {
+        j = count - 2;
+      } else continue;
+      while (j >= 0 && (pri[j] < p || (pri[j] === p && dist[j] > d2))) { dist[j + 1] = dist[j]; idx[j + 1] = idx[j]; pri[j + 1] = pri[j]; j--; }
+      dist[j + 1] = d2; idx[j + 1] = i; pri[j + 1] = p;
     }
     for (let k = 0; k < count; k++) this._queueEntity(ents[idx[k]]);
   }

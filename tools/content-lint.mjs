@@ -147,7 +147,7 @@ export async function buildContext(opts = {}) {
   for (const e of entities) {
     const b = e.components.brain;
     if (b?.kind === 'beast') guards.push({ x: (b.home || [e.x, e.y])[0], y: (b.home || [e.x, e.y])[1], kind: 'beast' });
-    if (/lever|plate|waystone/i.test(e.id) || e.components.waystone) guards.push({ x: e.x, y: e.y, kind: 'puzzle' });
+    if (/lever|plate|waystone/i.test(e.id) || e.components.waystone) guards.push({ x: e.x, y: e.y, kind: 'puzzle', id: e.id });
     if (e.components.dialogue) guards.push({ x: e.x, y: e.y, kind: 'giver' });
   }
   const far = generateFarCamps({ geo: G, terrain: w.terrain, seed: 12, avoid: guards.map((g) => [g.x, g.y]) });
@@ -203,7 +203,8 @@ export async function buildContext(opts = {}) {
   for (const r of G.regions) if (r.name) nameList.push({ where: r.id, kind: 'region', name: r.name });
   for (const id of characters) { const l = labelOf(id); nameList.push({ where: id, kind: 'npc', name: l.charAt(0).toUpperCase() + l.slice(1) }); }
   return {
-    names: nameList, logic, entSupport, anchors, entities, structures: def.structures, floating, texts, jsTexts, quests: qs, itemDefs: assets.items?.defs || (await loadDesignAssets()).items?.defs,
+    fxModels: new Set(Object.entries(globalThis.ASSETS.models || {}).filter(([, m]) => m && m.fx === true).map(([k]) => k)),
+    formatQuests: quests, names: nameList, logic, entSupport, anchors, entities, structures: def.structures, floating, texts, jsTexts, quests: qs, itemDefs: assets.items?.defs || (await loadDesignAssets()).items?.defs,
     labelOf, giverIds, pos, groundAt: gz, walkable, characters, levelIds: new Set((JSON.parse(fs.readFileSync(path.join(root, 'content/levels/tower.level.json'), 'utf8')).props || []).map((p) => p.id)), chests: entities.filter((e) => /^chest/.test(e.id)), guards,
     riverX: (y) => T.util.riverX(y), riverHalf: 10,
   };

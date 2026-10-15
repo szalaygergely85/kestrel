@@ -87,7 +87,7 @@ import { stepBeacon } from './quest/beacon.js';
 import { stepLantern } from './quest/lantern.js'; // OWN-REQ-006: hook-light off, same fixed-step slot as stepBeacon
 import { removeSwordIfTaken } from './quest/swordTake.js'; // US-078c
 import { applyDoorState } from './quest/doorToggle.js'; // DOOR-TOGGLE-01
-import { noteRead, resetNoteRead, stepNoteRead, isNoteOpen, getOpenNoteId, isNoteEscGrace, pushNoteDim, drawNotePanel } from './quest/noteRead.js'; // READ-01
+import { noteRead, resetNoteRead, stepNoteRead, isNoteOpen, getOpenNoteId, isNoteEscGrace, pushNoteDim, drawNotePanel, setNoteOfferProvider } from './quest/noteRead.js'; // READ-01
 import { createNoteOffer } from './quest/objectOffer.js'; // QFIX-S5-CLOSE: keep-light note close -> Accept/Exit offer
 import { wakeFrame, drawEyelid, applyWakeOnLoad } from './quest/wake.js';
 import { initMapCard, stepMapCard, isMapOpen, getMapPanel, getMapChart, drawMapCard } from './quest/mapCard.js';
@@ -592,7 +592,7 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
       const id = 'questMark_' + (markN++); let w = null, ent = null, hidden = true, scale = 1, anim = 'idle', x = 0, y = 0, z = 0;
       const cur = () => {
         const mw = markWorld; if (!mw) return null;
-        if (w !== mw || !ent || !ent.alive) { w = mw; ent = mw.get(id) || mw.spawn('prop', { x, y, z, yawDeg: 0, scale }, { voxel: { model, anim, loop: true, hidden } }, id); }
+        if (w !== mw || !ent || !ent.alive) { w = mw; ent = mw.get(id) || mw.spawn('prop', { x, y, z, yawDeg: 0, scale }, { voxel: { model, anim, loop: true, hidden, priority: 2 } }, id); }
         return ent.data;
       };
       const push = () => { const d = cur(); if (!d) return; Object.assign(d.transform, { x, y, z }); d.transform.scale = scale; d.components.voxel.hidden = hidden; d.components.voxel.anim = anim; w.renderVersion++; };
@@ -982,7 +982,7 @@ const swordStyleIds = {
 sprites.pool.renderer = renderer; // review item 1: sprite rects follow the pitched scene
 const wgActive = !!(wgPipeline && wgPipeline.ready && rt.backend === 'webgpu'); // WG-2b: geometry-only WebGPU pipeline (CPU still shades)
 engine.events.on('combat:hit', (p) => { if (p && p.source === 'player') hitStop.trigger(p.heavy ? 'heavy' : 'light'); }); // HITSTOP-01
-const hzb = createHzbInvalidator(() => ((occlOpt.enabled || params.get('stable') !== '0') && wgActive && wgPipeline.ready ? wgPipeline : null)); // OCCL-MAIN-01 (+ US-073c): cuts invalidate the HZB and the stable-pass history
+const hzb = createHzbInvalidator(() => ((occlOpt.enabled || params.get('stable') !== '0') && wgActive && wgPipeline.ready ? wgPipeline : null), { onCut: () => { if (engine.instances && engine.instances.resetLodHistory) engine.instances.resetLodHistory(); } }); // OCCL-MAIN-01 (+ US-073c): cuts invalidate the HZB and the stable-pass history
 if (wgActive) { wgPipeline.bindVoxels(gameVoxelPool); wgPipeline.bindViewModel(engine.viewModel); }
 engine.attachMaterialTable(matTable); engine.instances.bindPool(gameVoxelPool); // RE-06 (28.6)
 if (wgActive) wgPipeline.bindInstances(engine.instances);
@@ -1206,7 +1206,7 @@ async function runGame(mode, cinematic = null) {
   // COMPASS-02 (D-061): golden pocket compass, bottom-right. Resolver maps quest targets to world positions; hide rules are set in update(), drawn in render().
   const compass = createCompassHud({ style: window.ASSETS && window.ASSETS.uiStyle && window.ASSETS.uiStyle.compass });
   let compassBookVer = -1, compassTick = 0, compassWorld = null, compassBreach = null, compassHide = true;
-  const COMPASS_FLAG = { 'quest.burl.boars.done': 'bear', 'burl.arrived': 'bear', 'waystone.waystone.woken': 'endMarker', 'waystone.ws_roadBend.woken': 'relayBend', 'waystone.ws_ford.woken': 'relayFord' };
+  const COMPASS_FLAG = { 'quest.burl.boars.done': 'bear', 'quest.burl.follow.done': 'bear', 'burl.arrived': 'bear', 'waystone.waystone.woken': 'endMarker', 'waystone.ws_roadBend.woken': 'relayBend', 'waystone.ws_ford.woken': 'relayFord' };
   const COMPASS_ITEM = { sword: 'tower.sword' }; // COMPASS-QUEST-01: item step -> the level prop entity (placementId.propId)
   // PO-CH1-12: giver ids that are level props (placementId.propId) resolve through one helper for compass + map marks.
   const GIVER_ENT = { noteKeepLight: 'tower.noteKeepLight' };
@@ -1313,6 +1313,7 @@ const inspectObject = (id) => { // QL-04: inspect an object giver / hand-in prop
   return r;
 };
 const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.book : null), inspect: inspectObject }); // QFIX-S5-CLOSE: tower.blade is an objectGiver; the page opens the offer when it closes
+setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel itself offers [E] Accept / [Q] Close (no separate offer dialogue)
   // QL-WIRE: Ch1-2 errands: object givers (post / notePost / relays), talk.<site>, target1..3.hit (sword + arrow = combat:hit), escort flag
   const errands = createErrands({ getBook: () => (saveRelay ? saveRelay.quest.book : null), questFlag: (k, v) => saveRelay.quest.questFlag(k, v), inspect: inspectObject, note: (t, l) => notice.push(t, l), texts: inspectTexts });
   setInspectSink((id) => errands.inspected(id));
@@ -1525,7 +1526,7 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
         if (lightSet) lightSet.emissive = !isGpuCompareMode && !params.get('gpucompare') && !(resolvedQuality && resolvedQuality.name === 'low'); // EMIS-01b (38.12): glowing voxels light the scene; off on Low and every gpucompare mode
         window.__debug.lights = lightSet; // EMIS-01b: test hook (derivedStats)
         footIkWire = footIkOn && kitFootCells && world.terrain ? createFootIkWire({ pool: gameVoxelPool, createFootIk, voxelPointWorld, footCells: kitFootCells, ground: world.terrain, offFor: (e) => { if (!playerHandle || e !== playerHandle.data) return false; const b = e.components && e.components.body; return !!b && (b.swimming || b.grounded === false); } }) : null; // ANIM-IK-01b
-        giWire = giCfg && lightSet ? createGIWire(giCfg, world, lightSet) : null; if (giWire && world.loadGI) giLoadOptions((u) => fetch(u).then((r) => (r.ok ? r.text() : null))).then((o) => world.loadGI(o)).catch(() => {}); // GI-PROBE-07: manifest hashes, missing = quiet {} // GI-PROBE-06: no expectHash (the bake tool writes no manifest; the runtime cannot hash); missing files = quiet null
+        giWire = giCfg && lightSet ? createGIWire(giCfg, world, lightSet) : null; if (giWire && world.loadGI) giLoadOptions((u) => fetch(u).then((r) => (r.ok ? r.text() : null)), '../content/gi/manifest.json').then((o) => world.loadGI(o)).catch(() => {}); // GI-PROBE-07: manifest hashes, missing = quiet {} // GI-PROBE-06: no expectHash (the bake tool writes no manifest; the runtime cannot hash); missing files = quiet null
         // `?sun=0`: keep the sun's direction/color (F6/F7 still readable) but
         // force it off - `setSun` is the only writer of `on`.
         if (!sunEnabled) lightSet.setSun({ elevation: lightSet.sun.elevation, azimuth: lightSet.sun.azimuth, on: false });
@@ -1596,7 +1597,7 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
       // before creating the next, same "dispose before re-create" precedent as targeting/vitals below.
       if (wild && wild.dispose) wild.dispose();
       wild = null; regionAmb = null; engine.feedVoxels = null; // WILD-06: off in capture/bench/compare/cinematic, `?at=`/`?pose=` dev poses and `?fauna=0`
-      if (mode === 'world' && !cinematic && params.get('fauna') !== '0' && !isCaptureOrBench && params.get('capture') !== '1' && !params.has('at') && !params.has('pose')) {
+      if (mode === 'world' && !cinematic && params.get('fauna') !== '0' && !isCaptureOrBench && params.get('capture') !== '1') {
         try { wild = createWild({ world, pool: gameVoxelPool, fx: window.ASSETS.wildlifeFx, seed: 0x5EED, events: engine.events, legIk: new URLSearchParams(location.search).get('legik') !== '0' }); if (wild) engine.feedVoxels = wild.feed; regionAmb = bootRegionAmbient({ table: regionAmbTable, geo: window.ASSETS.levels && window.ASSETS.levels.world_geo, wild }); } catch (err) { console.warn('[wild] fauna off:', err && err.message); }
       }
       if (beasts) beasts.dispose();
@@ -1717,6 +1718,11 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
       setDialogueApi(dialogueCtl); window.__debug.dialogue = dialogueCtl; // tools/verify-ch12-run.mjs: read-only test hook
       errands.load(world); // QL-WIRE: [E] Inspect on post / notePost
       bearTurn = createNpcTurn(world, 'bear'); // NPC-BEAR-01: null when the world has no bear
+      try { // VOX-PRIO-01 (OB-171): quest givers + quest item props rank above plain props when the voxel cap bites (markers are tier 2 in markHandle)
+        const ids = new Set(Object.values(COMPASS_ITEM)); ids.add('bear');
+        if (questGenCtx) for (const d of questGenCtx.giverDefs) { if (d && d.giver) { ids.add(d.giver.npc); ids.add(d.giver.turnIn); } }
+        for (const id of ids) { const e = id && giverEntity(world, id); const v = e && e.data && e.data.components && e.data.components.voxel; if (v && !(v.priority > 1)) v.priority = 1; }
+      } catch (err) { console.warn('[voxprio]', err && err.message); }
       compassWorld = world; compassBreach = null; compassBookVer = -1; compassTick = 0; // COMPASS-02: re-resolve against the new world
       if (bearTurn) dialogueCtl.addNpc('bear');
       dialogueCtl.addNpc('rook'); // Rook the crow: no-op until the entity exists in the world
@@ -2311,7 +2317,8 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
       // keeps the opening E press from also closing it.
       stepNoteRead(dt, input, !!(look && look.locked), interactEye); // BUG-NOTE-ESC-01: Esc under pointer lock = lock lost = close
       if (saveRelay && engine.world && engine.world.state['tower.sword.taken'] === true) saveRelay.quest.book.actKey('q.tower.blade.accept'); // PO-CH1-01: taking the sword is the safety net when the offer was skipped (no-op unless available)
-      if (saveRelay && engine.world) noteOffer.step(getOpenNoteId()); // QFIX-S5-CLOSE: reading the wake-spot page = Accept/Exit offer for 'A Blade in the Ashes' (objectGiver, D-087), opened when the note closes
+      // OB-173: noteOffer.step (offer dialogue on note close) retired - the note panel accepts directly
+      // QFIX-S5-CLOSE: reading the wake-spot page = Accept/Exit offer for 'A Blade in the Ashes' (objectGiver, D-087), opened when the note closes
       if (saveRelay && engine.world && engine.world.state['tower.sword.taken'] === true && saveRelay.quest.book.statusOf('tower.blade') === 2) { // PO-CH1-09: sword in hand and Burl (outside) within 10 m = the player left the tower (old saves / door missed): the blade is ready to hand in
         const bh = engine.world.get('bear'), bt3 = bh && bh.data.transform, p3 = playerHandle.data.transform;
         if (bt3 && (bt3.x - p3.x) ** 2 + (bt3.y - p3.y) ** 2 <= 100) saveRelay.quest.feed({ type: 'area:entered', id: 'towerDoor' });

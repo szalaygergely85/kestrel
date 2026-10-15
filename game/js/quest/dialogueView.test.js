@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import paletteMod from '../../../design/palette.js';
 import titleMod from '../../../design/models/title.js';
-import { createDialogueView } from './dialogueView.js';
+import { createDialogueView, offerIndices } from './dialogueView.js';
 import { allocProbe, skipNote } from '../../../tools/allocProbe.mjs';
 // The ONLY explicit alloc exemption (arch 38.61 point 4): a UI draw that runs only while a modal is open. cap = measured (~LAST) + 25 %, still asserted.
 const ALLOC_EXEMPT = { cap: 500, /* measured 397.6 B/draw */ reason: 'dialogue draw runs only while the dialogue modal is open (text layout/strings)', ref: 'arch 38.61' };
@@ -141,3 +141,20 @@ for (const [c, r] of [[160, 60], [240, 90], [400, 150], [480, 180], [40, 15], [3
   }
 }
 console.log('dialogueView: ok');
+
+// OB-174: hint line says Q close; quest offers say E accept
+{
+  const g = grid(160, 60); view.draw(g, run({ state: 'waiting' }), 0);
+  assert.ok(g.row(Y8 + 6).includes('E: next   Q: close'), g.row(Y8 + 6));
+  const g2 = grid(160, 60); view.draw(g2, run({ state: 'choosing', choiceCount: 2, choiceFlag: (i) => (i === 0 ? 'q.burl.boars.accept' : null) }), 0);
+  assert.ok(g2.row(Y12 + 10).includes('E: accept   Q: not now') && !g2.row(Y12 + 10).includes('Up/Down'), g2.row(Y12 + 10));
+  // OB-186: offer shows no numbered list; a 3-choice node keeps it
+  const txt = (g) => { let s = ''; for (let y = 0; y < 60; y++) s += g.row(y) + '\n'; return s; };
+  const ro = run({ state: 'choosing', choiceCount: 2, choiceFlag: (i) => (i === 0 ? 'q.burl.boars.accept' : null) });
+  assert.ok(!/1\. /.test(txt(g2)) && !/2\. /.test(txt(g2)));
+  assert.deepEqual(offerIndices(ro), { accept: 0, decline: 1 });
+  assert.equal(offerIndices(run({ state: 'choosing', choiceCount: 3, choiceFlag: (i) => (i === 0 ? 'a.accept' : null) })), null);
+  const g3 = grid(160, 60); view.draw(g3, run({ state: 'choosing', choiceCount: 3, choiceFlag: () => null }), 0);
+  assert.ok(g3.row(Y12 + 10).includes('Up/Down: choose'), g3.row(Y12 + 10));
+  console.log('dialogueView OB-174/186 hints PASS');
+}

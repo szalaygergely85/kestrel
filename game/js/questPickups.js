@@ -25,7 +25,7 @@ export function itemLabel(defs, id) {
 
 /** @param {{getBook: () => any, feed: (e:any) => any, defs: Record<string, any>}} o */
 export function createQuestPickups({ getBook, feed, defs, isWorn }) {
-  let ctx = null, props = [], tick = 0, ops = null, opsInv = null;
+  let ctx = null, props = [], tick = 0, ops = null, opsInv = null, lastAdded = 0;
 
   const groundFn = () => (ctx && ctx.world && ctx.world.terrain ? (x, y) => ctx.world.terrain.groundAt(x, y) : null);
   function pack() { return (ctx && ctx.inventory) || null; }
@@ -38,7 +38,7 @@ export function createQuestPickups({ getBook, feed, defs, isWorn }) {
     const book = getBook(), inv = pack();
     if (!book || !inv) return;
     if (!ops || opsInv !== inv) { opsInv = inv; ops = { count: (id) => countOf(inv, id), remove: (id, n) => removeItem(inv, id, n),
-      add: (id, n) => { const k = addItem(inv, defs, id, n); if (k > 0 && ctx && ctx.events) ctx.events.emit('inventory:added', { id, n: k });
+      add: (id, n) => { const k = addItem(inv, defs, id, n); lastAdded = k; if (k > 0 && ctx && ctx.events) ctx.events.emit('inventory:added', { id, n: k });
         if (k < n && defs[id]) leftover(id, n - k); // CH12-CONTENT-01: full pack must not swallow a handed-over quest item (sq.fc.cog): leftover lies at the feet
         return k; }, // QL-04: add = giveOnAccept
       equipped: (id) => !!(isWorn && ctx && ctx.player && isWorn(ctx.player.components && ctx.player.components.equipment, id)) }; } // QL-WIRE: EQ-13 requireEquipped
@@ -84,11 +84,13 @@ export function createQuestPickups({ getBook, feed, defs, isWorn }) {
       const pr = props[best];
       if (pr.acceptQuest) { // OB-155p: the pickup IS the accept; the quest's giveOnAccept puts the item in the pack (no second copy)
         const b = getBook();
+        lastAdded = 0;
         if (!b || !b.accept(pr.acceptQuest)) return; // not available yet / already taken: stays
+        if (lastAdded < 1) return; // BH-S6: pack full -> leftover lies on the ground; prop goes at the next sync (status > 1), no toast
       } else if (addItem(inv, defs, pr.item, pr.n) < 1) return; // pack full: stays in the world
       ctx.world.remove(pr.id); if (ctx.world.removeInteractable) ctx.world.removeInteractable('qp.' + pr.id);
       props.splice(best, 1);
-      if (ctx.events) ctx.events.emit('inventory:added', { id: pr.item, n: pr.n });
+      if (!pr.acceptQuest && ctx.events) ctx.events.emit('inventory:added', { id: pr.item, n: pr.n }); // BH-S6: the accept path's add already emitted
       sync();
     },
     /** Hand-in reward ({items:[{id,n}]}) -> pack (+ toast event). Returns the number of item stacks granted. */

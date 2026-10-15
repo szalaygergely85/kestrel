@@ -64,7 +64,7 @@ const dv = ex({ id: 'sq.dv', title: 'D', site: 'rook.bend', template: 'deliver',
 assert.equal(dv.giver.turnIn, 'post1');
 // escort reuses the Burl follow flag when asked (m1 `follow` waits on burl.arrived)
 assert.equal(ex({ id: 'sq.es', title: 'E', site: 'burl.slope', template: 'escort', params: { npc: 'bear', to: 'waystone', flag: 'burl.arrived' } }).objectives[0].when.id, 'burl.arrived');
-assert.equal(m1.objectives.find(o => o.id === 'follow').when.id, 'burl.arrived');
+assert.equal(m1.objectives.find(o => o.id === 'follow').when.id, 'quest.burl.follow.done'); // OB-178/D-105: m1 follow completes on the Burl follow-quest flag
 
 // 2. gear pick is stable and uses fnv1a(questId) % slots at the right tier
 const g1 = ex({ id: 'sq.gear', title: 'G', site: 'rook.bend', template: 'fetch', params: { item: 'x' }, reward: { table: 'side.b1' } });

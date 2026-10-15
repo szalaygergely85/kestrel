@@ -24,7 +24,7 @@ import { archIndex, ARCH_NAMES } from './archetypes.js';
 import { validateArchetype } from './archetypeRules.js';
 import { perceive, leashState, returnTarget, LEASH_HOME, LEASH_ENGAGE, LEASH_RETURN, LEASH_GIVEUP } from '../../../../engine/index.js';
 
-export const MAX_BEASTS = 96; // GOB-01: boars + wolves + bears + goblin camps (was 32; loot.js MAX_SLOTS must match)
+export const MAX_BEASTS = 320; // GOB-01: boars + wolves + bears + goblin camps (was 32; loot.js MAX_SLOTS must match)
 const PATH_SLOTS = 64; // waypoints kept per beast path (truncated, final = the exact goal - see `storePath`)
 
 // ---- states -----------------------------------------------------------------------------------------------------
@@ -198,7 +198,9 @@ export function createBeastSim(world, opts) {
     stk: { // BEAST-01: stuck rule: t = steps spent wanting to move without leaving the anchor, ax/ay = anchor, fail = failed re-plans in a row, st
       t: new Int32Array(MAX_BEASTS), ax: new Float64Array(MAX_BEASTS), ay: new Float64Array(MAX_BEASTS),
       fail: new Uint8Array(MAX_BEASTS), st: new Uint8Array(MAX_BEASTS),
+      wall: new Uint8Array(MAX_BEASTS), // BH-A3: charge wall-slow streak (was aliased onto `unseen`, which perceiveOne rewrites)
     },
+    chargeLen: new Uint16Array(MAX_BEASTS), // OB-150: steps this charge may last (nominal chargeMax, longer when the player already backs away)
     bankT: new Int32Array(MAX_BEASTS),      // NAV-REACH-01: steps a chaser has held at the nearest reachable cell (partial path) before giving up
     bankHold: new Uint8Array(MAX_BEASTS),   // 1 while holding at that cell (speed 0, faces the player)
     partialGoal: new Uint8Array(MAX_BEASTS),// last A* for this slot was partial (goal unreachable)
@@ -409,7 +411,8 @@ export function createBeastSim(world, opts) {
     if (slot < 0 || slot >= sim.count) return;
     sim.goal.on[slot] = 1; sim.goal.tx[slot] = x; sim.goal.ty[slot] = y;
     sim.alt.tgt[slot] = -1; sim.alt.cd[slot] = 0;
-    if (sim.state[slot] === STATE_WANDER && !sim.hunt[slot]) { sim.timer[slot] = sim.cfgSteps.pauseMin; sim.pathLen[slot] = 0; sim.pathIdx[slot] = 0; sim.pathReq[slot] = 0; }
+    sim.hunt[slot] = 0; // BH-A2: a raid goal ends any hunt (goalStep pre-empts huntStep, which would never clear it)
+    if (sim.state[slot] === STATE_WANDER) { sim.timer[slot] = sim.cfgSteps.pauseMin; sim.pathLen[slot] = 0; sim.pathIdx[slot] = 0; sim.pathReq[slot] = 0; }
   };
   /** GOB-01: a dormant slot is skipped like GONE (no perceive/path/steer/post, steer agent parked) but keeps its state.
    *  WM-04: two independent reasons (camp distance, nav tile / player distance); a slot is dormant while either is set. */
@@ -951,6 +954,17 @@ function enterWindup(sim, i) {
   sim.timer[i] = sim.ssteps[i].windup;
 }
 
+/** OB-150: a boar/wolf charge is a straight line locked at the end of the wind-up. A player walking straight away (3.5 m/s) used
+ * to outlast the nominal 1.2 s / 0.5 s: the beast stopped 3-6 m short ("they can't touch me"). Run long enough to close the
+ * gap to a player jogging off at CHARGE_FLEE_MS (cap 2.5x nominal). Bears / goblins keep their short swipe / lunge. */
+const CHARGE_FLEE_MS = 4.0;
+function chargeStepsFor(sim, i, d) {
+  const nominal = sim.ssteps[i].chargeMax, v = sim.scfg[i].charge;
+  if (sim.bear[i] || sim.goblin[i] || v <= CHARGE_FLEE_MS + 1) return nominal;
+  const need = Math.ceil(((d + 1) / (v - CHARGE_FLEE_MS)) / SIM_STEP);
+  return Math.min(Math.max(nominal, need), Math.round(nominal * 2.5));
+}
+
 function enterCharge(sim, i, px, py) {
   const steer = sim.steer;
   const dx = px - steer.x[i], dy = py - steer.y[i];
@@ -958,8 +972,8 @@ function enterCharge(sim, i, px, py) {
   sim.cdx[i] = d > 1e-9 ? dx / d : sim.fx[i];
   sim.cdy[i] = d > 1e-9 ? dy / d : sim.fy[i];
   sim.state[i] = STATE_CHARGE;
-  sim.timer[i] = sim.ssteps[i].chargeMax;
-  sim.unseen[i] = 0; // reused as the wall-slow streak counter for the duration of the charge
+  sim.timer[i] = sim.chargeLen[i] = chargeStepsFor(sim, i, d);
+  sim.stk.wall[i] = 0; // BH-A3: charge wall-slow streak
   steer.accel[i] = CHARGE_ACCEL * (sim.scfg[i].charge / sim.cfg.charge); // WOLF-01: faster leap -> proportionally harder start (ratio 1 for boars)
 }
 
@@ -983,7 +997,7 @@ function enterStagger(sim, i, dirX, dirY, knock) {
   const dy = typeof dirY === 'number' ? dirY : sim.fy[i];
   sim.state[i] = STATE_STAGGER;
   sim.timer[i] = sim.cfgSteps.stagger;
-  sim.unseen[i] = 0; // clears the charge wall-slow streak counter (reused field)
+  sim.stk.wall[i] = 0; // BH-A3: clears the charge wall-slow streak
   sim.knockV[i] = knock;
   steer.vx[i] = dx * knock;
   steer.vy[i] = dy * knock;
@@ -1034,7 +1048,7 @@ function enterFlee(sim, i, px, py) {
   for (let k = 0; k < 6 && !found; k++) {
     const sc = k < 3 ? 1 : 0.5, rx = k % 3 === 0 ? ax : (k % 3 === 1 ? (ax - ay) * S : (ax + ay) * S), ry = k % 3 === 0 ? ay : (k % 3 === 1 ? (ax + ay) * S : (ay - ax) * S);
     gx = steer.x[i] + rx * sc; gy = steer.y[i] + ry * sc;
-    found = walkable(sim.grid, gx, gy);
+    found = walkable(sim.grid, gx, gy, steer.z[i]);
   }
   enterReturn(sim, i);
   if (!found) return;
@@ -1416,14 +1430,14 @@ function chargePost(sim, i, px, py) {
   const steer = sim.steer;
   const dx = steer.x[i] - sim.prevX[i], dy = steer.y[i] - sim.prevY[i];
   const moved2 = dx * dx + dy * dy;
-  const chargeStep = sim.ssteps[i].chargeMax - sim.timer[i];
+  const chargeStep = Math.max(sim.chargeLen[i], sim.ssteps[i].chargeMax) - sim.timer[i]; // OB-150: chargeLen is 0 when a test forces STATE_CHARGE
   const thresh = WALL_SPEED_FRAC * sim.scfg[i].charge * SIM_STEP;
   if (chargeStep >= 4) {
     if (moved2 < thresh * thresh) {
-      sim.unseen[i]++;
-      if (sim.unseen[i] >= WALL_STREAK) { enterRecover(sim, i, true); return; }
+      sim.stk.wall[i]++;
+      if (sim.stk.wall[i] >= WALL_STREAK) { enterRecover(sim, i, true); return; }
     } else {
-      sim.unseen[i] = 0;
+      sim.stk.wall[i] = 0;
     }
   }
   sim.timer[i]--;
@@ -1435,7 +1449,12 @@ function chargePost(sim, i, px, py) {
 /** True if the centre point (x,y) lands in a walkable NavGrid cell - the exact check engine/nav/steer.js's step
  * uses for its axis-sliding wall clamp (`cellWalkable`), re-stated here so the de-overlap can reuse it (steer.js
  * does not export it). Zero allocation. */
-function walkable(grid, x, y) {
+function walkable(grid, x, y, z) {
+  if (grid.layers) { // BH-A4: sheets (ruin floors) count, like steer.walkableQ
+    const li = grid.locate(x, y, z);
+    if (li < 0) return false;
+    return li >= grid.w * grid.h || grid.cost[li] !== 0;
+  }
   const cx = grid.cellX(x);
   const cy = grid.cellY(y);
   return grid.inBounds(cx, cy) && grid.cost[grid.index(cx, cy)] !== 0;
@@ -1448,7 +1467,8 @@ const _push = new Float64Array(2);
  * x or y axis alone if that stays walkable, else stay put (no tunnelling through a cost-0 cell). */
 function applyPush(steer, grid, slot) {
   const ox = steer.x[slot], oy = steer.y[slot], nx = _push[0], ny = _push[1];
-  if (walkable(grid, nx, ny)) { steer.x[slot] = nx; steer.y[slot] = ny; }
+  const z = steer.z[slot];
+  if (walkable(grid, nx, ny, z)) { steer.x[slot] = nx; steer.y[slot] = ny; }
   else if (walkable(grid, nx, oy)) { steer.x[slot] = nx; }
   else if (walkable(grid, ox, ny)) { steer.y[slot] = ny; }
   // else: blocked on both axes -> stay.
@@ -1496,6 +1516,7 @@ function hashSim(sim, h) {
   h.u32Array(sim.dmgCd, 0, n);
   h.u32Array(sim.hurtT, 0, n);
   h.u32Array(sim.unseen, 0, n);
+  h.u8Array(sim.stk.wall, 0, n);
   h.u32Array(sim.repathT, 0, n);
   for (let i = 0; i < n; i++) {
     h.f64(sim.homeX[i]); h.f64(sim.homeY[i]); h.f64(sim.homeZ[i]);
@@ -1590,8 +1611,8 @@ function resetSlotSim(sim, i) {
   // US-079b: dead steer slots are re-added in ascending order; addAgent hands out the lowest free slot, and the
   // live slots stay active (slots >= count are never used), so the lowest free slot is always the lowest dead one.
   if (!sim.steer.active[i] && !sim.dormant[i]) {
-    const slot = sim.steer.addAgent(sim.homeX[i], sim.homeY[i], sim.cfg.radius, 0, DEFAULT_ACCEL);
-    if (slot !== i) throw new Error(`beastSim.resetAll: re-added dead slot ${i} but addAgent returned ${slot}`);
+    const slot = sim.steer.activateAgent(i, sim.homeX[i], sim.homeY[i], sim.cfg.radius, 0, DEFAULT_ACCEL); // BH-A1: exactly slot i
+    if (slot !== i) throw new Error(`beastSim.resetAll: re-added dead slot ${i} but activateAgent returned ${slot}`);
   }
   const health = sim.entities[i].components.health;
   health.hp = health.max; // US-079b: boars come back alive

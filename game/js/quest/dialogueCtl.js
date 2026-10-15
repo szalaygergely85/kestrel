@@ -5,7 +5,7 @@
 // Zero allocation per step: keys are interned constants, clip names are data strings.
 import { createEscGrace } from './escGrace.js'; // OB-049
 import { createDialogueRunner } from '../../../engine/index.js';
-import { createDialogueView } from './dialogueView.js';
+import { createDialogueView, offerIndices } from './dialogueView.js';
 import { createJawSync } from './jawSync.js';
 
 export const CLOSE_FAR_M = 6.5;
@@ -55,6 +55,7 @@ export function createDialogueCtl(opt) {
   let npcId = null;       // entity id of the current speaker NPC
   let pendingClip = null; // node clip waiting to be played once
   let oneShot = false;    // a node clip is playing
+  let offerArmed = false; // OB-186 redo: true once an offer node has seen a step without confirm
   let lastBase = null;    // last talk/listen/idle we asked for
   const jaw = createJawSync({ maxDeg: opt.jawOpenDeg }); // opt.jawOpenDeg = model def's jawOpenDeg, else fallback
   let jawComp = null;     // voxel component of the NPC whose jaw we drive
@@ -155,7 +156,11 @@ export function createDialogueCtl(opt) {
       ctl._jaw(dt);
       if (!ctl.open) { if (ctl.locked && !ctl._closing) ctl.locked = false; return; } // DIALOGUE-LOCK-01: never stay locked without an open box. runner.state is read-only here ('ended' already counts as closed)
       if (lookLocked === false) { ctl.close(); return; }
-      if (input.pressed('Escape')) { ctl.close(); return; }
+      if (input.pressed('KeyQ') && !input.pressed('Escape') && runner.state === 'choosing') { // OB-186: Q on an offer = its decline/exit choice
+        const o = offerIndices(runner);
+        if (o) { runner.selected = o.decline; runner.choose(); if (input.consumePressed) input.consumePressed(); runner.tick(dt); if (runner.state === 'ended') { ctl._finish(); return; } ctl._clips(); return; }
+      }
+      if (input.pressed('Escape') || input.pressed('KeyQ')) { if (input.consumePressed) input.consumePressed(); ctl.close(); return; } // OB-174: Q = close too; the press is used up so it does not toggle lock-on
       let digit = false;
       if (runner.state === 'choosing') {
         if (input.pressed('ArrowUp')) runner.move(-1);
@@ -166,8 +171,12 @@ export function createDialogueCtl(opt) {
           if (i < runner.choiceCount && input.pressed(DIGIT_KEYS[i])) { runner.selected = i; digit = true; break; }
         }
       }
-      if (digit || input.pressed(CONFIRM_KEYS[0]) || input.pressed(CONFIRM_KEYS[1])) {
-        if (runner.state === 'choosing') runner.choose(); else runner.press();
+      const conf = digit || input.pressed(CONFIRM_KEYS[0]) || input.pressed(CONFIRM_KEYS[1]);
+      const offerNow = runner.state === 'choosing' && !digit && offerIndices(runner);
+      if (!offerNow) offerArmed = false; else if (!conf) offerArmed = true; // OB-186 redo: an offer node only accepts E after a step without confirm (the press that paged into it is not a deliberate accept)
+      if (conf && offerNow && !offerArmed) { if (input.consumePressed) input.consumePressed(); } // swallowed: still the paging press
+      else if (conf) {
+        if (runner.state === 'choosing') { const o = !digit && offerIndices(runner); if (o) runner.selected = o.accept; runner.choose(); } else runner.press(); // OB-186: E on an offer = accept
         if (input.consumePressed) input.consumePressed(); // DIALOGUE-LOCK-01: the confirm edge is used up, later handlers (E interact) must not see it
       } // one confirm per step: a pick never also advances the next line
       runner.tick(dt);

@@ -641,6 +641,8 @@ export class WgRasterPass {
 
   /** Camera cut / teleport (main.js): the next frame's cull phase 1 runs with hzbOn 0. */
   invalidateHzb() { if (this.hzb) this.hzb.invalidate(); }
+  /** LOD-RESET-01: camera cut - GPU LOD hysteresis (`lodPrev`) back to a fresh state. */
+  resetLodHistory() { if (this.cull) this.cull.resetLodHistory(); }
 
   /**
    * S8-B2-10c, after raster pass A (outside any pass): copy the depth G-buffer (texSDepth, f32 bits of linear depth) -> ONE HZB build (it is phase 1's input NEXT frame),

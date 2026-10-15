@@ -1,7 +1,6 @@
 // Hello-world sample: a flat floor, one voxel block, one light, WASD to walk, arrow keys to look.
 // Imports only stable names from engine/index.js (checked by docs/engine-guide/guide.test.js).
-import { AssetRegistry, createRenderer, createEngine, GBuffer, bindShading, renderWorld,
-  buildLightSet, syncEntityLights, attachedLightPos, createLightBuffer, ambientL, buildMeshFromTris, DEG2RAD } from '../../../../engine/index.js';
+import { AssetRegistry, createRenderer, createEngine, createFrameRenderer, buildMeshFromTris, DEG2RAD } from '../../../../engine/index.js';
 
 const status = document.querySelector('#status');
 const COLS = 240, ROWS = 90;
@@ -33,10 +32,10 @@ const built = await createRenderer({ canvas, backend: 'webgpu', cols: COLS, rows
 const { rt, pipeline } = built;
 const engine = createEngine({ canvas, assets, renderTarget: rt, renderPipeline: pipeline,
   cols: COLS, rows: ROWS, physics: { mode: 'mesh' }, shadows: { sun: 'off' } });
-const table = bindShading(assets.palette, assets.detailPass, rt.pxCellH / rt.pxCellW);
-if (pipeline?.ready) pipeline.bind(table, assets.palette);
-const resize = () => rt.resize(window.innerWidth, window.innerHeight);
+const frameRenderer = createFrameRenderer({ engine, rt, pipeline, assets }); // binds the GPU pass and runs the per-frame order
+const resize = () => { rt.resize(window.innerWidth, window.innerHeight); frameRenderer.resize(rt.cols, rt.rows); };
 resize(); addEventListener('resize', resize);
+await frameRenderer.ready; // wait for the shaders to compile
 
 // 4. World: floor mesh, the block, and one warm light beside it. (x east, y north, z up, metres.)
 const world = engine.loadWorld({ name: 'hello', structures: [], entities: [], state: {} }, { physics: 'mesh' });
@@ -44,21 +43,14 @@ world.placeMesh(floor, { x: 0, y: 0, z: 0 }, 'hello.floor');
 world.spawn('prop', { x: 0, y: 4, z: 0, yawDeg: 0, scale: 1 }, { voxel: { model: block.name, anim: 'idle', loop: true } }, 'hello.block');
 world.spawn('prop', { x: 1, y: 3, z: 1.2, yawDeg: 0, scale: 1 }, { light: { preset: 'lantern', on: true } }, 'hello.lamp');
 
-// 5. Frame buffer record that renderWorld reads, plus the light set built from the world.
-const fb = { rt, depth: engine.depthBuffer, palette: assets.palette, gbuf: new GBuffer(rt.cols, rt.rows),
-  matTable: table, detailPass: assets.detailPass, lights: buildLightSet(world, assets.palette),
-  light: createLightBuffer(rt.cols, rt.rows), timeSec: 0, gpu: !!pipeline?.ready, renderer: 'mesh',
-  terrainEnabled: false, sceneFade: 1, frameNo: 0 };
-
-// 6. Input: plain DOM key events. The camera is a plain object {x, y, z, yawDeg, pitchDeg}.
+// 5. Input: plain DOM key events. The camera is a plain object {x, y, z, yawDeg, pitchDeg}.
 const keys = new Set();
 addEventListener('keydown', (e) => keys.add(e.code));
 addEventListener('keyup', (e) => keys.delete(e.code));
 const cam = { x: 0, y: 0, z: 1.7, yawDeg: 0, pitchDeg: 5 }; // yaw 0 looks along +y (north)
-const lightPos = [0, 0, 0]; // scratch for syncEntityLights
 const SPEED = 3, TURN = 90; // m/s, deg/s
 
-// 7. Loop: update with a time step, then render.
+// 6. Loop: move the camera, then let the frame renderer draw (it also syncs entity lights and presents).
 let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
@@ -69,12 +61,7 @@ function frame(now) {
   const yaw = cam.yawDeg * DEG2RAD, sin = Math.sin(yaw), cos = Math.cos(yaw);
   cam.x += (sin * fwd + cos * strafe) * SPEED * dt; // forward = (sin, cos), right = (cos, -sin)
   cam.y += (cos * fwd - sin * strafe) * SPEED * dt;
-  fb.timeSec += dt; fb.frameNo++;
-  syncEntityLights(fb.lights, world, assets.palette, attachedLightPos, lightPos); // adds/moves lights carried by entities
-  engine.ui.clear(); engine.overlay.clear();
-  renderWorld(fb, world, cam);
-  if (pipeline?.ready) pipeline.frame(fb, ambientL, cam, world);
-  rt.present();
+  frameRenderer.step(world, cam, { animate: true, dt });
   requestAnimationFrame(frame);
 }
 status.textContent = `${built.info.label} | WASD walk, arrows look`;

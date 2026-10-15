@@ -67,7 +67,11 @@ export function createGoblinCamps({ defs, sim, events, state }) {
 
   function setDown(c, on) {
     for (let k = 0; k < slots[c].length; k++) sim.setDown(slots[c][k], on);
-    if (on) dead[c] = total[c]; else { dead[c] = 0; fled[c] = 0; }
+    if (on) dead[c] = total[c];
+    else { // BH-S5: tell the save relay these members are alive again (it prunes its `dead` set)
+      dead[c] = 0; fled[c] = 0;
+      for (const m of defs[c].members) events.emit('beast:respawned', { id: m.id });
+    }
   }
   // create / load: a camp that was down stays down (its slots go to GONE until the respawn rule lets them back)
   for (let c = 0; c < n; c++) if (state[wKey[c]]) setDown(c, true);

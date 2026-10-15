@@ -5,6 +5,7 @@ import { World, AssetRegistry } from '../../engine/index.js';
 // minimal event bus (engine/dev.js Events is off limits for game/js outside dev/)
 class Events { constructor() { this.m = {}; } on(n, f) { (this.m[n] ||= []).push(f); return () => { this.m[n] = this.m[n].filter((g) => g !== f); }; } emit(n, p) { for (const f of this.m[n] || []) f(p); } }
 import { ensureInventory } from './quest/sim/inventory.js';
+import { HUD_ROW } from './questRelay.js';
 import { createSaveRelay } from './saveRelay.js';
 import { createGameHooks, bridgeEngineEvents } from './gameHooks.js';
 import { DONE_TEXT } from './questRelay.js';
@@ -72,7 +73,7 @@ assert.deepEqual(A.quest.book.handIn('burl.boars'), { items: [] }); assert.equal
 A.quest.checkSections(); // main.js: stepGame does this each step
 assert.deepEqual(toasts, [], 'q03 silent');
 assert.equal(A.quest.objectiveText(), OBJ.follow);
-assert.equal(A.quest.questFlag('burl.arrived'), true); assert.equal(world.state['burl.arrived'], true, 'questFlag writes world.state');
+assert.equal(A.quest.questFlag('quest.burl.follow.done'), true); assert.equal(world.state['quest.burl.follow.done'], true, 'questFlag writes world.state'); // OB-178/D-105
 assert.equal(A.quest.objectiveText(), OBJ.waystone);
 A.quest.questFlag('waystone.waystone.woken');
 assert.equal(A.quest.objectiveText(), OBJ.road);
@@ -91,10 +92,10 @@ assert.equal(DONE_TEXT, 'The pencil line runs on.');
   function Relay0() { this.cols = 160; this.cells = new Map(); this.setCellRGB = (x, y, g) => { this.cells.set(y * 1000 + x, String.fromCharCode(g + 32)); }; }
   const R = createSaveRelay({ storage: null, questDef, giverDefs });
   R.quest.draw(C);
-  let row = ''; for (let x = 0; x < 40; x++) row += C.cells.get(1000 + x) ?? '';
-  assert.equal(row.trim(), ('> ' + OBJ.wake).slice(0, 40).trim(), 'objective line at row 1');
+  let row = ''; for (let x = 0; x < 40; x++) row += C.cells.get(HUD_ROW * 1000 + x) ?? '';
+  assert.equal(row.trim(), ('> ' + OBJ.wake).slice(0, 40).trim(), 'objective line at HUD_ROW');
   A.quest.draw(C); // done quest: plain line
-  row = ''; for (let x = 0; x < 40; x++) row += C.cells.get(1000 + x) ?? '';
+  row = ''; for (let x = 0; x < 40; x++) row += C.cells.get(HUD_ROW * 1000 + x) ?? '';
   assert.ok(row.includes(DONE_TEXT));
 }
 

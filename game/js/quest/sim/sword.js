@@ -8,7 +8,7 @@
 import { arcHits, applyImpulse, PHYSICS } from '../../../../engine/index.js';
 import { ARC_BOUNDS_L, ARC_BOUNDS_R } from '../swordConfig.js';
 import { weaponMods } from './weaponStats.js'; // EQ-20
-import { MAX_TARGETABLES } from './targetables.js'; // OB-076: one shared cap
+import { MAX_TARGETABLES, RESELECT_DIST, createNearestSelector } from './targetables.js'; // OB-076: one shared cap
 
 export const ST_IDLE = 0;
 export const ST_HOLD = 1;
@@ -66,14 +66,26 @@ export function createSwordSim(world, events, cfg, hooks) {
   const tcx = new Float64Array(MAX_TARGETS), tcy = new Float64Array(MAX_TARGETS), tcz = new Float64Array(MAX_TARGETS);
   const tcr = new Float64Array(MAX_TARGETS), tch = new Float64Array(MAX_TARGETS);
 
+  let tAll = [], tFx = 0, tFy = 0, tSelX = 0, tSelY = 0;
+  const tSel = createNearestSelector(MAX_TARGETS);
+  function reselectTargetables() {
+    tSelX = tFx; tSelY = tFy;
+    tCount = tSel.pick(tAll, tFx, tFy, tEntities);
+  }
   function rebuildTargetables() {
-    const all = [];
-    world.forEachEntity((e) => { if (e.components && e.components.targetable) all.push(e); });
-    if (all.length > MAX_TARGETS) {
-      console.warn(`createSwordSim: ${all.length} targetable entities, only the first ${MAX_TARGETS} can be hit.`);
+    tAll = [];
+    world.forEachEntity((e) => { if (e.components && e.components.targetable) tAll.push(e); });
+    if (tAll.length > MAX_TARGETS) {
+      console.warn(`createSwordSim: ${tAll.length} targetable entities, keeping the ${MAX_TARGETS} nearest.`);
     }
-    tEntities = all.slice(0, MAX_TARGETS);
-    tCount = tEntities.length;
+    reselectTargetables();
+  }
+  /** OB-169: overflow only - re-pick the nearest N once the player moved RESELECT_DIST. */
+  function focusTargetables(x, y) {
+    tFx = x; tFy = y;
+    if (tAll.length <= MAX_TARGETS) return;
+    const dx = x - tSelX, dy = y - tSelY;
+    if (state === ST_IDLE && dx * dx + dy * dy >= RESELECT_DIST * RESELECT_DIST) reselectTargetables(); // idle only: hitMask indices stay stable mid-swing
   }
   rebuildTargetables();
   const offAdded = events.on('entity:added', rebuildTargetables);
@@ -361,6 +373,7 @@ export function createSwordSim(world, events, cfg, hooks) {
 
   sim.step = function step(player, fx, fy, attackDown) {
     justEntered = false;
+    if (player && player.transform) focusTargetables(player.transform.x, player.transform.y);
     const down = attackDown ? 1 : 0;
     const pressed = down && !prevDown;
     const released = !down && prevDown;

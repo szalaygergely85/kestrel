@@ -23,7 +23,7 @@
 // Zero allocation per frame after a build.
 const MAX_GROUP_RANGES = 8; // pinned (was MAX_VOX_PARTS = 8): 9-16 range meshes stay single draws
 import { addMeshStructures, placementMatrix12, meshObjectId, meshFeedStats, DRAW_FLAG_ONE_PART, DRAW_FLAG_NO_CULL, DRAW_TAIL_RESERVE } from './DrawList.js';
-import { INSTANCE_STRIDE, INST_OBJECT_ID, INST_FLAGS, makeInstanceGroup, createInstanceParts, groupRadius, touchInstances } from './instances.js';
+import { INSTANCE_STRIDE, INST_OBJECT_ID, INST_FLAGS, makeInstanceGroup, createInstanceParts, groupRadius, touchInstances, resetLodHistory } from './instances.js';
 import { classifyAABB, CULL_OUT } from './culling.js';
 
 /** Total grouped instances per set (OB-043, 38.46: 2048 -> 4096; build-time only: 2 x 64 B CPU rows per member + one GPU vertex buffer per group). */
@@ -116,6 +116,9 @@ export class MeshGroupSet {
     /** OB-043 per-group scratch (sized at build): nearest survivor distance^2, sort order, take flag. */
     this._gd = new Float64Array(0); this._go = new Int32Array(0); this._gt = new Uint8Array(0);
   }
+
+  /** LOD-RESET-01: camera cut / world load - every group forgets its LOD + shadow-band hysteresis (JS twin of `WgCullPass.resetLodHistory`). */
+  resetLodHistory() { for (const sl of this.slots) if (sl && sl.g) resetLodHistory(sl.g); }
 
   /** @param {number} si structure index @returns {boolean} */
   has(si) { return si < this.grouped.length && this.grouped[si] === 1; }

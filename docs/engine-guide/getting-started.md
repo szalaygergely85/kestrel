@@ -1,6 +1,6 @@
 # Getting started
 
-We build the [hello-world sample](samples/hello-world/main.js) in seven steps. Every engine name below is `stable`. Coordinates: x east, y north, z up, in metres. Yaw 0 looks along +y.
+We build the [hello-world sample](samples/hello-world/main.js) in six steps. Every engine name below is `stable`. Coordinates: x east, y north, z up, in metres. Yaw 0 looks along +y.
 
 ## 1. Page and content
 
@@ -23,18 +23,19 @@ const assets = AssetRegistry.fromGlobals(globalThis.ASSETS);
 ## 2. Renderer and engine
 
 ```js
-import { createRenderer, createEngine, bindShading } from '../../../../engine/index.js';
+import { createRenderer, createEngine, createFrameRenderer } from '../../../../engine/index.js';
 const built = await createRenderer({ canvas, backend: 'webgpu', cols: 240, rows: 90,
   cpuGrid: { cols: 240, rows: 90 }, rays: 1, terrainEnabled: false, shadows: { sun: 'off' } });
 const { rt, pipeline } = built;
 const engine = createEngine({ canvas, assets, renderTarget: rt, renderPipeline: pipeline,
   cols: 240, rows: 90, physics: { mode: 'mesh' }, shadows: { sun: 'off' } });
-const table = bindShading(assets.palette, assets.detailPass, rt.pxCellH / rt.pxCellW);
-if (pipeline?.ready) pipeline.bind(table, assets.palette);
+const frameRenderer = createFrameRenderer({ engine, rt, pipeline, assets });
 rt.resize(window.innerWidth, window.innerHeight);
+frameRenderer.resize(rt.cols, rt.rows);
+await frameRenderer.ready; // shaders compiled
 ```
 
-`cols x rows` is the glyph grid. `rt` draws it to the canvas.
+`cols x rows` is the glyph grid. `rt` draws it to the canvas. `createFrameRenderer` binds the GPU pass and owns the per-frame order (lights, render, present); call `frameRenderer.resize(cols, rows)` after every `rt.resize`.
 
 ## 3. Load a world
 
@@ -57,19 +58,7 @@ world.spawn('prop', { x: 1, y: 3, z: 1.2, yawDeg: 0, scale: 1 }, { light: { pres
 
 A light is a component with a palette preset name (`lantern`, `torch`, ...).
 
-## 5. Frame buffer and lights
-
-`renderWorld` reads one record that holds everything a frame needs:
-
-```js
-import { GBuffer, buildLightSet, createLightBuffer } from '../../../../engine/index.js';
-const fb = { rt, depth: engine.depthBuffer, palette: assets.palette, gbuf: new GBuffer(rt.cols, rt.rows),
-  matTable: table, detailPass: assets.detailPass, lights: buildLightSet(world, assets.palette),
-  light: createLightBuffer(rt.cols, rt.rows), timeSec: 0, gpu: !!pipeline?.ready, renderer: 'mesh',
-  terrainEnabled: false, sceneFade: 1, frameNo: 0 };
-```
-
-## 6. Camera and input
+## 5. Camera and input
 
 The camera is a plain object. Input is plain DOM events:
 
@@ -82,22 +71,18 @@ addEventListener('keyup', (e) => keys.delete(e.code));
 
 Each frame, turn `yawDeg`, then move: forward is `(sin(yaw), cos(yaw))`, right is `(cos(yaw), -sin(yaw))`. Use `DEG2RAD` for the conversion.
 
-## 7. Render loop
+## 6. Render loop
 
 ```js
-import { renderWorld, syncEntityLights, attachedLightPos, ambientL } from '../../../../engine/index.js';
 function frame() {
-  syncEntityLights(fb.lights, world, assets.palette, attachedLightPos, [0, 0, 0]);
-  engine.ui.clear(); engine.overlay.clear();
-  renderWorld(fb, world, cam);
-  if (pipeline?.ready) pipeline.frame(fb, ambientL, cam, world);
-  rt.present();
+  // ...move `cam` from the keys...
+  frameRenderer.step(world, cam, { animate: true, dt });
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 ```
 
-`renderWorld` fills the cell buffers, `pipeline.frame` shades them on the GPU, `rt.present()` shows the result.
+`step` syncs the lights, fills the cell buffers, shades them on the GPU and presents the canvas.
 
 ## Next
 

@@ -124,6 +124,22 @@ if (global.gc) {
   for (let i = 0; i < 200000; i++) t.camps.step(1, (i & 255) * 4, 900);
   global.gc(); ok('zero allocation per step', process.memoryUsage().heapUsed <= b + 1e6);
 }
+// --- BH-S5: a respawned camp is not re-killed by the save relay's dead set on Continue
+{
+  const { createSaveRelay } = await import('../saveRelay.js');
+  const t = mk(); const c = defs[0];
+  const relay = createSaveRelay({ storage: null, questDef: JSON.parse(readFileSync(new URL('../../../content/quests/m1.quest.json', import.meta.url))), giverDefs: [] });
+  relay.bindEvents(t.events);
+  const H = relay.handlers();
+  t.camps.step(7, 925, 905);
+  for (const m of c.members) { H.onEvent('beast:died', { id: m.id }); t.kill(m.id); }
+  ok('S5 setup: relay lists the camp as dead', relay.deadBeasts.length === c.members.length);
+  t.camps.step(7 + c.respawnDays, 0, 0); // respawn far from the player
+  ok('S5 camp respawned', t.state[downKey(c.id)] === false);
+  const beasts = { slotOf: (id) => t.slotById[id] ?? -1, state: [], steer: { removeAgent() {} }, entities: [] };
+  relay.applyDeadToBeasts(beasts);
+  ok('S5 applyDeadToBeasts leaves respawned members alive', relay.deadBeasts.length === 0 && beasts.state.every((v) => v === undefined));
+}
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

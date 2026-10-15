@@ -1,7 +1,7 @@
 // CONTENT-LINT-01: one fixture per rule (finding fires) + a clean control (zero findings). Pure rule functions, no world load.
 // Run: node tools/content-lint.test.mjs
 import assert from 'node:assert/strict';
-import { lint, RULES, LEVELS, line, rawIn, meshTopAt } from './content-lint.mjs';
+import { lint, RULES, LEVELS, line, rawIn, meshTopAt, R17_LEGACY } from './content-lint.mjs';
 
 import { LOGIC_VOCAB as LV } from '../game/js/logic/vocab.js';
 const S = (id, mesh, x, y) => ({ id, mesh, origin: { x, y, z: 0 } });
@@ -26,6 +26,10 @@ const clean = () => ({
 });
 const run = (c) => lint(c);
 assert.deepEqual(run(clean()), [], 'clean control: no findings');
+// OB-172/D-104: an fx:true billboard (fire) passes R2, a non-fx sprite is still flagged
+{ const c = clean(); c.fxModels = new Set(['burnerFire']); c.entities.push(E('fire', 1, 1, 0, { sprite: { model: 'burnerFire' } }), E('berry', 2, 2, 0, { sprite: { model: 'berrySprig' } }));
+  const f = run(c).filter((x) => x.rule === 'R2' || x.id); assert.equal(f.filter((x) => String(x.id || x.where).includes('berry')).length >= 1, true, 'non-fx sprite flagged');
+  assert.equal(f.some((x) => String(x.id || x.where) === 'fire'), false, 'fx sprite allowed'); }
 
 // each fixture breaks exactly one thing and must produce a finding of that rule only
 const cases = {
@@ -88,3 +92,15 @@ for (const [kind, name] of [['quest', 'sq.burl.blue'], ['npc', 'wardenOrla'], ['
 assert.equal(RULES.R16({ names: [{ where: 'a', kind: 'item', name: 'Health Potion' }, { where: 'b', kind: 'npc', name: 'Burl' }, { where: 'c', kind: 'item', name: 'Tier T4 mark' }] }).length, 1, 'T4 only as a bare tag');
 assert.ok(Object.values(LEVELS).filter((l) => l === 'warn').length === 4, 'R8 R9 R10 R16 are warn level (R12 R13 R14 R15 errors)');
 console.log('content-lint.test: ok (' + Object.keys(cases).length + ' rules + clean control)');
+// R17 (QUEST-FORMAT, D-106): a quest fails without begin/end/rewards, with > 3 objectives, unknown next/requires, or xp; legacy allow-list only WARNs
+{
+  const ok = { id: 'q.ok', begin: { npc: 'rook' }, end: { npc: 'rook' }, requires: { quests: [] }, objectives: [{}], rewards: { coin: 5 }, next: 'q.two' }, two = { ...ok, id: 'q.two', next: null, requires: { quests: ['q.ok'] } };
+  const run17 = (...defs) => RULES.R17({ formatQuests: defs });
+  assert.equal(run17(ok, two).length, 0);
+  for (const [bad, re] of [[{ begin: undefined }, /no begin/], [{ end: undefined }, /no end/], [{ rewards: {} }, /empty rewards/], [{ objectives: [{}, {}, {}, {}] }, /4 objectives/], [{ next: 'q.nope' }, /next "q.nope"/], [{ requires: { quests: ['q.nope'] } }, /requires unknown/], [{ xp: 10 }, /xp/]]) {
+    const f = run17({ ...ok, id: 'q.bad', ...bad }, two); assert.ok(f.some((x) => re.test(x.msg) && x.id === 'q.bad' && x.level === 'error'), 'R17 ' + JSON.stringify(bad) + ': ' + f.map((x) => x.msg));
+  }
+  const legacyId = [...R17_LEGACY][0], f = run17({ ...ok, id: legacyId, rewards: {} }, two).filter((x) => x.id === legacyId); assert.ok(f.length === 1 && f[0].level === 'warn', 'legacy allow-list warns'); assert.ok(R17_LEGACY.has('m1'));
+  assert.equal(LEVELS.R17, 'error');
+}
+console.log('content-lint.test R17: ok');

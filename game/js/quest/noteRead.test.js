@@ -138,7 +138,7 @@ function edgeInput() {
   const esc = { pressed: (c) => c === 'Escape', consumePressed: () => {} };
   const openIt = () => { resetNoteRead(cfg); noteRead({ world, def }); stepNoteRead(0.2, none, true, { x: 10, y: 20, z: 1 }); };
 
-  ok('footer text is [E] Close and has no Esc hint (OB-056)', FOOTER_TEXT === '[E] Close' && !/esc/i.test(FOOTER_TEXT));
+  ok('footer text is [Q] Close and has no Esc hint (OB-056)', FOOTER_TEXT === '[Q] Close' && !/esc/i.test(FOOTER_TEXT));
   const cells = [];
   const ui = { cols: 160, rows: 60, setCellRGB: (x, y, code) => cells.push(code) };
   openIt();
@@ -169,3 +169,13 @@ function edgeInput() {
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { console.log('FAILURES:\n' + failures.map((f) => '  - ' + f).join('\n')); process.exit(1); }
 console.log('ALL PASS');
+
+// ---- OB-174: Q closes a note and the press is consumed ----
+{
+  resetNoteRead({ note: { fadeIn: 0.12, fadeOut: 0.08, sceneDim: { bgMul: 0.35 } } });
+  const world = { state: {} }; let consumed = 0; let q = false;
+  const inp = { pressed: (c) => q && c === 'KeyQ', consumePressed: () => { consumed++; } };
+  noteRead({ world, def: { noteId: 'keeperLog' } }); stepNoteRead(0.2, inp, true);
+  q = true; stepNoteRead(0.016, inp, true); q = false; stepNoteRead(0.2, inp, true);
+  ok('Q closes the note and consumes the press', !isNoteOpen() && consumed === 1);
+}
