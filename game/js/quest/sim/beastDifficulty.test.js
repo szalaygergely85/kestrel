@@ -83,12 +83,15 @@ ok(`notice time Easy > Normal > Hard (${ns.easy}/${ns.normal}/${ns.hard} steps)`
 { const { sim } = one('normal'); const t0 = sim.tactics.tokM; sim.setDifficulty('hard');
   ok('live switch: leash / tokens / difficulty row', sim.dm.leash === resolveDifficulty('hard').leash && sim.tactics.tokM === 3 && t0 === 2 && sim.difficulty.name === 'hard'); }
 
-// BH2-G1 eliteChance: seeded per-slot roll, Normal/Easy never, Hard some (more hp via +2 levels)
+// BH2-G1 eliteChance: seeded per-slot roll, Normal/Easy never, Hard some (x1.5 HP, spec)
 {
   const kinds = Array(12).fill('grey_wolf'), cnt = (d, sd) => { const { sim } = mk(kinds, d, sd); let n = 0; for (let i = 0; i < 12; i++) n += sim.elite[i]; return { sim, n }; };
   const ne = cnt('normal'), ee = cnt('easy'), he = cnt('hard'), he2 = cnt('hard');
   ok(`elites: Normal/Easy none, Hard some but not all (${ne.n}/${ee.n}/${he.n})`, ne.n === 0 && ee.n === 0 && he.n > 0 && he.n < 12);
   ok('elites: deterministic (same seed, same slots)', he.sim.elite.join() === he2.sim.elite.join());
+  const hp = (i) => he.sim.entities[i].components.health.max, el = [], nel = [];
+  for (let i = 0; i < 12; i++) (he.sim.elite[i] ? el : nel).push(hp(i));
+  ok(`elites: HP is exactly x1.5 a non-elite of the same kind (${el[0]} vs ${nel[0]})`, el.length > 0 && nel.length > 0 && el.every((v) => v === Math.round(nel[0] * 1.5)));
 }
 // BH2-G1 flank: Easy = no flank slots, Hard = tighter ring than Normal
 {
@@ -98,7 +101,7 @@ ok(`notice time Easy > Normal > Hard (${ns.easy}/${ns.normal}/${ns.hard} steps)`
     for (let t = 0; t < 600; t++) { sim.step(px, py, z); let m = 0; for (let i = 0; i < 6; i++) if (sim.tactics.flank[i] >= 0) m |= 1 << sim.tactics.flank[i]; let c = 0; for (; m; m &= m - 1) c++; /* distinct ring slots */ if (c > fl) fl = c; }
     return fl; };
   const fe = run('easy'), fn = run('normal'), fh = run('hard');
-  ok(`flank slots used Easy one side, Normal/Hard spread (${fe}/${fn}/${fh})`, fe === 1 && fn > 1 && fh > 1);
+  ok(`flank slots: Easy none (straight chase), Normal/Hard spread (${fe}/${fn}/${fh})`, fe === 0 && fn > 1 && fh > 1);
 }
 // vitals: playerDmg scales damage the player takes
 function taken(diff) {
@@ -107,9 +110,22 @@ function taken(diff) {
   const world = { get: () => null };
   const v = createVitals(world, events, VITALS_DEFAULTS, { dmgMul: () => resolveDifficulty(diff).playerDmg });
   v.step(player, null, 1 / 60);
-  listeners[0]({ target: 'player', source: 'b0', damage: 8 });
+  v.hurt(8, 'drown'); // playerDmg covers sourceless env damage only
   return 100 - player.components.health.hp;
 }
+// ARCH round 4b: beast hits carry only the enemy factor (playerDmg must not stack); sourceless env damage (hurt) uses playerDmg
+{ const mkV = (mul) => { const listeners = []; const events = { on: (n, f) => { listeners.push(f); return () => {}; }, emit() {} };
+    const player = { id: 'player', transform: { x: 0, y: 0, z: 0, yawDeg: 0 }, components: { health: { hp: 100, max: 100, invuln: 0 }, body: {} } };
+    const v = createVitals({ get: () => null }, events, VITALS_DEFAULTS, { dmgMul: () => mul }); v.step(player, null, 1 / 60); return { v, listeners, player }; };
+  const a = mkV(1), b = mkV(2);
+  a.listeners[0]({ target: 'player', source: 'b0', damage: 8 }); b.listeners[0]({ target: 'player', source: 'b0', damage: 8 });
+  ok('beast hit ignores playerDmg (dmgMul 2 == 1)', a.player.components.health.hp === b.player.components.health.hp);
+  a.v.hurt(5, 'drown'); b.v.hurt(5, 'drown');
+  ok(`drowning uses playerDmg (${100 - a.player.components.health.hp} vs ${100 - b.player.components.health.hp})`, b.player.components.health.hp < a.player.components.health.hp); }
+// per-slot perception reaches perceive() (a comment once swallowed the assignments): non-default pNear/pCone show up in the adapter
+{ const { world, sim } = mk(['grey_wolf']); sim.pNear[0] = 6.5; sim.pCone[0] = 0.25; const px = HX, py = HY - 20, z = world.terrain.heightAt(px, py);
+  for (let t = 0; t < 5; t++) sim.step(px, py, z);
+  ok(`noticedOf uses per-slot hearR/coneCos (${sim._pa.hearR}/${sim._pa.coneCos})`, sim._pa.hearR === 6.5 && sim._pa.coneCos === 0.25); }
 const tk = { easy: taken('easy'), normal: taken('normal'), hard: taken('hard') };
 ok(`player damage taken Easy < Normal < Hard (${tk.easy}/${tk.normal}/${tk.hard})`, tk.easy > 0 && tk.easy < tk.normal && tk.normal < tk.hard);
 console.warn = orig;

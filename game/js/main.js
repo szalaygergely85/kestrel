@@ -185,7 +185,6 @@ import { createParticleHooks, applyPropEmitters } from './quest/particleHooks.js
 import { createWaterfallHooks } from './quest/waterfallHooks.js';
 import { createAmbientMotes } from './quest/ambient.js';
 import { VITALS_DEFAULTS } from './quest/sim/vitalsConfig.js';
-import { resolveDifficulty } from './quest/sim/difficulty.js'; // BH2-G1
 import { createHitStop, hitStopEnabled } from './fx/hitStop.js'; // HITSTOP-01 (lane B1)
 import { createDeathFlow, deathFlowEnabled } from './fx/deathFade.js'; // DEATH-FLOW-01 part 1 (lane B1)
 import { createHurtFx, hurtFxEnabled } from './fx/hurtFx.js'; // HURT-FX-01 (lane B1): low-hearts pulse only (hurt edge + kick = US-080a2)
@@ -1690,7 +1689,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       if (vitals) vitals.dispose(); // Q9 item 1a: drop the old world's `combat:hit` listener before a new one is added below
       hurtFx.reset();
       vitals = createVitals(world, engine.events, VITALS_DEFAULTS, { beasts, targeting, block: shieldSim, // EQ-07: hooks.block = the shield sim
-        dmgMul: () => resolveDifficulty(loadSettings().difficulty).playerDmg, // BH2-G1
+        dmgMul: () => (beasts && beasts.difficulty ? beasts.difficulty.playerDmg : 1), // BH2-G1: sim.difficulty is the resolved row (kept current by applyDifficulty/setDifficulty)
         defence: () => { const c = playerHandle && playerHandle.data.components; return c && c.equipment && itemDefs ? defenceOf(c.equipment, itemDefs) : 0; }, // EQ-02
         defenceBonus: () => { const c = playerHandle && playerHandle.data.components; return c && c.equipment && itemDefs ? nightBonus(c.equipment, itemDefs, clockHour(world.state, clockCfg)) : 0; }, // QL-19: night cloak +10 %
         respawnPose: () => { hzb.invalidate('respawn'); const rp = gameHooks.respawn(); ensureBand(world, rp); return rp; }, // WS2-05: band for the respawn pose // seam onRespawn(): first non-null {x,y,z,yawDeg} wins

@@ -67,7 +67,7 @@ function assignFlanks(sim, S) {
       let best = -1e18;
       for (let k = 0; k < 6; k++) { const d = FLANK_X[k] * dx + FLANK_Y[k] * dy; if (d > best + 1e-9) { best = d; anchor = k; } }
     }
-    if (T.flankLv === 0) { T.flank[i] = anchor; continue; } // Easy: no surround - every waiter holds the same side (anchor) of the ring
+    if (T.flankLv === 0) { T.flank[i] = -1; continue; } // Easy (spec): no flank slots - waiters chase straight (see tacticsSteer)
     T.flank[i] = rank < 3 ? (anchor + 2 * rank) % 6 : (anchor + 2 * (rank - 3) + 1) % 6;
     rank = (rank + 1) % 6;
   }
@@ -79,6 +79,7 @@ export function tacticsSteer(sim, i, S) {
   if (sim.state[i] !== S.CHASE) return false;
   const role = sim.tactRole[i], w = sim.waiting[i];
   if (role === TACT_MELEE || role === TACT_SWARM) {
+    if (T.flankLv === 0 && w === 1) { o.x = px; o.y = py; o.speed = 0.8; return true; } // Easy: straight chase, the token queue still gates who attacks
     if (w !== 1 || T.flank[i] < 0) return false;
     const k = T.flank[i], r = role === TACT_SWARM ? TACT_TUNING.swarmR : (T.flankLv === 2 ? TACT_TUNING.flankRHard : T.flankLv === 0 ? TACT_TUNING.flankREasy : TACT_TUNING.flankR);
     o.x = px + FLANK_X[k] * r; o.y = py + FLANK_Y[k] * r; o.speed = 0.8; return true;
