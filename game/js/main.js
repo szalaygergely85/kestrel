@@ -9,7 +9,7 @@
 import { applyImpostorBoot, reapplyRememberedImpostors } from './ui/impostorPreset.js'; // R6-WIRE
 import { groundLookFromParams } from './look/groundLookConfig.js'; // ENV-02d
 import { buildAtmosConfig } from './look/atmosConfig.js'; import { createAtmosDriver } from './look/atmosDriver.js'; // ENV-03
-import { createAtmosState, mixAtmos, applyAtmosToPalette, gradeCells, createPostState, composePost, postCells } from '../../engine/index.js';
+import { createFogHour, createAtmosState, mixAtmos, applyAtmosToPalette, gradeCells, createPostState, composePost, postCells } from '../../engine/index.js';
 import { resolveGI, createGIWire, giLoadOptions } from './look/giWire.js';
 import { resolveFootIk, createFootIkWire } from './look/footIkWire.js'; // ANIM-IK-01b: kit character foot placement (?footik=0 off) // GI-PROBE-06
 import { sceneOf } from './look/sceneFlag.js'; import { resolvePost } from './look/postConfig.js'; // POST-STACK-01c // ENV-03: `?atmos=0` = no driver, palette untouched
@@ -1385,6 +1385,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
   let lightSet = null; let giWire = null; const giCfg = resolveGI(params, resolvedQuality && resolvedQuality.name); // GI-PROBE-06: baked bounce light; `?gi=0` = null = today's frames
   // US-006: built from the loaded world's level.def.lights, below
   const atmosLast = { w: null }; engine.events.on('world:loaded', () => { atmosLast.w = null; }); // REV-MAIN: forces a snap on the next atmosphere step
+   let fogHour = null; const applyFogHour = (P, h) => { if (!fogHour && window.FOG_HOUR) fogHour = createFogHour(P, window.FOG_HOUR); if (fogHour) fogHour.apply(h); }; // NIGHT-HAZE-01: far fog colour follows the hour
    let atmosDrv = null, atmosCfg = null, atmosV = -1, atmosBase = null; const atmosState = createAtmosState(); // ENV-03: biome atmosphere driver (null = off)
   const postQ = resolvedQuality && resolvedQuality.name, postCfg0 = resolvePost(window.POST_LOOK, params, postQ, 'outdoor'), postState = createPostState(); let postCfg = postCfg0, postV = -2; const sceneScratch = {}; let sceneNow = 'outdoor'; // SCENE-INTERIOR: sceneOf() flag; postCfg re-resolved only on change // POST-STACK-01c: `?post=0` = null = today's frames; scene stays 'outdoor' until an interior flag exists
   let clockDriver = null; // DN-03: step-quantised sun/look/ambient driver, rebuilt on every 'world:loaded'
@@ -1556,6 +1557,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
           shadowHour = ((shadowHour % 24) + 24) % 24;
           const gMoon = applySunPair(world, lightSet, shadowHour, hq, worldSunPath, sunEnabled); if (giWire) giWire.clock(hq, gMoon); // GI-PROBE-06: mix on hour step only // AUD2-02: ONE sun/moon decision for the stepped light/shadow sun and the smooth world.sun
           const L = blendLook(P, hq, P.daySchedule);
+          applyFogHour(P, hq);
           if (lightSet) { const hu = P.hue[L.ambient]; lightSet.ambient[0] = hu[0] * L.ambientI; lightSet.ambient[1] = hu[1] * L.ambientI; lightSet.ambient[2] = hu[2] * L.ambientI; }
         });
         clockDriver.update(clockHour(world.state, clockCfg), true);
@@ -1569,8 +1571,9 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         seedClockFromParam(world.state, hr); clockTimeApplied = true;
         applySunPair(world, lightSet, hr, hr, worldSunPath, sunEnabled);
         const L = blendLook(P, hr, P.daySchedule);
+        applyFogHour(P, hr);
         if (lightSet) { const hu = P.hue[L.ambient]; for (let i = 0; i < 3; i++) lightSet.ambient[i] = hu[i] * L.ambientI; }
-      } else if (Number.isFinite(timeHour)) { if (!clockTimeApplied) { seedClockFromParam(world.state, timeHour); clockTimeApplied = true; } applySunHours(world, lightSet, timeHour, worldSunPath, sunEnabled); } // frozen clock: the NPC schedules still read the ?time= hour
+      } else if (Number.isFinite(timeHour)) { applyFogHour(assets.palette, timeHour); if (!clockTimeApplied) { seedClockFromParam(world.state, timeHour); clockTimeApplied = true; } applySunHours(world, lightSet, timeHour, worldSunPath, sunEnabled); } // frozen clock: the NPC schedules still read the ?time= hour
       // Architect review 1 item 7 (tech notes item 8): `?lights=8` test-only -
       // 7 synthetic extra lights (torch preset) spread 2-4 m around the
       // level's first light, so the tester can measure the "8 point lights"
