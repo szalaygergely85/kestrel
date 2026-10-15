@@ -1870,7 +1870,8 @@ export class World {
     const sup = this._meshSupportScratch;
     probeSupportIo(this.colliders, this.colliders.length, io, grounded, opts, sup);
     let terrainZ = NaN, tnx = 0, tny = 0, tnz = 0;
-    if (this.terrain && this._terrainSupports(x, y, footZ)) {
+    const st = this.terrain ? this.structureAt(x, y) : null; // HUNT-ALLOC-01: inline gate, no double args through a helper (arch 38.61 2b)
+    if (this.terrain && (!st || (st.keepMask && this._terrainSupports(x, y, footZ)))) {
       this.terrain.groundAtBuf(io);
       terrainZ = io[3];
       if (terrainZ >= sup.floorZ) {
