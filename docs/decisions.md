@@ -1288,3 +1288,9 @@ Crocodile (owner, same session): **short grab + mash to escape (1.5 s, max 12 % 
 
 ## D-106
 **2026-10-15, owner ("exactly not one huge quest... split, each quest begin objectives end rewards. no huge quests... just chain quests", OB-182).** The story is a CHAIN of small quests, never one long quest with sections. Every quest: BEGIN = a giver (character, or a rare object per D-087) with a `!`, Accept (E) / Exit (Q); OBJECTIVES = 1-3 short steps; END = `?` at the return character, hand-in conversation, a REWARD (xp/item/coin/heart piece - something every time); the hand-in then OFFERS the next quest in the chain (D-105: never auto-start). The journal lists each quest separately. Applies to m1 "Beyond the Wall" (split into ~7 quests) and to any other multi-section quest.
+
+## D-107 - Performance + beauty plan from the fable tech review (owner, 2026-10-15; recorded by the PC-B main session)
+Owner answer to docs/tech-review-2026-10-15-fable.md section 5: "Anything which makes performance and quality better" = yes to all recommendations:
+1. Baked lighting (.gi.bin) ships in git. 2. The `extreme` preset is hidden until measured. 3. Up to 4 frames of sprite-light lag is accepted (SPRITE-LIGHT-CACHE-01). 4. Glyph-from-normals: try it after one test still; no Unicode block glyphs. 5. Light shafts (shadow-map march) on high/ultra only. Also accepted from the review: no workers unless frame slicing fails; the post-stack JS twin may be over budget as oracle-only (warn gate).
+Next: the review's sprint P1 (speed: PERF-MEASURE-02, PERF-JS-01, SIM-SPIKE-01, MESH-FEED-GRID-01, SPRITE-LIGHT-CACHE-01, SHADOW-TRIM-01) then P2 (beauty: GI-PROBE-01/02a, POST-STACK-01b/01c, NIGHT-SKY-01, WIND-GUST-01). PC-A to ratify the review and lane split.
+Owner 2026-10-15 (later): "Make those priority" - D-107 stories (pc-b-queue section H) go before the remaining EP-UNDER items (UNDER-04/05/06/07) and other queue work; in-flight items finish first.
