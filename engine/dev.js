@@ -100,3 +100,4 @@ export { WgPointShadowPass } from './render/gpu/wg/passPointShadow.js';
 export { WgRasterPass } from './render/gpu/wg/passRaster.js';
 
 export { makeMockGpuDevice } from './test/assert.js'; // mock GPU device for CPU-side pass benches
+export { SKY_GLOW } from './render/skyGlow.js'; // CANOPY-SHAFT-01b: gpucompare rule 8a reads the sun tint

@@ -8,8 +8,9 @@ import {
 import {
   runGpuCompare, compareCells, meshCellCap, compareGeometry, compareLight, describeCellNormals, poisonAllCells, unpackReadback,
   terrainMeshSetFor, runStableRow, compareGlow, emisFromPacked,
-  computeDerivatives, shadeSurfaces, edgePass, createShadowParityRunner,
+  computeDerivatives, shadeSurfaces, edgePass, createShadowParityRunner, SKY_GLOW,
 } from '../../../../engine/dev.js';
+import { shaftRule8a } from './shaftRule8a.js'; // CANOPY-SHAFT-01b rule 8a
 import { quadruped16, makeRowGI, createContactAO, setDynamicBlobs, buildContactBlobs } from '../../../../engine/dev.js'; // VOX-PARTS-16b: 12-part fixture for the `vox12` row
 import { POSES as GPU_COMPARE_POSES, GATE_POSES } from '../../../../content/dev-poses.js';
 import { fillUnitGrid, placeholderTeamSpec } from '../unitsHarness.js'; // RE-06: instanced-units pose helpers
@@ -1214,29 +1215,10 @@ async function runGpuCompareSceneMode(ctx) {
     if (poseShaft && lights && lights.shaft && rbw && wg) { // CANOPY-SHAFT-01b (38.76 rule 8a): frame B = lift on; hard asserts vs frame A (frame A is what the twin compare below uses)
       const aFg = new Uint8Array(rbw.fg), aBg = new Uint8Array(rbw.bg), lightA = new Uint32Array(await gpuPipeline.readbackLight());
       lights.shaft.liftOff = false;
-      fbCompare.gpu = true; renderWorld(fbCompare, world, cam); gpuPipeline.frame(fbCompare, lights, cam, world); engine.overlay.flush(cam); rt.present();
-      const rb = await wg.readbackCells(), sunI = sunFromWorld(world, assets.palette, {}).sunI;
-      const T = [255, 205, 130], fails = [];
-      let lifted = 0, glyphDiff = 0, nonShaft = 0, wrongDir = 0, maxLift = 0;
-      for (let c = 0; c < n; c++) {
-        const sq = (lightA[c * 4 + 3] >>> 20) & 15, o = c * 4;
-        let ch = false;
-        for (let k = 0; k < 3; k++) {
-          for (const [a, b] of [[aBg, rb.bg], [aFg, rb.fg]]) {
-            const d = b[o + k] - a[o + k]; if (d === 0) continue;
-            ch = true; maxLift = Math.max(maxLift, Math.abs(d));
-            const tgt = T[k] * sunI; if ((d > 0 && a[o + k] > tgt + 1) || (d < 0 && a[o + k] < tgt - 1)) wrongDir++; // must move toward FOG_SUN_TINT * sunI (1 byte slack)
-          }
-        }
-        if (aFg[o + 3] !== rb.fg[o + 3]) glyphDiff++; // glyph code lives in fg.a
-        if (ch) { if (sq === 0) nonShaft++; else lifted++; }
-      }
-      const liftedPct = 100 * lifted / n;
-      if (glyphDiff) fails.push('glyph changed in ' + glyphDiff + ' cells');
-      if (nonShaft) fails.push(nonShaft + ' changed cells with bits 20..23 = 0');
-      if (wrongDir) fails.push(wrongDir + ' channels moved away from the sun tint');
-      if (liftedPct < 1) fails.push('only ' + liftedPct.toFixed(2) + ' % of cells lifted (>= 1 % required)');
-      const okB = fails.length === 0; overallOk = overallOk && okB;
+      const r8 = await shaftRule8a({ n, aFg, aBg, lightA, sunI: sunFromWorld(world, assets.palette, {}).sunI, tint: SKY_GLOW.tint,
+        renderB: () => { fbCompare.gpu = true; renderWorld(fbCompare, world, cam); gpuPipeline.frame(fbCompare, lights, cam, world); engine.overlay.flush(cam); rt.present(); }, // frame B gets FRESH readback arrays (rbw stays frame A)
+        readCells: (f, b) => wg.readbackCells(f, b) });
+      const okB = r8.ok, { lifted, liftedPct, glyphDiff, nonShaft, wrongDir, maxLift } = r8.stats, fails = r8.fails; overallOk = overallOk && okB;
       console.log(`[gpucompare] ${okB ? 'PASS' : 'FAIL'} ${poseName} [shaft frame B vs A]: lifted=${liftedPct.toFixed(2)}% (>=1) glyphDiff=${glyphDiff} nonShaftChanged=${nonShaft} wrongDir=${wrongDir} maxLift=${maxLift}${fails.length ? ' :: ' + fails.join('; ') : ''}`);
       rowsOut.push({ pose: poseName + ' [shaft frame B]', ok: okB, shaftB: { lifted, liftedPct, glyphDiff, nonShaft, wrongDir, maxLift } });
       lights.shaft.liftOff = true; // restore frame A for the twin compare
