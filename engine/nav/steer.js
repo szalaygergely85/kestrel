@@ -52,7 +52,8 @@ const FNV_OFFSET = 0x811c9dc5 | 0;
 const FNV_PRIME = 16777619;
 
 /** cx/cy of the hash cell containing (x,y), clamped into [0,hw)/[0,hh). */
-function hashCellOf(steer, x, y) {
+function hashCellOf(steer, slot) { // slot, not (x, y): a double passed to a non-inlined call is boxed on Node 24
+  const x = steer.x[slot], y = steer.y[slot];
   let cx = Math.floor((x - steer.bounds.x0) / steer.hashCell);
   let cy = Math.floor((y - steer.bounds.y0) / steer.hashCell);
   if (cx < 0) cx = 0; else if (cx >= steer._hw) cx = steer._hw - 1;
@@ -82,7 +83,9 @@ function walkableQ(grid) {
     const local = L.base[s] + ly * L.w[s] + lx;
     if (Math.abs(L.height[local] - z) <= 1.0) return L.cost[local] !== 0;
   }
-  return cellWalkable(grid, x, y);
+  // ground cell, inlined (no double crosses a call)
+  const gx = Math.floor((x - grid.x0) / grid.cell), gy = Math.floor((y - grid.y0) / grid.cell);
+  return gx >= 0 && gy >= 0 && gx < grid.w && gy < grid.h && grid.cost[gy * grid.w + gx] !== 0;
 }
 
 // Same straight-step integer cost flowField.js uses, so a flow-follow
@@ -136,7 +139,6 @@ function computeDesired(steer, slot, grid, out) {
     const arriveR = steer.arriveR[slot];
     let speedScale = 1;
     if (arriveR > 0) {
-      const cx = grid.cellX(x), cy = grid.cellY(y);
       if (grid.layers !== null) {
         LQ[0] = x; LQ[1] = y; LQ[2] = steer.z[slot];
         const li = grid.locateQ();
@@ -146,7 +148,8 @@ function computeDesired(steer, slot, grid, out) {
           if (integ < thresh) speedScale = integ / thresh;
           if (speedScale < 0) speedScale = 0;
         }
-      } else if (grid.inBounds(cx, cy)) {
+      } else if (grid.inBounds(grid.cellX(x), grid.cellY(y))) {
+        const cx = grid.cellX(x), cy = grid.cellY(y);
         const integ = ff.integ[grid.index(cx, cy)];
         const thresh = (arriveR / grid.cell) * FLOW_STRAIGHT_COST;
         if (integ < thresh) speedScale = integ / thresh;
@@ -393,7 +396,7 @@ export function createSteer(opts) {
     head.fill(-1);
     for (let i = 0; i < hi; i++) {
       if (!active[i]) continue;
-      const idx = hashCellOf(steer, steer.x[i], steer.y[i]);
+      const idx = hashCellOf(steer, i);
       next[i] = head[idx];
       head[idx] = i;
     }
@@ -497,7 +500,7 @@ export function createSteer(opts) {
         if (moved) {
           LQ[0] = steer.x[i]; LQ[1] = steer.y[i]; LQ[2] = z;
           const li = grid.locateQ();
-          if (li >= 0) steer.z[i] = grid.cellZ(li);
+          if (li >= 0) { const nn = grid.w * grid.h; steer.z[i] = li < nn ? grid.height[li] : layers.height[li - nn]; } // cellZ inlined: no boxed return
         }
       }
     }
