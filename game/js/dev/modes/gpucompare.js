@@ -1,5 +1,5 @@
 import {
-  bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
+  sunFromWorld, bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
   meshFromJSON, meshFromBin, composeCharacter, meshCharacter, collapseRig, riggedModelDef, buildMeshFromTris, MaskAtlas, buildMaskAtlas, writeUnitInstance, buildLightSet, createLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
   bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks, sunPathFrom, applySunPair, blendLook, createAtmosState, mixAtmos, applyAtmosToPalette, gradeCells, createPostState, composePost, postCells,
   bakeImpostor, enableGroupImpostor, resolveGroupLod1, createInstanceBuffer,
@@ -1119,7 +1119,7 @@ async function runGpuCompareSceneMode(ctx) {
     if (sunOverride) restoreSun = applySunOverride(world, lights, sunOverride);
     else if (Number.isFinite(poseHour)) restoreSun = applyHourOverride(world, lights, assets.palette, poseHour, ctx.sunEnabled); // DN-04b
     if (lights) lights.gi = poseGi && lights ? makeRowGI({ ...poseGi, hour: poseHour, lights }) : null; // GI-PROBE-05: only the gi* rows carry a probe field
-    if (lights) lights.shaft = poseShaft || null; // CANOPY-SHAFT-01b: only the shaft* rows carry march data
+    if (lights) lights.shaft = poseShaft ? { ...poseShaft, liftOff: true } : null; // CANOPY-SHAFT-01b: only the shaft* rows carry march data; frame A = lift off (38.76 rule 8a), frame B (below) lift on
     if (lights) { // CONTACT-AO-01b: only the cao* rows carry a blob list (copied into a fixed cao; build once, camera = the pose eye)
       if (poseCao) { const c = createContactAO(), n = poseCao.length, f = (k) => Float32Array.from(poseCao, (b) => b[k]);
         setDynamicBlobs(c, { count: n, x: f('x'), y: f('y'), zBase: f('z'), rx: f('rx'), ry: f('ry'), h: f('h'), k: f('k') });
@@ -1211,6 +1211,37 @@ async function runGpuCompareSceneMode(ctx) {
       }
     }
     const gpuFg = rbw ? rbw.fg : null, gpuBg = rbw ? rbw.bg : null;
+    if (poseShaft && lights && lights.shaft && rbw && wg) { // CANOPY-SHAFT-01b (38.76 rule 8a): frame B = lift on; hard asserts vs frame A (frame A is what the twin compare below uses)
+      const aFg = new Uint8Array(rbw.fg), aBg = new Uint8Array(rbw.bg), lightA = new Uint32Array(await gpuPipeline.readbackLight());
+      lights.shaft.liftOff = false;
+      fbCompare.gpu = true; renderWorld(fbCompare, world, cam); gpuPipeline.frame(fbCompare, lights, cam, world); engine.overlay.flush(cam); rt.present();
+      const rb = await wg.readbackCells(), sunI = sunFromWorld(world, assets.palette, {}).sunI;
+      const T = [255, 205, 130], fails = [];
+      let lifted = 0, glyphDiff = 0, nonShaft = 0, wrongDir = 0, maxLift = 0;
+      for (let c = 0; c < n; c++) {
+        const sq = (lightA[c * 4 + 3] >>> 20) & 15, o = c * 4;
+        let ch = false;
+        for (let k = 0; k < 3; k++) {
+          for (const [a, b] of [[aBg, rb.bg], [aFg, rb.fg]]) {
+            const d = b[o + k] - a[o + k]; if (d === 0) continue;
+            ch = true; maxLift = Math.max(maxLift, Math.abs(d));
+            const tgt = T[k] * sunI; if ((d > 0 && a[o + k] > tgt + 1) || (d < 0 && a[o + k] < tgt - 1)) wrongDir++; // must move toward FOG_SUN_TINT * sunI (1 byte slack)
+          }
+        }
+        if (aFg[o + 3] !== rb.fg[o + 3]) glyphDiff++; // glyph code lives in fg.a
+        if (ch) { if (sq === 0) nonShaft++; else lifted++; }
+      }
+      const liftedPct = 100 * lifted / n;
+      if (glyphDiff) fails.push('glyph changed in ' + glyphDiff + ' cells');
+      if (nonShaft) fails.push(nonShaft + ' changed cells with bits 20..23 = 0');
+      if (wrongDir) fails.push(wrongDir + ' channels moved away from the sun tint');
+      if (liftedPct < 1) fails.push('only ' + liftedPct.toFixed(2) + ' % of cells lifted (>= 1 % required)');
+      const okB = fails.length === 0; overallOk = overallOk && okB;
+      console.log(`[gpucompare] ${okB ? 'PASS' : 'FAIL'} ${poseName} [shaft frame B vs A]: lifted=${liftedPct.toFixed(2)}% (>=1) glyphDiff=${glyphDiff} nonShaftChanged=${nonShaft} wrongDir=${wrongDir} maxLift=${maxLift}${fails.length ? ' :: ' + fails.join('; ') : ''}`);
+      rowsOut.push({ pose: poseName + ' [shaft frame B]', ok: okB, shaftB: { lifted, liftedPct, glyphDiff, nonShaft, wrongDir, maxLift } });
+      lights.shaft.liftOff = true; // restore frame A for the twin compare
+      fbCompare.gpu = true; renderWorld(fbCompare, world, cam); gpuPipeline.frame(fbCompare, lights, cam, world); engine.overlay.flush(cam); rt.present();
+    }
     const { GI, GA, Depth } = await gpuPipeline.readbackGeometry();
     const lightBuf = await gpuPipeline.readbackLight(); // WG-3b: WebGPU too (null only while the pass is not ported)
     const waterBits = poseName.includes('waterfall') ? await gpuPipeline.readbackWater() : null; // WG-3e: WebGPU too

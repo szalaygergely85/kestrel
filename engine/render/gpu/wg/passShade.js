@@ -309,7 +309,7 @@ export class WgShadePass {
       su.set(fgr.types, S_FGT);
     }
     { // CANOPY-SHAFT-01b: lift on only with march steps > 0 and k > 0 and the shadow-map sun (same gate as the light pass); else k = 0 -> shade skips it
-      const shf = p._light && p._light.shaft, on = !!(shf && shf.steps > 0 && shf.k > 0 && si[S_SUNMAP]);
+      const shf = p._light && p._light.shaft, on = !!(shf && shf.steps > 0 && shf.k > 0 && si[S_SUNMAP] && !shf.liftOff); // liftOff: dev-only (gpucompare frame A, 38.76 rule 8a): march stays on, lift off
       su[S_SHAFT] = on ? shf.k : 0; su[S_SHAFT + 1] = on ? shf.iso : 0; su[S_SHAFT + 2] = on ? shf.pw : 0; su[S_SHAFT + 3] = on ? shf.maxM : 0;
     }
     if (useScene && lightCam) { su[S_HORIZON] = lightCam.horizonRow; su[S_PLANEDY] = lightCam.planeDistY; }
