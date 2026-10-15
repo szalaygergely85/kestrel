@@ -131,7 +131,7 @@ function sampleGISnapped(st, f, qx, qy, qz, sn, nx, ny, nz, out, hint) {
   }
   return true;
 }
-export const GI_SNAP = 16, GI_CACHE = 65536;   // snap steps per probe cell; cache slots (power of 2)
+export const GI_SNAP = 16, GI_CACHE = 8192;   // snap steps per probe cell; cache slots (power of 2)
 /** Fill `acc` (normalised by wsum) with the interpolated sky4 / sun12 / emis12 coefficients at (x,y,z); false = all probes invalid. */
 const gp = new Float64Array(3);
 function giCoef(st, f) {
