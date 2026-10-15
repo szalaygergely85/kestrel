@@ -258,6 +258,16 @@ export class SpritePool {
     this._anim = new Array(MAX_SPRITES).fill('');
     this._frame = new Int32Array(MAX_SPRITES);
     this._pos = new Float64Array(MAX_SPRITES * 3);
+    // SPRITE-LIGHT-CACHE-01 (D-107): per-raw-index cached lightAt rgb + the position/frame it was taken at.
+    this.lightCache = true;                      // false = trace every sprite every frame (the old path)
+    this.lightCacheEvery = 4;                    // max lag in project() calls
+    this.lightCacheMove = 0.25;                  // m; a sprite that moved further refreshes at once
+    this.lightCacheStats = { hit: 0, miss: 0 };
+    this._lcRgb = new Float64Array(MAX_SPRITES * 3);
+    this._lcPos = new Float64Array(MAX_SPRITES * 3);
+    this._lcAt = new Int32Array(MAX_SPRITES).fill(-1);
+    this._lcFrame = 0; this._lcLight = null; this._lcWorld = null; this._lcCount = -1;
+    this._lcSun = new Float64Array(4);
     // US-016 (architecture.md 14.4 item 7): optional per-raw-sprite
     // billboard fields (`components.billboard` - unlit/fogModel/fogMax/
     // minCells/detailRows), null for an ordinary lit prop/entity sprite.
@@ -357,6 +367,22 @@ export class SpritePool {
       uMulR = (1 + (hr - 1) * k) * gain; uMulG = (1 + (hg - 1) * k) * gain; uMulB = (1 + (hb - 1) * k) * gain;
     }
 
+    // SPRITE-LIGHT-CACHE-01: global invalidation (new light set / world / light count / sun moved or toggled).
+    let lcAll = false;
+    const lcFrame = ++this._lcFrame;
+    if (perSprite) {
+      const sd = light.sun ? light.sun.dir : null, sun = this._lcSun;
+      if (light !== this._lcLight || world !== this._lcWorld || light.count !== this._lcCount) lcAll = true;
+      if (light.sun) {
+        const on = light.sun.on ? 1 : 0;
+        if (on !== sun[3] || (sd && (Math.abs(sd[0] - sun[0]) + Math.abs(sd[1] - sun[1]) + Math.abs(sd[2] - sun[2])) > 1e-3)) lcAll = true;
+        if (lcAll) { sun[0] = sd ? sd[0] : 0; sun[1] = sd ? sd[1] : 0; sun[2] = sd ? sd[2] : 0; sun[3] = on; }
+      }
+      this._lcLight = light; this._lcWorld = world; this._lcCount = light.count;
+    }
+    const lcOn = perSprite && this.lightCache, lcEvery = this.lightCacheEvery, lcMove2 = this.lightCacheMove * this.lightCacheMove;
+    const lcRgb = this._lcRgb, lcPos = this._lcPos, lcAt = this._lcAt;
+
     let n = 0;
     for (let i = 0; i < this.rawCount; i++) {
       const m = this._model[i];
@@ -412,7 +438,23 @@ export class SpritePool {
         const gain = S.fgMin + (1 - S.fgMin) * Math.pow(1, S.fgGamma);
         mulR = gain; mulG = gain; mulB = gain;
       } else if (perSprite) {
-        lightAt(light, world, px, py, pz + 0.5 * m.world.h, 0, 0, 1, sprLightScratch);
+        // Cache hit = reuse the last lightAt rgb (round-robin slot (i + frame) % every refreshes at least every `every` frames).
+        let hit = false;
+        if (lcOn && !lcAll && lcAt[i] >= 0 && lcFrame - lcAt[i] < lcEvery && (i + lcFrame) % lcEvery !== 0) {
+          const dx = px - lcPos[i * 3], dy = py - lcPos[i * 3 + 1], dz = pz - lcPos[i * 3 + 2];
+          if (dx * dx + dy * dy + dz * dz <= lcMove2) hit = true;
+        }
+        if (hit) {
+          sprLightScratch[0] = lcRgb[i * 3]; sprLightScratch[1] = lcRgb[i * 3 + 1]; sprLightScratch[2] = lcRgb[i * 3 + 2];
+          this.lightCacheStats.hit++;
+        } else {
+          lightAt(light, world, px, py, pz + 0.5 * m.world.h, 0, 0, 1, sprLightScratch);
+          this.lightCacheStats.miss++;
+          if (lcOn) {
+            lcRgb[i * 3] = sprLightScratch[0]; lcRgb[i * 3 + 1] = sprLightScratch[1]; lcRgb[i * 3 + 2] = sprLightScratch[2];
+            lcPos[i * 3] = px; lcPos[i * 3 + 1] = py; lcPos[i * 3 + 2] = pz; lcAt[i] = lcFrame;
+          }
+        }
         const Lm = Math.max(sprLightScratch[0], sprLightScratch[1], sprLightScratch[2]);
         b = Lm;
         const hr = Lm > 1e-6 ? sprLightScratch[0] / Lm : 1, hg = Lm > 1e-6 ? sprLightScratch[1] / Lm : 1, hb = Lm > 1e-6 ? sprLightScratch[2] / Lm : 1;
