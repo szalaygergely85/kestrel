@@ -2157,7 +2157,7 @@
     {"id": "cem33", "mesh": "quaternius/Wall_UnevenBrick_Straight", "origin": {"x": 1651.21, "y": 1370.99, "z": -50.28}, "yawDeg": 278},
     {"id": "cem34", "castShadow": false, "mesh": "quaternius/Wall_UnevenBrick_Straight", "origin": {"x": 1651.6, "y": 1376.1, "z": -50.97}, "yawDeg": 8},
     {"id": "cem35", "castShadow": false, "mesh": "quaternius/Wall_UnevenBrick_Straight", "origin": {"x": 1652.44, "y": 1370.16, "z": -50.24}, "yawDeg": 8},
-    {"id": "cem36", "mesh": "quaternius/Door_1_Round", "origin": {"x": 1650.9, "y": 1372.97, "z": -50.46}, "yawDeg": 278},
+    {"id": "cem36", "mesh": "quaternius/Door_1_Round", "origin": {"x": 1650.9, "y": 1372.97, "z": -50.45}, "yawDeg": 278},
     {"id": "cem37", "castShadow": false, "mesh": "quaternius/Prop_Brick2", "origin": {"x": 1648.96, "y": 1376.94, "z": -50.88}, "yawDeg": 318},
     {"id": "cem38", "castShadow": false, "mesh": "quaternius/Prop_Brick3", "origin": {"x": 1650.45, "y": 1368.46, "z": -49.87}, "yawDeg": 48},
     {"id": "cem39", "mesh": "quaternius/DeadTree_2", "origin": {"x": 1649.18, "y": 1381.82, "z": -51.68}, "scale": 0.8, "yawDeg": 308},
