@@ -4,7 +4,7 @@
 // Injected API (SPELL-01/02): defs = SPELL_DEFS (object keyed by id, or an array with ids) { name, branch:'fire'|'light'|'wind', root, glyph, color, tiers:[{mana, cd, dmg?, r?, ...} x3] };
 // book = createSpellBook (tier(id) 0..3, canRaise(id)); scrolls() = Spell Scroll count; useScroll(id) = new level or 0 (main wraps spellScroll.useScroll).
 export const BRANCHES = Object.freeze(['fire', 'light', 'wind']);
-const TITLES = { fire: 'Fire', light: 'Light', wind: 'Wind' };
+const TITLES = { fire: ' FIRE ', light: ' LIGHT ', wind: ' WIND ' }; // prebuilt padded (0 alloc in draw)
 const DEFAULT_RGB = { fire: [235, 120, 60], light: [90, 220, 205], wind: [205, 215, 205] };
 export const CARD = Object.freeze({ x0: 2, pitch: 33, w: 31, h: 4, y0: 4, gap: 1, detailY: 19, footY: 24, titleRow: 3 });
 let PUT = null, PW = 0; // draw-time put/width, so `text` is not a per-frame closure
@@ -38,19 +38,19 @@ export function createSpellPageView(o) {
   for (let ci = 0; ci < 3; ci++) {
     col[BRANCHES[ci]].forEach((d, ri) => {
       const rgbk = (o.rgb && o.rgb[d.color || d.colour]) || DEFAULT_RGB[d.branch];
-      const stat = [], now = [], next = [], plain = [];
+      const stat = [], now = [], next = [], plain = [], conf = [];
       for (let t = 0; t < 4; t++) {
         stat.push(t ? pips[t] + '  mp ' + d.tiers[t - 1].mana + '  cd ' + NUM(d.tiers[t - 1].cd) + ' s' : '');
         now.push(t ? 'Now: ' + tierText(d.tiers[t - 1]) : '');
         next.push(t === 0 ? '' : t >= 3 ? 'Max level' : 'Next level: ' + tierText(d.tiers[t]));
         plain.push(d.name + (t ? '  level ' + t : '  not learned'));
+        conf.push(t >= 3 ? '' : 'Raise ' + d.name + ' to level ' + (t + 1) + '?  [E] Yes  [Q] No');
       }
-      cards.push({ d, ci, ri, x: CARD.x0 + ci * CARD.pitch, y: CARD.y0 + ri * (CARD.h + CARD.gap), rgb: rgbk, name: d.name, stat, now, next, head: plain, glyph: (d.glyph || '*').charCodeAt(0) });
+      cards.push({ d, ci, ri, x: CARD.x0 + ci * CARD.pitch, y: CARD.y0 + ri * (CARD.h + CARD.gap), rgb: rgbk, name: d.name, stat, now, next, head: plain, conf, glyph: (d.glyph || '*').charCodeAt(0) });
     });
   }
   const scrollStr = []; const getScroll = (n) => scrollStr[n] || (scrollStr[n] = 'Spell Scrolls: ' + n);
-  const confirmStr = {};
-  let sel = 0, confirm = false;
+    let sel = 0, confirm = false;
 
   function at(ci, ri) { for (const c of cards) if (c.ci === ci && c.ri === ri) return c; return null; }
   function move(dc, dr) {
@@ -91,7 +91,7 @@ export function createSpellPageView(o) {
     /** @param {(x:number,y:number,code:number,fg:number[])=>void} put panel-relative; the caller fills the background */
     draw(put, W) {
       PUT = put; PW = W;
-      for (let ci = 0; ci < 3; ci++) text(CARD.x0 + ci * CARD.pitch + 1, CARD.titleRow, ' ' + TITLES[BRANCHES[ci]].toUpperCase() + ' ', K.gold);
+      for (let ci = 0; ci < 3; ci++) text(CARD.x0 + ci * CARD.pitch + 1, CARD.titleRow, TITLES[BRANCHES[ci]], K.gold);
       for (let i = 0; i < cards.length; i++) {
         const c = cards[i], t = book.tier(c.d.id) | 0, s = i === sel, fg = s ? K.gold : K.frame, w = CARD.w;
         for (let x = 1; x < w - 1; x++) { put(c.x + x, c.y, 45, fg); put(c.x + x, c.y + 3, 45, fg); }
@@ -110,8 +110,7 @@ export function createSpellPageView(o) {
       const n = o.scrolls() | 0;
       text(CARD.x0, CARD.footY, getScroll(n), K.text);
       if (confirm) {
-        const key = c.d.id + t; const s = confirmStr[key] || (confirmStr[key] = 'Raise ' + c.name + ' to level ' + (t + 1) + '?  [E] Yes  [Q] No');
-        text(CARD.x0, CARD.footY + 1, s, K.gold);
+        text(CARD.x0, CARD.footY + 1, c.conf[t], K.gold);
       } else if (canRaise(c)) text(CARD.x0, CARD.footY + 1, '[E] Use Spell Scroll', K.gold);
       else if (n > 0 && !anyRaisable()) text(CARD.x0, CARD.footY + 1, 'No spell can learn from this yet.', K.dim);
     },

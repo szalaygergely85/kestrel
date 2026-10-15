@@ -31,9 +31,19 @@ assert.deepEqual(useScroll(inv, book, 'gust'), { ok: false, reason: 'none' });
 addItem(inv, items, SCROLL_ID, 3);
 assert.equal(useScroll(inv, book, 'gust').level, 3);
 assert.deepEqual(useScroll(inv, book, 'gust'), { ok: false, reason: 'max' }); assert.equal(countOf(inv, SCROLL_ID), 2);
-assert.equal(useScroll(inv, book, 'fireball').level, 2); assert.equal(book.damageScale('fireball'), 1.75);
+assert.equal(useScroll(inv, book, 'fireball').level, 2);
 assert.deepEqual(useScroll(inv, book, 'nope'), { ok: false, reason: 'notLearned' });
 // AC4 no random in the scroll path
 const src = fs.readFileSync(new URL('./spellScroll.js', import.meta.url), 'utf8');
 assert.ok(!/Math\.random|rng|seed/i.test(src));
 console.log('spellScroll.test ok');
+
+// SPELL-ARCH7: one per-world book. Tab, pack overlay and fireball tier hook all read `current`; after a world reload (new state, new book) they all see the new tiers.
+{
+  const { createSpellBook: mk } = await import('./spellBook.js');
+  let current = mk({ 'spell.fireball': 2 });
+  const tab = { tier: (id) => current.tier(id) }, pack = { options: () => raisable(current) }, hook = () => current.tier('fireball') || 1;
+  assert.equal(tab.tier('fireball'), 2); assert.equal(hook(), 2); assert.deepEqual(pack.options(), raisable(current));
+  current = mk({}); // reload: fresh world state
+  assert.equal(tab.tier('fireball'), 0); assert.equal(hook(), 1); assert.deepEqual(pack.options(), []);
+}

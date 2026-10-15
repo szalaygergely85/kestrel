@@ -22,7 +22,7 @@ export const CHEST_TABLES = {
   chestCellar1: { fixed: [{ item: 'berry.blue', n: 3 }, { item: 'honeycomb', n: 1 }], weighted: [] },
   chestCellar2: { fixed: [{ item: 'boar.meat', n: 2 }, { item: 'arrow', n: 8 }], weighted: [] },
   chestCellar3: { fixed: [{ item: 'potion.hp', n: 1 }], weighted: [] },
-  chestCrypt: { fixed: [{ item: 'scroll.spell', n: 1 }, { item: 'potion.hp', n: 1 }], weighted: [] }, // UNDER-02 / D-114: the earned crypt chest (opens after room 3's skeletons are dead): one-time Spell Scroll (one random spell +1 level), a Health Potion; no gear/arrows; coins skipped: the only currency (cog) is still pending: owner and chest loot refuses it
+  chestCrypt: { fixed: [{ item: 'scroll.spell', n: 1 }, { item: 'potion.hp', n: 1 }], weighted: [] }, // UNDER-02 / D-114: the earned crypt chest (opens after room 3's skeletons are dead): one-time Spell Scroll (the player picks which spell gets +1 level), a Health Potion; no gear/arrows; SPELL-02 AC3 coins WAIVED: no currency exists yet (`cog` pending owner) and chest loot refuses it
   chestBearDen: { fixed: [{ item: 'arrow', n: 12 }, { item: 'potion.hp', n: 1 }], weighted: [], gear: { tier: 'sturdy' } }, // UNDER-04: the stash behind the sleeping bear (guarded by the bear home, not by depth)
   chestStrandCave: { fixed: [{ item: 'arrow', n: 10 }, { item: 'potion.hp', n: 1 }], weighted: [], gear: { tier: 'sturdy' } }, // UNDER-05: the smugglers' chest at the back of the Long Strand sea cave (guarded by the tortoise homes)
   chestGoblinTunnel: { fixed: [{ item: 'arrow', n: 12 }, { item: 'potion.hp', n: 1 }], weighted: [], gear: { tier: 'sturdy' } }, // UNDER-06: the goblins' stash in the tunnel between campNorth and campEast (earned: opens when the 3 tunnel goblins are dead)

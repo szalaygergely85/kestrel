@@ -1,6 +1,6 @@
 // EP-SPELLS (SPELL-01): pure data for the 7 spells (docs/epics/ep-spells.md section 2). No logic, no imports.
 // Each spell: name (plain, player-facing), branch, root (first of its branch), glyph, color key (palette/UI colour name),
-// maxTier 3, tiers[0..2] = numbers for level 1..3 (mana, cd in s, plus spell-specific fields). Fireball keeps its D-114 damageScale.
+// maxTier 3, tiers[0..2] = numbers for level 1..3 (mana, cd in s, plus spell-specific fields).
 const T = (a) => Object.freeze(a.map((r) => Object.freeze(r)));
 export const BRANCHES = Object.freeze(['fire', 'light', 'wind']);
 export const BRANCH_TITLES = Object.freeze({ fire: 'Fire', light: 'Light', wind: 'Wind' });
@@ -9,7 +9,7 @@ export const MAX_TIER = 3;
 
 export const SPELL_DEFS = Object.freeze({
   fireball: Object.freeze({
-    name: 'Fireball', branch: 'fire', root: true, glyph: '*', color: 'ember', maxTier: 3, damageScale: Object.freeze([0, 1, 1.75, 2.25]),
+    name: 'Fireball', branch: 'fire', root: true, glyph: '*', color: 'ember', maxTier: 3,
     tiers: T([
       { mana: 5, cd: 0.5, dmg: 3, r: 2.0, chargedMana: 10, chargedDmg: 5, chargedR: 3.0 },
       { mana: 5, cd: 0.5, dmg: 4, r: 2.0, chargedMana: 10, chargedDmg: 7, chargedR: 3.5 },

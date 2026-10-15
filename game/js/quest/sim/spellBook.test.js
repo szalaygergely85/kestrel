@@ -28,5 +28,4 @@ const s4 = {}; createSpellBook(s4).learn('fireball'); assert.equal(s4['magic.fir
 // AC4
 const t0 = b.tiers(); assert.equal(b.tiers(), t0); for (let i = 0; i < 10000; i++) b.tiers();
 assert.equal(createSpellBook(JSON.parse(JSON.stringify(st))).tier('spark'), 3);
-assert.equal(b.damageScale('fireball'), 1);
 console.log('spellBook.test ok');

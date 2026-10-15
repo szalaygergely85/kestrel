@@ -44,7 +44,5 @@ export function createSpellBook(state) {
     tiers() { for (let i = 0; i < SPELL_IDS.length; i++) tiersObj[SPELL_IDS[i]] = tier(SPELL_IDS[i]); return tiersObj; },
     /** Learned spell ids in tree order. */
     learned() { const o = []; for (let i = 0; i < SPELL_IDS.length; i++) if (tier(SPELL_IDS[i]) > 0) o.push(SPELL_IDS[i]); return o; },
-    /** Damage multiplier of a spell at its current tier (fireball: D-114 table; others 1). */
-    damageScale(id) { const d = has(id) ? SPELL_DEFS[id] : null; return d && d.damageScale ? d.damageScale[tier(id)] || 1 : 1; },
   };
 }

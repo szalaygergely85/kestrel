@@ -33,8 +33,9 @@ export const FIREBALL_TIER_CFG = Object.freeze(_tierCfg);
 export const FIREBALL_CFG = Object.freeze({ ...FB_BASE, tiers: FIREBALL_TIER_CFG });
 
 /** "Locked = tier 0" for every `spell.<id>` item, plus the mana potion until the fireball is learned. Refills `map` in place (0 alloc). */
+const LOCK_KEYS = Object.freeze(SPELL_IDS.map((id) => 'spell.' + id)); // no string building per call
 export function refreshLocked(map, tiers) {
-  for (let i = 0; i < SPELL_IDS.length; i++) { const k = 'spell.' + SPELL_IDS[i]; if (tiers[SPELL_IDS[i]] > 0) delete map[k]; else map[k] = 1; }
+  for (let i = 0; i < SPELL_IDS.length; i++) { const k = LOCK_KEYS[i]; if (tiers[SPELL_IDS[i]] > 0) delete map[k]; else map[k] = 1; }
   if (tiers.fireball > 0) delete map['potion.mp']; else map['potion.mp'] = 1;
   return map;
 }

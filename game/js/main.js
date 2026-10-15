@@ -113,6 +113,8 @@ import { createErrands, labelOf, gateOnMeet, isWorn, bannerLines } from './quest
 import { generateAll, generateForNpc } from './quest/questSnippets.js'; // QL-T4: generated q.<id>.* dialogue routes
 import { createUnderHook } from './underHook.js'; // B1-MAIN hooks 7: Ford cellar ladder + crypt door/chest
 import { createSpellBook } from './quest/sim/spellBook.js'; // EP-SPELLS
+import { computeTotals, createTotals } from './quest/sim/stats.js'; // SPELL-04: INT -> fireball damage
+const fbTotals = createTotals();
 import { raisable, useScroll as useSpellScroll, SCROLL_ID as SPELL_SCROLL_ID } from './quest/sim/spellScroll.js';
 import { SPELL_DEFS } from './quest/spellDefs.js';
 import { countOf as invCountOf } from './quest/sim/inventory.js';
@@ -1696,7 +1698,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       if (fbTargets) fbTargets.dispose();
       fbTargets = createTargetables(world, engine.events);
       spellBook = createSpellBook(world.state); spellCaster = createSpellDispatcher((id) => spellBook.tier(id) || (id === 'fireball' && fbOn ? 1 : 0)); // SPELL-04
-      fireball = createFireballSim(world, engine.events, FIREBALL_CFG, fbTargets, { spendMana: (n) => vitals && vitals.spendMana(n), isEnabled: () => fireballOn(world, FEATURES), tier: () => spellBook.tier('fireball') || 1 });
+      fireball = createFireballSim(world, engine.events, FIREBALL_CFG, fbTargets, { spendMana: (n) => vitals && vitals.spendMana(n), isEnabled: () => fireballOn(world, FEATURES), tier: () => spellBook.tier('fireball') || 1, damageMul: () => { const c = playerHandle && playerHandle.data.components; return computeTotals(c && c.rolledGear || null, fbTotals).fireDmgMul; } }); // INT: stats fireDmgMul at cast (rolled gear is not wired yet -> 1)
       hands.register('spell.fireball', fireball); spellCaster.register('fireball', () => fireball.requestTap());
       // EQ-07/09 (38.41): shield sim + arrow sim + the routing glue; shield/bow items get no-op sims so the router arms them (RMB -> left hand, LMB -> right hand)
       shieldSim = createShieldSim();
@@ -1826,8 +1828,8 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         };
       }
       if (invView && invView.isOpen) invView.close();
-      let sbSt = null, sbBook = null; const liveSpellBook = { tier: (id) => (sbSt !== engine.world.state && (sbBook = createSpellBook(sbSt = engine.world.state)), sbBook.tier(id)), canRaise: (id) => (liveSpellBook.tier(id), sbBook.canRaise(id)) }; // follows a reloaded world state, 0 alloc per call
-      const spendSpellScroll = (id) => { if (!playerHandle) return 0; const r = useSpellScroll(playerHandle.data.components.inventory, createSpellBook(engine.world.state), id); return r.ok ? r.level : 0; }; // ONE scroll spend path (pack overlay + Spells tab)
+      const liveSpellBook = { tier: (id) => (spellBook ? spellBook.tier(id) : 0), canRaise: (id) => !!spellBook && spellBook.canRaise(id) }; // ONE per-world book (the `spellBook` set on 'world:loaded'): Spells tab, pack overlay and fireball tier hook all read it
+      const spendSpellScroll = (id) => { if (!playerHandle || !spellBook) return 0; const r = useSpellScroll(playerHandle.data.components.inventory, spellBook, id); return r.ok ? r.level : 0; }; // ONE scroll spend path (pack overlay + Spells tab)
       invView = itemDefs && window.ASSETS.uiStyle.inventory ? createInventoryScreen({
         style: window.ASSETS.uiStyle.inventory, tabOpens: false, items: window.ASSETS.items, rgb: assets.palette.rgb, toast: toasts,
         inventoryOf: () => (playerHandle && playerHandle.data.components.inventory) || null,
@@ -1835,7 +1837,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         isSlotDisabled: (i) => { if (!playerHandle) return false; const inv = playerHandle.data.components.inventory, sl = inv && inv.slots[i]; return !!(sl && sl.id && LOCKED[sl.id]); }, // FB-01: spell + mana potion cells show as locked until unlocked (Items + Character tabs)
         healthOf: () => (playerHandle && playerHandle.data.components.health) || null,
         spellChoice: { // D-114: Spell Scroll -> the player chooses a learned spell (the fireball is today's only spell)
-          options: () => raisable(createSpellBook(engine.world.state)),
+          options: () => (spellBook ? raisable(spellBook) : []),
           pick: (id) => spendSpellScroll(id),
         },
         spellPage: { defs: SPELL_DEFS, book: liveSpellBook, useScroll: (id) => spendSpellScroll(id), // SPELL-03: Spells tab; same spend path as the pack overlay

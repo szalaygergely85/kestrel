@@ -15,7 +15,7 @@ const MAXC = MAX_TARGETABLES + 1; // targets + the player
  * @param {{emit:Function}} events
  * @param {typeof import('../spellConfig.js').FIREBALL_CFG} cfg
  * @param {ReturnType<typeof import('./targetables.js').createTargetables>} targets
- * @param {{spendMana?: (n:number)=>boolean, enabled?: boolean, isEnabled?: () => boolean}} [hooks] `enabled:false` = casting disabled (D-065); `tier()` = learned tier 1..3 (default 1; numbers from cfg.tiers[tier], else cfg.tap/charged)
+ * @param {{spendMana?: (n:number)=>boolean, enabled?: boolean, isEnabled?: () => boolean}} [hooks] `enabled:false` = casting disabled (D-065); `damageMul()` = INT multiplier read at cast (default 1); `tier()` = learned tier 1..3 (default 1; numbers from cfg.tiers[tier], else cfg.tap/charged)
  */
 export function createFireballSim(world, events, cfg, targets, hooks) {
   const spendMana = (n) => (hooks && typeof hooks.spendMana === 'function' ? hooks.spendMana(n) : true);
@@ -101,6 +101,7 @@ export function createFireballSim(world, events, cfg, targets, hooks) {
   }
 
   const tierCfg = () => { const t = hooks && typeof hooks.tier === 'function' ? hooks.tier() | 0 : 1; return (cfg.tiers && cfg.tiers[t < 1 ? 1 : t > 3 ? 3 : t]) || cfg; };
+  const dmgMul = () => { const m = hooks && typeof hooks.damageMul === 'function' ? hooks.damageMul() : 1; return m > 0 ? m : 1; }; // SPELL-04: INT (stats fireDmgMul) at cast
   let pendingTap = false; // SPELL-04: key-slot tap request, consumed by the next step
 
   function cast(player, charged, fx, fy, ax, ay, az) {
@@ -139,7 +140,7 @@ export function createFireballSim(world, events, cfg, targets, hooks) {
     slots.serial[s] = ++serialNo; slots.age[s] = 0;
     slots.x[s] = ox; slots.y[s] = oy; slots.z[s] = oz;
     slots.dx[s] = dx; slots.dy[s] = dy; slots.dz[s] = dz;
-    slots.speed[s] = C.speed; slots.radius[s] = C.radius; slots.damage[s] = C.damage; slots.knock[s] = C.knock;
+    slots.speed[s] = C.speed; slots.radius[s] = C.radius; slots.damage[s] = C.damage * dmgMul(); slots.knock[s] = C.knock;
     slots.travelled[s] = 0; slots.charged[s] = isCharged ? 1 : 0; slots.hand[s] = hand === 'left' ? 0 : 1;
 
     // point-blank sweep eye -> origin: a wall/boar in the way bursts at once
@@ -218,7 +219,7 @@ export function createFireballSim(world, events, cfg, targets, hooks) {
     requestTap() { if (state !== FB_IDLE || cooldown > 0 || pendingTap) return 'busy'; pendingTap = true; return 'cast'; },
     dispose() {},
     hashInto(h) {
-      h.u32(state); h.u32(holdSteps); h.u32(prevDown); h.u32(cooldown); h.u32(castTick & 0x7fffffff); h.u32(hand === 'left' ? 0 : 1);
+      h.u32(state); h.u32(holdSteps); h.u32(prevDown); h.u32(cooldown); h.u32(castTick & 0x7fffffff); h.u32(hand === 'left' ? 0 : 1); h.u32(pendingTap ? 1 : 0);
       h.u32(aliveCount);
       for (let s = 0; s < N; s++) {
         h.u32(slots.alive[s]);
