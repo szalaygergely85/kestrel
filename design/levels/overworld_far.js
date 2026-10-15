@@ -163,6 +163,21 @@
                            { mesh: 'quaternius/Rock_Medium_2', weight: 5, sinkM: 0.3, shadow: true, maxDistM: 130, collider: { prism: { r: 1.0, h: 1.5 } } } ];
               return { grass: list, forest: list, flowers: list, alpine: list, rock: list };
             })() },
+          // OB-184 (owner 2026-10-15 'what is missing from here'): forest-floor undergrowth by RULE, existing Quaternius meshes only, CPU path
+          // (not `gpu`: the GPU decor scatter stays off). biomeOnly: ground type `forest` inside biomes whose detail names `undergrowth`
+          // (world_geo G.biomes 1..3). No colliders (walk-through ferns/flowers/pebbles), shadow off, off trunks by the tree mask,
+          // off roads/paths (type path has no species) and structures/exclusions like every layer. 4 m lattice: ~0.5 * 6.25 = 3 / 100 m2.
+          { name: 'undergrowth', seed: 38429, cellM: 4, jitter: 1.4, fill: 1, biomeOnly: true, maxSlope: 0.6, clearM: 0.5, drawM: 45, lodCells: 4,
+            ground: { forest: [ { mesh: 'quaternius/Fern_1', weight: 6, sinkM: 0.03, shadow: false, sway: true, maxDistM: 40 },
+                                { mesh: 'quaternius/Plant_1', weight: 3, sinkM: 0.03, shadow: false, sway: true, maxDistM: 40 },
+                                { mesh: 'quaternius/Plant_7', weight: 2, sinkM: 0.03, shadow: false, sway: true, maxDistM: 40 },
+                                { mesh: 'quaternius/Bush_Common', weight: 1.5, sinkM: 0.05, shadow: false, sway: true, maxDistM: 45 },
+                                { mesh: 'quaternius/Mushroom_Common', weight: 2, sinkM: 0.02, shadow: false, maxDistM: 30 },
+                                { mesh: 'quaternius/Mushroom_Laetiporus', weight: 0.7, sinkM: 0.02, shadow: false, maxDistM: 30 },
+                                { mesh: 'quaternius/Flower_3_Single', weight: 1, sinkM: 0.03, shadow: false, sway: true, maxDistM: 30 },
+                                { mesh: 'quaternius/Flower_4_Single', weight: 1, sinkM: 0.03, shadow: false, sway: true, maxDistM: 30 },
+                                { mesh: 'quaternius/Pebble_Round_1', weight: 1, sinkM: 0.03, shadow: false, maxDistM: 30 },
+                                { mesh: 'quaternius/Pebble_Round_3', weight: 1, sinkM: 0.03, shadow: false, maxDistM: 30 } ] } },
           // ruin stubs: a low foundation strip (walk-over step) and, rarely, one standing wall fragment (Wall_UnevenBrick_Straight 2 x 0.4 x 3.1 m)
           { name: 'ruins', seed: 38413, cellM: 20, jitter: 6.0, fill: 1, biomeOnly: true, maxSlope: 0.25, clearM: 2.5, drawM: 130, lodCells: 4,
             ground: (function () {
