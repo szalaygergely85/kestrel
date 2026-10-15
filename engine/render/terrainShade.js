@@ -15,6 +15,7 @@ import { KIND_TERRAIN, KIND_GRASS } from './GBuffer.js';
 import { packTerrainTextures } from './gpu/TerrainTextures.js';
 import { unpackNormalOct } from '../voxel/octNormal.js';
 import { clampByte } from '../core/math.js';
+import { CAO_SUN_W } from './contactAO.js'; // 38.78 rev: contact zones also dim the analytic sun term
 import { sunFromWorld } from './lighting.js';
 import { WET_DARK, wetGain } from './detailShade.js';
 import { LEVEL_NONE, LEVEL_ANIM } from './temporalStable.js';
@@ -790,8 +791,10 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
     if (giOn) giTerrainK(gi, gbuf, i, giInvSky);
     const ambK = giK[0];
     // CONTACT-AO-01a (38.78): contact-AO byte (light.caoQ, 0 = none -> factor exactly 1) multiplies the ambient part only.
-    const caoF = (light && !light.uniform && light.caoQ && light.caoQ[i] !== 0) ? (127 - light.caoQ[i]) * (1 / 127) : 1;
-    const b = sun.ambientI * ambK * caoF * (isG ? GRASS_AO_LO + (1 - GRASS_AO_LO) * u : 1) + sun.sunI * Math.max(0, ndotl) * (sunMapOn ? light.sunN[i] * 0.25 : 1) * cF;
+    const caoQ = (light && !light.uniform && light.caoQ) ? light.caoQ[i] : 0;
+    const caoF = caoQ !== 0 ? (127 - caoQ) * (1 / 127) : 1;
+    const caoS = caoQ !== 0 ? 1 - CAO_SUN_W * caoQ * (1 / 127) : 1; // 38.78 rev: sun part too (x CAO_SUN_W)
+    const b = sun.ambientI * ambK * caoF * (isG ? GRASS_AO_LO + (1 - GRASS_AO_LO) * u : 1) + sun.sunI * Math.max(0, ndotl) * (sunMapOn ? light.sunN[i] * 0.25 : 1) * cF * caoS;
     let lr = 0, lg = 0, lb = 0;
     if (light && !light.uniform) {
       const o = i * 3; lr = light.rgb[o]; lg = light.rgb[o + 1]; lb = light.rgb[o + 2];
