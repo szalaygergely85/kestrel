@@ -460,7 +460,7 @@ const FULL_OPTIONS = [
 
 // Reuse the title card's skin without changing designer-owned assets or option data.
 function menuSettingsStyle(style, menu, full = true) {
-  const h = full ? 42 : menu.panel.h, w = menu.panel.w;
+  const h = full ? 46 : menu.panel.h, w = menu.panel.w;
   return {
     ...style,
     panel: { x: Math.floor((160 - w) / 2), y: Math.floor((60 - h) / 2), w, h },
@@ -475,11 +475,11 @@ function menuSettingsStyle(style, menu, full = true) {
     layout: [{section:'GRAPHICS',y:4},{id:'quality',y:6},{id:'shadows',y:8},
       {id:'lodScale',y:10},{id:'grid',y:12},{id:'aspect',y:14},{section:'SOUND',y:16},{id:'volume',y:18},
       {id:'mute',y:20},{section:'COMFORT',y:22},{id:'textSize',y:24},
-      {id:'reduceMotion',y:26},{section:'COMBAT HUD',y:28},{id:'enemyBars',y:30},{id:'dmgNumbers',y:32},{id:'back',y:35}],
-    rowOrder: ['quality','shadows','lodScale','grid','aspect','volume','mute','textSize','reduceMotion','enemyBars','dmgNumbers','back'],
-    labels: { ...style.labels, grid: 'Resolution', lodScale: 'LOD distance', aspect: 'Aspect ratio', enemyBars: 'Enemy health bars', dmgNumbers: 'Damage numbers' },
-    controlOf: { ...style.controlOf, lodScale: 'select', aspect: 'select', enemyBars: 'toggle', dmgNumbers: 'toggle' },
-    valueText: { ...style.valueText, lodScale: {0.6:'0.6x',0.8:'0.8x',1:'1x',1.25:'1.25x'} },
+      {id:'reduceMotion',y:26},{section:'COMBAT HUD',y:28},{id:'enemyBars',y:30},{id:'dmgNumbers',y:32},{section:'GAMEPLAY',y:34},{id:'difficulty',y:36},{id:'back',y:39}],
+    rowOrder: ['quality','shadows','lodScale','grid','aspect','volume','mute','textSize','reduceMotion','enemyBars','dmgNumbers','difficulty','back'],
+    labels: { ...style.labels, grid: 'Resolution', lodScale: 'LOD distance', aspect: 'Aspect ratio', enemyBars: 'Enemy health bars', dmgNumbers: 'Damage numbers', difficulty: 'Difficulty' },
+    controlOf: { ...style.controlOf, lodScale: 'select', aspect: 'select', enemyBars: 'toggle', dmgNumbers: 'toggle', difficulty: 'select' },
+    valueText: { ...style.valueText, lodScale: {0.6:'0.6x',0.8:'0.8x',1:'1x',1.25:'1.25x'}, difficulty: {easy:'Easy',normal:'Normal',hard:'Hard'} },
     notes: { ...style.notes, lodScale: {default:'Restart to apply'} },
     note: { ...style.note, color: menu.keyHints.fg },
     separator: { row: h - 5, glyph: menu.separators[0].glyph, color: menu.separators[0].fg, inset: menu.separators[0].from },
@@ -499,7 +499,7 @@ function settingsTitle(style) {
 export function createSettingsView(options = {}, { style, controls, quality, rgb, onChange, isDisabled, menuStyle = globalThis.ASSETS?.uiStyle?.menu } = {}) {
   if (!style || !controls || !quality || !rgb) throw new TypeError('Settings style, controls, quality and rgb required');
   const optionDefs = menuStyle ? [...FULL_OPTIONS, {id:'lodScale', values:[0.6,0.8,1,1.25], default:1}, {id:'aspect', values:ASPECT_VALUES, default:DEFAULT_ASPECT},
-    {id:'enemyBars', values:[false, true], default:true}, {id:'dmgNumbers', values:[false, true], default:true}] : FULL_OPTIONS; // HPBAR-02 / DMGNUM-01: "Combat HUD" group
+    {id:'enemyBars', values:[false, true], default:true}, {id:'dmgNumbers', values:[false, true], default:true}, {id:'difficulty', values:['easy','normal','hard'], default:'normal'}] : FULL_OPTIONS; // HPBAR-02 / DMGNUM-01: "Combat HUD" group
   if (menuStyle) {
     style = menuSettingsStyle(style, menuStyle);
     controls = { ...controls, label: {normal:menuStyle.row.normal.fg, focus:menuStyle.row.focus.fg, disabled:menuStyle.row.disabled.fg},
@@ -532,7 +532,7 @@ export function createSettingsView(options = {}, { style, controls, quality, rgb
       const token = value ? controls.toggle.on : controls.toggle.off;
       labels[id] = token.box + ' ' + token.text;
     } else labels[id] = '< ' + (id === 'shadows' && value === 'mid' ? 'Mid' : style.valueText[id]?.[value] || value) + ' >';
-    notes[id] = id === 'quality' || id === 'shadows' ? 'Restart to apply' : id === 'reduceMotion' ? 'Less head bob and camera kick' : id === 'enemyBars' ? 'Level and health above enemies' : id === 'dmgNumbers' ? 'Numbers rise from each hit' : id === 'textSize' ? 'Restart to apply' : (style.notes[id]?.[value] || style.notes[id]?.default || '');
+    notes[id] = id === 'quality' || id === 'shadows' ? 'Restart to apply' : id === 'reduceMotion' ? 'Less head bob and camera kick' : id === 'enemyBars' ? 'Level and health above enemies' : id === 'dmgNumbers' ? 'Numbers rise from each hit' : id === 'difficulty' ? 'Applies to new enemies' : id === 'textSize' ? 'Restart to apply' : (style.notes[id]?.[value] || style.notes[id]?.default || '');
   }
   for (const opt of optionDefs) refresh(opt.id);
   function disabled(id, value) { return !!isDisabled && !!isDisabled(id, value); }
@@ -693,7 +693,7 @@ function buildFullView(assets, over) {
     mute: isMuted(),
     textSize: saved.textSize || 'normal',
     reduceMotion: !!saved.reduceMotion,
-    enemyBars: saved.enemyBars !== false, dmgNumbers: saved.dmgNumbers !== false,
+    enemyBars: saved.enemyBars !== false, dmgNumbers: saved.dmgNumbers !== false, difficulty: saved.difficulty || 'normal',
     ...over,
   };
   return createSettingsView(opts, { style: st.full, controls: st.controls, quality: st.quality, rgb: assets.palette.rgb,
@@ -715,6 +715,7 @@ function onFullChange(id, v) {
   else if (id === 'mute') { values.mute = v; setMuted(v); saveSettings({ muted: v }); }
   else if (id === 'enemyBars') { setEnemyBarsOn(v); saveSettings({ enemyBars: v }); } // HPBAR-02
   else if (id === 'dmgNumbers') { setDamageNumbersOn(v); saveSettings({ dmgNumbers: v }); } // DMGNUM-01
+  else if (id === 'difficulty') { saveSettings({ difficulty: v }); if (ctx && typeof ctx.onDifficulty === 'function') ctx.onDifficulty(v); } // DIFF-MENU (D-083)
   else if (id === 'textSize' || id === 'reduceMotion') { if (id === 'reduceMotion') setReduceMotion(v); saveSettings({ [id]: v }); } // SETTINGS-APPLY-01
 }
 function stepFullView(input) {

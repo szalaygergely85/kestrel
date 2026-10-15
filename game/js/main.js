@@ -129,6 +129,7 @@ import { loadDecorPaint } from './decorPaintLoad.js'; // ED-FOLIAGE-04
 import { createDirectorWire } from './quest/sim/directorWire.js'; // BEAST-06a main hook (arch 38.64 answer c)
 import { createSpawnDirector, buildGroups, regionalMembers } from './quest/sim/spawnDirector.js';
 import { spawnRegionalBeasts } from './quest/sim/regionalBeasts.js';
+import { setForestAmbienceSources } from './audio/forestAmbience.js'; // OB-184
 import { createBeastSim } from './quest/sim/beastSim.js'; // US-079a (architecture.md 29.1)
 import { ensureWolves } from './quest/sim/wolfBrain.js'; // WOLF-01
 import { ensureBears } from './quest/sim/bearBrain.js'; // BEAR-01 (D-069): black bears in Thornwood
@@ -1153,6 +1154,7 @@ async function runGame(mode, cinematic = null) {
   initAudio();
   setVolume(loadSettings().volume); // SETTINGS-MOUNT-01
   setMuted(loadSettings().muted); // US-060: apply the remembered mute before any sound can play
+  setForestAmbienceSources({ biomeAt: (x, y) => { const u = window.ASSETS?.levels?.overworld_far?.util; return u && u.biomeAt ? u.biomeAt(x, y) : 0; }, hour: () => clockHour(engine.world.state, clockCfg) }); // OB-184: lazy lookups, silent on non-terrain worlds
 
   let simTime = 0;
   let clothTick = 0; // CLOTH-1b3 (33.5): integer fixed-step counter for `w.cloths.tick`/`wind.sampleInto` (rule 15: no wall clock)
@@ -1619,7 +1621,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         goblinWire.addFarCamps(planWorldLife(world, window.ASSETS?.levels?.world_geo, 12).camps); // WMP-09: authored-only avoid, same defs on Continue
       }
       if (aiDevRun) addAiReserve(world, 12, [0, 0]); // ED-AI-06: parked test creatures (never in normal play)
-      beasts = createBeastSim(world, { tileNav: !!gridNav, nav: (lifeNav = gridNav || (worldDef.nav && buildBeastNav(world, worldDef.nav))), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events, band: worldBand, fauna: wild ? wild.fauna : null, playerMaxHp: VITALS_DEFAULTS.maxHp, hpPerDamage: VITALS_DEFAULTS.beastDamageScale, waterNav: gridNav ? (() => { try { return buildWaterNav(world, gridNav.grid); } catch (e) { return null; } })() : null }); // LIFE-07: predators hunt the ambient fauna
+      beasts = createBeastSim(world, { tileNav: !!gridNav, nav: (lifeNav = gridNav || (worldDef.nav && buildBeastNav(world, worldDef.nav))), rng: createRng(worldDef.nav?.seed ?? 1), events: engine.events, band: worldBand, fauna: wild ? wild.fauna : null, playerMaxHp: VITALS_DEFAULTS.maxHp, hpPerDamage: VITALS_DEFAULTS.beastDamageScale, difficulty: loadSettings().difficulty /* OB-150: 'easy'|'normal'|'hard'; Settings > Difficulty (DIFF-MENU), read on each world load; live change via beasts.setDifficulty */, waterNav: gridNav ? (() => { try { return buildWaterNav(world, gridNav.grid); } catch (e) { return null; } })() : null }); // LIFE-07: predators hunt the ambient fauna
       // ED-LOGIC-01c: logic wire, rebuilt with every sim; no blocks (01d loads them) = nothing registered, nothing written
       if (logicUnreg) { logicUnreg(); logicUnreg = null; } logicWire = null;
       { const lb = (window.ASSETS && window.ASSETS.logicBlocks) || []; // 01d: content/logic/*.logic.json blocks; hint/sound callbacks wired with 01d
@@ -1958,7 +1960,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
             guardLoad(() => engine.setWorld(deserialize(initialState, assets, worldLoadOpts)));
           }
         }, () => relockPointer()),
-        onSettings: () => openSettings({ assets, engine, look }),
+        onSettings: () => openSettings({ assets, engine, look, onDifficulty: (d) => { if (beasts && beasts.setDifficulty) beasts.setDifficulty(d); } }),
         // CREDITS-MOUNT-01: licence inventory is fetched lazily on first open (menu only, never in capture/bench paths)
         createCredits: () => creditsInv && window.ASSETS?.uiStyle?.menu ? createCreditsView(creditsInv, { style: window.ASSETS.uiStyle.menu }) : null,
       });
@@ -1968,7 +1970,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       adapter: (saveRelay && saveRelay.adapter) || { listSlots: () => [], readSlot: () => ({ ok: true, save: null }) },
       style: window.ASSETS && window.ASSETS.uiStyle ? window.ASSETS.uiStyle.menu : null,
       onResume: () => { if (pauseResume.soft) pauseResume.resume(); else relockPointer(); }, // OB-072: soft pause = lock never lost
-      onSettings: () => openSettings({ assets, engine, look }),
+      onSettings: () => openSettings({ assets, engine, look, onDifficulty: (d) => { if (beasts && beasts.setDifficulty) beasts.setDifficulty(d); } }),
       onFullscreen: toggleFullscreen, // OB-072
       onUnstuck: isCaptureOrBench || params.get('capture') === '1' ? null : () => { // OB-140: newest safe spot >= 3 m away (always allowed, also in combat)
         const t = playerHandle.data.transform, p = safeSpots.pick(t.x, t.y, t.z);

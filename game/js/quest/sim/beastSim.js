@@ -11,6 +11,8 @@
 import { createAStar, findPath, findPathCells, smoothPath, createSteer, PHYSICS, SIM_STEP } from '../../../../engine/index.js';
 import { BEAST_DEFAULTS, toSteps } from './beastConfig.js';
 import { tierMult } from './band.js';
+import { levelScale, LEVEL_TABLE, kindFactors } from './beastLevels.js';
+import { resolveDifficulty } from './difficulty.js'; // DIFF-MENU
 import { canSee } from './sight.js';
 import { BEAR_TUNING, BEAR_MODEL, bearOverrides, bearPicksBite, isBearEntity } from './bearBrain.js'; // BEAR-01, BEAR-BITE
 import { WOLF_TUNING, wolfOverrides, isWolfEntity, circleTarget, awayTarget } from './wolfBrain.js'; // WOLF-01
@@ -325,8 +327,14 @@ export function createBeastSim(world, opts) {
     const br = e.components.brain;
     const tier = band ? band.beastTierAt(e.transform.x, e.transform.y, br && br.tier) : ((br && br.tier >= 1 && br.tier <= 3) ? br.tier | 0 : 1);
     const m = tierMult(tier);
-    sim.tier[i] = tier; sim.spdMul[i] = m.speed; sim._hitPayload[i].damage = sim.bear[i] ? BEAR_TUNING.swipeHearts : m.damage; // BEAR-01: swipe is a fixed 2 hearts
-    const maxHp = Math.round(sim.scfg[i].hp * m.hp);
+    // OB-150: hp/damage scale with the zone LEVEL (band 1-10, placed tier override -> representative level) and difficulty (beastLevels.js)
+    const lv = (br && br.tier >= 1 && br.tier <= 3) ? LEVEL_TABLE.tierLevel[br.tier | 0] : (band ? band.bandAt(e.transform.x, e.transform.y) : 1);
+    const ls = levelScale(lv, opts.difficulty);
+    // KINDS-F (OB-153): kinds.json hpF/dmgF (x boar, missing = 1) multiply the level result. Wolf/bear slots already carry their own
+    // tuning (WOLF_TUNING/BEAR_TUNING hpMul, swipe hearts) so they are skipped here to avoid double counting.
+    const kf = kindFactors(e, sim.wolf[i] || sim.bear[i]);
+    sim.tier[i] = tier; sim.spdMul[i] = m.speed; sim._hitPayload[i].damage = (sim.bear[i] ? BEAR_TUNING.swipeHearts : 1) * ls.damage * kf.dmg; // BEAR-01: swipe base is 2 hearts
+    const maxHp = Math.max(1, Math.round(sim.scfg[i].hp * ls.hp * kf.hp));
     e.components.health = { hp: maxHp, max: maxHp, invuln: 0 };
     steer.addAgent(e.transform.x, e.transform.y, cfg.radius, 0, DEFAULT_ACCEL);
   }
@@ -463,6 +471,15 @@ export function createBeastSim(world, opts) {
     }
   };
   /** GOB-01b: on -> slot goes to STATE_GONE (steer agent dropped, hidden, skipped); off -> back alive at home, hp max. */
+  // DIFF-MENU (D-083): live difficulty change from the Settings screen. Rescales live beasts' damage by the dmg ratio only;
+  // hp / spawn tuning apply to the next created beast (opts.difficulty is read at create).
+  sim.setDifficulty = function setDifficulty(name) {
+    const was = resolveDifficulty(opts.difficulty).dmg, now = resolveDifficulty(name);
+    opts.difficulty = now.name;
+    const r = was > 0 ? now.dmg / was : 1;
+    if (r !== 1) for (let i = 0; i < sim._hitPayload.length; i++) if (sim._hitPayload[i]) sim._hitPayload[i].damage *= r;
+    return now.name;
+  };
   sim.setDown = function setDown(slot, on) {
     if (slot < 0 || slot >= sim.count) return;
     if (on) {
