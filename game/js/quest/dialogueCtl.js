@@ -55,6 +55,7 @@ export function createDialogueCtl(opt) {
   let npcId = null;       // entity id of the current speaker NPC
   let pendingClip = null; // node clip waiting to be played once
   let oneShot = false;    // a node clip is playing
+  let offerArmed = false; // OB-186 redo: true once an offer node has seen a step without confirm
   let lastBase = null;    // last talk/listen/idle we asked for
   const jaw = createJawSync({ maxDeg: opt.jawOpenDeg }); // opt.jawOpenDeg = model def's jawOpenDeg, else fallback
   let jawComp = null;     // voxel component of the NPC whose jaw we drive
@@ -170,7 +171,11 @@ export function createDialogueCtl(opt) {
           if (i < runner.choiceCount && input.pressed(DIGIT_KEYS[i])) { runner.selected = i; digit = true; break; }
         }
       }
-      if (digit || input.pressed(CONFIRM_KEYS[0]) || input.pressed(CONFIRM_KEYS[1])) {
+      const conf = digit || input.pressed(CONFIRM_KEYS[0]) || input.pressed(CONFIRM_KEYS[1]);
+      const offerNow = runner.state === 'choosing' && !digit && offerIndices(runner);
+      if (!offerNow) offerArmed = false; else if (!conf) offerArmed = true; // OB-186 redo: an offer node only accepts E after a step without confirm (the press that paged into it is not a deliberate accept)
+      if (conf && offerNow && !offerArmed) { if (input.consumePressed) input.consumePressed(); } // swallowed: still the paging press
+      else if (conf) {
         if (runner.state === 'choosing') { const o = !digit && offerIndices(runner); if (o) runner.selected = o.accept; runner.choose(); } else runner.press(); // OB-186: E on an offer = accept
         if (input.consumePressed) input.consumePressed(); // DIALOGUE-LOCK-01: the confirm edge is used up, later handlers (E interact) must not see it
       } // one confirm per step: a pick never also advances the next line

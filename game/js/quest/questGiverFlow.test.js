@@ -31,7 +31,7 @@ function setup(relay) {
     assert.equal(ctl.openFor('bear'), true);
     for (let i = 0; i < 300 && ctl.open; i++) {
       if (i === esc) { tick('Escape'); break; }
-      if (ctl.runner.state === 'choosing') { if (offerIndices(ctl.runner)) { tick(pick > 0 ? 'KeyQ' : 'KeyE'); continue; } /* OB-186: offer = E accept / Q not now */ for (let k = 0; k < pick; k++) tick('ArrowDown'); tick('KeyE'); continue; }
+      if (ctl.runner.state === 'choosing') { if (offerIndices(ctl.runner)) { tick(); tick(pick > 0 ? 'KeyQ' : 'KeyE'); continue; } /* OB-186: offer = E accept / Q not now */ for (let k = 0; k < pick; k++) tick('ArrowDown'); tick('KeyE'); continue; }
       if (ctl.runner.state === 'typing' && said.at(-1) !== ctl.runner.line) said.push(ctl.runner.line);
       tick('KeyE');
     }

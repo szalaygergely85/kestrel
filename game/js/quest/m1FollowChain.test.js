@@ -1,5 +1,6 @@
 // OB-178: the REAL m1 chain from the boar hand-in to q05 - real questRelay + book + dialogueCtl + burlEscort + npcWalk on Burl's real walks.
 //   node game/js/quest/m1FollowChain.test.js
+import { offerIndices } from './dialogueView.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { compileDialogue } from '../../../engine/index.js';
@@ -29,7 +30,11 @@ function talk(pick = 0) {
   const tick = (...k) => { keys.clear(); k.forEach((c) => keys.add(c)); ctl.step(1 / 60, input, true); };
   assert.equal(ctl.openFor('bear'), true);
   for (let i = 0; i < 300 && ctl.open; i++) {
-    if (ctl.runner.state === 'choosing') { for (let k = 0; k < pick; k++) tick('ArrowDown'); tick('KeyE'); continue; }
+    if (ctl.runner.state === 'choosing') {
+      if (!offerIndices(ctl.runner)) { for (let k = 0; k < pick; k++) tick('ArrowDown'); tick('KeyE'); continue; }
+      tick('KeyE'); assert.equal(ctl.runner.state, 'choosing', 'OB-186 redo: the E straight after paging into an offer does not accept it');
+      tick(); tick(pick ? 'KeyQ' : 'KeyE'); continue; // release, then a deliberate press
+    }
     tick('KeyE');
   }
   tick();

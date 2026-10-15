@@ -1,5 +1,6 @@
 // CH1-10 part B: scripted Chapter 1 walkthrough through the real questRelay + book + dialogueCtl + save round trip.
 //   node game/js/quest/ch1Walkthrough.test.js
+import { offerIndices } from './dialogueView.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { compileDialogue, World, AssetRegistry } from '../../../engine/index.js';
@@ -34,7 +35,7 @@ function talk(relay, pick = 0) {
   const tick = (...k) => { keys.clear(); k.forEach((c) => keys.add(c)); ctl.step(1 / 60, input, true); };
   assert.equal(ctl.openFor('bear'), true);
   for (let i = 0; i < 300 && ctl.open; i++) {
-    if (ctl.runner.state === 'choosing') { for (let k = 0; k < pick; k++) tick('ArrowDown'); tick('KeyE'); continue; }
+    if (ctl.runner.state === 'choosing') { if (offerIndices(ctl.runner)) tick(); /* OB-186 redo: release before the deliberate accept */ for (let k = 0; k < pick; k++) tick('ArrowDown'); tick('KeyE'); continue; }
     tick('KeyE');
   }
   tick();
