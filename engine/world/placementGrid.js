@@ -36,6 +36,9 @@ export class PlacementGrid {
 
     this.cellOf = new Int32Array(n).fill(-1); // structure index -> compact cell id (-1 = not a member)
     this.reach2 = new Float32Array(n);        // per-placement reach^2 (feeds compare d2 <= reach2)
+    // MESH-FEED-GRID-01: flat per-member bbox xy + warm reach^2 ((reach + warmM)^2), so the camera feed can reject a member without touching its structure/mesh objects
+    this.bx0 = new Float64Array(n); this.by0 = new Float64Array(n); this.bx1 = new Float64Array(n); this.by1 = new Float64Array(n);
+    this.warm2 = new Float64Array(n);
     this.activeList = new Int32Array(n); this.activeCount = 0;
     this.warmList = new Int32Array(n); this.warmCount = 0;
 
@@ -54,6 +57,8 @@ export class PlacementGrid {
       if (reach !== reach) reach = o.farM; // NaN (reachPerM Infinity * r 0): unknown size -> far, never near
       if (o.cutM > 0 && reach > o.cutM && !isLandmark(s, o.keepFar)) reach = o.cutM; // OB-089: far buildings/props stop drawing where the far terrain takes over
       this.reach2[i] = reach * reach;
+      this.bx0[i] = b.x0; this.by0[i] = b.y0; this.bx1[i] = b.x1; this.by1[i] = b.y1;
+      { const rw = Math.sqrt(this.reach2[i]) + o.warmM; this.warm2[i] = rw * rw; }
       px0[i] = b.x0; py0[i] = b.y0; px1[i] = b.x1; py1[i] = b.y1;
       const cx = Math.floor(((b.x0 + b.x1) * 0.5) / cell), cy = Math.floor(((b.y0 + b.y1) * 0.5) / cell);
       // key = position AND reach class (0..4, doubling from minM) so one big mesh does not keep small props' cells active

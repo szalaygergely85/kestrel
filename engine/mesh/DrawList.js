@@ -127,6 +127,9 @@ function makeDrawItem() {
 
 /** Resets one `DrawItem` to identity/0 (reused by `DrawList.push`). */
 function resetDrawItem(item) {
+  // MESH-FEED-GRID-01: only voxel / instanced items ever write part matrices (voxelMesh, viewModel, addGroupInstances); clearing the 2 big
+  // typed arrays on every static/terrain/level push was the bulk of the reset cost. `item.type` still holds the previous use here.
+  const parts = item.type === DRAW_VOXEL || item.type === DRAW_INSTANCED;
   item.mesh = null;
   item.type = DRAW_STATIC;
   const m = item.matrix;
@@ -134,8 +137,7 @@ function resetDrawItem(item) {
   m[3] = 0; m[4] = 1; m[5] = 0;
   m[6] = 0; m[7] = 0; m[8] = 1;
   m[9] = 0; m[10] = 0; m[11] = 0;
-  item.partMatrices.fill(0);
-  item.partFlags.fill(0);
+  if (parts) { item.partMatrices.fill(0); item.partFlags.fill(0); }
   item.rangeFirst = 0;
   item.rangeCount = 0;
   item.planeIdOr = 0;
@@ -548,7 +550,7 @@ export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shado
   // STREAM-01b (38.51): residency grid. Re-fetched every frame (never cached: a structVersion change replaces the object); the camera
   // feed advances it, the shadow feed only reads the lists. Off (`world.streaming.enabled` false / no grid) = today's all-placements path.
   let grid = world.streaming && world.streaming.enabled && world.refreshPlacementGrid ? world.refreshPlacementGrid() : null;
-  let gl = null, gr2 = null, gN = structs.length, warmM = 0, gx = 0, gy = 0;
+  let gl = null, gr2 = null, gN = structs.length, warmM = 0, gx = 0, gy = 0, gw2 = null, gbx0 = null, gby0 = null, gbx1 = null, gby1 = null;
   if (grid) {
     gx = lodCentreX(cam); gy = lodCentreY(cam);
     if (!shadowOnly) grid.update(gx, gy);
@@ -557,19 +559,28 @@ export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shado
   }
   if (grid) {
     gl = grid.activeList; gr2 = grid.reach2; gN = grid.activeCount; warmM = grid.opts.warmM;
+    gw2 = grid.warm2; gbx0 = grid.bx0; gby0 = grid.by0; gbx1 = grid.bx1; gby1 = grid.by1; // MESH-FEED-GRID-01 flat prefilter data
   }
   if (!shadowOnly) { setLazyView(lodCentreX(cam), lodCentreY(cam), fogFarM); pumpLazyMeshes(); } // MESH-LOAD-01: decode queued payloads (<= 2 / 4 ms), remember the eye for scatter groups
   const fr = shadowOnly ? null : planes;
   let count = 0, requested = 0;
   for (let q = 0; q < gN; q++) {
     const i = gl ? gl[q] : q; // grid: ascending active structure indices (same order as 0..N, so ranking ties are unchanged)
-    if (structs[i].kind !== 'mesh') continue;
+    // MESH-FEED-GRID-01: flat prefilter. Outside reach + warmM nothing can happen (no touch, no request, no draw): reject from the
+    // grid's flat arrays without touching the structure / mesh objects. Slack 1e-6 keeps it a strict subset of the exact test below.
+    let dg2 = 0;
+    if (gl) {
+      const dx = gx < gbx0[i] ? gbx0[i] - gx : (gx > gbx1[i] ? gx - gbx1[i] : 0), dy = gy < gby0[i] ? gby0[i] - gy : (gy > gby1[i] ? gy - gby1[i] : 0);
+      dg2 = dx * dx + dy * dy;
+      if (dg2 > gw2[i] * 1.000001) continue;
+    } else if (structs[i].kind !== 'mesh') continue; // grid members are mesh placements by construction
     if (shadowOnly && structs[i].castShadow === false) continue; // MESH-SHADOW-01
-    if (bEye) bboxDistTo(bEye, structs[i].bbox); else bboxDistTo(cam, structs[i].bbox);
-    const d = _bd[0];
+    let d;
+    if (gl && !bEye) { d = Math.sqrt(dg2); _bd[0] = d; } // camera feed: reach metric == bboxDistTo metric (both lodCentre xy -> AABB)
+    else { if (bEye) bboxDistTo(bEye, structs[i].bbox); else bboxDistTo(cam, structs[i].bbox); d = _bd[0]; }
     // per-placement warm radius (reach + warmM) with the grid, else the global load / hold radius
     let rw2 = 0, dg = d; // dg: ONE metric for reach + warm = grid xy distance eye -> placement AABB (placementGrid.js)
-    if (gl) { dg = bboxDistXY(gx, gy, structs[i].bbox); const rw = Math.sqrt(gr2[i]) + warmM; rw2 = rw * rw; }
+    if (gl) { dg = bEye ? bboxDistXY(gx, gy, structs[i].bbox) : d; rw2 = gw2[i]; }
     if (!shadowOnly && structs[i].mesh.lazyOrigin && !structs[i].mesh.lazy && (gl ? dg * dg <= rw2 : d <= lazyHoldRadius())) touchMesh(structs[i].mesh); // S8-B2-03: LRU keep-alive inside loadM + 60 m
     if (structs[i].mesh.lazy) { // MESH-LOAD-01: payload not loaded = draws nothing; ask for it when within draw distance + margin
       if (!shadowOnly && (gl ? dg * dg <= rw2 : d <= fogFarM + LOAD_MARGIN_M)) requestMesh(structs[i].mesh);

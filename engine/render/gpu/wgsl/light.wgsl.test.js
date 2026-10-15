@@ -44,7 +44,8 @@ assert.equal(LIGHT_BLOCK.field('aoP').word, 420);
 assert.equal(LIGHT_BLOCK.field('pshA').word, 424, 'ME-16d words appended after aoP');
 assert.equal(LIGHT_BLOCK.field('pshO').word, 428); assert.equal(LIGHT_BLOCK.field('pshO').words, 24);
 assert.equal(LIGHT_BLOCK.field('pshSlot').word, 452); assert.equal(LIGHT_BLOCK.field('pshSlot').words, 24);
-assert.equal(LIGHT_BLOCK.sizeBytes, 1904);
+assert.equal(LIGHT_BLOCK.field('caoA').word, 476, 'CONTACT-AO-01b words appended after pshSlot'); assert.equal(LIGHT_BLOCK.field('caoD').words, 256);
+assert.equal(LIGHT_BLOCK.sizeBytes, 2944);
 assert.ok(LIGHT_WGSL.includes('aoRc(u.aoP.x, u.planeDistY, dist, u.aoP.z)'), 'rc from aoP');
 assert.ok(!/AO_TAP_CELLS|AO_RADIUS_M|AO_BIAS/.test(LIGHT_WGSL), 'legacy AO consts gone');
 

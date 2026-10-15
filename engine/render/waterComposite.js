@@ -21,16 +21,22 @@
 // Order in `renderWorld` (mesh): shade -> composite(surfaces) -> edgePass(mask) -> fillSky -> composite(sky). The GPU does the same
 // in `_passWaterComposite` (after shade, before edge; the sky is already in the shade output there). Zero allocation after warm.
 import { sunFromWorld } from './lighting.js';
-import { unprojectCell, unprojectPitched, pitchedFogScale } from './projection.js';
+import { unprojectCell, unprojectPitched } from './projection.js';
 import { lastWaterSelection } from './water.js';
 import { SKY_LUT_N } from './gpu/wgsl/skyLut.js';
-import { skyLutFromPalette, waterReflectAt, waterReflectMix } from './waterReflect.js';
+import { skyLutFromPalette, waterReflectAt, WATER_REFLECT } from './waterReflect.js';
 import {
   WL_STRIDE, WL_TABLE_SLOTS, WFOG_LEN, RIPPLE_SLOTS, RIPPLE_ACC_MIN, DEFAULT_RIPPLE_GLYPH, DEFAULT_RIPPLE_GAIN,
-  fillWaterSlotTable, defaultWaterLooks, waterFogParams, flowStreakHit, riverStreakHit, riverAlpha, waterSurfaceHash, waterEdgeDistance, waterfallHash, rippleAccAt,
+  fillWaterSlotTable, defaultWaterLooks, waterFogParams, flowStreakHit, riverStreakHit, waterSurfaceHash, waterfallHash, rippleAccAt,
 } from './waterLook.js';
 
+import {
+  WF_STRIDE, WF_SLOTS, CAUSTIC_CELL, CAUSTIC_HZ, fillWaterFinishTable, shearMirrorRow, reflAccept,
+} from './waterFinish.js';
+
 const _table = new Float32Array(WL_TABLE_SLOTS * WL_STRIDE); // 12 GPU slots + river slots 12..13 (38.45, JS twin)
+const _fin = new Float32Array(WF_SLOTS * WF_STRIDE); // WATER-FINISH-01a (38.77) per-slot finish keys; all 0 = off
+const _mir = new Float64Array(3);
 const _fog = new Float32Array(WFOG_LEN);
 const _rip = new Float32Array(RIPPLE_SLOTS * 4); // S8-B2-13b (38.14): 8 rings x (x, y, age, amp)
 const _p = new Float64Array(3);
@@ -44,6 +50,41 @@ let _mask = null;
 
 /** The slot table the last composite used (tests / the GPU uploader share the same packing). */
 export function lastWaterSlotTable() { return _table; }
+
+// WATER-ALLOC-01: the loop body is too big for V8's cumulative inlining budget, so any call that RETURNS a double (or a uint32 >= 2^31)
+// boxes a HeapNumber per cell (~66 KB/frame). Hot calls therefore return int32/bool only; double helpers are inlined below.
+// Double ARGUMENTS to a non-inlined call box too, so the wrappers below take ints only and read the doubles from module scratch.
+const _w = new Float64Array(3); // [dW, raw, rE] of the current cell (so the wrappers take no double argument)
+let _tNow = 0;
+const hashSurfI = (lb) => waterSurfaceHash(_table, lb, _p[0], _p[1]) | 0; // int32 bits; the loop reads them back with >>> 0
+const hashFallI = (lb, wz, i) => waterfallHash(_table, lb, _p[0], _p[1], wz[i]) | 0;
+const unprojW = (pitched, pterms, terms, col, row, k, out) => (pitched ? unprojectPitched(pterms, col, row, _w[k], out) : unprojectCell(terms, col, row, _w[k], out));
+const flowHit = (lb) => flowStreakHit(_table, lb, _p[0], _p[1]);
+const riverHit = (lb, wz, i) => riverStreakHit(_table, lb, wz[i], _w[2]);
+// == causticHit(floorP0, floorP1, t, k) with hashFastU inlined by hand (terrainShade.js hashFastU; parity: waterFinish.test.js + the byte compare)
+const causticAt = (fb8) => {
+  let h = (Math.imul(Math.floor(_floorP[0] / CAUSTIC_CELL) | 0, 0x27d4eb2d) ^ Math.imul(Math.floor(_floorP[1] / CAUSTIC_CELL) | 0, 0x165667b1) ^ Math.imul(Math.floor(_tNow * CAUSTIC_HZ) | 0, 0x9e3779b1)) | 0;
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  h ^= h >>> 16;
+  return ((h >>> 0) >>> 8) * (1 / 16777216) > 1 - _fin[fb8];
+};
+const mirrorShear = (terms, row) => shearMirrorRow(terms.horizonRow, row);
+const mirrorPitched = (terms) => { // == projectDirPitched(terms, p - eye, mirrored z) inlined (doubles must not cross a non-inlined call)
+  if (terms.ortho) return false;
+  const dx = _p[0] - terms.eyeX, dy = _p[1] - terms.eyeY, dz = -(_p[2] - terms.eyeZ);
+  const vd = dx * terms.fX + dy * terms.fY + dz * terms.fZ;
+  _mir[2] = vd;
+  if (!(vd > 1e-9)) return false;
+  const vx = dx * terms.rX + dy * terms.rY, vy = dx * terms.uX + dy * terms.uY + dz * terms.uZ;
+  _mir[0] = Math.floor((vx / vd / terms.tanHalfX + 1) * (terms.cols / 2) - 0.5 + 0.5);
+  _mir[1] = Math.floor((1 - vy / vd / terms.tanHalfY) * (terms.rows / 2) + 0.5);
+  return true;
+};
+const reflOk = (rowM, rows, wKind, kindArr, depth, mi) => reflAccept(rowM, rows, wKind[mi], kindArr[mi], depth[mi], _w[0]);
+const rippleHit = (n) => rippleAccAt(_rip, n, _p[0], _p[1]) >= RIPPLE_ACC_MIN;
+const reflectAt = (reflTerms) => waterReflectAt(reflTerms.eyeZ, _p[0] - reflTerms.eyeX, _p[1] - reflTerms.eyeY, _p[2] - reflTerms.eyeZ, _skyLut, _lutElevTop, _refl);
+const R_SKY = WATER_REFLECT.skyMix, R_DARK = WATER_REFLECT.darken;
 
 function byte(v) { return v <= 0 ? 0 : v >= 255 ? 255 : Math.floor(v + 0.5); }
 
@@ -66,6 +107,8 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
   const reflTerms = pitched ? pterms : terms, reflOn = _lutElevTop > 0 && !(pitched && pterms.ortho);
   const sel = lastWaterSelection();
   fillWaterSlotTable(sel, world, fb.waterLooks || defaultWaterLooks(), _table, fb.timeSec || 0);
+  fillWaterFinishTable(sel, world, fb.waterLooks || defaultWaterLooks(), _fin);
+  const timeSec = fb.timeSec || 0; _tNow = timeSec;
   waterFogParams(fb.matTable, fb.palette, !!world.terrain, _fog);
   // S8-B2-13b (38.14): fb.ripples is duck-typed {packInto} (engine/fx/ripples.js); absent (NEEDS B1-main not wired
   // yet, or no splashes this scene) = 0 rings, bit-identical to the pre-ripple render.
@@ -73,6 +116,7 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
   const rippleGlyph = fb.rippleGlyph != null ? fb.rippleGlyph : DEFAULT_RIPPLE_GLYPH;
   const rippleGain = fb.rippleGain != null ? fb.rippleGain : DEFAULT_RIPPLE_GAIN;
   const sun = sunFromWorld(world, fb.palette, _sun);
+  const sunUp = sun.dirZ > 0 && sun.sunI > 0;
   const light = fb.light;
   const sunMapOn = !!(light && !light.uniform && light.sunMapOn);
   const kindArr = fb.gbuf.kind, depth = fb.depth.depth, wKind = wt.kind, wDepth = wt.depth, wObj = wt.objectId;
@@ -87,16 +131,17 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
     if (isSky !== skyPass) continue;
     const dW = wDepth[i], raw = isSky ? Infinity : depth[i];
     if (!(dW < raw)) continue;
+    _w[0] = dW; _w[1] = raw;
     const slot = wObj[i] & 15, lb = slot * WL_STRIDE, sheet = (wObj[i] & 32) !== 0, ribbon = (wObj[i] & 64) !== 0;
     const opaqueAt = _table[lb + 3], seeThrough = _table[lb + 7], bgK = _table[lb + 13];
     let a = sheet ? _table[lb + 55] : isSky ? 1 : (raw - dW) / opaqueAt;
     a = a < 0 ? 0 : a > 1 ? 1 : a;
     const col = i % cols, row = (i / cols) | 0;
-    if (pitched) unprojectPitched(pterms, col, row, dW, _p); else unprojectCell(terms, col, row, dW, _p);
+    unprojW(pitched, pterms, terms, col, row, 0, _p);
 
     let column = Infinity;
     if (!isSky) {
-      if (pitched) unprojectPitched(pterms, col, row, raw, _floorP); else unprojectCell(terms, col, row, raw, _floorP);
+      unprojW(pitched, pterms, terms, col, row, 1, _floorP);
       column = Math.max(0, _p[2] - _floorP[2]);
       if (!sheet) { a = Math.max(raw - dW, column * WATER_PATH_FLOOR_K) / opaqueAt; a = a < 0 ? 0 : a > 1 ? 1 : a; } // OB-111: a steep ray through a shallow column still counts as column / 0.25 m of water
     }
@@ -104,9 +149,9 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
     let rE = 0, rRapid = 0;
     if (ribbon) {
       const rw = wObj[i];
-      rE = (rw >>> 16) * 0.001; rRapid = ((rw >>> 8) & 255) * (1 / 255);
+      rE = (rw >>> 16) * 0.001; _w[2] = rE; rRapid = ((rw >>> 8) & 255) * (1 / 255);
       const fe = _table[lb + 30], fs = _table[lb + 31];
-      a = riverAlpha(a, rE, column, fe, fs);
+      a = a * (fe > 0 ? Math.min(1, rE / fe) : 1) * Math.min(1, column / fs); // == riverAlpha (inlined: no boxed return)
     }
     const tint = isSky ? a : Math.min(column / _table[lb + 38], 1);
     // S8-B2-12b (38.13): cloud-darkening byte (`light.cloudQ[i]`, the JS-side copy of the floor cell's LIGHT.w bits
@@ -119,13 +164,13 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
     wr = wr < 0 ? 0 : wr > 255 ? 255 : wr; wg = wg < 0 ? 0 : wg > 255 ? 255 : wg; wb = wb < 0 ? 0 : wb > 255 ? 255 : wb;
 
     let br0 = wr * bgK, bg0 = wg * bgK, bb0 = wb * bgK;
-    const fi = i * 4;
+    const fi = i * 4, fb8 = slot * WF_STRIDE;
     const opaque = !sheet && a >= seeThrough;
     let glyph = fgArr[fi + 3];
     if (opaque) {
-      const h = waterSurfaceHash(_table, lb, _p[0], _p[1]);
+      const h = hashSurfI(lb) >>> 0;
       glyph = _table[lb + 16 + (h % (_table[lb + 12] | 0))];
-      if (ribbon ? riverStreakHit(_table, lb, wt.z[i], rE) : flowStreakHit(_table, lb, _p[0], _p[1])) glyph = _table[lb + 24]; // US-141a (35.4) / 38.45: flowing water streaks
+      if (ribbon ? riverHit(lb, wt.z, i) : flowHit(lb)) glyph = _table[lb + 24]; // US-141a (35.4) / 38.45: flowing water streaks
       if (ribbon && rRapid > 0 && (h >>> 8) * (1 / 16777216) < rRapid * _table[lb + 33]) { // rapids: foam glyph + rim tint
         glyph = _table[lb + 44];
         wr += (_table[lb + 48] - wr) * 0.5; wg += (_table[lb + 49] - wg) * 0.5; wb += (_table[lb + 50] - wb) * 0.5;
@@ -134,15 +179,32 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
         wr += (_table[lb + 8] - wr) * 0.5; wg += (_table[lb + 9] - wg) * 0.5; wb += (_table[lb + 10] - wb) * 0.5;
       }
       if (reflOn) { // AUD-42: sky tint at the mirrored elevation + fresnel (fg and bg)
-        waterReflectAt(reflTerms.eyeZ, _p[0] - reflTerms.eyeX, _p[1] - reflTerms.eyeY, _p[2] - reflTerms.eyeZ, _skyLut, _lutElevTop, _refl);
+        reflectAt(reflTerms);
         const F = _refl[0];
-        wr = waterReflectMix(wr, F, _refl[1]); wg = waterReflectMix(wg, F, _refl[2]); wb = waterReflectMix(wb, F, _refl[3]);
-        br0 = waterReflectMix(br0, F, _refl[1]); bg0 = waterReflectMix(bg0, F, _refl[2]); bb0 = waterReflectMix(bb0, F, _refl[3]);
+        const kS = F * R_SKY, kA = 1 - R_DARK * (1 - F), kB = 1 - kS, s1 = _refl[1] * kS, s2 = _refl[2] * kS, s3 = _refl[3] * kS; // == waterReflectMix x6 (inlined)
+        wr = wr * kA * kB + s1; wg = wg * kA * kB + s2; wb = wb * kA * kB + s3;
+        br0 = br0 * kA * kB + s1; bg0 = bg0 * kA * kB + s2; bb0 = bb0 * kA * kB + s3;
+        const rK = _fin[fb8 + 6];
+        if (rK > 0) { // WATER-FINISH-01a (38.77 A): screen-space reflection of the far bank (shaded bg of the mirrored row)
+          let rowM = -1, colM = col;
+          if (!pitched) rowM = mirrorShear(terms, row);
+          else if (mirrorPitched(pterms)) { colM = _mir[0]; rowM = _mir[1]; }
+          if (rowM >= 0 && rowM < rows && colM >= 0 && colM < cols) {
+            if (ripCount > 0 && rippleHit(ripCount)) rowM += (col & 1) ? 1 : -1; // ripple wobble
+            const mi = rowM * cols + colM;
+            if (rowM >= 0 && rowM < rows && reflOk(rowM, rows, wKind, kindArr, depth, mi)) {
+              const m = F * rK > 1 ? 1 : F * rK, dim = _fin[fb8 + 7], mf = mi * 4;
+              const mr = bgArr[mf] * dim, mg = bgArr[mf + 1] * dim, mb = bgArr[mf + 2] * dim;
+              wr += (mr - wr) * m; wg += (mg - wg) * m; wb += (mb - wb) * m;
+              br0 += (mr - br0) * m; bg0 += (mg - bg0) * m; bb0 += (mb - bb0) * m;
+            }
+          }
+        }
       }
     }
     // S8-B2-13b (38.14, the note of record): splash ripples, !sheet only (incl. see-through: replaces the floor
     // glyph), before the sheet/shore blocks. acc/glyph/gain are a single global uniform now, not a per-slot look field.
-    if (!sheet) {
+    if (!sheet && ripCount > 0) { // 0 rings -> acc 0 < RIPPLE_ACC_MIN: skip the call
       const acc = rippleAccAt(_rip, ripCount, _p[0], _p[1]);
       if (acc >= RIPPLE_ACC_MIN) {
         glyph = rippleGlyph;
@@ -151,7 +213,7 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
       }
     }
     if (sheet) {
-      const h = waterfallHash(_table, lb, _p[0], _p[1], wt.z[i]);
+      const h = hashFallI(lb, wt.z, i) >>> 0;
       glyph = _table[lb + 16 + h % (_table[lb + 12] | 0)];
       const brightness = 0.6 + (h % 3) * 0.2;
       const kS = sun.ambientI + sun.sunI * cF; // OB-045: foam scatters every way (full sun term, no N.L) and hangs in front of the cliff (no cliff sun map)
@@ -159,7 +221,8 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
       br0 = wr * bgK; bg0 = wg * bgK; bb0 = wb * bgK;
       if ((h >>> 8) * (1 / 16777216) > 0.92) { wr = _table[lb + 8]; wg = _table[lb + 9]; wb = _table[lb + 10]; }
     }
-    const e = waterEdgeDistance(_table, lb, _p[0], _p[1]);
+    const e = _table[lb + 51] === 1 ? _table[lb + 42] - Math.sqrt((_p[0] - _table[lb + 40]) * (_p[0] - _table[lb + 40]) + (_p[1] - _table[lb + 41]) * (_p[1] - _table[lb + 41]))
+      : Math.min(_p[0] - _table[lb + 40], _p[1] - _table[lb + 41], _table[lb + 42] - _p[0], _table[lb + 43] - _p[1]); // == waterEdgeDistance (inlined)
     const shoreS = ribbon ? Math.max(0, Math.min(column / _table[lb + 52], 1)) : Math.max(0, Math.min(column / _table[lb + 52], e / _table[lb + 39]));
     const shore = !sheet && !isSky && shoreS < 1 && dW < _table[lb + 53];
     if (shore) {
@@ -170,7 +233,12 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
       wb = _table[lb + 50] + (wb - _table[lb + 50]) * shoreS;
     }
     // own fog (distance dW, x the pitched fog scale)
-    const fd = pitched ? dW * pitchedFogScale(pterms, row) : dW;
+    let fd = dW;
+    if (pitched) { // == pitchedFogScale (inlined)
+      let fsc = pterms.cosP;
+      if (!pterms.ortho) { const kk = pterms.cosP - (1 - (2 * row) / pterms.rows) * pterms.tanHalfY * pterms.sinP; fsc = kk > 0 ? kk : 0; }
+      fd = dW * fsc;
+    }
     let f = (fd - fStart) / (fFull - fStart);
     f = f < 0 ? 0 : f > 1 ? 1 : f;
     if (fCurve !== 1) f = Math.pow(f, fCurve);
@@ -187,6 +255,11 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
       }
       br = bgArr[fi] + (br - bgArr[fi]) * a; bg = bgArr[fi + 1] + (bg - bgArr[fi + 1]) * a; bb = bgArr[fi + 2] + (bb - bgArr[fi + 2]) * a;
     } else if (!isSky) _mask[i] = 1;
+    if (!opaque && !shore && !isSky && !sheet && sunUp && _fin[fb8] > 0 && column < _fin[fb8 + 1] && causticAt(fb8)) {
+      glyph = _fin[fb8 + 5]; // WATER-FINISH-01a (38.77 B): shallow caustic flicker on the see-through bed
+      const kc = k * (1 - a);
+      fr += _fin[fb8 + 2] * kc; fg += _fin[fb8 + 3] * kc; fb2 += _fin[fb8 + 4] * kc;
+    }
     gArr[i] = glyph;
     fgArr[fi] = byte(fr); fgArr[fi + 1] = byte(fg); fgArr[fi + 2] = byte(fb2); fgArr[fi + 3] = glyph;
     bgArr[fi] = byte(br); bgArr[fi + 1] = byte(bg); bgArr[fi + 2] = byte(bb); bgArr[fi + 3] = 255;

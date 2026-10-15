@@ -752,7 +752,10 @@ fn shadeCell(frag: vec4f) -> FO {
     // S8-B2-12b (38.13): cloud-darkening byte (bits 24..31 of LIGHT.w, written by the light pass regardless of
     // strength - q is 0 unless strength > 0) scales the whole analytic sun term; q 0 -> cFt 1.0 -> bit-identical.
     let cFt = 1.0 - f32((lightT.w >> ${CLOUD_Q_SHIFT}u) & 255u) * (1.0 / 255.0);
-    let bSunT = su.ambientI + su.sunI * max(0.0, ndotlT) * sunFT * cFt;
+    // CONTACT-AO-01b (38.78): contact-AO byte (LIGHT.w bits 1..7) scales the analytic ambient; q 0 -> exactly 1.0 (bit-identical).
+    let caoQT = (lightT.w >> 1u) & 127u;
+    let caoFt = select(1.0, f32(127u - caoQT) * (1.0 / 127.0), caoQT != 0u);
+    let bSunT = su.ambientI * caoFt + su.sunI * max(0.0, ndotlT) * sunFT * cFt;
     let LcT = bitcast<vec3f>(lightT.xyz);
     let bT = bSunT + max(LcT.x, max(LcT.y, LcT.z));
     // RE-02a (28.1 A2 item 3): the horizontal forward distance (mode 0: unchanged).
@@ -788,7 +791,9 @@ ${look ? `    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceM
     var sunFG = 1.0;
     if (su.sunMapOn != 0) { sunFG = f32((lightG.w >> ${SUN_N_SHIFT}u) & ${SUN_N_MASK}u) * 0.25; }
     let cFg = 1.0 - f32((lightG.w >> ${CLOUD_Q_SHIFT}u) & 255u) * (1.0 / 255.0);
-    let bG = su.ambientI * (${GRASS_AO_LO.toFixed(4)} + ${(1 - GRASS_AO_LO).toFixed(4)} * hG) + su.sunI * max(0.0, ndotlG) * sunFG * cFg;
+    let caoQG = (lightG.w >> 1u) & 127u;
+    let caoFg = select(1.0, f32(127u - caoQG) * (1.0 / 127.0), caoQG != 0u);
+    let bG = su.ambientI * (${GRASS_AO_LO.toFixed(4)} + ${(1 - GRASS_AO_LO).toFixed(4)} * hG) * caoFg + su.sunI * max(0.0, ndotlG) * sunFG * cFg;
     let LcG = bitcast<vec3f>(lightG.xyz);
     var distG = bitcast<f32>(textureLoad(uDepth, cell, 0).x);
     if (su.projMode != 0) { distG *= fogScaleCell(cell.y, gridSize.y); }
@@ -985,7 +990,7 @@ export const SHADE_LEVEL_TARGETS = Object.freeze(['rgba8', 'rgba8', 'r8ui']);
 function giSplice(src, from, to) { if (!src.includes(from)) throw new Error('shade.wgsl GI splice: anchor missing: ' + from); return src.replace(from, to); }
 function shadeGi(src) {
   let s = giSplice(src, '@group(1) @binding(0) var<uniform> su: ShadeU;', '@group(1) @binding(0) var<uniform> su: ShadeU;\n' + giBindingWgsl(16) + '\n' + GI_SAMPLE_WGSL);
-  s = giSplice(s, 'let bSunT = su.ambientI + su.sunI', 'let bSunT = su.ambientI * giTerrK(uT, vT, bitcast<f32>(gaT.z), Nt) + su.sunI');
+  s = giSplice(s, 'let bSunT = su.ambientI * caoFt + su.sunI', 'let bSunT = su.ambientI * giTerrK(uT, vT, bitcast<f32>(gaT.z), Nt) * caoFt + su.sunI');
   s = giSplice(s, 'let bG = su.ambientI * (', 'let bG = su.ambientI * giTerrK(hG, lnG, bitcast<f32>(gaG.z), NG) * (');
   return s;
 }

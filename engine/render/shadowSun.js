@@ -85,7 +85,8 @@ export function resolveShadowLevel(level) {
     // PROPOSED: 1536^2 map (0.125 m texel), props within 36 m (LOD0 18 m), placed meshes within 40 m, at most 32
     case 'mid': return { sun: 'map', res: 1536, meshLod0M: 18, instCastM: 36, meshCastM: 40, meshCastCap: 32 };
     // = SUN_SHADOW_DEFAULTS (bit-identical to today)
-    case 'high': return { sun: 'map', res: SUN_SHADOW_DEFAULTS.res, meshLod0M: SUN_SHADOW_DEFAULTS.meshLod0M, instCastM: SUN_SHADOW_DEFAULTS.instCastM,
+    // SHADOW-TRIM-01 (S6, D-107): high trimmed to the ultra caster reach (LOD0 25 -> 16 m, LOD1 casters 48 -> 32 m); engine defaults stay 25/48
+    case 'high': return { sun: 'map', res: SUN_SHADOW_DEFAULTS.res, meshLod0M: 16, instCastM: 32,
       meshCastM: SUN_SHADOW_DEFAULTS.meshCastM, meshCastCap: SUN_SHADOW_DEFAULTS.meshCastCap };
     // PERF-R4 (D-075): ultra-only caster trim - same map/mesh reach as high, props LOD0 within 16 m, LOD1 casters to 32 m (high keeps 25/48 defaults)
     case 'ultra': return { sun: 'map', res: SUN_SHADOW_DEFAULTS.res, meshLod0M: 16, instCastM: 32,

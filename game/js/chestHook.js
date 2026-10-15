@@ -55,7 +55,7 @@ export const CLIP_FOR = { closed: 'closed', opening: 'open', open: 'opened' }; /
  * @returns {{card: any, onBoot: Function, onTick: Function, drawHud: Function}} a gameHooks handler set, plus
  *   `card` (test/dev access to the mounted item-get card view).
  */
-export function createChestHook({ defs, items, style, rgb, openedChestsOf = null, seed = 1, reduceMotion = false, notify = null }) {
+export function createChestHook({ defs, items, style, rgb, openedChestsOf = null, seed = 1, reduceMotion = false, notify = null, canOpenGate = null }) {
   const card = createItemGetCard(null, { style, items, rgb, reduceMotion });
   const itemDefs = items.defs;
   // OB-075: with `notify` (main.js: toasts.say) chest / gear pickups show a one-line "Looted: Leggings" / "Looted: 2 Potions" toast, no pause, no card.
@@ -96,7 +96,7 @@ export function createChestHook({ defs, items, style, rgb, openedChestsOf = null
           const e = d.propId && c.world.entity ? c.world.entity(d.propId) : null;
           const key = 'chest.' + d.id;
           if (c.world.removeInteractable) c.world.removeInteractable(key);
-          if (!e || sim.stateOf(d.id) !== 'closed') continue;
+          if (!e || sim.stateOf(d.id) !== 'closed' || (canOpenGate && !canOpenGate(d.id))) continue; // UNDER-02: gated chests (crypt) get their [E] only once the gate opens, see onTick
           const sh = chestPickShape(e);
           const rec = c.world.addInteractable({ key, name: 'chest.open', x: d.x, y: d.y, z: d.z + sh.hz, radius: CHEST_REACH, prompt: C.prompt, pick: shapeAabb(sh), pickShapes: [sh], def: { chestId: d.id } });
           recs.push({ id: d.id, key });
@@ -117,7 +117,16 @@ export function createChestHook({ defs, items, style, rgb, openedChestsOf = null
         const t = ctx.player.transform;
         pose.x = t.x; pose.y = t.y; pose.z = t.z; pose.forwardX = fwdScratch[0]; pose.forwardY = fwdScratch[1];
         const pb = ctx.player.components && ctx.player.components.body; pose.onBottom = !!(pb && pb.onBottom); // SWIM-04d
-        for (let i = 0; i < active.length; i++) if (sim.canOpen(active[i].id, pose)) { sim.open(active[i].id, pose); break; }
+        for (let i = 0; i < active.length; i++) if (sim.canOpen(active[i].id, pose) && (!canOpenGate || canOpenGate(active[i].id))) { sim.open(active[i].id, pose); break; }
+      }
+      if (canOpenGate && ctx.world && ctx.world.addInteractable) { // gate opened later (crypt cleared): add the crosshair target once
+        for (const d of active) {
+          const key = 'chest.' + d.id, e = d.propId && ctx.world.entity ? ctx.world.entity(d.propId) : null;
+          if (!e || recs.some((r) => r.id === d.id) || sim.stateOf(d.id) !== 'closed' || !canOpenGate(d.id)) continue;
+          const sh = chestPickShape(e);
+          ctx.world.addInteractable({ key, name: 'chest.open', x: d.x, y: d.y, z: d.z + sh.hz, radius: CHEST_REACH, prompt: C.prompt, pick: shapeAabb(sh), pickShapes: [sh], def: { chestId: d.id } });
+          recs.push({ id: d.id, key });
+        }
       }
       for (let i = recs.length - 1; i >= 0; i--) { // OB-106: an opened (or opening) chest shows no [E]
         if (sim.stateOf(recs[i].id) !== 'closed') { if (ctx.world.removeInteractable) ctx.world.removeInteractable(recs[i].key); recs.splice(i, 1); }

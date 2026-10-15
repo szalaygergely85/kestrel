@@ -16,6 +16,7 @@
   "structures": [
     {"id": "tower", "level": "tower", "note": "level (0,0) -> world (1480, 1018); footprint 24 x 14 m = world x 1480..1504, y 1018..1032; matches overworld_far.structures[0]", "origin": {"x": 1480, "y": 1018, "z": 0}, "yawSteps": 0},
     {"id": "fordCellar", "level": "ford_cellar", "note": "UNDER-03 / OB-191 (arch 38.75): smugglers cellar under the Ford trade post; level (0,0) -> world (996, 1055), 10x10; room x 998..1004, y 1057..1063, floor -92.5, top -89.6 (surface ~-88.1); keepTerrain, mesh physics", "origin": {"x": 996, "y": 1055, "z": -92.5}, "yawSteps": 0},
+    {"id": "crypt", "level": "crypt", "note": "UNDER-02 / OB-191: cemetery crypt under the facade (cem31..36); level (0,0) -> world (1650,1346); stair rows y 1372..1374, rooms floor -56.8; keepTerrain, mesh physics", "origin": {"x": 1650, "y": 1346, "z": -60}, "yawSteps": 0},
     {"id": "cellarHatch", "castShadow": false, "mesh": "quaternius/Floor_WoodLight", "origin": {"x": 1000.5, "y": 1058.7, "z": -87.99}, "scale": 0.35, "yawDeg": 0},
     {"id": "cellarCrate1", "mesh": "quaternius/Prop_Crate", "origin": {"x": 1003.4, "y": 1062.4, "z": -92.5}, "scale": 0.9, "yawDeg": 12},
     {"id": "cellarCrate2", "mesh": "quaternius/Prop_Crate", "origin": {"x": 1002.4, "y": 1062.5, "z": -92.5}, "scale": 0.8, "yawDeg": 190},
@@ -2156,11 +2157,17 @@
     {"id": "cem33", "mesh": "quaternius/Wall_UnevenBrick_Straight", "origin": {"x": 1651.21, "y": 1370.99, "z": -50.28}, "yawDeg": 278},
     {"id": "cem34", "castShadow": false, "mesh": "quaternius/Wall_UnevenBrick_Straight", "origin": {"x": 1651.6, "y": 1376.1, "z": -50.97}, "yawDeg": 8},
     {"id": "cem35", "castShadow": false, "mesh": "quaternius/Wall_UnevenBrick_Straight", "origin": {"x": 1652.44, "y": 1370.16, "z": -50.24}, "yawDeg": 8},
-    {"id": "cem36", "mesh": "quaternius/Door_1_Round", "origin": {"x": 1650.9, "y": 1372.97, "z": -50.46}, "yawDeg": 278},
+    {"id": "cem36", "mesh": "quaternius/Door_1_Round", "origin": {"x": 1650.9, "y": 1372.97, "z": -50.45}, "yawDeg": 278},
     {"id": "cem37", "castShadow": false, "mesh": "quaternius/Prop_Brick2", "origin": {"x": 1648.96, "y": 1376.94, "z": -50.88}, "yawDeg": 318},
     {"id": "cem38", "castShadow": false, "mesh": "quaternius/Prop_Brick3", "origin": {"x": 1650.45, "y": 1368.46, "z": -49.87}, "yawDeg": 48},
     {"id": "cem39", "mesh": "quaternius/DeadTree_2", "origin": {"x": 1649.18, "y": 1381.82, "z": -51.68}, "scale": 0.8, "yawDeg": 308},
-    {"id": "cem40", "mesh": "quaternius/DeadTree_4", "origin": {"x": 1643.34, "y": 1362.31, "z": -49.01}, "scale": 0.7, "yawDeg": 118}
+    {"id": "cem40", "mesh": "quaternius/DeadTree_4", "origin": {"x": 1643.34, "y": 1362.31, "z": -49.01}, "scale": 0.7, "yawDeg": 118},
+    {"id": "cryptBrick1", "mesh": "quaternius/Prop_Brick1", "origin": {"x": 1672.2, "y": 1374.6, "z": -56.8}, "yawDeg": 20},
+    {"id": "cryptBrick2", "mesh": "quaternius/Prop_Brick3", "origin": {"x": 1677, "y": 1370.8, "z": -56.8}, "scale": 0.9, "yawDeg": 150},
+    {"id": "cryptBrick3", "mesh": "quaternius/Prop_Brick2", "origin": {"x": 1672, "y": 1364.8, "z": -56.8}, "yawDeg": 70},
+    {"id": "cryptBrick4", "mesh": "quaternius/Prop_Brick4", "origin": {"x": 1677, "y": 1356, "z": -56.8}, "yawDeg": 200},
+    {"id": "cryptCoffin", "mesh": "quaternius/Prop_Crate", "origin": {"x": 1674.4, "y": 1360.6, "z": -56.8}, "scale": 1.3, "yawDeg": 0},
+    {"id": "cryptBanner", "mesh": "quaternius/Prop_Vine5", "origin": {"x": 1671.15, "y": 1352.5, "z": -55.599999999999994}, "scale": 1, "yawDeg": 90}
   ],
   "entities": [
     {"id": "player", "note": "pose = tower.start (x 17.0, y 9.5, facingDeg 330, pitchDeg 30, eyeH 0.3, lying) + origin -> world (1497.0, 1027.5)", "spawn": {"from": "start", "structure": "tower"}, "type": "player"},
@@ -2355,7 +2362,11 @@
     {"id": "cemGrave16", "components": {"collider": {"h": 0.9, "r": 0.45}, "voxel": {"anim": "idle", "loop": false, "model": "gravestone3"}}, "note": "OB-191 cemetery grave", "type": "prop", "x": 1647.24, "y": 1370.05, "yawDeg": 86, "z": "ground"},
     {"id": "cemGrave17", "components": {"collider": {"h": 0.9, "r": 0.45}, "voxel": {"anim": "idle", "loop": false, "model": "gravestone3Weathered"}}, "note": "OB-191 cemetery grave", "type": "prop", "x": 1647.93, "y": 1367.51, "yawDeg": 92.1, "z": "ground"},
     {"id": "cemeteryCryptDoor", "components": {"inspect": {"text": "note.cemetery.crypt"}}, "note": "OB-191 sealed crypt door (the crypt interior comes later as a cellar)", "type": "prop", "x": 1650.3, "y": 1372.9, "z": "ground"},
-    {"id": "cemetery1", "components": {}, "note": "OB-191 skeleton spawn anchor: cemetery1 radius 15 m, night", "type": "prop", "x": 1644, "y": 1372, "z": "ground"}
+    {"id": "cemetery1", "components": {}, "note": "OB-191 skeleton spawn anchor: cemetery1 radius 15 m, night", "type": "prop", "x": 1644, "y": 1372, "z": "ground"},
+    {"id": "cryptNames", "components": {"inspect": {"text": "note.crypt.walls"}}, "note": "UNDER-02: scraped names on the room 1 east wall (inspect)", "type": "prop", "x": 1676.7, "y": 1371.3, "z": -56.8},
+    {"id": "cryptCoffin", "components": {"inspect": {"text": "note.crypt.coffin"}}, "note": "UNDER-02: pushed-open coffin, room 2 (inspect)", "type": "prop", "x": 1674.4, "y": 1360.6, "z": -56.8},
+    {"id": "cryptBanner", "components": {"inspect": {"text": "note.crypt.banner"}}, "note": "UNDER-02: rotted banner, room 3 (inspect)", "type": "prop", "x": 1671.4, "y": 1352.5, "z": -56.199999999999996},
+    {"id": "chestCrypt", "components": {"inspect": {"text": "note.crypt.chest"}, "voxel": {"anim": "closed", "loop": false, "model": "chestBig"}}, "note": "UNDER-02: the earned chest in room 3 (opens after its skeletons are dead; chestDefs.js table)", "type": "prop", "x": 1674.5, "y": 1349.7, "yawDeg": 180, "z": -56.8}
   ],
   "horizon": [],
   "state": {
@@ -2373,7 +2384,10 @@
     "quest.wakeT": 0,
     "ui.mapCard.shown": false,
     "ui.mapCard.dismissed": false,
-    "ui.mapCard.opened": false
+    "ui.mapCard.opened": false,
+    "under.crypt.doorOpen": false,
+    "under.crypt.chest.chestCrypt": false,
+    "under.crypt.cleared": false
   },
   "bounds": {
     "pts": [[20, 80], [1880, 80], [1880, 1845], [1770, 1879], [1596, 1890], [1432, 1869], [1316, 1846], [1224, 1856], [1112, 1832], [1044, 1778], [975, 1729], [888, 1663], [806, 1582], [754, 1539], [703, 1532], [623, 1548], [498, 1576], [310, 1632], [123, 1611], [20, 1628]],

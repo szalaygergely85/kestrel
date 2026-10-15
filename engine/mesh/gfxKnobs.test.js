@@ -102,9 +102,9 @@ ok(Object.isFrozen(mkEngine().gfx)); eq({ ...mkEngine().gfx }, { ...GFX_DEFAULTS
   const def = resolveSunShadowOptions(undefined, 'mesh'), off = resolveSunShadowOptions({ sun: 'off' }, 'mesh');
   eq(def.sun, 'map'); eq(off.sun, 'off');
   assert.throws(() => resolveSunShadowOptions({ sun: 'off' }, 'dda'), /needs renderer 'mesh'/); checks++;
-  { const u = resolveShadowLevel('ultra'), h = resolveShadowLevel('high'); eq([u.meshLod0M, u.instCastM, h.meshLod0M, h.instCastM], [16, 32, 25, 48]); eq(u.res, h.res); resolveSunShadowOptions(u, 'mesh'); }
+  { const u = resolveShadowLevel('ultra'), h = resolveShadowLevel('high'); eq([u.meshLod0M, u.instCastM, h.meshLod0M, h.instCastM], [16, 32, 16, 32]); eq(u.res, h.res); resolveSunShadowOptions(u, 'mesh'); }
   eq([...SHADOW_LEVELS], ['off', 'low', 'mid', 'high', 'ultra']); ok(Object.isFrozen(SHADOW_LEVELS));
-  eq(resolveSunShadowOptions(resolveShadowLevel('high'), 'mesh'), def, "'high' == today's defaults");
+  eq(resolveSunShadowOptions(resolveShadowLevel('high'), 'mesh'), { ...def, meshLod0M: 16, instCastM: 32 }, "'high' == defaults with the SHADOW-TRIM-01 caster reach (16/32)");
   eq(resolveShadowLevel('off'), { sun: 'off' });
   for (const lv of ['low', 'mid']) {
     const o = resolveSunShadowOptions(resolveShadowLevel(lv), 'mesh');

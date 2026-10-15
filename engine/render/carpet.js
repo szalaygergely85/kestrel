@@ -477,6 +477,7 @@ export function bladeAtCell(ctx, ix, iy, out) {
 import { KIND_GRASS, KIND_TERRAIN, FACE_U } from './GBuffer.js';
 import { packNormalOct } from '../voxel/octNormal.js';
 import { STEP } from '../core/loop.js';
+import { GUST_BAND_AMP } from '../world/wind.js';
 
 export const SALT_TINT = 107;          // per-blade colour shift stream (cfg.seed + SALT_TINT)
 export const TINT_AMP = GRASS_TINT_AMP; // ramp position shift +-0.08 (terrainShade.js owns it: the shade decodes the tint byte)
@@ -510,9 +511,9 @@ export function carpetCtxFor(world) {
     validateRamps(c.cfg);
     const terrain = world.terrain;
     ctx = makeCarpetCtx(c, (q) => { q[2] = terrain.groundAt(q[0], q[1]); },
-      (q) => { world.wind.sampleInto(q[0], q[1], 0, q[2] / STEP, _windTmp); q[3] = _windTmp[0]; q[4] = _windTmp[1]; });
+      (q) => { world.wind.sampleInto(q[0], q[1], 0, q[2] / STEP, _windTmp); const gm = world.wind.gustMul ? world.wind.gustMul(q[0], q[1], q[2] / STEP) : 1; q[3] = _windTmp[0] * gm; q[4] = _windTmp[1] * gm; }); // WIND-GUST-01: gust bands like the GPU twin
     ctx.cfgRef = c.cfg;
-    const wp = world.wind && world.wind.params; ctx.windMax = wp ? wp.speed * (1 + wp.amp) : Infinity; // TUFT-PERF-01b lean bound (base field, like the GPU twin; zones are not bounded)
+    const wp = world.wind && world.wind.params; ctx.windMax = wp ? wp.speed * (1 + wp.amp) * (1 + GUST_BAND_AMP) : Infinity; // TUFT-PERF-01b lean bound (base field, like the GPU twin; zones are not bounded)
     _worldCtx.set(world, ctx);
   }
   applyCarpetQuality(ctx, world.carpetQuality); // OB-103

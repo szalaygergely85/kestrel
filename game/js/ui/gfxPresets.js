@@ -2,7 +2,8 @@
 import { GRID_VALUES } from '../settings/options.js';
 
 export const QUALITY_NAMES = Object.freeze(['low', 'medium', 'high', 'ultra', 'extreme']);
-export const QUALITY_CHOICES = Object.freeze([...QUALITY_NAMES, 'auto']);
+export const HIDDEN_QUALITIES = Object.freeze(['extreme']); // HIDE-EXTREME-01 (D-107): URL-only until measured <= 8 ms RTX
+export const QUALITY_CHOICES = Object.freeze([...QUALITY_NAMES.filter(n => !HIDDEN_QUALITIES.includes(n)), 'auto']);
 export const SHADOW_CHOICES = Object.freeze(['off', 'low', 'mid', 'high', 'ultra']);
 const KNOBS = ['grid', 'rays', 'shadowQuality', 'scatter', 'lodScale', 'pointShadows', 'carpet', 'impM', 'impMaxDistM', 'occl', 'decorDensity'];
 let presets = null;
@@ -58,6 +59,7 @@ export function resolveQuality({ param = new URLSearchParams(), saved = null, au
   let name = choice(params.get('quality') ?? savedName ?? autoName ?? 'high');
   let source = params.has('quality') ? 'param' : savedName != null ? 'saved' : autoName != null ? 'auto' : 'default';
   if (name === 'auto') { name = choice(autoName ?? 'high'); source = autoName != null ? 'auto' : 'default'; }
+  if (name === 'extreme' && source !== 'param') name = 'ultra'; // HIDE-EXTREME-01: saved/auto never yields hidden extreme
   if (!QUALITY_NAMES.includes(name)) { warn(`Unknown quality ${String(name)}; using high`); name = 'high'; }
   const knobs = knobsFor(name), knobSources = Object.fromEntries(KNOBS.map(key => [key, source]));
   const savedShadow = typeof saved === 'object' && saved?.shadowQuality;

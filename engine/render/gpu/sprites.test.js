@@ -422,6 +422,48 @@ const camE = { x: 2.5, y: 2.5, z: 1.6, yawDeg: 90, pitchDeg: 0 }; // facing east
   poolL.reset(); poolL.push('lantern', 'unlit', 0, far.x, far.y, far.z); poolL.project(camFar, cellsL, lights2, world2);
   const farMul = poolL.spr[12];
 
+  // ---- SPRITE-LIGHT-CACHE-01 (D-107): cached per-sprite lightAt, round-robin refresh, <= 4 frames lag ----
+  {
+    const N = 20, cc = new CellBuffer(COLS, ROWS); cc.pxCellW = 1; cc.pxCellH = 2;
+    const mk = (cache) => { const q = new SpritePool(atlas2, assets2.palette); q.lightCache = cache; return q; };
+    const fill = (q, dx = 0) => {
+      q.reset();
+      for (let i = 0; i < N; i++) q.push('lantern', 'unlit', 0, near.x + (i % 5) * 0.4 + (i === 3 ? dx : 0), near.y + Math.floor(i / 5) * 0.4, near.z);
+      q.project(camNear, cc, lights2, world2);
+    };
+    const on = mk(true), off = mk(false);
+    fill(on); fill(off);
+    ok('cache: a fresh single frame is byte-identical with the cache on or off',
+      on.count === off.count && Buffer.compare(Buffer.from(on.spr.buffer, 0, on.count * SPR_STRIDE * 4), Buffer.from(off.spr.buffer, 0, off.count * SPR_STRIDE * 4)) === 0);
+    ok('cache: first frame traces every sprite (miss = N)', on.lightCacheStats.miss === N && on.lightCacheStats.hit === 0);
+    on.lightCacheStats.miss = 0; on.lightCacheStats.hit = 0;
+    let maxAge = 0;
+    for (let f = 0; f < 12; f++) { fill(on); for (let i = 0; i < N; i++) maxAge = Math.max(maxAge, on._lcFrame - on._lcAt[i]); }
+    ok('cache: static sprites are served from the cache most frames', on.lightCacheStats.hit > on.lightCacheStats.miss, JSON.stringify(on.lightCacheStats));
+    ok('cache: max lag is < 4 project() calls for every sprite (' + maxAge + ')', maxAge < 4);
+    // static lights: cached output equals a fresh trace (nothing changed, so the lag is invisible)
+    ok('cache: static scene output stays byte-identical to the uncached pool',
+      (fill(off), Buffer.compare(Buffer.from(on.spr.buffer, 0, on.count * SPR_STRIDE * 4), Buffer.from(off.spr.buffer, 0, off.count * SPR_STRIDE * 4)) === 0));
+    fill(on, 1.0);
+    ok('cache: a sprite that moved > 0.25 m is re-traced the same frame', on._lcAt[3] === on._lcFrame);
+    const before = on.lightCacheStats.miss; fill(on, 1.0);
+    ok('cache: a sprite that stays put is not re-traced every frame', on.lightCacheStats.miss - before < N);
+    lights2.sun.on = true; lights2.update(0, world2); fill(on); // sun toggled: global refresh
+    ok('cache: sun toggle refreshes every sprite at once', Array.from({ length: N }, (_, i) => on._lcAt[i]).every((a) => a === on._lcFrame));
+    // 0 allocation per frame (heap delta over many frames; only meaningful with --expose-gc)
+    if (globalThis.gc) {
+      for (let f = 0; f < 200; f++) fill(on); globalThis.gc();
+      const h0 = process.memoryUsage().heapUsed;
+      for (let f = 0; f < 2000; f++) fill(on);
+      globalThis.gc();
+      const grew = process.memoryUsage().heapUsed - h0;
+      ok('cache: project() with the cache on allocates nothing steady-state (' + grew + ' B / 2000 frames)', grew < 200000);
+    }
+    // JS-twin micro-bench (ms per frame, 20 sprites; informational)
+    const bench = (q) => { for (let f = 0; f < 100; f++) fill(q); const t = process.hrtime.bigint(); for (let f = 0; f < 600; f++) fill(q); return Number(process.hrtime.bigint() - t) / 1e6 / 600; };
+    console.log(`[sprite light cache bench] 20 sprites: cache off ${bench(off).toFixed(3)} ms/frame, on ${bench(on).toFixed(3)} ms/frame`);
+  }
+
   ok('per-sprite light near the burner torch is brighter than far from every light',
     nearMul > farMul, `near=${nearMul} far=${farMul}`);
 
