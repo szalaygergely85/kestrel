@@ -30,6 +30,7 @@ import { WET_DARK, WET_SPEC } from '../../detailShade.js';
 import { VEG_TINT_WGSL } from '../../../mesh/vegTint.js'; // AUD-47
 import { SUN_N_SHIFT, SUN_N_MASK, CLOUD_Q_SHIFT } from '../../shadowSun.js'; // CLOUD_Q_SHIFT: S8-B2-12c (38.13)
 import { SKY_GLOW_WGSL } from '../../skyGlow.js';
+import { SKY_NIGHT_WGSL } from '../../skyNight.js'; // NIGHT-SKY-01
 import { FOG_SHAPE_WGSL } from '../../fogShape.js';
 import { SKYLINE_FOG_WGSL } from '../../skyline.js'; // MAP-06b (38.42)
 import { UNDER_WGSL } from '../../underwater.js'; // SWIM-04c (38.54)
@@ -414,6 +415,7 @@ fn faceK(face: i32) -> f32 { return su.faceK[u32(face) >> 2u][u32(face) & 3u]; }
 ${look ? TERRAIN_SHADE_LOOK_WGSL : TERRAIN_SHADE_WGSL}
 
 ${SKY_GLOW_WGSL}
+${SKY_NIGHT_WGSL}
 ${FOG_SHAPE_WGSL}
 ${UNDER_WGSL}
 // AUD-45: unit view direction of a cell for the standard fog (same rays as the sky: shear basis / pitched / ortho F).
@@ -722,8 +724,13 @@ fn shadeCell(frag: vec4f) -> FO {
         skyDir = normalize(select(pitchedCellDir(vec2f(cell), gridSize), su.pitchA.xyz, su.projMode == 2));
       }
       var col255 = textureLoad(uSky, vec2i(idx, 0), 0).rgb;
-      if (su.skyGlowOn.x > 0.5) { col255 = skyGlow(col255, skyDir, elevDeg, su.sunDir, su.sunI, u32(cell.x), u32(cell.y)); } // gated like compositor.js (sun === null skips glow+haze)
-      o.fg = vec4f(toByte01(col255.r), toByte01(col255.g), toByte01(col255.b), 0.0);
+      var fg255 = col255; var starG = 0;
+      if (su.skyGlowOn.x > 0.5) { // gated like compositor.js (sun === null skips glow+haze)
+        col255 = skyGlow(col255, skyDir, elevDeg, su.sunDir, su.sunI, u32(cell.x), u32(cell.y));
+        let sn = skyNight(col255, skyDir, elevDeg, su.sunDir, su.sunI, su.timeSec); // NIGHT-SKY-01 (twin: skyNight.js applySkyNight; day = untouched)
+        col255 = sn.bg; fg255 = sn.fg; starG = sn.g;
+      } else { fg255 = col255; }
+      o.fg = vec4f(toByte01(fg255.r), toByte01(fg255.g), toByte01(fg255.b), f32(starG) / 255.0);
       o.bg = vec4f(toByte01(col255.r), toByte01(col255.g), toByte01(col255.b), 1.0);
     } else {
       o.fg = jsFg;

@@ -9,6 +9,7 @@ import { PROJ_HFOV_DEG as HFOV_DEG, createPitchedTerms, pitchedTerms, screenRay,
 import { hashFast01 } from './terrainShade.js';
 import { resolveLook } from './look.js';
 import { applySkyGlow } from './skyGlow.js';
+import { applySkyNight } from './skyNight.js'; // NIGHT-SKY-01
 import { dirFromAzEl } from '../core/transform.js';
 
 const refOut = { fg: [0, 0, 0], bg: [0, 0, 0], glyph: ' ' };
@@ -64,6 +65,12 @@ function shadeSkyAndWrite(rt, x, y, ctx, azimuthDeg, elevDeg, tag) {
     glowBg[0] = bg[0]; glowBg[1] = bg[1]; glowBg[2] = bg[2]; glowFg[0] = fg[0]; glowFg[1] = fg[1]; glowFg[2] = fg[2];
     applySkyGlow(glowBg, cosA, elevDeg, sun.dirZ, sun.sunI, x, y); applySkyGlow(glowFg, cosA, elevDeg, sun.dirZ, sun.sunI, x, y);
     fg = glowFg; bg = glowBg;
+    // NIGHT-SKY-01: stars + moon disc (weight 0 by day -> untouched). Twin of WGSL skyNight; sky cells only, cloud glyph cells keep their glyph.
+    if (sun.sunI < 0.7) {
+    dirFromAzEl(azimuthDeg, elevDeg, cloudDir);
+    const sg = applySkyNight(glowBg, glowFg, cloudDir[0], cloudDir[1], cloudDir[2], elevDeg, sun.dirX, sun.dirY, sun.dirZ, sun.sunI, ctx.timeSec);
+    if (sg > 0 && glyphIdx === 0) glyphIdx = sg;
+    }
   }
   rt.setCellRGB(x, y, glyphIdx, clampByte(fg[0]), clampByte(fg[1]), clampByte(fg[2]),
     clampByte(bg[0]), clampByte(bg[1]), clampByte(bg[2]));
@@ -221,7 +228,7 @@ export function fillSky(fb, cam, sun = null) {
   const ctx = {
     P, U: P.util, rows, horizonRow, planeDistY,
     depthBuffer: fb.depth, useReferenceShader: false,
-    clouds, off, band, sun, // AUD-40: sun = {dirX,dirY,dirZ,sunI} (terrain worlds only, like the GPU) or null
+    clouds, off, band, sun, timeSec: fb.timeSec || 0, // AUD-40: sun = {dirX,dirY,dirZ,sunI} (terrain worlds only, like the GPU) or null
   };
 
   // RE-02a (28.1 A2 item 2): the pitched sky twin - per cell the `screenRay` direction gives

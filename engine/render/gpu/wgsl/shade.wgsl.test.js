@@ -492,6 +492,7 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
 {
   // sha256 of SHADE_WGSL taken before the 073b change, re-pinned after the 38.23 entity-tint merge and AUD-40 sky glow, AUD-45 fog shape and AUD-47 vegGain, SKY-GLOW-SOFT-01, DN-02 night floor, MAP-06b skyline cap, OB-073 smooth ground noise, OB-073 calm ground, OB-081 far tier blend + calm faces (41264 chars): the stable-off shader must not move by a single byte.
   // re-pinned 48155 -> 48644 by OB-104b2 on top of SWIM-04c (cliff branch + nrm param + ShadeU.cliff after the 7 under vec4)
+  // re-pinned 50440 -> 52308 by NIGHT-SKY-01 (skyNight in the kind-0 branch; day weight 0 = identical sky)
   // re-pinned 50210 -> 50440 by OB-154 (underlay-won cells static: no gust phase, fgw out = ramp-won only)
   // re-pinned 50129 -> 50210 by OB-121b (underlay: fgP.x = on * (1 + under); max(under, ramp) weight, close-band gate; under 0 = same output, asserted by the terrain probes)
   // re-pinned 49079 -> 50129 by G2 + P3 (far grass tier in shadeTerrain + fgP/fgW/fgT appended after cliff; off = zero uniforms = unchanged output)
@@ -499,8 +500,8 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   // re-pinned 45683 -> 48155 by SWIM-04c (UNDER_WGSL + shadeCell/fs_main split + 7 appended ShadeU vec4; underwater block is skipped when su.under.x = 0)
   // re-pinned 44782 -> 45683 by MASK-c (shadeGrass ground blend + back-light, packed GA.w word; TS_PATCH_NOISE_WGSL extracted verbatim)
   // re-pinned 41264 -> 44782 by OB-073-D2e (kind-10 shadeGrass + ShadeU.grass table + the kind-10 branch in fs_main; calm-ground code untouched, asserted by the terrain mutation probes above)
-  assert.equal(SHADE_WGSL.length, 50440, 'stable off: SHADE_WGSL length unchanged');
-  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), 'c27d5b8f1b0f1257ea8efbbb85dade2c2b20c0d8a426d5d80e8dc58532fc7a68', 'stable off: SHADE_WGSL byte-identical to pre-073b');
+  assert.equal(SHADE_WGSL.length, 52308, 'stable off: SHADE_WGSL length unchanged');
+  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '53045189a167a7fd8344684bc72ce3bd0c51ea715c226d3bc4775397a06b72a1', 'stable off: SHADE_WGSL byte-identical to pre-073b');
   assert.ok(!/lvl|lvOut|location\(2\)/.test(SHADE_WGSL), 'stable off: no level output');
   assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
   assert.deepEqual(SHADE_LEVEL_TARGETS, ['rgba8', 'rgba8', 'r8ui']);
@@ -556,7 +557,7 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   assert.ok(TERRAIN_SHADE_WGSL.includes('0.5000') && /su\.cliff\.y > 0\.5 && nrm\.z < 0\.5000/.test(TERRAIN_SHADE_WGSL), 'OB-104b2 cliff branch with CLIFF_NZ 0.5 literal');
   assert.equal(SHADE_BLOCK.field('fogView').word, SHADE_BLOCK.field('skyCam').word + 4, 'fogView right after skyCam');
   assert.equal(SHADE_BLOCK.field('skyGlowOn').word, SHADE_BLOCK.field('fogView').word + 4, 'skyGlowOn right after fogView');
-  assert.ok(/if \(su\.skyGlowOn\.x > 0\.5\) \{ col255 = skyGlow\(/.test(SHADE_WGSL), 'sky glow gated by skyGlowOn');
+  assert.ok(/if \(su\.skyGlowOn\.x > 0\.5\) \{[^}]*col255 = skyGlow\(/.test(SHADE_WGSL), 'sky glow gated by skyGlowOn (NIGHT-SKY-01: block form)');
   assert.equal(SHADE_BLOCK.field('fogView').word, SHADE_BLOCK.field('skyCam').word + 4, 'AUD-45 fogView appended right after skyCam');
   assert.ok(/if \(su\.etA\.x > 0\.0\) \{/.test(SHADE_WGSL), 'branch guarded by count (0 = skipped, bit-identical)');
   assert.ok(SHADE_WGSL.indexOf('su.etA.x > 0.0') < SHADE_WGSL.indexOf('rgbF += (fogFgC - rgbF) * f') && SHADE_WGSL.indexOf('su.etA.x > 0.0') > SHADE_WGSL.indexOf('var rgbBg = rgbF * bgKAvg'), 'after lighting, before fog');
