@@ -370,6 +370,15 @@ export function blendLook(P, hour, schedule, out) {
       out.cloudsShade[k] = sa2[k] + (sb2[k] - sa2[k]) * f;
     }
   } else out.cloudsLit = null;
+  // CLOUD-FLUFF-01d: cloud-shadow params follow the blend like the colours (a record without a block = strength 0, the other's geometry).
+  const sa = A.clouds && A.clouds.shadow, sb = B.clouds && B.clouds.shadow;
+  if (sa || sb) {
+    const cs = out.cloudShadow || (out.cloudShadow = { strength: 0, scale: 0, cover: 0, soft: 0, deckH: 0 });
+    const ga = sa || sb, gb = sb || sa, ka = sa ? (sa.strength === undefined ? 0 : sa.strength) : 0, kb = sb ? (sb.strength === undefined ? 0 : sb.strength) : 0;
+    const da = ga.deckH === undefined ? 300 : ga.deckH, db = gb.deckH === undefined ? 300 : gb.deckH;
+    cs.strength = ka + (kb - ka) * f; cs.scale = ga.scale + (gb.scale - ga.scale) * f; cs.cover = ga.cover + (gb.cover - ga.cover) * f;
+    cs.soft = ga.soft + (gb.soft - ga.soft) * f; cs.deckH = da + (db - da) * f;
+  } else out.cloudShadow = null;
   P.liveLook = out;
   P.liveLookVersion = (P.liveLookVersion | 0) + 1;
   return out;

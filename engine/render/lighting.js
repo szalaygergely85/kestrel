@@ -37,7 +37,7 @@ import { createPitchedTerms, pitchedTermsInto, unprojectPitched, resolveProjecti
 import { sunShadowTaps, sunShadowInfo } from './shadowSun.js';
 import { pointShadowTaps } from './shadowPoint.js';
 import { resolveLook } from './look.js'; // ART-01a (37.18 item 3)
-import { cloudShadeQP } from './cloudShadow.js'; // S8-B2-12c (38.13)
+import { cloudShadeQP, syncLiveCloudShadow } from './cloudShadow.js'; // S8-B2-12c (38.13)
 import { cloudDriftOffset } from './sky.js';
 import { sampleGIBuf } from './giProbe.js'; // GI-PROBE-04
 import { aoTapOcc, aoFactor, aoTapCells, AO_DEFAULTS, AO_MAX } from './horizonAo.js'; // S8-B2-20 (38.17)
@@ -597,7 +597,7 @@ export function buildLightSet(world, palette) {
   // ART-01a (37.18 item 3): the active look's hemi block (if any) is resolved
   // once here and copied into the LightSet. Absent block = `setLook` no-op, so
   // `ambient`/`sun.col` above are the byte-identical "today" values.
-  setLook(ls, resolveLook(palette));
+  setLook(ls, resolveLook(palette), palette);
   return ls;
 }
 
@@ -610,7 +610,7 @@ export function buildLightSet(world, palette) {
  * @param {LightSet} lights
  * @param {import('./look.js').LookRec|null} look
  */
-export function setLook(lights, look) {
+export function setLook(lights, look, palette) {
   const hemi = look && look.hemi;
   lights.hemi.on = !!hemi;
   // S8-B2-12c (38.13): look.clouds.shadow -> lights.cloud (null = off). Load/bind time only (allocates the object).
@@ -618,6 +618,7 @@ export function setLook(lights, look) {
   lights.cloud = cs && cs.strength > 0
     ? { strength: cs.strength, scale: cs.scale, cover: cs.cover, soft: cs.soft, deckH: cs.deckH, seed: look.clouds.seed, wind: look.clouds.wind }
     : null;
+  lights.cloudPal = lights.cloud ? (palette || null) : null; // CLOUD-FLUFF-01d: live look source (syncLiveCloudShadow)
   // S8-B2-20b (38.16): look.ao -> lights.ao (null = off). Load/bind time only (allocates the object).
   const ao = look && look.ao;
   lights.ao = ao && ao.strength > 0 ? { strength: ao.strength, radiusM: ao.radiusM, bias: ao.bias, maxCells: ao.maxCells } : null;
@@ -1213,6 +1214,7 @@ export function lightSurfaces(fb, lights, cam, world) {
   if (!lb || !lights) return;
   lb.uniform = false;
   // S8-B2-12c: deck drift for the cloud-shadow twin, once per frame (same offset the sky uses).
+  if (lights.cloud) syncLiveCloudShadow(lights);
   if (lights.cloud) cloudDriftOffset(lights.cloud, fb.timeSec || 0, lights.cloudOff);
   // PO REJECT item 1: `fb.cpuLightCap` is set only on the real gameplay
   // frame buffer's CPU-fallback path (game/js/main.js) - never on
