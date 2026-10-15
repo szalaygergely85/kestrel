@@ -30,6 +30,31 @@ export function rasterizeGlyphAtlas(canvas, ctx, m) {
   return canvas;
 }
 
+/**
+ * ATLAS-GUARD (OB-175): codes whose atlas cell has max alpha 0 (rasterised blank, e.g. font not ready yet). Pure, one pass.
+ * `codes` defaults to every printable glyph except space (space is intentionally empty).
+ * @param {ArrayLike<number>} alphaData tightly packed RGBA8 of the whole strip
+ * @param {{pxCellW: number, pxCellH: number}} layout @param {number[]} [codes]
+ * @returns {number[]}
+ */
+export function blankGlyphs(alphaData, layout, codes) {
+  const { pxCellW: cw, pxCellH: ch } = layout;
+  const stride = cw * GLYPH_COUNT * 4;
+  const list = codes || Array.from({ length: GLYPH_COUNT - 1 }, (_, i) => 33 + i);
+  const blank = [];
+  for (const code of list) {
+    if (code === 32) continue;
+    const x0 = (code - 32) * cw;
+    let seen = false;
+    for (let y = 0; y < ch && !seen; y++) {
+      const row = y * stride + x0 * 4 + 3;
+      for (let x = 0; x < cw; x++) if (alphaData[row + x * 4] > 0) { seen = true; break; }
+    }
+    if (!seen) blank.push(code);
+  }
+  return blank;
+}
+
 /** The rasterized strip as tightly packed RGBA8 rows (WebGPU `writeTexture` source). @param {HTMLCanvasElement} canvas @param {CanvasRenderingContext2D} ctx */
 export function glyphAtlasPixels(canvas, ctx) {
   return ctx.getImageData(0, 0, canvas.width, canvas.height).data;

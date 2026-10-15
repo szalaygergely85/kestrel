@@ -9,7 +9,7 @@
 
 import { CellBuffer } from './CellBuffer.js';
 import { computeCellBox, fitCssSize, fitCssRatio } from './glyphMetrics.js';
-import { rasterizeGlyphAtlas, glyphAtlasPixels, GLYPH_COUNT } from './glyphAtlas.js';
+import { rasterizeGlyphAtlas, glyphAtlasPixels, blankGlyphs, GLYPH_COUNT } from './glyphAtlas.js';
 import { PRESENT_WGSL, PRESENT_BLOCK, PRESENT_TEXTURES } from './gpu/wgsl/present.wgsl.js';
 import { FRAME_TIMER_SLOT } from './gpu/device/WebGpuTimer.js';
 
@@ -84,7 +84,21 @@ export class RenderTargetWebGPU {
     const ac = rasterizeGlyphAtlas(this._atlasCanvas, this._atlasCtx, m);
     if (old) this.device.dispose(old);
     const tex = this.device.createTexture({ format: 'rgba8', width: ac.width, height: ac.height, filter });
-    this.device.writeTexture(tex, glyphAtlasPixels(ac, this._atlasCtx));
+    const px = glyphAtlasPixels(ac, this._atlasCtx);
+    this.device.writeTexture(tex, px);
+    // ATLAS-GUARD (OB-175): blank cells = font not ready / canvas race. Wait for fonts, re-rasterize once, warn if still blank.
+    if (blankGlyphs(px, m).length) {
+      const retry = () => {
+        if (this.atlasTex !== tex && this._uiAtlasTex !== tex) return; // atlas was rebuilt meanwhile
+        const ac2 = rasterizeGlyphAtlas(this._atlasCanvas, this._atlasCtx, m);
+        const px2 = glyphAtlasPixels(ac2, this._atlasCtx);
+        const still = blankGlyphs(px2, m);
+        if (still.length && !this._warnedBlankAtlas) { this._warnedBlankAtlas = true; console.warn('[RenderTargetWebGPU] glyph atlas has blank cells: ' + still.map((c) => String.fromCharCode(c)).join('')); }
+        this.device.writeTexture(tex, px2);
+      };
+      const fr = typeof document !== 'undefined' && document.fonts && document.fonts.ready;
+      if (fr && typeof fr.then === 'function') fr.then(retry, retry); else retry();
+    }
     return tex;
   }
 
