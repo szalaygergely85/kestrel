@@ -71,6 +71,8 @@ import { normalizeQuestDef } from '../game/js/quest/sim/questFormat.js'; // UNDE
 import { readFile } from 'node:fs/promises';
 import { validateQuestDefinition } from '../game/js/quest/sim/quest.js';
 import { createCrafting } from '../game/js/quest/sim/crafting.js';
+import { lintSpellPlacements } from '../game/js/quest/sim/spellBooks.js'; // SPELL-09
+import { CHEST_TABLES } from '../game/js/quest/sim/chestDefs.js';
 
 const CLASSIC_SCRIPTS = [
   '../design/palette.js',
@@ -253,7 +255,7 @@ const MAX_ENDTEXT_LINE = 40;
  * at the first) and counts every check attempted, whether it passed or not.
  * @returns {{ errors: string[], checks: number }}
  */
-const MAX_OBJECTIVE_TEXT = 38, MAX_ITEM_NAME = 14, MAX_ITEM_DESC = 38;
+const MAX_OBJECTIVE_TEXT = 38, MAX_ITEM_NAME = 14, MAX_BOOK_NAME = 21, MAX_ITEM_DESC = 38;
 export function validateContent(ASSETS, opts = {}) {
   const errors = [];
   const warnings = [];
@@ -618,7 +620,7 @@ export function validateContent(ASSETS, opts = {}) {
     inlineText(def?.name, `items.defs.${id}.name`);
     inlineText(def?.desc, `items.defs.${id}.desc`);
     // S8-C-17b: writer-contract length limits (docs/story.md Sprint 8 texts)
-    if (typeof def?.name === 'string') check(def.name.length <= MAX_ITEM_NAME, `items.defs.${id}.name`, `name is ${def.name.length} chars, expected <= ${MAX_ITEM_NAME}`);
+    if (typeof def?.name === 'string') { const max = id.startsWith('book.spell.') ? MAX_BOOK_NAME : MAX_ITEM_NAME; check(def.name.length <= max, `items.defs.${id}.name`, `name is ${def.name.length} chars, expected <= ${max}`); } // SPELL-09: "Spell Book: <Spell>" is 21 chars at most
     if (typeof def?.desc === 'string') check(def.desc.length <= MAX_ITEM_DESC, `items.defs.${id}.desc`, `desc is ${def.desc.length} chars, expected <= ${MAX_ITEM_DESC}`);
   }
   for (const [id, table] of Object.entries(ASSETS?.items?.loot || {})) {
@@ -919,6 +921,12 @@ export function validateContent(ASSETS, opts = {}) {
     warnings.push(...dl.warnings);
     checks += dl.checks;
   }
+  if (opts.spellLint && opts.quests && opts.quests.length) { // SPELL-09 (real content only: the CLI sets spellLint) AC1: every placed spell has exactly one learn source; no stray / unknown Spell Book
+    const rewards = new Map();
+    for (const q of opts.quests) { const d = q.def && normalizeQuestDef(q.def); const its = d && d.reward && d.reward.items; if (its) rewards.set(d.id, its.map((i) => i.id)); }
+    for (const m of lintSpellPlacements(CHEST_TABLES, rewards, itemDefs)) fail('spellBooks', m);
+    checks++;
+  }
   return { errors, warnings, infos, checks, meshOnlyCount };
 }
 
@@ -1216,7 +1224,7 @@ async function main() {
   const lootFile = loadLootFile(fileURLToPath(new URL('../content/items/loot.json', import.meta.url)));
   const packQuests = await loadPackQuests(fileURLToPath(new URL('../content/quests', import.meta.url)), ASSETS?.items?.defs);
   questFiles.quests.push(...packQuests.quests); questFiles.errors.push(...packQuests.errors);
-  const { errors: allErrors, warnings, infos, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir, maskFilesDir, dialogueFilesDir, sites: packQuests.sites, quests: questFiles.quests, areas: questFiles.areas, areaPath: questFiles.areaPath, ...recipeFile, ...lootFile });
+  const { errors: allErrors, warnings, infos, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir, maskFilesDir, dialogueFilesDir, sites: packQuests.sites, quests: questFiles.quests, spellLint: true, areas: questFiles.areas, areaPath: questFiles.areaPath, ...recipeFile, ...lootFile });
   allErrors.push(...questFiles.errors);
   try { // GI-PROBE-02b: baked GI probe files are optional; missing / stale = warning only (GI stays off in that zone)
     const gi = await import('./bake-gi.mjs'), def = JSON.parse(readFileSync(new URL('../content/worlds/world_m1.world.json', import.meta.url), 'utf8'));

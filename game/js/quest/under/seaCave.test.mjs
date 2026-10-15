@@ -52,7 +52,7 @@ for (const m of site.members) {
 const cd = buildChestDefs(world).find((d) => d.id === 'chestStrandCave');
 ok(cd && Math.abs(cd.z - FL) < 0.05 && cd.y < 1724 && cd.y > 1722, 'chest on the chamber floor at the back (north wall)');
 ok(site.members.every((m) => Math.hypot(site.anchor[0] + m[2] - cd.x, site.anchor[1] + m[3] - cd.y) <= 15), 'chest within 15 m of the tortoise homes (earned)');
-ok(CHEST_TABLES.chestStrandCave && CHEST_TABLES.chestStrandCave.fixed.length === 2, 'chest table');
+ok(CHEST_TABLES.chestStrandCave && CHEST_TABLES.chestStrandCave.fixed.length === 3 && CHEST_TABLES.chestStrandCave.fixed.some((f) => f.item === 'book.spell.lightOrb'), 'chest table (SPELL-09: + Light Orb Spell Book)');
 // dressing: crates + lantern + note (note text is in inspect.json)
 ok(world.structures.filter((s) => /^strandCaveCrate/.test(s.id)).length >= 4, 'smugglers crates');
 ok(world.entity('strandCaveLamp') && world.entity('strandCaveNote'), 'lantern + note entities');

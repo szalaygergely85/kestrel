@@ -302,6 +302,17 @@
     icon: icon(['(#v#)', ' \\#/ ', '  v  '],
                ['LPddd', ' Ldd ', '  d  '])
   };
+  // EP-SPELLS SPELL-09: one Spell Book per spell (not Fireball: Burl teaches it). Picking one up in the pack learns the spell at once
+  // (game/js/spellBookHook.js reads `learns`, removes the book); a known spell only gets a "You already know" line.
+  [['fireRing', 'Fire Ring', 'ember'], ['spark', 'Spark', 'aether'], ['lightOrb', 'Light Orb', 'aether'], ['ward', 'Ward', 'aether'], ['gust', 'Gust', 'gust'], ['updraft', 'Updraft', 'gust']].forEach(function (b) {
+    defs['book.spell.' + b[0]] = {
+      id: 'book.spell.' + b[0], name: 'Spell Book: ' + b[1], kind: 'upgrade', stackMax: 1, hand: false, inPack: true,
+      desc: 'Read it to learn ' + b[1] + '.',
+      use: { learns: b[0], note: 'SPELL-09: learned on pickup by game/js/spellBookHook.js' },
+      glyph: { ch: '=', c: 'flameMid' },
+      icon: icon(['.---.', '|=*=|', "`---'"], ['ttttt', 'tOMOt', 'ttttt'])
+    };
+  });
   defs['scroll.spell'] = {
     id: 'scroll.spell', name: 'Spell Scroll', kind: 'upgrade', stackMax: 9, hand: false, inPack: true,
     desc: 'One of your spells grows stronger.',
