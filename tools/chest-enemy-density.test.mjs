@@ -14,12 +14,11 @@ console.log('chest-enemy-density.test: ok');
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 // OB-152 step 2 / OB-179: the real-content 0-loose gate is asserted once the chests are moved inside places (pending, see lane entry)
-const NEW_TOTAL = 11 + 4 + 1 + 1 + 1; // +1 UNDER-06 chestGoblinTunnel; // +1 UNDER-05 strand cave chest (chestStrandCave, tortoise homes within 15 m); // +1 UNDER-04 bear den stash (chestBearDen, guarded by the bear home, z > -20); // +4 underground chests (3 Ford cellar UNDER-03 + 1 crypt UNDER-02, earned by location, OB-152); 15 chests before OB-179; secretBend/Field/Bank/Ow1/Ow3 merged away = 10; OB-141 chestWest (in campSouthWest) = 11
-// OB-179: all 15 chests are counted (chestSmall: chest* and secret*), nothing loose, --list works
+// OB152-DENSITY-FIX: data-driven - no hard chest total; every chest is earned by RULE (guard/camp/ruin/puzzle within reach, dive, or underground z < -20), so new sites need no cap bump
 const listOut = execFileSync(process.execPath, [fileURLToPath(new URL('./chest-enemy-density.mjs', import.meta.url)), '--list', '--max-loose', '0'], { stdio: 'pipe' }).toString();
-assert.match(listOut, new RegExp('chests counted: ' + NEW_TOTAL), 'chest total after the OB-179 merge');
-assert.equal((listOut.match(/^(chest|secret)\w+ .* (ok|LOOSE)/gm) || []).length, NEW_TOTAL, '--list prints one row per chest');
-console.log('chest-enemy-density.test: 10 chests listed, none loose (loose count: ' + 0 + ')');
-// OB-152: "every chest is earned" - no LOOSE row in --list, and the total never grows past the OB-179/OB-141 count
-assert.equal((listOut.match(/ LOOSE/g) || []).length, 0, 'every chest is earned (guard/camp/ruin/puzzle within reach)');
-assert.ok(NEW_TOTAL <= 18, 'chest total cap'); // 18: all earned chests (UNDER-04/05/06)
+const total = Number(/chests counted: (\d+)/.exec(listOut)?.[1]);
+const rowsOut = listOut.match(/^(chest|secret)\w+ .* (ok( \((dive|underground)\))?|LOOSE)$/gm) || [];
+assert.ok(total > 0, 'chests are counted');
+assert.equal(rowsOut.length, total, '--list prints one row per chest');
+assert.equal((listOut.match(/ LOOSE/g) || []).length, 0, 'every chest is earned (guard/camp/ruin/puzzle in reach, dive, or underground)');
+console.log('chest-enemy-density.test: ' + total + ' chests listed, none loose');
