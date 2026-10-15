@@ -403,7 +403,7 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   const m = SHADE_WGSL.match(/let cFt = (1\.0 - f32\(\(lightT\.w >> \d+u\) & \d+u\) \* \(1\.0 \/ 255\.0\));/);
   assert.ok(m, 'cFt decode line present in shade.wgsl.js terrain branch');
   assert.ok(m[1].includes('>> 24u'), 'cFt shifts by CLOUD_SHIFT (24)');
-  assert.ok(/let bSunT = su\.ambientI \* caoFt \+ su\.sunI \* max\(0\.0, ndotlT\) \* sunFT \* cFt;/.test(SHADE_WGSL), 'cFt scales the analytic sun term bSunT');
+  assert.ok(/let bSunT = su\.ambientI \* caoFt \+ su\.sunI \* max\(0\.0, ndotlT\) \* sunFT \* cFt \* caoSt;/.test(SHADE_WGSL), 'cFt scales the analytic sun term bSunT');
   const probeSrc = `fn cloudFactorProbe(lightT: vec4u) -> f32 { let cFt = ${m[1]}; return cFt; }`;
   const f = compileFn(probeSrc, 'cloudFactorProbe', shims);
   for (const q of [0, 1, 64, 127, 153, 200, 255]) {
@@ -500,6 +500,7 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   // re-pinned 49079 -> 50129 by G2 + P3 (far grass tier in shadeTerrain + fgP/fgW/fgT appended after cliff; off = zero uniforms = unchanged output)
   // re-pinned 48644 -> 49079 by OB-089 (outdoor mesh fog branch, fogView.z; uniform layout unchanged)
   // re-pinned 45683 -> 48155 by SWIM-04c (UNDER_WGSL + shadeCell/fs_main split + 7 appended ShadeU vec4; underwater block is skipped when su.under.x = 0)
+  // re-pinned 52318 -> 52531 by 38.78 rev (caoSt / caoSg: contact byte also scales the analytic sun term x CAO_SUN_W; q 0 -> exactly 1.0)
   // re-pinned 50824 -> 52318 by CANOPY-SHAFT-01b (shaftW + shaftLiftC + shaftQ, 2 lift blocks gated by su.shaftA.x; k 0 skips)
   // re-pinned 50440 -> 50824 by CONTACT-AO-01b (caoFt / caoFg: LIGHT.w bits 1..7 scale the terrain/carpet ambient; q 0 -> exactly 1.0)
   // re-pinned 44782 -> 45683 by MASK-c (shadeGrass ground blend + back-light, packed GA.w word; TS_PATCH_NOISE_WGSL extracted verbatim)

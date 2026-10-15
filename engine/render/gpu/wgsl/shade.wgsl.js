@@ -37,6 +37,7 @@ import { FOG_SHAPE_WGSL } from '../../fogShape.js';
 import { SKYLINE_FOG_WGSL } from '../../skyline.js'; // MAP-06b (38.42)
 import { UNDER_WGSL } from '../../underwater.js'; // SWIM-04c (38.54)
 import { GI_SAMPLE_WGSL, giBindingWgsl } from '../../giGpu.js';
+import { CAO_SUN_W } from '../../contactAO.js'; // 38.78 rev
 import { CLIFF_NZ, FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE, FAR_GLYPH_CELL, FAR_BLEND_FP0, FAR_BLEND_FP1, NOISE_CELLS, NOISE_W, NOISE_SALT, PATCH_K, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX, GRASS_AO_LO, GRASS_TIP_H, GRASS_BASE_H, GRASS_LEAN_G, GRASS_LEVELS, GRASS_ROWS, GRASS_TINT_AMP, GRASS_GX_HAS, GRASS_BACKLIGHT_K, FG_SLOPE, FG_GUST, FG_MOD, FG_CODES, FG_TYPES } from '../../terrainShade.js';
 
 
@@ -786,7 +787,8 @@ fn shadeCell(frag: vec4f) -> FO {
     // CONTACT-AO-01b (38.78): contact-AO byte (LIGHT.w bits 1..7) scales the analytic ambient; q 0 -> exactly 1.0 (bit-identical).
     let caoQT = (lightT.w >> 1u) & 127u;
     let caoFt = select(1.0, f32(127u - caoQT) * (1.0 / 127.0), caoQT != 0u);
-    let bSunT = su.ambientI * caoFt + su.sunI * max(0.0, ndotlT) * sunFT * cFt;
+    let caoSt = select(1.0, 1.0 - ${CAO_SUN_W.toFixed(4)} * f32(caoQT) * (1.0 / 127.0), caoQT != 0u); // 38.78 rev: sun part too
+    let bSunT = su.ambientI * caoFt + su.sunI * max(0.0, ndotlT) * sunFT * cFt * caoSt;
     let LcT = bitcast<vec3f>(lightT.xyz);
     let bT = bSunT + max(LcT.x, max(LcT.y, LcT.z));
     // RE-02a (28.1 A2 item 3): the horizontal forward distance (mode 0: unchanged).
@@ -824,7 +826,8 @@ ${look ? `    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceM
     let cFg = 1.0 - f32((lightG.w >> ${CLOUD_Q_SHIFT}u) & 255u) * (1.0 / 255.0);
     let caoQG = (lightG.w >> 1u) & 127u;
     let caoFg = select(1.0, f32(127u - caoQG) * (1.0 / 127.0), caoQG != 0u);
-    let bG = su.ambientI * (${GRASS_AO_LO.toFixed(4)} + ${(1 - GRASS_AO_LO).toFixed(4)} * hG) * caoFg + su.sunI * max(0.0, ndotlG) * sunFG * cFg;
+    let caoSg = select(1.0, 1.0 - ${CAO_SUN_W.toFixed(4)} * f32(caoQG) * (1.0 / 127.0), caoQG != 0u);
+    let bG = su.ambientI * (${GRASS_AO_LO.toFixed(4)} + ${(1 - GRASS_AO_LO).toFixed(4)} * hG) * caoFg + su.sunI * max(0.0, ndotlG) * sunFG * cFg * caoSg;
     let LcG = bitcast<vec3f>(lightG.xyz);
     var distG = bitcast<f32>(textureLoad(uDepth, cell, 0).x);
     if (su.projMode != 0) { distG *= fogScaleCell(cell.y, gridSize.y); }

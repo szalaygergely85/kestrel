@@ -43,6 +43,7 @@ export { readZip, writeZip, crc32, checkZipPath, ZIP_LIMITS } from './content/zi
 export { World, stepSectorAnims, PROP_SCALE_MIN, PROP_SCALE_MAX } from './world/World.js';
 export { GIBake, encodeRaw as encodeGIBake } from './world/giBake.js'; // GI-PROBE-02b
 export { createGIState, mixGIState } from './render/giProbe.js'; // GI-PROBE-06
+export { createContactAO, setDynamicBlobs, buildContactBlobs, CAO_MAX } from './render/contactAO.js'; export { SHAFT_DEFAULTS } from './render/lightShaft.js'; // CONTACT-AO-01c / CANOPY-SHAFT-01c game hookup
 export { writeGIFile, readGIFile, readGIHeader, isGIFileFresh } from './world/giFile.js';
 export { zoneAt, zoneId, CHUNK as BAND_CHUNK } from './world/bandGrid.js';
 export { makeGrid as createBandGrid } from './world/bandGrid.js'; // ENG-API-01c: makeGrid deprecated (generic word, area prefix)
