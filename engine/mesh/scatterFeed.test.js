@@ -147,8 +147,12 @@ const tinyBinding = bindDetailInstances(tiny, registry(), cfg);
 ok(tinyBinding.groups.length === 1 && tinyBinding.groups[0].ib.capacity === 1);
 
 const missing = registry(); missing.pool.models.delete('rock');
-assert.throws(() => bindDetailInstances(detail, missing, cfg), /missing voxel model rock/); checks++;
-ok(missing.groups.length === 0);
+{ // OB-166: a missing model skips the species with ONE warn, never throws
+  const warns = [], w0 = console.warn; console.warn = m => warns.push(m);
+  let mb; try { mb = bindDetailInstances(detail, missing, cfg); } finally { console.warn = w0; }
+  ok(warns.length === 1 && /rock/.test(warns[0]) && mb.skipped > 0 && mb.missingIds.includes('rock'));
+  ok(!mb.groups.some(g => g.modelKey === 'rock') && feedDetail(mb, 0, 0, true) >= 0);
+}
 const full = registry();
 for (let i = 0; i < MAX_INSTANCE_GROUPS - 1; i++) full.group('tuft', 1);
 assert.throws(() => bindDetailInstances(detail, full, cfg), /over 32 groups/); checks++;
@@ -217,4 +221,13 @@ const sum = frames();
 global.gc(); const growth = process.memoryUsage().heapUsed - before;
 ok(growth < 64 * 1024 && sum > 0);
 ok(walk.groups.every((g, i) => g.ib.u32 === buffers[i]));
+// SAPLINGS: cull radius follows the largest per-instance scale (> 1 only); unscaled groups keep radiusScale 1
+{
+  ok(bindDetailInstances(detail, registry(), cfg).groups.every(g => g.radiusScale === 1));
+  const sc2 = new Float32Array(detail.count).fill(0.5); sc2[0] = 2;
+  const scaled = bindDetailInstances({ ...detail, scale: sc2 }, registry(), cfg);
+  ok(scaled.groups.some(g => g.radiusScale === 2) && scaled.groups.every(g => g.radiusScale === 1 || g.radiusScale === 2));
+  const small = bindDetailInstances({ ...detail, scale: new Float32Array(detail.count).fill(0.5) }, registry(), cfg);
+  ok(small.groups.every(g => g.radiusScale === 1));
+}
 console.log(`scatterFeed: ${checks} checks PASS (1000 frames, retained heap delta ${growth} bytes)`);

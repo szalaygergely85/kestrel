@@ -31,6 +31,11 @@ const wA = mkWorld();
 const avoid = []; wA.forEachEntity((e) => { const b = e.components?.brain; if (b?.kind === 'beast') avoid.push([...b.home]); });
 const list1 = generateRegionalBeasts({ geo: G, terrain: wA.terrain, seed: 12, avoid, safe: safeSpots(wA) });
 const list2 = generateRegionalBeasts({ geo: G, terrain: wA.terrain, seed: 12, avoid, safe: safeSpots(wA) });
+{ // BEAST-09a follow-up: water rules have their own group counter -> land groups identical with and without a water probe
+  const land = (l) => JSON.stringify(l.filter((b) => b.species !== 'croc').map((b) => [b.id, b.x, b.y, b.group]));
+  const withW = generateRegionalBeasts({ geo: G, terrain: wA.terrain, seed: 12, avoid, safe: safeSpots(wA), water: { deep: () => true } });
+  ok('land groups (ids/pos/group) identical with and without water probe', land(withW) === land(list1) && withW.some((b) => b.species === 'croc'));
+}
 const list3 = generateRegionalBeasts({ geo: G, terrain: wA.terrain, seed: 13, avoid, safe: safeSpots(wA) });
 ok('deterministic: same seed -> same ids + homes', JSON.stringify(list1) === JSON.stringify(list2));
 ok('different seed -> different homes', JSON.stringify(list1) !== JSON.stringify(list3));
@@ -53,7 +58,7 @@ for (const b of list1) {
 }
 ok('every home walkable, inside its region rect and the bounds polygon', bad.length === 0, bad.join(','));
 const perRegion = {}; for (const b of list1) if (!/\.road[A-Z]/.test(b.id)) perRegion[b.region] = (perRegion[b.region] || 0) + 1;
-const perRegionWant = {}; for (const r of REGION_RULES) perRegionWant[r.region] = (perRegionWant[r.region] || 0) + r.groups * r.size;
+const perRegionWant = {}; for (const r of REGION_RULES.filter((q) => !q.water)) perRegionWant[r.region] = (perRegionWant[r.region] || 0) + r.groups * r.size;
 // OB-185: 120 m group gap + mountains can leave a rule short; allow <= 25% missing, never more than asked
 const wrongCount = Object.keys(perRegionWant).filter((k) => (perRegion[k] || 0) > perRegionWant[k] || (perRegion[k] || 0) < perRegionWant[k] * 0.75).map((k) => `${k}:${perRegion[k] || 0}/${perRegionWant[k]}`);
 ok('count per region matches its rules (non-road groups)', wrongCount.length === 0, wrongCount.join(',') + ' total ' + list1.length);
@@ -67,10 +72,10 @@ const events = { emit() {}, on() { return () => {}; } };
 const mkSim = (w) => createBeastSim(w, { nav: nav(w), rng: createRng(1), events, band, tileNav: true, spawn: { x: 1480, y: 1030 } });
 const simA = quiet(() => mkSim(wA));
 const wB = mkWorld();
-const gen = quiet(() => spawnRegionalBeasts(wB, G, 12));
+const genAll = quiet(() => spawnRegionalBeasts(wB, G, 12)), gen = genAll.filter((b) => b.species !== 'croc'); // BEAST-09a: crocs are checked in crocSpawn.test.js
 ok('spawn adds the same list as generate', gen.length === list1.length && gen.every((b, i) => b.id === list1[i].id && b.x === list1[i].x));
 const simB = quiet(() => mkSim(wB));
-ok('sim B has authored + generated slots', simB.count === simA.count + gen.length, `${simA.count} -> ${simB.count}`);
+ok('sim B has authored + generated slots', simB.count === simA.count + genAll.length, `${simA.count} -> ${simB.count}`);
 const farB = gen.filter((b) => (b.x - 1480) ** 2 + (b.y - 1030) ** 2 > 200 * 200), far = farB.map((b) => simB.slotOf(b.id)); // OB-185: roadside groups near the tower are inside the 200 m wake radius
 ok('all generated slots exist + dormant (far from player)', far.every((s) => s >= 0 && simB.isDormant(s)), far.filter((s) => s < 0 || !simB.isDormant(s)).length + ' not dormant');
 const timeSteps = (sim, n) => { for (let i = 0; i < 200; i++) sim.step(1480, 1030, 0); const t0 = performance.now(); for (let i = 0; i < n; i++) sim.step(1480, 1030, 0); return (performance.now() - t0) / n; };

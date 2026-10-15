@@ -123,8 +123,9 @@ previousTrees = bindScatterInstances(world, detailRegistry);
 const missingDetail = { ...detailWorld, scatter, terrain: { recipe: { recipe: {
   forest: { trees: cfg }, detail: { maxDraw: 2, refeedM: 4 } } } },
   detail: { ...detail, speciesDefs: [{ model: 'missing', shadow: false, lodCells: 4 }] } };
-assert.throws(() => bindScatterInstances(missingDetail, detailRegistry, previousTrees, owner), /missing voxel model missing/); checks++;
-ok(owner._detail === null && detailRegistry.groups.length === 1);
+{ const w0 = console.warn; console.warn = () => {}; // OB-166: missing detail model = skipped species, world still binds
+  try { bindScatterInstances(missingDetail, detailRegistry, previousTrees, owner); } finally { console.warn = w0; }
+  ok(owner._detail && owner._detail.skipped > 0); }
 const realDetailWorld = { ...detailWorld, events: engine.events, structures: [], entities: [] };
 engine.setWorld(realDetailWorld);
 ok(engine._detail?.groups.length === 1);

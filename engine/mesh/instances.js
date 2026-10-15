@@ -67,13 +67,18 @@ const _old = new Uint32Array(INSTANCE_STRIDE);
  * @param {number} team - 0..7
  */
 export function writeUnitInstance(ib, i, x, y, z, yawDeg, objectId, team) {
+  writeScaledInstance(ib, i, x, y, z, yawDeg, 1, objectId, team);
+}
+
+/** SAPLINGS: `writeUnitInstance` with a uniform scale `sc` on the 3x3 (sc 1 = identical words). Same row layout, so JS raster and GPU read it alike. */
+export function writeScaledInstance(ib, i, x, y, z, yawDeg, sc, objectId, team) {
   cosSinDeg(yawDeg, _cs);
   const c = _cs[0], s = _cs[1];
   const f = ib.f32, o = i * INSTANCE_STRIDE, u = ib.u32;
   for (let w = 0; w < INSTANCE_STRIDE; w++) _old[w] = u[o + w];
-  f[o] = c; f[o + 1] = -s; f[o + 2] = 0; f[o + 3] = x;
-  f[o + 4] = s; f[o + 5] = c; f[o + 6] = 0; f[o + 7] = y;
-  f[o + 8] = 0; f[o + 9] = 0; f[o + 10] = 1; f[o + 11] = z;
+  f[o] = c * sc; f[o + 1] = -s * sc; f[o + 2] = 0; f[o + 3] = x;
+  f[o + 4] = s * sc; f[o + 5] = c * sc; f[o + 6] = 0; f[o + 7] = y;
+  f[o + 8] = 0; f[o + 9] = 0; f[o + 10] = sc; f[o + 11] = z;
   const aligned = (((yawDeg % 90) + 90) % 90 === 0) ? INST_FLAG_ALIGNED : 0; // the exact voxelPose test
   ib.u32[o + 12] = objectId >>> 0;
   ib.u32[o + 13] = (aligned | ((team & 7) << INST_TEAM_SHIFT)) >>> 0;
@@ -390,7 +395,7 @@ export function makeInstanceGroup(modelKey, capacity) {
     drawCount: /** @type {[number, number]} */ ([0, 0]),
     shadowIb: /** @type {[InstanceBuffer, InstanceBuffer]} */ ([createInstanceBuffer(capacity), createInstanceBuffer(capacity)]),
     shadowCount: /** @type {[number, number]} */ ([0, 0]), shadowBand: new Uint8Array(capacity),
-    lodCells: 0, maxDistM: 0, castShadow: true, lodPrev: new Uint8Array(capacity), _R: 0,
+    lodCells: 0, maxDistM: 0, castShadow: true, lodPrev: new Uint8Array(capacity), _R: 0, radiusScale: 1,
     _memoFrameNo: /** @type {number|null} */ (null),
     // QUAT-LOD-01 part 2: near-LOD0 cap (0 = off) + its scratch, and the lazily-resolved LOD1 registry mesh for `g.mesh` groups.
     // R6b (38.60): tree card impostor, OFF unless the host calls enableGroupImpostor (impostorCard.js). cardIb = engine-owned card bucket.
@@ -537,7 +542,7 @@ export class InstanceGroups {
         if (!memo || g._memoFrameNo !== frameNo) {
           let R = groupRadius(draw, g.parts);
           if (draw1) { const R1 = groupRadius(draw1, g.parts); if (R1 > R) R = R1; }
-          g._R = R;
+          g._R = g.radiusScale > 1 ? R * g.radiusScale : R; // SAPLINGS: per-instance scale > 1 grows the cull radius
           const kept = compactGroup(g, planes, R, draw1 ? viewProj : null, draw1 ? (rows || 0) : 0, this.swayPad, this.eye);
           g._memoFrameNo = frameNo;
           this.stats.instances += kept;
@@ -570,14 +575,14 @@ export class InstanceGroups {
         computeGroupParts(pm, g.pose, g.parts);
         let R = groupRadius(mesh, g.parts);
         if (mesh1) { const R1 = groupRadius(mesh1, g.parts); if (R1 > R) R = R1; }
-        g._R = R;
+        g._R = g.radiusScale > 1 ? R * g.radiusScale : R; // SAPLINGS: per-instance scale > 1 grows the cull radius
         continue;
       }
       if (!memo || g._memoFrameNo !== frameNo) {
         computeGroupParts(pm, g.pose, g.parts);
         let R = groupRadius(mesh, g.parts);
         if (mesh1) { const R1 = groupRadius(mesh1, g.parts); if (R1 > R) R = R1; }
-        g._R = R;
+        g._R = g.radiusScale > 1 ? R * g.radiusScale : R; // SAPLINGS: per-instance scale > 1 grows the cull radius
         const kept = compactGroup(g, planes, R, viewProj || null, rows || 0, this.swayPad, this.eye);
         g._memoFrameNo = frameNo;
         this.stats.instances += kept;

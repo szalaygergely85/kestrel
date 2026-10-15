@@ -12,7 +12,7 @@ import { DrawList, DRAW_INSTANCED } from './DrawList.js';
 import { VoxelMeshCache } from './voxelMesh.js';
 import {
   INSTANCE_STRIDE, INSTANCE_BYTES, INST_OBJECT_ID, INST_FLAGS, UNIT_OBJECT_BASE, MAX_INSTANCE_GROUPS, MAX_INSTANCES_PER_FRAME,
-  createInstanceBuffer, createInstanceParts, writeUnitInstance, computeGroupParts, InstanceGroups, groupRadius,
+  createInstanceBuffer, createInstanceParts, writeUnitInstance, writeScaledInstance, computeGroupParts, InstanceGroups, groupRadius,
 } from './instances.js';
 import { frustumPlanes } from './culling.js';
 import { makeOk } from '../test/assert.js';
@@ -59,6 +59,17 @@ ok('objectId at word 12, flags at word 13', INST_OBJECT_ID === 12 && INST_FLAGS 
   const o = 2 * INSTANCE_STRIDE;
   ok('row0/row1/row2 at 90 deg are exact', ib.f32[o] === 0 && ib.f32[o + 1] === -1 && ib.f32[o + 3] === 1.5 && ib.f32[o + 4] === 1 && ib.f32[o + 5] === 0 && ib.f32[o + 7] === -2.25 && ib.f32[o + 10] === 1 && ib.f32[o + 11] === 3);
   ok('objectId word + team bits + aligned bit at 90 deg', ib.u32[o + 12] === (UNIT_OBJECT_BASE | 7) && ib.u32[o + 13] === (1 | (5 << 8)));
+  { // SAPLINGS: writeScaledInstance(s=1) == writeUnitInstance word for word; s scales the 3x3 only
+    const A = createInstanceBuffer(2);
+    for (const yaw of [0, 37, 90, 211]) {
+      writeUnitInstance(A, 0, 1.5, -2, 3, yaw, 77, 3); writeScaledInstance(A, 1, 1.5, -2, 3, yaw, 1, 77, 3);
+      let same = true; for (let w = 0; w < INSTANCE_STRIDE; w++) if (A.u32[w] !== A.u32[INSTANCE_STRIDE + w]) same = false;
+      ok('writeScaledInstance(s=1) identical to writeUnitInstance at yaw ' + yaw, same);
+    }
+    writeScaledInstance(A, 1, 1.5, -2, 3, 90, 0.4, 77, 3);
+    const o1 = INSTANCE_STRIDE;
+    ok('scaled row: 3x3 * s, translation + flags unchanged', Math.abs(A.f32[o1 + 1] + 0.4) < 1e-6 && Math.abs(A.f32[o1 + 4] - 0.4) < 1e-6 && Math.abs(A.f32[o1 + 10] - 0.4) < 1e-6 && A.f32[o1 + 3] === 1.5 && A.f32[o1 + 11] === 3 && A.u32[o1 + 13] === (1 | (3 << 8)));
+  }
   writeUnitInstance(ib, 1, 0, 0, 0, 0, UNIT_OBJECT_BASE, 13); // architect RE-06 review: team masked to MAX_TEAMS (8)
   ok('team bits masked to 0..7', ((ib.u32[INSTANCE_STRIDE + 13] >>> 8) & 0xff) === (13 & 7));
   writeUnitInstance(ib, 0, 0, 0, 0, 37.5, 1, 0);

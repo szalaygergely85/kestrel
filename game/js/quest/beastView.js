@@ -55,6 +55,9 @@ function goblinClip(clip, st, i, sim, v) {
   if (v.model === 'goblinTorch' && cf.torchState && cf.torchState[name]) return cf.torchState[name];
   return cf.state[name] || clip;
 }
+// BEAST-09a: waterBrain state ids (ST_WINDUP 3, ST_CHARGE 4, ST_RECOVER 5, ST_FLINCH 8, ST_SUB 20, ST_GRAB 21) -> crocFx.clipFor.state key
+const CROC_STATE_NAME = { 3: 'windup', 4: 'lunge', 5: 'recover', 8: 'stagger', 20: 'swim', 21: 'grab' };
+const CROC_STATE_FALLBACK = { windup: 'idle', lunge: 'attack', recover: 'recover', stagger: 'flinch', swim: 'swim', grab: 'grab' };
 const STATE_CLIPS = ['idle', 'idle', 'charge', 'windup', 'charge', 'idle', 'idle', 'flinch'];
 
 // US-079b ARCH (37.16.1 amendment): the manually-driven clips' keyframe durations (ms), matching
@@ -125,6 +128,10 @@ export function presentBeasts(sim, world, overlay, styleIds, anim, legs, cam, bl
     if (sim.moving && !sim.moving[i] && (st === STATE_WANDER || st === STATE_CHASE || st === STATE_RETURN)
         && clip !== 'hurt' && clip !== 'flinch') { clip = 'idle'; vst = STATE_EAT; }
     if (v.model === 'wolf') clip = wolfClip(clip, vst, sim.fleeing[i]); // WOLF-D1: wolfFx.clipFor names
+    if (v.model === 'crocodile' && clip !== 'hurt' && clip !== 'die' && clip !== 'dead' && clip !== 'sink') { // BEAST-09a: water-slot states (waterBrain ST_*) -> crocFx.clipFor.state
+      const cf = globalThis.ASSETS && globalThis.ASSETS.crocFx, nm = CROC_STATE_NAME[st];
+      if (nm) clip = (cf && cf.clipFor.state[nm]) || CROC_STATE_FALLBACK[nm];
+    }
     if (v.model === 'bearBlack' && st === STATE_BITE) { // BEAR-BITE: blackBearFx.clipFor.state.bite -> attack
       const bf = globalThis.ASSETS && globalThis.ASSETS.blackBearFx; clip = (bf && bf.clipFor.state.bite) || 'attack';
     }
