@@ -68,14 +68,26 @@ export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
   let alpha = 0, lastT = -1;                                                       // fade
   let shownDir = -1, swingDir = -1, swingEnd = -1;                                 // swing follow-through
 
-  const resolveGiver = (world, ids) => { for (let i = 0; i < ids.length; i++) if (world.resolve('giver', ids[i], tmp)) return true; return false; };
+  const npcSA = [], npcSR = [], near = { x: 0, y: 0, ok: false }, cand = { x: 0, y: 0 };
+  // OB-183: with a player position (setNear) the NEAREST resolvable giver wins; tmp ends up holding it
+  const resolveGiver = (world, ids) => {
+    let bi = -1, bd = Infinity;
+    for (let i = 0; i < ids.length; i++) {
+      if (!world.resolve('giver', ids[i], tmp)) continue;
+      if (!near.ok) return true;
+      const d = (tmp.x - near.x) ** 2 + (tmp.y - near.y) ** 2;
+      if (d < bd) { bd = d; bi = i; cand.x = tmp.x; cand.y = tmp.y; }
+    }
+    if (bi < 0) return false;
+    world.resolve('giver', ids[bi], tmp); return true;
+  };
 
   /** Chooses the target; returns the shared {x,y,kind} (kind 1 ready '?', 2 step, 3 available '!') or null. Call on book change / ~2 Hz. */
   function target(book, world) {
     hasTarget = false;
     if (!book || !world) return null;
     tmp.z = NaN;
-    book.giverMarks(npcA, npcR);
+    book.giverMarks(npcA, npcR, npcSA, npcSR); for (let i = 0; i < npcSR.length; i++) npcR.push(npcSR[i]);   // OB-183: main offers first, side offers after
     let kind = 0;
     if (resolveGiver(world, npcR)) kind = 1;
     else {
@@ -87,7 +99,7 @@ export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
         if (idx < def.objectives.length && stepPos(def.objectives[idx].when, st, world)) kind = 2;
         else if (def.giver && def.giver.npc && world.resolve('giver', def.giver.npc, tmp)) kind = 2;   // COMPASS-QUEST-01: unresolvable step -> point at the quest's giver instead of hiding
       }
-      if (!kind && resolveGiver(world, npcA)) kind = 3;
+      if (!kind && (resolveGiver(world, npcA) || resolveGiver(world, npcSA))) kind = 3;
     }
     if (!kind) return null;
     tgt.x = tmp.x; tgt.y = tmp.y; tgt.z = tmp.z; tgt.kind = kind; hasTarget = true;
@@ -220,6 +232,8 @@ export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
 
   return {
     target, step, draw,
+    /** OB-183: player ground position so the nearest giver is picked; pass null to clear. */
+    setNear(x, y) { near.ok = x !== null && x !== undefined; if (near.ok) { near.x = x; near.y = y; } },
     setHidden(h) { hidden = !!h; },
     get hidden() { return hidden; },
     get visible() { return hasTarget && !hidden; },

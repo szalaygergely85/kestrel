@@ -1229,6 +1229,8 @@ async function runGame(mode, cinematic = null) {
     const t = e && e.data && e.data.transform; if (!t) return false;
     out.x = t.x; out.y = t.y; out.z = t.z; return true;
   } };
+  const nextCtx = { resolve: (k, id, o) => compassResolver.resolve(k, id, o), x: 0, y: 0 }; // OB-183: 'Next:' line + journal name the nearest giver
+  if (saveRelay) saveRelay.quest.nextCtx = nextCtx;
   const combatHud = createCombatHud({ events: engine.events, rgb: assets.palette.rgb, band: worldBand }); // HPBAR-02 + DMGNUM-01: enemy bars + damage numbers
   window.__debug.compass = compass; window.__debug.compassRetarget = () => { const b = saveRelay && saveRelay.quest.book; return b ? compass.target(b, compassResolver) : null; }; window.__debug.compassHidden = () => compassHide; // tools/verify-compass.mjs
   function compassFindMarker(w, markerId) { // structure marker -> world position (same lookup as audio/ambient.js; load-time-ish, cached)
@@ -2077,7 +2079,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       } else if (gameKeys.questLog && input.pressed(gameKeys.questLog) && !invOpen0 && !ending && !isMapOpen() && !isSettingsOpen() && !isNoteOpen() && !!look && look.locked
         && !(vitals && (vitals.dead || vLocked())) && !(questUiActive && wakeOut.inputLocked) && !(dialogueCtl && dialogueCtl.open)) {
         const bk = saveRelay.quest.book;
-        if (!qlView || qlBook !== bk) { qlBook = bk; qlView = createQuestLogScreen(bk, { style: window.ASSETS.uiStyle && window.ASSETS.uiStyle.menu, giverName: (id) => { const n = { bear: 'Burl', rook: 'Rook', hesk: 'Hesk', dorrin: 'Dorrin' }[id]; if (n) return n; const l = labelOf(id); return l.charAt(0).toUpperCase() + l.slice(1); }, itemName: (id) => { const d = window.ASSETS.items && window.ASSETS.items.defs[id]; return d && d.name ? d.name : itemLabel(null, id); }, onJournal: () => noteRead({ world: engine.world, def: { noteId: engine.world.state['chapter.ch2.done'] ? 'journalCh2' : 'journalCh1' } }) }); }
+        if (!qlView || qlBook !== bk) { qlBook = bk; qlView = createQuestLogScreen(bk, { style: window.ASSETS.uiStyle && window.ASSETS.uiStyle.menu, giverName: (id) => { const n = { bear: 'Burl', rook: 'Rook', hesk: 'Hesk', dorrin: 'Dorrin' }[id]; if (n) return n; const l = labelOf(id); return l.charAt(0).toUpperCase() + l.slice(1); }, nextCtx: () => nextCtx, itemName: (id) => { const d = window.ASSETS.items && window.ASSETS.items.defs[id]; return d && d.name ? d.name : itemLabel(null, id); }, onJournal: () => noteRead({ world: engine.world, def: { noteId: engine.world.state['chapter.ch2.done'] ? 'journalCh2' : 'journalCh1' } }) }); }
         qlWasLocked = look.locked; qlView.open(); input.consumePressed();
       }
     }
@@ -2125,6 +2127,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       const bk = saveRelay && saveRelay.quest.book;
       compassHide = !(mode === 'world' && playerHandle && bk && questUiActive) || ending || paused || isCaptureOrBench || uiLocked || titleMenuActive || isSettingsOpen() || isNoteOpen()
         || (dialogueCtl && dialogueCtl.open) || (vitals && vitals.dead) || deathFlow.phase !== 'idle' || (wakeOut && wakeOut.inputLocked); // phase, not .active (= the feature flag, always true)
+      if (playerHandle) { const pt0 = playerHandle.data.transform; nextCtx.x = pt0.x; nextCtx.y = pt0.y; compass.setNear(pt0.x, pt0.y); }
       if (bk && (bk.version !== compassBookVer || ++compassTick >= 30)) { compassBookVer = bk.version; compassTick = 0; compass.target(bk, compassResolver); }
       if (playerHandle && look) { const pt = playerHandle.data.transform; compass.step(pt.x, pt.y, look.yawDeg, pt.z); }
     }
