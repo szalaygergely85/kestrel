@@ -60,7 +60,7 @@ function uniformObject(words, ints) {
 
 function compileStable(src, ctx) {
   const base = { ...shims, textureLoad: tl, LEVEL_NONE, LEVEL_ANIM, ...ctx, giKind: (y) => y & 0xff, vec3f: (x, y, z) => ({ x, y, z }) };
-  for (const n of ['byteOf', 'packRgb', 'blendCh', 'blendPacked', 'reproject']) base[n] = compileFn(src, n, base);
+  for (const n of ['byteOf', 'packRgb', 'blendCh', 'blendPacked', 'reprojectCell', 'reproject']) base[n] = compileFn(src, n, base);
   return compileFn(src, 'stableCell', base);
 }
 
@@ -128,7 +128,7 @@ function toTextures(f, hist) {
   t.uWater = tex(cols, rows, (i) => [f.waterX[i], 0, 0, f.waterW[i]]);
   t.uHistFg = tex(cols, rows, (i) => [...rgbF(hist.fg[i]), unorm(hist.glyph[i])]);
   t.uHistBg = tex(cols, rows, (i) => [...rgbF(hist.bg[i]), 1]);
-  t.uHist = tex(cols, rows, (i) => [hist.planeId[i] >>> 0, f2u(hist.u[i]), f2u(hist.v[i]), hist.level[i] | (hist.kind[i] << 8)]);
+  t.uHist = tex(cols, rows, (i) => [hist.planeId[i] >>> 0, f2u(hist.u[i]), f2u(hist.v[i]), (hist.level[i] | (hist.kind[i] << 8) | (hist.mat[i] << 16)) >>> 0]);
   return t;
 }
 
@@ -249,9 +249,9 @@ const mutations = [
   ['kind/plane match dropped', 'if (hk != kind || hh.x != gi.x) { return o; }', ''],
   ['UV drift window x2', 'var uvLim = 1.0 / u.detailDefault', 'var uvLim = 2.0 / u.detailDefault'],
   ['UV drift window back to 0.5', 'var uvLim = 1.0 / u.detailDefault', 'var uvLim = 0.5 / u.detailDefault'],
-  ['dEye.z dropped', 'let wz = pz + u.dEye.z;', 'let wz = pz;'],
-  ['ortho branch swapped in prev projection', 'cf = (vx / u.prevA.w + 1.0)', 'cf = (vx / vdP / u.prevA.w + 1.0)'],
-  ['perspective divide dropped in rows', 'rf = (1.0 - vy / vdP / u.prevC.y)', 'rf = (1.0 - vy / u.prevC.y)'],
+  ['dEye.z dropped', 'let wz = pz + dEye.z;', 'let wz = pz;'],
+  ['ortho branch swapped in prev projection', 'cf = (vx / prevA.w + 1.0)', 'cf = (vx / vdP / prevA.w + 1.0)'],
+  ['perspective divide dropped in rows', 'rf = (1.0 - vy / vdP / prevC.y)', 'rf = (1.0 - vy / prevC.y)'],
 ];
 assert.ok(STABLE_WGSL.includes('u.waterOn != 0 && wl.x'), 'water test is gated by waterOn (waterOn): the 1x1 dummy reads 0 = water out of bounds');
 for (const [name, from, to] of mutations) {

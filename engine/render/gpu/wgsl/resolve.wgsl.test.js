@@ -13,12 +13,12 @@ assert.ok(!/%|\bround\s*\(|dpdx|dpdy|fwidth|frag_depth|textureSample|texelFetch|
 assert.ok(/fn vs_main/.test(RESOLVE_WGSL) && /fn fs_main\(@builtin\(position\) frag: vec4f\)/.test(RESOLVE_WGSL));
 assert.equal(MAX_SUB, 16);
 assert.ok(/array<u32, 16>/.test(RESOLVE_WGSL) && /const MAX_SUB: i32 = 16;/.test(RESOLVE_WGSL), 'constant interpolated from the GLSL module');
-assert.deepEqual(RESOLVE_TEXTURES, ['uint', 'uint', 'uint', 'uint']);
+assert.deepEqual(RESOLVE_TEXTURES, ['uint', 'uint', 'uint', 'uint', 'uint']);
 assert.deepEqual(RESOLVE_TARGETS, ['rgba32uint', 'rgba32uint', 'r32uint']);
 for (let i = 0; i < 4; i++) assert.ok(new RegExp('@group\\(0\\) @binding\\(' + i + '\\) var \\w+: texture_2d<u32>').test(RESOLVE_WGSL), 'binding ' + i);
 assert.ok(/@group\(1\) @binding\(0\) var<uniform> u: ResolveU/.test(RESOLVE_WGSL));
 assert.ok(/@location\(0\) gi: vec4u/.test(RESOLVE_WGSL) && /@location\(1\) ga: vec4u/.test(RESOLVE_WGSL) && /@location\(2\) depth: vec4u/.test(RESOLVE_WGSL));
-assert.equal(RESOLVE_BLOCK.sizeBytes, 16);
+assert.equal(RESOLVE_BLOCK.sizeBytes, 144, 'n,bandM,histValid,pad + 7 vec4 + 4 ints (AA-04b)');
 assert.equal(RESOLVE_BLOCK.field('n').word, 0);
 assert.ok(/ivec2|uvec/.test(RESOLVE_WGSL) === false, 'no GLSL type names');
 
@@ -53,10 +53,11 @@ function oracle(n, subs, mask) {
   return { gi: [w.x, y, w.z, w.w], ga: w.ga, depth: w.d };
 }
 
-const fsMain = (tex) => compileFn(RESOLVE_WGSL, 'fs_main', { textureLoad, ...tex, MAX_SUB, ...shims },
-  'const MAX_SUB_ = 16;', ['farPick', 'finish', 'rg4i', 'rg4j', 'bayer4', 'bandThreshold']);
+const fsMain = (tex) => compileFn(RESOLVE_WGSL, 'fs_main', { textureLoad, uHist: makeTex(1, 1, [[0, 0, 0, 0]]), ...tex, u: { histValid: 0, ...tex.u }, MAX_SUB, ...shims },
+  'const MAX_SUB_ = 16;', ['farPick', 'finish', 'rg4i', 'rg4j', 'bayer4', 'bandThreshold', 'reprojectCell']);
 let seed = 1234;
 const rand = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 0x100000000; };
+const f32u = (u) => { const b = new Uint32Array([u]); return new Float32Array(b.buffer)[0]; };
 const f2u = (() => { const f = new Float32Array(1), u = new Uint32Array(f.buffer); return (x) => { f[0] = x; return u[0]; }; })();
 let probes = 0;
 for (let round = 0; round < 80; round++) for (let n = 1; n <= 4; n++) {
@@ -75,7 +76,7 @@ for (let round = 0; round < 80; round++) for (let n = 1; n <= 4; n++) {
     sgi.push([s.x, s.y, s.z, s.w]); sga.push(s.ga); sdp.push([s.d, 0, 0, 0]);
   }
   for (let i = 0; i < cols * rows; i++) mask.push([rand() < 0.5 ? 1 : 0, 0, 0, 0]);
-  const run = fsMain({ uSGI: makeTex(sw, sh, sgi), uSGA: makeTex(sw, sh, sga), uSDepth: makeTex(sw, sh, sdp), uMask: makeTex(cols, rows, mask), u: { n, bandM: 0 } });
+  const run = fsMain({ uSGI: makeTex(sw, sh, sgi), uSGA: makeTex(sw, sh, sga), uSDepth: makeTex(sw, sh, sdp), uMask: makeTex(cols, rows, mask), u: { n, bandM: 0, histValid: 0 } });
   for (let cy = 0; cy < rows; cy++) for (let cx = 0; cx < cols; cx++) {
     const subs = [];
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) subs.push(sampleAt[(cy * n + j) * sw + cx * n + i]);
@@ -115,7 +116,7 @@ let bandCells = 0, farCells = 0;
       at.push(smp); sgi.push([smp.x, smp.y, smp.z, smp.w]); sga.push(smp.ga); sdp.push([smp.d, 0, 0, 0]);
     }
     for (let i = 0; i < cols * rows; i++) mask.push([rand() < 0.5 ? 1 : 0, 0, 0, 0]);
-    const run = fsMain({ uSGI: makeTex(sw, sh, sgi), uSGA: makeTex(sw, sh, sga), uSDepth: makeTex(sw, sh, sdp), uMask: makeTex(cols, rows, mask), u: { n, bandM } });
+    const run = fsMain({ uSGI: makeTex(sw, sh, sgi), uSGA: makeTex(sw, sh, sga), uSDepth: makeTex(sw, sh, sdp), uMask: makeTex(cols, rows, mask), u: { n, bandM, histValid: 0 } });
     const sub = { pid: new Int32Array(16), kind: new Uint32Array(16), mat: new Uint32Array(16), depth: new Float32Array(16) };
     for (let cy = 0; cy < rows; cy++) for (let cx = 0; cx < cols; cx++) {
       for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) {
@@ -137,4 +138,43 @@ let bandCells = 0, farCells = 0;
 }
 assert.ok(bandCells >= 3000 && farCells > 100, `band probe coverage ${bandCells} cells, ${farCells} far`);
 console.log(`resolve.wgsl.test.js: band probe ${bandCells} cells (${farCells} far path) WGSL == JS twin.`);
+// AA-04b (38.82 B): hysteresis on (histValid 1), identity camera (prev == cur, dEye 0 -> the cell reprojects onto itself): WGSL (probe)
+// == resolveCellJS(..., histKey) with the key read from a random HIST texture; and histValid 0 == the plain vote (byte-identical).
+let hystCells = 0, hystKept = 0;
+{
+  const cols = 6, rows = 4, n = 4, sw = cols * n, sh = rows * n, tan = 0.8;
+  const termsU = { histValid: 1, curA: { x: 0, y: 1, z: 0, w: tan }, curB: { x: 1, y: 0, z: 0, w: 0 }, curC: { x: 1, y: tan * 0.5, z: 0, w: 0 },
+    dEye: { x: 0, y: 0, z: 0, w: 0 }, gridCols: cols, gridRows: rows, ortho: 0 };
+  termsU.prevA = termsU.curA; termsU.prevB = termsU.curB; termsU.prevC = termsU.curC;
+  const out = { idx: 0, cov: 0, far: false }, out0 = { idx: 0, cov: 0, far: false };
+  for (let round = 0; round < 40; round++) {
+    const sgi = [], sga = [], sdp = [], mask = [], at = [];
+    for (let i = 0; i < sw * sh; i++) {
+      const kind = [1, 1, 2][Math.floor(rand() * 3)], pid = Math.floor(rand() * 2), mat = Math.floor(rand() * 3);
+      const smp = { x: pid, y: (kind | (mat << 16)) >>> 0, z: 1, w: 2, d: f2u(Math.fround(1 + rand() * 8)), ga: [f2u(rand()), f2u(rand()), f2u(rand()), f2u(rand())] };
+      at.push(smp); sgi.push([smp.x, smp.y, smp.z, smp.w]); sga.push(smp.ga); sdp.push([smp.d, 0, 0, 0]);
+    }
+    for (let i = 0; i < cols * rows; i++) mask.push([0, 0, 0, 0]);
+    const hk = [], hist = [];
+    for (let i = 0; i < cols * rows; i++) { const kind = [0, 1, 2][Math.floor(rand() * 3)], pid = Math.floor(rand() * 2), mat = Math.floor(rand() * 3); hk.push({ kind, pid, mat }); hist.push([pid, 0, 0, (4 | (kind << 8) | (mat << 16)) >>> 0]); }
+    const base = { uSGI: makeTex(sw, sh, sgi), uSGA: makeTex(sw, sh, sga), uSDepth: makeTex(sw, sh, sdp), uMask: makeTex(cols, rows, mask), uHist: makeTex(cols, rows, hist) };
+    const run = fsMain({ ...base, u: { n, bandM: 0, ...termsU } }), run0 = fsMain({ ...base, u: { n, bandM: 0, ...termsU, histValid: 0 } });
+    const sub = { pid: new Int32Array(16), kind: new Uint32Array(16), mat: new Uint32Array(16), depth: new Float32Array(16) };
+    for (let cy = 0; cy < rows; cy++) for (let cx = 0; cx < cols; cx++) {
+      for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) {
+        const smp = at[(cy * 4 + j) * sw + cx * 4 + i], k = j * 4 + i;
+        sub.pid[k] = smp.x; sub.kind[k] = smp.y & 0xff; sub.mat[k] = (smp.y >>> 16) & 0xffff; sub.depth[k] = f32u(smp.d);
+      }
+      resolveCellJS(sub, n, 0, cx, cy, out0, null);
+      resolveCellJS(sub, n, 0, cx, cy, out, hk[cy * cols + cx]);
+      const gi = (o) => [o.gi.x >>> 0, o.gi.y >>> 0, o.gi.z >>> 0, o.gi.w >>> 0];
+      const w = (idx) => at[(cy * 4 + (idx >> 2)) * sw + cx * 4 + (idx & 3)];
+      const exp = (idx, cov) => { const s = w(idx), kind = s.y & 0xff; return kind === 0 ? [0, 0, 0, 0] : [s.x, (kind | (((s.y >>> 8) & 0xf) << 8) | (cov << 13) | (((s.y >>> 16) & 0xffff) << 16)) >>> 0, s.z, s.w]; };
+      assert.deepEqual(gi(run({ x: cx + 0.5, y: cy + 0.5 })), exp(out.idx, out.cov), `hyst on, round ${round} cell ${cx},${cy}`);
+      assert.deepEqual(gi(run0({ x: cx + 0.5, y: cy + 0.5 })), exp(out0.idx, out0.cov), `histValid 0 = plain vote, round ${round} cell ${cx},${cy}`);
+      hystCells++; if (out.idx !== out0.idx) hystKept++;
+    }
+  }
+  assert.ok(hystKept > 20, `hysteresis really changed ${hystKept} winners`);
+}
 console.log(`resolve.wgsl.test.js: string/layout rules and ${probes} JS-evaluated cells vs the vote-rule oracle passed.`);

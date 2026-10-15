@@ -38,4 +38,18 @@ for (const n of [1, 2, 3]) { const s = mk(); const a = { ...resolveCellJS(s, n, 
   resolveCellJS(s, 4, 40, 0, 0, out); assert.equal(s.pid[out.idx], 2, 'tie -> smaller min depth'); assert.equal(out.cov, 3); }
 // sky samples do not count towards dMin (a sky-dominated cell with a near hit stays near only if the hit is RG4)
 { const s = mk(); s.kind.fill(0); resolveCellJS(s, 4, 40, 0, 0, out); assert.equal(out.far, true); }
+// AA-04b (38.82 B): winner hysteresis. n = 4 -> HYST = 2. mat 1 vs mat 2 in one cell; histKey = last frame's key at this position.
+{
+  const cell = (cnt1) => { const s = mk(); for (let c = 0; c < 16; c++) s.mat[c] = c < cnt1 ? 1 : 2; return s; }; // cnt1 of mat 1, rest mat 2
+  const key = (mat) => ({ kind: 1, pid: 0, mat });
+  const win = (s, hk) => { const o = { idx: -1, cov: -1, far: false }; resolveCellJS(s, 4, 0, 0, 0, o, hk); return s.mat[o.idx]; };
+  assert.equal(win(cell(8), null), 1, 'tie, no history: scan-order/depth rule (mat 1 first)');
+  assert.equal(win(cell(8), key(2)), 2, '8/16 vs 8/16 keeps last frame key (2)');
+  assert.equal(win(cell(8), key(1)), 1, '8/16 vs 8/16 keeps last frame key (1)');
+  assert.equal(win(cell(9), key(2)), 2, '9 vs 7 within HYST: keeps 2');
+  assert.equal(win(cell(10), key(2)), 1, '6/16 vs 10/16 flips to the clear winner');
+  assert.equal(win(cell(10), key(9)), 1, 'history key absent from the cell: plain vote');
+  assert.equal(win(cell(10), { kind: 0, pid: 0, mat: 2 }), 1, 'sky history key ignored');
+  const o2 = { idx: -1, cov: -1, far: false }; resolveCellJS(cell(7), 4, 0, 0, 0, o2, key(2)); assert.equal(o2.cov, Math.trunc(9 * 8 / 16 - 1), 'cov follows the kept group (9/16)');
+}
 console.log('resolveBand.test.js: bayer, RG4, dither +-7.5 %, near/far rules, n<4 passthrough passed.');

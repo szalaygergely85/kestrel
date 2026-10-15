@@ -21,12 +21,16 @@ export function bandThreshold(bandM, cx, cy) {
   return f(f(bandM) * f(1 + f(f(BAND_DITHER) * f(f(b / 15) - 0.5))));
 }
 
+/** AA-04b: kind the hysteresis never touches (model sprites; stable skips them too). */
+const KIND_MODEL_HYST = 8;
+
 /**
  * Resolve one cell's vote. sub = {pid:Int32Array, kind:Uint32Array, mat:Uint32Array, depth:Float32Array} in scan order
  * (index j*n+i, length n*n). out = {idx, cov, far} is filled: idx = scan-order index of the winning sub-sample.
- * Near path = the unchanged vote (normative 14.2 item 3); far path = same rule over RG4 only.
+ * histKey = null | {kind, pid, mat}: last frame's key at this cell's reprojected world position (AA-04b); out.bestMinDepth = the
+ * un-hysteresised best group's min depth (the depth to reproject with). Near path = the unchanged vote (normative 14.2 item 3); far path = same rule over RG4 only.
  */
-export function resolveCellJS(sub, n, bandM, cx, cy, out) {
+export function resolveCellJS(sub, n, bandM, cx, cy, out, histKey = null) {
   out.far = false;
   if (n === 4 && bandM > 0) {
     let dMin = 1e30;
@@ -44,6 +48,16 @@ export function resolveCellJS(sub, n, bandM, cx, cy, out) {
       if (sub.kind[b] === sub.kind[a] && sub.pid[b] === sub.pid[a] && sub.mat[b] === sub.mat[a]) { count++; if (sub.depth[b] < minD) minD = sub.depth[b]; }
     }
     if (count > bestCount || (count === bestCount && minD < bestMin)) { bestCount = count; bestMin = minD; winner = a; }
+  }
+  out.bestMinDepth = bestMin;
+  // AA-04b (38.82 mechanism B): keep last frame's key at this world position when its group is within HYST of the best (near path only)
+  if (histKey && histKey.kind !== 0 && histKey.kind !== KIND_MODEL_HYST) {
+    const hyst = Math.max(1, n2 >> 3);
+    let hc = 0, hFirst = -1;
+    for (let b = 0; b < n2; b++) {
+      if (sub.kind[b] === histKey.kind && sub.pid[b] === histKey.pid && sub.mat[b] === histKey.mat) { hc++; if (hFirst < 0) hFirst = b; }
+    }
+    if (hFirst >= 0 && hc >= bestCount - hyst) { winner = hFirst; bestCount = hc; }
   }
   let nearest = -1, nearestMag = 1e30;
   for (let a = 0; a < n2; a++) {

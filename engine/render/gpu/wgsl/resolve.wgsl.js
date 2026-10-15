@@ -6,7 +6,8 @@
 // Bindings: @group(0) 0 = SGI (rgba32uint), 1 = SGA (rgba32uint), 2 = SDEPTH (r32uint), 3 = MASK (r8uint);
 // @group(1) @binding(0) = ResolveU. Targets: 0 = GI rgba32uint, 1 = GA rgba32uint, 2 = DEPTH r32uint (x only is stored).
 import { defineUniformBlock } from './uniformBlock.js';
-import { GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL } from './common.wgsl.js';
+import { GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL, REPROJECT_WGSL } from './common.wgsl.js';
+import { KIND_MODEL } from '../../GBuffer.js';
 import { RESOLVE_BAND_WGSL } from '../../resolveBand.js'; // RTX-RAYS-BAND-01 (38.79): RG4 / Bayer / threshold helpers, one source with the JS twin
 export const MAX_SUB = 16; // 4x4, the architecture's hard cap (n <= 4)
 
@@ -14,10 +15,16 @@ export const MAX_SUB = 16; // 4x4, the architecture's hard cap (n <= 4)
 export const RESOLVE_BLOCK = defineUniformBlock('ResolveU', [
   { name: 'n', type: 'i32' },
   { name: 'bandM', type: 'f32' },
+  { name: 'histValid', type: 'i32' }, // AA-04b: 1 = hysteresis on this frame (stable history valid + aaHyst); 0 = the plain vote, byte-identical
+  { name: 'pad0', type: 'i32' },
+  // stable camera terms (same words as StableU, packStableUniforms): reproject the cell into last frame's camera
+  { name: 'curA', type: 'vec4' }, { name: 'curB', type: 'vec4' }, { name: 'curC', type: 'vec4' },
+  { name: 'prevA', type: 'vec4' }, { name: 'prevB', type: 'vec4' }, { name: 'prevC', type: 'vec4' }, { name: 'dEye', type: 'vec4' },
+  { name: 'gridCols', type: 'i32' }, { name: 'gridRows', type: 'i32' }, { name: 'ortho', type: 'i32' }, { name: 'pad1', type: 'i32' },
 ]);
 
 /** Texture slot kinds for PipelineDesc.bindings.textures. */
-export const RESOLVE_TEXTURES = Object.freeze(['uint', 'uint', 'uint', 'uint']);
+export const RESOLVE_TEXTURES = Object.freeze(['uint', 'uint', 'uint', 'uint', 'uint']); // slot 4 = HIST (stable's last output; a 1x1 dummy when histValid = 0)
 /** Colour target formats, in @location order. */
 export const RESOLVE_TARGETS = Object.freeze(['rgba32uint', 'rgba32uint', 'r32uint']);
 
@@ -27,11 +34,13 @@ ${RESOLVE_BLOCK.wgsl}
 @group(0) @binding(1) var uSGA: texture_2d<u32>;    // bitcast u,v,z,aoD, sub-grid
 @group(0) @binding(2) var uSDepth: texture_2d<u32>; // x = bitcast dist, sub-grid
 @group(0) @binding(3) var uMask: texture_2d<u32>;   // r8uint, cols x rows (per-cell UI overlay bit)
+@group(0) @binding(4) var uHist: texture_2d<u32>;   // AA-04b: stable HIST (planeId, u, v, level | kind << 8 | mat << 16), last frame
 @group(1) @binding(0) var<uniform> u: ResolveU;
 ${GBUF_UNPACK_WGSL}
 const MAX_SUB: i32 = ${MAX_SUB};
 ${FULLSCREEN_VS_WGSL}
 ${RESOLVE_BAND_WGSL}
+${REPROJECT_WGSL}
 struct FO {
   @location(0) gi: vec4u,
   @location(1) ga: vec4u,
@@ -140,6 +149,26 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
     }
     if (count > bestCount || (count == bestCount && minD < bestMinDepth)) {
       bestCount = count; bestMinDepth = minD; winner = a;
+    }
+  }
+
+  // AA-04b (38.82 B): keep last frame's key at this world position if its group is within HYST of the best. Twin: resolveBand.js resolveCellJS.
+  if (u.histValid != 0 && kk[winner] != 0u && kk[winner] != ${KIND_MODEL}u) {
+    let pc = reprojectCell(f32(cell.x), f32(cell.y), bestMinDepth, u.gridCols, u.gridRows, u.ortho, u.curA, u.curB, u.curC, u.prevA, u.prevB, u.prevC, u.dEye);
+    if (!(u.ortho == 0 && pc.z <= 0.0) && pc.x > -2.0 && pc.x < f32(u.gridCols) + 2.0 && pc.y > -2.0 && pc.y < f32(u.gridRows) + 2.0) {
+      let hc = i32(floor(pc.x + 0.5)); let hr = i32(floor(pc.y + 0.5));
+      if (hc >= 0 && hc < u.gridCols && hr >= 0 && hr < u.gridRows) {
+        let hh = textureLoad(uHist, vec2i(hc, hr), 0);
+        let hKind = (hh.w >> 8u) & 255u; let hMat = hh.w >> 16u; let hPid = i32(hh.x);
+        if (hKind != 0u && hKind != ${KIND_MODEL}u) {
+          var hCount = 0; var hFirst = -1;
+          for (var b = 0; b < MAX_SUB; b++) {
+            if (b >= n2) { break; }
+            if (kk[b] == hKind && pk[b] == hPid && mk[b] == hMat) { hCount++; if (hFirst < 0) { hFirst = b; } }
+          }
+          if (hFirst >= 0 && hCount >= bestCount - max(1, n2 / 8)) { winner = hFirst; bestCount = hCount; }
+        }
+      }
     }
   }
 

@@ -10,11 +10,11 @@
 // of vd), 3 SHADE_FG / 4 SHADE_BG (rgba8: the edge pass INPUT - the water composite output when water is on), 5 FINAL_FG / 6 FINAL_BG (rgba8:
 // the edge output; fg.a = glyph/255), 7 LEVEL (r8uint, shade's 3rd target, 255 = none), 8 WATER (rgba32uint layer: x = f32 bits of vD,
 // +Inf = none), 9 HIST_FG / 10 HIST_BG (rgba8: last frame's output, the ping-pong partner), 11 HIST (rgba32uint: planeId, u bits, v bits,
-// level | kind << 8). @group(1) @binding(0) = StableU. Targets (32 B, the attachment limit): 0 OUT_FG, 1 OUT_BG (rgba8; bg.a copied from final),
+// level | kind << 8 | mat << 16 (AA-04a)). @group(1) @binding(0) = StableU. Targets (32 B, the attachment limit): 0 OUT_FG, 1 OUT_BG (rgba8; bg.a copied from final),
 // 2 OUT_HIST (rgba32uint, same layout as HIST).
 // Edge cells are detected without touching the edge pass: final != shade (any rgb byte or the glyph) -> pass final through (38.25 item 3).
 import { defineUniformBlock } from './uniformBlock.js';
-import { GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL } from './common.wgsl.js';
+import { GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL, REPROJECT_WGSL } from './common.wgsl.js';
 import { KIND_NONE, KIND_MODEL } from '../../GBuffer.js';
 import { LEVEL_NONE, LEVEL_ANIM, UV_LIM_TEXELS, STABLE_FOOT_K } from '../../temporalStable.js';
 
@@ -51,6 +51,7 @@ ${STABLE_BLOCK.wgsl}
 
 ${GBUF_UNPACK_WGSL}
 ${FULLSCREEN_VS_WGSL}
+${REPROJECT_WGSL}
 
 const LEVEL_NONE: u32 = ${LEVEL_NONE}u;
 const LEVEL_ANIM: u32 = ${LEVEL_ANIM}u;
@@ -73,32 +74,7 @@ fn blendPacked(pk: u32, ck: u32) -> u32 {
 
 // temporalStable.js reprojection: current-camera cell ray (eye-relative) + dEye -> previous camera (eye 0). Returns (colF, rowF, vdPrev).
 fn reproject(col: f32, row: f32, vd: f32) -> vec3f {
-  let colsF = f32(u.gridCols); let rowsF = f32(u.gridRows);
-  let a = ((2.0 * (col + 0.5)) / colsF - 1.0) * u.curA.w;
-  let b = (1.0 - (2.0 * row) / rowsF) * u.curC.y;
-  var px: f32; var py: f32; var pz: f32;
-  if (u.ortho == 1) {
-    px = a * u.curB.x + b * u.curB.z + vd * u.curA.x;
-    py = a * u.curB.y + b * u.curB.w + vd * u.curA.y;
-    pz = b * u.curC.x + vd * u.curA.z;
-  } else {
-    px = (u.curA.x + a * u.curB.x + b * u.curB.z) * vd;
-    py = (u.curA.y + a * u.curB.y + b * u.curB.w) * vd;
-    pz = (u.curA.z + b * u.curC.x) * vd;
-  }
-  let wx = px + u.dEye.x; let wy = py + u.dEye.y; let wz = pz + u.dEye.z;
-  let vdP = wx * u.prevA.x + wy * u.prevA.y + wz * u.prevA.z;
-  let vx = wx * u.prevB.x + wy * u.prevB.y;
-  let vy = wx * u.prevB.z + wy * u.prevB.w + wz * u.prevC.x;
-  var cf = 0.0; var rf = 0.0;
-  if (u.ortho == 1) {
-    cf = (vx / u.prevA.w + 1.0) * (colsF * 0.5) - 0.5;
-    rf = (1.0 - vy / u.prevC.y) * (rowsF * 0.5);
-  } else if (vdP > 0.0) {
-    cf = (vx / vdP / u.prevA.w + 1.0) * (colsF * 0.5) - 0.5;
-    rf = (1.0 - vy / vdP / u.prevC.y) * (rowsF * 0.5);
-  }
-  return vec3f(cf, rf, vdP);
+  return reprojectCell(col, row, vd, u.gridCols, u.gridRows, u.ortho, u.curA, u.curB, u.curC, u.prevA, u.prevB, u.prevC, u.dEye);
 }
 
 struct SCell {
@@ -107,6 +83,7 @@ struct SCell {
   glyph: u32,    // 0..255
   level: u32,    // level written to history (the held level when the glyph was held)
   kind: u32,
+  mat: u32,      // gi mat id (16 bit) -> HIST.w bits 16-31 (AA-04a; read by resolve hysteresis only)
   plane: u32,
   ub: u32,       // f32 bits of this frame's u / v (history always describes THIS frame)
   vb: u32,
@@ -125,7 +102,7 @@ fn stableCell(cell: vec2i) -> SCell {
   o.fg = packRgb(fgC.x, fgC.y, fgC.z);
   o.bg = packRgb(bgC.x, bgC.y, bgC.z);
   o.glyph = byteOf(fgC.w);
-  o.level = lvC; o.kind = kind; o.plane = gi.x; o.ub = ga.x; o.vb = ga.y; o.fresh = 1u;
+  o.level = lvC; o.kind = kind; o.mat = giMat(gi.y) & 0xffffu; o.plane = gi.x; o.ub = ga.x; o.vb = ga.y; o.fresh = 1u;
   if (u.histValid == 0) { return o; }
   if (kind == ${KIND_NONE}u || kind == ${KIND_MODEL}u || lvC == LEVEL_ANIM) { return o; }
   // edge cell: final != shade (rgb of fg and bg, glyph in fg.a) -> pass through
@@ -193,7 +170,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
   var o: FO;
   o.fg = vec4f(f32((r.fg >> 16u) & 255u) / 255.0, f32((r.fg >> 8u) & 255u) / 255.0, f32(r.fg & 255u) / 255.0, f32(r.glyph) / 255.0);
   o.bg = vec4f(f32((r.bg >> 16u) & 255u) / 255.0, f32((r.bg >> 8u) & 255u) / 255.0, f32(r.bg & 255u) / 255.0, bgA);
-  o.hist = vec4u(r.plane, r.ub, r.vb, r.level | (r.kind << 8u));
+  o.hist = vec4u(r.plane, r.ub, r.vb, r.level | (r.kind << 8u) | (r.mat << 16u));
   return o;
 }
 `;

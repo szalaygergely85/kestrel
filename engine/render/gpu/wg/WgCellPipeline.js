@@ -61,6 +61,8 @@ export class WgCellPipeline {
     // S8-B2-10c two-phase HZB occlusion (`?occl=1`), default OFF
     this.gpuCull = opts.gpuCull !== false; // WG-4a compute cull of instance batches (`?gpucull=0` = CPU path)
     // US-073c (38.25): temporal glyph stability, `?stable=1`; absent = no pass, no extra target, frame byte-identical to before
+    this.aaHyst = opts.aaHyst !== false; // AA-04b (38.82 B): resolve winner hysteresis keyed by reprojected world position; needs stable + rays > 1; main.js wires ?aahyst=0
+    this._hystSp = null; this._stEarly = false;
     this.stableOpt = !!opts.stable; this._stablePass = null; this._stableOn = false; this._stableRan = false; this._stInp = { shadeFg: null, shadeBg: null, water: null, waterOn: false };
     // EMIS-03/04 (38.12): emissive bleed + halo, `opts.glow` = {radius, gain, haloBg, haloMin} (High/Ultra); absent = no pass, frame byte-identical to before
     this.glowOpt = opts.glow || null; this._glowPass = null; this._glowRan = false;
@@ -504,6 +506,7 @@ export class WgCellPipeline {
         }
       } else psp.active = false;
     }
+    this._prepHyst(t);
     try { this._cellPass.run(this, t); }
     catch (e) { this._abortOpenPass('cell'); this.ready = false; this.setEnabled(false); console.warn('[WgCellPipeline] resolve/deriv/light/shade/edge disabled:', e); return; }
     this._cellsShaded = this._cellPass.shaded;
@@ -534,9 +537,22 @@ export class WgCellPipeline {
     else { try { d.endPass(); } catch (_) { d._pass = null; } }
   }
 
+  /**
+   * AA-04b: the resolve hysteresis needs the stable camera terms of THIS frame before resolve. beginFrame runs once per frame, so it moves
+   * here and _runStable skips it (`_stEarly`). Off (aaHyst false, stable off, rays 1, no pitched raster) = `_hystSp` null, resolve unchanged.
+   */
+  _prepHyst(t) {
+    this._hystSp = null; this._stEarly = false;
+    const sp = this._stablePass, rp = this._rasterPass;
+    if (!this.aaHyst || !sp || !this._stableOn || this.rays < 2 || this.debugMode >= 0 || !rp || !rp.pitched || !this._cam || !t.texLevel) return;
+    try { sp.beginFrame(this._cam, rp.grid, null, rp.pitch); this._stEarly = true; this._hystSp = sp; }
+    catch (e) { console.warn('[WgCellPipeline] resolve hysteresis off this frame:', e); }
+  }
+
   /** US-073c (38.25 item 2): after edge, before sprites. History is invalidated on every frame it cannot run (not shaded, debug view, not pitched, error). */
   _runStable(t) {
     const sp = this._stablePass; this._stableRan = false;
+    const early = this._stEarly; if (!early || !sp || !this._stableOn) this._stEarly = false;
     if (!sp || !this._stableOn) return;
     const rp = this._rasterPass;
     if (!this._cellsShaded || this.debugMode >= 0 || !rp || !rp.pitched || !this._cam || !t.texLevel) { sp.invalidate(); return; }
@@ -544,7 +560,7 @@ export class WgCellPipeline {
     inp.shadeFg = wOn ? wp.edgeFg : t.texShadeFg; inp.shadeBg = wOn ? wp.edgeBg : t.texShadeBg; inp.water = wp ? wp.edgeWaterTexture : null; inp.waterOn = wOn;
     try {
       this._begin(WG_PASS_SLOT.stable);
-      try { sp.beginFrame(this._cam, rp.grid, null, rp.pitch); this._stableRan = sp.run(this, t, inp); } finally { this._end(); }
+      try { if (!this._stEarly) sp.beginFrame(this._cam, rp.grid, null, rp.pitch); this._stEarly = false; this._stableRan = sp.run(this, t, inp); } finally { this._end(); }
     } catch (e) {
       this._abortOpenPass('stable');
       this._stableOn = false; this._stableRan = false;

@@ -37,6 +37,7 @@ const TIE_EPS_UV = 1e-4;
  * @property {number} cols
  * @property {number} rows
  * @property {Uint8Array} kind
+ * @property {Uint16Array} [mat] - material id (AA-04a: carried into history for resolve hysteresis; absent = 0)
  * @property {Int32Array} planeId
  * @property {Float32Array} u
  * @property {Float32Array} v
@@ -74,7 +75,7 @@ export function createStableBuffers(cols, rows) {
   const n = cols * rows;
   return {
     cols, rows,
-    kind: new Uint8Array(n), planeId: new Int32Array(n),
+    kind: new Uint8Array(n), mat: new Uint16Array(n), planeId: new Int32Array(n),
     u: new Float32Array(n), v: new Float32Array(n),
     level: new Uint8Array(n), glyph: new Uint16Array(n),
     fg: new Uint32Array(n), bg: new Uint32Array(n),
@@ -176,7 +177,7 @@ export function stabilize(inp, hist, out, st) {
       const i = row * cols + col;
       // fresh by default; hist fields always describe THIS frame for the next one
       const kind = inp.kind[i], lvC = inp.level[i];
-      out.kind[i] = kind; out.planeId[i] = inp.planeId[i]; out.u[i] = inp.u[i]; out.v[i] = inp.v[i];
+      out.kind[i] = kind; out.mat[i] = inp.mat ? inp.mat[i] : 0; out.planeId[i] = inp.planeId[i]; out.u[i] = inp.u[i]; out.v[i] = inp.v[i];
       out.level[i] = lvC; out.glyph[i] = inp.glyph[i]; out.fg[i] = inp.fg[i]; out.bg[i] = inp.bg[i];
       out.tie[i] = 0; out.fresh[i] = 1; out.hsrc[i] = -1; out.held255[i] = 0;
       if (!valid) continue;
@@ -249,5 +250,49 @@ export function edgeMaskFromShade(finalFg, finalBg, finalGlyph, shadeFg, shadeBg
 /** Water mask as the WGSL pass sees it: the layer word holds a finite vD (x bits != +Inf) and is not flagged (bit 5 of w). */
 export function waterMaskFromLayer(layerX, layerW, out) {
   for (let i = 0; i < out.length; i++) out[i] = (layerX[i] !== 0x7f800000 && (layerW[i] & 32) === 0) ? 1 : 0;
+  return out;
+}
+
+// ---- AA-04b (38.82): f32 twin of common.wgsl.js reprojectCell, used by the resolve hysteresis (the stable twin above stays f64) ----
+const F = Math.fround;
+function terms32(t) {
+  return [t.fX, t.fY, t.fZ, t.tanHalfX, t.rX, t.rY, t.uX, t.uY, t.uZ, t.tanHalfY].map(F);
+}
+/** f32 camera words (what packStableUniforms writes) from a twin state after `beginFrame`: {cur[10], prev[10], dEye[3], cols, rows, ortho}. */
+export function stableTerms32(st, cols, rows) {
+  return { cur: terms32(st.cur), prev: terms32(st.prev), dEye: [F(st.dEx), F(st.dEy), F(st.dEz)], cols, rows, ortho: st.cur.ortho === 1 ? 1 : 0 };
+}
+/**
+ * f32 line-by-line twin of reprojectCell (common.wgsl.js). Writes (colF, rowF, vdPrev) into `out` (length >= 3).
+ * Term order in cur/prev: fX fY fZ tanHalfX | rX rY uX uY | uZ tanHalfY.
+ */
+export function reprojectF32(T, col, row, vd, out) {
+  const c = T.cur, p = T.prev, e = T.dEye, colsF = F(T.cols), rowsF = F(T.rows);
+  vd = F(vd);
+  const a = F(F(F(F(2) * F(F(col) + 0.5)) / colsF - 1) * c[3]);
+  const b = F(F(1 - F(F(2) * F(row)) / rowsF) * c[9]);
+  let px, py, pz;
+  if (T.ortho === 1) {
+    px = F(F(F(a * c[4]) + F(b * c[6])) + F(vd * c[0]));
+    py = F(F(F(a * c[5]) + F(b * c[7])) + F(vd * c[1]));
+    pz = F(F(b * c[8]) + F(vd * c[2]));
+  } else {
+    px = F(F(F(c[0] + F(a * c[4])) + F(b * c[6])) * vd);
+    py = F(F(F(c[1] + F(a * c[5])) + F(b * c[7])) * vd);
+    pz = F(F(c[2] + F(b * c[8])) * vd);
+  }
+  const wx = F(px + e[0]), wy = F(py + e[1]), wz = F(pz + e[2]);
+  const vdP = F(F(F(wx * p[0]) + F(wy * p[1])) + F(wz * p[2]));
+  const vx = F(F(wx * p[4]) + F(wy * p[5]));
+  const vy = F(F(F(wx * p[6]) + F(wy * p[7])) + F(wz * p[8]));
+  let cf = 0, rf = 0;
+  if (T.ortho === 1) {
+    cf = F(F(F(vx / p[3]) + 1) * F(colsF * 0.5)) - 0.5; cf = F(cf);
+    rf = F(F(1 - F(vy / p[9])) * F(rowsF * 0.5));
+  } else if (vdP > 0) {
+    cf = F(F(F(F(vx / vdP) / p[3]) + 1) * F(colsF * 0.5)); cf = F(cf - 0.5);
+    rf = F(F(1 - F(F(vy / vdP) / p[9])) * F(rowsF * 0.5));
+  }
+  out[0] = cf; out[1] = rf; out[2] = vdP;
   return out;
 }

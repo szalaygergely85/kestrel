@@ -2,6 +2,7 @@
 // Resolve votes the raster sub-sample set (texSGI/SGA/SDepth) down to cell-res texGI/texGA/texDepth; deriv reads those and
 // writes texGD; WG-3b then runs the light pass (passLight.js) into texLight. Pipelines and bind descriptors are built once here (22b); per frame only uniform words change.
 import { RESOLVE_BLOCK, RESOLVE_WGSL, RESOLVE_TEXTURES } from '../wgsl/resolve.wgsl.js';
+import { STABLE_BLOCK } from '../wgsl/stable.wgsl.js';
 import { DERIV_BLOCK, DERIV_WGSL, DERIV_TEXTURES } from '../wgsl/deriv.wgsl.js';
 import { WgLightPass } from './passLight.js';
 import { WgShadePass } from './passShade.js';
@@ -9,7 +10,10 @@ import { WgUploadSource } from './passUpload.js';
 import { PROJ_HFOV_DEG } from '../../projection.js';
 import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
 
-const R_N = RESOLVE_BLOCK.field('n').word, R_BAND = RESOLVE_BLOCK.field('bandM').word;
+const R_N = RESOLVE_BLOCK.field('n').word, R_BAND = RESOLVE_BLOCK.field('bandM').word, R_HVALID = RESOLVE_BLOCK.field('histValid').word;
+// AA-04b: StableU words copied into ResolveU by field name (vec4 = 4 words)
+const HYST_COPY = [['curA', 4], ['curB', 4], ['curC', 4], ['prevA', 4], ['prevB', 4], ['prevC', 4], ['dEye', 4], ['gridCols', 1], ['gridRows', 1], ['ortho', 1]]
+  .map(([n, w]) => ({ from: STABLE_BLOCK.field(n).word, to: RESOLVE_BLOCK.field(n).word, w }));
 const D_COLS = DERIV_BLOCK.field('cols').word, D_ROWS = DERIV_BLOCK.field('rows').word;
 const D_TAN = DERIV_BLOCK.field('tanHalfHFov').word, D_PDY = DERIV_BLOCK.field('planeDistY').word;
 
@@ -43,7 +47,8 @@ export class WgCellPass {
     this.upload = new WgUploadSource(device);  // WG-3c: `?gpucompare=shade` test source
     this.ru = new Float32Array(RESOLVE_BLOCK.sizeWords); this.ri = new Int32Array(this.ru.buffer);
     this.du = new Float32Array(DERIV_BLOCK.sizeWords); this.di = new Int32Array(this.du.buffer);
-    this.rTex = [0, 1, 2, 3].map(slot => ({ slot, texture: null }));
+    this.dummyHist = device.createTexture({ format: 'rgba32ui', width: 1, height: 1 }); // AA-04b: bound when the hysteresis is off
+    this.rTex = [0, 1, 2, 3, 4].map(slot => ({ slot, texture: null }));
     this.dTex = [0, 1, 2].map(slot => ({ slot, texture: null }));
     this.rBind = { uniforms: this.ru, textures: this.rTex };
     this.dBind = { uniforms: this.du, textures: this.dTex };
@@ -70,6 +75,12 @@ export class WgCellPass {
     if (wp && sceneOk) wp.prepare(p, p._rasterPass); // selection needs the camera/frustum of this frame's raster pass
     const rTex = this.rTex;
     rTex[0].texture = t.texSGI; rTex[1].texture = t.texSGA; rTex[2].texture = t.texSDepth; rTex[3].texture = t.texMask;
+    rTex[4].texture = this.dummyHist; this.ri[R_HVALID] = 0;
+    const hs = p._hystSp; // AA-04b: the stable pass whose camera terms/history resolve may use this frame (set by the pipeline, null = off)
+    if (hs && p.rays > 1 && hs.st.histValid && hs.outHist) {
+      rTex[4].texture = hs.outHist; this.ri[R_HVALID] = 1; // last frame's stable output (set[_k ^ 1])
+      for (const c of HYST_COPY) for (let k = 0; k < c.w; k++) this.ri[c.to + k] = hs.ui[c.from + k]; // raw words: floats and ints alike
+    }
     this.ri[R_N] = p.rays;
     this.ru[R_BAND] = p.rays === 4 ? (p.resolveBandM || 0) : 0; // 38.79: one f32 into the existing scratch
     // S8-B1-07: resolve + deriv share one 'resolve' timer slot (GpuCellPipeline.PASS_RESOLVE precedent: one query spans both).
