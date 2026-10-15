@@ -268,7 +268,7 @@
                [' bbb ', ' bbb ', 'bbbbb'])
   };
   defs.emberpod = {
-    id: 'emberpod', name: 'Emberpod', kind: 'material', stackMax: 3, hand: false, inPack: true,
+    id: 'emberpod', name: 'Emberpod', kind: 'material', stackMax: 9, hand: false, inPack: true,
     desc: 'A dry red pod. Warm as a held coal.',
     use: { none: 'Material - quest item (sq.burl.fire, FB-02; handed to Burl)' },
     glyph: { ch: 'o', c: 'goreRed' },
@@ -292,7 +292,7 @@
                ['sss  ', 'sKUiU', 'iUi  '])
   };
   defs['heart.piece'] = {
-    id: 'heart.piece', name: 'Heart Piece', kind: 'upgrade', stackMax: 3, hand: false, inPack: true,
+    id: 'heart.piece', name: 'Heart Piece', kind: 'upgrade', stackMax: 9, hand: false, inPack: true,
     desc: 'A warm red stone. Four make a heart.',
     use: { note: 'the 4th piece is consumed at once: +1 heart (max HP), a later sim story; stackMax 3 = never 4 in the pack' },
     glyph: { ch: 'v', c: 'vitalLight' },
@@ -303,7 +303,7 @@
                ['LPddd', ' Ldd ', '  d  '])
   };
   defs['scroll.spell'] = {
-    id: 'scroll.spell', name: 'Spell Scroll', kind: 'upgrade', stackMax: 3, hand: false, inPack: true,
+    id: 'scroll.spell', name: 'Spell Scroll', kind: 'upgrade', stackMax: 9, hand: false, inPack: true,
     desc: 'One of your spells grows stronger.',
     use: { chooseSpell: true, note: 'D-114: E in the inventory opens a list of learned spells; the pick gains +1 level and the scroll is used (quest/sim/spellTiers.js)' },
     glyph: { ch: '*', c: 'flameMid' },

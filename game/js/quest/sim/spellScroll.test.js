@@ -1,0 +1,39 @@
+// EP-SPELLS SPELL-02: Spell Scroll (player-chosen) + crypt chest.
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import '../../../../design/palette.js';
+import '../../../../design/items.js';
+import { createChests } from './chest.js';
+import { CHEST_TABLES } from './chestDefs.js';
+import { ensureInventory, countOf, addItem } from './inventory.js';
+import { createSpellBook } from './spellBook.js';
+import { useScroll, raisable, SCROLL_ID } from './spellScroll.js';
+
+const items = globalThis.ASSETS.items.defs;
+assert.ok(items[SCROLL_ID] && items[SCROLL_ID].name === 'Spell Scroll' && items[SCROLL_ID].stackMax === 9);
+const t = CHEST_TABLES.chestCrypt;
+assert.deepEqual(t.fixed.map((f) => f.item).sort(), ['potion.hp', 'scroll.spell']);
+const player = { transform: {}, components: {} };
+const inv = ensureInventory(player, { pack: [], left: null, right: null });
+const d = { id: 'c', x: 0, y: 0, z: 0, frontX: 0, frontY: 1, propId: 'c', interact: { radius: 2, facingDeg: 70, facingCos: 0.342 }, table: t };
+const sim = createChests([d], { items, inventoryOf: () => inv, events: { emit() {} }, seed: 1 });
+assert.equal(sim.open('c', { x: 0, y: 1, z: 0, forwardX: 0, forwardY: -1, onBottom: true }), true); sim.step(1);
+assert.equal(countOf(inv, SCROLL_ID), 1); assert.equal(countOf(inv, 'potion.hp'), 1);
+
+const st = {}, book = createSpellBook(st);
+assert.deepEqual(raisable(book), []);
+assert.deepEqual(useScroll(inv, book, 'fireball'), { ok: false, reason: 'notLearned' }); assert.equal(countOf(inv, SCROLL_ID), 1);
+book.learn('gust'); book.learn('fireball');
+assert.deepEqual(raisable(book).map((q) => q.id), ['fireball', 'gust'], 'tree order');
+assert.deepEqual(useScroll(inv, book, 'gust'), { ok: true, level: 2 });
+assert.equal(countOf(inv, SCROLL_ID), 0); assert.equal(book.tier('fireball'), 1); assert.equal(book.tier('gust'), 2);
+assert.deepEqual(useScroll(inv, book, 'gust'), { ok: false, reason: 'none' });
+addItem(inv, items, SCROLL_ID, 3);
+assert.equal(useScroll(inv, book, 'gust').level, 3);
+assert.deepEqual(useScroll(inv, book, 'gust'), { ok: false, reason: 'max' }); assert.equal(countOf(inv, SCROLL_ID), 2);
+assert.equal(useScroll(inv, book, 'fireball').level, 2); assert.equal(book.damageScale('fireball'), 1.75);
+assert.deepEqual(useScroll(inv, book, 'nope'), { ok: false, reason: 'notLearned' });
+// AC4 no random in the scroll path
+const src = fs.readFileSync(new URL('./spellScroll.js', import.meta.url), 'utf8');
+assert.ok(!/Math\.random|rng|seed/i.test(src));
+console.log('spellScroll.test ok');
