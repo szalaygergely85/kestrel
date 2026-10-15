@@ -1,5 +1,5 @@
 // LIFE-10: living-world simulation budget bench (docs/architecture.md 38.56 part (e)). Node only, no browser.
-//   node --expose-gc tools/bench-life.mjs [--hours 24] [--start 18] [--strict] [--json] [--quiet] [--poses --scenarios 0 --no-goblin]
+//   node --expose-gc tools/bench-life.mjs [--hours 24] [--start 18] [--strict] [--repeat 3] [--json] [--quiet] [--poses --scenarios 0 --no-goblin]
 // Builds the real world_m1, the 5 Outwall villagers (+schedule), the fauna (rabbit/deer + a bench fox that hunts
 // rabbits), the beast sim (fauna hunts + a bench raid) and steps them at the fixed 60 Hz step with the player at 3
 // distances from Outwall (in the village, 100 m, 600 m). Prints per-system ms/step p50/p95/max + heap growth, then
@@ -64,7 +64,7 @@ function parseArgs(argv) {
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--strict') o.strict = true; else if (a === '--json') o.json = true; else if (a === '--quiet') o.quiet = true;
-    else if (a === '--poses') o.poses = true; else if (a === '--no-goblin') o.goblin = false; else if (a === '--scenarios') o.scenarios = +argv[++i]; else if (a === '--hours') o.hours = +argv[++i]; else if (a === '--start') o.start = +argv[++i];
+    else if (a === '--poses') o.poses = true; else if (a === '--trace') o.trace = true; else if (a === '--repeat') o.repeat = +argv[++i]; else if (a === '--no-goblin') o.goblin = false; else if (a === '--scenarios') o.scenarios = +argv[++i]; else if (a === '--hours') o.hours = +argv[++i]; else if (a === '--start') o.start = +argv[++i];
   }
   return o;
 }
@@ -189,7 +189,9 @@ async function runScenario(assets, name, dist, opt, goblin = false, at = null) {
     t0 = performance.now(); tr[k] = t0 - t1;
     S.fauna.update(1 / 60, player, cam);
     t1 = performance.now(); tf[k] = t1 - t0;
+    const st0 = S.beasts.stats.astar, sn0 = S.beasts.stats.astarNodes;
     S.beasts.step(px, py, pz);
+    if (opt.trace) { const el = performance.now() - t1; if (el > 4) console.log('TRACE step', k, 'beast ms', el.toFixed(2), 'astar+', S.beasts.stats.astar - st0, 'nodes+', S.beasts.stats.astarNodes - sn0); }
     if (goblin) camps.step(day, px, py); // camp dormancy checks count as beastSim goblin extras
     t0 = performance.now(); tb[k] = t0 - t1;
     if (goblin) {
@@ -210,6 +212,12 @@ async function runScenario(assets, name, dist, opt, goblin = false, at = null) {
     for (let k = 0; k < 6000; k++) { while (spears.flyingCount < SPEARS_FLYING) { lobVelocity(px + 10, py, 1.4, px, py, 0.9, 13, GOBLIN_SPEAR_CFG.g, lob); if (!spears.fireVel(px + 10, py, 1.4, lob.vx, lob.vy, lob.vz, 1, 'bench')) break; } spears.step(); }
     gc(); spearHeap = process.memoryUsage().heapUsed - h0;
   }
+  // SIM-SPIKE-01-FIX: min-of-N per step. The sim is deterministic (same state hash every run), so step k does the same work in
+  // every repeat; the element-wise minimum drops OS/JIT/scheduler noise (a 0.02 ms call measured 1-7 ms once, 0.01 ms on re-run)
+  // and keeps real work bursts (they are in every repeat). `--repeat N` (default 1; use 3 for the strict gate).
+  const acc = opt._acc && opt._acc[name];
+  if (acc) { for (let k = 0; k < total; k++) { tv[k] = Math.min(tv[k], acc.tv[k]); tr[k] = Math.min(tr[k], acc.tr[k]); tf[k] = Math.min(tf[k], acc.tf[k]); tb[k] = Math.min(tb[k], acc.tb[k]); ta[k] = Math.min(ta[k], acc.ta[k]); } }
+  if (opt._acc) opt._acc[name] = { tv, tr, tf, tb, ta };
   const life = new Float64Array(total); for (let k = 0; k < total; k++) life[k] = tv[k] + tr[k];
   const n = total - WARM, sub = (a) => a.subarray(WARM);
   const res = {
@@ -225,11 +233,12 @@ async function runScenario(assets, name, dist, opt, goblin = false, at = null) {
 export async function runBench(opt) {
   const { assets } = await loadTestAssets();
   const results = [];
-  for (const [name, dist] of SCENARIOS.slice(0, opt.scenarios ?? SCENARIOS.length)) results.push(await runScenario(assets, name, dist, opt));
-  if (opt.poses) for (const [nm, x, y] of POSES) { const r = await runScenario(assets, 'pose ' + nm, 0, opt, false, [x, y]); results.push(r); }
+  const rep = Math.max(1, opt.repeat | 0), run = async (nm, d, o, g, at) => { o = { ...o, _acc: rep > 1 ? {} : null }; let r; for (let q = 0; q < rep; q++) r = await runScenario(assets, nm, d, o, g, at); return r; };
+  for (const [name, dist] of SCENARIOS.slice(0, opt.scenarios ?? SCENARIOS.length)) results.push(await run(name, dist, opt));
+  if (opt.poses) for (const [nm, x, y] of POSES) { const r = await run('pose ' + nm, 0, opt, false, [x, y]); results.push(r); }
   // GOB-08: 48 beasts, 20 goblins awake (2 camps + torch raid), 6 throwers, 8 spears in flight, player in Outwall
   let gob = null;
-  if (opt.goblin !== false) { gob = await runScenario(assets, 'goblins 48 beasts', 0, { ...opt, hours: opt.goblinHours ?? opt.hours }, true); results.push(gob); }
+  if (opt.goblin !== false) { gob = await run('goblins 48 beasts', 0, { ...opt, hours: opt.goblinHours ?? opt.hours }, true); results.push(gob); }
   const rows = [];
   for (const r of results) {
     if (r === gob) continue;
