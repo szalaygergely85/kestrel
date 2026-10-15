@@ -108,28 +108,38 @@ if (global.gc) {
 // ---- CH1-01: the real m1 chain, sections, migration ----
 {
   const ch1 = rd('m1.quest.json');
-  assert.deepEqual(ch1.objectives.map(o => o.id), ['wake', 'breach', 'sword', 'leave', 'beasts', 'follow', 'waystone', 'road', 'relayFound', 'relay1']);
-  assert.equal(ch1.sections.length, 6); assert.equal(validateSections(ch1), ch1);
+  assert.deepEqual(ch1.objectives.map(o => o.id), ['wake', 'breach', 'sword', 'leave', 'bladeDone', 'beasts', 'follow', 'waystone', 'stoneDone', 'road', 'relayFound', 'relay1', 'bendCall']);
+  assert.equal(ch1.sections.length, 5); assert.equal(validateSections(ch1), ch1);
   assert.equal(rd('burl.boars.quest.json').title, 'Boars in the Woods');
-  const o = structuredClone(ch1); o.objectives[1].section = 'q02';
+  const o = structuredClone(ch1); o.objectives[1].section = 'q03';
   assert.throws(() => validateSections(o), /contiguous/);
   o.objectives[1].section = 'zz'; assert.throws(() => validateSections(o), /unknown section/);
   const q = (completed, extra = {}) => ({ quest: { questVersion: 1, questId: 'm1', flags: {}, items: [], deadBeasts: [], areas: [], completed }, ...extra });
   const mig = c => migrateM1Ch1(q(c)).quest.completed;
   assert.deepEqual(mig(['wake', 'lantern']), ['wake']);
   assert.deepEqual(mig(['wake', 'lantern', 'breach', 'sword']), ['wake', 'breach', 'sword']);
-  assert.deepEqual(mig(['wake', 'lantern', 'breach', 'sword', 'beasts']), ['wake', 'breach', 'sword', 'leave', 'beasts']);
+  assert.deepEqual(mig(['wake', 'lantern', 'breach', 'sword', 'beasts']), ['wake', 'breach', 'sword', 'leave', 'bladeDone', 'beasts']);
   const six = migrateM1Ch1(q(['wake', 'lantern', 'breach', 'sword', 'beasts', 'waystone']));
-  assert.deepEqual(six.quest.completed, ['wake', 'breach', 'sword', 'leave', 'beasts', 'follow', 'waystone']);
+  assert.deepEqual(six.quest.completed, ['wake', 'breach', 'sword', 'leave', 'bladeDone', 'beasts', 'follow', 'waystone']);
   assert.deepEqual(six.world.state, { 'waystone.waystone.woken': true, 'burl.phase': 4, 'aether.attuned': true });
-  for (const c of [[], ['wake'], ['wake', 'breach', 'sword', 'leave', 'beasts', 'follow', 'waystone', 'road']]) { const g = q(c); assert.equal(migrateM1Ch1(g), g, 'already-new save untouched'); }
+  for (const c of [[], ['wake'], ['wake', 'breach', 'sword', 'leave', 'bladeDone', 'beasts', 'follow', 'waystone', 'stoneDone', 'road']]) { const g = q(c); assert.equal(migrateM1Ch1(g), g, 'already-new save untouched'); }
   assert.equal(migrateM1Ch1(six), six, 'idempotent');
   // FEN-OFF-01: a save that finished/reached the retired `fen` step keeps its chain minus `fen`
-  const full = ['wake', 'breach', 'sword', 'leave', 'beasts', 'follow', 'waystone', 'road', 'relayFound', 'relay1'];
+  const full = ['wake', 'breach', 'sword', 'leave', 'bladeDone', 'beasts', 'follow', 'waystone', 'stoneDone', 'road', 'relayFound', 'relay1', 'bendCall'];
   assert.deepEqual(mig([...full, 'fen']), full, 'old fen step dropped, rest kept');
   assert.deepEqual(mig(full), full, 'new-chain save untouched');
+  // QUEST-HANDIN-ALL: 4 saves of the OLD m1 shape keep every step; hand-ins are inserted only where the chain already passed them
+  {
+    const old = [['wake', 'breach', 'sword'], ['wake', 'breach', 'sword', 'leave'], ['wake', 'breach', 'sword', 'leave', 'beasts', 'follow', 'waystone'], ['wake', 'breach', 'sword', 'leave', 'beasts', 'follow', 'waystone', 'road', 'relayFound', 'relay1']];
+    const want = [old[0], old[1], old[2], old[3]];
+    // after stone wake: old save ends at waystone -> stoneDone pending (Burl '?'); bladeDone inserted (boars already done); after Bend: bendCall pending (Rook offers mq.bend.call)
+    want[2] = ['wake', 'breach', 'sword', 'leave', 'bladeDone', 'beasts', 'follow', 'waystone'];
+    want[3] = ['wake', 'breach', 'sword', 'leave', 'bladeDone', 'beasts', 'follow', 'waystone', 'stoneDone', 'road', 'relayFound', 'relay1'];
+    old.forEach((c, i) => { const m = migrateM1Ch1(q(c)); const got = m.quest.completed; assert.deepEqual(got, want[i], 'old save ' + i); for (const x of c) assert.ok(got.includes(x), 'no lost step ' + x); assert.equal(migrateM1Ch1(m), m, 'idempotent ' + i);
+      const bk = createQuestBook(ch1, [blade, burlReal], { quest: m.quest, quests: null }); assert.deepEqual(bk.toSave().quest.completed, want[i], 'book round trip ' + i); }); // quest states untouched = no reward replay; the next step (bladeDone/stoneDone/bendCall) stays a pending hand-in
+  }
   const book = createQuestBook(ch1, [blade, burlReal], { quest: six.quest, quests: null });
-  assert.equal(book.main.completed.length, 7); // round trip: restore + toSave keeps the prefix
+  assert.equal(book.main.completed.length, 8); // round trip: restore + toSave keeps the prefix
   assert.deepEqual(book.toSave().quest.completed, six.quest.completed);
   const sv = book.toSave(); assert.equal(migrateM1Ch1(sv), sv, 'round trip: saved new chain is not migrated again');
 }
