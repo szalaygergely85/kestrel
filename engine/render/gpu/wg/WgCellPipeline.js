@@ -437,6 +437,13 @@ export class WgCellPipeline {
     await this.device.readback(sp ? sp.outBg : t.texFinalBg, rect, outBg);
     return { fg: outFg, bg: outBg };
   }
+  /** Shade-pass output (pre-edge colours, rgba8; dev/gpucompare only: CANOPY-SHAFT-01b rule 8a direction check). */
+  async readbackShade(outFg, outBg) {
+    const t = this._t; if (!t || !this._cellsShaded) return null;
+    const rect = { x: 0, y: 0, w: this.cols, h: this.rows };
+    await this.device.readback(t.texShadeFg, rect, outFg); await this.device.readback(t.texShadeBg, rect, outBg);
+    return { fg: outFg, bg: outBg };
+  }
   /** WG-3e: the WATER layer (rgba32uint, 4 words/cell); null when no water drew this frame. */
   /** S8-B2-10c: camera cut / teleport - the next frame's cull phase 1 runs with hzbOn 0 (no-op with occl off). */
   invalidateHzb() { if (this._rasterPass) this._rasterPass.invalidateHzb(); }
