@@ -130,7 +130,8 @@ try {
   // ===== opening chain =====
   await beat('1 wake; tower.blade offered (gold "!" over the note, needle at the note)', async () => {
     await ev("(__t.w.state['quest.wakeT'] = 100, true)"); await pause(1500); await ev('(__t.D.playerHandle.data.components.body.eyeH = __t.D.engine.physics.eyeHeight, true)');
-    check('wake step done', await waitFor(async () => (await mainDone()).includes('"wake"'), 8000), 'main ' + await mainDone());
+    const wk = await waitFor(async () => (await mainDone()).includes('"wake"'), 8000); if (!wk) console.log('    DIAG-WAKE wakeT=' + await ev("JSON.stringify([__t.w.state['quest.wakeT'], performance.now(), document.hidden, document.visibilityState, Object.keys(__t.D), __t.w.state['quest.wakeT'], Object.keys(__t.w.state).slice(0, 40)])")); const fr = await evA("new Promise((r) => { let n = 0; const t0 = performance.now(); const f = () => { n++; if (performance.now() - t0 > 1000) r([n, Math.round(performance.now() - t0)]); else requestAnimationFrame(f); }; requestAnimationFrame(f); })"); console.log('    DIAG-RAF ' + JSON.stringify(fr) + ' ERR ' + JSON.stringify(errors.slice(0, 5)) + ' loop ' + JSON.stringify(await ev('(() => { const l = __t.D.loop; return JSON.stringify(Object.keys(l).map((k) => [k, typeof l[k] === "function" ? "f" : l[k]])); })()')) + ' ' + await ev('JSON.stringify([__t.D.look.locked, !!__t.D.dialogue.open, __t.D.vitals.inputLocked, __t.D.wakeOut])'));
+    check('wake step done', wk, 'main ' + await mainDone());
     check('tower.blade available', (await stOf('tower.blade')) === 1, await state('tower.blade'));
     await markCheck('gA', 'noteKeepLight', true, "gold '!' over the key-keeper note (object giver)");
     await needleCheck([2, 3], undefined, "needle at the note (wake step or available '!')");
