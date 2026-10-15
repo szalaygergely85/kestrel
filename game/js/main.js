@@ -181,7 +181,8 @@ import { createStubItemSim } from './quest/sim/hands.js'; // EQ-07: no-op sims s
 import { EQUIP_VIEW_MODELS, loadShieldView, presentShield, loadBowView, presentBow, drawBlockSpark, createArrowView } from './quest/equipView.js'; // EQ-07/09
 import { playShieldClank, playBowShot, playRelayHum } from './audio/sfx.js'; // EQ-07/09
 import { createTargetables } from './quest/sim/targetables.js';
-import { FIREBALL_CFG } from './quest/spellConfig.js';
+import { FIREBALL_CFG, refreshLocked } from './quest/spellConfig.js';
+import { createSpellDispatcher } from './quest/sim/spellCast.js'; // SPELL-04
 import { featuresFromParams, fireballOn } from './quest/features.js'; // D-065: fireball off unless ?fireball=1
 import { START_DEMO, START_FULL, startFor } from './quest/startConfig.js';
 import { createPracticeTarget, applyPropTargetables } from './quest/practiceTarget.js';
@@ -258,7 +259,7 @@ const saveStorage = () => (demo.on ? demoStorage(getSaveStorage()) : getSaveStor
 // ME-19a: mesh GPU versus the rasterJS twin; one geometry-parity mode.
 const FEATURES = featuresFromParams(new URLSearchParams(window.location.search)); // not via filterDemoParams: dev flag
 let fbOn = false; // FB-01 (38.53): fireball usable (dev override or world.state['magic.fireball']); one live read per sim step + per present, never captured at boot
-const FB_LOCKED_IDS = { 'spell.fireball': 1, 'potion.mp': 1 }; // hidden/refused while locked
+const LOCKED = { 'spell.fireball': 1, 'potion.mp': 1 }; // SPELL-04: locked = tier 0 for every spell.<id> (+ mana potion); refilled by syncFb() each sim step / frame
 const isGeometryCompare = (params.get('gpucompare') === '1' || params.get('gpucompare') === 'emissive');
 // ME-06 diagnostic: `&voxels=0` on either compare page empties the voxel
 // instance queue on both sides after each pose's feed, so a mesh-vs-oracle
@@ -1258,6 +1259,7 @@ async function runGame(mode, cinematic = null) {
     return null;
   }
   const vLocked = () => !!(vitals && vitals.inputLocked) || (travel && travel.inputLocked) || deathFlow.inputLocked; // DIALOGUE-LOCK-01 (owner: never lock during game): dialogue/notes/chapter card/notices no longer lock movement or look; only menus, death, travel fade and the intro wake do. // DEATH-FLOW-01 part 2: the flow lock gates move/attack/jump/interact like the vitals lock (the virtual [E] bypasses it)
+  const syncFb = () => { fbOn = fireballOn(engine.world, FEATURES); if (spellBook) { refreshLocked(LOCKED, spellBook.tiers()); if (fbOn) { delete LOCKED['spell.fireball']; delete LOCKED['potion.mp']; } } }; // SPELL-04
   const qbToast = (res) => { // EQ-12: quick-bar / potion feedback (no menu, never locks)
     const T = { none: 'No potions', full: 'Not hurt', refuse: 'Cannot use that now', empty: '' };
     if (toasts && T[res]) toasts.say(T[res], [226, 214, 176]);
@@ -1274,7 +1276,7 @@ async function runGame(mode, cinematic = null) {
   let offerToast = null, offerToastMsg = null; // toast once per new book.nextOffers() entry
   let equipPlay = null, shieldSim = null, arrowSim = null; // EQ-07/09: rebuilt on every 'world:loaded'
   let quickbar = null, qbView = null, qbTick = 0, qbBlocked = false; // EQ-12: sim rebuilt per world, view per page
-  let fireball = null, fbTargets = null; // SPELL-01a (37.14): rebuilt with the sword sim on every 'world:loaded'
+  let fireball = null, fbTargets = null, spellBook = null, spellCaster = null; // SPELL-01a (37.14): rebuilt with the sword sim on every 'world:loaded'
   // US-091b: pack-screen mouse. Hover -> UI cell under the pointer; a click while open must not re-lock the pointer
   // (PlayerLook's own canvas click handler), so a capture listener on window swallows it first.
   canvas.addEventListener('mousemove', (e) => {
@@ -1288,7 +1290,7 @@ async function runGame(mode, cinematic = null) {
   const qbDrag = createQuickbarDrag({
     slotAt: (cx, cy) => (qbView && ui ? qbView.slotAt(ui, cx, cy) : -1),
     idAt: (s) => { const q = playerHandle && playerHandle.data.components.quickbar; return q ? q[s] || null : null; },
-    assign: (s, id) => !!playerHandle && itemDefs && (fbOn || !FB_LOCKED_IDS[id]) && qbAssign(playerHandle.data, itemDefs, s, id),
+    assign: (s, id) => !!playerHandle && itemDefs && !LOCKED[id] && qbAssign(playerHandle.data, itemDefs, s, id),
     clear: (s) => !!playerHandle && itemDefs && qbClear(playerHandle.data, s, itemDefs),
   });
   canvas.addEventListener('mousedown', (e) => {
@@ -1691,8 +1693,9 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       hands.register('sword', sword);
       if (fbTargets) fbTargets.dispose();
       fbTargets = createTargetables(world, engine.events);
-      fireball = createFireballSim(world, engine.events, FIREBALL_CFG, fbTargets, { spendMana: (n) => vitals && vitals.spendMana(n), isEnabled: () => fireballOn(world, FEATURES), damageScale: () => createSpellBook(world.state).damageScale('fireball') });
-      hands.register('spell.fireball', fireball);
+      spellBook = createSpellBook(world.state); spellCaster = createSpellDispatcher((id) => spellBook.tier(id) || (id === 'fireball' && fbOn ? 1 : 0)); // SPELL-04
+      fireball = createFireballSim(world, engine.events, FIREBALL_CFG, fbTargets, { spendMana: (n) => vitals && vitals.spendMana(n), isEnabled: () => fireballOn(world, FEATURES), tier: () => spellBook.tier('fireball') || 1 });
+      hands.register('spell.fireball', fireball); spellCaster.register('fireball', () => fireball.requestTap());
       // EQ-07/09 (38.41): shield sim + arrow sim + the routing glue; shield/bow items get no-op sims so the router arms them (RMB -> left hand, LMB -> right hand)
       shieldSim = createShieldSim();
       arrowSim = createArrowSim(world, engine.events, BOW_CFG, fbTargets, wadeArrowHit);
@@ -1703,7 +1706,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       if (itemDefs) registerGearItems(hands, itemDefs, () => createStubItemSim());
       equipPlay = createEquipPlay({ hands, shield: shieldSim, arrows: arrowSim, defs: itemDefs || {}, bowCfg: BOW_CFG, swordDamage: SWORD_CFG.light.damage,
         say: (t) => { if (toasts) toasts.say(t, [226, 214, 176]); } });
-      quickbar = itemDefs ? createQuickbar(itemDefs) : null; qbTick = 0; // EQ-12: sip timer lives per world
+      quickbar = itemDefs ? createQuickbar(itemDefs, undefined, (id, pl) => spellCaster ? spellCaster.cast(id, pl) : 'empty') : null; qbTick = 0; // EQ-12: sip timer lives per world
       if (fbView) fbView.bind(fireball, lightSet); // SPELL-01b: 4 flight + 2 flash + 1 ember light, never removed
       if (practiceTarget) practiceTarget.dispose();
       practiceTarget = createPracticeTarget(world, engine.events, SWORD_CFG); // US-078d (30.1)
@@ -1825,14 +1828,14 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         style: window.ASSETS.uiStyle.inventory, tabOpens: false, items: window.ASSETS.items, rgb: assets.palette.rgb, toast: toasts,
         inventoryOf: () => (playerHandle && playerHandle.data.components.inventory) || null,
         slotLockText: () => 'Locked - learn fire first', // OB-156
-        isSlotDisabled: (i) => { if (fbOn || !playerHandle) return false; const inv = playerHandle.data.components.inventory, sl = inv && inv.slots[i]; return !!(sl && sl.id && FB_LOCKED_IDS[sl.id]); }, // FB-01: spell + mana potion cells show as locked until unlocked (Items + Character tabs)
+        isSlotDisabled: (i) => { if (!playerHandle) return false; const inv = playerHandle.data.components.inventory, sl = inv && inv.slots[i]; return !!(sl && sl.id && LOCKED[sl.id]); }, // FB-01: spell + mana potion cells show as locked until unlocked (Items + Character tabs)
         healthOf: () => (playerHandle && playerHandle.data.components.health) || null,
         spellChoice: { // D-114: Spell Scroll -> the player chooses a learned spell (the fireball is today's only spell)
           options: () => raisable(createSpellBook(engine.world.state)),
           pick: (id) => { if (!playerHandle) return 0; const r = useSpellScroll(playerHandle.data.components.inventory, createSpellBook(engine.world.state), id); return r.ok ? r.level : 0; },
         },
         onHandsChanged: () => { if (hands && playerHandle) hands.step(playerHandle.data, false, false, false); }, // router sees the change now (cancel + setHand + hands:changed)
-        quickbar: itemDefs ? { assign: (n, id) => !!playerHandle && (fbOn || !FB_LOCKED_IDS[id]) && qbAssign(playerHandle.data, itemDefs, n + HAND_SLOTS, id) } : undefined, // EQ-12: 1-4 over an item in the Items / Character tab (key n = bar slot n + 2)
+        quickbar: itemDefs ? { assign: (n, id) => !!playerHandle && !LOCKED[id] && qbAssign(playerHandle.data, itemDefs, n + HAND_SLOTS, id) } : undefined, // EQ-12: 1-4 over an item in the Items / Character tab (key n = bar slot n + 2)
         characterKey: params.get('craft') !== '1', // EQ-03: C opens the Character tab (the crafting list keeps C under ?craft=1)
         character: window.__charKit ? { // EQ-03/04: lazy preview + char cache, built on the first Character-tab open
           equipmentOf: () => (playerHandle && playerHandle.data.components.equipment) || null,
@@ -2283,7 +2286,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       if (telegraphWire) telegraphWire.step(performance.now());
       // US-078d (30.1 + D-034 amendment): the sword steps after beasts.step, so a heavy-hit stagger acts from the
       // beast's NEXT step (deterministic, synchronous emit). `attackDown` is the amendment's exact gate expression.
-      fbOn = fireballOn(engine.world, FEATURES); // FB-01: one read per sim step
+      syncFb(); // FB-01: one read per sim step
       if (hands) {
         // HANDS-01b (37.8a): the router turns LMB/RMB + the gate into one `down` per item; every item sim is stepped
         // every step (down = false when it is in no hand).
@@ -2310,7 +2313,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
           if ((++qbTick % 30) === 0) autoFill(pl, itemDefs);
           if (qbPlayOk()) {
             const choosing = !!(dialogueCtl && dialogueCtl.open && dialogueCtl.runner.state === 'choosing');
-            if (!choosing) for (let n = 0; n < 4; n++) if (input.pressed('Digit' + (n + 1))) { qbToast(!fbOn && FB_LOCKED_IDS[pl.components.quickbar[n + HAND_SLOTS]] ? 'empty' : quickbar.press(pl, n)); break; } // FB-01: a locked mana potion key does nothing
+            if (!choosing) for (let n = 0; n < 4; n++) if (input.pressed('Digit' + (n + 1))) { qbToast(LOCKED[pl.components.quickbar[n + HAND_SLOTS]] ? 'empty' : quickbar.press(pl, n)); break; } // FB-01: a locked mana potion key does nothing
           }
         }
         if (fireball) { // SPELL-01a: aim = unit 3D look vector (pitch > 0 = up); trig stays here, outside sim/
@@ -2542,7 +2545,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       if (cinematic) evaluatePath(cinematic, simTime, cam);
       if (cinematicHours) applySunHours(engine.world, lightSet, cam.hour, worldSunPath, sunEnabled);
       fb.timeSec = simTime;
-      fbOn = fireballOn(engine.world, FEATURES); // FB-01: same-frame appearance after unlock
+      syncFb(); // FB-01: same-frame appearance after unlock
       if (wgPipeline && wgPipeline.setCarpetFrame && engine.world && engine.world.carpet) { const wp = engine.world.wind && engine.world.wind.params; wgPipeline.setCarpetFrame(fb.timeSec, wp && wp.speed > 0 ? wp : null); } // OB-073-D2f: blade sway time + wind
       // Arch review 1 (US-017): `lightSet` is rebuilt by the 'world:loaded'
       // handler on every restart - rebind it here, or `fb.lights` would keep
@@ -2727,7 +2730,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
           }
           if (qbView && quickbar && playerHandle) { // EQ-12 + D-068: quick bar bottom-centre (OB-011: no potion HUD button; not in menus / cinematics)
             const qbOn = !vitals.dead && !wakeOut.inputLocked && !isMapOpen() && !isSettingsOpen() && !(invView && invView.isOpen) && !cinematic;
-            qbView.drawBar(ui, playerHandle.data, quickbar.st, qbOn, fbOn ? null : FB_LOCKED_IDS);
+            qbView.drawBar(ui, playerHandle.data, quickbar.st, qbOn, LOCKED);
           }
           hurtFx.draw(ui); // HURT-FX-01
           deathFlow.draw(ui, ui.cols, ui.rows); // DEATH-FLOW-01
@@ -2754,7 +2757,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       if (chapterCard) chapterCard.draw(ui); if (chapterCard2) chapterCard2.draw(ui); // CH1-09
       if (invView) invView.draw(ui); // US-091b: the pack screen, over HUD + toast
       if (invView && invView.isOpen && qbView && quickbar && playerHandle) { // QB-6: the bar inside the menu = the drag-and-drop target; the dragged icon rides the pointer
-        syncHandSlots(playerHandle.data); qbView.drawBar(ui, playerHandle.data, quickbar.st, true, fbOn ? null : FB_LOCKED_IDS);
+        syncHandSlots(playerHandle.data); qbView.drawBar(ui, playerHandle.data, quickbar.st, true, LOCKED);
         qbView.drawGhost(ui, qbDrag.ghostId, qbDrag.st.x, qbDrag.st.y);
       }
       if (craftView) craftView.draw(ui); // MAIN-WIRE-01

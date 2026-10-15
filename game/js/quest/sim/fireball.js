@@ -15,7 +15,7 @@ const MAXC = MAX_TARGETABLES + 1; // targets + the player
  * @param {{emit:Function}} events
  * @param {typeof import('../spellConfig.js').FIREBALL_CFG} cfg
  * @param {ReturnType<typeof import('./targetables.js').createTargetables>} targets
- * @param {{spendMana?: (n:number)=>boolean, enabled?: boolean, isEnabled?: () => boolean}} [hooks] `enabled:false` = casting disabled (D-065); `damageScale()` = D-114 spell-level multiplier
+ * @param {{spendMana?: (n:number)=>boolean, enabled?: boolean, isEnabled?: () => boolean}} [hooks] `enabled:false` = casting disabled (D-065); `tier()` = learned tier 1..3 (default 1; numbers from cfg.tiers[tier], else cfg.tap/charged)
  */
 export function createFireballSim(world, events, cfg, targets, hooks) {
   const spendMana = (n) => (hooks && typeof hooks.spendMana === 'function' ? hooks.spendMana(n) : true);
@@ -100,16 +100,20 @@ export function createFireballSim(world, events, cfg, targets, hooks) {
     burst(x, y, z, r, dmg, kn, ch, direct, dx, dy, curPlayer);
   }
 
+  const tierCfg = () => { const t = hooks && typeof hooks.tier === 'function' ? hooks.tier() | 0 : 1; return (cfg.tiers && cfg.tiers[t < 1 ? 1 : t > 3 ? 3 : t]) || cfg; };
+  let pendingTap = false; // SPELL-04: key-slot tap request, consumed by the next step
+
   function cast(player, charged, fx, fy, ax, ay, az) {
     if (hooks && hooks.enabled === false) return; // D-065 flag off: no projectile, burst, damage or mana (hand visual keeps its state)
     if (hooks && hooks.isEnabled && !hooks.isEnabled()) return; // FB-01: locked until unlocked (live getter; 0 MP, no projectile)
     if (aliveCount >= cfg.maxAlive) return; // refused at the cap, no mana
-    let C = cfg.tap;
+    const TC = tierCfg(), tapC = TC.tap, chC = TC.charged; // SPELL-04: numbers of the learned tier
+    let C = tapC;
     if (charged) {
-      if (spendMana(cfg.charged.mana)) C = cfg.charged;
-      else if (!spendMana(cfg.tap.mana)) return;
-    } else if (!spendMana(cfg.tap.mana)) return;
-    const isCharged = C === cfg.charged;
+      if (spendMana(chC.mana)) C = chC;
+      else if (!spendMana(tapC.mana)) return;
+    } else if (!spendMana(tapC.mana)) return;
+    const isCharged = C === chC;
     cooldown = cfg.cooldown; castTick = tick; lastCharged = isCharged ? 1 : 0;
 
     const t = player.transform, body = player.components && player.components.body;
@@ -135,7 +139,7 @@ export function createFireballSim(world, events, cfg, targets, hooks) {
     slots.serial[s] = ++serialNo; slots.age[s] = 0;
     slots.x[s] = ox; slots.y[s] = oy; slots.z[s] = oz;
     slots.dx[s] = dx; slots.dy[s] = dy; slots.dz[s] = dz;
-    slots.speed[s] = C.speed; slots.radius[s] = C.radius; slots.damage[s] = C.damage * (hooks && typeof hooks.damageScale === 'function' ? hooks.damageScale() : 1); slots.knock[s] = C.knock;
+    slots.speed[s] = C.speed; slots.radius[s] = C.radius; slots.damage[s] = C.damage; slots.knock[s] = C.knock;
     slots.travelled[s] = 0; slots.charged[s] = isCharged ? 1 : 0; slots.hand[s] = hand === 'left' ? 0 : 1;
 
     // point-blank sweep eye -> origin: a wall/boar in the way bursts at once
@@ -197,6 +201,7 @@ export function createFireballSim(world, events, cfg, targets, hooks) {
       const d = down ? 1 : 0;
       const pressed = d === 1 && prevDown === 0, released = d === 0 && prevDown === 1;
       prevDown = d;
+      if (pendingTap) { pendingTap = false; if (state === FB_IDLE && cooldown === 0 && d === 0) cast(player, false, fx, fy, ax, ay, az); }
       if (state === FB_IDLE) {
         if (pressed && cooldown === 0) { state = FB_HOLD; holdSteps = 1; } // holdSteps = steps the button was down, press included
       } else if (released) {
@@ -209,6 +214,8 @@ export function createFireballSim(world, events, cfg, targets, hooks) {
       }
       if (aliveCount > 0) flight();
     },
+    /** SPELL-04: quickbar key tap (no charge). Returns 'cast' (queued for the next step) or 'busy'. */
+    requestTap() { if (state !== FB_IDLE || cooldown > 0 || pendingTap) return 'busy'; pendingTap = true; return 'cast'; },
     dispose() {},
     hashInto(h) {
       h.u32(state); h.u32(holdSteps); h.u32(prevDown); h.u32(cooldown); h.u32(castTick & 0x7fffffff); h.u32(hand === 'left' ? 0 : 1);

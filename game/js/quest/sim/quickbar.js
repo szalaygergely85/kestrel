@@ -128,7 +128,7 @@ export function countFor(player, defs, id) {
   return d && inv && (d.kind === 'potion' || d.kind === 'food') ? countOf(inv, id) : 0;
 }
 
-export function createQuickbar(defs, hpPerHeart = HP_PER_HEART) {
+export function createQuickbar(defs, hpPerHeart = HP_PER_HEART, spellCast = null) { // spellCast(itemId, player) = SPELL-04 dispatcher cast
   const st = { sipT: 0, lastId: null };
   /** Drinks one `id` (default the red draught). 'drank' | 'sip' (still sipping) | 'none' (no potions) | 'full' (not hurt) | 'refuse'. */
   function drink(player, id) {
@@ -154,6 +154,7 @@ export function createQuickbar(defs, hpPerHeart = HP_PER_HEART) {
       const qb = ensureQuickbar(player, defs), id = key >= 0 && key < KEY_SLOTS ? qb[key + HAND_SLOTS] : null;
       if (!id || !defs[id]) return 'empty';
       const d = defs[id], c = player.components, inv = c.inventory, eq = c.equipment;
+      if (spellCast && id.startsWith('spell.')) return spellCast(id, player); // SPELL-04: key tap casts (no charge)
       if (d.kind === 'potion' || d.kind === 'food') return drink(player, id);
       if (!d.equip || !inv || !eq) return 'refuse';
       const s = d.equip.slot;
