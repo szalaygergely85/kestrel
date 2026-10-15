@@ -172,14 +172,17 @@ export function createBeastSim(world, opts) {
     // preallocated adapter scratch for engine/nav perceive + leash (zero alloc per step)
     _slot: 0,
     _pa: { x: 0, y: 0, fx: 0, fy: 0, coneCos: cfg.coneCos, range: cfg.noticeR, hearR: cfg.nearR, homeX: 0, homeY: 0, homeR: 0 },
-    _pt: { x: 0, y: 0, noise: 1 },
-    _po: { sees: false, hears: false, dist: 0, returnHome: false },
-    _lt: { x: 0, y: 0 },
-    _lret: { x: 0, y: 0, speed: 0 },
-    _ldef: { homeX: 0, homeY: 0, homeR: cfg.homeArriveR, leashR: cfg.leashR, aggroR: cfg.loseR / cfg.loseScale,
+    _sc: { // scratch objects folded into one key (SIMSHAPE-01: keeps the top-level key count in V8's fast-properties budget)
+      pt: { x: 0, y: 0, noise: 1 },
+      po: { sees: false, hears: false, dist: 0, returnHome: false },
+      lt: { x: 0, y: 0 },
+      lret: { x: 0, y: 0, speed: 0 },
+      def: { homeX: 0, homeY: 0, homeR: cfg.homeArriveR, leashR: cfg.leashR, aggroR: cfg.loseR / cfg.loseScale,
              loseScale: cfg.loseScale, returnSpeed: cfg.returnSpeed, giveUpT: cfg.giveUpSec },
+      ctx: { px: 0, py: 0 },
+      losFn: null,
+    },
     _lagents: null,
-    _losFn: null,
     entities: beastEntities.slice(0, count),
     ids: beastEntities.slice(0, count).map((e) => e.id),
     grp: beastEntities.slice(0, count).map((e) => (e.components.brain && typeof e.components.brain.group === 'string' ? e.components.brain.group : '')), // ED-LOGIC-01c: logic group name per slot ('' = none)
@@ -236,7 +239,6 @@ export function createBeastSim(world, opts) {
     kindIdx: new Uint8Array(MAX_RECORDS),     // BEAST-03a: index into KIND_NAMES (beastKinds.js); data only so far
     pNear: new Float64Array(MAX_RECORDS).fill(cfg.nearR), pCone: new Float64Array(MAX_RECORDS).fill(cfg.coneCos), // BEAST-03b per-slot perception
     pAggro: new Uint8Array(MAX_RECORDS),      // 0 hostile 1 whenHit 2 never 3 near (ARCH_AGGRO order)
-    _ctx: { px: 0, py: 0 },
     tactOn: new Uint8Array(MAX_RECORDS), tactRole: new Uint8Array(MAX_RECORDS), tactBand: new Float64Array(MAX_RECORDS * 3), // BEAST-04 (tactics.js)
     tactics: createTactics(MAX_RECORDS, (opts && opts.seed) || 0x9e3779b1), 
     sc: { allyN: 0, allyX: 0, allyY: 0, tS: { CHASE: STATE_CHASE, WINDUP: STATE_WINDUP, CHARGE: STATE_CHARGE, RECOVER: STATE_RECOVER }, prey: { x: 0, y: 0 }, thrX: new Float64Array(16), thrY: new Float64Array(16), tmp: { x: 0, y: 0 } }, // scratch
@@ -287,7 +289,7 @@ export function createBeastSim(world, opts) {
 
   sim._lagents = [];
   for (let i = 0; i < count; i++) sim._lagents.push({ x: 0, y: 0, leashMode: LEASH_HOME, leashT: 0 });
-  sim._losFn = () => sim.seen[sim._slot] === 1; // cached periodic LOS (sampled in perceiveOne), not a fresh ray
+  sim._sc.losFn = () => sim.seen[sim._slot] === 1; // cached periodic LOS (sampled in perceiveOne), not a fresh ray
 
   for (let i = 0; i < count; i++) {
     const e = sim.entities[i];
@@ -790,9 +792,9 @@ function stepSim(sim, px, py, pz) {
   }
   if (sim.fauna) huntPass(sim);
   for (let k = 0; k < n; k++) { const i = rec[k]; if (live(sim, i)) { perceiveOne(sim, i, px, py, pz); leashOne(sim, i, px, py); } }
-  sim._ctx.px = px; sim._ctx.py = py;
+  sim._sc.ctx.px = px; sim._sc.ctx.py = py;
   tacticsSync(sim, sim.sc.tS); // BEAST-04: token release + flank re-assign
-  for (let k = 0; k < n; k++) { const i = rec[k]; if (live(sim, i)) { if (!LAYERS[sim.archIdx[i]](sim, i, sim._ctx)) transitionOne(sim, i, px, py); } }
+  for (let k = 0; k < n; k++) { const i = rec[k]; if (live(sim, i)) { if (!LAYERS[sim.archIdx[i]](sim, i, sim._sc.ctx)) transitionOne(sim, i, px, py); } }
   if (sim.wb) stepWaterBrain(sim.wb, px, py); // BEAST-08b: water slots (own grid, own movement)
   updatePathRequests(sim, px, py);
   servePathRequest(sim, px, py);
@@ -866,7 +868,7 @@ function zOf(sim, i) {
 function noticedOf(sim, i, px, py) {
   // BEAST-PERCEIVE-01w: engine/nav/perceive through a thin adapter. hearing = the "nearR" any-direction bubble
   // (scaled by the player's noise), sight = noticeR + cone + the cached LOS flag. Same numbers as before at noise 1.
-  const steer = sim.steer, a = sim._pa, t = sim._pt;
+  const steer = sim.steer, a = sim._pa, t = sim._sc.pt;
   a.x = steer.x[i]; a.y = steer.y[i]; a.fx = sim.fx[i]; a.fy = sim.fy[i];
   t.x = px; t.y = py; t.noise = sim.noise;
   const calm = sim.wary[i] === 1 && sim.provoked[i] === 0; // DRESS-01b: unprovoked ambient boar = short notice only
@@ -874,7 +876,7 @@ function noticedOf(sim, i, px, py) {
   a.hearR = calm ? sim.cfg.calmNearR : sim.pNear[i];
   a.coneCos = sim.pCone[i];
   sim._slot = i;
-  const o = perceive(a, t, sim._losFn, sim._po);
+  const o = perceive(a, t, sim._sc.losFn, sim._sc.po);
   const ag = sim.pAggro[i]; // BEAST-03b: aggro mode (0 hostile = today's behaviour)
   if (ag === 0) return o.hears || o.sees;
   if (ag === 1) return sim.provoked[i] === 1 && (o.hears || o.sees);
@@ -884,7 +886,7 @@ function noticedOf(sim, i, px, py) {
 
 /** BEAST-PERCEIVE-01w: keep the engine leash mode in step with the brain state, then advance it (engaged states only). */
 function leashOne(sim, i, px, py) {
-  const ag = sim._lagents[i], def = sim._ldef, st = sim.state[i];
+  const ag = sim._lagents[i], def = sim._sc.def, st = sim.state[i];
   if (st === STATE_WANDER || st === STATE_EAT) { ag.leashMode = LEASH_HOME; ag.leashT = 0; return; }
   if (st === STATE_RETURN) { if (ag.leashMode !== LEASH_GIVEUP) ag.leashMode = LEASH_RETURN; return; }
   if (ag.leashMode === LEASH_HOME || ag.leashMode === LEASH_RETURN) { ag.leashMode = LEASH_ENGAGE; ag.leashT = 0; }
@@ -893,7 +895,7 @@ function leashOne(sim, i, px, py) {
   def.homeX = sim.homeX[i]; def.homeY = sim.homeY[i];
   def.aggroR = sim.scfg[i].loseR / sim.cfg.loseScale; // BEAR-01: per-slot (identical for boars/wolves)
   def.leashR = sim.wary[i] === 1 && sim.provoked[i] === 0 ? sim.cfg.calmLeashR : sim.scfg[i].leashR * sim.dm.leash; // BH2-G1
-  const t = sim._lt; t.x = px; t.y = py;
+  const t = sim._sc.lt; t.x = px; t.y = py;
   leashState(ag, def, t, SIM_STEP);
 }
 
@@ -1232,8 +1234,8 @@ function enterBlocked(sim, i, awayX, awayY) {
 function enterReturn(sim, i) {
   sim.state[i] = STATE_RETURN;
   sim.fleeing[i] = 0;
-  sim._ldef.homeX = sim.homeX[i]; sim._ldef.homeY = sim.homeY[i];
-  const rt = returnTarget(sim._ldef, sim._lret);
+  sim._sc.def.homeX = sim.homeX[i]; sim._sc.def.homeY = sim.homeY[i];
+  const rt = returnTarget(sim._sc.def, sim._sc.lret);
   sim.goalX[i] = rt.x; sim.goalY[i] = rt.y;
   sim.pathLen[i] = 0; sim.pathIdx[i] = 0;
   sim.pathReq[i] = 0;

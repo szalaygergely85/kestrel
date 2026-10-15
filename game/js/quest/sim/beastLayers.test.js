@@ -104,7 +104,7 @@ ok('10k steps: same seed -> identical state', a === b && a.length > 4, a + ' vs 
 { const { world, sim } = mk(process.env.KS ? process.env.KS.split(',') : ['troll', 'skeleton_archer', 'lynx', 'red_deer']);
   const zz = world.terrain.heightAt(HX, HY - 10); let k = 0;
   const r = allocProbe((n) => { for (let t = 0; t < n; t++, k++) { const ph = (k % 400) / 400, tri = ph < 0.5 ? ph * 2 : 2 - ph * 2; sim.step(HX + 30 * tri, HY - 8 - 6 * tri, zz); } }, { n: 2000 });
-  const ctx = sim._ctx; let acc = 0; const rl = allocProbe((n) => { for (let t = 0; t < n; t++) acc += LAYERS[sim.archIdx[t & 3]](sim, t & 3, ctx) ? 1 : 0; }, { n: 50000 });
+  const ctx = sim._sc.ctx; let acc = 0; const rl = allocProbe((n) => { for (let t = 0; t < n; t++) acc += LAYERS[sim.archIdx[t & 3]](sim, t & 3, ctx) ? 1 : 0; }, { n: 50000 });
   if (!rl.skipped) ok('LAYERS dispatch alloc < 1 B/call', rl.perCall < 1, rl.perCall.toFixed(2));
   if (r.skipped) console.log('SKIP alloc (no --expose-gc)');
   else { console.log('beastSim.step alloc: ' + r.perCall.toFixed(1) + ' B/step'); ok('alloc/step through real sim.step < ' + ALLOC_MAX + ' B', r.perCall < ALLOC_MAX, r.perCall.toFixed(1)); } }
