@@ -88,3 +88,19 @@ console.log('gfxPresets: D-047 data, precedence, independent shadows, validation
   assert.equal(warns.length, 1, 'window warning once for radiusScale 1.4 (need 27.8 m > 20 m)'); assert.equal(w.checkCarpetWindow().ok, false);
 }
 console.log('OB-103b carpet preset checks PASS');
+
+// HIDE-EXTREME-01 (D-107): extreme is URL-only
+{
+  const { QUALITY_CHOICES, resolveQuality } = await import('./gfxPresets.js');
+  const { findOption } = await import('../settings/options.js');
+  const { TIERS } = await import('../gfxAuto.js');
+  const assertM = (await import('node:assert')).default;
+  assertM.deepEqual([...QUALITY_CHOICES], ['low', 'medium', 'high', 'ultra', 'auto']);
+  assertM.ok(!findOption('quality').values.includes('extreme'), 'options menu lists no extreme');
+  assertM.ok(!TIERS.includes('extreme'), 'auto-pick never chooses extreme');
+  const w = () => {};
+  assertM.equal(resolveQuality({ param: new URLSearchParams('quality=extreme'), warn: w }).name, 'extreme');
+  assertM.equal(resolveQuality({ saved: 'extreme', warn: w }).name, 'ultra');
+  assertM.equal(resolveQuality({ auto: 'extreme', warn: w }).name, 'ultra');
+  console.log('HIDE-EXTREME-01: PASS');
+}

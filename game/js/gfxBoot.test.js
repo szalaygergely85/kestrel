@@ -85,4 +85,4 @@ console.log('gfxBoot: saved Ultra applies fully at boot PASS');
 
 { const u = boot('quality=ultra'), x = boot('quality=extreme'), h = boot('quality=high');
   assert.deepEqual([u.shadowOpts.meshLod0M, u.shadowOpts.instCastM, x.shadowOpts.meshLod0M, x.shadowOpts.instCastM, x.gfx.lodScale], [16, 32, 16, 32, 1], 'ultra/extreme shadow tier');
-  assert.deepEqual([h.shadowOpts.meshLod0M, h.shadowOpts.instCastM], [25, 32], 'high unchanged'); }
+  assert.deepEqual([h.shadowOpts.meshLod0M, h.shadowOpts.instCastM], [16, 32], 'high trimmed (SHADOW-TRIM-01)'); }
