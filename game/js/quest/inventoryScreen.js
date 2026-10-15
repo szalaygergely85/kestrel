@@ -39,6 +39,7 @@ const HINTS = [['W/A/S/D', true], [' select   ', false], ['E', true], [' use / w
  * @param {(i:number)=>boolean} [o.isSlotDisabled] host-owned pack locks @param {boolean} [o.characterKey] false: C belongs to crafting
  * @param {{assign:(n:number,id:string)=>boolean}} [o.quickbar] 1-4 over an item
  * @param {object} [o.character] {equipmentOf, createPreview, charCache, getLook, kit, onGearChanged}; absent = no gear slots / model
+ * @param {{options:()=>{id:string,name:string,level:number,max:number}[], pick:(id:string)=>number}} [o.spellChoice] D-114: Spell Scroll choice list (pick returns the new level or 0)
  * @param {object} [o.layout] overrides for LAYOUT
  */
 export function createInventoryScreen(o) {
@@ -159,6 +160,7 @@ export function createInventoryScreen(o) {
     const d = defs[id];
     if (d.equip) { wear(n, null); return; }
     if (d.kind === 'food' && d.use && d.use.heal) { eat(n, id); return; }
+    if (d.use && d.use.chooseSpell && o.spellChoice) { openPick(n); return; }
     if (d.hand === true) { toHand(n, id, hand || 'right'); return; }
     say((d.use && d.use.none) || 'Nothing happens', C.uiDim);
     setFlash(n, F_REFUSE, slotCfg.flash.refuse.ms);
@@ -201,12 +203,41 @@ export function createInventoryScreen(o) {
     return PACK0 + (first < 0 ? 0 : first);
   }
 
+  // D-114: Spell Scroll choice list (small overlay; the last row "Cancel" keeps the scroll; closing the screen also cancels)
+  let pick = null;
+  function openPick(n) {
+    const opts = o.spellChoice.options();
+    if (!opts.length) { say('Learn a spell first', C.uiDim); setFlash(n, F_REFUSE, slotCfg.flash.refuse.ms); return; }
+    pick = { n, opts, sel: 0 };
+  }
+  function pickKey(input) {
+    const m = pick.opts.length + 1; // + Cancel
+    if (input.pressed('KeyW') || input.pressed('ArrowUp')) pick.sel = (pick.sel + m - 1) % m;
+    if (input.pressed('KeyS') || input.pressed('ArrowDown')) pick.sel = (pick.sel + 1) % m;
+    if (input.pressed('KeyE') || input.pressed('Enter') || input.pressed('NumpadEnter')) {
+      const p = pick; pick = null;
+      if (p.sel < p.opts.length) {
+        const op = p.opts[p.sel], l = o.spellChoice.pick(op.id);
+        if (l) { setFlash(p.n, F_USE, slotCfg.flash.use.ms); say(op.name + ' is now level ' + l, C.heroGreen); } else setFlash(p.n, F_REFUSE, slotCfg.flash.refuse.ms);
+      }
+    }
+    if (input.pressed('Backspace')) pick = null;
+  }
+  function drawPick() {
+    const lines = ['Choose a spell to strengthen'];
+    for (let i = 0; i < pick.opts.length; i++) { const q = pick.opts[i]; lines.push((pick.sel === i ? '> ' : '  ') + q.name + '  Lv ' + q.level + ' -> ' + (q.level + 1)); }
+    lines.push((pick.sel === pick.opts.length ? '> ' : '  ') + 'Cancel');
+    let w = 0; for (const l of lines) if (l.length > w) w = l.length;
+    w += 4; const h = lines.length + 2, x0 = (P.w - w) >> 1, y0 = (P.h - h) >> 1;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) put(x0 + x, y0 + y, (y === 0 || y === h - 1) ? 45 : (x === 0 || x === w - 1) ? 124 : 32, C.uiHint, bg);
+    for (let i = 0; i < lines.length; i++) text(x0 + 2, y0 + 1 + i, lines[i], i === 0 ? C.uiText : (i - 1 === pick.sel ? C.gold : C.uiText), bg);
+  }
   function doOpen() {
     isOpen = true; cur = firstPack(); pxLast = pyLast = -1; turning = false; dragSrc = -1; dragMoved = false; dragPx = 0;
     yaw.reset(); subj.yawDeg = 180; flash.kind = 0; tipCur = -1; refreshModel();
     if (o.onOpen) o.onOpen();
   }
-  function doClose() { isOpen = false; turning = false; dragSrc = -1; if (o.onClose) o.onClose(); }
+  function doClose() { pick = null; isOpen = false; turning = false; dragSrc = -1; if (o.onClose) o.onClose(); }
 
   // ---- drawing helpers (hoisted: draw() must not create closures per frame) ----
   let U = null;
@@ -302,6 +333,7 @@ export function createInventoryScreen(o) {
         return;
       }
       if (input.pressed('Escape') || kI || kC || kTab) { doClose(); if (input.consumePressed) input.consumePressed(); return; }
+      if (pick) { pickKey(input); if (input.consumePressed) input.consumePressed(); return; }
       // 1-4 while an item is hovered / selected assigns it to that quick-bar slot
       if (o.quickbar) {
         for (let n = 0; n < 4; n++) {
@@ -421,6 +453,7 @@ export function createInventoryScreen(o) {
       for (let i = 0; i < tipLines.length; i++) text(L.details.x, L.details.y + i, tipLines[i], tipFg[i], bg);
       // the dragged icon rides the pointer
       if (dragSrc >= 0 && dragMoved) { const did = idAt(nodes[dragSrc]); if (did) iconAt(rx - 2, ry - 1, did, slotCfg.selected.innerBg); }
+      if (pick) drawPick();
       // key hints (gold keys); no Esc text anywhere
       let hl = 0; for (let i = 0; i < HINTS.length; i++) hl += HINTS[i][0].length;
       let hx = (P.w - hl) >> 1;

@@ -15,7 +15,7 @@ const MAXC = MAX_TARGETABLES + 1; // targets + the player
  * @param {{emit:Function}} events
  * @param {typeof import('../spellConfig.js').FIREBALL_CFG} cfg
  * @param {ReturnType<typeof import('./targetables.js').createTargetables>} targets
- * @param {{spendMana?: (n:number)=>boolean, enabled?: boolean, isEnabled?: () => boolean}} [hooks] `enabled:false` = casting disabled (D-065)
+ * @param {{spendMana?: (n:number)=>boolean, enabled?: boolean, isEnabled?: () => boolean}} [hooks] `enabled:false` = casting disabled (D-065); `damageScale()` = D-114 spell-level multiplier
  */
 export function createFireballSim(world, events, cfg, targets, hooks) {
   const spendMana = (n) => (hooks && typeof hooks.spendMana === 'function' ? hooks.spendMana(n) : true);
@@ -135,7 +135,7 @@ export function createFireballSim(world, events, cfg, targets, hooks) {
     slots.serial[s] = ++serialNo; slots.age[s] = 0;
     slots.x[s] = ox; slots.y[s] = oy; slots.z[s] = oz;
     slots.dx[s] = dx; slots.dy[s] = dy; slots.dz[s] = dz;
-    slots.speed[s] = C.speed; slots.radius[s] = C.radius; slots.damage[s] = C.damage; slots.knock[s] = C.knock;
+    slots.speed[s] = C.speed; slots.radius[s] = C.radius; slots.damage[s] = C.damage * (hooks && typeof hooks.damageScale === 'function' ? hooks.damageScale() : 1); slots.knock[s] = C.knock;
     slots.travelled[s] = 0; slots.charged[s] = isCharged ? 1 : 0; slots.hand[s] = hand === 'left' ? 0 : 1;
 
     // point-blank sweep eye -> origin: a wall/boar in the way bursts at once
