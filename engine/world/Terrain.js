@@ -405,6 +405,7 @@ export class Terrain {
   /** OB109-B2 (38.58): makes a finished (possibly cached) band `near`; version = old + 1 (the only change a cached band ever gets). */
   publishBand(b) {
     b.version = (this.near ? this.near.version : 0) + 1;
+    if (this.groundLook && !b.look) { b.look = new Uint8Array(b.w * b.h * 2); this._fillNearLook(b); } // BH2-R1: cached bundle baked before a runtime setGroundLook
     this.near = b; this.nearReady = true;
     return b;
   }

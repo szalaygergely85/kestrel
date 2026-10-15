@@ -27,6 +27,9 @@ pass._terrainTextures(world2); assert.ok(ups.includes(t2.near.look) && ups.inclu
 const t3 = { ...t2, nearReady: false, near: { ...t2.near, look: new Uint8Array(18).fill(9) } }, world3 = { terrain: t3 }; ups.length = 0;
 pass._terrainTextures(world3); assert.ok(!ups.includes(t3.near.look)); t3.nearReady = true; pass._terrainTextures(world3);
 assert.ok(ups.includes(t3.near.look), 'near look uploaded once ready (not skipped by an early world mark)'); pass._uploadLook = ou;
+// BH2-R1: a published band without look (cache hit after a runtime toggle) must fall back to the no-look pipeline
+const t4 = { ...terrain, near: { version: 9, w: 3, h: 3, type: new Uint8Array(9) } }; pass._terrainTextures({ terrain: t4 });
+assert.equal(pass.lookActive, false, 'near without look: lookActive false (no stale NEARLOOK)');
 terrain.groundLook = null; pass._terrainTextures(world); assert.equal(pass.lookActive, false, 'off again = plain path');
 pass.dispose(); assert.equal(mock.liveCount(), 0);
 console.log('passRaster.look.test.js: all checks passed.');
