@@ -24,7 +24,7 @@ export function decodeBundle(n, r) {
       || r.finalBg[i * 4] !== r.shadeBg[i * 4] || r.finalBg[i * 4 + 1] !== r.shadeBg[i * 4 + 1] || r.finalBg[i * 4 + 2] !== r.shadeBg[i * 4 + 2]
       || r.finalFg[i * 4 + 3] !== r.shadeFg[i * 4 + 3]) ? 1 : 0;
     o.hPlane[i] = r.hist[i * 4] | 0; o.hU[i] = bitsToF(r.hist[i * 4 + 1]); o.hV[i] = bitsToF(r.hist[i * 4 + 2]);
-    o.hLevel[i] = r.hist[i * 4 + 3] & 255; o.hKind[i] = (r.hist[i * 4 + 3] >> 8) & 255;
+    o.hLevel[i] = r.hist[i * 4 + 3] & 255; o.hKind[i] = (r.hist[i * 4 + 3] >> 8) & 15;
   }
   return o;
 }

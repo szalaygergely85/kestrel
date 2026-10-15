@@ -10,7 +10,7 @@
 // of vd), 3 SHADE_FG / 4 SHADE_BG (rgba8: the edge pass INPUT - the water composite output when water is on), 5 FINAL_FG / 6 FINAL_BG (rgba8:
 // the edge output; fg.a = glyph/255), 7 LEVEL (r8uint, shade's 3rd target, 255 = none), 8 WATER (rgba32uint layer: x = f32 bits of vD,
 // +Inf = none), 9 HIST_FG / 10 HIST_BG (rgba8: last frame's output, the ping-pong partner), 11 HIST (rgba32uint: planeId, u bits, v bits,
-// level | kind << 8 | mat << 16 (AA-04a)). @group(1) @binding(0) = StableU. Targets (32 B, the attachment limit): 0 OUT_FG, 1 OUT_BG (rgba8; bg.a copied from final),
+// level | kind << 8 (4 bits) | vmTag << 12 | mat << 16). @group(1) @binding(0) = StableU. Targets (32 B, the attachment limit): 0 OUT_FG, 1 OUT_BG (rgba8; bg.a copied from final),
 // 2 OUT_HIST (rgba32uint, same layout as HIST).
 // Edge cells are detected without touching the edge pass: final != shade (any rgb byte or the glyph) -> pass final through (38.25 item 3).
 import { defineUniformBlock } from './uniformBlock.js';
@@ -83,9 +83,8 @@ struct SCell {
   glyph: u32,    // 0..255
   level: u32,    // level written to history (the held level when the glyph was held)
   kind: u32,
-  mat: u32,      // gi mat id (16 bit) -> HIST.w bits 16-31 (AA-04a; read by resolve hysteresis only)
+  mat: u32,      // gi mat id (16 bit) -> HIST.w bits 16-31 (AA-04a / OB-198 history key; read by resolve hysteresis)
   plane: u32,
-  mat: u32,      // OB-198: material id for the history key
   vm: u32,       // AA-07a: view-model tag (0 = none, else 1 + 0xFFFF - objectId)
   ub: u32,       // f32 bits of this frame's u / v (history always describes THIS frame)
   vb: u32,

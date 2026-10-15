@@ -34,7 +34,7 @@ ${RESOLVE_BLOCK.wgsl}
 @group(0) @binding(1) var uSGA: texture_2d<u32>;    // bitcast u,v,z,aoD, sub-grid
 @group(0) @binding(2) var uSDepth: texture_2d<u32>; // x = bitcast dist, sub-grid
 @group(0) @binding(3) var uMask: texture_2d<u32>;   // r8uint, cols x rows (per-cell UI overlay bit)
-@group(0) @binding(4) var uHist: texture_2d<u32>;   // AA-04b: stable HIST (planeId, u, v, level | kind << 8 | mat << 16), last frame
+@group(0) @binding(4) var uHist: texture_2d<u32>;   // AA-04b: stable HIST (planeId, u, v, level | kind << 8 (4 bits) | vmTag << 12 | mat << 16), last frame
 @group(1) @binding(0) var<uniform> u: ResolveU;
 ${GBUF_UNPACK_WGSL}
 const MAX_SUB: i32 = ${MAX_SUB};
@@ -169,7 +169,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
       let hc = i32(floor(pc.x + 0.5)); let hr = i32(floor(pc.y + 0.5));
       if (hc >= 0 && hc < u.gridCols && hr >= 0 && hr < u.gridRows) {
         let hh = textureLoad(uHist, vec2i(hc, hr), 0);
-        let hKind = (hh.w >> 8u) & 255u; let hMat = hh.w >> 16u; let hPid = i32(hh.x);
+        let hKind = (hh.w >> 8u) & 15u; let hMat = hh.w >> 16u; let hPid = i32(hh.x);
         if (hKind != ${KIND_MODEL}u) {
           let hSky = hKind == 0u;
           var hCount = 0; var hFirst = -1;

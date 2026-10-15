@@ -529,8 +529,9 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   // re-pinned 44782 -> 45683 by MASK-c (shadeGrass ground blend + back-light, packed GA.w word; TS_PATCH_NOISE_WGSL extracted verbatim)
   // re-pinned 41264 -> 44782 by OB-073-D2e (kind-10 shadeGrass + ShadeU.grass table + the kind-10 branch in fs_main; calm-ground code untouched, asserted by the terrain mutation probes above)
   // re-pinned 58076 -> 58963 by OB-197 (bevelShadeK: footprint-aware stone bevel; shadeCore bevel call)
-  assert.equal(SHADE_WGSL.length, 60922, 'stable off: SHADE_WGSL length unchanged');
-  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), 'f84915156e10b5e25cfc9fb39ae0ade76c3b856c50b638ab8bb2723adae29ad2', 'stable off: SHADE_WGSL byte-identical to pre-073b');
+  // re-pinned 60922 -> 61248 by integration aaint (AA-08 soft patch tone merged with OB-204/OB-197)
+  assert.equal(SHADE_WGSL.length, 61248, 'stable off: SHADE_WGSL length unchanged');
+  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '2046360377f9341d5280bb297b25eab441f438c7f4490c7068b5e860b9d18736', 'stable off: SHADE_WGSL byte-identical to pre-073b');
   assert.ok(!/lvl|lvOut|location\(2\)/.test(SHADE_WGSL), 'stable off: no level output');
   assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
   assert.deepEqual(SHADE_LEVEL_TARGETS, ['rgba8', 'rgba8', 'r8ui']);

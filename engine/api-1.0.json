@@ -353,6 +353,7 @@
     {"name":"findPath","area":"nav","tier":"stable"},
     {"name":"findPathCells","area":"nav","tier":"stable"},
     {"name":"fitPreviewCamera","area":"anim","tier":"experimental"},
+    {"name":"flickerReprojStep","area":"render","tier":"experimental"},
     {"name":"flickerStep","area":"render","tier":"stable"},
     {"name":"forwardOf","area":"core","tier":"stable"},
     {"name":"fpVfovDeg","area":"render","tier":"experimental"},
