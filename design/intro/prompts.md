@@ -2,7 +2,7 @@
 
 Captions and image notes: `docs/story.md` "Opening sequence v2 (D-111, slideshow)". Owner generates the stills in ChatGPT; our ASCII converter turns them into real glyphs afterwards. Generated images stay OUT of git (public repo); record the source in `docs/licences.md` / `THIRD_PARTY_NOTICES.md`.
 
-**How to use:** paste one prompt per message. After the first image you like, upload it with every later prompt and add the line *"Match the style, palette and lighting of this reference image."* Wick is only ever seen from behind (D-111): never his face.
+**How to use (owner workflow, 2026-10-15):** generate all slides in ONE ChatGPT chat, one prompt per message. Start every prompt from slide 2 on with: *"Create a NEW image in the same series as the previous images in this chat. Keep the same style, palette and lighting."* Then name the earlier image by what it shows (e.g. "the same young man from the rooftop image with the teal light", "the same airship and city as in the first image (Ferrum)"). Only if ChatGPT drifts, attach that one image again. Wick is only ever seen from behind (D-111): never his face.
 
 **Style block** (already included at the end of every prompt below):
 > Style: moody painterly illustration, 16:9, strong contrast, limited palette: deep night blue and navy for sky and shadow, warm amber, orange and brass gold for lamps, fire and metal, a single cold teal for the distant signal light. Bold readable shapes, clear silhouettes, soft glow around lights. Steampunk-fantasy, brass and stone and timber. No text, no letters, no logos, no UI unless the prompt asks for one word.
@@ -13,6 +13,12 @@ Captions and image notes: `docs/story.md` "Opening sequence v2 (D-111, slideshow
 ```
 Wide establishing shot of Ferrum at dusk, seen from a high distance: a walled steampunk-fantasy city built in tiered rings of stone and timber up a steep hill. Amber lamps glow on every tier, steam and chimney smoke drift over the lower rings, the top tier has tall brass spires and an airship mooring mast. A massive dark wall rings the base of the hill. Beyond the wall the land is completely dark: black rolling hills and forest, no lights anywhere outside. Sky fading from dusk blue to night with the first stars.
 Style: moody painterly illustration, 16:9, strong contrast, limited palette: deep night blue and navy for sky and shadow, warm amber, orange and brass gold for lamps, fire and metal, a single cold teal for the distant signal light. Bold readable shapes, clear silhouettes, soft glow around lights. Steampunk-fantasy, brass and stone and timber. No text, no letters, no logos, no UI.
+```
+
+## 1b. Before (owner addition: the sister, before she vanished)
+```
+Dusk on the high skyworks rooftop of a steampunk city, among chimneys, rigging and tall brass lamp posts. A young woman in a worn work coat, seen from behind and in soft silhouette, reaches up to trim the flame of a tall brass street lamp with small shears. Beside her a younger boy, seen from behind, holds up a small brass oil can for her. Warm amber lamplight on their shoulders; below them the glowing tiered city falls away toward the dark wall and the black land beyond. A gentle, warm, happy moment. Faces not visible.
+Style: moody painterly illustration, 16:9, strong contrast, limited palette: deep dusk blue and navy for sky and shadow, warm amber, orange and brass gold for lamps and metal. Bold readable shapes, clear silhouettes, soft glow around lights. Steampunk-fantasy. No text, no logos, no UI.
 ```
 
 ## 2. Her lamp
@@ -61,4 +67,5 @@ Style: moody painterly illustration, 16:9, strong contrast, limited palette: col
 
 **Notes:**
 - Slides 2 and 5 ask for one word in the image ("FELL", "ALIVE"). If ChatGPT garbles it, re-roll or drop the word: the caption already says it, and the ASCII conversion may blur small text anyway.
-- Keep the same young man (dark hair, worn work jacket, leather satchel and straps) on slides 3 and 5-8: describe him the same way, or upload slide 3 as the reference for him.
+- **Wick's look (locked by the owner's slide 1b image, 2026-10-15):** messy brown hair, red neckerchief, leather braces over a worn work shirt; as a boy in 1b, about 18 from slide 3 ("The light") on. Upload the 1b image as the reference for him on every slide where he appears. Maren: hair in a bun, long worn work coat, seen from behind.
+- Owner progress 2026-10-15: slides 1 (Ferrum), 1b (Before), 2 (Her lamp) generated and approved; images kept outside the repo.

@@ -260,6 +260,13 @@ Inside, everyone knows: nobody lives beyond the Wall.
 ```
 IMAGE: Ferrum at dusk from a high distance. Tiered rings of stone and timber climb a hill, amber lamps on every tier, steam plumes, and the dark ring of the Wall with no lights outside it.
 
+**1b. (owner 2026-10-15: "shouldn't we have one before with the sister?"; draft caption by the PC-A main session, writer may polish)**
+```
+My sister trimmed the skyworks lamps. I carried her oil.
+She said the old stones under the Wards could sing.
+```
+IMAGE: Dusk on the skyworks roof. A young woman from behind, in soft silhouette, trims a tall brass street lamp with shears; the boy (young Wick) from behind holds up her oil can. Warm, happy. Her face stays hidden (kept for a possible later reveal). The intro is now 9 stills, ~36 s.
+
 **2.**
 ```
 Seven winters ago my sister went up to the skyworks.

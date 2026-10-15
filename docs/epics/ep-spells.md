@@ -1,7 +1,7 @@
 # EP-SPELLS - Fireball, Freeze, Telekinesis, Teleport (PC-B PO opus, 2026-10-15; owner to OK)
 
 **Replaces** the 2026-10-15 draft (Spark / Light Orb / Ward / Fire Ring / Gust / Updraft), which ignored D-021. Owner D-115: "we already said what spells can be".
-Reads: D-021 (the four spells; beacons, wells, quests; small skill tree; Teleport needs an architect note), D-115, D-114 + corrections (Spell Scroll: the player CHOOSES the learned spell, one per scroll, cancel keeps it), D-078 / D-084 (no XP; player level is derived from spell tiers + item levels), D-081 / D-091 (INT from gear only), D-112 (no stamina), D-113 (no dodge roll), D-018 (physics carry/throw - **not built**: there is no `engine/physics/rigid.js`; loose physics props today = `roller` bodies, e.g. `tower.boulder`), D-069 (Burl gives the Fireball), D-080 (beacons = Waystones), docs/owner-ideas/2026-09-24-story-and-progression.md.
+Reads: D-021 (the four spells; beacons, wells, quests; small skill tree; Teleport needs an architect note), D-115, D-114 + corrections (Spell Scroll: the player CHOOSES the learned spell, one per scroll, cancel keeps it), D-078 / D-084 (no XP; player level is derived from spell tiers + item levels), D-081 / D-091 (INT from gear only), D-117 (no stamina), D-113 (no dodge roll), D-018 (physics carry/throw - **not built**: there is no `engine/physics/rigid.js`; loose physics props today = `roller` bodies, e.g. `tower.boulder`), D-069 (Burl gives the Fireball), D-080 (beacons = Waystones), docs/owner-ideas/2026-09-24-story-and-progression.md.
 
 ## 1. Rules
 - **Exactly four spells:** Fireball, Freeze, Telekinesis, Teleport. Each has level 0 (not learned) and levels 1..3. Tier sum max 12.
