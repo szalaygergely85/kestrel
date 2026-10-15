@@ -71,11 +71,11 @@
         label: 'Pine / oak forest',
         pick: { ground: 'D', atmos: 'A' },   // OB-184 part 4: D = mossy leaf-litter floor (A was flat dark brown)
         ground: {
-          D: { name: 'Mossy leaf litter', glyphs: ' .,`', ramp: ['#25402a', '#3b5226', '#574428', '#6e5a30'], bg: ['#0f1e12', '#241c12'],   // mossDark / moss + litter browns of A
-               noiseScale: 3, macroScale: 16, contrast: 0.6,
-               shimmer: { amp: 0.05, mode: 'sheen', lean: ' .,`', sheen: 0.1 },
-               accents: [{ g: ',', c: '#5f7a34', d: 0.05, cluster: 0.8, maxDist: 30 },               // moss flecks
-                         { g: '`', c: '#6e5a30', d: 0.03, cluster: 0.5, maxDist: 25 }] },          // dry leaves
+          D: { name: 'Mossy leaf litter', glyphs: '.,;`', ramp: ['#3b5226', '#5f7a34', '#86722e', '#93ad4c'], bg: ['#1a2e16', '#34341c'],   // OB-184: brighter (old ramp luma .22-.36 vanished under canopy gloom); moss / mossLight + litter ochre; no blank glyph
+               noiseScale: 2.2, macroScale: 14, contrast: 0.75,
+               shimmer: { amp: 0.05, mode: 'sheen', lean: '.,;`', sheen: 0.1 },
+               accents: [{ g: '"', c: '#93ad4c', d: 0.08, cluster: 0.8, maxDist: 35 },               // moss tufts
+                         { g: '`', c: '#a8823c', d: 0.06, cluster: 0.5, maxDist: 30 }] },          // dry leaves
           A: { name: 'Needle litter (pine)', glyphs: '.,:;', ramp: ['#3a2e1c', '#574428', '#6e5a30', '#7a7038'], bg: ['#16110a', '#241c12'],
                noiseScale: 2.5, macroScale: 14, contrast: 0.5,
                shimmer: { amp: 0.08, mode: 'sheen', lean: '.,:;', sheen: 0.15 },
