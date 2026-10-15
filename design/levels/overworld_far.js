@@ -168,6 +168,8 @@
           // (world_geo G.biomes 1..3). No colliders (walk-through ferns/flowers/pebbles), shadow off, off trunks by the tree mask,
           // off roads/paths (type path has no species) and structures/exclusions like every layer. 4 m lattice: ~0.5 * 6.25 = 3 / 100 m2.
           { name: 'undergrowth', seed: 38429, cellM: 4, jitter: 1.4, fill: 1, biomeOnly: true, maxSlope: 0.6, clearM: 0.5, drawM: 45, lodCells: 4,
+            // OB-184b: cluster (engine scatter _clusterMul): x`near` within treeR m of a trunk, x`far` elsewhere, + 20 m value-noise patches
+            cluster: { treeR: 5, near: 1.45, far: 0.38, patchM: 18, patchAmt: 0.45 },
             ground: { forest: [ { mesh: 'quaternius/Fern_1', weight: 6, sinkM: 0.03, shadow: false, sway: true, maxDistM: 40 },
                                 { mesh: 'quaternius/Plant_1', weight: 3, sinkM: 0.03, shadow: false, sway: true, maxDistM: 40 },
                                 { mesh: 'quaternius/Plant_7', weight: 2, sinkM: 0.03, shadow: false, sway: true, maxDistM: 40 },

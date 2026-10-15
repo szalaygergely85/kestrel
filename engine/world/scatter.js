@@ -380,6 +380,7 @@ export class DetailScatterJob {
         const d = bio.detail[bio.biomeAt(x, y)];
         if (d !== undefined && d[l.name] !== undefined) fill = Math.min(1, l.fill * d[l.name]);
       }
+      if (l.cluster && fill > 0) fill = Math.min(1, fill * this._clusterMul(l.cluster, x, y, l.seed));   // OB-184b: gather around trunks / in patches
       if (paint !== null) fill = Math.min(1, fill * paintAt(paint, x, y));   // ED-FOLIAGE-03: decor paint multiplier (38.69), absent layer = old bytes
       if (u(ix, iy, 0) >= fill) continue;
       if (x < g.x0 || y < g.y0 || x >= x1 || y >= y1) continue;
@@ -459,6 +460,40 @@ export class DetailScatterJob {
     if (!c || !c.classMap || !(c.cellM > 0)) return false;
     const i = Math.floor((x - c.x0) / c.cellM), j = Math.floor((y - c.y0) / c.cellM);
     return i >= 0 && j >= 0 && i < c.w && j < c.h && c.classMap[j * c.w + i] !== 0;
+  }
+  /** OB-184b: data-driven density multiplier for a layer's `cluster: {treeR, near, far, patchM, patchAmt}`: `near` within treeR m of a trunk,
+   * `far` elsewhere (no trees given -> neutral 1), times coarse value-noise patches (1 +- patchAmt, cells of patchM m). Pure function of (x,y,seed). */
+  _clusterMul(c, x, y, seed) {
+    let m = 1;
+    if (this.trees) {
+      const R = c.treeR, grid = this._treeGridOf(), cx = Math.floor(x / 8), cy = Math.floor(y / 8), t = this.trees;
+      let near = false;
+      for (let gx = cx - 1; gx <= cx + 1 && !near; gx++) for (let gy = cy - 1; gy <= cy + 1 && !near; gy++) {
+        const a = grid.get(gx * 100003 + gy);
+        if (a) for (const i of a) { const dx = t.x[i] - x, dy = t.y[i] - y; if (dx * dx + dy * dy < R * R) { near = true; break; } }
+      }
+      m = near ? c.near : c.far;
+    }
+    if (c.patchM > 0 && c.patchAmt > 0) {
+      const fx = x / c.patchM, fy = y / c.patchM, ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy;
+      const h = (a, b) => hash2(a, b, seed + 77) / 4294967296, sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+      const v = (h(ix, iy) * (1 - sx) + h(ix + 1, iy) * sx) * (1 - sy) + (h(ix, iy + 1) * (1 - sx) + h(ix + 1, iy + 1) * sx) * sy;
+      m *= 1 + c.patchAmt * (2 * v - 1) * 2;   // value noise clusters near 0.5, so x2 restores the spread
+      if (m < 0) m = 0;
+    }
+    return m;
+  }
+  _treeGridOf() {
+    let grid = this._treeGrid;
+    if (!grid) {
+      grid = this._treeGrid = new Map();
+      const t = this.trees;
+      for (let i = 0; i < t.count; i++) {
+        const k = Math.floor(t.x[i] / 8) * 100003 + Math.floor(t.y[i] / 8);
+        const a = grid.get(k); if (a) a.push(i); else grid.set(k, [i]);
+      }
+    }
+    return grid;
   }
   /** WM-07b: true when the picked collide species at (x,y) lies within trunkR + own radius + 0.3 m of a tree of the same band. */
   _onTrunk(x, y, list, pickU) {
