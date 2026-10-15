@@ -215,9 +215,12 @@ async function runScenario(assets, name, dist, opt, goblin = false, at = null) {
   // SIM-SPIKE-01-FIX: min-of-N per step. The sim is deterministic (same state hash every run), so step k does the same work in
   // every repeat; the element-wise minimum drops OS/JIT/scheduler noise (a 0.02 ms call measured 1-7 ms once, 0.01 ms on re-run)
   // and keeps real work bursts (they are in every repeat). `--repeat N` (default 1; use 3 for the strict gate).
+  // min-of-N is only valid when every repeat did identical work: compare a deterministic state signature and fail loudly otherwise
+  const sig = [raidStarts, S.beasts.count, flyMax, alive, aliveSamples, vill.stats.astar, vill.stats.maxPerStep].join('|');
   const acc = opt._acc && opt._acc[name];
+  if (acc && acc.sig !== sig) throw new Error(`bench-life --repeat: state differs between repeats for '${name}' (${acc.sig} vs ${sig}); min-of-N is invalid`);
   if (acc) { for (let k = 0; k < total; k++) { tv[k] = Math.min(tv[k], acc.tv[k]); tr[k] = Math.min(tr[k], acc.tr[k]); tf[k] = Math.min(tf[k], acc.tf[k]); tb[k] = Math.min(tb[k], acc.tb[k]); ta[k] = Math.min(ta[k], acc.ta[k]); } }
-  if (opt._acc) opt._acc[name] = { tv, tr, tf, tb, ta };
+  if (opt._acc) opt._acc[name] = { tv, tr, tf, tb, ta, sig };
   const life = new Float64Array(total); for (let k = 0; k < total; k++) life[k] = tv[k] + tr[k];
   const n = total - WARM, sub = (a) => a.subarray(WARM);
   const res = {

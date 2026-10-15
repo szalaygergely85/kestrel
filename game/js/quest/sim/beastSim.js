@@ -29,7 +29,7 @@ import { perceive, leashState, returnTarget, LEASH_HOME, LEASH_ENGAGE, LEASH_RET
 
 export const POOL = 128; // BEAST-POOL-b: live (bound) slots; records beyond it sleep unbound
 export const MAX_RECORDS = 1024; // BEAST-POOL-a (37.16.5): the public slot IS the record index 0..MAX_RECORDS-1 (stable for the run); loot.js imports this
-export const ELITE_LEVELS = 2; // BH2-G1: an elite beast counts as zone level + 2 (hp/damage via beastLevels)
+export const ELITE_HP_MUL = 1.5; // BH2-G1 (spec): an elite beast has x1.5 HP
 export const MAX_BEASTS = MAX_RECORDS; // legacy alias of MAX_RECORDS (tests / tools still import it)
 const PATH_SLOTS = 64; // waypoints kept per beast path (truncated, final = the exact goal - see `storePath`)
 
@@ -338,15 +338,15 @@ export function createBeastSim(world, opts) {
     const m = tierMult(tier);
     // OB-150: hp/damage scale with the zone LEVEL (band 1-10, placed tier override -> representative level) and difficulty (beastLevels.js)
     const lv = (br && br.tier >= 1 && br.tier <= 3) ? LEVEL_TABLE.tierLevel[br.tier | 0] : (band ? band.bandAt(e.transform.x, e.transform.y) : 1);
-    // BH2-G1 eliteChance: no elite concept existed, so the simplest one: a seeded per-slot roll (Normal 0 = never) -> +ELITE_LEVELS levels; sim.elite[i] is the name-tag hook.
+    // BH2-G1 eliteChance: no elite concept existed, so the simplest one: a seeded per-slot roll (Normal 0 = never) -> x1.5 HP (ELITE_HP_MUL); sim.elite[i] is the name-tag hook.
     const ec = resolveDifficulty(opts.difficulty).eliteChance;
     sim.elite[i] = (ec > 0 && !sim.wat[i] && (hashU(((opts && opts.seed) || 0) >>> 0, i, 0xE11E) % 10000) < ec * 10000) ? 1 : 0;
-    const ls = levelScale(lv + (sim.elite[i] ? ELITE_LEVELS : 0), opts.difficulty);
+    const ls = levelScale(lv, opts.difficulty);
     // KINDS-F (OB-153): kinds.json hpF/dmgF (x boar, missing = 1) multiply the level result. Wolf/bear slots already carry their own
     // tuning (WOLF_TUNING/BEAR_TUNING hpMul, swipe hearts) so they are skipped here to avoid double counting.
     const kf = kindFactors(e, sim.wolf[i] || sim.bear[i]);
     sim.tier[i] = tier; sim.spdMul[i] = m.speed; sim._hitPayload[i].damage = (sim.bear[i] ? BEAR_TUNING.swipeHearts : 1) * ls.damage * kf.dmg; // BEAR-01: swipe base is 2 hearts
-    const maxHp = Math.max(1, Math.round(sim.scfg[i].hp * ls.hp * kf.hp));
+    const maxHp = Math.max(1, Math.round(sim.scfg[i].hp * ls.hp * kf.hp * (sim.elite[i] ? ELITE_HP_MUL : 1)));
     e.components.health = { hp: maxHp, max: maxHp, invuln: 0 };
     steer.addAgent(e.transform.x, e.transform.y, cfg.radius, 0, DEFAULT_ACCEL);
   }
@@ -478,6 +478,7 @@ export function createBeastSim(world, opts) {
   // DIFF-MENU (D-083): live difficulty change from the Settings screen. Rescales live beasts' damage by the dmg ratio only;
   // hp / spawn tuning apply to the next created beast (opts.difficulty is read at create).
   if (opts && opts.difficulty) sim.tactics.setDifficulty(resolveDifficulty(opts.difficulty).name); // BH2-G1: tokM + flank follow the create-time difficulty too
+  sim.difficulty = resolveDifficulty(opts && opts.difficulty); // resolved row, read by the game for playerDmg (kept current by setDifficulty)
   sim.setDifficulty = function setDifficulty(name) {
     const was = resolveDifficulty(opts.difficulty).dmg, now = resolveDifficulty(name);
     opts.difficulty = now.name;
@@ -869,7 +870,9 @@ function noticedOf(sim, i, px, py) {
   a.x = steer.x[i]; a.y = steer.y[i]; a.fx = sim.fx[i]; a.fy = sim.fy[i];
   t.x = px; t.y = py; t.noise = sim.noise;
   const calm = sim.wary[i] === 1 && sim.provoked[i] === 0; // DRESS-01b: unprovoked ambient boar = short notice only
-  a.range = calm ? sim.cfg.calmNoticeR : sim.scfg[i].noticeR * sim.dm.noticeR; // BH2-G1: /* BEAR-01: per-slot */ a.hearR = calm ? sim.cfg.calmNearR : sim.pNear[i]; a.coneCos = sim.pCone[i];
+  a.range = calm ? sim.cfg.calmNoticeR : sim.scfg[i].noticeR * sim.dm.noticeR; // BH2-G1: difficulty scales sight range (BEAR-01: per-slot)
+  a.hearR = calm ? sim.cfg.calmNearR : sim.pNear[i];
+  a.coneCos = sim.pCone[i];
   sim._slot = i;
   const o = perceive(a, t, sim._losFn, sim._po);
   const ag = sim.pAggro[i]; // BEAST-03b: aggro mode (0 hostile = today's behaviour)

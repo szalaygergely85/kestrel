@@ -144,14 +144,19 @@ export function generateRegionalBeasts(o) {
     const ng = rule.water ? nextWGroup : nextGroup, g = ng[region] || 0; ng[region] = g + 1; (rule.water ? wcentres : centres).push(c); // BEAST-09a: crocs never shift land groups (land list is the same with or without a water probe)
     let n = n0;
     const size = groupSize(rule, o.difficulty);
-    for (let k = 0; k < size; k++) {
+    // The shared rng always draws the BASE members (rule.size) so later groups' homes never shift with the difficulty; Easy skips emitting the last ones,
+    // Hard's extra members draw from a per-group sub-rng (seed x rule x group x member).
+    const base = rule.size, total = Math.max(size, base);
+    for (let k = 0; k < total; k++) {
       let hx = c[0], hy = c[1];
+      const mr = k < base ? rng : mulberry32((seed ^ strHash(rule.key + ':' + region + ':' + g + ':' + k)) >>> 0);
       if (k > 0) {
         for (let t = 0; t < 40; t++) {
-          const dir = DIRS[(rng() * 32) | 0], d = 3 + rng() * 4, x = Math.round((c[0] + dir[0] * d) * 2) / 2, y = Math.round((c[1] + dir[1] * d) * 2) / 2;
+          const dir = DIRS[(mr() * 32) | 0], d = 3 + mr() * 4, x = Math.round((c[0] + dir[0] * d) * 2) / 2, y = Math.round((c[1] + dir[1] * d) * 2) / 2;
           if (x > r[0] && x < r[2] && y > r[1] && y < r[3] && (rule.water ? deepHome(x, y) : walkable(x, y)) && !nearSafe(x, y)) { hx = x; hy = y; break; }
         }
       }
+      if (k >= size) continue; // Easy: drawn (to keep the shared rng in step) but not emitted
       out.push({ id: `${rule.species}.${rule.key}.${++n}`, species: rule.species, region, x: hx, y: hy, group: g });
     }
     return n;

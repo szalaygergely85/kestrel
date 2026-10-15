@@ -39,6 +39,8 @@ const list2 = generateRegionalBeasts({ geo: G, terrain: wA.terrain, seed: 12, av
   ok('groupDelta: Hard herd fits the beast pool', h.length < MAX_BEASTS);
   ok('groupDelta: deterministic', JSON.stringify(gen('hard')) === JSON.stringify(h));
   const sizes = {}; for (const b of e) { const k = b.region + '/' + b.group + '/' + b.species; sizes[k] = (sizes[k] || 0) + 1; }
+  const centres = (l) => { const m = {}; for (const b of l) { if (/.road/.test(b.id)) continue; /* roadside groups legitimately follow cover by the actual members */ const k = b.region + '/' + b.group + '/' + b.species; if (!m[k]) m[k] = b.x + ',' + b.y; } return JSON.stringify(m); };
+  ok('groupDelta: every rule group keeps the same home on Easy/Normal/Hard (no shift)', centres(e) === centres(n) && centres(h) === centres(n));
   ok('groupDelta: every Easy group has >= 1 member', Object.values(sizes).every((v) => v >= 1));
 }
 { // BEAST-09a follow-up: water rules have their own group counter -> land groups identical with and without a water probe
