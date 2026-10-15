@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "id": "teaser-water",
+  "fps": 30,
+  "note": "TEASER (owner 2026-10-15, TikTok 9:16, capture --portrait: VFOV ~47, ~27 deg horizontal after the crop): slow forward glide 20 m WNW (yaw 291 -> 289) over the open Glasswater (water rect 1145..1325 x 470..540, z -58), >= 30 m inside the rect (deep floor, no shelf), eye 0.65 -> 0.5 m over the surface, tilting down -20 -> -22 so ripples/reflections fill the frame and the far shore is only a thin band at the very top. Island ruin (1270, 520) is behind the camera; fisher's jetty (bearing ~245) and Glasswater beach (~330) are far outside the narrow field. Low sun ahead (west) at 17:00 for a glint path.",
+  "keys": [
+    { "t": 0,    "x": 1232.0,  "y": 506.0,  "z": -57.35, "yawDeg": 291,   "pitchDeg": -20,   "ease": "linear" },
+    { "t": 3.5,  "x": 1228.24, "y": 504.63, "z": -57.42, "yawDeg": 290.5, "pitchDeg": -21,   "ease": "linear" },
+    { "t": 7,    "x": 1222.6,  "y": 502.58, "z": -57.48, "yawDeg": 290,   "pitchDeg": -22,   "ease": "linear" },
+    { "t": 10.5, "x": 1216.96, "y": 500.53, "z": -57.5,  "yawDeg": 289.5, "pitchDeg": -22,   "ease": "linear" },
+    { "t": 14,   "x": 1213.2,  "y": 499.16, "z": -57.5,  "yawDeg": 289,   "pitchDeg": -21.5, "ease": "linear" }
+  ]
+}
