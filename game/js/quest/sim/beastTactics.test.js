@@ -53,9 +53,7 @@ for (const [diff, cap] of [['normal', 2], ['easy', 1], ['hard', 3]]) {
     if (held !== sim.tactics.nM) { leak = false; bad = `t=${t} held=${held} nM=${sim.tactics.nM}`; }
     if (held > cap) { leak = false; bad = 'over cap ' + held; }
   }
-  // Easy = straight chase (spec, no flank ring): token HOLDERS stay <= 1 (asserted below via held); a token-less wolf can show WINDUP next to the holder (open note, lane line), so the attacker bound is cap+1 there
-  const attCap = diff === 'easy' ? cap + 1 : cap;
-  ok(`6 wolves ${diff}: attackers <= ${attCap} (max ${maxAtt}, tokens used ${sim.tactics.maxMelee})`, maxAtt <= attCap && sim.tactics.maxMelee >= 1, `maxAtt=${maxAtt} maxMelee=${sim.tactics.maxMelee}`);
+  ok(`6 wolves ${diff}: attackers <= ${cap} (max ${maxAtt}, tokens used ${sim.tactics.maxMelee})`, maxAtt <= cap && sim.tactics.maxMelee >= 1, `maxAtt=${maxAtt} maxMelee=${sim.tactics.maxMelee}`);
   ok(`6 wolves ${diff}: counters match holders`, leak, bad);
   if (diff === 'normal') ok('normal: token-less wolves circle (waiting on a flank slot)', circled > 0);
 }

@@ -48,7 +48,7 @@ export function tacticsSync(sim, S) {
     const i = rec[k];
     if (!T.held[i]) continue;
     const st = sim.state[i];
-    if (sim.dormant[i] || sim.down[i] || (st !== S.WINDUP && st !== S.CHARGE && st !== S.RECOVER) || ++T.heldT[i] > TACT_TUNING.holderTimeout) T.release(i);
+    if (sim.dormant[i] || sim.down[i] || (st !== S.WINDUP && st !== S.CHARGE && st !== S.RECOVER) || (st !== S.WINDUP && ++T.heldT[i] > TACT_TUNING.holderTimeout)) T.release(i);
   }
   if (T.tick % TACT_TUNING.reassignEvery === 1) assignFlanks(sim, S);
 }
