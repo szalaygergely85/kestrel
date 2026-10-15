@@ -497,11 +497,12 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   // re-pinned 49079 -> 50129 by G2 + P3 (far grass tier in shadeTerrain + fgP/fgW/fgT appended after cliff; off = zero uniforms = unchanged output)
   // re-pinned 48644 -> 49079 by OB-089 (outdoor mesh fog branch, fogView.z; uniform layout unchanged)
   // re-pinned 45683 -> 48155 by SWIM-04c (UNDER_WGSL + shadeCell/fs_main split + 7 appended ShadeU vec4; underwater block is skipped when su.under.x = 0)
+  // re-pinned 50824 -> 52318 by CANOPY-SHAFT-01b (shaftW + shaftLiftC + shaftQ, 2 lift blocks gated by su.shaftA.x; k 0 skips)
   // re-pinned 50440 -> 50824 by CONTACT-AO-01b (caoFt / caoFg: LIGHT.w bits 1..7 scale the terrain/carpet ambient; q 0 -> exactly 1.0)
   // re-pinned 44782 -> 45683 by MASK-c (shadeGrass ground blend + back-light, packed GA.w word; TS_PATCH_NOISE_WGSL extracted verbatim)
   // re-pinned 41264 -> 44782 by OB-073-D2e (kind-10 shadeGrass + ShadeU.grass table + the kind-10 branch in fs_main; calm-ground code untouched, asserted by the terrain mutation probes above)
-  assert.equal(SHADE_WGSL.length, 50824, 'stable off: SHADE_WGSL length unchanged');
-  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), 'f7162495e8cf34dd1467bf2c060177dc7be01d362ab63d088aca3a36045d70a1', 'stable off: SHADE_WGSL byte-identical to pre-073b');
+  assert.equal(SHADE_WGSL.length, 52318, 'stable off: SHADE_WGSL length unchanged');
+  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), 'be1650ead95936560ab242d85dee52be0e9c91fed5823aa3f2aa8230683e8b7e', 'stable off: SHADE_WGSL byte-identical to pre-073b');
   assert.ok(!/lvl|lvOut|location\(2\)/.test(SHADE_WGSL), 'stable off: no level output');
   assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
   assert.deepEqual(SHADE_LEVEL_TARGETS, ['rgba8', 'rgba8', 'r8ui']);
@@ -553,7 +554,7 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   assert.equal(SHADE_BLOCK.field('cliff').word, SHADE_BLOCK.field('underRampC').word + 4, 'OB-104b2 cliff vec4 appended after the 7 SWIM-04c vec4');
   assert.equal(SHADE_BLOCK.field('fgP').word, SHADE_BLOCK.field('cliff').word + 4, 'G2 + P3 fgP appended right after cliff');
   assert.equal(SHADE_BLOCK.field('fgT').word, SHADE_BLOCK.field('fgP').word + 8, 'fgT after fgP + fgW');
-  assert.equal(SHADE_BLOCK.sizeBytes, (SHADE_BLOCK.field('grass').word + 320 + 28 + 4 + 8 + 64) * 4, 'fgT (16 vec4) is the tail of the block (7 under + cliff + fgP + fgW after grass)');
+  assert.equal(SHADE_BLOCK.sizeBytes, (SHADE_BLOCK.field('grass').word + 320 + 28 + 4 + 8 + 64 + 4) * 4, 'fgT (16 vec4) + shaftA (CANOPY-SHAFT-01b) are the tail of the block (7 under + cliff + fgP + fgW after grass)');
   assert.ok(TERRAIN_SHADE_WGSL.includes('0.5000') && /su\.cliff\.y > 0\.5 && nrm\.z < 0\.5000/.test(TERRAIN_SHADE_WGSL), 'OB-104b2 cliff branch with CLIFF_NZ 0.5 literal');
   assert.equal(SHADE_BLOCK.field('fogView').word, SHADE_BLOCK.field('skyCam').word + 4, 'fogView right after skyCam');
   assert.equal(SHADE_BLOCK.field('skyGlowOn').word, SHADE_BLOCK.field('fogView').word + 4, 'skyGlowOn right after fogView');

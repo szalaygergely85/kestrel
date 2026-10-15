@@ -30,6 +30,7 @@ const W_PSH_A = W('pshA'), W_PSH_O = W('pshO'), W_PSH_SLOT = W('pshSlot');
 
 // CONTACT-AO-01b (38.78): caoA.x = blob count, caoD = blob records (copied only when LightSet.cao.version changes)
 const W_CAO_A = W('caoA'), W_CAO_D = W('caoD');
+const W_SHAFT = W('shaft'); // CANOPY-SHAFT-01b: (steps, maxM, on, 0) from light.shaft {steps, k, maxM}
 
 const NO_CAM = Object.freeze({ x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 });
 
@@ -136,7 +137,7 @@ export class WgLightPass {
       lu[W_AMBIENT] = a[0] || 0; lu[W_AMBIENT + 1] = a[1] || 0; lu[W_AMBIENT + 2] = a[2] || 0;
       li[W_LIGHT_COUNT] = 0; li[W_SUN_ON] = 0; li[W_SUN_MODE] = 0;
       packCloudUniforms(null, 0, this.cloud8); lu.set(this.cloud8, W_CLOUD_A);
-      lu[W_CAO_A] = 0;
+      lu[W_CAO_A] = 0; lu[W_SHAFT] = 0; lu[W_SHAFT + 1] = 0; lu[W_SHAFT + 2] = 0;
       lu[W_AO_STRENGTH] = 0; lu[W_AO_P] = 0; lu[W_AO_P + 1] = 0; lu[W_AO_P + 2] = 0; lu[W_AO_P + 3] = 0;
       return;
     }
@@ -153,6 +154,9 @@ export class WgLightPass {
       if (this.caoFor !== cao || this.caoVer !== cao.version) { lu.set(cao.data.subarray(0, cao.n * CAO_STRIDE), W_CAO_D); this.caoFor = cao; this.caoVer = cao.version; }
       lu[W_CAO_A] = cao.n > CAO_MAX ? CAO_MAX : cao.n;
     } else lu[W_CAO_A] = 0;
+    // CANOPY-SHAFT-01b: shaft march only with steps > 0 and strength k > 0 (preset low/medium = 0 -> skipped, bits 20..23 stay 0).
+    const shf = light.shaft, shOn = !!(shf && shf.steps > 0 && shf.k > 0);
+    lu[W_SHAFT] = shOn ? shf.steps : 0; lu[W_SHAFT + 1] = shOn ? shf.maxM : 0; lu[W_SHAFT + 2] = shOn ? 1 : 0;
     const sun = light.sun, on = !!(sun && sun.on);
     li[W_SUN_ON] = on ? 1 : 0;
     if (sun) {

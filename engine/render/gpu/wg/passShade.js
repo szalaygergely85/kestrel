@@ -38,6 +38,7 @@ const S_SPARSE_C0 = S('fogSparseCode0'), S_SPARSE_C1 = S('fogSparseCode1'), S_HA
 const S_ETA = S('etA'), S_ETID = S('etId'), S_ETC = S('etC'); // 38.23 tint words
 const EMPTY_GRASS = { n: new Uint8Array(1), ramp: new Float64Array(12), glyph: new Uint8Array(5) };
 const S_PITCH_A = S('pitchA'), S_PITCH_B = S('pitchB'), S_PITCH_C = S('pitchC'), S_FACEK = S('faceK'), S_SKYCAM = S('skyCam'), S_FOGVIEW = S('fogView'), S_SKYGLOWON = S('skyGlowOn'), S_SKYLINE = S('skyline'), S_GRASS = S('grass'), S_CLIFF = S('cliff'), S_FGP = S('fgP'), S_FGW = S('fgW'), S_FGT = S('fgT');
+const S_SHAFT = S('shaftA'); // CANOPY-SHAFT-01b: (k, iso, pw, maxM) from light.shaft
 const S_UNDER = S('under'), S_UNDER_TINT = S('underTint'), S_UNDER_CAM = S('underCam'), S_UNDER_CEIL = S('underCeil'), S_UNDER_CAUS = S('underCaus'), S_UNDER_RB = S('underRampB'), S_UNDER_RC = S('underRampC'); // SWIM-04c
 /** 38.23: copy the tint table (fb.entityTints) into the ShadeU words: etA.x = count, etId (u32 view), etC rgb+k. Zero alloc; count 0 and cleared tail when absent. */
 export function writeEntityTints(su, su32, tints) {
@@ -306,6 +307,10 @@ export class WgShadePass {
       su[S_FGP] = fgr.on * (1 + fgr.under); su[S_FGP + 1] = fgr.startM; su[S_FGP + 2] = fgr.fadeM; su[S_FGP + 3] = fgr.mix;
       su[S_FGW] = fgr.dirX; su[S_FGW + 1] = fgr.dirY; su[S_FGW + 2] = fgr.cyc; su[S_FGW + 3] = fgr.invTravel;
       su.set(fgr.types, S_FGT);
+    }
+    { // CANOPY-SHAFT-01b: lift on only with march steps > 0 and k > 0 and the shadow-map sun (same gate as the light pass); else k = 0 -> shade skips it
+      const shf = p._light && p._light.shaft, on = !!(shf && shf.steps > 0 && shf.k > 0 && si[S_SUNMAP] && !shf.liftOff); // liftOff: dev-only (gpucompare frame A, 38.76 rule 8a): march stays on, lift off
+      su[S_SHAFT] = on ? shf.k : 0; su[S_SHAFT + 1] = on ? shf.iso : 0; su[S_SHAFT + 2] = on ? shf.pw : 0; su[S_SHAFT + 3] = on ? shf.maxM : 0;
     }
     if (useScene && lightCam) { su[S_HORIZON] = lightCam.horizonRow; su[S_PLANEDY] = lightCam.planeDistY; }
     if (useScene && p._world.terrain && this.palette) { // US-026a S5: the sun for the terrain look, per frame (a few trig calls)

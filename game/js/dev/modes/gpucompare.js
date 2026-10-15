@@ -1,5 +1,5 @@
 import {
-  bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
+  sunFromWorld, bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
   meshFromJSON, meshFromBin, composeCharacter, meshCharacter, collapseRig, riggedModelDef, buildMeshFromTris, MaskAtlas, buildMaskAtlas, writeUnitInstance, buildLightSet, createLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
   bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks, sunPathFrom, applySunPair, blendLook, createAtmosState, mixAtmos, applyAtmosToPalette, gradeCells, createPostState, composePost, postCells,
   bakeImpostor, enableGroupImpostor, resolveGroupLod1, createInstanceBuffer,
@@ -8,8 +8,9 @@ import {
 import {
   runGpuCompare, compareCells, meshCellCap, compareGeometry, compareLight, describeCellNormals, poisonAllCells, unpackReadback,
   terrainMeshSetFor, runStableRow, compareGlow, emisFromPacked,
-  computeDerivatives, shadeSurfaces, edgePass, createShadowParityRunner,
+  computeDerivatives, shadeSurfaces, edgePass, createShadowParityRunner, SKY_GLOW,
 } from '../../../../engine/dev.js';
+import { shaftRule8a } from './shaftRule8a.js'; // CANOPY-SHAFT-01b rule 8a
 import { quadruped16, makeRowGI, createContactAO, setDynamicBlobs, buildContactBlobs } from '../../../../engine/dev.js'; // VOX-PARTS-16b: 12-part fixture for the `vox12` row
 import { POSES as GPU_COMPARE_POSES, GATE_POSES } from '../../../../content/dev-poses.js';
 import { fillUnitGrid, placeholderTeamSpec } from '../unitsHarness.js'; // RE-06: instanced-units pose helpers
@@ -256,6 +257,16 @@ function buildCompareRuns(ctx) {
     ]) {
       runs.push({ world: worldM1, lights: worldM1Lights, name: `world_m1: ${n} (CONTACT-AO-01b blob ambient occlusion)`, hour: 12, cao: items,
         cam: { x: cx, y: cy, z: gz(cx, cy) + eh, yawDeg, pitchDeg }, real: true });
+    }
+  }
+
+  // CANOPY-SHAFT-01b (arch 38.76): 2 rows with the sun-shaft march on (lights.shaft; every other row has shaft null = steps 0 = byte-identical).
+  // Fixture forest (the giForest spot) at noon, camera looking toward the sun (yaw 135 = sun side at hour 12 in this world; adjust the yaw if the fixture sun moves).
+  {
+    const gz = (x, y) => (worldM1.terrain ? worldM1.terrain.groundAt(x, y) : 0), eh = engine.physics.eyeHeight, x = 1268, y = 1040;
+    for (const [n, steps] of [['shaftForestHigh', 6], ['shaftForestUltra', 10]]) {
+      runs.push({ world: worldM1, lights: worldM1Lights, name: `world_m1: ${n} (CANOPY-SHAFT-01b sun shafts, ${steps} steps)`, hour: 12, shaft: { steps, k: 0.35, iso: 0.25, pw: 4, maxM: 28 },
+        cam: { x, y, z: gz(x, y) + eh, yawDeg: 135, pitchDeg: 4 }, real: true });
     }
   }
 
@@ -1108,15 +1119,16 @@ async function runGpuCompareSceneMode(ctx) {
   // e.g. `?gpucompare=1&renderer=mesh&pose=water pond`. No filter = every pose.
   const poseQ = (params.get('pose') || '').toLowerCase();
   const poseRuns = poseQ ? runs.filter((r) => r.name.toLowerCase().includes(poseQ)) : runs;
-  for (const { world, lights, name: poseName, cam, fade, dim, real, before, spritesExtra, needK8, meshOnly, maskPose, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, hour: poseHour, atmos: poseAtmos, post: posePost, instAssert, vmAssert, decalAssert, timeSec: poseTime, carpet: carpetPose, gi: poseGi, under: underPose, cao: poseCao } of poseRuns) {
+  for (const { world, lights, name: poseName, cam, fade, dim, real, before, spritesExtra, needK8, meshOnly, maskPose, overlayOps, anchorShear, pitchedDefault, sun: sunOverride, hour: poseHour, atmos: poseAtmos, post: posePost, instAssert, vmAssert, decalAssert, timeSec: poseTime, carpet: carpetPose, gi: poseGi, under: underPose, cao: poseCao, shaft: poseShaft } of poseRuns) {
     if (world.carpet || world._carpetCtx) { world._carpetCtx = null; world.carpet = null; wg.setCarpet(null, null, 0); } // D2e: carpet poses only
     if (restoreSun) { restoreSun(); restoreSun = null; }
-  for (const r of runs) if (r.lights) { r.lights.gi = null; r.lights.cao = null; } // GI-PROBE-05: leave no probe field on the shared light sets
+  for (const r of runs) if (r.lights) { r.lights.gi = null; r.lights.cao = null; r.lights.shaft = null; } // GI-PROBE-05: leave no probe field on the shared light sets
     atmosOff(); // ENV-03c: previous pose's atmosphere off (one palette bump)
     if (meshOnly && renderer !== 'mesh') { console.log(`[gpucompare] SKIP ${poseName} (mesh renderer only)`); continue; }
     if (sunOverride) restoreSun = applySunOverride(world, lights, sunOverride);
     else if (Number.isFinite(poseHour)) restoreSun = applyHourOverride(world, lights, assets.palette, poseHour, ctx.sunEnabled); // DN-04b
     if (lights) lights.gi = poseGi && lights ? makeRowGI({ ...poseGi, hour: poseHour, lights }) : null; // GI-PROBE-05: only the gi* rows carry a probe field
+    if (lights) lights.shaft = poseShaft ? { ...poseShaft, liftOff: true } : null; // CANOPY-SHAFT-01b: only the shaft* rows carry march data; frame A = lift off (38.76 rule 8a), frame B (below) lift on
     if (lights) { // CONTACT-AO-01b: only the cao* rows carry a blob list (copied into a fixed cao; build once, camera = the pose eye)
       if (poseCao) { const c = createContactAO(), n = poseCao.length, f = (k) => Float32Array.from(poseCao, (b) => b[k]);
         setDynamicBlobs(c, { count: n, x: f('x'), y: f('y'), zBase: f('z'), rx: f('rx'), ry: f('ry'), h: f('h'), k: f('k') });
@@ -1208,6 +1220,18 @@ async function runGpuCompareSceneMode(ctx) {
       }
     }
     const gpuFg = rbw ? rbw.fg : null, gpuBg = rbw ? rbw.bg : null;
+    if (poseShaft && lights && lights.shaft && rbw && wg) { // CANOPY-SHAFT-01b (38.76 rule 8a): frame B = lift on; hard asserts vs frame A (frame A is what the twin compare below uses)
+      const aFg = new Uint8Array(rbw.fg), aBg = new Uint8Array(rbw.bg), lightA = new Uint32Array(await gpuPipeline.readbackLight());
+      lights.shaft.liftOff = false;
+      const r8 = await shaftRule8a({ n, aFg, aBg, lightA, sunI: sunFromWorld(world, assets.palette, {}).sunI, tint: SKY_GLOW.tint,
+        renderB: () => { fbCompare.gpu = true; renderWorld(fbCompare, world, cam); gpuPipeline.frame(fbCompare, lights, cam, world); engine.overlay.flush(cam); rt.present(); }, // frame B gets FRESH readback arrays (rbw stays frame A)
+        readCells: (f, b) => wg.readbackCells(f, b) });
+      const okB = r8.ok, { lifted, liftedPct, glyphDiff, nonShaft, wrongDir, maxLift } = r8.stats, fails = r8.fails; overallOk = overallOk && okB;
+      console.log(`[gpucompare] ${okB ? 'PASS' : 'FAIL'} ${poseName} [shaft frame B vs A]: lifted=${liftedPct.toFixed(2)}% (>=1) glyphDiff=${glyphDiff} nonShaftChanged=${nonShaft} wrongDir=${wrongDir} maxLift=${maxLift}${fails.length ? ' :: ' + fails.join('; ') : ''}`);
+      rowsOut.push({ pose: poseName + ' [shaft frame B]', ok: okB, shaftB: { lifted, liftedPct, glyphDiff, nonShaft, wrongDir, maxLift } });
+      lights.shaft.liftOff = true; // restore frame A for the twin compare
+      fbCompare.gpu = true; renderWorld(fbCompare, world, cam); gpuPipeline.frame(fbCompare, lights, cam, world); engine.overlay.flush(cam); rt.present();
+    }
     const { GI, GA, Depth } = await gpuPipeline.readbackGeometry();
     const lightBuf = await gpuPipeline.readbackLight(); // WG-3b: WebGPU too (null only while the pass is not ported)
     const waterBits = poseName.includes('waterfall') ? await gpuPipeline.readbackWater() : null; // WG-3e: WebGPU too
