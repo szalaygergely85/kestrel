@@ -187,7 +187,7 @@ try {
   });
   await beat('7 follow Burl to the stone, wake it; burl.stone READY, gold "?" over Burl', async () => {
     let arrived = false;
-    for (let i = 0; i < 200 && !arrived; i++) { const b = await ev("(() => { const t = __t.w.get('bear').data.transform; return [t.x, t.y, __t.w.state['burl.phase']]; })()"); if (b[2] >= 2) { arrived = true; break; } await tpA(b[0] - 4, b[1] + 1); await pause(1200); }
+    for (let i = 0; i < 200 && !arrived; i++) { const b = await ev("(() => { const t = __t.w.get('bear').data.transform; return [t.x, t.y, __t.w.state['burl.phase']]; })()"); if (b[2] >= 2) { arrived = true; break; } await ev("(() => { const h = __t.D.playerHandle.data.components.health; if (h.hp < h.max) h.hp = h.max; return 1; })()"); /* ESCORT-REG: stray hits killed the player mid-walk -> death card holds the sim */ await tpA(b[0] - 4, b[1] + 1); await pause(1200); }
     check('Burl reached the stone', arrived, 'phase ' + await ev("__t.w.state['burl.phase']"));
     check('burl.follow done / burl.stone accepted by the arrival', (await stOf('burl.follow')) === 4 || (await stOf('burl.stone')) >= 2, await state('burl.follow', 'burl.stone'));
     // Burl's stone talk (sets dlg.bear.stone.told, the gate for waking the stone) opens by itself on arrival; else start it with E
