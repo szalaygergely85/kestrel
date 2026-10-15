@@ -165,7 +165,7 @@ const synth = () => {
     const pm2 = packVoxelModel(d2, () => 1);
     const Lr = inst.layers;
     const run = (n2) => { for (let k = 0; k < n2; k++) { Lr[7] = (k & 7) / 8; Lr[15] = (k & 3) / 4; Lr[19] = (k & 1) * 0.5; computeVoxelPose(pm2, inst, out); } };
-    const r = allocProbe(run, { n: 20000 });
+    const r = allocProbe(run, { n: 20000, chunk: 1000, settle: 10, limit: 1 }); // chunk: no per-window OSR re-entry of `run` (boxed in Maglev on Node 24); pattern k&7 repeats per chunk
     ok('layered pose: 0 B/call', r.perCall < 1, `${r.perCall} B/call`);
   } else console.log('(run with --expose-gc for the allocation check)');
 }

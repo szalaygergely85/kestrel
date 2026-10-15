@@ -19,9 +19,9 @@ function stepAlloc(f, world, tag) {
   const run = (n) => { for (let i = 0; i < n; i++) f(); };
   const real = world.supportAtOut;
   world.supportAtOut = (g, o, io) => { io[3] = 0; };
-  const own = allocProbe(run, { n: 5000, warm: 4 }).perCall;
+  const own = allocProbe(run, { n: 1500, warm: 4, chunk: 100, settle: 20, limit: ALLOC_CAP }).perCall;
   world.supportAtOut = real;
-  const full = allocProbe(run, { n: 5000, warm: 4 }).perCall;
+  const full = allocProbe(run, { n: 1500, warm: 4, chunk: 100, settle: 20, limit: ALLOC_CAP }).perCall;
   console.log(`  [alloc] ${tag}: own ${own.toFixed(1)} B/step, with real floor ${full.toFixed(1)} B/step`);
   return { own, full };
 }

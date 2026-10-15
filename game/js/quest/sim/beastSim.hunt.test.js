@@ -19,9 +19,9 @@ function stepAlloc(f, world, tag) {
   const run = (n) => { for (let i = 0; i < n; i++) f(); };
   const real = world.supportAtOut;
   world.supportAtOut = (g, o, io) => { io[3] = 0; };
-  const own = allocProbe(run, { n: 3000, warm: 4 }).perCall;
+  const own = allocProbe(run, { n: 1500, warm: 4, chunk: 100, settle: 20, limit: ALLOC_CAP }).perCall;
   world.supportAtOut = real;
-  const full = allocProbe(run, { n: 3000, warm: 4 }).perCall;
+  const full = allocProbe(run, { n: 1500, warm: 4, chunk: 100, settle: 20, limit: ALLOC_CAP }).perCall;
   console.log(`  [alloc] ${tag}: own ${own.toFixed(1)} B/step, with real floor ${full.toFixed(1)} B/step`);
   return { own, full };
 }
@@ -647,8 +647,8 @@ const BOAR_R = 0.45;
     const pz = groundZ(world, 1465, 1025);
     for (let i = 0; i < 600; i++) sim.step(1465, 1025, pz);
     if (global.gc) {
-      const r = allocProbe((n) => { for (let i = 0; i < n; i++) { sim.noise = (i & 1) ? NOISE_SPRINT : 1; sim.step(1465 + (i % 7), 1025, pz); } }, { n: 4000 });
-      ok('P5 zero allocation over 4k steps (perceive + leash adapter)', r.perCall < 100, `perCall=${r.perCall}`);
+      const r = allocProbe((n) => { for (let i = 0; i < n; i++) { sim.noise = (i & 1) ? NOISE_SPRINT : 1; sim.step(1465 + (i % 7), 1025, pz); } }, { n: 10000, chunk: 1000 });
+      ok('P5 zero allocation over 10k steps (perceive + leash adapter)', r.perCall < 100, `perCall=${r.perCall}`);
     } else console.log('(skip) P5 alloc check needs --expose-gc');
   }
 }

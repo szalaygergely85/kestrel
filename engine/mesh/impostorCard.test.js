@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { packNormalOct, unpackNormalOct } from '../voxel/octNormal.js';
 import { bakeImpostor, decodeImpNormal, impMipOffset } from './impostorBake.js';
 import { impViewPick, impBandBits, impDecodeTexel, impTexelOffset, enableGroupImpostor, IMP_BAND_M, impMipPick } from './impostorCard.js';
+import { allocProbe } from '../../tools/allocProbe.mjs';
 import { makeInstanceGroup, compactGroup, createInstanceBuffer, writeUnitInstance, INSTANCE_STRIDE } from './instances.js';
 import { ditherKeep, LDT_ACTIVE } from './lodDither.js';
 import { createRasterTarget, rasterCards } from './rasterJS.js';
@@ -164,12 +165,10 @@ if (typeof global.gc === 'function') {
   const g = mkGroup(64, true);
   const eyeP = { x: 0, y: 0, z: 6 };
   for (let i = 0; i < 64; i++) writeUnitInstance(g.ib, i, (i % 8) * 6 - 20, 66 + (i >> 3) * 2, 0, i * 11, i, 0);
+  // chunked (allocProbe): one long 300-frame loop per window gets Maglev/OSR double boxing on Node 24 (NODE24-ALLOC)
   const measure = (name, fn) => {
-    for (let i = 0; i < 400; i++) fn();
-    global.gc(); const h0 = process.memoryUsage().heapUsed;
-    for (let i = 0; i < 300; i++) fn();
-    const d = process.memoryUsage().heapUsed - h0;
-    assert.ok(d < 64 * 1024, `${name}: heap grew ${d} B over 300 frames`);
+    const r = allocProbe((n) => { for (let i = 0; i < n; i++) fn(); }, { n: 300, chunk: 10, warm: 4 });
+    assert.ok(r.bytes < 64 * 1024, `${name}: heap grew ${r.bytes} B over 300 frames`);
   };
   measure('compactGroup', () => compactGroup(g, null, 5, null, 0, 0, eyeP));
   measure('rasterCards', () => rasterCards(g.cardIb, g.cardCount, imp, t, { M }, cam));

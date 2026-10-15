@@ -45,9 +45,13 @@ function frameC(r) {
 // ---- 0. 0 alloc per step (first in the file: later scenarios make the JIT state noisy, see animBlend.test.js)
 {
   const r = rig();
-  const res = allocProbe((n) => { for (let i = 0; i < n; i++) { ctl[0] = (i % 200) < 100 ? LOCO : ci.attack; ctl[1] = (i % 90) / 25; frameC(r); } }, { n: 50000 });
+  // chunk: run() is a regular hot function (no per-window OSR re-entry, which boxed doubles in Maglev on Node 24); settle: the
+  // request-change helpers (enter / fadeMs, taken every 100 steps) tier up late. Steady-state garbage still fails (allocProbe.test).
+  const it = new Int32Array(1); // step counter across chunks: same LOCO/attack + speed pattern as one long loop
+  const res = allocProbe((n) => { for (let k = 0; k < n; k++) { const i = it[0]++; ctl[0] = (i % 200) < 100 ? LOCO : ci.attack; ctl[1] = (i % 90) / 25; frameC(r); } }, { n: 50000, chunk: 1000, settle: 20, limit: 0.5 });
   if (res.skipped) console.log('SKIP alloc (no --expose-gc)');
-  else ok(`0 B/step blender + driver ${res.perCall.toFixed(3)}`, res.perCall < 0.5);
+  else ok(`0 B/step blender + driver`, res.perCall < 0.5, `${res.perCall.toFixed(3)} B/step`);
+  if (process.env.ALLOC_DEBUG) console.log(`  info: ${res.perCall.toFixed(4)} B/step`);
 }
 
 // ---- 1. foot slide <= 12 mm over a 0 -> run -> 0 speed ramp (stance = foot on the ground)
