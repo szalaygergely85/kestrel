@@ -504,6 +504,24 @@ export function worldToCell(terms, x, y, z, out3) {
 }
 
 /**
+ * WATER-FINISH-01a: screen cell of a world DIRECTION from the eye (point at infinity), pitched perspective only.
+ * out3 = [colIndex, rowIndex, vd] (rounded cell indices, may be off screen); returns false when the direction is behind
+ * the eye plane (vd <= 0) or the camera is ortho. Zero allocation.
+ * @param {PitchedTerms} terms @param {number} dx @param {number} dy @param {number} dz @param {Float64Array|number[]} out3
+ */
+export function projectDirPitched(terms, dx, dy, dz, out3) {
+  if (terms.ortho) return false;
+  const vd = dx * terms.fX + dy * terms.fY + dz * terms.fZ;
+  out3[2] = vd;
+  if (!(vd > 1e-9)) return false;
+  const vx = dx * terms.rX + dy * terms.rY;
+  const vy = dx * terms.uX + dy * terms.uY + dz * terms.uZ;
+  out3[0] = Math.floor((vx / vd / terms.tanHalfX + 1) * (terms.cols / 2) - 0.5 + 0.5);
+  out3[1] = Math.floor((1 - vy / vd / terms.tanHalfY) * (terms.rows / 2) + 0.5);
+  return true;
+}
+
+/**
  * `eye = focus - dist*F`, `F` from `yawDeg`/`pitchDeg` (28.1's basis, same
  * sign convention). Zero allocation.
  * @param {number} fx - focus x

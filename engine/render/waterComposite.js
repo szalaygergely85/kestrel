@@ -21,7 +21,7 @@
 // Order in `renderWorld` (mesh): shade -> composite(surfaces) -> edgePass(mask) -> fillSky -> composite(sky). The GPU does the same
 // in `_passWaterComposite` (after shade, before edge; the sky is already in the shade output there). Zero allocation after warm.
 import { sunFromWorld } from './lighting.js';
-import { unprojectCell, unprojectPitched, pitchedFogScale } from './projection.js';
+import { unprojectCell, unprojectPitched, pitchedFogScale, projectDirPitched } from './projection.js';
 import { lastWaterSelection } from './water.js';
 import { SKY_LUT_N } from './gpu/wgsl/skyLut.js';
 import { skyLutFromPalette, waterReflectAt, waterReflectMix } from './waterReflect.js';
@@ -30,7 +30,13 @@ import {
   fillWaterSlotTable, defaultWaterLooks, waterFogParams, flowStreakHit, riverStreakHit, riverAlpha, waterSurfaceHash, waterEdgeDistance, waterfallHash, rippleAccAt,
 } from './waterLook.js';
 
+import {
+  WF_STRIDE, WF_SLOTS, fillWaterFinishTable, causticHit, shearMirrorRow, reflAccept,
+} from './waterFinish.js';
+
 const _table = new Float32Array(WL_TABLE_SLOTS * WL_STRIDE); // 12 GPU slots + river slots 12..13 (38.45, JS twin)
+const _fin = new Float32Array(WF_SLOTS * WF_STRIDE); // WATER-FINISH-01a (38.77) per-slot finish keys; all 0 = off
+const _mir = new Float64Array(3);
 const _fog = new Float32Array(WFOG_LEN);
 const _rip = new Float32Array(RIPPLE_SLOTS * 4); // S8-B2-13b (38.14): 8 rings x (x, y, age, amp)
 const _p = new Float64Array(3);
@@ -66,6 +72,8 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
   const reflTerms = pitched ? pterms : terms, reflOn = _lutElevTop > 0 && !(pitched && pterms.ortho);
   const sel = lastWaterSelection();
   fillWaterSlotTable(sel, world, fb.waterLooks || defaultWaterLooks(), _table, fb.timeSec || 0);
+  fillWaterFinishTable(sel, world, fb.waterLooks || defaultWaterLooks(), _fin);
+  const timeSec = fb.timeSec || 0;
   waterFogParams(fb.matTable, fb.palette, !!world.terrain, _fog);
   // S8-B2-13b (38.14): fb.ripples is duck-typed {packInto} (engine/fx/ripples.js); absent (NEEDS B1-main not wired
   // yet, or no splashes this scene) = 0 rings, bit-identical to the pre-ripple render.
@@ -73,6 +81,7 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
   const rippleGlyph = fb.rippleGlyph != null ? fb.rippleGlyph : DEFAULT_RIPPLE_GLYPH;
   const rippleGain = fb.rippleGain != null ? fb.rippleGain : DEFAULT_RIPPLE_GAIN;
   const sun = sunFromWorld(world, fb.palette, _sun);
+  const sunUp = sun.dirZ > 0 && sun.sunI > 0;
   const light = fb.light;
   const sunMapOn = !!(light && !light.uniform && light.sunMapOn);
   const kindArr = fb.gbuf.kind, depth = fb.depth.depth, wKind = wt.kind, wDepth = wt.depth, wObj = wt.objectId;
@@ -119,7 +128,7 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
     wr = wr < 0 ? 0 : wr > 255 ? 255 : wr; wg = wg < 0 ? 0 : wg > 255 ? 255 : wg; wb = wb < 0 ? 0 : wb > 255 ? 255 : wb;
 
     let br0 = wr * bgK, bg0 = wg * bgK, bb0 = wb * bgK;
-    const fi = i * 4;
+    const fi = i * 4, fb8 = slot * WF_STRIDE;
     const opaque = !sheet && a >= seeThrough;
     let glyph = fgArr[fi + 3];
     if (opaque) {
@@ -138,6 +147,22 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
         const F = _refl[0];
         wr = waterReflectMix(wr, F, _refl[1]); wg = waterReflectMix(wg, F, _refl[2]); wb = waterReflectMix(wb, F, _refl[3]);
         br0 = waterReflectMix(br0, F, _refl[1]); bg0 = waterReflectMix(bg0, F, _refl[2]); bb0 = waterReflectMix(bb0, F, _refl[3]);
+        const rK = _fin[fb8 + 6];
+        if (rK > 0) { // WATER-FINISH-01a (38.77 A): screen-space reflection of the far bank (shaded bg of the mirrored row)
+          let rowM = -1, colM = col;
+          if (!pitched) rowM = shearMirrorRow(terms.horizonRow, row);
+          else if (projectDirPitched(pterms, _p[0] - pterms.eyeX, _p[1] - pterms.eyeY, -(_p[2] - pterms.eyeZ), _mir)) { colM = _mir[0]; rowM = _mir[1]; }
+          if (rowM >= 0 && rowM < rows && colM >= 0 && colM < cols) {
+            if (ripCount > 0 && rippleAccAt(_rip, ripCount, _p[0], _p[1]) >= RIPPLE_ACC_MIN) rowM += (col & 1) ? 1 : -1; // ripple wobble
+            const mi = rowM * cols + colM;
+            if (rowM >= 0 && rowM < rows && reflAccept(rowM, rows, wKind[mi], kindArr[mi], depth[mi], dW)) {
+              const m = F * rK > 1 ? 1 : F * rK, dim = _fin[fb8 + 7], mf = mi * 4;
+              const mr = bgArr[mf] * dim, mg = bgArr[mf + 1] * dim, mb = bgArr[mf + 2] * dim;
+              wr += (mr - wr) * m; wg += (mg - wg) * m; wb += (mb - wb) * m;
+              br0 += (mr - br0) * m; bg0 += (mg - bg0) * m; bb0 += (mb - bb0) * m;
+            }
+          }
+        }
       }
     }
     // S8-B2-13b (38.14, the note of record): splash ripples, !sheet only (incl. see-through: replaces the floor
@@ -187,6 +212,11 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
       }
       br = bgArr[fi] + (br - bgArr[fi]) * a; bg = bgArr[fi + 1] + (bg - bgArr[fi + 1]) * a; bb = bgArr[fi + 2] + (bb - bgArr[fi + 2]) * a;
     } else if (!isSky) _mask[i] = 1;
+    if (!opaque && !shore && !isSky && !sheet && sunUp && _fin[fb8] > 0 && column < _fin[fb8 + 1] && causticHit(_floorP[0], _floorP[1], timeSec, _fin[fb8])) {
+      glyph = _fin[fb8 + 5]; // WATER-FINISH-01a (38.77 B): shallow caustic flicker on the see-through bed
+      const kc = k * (1 - a);
+      fr += _fin[fb8 + 2] * kc; fg += _fin[fb8 + 3] * kc; fb2 += _fin[fb8 + 4] * kc;
+    }
     gArr[i] = glyph;
     fgArr[fi] = byte(fr); fgArr[fi + 1] = byte(fg); fgArr[fi + 2] = byte(fb2); fgArr[fi + 3] = glyph;
     bgArr[fi] = byte(br); bgArr[fi + 1] = byte(bg); bgArr[fi + 2] = byte(bb); bgArr[fi + 3] = 255;
