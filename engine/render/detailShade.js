@@ -86,6 +86,26 @@ function qfloor(x) { return Math.floor(x + (1 / 256)); }
 
 function smoothstepFast(a, b, x) { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); }
 function coverFast(cx, cy) { return Math.abs(cx) + Math.abs(cy); }
+/**
+ * OB-197: footprint-aware bevel. The old test (`gv - yv < top` -> topShade, else `yv < bottom` -> bottomShade) is a point
+ * sample of a thin periodic pattern, so as the cell's v-footprint `cov` (= |dvdx| + |dvdy|) grew/shrank with distance a
+ * different subset of cells fell in the 0.03 m bands and the light/dark blotches inside a block "transformed". This is the
+ * box-filter of that pattern over [yv - cov/2, yv + cov/2]: coverage fractions mix the two shades, a footprint of a
+ * full block or more gives the periodic mean. cov -> 0 is the old step function (edges differ only within half a footprint).
+ * WGSL twin: shade.wgsl.js bevelShadeK.
+ */
+export function bevelShadeK(yv, cov, gv, top, topShade, bottom, bottomShade) {
+  const mean = (top * (topShade - 1) + bottom * (bottomShade - 1)) / gv;
+  if (cov >= gv) return 1 + mean;
+  const h = (cov > 1e-6 ? cov : 1e-6) * 0.5, lo = yv - h, hi = yv + h, w = h * 2;
+  let tf = Math.min(hi, gv) - Math.max(lo, gv - top); tf = tf > 0 ? tf / w : 0;
+  let bf = Math.min(hi, bottom) - Math.max(lo, 0); bf = bf > 0 ? bf / w : 0;
+  // footprint hanging over a block edge continues into the neighbour course (period gv)
+  if (lo < 0) { const t2 = gv - Math.max(lo + gv, gv - top); if (t2 > 0) tf += t2 / w; }
+  else if (hi > gv) { const b2 = Math.min(hi - gv, bottom); if (b2 > 0) bf += b2 / w; }
+  if (tf > 1) tf = 1; if (bf > 1) bf = 1;
+  return 1 + tf * (topShade - 1) + bf * (bottomShade - 1);
+}
 function bandFactorFast(band, z) {
   if (!band || z == null) return 1;
   if (z <= band.full) return 1;
@@ -199,8 +219,7 @@ export function shadeV2(DP, rgb, m, s, L, out) {
 
   if (g && m.face.bevel && tier <= lodGates.bevel) {
     const bv = m.face.bevel, yv = fv * g.v;
-    if (g.v - yv < bv.top) shadeK *= bv.topShade;
-    else if (yv < bv.bottom) shadeK *= bv.bottomShade;
+    shadeK *= bevelShadeK(yv, Math.abs(s.dvdx) + Math.abs(s.dvdy), g.v, bv.top, bv.topShade, bv.bottom, bv.bottomShade);
   }
   const band = m.band;
   if (band) {
@@ -473,8 +492,7 @@ export function shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist
 
   if (g && rec.bevel && tier <= rec.bevelGate) {
     const bv = rec.bevel, yv = fv * g.v;
-    if (g.v - yv < bv.top) shadeK *= bv.topShade;
-    else if (yv < bv.bottom) shadeK *= bv.bottomShade;
+    shadeK *= bevelShadeK(yv, Math.abs(dvdx) + Math.abs(dvdy), g.v, bv.top, bv.topShade, bv.bottom, bv.bottomShade);
   }
   const band = rec.band;
   if (band) {

@@ -113,7 +113,7 @@ function core(src) {
     uSetF: f1Tex(packed.setF, SET_F_WIDTH, nSet),
   };
   Object.assign(base, mkHash(src));
-  for (const n of ['fmodGlsl', 'qfloor', 'smoothstepFast', 'coverFast', 'orientClassCode', 'crossLineFast', 'lineGlyphCodeFast', 'faceK', 'levelFromThresholds', 'pickCode', 'pickGlyphCodeFast']) base[n] = compileFn(src, n, base);
+  for (const n of ['fmodGlsl', 'qfloor', 'smoothstepFast', 'coverFast', 'bevelShadeK', 'orientClassCode', 'crossLineFast', 'lineGlyphCodeFast', 'faceK', 'levelFromThresholds', 'pickCode', 'pickGlyphCodeFast']) base[n] = compileFn(src, n, base);
   base.shadeCore = compileFn(src, 'shadeCore', base);
   return base;
 }
@@ -506,8 +506,9 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   // re-pinned 50440 -> 50824 by CONTACT-AO-01b (caoFt / caoFg: LIGHT.w bits 1..7 scale the terrain/carpet ambient; q 0 -> exactly 1.0)
   // re-pinned 44782 -> 45683 by MASK-c (shadeGrass ground blend + back-light, packed GA.w word; TS_PATCH_NOISE_WGSL extracted verbatim)
   // re-pinned 41264 -> 44782 by OB-073-D2e (kind-10 shadeGrass + ShadeU.grass table + the kind-10 branch in fs_main; calm-ground code untouched, asserted by the terrain mutation probes above)
-  assert.equal(SHADE_WGSL.length, 58076, 'stable off: SHADE_WGSL length unchanged');
-  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '9012ad714a2199cb1d0dcbae5782c9f1bcc810d30effcc365fa80ad3ff70c1c3', 'stable off: SHADE_WGSL byte-identical to pre-073b');
+  // re-pinned 58076 -> 58963 by OB-197 (bevelShadeK: footprint-aware stone bevel; shadeCore bevel call)
+  assert.equal(SHADE_WGSL.length, 58963, 'stable off: SHADE_WGSL length unchanged');
+  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), 'c9effbc1c3e0392ca251c3378762f7d8d2adce4b5a39dcc3220b47155fa5f97e', 'stable off: SHADE_WGSL byte-identical to pre-073b');
   assert.ok(!/lvl|lvOut|location\(2\)/.test(SHADE_WGSL), 'stable off: no level output');
   assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
   assert.deepEqual(SHADE_LEVEL_TARGETS, ['rgba8', 'rgba8', 'r8ui']);

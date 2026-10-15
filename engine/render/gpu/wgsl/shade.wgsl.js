@@ -472,6 +472,19 @@ fn pickGlyphCodeFast(setId: i32, gb: f32, hA: f32, classIdx: i32, cutoff: f32) -
 
 // --- shadeCore (14.2 item 3): everything that depends on THIS sub-sample's own u/v/z/aoD, up to (but excluding) the discrete
 // glyph pick and the gain/hue/overbright/fog/byte-quantise tail - those run once per CELL in fs_main on the group average.
+// OB-197: footprint-aware bevel (twin of detailShade.js bevelShadeK): box-filter of the top/bottom bevel bands over the cell's v-footprint.
+fn bevelShadeK(yv: f32, cov: f32, gv: f32, top: f32, topShade: f32, bottom: f32, bottomShade: f32) -> f32 {
+  let mean = (top * (topShade - 1.0) + bottom * (bottomShade - 1.0)) / gv;
+  if (cov >= gv) { return 1.0 + mean; }
+  let h = max(cov, 1.0e-6) * 0.5; let lo = yv - h; let hi = yv + h; let w = h * 2.0;
+  var tf = min(hi, gv) - max(lo, gv - top); tf = select(0.0, tf / w, tf > 0.0);
+  var bf = min(hi, bottom) - max(lo, 0.0); bf = select(0.0, bf / w, bf > 0.0);
+  if (lo < 0.0) { let t2 = gv - max(lo + gv, gv - top); if (t2 > 0.0) { tf += t2 / w; } }
+  else if (hi > gv) { let b2 = min(hi - gv, bottom); if (b2 > 0.0) { bf += b2 / w; } }
+  tf = min(tf, 1.0); bf = min(bf, 1.0);
+  return 1.0 + tf * (topShade - 1.0) + bf * (bottomShade - 1.0);
+}
+
 struct Core {
   b: f32, gb: f32, cr: f32, cg: f32, cb: f32, bgK: f32, hA: f32, hB: f32,
   onJoint: bool,
@@ -577,8 +590,7 @@ fn shadeCore(u: f32, v: f32, z: f32, aoD: f32,
   if (hasGrid && hasBevel && tier <= bevelGate) {
     let top = mf5.x; let topShade = mf5.y; let bottom = mf5.z; let bottomShade = mf5.w;
     let yv = fv * gv;
-    if (gv - yv < top) { shadeK *= topShade; }
-    else if (yv < bottom) { shadeK *= bottomShade; }
+    shadeK *= bevelShadeK(yv, abs(dvdx) + abs(dvdy), gv, top, topShade, bottom, bottomShade);
   }
 
   if (hasBand) {
