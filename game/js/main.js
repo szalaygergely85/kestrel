@@ -982,7 +982,7 @@ const swordStyleIds = {
 sprites.pool.renderer = renderer; // review item 1: sprite rects follow the pitched scene
 const wgActive = !!(wgPipeline && wgPipeline.ready && rt.backend === 'webgpu'); // WG-2b: geometry-only WebGPU pipeline (CPU still shades)
 engine.events.on('combat:hit', (p) => { if (p && p.source === 'player') hitStop.trigger(p.heavy ? 'heavy' : 'light'); }); // HITSTOP-01
-const hzb = createHzbInvalidator(() => ((occlOpt.enabled || params.get('stable') !== '0') && wgActive && wgPipeline.ready ? wgPipeline : null)); // OCCL-MAIN-01 (+ US-073c): cuts invalidate the HZB and the stable-pass history
+const hzb = createHzbInvalidator(() => ((occlOpt.enabled || params.get('stable') !== '0') && wgActive && wgPipeline.ready ? wgPipeline : null), { onCut: () => { if (engine.instances && engine.instances.resetLodHistory) engine.instances.resetLodHistory(); } }); // OCCL-MAIN-01 (+ US-073c): cuts invalidate the HZB and the stable-pass history
 if (wgActive) { wgPipeline.bindVoxels(gameVoxelPool); wgPipeline.bindViewModel(engine.viewModel); }
 engine.attachMaterialTable(matTable); engine.instances.bindPool(gameVoxelPool); // RE-06 (28.6)
 if (wgActive) wgPipeline.bindInstances(engine.instances);
