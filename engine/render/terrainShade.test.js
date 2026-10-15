@@ -384,7 +384,7 @@ export function patchShape(shade) {
   const r = glyphStable(shadeTerrain);
   console.log('OB-073 2..40 m sweep (0.05 m steps): worst glyph changes/point ' + r.worstG + ', worst colour jumps/point ' + r.worstJ);
   check('OB-073 approaching 2..40 m: each point changes glyph <= 3x (band/near->far switch, never re-rolls) (' + r.worstG + ')', r.worstG <= 3);
-  check('OB-073 approaching 2..40 m: each point colour jumps (> 4 bytes / 0.05 m) <= 4x (tier crossings only) (' + r.worstJ + ')', r.worstJ <= 4);
+  check('OB-073 approaching 2..40 m: each point colour jumps (> 4 bytes / 0.05 m) <= 12x (OB-208: a tier crossing is now a few small steps, not one big) (' + r.worstJ + ')', r.worstJ <= 12);
   const w = slowWalkFlips(shadeTerrain);
   console.log('OB-073 walk 1 m: ' + w.flips + '/' + w.n + ' glyphs flip 3..30 m ahead');
   check('OB-073 walking 1 m flips < 3 % of glyphs 3..30 m ahead (' + w.flips + '/' + w.n + ')', w.flips / w.n < 0.03);
@@ -586,6 +586,21 @@ export function patchShape(shade) {
   let anim = 0; const far = { ...cc, farGrass: recW };
   for (let k = 0; k < 300; k++) { const t = 40 + k * 0.1, u = 1500 + k; shadeTerrain(t, 0, 0.8, u, 1035, 10, far, a); shadeTerrain(t, 0, 0.8, u, 1035, 10.33, far, b); if (a.level === 254 && (a.glyph !== b.glyph || a.fg[1] !== b.fg[1])) anim++; }
   check('beyond the carpet the ramp shimmer still animates with wind (' + anim + ' cells changed)', anim > 0);
+}
+// OB-208 (AA-08): soft patch edge. Sweep u across patches: glyph/level constant, plateaus (pure tiers) exist, edges give intermediate colours.
+{
+  const o = out(); const cols = new Map(); let g0 = -1, glyphOk = true, levelOk = true, edgeMid = 0, prev = null, maxJump = 0;
+  for (let k = 0; k < 4000; k++) {
+    shadeTerrain(10, 0, 0.6, 1000 + k * 0.01, 1035, 0, ctx, o);
+    if (g0 < 0) g0 = o.glyph; if (o.glyph !== g0) glyphOk = false; if (o.level !== 255) levelOk = false;
+    const key = o.fg[1]; cols.set(key, (cols.get(key) || 0) + 1);
+    if (prev !== null) maxJump = Math.max(maxJump, Math.abs(key - prev)); prev = key;
+  }
+  const sorted = [...cols.entries()].sort((a, b) => b[1] - a[1]);
+  const plateau = sorted.filter(([, n]) => n > 300).length; // pure tier colours (interior / outside the patch)
+  for (const [, n] of sorted) if (n <= 300) edgeMid++;
+  check('OB-208 patch sweep: glyph + level unchanged (' + g0 + ')', glyphOk && levelOk);
+  check('OB-208 patch sweep: pure tier plateaus exist (' + plateau + ') and the edges give intermediate tones (' + edgeMid + ')', plateau >= 2 && edgeMid >= 3);
 }
 console.log(`terrainShade.test.js: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);
