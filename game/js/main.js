@@ -1837,6 +1837,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       }
       if (look) look.dispose(); // arch review 1: no leaked click/pointerlock listeners across restarts
       look = new PlayerLook(canvas, input, startT.yawDeg, startT.pitchDeg, { pitchClampDeg }); // Mesh first-person pitch clamp.
+      if (params.get('nopause') === '1') Object.defineProperty(look, 'locked', { get: () => true, set: () => {}, configurable: true }); // CAPTURE-NOPAUSE: headless never gets pointer lock -> treat as locked so isPaused/menu/input gates stay open (mouse look does nothing without real lock)
       look.sensDegPerPx = savedSettings.mouseSensitivity; // US-038b (no-op until PlayerLook reads instance fields, see NEEDS PC-A)
       look.invertY = savedSettings.invertY;
       if (cinematic) look.dispose(); // update's cinematic branch never reads game input

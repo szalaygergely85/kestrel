@@ -34,9 +34,8 @@ try {
   const rows = [];
   for (const q of ['low', 'medium', 'high']) for (const [w, h] of [[1280, 720], [1717, 790], [1366, 638]]) {
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: false });
-    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?pose=${POSE}&gpu=${backend}&quality=${q}&title=0&shadows=off` });
+    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?pose=${POSE}&gpu=${backend}&quality=${q}&title=0&shadows=off&nopause=1` });
     await pause(9000);
-    await evaluate(cdp, 'window.dispatchEvent(new Event("focus"))'); await pause(500);
     const s = await cdp.send('Page.captureScreenshot', { format: 'png' });
     const name = `ob189-${q}-${w}x${h}`; writeFileSync(path.join(out, name + '.png'), Buffer.from(s.data, 'base64'));
     const r = await evaluateAsync(cdp, COUNT(s.data, THRESH));
