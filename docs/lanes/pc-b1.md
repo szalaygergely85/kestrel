@@ -1181,3 +1181,4 @@ Browser check (main session): `node tools/capture-browser.mjs --port {port} --ur
   Fix: `gateOnStone` in game/js/quest/errands.js (called from gateOnMeet, already applied at main.js:552): non-`burl.*` defs that wait on burl.boars but name neither burl.follow nor burl.stone also require `{quest:'burl.stone', done:true}`. Input defs not mutated.
   Tests: new game/js/quest/ob187.test.js (real content, stone accepted -> blue `!` list empty; after stone done gondola offered); errands.test.js fixtures now finish burl.follow+burl.stone first (2 spots). errands*, ob187, rookQuests, offerMarks, chainMarks, m1FollowChain, questGiverFlow PASS.
   Not touched: questBook.js/main.js. Other sq.* with burl.home flag are covered the same way. Owner to confirm at the waystone (no browser run).
+- npcBear.test.js: Enter on choosing every 2nd step (release tick for offerArmed); no game change.

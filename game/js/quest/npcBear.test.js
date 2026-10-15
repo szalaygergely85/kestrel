@@ -113,7 +113,7 @@ ok('breach exit is visible: tower start is within 25 m', Math.hypot(tower.origin
   while (ctl.open && steps++ < 20000) {
     keys.clear();
     if (ctl.runner.state === 'waiting' && steps % 7 === 0) keys.add('KeyE');
-    if (ctl.runner.state === 'choosing') keys.add('Enter');
+    if (ctl.runner.state === 'choosing' && steps % 2 === 0) keys.add('Enter'); // OB-186 redo: offers need a release step before the deliberate press
     ctl.step(1 / 60, input, true);
     if (comp.partRot && comp.partRot.rx > maxJaw) maxJaw = comp.partRot.rx;
     if (comp.anim === 'talk') sawTalk = true;
