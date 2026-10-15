@@ -67,13 +67,18 @@ const _old = new Uint32Array(INSTANCE_STRIDE);
  * @param {number} team - 0..7
  */
 export function writeUnitInstance(ib, i, x, y, z, yawDeg, objectId, team) {
+  writeScaledInstance(ib, i, x, y, z, yawDeg, 1, objectId, team);
+}
+
+/** SAPLINGS: `writeUnitInstance` with a uniform scale `sc` on the 3x3 (sc 1 = identical words). Same row layout, so JS raster and GPU read it alike. */
+export function writeScaledInstance(ib, i, x, y, z, yawDeg, sc, objectId, team) {
   cosSinDeg(yawDeg, _cs);
   const c = _cs[0], s = _cs[1];
   const f = ib.f32, o = i * INSTANCE_STRIDE, u = ib.u32;
   for (let w = 0; w < INSTANCE_STRIDE; w++) _old[w] = u[o + w];
-  f[o] = c; f[o + 1] = -s; f[o + 2] = 0; f[o + 3] = x;
-  f[o + 4] = s; f[o + 5] = c; f[o + 6] = 0; f[o + 7] = y;
-  f[o + 8] = 0; f[o + 9] = 0; f[o + 10] = 1; f[o + 11] = z;
+  f[o] = c * sc; f[o + 1] = -s * sc; f[o + 2] = 0; f[o + 3] = x;
+  f[o + 4] = s * sc; f[o + 5] = c * sc; f[o + 6] = 0; f[o + 7] = y;
+  f[o + 8] = 0; f[o + 9] = 0; f[o + 10] = sc; f[o + 11] = z;
   const aligned = (((yawDeg % 90) + 90) % 90 === 0) ? INST_FLAG_ALIGNED : 0; // the exact voxelPose test
   ib.u32[o + 12] = objectId >>> 0;
   ib.u32[o + 13] = (aligned | ((team & 7) << INST_TEAM_SHIFT)) >>> 0;
