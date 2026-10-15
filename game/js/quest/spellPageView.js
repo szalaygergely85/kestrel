@@ -1,8 +1,8 @@
 // game/js/quest/spellPageView.js (SPELL-03, docs/epics/ep-spells.md section 3): the "Spells" page of the inventory screen.
 // Three columns Fire / Light / Wind, one card per spell. Pure view: spell data and the book are injected, strings are prebuilt
 // at construct time, `draw` only walks them (0 alloc). No text mentions Esc (owner rule).
-// Injected API (SPELL-01/02): defs = ordered spells { id, name, branch:'fire'|'light'|'wind', root, glyph, colour, tiers:[{mana, cd, dmg?, r?, ...} x3] };
-// book = { tier(id) 0..3, canRaise(id) }; scrolls() = Spell Scroll count; useScroll(id) = new level or 0.
+// Injected API (SPELL-01/02): defs = SPELL_DEFS (object keyed by id, or an array with ids) { name, branch:'fire'|'light'|'wind', root, glyph, color, tiers:[{mana, cd, dmg?, r?, ...} x3] };
+// book = createSpellBook (tier(id) 0..3, canRaise(id)); scrolls() = Spell Scroll count; useScroll(id) = new level or 0 (main wraps spellScroll.useScroll).
 export const BRANCHES = Object.freeze(['fire', 'light', 'wind']);
 const TITLES = { fire: 'Fire', light: 'Light', wind: 'Wind' };
 const DEFAULT_RGB = { fire: [235, 120, 60], light: [90, 220, 205], wind: [205, 215, 205] };
@@ -28,7 +28,7 @@ export function tierText(row) {
 
 /** @param {object} o {defs, book, scrolls, useScroll, rgb?, colors:{text,dim,hint,gold,frame}, say?} */
 export function createSpellPageView(o) {
-  const list = Array.isArray(o.defs) ? o.defs : Object.values(o.defs);
+  const list = Array.isArray(o.defs) ? o.defs : Object.keys(o.defs).map((id) => ({ id, ...o.defs[id] }));
   const col = { fire: [], light: [], wind: [] };
   for (const d of list) if (col[d.branch]) col[d.branch].push(d);
   for (const b of BRANCHES) col[b].sort((a, c) => (c.root ? 1 : 0) - (a.root ? 1 : 0));
@@ -37,7 +37,7 @@ export function createSpellPageView(o) {
   const pips = ['[---]', '[#--]', '[##-]', '[###]'];
   for (let ci = 0; ci < 3; ci++) {
     col[BRANCHES[ci]].forEach((d, ri) => {
-      const rgbk = (o.rgb && o.rgb[d.colour]) || DEFAULT_RGB[d.branch];
+      const rgbk = (o.rgb && o.rgb[d.color || d.colour]) || DEFAULT_RGB[d.branch];
       const stat = [], now = [], next = [], plain = [];
       for (let t = 0; t < 4; t++) {
         stat.push(t ? pips[t] + '  mp ' + d.tiers[t - 1].mana + '  cd ' + NUM(d.tiers[t - 1].cd) + ' s' : '');

@@ -1,31 +1,27 @@
 // SPELL-03: Spells tab golden cells. Run: node game/js/quest/spellPageView.test.js
-// Stand-in spell data (SPELL-01 spellDefs.js / spellBook.js merge later; the view only needs this shape).
+// Uses the real spellDefs / spellBook / spellScroll.
 import { makeOk } from '../../../engine/test/assert.js';
 import paletteMod from '../../../design/palette.js';
 import itemsMod from '../../../design/items.js';
 import invStyleMod from '../../../design/models/inventory_ui.js';
 import { createInventoryScreen } from './inventoryScreen.js';
 import { ensureInventory } from './sim/inventory.js';
+import { SPELL_DEFS } from './spellDefs.js';
+import { createSpellBook } from './sim/spellBook.js';
+import { useScroll, SCROLL_ID } from './sim/spellScroll.js';
+import { addItem, countOf } from './sim/inventory.js';
 import { tierText } from './spellPageView.js';
 
 paletteMod; itemsMod; invStyleMod;
 const A = globalThis.ASSETS, style = A.uiStyle.inventory, P = style.panel;
 let pass = 0, fail = 0; const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
-const T = (m, c, d, k, extra = {}) => ({ mana: m, cd: c, dmg: d, ...extra });
-const defs = [
-  { id: 'fireball', name: 'Fireball', branch: 'fire', root: true, glyph: '*', colour: 'ember', tiers: [T(5, 0.5, 3, { r: 2 }), T(5, 0.5, 4, { r: 3.5 }), T(9, 0.5, 5, { r: 4 })] },
-  { id: 'firering', name: 'Fire Ring', branch: 'fire', glyph: 'O', colour: 'ember', tiers: [T(8, 4, 4), T(8, 3.5, 6), T(7, 3, 8)] },
-  { id: 'spark', name: 'Spark', branch: 'light', root: true, glyph: '+', colour: 'aether', tiers: [T(4, 1.5, 1, { stun: 0.8 }), T(4, 1.2, 2), T(3, 1, 3)] },
-  { id: 'lightorb', name: 'Light Orb', branch: 'light', glyph: 'o', tiers: [T(6, 0, 0), T(6, 0, 0), T(5, 0, 0)] },
-  { id: 'ward', name: 'Ward', branch: 'light', glyph: 'o', tiers: [T(8, 12), T(8, 10), T(7, 8)] },
-  { id: 'gust', name: 'Gust', branch: 'wind', root: true, glyph: '~', tiers: [T(5, 2), T(5, 1.8), T(4, 1.5)] },
-  { id: 'updraft', name: 'Updraft', branch: 'wind', glyph: '^', tiers: [T(6, 5), T(5, 4), T(4, 3)] },
-];
-const st = { fireball: 1, firering: 0, spark: 3, lightorb: 0, ward: 0, gust: 0, updraft: 0 }; let scrolls = 1; const used = [];
-const book = { tier: (id) => st[id] | 0, canRaise: (id) => st[id] > 0 && st[id] < 3 };
-const spellPage = { defs, book, scrolls: () => scrolls, useScroll: (id) => { if (scrolls < 1 || !book.canRaise(id)) return 0; scrolls--; used.push(id); return ++st[id]; } };
 const player = { components: {} }; const inv = ensureInventory(player, { pack: [], left: null, right: null });
+const wstate = { 'spell.fireball': 1, 'spell.spark': 3 }; const book = createSpellBook(wstate);
+addItem(inv, A.items, SCROLL_ID, 1); const used = [];
+const scrolls = () => countOf(inv, SCROLL_ID);
+const spellPage = { defs: SPELL_DEFS, book, scrolls, useScroll: (id) => { const r = useScroll(inv, book, id); if (r.ok) used.push(id); return r.ok ? r.level : 0; } };
+const st = new Proxy({}, { get: (_, id) => book.tier(id) });
 const toasts = [];
 const view = createInventoryScreen({ style, items: A.items, rgb: A.palette.rgb, inventoryOf: () => inv, spellPage, toast: { say: (m) => toasts.push(m) } });
 const cols = 160, rows = 60, ch = new Int32Array(cols * rows);
@@ -53,9 +49,9 @@ ok(row(19).includes('Fire Ring  not learned') && !row(25).includes('[E]'), 'unle
 step('KeyW'); step('KeyE'); s = draw();
 ok(row(25).includes('Raise Fireball to level 2?  [E] Yes  [Q] No'), 'AC3 confirm line');
 step('KeyQ'); s = draw();
-ok(st.fireball === 1 && scrolls === 1 && !row(25).includes('Raise'), 'AC3 Q cancels, no change');
+ok(st.fireball === 1 && scrolls() === 1 && !row(25).includes('Raise'), 'AC3 Q cancels, no change');
 step('KeyE'); step('KeyE'); s = draw();
-ok(st.fireball === 2 && scrolls === 0 && used[0] === 'fireball' && toasts[0] === 'Fireball is now level 2', 'AC3 Yes calls useScroll');
+ok(st.fireball === 2 && scrolls() === 0 && used[0] === 'fireball' && toasts[0] === 'Fireball is now level 2', 'AC3 Yes calls useScroll');
 ok(row(24).includes('Spell Scrolls: 0') && !row(25).includes('[E]'), 'footer after use');
 // no pack change, tab toggles back, close works
 step('KeyT'); s = draw(); ok(s.includes(' PACK '), 'T returns to the pack');
