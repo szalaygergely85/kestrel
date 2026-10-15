@@ -597,7 +597,7 @@ function createPool(count) {
   for (let i = 0; i < pn; i++) { lv[i] = i; rec[i] = i; } // the first POOL records start bound (identity); the binder swaps from the first update on
   return {
     lv, rec, n: pn, free, freeN: 0, cand: new Int16Array(MAX_RECORDS), candD: new Float64Array(MAX_RECORDS),
-    rIn: 150, rOut: 180, every: 30, maxBind: 8, full: 0, evictGap: 20,
+    rIn: 150, rOut: 180, every: 30, nc: 0, phase: 0, primed: false, maxBind: 8, full: 0, evictGap: 20,
     lastX: new Float64Array(MAX_RECORDS), lastY: new Float64Array(MAX_RECORDS), // last position of an unbound record (BEAST-POOL-b)
   };
 }
@@ -674,13 +674,15 @@ function bindNow(sim, i) {
   return true;
 }
 
-/** Binder: unbind > rOut or off the nav tile (protected ones only for the tile), bind nearest-first < rIn (max `maxBind`), evict when full. No rng. */
-function poolUpdate(sim, px, py) {
-  const P = sim.pool, rec = P.rec, lv = P.lv, cap = rec.length, g = sim.grid, tile = sim.tileMode === true;
+/** Binder, 3 phases (SIM-SPIKE-01: the O(records) candidate scan is sliced over the pool.every steps, no rng, deterministic):
+ *  1) unbind > rOut or off the nav tile (protected ones only for the tile); 2) scan records [from,to) for candidates; 3) bind nearest-first
+ *  < rIn (max maxBind), evict when full. Candidates are re-validated + re-measured at bind time (the scan may be up to pool.every steps old). */
+function poolUnbind(sim, px, py) {
+  const P = sim.pool, rec = P.rec, g = sim.grid, tile = sim.tileMode === true;
   const x0 = tile ? g.x0 : 0, y0 = tile ? g.y0 : 0, x1 = tile ? x0 + g.w * g.cell : 0, y1 = tile ? y0 + g.h * g.cell : 0;
-  const hasP = px === px && py === py, rOut2 = P.rOut * P.rOut, rIn2 = P.rIn * P.rIn;
+  const hasP = px === px && py === py, rOut2 = P.rOut * P.rOut;
   let w = 0;
-  for (let k = 0; k < P.n; k++) { // 1) unbind / release, stable compaction
+  for (let k = 0; k < P.n; k++) { // stable compaction
     const i = rec[k], st = sim.state[i];
     if (sim.down[i] || st === STATE_GONE) { releaseRec(sim, i); continue; }
     if (deadSt(st) || sim.pendingDied[i] === 1 || sim.despawnReq[i] === 1) { rec[w++] = i; continue; } // 37.16.5: dying/corpse/sink + pending death keep their slot until GONE (any reason)
@@ -694,16 +696,35 @@ function poolUpdate(sim, px, py) {
     rec[w++] = i;
   }
   P.n = w;
-  if (!hasP) return;
-  let nc = 0; // 2) candidates (unbound, alive, in the tile, close or with a goal)
-  for (let r = 0; r < sim.count; r++) {
+}
+/** Append candidates (unbound, alive, in the tile, close or with a goal) among records [from, to). */
+function poolScan(sim, from, to, px, py) {
+  const P = sim.pool, lv = P.lv, g = sim.grid, tile = sim.tileMode === true, rIn2 = P.rIn * P.rIn;
+  const x0 = tile ? g.x0 : 0, y0 = tile ? g.y0 : 0, x1 = tile ? x0 + g.w * g.cell : 0, y1 = tile ? y0 + g.h * g.cell : 0;
+  let nc = P.nc;
+  for (let r = from; r < to; r++) {
+    if (lv[r] >= 0 || sim.down[r] || sim.dormCamp[r] || deadSt(sim.state[r])) continue;
+    if (tile) { const hx = sim.homeX[r], hy = sim.homeY[r]; if (hx < x0 || hy < y0 || hx >= x1 || hy >= y1) continue; }
+    const dx = P.lastX[r] - px, dy = P.lastY[r] - py;
+    if (sim.goal.on[r] !== 1 && dx * dx + dy * dy >= rIn2) continue;
+    P.cand[nc++] = r;
+  }
+  P.nc = nc;
+}
+function poolBind(sim, px, py) {
+  const P = sim.pool, rec = P.rec, lv = P.lv, cap = rec.length, g = sim.grid, tile = sim.tileMode === true;
+  const x0 = tile ? g.x0 : 0, y0 = tile ? g.y0 : 0, x1 = tile ? x0 + g.w * g.cell : 0, y1 = tile ? y0 + g.h * g.cell : 0, rIn2 = P.rIn * P.rIn;
+  let nc = 0; // re-validate + re-measure the scanned candidates
+  for (let c = 0; c < P.nc; c++) {
+    const r = P.cand[c];
     if (lv[r] >= 0 || sim.down[r] || sim.dormCamp[r] || deadSt(sim.state[r])) continue;
     if (tile) { const hx = sim.homeX[r], hy = sim.homeY[r]; if (hx < x0 || hy < y0 || hx >= x1 || hy >= y1) continue; }
     const dx = P.lastX[r] - px, dy = P.lastY[r] - py, d2 = dx * dx + dy * dy, pri = sim.goal.on[r] === 1;
     if (!pri && d2 >= rIn2) continue;
     P.cand[nc] = r; P.candD[nc] = pri ? -1 : Math.sqrt(d2); nc++;
   }
-  for (let m = 0; m < P.maxBind && nc > 0; m++) { // 3) nearest first, lower record on a tie (partial selection, no sort)
+  P.nc = 0;
+  for (let m = 0; m < P.maxBind && nc > 0; m++) { // nearest first, lower record on a tie (partial selection, no sort)
     let b = 0;
     for (let c = 1; c < nc; c++) if (P.candD[c] < P.candD[b] || (P.candD[c] === P.candD[b] && P.cand[c] < P.cand[b])) b = c;
     const r = P.cand[b], cd = P.candD[b];
@@ -721,11 +742,28 @@ function poolUpdate(sim, px, py) {
     bindRec(sim, r, P.free[--P.freeN]);
   }
 }
+/** Synchronous full binder pass (tile load, first step, tests). */
+function poolUpdate(sim, px, py) {
+  poolUnbind(sim, px, py);
+  if (!(px === px && py === py)) return;
+  sim.pool.nc = 0; poolScan(sim, 0, sim.count, px, py); poolBind(sim, px, py);
+  sim.pool.phase = 0;
+}
+/** Per-step binder: phases 0..every-2 scan a record slice each, the last phase unbinds + binds (all work <= 1/every of the full pass). */
+function poolStep(sim, px, py) {
+  const P = sim.pool, e = P.every;
+  if (!P.primed) { P.primed = true; poolUpdate(sim, px, py); return; } // the first step stays synchronous (records are bound before they act)
+  if (!(px === px && py === py)) { poolUnbind(sim, px, py); return; }
+  const ph = P.phase, chunk = Math.ceil(sim.count / (e - 1));
+  if (ph === 0) P.nc = 0;
+  if (ph < e - 1) { const from = ph * chunk; poolScan(sim, from, Math.min(sim.count, from + chunk), px, py); P.phase = ph + 1; return; }
+  poolUnbind(sim, px, py); poolBind(sim, px, py); P.phase = 0;
+}
 
 function stepSim(sim, px, py, pz) {
   const pool = sim.pool;
   sim._px = px; sim._py = py; sim._pz = pz;
-  if ((sim.tick % pool.every) === 0 && (sim.tileMode || sim.count > POOL)) poolUpdate(sim, px, py); // BEAST-POOL-b: binder, staggered by the step counter
+  if (sim.tileMode || sim.count > POOL) poolStep(sim, px, py); // BEAST-POOL-b: binder, staggered by the step counter
   // US-079b (37.16.2): `beast:died` goes out at the START of the step after the kill (exactly once), so the sword
   // is never mid-iteration when a loot spawn would rebuild its target list.
   let rec = pool.rec, n = pool.n; // re-read after poolUpdate
