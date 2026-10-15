@@ -14,7 +14,7 @@ const defs = activeCamps(json);
 const band = createBand(globalThis.ASSETS.levels.world_geo.regions);
 
 // --- placement + content rules
-ok('2 active camps, third authored but disabled', defs.length === 2 && json.camps.length === 3 && json.camps[2].enabled === false);
+ok('3 active camps (OB-141 enabled campSouthWest)', defs.length === 3 && json.camps.length === 3 && json.camps[2].enabled !== false);
 // WM-05/D-077: world_m1.bounds is one polygon now (no circle/capsule parts)
 const bpts = world_m1.bounds.pts;
 function inBounds(x, y) { // even-odd point in polygon

@@ -2028,7 +2028,23 @@
     {"id": "qfix001", "mesh": "quaternius/Prop_WoodenFence_Single", "origin": {"x": 966.5, "y": 1086, "z": -84.42}, "yawDeg": 90},
     {"id": "qfix002", "mesh": "quaternius/Prop_WoodenFence_Single", "origin": {"x": 1264.7, "y": 1031.6, "z": -30.73}, "yawDeg": 0},
     {"id": "qfix003", "mesh": "quaternius/Rock_Medium_2", "origin": {"x": 978.5, "y": 1050, "z": -87.73}, "yawDeg": 40},
-    {"id": "farmGateLeaf", "collide": false, "mesh": "quaternius/Door_1_Round", "note": "ED-LOGIC-01d (D-103): the river farm gate leaf; authored OPEN (yaw 90, collide off). via content/logic/props.json turns it to yaw 0 + collide on (closed) for the farm.ambush block", "origin": {"x": 1080, "y": 1090, "z": -82.1}, "scale": 2.6, "yawDeg": 90}
+    {"id": "farmGateLeaf", "collide": false, "mesh": "quaternius/Door_1_Round", "note": "ED-LOGIC-01d (D-103): the river farm gate leaf; authored OPEN (yaw 90, collide off). via content/logic/props.json turns it to yaw 0 + collide on (closed) for the farm.ambush block", "origin": {"x": 1080, "y": 1090, "z": -82.1}, "scale": 2.6, "yawDeg": 90},
+    {"id": "ob141s00", "mesh": "quaternius/Wall_Arch", "origin": {"x": 950, "y": 1090, "z": -82.48}, "yawDeg": 110},
+    {"id": "ob141s01", "castShadow": false, "mesh": "quaternius/Wall_BottomCover", "origin": {"x": 947.93, "y": 1089.25, "z": -82.3}, "yawDeg": 110},
+    {"id": "ob141s02", "castShadow": false, "mesh": "quaternius/Wall_BottomCover", "origin": {"x": 952.07, "y": 1090.75, "z": -82.65}, "yawDeg": 110},
+    {"id": "ob141s03", "mesh": "quaternius/Wall_UnevenBrick_Straight", "origin": {"x": 945.77, "y": 1088.46, "z": -82.1}, "yawDeg": 110},
+    {"id": "ob141s04", "mesh": "quaternius/Corner_Exterior_Brick", "origin": {"x": 946.8, "y": 1085.64, "z": -82.49}, "yawDeg": 20},
+    {"id": "ob141s05", "castShadow": false, "mesh": "quaternius/Floor_UnevenBrick", "origin": {"x": 950.86, "y": 1087.65, "z": -82.86}, "yawDeg": 20},
+    {"id": "ob141s06", "castShadow": false, "mesh": "quaternius/Prop_Brick1", "origin": {"x": 952.88, "y": 1092.32, "z": -82.57}, "yawDeg": 119},
+    {"id": "ob141s07", "castShadow": false, "mesh": "quaternius/Prop_Brick1", "origin": {"x": 946.33, "y": 1091.32, "z": -81.85}, "yawDeg": 73},
+    {"id": "ob141s08", "castShadow": false, "mesh": "quaternius/Prop_Brick1", "origin": {"x": 952.65, "y": 1085.64, "z": -83.11}, "yawDeg": 300},
+    {"id": "ob141s09", "castShadow": false, "mesh": "quaternius/Prop_Brick1", "origin": {"x": 955.25, "y": 1088.72, "z": -83.13}, "yawDeg": 20},
+    {"id": "ob141s10", "mesh": "quaternius/Rock_Medium_1", "origin": {"x": 875.31, "y": 1101.42, "z": -67.7}, "scale": 1.5, "yawDeg": 45},
+    {"id": "ob141s11", "mesh": "quaternius/Rock_Medium_2", "origin": {"x": 871.42, "y": 1105.31, "z": -66.24}, "scale": 1.8, "yawDeg": 225},
+    {"id": "ob141s12", "mesh": "quaternius/Rock_Medium_3", "origin": {"x": 866.11, "y": 1103.89, "z": -65.18}, "scale": 1.5, "yawDeg": 45},
+    {"id": "ob141s13", "mesh": "quaternius/Rock_Medium_1", "origin": {"x": 864.69, "y": 1098.58, "z": -65.64}, "scale": 1.8, "yawDeg": 225},
+    {"id": "ob141s14", "mesh": "quaternius/Rock_Medium_2", "origin": {"x": 868.58, "y": 1094.69, "z": -67.04}, "scale": 1.5, "yawDeg": 45},
+    {"id": "ob141s15", "mesh": "quaternius/Rock_Medium_3", "origin": {"x": 873.89, "y": 1096.11, "z": -68.04}, "scale": 1.8, "yawDeg": 225}
   ],
   "entities": [
     {"id": "player", "note": "pose = tower.start (x 17.0, y 9.5, facingDeg 330, pitchDeg 30, eyeH 0.3, lying) + origin -> world (1497.0, 1027.5)", "spawn": {"from": "start", "structure": "tower"}, "type": "player"},
@@ -2180,7 +2196,13 @@
     {"id": "relay_strand", "components": {"collider": {"h": 2.2, "r": 0.9}, "light": {"offset": {"down": -1.75}, "on": false, "preset": "waystone"}, "voxel": {"anim": "dead", "loop": true, "model": "waystone"}, "waystone": {"id": "ws_strand", "kind": "relay", "label": "place.relay.ws_strand", "order": 13}}, "note": "WM-13: dormant region relay ws_strand (strand); name key place.relay.ws_strand", "type": "prop", "x": 1606, "y": 1675, "yawDeg": 90, "z": "ground"},
     {"id": "warden_strand", "components": {"dialogue": "warden_strand", "voxel": {"anim": "idle", "loop": true, "model": "char.kit"}}, "note": "QFIX-S5c-2/3 (OB-155l): region warden beside relay_strand; gives/takes sq.reg.strand (Accept/Exit, ? here)", "type": "npc", "x": 1604, "y": 1677.5, "yawDeg": 141, "z": "ground"},
     {"id": "relay_whitecombs", "components": {"collider": {"h": 2.2, "r": 0.9}, "light": {"offset": {"down": -1.75}, "on": false, "preset": "waystone"}, "voxel": {"anim": "dead", "loop": true, "model": "waystone"}, "waystone": {"id": "ws_whitecombs", "kind": "relay", "label": "place.relay.ws_whitecombs", "order": 14}}, "note": "WM-13: dormant region relay ws_whitecombs (whitecombs); name key place.relay.ws_whitecombs", "type": "prop", "x": 202, "y": 239, "yawDeg": 90, "z": "ground"},
-    {"id": "warden_whitecombs", "components": {"dialogue": "warden_whitecombs", "voxel": {"anim": "idle", "loop": true, "model": "char.kit"}}, "note": "QFIX-S5c-2/3 (OB-155l): region warden beside relay_whitecombs; gives/takes sq.reg.whitecombs (Accept/Exit, ? here)", "type": "npc", "x": 200, "y": 241.5, "yawDeg": 141, "z": "ground"}
+    {"id": "warden_whitecombs", "components": {"dialogue": "warden_whitecombs", "voxel": {"anim": "idle", "loop": true, "model": "char.kit"}}, "note": "QFIX-S5c-2/3 (OB-155l): region warden beside relay_whitecombs; gives/takes sq.reg.whitecombs (Accept/Exit, ? here)", "type": "npc", "x": 200, "y": 241.5, "yawDeg": 141, "z": "ground"},
+    {"id": "chestWest", "components": {"voxel": {"anim": "closed", "loop": false, "model": "chestSmall"}}, "note": "OB-141 the ONLY new chest: inside campSouthWest (guarded by its 4 goblins, OB-179 rule; table chestDefs.js)", "type": "prop", "x": 878, "y": 1018, "yawDeg": 180, "z": "ground"},
+    {"id": "ruinWestNote", "components": {"inspect": {"text": "note.westRuin"}}, "note": "OB-141 scrawl at the west gatehouse (existing inspect system)", "type": "prop", "x": 952, "y": 1093.4, "z": "ground"},
+    {"id": "stonesWest", "components": {"inspect": {"text": "note.westStones"}}, "note": "OB-141 viewpoint: ring of standing stones on the west hill", "type": "prop", "x": 870, "y": 1100, "z": "ground"},
+    {"id": "ob141Boar1", "components": {"brain": {"home": [1020, 1144], "kind": "beast", "temperament": "wary"}, "targetable": {"height": 0.7, "radius": 0.45}, "voxel": {"anim": "idle", "loop": true, "model": "boarPlaceholder"}}, "note": "OB-141 wary boars grazing in the south-west riverside meadow (existing boarF pattern)", "type": "beast", "x": 1020, "y": 1144, "z": "ground"},
+    {"id": "ob141Boar2", "components": {"brain": {"home": [1024, 1140], "kind": "beast", "temperament": "wary"}, "targetable": {"height": 0.7, "radius": 0.45}, "voxel": {"anim": "idle", "loop": true, "model": "boarPlaceholder"}}, "note": "OB-141 wary boars grazing in the south-west riverside meadow (existing boarF pattern)", "type": "beast", "x": 1024, "y": 1140, "z": "ground"},
+    {"id": "ob141Boar3", "components": {"brain": {"home": [1017, 1150], "kind": "beast", "temperament": "wary"}, "targetable": {"height": 0.7, "radius": 0.45}, "voxel": {"anim": "idle", "loop": true, "model": "boarPlaceholder"}}, "note": "OB-141 wary boars grazing in the south-west riverside meadow (existing boarF pattern)", "type": "beast", "x": 1017, "y": 1150, "z": "ground"}
   ],
   "horizon": [],
   "state": {
