@@ -2,7 +2,7 @@
 
 Captions and image notes: `docs/story.md` "Opening sequence v2 (D-111, slideshow)". Owner generates the stills in ChatGPT; our ASCII converter turns them into real glyphs afterwards. Generated images stay OUT of git (public repo); record the source in `docs/licences.md` / `THIRD_PARTY_NOTICES.md`.
 
-**How to use:** paste one prompt per message. After the first image you like, upload it with every later prompt and add the line *"Match the style, palette and lighting of this reference image."* Wick is only ever seen from behind (D-111): never his face.
+**How to use (owner workflow, 2026-10-15):** generate all slides in ONE ChatGPT chat, one prompt per message. Start every prompt from slide 2 on with: *"Create a NEW image in the same series as the previous images in this chat. Keep the same style, palette and lighting."* Then name the earlier image by what it shows (e.g. "the same young man from the rooftop image with the teal light", "the same airship and city as in the first image (Ferrum)"). Only if ChatGPT drifts, attach that one image again. Wick is only ever seen from behind (D-111): never his face.
 
 **Style block** (already included at the end of every prompt below):
 > Style: moody painterly illustration, 16:9, strong contrast, limited palette: deep night blue and navy for sky and shadow, warm amber, orange and brass gold for lamps, fire and metal, a single cold teal for the distant signal light. Bold readable shapes, clear silhouettes, soft glow around lights. Steampunk-fantasy, brass and stone and timber. No text, no letters, no logos, no UI unless the prompt asks for one word.
