@@ -1,0 +1,23 @@
+// OB-202: fetch-step needle -> nearest known item source; item in pack -> turn-in; unknown source -> no needle. Run: node game/js/ui/compassFetch.test.js
+import assert from 'node:assert/strict';
+import { createCompassHud, FALLBACK_COMPASS_STYLE } from './compassHud.js';
+import { createQuestBook, READY, AVAILABLE } from '../quest/sim/questBook.js';
+let sources = { 'boar.hide': [100, 0] };
+const ents = { burl: [10, 0], wreck: [20, 0] };
+const world = { resolve(kind, id, out) { const p = kind === 'source' ? sources[id] : kind === 'giver' ? ents[id] : null; if (!p) return false; out.x = p[0]; out.y = p[1]; return true; } };
+const m1 = { version: 1, id: 'm1', name: 'm1', objectives: [{ id: 'a', text: 'a', when: { type: 'area', id: 'zz' } }] };
+const boars = { version: 1, id: 'burl.boars', name: 'b', giver: { npc: 'burl', turnIn: 'burl' }, objectives: [{ id: 'o', text: 's', when: { type: 'area', id: 'zz' } }], reward: { items: [] } };
+const plate = { version: 1, id: 'sq.wreck.plate', name: 'p', giver: { npc: 'wreck', turnIn: 'burl' }, requires: [{ quest: 'burl.boars', done: true }], objectives: [{ id: 'o', text: 'Find hide', when: { type: 'item', id: 'boar.hide' } }], reward: { items: [] } };
+const book = createQuestBook(m1, [boars, plate]);
+const hud = createCompassHud({ style: FALLBACK_COMPASS_STYLE });
+assert.notEqual(book.status(2), AVAILABLE, 'plate gated until burl.boars is done');
+book.accept('burl.boars'); book.feed({ type: 'area:entered', id: 'zz' }); book.handIn('burl.boars');
+assert.equal(book.status(2), AVAILABLE, 'plate offered after boars');
+book.accept('sq.wreck.plate'); book.track('sq.wreck.plate');
+assert.equal(hud.target(book, world).x, 100, 'fetch: needle at the nearest boar source');
+sources = {}; assert.equal(hud.target(book, world), null, 'unknown source: no needle (not the giver)');
+sources = { 'boar.hide': [100, 0] };
+book.feed({ type: 'item:got', id: 'boar.hide' });
+assert.equal(book.status(2), READY, 'hide in pack -> ready');
+assert.equal(hud.target(book, world).x, 10, 'have item -> turn-in (Burl)');
+console.log('compassFetch: ok');

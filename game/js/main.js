@@ -1244,9 +1244,14 @@ async function runGame(mode, cinematic = null) {
   // PO-CH1-12: giver ids that are level props (placementId.propId) resolve through one helper for compass + map marks.
   const GIVER_ENT = { noteKeepLight: 'tower.noteKeepLight' };
   const giverEntity = (w, id) => w.get(GIVER_ENT[id] || (saveRelay && saveRelay.quest.book ? saveRelay.quest.book.entityFor(id) : id)); // QL-04: object givers / hand-ins resolve through def.giver.entity / turnInEntity
+  const ITEM_SOURCE = { 'boar.hide': 'boar', 'boar.meat': 'boar', 'boar.tusk': 'boar' }; // OB-202: item -> beast kind that drops it (lootBoar: meat/hide/tusk)
+  let srcBest = null, srcBd = 0;
+  const srcVisit = (e, id) => { const d = e.data; if (!d || !d.components || !d.components.brain || typeof id !== 'string' || !id.startsWith(srcKind)) return; const h = d.components && d.components.health; if (h && h.hp <= 0) return; const t = d.transform; if (!t) return; const dd = (t.x - nextCtx.x) ** 2 + (t.y - nextCtx.y) ** 2; if (!srcBest || dd < srcBd) { srcBest = t; srcBd = dd; } };
+  let srcKind = '';
   const compassResolver = { resolve(kind, id, out) {
     const w = compassWorld; if (!w) return false;
     let e = null;
+    if (kind === 'source') { srcKind = ITEM_SOURCE[id]; if (!srcKind) return false; srcBest = null; w.forEachEntity(srcVisit); if (!srcBest) return false; out.x = srcBest.x; out.y = srcBest.y; out.z = srcBest.z; return true; }
     if (kind === 'giver') e = giverEntity(w, id);
     else if (kind === 'flag') e = w.get(COMPASS_FLAG[id] || ''); // CH1-02: flag step -> the prop/NPC that sets it (Burl hand-in, bear escort, stone, relay)
     else if (kind === 'item') e = w.get(COMPASS_ITEM[id] || id);
