@@ -46,13 +46,14 @@ const DEBUG_RAYS_WORD = DEBUG_BLOCK.field('rays').word;
 const DEBUG_DEPTH_WORD = DEBUG_BLOCK.field('depthK').word;
 
 export class WgCellPipeline {
-  /** @param {any} rt a RenderTargetWebGPU @param {{rays?: number, terrainEnabled?: boolean, shadows?: any}} [opts] */
+  /** @param {any} rt a RenderTargetWebGPU @param {{rays?: number, resolveBandM?: number, terrainEnabled?: boolean, shadows?: any}} [opts] */
   constructor(rt, opts = {}) {
     this.rt = rt;
     this.device = rt.device;
     this.cols = rt.cols;
     this.rows = rt.rows;
     this.rays = Math.max(1, Math.min(4, Math.round(opts.rays || 1)));
+    this.resolveBandM = Math.max(0, +opts.resolveBandM || 0); // RTX-RAYS-BAND-01 (38.79): far-band metres, read by the resolve pass only when rays == 4
     this.terrainEnabled = opts.terrainEnabled !== false;
     this.renderer = 'mesh';
     this.shadowOpts = opts.shadows || null;

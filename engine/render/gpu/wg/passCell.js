@@ -9,7 +9,7 @@ import { WgUploadSource } from './passUpload.js';
 import { PROJ_HFOV_DEG } from '../../projection.js';
 import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
 
-const R_N = RESOLVE_BLOCK.field('n').word;
+const R_N = RESOLVE_BLOCK.field('n').word, R_BAND = RESOLVE_BLOCK.field('bandM').word;
 const D_COLS = DERIV_BLOCK.field('cols').word, D_ROWS = DERIV_BLOCK.field('rows').word;
 const D_TAN = DERIV_BLOCK.field('tanHalfHFov').word, D_PDY = DERIV_BLOCK.field('planeDistY').word;
 
@@ -71,6 +71,7 @@ export class WgCellPass {
     const rTex = this.rTex;
     rTex[0].texture = t.texSGI; rTex[1].texture = t.texSGA; rTex[2].texture = t.texSDepth; rTex[3].texture = t.texMask;
     this.ri[R_N] = p.rays;
+    this.ru[R_BAND] = p.rays === 4 ? (p.resolveBandM || 0) : 0; // 38.79: one f32 into the existing scratch
     // S8-B1-07: resolve + deriv share one 'resolve' timer slot (GpuCellPipeline.PASS_RESOLVE precedent: one query spans both).
     wgSpanBegin(p, WG_PASS_SLOT.resolve);
     try {

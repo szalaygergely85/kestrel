@@ -1518,3 +1518,6 @@ Lane entries + ARCH verdicts only (no code, no browser). "pending owner walk" = 
 
 ### PERF-LOWPRESET-GUARD-01 (kestrel-3, 2026-10-15) - po-review
 tools/presetGuard.test.mjs + docs/test-reports/perf-2026-10-15-presets.json (budget sidecar, key-set hash). 8 fixtures; 12 preset/gfx suites PASS, check-deps OK. Note: "hidden" lives in HIDDEN_QUALITIES (gfxPresets.js), not the JSON; JSON has no cao/post keys yet (rule checks cao/contactAo/post/postGrade if added).
+
+### RTX-RAYS-BAND-01 (kestrel-3, 2026-10-15) - arch-review
+38.79 built: engine/render/resolveBand.js (+test; RG4, Bayer4, +-7.5 % threshold, resolveCellJS twin), ResolveU.bandM + farPick/finish in resolve.wgsl.js (near path output unchanged, old oracle test still exact), wgslProbe helpers option, probe WGSL==twin on 3456 cells x bandM 0/40/5 (793 far). Plumbing: preset knob raysFarM (ultra 40, rest 0, `?raysFarM=` 0..200), gfxBoot -> createRenderer resolveBandM -> WgCellPipeline -> passCell (0 alloc, one f32 write, only when rays==4). presets sidecar keySetHash -> 71e52b6c42f6. gpucompare INFO rows `?rays=4&raysFarM=40` (not run). Gates: run-tests --filter resolve,rays,wgsl,preset,gfx 41 PASS, check-deps OK. Open: RTX bench (<= 0.9 ms) + gpucompare run by main session; the 4 RG4 loads are re-read by the near path (cached texels), not reused.
