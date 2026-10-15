@@ -17,6 +17,9 @@ export const UNDER_SITES = Object.freeze([
   Object.freeze({ id: 'crypt', anchor: [1674.5, 1357.5], z: -56.8, night: false, group: '', members: Object.freeze([
     ['skelwar.crypt.1', 'skelwar', -2, 4.5], ['skelarch.crypt.1', 'skelarch', 2, 6], // room 2
     ['skelwar.crypt.2', 'skelwar', -2, -4], ['skelwar.crypt.3', 'skelwar', 2, -6], ['skelarch.crypt.2', 'skelarch', 0, -5]]) }), // room 3
+  // UNDER-06 (OB-191): goblin tunnel stash room between campNorth and campEast (3 goblins, any time of day; z = tunnel stash floor, so the dz < 3 m rule keeps them off the surface)
+  Object.freeze({ id: 'goblinTunnel', anchor: [945.5, 946], z: -88.8, night: false, group: '', members: Object.freeze([
+    ['archer.goblinTunnel.1', 'archer', -2, 1.5], ['torch.goblinTunnel.1', 'torch', 2, 1.5], ['archer.goblinTunnel.2', 'archer', 0, -1.5]]) }),
   // existing OB-141 ruin POI ob141r06 (whitecombs arch at 1740,200, far side, zone band 5 = level 5)
   Object.freeze({ id: 'ruinWhite', anchor: [1740, 200], night: false, group: '', members: Object.freeze([
     ['skelwar.ruinWhite.1', 'skelwar', -2, 2], ['skelarch.ruinWhite.1', 'skelarch', 2, 3]]) }),
