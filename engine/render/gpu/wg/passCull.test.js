@@ -141,6 +141,18 @@ for (const [lodCells, maxDistM] of [[0, 0], [14, 0], [14, 120]]) {
   cull.dispose();
   assert.equal(mock.liveCount(), live0, 'dispose frees every handle');
 }
+// ---- LOD-RESET-01 (arch): the shadow cull's lodPrev slot (shadow band) is zeroed by a reset too (WgShadowPass.resetLodHistory forwards to it) ----
+{
+  const cull = new WgCullPass(d, { shadow: true });
+  const g = makeGroup(64, 5);
+  cull.begin({ planes: null }); cull.add(g, [mesh0, null]); cull.run();
+  const b = cull.batches.get(g); b.lodPrev._gpu.u32.fill(2);
+  const { WgShadowPass } = await import('./passShadow.js');
+  assert.equal(typeof WgShadowPass.prototype.resetLodHistory, 'function', 'WgShadowPass forwards the reset');
+  WgShadowPass.prototype.resetLodHistory.call({ cull });
+  assert.ok(b.lodPrev._gpu.u32.every((v) => v === 0), 'shadow band buffer zeroed');
+  cull.dispose();
+}
 // ---- arch 2026-10-08 (WG-4a ARCH CHANGES): two groups marked static before add() both stay static; the args view is cached ----
 {
   const cull = new WgCullPass(d);
