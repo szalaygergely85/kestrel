@@ -212,6 +212,9 @@ export function createBeastSim(world, opts) {
       t: new Int32Array(MAX_RECORDS), ax: new Float64Array(MAX_RECORDS), ay: new Float64Array(MAX_RECORDS),
       fail: new Uint8Array(MAX_RECORDS), st: new Uint8Array(MAX_RECORDS),
       wall: new Uint8Array(MAX_RECORDS), // BH-A3: charge wall-slow streak (was aliased onto `unseen`, which perceiveOne rewrites)
+      lv: new Uint8Array(MAX_RECORDS),   // SPELL-05: zone level (OB-150) per slot, read by the Light Orb keep-out
+      cf: new Int32Array(MAX_RECORDS),   // SPELL-05: steps of calm-flee left (Light Orb Lv3), 0 = none
+      calm: { on: 0, x: 0, y: 0, r2: 0, lv: 0 }, // SPELL-05: Light Orb zone; beasts of level <= lv inside it do not START aggro
     },
     chargeLen: new Uint16Array(MAX_RECORDS), // OB-150: steps this charge may last (nominal chargeMax, longer when the player already backs away)
     bankT: new Int32Array(MAX_RECORDS),      // NAV-REACH-01: steps a chaser has held at the nearest reachable cell (partial path) before giving up
@@ -350,6 +353,7 @@ export function createBeastSim(world, opts) {
     // KINDS-F (OB-153): kinds.json hpF/dmgF (x boar, missing = 1) multiply the level result. Wolf/bear slots already carry their own
     // tuning (WOLF_TUNING/BEAR_TUNING hpMul, swipe hearts) so they are skipped here to avoid double counting.
     const kf = kindFactors(e, sim.wolf[i] || sim.bear[i]);
+    sim.stk.lv[i] = lv > 255 ? 255 : lv < 0 ? 0 : lv | 0;
     sim.tier[i] = tier; sim.spdMul[i] = m.speed * kf.spd; sim._hitPayload[i].damage = (sim.bear[i] ? BEAR_TUNING.swipeHearts : 1) * ls.damage * kf.dmg; // BEAR-01: swipe base is 2 hearts
     const maxHp = Math.max(1, Math.round(sim.scfg[i].hp * ls.hp * kf.hp * (sim.elite[i] ? ELITE_HP_MUL : 1)));
     e.components.health = { hp: maxHp, max: maxHp, invuln: 0 };
@@ -516,6 +520,19 @@ export function createBeastSim(world, opts) {
   sim.flee = function flee(slot) {
     if (slot < 0 || slot >= sim.count || sim.down[slot] || sim.dormant[slot] || deadSt(sim.state[slot])) return;
     enterFlee(sim, slot, sim._px, sim._py);
+  };
+  /** SPELL-05: Light Orb zone (x,y,r metres, beasts of level <= lv keep out); on=false clears it. */
+  sim.setCalm = function setCalm(on, x, y, r, lv) { const c = sim.stk.calm; c.on = on ? 1 : 0; c.x = x; c.y = y; c.r2 = r * r; c.lv = lv; };
+  /** SPELL-05: live beasts of level <= lv within r (2D) of (x,y) run away from the player for `steps` steps. Returns how many. */
+  sim.calmFlee = function calmFlee(x, y, r, lv, steps) {
+    let n = 0;
+    for (let i = 0; i < sim.count; i++) {
+      if (sim.down[i] || sim.dormant[i] || deadSt(sim.state[i]) || sim.stk.lv[i] > lv || sim.fleeing[i]) continue;
+      const dx = sim.steer.x[i] - x, dy = sim.steer.y[i] - y;
+      if (dx * dx + dy * dy > r * r) continue;
+      sim.flee(i); if (sim.fleeing[i]) { sim.stk.cf[i] = steps; n++; }
+    }
+    return n;
   };
   sim.isDormant = function isDormant(slot) { return slot >= 0 && slot < sim.count && sim.dormant[slot] === 1; };
   /** LIFE-08: drop the goal override; a wandering beast walks back home (STATE_RETURN). */
@@ -877,6 +894,8 @@ function zOf(sim, i) {
 }
 
 function noticedOf(sim, i, px, py) {
+  const cz = sim.stk.calm; // SPELL-05: Light Orb keep-out (the 'woken waystone light' rule): no aggro START inside the light
+  if (cz.on === 1 && sim.stk.lv[i] <= cz.lv) { const cx = sim.steer.x[i] - cz.x, cy = sim.steer.y[i] - cz.y; if (cx * cx + cy * cy <= cz.r2) return false; }
   // BEAST-PERCEIVE-01w: engine/nav/perceive through a thin adapter. hearing = the "nearR" any-direction bubble
   // (scaled by the player's noise), sight = noticeR + cone + the cached LOS flag. Same numbers as before at noise 1.
   const steer = sim.steer, a = sim._pa, t = sim._sc.pt;
@@ -1141,6 +1160,7 @@ function recoverStep(sim, i, px, py) {
 
 function returnStep(sim, i, px, py) {
   if (sim.fleeing[i]) { // WOLF-01: keep running until 30 m from where it started / from the player, then walk home
+    if (sim.stk.cf[i] > 0 && --sim.stk.cf[i] === 0) { sim.fleeing[i] = 0; enterReturn(sim, i); return; } // SPELL-05: Light Orb Lv3 flee ends after its seconds
     const dx = px - sim.steer.x[i], dy = py - sim.steer.y[i], gx = sim.goalX[i] - sim.steer.x[i], gy = sim.goalY[i] - sim.steer.y[i];
     if (dx * dx + dy * dy >= fleeMOf(sim, i) * fleeMOf(sim, i) || gx * gx + gy * gy <= 1) { sim.fleeing[i] = 0; enterReturn(sim, i); }
     return;
@@ -1305,7 +1325,7 @@ function reactToHit(sim, i, p) {
   const st = sim.state[i];
   if (p.heavy) {
     const knock = p.knock > 0 ? p.knock : sim.cfg.staggerKnock;
-    if (knock >= 1) { enterStagger(sim, i, p.dirX, p.dirY, Math.min(knock, 12)); return; }
+    if (knock >= 1) { enterStagger(sim, i, p.dirX, p.dirY, Math.min(knock, 12)); if (p.stunSec > 0) sim.timer[i] = Math.round(p.stunSec * 60); return; } // SPELL-05: Spark sets its own stun time
     enterFlinch(sim, i); // fire with a tiny falloff (knock < 1) -> flinch
     return;
   }
