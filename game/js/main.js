@@ -221,6 +221,7 @@ import { createQuestMarkers } from './quest/sim/questMarkers.js'; // QUEST-MARK-
 import { registerQuestMarks } from './quest/wire/questMarks.js';
 import { createQuestLogScreen, QUEST_LOG_KEYS } from './ui/questLog.js'; // QG-05
 import { GIVER_INFO } from './questNext.js'; // QUEST-NEXT-GIVER-01
+import { createOfferToast } from './quest/offerToast.js'; // new derived offer -> "New quest" toast
 import { createCompassHud } from './ui/compassHud.js'; // COMPASS-02 (D-061)
 import { createCombatHud } from './ui/combatHud.js'; import { setEnemyBarsOn, setDamageNumbersOn } from './ui/combatHudFlags.js'; // HPBAR-02 + DMGNUM-01 (D-086)
 import { createCrafting } from './quest/sim/crafting.js'; // MAIN-WIRE-01: crafting list on C
@@ -1264,6 +1265,7 @@ async function runGame(mode, cinematic = null) {
   const safeWa = { surfaceZ: 0, flatZ: 0, depth: 0, region: '', index: -1, look: 0 };
   const safeSpots = createSafeSpots(); // OB-140: last safe grounded spots for pause-menu Unstuck
   let wading = null; // RIVER-04: rebuilt on every 'world:loaded' (beasts keep their own nav block, depth >= 0.6: not wired here)
+  let offerToast = null, offerToastMsg = null; // toast once per new book.nextOffers() entry
   let equipPlay = null, shieldSim = null, arrowSim = null; // EQ-07/09: rebuilt on every 'world:loaded'
   let quickbar = null, qbView = null, qbTick = 0, qbBlocked = false; // EQ-12: sim rebuilt per world, view per page
   let fireball = null, fbTargets = null; // SPELL-01a (37.14): rebuilt with the sword sim on every 'world:loaded'
@@ -1785,6 +1787,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       if (saveRelay) { // QG-03: book events -> seam + toasts (the reward, if any, is granted from book.lastReward; Burl's quest has none - owner pick)
         const tv = toasts, msg = window.ASSETS.items.toast && window.ASSETS.items.toast.messages && window.ASSETS.items.toast.messages.packFull;
         saveRelay.quest.onSection = (title) => { if (tv && msg) tv.say('Quest complete: ' + title, msg.fg); const ws = world.state; if (chapterCard && saveRelay.quest.done && ws['waystone.waystone.woken'] && ws['waystone.ws_roadBend.woken']) chapterCard.trigger(); /* PO-CH1-08: card only after the meadow stone AND the relay */ }; // CH1-02: live section completion only
+        offerToast = createOfferToast(saveRelay.quest.book, (g) => GIVER_INFO[g] ? GIVER_INFO[g].name : g.charAt(0).toUpperCase() + g.slice(1)); offerToast.seed(); offerToastMsg = msg; // QUEST-NEXT-GIVER-01 (compass: compassHud.target)
         saveRelay.quest.book.onChange = (name, id) => {
           gameHooks.emitSimple(name, id);
           if (logicWire && (name === 'quest:accepted' || name === 'quest:done')) logicWire.notify(name === 'quest:accepted' ? 'quest.accepted' : 'quest.done', 'quest', id); // ED-LOGIC-01c
@@ -1793,7 +1796,6 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
           if (name === 'quest:ready' && id === 'burl.boars' && dialogueCtl && dialogueCtl.open) burlReopen = true; // PO-CH1-07: boars were already dead when accepted -> Burl speaks again (the hand-in) once this box closes
           if (name === 'quest:done' && id === 'mq.smoke' && chapterCard2) chapterCard2.trigger(); // QL-17: Ch2 end card + journalCh2
           if (name === 'quest:done' && questPickups) questPickups.grantReward(saveRelay.quest.book.lastReward); // QUESTS-01: hand-in reward -> pack (+ toast)
-          if (name === 'quest:done' && tv && msg && saveRelay.quest.book.nextOffers) { const o = saveRelay.quest.book.nextOffers().find(x => x.from === id); if (o) tv.say('New quest: ' + (GIVER_INFO[o.giver] ? GIVER_INFO[o.giver].name : o.giver.charAt(0).toUpperCase() + o.giver.slice(1)) + ' has work for you', msg.fg); } // QUEST-NEXT-GIVER-01 (compass: compassHud.target)
           if (tv && msg) { const bk = saveRelay.quest.book, qt = (bk.def(bk.index(id)) || {}).title; if (name === 'quest:accepted') tv.say('Quest accepted: ' + qt, msg.fg); else if (name === 'quest:done') tv.say('Quest complete: ' + qt, msg.fg); }
         };
       }
@@ -2379,6 +2381,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         hintSignals.jump = input.pressed(gameKeys.jump);
         hintSignals.pointerLocked = look.locked;
         hintSignals.mPressed = mPressedEdge;
+        if (offerToast && toasts && offerToastMsg) for (const line of offerToast.poll()) toasts.say(line, offerToastMsg.fg); // derived next offer after a hand-in / main step
         { // FS-01: M4 action hints; done-actions read from the live sims (swing/block/shot/swap/slot key/windows)
           actionSig.invOpen = !!(invView && invView.isOpen); actionSig.journalOpen = qlIsOpen();
           actionSig.swing = !!(sword && sword.state >= ST_LIGHT && sword.state <= ST_HARD);
