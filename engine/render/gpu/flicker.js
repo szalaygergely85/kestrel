@@ -27,7 +27,15 @@
 // are meaningful, matching `RGBA_INTEGER` readback padding); `fg` is the
 // RGBA8 readback (`Uint8Array(4*n)`) of the shaded (pre-edge or post-edge,
 // caller's choice - see the module doc in main.js) fg layer.
-export function flickerStep(prevGI, prevFg, curGI, curFg, cols, rows, out) {
+//
+// AA-01 (architecture.md 38.82): `colourPct` = % of the same non-sky-in-both cells whose max |delta| over the fg.rgb
+// and bg.rgb bytes is > COLOUR_FLICKER_THRESHOLD (24, strictly greater). Needs the optional `prevBg`/`curBg`
+// (RGBA8, `readbackCells().bg`); without them only fg.rgb is compared.
+export const COLOUR_FLICKER_THRESHOLD = 24;
+
+export function flickerStep(prevGI, prevFg, curGI, curFg, cols, rows, out, prevBg, curBg) {
+  const haveBg = !!(prevBg && curBg);
+  let colourChanged = 0;
   const n = cols * rows;
   const kindOf = (GI, i) => GI[i * 4 + 1] & 0xff;
   const matOf = (GI, i) => (GI[i * 4 + 1] >>> 16) & 0xffff;
@@ -48,6 +56,18 @@ export function flickerStep(prevGI, prevFg, curGI, curFg, cols, rows, out) {
       const keyChanged = pk !== ck || matOf(prevGI, i) !== matOf(curGI, i) || pidOf(prevGI, i) !== pidOf(curGI, i);
       const glyphChanged = prevFg[i * 4 + 3] !== curFg[i * 4 + 3];
       if (keyChanged || glyphChanged) totalChanged++;
+      {
+        const o = i * 4;
+        let m = Math.abs(prevFg[o] - curFg[o]);
+        let d = Math.abs(prevFg[o + 1] - curFg[o + 1]); if (d > m) m = d;
+        d = Math.abs(prevFg[o + 2] - curFg[o + 2]); if (d > m) m = d;
+        if (haveBg) {
+          d = Math.abs(prevBg[o] - curBg[o]); if (d > m) m = d;
+          d = Math.abs(prevBg[o + 1] - curBg[o + 1]); if (d > m) m = d;
+          d = Math.abs(prevBg[o + 2] - curBg[o + 2]); if (d > m) m = d;
+        }
+        if (m > COLOUR_FLICKER_THRESHOLD) colourChanged++;
+      }
 
       if (pk !== ck) continue;
       if (matOf(prevGI, i) !== matOf(curGI, i)) continue;
@@ -70,5 +90,7 @@ export function flickerStep(prevGI, prevFg, curGI, curFg, cols, rows, out) {
   out.total = total;
   out.totalChanged = totalChanged;
   out.totalPct = total ? (100 * totalChanged) / total : 0;
+  out.colourChanged = colourChanged;
+  out.colourPct = total ? (100 * colourChanged) / total : 0;
   return out;
 }

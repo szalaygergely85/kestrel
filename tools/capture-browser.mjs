@@ -182,7 +182,10 @@ export function buildQuery(mode, { grid, variant, rays, shadows, backend, stable
     // WG-1c2 (38.8a 12): the CPU path is the oracle; `&pose=<slug>` is appended per pose by runLiveCapture
     parts.push('force2d=1'); // WG-5b: the CPU Canvas2D path is the oracle
   } else if (mode === 'flicker') {
-    parts.push('flicker=1'); // ME-08c: `window.__flicker` (jsRow/gpuRow changed-glyph share)
+    // AA-01 (38.82): `--variant live` = the 5 live-overworld poses (wallNear, wallFar, bushes, crown, grassFar), 30 steps of 5 cm
+    // strafe + 5 cm forward, totalPct + colourPct per pose in `window.__flicker.poses`; `at=` freezes the clock/skips the title.
+    if (variant === 'live') parts.push('flickerlive=1', 'at=1496.91,1026.06,0,333,1');
+    else parts.push('flicker=1'); // ME-08c: `window.__flicker` (jsRow/gpuRow changed-glyph share)
     if (stable) parts.push('stable=1'); // FLICKER-WG-01: US-073 stable pass on (measure with vs without)
   } else {
     throw new Error(`unknown --mode '${mode}' (expected gpucompare|voxelbench|bench|flicker|webgpu-probe|wgsl|webgpu-present|presentdiff)`);
@@ -756,7 +759,7 @@ export async function runLiveCapture(opts) {
     const query = opts.query || buildQuery(opts.mode, opts); // ME-08c: `--query <raw>` override
     // BUG-BENCH-01: `--query` REPLACES the whole query (mode param included); `--query "shadows=map"` alone loads the plain game and
     // waits for a result that never comes. Use `--shadows map` to add a flag to the mode's query instead.
-    if (opts.query && opts.mode && !WEBGPU_PAGE_MODES.has(opts.mode) && !/(^|&)(gpucompare|bench|voxelbench|flicker)=/.test(opts.query)) {
+    if (opts.query && opts.mode && !WEBGPU_PAGE_MODES.has(opts.mode) && !/(^|&)(gpucompare|bench|voxelbench|flicker|flickerlive)=/.test(opts.query)) {
       console.error(`capture-browser: WARNING --query '${opts.query}' has no ${opts.mode} parameter, so window.${opts.global || resultGlobalFor(opts.mode)} will never appear (use --shadows <v> or put the mode flag in --query)`);
     }
     // Server is started at the repo root (matches CLAUDE.md's own

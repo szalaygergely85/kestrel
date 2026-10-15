@@ -9,17 +9,17 @@ export async function motionSeries(castFrame, base, d, steps, cols, rows, opts =
   if (onStart) onStart(); // e.g. wg.invalidateHistory(): each series starts with a camera cut
   let cam = { ...base };
   let prev = await castFrame(cam);
-  let sumInterior = 0, sumTotal = 0;
+  let sumInterior = 0, sumTotal = 0, sumColour = 0;
   const out = {};
   for (let s = 0; s < steps; s++) {
     cam = { x: cam.x + d.dx, y: cam.y + d.dy, z: cam.z, yawDeg: cam.yawDeg + d.dyaw, pitchDeg: cam.pitchDeg };
     const cur = await castFrame(cam);
-    flickerStep(prev.GI, prev.fg, cur.GI, cur.fg, cols, rows, out);
-    sumInterior += out.pct; sumTotal += out.totalPct;
-    if (collect) collect.push({ step: s + 1, x: cam.x, pct: out.pct, totalPct: out.totalPct });
+    flickerStep(prev.GI, prev.fg, cur.GI, cur.fg, cols, rows, out, prev.bg, cur.bg);
+    sumInterior += out.pct; sumTotal += out.totalPct; sumColour += out.colourPct;
+    if (collect) collect.push({ step: s + 1, x: cam.x, pct: out.pct, totalPct: out.totalPct, colourPct: out.colourPct });
     prev = cur;
   }
-  return { interior: sumInterior / steps, total: sumTotal / steps };
+  return { interior: sumInterior / steps, total: sumTotal / steps, colour: sumColour / steps };
 }
 
 /** fwd / strafe / yaw series -> one row (main numbers = totalPct, interior kept informational). */
@@ -30,6 +30,7 @@ export async function runRow(castFrame, base, motions, steps, cols, rows, opts =
   const avg = (k) => (fwd[k] + strafe[k] + yaw[k]) / 3;
   return {
     fwd: fwd.total, strafe: strafe.total, yaw: yaw.total, avg: avg('total'),
+    fwdColour: fwd.colour, strafeColour: strafe.colour, yawColour: yaw.colour, avgColour: avg('colour'),
     fwdInterior: fwd.interior, strafeInterior: strafe.interior, yawInterior: yaw.interior, avgInterior: avg('interior'),
   };
 }

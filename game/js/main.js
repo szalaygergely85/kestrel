@@ -55,6 +55,7 @@ import { GATE_POSES } from '../../content/dev-poses.js';
 import { prefetchLazyMeshesAtBoot, prefetchAllLazyMeshes } from './bootPrefetchHook.js'; // MESH-LOAD-01: boot prefetchNear call
 import { parseCloudShadowFlag, devCloudShadow, parseAoStrength } from './cloudParam.js'; // S8-B2-12a/S8-B2-20 NEEDS B1 item (2)/(1): `?cloudshadow=1`/`?ao=<0..1>` parse
 import { MODES } from './dev/modes/index.js';
+import { createFlickerLive, runLivePoses } from './dev/flickerLive.js'; // AA-01
 import { loadCinematic, evaluatePath, createPlayback } from './dev/modes/cinematic.js';
 import { createPauseResume } from './quest/pauseResume.js'; // OB-068
 import { entityTop, markZ } from './quest/markTop.js'; // OB-155h/OB-164: marker height from the model top
@@ -2499,6 +2500,22 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
   }
 
   // Reused every frame (architecture.md section 9: no per-frame objects).
+  const flickerLive = params.get('flickerlive') === '1' ? createFlickerLive() : null; // AA-01 (game/js/dev/flickerLive.js)
+  if (flickerLive) {
+    (async () => { // wait for the world + WebGPU pipeline, then measure the 5 poses; result -> window.__flicker
+      while (!(engine.world && engine.world.terrain && wgPipeline && wgPipeline.ready && wgPipeline.frameComplete)) await flickerLive.nextFrame();
+      await flickerLive.frames(60);
+      const capture = async () => { const cells = await wgPipeline.readbackCells(); const { GI } = await wgPipeline.readbackGeometry(); return { GI: GI.slice(), fg: cells.fg.slice(), bg: cells.bg ? cells.bg.slice() : undefined }; };
+      try {
+        const st = params.get('stable') === '1';
+        if (wgPipeline.setStable) wgPipeline.setStable(st);
+        const r = await runLivePoses(flickerLive, { world: engine.world, wg: wgPipeline, cols: rt.cols, rows: rt.rows, capture });
+        r.stable = st;
+        window.__flicker = r;
+        console.log('[flicker] live poses ' + JSON.stringify(r));
+      } catch (e) { console.error('[flicker] failed: ' + (e && e.message)); window.__flicker = { error: String(e && e.message) }; }
+    })();
+  }
   const cam = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 }; window.__debug.cam = cam; // OB-017: verify-equip-play reads the eye
   // US-006: reused per-frame scratch for `syncEntityLights`'s
   // `attachedLightPos` output (architecture.md 9 - no per-frame allocation).
@@ -2626,6 +2643,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       fb.sceneFade = endFadeAmount(engine.world, assets.uiStyle);
       engine.feedDetail(cam); // ENV-01a2: shared fed set before either render twin.
       fb.frameNo = (fb.frameNo || 0) + 1; // RE-15a: one host-owned counter for instances.js addToDrawList's memo
+      if (flickerLive) { flickerLive.beforeRender(cam, engine.world); fb.timeSec = 0; } // AA-01: ?flickerlive=1 camera override + frozen time
       renderWorld(fb, engine.world, cam);
       // US-053b/c: particle layer build, before sprites.render per 32.1 (the sprite pass reads the layer's touched
       // cells right after its own sprite loop).
@@ -2838,6 +2856,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
     lap(SEC.gpuFrame);
     rt.present();
     lap(SEC.present);
+    if (flickerLive) flickerLive.afterPresent(); // AA-01
     if (autoBench && autoBench.phase !== 'done') { const t = performance.now(); lastFrameDt = lastFrameT ? t - lastFrameT : NaN; lastFrameT = t; autoBench.tick(); } // GFX-02
     // US-018 (architecture.md 16): "do not leave pass timing on when the
     // overlay is hidden and no bench runs" - a plain boolean set, cheap
