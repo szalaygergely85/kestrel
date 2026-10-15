@@ -67,4 +67,5 @@ Style: moody painterly illustration, 16:9, strong contrast, limited palette: col
 
 **Notes:**
 - Slides 2 and 5 ask for one word in the image ("FELL", "ALIVE"). If ChatGPT garbles it, re-roll or drop the word: the caption already says it, and the ASCII conversion may blur small text anyway.
-- Keep the same young man (dark hair, worn work jacket, leather satchel and straps) on slides 3 and 5-8: describe him the same way, or upload slide 3 as the reference for him.
+- **Wick's look (locked by the owner's slide 1b image, 2026-10-15):** messy brown hair, red neckerchief, leather braces over a worn work shirt; as a boy in 1b, about 18 from slide 3 ("The light") on. Upload the 1b image as the reference for him on every slide where he appears. Maren: hair in a bun, long worn work coat, seen from behind.
+- Owner progress 2026-10-15: slides 1 (Ferrum), 1b (Before), 2 (Her lamp) generated and approved; images kept outside the repo.
