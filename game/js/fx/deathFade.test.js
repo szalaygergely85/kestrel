@@ -1,4 +1,4 @@
-import { fadeAt, createDeathFlow } from './deathFade.js';
+import { fadeAt, createDeathFlow, blinkFlashAt, createBlinkFlash } from './deathFade.js';
 let bad = 0; const ok = (n, c) => { if (!c) { bad++; console.log('FAIL', n); } };
 ok('t=0', fadeAt(0).alpha === 0 && fadeAt(0).textAlpha === 0);
 ok('t=1000', fadeAt(1000).alpha === 1);
@@ -20,4 +20,6 @@ fl.died(3000); ok('new death works', fl.step(3001).inputLocked);
 const off = createDeathFlow({ enabled: false }); off.died(0); ok('disabled', !off.step(10).inputLocked);
 ok('getter locked during out', (()=>{const f=createDeathFlow({onRespawn(){}});f.died(0);f.step(100);return f.inputLocked===true;})());
 ok('getter unlocked idle/disabled', createDeathFlow().inputLocked===false && createDeathFlow({enabled:false}).active===false);
+ok('blink flash 1->0 in 120ms', blinkFlashAt(0)===1 && blinkFlashAt(60)===0.5 && blinkFlashAt(120)===0);
+ok('blink flash disabled', createBlinkFlash({enabled:false}).alpha(0)===0);
 console.log(bad ? 'FAILED ' + bad : 'deathFade ok'); process.exit(bad ? 1 : 0);

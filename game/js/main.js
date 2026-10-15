@@ -203,7 +203,7 @@ import { createFireflies, fireflyProbes } from './fx/fireflyWire.js'; // FIREFLY
 import { createUnderCreep, applyCreepLights, creepMistDensity, createFirstEntry } from './quest/under/creep.js'; // UNDER-LIGHT-CREEP-01
 import { VITALS_DEFAULTS } from './quest/sim/vitalsConfig.js';
 import { createHitStop, hitStopEnabled } from './fx/hitStop.js'; // HITSTOP-01 (lane B1)
-import { createDeathFlow, deathFlowEnabled } from './fx/deathFade.js'; // DEATH-FLOW-01 part 1 (lane B1)
+import { createDeathFlow, deathFlowEnabled, createBlinkFlash } from './fx/deathFade.js'; // DEATH-FLOW-01 part 1 (lane B1)
 import { createHurtFx, hurtFxEnabled } from './fx/hurtFx.js'; // HURT-FX-01 (lane B1): low-hearts pulse only (hurt edge + kick = US-080a2)
 import { wireHitSparks, hitSparksEnabled } from './fx/hitSparkWire.js'; // HIT-SPARK-WIRE (lane B1)
 import { parsePointShadows, presetPointShadowsOn } from './pointShadowOpt.js'; // ME-16e: ?pointshadows=0|N
@@ -313,6 +313,7 @@ try {
 } catch (err) { console.warn(`[quality] presets unavailable (${err.message}) - booting without a preset`); }
 const hitStop = createHitStop({ enabled: hitStopEnabled(params, isCaptureOrBench) }); // HITSTOP-01: off in capture/bench(+combat)/compare and ?fx=0
 let deathRespawnDue = false; // DEATH-FLOW-01: fade finished -> next vitals.step gets a virtual [E] (its normal respawn path, pose logic untouched)
+const blinkFlash = createBlinkFlash({ enabled: deathFlowEnabled(params, isCaptureOrBench) }); // SPELL-R4b
 const deathFlow = createDeathFlow({ enabled: deathFlowEnabled(params, isCaptureOrBench), onRespawn: () => { deathRespawnDue = true; } });
 setReduceMotion(savedSettings.reduceMotion); // SETTINGS-APPLY-01: read at boot, the Settings panel updates it live
 setEnemyBarsOn(savedSettings.enemyBars); setDamageNumbersOn(savedSettings.dmgNumbers); // HPBAR-02 / DMGNUM-01: Combat HUD switches (default On)
@@ -1710,7 +1711,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       fireball = createFireballSim(world, engine.events, FIREBALL_CFG, fbTargets, { spendMana: (n) => vitals && vitals.spendMana(n), isEnabled: () => fireballOn(world, FEATURES), tier: () => spellBook.tier('fireball') || 1, damageMul: () => { const c = playerHandle && playerHandle.data.components; return computeTotals(c && c.rolledGear || null, fbTotals).fireDmgMul; } }); // INT: stats fireDmgMul at cast (rolled gear: rolledGear.js)
       hands.register('spell.fireball', fireball); spellCaster.register('fireball', () => fireball.requestTap());
       teleport = createTeleport(world, { spendMana: (n) => vitals && vitals.spendMana(n), say: (t) => toasts && toasts.say(t, [226, 214, 176]), loseTrack: (x, y, r, s) => beasts && loseTrack(beasts, x, y, r, s), // SPELL-R4
-        blink: (x, y, z) => { const d = playerHandle.data, t = d.transform, b = d.components.body, bd = engine.particles.defIdOf('fireballBurst'); engine.particles.burstAt(bd, t.x, t.y, t.z + 1, 24, 0, 0, 1); t.x = x; t.y = y; t.z = z; b.vx = b.vy = b.vz = 0; b.fallDistance = 0; b.peakZ = z; b.grounded = true; if (b.feel) b.feel.stepOffset = 0; hzb.invalidate('blink'); ensureBand(engine.world, t); engine.particles.burstAt(bd, x, y, z + 1, 24, 0, 0, 1); } });
+        blink: (x, y, z) => { blinkFlash.trigger(performance.now()); const d = playerHandle.data, t = d.transform, b = d.components.body, bd = engine.particles.defIdOf('fireballBurst'); engine.particles.burstAt(bd, t.x, t.y, t.z + 1, 24, 0, 0, 1); t.x = x; t.y = y; t.z = z; b.vx = b.vy = b.vz = 0; b.fallDistance = 0; b.peakZ = z; b.grounded = true; if (b.feel) b.feel.stepOffset = 0; hzb.invalidate('blink'); ensureBand(engine.world, t); engine.particles.burstAt(bd, x, y, z + 1, 24, 0, 0, 1); } });
       spellCaster.register('teleport', (pl) => { const t = pl.transform, pr = look.pitchDeg * Math.PI / 180, cp = Math.cos(pr); tpEye[0] = t.x; tpEye[1] = t.y; tpEye[2] = t.z; forwardOf(look.yawDeg, tpAim); tpAim[0] *= cp; tpAim[1] *= cp; tpAim[2] = Math.sin(pr); return teleport.cast(spellBook.tier('teleport'), tpEye, tpAim) === 0 ? 'cast' : 'busy'; }); // SPELL-R4
       // SPELL-R1 (D-115): only Fireball is registered; spell.freeze / telekinesis / teleport answer 'notImplemented' until SPELL-R2..R4
       // EQ-07/09 (38.41): shield sim + arrow sim + the routing glue; shield/bow items get no-op sims so the router arms them (RMB -> left hand, LMB -> right hand)
@@ -2761,6 +2762,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
           }
           hurtFx.draw(ui); // HURT-FX-01
           deathFlow.draw(ui, ui.cols, ui.rows); // DEATH-FLOW-01
+          blinkFlash.draw(ui, performance.now()); // SPELL-R4b
           presentPickups(engine.world, assets.pickupStyle, fb.timeSec); // US-080b
           compass.setHidden(compassHide); compass.draw(ui, ui.cols, ui.rows, fb.timeSec); // COMPASS-02 (D-061)
           if (!isCaptureOrBench && playerHandle) { const hp = playerHandle.data.transform; combatHud.frame(cam, fb.rt, ui, hp.x, hp.y, targeting ? targeting.targetId : null, fb.timeSec); combatHud.draw(ui, vitals.dead || wakeOut.inputLocked || isMapOpen() || isSettingsOpen() || pauseResume.soft || pauseResume.active || ending || !!(invView && invView.isOpen)); } // HPBAR-02 + DMGNUM-01
