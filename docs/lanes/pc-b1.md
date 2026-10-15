@@ -1234,3 +1234,44 @@ Browser check (main session): `node tools/capture-browser.mjs --port {port} --ur
   Result (clock 9): auto picked medium (p95 14.9 ms); navy frac low 0 / med .013 / high .020 / ultra .019 (band 0.46-0.58 H, camera pitched up after the drop so band is sky - tune BAND). BUT high (and likely med/ultra) stills show dense random BLACK cell speckle over sky + ground (auto/low clean) = candidate for the owner's black shapes; cases after the first spawn at the saved spot (shared profile).
   No-pause: no ?nopause flag exists (main.js:1388 skips installAutoPause only for bench/gpucompare/cinematic). NEEDS B1-main: `?nopause=1` -> main.js:1388 `if (mode === 'world' && !isCaptureOrBench && params.get('nopause') !== '1') installAutoPause();` (script meanwhile stops blur/visibility listeners via addScriptToEvaluateOnNewDocument + fakes look.locked).
 - OB-175 follow-up (kestrel-2): black-cell speckle + dropped HUD letters (m,t,T) in owner-medium/high/ultra stills of the FIRST run NOT reproduced in 3 later runs (medium tele/notele/noshim, auto->medium, auto->high: all clean, HUD text intact). Script shim/?autoquality/fake lock/teleport all ruled out as cause. Atlas state sane (medium 240x90 cell 4x7, atlas strip 570x11 = UI atlas 6x11, fonts.status loaded). Looks like a one-off glyph-atlas raster glitch (fillText blank for some codes) = flaky, likely under GPU/CPU load (3 cases in a row after the auto bench). Suggest guard (engine, ARCH): after rasterizeGlyphAtlas, verify each code 33-126 has alpha>0 and re-raster once if not. verify-ob175.mjs now takes case mods (medium:noshim:notele:nolock:pose) + env PROBE/CONSOLE.
+
+## PO batch 2026-10-15 (PC-B, sonnet)
+Judged from lane entries + OB rows only (no code, no browser). "pending owner walk" = owner-visible, owner must confirm.
+
+| Item | Verdict | Reason / flag |
+|---|---|---|
+| OB-186 redo | PO OK (pending owner walk) | Offer = no list, E accept / Q not now; E that paged in is swallowed (offerArmed). No "Esc to close" text. |
+| QUEST-FORMAT re-land | PO OK | Infra only; `next` waits on hand-in, never auto-starts (D-105); small chains (D-106); 7 suites PASS. |
+| OB-187 | PO OK (pending owner walk) | gondola sq.wreck.plate now needs burl.stone done; blue `!` rule (requires met) honoured. |
+| OB-190 | PO OK (pending owner walk) | Tracker moved to HUD_ROW 4 (was overdrawn by HP bar); test covers it. Not browser-checked. |
+| VOX-PRIO-01 (OB-171) | PO OK | ARCH OK; quest NPCs/markers outrank far props. Engine bug, owner only needs to see no missing characters. |
+| OB-150 steps 2-4 + level scaling + KINDS-F | PO OK (pending owner walk) for steps 2-4 (boar/wolf/bear/goblin hit a walking player, flank, 2 tokens); REJECT-as-incomplete for "level scaling" and KINDS-F: no lane entry found for either, so damage-by-zone-band (owner point 4) is unverified. Needs entry + test. |
+| OB-184 (undergrowth, clustering, saplings, ambience) | PO OK (pending owner walk) for undergrowth + clustering (existing meshes only, good). PO REJECT for saplings and forest ambience (birds, sounds, light shafts, carpet colour): not done (saplings = ARCH note 37.4.1 only). Clustering still ARCH CHANGES (validate `cluster`, reuse `_treeGridOf`). Keep OB-184 open. |
+| OB-189 (close-wall glyphs) | PO OK (pending owner walk) | ARCH OK, one MaterialTable for JS+GPU. Re-baseline gpucompare goldens once. Owner must confirm stripes gone at the wreck walls on low res. |
+| OB-155 re-audit | PO OK | Probe + lint 0 real floats, 4 small floats lowered; 2 false positives explained. Owner retest on a New Game (OB-155g old saves). |
+| OB-142 | PO OK (pending owner walk) | Cause = `?at=` skipped fauna, now allowed; river has 9 beasts within 150 m. Ask owner to retest with `?at=`. |
+| OB-141 (west POIs) | PO OK (pending owner walk) | 4 POIs, existing meshes/systems. Flag: new chestWest is guarded by the goblin camp (earned, OK); note texts note.westRuin/westStones need writer check; plain names OK. |
+| OB-156 markRule audit | PO OK | 84/84 pass; gold/blue `!` `?` rule of record holds. Known gaps (waypoint-ending steps, OB-181) wait for the OB-182 chain rewrite. |
+| OB-135 plain names | PO OK (pending owner walk) | 556 strings audited. Flag: "Health Orb"/"Mana Orb" (the rule's example is Health Potion; is "Orb" plain enough?), and lore names (Blue Sprig, Red Cap, Waystone Glass, Teal Crystal) kept: owner to confirm. |
+| OB-188 waystone wake | PO OK (pending owner walk) | `requires` hid the stone; removed, prompt names missing step; collider added. verify-ob188.mjs NOT run: run it before the owner walks. |
+| OB-136 riverBand audit | PO OK as audit; OB-136 stays OPEN | No data changed: 3 main (mq.ford.*, mq.smoke) + 11 side quests still cross early. PO call: side quests re-site or band 5 in the D-106 chain rewrite; main keeps first 5 levels east of the river. |
+| OB-152 chests | PO OK (pending owner walk) | 15 -> 10 -> 11 chests, 0 loose, all in camps/ruins/puzzles (earned). Open: heart-piece hint texts and "Climb"/"Old house roof" hints NEEDS WRITER. "More enemies by zone" rides OB-150. |
+| OB-166 load guard | PO REJECT (no evidence) | No lane entry for a guard/fix; bug row says not reproduced, needs owner URL + first console error. Keep open. |
+| BEAST-09a crocodiles | PO REJECT (hold) | Only seen as "not merged 782296ad" in backlog; no lane entry/ACs result. Resubmit with entry; croc model is existing-mesh? check. |
+| ATLAS-GUARD | PO OK | ARCH OK; blank-glyph guard. Node only; owner just watches for missing HUD letters / black speckle. |
+
+Contradiction check: no plain-name, env-mesh, chest, D-105, D-106 or "Esc to close" violations found. Watch: Orb names.
+
+### Owner walk-test list
+- Meadow waystone (~1386,1024): talk to Burl, check E/Q offer has no numbered list; accept; E at stone wakes it; you cannot walk through; no blue `!` from the gondola (tower ~x1495) until the stone is done.
+- After accepting any quest: objective line top-left under the MP bar.
+- Forest (Northwood band): ferns, bushes, mushrooms, logs, clustering near trunks; note still missing saplings, birds, sounds.
+- Wreck walls (forestWalk pose, low res): no light stripes close to walls/stones.
+- Ford (~992,1079): wild boars and rabbits present, also when using `?at=`.
+- West POIs: goblin camp (880,1012) + chest (878,1018); gatehouse note (952,1093); standing stones (870,1100); 3 boars (1020,1144).
+- Rook ruin (~976,1060): chests/nest on the floor inside, stairs walkable (970.7,1056-1062).
+- Combat: boar, wolf pack, bear, goblin hit you while walking away; running escapes; wolves flank.
+- Chests: ford ruin room (976.6,1058.9), campNorth (922,902.5), campEast (962,972.5); read heart-piece hints.
+- Inventory: new names (Old Sword, Health Orb, Mana Orb, Bomb, Brass Shield, Lantern, Fireball) read fine?
+- Quest `!`/`?` colours: gold main, blue side, `?` at hand-in.
+- New Game once (OB-155 old-save floats), and report any missing characters near markers.
