@@ -21,8 +21,8 @@ export function levelScale(lv, difficulty) {
 
 /** KINDS-F: per-kind {hp, dmg} factors from kinds.json (hpF/dmgF, missing/non-finite = 1). `skip` (wolf/bear slots with own tuning) -> 1/1. */
 export function kindFactors(e, skip) {
-  if (skip) return { hp: 1, dmg: 1 };
+  if (skip) return { hp: 1, dmg: 1, spd: 1 };
   const k = KINDS[kindOfEntity(e)];
   const f = (v) => (typeof v === 'number' && isFinite(v) && v > 0 ? v : 1);
-  return { hp: f(k && k.hpF), dmg: f(k && k.dmgF) };
+  return { hp: f(k && k.hpF), dmg: f(k && k.dmgF), spd: f(k && k.spdF) }; // spdF: UNDER-SKEL-VARIETY-01 (brute 0.7)
 }

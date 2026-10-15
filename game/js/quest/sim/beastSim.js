@@ -18,7 +18,7 @@ import { canSee } from './sight.js';
 import { BEAR_TUNING, BEAR_MODEL, bearOverrides, bearPicksBite, isBearEntity } from './bearBrain.js'; // BEAR-01, BEAR-BITE
 import { WOLF_TUNING, wolfOverrides, isWolfEntity, circleTarget, awayTarget } from './wolfBrain.js'; // WOLF-01
 import { GOBLIN_TUNING, goblinOverrides, isGoblinEntity } from './goblinBrain.js'; // GOB-01
-import { KINDS, kindIndex, kindOfEntity } from './beastKinds.js'; // BEAST-03a
+import { KINDS, KIND_NAMES, kindIndex, kindOfEntity } from './beastKinds.js'; // BEAST-03a
 import { ARCHETYPES } from "./archetypes.js";
 import { createWaterBrain, stepWaterBrain, grabMash as wbGrabMash, waterBlocks, waterHit } from './brains/waterBrain.js'; // BEAST-08b
 import { LAYERS } from './brains/layers.js'; // BEAST-03b: LAYERS[archIdx](sim, i, ctx)
@@ -320,7 +320,7 @@ export function createBeastSim(world, opts) {
       // BEAST-03b: any other explicit kind takes perception/leash/speeds from its archetype row (boar + the 3 legacy species keep today's numbers)
       const A = sim.ap.tab[KINDS[e.components.brain.beastKind].arch];
       sim.scfg.push({ ...cfg });
-      sim.ssteps.push({ ...sim.cfgSteps });
+      { const ts = KINDS[e.components.brain.beastKind].telegraphSec; sim.ssteps.push(ts > 0 ? { ...sim.cfgSteps, windup: toSteps(ts) } : { ...sim.cfgSteps }); } // UNDER-SKEL-VARIETY-01: brute telegraph 0.8 s
       sim.ap.slot[i] = 1;
       deriveArchSlot(sim, i, A);
     } else { sim.scfg.push(cfg); sim.ssteps.push(sim.cfgSteps); }
@@ -347,7 +347,7 @@ export function createBeastSim(world, opts) {
     // KINDS-F (OB-153): kinds.json hpF/dmgF (x boar, missing = 1) multiply the level result. Wolf/bear slots already carry their own
     // tuning (WOLF_TUNING/BEAR_TUNING hpMul, swipe hearts) so they are skipped here to avoid double counting.
     const kf = kindFactors(e, sim.wolf[i] || sim.bear[i]);
-    sim.tier[i] = tier; sim.spdMul[i] = m.speed; sim._hitPayload[i].damage = (sim.bear[i] ? BEAR_TUNING.swipeHearts : 1) * ls.damage * kf.dmg; // BEAR-01: swipe base is 2 hearts
+    sim.tier[i] = tier; sim.spdMul[i] = m.speed * kf.spd; sim._hitPayload[i].damage = (sim.bear[i] ? BEAR_TUNING.swipeHearts : 1) * ls.damage * kf.dmg; // BEAR-01: swipe base is 2 hearts
     const maxHp = Math.max(1, Math.round(sim.scfg[i].hp * ls.hp * kf.hp * (sim.elite[i] ? ELITE_HP_MUL : 1)));
     e.components.health = { hp: maxHp, max: maxHp, invuln: 0 };
     steer.addAgent(e.transform.x, e.transform.y, cfg.radius, 0, DEFAULT_ACCEL);
@@ -380,7 +380,7 @@ export function createBeastSim(world, opts) {
       return;
     }
     if (p.damage > 0) { // 37.16.2 item 3: damage + cooldown + hurt + cause + aggro
-      health.hp -= p.damage;
+      health.hp -= p.damage * blockMul(sim, i); // UNDER-SKEL-VARIETY-01: kinds.json blockF (skeleton warrior shield) cuts frontal hits
       sim.dmgCd[i] = sim.cfgSteps.dmgCooldown;
       sim.hurtT[i] = 0;
       sim.cause[i] = p.cause === 'fire' ? 1 : 0;
@@ -574,6 +574,14 @@ export function createBeastSim(world, opts) {
 }
 
 // ---- step pipeline (29.1 "Fixed-step order inside step") ----------------------------------------------------
+
+/** UNDER-SKEL-VARIETY-01: damage multiplier of a kind with `blockF` (shield) when the beast faces the player; else 1. No alloc. */
+function blockMul(sim, i) {
+  const bf = KINDS[KIND_NAMES[sim.kindIdx[i]]].blockF;
+  if (!(bf > 0)) return 1;
+  const dx = _pp[0] - sim.steer.x[i], dy = _pp[1] - sim.steer.y[i];
+  return dx * sim.fx[i] + dy * sim.fy[i] > 0 ? 1 - bf : 1;
+}
 
 /** GOB-01: a slot that perceives, paths, steers and posts (not dead/GONE, not dormant). */
 const live = (sim, i) => !deadSt(sim.state[i]) && sim.dormant[i] === 0 && sim.wat[i] === 0;
