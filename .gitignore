@@ -27,5 +27,3 @@ design/preview/lod1-trees.data.js
 # DESKTOP-ZIP-01: portable Windows build output
 /tools/desktop/dist/
 
-# GI-PROBE-02b: baked GI probe files - owner decision pending (GI-Q1): commit ~5 MB of .gi.bin or bake at load
-/content/gi/*.gi.bin

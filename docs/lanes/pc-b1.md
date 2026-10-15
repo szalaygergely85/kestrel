@@ -4,6 +4,10 @@
 
 (Older entries: docs/lanes/archive/pc-b1-2026-10-10.md)
 
+### GI-SHIP-01 (kestrel-2, 2026-10-15, dev done, Node only)
+- Baked all 5 zones of world_m1 (g4_7,g3_7,g4_9,g4_11,g4_13): 4.98 MB total (1.00 MB each), bake 84 s (88 s wall). .gitignore rule + comment removed; main session commits content/gi/*.gi.bin + manifest.json.
+- New tools/gi-fresh.test.mjs (run-tests picks it up): fails if a zone .gi.bin is missing/stale vs the input hash. Any placement/structure/terrain change needs a re-bake (node tools/bake-gi.mjs). validate-content: 0 GI warnings.
+
 ### RIG-GC-01 (kestrel-2, dev done, Node only)
 - `game/js/dev/modes/gpucompare.js`: loads `content/chargen/human.charkit.json`, builds `char.gc` (default recipe -> composeCharacter -> meshCharacter -> collapseRig(kit.partMap) -> riggedModelDef, ~2203 quads) before the pool binds; new row `world_m1: charRig (RIG-GC-01, ...)` (mesh only, rest pose since the kit has no clips, jaw partRot ry 30 via slot.addPart, 3 m ahead of the eye at 1473,1025). Test `gpucompare.charRig.test.js`.
 - MAIN SESSION: run `node tools/capture-browser.mjs --mode gpucompare --backend webgpu --timeout-ms 600000 --port 9575 --baseline docs/test-reports/gpucompare-baseline-webgpu-intel.json > <log> 2>&1`; the baseline needs the new row `world_m1: charRig (RIG-GC-01, rigged chargen character, jaw partRot ry 30, 3 m ahead)` (+ its auto-generated shadow-depth row) as PASS or a recorded known-FAIL with metrics (D-039). Status: arch-review.
