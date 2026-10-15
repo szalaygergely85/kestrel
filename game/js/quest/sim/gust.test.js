@@ -17,7 +17,7 @@ function rig(tier, { wx = null, ents = [], props = [], mp = 100, dmul } = {}) {
 }
 const at = (r, a) => [Math.cos(deg(a)) * r, Math.sin(deg(a)) * r];
 for (const t of [1, 2, 3]) { // tier numbers: range edge, knock, dmg, mana, cd
-  const row = SPELL_DEFS.gust.tiers[t - 1];
+  const row = SPELL_DEFS.telekinesis.tiers[t - 1];
   const ents = [tgt('in', row.range - 0.5, 0), tgt('far', row.range + 1, 0)];
   const R = rig(t, { ents }); R.go();
   assert.deepEqual(R.hits.map((h) => h.target), ['in']); assert.equal(R.hits[0].knock, row.knock); assert.equal(R.hits[0].damage, row.dmg); assert.equal(R.hits[0].heavy, 1); assert.equal(R.hits[0].stunSec, row.stagger); // SPELL-ARCH8
@@ -47,5 +47,5 @@ for (const t of [1, 2, 3]) { // tier numbers: range edge, knock, dmg, mana, cd
   const h0 = process.memoryUsage().heapUsed; loop(3000); if (global.gc) global.gc();
   const dh = process.memoryUsage().heapUsed - h0; assert.ok(dh < 100000, '0 alloc ' + dh);
 }
-{ const R = rig(2, { ents: [tgt('a', 3, 0)], dmul: 1.15 }); R.go(); assert.equal(R.hits[0].damage, SPELL_DEFS.gust.tiers[1].dmg * 1.15, 'INT multiplier applies to Gust'); }
+{ const R = rig(2, { ents: [tgt('a', 3, 0)], dmul: 1.15 }); R.go(); assert.equal(R.hits[0].damage, SPELL_DEFS.telekinesis.tiers[1].dmg * 1.15, 'INT multiplier applies to Gust'); }
 console.log('gust.test.js OK');

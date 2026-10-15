@@ -1,4 +1,4 @@
-// game/js/quest/spellLightView.test.js (SPELL-05b): Spark + Light Orb view with the REAL sims, particles and LightSet.
+// game/js/quest/spellLightView.test.js (SPELL-05b): Spark (Freeze bolt) view with the REAL sims, particles and LightSet.
 // Run: node --expose-gc game/js/quest/spellLightView.test.js
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -8,7 +8,6 @@ import '../../../design/palette.js';
 import '../../../design/detail-pass.js';
 import { createTargetables } from './sim/targetables.js';
 import { createSparkSim } from './sim/spark.js';
-import { createLightOrbSim } from './sim/lightOrb.js';
 import { createSpellLightView } from './spellLightView.js';
 
 if (typeof global.gc !== 'function') { const r = spawnSync(process.execPath, ['--expose-gc', fileURLToPath(import.meta.url)], { stdio: 'inherit' }); process.exit(r.status ?? 1); }
@@ -26,13 +25,12 @@ function rig({ wx = null, preLights = 3, noParticles = false } = {}) {
   const player = { id: 'player', transform: { x: 0, y: 0, z: 0, yawDeg: 90 }, components: { body: { eyeH: 1.6 } } };
   const world = stubWorld(wx), events = makeEvents(), tg = createTargetables(world, events);
   const spark = createSparkSim(world, events, tg, { spendMana: () => true });
-  const orb = createLightOrbSim(events, () => null, { spendMana: () => true });
   const particles = createParticles({}), lights = new LightSet();
   for (let i = 0; i < preLights; i++) lights.add({ x: 0, y: 0, z: 0, hue: [1, 1, 1], intensity: 1, radius: 3, on: true, key: `w${i}` });
   const view = createSpellLightView({ particles: noParticles ? null : particles, palette: A.palette, events });
-  view.bind(spark, orb, lights);
-  const r = { player, spark, orb, particles, lights, view, events };
-  r.step = () => { spark.step(player, 1, 0, 0); orb.step(player); view.stepFx(); particles.step(); };
+  view.bind(spark, lights);
+  const r = { player, spark, particles, lights, view, events };
+  r.step = () => { spark.step(player, 1, 0, 0); view.stepFx(); particles.step(); };
   r.frame = (a = 1) => { view.present(a); lights.update(1, null); };
   return r;
 }
@@ -41,18 +39,18 @@ const onCount = (r) => { let n = 0; for (let i = 3; i < r.lights.count; i++) if 
 
 if (process.env.SLV_ALLOC_PROBE) {
   const r = rig({ wx: 8 });
-  const pump = (n) => { for (let i = 0; i < n; i++) { if (i % 120 === 0) r.spark.requestTap(); if (i % 600 === 5) r.orb.cast(r.player); r.step(); r.frame(0.5); } };
+  const pump = (n) => { for (let i = 0; i < n; i++) { if (i % 120 === 0) r.spark.requestTap(); r.step(); r.frame(0.5); } };
   pump(8000);
   const w = [];
   for (let k = 0; k < 3; k++) { global.gc(); const h0 = process.memoryUsage().heapUsed; pump(3000); global.gc(); w.push(process.memoryUsage().heapUsed - h0); }
   console.log(w.sort((a, b) => a - b)[1]); process.exit(0);
 }
 
-{ const r = rig(); ok('all 4 particle defs defined', ['sparkTrail', 'sparkHit', 'orbCore', 'orbShimmer'].every((k) => r.particles.defIdOf(k) >= 0)); }
-// binding: 2 bolt + 1 flash + 1 orb, off at start, respects the cap
+{ const r = rig(); ok('both particle defs defined', ['sparkTrail', 'sparkHit'].every((k) => r.particles.defIdOf(k) >= 0)); }
+// binding: 2 bolt + 1 flash, off at start, respects the cap
 {
   const r = rig();
-  ok('4 lights bound, all off', r.view.stats.boundLights === 4 && r.lights.count === 7 && onCount(r) === 0, `bound=${r.view.stats.boundLights}`);
+  ok('3 lights bound, all off', r.view.stats.boundLights === 3 && r.lights.count === 6 && onCount(r) === 0, `bound=${r.view.stats.boundLights}`);
   const t = rig({ preLights: MAX_LIGHTS - 2 });
   ok('cap respected with 2 free lights', t.lights.count === MAX_LIGHTS && t.view.stats.boundLights === 2);
   const n = rig({ noParticles: true }); n.spark.requestTap(); n.step(); n.frame();
@@ -72,24 +70,10 @@ if (process.env.SLV_ALLOC_PROBE) {
   for (let i = 0; i < 90; i++) r.step();
   ok('emitters released after the flight', liveEmitters(r.particles) === 0, String(liveEmitters(r.particles)));
 }
-// Light Orb: fade in, radius = orb radius, fade out on end
-{
-  const r = rig();
-  r.orb.cast(r.player); r.step(); r.frame();
-  ok('lightOrb:cast -> light on, glyph emitters created', r.view.stats.orbCasts === 1 && r.lights.on[r.view.orbLight] === 1 && r.view.coreHandle >= 0);
-  const lvl1 = r.view.orbLevel;
-  for (let i = 0; i < 30; i++) r.step();
-  r.frame();
-  ok('fades in', r.view.orbLevel > lvl1 && r.view.orbLevel === 1);
-  ok('radius = orb radius (8 m tier 1)', r.lights.radius[r.view.orbLight] === 8);
-  r.orb.stop(); for (let i = 0; i < 40; i++) r.step();
-  r.frame();
-  ok('lightOrb:end -> faded out, light off, emitters released', r.view.stats.orbEnds === 1 && r.view.orbLevel === 0 && r.lights.on[r.view.orbLight] === 0 && r.view.coreHandle < 0);
-}
 // dispose / rebind leaves no listeners
 {
-  const r = rig(); r.view.dispose(); r.orb.cast(r.player);
-  ok('dispose unsubscribes', r.view.stats.orbCasts === 0);
+  const r = rig(); r.view.dispose(); r.spark.requestTap(); r.step();
+  ok('dispose unsubscribes', r.view.stats.casts === 0);
 }
 // 0 allocation
 {

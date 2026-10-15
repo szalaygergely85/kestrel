@@ -1,11 +1,10 @@
 // game/js/quest/spellPageView.js (SPELL-03, docs/epics/ep-spells.md section 3): the "Spells" page of the inventory screen.
-// Three columns Fire / Light / Wind, one card per spell. Pure view: spell data and the book are injected, strings are prebuilt
+// Four cards (D-021: Fireball, Freeze, Telekinesis, Teleport) in a 2x2 grid in learn order; SPELL-R5 lays them out as one row. Pure view: spell data and the book are injected, strings are prebuilt
 // at construct time, `draw` only walks them (0 alloc). No text mentions Esc (owner rule).
-// Injected API (SPELL-01/02): defs = SPELL_DEFS (object keyed by id, or an array with ids) { name, branch:'fire'|'light'|'wind', root, glyph, color, tiers:[{mana, cd, dmg?, r?, ...} x3] };
+// Injected API (SPELL-01/02): defs = SPELL_DEFS (object keyed by id, or an array with ids) { name, glyph, color, tiers:[{mana, cd, dmg?, r?, ...} x3] };
 // book = createSpellBook (tier(id) 0..3, canRaise(id)); scrolls() = Spell Scroll count; useScroll(id) = new level or 0 (main wraps spellScroll.useScroll).
-export const BRANCHES = Object.freeze(['fire', 'light', 'wind']);
-const TITLES = { fire: ' FIRE ', light: ' LIGHT ', wind: ' WIND ' }; // prebuilt padded (0 alloc in draw)
-const DEFAULT_RGB = { fire: [235, 120, 60], light: [90, 220, 205], wind: [205, 215, 205] };
+const DEFAULT_RGB = [90, 220, 205];
+const COLS = 2;
 import { learnHint } from './sim/spellBooks.js';
 export const CARD = Object.freeze({ x0: 2, pitch: 33, w: 31, h: 4, y0: 4, gap: 1, detailY: 19, footY: 24, titleRow: 3 });
 let PUT = null, PW = 0; // draw-time put/width, so `text` is not a per-frame closure
@@ -30,15 +29,14 @@ export function tierText(row) {
 /** @param {object} o {defs, book, scrolls, useScroll, rgb?, colors:{text,dim,hint,gold,frame}, say?} */
 export function createSpellPageView(o) {
   const list = Array.isArray(o.defs) ? o.defs : Object.keys(o.defs).map((id) => ({ id, ...o.defs[id] }));
-  const col = { fire: [], light: [], wind: [] };
-  for (const d of list) if (col[d.branch] && (learnHint(d.id) !== null || (o.book.tier(d.id) | 0) > 0)) col[d.branch].push(d); // no source yet (Updraft) and not learned: card hidden
-  for (const b of BRANCHES) col[b].sort((a, c) => (c.root ? 1 : 0) - (a.root ? 1 : 0));
+  const shown = list.filter((d) => learnHint(d.id) !== null || (o.book.tier(d.id) | 0) > 0); // no hint and not learned: card hidden
   const K = o.colors, book = o.book;
   const cards = []; // flat, column-major; each prebuilt
   const pips = ['[---]', '[#--]', '[##-]', '[###]'];
-  for (let ci = 0; ci < 3; ci++) {
-    col[BRANCHES[ci]].forEach((d, ri) => {
-      const rgbk = (o.rgb && o.rgb[d.color || d.colour]) || DEFAULT_RGB[d.branch];
+  {
+    shown.forEach((d, i) => {
+      const ci = i % COLS, ri = (i / COLS) | 0;
+      const rgbk = (o.rgb && o.rgb[d.color || d.colour]) || DEFAULT_RGB;
       const stat = [], now = [], next = [], plain = [], conf = [];
       for (let t = 0; t < 4; t++) {
         stat.push(t ? pips[t] + '  mp ' + d.tiers[t - 1].mana + '  cd ' + NUM(d.tiers[t - 1].cd) + ' s' : '');
@@ -58,8 +56,8 @@ export function createSpellPageView(o) {
     const c = cards[sel];
     if (dr) { const n = at(c.ci, c.ri + dr); if (n) sel = cards.indexOf(n); }
     if (dc) {
-      for (let k = 1; k < 3; k++) {
-        const ci = (c.ci + dc * k + 3) % 3, n = at(ci, Math.min(c.ri, col[BRANCHES[ci]].length - 1));
+      for (let k = 1; k < COLS; k++) {
+        const ci = (c.ci + dc * k + COLS) % COLS, n = at(ci, c.ri) || at(ci, 0);
         if (n) { sel = cards.indexOf(n); break; }
       }
     }
@@ -92,7 +90,6 @@ export function createSpellPageView(o) {
     /** @param {(x:number,y:number,code:number,fg:number[])=>void} put panel-relative; the caller fills the background */
     draw(put, W) {
       PUT = put; PW = W;
-      for (let ci = 0; ci < 3; ci++) text(CARD.x0 + ci * CARD.pitch + 1, CARD.titleRow, TITLES[BRANCHES[ci]], K.gold);
       for (let i = 0; i < cards.length; i++) {
         const c = cards[i], t = book.tier(c.d.id) | 0, s = i === sel, fg = s ? K.gold : K.frame, w = CARD.w;
         for (let x = 1; x < w - 1; x++) { put(c.x + x, c.y, 45, fg); put(c.x + x, c.y + 3, 45, fg); }

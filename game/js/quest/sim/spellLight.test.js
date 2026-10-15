@@ -1,5 +1,4 @@
-// SPELL-05: Spark + Light Orb (sim/spark.js, sim/lightOrb.js). Seeded Node tests per tier: damage, stun, range, mana, cooldown, orb radius /
-// duration / keep-out level / flee, dispatcher registration, determinism hash twice equal, 0 alloc. Run: node game/js/quest/sim/spellLight.test.js
+// SPELL-05 / R1: Spark sim (SPELL_DEFS.freeze rows; becomes Freeze in SPELL-R2). Seeded Node tests per tier: damage, stun, range, mana, cooldown, dispatcher registration, determinism hash twice equal, 0 alloc. Run: node game/js/quest/sim/spellLight.test.js
 import assert from 'node:assert/strict';
 import { World, NavGrid, createAStar, createRng, createHasher } from '../../../../engine/index.js';
 import paletteMod from '../../../../design/palette.js';
@@ -17,7 +16,6 @@ import boarMod from '../../../../design/models/voxel_beast.js';
 import { loadTestAssets } from '../../../../tools/testing/content-node.mjs';
 import { createTargetables } from './targetables.js';
 import { createSparkSim } from './spark.js';
-import { createLightOrbSim } from './lightOrb.js';
 import { createSpellDispatcher } from './spellCast.js';
 import { createBeastSim, STATE_WANDER, STATE_STAGGER } from './beastSim.js';
 import { SPELL_DEFS } from '../spellDefs.js';
@@ -25,7 +23,7 @@ import { SPELL_DEFS } from '../spellDefs.js';
 paletteMod; detailPassMod; terrainMod; lanternMod; leverMod; boulderMod; rubbleMod; wreckageMod; relayMod; swordMod; boarMod; m3PropsMod;
 
 // ---------- Spark (stub world: no walls; one target) ----------
-const S = SPELL_DEFS.spark.tiers;
+const S = SPELL_DEFS.freeze.tiers;
 function sparkRig(tier, wall) {
   const target = { id: 'b1', transform: { x: 10, y: 0, z: 0 }, components: { targetable: { radius: 0.5, height: 2 }, health: { hp: 9, max: 9 } } };
   const player = { id: 'player', transform: { x: 0, y: 0, z: 0 }, components: { body: { eyeH: 1.6 } } };
@@ -48,7 +46,7 @@ for (const t of [1, 2, 3]) {
   for (let i = 0; i < 40 && r.hits.length === 0; i++) r.step();
   assert.equal(r.hits.length, 1, `tier ${t} hit`);
   const h = r.hits[0];
-  assert.equal(h.target, 'b1'); assert.equal(h.damage, row.dmg); assert.equal(h.heavy, 1); assert.equal(h.stunSec, row.stun); assert.ok(h.knock >= 1);
+  assert.equal(h.target, 'b1'); assert.equal(h.damage, row.dmg); assert.equal(h.heavy, 1); assert.equal(h.stunSec, row.stun); assert.equal(h.knock, row.knock);
   assert.equal(r.sim.alive, 0, 'bolt consumed by the first beast');
   assert.equal(r.sim.requestTap(), 'busy', 'cooldown'); // still cooling
 }
@@ -56,7 +54,7 @@ for (const t of [1, 2, 3]) {
   const r = sparkRig(1); r.target.transform.x = 25; r.sim.requestTap();
   for (let i = 0; i < 60; i++) r.step();
   assert.equal(r.hits.length, 0); assert.equal(r.sim.alive, 0); assert.equal(r.ends.length, 1);
-  assert.ok(Math.abs(r.ends[0].x - 20) < 1e-6, 'ends at range ' + r.ends[0].x); assert.equal(r.ends[0].hitBeast, false);
+  assert.ok(Math.abs(r.ends[0].x - S[0].range) < 1e-6, 'ends at range ' + r.ends[0].x); assert.equal(r.ends[0].hitBeast, false);
 }
 { // a wall stops it before the beast
   const r = sparkRig(2, 5); r.sim.requestTap();
@@ -95,64 +93,6 @@ const grid = new NavGrid({ x0: 1400, y0: 928, w: 100, h: 192, cell: 1 }); grid.b
 const listeners = new Map();
 const events = { on(n, f) { let s = listeners.get(n); if (!s) listeners.set(n, s = new Set()); s.add(f); return () => s.delete(f); }, emit(n, p) { const s = listeners.get(n); if (s) for (const f of Array.from(s)) f(p); } };
 const mkBeasts = () => (world.get('a').data.transform.x = 1480, world.get('a').data.transform.y = 1000, createBeastSim(world, { nav: { grid, astar: createAStar(grid) }, rng: createRng(1), events }));
-const O = SPELL_DEFS.lightOrb.tiers;
-const PX = 1480, PY = 1003; // 3 m from the beast: inside its hearing bubble
-
-function aggroAfter(tier, lvl, withOrb, steps = 90) {
-  const beasts = mkBeasts(); const sl = beasts.slotOf('a'); const hl = beasts.entities[sl].components.health; hl.hp = hl.max = 99; beasts.stk.lv[sl] = lvl;
-  let mp = 100;
-  const orb = createLightOrbSim(events, () => beasts, { spendMana: (n) => (mp < n ? false : (mp -= n, true)), tier: () => tier });
-  const pl = { transform: { x: PX, y: PY, z: 0 } };
-  if (withOrb) assert.equal(orb.cast(pl), 'cast');
-  let aggro = false;
-  for (let i = 0; i < steps; i++) { orb.step(pl); beasts.step(PX, PY, 0); const st = beasts.state[sl]; if (st >= 1 && st <= 5) { aggro = true; break; } }
-  return { aggro, beasts, orb, sl, mp };
-}
-assert.equal(aggroAfter(1, 1, false).aggro, true, 'control: an unlit beast notices the player at 3 m');
-for (const t of [1, 2, 3]) {
-  const keep = O[t - 1].keepOutLevel;
-  assert.equal(aggroAfter(t, keep, true).aggro, false, `tier ${t}: level ${keep} beast keeps out`);
-  assert.equal(aggroAfter(t, keep + 1, true).aggro, true, `tier ${t}: level ${keep + 1} beast is not held back`);
-}
-{ // radius: the same beast just outside the light radius notices
-  const beasts = mkBeasts(); const sl = beasts.slotOf('a'); beasts.stk.lv[sl] = 1;
-  const orb = createLightOrbSim(events, () => beasts, { tier: () => 1 });
-  const far = { transform: { x: 1480, y: 1000 + 3 + O[0].lightR + 1, z: 0 } }; // player (and orb) > lightR from the beast, but the hear bubble is only 3 m: move the beast instead
-  const near = { transform: { x: PX, y: PY, z: 0 } };
-  orb.cast(near); assert.ok(Math.abs(orb.orb.z - 2.2) < 1e-9 && orb.orb.r === O[0].lightR);
-  assert.ok(far);
-}
-{ // duration + one alive + refresh + mana + cooldown
-  for (const t of [1, 2, 3]) {
-    const beasts = mkBeasts(); let mp = 100;
-    const orb = createLightOrbSim(events, () => beasts, { spendMana: (n) => (mp < n ? false : (mp -= n, true)), tier: () => t });
-    const pl = { transform: { x: 5, y: 5, z: 0 } };
-    assert.equal(orb.cast(pl), 'cast'); assert.equal(mp, 100 - O[t - 1].mana, `tier ${t} mana`);
-    assert.equal(orb.stepsLeft, O[t - 1].dur * 60); assert.equal(orb.orb.r, O[t - 1].lightR);
-    assert.equal(orb.cast(pl), 'busy', 'cooldown'); assert.equal(mp, 100 - O[t - 1].mana, 'busy costs nothing');
-    pl.transform.x = 9; orb.step(pl); assert.equal(orb.orb.x, 9, 'follows the player'); assert.equal(orb.orb.z, 2.2);
-    for (let i = 0; i < 60; i++) orb.step(pl); // past the 1 s cooldown
-    assert.equal(orb.cast(pl), 'cast', 'recast refreshes'); assert.equal(orb.alive, true); assert.equal(orb.stepsLeft, O[t - 1].dur * 60);
-    assert.equal(beasts.stk.calm.on, 1);
-    for (let i = 0; i < O[t - 1].dur * 60; i++) orb.step(pl);
-    assert.equal(orb.alive, false); assert.equal(beasts.stk.calm.on, 0, 'zone cleared at the end');
-  }
-  const poor = createLightOrbSim(events, () => null, { spendMana: () => false, tier: () => 1 });
-  assert.equal(poor.cast({ transform: { x: 0, y: 0, z: 0 } }), 'noMana'); assert.equal(poor.alive, false); assert.equal(poor.refused, 1);
-}
-{ // Lv3: a beast inside at cast time flees for 2 s then returns; Lv1/2 do not flee
-  const a = aggroAfter(3, 1, true, 5); // cast already flagged the flee
-  assert.equal(a.beasts.fleeing[a.sl], 1, 'tier 3 beast flees'); assert.equal(a.beasts.stk.cf[a.sl] > 0, true);
-  for (let i = 0; i < 125; i++) a.beasts.step(PX, PY, 0);
-  assert.equal(a.beasts.fleeing[a.sl], 0, 'flee ends after ~2 s');
-  assert.equal(aggroAfter(2, 1, true, 5).beasts.fleeing[0], 0, 'tier 2 does not flee');
-}
-{ // SPELL-ARCH8: a calm-flee that ended early (enterFlee via another path) leaves no stale cf to shorten a later WOLF-01 flee
-  const a = aggroAfter(3, 1, true, 5); const sl = a.sl;
-  assert.ok(a.beasts.stk.cf[sl] > 0); a.beasts.stk.cf[sl] = 10_000; // stale count left from an ended calm-flee
-  a.beasts.flee(sl); // sim.flee -> enterFlee
-  assert.equal(a.beasts.stk.cf[sl], 0, 'enterFlee zeroes stk.cf');
-}
 { // Spark stun: a combat:hit with stunSec staggers for exactly round(stun*60) steps; plain hit keeps the default timer
   for (const t of [1, 2, 3]) {
     const beasts = mkBeasts(); const sl = beasts.slotOf('a'); const hl = beasts.entities[sl].components.health; hl.hp = hl.max = 99;
@@ -161,18 +101,13 @@ for (const t of [1, 2, 3]) {
     beasts.dispose && beasts.dispose();
   }
 }
-{ // dispatcher: spark + lightOrb registered, locked at tier 0, 'cast' when learned
-  const tiers = { spark: 0, lightOrb: 2 };
+{ // dispatcher: spark registered, locked at tier 0, 'cast' when learned
+  const tiers = { freeze: 0 };
   const d = createSpellDispatcher((id) => tiers[id] | 0);
-  const sp = sparkRig(1).sim; const orb = createLightOrbSim(events, () => null, { tier: () => 2 });
-  d.register('spark', () => sp.requestTap()); d.register('lightOrb', (p) => orb.cast(p));
-  assert.equal(d.cast('spell.spark', null), 'locked'); assert.equal(d.cast('spell.lightOrb', { transform: { x: 0, y: 0, z: 0 } }), 'cast');
-  tiers.spark = 1; assert.equal(d.cast('spell.spark', null), 'cast');
-}
-{ // orb determinism
-  const run = () => { const beasts = mkBeasts(), hh = createHasher(); const orb = createLightOrbSim(events, () => beasts, { tier: () => 3 }); const pl = { transform: { x: PX, y: PY, z: 0 } };
-    orb.cast(pl); for (let i = 0; i < 300; i++) { orb.step(pl); beasts.step(PX, PY, 0); orb.hashInto(hh); hh.u32(beasts.state[0]); } return (typeof hh.value === "function" ? hh.value() : hh.value); };
-  assert.equal(run(), run(), 'orb hash twice equal');
+  const sp = sparkRig(1).sim;
+  d.register('freeze', () => sp.requestTap());
+  assert.equal(d.cast('spell.freeze', null), 'locked');
+  tiers.freeze = 1; assert.equal(d.cast('spell.freeze', null), 'cast');
 }
 console.log('spellLight.test.js: all pass');
 process.exit(0);

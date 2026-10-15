@@ -1,4 +1,4 @@
-// SPELL-DEV-01: `?spells=1` dev override. Learns every spell except Updraft at tier 1 (never lowers a higher tier) and tops the
+// SPELL-DEV-01: `?spells=1` dev override. Learns all four spells (D-021) at tier 1 (never lowers a higher tier) and tops the
 // pack up to 2 Spell Scrolls. Pure; the caller (main.js) runs it once per world load. Dev only: it touches world.state / the pack
 // only in memory, so a real save is affected only if the player then saves (same rule as ?fireball=1).
 import { SPELL_IDS } from '../spellDefs.js';
@@ -6,7 +6,7 @@ import { SCROLL_ID } from './spellScroll.js';
 import { countOf, addItem } from './inventory.js';
 
 export const DEV_SCROLLS = 2;
-export const DEV_SKIP = Object.freeze(['updraft']);
+export const DEV_SKIP = Object.freeze([]);
 
 /** @returns {{learned:string[], scrolls:number}} what was changed */
 export function applyDevSpells(book, inv, itemDefs) {

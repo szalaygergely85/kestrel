@@ -37,13 +37,13 @@ assert.equal(FIREBALL_TIER_CFG[1].tap, FIREBALL_CFG.tap); assert.equal(FIREBALL_
 
 // dispatcher: locked / notImplemented / dummy registration
 {
-  const tiers = { fireball: 1, spark: 0, gust: 2 };
+  const tiers = { fireball: 1, freeze: 0, telekinesis: 2 };
   const d = createSpellDispatcher((id) => tiers[id] | 0);
   let n = 0; d.register('fireball', () => (n++, 'cast'));
   assert.equal(d.cast('spell.fireball', null), 'cast'); assert.equal(n, 1);
-  assert.equal(d.cast('spell.gust', null), 'notImplemented'); // learned, no sim yet
-  d.register('spark', () => 'cast'); assert.equal(d.cast('spell.spark', null), 'locked');
-  d.register('gust', () => 'dummy'); assert.equal(d.cast('spell.gust', null), 'dummy'); // one table entry = a new spell
+  assert.equal(d.cast('spell.telekinesis', null), 'notImplemented'); // learned, no sim yet
+  d.register('freeze', () => 'cast'); assert.equal(d.cast('spell.freeze', null), 'locked');
+  d.register('telekinesis', () => 'dummy'); assert.equal(d.cast('spell.telekinesis', null), 'dummy'); // one table entry = a new spell
   assert.equal(d.cast('sword', null), 'notImplemented');
 }
 // quickbar key routes spell.* to the dispatcher
@@ -58,8 +58,8 @@ assert.equal(FIREBALL_TIER_CFG[1].tap, FIREBALL_CFG.tap); assert.equal(FIREBALL_
   const map = {}, tiers = {}; for (const id of SPELL_IDS) tiers[id] = 0;
   refreshLocked(map, tiers);
   for (const id of SPELL_IDS) assert.equal(map['spell.' + id], 1); assert.equal(map['potion.mp'], 1);
-  tiers.spark = 1; tiers.fireball = 1; refreshLocked(map, tiers);
-  assert.equal(map['spell.spark'], undefined); assert.equal(map['spell.fireball'], undefined); assert.equal(map['potion.mp'], undefined); assert.equal(map['spell.gust'], 1);
+  tiers.freeze = 1; tiers.fireball = 1; refreshLocked(map, tiers);
+  assert.equal(map['spell.freeze'], undefined); assert.equal(map['spell.fireball'], undefined); assert.equal(map['potion.mp'], undefined); assert.equal(map['spell.telekinesis'], 1);
 }
 assert.equal(SPELL_DEFS.fireball.tiers[1].chargedDmg, FIREBALL_TIER_CFG[2].charged.damage);
 console.log('spellCast.test.js: all pass');

@@ -1,6 +1,6 @@
 // EP-SPELLS (SPELL-09): where each spell is learned. Pure data + small pure helpers (no DOM, no engine).
 // A Spell Book is the pack item `book.spell.<spellId>`; picking one up learns the spell once (spellBookHook.js).
-// Waystone wakes teach directly (no item). Burl's Fireball is not here (D-069). Updraft is NOT placed yet (owner undecided).
+// Waystone wakes teach directly (no item). Burl's Fireball is not here (D-069). Freeze and Teleport are placed in SPELL-R6 (hint only until then).
 import { SPELL_DEFS, SPELL_IDS } from '../spellDefs.js';
 
 export const BOOK_PREFIX = 'book.spell.';
@@ -10,14 +10,11 @@ export const spellOfBook = (itemId) => (typeof itemId === 'string' && itemId.sta
 /** The single planned learn source per spell. kind: 'chest' (CHEST_TABLES id) | 'quest' (quest id, reward item) | 'wake' (see WAKE) | 'burl' | 'unplaced'. */
 export const PLACEMENTS = Object.freeze({
   fireball: { kind: 'burl' },
-  fireRing: { kind: 'chest', id: 'chestGoblinTunnel' }, // stash at the tunnel midpoint, earned: opens when the 3 goblins are dead
-  spark: { kind: 'wake', rule: 'thirdNear' },
-  lightOrb: { kind: 'chest', id: 'chestStrandCave' }, // the sea cave chest (dark cave), earned: guarded by the tortoises
-  ward: { kind: 'quest', id: 'mq.ford.mirror' }, // Rook's hand-in at the ford ruin
-  gust: { kind: 'wake', rule: 'firstFar' },
-  updraft: { kind: 'unplaced' }, // owner has not decided
+  freeze: { kind: 'unplaced', hint: 'Look into the dry well.' }, // SPELL-R6: the dry well north of the post
+  telekinesis: { kind: 'wake', rule: 'thirdNear' }, // the 3rd near-side Waystone
+  teleport: { kind: 'unplaced', hint: 'Help Rook at the ford.' }, // SPELL-R6: mq.ford.mirror hand-in
 });
-/** Spells that must have exactly one source (everything except Burl's Fireball and the unplaced Updraft). */
+/** Spells that must have exactly one source (everything except Burl's Fireball and the not yet placed Freeze/Teleport). */
 export const PLACED_IDS = Object.freeze(SPELL_IDS.filter((id) => PLACEMENTS[id].kind !== 'burl' && PLACEMENTS[id].kind !== 'unplaced'));
 /** Extra Spell Books in chests that are not the spell's own placement (none today; the bear den gets a Spell Scroll, not a book). */
 
@@ -35,7 +32,8 @@ export function wakeGrants(st) {
 /** One plain hint line for an unlearned spell, derived from PLACEMENTS (no per-id text). null = no source yet (hide the card). */
 export function learnHint(spellId) {
   const p = PLACEMENTS[spellId];
-  if (!p || p.kind === 'unplaced') return null;
+  if (!p) return null;
+  if (p.kind === 'unplaced') return p.hint || null;
   if (p.kind === 'burl') return 'Ask Burl.';
   if (p.kind === 'chest') return 'Find its Spell Book.';
   if (p.kind === 'quest') return 'Help Rook at the ford.';

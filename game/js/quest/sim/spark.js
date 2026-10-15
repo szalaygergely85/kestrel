@@ -1,13 +1,13 @@
 // game/js/quest/sim/spark.js (SPELL-05, docs/epics/ep-spells.md section 2 Light/Spark). The Spark: a straight, fast bolt (no gravity).
 // First beast hit: damage + heavy `combat:hit` (existing stagger state) with `stunSec` = the tier's stun time; a wall stops it.
-// Reuses the shared swept hit test (sim/sweep.js, the fireball/arrow primitive). All numbers come from spellDefs.js (SPELL_DEFS.spark.tiers).
+// Reuses the shared swept hit test (sim/sweep.js, the fireball/arrow primitive). All numbers come from spellDefs.js (SPELL_DEFS.freeze.tiers).
 // Key-slot cast like the fireball tap: requestTap() queues, the next step() fires with the aim. Rule 15 (sim/**): no Math.random, no trig,
 // integer step counters, zero allocation in step. Transient (not saved).
 import { SIM_STEP } from '../../../../engine/index.js';
 import { SPELL_DEFS } from '../spellDefs.js';
 import { sweepSegment, NO_HIT, WORLD_HIT, TARGET_HIT } from './sweep.js';
 
-const TIERS = SPELL_DEFS.spark.tiers, MAXN = TIERS[0].alive;
+const TIERS = SPELL_DEFS.freeze.tiers, MAXN = TIERS[0].alive;
 
 /**
  * @param {any} world @param {{emit:Function}} events @param {any} targets createTargetables()

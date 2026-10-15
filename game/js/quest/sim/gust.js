@@ -10,7 +10,7 @@ export const PROP_MAX = 8; // m/s impulse ceiling for props
 const EYE = 1.2; // m above the feet: cone origin / LOS start
 /** @param {any} world @param {any} events @param {any} targets createTargetables() @param {{spendMana?:(n:number)=>boolean, tier?:()=>number, forEachProp?:(fn:Function)=>void}} [hooks] */
 export function createGustSim(world, events, targets, hooks) {
-  const tiers = SPELL_DEFS.gust.tiers;
+  const tiers = SPELL_DEFS.telekinesis.tiers;
   let cooldown = 0, pending = false, castTick = -1000000, tick = 0, hits = 0, propHits = 0;
   const seg = new Float64Array(6), ray = { t: 0, x: 0, y: 0, z: 0 };
   const hitP = { source: 'player', target: null, damage: 0, heavy: 1, cause: 'wind', knock: 0, stunSec: 0, dirX: 0, dirY: 0, px: 0, py: 0, pz: 0 };

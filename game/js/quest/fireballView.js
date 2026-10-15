@@ -59,8 +59,8 @@ export function createFireballView(o) {
     stats.bursts++;
     const sl = sim.slots;
     let s = -1;
-    if (!p.ring) for (let i = 0; i < N; i++) if (sl.alive[i] === 0 && trailSerial[i] !== 0 && consumed[i] === 0) { s = i; break; } // the ball that just died
-    if (s < 0 && !p.ring) { // point-blank cast burst: the slot was never stepped; it is the newest serial among the dead slots
+    for (let i = 0; i < N; i++) if (sl.alive[i] === 0 && trailSerial[i] !== 0 && consumed[i] === 0) { s = i; break; } // the ball that just died
+    if (s < 0) { // point-blank cast burst: the slot was never stepped; it is the newest serial among the dead slots
       let best = -1;
       for (let i = 0; i < N; i++) if (sl.alive[i] === 0 && sl.serial[i] > best) { best = sl.serial[i]; s = i; }
     }
@@ -69,8 +69,8 @@ export function createFireballView(o) {
     if (pend.n < MAX_PENDING) {
       const k = pend.n++;
       pend.x[k] = p.x; pend.y[k] = p.y; pend.z[k] = p.z; pend.ch[k] = ch;
-      pend.dx[k] = s >= 0 ? sl.dx[s] : 0; pend.dy[k] = s >= 0 ? sl.dy[s] : 0; pend.dz[k] = s >= 0 ? sl.dz[s] : p.ring ? -0.4 : -1; // ring: sprays up and out
-      pend.sc[k] = p.ring ? Math.min(2, p.radius / 2) : 1; // burst size scales with the ring radius (2 m = a fireball)
+      pend.dx[k] = s >= 0 ? sl.dx[s] : 0; pend.dy[k] = s >= 0 ? sl.dy[s] : 0; pend.dz[k] = s >= 0 ? sl.dz[s] : -1;
+      pend.sc[k] = 1;
     }
     const t = sim.tick;
     let b = br.next; br.next = (b + 1) % N_BURST;
