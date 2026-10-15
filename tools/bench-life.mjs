@@ -240,6 +240,7 @@ export async function runBench(opt) {
     }
     rows.push({ scenario: r.scenario, label: 'heap growth after warm-up (bytes)', value: r.heapGrowthBytes, cap: null, verdict: r.heapGrowthBytes == null ? 'INFO (run with --expose-gc)' : 'INFO' });
     rows.push({ scenario: r.scenario, label: 'villager step p99.9 (ms; max is GC/OS noise from the other systems, see lane note)', value: r.sys.villagers.p999, cap: 4, verdict: r.sys.villagers.p999 <= 4 ? 'PASS' : 'FLAG' });
+    for (const k of ['villagers', 'life', 'fauna', 'beast']) if (r.sys[k]) rows.push({ scenario: r.scenario, label: 'SIM-SPIKE-01 ' + k + ' max step (ms, cap 4, --strict gate)', value: r.sys[k].max, cap: 4, verdict: r.sys[k].max <= 4 ? 'PASS' : 'FLAG' });
     rows.push({ scenario: r.scenario, label: 'load-time band warm-up (ms, not per step)', value: r.warmMs, cap: null, verdict: 'INFO' });
     rows.push({ scenario: r.scenario, label: 'A* per step max', value: r.maxAstarPerStep, cap: 1, verdict: r.maxAstarPerStep <= 1 ? 'PASS' : 'FLAG' });
   }
