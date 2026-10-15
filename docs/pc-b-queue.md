@@ -10,6 +10,16 @@ The rule is FIXED (OB-156, D-082, D-087, D-108; no owner questions, no PO round 
 | BEND-NPC-01 | writer (name + lines) + kestrel-4 (content) + kestrel-1 (placement/mount if needed) | D-110: a second quest NPC (char.kit, like the wardens) 2.5-3 m from the Bend waystone on walkable ground; moves the Bend-area errands (the sq.rb.* set and any other errand whose targets are nearer the Bend than the trade post) from post-keeper Bram to this NPC as giver AND turnIn; Bram keeps the trade-post/ford ones. Writer: name, greeting, offer/hand-in lines. Must pass QUEST-E2E-ALL for every moved quest; lint R14/R18 0; owner look. | todo (with QUEST-HANDIN-ALL) |
 | QUEST-WALK-OWNER | main session (PC-B) | When QUEST-E2E-ALL is green: one browser route walk of the opening chain + 3 side quests (accept, complete, hand in) with stills of `!`, `?`, needle; then owner walk. | todo |
 
+## Look checks from PC-A stills 2026-10-15 (before the TikTok teaser recording) (PC-A main session)
+Stills: PC-A local `docs/test-reports/stills-2026-10-15/` (not in git, public repo). Teaser paths: `design/cinematics/teaser-*.json` + README.
+
+| ID | Slot | AC | Status |
+|---|---|---|---|
+| NIGHT-HAZE-01 | kestrel-2 (atmos/fog) + kestrel-1 (main.js wiring) | At 22:00 a large bright grey band covers the horizon and distant forest (sky above is correctly dark with stars). Likely: the ENV-03 biome haze (atmos driver) keeps its day colour; the new `?cinehour` branch says it does not apply the atmos driver. (1) Compare the normal game with the clock running to 22:00 vs `?cinematic=grassland&cinehour=22`; (2) make the biome haze/fog colour follow the hour (same day/night blend as the sky, both the running clock and cinehour); (3) stills at 06:15, 12, 19, 22 before/after + a gpucompare row at 22:00. Engine part: PC-A arch-review. **Before the teaser recording** (teaser-sky 19:00, teaser-dawn-sea 06:15 depend on it). | todo |
+| DAWN-COLOUR-01 | kestrel-2 + designer | At 06:15-06:30 the sky stays plain day blue (only the ground darkens): no sunrise colours. Check the look blend for dawn hours; designer gives the dawn sky/horizon colours if missing. Before teaser-dawn-sea. | todo (check) |
+| CEM-GRAVES-CHECK | kestrel-4 | At the cemetery (graves cemGrave01-17 around 1639-1648, 1363-1380) a still from ~1632,1366 showed no graves. Check whether they are placed/drawn (voxel cap? draw distance? ground anchor) or the camera faced away; fix if broken. | todo (check) |
+| BURL-POSE-CHECK | kestrel-1 | dev pose `burl` (content/dev-poses.js) now frames a human NPC close up, not Burl the bear. Update the pose (or find out why Burl is not there). | todo (check) |
+
 ## FOLIAGE-CAP-BENCH (owner 2026-10-15: runs it TONIGHT on his machines) (PC-A main session) - small, do right after the current item, ready by evening
 
 | ID | Slot | AC | Status |
