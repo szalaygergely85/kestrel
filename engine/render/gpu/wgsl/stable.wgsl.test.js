@@ -54,12 +54,12 @@ function uniformObject(words, ints) {
   const v4 = (n) => { const a = w(n); return { x: words[a], y: words[a + 1], z: words[a + 2], w: words[a + 3] }; };
   return {
     curA: v4('curA'), curB: v4('curB'), curC: v4('curC'), prevA: v4('prevA'), prevB: v4('prevB'), prevC: v4('prevC'), dEye: v4('dEye'),
-    gridCols: ints[w('gridCols')], gridRows: ints[w('gridRows')], histValid: ints[w('histValid')], ortho: ints[w('ortho')], snap: ints[w('snap')], waterOn: ints[w('waterOn')], detailDefault: words[w('detailDefault')],
+    gridCols: ints[w('gridCols')], gridRows: ints[w('gridRows')], histValid: ints[w('histValid')], ortho: ints[w('ortho')], snap: ints[w('snap')], waterOn: ints[w('waterOn')], aaFlags: ints[w('aaFlags')], detailDefault: words[w('detailDefault')],
   };
 }
 
 function compileStable(src, ctx) {
-  const base = { ...shims, textureLoad: tl, LEVEL_NONE, LEVEL_ANIM, ...ctx, giKind: (y) => y & 0xff, vec3f: (x, y, z) => ({ x, y, z }) };
+  const base = { ...shims, textureLoad: tl, LEVEL_NONE, LEVEL_ANIM, ...ctx, giKind: (y) => y & 0xff, giMat: (y) => (y >>> 16) & 0xffff, vec3f: (x, y, z) => ({ x, y, z }) };
   for (const n of ['byteOf', 'packRgb', 'blendCh', 'blendPacked', 'reprojectCell', 'reproject']) base[n] = compileFn(src, n, base);
   return compileFn(src, 'stableCell', base);
 }
@@ -233,7 +233,7 @@ const mutations = [
   ['floor(y+0.5) -> floor(y)', 'floor(pc.y + 0.5)', 'floor(pc.y)'],
   ['snap threshold > -> >=', 'abs(d) > u.snap', 'abs(d) >= u.snap'],
   ['blend rounding (+1)', '(p + c + 1u) >> 1u', '(p + c) >> 1u'],
-  ['glyph hold window <=1 -> <1', 'abs(i32(lvC) - i32(lvP)) <= 1', 'abs(i32(lvC) - i32(lvP)) < 1'],
+  ['glyph hold window <=1 -> <1', 'lvDiff <= 1)', 'lvDiff < 1)'],
   ['edge: fg.r ignored', 'if (fgC.x != sf.x || ', 'if ('],
   ['edge: glyph ignored', 'fgC.w != sf.w || ', ''],
   ['edge: bg.b ignored', ' || bgC.z != sb.z) { return o; }', ') { return o; }'],
@@ -246,7 +246,8 @@ const mutations = [
   ['255 snap test ignores red', 'let snapped = abs(i32((fgCur >> 16u) & 255u) - i32((sa >> 16u) & 255u)) > u.snap', 'let snapped = false'],
   ['255 cells take the ramp hold rule', 'if (c255) {', 'if (false) {'],
   ['sky/model not rejected', 'if (kind == 0u || kind == 8u || lvC', 'if (lvC'],
-  ['kind/plane match dropped', 'if (hk != kind || hh.x != gi.x) { return o; }', ''],
+  ['kind match dropped', 'if (hk != kind) { return o; }', ''],
+  ['plane match dropped (OB-198: mesh/material exemption)', 'if (hh.x != gi.x) {', 'if (false) {'],
   ['UV drift window x2', 'var uvLim = 1.0 / u.detailDefault', 'var uvLim = 2.0 / u.detailDefault'],
   ['UV drift window back to 0.5', 'var uvLim = 1.0 / u.detailDefault', 'var uvLim = 0.5 / u.detailDefault'],
   ['dEye.z dropped', 'let wz = pz + dEye.z;', 'let wz = pz;'],

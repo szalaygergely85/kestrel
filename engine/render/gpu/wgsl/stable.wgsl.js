@@ -15,7 +15,7 @@
 // Edge cells are detected without touching the edge pass: final != shade (any rgb byte or the glyph) -> pass final through (38.25 item 3).
 import { defineUniformBlock } from './uniformBlock.js';
 import { GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL, REPROJECT_WGSL } from './common.wgsl.js';
-import { KIND_NONE, KIND_MODEL } from '../../GBuffer.js';
+import { KIND_NONE, KIND_MODEL, KIND_MESH } from '../../GBuffer.js';
 import { LEVEL_NONE, LEVEL_ANIM, UV_LIM_TEXELS, STABLE_FOOT_K } from '../../temporalStable.js';
 
 export const STABLE_BLOCK = defineUniformBlock('StableU', [
@@ -27,7 +27,7 @@ export const STABLE_BLOCK = defineUniformBlock('StableU', [
   { name: 'prevC', type: 'vec4' },
   { name: 'dEye', type: 'vec4' },   // eyeCur - eyePrev (f64 on the host), w unused
   { name: 'gridCols', type: 'i32' }, { name: 'gridRows', type: 'i32' }, { name: 'histValid', type: 'i32' }, { name: 'ortho', type: 'i32' },
-  { name: 'snap', type: 'i32' }, { name: 'detailDefault', type: 'f32' }, { name: 'waterOn', type: 'i32' }, { name: 'pad1', type: 'i32' },
+  { name: 'snap', type: 'i32' }, { name: 'detailDefault', type: 'f32' }, { name: 'waterOn', type: 'i32' }, { name: 'aaFlags', type: 'i32' },
 ]);
 
 export const STABLE_TEXTURES = Object.freeze(['uint', 'uint', 'uint', 'float', 'float', 'float', 'float', 'uint', 'uint', 'float', 'float', 'uint']);
@@ -85,6 +85,7 @@ struct SCell {
   kind: u32,
   mat: u32,      // gi mat id (16 bit) -> HIST.w bits 16-31 (AA-04a; read by resolve hysteresis only)
   plane: u32,
+  mat: u32,      // OB-198: material id for the history key
   ub: u32,       // f32 bits of this frame's u / v (history always describes THIS frame)
   vb: u32,
   fresh: u32,    // 1 = no history taken
@@ -102,7 +103,7 @@ fn stableCell(cell: vec2i) -> SCell {
   o.fg = packRgb(fgC.x, fgC.y, fgC.z);
   o.bg = packRgb(bgC.x, bgC.y, bgC.z);
   o.glyph = byteOf(fgC.w);
-  o.level = lvC; o.kind = kind; o.mat = giMat(gi.y) & 0xffffu; o.plane = gi.x; o.ub = ga.x; o.vb = ga.y; o.fresh = 1u;
+  o.level = lvC; o.kind = kind; o.plane = gi.x; o.mat = giMat(gi.y); o.ub = ga.x; o.vb = ga.y; o.fresh = 1u;
   if (u.histValid == 0) { return o; }
   if (kind == ${KIND_NONE}u || kind == ${KIND_MODEL}u || lvC == LEVEL_ANIM) { return o; }
   // edge cell: final != shade (rgb of fg and bg, glyph in fg.a) -> pass through
@@ -125,7 +126,11 @@ fn stableCell(cell: vec2i) -> SCell {
 
   let hh = textureLoad(uHist, hcell, 0);
   let hk = (hh.w >> 8u) & 255u;
-  if (hk != kind || hh.x != gi.x) { return o; }
+  if (hk != kind) { return o; }
+  if (hh.x != gi.x) {
+    // OB-198 (2): mesh planeIds flip almost every step; the material is the stable key (aaFlags bit 1)
+    if (!((u.aaFlags & 2) != 0 && kind == ${KIND_MESH}u && (hh.w >> 16u) == giMat(gi.y))) { return o; }
+  }
   let lvP = hh.w & 255u;
   if (lvP == LEVEL_ANIM) { return o; }
   let c255 = lvC == LEVEL_NONE;
@@ -152,7 +157,9 @@ fn stableCell(cell: vec2i) -> SCell {
     if (!snapped) { o.glyph = byteOf(hf.w); o.ub = hh.y; o.vb = hh.z; }
     return o;
   }
-  if (abs(i32(lvC) - i32(lvP)) <= 1) { o.glyph = byteOf(hf.w); o.level = lvP; }
+  // OB-198 (1): glyph hysteresis (aaFlags bit 0); off = hold only at equal level
+  let lvDiff = abs(i32(lvC) - i32(lvP));
+  if (((u.aaFlags & 1) != 0 && lvDiff <= 1) || lvDiff == 0) { o.glyph = byteOf(hf.w); o.level = lvP; }
   return o;
 }
 

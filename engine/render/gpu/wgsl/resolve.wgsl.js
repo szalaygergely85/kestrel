@@ -152,21 +152,32 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
     }
   }
 
-  // AA-04b (38.82 B): keep last frame's key at this world position if its group is within HYST of the best. Twin: resolveBand.js resolveCellJS.
-  if (u.histValid != 0 && kk[winner] != 0u && kk[winner] != ${KIND_MODEL}u) {
-    let pc = reprojectCell(f32(cell.x), f32(cell.y), bestMinDepth, u.gridCols, u.gridRows, u.ortho, u.curA, u.curB, u.curC, u.prevA, u.prevB, u.prevC, u.dEye);
+  // AA-04b (38.82 B) + OB-208: keep last frame's key (sky included) while its group has >= n2/4 samples or is within HYST of the best.
+  // Sky keys match on kind only; a sky winner reprojects with the nearest geometry depth. Twin: resolveBand.js resolveCellJS.
+  if (u.histValid != 0 && kk[winner] != ${KIND_MODEL}u) {
+    var rd = bestMinDepth;
+    if (kk[winner] == 0u) {
+      rd = 1.0e30;
+      for (var b = 0; b < MAX_SUB; b++) {
+        if (b >= n2) { break; }
+        if (kk[b] != 0u && dk[b] < rd) { rd = dk[b]; }
+      }
+      if (rd >= 1.0e29) { rd = 1.0e4; }
+    }
+    let pc = reprojectCell(f32(cell.x), f32(cell.y), rd, u.gridCols, u.gridRows, u.ortho, u.curA, u.curB, u.curC, u.prevA, u.prevB, u.prevC, u.dEye);
     if (!(u.ortho == 0 && pc.z <= 0.0) && pc.x > -2.0 && pc.x < f32(u.gridCols) + 2.0 && pc.y > -2.0 && pc.y < f32(u.gridRows) + 2.0) {
       let hc = i32(floor(pc.x + 0.5)); let hr = i32(floor(pc.y + 0.5));
       if (hc >= 0 && hc < u.gridCols && hr >= 0 && hr < u.gridRows) {
         let hh = textureLoad(uHist, vec2i(hc, hr), 0);
         let hKind = (hh.w >> 8u) & 255u; let hMat = hh.w >> 16u; let hPid = i32(hh.x);
-        if (hKind != 0u && hKind != ${KIND_MODEL}u) {
+        if (hKind != ${KIND_MODEL}u) {
+          let hSky = hKind == 0u;
           var hCount = 0; var hFirst = -1;
           for (var b = 0; b < MAX_SUB; b++) {
             if (b >= n2) { break; }
-            if (kk[b] == hKind && pk[b] == hPid && mk[b] == hMat) { hCount++; if (hFirst < 0) { hFirst = b; } }
+            if (kk[b] == hKind && (hSky || (pk[b] == hPid && mk[b] == hMat))) { hCount++; if (hFirst < 0) { hFirst = b; } }
           }
-          if (hFirst >= 0 && hCount >= bestCount - max(1, n2 / 8)) { winner = hFirst; bestCount = hCount; }
+          if (hFirst >= 0 && (hCount >= max(1, n2 / 4) || hCount >= bestCount - max(1, n2 / 8))) { winner = hFirst; bestCount = hCount; }
         }
       }
     }

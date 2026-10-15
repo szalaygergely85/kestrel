@@ -50,14 +50,20 @@ export function resolveCellJS(sub, n, bandM, cx, cy, out, histKey = null) {
     if (count > bestCount || (count === bestCount && minD < bestMin)) { bestCount = count; bestMin = minD; winner = a; }
   }
   out.bestMinDepth = bestMin;
-  // AA-04b (38.82 mechanism B): keep last frame's key at this world position when its group is within HYST of the best (near path only)
-  if (histKey && histKey.kind !== 0 && histKey.kind !== KIND_MODEL_HYST) {
-    const hyst = Math.max(1, n2 >> 3);
+  // AA-04b (38.82 B) + OB-208: keep last frame's key at this world position (sky included) while its group still has >= n*n/4 samples
+  // (or is within HYST of the best). Sky keys match on kind only. Models excluded. A sky winner reprojects with the nearest geometry depth
+  // in the cell (sky depth is infinite); no geometry -> 1e4.
+  if (sub.kind[winner] === KIND_MODEL_HYST) { /* plain vote */ } else if (histKey && histKey.kind !== KIND_MODEL_HYST) {
+    if (sub.kind[winner] === 0) {
+      let g = 1e30; for (let b = 0; b < n2; b++) if (sub.kind[b] !== 0 && sub.depth[b] < g) g = sub.depth[b];
+      out.bestMinDepth = g < 1e29 ? g : 1e4;
+    }
+    const hyst = Math.max(1, n2 >> 3), keepMin = Math.max(1, n2 >> 2), sky = histKey.kind === 0;
     let hc = 0, hFirst = -1;
     for (let b = 0; b < n2; b++) {
-      if (sub.kind[b] === histKey.kind && sub.pid[b] === histKey.pid && sub.mat[b] === histKey.mat) { hc++; if (hFirst < 0) hFirst = b; }
+      if (sub.kind[b] === histKey.kind && (sky || (sub.pid[b] === histKey.pid && sub.mat[b] === histKey.mat))) { hc++; if (hFirst < 0) hFirst = b; }
     }
-    if (hFirst >= 0 && hc >= bestCount - hyst) { winner = hFirst; bestCount = hc; }
+    if (hFirst >= 0 && (hc >= keepMin || hc >= bestCount - hyst)) { winner = hFirst; bestCount = hc; }
   }
   let nearest = -1, nearestMag = 1e30;
   for (let a = 0; a < n2; a++) {

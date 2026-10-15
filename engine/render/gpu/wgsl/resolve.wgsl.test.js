@@ -150,7 +150,7 @@ let hystCells = 0, hystKept = 0;
   for (let round = 0; round < 40; round++) {
     const sgi = [], sga = [], sdp = [], mask = [], at = [];
     for (let i = 0; i < sw * sh; i++) {
-      const kind = [1, 1, 2][Math.floor(rand() * 3)], pid = Math.floor(rand() * 2), mat = Math.floor(rand() * 3);
+      const kind = [0, 1, 1, 2][Math.floor(rand() * 4)], pid = Math.floor(rand() * 2), mat = Math.floor(rand() * 3);
       const smp = { x: pid, y: (kind | (mat << 16)) >>> 0, z: 1, w: 2, d: f2u(Math.fround(1 + rand() * 8)), ga: [f2u(rand()), f2u(rand()), f2u(rand()), f2u(rand())] };
       at.push(smp); sgi.push([smp.x, smp.y, smp.z, smp.w]); sga.push(smp.ga); sdp.push([smp.d, 0, 0, 0]);
     }

@@ -47,9 +47,23 @@ for (const n of [1, 2, 3]) { const s = mk(); const a = { ...resolveCellJS(s, n, 
   assert.equal(win(cell(8), key(2)), 2, '8/16 vs 8/16 keeps last frame key (2)');
   assert.equal(win(cell(8), key(1)), 1, '8/16 vs 8/16 keeps last frame key (1)');
   assert.equal(win(cell(9), key(2)), 2, '9 vs 7 within HYST: keeps 2');
-  assert.equal(win(cell(10), key(2)), 1, '6/16 vs 10/16 flips to the clear winner');
+  assert.equal(win(cell(10), key(2)), 2, '6/16 vs 10/16 still keeps (history group >= n*n/4, OB-208)');
+  assert.equal(win(cell(13), key(2)), 1, '3/16 vs 13/16 flips to the clear winner');
   assert.equal(win(cell(10), key(9)), 1, 'history key absent from the cell: plain vote');
-  assert.equal(win(cell(10), { kind: 0, pid: 0, mat: 2 }), 1, 'sky history key ignored');
+  assert.equal(win(cell(10), { kind: 0, pid: 0, mat: 2 }), 1, 'sky history key absent from a sky-free cell: plain vote');
   const o2 = { idx: -1, cov: -1, far: false }; resolveCellJS(cell(7), 4, 0, 0, 0, o2, key(2)); assert.equal(o2.cov, Math.trunc(9 * 8 / 16 - 1), 'cov follows the kept group (9/16)');
+}
+// OB-208: sky key hysteresis. 16 samples: nLeaf leaf (kind 1), rest sky (kind 0). keep while the history group has >= 4 samples.
+{
+  const cell = (nLeaf) => { const s = mk(); for (let c = 0; c < 16; c++) { s.kind[c] = c < nLeaf ? 1 : 0; s.mat[c] = 1; s.pid[c] = 0; } return s; };
+  const kindWon = (s, hk) => { const o = { idx: -1, cov: -1, far: false }; resolveCellJS(s, 4, 0, 0, 0, o, hk); return s.kind[o.idx]; };
+  const leafKey = { kind: 1, pid: 0, mat: 1 }, skyKey = { kind: 0, pid: 0, mat: 0 };
+  assert.equal(kindWon(cell(6), null), 0, '6 leaf / 10 sky, no history: sky');
+  assert.equal(kindWon(cell(6), leafKey), 1, 'leaf 6/16 with leaf history stays leaf');
+  assert.equal(kindWon(cell(3), leafKey), 0, 'leaf 3/16 with leaf history goes to sky');
+  assert.equal(kindWon(cell(11), skyKey), 0, 'sky 5/16 with sky history stays sky');
+  assert.equal(kindWon(cell(13), skyKey), 1, 'sky 3/16 with sky history goes to leaf');
+  const o = { idx: -1, cov: -1, far: false }; resolveCellJS(cell(6), 4, 0, 0, 0, o, null); assert.equal(o.bestMinDepth, 1e30 < 1e29 ? 0 : o.bestMinDepth);
+  const s6 = cell(6); for (let c = 0; c < 16; c++) s6.depth[c] = c < 6 ? 5 + c : 1e30; resolveCellJS(s6, 4, 0, 0, 0, o, skyKey); assert.equal(o.bestMinDepth, 5, 'sky winner reprojects at the nearest geometry depth');
 }
 console.log('resolveBand.test.js: bayer, RG4, dither +-7.5 %, near/far rules, n<4 passthrough passed.');

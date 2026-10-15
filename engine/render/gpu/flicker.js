@@ -94,3 +94,59 @@ export function flickerStep(prevGI, prevFg, curGI, curFg, cols, rows, out, prevB
   out.colourPct = total ? (100 * colourChanged) / total : 0;
   return out;
 }
+
+// AA-01b (OB-198): the motion-compensated flicker metric. `flickerStep` compares cell i with cell i, but a 5 cm strafe moves
+// the image 1-4 cells, so it measures image motion. This one reprojects each cell of the current frame into the previous
+// camera (same maths as temporalStable.stabilize: unprojectPitched + worldToCell, history cell = floor(x + 0.5)) and compares
+// it with the cell it lands on. Cells that land off screen, on sky, or on a surface at another depth (> DEPTH_TOL, i.e.
+// disoccluded) are excluded from the denominator. Categories are mutually exclusive: kind > material > glyphOnly >
+// colourOnly. planeId is NOT part of the key. `totalPct` = any of them.
+// Inputs: {GI, fg, bg?, Depth} readbacks (Depth channel 0 = f32 bits, `readbackGeometry().Depth`); camPrev/camCur =
+// {x,y,z,yawDeg,pitchDeg,vfovDeg?}; grid = {cols, rows, pxCellW, pxCellH}.
+import { createPitchedTerms, pitchedTermsInto, unprojectPitched, worldToCell } from '../projection.js';
+
+export const REPROJ_DEPTH_TOL = 0.05;
+const _f32 = new Float32Array(1), _u32 = new Uint32Array(_f32.buffer);
+const bitsToF32 = (b) => { _u32[0] = b; return _f32[0]; };
+let _tPrev = null, _tCur = null; const _w = new Float64Array(3), _pc = new Float64Array(3);
+
+export function flickerReprojStep(prev, cur, camPrev, camCur, grid, out) {
+  if (!_tPrev) { _tPrev = createPitchedTerms(); _tCur = createPitchedTerms(); }
+  pitchedTermsInto(_tPrev, camPrev, grid); pitchedTermsInto(_tCur, camCur, grid);
+  const { cols, rows } = grid;
+  const haveBg = !!(prev.bg && cur.bg);
+  let n = 0, kind = 0, mat = 0, glyph = 0, colour = 0, excluded = 0;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const i = r * cols + c;
+      const ck = cur.GI[i * 4 + 1] & 0xff;
+      if (ck === 0) continue;
+      const vd = bitsToF32(cur.Depth[i * 4]);
+      if (!(vd > 0) || !Number.isFinite(vd)) { excluded++; continue; }
+      unprojectPitched(_tCur, c, r, vd, _w);
+      worldToCell(_tPrev, _w[0], _w[1], _w[2], _pc);
+      if (_pc[2] <= 0) { excluded++; continue; }
+      const hc = Math.floor(_pc[0] + 0.5), hr = Math.floor(_pc[1] + 0.5);
+      if (!(hc >= 0 && hc < cols && hr >= 0 && hr < rows)) { excluded++; continue; }
+      const h = hr * cols + hc;
+      const pk = prev.GI[h * 4 + 1] & 0xff;
+      const pvd = bitsToF32(prev.Depth[h * 4]);
+      if (pk === 0 || !(Math.abs(pvd - _pc[2]) <= REPROJ_DEPTH_TOL * _pc[2])) { excluded++; continue; }
+      n++;
+      if (pk !== ck) { kind++; continue; }
+      if (((prev.GI[h * 4 + 1] >>> 16) & 0xffff) !== ((cur.GI[i * 4 + 1] >>> 16) & 0xffff)) { mat++; continue; }
+      if (prev.fg[h * 4 + 3] !== cur.fg[i * 4 + 3]) { glyph++; continue; }
+      let m = 0;
+      for (let k = 0; k < 3; k++) {
+        let d = Math.abs(prev.fg[h * 4 + k] - cur.fg[i * 4 + k]); if (d > m) m = d;
+        if (haveBg) { d = Math.abs(prev.bg[h * 4 + k] - cur.bg[i * 4 + k]); if (d > m) m = d; }
+      }
+      if (m > COLOUR_FLICKER_THRESHOLD) colour++;
+    }
+  }
+  const pct = (v) => (n ? (100 * v) / n : 0);
+  out.n = n; out.excluded = excluded;
+  out.kindPct = pct(kind); out.materialPct = pct(mat); out.glyphOnlyPct = pct(glyph); out.colourOnlyPct = pct(colour);
+  out.totalPct = pct(kind + mat + glyph + colour);
+  return out;
+}

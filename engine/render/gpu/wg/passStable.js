@@ -18,7 +18,7 @@ import { createStableState, beginFrame, CHANNEL_SNAP, DEFAULT_DETAIL } from '../
 const W = (n) => STABLE_BLOCK.field(n).word;
 const W_CUR_A = W('curA'), W_CUR_B = W('curB'), W_CUR_C = W('curC'), W_PREV_A = W('prevA'), W_PREV_B = W('prevB'), W_PREV_C = W('prevC');
 const W_WATER_ON = W('waterOn'); // StableU.waterOn (1 = bind a real WATER layer)
-const W_DEYE = W('dEye'), W_COLS = W('gridCols'), W_ROWS = W('gridRows'), W_VALID = W('histValid'), W_ORTHO = W('ortho'), W_SNAP = W('snap'), W_DETAIL = W('detailDefault');
+const W_DEYE = W('dEye'), W_COLS = W('gridCols'), W_ROWS = W('gridRows'), W_VALID = W('histValid'), W_ORTHO = W('ortho'), W_SNAP = W('snap'), W_DETAIL = W('detailDefault'), W_AAFLAGS = W('aaFlags');
 /** STABLE_TEXTURES slot order (stable.wgsl.js header). */
 const ST = { GI: 0, GA: 1, DEPTH: 2, SHADE_FG: 3, SHADE_BG: 4, FINAL_FG: 5, FINAL_BG: 6, LEVEL: 7, WATER: 8, HIST_FG: 9, HIST_BG: 10, HIST: 11 };
 
@@ -35,14 +35,16 @@ export function packStableUniforms(st, cols, rows, f32, i32) {
   f32[W_DEYE] = st.dEx; f32[W_DEYE + 1] = st.dEy; f32[W_DEYE + 2] = st.dEz; f32[W_DEYE + 3] = 0;
   i32[W_COLS] = cols; i32[W_ROWS] = rows; i32[W_VALID] = st.histValid ? 1 : 0; i32[W_ORTHO] = st.cur.ortho === 1 ? 1 : 0;
   i32[W_SNAP] = CHANNEL_SNAP; f32[W_DETAIL] = DEFAULT_DETAIL;
+  i32[W_AAFLAGS] = (st.aaGlyph ? 1 : 0) | (st.aaMesh ? 2 : 0); // OB-198: ?aaglyph=0 / ?aamesh=0
 }
 
 export class WgStablePass {
   /** @param {any} device */
-  constructor(device) {
+  constructor(device, opts) {
     this.device = device;
     this.cols = 0; this.rows = 0; this._k = 0; this.ran = false;
     this.st = createStableState();
+    this.st.aaGlyph = !(opts && opts.aaGlyph === false); this.st.aaMesh = !(opts && opts.aaMesh === false); // OB-198
     this.pipe = device.createPipeline({
       vertex: { src: { wgsl: STABLE_WGSL } }, fragment: { src: { wgsl: STABLE_WGSL }, targets: 3 },
       bindings: { uniformBytes: STABLE_BLOCK.sizeBytes, textures: STABLE_TEXTURES.slice() },
