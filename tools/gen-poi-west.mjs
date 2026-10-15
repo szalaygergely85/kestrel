@@ -35,7 +35,6 @@ data.entities.push({ id: 'ruinWestNote', components: { inspect: { text: 'note.we
 const S = [870, 1100];
 for (let i = 0; i < 6; i++) { const a = i * 60 + 15, [dx, dy] = rot(a, 5.5, 0); put('Rock_Medium_' + (1 + i % 3), S[0] + dx, S[1] + dy, a * 3 % 360, { scale: 1.5 + (i % 2) * 0.3, ext: 1.2 }); }
 data.entities.push({ id: 'stonesWest', components: { inspect: { text: 'note.westStones' } }, note: 'OB-141 viewpoint: ring of standing stones on the west hill', type: 'prop', x: S[0], y: S[1], z: 'ground' });
-// POI 4: boars grazing in the riverside meadow (existing wary-boar pattern of boarF1/F2)
-for (const [i, [bx, by]] of [[1020, 1144], [1024, 1140], [1017, 1150]].entries()) data.entities.push({ id: 'ob141Boar' + (i + 1), components: { brain: { home: [bx, by], kind: 'beast', temperament: 'wary' }, targetable: { height: 0.7, radius: 0.45 }, voxel: { anim: 'idle', loop: true, model: 'boarPlaceholder' } }, note: 'OB-141 wary boars grazing in the south-west riverside meadow (existing boarF pattern)', type: 'beast', x: bx, y: by, z: 'ground' });
+// POI 4 (3 boars) removed: boar cap; now the look-at entity ob141Meadow (hand-added)
 fs.writeFileSync(FILE, stringifyContent(data), 'utf8');
 console.log('added structures', n);
