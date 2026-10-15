@@ -147,8 +147,12 @@ const tinyBinding = bindDetailInstances(tiny, registry(), cfg);
 ok(tinyBinding.groups.length === 1 && tinyBinding.groups[0].ib.capacity === 1);
 
 const missing = registry(); missing.pool.models.delete('rock');
-assert.throws(() => bindDetailInstances(detail, missing, cfg), /missing voxel model rock/); checks++;
-ok(missing.groups.length === 0);
+{ // OB-166: a missing model skips the species with ONE warn, never throws
+  const warns = [], w0 = console.warn; console.warn = m => warns.push(m);
+  let mb; try { mb = bindDetailInstances(detail, missing, cfg); } finally { console.warn = w0; }
+  ok(warns.length === 1 && /rock/.test(warns[0]) && mb.skipped > 0 && mb.missingIds.includes('rock'));
+  ok(!mb.groups.some(g => g.modelKey === 'rock') && feedDetail(mb, 0, 0, true) >= 0);
+}
 const full = registry();
 for (let i = 0; i < MAX_INSTANCE_GROUPS - 1; i++) full.group('tuft', 1);
 assert.throws(() => bindDetailInstances(detail, full, cfg), /over 32 groups/); checks++;
