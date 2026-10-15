@@ -45,6 +45,8 @@ export function createShieldSim(cfg = SHIELD_DEFAULTS) {
     /** Bind the player's stamina state ({stamina}); regeneration stays with its owner (stepStamina). */
     attachStamina(state) { st = state || null; locked = false; },
     get locked() { return locked; },
+    /** R6-FIX D: true once stamina is attached; the arrow-softening rule only applies then (without stamina a raised shield blocks arrows fully, as before). */
+    get hasStamina() { return st !== null; },
     /** Called by vitals for each blocked hit (melee/projectile damage n): drains stamina; at 0 the shield drops. */
     onBlock(n) {
       if (!st) return;

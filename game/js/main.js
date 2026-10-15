@@ -133,7 +133,7 @@ import { createSpawnDirector, buildGroups, regionalMembers } from './quest/sim/s
 import { spawnRegionalBeasts } from './quest/sim/regionalBeasts.js';
 import { setForestAmbienceSources } from './audio/forestAmbience.js'; // OB-184
 import { setUndergroundSources } from './audio/undergroundAmbience.js'; import { createUnderSpawner, UNDER_SITES } from './quest/sim/underSkeletons.js'; // UNDER-01 / UNDER-08
-import { createBeastSim, STATE_DYING, STATE_GONE, STATE_EAT } from './quest/sim/beastSim.js';
+import { createBeastSim, isBeastDeadState } from './quest/sim/beastSim.js';
 import { kindOf } from './quest/sim/quest.js'; // US-079a (architecture.md 29.1)
 import { ensureWolves } from './quest/sim/wolfBrain.js'; // WOLF-01
 import { ensureBears } from './quest/sim/bearBrain.js'; // BEAR-01 (D-069): black bears in Thornwood
@@ -207,6 +207,7 @@ import { ensureInventory, validateItemDefs, migrateSword, addItem } from './ques
 import { presentPickups } from './quest/pickupsView.js';
 import { createLoot, setLootApi } from './quest/sim/loot.js'; // US-091a2 (37.16.3)
 import { createRelayWake, setRelayWakeApi } from './quest/relayWake.js'; // WS1-06b: wake the road-bend relay
+import { talkNpcIds } from './quest/npcNames.js'; // R6-FIX A
 import { createDialogueCtl, setDialogueApi } from './quest/dialogueCtl.js'; // DIALOGUE-01b2 (38.28)
 import { createCrystalGrant } from './quest/crystal.js'; // CH1-MOUNT: CH1-03 aether crystal after the boars
 import { createNpcWalk } from './quest/npcWalk.js'; // CH1-07
@@ -694,7 +695,8 @@ if (chestHook) gameHooks.register(chestHook);
 if (chestHook) gameHooks.register(createHeartHook({ getCard: () => chestHook.card, notify: (t) => { if (lootToast) lootToast.say(t, [226, 214, 176]); } })); // QL-08; OB-105: heart piece = toast, not the card
 // QUESTS-01: generic world pickup prop + pack counts for collect/deliver objectives + hand-in reward grant (game/js/questPickups.js)
 let questBeastSim = null; // SOFTLOCK-01: the live beast sim for the kill-quest accept rule (set where the sim is built)
-const questPickups = (itemDefs && saveRelay) ? createQuestPickups({ livingOfKind: (kind) => { const s = questBeastSim; if (!s || !s.ids) return 99; let n = 0; for (let i = 0; i < s.ids.length; i++) if (kindOf(s.ids[i]) === kind && !s.down[i] && !(s.state[i] >= STATE_DYING && s.state[i] <= STATE_GONE && s.state[i] !== STATE_EAT)) n++; return n; }, getBook: () => saveRelay.quest.book, feed: (e) => saveRelay.quest.feed(e), defs: itemDefs, isWorn }) : null; // QL-WIRE: requireEquipped hand-ins
+if (saveRelay) saveRelay.quest.setLivingOfKind((kind) => { const s = questBeastSim; if (!s || !s.ids) return 99; let n = 0; for (let i = 0; i < s.ids.length; i++) if (kindOf(s.ids[i]) === kind && !s.down[i] && !isBeastDeadState(s.state[i])) n++; return n; }); // SOFTLOCK-01 + R6-FIX C: installed on every book the relay creates/loads (not lazily in questPickups.sync)
+const questPickups = (itemDefs && saveRelay) ? createQuestPickups({ getBook: () => saveRelay.quest.book, feed: (e) => saveRelay.quest.feed(e), defs: itemDefs, isWorn }) : null; // QL-WIRE: requireEquipped hand-ins
 if (questPickups) gameHooks.register(questPickups);
 // US-090w: title menu before play. Off for `?title=0`, capture/bench/compare/cinematic pages, `?capture=1`, `?at=`/`?pose=` dev poses and bare `?level=` rooms.
 const menuWanted = params.get('title') !== '0' && !isCaptureOrBench && params.get('capture') !== '1' && !params.has('at') && !params.has('pose') && !params.get('level') && !params.get('cinematic');
@@ -1575,7 +1577,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         clockDriver.update(clockHour(world.state, clockCfg), true);
         { const G = window.ASSETS.levels.world_geo, far = window.ASSETS.levels.overworld_far, f = P.fog && (P.fog.farBase || P.fog.far); // ENV-03: only with BIOME_LOOK + geo biomes + terrain (and a running clock: capture/gpucompare never get a driver)
           if (!atmosDrv && params.get('atmos') !== '0' && window.BIOME_LOOK && G && G.biomes && far && far.util && far.util.biomeBlend && f) {
-            atmosCfg = buildAtmosConfig(window.BIOME_LOOK, G.biomes); atmosBase = { start: f.start, full: f.full, curve: f.curve || 1, near: P.rgb[f.color], far: P.rgb[f.colorFar] };
+            atmosCfg = buildAtmosConfig(window.BIOME_LOOK, G.biomes); atmosBase = /* NIGHT-HAZE: night biome haze works only because near/far are the same arrays fogHour writes in place */ { start: f.start, full: f.full, curve: f.curve || 1, near: P.rgb[f.color], far: P.rgb[f.colorFar] };
             atmosDrv = createAtmosDriver({ nEntries: atmosCfg.table.n, biomeToEntry: atmosCfg.biomeToEntry, biomeBlend: (x, y, o) => far.util.biomeBlend(x, y, o), schedule: P.daySchedule, slotOf: { morning: 0, noon: 0, dusk: 1, night: 2 }, frozenSlot: 0 }); } }
       } else if (cinematic && !cinematicHours && params.has('cinehour') && Number.isFinite(parseFloat(params.get('cinehour'))) && assets.palette.daySchedule) {
         // capture-cinematic `--hour H` (dev only): clock frozen at H with the FULL live look (sun/moon pair, sky, fog colour, clouds, ambient), like gpucompare's applyHourOverride
@@ -1766,7 +1768,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       if (bearTurn) dialogueCtl.addNpc('bear');
       dialogueCtl.addNpc('rook'); // Rook the crow: no-op until the entity exists in the world
       outwall = saveEnabled && saveRelay ? createOutwall({ world, questFlag: (k) => saveRelay.quest.questFlag(k) }) : null;
-      for (const gd of (questGenCtx ? questGenCtx.giverDefs : [])) { const nid = gd && gd.giver && !gd.objectGiver && gd.giver.npc; if (typeof nid === 'string' && /^warden_/.test(nid)) dialogueCtl.addNpc(nid); } // QWALK-WARDEN-TALK: the 10 region wardens (QFIX-S5c) were givers with a dialogue but no [E] Talk interactable
+      for (const nid of talkNpcIds(questGenCtx ? questGenCtx.giverDefs : [], bundle.dialogues)) if (nid !== 'bear') dialogueCtl.addNpc(nid); // QWALK-WARDEN-TALK + R6-FIX A: EVERY giver/turn-in npc with a dialogue (wardens, Bram, Joss ...) gets [E] Talk (bear: bearTurn rule above; addNpc is idempotent)
       dialogueCtl.addNpc('hesk'); dialogueCtl.addNpc('dorrin'); // Ch3 Outwall NPCs (world_m1 entities, char.kit model registered at boot; both share the default kit look, no tint)
       if (outLife) outLife.dispose(); // LIFE-04: villagers replace the OUT-02 spawn hook; only with saves live (same gate as OUT-01), never in capture/bench
       outLife = lifeData && outwall && lifeNav && mode === 'world' ? createOutwallLife({ world, life: lifeData.life, nav: lifeNav, tileNav: !!(world.terrainGrid && world.nav && lifeNav === world.nav), events: engine.events, state: world.state, outwall, dialogue: dialogueCtl, barksData: lifeData.barks, style: window.ASSETS.uiStyle.dialogue, hour: clockHour(world.state, clockCfg) }) : null;

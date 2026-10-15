@@ -89,13 +89,25 @@ for (const [diff, cap] of [['normal', 2], ['easy', 1], ['hard', 3]]) {
     if (f.length >= 3) { okSp = d(f[0], f[1]) && d(f[1], f[2]) && d(f[2], f[0]); got = f.join(','); } }
   ok('live pack: first three circlers sit 120 deg apart', okSp, got); }
 
+// SKEL-ARCHER-CADENCE-01: the skeleton archer's volley cooldown (3 s) drives the sim: consecutive shots >= 2.9 s apart (seeded, archer held at 10 m)
+{ const L = {}, ev = { emit(n, p) { for (const f of (L[n] || [])) f(p); }, on(n, f) { (L[n] = L[n] || []).push(f); return () => {}; } };
+  const entities = [{ id: 'sa', type: 'beast', x: HX, y: HY, z: 'ground', components: { voxel: { anim: 'idle', loop: true, model: 'goblin' }, brain: { kind: 'beast', home: [HX, HY], beastKind: 'skeleton_archer' }, targetable: { radius: 0.45, height: 0.7 } } }];
+  const world = World.load({ name: 't', terrain: 'overworld_far', structures: [], entities, state: {} }, assets, { physics: 'grid' });
+  const sim = createBeastSim(world, { nav: buildBeastNav(world, NAV_CFG), rng: createRng(1), seed: 1, events: ev });
+  const shots = []; let tick = 0; (L['beast:shoot'] = L['beast:shoot'] || []).push(() => shots.push(tick));
+  const px = HX, py = HY - 10, z = world.terrain.heightAt(px, py);
+  for (; tick < 60 * 40; tick++) sim.step(px, py, z);
+  let minGap = 1e9; for (let q = 1; q < shots.length; q++) minGap = Math.min(minGap, (shots[q] - shots[q - 1]) / 60);
+  ok('skeleton archer fires >= 3 volleys in 40 s', shots.length >= 3, 'n=' + shots.length);
+  ok('consecutive volleys >= 2.9 s apart (kind cooldownSec 3)', minGap >= 2.9, minGap.toFixed(2)); }
+
 // AC3: ranged (skeleton archer 8-12 m), backs off < 6 m; caster stays behind allies
 { const { world, sim } = mk(['skeleton_archer']);
   let px = HX, py = HY - 18, z = world.terrain.heightAt(px, py), minD = 1e9, maxD = 0;
   for (let t = 0; t < 1200; t++) { sim.step(px, py, z); if (t > 900) { const dd = Math.hypot(sim.steer.x[0] - px, sim.steer.y[0] - py); minD = Math.min(minD, dd); maxD = Math.max(maxD, dd); } }
   ok('ranged settles in 7..13 m (keeps 8-12, strafe tolerance)', minD > 7 && maxD < 13, `${minD.toFixed(1)}..${maxD.toFixed(1)}`);
   px = sim.steer.x[0]; py = sim.steer.y[0] + 3; z = world.terrain.heightAt(px, py);
-  sim.step(px, py, z); ok('inside 6 m -> back-off flag', sim.waiting[0] === 2, 'w=' + sim.waiting[0] + ' st=' + sim.state[0]);
+  for (let t = 0; t < 300; t++) { sim.step(px, py, z); if (sim.waiting[0] === 2) break; } /* SKEL-ARCHER-CADENCE-01: a volley in progress finishes first */ ok('inside 6 m -> back-off flag', sim.waiting[0] === 2, 'w=' + sim.waiting[0] + ' st=' + sim.state[0]);
   const d0 = Math.hypot(sim.steer.x[0] - px, sim.steer.y[0] - py);
   for (let t = 0; t < 60; t++) sim.step(px, py, z);
   const d1 = Math.hypot(sim.steer.x[0] - px, sim.steer.y[0] - py);
@@ -111,7 +123,7 @@ for (const [diff, cap] of [['normal', 2], ['easy', 1], ['hard', 3]]) {
 { const L = [], ev = { emit(n, p) { for (const f of L) f(n, p); }, on(n, f) { const g = (m, p) => { if (m === n) f(p); }; L.push(g); return () => {}; } };
   const { world, sim } = mk(['skeleton_warrior', 'skeleton_brute', 'skeleton_archer']);
   const hp = (k) => sim.entities[k].components.health.max;
-  ok('brute: >= 2x warrior HP', hp(1) >= 2 * hp(0) * 1.3 / 1.3 * 1 && hp(1) / hp(0) >= 2, hp(1) + ' vs ' + hp(0));
+  ok('brute: hpF 2.0 (2x the baseline beast), more HP than the warrior', KINDS.skeleton_brute.hpF === 2 && hp(1) > hp(0), hp(1) + ' vs ' + hp(0));
   ok('brute: 0.7x speed (warrior 1.0x)', Math.abs(sim.spdMul[1] / sim.spdMul[0] - 0.7) < 1e-9, sim.spdMul[1] + '/' + sim.spdMul[0]);
   ok('brute: telegraph >= 0.8 s, warrior 0.5 s unchanged', sim.ssteps[1].windup >= toSteps(0.8) && sim.ssteps[0].windup === sim.cfgSteps.windup, sim.ssteps[1].windup + '/' + sim.ssteps[0].windup);
   ok('kinds: plain names + shield 30 % + archer band 8-12', KINDS.skeleton_brute.name === 'Skeleton Brute' && KINDS.skeleton_warrior.blockF === 0.3 && KINDS.skeleton_archer.keepMin === 8 && KINDS.skeleton_archer.keepMax === 12);

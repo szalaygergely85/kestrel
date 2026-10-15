@@ -17,7 +17,9 @@ const PLATE = [10, 11, 16], TEXT = [226, 214, 176], DIM = [140, 134, 112];
  * @param {any} [savedQuests] save.game.quests map (or migrated)
  */
 export function createQuestRelay(def, saved = null, giverDefs = [], savedQuests = null) {
-  let book = createQuestBook(def, giverDefs, { quest: saved, quests: savedQuests });
+  let livingFn = null; // R6-FIX C: SOFTLOCK-01 hook, installed on EVERY book this relay creates (new game, load, reset)
+  const mkBook = (q, qs) => { const b = createQuestBook(def, giverDefs, { quest: q, quests: qs }); if (livingFn) b.livingOfKind = livingFn; return b; };
+  let book = mkBook(saved, savedQuests);
   let state = book.main;
   let rows = questObjectives(state, def, []);
   const fired = { wake: false, sword: false, waystone: false, breach: false }; // edge guards (cheap polling)
@@ -70,6 +72,10 @@ export function createQuestRelay(def, saved = null, giverDefs = [], savedQuests 
     },
     /** QG-03: the quest book (m1 + giver quests); replaced on reset(), so read it through the relay each time. */
     get book() { return book; },
+    /** R6-FIX C: (kind) => living beasts of that kind; kept across resets. */
+    setLivingOfKind(fn) { livingFn = typeof fn === 'function' ? fn : null; book.livingOfKind = livingFn || undefined; },
+    /** R6-FIX C: replay the saved dead-beast ids into the book's kill record. */
+    seedDead(ids) { book.seedDead(ids); },
     /** Optional (name, a, b) callback for every event poll() fires (main.js points it at the gameHooks seam). */
     onPoll: null,
     get state() { return state; },
@@ -93,7 +99,7 @@ export function createQuestRelay(def, saved = null, giverDefs = [], savedQuests 
     /** Replace the quest (restore from a save, or a fresh run when `saved` is null). */
     reset(savedState = null, savedQuests = null) {
       const onChange = book.onChange;
-      book = createQuestBook(def, giverDefs, { quest: savedState, quests: savedQuests }); firedAreas.clear(); book.onChange = onChange; state = book.main; rows = questObjectives(state, def, []); syncFired(); dirty = false; seen = state.completed.length;
+      book = mkBook(savedState, savedQuests); firedAreas.clear(); book.onChange = onChange; state = book.main; rows = questObjectives(state, def, []); syncFired(); dirty = false; seen = state.completed.length;
     },
     /**
      * Per-fixed-step facts -> events. Every flag fires once (guards); cost is a few comparisons.

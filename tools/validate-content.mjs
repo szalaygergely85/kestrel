@@ -1180,7 +1180,7 @@ export function lintRegions(o) {
       }
     }
     // 4. region text present
-    const texts = [['title', q.title], ['returnText', q.returnText], ...(q.steps || []).flatMap((st, i) => [[`steps[${i}].journal`, st.journal], [`steps[${i}].objText`, st.objText]]), ...[...(q.lines?.offer || []), ...(q.lines?.done || [])].map((t, i) => [`lines[${i}]`, t])];
+    const texts = [['title', q.title], ['returnText', q.returnText], ...(q.steps || []).flatMap((st, i) => [[`steps[${i}].journal`, st.journal], [`steps[${i}].objText`, st.objText]]), ...[...(q.lines?.offer || []), ...(q.lines?.done || []), ...(q.lines?.accept || []), ...(q.lines?.decline || [])].map((t, i) => [`lines[${i}]`, t])];
     for (const [k, v] of texts) { if (typeof v !== 'string' || !v.trim()) out.push(`regions:${q.id}: ${k} is empty`); else if (/NEEDS WRITER/i.test(v)) out.push(`regions:${q.id}: ${k} still says NEEDS WRITER`); }
     if (!q.lines?.offer?.length) out.push(`regions:${q.id}: lines.offer is empty`);
   }

@@ -41,6 +41,26 @@ console.log('creep.test OK');
   ls.ambient.fill(1); st.amb = 1; applyCreepLights(ls, out, st); assert.ok(Math.abs(ls.ambient[1] - 0.5) < 1e-6);
   out.ambientScale = 1; out.flickerMul = 1; applyCreepLights(ls, out, st); assert.ok(Math.abs(ls.ambient[2] - 1) < 1e-6 && Math.abs(ls.flickerAmount[1] - 0.2) < 1e-6);
   applyCreepLights(null, out, st);
+  // R6-FIX B: enter -> fade in -> exit -> fade out is bitwise exact, also with an hour step and a light added inside
+  {
+    const bits = (a) => Array.from(a, (v) => v).join(','), ls2 = { ambient: new Float32Array([0.37, 0.41, 0.53]), flickerAmount: new Float32Array([0.13, 0.07, 0.31, 0]), count: 3 };
+    const s2 = { amb: 1, fl: 1 }, o2 = { ambientScale: 1, flickerMul: 1 };
+    const a0 = bits(ls2.ambient), f0 = bits(ls2.flickerAmount);
+    for (const w of [0.2, 0.55, 0.9, 0.6, 0.3, 0.07]) { o2.ambientScale = 1 - w * 0.7; o2.flickerMul = 1 + w * 1.9; applyCreepLights(ls2, o2, s2); }
+    ls2.flickerAmount[3] = 0.5; ls2.count = 4; // a light added inside the site: must not be scaled nor divided
+    applyCreepLights(ls2, o2, s2);
+    assert.equal(ls2.flickerAmount[3], 0.5);
+    for (const w of [0.05, 0]) { o2.ambientScale = 1 - w * 0.7; o2.flickerMul = 1 + w * 1.9; applyCreepLights(ls2, o2, s2); }
+    o2.ambientScale = 1; o2.flickerMul = 1; applyCreepLights(ls2, o2, s2);
+    assert.equal(bits(ls2.ambient), a0); assert.equal(bits(ls2.flickerAmount.subarray(0, 3)), f0.split(',').slice(0, 3).join(',')); assert.equal(ls2.flickerAmount[3], 0.5);
+    // hour step during the visit: the main rewrites ambient and resets st.amb = 1 -> the NEW base is restored on exit
+    const s3 = { amb: 1, fl: 1 }; o2.ambientScale = 0.6; o2.flickerMul = 1.5; applyCreepLights(ls2, o2, s3);
+    ls2.ambient[0] = 0.9; ls2.ambient[1] = 0.8; ls2.ambient[2] = 0.7; s3.amb = 1; applyCreepLights(ls2, o2, s3);
+    assert.ok(Math.abs(ls2.ambient[0] - 0.9 * 0.6) < 1e-6);
+    o2.ambientScale = 1; o2.flickerMul = 1; applyCreepLights(ls2, o2, s3);
+    assert.equal(bits(ls2.ambient), bits(new Float32Array([0.9, 0.8, 0.7])));
+    assert.equal(bits(ls2.flickerAmount.subarray(0, 3)), f0.split(',').slice(0, 3).join(','));
+  }
   assert.equal(creepMistDensity(0, 1), 0); assert.equal(creepMistDensity(0.1, 1), 0.2); assert.equal(creepMistDensity(0.05, 0), 0.05);
 }
 

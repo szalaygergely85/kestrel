@@ -10,7 +10,7 @@ import { createJawSync } from './jawSync.js';
 
 export const CLOSE_FAR_M = 6.5;
 const CONFIRM_KEYS = ['KeyE', 'Enter'];
-const NPC_NAMES = { bear: 'Burl', rook: 'Rook', hesk: 'Hesk', dorrin: 'Dorrin', warden_ashmile: 'Tull', warden_downs: 'Edda', warden_glasswater: 'Lin', warden_heath: 'Nell', warden_highpastures: 'Ewan', warden_northwood: 'Brenna', warden_reedmire: 'Orla', warden_signalhill: 'Ivo', warden_strand: 'Kit', warden_whitecombs: 'Sten' }; // OB-054b: prompt names the NPC (id as fallback)
+import { NPC_NAMES } from './npcNames.js'; // R6-FIX A: one name table (talk prompt + errand labels)
 // DIALOGUE-LOCK-01 (PO REJECT): movement stays live, so W/S are NOT read here; choose with arrows / wheel / digits 1-4.
 const DIGIT_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4'];
 
@@ -113,6 +113,8 @@ export function createDialogueCtl(opt) {
     addNpc(id, o = {}) {
       const h = world.get(id), t = h && h.data && h.data.transform;
       if (!t) return null;
+      const have = world.interactables && world.interactables.find((r) => r.key === 'npc.' + id); // R6-FIX A: idempotent (generic giver loop + explicit registrations)
+      if (have) return have;
       return world.addInteractable({
         key: 'npc.' + id, name: 'npc.talk', x: t.x, y: t.y, z: t.z + (o.lift ?? 1), radius: o.radius ?? 2.2,
         prompt: o.prompt ?? ('[E] Talk to ' + (NPC_NAMES[id] || id)).slice(0, 28), def: { npcId: id },

@@ -151,7 +151,7 @@ export function createVitals(world, events, cfg, hooks) {
       p.blocked = 1;
       sh.blockTick = tick;
       if (sh.onBlock) sh.onBlock(n); // SHIELD-STAMINA-01: stamina drain, drop at 0
-      if (p.cause === 'arrow') { // arrows are only softened: half damage from the front, no knock, still hurts
+      if (p.cause === 'arrow' && sh.hasStamina === true) { // R6-FIX D: only with the stamina rules attached - arrows are only softened: half damage from the front, no knock, still hurts
         applyDamage(Math.round(n * (sh.arrowFactor !== undefined ? sh.arrowFactor : 0.5)), dirX, dirY);
         return;
       }

@@ -61,14 +61,31 @@ export function createUnderCreep(particles, opts = {}) {
   };
 }
 
-/** Main wiring helper (tiny, testable). `st` = {amb:1, fl:1} keeps the scale already applied so repeated steps never compound.
- *  Call `st.amb = 1` right after anything rewrites lightSet.ambient (hour step). Returns nothing; no-op when lightSet is null. */
+/** Main wiring helper (R6-FIX B: absolute, not ratio). `st` = {amb:1, fl:1}: the scales currently applied (1 = lightSet holds the BASE values).
+ *  When a scale leaves 1 the base ambient / flicker values are captured; every frame writes base * scale, and when the scale is 1 again the
+ *  captured base bytes are written back EXACTLY (no A*s*(1/s) drift). Call `st.amb = 1` right after anything rewrites lightSet.ambient (hour step):
+ *  the next frame then re-captures the new base. Lights added while inside (index >= captured count) are never touched. No-op when lightSet is null. */
 export function applyCreepLights(lightSet, out, st) {
   if (!lightSet) return;
-  const a = out.ambientScale / st.amb;
-  if (a !== 1) { const A = lightSet.ambient; A[0] *= a; A[1] *= a; A[2] *= a; st.amb = out.ambientScale; }
-  const f = out.flickerMul / st.fl;
-  if (f !== 1) { const F = lightSet.flickerAmount; for (let i = 0; i < lightSet.count; i++) F[i] *= f; st.fl = out.flickerMul; }
+  const sa = out.ambientScale;
+  if (sa !== st.amb) {
+    const A = lightSet.ambient, B = st.ba || (st.ba = new Float32Array(3));
+    if (st.amb === 1) { B[0] = A[0]; B[1] = A[1]; B[2] = A[2]; } // leaving 1: capture the base
+    if (sa === 1) { A[0] = B[0]; A[1] = B[1]; A[2] = B[2]; } else { A[0] = B[0] * sa; A[1] = B[1] * sa; A[2] = B[2] * sa; }
+    st.amb = sa;
+  }
+  const sf = out.flickerMul;
+  if (sf !== st.fl) {
+    const F = lightSet.flickerAmount;
+    if (st.fl === 1) { // leaving 1: capture the base amounts of the lights that exist now
+      if (!st.bf || st.bf.length < F.length) st.bf = new Float32Array(F.length);
+      st.bn = Math.min(lightSet.count, F.length);
+      for (let i = 0; i < st.bn; i++) st.bf[i] = F[i];
+    }
+    const n = Math.min(st.bn, lightSet.count, F.length), B = st.bf;
+    if (sf === 1) for (let i = 0; i < n; i++) F[i] = B[i]; else for (let i = 0; i < n; i++) F[i] = B[i] * sf;
+    st.fl = sf;
+  }
 }
 /** Post mist density for this frame: base * (1 + 1.5*creep), capped 0.2; base 0 (no mist preset) stays 0. */
 export const creepMistDensity = (base, creepMist) => (base > 0 ? Math.min(0.2, base * (1 + 1.5 * creepMist)) : base);
