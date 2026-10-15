@@ -112,7 +112,8 @@ import { setInspectSink, wrapText } from './quest/questInspect.js'; // QL-04
 import { createErrands, labelOf, gateOnMeet, isWorn, bannerLines } from './quest/errands.js'; // QL-WIRE: Ch1-2 errands
 import { generateAll, generateForNpc } from './quest/questSnippets.js'; // QL-T4: generated q.<id>.* dialogue routes
 import { createUnderHook } from './underHook.js'; // B1-MAIN hooks 7: Ford cellar ladder + crypt door/chest
-import { spellDamageScale, SPELLS, upgradableSpells, useScroll } from './quest/sim/spellTiers.js'; // D-114
+import { createSpellBook } from './quest/sim/spellBook.js'; // EP-SPELLS
+import { raisable, useScroll as useSpellScroll } from './quest/sim/spellScroll.js';
 import { createHeartHook } from './heartHook.js'; // QL-08: heart pieces -> max HP
 import { createChestHook } from './chestHook.js'; // S8-B1-04: chest sim + item-get card, through the seam only
 import { createMapFogHook } from './mapFogHook.js'; // S8-B1-16: visited-cell mask feed, through the seam only
@@ -1690,7 +1691,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       hands.register('sword', sword);
       if (fbTargets) fbTargets.dispose();
       fbTargets = createTargetables(world, engine.events);
-      fireball = createFireballSim(world, engine.events, FIREBALL_CFG, fbTargets, { spendMana: (n) => vitals && vitals.spendMana(n), isEnabled: () => fireballOn(world, FEATURES), damageScale: () => spellDamageScale(world.state, 'fireball') });
+      fireball = createFireballSim(world, engine.events, FIREBALL_CFG, fbTargets, { spendMana: (n) => vitals && vitals.spendMana(n), isEnabled: () => fireballOn(world, FEATURES), damageScale: () => createSpellBook(world.state).damageScale('fireball') });
       hands.register('spell.fireball', fireball);
       // EQ-07/09 (38.41): shield sim + arrow sim + the routing glue; shield/bow items get no-op sims so the router arms them (RMB -> left hand, LMB -> right hand)
       shieldSim = createShieldSim();
@@ -1827,8 +1828,8 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         isSlotDisabled: (i) => { if (fbOn || !playerHandle) return false; const inv = playerHandle.data.components.inventory, sl = inv && inv.slots[i]; return !!(sl && sl.id && FB_LOCKED_IDS[sl.id]); }, // FB-01: spell + mana potion cells show as locked until unlocked (Items + Character tabs)
         healthOf: () => (playerHandle && playerHandle.data.components.health) || null,
         spellChoice: { // D-114: Spell Scroll -> the player chooses a learned spell (the fireball is today's only spell)
-          options: () => upgradableSpells(engine.world.state, (id) => id === 'fireball' && fbOn).map((q) => ({ ...q, name: SPELLS[q.id].name })),
-          pick: (id) => (playerHandle ? useScroll(playerHandle.data.components.inventory, engine.world.state, id, (s) => s === 'fireball' && fbOn) : 0),
+          options: () => raisable(createSpellBook(engine.world.state)),
+          pick: (id) => { if (!playerHandle) return 0; const r = useSpellScroll(playerHandle.data.components.inventory, createSpellBook(engine.world.state), id); return r.ok ? r.level : 0; },
         },
         onHandsChanged: () => { if (hands && playerHandle) hands.step(playerHandle.data, false, false, false); }, // router sees the change now (cancel + setHand + hands:changed)
         quickbar: itemDefs ? { assign: (n, id) => !!playerHandle && (fbOn || !FB_LOCKED_IDS[id]) && qbAssign(playerHandle.data, itemDefs, n + HAND_SLOTS, id) } : undefined, // EQ-12: 1-4 over an item in the Items / Character tab (key n = bar slot n + 2)

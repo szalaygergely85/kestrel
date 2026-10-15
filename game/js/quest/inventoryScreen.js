@@ -217,7 +217,7 @@ export function createInventoryScreen(o) {
   let pick = null;
   function openPick(n) {
     const opts = o.spellChoice.options();
-    if (!opts.length) { say('Learn a spell first', C.uiDim); setFlash(n, F_REFUSE, slotCfg.flash.refuse.ms); return; }
+    if (!opts.length) { say('No spell can learn from this yet.', C.uiDim); setFlash(n, F_REFUSE, slotCfg.flash.refuse.ms); return; }
     pick = { n, opts, sel: 0 };
   }
   function pickKey(input) {
