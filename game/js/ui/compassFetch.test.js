@@ -24,9 +24,11 @@ assert.equal(hud.target(book, world).x, 10, 'have item -> turn-in (Burl)');
 // OB-207: resolveItemSource falls back to a dead (respawning) beast's spot when none is alive
 import { resolveItemSource } from './itemSource.js';
 const mkw = (list) => ({ forEachEntity: (f) => list.forEach((e) => f(e, e.id)), get: () => null });
-const boar = (id, x, hp) => ({ id, data: { transform: { x, y: 0, z: 0 }, components: { brain: {}, health: { hp } } } });
+const boar = (id, x, hp, home) => ({ id, data: { transform: { x, y: 0, z: 0 }, components: { brain: home ? { home: [home, 0] } : {}, health: { hp } } } });
 const src = { 'boar.hide': { beast: 'boar' } }, o = { x: 0, y: 0, z: 0 };
 assert.equal(resolveItemSource(src, 'boar.hide', mkw([boar('boar1', 50, 0), boar('boar2', 80, 3)]), { x: 0, y: 0 }, o), true); assert.equal(o.x, 80, 'live boar wins over a nearer dead one');
 assert.equal(resolveItemSource(src, 'boar.hide', mkw([boar('boar1', 50, 0), boar('boar2', 80, 0)]), { x: 0, y: 0 }, o), true); assert.equal(o.x, 50, 'all dead -> nearest herd spot');
 assert.equal(resolveItemSource(src, 'boar.hide', mkw([]), { x: 0, y: 0 }, o), false, 'no boar placed at all -> unknown');
+assert.equal(resolveItemSource(src, 'boar.hide', mkw([boar('boar1', 500, 0, 40), boar('boar2', 10, 0, 90)]), { x: 0, y: 0 }, o), true); assert.equal(o.x, 40, 'all dead -> nearest respawn HOME (not the corpse spot at x=10)');
+assert.equal(resolveItemSource(src, 'boar.hide', mkw([boar('boar1', 500, 3, 40), boar('boar2', 10, 0, 5)]), { x: 0, y: 0 }, o), true); assert.equal(o.x, 500, 'live boar wins over a nearer respawn area');
 console.log('compassFetch: ok');

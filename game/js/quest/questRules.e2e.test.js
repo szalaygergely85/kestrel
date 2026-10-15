@@ -177,6 +177,10 @@ const SHOW_ALL = process.argv.includes('--all');
 const TODO = { // empty: every rule passes on all quests (OB-206/207 fixed); add 'quest|rule': 'OB-NNN' only for a logged open bug
 };
 const sources = rd('content/items/sources.json').items || {};
+// OB-207: a beast-drop item needs spawn data for its kind (authored entity with brain.home in the world file; regional herds add more) - else the audit fails
+const worldEnts = rd('content/worlds/world_m1.world.json').entities || [];
+const beastHomes = (kind) => worldEnts.filter((e) => typeof e.id === 'string' && e.id.startsWith(kind) && e.components && e.components.brain && e.components.brain.home).length;
+for (const [item, s] of Object.entries(sources)) assert.ok(!s.beast || beastHomes(s.beast) > 0, 'beast-drop item ' + item + ": beast kind '" + s.beast + "' has no spawn area (no world entity with brain.home)");
 const ui = createUiLayer({ cols: 160 });
 // compass world: every giver id gets a unique spot; areas/sources/beasts resolve like the game (area in areas.json, item source in sources.json)
 const spot = new Map(); const spotOf = (key) => { if (!spot.has(key)) spot.set(key, 10 * (spot.size + 1)); return spot.get(key); };
@@ -186,7 +190,7 @@ const cworld = { resolve(kind, id, out) {
   let key = null;
   if (kind === 'giver') key = 'giver:' + id;
   else if (kind === 'area') { if (areaIds.has(id)) key = 'area:' + id; }
-  else if (kind === 'source') { const s = sources[id]; if (s && !s.giver) key = 'source:' + id; }
+  else if (kind === 'source') { const s = sources[id]; if (s && !s.giver && (!s.beast || beastHomes(s.beast) > 0)) key = 'source:' + id; }
   else if (kind === 'beast') key = 'beast:' + id;
   if (!key) return false;
   out.x = spotOf(key); out.y = 0; return true;
