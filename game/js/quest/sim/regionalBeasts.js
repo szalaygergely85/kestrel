@@ -67,11 +67,12 @@ export const FIXED_SAFE = Object.freeze([[1497, 1027, 70]]);
 export const REGIONAL_BEAST_COUNT = REGION_RULES.reduce((n, r) => n + r.groups * r.size, 0);
 
 import { WOLF_MODEL } from './wolfBrain.js';
-export const MODEL = { boar: 'boarPlaceholder', wolf: WOLF_MODEL, bear: 'bearBlack', croc: 'crocodile', deer: 'deer', fox: 'fox', turtle: 'tortoise', goat: 'goat', whitewolf: WOLF_MODEL, cavebear: 'bearBlack', archer: 'goblin', shaman: 'goblin', chief: 'goblin', torch: 'goblinTorch' }; // BEAST-02: wolf packs use the real voxel_wolf model ('wolf')
+import { UNDER_SITES, CEMETERY_TIER } from './underSkeletons.js'; // UNDER-01
+export const MODEL = { boar: 'boarPlaceholder', wolf: WOLF_MODEL, bear: 'bearBlack', croc: 'crocodile', deer: 'deer', fox: 'fox', turtle: 'tortoise', goat: 'goat', whitewolf: WOLF_MODEL, cavebear: 'bearBlack', archer: 'goblin', shaman: 'goblin', chief: 'goblin', torch: 'goblinTorch', skelwar: 'skeleton', skelarch: 'skeletonArcher' }; // BEAST-02: wolf packs use the real voxel_wolf model ('wolf')
 export const BODY = { boar: { height: 0.7, radius: 0.45 }, wolf: { height: 0.7, radius: 0.45 }, bear: { height: 1.1, radius: 0.7 }, croc: { height: 0.5, radius: 0.7 },
-  deer: { height: 1.2, radius: 0.5 }, fox: { height: 0.6, radius: 0.35 }, turtle: { height: 0.5, radius: 0.5 }, goat: { height: 0.9, radius: 0.45 }, whitewolf: { height: 0.8, radius: 0.5 }, cavebear: { height: 1.3, radius: 0.8 }, archer: { height: 1.0, radius: 0.4 }, shaman: { height: 1.0, radius: 0.4 }, chief: { height: 1.3, radius: 0.5 }, torch: { height: 1.0, radius: 0.4 } };
+  deer: { height: 1.2, radius: 0.5 }, fox: { height: 0.6, radius: 0.35 }, turtle: { height: 0.5, radius: 0.5 }, goat: { height: 0.9, radius: 0.45 }, whitewolf: { height: 0.8, radius: 0.5 }, cavebear: { height: 1.3, radius: 0.8 }, archer: { height: 1.0, radius: 0.4 }, shaman: { height: 1.0, radius: 0.4 }, chief: { height: 1.3, radius: 0.5 }, torch: { height: 1.0, radius: 0.4 }, skelwar: { height: 1.8, radius: 0.35 }, skelarch: { height: 1.8, radius: 0.35 } };
 /** OB-153: id-prefix species -> kinds.json kind for the non-legacy species (boar/wolf/bear keep their legacy brains). */
-export const KIND_OF = Object.freeze({ deer: 'red_deer', fox: 'fox', turtle: 'snapping_turtle', goat: 'mountain_goat', whitewolf: 'white_wolf', cavebear: 'cave_bear', archer: 'goblin_archer', shaman: 'goblin_shaman', chief: 'goblin_chief', torch: 'goblin_torch_bearer' });
+export const KIND_OF = Object.freeze({ deer: 'red_deer', fox: 'fox', turtle: 'snapping_turtle', goat: 'mountain_goat', whitewolf: 'white_wolf', cavebear: 'cave_bear', archer: 'goblin_archer', shaman: 'goblin_shaman', chief: 'goblin_chief', torch: 'goblin_torch_bearer', skelwar: 'skeleton_warrior', skelarch: 'skeleton_archer' });
 export const SPECIES_BEAST_KIND = { croc: 'river_crocodile' }; // brain.beastKind of species that are not the 3 legacy ones (kindOfEntity)
 /** World_m1 beast nav rect in metres [x0,y0,x1,y1] (nav.area is in cells x cell 2): water slots outside it cannot init (initSwimmer) and would stay land crocs. */
 export const WATER_NAV_AREA = Object.freeze([790, 860, 1700, 1840]);
@@ -229,5 +230,16 @@ export function spawnRegionalBeasts(world, geo, seed, navArea) {
     world.spawn('beast', { x: b.x, y: b.y, z: world.terrain.heightAt(b.x, b.y) },
       { voxel: { anim: 'idle', loop: true, model: MODEL[b.species] }, brain, targetable: { ...BODY[b.species] } }, b.id);
   }
+  spawnUnderSkeletons(world);
   return list;
+}
+
+/** UNDER-01 (OB-191): the cemetery trio (reserve group, woken at night by underSkeletons.createUnderSpawner) + the idle pair in one ruin. Not in the returned list (the director does not own them). */
+export function spawnUnderSkeletons(world) {
+  for (const site of UNDER_SITES) for (const m of site.members) {
+    if (world.get(m[0])) continue; // restored from a save: already there
+    const x = site.anchor[0] + m[2], y = site.anchor[1] + m[3], brain = { kind: 'beast', home: [x, y], temperament: 'wary', beastKind: KIND_OF[m[1]] };
+    if (site.night) { brain.group = site.group; brain.reserve = true; brain.tier = CEMETERY_TIER; }
+    world.spawn('beast', { x, y, z: world.terrain.heightAt(x, y) }, { voxel: { anim: 'idle', loop: true, model: MODEL[m[1]] }, brain, targetable: { ...BODY[m[1]] } }, m[0]);
+  }
 }
