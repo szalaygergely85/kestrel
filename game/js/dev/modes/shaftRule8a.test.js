@@ -1,6 +1,6 @@
 // Drives shaftRule8a with a fake wg whose readbackCells reuses its buffers (like WgCellPipeline._rbFg/_rbBg).
 import assert from 'node:assert/strict';
-import { shaftRule8a } from './shaftRule8a.js';
+import { shaftRule8a, finalSignOk } from './shaftRule8a.js';
 
 const n = 100, tint = [255, 205, 130];
 function fakeWg() {
@@ -32,4 +32,11 @@ assert.equal(rn.ok, false); assert.match(rn.fails[0], /readbackShade null/);
 wg.paint(false);
 const rs = await shaftRule8a({ n, aFg, aBg, aSFg: sA.fg, aSBg: sA.bg, readShade: (f, b) => wg.readbackShade(f, b), lightA, renderB: async () => wg.paint(true), readCells: async (f, b) => { const o = await wg.readbackCells(f, b); o.fg[0] = 90; return o; }, sunI: 1, tint });
 assert.equal(rs.ok, false); assert.ok(rs.stats.signMismatch > 0);
+// rounding rule: (shade delta, final delta)
+assert.ok(finalSignOk(1, 0)); assert.ok(finalSignOk(-1, 0)); assert.ok(finalSignOk(2, 3)); assert.ok(finalSignOk(0, 0));
+assert.ok(!finalSignOk(2, 0)); assert.ok(!finalSignOk(1, -1)); assert.ok(!finalSignOk(0, 1)); assert.ok(!finalSignOk(0, -1));
+// integration: one-quantum loss (shade +1, final 0) passes and is counted; (shade +20, final 0) fails
+wg.paint(false);
+const rq = await shaftRule8a({ n, aFg, aBg, aSFg: sA.fg, aSBg: sA.bg, readShade: async (f, b) => { const o = await wg.readbackShade(f, b); o.fg[0] = 101; return o; }, lightA, renderB: async () => wg.paint(true), readCells: async (f, b) => { const o = await wg.readbackCells(f, b); o.fg[0] = 100; return o; }, sunI: 1, tint });
+assert.ok(rq.ok, rq.fails.join(';')); assert.equal(rq.stats.quantized, 1);
 console.log('shaftRule8a ok');
