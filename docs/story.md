@@ -228,6 +228,8 @@ Credits screen (later): `Voxel assets by StickyBizcuit`.
 
 ## Opening sequence (panels)
 
+Superseded by v2 (D-111), see "Opening sequence v2" below.
+
 Voice: Wick, first person, present tense. He is never named or shown, only his hands. One caption per still and ASCII only. It replaces the beat list in section 9.4 with five panels, ending on the existing wake.
 
 ```
@@ -244,6 +246,92 @@ Voice: Wick, first person, present tense. He is never named or shown, only his h
 ```
 
 Panel 5's "Then nothing" deliberately echoes the Crown print `BEYOND THE WALL: NOTHING`. The wake then shows that it is not nothing.
+
+## Opening sequence v2 (D-111, slideshow)
+
+DRAFT, owner to approve. Eight stills, ~4 s each (~32 s), AI-generated and converted to real ASCII glyphs. One caption per still, 1-2 lines, each line <= 60 chars, ASCII only. Voice as before: Wick, first person, present tense, never named. His sister is "she" / "my sister" only; her name stays off screen (section 9.6). The last still hands off to the wake in the wreck.
+
+Note on "one night": canon says the signal has sent for years. The caption says the night *he* sees it, not the night it starts.
+
+**1.**
+```
+Ferrum. Rings of stone and brass, lamps that never gutter.
+Inside, everyone knows: nobody lives beyond the Wall.
+```
+IMAGE: Ferrum at dusk from a high distance. Tiered rings of stone and timber climb a hill, amber lamps on every tier, steam plumes, and the dark ring of the Wall with no lights outside it.
+
+**2.**
+```
+Seven winters ago my sister went up to the skyworks.
+Her lamp came back trimmed and shuttered. She did not.
+```
+IMAGE: Close still life, cold grey morning light through a Low Wards window. A brass hand-lamp on a bare table, wick trimmed, shutter closed, one notice slip beside it reading FELL. No people.
+
+**3.**
+```
+One night, far beyond the Wall, a light.
+Three short. Three long. Three short. Again. Again.
+```
+IMAGE: Night from the skyworks roof, looking out over the Wall into black land. One tiny teal point on the far horizon; the only light past the Wall. Wick from behind at the roof edge, small in frame, face never shown.
+
+**4.**
+```
+I know it: Factor's Code, the old merchant lamp-talk.
+She taught me in the shut Factory, with a shuttered lamp.
+```
+IMAGE: Memory, warm and dim. Inside an empty merchant hall: dusty ledger shelves, a big shuttered signal lamp on a sill, its slats half open, one beam across the floor. Two children from behind at the sill, the taller girl working the shutter, the boy (young Wick) watching; no faces.
+
+**5.**
+```
+In Factor's Code it is one word: ALIVE.
+The Crown says marsh-fire. Thirty nights, I chart it.
+```
+IMAGE: Lamplit desk at night. A printed Crown sky-chart, a pencil line running off the printed edge toward a small star mark, the word ALIVE pencilled in the margin. Over Wick's shoulder as he hunches over the chart, pencil in hand, the far teal point in the window beyond.
+
+**6.**
+```
+Midnight. A knife, a mooring rope, a Crown ship that
+was never mine. The rope gives.
+```
+IMAGE: Skyworks mooring deck at midnight under amber lamps. The *Kestrel*, small brass gondola and patched envelope, straining on one rope. Wick from behind in the gondola, knife half through the rope, the city lamps beyond him.
+
+**7.**
+```
+The Wall slides under me. Its lamps wake one by one.
+Then the ballistae. A bolt through the envelope.
+```
+IMAGE: Over Wick's shoulder at the gondola rail, looking down at the Wall at night, a line of lamps flaring left to right, one ballista swung up, a bolt streak rising, canvas tearing at the top of frame.
+
+**8.**
+```
+The burner roars. A broken tower opens like a mouth.
+Stone, moss, brass. The chart in my fist. Then nothing.
+```
+IMAGE: Falling, pre-dawn blue. A roofless round stone tower seen from above, mossy rim rushing up, burner glare white in the corner. Wick from behind clinging to the tilted gondola, chart in his fist, the opening below. Hard cut to black, then the wake.
+
+"Then nothing" keeps the echo of the Crown print `BEYOND THE WALL: NOTHING`; the wake shows it is not nothing.
+
+Why the shuttered lamp twice: a shutter is how you talk in Factor's Code. Her lamp came back shuttered (section 9.2), and she taught him the code with a shuttered lamp. The image does the work; nobody says it.
+
+**The Factory (lore, not on screen):** a shut merchant trading house in the Low Wards, from before the Wall Law, when caravans and river barges still went out. Its factors talked tower to tower with shuttered lamps. Children play in it; Maren took Wick there and taught him the code for fun. Old enough that nobody in Ferrum reads it any more, which is why only he sees a word in the light.
+
+**Alternatives: the code's name**
+1. **Factor's Code** (chosen above). Plain, period, ties to "factory".
+2. **Tally-light.** A clerk's word: lamps counting cargo, tower to tower.
+3. **Barge-blink.** River-trade slang; warmer, more Low Wards.
+
+**Alternatives: how "alive" is phrased (slide 5, line 1)**
+1. `In Factor's Code it is one word: ALIVE.` (chosen above)
+2. `In the old code it means: STILL ALIVE.` - softer, sounds like a reply to a question.
+3. `On the Factory ledgers that mark meant: crew alive.` - the caravan meaning (cargo lost, crew alive), so "alive" is his reading, not a fact.
+
+ESCALATE TO MANAGER (proposals for `docs/game-design.md` section 3; not edited here):
+1. **Signal meaning:** keep "repeating SOS, 3 short 3 long 3 short" (D-013), and add: in the old merchant lamp-code (Factor's Code) the same pattern reads ALIVE. Both readings stand; neither names a sender, so M4 is still open (fits A, B and C in section 7; A best, the code is older than the Wall).
+2. **Motive:** add Maren (section 9, approved 2025-09-25) to canon: the vanished sister is why Wick flies. Her name stays off screen in M1.
+3. **New place:** the Factory, a shut pre-Wall merchant house in the Low Wards where Wick learned the code from her.
+4. **Hero on screen:** canon says "first-person, never seen". Owner decided (2026-10-15): the intro stills show Wick from behind / over the shoulder, face never shown. Add that exception to section 3.
+5. **Crown's reading:** "The Crown denies it" becomes "the Crown calls it marsh-fire, then says there was no light". No change in substance.
+6. **Section 9.3 trigger** (masons mortaring the humming stones): not in the slideshow. Keep as lore or drop; the slideshow does not need it.
 
 ## Death card
 

@@ -9,7 +9,7 @@
 import { applyImpostorBoot, reapplyRememberedImpostors } from './ui/impostorPreset.js'; // R6-WIRE
 import { groundLookFromParams } from './look/groundLookConfig.js'; // ENV-02d
 import { buildAtmosConfig } from './look/atmosConfig.js'; import { createAtmosDriver } from './look/atmosDriver.js'; // ENV-03
-import { createAtmosState, mixAtmos, applyAtmosToPalette, gradeCells, createPostState, composePost, postCells } from '../../engine/index.js';
+import { createFogHour, createAtmosState, mixAtmos, applyAtmosToPalette, gradeCells, createPostState, composePost, postCells } from '../../engine/index.js';
 import { createFxHook, resolveFx } from './fxHook.js';
 import { resolveGI, createGIWire, giLoadOptions } from './look/giWire.js';
 import { resolveFootIk, createFootIkWire, createSupportGround } from './look/footIkWire.js'; // ANIM-IK-01b: kit character foot placement (?footik=0 off) // GI-PROBE-06
@@ -940,18 +940,13 @@ if (handDef && handDef.variants && handLookDef) {
   }
 }
 registerRiggedChars(assets, bundle.models); // RIG-03w: char.<id> from package .glb, before bind
-// OB-086 (owner 2026-10-12: "import 1 char into the game, i wanna see"): the default kit character (human kit v8 shapes) as a
-// world model, stood 2 m east of Burl on every world load (entity id demo.kitChar: never saved, see saveState TRANSIENT_ENTITY).
+// The default kit character (human kit v8 shapes) as the `char.kit` world model (player body + NPCs). The OB-086 demo copy that
+// stood 2 m east of Burl (demo.kitChar) was removed on the owner's request 2026-10-15.
 let kitFootCells = null; // ANIM-IK-01b: foot cells of the kit legRig (footIkWire)
 if (window.__charKit && !assets.has('model', 'char.kit')) {
   try { const K = window.__charKit; const grid = composeCharacter(K, K.defaults); const sw = window.ASSETS.chargenSwimClips; if (sw) Object.assign(grid.clips, sw.clips); /* SWIM-ASSETS-01: swim/tread/dive, in-game player only */ const kitDef = riggedModelDef(collapseRig(meshCharacter(grid), K.partMap), { legRig: HUMANOID_SPLIT_LEG_RIG, lookAt: { part: 'head', yawLimitDeg: 60, pitchLimitDeg: 25, hz: 2 } }); kitFootCells = kitDef.voxel.legRig ? kitDef.voxel.legRig.legs.map((l) => l.foot) : null; /* ANIM-IK-01b: split-leg rig */ assets.add('model', 'char.kit', kitDef); }
   catch (e) { console.warn('[char.kit] ' + e.message); }
 }
-if (assets.has('model', 'char.kit')) engine.events.on('world:loaded', ({ world: kw }) => {
-  const b = kw.get('bear'), bt = b && b.data && b.data.transform; if (!bt || kw.get('demo.kitChar')) return;
-  const gz = kw.floorAt(bt.x + 2, bt.y);
-  kw.spawn('prop', { x: bt.x + 2, y: bt.y, z: gz == null ? bt.z : gz, yawDeg: 180, scale: 1 }, { voxel: { model: 'char.kit', anim: 'idle', loop: true } }, 'demo.kitChar');
-});
 const gameVoxelPool = new VoxelPool();
 gameVoxelPool.bind(assets, matTable);
 // RE-02b F1 + review: 'mesh' only when the mesh GpuCellPipeline is really active (CPU fallback renders shear).
@@ -1400,6 +1395,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
   let lightSet = null; let giWire = null; const giCfg = resolveGI(params, resolvedQuality && resolvedQuality.name, wgActive); // GI-PROBE-06: baked bounce light; `?gi=0` = null = today's frames
   // US-006: built from the loaded world's level.def.lights, below
   const atmosLast = { w: null }; engine.events.on('world:loaded', () => { atmosLast.w = null; }); // REV-MAIN: forces a snap on the next atmosphere step
+   let fogHour = null; const applyFogHour = (P, h) => { if (!fogHour && window.FOG_HOUR) fogHour = createFogHour(P, window.FOG_HOUR); if (fogHour) fogHour.apply(h); }; // NIGHT-HAZE-01: far fog colour follows the hour
    let atmosDrv = null, atmosCfg = null, atmosV = -1, atmosBase = null; const atmosState = createAtmosState(); // ENV-03: biome atmosphere driver (null = off)
   const postQ = resolvedQuality && resolvedQuality.name, postCfg0 = resolvePost(window.POST_LOOK, params, postQ, 'outdoor'), postState = createPostState(); let postCfg = postCfg0, postV = -2; const sceneScratch = {}; let sceneNow = 'outdoor'; // SCENE-INTERIOR: sceneOf() flag; postCfg re-resolved only on change // POST-STACK-01c: `?post=0` = null = today's frames; scene stays 'outdoor' until an interior flag exists
   let clockDriver = null; // DN-03: step-quantised sun/look/ambient driver, rebuilt on every 'world:loaded'
@@ -1571,6 +1567,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
           shadowHour = ((shadowHour % 24) + 24) % 24;
           const gMoon = applySunPair(world, lightSet, shadowHour, hq, worldSunPath, sunEnabled); if (giWire) giWire.clock(hq, gMoon); // GI-PROBE-06: mix on hour step only // AUD2-02: ONE sun/moon decision for the stepped light/shadow sun and the smooth world.sun
           const L = blendLook(P, hq, P.daySchedule);
+          applyFogHour(P, hq);
           if (lightSet) { const hu = P.hue[L.ambient]; lightSet.ambient[0] = hu[0] * L.ambientI; lightSet.ambient[1] = hu[1] * L.ambientI; lightSet.ambient[2] = hu[2] * L.ambientI; creepSt.amb = 1; }
         });
         clockDriver.update(clockHour(world.state, clockCfg), true);
@@ -1578,7 +1575,15 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
           if (!atmosDrv && params.get('atmos') !== '0' && window.BIOME_LOOK && G && G.biomes && far && far.util && far.util.biomeBlend && f) {
             atmosCfg = buildAtmosConfig(window.BIOME_LOOK, G.biomes); atmosBase = { start: f.start, full: f.full, curve: f.curve || 1, near: P.rgb[f.color], far: P.rgb[f.colorFar] };
             atmosDrv = createAtmosDriver({ nEntries: atmosCfg.table.n, biomeToEntry: atmosCfg.biomeToEntry, biomeBlend: (x, y, o) => far.util.biomeBlend(x, y, o), schedule: P.daySchedule, slotOf: { morning: 0, noon: 0, dusk: 1, night: 2 }, frozenSlot: 0 }); } }
-      } else if (Number.isFinite(timeHour)) { if (!clockTimeApplied) { seedClockFromParam(world.state, timeHour); clockTimeApplied = true; } applySunHours(world, lightSet, timeHour, worldSunPath, sunEnabled); } // frozen clock: the NPC schedules still read the ?time= hour
+      } else if (cinematic && !cinematicHours && params.has('cinehour') && Number.isFinite(parseFloat(params.get('cinehour'))) && assets.palette.daySchedule) {
+        // capture-cinematic `--hour H` (dev only): clock frozen at H with the FULL live look (sun/moon pair, sky, fog colour, clouds, ambient), like gpucompare's applyHourOverride
+        const P = assets.palette, hr = ((parseFloat(params.get('cinehour')) % 24) + 24) % 24;
+        seedClockFromParam(world.state, hr); clockTimeApplied = true;
+        applySunPair(world, lightSet, hr, hr, worldSunPath, sunEnabled);
+        const L = blendLook(P, hr, P.daySchedule);
+        applyFogHour(P, hr);
+        if (lightSet) { const hu = P.hue[L.ambient]; for (let i = 0; i < 3; i++) lightSet.ambient[i] = hu[i] * L.ambientI; }
+      } else if (Number.isFinite(timeHour)) { applyFogHour(assets.palette, timeHour); if (!clockTimeApplied) { seedClockFromParam(world.state, timeHour); clockTimeApplied = true; } applySunHours(world, lightSet, timeHour, worldSunPath, sunEnabled); } // frozen clock: the NPC schedules still read the ?time= hour
       // Architect review 1 item 7 (tech notes item 8): `?lights=8` test-only -
       // 7 synthetic extra lights (torch preset) spread 2-4 m around the
       // level's first light, so the tester can measure the "8 point lights"
@@ -1599,6 +1604,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       }
 
       playerHandle = world.get('player');
+      if (cinematic && params.get('clean') === '1' && playerHandle) { const pv = playerHandle.data.components.voxel; if (pv) { pv.hidden = true; world.renderVersion++; } } // capture-cinematic --clean: no player body in teaser frames (HUD/hands/markers are already off in cinematic)
       // US-078d Q12 item 1(b): must run BEFORE createSwordSim/createTargeting below - both scan
       // `components.targetable` once at creation (rebuilt only on entity:added/removed after that), so a prop
       // whose `targetable` component gets added here instead of at World.load time would otherwise be invisible
