@@ -62,7 +62,7 @@ Each row = the numbered fix of the report's ARCH CHANGES (C = report C, D = repo
 | BH-S7 | kestrel-1 | errands `offered`/`looked` Sets are page-lifetime, not reset on load -> after Load the first waystone touch accepts instead of offering (OB-126 regresses). | done (PO, no owner test; errandsReload.test) |
 | BH-A3 | kestrel-3 | perceiveOne writes `unseen` every 6 ticks while chargePost uses the same field as the wall-slow streak -> one blocked-LOS slow step = 2 s wall recover; leaks into hashSim. | done (PO, no owner test; beastSim.hunt asserts) |
 | BH-A4 | kestrel-3 | deOverlap/enterFlee `walkable()` ignores `grid.layers`: beasts on ruin floors never pushed apart, flee points all "blocked". | done (PO, no owner test; beastSim.hunt asserts) |
-| BH-R1 | kestrel-2 | World.placeStructure (World.js:933-948) does not reset the band/zone key memos -> bakeAhead/streamBand reuse bundles baked without the new structure (editor/runtime placement). Engine: PC-A arch-review. | todo |
+| BH-R1 | kestrel-2 | World.placeStructure (World.js:933-948) does not reset the band/zone key memos -> bakeAhead/streamBand reuse bundles baked without the new structure (editor/runtime placement). Engine: PC-A arch-review. | arch-review (placeStructure -> _invalidateBandsFor; engine/world/bandPlaceStructure.test.js) |
 | BH-SUSPECTS | PC-A (later) | 14 unconfirmed suspects across the 3 reports (beacon light handle in world.state, ground look on a cache hit, resetAll reviving logic-reserve groups, swim leave rule, legDriver FLAT_TOL > 15 deg...). Probe in the next hunt. | parked |
 
 ## PC-A review 2026-10-15 fixes (PC-A PO; reports `docs/test-reports/batch-review-2026-10-15-pca-A.md` / `-pca-B.md`, `po-batch-2026-10-15-pca.md`)

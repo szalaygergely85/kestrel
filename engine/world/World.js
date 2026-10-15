@@ -982,10 +982,22 @@ export class World {
       this.structTable[o + 7] = structSeq;
     }
 
+    this._invalidateBandsFor(bbox); // BH-R1: band/zone key memos fold the structure list - drop them + overlapping cached bundles
     this.renderVersion++;
     this.structVersion++; // US-030a: the placed-structure LIST changed shape - see the constructor comment.
     if (this.events) this.events.emit('world:structurePlaced', { id: structId, origin: placed.origin });
     return placed;
+  }
+
+  /**
+   * BH-R1: a structure placed after load changes `nearBandKey` (heights, carve/keep masks, scatter), but the key memos
+   * (_bandKeys/_zoneKeys/_pinKeys) are only reset by _gridFill/onRebake. Reset them and drop cached bundles whose rect
+   * touches `bbox` (+ blend ring margin); unrelated bands keep their cache. The key change itself forces a fresh bake.
+   */
+  _invalidateBandsFor(bbox) {
+    const R = 16;
+    this._bandKeys.length = 0; this._bandKeysC.length = 0; this._zoneKeys.clear(); this._pinKeys = null; this._ahead = null; this._aheadIdle = -1;
+    this.bandCache.invalidateRect(bbox.x0 - R, bbox.y0 - R, bbox.x1 + R, bbox.y1 + R);
   }
 
   /** Place content MeshData; grid sectors and dynamic tags remain level-only. */
