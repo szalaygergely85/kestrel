@@ -231,6 +231,7 @@ import { runPerfBench } from './dev/perfBench.js'; // US-018 (architecture.md 16
 import { createSpriteSystem, spawnTestSprites } from './dev/spriteDev.js';
 // ---- end US-030c ----
 // ---- US-010: quest behaviours (registered by name before any World loads) ----
+import { defineLeafFall, createLeafFall, gustBand } from '../../engine/index.js'; // WIND-GUST-01b
 import { validateBehaviours, createRipples, defineWadeSplash, createEntityTintTable, fillEntityTints, localToWorld } from '../../engine/index.js';
 import { selectHints, createHintSet, pulseStep, buildHintColors, HINT_GLYPH } from './quest/useHints.js'; // INT-HL-01
 import './quest/index.js';
@@ -524,6 +525,7 @@ bootSpan('createEngine', tCE);
 const ripples = createRipples();
 const wadeFx = createWadeFx(engine.particles, ripples); // US-055a: wade splash + leg rings + arrow water hit
 defineWadeSplash(engine.particles, {});
+defineLeafFall(engine.particles, {}); const leafFall = createLeafFall(engine.particles, gustBand); // WIND-GUST-01b: leaves shed under travelling gust bands
 const worldBand = window.ASSETS.levels.world_geo ? createBand(window.ASSETS.levels.world_geo.regions) : null; // US-129a (null = tier 1)
 const wadeArrowHit = (x, y, z) => wadeFx.arrowHit(x, y, z, fb ? fb.timeSec : 0); // one closure, not per frame
 engine.events.on('magic.unlocked', () => startMpFade(fb ? fb.timeSec : 0)); // FB-03: the MP bar fades in (same clock drawVitals gets)
@@ -2312,6 +2314,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       // US-053c: after beast/sword/vitals steps, before entityEmitters.sync()/particles.step() per 32.1.
       if (particleHooks) particleHooks.step(playerHandle.data);
       if (waterfallHooks) waterfallHooks.step();
+      { const pt = playerHandle.data.transform; leafFall.step(engine.world.scatter, engine.world.wind, pt.x, pt.y, clothTick); } // WIND-GUST-01b
       if (ambientMotes) { const pt = playerHandle.data.transform; ambientMotes.step(pt.x, pt.y, pt.z); } // S8-B1-18: position lives on .transform
       entityEmitters.sync(); engine.particles.step();
       if (waterfallHooks) waterfallHooks.afterStep();

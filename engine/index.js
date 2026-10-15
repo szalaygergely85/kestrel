@@ -40,6 +40,7 @@ export { validatePackageManifest, openPackage, mountPackages, loadPackageModels,
 export { readZip, writeZip, crc32, checkZipPath, ZIP_LIMITS } from './content/zip.js'; // KPKG-01/03 (38.30)
 
 // ---- world ----------------------------------------------------------------
+export { gustBand } from './world/wind.js'; // WIND-GUST-01b: injected into createLeafFall (fx/** may not import world/**)
 export { World, stepSectorAnims, PROP_SCALE_MIN, PROP_SCALE_MAX } from './world/World.js';
 export { GIBake, encodeRaw as encodeGIBake } from './world/giBake.js'; // GI-PROBE-02b
 export { createGIState, mixGIState } from './render/giProbe.js'; // GI-PROBE-06
@@ -279,6 +280,7 @@ export { createEntityEmitters } from './world/entityEmitters.js';
 // ---- S8-B2-13b splash ripples (docs/architecture.md 38.14, the note of record) ----
 export { createRipples, RIPPLE_LIFE, RIPPLE_SPEED, RIPPLE_W } from './fx/ripples.js';
 export { defineHitSparks, hitSparks, HIT_SPARK_HUES } from './fx/hitSparks.js';
+export { defineLeafFall, createLeafFall, LEAF_FALL } from './fx/leafFall.js';
 export { defineWadeSplash, wadeSplashAt, arrowSplashAt, WADE_SPLASH } from './fx/wadeSplash.js';
 export { laneCells, laneAlpha, LANE_CELL_M, LANE_ALPHA_MAX } from './fx/chargeLane.js';
 
