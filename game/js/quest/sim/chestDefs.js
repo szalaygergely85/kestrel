@@ -25,6 +25,7 @@ export const CHEST_TABLES = {
   chestCrypt: { fixed: [{ item: 'arrow', n: 10 }, { item: 'potion.hp', n: 1 }], weighted: [], gear: { tier: 'sturdy' } }, // UNDER-02: the earned crypt chest (opens after room 3's skeletons are dead; modest gear reward)
   chestBearDen: { fixed: [{ item: 'arrow', n: 12 }, { item: 'potion.hp', n: 1 }], weighted: [], gear: { tier: 'sturdy' } }, // UNDER-04: the stash behind the sleeping bear (guarded by the bear home, not by depth)
   chestStrandCave: { fixed: [{ item: 'arrow', n: 10 }, { item: 'potion.hp', n: 1 }], weighted: [], gear: { tier: 'sturdy' } }, // UNDER-05: the smugglers' chest at the back of the Long Strand sea cave (guarded by the tortoise homes)
+  chestGoblinTunnel: { fixed: [{ item: 'arrow', n: 12 }, { item: 'potion.hp', n: 1 }], weighted: [], gear: { tier: 'sturdy' } }, // UNDER-06: the goblins' stash in the tunnel between campNorth and campEast (earned: opens when the 3 tunnel goblins are dead)
   chestHidden: { fixed: [], weighted: [], gear: { tier: 'fine' } },
   chestBed: { fixed: [{ item: 'arrow', n: 10 }], weighted: [], gear: { tier: 'sturdy' } }, // SWIM-04d: Glasswater lake-bed chest (needsBottom)
   chestForge: { fixed: [{ item: 'gear.main.sword.sturdy', n: 1 }], weighted: [] }, // EQ-20: Outwall forge chest (a sturdy sword). Band 5+ chests: add `weapon: { tier: 'fine' }`.

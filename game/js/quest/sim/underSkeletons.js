@@ -21,6 +21,9 @@ export const UNDER_SITES = Object.freeze([
   Object.freeze({ id: 'bearDen', anchor: [1584, 432], z: 11.76, night: false, group: '', members: Object.freeze([['bear.bearDen.1', 'bear', 0, 0]]) }),
   // UNDER-05 (OB-191): the Long Strand sea cave (any time of day; z = chamber floor). TWO tortoises (wary = calm, no aggro) on the floor of the chamber.
   Object.freeze({ id: 'strandCave', anchor: [1618.5, 1726], z: -95.31, night: false, group: '', members: Object.freeze([['turtle.strandCave.1', 'turtle', -2.5, 0.5], ['turtle.strandCave.2', 'turtle', 2.2, -0.8]]) }),
+  // UNDER-06 (OB-191): goblin tunnel stash room between campNorth and campEast (3 goblins, any time of day; z = tunnel stash floor, so the dz < 3 m rule keeps them off the surface)
+  Object.freeze({ id: 'goblinTunnel', anchor: [945.5, 946], z: -88.8, night: false, group: '', members: Object.freeze([
+    ['archer.goblinTunnel.1', 'archer', -2, 1.5], ['torch.goblinTunnel.1', 'torch', 2, 1.5], ['archer.goblinTunnel.2', 'archer', 0, -1.5]]) }),
   // existing OB-141 ruin POI ob141r06 (whitecombs arch at 1740,200, far side, zone band 5 = level 5)
   Object.freeze({ id: 'ruinWhite', anchor: [1740, 200], night: false, group: '', members: Object.freeze([
     ['skelwar.ruinWhite.1', 'skelwar', -2, 2], ['skelarch.ruinWhite.1', 'skelarch', 2, 3]]) }),
