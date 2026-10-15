@@ -207,6 +207,7 @@ import { ensureInventory, validateItemDefs, migrateSword, addItem } from './ques
 import { presentPickups } from './quest/pickupsView.js';
 import { createLoot, setLootApi } from './quest/sim/loot.js'; // US-091a2 (37.16.3)
 import { createRelayWake, setRelayWakeApi } from './quest/relayWake.js'; // WS1-06b: wake the road-bend relay
+import { talkNpcIds } from './quest/npcNames.js'; // R6-FIX A
 import { createDialogueCtl, setDialogueApi } from './quest/dialogueCtl.js'; // DIALOGUE-01b2 (38.28)
 import { createCrystalGrant } from './quest/crystal.js'; // CH1-MOUNT: CH1-03 aether crystal after the boars
 import { createNpcWalk } from './quest/npcWalk.js'; // CH1-07
@@ -1766,7 +1767,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       if (bearTurn) dialogueCtl.addNpc('bear');
       dialogueCtl.addNpc('rook'); // Rook the crow: no-op until the entity exists in the world
       outwall = saveEnabled && saveRelay ? createOutwall({ world, questFlag: (k) => saveRelay.quest.questFlag(k) }) : null;
-      for (const gd of (questGenCtx ? questGenCtx.giverDefs : [])) { const nid = gd && gd.giver && !gd.objectGiver && gd.giver.npc; if (typeof nid === 'string' && /^warden_/.test(nid)) dialogueCtl.addNpc(nid); } // QWALK-WARDEN-TALK: the 10 region wardens (QFIX-S5c) were givers with a dialogue but no [E] Talk interactable
+      for (const nid of talkNpcIds(questGenCtx ? questGenCtx.giverDefs : [], bundle.dialogues)) if (nid !== 'bear') dialogueCtl.addNpc(nid); // QWALK-WARDEN-TALK + R6-FIX A: EVERY giver/turn-in npc with a dialogue (wardens, Bram, Joss ...) gets [E] Talk (bear: bearTurn rule above; addNpc is idempotent)
       dialogueCtl.addNpc('hesk'); dialogueCtl.addNpc('dorrin'); // Ch3 Outwall NPCs (world_m1 entities, char.kit model registered at boot; both share the default kit look, no tint)
       if (outLife) outLife.dispose(); // LIFE-04: villagers replace the OUT-02 spawn hook; only with saves live (same gate as OUT-01), never in capture/bench
       outLife = lifeData && outwall && lifeNav && mode === 'world' ? createOutwallLife({ world, life: lifeData.life, nav: lifeNav, tileNav: !!(world.terrainGrid && world.nav && lifeNav === world.nav), events: engine.events, state: world.state, outwall, dialogue: dialogueCtl, barksData: lifeData.barks, style: window.ASSETS.uiStyle.dialogue, hour: clockHour(world.state, clockCfg) }) : null;

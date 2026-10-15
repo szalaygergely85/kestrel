@@ -47,7 +47,9 @@ export function isWorn(eq, id) {
 // OB-094: a giver whose site entity is an invisible marker picks on the VISIBLE prop's collider shapes instead (the marker 'gondola'
 // sits at the tower centre with no model; the wreck you see is the tower level prop 'tower.gondola')
 const PICK_PROP = { gondola: 'tower.gondola' };
-const LABELS = { relayBend: 'Bend Waystone', relayFord: 'Ford Waystone', owBoard: 'Notice board', pierStone: 'Pier stone', relay_glasswater: 'Glasswater Waystone', relay_northwood: 'Northwood Waystone', relay_highPastures: 'Pasture Waystone', relay_ashMile: 'Ash Mile Waystone', relay_downs: 'Downs Waystone', relay_signalHill: 'Signal Hill Waystone', relay_heath: 'Heath Waystone', relay_reedmire: 'Reedmire Waystone', relay_strand: 'Strand Waystone', relay_whitecombs: 'Combfoot Waystone', warden_glasswater: 'Lin', warden_northwood: 'Brenna', warden_highpastures: 'Ewan', warden_ashmile: 'Tull', warden_downs: 'Edda', warden_signalhill: 'Ivo', warden_heath: 'Nell', warden_reedmire: 'Orla', warden_strand: 'Kit', warden_whitecombs: 'Sten', postkeeper: 'Bram', joss: 'Joss', post: 'trade basket', notePost: 'notice post', gondola: 'wrecked airship', packet: 'cloth packet', noteKeepLight: 'pinned note', noteSteelHush: 'pinned note', noteLeave: 'pinned note' }; // OB-058 writer names (docs/story.md)
+import { NPC_NAMES, OBJECT_LABELS } from './npcNames.js'; // R6-FIX A: names live in ONE module
+const { bear: _b, rook: _r, hesk: _h, dorrin: _d, ...ERRAND_NPC_NAMES } = NPC_NAMES; // these four never had an errand label: keep the player text identical
+const LABELS = { ...OBJECT_LABELS, ...ERRAND_NPC_NAMES };
 export function labelOf(id) { return LABELS[id] || String(id).replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase(); }
 /** '[E] <Verb> <name>' capped at 28 chars (name trimmed, never a bare verb). */
 export function promptFor(verb, name) { return ('[E] ' + verb + ' ' + name).slice(0, 28).trim(); }
