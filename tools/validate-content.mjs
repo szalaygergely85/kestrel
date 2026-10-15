@@ -105,6 +105,7 @@ const CLASSIC_SCRIPTS = [
   '../design/models/voxel_wildlife.js', // QL-06: ASSETS.models.crow (Rook, world_m1 entity "rook"), same load position as game/index.html.
   '../design/models/voxel_eat_clips.js', // SWIM-ASSETS-01: eat clips, after the model files, same load position as game/index.html.
   '../design/models/voxel_seamonster.js', // SWIM-ASSETS-01: ASSETS.models.seaMonster (world_m1 entity "seaMonster").
+  '../design/models/sb_objects.js', // OB-191: gravestone1..3(+Weathered) for the cemetery (game/index.html needs the same script tag: shared hot file, main session adds it).
   '../design/models/m3_props.js', // US-078d: the practice target pell (content/levels/tower.level.json prop "practiceTarget"), same load position as game/index.html.
   '../design/models/far_tower.js',
   '../design/models/ferrum_lights.js',
