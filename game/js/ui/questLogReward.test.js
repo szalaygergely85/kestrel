@@ -32,4 +32,10 @@ assert.ok(!t2 || t2.kind !== 3 || t2.x !== 1 || book.nextOffers().length === 0 |
 book.accept('burl.boars');
 let seen = false; for (let k = 0; k < 6 && !seen; k++) { seen = text().some(l => l === 'Reward: 5 coins, potion.hp x2'); log.handleKey('KeyS'); }
 assert.ok(seen, 'reward line (coins + items)');
+{ // real display names (as main.js: items.defs[id].name)
+  await import('../../../design/palette.js'); await import('../../../design/items.js'); const defs2 = globalThis.ASSETS.items.defs;
+  const nm = defs2['potion.hp'] && defs2['potion.hp'].name; assert.ok(nm && nm !== 'potion.hp', 'potion.hp has a real name');
+  const log2 = createQuestLogScreen(book, { giverName: id => names[id] || id, itemName: id => (defs2[id] && defs2[id].name) || id });
+  let ok2 = false; for (let k = 0; k < 6 && !ok2; k++) { log2.open(); log2.draw(createUiLayer({ cols: 160 })); ok2 = log2.snapshot().right.some(l => l === 'Reward: 5 coins, ' + nm + ' x2'); log2.handleKey('KeyS'); }
+  assert.ok(ok2, 'reward line uses the real item name: ' + nm); }
 console.log('questLogReward PASS');

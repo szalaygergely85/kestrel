@@ -4,12 +4,13 @@
 export function createOfferToast(book, giverName) {
   const seen = new Set();
   let ver = -1;
+  const scratch = []; // reused by poll(): 0 alloc per frame; valid until the next poll()
   const list = () => (book && book.nextOffers ? book.nextOffers() : []);
   return {
     seed() { seen.clear(); ver = book ? book.version : -1; for (const o of list()) seen.add(o.id); },
     /** @returns {string[]} toast lines for offers that are new since the last seed()/poll() */
     poll() {
-      const out = [];
+      const out = scratch; out.length = 0;
       if (!book || book.version === ver) return out; // cheap per-frame call: only re-derive when the book changed
       ver = book.version;
       for (const o of list()) {

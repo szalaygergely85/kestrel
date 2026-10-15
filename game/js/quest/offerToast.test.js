@@ -19,3 +19,6 @@ assert.deepEqual(t.poll(), [], 'an offer that reappears does not re-toast');
 t.seed(); book.offers = [{ id: 'q.c', giver: 'x', from: 'q' }]; book.version++;
 assert.equal(t.poll().length, 1, 'after a reload seed, only truly new offers toast');
 console.log('ALL PASS');
+// allocProbe: unchanged-version polls return the one scratch array (no new [] per frame)
+{ const b2 = { version: 1, nextOffers() { return []; } }, t2 = createOfferToast(b2, name); t2.seed();
+  const a = t2.poll(); for (let i = 0; i < 1000; i++) assert.equal(t2.poll(), a, 'poll reuses one scratch array'); assert.equal(a.length, 0); }

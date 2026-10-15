@@ -30,3 +30,19 @@ const off = run('crypt', 300, { enabled: false }); assert.deepEqual([off.c.out.w
 assert.equal(run('forest', 100, {}).c.out.w, 0);
 assert.equal(creepFlicker({ hzMin: 8, hzMax: 12, amount: 0.15, jitter: 0.05 }, 2).amount, 0.3);
 console.log('creep.test OK');
+
+// main wiring helpers: no compounding, hour rewrite resets, mist cap
+{
+  const { applyCreepLights, creepMistDensity } = await import('./creep.js');
+  const ls = { ambient: new Float32Array([1, 1, 1]), flickerAmount: new Float32Array([0.2, 0.2, 9]), count: 2 }, st = { amb: 1, fl: 1 };
+  const out = { ambientScale: 0.5, flickerMul: 2 };
+  applyCreepLights(ls, out, st); applyCreepLights(ls, out, st);
+  assert.ok(Math.abs(ls.ambient[0] - 0.5) < 1e-6 && Math.abs(ls.flickerAmount[0] - 0.4) < 1e-6 && ls.flickerAmount[2] === 9);
+  ls.ambient.fill(1); st.amb = 1; applyCreepLights(ls, out, st); assert.ok(Math.abs(ls.ambient[1] - 0.5) < 1e-6);
+  out.ambientScale = 1; out.flickerMul = 1; applyCreepLights(ls, out, st); assert.ok(Math.abs(ls.ambient[2] - 1) < 1e-6 && Math.abs(ls.flickerAmount[1] - 0.2) < 1e-6);
+  applyCreepLights(null, out, st);
+  assert.equal(creepMistDensity(0, 1), 0); assert.equal(creepMistDensity(0.1, 1), 0.2); assert.equal(creepMistDensity(0.05, 0), 0.05);
+}
+
+{ const { createFirstEntry } = await import('./creep.js'); const f = createFirstEntry();
+  assert.ok(f.first('crypt') && !f.first('crypt') && f.first('cellar') && !f.first(null) && !f.first(undefined)); }

@@ -60,3 +60,18 @@ export function createUnderCreep(particles, opts = {}) {
     dispose() { if (handle >= 0 && particles) particles.release(handle); handle = -1; },
   };
 }
+
+/** Main wiring helper (tiny, testable). `st` = {amb:1, fl:1} keeps the scale already applied so repeated steps never compound.
+ *  Call `st.amb = 1` right after anything rewrites lightSet.ambient (hour step). Returns nothing; no-op when lightSet is null. */
+export function applyCreepLights(lightSet, out, st) {
+  if (!lightSet) return;
+  const a = out.ambientScale / st.amb;
+  if (a !== 1) { const A = lightSet.ambient; A[0] *= a; A[1] *= a; A[2] *= a; st.amb = out.ambientScale; }
+  const f = out.flickerMul / st.fl;
+  if (f !== 1) { const F = lightSet.flickerAmount; for (let i = 0; i < lightSet.count; i++) F[i] *= f; st.fl = out.flickerMul; }
+}
+/** Post mist density for this frame: base * (1 + 1.5*creep), capped 0.2; base 0 (no mist preset) stays 0. */
+export const creepMistDensity = (base, creepMist) => (base > 0 ? Math.min(0.2, base * (1 + 1.5 * creepMist)) : base);
+
+/** (c) once-per-site-per-session chill cue: first(key) is true the first time a non-null key is seen (key = structure id/name, else ambience). */
+export function createFirstEntry() { const seen = new Set(); return { first(key) { if (key == null || seen.has(key)) return false; seen.add(key); return true; } }; }

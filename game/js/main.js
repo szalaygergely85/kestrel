@@ -175,7 +175,7 @@ import { createQuickbarView } from './quest/quickbarView.js'; // EQ-12 + D-068
 import { createEquipPlay, registerGearItems } from './quest/equipPlay.js'; // EQ-07/09: LMB/RMB/Q routing, bow draw, pick-up
 import { createStubItemSim } from './quest/sim/hands.js'; // EQ-07: no-op sims so the router arms shield / bow
 import { EQUIP_VIEW_MODELS, loadShieldView, presentShield, loadBowView, presentBow, drawBlockSpark, createArrowView } from './quest/equipView.js'; // EQ-07/09
-import { playShieldClank, playBowShot } from './audio/sfx.js'; // EQ-07/09
+import { playShieldClank, playBowShot, playRelayHum } from './audio/sfx.js'; // EQ-07/09
 import { createTargetables } from './quest/sim/targetables.js';
 import { FIREBALL_CFG } from './quest/spellConfig.js';
 import { featuresFromParams, fireballOn } from './quest/features.js'; // D-065: fireball off unless ?fireball=1
@@ -185,6 +185,7 @@ import { createParticleHooks, applyPropEmitters } from './quest/particleHooks.js
 import { createWaterfallHooks } from './quest/waterfallHooks.js';
 import { createAmbientMotes } from './quest/ambient.js';
 import { createFireflies, fireflyProbes } from './fx/fireflyWire.js'; // FIREFLY-NIGHT-01
+import { createUnderCreep, applyCreepLights, creepMistDensity, createFirstEntry } from './quest/under/creep.js'; // UNDER-LIGHT-CREEP-01
 import { VITALS_DEFAULTS } from './quest/sim/vitalsConfig.js';
 import { createHitStop, hitStopEnabled } from './fx/hitStop.js'; // HITSTOP-01 (lane B1)
 import { createDeathFlow, deathFlowEnabled } from './fx/deathFade.js'; // DEATH-FLOW-01 part 1 (lane B1)
@@ -1390,7 +1391,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
   }
   let invWasLocked = false; // pointer lock state when the pack opened (re-lock on close)
   let waterfallHooks = null;
-  let ambientMotes = null, fireflies = null; // FIREFLY-NIGHT-01: night-only, same flag as ambientMotes (off on Low), indoor/underground probe inside
+  const creepFirst = createFirstEntry(); let underCreep = null, creepSt = { amb: 1, fl: 1 }, creepMistBase = 0; let ambientMotes = null, fireflies = null; // FIREFLY-NIGHT-01: night-only, same flag as ambientMotes (off on Low), indoor/underground probe inside
   let lightSet = null; let giWire = null; const giCfg = resolveGI(params, resolvedQuality && resolvedQuality.name); // GI-PROBE-06: baked bounce light; `?gi=0` = null = today's frames
   // US-006: built from the loaded world's level.def.lights, below
   const atmosLast = { w: null }; engine.events.on('world:loaded', () => { atmosLast.w = null; }); // REV-MAIN: forces a snap on the next atmosphere step
@@ -1565,7 +1566,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
           shadowHour = ((shadowHour % 24) + 24) % 24;
           const gMoon = applySunPair(world, lightSet, shadowHour, hq, worldSunPath, sunEnabled); if (giWire) giWire.clock(hq, gMoon); // GI-PROBE-06: mix on hour step only // AUD2-02: ONE sun/moon decision for the stepped light/shadow sun and the smooth world.sun
           const L = blendLook(P, hq, P.daySchedule);
-          if (lightSet) { const hu = P.hue[L.ambient]; lightSet.ambient[0] = hu[0] * L.ambientI; lightSet.ambient[1] = hu[1] * L.ambientI; lightSet.ambient[2] = hu[2] * L.ambientI; }
+          if (lightSet) { const hu = P.hue[L.ambient]; lightSet.ambient[0] = hu[0] * L.ambientI; lightSet.ambient[1] = hu[1] * L.ambientI; lightSet.ambient[2] = hu[2] * L.ambientI; creepSt.amb = 1; }
         });
         clockDriver.update(clockHour(world.state, clockCfg), true);
         { const G = window.ASSETS.levels.world_geo, far = window.ASSETS.levels.overworld_far, f = P.fog && (P.fog.farBase || P.fog.far); // ENV-03: only with BIOME_LOOK + geo biomes + terrain (and a running clock: capture/gpucompare never get a driver)
@@ -1607,6 +1608,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       waterfallHooks = waterfallPreset ? createWaterfallHooks(world, engine.particles, waterfallPreset) : null;
       if (ambientMotes) ambientMotes.dispose();
       if (fireflies) fireflies.dispose();
+      if (underCreep) underCreep.dispose(); creepSt = { amb: 1, fl: 1 }; underCreep = createUnderCreep(engine.particles, { enabled: params.get('creep') !== '0' && !isCaptureOrBench && params.get('capture') !== '1', quality: resolvedQuality && resolvedQuality.name, rgb: assets.palette.rgb }); // UNDER-LIGHT-CREEP-01
       // S8-B1-18 (closes US-019): ambient dust motes, off with ?ambient=0 and on the Low preset.
       ambientMotes = createAmbientMotes(world, engine.particles, { enabled: params.get('ambient') !== '0' && !isCaptureOrBench && params.get('capture') !== '1' && !(resolvedQuality && resolvedQuality.name === 'low'), rgb: assets.palette.rgb, palette: assets.palette });
       fireflies = createFireflies(fireflyProbes(world, assets.palette), engine.particles, { enabled: params.get('ambient') !== '0' && !isCaptureOrBench && params.get('capture') !== '1' && !(resolvedQuality && resolvedQuality.name === 'low') }); // FIREFLY-NIGHT-01
@@ -2322,6 +2324,8 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       if (particleHooks) particleHooks.step(playerHandle.data);
       if (waterfallHooks) waterfallHooks.step();
       if (ambientMotes) { const pt = playerHandle.data.transform; ambientMotes.step(pt.x, pt.y, pt.z); if (fireflies) fireflies.step(pt.x, pt.y); } // S8-B1-18: position lives on .transform
+      if (underCreep && playerHandle) { const pt = playerHandle.data.transform, st = world.structureAt(pt.x, pt.y); const amb = (st && st.level && st.level.ambience) || null; underCreep.step(amb, pt.x, pt.y, pt.z); if (amb && underCreep.out.w > 0 && creepFirst.first(st.id || st.name || amb)) playRelayHum(); // chill cue, once per site per session
+        applyCreepLights(lightSet, underCreep.out, creepSt); } // UNDER-LIGHT-CREEP-01
       entityEmitters.sync(); engine.particles.step();
       if (waterfallHooks) waterfallHooks.afterStep();
       lap(SEC.physics);
@@ -2564,7 +2568,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       // cells right after its own sprite loop).
       engine.particleLayer.build(engine.particles, cam, rt, fb.lights, engine.world, assets.palette, renderer);
       sprites.render(fb, engine.world, cam, fbView ? (handFxOn ? handFbExtra : fbView.extra) : undefined); // US-030c (ARCH CHANGES item 1): after the surfaces, before present()
-      if (postCfg && postV !== atmosV) { postV = atmosV; composePost(atmosState, postCfg, postState); } if (postCfg && wgPipeline && wgPipeline._spritesPass) wgPipeline._spritesPass.post = postState; // POST-STACK-01c: compose for both paths (the GPU sprite pass reads the same state); the JS finish runs below, after the fade
+      if (postCfg && postV !== atmosV) { postV = atmosV; composePost(atmosState, postCfg, postState); creepMistBase = postState.mist[3] > 0 ? postState.mist[0] : 0; } if (postCfg && underCreep && creepMistBase > 0) postState.mist[0] = creepMistDensity(creepMistBase, underCreep.out.mist); if (postCfg && wgPipeline && wgPipeline._spritesPass) wgPipeline._spritesPass.post = postState; // POST-STACK-01c: compose for both paths (the GPU sprite pass reads the same state); the JS finish runs below, after the fade
       // US-017 ARCH CHANGES #1 item 2: CPU-path scene fade, moved here from
       // compositor.js so sprites fade too (oracle parity with the GPU
       // composite pass, which fades every non-mask cell in one pass). Skips
