@@ -119,6 +119,7 @@ export function createStableState() {
     aaGlyph: true, // OB-198 (1): glyph hysteresis +-1 level (off = hold only at equal level); ?aaglyph=0
     aaMesh: true, // OB-198 (2): KIND_MESH history survives a planeId change when the material matches; ?aamesh=0
     aaVm: true, // AA-07a: kind-8 models take history (view model: same cell, key objectId+mat; world props: material key + reprojection); ?aavm=0
+    aaAnchor: true, // AA-09: a both-255 hold of a static surface re-anchors (writes the CURRENT u/v) so cumulative drift cannot re-roll it; ?aaanchor=0
     aaJoint: true, // AA-07b: a line<->ramp mismatch holds the history glyph while the joint coverage is 1/4..3/4; ?aajoint=0
     footK: STABLE_FOOT_K, // tests may set 0 to isolate the texel limit
     _pcell: new Float64Array(3), _pw: new Float64Array(3), _pc: new Float64Array(3),
@@ -267,7 +268,12 @@ export function stabilize(inp, hist, out, st) {
         const a = hist.fg[h], b = inp.fg[i];
         const snapped = Math.abs(((b >> 16) & 255) - ((a >> 16) & 255)) > CHANNEL_SNAP || Math.abs(((b >> 8) & 255) - ((a >> 8) & 255)) > CHANNEL_SNAP
           || Math.abs((b & 255) - (a & 255)) > CHANNEL_SNAP;
-        if (!snapped) { out.glyph[i] = hist.glyph[h]; out.u[i] = hist.u[h]; out.v[i] = hist.v[h]; out.held255[i] = 1; }
+        if (!snapped) {
+          out.glyph[i] = hist.glyph[h]; out.held255[i] = 1;
+          // AA-09: static surface (same planeId, mesh also same material, not a model) re-anchors: keep the CURRENT u/v already in out; else the old history anchor
+          const reAnchor = st.aaAnchor && vmTag === 0 && kind !== KIND_MODEL && hist.planeId[h] === inp.planeId[i] && (kind !== KIND_MESH || matSame);
+          if (!reAnchor) { out.u[i] = hist.u[h]; out.v[i] = hist.v[h]; }
+        }
         continue;
       }
       const hold = st.aaGlyph ? Math.abs(lvC - lvP) <= 1 : lvC === lvP;

@@ -22,6 +22,7 @@ let pass = 0, fail = 0;
 const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
+let ANCHOR = false; // AA-09: the older anchor tests run with the re-anchor off (identical to the old behaviour)
 const COLS = 40, ROWS = 20;
 const GRID = { cols: COLS, rows: ROWS, pxCellW: 8, pxCellH: 16 };
 const cam0 = { x: 0, y: 0, z: 1.6, yawDeg: 0, pitchDeg: 0 };
@@ -167,7 +168,7 @@ function run(st, cam, inpFn, hist, flags) {
   ok('UV limit constant is 1.0/detail', UV_LIM_TEXELS === 1 && LIM === 0.0625);
   // setup: static camera, history = frame A exactly; `mut(inp, hist)` edits cells, then one stabilize
   const once = (mut, flags) => {
-    const st = createStableState(); st.footK = 0;
+    const st = createStableState(); st.footK = 0; st.aaAnchor = ANCHOR;
     beginFrame(st, cam0, GRID);
     const h = colHist(wallInput(st));
     beginFrame(st, cam0, GRID, flags);
@@ -212,7 +213,7 @@ function run(st, cam, inpFn, hist, flags) {
   ok('hsrc = history cell on a reached lookup, -1 before', o.hsrc[at(2, 3)] === at(2, 3) && r2.out.hsrc[at(2, 6)] === -1);
 
   // slow-moving surface: u advances 0.3*lim per frame; the anchor stays on the first u, so the hold ends after 3 frames
-  const st = createStableState(); st.footK = 0;
+  const st = createStableState(); st.footK = 0; st.aaAnchor = false;
   beginFrame(st, cam0, GRID);
   const a0 = wallInput(st);
   a0.level.fill(LEVEL_NONE);
@@ -230,6 +231,34 @@ function run(st, cam, inpFn, hist, flags) {
     if (seq[seq.length - 1] === 'fresh') break;
   }
   ok('slow drift: held 3 frames, refreshed once cumulative drift >= lim', seq.join() === 'hold,hold,hold,fresh', seq.join());
+}
+
+// 4b. AA-09: re-anchor of a both-255 hold on a static surface
+{
+  const LIM = UV_LIM_TEXELS / DEFAULT_DETAIL, at = (r, c) => r * COLS + c;
+  const slide = (aaAnchor, kind, frames = 40, fgStep = 0) => {
+    const st = createStableState(); st.footK = 0; st.aaAnchor = aaAnchor;
+    beginFrame(st, cam0, GRID);
+    const mk = (k) => { const inp = wallInput(st); inp.level.fill(LEVEL_NONE); inp.kind.fill(kind); for (let i = 0; i < COLS * ROWS; i++) { inp.u[i] += k * 0.3 * LIM; inp.glyph[i] = 7 + k; if (fgStep) { const b = (100 + k * fgStep) & 255; inp.fg[i] = (b << 16) | (b << 8) | b; } } return inp; };
+    let hist = createStableBuffers(COLS, ROWS), out = createStableBuffers(COLS, ROWS);
+    stabilize(mk(0), createStableBuffers(COLS, ROWS), hist, st); // frame 0: invalid
+    const g0 = hist.glyph[at(10, 10)];
+    let held = 0, fresh = 0;
+    for (let k = 1; k <= frames; k++) {
+      beginFrame(st, cam0, GRID);
+      stabilize(mk(k), hist, out, st);
+      if (out.glyph[at(10, 10)] === g0) held++; else fresh++;
+      const t = hist; hist = out; out = t;
+    }
+    return { held, fresh };
+  };
+  const on = slide(true, KIND_WALL), off = slide(false, KIND_WALL), mdl = slide(true, 8), msh = slide(true, KIND_MESH);
+  ok('AA-09 aaAnchor on: static surface panned 40 x 0.3*lim holds all frames', on.held === 40, JSON.stringify(on));
+  ok('AA-09 aaAnchor off: refreshes after cumulative drift (old behaviour)', off.fresh > 5 && off.held < 40, JSON.stringify(off));
+  ok('AA-09 model (kind 8) keeps the old anchor: refreshes', mdl.fresh > 5, JSON.stringify(mdl));
+  ok('AA-09 mesh with same plane+material re-anchors', msh.held === 40, JSON.stringify(msh));
+  const snap = slide(true, KIND_WALL, 6, 60);
+  ok('AA-09 fg snap still re-rolls the glyph', snap.fresh === 6, JSON.stringify(snap));
 }
 
 // 5. ortho pose: static identity, 1-cell pan

@@ -170,7 +170,12 @@ fn stableCell(cell: vec2i) -> SCell {
     let sa = packRgb(hf.x, hf.y, hf.z);
     let snapped = abs(i32((fgCur >> 16u) & 255u) - i32((sa >> 16u) & 255u)) > u.snap || abs(i32((fgCur >> 8u) & 255u) - i32((sa >> 8u) & 255u)) > u.snap
       || abs(i32(fgCur & 255u) - i32(sa & 255u)) > u.snap;
-    if (!snapped) { o.glyph = byteOf(hf.w); o.ub = hh.y; o.vb = hh.z; }
+    if (!snapped) {
+      o.glyph = byteOf(hf.w);
+      // AA-09 (aaFlags bit 4): static surface (same planeId, mesh also same material, not a model) re-anchors = keeps the current u/v; else the history anchor
+      let reAnchor = (u.aaFlags & 16) != 0 && vmTag == 0u && kind != ${KIND_MODEL}u && hh.x == gi.x && (kind != ${KIND_MESH}u || matSame);
+      if (!reAnchor) { o.ub = hh.y; o.vb = hh.z; }
+    }
     return o;
   }
   // OB-198 (1): glyph hysteresis (aaFlags bit 0); off = hold only at equal level

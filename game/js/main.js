@@ -522,7 +522,7 @@ const pointShadowOpt = parsePointShadows(params, resolvedQuality && resolvedQual
 const tCR = bootNow();
 const { rt: builtRt, pipeline: wgPipeline, device: gpuDevice, info: rendererInfo } = await createRenderer({ canvas, cols: gridResult.cols, rows: gridResult.rows, backend: params.get('backend') || 'webgpu', onWebGpuMissing,
   force2d: params.get('force2d') === '1', gpu: params.get('gpu') !== '0', rays, resolveBandM: bootOpts.raysFarM, terrainEnabled: params.get('terrain') !== '0',
-  aaCov: params.get('aacov') !== '0', aaHyst: params.get('aahyst') !== '0', aaGlyph: params.get('aaglyph') !== '0', aaMesh: params.get('aamesh') !== '0', aaVm: params.get('aavm') !== '0', aaJoint: params.get('aajoint') !== '0', // AA-01b: ?aacov=0 / ?aahyst=0 switch the 38.82 AA passes off
+  aaCov: params.get('aacov') !== '0', aaHyst: params.get('aahyst') !== '0', aaGlyph: params.get('aaglyph') !== '0', aaMesh: params.get('aamesh') !== '0', aaVm: params.get('aavm') !== '0', aaJoint: params.get('aajoint') !== '0', aaAnchor: params.get('aaanchor') !== '0', // AA-01b: ?aacov=0 / ?aahyst=0 switch the 38.82 AA passes off
   stable: params.get('stable') !== '0', // US-073c (38.25) + OB-073 D (owner 2026-10-12): temporal glyph stability, default ON (`?stable=0` off); ?gpucompare=1 builds it for the `stable` row (the pass stays off for every other row)
   shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0', occl: occlOpt.occl, pointShadows: pointShadowOpt.pointShadows, pointShadowLevel: pointShadowOpt.pointShadowLevel, glow: parseGlow(params, resolvedQuality && resolvedQuality.name), // EMIS-03/04: emissive bleed + halo (High/Ultra, ?emissive=); OCCL-MAIN-01: `?occl=1` two-phase HZB occlusion, default OFF, WebGPU only
   onCompileProgress: (done, total) => { bootStages.enter('pipelines'); if (bootCard) bootCard.setStageLines(bootStages.cardText()); if (bootProg) bootProg.count('compile', done, total); } }); // WG-4a: `?gpucull=0` = CPU instance cull on WebGPU; WG-3d: the WebGPU pipeline needs the same sun-shadow options as the engine
@@ -2513,7 +2513,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         const st = params.get('stable') === '1';
         if (wgPipeline.setStable) wgPipeline.setStable(st);
         const r = await runLivePoses(flickerLive, { world: engine.world, wg: wgPipeline, cols: rt.cols, rows: rt.rows, pxCellW: rt.pxCellW, pxCellH: rt.pxCellH, capture, getGrid: () => ({ cols: rt.cols, rows: rt.rows, pxCellW: rt.pxCellW, pxCellH: rt.pxCellH }) }); // AA-01c
-        r.stable = st; r.rays = engine.rays; r.stableOn = !!wgPipeline._stableOn; r.stableRan = !!wgPipeline._stableRan; r.aaCov = params.get('aacov') !== '0'; r.aaHyst = params.get('aahyst') !== '0'; r.aaGlyph = params.get('aaglyph') !== '0'; r.aaMesh = params.get('aamesh') !== '0'; r.aaVm = params.get('aavm') !== '0'; r.aaJoint = params.get('aajoint') !== '0';
+        r.stable = st; r.rays = engine.rays; r.stableOn = !!wgPipeline._stableOn; r.stableRan = !!wgPipeline._stableRan; r.aaCov = params.get('aacov') !== '0'; r.aaAnchor = params.get('aaanchor') !== '0'; r.aaHyst = params.get('aahyst') !== '0'; r.aaGlyph = params.get('aaglyph') !== '0'; r.aaMesh = params.get('aamesh') !== '0'; r.aaVm = params.get('aavm') !== '0'; r.aaJoint = params.get('aajoint') !== '0';
         window.__flicker = r;
         console.log('[flicker] live poses ' + JSON.stringify(r));
       } catch (e) { console.error('[flicker] failed: ' + (e && e.message)); window.__flicker = { error: String(e && e.message) }; }
