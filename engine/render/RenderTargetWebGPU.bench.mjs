@@ -1,6 +1,6 @@
 // PERF-10: uploadChangedRows old (single span) vs new (gap-merged ranges). Fake device = texture memory; proves identical final bytes.
-import assert from 'node:assert/strict';
-import { uploadChangedRows, makeUploadState } from '../engine/render/RenderTargetWebGPU.js';
+const assert = { deepEqual(a, b) { if (a.length !== b.length || a.some((v, i) => v !== b[i])) throw new Error('buffers differ'); } };
+import { uploadChangedRows, makeUploadState } from './RenderTargetWebGPU.js';
 function oldUpload(d, tex, src, cols, rows, st) {
   const n = cols * rows, odd = !src || !src.buffer || (src.byteOffset & 3) !== 0 || src.length !== n * 4;
   if (odd || st.tex !== tex || st.src !== src || !st.prev || st.prev.length !== n) {
