@@ -104,7 +104,7 @@ export function flickerStep(prevGI, prevFg, curGI, curFg, cols, rows, out, prevB
 // Inputs: {GI, fg, bg?, Depth} readbacks (Depth channel 0 = f32 bits, `readbackGeometry().Depth`); camPrev/camCur =
 // {x,y,z,yawDeg,pitchDeg,vfovDeg?}; grid = {cols, rows, pxCellW, pxCellH}.
 import { createPitchedTerms, pitchedTermsInto, unprojectPitched, worldToCell } from '../projection.js';
-import { levelOfByte, covOfByte, uvDriftLimit, CHANNEL_SNAP, DEFAULT_DETAIL } from '../temporalStable.js';
+import { levelOfByte, covOfByte, uvDriftLimit, CHANNEL_SNAP, DEFAULT_DETAIL, GRAZE_K, GRAZE_CAP } from '../temporalStable.js';
 import { KIND_MESH, KIND_MODEL } from '../GBuffer.js';
 
 export const REPROJ_DEPTH_TOL = 0.05;
@@ -227,6 +227,14 @@ function lineAtNeighbour(fg, i, cols, rows, gcls, want) {
   return false;
 }
 // `terms.gcls` (glyphClassTable) and `terms.octave(frame, cellIndex)` (octave 0..3 of coverV/(maxCover*gv), diag-only) are optional.
+// AA-26 (OB-208): diag twin of temporalStable.js grazeUvLimit on the measured frame's GI/GA (f64)
+function diagGrazeLim(d, i, cols, rows, kind, mat, lim) {
+  const x = i % cols, y = (i - x) / cols, u0 = bitsToF32(d.GA[i * 4]), v0 = bitsToF32(d.GA[i * 4 + 1]);
+  const st = (j) => { const g = d.GI[j * 4 + 1]; if ((g & 0xff) !== kind || (g >>> 16) !== mat) return Infinity; const du = bitsToF32(d.GA[j * 4]) - u0, dv = bitsToF32(d.GA[j * 4 + 1]) - v0; return Math.sqrt(du * du + dv * dv); };
+  let gx = Math.min(x > 0 ? st(i - 1) : Infinity, x < cols - 1 ? st(i + 1) : Infinity), gy = Math.min(y > 0 ? st(i - cols) : Infinity, y < rows - 1 ? st(i + cols) : Infinity);
+  if (gx === Infinity) gx = 0; if (gy === Infinity) gy = 0;
+  const g = Math.min(GRAZE_K * Math.max(gx, gy), GRAZE_CAP * lim); return g > lim ? g : lim;
+}
 export function flickerGlyphReasons(d, p, hmap, cols, rows, terms, cnt) {
   const gcls = terms.gcls || DEFAULT_GCLS, octave = terms.octave || null;
   let n = 0, flips = 0;
@@ -264,8 +272,11 @@ export function flickerGlyphReasons(d, p, hmap, cols, rows, terms, cnt) {
         const du = bitsToF32(d.GA[o]) - bitsToF32(p.hist[h * 4 + 1]), dv = bitsToF32(d.GA[o + 1]) - bitsToF32(p.hist[h * 4 + 2]);
         const vd = bitsToF32(d.Depth[i]);
         const lim = uvDriftLimit(vd, terms.tanHalfX, terms.tanHalfY, cols, rows, DEFAULT_DETAIL, terms.ortho === 1), dUV = Math.sqrt(du * du + dv * dv);
-        if (dUV >= lim) { r = 'uvDrift'; const b = 'uv' + (dUV < 2 * lim ? '<2' : dUV < 4 * lim ? '<4' : '4+'); cnt.sub[b] = (cnt.sub[b] || 0) + 1;
-          const lk = (lvC === lvP ? 'uvLv=:' : 'uvLv!:') + kind; cnt.sub[lk] = (cnt.sub[lk] || 0) + 1; const mk = 'uvMat:' + kind + ':' + mat; cnt.sub[mk] = (cnt.sub[mk] || 0) + 1; }
+        const gl = dUV >= lim ? diagGrazeLim(d, i, cols, rows, kind, mat, lim) : lim; // AA-26: same limit as the stable pass (AA-20 graze)
+        if (dUV >= gl) { r = 'uvDrift'; const b = 'uv' + (dUV < 2 * lim ? '<2' : dUV < 4 * lim ? '<4' : '4+'); cnt.sub[b] = (cnt.sub[b] || 0) + 1;
+          const lk = (lvC === lvP ? 'uvLv=:' : 'uvLv!:') + kind; cnt.sub[lk] = (cnt.sub[lk] || 0) + 1; const mk = 'uvMat:' + kind + ':' + mat; cnt.sub[mk] = (cnt.sub[mk] || 0) + 1;
+          const gk = (gl <= lim ? 'gz0:' : dUV < 2 * gl ? 'gz1-2:' : 'gz2+:') + kind; // AA-26: vs the AA-20 graze limit
+          cnt.sub[gk] = (cnt.sub[gk] || 0) + 1; const pk = (p.hist[h * 4] === d.GI[o] ? 'uvPl=:' : 'uvPl!:') + kind; cnt.sub[pk] = (cnt.sub[pk] || 0) + 1; }
         else if (joint) r = 'replayHold';
         else if (c255) {
           let snapped = false;

@@ -74,6 +74,7 @@ const TIE_EPS_UV = 1e-4;
  * @property {Uint8Array} [edge] - 1 = edge cell (final != shade): passed through
  * @property {Uint8Array} [water] - 1 = water-layer cell: always fresh
  * @property {Float32Array} [detail]
+ * @property {Uint8Array} [soft] - AA-26: 1 = soft-edge leaf material (kind 9 + F_SOFT_EDGE)
  */
 /**
  * @typedef {Object} StableHist  last frame's output (also the shape of StableOut minus `tie`)
@@ -142,6 +143,7 @@ export function createStableState() {
     aaVm: true, // AA-07a: kind-8 models take history (view model: same cell, key objectId+mat; world props: material key + reprojection); ?aavm=0
     aaAnchor: true, // AA-09: a both-255 hold of a static surface re-anchors (writes the CURRENT u/v) so cumulative drift cannot re-roll it; ?aaanchor=0
     aaGraze: true, // AA-20 (OB-208): UV drift limit follows the cell's own UV footprint on grazing surfaces (road ahead); ?aagraze=0
+    aaLeafUv: true, // AA-26 (OB-208): soft-edge leaf cells (inp.soft) skip the UV drift test - their glyph dice is world-keyed (AA-15), card u/v is unrelated; set per frame from fogShapeCtx
     aaHue: true, // AA-23 (OB-208): colour snap per colour, not per channel (no hue split); ?aahue=0
     aaVox: true, // AA-21 (OB-208): a world voxel prop (kind 8, same planeId + material) re-anchors its both-255 hold like other static surfaces; ?aavox=0
     aaEdge: true, // AA-18 (OB-208): edge cells (final != shade) take history like any cell (glyph hold) instead of passing through; ?aaedge=0
@@ -281,7 +283,9 @@ export function stabilize(inp, hist, out, st) {
       // AA-07b: a line<->ramp mismatch on a cell with joint coverage 1/4..3/4 is the 50 pct joint vote flipping: hold the history glyph
       const jointHold = c255 !== p255 && st.aaJoint && inp.cov && inp.cov[i] >= 1 && inp.cov[i] <= 3;
       if (c255 !== p255 && !jointHold) continue; // mixed ramp/non-ramp: a real pattern edge, always fresh
-      if (vmTag === 0) {
+      // AA-26 (OB-208): a soft-edge leaf (AA-15 world dice) keeps history on kind + material + reprojection; its card u/v says nothing about the glyph
+      const leafHold = st.aaLeafUv && !ortho && kind === KIND_MESH && matSame && inp.soft && inp.soft[i] === 1;
+      if (vmTag === 0 && !leafHold) {
         const detail = (inp.detail ? inp.detail[i] : 0) || DEFAULT_DETAIL;
         const du = inp.u[i] - hist.u[h], dv = inp.v[i] - hist.v[h];
         const dUV = Math.sqrt(du * du + dv * dv);
