@@ -450,6 +450,9 @@ export function validateContent(ASSETS, opts = {}) {
       }
       if (typeof voxelModel === 'string') {
         check(!!resolveModel(models, voxelModel, undefined) || addonChars.has(voxelModel), `${base}.entities[${e.id}].components.voxel.model`, `model "${voxelModel}" not found in ASSETS.models`);
+        // VISQA-15: a sprite (glyph-grid) model under components.voxel draws nothing (VoxelPool warns) - use components.sprite.
+        const vm = resolveModel(models, voxelModel, undefined);
+        check(!vm || !!vm.voxel || !!vm.mesh || !!vm.meshOnly || !(vm.frames || vm.anims || vm.animations && !vm.voxel) || addonChars.has(voxelModel), `${base}.entities[${e.id}].components.voxel.model`, `model "${voxelModel}" is a sprite model; use components.sprite`);
       }
       // ED-SCALE-1 (34.1): `scale` inline shorthand or `transform.scale`.
       const rawScale = e.scale !== undefined ? e.scale : (e.transform && e.transform.scale);

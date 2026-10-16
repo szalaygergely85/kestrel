@@ -21,6 +21,7 @@ export const SPOTS = [
   ['cliff', 1552, 468, 0, 12, 'northwood hillside cliff face (~9 m rise at y 454-458), looking up from below (VISQA-09; the old 1250,596 spot stood in the outlet river)'],
   ['lake-shore', 1215, 547, 0, 0, 'Glasswater south shore'],
   ['burl-home', 1404, 1019, 0, 4, "Burl's new home (1404,1010)"],
+  ['smoke-fire', 958, 1011, 0, 6, 'VISQA-15: smokeFire1 brazier at the base of the goblin smoke plume (958,1004)'],
 ];
 // VISQA-10 set 2. Interiors: [name, x, y, zFloor (null = ground snap), yawDeg, pitchDeg, note] (world coords from the level origins in world_m1)
 export const INTERIORS = [

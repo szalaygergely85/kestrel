@@ -46,7 +46,7 @@ export function ensureGoblinCamps(world, defs, terrain) {
     }
     for (let k = 0; k < c.props.length; k++) {
       const p = c.props[k];
-      world.addEntity({ id: c.id + '.prop' + k, type: 'prop', transform: { x: c.at[0] + p.at[0], y: c.at[1] + p.at[1], z: terrain && terrain.groundAt ? terrain.groundAt(c.at[0] + p.at[0], c.at[1] + p.at[1]) : 0, yaw: p.yaw || 0 }, components: { voxel: { model: p.model } } });
+      world.addEntity({ id: c.id + '.prop' + k, type: 'prop', transform: { x: c.at[0] + p.at[0], y: c.at[1] + p.at[1], z: terrain && terrain.groundAt ? terrain.groundAt(c.at[0] + p.at[0], c.at[1] + p.at[1]) : 0, yaw: p.yaw || 0 }, components: p.model === 'brazier' ? { sprite: { model: p.model, anim: 'burn', loop: true } } : { voxel: { model: p.model } } });   // VISQA-15: brazier is a sprite model (a voxel component drew nothing)
     }
   }
   return n;
