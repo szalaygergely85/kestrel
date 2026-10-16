@@ -1919,3 +1919,5 @@ Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-
   Files: game/js/dev/flickerLive.js (+test), game/js/main.js (1 line: place hook), tools/flicker-gate.mjs, docs/test-reports/flicker-baseline.json. Suites flicker* 11 PASS, check-deps OK.
 - 2026-10-16 kestrel-4 PLAYER-LEVEL-01 + SPELL-R8 -> po-review: game/js/quest/sim/power.js (+test, +alloc test 0 B/call), statsConfig POWER tables, inventoryScreen Power lines + header, levelHud.js (HUD Lv N, Level up! 2 s), main.js +2.
   Stills docs/test-reports/playerlevel/{hud,character}.png (Power 2,110 - Level 2). D-069 gate helper exported, not wired (Burl flag stays). Spell page 'Power N' per card not done.
+### FLICKER-F3-01 (kestrel-3, 2026-10-16) - po-review
+- game/js/dev/flickerMeter.js (+test: exact ratio, EMA, heap probe) + main.js 8 lines (import, f3Flicker, F3-only async readbackCells+Geometry, text line); `?flicker=0` removes. Still EMA + raw-moving only; no reprojected variant.
