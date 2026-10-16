@@ -109,20 +109,21 @@
       "Come to the gate."
     ], "setFlag": "q.mq.ow.fence.handin", "speaker": "hesk"},
     "hesk.close.1": {"lines": [
-      "The chart scrap runs west. Past the crossroads.",
-      "I can't leave the gate. You can. Go and look."
+      "That scrap from the board. Its lines run west.",
+      "Past the crossroads. I can't leave the gate. You can."
     ], "next": "hesk.close.2", "speaker": "hesk"},
-    "hesk.close.2": {"choices": [{"next": "hesk.close.3", "setFlag": "q.mq.ow.close.accept", "text": "I will look."}, {"next": "hesk.later", "text": "Not yet."}], "lines": [
-      "Walk out to the crossroads. Then tell me."
+    "hesk.close.2": {"choices": [{"next": "hesk.close.3", "setFlag": "q.mq.ow.close.accept", "text": "I'll go and look."}, {"next": "hesk.later", "text": "Not yet."}], "lines": [
+      "Walk out to the crossroads. Look west. Then tell me."
     ], "speaker": "hesk"},
     "hesk.close.3": {"end": true, "lines": [
-      "Mind the road. It's longer than it looks."
+      "Mind the road, Wick. It's longer than it looks."
     ], "speaker": "hesk"},
     "hesk.close.active.1": {"end": true, "lines": [
-      "The crossroads, Wick. Then come back and tell me."
+      "The crossroads, Wick. Look west, then come back."
     ], "speaker": "hesk"},
     "hesk.close.done.1": {"end": true, "lines": [
-      "West, then. We'll keep the waystone lit for you."
+      "So the road goes on. Someone walked it before you.",
+      "Take these. West, then. We'll keep the waystone lit."
     ], "setFlag": "q.mq.ow.close.handin", "speaker": "hesk"},
     "hesk.board.2": {"choices": [{"next": "hesk.board.3", "setFlag": "q.mq.ow.board.accept", "text": "I will read it."}, {"next": "hesk.later", "text": "Not yet."}], "lines": [
       "Read every name. Then come back to me."

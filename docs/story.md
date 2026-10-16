@@ -1811,6 +1811,25 @@ Notes:
 - The chart scrap is unsigned pencil and is not Wick's "W." hand. Whose hand it is stays open (M4 reason, GDD 3). "Tanners' Stair" is a new Low Wards place name. It is minor and can be swapped.
 - No line says why the SOS calls or who sends it, and the "older than the Wall" reveal is kept for Ch4.
 
+**mq.ow.close** "The Line West" (Ch3 close; giver and hand-in Hesk at the gate; explore crossroads; reward 15 arrows)
+
+Beat: the scrap from the board has pencil lines running west. Hesk can't leave the gate, so she sends Wick out to the crossroads to look. He comes back and the road goes on. Hesk doesn't say who walked it first; the knot and the scrap already did. The village keeps its waystone lit behind him, and Ch3 closes on the road west. Maren stays implied: "someone" is the most anyone says.
+
+| key | speaker | text | chars |
+|---|---|---|---|
+| title | - | `The Line West` | 13 |
+| obj | HUD | `Walk west to the crossroads` | 27 |
+| journal | - | `The scrap's lines run west. Walk to the crossroads and look.` | 59 |
+| return | HUD | `Tell Hesk what the road looks like` | 34 |
+| offer (1) | HESK | `That scrap from the board. Its lines run west.` | 46 |
+| offer (2) | HESK | `Past the crossroads. I can't leave the gate. You can.` | 53 |
+| offer (3) | HESK | `Walk out to the crossroads. Look west. Then tell me.` | 52 |
+| choices | - | `I'll go and look.` / `Not yet.` | |
+| accept | HESK | `Mind the road, Wick. It's longer than it looks.` | 47 |
+| active | HESK | `The crossroads, Wick. Look west, then come back.` | 48 |
+| hand-in (1) | HESK | `So the road goes on. Someone walked it before you.` | 50 |
+| hand-in (2) | HESK | `Take these. West, then. We'll keep the waystone lit.` | 52 |
+
 ## Journal summaries (OB-097)
 
 PC-B writer, 2026-10-12. These texts go in the right-hand details pane of the J journal. Each text is shown while its step is the **current** step: it says what has happened so far and what to do next, in the player's journal voice ("You ..."). Limits: 1-2 short sentences (a few use three very short ones), <= 110 chars, ASCII, no key names, lengths counted by hand.
