@@ -3,7 +3,7 @@
 // WM-03 (38.59): phase 4 = per-band nav tile (`world.navTiles` set; the world never imports engine/nav, the NavGrid comes from `navTiles.create`).
 // `World._bandJob` is the job of the pending swap (it adopts `terrain._bb`); prebake / bake-ahead run their own job.
 import { TreeScatterJob, DetailScatterJob } from './scatter.js';
-import { buildTrunkCollider, buildDetailCollider } from './colliders.js';
+import { trunkColliderJob, detailColliderJob } from './colliders.js';
 import { minNormalZFromSlopeDeg } from '../core/transform.js';
 
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -66,7 +66,7 @@ export class BandBakeJob {
     this.phase = -1; // -1 terrain rows | 0 trees | 1 detail | 2 trunk collider | 3 detail collider | 4 nav tile | 5 done (BandBakeJob.DONE)
     this.view = null; this.trees = null; this.detail = null;
     this.scatter = world.scatter; this.detailSet = world.detail; this.trunks = null; this.detailCol = null;
-    this.nav = null; this._nv = null;
+    this.nav = null; this._nv = null; this._colJob = null;
   }
 
   /** Fresh job for zone `(cx0,cy0,cw,ch)`; `src` = band to copy the overlap from or null (bytes are identical either way). */
@@ -95,8 +95,14 @@ export class BandBakeJob {
       const left = msBudget - (now() - t0);
       if (this.phase === 0) { if (this.trees.step(left)) { this.scatter = this.trees.result; this.phase = 1; } }
       else if (this.phase === 1) { if (this.detail && this.scatter) this.detail.trees = this.scatter; if (!this.detail || this.detail.step(left)) { this.detailSet = this.detail ? this.detail.result : null; this.phase = 2; } }
-      else if (this.phase === 2) { this.trunks = mesh && this.scatter ? buildTrunkCollider(this.scatter, terrain.recipe.recipe.forest.trees) : null; this.phase = 3; }
-      else if (this.phase === 3) { this.detailCol = mesh && this.detailSet ? buildDetailCollider(this.detailSet) : null; this.phase = 4; }
+      // PERF-03: collider BVHs are sliced (ColliderBuildJob) so a bake-ahead band never builds a whole BVH in one frame
+      else if (this.phase === 2) {
+        if (!mesh || !this.scatter) { this.trunks = null; this.phase = 3; }
+        else { const j = this._colJob || (this._colJob = trunkColliderJob(this.scatter, terrain.recipe.recipe.forest.trees)); if (j.step(left)) { this.trunks = j.result; this._colJob = null; this.phase = 3; } }
+      } else if (this.phase === 3) {
+        if (!mesh || !this.detailSet) { this.detailCol = null; this.phase = 4; }
+        else { const j = this._colJob || (this._colJob = detailColliderJob(this.detailSet)); if (j.step(left)) { this.detailCol = j.result; this._colJob = null; this.phase = 4; } }
+      }
       else if (this._navStep(left)) this.phase = 5;
       if (msBudget - (now() - t0) <= 0) break;
     }

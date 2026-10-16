@@ -22,6 +22,7 @@ import { StaticMeshBuilder, packFlat1, AO_NONE } from './MeshData.js';
 import { PART_STRIDE, MAX_VOX_PARTS } from '../voxel/VoxelModel.js';
 import { computeVoxelPose, FORWARD } from '../voxel/voxelPose.js';
 import { DRAW_VOXEL } from './DrawList.js';
+import { classifyAABB, CULL_OUT } from './culling.js';
 
 // ME-22 (architecture.md 28.12 item 3): the quad budget is checked here,
 // where the mesh is actually built, not in the (cheap/pure) validator.
@@ -566,11 +567,14 @@ const _poseScratch = new Float64Array(MAX_VOX_PARTS * PART_STRIDE);
  * @param {{list: Array<{model: object, modelKey: string, x: number, y: number, z: number, yawDeg: number, clip: number, frame: number, tMs: number, rect: {minX:number,minY:number,minZ:number,maxX:number,maxY:number,maxZ:number}}>}} pool
  * @param {VoxelMeshCache} cache
  * @param {(modelKey: string) => string[]} partNamesFor
+ * @param {Float64Array|null} [planes] PERF-03: skip instances whose world AABB (`rect`) is outside these planes - the same
+ *   classifyAABB test `DrawList.cull(planes)` applies to the pushed item later, so the culled list is unchanged (fewer pushes)
  */
-export function addVoxelInstances(list, pool, cache, partNamesFor) {
+export function addVoxelInstances(list, pool, cache, partNamesFor, planes = null) {
   const items = pool.list;
   for (let k = 0; k < items.length; k++) {
     const inst = items[k];
+    if (planes) { const rc = inst.rect; if (classifyAABB(planes, rc.minX, rc.minY, rc.minZ, rc.maxX, rc.maxY, rc.maxZ) === CULL_OUT) continue; }
     const pm = /** @type {any} */ (inst.model);
     const partNames = partNamesFor(inst.modelKey);
     const mesh = cache.get(pm, inst.modelKey, partNames);
