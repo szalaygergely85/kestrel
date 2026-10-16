@@ -1314,6 +1314,10 @@ async function runGame(mode, cinematic = null) {
     assign: (s, id) => !!playerHandle && itemDefs && !LOCKED[id] && qbAssign(playerHandle.data, itemDefs, s, id),
     clear: (s) => !!playerHandle && itemDefs && qbClear(playerHandle.data, s, itemDefs),
   });
+  let invMouseHeld = false; // OB-203: real left-button state for the pack drag (input.isDown is eaten by consumePressed)
+  window.addEventListener('mousedown', (e) => { if (e.button === 0) invMouseHeld = true; }, true);
+  window.addEventListener('mouseup', (e) => { if (e.button === 0) invMouseHeld = false; }, true);
+  window.addEventListener('blur', () => { invMouseHeld = false; });
   canvas.addEventListener('mousedown', (e) => {
     if (e.button !== 0 || !invView || !invView.isOpen || !ui) { qbDrag.cancel(); return; }
     const c = qbCell(e); invView.setPointer(c[0], c[1]); qbDrag.down(c[0], c[1], invView.hoverItemId);
@@ -1857,7 +1861,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       const liveSpellBook = { tier: (id) => (spellBook ? spellBook.tier(id) : 0), canRaise: (id) => !!spellBook && spellBook.canRaise(id) }; // ONE per-world book (the `spellBook` set on 'world:loaded'): Spells tab, pack overlay and fireball tier hook all read it
       const spendSpellScroll = (id) => { if (!playerHandle || !spellBook) return 0; const r = useSpellScroll(playerHandle.data.components.inventory, spellBook, id); return r.ok ? r.level : 0; }; // ONE scroll spend path (pack overlay + Spells tab)
       invView = itemDefs && window.ASSETS.uiStyle.inventory ? createInventoryScreen({
-        style: window.ASSETS.uiStyle.inventory, tabOpens: false, items: window.ASSETS.items, rgb: assets.palette.rgb, toast: toasts,
+        style: window.ASSETS.uiStyle.inventory, tabOpens: false, mouseHeld: () => invMouseHeld, items: window.ASSETS.items, rgb: assets.palette.rgb, toast: toasts,
         inventoryOf: () => (playerHandle && playerHandle.data.components.inventory) || null,
         slotLockText: () => 'Locked - learn fire first', // OB-156
         isSlotDisabled: (i) => { if (!playerHandle) return false; const inv = playerHandle.data.components.inventory, sl = inv && inv.slots[i]; return !!(sl && sl.id && LOCKED[sl.id]); }, // FB-01: spell + mana potion cells show as locked until unlocked (Items + Character tabs)
