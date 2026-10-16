@@ -1761,3 +1761,7 @@ Also: `flickerLive.hold` skips wgPipeline.frame during capture (readbacks see ON
 ### OB-203-REOPEN (kestrel-1, 2026-10-16) - po-review
 Cause: inventoryScreen.step ends with input.consumePressed(), which also clears isDown('Mouse0') for the whole press, so the drag was released the very next step (always a click, never a drop). Node test mock hid it. Fix: screen takes `o.mouseHeld` (main.js feeds real button state from window mousedown/mouseup); fallback to isDown. Pack->empty cell with gaps now sticks; model/save never compacted (plain JSON slots).
 Files: game/js/quest/inventoryScreen.js, game/js/main.js, inventoryScreen.test.js (+OB-203 cases), tools/verify-backpack-drag.mjs (PASS on 9510, ran 3x incl. 1 pre-fix FAIL repro). Suites inventory,save + check-deps OK.
+
+### OB-213 (kestrel-3, 2026-10-16) - po-review
+Cause: world_geo river bed cross-sections are tilted ~11 deg (ys = y + dx*tangent), so the outlet cliff face is a 2 m-deep oblique ramp; braidFalls sheet at out 1.5 m stood inside that ramp/east bank -> terrain cut the right half. Fix: world_m1 waterfalls braidFalls `out` 1.5 -> 4.5 (+ same constant in tools/gen-river-water.mjs); lip/drop/river untouched.
+Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-after2.png (full sheet, no green). validate-content + 114 suites + check-deps OK. gi-fresh reports g4_7,g3_7,g4_9,g4_11,g4_13 stale (not re-baked; likely unrelated to this change, unverified).

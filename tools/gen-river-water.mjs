@@ -99,7 +99,7 @@ out.water.splice(fi, 0, ...rivers);                           // lower index tha
   if (!(drop >= 2 && drop <= 20)) throw new Error('braidFalls drop out of 2..20 m: ' + drop);
   const lip = [x + uy * hw, y - ux * hw, x - uy * hw, y + ux * hw].map((v) => +v.toFixed(2));
   out.waterfalls = (out.waterfalls || []).filter((w) => w.id !== 'braidFalls');
-  out.waterfalls.push({ id: 'braidFalls', lip, z: +lipZ.toFixed(3), drop, outDeg, out: 1.5, look: 'waterfall' });
+  out.waterfalls.push({ id: 'braidFalls', lip, z: +lipZ.toFixed(3), drop, outDeg, out: 4.5, look: 'waterfall' });
 }
 fs.writeFileSync(FILE, stringifyContent(out), 'utf8');
 console.log(`gen-river-water v2: ${up.length}+${shelf.length}+${down.length} verts, worst slope ${worst.toFixed(3)}`);

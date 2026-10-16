@@ -2683,7 +2683,7 @@
     {"id": "glasswater", "look": "water", "note": "MAP-05: Glasswater lake surface (world_geo.js lake.surface); rect inside the bowl ellipse", "rect": [1145, 470, 1325, 540], "shape": "rect", "z": -58}
   ],
   "waterfalls": [
-    {"id": "braidFalls", "drop": 16.587, "lip": [1254.37, 605.4, 1234.73, 601.6], "look": "waterfall", "out": 1.5, "outDeg": 191, "z": -60.013}
+    {"id": "braidFalls", "drop": 16.587, "lip": [1254.37, 605.4, 1234.73, 601.6], "look": "waterfall", "out": 4.5, "outDeg": 191, "z": -60.013}
   ],
   "wind": {
     "zones": [{"id": "stairwell.draft", "dirDeg": 0, "edge": 0.5, "mode": "add", "push": false, "rect": [1495.8, 1020.5, 1499.2, 1023.5], "shape": "rect", "speed": 0.6}]
