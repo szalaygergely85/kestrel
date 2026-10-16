@@ -45,8 +45,8 @@ const you = (t) => 'YOU: ' + t;
   ok('1 departing: wins over every other flag, one farewell line, no new flags', ids(w.said) === ids([burl('Go on, sky-cub. The road is west.')]) && f.s.size === 4); }
 // 2 woken
 { const f = mk('s.waystone.waystone.woken', 's.burl.arrived'); const w = walk(f, 0);
-  ok('2 woken: starts with the player asking, 16 lines (OB-210: ends in the road offer)', first(w) === you('What is that?') && w.said.length === 16, w.said.length);
-  ok('2 woken: Accept on the road offer sets q.burl.road.accept + s.burl.depart (OB-210)', lastOf(w) === burl('West, sky-cub. Tell Rook I sent you.') && f.s.has('s.burl.depart') && f.s.has('q.burl.road.accept') && f.s.size === 5); }
+  ok('2 woken: starts with the player asking, 18 lines (OB-210: ends in the road offer)', first(w) === you('What is that?') && w.said.length === 18, w.said.length);
+  ok('2 woken: Accept on the road offer sets q.burl.road.accept + s.burl.depart (OB-210)', lastOf(w) === burl('Tell Rook the bear sent you.') && f.s.has('s.burl.depart') && f.s.has('q.burl.road.accept') && f.s.size === 5); }
 // 3 arrived (the stone talk)
 { const f = mk('s.burl.arrived', 'q.burl.boars.done', 's.burl.follow'); const w = walk(f, 0);
   ok('3 arrived: stone talk, 18 lines, ends on the crystal line', first(w) === burl('There we are.') && w.said.length === 19 && lastOf(w) === burl('Go on. It is waiting.'), w.said.length);

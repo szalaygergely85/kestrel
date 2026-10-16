@@ -246,17 +246,20 @@
       "The world is wider than your Wall."
     ], "next": "bear.road.offer", "speaker": "burl"},
     "bear.road.offer": {"choices": [{"next": "bear.road.go", "setFlag": "q.burl.road.accept", "text": "I'll go west."}, {"next": "bear.road.later", "text": "Not yet."}], "lines": [
-      "Take the old road west to the bend.",
-      "Wake the stone there. A crow, Rook, keeps watch."
+      "One more thing. The old road runs west to a bend.",
+      "There's a waystone there, cold as this one was.",
+      "A crow keeps watch on it. Rook. He talks a lot."
     ], "speaker": "burl"},
     "bear.road.go": {"end": true, "lines": [
-      "West, sky-cub. Tell Rook I sent you."
+      "West is yours, sky-cub. I'm off to my berries.",
+      "Tell Rook the bear sent you."
     ], "setFlag": "s.burl.depart", "speaker": "burl"},
     "bear.road.later": {"end": true, "lines": [
-      "Rest, then. The road will wait for you."
+      "Rest first, then. The road will keep. Roads do."
     ], "speaker": "burl"},
     "bear.road.active": {"end": true, "lines": [
-      "The bend stone is west. Rook waits there."
+      "The Bend waystone is west, where the road turns.",
+      "Hold the crystal to the mark, same as here."
     ], "speaker": "burl"},
     "bear.home": {"end": true, "lines": [
       "There you are. I took the long way home.",
