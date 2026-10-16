@@ -1103,7 +1103,7 @@ async function runGpuCompareSceneMode(ctx) {
   // ME-15b (27.9a item 10): sun shadow depth parity rows (GPU map vs rasterJS depth-only twin), mesh renderer only.
   const shadowRows = [];
   const stableRows = []; // US-073c (38.25 item 6): one `stable` row (2-frame pan), first suitable pitched pose
-  let stableDone = false, stableWaterDone = false;
+  let stableDone = false, stableWaterDone = false, stableHystDone = false; // AA-04-FIX: one rays-4 resolve-hyst run
   const shadowRunner = renderer === 'mesh' && gpuPipeline.shadowOpts && gpuPipeline.shadowOpts.sun === 'map'
     ? createShadowParityRunner(gpuPipeline.shadowOpts.res) : null;
   // ENV-03c: synthetic 3-entry atmosphere table (day/dusk/night per entry: forest, meadow, fields); numbers in the 38.65 ranges
@@ -1277,6 +1277,28 @@ async function runGpuCompareSceneMode(ctx) {
         overallOk = overallOk && ok;
         console.log(`[gpucompare] ${noWater ? 'SKIP' : ok ? 'PASS' : 'FAIL'} stable pan (${poseName}, ${label}): ` + (sr.skipped ? `SKIPPED ${sr.reason}` : `waterOn=${sr.waterOn} histValid=${sr.histValid} used=${sr.usedPct.toFixed(1)}% live=${sr.livePct.toFixed(1)}% of non-sky (>=20) mismatches=${sr.mismatches} (must be 0) tieMismatches=${sr.tieMismatches} ties=${sr.tiePct.toFixed(3)}% (<=0.5) held twin/gpu=${sr.heldTwin}/${sr.heldGpu} held255=${sr.held255} vacuous=${sr.vacuous}${noWater ? ' (no water in view: sub-case not exercised)' : ''}${sr.bad && sr.bad.length ? ' e.g. ' + JSON.stringify(sr.bad[0]) : ''}`));
       }
+      // AA-04-FIX (38.82 B): the `resolve-hyst` sub-check needs rays > 1 (the main pipeline is rays 1), so the same 2-frame pan runs once on a
+      // rays-4 stable pipeline with aaHyst on (default ON in the game): the resolve twin on the GPU's own sub-samples + HIST of frame A, 0 non-tie mismatches.
+      if (!stableHystDone && !isWaterPose) {
+        stableHystDone = true;
+        const p4 = new wg.constructor(rt, { rays: 4, stable: true, aaHyst: true, terrainEnabled: wg.terrainEnabled, shadows: wg.shadowOpts, gpuCull: wg.gpuCull });
+        let hr = null;
+        try {
+          if (p4.ready && p4.compiled) await p4.compiled; // async boot batch: frames before the compile resolves do not shade
+          if (p4.ready) {
+            p4.bind(matTable, assets.palette); p4.setSource('scene');
+            p4.bindVoxels(wg._voxelPool); p4.bindViewModel(wg._viewModel); p4.bindInstances(wg._instances);
+            const f4 = (c) => () => { fbCompare.gpu = true; renderWorld(fbCompare, world, c); p4.frame(fbCompare, lights || ambientL, c, world); engine.overlay.flush(c); rt.present(); };
+            f4(camA)(); f4(camA)(); // warm-up: lazy material-table upload + first shaded frame
+            hr = await runStableRow(p4, camA, camB, f4(camA), f4(camB), { waterOff: true, hyst: true });
+          }
+        } finally { p4.dispose(); if (wg.ready) wg.setEnabled(true); }
+        const h = hr && hr.hyst, ok = !!(h && h.ok);
+        stableRows.push({ pose: `stable pan (${poseName}) [webgpu rays 4, resolve-hyst]`, ok, stable: hr || { skipped: true, reason: 'rays-4 pipeline not ready' } });
+        overallOk = overallOk && ok;
+        console.log(`[gpucompare] ${ok ? 'PASS' : 'FAIL'} resolve-hyst (${poseName}, rays 4): ` + (!h ? `SKIPPED ${hr ? hr.reason || 'no hyst result' : 'pipeline not ready'}` : `histValid=${h.histValid} keyed=${h.keyedPct.toFixed(1)}% changed=${h.changed} far=${h.far} mismatches=${h.mismatches} (must be 0) ties=${h.ties} tieMismatches=${h.tieMismatches} vacuous=${h.vacuous}${h.bad.length ? ' e.g. ' + JSON.stringify(h.bad) : ''}`)
+          + (hr && !hr.skipped ? ` | stable(info) mismatches=${hr.mismatches} ties=${hr.tiePct.toFixed(3)}% live=${hr.livePct.toFixed(1)}%` : ''));
+      }
     }
 
     const wasActive = rt.gpuActive;
@@ -1445,7 +1467,7 @@ async function runGpuCompareSceneMode(ctx) {
     const d = r.shadowDepth;
     text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose}\n  items ${d.items}  co-covered ${d.both}  within 16 ULP+0.05 texel ${d.withinPct.toFixed(4)}% (>=99.9%)  flat 16 ULP ${d.within16Pct.toFixed(3)}%  maxUlp ${d.maxUlp}  coverage mismatch ${d.covMismatchPct.toFixed(4)}% (<=0.3%)\n`;
   }
-  for (const r of stableRows) text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose}\n  ` + (r.stable.skipped ? `skipped: ${r.stable.reason}` : `history cells ${r.stable.usedPct.toFixed(1)}% (live ${r.stable.livePct.toFixed(1)}% of non-sky, >=20)  mismatches ${r.stable.mismatches} (must be 0)  tie mismatches ${r.stable.tieMismatches}  ties ${r.stable.tiePct.toFixed(3)}% (<=0.5%)  held twin/gpu ${r.stable.heldTwin}/${r.stable.heldGpu}  waterOn ${r.stable.waterOn}`) + '\n';
+  for (const r of stableRows) text += `${r.ok ? 'PASS' : 'FAIL'}  ${r.pose}\n  ` + (r.stable.skipped ? `skipped: ${r.stable.reason}` : `history cells ${r.stable.usedPct.toFixed(1)}% (live ${r.stable.livePct.toFixed(1)}% of non-sky, >=20)  mismatches ${r.stable.mismatches} (must be 0)  tie mismatches ${r.stable.tieMismatches}  ties ${r.stable.tiePct.toFixed(3)}% (<=0.5%)  held twin/gpu ${r.stable.heldTwin}/${r.stable.heldGpu}  waterOn ${r.stable.waterOn}` + (r.stable.hyst ? `  resolve-hyst: mismatches ${r.stable.hyst.mismatches} (must be 0) ties ${r.stable.hyst.ties} keyed ${r.stable.hyst.keyedPct.toFixed(1)}% changed ${r.stable.hyst.changed}` : '')) + '\n';
   text += `\n${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`;
   console.log(`[gpucompare] ${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`);
 

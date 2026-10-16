@@ -2,9 +2,10 @@
 // so the row must pass; a changed GPU byte outside the tie mask must fail; a vacuous sequence (no history) must not pass.
 // Run: node engine/render/gpu/wg/stableCompare.test.js
 import assert from 'node:assert';
-import { compareStableRow } from './stableCompare.js';
+import { compareStableRow, compareResolveHyst } from './stableCompare.js';
+import { F_SOFT_EDGE } from '../ShadeTextures.js';
 import { beginFrame, stabilize, createStableState, createStableBuffers } from '../../temporalStable.js';
-import { KIND_WALL } from '../../GBuffer.js';
+import { KIND_WALL, KIND_MESH } from '../../GBuffer.js';
 
 const COLS = 40, ROWS = 20, N = COLS * ROWS;
 const grid = { cols: COLS, rows: ROWS, pxCellW: 8, pxCellH: 16 };
@@ -91,5 +92,30 @@ function build(camBUse) {
   // vacuous: a camera cut leaves no history -> the row must not pass
   const cut = compareStableRow({ cols: COLS, rows: ROWS, camA, camB: { ...camB, x: 9 }, grid, A, B });
   assert.ok(cut.vacuous && !cut.ok, 'cut sequence is vacuous, not a pass');
+}
+// AA-04-FIX (38.82 B): the resolve-hyst sub-check. Identity camera terms (cur == prev) -> every cell reprojects onto itself.
+{
+  const C = 4, R = 2, n = 4, sc = C * n, ns = sc * R * n, ID = [0, 1, 0, 1, 1, 0, 0, 0, 1, 1];
+  const words = { n, bandM: 0, histValid: 1, folEdge: 1, vox: 1, T: { cur: ID, prev: ID, dEye: [0, 0, 0], cols: C, rows: R, ortho: 0 } };
+  const subGI = new Uint32Array(ns * 4), subDepth = new Uint32Array(ns), hist = new Uint32Array(C * R * 4), gi = new Uint32Array(C * R * 4);
+  const put = (cx, cy, k, pid, kind, mat, d) => { const s = (cy * n + (k / n | 0)) * sc + cx * n + (k % n); subGI[s * 4] = pid; subGI[s * 4 + 1] = kind | (mat << 16); subDepth[s] = fb(d); };
+  const key = (arr, c, pid, kind, mat, w = 0) => { arr[c * 4] = pid; arr[c * 4 + 1] = kind | (mat << 16); arr[c * 4 + 3] = w; };
+  for (let c = 0; c < C * R; c++) { for (let k = 0; k < 16; k++) put(c % C, c / C | 0, k, 1, KIND_WALL, 3, 5); key(hist, c, 1, 0, 0, (KIND_WALL << 8) | (3 << 16)); key(gi, c, 1, KIND_WALL, 3); }
+  for (let k = 0; k < 16; k++) if (k % n < 2) put(1, 0, k, 2, KIND_WALL, 4, 4); // (1,0): 8/8, the nearer Q wins the plain vote; history P keeps P
+  for (let k = 3; k < 16; k++) put(2, 1, k, 2, KIND_WALL, 4, 4); key(gi, 6, 2, KIND_WALL, 4); // (2,1): P 3/16 < n^2/4 and < best - 2 -> flips to Q
+  // (3,0) AA-17 soft leaf: last card (6, mat 7) 2/16, same leaf on card 9 5/16, other mesh (8, mat 2) 9/16 -> leaf as a whole (7) holds -> card 6
+  for (let k = 0; k < 16; k++) put(3, 0, k, k < 2 ? 6 : k < 7 ? 9 : 8, KIND_MESH, k < 7 ? 7 : 2, 5);
+  key(hist, 3, 6, 0, 0, (KIND_MESH << 8) | (7 << 16)); key(gi, 3, 6, KIND_MESH, 7);
+  const matI = new Int32Array(8 * 2 * 4); matI[7 * 2 * 4 + 1] = F_SOFT_EDGE;
+  const a = { cols: C, rows: R, words, subGI, subDepth, hist, gi, matI, matIWidth: 2, nMat: 8 };
+  const r = compareResolveHyst(a);
+  assert.ok(r.ok && r.mismatches === 0 && r.keyed === 8 && r.changed === 2, 'resolve-hyst: GPU keys of the twin pass ' + JSON.stringify(r));
+  const noSoft = compareResolveHyst({ ...a, words: { ...words, folEdge: 0 } });
+  assert.ok(!noSoft.ok && noSoft.mismatches === 1 && noSoft.bad[0].col === 3, 'AA-17 soft key is modelled (folEdge 0 -> the soft cell is a mismatch)');
+  const g2 = gi.slice(); key(g2, 1, 2, KIND_WALL, 4);
+  const r2 = compareResolveHyst({ ...a, gi: g2 });
+  assert.ok(!r2.ok && r2.mismatches === 1 && r2.bad[0].col === 1, 'a GPU that ignores the history key is caught');
+  const r3 = compareResolveHyst({ ...a, words: { ...words, histValid: 0 } });
+  assert.ok(r3.vacuous && !r3.ok, 'histValid 0 is vacuous, not a pass');
 }
 console.log('stableCompare.test.js: all checks passed.');

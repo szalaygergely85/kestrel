@@ -167,7 +167,7 @@ Each row = the numbered fix of the report's ARCH CHANGES (C = report C, D = repo
 
 | ID | Slot | AC (short) | Status |
 |---|---|---|---|
-| AA-04-FIX | kestrel-2 (engine) | arch F (batch-review-2026-10-16-pca-F.md): (1) add the GPU `resolve-hyst` check to the stable gpucompare row 38.82 requires (aaHyst is default ON); (2) PC-B architect writes the keep-at-n^2/4 rule (sky included) into architecture.md 38.82 B; no feature code in merge commits. | todo |
+| AA-04-FIX | kestrel-2 (engine) | arch F (batch-review-2026-10-16-pca-F.md): (1) add the GPU `resolve-hyst` check to the stable gpucompare row 38.82 requires (aaHyst is default ON); (2) PC-B architect writes the keep-at-n^2/4 rule (sky included) into architecture.md 38.82 B; no feature code in merge commits. | arch-review (kestrel-3: resolve-hyst sub-check = rays-4 stable row in gpucompare, carpetMeadow 0 mismatches / 31 ties / 780 hyst-changed cells; 38.82 B keep-rule paragraph) |
 | AA-03a-FIX | kestrel-2 | arch F: coverageColour.test fails on Node 24: matFlatColor allocates ~64 B per call; fix the code, never widen the limit. | todo |
 | BEAST-POOL-BIND-LATE-FIX | kestrel-3 | arch F: beastPool.test 10.9 s alone (the new block adds ~7 s): fewer scan phases, < ~5 s. Overflow behaviour is safe (falls back to the sliced scan). | dev done (2026-10-16, 6 edge phases; 12-15 s -> 6.4-7.0 s on this loaded box) |
 | FLICKER-GATE-FIX | kestrel-4 (tools) | arch F: tools/flicker-gate.mjs can compare a stale old capture when the browser capture fails without writing a file: add a file-time guard. Not a merge gate until FLICKER-METRIC-DET. | dev done (2026-10-16): file-time guard (pickFreshCapture, stale -> FAIL exit 1), --timeout-ms parsed + passed on, test added |

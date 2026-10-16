@@ -2,7 +2,12 @@
 // stable pass on; the JS twin (temporalStable.js) is fed the GPU's OWN read-back inputs of B plus A's read-back output as history,
 // and its output must equal the GPU's B output: 0 mismatches outside the tie mask, ties <= 0.5 % of the grid.
 // `compareStableRow` is pure (Node-testable); `runStableRow` does the device calls (async readbacks) around two caller-supplied frames.
-import { beginFrame, stabilize, createStableState, createStableBuffers, edgeMaskFromShade, waterMaskFromLayer, levelOfByte, covOfByte } from '../../temporalStable.js';
+import { beginFrame, stabilize, createStableState, createStableBuffers, edgeMaskFromShade, waterMaskFromLayer, levelOfByte, covOfByte, reprojectF32 } from '../../temporalStable.js';
+import { resolveCellJS } from '../../resolveBand.js';
+import { RESOLVE_BLOCK } from '../wgsl/resolve.wgsl.js';
+import { F_SOFT_EDGE } from '../ShadeTextures.js';
+import { KIND_MODEL, KIND_MESH } from '../../GBuffer.js';
+
 
 export const STABLE_TIE_MAX_FRAC = 0.005;
 /** STABLE-GATE-TEST-01 liveness floor: the twin must take history on at least this share of the non-sky cells (a reject-everything bug cannot pass). */
@@ -82,6 +87,7 @@ export async function runStableRow(p, camA, camB, renderA, renderB, opts) {
     const A = { outFg: await rb8(sp.outFg, 4), outBg: await rb8(sp.outBg, 4), hist: await rb32(sp.outHist, 4) };
     renderB();
     if (!p._stableRan) return { ok: false, skipped: true, reason: 'stable pass did not run on frame B' };
+    const cp = p._cellPass, hystWords = opts && opts.hyst && cp ? resolveWordsOf(cp.ru, cp.ri) : null; // AA-04-FIX: frame B's ResolveU, before any await
     const t = p._t, inp = p._stInp, waterOn = !!(p._waterPass && p._waterPass.active);
     const B = {
       GI: await rb32(t.texGI, 4), GA: await rb32(t.texGA, 4), depth: await rb32(t.texDepth, 1), level: await rb8(t.texLevel, 1),
@@ -91,6 +97,87 @@ export async function runStableRow(p, camA, camB, renderA, renderB, opts) {
     const grid = p._rasterPass.grid;
     const res = compareStableRow({ cols, rows, camA, camB, grid: { cols: grid.cols, rows: grid.rows, pxCellW: grid.pxCellW, pxCellH: grid.pxCellH }, A, B });
     res.waterOn = waterOn; res.waterOff = waterOff;
+    if (hystWords) { // AA-04-FIX (38.82 B): resolve-hyst sub-check on the same frame B
+      const tt = p._t, sr = { x: 0, y: 0, w: tt.subCols, h: tt.subRows }, ns = tt.subCols * tt.subRows;
+      const subGI = new Uint32Array(ns * 4), subDepth = new Uint32Array(ns);
+      await d.readback(tt.texSGI, sr, subGI); await d.readback(tt.texSDepth, sr, subDepth);
+      const pk = cp.shadePass && cp.shadePass.packed;
+      res.hyst = compareResolveHyst({ cols, rows, words: hystWords, subGI, subDepth, hist: A.hist, gi: B.GI,
+        matI: pk ? pk.matI : null, matIWidth: pk ? pk.dims.matIWidth : 0, nMat: pk ? pk.dims.nMat : 0 });
+    }
     return res;
   } finally { p.setStable(false); if (wp) wp.forceOff = wasForce; }
+}
+
+// ---- AA-04-FIX (38.82 B, arch review F): the stable row's `resolve-hyst` sub-check. On frame B the resolve twin (resolveBand.js
+// resolveCellJS with histKey) runs on the GPU's own sub-sample G-buffer, its own ResolveU words and the GPU HIST read-back of frame A;
+// its winner key (kind, planeId, mat) per cell must equal the GPU resolve output (cell GI). Ties (reprojection lands within 1e-3 of a
+// cell border, or two groups with equal count and min depth within 1e-6) are reported, never failed. Models AA-17 (soft-edge leaf key,
+// folEdge + MAT_I F_SOFT_EDGE incl. the -1 rows) and AA-21 (vox: kind-8 winners vs kind-8 keys only).
+const RW = (name) => RESOLVE_BLOCK.field(name).word;
+const RW_TERMS = ['curA', 'curB', 'curC', 'prevA', 'prevB', 'prevC', 'dEye'].map(RW);
+/** Snapshot of the ResolveU words the GPU used this frame (call right after the frame, before the next one overwrites the scratch). */
+export function resolveWordsOf(ru, ri) {
+  const w = (k, o) => ru[RW_TERMS[k] + o];
+  const terms = (k) => [w(k, 0), w(k, 1), w(k, 2), w(k, 3), w(k + 1, 0), w(k + 1, 1), w(k + 1, 2), w(k + 1, 3), w(k + 2, 0), w(k + 2, 1)];
+  return {
+    n: ri[RW('n')], bandM: ru[RW('bandM')], histValid: ri[RW('histValid')], folEdge: ri[RW('folEdge')], vox: ri[RW('vox')],
+    T: { cur: terms(0), prev: terms(3), dEye: [w(6, 0), w(6, 1), w(6, 2)], cols: ri[RW('gridCols')], rows: ri[RW('gridRows')], ortho: ri[RW('ortho')] },
+  };
+}
+
+/**
+ * @param {{cols:number, rows:number, words:ReturnType<typeof resolveWordsOf>, subGI:Uint32Array, subDepth:Uint32Array, hist:Uint32Array,
+ *   gi:Uint32Array, matI:Int32Array|null, matIWidth:number, nMat:number}} a  subGI/subDepth: (cols*n) x (rows*n), 4-wide / 1-wide; hist, gi: cell-major 4-wide
+ */
+export function compareResolveHyst(a) {
+  const { cols, rows, words: W, subGI, subDepth, hist, gi } = a, n = W.n, n2 = n * n, subCols = cols * n;
+  const sub = { pid: new Int32Array(n2), kind: new Uint32Array(n2), mat: new Uint32Array(n2), depth: new Float32Array(n2) };
+  const dv = new Float32Array(subDepth.buffer, subDepth.byteOffset, subDepth.length);
+  const out = { idx: 0, cov: 0, far: false, bestMinDepth: 0 }, pc = new Float32Array(3), hk = { kind: 0, pid: 0, mat: 0, soft: false, vox: W.vox !== 0 };
+  const soft = (k, m) => W.folEdge !== 0 && k === KIND_MESH && !!a.matI && m < a.nMat && (a.matI[m * a.matIWidth * 4 + 1] & F_SOFT_EDGE) !== 0;
+  let keyed = 0, changed = 0, mism = 0, ties = 0, tieMism = 0, far = 0; const bad = [];
+  for (let cy = 0; cy < rows; cy++) for (let cx = 0; cx < cols; cx++) {
+    for (let j = 0, k = 0; j < n; j++) for (let i = 0; i < n; i++, k++) {
+      const s = (cy * n + j) * subCols + cx * n + i, y = subGI[s * 4 + 1];
+      sub.pid[k] = subGI[s * 4] | 0; sub.kind[k] = y & 255; sub.mat[k] = (y >>> 16) & 0xffff; sub.depth[k] = dv[s];
+    }
+    resolveCellJS(sub, n, W.bandM, cx, cy, out, null);
+    const plain = out.idx; let tie = false, key = null;
+    if (out.far) far++;
+    else {
+      for (let p = 0; p < n2 && !tie; p++) for (let q = 0; q < n2; q++) { // vote tie: two keys, equal count, min depth within 1e-6
+        if (sub.kind[p] === sub.kind[q] && sub.pid[p] === sub.pid[q] && sub.mat[p] === sub.mat[q]) continue;
+        let cp = 0, cq = 0, dp = 1e30, dq = 1e30;
+        for (let b = 0; b < n2; b++) {
+          const ip = sub.kind[b] === sub.kind[p] && sub.pid[b] === sub.pid[p] && sub.mat[b] === sub.mat[p], iq = sub.kind[b] === sub.kind[q] && sub.pid[b] === sub.pid[q] && sub.mat[b] === sub.mat[q];
+          if (ip) { cp++; if (sub.depth[b] < dp) dp = sub.depth[b]; } if (iq) { cq++; if (sub.depth[b] < dq) dq = sub.depth[b]; }
+        }
+        if (cp === cq && Math.abs(dp - dq) <= 1e-6 * Math.max(1, dp)) { tie = true; break; }
+      }
+      const wModel = sub.kind[plain] === KIND_MODEL;
+      if (W.histValid !== 0 && (!wModel || W.vox !== 0)) {
+        let rd = out.bestMinDepth;
+        if (sub.kind[plain] === 0) { rd = 1e30; for (let b = 0; b < n2; b++) if (sub.kind[b] !== 0 && sub.depth[b] < rd) rd = sub.depth[b]; if (rd >= 1e29) rd = 1e4; }
+        reprojectF32(W.T, cx, cy, rd, pc);
+        if (!(W.T.ortho === 0 && pc[2] <= 0) && pc[0] > -2 && pc[0] < W.T.cols + 2 && pc[1] > -2 && pc[1] < W.T.rows + 2) {
+          const fx = pc[0] + 0.5 - Math.floor(pc[0] + 0.5), fy = pc[1] + 0.5 - Math.floor(pc[1] + 0.5);
+          if (fx < 1e-3 || fx > 1 - 1e-3 || fy < 1e-3 || fy > 1 - 1e-3) tie = true; // f32/FMA rounding may pick the neighbour HIST texel
+          const hc = Math.floor(pc[0] + 0.5), hr = Math.floor(pc[1] + 0.5);
+          if (hc >= 0 && hc < W.T.cols && hr >= 0 && hr < W.T.rows) {
+            const h = (hr * cols + hc) * 4, hw = hist[h + 3];
+            hk.kind = (hw >>> 8) & 15; hk.mat = hw >>> 16; hk.pid = hist[h] | 0;
+            if ((hk.kind === KIND_MODEL) === wModel) { hk.soft = soft(hk.kind, hk.mat); key = hk; keyed++; }
+          }
+        }
+      }
+      if (key) { resolveCellJS(sub, n, W.bandM, cx, cy, out, key); if (out.idx !== plain) changed++; }
+    }
+    const w = out.idx, c = cy * cols + cx, gy = gi[c * 4 + 1];
+    if ((gi[c * 4] | 0) === sub.pid[w] && (gy & 255) === sub.kind[w] && ((gy >>> 16) & 0xffff) === sub.mat[w]) { if (tie) ties++; continue; }
+    if (tie) { ties++; tieMism++; continue; }
+    mism++; if (bad.length < 3) bad.push({ col: cx, row: cy, gpu: [gi[c * 4] | 0, gy & 255, (gy >>> 16) & 0xffff], twin: [sub.pid[w], sub.kind[w], sub.mat[w]], hist: key ? [key.pid, key.kind, key.mat, key.soft] : null });
+  }
+  const cells = cols * rows, vacuous = W.histValid === 0 || n < 2 || keyed < cells * 0.02;
+  return { ok: !vacuous && mism === 0, n, histValid: W.histValid, keyed, keyedPct: 100 * keyed / cells, changed, far, mismatches: mism, ties, tieMismatches: tieMism, vacuous, bad };
 }
