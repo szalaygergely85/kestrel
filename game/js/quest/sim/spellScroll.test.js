@@ -12,7 +12,7 @@ import { useScroll, raisable, SCROLL_ID } from './spellScroll.js';
 const items = globalThis.ASSETS.items.defs;
 assert.ok(items[SCROLL_ID] && items[SCROLL_ID].name === 'Spell Scroll' && items[SCROLL_ID].stackMax === 9);
 const t = CHEST_TABLES.chestCrypt;
-assert.deepEqual(t.fixed.map((f) => f.item).sort(), ['potion.hp', 'scroll.spell']);
+assert.deepEqual(t.fixed.map((f) => f.item).sort(), ['heart.piece', 'potion.hp', 'scroll.spell']); // UNDER-CRYPT-REWARD-01 restored the Heart Piece
 const player = { transform: {}, components: {} };
 const inv = ensureInventory(player, { pack: [], left: null, right: null });
 const d = { id: 'c', x: 0, y: 0, z: 0, frontX: 0, frontY: 1, propId: 'c', interact: { radius: 2, facingDeg: 70, facingCos: 0.342 }, table: t };
