@@ -3,6 +3,7 @@
 // Characters = NPCs with dialogue (D-082). Objects = props (inspect posts, notes). Enemies = beasts (brain component).
 import { setQuestField, setAreaCmd } from './model.js';
 import { objField } from './flow.js';
+import { isFormatDef } from './format.js';
 
 export const AREA_RADIUS = 4;
 export const NOT_CHARACTER = 'Pick a character, not an object';
@@ -49,7 +50,7 @@ export function groundTarget(point, ctx = {}) {
 export function stepWants(step) {
   if (step.template) return { talk: 'character', deliver: 'character', explore: 'area', kill: 'enemy', fetch: 'object', collect: 'object', escort: 'character' }[step.template] || null;
   const t = step.when && step.when.type;
-  return { area: 'area', item: 'object', deliver: 'character', talk: 'character' }[t] || null;
+  return { area: 'area', item: 'object', collect: 'object', deliver: 'character', talk: 'character' }[t] || null;
 }
 
 const fail = (error) => ({ cmd: null, error });
@@ -67,6 +68,10 @@ export function applyPick(q, slot, hit, world, ctx = {}) {
     const okObject = slot === 'giver' && q.raw.objectGiver === true && kind === 'object';   // D-087
     if (kind !== 'character' && !okObject) return fail(NOT_CHARACTER);
     const ref = pack ? siteFor(ctx.sites, ent.id) : ent.id;
+    if (!pack && isFormatDef(q.raw)) {   // ED-QUI-03: format defs keep begin / end
+      return slot === 'giver' ? { cmd: setQuestField(q, 'begin', kind === 'object' ? { object: ref } : { npc: ref }), error: null }
+        : { cmd: setQuestField(q, 'end', { npc: ref }), error: null };
+    }
     if (slot === 'giver') {
       return pack ? { cmd: setQuestField(q, 'site', ref), error: null }
         : { cmd: setQuestField(q, 'giver', { ...(q.raw.giver || {}), npc: ref }), error: null };

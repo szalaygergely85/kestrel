@@ -176,6 +176,12 @@
     .q-prow.bad { border-color: var(--ed-red); } .q-prow.disabled { opacity: 0.55; } .q-tag { color: var(--ed-amber); } .q-plabel { flex: 1; }
     .q-ptext { flex-basis: 100%; color: var(--ed-red); font-size: 10px; } .q-ptext.dim { color: var(--ed-fg-dim); }
 
+    /* ED-QUI-03/04: origin + turn-in cards, objective step cards */
+    .q-origin { display: flex; gap: 6px; flex-wrap: wrap; } .q-ocard { flex: 1 1 200px; padding: 6px; border: 1px solid var(--ed-line); border-radius: 6px; background: var(--ed-void); }
+    .q-ocard.bad, .q-ostep.bad { border-color: var(--ed-red); } .q-ohead { font: 600 11px var(--ed-font-head); color: var(--ed-fg-hi); display: flex; gap: 6px; align-items: center; }
+    .q-ocard.gold .q-ohead { color: var(--ed-gold); } .q-ocard.blue .q-ohead { color: var(--ed-blue); } .q-oname { font-size: 13px; color: var(--ed-fg-hi); } .q-ometa { font-size: 10px; color: var(--ed-fg-dim); }
+    .q-orow { display: flex; flex-wrap: wrap; gap: 4px; align-items: flex-end; margin-top: 4px; } .q-ostep { padding: 6px; margin: 4px 0; border: 1px solid var(--ed-line); border-radius: 6px; background: var(--ed-void); } .q-ostep.active { border-color: var(--ed-cyan); }
+
     /* US-067: Assets tab list */
     #assets-list { flex: 1 1 auto; overflow-y: auto; padding: 4px; }
     /* ED-FOLDERS-01: folder toolbar (create a user folder) + collapsible

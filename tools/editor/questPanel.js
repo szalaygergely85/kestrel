@@ -14,6 +14,8 @@ import { renderLineEditor } from './questDialogue.js';
 import { createLiveSender, browserChannel } from './quest/liveSend.js';
 import { stripModel, CARDS } from './quest/questStrip.js';
 import { prereqRows, setRequiresKeepShape } from './quest/prereqs.js';
+import { originCards, setTurnInSameAsGiver } from './quest/originCards.js';
+import { objectiveCards, setStepKind, setStepCount, kindsFor, KIND_LABEL, MAX_TEXT } from './quest/objectiveCards.js';
 import { loadDialogues, saveDialogues, captureBaseline } from './quest/lines.js';
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -185,6 +187,57 @@ export async function mountQuestPanel(root, opts) {
     box.append(add, item); return box;
   }
 
+  // ED-QUI-03: card [02] ORIGIN + TURN-IN side by side
+  function originBox(q, pickBtn) {
+    const oc = originCards(q, getWorld(), names, sites, floorAt), wrap = el('div', 'q-origin'); wrap.id = 'quest-origin';
+    const one = (c, title, slot, extra) => {
+      const box = el('div', 'q-ocard ' + c.color + (c.problem ? ' bad' : '')); box.dataset.role = slot;
+      box.append(el('div', 'q-ohead', c.glyph + '  ' + title), el('div', 'q-oname', c.name + (c.same ? ' (same as giver)' : '')), el('div', 'q-ometa', 'id ' + (c.id || '-') + ' - ' + c.kind));
+      box.append(el('div', 'q-ometa', c.pos ? 'X ' + c.pos.x + '  Y ' + c.pos.y + '  Z ' + c.pos.z : 'no position'), el('div', 'q-ometa', 'Talk ' + c.radius + ' m - ' + c.region));
+      const row = el('div', 'q-orow'), pk = pickBtn(slot, title.toLowerCase()); pk.textContent = 'Pick in 3D'; row.append(pk); if (extra) row.append(extra);
+      const go = el('button', 'ed-btn', 'Go to'); go.disabled = !c.id || !c.pos; go.addEventListener('click', () => opts.onFocus && c.id && opts.onFocus(c.id)); row.append(go);
+      box.append(row); if (c.problem) box.append(el('div', 'q-ptext', c.problem));
+      return box;
+    };
+    const same = el('button', 'ed-btn', 'Same as giver'); same.id = 'quest-turnin-same'; same.disabled = oc.turnIn.same;
+    same.addEventListener('click', () => { const c = setTurnInSameAsGiver(q); if (c) run(c); });
+    wrap.append(one(oc.origin, 'ORIGIN', 'giver'), one(oc.turnIn, 'TURN-IN', 'return', same));
+    return wrap;
+  }
+  // ED-QUI-04: card [03] one card per objective step
+  function objectivesBox(q, pickBtn) {
+    const oc = objectiveCards(q, getWorld(), { sites, names, floorAt, zones: [...((getWorld().zones) || []), ...model.zones] }), wrap = el('div', 'q-objs'); wrap.id = 'quest-objs';
+    const kinds = kindsFor(q);
+    oc.cards.forEach((c, i) => {
+      const box = el('div', 'q-obj q-ostep' + (selObj === i ? ' active' : '') + (c.textBad ? ' bad' : '')); box.dataset.obj = i;
+      box.addEventListener('click', () => { if (selObj !== i) { selObj = i; opts.onMarkers && opts.onMarkers(); box.classList.add('active'); } });
+      const head = el('div', 'q-ohead'); head.append(el('span', 'q-card-n', '[' + c.n + ']'));
+      const ks = el('select', 'q-kind'); for (const k of kinds) ks.append(new Option(KIND_LABEL[k], k)); ks.value = c.kind;
+      ks.title = 'Changing the kind starts a new blank step of that kind'; ks.addEventListener('change', () => { const cmd = setStepKind(q, i, ks.value); if (cmd) run(cmd); });
+      head.append(ks); box.append(head);
+      box.append(field('Text', c.text, (v) => run(ed.setObjectiveField(q, i, 'text', v))));
+      box.append(el('div', 'q-ometa' + (c.textBad ? ' q-ptext' : ''), c.textLen + ' / ' + MAX_TEXT));
+      box.append(field('Journal', c.journal, (v) => run(ed.setObjectiveField(q, i, 'journal', v)), true));
+      box.append(el('div', 'q-ometa', 'Target: ' + c.target.line + (c.target.pos ? '  (X ' + c.target.pos.x + ' Y ' + c.target.pos.y + (c.target.pos.z != null ? ' Z ' + c.target.pos.z : '') + ')' : '')));
+      const row = el('div', 'q-orow');
+      if (c.canCount) {   // count only for collect / kill (OB-099)
+        const n = el('input'); n.type = 'number'; n.min = 1; n.value = c.count; n.style.width = '4em'; n.dataset.count = i;
+        n.addEventListener('change', () => { const cmd = setStepCount(q, i, Number(n.value)); if (cmd) run(cmd); else redraw(); });
+        const w = el('label', 'q-field'); w.append(el('span', null, 'Count'), n); row.append(w);
+      }
+      const pk = pickBtn({ obj: i }, 'the target of step ' + c.n); pk.textContent = 'Pick in 3D'; pk.disabled = !c.canPick; row.append(pk);
+      const up = el('button', 'ed-btn', 'Up'), dn = el('button', 'ed-btn', 'Down'), del = el('button', 'ed-btn', 'Delete');
+      up.disabled = !c.canUp; dn.disabled = !c.canDown;
+      up.addEventListener('click', () => run(ed.moveStep(q, i, i - 1))); dn.addEventListener('click', () => run(ed.moveStep(q, i, i + 1))); del.addEventListener('click', () => run(ed.deleteStep(q, i)));
+      row.append(up, dn, del); box.append(row); wrap.append(box);
+    });
+    const add = el('button', 'ed-btn', 'ADD STEP'); add.id = 'quest-add-step'; add.disabled = !oc.canAdd; if (!oc.canAdd) add.title = oc.addNote;
+    add.addEventListener('click', () => { const c = fe.addStepMax(q); if (c) run(c); });
+    wrap.append(add); if (oc.addNote) wrap.append(el('div', 'q-ometa', oc.addNote));
+    for (const t of oc.problems) wrap.append(el('div', 'q-ptext', t));
+    return wrap;
+  }
+
   function renderDetail() {
     detail.textContent = '';
     const q = current;
@@ -209,28 +262,14 @@ export async function mountQuestPanel(root, opts) {
       b.addEventListener('click', () => { pickMsg = ''; picker.armed && picker.slot === slot ? picker.cancel() : picker.arm(slot); });
       return b;
     };
-    const slotRow = (label, slot) => { const w = el('div', 'q-field'); w.append(el('span', null, label), pickBtn(slot, label)); return w; };
-    host.append(slotRow('Giver', 'giver'), slotRow('Return to', 'return'));
+    host.append(originBox(q, pickBtn));
     const pm = el('div', 'q-msg', picker.armed ? 'Click in the 3D view (Esc cancels)' : pickMsg); pm.id = 'quest-pick-msg'; host.append(pm);
     into('conversation');
     host.append(renderLineEditor({ q, dm, base: lineBase, model, names, run, setMsg: (m) => { lineMsg = m; const e = document.getElementById('quest-line-msg'); if (e) e.textContent = m; } }));
     const lm = el('div', 'q-msg', lineMsg); lm.id = 'quest-line-msg'; host.append(lm);
     host.append(field('Offer (Accept / Exit text, one line each)', ((q.lines && q.lines.offer) || []).join('\n'), (v) => run(ed.setOfferLines(q, v.split('\n'))), true));
     into('objectives');
-    q.objectives.forEach((o, i) => {
-      const box = el('div', 'q-obj' + (selObj === i ? ' active' : '')); box.dataset.obj = i; box.append(el('b', null, `Step ${i + 1}`));
-      box.addEventListener('click', () => { if (selObj !== i) { selObj = i; opts.onMarkers && opts.onMarkers(); box.classList.add('active'); } });
-      box.append(field('Text', objText(o), (v) => run(ed.setObjectiveField(q, i, 'text', v))));
-      box.append(field('Journal', objJournal(o), (v) => run(ed.setObjectiveField(q, i, 'journal', v)), true));
-      const up = el('button', 'ed-btn', 'Up'), dn = el('button', 'ed-btn', 'Down'), del = el('button', 'ed-btn', 'Delete');
-      up.disabled = i === 0; dn.disabled = i === q.objectives.length - 1;
-      up.addEventListener('click', () => run(ed.moveStep(q, i, i - 1)));
-      dn.addEventListener('click', () => run(ed.moveStep(q, i, i + 1)));
-      del.addEventListener('click', () => run(ed.deleteStep(q, i)));
-      box.append(pickBtn({ obj: i }, 'the target of step ' + (i + 1)), up, dn, del); host.append(box);
-    });
-    const add = el('button', 'ed-btn', 'Add step'); add.addEventListener('click', () => { const c = fe.addStepMax(q); if (c) run(c); }); // QUEST-FORMAT: max 3 steps
-    host.append(add);
+    host.append(objectivesBox(q, pickBtn));
     into('spatial'); host.append(field('Return text', q.returnText || '', (v) => run(ed.setReturnText(q, v))));
     into('rewards');
     // reward item: picked by plain name, never a raw id
