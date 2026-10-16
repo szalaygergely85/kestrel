@@ -9,6 +9,12 @@
 | OB-212 BURL-TELEPORT | kestrel-1 + kestrel-4 | Burl jumps back to the tower (owner F3 1471.2, 1025.1) after he had walked away, when the player accepts the gondola quest sq.wreck.plate ("Find hide for a strap"). Find what re-places him on a quest accept / quest-book change (giver site placement, NPC reset, schedule restart, content-wins on load) and fix; Node test: Burl walks home, player accepts sq.wreck.plate (and any other quest), Burl stays where he is; also across save/load. | todo, START NOW |
 | OB-203-REOPEN | kestrel-1 (inventoryScreen.js / main.js) | Owner can still not reorganise the backpack: moving an item into an empty cell with gaps between does not stick (see docs/bugs.md OB-203). Repro in the browser first, then fix + Node test (move 0 -> 5 leaves 1-4 empty; survives save/load and the next pickup) + one headless drag check. | todo, START NOW |
 
+## Owner look 2026-10-16: waterfall wider than its pool (PC-A main session)
+
+| ID | Slot | AC | Status |
+|---|---|---|---|
+| OB-214 FALLS-POOL | kestrel-4 (world content) + kestrel-2 if world_geo terrain | braidFalls (content/worlds/world_m1.world.json `waterfalls`, written by tools/gen-river-water.mjs) is 20 m wide but the water under it is narrower: the east ~4 m of the sheet lands on a dry grass bank (-74/-75 vs water -76.6). Pick ONE (owner look decides, show a still of each): (a) widen the plunge pool - carve the bank east of the lip (design/levels/world_geo.js river poly 605-628 halfWidth / a pool carve) and widen the `braid` water ribbon there so water spans the full sheet width; or (b) narrow the lip to the water actually below it. ACs: at the teaser view (design/cinematics/teaser-river-falls.json t=0, `capture-cinematic --size 3840x2160 --grid 720x270 --hour 11`) the whole sheet bottom meets water, no grass under it; keep out 4.5 (OB-213); regenerate via tools/gen-river-water.mjs (not by hand); GI re-bake (gi-fresh green); riverWater.test + validate-content pass. ~0.5 d | todo |
+
 ## PC-B refill 2026-10-16 (PC-B 5th agent, PC-A to ratify)
 Owner priorities: (1) flicker / visual stability OB-208 / OB-198 / OB-194 (NOT the stable-pass glyph work: AA-10 runs in kestrel-3); (2) quest polish OB-209 / OB-181..183. Each row <= 1 programmer-day. Audit 2026-10-16 could only check `.git/logs` (no shell): 4 rows marked `done?`; PC-A please run the full `git log --all | grep` on the rest. Checked against the log: none of these IDs exist yet.
 
