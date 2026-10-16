@@ -7,5 +7,6 @@
   "objectives": [
     { "id": "arrive", "text": "Follow Burl", "journal": "The boars are gone, and the bear has a name: Burl. Follow her to where she leads.", "when": { "type": "flag", "id": "burl.arrived", "equals": true } }
   ],
-  "returnText": "Talk to Burl at the stone"
+  "returnText": "Talk to Burl at the stone",
+  "reward": { "items": [{ "id": "arrow", "n": 5 }] }
 }

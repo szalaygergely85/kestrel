@@ -10,5 +10,6 @@
     { "id": "north", "text": "Follow the footpath north", "journal": "Smoke rises in the north. Follow the footpath toward it.", "when": { "type": "area", "id": "northLook" } }
   ],
   "returnText": "Talk to Rook",
-  "abandonable": false
+  "abandonable": false,
+  "reward": { "items": [{ "id": "potion.hp", "n": 1 }] }
 }

@@ -11,5 +11,6 @@
     { "id": "wake", "text": "Wake the Bend waystone", "journal": "Hold the crystal to the carved mark.", "when": { "type": "flag", "id": "waystone.ws_roadBend.woken", "equals": true } }
   ],
   "returnText": "Talk to Rook",
-  "abandonable": false
+  "abandonable": false,
+  "reward": { "items": [{ "id": "potion.hp", "n": 1 }, { "id": "arrow", "n": 5 }] }
 }

@@ -256,6 +256,11 @@ const MAX_ENDTEXT_LINE = 40;
  * @returns {{ errors: string[], checks: number }}
  */
 const MAX_OBJECTIVE_TEXT = 38, MAX_ITEM_NAME = 14, MAX_BOOK_NAME = 21, MAX_ITEM_DESC = 38;
+/** Quests allowed to pay nothing, id -> reason (QUEST-REWARD-AUDIT). Keep empty unless the quest is a pure story hand-off. */
+export const NO_REWARD_OK = Object.freeze({
+  m1: 'legacy giverless auto-quest (sections only, no hand-in NPC); a giverless quest cannot reward (quest.js)',
+});
+
 export function validateContent(ASSETS, opts = {}) {
   const errors = [];
   const warnings = [];
@@ -688,6 +693,9 @@ export function validateContent(ASSETS, opts = {}) {
     questIds.add(def?.id);
     try { validateQuestDefinition(def); check(true, path, ''); }
     catch (e) { check(false, path, e.message); continue; }
+    // QUEST-REWARD-AUDIT (D-106): every quest pays something at hand-in (items / coin / heart piece), except the allow-listed ones.
+    { const r = def.reward, paid = !!r && ((r.items && r.items.length) || r.coin || r.heartPiece);
+      check(paid || Object.hasOwn(NO_REWARD_OK, def.id), `${path}.reward`, `quest "${def.id}" rewards nothing (D-106: add a reward, or allow-list it in NO_REWARD_OK with a reason)`); }
     for (const objective of def.objectives) {
       const base = `${path}.objectives[${objective.id}]`;
       inlineText(objective.text, `${base}.text`);

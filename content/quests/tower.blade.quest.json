@@ -43,5 +43,6 @@
       "Pinned to the wall: Do not stay down here.",
       "Climb the tower stair and find the blade?"
     ]
-  }
+  },
+  "reward": { "items": [{ "id": "arrow", "n": 5 }] }
 }

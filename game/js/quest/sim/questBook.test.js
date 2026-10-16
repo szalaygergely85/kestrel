@@ -21,7 +21,7 @@ assert.deepEqual([...STATUS_NAMES], ['unavailable', 'available', 'active', 'read
 assert.equal(validateGiverQuest(burl), burl);
 for (const bad of [{ ...burl, giver: {} }, { ...burl, id: 'Burl' }, { ...burl, requires: [{ quest: 'm1' }] }, { ...burl, requires: [{ quest: 'm1', done: 1 }] }, { ...burl, reward: { items: [{ id: 'coin', n: 0 }] } }])
   assert.throws(() => validateGiverQuest(bad));
-assert.equal(burl.reward, undefined, 'owner pick: no item reward');
+assert.ok(burl.reward && burl.reward.items.length > 0, 'D-106: every quest rewards something');
 
 // walk unavailable -> available -> active -> ready -> done
 const log = [];
@@ -45,7 +45,7 @@ const marksA = ['x'], marksR = [];
 b.giverMarks(marksA, marksR); assert.deepEqual([marksA, marksR], [[], ['bear']]);
 assert.equal(b.tracked(), 1);
 const reward = b.handIn('burl.boars');
-assert.deepEqual(reward.items, []); assert.ok(Object.isFrozen(reward));
+assert.deepEqual(reward.items, [{ id: 'arrow', n: 10 }]); assert.ok(Object.isFrozen(reward));
 assert.equal(b.handIn('burl.boars'), null, 'twice = null');
 assert.equal(b.status(1), DONE);
 assert.ok(b.main.completed.includes('beasts'), 'done flag advances m1 beasts');
@@ -72,7 +72,7 @@ assert.equal(b.hasKey('q.burl.boars.accept'), false, 'act keys are not has keys'
 assert.equal(b.actKey('q.burl.boars.available'), false);
 assert.equal(b.hasKey('q.burl.boars.ready'), true);
 assert.equal(b.actKey('q.burl.boars.handin'), true);
-assert.equal(b.lastReward.items.length, 0);
+assert.equal(b.lastReward.items.length, 1);
 assert.equal(b.hasKey('q.burl.boars.done'), true);
 assert.equal(b.statusOf('nope'), -1);
 assert.equal(b.objectives(1, [])[0].progress, 5);

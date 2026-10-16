@@ -9,5 +9,6 @@
     { "id": "riverBank", "text": "Follow the road to the river", "journal": "Rook gave you a chart of the river. Follow the road west to the water.", "when": { "type": "area", "id": "riverBank" } }
   ],
   "returnText": "Talk to Rook",
-  "abandonable": false
+  "abandonable": false,
+  "reward": { "items": [{ "id": "arrow", "n": 5 }] }
 }
