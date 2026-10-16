@@ -1995,3 +1995,8 @@ Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-
 
 - QL-MAIN-04 QUEST-GRAPH-LINT (kestrel-4, gipath) done: tools/quest-graph-lint.mjs (rule ids QG-A-UNREACHABLE, QG-B-CYCLE, QG-C-MISSING-QUEST, QG-D-REWARD-ITEM, QG-E-DIALOGUE-MISSING) + quest-graph-lint.test.mjs (one fixture per rule, clean control, real content 0 hits over 88 quests); wired as one line in validate-content.mjs main (content OK). Rule e = giver/turnIn entity's dialogue id must have a content/dialogue file (quest data has no node refs). Roots: giver-less quest without requires (m1).
 - QL-MAIN-03 CH3-REGION-HANDINS done: game/js/quest/regionQuests.e2e.test.js, 10/10 sq.reg.* pass runQuestE2e with no data fixes (asserts mark/hand-in/reward steps present). No commit made.
+
+### RND-NIGHT-RIM-03 MOON-RIM (kestrel-2, 2026-10-16) - dev, Node green, needs night stills (main session)
+- One rule in the LIGHT pass (terrain, voxels, meshes alike; shade pass untouched): rim = k*max(0,N.Lmoon)*(1-N.V)^2*fade, cool col, added to L. Files: engine/render/moonRim.js (+test), lighting.js (syncMoonRim in syncLiveSun, lightSurfaces twin), light.wgsl.js (+rimA vec4 last: 2976 B), passLight.js upload, main.js `?moonrim=0`.
+- k = 0.09 * night(sunI) * moon elevation; 0 by day, back-facing, moon off/below horizon; fade 0 from 150 m (never outshines sky, OB-209). Tests: moonRim.test + light/contactAO/lightShaft size pins updated; Node green. check-deps FAIL is pre-existing (tools/bench-upload.mjs deep import).
+- Still: `node tools/capture-browser.mjs` tower-door-22 and teaser crypt 22:00 with `?moonrim=1` vs `?moonrim=0` (ports 9575-9649); also run `?gpucompare=1` (light rows).

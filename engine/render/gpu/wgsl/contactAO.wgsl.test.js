@@ -52,7 +52,7 @@ console.log(`contactAO.wgsl: ${pts} points, ${exact} exact, ${tie} tie-rounded`)
 
 // LightU: appended at the end, 1 + 64 vec4 rows; n word is f32 x of caoA
 const fa = LIGHT_BLOCK.field('caoA'), fd = LIGHT_BLOCK.field('caoD');
-assert.equal(fd.word, fa.word + 4); assert.equal(fd.word + CAO_MAX * 2 * 4 + 4, LIGHT_BLOCK.sizeWords); // +4 = CANOPY-SHAFT-01b shaft vec4 after caoD
+assert.equal(fd.word, fa.word + 4); assert.equal(fd.word + CAO_MAX * 2 * 4 + 8, LIGHT_BLOCK.sizeWords); // +8 = CANOPY-SHAFT-01b shaft + RND-NIGHT-RIM-03 rimA vec4s after caoD
 assert.ok(LIGHT_BLOCK.field('pshSlot').word < fa.word, 'cao fields are appended after every existing word');
 assert.ok(LIGHT_BLOCK.sizeBytes <= 65536 / 2, 'LightU stays well under the 64 KB uniform limit');
 
