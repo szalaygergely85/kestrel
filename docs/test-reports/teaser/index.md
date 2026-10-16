@@ -16,3 +16,7 @@ Build: pc-b 3e972a4d (+ TEASER-QA path fixes). `node tools/teaser-stills.mjs --p
 | teaser-water | 12 (was 17) | fixed (hour) | at 17:00 the lake rendered near-black brown (`-h17-before-sheet`); at 12:00 it reads blue. Far shore = flat stepped slab band at the top |
 
 No HUD/pause overlays and no camera-inside-geometry frames in any path. Note: in a single run the 10th page load (leaves) timed out at 120 s; the load wait is now 240 s.
+
+## Re-sweep 2 (VISQA-30, 2026-10-16 pm, build e29ae27f)
+
+All 10 paths ran with no exceptions. Sheets re-shot (full frames deleted). REGRESSIONS: none. Still open: grass sun wedge + dark block on horizon (TEASER-QA-05, now also live = VISQA-25), leaves floor near-black (QA-01 render part), crypt-drone dark with facade only (QA-04/07), strand-dawn stair-stepped coast (QA-06), water far shore slab (QA-06). water at 12:00 reads blue (QA-02 fix holds). river-falls: streaky blue-white fall OK, but end frame shows a flat grey slab across the river + flat grey cliffs (VISQA-27).

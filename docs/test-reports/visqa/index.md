@@ -31,8 +31,8 @@
 | ![s2-burl.png](s2-burl.png) | in place, camera 1474,1028,2,255 model bear yaw 75 at 1471.0,1029.1 z 2.4 | Burl (npc bear) |
 | ![s2-rook.png](s2-rook.png) | in place, camera 982,1057,-86,180 model crow yaw 270 at 982.0,1060.0 z -86.4 | Rook (perched crow, on the Ford ruin crate; seen from the side, his front faces the ruin wall) |
 | ![s2-warden.png](s2-warden.png) | model char.kit cam 1440.0,1040.0 subject 1436.5,1040.0 z 1.3 yaw 90 (home 1669,629,-50,141) | region warden (char.kit) |
-| ![s2-boar.png](s2-boar.png) | model boarPlaceholder cam 1440.0,1040.0 subject 1436.5,1040.0 z 1.3 yaw 90 (home 1460,1030,2,134) | first boar |
-| ![s2-wolf.png](s2-wolf.png) | in place, camera 849,994,-74,182 model wolf yaw 272 at 848.7,997.1 z -74.4 | first wolf (brain.species wolf / model wolf); wolves live ~600 m west, unbound far from the player, so the camera goes to the wolf |
+| ![s2-boar.png](s2-boar.png) | model boarPlaceholder cam 1440.0,1040.0 subject 1436.5,1040.0 z 1.3 yaw 90 (home 1460,1033,2,235) | first boar |
+| ![s2-wolf.png](s2-wolf.png) | in place, camera 855,997,-75,294 model wolf yaw 24 at 852.0,995.2 z -74.8 | first wolf (brain.species wolf / model wolf); wolves live ~600 m west, unbound far from the player, so the camera goes to the wolf |
 | ![s2-skeleton.png](s2-skeleton.png) | model skeleton cam 1440.0,1040.0 subject 1436.5,1040.0 z 1.3 yaw 90 (home 1738,202,211,0) | first surface skeleton (crypt ones do not render when pinned to the meadow) |
 | ![s2-ui-inventory.png](s2-ui-inventory.png) | KeyI | pack (I) |
 | ![s2-ui-character.png](s2-ui-character.png) | KeyC | character / equipment (C) |
@@ -40,3 +40,7 @@
 | ![s2-ui-map.png](s2-ui-map.png) | KeyM | map (M) |
 | ![s2-ui-pause.png](s2-ui-pause.png) | lock lost | pause menu (pointer lock lost = what Esc does in a real browser) |
 | ![s2-ui-settings.png](s2-ui-settings.png) | KeyS+Enter | Settings from the pause menu (S selects, Enter opens) |
+
+## Re-sweep 2 (VISQA-30, 2026-10-16 pm, build e29ae27f)
+
+Sets 1+2 re-run. REGRESSIONS: none found (fixes from e11b9ba9 / 297040f4 still hold: quickbar night plates, interior haze, smoke-fire brazier, map label, journal, settings note, falls foam at night). Still open: VISQA-04 (lake-shore mint), -09/-21 (cliff pose flat, burl-home shows Burl but no house), -12 (bear den dark), -13 (interiors too dark to judge), -19/-24 (close-ups: wolf seen from the side behind a fence), -23 (smoke plume pale at night). New: VISQA-25 sun wedge also in live burl-home-09, -26 pink specks on the fall sheet (braid-falls-13), -27 river-falls end slab/flat grey cliffs, -28 sea cave flat wash, -29 tower-door-22 night mush (low), -31 sweep framing. Not viewed in detail (assumed unchanged): other 09/22 stills, s2-pause/settings/character, s2-rook/burl/warden/boar.
