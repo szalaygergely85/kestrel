@@ -223,7 +223,9 @@ fn stableCell(cell: vec2i) -> SCell {
   }
   // OB-198 (1): glyph hysteresis (aaFlags bit 0); off = hold only at equal level
   let lvDiff = abs(i32(lvC) - i32(lvP));
-  if (((u.aaFlags & 1) != 0 && lvDiff <= 1) || lvDiff == 0) { o.glyph = byteOf(hf.w); o.level = lvP; }
+  // AA-29 (aaFlags bit 2048): a held soft-edge leaf (leafHold) takes +-2 (twin: st.aaLeafLv)
+  let lvTol = select(1, 2, leafHold && (u.aaFlags & 2048) != 0);
+  if (((u.aaFlags & 1) != 0 && lvDiff <= lvTol) || lvDiff == 0) { o.glyph = byteOf(hf.w); o.level = lvP; }
   return o;
 }
 

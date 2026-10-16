@@ -60,7 +60,7 @@ function uniformObject(words, ints) {
 
 function compileStable(src, ctx) {
   const base = { ...shims, textureLoad: tl, LEVEL_NONE, LEVEL_ANIM, ...ctx, giKind: (y) => y & 0xff, giMat: (y) => (y >>> 16) & 0xffff, vec3f: (x, y, z) => ({ x, y, z }),
-    uMatI: { w: 1, h: 1, data: [[0, 0, 0, 0]] }, textureDimensions: (t) => ({ x: t.w, y: t.h }), vec2i: (x, y) => ({ x, y }) }; // AA-26: 1x1 stub MAT_I = not soft
+    uMatI: { w: 1, h: 1, data: [[0, LEAF ? 65536 : 0, 0, 0]] }, textureDimensions: (t) => ({ x: t.w, y: t.h }), vec2i: (x, y) => ({ x, y }) }; // AA-26: 1x1 stub MAT_I = not soft
   for (const n of ['byteOf', 'packRgb', 'blendCh', 'blendPacked', 'reprojectCell', 'reproject', 'grazeStep', 'grazeLimit', 'leafSoft']) base[n] = compileFn(src, n, base);
   return compileFn(src, 'stableCell', base);
 }
@@ -93,7 +93,7 @@ function makeFrame(st, cols, rows, plane, opts) {
     shadeFg: new Uint32Array(n), shadeBg: new Uint32Array(n), finalFg: new Uint32Array(n), finalBg: new Uint32Array(n),
     waterX: new Uint32Array(n).fill(0x7f800000), waterW: new Uint32Array(n),
   };
-  const baseKind = plane.n[2] === 0 ? KIND_WALL : TERR ? KIND_TERRAIN : KIND_FLOOR; // AA-28: TERR = floor scenes are terrain
+  const baseKind = LEAF ? KIND_MESH : plane.n[2] === 0 ? KIND_WALL : TERR ? KIND_TERRAIN : KIND_FLOOR; // AA-28: TERR = floor scenes are terrain
   for (let i = 0; i < n; i++) {
     const hit = geo.hit[i] === 1;
     f.kind[i] = !hit ? KIND_NONE : (rand() < 0.03 ? [KIND_MODEL, KIND_MESH, KIND_NONE][Math.floor(rand() * 3)] : baseKind);
@@ -143,10 +143,11 @@ let EDGE = false; // AA-18: aaEdge switch of the probe scenes (off keeps the edg
 let VOX = true; // AA-21: aaVox switch of the probe scenes
 let GRAZE = true; // AA-20: aaGraze switch (the old-rule mutations run with it off, the graze mutation with it on)
 let TERR = false, TERRSNAP = true; // AA-28: terrain floor scenes + the aaTerrSnap switch
+let LEAF = false, LEAFLV = true; // AA-29: soft-edge leaf (kind 9, mat 0 soft) scenes + the aaLeafLv switch
 let HUE = true; // AA-23: aaHue switch (old per-channel blend mutations run with it off)
 let ANCHOR = true; // AA-09: aaAnchor switch of the probe scenes (the mutation loop runs both)
 function scene(src, cam0, cam1, plane, tweak) {
-  const st = createStableState(); st.aaAnchor = ANCHOR; st.aaEdge = EDGE; st.aaVox = VOX; st.aaGraze = GRAZE; st.aaHue = HUE; st.aaTerrSnap = TERRSNAP;
+  const st = createStableState(); st.aaAnchor = ANCHOR; st.aaEdge = EDGE; st.aaVox = VOX; st.aaGraze = GRAZE; st.aaHue = HUE; st.aaTerrSnap = TERRSNAP; st.aaLeafLv = LEAFLV;
   beginFrame(st, cam0, GRID);
   const fa = makeFrame(st, COLS, ROWS, plane, {});
   const hist = createStableBuffers(COLS, ROWS);
@@ -181,7 +182,7 @@ function twinInput(f) {
   const water = waterMaskFromLayer(f.waterX, f.waterW, new Uint8Array(N));
   return {
     cols: COLS, rows: ROWS, kind: f.kind, mat: f.mat, planeId: f.planeId, u: f.geo.u, v: f.geo.v, vd: f.geo.vd, level: f.level, glyph: f.glyph,
-    fg: f.finalFg, bg: f.finalBg, edge, water, detail: new Float32Array(N).fill(DETAIL),
+    fg: f.finalFg, bg: f.finalBg, edge, water, detail: new Float32Array(N).fill(DETAIL), soft: LEAF ? new Uint8Array(N).fill(1) : undefined,
   };
 }
 
@@ -271,6 +272,17 @@ for (const [mn, from, to] of [['AA-28 material test dropped', 'kind == ${KIND_TE
   assert.ok(cases.some(([name, c0, camK, plane]) => [1, 2, 3].some((k) => runCase(src, name, c0, camK, plane, k, terrTweak).mism > 0)), `mutation survived: ${mn}`);
 }
 TERR = false;
+// AA-29 (OB-208): leaf scenes (every hit cell a soft-edge kind-9 leaf, +-1/+-2 level steps) at parity in both switch states; mutation caught
+const seedLeaf = seed; // keep the random stream of the later probes unchanged
+LEAF = true;
+for (LEAFLV of [true, false]) for (const [name, c0, camK, plane] of cases) for (let k = 1; k <= 4; k++) {
+  const r = runCase(STABLE_WGSL, name, c0, camK, plane, k);
+  assert.equal(r.mism, 0, `aaLeafLv ${LEAFLV} ${name} k=${k}: ${r.mism} mismatches ${JSON.stringify(r.bad)}`);
+}
+LEAFLV = true;
+assert.ok(STABLE_WGSL.includes('select(1, 2, leafHold && (u.aaFlags & 2048) != 0)'), 'mutation anchor missing: AA-29');
+assert.ok(cases.some(([name, c0, camK, plane]) => [1, 2, 3].some((k) => runCase(STABLE_WGSL.replace('select(1, 2, leafHold && (u.aaFlags & 2048) != 0)', 'select(1, 2, false)'), name, c0, camK, plane, k).mism > 0)), 'mutation survived: AA-29 leaf +-2 dropped');
+LEAF = false; seed = seedLeaf;
 VOX = false; // AA-21 (OB-208): aaVox off (kind 8 keeps the history anchor) stays at parity
 for (const [name, c0, camK, plane] of cases) for (let k = 1; k <= 4; k++) {
   const r = runCase(STABLE_WGSL, name, c0, camK, plane, k);
@@ -300,7 +312,7 @@ const mutations = [
   ['floor(y+0.5) -> floor(y)', 'floor(pc.y + 0.5)', 'floor(pc.y)'],
   ['snap threshold > -> >=', 'abs(d) > u.snap', 'abs(d) >= u.snap'],
   ['blend rounding (+1)', '(p + c + 1u) >> 1u', '(p + c) >> 1u'],
-  ['glyph hold window <=1 -> <1', 'lvDiff <= 1)', 'lvDiff < 1)'],
+  ['glyph hold window <=1 -> <1', 'lvDiff <= lvTol)', 'lvDiff < lvTol)'],
   ['edge: fg.r ignored', '(fgC.x != sf.x || ', '('],
   ['edge: glyph ignored', 'fgC.w != sf.w || ', ''],
   ['edge: bg.b ignored', ' || bgC.z != sb.z)) { return o; }', ')) { return o; }'],

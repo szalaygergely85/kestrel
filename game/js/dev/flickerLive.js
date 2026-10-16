@@ -16,6 +16,7 @@ export async function diagCapture(wg) {
   await dv.readback(t.texGI, rect, r.GI); await dv.readback(t.texGA, rect, r.GA); await dv.readback(t.texDepth, rect, r.Depth); await dv.readback(t.texLevel, rect, r.level);
   await dv.readback(t.texFinalFg, rect, r.preFg); await dv.readback(t.texFinalBg, rect, r.finalBg);
   await dv.readback(inp.shadeFg || t.texShadeFg, rect, r.shadeFg); await dv.readback(inp.shadeBg || t.texShadeBg, rect, r.shadeBg);
+  if (t.texLight) { r.Light = new Uint32Array(4 * n); await dv.readback(t.texLight, rect, r.Light); } // AA-29: leaf levelJump light buckets
   return r;
 }
 
