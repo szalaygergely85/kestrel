@@ -523,6 +523,7 @@
     {"name":"setLook","area":"render","tier":"experimental"},
     {"name":"setSampleDh","area":"world","tier":"stable"},
     {"name":"setSampleType","area":"world","tier":"stable"},
+    {"name":"setTerrainSnapHold","area":"render","tier":"experimental"},
     {"name":"setTint","area":"anim","tier":"stable"},
     {"name":"setVoxelHold","area":"render","tier":"experimental"},
     {"name":"setWindHold","area":"render","tier":"experimental"},
