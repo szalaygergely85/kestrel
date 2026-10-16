@@ -1946,3 +1946,8 @@ Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-
 - 23: particleLayer.js: growing smoke puffs (sizeEndM > sizeM) multiply colour AND fog colour by smokeDimRatio (gain without the 0.32 fgMin floor / floored gain) -> follows ambient/moon at night; farSmoke thinner (size 1.0 -> 4, spread 5 deg, box .3). Tests: particleLayer (smokeDimRatio), farSmoke. No WGSL (particles are CPU-only).
 - 26: cause = sheet highlight specks (h>0.92, look.highlight white) were alpha-blended 25 % with the shaded cliff floor (warm rock -> salmon). Now fg opaque when a>0 (JS twin waterComposite.js, wgsl, glslref); alpha 0 still preserves scene. waterfall.test pinned.
 - Verify: re-shoot visqa-sweep spots smoke-fire-22 and braid-falls-13 (+ ?gpucompare=1 for the water shader change).
+
+### kestrel-2 aa30: VISQA-25 (render, Node only, not browser-verified); VISQA-27 not started (budget)
+- 25: cause = CANOPY-SHAFT-01b sky-cell lift in shade.wgsl.js (GPU-only, no JS twin) used shaft iso 0.25: every sunlit sky ray got the lift regardless of sun angle, rays marching through tree shadow got less -> unshadowed gaps = pale wedge from the top edge (matches col ~117 rows 0-20, 93 deg off the sun, skyGlow/farSkyShift innocent). Fix: sky call passes iso 0.0 (forward lobe pow(cos,pw) only). Night/far fog untouched (OB-209 safe). Test: lightShaft.test.js VISQA-25.
+- Prior TEASER-QA-05 attempt likely changed the wrong arg/pass; if wedge persists the shaft march itself (light.wgsl shaftBitsAt) is next.
+- Verify: re-shoot visqa spot burl-home-09 + `node tools/teaser-stills.mjs <port>` grass, then ?gpucompare=1 (shade WGSL changed). 27: findings none.

@@ -108,3 +108,14 @@ ok('WGSL shaftW == oracle', (() => {
   console.log(`shaft JS oracle 240x90 x10 steps: ${(performance.now() - t0).toFixed(2)} ms (${s})`);
 }
 console.log(`lightShaft.test: ${pass} checks ok`);
+
+// VISQA-25: sky cells use iso 0 (forward lobe only). iso > 0 lifted every sunlit sky ray ~93 deg off the sun, so the unshadowed gaps between
+// trees read as a pale wedge against shadow-marched rays. Pin: WGSL sky call passes 0.0 for iso; sun-side keeps its lift.
+{
+  const src = (await import('./gpu/wgsl/shade.wgsl.js')).SHADE_WGSL;
+  const m = src.match(/let sw = shaftW\(sq, su\.shaftA\.w, dot\(skyDir, su\.sunDir\)[^;]*;/);
+  assert.ok(m && /su\.shaftA\.x, 0\.0, su\.shaftA\.z/.test(m[0]), 'VISQA-25: sky shaft lift passes iso 0.0');
+  const A = { k: 0.5, iso: 0.0, pw: 4, maxM: 28 };
+  assert.equal(shaftW(15, 28, -0.05, 1, A, 0), 0, 'VISQA-25: away from sun -> no sky lift');
+  assert.ok(shaftW(15, 28, 0.98, 1, A, 0) > 0.3, 'VISQA-25: toward sun keeps lift');
+}
