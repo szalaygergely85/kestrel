@@ -297,6 +297,7 @@ export class WgShadePass {
     if (useScene && p._cam) { su[S_UNDER_CAM] = p._cam.x; su[S_UNDER_CAM + 1] = p._cam.y; }
     su[S_FOGVIEW + 2] = fogShapeOn && this.terrainU.fogOn && meshOutdoorFog(p._world, p._cam, p._palette) ? 1 : 0; // OB-089: mesh pixels fog like the terrain outdoors
     const liveK = this.palette && this.palette.liveLook; su[S_SKYGLOWON + 1] = liveK && liveK.floorEff > 0 ? liveK.floorEff : 0; // DN-02 night glyph-luminance floor (0 = off)
+    const atm = this.palette && this.palette.atmos; su[S_SKYGLOWON + 2] = fogShapeOn && atm && atm.farSkyW > 0 ? atm.farSkyW : 0; // VISQA-02: far fog sky shift weight (twin: fogShape.js farSkyPrep)
     su[S_SKYGLOWON] = fogShapeOn ? 1 : 0; // AUD-40: same gate, written every frame (sunDir/sunI are stale outside terrain worlds)
     if (this.skyClouds) { const o = S_CLOUD + 12, w = this.skyCloudWind; su[o] = (w[0] * tSec) % 256; su[o + 1] = (w[1] * tSec) % 256; } // drift = sky.js cloudDriftOffset (f32 store = fround)
     if (pitched) {

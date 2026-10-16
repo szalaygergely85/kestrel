@@ -26,7 +26,7 @@ import { entityTintAt, tintChannel } from './entityTint.js';
 import { vegTintGain } from '../mesh/vegTint.js';
 import { KIND_MODEL, KIND_MESH, FACE_PACKED } from './GBuffer.js';
 import { clamp01, clampByte } from '../core/math.js';
-import { fogShapeCtx, fogShapeF, fogScatterW, fogScatterColor, fogCellDirJS, folDiceJS } from './fogShape.js';
+import { fogShapeCtx, fogShapeF, fogScatterW, fogScatterColor, fogCellDirJS, folDiceJS, farSkyActive, farSkyShiftJS } from './fogShape.js';
 
 // --- fast level()/orientClass() (tech notes item 6) -------------------------
 const TAN22 = Math.tan(22 * Math.PI / 180);
@@ -606,7 +606,7 @@ export function shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist
  * the averaged `b`/`gb`/`cr`/`cg`/`cb`/`bgK`/`hA`/`hB`. `face` is only
  * needed for `orientClassCode`'s du/dv axis pick.
  */
-const _fogFgS = [0, 0, 0], _fogBgS = [0, 0, 0], _fogOut = [0, 0, 0];
+const _fogFgS = [0, 0, 0], _fogBgS = [0, 0, 0], _fogOut = [0, 0, 0], _farSh = [0, 0, 0], _farC = [0, 0, 0];
 let vegOn = false; // AUD-47: set per cell by shadeSurfaces (v2 path) so the gain lands before fog like the WGSL
 const vegGain = new Float32Array(3);
 function shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff, light, out, cellIdx) {
@@ -618,7 +618,11 @@ function shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff
     const o = fogShapeCtx;
     f = dist <= o.tStart ? 0 : dist >= o.tFull ? 1 : (dist - o.tStart) / (o.tFull - o.tStart);
     if (o.tCurve !== 1) f = Math.pow(f, o.tCurve);
-    const nr = o.tNear, fr2 = o.tFar;
+    let fr2 = o.tFar; const nr = o.tNear;
+    if (farSkyActive()) { // VISQA-02: far colour + the sky gradient shift at this cell's elevation (twin of WGSL gFarSky)
+      const cols = o.terms.cols, row = Math.floor(cellIdx / cols), sh = farSkyShiftJS(cellIdx - row * cols, row, _farSh);
+      _farC[0] = fr2[0] + sh[0]; _farC[1] = fr2[1] + sh[1]; _farC[2] = fr2[2] + sh[2]; fr2 = _farC;
+    }
     _fogOut[0] = nr[0] + (fr2[0] - nr[0]) * f; _fogOut[1] = nr[1] + (fr2[1] - nr[1]) * f; _fogOut[2] = nr[2] + (fr2[2] - nr[2]) * f;
     fogFgC = _fogOut; fogBgC = _fogOut;
   } // edge-pass gate (gbuf.fogF): the LINEAR factor - edge.wgsl fogF(dist) recomputes it without the AUD-45 boost

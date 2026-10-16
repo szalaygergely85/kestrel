@@ -35,3 +35,12 @@ assert.equal(none.worstDist, 0); assert.ok(!farGateFails(none));
 const night = measureFarBand((() => { const p = still([60, 70, 110], [28, 34, 56]); for (let i = 0; i < p.length; i += 4) { const y = Math.floor(i / 4 / W); if (y >= 80 && y < 130) { p[i] = 8; p[i + 1] = 10; p[i + 2] = 12; } } return p; })(), W, H, opts);
 assert.ok(night.shapes >= 2 && farGateFails(night), `night pale hill fails (${night.worstDist})`);
 console.log('farSilhouette.test: ok');
+
+// VISQA-02: measureRidge - a flat cream block under a blue sky fails; the same block shaded like the sky above it passes.
+{
+  const { measureRidge } = await import('./farSilhouette.mjs');
+  const W = 200, H = 200, img = (fillFn) => { const px = new Uint8Array(W * H * 4); for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4, c = y < 80 ? [120, 150, 200 + (80 - y) * 0.3] : fillFn(y); px[i] = c[0]; px[i + 1] = c[1]; px[i + 2] = c[2]; px[i + 3] = 255; } return px; };
+  const bad = measureRidge(img(() => [243, 219, 178]), W, H, { xFrom: 0, xTo: 1, yFrom: 0.3, yTo: 0.6 });
+  const good = measureRidge(img(() => [125, 152, 198]), W, H, { xFrom: 0, xTo: 1, yFrom: 0.3, yTo: 0.6 });
+  assert.ok(farGateFails(bad) && !farGateFails(good), `ridge gate: bad ${bad.worstDist} good ${good.worstDist}`);
+}

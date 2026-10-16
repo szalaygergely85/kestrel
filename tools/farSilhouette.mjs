@@ -50,3 +50,30 @@ export function measureFarBand(px, w, h, opts = {}) {
 export function farGateFails(m, { maxDist = 36 } = {}) {
   return m.worstDist > maxDist;
 }
+
+/**
+ * VISQA-02 (high far ridge): per column strip in [xFrom, xTo), rows [yFrom, yTo): the strongest step between the sky block just above
+ * (rows y-6..y-2) and a FLAT block below (rows y..y+minH all within fillT of row y+1) = a far mountain cut out as one flat fill against
+ * the sky at its ridge, counted only when the fill is PALER (luma) than that sky. dist = rgb distance of the two blocks; worstDist = mean of the 3 worst strips (gate with farGateFails).
+ * Before VISQA-02 (burl-home 09/13: flat cream under blue sky) it is large; after, the fogged ridge takes the sky colour at its elevation.
+ */
+export function measureRidge(px, w, h, opts = {}) {
+  const o = { xFrom: 0.42, xTo: 0.78, yFrom: 0.25, yTo: 0.5, cols: 20, fillT: 6, minH: 12, ...opts };
+  const shapes = [];
+  for (let x0 = Math.floor(o.xFrom * w); x0 + o.cols <= Math.floor(o.xTo * w); x0 += o.cols) {
+    const x1 = x0 + o.cols; let best = null;
+    for (let y = Math.floor(o.yFrom * h); y < Math.floor(o.yTo * h); y++) {
+      const ref = bandMean(px, w, x0, x1, y + 1, y + 2); let flat = true;
+      for (let k = y; k < y + o.minH && flat; k++) { const m = bandMean(px, w, x0, x1, k, k + 1); flat = Math.abs(m.r - ref.r) + Math.abs(m.g - ref.g) + Math.abs(m.b - ref.b) <= o.fillT * 3; }
+      if (!flat) continue;
+      const sky = bandMean(px, w, x0, x1, y - 6, y - 2), fill = bandMean(px, w, x0, x1, y, y + 4);
+      if (fill.l < sky.l) continue; // only PALE cut-outs (owner: flat cream far hill); a darker ridge / cloud underside is aerial perspective
+      const dist = Math.hypot(fill.r - sky.r, fill.g - sky.g, fill.b - sky.b);
+      if (!best || dist > best.dist) best = { x: x0, top: y, dist: Math.round(dist), fill: [fill.r, fill.g, fill.b].map(Math.round), sky: [sky.r, sky.g, sky.b].map(Math.round) };
+    }
+    if (best) shapes.push(best);
+  }
+  shapes.sort((a, b) => b.dist - a.dist);
+  const k = Math.min(3, shapes.length), worstDist = k ? shapes.slice(0, k).reduce((a, s) => a + s.dist, 0) / k : 0;
+  return { shapes: shapes.length, worstDist, worst: shapes.slice(0, 3) };
+}
