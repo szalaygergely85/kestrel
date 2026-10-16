@@ -3,6 +3,8 @@
 // (D-039). Both only act where f > 0 (short range is untouched) and leave f == 1 at 1. Sun colour/strength come from skyGlow.js.
 import { SKY_GLOW, skyGlowStrength } from './skyGlow.js';
 import { screenRay } from './projection.js';
+import { skyLutFromPalette } from './waterReflect.js';
+import { SKY_LUT_N } from './gpu/wgsl/skyLut.js';
 
 export const FOG_SHAPE = Object.freeze({
   base: 6,            // metres: fog height reference (valley floor); denser below, thinning above
@@ -91,6 +93,36 @@ export function folDiceJS(col, row, dist, seed) { // seed = material seed + salt
   h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
   h ^= h >>> 16;
   return (h >>> 0) / 4294967296;
+}
+/**
+ * VISQA-02 (OB-209 follow-up): far fog follows the sky gradient at the cell's own elevation. Per frame: skyW = P.atmos.farSkyW
+ * (biome share of the sky-horizon far fog, 0 = off -> byte-identical) and the CPU copy of the GPU sky LUT (same bake as passShade
+ * _bakeSky: look stops + atmos haze, f32). Per cell: out = skyW * (lut[idx(elev)] - lut[0]) for elev > 0, else 0 (twin of WGSL
+ * farSkyShift: elev from fogCellDir, idx = round(clamp(elev / elevTop) * (N - 1))). Needs fogShapeCtx.terms for this frame.
+ */
+const farSky = { w: 0, top: 0, ver: -1, live: -1, P: /** @type {any} */ (null), lut: new Float32Array(SKY_LUT_N * 4) };
+export function farSkyPrep(P) {
+  const st = P && P.atmos, w = st && st.farSkyW > 0 ? st.farSkyW : 0;
+  farSky.w = 0;
+  if (!w) return 0;
+  const fv = P.liveFogVersion | 0, lv = P.liveLookVersion | 0;
+  if (farSky.P !== P || farSky.ver !== fv || farSky.live !== lv) { farSky.top = skyLutFromPalette(P, farSky.lut) || 0; farSky.P = P; farSky.ver = fv; farSky.live = lv; }
+  if (farSky.top > 0) farSky.w = w;
+  return farSky.w;
+}
+/** Disable the per-cell shift (non-terrain frames). */
+export function farSkyOff() { farSky.w = 0; }
+/** True when farSkyShiftJS can return non-zero this frame. */
+export function farSkyActive() { return farSky.w > 0; }
+export function farSkyShiftJS(col, row, out) {
+  out[0] = 0; out[1] = 0; out[2] = 0;
+  if (!(farSky.w > 0) || !fogShapeCtx.terms) return out;
+  const d = fogCellDirJS(col, row), fr = Math.fround;
+  const e = fr(Math.atan2(fr(d[2]), fr(Math.hypot(fr(d[0]), fr(d[1])))) * (180 / Math.PI));
+  if (!(e > 0)) return out;
+  const t = Math.min(1, e / farSky.top), L = farSky.lut, o = Math.floor(t * (SKY_LUT_N - 1) + 0.5) * 4, w = farSky.w;
+  out[0] = w * (L[o] - L[0]); out[1] = w * (L[o + 1] - L[1]); out[2] = w * (L[o + 2] - L[2]);
+  return out;
 }
 const _dir = [0, 0, 0], _ray = { ox: 0, oy: 0, oz: 0, dx: 0, dy: 0, dz: 0 };
 

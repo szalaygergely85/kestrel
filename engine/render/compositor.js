@@ -5,7 +5,7 @@
 // beginFrame/castSectors/.../fillSky sequence main.js used to write out by
 // hand for a single bare level (US-024).
 import { windSwayOn, sunWindClock } from '../mesh/sway.js';
-import { fogShapeCtx, meshOutdoorFog } from './fogShape.js';
+import { fogShapeCtx, meshOutdoorFog, farSkyPrep, farSkyOff } from './fogShape.js';
 import { fillSky, ambientL, primeAmbientLight } from './sky.js';
 import { shadeTerrainCells } from './terrainShade.js';
 import { carpetCtxFor, carpetCells } from './carpet.js';
@@ -416,7 +416,8 @@ export function renderWorld(fb, world, cam) {
       const fsun = sunFromWorld(world, fb.palette, skySunScratch);
       fsc.mode = meshPitched ? (meshPitchTerms.ortho ? 2 : 1) : 0; fsc.terms = meshPitched ? meshPitchTerms : meshTerms; fsc.camZ = cam.z; fsc.camX = cam.x; fsc.camY = cam.y; // AA-15: + cam x/y for folDiceJS
       fsc.sunX = fsun.dirX; fsc.sunY = fsun.dirY; fsc.sunZ = fsun.dirZ; fsc.sunI = fsun.sunI;
-    }
+      farSkyPrep(fb.palette); // VISQA-02: far fog -> sky at the cell's elevation (terrain + outdoor meshes; terms stay set for shadeTerrainCells)
+    } else farSkyOff();
     shadeSurfaces(fb, fb.gbuf, fb.matTable, fb.detailPass, fb.light);
     fsc.on = false; fsc.outdoor = false;
     shadeTerrainCells(fb, world.terrain, world, fb.timeSec || 0, meshHashCell);

@@ -25,7 +25,7 @@ export function atmosFogFitError(samples = 3000) {
 export function createAtmosState() {
   return {
     on: false, version: 0,
-    fogNear: new Float32Array(3), fogFar: new Float32Array(3), wNone: 1, fogStart: 0, fogFull: 1, fogCurve: 1,
+    fogNear: new Float32Array(3), fogFar: new Float32Array(3), wNone: 1, farSkyW: 0, fogStart: 0, fogFull: 1, fogCurve: 1,
     haze: new Float32Array(3), hazeK: 0,
     lift: new Float32Array(3), invGamma: new Float32Array([1, 1, 1]), gain: new Float32Array([1, 1, 1]), sat: 1,
     gradeId: true,      // grade is exactly the identity (skipped)
@@ -116,7 +116,10 @@ export function applyAtmosToPalette(P, state) {
   // stop t = 0 + this state's haze at t = 0), so fully fogged far hills melt into the sky instead of a pale/green cut-out.
   // Weighted by the biome share (1 - wNone): wNone 1 keeps the base far colour (fogHour) byte-identical.
   const fw = 1 - (state.wNone >= 0 ? state.wNone : 0), ff = state.fogFar;
-  if (fw > 0 && skyHorizonRGB(P, state, HZ)) { HZ[0] = ff[0] + (HZ[0] - ff[0]) * fw; HZ[1] = ff[1] + (HZ[1] - ff[1]) * fw; HZ[2] = ff[2] + (HZ[2] - ff[2]) * fw; setLive(P, LIVE_FAR, HZ); }
+  // VISQA-02: farSkyW = that share; the shade passes add farSkyW * (sky(elev) - sky(0)) per cell (fogShape.js farSkyShiftJS / WGSL
+  // farSkyShift), so a far ridge high above the horizon fogs to the sky at ITS elevation, not one flat horizon cream.
+  state.farSkyW = 0;
+  if (fw > 0 && skyHorizonRGB(P, state, HZ)) { HZ[0] = ff[0] + (HZ[0] - ff[0]) * fw; HZ[1] = ff[1] + (HZ[1] - ff[1]) * fw; HZ[2] = ff[2] + (HZ[2] - ff[2]) * fw; setLive(P, LIVE_FAR, HZ); state.farSkyW = fw; }
   else setLive(P, LIVE_FAR, ff);
   P.fog.far = L; P.atmos = state;
   P.liveFogVersion = (P.liveFogVersion | 0) + 1;
