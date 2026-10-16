@@ -97,7 +97,7 @@ const gC = numericLiterals(glslC), wC = numericLiterals(wgslC);
 wC.delete(64); wC.delete(0.001); // RIVER-03 (38.45): ribbon flag bit + e*1000 decode, no GLSL equivalent (GLSL frozen, D-044)
 wC.delete(24); // S8-B2-12b (38.13): CLOUD_SHIFT, the cloud-darkening byte's bit shift - no GLSL equivalent (GLSL frozen, D-044)
 for (const v of [RIPPLE_SPEED, RIPPLE_W]) wC.delete(v); // S8-B2-13b (38.14): ripple-only constants (2, 0.2, 255 are already required by unrelated GLSL text), no GLSL equivalent (GLSL frozen, D-044)
-wC.delete(0.000001); for (const v of [WATER_REFLECT.f0, WATER_REFLECT.skyMix, WATER_REFLECT.darken]) wC.delete(v); // AUD-42: reflection-only constants (GLSL frozen, D-044)
+wC.delete(0.000001); for (const v of [WATER_REFLECT.f0, WATER_REFLECT.skyMix, WATER_REFLECT.darken, WATER_REFLECT.skyFloor]) wC.delete(v); // AUD-42: reflection-only constants (GLSL frozen, D-044)
 assert.deepEqual([...gC].filter((v) => !wC.has(v)), [], 'GLSL constants missing in WGSL');
 assert.deepEqual([...wC].filter((v) => !gC.has(v)), [], 'WGSL constants not in GLSL');
 

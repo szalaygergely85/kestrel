@@ -2112,7 +2112,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       const world = engine.world;
       stepSectorAnims(world, dt); world.water.step();
       evaluatePath(cinematic, simTime, cam);
-      if (cinematicHours) applySunHours(world, lightSet, cam.hour, worldSunPath, sunEnabled);
+      if (cinematicHours) applySunPair(world, lightSet, cam.hour, cam.hour, worldSunPath, sunEnabled); // TEASER-QA-07: moon light at night like the game (was sun-only: night teasers had no moon)
       if (world.cloths) world.cloths.tick(clothTick, world.wind, cam.x, cam.y, cam.z);
       stepAnimations(world, dt * 1000);
       if (waterfallHooks) waterfallHooks.step();
@@ -2618,7 +2618,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       cam.x = eye.x; cam.y = eye.y; cam.z = eyeZ(eye.z, playerHandle.data.components.body, PHYSICS); cam.yawDeg = eye.yawDeg; // SETTINGS-APPLY-01: reduce motion drops head bob
       cam.pitchDeg = eye.pitchDeg + gateKick((vitals ? kickDeg(vitals, simTime) : 0) + (fbView ? fbView.kickDeg() : 0)); // US-080a2 (30.2): hurt pitch kick + SPELL-01b blast kick, render eye only - never written into `look`
       if (cinematic) evaluatePath(cinematic, simTime, cam);
-      if (cinematicHours) applySunHours(engine.world, lightSet, cam.hour, worldSunPath, sunEnabled);
+      if (cinematicHours) applySunPair(engine.world, lightSet, cam.hour, cam.hour, worldSunPath, sunEnabled); // TEASER-QA-07 (moon, as above)
       fb.timeSec = simTime;
       syncFb(); // FB-01: same-frame appearance after unlock
       if (wgPipeline && wgPipeline.setCarpetFrame && engine.world && engine.world.carpet) { const wp = engine.world.wind && engine.world.wind.params; wgPipeline.setCarpetFrame(fb.timeSec, wp && wp.speed > 0 ? wp : null); } // OB-073-D2f: blade sway time + wind

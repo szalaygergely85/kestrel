@@ -211,7 +211,7 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
       let rF = ${WATER_REFLECT.f0} + (1.0 - ${WATER_REFLECT.f0}) * (rm2 * rm2 * rm);
       let rt = clamp(degrees(asin(rc)) / wu.reflectU.x, 0.0, 1.0);
       let rsky = wu.skyLut[i32(floor(rt * ${SKY_LUT_N - 1}.0 + 0.5))].rgb;
-      let rkS = rF * ${WATER_REFLECT.skyMix};
+      let rkS = max(rF, ${WATER_REFLECT.skyFloor}) * ${WATER_REFLECT.skyMix}; // TEASER-QA-02: sky floor (twin waterReflect.js)
       let rBody = (1.0 - ${WATER_REFLECT.darken} * (1.0 - rF)) * (1.0 - rkS);
       wc = wc * rBody + rsky * rkS;
       wb = wb * rBody + rsky * rkS;

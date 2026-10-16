@@ -9,6 +9,8 @@ export const WATER_REFLECT = Object.freeze({
   f0: 0.06,        // fresnel at normal incidence (looking straight down: mostly see into the water)
   skyMix: 0.85,    // max share of the sky colour at fresnel 1 (grazing view)
   darken: 0.18,    // body darkening at steep view (scaled by 1 - fresnel)
+  skyFloor: 0.3,   // TEASER-QA-02: min fresnel for the sky share only (kS = max(F, skyFloor) * skyMix): a lake at low sun / steep view
+                   // keeps ~25 % of its sky colour instead of going near-black (body k drops ~3.5x noon -> 17:00); the darken term keeps F
 });
 
 /** Flat sky gradient LUT, same bake as WgShadePass._bakeSky (read-only twin; rgb in 0..255, 4 floats per sample). Returns elevTop or 0 (no sky). */
@@ -52,8 +54,8 @@ export function waterReflectAt(eyeZ, dx, dy, dz, lut, elevTop, out) {
   return out;
 }
 
-/** Body colour after reflection: body * (1 - darken*(1-F)) * (1-kS) + sky * kS, kS = F*skyMix. @param {number} body @param {number} F @param {number} sky */
+/** Body colour after reflection: body * (1 - darken*(1-F)) * (1-kS) + sky * kS, kS = max(F, skyFloor)*skyMix. @param {number} body @param {number} F @param {number} sky */
 export function waterReflectMix(body, F, sky) {
-  const kS = F * WATER_REFLECT.skyMix;
+  const kS = (F > WATER_REFLECT.skyFloor ? F : WATER_REFLECT.skyFloor) * WATER_REFLECT.skyMix;
   return body * (1 - WATER_REFLECT.darken * (1 - F)) * (1 - kS) + sky * kS;
 }
