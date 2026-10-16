@@ -6,7 +6,7 @@
 import { spawn } from 'node:child_process';
 import { writeFileSync, readFileSync, readdirSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
-import { pickCliffPose, pickEntity } from './visqa-pick.mjs';
+import { pickCliffPose, pickEntity, closeupPose } from './visqa-pick.mjs';
 import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, connectCdp, evaluate, evaluateAsync, killTree } from './capture-browser.mjs';
 
 // [name, x, y, yawDeg (0 = north/-y, 90 = east), pitchDeg, note]
@@ -21,7 +21,7 @@ export const SPOTS = [
   ['braid-falls', 1238, 632, 0, 12, 'braidFalls from below'],
   ['cliff', 1552, 468, 0, 12, 'northwood hillside cliff face (~9 m rise at y 454-458), looking up from below (VISQA-09; the old 1250,596 spot stood in the outlet river)'],
   ['lake-shore', 1215, 547, 0, 0, 'Glasswater south shore'],
-  ['burl-home', 1404, 1019, 0, 4, "Burl's new home (1404,1010)"],
+  ['burl-home', 1407.5, 1014.5, 322, 4, "VISQA-09: Burl at his post-departure home waypoint walks.home (1404,1010), seen from 5.7 m SE. NOTE: no home BUILDING exists in tracked content (the waypoint is just a clearing; content/local/placements.json has no structures), so this frames Burl only"],
   ['smoke-fire', 958, 1011, 0, 6, 'VISQA-15: smokeFire1 brazier at the base of the goblin smoke plume (958,1004)'],
 ];
 // VISQA-10 set 2. Interiors: [name, x, y, zFloor (null = ground snap), yawDeg, pitchDeg, note] (world coords from the level origins in world_m1)
@@ -87,10 +87,15 @@ async function runSet2() {
     const found = await evaluate(cdp, `(()=>{const e=${finder};return !!(e&&e.transform)})()`).catch(() => false);
     if (!found) { rows.push({ file: `s2-${name}.png`, pose: 'not found', note }); console.log('closeup', name, 'NOT FOUND', name === 'wolf' ? '- no wolf in range' : ''); continue; }
     if (mode === 'inplace') { // VISQA-19/24: npcs (Burl walks, Rook sits underground) stay where the sim keeps them; the camera goes 3.5 m in front of them, looking back
-      const cam = async () => { const q = await evaluate(cdp, `(()=>{const E0=${finder},B0=__debug.beasts,i0=B0.entities.indexOf(E0);if(i0>=0&&${name === 'wolf'}){const t=E0.transform,fx=B0.fx[i0],fy=B0.fy[i0],n=Math.hypot(fx,fy)||1,px=fx/n,py=fy/n;return [t.x+px*${D},t.y+py*${D},t.z,(Math.atan2(-px,py)*180/Math.PI+360)%360]}const t=${finder}.transform,side=${name === 'rook' ? 1 : 0},a=((t.yawDeg||0)+(side?90:0))*Math.PI/180;return [t.x+Math.sin(a)*${D},t.y-Math.cos(a)*${D},t.z,((t.yawDeg||0)+(side?90:0)+180)%360]})()`); await place(q[0], q[1], name === 'rook' ? q[2] - 0.9 : null, q[3], name === 'wolf' ? -12 : 0); return q; };
-      await cam(); await pause(2800); let q = await cam(); for (let k = 0; k < 3; k++) { await pause(250); q = await cam(); } await pause(120); q = await cam(); // wolves keep walking: re-aim right before the still
+      // VISQA-19: pure closeupPose (tools/visqa-pick.mjs) = D m in FRONT of the entity (beast: sim facing fx/fy, npc: its yaw); the pose is re-asserted
+      // until the player really stands there (the unstuck / ground logic and wolves walking away undo it), Rook's floor is 0.9 m under his perch.
+      const cam = async () => { const q = await evaluate(cdp, `(()=>{const E0=${finder},B0=__debug.beasts,i0=B0.entities.indexOf(E0);const fr=i0>=0?{fx:B0.fx[i0],fy:B0.fy[i0]}:null;return (${closeupPose})(E0.transform,fr,${D},${name === 'rook' ? 0.9 : 0},${name === 'rook' ? 'false' : 'true'})})()`); await place(q.x, q.y, q.z, q.yaw, name === 'wolf' ? -12 : 0); return q; };
+      const held = async (q) => { const p = await evaluate(cdp, '(()=>{const t=__debug.playerHandle.data.transform;return [t.x,t.y]})()'); return Math.hypot(p[0] - q.x, p[1] - q.y) < 0.5; };
+      await cam(); await pause(2800); let q = await cam();
+      for (let k = 0; k < 6; k++) { await pause(250); q = await cam(); if (k >= 2 && await held(q)) break; }
+      await pause(120); q = await cam(); if (!(await held(q))) console.log('closeup', name, 'WARNING: player pose not held');
       const mi = await evaluate(cdp, `(()=>{const e=${finder};const v=e.components&&e.components.voxel;return 'model '+(v&&v.model)+' yaw '+((e.transform.yawDeg)||0).toFixed(0)+' at '+e.transform.x.toFixed(1)+','+e.transform.y.toFixed(1)+' z '+(+e.transform.z).toFixed(1)})()`);
-      await shot(name, 'in place, camera ' + q.map((v) => Math.round(v)).join(',') + ' ' + mi, note); continue;
+      await shot(name, 'in place, camera ' + [q.x, q.y, q.z, q.yaw].map((v) => Math.round(v)).join(',') + ' ' + mi, note); continue;
     }
     await place(MX, MY, null, 270, -6); await pause(600); // camera looks west
     const S = FRONT[name] || 1, yawSubject = S > 0 ? 90 : 270; // subject at the west side; its front must point east (toward the camera)

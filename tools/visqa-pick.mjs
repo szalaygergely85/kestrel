@@ -45,3 +45,14 @@ export function pickEntity(entities, spec) {
   }
   return null;
 }
+
+/** VISQA-19: camera pose D m in FRONT of a subject, looking back at it. Front = (sin yaw, -cos yaw) of the subject's yawDeg (0 = north/-y, 90 = east, same as the
+ * player); a beast's sim facing vector {fx,fy} wins when given. dz = camera floor offset vs the subject z (Rook perches 0.9 m above the floor).
+ * Returns {x,y,z,yaw} (yaw = where the camera looks = front + 180), z null when `snap` (caller ground-snaps). Self-contained (injected into the page). */
+export function closeupPose(t, front, D, dz, snap) {
+  D = D || 3.5; dz = dz || 0;
+  let px, py;
+  if (front && (front.fx || front.fy)) { const n = Math.hypot(front.fx, front.fy); px = front.fx / n; py = front.fy / n; }
+  else { const a = (t.yawDeg || 0) * Math.PI / 180; px = Math.sin(a); py = -Math.cos(a); }
+  return { x: t.x + px * D, y: t.y + py * D, z: snap ? null : t.z - dz, yaw: ((Math.atan2(-px, py) * 180 / Math.PI) % 360 + 360) % 360 };
+}

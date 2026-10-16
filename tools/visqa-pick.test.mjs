@@ -23,3 +23,14 @@ assert.strictEqual(pickEntity(list, { id: 'rook' }).index, 5);
 assert.strictEqual(pickEntity([list[1], list[2]], { kind: 'wolf' }), null, 'no wolf -> null');
 assert.strictEqual(pickEntity(list, { id: 'nobody' }), null);
 console.log('visqa-pick ok');
+
+import { closeupPose } from './visqa-pick.mjs';
+{ // subject facing north (yaw 0) at (100,200): camera 3.5 m north of it, looking south (yaw 180)
+  const n = closeupPose({ x: 100, y: 200, z: 5, yawDeg: 0 }, null, 3.5, 0, false);
+  assert(Math.abs(n.x - 100) < 1e-9 && Math.abs(n.y - 196.5) < 1e-9 && Math.abs(n.yaw - 180) < 1e-9 && n.z === 5, 'north-facing: ' + JSON.stringify(n));
+  const e = closeupPose({ x: 0, y: 0, z: 0, yawDeg: 90 }, null, 4, 0, true); // faces east: camera east, looks west (270)
+  assert(Math.abs(e.x - 4) < 1e-9 && Math.abs(e.y) < 1e-9 && Math.abs(e.yaw - 270) < 1e-9 && e.z === null, 'east-facing: ' + JSON.stringify(e));
+  const b = closeupPose({ x: 10, y: 10, z: 1, yawDeg: 0 }, { fx: 0, fy: 2 }, 3, 0.9, false); // beast facing +y (south): sim vector beats yaw
+  assert(Math.abs(b.y - 13) < 1e-9 && Math.abs(b.yaw) < 1e-9 && Math.abs(b.z - 0.1) < 1e-9, 'beast fx/fy: ' + JSON.stringify(b));
+  console.log('closeupPose ok');
+}
