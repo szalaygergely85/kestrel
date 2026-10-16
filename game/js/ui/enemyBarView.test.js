@@ -63,3 +63,11 @@ console.log('enemyBarView.test.js ok');
 // VISQA-01: projected off-screen (in front of the camera but outside the grid) -> no bar pinned to the edge
 for (const [c, r] of [[-3, 20], [160, 20], [80, -2], [80, 60]]) { view = createEnemyBarView({ rgb, project: (x, y, z, o) => { o.c = c; o.r = r; return true; }, band }); run(view, [mk()]); ui = fakeUi(); view.draw(ui, false); assert.equal(ui.cells.size, 0, `off-screen ${c},${r}`); }
 console.log('enemyBarView.test.js off-screen ok');
+
+// VISQA-22: an occluded beast (seen() false) draws no bar; a visible one does
+{
+  const ui2 = fakeUi(); let vis = false;
+  const v2 = createEnemyBarView({ rgb, project, band, seen: () => vis });
+  run(v2, [mk()]); v2.draw(ui2, false); assert.equal(rowText(ui2, 19), '', 'occluded: no plate');
+  vis = true; v2.draw(ui2, false); assert.match(rowText(ui2, 19), /Lv 6 Boar/, 'visible: plate');
+}
