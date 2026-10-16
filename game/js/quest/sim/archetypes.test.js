@@ -58,7 +58,8 @@ ok('night kinds exist', KIND_NAMES.some((k) => KINDS[k].when === 'night'));
 const near = (a, b) => Math.abs(a - b) < 1e-9;
 const wo = wolfOverrides(BEAST_DEFAULTS), bo = bearOverrides(BEAST_DEFAULTS), go = goblinOverrides(BEAST_DEFAULTS, 'melee'), gt = goblinOverrides(BEAST_DEFAULTS, 'thrower');
 ok('wolf kind speeds = live', near(KINDS.grey_wolf.walk, wo.walk) && near(KINDS.grey_wolf.run, wo.chase));
-ok('wolf leap windup/range = live', near(KINDS.grey_wolf.attacks[0].windupSec, wo.windupSec) && near(KINDS.grey_wolf.attacks[0].range, wo.windupR));
+const wbite = KINDS.grey_wolf.attacks.find((x) => x.id === 'bite'); // OB-220: wolves bite in melee (data row `bite`)
+ok('wolf bite windup/range = live', near(wbite.windupSec, wo.windupSec) && near(wbite.range, wo.windupR));
 ok('bear kind speeds/windup = live', near(KINDS.black_bear.walk, bo.walk) && near(KINDS.black_bear.run, bo.chase) && near(KINDS.black_bear.attacks[0].windupSec, bo.windupSec) && near(KINDS.black_bear.attacks[0].range, bo.windupR));
 ok('goblin kind speeds/windup = live', near(KINDS.goblin_warrior.walk, go.walk) && near(KINDS.goblin_warrior.run, go.chase) && near(KINDS.goblin_warrior.attacks[0].windupSec, go.windupSec));
 ok('thrower windup = live', near(KINDS.goblin_spear_thrower.attacks[0].windupSec, gt.windupSec));

@@ -124,8 +124,8 @@ const gz = (sim) => groundZ(sim.world, PX, PY);
   const { sim } = freshSim([gobEntity('g1', PX - 9, PY)]);
   ok('goblin hp = 2 (0.6 x boar 4)', sim.entities[0].components.health.max === 2, String(sim.entities[0].components.health.max));
   ok('goblin group 2, packer', sim.group[0] === 2 && sim.packer[0] === 1 && sim.goblin[0] === 1);
-  ok('goblin chase = 1.15 x boar', Math.abs(sim.scfg[0].chase - 4.5 * 1.15) < 1e-9);
-  ok('lunge = 2.5 m, windup 30 steps', Math.abs(sim.scfg[0].charge * sim.scfg[0].chargeMaxSec - 2.5) < 1e-9 && sim.ssteps[0].windup === 30);
+  ok("OB-220 melee goblin chase = 1.3 x boar", Math.abs(sim.scfg[0].chase - 4.5 * 1.3) < 1e-9);
+  ok('OB-220 melee jab = 3 m, windup 30 steps, reach 2.4 m', Math.abs(sim.scfg[0].charge * sim.scfg[0].chargeMaxSec - 3) < 1e-9 && sim.ssteps[0].windup === 30 && sim.scfg[0].windupR === 2.4);
 }
 
 // 2. 4 goblins: at most 2 tokens, circle in 3-5 m band, strikes land
@@ -139,7 +139,7 @@ const gz = (sim) => groundZ(sim.world, PX, PY);
       if (isTok(sim.state[i])) tok++;
       if (sim.state[i] === STATE_CHASE && sim.waiting[i]) {
         const d = Math.hypot(sim.steer.x[i] - PX, sim.steer.y[i] - PY);
-        circ++; if (d < 2.5 || d > 5.5) circBad++;
+        circ++; if (d < 1.2 || d > 4.5) circBad++; // OB-220: melee circling stays close (2.2-3.2 m band)
       }
     }
     if (tok > maxTok) maxTok = tok;
@@ -149,7 +149,7 @@ const gz = (sim) => groundZ(sim.world, PX, PY);
   ok('never more than 2 tokens (8k ticks)', maxTok <= 2, `max ${maxTok}`);
   ok('two goblins do attack together', seen2);
   ok('goblins attacked (bites > 5)', bites > 5, `bites ${bites}`);
-  ok('waiting goblins circled (about 3-5 m)', circ > 8 && circBad / circ < 0.1, `circ ${circ} bad ${circBad}`);
+  ok('waiting goblins circled (about 2-3 m)', circ > 8 && circBad / circ < 0.1, `circ ${circ} bad ${circBad}`);
 }
 
 // 3. a hit goblin retreats about 3 m
@@ -173,9 +173,9 @@ const gz = (sim) => groundZ(sim.world, PX, PY);
   sim.entities[0].components.health.hp = 0.4; // of max 2 (20 %)
   for (let t = 0; t < 600 && !sim.fleeing[0]; t++) sim.step(PX, PY, gz(sim));
   ok('lone hurt goblin flees', sim.fleeing[0] === 1 && sim.state[0] === STATE_RETURN, `fleeing ${sim.fleeing[0]} state ${sim.state[0]}`);
-  let dmax = 0;
-  for (let t = 0; t < 900; t++) { sim.step(PX, PY, gz(sim)); dmax = Math.max(dmax, Math.hypot(sim.steer.x[0] - PX, sim.steer.y[0] - PY)); }
-  ok('fled to 20 m, then walks home', dmax >= 19.5 && dmax < 27 && sim.fleeing[0] === 0, `dmax ${dmax.toFixed(1)}`);
+  let dmax = 0, calmed = false; // OB-220: the faster melee goblin may re-notice the player at the camp edge and flee again, so "walks home" = fleeing dropped to 0 at some point
+  for (let t = 0; t < 900; t++) { sim.step(PX, PY, gz(sim)); dmax = Math.max(dmax, Math.hypot(sim.steer.x[0] - PX, sim.steer.y[0] - PY)); if (!sim.fleeing[0]) calmed = true; }
+  ok('fled to 20 m, then walks home', dmax >= 19.5 && dmax < 27 && calmed, `dmax ${dmax.toFixed(1)} fl ${sim.fleeing[0]} st ${sim.state[0]} at ${sim.steer.x[0].toFixed(1)},${sim.steer.y[0].toFixed(1)} P ${PX},${PY}`);
 }
 {
   const { sim } = freshSim([gobEntity('g1', PX - 10, PY), gobEntity('g2', PX - 12, PY + 2)]);

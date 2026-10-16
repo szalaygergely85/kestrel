@@ -1259,7 +1259,7 @@ function enterRecover(sim, i, wall) {
   sim.state[i] = STATE_RECOVER;
   sim.timer[i] = wall ? sim.ssteps[i].recoverWall : sim.ssteps[i].recover;
   sim.steer.accel[i] = DEFAULT_ACCEL;
-  if (sim.goblin[i]) { sim.steer.vx[i] = 0; sim.steer.vy[i] = 0; } // GOB-01: the 8 m/s lunge must not carry it through the player
+  if (sim.goblin[i] || sim.wolf[i]) { sim.steer.vx[i] = 0; sim.steer.vy[i] = 0; } // GOB-01 / OB-220: the lunge must not carry it through the player
 }
 
 /** US-078d amendment (D-034) + US-079b (37.16.2): a heavy hit staggers the beast from ANY state (interrupts
