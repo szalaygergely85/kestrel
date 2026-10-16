@@ -317,6 +317,12 @@
           { id: 'groveNorthWest', shape: 'disc', x: 1460, y: 1008, r: 9, type: 'forest', mode: 'set',
             note: 'north of the walk-out, ~33 deg right of the breach view centre (yaw 270): the first trees you see from the breach' }
         ]
+      },
+      // VISQA-08: the steep hill south-east of the ford (rock type by slope) rendered as pale pink-white stripe bands; read as grass instead.
+      '8,8': {
+        paints: [
+          { id: 'fordHillGrass', shape: 'disc', x: 1085, y: 1112, r: 42, type: 'grass', mode: 'set', note: 'VISQA-08: was slope-rock stripes (stoneLight in sun); farm gate leaf stays at (1080,1090)' }
+        ]
       }
     },
 

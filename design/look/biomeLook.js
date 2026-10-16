@@ -41,7 +41,7 @@
           A: { name: 'Soft sward', glyphs: ".,'\"", ramp: ['#3f7a2a', '#5c9a36', '#7fba48', '#a6d060'], bg: ['#1a3412', '#2a5020'],
                noiseScale: 3.5, macroScale: 24, contrast: 0.55,
                shimmer: { amp: 0.35, mode: 'lean', lean: '.,``', sheen: 0.25 },
-               accents: [{ g: '.', c: '#f6f3ea', d: 0.006, cluster: 0.6, maxDist: 25 }] },          // petalWhite specks
+               accents: [{ g: '.', c: '#c4d49c', d: 0.003, cluster: 0.35, maxDist: 12 }] },          // VISQA-07: was petalWhite #f6f3ea d .006 cluster .6 maxDist 25 = rows of bright dashes at grazing angle; now pale-green specks, near only
           B: { name: 'Lush tufts', glyphs: ",;'\"", ramp: ['#2f6424', '#4a8a30', '#6aa83e', '#8ec452'], bg: ['#14300f', '#22481a'],
                noiseScale: 2.2, macroScale: 16, contrast: 0.45,
                shimmer: { amp: 0.3, mode: 'sheen', lean: ",;'\"", sheen: 0.3 },
@@ -92,8 +92,8 @@
         },
         atmos: {
           A: { name: 'Green gloom',
-               fog: { day: '#7a9a7e', dusk: '#5a4a48', night: '#0e1820' }, fogDensity: 0.012,
-               haze: { day: '#b8d0b0', dusk: '#d09878', night: '#18263a' }, hazeAmount: 0.5,
+               fog: { day: '#7a9a7e', dusk: '#5a4a48', night: '#0e1820' }, fogDensity: 0.007,   // VISQA-04: 0.012 -> 0.007 (Glasswater bowl is biome 1: walls ~150 m were flat mint)
+               haze: { day: '#b8d0b0', dusk: '#d09878', night: '#18263a' }, hazeAmount: 0.38,
                grade: { day:   { lift: [0.0, 0.02, 0.01],  gamma: [0.97, 1.0, 0.97], gain: [0.92, 1.0, 0.9],  sat: 0.95 },
                         dusk:  { lift: [0.02, 0.01, 0.02], gamma: [1, 0.97, 0.97],   gain: [1.0, 0.88, 0.8],  sat: 0.9 },
                         night: { lift: [0.0, 0.015, 0.03], gamma: [1, 1, 1.05],      gain: [0.5, 0.6, 0.8],   sat: 0.5 } } },
