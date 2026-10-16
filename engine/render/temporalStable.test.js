@@ -152,7 +152,12 @@ function run(st, cam, inpFn, hist, flags) {
   inp.level[at(4, 5)] = 6; // within one: hold glyph
   inp.level[at(4, 6)] = 7; // two apart: fresh glyph
   const out = createStableBuffers(COLS, ROWS);
+  st.aaEdge = false; // AA-18 off: edge cells pass through
   stabilize(inp, h, out, st);
+  const outE = createStableBuffers(COLS, ROWS);
+  st.aaEdge = true; stabilize(inp, h, outE, st); st.aaEdge = false;
+  ok('AA-18 aaEdge: the edge cell takes history (glyph held), other cells unchanged', outE.fresh[at(3, 8)] === 0 && outE.glyph[at(3, 8)] === h.glyph[at(3, 8)]
+    && outE.glyph.every((g, k) => k === at(3, 8) || g === out.glyph[k]));
   for (const [nm, c] of [['sky', 3], ['kind 8', 4], ['water', 5], ['level 255 cur', 6], ['level 255 hist', 7], ['edge', 8], ['planeId mismatch', 9], ['uv drift', 10], ['vd 0', 11]]) {
     ok(`reject: ${nm} fresh`, out.fresh[at(3, c)] === 1 && out.glyph[at(3, c)] === inp.glyph[at(3, c)]);
   }

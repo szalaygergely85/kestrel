@@ -137,9 +137,10 @@ const GRID = { cols: COLS, rows: ROWS, pxCellW: 8, pxCellH: 16 };
 const WALL = { n: [0, 1, 0], d: -5 }, FLOOR = { n: [0, 0, 1], d: 0 };
 
 /** Two-frame scene: A (invalid) -> history from the twin; B with cam1. Returns twin out + emulated cells. */
+let EDGE = false; // AA-18: aaEdge switch of the probe scenes (off keeps the edge pass-through mutations meaningful; a parity loop runs it on)
 let ANCHOR = true; // AA-09: aaAnchor switch of the probe scenes (the mutation loop runs both)
 function scene(src, cam0, cam1, plane, tweak) {
-  const st = createStableState(); st.aaAnchor = ANCHOR;
+  const st = createStableState(); st.aaAnchor = ANCHOR; st.aaEdge = EDGE;
   beginFrame(st, cam0, GRID);
   const fa = makeFrame(st, COLS, ROWS, plane, {});
   const hist = createStableBuffers(COLS, ROWS);
@@ -224,6 +225,13 @@ for (const [name, c0, camK, plane] of cases) for (let k = 1; k <= 4; k++) {
   assert.equal(r.mism, 0, `aaAnchor off ${name} k=${k}: ${r.mism} mismatches`);
 }
 ANCHOR = true;
+EDGE = true; // AA-18 (OB-208): edge cells take history - WGSL == twin
+for (const [name, c0, camK, plane] of cases) for (let k = 1; k <= 4; k++) {
+  const r = runCase(STABLE_WGSL, name, c0, camK, plane, k);
+  assert.equal(r.mism, 0, `aaEdge on ${name} k=${k}: ${r.mism} mismatches`);
+}
+assert.ok(cases.some(([name, c0, camK, plane]) => runCase(STABLE_WGSL.replace('if ((u.aaFlags & 32) == 0 && (', 'if ((u.aaFlags & 0) == 0 && ('), name, c0, camK, plane, 1).mism > 0), 'mutation: AA-18 edge hold bit ignored');
+EDGE = false;
 assert.ok(totalHeld255 > 30, `both-255 holds exercised (${totalHeld255})`);
 // invalid history: copy through, fresh everywhere (both sides)
 {
@@ -241,9 +249,9 @@ const mutations = [
   ['snap threshold > -> >=', 'abs(d) > u.snap', 'abs(d) >= u.snap'],
   ['blend rounding (+1)', '(p + c + 1u) >> 1u', '(p + c) >> 1u'],
   ['glyph hold window <=1 -> <1', 'lvDiff <= 1)', 'lvDiff < 1)'],
-  ['edge: fg.r ignored', 'if (fgC.x != sf.x || ', 'if ('],
+  ['edge: fg.r ignored', '(fgC.x != sf.x || ', '('],
   ['edge: glyph ignored', 'fgC.w != sf.w || ', ''],
-  ['edge: bg.b ignored', ' || bgC.z != sb.z) { return o; }', ') { return o; }'],
+  ['edge: bg.b ignored', ' || bgC.z != sb.z)) { return o; }', ')) { return o; }'],
   ['water cells take history', 'if (u.waterOn != 0 && wl.x != 0x7f800000u && (wl.w & 32u) == 0u) { return o; }', ''],
   ['level 254 cur not rejected', ' || lvC == LEVEL_ANIM) { return o; }', ') { return o; }'],
   ['hist level 254 not rejected', 'if (lvP == LEVEL_ANIM) { return o; }', ''],
