@@ -632,7 +632,12 @@ export function createSettingsView(options = {}, { style, controls, quality, rgb
           cell(p.x + r.valueCol + j, y, ch, fg, band);
         }
       }
-      if (selected) text(p.x + style.note.col, y + r.noteOffset, off ? controls.disabledSuffix.text : notes[id], style.note.color, bg, p.w - style.note.col - 1);
+    }
+    // VISQA-18: the focused row's note sits in the footer gap (between separator and key hints), centred - never squeezed between two rows
+    if (rows[focus] && rows[focus] !== 'back') {
+      const fid = rows[focus], note = disabled(fid) ? controls.disabledSuffix.text : notes[fid];
+      const noteRow = style.separator.row + 1 < style.keyHints.row ? style.separator.row + 1 : rowY[fid] + r.noteOffset;
+      if (note) text(p.x + Math.max(1, (p.w - note.length) >> 1), p.y + noteRow, note, style.note.color, bg, p.w - 2);
     }
     for (let x = style.separator.inset; x < p.w - style.separator.inset; x++) cell(p.x + x, p.y + style.separator.row, style.separator.glyph, style.separator.color);
     const hints = style.keyHints;

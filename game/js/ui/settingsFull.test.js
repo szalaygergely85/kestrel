@@ -16,7 +16,7 @@ const detached=view.snapshot();detached.volume=0;assert.equal(view.snapshot().vo
 const ui=createUiLayer({cols:160});view.draw(ui);
 const p=settings.full.panel;
 const line=y=>Array.from(ui.cells.glyphIdx.slice((p.y+y)*ui.cols+p.x,(p.y+y)*ui.cols+p.x+p.w),v=>String.fromCharCode(v+32)).join('');
-assert.ok(line(0).includes('SETTINGS'));assert.ok(line(3).includes('[Medium]'));assert.ok(line(4).includes('Restart to apply'));
+assert.ok(line(0).includes('SETTINGS'));assert.ok(line(3).includes('[Medium]'));assert.ok(!line(4).includes('Restart to apply')); /* VISQA-18: the note sits in the footer gap, not between rows */ assert.ok(Array.from({length:p.h},(_,y)=>line(y)).some(l=>l.includes('Restart to apply')));
 for(let y=0;y<p.h;y++)for(let x=0;x<p.w;x++) {
  const i=((p.y+y)*ui.cols+p.x+x)*4;
  assert.deepEqual([...ui.cells.bg.slice(i,i+3)],y===3&&x>=1&&x<=62?[52,42,16]:[10,11,16]);

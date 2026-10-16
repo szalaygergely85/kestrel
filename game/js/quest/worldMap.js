@@ -57,6 +57,13 @@ export function createWorldMapCard(geo, names, palette, { getSeen, w, h, travel 
 
   // marker lists (world metres); statics = woken relays/waystones (persist), digits = current travel points, quest = giver marks
   const statics = [], staticKinds = [], dig = [], digIds = [], quest = [], questKinds = [];
+  const labelMask = new Uint8Array(w * h); // VISQA-14: card cells holding a region-name letter; markers never overwrite them
+  /** A marker cell that lands on a label letter slides along its row to the nearest free cell (the name keeps every letter). */
+  function free(i) {
+    if (i < 0 || !labelMask[i]) return i;
+    for (let d = 1; d < 40; d++) { if (!labelMask[i - d]) return i - d; if (!labelMask[i + d]) return i + d; }
+    return i;
+  }
   const labels = []; // flat [cellX, cellY, len, regionIdx] of the placed names (tests read these)
   let travelLine = '', previous = -1, dirty = true, sel = -1, noticeText = '', travelNames = [], travelBase = '';
   const position = { x: -1, y: -1, code: 0 };
@@ -64,7 +71,7 @@ export function createWorldMapCard(geo, names, palette, { getSeen, w, h, travel 
   function compose() {
     const seen = getSeen() || [];
     for (let k = 0; k < nR; k++) seenFlag[k] = seen.indexOf(rIds[k]) >= 0 ? 1 : 0;
-    labels.length = 0;
+    labels.length = 0; labelMask.fill(0);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       const i = y * w + x;
       if (!x || !y || x === w - 1 || y === h - 1) { put(i, 35, C.edge); continue; }
@@ -90,13 +97,13 @@ export function createWorldMapCard(geo, names, palette, { getSeen, w, h, travel 
           fit = inB[ci] === 1 && (cc === 46 || cc === 45 || cc === 124 || cc === 43); // may spill over a neighbour's land / outline, never over another name or the bounds line
         }
         if (!fit) continue;
-        for (let q = 0; q < nm.length; q++) put((row + 1) * w + x0 + q + 1, nm.charCodeAt(q), C.name);
+        for (let q = 0; q < nm.length; q++) { put((row + 1) * w + x0 + q + 1, nm.charCodeAt(q), C.name); labelMask[(row + 1) * w + x0 + q + 1] = 1; }
         labels.push(x0, row, nm.length, k); done = true;
       }
     }
-    for (let k = 0; k < statics.length; k += 2) { const i = index(statics[k], statics[k + 1]); if (i >= 0) put(i, staticKinds[k >> 1] === 'waystone' ? 79 : 111, staticKinds[k >> 1] === 'waystone' ? C.waystone : C.relay); }
-    for (let k = 0; k < dig.length; k += 2) { const i = index(dig[k], dig[k + 1]); if (i >= 0) put(i, 49 + (k >> 1), C.waystone); }
-    for (let k = 0; k < quest.length; k += 2) { const i = index(quest[k], quest[k + 1]); if (i >= 0) put(i, questKinds[k >> 1] === 'quest' ? 33 : 63, C.quest); }
+    for (let k = 0; k < statics.length; k += 2) { const i = free(index(statics[k], statics[k + 1])); if (i >= 0) put(i, staticKinds[k >> 1] === 'waystone' ? 79 : 111, staticKinds[k >> 1] === 'waystone' ? C.waystone : C.relay); }
+    for (let k = 0; k < dig.length; k += 2) { const i = free(index(dig[k], dig[k + 1])); if (i >= 0) put(i, 49 + (k >> 1), C.waystone); }
+    for (let k = 0; k < quest.length; k += 2) { const i = free(index(quest[k], quest[k + 1])); if (i >= 0) put(i, questKinds[k >> 1] === 'quest' ? 33 : 63, C.quest); }
     const row = (h - 1) * w, st = (w - travelLine.length) >> 1; // travel line centred on the bottom border
     for (let q = -1; q <= travelLine.length && travelLine; q++) put(row + st + q, q < 0 || q >= travelLine.length ? 32 : travelLine.charCodeAt(q), C.name);
     art.codes.set(baseCodes); art.rgb.set(baseRgb); previous = -1; dirty = false;
@@ -149,7 +156,7 @@ export function createWorldMapCard(geo, names, palette, { getSeen, w, h, travel 
     updatePose(x, y, yawDeg) { // 0 alloc: two cells
       if (dirty) compose();
       if (previous >= 0) { art.codes[previous] = baseCodes[previous]; art.rgb[previous * 3] = baseRgb[previous * 3]; art.rgb[previous * 3 + 1] = baseRgb[previous * 3 + 1]; art.rgb[previous * 3 + 2] = baseRgb[previous * 3 + 2]; }
-      previous = Number.isFinite(yawDeg) ? index(x, y) : -1;
+      previous = Number.isFinite(yawDeg) ? free(index(x, y)) : -1;
       if (previous < 0) { position.x = -1; position.y = -1; position.code = 0; return false; }
       const code = arrows[Math.floor((((yawDeg % 360) + 360) % 360 + 45) / 90) % 4];
       art.codes[previous] = code; art.rgb[previous * 3] = C.player[0]; art.rgb[previous * 3 + 1] = C.player[1]; art.rgb[previous * 3 + 2] = C.player[2];
