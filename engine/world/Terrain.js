@@ -265,19 +265,19 @@ export class Terrain {
     // farVersion bump (arch REV-ENV02D): hosts key FARLOOK on it; smaller than a new lookVersion (same set of consumers re-key, toggle is rare/editor-only)
     if (!cfg) { this.groundLook = null; this.farLook = null; if (this.near) delete this.near.look; if (this.farReady) this.farVersion++; return; }
     if (cfg.blendM !== undefined) assertBlendM(cfg.blendM, this.mapCell);
-    this.groundLook = new LookBaker(cfg, this.util); this._lookGen = (this._lookGen | 0) + 1; // numeric (bundleBytes walks objects)
+    this.groundLook = new LookBaker(cfg, this.util); this.groundLook.canopyType = this._forestTypeId; this._lookGen = (this._lookGen | 0) + 1; // numeric (bundleBytes walks objects); VISQA-03 canopyType
     this.farLook = new Uint8Array(this.mapW * this.mapH * 2);
     if (this.farReady) { this._fillFarLook(); this.farVersion++; }
     if (this.nearReady) { const g = this.near; g.look = new Uint8Array(g.w * g.h * 2); this._fillNearLook(g); g.version++; }
   }
   _fillFarLook() {
     const L = this.groundLook, w = this.mapW, c = this.mapCell;
-    for (let j = 0; j < this.mapH; j++) for (let i = 0; i < w; i++) L.bakeCell(this.mapX0 + (i + 0.5) * c, this.mapY0 + (j + 0.5) * c, this.farType[i + j * w], this.farLook, i + j * w);
+    for (let j = 0; j < this.mapH; j++) for (let i = 0; i < w; i++) L.bakeCell(this.mapX0 + (i + 0.5) * c, this.mapY0 + (j + 0.5) * c, this.farType[i + j * w], this.farLook, i + j * w, this._canopyM > 0);
   }
   _fillNearLook(g) {
     g.lookSrc = this._lookGen; // BH2-R1: which look config baked this band (publishBand refills when it differs)
     const L = this.groundLook, c = g.cell;
-    for (let j = 0; j < g.h; j++) for (let i = 0; i < g.w; i++) L.bakeCell(g.x0 + (i + 0.5) * c, g.y0 + (j + 0.5) * c, g.type[i + j * g.w], g.look, i + j * g.w);
+    for (let j = 0; j < g.h; j++) for (let i = 0; i < g.w; i++) L.bakeCell(g.x0 + (i + 0.5) * c, g.y0 + (j + 0.5) * c, g.type[i + j * g.w], g.look, i + j * g.w, !this.realTrees && this._canopyM > 0);
   }
 
   /**
@@ -340,7 +340,7 @@ export class Terrain {
         b.hDraw.set(cur.hDraw.subarray(s0, s0 + len), d0);
         if (b.look) {
           if (cur.look) b.look.set(cur.look.subarray(s0 * 2, (s0 + len) * 2), d0 * 2);
-          else { const L = this.groundLook, ey = b.y0 + (j + 0.5) * cell; for (let q = 0; q < len; q++) L.bakeCell(b.x0 + (st.ox0 + q + 0.5) * cell, ey, b.type[d0 + q], b.look, d0 + q); } // source baked before the look was on
+          else { const L = this.groundLook, ey = b.y0 + (j + 0.5) * cell; for (let q = 0; q < len; q++) L.bakeCell(b.x0 + (st.ox0 + q + 0.5) * cell, ey, b.type[d0 + q], b.look, d0 + q, !this.realTrees && this._canopyM > 0); } // source baked before the look was on
         }
         let mn = st.mn, mx = st.mx;
         for (let i = d0, e = d0 + len; i < e; i++) { const v = b.height[i] + (b.type[i] === fid ? can : 0); if (v < mn) mn = v; if (v > mx) mx = v; }
@@ -370,7 +370,7 @@ export class Terrain {
           const hv = G.height[i];
           b.height[o + i] = hv; b.type[o + i] = G.type[i];
           b.hDraw[o + i] = hv + (G.type[i] === forestId ? canopy : 0);
-          if (b.look) this.groundLook.bakeCell(b.x0 + (cs + i + 0.5) * cell, b.y0 + (r + 0.5) * cell, G.type[i], b.look, o + i);
+          if (b.look) this.groundLook.bakeCell(b.x0 + (cs + i + 0.5) * cell, b.y0 + (r + 0.5) * cell, G.type[i], b.look, o + i, !this.realTrees && this._canopyM > 0);
           const v = b.height[o + i] + (b.type[o + i] === st.fid ? st.canopy : 0);
           if (v < st.mn) st.mn = v; if (v > st.mx) st.mx = v;
         }
@@ -460,7 +460,7 @@ export class Terrain {
               g.height[k] = util.heightAt(x, y);
             }
             g.type[k] = t;
-            if (g.look) this.groundLook.bakeCell(x, y, t, g.look, k);
+            if (g.look) this.groundLook.bakeCell(x, y, t, g.look, k, canopy > 0);
             const hv = g.height[k] + (t === forestId ? canopy : 0); // float32 height, double sum like bakeNearBand
             g.hDraw[k] = hv;
             if (hv < minH) minH = hv;
@@ -488,7 +488,7 @@ export class Terrain {
             const t = util.typeAt(x, y);
             if (rowH && i >= hi0 && i <= hi1) this.farH[k] = util.heightAt(x, y);
             this.farType[k] = t;
-            if (this.farLook) this.groundLook.bakeCell(x, y, t, this.farLook, k);
+            if (this.farLook) this.groundLook.bakeCell(x, y, t, this.farLook, k, canopy > 0);
             const hv = this.farH[k] + (t === forestId ? canopy : 0);
             this.farHDraw[k] = hv;
             if (hv > this.farMaxH) this.farMaxH = hv;
@@ -650,7 +650,7 @@ export class Terrain {
         const x = this.mapX0 + (col + 0.5) * cell;
         this.farH[rowBase + col] = this.util.heightAt(x, y);
         this.farType[rowBase + col] = this.util.typeAt(x, y);
-        if (this.farLook) this.groundLook.bakeCell(x, y, this.farType[rowBase + col], this.farLook, rowBase + col);
+        if (this.farLook) this.groundLook.bakeCell(x, y, this.farType[rowBase + col], this.farLook, rowBase + col, this._canopyM > 0);
         col++;
         if ((col & (BAKE_CHECK_COLS - 1)) === 0 && now() - t0 >= msBudget) {
           this._bakeCol = col;
