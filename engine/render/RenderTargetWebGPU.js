@@ -313,16 +313,24 @@ export function uploadChangedRows(d, tex, src, cols, rows, st) {
     return rows;
   }
   const a = st.src32, p = st.prev;
-  let i = 0;
-  while (i < n && a[i] === p[i]) i++;
-  if (i === n) return 0;
-  let j = n - 1;
-  while (a[j] === p[j]) j--;
-  const r0 = (i / cols) | 0, r1 = (j / cols) | 0;
-  for (let k = r0 * cols, e = (r1 + 1) * cols; k < e; k++) p[k] = a[k];
-  const rect = st.rect; rect.x = 0; rect.y = r0; rect.w = cols; rect.h = r1 - r0 + 1;
-  d.writeTexture(tex, src, rect, r0 * cols * 4);
-  return rect.h;
+  // PERF-10: row-wise scan; changed rows are grouped into ranges, and runs separated by fewer than `gap` unchanged rows are
+  // merged (one writeTexture per range). A HUD at the top and bottom no longer drags the whole grid through writeTexture.
+  const gap = Math.max(2, (4096 / (cols * 4)) | 0), rect = st.rect;
+  let sent = 0, r = 0, start = -1, last = -1;
+  for (; r <= rows; r++) {
+    let ch = false;
+    if (r < rows) {
+      for (let k = r * cols, e = k + cols; k < e; k++) if (a[k] !== p[k]) { ch = true; break; }
+    }
+    if (ch) { if (start < 0) start = r; last = r; continue; }
+    if (start >= 0 && (r === rows || r - last > gap)) {
+      for (let k = start * cols, e = (last + 1) * cols; k < e; k++) p[k] = a[k];
+      rect.x = 0; rect.y = start; rect.w = cols; rect.h = last - start + 1;
+      d.writeTexture(tex, src, rect, start * cols * 4);
+      sent += rect.h; start = -1;
+    }
+  }
+  return sent;
 }
 
 export { GLYPH_COUNT };
