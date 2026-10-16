@@ -5,6 +5,7 @@
   'use strict';
   var FOG_HOUR = {
     dusk:  { near: '#7a6a7c', far: '#d89870' },
+    dawn:  { near: '#8a7080', far: '#e8a888' },
     night: { near: '#0d1426', far: '#1b2742' },
   };
   root.FOG_HOUR = FOG_HOUR;

@@ -1602,7 +1602,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         { const G = window.ASSETS.levels.world_geo, far = window.ASSETS.levels.overworld_far, f = P.fog && (P.fog.farBase || P.fog.far); // ENV-03: only with BIOME_LOOK + geo biomes + terrain (and a running clock: capture/gpucompare never get a driver)
           if (!atmosDrv && params.get('atmos') !== '0' && window.BIOME_LOOK && G && G.biomes && far && far.util && far.util.biomeBlend && f) {
             atmosCfg = buildAtmosConfig(window.BIOME_LOOK, G.biomes); atmosBase = /* NIGHT-HAZE: night biome haze works only because near/far are the same arrays fogHour writes in place */ { start: f.start, full: f.full, curve: f.curve || 1, near: P.rgb[f.color], far: P.rgb[f.colorFar] };
-            atmosDrv = createAtmosDriver({ nEntries: atmosCfg.table.n, biomeToEntry: atmosCfg.biomeToEntry, biomeBlend: (x, y, o) => far.util.biomeBlend(x, y, o), schedule: P.daySchedule, slotOf: { morning: 0, noon: 0, dusk: 1, night: 2 }, frozenSlot: 0 }); } }
+            atmosDrv = createAtmosDriver({ nEntries: atmosCfg.table.n, biomeToEntry: atmosCfg.biomeToEntry, biomeBlend: (x, y, o) => far.util.biomeBlend(x, y, o), schedule: P.daySchedule, slotOf: { morning: 0, noon: 0, dawn: 1, dusk: 1, night: 2 }, frozenSlot: 0 }); } }
       } else if (cinematic && !cinematicHours && params.has('cinehour') && Number.isFinite(parseFloat(params.get('cinehour'))) && assets.palette.daySchedule) {
         // capture-cinematic `--hour H` (dev only): clock frozen at H with the FULL live look (sun/moon pair, sky, fog colour, clouds, ambient), like gpucompare's applyHourOverride
         const P = assets.palette, hr = ((parseFloat(params.get('cinehour')) % 24) + 24) % 24;

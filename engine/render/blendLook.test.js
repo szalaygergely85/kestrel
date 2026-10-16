@@ -72,6 +72,17 @@ applySunHours(w, ls, 0, path, true, true);
 check('midnight sun below -6; moon switch lifts it', sunEl < -6 && w.sun.elevation > 6 && near(w.sun.elevation, -sunEl, 1e-6));
 applySunHours(w, ls, 12, path, true, true); check('noon unchanged by moon flag', w.sun.elevation > 60);
 
+// DAWN-COLOUR-01: warm sunrise horizon at 06:15, night at 05:00, noon/dusk untouched
+{
+  const hz = (h) => { blendLook(P, h, S, out); return P.rgb[out.sky[0].c].slice(); };
+  const noonH = hz(12), dawnH = hz(6.25), nightH = P.rgb[P.timeOfDay.night.sky[0].c];
+  check('06:15 horizon warm (r>b) and not day', dawnH[0] > dawnH[2] && dawnH.join() !== noonH.join());
+  check('06:15 warmer than noon', dawnH[0] - dawnH[2] > noonH[0] - noonH[2]);
+  check('05:00 = night', hz(5).join() === nightH.join());
+  check('19:00 = dusk', hz(19).join() === P.rgb[P.timeOfDay.dusk.sky[0].c].join());
+  check('12:00 = day horizon', noonH.join() === P.rgb[P.timeOfDay.noon.sky[0].c].join());
+}
+
 // zero alloc after warm-up
 blendLook(P, 7, S, out);
 globalThis.gc(); globalThis.gc(); const m0 = process.memoryUsage().heapUsed; let acc = 0;

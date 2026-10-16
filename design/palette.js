@@ -110,6 +110,10 @@
     skyDuskMid:     '#b0587a',
     skyDuskHorizon: '#ffb070',
     cloudDusk:      '#ffc8a0',
+    // DAWN-COLOUR-01: sunrise sky (deep blue top, rose-orange low sky, warm horizon); ambient/sun/cloud/fog reuse the dusk colours
+    skyDawnTop:     '#26407a',
+    skyDawnMid:     '#d0789a',
+    skyDawnHorizon: '#ffb98a',
     fogDusk:        '#2e2436',
     ambientNight:   '#141c36',
     moon:           '#9fb4e0',
@@ -466,6 +470,13 @@
                          shadow: { strength: 0.35, scale: 0.005333, cover: 0.5, soft: 0.2, deckH: 300 } } },
     dusk:    { ambient: 'ambientDusk',  ambientI: 0.10, sun: 'sunDusk', sunI: 0.8,  sunElev: 10,
                sky: [{ t: 0, c: 'skyDuskHorizon' }, { t: 0.3, c: 'skyDuskMid' }, { t: 1, c: 'skyDuskTop' }],
+               cloud: 'cloudDusk', fog: 'fogDusk',
+               clouds: { lit: 'cloudEve', shade: 'cloudEveShade', ramp: 'sky', scale: 1.6, bias: 0.12, cover: 0.5, puffK: 3.0,
+                         wispCover: 0.58, wispK: 3.0, wind: [0.006, 0.0015], litK: 2.2, litDy: 0.06, bodyK: 0.9, seed: 3,
+                         shadow: { strength: 0.2, scale: 0.005333, cover: 0.5, soft: 0.2, deckH: 300 } } },
+    // DAWN-COLOUR-01: symmetric to dusk, scheduled 05:00 night -> 06:15 dawn -> 07:30 morning
+    dawn:    { ambient: 'ambientDusk',  ambientI: 0.10, sun: 'sunDusk', sunI: 0.8,  sunElev: 10,
+               sky: [{ t: 0, c: 'skyDawnHorizon' }, { t: 0.3, c: 'skyDawnMid' }, { t: 1, c: 'skyDawnTop' }],
                cloud: 'cloudDusk', fog: 'fogDusk',
                clouds: { lit: 'cloudEve', shade: 'cloudEveShade', ramp: 'sky', scale: 1.6, bias: 0.12, cover: 0.5, puffK: 3.0,
                          wispCover: 0.58, wispK: 3.0, wind: [0.006, 0.0015], litK: 2.2, litDy: 0.06, bodyK: 0.9, seed: 3,
@@ -1881,7 +1892,7 @@
     timeOfDay: timeOfDay,
     defaultTime: 'morning',
     // DN-01 (38.39, defaults pending owner DN-Q1/Q3): hours -> look keys (wraps 21 -> 5 night); nightFloor = min ambientI + min glyph luminance.
-    daySchedule: [{ h: 5, key: 'night' }, { h: 6.5, key: 'morning' }, { h: 12, key: 'noon' }, { h: 19, key: 'dusk' }, { h: 21, key: 'night' }],
+    daySchedule: [{ h: 5, key: 'night' }, { h: 6.25, key: 'dawn' }, { h: 7.5, key: 'morning' }, { h: 12, key: 'noon' }, { h: 19, key: 'dusk' }, { h: 21, key: 'night' }],
     nightFloor: { ambientI: 0.06, lum: 0.18 },
     materials: materials,
     chargen: chargen,  // CHARGEN-01: skin / hair / eye / dye ramps + hand tint maps + the list of appended keys
