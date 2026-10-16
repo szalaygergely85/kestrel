@@ -55,7 +55,7 @@ import { GATE_POSES } from '../../content/dev-poses.js';
 import { prefetchLazyMeshesAtBoot, prefetchAllLazyMeshes } from './bootPrefetchHook.js'; // MESH-LOAD-01: boot prefetchNear call
 import { parseCloudShadowFlag, devCloudShadow, parseAoStrength } from './cloudParam.js'; // S8-B2-12a/S8-B2-20 NEEDS B1 item (2)/(1): `?cloudshadow=1`/`?ao=<0..1>` parse
 import { MODES } from './dev/modes/index.js';
-import { createFlickerLive, runLivePoses, parseFlickerDump } from './dev/flickerLive.js'; // AA-01
+import { createFlickerLive, runLivePoses, parseFlickerDump, POSES_ALL } from './dev/flickerLive.js'; // AA-01
 import { loadCinematic, evaluatePath, createPlayback } from './dev/modes/cinematic.js';
 import { createPauseResume } from './quest/pauseResume.js'; // OB-068
 import { entityTop, markZ } from './quest/markTop.js'; // OB-155h/OB-164: marker height from the model top
@@ -2513,6 +2513,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
 
   // Reused every frame (architecture.md section 9: no per-frame objects).
   const flickerLive = params.get('flickerlive') === '1' ? createFlickerLive() : null; // AA-01 (game/js/dev/flickerLive.js)
+  if (flickerLive) (window.__debug = window.__debug || {}).flickerLive = flickerLive; // AA-19: still-shot scripts wait on flickerLive.sword / cam
   if (flickerLive) {
     (async () => { // wait for the world + WebGPU pipeline, then measure the 5 poses; result -> window.__flicker
       while (!(engine.world && engine.world.terrain && wgPipeline && wgPipeline.ready && wgPipeline.frameComplete)) await flickerLive.nextFrame();
@@ -2526,7 +2527,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       try {
         const st = params.get('stable') === '1';
         if (wgPipeline.setStable) wgPipeline.setStable(st);
-        const r = await runLivePoses(flickerLive, { world: engine.world, wg: wgPipeline, cols: rt.cols, rows: rt.rows, pxCellW: rt.pxCellW, pxCellH: rt.pxCellH, capture, getGrid: () => ({ cols: rt.cols, rows: rt.rows, pxCellW: rt.pxCellW, pxCellH: rt.pxCellH }), dump: parseFlickerDump(params.get('flickerdump')), diag: params.get('flickerdiag') === '1' }); // AA-01c; OB198-DUMP-DIFF-01: `&flickerdump=<pose>:<step>`
+        const r = await runLivePoses(flickerLive, { poses: params.get('flickerpose') ? POSES_ALL.filter((q) => q.slug === params.get('flickerpose')) : undefined, world: engine.world, wg: wgPipeline, cols: rt.cols, rows: rt.rows, pxCellW: rt.pxCellW, pxCellH: rt.pxCellH, capture, getGrid: () => ({ cols: rt.cols, rows: rt.rows, pxCellW: rt.pxCellW, pxCellH: rt.pxCellH }), dump: parseFlickerDump(params.get('flickerdump')), diag: params.get('flickerdiag') === '1' }); // AA-01c; OB198-DUMP-DIFF-01: `&flickerdump=<pose>:<step>`
         r.stable = st; r.rays = engine.rays; r.stableOn = !!wgPipeline._stableOn; r.stableRan = !!wgPipeline._stableRan; r.aaCov = params.get('aacov') !== '0'; r.aaAnchor = params.get('aaanchor') !== '0'; r.aaHyst = params.get('aahyst') !== '0'; r.aaGlyph = params.get('aaglyph') !== '0'; r.aaMesh = params.get('aamesh') !== '0'; r.aaVm = params.get('aavm') !== '0'; r.aaJoint = params.get('aajoint') !== '0'; r.aaFolEdge = params.get('aafoledge') !== '0';
         window.__flicker = r;
         console.log('[flicker] live poses ' + JSON.stringify(r, (k, v) => (k === 'dump' ? (v ? 'dumped ' + v.pose + ':' + v.step : v) : v)));

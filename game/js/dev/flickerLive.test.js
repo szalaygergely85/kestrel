@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
-import { POSES, stepCam, createFlickerLive } from './flickerLive.js';
+import { POSES, POSES_ALL, stepCam, createFlickerLive } from './flickerLive.js';
 
 assert.deepEqual(POSES.map((p) => p.slug), ['wallNear', 'wallFar', 'bushes', 'crown', 'grassFar']);
+assert.deepEqual(POSES_ALL.map((p) => p.slug), ['wallNear', 'wallFar', 'bushes', 'crown', 'grassFar', 'roadWalk']);
 const a = { x: 0, y: 0, z: 1.6, yawDeg: 0, pitchDeg: 0 }, b = stepCam(a); // yaw 0: fwd = (0,-1), right = (1,0)
 assert.ok(Math.abs(b.x - 0.05) < 1e-12 && Math.abs(b.y + 0.05) < 1e-12);
 const h = createFlickerLive(); const cam = { x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 };

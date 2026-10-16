@@ -31,11 +31,22 @@ export const POSES = [
   { slug: 'crown', x: 1489.74, y: 1047, yawDeg: 0, pitchDeg: 18, groundEye: true }, // AA-01b: TwistedTree_4 (1489.74,1039.05) 8 m ahead, crown fills the centre
   { slug: 'grassFar', x: 1496, y: 1040, yawDeg: 0, pitchDeg: -5, groundEye: true },
 ];
+// AA-19 (OB-208): the owner's complaint view = WALKING west along the straight road (1130,1068) toward Rook's ruin / the ford (road ahead, bushes + crowns right,
+// ruin in the distance), sword view model in hand, 30 steps of 10 cm FORWARD only. Reported separately (poses.roadWalk.*), NOT in avg
+// (avg stays over the 5 static poses so it stays comparable with older baselines).
+export const ROAD_WALK = { slug: 'roadWalk', x: 1130, y: 1068, yawDeg: 273.5, pitchDeg: -2, groundEye: true, walk: true, sword: true, stepM: 0.1, inAvg: false };
+export const POSES_ALL = [...POSES, ROAD_WALK];
 
 /** One 5 cm strafe + 5 cm forward move for a camera with yawDeg (forward = (sin, -cos), right = (cos, sin)). */
 export function stepCam(cam, m = STEP_M) {
   const r = cam.yawDeg * Math.PI / 180;
   return { ...cam, x: cam.x + (Math.sin(r) + Math.cos(r)) * m, y: cam.y + (-Math.cos(r) + Math.sin(r)) * m };
+}
+
+/** AA-19: a pure forward step of m metres along yaw (walking, no strafe). */
+export function walkCam(cam, m = 0.1) {
+  const r = cam.yawDeg * Math.PI / 180;
+  return { ...cam, x: cam.x + Math.sin(r) * m, y: cam.y - Math.cos(r) * m };
 }
 
 export function createFlickerLive() {
@@ -44,6 +55,10 @@ export function createFlickerLive() {
     cam: null, // when set, beforeRender overwrites the game's camera with it
     beforeRender(cam, world) {
       if (!h.cam) return;
+      if (h.sword && world && world.get) { // AA-19: the held sword view model needs inventory.left = 'sword' + a hands.step (hands.handOf)
+        const pl = world.get('player'), dbg = window.__debug;
+        if (pl && dbg && dbg.hands) { pl.data.components.inventory.left = 'sword'; pl.data.components.inventory.right = null; dbg.hands.step(pl.data, false, false, true); }
+      }
       if (world && world.wind && world.wind.params) world.wind.params.speed = 0; // static scene
       cam.x = h.cam.x; cam.y = h.cam.y; cam.z = h.cam.z; cam.yawDeg = h.cam.yawDeg; cam.pitchDeg = h.cam.pitchDeg;
     },
@@ -68,7 +83,7 @@ export function packFrame(c, n) {
 export function packDump(pose, step, prev, cur, cols, rows) { const n = cols * rows; return { pose, step, cols, rows, A: packFrame(prev, n), B: packFrame(cur, n) }; }
 
 /** Runs every pose; `capture()` -> { GI, fg, bg } of the frame just presented. `capture()` also returns Depth. Returns { poses: {slug: {totalPct, kindPct, materialPct, glyphOnlyPct, colourOnlyPct, n, excluded, oldTotalPct}}, avg, ... }. */
-export async function runLivePoses(h, { world, wg, cols, rows, pxCellW = 1, pxCellH = 2, capture, getGrid = null, poses = POSES, steps = STEPS, settle = 60, dump = null, diag = false }) {
+export async function runLivePoses(h, { world, wg, cols, rows, pxCellW = 1, pxCellH = 2, capture, getGrid = null, poses = POSES_ALL, steps = STEPS, settle = 60, dump = null, diag = false }) {
   let hmap = null; const terms = createPitchedTerms();
   // AA-14a: glyph classes for the mixed255 split (line codes + the fog haze/sparse codes of the shade pass's uniforms)
   const fogU = wg && wg._cellPass && wg._cellPass.shadePass && wg._cellPass.shadePass.uniforms && wg._cellPass.shadePass.uniforms.fog;
@@ -81,11 +96,14 @@ export async function runLivePoses(h, { world, wg, cols, rows, pxCellW = 1, pxCe
     return c; };
   const sameGrid = (a, b) => a.cols === b.cols && a.rows === b.rows && a.pxCellW === b.pxCellW && a.pxCellH === b.pxCellH;
   const KEYS = ['totalPct', 'kindPct', 'materialPct', 'glyphOnlyPct', 'glyphOnlyRawPct', 'shiftPct', 'colourOnlyPct', 'n', 'excluded'];
-  const sums = {};
+  const sums = {}; let nAvg = 0;
   for (const p of poses) {
     const gz = p.groundEye && world.terrain ? world.terrain.groundAt(p.x, p.y) + EYE_H : EYE_H;
     let cam = { x: p.x, y: p.y, z: gz, yawDeg: p.yawDeg, pitchDeg: p.pitchDeg };
     h.cam = cam;
+    const swordWas = world.state ? world.state['tower.sword.taken'] : undefined;
+    h.sword = !!p.sword; // beforeRender keeps the sword in the left hand every frame (the game loop resets it) and re-steps the hands router
+    if (p.sword && world.state) world.state['tower.sword.taken'] = true; // AA-19: show the held sword view model like the owner sees it
     if (wg && wg.invalidateHistory) wg.invalidateHistory(); // each pose starts with a camera cut
     await h.frames(settle); // streaming (meshes, carpet, shadows) settles
     let prev = await cap(); prev.cam = { ...cam };
@@ -93,7 +111,7 @@ export async function runLivePoses(h, { world, wg, cols, rows, pxCellW = 1, pxCe
     const why = { kinds: {}, sub: {} }; // AA-DIAG-01: glyph-only flip reasons (counts; -> % of the diag's own n below)
     let used = 0;
     for (let s = 0; s < steps; s++) {
-      cam = stepCam(cam); h.cam = cam;
+      cam = p.walk ? walkCam(cam, p.stepM || 0.1) : stepCam(cam); h.cam = cam;
       await h.frames(2); // the first may be a frame already past beforeRender; the second certainly drew `cam`
       const cur = await cap();
       if (!sameGrid(prev.grid, cur.grid)) { res.skippedSteps++; cur.cam = { ...cam }; prev = cur; continue; } // grid changed between the frames
@@ -115,10 +133,14 @@ export async function runLivePoses(h, { world, wg, cols, rows, pxCellW = 1, pxCe
       w.sub = {}; for (const k of Object.keys(why.sub)) w.sub[k] = 100 * why.sub[k] / why.n; pr.why = w; }
     pr.cols = prev.grid.cols; pr.rows = prev.grid.rows; pr.used = used; // diagnostics: which grid the pose was measured on
     res.poses[p.slug] = pr;
+    if (p.sword && world.state) world.state['tower.sword.taken'] = swordWas;
+    h.sword = false;
+    if (p.inAvg === false) continue; // AA-19: reported separately, not part of avg
+    nAvg++;
     for (const k of Object.keys(pr)) if (k !== 'why') sums[k] = (sums[k] || 0) + pr[k];
   }
   h.cam = null;
-  res.avg = {}; for (const k of Object.keys(sums)) res.avg[k] = sums[k] / poses.length;
+  res.avg = {}; for (const k of Object.keys(sums)) res.avg[k] = sums[k] / Math.max(1, nAvg);
   res.avgTotalPct = res.avg.totalPct;
   return res;
 }
