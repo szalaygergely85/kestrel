@@ -44,6 +44,22 @@ ok('contextmenu not blocked elsewhere (window)', win.fire('contextmenu', {}).def
 off();
 ok('off() removes the listener', canvas.fire('contextmenu', {}).defaultPrevented === false);
 
+// OB-221: a tap shorter than one step (keydown + keyup before the step) then consumePressed must NOT swallow the next press
+{
+  const tt = new FakeTarget(); const inp = new Input(tt);
+  tt.fire('keydown', { code: 'Enter' }); tt.fire('keyup', { code: 'Enter' });
+  ok('OB-221 quick tap seen once', inp.pressed('Enter'));
+  inp.consumePressed();
+  tt.fire('keydown', { code: 'Enter' });
+  ok('OB-221 second tap after a consumed quick tap is a fresh press', inp.pressed('Enter'));
+  tt.fire('keyup', { code: 'Enter' }); inp.consumePressed();
+  // held key: consumed until its keyup (auto-repeat must not re-arm)
+  tt.fire('keydown', { code: 'Enter' }); inp.consumePressed(); tt.fire('keydown', { code: 'Enter' });
+  ok('OB-221 held key stays consumed', !inp.pressed('Enter'));
+  tt.fire('keyup', { code: 'Enter' }); tt.fire('keydown', { code: 'Enter' });
+  ok('OB-221 re-press after release works', inp.pressed('Enter'));
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');
