@@ -10,7 +10,7 @@
 // checks themselves being too strict - see validate-content.mjs's "3. Voxel
 // models" comment for a real example of a check that started out too
 // strict before this fixture existed).
-import { validateContent, loadQuestFiles, validateDialogueFiles, validateBarks } from './validate-content.mjs';
+import { validateContent, loadQuestFiles, validateDialogueFiles, validateBarks, lintQuestText, applyR19Allow, R19_ALLOW } from './validate-content.mjs';
 import { makeOk } from '../engine/test/assert.js';
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -670,6 +670,26 @@ for (const [name, breakFixture, finding] of areaCases) {
   one('camp outside region', (o) => { o.camps[0].at = [80, 80]; o.camps[0].members = []; }, 'outside region aa');
   one('empty title', (o) => { o.quests[0].title = ''; }, 'title is empty');
   one('NEEDS WRITER left', (o) => { o.quests[0].steps[0].journal = 'NEEDS WRITER'; }, 'NEEDS WRITER');
+}
+
+// QUEST-TEXT-LINT-01 (R19): one fixture per violation kind + allow-list may only shrink
+{
+  const q = (o) => lintQuestText([{ path: 'content/quests/x.quest.json', json: { objectives: [{ id: 'mq.a', text: 'ok', journal: 'ok', ...o }] } }]);
+  const d = (o) => lintQuestText([{ path: 'content/dialogue/x.dialogue.json', json: { nodes: { 'n.1': { text: 'ok', next: 'mq.a', ...o } } } }]);
+  const kinds = (h) => h.map((x) => x.kind).join(',');
+  ok('R19 clean', kinds(q({})) === '' && kinds(d({})) === '');
+  ok('R19 id fields are fine', kinds(d({ setFlag: 'q.mq.a.accept' })) === '');
+  ok('R19 NEEDS WRITER', kinds(q({ text: 'NEEDS WRITER' })) === 'writer');
+  ok('R19 raw id', kinds(q({ text: 'Open sq.hw.pier now' })) === 'id' && kinds(d({ text: 'See note.owBoard' })) === 'id');
+  ok('R19 Esc hint', kinds(d({ text: 'Esc to close' })) === 'esc');
+  ok('R19 objective > 38', kinds(q({ journal: 'x'.repeat(39) })) === 'objlen' && kinds(q({ journal: 'x'.repeat(38) })) === '');
+  ok('R19 talk line > 56', kinds(d({ text: 'x'.repeat(57) })) === 'talklen' && kinds(d({ text: 'x'.repeat(56) })) === '');
+  const hit = q({ journal: 'x'.repeat(40) });
+  ok('R19 unlisted hit fails', applyR19Allow(hit, {}).length === 1);
+  ok('R19 allow-list covers hit', applyR19Allow(hit, { 'content/quests/x.quest.json|objlen': 1 }).length === 0);
+  ok('R19 stale allow-list entry fails (may only shrink)', applyR19Allow([], { 'content/quests/x.quest.json|objlen': 1 }).length === 1);
+  ok('R19 growth fails', applyR19Allow([...hit, ...q({ journal: 'y'.repeat(40) })], { 'content/quests/x.quest.json|objlen': 1 }).length === 1);
+  ok('R19 real allow-list is non-negative ints', Object.values(R19_ALLOW).every((n) => Number.isInteger(n) && n > 0));
 }
 
 console.log(`${pass} passed, ${fail} failed`);
