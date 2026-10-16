@@ -1826,3 +1826,7 @@ Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-
   Files: engine/physics/bvh.js (+bvhBuilder.test.js), engine/world/colliders.js, engine/world/bandBake.js, engine/mesh/voxelMesh.js (+test), engine/mesh/shadowList.js, tools/perf-pose.mjs (p99/max/spike counts).
   Spikes (ultra, best of 2): CPU p99 roadBend 12.0->10.2, forest 11.9->9.4, fordDetail 14.2->12.0; CPU max 59/45/73 -> 36/31/27 ms; ring-fill frames >16.7 ms 15/13/18 -> 7/4/9. p50 = noise (GPU shared).
   Gates: gpucompare only signal tower (+ known decorFord), flicker PASS, route-walk endTrigger both, run-tests 365/366 (geoLayers pre-existing), check-deps OK. Details: docs/test-reports/perf-2026-10-16.md PERF-03.
+- PERF-04 (kestrel-1 branch perf04, uncommitted, engine -> arch-review): CPU cell layer + UI layer upload only changed rows (`uploadChangedRows`, RenderTargetWebGPU; debug view invalidates), out-of-band ground height exact-key cache (`Terrain._heightCached`, flushed on edit-layer version). Bit-identical, tests uploadChangedRows.test.js + heightCache.test.js.
+  Files: engine/render/RenderTargetWebGPU.js, engine/render/gpu/wg/WgCellPipeline.js, engine/world/Terrain.js, engine/world/terrainEdits.js (+2 tests).
+  CPU p50 -0.2..-0.7 ms every row (ultra 7.0/6.1/7.9 -> 6.5/5.6/7.5; high 5.7/4.8/6.7 -> 5.5/4.7/6.0), p99 flat, max = noise; 1 run per side.
+  Gates: gpucompare only signal tower (+ known decorFord), flicker PASS, route-walk no FAIL, tests green (geo* load-flaky only), check-deps OK. Details: docs/test-reports/perf-2026-10-16.md PERF-04.

@@ -34,6 +34,9 @@ function now() {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
 
+/** PERF-04: entries of the out-of-band ground height cache (power of two). */
+const HC_SIZE = 256;
+
 export class Terrain {
   /**
    * @param {Object} recipe - `assets.terrain(key)` (design/levels/overworld_far.js shape).
@@ -117,6 +120,26 @@ export class Terrain {
     this._groundNormalScratch = { x: 0, y: 0, z: 1 };
     // BEAST-ALLOC-02 (arch 38.61): caller-owned *Out forms write doubles into Float64Arrays (no boxed returns).
     this._gOut4 = new Float64Array(4);
+    // PERF-04: exact-key cache of the analytic height for out-of-band ground reads (`_groundCore`). Foot IK / beasts standing outside
+    // the near band ask the same foot points every frame; a hit returns the value heightAt computed for exactly that (x, y) (bit-identical).
+    // Flushed when the edit layer (identity or `version`, bumped by setSampleDh/setSampleType) changes - the only mutable heightAt input.
+    this._hcX = new Float64Array(HC_SIZE).fill(NaN); this._hcY = new Float64Array(HC_SIZE); this._hcV = new Float64Array(HC_SIZE);
+    this._hcF = new Float64Array(2); this._hcU = new Uint32Array(this._hcF.buffer);
+    this._hcEdits = null; this._hcEv = 0;
+  }
+
+  /** PERF-04: `heightAt(x, y)` through the exact-key cache above (x or y == 0 bypass it, so -0/+0 never share an entry). */
+  _heightCached(x, y) {
+    const e = this.edits, ev = e ? (e.version | 0) : 0;
+    if (e !== this._hcEdits || ev !== this._hcEv) { this._hcEdits = e; this._hcEv = ev; this._hcX.fill(NaN); }
+    if (x === 0 || y === 0) return this.heightAt(x, y);
+    const f = this._hcF, u = this._hcU; f[0] = x; f[1] = y;
+    let h = Math.imul(u[0] ^ u[1], 0x9E3779B1) ^ Math.imul(u[2] ^ u[3], 0x85EBCA77);
+    h = (h ^ (h >>> 16)) & (HC_SIZE - 1);
+    if (this._hcX[h] === x && this._hcY[h] === y) return this._hcV[h];
+    const v = this.heightAt(x, y);
+    this._hcX[h] = x; this._hcY[h] = y; this._hcV[h] = v;
+    return v;
   }
 
   /** The recipe's edit layer is module-global: re-bind THIS terrain's layer before any call into the recipe (two Terrains, one recipe). */
@@ -561,7 +584,7 @@ export class Terrain {
         return;
       }
     }
-    b[2] = this.heightAt(x, y);
+    b[2] = this._heightCached(x, y); // PERF-04 (== this.heightAt(x, y))
   }
 
   /** `groundAt` for caller buffer `io`: in io[0]=x, io[1]=y; out io[3]=height (io[2] is left alone). */
