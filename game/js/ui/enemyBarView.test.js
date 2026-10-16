@@ -60,3 +60,6 @@ assert.equal(enemyBarsOn(), true); setEnemyBarsOn(false); assert.equal(enemyBars
 // behind the camera: not drawn
 view = createEnemyBarView({ rgb, project: () => false, band }); run(view, [mk()]); ui = fakeUi(); view.draw(ui, false); assert.equal(ui.cells.size, 0);
 console.log('enemyBarView.test.js ok');
+// VISQA-01: projected off-screen (in front of the camera but outside the grid) -> no bar pinned to the edge
+for (const [c, r] of [[-3, 20], [160, 20], [80, -2], [80, 60]]) { view = createEnemyBarView({ rgb, project: (x, y, z, o) => { o.c = c; o.r = r; return true; }, band }); run(view, [mk()]); ui = fakeUi(); view.draw(ui, false); assert.equal(ui.cells.size, 0, `off-screen ${c},${r}`); }
+console.log('enemyBarView.test.js off-screen ok');

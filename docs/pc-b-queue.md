@@ -1,5 +1,19 @@
 # PC-B queue
 
+## VISQA 2026-10-16 (PC-B, owner away)
+Source: `node tools/visqa-sweep.mjs <port>` stills, docs/test-reports/visqa/index.md (11 spots x 09/13/22). Fixed in VISQA-01: enemy bar of an off-screen beast pinned to the screen edge (burl-home 09/13, "Lv 1 Boar" with no boar).
+
+| ID | Slot | AC | Files | Status |
+|---|---|---|---|---|
+| VISQA-02 FAR-CREAM | kestrel-2 (render; PC-A arch-review) | Far mountains (burl-home/meadow-road/bend 09+13) are one flat cream/peach cut-out up to ~15 deg above the horizon while the sky behind turns blue: OB-209 fogs them to the sky HORIZON colour only. AC: far fog colour follows the sky gradient at the fragment's elevation (or caps far-fog k so ridge shading stays), JS twin + gpucompare 0 PASS->FAIL, verify-far-silhouette + visqa burl-home-13 still. | engine/render/atmos.js, sky/far-fog WGSL + twin | todo |
+| VISQA-03 FAR-TREE-PALE | kestrel-2 (render) | burl-home-13 re-run: the far tree line at right (x 700-1000) turns into pale grey-tan flat blocks (impostor/far-tree LOD fog), same view 1 min earlier was dark green. AC: far trees fog like the terrain behind them at all hours, no LOD pale pop; still pair before/after. | far tree impostor / mesh fog path | todo |
+| VISQA-04 LAKE-HAZE | kestrel-3 (look data, owner pick) | Glasswater shore (lake-shore 09+13) is fully washed mint: bowl walls ~150 m away are flat fog, only the sky slot is blue. AC: find the biome atmos entry at (1215,547) (biomeLook atmosMap), lower fogDensity/hazeAmount so the bowl walls keep shading at 150 m; still before/after; owner look. | design/look/biomeLook.js | todo |
+| VISQA-05 FALLS-FOAM-NIGHT | kestrel-2 (render) | braid-falls-22: the plunge foam/splash clumps at the fall base stay light grey (unlit) at night while everything else is dark. AC: splash/foam colour scales with sun+ambient (moon) like the water, twin parity. | waterfall splash/foam draw (waterComposite / falls sprites) | todo |
+| VISQA-06 HOTBAR-NIGHT | kestrel-1 (UI) | At 22:00 the quick-bar plates ([14,20,34]) vanish into the navy night scene (only the corner dots + labels show). AC: plates stay readable at night (1-cell lighter rim or plate a bit lighter than the night grade), no change to day look; headless still at 09 + 22. | game/js/quest/quickbarView.js | todo |
+| VISQA-07 GRASS-DASH-SPECKS | kestrel-3 (diagnose first) | forest-edge-09 / cemetery-09: short rows of bright white dashes ("----") lie on the grass in the mid distance. AC: identify the source (ground accent, decor glyph, AA line glyph OB-208) with F3/layer toggle; fix or log under OB-208. | tbd | todo |
+| VISQA-08 FORD-PALE-STRIPES | kestrel-3 (diagnose) | ford 09/13: pale pink-white stripe bands on the hill south-east of the ford (~x1080-1120, y1080-1110, near farmGateLeaf) and a lone dark door slab (Door_1_Round farmGateLeaf @1080,1090) standing on the slope. AC: identify (field material? rock path?), make it read as intended or remove the stray door. | content/worlds/world_m1.world.json / terrain material | todo |
+| VISQA-09 SWEEP-SPOTS | kestrel-4 | Sweep spot fixes: burl-home shows no home (Burl's home may live only in the git-ignored local overlay; check placements), cliff spot stands in the outlet river - pick a real cliff pose. | tools/visqa-sweep.mjs | todo |
+
 ## !!! OWNER P0 (2026-10-16, reported again while testing on port 8000) - do FIRST, before OWNER PRIORITY 1 leftovers (PC-A main session)
 
 | ID | Slot | AC | Status |
