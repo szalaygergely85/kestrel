@@ -63,7 +63,7 @@ export class WgCellPipeline {
     // US-073c (38.25): temporal glyph stability, `?stable=1`; absent = no pass, no extra target, frame byte-identical to before
     this.aaHyst = opts.aaHyst !== false; // AA-04b (38.82 B): resolve winner hysteresis keyed by reprojected world position; needs stable + rays > 1; main.js wires ?aahyst=0
     this._hystSp = null; this._stEarly = false;
-    this.aaGlyph = opts.aaGlyph !== false; this.aaMesh = opts.aaMesh !== false; this.aaVm = opts.aaVm !== false; this.aaJoint = opts.aaJoint !== false; this.aaAnchor = opts.aaAnchor !== false; // AA-07: ?aavm=0 / ?aajoint=0 // OB-198: ?aaglyph=0 / ?aamesh=0 -> stable pass options
+    this.aaGlyph = opts.aaGlyph !== false; this.aaMesh = opts.aaMesh !== false; this.aaVm = opts.aaVm !== false; this.aaJoint = opts.aaJoint !== false; this.aaAnchor = opts.aaAnchor !== false; this.aaGraze = opts.aaGraze !== false; // AA-20: ?aagraze=0 // AA-07: ?aavm=0 / ?aajoint=0 // OB-198: ?aaglyph=0 / ?aamesh=0 -> stable pass options
     this.aaCov = opts.aaCov !== false; // 38.82 A: default ON; main.js maps ?aacov=0 -> aaCov:false
     this.stableOpt = !!opts.stable; this._stablePass = null; this._stableOn = false; this._stableRan = false; this._stInp = { shadeFg: null, shadeBg: null, water: null, waterOn: false };
     // EMIS-03/04 (38.12): emissive bleed + halo, `opts.glow` = {radius, gain, haloBg, haloMin} (High/Ultra); absent = no pass, frame byte-identical to before
@@ -152,7 +152,7 @@ export class WgCellPipeline {
       if (this._carpetPass) this._cellPass.carpet = this._carpetPass;
       this._cellPass.lightPass.pointPass = this._pointShadowPass;
       bootSpan('pass cell (ctor total)', tp);
-      if (this.stableOpt) { this._stablePass = new WgStablePass(this.device, { aaGlyph: this.aaGlyph, aaMesh: this.aaMesh, aaVm: this.aaVm, aaJoint: this.aaJoint, aaAnchor: this.aaAnchor }); this._stablePass.resize(this.cols, this.rows); this._stableOn = true; }
+      if (this.stableOpt) { this._stablePass = new WgStablePass(this.device, { aaGlyph: this.aaGlyph, aaMesh: this.aaMesh, aaVm: this.aaVm, aaJoint: this.aaJoint, aaAnchor: this.aaAnchor, aaGraze: this.aaGraze }); this._stablePass.resize(this.cols, this.rows); this._stableOn = true; }
       if (this.glowOpt) { this._glowPass = new WgGlowPass(this.device); this._glowPass.resize(this.cols, this.rows); this._glowPass.configure(this.glowOpt); }
       this.shadowOpts = this._shadowPass.shadowOpts; // resolved (GL pipeline exposes the same field)
       this.portedPasses.push('debug', 'raster', 'resolve', 'deriv', 'light', 'shade', 'edge');

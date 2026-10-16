@@ -60,7 +60,7 @@ function uniformObject(words, ints) {
 
 function compileStable(src, ctx) {
   const base = { ...shims, textureLoad: tl, LEVEL_NONE, LEVEL_ANIM, ...ctx, giKind: (y) => y & 0xff, giMat: (y) => (y >>> 16) & 0xffff, vec3f: (x, y, z) => ({ x, y, z }) };
-  for (const n of ['byteOf', 'packRgb', 'blendCh', 'blendPacked', 'reprojectCell', 'reproject']) base[n] = compileFn(src, n, base);
+  for (const n of ['byteOf', 'packRgb', 'blendCh', 'blendPacked', 'reprojectCell', 'reproject', 'grazeStep', 'grazeLimit']) base[n] = compileFn(src, n, base);
   return compileFn(src, 'stableCell', base);
 }
 
@@ -139,9 +139,10 @@ const WALL = { n: [0, 1, 0], d: -5 }, FLOOR = { n: [0, 0, 1], d: 0 };
 /** Two-frame scene: A (invalid) -> history from the twin; B with cam1. Returns twin out + emulated cells. */
 let EDGE = false; // AA-18: aaEdge switch of the probe scenes (off keeps the edge pass-through mutations meaningful; a parity loop runs it on)
 let VOX = true; // AA-21: aaVox switch of the probe scenes
+let GRAZE = true; // AA-20: aaGraze switch (the old-rule mutations run with it off, the graze mutation with it on)
 let ANCHOR = true; // AA-09: aaAnchor switch of the probe scenes (the mutation loop runs both)
 function scene(src, cam0, cam1, plane, tweak) {
-  const st = createStableState(); st.aaAnchor = ANCHOR; st.aaEdge = EDGE; st.aaVox = VOX;
+  const st = createStableState(); st.aaAnchor = ANCHOR; st.aaEdge = EDGE; st.aaVox = VOX; st.aaGraze = GRAZE;
   beginFrame(st, cam0, GRID);
   const fa = makeFrame(st, COLS, ROWS, plane, {});
   const hist = createStableBuffers(COLS, ROWS);
@@ -226,6 +227,12 @@ for (const [name, c0, camK, plane] of cases) for (let k = 1; k <= 4; k++) {
   assert.equal(r.mism, 0, `aaAnchor off ${name} k=${k}: ${r.mism} mismatches`);
 }
 ANCHOR = true;
+GRAZE = false; // AA-20: graze limit off stays at parity
+for (const [name, c0, camK, plane] of cases) for (let k = 1; k <= 4; k++) {
+  const r = runCase(STABLE_WGSL, name, c0, camK, plane, k);
+  assert.equal(r.mism, 0, `aaGraze off ${name} k=${k}: ${r.mism} mismatches`);
+}
+GRAZE = true;
 VOX = false; // AA-21 (OB-208): aaVox off (kind 8 keeps the history anchor) stays at parity
 for (const [name, c0, camK, plane] of cases) for (let k = 1; k <= 4; k++) {
   const r = runCase(STABLE_WGSL, name, c0, camK, plane, k);
@@ -278,7 +285,10 @@ const mutations = [
   ['perspective divide dropped in rows', 'rf = (1.0 - vy / vdP / prevC.y)', 'rf = (1.0 - vy / prevC.y)'],
 ];
 assert.ok(STABLE_WGSL.includes('u.waterOn != 0 && wl.x'), 'water test is gated by waterOn (waterOn): the 1x1 dummy reads 0 = water out of bounds');
+const GRAZE_MUT = new Set(['graze K x0.25', 'graze side max instead of min']);
+mutations.push(['graze K x0.25', 'min(0.7500 * max(gx, gy)', 'min(0.1875 * max(gx, gy)'], ['graze side max instead of min', 'var gy = min(grazeStep(cx, cy - 1', 'var gy = max(grazeStep(cx, cy - 1']);
 for (const [name, from, to] of mutations) {
+  GRAZE = GRAZE_MUT.has(name); // AA-20: the old rules are checked without the graze limit (it would hide a looser texel window)
   assert.ok(STABLE_WGSL.includes(from), `mutation anchor missing: ${name}`);
   const src = STABLE_WGSL.replace(from, to);
   let caught = 0;
@@ -289,6 +299,7 @@ for (const [name, from, to] of mutations) {
   ANCHOR = true;
   assert.ok(caught > 0, `mutation survived: ${name}`);
 }
+GRAZE = true;
 
 // ---------------- host side: uniforms, device pass, shade level target, stable-off identity ----------------
 {
