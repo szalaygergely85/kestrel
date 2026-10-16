@@ -1,5 +1,5 @@
 // ME-06c1 (architecture.md 37.2): derived, load-time tree placements.
-import { buildCarpetClassMap } from "./carpet.js";
+import { CarpetClassMapJob } from "./carpet.js";
 import { paintAt } from "./grassMask.js";
 import { decorHash, jitterCm, K_JX, K_JY } from "../mesh/decorScatter.js";
 export function hash2(ix, iy, seed) {
@@ -359,12 +359,17 @@ export class DetailScatterJob {
       this.decor = { layers: [] };
       // ENV-01b fix: the band's OWN class map (never world.carpet, which is the live near band and is rewritten in place)
       const cc = opts && opts.carpetCtx;
-      if (cc && cc.cfg && cc.cfg.variants) this.carpet = buildCarpetClassMap(terrain, cc.recipe, cc.cfg, null, structures);
+      if (cc && cc.cfg && cc.cfg.variants) { const cj = new CarpetClassMapJob(terrain, cc.recipe, cc.cfg, null, structures); if (cj.res) { this._carpetJob = cj; this._carpetN = structures.length; } } // PERF-05: row-sliced in step() (was ~14 ms here)
     }
   }
   step(msBudget) {
     if (this.result) return true;
     const t0 = _now();
+    if (this._carpetJob) { // PERF-05: the band's class map first (the mask rows read it via _inCarpet)
+      if (!this._carpetJob.step(msBudget)) return false;
+      this.carpet = this._carpetJob.res; this._carpetJob = null;
+      if (_now() - t0 >= msBudget) return false;
+    }
     while (this.layer < this.layers.length) {
       const l = this.layers[this.layer].l;
       if (!this.rowInit) { this.iy = Math.floor(this.g.y0 / l.cellM); this.rowInit = true; }

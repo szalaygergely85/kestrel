@@ -80,55 +80,87 @@ const CLASS_ZERO_MIN_SPAN = 4; // m: a structure needs a bbox side >= this to bl
  * @returns {{classMap: Uint8Array, x0:number, y0:number, w:number, h:number, cellM:number}|null} null before `terrain.nearReady`
  */
 export function buildCarpetClassMap(terrain, recipe, cfg, out, structures) {
-  const g = terrain && terrain.near;
-  if (!g || !terrain.nearReady) return null;
-  const cellM = cfg.classCellM || CARPET_DEFAULTS.classCellM;
-  const w = Math.floor(g.w * g.cell / cellM), h = Math.floor(g.h * g.cell / cellM);
-  const res = out && out.classMap && out.classMap.length === w * h ? out : { classMap: new Uint8Array(w * h) };
-  res.x0 = g.x0; res.y0 = g.y0; res.w = w; res.h = h; res.cellM = cellM;
-  const map = res.classMap, vs = cfg.variants, names = terrain.typeNames;
-  const biomeAt = recipe && recipe.util && typeof recipe.util.biomeAt === 'function' ? recipe.util.biomeAt : null;
-  // Per baked type id: bitmask of variants whose ground list has it (resolved once, no per-cell string work).
-  const nv = vs.length, typeMask = new Uint16Array(names.length);
-  for (let t = 0; t < names.length; t++) for (let v = 0; v < nv; v++) if (vs[v].ground.indexOf(names[t]) >= 0) typeMask[t] |= 1 << v;
-  const needBiome = vs.some((v) => v.biomes);
-  for (let j = 0; j < h; j++) {
-    const y = g.y0 + (j + 0.5) * cellM;
-    for (let i = 0; i < w; i++) {
-      const x = g.x0 + (i + 0.5) * cellM;
-      const ti = Math.floor((x - g.x0) / g.cell) + Math.floor((y - g.y0) / g.cell) * g.w;
-      const m = typeMask[g.type[ti]];
-      let id = 0;
-      if (m) {
-        const b = needBiome && biomeAt ? biomeAt(x, y) : -1;
-        for (let v = 0; v < nv; v++) {
-          if (!(m & (1 << v))) continue;
-          const bs = vs[v].biomes;
-          if (bs && (b < 0 || bs.indexOf(b) < 0)) continue;
-          if (vs[v].areas && !inAreas(vs[v].areas, x, y)) continue;
-          id = v + 1; break;
+  const j = new CarpetClassMapJob(terrain, recipe, cfg, out, structures);
+  if (!j.res) return null;
+  j.step(Infinity);
+  return j.res;
+}
+
+const clsNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+/**
+ * PERF-05: buildCarpetClassMap as a row-sliced job (~14 ms in one call at a 640x384 m band, the biggest bake-ahead / swap-frame spike).
+ * `res` is null when the near band is not baked (buildCarpetClassMap returns null then). `step(ms)` does >= 1 class row (or 64
+ * structures) per call and returns true once `res` is final; the bytes equal the one-shot build by construction (same loops, in order).
+ */
+export class CarpetClassMapJob {
+  constructor(terrain, recipe, cfg, out, structures) {
+    const g = terrain && terrain.near;
+    this.res = null; this.done = false;
+    if (!g || !terrain.nearReady) return;
+    const cellM = cfg.classCellM || CARPET_DEFAULTS.classCellM;
+    const w = Math.floor(g.w * g.cell / cellM), h = Math.floor(g.h * g.cell / cellM);
+    const res = out && out.classMap && out.classMap.length === w * h ? out : { classMap: new Uint8Array(w * h) };
+    res.x0 = g.x0; res.y0 = g.y0; res.w = w; res.h = h; res.cellM = cellM;
+    const vs = cfg.variants, names = terrain.typeNames;
+    // Per baked type id: bitmask of variants whose ground list has it (resolved once, no per-cell string work).
+    const nv = vs.length, typeMask = new Uint16Array(names.length);
+    for (let t = 0; t < names.length; t++) for (let v = 0; v < nv; v++) if (vs[v].ground.indexOf(names[t]) >= 0) typeMask[t] |= 1 << v;
+    Object.assign(this, { g, res, cfg, vs, nv, typeMask, structures: structures && structures.length ? structures : null,
+      biomeAt: recipe && recipe.util && typeof recipe.util.biomeAt === 'function' ? recipe.util.biomeAt : null,
+      needBiome: vs.some((v) => v.biomes), j: 0, k: 0, grow: 0 });
+    this.res = res;
+  }
+  step(ms) {
+    if (this.done) return true;
+    if (!this.res) return false;
+    const t0 = clsNow(), { g, res, vs, nv, typeMask, biomeAt, needBiome } = this, map = res.classMap, w = res.w, h = res.h, cellM = res.cellM;
+    while (this.j < h) {
+      const j = this.j++, y = g.y0 + (j + 0.5) * cellM;
+      for (let i = 0; i < w; i++) {
+        const x = g.x0 + (i + 0.5) * cellM;
+        const ti = Math.floor((x - g.x0) / g.cell) + Math.floor((y - g.y0) / g.cell) * g.w;
+        const m = typeMask[g.type[ti]];
+        let id = 0;
+        if (m) {
+          const b = needBiome && biomeAt ? biomeAt(x, y) : -1;
+          for (let v = 0; v < nv; v++) {
+            if (!(m & (1 << v))) continue;
+            const bs = vs[v].biomes;
+            if (bs && (b < 0 || bs.indexOf(b) < 0)) continue;
+            if (vs[v].areas && !inAreas(vs[v].areas, x, y)) continue;
+            id = v + 1; break;
+          }
         }
+        map[i + j * w] = id;
       }
-      map[i + j * w] = id;
+      if (clsNow() - t0 >= ms) return false;
     }
-  }
-  if (structures && structures.length) {
-    let maxH = 0;
-    for (const v of vs) { const m = v.heightM[1] * PATCH_MAX * (v.tuft && v.tuft.mul !== undefined ? v.tuft.mul : TUFT_DEFAULT_MUL); if (m > maxH) maxH = m; }
-    const jit = cfg.classJitterM == null ? CARPET_DEFAULTS.classJitterM : cfg.classJitterM, grow = jit + LEAN_CAP_M * maxH;
-    for (const s of structures) {
-      const b = s && s.bbox;
-      if (!b || !(isNum(b.x0) && isNum(b.y0) && isNum(b.x1) && isNum(b.y1))) continue;
-      // OB-101: small dressing (clumps, flowers, bushes, rocks; both spans < CLASS_ZERO_MIN_SPAN) is excluded by the 0.5 m density mask only: zeroing 2 m class cells grown
-      // by ~1.1 m around hundreds of them wiped the whole meadow (class map 99.5 % empty, no blades in play).
-      if (b.x1 - b.x0 < CLASS_ZERO_MIN_SPAN && b.y1 - b.y0 < CLASS_ZERO_MIN_SPAN) continue;
-      // class cell i covers [x0 + i*cellM, x0 + (i+1)*cellM): overlap with the grown rect
-      const i0 = Math.max(0, Math.floor((b.x0 - grow - res.x0) / cellM)), i1 = Math.min(w - 1, Math.floor((b.x1 + grow - res.x0) / cellM));
-      const j0 = Math.max(0, Math.floor((b.y0 - grow - res.y0) / cellM)), j1 = Math.min(h - 1, Math.floor((b.y1 + grow - res.y0) / cellM));
-      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) map[i + j * w] = 0;
+    const ss = this.structures;
+    if (ss) {
+      if (this.k === 0) {
+        let maxH = 0;
+        for (const v of vs) { const m = v.heightM[1] * PATCH_MAX * (v.tuft && v.tuft.mul !== undefined ? v.tuft.mul : TUFT_DEFAULT_MUL); if (m > maxH) maxH = m; }
+        const jit = this.cfg.classJitterM == null ? CARPET_DEFAULTS.classJitterM : this.cfg.classJitterM;
+        this.grow = jit + LEAN_CAP_M * maxH;
+      }
+      const grow = this.grow;
+      while (this.k < ss.length) {
+        const s = ss[this.k++], b = s && s.bbox;
+        if (!b || !(isNum(b.x0) && isNum(b.y0) && isNum(b.x1) && isNum(b.y1))) continue;
+        // OB-101: small dressing (clumps, flowers, bushes, rocks; both spans < CLASS_ZERO_MIN_SPAN) is excluded by the 0.5 m density mask only: zeroing 2 m class cells grown
+        // by ~1.1 m around hundreds of them wiped the whole meadow (class map 99.5 % empty, no blades in play).
+        if (b.x1 - b.x0 < CLASS_ZERO_MIN_SPAN && b.y1 - b.y0 < CLASS_ZERO_MIN_SPAN) continue;
+        // class cell i covers [x0 + i*cellM, x0 + (i+1)*cellM): overlap with the grown rect
+        const i0 = Math.max(0, Math.floor((b.x0 - grow - res.x0) / cellM)), i1 = Math.min(w - 1, Math.floor((b.x1 + grow - res.x0) / cellM));
+        const j0 = Math.max(0, Math.floor((b.y0 - grow - res.y0) / cellM)), j1 = Math.min(h - 1, Math.floor((b.y1 + grow - res.y0) / cellM));
+        for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) map[i + j * w] = 0;
+        if ((this.k & 63) === 0 && clsNow() - t0 >= ms) return false;
+      }
     }
+    this.done = true;
+    return true;
   }
-  return res;
 }
 
 // ---- MASK-b (38.52 amendment, OB-096 grass mask): near-band density mask. Derived render data, never serialized/hashed.
