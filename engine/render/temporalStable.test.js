@@ -461,5 +461,11 @@ console.log('temporalStable OB-198 cases ok');
   grazeUvLimit(inp, 1, 1, 5, o); assert.equal(o[0], 5, 'graze: never below the base limit');
 }
 console.log('temporalStable AA-20 graze cases ok');
+// AA-26 (OB-208): a soft-edge leaf cell (inp.soft) keeps history past the UV drift limit (world-keyed dice); off / not soft = fresh
+for (const [leaf, soft, want] of [[true, 1, 0], [false, 1, 1], [true, 0, 1]]) {
+  const st = createStableState(); st.aaGraze = false; st.aaLeafUv = leaf; beginFrame(st, cam0, GRID); const a = wallInput(st); a.kind.fill(KIND_MESH); const h = colHist(a); beginFrame(st, cam0, GRID);
+  const b = wallInput(st); b.kind.fill(KIND_MESH); for (let k = 0; k < b.u.length; k++) b.u[k] += 3; b.soft = new Uint8Array(b.u.length).fill(soft);
+  const out = createStableBuffers(COLS, ROWS); stabilize(b, h, out, st); ok(`AA-26 leaf=${leaf} soft=${soft}: fresh ${want}`, out.fresh[10 * COLS + 20] === want, String(out.fresh[10 * COLS + 20]));
+}
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

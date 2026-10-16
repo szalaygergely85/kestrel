@@ -21,7 +21,7 @@ const W_CUR_A = W('curA'), W_CUR_B = W('curB'), W_CUR_C = W('curC'), W_PREV_A = 
 const W_WATER_ON = W('waterOn'); // StableU.waterOn (1 = bind a real WATER layer)
 const W_DEYE = W('dEye'), W_COLS = W('gridCols'), W_ROWS = W('gridRows'), W_VALID = W('histValid'), W_ORTHO = W('ortho'), W_SNAP = W('snap'), W_DETAIL = W('detailDefault'), W_AAFLAGS = W('aaFlags');
 /** STABLE_TEXTURES slot order (stable.wgsl.js header). */
-const ST = { GI: 0, GA: 1, DEPTH: 2, SHADE_FG: 3, SHADE_BG: 4, FINAL_FG: 5, FINAL_BG: 6, LEVEL: 7, WATER: 8, HIST_FG: 9, HIST_BG: 10, HIST: 11 };
+const ST = { GI: 0, GA: 1, DEPTH: 2, SHADE_FG: 3, SHADE_BG: 4, FINAL_FG: 5, FINAL_BG: 6, LEVEL: 7, WATER: 8, HIST_FG: 9, HIST_BG: 10, HIST: 11, MAT_I: 12 };
 
 function putTerms(f32, a, b, c, t) {
   f32[a] = t.fX; f32[a + 1] = t.fY; f32[a + 2] = t.fZ; f32[a + 3] = t.tanHalfX;
@@ -36,7 +36,7 @@ export function packStableUniforms(st, cols, rows, f32, i32) {
   f32[W_DEYE] = st.dEx; f32[W_DEYE + 1] = st.dEy; f32[W_DEYE + 2] = st.dEz; f32[W_DEYE + 3] = 0;
   i32[W_COLS] = cols; i32[W_ROWS] = rows; i32[W_VALID] = st.histValid ? 1 : 0; i32[W_ORTHO] = st.cur.ortho === 1 ? 1 : 0;
   i32[W_SNAP] = CHANNEL_SNAP; f32[W_DETAIL] = DEFAULT_DETAIL;
-  i32[W_AAFLAGS] = (st.aaGlyph ? 1 : 0) | (st.aaMesh ? 2 : 0) | (st.aaVm ? 4 : 0) | (st.aaJoint ? 8 : 0) | (st.aaAnchor ? 16 : 0) | (st.aaEdge ? 32 : 0) | (st.aaVox ? 64 : 0) | (st.aaGraze ? 128 : 0) | (st.aaHue ? 256 : 0); // AA-18: ?aaedge=0; AA-20: ?aagraze=0 (bit 128); OB-198: ?aaglyph=0 / ?aamesh=0
+  i32[W_AAFLAGS] = (st.aaGlyph ? 1 : 0) | (st.aaMesh ? 2 : 0) | (st.aaVm ? 4 : 0) | (st.aaJoint ? 8 : 0) | (st.aaAnchor ? 16 : 0) | (st.aaEdge ? 32 : 0) | (st.aaVox ? 64 : 0) | (st.aaGraze ? 128 : 0) | (st.aaHue ? 256 : 0) | (st.aaLeafUv ? 512 : 0); // AA-18: ?aaedge=0; AA-20: ?aagraze=0 (bit 128); OB-198: ?aaglyph=0 / ?aamesh=0
 }
 
 export class WgStablePass {
@@ -53,6 +53,7 @@ export class WgStablePass {
     });
     this.u = new Float32Array(STABLE_BLOCK.sizeWords); this.ui = new Int32Array(this.u.buffer);
     this.dummyWater = device.createTexture({ format: 'rgba32ui', width: 1, height: 1 });
+    this.dummyMatI = device.createTexture({ format: 'rgba32i', width: 1, height: 1 }); // AA-26: 1x1 stub until the shade MAT_I exists (= not soft)
     this.set = [null, null];
     this.tex = STABLE_TEXTURES.map((_, slot) => ({ slot, texture: null }));
     this.bindDesc = [{ uniforms: this.u, textures: this.tex }, { uniforms: this.u, textures: this.tex }];
@@ -82,6 +83,7 @@ export class WgStablePass {
     this._invalid = false;
     this.st.aaEdge = fogShapeCtx.aaEdgeHold; // AA-18 (OB-208): ?aaedge=0
     this.st.aaVox = fogShapeCtx.aaVox !== false; // AA-21 (OB-208): ?aavox=0
+    this.st.aaLeafUv = fogShapeCtx.aaLeafUv !== false && fogShapeCtx.aaFol !== false; // AA-26 (OB-208): ?aaleafuv=0; only with the AA-15 world dice
     packStableUniforms(this.st, this.cols, this.rows, this.u, this.ui);
     return valid;
   }
@@ -99,6 +101,7 @@ export class WgStablePass {
     tx[ST.GI].texture = t.texGI; tx[ST.GA].texture = t.texGA; tx[ST.DEPTH].texture = t.texDepth;
     tx[ST.SHADE_FG].texture = sFg; tx[ST.SHADE_BG].texture = sBg; tx[ST.FINAL_FG].texture = t.texFinalFg; tx[ST.FINAL_BG].texture = t.texFinalBg;
     tx[ST.LEVEL].texture = t.texLevel; tx[ST.WATER].texture = (inputs && inputs.water) || this.dummyWater;
+    const sh = p && p._cellPass && p._cellPass.shadePass; tx[ST.MAT_I].texture = (sh && sh.texMatI) || this.dummyMatI; // AA-26
     tx[ST.HIST_FG].texture = hist.outFg; tx[ST.HIST_BG].texture = hist.outBg; tx[ST.HIST].texture = hist.hist;
     d.beginPass(out.target); d.bind(this.pipe, this.bindDesc[k]); d.draw(3); d.endPass();
     this._k = k ^ 1; this.ran = true; // flip only after a successful run
