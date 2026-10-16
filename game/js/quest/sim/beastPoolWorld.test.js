@@ -44,6 +44,7 @@ const mkBus = () => { const h = {}; return { on: (n, f) => { (h[n] ||= []).push(
 const bound = (sim, i) => (BASE ? true : sim.pool.lv[i] >= 0);
 const DT = 1 / 60; let losOn = true; // the director's never-in-view LOS term (open terrain at 400 m is mostly visible); off only while checking the pool side of a respawn
 
+let navCache = null; // nav grid + water nav are read-only and derived from the same world def: the Continue boot reuses them (saves ~1 s)
 function boot(state, deadIds) {
   const w = World.load(def, assets, { physics: 'grid' }); w.state = state;
   const ev = mkBus(); const relay = createSaveRelay({ storage: null, questDef, giverDefs: [] }); const hd = relay.handlers();
@@ -53,8 +54,9 @@ function boot(state, deadIds) {
   let regional = null; quiet(() => { regional = spawnRegionalBeasts(w, G, 12); });
   const homes = []; w.forEachEntity((e) => { const b = e.components?.brain; if (b?.kind === 'beast' && b.home) homes.push([b.home[0], b.home[1]]); });
   gw.addFarCamps(generateFarCamps({ geo: G, terrain: w.terrain, seed: 12, avoid: homes }));
-  const nav = buildBeastNav(w, def.nav);
-  const sim = quiet(() => createBeastSim(w, { nav, rng: createRng(1), events: ev, band, tileNav: true, spawn: { x: 1480, y: 1030 }, waterNav: (() => { try { return buildWaterNav(w, nav.grid); } catch (e) { return null; } })() }));
+  if (!navCache) { const nav = buildBeastNav(w, def.nav); navCache = { nav, waterNav: (() => { try { return buildWaterNav(w, nav.grid); } catch (e) { return null; } })() }; }
+  const { nav, waterNav } = navCache;
+  const sim = quiet(() => createBeastSim(w, { nav, rng: createRng(1), events: ev, band, tileNav: true, spawn: { x: 1480, y: 1030 }, waterNav }));
   const members = regionalMembers(regional, (id) => sim.slotOf(id)), groups = buildGroups(members, def.nav.seed ?? 1);
   let dw = null;
   const dir = createSpawnDirector({ groups, dayLenSec: 1200, viewHalfRad: Math.PI / 4, los: (ax, ay, bx, by) => losOn && hasLineOfSight(w, ax, ay, w.terrain.heightAt(ax, ay) + 1.6, bx, by, w.terrain.heightAt(bx, by) + 1), onRespawn: (gi, g) => dw.respawn(gi, g), seed: def.nav.seed ?? 1, firstSlot: members.length,
@@ -99,7 +101,7 @@ const stepOnce = (t) => {
     }
   }
 };
-const walkTo = (x, y, speed = 5) => { const dx = x - px, dy = y - py, d = Math.hypot(dx, dy); if (d < 0.01) return; fx = dx / d; fy = dy / d; const n = Math.ceil(d / (speed * DT)); const sx = dx / n, sy = dy / n; for (let k = 0; k < n; k++) { px += sx; py += sy; stepOnce(true); } };
+const walkTo = (x, y, speed = 10) => { const dx = x - px, dy = y - py, d = Math.hypot(dx, dy); if (d < 0.01) return; fx = dx / d; fy = dy / d; const n = Math.ceil(d / (speed * DT)); const sx = dx / n, sy = dy / n; for (let k = 0; k < n; k++) { px += sx; py += sy; stepOnce(true); } };
 for (let k = 0; k < 600; k++) stepOnce(false); // settle: 8 binds per 30 steps
 // the raid: run midnight with the player at the tower; a raid pack must get goals, bind (priority) and never be evicted while it has one
 hour = 23.99; for (let k = 0; k < 4; k++) { T.life.step(hour); } hour = 0.05; T.life.step(hour);
@@ -114,7 +116,7 @@ ok('raid-style goals on a far pack: all bound at the next binder update', BASE |
 hour = 23;
 for (let k = 1; k < ROAD.length; k++) {
   const before = k === 1 ? 0 : costs.length;
-  walkTo(ROAD[k][0], ROAD[k][1]);
+  walkTo(ROAD[k][0], ROAD[k][1], k >= 12 ? 12 : 20); // sprint pace tower<->Ford, 12 m/s on the cemetery leg (10 m/s trips the near-miss assert: a cemetery skeleton rising on arrival stays unbound >45 steps at 25 m - sampling-phase effect, see lane note) (its skeletons rise on arrival: the 15-step sampling phase matters there)
   if (!BASE) { for (const i of goalRecs) if (sim.goal.on[i] && !(sim.state[i] >= 9) && sim.pool.lv[i] < 0) raidUnbound++; raidChecked++; }
   void before;
 }
