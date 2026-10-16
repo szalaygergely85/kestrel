@@ -15,7 +15,7 @@ ok(st && st.keepMask, 'site bearDen placed (keepTerrain)');
 const errs = validateUnder(world);
 ok(errs.length === 0, 'validateUnder: ' + errs.slice(0, 2).join('; '));
 const lv = JSON.parse(fs.readFileSync(new URL('../../../../content/levels/bear_den.level.json', import.meta.url), 'utf8'));
-ok(lv.ambience === 'cave' && lv.lights.length === 0, 'dark cave: ambience cave, no torches');
+ok(lv.ambience === 'cave' && lv.lights.length === 1 && !/torch/i.test(lv.lights[0].preset), 'dark cave: ambience cave, one soft non-torch light (VISQA-12)');
 const FL = UNDER_SITES.find((s) => s.id === 'bearDen').z;
 ok(Math.abs(st.origin.z + 3.2 - FL) < 0.02, 'site z = chamber floor ' + FL);
 

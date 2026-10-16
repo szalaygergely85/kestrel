@@ -8,6 +8,8 @@
     grade: { lift: [0.01, 0.005, 0.0], gamma: [1.0, 1.0, 1.02], gain: [1.04, 1.0, 0.95], sat: 1.06 }, // gentle warm finish on top of the biome grade
     vignette: { k: 0.28, r0: 0.55, r1: 1.15, rgb: [0.02, 0.02, 0.03] },
     mist: { rgb: [0.55, 0.58, 0.64], density: 0.035, start: 4, heightK: 0 },
+    // VISQA-11: mist underground (keepTerrain sites: crypt, cellar, caves, den). rgb = the level ambient (dark), set by postConfig.
+    mistUnder: { density: 0.06, start: 3, heightK: 0 },
   },
   presets: {
     low:    { bloom: false, grade: false, vignette: true, mist: true },
@@ -19,6 +21,7 @@
   scenes: {
     outdoor:  { mist: false },
     interior: { mist: true },
+    underground: { mist: true }, // VISQA-11: buried keepTerrain level; mist = base.mistUnder in the level ambient colour, not the pale tower dust
     underwater: { mist: false }, // SCENE-INTERIOR-2: water tint/fog is the atmos job; no extra mist
   },
   };
