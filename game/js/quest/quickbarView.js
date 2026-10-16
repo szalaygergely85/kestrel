@@ -10,6 +10,8 @@ import { QB_SLOTS, HAND_SLOTS } from './sim/quickbar.js';
 export const SLOT_W = 7, SLOT_H = 4, SLOT_GAP = 1, GROUP_GAP = 2; // GROUP_GAP = extra gap between the hand pair and the keys
 const PLATE = [10, 11, 16], PLATE_ON = [64, 54, 24], GOLD = [236, 196, 92], DIM = [96, 92, 80], TEXT = [226, 214, 176], WARN = [200, 70, 60];
 const LABELS = ['L', 'R', '1', '2', '3', '4'];
+// VISQA-06: 1-cell lighter rim so the plates read against the navy night scene (UI is not night-graded, the plates are just very dark)
+const rimOf = (b) => [Math.min(255, b[0] + 30), Math.min(255, b[1] + 38), Math.min(255, b[2] + 56)];
 const HAND_PLATE = [14, 20, 34], HAND_ON = [40, 56, 84], HAND_TXT = [140, 190, 236], DRAG_BG = [90, 76, 30];
 
 /** @param {{defs:any, keys:any, rgb:any}} o  keys = items.keys (icon colour letters), rgb = palette rgb */
@@ -33,11 +35,11 @@ export function createQuickbarView(o) {
     return c;
   }
   const put = (ui, x, y, ch, fg, bg) => { if (x >= 0 && y >= 0 && x < ui.cols && y < ui.rows) ui.setCellRGB(x, y, ch.charCodeAt(0) - 32, fg[0], fg[1], fg[2], bg[0], bg[1], bg[2]); };
-  function icon(ui, x, y, id, dim, bg) {
+  function icon(ui, x, y, id, dim, bg, rimBottom) {
     const cells = dim ? (cellsOf(id), dimCache[id]) : cellsOf(id);
     for (let r = 0; r < 3; r++) for (let k = 0; k < 5; k++) {
-      const cl = cells[r * 5 + k];
-      if (cl.rgb && x + k >= 0 && x + k < ui.cols && y + r < ui.rows) ui.setCellRGB(x + k, y + r, cl.code, cl.rgb[0], cl.rgb[1], cl.rgb[2], bg[0], bg[1], bg[2]);
+      const cl = cells[r * 5 + k], b = rimBottom && r === 2 ? rimBottom : bg;
+      if (cl.rgb && x + k >= 0 && x + k < ui.cols && y + r < ui.rows) ui.setCellRGB(x + k, y + r, cl.code, cl.rgb[0], cl.rgb[1], cl.rgb[2], b[0], b[1], b[2]);
     }
   }
   function isActive(id, eq, sipId) {
@@ -85,15 +87,16 @@ export function createQuickbarView(o) {
         const id = lk && hand && defs[qb[i]] && defs[qb[i]].kind !== 'potion' ? null : qb[i]; // FB-03: locked spell hand box = an empty slot
         const on = !!id && !lk && isActive(id, eq, sipId), n = id ? countOfId(inv, id) : -1, dim = !!id && (n === 0 || lk);
         const bg = hand ? (on ? HAND_ON : HAND_PLATE) : (on ? PLATE_ON : PLATE);
-        for (let r = 0; r < SLOT_H; r++) for (let c = 0; c < SLOT_W; c++) put(ui, x + c, y + r, ' ', TEXT, bg);
+        const rim = rimOf(bg);
+        for (let r = 0; r < SLOT_H; r++) for (let c = 0; c < SLOT_W; c++) put(ui, x + c, y + r, ' ', TEXT, r === 0 || r === SLOT_H - 1 || c === 0 || c === SLOT_W - 1 ? rim : bg);
         if (id) {
-          icon(ui, x + 1, y + 1, id, dim, bg);
-          if (on) for (let r = 1; r < 3; r++) { put(ui, x, y + r, '[', GOLD, bg); put(ui, x + SLOT_W - 1, y + r, ']', GOLD, bg); }
-          if (n >= 0) { const s = cStr[n > 99 ? 99 : n]; for (let k = 0; k < s.length; k++) put(ui, x + SLOT_W - s.length + k, y + SLOT_H - 1, s[k], n === 0 ? WARN : TEXT, bg); }
+          icon(ui, x + 1, y + 1, id, dim, bg, rim);
+          if (on) for (let r = 1; r < 3; r++) { put(ui, x, y + r, '[', GOLD, rim); put(ui, x + SLOT_W - 1, y + r, ']', GOLD, rim); }
+          if (n >= 0) { const s = cStr[n > 99 ? 99 : n]; for (let k = 0; k < s.length; k++) put(ui, x + SLOT_W - s.length + k, y + SLOT_H - 1, s[k], n === 0 ? WARN : TEXT, rim); }
         } else {
-          put(ui, x, y, '.', DIM, bg); put(ui, x + SLOT_W - 1, y, '.', DIM, bg); put(ui, x, y + SLOT_H - 1, '.', DIM, bg); put(ui, x + SLOT_W - 1, y + SLOT_H - 1, '.', DIM, bg);
+          put(ui, x, y, '.', DIM, rim); put(ui, x + SLOT_W - 1, y, '.', DIM, rim); put(ui, x, y + SLOT_H - 1, '.', DIM, rim); put(ui, x + SLOT_W - 1, y + SLOT_H - 1, '.', DIM, rim);
         }
-        put(ui, x, y, LABELS[i], hand ? HAND_TXT : id ? GOLD : DIM, bg);
+        put(ui, x, y, LABELS[i], hand ? HAND_TXT : id ? GOLD : DIM, rim);
       }
     },
   };

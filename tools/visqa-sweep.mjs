@@ -16,7 +16,7 @@ export const SPOTS = [
   ['bend', 1262, 1042, 0, 0, 'Bend relay/waystone'],
   ['cemetery', 1644, 1382, 0, 0, 'cemetery1'],
   ['braid-falls', 1238, 632, 0, 12, 'braidFalls from below'],
-  ['cliff', 1250, 596, 180, -18, 'falls lip looking down'],
+  ['cliff', 1552, 468, 0, 12, 'northwood hillside cliff face (~9 m rise at y 454-458), looking up from below (VISQA-09; the old 1250,596 spot stood in the outlet river)'],
   ['lake-shore', 1215, 547, 0, 0, 'Glasswater south shore'],
   ['burl-home', 1404, 1019, 0, 4, "Burl's new home (1404,1010)"],
 ];
@@ -47,6 +47,8 @@ try {
     await pause(4000);
     for (const [name, x, y, yaw, pitch, note] of spots) {
       const gz = await evaluate(cdp, `(()=>{const t=__debug.playerHandle.data.transform;t.x=${x};t.y=${y};if(__debug.vitals&&__debug.vitals.setGodMode)__debug.vitals.setGodMode(true);const T=__debug.world.terrain,gz=(T.groundAt||T.heightAt).call(T,${x},${y});t.z=(gz==null?t.z:gz+0.2);t.yawDeg=${yaw};t.pitchDeg=${pitch};const L=__debug.look;if(L){L.yawDeg=${yaw};L.pitchDeg=${pitch};}return gz})()`);
+      // VISQA-09: a new game has Burl at the tower; for the home spot put him at his post-departure home (walks.home, OB-212)
+      if (name === 'burl-home') await evaluate(cdp, `(()=>{const b=__debug.world.get('bear');if(b&&b.data.transform){b.data.transform.x=1404;b.data.transform.y=1010;const T=__debug.world.terrain;const g=(T.groundAt||T.heightAt).call(T,1404,1010);if(g!=null)b.data.transform.z=g;}return !!b})()`);
       await pause(settle);
       const s = await cdp.send('Page.captureScreenshot', { format: 'png' });
       const file = `${name}-${String(h).padStart(2, '0')}.png`;
