@@ -1,0 +1,31 @@
+{
+ "sha": "201affe9",
+ "date": "2026-10-16",
+ "grid": "480x180",
+ "poses": {
+  "wallNear": {
+   "totalPct": 5.846294720643004,
+   "glyphOnlyPct": 5.062366899069564
+  },
+  "wallFar": {
+   "totalPct": 6.331751765491578,
+   "glyphOnlyPct": 4.924197984620602
+  },
+  "bushes": {
+   "totalPct": 7.156230363621956,
+   "glyphOnlyPct": 4.17868472848524
+  },
+  "crown": {
+   "totalPct": 6.329808324703097,
+   "glyphOnlyPct": 4.988653769097526
+  },
+  "grassFar": {
+   "totalPct": 4.431818859521075,
+   "glyphOnlyPct": 3.7288469080689692
+  }
+ },
+ "avg": {
+  "totalPct": 6.019180806796143,
+  "glyphOnlyPct": 4.57655005786838
+ }
+}
