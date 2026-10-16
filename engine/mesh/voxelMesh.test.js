@@ -651,6 +651,21 @@ for (const [name, def] of [['quadruped12', quadruped12], ['post12', post12]]) {
   ok('48 mesh voxel draws have unique prop ids below unit/view-model ranges', ids.length === 48 && new Set(ids).size === 48 && ids[47] === (0x8000 | 47) && ids.every(id => id < 0xFFFF && id < 0x10000));
 }
 
+// PERF-03: addVoxelInstances(planes) pre-culls by the same classifyAABB test DrawList.cull(planes) applies -> same culled list.
+{
+  const { pm, partNames } = pack(quadruped12);
+  const items = Array.from({ length: 40 }, (_, i) => ({ model: pm, modelKey: 'bear', x: i * 3, y: (i % 5) * 4, z: 0, yawDeg: i * 37, clip: -1, frame: 0, tMs: 0, scale: 1,
+    rect: { minX: i * 3 - 1, minY: (i % 5) * 4 - 1, minZ: 0, maxX: i * 3 + 1, maxY: (i % 5) * 4 + 1, maxZ: 2 } }));
+  const r = 20, cx = 50, cy = 6, cz = 1; // box planes (inside n.p + d >= 0), as WgPointShadowPass._boxPlanes
+  const planes = Float64Array.from([1, 0, 0, -(cx - r), -1, 0, 0, cx + r, 0, 1, 0, -(cy - 3), 0, -1, 0, cy + 3, 0, 0, 1, -(cz - r), 0, 0, -1, cz + r]);
+  const cache = new VoxelMeshCache(), a = new DrawList(), b = new DrawList();
+  addVoxelInstances(a, { list: items }, cache, () => partNames); const pushedA = a.count; a.cull(planes);
+  addVoxelInstances(b, { list: items }, cache, () => partNames, planes); const pushedB = b.count; b.cull(planes);
+  const sig = (l) => l.items.slice(0, l.count).map((it) => [it.objectId, it.planeIdOr, it.zBase, ...it.aabb, ...it.partMatrices.slice(0, 24), ...it.partFlags.slice(0, 4)].join(',')).join('|');
+  ok('PERF-03: pre-culled voxel list == pushed-then-culled list (ids, aabb, part matrices)', a.count > 0 && a.count === b.count && sig(a) === sig(b), `${a.count} vs ${b.count}`);
+  ok('PERF-03: pre-cull pushes fewer items', pushedB === b.count && pushedB < pushedA, `${pushedB} < ${pushedA}`);
+}
+
 ok('all frozen oracle rays were checked', oracleIndex === golden.rays.length, `${oracleIndex}/${golden.rays.length}`);
 
 console.log(`${pass} passed, ${fail} failed.`);
