@@ -113,7 +113,8 @@ fn stableCell(cell: vec2i) -> SCell {
   // edge cell: final != shade (rgb of fg and bg, glyph in fg.a) -> pass through
   let sf = textureLoad(uShadeFg, cell, 0);
   let sb = textureLoad(uShadeBg, cell, 0);
-  if (fgC.x != sf.x || fgC.y != sf.y || fgC.z != sf.z || fgC.w != sf.w || bgC.x != sb.x || bgC.y != sb.y || bgC.z != sb.z) { return o; }
+  // AA-18 (aaFlags bit 5): edge cells take history like any cell (twin: st.aaEdge)
+  if ((u.aaFlags & 32) == 0 && (fgC.x != sf.x || fgC.y != sf.y || fgC.z != sf.z || fgC.w != sf.w || bgC.x != sb.x || bgC.y != sb.y || bgC.z != sb.z)) { return o; }
   // water-layer cell (ripples must not freeze): the layer word holds a finite vD
   let wl = textureLoad(uWater, cell, 0);
   if (u.waterOn != 0 && wl.x != 0x7f800000u && (wl.w & 32u) == 0u) { return o; } // waterOn: the 1x1 dummy reads 0 (= 'water') out of bounds

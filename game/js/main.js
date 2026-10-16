@@ -211,10 +211,11 @@ import { wireHitSparks, hitSparksEnabled } from './fx/hitSparkWire.js'; // HIT-S
 import { parsePointShadows, presetPointShadowsOn } from './pointShadowOpt.js'; // ME-16e: ?pointshadows=0|N
 import { parseGlow } from './glowOpt.js'; // EMIS-03/04: bleed + halo knob
 import { setReduceMotion, isReduceMotion, eyeZ, gateKick, textSizeCols } from './ui/comfort.js'; // SETTINGS-APPLY-01
-import { PHYSICS, createUnderState, setApiWarnings, setFoliageDice, setFoliageLight, setFoliageEdge } from '../../engine/index.js';
+import { PHYSICS, createUnderState, setApiWarnings, setFoliageDice, setFoliageLight, setFoliageEdge, setEdgeHold } from '../../engine/index.js';
 setFoliageDice(new URLSearchParams(location.search).get('aafol') !== '0'); // AA-15 (OB-208): leaf-card world glyph dice, ?aafol=0 = old per-card u/v dice
 setFoliageLight(new URLSearchParams(location.search).get('aafoll') !== '0'); // AA-16 (OB-208): leaf-card light smoothing, ?aafoll=0 = off
 setFoliageEdge(new URLSearchParams(location.search).get('aafoledge') !== '0'); // AA-17 (OB-208): resolve hysteresis keeps a leaf key across leaf cards, ?aafoledge=0 = off
+setEdgeHold(new URLSearchParams(location.search).get('aaedge') !== '0'); // AA-18 (OB-208): stable pass lets edge cells take history (glyph hold), ?aaedge=0 = off
 if (new URLSearchParams(window.location.search).get('debug') === '1') setApiWarnings(true); // ENG-API-01h: dev flag only - deprecated engine names warn once
 import { meshFeedStats, MAX_MESH_DRAWS, MAX_DRAW_ITEMS } from '../../engine/index.js'; // OB-039: F3 mesh draw cap line
 import { createModelPreview, createCharCache } from '../../engine/index.js'; // EQ-03/04: Character tab model preview
@@ -2528,7 +2529,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         const st = params.get('stable') === '1';
         if (wgPipeline.setStable) wgPipeline.setStable(st);
         const r = await runLivePoses(flickerLive, { poses: params.get('flickerpose') ? POSES_ALL.filter((q) => q.slug === params.get('flickerpose')) : undefined, world: engine.world, wg: wgPipeline, cols: rt.cols, rows: rt.rows, pxCellW: rt.pxCellW, pxCellH: rt.pxCellH, capture, getGrid: () => ({ cols: rt.cols, rows: rt.rows, pxCellW: rt.pxCellW, pxCellH: rt.pxCellH }), dump: parseFlickerDump(params.get('flickerdump')), diag: params.get('flickerdiag') === '1' }); // AA-01c; OB198-DUMP-DIFF-01: `&flickerdump=<pose>:<step>`
-        r.stable = st; r.rays = engine.rays; r.stableOn = !!wgPipeline._stableOn; r.stableRan = !!wgPipeline._stableRan; r.aaCov = params.get('aacov') !== '0'; r.aaAnchor = params.get('aaanchor') !== '0'; r.aaHyst = params.get('aahyst') !== '0'; r.aaGlyph = params.get('aaglyph') !== '0'; r.aaMesh = params.get('aamesh') !== '0'; r.aaVm = params.get('aavm') !== '0'; r.aaJoint = params.get('aajoint') !== '0'; r.aaFolEdge = params.get('aafoledge') !== '0';
+        r.stable = st; r.rays = engine.rays; r.stableOn = !!wgPipeline._stableOn; r.stableRan = !!wgPipeline._stableRan; r.aaCov = params.get('aacov') !== '0'; r.aaEdge = params.get('aaedge') !== '0'; r.aaAnchor = params.get('aaanchor') !== '0'; r.aaHyst = params.get('aahyst') !== '0'; r.aaGlyph = params.get('aaglyph') !== '0'; r.aaMesh = params.get('aamesh') !== '0'; r.aaVm = params.get('aavm') !== '0'; r.aaJoint = params.get('aajoint') !== '0'; r.aaFolEdge = params.get('aafoledge') !== '0';
         window.__flicker = r;
         console.log('[flicker] live poses ' + JSON.stringify(r, (k, v) => (k === 'dump' ? (v ? 'dumped ' + v.pose + ':' + v.step : v) : v)));
       } catch (e) { console.error('[flicker] failed: ' + (e && e.message)); window.__flicker = { error: String(e && e.message) }; }

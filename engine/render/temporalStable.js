@@ -120,6 +120,7 @@ export function createStableState() {
     aaMesh: true, // OB-198 (2): KIND_MESH history survives a planeId change when the material matches; ?aamesh=0
     aaVm: true, // AA-07a: kind-8 models take history (view model: same cell, key objectId+mat; world props: material key + reprojection); ?aavm=0
     aaAnchor: true, // AA-09: a both-255 hold of a static surface re-anchors (writes the CURRENT u/v) so cumulative drift cannot re-roll it; ?aaanchor=0
+    aaEdge: true, // AA-18 (OB-208): edge cells (final != shade) take history like any cell (glyph hold) instead of passing through; ?aaedge=0
     aaJoint: true, // AA-07b: a line<->ramp mismatch holds the history glyph while the joint coverage is 1/4..3/4; ?aajoint=0
     footK: STABLE_FOOT_K, // tests may set 0 to isolate the texel limit
     _pcell: new Float64Array(3), _pw: new Float64Array(3), _pc: new Float64Array(3),
@@ -210,7 +211,7 @@ export function stabilize(inp, hist, out, st) {
       out.tie[i] = 0; out.fresh[i] = 1; out.hsrc[i] = -1; out.held255[i] = 0;
       if (!valid) continue;
       if (kind === KIND_NONE || (kind === KIND_MODEL && !st.aaVm) || lvC === LEVEL_ANIM) continue;
-      if (inp.edge && inp.edge[i]) continue;
+      if (inp.edge && inp.edge[i] && !st.aaEdge) continue; // AA-18: with aaEdge an outline appearing on a kept surface holds the history glyph (the disappearing side already did)
       if (inp.water && inp.water[i]) continue;
       const vd = inp.vd[i];
       if (!(vd > 0) || !Number.isFinite(vd)) continue;
