@@ -141,6 +141,12 @@ function noSignals() { return { walking: false, pointerUnlocked: false, moveOrLo
   ok('pushHintDim with a current hint pushes one plate rect', dim.n === 1);
   drawHints(rt, uiStyle, null); // should not throw
   ok('drawHints with a current hint does not throw', true);
+  // VISQA-16: a partly faded hint keeps its letters: glyph codes identical with and without a ramp lut
+  const grab = () => { const o = []; return { cols: 160, rows: 60, o, setCellRGB(x, y, g) { o.push(x + ':' + g); } }; };
+  const a1 = grab(), a2 = grab();
+  drawHints(a1, uiStyle, null);
+  drawHints(a2, uiStyle, { idx: new Uint8Array(128), ramp: new Uint8Array([32, 46, 58, 35]), minGain: 0 });
+  ok('hint glyphs independent of the fade lut', a1.o.length > 0 && a1.o.join() === a2.o.join());
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

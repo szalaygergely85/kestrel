@@ -37,8 +37,10 @@ export const CLOSEUPS = [
   ['warden', "__debug.world.entity('warden_northwood')", 'region warden (char.kit)'],
   ['boar', "__debug.beasts.entities.find((e)=>e&&/boar/i.test(e.components&&e.components.voxel&&e.components.voxel.model||''))", 'first boar'],
   ['wolf', "__debug.beasts.entities.find((e,i)=>e&&__debug.beasts.wolf&&__debug.beasts.wolf[i])", 'first wolf'],
-  ['skeleton', "__debug.beasts.entities.find((e)=>e&&/skel/i.test(e.components&&e.components.voxel&&e.components.voxel.model||''))", 'first skeleton'],
+  ['skeleton', "(__debug.beasts.entities.find((e)=>e&&/skel/i.test(e.components&&e.components.voxel&&e.components.voxel.model||'')&&e.transform.z>-5)||__debug.beasts.entities.find((e)=>e&&/skel/i.test(e.components&&e.components.voxel&&e.components.voxel.model||'')))", 'first surface skeleton (crypt ones do not render when pinned to the meadow)'],
 ];
+// VISQA-19: front of a creature = (sin yaw, -cos yaw) of its own yaw (0 = north); per-subject sign override if a model faces the other way
+const FRONT = {}; // per-subject sign override for npc yaw (beasts are pinned through the sim: steer x/y + facing fx/fy, which is their model front)
 // UI: [name, keys pressed (CDP Input.dispatchKeyEvent), close keys, note]
 export const UI_SCREENS = [
   ['inventory', ['KeyI'], ['KeyI'], 'pack (I)'],
@@ -74,14 +76,20 @@ async function runSet2() {
     const zNow = await evaluate(cdp, '+__debug.playerHandle.data.transform.z.toFixed(2)');
     await shot(name, `${x},${y} z ${z} (now ${zNow}) yaw ${yaw}`, note);
   }
+  // VISQA-19: the player stays on the open meadow (underground spots got undone by the unstuck/ground logic: Rook ended at the tower);
+  // the SUBJECT is moved 3.5 m in front of the camera, turned to face it, and re-pinned right before the still (a wolf trots away fast), then put back.
+  const MX = 1440, MY = 1040, D = 3.5;
   for (const [name, finder, note] of CLOSEUPS) {
-    const pose = await evaluate(cdp, `(()=>{const e=${finder};if(!e||!e.transform)return null;const t=e.transform,a=(t.yawDeg||0)*Math.PI/180,d=3.5;
-      return {x:+(t.x-Math.sin(a)*d).toFixed(2),y:+(t.y+Math.cos(a)*d).toFixed(2),z:+t.z||null,yaw:(t.yawDeg||0)%360}})()`).catch(() => null);
-    if (!pose) { rows.push({ file: `s2-${name}.png`, pose: 'not found', note }); console.log('closeup', name, 'NOT FOUND'); continue; }
-    await place(pose.x, pose.y, pose.z, pose.yaw, -6); await pause(2500); // entity z, not terrain: Rook stands on the Ford trade-post floor
-    // the entity may have moved: re-aim at it from 3.5 m right before the still
-    const p2 = await evaluate(cdp, `(()=>{const e=${finder};const t=e.transform,p=__debug.playerHandle.data.transform;const dx0=t.x-p.x,dy0=t.y-p.y;const l=Math.hypot(dx0,dy0)||1;p.x=t.x-dx0/l*3.5;p.y=t.y-dy0/l*3.5;p.z=+t.z+0.05;const yaw=Math.atan2(dx0,-dy0)*180/Math.PI;p.yawDeg=yaw;p.pitchDeg=-6;if(__debug.look){__debug.look.yawDeg=yaw;__debug.look.pitchDeg=-6;}return p.x.toFixed(1)+','+p.y.toFixed(1)+' -> '+t.x.toFixed(1)+','+t.y.toFixed(1)+' z '+(+t.z).toFixed(1)})()`);
-    await pause(250); await shot(name, p2, note); // short: a wolf trots ~5 m in 0.7 s
+    const found = await evaluate(cdp, `(()=>{const e=${finder};return !!(e&&e.transform)})()`).catch(() => false);
+    if (!found) { rows.push({ file: `s2-${name}.png`, pose: 'not found', note }); console.log('closeup', name, 'NOT FOUND'); continue; }
+    await place(MX, MY, null, 270, -6); await pause(600); // camera looks west
+    const S = FRONT[name] || 1, yawSubject = S > 0 ? 90 : 270; // subject at the west side; its front must point east (toward the camera)
+    const pin = `(()=>{const e=${finder};const t=e.transform,T=__debug.world.terrain,x=${MX - D},y=${MY},g=(T.groundAt||T.heightAt).call(T,x,y);t.x=x;t.y=y;if(g!=null)t.z=g;t.yawDeg=${yawSubject};if(e.velocity){e.velocity.x=0;e.velocity.y=0;}const B=__debug.beasts,i=B&&B.entities?B.entities.indexOf(e):-1;if(i>=0){B.steer.x[i]=x;B.steer.y[i]=y;B.steer.vx[i]=0;B.steer.vy[i]=0;B.fx[i]=1;B.fy[i]=0;if(B.dormant)B.dormant[i]=0;if(B.dormTile)B.dormTile[i]=0;if(B.steer.active)B.steer.active[i]=1;if(B.down)B.down[i]=0;}return [t.x,t.y,t.z]})()`;
+    const saved = await evaluate(cdp, `(()=>{const e=${finder};const t=e.transform;window.__vqSaved=[t.x,t.y,t.z,t.yawDeg];return window.__vqSaved})()`);
+    await evaluate(cdp, pin); await pause(900); await evaluate(cdp, pin); await pause(120);
+    const info = await evaluate(cdp, `(()=>{const e=${finder};const t=e.transform,p=__debug.playerHandle.data.transform;return 'cam '+p.x.toFixed(1)+','+p.y.toFixed(1)+' subject '+t.x.toFixed(1)+','+t.y.toFixed(1)+' z '+(+t.z).toFixed(1)+' yaw '+(t.yawDeg||0).toFixed(0)+' (home '+window.__vqSaved.map((v)=>Math.round(v)).join(',')+')'})()`);
+    await shot(name, info, note);
+    await evaluate(cdp, `(()=>{const e=${finder};const t=e.transform,s=window.__vqSaved;t.x=s[0];t.y=s[1];t.z=s[2];t.yawDeg=s[3];return true})()`);
   }
   await place(1440, 1040, null, 270, 0); await pause(2000); // start meadow behind the UI screens
   for (const [name, open, close, note] of UI_SCREENS) {
