@@ -83,6 +83,22 @@ export function formatTable(result) {
   return out.join('\n');
 }
 
+// FLICKER-METRIC-DET: K runs of extractPoses() -> median per pose/avg (the value gated/saved) + min/max spread of glyphOnly.
+const median = (a) => { const b = [...a].sort((x, y) => x - y), m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; };
+export function summarizeRuns(runs) {
+  const names = [...new Set(runs.flatMap((r) => Object.keys(r.poses)))];
+  const out = { poses: {}, avg: {}, spread: {} };
+  const agg = (get, set, key) => {
+    for (const k of ['totalPct', 'glyphOnlyPct']) {
+      const v = runs.map((r) => get(r)?.[k]).filter(isNum);
+      if (v.length) { set(k, median(v)); if (k === 'glyphOnlyPct') out.spread[key] = { min: Math.min(...v), max: Math.max(...v), spread: Math.max(...v) - Math.min(...v), n: v.length }; }
+    }
+  };
+  for (const n of names) agg((r) => r.poses[n], (k, v) => ((out.poses[n] ||= {})[k] = v), n);
+  agg((r) => r.avg, (k, v) => (out.avg[k] = v), 'AVG');
+  return out;
+}
+
 function newestCapture() {
   const files = readdirSync(CAPTURES).filter((n) => /-flicker-live-grid\.json$/.test(n))
     .map((n) => ({ n, t: statSync(path.join(CAPTURES, n)).mtimeMs })).sort((a, b) => b.t - a.t);
@@ -96,6 +112,7 @@ function parseArgs(argv) {
     if (argv[i] === '--port') o.port = argv[++i];
     else if (argv[i] === '--save') o.save = true;
     else if (argv[i] === '--baseline') o.baseline = argv[++i];
+    else if (argv[i] === '--repeat') o.repeat = Math.max(1, Number(argv[++i]) || 1);
     else if (argv[i] === '--query') o.query = argv[++i];
     else throw new Error('unknown arg ' + argv[i]);
   }
@@ -107,14 +124,26 @@ function main() {
   if (!o.port) throw new Error('--port <N> is required');
   const args = [path.join(ROOT, 'tools', 'capture-browser.mjs'), '--mode', 'flicker', '--variant', 'live', '--stable', '--rays', '4', '--port', String(o.port)];
   if (o.query) args.push('--query', o.query);
-  const r = spawnSync(process.execPath, args, { cwd: ROOT, stdio: 'inherit' });
-  if (r.status !== 0) throw new Error('capture-browser exited with ' + r.status);
-  const file = newestCapture();
-  const cap = JSON.parse(readFileSync(file, 'utf8'));
-  const cur = extractPoses(cap.rows?.[0]?.metrics);
+  const K = o.repeat || 1, runs = []; let retries = 0;
+  for (let i = 0; i < K; i++) {
+    let r = spawnSync(process.execPath, args, { cwd: ROOT, stdio: 'inherit' });
+    for (let t = 0; t < 2 && r.status !== 0 && K > 1; t++) { // infrastructure hiccup (browser start): retry, counted in the report
+      retries++; console.warn('flicker-gate: run ' + (i + 1) + '/' + K + ' exited with ' + r.status + ', retrying (' + retries + ' retries so far)');
+      r = spawnSync(process.execPath, args, { cwd: ROOT, stdio: 'inherit' });
+    }
+    if (r.status !== 0) throw new Error('capture-browser exited with ' + r.status + ' (run ' + (i + 1) + '/' + K + ')');
+    const cap = JSON.parse(readFileSync(newestCapture(), 'utf8'));
+    runs.push({ ...extractPoses(cap.rows?.[0]?.metrics), sha: cap.sha, date: cap.date });
+  }
+  const cur = K > 1 ? summarizeRuns(runs) : runs[0];
+  const cap = runs[runs.length - 1];
+  if (K > 1) {
+    console.log('REPEAT x' + K + ' (' + retries + ' retried runs): glyphOnly% per run, median, spread (max-min)');
+    for (const k of Object.keys(cur.spread)) { const sp = cur.spread[k]; console.log('  ' + k.padEnd(10) + runs.map((r) => f(k === 'AVG' ? r.avg.glyphOnlyPct : r.poses[k]?.glyphOnlyPct)).join('  ') + '   median ' + f(k === 'AVG' ? cur.avg.glyphOnlyPct : cur.poses[k].glyphOnlyPct) + '  spread ' + f(sp.spread)); }
+  }
   const blPath = o.baseline || DEFAULT_BASELINE;
   if (o.save) {
-    writeFileSync(blPath, JSON.stringify({ sha: cap.sha, date: cap.date, poses: cur.poses, avg: cur.avg }, null, 2) + '\n');
+    writeFileSync(blPath, JSON.stringify({ sha: cap.sha, date: cap.date, repeat: K, poses: cur.poses, avg: cur.avg }, null, 2) + '\n');
     console.log('baseline written: ' + path.relative(ROOT, blPath));
     return;
   }

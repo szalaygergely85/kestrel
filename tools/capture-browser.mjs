@@ -186,6 +186,7 @@ export function buildQuery(mode, { grid, variant, rays, shadows, backend, stable
     // strafe + 5 cm forward, totalPct + colourPct per pose in `window.__flicker.poses`; `at=` freezes the clock/skips the title.
     if (variant === 'live') parts.push('flickerlive=1', 'at=1496.91,1026.06,0,333,1');
     else parts.push('flicker=1'); // ME-08c: `window.__flicker` (jsRow/gpuRow changed-glyph share)
+    if (variant === 'live') parts.push('grid=480x180'); // FLICKER-METRIC-DET: the grid came from preset/saved settings/boot race (240x90 in ~half the runs, glyphOnly 7.7 vs 5.2): pin the owner grid
     parts.push(`rays=${rays || 4}`); // AA-01b: flickerlive has no quality preset (rays defaults to 2); pin 4
     if (stable) parts.push('stable=1'); // FLICKER-WG-01: US-073 stable pass on (measure with vs without)
   } else {

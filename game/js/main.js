@@ -2508,8 +2508,13 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
   if (flickerLive) {
     (async () => { // wait for the world + WebGPU pipeline, then measure the 5 poses; result -> window.__flicker
       while (!(engine.world && engine.world.terrain && wgPipeline && wgPipeline.ready && wgPipeline.frameComplete)) await flickerLive.nextFrame();
+      // FLICKER-METRIC-DET: the boot grid (240x90 CPU) is only switched to the live 480x180 by the pendingBootGrid hook (a race with this wait):
+      // half the runs measured the small grid (glyphOnly 7.7 vs 5.2 on the big one). Force the live grid and wait until it is in place.
+      for (let t = 0; t < 600 && (pendingBootGrid || rt.cols !== gridResult.cols || rt.rows !== gridResult.rows); t++) { if (!pendingBootGrid && (rt.cols !== gridResult.cols || rt.rows !== gridResult.rows)) engine.setGrid(gridResult.cols, gridResult.rows); await flickerLive.nextFrame(); }
       await flickerLive.frames(60);
-      const capture = async () => { const cells = await wgPipeline.readbackCells(); const g = await wgPipeline.readbackGeometry(); return { GI: g.GI.slice(), Depth: g.Depth.slice(), fg: cells.fg.slice(), bg: cells.bg ? cells.bg.slice() : undefined }; };
+      // FLICKER-METRIC-DET: `hold` skips wgPipeline.frame so the (async, multi-frame) readbacks all see ONE frame's textures; a readback that throws
+      // (targets/stable-pass buffers not allocated yet: 'gpuFormat' of null) or returns null is retried after a few frames.
+      const capture = async () => { flickerLive.hold = true; try { for (let t = 0; t < 20; t++) { try { const cells = await wgPipeline.readbackCells(); if (cells && cells.fg) { const g = await wgPipeline.readbackGeometry(); return { GI: g.GI.slice(), Depth: g.Depth.slice(), fg: cells.fg.slice(), bg: cells.bg ? cells.bg.slice() : undefined }; } } catch (e) { if (t === 19) throw e; } flickerLive.hold = false; await flickerLive.frames(5); flickerLive.hold = true; } throw new Error('capture: readback never became ready'); } finally { flickerLive.hold = false; } };
       try {
         const st = params.get('stable') === '1';
         if (wgPipeline.setStable) wgPipeline.setStable(st);
@@ -2856,7 +2861,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
     // plain array as back-compat ambient-only input).
     lap(SEC.ui);
     if (mode === 'world' && cam) hzb.trackPose(cam.x, cam.y, cam.z); // waystone / save-load / unannounced pose jumps
-    if (wgActive && wgPipeline.ready) wgPipeline.frame(fb, (mode === 'world' && fb.lights) || ambientL, mode === 'world' ? cam : null, mode === 'world' ? engine.world : null);
+    if (wgActive && wgPipeline.ready && !(flickerLive && flickerLive.hold)) wgPipeline.frame(fb, (mode === 'world' && fb.lights) || ambientL, mode === 'world' ? cam : null, mode === 'world' ? engine.world : null);
     lap(SEC.gpuFrame);
     rt.present();
     lap(SEC.present);
