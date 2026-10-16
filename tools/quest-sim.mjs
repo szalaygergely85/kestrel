@@ -1,10 +1,14 @@
 // QL-T2 (architecture 38.44 item 11): headless quest simulator. Runs every quest of the real content through the real
 // questBook on a fake world: talk -> accept -> feed the facts each objective needs -> hand in -> reward.
 // Usage: node tools/quest-sim.mjs [--json]    (exit 1 when any quest FAILs)
+// ED-QUI-07b1 (38.85): node tools/quest-sim.mjs --quest <id> [--json] [--root <dir>] runs ONE quest through the QUEST-E2E-ALL step
+// chain (game/js/quest/questE2eRun.js, fresh runtime, prerequisites first) and prints every step; exit 1 names the first failing step.
 import { staticReach } from './reach-check.mjs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createQuestBook, AVAILABLE, READY, DONE, ACTIVE, STATUS_NAMES } from '../game/js/quest/sim/questBook.js';
 import { loadDesignAssets, loadQuestFiles, loadPackQuests } from './validate-content.mjs';
+import { loadQuestE2eBundle } from './quest-e2e-content.mjs';
+import { runQuestE2e } from '../game/js/quest/questE2eRun.js';
 
 /** Facts (events) one objective needs. World data is consulted for pickups, beasts and areas: a missing target is a FAIL. */
 function factsFor(o, w, packOps) {
@@ -119,7 +123,22 @@ export function worldFacts(assets) {
   return w;
 }
 
+/** --quest mode: one quest, e2e step chain. -> exit code (0 ok, 1 fail, 2 usage). */
+export async function simQuestCli(argv, out = console.log) {
+  const at = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
+  const id = at('--quest'), root = at('--root');
+  if (!id || id.startsWith('--')) { out('usage: node tools/quest-sim.mjs --quest <id> [--json] [--root <dir>]'); return 2; }
+  const res = await runQuestE2e(await loadQuestE2eBundle(root ? { root } : {}), id);
+  if (argv.includes('--json')) out(JSON.stringify({ quest: id, ...res }, null, 1));
+  else {
+    for (const s of res.steps) out((s.ok ? 'PASS ' + s.name : 'FAIL ' + s.name.padEnd(34) + ' ' + s.detail));
+    out(res.ok ? 'quest ' + id + ': OK (' + res.steps.length + ' steps)' : 'quest ' + id + ': FAIL at ' + res.firstFail.name + ': ' + res.firstFail.detail);
+  }
+  return res.ok ? 0 : 1;
+}
+
 async function main() {
+  if (process.argv.includes('--quest')) { process.exitCode = await simQuestCli(process.argv.slice(2)); return; }
   const json = process.argv.includes('--json');
   const assets = await loadDesignAssets();
   const dir = fileURLToPath(new URL('../content/quests', import.meta.url));
