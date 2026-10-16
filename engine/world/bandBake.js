@@ -138,6 +138,7 @@ export class BandBakeJob {
   bundle() {
     if (this.phase < 5) throw new Error('BandBakeJob.bundle: not finished');
     const near = this.world.terrain.finishBandState(this.st);
-    return { key: null, zone: -1, near, scatter: this.scatter, detail: this.detailSet, decor: this.detail && this.detail.decor || null, trunks: this.trunks, detailCol: this.detailCol, nav: this.nav, classMap: null, bytes: 0, pinned: false, lastUse: 0 };
+    const dj = this.detail, carpetClass = dj && dj.carpet ? { map: dj.carpet, n: dj._carpetN } : null; // PERF-05: the band's class map, reused by the swap frame
+    return { key: null, zone: -1, carpetClass, near, scatter: this.scatter, detail: this.detailSet, decor: this.detail && this.detail.decor || null, trunks: this.trunks, detailCol: this.detailCol, nav: this.nav, classMap: null, bytes: 0, pinned: false, lastUse: 0 };
   }
 }

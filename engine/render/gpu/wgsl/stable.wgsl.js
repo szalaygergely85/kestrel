@@ -131,7 +131,8 @@ fn stableCell(cell: vec2i) -> SCell {
   // edge cell: final != shade (rgb of fg and bg, glyph in fg.a) -> pass through
   let sf = textureLoad(uShadeFg, cell, 0);
   let sb = textureLoad(uShadeBg, cell, 0);
-  if (fgC.x != sf.x || fgC.y != sf.y || fgC.z != sf.z || fgC.w != sf.w || bgC.x != sb.x || bgC.y != sb.y || bgC.z != sb.z) { return o; }
+  // AA-18 (aaFlags bit 5): edge cells take history like any cell (twin: st.aaEdge)
+  if ((u.aaFlags & 32) == 0 && (fgC.x != sf.x || fgC.y != sf.y || fgC.z != sf.z || fgC.w != sf.w || bgC.x != sb.x || bgC.y != sb.y || bgC.z != sb.z)) { return o; }
   // water-layer cell (ripples must not freeze): the layer word holds a finite vD
   let wl = textureLoad(uWater, cell, 0);
   if (u.waterOn != 0 && wl.x != 0x7f800000u && (wl.w & 32u) == 0u) { return o; } // waterOn: the 1x1 dummy reads 0 (= 'water') out of bounds
@@ -173,8 +174,8 @@ fn stableCell(cell: vec2i) -> SCell {
     // OB-193: limit = max(texel limit, cell footprint at this depth) - twin: temporalStable.js uvDriftLimit
     var uvLim = ${UV_LIM_TEXELS.toFixed(1)} / u.detailDefault;
     if (u.ortho == 0) { uvLim = max(uvLim, ${STABLE_FOOT_K.toFixed(4)} * vd * 2.0 * max(u.curA.w / f32(u.gridCols), u.curC.y / f32(u.gridRows))); }
-    // AA-20 (aaFlags bit 5): grazing surface -> the limit follows the cell's own UV step to same kind+mat neighbours (twin: temporalStable.js grazeUvLimit)
-    if (dUV >= uvLim && (u.aaFlags & 32) != 0 && u.ortho == 0) { uvLim = grazeLimit(cell.x, cell.y, kind, giMat(gi.y), bitcast<f32>(ga.x), bitcast<f32>(ga.y), uvLim); }
+    // AA-20 (aaFlags bit 128): grazing surface -> the limit follows the cell's own UV step to same kind+mat neighbours (twin: temporalStable.js grazeUvLimit)
+    if (dUV >= uvLim && (u.aaFlags & 128) != 0 && u.ortho == 0) { uvLim = grazeLimit(cell.x, cell.y, kind, giMat(gi.y), bitcast<f32>(ga.x), bitcast<f32>(ga.y), uvLim); }
     if (dUV >= uvLim) { return o; }
   }
 
@@ -193,7 +194,9 @@ fn stableCell(cell: vec2i) -> SCell {
     if (!snapped) {
       o.glyph = byteOf(hf.w);
       // AA-09 (aaFlags bit 4): static surface (same planeId, mesh also same material, not a model) re-anchors = keeps the current u/v; else the history anchor
-      let reAnchor = (u.aaFlags & 16) != 0 && vmTag == 0u && kind != ${KIND_MODEL}u && hh.x == gi.x && (kind != ${KIND_MESH}u || matSame);
+      // AA-21 (aaFlags 64): a world voxel prop (kind 8, not the view model) re-anchors too when plane + material match
+      let reAnchor = (u.aaFlags & 16) != 0 && vmTag == 0u && hh.x == gi.x
+        && ((kind != ${KIND_MODEL}u && (kind != ${KIND_MESH}u || matSame)) || (kind == ${KIND_MODEL}u && (u.aaFlags & 64) != 0 && matSame));
       if (!reAnchor) { o.ub = hh.y; o.vb = hh.z; }
     }
     return o;

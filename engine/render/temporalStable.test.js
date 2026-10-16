@@ -152,7 +152,12 @@ function run(st, cam, inpFn, hist, flags) {
   inp.level[at(4, 5)] = 6; // within one: hold glyph
   inp.level[at(4, 6)] = 7; // two apart: fresh glyph
   const out = createStableBuffers(COLS, ROWS);
+  st.aaEdge = false; // AA-18 off: edge cells pass through
   stabilize(inp, h, out, st);
+  const outE = createStableBuffers(COLS, ROWS);
+  st.aaEdge = true; stabilize(inp, h, outE, st); st.aaEdge = false;
+  ok('AA-18 aaEdge: the edge cell takes history (glyph held), other cells unchanged', outE.fresh[at(3, 8)] === 0 && outE.glyph[at(3, 8)] === h.glyph[at(3, 8)]
+    && outE.glyph.every((g, k) => k === at(3, 8) || g === out.glyph[k]));
   for (const [nm, c] of [['sky', 3], ['kind 8', 4], ['water', 5], ['level 255 cur', 6], ['level 255 hist', 7], ['edge', 8], ['planeId mismatch', 9], ['uv drift', 10], ['vd 0', 11]]) {
     ok(`reject: ${nm} fresh`, out.fresh[at(3, c)] === 1 && out.glyph[at(3, c)] === inp.glyph[at(3, c)]);
   }
@@ -236,8 +241,8 @@ function run(st, cam, inpFn, hist, flags) {
 // 4b. AA-09: re-anchor of a both-255 hold on a static surface
 {
   const LIM = UV_LIM_TEXELS / DEFAULT_DETAIL, at = (r, c) => r * COLS + c;
-  const slide = (aaAnchor, kind, frames = 40, fgStep = 0) => {
-    const st = createStableState(); st.footK = 0; st.aaAnchor = aaAnchor;
+  const slide = (aaAnchor, kind, frames = 40, fgStep = 0, aaVox = true) => {
+    const st = createStableState(); st.footK = 0; st.aaAnchor = aaAnchor; st.aaVox = aaVox;
     beginFrame(st, cam0, GRID);
     const mk = (k) => { const inp = wallInput(st); inp.level.fill(LEVEL_NONE); inp.kind.fill(kind); for (let i = 0; i < COLS * ROWS; i++) { inp.u[i] += k * 0.3 * LIM; inp.glyph[i] = 7 + k; if (fgStep) { const b = (100 + k * fgStep) & 255; inp.fg[i] = (b << 16) | (b << 8) | b; } } return inp; };
     let hist = createStableBuffers(COLS, ROWS), out = createStableBuffers(COLS, ROWS);
@@ -252,10 +257,11 @@ function run(st, cam, inpFn, hist, flags) {
     }
     return { held, fresh };
   };
-  const on = slide(true, KIND_WALL), off = slide(false, KIND_WALL), mdl = slide(true, 8), msh = slide(true, KIND_MESH);
+  const on = slide(true, KIND_WALL), off = slide(false, KIND_WALL), mdl = slide(true, 8, 40, 0, false), mdlV = slide(true, 8), msh = slide(true, KIND_MESH);
   ok('AA-09 aaAnchor on: static surface panned 40 x 0.3*lim holds all frames', on.held === 40, JSON.stringify(on));
   ok('AA-09 aaAnchor off: refreshes after cumulative drift (old behaviour)', off.fresh > 5 && off.held < 40, JSON.stringify(off));
-  ok('AA-09 model (kind 8) keeps the old anchor: refreshes', mdl.fresh > 5, JSON.stringify(mdl));
+  ok('AA-09 model (kind 8) with aaVox off keeps the old anchor: refreshes', mdl.fresh > 5, JSON.stringify(mdl));
+  ok('AA-21 aaVox: world voxel prop (kind 8, same plane+material) re-anchors and holds', mdlV.held === 40, JSON.stringify(mdlV));
   ok('AA-09 mesh with same plane+material re-anchors', msh.held === 40, JSON.stringify(msh));
   const snap = slide(true, KIND_WALL, 6, 60);
   ok('AA-09 fg snap still re-rolls the glyph', snap.fresh === 6, JSON.stringify(snap));

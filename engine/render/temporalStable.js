@@ -142,6 +142,8 @@ export function createStableState() {
     aaVm: true, // AA-07a: kind-8 models take history (view model: same cell, key objectId+mat; world props: material key + reprojection); ?aavm=0
     aaAnchor: true, // AA-09: a both-255 hold of a static surface re-anchors (writes the CURRENT u/v) so cumulative drift cannot re-roll it; ?aaanchor=0
     aaGraze: true, // AA-20 (OB-208): UV drift limit follows the cell's own UV footprint on grazing surfaces (road ahead); ?aagraze=0
+    aaVox: true, // AA-21 (OB-208): a world voxel prop (kind 8, same planeId + material) re-anchors its both-255 hold like other static surfaces; ?aavox=0
+    aaEdge: true, // AA-18 (OB-208): edge cells (final != shade) take history like any cell (glyph hold) instead of passing through; ?aaedge=0
     aaJoint: true, // AA-07b: a line<->ramp mismatch holds the history glyph while the joint coverage is 1/4..3/4; ?aajoint=0
     footK: STABLE_FOOT_K, // tests may set 0 to isolate the texel limit
     _g: new Float64Array(1), _pcell: new Float64Array(3), _pw: new Float64Array(3), _pc: new Float64Array(3),
@@ -232,7 +234,7 @@ export function stabilize(inp, hist, out, st) {
       out.tie[i] = 0; out.fresh[i] = 1; out.hsrc[i] = -1; out.held255[i] = 0;
       if (!valid) continue;
       if (kind === KIND_NONE || (kind === KIND_MODEL && !st.aaVm) || lvC === LEVEL_ANIM) continue;
-      if (inp.edge && inp.edge[i]) continue;
+      if (inp.edge && inp.edge[i] && !st.aaEdge) continue; // AA-18: with aaEdge an outline appearing on a kept surface holds the history glyph (the disappearing side already did)
       if (inp.water && inp.water[i]) continue;
       const vd = inp.vd[i];
       if (!(vd > 0) || !Number.isFinite(vd)) continue;
@@ -294,7 +296,9 @@ export function stabilize(inp, hist, out, st) {
         if (!snapped) {
           out.glyph[i] = hist.glyph[h]; out.held255[i] = 1;
           // AA-09: static surface (same planeId, mesh also same material, not a model) re-anchors: keep the CURRENT u/v already in out; else the old history anchor
-          const reAnchor = st.aaAnchor && vmTag === 0 && kind !== KIND_MODEL && hist.planeId[h] === inp.planeId[i] && (kind !== KIND_MESH || matSame);
+          // AA-21: with aaVox a world voxel prop (kind 8, not the view model) re-anchors too when plane + material match
+          const reAnchor = st.aaAnchor && vmTag === 0 && hist.planeId[h] === inp.planeId[i]
+            && ((kind !== KIND_MODEL && (kind !== KIND_MESH || matSame)) || (kind === KIND_MODEL && st.aaVox && matSame));
           if (!reAnchor) { out.u[i] = hist.u[h]; out.v[i] = hist.v[h]; }
         }
         continue;

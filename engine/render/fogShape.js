@@ -60,6 +60,8 @@ export function fogDirShear(hx, hy, tanE, out) {
 export const fogShapeCtx = { on: false, mode: 0, camZ: 0, terms: null, sunX: 0, sunY: 0, sunZ: 0, sunI: 0,
   camX: 0, camY: 0, aaFol: true, // AA-15 (OB-208): camera x/y + the foliage world-dice switch (`?aafol=0` -> setFoliageDice(false))
   aaFolL: true, // AA-16 (OB-208): leaf-card light smoothing switch (`?aafoll=0` -> setFoliageLight(false))
+  aaEdgeHold: true, // AA-18 (OB-208): stable pass lets edge cells take history (`?aaedge=0` -> setEdgeHold(false)); read by passStable.js
+  aaVox: true, // AA-21 (OB-208): resolve hysteresis for voxel-model cells (`?aavox=0` -> setVoxelHold(false)); read by passCell.js
   aaFolE: true, // AA-17 (OB-208): resolve hysteresis keeps a soft-edge leaf key across leaf cards (`?aafoledge=0` -> setFoliageEdge(false))
   // OB-089: outdoor MESH fog (terrain's far fog: palette.fog.far near->far colours over start..full, curve) instead of the interior fogV2.
   outdoor: false, tStart: 0, tFull: 1, tCurve: 1, tNear: /** @type {ArrayLike<number>|null} */ (null), tFar: /** @type {ArrayLike<number>|null} */ (null) };
@@ -82,6 +84,12 @@ export function setFoliageDice(on) { fogShapeCtx.aaFol = !!on; }
 export function setFoliageLight(on) { fogShapeCtx.aaFolL = !!on; }
 /** AA-17 (OB-208): switch the resolve-hysteresis soft-edge leaf match (kind + material, any planeId; default on). Read by passCell.js (ResolveU.folEdge). */
 export function setFoliageEdge(on) { fogShapeCtx.aaFolE = !!on; }
+/** AA-18 (OB-208): set the convex/concave depth margin (0 = off = the old inclusive sign test). Read by edgePass.js and passShade.js (EdgeU.cornerEps). */
+/** AA-18 (OB-208): switch the edge-cell history hold of the stable pass (default on). */
+export function setEdgeHold(on) { fogShapeCtx.aaEdgeHold = !!on; }
+/** AA-21 (OB-208): switch the resolve hysteresis for voxel-model (kind 8) cells: a model winner keeps last frame's model face key (default on). Read by passCell.js (ResolveU.vox). */
+export function setVoxelHold(on) { fogShapeCtx.aaVox = !!on; }
+export function setEdgeCorner(eps) { fogShapeCtx.aaEdgeEps = Number.isFinite(eps) ? eps : 0; }
 /** AA-16: fogView.w bit field for passShade.js - 1 = world glyph dice (AA-15), 2 = leaf light smoothing (AA-16). */
 export function foliageBits() { return (fogShapeCtx.aaFol ? 1 : 0) + (fogShapeCtx.aaFolL ? 2 : 0); }
 

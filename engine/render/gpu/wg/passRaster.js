@@ -569,7 +569,9 @@ export class WgRasterPass {
   }
 
   run(p) {
+    const sm = p.stageMs, t0 = sm ? performance.now() : 0; // PERF-05: dev-only, null = off
     this.prepare(p);
+    if (sm) sm[0] = performance.now() - t0;
     const list = this.list, d = this.device;
     // S8-B1-07: cull (compute) and raster (render) are separate timer slots - one span each, never nested.
     wgSpanBegin(p, WG_PASS_SLOT.cull);

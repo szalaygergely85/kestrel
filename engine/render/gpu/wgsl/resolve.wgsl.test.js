@@ -142,7 +142,7 @@ assert.ok(bandCells >= 3000 && farCells > 100, `band probe coverage ${bandCells}
 console.log(`resolve.wgsl.test.js: band probe ${bandCells} cells (${farCells} far path) WGSL == JS twin.`);
 // AA-04b (38.82 B): hysteresis on (histValid 1), identity camera (prev == cur, dEye 0 -> the cell reprojects onto itself): WGSL (probe)
 // == resolveCellJS(..., histKey) with the key read from a random HIST texture; and histValid 0 == the plain vote (byte-identical).
-let hystCells = 0, hystKept = 0, softKept = 0;
+let hystCells = 0, hystKept = 0, softKept = 0, voxKept = 0;
 const MATI = makeTex(1, 3, [[0, 0, 0, 0], [0, F_SOFT_EDGE | 3, 0, 0], [0, 4, 0, 0]]); // AA-17: mat 1 = soft-edge leaf
 {
   const cols = 6, rows = 4, n = 4, sw = cols * n, sh = rows * n, tan = 0.8;
@@ -153,16 +153,17 @@ const MATI = makeTex(1, 3, [[0, 0, 0, 0], [0, F_SOFT_EDGE | 3, 0, 0], [0, 4, 0, 
   for (let round = 0; round < 40; round++) {
     const sgi = [], sga = [], sdp = [], mask = [], at = [];
     for (let i = 0; i < sw * sh; i++) {
-      const kind = [0, 1, 1, 2, 9, 9][Math.floor(rand() * 6)], pid = Math.floor(rand() * 2), mat = Math.floor(rand() * 3);
+      let kind = [0, 1, 1, 2, 9, 9][Math.floor(rand() * 6)]; if (kind === 2 && round >= 20) kind = 8; const pid = Math.floor(rand() * 2), mat = Math.floor(rand() * 3);
       const smp = { x: pid, y: (kind | (mat << 16)) >>> 0, z: 1, w: 2, d: f2u(Math.fround(1 + rand() * 8)), ga: [f2u(rand()), f2u(rand()), f2u(rand()), f2u(rand())] };
       at.push(smp); sgi.push([smp.x, smp.y, smp.z, smp.w]); sga.push(smp.ga); sdp.push([smp.d, 0, 0, 0]);
     }
     for (let i = 0; i < cols * rows; i++) mask.push([0, 0, 0, 0]);
     const hk = [], hist = [];
-    for (let i = 0; i < cols * rows; i++) { const kind = [0, 1, 2, 9][Math.floor(rand() * 4)], pid = Math.floor(rand() * 2), mat = Math.floor(rand() * 3); hk.push({ kind, pid, mat }); hist.push([pid, 0, 0, (4 | (kind << 8) | (mat << 16)) >>> 0]); }
+    for (let i = 0; i < cols * rows; i++) { let kind = [0, 1, 2, 9][Math.floor(rand() * 4)]; if (kind === 2 && round >= 20) kind = 8; const pid = Math.floor(rand() * 2), mat = Math.floor(rand() * 3); hk.push({ kind, pid, mat }); hist.push([pid, 0, 0, (4 | (kind << 8) | (mat << 16)) >>> 0]); }
     const base = { uSGI: makeTex(sw, sh, sgi), uSGA: makeTex(sw, sh, sga), uSDepth: makeTex(sw, sh, sdp), uMask: makeTex(cols, rows, mask), uHist: makeTex(cols, rows, hist), uMatI: MATI };
     const folEdge = round % 2; // AA-17: odd rounds = soft-edge leaf keys match on kind + mat
-    const run = fsMain({ ...base, u: { n, bandM: 0, ...termsU, folEdge } }), runP = fsMain({ ...base, u: { n, bandM: 0, ...termsU, folEdge: 0 } }), run0 = fsMain({ ...base, u: { n, bandM: 0, ...termsU, histValid: 0, folEdge } });
+    const vox = round >= 20 ? (round >> 1) % 2 : 1; // AA-21: rounds 20+ put kind 8 (models) in; vox alternates every 2 rounds
+    const run = fsMain({ ...base, u: { n, bandM: 0, ...termsU, folEdge, vox } }), runV = fsMain({ ...base, u: { n, bandM: 0, ...termsU, folEdge, vox: 1 - vox } }), runP = fsMain({ ...base, u: { n, bandM: 0, ...termsU, folEdge: 0, vox } }), run0 = fsMain({ ...base, u: { n, bandM: 0, ...termsU, histValid: 0, vox, folEdge } });
     const sub = { pid: new Int32Array(16), kind: new Uint32Array(16), mat: new Uint32Array(16), depth: new Float32Array(16) };
     for (let cy = 0; cy < rows; cy++) for (let cx = 0; cx < cols; cx++) {
       for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) {
@@ -170,7 +171,7 @@ const MATI = makeTex(1, 3, [[0, 0, 0, 0], [0, F_SOFT_EDGE | 3, 0, 0], [0, 4, 0, 
         sub.pid[k] = smp.x; sub.kind[k] = smp.y & 0xff; sub.mat[k] = (smp.y >>> 16) & 0xffff; sub.depth[k] = f32u(smp.d);
       }
       resolveCellJS(sub, n, 0, cx, cy, out0, null);
-      const hkc = hk[cy * cols + cx]; hkc.soft = folEdge === 1 && hkc.kind === 9 && hkc.mat === 1;
+      const hkc = hk[cy * cols + cx]; hkc.soft = folEdge === 1 && hkc.kind === 9 && hkc.mat === 1; hkc.vox = vox === 1;
       resolveCellJS(sub, n, 0, cx, cy, out, hkc);
       const gi = (o) => [o.gi.x >>> 0, o.gi.y >>> 0, o.gi.z >>> 0, o.gi.w >>> 0];
       const w = (idx) => at[(cy * 4 + (idx >> 2)) * sw + cx * 4 + (idx & 3)];
@@ -178,11 +179,13 @@ const MATI = makeTex(1, 3, [[0, 0, 0, 0], [0, F_SOFT_EDGE | 3, 0, 0], [0, 4, 0, 
       assert.deepEqual(gi(run({ x: cx + 0.5, y: cy + 0.5 })), exp(out.idx, out.cov), `hyst on, round ${round} cell ${cx},${cy}`);
       assert.deepEqual(gi(run0({ x: cx + 0.5, y: cy + 0.5 })), exp(out0.idx, out0.cov), `histValid 0 = plain vote, round ${round} cell ${cx},${cy}`);
       if (folEdge && gi(runP({ x: cx + 0.5, y: cy + 0.5 })).join() !== gi(run({ x: cx + 0.5, y: cy + 0.5 })).join()) softKept++;
+      if (vox && gi(runV({ x: cx + 0.5, y: cy + 0.5 })).join() !== gi(run({ x: cx + 0.5, y: cy + 0.5 })).join()) voxKept++; // AA-21: the switch really matters
       hystCells++; if (out.idx !== out0.idx) hystKept++;
     }
   }
   assert.ok(hystKept > 20, `hysteresis really changed ${hystKept} winners`);
   assert.ok(softKept > 3, `AA-17 soft-edge leaf match really changed ${softKept} winners`);
+  assert.ok(voxKept >= 2, `AA-21 model-key hysteresis really changed ${voxKept} winners`); console.log(`resolve.wgsl.test.js: AA-21 model-key hysteresis changed ${voxKept} winners (WGSL == twin both ways)`);
   console.log(`resolve.wgsl.test.js: AA-17 soft-edge leaf key changed ${softKept} winners (WGSL == twin)`);
 }
 console.log(`resolve.wgsl.test.js: string/layout rules and ${probes} JS-evaluated cells vs the vote-rule oracle passed.`);

@@ -168,6 +168,35 @@ export function flickerReprojStep(prev, cur, camPrev, camCur, grid, out, hmap = 
   return out;
 }
 
+// AA-18 (OB-208, diag only): for an 'edge' flip, was last frame's history cell an edge too (ePrev:edge|none), and which neighbour
+// input fires now (first of up, dn, lf, rt; eTrig:sky = kind 0, eTrig:d<1.05 / d<1.2 / d+ = depth over the farther() threshold by that
+// ratio, eTrig:other = no farther neighbour = convex/concave/seam). Soft / isVert gating of the real rule is not replayed.
+function edgeWhy(d, p, i, h, cols, rows, sub) {
+  const o = h * 4;
+  let pe = false;
+  for (let k = 0; k < 4; k++) if (p.preFg[o + k] !== p.shadeFg[o + k]) pe = true;
+  const pk = 'ePrev:' + (pe ? 'edge' : 'none'); sub[pk] = (sub[pk] || 0) + 1;
+  const x = i % cols, y = (i - x) / cols, dc = bitsToF32(d.Depth[i]), pl = d.GI[i * 4];
+  let t = 'eTrig:other';
+  for (const [nx, ny] of [[x, y - 1], [x, y + 1], [x - 1, y], [x + 1, y]]) {
+    if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+    const n = ny * cols + nx, nk = d.GI[n * 4 + 1] & 0xff;
+    if (nk === 0) { t = 'eTrig:sky'; break; }
+    if (d.GI[n * 4] === pl) continue;
+    const q = bitsToF32(d.Depth[n]) / (dc * 1.18 + 0.35);
+    if (q > 1) { t = q < 1.05 ? 'eTrig:d<1.05' : q < 1.2 ? 'eTrig:d<1.2' : 'eTrig:d+'; break; }
+  }
+  sub[t] = (sub[t] || 0) + 1;
+  if (t === 'eTrig:other' && x + 1 < cols) { // convex/concave margin: min(|dl-di|, |dr-dRt|) / di (detail-pass rule 4/5 inputs)
+    const kAt = (n) => d.GI[n * 4 + 1] & 0xff, dAt = (n) => bitsToF32(d.Depth[n]);
+    const dl = x > 0 && kAt(i - 1) !== 0 ? dAt(i - 1) : dc, dRt = dAt(i + 1), dr = x + 2 < cols && kAt(i + 2) !== 0 ? dAt(i + 2) : dRt;
+    const mg = Math.min(Math.abs(dl - dc), Math.abs(dr - dRt)) / dc;
+    const mk = 'eM:' + (mg === 0 ? '0' : mg < 0.0001 ? '<.01%' : mg < 0.0003 ? '<.03%' : mg < 0.001 ? '<.1%' : mg < 0.002 ? '<.2%' : mg < 0.005 ? '<.5%' : '.5%+'); sub[mk] = (sub[mk] || 0) + 1;
+    const ck = 'eC:' + ((d.GI[(i + 1) * 4] !== pl) ? 'plane' : 'same') + (p.GI[o] === p.GI[o + 4] ? '/pSame' : '/pDiff'); sub[ck] = (sub[ck] || 0) + 1;
+  }
+  const gk = 'eG:' + String.fromCharCode(32 + d.preFg[i * 4 + 3]) + (t === 'eTrig:other' ? '/o' : '/n'); sub[gk] = (sub[gk] || 0) + 1; // rule glyph now (o = no farther neighbour)
+  const tk = t + (pe ? '/pe' : '/pn'); sub[tk] = (sub[tk] || 0) + 1;
+}
 // AA-DIAG-01 (OB-208, ex AA-10): why do glyph-only flips survive the stable pass? Replays stableCell's reject order (temporalStable.js / stable.wgsl.js)
 // for every counted cell (hmap from flickerReprojStep) whose surface key (kind, mat) is equal but whose STABLE OUTPUT glyph changed.
 // `d`/`p` = this/last frame's diag readback: {GI, GA (4-wide u32), Depth (1-wide u32 f32 bits), level (u8 raw shade level byte),
@@ -249,9 +278,14 @@ export function flickerGlyphReasons(d, p, hmap, cols, rows, terms, cnt) {
       }
     }
     if (r === 'edge' || r === 'levelJump') { const mk = r + 'Mat:' + kind + ':' + mat; cnt.sub[mk] = (cnt.sub[mk] || 0) + 1; }
+    if (r === 'edge') edgeWhy(d, p, i, h, cols, rows, cnt.sub); // AA-18 (OB-208): which edge-rule input made the outline
     if (octave && octave(d, i) !== octave(p, h)) cnt.octPop = (cnt.octPop || 0) + 1;
     cnt[r] = (cnt[r] || 0) + 1;
     const rk = r + ':' + kind; cnt.sub[rk] = (cnt.sub[rk] || 0) + 1;
+    if (kind === KIND_MODEL) { // AA-21 (OB-208): kind-8 split static prop (objectId 0) / entity (beast, NPC, view model: objectId > 0), plane kept or not
+      const ok = (d.GI[o + 3] ? 'k8e:' : 'k8s:') + r; cnt.sub[ok] = (cnt.sub[ok] || 0) + 1;
+      const pk = ok + (p.hist[h * 4] === d.GI[o] ? '/pl=' : '/pl!'); cnt.sub[pk] = (cnt.sub[pk] || 0) + 1;
+    }
   }
   cnt.n = (cnt.n || 0) + n; cnt.flips = (cnt.flips || 0) + flips;
   return cnt;

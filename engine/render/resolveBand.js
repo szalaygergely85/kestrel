@@ -28,7 +28,7 @@ const KIND_MODEL_HYST = 8;
  * Resolve one cell's vote. sub = {pid:Int32Array, kind:Uint32Array, mat:Uint32Array, depth:Float32Array} in scan order
  * (index j*n+i, length n*n). out = {idx, cov, far} is filled: idx = scan-order index of the winning sub-sample.
  * histKey = null | {kind, pid, mat, soft?}: last frame's key at this cell's reprojected world position (AA-04b); soft = AA-17 soft-edge leaf key (kind 9 +
- * F_SOFT_EDGE, switch on): when the exact card fails the rule, the whole kind + mat group (any planeId) may still hold the cell for leaf,
+ * F_SOFT_EDGE, switch on); vox = AA-21 model-key hysteresis switch: when the exact card fails the rule, the whole kind + mat group (any planeId) may still hold the cell for leaf,
  * and a leaf winner on another card switches back to last frame's card while that card has a sample; out.bestMinDepth = the
  * un-hysteresised best group's min depth (the depth to reproject with). Near path = the unchanged vote (normative 14.2 item 3); far path = same rule over RG4 only.
  */
@@ -55,7 +55,9 @@ export function resolveCellJS(sub, n, bandM, cx, cy, out, histKey = null) {
   // AA-04b (38.82 B) + OB-208: keep last frame's key at this world position (sky included) while its group still has >= n*n/4 samples
   // (or is within HYST of the best). Sky keys match on kind only. Models excluded. A sky winner reprojects with the nearest geometry depth
   // in the cell (sky depth is infinite); no geometry -> 1e4.
-  if (sub.kind[winner] === KIND_MODEL_HYST) { /* plain vote */ } else if (histKey && histKey.kind !== KIND_MODEL_HYST) {
+  // AA-21 (OB-208): histKey.vox = a model winner takes hysteresis against a model key (the voxel face choice); model <-> non-model never
+  const wModel = sub.kind[winner] === KIND_MODEL_HYST;
+  if (wModel && !(histKey && histKey.vox)) { /* plain vote */ } else if (histKey && (histKey.kind === KIND_MODEL_HYST) === wModel) {
     if (sub.kind[winner] === 0) {
       let g = 1e30; for (let b = 0; b < n2; b++) if (sub.kind[b] !== 0 && sub.depth[b] < g) g = sub.depth[b];
       out.bestMinDepth = g < 1e29 ? g : 1e4;

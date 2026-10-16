@@ -11,7 +11,7 @@ import { PROJ_HFOV_DEG } from '../../projection.js';
 import { fogShapeCtx } from '../../fogShape.js'; // AA-17 (OB-208): aaFolE switch
 import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
 
-const R_N = RESOLVE_BLOCK.field('n').word, R_BAND = RESOLVE_BLOCK.field('bandM').word, R_HVALID = RESOLVE_BLOCK.field('histValid').word, R_FOLE = RESOLVE_BLOCK.field('folEdge').word;
+const R_N = RESOLVE_BLOCK.field('n').word, R_BAND = RESOLVE_BLOCK.field('bandM').word, R_HVALID = RESOLVE_BLOCK.field('histValid').word, R_FOLE = RESOLVE_BLOCK.field('folEdge').word, R_VOX = RESOLVE_BLOCK.field('vox').word;
 // AA-04b: StableU words copied into ResolveU by field name (vec4 = 4 words)
 const HYST_COPY = [['curA', 4], ['curB', 4], ['curC', 4], ['prevA', 4], ['prevB', 4], ['prevC', 4], ['dEye', 4], ['gridCols', 1], ['gridRows', 1], ['ortho', 1]]
   .map(([n, w]) => ({ from: STABLE_BLOCK.field(n).word, to: RESOLVE_BLOCK.field(n).word, w }));
@@ -79,6 +79,7 @@ export class WgCellPass {
     rTex[4].texture = this.dummyHist; this.ri[R_HVALID] = 0;
     rTex[5].texture = this.shadePass.texMatI; // AA-17: F_SOFT_EDGE per material (shade packs it; 1x1 stub until the first upload)
     this.ri[R_FOLE] = fogShapeCtx.aaFolE ? 1 : 0;
+    this.ri[R_VOX] = fogShapeCtx.aaVox !== false ? 1 : 0; // AA-21 (OB-208): ?aavox=0
     const hs = p._hystSp; // AA-04b: the stable pass whose camera terms/history resolve may use this frame (set by the pipeline, null = off)
     if (hs && p.rays > 1 && hs.st.histValid && hs.outHist) {
       rTex[4].texture = hs.outHist; this.ri[R_HVALID] = 1; // last frame's stable output (set[_k ^ 1])

@@ -21,7 +21,7 @@ export const RESOLVE_BLOCK = defineUniformBlock('ResolveU', [
   // stable camera terms (same words as StableU, packStableUniforms): reproject the cell into last frame's camera
   { name: 'curA', type: 'vec4' }, { name: 'curB', type: 'vec4' }, { name: 'curC', type: 'vec4' },
   { name: 'prevA', type: 'vec4' }, { name: 'prevB', type: 'vec4' }, { name: 'prevC', type: 'vec4' }, { name: 'dEye', type: 'vec4' },
-  { name: 'gridCols', type: 'i32' }, { name: 'gridRows', type: 'i32' }, { name: 'ortho', type: 'i32' }, { name: 'pad1', type: 'i32' },
+  { name: 'gridCols', type: 'i32' }, { name: 'gridRows', type: 'i32' }, { name: 'ortho', type: 'i32' }, { name: 'vox', type: 'i32' }, // AA-21 (OB-208): 1 = a kind-8 winner keeps a kind-8 history key (voxel face choice), was pad1
 ]);
 
 /** Texture slot kinds for PipelineDesc.bindings.textures. */
@@ -161,7 +161,8 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
 
   // AA-04b (38.82 B) + OB-208: keep last frame's key (sky included) while its group has >= n2/4 samples or is within HYST of the best.
   // Sky keys match on kind only; soft-edge leaf keys on kind + mat (AA-17: any leaf card); a sky winner reprojects with the nearest geometry depth. Twin: resolveBand.js resolveCellJS.
-  if (u.histValid != 0 && kk[winner] != ${KIND_MODEL}u) {
+  let wModel = kk[winner] == ${KIND_MODEL}u; // AA-21: with vox, model winners take hysteresis against model keys only (models never hold a non-model key or vice versa)
+  if (u.histValid != 0 && (!wModel || u.vox != 0)) {
     var rd = bestMinDepth;
     if (kk[winner] == 0u) {
       rd = 1.0e30;
@@ -177,7 +178,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
       if (hc >= 0 && hc < u.gridCols && hr >= 0 && hr < u.gridRows) {
         let hh = textureLoad(uHist, vec2i(hc, hr), 0);
         let hKind = (hh.w >> 8u) & 15u; let hMat = hh.w >> 16u; let hPid = i32(hh.x);
-        if (hKind != ${KIND_MODEL}u) {
+        if ((hKind == ${KIND_MODEL}u) == wModel) {
           let hSky = hKind == 0u; let hSoft = softHist(hKind, hMat);
           var hCount = 0; var hFirst = -1; var sCount = 0; var sFirst = -1;
           for (var b = 0; b < MAX_SUB; b++) {
