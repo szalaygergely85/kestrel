@@ -1327,3 +1327,6 @@ Owner 2026-10-15 (later): "Make those priority" - D-107 stories (pc-b-queue sect
 
 ## D-116
 **2026-10-15, owner (PC-B session): player level from a summed POWER score (Diablo-style).** Owner: "items should have a power level like in diablo. you can add everything together, well balanced. and like 1000-2500 lvl2 etc". Every item has a power number (from item level, rarity and its stat lines); learned spells add power per spell level; the player's total power = the sum; the player level 1..10 comes from total-power bands (e.g. 1000-2500 = level 2). Replaces the weighted-average formula in the PLAYER-LEVEL-01 proposal (D-084 stays: no XP, level from items + spells). PO proposes the power formula + band table, balanced so a full matching kit of item level N lands at player level ~N.
+
+## D-113
+**2026-10-16, owner (PC-A session).** (1) Intro canon approved: Maren, the Factory, Morse "ALIVE" and Wick seen from behind in the intro go into docs/game-design.md section 3. (2) Player text says **map**, not "sky-chart" (intro captions changed). (3) Settings > Difficulty: **hide Easy/Hard** until BEAST-06b wires all difficulty fields (BH2-G1). (4) The extra teaser camera paths in design/cinematics/ are committed.

@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "id": "teaser-river-falls",
+  "fps": 30,
+  "note": "TEASER (owner 2026-10-16, TikTok 9:16, capture --hour 11; opening shot): starts 3.5 m over the lower braid ~28 m below braidFalls (lip ~1245,603, 16.6 m drop -60 -> -76.6) looking up at the falls (pitch +12..+14), climbs while still ~20 m off the face (falls stay in frame), passes 3 m over the lip, then glides north up braid_outlet looking up-river (pitch -8).",
+  "keys": [
+    {
+      "t": 0,
+      "x": 1240.5,
+      "y": 632,
+      "z": -73,
+      "yawDeg": 8,
+      "pitchDeg": 12,
+      "ease": "linear"
+    },
+    {
+      "t": 3,
+      "x": 1241.5,
+      "y": 624,
+      "z": -66,
+      "yawDeg": 7,
+      "pitchDeg": 6,
+      "ease": "linear"
+    },
+    {
+      "t": 5,
+      "x": 1243.5,
+      "y": 610,
+      "z": -57,
+      "yawDeg": 4,
+      "pitchDeg": -2,
+      "ease": "linear"
+    },
+    {
+      "t": 6.5,
+      "x": 1245,
+      "y": 598,
+      "z": -55.5,
+      "yawDeg": 2,
+      "pitchDeg": -6,
+      "ease": "linear"
+    },
+    {
+      "t": 8,
+      "x": 1247,
+      "y": 580,
+      "z": -54.5,
+      "yawDeg": 0,
+      "pitchDeg": -8,
+      "ease": "linear"
+    }
+  ]
+}

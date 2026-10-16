@@ -27,3 +27,6 @@ design/preview/lod1-trees.data.js
 # DESKTOP-ZIP-01: portable Windows build output
 /tools/desktop/dist/
 
+# intro source images (AI-generated, owner) - kept out of the public repo
+design/intro/src/
+design/intro/preview/

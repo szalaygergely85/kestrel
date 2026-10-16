@@ -291,7 +291,7 @@ IMAGE: Memory, warm and dim. Inside an empty merchant hall: dusty ledger shelves
 **5.**
 ```
 In Factor's Code it is one word: ALIVE.
-The Crown says marsh-fire. Thirty nights, I chart it.
+The Crown says marsh-fire. Thirty nights, I map it.
 ```
 IMAGE: Lamplit desk at night. A printed Crown sky-chart, a pencil line running off the printed edge toward a small star mark, the word ALIVE pencilled in the margin. Over Wick's shoulder as he hunches over the chart, pencil in hand, the far teal point in the window beyond.
 
@@ -312,7 +312,7 @@ IMAGE: Over Wick's shoulder at the gondola rail, looking down at the Wall at nig
 **8.**
 ```
 The burner roars. A broken tower opens like a mouth.
-Stone, moss, brass. The chart in my fist. Then nothing.
+Stone, moss, brass. The map in my fist. Then nothing.
 ```
 IMAGE: Falling, pre-dawn blue. A roofless round stone tower seen from above, mossy rim rushing up, burner glare white in the corner. Wick from behind clinging to the tilted gondola, chart in his fist, the opening below. Hard cut to black, then the wake.
 
