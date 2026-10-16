@@ -10,7 +10,7 @@ export const LOOK_FAR_TEXELS_PER_BLEND = 3; // risk (a): blendM must span >= 3 f
 export class LookBaker {
   constructor(cfg, util) {
     if (!cfg || !Array.isArray(cfg.lookMap)) throw new Error('groundLook: cfg.lookMap array required');
-    this.cfg = cfg; this.bb = { a: 0, b: 0, w: 0 };
+    this.cfg = cfg; this.bb = { a: 0, b: 0, w: 0 }; this.canopyType = -1; // VISQA-03: set by Terrain (forest type id)
     this.blendFn = util && typeof util.biomeBlend === 'function' ? util.biomeBlend : null;
     const lut = this.lut = new Uint8Array(256 * 256), m = cfg.lookMap;
     for (let t = 0; t < 256; t++) for (let b = 0; b < 256; b++) {
@@ -24,8 +24,14 @@ export class LookBaker {
     }
   }
 
-  /** Writes the byte pair of the texel at (x, y) with ground `type` into `out[2k], out[2k+1]`. 0 alloc. */
-  bakeCell(x, y, type, out, k) {
+  /**
+   * Writes the byte pair of the texel at (x, y) with ground `type` into `out[2k], out[2k+1]`. 0 alloc.
+   * VISQA-03: `canopy` = this texel draws the +canopy block (far ring always; near band without real trees). A texel of
+   * `canopyType` (forest) then gets look 0 (TLOOK canopy greens + face glyphs): its visible surface is the canopy top, not the
+   * forest FLOOR look (leaf litter), which read as pale grey-tan flat blocks behind the real-tree line.
+   */
+  bakeCell(x, y, type, out, k, canopy = false) {
+    if (canopy && type === this.canopyType) { const j0 = k << 1; out[j0] = 0; out[j0 + 1] = 0; return; }
     const bb = this.bb, lut = this.lut, f = this.blendFn;
     if (f) f(x, y, bb); else { bb.a = 0; bb.b = 0; bb.w = 0; }
     const la = lut[type << 8 | bb.a], lb = lut[type << 8 | bb.b], j = k << 1;
