@@ -113,7 +113,10 @@
   },
   "lights": [
     {"id": "lantern", "on": true, "preset": "lanternHook", "x": 2.9, "y": 3, "z": 4.39},
-    {"id": "dressTorch1", "on": true, "preset": "torch", "x": 12.200000000000045, "y": 6.5, "z": 1.5}
+    {"id": "dressTorch1", "on": true, "preset": "torch", "x": 12.200000000000045, "y": 6.5, "z": 1.5},
+    {"id": "caveMid", "on": true, "preset": "torch", "x": 7.5, "y": 5.5, "z": 4.8},
+    {"id": "caveEast", "on": true, "preset": "lanternHook", "x": 11, "y": 3.5, "z": 4.6},
+    {"id": "caveMouth", "on": true, "preset": "lanternHook", "x": 4, "y": 8, "z": 4.6}
   ],
   "props": [],
   "interactables": [],

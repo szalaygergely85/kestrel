@@ -83,7 +83,10 @@
     "preset": "ambient"
   },
   "lights": [
-    {"id": "mouthSpill", "on": true, "preset": "lanternHook", "x": 7, "y": 7, "z": 5.4}
+    {"id": "mouthSpill", "on": true, "preset": "torch", "x": 6.5, "y": 5.5, "z": 5},
+    {"id": "denBack1", "on": true, "preset": "lanternHook", "x": 3.5, "y": 3.5, "z": 4.6},
+    {"id": "denBack2", "on": true, "preset": "lanternHook", "x": 10, "y": 3.5, "z": 4.6},
+    {"id": "denMouth", "on": true, "preset": "lanternHook", "x": 7, "y": 8.5, "z": 4.6}
   ],
   "props": [],
   "interactables": [],
