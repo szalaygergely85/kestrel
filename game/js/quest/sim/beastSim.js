@@ -459,6 +459,7 @@ export function createBeastSim(world, opts) {
     if (slot < 0 || slot >= sim.count) return;
     sim.dormCamp[slot] = on ? 1 : 0;
     applyDormant(slot);
+    if (!on) markHot(sim, slot);
   };
   /** WM-04: nav-tile / 200 m dormancy (separate reason from the camp's, so a camp wake never wakes a tile-dormant beast). */
   sim.setTileDormant = function setTileDormant(slot, on) { // BEAST-POOL-b shim: on = unbind now (binding is the binder's job)
@@ -512,6 +513,7 @@ export function createBeastSim(world, opts) {
       if (sim.down[slot] === 2 && sim.pool.lv[slot] >= 0) sim.steer.active[slot] = 1;
       sim.down[slot] = 0; sim.dormant[slot] = 0; sim.dormCamp[slot] = 0; sim.dormTile[slot] = 0;
       resetSlotSim(sim, slot);
+      markHot(sim, slot);
       resyncLeash(sim);
     }
     if (sim.pool.lv[slot] < 0 && !sim.down[slot]) { sim.dormTile[slot] = 1; sim.dormant[slot] = 1; } // unbound records read as tile-dormant
@@ -641,7 +643,7 @@ function createPool(count) {
   for (let i = 0; i < pn; i++) { lv[i] = i; rec[i] = i; } // the first POOL records start bound (identity); the binder swaps from the first update on
   return {
     lv, rec, n: pn, free, freeN: 0, cand: new Int16Array(MAX_RECORDS), candD: new Float64Array(MAX_RECORDS),
-    rIn: 150, rOut: 180, every: 30, nc: 0, phase: 0, primed: false, maxBind: 8, full: 0, evictGap: 20,
+    rIn: 150, rOut: 180, every: 30, hot: new Int16Array(64), hotN: 0, nc: 0, phase: 0, primed: false, maxBind: 8, full: 0, evictGap: 20,
     lastX: new Float64Array(MAX_RECORDS), lastY: new Float64Array(MAX_RECORDS), // last position of an unbound record (BEAST-POOL-b)
   };
 }
@@ -741,6 +743,27 @@ function poolUnbind(sim, px, py) {
   }
   P.n = w;
 }
+/** BIND-LATE-01: a record that wakes/respawns is queued here and bound at the next step (not at the next sliced scan, up to ~59 steps later). */
+function markHot(sim, r) {
+  const P = sim.pool;
+  if (P.lv[r] >= 0 || P.hotN >= P.hot.length) return; // bound already, or queue full (the sliced scan still catches it)
+  for (let k = 0; k < P.hotN; k++) if (P.hot[k] === r) return;
+  P.hot[P.hotN++] = r;
+}
+/** Bind the queued hot records that are alive, in the tile and < rIn, while a slot is free (no eviction: the sliced pass handles a full pool). */
+function poolHot(sim, px, py) {
+  const P = sim.pool, g = sim.grid, tile = sim.tileMode === true, rIn2 = P.rIn * P.rIn;
+  const x0 = tile ? g.x0 : 0, y0 = tile ? g.y0 : 0, x1 = tile ? x0 + g.w * g.cell : 0, y1 = tile ? y0 + g.h * g.cell : 0;
+  for (let k = 0; k < P.hotN; k++) {
+    const r = P.hot[k];
+    if (P.lv[r] >= 0 || sim.down[r] || sim.dormCamp[r] || deadSt(sim.state[r])) continue;
+    if (tile) { const hx = sim.homeX[r], hy = sim.homeY[r]; if (hx < x0 || hy < y0 || hx >= x1 || hy >= y1) continue; }
+    const dx = P.lastX[r] - px, dy = P.lastY[r] - py;
+    if (dx * dx + dy * dy >= rIn2) continue;
+    if (P.freeN > 0) bindRec(sim, r, P.free[--P.freeN]);
+  }
+  P.hotN = 0;
+}
 /** Append candidates (unbound, alive, in the tile, close or with a goal) among records [from, to). */
 function poolScan(sim, from, to, px, py) {
   const P = sim.pool, lv = P.lv, g = sim.grid, tile = sim.tileMode === true, rIn2 = P.rIn * P.rIn;
@@ -798,6 +821,7 @@ function poolStep(sim, px, py) {
   const P = sim.pool, e = P.every;
   if (!P.primed) { P.primed = true; poolUpdate(sim, px, py); return; } // the first step stays synchronous (records are bound before they act)
   if (!(px === px && py === py)) { poolUnbind(sim, px, py); return; }
+  if (P.hotN > 0) poolHot(sim, px, py);
   const ph = P.phase, chunk = Math.ceil(sim.count / (e - 1));
   if (ph === 0) P.nc = 0;
   if (ph < e - 1) { const from = ph * chunk; poolScan(sim, from, Math.min(sim.count, from + chunk), px, py); P.phase = ph + 1; return; }
