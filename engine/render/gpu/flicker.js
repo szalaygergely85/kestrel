@@ -161,7 +161,32 @@ export function flickerReprojStep(prev, cur, camPrev, camCur, grid, out, hmap = 
 // preFg (rgba8 edge output = stable input), shadeFg/shadeBg (rgba8 edge input), finalBg (rgba8), outFg (rgba8 stable output), hist (4-wide u32 OUT_HIST)}.
 // `terms` = pitchedTerms of the current camera (tanHalfX/Y). Adds per-reason counts into `cnt` (keys GLYPH_REASONS) and kind counts into cnt.kinds.
 export const GLYPH_REASONS = Object.freeze(['heldChanged', 'edge', 'kind', 'plane', 'mat', 'anim', 'mixed255', 'uvDrift', 'snap255', 'levelJump', 'replayHold']);
+// AA-14a (38.84): mixed255 split by the glyph on the 255 side + `lineShift` (the line moved with the image) + `octPop` (texel-hash octave change).
+// Counts live next to the reasons in `cnt` (m255:* sum to mixed255; lineShift is a sub-count of m255:line; octPop counts any flip). Glyph byte = shade glyphCode (ascii - 32).
+export const M255_KEYS = Object.freeze(['m255:line', 'm255:stip', 'm255:blank', 'm255:other', 'lineShift', 'octPop']);
+export const GC_LINE = 1, GC_STIP = 2;
+/** 256-entry glyph class table (0 other, GC_LINE, GC_STIP). Line codes = shade.wgsl lineGlyphCodeFast (- _ | / \); `extraLine` = e.g. a material's grid-cross code; `stipCodes` = fog haze/sparse codes. */
+export function glyphClassTable(stipCodes = [], extraLine = []) {
+  const t = new Uint8Array(256);
+  for (const a of [45, 95, 124, 47, 92]) t[a - 32] = GC_LINE;
+  for (const c of extraLine) if (c > 0 && c < 256) t[c] = GC_LINE;
+  for (const c of stipCodes) if (c > 0 && c < 256 && t[c] === 0) t[c] = GC_STIP;
+  return t;
+}
+const DEFAULT_GCLS = glyphClassTable();
+// 4-neighbour of cell i holding a line glyph in `fg` (rgba8, glyph in alpha): code === want, or any line code when want < 0.
+function lineAtNeighbour(fg, i, cols, rows, gcls, want) {
+  const x = i % cols, y = (i - x) / cols;
+  let g;
+  if (x > 0) { g = fg[(i - 1) * 4 + 3]; if (gcls[g] === GC_LINE && (want < 0 || g === want)) return true; }
+  if (x < cols - 1) { g = fg[(i + 1) * 4 + 3]; if (gcls[g] === GC_LINE && (want < 0 || g === want)) return true; }
+  if (y > 0) { g = fg[(i - cols) * 4 + 3]; if (gcls[g] === GC_LINE && (want < 0 || g === want)) return true; }
+  if (y < rows - 1) { g = fg[(i + cols) * 4 + 3]; if (gcls[g] === GC_LINE && (want < 0 || g === want)) return true; }
+  return false;
+}
+// `terms.gcls` (glyphClassTable) and `terms.octave(frame, cellIndex)` (octave 0..3 of coverV/(maxCover*gv), diag-only) are optional.
 export function flickerGlyphReasons(d, p, hmap, cols, rows, terms, cnt) {
+  const gcls = terms.gcls || DEFAULT_GCLS, octave = terms.octave || null;
   let n = 0, flips = 0;
   for (let i = 0; i < cols * rows; i++) {
     const h = hmap[i]; if (h < 0) continue;
@@ -183,7 +208,16 @@ export function flickerGlyphReasons(d, p, hmap, cols, rows, terms, cnt) {
       const lvC = levelOfByte(d.level[i]), cov = covOfByte(d.level[i]), lvP = hw & 255;
       const c255 = lvC === 255, p255 = lvP === 255, joint = c255 !== p255 && cov >= 1 && cov <= 3;
       if (lvC === 254 || lvP === 254) r = 'anim';
-      else if (c255 !== p255 && !joint) r = 'mixed255';
+      else if (c255 !== p255 && !joint) {
+        r = 'mixed255';
+        const g = c255 ? og : p.outFg[h * 4 + 3], cl = gcls[g];
+        const sub = g === 0 ? 'm255:blank' : cl === GC_LINE ? 'm255:line' : cl === GC_STIP ? 'm255:stip' : 'm255:other';
+        cnt[sub] = (cnt[sub] || 0) + 1;
+        if (cl === GC_LINE) { // the line glyph sits at a 4-neighbour of the ramp side's cell in the other frame (the line moved with the image)
+          const moved = c255 ? lineAtNeighbour(p.outFg, h, cols, rows, gcls, -1) : lineAtNeighbour(d.outFg, i, cols, rows, gcls, g);
+          if (moved) cnt.lineShift = (cnt.lineShift || 0) + 1;
+        }
+      }
       else {
         const du = bitsToF32(d.GA[o]) - bitsToF32(p.hist[h * 4 + 1]), dv = bitsToF32(d.GA[o + 1]) - bitsToF32(p.hist[h * 4 + 2]);
         const vd = bitsToF32(d.Depth[i]);
@@ -200,6 +234,7 @@ export function flickerGlyphReasons(d, p, hmap, cols, rows, terms, cnt) {
         }
       }
     }
+    if (octave && octave(d, i) !== octave(p, h)) cnt.octPop = (cnt.octPop || 0) + 1;
     cnt[r] = (cnt[r] || 0) + 1;
     const rk = r + ':' + kind; cnt.sub[rk] = (cnt.sub[rk] || 0) + 1;
   }

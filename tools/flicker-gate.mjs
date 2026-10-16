@@ -36,6 +36,18 @@ export function extractPoses(metrics) {
 
 // AA-DIAG-01: metrics `poses.<pose>.why.<reason>` (only with &flickerdiag=1) -> text table, % of counted cells per reason; '' when absent.
 export const WHY_REASONS = ['heldChanged', 'edge', 'kind', 'plane', 'mat', 'anim', 'mixed255', 'uvDrift', 'snap255', 'levelJump', 'replayHold'];
+export const M255_COLS = ['mixed255', 'lineShift', 'm255:line', 'm255:stip', 'm255:blank', 'm255:other', 'octPop'];
+// AA-14a: lineShift as % of mixed255 (the AA-14b go/no-go is >= 70); '-' when there is no mixed255.
+export const shiftShare = (w) => (w && w.mixed255 > 0 ? 100 * (w.lineShift || 0) / w.mixed255 : null);
+export function m255Table(metrics) {
+  const poses = {};
+  for (const k of Object.keys(metrics || {})) { const m = /^poses\.([^.]+)\.why\.([^.]+)$/.exec(k); if (m) (poses[m[1]] ||= {})[m[2]] = metrics[k]; }
+  const names = Object.keys(poses); if (!names.length) return '';
+  const c = (v, w = 10) => (typeof v === 'number' ? v.toFixed(2) : '-').padStart(w);
+  const lines = ['M255 (mixed255 split, % of counted cells; shift% = lineShift / mixed255)', 'pose'.padEnd(14) + 'glyphOnly'.padStart(10) + M255_COLS.map((r) => r.padStart(11)).join('') + 'shift%'.padStart(8)];
+  for (const n of names) lines.push(n.padEnd(14) + c(poses[n].glyphOnlyPct) + M255_COLS.map((r) => c(poses[n][r], 11)).join('') + c(shiftShare(poses[n]), 8));
+  return lines.join('\n');
+}
 export function whyTable(metrics) {
   const poses = {};
   for (const k of Object.keys(metrics || {})) { const m = /^poses\.([^.]+)\.why\.([^.]+)$/.exec(k); if (m) (poses[m[1]] ||= {})[m[2]] = metrics[k]; }
@@ -146,6 +158,7 @@ function main() {
     if (r.status !== 0) throw new Error('capture-browser exited with ' + r.status + ' (run ' + (i + 1) + '/' + K + ')');
     const cap = JSON.parse(readFileSync(newestCapture(), 'utf8'));
     const wt = whyTable(cap.rows?.[0]?.metrics); if (wt) console.log(wt);
+    const mt = m255Table(cap.rows?.[0]?.metrics); if (mt) console.log(mt);
     runs.push({ ...extractPoses(cap.rows?.[0]?.metrics), sha: cap.sha, date: cap.date });
   }
   const cur = K > 1 ? summarizeRuns(runs) : runs[0];

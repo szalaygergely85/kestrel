@@ -2,7 +2,7 @@
 // Per pose: 30 steps of 5 cm strafe + 5 cm forward in a static scene (wind speed 0, fb.timeSec 0, clock frozen by ?at),
 // after each step the N vs N-1 frame is compared with flickerStep -> totalPct + colourPct, averaged over the steps.
 // main.js calls `beforeRender(cam, world)` before the frame is drawn and `afterPresent()` after rt.present().
-import { flickerStep, flickerReprojStep, flickerGlyphReasons, GLYPH_REASONS, pitchedTerms, createPitchedTerms } from '../../../engine/index.js';
+import { flickerStep, flickerReprojStep, flickerGlyphReasons, GLYPH_REASONS, M255_KEYS, glyphClassTable, pitchedTerms, createPitchedTerms } from '../../../engine/index.js';
 
 /** AA-10 diag: what the stable pass saw this frame (its own inputs + output + OUT_HIST), read straight from the pipeline; null = stable did not run. */
 export async function diagCapture(wg) {
@@ -70,6 +70,9 @@ export function packDump(pose, step, prev, cur, cols, rows) { const n = cols * r
 /** Runs every pose; `capture()` -> { GI, fg, bg } of the frame just presented. `capture()` also returns Depth. Returns { poses: {slug: {totalPct, kindPct, materialPct, glyphOnlyPct, colourOnlyPct, n, excluded, oldTotalPct}}, avg, ... }. */
 export async function runLivePoses(h, { world, wg, cols, rows, pxCellW = 1, pxCellH = 2, capture, getGrid = null, poses = POSES, steps = STEPS, settle = 60, dump = null, diag = false }) {
   let hmap = null; const terms = createPitchedTerms();
+  // AA-14a: glyph classes for the mixed255 split (line codes + the fog haze/sparse codes of the shade pass's uniforms)
+  const fogU = wg && wg._cellPass && wg._cellPass.shadePass && wg._cellPass.shadePass.uniforms && wg._cellPass.shadePass.uniforms.fog;
+  const gcls = glyphClassTable(fogU ? [...(fogU.hazeCodes || []), ...(fogU.sparseCodes || [])] : []);
   const out = {}, res = { poses: {}, steps, stepM: STEP_M, skippedSteps: 0 };
   // AA-01c: the grid can change mid-run (480x180 after the first frames); `getGrid()` -> {cols,rows,pxCellW,pxCellH} is read at EVERY capture,
   // the capture carries the grid it was read with, and a step whose two frames have different grids is skipped (the readback stride would be wrong).
@@ -100,14 +103,14 @@ export async function runLivePoses(h, { world, wg, cols, rows, pxCellW = 1, pxCe
       const dOk = diag && prev.diag && cur.diag && cur.diag.cols === gcols && prev.diag.cols === gcols && cur.diag.rows === grows;
       if (dOk && (!hmap || hmap.length !== gcols * grows)) hmap = new Int32Array(gcols * grows);
       flickerReprojStep(prev, cur, prev.cam, { ...cam }, cur.grid, out, dOk ? hmap : null); // motion-compensated (AA-01b)
-      if (dOk) flickerGlyphReasons(cur.diag, prev.diag, hmap, gcols, grows, pitchedTerms({ ...cam }, cur.grid, terms), why);
+      if (dOk) { const tt = pitchedTerms({ ...cam }, cur.grid, terms); tt.gcls = gcls; flickerGlyphReasons(cur.diag, prev.diag, hmap, gcols, grows, tt, why); }
       for (const k of KEYS) acc[k] += out[k];
       if (dump && !res.dump && dump.pose === p.slug && dump.step === s) res.dump = packDump(p.slug, s, prev, cur, gcols, grows); // OB198-DUMP-DIFF-01
       used++;
       cur.cam = { ...cam }; prev = cur;
     }
     const pr = {}; for (const k of Object.keys(acc)) pr[k] = acc[k] / Math.max(1, used);
-    if (why.n) { const w = { glyphOnlyPct: 100 * (why.flips || 0) / why.n, kinds: {} }; for (const k of GLYPH_REASONS) w[k] = 100 * (why[k] || 0) / why.n;
+    if (why.n) { const w = { glyphOnlyPct: 100 * (why.flips || 0) / why.n, kinds: {} }; for (const k of [...GLYPH_REASONS, ...M255_KEYS]) w[k] = 100 * (why[k] || 0) / why.n;
       for (const k of Object.keys(why.kinds)) w.kinds[k] = 100 * why.kinds[k] / why.n;
       w.sub = {}; for (const k of Object.keys(why.sub)) w.sub[k] = 100 * why.sub[k] / why.n; pr.why = w; }
     pr.cols = prev.grid.cols; pr.rows = prev.grid.rows; pr.used = used; // diagnostics: which grid the pose was measured on
