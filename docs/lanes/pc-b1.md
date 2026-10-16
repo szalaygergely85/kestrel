@@ -1826,3 +1826,6 @@ Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-
   Files: engine/physics/bvh.js (+bvhBuilder.test.js), engine/world/colliders.js, engine/world/bandBake.js, engine/mesh/voxelMesh.js (+test), engine/mesh/shadowList.js, tools/perf-pose.mjs (p99/max/spike counts).
   Spikes (ultra, best of 2): CPU p99 roadBend 12.0->10.2, forest 11.9->9.4, fordDetail 14.2->12.0; CPU max 59/45/73 -> 36/31/27 ms; ring-fill frames >16.7 ms 15/13/18 -> 7/4/9. p50 = noise (GPU shared).
   Gates: gpucompare only signal tower (+ known decorFord), flicker PASS, route-walk endTrigger both, run-tests 365/366 (geoLayers pre-existing), check-deps OK. Details: docs/test-reports/perf-2026-10-16.md PERF-03.
+
+- VISQA-20 re-sweep (kestrel-4, e11b9ba9): sets 1+2 re-run (4 browser runs: first set-1 run timed out booting, set-2 hard-codes 600 tries). Fixed 03,06,11,14,15,16,17,18; still 04,05,08,09,12,19; n/c 02,13; 07 not reproduced.
+  New rows VISQA-21..24 (cliff pose, stale Boar bar, night smoke glow, wolf/rook pick). Results: docs/test-reports/visqa/index.md.
