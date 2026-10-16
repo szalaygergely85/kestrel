@@ -165,7 +165,8 @@ function seedFor(key) {
 export class LightSet {
   constructor() {
     this.ambient = new Float32Array(3);
-    this.sun = { on: false, elevation: 0, azimuth: 0, dir: new Float32Array(3), col: new Float32Array(3) };
+    // SUN-COL-LIVE: baseCol = the load-time (default-time) sun colour that syncLiveSun scales from; null until buildLightSet / first sync.
+    this.sun = { on: false, elevation: 0, azimuth: 0, dir: new Float32Array(3), col: new Float32Array(3), baseCol: null };
     // ART-01a (37.18 item 3): allocated once. `hemi` = the hemisphere-ambient
     // look state (off until `setLook` turns it on); `roof` = the roof map the
     // light pass samples for indoor/outdoor (null until a look needs it, set by
@@ -600,7 +601,38 @@ export function buildLightSet(world, palette) {
   // once here and copied into the LightSet. Absent block = `setLook` no-op, so
   // `ambient`/`sun.col` above are the byte-identical "today" values.
   setLook(ls, resolveLook(palette), palette);
+  ls.sun.baseCol = Float32Array.from(ls.sun.col); // SUN-COL-LIVE: the default-time colour the day/night clock scales from
   return ls;
+}
+
+/**
+ * VISQA-05 / SUN-COL-LIVE: live sun strength relative to the look the LightSet's base `sun.col` was built from
+ * (the palette's default time), clamped to <= 1 so day (noon > morning) stays bit-identical. 1 without a live look.
+ * @param {any} P palette @returns {number}
+ */
+export function liveSunScale(P) {
+  const live = P && P.liveLook, ref = P && P.timeOfDay && P.timeOfDay[P.defaultTime];
+  if (!live || !ref || !(ref.sunI > 0) || !Number.isFinite(live.sunI)) return 1;
+  const k = live.sunI / ref.sunI;
+  return k < 0 ? 0 : k > 1 ? 1 : k;
+}
+
+/**
+ * SUN-COL-LIVE: makes `lights.sun.col` follow the day/night look (`P.liveLook`, blendLook) so every sun consumer
+ * (light pass JS + WGSL via passLight's sunCol uniform, sprites, particles, GI mix) agrees with the terrain's live
+ * `sunI`. k = liveSunScale; the hue moves from the base hue toward the live sun/moon hue by (1 - k):
+ *   col = (base * (1 - w) + hue(live.sun) * max(base) * w) * k,  w = 1 - k.
+ * Day (k = 1, w = 0) writes `base` back exactly (noon byte-identical); no live look = base. Allocation-free after the first call.
+ * @param {LightSet} lights @param {any} P palette
+ */
+export function syncLiveSun(lights, P) {
+  if (!lights) return;
+  const s = lights.sun;
+  if (!s.baseCol) s.baseCol = Float32Array.from(s.col);
+  const b = s.baseCol, k = liveSunScale(P);
+  if (k >= 1) { s.col[0] = b[0]; s.col[1] = b[1]; s.col[2] = b[2]; return; }
+  const w = 1 - k, hu = P.hue && P.hue[P.liveLook.sun], m = Math.max(b[0], b[1], b[2]);
+  for (let i = 0; i < 3; i++) s.col[i] = (b[i] * (1 - w) + (hu ? hu[i] : b[i] / (m || 1)) * m * w) * k;
 }
 
 /**
@@ -629,7 +661,7 @@ export function setLook(lights, look, palette) {
   lights.hemi.ground.set(hemi.ground);
   lights.hemi.tint.set(hemi.tint);
   lights.hemi.tintK = hemi.tintK;
-  if (hemi.sunFromLook) lights.sun.col.set(look.sun);
+  if (hemi.sunFromLook) { lights.sun.col.set(look.sun); if (lights.sun.baseCol) lights.sun.baseCol.set(look.sun); } // SUN-COL-LIVE base follows
 }
 
 /**

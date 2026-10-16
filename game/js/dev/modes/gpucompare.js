@@ -1,7 +1,7 @@
 import {
   sunFromWorld, bindLevel, Camera, renderWorld, VoxelPool, World, repackMaterials, drawSprites, HFOV_DEG,
   meshFromJSON, meshFromBin, composeCharacter, meshCharacter, collapseRig, riggedModelDef, buildMeshFromTris, MaskAtlas, buildMaskAtlas, writeUnitInstance, buildLightSet, createLightBuffer, applySceneFade, clearMaskForSceneFade, createSceneDim, resetSceneDim, applySceneDim, setWorldSun,
-  bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks, sunPathFrom, applySunPair, blendLook, createAtmosState, mixAtmos, applyAtmosToPalette, gradeCells, createPostState, composePost, postCells,
+  bindDecals, drawDecals, hexToRgb, ambientL, loadLevel, createClothSystem, forwardOf, rightOf, createWater, collectWaterDefs, createWaterfalls, collectWaterfallDefs, resolveWaterLooks, sunPathFrom, applySunPair, blendLook, syncLiveSun, createAtmosState, mixAtmos, applyAtmosToPalette, gradeCells, createPostState, composePost, postCells,
   bakeImpostor, enableGroupImpostor, resolveGroupLod1, createInstanceBuffer,
   createRipples, defineWadeSplash, wadeSplashAt, validateCarpetConfig, createUnderState, pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG,
 } from '../../../../engine/index.js';
@@ -1027,10 +1027,12 @@ function applyHourOverride(world, lights, P, hour, on) {
   applySunPair(world, lights, hour, hour, path, on);
   const L = blendLook(P, hour, P.daySchedule);
   if (lights) { const hu = P.hue[L.ambient]; for (let i = 0; i < 3; i++) lights.ambient[i] = hu[i] * L.ambientI; }
+  syncLiveSun(lights, P); // SUN-COL-LIVE: same as main.js's clock step
   return () => {
     world.sun = oldSun;
     if (hadSource) world.sunSource = oldSource; else delete world.sunSource;
     delete P.liveLook; P.liveLookVersion = (P.liveLookVersion | 0) + 1; // back to the frozen look; the version bump re-bakes the sky LUT
+    syncLiveSun(lights, P); // no live look -> base colour back
     if (lights && old) { lights.setSun({ elevation: old.elevation, azimuth: old.azimuth, on: old.on }); for (let i = 0; i < 3; i++) lights.ambient[i] = old.amb[i]; }
   };
 }

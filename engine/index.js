@@ -144,7 +144,7 @@ export { packLevel, repackMaterials } from './world/packed.js';
 export {
   LightSet, buildLightSet, setWorldSun, applySunHours, applySunPair, syncEntityLights, lightAt, lightSurfaces,
   computeVisGrid, sunVisible, falloff as lightFalloff, packLightUniforms,
-  MAX_LIGHTS, setLook, OUTDOOR_SHIFT,
+  MAX_LIGHTS, setLook, OUTDOOR_SHIFT, syncLiveSun,
 } from './render/lighting.js';
 
 export { makeLightBuffer as createLightBuffer } from './render/lighting.js'; // ENG-API-01c: makeLightBuffer deprecated

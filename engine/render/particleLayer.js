@@ -27,7 +27,8 @@
 // Zero allocation after `bind()` (architecture.md 9) - `build()` never
 // allocates, so `touched`/`part`/`partZ` are all sized once per grid change.
 import { camBasis, projectSprite, resolveFogColor } from './sprites.js';
-import { lightAt } from './lighting.js';
+import { lightAt, liveSunScale } from './lighting.js';
+export { liveSunScale }; // VISQA-05 helper, now in lighting.js (SUN-COL-LIVE: syncLiveSun applies it to sun.col at the source)
 import { D, DEF_STRIDE, MAX_RAMP } from '../fx/emitterDef.js';
 import { MAX_EMITTERS } from '../fx/particles.js';
 
@@ -38,20 +39,8 @@ function partEmptyI() { return new Int32Array(0); }
 const MAX_FOOT = 12; // max screen footprint of one sized particle (cells per side)
 const _ps = { depth: 0, fogDepth: 0, colCenter: 0, feetRow: 0, rowsOnScreen: 0 };
 const _lightScratch = new Float64Array(3);
-const _noSunScratch = new Float64Array(3);
 const _fog3 = new Float64Array(3);
 
-/**
- * VISQA-05: live sun strength relative to the look the LightSet's `sun.col` was baked from (the palette's
- * default time), clamped to <= 1 so day (noon > morning) stays bit-identical. 1 without a live look.
- * @param {any} P palette @returns {number}
- */
-export function liveSunScale(P) {
-  const live = P && P.liveLook, ref = P && P.timeOfDay && P.timeOfDay[P.defaultTime];
-  if (!live || !ref || !(ref.sunI > 0) || !Number.isFinite(live.sunI)) return 1;
-  const k = live.sunI / ref.sunI;
-  return k < 0 ? 0 : k > 1 ? 1 : k;
-}
 // Per-emitter light multiplier cache (<= MAX_EMITTERS entries, rebuilt every
 // `build()` - no per-particle `lightAt`, per the architect's "Known limit").
 const _emMulR = new Float64Array(MAX_EMITTERS);
@@ -144,22 +133,12 @@ export function createParticleLayer() {
       // 3. Per-emitter light sample (<= MAX_EMITTERS calls), gain-shaded like a sprite.
       const em = ps.emitters;
       _emDone.fill(0, 0, MAX_EMITTERS);
-      const sunK = liveSunScale(palette);
       for (let s = 0; s < MAX_EMITTERS; s++) {
         if (!em.used[s] || em.live[s] <= 0) continue;
+        // VISQA-05 night dimming now happens at the source: syncLiveSun (SUN-COL-LIVE) scales lights.sun.col by the live look.
         lightAt(lights, world, em.x[s], em.y[s], em.z[s] + 0.1, 0, 0, 1, _lightScratch);
-        // VISQA-05: LightSet.sun.col is the load-time (day) colour; the clock only moves its direction (the moon at
-        // night). Dim by the sun's share of this sample x (1 - live sunI / ref sunI), so splash/mist darkens at night
-        // like the water (ambientI + sunI) while torch-lit emitters keep their point light. sunK 1 = old path, bit-identical.
-        let dimK = 1;
-        if (sunK < 1) {
-          const aSum = _lightScratch[0] + _lightScratch[1] + _lightScratch[2];
-          lightAt(lights, world, em.x[s], em.y[s], em.z[s] + 0.1, 0, 0, 1, _noSunScratch, undefined, 0, true);
-          const sunSum = aSum - (_noSunScratch[0] + _noSunScratch[1] + _noSunScratch[2]);
-          if (aSum > 1e-6 && sunSum > 0) dimK = 1 - (sunSum / aSum) * (1 - sunK);
-        }
         shadeMulFromLight(palette.shading, _lightScratch[0], _lightScratch[1], _lightScratch[2], _lightScratch);
-        _emMulR[s] = _lightScratch[0] * dimK; _emMulG[s] = _lightScratch[1] * dimK; _emMulB[s] = _lightScratch[2] * dimK;
+        _emMulR[s] = _lightScratch[0]; _emMulG[s] = _lightScratch[1]; _emMulB[s] = _lightScratch[2];
         _emDone[s] = 1;
       }
 
