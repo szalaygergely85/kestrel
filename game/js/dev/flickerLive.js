@@ -4,6 +4,7 @@
 // main.js calls `beforeRender(cam, world)` before the frame is drawn and `afterPresent()` after rt.present().
 import { flickerStep, flickerReprojStep, flickerGlyphReasons, GLYPH_REASONS, M255_KEYS, glyphClassTable, pitchedTerms, createPitchedTerms } from '../../../engine/index.js';
 
+const VM_SAME = typeof location === 'undefined' || new URLSearchParams(location.search).get('flickervm') !== '0'; // AA-31 (OB-208): ?flickervm=0 = old vm mapping
 /** AA-10 diag: what the stable pass saw this frame (its own inputs + output + OUT_HIST), read straight from the pipeline; null = stable did not run. */
 export async function diagCapture(wg) {
   const t = wg && wg._t, sp = wg && wg._stablePass;
@@ -131,8 +132,8 @@ export async function runLivePoses(h, { world, wg, cols, rows, pxCellW = 1, pxCe
       acc.oldTotalPct += out.totalPct; // same-index metric (measures image motion), kept for reference
       const dOk = diag && prev.diag && cur.diag && cur.diag.cols === gcols && prev.diag.cols === gcols && cur.diag.rows === grows;
       if (dOk && (!hmap || hmap.length !== gcols * grows)) hmap = new Int32Array(gcols * grows);
-      flickerReprojStep(prev, cur, prev.cam, { ...cam }, cur.grid, out, dOk ? hmap : null, gcls); // motion-compensated (AA-01b)
-      if (dOk) { const tt = pitchedTerms({ ...cam }, cur.grid, terms); tt.gcls = gcls; flickerGlyphReasons(cur.diag, prev.diag, hmap, gcols, grows, tt, why); }
+      flickerReprojStep(prev, cur, prev.cam, { ...cam }, cur.grid, out, dOk ? hmap : null, gcls, VM_SAME); // motion-compensated (AA-01b); AA-31 view model same cell
+      if (dOk) { const tt = pitchedTerms({ ...cam }, cur.grid, terms); tt.gcls = gcls; tt.aaSeam = typeof location === 'undefined' || new URLSearchParams(location.search).get('aaseam') !== '0'; flickerGlyphReasons(cur.diag, prev.diag, hmap, gcols, grows, tt, why); }
       for (const k of KEYS) acc[k] += out[k];
       if (dump && !res.dump && dump.pose === p.slug && dump.step === s) res.dump = packDump(p.slug, s, prev, cur, gcols, grows); // OB198-DUMP-DIFF-01
       used++;

@@ -61,7 +61,7 @@ function uniformObject(words, ints) {
 function compileStable(src, ctx) {
   const base = { ...shims, textureLoad: tl, LEVEL_NONE, LEVEL_ANIM, ...ctx, giKind: (y) => y & 0xff, giMat: (y) => (y >>> 16) & 0xffff, vec3f: (x, y, z) => ({ x, y, z }),
     uMatI: { w: 1, h: 1, data: [[0, LEAF ? 65536 : 0, 0, 0]] }, textureDimensions: (t) => ({ x: t.w, y: t.h }), vec2i: (x, y) => ({ x, y }) }; // AA-26: 1x1 stub MAT_I = not soft
-  for (const n of ['byteOf', 'packRgb', 'blendCh', 'blendPacked', 'reprojectCell', 'reproject', 'grazeStep', 'grazeLimit', 'leafSoft']) base[n] = compileFn(src, n, base);
+  for (const n of ['byteOf', 'packRgb', 'blendCh', 'blendPacked', 'reprojectCell', 'reproject', 'grazeStep', 'grazeLimit', 'leafSoft', 'seamOk', 'seamAt']) base[n] = compileFn(src, n, base);
   return compileFn(src, 'stableCell', base);
 }
 
@@ -93,7 +93,7 @@ function makeFrame(st, cols, rows, plane, opts) {
     shadeFg: new Uint32Array(n), shadeBg: new Uint32Array(n), finalFg: new Uint32Array(n), finalBg: new Uint32Array(n),
     waterX: new Uint32Array(n).fill(0x7f800000), waterW: new Uint32Array(n),
   };
-  const baseKind = LEAF ? KIND_MESH : plane.n[2] === 0 ? KIND_WALL : TERR ? KIND_TERRAIN : KIND_FLOOR; // AA-28: TERR = floor scenes are terrain
+  const baseKind = LEAF || SEAM ? KIND_MESH : plane.n[2] === 0 ? KIND_WALL : TERR ? KIND_TERRAIN : KIND_FLOOR; // AA-28: TERR = floor scenes are terrain
   for (let i = 0; i < n; i++) {
     const hit = geo.hit[i] === 1;
     f.kind[i] = !hit ? KIND_NONE : (rand() < 0.03 ? [KIND_MODEL, KIND_MESH, KIND_NONE][Math.floor(rand() * 3)] : baseKind);
@@ -143,11 +143,12 @@ let EDGE = false; // AA-18: aaEdge switch of the probe scenes (off keeps the edg
 let VOX = true; // AA-21: aaVox switch of the probe scenes
 let GRAZE = true; // AA-20: aaGraze switch (the old-rule mutations run with it off, the graze mutation with it on)
 let TERR = false, TERRSNAP = true; // AA-28: terrain floor scenes + the aaTerrSnap switch
+let SEAM = false, SEAMON = true; // AA-31: facet-seam scenes (kind 9 mesh, not soft) + the aaSeam switch
 let LEAF = false, LEAFLV = true; // AA-29: soft-edge leaf (kind 9, mat 0 soft) scenes + the aaLeafLv switch
 let HUE = true; // AA-23: aaHue switch (old per-channel blend mutations run with it off)
 let ANCHOR = true; // AA-09: aaAnchor switch of the probe scenes (the mutation loop runs both)
 function scene(src, cam0, cam1, plane, tweak) {
-  const st = createStableState(); st.aaAnchor = ANCHOR; st.aaEdge = EDGE; st.aaVox = VOX; st.aaGraze = GRAZE; st.aaHue = HUE; st.aaTerrSnap = TERRSNAP; st.aaLeafLv = LEAFLV;
+  const st = createStableState(); st.aaAnchor = ANCHOR; st.aaEdge = EDGE; st.aaVox = VOX; st.aaGraze = GRAZE; st.aaHue = HUE; st.aaTerrSnap = TERRSNAP; st.aaLeafLv = LEAFLV; st.aaSeam = SEAMON;
   beginFrame(st, cam0, GRID);
   const fa = makeFrame(st, COLS, ROWS, plane, {});
   const hist = createStableBuffers(COLS, ROWS);
@@ -283,6 +284,18 @@ LEAFLV = true;
 assert.ok(STABLE_WGSL.includes('select(1, 2, leafHold && (u.aaFlags & 2048) != 0)'), 'mutation anchor missing: AA-29');
 assert.ok(cases.some(([name, c0, camK, plane]) => [1, 2, 3].some((k) => runCase(STABLE_WGSL.replace('select(1, 2, leafHold && (u.aaFlags & 2048) != 0)', 'select(1, 2, false)'), name, c0, camK, plane, k).mism > 0)), 'mutation survived: AA-29 leaf +-2 dropped');
 LEAF = false; seed = seedLeaf;
+// AA-31 (OB-208): seam scenes (non-soft kind-9 mesh, planeId bands of 12; frame B's u jumps by 5 per band, so only a seam cell - history on
+// the adjacent band - can keep history) at parity in both switch states; the seam hold is exercised and the mutation is caught
+const seedSeam = seed; SEAM = true;
+const seamTweak = (fb, fa, i) => { fb.geo.u[i] += 5 * fb.planeId[i]; };
+for (SEAMON of [true, false]) for (const [name, c0, camK, plane] of cases) for (let k = 1; k <= 4; k++) {
+  const r = runCase(STABLE_WGSL, name, c0, camK, plane, k, seamTweak);
+  assert.equal(r.mism, 0, `aaSeam ${SEAMON} ${name} k=${k}: ${r.mism} mismatches ${JSON.stringify(r.bad)}`);
+}
+SEAMON = true;
+assert.ok(STABLE_WGSL.includes('hh.x != gi.x && seamAt('), 'mutation anchor missing: AA-31');
+assert.ok(cases.some(([name, c0, camK, plane]) => [1, 2, 3].some((k) => runCase(STABLE_WGSL.replace('hh.x != gi.x && seamAt(', 'false && seamAt('), name, c0, camK, plane, k, seamTweak).mism > 0)), 'mutation survived: AA-31 seam hold dropped');
+SEAM = false; seed = seedSeam;
 VOX = false; // AA-21 (OB-208): aaVox off (kind 8 keeps the history anchor) stays at parity
 for (const [name, c0, camK, plane] of cases) for (let k = 1; k <= 4; k++) {
   const r = runCase(STABLE_WGSL, name, c0, camK, plane, k);

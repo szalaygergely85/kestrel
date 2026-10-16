@@ -104,7 +104,7 @@ export function flickerStep(prevGI, prevFg, curGI, curFg, cols, rows, out, prevB
 // Inputs: {GI, fg, bg?, Depth} readbacks (Depth channel 0 = f32 bits, `readbackGeometry().Depth`); camPrev/camCur =
 // {x,y,z,yawDeg,pitchDeg,vfovDeg?}; grid = {cols, rows, pxCellW, pxCellH}.
 import { createPitchedTerms, pitchedTermsInto, unprojectPitched, worldToCell } from '../projection.js';
-import { levelOfByte, covOfByte, uvDriftLimit, CHANNEL_SNAP, DEFAULT_DETAIL, GRAZE_K, GRAZE_CAP, hueShift } from '../temporalStable.js';
+import { vmTagOf, levelOfByte, covOfByte, uvDriftLimit, CHANNEL_SNAP, DEFAULT_DETAIL, GRAZE_K, GRAZE_CAP, hueShift } from '../temporalStable.js';
 import { KIND_MESH, KIND_MODEL } from '../GBuffer.js';
 
 export const REPROJ_DEPTH_TOL = 0.05;
@@ -120,7 +120,10 @@ function glyphAtNeighbour(fg, i, cols, rows, want) {
   return (x > 0 && fg[(i - 1) * 4 + 3] === want) || (x < cols - 1 && fg[(i + 1) * 4 + 3] === want)
     || (y > 0 && fg[(i - cols) * 4 + 3] === want) || (y < rows - 1 && fg[(i + cols) * 4 + 3] === want);
 }
-export function flickerReprojStep(prev, cur, camPrev, camCur, grid, out, hmap = null, gcls = DEFAULT_GCLS) {
+// AA-31 (OB-208): `vmSame` (default on) compares a view-model cell (kind 8, objectId in the VM range, raster GI.w) with the SAME screen cell in
+// prev, like the eye and the stable pass (AA-07a vmTag) see it; camera reprojection mapped the screen-locked hand/sword onto other cells
+// (forestWalk 'heldChanged' 0.18 %, crown k8e mixed255/uvDrift 0.6 %). false = the old camera-only mapping (`?flickervm=0`).
+export function flickerReprojStep(prev, cur, camPrev, camCur, grid, out, hmap = null, gcls = DEFAULT_GCLS, vmSame = true) {
   if (hmap) hmap.fill(-1); // AA-DIAG-01: history cell of every counted (n) cell, -1 = not counted
   if (!_tPrev) { _tPrev = createPitchedTerms(); _tCur = createPitchedTerms(); }
   pitchedTermsInto(_tPrev, camPrev, grid); pitchedTermsInto(_tCur, camCur, grid);
@@ -134,15 +137,21 @@ export function flickerReprojStep(prev, cur, camPrev, camCur, grid, out, hmap = 
       if (ck === 0) continue;
       const vd = bitsToF32(cur.Depth[i * 4]);
       if (!(vd > 0) || !Number.isFinite(vd)) { excluded++; continue; }
-      unprojectPitched(_tCur, c, r, vd, _w);
-      worldToCell(_tPrev, _w[0], _w[1], _w[2], _pc);
-      if (_pc[2] <= 0) { excluded++; continue; }
-      const hc = Math.floor(_pc[0] + 0.5), hr = Math.floor(_pc[1] + 0.5);
-      if (!(hc >= 0 && hc < cols && hr >= 0 && hr < rows)) { excluded++; continue; }
-      const h = hr * cols + hc;
+      let h;
+      if (vmSame && ck === KIND_MODEL && vmTagOf(cur.GI[i * 4 + 3])) { // AA-31: view model = screen-locked, same cell (as the stable pass keys it)
+        if (prev.GI[i * 4 + 3] !== cur.GI[i * 4 + 3] || (prev.GI[i * 4 + 1] & 0xff) !== ck) { excluded++; continue; }
+        h = i;
+      } else {
+        unprojectPitched(_tCur, c, r, vd, _w);
+        worldToCell(_tPrev, _w[0], _w[1], _w[2], _pc);
+        if (_pc[2] <= 0) { excluded++; continue; }
+        const hc = Math.floor(_pc[0] + 0.5), hr = Math.floor(_pc[1] + 0.5);
+        if (!(hc >= 0 && hc < cols && hr >= 0 && hr < rows)) { excluded++; continue; }
+        h = hr * cols + hc;
+        const pvd = bitsToF32(prev.Depth[h * 4]);
+        if ((prev.GI[h * 4 + 1] & 0xff) === 0 || !(Math.abs(pvd - _pc[2]) <= REPROJ_DEPTH_TOL * _pc[2])) { excluded++; continue; }
+      }
       const pk = prev.GI[h * 4 + 1] & 0xff;
-      const pvd = bitsToF32(prev.Depth[h * 4]);
-      if (pk === 0 || !(Math.abs(pvd - _pc[2]) <= REPROJ_DEPTH_TOL * _pc[2])) { excluded++; continue; }
       n++;
       if (hmap) hmap[i] = h;
       if (pk !== ck) { kind++; continue; }
@@ -236,6 +245,11 @@ function diagGrazeLim(d, i, cols, rows, kind, mat, lim) {
   if (gx === Infinity) gx = 0; if (gy === Infinity) gy = 0;
   const g = Math.min(GRAZE_K * Math.max(gx, gy), GRAZE_CAP * lim); return g > lim ? g : lim;
 }
+// AA-31 (OB-208): diag twin of temporalStable.js seamAt on the measured frame's GI
+function diagSeamAt(d, i, cols, rows, kind, mat, p) {
+  const x = i % cols, ok = (j) => d.GI[j * 4] === p && (d.GI[j * 4 + 1] & 0xff) === kind && (d.GI[j * 4 + 1] >>> 16) === mat;
+  return (x > 0 && ok(i - 1)) || (x < cols - 1 && ok(i + 1)) || (i >= cols && ok(i - cols)) || (i + cols < cols * rows && ok(i + cols));
+}
 // AA-DIAG-EDGE (OB-208): does the edge rule have a trigger at cell i? (sky neighbour, a different-plane neighbour farther than the farther() threshold,
 // or a non-zero convex/concave depth margin). preFg != shadeFg without a trigger is NOT edge work (labels only; the cell falls through to its real reason).
 function edgeTriggered(d, i, cols, rows) {
@@ -311,7 +325,10 @@ export function flickerGlyphReasons(d, p, hmap, cols, rows, terms, cnt) {
         const vd = bitsToF32(d.Depth[i]);
         const lim = uvDriftLimit(vd, terms.tanHalfX, terms.tanHalfY, cols, rows, DEFAULT_DETAIL, terms.ortho === 1), dUV = Math.sqrt(du * du + dv * dv);
         const gl = dUV >= lim ? diagGrazeLim(d, i, cols, rows, kind, mat, lim) : lim; // AA-26: same limit as the stable pass (AA-20 graze)
-        if (dUV >= gl) { r = 'uvDrift'; const b = 'uv' + (dUV < 2 * lim ? '<2' : dUV < 4 * lim ? '<4' : '4+'); cnt.sub[b] = (cnt.sub[b] || 0) + 1;
+        // AA-31: facet seam (history on another planeId of the same material that is a 4-neighbour now) skips the UV check like the stable pass
+        const seam = dUV >= gl && p.hist[h * 4] !== d.GI[o] && diagSeamAt(d, i, cols, rows, kind, mat, p.hist[h * 4]);
+        if (seam) { const sk = (terms.aaSeam === false ? 'uvSeam:' : 'seamHeld:') + kind; cnt.sub[sk] = (cnt.sub[sk] || 0) + 1; }
+        if (dUV >= gl && !(seam && terms.aaSeam !== false)) { r = 'uvDrift'; const b = 'uv' + (dUV < 2 * lim ? '<2' : dUV < 4 * lim ? '<4' : '4+'); cnt.sub[b] = (cnt.sub[b] || 0) + 1;
           const lk = (lvC === lvP ? 'uvLv=:' : 'uvLv!:') + kind; cnt.sub[lk] = (cnt.sub[lk] || 0) + 1; const mk = 'uvMat:' + kind + ':' + mat; cnt.sub[mk] = (cnt.sub[mk] || 0) + 1;
           const gk = (gl <= lim ? 'gz0:' : dUV < 2 * gl ? 'gz1-2:' : 'gz2+:') + kind; // AA-26: vs the AA-20 graze limit
           cnt.sub[gk] = (cnt.sub[gk] || 0) + 1; const pk = (p.hist[h * 4] === d.GI[o] ? 'uvPl=:' : 'uvPl!:') + kind; cnt.sub[pk] = (cnt.sub[pk] || 0) + 1;

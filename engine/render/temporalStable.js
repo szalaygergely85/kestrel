@@ -108,6 +108,12 @@ export function grazeUvLimit(inp, col, row, lim, out) {
   const g = Math.min(GRAZE_K * Math.max(gx, gy), GRAZE_CAP * lim);
   out[0] = g > lim ? g : lim; // written, not returned: keeps the stabilize loop allocation-free (no boxed double)
 }
+/** AA-31: is a 4-neighbour of (col,row) on planeId `p` with the cell's kind + material? (twin of stable.wgsl.js seamAt) */
+export function seamAt(inp, col, row, p) {
+  const cols = inp.cols, rows = inp.rows, i = row * cols + col;
+  const ok = (j) => inp.planeId[j] === p && inp.kind[j] === inp.kind[i] && (inp.mat ? inp.mat[j] === inp.mat[i] : true);
+  return (col > 0 && ok(i - 1)) || (col < cols - 1 && ok(i + 1)) || (row > 0 && ok(i - cols)) || (row < rows - 1 && ok(i + cols));
+}
 function grazeStep(inp, i, j) {
   if (inp.kind[j] !== inp.kind[i] || (inp.mat ? inp.mat[j] !== inp.mat[i] : false)) return Infinity;
   const du = inp.u[j] - inp.u[i], dv = inp.v[j] - inp.v[i];
@@ -144,6 +150,7 @@ export function createStableState() {
     aaAnchor: true, // AA-09: a both-255 hold of a static surface re-anchors (writes the CURRENT u/v) so cumulative drift cannot re-roll it; ?aaanchor=0
     aaGraze: true, // AA-20 (OB-208): UV drift limit follows the cell's own UV footprint on grazing surfaces (road ahead); ?aagraze=0
     aaLeafUv: true, // AA-26 (OB-208): soft-edge leaf cells (inp.soft) skip the UV drift test - their glyph dice is world-keyed (AA-15), card u/v is unrelated; set per frame from fogShapeCtx
+    aaSeam: true, // AA-31 (OB-208): a mesh/prop cell whose history sits on the adjacent facet (same material) skips the UV check; ?aaseam=0
     aaLeafLv: true, // AA-29 (OB-208): a leafHold cell holds through |level step| <= 2 (its 5x5 folLight mean moves 15 %+ on a walk while its own light holds); ?aaleaflv=0
     aaTerrSnap: true, // AA-28 (OB-208): a terrain both-255 glyph (same material) survives an fg snap (canopy shadow, colour tier); set per frame from fogShapeCtx (?aaterrsnap=0)
     aaHue: true, // AA-23 (OB-208): colour snap per colour, not per channel (no hue split); ?aahue=0
@@ -296,7 +303,10 @@ export function stabilize(inp, hist, out, st) {
       if (c255 !== p255 && !jointHold) continue; // mixed ramp/non-ramp: a real pattern edge, always fresh
       // AA-26 (OB-208): a soft-edge leaf (AA-15 world dice) keeps history on kind + material + reprojection; its card u/v says nothing about the glyph
       const leafHold = st.aaLeafUv && !ortho && kind === KIND_MESH && matSame && inp.soft && inp.soft[i] === 1;
-      if (vmTag === 0 && !leafHold) {
+      // AA-31 (OB-208): facet seam - history on another planeId of the same material that is a 4-neighbour of this cell NOW (the adjacent
+      // facet of the same trunk/prop): low-poly atlas UVs jump between facets, so the UV check re-rolled the glyph on every seam cell
+      const seamHold = st.aaSeam && !leafHold && vmTag === 0 && !ortho && matSame && hist.planeId[h] !== inp.planeId[i] && seamAt(inp, col, row, hist.planeId[h]);
+      if (vmTag === 0 && !leafHold && !seamHold) {
         const detail = (inp.detail ? inp.detail[i] : 0) || DEFAULT_DETAIL;
         const du = inp.u[i] - hist.u[h], dv = inp.v[i] - hist.v[h];
         const dUV = Math.sqrt(du * du + dv * dv);
