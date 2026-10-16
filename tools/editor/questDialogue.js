@@ -2,7 +2,7 @@
 // (speaker, node id, quoted editable lines with a live "n / 56" counter, read-only branches) and the "Changed text" list for the writer.
 // Logic lives in quest/lines.js (edits) and quest/conversation.js (view model).
 import { LINE_MAX, lineLength, setLine, addLine, deleteLine, moveLine, changedLines, exportChangedText } from './quest/lines.js';
-import { conversationView } from './quest/conversation.js';
+import { conversationView, nodeRole } from './quest/conversation.js';
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 
@@ -22,12 +22,13 @@ export function renderLineEditor(ctx) {
   for (const n of view.nodes) {
     const t = el('div', 'q-node' + (n.branches.some((b) => b.dangling) ? ' bad' : '')); t.dataset.node = n.id;
     const head = el('div', 'q-node-head');
-    head.append(el('span', 'q-speaker', '> ' + (n.speaker || 'no speaker')), el('span', 'q-node-id', n.id), el('span', 'q-pill', n.stage.toUpperCase()));
+    head.append(el('span', 'q-speaker', '> ' + (n.speaker || 'no speaker')), el('span', 'q-node-id', n.id), el('span', 'q-pill', nodeRole(n)));
     t.append(head);
     if (n.gate) t.append(el('div', 'q-ometa', 'IF ' + n.gate));
     const last = n.lines.length - 1;
     n.lines.forEach((r, i) => {
       const row = el('div', 'q-line'); row.dataset.key = r.key; row.dataset.index = r.index;
+      const top = el('div', 'q-line-in'), tools = el('div', 'q-line-tools');
       const inp = el('input'); inp.type = 'text'; inp.value = r.text; if (r.over) inp.classList.add('over');
       const cnt = el('span', 'q-count' + (r.over ? ' over' : ''), `${r.count} / ${LINE_MAX}`);
       const update = () => {
@@ -43,7 +44,9 @@ export function renderLineEditor(ctx) {
       });
       const up = act('Up', () => moveLine(q, r.key, r.index, r.index - 1, dm)), dn = act('Down', () => moveLine(q, r.key, r.index, r.index + 1, dm));
       up.disabled = i === 0; dn.disabled = i === last;
-      row.append(el('span', 'q-quote', '"'), inp, el('span', 'q-quote', '"'), cnt, up, dn, act('Delete', () => deleteLine(q, r.key, r.index, dm)));
+      top.append(el('span', 'q-quote', '"'), inp, el('span', 'q-quote', '"'));
+      tools.append(cnt, up, dn, act('Delete', () => deleteLine(q, r.key, r.index, dm)));   // full row width for the text; counter + buttons right-aligned below
+      row.append(top, tools);
       t.append(row);
     });
     t.append(act('Add line to ' + n.stage.toLowerCase(), () => addLine(q, n.key, '', dm)));

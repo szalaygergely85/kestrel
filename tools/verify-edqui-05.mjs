@@ -51,8 +51,37 @@ try {
   assert.equal(await ev('JSON.stringify(window.__questPanel.model.quests.find(q => q.id === "burl.road").raw)'), before, 'wide view must not change the quest');
   await ev('window.__questPanel.select("burl.road")'); await pause(200);
   await ev("document.querySelector(\"[data-card=conversation]\").scrollIntoView()");
+  const fs = await import('node:fs');
   const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });
-  (await import('node:fs')).writeFileSync(path.join(ROOT, 'docs/test-reports/edqui-05.png'), Buffer.from(shot.data, 'base64'));
+  fs.writeFileSync(path.join(ROOT, 'docs/test-reports/edqui-05.png'), Buffer.from(shot.data, 'base64'));
+
+  // ED-QUI-07a: card [06] VALIDATE + node role tags + full-width line inputs
+  const v07 = JSON.parse(await ev(`JSON.stringify({
+    btn: !!document.getElementById("quest-validate"), foot: document.getElementById("quest-vfoot").innerText, verdict: document.getElementById("quest-verdict").innerText,
+    chip: document.getElementById("quest-status").innerText, rows: document.querySelectorAll("#quest-lint .q-vrow").length, simArea: !!document.getElementById("quest-sim-area"),
+    roles: [...document.querySelectorAll("#quest-lines .q-node")].map(n => n.dataset.node + ":" + n.querySelector(".q-node-head .q-pill").innerText),
+    inputs: [...document.querySelectorAll("#quest-lines .q-line input")].map(i => ({ w: Math.round(i.getBoundingClientRect().width), sw: i.scrollWidth, cw: i.clientWidth, len: i.value.length })) })`));
+  console.log(JSON.stringify(v07));
+  assert.ok(v07.btn && v07.simArea && /bytes/.test(v07.foot) && /content\/quests\//.test(v07.foot), '06 card: ' + JSON.stringify(v07));
+  assert.ok(v07.roles.some((r) => /^rook\.meet\.1:MEET$/.test(r)) && !v07.roles.some((r) => /meet.*HAND-IN/.test(r)), 'roles: ' + v07.roles);
+  assert.ok(v07.inputs.length > 3 && v07.inputs.every((i) => i.sw <= i.cw + 1), 'a line input is cut: ' + JSON.stringify(v07.inputs));
+  // a broken quest: 4th objective + xp -> errors in the list with Go to; Go to scrolls to the card
+  await ev('window.__questPanel.select("sq.burl.blue")'); await pause(250);
+  const blue = JSON.parse(await ev(`JSON.stringify({ verdict: document.getElementById("quest-verdict").innerText, chip: document.getElementById("quest-status").innerText })`));
+  console.log(JSON.stringify(blue));
+  await ev('window.__questPanel.select("burl.road")'); await pause(250);
+  const goOk = await ev(`(() => { const r = document.querySelector("#quest-lint .q-vrow button"); if (!r) return "no-rows-ok"; r.click(); return "clicked"; })()`);
+  console.log('goto: ' + goOk);
+  console.log('items: ' + await ev('JSON.stringify([...document.querySelectorAll("#quest-lint .q-vrow")].map(r => r.innerText))'));
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 1500, deviceScaleFactor: 1, mobile: false }); await pause(400);
+  const snap = async (file, card) => {
+    await ev(`document.querySelector("[data-card=${card}]").scrollIntoView()`); await pause(200);
+    const sh = await cdp.send('Page.captureScreenshot', { format: 'png' });
+    fs.writeFileSync(path.join(ROOT, 'docs/test-reports/' + file), Buffer.from(sh.data, 'base64'));
+  };
+  await snap('edqui-07a-roadvalidate.png', 'validate');                 // burl.road: [06] list + footer
+  await ev('window.__questPanel.select("sq.burl.blue")'); await pause(300);
+  await snap('edqui-07a.png', 'conversation');                           // sq.burl.blue: [04] + [06] in one view
   assert.deepEqual(errors, [], 'page errors: ' + JSON.stringify(errors));
   console.log('verify-edqui-05 PASS');
 } finally {
