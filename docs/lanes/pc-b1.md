@@ -1761,3 +1761,7 @@ Also: `flickerLive.hold` skips wgPipeline.frame during capture (readbacks see ON
 ### OB198-DUMP-DIFF-01 (kestrel-2, branch framediff) - built, browser not run
 - tools/frame-diff.mjs (+test): diffFrames/heatPng/crc32/report; dump opt-in in game/js/dev/flickerLive.js (`dump:{pose,step}` -> res.dump = glyph/kind/mat/pid/fg/bg per cell, A=prev B=cur) + main.js `&flickerdump=<pose>:<step>` (console log elides the dump).
 - E2E (main session): `node tools/capture-browser.mjs --mode flicker --variant live ... &flickerdump=wallNear:3`, save `window.__flicker` JSON, then `node tools/frame-diff.mjs <that.json> --out heat.png` (needs a way to write __flicker to file; check capture-browser flags).
+
+### AA-DIAG-01 (kestrel-3, branch aadiag) - Node only, browser not run
+- `flickerGlyphReasons` + `GLYPH_REASONS` (engine/render/gpu/flicker.js, engine/index.js, api-1.0.json) and `diagCapture` + `why` accumulation (game/js/dev/flickerLive.js), opt-in `&flickerdiag=1` (default off); no stable-pass/HIST change (cov read from the current level byte only). frame-diff cherry-picked (bad35f7d, grid pin/settle 60 kept). flicker-gate prints the `why.*` table. Tests: flickerReasons.test.js (new), flicker-gate/flickerLive/frame-diff/api PASS, check-deps OK.
+- Run: `node tools/flicker-gate.mjs --port {port} --repeat 1 --query "...&flickerdiag=1"`. Unverified on GPU: HIST word layout assumed (level lo8, kind bits 8-11, mat hi16) as in AA-10.
