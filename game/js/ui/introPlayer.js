@@ -103,15 +103,62 @@ const CAPTION_RGB = [232, 220, 190];
 const HINT_RGB = [110, 104, 90];
 const HINT = 'any key: next';
 
-/** Draw one slide (fit + centred, brightness `alpha`) and its caption onto the UI cell layer. */
-export function drawIntroFrame(ui, slide, lines, alpha) {
+export const SLIDE_BRIGHT = 1.15; // OB-219: owner found the slides dark
+const CELL_PX = 4; // overlay pixels per source cell (400x150 slide -> 1600x600 canvas)
+
+/** OB-219: paint a slide cell-for-cell (native grid, no downsample) with a 2D-context-like `ctx`. Returns cells painted. */
+export function paintSlideNative(ctx, slide, cellPx = CELL_PX, bright = SLIDE_BRIGHT) {
+  const { cols, rows, glyph, fg, bg, rgb } = slide;
+  const c = (k) => Math.min(255, Math.round(rgb[k] * bright));
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cols * cellPx, rows * cellPx);
+  ctx.font = `${cellPx + 1}px monospace`; ctx.textBaseline = 'top';
+  let n = 0;
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+    const i = y * cols + x, f = fg[i] * 3, b = bg[i] * 3;
+    ctx.fillStyle = `rgb(${c(b)},${c(b + 1)},${c(b + 2)})`; ctx.fillRect(x * cellPx, y * cellPx, cellPx, cellPx);
+    if (glyph[i] > 0) { ctx.fillStyle = `rgb(${c(f)},${c(f + 1)},${c(f + 2)})`; ctx.fillText(String.fromCharCode(glyph[i] + 32), x * cellPx, y * cellPx); }
+    n++;
+  }
+  return n;
+}
+
+/**
+ * OB-219: DOM overlay canvas that shows the slide at its native 400x150 grid over the top part of the game canvas
+ * (the caption band stays on the UI layer). Slides are painted once and cached; fades use CSS opacity.
+ */
+export function createSlideOverlay(gameCanvas, doc = document) {
+  const el = doc.createElement('canvas');
+  el.style.cssText = 'position:fixed;display:none;pointer-events:none;z-index:50;background:#000;object-fit:contain';
+  doc.body.appendChild(el);
+  const cache = new Map(); // slide -> ImageBitmap-ish canvas
+  return {
+    show(slide, alpha, capRows, uiRows) {
+      if (alpha <= 0) { el.style.display = 'none'; return; }
+      let src = cache.get(slide);
+      if (!src) {
+        src = doc.createElement('canvas'); src.width = slide.cols * CELL_PX; src.height = slide.rows * CELL_PX;
+        paintSlideNative(src.getContext('2d'), slide); cache.set(slide, src);
+      }
+      if (el.width !== src.width) { el.width = src.width; el.height = src.height; }
+      el.getContext('2d').drawImage(src, 0, 0);
+      const r = gameCanvas.getBoundingClientRect(), h = r.height * (uiRows - capRows) / uiRows;
+      el.style.left = r.left + 'px'; el.style.top = r.top + 'px'; el.style.width = r.width + 'px'; el.style.height = h + 'px';
+      el.style.opacity = String(Math.min(1, alpha)); el.style.display = 'block';
+    },
+    hide() { el.style.display = 'none'; },
+  };
+}
+
+/** Draw one slide (fit + centred, brightness `alpha`) and its caption onto the UI cell layer. With `nativeOverlay` the slide itself is drawn by the overlay canvas, the UI layer only paints black + caption. */
+export function drawIntroFrame(ui, slide, lines, alpha, nativeOverlay = false) {
   const W = ui.cols, H = ui.rows;
   ui.clear('#000000');
   // OB-216: ui.clear() is TRANSPARENT, so the title-menu world showed through between slides. Paint every cell opaque black.
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) ui.setCellRGB(x, y, 0, 0, 0, 0, 0, 0, 0);
   if (alpha <= 0) return;
+  if (nativeOverlay) nativeOverlay.show(slide, alpha, lines.length + 3, H);
   const k = Math.max(slide.cols / W, slide.rows / H);
-  const dw = Math.min(W, Math.floor(slide.cols / k)), dh = Math.min(H, Math.floor(slide.rows / k));
+  const dw = nativeOverlay ? 0 : Math.min(W, Math.floor(slide.cols / k)), dh = Math.min(H, Math.floor(slide.rows / k));
   const ox = (W - dw) >> 1, oy = (H - dh) >> 1;
   const { glyph, fg, bg, rgb } = slide;
   for (let y = 0; y < dh; y++) {
@@ -143,7 +190,8 @@ export function drawIntroFrame(ui, slide, lines, alpha) {
  * Host-facing player. `entries` = loadIntroSlides() result. Returns null when there is nothing to play.
  * @param {{entries:Array<{slide:object,lines:string[]}>, onSlide?:(i:number)=>void, onDone:()=>void, slideSec?:number|((i:number)=>number), fadeSec?:number}} o
  */
-export function createIntroPlayer({ entries, onSlide = null, onDone, slideSec = null, fadeSec = 0.8 }) {
+export function createIntroPlayer({ entries, onSlide = null, onDone: onDone0, slideSec = null, fadeSec = 0.8, overlay = null }) {
+  const onDone = () => { if (overlay) overlay.hide(); onDone0(); };
   if (!entries || !entries.length) return null;
   const perSlide = slideSec != null ? slideSec : (i) => holdSeconds(entries[i].lines) + 2 * fadeSec;
   const seq = createIntroSequence({ count: entries.length, slideSec: perSlide, fadeSec, onSlide, onDone });
@@ -160,7 +208,7 @@ export function createIntroPlayer({ entries, onSlide = null, onDone, slideSec = 
     click() { seq.next(); },
     draw(ui) {
       const e = entries[seq.index];
-      if (e) drawIntroFrame(ui, e.slide, e.lines, seq.alpha);
+      if (e && !seq.done) drawIntroFrame(ui, e.slide, e.lines, seq.alpha, overlay); else if (overlay) overlay.hide();
     },
   };
 }

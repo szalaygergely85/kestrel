@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { createTitleMenuHost } from '../titleMenuHost.js';
 import { createMemoryAdapter } from '../quest/save/saveState.js';
-import { holdSeconds, createIntroSequence, createIntroPlayer, decodeSlide, loadIntroSlides, INTRO_SLIDES, drawIntroFrame } from './introPlayer.js';
+import { holdSeconds, createIntroSequence, createIntroPlayer, decodeSlide, loadIntroSlides, INTRO_SLIDES, drawIntroFrame, paintSlideNative, SLIDE_BRIGHT } from './introPlayer.js';
 
 // timing: 3 slides of 4 s
 {
@@ -81,5 +81,19 @@ const mk = () => ({ version: 1, cols: 4, rows: 2, ramp: ' .#', palette: ['#10203
   const none = () => false;
   for (let i = 0; i < 1500; i++) { host.draw(ui); host.step(none, 1 / 60); step++; if (!host.active) break; }
   assert.equal(drawn, 0, 'menu must not draw while the intro plays'); assert.equal(news, 1); assert.equal(host.active, false);
+}
+// OB-219: native-grid overlay keeps every source cell (the 160x60 fit drops cells), brightens x1.15 capped, caption unchanged
+{
+  const big = decodeSlide({ ...mk(), cols: 400, rows: 150, glyphs: '#'.repeat(60000), fg: b64(new Uint8Array(60000).fill(1)), bg: b64(new Uint8Array(60000)) });
+  const fills = []; const ctx = { fillRect: (...a) => fills.push(a), fillText() {}, set fillStyle(v) { this._f = v; fills.push(v); } };
+  assert.equal(paintSlideNative(ctx, big), 60000);
+  const cells = new Set(); const ui = { cols: 160, rows: 60, clear() {}, setCellRGB: (x, y, g) => { if (g) cells.add(x + ',' + y); } };
+  drawIntroFrame(ui, big, ['hi'], 1);
+  assert.ok(cells.size <= 160 * 60 && 400 * 150 > 160 * 60 * 6, 'old fit shows <= 9600 cells, native 60000');
+  assert.ok(fills.includes('rgb(255,255,255)') && SLIDE_BRIGHT === 1.15); // white capped at 255
+  const shown = []; const ov = { show: (...a) => shown.push(a), hide() {} }; const uiCells = new Set();
+  const ui2 = { cols: 160, rows: 60, clear() {}, setCellRGB: (x, y, g) => { if (g) uiCells.add(y); } };
+  drawIntroFrame(ui2, big, ['hi'], 0.5, ov);
+  assert.deepEqual(shown[0].slice(1), [0.5, 4, 60]); assert.deepEqual([...uiCells].sort((a, b) => a - b), [57, 59]); // only caption + hint rows
 }
 console.log('introPlayer.test.js ok');
