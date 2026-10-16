@@ -35,7 +35,7 @@ export function packStableUniforms(st, cols, rows, f32, i32) {
   f32[W_DEYE] = st.dEx; f32[W_DEYE + 1] = st.dEy; f32[W_DEYE + 2] = st.dEz; f32[W_DEYE + 3] = 0;
   i32[W_COLS] = cols; i32[W_ROWS] = rows; i32[W_VALID] = st.histValid ? 1 : 0; i32[W_ORTHO] = st.cur.ortho === 1 ? 1 : 0;
   i32[W_SNAP] = CHANNEL_SNAP; f32[W_DETAIL] = DEFAULT_DETAIL;
-  i32[W_AAFLAGS] = (st.aaGlyph ? 1 : 0) | (st.aaMesh ? 2 : 0) | (st.aaVm ? 4 : 0) | (st.aaJoint ? 8 : 0) | (st.aaAnchor ? 16 : 0); // OB-198: ?aaglyph=0 / ?aamesh=0
+  i32[W_AAFLAGS] = (st.aaGlyph ? 1 : 0) | (st.aaMesh ? 2 : 0) | (st.aaVm ? 4 : 0) | (st.aaJoint ? 8 : 0) | (st.aaAnchor ? 16 : 0) | (st.aaGraze ? 32 : 0); // OB-198: ?aaglyph=0 / ?aamesh=0
 }
 
 export class WgStablePass {
@@ -44,7 +44,7 @@ export class WgStablePass {
     this.device = device;
     this.cols = 0; this.rows = 0; this._k = 0; this.ran = false;
     this.st = createStableState();
-    this.st.aaGlyph = !(opts && opts.aaGlyph === false); this.st.aaMesh = !(opts && opts.aaMesh === false); this.st.aaVm = !(opts && opts.aaVm === false); this.st.aaJoint = !(opts && opts.aaJoint === false); this.st.aaAnchor = !(opts && opts.aaAnchor === false); // OB-198
+    this.st.aaGlyph = !(opts && opts.aaGlyph === false); this.st.aaMesh = !(opts && opts.aaMesh === false); this.st.aaVm = !(opts && opts.aaVm === false); this.st.aaJoint = !(opts && opts.aaJoint === false); this.st.aaAnchor = !(opts && opts.aaAnchor === false); this.st.aaGraze = !(opts && opts.aaGraze === false); // OB-198, AA-20
     this.pipe = device.createPipeline({
       vertex: { src: { wgsl: STABLE_WGSL } }, fragment: { src: { wgsl: STABLE_WGSL }, targets: 3 },
       bindings: { uniformBytes: STABLE_BLOCK.sizeBytes, textures: STABLE_TEXTURES.slice() },

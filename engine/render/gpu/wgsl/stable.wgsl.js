@@ -16,7 +16,7 @@
 import { defineUniformBlock } from './uniformBlock.js';
 import { GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL, REPROJECT_WGSL } from './common.wgsl.js';
 import { KIND_NONE, KIND_MODEL, KIND_MESH } from '../../GBuffer.js';
-import { LEVEL_NONE, LEVEL_ANIM, UV_LIM_TEXELS, STABLE_FOOT_K } from '../../temporalStable.js';
+import { LEVEL_NONE, LEVEL_ANIM, UV_LIM_TEXELS, STABLE_FOOT_K, GRAZE_K, GRAZE_CAP } from '../../temporalStable.js';
 
 export const STABLE_BLOCK = defineUniformBlock('StableU', [
   { name: 'curA', type: 'vec4' },   // current terms: fX, fY, fZ, tanHalfX (halfW when ortho)
@@ -91,6 +91,24 @@ struct SCell {
   fresh: u32,    // 1 = no history taken
 };
 
+// AA-20: UV step to neighbour n when it is the same kind + material, else a huge value (twin: grazeUvLimit's step()).
+fn grazeStep(nx: i32, ny: i32, kind: u32, mat: u32, u0: f32, v0: f32) -> f32 {
+  if (nx < 0 || nx >= u.gridCols || ny < 0 || ny >= u.gridRows) { return 3.0e38; }
+  let g = textureLoad(uGI, vec2i(nx, ny), 0);
+  if (giKind(g.y) != kind || giMat(g.y) != mat) { return 3.0e38; }
+  let a = textureLoad(uGA, vec2i(nx, ny), 0);
+  let du = bitcast<f32>(a.x) - u0; let dv = bitcast<f32>(a.y) - v0;
+  return sqrt(du * du + dv * dv);
+}
+fn grazeLimit(cx: i32, cy: i32, kind: u32, mat: u32, u0: f32, v0: f32, lim: f32) -> f32 {
+  var gx = min(grazeStep(cx - 1, cy, kind, mat, u0, v0), grazeStep(cx + 1, cy, kind, mat, u0, v0));
+  var gy = min(grazeStep(cx, cy - 1, kind, mat, u0, v0), grazeStep(cx, cy + 1, kind, mat, u0, v0));
+  if (gx > 1.0e38) { gx = 0.0; }
+  if (gy > 1.0e38) { gy = 0.0; }
+  let g = min(${GRAZE_K.toFixed(4)} * max(gx, gy), ${GRAZE_CAP.toFixed(1)} * lim);
+  return max(g, lim);
+}
+
 // One cell of temporalStable.js stabilize(). The reject order is the twin's.
 fn stableCell(cell: vec2i) -> SCell {
   var o: SCell;
@@ -155,6 +173,8 @@ fn stableCell(cell: vec2i) -> SCell {
     // OB-193: limit = max(texel limit, cell footprint at this depth) - twin: temporalStable.js uvDriftLimit
     var uvLim = ${UV_LIM_TEXELS.toFixed(1)} / u.detailDefault;
     if (u.ortho == 0) { uvLim = max(uvLim, ${STABLE_FOOT_K.toFixed(4)} * vd * 2.0 * max(u.curA.w / f32(u.gridCols), u.curC.y / f32(u.gridRows))); }
+    // AA-20 (aaFlags bit 5): grazing surface -> the limit follows the cell's own UV step to same kind+mat neighbours (twin: temporalStable.js grazeUvLimit)
+    if (dUV >= uvLim && (u.aaFlags & 32) != 0 && u.ortho == 0) { uvLim = grazeLimit(cell.x, cell.y, kind, giMat(gi.y), bitcast<f32>(ga.x), bitcast<f32>(ga.y), uvLim); }
     if (dUV >= uvLim) { return o; }
   }
 

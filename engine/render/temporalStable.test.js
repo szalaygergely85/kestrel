@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import v8 from 'node:v8';
-import { encodeLevelByte, levelOfByte, covOfByte, vmTagOf, beginFrame, stabilize, createStableState, createStableBuffers, CHANNEL_SNAP, LEVEL_ANIM, LEVEL_NONE, UV_LIM_TEXELS, DEFAULT_DETAIL, uvDriftLimit } from './temporalStable.js';
+import { encodeLevelByte, levelOfByte, covOfByte, vmTagOf, beginFrame, stabilize, createStableState, createStableBuffers, CHANNEL_SNAP, LEVEL_ANIM, LEVEL_NONE, UV_LIM_TEXELS, DEFAULT_DETAIL, uvDriftLimit, grazeUvLimit, GRAZE_K, GRAZE_CAP } from './temporalStable.js';
 import { KIND_NONE, KIND_WALL, KIND_MODEL, KIND_MESH } from './GBuffer.js';
 import { makeOk } from '../test/assert.js';
 
@@ -168,7 +168,7 @@ function run(st, cam, inpFn, hist, flags) {
   ok('UV limit constant is 1.0/detail', UV_LIM_TEXELS === 1 && LIM === 0.0625);
   // setup: static camera, history = frame A exactly; `mut(inp, hist)` edits cells, then one stabilize
   const once = (mut, flags) => {
-    const st = createStableState(); st.footK = 0; st.aaAnchor = ANCHOR;
+    const st = createStableState(); st.footK = 0; st.aaAnchor = ANCHOR; st.aaGraze = false; // AA-20 graze limit tested on its own below
     beginFrame(st, cam0, GRID);
     const h = colHist(wallInput(st));
     beginFrame(st, cam0, GRID, flags);
@@ -213,7 +213,7 @@ function run(st, cam, inpFn, hist, flags) {
   ok('hsrc = history cell on a reached lookup, -1 before', o.hsrc[at(2, 3)] === at(2, 3) && r2.out.hsrc[at(2, 6)] === -1);
 
   // slow-moving surface: u advances 0.3*lim per frame; the anchor stays on the first u, so the hold ends after 3 frames
-  const st = createStableState(); st.footK = 0; st.aaAnchor = false;
+  const st = createStableState(); st.footK = 0; st.aaAnchor = false; st.aaGraze = false;
   beginFrame(st, cam0, GRID);
   const a0 = wallInput(st);
   a0.level.fill(LEVEL_NONE);
@@ -435,3 +435,16 @@ console.log('ALL PASS');
     const b = wallInput(st); b.kind.fill(KIND_MESH); b.planeId.fill(9); const out = createStableBuffers(COLS, ROWS); stabilize(b, h, out, st); assert.equal(out.fresh[10 * COLS + 20], 1, 'aaMesh=0: planeId flip drops'); }
 }
 console.log('temporalStable OB-198 cases ok');
+
+// AA-20 (OB-208): graze limit = GRAZE_K x the smaller same-kind+mat UV step per axis (larger axis wins), capped, never below the base limit
+{
+  const C = 3, R = 3, u = new Float32Array(9), v = new Float32Array(9), kind = new Uint8Array(9).fill(7), mat = new Uint16Array(9), o = new Float64Array(1);
+  for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) { u[r * C + c] = c * 0.1; v[r * C + c] = r * 1.0; } // grazing: 1 m per row, 0.1 m per column
+  const inp = { cols: C, rows: R, u, v, kind, mat };
+  grazeUvLimit(inp, 1, 1, 0.05, o); assert.ok(Math.abs(o[0] - GRAZE_K * 1.0) < 1e-6, 'graze: row footprint (1 m) x K');
+  v[7] = 50; grazeUvLimit(inp, 1, 1, 0.05, o); assert.ok(Math.abs(o[0] - GRAZE_K * 1.0) < 1e-6, 'graze: a silhouette side (far row below) is ignored');
+  v[7] = 2; kind[1] = 9; kind[7] = 9; grazeUvLimit(inp, 1, 1, 0.05, o); assert.ok(Math.abs(o[0] - GRAZE_K * 0.1) < 1e-6, 'graze: no same-kind row neighbour -> column step only');
+  kind[1] = 7; kind[7] = 7; grazeUvLimit(inp, 1, 1, 0.01, o); assert.ok(Math.abs(o[0] - GRAZE_CAP * 0.01) < 1e-9, 'graze: capped at GRAZE_CAP x base');
+  grazeUvLimit(inp, 1, 1, 5, o); assert.equal(o[0], 5, 'graze: never below the base limit');
+}
+console.log('temporalStable AA-20 graze cases ok');

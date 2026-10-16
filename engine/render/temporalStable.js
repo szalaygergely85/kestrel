@@ -29,6 +29,10 @@ export const LEVEL_ANIM = 254;
 export const UV_LIM_TEXELS = 1.0;
 /** OB-193: the UV drift limit also scales with the cell's own world footprint (x this); a nearest-cell reprojection error is up to ~0.7 cell, so a fixed 1/detail limit (6 cm) rejected history on every wall farther than ~2 m at grid 400 -> the texel hash re-rolled each frame (glyph crawl). */
 export const STABLE_FOOT_K = 1.0;
+/** AA-20 (OB-208): grazing surfaces (road/terrain ahead) stretch a cell's UV footprint far past the view-perpendicular footprint above, so a
+ *  forward step's sub-cell reprojection error re-rolled the texel hash. Graze limit = GRAZE_K x the cell's own UV step to its same-kind+mat
+ *  neighbours (per axis the smaller of the two sides, so a silhouette side is ignored), capped at GRAZE_CAP x the base limit. Twin: stable.wgsl.js. */
+export const GRAZE_K = 0.75, GRAZE_CAP = 32;
 /** AA-07a: the view model's objectId range (raster.wgsl.js: 0xFFFF - handIndex, GI.w). */
 export const VM_ID_MIN = 0xFFF8;
 /** History tag of a cell: 0 = not a view-model cell, else 1 + (0xFFFF - objectId) (1..8, fits 4 bits of the GPU history word). */
@@ -92,6 +96,23 @@ export function uvDriftLimit(vd, tanHalfX, tanHalfY, cols, rows, detail, ortho, 
   return foot > lim ? foot : lim;
 }
 
+/** AA-20: graze-aware UV limit of cell (col,row): max(lim, min(GRAZE_K * max(gx, gy), GRAZE_CAP * lim)); g* = per axis the smaller UV step
+ *  to a same kind+mat neighbour (an axis with no such neighbour counts 0); result in out[0]. f64; the WGSL twin runs it in f32 only when dUV >= lim. */
+export function grazeUvLimit(inp, col, row, lim, out) {
+  const cols = inp.cols, rows = inp.rows, i = row * cols + col;
+  let gx = Math.min(col > 0 ? grazeStep(inp, i, i - 1) : Infinity, col < cols - 1 ? grazeStep(inp, i, i + 1) : Infinity);
+  let gy = Math.min(row > 0 ? grazeStep(inp, i, i - cols) : Infinity, row < rows - 1 ? grazeStep(inp, i, i + cols) : Infinity);
+  if (gx === Infinity) gx = 0;
+  if (gy === Infinity) gy = 0;
+  const g = Math.min(GRAZE_K * Math.max(gx, gy), GRAZE_CAP * lim);
+  out[0] = g > lim ? g : lim; // written, not returned: keeps the stabilize loop allocation-free (no boxed double)
+}
+function grazeStep(inp, i, j) {
+  if (inp.kind[j] !== inp.kind[i] || (inp.mat ? inp.mat[j] !== inp.mat[i] : false)) return Infinity;
+  const du = inp.u[j] - inp.u[i], dv = inp.v[j] - inp.v[i];
+  return Math.sqrt(du * du + dv * dv);
+}
+
 /** Allocates the buffers of one history/output set (ping-pong two of these). */
 export function createStableBuffers(cols, rows) {
   const n = cols * rows;
@@ -120,9 +141,10 @@ export function createStableState() {
     aaMesh: true, // OB-198 (2): KIND_MESH history survives a planeId change when the material matches; ?aamesh=0
     aaVm: true, // AA-07a: kind-8 models take history (view model: same cell, key objectId+mat; world props: material key + reprojection); ?aavm=0
     aaAnchor: true, // AA-09: a both-255 hold of a static surface re-anchors (writes the CURRENT u/v) so cumulative drift cannot re-roll it; ?aaanchor=0
+    aaGraze: true, // AA-20 (OB-208): UV drift limit follows the cell's own UV footprint on grazing surfaces (road ahead); ?aagraze=0
     aaJoint: true, // AA-07b: a line<->ramp mismatch holds the history glyph while the joint coverage is 1/4..3/4; ?aajoint=0
     footK: STABLE_FOOT_K, // tests may set 0 to isolate the texel limit
-    _pcell: new Float64Array(3), _pw: new Float64Array(3), _pc: new Float64Array(3),
+    _g: new Float64Array(1), _pcell: new Float64Array(3), _pw: new Float64Array(3), _pc: new Float64Array(3),
   };
 }
 
@@ -254,7 +276,8 @@ export function stabilize(inp, hist, out, st) {
         const detail = (inp.detail ? inp.detail[i] : 0) || DEFAULT_DETAIL;
         const du = inp.u[i] - hist.u[h], dv = inp.v[i] - hist.v[h];
         const dUV = Math.sqrt(du * du + dv * dv);
-        const lim = uvDriftLimit(vd, relCur.tanHalfX, relCur.tanHalfY, cols, rows, detail, ortho, st.footK);
+        let lim = uvDriftLimit(vd, relCur.tanHalfX, relCur.tanHalfY, cols, rows, detail, ortho, st.footK);
+        if (st.aaGraze && !ortho && dUV >= lim) { grazeUvLimit(inp, col, row, lim, st._g); lim = st._g[0]; } // AA-20: only past the base limit (GPU: lazy neighbour reads)
         if (Math.abs(dUV - lim) < TIE_EPS_UV) out.tie[i] = 1;
         if (dUV >= lim) continue;
       }
