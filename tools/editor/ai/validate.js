@@ -100,3 +100,13 @@ export function validateKinds(kinds, archetypes, opts = {}) {
 }
 
 export const validateBeasts = (archetypes, kinds, opts) => [...validateArchetypes(archetypes), ...validateKinds(kinds, archetypes, opts)];
+
+// VISQA-25: every beast kind's `model` must be a registered voxel/mesh model (else the beast falls back to the placeholder).
+// Kinds with a non-empty `todo` are declared placeholders (model still to be made) and are skipped.
+// kinds = parsed kinds.json ({kinds:[..]} or array / object map), modelNames = Set of registered model names.
+export function lintBeastModels(kinds, modelNames) {
+  const list = Array.isArray(kinds) ? kinds : Array.isArray(kinds && kinds.kinds) ? kinds.kinds : Object.values((kinds && kinds.kinds) || kinds || {});
+  const out = [];
+  for (const k of list) if (k && k.model && !k.todo && !modelNames.has(k.model)) out.push(`kind "${k.name || k.id}": model "${k.model}" is not a registered model`);
+  return out;
+}

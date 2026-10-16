@@ -1849,3 +1849,5 @@ Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-
   Files: engine/render/RenderTargetWebGPU.js, engine/render/gpu/wg/WgCellPipeline.js, engine/world/Terrain.js, engine/world/terrainEdits.js (+2 tests).
   CPU p50 -0.2..-0.7 ms every row (ultra 7.0/6.1/7.9 -> 6.5/5.6/7.5; high 5.7/4.8/6.7 -> 5.5/4.7/6.0), p99 flat, max = noise; 1 run per side.
   Gates: gpucompare only signal tower (+ known decorFord), flicker PASS, route-walk no FAIL, tests green (geo* load-flaky only), check-deps OK. Details: docs/test-reports/perf-2026-10-16.md PERF-04.
+- VISQA-25 WOLF-HUMANOID: false positive. kinds.json model "wolf" -> regionalBeasts MODEL -> voxel_wolf.js is registered and renders (4 legs); the sweep still framed the wolf head-on (narrow/tall front view reads humanoid). visqa-sweep.mjs now frames wolves from the side (docs/test-reports/visqa/s2-wolf.png shows the real wolf).
+  Added lintBeastModels (tools/editor/ai/validate.js, wired in validate-content; kinds with a `todo` placeholder are skipped) + beastModels.test.mjs; real content 0 errors.
