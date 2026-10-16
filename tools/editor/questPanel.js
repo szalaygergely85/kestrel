@@ -4,10 +4,9 @@
 //   write(relPath, text) persists one quest file (editor supplies its own io; default = download).
 import { loadQuests, saveQuest, saveAll, applyZones, makeStack } from './quest/model.js';
 import { buildLintCtx, liveLint, presetOptions, playUrl } from './quest/wire.js';
-import { questRows, filterRows, buildFlow, itemChoices, objText, objJournal } from './quest/flow.js';
+import { questRows, filterRows, itemChoices } from './quest/flow.js';
 import * as ed from './quest/edit.js';
 import * as fe from './quest/formatEdit.js';
-import { formatView, MAX_OBJECTIVES } from './quest/format.js';
 import { applyPick } from './quest/targets.js';
 import { createQuestPicker } from './questPick.js';
 import { renderLineEditor } from './questDialogue.js';
@@ -17,6 +16,9 @@ import { prereqRows, setRequiresKeepShape } from './quest/prereqs.js';
 import { originCards, setTurnInSameAsGiver } from './quest/originCards.js';
 import { objectiveCards, setStepKind, setStepCount, kindsFor, KIND_LABEL, MAX_TEXT } from './quest/objectiveCards.js';
 import { loadDialogues, saveDialogues, captureBaseline } from './quest/lines.js';
+import { conversationView, conversationLint } from './quest/conversation.js';
+import { rewardTiles, setRewardItems, rewardLint } from './quest/rewards.js';
+import { HEART_PIECE_ITEM } from './quest/format.js';
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 
@@ -34,33 +36,6 @@ export function memFs(files) {
 }
 
 export async function mountQuestPanel(root, opts) {
-  // QUEST-FORMAT (D-106): the fixed fields Begin / End / Requires / Objectives (max 3) / Rewards / Next as dropdowns of existing npcs, objects and quests.
-  const formatBlock = (q) => {
-    const v = formatView(q.raw), ch = fe.formatChoices(model, getWorld(), names), box = el('fieldset', 'q-format'); box.id = 'quest-format';
-    box.append(el('legend', null, 'Quest format'));
-    const sel = (id, label, opts2, value, onChange, none = '(none)') => {
-      const s = el('select'); s.id = id; s.append(new Option(none, ''));
-      for (const o of opts2) s.append(new Option(o.name, o.id));
-      s.value = value || ''; s.addEventListener('change', () => onChange(s.value));
-      const w = el('label', 'q-field'); w.append(el('span', null, label), s); return w;
-    };
-    const bKind = v.begin && v.begin.object !== undefined ? 'object' : 'npc', bId = v.begin ? (v.begin.object !== undefined ? v.begin.object : v.begin.npc) : '';
-    box.append(sel('qf-begin', 'Begin (npc)', ch.npcs, bKind === 'npc' ? bId : '', (id) => run(fe.setBegin(q, 'npc', id))));
-    box.append(sel('qf-begin-obj', 'Begin (object)', ch.objects, bKind === 'object' ? bId : '', (id) => run(fe.setBegin(q, 'object', id))));
-    box.append(sel('qf-end', 'End (hand-in npc)', ch.npcs, v.end && v.end.npc, (id) => run(fe.setEnd(q, id))));
-    const others = ch.quests.filter((x) => x.id !== q.id);
-    box.append(el('div', 'q-hint', 'Objectives: ' + v.objectives.length + ' / ' + MAX_OBJECTIVES + (v.objectives.length >= MAX_OBJECTIVES ? ' (full)' : '')));
-    const rw = v.rewards || {}, it = rw.items && rw.items[0];
-    const isel = el('select'); isel.id = 'qf-reward'; isel.append(new Option('(no item)', '')); for (const c of itemChoices(itemDefs)) isel.append(new Option(c.name, c.id)); isel.value = it ? it.id : '';
-    const num = (id, val) => { const i = el('input'); i.type = 'number'; i.min = 0; i.id = id; i.value = val || 0; i.style.width = '4em'; return i; };
-    const cnt = num('qf-reward-n', it ? it.n : 1), coin = num('qf-coin', rw.coin), hp = num('qf-heart', rw.heartPiece);
-    const msg = el('div', 'q-msg'); msg.id = 'qf-msg';
-    const setRw = () => { const c = fe.setRewards(q, { itemId: isel.value, n: Number(cnt.value) || 1, coin: Number(coin.value) || 0, heartPiece: Number(hp.value) || 0 }); if (c) run(c); else msg.textContent = 'Rewards can not be empty.'; };
-    for (const e of [isel, cnt, coin, hp]) e.addEventListener('change', setRw);
-    const rl = el('label', 'q-field'); rl.append(el('span', null, 'Rewards'), isel, cnt, el('span', null, 'coin'), coin, el('span', null, 'heart piece'), hp); box.append(rl, msg);
-    box.append(sel('qf-next', 'Next (offered at the hand-in)', others, v.next, (id) => run(fe.setNext(q, id))));
-    return box;
-  };
   const { names, itemDefs, loadFiles, write, getWorld = () => ({ entities: [] }), floorAt } = opts;
   const files = await loadFiles();
   // ED-QUEST-03b: areas.json stays in the model (area picks write it; Save writes it back); the overlay reads the same object
@@ -73,7 +48,8 @@ export async function mountQuestPanel(root, opts) {
   const lineBase = captureBaseline(model);
   let lineMsg = '';
   const stack = makeStack();
-  let current = null, filter = '', pickMsg = '', selObj = -1, showAll = false;   // ED-QUEST-04: selObj = step highlighted in the view
+  let current = null, filter = '', pickMsg = '', selObj = -1, showAll = false, wide = true;   // wide: the Quest tab opens as a wide panel (mockup density)
+  const applyWide = () => { root.classList.toggle('wide', wide); const d = document.getElementById('left-dock'); if (d) d.classList.toggle('q-wide', wide); };   // ED-QUEST-04: selObj = step highlighted in the view
   const sites = (model.files.get('sites.json') || { obj: {} }).obj.sites || {};
   // ED-QUEST-03: Pick mode. A hit from the viewport sets the armed slot via one undoable command.
   const picker = createQuestPicker({
@@ -85,7 +61,7 @@ export async function mountQuestPanel(root, opts) {
     },
   });
 
-  root.textContent = '';
+  root.textContent = ''; applyWide();
   const bar = el('div', 'q-bar');
   const search = el('input'); search.type = 'text'; search.placeholder = 'filter title / id / giver...'; search.id = 'quest-filter';
   bar.append(search);
@@ -119,6 +95,53 @@ export async function mountQuestPanel(root, opts) {
     wrap.append(inp); return wrap;
   }
 
+  // ED-QUI-05/06: conversation (Accept/Exit, dangling GOTO) and reward problems join the live lint list
+  const extraLint = (q, base) => [...base, ...conversationLint(dm, q, names), ...rewardLint(q, itemDefs, coinFlags)];
+  const coinFlags = { coinPaid: false };   // runtime pays items only (questBook.js); flip when the grant pays rewards.coin
+  // ED-QUI-06: card [05] reward tiles
+  function rewardsBox(q) {
+    const t = rewardTiles(q, itemDefs, coinFlags, model), wrap = el('div', 'q-rewards'); wrap.id = 'quest-rewards';
+    const msg = el('div', 'q-ptext'); msg.id = 'quest-reward-msg';
+    const apply = (patch) => { const r = setRewardItems(q, patch); if (r.error) { msg.textContent = r.error; return; } run(r.cmd); };
+    const grid = el('div', 'q-rgrid');
+    t.items.forEach((it, i) => {
+      const tile = el('div', 'q-rtile'); tile.dataset.item = it.id;
+      tile.append(el('div', 'q-oname', it.name));
+      if (it.rarity) tile.append(el('span', 'q-pill', it.rarity.toUpperCase()));
+      const n = el('input'); n.type = 'number'; n.min = 1; n.value = it.n; n.style.width = '3.5em';
+      n.addEventListener('change', () => apply({ items: t.items.map((x, j) => (j === i ? { id: x.id, n: Number(n.value) || 1 } : x)) }));
+      const rm = el('button', 'ed-btn', 'Remove'); rm.addEventListener('click', () => apply({ items: t.items.filter((_, j) => j !== i) }));
+      const row = el('div', 'q-orow'); row.append(n, rm); tile.append(row); grid.append(tile);
+    });
+    if (t.heart.shown) {
+      const tile = el('div', 'q-rtile'); tile.id = 'quest-heart';
+      tile.append(el('div', 'q-oname', 'Heart piece'));
+      const n = el('input'); n.type = 'number'; n.min = 0; n.max = 1; n.value = Math.min(1, t.heart.n); n.style.width = '3.5em';
+      n.addEventListener('change', () => apply({ heartPiece: Math.min(1, Math.max(0, Number(n.value) || 0)) }));
+      const row = el('div', 'q-orow'); row.append(n, el('span', 'q-ometa', '/ 1')); tile.append(row); grid.append(tile);
+    }
+    const coin = el('div', 'q-rtile disabled'); coin.id = 'quest-coin'; coin.title = t.coin.note;
+    coin.append(el('div', 'q-oname', 'Coin'));
+    const cn = el('input'); cn.type = 'number'; cn.min = 0; cn.value = t.coin.n; cn.style.width = '3.5em'; cn.disabled = !t.coin.enabled;
+    if (t.coin.enabled) cn.addEventListener('change', () => apply({ coin: Number(cn.value) || 0 }));
+    coin.append(cn); if (t.coin.note) coin.append(el('div', 'q-ometa', t.coin.note)); grid.append(coin);
+    const add = el('select'); add.id = 'quest-reward-add'; add.append(new Option('+ Add item...', ''));
+    for (const c of itemChoices(itemDefs)) if (c.id !== HEART_PIECE_ITEM && !t.items.some((x) => x.id === c.id)) add.append(new Option(c.name, c.id));
+    add.addEventListener('change', () => { if (add.value) apply({ items: [...t.items, { id: add.value, n: 1 }] }); });
+    const nx = el('div', 'q-rtile'); nx.id = 'quest-next';
+    nx.append(el('div', 'q-ohead', 'NEXT QUEST'));
+    const ns = el('select'); ns.append(new Option('(none)', ''));
+    for (const c of fe.formatChoices(model, getWorld(), names).quests) if (c.id !== q.id) ns.append(new Option(c.name, c.id));
+    ns.value = t.next ? t.next.id : ''; ns.addEventListener('change', () => run(fe.setNext(q, ns.value)));
+    nx.append(ns, el('div', 'q-ometa', 'Offered at hand-in, never auto-started'));
+    const hand = conversationView(dm, q, names).nodes.filter((x) => x.stage === 'Hand-in').flatMap((x) => x.sets);
+    if (hand.length) nx.append(el('div', 'q-ometa', 'Hand-in sets: ' + hand.join(', ')));
+    grid.append(nx);
+    wrap.append(grid, add, msg);
+    for (const p of t.problems) wrap.append(el('div', 'q-ptext', p));
+    return wrap;
+  }
+
   // ED-QUEST-05: live lint list, rebuilt on every redraw (every edit goes through run()/redraw)
   function goTo(t) {
     if (t.kind === 'objective') { const i = current.objectives.findIndex((o) => o.id === t.id); if (i >= 0) { selObj = i; redraw(); const b = detail.querySelector('[data-obj="' + i + '"]'); if (b && b.scrollIntoView) b.scrollIntoView({ block: 'nearest' }); } }
@@ -128,7 +151,7 @@ export async function mountQuestPanel(root, opts) {
   function lintBox(q) {
     const box = el('div', 'q-lint'); box.id = 'quest-lint';
     let msgs = [];
-    try { msgs = liveLint(model, q, buildLintCtx({ world: getWorld(), itemDefs, names, floorAt, sites, getMesh: opts.getMesh })); } catch (e) { msgs = [{ rule: 'R0', severity: 'warn', text: 'Lint failed: ' + (e && e.message), target: { kind: 'field', id: 'title' } }]; }
+    try { msgs = extraLint(q, liveLint(model, q, buildLintCtx({ world: getWorld(), itemDefs, names, floorAt, sites, getMesh: opts.getMesh }))); } catch (e) { msgs = [{ rule: 'R0', severity: 'warn', text: 'Lint failed: ' + (e && e.message), target: { kind: 'field', id: 'title' } }]; }
     box.append(el('b', null, msgs.length ? 'Problems (' + msgs.length + ')' : 'No problems'));
     for (const m of msgs) {
       const row = el('div', 'q-lint-row ' + m.severity); row.dataset.rule = m.rule;
@@ -158,7 +181,9 @@ export async function mountQuestPanel(root, opts) {
     row.append(el('span', 'q-pill id', 'QUEST ' + m.id), sc, el('span', 'q-pill ' + m.color, m.type === 'side' ? 'SIDE' : 'MAIN'), el('span', 'q-pill', m.region.toUpperCase()));
     const sim = el('button', 'ed-btn primary', 'SIM'); sim.id = 'quest-sim'; sim.title = 'Play from here (live game tab)';
     sim.addEventListener('click', () => { const b = document.getElementById('quest-play'); if (b) b.click(); });
-    row.append(nb, sim);
+    const wb = el('button', 'ed-btn', wide ? 'NARROW' : 'WIDE'); wb.id = 'quest-wide'; wb.title = 'Toggle the wide quest panel';
+    wb.addEventListener('click', () => { wide = !wide; applyWide(); redraw(); });
+    row.append(nb, sim, wb);
     box.append(row, field('Title', q.title, (v) => run(ed.setTitle(q, v))));
     return box;
   }
@@ -245,16 +270,13 @@ export async function mountQuestPanel(root, opts) {
     let host = detail;
     if (!q) { host.append(stripBox(null, [])); host.append(el('div', 'q-hint', 'Pick a quest.')); return; }
     let msgs = [];
-    try { msgs = liveLint(model, q, buildLintCtx({ world: getWorld(), itemDefs, names, floorAt, sites, getMesh: opts.getMesh })); } catch (e) { msgs = []; }
+    try { msgs = extraLint(q, liveLint(model, q, buildLintCtx({ world: getWorld(), itemDefs, names, floorAt, sites, getMesh: opts.getMesh }))); } catch (e) { msgs = []; }
     detail.append(stripBox(q, msgs));
     for (const c of CARDS) cards[c.id] = cardBox(c);
     const into = (id) => { host = cards[id].body; };
     for (const c of CARDS) detail.append(cards[c.id].box);
     into('prereq'); host.append(prereqCard(q));
     into('objectives');
-    const flow = el('pre', 'q-flow'); flow.id = 'quest-flow';
-    flow.textContent = buildFlow(q, names).map((n) => n.label + (n.detail ? '\n    ' + n.detail : '')).join('\n  v\n');
-    host.append(flow);
     into('validate'); host.append(lintBox(q)); into('spatial');
     const pickBtn = (slot, label) => {
       const b = el('button', 'ed-btn' + (picker.slot === slot || (picker.slot && slot && picker.slot.obj === slot.obj && slot.obj !== undefined) ? ' active' : ''), 'Pick');
@@ -267,22 +289,10 @@ export async function mountQuestPanel(root, opts) {
     into('conversation');
     host.append(renderLineEditor({ q, dm, base: lineBase, model, names, run, setMsg: (m) => { lineMsg = m; const e = document.getElementById('quest-line-msg'); if (e) e.textContent = m; } }));
     const lm = el('div', 'q-msg', lineMsg); lm.id = 'quest-line-msg'; host.append(lm);
-    host.append(field('Offer (Accept / Exit text, one line each)', ((q.lines && q.lines.offer) || []).join('\n'), (v) => run(ed.setOfferLines(q, v.split('\n'))), true));
     into('objectives');
     host.append(objectivesBox(q, pickBtn));
     into('spatial'); host.append(field('Return text', q.returnText || '', (v) => run(ed.setReturnText(q, v))));
-    into('rewards');
-    // reward item: picked by plain name, never a raw id
-    const cur = q.reward && q.reward.items && q.reward.items[0];
-    const sel = el('select'); sel.id = 'quest-reward';
-    sel.append(new Option('(no item)', ''));
-    for (const c of itemChoices(itemDefs)) sel.append(new Option(c.name, c.id));
-    sel.value = cur ? cur.id : '';
-    const cnt = el('input'); cnt.type = 'number'; cnt.min = 1; cnt.value = cur ? cur.n : 1; cnt.style.width = '4em';
-    const setReward = () => run(ed.setRewardItem(q, sel.value, Number(cnt.value) || 1));
-    sel.addEventListener('change', setReward); cnt.addEventListener('change', setReward);
-    const rw = el('label', 'q-field'); rw.append(el('span', null, 'Reward'), sel, cnt); host.append(rw);
-    host.append(formatBlock(q));
+    into('rewards'); host.append(rewardsBox(q));
     into('validate');
     const tools = el('div', 'q-tools');
     const undo = el('button', 'ed-btn', 'Undo'), redo = el('button', 'ed-btn', 'Redo'), save = el('button', 'ed-btn', 'Save'); save.id = 'quest-save';
