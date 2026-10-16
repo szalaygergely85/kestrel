@@ -277,7 +277,10 @@ function checkConsumerFile(file, src) {
     }
     // Rule 6: tools/editor/** is a second client of engine/index.js only -
     // it must never depend on game/ (architecture.md 24.2).
-    if (isEditorFile && (resolved.startsWith(GAME_DIR + path.sep) || resolved === GAME_DIR)) {
+    // ED-QUI-07b2 (architecture 38.85): the quest simulator runs the game's own browser-safe runner in the editor. Narrow allow-list: the runner + the quest boot loader (the parity test) only.
+    const fwd = (x) => x.split(path.sep).join('/');
+    const simOk = isEditorFile && /tools\/editor\/(questPanel\.js|quest\/sim\.test\.mjs)$/.test(fwd(file)) && /game\/js\/(quest\/questE2eRun|questBoot)\.js$/.test(fwd(resolved));
+    if (isEditorFile && !simOk && (resolved.startsWith(GAME_DIR + path.sep) || resolved === GAME_DIR)) {
       findings.push(`${rel(file)}:${line}: import "${spec}" resolves into game/ - tools/editor/** must not depend on game/`);
     }
   }

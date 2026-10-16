@@ -82,6 +82,22 @@ try {
   await snap('edqui-07a-roadvalidate.png', 'validate');                 // burl.road: [06] list + footer
   await ev('window.__questPanel.select("sq.burl.blue")'); await pause(300);
   await snap('edqui-07a.png', 'conversation');                           // sq.burl.blue: [04] + [06] in one view
+  // ED-QUI-07b2: SIM on burl.road (all green), STEP reveals one row at a time, strip SIM = same run
+  await ev('window.__questPanel.select("burl.road")'); await pause(300);
+  await ev('document.getElementById("quest-sim-run").click()');
+  let sum = ''; for (let i = 0; i < 60 && !/SIM (PASS|FAIL)/.test(sum); i++) { await pause(300); sum = await ev('(document.getElementById("quest-sim-sum") || {innerText:""}).innerText'); }
+  const simInfo = JSON.parse(await ev(`JSON.stringify({ sum: document.getElementById("quest-sim-sum").innerText, rows: document.querySelectorAll("#quest-sim-area .q-simrow").length, bad: document.querySelectorAll("#quest-sim-area .q-simrow.error").length, play: !document.getElementById("quest-sim-live").disabled })`));
+  console.log(JSON.stringify(simInfo));
+  assert.ok(/SIM PASS/.test(simInfo.sum) && simInfo.rows >= 10 && simInfo.bad === 0 && simInfo.play, 'sim burl.road: ' + JSON.stringify(simInfo));
+  await ev('document.getElementById("quest-sim-step").click()'); await pause(800);   // steps exhausted -> a new stepwise run shows 1 row
+  for (let i = 0; i < 40 && (await ev('document.querySelectorAll("#quest-sim-area .q-simrow").length')) !== 1; i++) await pause(300);
+  assert.equal(await ev('document.querySelectorAll("#quest-sim-area .q-simrow").length'), 1, 'STEP shows one row');
+  await ev('document.getElementById("quest-sim-step").click()'); await pause(300);
+  assert.equal(await ev('document.querySelectorAll("#quest-sim-area .q-simrow").length'), 2, 'STEP reveals the next row');
+  await ev('document.getElementById("quest-sim").click()');   // strip SIM = full run
+  for (let i = 0; i < 40 && (await ev('document.querySelectorAll("#quest-sim-area .q-simrow").length')) < 10; i++) await pause(300);
+  await snap('edqui-07b.png', 'validate');
+  assert.equal(await ev('JSON.stringify(window.__questPanel.model.quests.find(q => q.id === "burl.road").raw)'), before, 'SIM must not change the quest');
   assert.deepEqual(errors, [], 'page errors: ' + JSON.stringify(errors));
   console.log('verify-edqui-05 PASS');
 } finally {

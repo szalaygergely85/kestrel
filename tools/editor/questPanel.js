@@ -20,6 +20,7 @@ import { loadDialogues, saveDialogues, captureBaseline } from './quest/lines.js'
 import { conversationView } from './quest/conversation.js';
 import { rewardTiles, setRewardItems, rewardLint } from './quest/rewards.js';
 import { HEART_PIECE_ITEM } from './quest/format.js';
+import { buildEditorBundle, simSteps } from './quest/sim.js';
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 
@@ -149,6 +150,45 @@ export async function mountQuestPanel(root, opts) {
     else if (t.kind === 'giver' || t.kind === 'return') { opts.onFocus && t.id && opts.onFocus(t.id); const b = detail.querySelector('[data-pick="' + t.kind + '"]'); if (b && b.focus) b.focus(); }
     else { const f = detail.querySelector(t.kind === 'reward' ? '#quest-reward' : '[data-field="' + t.id + '"] input, [data-field="' + t.id + '"] textarea') || detail.querySelector('[data-field="title"] input'); if (f && f.focus) f.focus(); }
   }
+
+  // ED-QUI-07b2: SIM = the real quest runtime (runQuestE2e) on the OPEN, unsaved documents; STEP reveals one row at a time. Warns on FAIL, never blocks Play live.
+  const simRuns = new Map();   // quest id -> { result, shown, stamp }
+  const simStamp = (q) => JSON.stringify(q.raw) + '|' + [...dm.files.values()].map((f) => JSON.stringify(f.obj)).join('');
+  const fetchText = opts.fetchText || (async (p) => { try { const r = await fetch('../../' + p); return r.ok ? r.text() : null; } catch (e) { return null; } });
+  async function runSim(q, stepwise) {
+    const { runQuestE2e } = await import('../../game/js/quest/questE2eRun.js');
+    let result;
+    try { const bundle = await buildEditorBundle({ model, dm, itemDefs, fetchText, openEntities: (getWorld() || {}).entities || [] }); result = await runQuestE2e(bundle, q.id); }
+    catch (e) { const f = { name: '0 loaded', ok: false, detail: String((e && e.message) || e) }; result = { ok: false, steps: [f], firstFail: f }; }
+    simRuns.set(q.id, { result, shown: stepwise ? 1 : Infinity, stamp: simStamp(q) });
+    if (current === q) redraw();
+    goTo({ kind: 'card', id: 'validate' });
+  }
+  function simBox(q) {
+    const box = el('div', 'q-vsim'); box.id = 'quest-sim-area';
+    const head = el('div', 'q-vhead');
+    const run1 = el('button', 'ed-btn primary', 'SIM'), step = el('button', 'ed-btn', 'STEP'), live = el('button', 'ed-btn', 'Play live');
+    run1.id = 'quest-sim-run'; step.id = 'quest-sim-step'; live.id = 'quest-sim-live';
+    run1.title = 'Run the whole quest here (real quest runtime, your unsaved edits included)'; step.title = 'Show the run one step at a time'; live.title = 'Open the game tab at this quest (Play from here)';
+    run1.addEventListener('click', () => runSim(q, false));
+    live.addEventListener('click', () => { const b = document.getElementById('quest-play'); if (b) b.click(); });
+    const r = simRuns.get(q.id);
+    step.addEventListener('click', () => { if (!r || r.shown >= r.result.steps.length) runSim(q, true); else { r.shown++; redraw(); } });
+    head.append(run1, step, live); box.append(head);
+    if (!r) { box.append(el('div', null, 'STEP SIMULATOR: SIM runs the quest end to end (offer, talk, accept, objectives, hand-in, reward) on the real quest runtime.')); return box; }
+    const rows = simSteps(r.result), stale = r.stamp !== simStamp(q);
+    const sum = el('div', 'q-simsum ' + (r.result.ok ? 'ok' : 'error'), (r.result.ok ? 'SIM PASS: ' + rows.length + ' steps' : 'SIM FAIL: ' + (r.result.firstFail ? r.result.firstFail.name + ' - ' + r.result.firstFail.detail : '')) + (stale ? ' (edited since this run - run SIM again)' : ''));
+    sum.id = 'quest-sim-sum'; box.append(sum);
+    if (!r.result.ok) box.append(el('div', 'q-vrow warn', 'This quest fails the simulation. Play live still opens, but it may not complete.'));
+    rows.slice(0, r.shown).forEach((s) => {
+      const row = el('div', 'q-vrow q-simrow ' + (s.ok ? 'ok' : 'error') + (s.first ? ' first' : '')); row.dataset.step = s.name;
+      const go = el('button', 'ed-btn', 'Go to'); go.addEventListener('click', () => goTo({ kind: 'card', id: s.card }));
+      row.append(el('span', 'rule', s.status), el('span', null, s.label + (s.detail ? ' - ' + s.detail : '') + ' '));
+      if (!s.ok) row.append(go);
+      box.append(row);
+    });
+    return box;
+  }
   // ED-QUI-07a: the whole static check of the open quest (lintQuest + format + R19 + conversation + reward), one result for the list, the footer and the strip chip
   const lintCtx = () => ({ ...buildLintCtx({ world: getWorld(), itemDefs, names, floorAt, sites, getMesh: opts.getMesh }), names });
   const validateOf = (q) => {
@@ -169,7 +209,7 @@ export async function mountQuestPanel(root, opts) {
     const foot = el('div', 'q-vfoot'); foot.id = 'quest-vfoot';
     const vd = el('span', 'verdict ' + ft.kind, ft.verdict); vd.id = 'quest-verdict';
     foot.append(el('span', null, 'FILE ' + ft.path), el('span', null, ft.bytes + ' bytes'), vd); box.append(foot);
-    const sim = el('div', 'q-vsim', 'STEP SIMULATOR: runs the quest end to end here (ED-QUI-07b).'); sim.id = 'quest-sim-area'; box.append(sim);   // placeholder for the 07b runner
+    box.append(simBox(q));   // ED-QUI-07b2: STEP SIMULATOR (runs questE2eRun on the open documents)
     return box;
   }
 
@@ -191,8 +231,8 @@ export async function mountQuestPanel(root, opts) {
     const row = el('div', 'q-strip-row');
     const sc = el('span', 'q-pill status ' + m.status.kind, m.status.label); sc.id = 'quest-status';
     row.append(el('span', 'q-pill id', 'QUEST ' + m.id), sc, el('span', 'q-pill ' + m.color, m.type === 'side' ? 'SIDE' : 'MAIN'), el('span', 'q-pill', m.region.toUpperCase()));
-    const sim = el('button', 'ed-btn primary', 'SIM'); sim.id = 'quest-sim'; sim.title = 'Play from here (live game tab)';
-    sim.addEventListener('click', () => { const b = document.getElementById('quest-play'); if (b) b.click(); });
+    const sim = el('button', 'ed-btn primary', 'SIM'); sim.id = 'quest-sim'; sim.title = 'Simulate this quest (STEP SIMULATOR, card [06])';
+    sim.addEventListener('click', () => runSim(q, false));
     const wb = el('button', 'ed-btn', wide ? 'NARROW' : 'WIDE'); wb.id = 'quest-wide'; wb.title = 'Toggle the wide quest panel';
     wb.addEventListener('click', () => { wide = !wide; applyWide(); redraw(); });
     row.append(nb, sim, wb);
