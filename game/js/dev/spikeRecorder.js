@@ -16,6 +16,24 @@ export class SpikeRecorder extends FrameProfiler {
     this.prev = new Float64Array(this.names.length); this.prevJs = 0;
     this._t0 = 0; this._lastT0 = 0; this._heap0 = 0; this._lastHeapEnd = 0;
     this.lastLine = '';
+    // PERF-06: heap growth per section over the whole run (bytes; a heap DROP = a GC ran and is not counted). Slot
+    // names.length = inside the frame but outside any lap, names.length + 1 = between frames (rAF callbacks, events).
+    this.allocB = new Float64Array(this.names.length + 2); this._heapMark = 0;
+    this.trackAlloc = false; // set by tools/perf-walk.mjs --alloc (a heap read per lap; off for timing runs)
+  }
+
+  add(i, ms) {
+    super.add(i, ms);
+    if (!this.trackAlloc) return;
+    const h = heapNow(); if (h > this._heapMark) this.allocB[i] += h - this._heapMark;
+    this._heapMark = h;
+  }
+
+  /** PERF-06: { section: MB } allocated over the run, largest first (dev report). */
+  allocReport() {
+    const n = this.names.length, out = [];
+    for (let i = 0; i < this.allocB.length; i++) if (this.allocB[i] > 0) out.push([i < n ? this.names[i] : i === n ? 'frame:unlapped' : 'between', +(this.allocB[i] / 1048576).toFixed(1)]);
+    return out.sort((a, b) => b[1] - a[1]);
   }
 
   beginFrame() {
@@ -23,6 +41,9 @@ export class SpikeRecorder extends FrameProfiler {
     this.cur.fill(0);
     this._lastT0 = this._t0; this._t0 = performance.now();
     this._heap0 = heapNow();
+    const n = this.names.length;
+    if (this.trackAlloc && this._lastHeapEnd && this._heap0 > this._lastHeapEnd) this.allocB[n + 1] += this._heap0 - this._lastHeapEnd;
+    this._heapMark = this._heap0;
   }
 
   /** top-k sections of `arr` as "name ms" text (spike path only). */
@@ -37,6 +58,7 @@ export class SpikeRecorder extends FrameProfiler {
     super.endFrame(simMs, renderMs, steps);
     const js = simMs + renderMs, itv = this._lastT0 > 0 ? this._t0 - this._lastT0 : 0;
     const heapEnd = heapNow();
+    if (this.trackAlloc && heapEnd > this._heapMark) this.allocB[this.names.length] += heapEnd - this._heapMark;
     const gcIn = Math.max(0, this._heap0 - heapEnd) / 1048576, gcBetween = Math.max(0, this._lastHeapEnd - this._heap0) / 1048576;
     this._lastHeapEnd = heapEnd;
     this.frames++;

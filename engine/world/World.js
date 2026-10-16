@@ -2351,7 +2351,9 @@ export class World {
    * replacement for reading `world._entities` directly (e.g. `SpritePool.collect`).
    */
   forEachEntity(fn) {
-    for (const [id, e] of this._entities) fn(e, id);
+    // PERF-08: Map#forEach, not `for (const [id, e] of ...)`: the destructured entry array was allocated per entity
+    // per call in Chrome (~440 MB / 60 s walk). Same order and live semantics; fn also gets the Map as a 3rd arg (unused).
+    this._entities.forEach(fn);
   }
 
   _handleFor(id) {

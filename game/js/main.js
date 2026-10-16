@@ -1550,10 +1550,10 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         ++decorVer; decorPass.setMasks(w.decor, decorVer); decorPass.setNear({ data: nb.hDraw, w: nb.w, h: nb.h, x0: nb.x0, y0: nb.y0, cell: nb.cell }, decorVer);
       } catch (e) { decorDbg.bad = true; decorPass.setMasks(null, 0); console.warn('[decor] GPU decor disabled: ' + (e && e.message)); }
     };
-    engine.events.on('world:loaded', (e) => pushDecor(e && e.world)); engine.events.on('world:band', () => pushDecor()); engine.events.on('world:scatter', (e) => pushDecor(e && e.world));
+    engine.events.on('world:loaded', (e) => pushDecor(e && e.world)); engine.events.on('world:scatter', (e) => pushDecor(e && e.world)); // PERF-06: no world:band hook - World._publishBand always emits world:scatter right after it (was pushed twice per swap)
     window.__debug = window.__debug || {}; // verify-decor.mjs: count = candidate lattice cells of the last frame (no readback), dispatches/frameErrors cumulative
     window.__debug.decorStats = () => ({ on: !!(decorPass && decorPass.on), count: decorPass ? decorPass.stats.lastThreads : 0, dispatches: decorDbg.total, frameErrors: decorDbg.frameErrors });
-    engine.events.on('world:loaded', (e) => pushCarpet(e && e.world)); engine.events.on('world:band', () => pushCarpet()); engine.events.on('world:scatter', () => pushCarpet()); // review 12d: refreshTerrainScatter rebuilds the carpet too // the event's world: engine.world is not swapped yet when world:loaded fires
+    engine.events.on('world:loaded', (e) => pushCarpet(e && e.world)); engine.events.on('world:scatter', () => pushCarpet()); // PERF-06: world:scatter follows every world:band (one push per swap, was 2 x 1.8 ms) // review 12d: refreshTerrainScatter rebuilds the carpet too // the event's world: engine.world is not swapped yet when world:loaded fires
     engine.events.on('world:loaded', (evt) => {
       const world = evt.world;
       bootMark('world:loaded (world built, handler start)');

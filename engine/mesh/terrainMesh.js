@@ -440,7 +440,19 @@ function pushTerrainItem(list, mesh, ox, oy, oz, objectId, rangeIdx) {
 function distToRectXY(cx, cy, x0, y0, x1, y1) {
   const nx = Math.min(Math.max(cx, x0), x1);
   const ny = Math.min(Math.max(cy, y0), y1);
-  return Math.hypot(cx - nx, cy - ny);
+  return hypot2(cx - nx, cy - ny);
+}
+
+// PERF-08: bit-exact copy of V8's 2-arg Math.hypot (PERF-07: 10M-pair compare 0 diffs). The variadic builtin boxes its
+// arguments/result (~140 MB / 60 s walk in the shadow-list build); this one stays on unboxed doubles when inlined.
+function hypot2(a, b) {
+  a = a < 0 ? -a : a; b = b < 0 ? -b : b;
+  if (a === Infinity || b === Infinity) return Infinity;
+  if (a !== a || b !== b) return NaN;
+  const m = a > b ? a : b;
+  if (m === 0) return 0;
+  const na = a / m, nb = b / m;
+  return Math.sqrt(na * na + nb * nb) * m;
 }
 
 // ---------------------------------------------------------------------------
@@ -567,6 +579,7 @@ export class TerrainMeshSet {
     this.near = this._nearA;
     this._builtFor = null; this._buildingFor = null; this._buildRow = 0;
     this._bandNrm = new Float32Array(bandW * bandH * 3); // scratch: per-band-vertex normal, filled row by row
+    this._chunkZ = new Float64Array(total * 2); // PERF-06: per back chunk [minZ, maxZ], accumulated row by row
     // Draw-list keys: near chunks 0..total-1, stitch = total (9 for 3x3), far tiles from `_farKey0` (16 for 3x3)
     this._farKey0 = Math.max(16, total + 1);
   }
@@ -583,46 +596,52 @@ export class TerrainMeshSet {
       const o3 = (rowBase + i) * 3;
       this._bandNrm[o3] = sN.x; this._bandNrm[o3 + 1] = sN.y; this._bandNrm[o3 + 2] = sN.z;
     }
+    this._fillBackRow(g, j);
   }
 
+  /** PERF-06: copies band row `j` (height, packed normal, local xy) into every BACK chunk that holds it and grows that chunk's
+   * z range - the vertex fill `_publishNear` used to do for the whole band in the flip frame (13 ms), now spread over the
+   * budgeted row build. The back set is never drawn before `_publishNear` flips it, so writing it early is invisible. */
+  _fillBackRow(g, j) {
+    const back = this.near === this._nearA ? this._nearB : this._nearA, cz = this._chunkZ, cw = this._cw;
+    if (j === 0) for (let k = 0; k < cz.length; k += 2) { cz[k] = Infinity; cz[k + 1] = -Infinity; }
+    for (let ky = 0; ky < this._ch; ky++) {
+      const rowInfo = this._chunkRow[ky];
+      if (j < rowInfo.start || j > rowInfo.end) continue; // shared boundary rows belong to two chunk rows
+      const lj = j - rowInfo.start, ly = (lj + 0.5) * g.cell;
+      for (let kx = 0; kx < cw; kx++) {
+        const i9 = ky * cw + kx, mesh = back[i9], colInfo = this._chunkCol[kx], cc = colInfo.count;
+        const pos = mesh.pos, nrm = mesh.nrm, bn = this._bandNrm;
+        let minZ = cz[i9 * 2], maxZ = cz[i9 * 2 + 1];
+        for (let li = 0; li < cc; li++) {
+          const srcIdx = colInfo.start + li + j * g.w, dstV = li + lj * cc, z = g.hDraw[srcIdx];
+          // Band vertex (i, j) sits at the CELL CENTRE `x0 + (i + 0.5) cell` (27.15.5) - the same sample point
+          // `util.gridHeight`'s bilinear, the far tiles and the stitch ring use (architect fix ME-06: was the cell corner).
+          pos[dstV * 3] = (li + 0.5) * g.cell; pos[dstV * 3 + 1] = ly; pos[dstV * 3 + 2] = z;
+          const nOff = srcIdx * 3;
+          nrm[dstV] = packNormalOct(bn[nOff], bn[nOff + 1], bn[nOff + 2]);
+          if (z < minZ) minZ = z;
+          if (z > maxZ) maxZ = z;
+        }
+        cz[i9 * 2] = minZ; cz[i9 * 2 + 1] = maxZ;
+      }
+    }
+  }
+
+  /** Flips the back chunk set (vertices already filled row by row in `_fillBackRow`): origin, bbox, version only. */
   _publishNear(g) {
-    const back = this.near === this._nearA ? this._nearB : this._nearA;
+    const back = this.near === this._nearA ? this._nearB : this._nearA, cz = this._chunkZ;
     for (let ky = 0; ky < this._ch; ky++) {
       for (let kx = 0; kx < this._cw; kx++) {
         const i9 = ky * this._cw + kx;
         const mesh = back[i9];
         const colInfo = this._chunkCol[kx], rowInfo = this._chunkRow[ky];
         const cc = colInfo.count, rc = rowInfo.count;
-        const ox = g.x0 + colInfo.start * g.cell, oy = g.y0 + rowInfo.start * g.cell;
-        mesh._origin.x = ox; mesh._origin.y = oy; mesh._origin.z = 0;
-        let minZ = Infinity, maxZ = -Infinity;
-        for (let lj = 0; lj < rc; lj++) {
-          const gj = rowInfo.start + lj;
-          for (let li = 0; li < cc; li++) {
-            const gi = colInfo.start + li;
-            const srcIdx = gi + gj * g.w;
-            const z = g.hDraw[srcIdx];
-            const dstV = li + lj * cc;
-            // Band vertex (i, j) sits at the CELL CENTRE `x0 + (i + 0.5) cell`
-            // (27.15.5) - the same sample point `util.gridHeight`'s bilinear
-            // (`fx = x/cell - 0.5`), the far tiles and the stitch ring use.
-            // Architect fix (ME-06): this was `li * cell` (cell corner), a
-            // 1 m shift of the whole band vs the DDA oracle and the stitch.
-            mesh.pos[dstV * 3] = (li + 0.5) * g.cell;
-            mesh.pos[dstV * 3 + 1] = (lj + 0.5) * g.cell;
-            mesh.pos[dstV * 3 + 2] = z;
-            const nOff = srcIdx * 3;
-            mesh.nrm[dstV] = packNormalOct(this._bandNrm[nOff], this._bandNrm[nOff + 1], this._bandNrm[nOff + 2]);
-            if (z < minZ) minZ = z;
-            if (z > maxZ) maxZ = z;
-          }
-        }
-        mesh.bbox[0] = 0.5 * g.cell; mesh.bbox[1] = 0.5 * g.cell; mesh.bbox[2] = minZ;
-        mesh.bbox[3] = (cc - 0.5) * g.cell; mesh.bbox[4] = (rc - 0.5) * g.cell; mesh.bbox[5] = maxZ;
-        // Architect fix (ME-06): front/back chunks share one `id` (the GPU
-        // cache key, MeshBuffers.js) so the version must be unique across
-        // BOTH sets - a per-mesh `++` gave A and B the same numbers and the
-        // second flip re-used a stale vertex buffer.
+        mesh._origin.x = g.x0 + colInfo.start * g.cell; mesh._origin.y = g.y0 + rowInfo.start * g.cell; mesh._origin.z = 0;
+        mesh.bbox[0] = 0.5 * g.cell; mesh.bbox[1] = 0.5 * g.cell; mesh.bbox[2] = cz[i9 * 2];
+        mesh.bbox[3] = (cc - 0.5) * g.cell; mesh.bbox[4] = (rc - 0.5) * g.cell; mesh.bbox[5] = cz[i9 * 2 + 1];
+        // Architect fix (ME-06): front/back chunks share one `id` (the GPU cache key, MeshBuffers.js) so the version must be
+        // unique across BOTH sets - a per-mesh `++` gave A and B the same numbers and the second flip re-used a stale buffer.
         mesh.meshVersion = ++this._nearVersion;
       }
     }
