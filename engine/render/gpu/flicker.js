@@ -313,7 +313,14 @@ export function flickerGlyphReasons(d, p, hmap, cols, rows, terms, cnt) {
         if (dUV >= gl) { r = 'uvDrift'; const b = 'uv' + (dUV < 2 * lim ? '<2' : dUV < 4 * lim ? '<4' : '4+'); cnt.sub[b] = (cnt.sub[b] || 0) + 1;
           const lk = (lvC === lvP ? 'uvLv=:' : 'uvLv!:') + kind; cnt.sub[lk] = (cnt.sub[lk] || 0) + 1; const mk = 'uvMat:' + kind + ':' + mat; cnt.sub[mk] = (cnt.sub[mk] || 0) + 1;
           const gk = (gl <= lim ? 'gz0:' : dUV < 2 * gl ? 'gz1-2:' : 'gz2+:') + kind; // AA-26: vs the AA-20 graze limit
-          cnt.sub[gk] = (cnt.sub[gk] || 0) + 1; const pk = (p.hist[h * 4] === d.GI[o] ? 'uvPl=:' : 'uvPl!:') + kind; cnt.sub[pk] = (cnt.sub[pk] || 0) + 1; }
+          cnt.sub[gk] = (cnt.sub[gk] || 0) + 1; const pk = (p.hist[h * 4] === d.GI[o] ? 'uvPl=:' : 'uvPl!:') + kind; cnt.sub[pk] = (cnt.sub[pk] || 0) + 1;
+          if (p.GA) { const ru = bitsToF32(d.GA[o]) - bitsToF32(p.GA[h * 4]), rv = bitsToF32(d.GA[o + 1]) - bitsToF32(p.GA[h * 4 + 1]); // AA-30: raw prev uv vs held anchor
+            const rk = (Math.sqrt(ru * ru + rv * rv) < gl ? 'uvRaw<:' : 'uvRaw>:') + kind + (p.hist[h * 4] === d.GI[o] ? '/pl=' : '/pl!'); cnt.sub[rk] = (cnt.sub[rk] || 0) + 1; }
+          { let nb = 'uvNb-'; const hx = h % cols, hy = (h - hx) / cols; // AA-30: a 3x3 history neighbour with the current plane and uv in limit?
+            for (let yy = hy - 1; yy <= hy + 1 && nb === 'uvNb-'; yy++) for (let xx = hx - 1; xx <= hx + 1; xx++) { if (xx < 0 || yy < 0 || xx >= cols || yy >= rows) continue;
+              const j = yy * cols + xx; if (j === h || p.hist[j * 4] !== d.GI[o]) continue; const nu = bitsToF32(d.GA[o]) - bitsToF32(p.hist[j * 4 + 1]), nv = bitsToF32(d.GA[o + 1]) - bitsToF32(p.hist[j * 4 + 2]);
+              if (Math.sqrt(nu * nu + nv * nv) < gl) { nb = 'uvNb+'; break; } }
+            const nk = nb + ':' + kind + (p.hist[h * 4] === d.GI[o] ? '/pl=' : '/pl!'); cnt.sub[nk] = (cnt.sub[nk] || 0) + 1; } }
         else if (joint) r = 'replayHold';
         else if (c255) {
           let snapped = false;
