@@ -1214,6 +1214,67 @@ async function lintRegionsReal(ASSETS, sites) {
   return lintRegions({ geo: { bounds, regions }, quests: pack.quests, sites, relayIds: Object.keys(RELAY_WAKE), itemIds: new Set(Object.keys(ASSETS.items?.defs || {})), beastKinds: new Set(['boar', 'wolf', 'bear']), camps }); // kinds = quest.js kindOf() species
 }
 
+// QUEST-TEXT-LINT-01 (R19): player-visible quest + dialogue text. Pure; files = [{ path, json }] (path under content/quests or content/dialogue).
+// Visible keys only (ids in id/key/next/requires/setFlag/node fields are fine). Kinds: writer, id, esc, objlen (<= 38), talklen (<= 56).
+const R19_VISIBLE = new Set(['title', 'text', 'journal', 'returnText', 'objText', 'nextHint', 'hint', 'hintTitle', 'prompt', 'accept', 'later', 'lines']);
+const R19_OBJ_KEYS = new Set(['text', 'objText', 'journal', 'returnText']); // objective / journal lines (quest files)
+export const R19_OBJ_MAX = 38, R19_TALK_MAX = 56;
+export function lintQuestText(files) {
+  const out = [];
+  for (const { path, json } of files) {
+    const isDialogue = /(^|[\/])dialogue[\/]/.test(path);
+    const walk = (v, where, key, visible) => {
+      if (typeof v === 'string') {
+        if (!visible || !v) return;
+        const add = (kind, msg) => out.push({ file: path, where, kind, text: v, msg });
+        if (/NEEDS WRITER/i.test(v)) add('writer', 'NEEDS WRITER');
+        if (/\b(mq|sq|note|flag|item)\.[a-z]/i.test(v)) add('id', 'raw id in player text');
+        if (/\besc\b/i.test(v)) add('esc', 'Esc hint');
+        if (!isDialogue && R19_OBJ_KEYS.has(key) && v.length > R19_OBJ_MAX) add('objlen', `${v.length} chars > ${R19_OBJ_MAX}`);
+        if (isDialogue && (key === 'text' || key === 'lines') && v.length > R19_TALK_MAX) add('talklen', `${v.length} chars > ${R19_TALK_MAX}`);
+      } else if (Array.isArray(v)) v.forEach((x, i) => walk(x, `${where}[${i}]`, key, visible));
+      else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) walk(x, where ? `${where}.${k}` : k, k, visible || R19_VISIBLE.has(k));
+    };
+    walk(json, '', '', false);
+  }
+  return out;
+}
+
+// Named allow-list of today's hits: "<file>|<kind>" -> max hits. It may only shrink (a larger count fails; so does a stale, too-high entry).
+export const R19_ALLOW = { // today's journal-length hits (writer to shorten later; may only shrink)
+  'content/quests/burl.boars.quest.json|objlen': 1,
+  'content/quests/burl.follow.quest.json|objlen': 1,
+  'content/quests/burl.stone.quest.json|objlen': 1,
+  'content/quests/ch12/pack.json|objlen': 52,
+  'content/quests/ch3/pack.json|objlen': 17,
+  'content/quests/ch3b/pack.json|objlen': 6,
+  'content/quests/m1.quest.json|objlen': 13,
+  'content/quests/mq.bend.call.quest.json|objlen': 2,
+  'content/quests/mq.ford.mirror.quest.json|objlen': 2,
+  'content/quests/mq.ford.stones.quest.json|objlen': 1,
+  'content/quests/mq.river.road.quest.json|objlen': 1,
+  'content/quests/mq.smoke.quest.json|objlen': 2,
+  'content/quests/regions/pack.json|objlen': 10,
+  'content/quests/sq.burl.blue.quest.json|objlen': 2,
+  'content/quests/tower.blade.quest.json|objlen': 3,
+  'content/quests/under.crypt.quest.json|objlen': 3,
+  'content/quests/under.graves.quest.json|objlen': 2,
+};
+export function applyR19Allow(hits, allow = R19_ALLOW) {
+  const errors = [], counts = {};
+  for (const h of hits) { const k = `${h.file}|${h.kind}`; counts[k] = (counts[k] || 0) + 1; }
+  for (const h of hits) { const k = `${h.file}|${h.kind}`; if (counts[k] > (allow[k] || 0) && !h.reported) { for (const x of hits) if (`${x.file}|${x.kind}` === k) x.reported = true; errors.push(`R19 ${h.file}: ${counts[k]} ${h.kind} hit(s), allowed ${allow[k] || 0}; first: ${h.where} "${h.text.slice(0, 60)}" (${h.msg})`); } }
+  for (const [k, n] of Object.entries(allow)) if ((counts[k] || 0) < n) errors.push(`R19 allow-list '${k}' is stale (${counts[k] || 0} < ${n}): lower it`);
+  return errors;
+}
+
+function readJsonTree(dir, suffix) {
+  const out = [];
+  const walk = (d) => { for (const e of readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) { const p = `${d}/${e.name}`; if (e.isDirectory()) walk(p); else if (e.name.endsWith(suffix)) { try { out.push({ path: p, json: JSON.parse(readFileSync(p, 'utf8')) }); } catch { /* parse errors reported elsewhere */ } } } };
+  if (existsSync(dir)) walk(dir);
+  return out;
+}
+
 async function main() {
   const ASSETS = await loadDesignAssets();
   const meshFilesDir = fileURLToPath(new URL('../content/meshes', import.meta.url));
@@ -1244,6 +1305,14 @@ async function main() {
     allErrors.push(...validateSpawnAreas(JSON.parse(readFileSync(`${bd}/spawnAreas.json`, 'utf8')), JSON.parse(readFileSync(`${bd}/kinds.json`, 'utf8'))).map((m) => `spawn areas: ${m}`));
   } catch (e) { allErrors.push(`beasts: could not validate content/beasts: ${e.message}`); }
   try { allErrors.push(...await lintRegionsReal(ASSETS, packQuests.sites || {})); } catch (e) { allErrors.push(`regions: lint crashed: ${e.message}`); }
+  { // QUEST-TEXT-LINT-01 R19
+    const root = fileURLToPath(new URL('..', import.meta.url)).split(String.fromCharCode(92)).join('/').replace(/[/]$/, '');
+    const rel = (f) => ({ ...f, path: f.path.split(String.fromCharCode(92)).join('/').replace(root + '/', '') });
+    const hits = lintQuestText([...readJsonTree(fileURLToPath(new URL('../content/quests', import.meta.url)), '.json'), ...readJsonTree(dialogueFilesDir, '.json')].map(rel));
+    const by = {}; for (const h of hits) by[h.kind] = (by[h.kind] || 0) + 1;
+    infos.push(`R19 quest/dialogue text: ${hits.length} hit(s) ${JSON.stringify(by)}; allow-list ${JSON.stringify(R19_ALLOW)}`);
+    allErrors.push(...applyR19Allow(hits));
+  }
   for (const w of warnings) console.warn(`WARN ${w}`);
   // CONTENT-LINT-01: `--lint` also runs tools/content-lint.mjs; its findings are printed as INFO/WARN and never fail validate-content
   if (process.argv.includes('--lint')) {
