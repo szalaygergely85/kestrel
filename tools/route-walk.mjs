@@ -405,7 +405,7 @@ function doorClosedProbe(physics) {
 function clearance() {
   const { world } = setup('mesh'), data = legacyVariant(assets.world('world_m1')), out = [];
   const walks = (id) => { const e = data.entities.find((en) => en.components && en.components.walks && en.components.walks[id]); return e.components.walks[id]; };
-  const area = data.nav.area;
+  const area = data.nav.area, navCell = data.nav.cell || 1;
   const statics = world.colliders.filter((c) => c.id !== 'npcs:kinematic');
   const opts = { height: 1.7, stepUpMax: 0.45, walkCos: Math.cos(50 * Math.PI / 180) }, o = {}, nn = {};
   for (const name of ['follow', 'depart']) {
@@ -422,7 +422,7 @@ function clearance() {
       const push = Math.hypot(q.x - (x + 0.001), q.y - y);
       world.terrain.groundNormalAt(x, y, nn);
       const slope = Math.hypot(nn.x, nn.y) / Math.max(1e-6, nn.z);
-      const inNav = x >= area.x0 && x < area.x0 + area.w && y >= area.y0 && y < area.y0 + area.h;
+      const inNav = x >= area.x0 && x < area.x0 + area.w * navCell && y >= area.y0 && y < area.y0 + area.h * navCell; // area.x0/y0 in metres, w/h in cells
       const why = [];
       if (push > 0.02 || q.blockedX || q.blockedY) why.push(`collider<0.8m (push ${push.toFixed(2)})`);
       if (slope >= 0.6) why.push(`slope ${slope.toFixed(2)}`);
