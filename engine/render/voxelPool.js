@@ -7,7 +7,7 @@
 
 import { MAX_VOX_INSTANCES, MAX_VOX_INSTANCES_MESH, MAX_VOX_PARTS, PART_STRIDE } from '../voxel/VoxelModel.js';
 import { packVoxelModel } from '../voxel/voxelPack.js';
-import { voxelPointWorld } from '../voxel/voxelPose.js';
+import { voxelPointWorld, FORWARD } from '../voxel/voxelPose.js';
 import { computeProjection, computeProjectionPitched, instanceRect } from '../voxel/instanceRect.js';
 import { createPitchedTerms, pitchedTerms, resolveProjection, isPitchedFamily } from './projection.js';
 import { lodCentreX, lodCentreY, lodCentreZ } from '../core/camFocus.js';
@@ -39,6 +39,12 @@ function warnOnce(pool, msg) {
 
 // RIG-04b: `arr.length = n` with n < capacity/2 right-trims V8's backing store, so the next frame that grows the list again
 // allocates a new one (~600 B when a 48-instance list drops to 4 and back). pop() keeps the capacity: zero allocation.
+// PERF-01: keep FORWARD (filled by the instanceRect -> computeVoxelPose call just made for `out`) on the slot.
+function keepForward(out, pm) {
+  const n = pm.partCount * 12, f = out.fwd;
+  for (let i = 0; i < n; i++) f[i] = FORWARD[i];
+  out.fwdModel = pm;
+}
 function shrinkTo(arr, n) {
   while (arr.length > n) arr.pop();
 }
@@ -46,6 +52,9 @@ function shrinkTo(arr, n) {
 function projectedSlot() {
   return { model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, fromClip: -1, fromFrame: 0, fromTMs: 0, fromW: 0, scale: 1, slot: 0, entity: null, addPart: -1, addRx: 0, addRy: 0, addRz: 0, legs: null, layers: null, look: null,
     pose: new Float64Array(MAX_VOX_PARTS * PART_STRIDE),
+    // PERF-01: copy of the forward part transforms (voxelPose FORWARD) of `pose`, so addVoxelInstances does not re-pose the slot.
+    // `fwdModel` = the model it was posed for (null = no valid copy; addVoxelInstances then poses again).
+    fwd: new Float64Array(MAX_VOX_PARTS * 12), fwdModel: null,
     rect: { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0, minCol: 0, maxCol: 0, minRow: 0, maxRow: 0, empty: false } };
 }
 
@@ -371,6 +380,7 @@ export class VoxelPool {
       const out = this._shadowSlots[i];
       this.shadowList[i] = out; // references only: the posed records live in the never-shrinking `_shadowSlots`
       instanceRect(_noCullProj, inst.model, inst, out.pose, null, out.rect);
+      keepForward(out, inst.model);
       out.model = inst.model; out.modelKey = inst.modelKey;
       out.x = inst.x; out.y = inst.y; out.z = inst.z; out.yawDeg = inst.yawDeg;
       out.clip = inst.clip; out.frame = inst.frame; out.tMs = inst.tMs; out.fromClip = inst.fromClip; out.fromFrame = inst.fromFrame; out.fromTMs = inst.fromTMs; out.fromW = inst.fromW; out.scale = inst.scale;
@@ -412,7 +422,8 @@ export class VoxelPool {
       const out = this._slots[count];
       this.list[count] = out;
       instanceRect(_proj, inst.model, inst, out.pose, null, out.rect);
-      if (out.rect.empty) { culled++; continue; }
+      if (out.rect.empty) { out.fwdModel = null; culled++; continue; }
+      keepForward(out, inst.model);
       out.model = inst.model; out.modelKey = inst.modelKey;
       out.x = inst.x; out.y = inst.y; out.z = inst.z; out.yawDeg = inst.yawDeg;
       out.clip = inst.clip; out.frame = inst.frame; out.tMs = inst.tMs; out.fromClip = inst.fromClip; out.fromFrame = inst.fromFrame; out.fromTMs = inst.fromTMs; out.fromW = inst.fromW; out.scale = inst.scale;
