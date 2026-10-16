@@ -12,7 +12,7 @@ import {
   GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL, CELL_RAY_WGSL, CELL_RAY_PITCHED_WGSL, FMOD_WGSL, HASH_FAST_WGSL, BYTE_OUT_WGSL,
 } from './common.wgsl.js';
 import { SUN_N_SHIFT, SUN_N_MASK, CLOUD_Q_SHIFT } from '../../shadowSun.js'; // CLOUD_Q_SHIFT: S8-B2-12c (38.13)
-import { WL_STRIDE, WL_SLOTS, WATER_HASH_SALT, WATER_FLOW_SALT, WATER_FALL_SALT, RIPPLE_SLOTS, RIPPLE_ACC_MIN } from '../../waterLook.js';
+import { WL_STRIDE, WL_SLOTS, WATER_HASH_SALT, WATER_FLOW_SALT, WATER_FALL_SALT, FALL_STREAK_M, RIPPLE_SLOTS, RIPPLE_ACC_MIN } from '../../waterLook.js';
 import { SKY_LUT_N } from './skyLut.js';
 import { WATER_REFLECT } from '../../waterReflect.js'; // AUD-42: constants shared with the JS twin
 import { WF_SLOTS, WATER_FINISH_WGSL } from '../../waterFinish.js'; // WATER-FINISH-01b (38.77): finish row + reflection/caustic helpers
@@ -261,7 +261,7 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
     let lip = wu.wl[lb + 10];
     let u = (P.x - lip.x) * lip.z + (P.y - lip.y) * lip.w;
     let ia = i32(floor(u / 0.25));
-    let ib = i32(floor((bitcast<f32>(w.z) - wu.wl[lb + 9].x) / 0.6));
+    let ib = i32(floor((bitcast<f32>(w.z) - wu.wl[lb + 9].x) / ${FALL_STREAK_M.toFixed(1)}));
     let h = hashFastU(ia & 1023, ib & 1023, ${WATER_FALL_SALT});
     let gi = i32(umod(h, u32(nGlyph)));
     let gv = wu.wl[lb + 4 + (gi >> 2)];

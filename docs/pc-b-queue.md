@@ -4,9 +4,9 @@
 Stills + verdicts: docs/test-reports/teaser/index.md (`node tools/teaser-stills.mjs`). Fixed in TEASER-QA: crypt-night end framing, teaser-water hour 17 -> 12.
 | id | what | track |
 |---|---|---|
-| TEASER-QA-01 | teaser-leaves broken: grove floor near-black, no ferns/trunks in frame, landmarks on the end horizon -> re-author the path (designer) after checking groveNorthWest content at 15:30 | PC-B design |
+| TEASER-QA-01 | teaser-leaves broken: grove floor near-black, no ferns/trunks in frame, landmarks on the end horizon -> re-author the path (designer) after checking groveNorthWest content at 15:30 | PC-B design | po-review (k2 2026-10-16: path re-authored to the 1406,916 stand, hour 10; floor under the stand still near-black = render) |
 | TEASER-QA-02 | Glasswater (and lakes at low sun) render near-black brown at 17:00 at pitch -20 (noon is blue): water shading at low sun, twin + gpucompare | PC-A render |
-| TEASER-QA-03 | braidFalls sheet reads as a beige wall (no water colour/motion in stills) + Glasswater surface visible as a raised slab above braid_outlet from the lip | PC-B content / render |
+| TEASER-QA-03 | braidFalls sheet reads as a beige wall (no water colour/motion in stills) + Glasswater surface visible as a raised slab above braid_outlet from the lip | PC-B content / render | arch-review (k2 2026-10-16: FALL_STREAK_M 0.6 -> 2 m sheet hash, JS+WGSL, gpucompare waterfall rows PASS; blue-white look; slab = grazing view, end key raised; no level bug) |
 | TEASER-QA-04 | crypt (cem32) is a facade only: the doorway shows sky/fence; add a back room or dark interior behind the door; fence rows float above the horizon west of the cemetery | PC-B content |
 | TEASER-QA-05 | teaser-grass: dark building block on the north horizon (mid), sun drawn as a wedge from the top edge (also leaves), green specks above the horizon | PC-B design + render ask |
 | TEASER-QA-06 | Far coast/shore silhouettes are stair-stepped slabs (strand-dawn coast, Glasswater far shore, dawn-sea horizon bar): coarse terrain LOD in the near band | PC-A world |

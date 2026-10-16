@@ -4,9 +4,9 @@
   const base = { burst: 0, dir: [0, 0, 1], wind: 0, emissive: false, emissiveFog: 0, killBelow: null };
   A.waterfall = {
     preset: { id: 'waterfall', lip: [6, 7, 12, 7], z: 8, out: 1.5, outDeg: 180, drop: 8, look: 'waterfall' },
-    // OB-045: white water. The sheet colour is the look's `shallow` (was the engine default sea-glass blue -> a dark slate wall).
+    // OB-045: white water (TEASER-QA-03: blue-white: the near-white sheet over brown rock read beige). The sheet colour is the look's `shallow` (was the engine default sea-glass blue -> a dark slate wall).
     look: { fallRamp: "|:'", fallSpeed: 10, highlight: [250, 252, 255], sheetAlpha: 0.75,
-            shallow: [236, 244, 248], deep: [150, 182, 198], bgK: 0.85 }, // bgK high: thin fall glyphs, the bg carries the white
+            shallow: [214, 232, 244], deep: [150, 182, 198], bgK: 0.85 }, // bgK high: thin fall glyphs, the bg carries the white
     // View z is feet height; the normal game camera adds standing eye height.
     views: {
       front: { x: 9, y: 23, z: 0.15, yawDeg: 0, pitchDeg: 7 },

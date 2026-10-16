@@ -31,6 +31,8 @@ export const WATER_HASH_SALT = 57;
 /** Salt of the flow streak hash (`hashFastU(ia & 1023, ib & 1023, WATER_FLOW_SALT)`, 35.4). */
 export const WATER_FLOW_SALT = 59;
 export const WATER_FALL_SALT = 61;
+// TEASER-QA-03: sheet hash cell = 0.25 m across x FALL_STREAK_M along the fall (was 0.6: per-cell noise read as a stone wall from 20+ m; long cells = falling streaks).
+export const FALL_STREAK_M = 2;
 /** Flow below this speed (m/s) is still water: the 32.2 time-bucket hash, no streaks. */
 export const FLOW_MIN = 0.05;
 /** Slots 0..7 regions, 8..11 waterfall sheets (35.3), 12..13 river ribbons (38.45, RIVER-03: the GPU uniform now holds all 14). */
@@ -234,7 +236,7 @@ export function waterSurfaceHash(t, lb, px, py) {
 export function waterfallHash(t, lb, px, py, arc) {
   const f = Math.fround;
   const u = f(f(f(f(px) - t[lb + 40]) * t[lb + 42]) + f(f(f(py) - t[lb + 41]) * t[lb + 43]));
-  const a = Math.floor(f(u / f(0.25))), b = Math.floor(f(f(f(arc) - t[lb + 36]) / f(0.6)));
+  const a = Math.floor(f(u / f(0.25))), b = Math.floor(f(f(f(arc) - t[lb + 36]) / f(FALL_STREAK_M)));
   return hashFastU(a & 1023, b & 1023, WATER_FALL_SALT);
 }
 
