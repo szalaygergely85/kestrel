@@ -373,23 +373,54 @@
     });
     var lakeBox = bbox(L, 1 + L.shore + 0.01), marshBox = bbox(M, 1.01);
     var inBox = function (b, x, y) { return x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3]; };
+    // PERF-10: the ridges layer runs for every geo height sample. Its constants are copied once here (G is not mutated after
+    // installGeo; same doubles -> same bits) into closure vars / typed arrays: no object-map reads that another literal shape can
+    // deprecate (PERF-09), no polymorphic range maps (only Whitecombs has `gorge`). gauss / hypot / smooth / ell are written out by
+    // hand with the SAME expressions: those calls sit behind the range/peak filters, so TurboFan's call-frequency gate left them
+    // un-inlined and every double argument/return was a fresh HeapNumber. riverX only runs when a gorge needs it (pure function of y).
+    var TD = T.drop, TY0 = T.y0, TYD = T.y1 - T.y0, NR = G.ranges.length, NP = G.peaks.length, RK = 11;
+    var RID = [], RSEED = new Int32Array(NR), RG = new Float64Array(NR * RK), PK = new Float64Array(NP * 5);
+    G.ranges.forEach(function (R, i) {   // box x0,y0,x1,y1 | w, h, scale, amp, w*0.7, 1-keep, gorge width (0 = no gorge)
+      var o = i * RK, B = rangeBox[i]; RID.push(R.id); RSEED[i] = G.seed + R.seedOff;   // int seed: passed to fbm as a Smi, as before
+      RG[o] = B[0]; RG[o + 1] = B[1]; RG[o + 2] = B[2]; RG[o + 3] = B[3]; RG[o + 4] = R.w; RG[o + 5] = R.h;
+      RG[o + 6] = R.ridged.scale; RG[o + 7] = R.ridged.amp; RG[o + 8] = R.w * 0.7;
+      RG[o + 9] = R.gorge ? 1 - R.gorge.keep : 0; RG[o + 10] = R.gorge ? R.gorge.width : 0;
+    });
+    G.peaks.forEach(function (p, i) { var o = i * 5; PK[o] = p.x; PK[o + 1] = p.y; PK[o + 2] = p.h; PK[o + 3] = p.r; PK[o + 4] = p.r * 28; });
+    var GP = G.gate.pass; ell(GP, GP.x, GP.y);   // fills GP._cs = [cos, sin] of rot, exactly as ell() reads it
+    var GPX = GP.x, GPY = GP.y, GPRX = GP.rx, GPRY = GP.ry, GPC = GP._cs[0], GPS = GP._cs[1], GPF = GP.floor;
     return [
       { id: 'ridges', rect: WORLD_RECT, heightFn: function (h0, x, y, F) {       // MAP-03: southern tilt, ranges, peaks, Sealed Gate pass
           var m = mask(x, y); if (m <= 0) return h0;
-          var h = h0 - T.drop * smooth(T.y0, T.y1, y), i, e, dr = Math.abs(x - U.riverX(y));
-          for (i = 0; i < G.ranges.length; i++) {
-            var R = G.ranges[i], B = rangeBox[i];
+          var t = (y - TY0) / TYD; t = t < 0 ? 0 : t > 1 ? 1 : t;               // smooth(T.y0, T.y1, y)
+          var h = h0 - TD * (t * t * (3 - 2 * t)), i, o, e, g, dr = -1;
+          for (i = 0; i < NR; i++) {
+            o = i * RK;
             // WM-01: far from the range (bbox + 2.6 w + 32 m GeoFields slack) f < 0.002 for sure: skip sdf + exp
-            if (x < B[0] || x > B[2] || y < B[1] || y > B[3]) continue;
-            var d = F.sdf(R.id, x, y), f = gauss(d / R.w);
+            if (x < RG[o] || x > RG[o + 2] || y < RG[o + 1] || y > RG[o + 3]) continue;
+            var d = F.sdf(RID[i], x, y); g = d / RG[o + 4];
+            var f = Math.exp(-(g * g));                                      // gauss(d / R.w)
             if (f < 0.002) continue;
-            var n = U.fbm(x / R.ridged.scale, y / R.ridged.scale, G.seed + R.seedOff, 4, 0.5, 2), rn = 1 - Math.abs(2 * n - 1);
-            var add = R.h * f + R.ridged.amp * rn * rn * gauss(d / (R.w * 0.7));
-            if (R.gorge) add *= 1 - (1 - R.gorge.keep) * gauss(dr / R.gorge.width);
+            var sc = RG[o + 6], n = U.fbm(x / sc, y / sc, RSEED[i], 4, 0.5, 2), rn = 1 - Math.abs(2 * n - 1);
+            g = d / RG[o + 8];
+            var add = RG[o + 5] * f + RG[o + 7] * rn * rn * Math.exp(-(g * g));   // R.h * f + R.ridged.amp * rn^2 * gauss(d / (0.7 w))
+            if (RG[o + 10] !== 0) {                                          // gorge: the river notch
+              if (dr < 0) dr = Math.abs(x - U.riverX(y));
+              g = dr / RG[o + 10]; add *= 1 - RG[o + 9] * Math.exp(-(g * g));
+            }
             h += add;
           }
-          for (i = 0; i < G.peaks.length; i++) { var p = G.peaks[i], px = x - p.x, py = y - p.y, pl = p.r * 28; if (px > pl || -px > pl || py > pl || -py > pl) continue; h += p.h * gauss(hypot(px, py) / p.r); }   // beyond 28 r exp underflows to exactly 0
-          e = ell(G.gate.pass, x, y); if (e < 1) h += (G.gate.pass.floor - h) * smooth(1, 0.6, e);
+          for (i = 0; i < NP; i++) {                                          // beyond 28 r exp underflows to exactly 0
+            o = i * 5;
+            var px = x - PK[o], py = y - PK[o + 1], pl = PK[o + 4]; if (px > pl || -px > pl || py > pl || -py > pl) continue;
+            // hypot(px, py), same steps as hypot() above. px, py are finite or NaN here (the 28 r filter rejects +-Infinity);
+            // m = 0 -> 0, and a NaN input -> NaN on every path (ax NaN with ay 0 is the one case the m = 0 test must catch).
+            var ax = px < 0 ? -px : px, ay = py < 0 ? -py : py, hm = ax > ay ? ax : ay, na = ax / hm, nb = ay / hm;
+            g = (hm === 0 ? (ax !== ax ? NaN : 0) : Math.sqrt(na * na + nb * nb) * hm) / PK[o + 3]; h += PK[o + 2] * Math.exp(-(g * g));
+          }
+          var gx = x - GPX, gy = y - GPY, gu = (gx * GPC + gy * GPS) / GPRX, gv = (-gx * GPS + gy * GPC) / GPRY;
+          e = Math.sqrt(gu * gu + gv * gv);                                  // ell(G.gate.pass, x, y)
+          if (e < 1) { t = (e - 1) / (0.6 - 1); t = t < 0 ? 0 : t > 1 ? 1 : t; h += (GPF - h) * (t * t * (3 - 2 * t)); }   // smooth(1, 0.6, e)
           return h0 + m * (h - h0);
         } },
       { id: 'lake', rect: bbox(L, 1 + L.shore), heightFn: function (h, x, y) {   // MAP-05: Glasswater bowl + shore lip
