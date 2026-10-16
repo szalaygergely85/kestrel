@@ -60,6 +60,7 @@ export function fogDirShear(hx, hy, tanE, out) {
 export const fogShapeCtx = { on: false, mode: 0, camZ: 0, terms: null, sunX: 0, sunY: 0, sunZ: 0, sunI: 0,
   camX: 0, camY: 0, aaFol: true, // AA-15 (OB-208): camera x/y + the foliage world-dice switch (`?aafol=0` -> setFoliageDice(false))
   aaFolL: true, // AA-16 (OB-208): leaf-card light smoothing switch (`?aafoll=0` -> setFoliageLight(false))
+  aaFolE: true, // AA-17 (OB-208): resolve hysteresis keeps a soft-edge leaf key across leaf cards (`?aafoledge=0` -> setFoliageEdge(false))
   // OB-089: outdoor MESH fog (terrain's far fog: palette.fog.far near->far colours over start..full, curve) instead of the interior fogV2.
   outdoor: false, tStart: 0, tFull: 1, tCurve: 1, tNear: /** @type {ArrayLike<number>|null} */ (null), tFar: /** @type {ArrayLike<number>|null} */ (null) };
 
@@ -79,6 +80,8 @@ export function meshOutdoorFog(world, cam, palette) {
 export function setFoliageDice(on) { fogShapeCtx.aaFol = !!on; }
 /** AA-16 (OB-208): switch the leaf-card light smoothing (default on). Read by detailShade.js shadeSurfaces and passShade.js (fogView.w bit 2). */
 export function setFoliageLight(on) { fogShapeCtx.aaFolL = !!on; }
+/** AA-17 (OB-208): switch the resolve-hysteresis soft-edge leaf match (kind + material, any planeId; default on). Read by passCell.js (ResolveU.folEdge). */
+export function setFoliageEdge(on) { fogShapeCtx.aaFolE = !!on; }
 /** AA-16: fogView.w bit field for passShade.js - 1 = world glyph dice (AA-15), 2 = leaf light smoothing (AA-16). */
 export function foliageBits() { return (fogShapeCtx.aaFol ? 1 : 0) + (fogShapeCtx.aaFolL ? 2 : 0); }
 
