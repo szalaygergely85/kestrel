@@ -15,7 +15,7 @@
 // Edge cells are detected without touching the edge pass: final != shade (any rgb byte or the glyph) -> pass final through (38.25 item 3).
 import { defineUniformBlock } from './uniformBlock.js';
 import { GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL, REPROJECT_WGSL } from './common.wgsl.js';
-import { KIND_NONE, KIND_MODEL, KIND_MESH } from '../../GBuffer.js';
+import { KIND_NONE, KIND_MODEL, KIND_MESH, KIND_TERRAIN } from '../../GBuffer.js';
 import { F_SOFT_EDGE } from '../ShadeTextures.js'; // AA-26
 import { LEVEL_NONE, LEVEL_ANIM, UV_LIM_TEXELS, STABLE_FOOT_K, GRAZE_K, GRAZE_CAP } from '../../temporalStable.js';
 
@@ -210,7 +210,8 @@ fn stableCell(cell: vec2i) -> SCell {
     let sa = packRgb(hf.x, hf.y, hf.z);
     let snapped = abs(i32((fgCur >> 16u) & 255u) - i32((sa >> 16u) & 255u)) > u.snap || abs(i32((fgCur >> 8u) & 255u) - i32((sa >> 8u) & 255u)) > u.snap
       || abs(i32(fgCur & 255u) - i32(sa & 255u)) > u.snap;
-    if (!snapped) {
+    // AA-28 (aaFlags bit 1024): a terrain glyph (same material) survives the snap - it never depends on light or colour tier (twin: st.aaTerrSnap)
+    if (!snapped || ((u.aaFlags & 1024) != 0 && kind == ${KIND_TERRAIN}u && matSame)) {
       o.glyph = byteOf(hf.w);
       // AA-09 (aaFlags bit 4): static surface (same planeId, mesh also same material, not a model) re-anchors = keeps the current u/v; else the history anchor
       // AA-21 (aaFlags 64): a world voxel prop (kind 8, not the view model) re-anchors too when plane + material match

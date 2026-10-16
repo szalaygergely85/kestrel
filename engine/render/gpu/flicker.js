@@ -104,7 +104,7 @@ export function flickerStep(prevGI, prevFg, curGI, curFg, cols, rows, out, prevB
 // Inputs: {GI, fg, bg?, Depth} readbacks (Depth channel 0 = f32 bits, `readbackGeometry().Depth`); camPrev/camCur =
 // {x,y,z,yawDeg,pitchDeg,vfovDeg?}; grid = {cols, rows, pxCellW, pxCellH}.
 import { createPitchedTerms, pitchedTermsInto, unprojectPitched, worldToCell } from '../projection.js';
-import { levelOfByte, covOfByte, uvDriftLimit, CHANNEL_SNAP, DEFAULT_DETAIL, GRAZE_K, GRAZE_CAP } from '../temporalStable.js';
+import { levelOfByte, covOfByte, uvDriftLimit, CHANNEL_SNAP, DEFAULT_DETAIL, GRAZE_K, GRAZE_CAP, hueShift } from '../temporalStable.js';
 import { KIND_MESH, KIND_MODEL } from '../GBuffer.js';
 
 export const REPROJ_DEPTH_TOL = 0.05;
@@ -282,6 +282,8 @@ export function flickerGlyphReasons(d, p, hmap, cols, rows, terms, cnt) {
           let snapped = false;
           for (let k = 0; k < 3; k++) if (Math.abs(d.preFg[o + k] - p.outFg[h * 4 + k]) > CHANNEL_SNAP) snapped = true;
           r = snapped ? 'snap255' : 'replayHold';
+          if (snapped) { const pk = (p.outFg[h * 4] << 16) | (p.outFg[h * 4 + 1] << 8) | p.outFg[h * 4 + 2], ck = (d.preFg[o] << 16) | (d.preFg[o + 1] << 8) | d.preFg[o + 2];
+            const sk = (hueShift(pk, ck) ? 'snH:' : 'snL:') + kind; cnt.sub[sk] = (cnt.sub[sk] || 0) + 1; } // AA-28: hue vs brightness-only snap
         } else {
           const dl = Math.abs(lvC - lvP); r = dl > 1 ? 'levelJump' : 'replayHold';
           if (dl > 1) { const b = 'dl' + (dl === 2 ? '2' : dl <= 4 ? '3-4' : '5+') + (cov ? 'cov' : ''); cnt.sub[b] = (cnt.sub[b] || 0) + 1; }

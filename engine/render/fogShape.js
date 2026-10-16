@@ -62,6 +62,7 @@ export const fogShapeCtx = { on: false, mode: 0, camZ: 0, terms: null, sunX: 0, 
   aaFolL: true, // AA-16 (OB-208): leaf-card light smoothing switch (`?aafoll=0` -> setFoliageLight(false))
   aaEdgeHold: true, // AA-18 (OB-208): stable pass lets edge cells take history (`?aaedge=0` -> setEdgeHold(false)); read by passStable.js
   aaLeafUv: true, // AA-26 (OB-208): stable pass skips the UV drift test on soft-edge leaf cells (`?aaleafuv=0` -> setLeafUvHold(false)); read by passStable.js
+  aaTerrSnap: true, // AA-28 (OB-208): stable pass keeps a terrain glyph through a brightness-only fg snap (`?aaterrsnap=0` -> setTerrainSnapHold(false)); read by passStable.js
   aaVox: true, // AA-21 (OB-208): resolve hysteresis for voxel-model cells (`?aavox=0` -> setVoxelHold(false)); read by passCell.js
   aaFolE: true, // AA-17 (OB-208): resolve hysteresis keeps a soft-edge leaf key across leaf cards (`?aafoledge=0` -> setFoliageEdge(false))
   // OB-089: outdoor MESH fog (terrain's far fog: palette.fog.far near->far colours over start..full, curve) instead of the interior fogV2.
@@ -92,6 +93,8 @@ export function setEdgeHold(on) { fogShapeCtx.aaEdgeHold = !!on; }
 export function setVoxelHold(on) { fogShapeCtx.aaVox = !!on; }
 /** AA-26 (OB-208): switch the stable-pass leaf hold (soft-edge leaf cells keep history without the UV drift test; default on). */
 export function setLeafUvHold(on) { fogShapeCtx.aaLeafUv = !!on; }
+/** AA-28 (OB-208): switch the stable-pass terrain hold through brightness-only colour snaps (default on). */
+export function setTerrainSnapHold(on) { fogShapeCtx.aaTerrSnap = !!on; }
 export function setEdgeCorner(eps) { fogShapeCtx.aaEdgeEps = Number.isFinite(eps) ? eps : 0; }
 /** AA-16: fogView.w bit field for passShade.js - 1 = world glyph dice (AA-15), 2 = leaf light smoothing (AA-16). */
 export function foliageBits() { return (fogShapeCtx.aaFol ? 1 : 0) + (fogShapeCtx.aaFolL ? 2 : 0); }
