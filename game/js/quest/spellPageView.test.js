@@ -10,7 +10,7 @@ import { SPELL_DEFS } from './spellDefs.js';
 import { createSpellBook } from './sim/spellBook.js';
 import { useScroll, SCROLL_ID } from './sim/spellScroll.js';
 import { addItem, countOf } from './sim/inventory.js';
-import { tierText } from './spellPageView.js';
+import { tierText, spellHeadText } from './spellPageView.js';
 
 paletteMod; itemsMod; invStyleMod;
 const A = globalThis.ASSETS, style = A.uiStyle.inventory, P = style.panel;
@@ -38,10 +38,12 @@ ok(row(5).includes('Freeze') && row(6).includes('[###] mp 4 cd 1.5 s'), 'AC1 Fre
 ok(row(5).includes('Telekinesis') && row(6).includes('Not learned') && row(7).includes('Wake more') && row(5).includes('Teleport') && row(7).includes('Help Rook at the') && row(8).includes('ford.'), 'AC1 one row of 4 cards, hints derived');
 ok(/Fireball.*-.*Freeze/.test(row(6).replace(/\[#--\][^|]*\|/, '')) || row(6).includes('-'), 'cards joined by -');
 ok(row(12).includes('Fireball  level 1') && row(13).includes('Now: 5 mp, dmg 3, radius 2, cooldown 0.5 s') && row(14).includes('Next level: 5 mp, dmg 4, radius 3.5, cooldown 0.5 s'), 'AC2 Fireball 1 -> 2 golden lines');
+ok(row(12).includes('Power 250  (Next: +350)'), 'power: level 1 shows Power + Next');
 ok(row(18).includes('Spell Scrolls: 1') && row(19).includes('[E] Use Spell Scroll'), 'AC3 footer');
 ok(!/esc/i.test(s), 'AC4 no Esc text');
 for (let y = 0; y < P.h; y++) ok(row(y).length <= 160, 'AC4 row fits');
 step('KeyD'); s = draw();
+ok(row(12).includes('Freeze  level 3  -  Power 1,000') && !row(12).includes('Next'), 'power: max level, no Next');
 ok(row(12).includes('Freeze  level 3') && row(14).includes('Max level') && !row(19).includes('[E]'), 'AC2 level 3 shows Max level, no scroll action');
 step('KeyD'); s = draw();
 ok(row(12).includes('Telekinesis  not learned') && row(13).includes('Not learned yet. Wake more waystones.') && !row(19).includes('[E]'), 'unlearned card cannot take a scroll');
@@ -50,6 +52,7 @@ ok(row(19).includes('Raise Fireball to level 2?  [E] Yes  [Q] No'), 'AC3 confirm
 step('KeyQ'); s = draw();
 ok(st.fireball === 1 && scrolls() === 1 && !row(19).includes('Raise'), 'AC3 Q cancels, no change');
 step('KeyE'); step('KeyE'); s = draw();
+ok(row(12).includes('Fireball  level 2  -  Power 600  (Next: +400)'), 'power: level 2');
 ok(st.fireball === 2 && scrolls() === 0 && used[0] === 'fireball' && toasts[0] === 'Fireball is now level 2', 'AC3 Yes calls useScroll');
 ok(row(18).includes('Spell Scrolls: 0') && !row(19).includes('[E]'), 'footer after use');
 // no pack change, tab toggles back, close works
@@ -58,5 +61,6 @@ step('KeyT'); step('KeyI'); ok(!view.isOpen, 'I closes from the page');
 // 0 alloc per draw (heap delta over many draws)
 view.open(); step('KeyT'); draw();
 if (globalThis.gc) { globalThis.gc(); const h0 = process.memoryUsage().heapUsed; for (let i = 0; i < 2000; i++) view.draw(ui); const d = process.memoryUsage().heapUsed - h0; ok(d < 2e6, 'AC4 draw ~0 alloc (' + d + ' B)'); }
+ok(spellHeadText('X', 0) === 'X  not learned', 'power: unlearned has no Power');
 ok(tierText({ mana: 4, cd: 1, stun: 0.8 }) === '4 mp, stun 0.8 s, cooldown 1 s', 'tierText');
 console.log(`spellPageView: ${pass} pass, ${fail} fail`); if (fail) { console.log(failures.join('\n')); process.exit(1); }
