@@ -46,7 +46,8 @@ export function limitFor(gpu, quality) {
  * A step without GPU timer data (or no limit) makes the verdict UNKNOWN.
  */
 export function evaluate(samples, limit) {
-  const rows = samples.map((s) => ({ tris: s.tris, gpuP50: pct(s.gpu, 0.5), gpuP95: pct(s.gpu95, 0.95), jsP95: pct(s.js, 0.95) }));
+  const rows = samples.map((s) => ({ tris: s.tris, gpuP50: pct(s.gpu, 0.5), gpuP95: pct(s.gpu95, 0.5), jsP95: pct(s.js, 0.95) }));
+  // arch F (2026-10-16): gpuP95 = MEDIAN of the rolling-p95 snapshots (the p95 of p95s sat on the worst spike).
   let cap = null, firstOver = null, unknown = false;
   for (const r of rows) {
     r.pass = Number.isFinite(r.gpuP95) && limit != null ? r.gpuP95 <= limit : null;
