@@ -355,7 +355,7 @@
   // 2b. COLOR RAMPS  (arrays of color keys, dim -> bright; pair with a glyph ramp of the same name)
   //   pick: k = round(g * (n - 1)) for a glow level g in 0..1 (g = 0 -> first key, never "off": off = don't draw).
   //   aether: the teal glow family, dormant -> white-hot core. US-016 signal-tower light (fixed k), US-022 relay wake
-  //           (g ramps 0 -> 1 with lights.relay.grow), the P2 SOS pulse (g follows the pulse), later gauntlet spells.
+  //           (g ramps 0 -> 1 with lights.relay.grow), the P2 ALIVE pulse (ASSETS.signal) (g follows the pulse), later gauntlet spells.
   //   cityLight: Ferrum's amber pinpoints on the horizon (US-016), Low Wards -> the Crown.
   // ---------------------------------------------------------------------------
   var colorRamps = {

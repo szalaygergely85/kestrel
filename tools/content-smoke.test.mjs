@@ -155,6 +155,7 @@ const unaccountedFor = allJsonFiles.filter((rel) => {
   if (rel === 'quests/burl.boars.quest.json' || rel === 'quests/tower.blade.quest.json') return false; // QG-01 giver quest, validated by questBook.test.js + validate-content
   if (/^quests\/[^/]+\.quest\.json$/.test(rel)) return false; // QL-02: any standalone quest definition, linted by validate-content.mjs
   if (rel === 'quests/areas.json') return false; // AREAS-01 standalone alias table, checked by validate-content.mjs
+  if (rel === 'items/sources.json') return false; // OB-202/207: item sources as data, checked by validate-content.mjs + itemSources tests
   if (['quests/index.json', 'quests/sites.json', 'quests/rewards.json'].includes(rel) || rel.startsWith('quests/') && rel.endsWith('/pack.json')) return false; // QL-T1 (38.44): pack index, site + reward tables and region packs, loaded by questBoot.js
   if (rel === 'dialogue/inspect.json' || rel === 'dialogue/quest-snippets.json') return false; // QL-T4: look-at text table + generated quest snippets, loaded by game/js/main.js
   if (rel === 'beasts/tiers.json') return false; // US-129a: data mirror of game/js/quest/sim/band.js BAND_TABLE (band.test.js keeps them equal), not a manifest content file
