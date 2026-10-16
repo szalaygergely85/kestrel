@@ -90,12 +90,12 @@
     farSmoke: {
       rate: 4, burst: 0,
       life: [9.0, 11.0], speed: [0.5, 1.0],
-      dir: [0, 0, 1], spreadDeg: 7, box: [0.4, 0.4, 0.05],
+      dir: [0, 0, 1], spreadDeg: 5, box: [0.3, 0.3, 0.05],
       accelZ: 1.8, drag: 0.7, wind: 1,
       maxLive: 48, killBelow: null,
       glyphs:  "OOO%o;:~-'.",
       colors: ['ashLight', 'ashLight', 'ashLight', 'ashLight', 'ash', 'ash', 'ash', 'ashLight'],
-      emissive: false, emissiveFog: 0, sizeM: 1.5, sizeEndM: 7 // VISQA-23: was emissive (unlit) -> glowing white pillars at night; now lit by the emitter's light like smoke
+      emissive: false, emissiveFog: 0, sizeM: 1.0, sizeEndM: 4 // VISQA-23: was emissive (unlit) -> glowing white pillars at night; now lit by the emitter's light like smoke
     },
     // --- sparks: the sword-hit burst (burstAt, cone along the hit normal via setEmitterDir; default axis = up).
     // 10 sparks at 2.5-5 m/s in a wide 50 deg cone, real gravity, 0.3-0.4 s: a short bright spray that arcs down.

@@ -47,6 +47,7 @@ const _emMulR = new Float64Array(MAX_EMITTERS);
 const _emMulG = new Float64Array(MAX_EMITTERS);
 const _emMulB = new Float64Array(MAX_EMITTERS);
 const _emDone = new Uint8Array(MAX_EMITTERS);
+const _emDim = new Float64Array(MAX_EMITTERS); // VISQA-23: floorless/floored gain ratio (<= 1), smoke puffs only
 
 /**
  * `lightAt`'s raw rgb -> the same per-point gain curve `SpritePool.project`
@@ -57,6 +58,17 @@ const _emDone = new Uint8Array(MAX_EMITTERS);
  * @param {number} r @param {number} g @param {number} b
  * @param {Float64Array} out length-3, written in place (mulR, mulG, mulB)
  */
+/**
+ * VISQA-23: ratio of the gain WITHOUT the fgMin floor to the normal gain (<= 1). Growing smoke puffs multiply by it so a
+ * plume follows the real ambient/moon light at night instead of sitting on the 0.32 glyph-visibility floor (pale pillars).
+ */
+export function smokeDimRatio(S, r, g, b) {
+  const Lm = Math.max(r, g, b);
+  const bc = Lm < 0 ? 0 : Lm > 1 ? 1 : Lm;
+  const floored = S.fgMin + (1 - S.fgMin) * Math.pow(bc, S.fgGamma);
+  return floored > 1e-6 ? Math.pow(bc, S.fgGamma) / floored : 1;
+}
+
 function shadeMulFromLight(S, r, g, b, out) {
   const Lm = Math.max(r, g, b);
   const hr = Lm > 1e-6 ? r / Lm : 1, hg = Lm > 1e-6 ? g / Lm : 1, hb = Lm > 1e-6 ? b / Lm : 1;
@@ -137,6 +149,7 @@ export function createParticleLayer() {
         if (!em.used[s] || em.live[s] <= 0) continue;
         // VISQA-05 night dimming now happens at the source: syncLiveSun (SUN-COL-LIVE) scales lights.sun.col by the live look.
         lightAt(lights, world, em.x[s], em.y[s], em.z[s] + 0.1, 0, 0, 1, _lightScratch);
+        _emDim[s] = smokeDimRatio(palette.shading, _lightScratch[0], _lightScratch[1], _lightScratch[2]);
         shadeMulFromLight(palette.shading, _lightScratch[0], _lightScratch[1], _lightScratch[2], _lightScratch);
         _emMulR[s] = _lightScratch[0]; _emMulG[s] = _lightScratch[1]; _emMulB[s] = _lightScratch[2];
         _emDone[s] = 1;
@@ -195,7 +208,12 @@ export function createParticleLayer() {
           const s = emOf[i];
           const mr = _emDone[s] ? _emMulR[s] : 1, mg = _emDone[s] ? _emMulG[s] : 1, mb = _emDone[s] ? _emMulB[s] : 1;
           rr *= mr; gg *= mg; bb *= mb;
-          if (f > 0) { rr += (_fog3[0] - rr) * f; gg += (_fog3[1] - gg) * f; bb += (_fog3[2] - bb) * f; }
+          let fr = _fog3[0], fg = _fog3[1], fb = _fog3[2];
+          if (defRec[o + D.SIZE_END_M] > defRec[o + D.SIZE_M]) { // growing smoke puff (VISQA-23): tracks the real light, fog too
+            const dm = _emDone[s] ? _emDim[s] : 1;
+            rr *= dm; gg *= dm; bb *= dm; fr *= dm; fg *= dm; fb *= dm;
+          }
+          if (f > 0) { rr += (fr - rr) * f; gg += (fg - gg) * f; bb += (fb - bb) * f; }
         }
         const br = toByte(rr), bg = toByte(gg), bbb = toByte(bb);
         const mixA = toByte(defRec[o + D.BG_MIX] * 255); // 0 = no bg tint (default)

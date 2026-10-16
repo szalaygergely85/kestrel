@@ -123,6 +123,7 @@ void main() {
     if (float(h >> 8u) * (1.0 / 16777216.0) > 1.0 - r3.w) wc += (r2.rgb - wc) * 0.5;
   }
 
+  bool hl = false; // VISQA-26
   if (sheet) {
     vec4 lip = uWL[lb + 10];
     float u = (P.x - lip.x) * lip.z + (P.y - lip.y) * lip.w;
@@ -136,7 +137,7 @@ void main() {
     float kS = uAmbientI + uSunI; // OB-045: no cliff sun-map shadow on the sheet
     wc = min(vec3(255.0), r0.rgb * kS * brightness);
     wb = wc * bgK;
-    if (float(h >> 8u) * (1.0 / 16777216.0) > 0.92) wc = r2.rgb;
+    if (float(h >> 8u) * (1.0 / 16777216.0) > 0.92) { wc = r2.rgb; hl = true; }
   }
   vec4 shape = uWL[lb + 10], foam = uWL[lb + 11], rim = uWL[lb + 12], shoreParams = uWL[lb + 13];
   float e;
@@ -161,7 +162,7 @@ void main() {
   vec3 bgc = wb + (uWFog[3].rgb + (uWFog[4].rgb - uWFog[3].rgb) * f - wb) * fBg;
   if (!opaque) { // see-through: tint the shaded floor cell by the opacity
     vec3 fgOld = floor(sfg.rgb * 255.0 + 0.5), bgOld = floor(sbg.rgb * 255.0 + 0.5);
-    if (!shore) fgc = fgOld + (fgc - fgOld) * a;
+    if (!shore) fgc = fgOld + (fgc - fgOld) * ((hl && a > 0.0) ? 1.0 : a);
     bgc = bgOld + (bgc - bgOld) * a;
   }
   outFg = vec4(toByte01(fgc.r), toByte01(fgc.g), toByte01(fgc.b), toByte01(glyph));
