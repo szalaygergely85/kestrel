@@ -1,5 +1,5 @@
 // tools/flicker-gate.test.mjs: node tools/flicker-gate.test.mjs
-import { compare, extractPoses, formatTable } from './flicker-gate.mjs';
+import { compare, extractPoses, formatTable, summarizeRuns } from './flicker-gate.mjs';
 let fail = 0;
 const ok = (c, m) => { if (!c) { fail++; console.error('FAIL ' + m); } };
 const mk = (a, b, avg) => ({ poses: { wallNear: { totalPct: 6, glyphOnlyPct: a }, wallFar: { totalPct: 8, glyphOnlyPct: b } }, avg: { totalPct: 7, glyphOnlyPct: avg } });
@@ -14,5 +14,7 @@ ok(!miss.ok && miss.messages.some((m) => /wallFar.*missing/.test(m)), 'missing p
 ok(formatTable(up).includes('FLICKER GATE: FAIL'), 'table prints verdict');
 const ex = extractPoses({ 'poses.a.totalPct': 1, 'poses.a.glyphOnlyPct': 2, 'poses.a.n': 5, 'avg.glyphOnlyPct': 3, avgTotalPct: 4 });
 ok(ex.poses.a.glyphOnlyPct === 2 && ex.avg.glyphOnlyPct === 3 && ex.avg.totalPct === 4 && !('n' in ex.poses.a), 'extract');
+const sm = summarizeRuns([mk(5, 7, 6), mk(7.5, 7.1, 6.3), mk(5.2, 7.2, 6.4)]);
+ok(sm.poses.wallNear.glyphOnlyPct === 5.2 && Math.abs(sm.spread.wallNear.spread - 2.5) < 1e-9 && sm.avg.glyphOnlyPct === 6.3, 'summarizeRuns median + spread');
 if (fail) { console.error(fail + ' failed'); process.exit(1); }
 console.log('flicker-gate: all passed');

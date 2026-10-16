@@ -1752,3 +1752,8 @@ Reviewer: PC-B architect (opus, D-066). **42a8cd4a ARCH OK -> po-review/testing:
 - FAIL: pose glyphOnly > base*1.15+0.3, avg > base*1.10+0.2, or missing pose; --save writes docs/test-reports/flicker-baseline.json ({sha,date,poses,avg}). Pure compare/extractPoses/formatTable exported; tools/flicker-gate.test.mjs (6 cases).
 - node --check OK, --filter flicker-gate and check-deps OK. BROWSER NOT RUN: main session: node tools/flicker-gate.mjs --port 9725 --save, then again without --save.
 - GATE-SAVERELAY (branch saverelay): saveRelay.test.js was stale vs OB-199 mainStepGated (tower.blade never accepted, burl.departing unset); test now accepts the blade note + sets burl.departing; no code change. saveRelay/questRules/allQuests PASS, check-deps OK.
+
+## FLICKER-METRIC-DET (OB-208, kestrel-4 branch flickerdet, uncommitted)
+Root cause of bimodal results: the grid. flickerlive is not captureLike, so grid came from preset/saved/boot race: ~half the runs measured 240x90 (wallNear 7.5-7.7) vs 480x180 (5.06). Fix: capture-browser flicker live pins `grid=480x180`; main.js waits for the live grid (setGrid) before the 60 warm-up frames.
+Also: `flickerLive.hold` skips wgPipeline.frame during capture (readbacks see ONE frame); capture retries <=20x on throw/null readback (gpuFormat-null guard); settle 30->60; per-pose cols/rows/used diagnostics.
+`tools/flicker-gate.mjs --repeat K` (median + min/max spread, retries a failed browser start twice and reports count). New baseline values (480x180, stable, rays 4): wallNear 5.06 wallFar 4.92 bushes 4.18 crown 4.99 grassFar 3.73 avg 4.58 - the stored flicker-baseline.json predates this and must be re-saved (--save --repeat 3).

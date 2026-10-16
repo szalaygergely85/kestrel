@@ -41,7 +41,7 @@ export function createFlickerLive() {
 }
 
 /** Runs every pose; `capture()` -> { GI, fg, bg } of the frame just presented. `capture()` also returns Depth. Returns { poses: {slug: {totalPct, kindPct, materialPct, glyphOnlyPct, colourOnlyPct, n, excluded, oldTotalPct}}, avg, ... }. */
-export async function runLivePoses(h, { world, wg, cols, rows, pxCellW = 1, pxCellH = 2, capture, getGrid = null, poses = POSES, steps = STEPS, settle = 30 }) {
+export async function runLivePoses(h, { world, wg, cols, rows, pxCellW = 1, pxCellH = 2, capture, getGrid = null, poses = POSES, steps = STEPS, settle = 60 }) {
   const out = {}, res = { poses: {}, steps, stepM: STEP_M, skippedSteps: 0 };
   // AA-01c: the grid can change mid-run (480x180 after the first frames); `getGrid()` -> {cols,rows,pxCellW,pxCellH} is read at EVERY capture,
   // the capture carries the grid it was read with, and a step whose two frames have different grids is skipped (the readback stride would be wrong).
@@ -74,6 +74,7 @@ export async function runLivePoses(h, { world, wg, cols, rows, pxCellW = 1, pxCe
       cur.cam = { ...cam }; prev = cur;
     }
     const pr = {}; for (const k of Object.keys(acc)) pr[k] = acc[k] / Math.max(1, used);
+    pr.cols = prev.grid.cols; pr.rows = prev.grid.rows; pr.used = used; // diagnostics: which grid the pose was measured on
     res.poses[p.slug] = pr;
     for (const k of Object.keys(pr)) sums[k] = (sums[k] || 0) + pr[k];
   }
