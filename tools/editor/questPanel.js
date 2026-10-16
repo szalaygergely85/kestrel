@@ -12,6 +12,8 @@ import { applyPick } from './quest/targets.js';
 import { createQuestPicker } from './questPick.js';
 import { renderLineEditor } from './questDialogue.js';
 import { createLiveSender, browserChannel } from './quest/liveSend.js';
+import { stripModel, CARDS } from './quest/questStrip.js';
+import { prereqRows, setRequiresKeepShape } from './quest/prereqs.js';
 import { loadDialogues, saveDialogues, captureBaseline } from './quest/lines.js';
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -45,8 +47,6 @@ export async function mountQuestPanel(root, opts) {
     box.append(sel('qf-begin-obj', 'Begin (object)', ch.objects, bKind === 'object' ? bId : '', (id) => run(fe.setBegin(q, 'object', id))));
     box.append(sel('qf-end', 'End (hand-in npc)', ch.npcs, v.end && v.end.npc, (id) => run(fe.setEnd(q, id))));
     const others = ch.quests.filter((x) => x.id !== q.id);
-    const req = (v.requires.quests.length ? v.requires.quests : ['']).concat(v.requires.quests.length ? [''] : []);
-    req.forEach((rid, k) => box.append(sel('qf-req' + k, k ? 'and' : 'Requires', others, rid, (id) => run(fe.setRequires(q, req.map((x, j) => (j === k ? id : x)))))));
     box.append(el('div', 'q-hint', 'Objectives: ' + v.objectives.length + ' / ' + MAX_OBJECTIVES + (v.objectives.length >= MAX_OBJECTIVES ? ' (full)' : '')));
     const rw = v.rewards || {}, it = rw.items && rw.items[0];
     const isel = el('select'); isel.id = 'qf-reward'; isel.append(new Option('(no item)', '')); for (const c of itemChoices(itemDefs)) isel.append(new Option(c.name, c.id)); isel.value = it ? it.id : '';
@@ -86,8 +86,7 @@ export async function mountQuestPanel(root, opts) {
   root.textContent = '';
   const bar = el('div', 'q-bar');
   const search = el('input'); search.type = 'text'; search.placeholder = 'filter title / id / giver...'; search.id = 'quest-filter';
-  const newBtn = el('button', 'ed-btn', 'New quest'); newBtn.id = 'quest-new';
-  bar.append(search, newBtn);
+  bar.append(search);
   const allLbl = el('label', 'q-field'); const allCb = el('input'); allCb.type = 'checkbox'; allCb.id = 'quest-show-all';
   allLbl.append(allCb, el('span', null, ' Show all quest markers'));
   allCb.addEventListener('change', () => { showAll = allCb.checked; opts.onMarkers && opts.onMarkers(); });
@@ -137,14 +136,73 @@ export async function mountQuestPanel(root, opts) {
     return box;
   }
 
+  // ED-QUI-01: numbered collapsible card
+  function cardBox(c) {
+    const box = el('section', 'q-card'); box.dataset.card = c.id;
+    const head = el('div', 'q-card-head'), body = el('div', 'q-card-body');
+    head.append(el('span', 'q-card-n', '[' + c.n + ']'), el('span', 'q-card-t', c.title)); head.dataset.card = c.id;
+    head.addEventListener('click', () => box.classList.toggle('closed'));
+    box.append(head, body); return { box, body, head };
+  }
+  // ED-QUI-01: context strip (id chip, status chip, type + region chips, inline rename, NEW, SIM)
+  function stripBox(q, lintMsgs) {
+    const box = el('div', 'q-strip'); box.id = 'quest-strip';
+    const nb = el('button', 'ed-btn', 'NEW'); nb.id = 'quest-new'; nb.title = 'New side quest';
+    nb.addEventListener('click', () => { const c = ed.newSideQuest(model); stack.run(c); current = c.quest; redraw(); });
+    if (!q) { box.append(nb); return box; }
+    const m = stripModel(q, lintMsgs);
+    const row = el('div', 'q-strip-row');
+    const sc = el('span', 'q-pill status ' + m.status.kind, m.status.label); sc.id = 'quest-status';
+    row.append(el('span', 'q-pill id', 'QUEST ' + m.id), sc, el('span', 'q-pill ' + m.color, m.type === 'side' ? 'SIDE' : 'MAIN'), el('span', 'q-pill', m.region.toUpperCase()));
+    const sim = el('button', 'ed-btn primary', 'SIM'); sim.id = 'quest-sim'; sim.title = 'Play from here (live game tab)';
+    sim.addEventListener('click', () => { const b = document.getElementById('quest-play'); if (b) b.click(); });
+    row.append(nb, sim);
+    box.append(row, field('Title', q.title, (v) => run(ed.setTitle(q, v))));
+    return box;
+  }
+  // ED-QUI-02: card [01] prerequisites
+  function prereqCard(q) {
+    const pr = prereqRows(model, q), box = el('div', 'q-prereq'); box.id = 'quest-prereq';
+    box.append(el('div', 'q-prereq-sum' + (pr.ok < pr.total ? ' bad' : ''), pr.header));
+    const ids = pr.rows.map((r) => r.quest);
+    for (const r of pr.rows) {
+      const row = el('div', 'q-prow' + (r.problem ? ' bad' : '')); row.dataset.req = r.quest;
+      const open = el('button', 'ed-btn', 'Open'); open.title = 'Open this quest';
+      open.disabled = !model.quests.some((x) => x.id === r.quest);
+      open.addEventListener('click', () => { current = model.quests.find((x) => x.id === r.quest) || current; selObj = -1; redraw(); });
+      const rm = el('button', 'ed-btn', 'Remove');
+      rm.addEventListener('click', () => run(setRequiresKeepShape(q, ids.filter((x) => x !== r.quest))));
+      row.append(el('span', 'q-tag', '[REQ]'), el('span', 'q-plabel', r.title), open, rm);
+      if (r.problem) row.append(el('div', 'q-ptext', r.text));
+      box.append(row);
+    }
+    const add = el('select'); add.id = 'quest-req-add'; add.append(new Option('+ Add required quest...', ''));
+    for (const c of fe.formatChoices(model, getWorld(), names).quests) if (c.id !== q.id && !ids.includes(c.id)) add.append(new Option(c.name, c.id));
+    add.addEventListener('change', () => { if (add.value) run(setRequiresKeepShape(q, [...ids, add.value])); });
+    const item = el('div', 'q-prow disabled'); item.title = pr.item.note;
+    item.append(el('span', 'q-tag', '[ITM]'), el('span', 'q-plabel', 'Required item'));
+    const ib = el('button', 'ed-btn', 'Add'); ib.disabled = true; item.append(ib, el('div', 'q-ptext dim', pr.item.note));
+    box.append(add, item); return box;
+  }
+
   function renderDetail() {
     detail.textContent = '';
     const q = current;
-    if (!q) { detail.append(el('div', 'q-hint', 'Pick a quest.')); return; }
+    const cards = {};
+    let host = detail;
+    if (!q) { host.append(stripBox(null, [])); host.append(el('div', 'q-hint', 'Pick a quest.')); return; }
+    let msgs = [];
+    try { msgs = liveLint(model, q, buildLintCtx({ world: getWorld(), itemDefs, names, floorAt, sites, getMesh: opts.getMesh })); } catch (e) { msgs = []; }
+    detail.append(stripBox(q, msgs));
+    for (const c of CARDS) cards[c.id] = cardBox(c);
+    const into = (id) => { host = cards[id].body; };
+    for (const c of CARDS) detail.append(cards[c.id].box);
+    into('prereq'); host.append(prereqCard(q));
+    into('objectives');
     const flow = el('pre', 'q-flow'); flow.id = 'quest-flow';
     flow.textContent = buildFlow(q, names).map((n) => n.label + (n.detail ? '\n    ' + n.detail : '')).join('\n  v\n');
-    detail.append(flow);
-    detail.append(lintBox(q));
+    host.append(flow);
+    into('validate'); host.append(lintBox(q)); into('spatial');
     const pickBtn = (slot, label) => {
       const b = el('button', 'ed-btn' + (picker.slot === slot || (picker.slot && slot && picker.slot.obj === slot.obj && slot.obj !== undefined) ? ' active' : ''), 'Pick');
       b.title = 'Pick ' + label + ' in the 3D view (Esc cancels)'; b.dataset.pick = typeof slot === 'string' ? slot : 'obj' + slot.obj;
@@ -152,12 +210,13 @@ export async function mountQuestPanel(root, opts) {
       return b;
     };
     const slotRow = (label, slot) => { const w = el('div', 'q-field'); w.append(el('span', null, label), pickBtn(slot, label)); return w; };
-    detail.append(slotRow('Giver', 'giver'), slotRow('Return to', 'return'));
-    const pm = el('div', 'q-msg', picker.armed ? 'Click in the 3D view (Esc cancels)' : pickMsg); pm.id = 'quest-pick-msg'; detail.append(pm);
-    detail.append(field('Title', q.title, (v) => run(ed.setTitle(q, v))));
-    detail.append(renderLineEditor({ q, dm, base: lineBase, model, names, run, setMsg: (m) => { lineMsg = m; const e = document.getElementById('quest-line-msg'); if (e) e.textContent = m; } }));
-    const lm = el('div', 'q-msg', lineMsg); lm.id = 'quest-line-msg'; detail.append(lm);
-    detail.append(field('Offer (Accept / Exit text, one line each)', ((q.lines && q.lines.offer) || []).join('\n'), (v) => run(ed.setOfferLines(q, v.split('\n'))), true));
+    host.append(slotRow('Giver', 'giver'), slotRow('Return to', 'return'));
+    const pm = el('div', 'q-msg', picker.armed ? 'Click in the 3D view (Esc cancels)' : pickMsg); pm.id = 'quest-pick-msg'; host.append(pm);
+    into('conversation');
+    host.append(renderLineEditor({ q, dm, base: lineBase, model, names, run, setMsg: (m) => { lineMsg = m; const e = document.getElementById('quest-line-msg'); if (e) e.textContent = m; } }));
+    const lm = el('div', 'q-msg', lineMsg); lm.id = 'quest-line-msg'; host.append(lm);
+    host.append(field('Offer (Accept / Exit text, one line each)', ((q.lines && q.lines.offer) || []).join('\n'), (v) => run(ed.setOfferLines(q, v.split('\n'))), true));
+    into('objectives');
     q.objectives.forEach((o, i) => {
       const box = el('div', 'q-obj' + (selObj === i ? ' active' : '')); box.dataset.obj = i; box.append(el('b', null, `Step ${i + 1}`));
       box.addEventListener('click', () => { if (selObj !== i) { selObj = i; opts.onMarkers && opts.onMarkers(); box.classList.add('active'); } });
@@ -168,11 +227,12 @@ export async function mountQuestPanel(root, opts) {
       up.addEventListener('click', () => run(ed.moveStep(q, i, i - 1)));
       dn.addEventListener('click', () => run(ed.moveStep(q, i, i + 1)));
       del.addEventListener('click', () => run(ed.deleteStep(q, i)));
-      box.append(pickBtn({ obj: i }, 'the target of step ' + (i + 1)), up, dn, del); detail.append(box);
+      box.append(pickBtn({ obj: i }, 'the target of step ' + (i + 1)), up, dn, del); host.append(box);
     });
     const add = el('button', 'ed-btn', 'Add step'); add.addEventListener('click', () => { const c = fe.addStepMax(q); if (c) run(c); }); // QUEST-FORMAT: max 3 steps
-    detail.append(add);
-    detail.append(field('Return text', q.returnText || '', (v) => run(ed.setReturnText(q, v))));
+    host.append(add);
+    into('spatial'); host.append(field('Return text', q.returnText || '', (v) => run(ed.setReturnText(q, v))));
+    into('rewards');
     // reward item: picked by plain name, never a raw id
     const cur = q.reward && q.reward.items && q.reward.items[0];
     const sel = el('select'); sel.id = 'quest-reward';
@@ -182,8 +242,9 @@ export async function mountQuestPanel(root, opts) {
     const cnt = el('input'); cnt.type = 'number'; cnt.min = 1; cnt.value = cur ? cur.n : 1; cnt.style.width = '4em';
     const setReward = () => run(ed.setRewardItem(q, sel.value, Number(cnt.value) || 1));
     sel.addEventListener('change', setReward); cnt.addEventListener('change', setReward);
-    const rw = el('label', 'q-field'); rw.append(el('span', null, 'Reward'), sel, cnt); detail.append(rw);
-    detail.append(formatBlock(q));
+    const rw = el('label', 'q-field'); rw.append(el('span', null, 'Reward'), sel, cnt); host.append(rw);
+    host.append(formatBlock(q));
+    into('validate');
     const tools = el('div', 'q-tools');
     const undo = el('button', 'ed-btn', 'Undo'), redo = el('button', 'ed-btn', 'Redo'), save = el('button', 'ed-btn', 'Save'); save.id = 'quest-save';
     undo.addEventListener('click', () => { stack.undo(); redraw(); });
@@ -205,11 +266,10 @@ export async function mountQuestPanel(root, opts) {
       const c = opts.getCamGround ? opts.getCamGround() : null; if (!c) { msg.textContent = 'No camera position'; return; }
       window.open(playUrl('../../game/index.html', c, q.id, pSel.value), '_blank');
     });
-    tools.append(undo, redo, save, pSel, play, msg); detail.append(tools);
+    tools.append(undo, redo, save, pSel, play, msg); host.append(tools);
   }
 
   search.addEventListener('input', () => { filter = search.value; renderList(); });
-  newBtn.addEventListener('click', () => { const c = ed.newSideQuest(model); stack.run(c); current = c.quest; redraw(); });
   redraw();
   return {
     model, stack, picker, areasFile, dialogues: dm, lineBase, select: (id) => { current = model.quests.find((x) => x.id === id); selObj = -1; redraw(); },
