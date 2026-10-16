@@ -2001,3 +2001,4 @@ Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-
 - NEEDS writer: story.md has no Ch3 close text; Hesk lines in hesk.dialogue.json (hesk.close.*) are a neutral placeholder pointing west.
 - Test: allQuests.e2e.test.js now fails on any main quest with no next / no dependant unless chainEnd (exactly one allowed).
 - validate-content OK; allQuests/templates/questBook/quest-graph suites PASS.
+- QL-MAIN-02 RIVER-SIDE-AUDIT (kestrel-3) done: tools/quest-zone-lint.mjs (+ .test.mjs fixture: far-side band 1-5 target -> hit, near-side / band 5+ -> clean), wired into validate-content as warnings (same geometry as riverBand.test.js). Real content: 14 hits (3 main mq.ford.mirror/stones/smoke, 11 side sq.*), all at the Ford west-bank hub (x 966-1010); nothing moved, listed in docs/bugs.md OB-136 notes for owner/PO call. No commit made.
