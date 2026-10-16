@@ -1894,3 +1894,4 @@ Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-
   check-deps rule 6 got a narrow allow-list (questPanel.js + sim.test.mjs may import game questE2eRun.js / questBoot.js) - architect please ratify.
 
 - 2026-10-16 k2 teaserfix2 (TEASER-QA-02/05/07/01): water skyFloor 0.3 (waterReflect.js + waterComposite.js + WGSL, 17:00 Glasswater no longer near-black); cinematics use applySunPair (moon at night, main.js); sky wedge (05) not found - GPU sky cells 93 deg from the sun, shaft-iso test reverted; canopy floor AO-floor test reverted. gpucompare not run (tool cap).
+- ED-QUI-08 DIFF (OB-214, kestrel-4, uncommitted, po-review): tools/editor/quest/diff.js questDiff/diffText (+diff.test.mjs), questPanel DIFF button in card [06] (list, Go to, Copy) + CHANGES n chip in strip; baseline = raw cloned at editor start. verify-edqui-05 extended -> docs/test-reports/edqui-08.png.
