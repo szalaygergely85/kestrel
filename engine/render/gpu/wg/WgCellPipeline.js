@@ -527,6 +527,7 @@ export class WgCellPipeline {
     u[DEBUG_RAYS_WORD] = this.rays;
     u[DEBUG_DEPTH_WORD] = DEPTH_FADE_K;
     this._debugTex[0].texture = t.texSGI; this._debugTex[1].texture = t.texSGA; this._debugTex[2].texture = t.texSDepth;
+    if (rt.invalidateCellUpload) rt.invalidateCellUpload(); // PERF-04: the debug view overwrites rt.fgTex/bgTex; next frame re-uploads the CPU layer in full
     d.beginPass(this._outTarget);
     try { d.bind(this._pipeDebug, this._debugBind); d.draw(3); } finally { d.endPass(); }
   }

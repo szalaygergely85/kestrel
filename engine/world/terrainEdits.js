@@ -52,9 +52,11 @@ export function sampleType(layer, gi, gj) {
 export function setSampleDh(layer, gi, gj, cm) {
   const c = chunkAt(layer, gi, gj, true);
   c.dh[mod(gi, layer.n) + mod(gj, layer.n) * layer.n] = Math.max(-32768, Math.min(32767, Math.round(cm)));
+  layer.version = (layer.version | 0) + 1; // PERF-04: Terrain's out-of-band height cache flushes on a version change
 }
 export function setSampleType(layer, gi, gj, t) {
   chunkAt(layer, gi, gj, true).type[mod(gi, layer.n) + mod(gj, layer.n) * layer.n] = t;
+  layer.version = (layer.version | 0) + 1;
 }
 
 /** Bilinear height delta in metres (0 for an empty layer). */

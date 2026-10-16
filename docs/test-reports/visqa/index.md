@@ -31,8 +31,8 @@
 | ![s2-burl.png](s2-burl.png) | in place, camera 1474,1028,2,255 model bear yaw 75 at 1471.0,1029.1 z 2.4 | Burl (npc bear) |
 | ![s2-rook.png](s2-rook.png) | in place, camera 982,1057,-86,180 model crow yaw 270 at 982.0,1060.0 z -86.4 | Rook (perched crow, on the Ford ruin crate; seen from the side, his front faces the ruin wall) |
 | ![s2-warden.png](s2-warden.png) | model char.kit cam 1440.0,1040.0 subject 1436.5,1040.0 z 1.3 yaw 90 (home 1669,629,-50,141) | region warden (char.kit) |
-| ![s2-boar.png](s2-boar.png) | model boarPlaceholder cam 1440.0,1040.0 subject 1436.5,1040.0 z 1.3 yaw 90 (home 1459,1033,2,229) | first boar |
-| ![s2-wolf.png](s2-wolf.png) | in place, camera 854,991,-74,315 model wolf yaw 135 at 851.8,988.2 z -74.3 | first wolf (brain.species wolf / model wolf); wolves live ~600 m west, unbound far from the player, so the camera goes to the wolf |
+| ![s2-boar.png](s2-boar.png) | model boarPlaceholder cam 1440.0,1040.0 subject 1436.5,1040.0 z 1.3 yaw 90 (home 1460,1030,2,134) | first boar |
+| ![s2-wolf.png](s2-wolf.png) | in place, camera 849,994,-74,182 model wolf yaw 272 at 848.7,997.1 z -74.4 | first wolf (brain.species wolf / model wolf); wolves live ~600 m west, unbound far from the player, so the camera goes to the wolf |
 | ![s2-skeleton.png](s2-skeleton.png) | model skeleton cam 1440.0,1040.0 subject 1436.5,1040.0 z 1.3 yaw 90 (home 1738,202,211,0) | first surface skeleton (crypt ones do not render when pinned to the meadow) |
 | ![s2-ui-inventory.png](s2-ui-inventory.png) | KeyI | pack (I) |
 | ![s2-ui-character.png](s2-ui-character.png) | KeyC | character / equipment (C) |
