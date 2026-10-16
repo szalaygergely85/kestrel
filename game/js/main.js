@@ -211,8 +211,9 @@ import { wireHitSparks, hitSparksEnabled } from './fx/hitSparkWire.js'; // HIT-S
 import { parsePointShadows, presetPointShadowsOn } from './pointShadowOpt.js'; // ME-16e: ?pointshadows=0|N
 import { parseGlow } from './glowOpt.js'; // EMIS-03/04: bleed + halo knob
 import { setReduceMotion, isReduceMotion, eyeZ, gateKick, textSizeCols } from './ui/comfort.js'; // SETTINGS-APPLY-01
-import { PHYSICS, createUnderState, setApiWarnings, setFoliageDice } from '../../engine/index.js';
+import { PHYSICS, createUnderState, setApiWarnings, setFoliageDice, setFoliageLight } from '../../engine/index.js';
 setFoliageDice(new URLSearchParams(location.search).get('aafol') !== '0'); // AA-15 (OB-208): leaf-card world glyph dice, ?aafol=0 = old per-card u/v dice
+setFoliageLight(new URLSearchParams(location.search).get('aafoll') !== '0'); // AA-16 (OB-208): leaf-card light smoothing, ?aafoll=0 = off
 if (new URLSearchParams(window.location.search).get('debug') === '1') setApiWarnings(true); // ENG-API-01h: dev flag only - deprecated engine names warn once
 import { meshFeedStats, MAX_MESH_DRAWS, MAX_DRAW_ITEMS } from '../../engine/index.js'; // OB-039: F3 mesh draw cap line
 import { createModelPreview, createCharCache } from '../../engine/index.js'; // EQ-03/04: Character tab model preview

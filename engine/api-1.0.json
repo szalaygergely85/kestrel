@@ -515,6 +515,7 @@
     {"name":"setClothSphere","area":"core","tier":"experimental"},
     {"name":"setDynamicBlobs","area":"world","tier":"experimental"},
     {"name":"setFoliageDice","area":"render","tier":"experimental"},
+    {"name":"setFoliageLight","area":"render","tier":"experimental"},
     {"name":"setGrassSample","area":"world","tier":"stable"},
     {"name":"setLook","area":"render","tier":"experimental"},
     {"name":"setSampleDh","area":"world","tier":"stable"},

@@ -851,6 +851,32 @@ function v1FogFactor(dist, fog) {
  *   `cellLight` scratch per cell (no allocation) - `shadeDetailFast`/
  *   `fastShade` keep taking a flat `[r,g,b]` array, unchanged.
  */
+/**
+ * AA-16 (OB-208): mean light of a soft-edge leaf cell and its 3x3 soft-edge kind-9 neighbours whose (shade-scaled) depth is
+ * within 15 % + 0.5 m, so a cell that lands on another leaf card (other normal -> other light) keeps its brightness level.
+ * Twin of WGSL folLight (shade.wgsl.js): same neighbour order, float32 sums. Writes `light` (holding the cell's own light) in place.
+ */
+/** AA-16: neighbourhood radius in cells (1 = 3x3). WGSL twin interpolates the same constant. */
+export const FOL_LIGHT_R = 2;
+export function folLightJS(x, y, cols, rows, kind, mat, soft, depth, lbRgb, light) {
+  const f = Math.fround, d0 = depth[y * cols + x], tol = f(f(0.15 * d0) + 0.5);
+  let sr = f(light[0]), sg = f(light[1]), sb = f(light[2]), n = 1;
+  for (let dy = -FOL_LIGHT_R; dy <= FOL_LIGHT_R; dy++) {
+    for (let dx = -FOL_LIGHT_R; dx <= FOL_LIGHT_R; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const cx = x + dx, cy = y + dy;
+      if (cx < 0 || cy < 0 || cx >= cols || cy >= rows) continue;
+      const j = cy * cols + cx;
+      if (kind[j] !== KIND_MESH) continue;
+      const m = mat[j];
+      if (!(m < soft.length && soft[m] === 1)) continue;
+      if (Math.abs(f(depth[j] - d0)) > tol) continue;
+      const o = j * 3; sr = f(sr + lbRgb[o]); sg = f(sg + lbRgb[o + 1]); sb = f(sb + lbRgb[o + 2]); n++;
+    }
+  }
+  light[0] = f(sr / n); light[1] = f(sg / n); light[2] = f(sb / n);
+}
+
 export function shadeSurfaces(fb, gbuf, table, DP, lightBuf) {
   const rt = fb.rt;
   // US-029: when a GPU cell pipeline owns shading this frame (`rt.gpuActive`,
@@ -882,6 +908,7 @@ export function shadeSurfaces(fb, gbuf, table, DP, lightBuf) {
   }
 
   const tints = fb.entityTints || null; // 38.23 table or null (off)
+  const soft = table && table.soft ? table.soft : null; // AA-16
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const i = y * cols + x;
@@ -891,7 +918,13 @@ export function shadeSurfaces(fb, gbuf, table, DP, lightBuf) {
       const dist = depth[i];
       let glyphIdx, fg, bg, f, onJoint;
 
-      if (!uniform) { const o = i * 3; cellLight[0] = lbRgb[o]; cellLight[1] = lbRgb[o + 1]; cellLight[2] = lbRgb[o + 2]; }
+      if (!uniform) {
+        const o = i * 3; cellLight[0] = lbRgb[o]; cellLight[1] = lbRgb[o + 1]; cellLight[2] = lbRgb[o + 2];
+        // AA-16 (OB-208): leaf-card light smoothing, same gate as the WGSL fogView.w bit 2 (fog ctx on, not ortho, soft-edge kind 9)
+        if (kind[i] === KIND_MESH && soft !== null && id < soft.length && soft[id] === 1 && fogShapeCtx.on && fogShapeCtx.aaFolL && fogShapeCtx.mode !== 2) {
+          folLightJS(x, y, cols, rows, kind, gbuf.mat, soft, depth, lbRgb, cellLight);
+        }
+      }
       const light = cellLight;
 
       if (DP && rec && rec.v2) {

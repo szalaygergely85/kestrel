@@ -533,8 +533,9 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   // re-pinned 60922 -> 61248 by integration aaint (AA-08 soft patch tone merged with OB-204/OB-197)
   // re-pinned 61248 -> 62327 by AA-15 (OB-208: folDice world-block glyph dice for soft-edge leaf cards, gated on fogView.w)
   // re-pinned 62327 -> 63190 by VISQA-02 (gFarSky: far fog follows the sky LUT at the cell elevation, skyGlowOn.z weight)
-  assert.equal(SHADE_WGSL.length, 63190, 'stable off: SHADE_WGSL length unchanged');
-  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), 'd6c0a7a576b2a9ed0bfb3c4f6d1cae907fae52541a81a4270d8ad3add5c621d1', 'stable off: SHADE_WGSL byte-identical to pre-073b');
+  // re-pinned 63190 -> 64622 by AA-16 (OB-208: folLight leaf-card light smoothing, fogView.w bit field)
+  assert.equal(SHADE_WGSL.length, 64622, 'stable off: SHADE_WGSL length unchanged');
+  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '7e81e61ba3e9712a771022f0fc4226340150ef9eac47548377437e0f0f968521', 'stable off: SHADE_WGSL byte-identical to pre-073b');
   assert.ok(!/lvl|lvOut|location\(2\)/.test(SHADE_WGSL), 'stable off: no level output');
   assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
   assert.deepEqual(SHADE_LEVEL_TARGETS, ['rgba8', 'rgba8', 'r8ui']);
