@@ -2643,6 +2643,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       // `fb.lights` - the GPU path never calls into compositor.js's own
       // (CPU-only) lighting hook, so this must run here, not there.
       if (fb.lights) {
+        fb.lights.selectPlaced(cam); // VISQA-32: the placed lights nearest the camera get the slots (no-op <= MAX_LIGHTS)
         syncEntityLights(fb.lights, engine.world, assets.palette, attachedLightPos, lightSyncPos);
         if (fb.lights.emissive) gameVoxelPool.offerEmissive(fb.lights, cam); // EMIS-01b: derived slots from last frame's voxel queue, before update() builds their vis
         fb.lights.update(fb.timeSec, engine.world);

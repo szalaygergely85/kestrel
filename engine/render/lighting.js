@@ -57,6 +57,9 @@ export const MAX_LIGHTS = 24; // LIGHTS-24-01: was 16 while GLSL was frozen (38.
 /** EMIS-01b: derived-light candidate list size and the replace margin (38.12 (1)). */
 export const DERIVED_MAX_CAND = 64;
 export const DERIVED_HYSTERESIS = 1.25;
+export const POOL_SWAP_MARGIN_M = 4; // VISQA-32: a parked placed light must be this much closer than the worst active one
+export const POOL_RESELECT_M = 0.5;  // VISQA-32: camera travel between two placed-light re-rankings
+const NO_FLICKER = Object.freeze({});
 // ART-01a (37.18 item 3/8): `LIGHT.w` bit written once the hemi/haze light pass
 // lands (ART-01b). Exported now so the pixel code can land without touching this file's API.
 export const OUTDOOR_SHIFT = 19;
@@ -242,6 +245,18 @@ export class LightSet {
     this._dHas = new Uint8Array(MAX_LIGHTS); // scratch: derived slot still wanted this frame
     this.derivedStats = { swaps: 0, count: 0 }; // swaps = slot assignments changed (bench / EMIS-02)
 
+    // VISQA-32 (LIGHT-PRIORITY): when a world places more lights than MAX_LIGHTS, ALL of them go into a
+    // load-time pool and `selectPlaced` (per frame, camera position) keeps the nearest ones in their slots.
+    // Pool slots are rewritten in place (no handle of another light ever moves). poolN = 0 -> old path.
+    this.poolN = 0;
+    this.pool = null;          // [{x,y,z,hue(own copy),intensity,radius,flicker,on,key,seed}] (load-time)
+    this.poolX = null; this.poolY = null; this.poolZ = null; this.poolE = null; // Float32Array(poolN); poolE = scratch score
+    this.poolSlot = null;      // Int32Array(poolN): slot holding the pool light, -1 = parked
+    this.slotPool = new Int32Array(MAX_LIGHTS).fill(-1); // slot -> pool index, -1 = not a pool light
+    this._selX = NaN; this._selY = 0; this._selZ = 0; // camera at the last selection (NaN = never)
+    this.poolStats = { swaps: 0, active: 0 };
+    this._warnedFull = false;
+
     // PO REJECT item 1 (CPU fallback light cap): preallocated 4-nearest
     // scratch, filled by `selectCpuLights` - CPU (`?gpu=0`) path only, never
     // touched by the GPU/GLSL path or `?gpucompare=1` (both keep the full
@@ -260,7 +275,15 @@ export class LightSet {
     const nd = this.count - this.baseCount; // derived lights in the tail
     if (this.count >= MAX_LIGHTS && nd > 0) this.count--; // a derived light yields its slot to a placed one
     if (this.count >= MAX_LIGHTS) {
-      console.warn('[LightSet] MAX_LIGHTS reached, dropping light', def.key || '');
+      // VISQA-32: a pooled world light (the least relevant one) yields its slot to a runtime light
+      const s = this._worstPoolSlot();
+      if (s >= 0) {
+        this._park(s);
+        this._write(s, def);
+        this.dKey[s] = 0;
+        return s;
+      }
+      if (!this._warnedFull) { this._warnedFull = true; console.warn('[LightSet] MAX_LIGHTS reached, dropping light', def.key || '', '(warned once)'); }
       return -1;
     }
     if (this.count - this.baseCount > 0) {
@@ -293,6 +316,7 @@ export class LightSet {
     this.flickerJitter[h] = fl.jitter || 0;
     this.seed[h] = (def.seed | 0) || seedFor(def.key || String(h));
     this.key[h] = def.key || null;
+    this.slotPool[h] = -1; // VISQA-32: a pool write sets it right after
     this._visKeyX[h] = 0x7fffffff; this._visKeyY[h] = 0x7fffffff; this._visStructVersion[h] = -1; this._visPackedVersion[h] = -2;
     // Seed pos/col immediately (radius/z at least) so a read before the
     // first `update()` call is well-formed (zero flicker).
@@ -313,6 +337,8 @@ export class LightSet {
     this.seed[dst] = this.seed[src];
     this.key[dst] = this.key[src];
     this.dKey[dst] = this.dKey[src];
+    const p = this.slotPool[src]; // VISQA-32: a pool light keeps its mapping when compaction moves it
+    this.slotPool[dst] = p; if (p >= 0) this.poolSlot[p] = dst;
     this.visVersion[dst] = this.visVersion[src];
     this._visKeyX[dst] = 0x7fffffff; this._visKeyY[dst] = 0x7fffffff; this._visStructVersion[dst] = -1; this._visPackedVersion[dst] = -2;
   }
@@ -377,6 +403,7 @@ export class LightSet {
    */
   remove(handle) {
     if (handle < 0 || handle >= this.count) return;
+    if (this.slotPool[handle] >= 0) this._park(handle); // VISQA-32: back to the pool (parked), slot freed
     const last = this.count - 1;
     if (handle < this.baseCount) {
       // placed/entity light: swap the last placed light in, then close the hole with the last derived one
@@ -387,7 +414,95 @@ export class LightSet {
     } else if (handle !== last) {
       this._copySlot(handle, last);
     }
+    this.slotPool[last] = -1;
     this.count = last;
+  }
+
+  // ---- VISQA-32 (LIGHT-PRIORITY): placed-light pool ---------------------------------------------
+  // buildLightSet hands every placed light to `setPool` when there are more than MAX_LIGHTS of them.
+  // Score = distance from the camera to the light's sphere (dist - radius); the active ones get
+  // POOL_SWAP_MARGIN_M of hysteresis, so a pair only swaps back after the camera moved that far.
+
+  /** Load time: fills the free slots with the first pool lights (the next `selectPlaced` re-ranks them). */
+  setPool(defs) {
+    const n = defs.length;
+    this.poolN = n;
+    this.pool = defs.map((d) => ({ x: d.x, y: d.y, z: d.z, hue: Float32Array.from(d.hue || [1, 1, 1]),
+      intensity: d.intensity || 0, radius: d.radius, flicker: d.flicker || NO_FLICKER, on: d.on !== false,
+      key: d.key || null, seed: (d.seed | 0) || seedFor(d.key || 'pool' + n) }));
+    this.poolX = new Float32Array(n); this.poolY = new Float32Array(n); this.poolZ = new Float32Array(n);
+    this.poolE = new Float32Array(n);
+    this.poolSlot = new Int32Array(n).fill(-1);
+    for (let i = 0; i < n; i++) { this.poolX[i] = defs[i].x; this.poolY[i] = defs[i].y; this.poolZ[i] = defs[i].z; }
+    for (let i = 0; i < n && this.count < MAX_LIGHTS; i++) {
+      const h = this.add(this.pool[i]);
+      this.slotPool[h] = i; this.poolSlot[i] = h;
+    }
+    this._selX = NaN;
+    this.poolStats.active = this._poolActive();
+  }
+
+  _poolActive() { let a = 0; for (let h = 0; h < this.count; h++) if (this.slotPool[h] >= 0) a++; return a; }
+
+  /** Writes a pool slot's live state (setOn / beacon ramp / setParams) back to its pool entry and parks it. */
+  _park(h) {
+    const p = this.slotPool[h];
+    if (p < 0) return;
+    const e = this.pool[p];
+    e.on = this.on[h] !== 0; e.intensity = this.baseIntensity[h]; e.radius = this.radius[h];
+    e.hue[0] = this.baseHue[h * 3]; e.hue[1] = this.baseHue[h * 3 + 1]; e.hue[2] = this.baseHue[h * 3 + 2];
+    this.poolSlot[p] = -1; this.slotPool[h] = -1;
+  }
+
+  /** The active pool slot farthest (dist - radius) from the last selection camera; -1 if none. */
+  _worstPoolSlot() {
+    let best = -1, bestE = -Infinity;
+    const has = this._selX === this._selX; // false before the first selectPlaced: take the last pool slot
+    for (let h = 0; h < this.count; h++) {
+      const p = this.slotPool[h];
+      if (p < 0) continue;
+      let e = h;
+      if (has) {
+        const dx = this.poolX[p] - this._selX, dy = this.poolY[p] - this._selY, dz = this.poolZ[p] - this._selZ;
+        e = Math.sqrt(dx * dx + dy * dy + dz * dz) - this.radius[h];
+      }
+      if (e > bestE) { bestE = e; best = h; }
+    }
+    return best;
+  }
+
+  /**
+   * Per frame (before `update`): keeps the pool lights nearest to the camera in the pool slots.
+   * Re-ranks only after the camera moved POOL_RESELECT_M; a parked light replaces the worst active
+   * one only when it is POOL_SWAP_MARGIN_M closer. No-op without a pool. 0 allocation: takes the
+   * camera object ({x, y, z}), not three doubles (a non-inlined call would box them, FRAME-ALLOC-01).
+   */
+  selectPlaced(cam) {
+    const n = this.poolN;
+    if (n === 0) return;
+    const cx = cam.x, cy = cam.y, cz = cam.z;
+    const mx = cx - this._selX, my = cy - this._selY, mz = cz - this._selZ;
+    if (mx * mx + my * my + mz * mz < POOL_RESELECT_M * POOL_RESELECT_M) return; // NaN (first call) falls through
+    this._selX = cx; this._selY = cy; this._selZ = cz;
+    const E = this.poolE;
+    for (let i = 0; i < n; i++) {
+      const dx = this.poolX[i] - cx, dy = this.poolY[i] - cy, dz = this.poolZ[i] - cz;
+      const h = this.poolSlot[i];
+      E[i] = Math.sqrt(dx * dx + dy * dy + dz * dz) - (h >= 0 ? this.radius[h] : this.pool[i].radius);
+    }
+    for (let guard = 0; guard < n; guard++) {
+      let cand = -1, candE = Infinity, worst = -1, worstE = -Infinity;
+      for (let i = 0; i < n; i++) {
+        if (this.poolSlot[i] < 0) { if (E[i] < candE) { candE = E[i]; cand = i; } } else if (E[i] > worstE) { worstE = E[i]; worst = i; }
+      }
+      if (cand < 0 || worst < 0 || candE + POOL_SWAP_MARGIN_M >= worstE) break;
+      const h = this.poolSlot[worst];
+      this._park(h);
+      this._write(h, this.pool[cand]);
+      this.dKey[h] = 0;
+      this.slotPool[h] = cand; this.poolSlot[cand] = h;
+      this.poolStats.swaps++;
+    }
   }
 
   // ---- EMIS-01b (38.12 (1)): derived emissive lights ---------------------------------------------
@@ -579,6 +694,7 @@ export function buildLightSet(world, palette) {
     ls.sun.col[2] = sunHue[2] * sunPreset.intensity;
   }
 
+  const placed = []; // VISQA-32: collected first; more than MAX_LIGHTS -> the distance-ranked pool
   for (const s of world.structures) {
     const def = s.level && s.level.def;
     const lightDefs = def && def.lights;
@@ -588,7 +704,7 @@ export function buildLightSet(world, palette) {
       if (!preset) { console.warn(`[lighting] unknown light preset "${ld.preset}" (${s.id}.${ld.id})`); continue; }
       const hue = palette.hue[preset.color];
       localToWorld(s.frame, ld.x, ld.y, ld.z, lightW);
-      ls.add({
+      placed.push({
         x: lightW.x, y: lightW.y, z: lightW.z,
         hue, intensity: preset.intensity, radius: preset.radius,
         flicker: preset.flicker || null,
@@ -597,6 +713,8 @@ export function buildLightSet(world, palette) {
       });
     }
   }
+  if (placed.length > MAX_LIGHTS) ls.setPool(placed);
+  else for (let i = 0; i < placed.length; i++) ls.add(placed[i]); // byte-identical old path
   // ART-01a (37.18 item 3): the active look's hemi block (if any) is resolved
   // once here and copied into the LightSet. Absent block = `setLook` no-op, so
   // `ambient`/`sun.col` above are the byte-identical "today" values.
