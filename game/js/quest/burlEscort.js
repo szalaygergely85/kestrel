@@ -27,7 +27,7 @@ export function createBurlEscort(o) {
   // QL-05: the walk's first waypoint is her berry slope (data). Appears there, talkable again, flag s.burl.home / quest flag burl.home.
   function goHome() {
     setPhase(PHASE_BACK); st['burl.home'] = true; st['burl.departing'] = false;
-    walk.place('follow', 0); if (t0) t0.yawDeg = homeYaw;
+    walk.place(hasHomePt() ? 'home' : 'follow', 0); if (t0) t0.yawDeg = homeYaw;
     if (o.restore) { if (world.removeInteractable) world.removeInteractable('npc.' + id); talkRec = null; o.restore(); } // the lead walk keeps the talk record alive: drop it so restore() cannot register a duplicate key
     questFlag('burl.home');
   }
@@ -36,7 +36,9 @@ export function createBurlEscort(o) {
   const leadStatus = () => (o.leadStatus ? o.leadStatus() : -1);
   const lead = () => walk.start('toBend', { lead: true, waitFar: LEAD_WAIT_M, resumeNear: LEAD_RESUME_M, fromWp: st['burl.lwp'] | 0, onArrive: atBend });
   function atBend() { st['burl.lwp'] = walk.wp; setPhase(PHASE_BEND); questFlag(BEND_FLAG, true); }
-  const homeXY = () => { const w = world.get(id), p = w && w.data.components && w.data.components.walks && w.data.components.walks.follow; return p ? p[0] : null; };
+  // OB-212 (owner decision): after the departure Burl lives at walks.home[0] (his new home away from the tower); old data without it keeps the tower spot
+  const hasHomePt = () => { const w = world.get(id), c = w && w.data.components; return !!(c && c.walks && c.walks.home && c.walks.home[0]); };
+  const homeXY = () => { const w = world.get(id), k = w && w.data.components && w.data.components.walks, p = k && (k.home || k.follow); return p ? p[0] : null; };
   // The [E] Talk interactable is registered once (dialogueCtl.addNpc) at the spot Burl stood then; while he walks (follow / lead to the Bend) it must
   // follow him, or the Bend hand-in ("Talk to Burl at the Bend Waystone") has nothing to press. Interactables read x/y/z live (interaction.js).
   let talkRec = null;
@@ -82,7 +84,7 @@ export function createBurlEscort(o) {
         const open = o.dialogueOpen && o.dialogueOpen();
         if (st['burl.depart'] && !open) { // the after-wake node ended: leave
           setPhase(PHASE_DEPART); questFlag('burl.departing');
-          walk.start('depart', { lead: false, hideAtEnd: true, onArrive: gone });
+          walk.start('depart', { lead: false, hideAtEnd: !hasHomePt(), onArrive: hasHomePt() ? goHome : gone }); // OB-212: with a new home he simply stays where the walk ends (visible, errands start there)
           return;
         }
         // PO-CH1-08: the stone is awake -> Burl's goodbye opens by itself once the notice is gone and the player is near (no un-prompted re-talk)
