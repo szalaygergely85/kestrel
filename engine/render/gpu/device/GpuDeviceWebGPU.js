@@ -99,6 +99,9 @@ export class GpuDeviceWebGPU {
     /** FIX-PASS: counters exposed through `stats` (see passStats). */ this.abortedPasses = 0;
     /** @type {string|null} */ this._passStack = null;
     /** @type {any} */ this._curPipeline = null;
+    /** PERF-11 per-pass encoder state cache + removed-call counter. */ this.skippedCalls = 0;
+    /** @type {any} */ this._bg0 = null; /** @type {any} */ this._bg1 = null; this._bg1Off = -1; /** @type {any} */ this._ib = null; /** @type {any} */ this._ibFmt = null;
+    /** @type {any[]} */ this._vb = new Array(16).fill(null); this._vbOff = new Array(16).fill(0);
     this._dyn = [0];
     /** @type {Map<number, any[]>} */ this._staging = new Map();
     this._canvasTarget = null;
@@ -503,7 +506,7 @@ export class GpuDeviceWebGPU {
     }
     this.timer.attach(pd);
     this._pass = this._encoder.beginRenderPass(pd);
-    this._curPipeline = null;
+    this._curPipeline = null; this._resetPassState();
     this._boundTarget = target;
     if (this.tracePasses) { // FIX-PASS: owner stack only for the TRACE_PASSES_AFTER_ABORT passes after a stale pass was seen, then 0-alloc again
       this._passStack = new Error('pass opened here').stack;
@@ -526,7 +529,7 @@ export class GpuDeviceWebGPU {
     let owner = t ? (t.isCanvas ? 'canvas' : `target ${t.width}x${t.height} colour=${t.colorCount} depth=${t.hasDepth}`) : 'unknown target';
     if (this._passStack) owner += ' | opened at: ' + this._passStack;
     try { this._pass.end(); } catch (_) { /* an encoder already invalid: dropping the pass is all we can do */ }
-    this._pass = null; this._curPipeline = null; this._boundTarget = null; this._passStack = null;
+    this._pass = null; this._curPipeline = null; this._resetPassState(); this._boundTarget = null; this._passStack = null;
     this.tracePasses = true; this._traceLeft = TRACE_PASSES_AFTER_ABORT;
     this.abortedPasses++;
     if (reason) console.warn(`[GpuDeviceWebGPU] aborted open pass (${reason}): ${owner}`);
@@ -551,7 +554,7 @@ export class GpuDeviceWebGPU {
     if (p.gpu === null) throw new Error('pipeline still compiling: ' + p.label);
     if (p !== this._curPipeline) {
       pass.setPipeline(p.gpu); this._curPipeline = p;
-      if (p.texKinds.length === 0 && p.nsto === 0) pass.setBindGroup(0, this._emptyGroup()); // group 0 is in the layout: always set
+      if (p.texKinds.length === 0 && p.nsto === 0) this._setBg0(pass, this._emptyGroup()); // group 0 is in the layout: always set
     }
     // textures: rebuild the cached bind group only when a handle differs (element-wise compare, no alloc)
     const texs = desc.textures;
@@ -586,7 +589,7 @@ export class GpuDeviceWebGPU {
         this._buildTexGroup(p);
         if (sto && p.texKinds.length === 0) desc._grp = { p, grp: p.texGroup, n: sto.length, bufs: sto.map((e) => e.buffer) }; // miss only: allocates once per change
       }
-      pass.setBindGroup(0, p.texGroup);
+      this._setBg0(pass, p.texGroup);
     }
     // uniforms: caller-allocated ring slot (uniformOffsetBytes) or alloc + copy `uniforms` here
     if (p.uniformGroup) {
@@ -602,15 +605,33 @@ export class GpuDeviceWebGPU {
         (u instanceof Int32Array ? ring.i32 : ring.f32).set(/** @type {any} */ (u), off >> 2);
       }
       this._dyn[0] = off;
-      pass.setBindGroup(1, p.uniformGroup, this._dyn);
+      if (this._bg1 !== p.uniformGroup || this._bg1Off !== off) { this._bg1 = p.uniformGroup; this._bg1Off = off; pass.setBindGroup(1, p.uniformGroup, this._dyn); } else this.skippedCalls++;
     }
-    if (desc.vertexBuffer) pass.setVertexBuffer(0, desc.vertexBuffer.gpu);
-    if (desc.instanceBuffer) { if (desc.instanceOffset) pass.setVertexBuffer(1, desc.instanceBuffer.gpu, desc.instanceOffset); else pass.setVertexBuffer(1, desc.instanceBuffer.gpu); } // ENV-01d: instanceOffset = byte offset into a shared slab (decor species)
+    // redundant-state elimination (PERF-11): vertex/index state persists inside a pass (setPipeline does not reset it)
+    if (desc.vertexBuffer) this._setVb(pass, 0, desc.vertexBuffer.gpu, 0);
+    if (desc.instanceBuffer) this._setVb(pass, 1, desc.instanceBuffer.gpu, desc.instanceOffset || 0); // ENV-01d: instanceOffset = byte offset into a shared slab (decor species)
     const xb = desc.extraBuffers;
-    if (xb) for (let i = 0; i < xb.length; i++) pass.setVertexBuffer(p.extraBase + i, xb[i].gpu);
-    if (desc.indexBuffer) { pass.setIndexBuffer(desc.indexBuffer.gpu, desc.indexBuffer.indexFormat); p.indexed = true; }
+    if (xb) for (let i = 0; i < xb.length; i++) this._setVb(pass, p.extraBase + i, xb[i].gpu, 0);
+    if (desc.indexBuffer) {
+      const ib = desc.indexBuffer.gpu, fmt = desc.indexBuffer.indexFormat;
+      if (this._ib !== ib || this._ibFmt !== fmt) { this._ib = ib; this._ibFmt = fmt; pass.setIndexBuffer(ib, fmt); } else this.skippedCalls++;
+      p.indexed = true;
+    }
     else if (desc.vertexBuffer) p.indexed = false;
   }
+
+  /** @param {any} pass @param {any} g */
+  _setBg0(pass, g) { if (this._bg0 === g) { this.skippedCalls++; return; } this._bg0 = g; pass.setBindGroup(0, g); }
+
+  /** @param {any} pass @param {number} slot @param {any} buf @param {number} off */
+  _setVb(pass, slot, buf, off) {
+    if (this._vb[slot] === buf && this._vbOff[slot] === off) { this.skippedCalls++; return; }
+    this._vb[slot] = buf; this._vbOff[slot] = off;
+    if (off) pass.setVertexBuffer(slot, buf, off); else pass.setVertexBuffer(slot, buf);
+  }
+
+  /** Per-pass encoder-state cache reset (beginPass / endPass / abortPass). */
+  _resetPassState() { this._bg0 = null; this._bg1 = null; this._bg1Off = -1; this._ib = null; this._ibFmt = null; this._vb.fill(null); this._vbOff.fill(0); }
 
   /** Device-level cached empty bind group for pipelines without textures. */
   _emptyGroup() {
@@ -646,7 +667,7 @@ export class GpuDeviceWebGPU {
   endPass() {
     if (!this._pass) throw new Error('GpuDeviceWebGPU.endPass: no open pass');
     this._pass.end();
-    this._pass = null; this._curPipeline = null; this._boundTarget = null; this._passStack = null;
+    this._pass = null; this._curPipeline = null; this._resetPassState(); this._boundTarget = null; this._passStack = null;
   }
 
   /** OB-119: destroys the resources dispose() deferred while commands were recorded (call after queue.submit). */

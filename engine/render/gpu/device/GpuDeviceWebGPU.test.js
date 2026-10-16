@@ -179,7 +179,7 @@ const consts = {
   ok('no uniforms/textures: only empty group 0 set, no group 1', g.sets.length === 1 && g.sets[0].i === 0);
   g.sets.length = 0;
   d.bind(pU, { uniformOffsetBytes: 768 });
-  ok('uniformOffsetBytes: no ring alloc, dynamic offset passed', d.uniformRing.usedBytes === 0 && g.sets.some((s) => s.i === 1 && s.dyn[0] === 768) && g.sets[0].i === 0);
+  ok('uniformOffsetBytes: no ring alloc, dynamic offset passed', d.uniformRing.usedBytes === 0 && g.sets.some((s) => s.i === 1 && s.dyn[0] === 768)); // PERF-11: empty group 0 already set by pN in this pass, so it is no longer re-emitted
   d.endPass();
 }
 

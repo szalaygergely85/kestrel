@@ -1978,3 +1978,7 @@ Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-
 
 - AA-32b (kestrel-2, perf09): flicker diag `seamShift` = sub-count of uvDrift (same mat, other planeId, 3x3 same-plane history neighbour within the uv limit); added to M255_KEYS, so flickerLive emits `why.seamShift` and flicker-gate prints it as its own M255 column (missing = '-', baselines unaffected). glyphOnly and the gate pass/fail rule are UNCHANGED. Test: flickerReasons.test.js (seam moved -> seamShift; no neighbour -> plain uvDrift).
 - NEEDS PC-A + owner: count seamShift as motion? (arch 38.87 says out of glyphOnly; needs ratification like AA-14b before the gate changes.)
+
+### PERF-11 (kestrel-2, perf09) - redundant WebGPU state elimination (needs main-session gpucompare + perf-walk)
+- `GpuDeviceWebGPU.bind`: per-render-pass cache (reset in beginPass/endPass/abortPass) skips setBindGroup 0 (same group), setBindGroup 1 (same group + dynamic offset), setVertexBuffer (same slot/buffer/offset), setIndexBuffer (same buffer+format); setPipeline was already deduped. `skippedCalls` counter on the device. GPUBindGroups were already cached (texGroup / per-desc / dispatch groups), nothing to add there. Compute passes are 1 dispatch each: no change.
+- Test `engine/render/gpu/device/GpuDeviceWebGPU.redundant.test.js`: 3 passes x 100 random draws, naive vs cached; effective state identical at all 300 draws; set* calls 1128 -> 442 (-686, -61 %). Draw order/data untouched.
