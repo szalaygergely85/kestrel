@@ -80,3 +80,16 @@ const run = (a, b) => flickerReprojStep(a, b, a.cam, b.cam, grid, {});
   assert.ok(same(g, h).glyphOnlyPct > 0, 'one-way change keeps glyphOnly');
 }
 console.log('flickerReproj.test: ok');
+// AA-31 (OB-208): a view-model block (kind 8, objectId 0xFFFF) is screen-locked: same glyphs at the same cells after a 2-cell camera shift
+// = 0 % with vmSame (default), the camera-only mapping (vmSame false) sends it to other cells (here: excluded).
+{
+  f32[0] = 0.5; const VMD = u32[0];
+  const vmFrame = (camX) => { const f = frame(camX); for (let r = 10; r < 30; r++) for (let c = 40; c < 60; c++) { const i = r * grid.cols + c; f.GI[i * 4 + 1] = 8 | (5 << 16); f.GI[i * 4 + 3] = 0xFFFF; f.fg[i * 4 + 3] = c % 2 ? 33 : 34; f.Depth[i * 4] = VMD; } return f; };
+  const a = vmFrame(0), b = vmFrame(2 * cellW);
+  const on = run(a, b), off = flickerReprojStep(a, b, a.cam, b.cam, grid, {}, null, undefined, false);
+  assert.equal(on.totalPct, 0, 'vm same cell = 0 %: ' + on.totalPct);
+  assert.ok(on.n >= off.n + 400, 'camera-only mapping loses the vm block: ' + on.n + ' vs ' + off.n);
+  const c = vmFrame(2 * cellW); c.fg[(20 * grid.cols + 50) * 4 + 3] = 40; // a real vm glyph flip is still counted
+  assert.ok(run(a, c).glyphOnlyPct > 0, 'vm flip counted');
+}
+console.log('flickerReproj.test: AA-31 vm ok');

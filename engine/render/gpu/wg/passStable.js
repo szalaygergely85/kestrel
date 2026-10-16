@@ -36,7 +36,7 @@ export function packStableUniforms(st, cols, rows, f32, i32) {
   f32[W_DEYE] = st.dEx; f32[W_DEYE + 1] = st.dEy; f32[W_DEYE + 2] = st.dEz; f32[W_DEYE + 3] = 0;
   i32[W_COLS] = cols; i32[W_ROWS] = rows; i32[W_VALID] = st.histValid ? 1 : 0; i32[W_ORTHO] = st.cur.ortho === 1 ? 1 : 0;
   i32[W_SNAP] = CHANNEL_SNAP; f32[W_DETAIL] = DEFAULT_DETAIL;
-  i32[W_AAFLAGS] = (st.aaGlyph ? 1 : 0) | (st.aaMesh ? 2 : 0) | (st.aaVm ? 4 : 0) | (st.aaJoint ? 8 : 0) | (st.aaAnchor ? 16 : 0) | (st.aaEdge ? 32 : 0) | (st.aaVox ? 64 : 0) | (st.aaGraze ? 128 : 0) | (st.aaHue ? 256 : 0) | (st.aaLeafUv ? 512 : 0) | (st.aaTerrSnap ? 1024 : 0) | (st.aaLeafLv ? 2048 : 0); // AA-18: ?aaedge=0; AA-20: ?aagraze=0 (bit 128); OB-198: ?aaglyph=0 / ?aamesh=0
+  i32[W_AAFLAGS] = (st.aaGlyph ? 1 : 0) | (st.aaMesh ? 2 : 0) | (st.aaVm ? 4 : 0) | (st.aaJoint ? 8 : 0) | (st.aaAnchor ? 16 : 0) | (st.aaEdge ? 32 : 0) | (st.aaVox ? 64 : 0) | (st.aaGraze ? 128 : 0) | (st.aaHue ? 256 : 0) | (st.aaLeafUv ? 512 : 0) | (st.aaTerrSnap ? 1024 : 0) | (st.aaLeafLv ? 2048 : 0) | (st.aaSeam ? 4096 : 0); // AA-18: ?aaedge=0; AA-20: ?aagraze=0 (bit 128); OB-198: ?aaglyph=0 / ?aamesh=0
 }
 
 export class WgStablePass {
@@ -86,6 +86,7 @@ export class WgStablePass {
     this.st.aaLeafUv = fogShapeCtx.aaLeafUv !== false && fogShapeCtx.aaFol !== false; // AA-26 (OB-208): ?aaleafuv=0; only with the AA-15 world dice
     this.st.aaTerrSnap = fogShapeCtx.aaTerrSnap !== false; // AA-28 (OB-208): ?aaterrsnap=0
     this.st.aaLeafLv = fogShapeCtx.aaLeafLv !== false; // AA-29 (OB-208): ?aaleaflv=0
+    this.st.aaSeam = fogShapeCtx.aaSeam !== false; // AA-31 (OB-208): ?aaseam=0
     packStableUniforms(this.st, this.cols, this.rows, this.u, this.ui);
     return valid;
   }

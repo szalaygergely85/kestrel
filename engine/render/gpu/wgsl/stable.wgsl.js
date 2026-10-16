@@ -117,6 +117,15 @@ fn leafSoft(m: u32) -> bool {
   if (m >= u32(textureDimensions(uMatI).y)) { return false; }
   return (textureLoad(uMatI, vec2i(0, i32(m)), 0).y & ${F_SOFT_EDGE}) != 0;
 }
+// AA-31 (OB-208): a 4-neighbour on planeId p with the same kind + material (twin: temporalStable.js seamAt)
+fn seamOk(nx: i32, ny: i32, kind: u32, mat: u32, p: u32) -> bool {
+  if (nx < 0 || nx >= u.gridCols || ny < 0 || ny >= u.gridRows) { return false; }
+  let g = textureLoad(uGI, vec2i(nx, ny), 0);
+  return g.x == p && giKind(g.y) == kind && giMat(g.y) == mat;
+}
+fn seamAt(cx: i32, cy: i32, kind: u32, mat: u32, p: u32) -> bool {
+  return seamOk(cx - 1, cy, kind, mat, p) || seamOk(cx + 1, cy, kind, mat, p) || seamOk(cx, cy - 1, kind, mat, p) || seamOk(cx, cy + 1, kind, mat, p);
+}
 fn grazeLimit(cx: i32, cy: i32, kind: u32, mat: u32, u0: f32, v0: f32, lim: f32) -> f32 {
   var gx = min(grazeStep(cx - 1, cy, kind, mat, u0, v0), grazeStep(cx + 1, cy, kind, mat, u0, v0));
   var gy = min(grazeStep(cx, cy - 1, kind, mat, u0, v0), grazeStep(cx, cy + 1, kind, mat, u0, v0));
@@ -186,7 +195,9 @@ fn stableCell(cell: vec2i) -> SCell {
   if (c255 != (lvP == LEVEL_NONE) && !jointHold) { return o; } // mixed ramp/non-ramp: a real pattern edge, always fresh
   // AA-26 (aaFlags bit 512): a soft-edge leaf keeps history on kind + material + reprojection (world-keyed dice; twin: leafHold)
   let leafHold = (u.aaFlags & 512) != 0 && u.ortho == 0 && kind == ${KIND_MESH}u && matSame && leafSoft(giMat(gi.y));
-  if (vmTag == 0u && !leafHold) {
+  // AA-31 (aaFlags bit 4096): facet seam - history on the adjacent facet (another planeId, same material, a 4-neighbour now) skips the UV check (twin: seamHold)
+  let seamHold = (u.aaFlags & 4096) != 0 && !leafHold && vmTag == 0u && u.ortho == 0 && matSame && hh.x != gi.x && seamAt(cell.x, cell.y, kind, giMat(gi.y), hh.x);
+  if (vmTag == 0u && !leafHold && !seamHold) {
     let du = bitcast<f32>(ga.x) - bitcast<f32>(hh.y);
     let dv = bitcast<f32>(ga.y) - bitcast<f32>(hh.z);
     let dUV = sqrt(du * du + dv * dv);

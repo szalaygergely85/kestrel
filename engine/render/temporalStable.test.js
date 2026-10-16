@@ -474,6 +474,14 @@ for (const [lv, soft, d, want] of [[true, 1, 2, 'hist'], [false, 1, 2, 'cur'], [
   const out = createStableBuffers(COLS, ROWS); stabilize(b, h, out, st); const i = 10 * COLS + 20;
   ok(`AA-29 leafLv=${lv} soft=${soft} dl=${d}: ${want}`, want === 'hist' ? out.glyph[i] === h.glyph[i] && out.level[i] === 4 : out.level[i] === 4 + d, `${out.glyph[i]}/${h.glyph[i]} lv ${out.level[i]}`);
 }
+// AA-31 (OB-208): a facet-seam cell (history on planeId 5, a 4-neighbour is on planeId 5 now, same material) keeps history past the UV limit;
+// off / no neighbour on the history's plane = fresh
+for (const [seam, nb, want] of [[true, true, 0], [false, true, 1], [true, false, 1]]) {
+  const i = 10 * COLS + 20;
+  const st = createStableState(); st.aaGraze = false; st.aaSeam = seam; beginFrame(st, cam0, GRID); const a = wallInput(st); a.kind.fill(KIND_MESH); a.planeId.fill(5); const h = colHist(a); beginFrame(st, cam0, GRID);
+  const b = wallInput(st); b.kind.fill(KIND_MESH); b.planeId.fill(6); if (nb) b.planeId[i - 1] = 5; for (let k = 0; k < b.u.length; k++) b.u[k] += 3;
+  const out = createStableBuffers(COLS, ROWS); stabilize(b, h, out, st); ok(`AA-31 seam=${seam} nb=${nb}: fresh ${want}`, out.fresh[i] === want, String(out.fresh[i]));
+}
 // AA-28 (OB-208): hueShift = chromaticity change only (a canopy shadow halves the brightness: no shift; a tint does)
 for (const [a, b, want, why] of [[0x5a6e3c, 0x2d371e, false, 'half brightness'], [0x5a6e3c, 0x5a6e3c, false, 'same'], [0x5a6e3c, 0x8a6e3c, true, 'red +48'], [0x405020, 0x204828, true, 'green to teal'], [0x101010, 0x000000, true, 'to black']])
   if (hueShift(a, b) !== want) { fail++; failures.push(`AA-28 hueShift ${why}: want ${want}`); }
