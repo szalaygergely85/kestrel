@@ -1,5 +1,17 @@
 # PC-B queue
 
+## TEASER-QA 2026-10-16
+Stills + verdicts: docs/test-reports/teaser/index.md (`node tools/teaser-stills.mjs`). Fixed in TEASER-QA: crypt-night end framing, teaser-water hour 17 -> 12.
+| id | what | track |
+|---|---|---|
+| TEASER-QA-01 | teaser-leaves broken: grove floor near-black, no ferns/trunks in frame, landmarks on the end horizon -> re-author the path (designer) after checking groveNorthWest content at 15:30 | PC-B design |
+| TEASER-QA-02 | Glasswater (and lakes at low sun) render near-black brown at 17:00 at pitch -20 (noon is blue): water shading at low sun, twin + gpucompare | PC-A render |
+| TEASER-QA-03 | braidFalls sheet reads as a beige wall (no water colour/motion in stills) + Glasswater surface visible as a raised slab above braid_outlet from the lip | PC-B content / render |
+| TEASER-QA-04 | crypt (cem32) is a facade only: the doorway shows sky/fence; add a back room or dark interior behind the door; fence rows float above the horizon west of the cemetery | PC-B content |
+| TEASER-QA-05 | teaser-grass: dark building block on the north horizon (mid), sun drawn as a wedge from the top edge (also leaves), green specks above the horizon | PC-B design + render ask |
+| TEASER-QA-06 | Far coast/shore silhouettes are stair-stepped slabs (strand-dawn coast, Glasswater far shore, dawn-sea horizon bar): coarse terrain LOD in the near band | PC-A world |
+| TEASER-QA-07 | teaser-crypt-drone too dark to read at 22:00 (crypt small, flat green grass): brighter moon/hour 21 or a lantern at the crypt | PC-B design |
+
 ## ED-QUEST-UI (owner OB-214 mockup) (PC-B PO, PC-A to ratify)
 Source: design/editor/quest-editor-mockup.md (owner "Quest Editor PRO" mockup, OB-214). Goal: the editor's Quest tab reaches the mockup's layout and density **on our quest data**; it rehosts what ED-QUEST-01..07b already built (model.js, flow.js, edit.js, formatEdit.js, format.js, lines.js, lintQuest.js, wire.js, markers.js, targets.js, liveSend.js, questPick.js, questDialogue.js), no new quest rules. Rules of record: OB-156, D-082, D-105, D-106 (1-3 objectives, reward every time, `next` offered never auto-started), D-108 (every quest has a hand-in at a CHARACTER), D-087 (rare object givers), D-084/D-116 (no XP; level = power score, never a quest gate), R19 + LINE_MAX 56.
 Common rules for every row: logic in pure modules under `tools/editor/quest/` with a `*.test.mjs` (Node-testable AC); DOM stays thin in `tools/editor/questPanel.js` (+ new `tools/editor/questCards.js` if the panel passes ~600 lines); the editor never imports `game/` (check-deps; mirror + parity test like format.js/markers.js); no new editor shell, ribbon or mobile tab bar (the mockup's Viewport/Scene Tree/Inspector/Terminal tab bar and avatar are **not in scope**: our editor layout stays, D-102); existing quest tests + `node tools/run-tests.mjs --filter editor` green; one headless still of the Quest tab per row in docs/test-reports/edqui/. Plain player-facing names everywhere (raw ids only small/grey).
