@@ -235,6 +235,26 @@ function diagGrazeLim(d, i, cols, rows, kind, mat, lim) {
   if (gx === Infinity) gx = 0; if (gy === Infinity) gy = 0;
   const g = Math.min(GRAZE_K * Math.max(gx, gy), GRAZE_CAP * lim); return g > lim ? g : lim;
 }
+// AA-29 (OB-208): why a mesh cell's ramp level jumped by 2+: raw light change at the cell vs the change of the AA-16 5x5 depth-gated
+// same-material mean (folLight), and whether the window's member count changed. Keys: ljRaw/ljAvg <5|<15|15+ (pct), ljN= / ljN!.
+const _lum = (L, o) => { const f = new Float32Array(L.buffer, o * 4, 3); return f[0] * 0.3 + f[1] * 0.59 + f[2] * 0.11; };
+function folMean(D, i, cols, rows, mat) {
+  const x = i % cols, y = (i / cols) | 0, dv = new Float32Array(D.Depth.buffer), d0 = dv[i], tol = 0.15 * d0 + 0.5;
+  let s = 0, n = 0;
+  for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+    const cx = x + dx, cy = y + dy; if (cx < 0 || cy < 0 || cx >= cols || cy >= rows) continue;
+    const j = cy * cols + cx; if ((D.GI[j * 4 + 1] >>> 16) !== mat || Math.abs(dv[j] - d0) > tol) continue;
+    s += _lum(D.Light, j * 4); n++;
+  }
+  return [n ? s / n : 0, n];
+}
+function leafJumpWhy(d, p, i, h, cols, rows, mat, up, sub) {
+  const b = (a, c) => { const r = Math.abs(a - c) / Math.max(1e-4, Math.max(a, c)); return r < 0.05 ? '<5' : r < 0.15 ? '<15' : '15+'; };
+  const [mc, nc] = folMean(d, i, cols, rows, mat), [mp, np] = folMean(p, h, cols, rows, mat);
+  const k1 = 'ljRaw' + b(_lum(d.Light, i * 4), _lum(p.Light, h * 4)) + ':' + mat, k2 = 'ljAvg' + b(mc, mp) + ':' + mat;
+  const k3 = 'ljN' + (nc === np ? '=' : '!') + ':' + mat, k4 = 'lj' + (up ? 'Up' : 'Dn') + ':' + mat;
+  for (const k of [k1, k2, k3, k4]) sub[k] = (sub[k] || 0) + 1;
+}
 export function flickerGlyphReasons(d, p, hmap, cols, rows, terms, cnt) {
   const gcls = terms.gcls || DEFAULT_GCLS, octave = terms.octave || null;
   let n = 0, flips = 0;
@@ -287,6 +307,7 @@ export function flickerGlyphReasons(d, p, hmap, cols, rows, terms, cnt) {
         } else {
           const dl = Math.abs(lvC - lvP); r = dl > 1 ? 'levelJump' : 'replayHold';
           if (dl > 1) { const b = 'dl' + (dl === 2 ? '2' : dl <= 4 ? '3-4' : '5+') + (cov ? 'cov' : ''); cnt.sub[b] = (cnt.sub[b] || 0) + 1; }
+          if (dl > 1 && kind === KIND_MESH && d.Light && p.Light) leafJumpWhy(d, p, i, h, cols, rows, mat, lvC > lvP, cnt.sub); // AA-29
         }
       }
     }

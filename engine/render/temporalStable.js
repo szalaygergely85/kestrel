@@ -144,6 +144,7 @@ export function createStableState() {
     aaAnchor: true, // AA-09: a both-255 hold of a static surface re-anchors (writes the CURRENT u/v) so cumulative drift cannot re-roll it; ?aaanchor=0
     aaGraze: true, // AA-20 (OB-208): UV drift limit follows the cell's own UV footprint on grazing surfaces (road ahead); ?aagraze=0
     aaLeafUv: true, // AA-26 (OB-208): soft-edge leaf cells (inp.soft) skip the UV drift test - their glyph dice is world-keyed (AA-15), card u/v is unrelated; set per frame from fogShapeCtx
+    aaLeafLv: true, // AA-29 (OB-208): a leafHold cell holds through |level step| <= 2 (its 5x5 folLight mean moves 15 %+ on a walk while its own light holds); ?aaleaflv=0
     aaTerrSnap: true, // AA-28 (OB-208): a terrain both-255 glyph (same material) survives an fg snap (canopy shadow, colour tier); set per frame from fogShapeCtx (?aaterrsnap=0)
     aaHue: true, // AA-23 (OB-208): colour snap per colour, not per channel (no hue split); ?aahue=0
     aaVox: true, // AA-21 (OB-208): a world voxel prop (kind 8, same planeId + material) re-anchors its both-255 hold like other static surfaces; ?aavox=0
@@ -325,7 +326,7 @@ export function stabilize(inp, hist, out, st) {
         }
         continue;
       }
-      const hold = st.aaGlyph ? Math.abs(lvC - lvP) <= 1 : lvC === lvP;
+      const hold = st.aaGlyph ? Math.abs(lvC - lvP) <= (leafHold && st.aaLeafLv ? 2 : 1) : lvC === lvP; // AA-29: leaf +-2
       if (hold) { out.glyph[i] = hist.glyph[h]; out.level[i] = lvP; }
     }
   }
