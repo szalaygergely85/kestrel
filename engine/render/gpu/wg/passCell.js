@@ -8,9 +8,10 @@ import { WgLightPass } from './passLight.js';
 import { WgShadePass } from './passShade.js';
 import { WgUploadSource } from './passUpload.js';
 import { PROJ_HFOV_DEG } from '../../projection.js';
+import { fogShapeCtx } from '../../fogShape.js'; // AA-17 (OB-208): aaFolE switch
 import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
 
-const R_N = RESOLVE_BLOCK.field('n').word, R_BAND = RESOLVE_BLOCK.field('bandM').word, R_HVALID = RESOLVE_BLOCK.field('histValid').word;
+const R_N = RESOLVE_BLOCK.field('n').word, R_BAND = RESOLVE_BLOCK.field('bandM').word, R_HVALID = RESOLVE_BLOCK.field('histValid').word, R_FOLE = RESOLVE_BLOCK.field('folEdge').word;
 // AA-04b: StableU words copied into ResolveU by field name (vec4 = 4 words)
 const HYST_COPY = [['curA', 4], ['curB', 4], ['curC', 4], ['prevA', 4], ['prevB', 4], ['prevC', 4], ['dEye', 4], ['gridCols', 1], ['gridRows', 1], ['ortho', 1]]
   .map(([n, w]) => ({ from: STABLE_BLOCK.field(n).word, to: RESOLVE_BLOCK.field(n).word, w }));
@@ -48,7 +49,7 @@ export class WgCellPass {
     this.ru = new Float32Array(RESOLVE_BLOCK.sizeWords); this.ri = new Int32Array(this.ru.buffer);
     this.du = new Float32Array(DERIV_BLOCK.sizeWords); this.di = new Int32Array(this.du.buffer);
     this.dummyHist = device.createTexture({ format: 'rgba32ui', width: 1, height: 1 }); // AA-04b: bound when the hysteresis is off
-    this.rTex = [0, 1, 2, 3, 4].map(slot => ({ slot, texture: null }));
+    this.rTex = [0, 1, 2, 3, 4, 5].map(slot => ({ slot, texture: null }));
     this.dTex = [0, 1, 2].map(slot => ({ slot, texture: null }));
     this.rBind = { uniforms: this.ru, textures: this.rTex };
     this.dBind = { uniforms: this.du, textures: this.dTex };
@@ -76,6 +77,8 @@ export class WgCellPass {
     const rTex = this.rTex;
     rTex[0].texture = t.texSGI; rTex[1].texture = t.texSGA; rTex[2].texture = t.texSDepth; rTex[3].texture = t.texMask;
     rTex[4].texture = this.dummyHist; this.ri[R_HVALID] = 0;
+    rTex[5].texture = this.shadePass.texMatI; // AA-17: F_SOFT_EDGE per material (shade packs it; 1x1 stub until the first upload)
+    this.ri[R_FOLE] = fogShapeCtx.aaFolE ? 1 : 0;
     const hs = p._hystSp; // AA-04b: the stable pass whose camera terms/history resolve may use this frame (set by the pipeline, null = off)
     if (hs && p.rays > 1 && hs.st.histValid && hs.outHist) {
       rTex[4].texture = hs.outHist; this.ri[R_HVALID] = 1; // last frame's stable output (set[_k ^ 1])

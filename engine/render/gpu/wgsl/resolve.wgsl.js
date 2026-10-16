@@ -7,7 +7,8 @@
 // @group(1) @binding(0) = ResolveU. Targets: 0 = GI rgba32uint, 1 = GA rgba32uint, 2 = DEPTH r32uint (x only is stored).
 import { defineUniformBlock } from './uniformBlock.js';
 import { GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL, REPROJECT_WGSL } from './common.wgsl.js';
-import { KIND_MODEL } from '../../GBuffer.js';
+import { KIND_MODEL, KIND_MESH } from '../../GBuffer.js';
+import { F_SOFT_EDGE } from '../ShadeTextures.js';
 import { RESOLVE_BAND_WGSL } from '../../resolveBand.js'; // RTX-RAYS-BAND-01 (38.79): RG4 / Bayer / threshold helpers, one source with the JS twin
 export const MAX_SUB = 16; // 4x4, the architecture's hard cap (n <= 4)
 
@@ -16,7 +17,7 @@ export const RESOLVE_BLOCK = defineUniformBlock('ResolveU', [
   { name: 'n', type: 'i32' },
   { name: 'bandM', type: 'f32' },
   { name: 'histValid', type: 'i32' }, // AA-04b: 1 = hysteresis on this frame (stable history valid + aaHyst); 0 = the plain vote, byte-identical
-  { name: 'pad0', type: 'i32' },
+  { name: 'folEdge', type: 'i32' }, // AA-17 (OB-208): 1 = a soft-edge leaf history key (kind 9 + F_SOFT_EDGE) matches on kind + mat, any planeId
   // stable camera terms (same words as StableU, packStableUniforms): reproject the cell into last frame's camera
   { name: 'curA', type: 'vec4' }, { name: 'curB', type: 'vec4' }, { name: 'curC', type: 'vec4' },
   { name: 'prevA', type: 'vec4' }, { name: 'prevB', type: 'vec4' }, { name: 'prevC', type: 'vec4' }, { name: 'dEye', type: 'vec4' },
@@ -24,7 +25,7 @@ export const RESOLVE_BLOCK = defineUniformBlock('ResolveU', [
 ]);
 
 /** Texture slot kinds for PipelineDesc.bindings.textures. */
-export const RESOLVE_TEXTURES = Object.freeze(['uint', 'uint', 'uint', 'uint', 'uint']); // slot 4 = HIST (stable's last output; a 1x1 dummy when histValid = 0)
+export const RESOLVE_TEXTURES = Object.freeze(['uint', 'uint', 'uint', 'uint', 'uint', 'sint']); // slot 4 = HIST (stable's last output; a 1x1 dummy when histValid = 0); slot 5 = shade MAT_I (AA-17)
 /** Colour target formats, in @location order. */
 export const RESOLVE_TARGETS = Object.freeze(['rgba32uint', 'rgba32uint', 'r32uint']);
 
@@ -35,12 +36,18 @@ ${RESOLVE_BLOCK.wgsl}
 @group(0) @binding(2) var uSDepth: texture_2d<u32>; // x = bitcast dist, sub-grid
 @group(0) @binding(3) var uMask: texture_2d<u32>;   // r8uint, cols x rows (per-cell UI overlay bit)
 @group(0) @binding(4) var uHist: texture_2d<u32>;   // AA-04b: stable HIST (planeId, u, v, level | kind << 8 (4 bits) | vmTag << 12 | mat << 16), last frame
+@group(0) @binding(5) var uMatI: texture_2d<i32>;    // AA-17: shade MAT_I (row = material id, texel 0 .y = flags; F_SOFT_EDGE)
 @group(1) @binding(0) var<uniform> u: ResolveU;
 ${GBUF_UNPACK_WGSL}
 const MAX_SUB: i32 = ${MAX_SUB};
 ${FULLSCREEN_VS_WGSL}
 ${RESOLVE_BAND_WGSL}
 ${REPROJECT_WGSL}
+// AA-17 (OB-208): history key is a soft-edge leaf (mesh kind + F_SOFT_EDGE); rows past the table (1x1 stub before the first upload) = not soft.
+fn softHist(k: u32, m: u32) -> bool {
+  if (u.folEdge == 0 || k != ${KIND_MESH}u || m >= textureDimensions(uMatI).y) { return false; }
+  return (textureLoad(uMatI, vec2i(0, i32(m)), 0).y & ${F_SOFT_EDGE}) != 0;
+}
 struct FO {
   @location(0) gi: vec4u,
   @location(1) ga: vec4u,
@@ -153,7 +160,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
   }
 
   // AA-04b (38.82 B) + OB-208: keep last frame's key (sky included) while its group has >= n2/4 samples or is within HYST of the best.
-  // Sky keys match on kind only; a sky winner reprojects with the nearest geometry depth. Twin: resolveBand.js resolveCellJS.
+  // Sky keys match on kind only; soft-edge leaf keys on kind + mat (AA-17: any leaf card); a sky winner reprojects with the nearest geometry depth. Twin: resolveBand.js resolveCellJS.
   if (u.histValid != 0 && kk[winner] != ${KIND_MODEL}u) {
     var rd = bestMinDepth;
     if (kk[winner] == 0u) {
@@ -171,13 +178,19 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
         let hh = textureLoad(uHist, vec2i(hc, hr), 0);
         let hKind = (hh.w >> 8u) & 15u; let hMat = hh.w >> 16u; let hPid = i32(hh.x);
         if (hKind != ${KIND_MODEL}u) {
-          let hSky = hKind == 0u;
-          var hCount = 0; var hFirst = -1;
+          let hSky = hKind == 0u; let hSoft = softHist(hKind, hMat);
+          var hCount = 0; var hFirst = -1; var sCount = 0; var sFirst = -1;
           for (var b = 0; b < MAX_SUB; b++) {
             if (b >= n2) { break; }
             if (kk[b] == hKind && (hSky || (pk[b] == hPid && mk[b] == hMat))) { hCount++; if (hFirst < 0) { hFirst = b; } }
+            if (hSoft && kk[b] == hKind && mk[b] == hMat) { sCount++; if (sFirst < 0) { sFirst = b; } }
           }
           if (hFirst >= 0 && (hCount >= max(1, n2 / 4) || hCount >= bestCount - max(1, n2 / 8))) { winner = hFirst; bestCount = hCount; }
+          // AA-17 (soft-edge leaf key): (a) exact card lost but the leaf material as a whole holds and the plain winner is not that leaf
+          // -> keep a leaf key (last frame's card if present); (b) the plain winner is that leaf on another card -> stay on last frame's card.
+          else if (sFirst >= 0 && !(kk[winner] == hKind && mk[winner] == hMat) && (sCount >= max(1, n2 / 4) || sCount >= bestCount - max(1, n2 / 8))) {
+            winner = select(sFirst, hFirst, hFirst >= 0); bestCount = sCount;
+          } else if (hFirst >= 0 && hSoft && kk[winner] == hKind && mk[winner] == hMat) { winner = hFirst; bestCount = sCount; }
         }
       }
     }

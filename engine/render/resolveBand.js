@@ -27,7 +27,9 @@ const KIND_MODEL_HYST = 8;
 /**
  * Resolve one cell's vote. sub = {pid:Int32Array, kind:Uint32Array, mat:Uint32Array, depth:Float32Array} in scan order
  * (index j*n+i, length n*n). out = {idx, cov, far} is filled: idx = scan-order index of the winning sub-sample.
- * histKey = null | {kind, pid, mat}: last frame's key at this cell's reprojected world position (AA-04b); out.bestMinDepth = the
+ * histKey = null | {kind, pid, mat, soft?}: last frame's key at this cell's reprojected world position (AA-04b); soft = AA-17 soft-edge leaf key (kind 9 +
+ * F_SOFT_EDGE, switch on): when the exact card fails the rule, the whole kind + mat group (any planeId) may still hold the cell for leaf,
+ * and a leaf winner on another card switches back to last frame's card while that card has a sample; out.bestMinDepth = the
  * un-hysteresised best group's min depth (the depth to reproject with). Near path = the unchanged vote (normative 14.2 item 3); far path = same rule over RG4 only.
  */
 export function resolveCellJS(sub, n, bandM, cx, cy, out, histKey = null) {
@@ -58,12 +60,18 @@ export function resolveCellJS(sub, n, bandM, cx, cy, out, histKey = null) {
       let g = 1e30; for (let b = 0; b < n2; b++) if (sub.kind[b] !== 0 && sub.depth[b] < g) g = sub.depth[b];
       out.bestMinDepth = g < 1e29 ? g : 1e4;
     }
-    const hyst = Math.max(1, n2 >> 3), keepMin = Math.max(1, n2 >> 2), sky = histKey.kind === 0;
-    let hc = 0, hFirst = -1;
+    const hyst = Math.max(1, n2 >> 3), keepMin = Math.max(1, n2 >> 2), sky = histKey.kind === 0, soft = !!histKey.soft;
+    let hc = 0, hFirst = -1, sc = 0, sFirst = -1;
     for (let b = 0; b < n2; b++) {
       if (sub.kind[b] === histKey.kind && (sky || (sub.pid[b] === histKey.pid && sub.mat[b] === histKey.mat))) { hc++; if (hFirst < 0) hFirst = b; }
+      if (soft && sub.kind[b] === histKey.kind && sub.mat[b] === histKey.mat) { sc++; if (sFirst < 0) sFirst = b; }
     }
     if (hFirst >= 0 && (hc >= keepMin || hc >= bestCount - hyst)) { winner = hFirst; bestCount = hc; }
+    // AA-17: (a) exact card lost, leaf material holds, plain winner not that leaf -> keep a leaf key (last card if present);
+    // (b) plain winner is that leaf on another card -> stay on last frame's card (any sample of it)
+    else if (sFirst >= 0 && !(sub.kind[winner] === histKey.kind && sub.mat[winner] === histKey.mat) && (sc >= keepMin || sc >= bestCount - hyst)) {
+      winner = hFirst >= 0 ? hFirst : sFirst; bestCount = sc;
+    } else if (hFirst >= 0 && soft && sub.kind[winner] === histKey.kind && sub.mat[winner] === histKey.mat) { winner = hFirst; bestCount = sc; }
   }
   let nearest = -1, nearestMag = 1e30;
   for (let a = 0; a < n2; a++) {

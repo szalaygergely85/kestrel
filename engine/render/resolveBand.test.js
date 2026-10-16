@@ -66,4 +66,17 @@ for (const n of [1, 2, 3]) { const s = mk(); const a = { ...resolveCellJS(s, n, 
   const o = { idx: -1, cov: -1, far: false }; resolveCellJS(cell(6), 4, 0, 0, 0, o, null); assert.equal(o.bestMinDepth, 1e30 < 1e29 ? 0 : o.bestMinDepth);
   const s6 = cell(6); for (let c = 0; c < 16; c++) s6.depth[c] = c < 6 ? 5 + c : 1e30; resolveCellJS(s6, 4, 0, 0, 0, o, skyKey); assert.equal(o.bestMinDepth, 5, 'sky winner reprojects at the nearest geometry depth');
 }
+// AA-17 (OB-208): soft-edge leaf history key (kind 9, soft) - (b) a leaf winner on another card goes back to last frame's card;
+// (a) sky winner with the leaf material split over two cards (each < n2/4) keeps a leaf key; non-soft keys unchanged.
+{
+  const leaf = (cards) => { const s = { pid: new Int32Array(16), kind: new Uint32Array(16), mat: new Uint32Array(16), depth: new Float32Array(16).fill(3) };
+    cards.forEach((pid, c) => { if (pid >= 0) { s.kind[c] = 9; s.pid[c] = pid; s.mat[c] = 5; } }); return s; };
+  const pidWon = (s, hk) => { const o = { idx: -1, cov: -1, far: false }; resolveCellJS(s, 4, 0, 0, 0, o, hk); return s.kind[o.idx] === 0 ? -1 : s.pid[o.idx]; };
+  const b = leaf([1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]); // card 2 has 15/16, last frame card 1
+  assert.equal(pidWon(b, { kind: 9, pid: 1, mat: 5, soft: true }), 1, 'soft: stay on last card');
+  assert.equal(pidWon(b, { kind: 9, pid: 1, mat: 5 }), 2, 'not soft: plain vote');
+  const a = leaf([1, 1, 1, 2, 2, 2, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]); // sky 10/16, leaf 3 + 3 over two cards
+  assert.equal(pidWon(a, { kind: 9, pid: 2, mat: 5, soft: true }), 2, 'soft: leaf material 6/16 holds against sky');
+  assert.equal(pidWon(a, { kind: 9, pid: 2, mat: 5 }), -1, 'not soft: sky wins (3/16 < 4)');
+}
 console.log('resolveBand.test.js: bayer, RG4, dither +-7.5 %, near/far rules, n<4 passthrough passed.');

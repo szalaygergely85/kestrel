@@ -165,7 +165,7 @@ export { resolveWaterLooks } from './render/waterLook.js'; // US-055a2c Q12 item
 // US-047: runGpuCompare/compareCells/compareGeometry/compareLight/poison*
 // (gpucompare parity harness) moved to engine/dev.js.
 export { flickerStep, flickerReprojStep, flickerGlyphReasons, GLYPH_REASONS, M255_KEYS, glyphClassTable } from './render/gpu/flicker.js';
-export { setFoliageDice, setFoliageLight } from './render/fogShape.js'; // AA-15 (OB-208): ?aafol=0; AA-16: ?aafoll=0
+export { setFoliageDice, setFoliageLight, setFoliageEdge } from './render/fogShape.js'; // AA-15 (OB-208): ?aafol=0; AA-16: ?aafoll=0; AA-17: ?aafoledge=0
 
 // ---- physics ----------------------------------------------------------------
 export { PHYSICS_DEFAULTS, PHYSICS } from './physics/config.js';
