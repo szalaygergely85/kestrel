@@ -123,11 +123,16 @@ export function summarizeRuns(runs) {
   return out;
 }
 
-function newestCapture() {
+// FLICKER-GATE-FIX: pure pick; only captures written at/after startMs count (a failed capture must not compare a stale file).
+export function pickFreshCapture(files, startMs) {
+  const fresh = files.filter((f) => f.t >= startMs).sort((a, b) => b.t - a.t);
+  if (!fresh.length) throw new Error('capture-browser wrote no new *-flicker-live-grid.json since this run started (stale captures ignored)');
+  return fresh[0].n;
+}
+function newestCapture(startMs) {
   const files = readdirSync(CAPTURES).filter((n) => /-flicker-live-grid\.json$/.test(n))
-    .map((n) => ({ n, t: statSync(path.join(CAPTURES, n)).mtimeMs })).sort((a, b) => b.t - a.t);
-  if (!files.length) throw new Error('no *-flicker-live-grid.json capture found');
-  return path.join(CAPTURES, files[0].n);
+    .map((n) => ({ n, t: statSync(path.join(CAPTURES, n)).mtimeMs }));
+  return path.join(CAPTURES, pickFreshCapture(files, startMs));
 }
 
 function parseArgs(argv) {
@@ -137,6 +142,7 @@ function parseArgs(argv) {
     else if (argv[i] === '--save') o.save = true;
     else if (argv[i] === '--baseline') o.baseline = argv[++i];
     else if (argv[i] === '--repeat') o.repeat = Math.max(1, Number(argv[++i]) || 1);
+    else if (argv[i] === '--timeout-ms') o.timeoutMs = Number(argv[++i]) || 240000;
     else if (argv[i] === '--query') o.query = argv[++i];
     else throw new Error('unknown arg ' + argv[i]);
   }
@@ -146,17 +152,19 @@ function parseArgs(argv) {
 function main() {
   const o = parseArgs(process.argv.slice(2));
   if (!o.port) throw new Error('--port <N> is required');
-  const args = [path.join(ROOT, 'tools', 'capture-browser.mjs'), '--mode', 'flicker', '--variant', 'live', '--stable', '--rays', '4', '--port', String(o.port), '--timeout-ms', '240000']; // AA-19: 6 poses (roadWalk) outgrew the 120 s default
+  const args = [path.join(ROOT, 'tools', 'capture-browser.mjs'), '--mode', 'flicker', '--variant', 'live', '--stable', '--rays', '4', '--port', String(o.port), '--timeout-ms', String(o.timeoutMs || 240000)]; // AA-19: 6 poses (roadWalk) outgrew the 120 s default
   if (o.query) args.push('--query', o.query);
   const K = o.repeat || 1, runs = []; let retries = 0;
   for (let i = 0; i < K; i++) {
+    const startMs = Date.now() - 1000; // 1 s slack for coarse file-system mtimes
     let r = spawnSync(process.execPath, args, { cwd: ROOT, stdio: 'inherit' });
     for (let t = 0; t < 2 && r.status !== 0 && K > 1; t++) { // infrastructure hiccup (browser start): retry, counted in the report
       retries++; console.warn('flicker-gate: run ' + (i + 1) + '/' + K + ' exited with ' + r.status + ', retrying (' + retries + ' retries so far)');
       r = spawnSync(process.execPath, args, { cwd: ROOT, stdio: 'inherit' });
     }
     if (r.status !== 0) throw new Error('capture-browser exited with ' + r.status + ' (run ' + (i + 1) + '/' + K + ')');
-    const cap = JSON.parse(readFileSync(newestCapture(), 'utf8'));
+    const cap = JSON.parse(readFileSync(newestCapture(startMs), 'utf8'));
+    if (!cap.rows?.[0]?.metrics) throw new Error('capture has no rows[0].metrics (failed capture)');
     const wt = whyTable(cap.rows?.[0]?.metrics); if (wt) console.log(wt);
     const mt = m255Table(cap.rows?.[0]?.metrics); if (mt) console.log(mt);
     runs.push({ ...extractPoses(cap.rows?.[0]?.metrics), sha: cap.sha, date: cap.date });
