@@ -102,7 +102,7 @@ const files = {};
 const getJson = async (u) => {
   const m = /content\/quests\/(.*)$/.exec(u); if (!m) { if (u.includes('barks')) return {}; if (u.includes('charkit')) return {}; throw new Error('404 ' + u); }
   const n = m[1];
-  if (n === 'index.json') return { version: 1, packs: ['west'], legacy: ['m1', 'tower.blade', 'burl.boars', 'mq.river.road', 'mq.ford.stones', 'mq.bend.call'] };
+  if (n === 'index.json') return { version: 1, packs: ['west'], legacy: ['m1', 'tower.blade', 'burl.boars', 'burl.follow', 'burl.stone', 'burl.road', 'mq.river.road', 'mq.ford.stones', 'mq.bend.call'] };
   if (n === 'sites.json') return { version: 1, sites: ctx.sites };
   if (n === 'rewards.json') return { version: 1, tables: ctx.rewards };
   if (n === 'west/pack.json') return { version: 1, region: 'west', band: [1, 5], quests: [{ id: 'sq.w.one', title: 'One', template: 'kill', site: 'rook.bend', params: { ids: ['b1'], count: 1 } }, { id: 'sq.w.bad', title: 'Bad', template: 'zzz', site: 'rook.bend' }] };
@@ -110,7 +110,7 @@ const getJson = async (u) => {
 };
 const logs = [];
 const boot = await loadQuestFiles(getJson, { log: (m) => logs.push(m) });
-assert.deepEqual(boot.giverDefs.map(d => d.id), ['tower.blade', 'burl.boars', 'mq.river.road', 'mq.ford.stones', 'mq.bend.call', 'sq.w.one']);
+assert.deepEqual(boot.giverDefs.map(d => d.id), ['tower.blade', 'burl.boars', 'burl.follow', 'burl.stone', 'burl.road', 'mq.river.road', 'mq.ford.stones', 'mq.bend.call', 'sq.w.one']);
 assert.deepEqual(boot.errors.map(e => e.file), ['pack:west:sq.w.bad']);
 const ids = m1.objectives.map(o => o.id), upto = ids.slice(0, ids.indexOf('relay1') + 1);
 const book = createQuestBook(boot.questDef, boot.giverDefs, { quest: { questVersion: 1, questId: 'm1', flags: {}, items: [], deadBeasts: [], areas: [], completed: [] }, quests: null });

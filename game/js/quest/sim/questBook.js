@@ -20,6 +20,19 @@ function bladeFromMain(def, main, boars) {
   return { quest: JSON.parse(stringifyQuest(q, def)), accepted: true, handedIn: !!(boars && (boars.accepted || boars.handedIn)) };
 }
 
+/** OB-210: a MAIN giver quest that owns m1 steps (same `when`) but is missing from a save made before it existed: facts copied from m1;
+ *  accepted once m1 completed an owned step or that step's mark.taken flag is set (the player was sent off); handed in once m1 completed the last owned step. */
+function fromMainSteps(def, mainDef, main) {
+  if (!isMainDef(def) || !def.giver || !Array.isArray(main.completed) || !main.flags) return undefined;
+  const whens = new Set(def.objectives.map(o => JSON.stringify(o.when)));
+  const owned = mainDef.objectives.filter(o => whens.has(JSON.stringify(o.when)));
+  if (!owned.length) return undefined;
+  const accepted = owned.some(o => main.completed.includes(o.id) || (o.mark && o.mark.taken && main.flags[o.mark.taken]));
+  if (!accepted) return undefined; // not reached yet: the quest is simply offered (fresh state)
+  const q = createQuest(def, { questVersion: 1, questId: def.id, flags: { ...main.flags }, items: [...(main.items || [])], deadBeasts: [], areas: [...(main.areas || [])], completed: [] });
+  return { quest: JSON.parse(stringifyQuest(q, def)), accepted: true, handedIn: main.completed.includes(owned[owned.length - 1].id) };
+}
+
 export function validateGiverQuest(def) {
   def = normalizeQuestDef(def); // QUEST-FORMAT: begin/end/requires{quests}/rewards -> the legacy shape below
   validateQuestDefinition(def);
@@ -70,7 +83,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
     const def = validateGiverQuest(giverDefs[i]);
     if (ids.has(def.id)) throw new Error('quest: duplicate quest id ' + def.id);
     ids.add(def.id);
-    const s = saved?.quests?.[def.id];
+    const s = saved?.quests?.[def.id] ?? (saved?.quest ? fromMainSteps(def, mainDef, saved.quest) : undefined); // OB-210: a main quest added after the save
     const auto = !def.giver; // QL-T1: giverless
     const e = { def, auto, giver: auto ? null : def.giver.npc, turnIn: auto ? null : def.giver.turnIn || def.giver.npc, state: createQuest(def, s ? s.quest : null), accepted: !!(s && s.accepted === true), handedIn: !!(s && s.handedIn === true), seq: 0, prev: 0, given: Array.isArray(s && s.given) ? s.given.filter(g => g && typeof g.id === 'string' && Number.isInteger(g.n) && g.n > 0) : [] };
     // OB-087: the saved accept order wins (the unpinned HUD track = most recently accepted must survive Continue); old saves: array order

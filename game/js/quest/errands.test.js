@@ -81,6 +81,7 @@ function talkBurl(pick = 0) { // run the real dialogue runner to its end; return
   assert.ok(set3.includes('s.burl.home.met'), 'first home talk runs bear.home: ' + set3.join(',') + ' / ' + spoken.join('|'));
 }
 // Burl offers the first available errand (sq.tm.nub needs burl.boars done = yes) and accepts it by the choice
+book.accept('burl.road'); book.handIn('burl.road'); // OB-210: Burl gives The Road West before she goes home (accepted + handed in at Rook)
 const said = talkBurl(0);
 assert.ok(said.length >= 2 && flagsOut.some((k) => /^q.sq..*.accept$/.test(k)), 'offer + accept by talking: ' + flagsOut.join(','));
 assert.ok(said.some((l) => /Nub|slope|boar|sky-cub/i.test(l)), 'writer lines are spoken');

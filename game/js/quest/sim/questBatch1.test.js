@@ -59,7 +59,7 @@ function openGates(b) {
   const gate = (id) => { const i = b.index(id); const defs = b.def(i); for (const e of feedFor(defs)) b.feed(e); };
   for (const o of files.questDef.objectives) { const w = o.when; if (w.type === 'flag') b.feed({ type: 'flag:set', key: w.id, value: w.equals }); else if (w.type === 'area') b.feed({ type: 'area:entered', id: w.id }); else if (w.type === 'item') b.feed({ type: 'item:got', id: w.id }); else if (w.type === 'beasts') for (const id of w.ids.slice(0, w.count)) b.feed({ type: 'beast:died', id }); }
   // FB-02: sq.burl.fire opens after the Ch2 end beat mq.ford.mirror (handed in below)
-  for (const id of ['tower.blade', 'burl.boars', 'sq.burl.blue']) { b.accept(id); gate(id); if (id === 'sq.burl.blue') pack.set('berry.blue', 6); b.handIn(id); }
+  for (const id of ['tower.blade', 'burl.boars', 'sq.burl.blue', 'burl.follow', 'burl.stone', 'burl.road']) { /* OB-210: burl.road (Burl -> Rook) opens mq.bend.call */ b.accept(id); gate(id); if (id === 'sq.burl.blue') pack.set('berry.blue', 6); b.handIn(id); }
   gate('mq.river.road'); gate('mq.ford.stones');
   b.accept('mq.bend.call'); gate('mq.bend.call'); b.handIn('mq.bend.call'); // M4 story quests (sq.honey / rook.shiny / packet) open after mq.bend.call is DONE
   b.accept('mq.ford.mirror'); gate('mq.ford.mirror'); b.handIn('mq.ford.mirror'); // FB-02 prereq
@@ -120,8 +120,10 @@ for (const id of ['sq.burl.boars.s', 'sq.burl.scout', 'sq.fc.ford']) {
   const b = newBook();
   assert.ok(!b.nextOffers().some((o) => o.id === 'mq.bend.call'), 'not offered before relay1');
   for (const o of files.questDef.objectives) { const w = o.when; if (w.type === 'flag') b.feed({ type: 'flag:set', key: w.id, value: w.equals }); else if (w.type === 'area') b.feed({ type: 'area:entered', id: w.id }); else if (w.type === 'item') b.feed({ type: 'item:got', id: w.id }); else if (w.type === 'beasts') for (const id of w.ids.slice(0, w.count)) b.feed({ type: 'beast:died', id }); if (o.id === 'relay1') break; }
+  assert.ok(!b.nextOffers().some((x) => x.id === 'mq.bend.call'), 'OB-210: not offered before burl.road is handed in');
+  for (const id of ['tower.blade', 'burl.boars', 'burl.follow', 'burl.stone', 'burl.road']) { b.accept(id); for (const e of feedFor(b.def(b.index(id)))) b.feed(e); b.handIn(id); }
   const o = b.nextOffers().find((x) => x.id === 'mq.bend.call');
-  assert.ok(o && o.giver === 'rook' && o.from === 'm1', 'm1 relay1 -> Rook offers mq.bend.call');
+  assert.ok(o && o.giver === 'rook' && o.from === 'burl.road', 'OB-210: burl.road handed in at Rook -> Rook offers mq.bend.call');
   assert.ok(b.accept('mq.bend.call')); assert.ok(!b.nextOffers().some((x) => x.id === 'mq.bend.call'), 'accepted -> no longer offered');
   const c = newBook(); c.accept('tower.blade'); for (const e of feedFor(c.def(c.index('tower.blade')))) c.feed(e); c.handIn('tower.blade');
   const s = c.nextOffers().find((x) => x.id === 'burl.boars');
