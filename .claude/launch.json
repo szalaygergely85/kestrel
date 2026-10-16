@@ -82,6 +82,17 @@
         "C:/MyFiles/CodingProjects/kestrel-2"
       ],
       "port": 9590
+    },
+    {
+      "name": "k1-preview",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "tools/serve.py",
+        "9591",
+        "--directory",
+        "C:/MyFiles/CodingProjects/kestrel-1"
+      ],
+      "port": 9591
     }
   ]
 }
