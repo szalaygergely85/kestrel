@@ -712,7 +712,8 @@ const chestHook = (itemDefs && assets.uiStyle && assets.uiStyle.itemGetCard)
 gameHooks.register(underHook); // B1-MAIN hooks 7
 if (chestHook) gameHooks.register(chestHook);
 if (chestHook) gameHooks.register(createHeartHook({ getCard: () => chestHook.card, notify: (t) => { if (lootToast) lootToast.say(t, [226, 214, 176]); } })); // QL-08; OB-105: heart piece = toast, not the card
-gameHooks.register(createSpellBookHook({ getBook: () => spellBook, getDefs: () => itemDefs, notify: (t) => { if (lootToast) lootToast.say(t, [226, 214, 176]); } })); // SPELL-09: Spell Books in the pack + waystone-wake spells learn once (spellBook = the per-world book set on 'world:loaded')
+let spellBookHolder = null; // BUG-SPELLBOOK-SCOPE: module-level mirror of the per-world `spellBook` (declared later in a nested scope)
+gameHooks.register(createSpellBookHook({ getBook: () => spellBookHolder, getDefs: () => itemDefs, notify: (t) => { if (lootToast) lootToast.say(t, [226, 214, 176]); } })); // SPELL-09: Spell Books in the pack + waystone-wake spells learn once (spellBook = the per-world book set on 'world:loaded')
 // QUESTS-01: generic world pickup prop + pack counts for collect/deliver objectives + hand-in reward grant (game/js/questPickups.js)
 let questBeastSim = null; // SOFTLOCK-01: the live beast sim for the kill-quest accept rule (set where the sim is built)
 if (saveRelay) saveRelay.quest.setLivingOfKind((kind) => { const s = questBeastSim; if (!s || !s.ids) return 99; let n = 0; for (let i = 0; i < s.ids.length; i++) if (kindOf(s.ids[i]) === kind && !s.down[i] && !isBeastDeadState(s.state[i])) n++; return n; }); // SOFTLOCK-01 + R6-FIX C: installed on every book the relay creates/loads (not lazily in questPickups.sync)
@@ -1713,7 +1714,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       hands.register('sword', sword);
       if (fbTargets) fbTargets.dispose();
       fbTargets = createTargetables(world, engine.events);
-      spellBook = createSpellBook(world.state); spellCaster = createSpellDispatcher((id) => spellBook.tier(id) || (id === 'fireball' && fbOn ? 1 : 0)); // SPELL-04
+      spellBook = spellBookHolder = createSpellBook(world.state); spellCaster = createSpellDispatcher((id) => spellBook.tier(id) || (id === 'fireball' && fbOn ? 1 : 0)); // SPELL-04
       fireball = createFireballSim(world, engine.events, FIREBALL_CFG, fbTargets, { spendMana: (n) => vitals && vitals.spendMana(n), isEnabled: () => fireballOn(world, FEATURES), tier: () => spellBook.tier('fireball') || 1, damageMul: () => { const c = playerHandle && playerHandle.data.components; return computeTotals(c && c.rolledGear || null, fbTotals).fireDmgMul; } }); // INT: stats fireDmgMul at cast (rolled gear: rolledGear.js)
       hands.register('spell.fireball', fireball); spellCaster.register('fireball', () => fireball.requestTap());
       teleport = createTeleport(world, { spendMana: (n) => vitals && vitals.spendMana(n), say: (t) => toasts && toasts.say(t, [226, 214, 176]), loseTrack: (x, y, r, s) => beasts && loseTrack(beasts, x, y, r, s), // SPELL-R4

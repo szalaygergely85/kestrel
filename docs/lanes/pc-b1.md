@@ -1716,3 +1716,6 @@ Reviewer: PC-B architect (opus, D-066). **42a8cd4a ARCH OK -> po-review/testing:
 - Suites: signalAlive, rookQuests, relayWake, title* PASS; check-deps OK. Owner look: design/preview/title.html (flourish + map card) and Bend relay wake blink in game.
 - NEEDS main: design/palette.js:354 comment "the P2 SOS pulse" -> "the P2 ALIVE pulse (ASSETS.signal)".
 - Remaining SOS: docs/story.md (many lines, writer's SIGNAL-ALIVE-TEXT item, left alone), tools/verify-ch12-run.mjs:228 beat label "SOS pulse seen" (not touched).
+
+- QUEST-NEXT-GIVER-01 (kestrel-1, branch questnext): toast (offerToast) + compass nextOffers pointer were already wired (compassHud.target, main.js offerToast); added the missing e2e in game/js/questNext.test.js: real content m1 relay step -> mq.bend.call: toast "New quest: Rook has work for you", needle -> Rook (kind 3), save/load keeps it, no re-toast after load, tracking another quest replaces it, accepting clears it. Suites questNext/questRules/compass green, check-deps OK.
+- BUG-SPELLBOOK-SCOPE: main.js SPELL-09 hook read out-of-scope `spellBook`; now a module-level `spellBookHolder` set at the world:loaded createSpellBook line (3 touches). Syntax check ok; no Node test (main.js not importable). Note: derived offers also toast other givers (e.g. Joss) after the same step, by design.
