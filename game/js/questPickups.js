@@ -34,6 +34,15 @@ export function createQuestPickups({ getBook, feed, defs, isWorn }) {
     if (canDrop) spawnLeftoverDrop(ctx.world, id, n, t.x, t.y, t.z, true, groundFn());
     if (ctx && ctx.events) ctx.events.emit('inventory:full', { id, n, dropped: canDrop });
   }
+  function setShown(pr, on) {
+    if (pr.shown === on) return;
+    pr.shown = on;
+    const e = ctx.world.entity(pr.id), v = e && e.components && e.components.voxel;
+    if (v) { v.hidden = !on; if (ctx.world.renderVersion !== undefined) ctx.world.renderVersion++; }
+    if (!ctx.world.addInteractable) return;
+    ctx.world.removeInteractable('qp.' + pr.id);
+    if (on) ctx.world.addInteractable(pr.ia);
+  }
   function sync() {
     const book = getBook(), inv = pack();
     if (!book || !inv) return;
@@ -43,11 +52,17 @@ export function createQuestPickups({ getBook, feed, defs, isWorn }) {
         return k; }, // QL-04: add = giveOnAccept
       equipped: (id) => !!(isWorn && ctx && ctx.player && isWorn(ctx.player.components && ctx.player.components.equipment, id)) }; } // QL-WIRE: EQ-13 requireEquipped
     if (book.packOps !== ops) book.packOps = ops;
+    syncGivers(book);
+    for (const id of book.countedItems()) feed({ type: 'item:count', id, n: countOf(inv, id) });
+  }
+  function syncGivers(book) {
     for (let i = props.length - 1; i >= 0; i--) { // accepted another way (E on the object): the packet leaves the world too
       const pr = props[i];
-      if (pr.acceptQuest && ctx.world.entity(pr.id) && book.statusOf(pr.acceptQuest) > 1) { ctx.world.remove(pr.id); if (ctx.world.removeInteractable) ctx.world.removeInteractable('qp.' + pr.id); props.splice(i, 1); }
+      if (!pr.acceptQuest || !ctx.world.entity(pr.id)) continue;
+      const st = book.statusOf(pr.acceptQuest);
+      if (st > 1) { ctx.world.remove(pr.id); if (ctx.world.removeInteractable) ctx.world.removeInteractable('qp.' + pr.id); props.splice(i, 1); continue; }
+      setShown(pr, st !== 0); // OB-216: an object giver whose quest is not open yet (opensAfter) is not in the world: no dead '[E] Pick up' prompt
     }
-    for (const id of book.countedItems()) feed({ type: 'item:count', id, n: countOf(inv, id) });
   }
 
   const hook = {
@@ -62,12 +77,14 @@ export function createQuestPickups({ getBook, feed, defs, isWorn }) {
       });
       c.world.forEachEntity((e, id) => {
         const q = e.components && e.components.questPickup; if (!q || !e.transform) return;
-        props.push({ id, tr: e.transform, item: q.item, n: q.n || 1, acceptQuest: q.acceptQuest || null });
         // QL-05: "[E] Pick" prompt (the take itself stays in onTick; the behaviour 'pickup.take' is a no-op that only shows the prompt)
+        const ia = { key: 'qp.' + id, name: 'pickup.take', x: e.transform.x, y: e.transform.y, z: e.transform.z + 0.3, radius: REACH, prompt: ('[E] Pick up ' + itemLabel(defs, q.item)).slice(0, 28), def: { pickupId: id }, bodyId: id, bodyR: 0.35, bodyH: 0.7 }; // OB-084: [E] on the whole item
+        props.push({ id, tr: e.transform, item: q.item, n: q.n || 1, acceptQuest: q.acceptQuest || null, ia, shown: null });
         if (!c.world.addInteractable) return;
         c.world.removeInteractable('qp.' + id);
-        c.world.addInteractable({ key: 'qp.' + id, name: 'pickup.take', x: e.transform.x, y: e.transform.y, z: e.transform.z + 0.3, radius: REACH, prompt: ('[E] Pick up ' + itemLabel(defs, q.item)).slice(0, 28), def: { pickupId: id }, bodyId: id, bodyR: 0.35, bodyH: 0.7 }); // OB-084: [E] on the whole item
+        if (!q.acceptQuest) c.world.addInteractable(ia); // OB-216: object givers get theirs from sync() once the quest is open
       });
+      const b0 = getBook(); if (b0) syncGivers(b0);
     },
     onTick() {
       if (!ctx || !ctx.player) return;
@@ -78,7 +95,7 @@ export function createQuestPickups({ getBook, feed, defs, isWorn }) {
       let best = -1, bd = REACH * REACH;
       for (let i = 0; i < props.length; i++) {
         const t = props[i].tr, dx = t.x - p.x, dy = t.y - p.y, d2 = dx * dx + dy * dy;
-        if (d2 <= bd && Math.abs((t.z || 0) - p.z) <= REACH_DZ && ctx.world.entity(props[i].id)) { bd = d2; best = i; }
+        if (d2 <= bd && props[i].shown !== false && Math.abs((t.z || 0) - p.z) <= REACH_DZ && ctx.world.entity(props[i].id)) { bd = d2; best = i; }
       }
       if (best < 0) return;
       const pr = props[best];

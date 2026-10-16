@@ -28,6 +28,7 @@
         pts: [[-40, 330], [250, 240], [560, 260], [860, 150], [1180, 110], [1500, 180], [1800, 140], [2100, 240]],
         gorge: { width: 90, keep: 0.25, note: 'the river cuts a notch: range height x 0.25 at the river' } },
       { id: 'westFells', name: 'the West Fells (P; was recipe.ridge)', h: 170, w: 190, ridged: { scale: 150, amp: 60 }, seedOff: 73,
+        coastFade: 260, // OB-209b: the fells sink toward the sea over 260 m (coast sd), so the 12 m cliff no longer slices a 150 m flat-topped wall (the far 'pale building')
         pts: [[110, 300], [190, 500], [240, 700], [230, 840], [260, 1000], [230, 1200], [170, 1430]] }
     ],
     peaks: [
@@ -217,6 +218,7 @@
       var n = U.fbm(x / R.ridged.scale, y / R.ridged.scale, G.seed + R.seedOff, 4, 0.5, 2), rn = 1 - Math.abs(2 * n - 1);
       var add = R.h * f + R.ridged.amp * rn * rn * Math.exp(-Math.pow(d / (R.w * 0.7), 2));
       if (R.gorge) add *= 1 - (1 - R.gorge.keep) * Math.exp(-Math.pow(dr / R.gorge.width, 2));
+      if (R.coastFade) add *= smooth(0, R.coastFade, coastSD(x, y).sd); // OB-209b
       h += add;
     }
     for (i = 0; i < G.peaks.length; i++) { var p = G.peaks[i]; h += p.h * Math.exp(-Math.pow(Math.hypot(x - p.x, y - p.y) / p.r, 2)); }
@@ -374,6 +376,7 @@
             var n = U.fbm(x / R.ridged.scale, y / R.ridged.scale, G.seed + R.seedOff, 4, 0.5, 2), rn = 1 - Math.abs(2 * n - 1);
             var add = R.h * f + R.ridged.amp * rn * rn * Math.exp(-Math.pow(d / (R.w * 0.7), 2));
             if (R.gorge) add *= 1 - (1 - R.gorge.keep) * Math.exp(-Math.pow(dr / R.gorge.width, 2));
+            if (R.coastFade) add *= smooth(0, R.coastFade, F.sdf('coast', x, y)); // OB-209b (same as geoHeight, 16 m bilinear sd)
             h += add;
           }
           for (i = 0; i < G.peaks.length; i++) { var p = G.peaks[i], px = x - p.x, py = y - p.y, pl = p.r * 28; if (px > pl || -px > pl || py > pl || -py > pl) continue; h += p.h * Math.exp(-Math.pow(Math.hypot(px, py) / p.r, 2)); }   // beyond 28 r exp underflows to exactly 0
