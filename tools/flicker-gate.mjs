@@ -146,7 +146,7 @@ function parseArgs(argv) {
 function main() {
   const o = parseArgs(process.argv.slice(2));
   if (!o.port) throw new Error('--port <N> is required');
-  const args = [path.join(ROOT, 'tools', 'capture-browser.mjs'), '--mode', 'flicker', '--variant', 'live', '--stable', '--rays', '4', '--port', String(o.port)];
+  const args = [path.join(ROOT, 'tools', 'capture-browser.mjs'), '--mode', 'flicker', '--variant', 'live', '--stable', '--rays', '4', '--port', String(o.port), '--timeout-ms', '240000']; // AA-19: 6 poses (roadWalk) outgrew the 120 s default
   if (o.query) args.push('--query', o.query);
   const K = o.repeat || 1, runs = []; let retries = 0;
   for (let i = 0; i < K; i++) {
