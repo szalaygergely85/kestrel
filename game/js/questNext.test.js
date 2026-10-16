@@ -6,7 +6,7 @@ import { createCompassHud, FALLBACK_COMPASS_STYLE } from './ui/compassHud.js';
 import { createQuestLogScreen } from './ui/questLog.js';
 import { nextLine, EXPLORE_TEXT } from './questNext.js';
 const rd = (f) => JSON.parse(readFileSync(new URL('../../content/quests/' + f, import.meta.url)));
-const m1 = rd('m1.quest.json'), defs = ['tower.blade', 'burl.boars', 'burl.follow', 'burl.stone', 'mq.bend.call', 'mq.ford.stones', 'mq.ford.mirror', 'mq.river.road', 'mq.smoke', 'sq.burl.blue'].map((n) => rd(n + '.quest.json'));
+const m1 = rd('m1.quest.json'), defs = ['tower.blade', 'burl.boars', 'burl.follow', 'burl.stone', 'burl.road', 'mq.bend.call', 'mq.ford.stones', 'mq.ford.mirror', 'mq.river.road', 'mq.smoke', 'sq.burl.blue'].map((n) => rd(n + '.quest.json'));
 const pos = { rook: [982, 1060], bear: [100, 100], hesk: [500, 500] };
 const world = { resolve(kind, id, out) { const p = kind === 'giver' && pos[id]; if (!p) return false; out.x = p[0]; out.y = p[1]; return true; } };
 const ctx = { resolve: world.resolve, x: 0, y: 0 };
@@ -22,7 +22,9 @@ assert.ok(!relay.objectiveText().startsWith('Next:'));
 // force "no active main quest, mq.bend.call available": complete m1 by restoring a state where every step is done
 const full = JSON.parse(JSON.stringify(relay.state));
 full.completed = m1.objectives.map((o) => o.id); full.flags = {}; 
-const r2 = createQuestRelay(m1, full, defs, null); r2.nextCtx = ctx;
+const qs = JSON.parse(JSON.stringify(relay.book.toSave().quests)); // OB-210: the Burl chain (burl.road handed in at Rook) is done when m1 is
+for (const id of ['tower.blade', 'burl.boars', 'burl.follow', 'burl.stone', 'burl.road']) Object.assign(qs[id], { accepted: true, handedIn: true });
+const r2 = createQuestRelay(m1, full, defs, qs); r2.nextCtx = ctx;
 const t = r2.objectiveText();
 console.log('after m1:', t, '| statuses', [...Array(r2.book.count).keys()].map((i) => r2.book.def(i).id + ':' + r2.book.status(i)).join(' '));
 assert.ok(t.startsWith('Next: talk to Rook'), t);
@@ -60,26 +62,31 @@ import { AVAILABLE as AVAILABLE_ST } from './quest/sim/questBook.js';
   const itemList = Object.values(idefs).map((d) => ({ id: d.id, slot: d.equip && d.equip.slot, tier: d.equip && d.equip.tier }));
   const qb = await loadQuestFiles((u) => Promise.resolve(JSON.parse(readFileSync(new URL(u.replace(/^(\.\.\/)+/, ''), root)))), { wantBarks: false, log: () => {}, items: itemList });
   const real = gateOnMeet(qb.giverDefs);
-  const mk = (saved) => createQuestRelay(qb.questDef, saved || null, real, null);
+  const mk = (saved, qs) => createQuestRelay(qb.questDef, saved || null, real, qs || null);
   const wd = { resolve: (k, id, o) => { const p = k === 'giver' ? pos[id] : [5, 5]; if (!p) return false; o.x = p[0]; o.y = p[1]; return true; } };
   const nm = (g) => (GIVER_INFO[g] ? GIVER_INFO[g].name : g.charAt(0).toUpperCase() + g.slice(1));
   const ids = qb.questDef.objectives.map((o) => o.id), k = ids.indexOf('relay1');
   // state just before the relay step: every earlier m1 step done, nothing else accepted
   const base = JSON.parse(JSON.stringify(mk().state)); base.completed = ids.slice(0, k); base.flags = {};
   for (const o of qb.questDef.objectives.slice(0, k)) if (o.when.type === 'flag') base.flags[o.when.id] = true;
-  const rl = mk(base), bk = rl.book;
+  for (const o of qb.questDef.objectives.slice(0, k)) if (o.when.type === 'area' && !base.areas.includes(o.when.id)) base.areas.push(o.when.id); // a real save holds the areas it passed (OB-210 migration reads them)
+  base.areas.sort();
+  const qs = JSON.parse(JSON.stringify(mk().book.toSave().quests)); delete qs['burl.road']; // OB-210: the Burl chain is handed in; burl.road comes from the old-save migration
+  for (const id of ['tower.blade', 'burl.boars', 'burl.follow', 'burl.stone']) Object.assign(qs[id], { accepted: true, handedIn: true });
+  const rl = mk(base, qs), bk = rl.book;
   const toast = createOfferToast(bk, nm); toast.seed();
   const h = createCompassHud({ style: FALLBACK_COMPASS_STYLE }); h.setNear(0, 0);
   const tgtOf = (b) => { const t2 = h.target(b, wd); return t2 ? t2.x + ',' + t2.y + ',' + t2.kind : null; };
   assert.notEqual(bk.statusOf('mq.bend.call'), AVAILABLE_ST, 'bend quest not offered before the relay step');
   assert.deepEqual(toast.poll(), [], 'no toast yet');
   rl.questFlag('waystone.ws_roadBend.woken', true); // the real step event
-  assert.equal(bk.statusOf('mq.bend.call'), AVAILABLE_ST, 'bend quest offered after the relay step');
+  assert.equal(bk.statusOf('burl.road'), 3, 'OB-210: The Road West (migrated from the m1 steps) ready at Rook'); assert.ok(bk.handIn('burl.road')); // Rook takes it
+  assert.equal(bk.statusOf('mq.bend.call'), AVAILABLE_ST, 'bend quest offered after the burl.road hand-in (OB-210)');
   const tl = [...toast.poll()]; assert.ok(tl.includes('New quest: Rook has work for you'), 'toast with the plain giver name: ' + tl);
   assert.ok(tl.every((l) => /^New quest: [A-Z][a-z]+ has work for you$/.test(l)), 'plain display names only: ' + tl);
   assert.equal(tgtOf(bk), '982,1060,3', 'compass needle -> Rook, kind 3 (!)');
   const saved = JSON.parse(JSON.stringify(rl.state)); // save/load in the gap keeps the pointer
-  const rl2 = mk(saved); h.setNear(0, 0);
+  const rl2 = mk(saved, JSON.parse(JSON.stringify(rl.book.toSave().quests))); h.setNear(0, 0);
   assert.equal(rl2.book.statusOf('mq.bend.call'), AVAILABLE_ST); assert.equal(tgtOf(rl2.book), '982,1060,3', 'pointer survives save/load');
   const t3 = createOfferToast(rl2.book, nm); t3.seed(); assert.deepEqual([...t3.poll()], [], 'no re-toast after load');
   // tracking/accepting another quest replaces the pointer

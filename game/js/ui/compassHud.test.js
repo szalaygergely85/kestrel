@@ -15,20 +15,19 @@ const boars = { version: 1, id: 'burl.boars', title: 'B', giver: { npc: 'bear' }
   objectives: [{ id: 'k', text: 'k', when: { type: 'beasts', ids: ['b1', 'b2'], count: 2 } }] };
 const POS = { 'giver:bear': [100, 0], 'area:breach': [0, -50], 'beast:b1': [30, 40], 'beast:b2': [-30, 40], 'flag:f': [5, 5] };
 const world = { resolve(kind, id, out) { const p = POS[kind + ':' + id]; if (!p) return false; out.x = p[0]; out.y = p[1]; return true; } };
-const mk = () => createQuestBook(main, [boars]);
+// OB-211: with NO accepted quest the needle never points at a bare place (m1 step); the geometry tests below track a 'walk' quest whose step is area:breach.
+const walk = { version: 1, id: 'walk', title: 'W', giver: { npc: 'walker' }, objectives: [{ id: 'w', text: 'w', when: { type: 'area', id: 'breach' } }] };
+const mkPlain = () => createQuestBook(main, [boars]);
+const mk = () => { const bk = createQuestBook(main, [boars, walk]); bk.accept('walk'); return bk; };
 const hud = () => createCompassHud({ style: FALLBACK_COMPASS_STYLE });
 
-// priority: main step (area breach) while bear unavailable
-let b = mk(), h = hud(), t = h.target(b, world);
-ok('step target when no giver', t && t.x === 0 && t.y === -50 && t.kind === 2);
+// OB-211 priority: nothing accepted -> the character with the gold '!' (the next main quest), never the m1 step place
+let b = mkPlain(), h = hud(), t = h.target(b, world);
+ok('no accepted quest, no giver: no needle (never a bare place)', t === null);
 b.feed({ type: 'area:entered', id: 'breach' });
 ok('book moved to step 2', b.questState(0).completed.length === 1, JSON.stringify(b.questState(0)));
 t = h.target(b, world);
-ok('available giver ! outranks nothing: step wins over !', t && t.kind === 3 || t.kind === 2, String(t && t.kind)); // flag step resolves -> kind 2
-ok('flag step is preferred over available !', t.kind === 2 && t.x === 5);
-POS['flag:f'] = null;
-t = h.target(b, world);
-ok('available giver ! when step has no position', t && t.kind === 3 && t.x === 100);
+ok('no accepted quest: gold ! giver, not the m1 flag step place', t && t.kind === 3 && t.x === 100, String(t && t.kind));
 b.accept('burl.boars');
 t = h.target(b, world);
 ok('tracked beasts quest -> first living beast', t && t.kind === 2 && t.x === 30 && t.y === 40);
@@ -40,7 +39,7 @@ t = h.target(b, world);
 ok('ready giver ? beats everything', b.statusOf('burl.boars') === 3 && t.kind === 1 && t.x === 100);
 b.handIn('burl.boars');
 POS['flag:f'] = [5, 5];
-ok('after hand-in back to main step', h.target(b, world).kind === 2);
+ok('after hand-in with no main quest offered: no needle (not the m1 step place)', h.target(b, world) === null);
 ok('null world/book -> no target', h.target(null, world) === null && !h.visible);
 
 // bearing sectors: target north of player (y = -10), yaw 0 -> sector 0
@@ -93,7 +92,7 @@ const lab = (tp, setup, z0) => { const hh = dres(0, 0, 0, tp, setup); return hh.
 ok('designer: label "42 m"', lab([0, -42]) === '42 m', lab([0, -42]));
 ok('designer: km format', lab([0, -1234]) === '1.2 km', lab([0, -1234]));
 ok('designer: here within 3 m', lab([0, -2]) === 'here', lab([0, -2]));
-ok('designer: giver ! prefix', (() => { POS['area:breach'] = null; const bk = mk(); bk.feed({ type: 'area:entered', id: 'breach' }); POS['flag:f'] = null; const hh = dhud(); hh.target(bk, world); hh.step(0, 0, 0); POS['area:breach'] = [0, -1]; POS['flag:f'] = [5, 5]; return hh.label === '! 100 m'; })());
+ok('designer: giver ! prefix', (() => { POS['area:breach'] = null; const bk = mkPlain(); bk.feed({ type: 'area:entered', id: 'breach' }); POS['flag:f'] = null; const hh = dhud(); hh.target(bk, world); hh.step(0, 0, 0); POS['area:breach'] = [0, -1]; POS['flag:f'] = [5, 5]; return hh.label === '! 100 m'; })());
 { POS['area:breach'] = [0, -10]; POS['area:breach'] ||= 0; const hh = dhud(); const old = world.resolve; world.resolve = (k, i, o) => { const r = old(k, i, o); if (r) o.z = 10; return r; }; hh.target(mk(), world); hh.step(0, 0, 0, 0); world.resolve = old; ok('designer: height ^ when target 10 m above', hh.label === '10 m ^', hh.label); }
 { // draw: bottom-right of a 160x60 layer, fade in, hidden
   const hd2 = dres(0, 0, 0, [0, -42]), cl = [], u2 = { cols: 160, setCellRGB(x, y, g) { cl.push([x, y, g]); } };

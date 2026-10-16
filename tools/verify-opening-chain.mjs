@@ -16,6 +16,7 @@ export const STEPS = [
   { quest: 'burl.boars', giver: 'bear', handIn: 'bear' },
   { quest: 'burl.follow', giver: 'bear', handIn: 'bear' },
   { quest: 'burl.stone', giver: 'bear', handIn: 'bear' },
+  { quest: 'burl.road', giver: 'bear', handIn: 'rook' }, // OB-210: Burl offers the road west; Rook takes it and offers mq.bend.call
   { quest: 'mq.bend.call', giver: 'rook', handIn: 'rook' },
 ];
 export const STEP_IDS = STEPS.map((s) => s.quest);
@@ -115,15 +116,22 @@ async function main() {
       } };
     },
     async 'burl.stone'() { // accepted by the follow arrival; tell + wake the waystone -> READY; the hand-in is Burl's departure talk
-      return { accept: async () => {}, complete: async () => {
+      return { accept: async () => { // the arrival talk opens by itself (Accept/Exit); else talk to Burl
+        for (let i = 0; i < 4 && (await stOf('burl.stone')) < 2; i++) { if (await waitFor(() => ev('__t.D.dialogue.open'), i ? 3000 : 20000)) await evA(`__t.dlg(${J(YES)})`); else await talk('bear'); await pause(500); }
+      }, complete: async () => {
         for (let i = 0; i < 4 && !(await flag('dlg.bear.stone.told')); i++) { if (!(await waitFor(() => ev('__t.D.dialogue.open'), i ? 3000 : 20000))) await talk('bear'); else await evA('__t.dlg(["ok|yes|thanks|stone|wake"])'); await pause(500); }
         for (let i = 0, woken = false; i < 5 && !woken; i++) { if (await ev('__t.D.dialogue.open')) await evA('__t.dlg(["ok|yes|thanks"])'); await goIx('stone.waystone', 1.2); await pressE(1); woken = await waitFor(() => completed('waystone'), 4000); }
       } };
     },
-    async 'mq.bend.call'() { // road west -> Bend relay -> pulse seen + knot read, then Rook's talk accepts (and may already be READY)
-      return { accept: async () => {
+    async 'burl.road'() { // OB-210: offered by Burl right after the stone hand-in (that talk may already accept it); road west -> Bend relay -> wake
+      return { accept: () => talkUntil('bear', 'burl.road', 2, 4), complete: async () => {
         await goTrig('roadWest', 'bendRelay'); await goIx('relay.ws_roadBend', 1.2); await pressE(1);
-        await waitFor(() => flag('waystone.ws_roadBend.woken'), 15000); await waitFor(() => flag('relay.bend.pulseSeen'), 15000);
+        await waitFor(() => flag('waystone.ws_roadBend.woken'), 15000);
+      } };
+    },
+    async 'mq.bend.call'() { // offered by Rook in the burl.road hand-in talk; pulse seen + knot read, then Rook's talk (may already be READY)
+      return { accept: async () => {
+        await talkUntil('rook', 'mq.bend.call', 2, 3); await waitFor(() => flag('relay.bend.pulseSeen'), 15000);
         await goIx('qi.knot', 0.9); await pressE(2); await waitFor(() => flag('lore.knot.read'), 4000);
         await talkUntil('rook', 'mq.bend.call', 2);
       }, complete: async () => {} };

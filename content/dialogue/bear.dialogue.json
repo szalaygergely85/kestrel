@@ -9,6 +9,8 @@
   "entry": [
     {"node": "bear.blue.ready", "requires": "q.sq.burl.blue.ready"},
     {"node": "bear.blue.active", "requires": "q.sq.burl.blue.active"},
+    {"node": "bear.road.offer", "requires": "q.burl.road.available"},
+    {"node": "bear.road.active", "requires": "q.burl.road.active"},
     {"node": "bear.blue.offer.1", "requires": "q.sq.burl.blue.available"},
     {"node": "bear.home.again", "requires": "s.burl.home.met"},
     {"node": "bear.home", "requires": "s.burl.home"},
@@ -239,10 +241,23 @@
     "bear.woken.7": {"lines": [
       "Thank you, Burl."
     ], "next": "bear.woken.8", "speaker": "you"},
-    "bear.woken.8": {"end": true, "lines": [
+    "bear.woken.8": {"lines": [
       "Take care out there.",
       "The world is wider than your Wall."
+    ], "next": "bear.road.offer", "speaker": "burl"},
+    "bear.road.offer": {"choices": [{"next": "bear.road.go", "setFlag": "q.burl.road.accept", "text": "I'll go west."}, {"next": "bear.road.later", "text": "Not yet."}], "lines": [
+      "Take the old road west to the bend.",
+      "Wake the stone there. A crow, Rook, keeps watch."
+    ], "speaker": "burl"},
+    "bear.road.go": {"end": true, "lines": [
+      "West, sky-cub. Tell Rook I sent you."
     ], "setFlag": "s.burl.depart", "speaker": "burl"},
+    "bear.road.later": {"end": true, "lines": [
+      "Rest, then. The road will wait for you."
+    ], "speaker": "burl"},
+    "bear.road.active": {"end": true, "lines": [
+      "The bend stone is west. Rook waits there."
+    ], "speaker": "burl"},
     "bear.home": {"end": true, "lines": [
       "There you are. I took the long way home.",
       "The stone hums all night now. I sleep better."

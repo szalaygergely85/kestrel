@@ -93,9 +93,10 @@ export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
     let kind = 0, side = false, noSource = false;
     // COMPASS-TRACK-01 (D-108): the needle follows the TRACKED quest only (else the main quest). READY -> its hand-in character
     // (book.turnInOf, data-driven), ACTIVE -> its current step; nothing tracked/active -> OB-183 nearest available giver.
+    // OB-211 (D-108 amendment): NO accepted quest -> never a bare place (the m1 step); the needle goes to the character with the gold '!' below.
     const ti = book.tracked();
     const qi = ti >= 0 ? ti : 0;
-    const def = book.def(qi), st = book.questState(qi), stt = book.status(qi);
+    const def = book.def(qi), st = book.questState(qi), stt = ti >= 0 ? book.status(qi) : -1;
     if (stt === READY && book.turnInOf && book.turnInOf(qi) && world.resolve('giver', book.turnInOf(qi), tmp)) { kind = 1; side = !book.isMain(qi); }
     else if (stt === ACTIVE && !(qi === 0 && book.mainStepGated && book.mainStepGated())) { // OB-199: not-accepted main step -> no needle
       const idx = st.completed.length;
@@ -107,6 +108,7 @@ export function createCompassHud({ style = FALLBACK_COMPASS_STYLE } = {}) {
     if (noSource) return null;
     if (!kind) {
       book.giverMarks(npcA, npcR, npcSA, npcSR);
+      if (book.chainMarks) book.chainMarks(npcA); // OB-211: a main step handed out by a character (m1 mark.start) counts as that character's gold '!'
       if (resolveGiver(world, npcA)) kind = 3; else if (resolveGiver(world, npcSA)) { kind = 3; side = true; }
     }
     if (!kind && book.nextOffers && book.tracked() < 0) {   // QUEST-NEXT-GIVER-01: after a hand-in the follow-up giver is the target until the player accepts/tracks something (D-108 tracked quest still wins)

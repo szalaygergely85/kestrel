@@ -11,7 +11,7 @@ const book = createQuestBook(m1, [A, B, C]);
 const hud = createCompassHud({ style: FALLBACK_COMPASS_STYLE });
 const at = () => { const t = hud.target(book, world); return t ? t.x : null; };
 const isMainQ = (id) => book.isMain(book.index ? book.index(id) : [A, B, C].findIndex(d => d.id === id) + 1);
-assert.equal(at(), 10, 'nothing accepted: main quest step (m1)');
+assert.equal(at(), 20, 'OB-211: nothing accepted -> the gold ! giver of the next main quest (qa @ gA), never the m1 step place');
 book.accept('qa'); assert.equal(at(), 60, 'tracked qa: its step');
 book.accept('qb'); assert.equal(at(), 70, 'qb most recent -> tracked');
 assert.ok(book.track('qa')); assert.equal(at(), 60, 'switch tracking -> needle switches at once');
@@ -25,5 +25,5 @@ assert.ok(book.track('qa')); assert.equal(at(), 60, 'tracking qa ignores qb read
 book.feed({ type: 'area:entered', id: 'stepA' });
 assert.equal(hud.target(book, world).x, 30, 'qa ready -> tA'); assert.equal(hud.side, false, 'main quest return in gold');
 book.handIn('qa'); book.handIn('qb');
-assert.equal(book.tracked(), -1, 'nothing tracked'); assert.equal(at(), 10, 'nothing tracked -> main quest step');
+assert.equal(book.tracked(), -1, 'nothing tracked'); assert.equal(at(), 80, 'OB-211: nothing tracked -> a giver character (qc @ offer), not the m1 step place');
 console.log('compassTrack: ok');

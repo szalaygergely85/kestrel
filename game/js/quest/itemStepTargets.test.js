@@ -77,8 +77,8 @@ for (const q of all) {
     else if (given) gather = 'given on accept';
     else {
       const t = hud.target(book, resolver);
-      gather = describe(t, giverP, turnP);
-      if (!t) fails.push(name + ': no needle while gathering ' + w.id + ' (source ' + JSON.stringify(src) + ' resolves nowhere in the world)');
+      gather = describe(t, giverP, turnP); // OB-211: a bare m1 step (no accepted quest) has no needle; its owner quest's row (tower.blade) checks the gather needle
+      if (!t && !q.main) fails.push(name + ': no needle while gathering ' + w.id + ' (source ' + JSON.stringify(src) + ' resolves nowhere in the world)');
       else if (near(t, giverP) || near(t, turnP)) fails.push(name + ': gather needle is on the giver/hand-in for ' + w.id);
     }
     book.feed(w.type === 'item' ? { type: 'item:got', id: w.id } : { type: 'item:count', id: w.id, n: need });
