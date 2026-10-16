@@ -40,7 +40,7 @@ try {
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 700, deviceScaleFactor: 1, mobile: false });
   await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
   for (const h of hours) {
-    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?save=0&nopause=1&quality=medium&backend=webgpu&title=0&time=${h}` });
+    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?save=0&nopause=1&quality=medium&backend=webgpu&title=0&time=${h}${(process.env.QS || '').split('|')[hours.indexOf(h)] || ''}` });   // QS='&scatter=0|&aamesh=0' = extra query per HOURS entry (dev probe)
     let ok = false;
     for (let i = 0; i < (Number(process.env.READY_TRIES) || 600) && !ok; i++) { await pause(300); try { ok = !!(await evaluate(cdp, '!!(window.__debug && window.__debug.playerHandle && window.__debug.world) && !/Checking your graphics/.test(document.body.innerText||"")')); } catch { /* navigating */ } }
     if (!ok) throw new Error('never ready ' + JSON.stringify(await evaluateAsync(cdp, '(async()=>location.href+" "+document.readyState+" "+document.title+" "+document.body.innerHTML.length+" "+JSON.stringify(window.__debug&&window.__debug.bootErrors))()').catch((e) => String(e))));
@@ -50,6 +50,7 @@ try {
       // VISQA-09: a new game has Burl at the tower; for the home spot put him at his post-departure home (walks.home, OB-212)
       if (name === 'burl-home') await evaluate(cdp, `(()=>{const b=__debug.world.get('bear');if(b&&b.data.transform){b.data.transform.x=1404;b.data.transform.y=1010;const T=__debug.world.terrain;const g=(T.groundAt||T.heightAt).call(T,1404,1010);if(g!=null)b.data.transform.z=g;}return !!b})()`);
       await pause(settle);
+      if (process.env.EVAL) console.log('eval', name, h, JSON.stringify(await evaluate(cdp, process.env.EVAL.replace(/\$X/g, x).replace(/\$Y/g, y))));   // dev probe (env EVAL, $X/$Y = spot)
       const s = await cdp.send('Page.captureScreenshot', { format: 'png' });
       const file = `${name}-${String(h).padStart(2, '0')}.png`;
       writeFileSync(path.join(outDir, file), Buffer.from(s.data, 'base64'));
