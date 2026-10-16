@@ -142,6 +142,7 @@ export function createStableState() {
     aaVm: true, // AA-07a: kind-8 models take history (view model: same cell, key objectId+mat; world props: material key + reprojection); ?aavm=0
     aaAnchor: true, // AA-09: a both-255 hold of a static surface re-anchors (writes the CURRENT u/v) so cumulative drift cannot re-roll it; ?aaanchor=0
     aaGraze: true, // AA-20 (OB-208): UV drift limit follows the cell's own UV footprint on grazing surfaces (road ahead); ?aagraze=0
+    aaHue: true, // AA-23 (OB-208): colour snap per colour, not per channel (no hue split); ?aahue=0
     aaVox: true, // AA-21 (OB-208): a world voxel prop (kind 8, same planeId + material) re-anchors its both-255 hold like other static surfaces; ?aavox=0
     aaEdge: true, // AA-18 (OB-208): edge cells (final != shade) take history like any cell (glyph hold) instead of passing through; ?aaedge=0
     aaJoint: true, // AA-07b: a line<->ramp mismatch holds the history glyph while the joint coverage is 1/4..3/4; ?aajoint=0
@@ -199,9 +200,15 @@ export function beginFrame(st, cam, grid, flags, terms) {
   return valid;
 }
 
-function blend(pk, ck) {
+/** AA-23 (OB-208): with `hue` the snap decision is per COLOUR - any channel past CHANNEL_SNAP snaps all three, else all three blend
+ *  (per-channel snapping split the hue = pink/teal cells). Twin: stable.wgsl.js blendPacked (aaFlags bit 256). */
+function blend(pk, ck, hue) {
   const pr = (pk >> 16) & 255, pg = (pk >> 8) & 255, pb = pk & 255;
   const cr = (ck >> 16) & 255, cg = (ck >> 8) & 255, cb = ck & 255;
+  if (hue) {
+    if (Math.abs(cr - pr) > CHANNEL_SNAP || Math.abs(cg - pg) > CHANNEL_SNAP || Math.abs(cb - pb) > CHANNEL_SNAP) return ck & 0xFFFFFF;
+    return (((pr + cr + 1) >> 1) << 16) | (((pg + cg + 1) >> 1) << 8) | ((pb + cb + 1) >> 1);
+  }
   const r = Math.abs(cr - pr) > CHANNEL_SNAP ? cr : (pr + cr + 1) >> 1;
   const g = Math.abs(cg - pg) > CHANNEL_SNAP ? cg : (pg + cg + 1) >> 1;
   const b = Math.abs(cb - pb) > CHANNEL_SNAP ? cb : (pb + cb + 1) >> 1;
@@ -285,8 +292,8 @@ export function stabilize(inp, hist, out, st) {
       }
 
       out.fresh[i] = 0; used++;
-      out.fg[i] = blend(hist.fg[h], inp.fg[i]);
-      out.bg[i] = blend(hist.bg[h], inp.bg[i]);
+      out.fg[i] = blend(hist.fg[h], inp.fg[i], st.aaHue);
+      out.bg[i] = blend(hist.bg[h], inp.bg[i], st.aaHue);
       if (jointHold) { out.glyph[i] = hist.glyph[h]; out.level[i] = lvP; continue; }
       if (c255) {
         // both sides non-ramp: hold the texture glyph unless the fg snapped (light/door/flash re-rolls the cell); keep the history's anchor u/v

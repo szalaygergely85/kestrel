@@ -18,7 +18,7 @@ import { WgCellPipeline } from './gpu/wg/WgCellPipeline.js';
  */
 // POINTSHADOW-WIRE-01: options forwarded to WgCellPipeline . pointShadows undefined -> pipeline default (off).
 export function wgPipelineOpts(o) {
-  return { rays: o.rays, resolveBandM: o.resolveBandM, terrainEnabled: o.terrainEnabled, shadows: o.shadows, gpuCull: o.gpuCull, occl: o.occl, pointShadows: o.pointShadows, pointShadowLevel: o.pointShadowLevel, stable: o.stable, glow: o.glow, aaCov: o.aaCov, aaHyst: o.aaHyst, aaGlyph: o.aaGlyph, aaMesh: o.aaMesh, aaVm: o.aaVm, aaJoint: o.aaJoint, aaAnchor: o.aaAnchor, aaGraze: o.aaGraze }; // US-073c: `?stable=1`; EMIS-03/04: emissive bleed + halo params (absent = off)
+  return { rays: o.rays, resolveBandM: o.resolveBandM, terrainEnabled: o.terrainEnabled, shadows: o.shadows, gpuCull: o.gpuCull, occl: o.occl, pointShadows: o.pointShadows, pointShadowLevel: o.pointShadowLevel, stable: o.stable, glow: o.glow, aaCov: o.aaCov, aaHyst: o.aaHyst, aaGlyph: o.aaGlyph, aaMesh: o.aaMesh, aaVm: o.aaVm, aaJoint: o.aaJoint, aaAnchor: o.aaAnchor, aaGraze: o.aaGraze, aaHue: o.aaHue }; // US-073c: `?stable=1`; EMIS-03/04: emissive bleed + halo params (absent = off)
 }
 
 export async function createRenderer(o) {

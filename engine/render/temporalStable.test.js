@@ -151,6 +151,9 @@ function run(st, cam, inpFn, hist, flags) {
   inp.fg[at(4, 4)] = (100 + CHANNEL_SNAP + 1) << 16 | 100 << 8 | 100; // diff 49: snap
   inp.level[at(4, 5)] = 6; // within one: hold glyph
   inp.level[at(4, 6)] = 7; // two apart: fresh glyph
+  // AA-23 (OB-208): one channel jumps past the snap, the others move a little -> the whole colour snaps (no hue split); small moves blend all three
+  h.fg[at(4, 7)] = (100 << 16) | (120 << 8) | 140; inp.fg[at(4, 7)] = (100 << 16) | ((120 + CHANNEL_SNAP + 20) << 8) | 150;
+  h.fg[at(4, 8)] = (100 << 16) | (120 << 8) | 140; inp.fg[at(4, 8)] = (110 << 16) | (130 << 8) | 101;
   const out = createStableBuffers(COLS, ROWS);
   st.aaEdge = false; // AA-18 off: edge cells pass through
   stabilize(inp, h, out, st);
@@ -163,6 +166,11 @@ function run(st, cam, inpFn, hist, flags) {
   }
   ok('blend diff 48: (p+c+1)>>1', ((out.fg[at(4, 3)] >> 16) & 255) === 124, `${(out.fg[at(4, 3)] >> 16) & 255}`);
   ok('snap diff 49: cur byte', ((out.fg[at(4, 4)] >> 16) & 255) === 149);
+  ok('AA-23 one channel jump: whole colour snaps (no hue split)', out.fg[at(4, 7)] === inp.fg[at(4, 7)], out.fg[at(4, 7)].toString(16));
+  ok('AA-23 small moves: all three channels blend', out.fg[at(4, 8)] === ((105 << 16) | (125 << 8) | 121), out.fg[at(4, 8)].toString(16));
+  { const o2 = createStableBuffers(COLS, ROWS); st.aaHue = false; stabilize(inp, h, o2, st); st.aaHue = true;
+    ok('AA-23 ?aahue=0: old per-channel rule (g snaps, r/b average = hue split)', o2.fg[at(4, 7)] === ((100 << 16) | ((120 + CHANNEL_SNAP + 20) << 8) | 145)
+      && o2.fg[at(4, 8)] === out.fg[at(4, 8)], o2.fg[at(4, 7)].toString(16)); }
   ok('glyph held within one level', out.glyph[at(4, 5)] === h.glyph[at(4, 5)] && out.level[at(4, 5)] === 5);
   ok('glyph fresh at two levels', out.glyph[at(4, 6)] === inp.glyph[at(4, 6)] && out.level[at(4, 6)] === 7 && out.fresh[at(4, 6)] === 0);
 }

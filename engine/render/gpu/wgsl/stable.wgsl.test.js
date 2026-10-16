@@ -140,9 +140,10 @@ const WALL = { n: [0, 1, 0], d: -5 }, FLOOR = { n: [0, 0, 1], d: 0 };
 let EDGE = false; // AA-18: aaEdge switch of the probe scenes (off keeps the edge pass-through mutations meaningful; a parity loop runs it on)
 let VOX = true; // AA-21: aaVox switch of the probe scenes
 let GRAZE = true; // AA-20: aaGraze switch (the old-rule mutations run with it off, the graze mutation with it on)
+let HUE = true; // AA-23: aaHue switch (old per-channel blend mutations run with it off)
 let ANCHOR = true; // AA-09: aaAnchor switch of the probe scenes (the mutation loop runs both)
 function scene(src, cam0, cam1, plane, tweak) {
-  const st = createStableState(); st.aaAnchor = ANCHOR; st.aaEdge = EDGE; st.aaVox = VOX; st.aaGraze = GRAZE;
+  const st = createStableState(); st.aaAnchor = ANCHOR; st.aaEdge = EDGE; st.aaVox = VOX; st.aaGraze = GRAZE; st.aaHue = HUE;
   beginFrame(st, cam0, GRID);
   const fa = makeFrame(st, COLS, ROWS, plane, {});
   const hist = createStableBuffers(COLS, ROWS);
@@ -233,6 +234,18 @@ for (const [name, c0, camK, plane] of cases) for (let k = 1; k <= 4; k++) {
   assert.equal(r.mism, 0, `aaGraze off ${name} k=${k}: ${r.mism} mismatches`);
 }
 GRAZE = true;
+// AA-23 (OB-208): g/b also jump (some past the snap) so the per-colour snap decides on a channel other than r; both switch states at parity
+const hueTweak = (fb, fa, i) => {
+  if (fb.finalFg[i] !== fb.shadeFg[i]) return;
+  const jump = rand() < 0.2 ? 49 + Math.floor(rand() * 30) : Math.floor(rand() * 48);
+  const g = (fb.shadeFg[i] >> 8) & 255, ng = Math.min(255, Math.max(0, g + (rand() < 0.5 ? jump : -jump)));
+  fb.shadeFg[i] = (fb.shadeFg[i] & 0xff00ff) | (ng << 8); fb.finalFg[i] = fb.shadeFg[i];
+};
+for (HUE of [true, false]) for (const [name, c0, camK, plane] of cases) for (let k = 1; k <= 4; k++) {
+  const r = runCase(STABLE_WGSL, name, c0, camK, plane, k, hueTweak);
+  assert.equal(r.mism, 0, `aaHue ${HUE} g-jitter ${name} k=${k}: ${r.mism} mismatches ${JSON.stringify(r.bad)}`);
+}
+HUE = true;
 VOX = false; // AA-21 (OB-208): aaVox off (kind 8 keeps the history anchor) stays at parity
 for (const [name, c0, camK, plane] of cases) for (let k = 1; k <= 4; k++) {
   const r = runCase(STABLE_WGSL, name, c0, camK, plane, k);
@@ -287,19 +300,23 @@ const mutations = [
 assert.ok(STABLE_WGSL.includes('u.waterOn != 0 && wl.x'), 'water test is gated by waterOn (waterOn): the 1x1 dummy reads 0 = water out of bounds');
 const GRAZE_MUT = new Set(['graze K x0.25', 'graze side max instead of min']);
 mutations.push(['graze K x0.25', 'min(0.7500 * max(gx, gy)', 'min(0.1875 * max(gx, gy)'], ['graze side max instead of min', 'var gy = min(grazeStep(cx, cy - 1', 'var gy = max(grazeStep(cx, cy - 1']);
+const HUE_MUT = new Set(['hue snap > -> >=', 'hue blend rounding', 'hue snap ignores g']);
+mutations.push(['hue snap > -> >=', 'max(dr, max(dg, db)) > u.snap', 'max(dr, max(dg, db)) >= u.snap'], ['hue blend rounding', '(pk & 255u) + (ck & 255u) + 1u)', '(pk & 255u) + (ck & 255u))'],
+  ['hue snap ignores g', 'max(dr, max(dg, db))', 'max(dr, db)']);
 for (const [name, from, to] of mutations) {
+  HUE = HUE_MUT.has(name); // AA-23: the per-channel blend rules are checked with aaHue off (the per-colour path bypasses blendCh)
   GRAZE = GRAZE_MUT.has(name); // AA-20: the old rules are checked without the graze limit (it would hide a looser texel window)
   assert.ok(STABLE_WGSL.includes(from), `mutation anchor missing: ${name}`);
   const src = STABLE_WGSL.replace(from, to);
   let caught = 0;
   for (ANCHOR of [true, false]) for (const [cn, cam0, camK, plane] of cases) for (let k = 1; k <= 4 && !caught; k++) {
-    const r = runCase(src, cn, cam0, camK, plane, k);
+    const r = runCase(src, cn, cam0, camK, plane, k, HUE ? hueTweak : undefined);
     if (r.mism > 0) caught++;
   }
   ANCHOR = true;
   assert.ok(caught > 0, `mutation survived: ${name}`);
 }
-GRAZE = true;
+GRAZE = true; HUE = true;
 
 // ---------------- host side: uniforms, device pass, shade level target, stable-off identity ----------------
 {

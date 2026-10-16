@@ -66,6 +66,16 @@ fn blendCh(p: u32, c: u32) -> u32 {
   return select((p + c + 1u) >> 1u, c, abs(d) > u.snap);
 }
 fn blendPacked(pk: u32, ck: u32) -> u32 {
+  // AA-23 (aaFlags bit 256): any channel past the snap snaps the whole colour (twin: temporalStable.js blend, hue arg)
+  if ((u.aaFlags & 256) != 0) {
+    let dr = abs(i32((ck >> 16u) & 255u) - i32((pk >> 16u) & 255u));
+    let dg = abs(i32((ck >> 8u) & 255u) - i32((pk >> 8u) & 255u));
+    let db = abs(i32(ck & 255u) - i32(pk & 255u));
+    if (max(dr, max(dg, db)) > u.snap) { return ck & 0xFFFFFFu; }
+    let r = (((pk >> 16u) & 255u) + ((ck >> 16u) & 255u) + 1u) >> 1u;
+    let g = (((pk >> 8u) & 255u) + ((ck >> 8u) & 255u) + 1u) >> 1u;
+    return (r << 16u) | (g << 8u) | (((pk & 255u) + (ck & 255u) + 1u) >> 1u);
+  }
   let r = blendCh((pk >> 16u) & 255u, (ck >> 16u) & 255u);
   let g = blendCh((pk >> 8u) & 255u, (ck >> 8u) & 255u);
   let b = blendCh(pk & 255u, ck & 255u);
