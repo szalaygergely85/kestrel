@@ -45,6 +45,7 @@ export class RenderTargetWebGPU {
     this._uiLayer = null;
     this._clearOpts = { clear: true }; // hoisted: present() runs every frame
     this._pf = null; this._pb = null;
+    this._upFg = makeUploadState(); this._upBg = makeUploadState(); this._upUiFg = makeUploadState(); this._upUiBg = makeUploadState(); // PERF-04
     this._cellPass = null; this._spritePass = null; this._overlayPass = null;
     this._measureCanvas = document.createElement('canvas');
     this._measureCtx = this._measureCanvas.getContext('2d', { willReadFrequently: true });
@@ -209,6 +210,8 @@ export class RenderTargetWebGPU {
   setCellPass(fn) { this._cellPass = fn || null; }
   setSpritePass(fn) { this._spritePass = fn || null; }
   setOverlayPass(fn) { this._overlayPass = fn || null; }
+  /** PERF-04: something other than present() drew into fgTex/bgTex (the pipeline debug view): re-upload the whole CPU layer next frame. */
+  invalidateCellUpload() { if (this._upFg) { this._upFg.tex = null; this._upBg.tex = null; } }
   /** WG-3f: present these textures (pipeline sprite/overlay output) instead of the CPU cell textures; null = back to fgTex/bgTex. */
   setPresentCells(fg, bg) { this._pf = fg || null; this._pb = bg || null; }
 
@@ -247,8 +250,9 @@ export class RenderTargetWebGPU {
     if (d._pass && typeof d.abortPass === 'function') console.error('[RenderTargetWebGPU] stale GPU pass left open before present (aborted): ' + d.abortPass());
     d.timer.begin(FRAME_TIMER_SLOT); // WG-1b3: whole GPU present, including the cell-pass hook.
     try { // FIX-PASS: a throw anywhere below must not leave the frame's pass or timer span open (the next present would crash)
-      d.writeTexture(this.fgTex, this.cells.fg);
-      d.writeTexture(this.bgTex, this.cells.bg);
+      if (!this._upFg) { this._upFg = makeUploadState(); this._upBg = makeUploadState(); this._upUiFg = makeUploadState(); this._upUiBg = makeUploadState(); } // targets built without init (tests)
+      uploadChangedRows(d, this.fgTex, this.cells.fg, this.cols, this.rows, this._upFg); // PERF-04: only rows that changed since the last upload
+      uploadChangedRows(d, this.bgTex, this.cells.bg, this.cols, this.rows, this._upBg);
       if (this._cellPass) this._cellPass();
       if (this._spritePass) this._spritePass();
       if (this._overlayPass) this._overlayPass();
@@ -263,8 +267,8 @@ export class RenderTargetWebGPU {
       this._presentFg = pf; this._presentBg = pb;
       if (this._uiLayer && this._uiFgTex) {
         const ui = this._uiLayer;
-        d.writeTexture(this._uiFgTex, ui.cells.fg);
-        d.writeTexture(this._uiBgTex, ui.cells.bg);
+        uploadChangedRows(d, this._uiFgTex, ui.cells.fg, ui.cols, ui.rows, this._upUiFg);
+        uploadChangedRows(d, this._uiBgTex, ui.cells.bg, ui.cols, ui.rows, this._upUiBg);
         this._grid[0] = this._uiFgTex; this._grid[1] = this._uiBgTex; this._grid[2] = this._uiAtlasTex;
         this._draw(this._pipeUi, this._bindUi, this._texUi, this._grid, ui.cols, ui.rows, 1);
       }
@@ -284,6 +288,41 @@ export class RenderTargetWebGPU {
     if (d.timer.writeStats) d.timer.writeStats(this.stats);
     if (d.writePassStats) d.writePassStats(this.stats);
   }
+}
+
+/** PERF-04 upload state of one CPU cell array -> texture pair: `prev` = the u32 words last uploaded into `tex`. */
+export function makeUploadState() { return { tex: null, src: null, src32: null, prev: null, rect: { x: 0, y: 0, w: 0, h: 0 } }; }
+
+/**
+ * PERF-04: upload `src` (RGBA8 cells, cols x rows) into `tex`, sending only the row span [first changed row, last changed row]
+ * since the last upload through the same `st`. The texture ends up byte-identical to a full upload as long as nothing else
+ * writes `tex` (callers that do must clear `st.tex`). A new texture / source array (resize, device restore) = full upload.
+ * The CPU layer is mostly static (a clear + HUD), so most frames upload nothing. Zero allocation after the first call per size.
+ * @param {any} d device @param {any} tex @param {Uint8Array|Uint8ClampedArray} src @param {number} cols @param {number} rows @param {ReturnType<typeof makeUploadState>} st
+ * @returns {number} rows uploaded
+ */
+export function uploadChangedRows(d, tex, src, cols, rows, st) {
+  const n = cols * rows, odd = !src || !src.buffer || (src.byteOffset & 3) !== 0 || src.length !== n * 4;
+  if (odd || st.tex !== tex || st.src !== src || !st.prev || st.prev.length !== n) {
+    d.writeTexture(tex, src);
+    if (odd) { st.tex = null; return rows; } // unaligned / odd source (test fakes): always full
+    if (!st.prev || st.prev.length !== n) st.prev = new Uint32Array(n);
+    st.src32 = new Uint32Array(src.buffer, src.byteOffset, n);
+    st.prev.set(st.src32);
+    st.tex = tex; st.src = src;
+    return rows;
+  }
+  const a = st.src32, p = st.prev;
+  let i = 0;
+  while (i < n && a[i] === p[i]) i++;
+  if (i === n) return 0;
+  let j = n - 1;
+  while (a[j] === p[j]) j--;
+  const r0 = (i / cols) | 0, r1 = (j / cols) | 0;
+  for (let k = r0 * cols, e = (r1 + 1) * cols; k < e; k++) p[k] = a[k];
+  const rect = st.rect; rect.x = 0; rect.y = r0; rect.w = cols; rect.h = r1 - r0 + 1;
+  d.writeTexture(tex, src, rect, r0 * cols * 4);
+  return rect.h;
 }
 
 export { GLYPH_COUNT };
