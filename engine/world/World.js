@@ -1904,7 +1904,7 @@ export class World {
     if (this.terrain && (!st || (st.keepMask && this._terrainSupports(x, y, footZ)))) {
       this.terrain.groundAtBuf(io);
       terrainZ = io[3];
-      if (terrainZ >= sup.floorZ && opts.heightOnly !== true) { // PERF-02: heightOnly callers (foot IK) skip the 4 extra height reads of the normal
+      if (terrainZ >= sup.floorZ && !(opts && opts.heightOnly === true)) { // PERF-02: heightOnly callers (foot IK) skip the 4 extra height reads of the normal
         this.terrain.groundNormalAtBuf(io);
         tnx = io[4]; tny = io[5]; tnz = io[6];
       }
