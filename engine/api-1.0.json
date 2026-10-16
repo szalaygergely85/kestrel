@@ -519,6 +519,7 @@
     {"name":"setFoliageEdge","area":"render","tier":"experimental"},
     {"name":"setFoliageLight","area":"render","tier":"experimental"},
     {"name":"setGrassSample","area":"world","tier":"stable"},
+    {"name":"setGrassShade","area":"render","tier":"experimental"},
     {"name":"setLeafLevelHold","area":"render","tier":"experimental"},
     {"name":"setLeafUvHold","area":"render","tier":"experimental"},
     {"name":"setLook","area":"render","tier":"experimental"},
