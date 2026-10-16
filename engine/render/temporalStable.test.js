@@ -409,14 +409,13 @@ console.log(`${pass} passed, ${fail} failed.`);
     && encodeLevelByte(5, 0, false) === 5 && encodeLevelByte(5, 4, false) === 5 && encodeLevelByte(255, 2, false) === 255 && encodeLevelByte(254, 2, false) === 254
     && covOfByte(255) === 0 && covOfByte(254) === 0 && levelOfByte(254) === 254);
 }
-if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
-console.log('ALL PASS');
 
 // OB-193: the drift limit grows with the cell footprint (distant walls keep their glyph), ortho keeps the texel limit.
 {
-  const near = uvDriftLimit(1, 0.5, 0.3, 400, 150, 16, false), far = uvDriftLimit(8, 0.5, 0.3, 400, 150, 16, false);
+  const near = uvDriftLimit(1, 0.5, 0.3, 400, 150, 16, false), far = uvDriftLimit(40, 0.5, 0.3, 400, 150, 16, false), mid = uvDriftLimit(8, 0.5, 0.3, 400, 150, 16, false);
   ok('OB-193 near wall keeps the texel limit', near === 1 / 16, String(near));
-  ok('OB-193 far wall limit = cell footprint', Math.abs(far - 8 * 2 * 0.5 / 400) < 1e-12 && far > 1 / 16, String(far));
+  ok('OB-193 depth 8 footprint is below the texel limit (texel limit applies)', mid === 1 / 16, String(mid));
+  ok('OB-193 far wall (depth 40) limit = cell footprint 0.16, grows with depth', Math.abs(far - 0.16) < 1e-9 && far > 1 / 16 && uvDriftLimit(80, 0.5, 0.3, 400, 150, 16, false) > far, String(far));
   ok('OB-193 ortho keeps the texel limit', uvDriftLimit(8, 0.5, 0.3, 400, 150, 16, true) === 1 / 16);
 }
 
@@ -462,3 +461,5 @@ console.log('temporalStable OB-198 cases ok');
   grazeUvLimit(inp, 1, 1, 5, o); assert.equal(o[0], 5, 'graze: never below the base limit');
 }
 console.log('temporalStable AA-20 graze cases ok');
+if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
+console.log('ALL PASS');

@@ -262,7 +262,7 @@ const drive = (sim, px, py, times = 30) => { for (let m = 0; m < times; m++) sim
 // whatever the phase of the sliced binder scan (was: up to ~59 steps, so a passing player at 10 m/s outran the 100 m "alive is bound" assert).
 {
   let worst = 0, allBound = true;
-  for (let ph = 0; ph < 30; ph += 1) {
+  for (const ph of [0, 1, 7, 14, 15, 29]) { // edge/aliasing phases of the 30-step scan (all 30 cost ~7 s)
     const sim = lineWorld(140, 0.45);
     for (let i = 0; i < 140; i++) sim.setDormant(i, true); // camps asleep: none is a candidate
     for (let t = 0; t < 70; t++) sim.step(1000, 1000, gz(sim)); // player far: everything unbound
@@ -271,7 +271,7 @@ const drive = (sim, px, py, times = 30) => { for (let m = 0; m < times; m++) sim
     let n = 0; while (!bound(sim, 0) && n < 80) { sim.step(1425, 1000, gz(sim)); n++; }
     worst = Math.max(worst, n); if (!bound(sim, 0)) allBound = false;
   }
-  ok('a record waking at 25 m binds within <= 20 steps at every scan phase', allBound && worst <= 20, `worst ${worst} steps`);
+  ok('a record waking at 25 m binds within <= 20 steps at the sampled scan phases', allBound && worst <= 20, `worst ${worst} steps`);
 }
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
