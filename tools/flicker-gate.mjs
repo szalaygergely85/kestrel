@@ -27,10 +27,10 @@ export function extractPoses(metrics) {
   const m0 = metrics || {};
   const poses = {};
   for (const k of Object.keys(m0)) {
-    const m = /^poses\.([^.]+)\.(totalPct|glyphOnlyPct)$/.exec(k);
+    const m = /^poses\.([^.]+)\.(totalPct|glyphOnlyPct|glyphOnlyRawPct|shiftPct)$/.exec(k);
     if (m) (poses[m[1]] ||= {})[m[2]] = m0[k];
   }
-  const avg = { totalPct: m0['avg.totalPct'] ?? m0.avgTotalPct, glyphOnlyPct: m0['avg.glyphOnlyPct'] };
+  const avg = { totalPct: m0['avg.totalPct'] ?? m0.avgTotalPct, glyphOnlyPct: m0['avg.glyphOnlyPct'], glyphOnlyRawPct: m0['avg.glyphOnlyRawPct'], shiftPct: m0['avg.shiftPct'] };
   return { poses, avg };
 }
 
@@ -80,7 +80,7 @@ export function compare(current, baseline) {
     }
     const lim = limit(b.glyphOnlyPct, POSE_MARGIN);
     const bad = c.glyphOnlyPct > lim;
-    rows.push({ pose, total: c.totalPct, glyphOnly: c.glyphOnlyPct, baseline: b.glyphOnlyPct, limit: lim, verdict: bad ? 'FAIL' : 'PASS' });
+    rows.push({ pose, total: c.totalPct, glyphOnly: c.glyphOnlyPct, baseline: b.glyphOnlyPct, limit: lim, verdict: bad ? 'FAIL' : 'PASS', raw: c.glyphOnlyRawPct ?? null, shift: c.shiftPct ?? null });
     if (bad) messages.push(`pose "${pose}" glyphOnly ${c.glyphOnlyPct.toFixed(2)} % > limit ${lim.toFixed(2)} % (baseline ${b.glyphOnlyPct.toFixed(2)} %)`);
   }
   const ca = current.avg?.glyphOnlyPct, ba = baseline.avg?.glyphOnlyPct;
@@ -90,7 +90,7 @@ export function compare(current, baseline) {
   } else if (isNum(ba)) {
     const lim = limit(ba, AVG_MARGIN);
     const bad = ca > lim;
-    rows.push({ pose: 'AVG', total: current.avg.totalPct ?? null, glyphOnly: ca, baseline: ba, limit: lim, verdict: bad ? 'FAIL' : 'PASS' });
+    rows.push({ pose: 'AVG', total: current.avg.totalPct ?? null, glyphOnly: ca, baseline: ba, limit: lim, verdict: bad ? 'FAIL' : 'PASS', raw: current.avg.glyphOnlyRawPct ?? null, shift: current.avg.shiftPct ?? null });
     if (bad) messages.push(`avg glyphOnly ${ca.toFixed(2)} % > limit ${lim.toFixed(2)} % (baseline ${ba.toFixed(2)} %)`);
   }
   return { ok: rows.every((r) => r.verdict !== 'FAIL'), rows, messages };
@@ -98,8 +98,8 @@ export function compare(current, baseline) {
 
 const f = (v) => (isNum(v) ? v.toFixed(2) : '-');
 export function formatTable(result) {
-  const head = ['pose', 'total%', 'glyphOnly%', 'baseline%', 'limit%', 'verdict'];
-  const lines = result.rows.map((r) => [r.pose, f(r.total), f(r.glyphOnly), f(r.baseline), f(r.limit), r.verdict]);
+  const head = ['pose', 'total%', 'glyphOnly%', 'raw%', 'shift%', 'baseline%', 'limit%', 'verdict']; // AA-14b: gated on glyphOnly (line shifts removed); raw = the old definition, always printed
+  const lines = result.rows.map((r) => [r.pose, f(r.total), f(r.glyphOnly), f(r.raw), f(r.shift), f(r.baseline), f(r.limit), r.verdict]);
   const w = head.map((h, i) => Math.max(h.length, ...lines.map((l) => l[i].length)));
   const fmt = (l) => l.map((c, i) => c.padEnd(w[i])).join('  ');
   const out = [fmt(head), ...lines.map(fmt), '', result.ok ? 'FLICKER GATE: PASS' : 'FLICKER GATE: FAIL'];
@@ -113,7 +113,7 @@ export function summarizeRuns(runs) {
   const names = [...new Set(runs.flatMap((r) => Object.keys(r.poses)))];
   const out = { poses: {}, avg: {}, spread: {} };
   const agg = (get, set, key) => {
-    for (const k of ['totalPct', 'glyphOnlyPct']) {
+    for (const k of ['totalPct', 'glyphOnlyPct', 'glyphOnlyRawPct', 'shiftPct']) {
       const v = runs.map((r) => get(r)?.[k]).filter(isNum);
       if (v.length) { set(k, median(v)); if (k === 'glyphOnlyPct') out.spread[key] = { min: Math.min(...v), max: Math.max(...v), spread: Math.max(...v) - Math.min(...v), n: v.length }; }
     }

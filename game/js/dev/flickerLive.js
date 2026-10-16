@@ -80,7 +80,7 @@ export async function runLivePoses(h, { world, wg, cols, rows, pxCellW = 1, pxCe
     if (!sameGrid(g, g2)) c.grid.cols = -1; // the grid changed while reading back: never equal to another capture's grid
     return c; };
   const sameGrid = (a, b) => a.cols === b.cols && a.rows === b.rows && a.pxCellW === b.pxCellW && a.pxCellH === b.pxCellH;
-  const KEYS = ['totalPct', 'kindPct', 'materialPct', 'glyphOnlyPct', 'colourOnlyPct', 'n', 'excluded'];
+  const KEYS = ['totalPct', 'kindPct', 'materialPct', 'glyphOnlyPct', 'glyphOnlyRawPct', 'shiftPct', 'colourOnlyPct', 'n', 'excluded'];
   const sums = {};
   for (const p of poses) {
     const gz = p.groundEye && world.terrain ? world.terrain.groundAt(p.x, p.y) + EYE_H : EYE_H;
@@ -102,7 +102,7 @@ export async function runLivePoses(h, { world, wg, cols, rows, pxCellW = 1, pxCe
       acc.oldTotalPct += out.totalPct; // same-index metric (measures image motion), kept for reference
       const dOk = diag && prev.diag && cur.diag && cur.diag.cols === gcols && prev.diag.cols === gcols && cur.diag.rows === grows;
       if (dOk && (!hmap || hmap.length !== gcols * grows)) hmap = new Int32Array(gcols * grows);
-      flickerReprojStep(prev, cur, prev.cam, { ...cam }, cur.grid, out, dOk ? hmap : null); // motion-compensated (AA-01b)
+      flickerReprojStep(prev, cur, prev.cam, { ...cam }, cur.grid, out, dOk ? hmap : null, gcls); // motion-compensated (AA-01b)
       if (dOk) { const tt = pitchedTerms({ ...cam }, cur.grid, terms); tt.gcls = gcls; flickerGlyphReasons(cur.diag, prev.diag, hmap, gcols, grows, tt, why); }
       for (const k of KEYS) acc[k] += out[k];
       if (dump && !res.dump && dump.pose === p.slug && dump.step === s) res.dump = packDump(p.slug, s, prev, cur, gcols, grows); // OB198-DUMP-DIFF-01

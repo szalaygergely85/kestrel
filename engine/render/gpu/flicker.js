@@ -112,13 +112,21 @@ const _f32 = new Float32Array(1), _u32 = new Uint32Array(_f32.buffer);
 const bitsToF32 = (b) => { _u32[0] = b; return _f32[0]; };
 let _tPrev = null, _tCur = null; const _w = new Float64Array(3), _pc = new Float64Array(3);
 
-export function flickerReprojStep(prev, cur, camPrev, camCur, grid, out, hmap = null) {
+// AA-14b (38.84): `shiftPct` = glyph changes explained as a line moving with the image: the glyph pair involves a line code
+// (shade.wgsl line glyphs, `gcls`) AND the cur glyph sits at a 4-neighbour of the history cell in prev AND the prev glyph sits at a
+// 4-neighbour of the cell in cur (both directions). `glyphOnlyPct` = glyphOnlyRawPct - shiftPct; `glyphOnlyRawPct` = the old definition.
+function glyphAtNeighbour(fg, i, cols, rows, want) {
+  const x = i % cols, y = (i - x) / cols;
+  return (x > 0 && fg[(i - 1) * 4 + 3] === want) || (x < cols - 1 && fg[(i + 1) * 4 + 3] === want)
+    || (y > 0 && fg[(i - cols) * 4 + 3] === want) || (y < rows - 1 && fg[(i + cols) * 4 + 3] === want);
+}
+export function flickerReprojStep(prev, cur, camPrev, camCur, grid, out, hmap = null, gcls = DEFAULT_GCLS) {
   if (hmap) hmap.fill(-1); // AA-DIAG-01: history cell of every counted (n) cell, -1 = not counted
   if (!_tPrev) { _tPrev = createPitchedTerms(); _tCur = createPitchedTerms(); }
   pitchedTermsInto(_tPrev, camPrev, grid); pitchedTermsInto(_tCur, camCur, grid);
   const { cols, rows } = grid;
   const haveBg = !!(prev.bg && cur.bg);
-  let n = 0, kind = 0, mat = 0, glyph = 0, colour = 0, excluded = 0;
+  let n = 0, kind = 0, mat = 0, glyph = 0, shift = 0, colour = 0, excluded = 0;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const i = r * cols + c;
@@ -139,7 +147,12 @@ export function flickerReprojStep(prev, cur, camPrev, camCur, grid, out, hmap = 
       if (hmap) hmap[i] = h;
       if (pk !== ck) { kind++; continue; }
       if (((prev.GI[h * 4 + 1] >>> 16) & 0xffff) !== ((cur.GI[i * 4 + 1] >>> 16) & 0xffff)) { mat++; continue; }
-      if (prev.fg[h * 4 + 3] !== cur.fg[i * 4 + 3]) { glyph++; continue; }
+      const pg = prev.fg[h * 4 + 3], cg = cur.fg[i * 4 + 3];
+      if (pg !== cg) {
+        glyph++;
+        if ((gcls[cg] === GC_LINE || gcls[pg] === GC_LINE) && glyphAtNeighbour(prev.fg, h, cols, rows, cg) && glyphAtNeighbour(cur.fg, i, cols, rows, pg)) shift++;
+        continue;
+      }
       let m = 0;
       for (let k = 0; k < 3; k++) {
         let d = Math.abs(prev.fg[h * 4 + k] - cur.fg[i * 4 + k]); if (d > m) m = d;
@@ -150,7 +163,7 @@ export function flickerReprojStep(prev, cur, camPrev, camCur, grid, out, hmap = 
   }
   const pct = (v) => (n ? (100 * v) / n : 0);
   out.n = n; out.excluded = excluded;
-  out.kindPct = pct(kind); out.materialPct = pct(mat); out.glyphOnlyPct = pct(glyph); out.colourOnlyPct = pct(colour);
+  out.kindPct = pct(kind); out.materialPct = pct(mat); out.glyphOnlyRawPct = pct(glyph); out.shiftPct = pct(shift); out.glyphOnlyPct = pct(glyph - shift); out.colourOnlyPct = pct(colour);
   out.totalPct = pct(kind + mat + glyph + colour);
   return out;
 }
