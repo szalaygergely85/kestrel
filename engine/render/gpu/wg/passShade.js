@@ -6,7 +6,7 @@
 // (matTable bind, palette/time of day, terrain far-bake version); per frame only uniform words change.
 // The water layer is WG-3e: edge gets waterOn = 0 and a 1x1 dummy WATER texture. ALPHA-01d soft edges are WGSL-only (edge.wgsl.js header, D-044), not in the shipped GLSL
 // (twin: edgePass.js).
-import { meshOutdoorFog } from '../../fogShape.js'; // OB-089
+import { meshOutdoorFog, fogShapeCtx } from '../../fogShape.js'; // OB-089; AA-15 aaFol switch
 import { updateUnderState } from '../../underwater.js'; // SWIM-04c
 import { SHADE_BLOCK, SHADE_WGSL, SHADE_LEVEL_WGSL, SHADE_TEXTURES, SHADE_LOOK_BLOCK, SHADE_LOOK_WGSL, SHADE_LEVEL_LOOK_WGSL, SHADE_GI_WGSL, SHADE_LEVEL_GI_WGSL, SHADE_LOOK_GI_WGSL, SHADE_LEVEL_LOOK_GI_WGSL, SHADE_GI_BUFFERS } from '../wgsl/shade.wgsl.js';
 import { giBufferFor } from './giUpload.js'; // GI-PROBE-05
@@ -291,6 +291,10 @@ export class WgShadePass {
     // AUD-45: height fog + sun in-scatter, same gate as the CPU compositor (terrain world with a time-of-day palette).
     const fogShapeOn = useScene && !!p._world.terrain && !!(p._palette && p._palette.timeOfDay);
     su[S_FOGVIEW] = fogShapeOn ? p._cam.z : 0; su[S_FOGVIEW + 1] = fogShapeOn ? 1 : 0;
+    // AA-15 (OB-208): foliage world dice (fogView.w; same gate as the twin: fog ctx on, not ortho). underCam.xy = camera x/y every frame
+    // (the underwater block itself stays gated on under.x, and rewrites the same values when submerged).
+    su[S_FOGVIEW + 3] = fogShapeOn && fogShapeCtx.aaFol && !(pitched && rp.ortho) ? 1 : 0;
+    if (useScene && p._cam) { su[S_UNDER_CAM] = p._cam.x; su[S_UNDER_CAM + 1] = p._cam.y; }
     su[S_FOGVIEW + 2] = fogShapeOn && this.terrainU.fogOn && meshOutdoorFog(p._world, p._cam, p._palette) ? 1 : 0; // OB-089: mesh pixels fog like the terrain outdoors
     const liveK = this.palette && this.palette.liveLook; su[S_SKYGLOWON + 1] = liveK && liveK.floorEff > 0 ? liveK.floorEff : 0; // DN-02 night glyph-luminance floor (0 = off)
     su[S_SKYGLOWON] = fogShapeOn ? 1 : 0; // AUD-40: same gate, written every frame (sunDir/sunI are stale outside terrain worlds)

@@ -235,7 +235,8 @@ export function flickerGlyphReasons(d, p, hmap, cols, rows, terms, cnt) {
         const du = bitsToF32(d.GA[o]) - bitsToF32(p.hist[h * 4 + 1]), dv = bitsToF32(d.GA[o + 1]) - bitsToF32(p.hist[h * 4 + 2]);
         const vd = bitsToF32(d.Depth[i]);
         const lim = uvDriftLimit(vd, terms.tanHalfX, terms.tanHalfY, cols, rows, DEFAULT_DETAIL, terms.ortho === 1), dUV = Math.sqrt(du * du + dv * dv);
-        if (dUV >= lim) { r = 'uvDrift'; const b = 'uv' + (dUV < 2 * lim ? '<2' : dUV < 4 * lim ? '<4' : '4+'); cnt.sub[b] = (cnt.sub[b] || 0) + 1; }
+        if (dUV >= lim) { r = 'uvDrift'; const b = 'uv' + (dUV < 2 * lim ? '<2' : dUV < 4 * lim ? '<4' : '4+'); cnt.sub[b] = (cnt.sub[b] || 0) + 1;
+          const lk = (lvC === lvP ? 'uvLv=:' : 'uvLv!:') + kind; cnt.sub[lk] = (cnt.sub[lk] || 0) + 1; const mk = 'uvMat:' + kind + ':' + mat; cnt.sub[mk] = (cnt.sub[mk] || 0) + 1; }
         else if (joint) r = 'replayHold';
         else if (c255) {
           let snapped = false;
@@ -247,6 +248,7 @@ export function flickerGlyphReasons(d, p, hmap, cols, rows, terms, cnt) {
         }
       }
     }
+    if (r === 'edge' || r === 'levelJump') { const mk = r + 'Mat:' + kind + ':' + mat; cnt.sub[mk] = (cnt.sub[mk] || 0) + 1; }
     if (octave && octave(d, i) !== octave(p, h)) cnt.octPop = (cnt.octPop || 0) + 1;
     cnt[r] = (cnt[r] || 0) + 1;
     const rk = r + ':' + kind; cnt.sub[rk] = (cnt.sub[rk] || 0) + 1;

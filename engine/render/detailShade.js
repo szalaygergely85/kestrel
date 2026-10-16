@@ -26,7 +26,7 @@ import { entityTintAt, tintChannel } from './entityTint.js';
 import { vegTintGain } from '../mesh/vegTint.js';
 import { KIND_MODEL, KIND_MESH, FACE_PACKED } from './GBuffer.js';
 import { clamp01, clampByte } from '../core/math.js';
-import { fogShapeCtx, fogShapeF, fogScatterW, fogScatterColor, fogCellDirJS } from './fogShape.js';
+import { fogShapeCtx, fogShapeF, fogScatterW, fogScatterColor, fogCellDirJS, folDiceJS } from './fogShape.js';
 
 // --- fast level()/orientClass() (tech notes item 6) -------------------------
 const TAN22 = Math.tan(22 * Math.PI / 180);
@@ -711,7 +711,12 @@ export function shadeDetailFast(table, rec, i, gbuf, dist, light, out, minor) {
   // for axis-aligned parts; this is the face-7 twin of that).
   const aoD = ((kind === KIND_MODEL || kind === KIND_MESH) && face === FACE_PACKED) ? Infinity : gbuf.aoD[i];
   const dudx = gbuf.dudx[i], dvdx = gbuf.dvdx[i], dudy = gbuf.dudy[i], dvdy = gbuf.dvdy[i];
+  const fc = fogShapeCtx, fol = kind === KIND_MESH && rec.softEdge && fc.on && fc.aaFol && fc.mode !== 2;
   const core = shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist, face, kind, light, coreScratch);
+  if (fol) { // AA-15 (OB-208): leaf cards - world-block glyph dice (twin of WGSL folDice; the per-sub-sample tint dice stay on u/v)
+    const cols = fc.terms.cols, row = Math.floor(i / cols);
+    core.hA = folDiceJS(i - row * cols, row, dist, rec.seed + 977);
+  }
   shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff, light, out, i);
   if (minor !== undefined && minor.count > 0 && minor.nTotal > 1) coverageMix(table, minor, light, out); // 38.82 A
   return out;
