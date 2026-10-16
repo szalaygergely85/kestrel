@@ -5,6 +5,8 @@
 // book = createSpellBook (tier(id) 0..3, canRaise(id)); scrolls() = Spell Scroll count; useScroll(id) = new level or 0 (main wraps spellScroll.useScroll).
 const DEFAULT_RGB = [90, 220, 205];
 import { learnHint } from './sim/spellBooks.js';
+import { SPELL_POWER } from './sim/statsConfig.js';
+import { formatPower } from './sim/power.js'; // PLAYER-LEVEL-01 (D-116): Power N per learned level
 export const CARD = Object.freeze({ x0: 2, pitch: 24, w: 23, h: 6, y0: 4, detailY: 12, footY: 18, hintW: 19 });
 let PUT = null, PW = 0; // draw-time put/width, so `text` is not a per-frame closure
 function text(x, y, s, fg) { for (let j = 0; j < s.length && x + j < PW; j++) PUT(x + j, y, s.charCodeAt(j), fg); }
@@ -23,6 +25,13 @@ export function tierText(row) {
   if (row.height != null) p.push('height ' + NUM(row.height) + ' m');
   p.push('cooldown ' + NUM(row.cd) + ' s');
   return p.join(', ');
+}
+
+/** Detail head: "Fireball  level 2  -  Power 600  (Next: +400)"; unlearned = name only; max level = no Next. */
+export function spellHeadText(name, t) {
+  if (!(t >= 1)) return name + '  not learned';
+  const L = t >= 3 ? 3 : t, nx = L < 3 ? '  (Next: +' + formatPower(SPELL_POWER[L + 1] - SPELL_POWER[L]) + ')' : '';
+  return name + '  level ' + t + '  -  Power ' + formatPower(SPELL_POWER[L]) + nx;
 }
 
 /** Word-wrap to at most 2 lines of w chars (construct time only). */
@@ -48,7 +57,7 @@ export function createSpellPageView(o) {
         stat.push(t ? pips[t] + ' mp ' + d.tiers[t - 1].mana + ' cd ' + NUM(d.tiers[t - 1].cd) + ' s' : '');
         now.push(t ? 'Now: ' + tierText(d.tiers[t - 1]) : '');
         next.push(t === 0 ? '' : t >= 3 ? 'Max level' : 'Next level: ' + tierText(d.tiers[t]));
-        plain.push(d.name + (t ? '  level ' + t : '  not learned'));
+        plain.push(spellHeadText(d.name, t));
         conf.push(t >= 3 ? '' : 'Raise ' + d.name + ' to level ' + (t + 1) + '?  [E] Yes  [Q] No');
       }
       cards.push({ hint: learnHint(d.id) || '', hl: wrap(learnHint(d.id) || '', CARD.hintW), d, ci, x: CARD.x0 + ci * CARD.pitch, y: CARD.y0, rgb: rgbk, name: d.name, stat, now, next, head: plain, conf, glyph: (d.glyph || '*').charCodeAt(0) });

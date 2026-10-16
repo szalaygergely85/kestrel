@@ -36,6 +36,7 @@ try {
   await key('KeyC', 'c'); await pause(1200);
   check('character view open', await evaluate(cdp, 'window.__debug.invView.isOpen'), null);
   await shot('character.png');
+  await key('KeyT', 't'); await pause(800); await shot('spells-tab.png'); // Spells tab: Power N per card
   check('no page errors', errors.length === 0, errors);
 } catch (e) { failed = true; console.log('FAIL ' + e.message); }
 finally {

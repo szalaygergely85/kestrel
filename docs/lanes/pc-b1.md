@@ -1921,3 +1921,4 @@ Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-
   Stills docs/test-reports/playerlevel/{hud,character}.png (Power 2,110 - Level 2). D-069 gate helper exported, not wired (Burl flag stays). Spell page 'Power N' per card not done.
 ### FLICKER-F3-01 (kestrel-3, 2026-10-16) - po-review
 - game/js/dev/flickerMeter.js (+test: exact ratio, EMA, heap probe) + main.js 8 lines (import, f3Flicker, F3-only async readbackCells+Geometry, text line); `?flicker=0` removes. Still EMA + raw-moving only; no reprojected variant.
+- PLAYER-LEVEL-01 leftover: Spells tab detail head shows 'Power N (Next: +M)' (spellPageView.js spellHeadText, test +4); still docs/test-reports/playerlevel/spells-tab.png (fresh save: no spell learned, so only 'not learned' visible; levels 1/2/max proven in Node test).
