@@ -1833,3 +1833,6 @@ Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-
   GPU glyphOnly (480x180, 1 run each) off / 3x3 / 5x5: wallNear 1.75/1.75/1.75, wallFar 1.72/1.70/1.69, bushes 3.17/2.67/2.41, crown 2.56/2.48/2.41, grassFar 1.47/1.46/1.45, avg 2.13/2.01/1.94; no pose worse. Look: stills docs/test-reports/aa16/bushes-{off,on}.png, no visible change at 240x90.
   Tests: new engine/render/folLight.test.js; folDice.test regex, shade.wgsl.test pin 63190 -> 64622 + hash, api manifest +setFoliageLight; filtered suites PASS, check-deps OK. gpucompare rtx4060: only the known signal tower PASS->FAIL + decorFord NEW FAIL (rest PASS / NEW PASS).
   Left (ASK ARCHITECT): crown edge 1.24 (resolve hysteresis keys kind 9 on planeId+mat, so a leaf cell moving to another card never matches history - a mat-only key for soft mats needs the soft table in resolve); kind 8 voxel props ~1.0/pose; terrain kind 7 1.6 in bushes.
+
+- VISQA-20 re-sweep (kestrel-4, e11b9ba9): sets 1+2 re-run (4 browser runs: first set-1 run timed out booting, set-2 hard-codes 600 tries). Fixed 03,06,11,14,15,16,17,18; still 04,05,08,09,12,19; n/c 02,13; 07 not reproduced.
+  New rows VISQA-21..24 (cliff pose, stale Boar bar, night smoke glow, wolf/rook pick). Results: docs/test-reports/visqa/index.md.
