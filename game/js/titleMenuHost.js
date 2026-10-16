@@ -11,18 +11,20 @@ export const MENU_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Ke
 /**
  * @param {{adapter:any, style?:any, onNewGame:(slot:number, look?:object)=>void, onContinue:(slot:number, save:any)=>void, onLoad?:(slot:number, save:any)=>void, onSettings:()=>void, createCredits?:()=>any}} o
  */
-export function createTitleMenuHost({ adapter, style = null, onNewGame, onContinue, onLoad = null, onSettings, createCredits = null, createCharCreate = null }) {
+export function createTitleMenuHost({ adapter, style = null, onNewGame, onContinue, onLoad = null, onSettings, createCredits = null, createCharCreate = null, createIntro = null }) {
   const menu = createTitleMenu(adapter, { style });
   menu.refresh();
   let active = true;
   let create = null, createSlot = 0; // CHARGEN-17: open creation screen (ui/charCreate.js) after New game, or null
+  let intro = null; // INTRO-PLAYER-01: running intro slideshow (ui/introPlayer.js); onNewGame fires when it ends
   let credits = null; // open Credits view (ui/creditsView.js) or null; the menu card is hidden while it is up
   const host = {
     menu,
     get active() { return active; },
     /** Feed one fixed step's key edges (`pressed(code)` -> bool). Settings open = the host must not call this. */
-    step(pressed) {
+    step(pressed, dt = 1 / 60) {
       if (!active) return;
+      if (intro) { intro.step(pressed, dt); return; }
       if (create) { // creation screen: W/S/A/D/Enter like Settings; Confirm starts the game, Back returns to the menu card
         for (const code of CREATE_KEYS) if (pressed(code)) create.handleKey(code);
         const a = create.takeAction();
@@ -42,6 +44,7 @@ export function createTitleMenuHost({ adapter, style = null, onNewGame, onContin
     /** Pointer in UI-grid cells; `click` false = hover only. Returns true when the pointer hit a row. */
     pointer(x, y, click) {
       if (!active || credits || create) return false;
+      if (intro) { if (click) intro.click(); return true; }
       const hit = menu.handlePointer(x, y, click);
       host.consume();
       return hit;
@@ -53,7 +56,10 @@ export function createTitleMenuHost({ adapter, style = null, onNewGame, onContin
       if (a.type === 'settings') { onSettings(); return; } // stays active; the menu card returns when Settings closes
       if (a.type === 'newGame') {
         const c = createCharCreate ? createCharCreate() : null;
-        if (c) { create = c; createSlot = a.slot; } else { active = false; onNewGame(a.slot); }
+        const start = () => { intro = null; active = false; onNewGame(a.slot); };
+        if (c) { create = c; createSlot = a.slot; }
+        else if (createIntro && (intro = createIntro(start))) { /* menu stays active (sim frozen) until the intro ends */ }
+        else start();
       }
       else if (a.type === 'continue') { active = false; onContinue(a.slot, a.save); }
       else if (a.type === 'load' && Number.isInteger(a.slot)) { active = false; (onLoad || onContinue)(a.slot, a.save); } // explicit slot, same resume boot as Continue
@@ -67,7 +73,8 @@ export function createTitleMenuHost({ adapter, style = null, onNewGame, onContin
       return !!credits;
     },
     /** Draw into the UI layer (after ui.clear). */
-    draw(ui) { if (active) (create || credits || menu).draw(ui); },
+    draw(ui) { if (active) (intro || create || credits || menu).draw(ui); },
+    get introOpen() { return !!intro; },
   };
   return host;
 }

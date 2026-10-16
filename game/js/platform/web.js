@@ -138,6 +138,7 @@ export function loadSettings() {
   // SETTINGS-MOUNT-01: optional comfort + LOD choices (absent = never chosen)
   if (TEXT_SIZES.includes(parsed.textSize)) out.textSize = parsed.textSize;
   if (isBoolean(parsed.reduceMotion)) out.reduceMotion = parsed.reduceMotion;
+  if (isBoolean(parsed.showIntro)) out.showIntro = parsed.showIntro; // INTRO-PLAYER-01 (absent = on)
   if (DIFFICULTIES.includes(parsed.difficulty)) out.difficulty = parsed.difficulty; // DIFF-MENU (D-083)
   if (validLod(parsed.lodScale)) out.lodScale = parsed.lodScale;
   if (parsed.gfxOverrides === true) out.gfxOverrides = true; // QUALITY-STALE-01: shadow/LOD rows changed after the preset pick
@@ -182,6 +183,8 @@ export function saveSettings(partial) {
   if (textSize !== undefined) next.textSize = textSize;
   const reduceMotion = isBoolean(p.reduceMotion) ? p.reduceMotion : current.reduceMotion;
   if (reduceMotion !== undefined) next.reduceMotion = reduceMotion;
+  const showIntro = isBoolean(p.showIntro) ? p.showIntro : current.showIntro;
+  if (showIntro !== undefined) next.showIntro = showIntro;
   const difficulty = DIFFICULTIES.includes(p.difficulty) ? p.difficulty : current.difficulty;
   if (difficulty !== undefined) next.difficulty = difficulty;
   const lodScale = clears('lodScale') ? undefined : validLod(p.lodScale) ? p.lodScale : current.lodScale;

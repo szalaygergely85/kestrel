@@ -41,7 +41,7 @@ assert.deepEqual(createSettingsView(JSON.parse(JSON.stringify(view.snapshot())),
 const menuStyle=context.ASSETS.uiStyle.menu;
 const styledChanges=[];
 const styled=createSettingsView(view.snapshot(),{...config,menuStyle,onChange:(id,value)=>styledChanges.push([id,value])});
-const styledState=styled.snapshot();delete styledState.lodScale;delete styledState.aspect;assert.equal(styledState.enemyBars,true,'Combat HUD defaults On');assert.equal(styledState.dmgNumbers,true);assert.equal(styledState.difficulty,'normal','Difficulty defaults Normal');delete styledState.difficulty;delete styledState.enemyBars;delete styledState.dmgNumbers;
+const styledState=styled.snapshot();delete styledState.lodScale;delete styledState.aspect;assert.equal(styledState.enemyBars,true,'Combat HUD defaults On');assert.equal(styledState.dmgNumbers,true);assert.equal(styledState.difficulty,'normal','Difficulty defaults Normal');delete styledState.difficulty;delete styledState.enemyBars;delete styledState.dmgNumbers;delete styledState.showIntro;
 assert.deepEqual(styledState,view.snapshot(),'skin preserves every existing option');
 assert.equal(styled.snapshot().lodScale,1);
 styled.draw(ui);

@@ -1938,3 +1938,12 @@ Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-
 ### US-112 web demo bundle (kestrel-4, dev done, tooling only)
 - New `tools/build-web-demo.mjs [--out dist/web-demo] [--zip]` (+ `.test.mjs`): reuses desktop/pack-filter `shouldShip`, tracked files only (git ls-files), drops all html except game/index.html, strips the optional `design/local` script tag (404), writes root redirect index.html + README-ITCH.txt; own zip writer (zlib). dist/ already git-ignored. Result: 1168 files, 27.8 MB, zip 9.9 MB; no COOP/COEP needed; WebGPU required.
 - Headless boot on 9730 (static node server): title -> new game OK (player handle up), 0 console errors. 404s (same in dev, harmless): content/local/manifest.json, terrain/overworld_far.decorPaint.json, and BUG `game/content/gi/g4_7.gi.bin` - GI bins are fetched from game/content/gi/ (giLoader default baseUrl 'content/gi/', main.js passes none) so baked GI never loads; fix = baseUrl '../content/gi/' in giWire/main (changes the look, engine/ARCH).
+
+### VISQA-22 STALE-ENEMY-BAR (kestrel-1, verified, no new code)
+- Already fixed in 76c0d0a9: enemyBarView.draw skips off-screen (VISQA-01) and `seen()`-occluded beasts; combatHud.terrainSees (14-step terrain LOS from the camera eye, pure, exported) is wired via main.js groundAt. Dead/dormant beasts are excluded in fillBeastRecord/select; a gone target fades out in 0.3 s.
+- Tests: combatHud.test.js (terrainSees flat/ridge/no terrain) + enemyBarView.test.js (occluded -> no bar) PASS. Limit: LOS is terrain only, not props/trees (would need a collider ray, engine-side).
+
+### INTRO-PLAYER-01 (kestrel-1, owner look pending)
+- New game plays the 9 slides (ui/introPlayer.js: pure createIntroSequence + decodeSlide/loadIntroSlides + drawIntroFrame on the UI layer); 4 s/slide, 0.6 s fade, any of Space/Enter/arrows/E/F or click = next, Esc = skip all; missing slides dropped silently, none = no intro. Continue never plays it.
+- titleMenuHost: new option createIntro(done); menu stays active (sim frozen) until the intro ends, then onNewGame fires (existing wake). main.js: background slide load, `introMusic` no-op onSlide hook. Setting "Show intro" (settings.js row under Gameplay, platform/web.js `showIntro`, default on).
+- Tests: introPlayer.test.js (new), settingsFull/settingsMount adjusted for the extra row; settings/titleMenu/platform suites PASS. Not run in a browser (owner look; slide fit uses ui.cols/rows, 2.5x downsample).

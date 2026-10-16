@@ -68,8 +68,8 @@ tick('ArrowRight');
 assert.notEqual(loadSettings().grid, '480x180', 'refused grid not saved');
 
 // Back via Enter on the Back row
-for (let i = 0; i < 12; i++) tick('ArrowDown');
-for (let i = 0; i < 12 && !(isSettingsOpen() === false); i++) { tick('Enter'); if (isSettingsOpen()) tick('ArrowDown'); }
+for (let i = 0; i < 13; i++) tick('ArrowDown');
+for (let i = 0; i < 13 && !(isSettingsOpen() === false); i++) { tick('Enter'); if (isSettingsOpen()) tick('ArrowDown'); }
 settle();
 assert.ok(!isSettingsOpen(), 'Back returns');
 setMuted(false);

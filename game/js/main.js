@@ -101,6 +101,7 @@ import { createWaystoneWire } from './quest/wire/waystone.js'; // WAYSTONE-01w
 import { createTravel } from './quest/travel.js'; // WS1-07b: map travel (fade, teleport, reset)
 import { aspectRatio } from './settings/options.js'; // OB-117: saved picture ratio at boot
 import { ensureBand, bandReady, placeLoaded, gridEnabled, gridVariant, legacyVariant } from './quest/bandPose.js'; // MAP-13: band at any pose; WM-05: grid default, ?grid=0 = legacy bands
+import { createIntroPlayer, loadIntroSlides } from './ui/introPlayer.js'; // INTRO-PLAYER-01
 import { createTitleMenuHost, withRelock } from './titleMenuHost.js'; // US-090w: title menu (New / Continue / Settings) before play
 import { createStorageAdapter } from './quest/save/saveState.js';
 import { retintHand, lookOrDefault } from './quest/look/handLook.js'; // CHARGEN-16
@@ -2049,7 +2050,12 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
     }
     // US-090w: the title menu. The world is already built behind it; New game just closes it (the world is fresh),
     // Continue swaps in the chosen slot (same swap as the boot load / `R`), Settings opens the normal panel on top.
+    // INTRO-PLAYER-01: slides load in the background; New game plays them (Setting "Show intro", default on), Continue never does.
+    let introEntries = [];
+    if (!isCaptureOrBench) loadIntroSlides((u) => fetch(u).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })).then((e) => { introEntries = e; }, () => {});
+    const introMusic = (i) => { /* music hook: slide i starts (INTRO-MUSIC later) */ };
     const makeMenuHost = () => createTitleMenuHost({
+        createIntro: (done) => (loadSettings().showIntro === false ? null : createIntroPlayer({ entries: introEntries, onSlide: introMusic, onDone: done })),
         adapter: createStorageAdapter(saveStorage()),
         style: window.ASSETS && window.ASSETS.uiStyle ? window.ASSETS.uiStyle.menu : null,
         onNewGame: withRelock((slot, chosenLook) => { if (saveRelay) { saveRelay.setSlot(slot); if (chosenLook) saveRelay.look = chosenLook; } }, () => relockPointer()), // NEWGAME-PAUSED-01: menu key/click is the gesture that re-locks the pointer (else look.locked=false = isPaused) // CHARGEN-17: Confirm stores player.look in the new save
@@ -2131,7 +2137,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
     // US-090w: title menu up -> the sim stays frozen (wake timeline, autosave and quest poll start after it closes).
     if (menuHost && menuHost.active) {
       if (isSettingsOpen()) updateSettings(dt, input, { assets, engine, look, canOpen: false });
-      else menuHost.step((c) => input.pressed(c));
+      else menuHost.step((c) => input.pressed(c), dt);
       input.consumePressed(); input.consumeMouseDelta();
       return;
     }
