@@ -137,8 +137,9 @@ const GRID = { cols: COLS, rows: ROWS, pxCellW: 8, pxCellH: 16 };
 const WALL = { n: [0, 1, 0], d: -5 }, FLOOR = { n: [0, 0, 1], d: 0 };
 
 /** Two-frame scene: A (invalid) -> history from the twin; B with cam1. Returns twin out + emulated cells. */
+let ANCHOR = true; // AA-09: aaAnchor switch of the probe scenes (the mutation loop runs both)
 function scene(src, cam0, cam1, plane, tweak) {
-  const st = createStableState();
+  const st = createStableState(); st.aaAnchor = ANCHOR;
   beginFrame(st, cam0, GRID);
   const fa = makeFrame(st, COLS, ROWS, plane, {});
   const hist = createStableBuffers(COLS, ROWS);
@@ -217,6 +218,12 @@ for (const [name, cam0, camK, plane] of cases) {
     totalUsed += r.used; totalHeld255 += r.held255; probes += N;
   }
 }
+ANCHOR = false; // AA-09: aaAnchor off (old history-anchor behaviour) stays at parity
+for (const [name, c0, camK, plane] of cases) for (let k = 1; k <= 4; k++) {
+  const r = runCase(STABLE_WGSL, name, c0, camK, plane, k);
+  assert.equal(r.mism, 0, `aaAnchor off ${name} k=${k}: ${r.mism} mismatches`);
+}
+ANCHOR = true;
 assert.ok(totalHeld255 > 30, `both-255 holds exercised (${totalHeld255})`);
 // invalid history: copy through, fresh everywhere (both sides)
 {
@@ -243,6 +250,7 @@ const mutations = [
   ['mixed 255/ramp not rejected', 'if (c255 != (lvP == LEVEL_NONE) && !jointHold) { return o; }', ''],
   ['255 hold ignores the fg snap', 'if (!snapped) {', 'if (true) {'],
   ['255 hold keeps the CURRENT u/v (no anchor)', 'o.ub = hh.y; o.vb = hh.z;', ''],
+  ['255 hold never re-anchors (AA-09)', '(u.aaFlags & 16) != 0 && vmTag == 0u', 'false && vmTag == 0u'],
   ['255 snap test ignores red', 'let snapped = abs(i32((fgCur >> 16u) & 255u) - i32((sa >> 16u) & 255u)) > u.snap', 'let snapped = false'],
   ['255 cells take the ramp hold rule', 'if (c255) {', 'if (false) {'],
   ['models rejected although aaVm is on', '|| (kind == 8u && (u.aaFlags & 4) == 0) ||', '|| kind == 8u ||'],
@@ -259,10 +267,11 @@ for (const [name, from, to] of mutations) {
   assert.ok(STABLE_WGSL.includes(from), `mutation anchor missing: ${name}`);
   const src = STABLE_WGSL.replace(from, to);
   let caught = 0;
-  for (const [cn, cam0, camK, plane] of cases) for (let k = 1; k <= 4 && !caught; k++) {
+  for (ANCHOR of [true, false]) for (const [cn, cam0, camK, plane] of cases) for (let k = 1; k <= 4 && !caught; k++) {
     const r = runCase(src, cn, cam0, camK, plane, k);
     if (r.mism > 0) caught++;
   }
+  ANCHOR = true;
   assert.ok(caught > 0, `mutation survived: ${name}`);
 }
 

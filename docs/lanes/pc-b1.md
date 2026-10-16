@@ -1729,3 +1729,13 @@ Reviewer: PC-B architect (opus, D-066). **42a8cd4a ARCH OK -> po-review/testing:
 - QUEST-TEXT-LINT-01 (kestrel-4, branch questlint, uncommitted): R19 `lintQuestText`/`applyR19Allow`/`R19_ALLOW` in tools/validate-content.mjs (wired into main, prints hit counts + allow-list as INFO); scans content/quests + content/dialogue visible keys only (title/text/journal/returnText/objText/hint*/prompt/lines/...), ids in id/next/requires/setFlag ignored.
 - Today: writer 0, id 0, esc 0, talklen 0, objlen 119 (all quest `journal` lines 59-99 chars vs 38; allow-listed per file|kind with a max count, stale/too-high entry fails so it only shrinks). The 4 NEEDS WRITER hits are `note` dev fields in world_m1.world.json (not player-visible, not scanned).
 - 10 fixture checks in tools/validate-content.test.mjs; validate-content OK, --filter validate-content PASS, check-deps OK.
+### AA-09 (OB-208 flicker round 2: aaAnchor) - dev done, arch-review (kestrel-3, branch aa09)
+- `aaAnchor` (default on): both-255 hold of a static surface (vmTag 0, not KIND_MODEL, same planeId, mesh also same mat) writes the CURRENT u/v -> no cumulative-drift re-roll. Twin `temporalStable.js`, WGSL `stable.wgsl.js` (aaFlags bit 16), `passStable.js`, `WgCellPipeline.js`, `createRenderer.js`. Off = old behaviour (tested at parity).
+- Tests: temporalStable (40 frames x 0.3*lim: on holds 40/40, off refreshes, model keeps old anchor, mesh re-anchors, fg snap re-rolls) + stable.wgsl (parity both switch states, 2 new mutations; model branch not probed: no kind 8 in probe scenes). check-deps OK.
+- NEEDS B1-main: game/js/main.js:525 add `aaAnchor: params.get('aaanchor') !== '0',` after `aaJoint: ...`; and at ~2516 `r.aaAnchor = params.get('aaanchor') !== '0';` (diag only).
+- Measure (main session): `node tools/capture-browser.mjs --mode flicker --variant live --stable --rays 4 --port {port}` vs the same run with the page param `aaanchor=0` (check how capture-browser forwards extra query params; not verified).
+
+### BEAST-POOL-c-FIX - dev done (kestrel-3, branch beastpoolc2)
+- `game/js/quest/sim/beastPoolWorld.test.js` only: Continue boot reuses the read-only nav + waterNav of boot 1 (-~0.4 s); walk steps 17055 -> ~7.5k (tower<->Ford legs 20 m/s, cemetery leg 12 m/s). All 23 asserts unchanged.
+- Wall time 3 runs: before 8.6/8.9/9.0 s -> after 5.4/5.4/5.2 s. `--filter beastPool,beastSim` 4 PASS, check-deps OK.
+- Finding (not fixed): cemetery leg at exactly 10 m/s fails "alive within 100 m is bound" (skelarch/skelwar.cemetery.* rising on arrival, 25 m, unbound >45 steps). Sampling-phase effect or a real late bind of the freshly risen under-skeletons; 5/8/9/12/16 m/s pass. Worth an architect look.
