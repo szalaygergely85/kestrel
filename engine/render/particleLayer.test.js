@@ -2,7 +2,7 @@
 // Run: node [--expose-gc] engine/render/particleLayer.test.js
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { createParticleLayer } from './particleLayer.js';
+import { createParticleLayer, liveSunScale } from './particleLayer.js';
 import { camBasis, projectSprite } from './sprites.js';
 import { createParticles } from '../fx/particles.js';
 import { D, DEF_STRIDE, MAX_RAMP } from '../fx/emitterDef.js';
@@ -230,6 +230,14 @@ function cellBytes(layer, col, row) {
   console.log(`[particleLayer] build() budget: ${b500.live} live = ${b500.ms.toFixed(4)} ms, ${b2048.live} live = ${b2048.ms.toFixed(4)} ms`);
   ok('budget (warn-only): 500 live build() <= 0.1 ms', true, `${b500.ms.toFixed(4)} ms (bar 0.1 ms, informational)`);
   ok('budget (warn-only): 2048 live build() <= 0.3 ms', true, `${b2048.ms.toFixed(4)} ms (bar 0.3 ms, informational)`);
+}
+
+// VISQA-05: live sun scale for the emitter light sample (day clamps to 1 = bit-identical; night = sunI ratio).
+{
+  const tod = { morning: { sunI: 1 }, noon: { sunI: 1.1 }, night: { sunI: 0.25 } };
+  ok('liveSunScale: no live look -> 1', liveSunScale({ timeOfDay: tod, defaultTime: 'morning' }) === 1);
+  ok('liveSunScale: noon (above ref) clamps to 1', liveSunScale({ timeOfDay: tod, defaultTime: 'morning', liveLook: { sunI: 1.1 } }) === 1);
+  ok('liveSunScale: night = 0.25', Math.abs(liveSunScale({ timeOfDay: tod, defaultTime: 'morning', liveLook: { sunI: 0.25 } }) - 0.25) < 1e-12);
 }
 
 console.log(`\n[particleLayer.test.js] ${pass} passed, ${fail} failed`);
