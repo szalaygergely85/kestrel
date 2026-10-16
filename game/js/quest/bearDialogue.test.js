@@ -45,8 +45,8 @@ const you = (t) => 'YOU: ' + t;
   ok('1 departing: wins over every other flag, one farewell line, no new flags', ids(w.said) === ids([burl('Go on, sky-cub. The road is west.')]) && f.s.size === 4); }
 // 2 woken
 { const f = mk('s.waystone.waystone.woken', 's.burl.arrived'); const w = walk(f, 0);
-  ok('2 woken: starts with the player asking, 13 lines', first(w) === you('What is that?') && w.said.length === 13, w.said.length);
-  ok('2 woken: last node sets s.burl.depart (only new flag)', lastOf(w) === burl('The world is wider than your Wall.') && f.s.has('s.burl.depart') && f.s.size === 4); }
+  ok('2 woken: starts with the player asking, 18 lines (OB-210: ends in the road offer)', first(w) === you('What is that?') && w.said.length === 18, w.said.length);
+  ok('2 woken: Accept on the road offer sets q.burl.road.accept + s.burl.depart (OB-210)', lastOf(w) === burl('Tell Rook the bear sent you.') && f.s.has('s.burl.depart') && f.s.has('q.burl.road.accept') && f.s.size === 5); }
 // 3 arrived (the stone talk)
 { const f = mk('s.burl.arrived', 'q.burl.boars.done', 's.burl.follow'); const w = walk(f, 0);
   ok('3 arrived: stone talk, 18 lines, ends on the crystal line', first(w) === burl('There we are.') && w.said.length === 19 && lastOf(w) === burl('Go on. It is waiting.'), w.said.length);
@@ -101,13 +101,13 @@ const R = 'q.tower.blade.ready';
   const reach = new Set(), st = comp.entry.map((e) => e.node);
   while (st.length) { const i = st.pop(); if (reach.has(i)) continue; reach.add(i); const n = comp.nodes[i]; if (n.next != null && n.next >= 0) st.push(n.next); for (const c of n.choices) st.push(c.next); }
   ok(`every node reachable (${reach.size}/${comp.nodes.length})`, reach.size === comp.nodes.length);
-  ok('19 entries + 1 hand-routed stone hand-in, last is unconditional', comp.entry.length === 20 && comp.entry[19].requires === null);
+  ok('21 entries + 1 hand-routed stone hand-in, last is unconditional (OB-210: road offer/active)', comp.entry.length === 22 && comp.entry[21].requires === null);
   ok('QUEST-WALK-OWNER: burl.stone ready is hand-routed to the woken talk (no generated hand-in hides the goodbye)', JSON.parse(readFileSync(new URL('dialogue/bear.dialogue.json', root), 'utf8')).entry.some((e) => e.requires === 'q.burl.stone.ready' && e.node === 'bear.woken.1'));
   const long = comp.nodes.flatMap((n) => n.lines).filter((l) => l.length > 56);
   ok('every line <= 56 chars', long.length === 0, long.join('|'));
   ok('D-013: no player name in the lines', !comp.nodes.flatMap((n) => n.lines).some((l) => /\bWick\b/.test(l)));
   const flags = new Set(comp.nodes.flatMap((n) => [n.setFlag, ...n.choices.map((c) => c.setFlag)]).filter(Boolean));
-  ok('flags set by the graph', ids([...flags].sort()) === ids(['bear.stone.told', 'bear.talked', 'q.burl.boars.accept', 'q.burl.boars.handin', 'q.burl.follow.accept', 'q.burl.follow.handin', 'q.burl.stone.accept', 'q.burl.stone.handin', 'q.sq.burl.blue.accept', 'q.sq.burl.blue.handin', 'q.tower.blade.handin', 's.burl.depart', 's.burl.follow', 's.burl.home.met']), [...flags].join());
+  ok('flags set by the graph', ids([...flags].sort()) === ids(['bear.stone.told', 'bear.talked', 'q.burl.boars.accept', 'q.burl.boars.handin', 'q.burl.follow.accept', 'q.burl.follow.handin', 'q.burl.road.accept', 'q.burl.stone.accept', 'q.burl.stone.handin', 'q.sq.burl.blue.accept', 'q.sq.burl.blue.handin', 'q.tower.blade.handin', 's.burl.depart', 's.burl.follow', 's.burl.home.met']), [...flags].join());
 }
 // barks file shape
 {

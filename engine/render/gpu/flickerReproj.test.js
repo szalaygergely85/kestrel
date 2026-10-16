@@ -59,4 +59,24 @@ const run = (a, b) => flickerReprojStep(a, b, a.cam, b.cam, grid, {});
   f32[0] = D * 1.2; for (let i = 0; i < n; i++) b.Depth[i * 4] = u32[0];
   const r = run(a, b); assert.equal(r.n, 0); assert.equal(r.totalPct, 0);
 }
+// 6. AA-14b: line glyphs. A line (code 13 '-') moving 1 row with the image = shiftPct, not glyphOnly; a line popping in place stays
+// in glyphOnly; raw keeps the old definition.
+{
+  const LINE = 13, BLANK = 0, R = 20, C = 50, at = (r, c) => (r * grid.cols + c) * 4 + 3;
+  const base = () => { const f = frame(0); for (let i = 0; i < n; i++) f.fg[i * 4 + 3] = BLANK; return f; };
+  const a = base(), b = base(); a.fg[at(R, C)] = LINE; b.fg[at(R + 1, C)] = LINE; // same camera: line moved down one row
+  const same = (x, y) => flickerReprojStep(x, y, x.cam, x.cam, grid, {});
+  const r = same(a, b);
+  assert.ok(Math.abs(r.glyphOnlyRawPct - 2 * 100 / r.n) < 1e-9, 'raw counts both cells');
+  assert.equal(r.shiftPct, r.glyphOnlyRawPct, 'both cells explained as a shift');
+  assert.equal(r.glyphOnlyPct, 0, 'shift leaves glyphOnly');
+  assert.ok(Math.abs(r.totalPct - r.glyphOnlyRawPct) < 1e-9, 'total unchanged (raw)');
+  const c = base(); c.fg[at(R, C)] = LINE; // line pops in place, nothing at a neighbour
+  const r2 = same(base(), c);
+  assert.equal(r2.shiftPct, 0); assert.equal(r2.glyphOnlyPct, r2.glyphOnlyRawPct); assert.ok(r2.glyphOnlyPct > 0, 'pop stays glyphOnly');
+  const d = base(); d.fg[at(R + 1, C)] = 20; const e = base(); e.fg[at(R, C)] = 20; // non-line glyph moving: ramp noise, not a shift
+  assert.equal(same(d, e).shiftPct, 0, 'ramp change is not a shift');
+  const g = base(), h = base(); g.fg[at(R, C)] = LINE; h.fg[at(R + 1, C)] = LINE; h.fg[at(R, C)] = 20; // one-way: prev glyph LINE not at a neighbour of cur... check cell (R,C): cur 20, prev LINE
+  assert.ok(same(g, h).glyphOnlyPct > 0, 'one-way change keeps glyphOnly');
+}
 console.log('flickerReproj.test: ok');

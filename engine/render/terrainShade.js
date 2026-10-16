@@ -21,6 +21,8 @@ import { WET_DARK, wetGain } from './detailShade.js';
 import { LEVEL_NONE, LEVEL_ANIM } from './temporalStable.js';
 import { STEP } from '../core/loop.js';
 import { skylineFogF } from './skyline.js';
+import { farSkyActive, farSkyShiftJS } from './fogShape.js';
+const FAR_SKY = [0, 0, 0];
 import { sampleGIBuf, giMemoBegin, giMemoEnd } from './giProbe.js'; // GI-PROBE-04
 import { resolveLook } from './look.js';
 import { shadeLookCell, packLookTable, makeGroundLook, LOOK_TABLE_WORDS } from './groundLook.js'; // ENV-02b (38.63); circular with this file but only called at runtime
@@ -404,9 +406,10 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   f = f < 0 ? 0 : f > 1 ? 1 : f;
   f = Math.pow(f, F.curve || 1);
   if (ctx.skyline) f = skylineFogF(f, t, type, z, ctx.skyline);
-  const fcr = F.nearRGB[0] + (F.farRGB[0] - F.nearRGB[0]) * f;
-  const fcg = F.nearRGB[1] + (F.farRGB[1] - F.nearRGB[1]) * f;
-  const fcb = F.nearRGB[2] + (F.farRGB[2] - F.nearRGB[2]) * f;
+  // VISQA-02: FAR_SKY = per-cell sky-gradient shift of the far colour (set by shadeTerrainCells, 0 elsewhere; twin of WGSL gFarSky)
+  const fcr = F.nearRGB[0] + (F.farRGB[0] + FAR_SKY[0] - F.nearRGB[0]) * f;
+  const fcg = F.nearRGB[1] + (F.farRGB[1] + FAR_SKY[1] - F.nearRGB[1]) * f;
+  const fcb = F.nearRGB[2] + (F.farRGB[2] + FAR_SKY[2] - F.nearRGB[2]) * f;
   fr += (fcr - fr) * f; fg += (fcg - fg) * f; fb += (fcb - fb) * f;
   const fBg = Math.min(1, 1.1 * f);
   br += (fcr - br) * fBg; bg += (fcg - bg) * fBg; bb += (fcb - bb) * fBg;
@@ -780,6 +783,7 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
   const giOn = !!gi && gi.on && gi.field !== null;
   const giInvSky = giOn ? 1 / Math.max(1e-6, gi.skyRGB[0] + gi.skyRGB[1] + gi.skyRGB[2]) : 0;
   if (giOn) giMemoBegin(gi);
+  const fsOn = farSkyActive(); // VISQA-02: per-cell far-fog sky shift (fogShape.js), off = FAR_SKY stays 0
   for (let i = 0; i < n; i++) {
     const kd = gbuf.kind[i];
     if (kd !== KIND_TERRAIN && !(kd === KIND_GRASS && grassTab !== null)) continue; // OB-073 D2c: kind 10 only with a carpet table
@@ -807,6 +811,7 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
       lr = light.rgb[0]; lg = light.rgb[1]; lb = light.rgb[2];
     }
     const bT = b + Math.max(lr, Math.max(lg, lb));
+    if (fsOn && !isG) farSkyShiftJS(i % gbuf.cols, (i / gbuf.cols) | 0, FAR_SKY); // VISQA-02
     if (isG) shadeGrass(t, gbuf.mat[i], u, v, gbuf.vao[i], bT, grassTab, ctx, shadeOut, gbuf.grassX[i], sun.sunI);
     else if (GLK) { lookAtXY(u, v); shadeTerrain(t, gbuf.mat[i], bT, u, v, timeSec, ctx, shadeOut, forestFaceMode(gbuf, alias, ctx, i, t), gbuf.z[i], shadeNrm[0], shadeNrm[1], shadeNrm[2], lkLo, lkHi, lkW); } // ENV-02d: u,v = world x,y of a terrain cell
     else shadeTerrain(t, gbuf.mat[i], bT, u, v, timeSec, ctx, shadeOut, forestFaceMode(gbuf, alias, ctx, i, t), gbuf.z[i], shadeNrm[0], shadeNrm[1], shadeNrm[2]); // MAP-06b: z = the rasterised surface height (kind 7: zBase/zRef 0), same value as the GPU's GA.z
@@ -818,4 +823,5 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
     cells.setCellRGB(x, y, shadeOut.glyph, shadeOut.fg[0], shadeOut.fg[1], shadeOut.fg[2], shadeOut.bg[0], shadeOut.bg[1], shadeOut.bg[2]);
   }
   if (giOn) giMemoEnd(gi);
+  FAR_SKY[0] = 0; FAR_SKY[1] = 0; FAR_SKY[2] = 0;
 }

@@ -81,6 +81,7 @@ function talkBurl(pick = 0) { // run the real dialogue runner to its end; return
   assert.ok(set3.includes('s.burl.home.met'), 'first home talk runs bear.home: ' + set3.join(',') + ' / ' + spoken.join('|'));
 }
 // Burl offers the first available errand (sq.tm.nub needs burl.boars done = yes) and accepts it by the choice
+book.accept('burl.road'); book.handIn('burl.road'); // OB-210: Burl gives The Road West before she goes home (accepted + handed in at Rook)
 const said = talkBurl(0);
 assert.ok(said.length >= 2 && flagsOut.some((k) => /^q.sq..*.accept$/.test(k)), 'offer + accept by talking: ' + flagsOut.join(','));
 assert.ok(said.some((l) => /Nub|slope|boar|sky-cub/i.test(l)), 'writer lines are spoken');
@@ -166,7 +167,7 @@ if (book.statusOf('sq.burl.walk') === ACTIVE) {
   delete flags['escort.bear.relayBend']; assert.equal(er.escortTick(), false, 'walk fires the flag, not the proximity tick'); delete hold.walks;
   const bw = rd('content/worlds/world_m1.world.json').entities.find((e) => e.id === 'bear').components.walks.toBend;
   assert.ok(bw.length >= 30 && bw.every((p, i) => i === 0 || Math.hypot(p[0] - bw[i - 1][0], p[1] - bw[i - 1][1]) <= 8.01), 'toBend polyline <= 8 m steps');
-  assert.ok(Math.hypot(bw[0][0] - 1471, bw[0][1] - 1029.1) < 1 && Math.hypot(bw[bw.length - 1][0] - 1262, bw[bw.length - 1][1] - 1033) < 8, 'home -> Bend');
+  assert.ok(Math.hypot(bw[0][0] - 1404, bw[0][1] - 1010) < 1 /* OB-212: new home */ && Math.hypot(bw[bw.length - 1][0] - 1262, bw[bw.length - 1][1] - 1033) < 8, 'home -> Bend');
   const wk = defs.find((d) => d.id === 'sq.burl.walk'), ri = patched.nodes['qs.' + wk.id + '.ready'];
   assert.ok(wk.lines.done.length && ri.lines.includes(wk.lines.done[0]) && ri.lines.length === wk.lines.ready.length + wk.lines.done.length, 'done line follows ready on hand-in');
   assert.ok(bannerLines(wk, 'handin', wrapText).join(' ').includes(wk.lines.done[0].split(' ')[0]), 'banner has the done line');

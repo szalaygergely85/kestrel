@@ -55,7 +55,7 @@ import { GATE_POSES } from '../../content/dev-poses.js';
 import { prefetchLazyMeshesAtBoot, prefetchAllLazyMeshes } from './bootPrefetchHook.js'; // MESH-LOAD-01: boot prefetchNear call
 import { parseCloudShadowFlag, devCloudShadow, parseAoStrength } from './cloudParam.js'; // S8-B2-12a/S8-B2-20 NEEDS B1 item (2)/(1): `?cloudshadow=1`/`?ao=<0..1>` parse
 import { MODES } from './dev/modes/index.js';
-import { createFlickerLive, runLivePoses } from './dev/flickerLive.js'; // AA-01
+import { createFlickerLive, runLivePoses, parseFlickerDump } from './dev/flickerLive.js'; // AA-01
 import { loadCinematic, evaluatePath, createPlayback } from './dev/modes/cinematic.js';
 import { createPauseResume } from './quest/pauseResume.js'; // OB-068
 import { entityTop, markZ } from './quest/markTop.js'; // OB-155h/OB-164: marker height from the model top
@@ -211,7 +211,8 @@ import { wireHitSparks, hitSparksEnabled } from './fx/hitSparkWire.js'; // HIT-S
 import { parsePointShadows, presetPointShadowsOn } from './pointShadowOpt.js'; // ME-16e: ?pointshadows=0|N
 import { parseGlow } from './glowOpt.js'; // EMIS-03/04: bleed + halo knob
 import { setReduceMotion, isReduceMotion, eyeZ, gateKick, textSizeCols } from './ui/comfort.js'; // SETTINGS-APPLY-01
-import { PHYSICS, createUnderState, setApiWarnings } from '../../engine/index.js';
+import { PHYSICS, createUnderState, setApiWarnings, setFoliageDice } from '../../engine/index.js';
+setFoliageDice(new URLSearchParams(location.search).get('aafol') !== '0'); // AA-15 (OB-208): leaf-card world glyph dice, ?aafol=0 = old per-card u/v dice
 if (new URLSearchParams(window.location.search).get('debug') === '1') setApiWarnings(true); // ENG-API-01h: dev flag only - deprecated engine names warn once
 import { meshFeedStats, MAX_MESH_DRAWS, MAX_DRAW_ITEMS } from '../../engine/index.js'; // OB-039: F3 mesh draw cap line
 import { createModelPreview, createCharCache } from '../../engine/index.js'; // EQ-03/04: Character tab model preview
@@ -1314,6 +1315,10 @@ async function runGame(mode, cinematic = null) {
     assign: (s, id) => !!playerHandle && itemDefs && !LOCKED[id] && qbAssign(playerHandle.data, itemDefs, s, id),
     clear: (s) => !!playerHandle && itemDefs && qbClear(playerHandle.data, s, itemDefs),
   });
+  let invMouseHeld = false; // OB-203: real left-button state for the pack drag (input.isDown is eaten by consumePressed)
+  window.addEventListener('mousedown', (e) => { if (e.button === 0) invMouseHeld = true; }, true);
+  window.addEventListener('mouseup', (e) => { if (e.button === 0) invMouseHeld = false; }, true);
+  window.addEventListener('blur', () => { invMouseHeld = false; });
   canvas.addEventListener('mousedown', (e) => {
     if (e.button !== 0 || !invView || !invView.isOpen || !ui) { qbDrag.cancel(); return; }
     const c = qbCell(e); invView.setPointer(c[0], c[1]); qbDrag.down(c[0], c[1], invView.hoverItemId);
@@ -1857,7 +1862,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       const liveSpellBook = { tier: (id) => (spellBook ? spellBook.tier(id) : 0), canRaise: (id) => !!spellBook && spellBook.canRaise(id) }; // ONE per-world book (the `spellBook` set on 'world:loaded'): Spells tab, pack overlay and fireball tier hook all read it
       const spendSpellScroll = (id) => { if (!playerHandle || !spellBook) return 0; const r = useSpellScroll(playerHandle.data.components.inventory, spellBook, id); return r.ok ? r.level : 0; }; // ONE scroll spend path (pack overlay + Spells tab)
       invView = itemDefs && window.ASSETS.uiStyle.inventory ? createInventoryScreen({
-        style: window.ASSETS.uiStyle.inventory, tabOpens: false, items: window.ASSETS.items, rgb: assets.palette.rgb, toast: toasts,
+        style: window.ASSETS.uiStyle.inventory, tabOpens: false, mouseHeld: () => invMouseHeld, items: window.ASSETS.items, rgb: assets.palette.rgb, toast: toasts,
         inventoryOf: () => (playerHandle && playerHandle.data.components.inventory) || null,
         slotLockText: () => 'Locked - learn fire first', // OB-156
         isSlotDisabled: (i) => { if (!playerHandle) return false; const inv = playerHandle.data.components.inventory, sl = inv && inv.slots[i]; return !!(sl && sl.id && LOCKED[sl.id]); }, // FB-01: spell + mana potion cells show as locked until unlocked (Items + Character tabs)
@@ -2518,10 +2523,10 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       try {
         const st = params.get('stable') === '1';
         if (wgPipeline.setStable) wgPipeline.setStable(st);
-        const r = await runLivePoses(flickerLive, { world: engine.world, wg: wgPipeline, cols: rt.cols, rows: rt.rows, pxCellW: rt.pxCellW, pxCellH: rt.pxCellH, capture, getGrid: () => ({ cols: rt.cols, rows: rt.rows, pxCellW: rt.pxCellW, pxCellH: rt.pxCellH }) }); // AA-01c
+        const r = await runLivePoses(flickerLive, { world: engine.world, wg: wgPipeline, cols: rt.cols, rows: rt.rows, pxCellW: rt.pxCellW, pxCellH: rt.pxCellH, capture, getGrid: () => ({ cols: rt.cols, rows: rt.rows, pxCellW: rt.pxCellW, pxCellH: rt.pxCellH }), dump: parseFlickerDump(params.get('flickerdump')), diag: params.get('flickerdiag') === '1' }); // AA-01c; OB198-DUMP-DIFF-01: `&flickerdump=<pose>:<step>`
         r.stable = st; r.rays = engine.rays; r.stableOn = !!wgPipeline._stableOn; r.stableRan = !!wgPipeline._stableRan; r.aaCov = params.get('aacov') !== '0'; r.aaAnchor = params.get('aaanchor') !== '0'; r.aaHyst = params.get('aahyst') !== '0'; r.aaGlyph = params.get('aaglyph') !== '0'; r.aaMesh = params.get('aamesh') !== '0'; r.aaVm = params.get('aavm') !== '0'; r.aaJoint = params.get('aajoint') !== '0';
         window.__flicker = r;
-        console.log('[flicker] live poses ' + JSON.stringify(r));
+        console.log('[flicker] live poses ' + JSON.stringify(r, (k, v) => (k === 'dump' ? (v ? 'dumped ' + v.pose + ':' + v.step : v) : v)));
       } catch (e) { console.error('[flicker] failed: ' + (e && e.message)); window.__flicker = { error: String(e && e.message) }; }
     })();
   }
@@ -2766,7 +2771,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       }
       if (window.__debug) window.__debug.useHints = useHintSet; // tools/verify-use-hints.mjs
       if (questUiActive && !ending) {
-        if ((!isCaptureOrBench || params.get('save') === '1') && !wakeOut.inputLocked) { gameHooks.drawHud(ui); if (relayWake) relayWake.drawHud(ui); } // D-050 seam: today the quest relay's TEMPORARY objective line, top-left
+        if ((!isCaptureOrBench || params.get('save') === '1') && !wakeOut.inputLocked && !isMapOpen()) { gameHooks.drawHud(ui); if (relayWake) relayWake.drawHud(ui); } // VISQA-10: not under the open map (the objective chip poked out over the map frame); D-050 seam: today the quest relay's TEMPORARY objective line, top-left
         drawHints(ui, assets.uiStyle, fadeLut);
         if (regionBanner && !regionBannerBlocked) regionBanner.draw(ui); // REGION-01: top-centre, clear of the prompt (below the cross) and the bottom-left hints
         // 17.4: an eyelid over the 3D view, not UI text. BUG-WEBGPU-EYELID-01: once the WebGPU frame is complete its presenter shows the sprite-pass

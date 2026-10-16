@@ -115,6 +115,28 @@ for (const k of ['KeyI', 'KeyC', 'Tab']) {
   drag(r, () => slotPtr(r, 'legs'), () => packPtr(r, 0));
   ok('unequip into a full pack refuses', r.eq.legs === 'gear.legs.pants.worn');
 }
+// ---- OB-203 reopen: pack -> EMPTY pack cell leaves a gap and sticks ----
+{
+  const r = rig(); r.step('KeyI');
+  const sw = idx(r, 'sword'); const before = r.inv.slots.filter((s) => s.id).length;
+  drag(r, () => packPtr(r, sw), () => packPtr(r, 9));
+  ok('OB-203 drag to empty cell 9', r.inv.slots[9].id === 'sword' && r.inv.slots[sw].id === null && r.inv.slots.filter((s) => s.id).length === before, JSON.stringify(r.inv.slots.slice(0, 10).map((s) => s.id)));
+  ok('OB-203 gap cells stay empty', [4, 5, 6, 7, 8].every((i) => !r.inv.slots[i].id));
+  addItem(r.inv, defs, 'boar.hide', 1);
+  ok('OB-203 next pickup takes the first empty cell, moved item stays', r.inv.slots[9].id === 'sword' && r.inv.slots.findIndex((s) => s.id === 'boar.hide') < 9);
+  r.step('KeyI'); r.step('KeyI');
+  ok('OB-203 reopen keeps the gap', r.inv.slots[9].id === 'sword');
+}
+// OB-203: real input eats isDown('Mouse0') via consumePressed; the drag must follow o.mouseHeld instead
+{
+  let btn = false; const r = rig({ mouseHeld: () => btn }); r.step('KeyI');
+  const realConsume = r.input.consumePressed; r.input.consumePressed = () => { r.input.release('Mouse0'); realConsume(); }; // mimic engine Input
+  const sw = idx(r, 'sword'); packPtr(r, sw); btn = true; r.input.press('Mouse0'); r.input.hold('Mouse0'); r.view.step(1 / 60, r.input, true);
+  packPtr(r, 14); r.view.step(1 / 60, r.input, true); btn = false; r.view.step(1 / 60, r.input, true);
+  ok('OB-203 drag survives consumePressed (real input)', r.inv.slots[14].id === 'sword' && r.inv.slots[sw].id === null);
+  const copy = JSON.parse(JSON.stringify(r.player.components.inventory));
+  ok('OB-203 gap survives a save round trip', copy.slots[14].id === 'sword' && !copy.slots[sw].id && !copy.slots[5].id);
+}
 // ---- locked slots ----
 {
   const r = rig(); r.locked.add(0); r.locked.add(1); r.step('KeyI');

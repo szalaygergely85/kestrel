@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "id": "burl.road",
+  "title": "The Road West",
+  "giver": { "npc": "bear", "turnIn": "rook" },
+  "main": true,
+  "requires": [{ "quest": "burl.stone", "done": true }],
+  "objectives": [
+    { "id": "road", "text": "Take the old road west", "journal": "The old road runs west to a bend.", "when": { "type": "area", "id": "roadWest" } },
+    { "id": "find", "text": "Find the cold waystone at the bend", "journal": "A cold waystone stands at the bend.", "when": { "type": "area", "id": "bendRelay" } },
+    { "id": "wake", "text": "Wake the Bend waystone", "journal": "Hold the crystal to the carved mark.", "when": { "type": "flag", "id": "waystone.ws_roadBend.woken", "equals": true } }
+  ],
+  "returnText": "Talk to Rook",
+  "abandonable": false
+}

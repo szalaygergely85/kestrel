@@ -104,18 +104,29 @@ export function flickerStep(prevGI, prevFg, curGI, curFg, cols, rows, out, prevB
 // Inputs: {GI, fg, bg?, Depth} readbacks (Depth channel 0 = f32 bits, `readbackGeometry().Depth`); camPrev/camCur =
 // {x,y,z,yawDeg,pitchDeg,vfovDeg?}; grid = {cols, rows, pxCellW, pxCellH}.
 import { createPitchedTerms, pitchedTermsInto, unprojectPitched, worldToCell } from '../projection.js';
+import { levelOfByte, covOfByte, uvDriftLimit, CHANNEL_SNAP, DEFAULT_DETAIL } from '../temporalStable.js';
+import { KIND_MESH, KIND_MODEL } from '../GBuffer.js';
 
 export const REPROJ_DEPTH_TOL = 0.05;
 const _f32 = new Float32Array(1), _u32 = new Uint32Array(_f32.buffer);
 const bitsToF32 = (b) => { _u32[0] = b; return _f32[0]; };
 let _tPrev = null, _tCur = null; const _w = new Float64Array(3), _pc = new Float64Array(3);
 
-export function flickerReprojStep(prev, cur, camPrev, camCur, grid, out) {
+// AA-14b (38.84): `shiftPct` = glyph changes explained as a line moving with the image: the glyph pair involves a line code
+// (shade.wgsl line glyphs, `gcls`) AND the cur glyph sits at a 4-neighbour of the history cell in prev AND the prev glyph sits at a
+// 4-neighbour of the cell in cur (both directions). `glyphOnlyPct` = glyphOnlyRawPct - shiftPct; `glyphOnlyRawPct` = the old definition.
+function glyphAtNeighbour(fg, i, cols, rows, want) {
+  const x = i % cols, y = (i - x) / cols;
+  return (x > 0 && fg[(i - 1) * 4 + 3] === want) || (x < cols - 1 && fg[(i + 1) * 4 + 3] === want)
+    || (y > 0 && fg[(i - cols) * 4 + 3] === want) || (y < rows - 1 && fg[(i + cols) * 4 + 3] === want);
+}
+export function flickerReprojStep(prev, cur, camPrev, camCur, grid, out, hmap = null, gcls = DEFAULT_GCLS) {
+  if (hmap) hmap.fill(-1); // AA-DIAG-01: history cell of every counted (n) cell, -1 = not counted
   if (!_tPrev) { _tPrev = createPitchedTerms(); _tCur = createPitchedTerms(); }
   pitchedTermsInto(_tPrev, camPrev, grid); pitchedTermsInto(_tCur, camCur, grid);
   const { cols, rows } = grid;
   const haveBg = !!(prev.bg && cur.bg);
-  let n = 0, kind = 0, mat = 0, glyph = 0, colour = 0, excluded = 0;
+  let n = 0, kind = 0, mat = 0, glyph = 0, shift = 0, colour = 0, excluded = 0;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const i = r * cols + c;
@@ -133,9 +144,15 @@ export function flickerReprojStep(prev, cur, camPrev, camCur, grid, out) {
       const pvd = bitsToF32(prev.Depth[h * 4]);
       if (pk === 0 || !(Math.abs(pvd - _pc[2]) <= REPROJ_DEPTH_TOL * _pc[2])) { excluded++; continue; }
       n++;
+      if (hmap) hmap[i] = h;
       if (pk !== ck) { kind++; continue; }
       if (((prev.GI[h * 4 + 1] >>> 16) & 0xffff) !== ((cur.GI[i * 4 + 1] >>> 16) & 0xffff)) { mat++; continue; }
-      if (prev.fg[h * 4 + 3] !== cur.fg[i * 4 + 3]) { glyph++; continue; }
+      const pg = prev.fg[h * 4 + 3], cg = cur.fg[i * 4 + 3];
+      if (pg !== cg) {
+        glyph++;
+        if ((gcls[cg] === GC_LINE || gcls[pg] === GC_LINE) && glyphAtNeighbour(prev.fg, h, cols, rows, cg) && glyphAtNeighbour(cur.fg, i, cols, rows, pg)) shift++;
+        continue;
+      }
       let m = 0;
       for (let k = 0; k < 3; k++) {
         let d = Math.abs(prev.fg[h * 4 + k] - cur.fg[i * 4 + k]); if (d > m) m = d;
@@ -146,7 +163,96 @@ export function flickerReprojStep(prev, cur, camPrev, camCur, grid, out) {
   }
   const pct = (v) => (n ? (100 * v) / n : 0);
   out.n = n; out.excluded = excluded;
-  out.kindPct = pct(kind); out.materialPct = pct(mat); out.glyphOnlyPct = pct(glyph); out.colourOnlyPct = pct(colour);
+  out.kindPct = pct(kind); out.materialPct = pct(mat); out.glyphOnlyRawPct = pct(glyph); out.shiftPct = pct(shift); out.glyphOnlyPct = pct(glyph - shift); out.colourOnlyPct = pct(colour);
   out.totalPct = pct(kind + mat + glyph + colour);
   return out;
+}
+
+// AA-DIAG-01 (OB-208, ex AA-10): why do glyph-only flips survive the stable pass? Replays stableCell's reject order (temporalStable.js / stable.wgsl.js)
+// for every counted cell (hmap from flickerReprojStep) whose surface key (kind, mat) is equal but whose STABLE OUTPUT glyph changed.
+// `d`/`p` = this/last frame's diag readback: {GI, GA (4-wide u32), Depth (1-wide u32 f32 bits), level (u8 raw shade level byte),
+// preFg (rgba8 edge output = stable input), shadeFg/shadeBg (rgba8 edge input), finalBg (rgba8), outFg (rgba8 stable output), hist (4-wide u32 OUT_HIST)}.
+// `terms` = pitchedTerms of the current camera (tanHalfX/Y). Adds per-reason counts into `cnt` (keys GLYPH_REASONS) and kind counts into cnt.kinds.
+export const GLYPH_REASONS = Object.freeze(['heldChanged', 'edge', 'kind', 'plane', 'mat', 'anim', 'mixed255', 'uvDrift', 'snap255', 'levelJump', 'replayHold']);
+// AA-14a (38.84): mixed255 split by the glyph on the 255 side + `lineShift` (the line moved with the image) + `octPop` (texel-hash octave change).
+// Counts live next to the reasons in `cnt` (m255:* sum to mixed255; lineShift is a sub-count of m255:line; octPop counts any flip). Glyph byte = shade glyphCode (ascii - 32).
+export const M255_KEYS = Object.freeze(['m255:line', 'm255:stip', 'm255:blank', 'm255:other', 'lineShift', 'octPop']);
+export const GC_LINE = 1, GC_STIP = 2;
+/** 256-entry glyph class table (0 other, GC_LINE, GC_STIP). Line codes = shade.wgsl lineGlyphCodeFast (- _ | / \); `extraLine` = e.g. a material's grid-cross code; `stipCodes` = fog haze/sparse codes. */
+export function glyphClassTable(stipCodes = [], extraLine = []) {
+  const t = new Uint8Array(256);
+  for (const a of [45, 95, 124, 47, 92]) t[a - 32] = GC_LINE;
+  for (const c of extraLine) if (c > 0 && c < 256) t[c] = GC_LINE;
+  for (const c of stipCodes) if (c > 0 && c < 256 && t[c] === 0) t[c] = GC_STIP;
+  return t;
+}
+const DEFAULT_GCLS = glyphClassTable();
+// 4-neighbour of cell i holding a line glyph in `fg` (rgba8, glyph in alpha): code === want, or any line code when want < 0.
+function lineAtNeighbour(fg, i, cols, rows, gcls, want) {
+  const x = i % cols, y = (i - x) / cols;
+  let g;
+  if (x > 0) { g = fg[(i - 1) * 4 + 3]; if (gcls[g] === GC_LINE && (want < 0 || g === want)) return true; }
+  if (x < cols - 1) { g = fg[(i + 1) * 4 + 3]; if (gcls[g] === GC_LINE && (want < 0 || g === want)) return true; }
+  if (y > 0) { g = fg[(i - cols) * 4 + 3]; if (gcls[g] === GC_LINE && (want < 0 || g === want)) return true; }
+  if (y < rows - 1) { g = fg[(i + cols) * 4 + 3]; if (gcls[g] === GC_LINE && (want < 0 || g === want)) return true; }
+  return false;
+}
+// `terms.gcls` (glyphClassTable) and `terms.octave(frame, cellIndex)` (octave 0..3 of coverV/(maxCover*gv), diag-only) are optional.
+export function flickerGlyphReasons(d, p, hmap, cols, rows, terms, cnt) {
+  const gcls = terms.gcls || DEFAULT_GCLS, octave = terms.octave || null;
+  let n = 0, flips = 0;
+  for (let i = 0; i < cols * rows; i++) {
+    const h = hmap[i]; if (h < 0) continue;
+    n++;
+    const giY = d.GI[i * 4 + 1], kind = giY & 0xff, mat = giY >>> 16;
+    const hw = p.hist[h * 4 + 3], pkind = p.GI[h * 4 + 1] & 0xff, pmat = p.GI[h * 4 + 1] >>> 16;
+    if (pkind !== kind || pmat !== mat) continue; // kind / material class of the metric
+    const og = d.outFg[i * 4 + 3];
+    if (og === p.outFg[h * 4 + 3]) continue;
+    flips++; cnt.kinds[kind] = (cnt.kinds[kind] || 0) + 1;
+    const o = i * 4;
+    let r;
+    if (og !== d.preFg[o + 3]) r = 'heldChanged'; // the output glyph came from history, but not from the measured last frame's glyph
+    else if (d.preFg[o] !== d.shadeFg[o] || d.preFg[o + 1] !== d.shadeFg[o + 1] || d.preFg[o + 2] !== d.shadeFg[o + 2] || d.preFg[o + 3] !== d.shadeFg[o + 3]
+      || d.finalBg[o] !== d.shadeBg[o] || d.finalBg[o + 1] !== d.shadeBg[o + 1] || d.finalBg[o + 2] !== d.shadeBg[o + 2]) r = 'edge';
+    else if (((hw >> 8) & 15) !== kind) r = 'kind';
+    else if (p.hist[h * 4] !== d.GI[o] && !((hw >>> 16) === mat && (kind === KIND_MESH || kind === KIND_MODEL))) r = (hw >>> 16) === mat ? 'plane' : 'mat';
+    else {
+      const lvC = levelOfByte(d.level[i]), cov = covOfByte(d.level[i]), lvP = hw & 255;
+      const c255 = lvC === 255, p255 = lvP === 255, joint = c255 !== p255 && cov >= 1 && cov <= 3;
+      if (lvC === 254 || lvP === 254) r = 'anim';
+      else if (c255 !== p255 && !joint) {
+        r = 'mixed255';
+        const g = c255 ? og : p.outFg[h * 4 + 3], cl = gcls[g];
+        const sub = g === 0 ? 'm255:blank' : cl === GC_LINE ? 'm255:line' : cl === GC_STIP ? 'm255:stip' : 'm255:other';
+        cnt[sub] = (cnt[sub] || 0) + 1;
+        if (cl === GC_LINE) { // the line glyph sits at a 4-neighbour of the ramp side's cell in the other frame (the line moved with the image)
+          const moved = c255 ? lineAtNeighbour(p.outFg, h, cols, rows, gcls, -1) : lineAtNeighbour(d.outFg, i, cols, rows, gcls, g);
+          if (moved) cnt.lineShift = (cnt.lineShift || 0) + 1;
+        }
+      }
+      else {
+        const du = bitsToF32(d.GA[o]) - bitsToF32(p.hist[h * 4 + 1]), dv = bitsToF32(d.GA[o + 1]) - bitsToF32(p.hist[h * 4 + 2]);
+        const vd = bitsToF32(d.Depth[i]);
+        const lim = uvDriftLimit(vd, terms.tanHalfX, terms.tanHalfY, cols, rows, DEFAULT_DETAIL, terms.ortho === 1), dUV = Math.sqrt(du * du + dv * dv);
+        if (dUV >= lim) { r = 'uvDrift'; const b = 'uv' + (dUV < 2 * lim ? '<2' : dUV < 4 * lim ? '<4' : '4+'); cnt.sub[b] = (cnt.sub[b] || 0) + 1;
+          const lk = (lvC === lvP ? 'uvLv=:' : 'uvLv!:') + kind; cnt.sub[lk] = (cnt.sub[lk] || 0) + 1; const mk = 'uvMat:' + kind + ':' + mat; cnt.sub[mk] = (cnt.sub[mk] || 0) + 1; }
+        else if (joint) r = 'replayHold';
+        else if (c255) {
+          let snapped = false;
+          for (let k = 0; k < 3; k++) if (Math.abs(d.preFg[o + k] - p.outFg[h * 4 + k]) > CHANNEL_SNAP) snapped = true;
+          r = snapped ? 'snap255' : 'replayHold';
+        } else {
+          const dl = Math.abs(lvC - lvP); r = dl > 1 ? 'levelJump' : 'replayHold';
+          if (dl > 1) { const b = 'dl' + (dl === 2 ? '2' : dl <= 4 ? '3-4' : '5+') + (cov ? 'cov' : ''); cnt.sub[b] = (cnt.sub[b] || 0) + 1; }
+        }
+      }
+    }
+    if (r === 'edge' || r === 'levelJump') { const mk = r + 'Mat:' + kind + ':' + mat; cnt.sub[mk] = (cnt.sub[mk] || 0) + 1; }
+    if (octave && octave(d, i) !== octave(p, h)) cnt.octPop = (cnt.octPop || 0) + 1;
+    cnt[r] = (cnt[r] || 0) + 1;
+    const rk = r + ':' + kind; cnt.sub[rk] = (cnt.sub[rk] || 0) + 1;
+  }
+  cnt.n = (cnt.n || 0) + n; cnt.flips = (cnt.flips || 0) + flips;
+  return cnt;
 }

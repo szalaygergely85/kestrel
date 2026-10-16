@@ -375,7 +375,9 @@ export function createInventoryScreen(o) {
         if (cur === VIEW) turning = true;
         else if (idAt(nodes[cur]) || nodes[cur].kind === 0) { dragSrc = cur; dragMoved = false; }
       }
-      const held = down('Mouse0');
+      // OB-203: the end-of-step consumePressed() below also clears isDown('Mouse0') for the whole press, so a drag never
+      // looked held; main.js feeds the real button state (o.mouseHeld) from the DOM mousedown/mouseup instead.
+      const held = o.mouseHeld ? (o.mouseHeld() || input.pressed('Mouse0')) : down('Mouse0');
       if (turning && !held && !input.pressed('Mouse0')) turning = false;
       if (dragSrc >= 0 && !held) { const s = dragSrc; dragSrc = -1; release(s); dragMoved = false; }
       if (input.pressed('KeyE') || input.pressed('Enter') || input.pressed('NumpadEnter')) activate(cur);

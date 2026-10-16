@@ -3,6 +3,8 @@
 // (D-039). Both only act where f > 0 (short range is untouched) and leave f == 1 at 1. Sun colour/strength come from skyGlow.js.
 import { SKY_GLOW, skyGlowStrength } from './skyGlow.js';
 import { screenRay } from './projection.js';
+import { skyLutFromPalette } from './waterReflect.js';
+import { SKY_LUT_N } from './gpu/wgsl/skyLut.js';
 
 export const FOG_SHAPE = Object.freeze({
   base: 6,            // metres: fog height reference (valley floor); denser below, thinning above
@@ -56,6 +58,7 @@ export function fogDirShear(hx, hy, tanE, out) {
  * 2 ortho. terms = shear ProjTerms (mode 0) or PitchedTerms (modes 1/2). sun = {dirX,dirY,dirZ,sunI}.
  */
 export const fogShapeCtx = { on: false, mode: 0, camZ: 0, terms: null, sunX: 0, sunY: 0, sunZ: 0, sunI: 0,
+  camX: 0, camY: 0, aaFol: true, // AA-15 (OB-208): camera x/y + the foliage world-dice switch (`?aafol=0` -> setFoliageDice(false))
   // OB-089: outdoor MESH fog (terrain's far fog: palette.fog.far near->far colours over start..full, curve) instead of the interior fogV2.
   outdoor: false, tStart: 0, tFull: 1, tCurve: 1, tNear: /** @type {ArrayLike<number>|null} */ (null), tFar: /** @type {ArrayLike<number>|null} */ (null) };
 
@@ -70,6 +73,56 @@ export function meshOutdoorFog(world, cam, palette) {
   if (!fr || !palette.rgb[fr.color] || !palette.rgb[fr.colorFar]) return false;
   if (typeof world.isOutdoorAt === 'function') return world.isOutdoorAt(cam.x, cam.y, cam.z); // OB-205: z-aware (above a buried cellar = outside)
   return !(typeof world.sectorAt === 'function' && world.sectorAt(cam.x, cam.y));
+}
+/** AA-15 (OB-208): switch the foliage world-space glyph dice (default on). Read by the CPU twin (detailShade.js) and passShade.js (fogView.w). */
+export function setFoliageDice(on) { fogShapeCtx.aaFol = !!on; }
+
+/**
+ * AA-15 (OB-208): glyph dice for soft-edge leaf cards (kind 9), keyed to a WORLD-space block instead of the per-card u/v (leaf cards
+ * have unrelated u/v, so a card change under the cell centre re-rolled the alternate glyph every step). Block edge q (m) doubles with
+ * distance (0.25 / 0.5 / 1 / 2 at < 16 / 32 / 64 m), ~3-8 cells everywhere. Point = cam + unit cell dir * shade dist (both f32-rounded
+ * like the WGSL `folDice`); not for ortho (mode 2). Needs fogShapeCtx terms/cam for this frame (on === true).
+ */
+export function folDiceJS(col, row, dist, seed) { // seed = material seed + salt (977)
+  const c = fogShapeCtx, d = fogCellDirJS(col, row), fr = Math.fround;
+  const q = dist >= 64 ? 4 : dist >= 32 ? 2 : dist >= 16 ? 1 : 0.5, iq = 1 / q;
+  const px = fr(fr(c.camX) + fr(fr(d[0]) * fr(dist))), py = fr(fr(c.camY) + fr(fr(d[1]) * fr(dist))), pz = fr(fr(c.camZ) + fr(fr(d[2]) * fr(dist)));
+  const ix = Math.floor(px * iq), iy = Math.floor(py * iq), iz = Math.floor(pz * iq);
+  let h = (Math.imul(ix | 0, 0x27d4eb2d) ^ Math.imul((iy + Math.imul(iz, 8191)) | 0, 0x165667b1) ^ Math.imul(seed | 0, 0x9e3779b1)) | 0;
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+/**
+ * VISQA-02 (OB-209 follow-up): far fog follows the sky gradient at the cell's own elevation. Per frame: skyW = P.atmos.farSkyW
+ * (biome share of the sky-horizon far fog, 0 = off -> byte-identical) and the CPU copy of the GPU sky LUT (same bake as passShade
+ * _bakeSky: look stops + atmos haze, f32). Per cell: out = skyW * (lut[idx(elev)] - lut[0]) for elev > 0, else 0 (twin of WGSL
+ * farSkyShift: elev from fogCellDir, idx = round(clamp(elev / elevTop) * (N - 1))). Needs fogShapeCtx.terms for this frame.
+ */
+const farSky = { w: 0, top: 0, ver: -1, live: -1, P: /** @type {any} */ (null), lut: new Float32Array(SKY_LUT_N * 4) };
+export function farSkyPrep(P) {
+  const st = P && P.atmos, w = st && st.farSkyW > 0 ? st.farSkyW : 0;
+  farSky.w = 0;
+  if (!w) return 0;
+  const fv = P.liveFogVersion | 0, lv = P.liveLookVersion | 0;
+  if (farSky.P !== P || farSky.ver !== fv || farSky.live !== lv) { farSky.top = skyLutFromPalette(P, farSky.lut) || 0; farSky.P = P; farSky.ver = fv; farSky.live = lv; }
+  if (farSky.top > 0) farSky.w = w;
+  return farSky.w;
+}
+/** Disable the per-cell shift (non-terrain frames). */
+export function farSkyOff() { farSky.w = 0; }
+/** True when farSkyShiftJS can return non-zero this frame. */
+export function farSkyActive() { return farSky.w > 0; }
+export function farSkyShiftJS(col, row, out) {
+  out[0] = 0; out[1] = 0; out[2] = 0;
+  if (!(farSky.w > 0) || !fogShapeCtx.terms) return out;
+  const d = fogCellDirJS(col, row), fr = Math.fround;
+  const e = fr(Math.atan2(fr(d[2]), fr(Math.hypot(fr(d[0]), fr(d[1])))) * (180 / Math.PI));
+  if (!(e > 0)) return out;
+  const t = Math.min(1, e / farSky.top), L = farSky.lut, o = Math.floor(t * (SKY_LUT_N - 1) + 0.5) * 4, w = farSky.w;
+  out[0] = w * (L[o] - L[0]); out[1] = w * (L[o + 1] - L[1]); out[2] = w * (L[o + 2] - L[2]);
+  return out;
 }
 const _dir = [0, 0, 0], _ray = { ox: 0, oy: 0, oz: 0, dx: 0, dy: 0, dz: 0 };
 

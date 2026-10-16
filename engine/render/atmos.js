@@ -25,7 +25,7 @@ export function atmosFogFitError(samples = 3000) {
 export function createAtmosState() {
   return {
     on: false, version: 0,
-    fogNear: new Float32Array(3), fogFar: new Float32Array(3), fogStart: 0, fogFull: 1, fogCurve: 1,
+    fogNear: new Float32Array(3), fogFar: new Float32Array(3), wNone: 1, farSkyW: 0, fogStart: 0, fogFull: 1, fogCurve: 1,
     haze: new Float32Array(3), hazeK: 0,
     lift: new Float32Array(3), invGamma: new Float32Array([1, 1, 1]), gain: new Float32Array([1, 1, 1]), sat: 1,
     gradeId: true,      // grade is exactly the identity (skipped)
@@ -78,6 +78,7 @@ export function mixAtmos(table, drv, baseFog, out) {
     out.haze[0] = hr; out.haze[1] = hg; out.haze[2] = hb; out.hazeK = hk;
     setGrade(out, lr, lg, lb, wN + gr, wN + gg, wN + gb, wN + ar, wN + ag, wN + ab, wN + sat);
   }
+  out.wNone = any === 0 ? 1 : wN; // OB-209: biome share for the far-fog -> sky-horizon rule (applyAtmosToPalette)
   out.on = true; out.version = drv.version;
   return out;
 }
@@ -110,9 +111,30 @@ export function applyAtmosToPalette(P, state) {
   }
   const L = state._live;
   L.start = state.fogStart; L.full = state.fogFull; L.curve = state.fogCurve;
-  setLive(P, LIVE_NEAR, state.fogNear); setLive(P, LIVE_FAR, state.fogFar);
+  setLive(P, LIVE_NEAR, state.fogNear);
+  // OB-209 (far silhouette): the far end of the biome fog converges to the SKY HORIZON colour the sky pass draws (look sky
+  // stop t = 0 + this state's haze at t = 0), so fully fogged far hills melt into the sky instead of a pale/green cut-out.
+  // Weighted by the biome share (1 - wNone): wNone 1 keeps the base far colour (fogHour) byte-identical.
+  const fw = 1 - (state.wNone >= 0 ? state.wNone : 0), ff = state.fogFar;
+  // VISQA-02: farSkyW = that share; the shade passes add farSkyW * (sky(elev) - sky(0)) per cell (fogShape.js farSkyShiftJS / WGSL
+  // farSkyShift), so a far ridge high above the horizon fogs to the sky at ITS elevation, not one flat horizon cream.
+  state.farSkyW = 0;
+  if (fw > 0 && skyHorizonRGB(P, state, HZ)) { HZ[0] = ff[0] + (HZ[0] - ff[0]) * fw; HZ[1] = ff[1] + (HZ[1] - ff[1]) * fw; HZ[2] = ff[2] + (HZ[2] - ff[2]) * fw; setLive(P, LIVE_FAR, HZ); state.farSkyW = fw; }
+  else setLive(P, LIVE_FAR, ff);
   P.fog.far = L; P.atmos = state;
   P.liveFogVersion = (P.liveFogVersion | 0) + 1;
+}
+const HZ = new Float64Array(3);
+/**
+ * OB-209: the sky's horizon colour (t = 0 of the live look's sky gradient, then the atmos haze at t = 0 - the same value
+ * skyLutFromPalette / the sky pass bake at the horizon). Writes rgb 0..255 into out; false when the palette has no sky look.
+ */
+export function skyHorizonRGB(P, state, out) {
+  const T = P && P.timeOfDay ? (P.liveLook || P.timeOfDay[P.defaultTime]) : null, st = T && T.sky, c = st && st.length && P.rgb[st[0].c];
+  if (!c) return false;
+  out[0] = c[0]; out[1] = c[1]; out[2] = c[2];
+  if (state) hazeRGB(out, 0, state);
+  return true;
 }
 function setLive(P, key, c) {
   const rgb = P.rgb[key], hue = P.hue[key];

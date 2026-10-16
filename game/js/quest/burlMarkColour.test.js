@@ -28,6 +28,7 @@ book.handIn('burl.boars'); gold('follow offered: gold !'); book.accept('burl.fol
 f({ type: 'flag:set', key: 'burl.arrived', value: true }); gold('arrived: gold ?');
 book.handIn('burl.follow'); gold('stone offered: gold !'); book.accept('burl.stone'); none('stone active');
 f({ type: 'flag:set', key: 'waystone.waystone.woken', value: true }); gold('stone ready: gold ?');
-book.handIn('burl.stone'); gold('road step: gold ! (main chain mark)');
+book.handIn('burl.stone'); gold('OB-210: Burl offers The Road West: gold !');
+book.accept('burl.road');
 r.questFlag('burl.departing'); none('Burl walks off: road handed, no blue ! before she is home');
 console.log('burlMarkColour OK');

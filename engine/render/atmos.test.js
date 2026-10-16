@@ -150,3 +150,15 @@ console.log('atmos.test ok', JSON.stringify({ fitErr: +fitErr.toFixed(4), maxD25
 { const rt = { cells: new CellBuffer(8, 8), cols: 8, rows: 8 }; for (let i = 0; i < rt.cells.fg.length; i += 4) { rt.cells.fg[i] = 200; rt.cells.bg[i + 1] = 90; }
   const ref = { fg: new Uint8Array(rt.cells.fg), bg: new Uint8Array(rt.cells.bg) }; gradeCells(ref, stg); gradeCells(rt, stg);
   assert.deepEqual(rt.cells.fg, ref.fg, 'RenderTarget fg graded like bare CellBuffer'); assert.deepEqual(rt.cells.bg, ref.bg, 'RenderTarget bg'); }
+
+// ---- OB-209 (far silhouette): with a biome fully on, the far fog end == the sky horizon colour (look sky t=0 + haze at t=0)
+{
+  const { skyHorizonRGB } = await import('./atmos.js');
+  const s9 = createAtmosState(); drv.w[0] = 1; drv.w[1] = 0; drv.wNone = 0; drv.version++; mixAtmos(table, drv, base, s9);
+  applyAtmosToPalette(P, s9);
+  const hz = new Float64Array(3); assert.ok(skyHorizonRGB(P, s9, hz), 'palette has a sky look');
+  const far = P.rgb[P.fog.far.colorFar];
+  for (let k = 0; k < 3; k++) assert.ok(Math.abs(far[k] - hz[k]) < 1e-6, `far fog end = sky horizon (${far[k]} vs ${hz[k]})`);
+  assert.equal(s9.wNone, 0);
+  s9.on = false; applyAtmosToPalette(P, s9);
+}

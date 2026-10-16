@@ -71,6 +71,7 @@ export function createEnemyBarView({ rgb, project, band = null, select = null, e
       const key = cellsOf(s.frac) * 1000 + s.level;
       if (key !== s.key || s.textName !== s.name) { s.key = key; s.textName = s.name; s.text = barLabel(s.frac, s.level, s.name, s.boss); }
       if (!project(s.x, s.y, s.z + HEAD_LIFT, pt)) continue;
+      if (pt.c < 0 || pt.c >= ui.cols || pt.r < 0 || pt.r >= ui.rows) continue; // VISQA-01: beast off-screen -> no bar pinned to the screen edge (the clamp below is only for heads near the edge)
       const w = s.text.length;
       let x0 = (pt.c | 0) - (w >> 1), y0 = (pt.r | 0) - 1;
       x0 = x0 < 0 ? 0 : x0 + w > ui.cols ? ui.cols - w : x0;

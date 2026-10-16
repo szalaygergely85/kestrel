@@ -9,6 +9,8 @@
   "entry": [
     {"node": "bear.blue.ready", "requires": "q.sq.burl.blue.ready"},
     {"node": "bear.blue.active", "requires": "q.sq.burl.blue.active"},
+    {"node": "bear.road.offer", "requires": "q.burl.road.available"},
+    {"node": "bear.road.active", "requires": "q.burl.road.active"},
     {"node": "bear.blue.offer.1", "requires": "q.sq.burl.blue.available"},
     {"node": "bear.home.again", "requires": "s.burl.home.met"},
     {"node": "bear.home", "requires": "s.burl.home"},
@@ -239,10 +241,26 @@
     "bear.woken.7": {"lines": [
       "Thank you, Burl."
     ], "next": "bear.woken.8", "speaker": "you"},
-    "bear.woken.8": {"end": true, "lines": [
+    "bear.woken.8": {"lines": [
       "Take care out there.",
       "The world is wider than your Wall."
+    ], "next": "bear.road.offer", "speaker": "burl"},
+    "bear.road.offer": {"choices": [{"next": "bear.road.go", "setFlag": "q.burl.road.accept", "text": "I'll go west."}, {"next": "bear.road.later", "text": "Not yet."}], "lines": [
+      "One more thing. The old road runs west to a bend.",
+      "There's a waystone there, cold as this one was.",
+      "A crow keeps watch on it. Rook. He talks a lot."
+    ], "speaker": "burl"},
+    "bear.road.go": {"end": true, "lines": [
+      "West is yours, sky-cub. I'm off to my berries.",
+      "Tell Rook the bear sent you."
     ], "setFlag": "s.burl.depart", "speaker": "burl"},
+    "bear.road.later": {"end": true, "lines": [
+      "Rest first, then. The road will keep. Roads do."
+    ], "speaker": "burl"},
+    "bear.road.active": {"end": true, "lines": [
+      "The Bend waystone is west, where the road turns.",
+      "Hold the crystal to the mark, same as here."
+    ], "speaker": "burl"},
     "bear.home": {"end": true, "lines": [
       "There you are. I took the long way home.",
       "The stone hums all night now. I sleep better."

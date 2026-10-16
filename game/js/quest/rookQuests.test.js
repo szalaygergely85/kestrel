@@ -44,6 +44,12 @@ talk(); assert.equal(st('mq.bend.call'), 0); assert.ok(!state['mq.bend.call.acce
 // m1 step relay1 (the Bend relay) -> available; pulse flag 4 s after the wake
 for (const o of files.questDef.objectives) { const w = o.when; if (w.type === 'flag') questFlag(w.id); else if (w.type === 'area') book.feed({ type: 'area:entered', id: w.id }); else if (w.type === 'item') book.feed({ type: 'item:got', id: w.id }); else if (w.type === 'beasts') for (const id of w.ids) book.feed({ type: 'beast:died', id }); if (o.id === 'relay1') break; }
 questFlag('waystone.ws_roadBend.woken');
+// OB-210: mq.bend.call opens once Burl's "The Road West" (burl.road) is handed in at Rook; hand the Burl chain in with real events
+for (const id of ['tower.blade', 'burl.boars', 'burl.follow', 'burl.stone', 'burl.road']) {
+  const d = book.def(book.index(id)); book.accept(id);
+  for (const o of d.objectives) { const w = o.when; if (w.type === 'flag') questFlag(w.id); else if (w.type === 'area') book.feed({ type: 'area:entered', id: w.id }); else if (w.type === 'item') book.feed({ type: 'item:got', id: w.id }); else if (w.type === 'beasts') for (let n = 0; n < w.count; n++) book.feed({ type: 'beast:died', id: w.kind !== undefined ? w.kind + 'R' + n : w.ids[n] }); }
+  book.handIn(id);
+}
 er.mainSync(0); assert.equal(st('mq.bend.call'), 1); assert.ok(state['mq.bend.call.available']);
 er.mainSync(3); assert.ok(!state['relay.bend.pulseSeen']); er.mainSync(1.5); assert.ok(state['relay.bend.pulseSeen'], 'pulse seen');
 const meet = talk(); assert.equal(meet.length, 9); assert.equal(st('mq.bend.call'), 2, 'accepted via dialogue'); assert.ok(state['mq.bend.call.active']);

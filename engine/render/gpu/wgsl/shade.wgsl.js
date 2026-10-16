@@ -68,7 +68,7 @@ const SHADE_FIELDS = [
   { name: 'etA', type: 'vec4' }, { name: 'etId', type: 'vec4', count: 2 }, { name: 'etC', type: 'vec4', count: 8 },
   { name: 'skyCam', type: 'vec4' }, // AUD-40, APPENDED: shear-mode sky ray = (dirX + planeX*cx, dirY + planeY*cx): dirX, dirY, planeX, planeY
   { name: 'fogView', type: 'vec4' }, // AUD-45, APPENDED: x = eye height (m), y = 1 when height fog + sun in-scatter are on (terrain worlds), z = 1 outdoor mesh fog (OB-089), w unused
-  { name: 'skyGlowOn', type: 'vec4' }, // AUD-40 fix, APPENDED: x = 1 when sky glow + horizon haze apply (compositor gate: terrain world + timeOfDay palette), written every frame; DN-02 y = night glyph-luminance floor (liveLook.floorEff, 0 = off)
+  { name: 'skyGlowOn', type: 'vec4' }, // AUD-40 fix, APPENDED: x = 1 when sky glow + horizon haze apply (compositor gate: terrain world + timeOfDay palette), written every frame; DN-02 y = night glyph-luminance floor (liveLook.floorEff, 0 = off); VISQA-02 z = far-fog sky shift weight (atmos farSkyW)
   { name: 'skyline', type: 'vec4' }, // MAP-06b (38.42), APPENDED: far-terrain fog cap x fogMax (0 = off), y fromZ, z seaFogMax, w seaLevel
   { name: 'grass', type: 'vec4', count: 80 }, // OB-073 D2e, APPENDED: carpet variant table, 16 variants x GRASS_ROWS vec4 (terrainShade.js packGrassTable); all 0 = no carpet
   // SWIM-04c (38.54), APPENDED after grass: underwater look (underwater.js UNDER_WGSL). under.x = 0 skips the whole block.
@@ -141,6 +141,7 @@ fn tsFootprint(t: f32) -> f32 {
 ${TS_PATCH_NOISE_WGSL}
 
 struct TerrainOut { fr: f32, fg: f32, fb: f32, br: f32, bg: f32, bb: f32, glyph: i32, fgw: f32 };
+var<private> gFarSky: vec3f; // VISQA-02: per-cell sky-gradient shift of the far fog colour (set in shadeCell; twin: fogShape.js farSkyShiftJS)
 
 ${SKYLINE_FOG_WGSL}
 fn shadeTerrain(t: f32, typeIdIn: i32, b: f32, uIn: f32, vIn: f32, timeSec: f32, faceMode: i32, z: f32, nrm: vec3f${LK ? ', lookLo: i32, lookHi: i32, lookW: f32' : ''}) -> TerrainOut {
@@ -263,9 +264,9 @@ ${LK ? `        if (fgw > 0.5 - 0.4 * sg) { code = select(select(${FG_CODES[1]},
   f = clamp(f, 0.0, 1.0);
   f = pow(f, su.terrainFogCurve);
   f = skylineFogF(f, t, typeId, z, su.skyline); // MAP-06b (38.42): far peaks / sea line fog cap (x = 0: unchanged)
-  let fcr = su.terrainFogNearRGB.x + (su.terrainFogFarRGB.x - su.terrainFogNearRGB.x) * f;
-  let fcg = su.terrainFogNearRGB.y + (su.terrainFogFarRGB.y - su.terrainFogNearRGB.y) * f;
-  let fcb = su.terrainFogNearRGB.z + (su.terrainFogFarRGB.z - su.terrainFogNearRGB.z) * f;
+  let fcr = su.terrainFogNearRGB.x + (su.terrainFogFarRGB.x + gFarSky.x - su.terrainFogNearRGB.x) * f;
+  let fcg = su.terrainFogNearRGB.y + (su.terrainFogFarRGB.y + gFarSky.y - su.terrainFogNearRGB.y) * f;
+  let fcb = su.terrainFogNearRGB.z + (su.terrainFogFarRGB.z + gFarSky.z - su.terrainFogNearRGB.z) * f;
   fr += (fcr - fr) * f; fgc += (fcg - fgc) * f; fbc += (fcb - fbc) * f;
   let fBg = min(1.0, 1.1 * f);
   br += (fcr - br) * fBg; bgc += (fcg - bgc) * fBg; bbc += (fcb - bbc) * fBg;
@@ -442,6 +443,15 @@ fn shaftLiftC(c: vec3f, w: f32, sunI: f32) -> vec3f { return c + (FOG_SUN_TINT *
 fn shaftQ(cell: vec2i) -> i32 { return i32((textureLoad(uLightTex, cell, 0).w >> ${SHAFT_SHIFT}u) & ${SHAFT_Q}u); }
 ${UNDER_WGSL}
 // AUD-45: unit view direction of a cell for the standard fog (same rays as the sky: shear basis / pitched / ortho F).
+// VISQA-02: far fog -> the sky at the cell's own elevation: skyGlowOn.z (atmos farSkyW) * (uSky[idx(elev)] - uSky[0]), elev > 0 only.
+fn farSkyShift(cell: vec2i, gridSize: vec2i) -> vec3f {
+  if (su.skyGlowOn.z <= 0.0 || su.skyElevTop <= 0.0) { return vec3f(0.0); }
+  let d = fogCellDir(cell, gridSize);
+  let e = degrees(atan2(d.z, length(d.xy)));
+  if (!(e > 0.0)) { return vec3f(0.0); }
+  let idx = i32(min(1.0, e / su.skyElevTop) * ${SKY_LUT_N - 1}.0 + 0.5);
+  return su.skyGlowOn.z * (textureLoad(uSky, vec2i(idx, 0), 0).rgb - textureLoad(uSky, vec2i(0, 0), 0).rgb);
+}
 fn fogCellDir(cell: vec2i, gridSize: vec2i) -> vec3f {
   if (su.projMode == 0) {
     let cx = (2.0 * (f32(cell.x) + 0.5)) / f32(gridSize.x) - 1.0;
@@ -452,6 +462,17 @@ fn fogCellDir(cell: vec2i, gridSize: vec2i) -> vec3f {
   }
   return normalize(select(pitchedCellDir(vec2f(cell), gridSize), su.pitchA.xyz, su.projMode == 2));
 }
+// AA-15 (OB-208): world-space glyph dice for soft-edge leaf cards (twin: fogShape.js folDiceJS). Block q = 0.25/0.5/1/2 m by distance.
+fn folDice(cell: vec2i, gridSize: vec2i, dist: f32, seed: i32) -> f32 {
+  let d = fogCellDir(cell, gridSize);
+  var q = 0.5;
+  if (dist >= 16.0) { q = 1.0; } if (dist >= 32.0) { q = 2.0; } if (dist >= 64.0) { q = 4.0; }
+  let iq = 1.0 / q;
+  let px = su.underCam.x + d.x * dist; let py = su.underCam.y + d.y * dist; let pz = su.fogView.x + d.z * dist;
+  let ix = i32(floor(px * iq)); let iy = i32(floor(py * iq)); let iz = i32(floor(pz * iq));
+  return hashFast(ix, iy + iz * 8191, seed);
+}
+
 fn pickCode(setId: i32, entryIdx: i32, hA: f32, useAlt: bool) -> i32 {
   let t = textureLoad(uSetI, vec2i(2 + entryIdx, setId), 0);
   let cnt = t.x;
@@ -751,6 +772,7 @@ fn shadeCell(frag: vec4f) -> FO {
   let jsFg = textureLoad(uFgTex, cell, 0);
   let jsBg = textureLoad(uBgTex, cell, 0);
   let gridSize = vec2i(textureDimensions(uGI));
+  if (kindU != 0u) { gFarSky = farSkyShift(cell, gridSize); } // VISQA-02 (0 when off)
   var o: FO;${L.init}
 
   if (kindU == 0u) {
@@ -910,6 +932,12 @@ ${look ? `    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceM
   let hcolM = select(vec3f(1.0), Lc / Lm, Lm > 1e-6);
   var mnFg = vec3f(0.0); var mnBg = vec3f(0.0); var mnCount = 0;
 
+  // AA-15 (OB-208): soft-edge leaf cards (F_SOFT_EDGE, kind 9) key the glyph dice on a world block, not the per-card u/v
+  var folOn = false; var folSeed = 0;
+  if (su.fogView.w > 0.5 && kindU == ${KIND_MESH}u) {
+    let mi0f = textureLoad(uMatI, vec2i(0, matId), 0);
+    folOn = (mi0f.y & 65536) != 0; folSeed = mi0f.x;
+  }
   for (var j = 0; j < 4; j++) {
     if (j >= su.n) { break; }
     for (var i = 0; i < 4; i++) {
@@ -966,14 +994,15 @@ ${look ? `    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceM
   let bAvg = bSum * invCount; let gbAvg = gbSum * invCount;
   let crAvg = crSum * invCount; let cgAvg = cgSum * invCount; let cbAvg = cbSum * invCount;
   let bgKAvg = bgKSum * invCount;
-  let hAAvg = hAW; let hBAvg = hBW;
+  var hAAvg = hAW; let hBAvg = hBW;
+  if (folOn) { hAAvg = folDice(cell, gridSize, dist, folSeed + 977); } // AA-15: leaf cards pick the alternate glyph from a world block
 
   var f = select(select((dist - su.fogStart) / (su.fogFull - su.fogStart), 1.0, dist >= su.fogFull), 0.0, dist <= su.fogStart);
   var fogFgC = su.fogFg; var fogBgC = su.fogBg;
   if (su.fogView.z > 0.5) { // OB-089: outdoor mesh fog = the terrain's far fog (twin: detailShade.js shadeTail, fogShapeCtx.outdoor); fg == bg
     f = clamp((dist - su.terrainFogStart) / (su.terrainFogFull - su.terrainFogStart), 0.0, 1.0);
     f = select(pow(f, su.terrainFogCurve), f, su.terrainFogCurve == 1.0);
-    let oc = su.terrainFogNearRGB + (su.terrainFogFarRGB - su.terrainFogNearRGB) * f;
+    let oc = su.terrainFogNearRGB + (su.terrainFogFarRGB + gFarSky - su.terrainFogNearRGB) * f; // VISQA-02: + sky shift
     fogFgC = oc; fogBgC = oc;
   }
   if (su.fogView.y > 0.5 && su.fogView.z < 0.5 && f > 0.0) { // AUD-45: height fog + sun in-scatter (only where f > 0); OB-204: not for outdoor meshes (terrain has none, so far meshes came out paler than the hills)

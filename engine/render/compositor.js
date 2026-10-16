@@ -5,7 +5,7 @@
 // beginFrame/castSectors/.../fillSky sequence main.js used to write out by
 // hand for a single bare level (US-024).
 import { windSwayOn, sunWindClock } from '../mesh/sway.js';
-import { fogShapeCtx, meshOutdoorFog } from './fogShape.js';
+import { fogShapeCtx, meshOutdoorFog, farSkyPrep, farSkyOff } from './fogShape.js';
 import { fillSky, ambientL, primeAmbientLight } from './sky.js';
 import { shadeTerrainCells } from './terrainShade.js';
 import { carpetCtxFor, carpetCells } from './carpet.js';
@@ -414,9 +414,10 @@ export function renderWorld(fb, world, cam) {
     if (fsc.outdoor) { const fr = fb.palette.fog.far; fsc.tStart = fr.start; fsc.tFull = fr.full; fsc.tCurve = fr.curve || 1; fsc.tNear = fb.palette.rgb[fr.color]; fsc.tFar = fb.palette.rgb[fr.colorFar]; }
     if (fsc.on) {
       const fsun = sunFromWorld(world, fb.palette, skySunScratch);
-      fsc.mode = meshPitched ? (meshPitchTerms.ortho ? 2 : 1) : 0; fsc.terms = meshPitched ? meshPitchTerms : meshTerms; fsc.camZ = cam.z;
+      fsc.mode = meshPitched ? (meshPitchTerms.ortho ? 2 : 1) : 0; fsc.terms = meshPitched ? meshPitchTerms : meshTerms; fsc.camZ = cam.z; fsc.camX = cam.x; fsc.camY = cam.y; // AA-15: + cam x/y for folDiceJS
       fsc.sunX = fsun.dirX; fsc.sunY = fsun.dirY; fsc.sunZ = fsun.dirZ; fsc.sunI = fsun.sunI;
-    }
+      farSkyPrep(fb.palette); // VISQA-02: far fog -> sky at the cell's elevation (terrain + outdoor meshes; terms stay set for shadeTerrainCells)
+    } else farSkyOff();
     shadeSurfaces(fb, fb.gbuf, fb.matTable, fb.detailPass, fb.light);
     fsc.on = false; fsc.outdoor = false;
     shadeTerrainCells(fb, world.terrain, world, fb.timeSec || 0, meshHashCell);
@@ -441,7 +442,7 @@ export function renderWorld(fb, world, cam) {
     updateUnderState(world, cam.x, cam.y, cam.z, fb.under);
     if (fb.under.on) {
       const fsc = fogShapeCtx; // reuse the fog ray context for per-cell view rays
-      fsc.mode = meshPitched ? (meshPitchTerms.ortho ? 2 : 1) : 0; fsc.terms = meshPitched ? meshPitchTerms : meshTerms; fsc.camZ = cam.z;
+      fsc.mode = meshPitched ? (meshPitchTerms.ortho ? 2 : 1) : 0; fsc.terms = meshPitched ? meshPitchTerms : meshTerms; fsc.camZ = cam.z; fsc.camX = cam.x; fsc.camY = cam.y; // AA-15: + cam x/y for folDiceJS
       underwaterPass(fb.rt, fb.gbuf, fb.depth.depth, cam.x, cam.y, cam.z, fb.timeSec || 0, fb.under);
     }
   }

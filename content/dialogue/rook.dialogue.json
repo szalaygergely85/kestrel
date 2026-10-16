@@ -7,6 +7,7 @@
     "you": {"label": "YOU", "player": true}
   },
   "entry": [
+    {"node": "rook.bend.ready.1", "requires": "q.burl.road.ready"},
     {"node": "rook.mirror.done.1", "requires": "q.mq.ford.mirror.ready"},
     {"node": "rook.call.ready.1", "requires": "q.mq.bend.call.ready"},
     {"node": "rook.road.ready", "requires": "q.mq.river.road.ready"},
@@ -27,6 +28,12 @@
     {"node": "rook.meet.1"}
   ],
   "nodes": {
+    "rook.bend.ready.1": {"lines": [
+      "Cold stone, warm now. I watched it wake."
+    ], "next": "rook.bend.ready.2", "setFlag": "q.burl.road.handin", "speaker": "rook"},
+    "rook.bend.ready.2": {"lines": [
+      "The bear sent you. Big paws. Slow. Like you."
+    ], "next": "rook.meet.1", "speaker": "rook"},
     "rook.road.1": {"choices": [{"next": "rook.road.2", "setFlag": "q.mq.river.road.accept", "text": "I'll walk it."}, {"next": "rook.later", "text": "Not yet."}], "lines": [
       "Paper says river. River says west. Follow the road."
     ], "speaker": "rook"},

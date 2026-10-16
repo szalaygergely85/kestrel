@@ -218,12 +218,25 @@ function runQuest(def) {
     if (ns === ACTIVE || ns === READY) fail('8 next-not-auto', "next '" + def.next + "' was auto-accepted (" + STATUS_NAMES[ns] + ')');
     else if (ns !== AVAILABLE) fail('8 next-offered', "next '" + def.next + "' is " + STATUS_NAMES[ns] + ' after the hand-in (expected available)');
   }
+  // 8b. OB-210 / D-108 amendment: after a MAIN hand-in the next main quest is offered by a character at once (never only a place / the compass)
+  if (!side && st() === DONE) handOffCheck(turnIn, fail);
   // 9. save -> load identical
   saveCheck(def, fail, '9 save-load');
 
   active.delete(def.id);
   results.set(def.id, res || { ok: true });
   return results.get(def.id);
+}
+
+/** OB-210: generated from content (no hand list). While main quests remain, one must be ACTIVE/READY or AVAILABLE at a character:
+ *  offered by the hand-in character itself within ONE talk (Accept/Exit shown), else that giver carries the gold '!' (the hand-in names them). */
+function handOffCheck(turnIn, fail) {
+  const b = relay.book, avail = []; let pending = false, open = false;
+  for (let i = 1; i < b.count; i++) { if (!b.isMain(i)) continue; const s = b.status(i); if (s === DONE) continue; pending = true; if (s === AVAILABLE) avail.push(i); else if (s === ACTIVE || s === READY) open = true; }
+  if (!pending || open) return;
+  if (!avail.length) { fail('8 main-handoff', 'after the hand-in no character offers the next main quest (the chain goes on by places only)'); return; }
+  if (avail.some((i) => b.giverOf(i) === turnIn)) { const t = talk(turnIn, null); if (t.offers < 1) fail('8 main-handoff', "'" + turnIn + "' offers the next main quest but one more talk shows no Accept/Exit"); return; }
+  const L = lists(); if (!avail.some((i) => L.gA.includes(b.giverOf(i)) && (isChar(b.giverOf(i)) || b.def(i).objectGiver === true))) fail('8 main-handoff', "next main quest has no gold '!' over a character: " + avail.map((i) => b.def(i).id + '@' + b.giverOf(i)).join(', '));
 }
 
 /** The real pickup path: a questPickup prop next to the player + E (questPickups.onTick) until the pack holds n of `id`. */

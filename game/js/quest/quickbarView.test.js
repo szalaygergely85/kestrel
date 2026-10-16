@@ -57,3 +57,10 @@ assert.equal(at(X[2] + 5, y0 + 3) + at(X[2] + 6, y0 + 3), 'x3', 'bar slot shows 
   assert.equal(ui.cells.get((x1 + 3) + ',' + (y + 2)).ch !== ' ', true, 'unlocked: spell icon drawn');
 }
 console.log('quickbarView.test: ok');
+
+// VISQA-06: outer ring of each plate is lighter than the plate interior
+{
+  const y0 = v.slotY(ui.rows), x0 = v.slotX(ui.cols, 3);
+  const edge = ui.cells.get(x0 + ',' + y0).bg, mid = ui.cells.get((x0 + 3) + ',' + (y0 + 1)).bg;
+  assert.ok(edge[2] > mid[2] && edge[1] > mid[1], 'plate rim lighter than interior');
+}

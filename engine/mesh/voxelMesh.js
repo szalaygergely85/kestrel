@@ -575,14 +575,17 @@ export function addVoxelInstances(list, pool, cache, partNamesFor) {
     const partNames = partNamesFor(inst.modelKey);
     const mesh = cache.get(pm, inst.modelKey, partNames);
 
-    computeVoxelPose(pm, inst, _poseScratch);
+    // PERF-01: a VoxelPool slot posed this frame carries its FORWARD copy (`fwd`) + L_k output (`pose`): reuse them
+    // (same inputs -> bit-identical); anything else (fixtures, plain objects) is posed here as before.
+    let fwd = FORWARD, pose = _poseScratch;
+    if (inst.fwdModel === pm && inst.fwd && inst.pose) { fwd = inst.fwd; pose = inst.pose; } else computeVoxelPose(pm, inst, _poseScratch);
 
     const item = list.push(mesh, DRAW_VOXEL);
     const partCount = pm.partCount;
     for (let p = 0; p < partCount; p++) {
       const fbase = p * 12;
-      for (let c = 0; c < 12; c++) item.partMatrices[p * 12 + c] = FORWARD[fbase + c];
-      item.partFlags[p] = _poseScratch[p * PART_STRIDE + 12];
+      for (let c = 0; c < 12; c++) item.partMatrices[p * 12 + c] = fwd[fbase + c];
+      item.partFlags[p] = pose[p * PART_STRIDE + 12];
     }
     item.planeIdOr = (k & 0xF) << 24;
     item.objectId = 0x8000 | k;

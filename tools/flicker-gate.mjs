@@ -27,11 +27,35 @@ export function extractPoses(metrics) {
   const m0 = metrics || {};
   const poses = {};
   for (const k of Object.keys(m0)) {
-    const m = /^poses\.([^.]+)\.(totalPct|glyphOnlyPct)$/.exec(k);
+    const m = /^poses\.([^.]+)\.(totalPct|glyphOnlyPct|glyphOnlyRawPct|shiftPct)$/.exec(k);
     if (m) (poses[m[1]] ||= {})[m[2]] = m0[k];
   }
-  const avg = { totalPct: m0['avg.totalPct'] ?? m0.avgTotalPct, glyphOnlyPct: m0['avg.glyphOnlyPct'] };
+  const avg = { totalPct: m0['avg.totalPct'] ?? m0.avgTotalPct, glyphOnlyPct: m0['avg.glyphOnlyPct'], glyphOnlyRawPct: m0['avg.glyphOnlyRawPct'], shiftPct: m0['avg.shiftPct'] };
   return { poses, avg };
+}
+
+// AA-DIAG-01: metrics `poses.<pose>.why.<reason>` (only with &flickerdiag=1) -> text table, % of counted cells per reason; '' when absent.
+export const WHY_REASONS = ['heldChanged', 'edge', 'kind', 'plane', 'mat', 'anim', 'mixed255', 'uvDrift', 'snap255', 'levelJump', 'replayHold'];
+export const M255_COLS = ['mixed255', 'lineShift', 'm255:line', 'm255:stip', 'm255:blank', 'm255:other', 'octPop'];
+// AA-14a: lineShift as % of mixed255 (the AA-14b go/no-go is >= 70); '-' when there is no mixed255.
+export const shiftShare = (w) => (w && w.mixed255 > 0 ? 100 * (w.lineShift || 0) / w.mixed255 : null);
+export function m255Table(metrics) {
+  const poses = {};
+  for (const k of Object.keys(metrics || {})) { const m = /^poses\.([^.]+)\.why\.([^.]+)$/.exec(k); if (m) (poses[m[1]] ||= {})[m[2]] = metrics[k]; }
+  const names = Object.keys(poses); if (!names.length) return '';
+  const c = (v, w = 10) => (typeof v === 'number' ? v.toFixed(2) : '-').padStart(w);
+  const lines = ['M255 (mixed255 split, % of counted cells; shift% = lineShift / mixed255)', 'pose'.padEnd(14) + 'glyphOnly'.padStart(10) + M255_COLS.map((r) => r.padStart(11)).join('') + 'shift%'.padStart(8)];
+  for (const n of names) lines.push(n.padEnd(14) + c(poses[n].glyphOnlyPct) + M255_COLS.map((r) => c(poses[n][r], 11)).join('') + c(shiftShare(poses[n]), 8));
+  return lines.join('\n');
+}
+export function whyTable(metrics) {
+  const poses = {};
+  for (const k of Object.keys(metrics || {})) { const m = /^poses\.([^.]+)\.why\.([^.]+)$/.exec(k); if (m) (poses[m[1]] ||= {})[m[2]] = metrics[k]; }
+  const names = Object.keys(poses); if (!names.length) return '';
+  const c = (v) => (typeof v === 'number' ? v.toFixed(2) : '-').padStart(9);
+  const lines = ['WHY (glyph-only flips by reason, % of counted cells)', 'pose'.padEnd(14) + 'glyphOnly'.padStart(9) + WHY_REASONS.map((r) => r.slice(0, 9).padStart(10)).join('')];
+  for (const n of names) lines.push(n.padEnd(14) + c(poses[n].glyphOnlyPct) + WHY_REASONS.map((r) => c(poses[n][r]).padStart(10)).join(''));
+  return lines.join('\n');
 }
 
 const limit = (base, mg) => base * mg.rel + mg.abs;
@@ -56,7 +80,7 @@ export function compare(current, baseline) {
     }
     const lim = limit(b.glyphOnlyPct, POSE_MARGIN);
     const bad = c.glyphOnlyPct > lim;
-    rows.push({ pose, total: c.totalPct, glyphOnly: c.glyphOnlyPct, baseline: b.glyphOnlyPct, limit: lim, verdict: bad ? 'FAIL' : 'PASS' });
+    rows.push({ pose, total: c.totalPct, glyphOnly: c.glyphOnlyPct, baseline: b.glyphOnlyPct, limit: lim, verdict: bad ? 'FAIL' : 'PASS', raw: c.glyphOnlyRawPct ?? null, shift: c.shiftPct ?? null });
     if (bad) messages.push(`pose "${pose}" glyphOnly ${c.glyphOnlyPct.toFixed(2)} % > limit ${lim.toFixed(2)} % (baseline ${b.glyphOnlyPct.toFixed(2)} %)`);
   }
   const ca = current.avg?.glyphOnlyPct, ba = baseline.avg?.glyphOnlyPct;
@@ -66,7 +90,7 @@ export function compare(current, baseline) {
   } else if (isNum(ba)) {
     const lim = limit(ba, AVG_MARGIN);
     const bad = ca > lim;
-    rows.push({ pose: 'AVG', total: current.avg.totalPct ?? null, glyphOnly: ca, baseline: ba, limit: lim, verdict: bad ? 'FAIL' : 'PASS' });
+    rows.push({ pose: 'AVG', total: current.avg.totalPct ?? null, glyphOnly: ca, baseline: ba, limit: lim, verdict: bad ? 'FAIL' : 'PASS', raw: current.avg.glyphOnlyRawPct ?? null, shift: current.avg.shiftPct ?? null });
     if (bad) messages.push(`avg glyphOnly ${ca.toFixed(2)} % > limit ${lim.toFixed(2)} % (baseline ${ba.toFixed(2)} %)`);
   }
   return { ok: rows.every((r) => r.verdict !== 'FAIL'), rows, messages };
@@ -74,8 +98,8 @@ export function compare(current, baseline) {
 
 const f = (v) => (isNum(v) ? v.toFixed(2) : '-');
 export function formatTable(result) {
-  const head = ['pose', 'total%', 'glyphOnly%', 'baseline%', 'limit%', 'verdict'];
-  const lines = result.rows.map((r) => [r.pose, f(r.total), f(r.glyphOnly), f(r.baseline), f(r.limit), r.verdict]);
+  const head = ['pose', 'total%', 'glyphOnly%', 'raw%', 'shift%', 'baseline%', 'limit%', 'verdict']; // AA-14b: gated on glyphOnly (line shifts removed); raw = the old definition, always printed
+  const lines = result.rows.map((r) => [r.pose, f(r.total), f(r.glyphOnly), f(r.raw), f(r.shift), f(r.baseline), f(r.limit), r.verdict]);
   const w = head.map((h, i) => Math.max(h.length, ...lines.map((l) => l[i].length)));
   const fmt = (l) => l.map((c, i) => c.padEnd(w[i])).join('  ');
   const out = [fmt(head), ...lines.map(fmt), '', result.ok ? 'FLICKER GATE: PASS' : 'FLICKER GATE: FAIL'];
@@ -89,7 +113,7 @@ export function summarizeRuns(runs) {
   const names = [...new Set(runs.flatMap((r) => Object.keys(r.poses)))];
   const out = { poses: {}, avg: {}, spread: {} };
   const agg = (get, set, key) => {
-    for (const k of ['totalPct', 'glyphOnlyPct']) {
+    for (const k of ['totalPct', 'glyphOnlyPct', 'glyphOnlyRawPct', 'shiftPct']) {
       const v = runs.map((r) => get(r)?.[k]).filter(isNum);
       if (v.length) { set(k, median(v)); if (k === 'glyphOnlyPct') out.spread[key] = { min: Math.min(...v), max: Math.max(...v), spread: Math.max(...v) - Math.min(...v), n: v.length }; }
     }
@@ -133,6 +157,8 @@ function main() {
     }
     if (r.status !== 0) throw new Error('capture-browser exited with ' + r.status + ' (run ' + (i + 1) + '/' + K + ')');
     const cap = JSON.parse(readFileSync(newestCapture(), 'utf8'));
+    const wt = whyTable(cap.rows?.[0]?.metrics); if (wt) console.log(wt);
+    const mt = m255Table(cap.rows?.[0]?.metrics); if (mt) console.log(mt);
     runs.push({ ...extractPoses(cap.rows?.[0]?.metrics), sha: cap.sha, date: cap.date });
   }
   const cur = K > 1 ? summarizeRuns(runs) : runs[0];

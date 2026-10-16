@@ -2946,3 +2946,36 @@ cleared the stale NEEDS WRITER dev notes in `world_m1.world.json`). Lines <= 56.
 - Old mortar on one face. Once part of a bridge pier.
 - A Crown stamp, half chiselled away.
 - The bridge was pulled down. Not by the river.
+
+## The Road West (OB-210)
+
+Main quest `burl.road`: Burl offers it right after the stone hand-in, Rook takes
+the hand-in at the Bend, then his own meet chain (`rook.meet.*`) offers
+`mq.bend.call`. Lines <= 56. Rook's lines come before he gives his name.
+
+Quest: title `The Road West`, return `Talk to Rook`.
+- road: `Take the old road west` / journal "Burl says the old road runs west to a bend."
+- find: `Find the cold waystone at the bend` / "A cold waystone stands where the road bends."
+- wake: `Wake the Bend waystone` / "Hold the crystal to the carved mark."
+
+**bear.road.offer** (BURL; choices "I'll go west." / "Not yet.")
+- One more thing. The old road runs west to a bend.
+- There's a waystone there, cold as this one was.
+- A crow keeps watch on it. Rook. He talks a lot.
+
+**bear.road.go** (BURL)
+- West is yours, sky-cub. I'm off to my berries.
+- Tell Rook the bear sent you.
+
+**bear.road.later** (BURL)
+- Rest first, then. The road will keep. Roads do.
+
+**bear.road.active** (BURL)
+- The Bend waystone is west, where the road turns.
+- Hold the crystal to the mark, same as here.
+
+**rook.bend.ready.1** (ROOK)
+- Cold stone, warm now. I watched it wake.
+
+**rook.bend.ready.2** (ROOK, then `rook.meet.1` "Ha. The fell-bird walks.")
+- The bear sent you. Big paws. Slow. Like you.
