@@ -182,10 +182,19 @@ export function perCellHashSize(t, k, handover) {
 export const FG_MIX = 0.55, FG_GUST = 0.3, FG_FADE_MIN_M = 4, FG_FADE_K = 0.5, FG_SLOPE = 1.5, FG_MOD = 0.2;
 export const FG_CODES = [12, 2, 7]; // ascii - 32 of `,` `"` `'`
 export const FG_TYPES = 16;
-export function makeFarGrass() { return { on: 0, under: 0, startM: 12, fadeM: 6, mix: FG_MIX, dirX: 1, dirY: 0, cyc: 0, invTravel: 0, types: new Float32Array(FG_TYPES * 4), _cfg: null, _names: null }; }
+// AA-22 (OB-208): wind hold. The far-grass gust phase is quantised to FG_QB buckets per cycle and the look lean clock to LOOK_TQ steps/s;
+// a cell is level 254 (never held) only on the frame its bucket/step changed since the previous shade time (tPrev), else 255 (holdable),
+// so camera motion with a frozen or between-step clock no longer re-rolls these glyphs. mask bit 1 = far grass, 2 = lean; 0 = old (?aawind=0).
+export const FG_QB = 16, LOOK_TQ = 10;
+const windHold = { mask: 3 };
+export function setWindHold(mask) { windHold.mask = mask | 0; }
+export function makeFarGrass() { return { on: 0, under: 0, startM: 12, fadeM: 6, mix: FG_MIX, dirX: 1, dirY: 0, cyc: 0, invTravel: 0, qb: 0, qt: 0, tPrev: 0, tCur: NaN, types: new Float32Array(FG_TYPES * 4), _cfg: null, _names: null }; }
 /** Fill (no alloc) the far-grass record of a carpet config. Per ground type the variant with the most `areas` wins (no areas = everywhere = wins); colour = ramp middle.
  *  quality = world.carpetQuality (on, radiusScale, farGrass !== false); windParams = world.wind.params or null (calm: no gust). */
-export function farGrassFill(rec, cfg, typeNames, quality, windParams) {
+export function farGrassFill(rec, cfg, typeNames, quality, windParams, timeSec = 0) {
+  // AA-22: shade-time history (a repeated time keeps tPrev, so a frozen clock = tPrev === tCur = nothing animates); first call = no change
+  if (timeSec !== rec.tCur) { rec.tPrev = rec.tCur === rec.tCur ? rec.tCur : timeSec; rec.tCur = timeSec; }
+  rec.qb = windHold.mask & 1 ? FG_QB : 0; rec.qt = windHold.mask & 2 ? LOOK_TQ : 0;
   const vs = cfg ? cfg.variants || [] : [], T = rec.types;
   rec.on = cfg && quality && quality.on !== false && quality.farGrass !== false ? 1 : 0;
   const radius = (cfg && cfg.radiusM ? cfg.radiusM : 12) * (quality && quality.radiusScale ? quality.radiusScale : 1);
@@ -264,7 +273,10 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   let nWs = 0, nN = 0;
   // ENV-02b: a look cell replaces the 3-octave loop by the look tone (nP := 2 tone - 1); the look shade runs once, results in GLq
   const GL = ctx.groundLook, lookOn = GL ? (lookLo | lookHi) !== 0 : false, GLq = lookOn ? GL.q : null;
-  if (lookOn) { GLq[0] = fu; GLq[1] = fv; GLq[2] = fp; GLq[3] = t; GLq[4] = timeSec; GLq[5] = lookW; GLq[21] = ctx.farGrass !== undefined && ctx.farGrass.on !== 0 ? 0 : 1; shadeLookCell(GL, lookLo, lookHi, GLq); }
+  // AA-22: lean clock quantised to LOOK_TQ steps/s (needs the far-grass record's tPrev); leanStep = the step changed since tPrev
+  const FGR = ctx.farGrass, lqt = FGR !== undefined && FGR.on !== 0 ? FGR.qt : 0;
+  const leanStep = lqt > 0 ? Math.floor(timeSec * lqt) !== Math.floor(FGR.tPrev * lqt) : true;
+  if (lookOn) { GLq[0] = fu; GLq[1] = fv; GLq[2] = fp; GLq[3] = t; GLq[4] = lqt > 0 ? Math.floor(timeSec * lqt) / lqt : timeSec; GLq[5] = lookW; GLq[21] = ctx.farGrass !== undefined && ctx.farGrass.on !== 0 ? 0 : 1; shadeLookCell(GL, lookLo, lookHi, GLq); }
   for (let o = 0; o < 3; o++) {
     if (lookOn) break;
     const cell = NOISE_CELLS[o];
@@ -346,7 +358,6 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   }
   // G2 + P3: far grass tier (WGSL twin: shadeTerrain, same lines). fgw = weight 0..1, > 0 = stable level 254.
   let fgw = 0, fgAnim = false;
-  const FGR = ctx.farGrass;
   if (FGR !== undefined && FGR.on !== 0 && (!close || FGR.under > 0)) {
     const st = FGR.types[type * 4 + 3];
     if (st > 0) {
@@ -357,10 +368,16 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
       if (fgw > 0) {
         let tri = 0.5;
         if (!stat) {
-          let ph = (timeSec - (fu * FGR.dirX + fv * FGR.dirY) * FGR.invTravel) * FGR.cyc; ph -= Math.floor(ph);
+          const lag = (fu * FGR.dirX + fv * FGR.dirY) * FGR.invTravel;
+          let ph = (timeSec - lag) * FGR.cyc;
+          if (FGR.qb > 0) { // AA-22: bucketed phase; animated only on the bucket change since tPrev
+            const bk = Math.floor(ph * FGR.qb);
+            fgAnim = bk !== Math.floor((FGR.tPrev - lag) * FGR.cyc * FGR.qb);
+            ph = (bk + 0.5) * (1 / FGR.qb);
+          } else fgAnim = true;
+          ph -= Math.floor(ph);
           tri = 1 - Math.abs(2 * ph - 1); tri = tri * tri * (3 - 2 * tri);
         }
-        fgAnim = !stat;
         let sg = nP * FG_SLOPE + (tri - 0.5) * FG_GUST; sg = sg < -1 ? -1 : sg > 1 ? 1 : sg;
         if (fgw > 0.5 - 0.4 * sg) code = lookOn ? GLq[18 + (sg < -0.33 ? 0 : sg > 0.33 ? 2 : 1)] | 0 : FG_CODES[sg < -0.33 ? 0 : sg > 0.33 ? 2 : 1];
         const km = fgw * FGR.mix * (1 + FG_MOD * sg), o4 = type * 4;
@@ -417,7 +434,7 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
 
   out.glyph = code;
   // 38.25 amendment C.1: stable-pass level byte of a terrain cell (twin of shade.wgsl's terrain splice): 254 = the shimmer branch (glyph can change next tick), else 255
-  out.level = fgAnim || (lookOn && GLq[14] > 0) ? LEVEL_ANIM : LEVEL_NONE; // OB-073: no glint branch; G2: far-grass cells animate (gust)
+  out.level = fgAnim || (lookOn && GLq[14] > 0 && leanStep) ? LEVEL_ANIM : LEVEL_NONE; // OB-073: no glint branch; G2: far-grass cells animate (gust)
   // toByte inlined (a non-inlined call returning a double boxes it); same clamp + round
   const ofg = out.fg, obg = out.bg;
   ofg[0] = Math.floor((fr < 0 ? 0 : fr > 255 ? 255 : fr) + 0.5); ofg[1] = Math.floor((fg < 0 ? 0 : fg > 255 ? 255 : fg) + 0.5); ofg[2] = Math.floor((fb < 0 ? 0 : fb > 255 ? 255 : fb) + 0.5);
@@ -777,7 +794,7 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
   const grassTab = world && world.carpet && world.carpet.cfg ? grassTableFor(world.carpet.cfg) : null;
   if (grassTab !== null && terrain.typeNames) { // G2 + P3: far grass record (ctx-owned, filled in place)
     if (!ctx.farGrass) ctx.farGrass = makeFarGrass();
-    farGrassFill(ctx.farGrass, world.carpet.cfg, terrain.typeNames, world.carpetQuality, world.wind && world.wind.params ? world.wind.params : null);
+    farGrassFill(ctx.farGrass, world.carpet.cfg, terrain.typeNames, world.carpetQuality, world.wind && world.wind.params ? world.wind.params : null, timeSec);
   } else if (ctx.farGrass) ctx.farGrass.on = 0;
   const gi = fb.lights ? fb.lights.gi : null;
   const giOn = !!gi && gi.on && gi.field !== null;

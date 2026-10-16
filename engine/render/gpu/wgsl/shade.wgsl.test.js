@@ -229,7 +229,7 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
     terrainFogStart: fog.start, terrainFogFull: fog.full, terrainFogCurve: fog.curve,
     terrainFogNearRGB: { x: fog.nearRGB[0], y: fog.nearRGB[1], z: fog.nearRGB[2] }, terrainFogFarRGB: { x: fog.farRGB[0], y: fog.farRGB[1], z: fog.farRGB[2] },
     wetness: wet, // S8-B2-14b
-    fgP: FGREC ? { x: 1 + (FGREC.under || 0), y: FGREC.startM, z: FGREC.fadeM, w: FGREC.mix } : { x: 0, y: 0, z: 1, w: 0 }, fgW: FGREC ? { x: FGREC.dirX, y: FGREC.dirY, z: FGREC.cyc, w: FGREC.invTravel } : { x: 0, y: 0, z: 0, w: 0 },
+    fgP: FGREC ? { x: 1 + (FGREC.under || 0), y: FGREC.startM, z: FGREC.fadeM, w: FGREC.mix } : { x: 0, y: 0, z: 1, w: 0 }, fgW: FGREC ? { x: FGREC.dirX, y: FGREC.dirY, z: FGREC.cyc, w: FGREC.invTravel } : { x: 0, y: 0, z: 0, w: 0 }, fgQ: FGREC ? { x: FGREC.qb, y: FGREC.tPrev, z: FGREC.qt, w: 0 } : { x: 0, y: 0, z: 0, w: 0 }, /* AA-22 */
     fgT: Array.from({ length: FG_TYPES }, (_, i) => FGREC ? { x: FGREC.types[i * 4], y: FGREC.types[i * 4 + 1], z: FGREC.types[i * 4 + 2], w: FGREC.types[i * 4 + 3] } : { x: 0, y: 0, z: 0, w: 0 }),
     cliff: { x: 1, y: 1, z: 0, w: 0 }, // OB-104b2: rock = fixture row 1
     skyGlowOn: { x: 0, y: floorY, z: 0, w: 0 }, // DN-02
@@ -534,8 +534,9 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   // re-pinned 61248 -> 62327 by AA-15 (OB-208: folDice world-block glyph dice for soft-edge leaf cards, gated on fogView.w)
   // re-pinned 62327 -> 63190 by VISQA-02 (gFarSky: far fog follows the sky LUT at the cell elevation, skyGlowOn.z weight)
   // re-pinned 63190 -> 64622 by AA-16 (OB-208: folLight leaf-card light smoothing, fogView.w bit field)
-  assert.equal(SHADE_WGSL.length, 64622, 'stable off: SHADE_WGSL length unchanged');
-  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '7e81e61ba3e9712a771022f0fc4226340150ef9eac47548377437e0f0f968521', 'stable off: SHADE_WGSL byte-identical to pre-073b');
+  // re-pinned 64622 -> 64993 by AA-22 (OB-208: wind hold, bucketed far-grass gust + appended fgQ; fgQ.x = 0 = old phase)
+  assert.equal(SHADE_WGSL.length, 64993, 'stable off: SHADE_WGSL length unchanged');
+  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '5281061021f516cb57327ea686aea8f5ada909fce1a60af196ec3e191050c032', 'stable off: SHADE_WGSL byte-identical to pre-073b');
   assert.ok(!/lvl|lvOut|location\(2\)/.test(SHADE_WGSL), 'stable off: no level output');
   assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
   assert.deepEqual(SHADE_LEVEL_TARGETS, ['rgba8', 'rgba8', 'r8ui']);
@@ -589,7 +590,7 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   assert.equal(SHADE_BLOCK.field('fgP').word, SHADE_BLOCK.field('cliff').word + 4, 'G2 + P3 fgP appended right after cliff');
   assert.equal(SHADE_BLOCK.field('fgT').word, SHADE_BLOCK.field('fgP').word + 8, 'fgT after fgP + fgW');
   assert.equal(SHADE_BLOCK.field('cloudA').word, SHADE_BLOCK.field('shaftA').word + 4, 'CLOUD-FLUFF-01b cloud words appended after shaftA');
-  assert.equal(SHADE_BLOCK.sizeBytes, (SHADE_BLOCK.field('grass').word + 320 + 28 + 4 + 8 + 64 + 4 + 28) * 4, 'fgT (16 vec4) + shaftA + cloudA..cloudShade (7 vec4) are the tail of the block');
+  assert.equal(SHADE_BLOCK.sizeBytes, (SHADE_BLOCK.field('grass').word + 320 + 28 + 4 + 8 + 64 + 4 + 28 + 4) * 4, 'fgT (16 vec4) + shaftA + cloudA..cloudShade (7 vec4) + fgQ (AA-22) are the tail of the block');
   assert.ok(TERRAIN_SHADE_WGSL.includes('0.5000') && /su\.cliff\.y > 0\.5 && nrm\.z < 0\.5000/.test(TERRAIN_SHADE_WGSL), 'OB-104b2 cliff branch with CLIFF_NZ 0.5 literal');
   assert.equal(SHADE_BLOCK.field('fogView').word, SHADE_BLOCK.field('skyCam').word + 4, 'fogView right after skyCam');
   assert.equal(SHADE_BLOCK.field('skyGlowOn').word, SHADE_BLOCK.field('fogView').word + 4, 'skyGlowOn right after fogView');

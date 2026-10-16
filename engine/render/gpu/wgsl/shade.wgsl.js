@@ -87,6 +87,7 @@ const SHADE_FIELDS = [
   // CLOUD-FLUFF-01b, APPENDED: GPU sky cloud deck (skyCloud.js). cloudA = on, seed, scale, bias | B = cover, puffK, wispCover, wispK | C = litK, litDy, bodyK, - | D = driftX, driftY, cloudBand0, cloudBand1 | E = cloudBand2 | lit/shade rgb 0..255. All 0 = no clouds.
   { name: 'cloudA', type: 'vec4' }, { name: 'cloudB', type: 'vec4' }, { name: 'cloudC', type: 'vec4' }, { name: 'cloudD', type: 'vec4' }, { name: 'cloudE', type: 'vec4' },
   { name: 'cloudLit', type: 'vec4' }, { name: 'cloudShade', type: 'vec4' },
+  { name: 'fgQ', type: 'vec4' }, // AA-22 (OB-208), APPENDED: wind hold. x = far-grass gust buckets per cycle (0 = off), y = previous shade time, z = lean clock steps/s (0 = off) (twin: farGrassFill rec.qb/tPrev/qt)
 ];
 export const SHADE_BLOCK = defineUniformBlock('ShadeU', SHADE_FIELDS);
 /** ENV-02d: ShadeU + look table (appended: earlier word offsets unchanged); look pipelines only. */
@@ -157,7 +158,10 @@ fn shadeTerrain(t: f32, typeIdIn: i32, b: f32, uIn: f32, vIn: f32, timeSec: f32,
   ${LK ? `var lk: LookOut;
   let lookOn = (lookLo | lookHi) != 0;
   var nP = 0.0;
-  if (lookOn) { lk = lkShade(u, v, fp, t, timeSec, lookLo, lookHi, lookW); nP = 2.0 * lk.tone - 1.0; } // ENV-02d: look tone replaces the patch noise (twin: shadeTerrain lookOn)
+  let lqt = select(0.0, su.fgQ.z, su.fgP.x > 0.5); // AA-22: lean clock steps/s (twin: lqt = FGR.on ? FGR.qt : 0)
+  let leanStep = lqt <= 0.0 || floor(timeSec * lqt) != floor(su.fgQ.y * lqt);
+  let lkT = select(timeSec, floor(timeSec * lqt) / max(lqt, 1.0), lqt > 0.0);
+  if (lookOn) { lk = lkShade(u, v, fp, t, lkT, lookLo, lookHi, lookW); nP = 2.0 * lk.tone - 1.0; } // ENV-02d: look tone replaces the patch noise (twin: shadeTerrain lookOn)
   else { nP = tsPatchNoise(u, v, fp, tsValueNoise(u * ${(1 / NOISE_CELLS[0]).toFixed(4)}, v * ${(1 / NOISE_CELLS[0]).toFixed(4)}, ${NOISE_SALT})); }` : `let v8 = tsValueNoise(u * ${(1 / NOISE_CELLS[0]).toFixed(4)}, v * ${(1 / NOISE_CELLS[0]).toFixed(4)}, ${NOISE_SALT});
   let nP = tsPatchNoise(u, v, fp, v8);`}
   // OB-073 calm ground: colour tier only from the smooth noise (no per-cell dither dice); ONE glyph per type (no hash, no band/close/glint).
@@ -220,7 +224,14 @@ ${LK ? `  if (lookOn) { fr = lk.fr * 255.0 * gain; fgc = lk.fg * 255.0 * gain; f
       if (fgw > 0.0) {
         var tri = 0.5;
         if (!fstat) {
-          var ph = (timeSec - (u * su.fgW.x + v * su.fgW.y) * su.fgW.w) * su.fgW.z; ph = ph - floor(ph);
+          let lag = (u * su.fgW.x + v * su.fgW.y) * su.fgW.w;
+          var ph = (timeSec - lag) * su.fgW.z;
+          if (su.fgQ.x > 0.0) { // AA-22: bucketed gust phase; animated only on the bucket change since fgQ.y (twin: shadeTerrain)
+            let bk = floor(ph * su.fgQ.x);
+            if (bk == floor((su.fgQ.y - lag) * su.fgW.z * su.fgQ.x)) { fgAnimW = 0.0; }
+            ph = (bk + 0.5) * (1.0 / su.fgQ.x);
+          }
+          ph = ph - floor(ph);
           tri = 1.0 - abs(2.0 * ph - 1.0); tri = tri * tri * (3.0 - 2.0 * tri);
         }
         let sg = clamp(nP * ${FG_SLOPE.toFixed(4)} + (tri - 0.5) * ${FG_GUST.toFixed(4)}, -1.0, 1.0);
@@ -273,7 +284,7 @@ ${LK ? `        if (fgw > 0.5 - 0.4 * sg) { code = select(select(${FG_CODES[1]},
   if (f > 0.85) { code = 0; }
 
   var o: TerrainOut;
-  o.fr = fr; o.fg = fgc; o.fb = fbc; o.br = br; o.bg = bgc; o.bb = bbc; o.glyph = code; o.fgw = ${LK ? 'select(fgAnimW, 1.0, lookOn && lk.anim > 0.0)' : 'fgAnimW'};
+  o.fr = fr; o.fg = fgc; o.fb = fbc; o.br = br; o.bg = bgc; o.bb = bbc; o.glyph = code; o.fgw = ${LK ? 'select(fgAnimW, 1.0, lookOn && lk.anim > 0.0 && leanStep)' : 'fgAnimW'};
   return o;
 }
 // OB-073 D2e: kind-10 carpet blade (twin: terrainShade.js shadeGrass). No skyline cap, glyph by h01 / lean, colour = ramp(h01 + tint).

@@ -39,7 +39,7 @@ const S_SPARSE_ALT = S('fogSparseAlt'), S_HAZE_ALT = S('fogHazeAlt');
 const S_SPARSE_C0 = S('fogSparseCode0'), S_SPARSE_C1 = S('fogSparseCode1'), S_HAZE_C0 = S('fogHazeCode0'), S_HAZE_C1 = S('fogHazeCode1');
 const S_ETA = S('etA'), S_ETID = S('etId'), S_ETC = S('etC'); // 38.23 tint words
 const EMPTY_GRASS = { n: new Uint8Array(1), ramp: new Float64Array(12), glyph: new Uint8Array(5) };
-const S_PITCH_A = S('pitchA'), S_PITCH_B = S('pitchB'), S_PITCH_C = S('pitchC'), S_FACEK = S('faceK'), S_SKYCAM = S('skyCam'), S_FOGVIEW = S('fogView'), S_SKYGLOWON = S('skyGlowOn'), S_SKYLINE = S('skyline'), S_GRASS = S('grass'), S_CLIFF = S('cliff'), S_FGP = S('fgP'), S_FGW = S('fgW'), S_FGT = S('fgT');
+const S_PITCH_A = S('pitchA'), S_PITCH_B = S('pitchB'), S_PITCH_C = S('pitchC'), S_FACEK = S('faceK'), S_SKYCAM = S('skyCam'), S_FOGVIEW = S('fogView'), S_SKYGLOWON = S('skyGlowOn'), S_SKYLINE = S('skyline'), S_GRASS = S('grass'), S_CLIFF = S('cliff'), S_FGP = S('fgP'), S_FGW = S('fgW'), S_FGT = S('fgT'), S_FGQ = S('fgQ');
 const S_SHAFT = S('shaftA'); // CANOPY-SHAFT-01b: (k, iso, pw, maxM) from light.shaft
 const S_CLOUD = S('cloudA'); // CLOUD-FLUFF-01b: cloudA..cloudShade are 7 contiguous vec4 words
 const S_UNDER = S('under'), S_UNDER_TINT = S('underTint'), S_UNDER_CAM = S('underCam'), S_UNDER_CEIL = S('underCeil'), S_UNDER_CAUS = S('underCaus'), S_UNDER_RB = S('underRampB'), S_UNDER_RC = S('underRampC'); // SWIM-04c
@@ -333,10 +333,11 @@ export class WgShadePass {
     // G2 + P3 (D-075 step 4): far grass tier, per frame (same record + fill as the JS twin's ctx.farGrass; on = 0 without a carpet)
     {
       const fgr = this.fgRec || (this.fgRec = makeFarGrass()), w = useScene ? p._world : null;
-      if (gcfg && w.terrain && w.terrain.typeNames) farGrassFill(fgr, gcfg, w.terrain.typeNames, w.carpetQuality, w.wind && w.wind.params ? w.wind.params : null); else fgr.on = 0;
+      if (gcfg && w.terrain && w.terrain.typeNames) farGrassFill(fgr, gcfg, w.terrain.typeNames, w.carpetQuality, w.wind && w.wind.params ? w.wind.params : null, tSec); else fgr.on = 0;
       su[S_FGP] = fgr.on * (1 + fgr.under); su[S_FGP + 1] = fgr.startM; su[S_FGP + 2] = fgr.fadeM; su[S_FGP + 3] = fgr.mix;
       su[S_FGW] = fgr.dirX; su[S_FGW + 1] = fgr.dirY; su[S_FGW + 2] = fgr.cyc; su[S_FGW + 3] = fgr.invTravel;
       su.set(fgr.types, S_FGT);
+      su[S_FGQ] = fgr.qb; su[S_FGQ + 1] = fgr.tPrev; su[S_FGQ + 2] = fgr.qt; // AA-22 wind hold (twin: shadeTerrain)
     }
     { // CANOPY-SHAFT-01b: lift on only with march steps > 0 and k > 0 and the shadow-map sun (same gate as the light pass); else k = 0 -> shade skips it
       const shf = p._light && p._light.shaft, on = !!(shf && shf.steps > 0 && shf.k > 0 && si[S_SUNMAP] && !shf.liftOff); // liftOff: dev-only (gpucompare frame A, 38.76 rule 8a): march stays on, lift off

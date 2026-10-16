@@ -1,7 +1,7 @@
 // US-016 Node tests for `shadeTerrain` (docs/architecture.md 14.4 item 5,
 // near-detail extension 23.4).
 import { allocProbe, skipNote } from '../../tools/allocProbe.mjs';
-import { shadeTerrain, hashFast01, perCellHashSize, shadeTerrainCells, groundAlbedo, groundTierOffset, patchNoise, valueNoise, NOISE_CELLS, NOISE_SALT, PATCH_K, shadeGrass, grassTableFor, GRASS_GX_HAS, GRASS_BACKLIGHT_K, CLIFF_NZ, makeFarGrass, farGrassFill } from './terrainShade.js';
+import { setWindHold, shadeTerrain, hashFast01, perCellHashSize, shadeTerrainCells, groundAlbedo, groundTierOffset, patchNoise, valueNoise, NOISE_CELLS, NOISE_SALT, PATCH_K, shadeGrass, grassTableFor, GRASS_GX_HAS, GRASS_BACKLIGHT_K, CLIFF_NZ, makeFarGrass, farGrassFill } from './terrainShade.js';
 import { Terrain } from '../world/Terrain.js';
 import { GBuffer, KIND_TERRAIN } from './GBuffer.js';
 import { CellBuffer } from './CellBuffer.js';
@@ -515,7 +515,11 @@ export function patchShape(shade) {
   check('farGrass: inside the radius unchanged (level 255)', oa.glyph === ob.glyph && oa.fg[1] === ob.fg[1] && ob.level === 255);
   shadeTerrain(40, 1, 0.9, 100, 100, 0, ctx, oa);
   shadeTerrain(40, 1, 0.9, 100, 100, 0, { ...ctx, farGrass: rec }, ob);
-  check('farGrass: beyond the fade -> level 254 and greener', ob.level === 254 && ob.fg[1] > oa.fg[1]);
+  check('farGrass: beyond the fade -> greener, calm = level 255 (AA-22 wind hold)', ob.level === 255 && ob.fg[1] > oa.fg[1]);
+  setWindHold(0); farGrassFill(rec, cfg, ['water', 'grass'], { on: true, radiusScale: 1, farGrass: true }, null);
+  shadeTerrain(40, 1, 0.9, 100, 100, 0, { ...ctx, farGrass: rec }, ob);
+  check('farGrass: ?aawind=0 -> level 254 (old)', ob.level === 254);
+  setWindHold(3); farGrassFill(rec, cfg, ['water', 'grass'], { on: true, radiusScale: 1, farGrass: true }, null);
   rec.on = 0; shadeTerrain(40, 1, 0.9, 100, 100, 0, { ...ctx, farGrass: rec }, ob);
   check('farGrass: off = identical', ob.glyph === oa.glyph && ob.fg[1] === oa.fg[1] && ob.level === 255);
 }
@@ -584,8 +588,24 @@ export function patchShape(shade) {
   }
   check('underlay + wind on: 0 changed cells in the 1.5-12 m band over 0.33 s (' + changed + '/' + n + ')', changed === 0);
   let anim = 0; const far = { ...cc, farGrass: recW };
-  for (let k = 0; k < 300; k++) { const t = 40 + k * 0.1, u = 1500 + k; shadeTerrain(t, 0, 0.8, u, 1035, 10, far, a); shadeTerrain(t, 0, 0.8, u, 1035, 10.33, far, b); if (a.level === 254 && (a.glyph !== b.glyph || a.fg[1] !== b.fg[1])) anim++; }
+  for (let k = 0; k < 300; k++) { const t = 40 + k * 0.1, u = 1500 + k; shadeTerrain(t, 0, 0.8, u, 1035, 10, far, a); shadeTerrain(t, 0, 0.8, u, 1035, 10 + 0.5 / 15, far, b); if (a.level === 254 && (a.glyph !== b.glyph || a.fg[1] !== b.fg[1])) anim++; }
   check('beyond the carpet the ramp shimmer still animates with wind (' + anim + ' cells changed)', anim > 0);
+  // AA-22 (OB-208) wind hold: a frozen clock = no 254; while the clock runs a cell's glyph/colour may change ONLY on a frame it reports 254
+  // (its gust bucket changed since tPrev), so the stable pass may hold every 255 cell without freezing the wind
+  const recH = farGrassFill(makeFarGrass(), cfgU, ['grass', 'water'], { on: true, radiusScale: 1, farGrass: true }, wind, 5);
+  const fz = { ...cc, farGrass: recH }; let n254 = 0, bad = 0, moved = 0;
+  for (let k = 0; k < 300; k++) { shadeTerrain(40 + k * 0.1, 0, 0.8, 1500 + k, 1035, 5, fz, a); if (a.level === 254) n254++; }
+  check('AA-22: frozen clock -> 0 animated far-grass cells (' + n254 + ')', n254 === 0);
+  const prevG = new Int16Array(300), prevF = new Int16Array(300); n254 = 0;
+  for (let f = 0; f <= 120; f++) {
+    const ts = 5 + f / 600; farGrassFill(recH, cfgU, ['grass', 'water'], { on: true, radiusScale: 1, farGrass: true }, wind, ts);
+    for (let k = 0; k < 300; k++) {
+      shadeTerrain(40 + k * 0.1, 0, 0.8, 1500 + k, 1035, ts, fz, a);
+      if (f > 0) { const ch = a.glyph !== prevG[k] || a.fg[1] !== prevF[k]; if (a.level === 254) n254++; if (ch) moved++; if (ch && a.level !== 254) bad++; }
+      prevG[k] = a.glyph; prevF[k] = a.fg[1];
+    }
+  }
+  check('AA-22: running clock - changes only on 254 frames (' + bad + ' bad, ' + moved + ' changes, ' + n254 + ' x 254 of 36000)', bad === 0 && moved > 0 && n254 < 36000);
 }
 // OB-208 (AA-08): soft patch edge. Sweep u across patches: glyph/level constant, plateaus (pure tiers) exist, edges give intermediate colours.
 {
