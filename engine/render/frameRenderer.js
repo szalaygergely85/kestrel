@@ -133,6 +133,7 @@ export function createFrameRenderer({ engine, rt, pipeline = null, assets, idleS
 
       fb.lights = lightSet;
       if (lightSet) {
+        if (cam) lightSet.selectPlaced(cam); // VISQA-32: nearest placed lights get the slots (no-op <= MAX_LIGHTS)
         syncEntityLights(lightSet, world, palette, attachedLightPos, lightSyncScratch);
         lightSet.timeBuf[0] = fb.timeSec;
         lightSet.updateBuffered(world);
