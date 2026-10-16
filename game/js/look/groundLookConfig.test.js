@@ -102,3 +102,15 @@ console.log('groundLookConfig tests: ' + n + ' ok');
   assert.ok(live && live.looks.length === 6, 'main.js-equivalent opts give a look config');
   console.log('groundLookFromParams live-opts ok');
 }
+// LOOK-LINEAR-01: `?looklin=1` uses the look hex as authored (byte / 255, like TLOOK); default keeps the old sRGB->linear decode.
+{
+  const { groundLookFromParams } = await import('./groundLookConfig.js');
+  const lvl = globalThis.ASSETS.levels.overworld_far, P = (q) => new URLSearchParams(q);
+  const off = groundLookFromParams(P(''), BL, lvl), on = groundLookFromParams(P('looklin=1'), BL, lvl);
+  const fo = off.looks[1], fn = on.looks[1]; // forest
+  assert.deepEqual(fn.bg[0].map(v => Math.round(v * 255)), [26, 46, 22], 'forest bg #1a2e16 as authored');
+  assert.deepEqual(fo.bg[0].map(v => Math.round(v * 255)), [3, 7, 2], 'default = old decode');
+  assert.equal(JSON.stringify(buildGroundLookConfig(BL, T)), JSON.stringify(off), 'off = default build, no leak from the on build');
+  assert.deepEqual(on.looks.map(l => l.glyphs), off.looks.map(l => l.glyphs), 'only colours change');
+  console.log('looklin ok');
+}

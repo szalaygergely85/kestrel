@@ -1,6 +1,6 @@
 // ENV-02a (arch 38.63 point 3): turns the designer's picked ground looks (design/look/biomeLook.js) into the engine-facing config:
 // plain numbers and id arrays only (linear RGB, glyph char codes, look ids, terrain type ids); NO hex strings, no names, no palette keys.
-// Pure and deterministic: buildGroundLookConfig(biomeLook, terrainTypes) -> { looks:[...], lookMap:[...] } or throws on a bad field.
+// Pure and deterministic: buildGroundLookConfig(biomeLook, terrainTypes, opts?) -> { looks:[...], lookMap:[...] } or throws on a bad field.
 // Look id 0 = today's ground (TLOOK path); looks get ids 1.. in biomeLook.order (<= 15, they share a nibble in the bake).
 // resolveLook(cfg, groundId, biomeId) -> look id (first matching rule, else 0). The World opt `groundLook` takes this object (ENV-02c).
 
@@ -15,16 +15,25 @@ function glyphCodes(where, s, minLen, maxLen) {
   return out;
 }
 function lin(c) { return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+// LOOK-LINEAR-01: the rest of the terrain pipeline (TLOOK = palette byte / 255, shade.wgsl `* 255`, no output encode) works on
+// display (sRGB) bytes, so this sRGB->linear decode is a leftover that draws every look colour too dark (forest bg #1a2e16 -> 3,7,2).
+// `authored` (= `?looklin=1`, owner decides the default) uses the hex as authored, byte / 255 like the other tables; off = old decode.
+let decode = lin;
 function rgb(where, hex) {
   if (typeof hex !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(hex)) fail(where, 'bad hex colour ' + JSON.stringify(hex));
-  return [1, 3, 5].map(i => lin(parseInt(hex.substr(i, 2), 16) / 255));
+  return [1, 3, 5].map(i => decode(parseInt(hex.substr(i, 2), 16) / 255));
 }
 function colours(where, list, n) {
   if (!Array.isArray(list) || list.length !== n) fail(where, 'needs exactly ' + n + ' colours');
   return list.map((h, i) => rgb(where + '[' + i + ']', h));
 }
+const asAuthored = (c) => c;
 
-export function buildGroundLookConfig(biomeLook, terrainTypes) {
+export function buildGroundLookConfig(biomeLook, terrainTypes, opts) {
+  decode = opts && opts.authored ? asAuthored : lin;
+  try { return build(biomeLook, terrainTypes); } finally { decode = lin; }
+}
+function build(biomeLook, terrainTypes) {
   if (!biomeLook || !Array.isArray(biomeLook.order) || !biomeLook.biomes) fail('data', 'biomeLook has no order/biomes');
   const order = biomeLook.order;
   if (order.length > MAX_LOOKS) fail('order', 'at most ' + MAX_LOOKS + ' looks, got ' + order.length);
@@ -90,5 +99,5 @@ export function resolveLook(cfg, groundId, biomeId) {
 export function groundLookFromParams(params, biomeLook, recipe) {
   if (params.get('look') === '0' || !biomeLook || !recipe || !recipe.terrain) return null;
   const T = {}; for (const [k, v] of Object.entries(recipe.terrain)) T[k] = v.id;
-  return buildGroundLookConfig(biomeLook, T);
+  return buildGroundLookConfig(biomeLook, T, { authored: params.get('looklin') === '1' }); // LOOK-LINEAR-01 (default off)
 }

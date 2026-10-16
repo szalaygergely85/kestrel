@@ -57,7 +57,9 @@ const hours = (process.env.HOURS || '9,13,22').split(',').map(Number);
 const only = process.env.ONLY ? process.env.ONLY.split(',') : null;
 const spots = SPOTS.filter((s) => !only || only.includes(s[0]));
 const settle = Number(process.env.SETTLE || 6000);
-const outDir = path.join(ROOT, 'docs/test-reports/visqa'); mkdirSync(outDir, { recursive: true });
+// LOOK-LINEAR-01: EXTRA='&looklin=1' (query added at every hour), OUTDIR=docs/test-reports/looklin, SUFFIX=-on (file <spot>-<hh><SUFFIX>.png; with SUFFIX no index.md is written)
+const EXTRA = process.env.EXTRA || '', SUFFIX = process.env.SUFFIX || '';
+const outDir = path.join(ROOT, process.env.OUTDIR || 'docs/test-reports/visqa'); mkdirSync(outDir, { recursive: true });
 const profile = mkdtempSync(path.join(os.tmpdir(), 'kestrel-visqa-'));
 const server = spawn('python', ['-c', 'import http.server,sys; http.server.ThreadingHTTPServer.request_queue_size=128; sys.argv=["tools/serve.py",sys.argv[1]]; import tools.serve; tools.serve.main()', String(port)], { cwd: ROOT, stdio: 'ignore', windowsHide: true });
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -119,7 +121,7 @@ try {
   await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
   if (set2) await runSet2();
   for (const h of (set2 ? [] : hours)) {
-    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?save=0&nopause=1&quality=medium&backend=webgpu&title=0&time=${h}${(process.env.QS || '').split('|')[hours.indexOf(h)] || ''}` });   // QS='&scatter=0|&aamesh=0' = extra query per HOURS entry (dev probe)
+    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?save=0&nopause=1&quality=medium&backend=webgpu&title=0&time=${h}${EXTRA}${(process.env.QS || '').split('|')[hours.indexOf(h)] || ''}` });   // QS='&scatter=0|&aamesh=0' = extra query per HOURS entry (dev probe)
     let ok = false;
     for (let i = 0; i < (Number(process.env.READY_TRIES) || 600) && !ok; i++) { await pause(300); try { ok = !!(await evaluate(cdp, '!!(window.__debug && window.__debug.playerHandle && window.__debug.world) && !/Checking your graphics/.test(document.body.innerText||"")')); } catch { /* navigating */ } }
     if (!ok) throw new Error('never ready ' + JSON.stringify(await evaluateAsync(cdp, '(async()=>location.href+" "+document.readyState+" "+document.title+" "+document.body.innerHTML.length+" "+JSON.stringify(window.__debug&&window.__debug.bootErrors))()').catch((e) => String(e))));
@@ -135,7 +137,7 @@ try {
       await pause(settle);
       if (process.env.EVAL) console.log('eval', name, h, JSON.stringify(await evaluate(cdp, process.env.EVAL.replace(/\$X/g, x).replace(/\$Y/g, y))));   // dev probe (env EVAL, $X/$Y = spot)
       const s = await cdp.send('Page.captureScreenshot', { format: 'png' });
-      const file = `${name}-${String(h).padStart(2, '0')}.png`;
+      const file = `${name}-${String(h).padStart(2, '0')}${SUFFIX}.png`;
       writeFileSync(path.join(outDir, file), Buffer.from(s.data, 'base64'));
       rows.push({ name, h, file, x, y, yaw, pitch, gz, note }); console.log('still', file, 'gz', gz);
     }
@@ -144,6 +146,7 @@ try {
   clearTimeout(killer); cdp?.close(); if (browser?.pid) killTree(browser.pid); if (server.pid) killTree(server.pid);
   await pause(300); try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch {}
 }
+if (SUFFIX) { console.log('wrote', rows.length, 'stills (SUFFIX set: no index.md)'); process.exit(0); }
 const idxPath = path.join(outDir, 'index.md');
 let oldIdx = ''; try { oldIdx = readFileSync(idxPath, 'utf8'); } catch {}
 const s2At = oldIdx.indexOf('\n## Set 2'), set2Old = s2At >= 0 ? oldIdx.slice(s2At) : '';
