@@ -224,6 +224,7 @@ import { SpikeRecorder } from './dev/spikeRecorder.js'; // PERF-05 `?spikes=1`
 import { createModelPreview, createCharCache } from '../../engine/index.js'; // EQ-03/04: Character tab model preview
 import { composeCharacter, meshCharacter, collapseRig, riggedModelDef, HUMANOID_SPLIT_LEG_RIG, createFootIk, voxelPointWorld } from '../../engine/index.js'; // OB-086: the kit character in the world
 import { drawArrowCount, drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
+import { drawPlayerLevel } from './quest/levelHud.js'; // PLAYER-LEVEL-01 / SPELL-R8: HUD "Lv N" (power bands, D-116)
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
 import { ensureInventory, validateItemDefs, migrateSword, addItem } from './quest/sim/inventory.js'; // US-091a1 (37.16.4)
 import { presentPickups } from './quest/pickupsView.js';
@@ -2800,6 +2801,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
           // Q9 item 2c: hidden on the title (wakeOut.inputLocked covers the wake/title timeline) and map cards too,
           // not just while dead - the end card is already covered by the `!ending` gate around this whole block.
           drawVitals(ui, engine.world, assets.uiStyle.vitals, fb.timeSec, !vitals.dead && !wakeOut.inputLocked && !isMapOpen(), vitals, fbOn);
+          drawPlayerLevel(ui, engine.world, assets.uiStyle.vitals, fb.timeSec, !vitals.dead && !wakeOut.inputLocked && !isMapOpen(), spellBookHolder, itemDefs); // PLAYER-LEVEL-01: recomputed each frame (equip / learn / scroll)
           if (swimWire) swimWire.draw(ui, assets.uiStyle.vitals, playerHandle.data, fb.timeSec); // SWIM-HOOKS-01
           drawHurtEdge(ui, vitals, fb.timeSec, assets.uiStyle.vitals, isReduceMotion());
           if (equipPlay) { // EQ-07/09: block spark + the arrow count next to the hearts while the bow set is out
