@@ -79,7 +79,7 @@ const makeSu = (hashCell, wind, FG) => ({
 const q = (x) => Math.floor(Math.min(255, Math.max(0, x)) + 0.5);
 function compileAll(src, su) {
   const h = mkHash(src);
-  const base = { ...shims, textureLoad, su, uTlook: uTl, uGain, imul, ...h, MAX_FEATURES_PER_TYPE, FOREST_FACE_NZ, exp2: (x) => Math.pow(2, x), ceil: Math.ceil, log2: Math.log2, pow: Math.pow };
+  const base = { ...shims, gFarSky: { x: 0, y: 0, z: 0 }, textureLoad, su, uTlook: uTl, uGain, imul, ...h, MAX_FEATURES_PER_TYPE, FOREST_FACE_NZ, exp2: (x) => Math.pow(2, x), ceil: Math.ceil, log2: Math.log2, pow: Math.pow };
   base.samplePowLUT = compileFn(SHADE_WGSL, 'samplePowLUT', base);
   base.imod = compileFn(SHADE_WGSL.replace('fn imod(a: i32, b: i32) -> i32 { return a - b * (a / b); }', 'fn imod(a: i32, b: i32) -> i32 { return a - b * Math.trunc(a / b); }'), 'imod', { ...base, Math });
   base.pickCodeFromPacked = compileFn(src, 'pickCodeFromPacked', base);

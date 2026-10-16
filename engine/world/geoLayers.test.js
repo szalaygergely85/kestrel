@@ -29,6 +29,9 @@ util.setGeoLayers([]);
 const bedLine = recipe.recipe.river.bedLine; delete recipe.recipe.river.bedLine;
 const bankRock = recipe.recipe.river.bankRock; delete recipe.recipe.river.bankRock; // OB-062b: gentle banks earth/grass + band 9.5 m (same treatment as bedLine)
 const riverHalfW = recipe.recipe.river.halfWidth; recipe.recipe.river.halfWidth = 10;
+// GATE-FIX-1016: content paints added after d3be9a62 (VISQA-08 fordHillGrass in chunk '8,8', inside the west window) are not part of the
+// pre-change recipe; hide them for the pinned compare only (the empty-layer-list == no-layers claim is unchanged), restore below.
+const ovr88 = recipe.overrides && recipe.overrides['8,8']; if (ovr88) { delete recipe.overrides['8,8']; util.reindexOverrides(); }
 const h0 = { e: hashOf(east()), w: hashOf(west()), f: hashOf(far()) };
 // pre-change recipe = the file at git commit d3be9a62 (MAP-01a parent); GEO_BASE overrides with a file path
 let BASE = process.env.GEO_BASE, TMP_BASE = null;
@@ -42,7 +45,7 @@ if (BASE && existsSync(BASE)) {
   ok('empty list: near west == pre-change', hashOf(b.bake(6 * 128, 7 * 128, 2, 3 * 64, 3 * 64)) === h0.w);
   ok('empty list: far bake == pre-change', hashOf(b.generate()) === h0.f);
 } else console.log('SKIP baseline compare (set GEO_BASE)');
-recipe.recipe.river.bedLine = bedLine; if (bankRock) recipe.recipe.river.bankRock = bankRock; recipe.recipe.river.halfWidth = riverHalfW;
+recipe.recipe.river.bedLine = bedLine; if (bankRock) recipe.recipe.river.bankRock = bankRock; recipe.recipe.river.halfWidth = riverHalfW; if (ovr88) { recipe.overrides['8,8'] = ovr88; util.reindexOverrides(); }
 h0.e = hashOf(east()); h0.w = hashOf(west()); h0.f = hashOf(far());
 
 // 2. four dummy layers outside keep: keep area unchanged, outside changed
