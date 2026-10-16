@@ -12,6 +12,7 @@ import {
   listOutlinerItems, frameFor, itemToWorld, worldToItem, mintId, fileKey,
 } from './doc.js';
 import { createOverlayTarget } from './overlayTarget.js';
+import { registerKitChar } from './charKit.js'; // OB-218
 import { makePickGuard } from './pickGuard.js';
 import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose, applyViewPreset, toggleOrtho, adjustOrthoHalfH, lookAlongAxis } from './camera.js';
 import { createAxisGizmo } from './axisGizmo.js';
@@ -284,6 +285,7 @@ try {
 }
 window.__editorBoot?.stage('asset/world init', 'Preparing assets and world');
 const assets = bundle ? AssetRegistry.fromJSON(bundle, window.ASSETS) : AssetRegistry.fromGlobals(window.ASSETS);
+await registerKitChar(assets); // OB-218: char.kit (Hesk, Dorrin) before the VoxelPool binds
 
 // `?world=<id>` (US-063): already just a normal `assets.world(id)` lookup
 // below (`assets.world` throws with a clear "unknown world" message +known
@@ -3047,6 +3049,9 @@ window.__editor = {
   icons: { stats: iconStats, queue: iconQueue, cache: iconCache, refresh: refreshIcons,
     get renderer() { return iconRenderer; } },
   doImportVox,
+  // OB-218: model keys of the voxel instances queued for the last frame (verify-editor-characters.mjs)
+  drawnModelKeys: () => { const p = frame.voxelPool; return p.raw.slice(0, p._rawCount).map((r) => r.modelKey); },
+  setCamPose: (o) => { cam = createCameraPose({ ...cam, ...o }); frame.markDirty(); },
 };
 
 engine.run({ update, render });
