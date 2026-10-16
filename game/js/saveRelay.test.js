@@ -53,20 +53,22 @@ assert.deepEqual(toasts, [], 'q01 is silent (the giver quest owns the toast)');
 assert.equal(A.quest.objectiveText(), OBJ.leave);
 A.quest.feed({ type: 'area:entered', id: 'towerDoor' });
 assert.deepEqual(toasts, []);
-assert.equal(A.quest.objectiveText(), 'Tell Burl you are out'); // QUEST-HANDIN-ALL: the blade is handed in at Burl before the boars
+assert.equal(A.quest.objectiveText(), '', 'OB-199: tower.blade not accepted yet -> hand-in step gated (no HUD line)');
+assert.equal(A.quest.book.accept('tower.blade'), true); // the player accepts the note at the sword (allQuests.e2e: note panel -> book.accept)
+assert.equal(A.quest.objectiveText(), 'Talk to the bear'); // accepted + ready: the tracked giver quest's return line (m1's 'Tell Burl you are out' is the same hand-in)
 A.quest.questFlag('quest.tower.blade.done', true);
-assert.equal(A.quest.objectiveText(), OBJ.beasts);
+assert.equal(A.quest.objectiveText(), 'Talk to the bear');
 events.emit('beast:died', { id: 'boar1' });
 events.emit('beast:died', { id: 'boar1' }); // duplicate counts once
 events.emit('chest:opened', { id: 'chestA' });
 events.emit('inventory:added', { id: 'boar_meat', n: 1 });
-assert.equal(A.quest.objectiveText(), OBJ.beasts);
+assert.equal(A.quest.objectiveText(), 'Talk to the bear');
 events.emit('beast:died', { id: 'boar2' });
-assert.equal(A.quest.objectiveText(), OBJ.beasts, 'QG-03: m1 waits for Burl until the hand-in');
+assert.equal(A.quest.objectiveText(), 'Talk to the bear', 'QG-03: m1 waits for Burl until the hand-in');
 for (const id of ['boar3', 'boar4', 'boar5']) events.emit('beast:died', { id });
-assert.equal(A.quest.objectiveText(), OBJ.beasts, 'boars killed before accept: m1 still says find the bear');
+assert.equal(A.quest.objectiveText(), 'Talk to the bear', 'boars killed before accept: m1 still says find the bear');
 assert.equal(A.quest.book.statusOf('burl.boars'), 0, 'unavailable until the blade quest is turned in at Burl');
-assert.equal(A.quest.book.accept('tower.blade'), true); assert.equal(A.quest.book.statusOf('tower.blade'), 3, 'blade facts came first -> ready'); assert.ok(A.quest.book.handIn('tower.blade'));
+assert.equal(A.quest.book.statusOf('tower.blade'), 3, 'blade facts came first -> ready'); assert.ok(A.quest.book.handIn('tower.blade'));
 assert.equal(A.quest.book.statusOf('burl.boars'), 1, 'available');
 assert.equal(A.quest.book.accept('burl.boars'), true); assert.equal(A.quest.book.statusOf('burl.boars'), 2, 'OB-115: boars killed before accept do not count -> active');
 for (const id of ['boarN1', 'boarN2', 'boarW1', 'boarW2', 'boarR1']) events.emit('beast:died', { id }); // OB-115: any boar after accept counts
@@ -79,6 +81,7 @@ assert.equal(A.quest.objectiveText(), OBJ.follow);
 assert.equal(A.quest.questFlag('quest.burl.follow.done'), true); assert.equal(world.state['quest.burl.follow.done'], true, 'questFlag writes world.state'); // OB-178/D-105
 assert.equal(A.quest.objectiveText(), OBJ.waystone);
 A.quest.questFlag('waystone.waystone.woken'); A.quest.questFlag('quest.burl.stone.done', true);
+A.quest.questFlag('burl.departing', true); // Burl's dialogue hands over the road step (m1 road mark.taken, OB-199 gate)
 assert.equal(A.quest.objectiveText(), OBJ.road);
 A.quest.feed({ type: 'area:entered', id: 'roadWest' }); A.quest.feed({ type: 'area:entered', id: 'bendRelay' });
 assert.equal(A.quest.objectiveText(), OBJ.relay1);
