@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "id": "teaser-crypt-drone",
+  "fps": 30,
+  "note": "TEASER (owner 2026-10-16, TikTok 9:16, capture --portrait --hour 22): drone shot - starts ~14 m over the SW corner of the OB-191 cemetery (ground ~-51) with the night sky in frame, glides NE and descends over the graves toward the crypt facade + round door (cem32/cem36, ~1651,1373), ending ~18 m from the door at ~4 m height, left of the dead tree cem39.",
+  "keys": [
+    {
+      "t": 0,
+      "x": 1614,
+      "y": 1404,
+      "z": -37,
+      "yawDeg": 43,
+      "pitchDeg": -17,
+      "ease": "linear"
+    },
+    {
+      "t": 3,
+      "x": 1623,
+      "y": 1399,
+      "z": -40.5,
+      "yawDeg": 44,
+      "pitchDeg": -15,
+      "ease": "linear"
+    },
+    {
+      "t": 6,
+      "x": 1632,
+      "y": 1391,
+      "z": -44.5,
+      "yawDeg": 45,
+      "pitchDeg": -12,
+      "ease": "linear"
+    },
+    {
+      "t": 8,
+      "x": 1637,
+      "y": 1386,
+      "z": -46.8,
+      "yawDeg": 46,
+      "pitchDeg": -9,
+      "ease": "linear"
+    }
+  ]
+}

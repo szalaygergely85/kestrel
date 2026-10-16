@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "id": "teaser-strand-dawn",
+  "fps": 30,
+  "note": "TEASER (owner 2026-10-16, TikTok 9:16, capture --hour 6.5): slow low glide (~3.5 m/s) 2 m over the Long Strand shallows (waterline y ~1778, sea surface -96), heading east along the beach toward the strand-cave rock pile (strandCaveRock*, ~1618,1776) with the sunrise behind it. Beach strip on the left, surf + sea on the right.",
+  "keys": [
+    { "t": 0, "x": 1560, "y": 1784.5, "z": -94.0, "yawDeg": 82, "pitchDeg": -6,  "ease": "linear" },
+    { "t": 4, "x": 1574, "y": 1784,   "z": -94.1, "yawDeg": 80, "pitchDeg": -5,  "ease": "linear" },
+    { "t": 8, "x": 1588, "y": 1783.5, "z": -94.2, "yawDeg": 77, "pitchDeg": -4,  "ease": "linear" }
+  ]
+}
