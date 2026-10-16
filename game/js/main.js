@@ -1540,6 +1540,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
     // OB-073-D2f: hand the GPU carpet pass the class map + near heights on every world load / band swap (version bump re-uploads)
     let carpetVer = 0;
     const pushCarpet = (wIn) => { const w = wIn || engine.world, nb = w && w.terrain && w.terrain.near; if (!wgPipeline || !wgPipeline.setCarpet) return; if (!w || !w.carpet || !nb) { wgPipeline.setCarpet(null, null, 0); return; } wgPipeline.setCarpet(w.carpet, { data: nb.hDraw, w: nb.w, h: nb.h, x0: nb.x0, y0: nb.y0, cell: nb.cell }, ++carpetVer); };
+    if (wgPipeline) wgPipeline._carpetHeal = pushCarpet; // OB-217: frame-loop self-heal when a world:loaded/scatter push left the carpet pass empty
     // ENV-01-WIRE: configure the decor pass once per world, then hand it the band's baked masks + near heights (re-uploaded only when they change)
     let decorWorld = null, decorLast = null, decorVer = 0, decorWarned = false; // decorVer: numeric version for setMasks + setNear, bumped per event (Terrain edits write hDraw in place, like the carpet)
     const pushDecor = (wIn) => {
@@ -2635,6 +2636,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       if (cinematicHours) applySunPair(engine.world, lightSet, cam.hour, cam.hour, worldSunPath, sunEnabled); // TEASER-QA-07 (moon, as above)
       fb.timeSec = simTime;
       syncFb(); // FB-01: same-frame appearance after unlock
+      if (wgPipeline && wgPipeline._carpetHeal && engine.world && engine.world.carpet && engine.world.terrain && engine.world.terrain.near && (!wgPipeline._carpetPass || !wgPipeline._carpetPass.active)) wgPipeline._carpetHeal(); // OB-217
       if (wgPipeline && wgPipeline.setCarpetFrame && engine.world && engine.world.carpet) { const wp = engine.world.wind && engine.world.wind.params; wgPipeline.setCarpetFrame(fb.timeSec, wp && wp.speed > 0 ? wp : null); } // OB-073-D2f: blade sway time + wind
       // Arch review 1 (US-017): `lightSet` is rebuilt by the 'world:loaded'
       // handler on every restart - rebind it here, or `fb.lights` would keep
