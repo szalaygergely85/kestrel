@@ -120,6 +120,7 @@ export function createStableState() {
     aaMesh: true, // OB-198 (2): KIND_MESH history survives a planeId change when the material matches; ?aamesh=0
     aaVm: true, // AA-07a: kind-8 models take history (view model: same cell, key objectId+mat; world props: material key + reprojection); ?aavm=0
     aaAnchor: true, // AA-09: a both-255 hold of a static surface re-anchors (writes the CURRENT u/v) so cumulative drift cannot re-roll it; ?aaanchor=0
+    aaVox: true, // AA-21 (OB-208): a world voxel prop (kind 8, same planeId + material) re-anchors its both-255 hold like other static surfaces; ?aavox=0
     aaEdge: true, // AA-18 (OB-208): edge cells (final != shade) take history like any cell (glyph hold) instead of passing through; ?aaedge=0
     aaJoint: true, // AA-07b: a line<->ramp mismatch holds the history glyph while the joint coverage is 1/4..3/4; ?aajoint=0
     footK: STABLE_FOOT_K, // tests may set 0 to isolate the texel limit
@@ -272,7 +273,9 @@ export function stabilize(inp, hist, out, st) {
         if (!snapped) {
           out.glyph[i] = hist.glyph[h]; out.held255[i] = 1;
           // AA-09: static surface (same planeId, mesh also same material, not a model) re-anchors: keep the CURRENT u/v already in out; else the old history anchor
-          const reAnchor = st.aaAnchor && vmTag === 0 && kind !== KIND_MODEL && hist.planeId[h] === inp.planeId[i] && (kind !== KIND_MESH || matSame);
+          // AA-21: with aaVox a world voxel prop (kind 8, not the view model) re-anchors too when plane + material match
+          const reAnchor = st.aaAnchor && vmTag === 0 && hist.planeId[h] === inp.planeId[i]
+            && ((kind !== KIND_MODEL && (kind !== KIND_MESH || matSame)) || (kind === KIND_MODEL && st.aaVox && matSame));
           if (!reAnchor) { out.u[i] = hist.u[h]; out.v[i] = hist.v[h]; }
         }
         continue;

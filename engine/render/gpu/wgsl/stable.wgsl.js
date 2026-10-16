@@ -174,7 +174,9 @@ fn stableCell(cell: vec2i) -> SCell {
     if (!snapped) {
       o.glyph = byteOf(hf.w);
       // AA-09 (aaFlags bit 4): static surface (same planeId, mesh also same material, not a model) re-anchors = keeps the current u/v; else the history anchor
-      let reAnchor = (u.aaFlags & 16) != 0 && vmTag == 0u && kind != ${KIND_MODEL}u && hh.x == gi.x && (kind != ${KIND_MESH}u || matSame);
+      // AA-21 (aaFlags 64): a world voxel prop (kind 8, not the view model) re-anchors too when plane + material match
+      let reAnchor = (u.aaFlags & 16) != 0 && vmTag == 0u && hh.x == gi.x
+        && ((kind != ${KIND_MODEL}u && (kind != ${KIND_MESH}u || matSame)) || (kind == ${KIND_MODEL}u && (u.aaFlags & 64) != 0 && matSame));
       if (!reAnchor) { o.ub = hh.y; o.vb = hh.z; }
     }
     return o;
