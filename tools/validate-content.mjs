@@ -1298,6 +1298,7 @@ async function main() {
   questFiles.quests.push(...packQuests.quests); questFiles.errors.push(...packQuests.errors);
   const { errors: allErrors, warnings, infos, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir, maskFilesDir, dialogueFilesDir, sites: packQuests.sites, quests: questFiles.quests, spellLint: true, areas: questFiles.areas, areaPath: questFiles.areaPath, ...recipeFile, ...lootFile });
   allErrors.push(...questFiles.errors);
+  for (const h of await (await import('./quest-graph-lint.mjs')).lintRealContent({ quests: questFiles.quests, itemDefs: ASSETS?.items?.defs || {} })) allErrors.push(`${h.rule} ${h.quest}: ${h.msg}`); // QL-MAIN-04
   try { // GI-PROBE-02b: baked GI probe files are optional; missing / stale = warning only (GI stays off in that zone)
     const gi = await import('./bake-gi.mjs'), def = JSON.parse(readFileSync(new URL('../content/worlds/world_m1.world.json', import.meta.url), 'utf8'));
     for (const r of gi.checkGIDir(fileURLToPath(new URL('../content/gi', import.meta.url)), gi.zonesOf(def), gi.inputHash())) if (r.status !== 'ok') warnings.push(`content/gi/${r.id}.gi.bin: ${r.status} GI file (run node tools/bake-gi.mjs; GI stays off in this zone)`);
