@@ -1,5 +1,5 @@
 // INTRO-PLAYER-01 (D-111/D-112): the opening slideshow shown after "New game" (never on Continue).
-// Nine ASCII stills from content/intro/*.ascii.json (tools/img2ascii.py), ~4 s each with a fade in/out, caption under each.
+// Nine ASCII stills from content/intro/*.ascii.json (tools/img2ascii.py), read-time hold (holdSeconds) with 0.8 s fades through black, caption under each.
 // Three parts: a pure sequence state machine (createIntroSequence, Node-tested), a slide decoder + loader that skips
 // missing files silently, and a drawer onto the UI cell layer (ui.setCellRGB). titleMenuHost keeps the menu "active"
 // (sim frozen) while the player runs and calls onNewGame when it finishes.
@@ -24,8 +24,9 @@ export const INTRO_NEXT_KEYS = ['Space', 'Enter', 'ArrowRight', 'ArrowDown', 'Ke
  * Pure slide sequence. update(dt) advances time; next()/skip() are the player's inputs.
  * @param {{count:number, slideSec?:number, fadeSec?:number, onSlide?:(i:number)=>void, onDone?:()=>void}} o
  */
-export function createIntroSequence({ count, slideSec = 4, fadeSec = 0.6, onSlide = null, onDone = null }) {
+export function createIntroSequence({ count, slideSec = 4, fadeSec = 0.8, onSlide = null, onDone = null }) {
   const s = { index: 0, t: 0, done: count <= 0 };
+  const dur = (i) => (typeof slideSec === 'function' ? slideSec(i) : slideSec); // total slide time incl. both fades
   const fire = (f, ...a) => { try { if (f) f(...a); } catch { /* hooks must never break the intro */ } };
   if (s.done) fire(onDone); else fire(onSlide, 0); // music hook: slide 0 starts at construction
   const finish = () => { if (s.done) return; s.done = true; fire(onDone); };
@@ -36,21 +37,28 @@ export function createIntroSequence({ count, slideSec = 4, fadeSec = 0.6, onSlid
     /** 0..1 brightness: fade in at the start, fade out at the end of a slide. */
     get alpha() {
       if (s.done) return 0;
-      const a = Math.min(1, s.t / fadeSec, (slideSec - s.t) / fadeSec);
+      const a = Math.min(1, s.t / fadeSec, (dur(s.index) - s.t) / fadeSec);
       return a < 0 ? 0 : a;
     },
     update(dt) {
       if (s.done) return;
       s.t += dt;
-      if (s.t >= slideSec) seq.next();
+      if (s.t >= dur(s.index)) advance();
     },
+    /** Player input: mid-fade-in finishes the fade first, otherwise go to the next slide. */
     next() {
       if (s.done) return;
-      s.index++; s.t = 0;
-      if (s.index >= count) { s.index = count - 1; finish(); } else fire(onSlide, s.index);
+      if (s.t < fadeSec) { s.t = fadeSec; return; }
+      advance();
     },
     skip() { finish(); },
   };
+  function advance() {
+    {
+      s.index++; s.t = 0;
+      if (s.index >= count) { s.index = count - 1; finish(); } else fire(onSlide, s.index);
+    }
+  }
   return seq;
 }
 
@@ -85,12 +93,22 @@ export async function loadIntroSlides(getJson, base = '../content/intro/') {
   return out;
 }
 
+/** Owner OB-216: reading time from the caption length. Total slide time = hold + fade in + fade out. */
+export function holdSeconds(lines) {
+  const chars = (lines || []).reduce((n, l) => n + l.length, 0);
+  return Math.max(7, 2.5 + 0.07 * chars);
+}
+
 const CAPTION_RGB = [232, 220, 190];
+const HINT_RGB = [110, 104, 90];
+const HINT = 'any key: next';
 
 /** Draw one slide (fit + centred, brightness `alpha`) and its caption onto the UI cell layer. */
 export function drawIntroFrame(ui, slide, lines, alpha) {
   const W = ui.cols, H = ui.rows;
   ui.clear('#000000');
+  // OB-216: ui.clear() is TRANSPARENT, so the title-menu world showed through between slides. Paint every cell opaque black.
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) ui.setCellRGB(x, y, 0, 0, 0, 0, 0, 0, 0);
   if (alpha <= 0) return;
   const k = Math.max(slide.cols / W, slide.rows / H);
   const dw = Math.min(W, Math.floor(slide.cols / k)), dh = Math.min(H, Math.floor(slide.rows / k));
@@ -114,15 +132,21 @@ export function drawIntroFrame(ui, slide, lines, alpha) {
       if (g > 0) ui.setCellRGB(x0 + c, top + li, g, CAPTION_RGB[0] * alpha, CAPTION_RGB[1] * alpha, CAPTION_RGB[2] * alpha, 0, 0, 0);
     }
   });
+  const hx = (W - HINT.length) >> 1; // small dim hint on the last row (no Esc wording; Esc still skips silently)
+  for (let c = 0; c < HINT.length; c++) {
+    const g = HINT.charCodeAt(c) - 32;
+    if (g > 0) ui.setCellRGB(hx + c, H - 1, g, HINT_RGB[0] * alpha, HINT_RGB[1] * alpha, HINT_RGB[2] * alpha, 0, 0, 0);
+  }
 }
 
 /**
  * Host-facing player. `entries` = loadIntroSlides() result. Returns null when there is nothing to play.
- * @param {{entries:Array<{slide:object,lines:string[]}>, onSlide?:(i:number)=>void, onDone:()=>void, slideSec?:number, fadeSec?:number}} o
+ * @param {{entries:Array<{slide:object,lines:string[]}>, onSlide?:(i:number)=>void, onDone:()=>void, slideSec?:number|((i:number)=>number), fadeSec?:number}} o
  */
-export function createIntroPlayer({ entries, onSlide = null, onDone, slideSec = 4, fadeSec = 0.6 }) {
+export function createIntroPlayer({ entries, onSlide = null, onDone, slideSec = null, fadeSec = 0.8 }) {
   if (!entries || !entries.length) return null;
-  const seq = createIntroSequence({ count: entries.length, slideSec, fadeSec, onSlide, onDone });
+  const perSlide = slideSec != null ? slideSec : (i) => holdSeconds(entries[i].lines) + 2 * fadeSec;
+  const seq = createIntroSequence({ count: entries.length, slideSec: perSlide, fadeSec, onSlide, onDone });
   return {
     get done() { return seq.done; },
     seq,
@@ -130,7 +154,7 @@ export function createIntroPlayer({ entries, onSlide = null, onDone, slideSec = 
     step(pressed, dt = 1 / 60) {
       if (seq.done) return;
       if (pressed('Escape')) { seq.skip(); return; }
-      for (const k of INTRO_NEXT_KEYS) if (pressed(k)) { seq.next(); break; }
+      if (typeof pressed.any === 'function' ? pressed.any() : INTRO_NEXT_KEYS.some((k) => pressed(k))) seq.next(); // any key (main passes pressed.any)
       seq.update(dt);
     },
     click() { seq.next(); },
