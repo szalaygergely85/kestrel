@@ -1,49 +1,49 @@
 {
-  "sha": "3e972a4d",
+  "sha": "ba13e1ab",
   "date": "2026-10-16",
   "repeat": 1,
   "poses": {
     "wallNear": {
-      "totalPct": 5.734930949235236,
-      "glyphOnlyPct": 1.7578071044037575,
-      "glyphOnlyRawPct": 4.978986548914616,
-      "shiftPct": 3.2211794445108572
+      "totalPct": 5.7359361475415085,
+      "glyphOnlyPct": 1.7590487022967243,
+      "glyphOnlyRawPct": 4.9791029162227325,
+      "shiftPct": 3.2200542139260078
     },
     "wallFar": {
-      "totalPct": 5.969774130469373,
-      "glyphOnlyPct": 1.5106268613606002,
-      "glyphOnlyRawPct": 4.599653172004135,
-      "shiftPct": 3.0890263106435336
+      "totalPct": 5.929714597819091,
+      "glyphOnlyPct": 1.4726643478801542,
+      "glyphOnlyRawPct": 4.56160810885548,
+      "shiftPct": 3.088943760975325
     },
     "bushes": {
-      "totalPct": 4.664845273638574,
-      "glyphOnlyPct": 1.421265219218392,
-      "glyphOnlyRawPct": 1.9482209222395968,
-      "shiftPct": 0.5269557030212048
+      "totalPct": 4.620495351915874,
+      "glyphOnlyPct": 1.3586423599709652,
+      "glyphOnlyRawPct": 1.8851578130097342,
+      "shiftPct": 0.5265154530387692
     },
     "crown": {
-      "totalPct": 4.523526253604749,
-      "glyphOnlyPct": 1.6898009848497273,
-      "glyphOnlyRawPct": 3.1977797203490206,
-      "shiftPct": 1.5079787354992935
+      "totalPct": 4.504680748236494,
+      "glyphOnlyPct": 1.6745009495878935,
+      "glyphOnlyRawPct": 3.182436972247353,
+      "shiftPct": 1.5079360226594603
     },
     "grassFar": {
-      "totalPct": 4.102577427827394,
-      "glyphOnlyPct": 1.3736274061605647,
-      "glyphOnlyRawPct": 3.425662041795916,
-      "shiftPct": 2.0520346356353527
+      "totalPct": 4.074275013194408,
+      "glyphOnlyPct": 1.345930579041842,
+      "glyphOnlyRawPct": 3.3981272139717165,
+      "shiftPct": 2.052196634929875
     },
     "roadWalk": {
-      "totalPct": 4.716897954137626,
-      "glyphOnlyPct": 1.7104276017500293,
-      "glyphOnlyRawPct": 1.8918897091954545,
-      "shiftPct": 0.18146210744542526
+      "totalPct": 3.6507397174974345,
+      "glyphOnlyPct": 0.6677073699879313,
+      "glyphOnlyRawPct": 0.848109760413574,
+      "shiftPct": 0.1804023904256426
     }
   },
   "avg": {
-    "totalPct": 4.9991308069550655,
-    "glyphOnlyPct": 1.5506255151986084,
-    "glyphOnlyRawPct": 3.6300604810606565,
-    "shiftPct": 2.079434965862048
+    "totalPct": 4.973020371741475,
+    "glyphOnlyPct": 1.522157387755516,
+    "glyphOnlyRawPct": 3.6012866048614027,
+    "shiftPct": 2.0791292171058875
   }
 }
