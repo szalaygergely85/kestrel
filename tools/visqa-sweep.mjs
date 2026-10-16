@@ -6,6 +6,7 @@
 import { spawn } from 'node:child_process';
 import { writeFileSync, readFileSync, readdirSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
+import { pickCliffPose, pickEntity, closeupPose } from './visqa-pick.mjs';
 import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, connectCdp, evaluate, evaluateAsync, killTree } from './capture-browser.mjs';
 
 // [name, x, y, yawDeg (0 = north/-y, 90 = east), pitchDeg, note]
@@ -20,7 +21,7 @@ export const SPOTS = [
   ['braid-falls', 1238, 632, 0, 12, 'braidFalls from below'],
   ['cliff', 1552, 468, 0, 12, 'northwood hillside cliff face (~9 m rise at y 454-458), looking up from below (VISQA-09; the old 1250,596 spot stood in the outlet river)'],
   ['lake-shore', 1215, 547, 0, 0, 'Glasswater south shore'],
-  ['burl-home', 1404, 1019, 0, 4, "Burl's new home (1404,1010)"],
+  ['burl-home', 1407.5, 1014.5, 322, 4, "VISQA-09: Burl at his post-departure home waypoint walks.home (1404,1010), seen from 5.7 m SE. NOTE: no home BUILDING exists in tracked content (the waypoint is just a clearing; content/local/placements.json has no structures), so this frames Burl only"],
   ['smoke-fire', 958, 1011, 0, 6, 'VISQA-15: smokeFire1 brazier at the base of the goblin smoke plume (958,1004)'],
 ];
 // VISQA-10 set 2. Interiors: [name, x, y, zFloor (null = ground snap), yawDeg, pitchDeg, note] (world coords from the level origins in world_m1)
@@ -34,10 +35,10 @@ export const INTERIORS = [
 // Close-ups: [name, finder js (an entity with .transform), note]; camera 3.5 m in front of the entity, looking back at it
 export const CLOSEUPS = [
   ['burl', "__debug.world.entity('bear')", 'Burl (npc bear)', 'inplace'],
-  ['rook', "__debug.world.entity('rook')", 'Rook (perched crow, on the Ford ruin crate; seen from the side, his front faces the ruin wall)', 'inplace'],
+  ['rook', "((e)=>e&&e.id==='rook'?e:null)(__debug.world.entity('rook'))", 'Rook (perched crow, on the Ford ruin crate; seen from the side, his front faces the ruin wall)', 'inplace'],
   ['warden', "__debug.world.entity('warden_northwood')", 'region warden (char.kit)'],
   ['boar', "__debug.beasts.entities.find((e)=>e&&/boar/i.test(e.components&&e.components.voxel&&e.components.voxel.model||''))", 'first boar'],
-  ['wolf', "__debug.beasts.entities.find((e)=>e&&e.components&&((e.components.brain&&e.components.brain.species==='wolf')||/wolf/i.test((e.components.voxel&&e.components.voxel.model)||'')))", 'first wolf (brain.species wolf / model wolf); wolves live ~600 m west, unbound far from the player, so the camera goes to the wolf', 'inplace'],
+  ['wolf', `((r)=>r&&r.entity)((${pickEntity})(__debug.beasts.entities,{kind:'wolf'}))`, 'first wolf (brain.species wolf / model wolf); wolves live ~600 m west, unbound far from the player, so the camera goes to the wolf', 'inplace'],
   ['skeleton', "(__debug.beasts.entities.find((e)=>e&&/skel/i.test(e.components&&e.components.voxel&&e.components.voxel.model||'')&&e.transform.z>-5)||__debug.beasts.entities.find((e)=>e&&/skel/i.test(e.components&&e.components.voxel&&e.components.voxel.model||'')))", 'first surface skeleton (crypt ones do not render when pinned to the meadow)'],
 ];
 // VISQA-19: front of a creature = (sin yaw, -cos yaw) of its own yaw (0 = north); per-subject sign override if a model faces the other way
@@ -84,12 +85,17 @@ async function runSet2() {
   const MX = 1440, MY = 1040, D = 3.5;
   for (const [name, finder, note, mode] of CLOSEUPS) {
     const found = await evaluate(cdp, `(()=>{const e=${finder};return !!(e&&e.transform)})()`).catch(() => false);
-    if (!found) { rows.push({ file: `s2-${name}.png`, pose: 'not found', note }); console.log('closeup', name, 'NOT FOUND'); continue; }
+    if (!found) { rows.push({ file: `s2-${name}.png`, pose: 'not found', note }); console.log('closeup', name, 'NOT FOUND', name === 'wolf' ? '- no wolf in range' : ''); continue; }
     if (mode === 'inplace') { // VISQA-19/24: npcs (Burl walks, Rook sits underground) stay where the sim keeps them; the camera goes 3.5 m in front of them, looking back
-      const cam = async () => { const q = await evaluate(cdp, `(()=>{const E0=${finder},B0=__debug.beasts,i0=B0.entities.indexOf(E0);if(i0>=0&&${name === 'wolf'}){const t=E0.transform,fx=B0.fx[i0],fy=B0.fy[i0],n=Math.hypot(fx,fy)||1,px=fx/n,py=fy/n;return [t.x+px*${D},t.y+py*${D},t.z,(Math.atan2(-px,py)*180/Math.PI+360)%360]}const t=${finder}.transform,side=${name === 'rook' ? 1 : 0},a=((t.yawDeg||0)+(side?90:0))*Math.PI/180;return [t.x+Math.sin(a)*${D},t.y-Math.cos(a)*${D},t.z,((t.yawDeg||0)+(side?90:0)+180)%360]})()`); await place(q[0], q[1], name === 'rook' ? q[2] - 0.9 : null, q[3], name === 'wolf' ? -12 : 0); return q; };
-      await cam(); await pause(2800); let q = await cam(); for (let k = 0; k < 3; k++) { await pause(250); q = await cam(); } await pause(120); q = await cam(); // wolves keep walking: re-aim right before the still
+      // VISQA-19: pure closeupPose (tools/visqa-pick.mjs) = D m in FRONT of the entity (beast: sim facing fx/fy, npc: its yaw); the pose is re-asserted
+      // until the player really stands there (the unstuck / ground logic and wolves walking away undo it), Rook's floor is 0.9 m under his perch.
+      const cam = async () => { const q = await evaluate(cdp, `(()=>{const E0=${finder},B0=__debug.beasts,i0=B0.entities.indexOf(E0);const fr=i0>=0?{fx:B0.fx[i0],fy:B0.fy[i0]}:null;return (${closeupPose})(E0.transform,fr,${D},${name === 'rook' ? 0.9 : 0},${name === 'rook' ? 'false' : 'true'})})()`); await place(q.x, q.y, q.z, q.yaw, name === 'wolf' ? -12 : 0); return q; };
+      const held = async (q) => { const p = await evaluate(cdp, '(()=>{const t=__debug.playerHandle.data.transform;return [t.x,t.y]})()'); return Math.hypot(p[0] - q.x, p[1] - q.y) < 0.5; };
+      await cam(); await pause(2800); let q = await cam();
+      for (let k = 0; k < 6; k++) { await pause(250); q = await cam(); if (k >= 2 && await held(q)) break; }
+      await pause(120); q = await cam(); if (!(await held(q))) console.log('closeup', name, 'WARNING: player pose not held');
       const mi = await evaluate(cdp, `(()=>{const e=${finder};const v=e.components&&e.components.voxel;return 'model '+(v&&v.model)+' yaw '+((e.transform.yawDeg)||0).toFixed(0)+' at '+e.transform.x.toFixed(1)+','+e.transform.y.toFixed(1)+' z '+(+e.transform.z).toFixed(1)})()`);
-      await shot(name, 'in place, camera ' + q.map((v) => Math.round(v)).join(',') + ' ' + mi, note); continue;
+      await shot(name, 'in place, camera ' + [q.x, q.y, q.z, q.yaw].map((v) => Math.round(v)).join(',') + ' ' + mi, note); continue;
     }
     await place(MX, MY, null, 270, -6); await pause(600); // camera looks west
     const S = FRONT[name] || 1, yawSubject = S > 0 ? 90 : 270; // subject at the west side; its front must point east (toward the camera)
@@ -127,9 +133,9 @@ try {
     if (!ok) throw new Error('never ready ' + JSON.stringify(await evaluateAsync(cdp, '(async()=>location.href+" "+document.readyState+" "+document.title+" "+document.body.innerHTML.length+" "+JSON.stringify(window.__debug&&window.__debug.bootErrors))()').catch((e) => String(e))));
     await pause(4000);
     for (let [name, x, y, yaw, pitch, note] of spots) {
-      if (name === 'cliff') { // VISQA-21: data-driven pose - walk the terrain north along x, find the foot of the first >=4 m rise, stand 14 m south of it, aim at mid-height of the face
-        const pose = await evaluate(cdp, `(()=>{const T=__debug.world.terrain,g=(a,b)=>(T.groundAt||T.heightAt).call(T,a,b);let foot=null,top=null;for(let yy=${y + 30};yy>${y - 60};yy-=1){const h0=g(${x},yy),h1=g(${x},yy-4);if(h0==null||h1==null)continue;if(foot==null&&h1-h0>2.2)foot=yy;if(foot!=null&&h1-h0<0.6){top=yy-4;break}}if(foot==null)return null;const cy=foot+14,hc=g(${x},cy)+1.6,hm=(g(${x},foot)+g(${x},top==null?foot-8:top))/2;return {y:cy,pitch:Math.round(Math.atan2(hm-hc,cy-foot)*180/Math.PI),foot,top}})()`).catch(() => null);
-        if (pose) { y = pose.y; pitch = pose.pitch; yaw = 0; console.log('cliff pose', JSON.stringify(pose)); }
+      if (name === 'cliff') { // VISQA-21: steepest slope within 60 m of the spot (tools/visqa-pick.mjs pickCliffPose, injected), camera 12 m back looking up at it
+        const pose = await evaluate(cdp, `(()=>{const T=__debug.world.terrain,g=(a,b)=>(T.groundAt||T.heightAt).call(T,a,b);return (${pickCliffPose})(g,${x},${y},60,12,1.6)})()`).catch(() => null);
+        if (pose) { x = pose.x; y = pose.y; yaw = pose.yaw; pitch = pose.pitch; console.log('cliff pose', JSON.stringify(pose)); } else console.log('cliff pose: NO slope found near', x, y, '(keeping the spot)');
       }
       const gz = await evaluate(cdp, `(()=>{const t=__debug.playerHandle.data.transform;t.x=${x};t.y=${y};if(__debug.vitals&&__debug.vitals.setGodMode)__debug.vitals.setGodMode(true);const T=__debug.world.terrain,gz=(T.groundAt||T.heightAt).call(T,${x},${y});t.z=(gz==null?t.z:gz+0.2);t.yawDeg=${yaw};t.pitchDeg=${pitch};const L=__debug.look;if(L){L.yawDeg=${yaw};L.pitchDeg=${pitch};}return gz})()`);
       // VISQA-09: a new game has Burl at the tower; for the home spot put him at his post-departure home (walks.home, OB-212)
