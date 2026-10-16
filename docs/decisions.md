@@ -1330,3 +1330,5 @@ Owner 2026-10-15 (later): "Make those priority" - D-107 stories (pc-b-queue sect
 
 ## D-113
 **2026-10-16, owner (PC-A session).** (1) Intro canon approved: Maren, the Factory, Morse "ALIVE" and Wick seen from behind in the intro go into docs/game-design.md section 3. (2) Player text says **map**, not "sky-chart" (intro captions changed). (3) Settings > Difficulty: **hide Easy/Hard** until BEAST-06b wires all difficulty fields (BH2-G1). (4) The extra teaser camera paths in design/cinematics/ are committed.
+
+**D-108 amendment (owner 2026-10-16, OB-211):** with NO accepted quest, the compass needle points at the character who offers the next main quest (the gold `!`), never at a bare place. When a character hands in a main quest, the next main quest is offered by a character right away (OB-210).
