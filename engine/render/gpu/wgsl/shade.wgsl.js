@@ -851,7 +851,7 @@ fn shadeCell(frag: vec4f) -> FO {
       if (cloudG != 0) { starG = cloudG; }
       if (su.shaftA.x > 0.0) { // CANOPY-SHAFT-01b: sky cells get the same lift (len = maxM, f = 0); glyph untouched
         let sq = shaftQ(cell);
-        if (sq > 0) { let sw = shaftW(sq, su.shaftA.w, dot(skyDir, su.sunDir), su.sunI, su.shaftA.x, su.shaftA.y, su.shaftA.z, su.shaftA.w, 0.0); col255 = shaftLiftC(col255, sw, su.sunI); fg255 = shaftLiftC(fg255, sw * 0.5, su.sunI); }
+        if (sq > 0) { let sw = shaftW(sq, su.shaftA.w, dot(skyDir, su.sunDir), su.sunI, su.shaftA.x, 0.0, su.shaftA.z, su.shaftA.w, 0.0); col255 = shaftLiftC(col255, sw, su.sunI); fg255 = shaftLiftC(fg255, sw * 0.5, su.sunI); }
       }
       o.fg = vec4f(toByte01(fg255.r), toByte01(fg255.g), toByte01(fg255.b), f32(starG) / 255.0);
       o.bg = vec4f(toByte01(col255.r), toByte01(col255.g), toByte01(col255.b), 1.0);

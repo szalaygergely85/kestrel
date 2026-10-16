@@ -257,6 +257,7 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
     }
   }
 
+  var hl = false; // VISQA-26: highlight speck stays opaque in fg
   if (sheet) {
     let lip = wu.wl[lb + 10];
     let u = (P.x - lip.x) * lip.z + (P.y - lip.y) * lip.w;
@@ -272,7 +273,7 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
     let kS = wu.ambientI + wu.sunI * cF; // foam scatters light every way: full sun term, no N.L
     wc = min(vec3f(255.0), r0.rgb * kS * brightness);
     wb = wc * bgK;
-    if (f32(h >> 8u) * (1.0 / 16777216.0) > 0.92) { wc = r2.rgb; }
+    if (f32(h >> 8u) * (1.0 / 16777216.0) > 0.92) { wc = r2.rgb; hl = true; }
   }
   let shape = wu.wl[lb + 10]; let foam = wu.wl[lb + 11]; let rim = wu.wl[lb + 12]; let shoreParams = wu.wl[lb + 13];
   var e: f32;
@@ -298,7 +299,7 @@ struct FO { @location(0) fg: vec4f, @location(1) bg: vec4f };
   var bgc = wb + (wu.wfog[3].rgb + (wu.wfog[4].rgb - wu.wfog[3].rgb) * f - wb) * fBg;
   if (!opaque) { // see-through: tint the shaded floor cell by the opacity
     let fgOld = floor(sfg.rgb * 255.0 + 0.5); let bgOld = floor(sbg.rgb * 255.0 + 0.5);
-    if (!shore) { fgc = fgOld + (fgc - fgOld) * a; }
+    if (!shore) { fgc = fgOld + (fgc - fgOld) * select(a, 1.0, hl && a > 0.0); }
     bgc = bgOld + (bgc - bgOld) * a;
   }
   if (!opaque && !shore && !isSky && !sheet && wu.sunDir.z > 0.0 && wu.sunI > 0.0) { // WATER-FINISH-01b (38.77 B): shallow caustic flicker on the see-through bed

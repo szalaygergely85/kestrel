@@ -212,6 +212,7 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
         wr += (255 - wr) * m; wg += (255 - wg) * m; wb += (255 - wb) * m;
       }
     }
+    let hl = false;
     if (sheet) {
       const h = hashFallI(lb, wt.z, i) >>> 0;
       glyph = _table[lb + 16 + h % (_table[lb + 12] | 0)];
@@ -219,7 +220,7 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
       const kS = sun.ambientI + sun.sunI * cF; // OB-045: foam scatters every way (full sun term, no N.L) and hangs in front of the cliff (no cliff sun map)
       wr = Math.min(255, _table[lb] * kS * brightness); wg = Math.min(255, _table[lb + 1] * kS * brightness); wb = Math.min(255, _table[lb + 2] * kS * brightness);
       br0 = wr * bgK; bg0 = wg * bgK; bb0 = wb * bgK;
-      if ((h >>> 8) * (1 / 16777216) > 0.92) { wr = _table[lb + 8]; wg = _table[lb + 9]; wb = _table[lb + 10]; }
+      if ((h >>> 8) * (1 / 16777216) > 0.92) { wr = _table[lb + 8]; wg = _table[lb + 9]; wb = _table[lb + 10]; hl = true; }
     }
     const e = _table[lb + 51] === 1 ? _table[lb + 42] - Math.sqrt((_p[0] - _table[lb + 40]) * (_p[0] - _table[lb + 40]) + (_p[1] - _table[lb + 41]) * (_p[1] - _table[lb + 41]))
       : Math.min(_p[0] - _table[lb + 40], _p[1] - _table[lb + 41], _table[lb + 42] - _p[0], _table[lb + 43] - _p[1]); // == waterEdgeDistance (inlined)
@@ -250,8 +251,9 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
     let bg = bg0 + (_fog[13] + (_fog[17] - _fog[13]) * f - bg0) * fBg;
     let bb = bb0 + (_fog[14] + (_fog[18] - _fog[14]) * f - bb0) * fBg;
     if (!opaque) { // see-through: tint the shaded floor cell by the opacity
-      if (!shore) {
-        fr = fgArr[fi] + (fr - fgArr[fi]) * a; fg = fgArr[fi + 1] + (fg - fgArr[fi + 1]) * a; fb2 = fgArr[fi + 2] + (fb2 - fgArr[fi + 2]) * a;
+      if (!shore) { // VISQA-26: a sheet highlight speck is opaque in fg (blending it 25 % toward a warm cliff read as salmon); alpha 0 still shows the scene
+        const af = hl && a > 0 ? 1 : a;
+        fr = fgArr[fi] + (fr - fgArr[fi]) * af; fg = fgArr[fi + 1] + (fg - fgArr[fi + 1]) * af; fb2 = fgArr[fi + 2] + (fb2 - fgArr[fi + 2]) * af;
       }
       br = bgArr[fi] + (br - bgArr[fi]) * a; bg = bgArr[fi + 1] + (bg - bgArr[fi + 1]) * a; bb = bgArr[fi + 2] + (bb - bgArr[fi + 2]) * a;
     } else if (!isSky) _mask[i] = 1;
