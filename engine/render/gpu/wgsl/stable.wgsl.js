@@ -16,6 +16,7 @@
 import { defineUniformBlock } from './uniformBlock.js';
 import { GBUF_UNPACK_WGSL, FULLSCREEN_VS_WGSL, REPROJECT_WGSL } from './common.wgsl.js';
 import { KIND_NONE, KIND_MODEL, KIND_MESH } from '../../GBuffer.js';
+import { F_SOFT_EDGE } from '../ShadeTextures.js'; // AA-26
 import { LEVEL_NONE, LEVEL_ANIM, UV_LIM_TEXELS, STABLE_FOOT_K, GRAZE_K, GRAZE_CAP } from '../../temporalStable.js';
 
 export const STABLE_BLOCK = defineUniformBlock('StableU', [
@@ -30,7 +31,7 @@ export const STABLE_BLOCK = defineUniformBlock('StableU', [
   { name: 'snap', type: 'i32' }, { name: 'detailDefault', type: 'f32' }, { name: 'waterOn', type: 'i32' }, { name: 'aaFlags', type: 'i32' },
 ]);
 
-export const STABLE_TEXTURES = Object.freeze(['uint', 'uint', 'uint', 'float', 'float', 'float', 'float', 'uint', 'uint', 'float', 'float', 'uint']);
+export const STABLE_TEXTURES = Object.freeze(['uint', 'uint', 'uint', 'float', 'float', 'float', 'float', 'uint', 'uint', 'float', 'float', 'uint', 'sint']); // slot 12 = shade MAT_I (AA-26)
 export const STABLE_TARGETS = Object.freeze(['rgba8', 'rgba8', 'rgba32ui']);
 
 export const STABLE_WGSL = `
@@ -47,6 +48,7 @@ ${STABLE_BLOCK.wgsl}
 @group(0) @binding(9) var uHistFg: texture_2d<f32>;
 @group(0) @binding(10) var uHistBg: texture_2d<f32>;
 @group(0) @binding(11) var uHist: texture_2d<u32>;
+@group(0) @binding(12) var uMatI: texture_2d<i32>; // AA-26: shade MAT_I (row = material, texel 0 .y = flags; F_SOFT_EDGE); 1x1 stub = not soft
 @group(1) @binding(0) var<uniform> u: StableU;
 
 ${GBUF_UNPACK_WGSL}
@@ -109,6 +111,11 @@ fn grazeStep(nx: i32, ny: i32, kind: u32, mat: u32, u0: f32, v0: f32) -> f32 {
   let a = textureLoad(uGA, vec2i(nx, ny), 0);
   let du = bitcast<f32>(a.x) - u0; let dv = bitcast<f32>(a.y) - v0;
   return sqrt(du * du + dv * dv);
+}
+// AA-26 (OB-208): soft-edge leaf material (twin: inp.soft); rows past the table = not soft
+fn leafSoft(m: u32) -> bool {
+  if (m >= u32(textureDimensions(uMatI).y)) { return false; }
+  return (textureLoad(uMatI, vec2i(0, i32(m)), 0).y & ${F_SOFT_EDGE}) != 0;
 }
 fn grazeLimit(cx: i32, cy: i32, kind: u32, mat: u32, u0: f32, v0: f32, lim: f32) -> f32 {
   var gx = min(grazeStep(cx - 1, cy, kind, mat, u0, v0), grazeStep(cx + 1, cy, kind, mat, u0, v0));
@@ -177,7 +184,9 @@ fn stableCell(cell: vec2i) -> SCell {
   // AA-07b: line<->ramp mismatch on a 1/4..3/4 joint-coverage cell = the 50 pct joint vote flipping: hold the history glyph (aaFlags bit 3)
   let jointHold = c255 != (lvP == LEVEL_NONE) && (u.aaFlags & 8) != 0 && cov >= 1u && cov <= 3u;
   if (c255 != (lvP == LEVEL_NONE) && !jointHold) { return o; } // mixed ramp/non-ramp: a real pattern edge, always fresh
-  if (vmTag == 0u) {
+  // AA-26 (aaFlags bit 512): a soft-edge leaf keeps history on kind + material + reprojection (world-keyed dice; twin: leafHold)
+  let leafHold = (u.aaFlags & 512) != 0 && u.ortho == 0 && kind == ${KIND_MESH}u && matSame && leafSoft(giMat(gi.y));
+  if (vmTag == 0u && !leafHold) {
     let du = bitcast<f32>(ga.x) - bitcast<f32>(hh.y);
     let dv = bitcast<f32>(ga.y) - bitcast<f32>(hh.z);
     let dUV = sqrt(du * du + dv * dv);

@@ -59,8 +59,9 @@ function uniformObject(words, ints) {
 }
 
 function compileStable(src, ctx) {
-  const base = { ...shims, textureLoad: tl, LEVEL_NONE, LEVEL_ANIM, ...ctx, giKind: (y) => y & 0xff, giMat: (y) => (y >>> 16) & 0xffff, vec3f: (x, y, z) => ({ x, y, z }) };
-  for (const n of ['byteOf', 'packRgb', 'blendCh', 'blendPacked', 'reprojectCell', 'reproject', 'grazeStep', 'grazeLimit']) base[n] = compileFn(src, n, base);
+  const base = { ...shims, textureLoad: tl, LEVEL_NONE, LEVEL_ANIM, ...ctx, giKind: (y) => y & 0xff, giMat: (y) => (y >>> 16) & 0xffff, vec3f: (x, y, z) => ({ x, y, z }),
+    uMatI: { w: 1, h: 1, data: [[0, 0, 0, 0]] }, textureDimensions: (t) => ({ x: t.w, y: t.h }), vec2i: (x, y) => ({ x, y }) }; // AA-26: 1x1 stub MAT_I = not soft
+  for (const n of ['byteOf', 'packRgb', 'blendCh', 'blendPacked', 'reprojectCell', 'reproject', 'grazeStep', 'grazeLimit', 'leafSoft']) base[n] = compileFn(src, n, base);
   return compileFn(src, 'stableCell', base);
 }
 

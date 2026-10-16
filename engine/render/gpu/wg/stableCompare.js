@@ -24,7 +24,7 @@ const rgb = (a, i) => (a[i * 4] << 16) | (a[i * 4 + 1] << 8) | a[i * 4 + 2];
  */
 export function compareStableRow(a) {
   const { cols, rows } = a, n = cols * rows, A = a.A, B = a.B;
-  const st = createStableState();
+  const st = createStableState(); st.aaLeafUv = a.aaLeafUv !== false; // AA-26: same flag as the GPU frame
   beginFrame(st, a.camA, a.grid, { invalidate: true });
   const histValid = beginFrame(st, a.camB, a.grid, { invalidate: false });
   const inp = {
@@ -45,6 +45,7 @@ export function compareStableRow(a) {
   }
   inp.edge = edgeMaskFromShade(inp.fg, inp.bg, inp.glyph, shFg, shBg, shGl, new Uint8Array(n));
   inp.water = waterMaskFromLayer(wx, ww, new Uint8Array(n));
+  if (a.matI) { const sf = new Uint8Array(n); for (let i = 0; i < n; i++) { const m = inp.mat[i]; sf[i] = inp.kind[i] === KIND_MESH && m < a.nMat && (a.matI[m * a.matIWidth * 4 + 1] & F_SOFT_EDGE) !== 0 ? 1 : 0; } inp.soft = sf; } // AA-26
   const used = stabilize(inp, hist, out, st);
   let ties = 0, mism = 0, tieMism = 0, nonSky = 0, heldTwin = 0, heldGpu = 0, held255 = 0, held255Gpu = 0; const bad = [];
   for (let i = 0; i < n; i++) {
@@ -94,8 +95,9 @@ export async function runStableRow(p, camA, camB, renderA, renderB, opts) {
       shadeFg: await rb8(inp.shadeFg, 4), shadeBg: await rb8(inp.shadeBg, 4), finalFg: await rb8(t.texFinalFg, 4), finalBg: await rb8(t.texFinalBg, 4),
       water: waterOn ? await rb32(inp.water, 4) : null, outFg: await rb8(sp.outFg, 4), outBg: await rb8(sp.outBg, 4),
     };
-    const grid = p._rasterPass.grid;
-    const res = compareStableRow({ cols, rows, camA, camB, grid: { cols: grid.cols, rows: grid.rows, pxCellW: grid.pxCellW, pxCellH: grid.pxCellH }, A, B });
+    const grid = p._rasterPass.grid, pk0 = p._cellPass && p._cellPass.shadePass && p._cellPass.shadePass.packed; // AA-26: MAT_I soft flags for the leaf hold
+    const res = compareStableRow({ cols, rows, camA, camB, grid: { cols: grid.cols, rows: grid.rows, pxCellW: grid.pxCellW, pxCellH: grid.pxCellH }, A, B,
+      aaLeafUv: sp.st.aaLeafUv, matI: pk0 ? pk0.matI : null, matIWidth: pk0 ? pk0.dims.matIWidth : 0, nMat: pk0 ? pk0.dims.nMat : 0 });
     res.waterOn = waterOn; res.waterOff = waterOff;
     if (hystWords) { // AA-04-FIX (38.82 B): resolve-hyst sub-check on the same frame B
       const tt = p._t, sr = { x: 0, y: 0, w: tt.subCols, h: tt.subRows }, ns = tt.subCols * tt.subRows;
