@@ -1,67 +1,67 @@
 {
-  "sha": "0754ad93",
+  "sha": "49055091",
   "date": "2026-10-16",
   "repeat": 1,
   "poses": {
     "wallNear": {
-      "totalPct": 5.404960258819953,
-      "glyphOnlyPct": 1.7722294595972095,
-      "glyphOnlyRawPct": 4.976701224279308,
-      "shiftPct": 3.2044717646820993
+      "totalPct": 5.407826714368943,
+      "glyphOnlyPct": 1.7723846878367517,
+      "glyphOnlyRawPct": 4.976739876855997,
+      "shiftPct": 3.204355189019245
     },
     "wallFar": {
-      "totalPct": 5.930913197655327,
-      "glyphOnlyPct": 1.4728290773130326,
-      "glyphOnlyRawPct": 4.561773022069707,
-      "shiftPct": 3.0889439447566738
+      "totalPct": 5.892104085329633,
+      "glyphOnlyPct": 1.4358758581398468,
+      "glyphOnlyRawPct": 4.524161658493131,
+      "shiftPct": 3.0882858003532827
     },
     "bushes": {
-      "totalPct": 4.625422010463225,
-      "glyphOnlyPct": 1.359268701478562,
-      "glyphOnlyRawPct": 1.8859711573846565,
-      "shiftPct": 0.5267024559060941
+      "totalPct": 4.21608124960645,
+      "glyphOnlyPct": 0.9352533782308942,
+      "glyphOnlyRawPct": 1.45088901288284,
+      "shiftPct": 0.5156356346519458
     },
     "crown": {
-      "totalPct": 4.511559081889861,
-      "glyphOnlyPct": 1.6742654298636304,
-      "glyphOnlyRawPct": 3.1825333794746182,
-      "shiftPct": 1.5082679496109883
+      "totalPct": 4.192121275613007,
+      "glyphOnlyPct": 1.385920556090468,
+      "glyphOnlyRawPct": 2.8774801660705704,
+      "shiftPct": 1.4915596099801012
     },
     "grassFar": {
-      "totalPct": 4.064549651364598,
-      "glyphOnlyPct": 1.3448352815058398,
-      "glyphOnlyRawPct": 3.396549995557568,
-      "shiftPct": 2.0517147140517276
+      "totalPct": 4.048876560040412,
+      "glyphOnlyPct": 1.332251856798594,
+      "glyphOnlyRawPct": 3.383925916945102,
+      "shiftPct": 2.051674060146508
     },
     "roadWalk": {
-      "totalPct": 3.6498954381960877,
-      "glyphOnlyPct": 0.6665151243941368,
-      "glyphOnlyRawPct": 0.8466351789332143,
-      "shiftPct": 0.1801200545390776
+      "totalPct": 3.5563992372533093,
+      "glyphOnlyPct": 0.5752140018923647,
+      "glyphOnlyRawPct": 0.7538718072843865,
+      "shiftPct": 0.17865780539202167
     },
     "forestWalk": {
-      "totalPct": 4.648297726036573,
-      "glyphOnlyPct": 1.9304184410130456,
-      "glyphOnlyRawPct": 2.0260701021247125,
-      "shiftPct": 0.09565166111166674
+      "totalPct": 4.114714971885091,
+      "glyphOnlyPct": 1.4437164228528552,
+      "glyphOnlyRawPct": 1.4971487287473861,
+      "shiftPct": 0.0534323058945311
     },
     "townWalk": {
-      "totalPct": 5.185015943273384,
-      "glyphOnlyPct": 1.1999076475418857,
-      "glyphOnlyRawPct": 3.0813997068033356,
-      "shiftPct": 1.8814920592614508
+      "totalPct": 5.173907039798232,
+      "glyphOnlyPct": 1.2034564397892227,
+      "glyphOnlyRawPct": 3.0822540801906566,
+      "shiftPct": 1.8787976404014333
     },
     "cryptWalk": {
-      "totalPct": 7.869625422124941,
-      "glyphOnlyPct": 2.724474229379611,
-      "glyphOnlyRawPct": 5.230318633229384,
-      "shiftPct": 2.505844403849773
+      "totalPct": 7.841885952367459,
+      "glyphOnlyPct": 2.678798518676438,
+      "glyphOnlyRawPct": 5.205393748562588,
+      "shiftPct": 2.5265952298861523
     }
   },
   "avg": {
-    "totalPct": 4.907480840038593,
-    "glyphOnlyPct": 1.5246855899516547,
-    "glyphOnlyRawPct": 3.6007057557531716,
-    "shiftPct": 2.076020165801517
+    "totalPct": 4.751401976991689,
+    "glyphOnlyPct": 1.3723372674193108,
+    "glyphOnlyRawPct": 3.442639326249528,
+    "shiftPct": 2.0703020588302166
   }
 }
