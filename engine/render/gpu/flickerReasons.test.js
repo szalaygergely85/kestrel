@@ -21,6 +21,7 @@ for (let i = 0; i < N; i++) {
 d.level[0] = 255; // mixed255: none vs ramp, no joint coverage
 d.level[1] = 12;  // levelJump: |12-4| = 8
 d.shadeFg[2 * 4] = 99; // edge: stable input differs from shade output
+d.Depth[3] = bits(50); // ... and the right neighbour is far deeper on another plane (edge trigger)
 const du = 1000; d.GA[4 * 3] = bits(du); // uvDrift: way above the footprint limit
 // cell 4 stays a plain replayHold (control)
 const cnt = { kinds: {}, sub: {} };
@@ -29,6 +30,15 @@ check('n counts every mapped cell', cnt.n === 5);
 check('flips counts every glyph change', cnt.flips === 5);
 for (const r of ['mixed255', 'levelJump', 'edge', 'uvDrift', 'replayHold']) check(r + ' counted once', cnt[r] === 1);
 check('no other reason fired', GLYPH_REASONS.every((r) => ['mixed255', 'levelJump', 'edge', 'uvDrift', 'replayHold'].includes(r) || !cnt[r]));
+// AA-DIAG-EDGE: a same-plane, equal-depth cell (ceiling) whose preFg differs from shadeFg has no edge trigger -> falls through to its real reason, edgeNoTrig counted.
+{
+  const c = { kinds: {}, sub: {} }; d.shadeFg[4 * 4] = 77; d.GI[4 * 4] = d.GI[3 * 4]; // cell 4 = same plane as neighbour 3, same depth
+  flickerGlyphReasons(d, p, hmap, cols, rows, { tanHalfX: 1, tanHalfY: 1, ortho: 0 }, c);
+  check('no-trigger cell is not edge (only cell 2 stays edge)', c.edge === 1);
+  check('edgeNoTrig counted for the ceiling cell', c.sub['edgeNoTrig:' + KIND] >= 1);
+  check('ceiling cell fell through to a real reason (plane here)', c.plane === 1);
+  d.shadeFg[4 * 4] = 0;
+}
 check('kind histogram', cnt.kinds[KIND] === 5);
 check('a cell with an unchanged glyph is not a flip', (() => { const c = { kinds: {}, sub: {} }; d.outFg[3] = 0; d.outFg[7] = 0; p.outFg[3] = 0; p.outFg[7] = 0; hmap.fill(-1); hmap[0] = 0; hmap[1] = 1; flickerGlyphReasons(d, p, hmap, cols, rows, { tanHalfX: 1, tanHalfY: 1, ortho: 0 }, c); return c.n === 2 && c.flips === 0; })());
 

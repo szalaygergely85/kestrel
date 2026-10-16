@@ -235,6 +235,22 @@ function diagGrazeLim(d, i, cols, rows, kind, mat, lim) {
   if (gx === Infinity) gx = 0; if (gy === Infinity) gy = 0;
   const g = Math.min(GRAZE_K * Math.max(gx, gy), GRAZE_CAP * lim); return g > lim ? g : lim;
 }
+// AA-DIAG-EDGE (OB-208): does the edge rule have a trigger at cell i? (sky neighbour, a different-plane neighbour farther than the farther() threshold,
+// or a non-zero convex/concave depth margin). preFg != shadeFg without a trigger is NOT edge work (labels only; the cell falls through to its real reason).
+function edgeTriggered(d, i, cols, rows) {
+  const x = i % cols, y = (i - x) / cols, dc = bitsToF32(d.Depth[i]), pl = d.GI[i * 4];
+  for (const [nx, ny] of [[x, y - 1], [x, y + 1], [x - 1, y], [x + 1, y]]) {
+    if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+    const n = ny * cols + nx;
+    if ((d.GI[n * 4 + 1] & 0xff) === 0) return true;
+    if (d.GI[n * 4] === pl) continue;
+    if (bitsToF32(d.Depth[n]) / (dc * 1.18 + 0.35) > 1) return true;
+  }
+  if (x + 1 >= cols) return false;
+  const kAt = (n) => d.GI[n * 4 + 1] & 0xff, dAt = (n) => bitsToF32(d.Depth[n]);
+  const dl = x > 0 && kAt(i - 1) !== 0 ? dAt(i - 1) : dc, dRt = dAt(i + 1), dr = x + 2 < cols && kAt(i + 2) !== 0 ? dAt(i + 2) : dRt;
+  return Math.min(Math.abs(dl - dc), Math.abs(dr - dRt)) / dc > 0;
+}
 export function flickerGlyphReasons(d, p, hmap, cols, rows, terms, cnt) {
   const gcls = terms.gcls || DEFAULT_GCLS, octave = terms.octave || null;
   let n = 0, flips = 0;
@@ -250,8 +266,9 @@ export function flickerGlyphReasons(d, p, hmap, cols, rows, terms, cnt) {
     const o = i * 4;
     let r;
     if (og !== d.preFg[o + 3]) r = 'heldChanged'; // the output glyph came from history, but not from the measured last frame's glyph
-    else if (d.preFg[o] !== d.shadeFg[o] || d.preFg[o + 1] !== d.shadeFg[o + 1] || d.preFg[o + 2] !== d.shadeFg[o + 2] || d.preFg[o + 3] !== d.shadeFg[o + 3]
-      || d.finalBg[o] !== d.shadeBg[o] || d.finalBg[o + 1] !== d.shadeBg[o + 1] || d.finalBg[o + 2] !== d.shadeBg[o + 2]) r = 'edge';
+    else if ((d.preFg[o] !== d.shadeFg[o] || d.preFg[o + 1] !== d.shadeFg[o + 1] || d.preFg[o + 2] !== d.shadeFg[o + 2] || d.preFg[o + 3] !== d.shadeFg[o + 3]
+      || d.finalBg[o] !== d.shadeBg[o] || d.finalBg[o + 1] !== d.shadeBg[o + 1] || d.finalBg[o + 2] !== d.shadeBg[o + 2])
+      && (edgeTriggered(d, i, cols, rows) || (cnt.sub['edgeNoTrig:' + kind] = (cnt.sub['edgeNoTrig:' + kind] || 0) + 1, false))) r = 'edge';
     else if (((hw >> 8) & 15) !== kind) r = 'kind';
     else if (p.hist[h * 4] !== d.GI[o] && !((hw >>> 16) === mat && (kind === KIND_MESH || kind === KIND_MODEL))) r = (hw >>> 16) === mat ? 'plane' : 'mat';
     else {
