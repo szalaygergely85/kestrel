@@ -563,7 +563,7 @@ export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shado
   }
   if (!shadowOnly) { setLazyView(lodCentreX(cam), lodCentreY(cam), fogFarM); pumpLazyMeshes(); } // MESH-LOAD-01: decode queued payloads (<= 2 / 4 ms), remember the eye for scatter groups
   const fr = shadowOnly ? null : planes;
-  let count = 0, requested = 0;
+  let count = 0, requested = 0, worst = 0, worstK = 0, wValid = false;
   for (let q = 0; q < gN; q++) {
     const i = gl ? gl[q] : q; // grid: ascending active structure indices (same order as 0..N, so ranking ties are unchanged)
     // MESH-FEED-GRID-01: flat prefilter. Outside reach + warmM nothing can happen (no touch, no request, no draw): reject from the
@@ -596,10 +596,15 @@ export function addMeshStructures(list, world, cam, cache, idFor, fogFarM, shado
     const key = _bd[1];
     if (count < maxKeep) {
       _mOrder[count] = i; _mDist[count] = d; _mKey[count] = key; count++;
+      wValid = false;
     } else if (maxKeep > 0) {
-      let worst = 0, worstK = _mKey[0];
-      for (let k = 1; k < maxKeep; k++) if (_mKey[k] > worstK || (_mKey[k] === worstK && _mOrder[k] > _mOrder[worst])) { worstK = _mKey[k]; worst = k; } // ties: evict the highest object id (MESH-SHADOW-02)
-      if (key < worstK) { _mOrder[worst] = i; _mDist[worst] = d; _mKey[worst] = key; }
+      // PERF-09: the evict target only changes when a slot is replaced -> cache it (was an O(maxKeep) scan per candidate).
+      if (!wValid) {
+        worst = 0; worstK = _mKey[0];
+        for (let k = 1; k < maxKeep; k++) if (_mKey[k] > worstK || (_mKey[k] === worstK && _mOrder[k] > _mOrder[worst])) { worstK = _mKey[k]; worst = k; } // ties: evict the highest object id (MESH-SHADOW-02)
+        wValid = true;
+      }
+      if (key < worstK) { _mOrder[worst] = i; _mDist[worst] = d; _mKey[worst] = key; wValid = false; }
     }
   }
   for (let i = 1; i < count; i++) {

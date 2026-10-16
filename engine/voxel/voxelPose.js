@@ -360,8 +360,10 @@ export function computeVoxelPose(pm, inst, out) {
     const rx = _rotOut[p * 3], ry = _rotOut[p * 3 + 1], rz = _rotOut[p * 3 + 2];
     const posX = _posOut[p * 3], posY = _posOut[p * 3 + 1], posZ = _posOut[p * 3 + 2];
 
-    setRotFromPose(p * 3, _Rrot);
     const rotZero = rx === 0 && ry === 0 && rz === 0;
+    if (rotZero) { // PERF-09: R(0,0,0) is exactly the identity (csAt(0) = {1,0}) -> skip 3 sin/cos + 2 matMul3
+      _Rrot[0] = 1; _Rrot[1] = 0; _Rrot[2] = 0; _Rrot[3] = 0; _Rrot[4] = 1; _Rrot[5] = 0; _Rrot[6] = 0; _Rrot[7] = 0; _Rrot[8] = 1;
+    } else setRotFromPose(p * 3, _Rrot);
 
     const abase = p * 9, bbase = p * 3;
     if (parentIdx < 0) {
