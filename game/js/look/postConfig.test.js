@@ -13,6 +13,11 @@ for (const [l, w] of Object.entries(want)) {
 assert.equal(r('', 'high').bloom, GLOW_LEVELS.high); assert.equal(r('', 'ultra').bloom.radius, GLOW_LEVELS.ultra.radius);
 for (const l of ['low', 'medium', 'high', 'ultra']) assert.ok(r('', l, 'interior').mist, 'interior mist ' + l);
 assert.equal(r('', 'extreme').bloom, GLOW_LEVELS.ultra);
+// VISQA-11: underground = dark short mist in the level ambient colour (not the pale tower mist); no ambient -> base rgb
+{ const u = resolvePost(look, new URLSearchParams(''), 'medium', 'underground', [0.063, 0.0795, 0.12]);
+  assert.deepEqual(u.mist.rgb, [0.063, 0.0795, 0.12]); assert.equal(u.mist.density, look.base.mistUnder.density); assert.equal(u.mist.start, look.base.mistUnder.start);
+  assert.deepEqual(resolvePost(look, new URLSearchParams(''), 'low', 'underground').mist.rgb, look.base.mist.rgb);
+  assert.equal(r('', 'high', 'interior').mist, look.base.mist); }
 // parameters never differ between presets
 assert.equal(r('', 'medium').vignette, r('', 'ultra').vignette);
 // ?post=0 = today's frames; gpucompare forces null; ?emissive= still works

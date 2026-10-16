@@ -30,7 +30,7 @@
 | ![s2-burl.png](s2-burl.png) | 1467.6,1030.0 -> 1471.0,1029.1 z 2.4 | Burl (npc bear) |
 | ![s2-rook.png](s2-rook.png) | 985.5,1059.8 -> 982.0,1060.0 z -86.4 | Rook |
 | ![s2-warden.png](s2-warden.png) | 1666.8,625.8 -> 1669.0,628.5 z -49.7 | region warden (char.kit) |
-| ![s2-boar.png](s2-boar.png) | 1460.2,1030.7 -> 1463.7,1030.4 z 2.4 | first boar |
+| ![s2-boar.png](s2-boar.png) | 1460.0,1030.7 -> 1463.5,1030.4 z 2.4 | first boar |
 | ![s2-wolf.png](s2-wolf.png) | 849.8,997.1 -> 852.8,998.9 z -74.6 | first wolf |
 | ![s2-skeleton.png](s2-skeleton.png) | 1641.0,1376.5 -> 1641.0,1373.0 z -50.0 | first skeleton |
 | ![s2-ui-inventory.png](s2-ui-inventory.png) | KeyI | pack (I) |

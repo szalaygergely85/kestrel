@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { sceneOf, HOLD } from './sceneFlag.js';
+import { sceneOf, HOLD, undergroundAmbient } from './sceneFlag.js';
 // fake tower: one 4x4 level at origin (10,10), ceiling 3 m above z 0
 const sec = { ceilH: 3 };
 const world = { structVersion: 1, structures: [{ level: { width: 4, height: 4, sectorAt: () => sec }, origin: { x: 10, y: 10, z: 0 }, packed: { version: 1, ceilH: 3 } }] };
@@ -34,3 +34,13 @@ console.log('sceneFlag OK');
   if (global.gc) { const w = { structVersion: 1, structures: [], supportAtOut(g, o, io) { io[9] = 3.5; } }, s = {}, q = { x: 1, y: 1, z: 0 }, b = { diving: false }; sceneOf(w, q, s, 1 / 60, b); for (let i = 0; i < 3e5; i++) sceneOf(null, q, s, 1 / 60, b); global.gc(); const h0 = process.memoryUsage().heapUsed; for (let i = 0; i < 3e5; i++) sceneOf(null, q, s, 1 / 60, b); const d = process.memoryUsage().heapUsed - h0; assert.ok(d < 200000, 'cover alloc ' + d); }
 }
 console.log('sceneFlag2 OK');
+{ // VISQA-11: undergroundAmbient = level ambient only inside a buried keepTerrain site
+  const pal = { lights: { ambient: { color: 'ambient', intensity: 0.5 } }, hue: { ambient: [0.2, 0.4, 1] } }, out = [0, 0, 0];
+  const st = { keepMask: new Uint8Array(1), level: { def: { ambient: { preset: 'ambient' } } } };
+  const mk = (s, outdoor) => ({ structureAt: () => s, isOutdoorAt: () => outdoor });
+  assert.deepEqual(undergroundAmbient(mk(st, false), { x: 0, y: 0, z: 0 }, pal, out), [0.1, 0.2, 0.5]);
+  assert.equal(undergroundAmbient(mk(st, true), { x: 0, y: 0, z: 0 }, pal, out), null, 'above the site = outdoor');
+  assert.equal(undergroundAmbient(mk({ ...st, keepMask: null }, false), { x: 0, y: 0, z: 0 }, pal, out), null, 'tower (no keepTerrain)');
+  assert.equal(undergroundAmbient(mk(null, true), { x: 0, y: 0, z: 0 }, pal, out), null);
+  console.log('sceneFlag underground OK');
+}
