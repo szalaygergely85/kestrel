@@ -26,6 +26,14 @@ The rule is FIXED (OB-156, D-082, D-087, D-108; no owner questions, no PO round 
 | BEND-NPC-01 | writer (name + lines) + kestrel-4 (content) + kestrel-1 (placement/mount if needed) | D-110: a second quest NPC (char.kit, like the wardens) 2.5-3 m from the Bend waystone on walkable ground; moves the Bend-area errands (the sq.rb.* set and any other errand whose targets are nearer the Bend than the trade post) from post-keeper Bram to this NPC as giver AND turnIn; Bram keeps the trade-post/ford ones. Writer: name, greeting, offer/hand-in lines. Must pass QUEST-E2E-ALL for every moved quest; lint R14/R18 0; owner look. | todo (with QUEST-HANDIN-ALL) |
 | QUEST-WALK-OWNER | main session (PC-B) | When QUEST-E2E-ALL is green: one browser route walk of the opening chain + 3 side quests (accept, complete, hand in) with stills of `!`, `?`, needle; then owner walk. | todo |
 
+## Intro slideshow (owner 2026-10-15/16, D-111, D-112) (PC-A main session)
+The owner generated all 9 stills in ChatGPT (prompts: `design/intro/prompts.md`; captions: docs/story.md "Opening sequence v2" + slide 1b). Source images live in `design/intro/src/` on the owner's machines: **git-ignored, never committed** (public repo). Order: 1 Ferrum, 1b Before, 2 Her lamp, 3 The light, 4 Factor's Code memory, 5 ALIVE, 6 The rope gives, 7 The Wall wakes, 8 The fall.
+
+| ID | Slot | AC | Status |
+|---|---|---|---|
+| INTRO-ASCII-01 | kestrel-4 (tools) | `node tools/img2ascii.mjs <in.png|webp|jpg> --grid 480x180 [--out file]`: converts an image into REAL glyph cells using the game's own glyph ramp(s) and palette (design/palette.js; same glyph set the renderer uses), per cell: luminance -> glyph from the ramp, colour -> nearest palette colour (or palette-ramp blend), optional edge glyphs for contours; output = a compact cell file (glyph + colour index per cell, e.g. JSON or binary) the game can draw, plus a PNG preview rendered with the game font. Grid options for low/high presets (240x90, 480x180). Node test on a small fixture (deterministic output hash). The owner judges the look on the 9 slides (preview page `design/preview/intro-ascii.html` showing source vs ASCII side by side, reading files from design/intro/src/ locally). Generated cell files: also kept out of git unless the owner says otherwise. | todo |
+| INTRO-PLAYER-01 | kestrel-1 (game UI) | After "New Game" (not on Continue): plays the 9 ASCII slides in order, ~4 s each, fade in/out, the caption under each slide (docs/story.md v2 text, after SIGNAL-ALIVE-TEXT), any key/click = next slide, Esc = skip all; then hands off to the existing wake-in-the-wreck. Missing slide files -> skip the intro silently (repo builds without the images). Setting "Show intro" (default on). Music hook for later. Node test for the sequence state machine; owner look. | todo (after INTRO-ASCII-01) |
+
 ## Signal = Morse "ALIVE" (owner 2026-10-15, D-112) (PC-A main session)
 
 | ID | Slot | AC | Status |
