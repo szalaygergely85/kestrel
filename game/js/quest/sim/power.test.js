@@ -114,7 +114,7 @@ assert.equal(playerLevel(S(3, 3, 3, 3), kit4m, defs), 5); assert.equal(itemLevel
 assert.equal(powerText(1800), 'Power 1,800'); assert.equal(formatPower(59500), '59,500'); assert.equal(formatPower(140), '140'); assert.equal(formatPower(1000000), '1,000,000');
 assert.equal(powerCompare(2150, 1800).text, 'Power +350'); assert.equal(powerCompare(1680, 1800).text, 'Power -120'); assert.equal(powerCompare(60, 60).text, 'Power same');
 assert.equal(powerCompare(340, 0).tone, 'up', 'empty slot = green');
-assert.equal(headerText(5300), 'Power 5,300 - Level 4'); assert.equal(breakdownText(4450, 850), 'Items 4,450 + Spells 850');
+assert.equal(headerText(5300), 'Power 5,300 - Level 4'); assert.equal(breakdownText(4450, 850), 'Gear 4,450 + Spells 850');
 assert.equal(nextLevelText(5300), 'Next level at 8,000'); assert.equal(nextLevelText(59500), 'Max level');
 assert.equal(hudLevelText(4), 'Lv 4'); assert.equal(levelUpText(5), 'Level up! 5');
 const tints = [], hints = [];

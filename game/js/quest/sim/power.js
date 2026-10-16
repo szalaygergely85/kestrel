@@ -113,7 +113,7 @@ export function powerCompare(p, worn) {
   return d > 0 ? { text: 'Power +' + formatPower(d), tone: 'up' } : d < 0 ? { text: 'Power -' + formatPower(-d), tone: 'down' } : { text: 'Power same', tone: 'same' };
 }
 export const headerText = (total) => 'Power ' + formatPower(total) + ' - Level ' + levelFromPower(total);
-export const breakdownText = (items, spells) => 'Items ' + formatPower(items) + ' + Spells ' + formatPower(spells);
+export const breakdownText = (items, spells) => 'Gear ' + formatPower(items) + ' + Spells ' + formatPower(spells);
 export function nextLevelText(total) { const n = nextLevelPower(total); return n < 0 ? 'Max level' : 'Next level at ' + formatPower(n); }
 export const hudLevelText = (L) => 'Lv ' + L;
 export const levelUpText = (L) => 'Level up! ' + L;
