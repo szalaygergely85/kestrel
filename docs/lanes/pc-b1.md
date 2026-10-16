@@ -1719,3 +1719,7 @@ Reviewer: PC-B architect (opus, D-066). **42a8cd4a ARCH OK -> po-review/testing:
 
 - QUEST-NEXT-GIVER-01 (kestrel-1, branch questnext): toast (offerToast) + compass nextOffers pointer were already wired (compassHud.target, main.js offerToast); added the missing e2e in game/js/questNext.test.js: real content m1 relay step -> mq.bend.call: toast "New quest: Rook has work for you", needle -> Rook (kind 3), save/load keeps it, no re-toast after load, tracking another quest replaces it, accepting clears it. Suites questNext/questRules/compass green, check-deps OK.
 - BUG-SPELLBOOK-SCOPE: main.js SPELL-09 hook read out-of-scope `spellBook`; now a module-level `spellBookHolder` set at the world:loaded createSpellBook line (3 touches). Syntax check ok; no Node test (main.js not importable). Note: derived offers also toast other givers (e.g. Joss) after the same step, by design.
+### DAWN-COLOUR-01 (kestrel-2, branch dawncolour) - arch-review (PC-A)
+- design/palette.js: new `dawn` timeOfDay key (skyDawn* rose/orange horizon, deep blue top; ambient/sun/cloud/fog = dusk), daySchedule 5 night, 6.25 dawn, 7.5 morning (was morning at 6.5), noon/dusk/night unchanged.
+- engine/render/fogHour.js: 4th slot (dawn=3); design/look/fogNight.js `dawn` far #e8a888. Tests: fogHour.test.js + blendLook.test.js (06:15 warm, 05:00 night, 12:00/19:00 unchanged).
+- Optional NEEDS B1-main: main.js:1605 atmosDriver slotOf add `dawn: 1` (else dawn haze = day slot). Browser: HOURS=5.5,6.25,7 verify-nighthaze.mjs -dawn (not run).
