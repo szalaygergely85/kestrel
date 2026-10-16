@@ -1301,7 +1301,8 @@ async function main() {
   // ED-AI-01: content/beasts archetypes + kinds (plain-language range errors, tools/editor/ai/validate.js)
   try {
     const bd = fileURLToPath(new URL('../content/beasts', import.meta.url));
-    const { validateBeasts } = await import('./editor/ai/validate.js');
+    const { validateBeasts, lintBeastModels } = await import('./editor/ai/validate.js');
+    allErrors.push(...lintBeastModels(JSON.parse(readFileSync(`${bd}/kinds.json`, 'utf8')), new Set(Object.keys(ASSETS.models || {}))).map((m) => `beasts: ${m}`)); // VISQA-25
     allErrors.push(...validateBeasts(JSON.parse(readFileSync(`${bd}/archetypes.json`, 'utf8')), JSON.parse(readFileSync(`${bd}/kinds.json`, 'utf8'))).map((m) => `beasts: ${m}`));
     // ED-AI-04: painted spawn areas (empty list shipped)
     const { validateSpawnAreas } = await import('./editor/ai/spawnAreas.js');
