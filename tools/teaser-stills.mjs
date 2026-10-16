@@ -13,7 +13,7 @@ import { buildQuery } from './capture-cinematic.mjs';
 
 // Intended capture hour per teaser (design/cinematics/README.md table + each file's note). teaser-water 17 -> 12 (TEASER-QA: water near-black at 17:00).
 export const TEASER_HOURS = Object.freeze({
-  'teaser-grass': 17, 'teaser-water': 12, 'teaser-fire': 22, 'teaser-sky': 19, 'teaser-leaves': 15.5,
+  'teaser-grass': 17, 'teaser-water': 12, 'teaser-fire': 22, 'teaser-sky': 19, 'teaser-leaves': 10,
   'teaser-dawn-sea': 6.25, 'teaser-crypt-drone': 22, 'teaser-crypt-night': 22, 'teaser-river-falls': 11, 'teaser-strand-dawn': 6.5,
 });
 

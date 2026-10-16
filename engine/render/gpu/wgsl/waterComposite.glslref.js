@@ -11,7 +11,7 @@
 import { GLSL_VERSION, PRECISION, GBUF_UNPACK, BYTE_OUT, CELL_RAY_PITCHED } from './glslref.common.js';
 import { HASH_FAST, PITCH_UNIFORMS, CELL_RAY } from './glslref.extra.js';
 import { SUN_N_SHIFT, SUN_N_MASK } from '../../shadowSun.js';
-import { WL_STRIDE, WL_SLOTS, WATER_HASH_SALT, WATER_FLOW_SALT, WATER_FALL_SALT } from '../../waterLook.js';
+import { WL_STRIDE, WL_SLOTS, WATER_HASH_SALT, WATER_FLOW_SALT, WATER_FALL_SALT, FALL_STREAK_M } from '../../waterLook.js';
 
 export const WATER_COMPOSITE_VECS_PER_SLOT = WL_STRIDE / 4;
 
@@ -126,7 +126,7 @@ void main() {
   if (sheet) {
     vec4 lip = uWL[lb + 10];
     float u = (P.x - lip.x) * lip.z + (P.y - lip.y) * lip.w;
-    int ia = int(floor(u / 0.25)), ib = int(floor((uintBitsToFloat(w.z) - uWL[lb + 9].x) / 0.6));
+    int ia = int(floor(u / 0.25)), ib = int(floor((uintBitsToFloat(w.z) - uWL[lb + 9].x) / ${FALL_STREAK_M.toFixed(1)}));
     uint h = hashFastU(ia & 1023, ib & 1023, ${WATER_FALL_SALT});
     int gi = int(h % uint(nGlyph));
     vec4 gv = uWL[lb + 4 + (gi >> 2)];
