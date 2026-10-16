@@ -452,6 +452,18 @@ export const GRASS_TINT_AMP = 0.08;     // ramp position shift = (tintByte / 255
 export const GRASS_GX_HAS = 67108864;   // 1 << 26: the cell below was terrain, the type + tier offset are valid (else no ground blend)
 export const GRASS_GROUND_TINT = 0.6;   // default variant groundTint: blade colour = ground at the root, full ramp colour from h01 >= groundTint
 export const GRASS_BACKLIGHT_K = 0.3;   // back-light warm boost cap (x bl x h01^2 x min(sunI, 1))
+// OB-217: shaded grass keeps value range. s = K * shade(bE) * day(sunI): lift gain x(1 + LIFT s), spread by ramp position x(1 + SPREAD s (2x-1)).
+// Night (sunI ~ 0) and sunlit (bE >= SHADE_HI) give s = 0 = bit-identical to before. Switch: ?grassshade=0 (game/js/main.js -> setGrassShade(0)). WGSL twin: shade.wgsl.js shadeGrass (skyGlowOn.w = K).
+export const GRASS_SHADE_LO = 0.25, GRASS_SHADE_HI = 0.75, GRASS_SHADE_DAY_SUN = 0.6, GRASS_SHADE_LIFT = 0.15, GRASS_SHADE_SPREAD = 0.45;
+let grassShadeK = 1;
+export function setGrassShade(k) { grassShadeK = k > 0 ? 1 : 0; }
+export function getGrassShade() { return grassShadeK; }
+export function grassShadeS(bE, sunI, K) {
+  if (!(K > 0)) return 0;
+  let d = sunI / GRASS_SHADE_DAY_SUN; d = d < 0 ? 0 : d > 1 ? 1 : d;
+  let t = (bE - GRASS_SHADE_LO) / (GRASS_SHADE_HI - GRASS_SHADE_LO); t = t < 0 ? 0 : t > 1 ? 1 : t;
+  return K * (1 - t * t * (3 - 2 * t)) * d;
+}
 export const GRASS_LEVELS = 15.999;   // stable level byte of a kind-10 cell = floor(ramp position x * 15.999) = 0..15 (same in the grass shade WGSL)
 export const GRASS_ROWS = 5;          // vec4 rows per variant in the GPU table: ramp k=0..3 (rgb; row0.w = n, row1..3.w = base/mid/tip glyph code), row 4 = (leanL, leanR, groundTint)
 /** Pack a grassTableFor() table into the GPU uniform layout (16 variants x GRASS_ROWS vec4) into `out` (Float32Array(80*4)); no alloc. */
@@ -506,6 +518,7 @@ export function shadeGrass(t, variant, h01, lean, tint, b, tab, ctx, out, gx = 0
   let gain = gainOf(bE, ctx.shading);
   gain = wetGain(gain, bE, wet, ctx.shading.fgMaxGain);
   let x = h01 + tint; x = x < 0 ? 0 : x > 1 ? 1 : x;
+  const gs = grassShadeS(bE, sunI, grassShadeK); if (gs > 0) gain *= (1 + GRASS_SHADE_LIFT * gs) * (1 + GRASS_SHADE_SPREAD * gs * (2 * x - 1)); // OB-217
   const n = tab.n[variant], xf = x * (n - 1);
   let i0 = Math.floor(xf); if (i0 > n - 2) i0 = n - 2;
   const fx = xf - i0, o0 = variant * 12 + i0 * 3, o1 = o0 + 3, R = tab.ramp;

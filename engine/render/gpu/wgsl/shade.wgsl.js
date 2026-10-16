@@ -38,7 +38,7 @@ import { SKYLINE_FOG_WGSL } from '../../skyline.js'; // MAP-06b (38.42)
 import { UNDER_WGSL } from '../../underwater.js'; // SWIM-04c (38.54)
 import { GI_SAMPLE_WGSL, giBindingWgsl } from '../../giGpu.js';
 import { CAO_SUN_W } from '../../contactAO.js'; // 38.78 rev
-import { CLIFF_NZ, FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE, FAR_GLYPH_CELL, FAR_BLEND_FP0, FAR_BLEND_FP1, NOISE_CELLS, NOISE_W, NOISE_SALT, PATCH_K, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX, GRASS_AO_LO, GRASS_TIP_H, GRASS_BASE_H, GRASS_LEAN_G, GRASS_LEVELS, GRASS_ROWS, GRASS_TINT_AMP, GRASS_GX_HAS, GRASS_BACKLIGHT_K, FG_SLOPE, FG_GUST, FG_MOD, FG_CODES, FG_TYPES } from '../../terrainShade.js';
+import { CLIFF_NZ, FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE, FAR_GLYPH_CELL, FAR_BLEND_FP0, FAR_BLEND_FP1, NOISE_CELLS, NOISE_W, NOISE_SALT, PATCH_K, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX, GRASS_AO_LO, GRASS_TIP_H, GRASS_BASE_H, GRASS_LEAN_G, GRASS_LEVELS, GRASS_ROWS, GRASS_TINT_AMP, GRASS_GX_HAS, GRASS_BACKLIGHT_K, GRASS_SHADE_LO, GRASS_SHADE_HI, GRASS_SHADE_DAY_SUN, GRASS_SHADE_LIFT, GRASS_SHADE_SPREAD, FG_SLOPE, FG_GUST, FG_MOD, FG_CODES, FG_TYPES } from '../../terrainShade.js';
 
 
 
@@ -296,6 +296,12 @@ fn shadeGrass(t: f32, variant: i32, h01: f32, lean: f32, tint: f32, b: f32, gx: 
   if (bcc > 1.0) { gain = min(su.fgMaxGain, gain + (bcc - 1.0) * 0.5); }
   gain = wetGain(gain, bE);
   let x = clamp(h01 + tint, 0.0, 1.0);
+  if (su.skyGlowOn.w > 0.0) { // OB-217 shaded grass value range (twin: terrainShade.js grassShadeS)
+    let gd = clamp(sunI / ${GRASS_SHADE_DAY_SUN.toFixed(4)}, 0.0, 1.0);
+    let gt = clamp((bE - ${GRASS_SHADE_LO.toFixed(4)}) / ${(GRASS_SHADE_HI - GRASS_SHADE_LO).toFixed(4)}, 0.0, 1.0);
+    let gs = su.skyGlowOn.w * (1.0 - gt * gt * (3.0 - 2.0 * gt)) * gd;
+    if (gs > 0.0) { gain = gain * (1.0 + ${GRASS_SHADE_LIFT.toFixed(4)} * gs) * (1.0 + ${GRASS_SHADE_SPREAD.toFixed(4)} * gs * (2.0 * x - 1.0)); }
+  }
   let gb = variant * ${GRASS_ROWS};
   let n = max(i32(su.grass[gb].w), 2);
   let xf = x * f32(n - 1);
