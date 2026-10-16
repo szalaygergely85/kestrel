@@ -173,6 +173,7 @@ const unaccountedFor = allJsonFiles.filter((rel) => {
   if (/^life\/[^/]+\.json$/.test(rel)) return false; // GOB-07b: standalone life configs (raids, goblinCamps, outwall.life), fetched by main.js, checked by their own tests
   if (rel.startsWith('editor/')) return false; // ED-FOLDERS-01: editor-only data (asset folder layout), never loaded by the game/loadPack
   if (rel.startsWith('packages/')) return false; // KPKG-03: *.pkg.json pack specs, read only by tools/pack.mjs
+  if (/^intro\/[^/]+\.ascii\.json$/.test(rel)) return false; // INTRO-ASCII-01 (D-111): intro slideshow glyph cells from tools/img2ascii.py, read by the intro player (INTRO-PLAYER-01)
   if (rel.startsWith('chargen/')) return false; // CHARGEN-01: *.charkit.json character kits, read by engine/chargen + tools/chargen-build-kit.mjs (38.29), not a manifest content kind
   if ((manifest.masks || []).includes(rel)) return false; // ALPHA-01e: alpha masks are listed in manifest.masks
   return !manifest.files.includes(rel);
