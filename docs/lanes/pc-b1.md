@@ -1995,3 +1995,9 @@ Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-
 
 - QL-MAIN-04 QUEST-GRAPH-LINT (kestrel-4, gipath) done: tools/quest-graph-lint.mjs (rule ids QG-A-UNREACHABLE, QG-B-CYCLE, QG-C-MISSING-QUEST, QG-D-REWARD-ITEM, QG-E-DIALOGUE-MISSING) + quest-graph-lint.test.mjs (one fixture per rule, clean control, real content 0 hits over 88 quests); wired as one line in validate-content.mjs main (content OK). Rule e = giver/turnIn entity's dialogue id must have a content/dialogue file (quest data has no node refs). Roots: giver-less quest without requires (m1).
 - QL-MAIN-03 CH3-REGION-HANDINS done: game/js/quest/regionQuests.e2e.test.js, 10/10 sq.reg.* pass runQuestE2e with no data fixes (asserts mark/hand-in/reward steps present). No commit made.
+
+### QL-MAIN-01 CH3-CLOSE (kestrel-4, 2026-10-16) - po-review
+- `mq.ow.board` gets `next: mq.ow.close`; new main quest `mq.ow.close` "The Line West" (ch3/pack.json): explore crossroads, hand-in Hesk, reward 15 arrows (potion.hp made sq.ow.song fail R6 in the shared run); `chainEnd:true` marks the declared end (templates.js passes next + chainEnd through).
+- NEEDS writer: story.md has no Ch3 close text; Hesk lines in hesk.dialogue.json (hesk.close.*) are a neutral placeholder pointing west.
+- Test: allQuests.e2e.test.js now fails on any main quest with no next / no dependant unless chainEnd (exactly one allowed).
+- validate-content OK; allQuests/templates/questBook/quest-graph suites PASS.
