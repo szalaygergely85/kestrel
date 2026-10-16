@@ -116,7 +116,7 @@ ok('raid-style goals on a far pack: all bound at the next binder update', BASE |
 hour = 23;
 for (let k = 1; k < ROAD.length; k++) {
   const before = k === 1 ? 0 : costs.length;
-  walkTo(ROAD[k][0], ROAD[k][1], k >= 12 ? 12 : 20); // sprint pace tower<->Ford, 12 m/s on the cemetery leg (10 m/s trips the near-miss assert: a cemetery skeleton rising on arrival stays unbound >45 steps at 25 m - sampling-phase effect, see lane note) (its skeletons rise on arrival: the 15-step sampling phase matters there)
+  walkTo(ROAD[k][0], ROAD[k][1], k >= 12 ? 10 : 20); // sprint pace tower<->Ford, 10 m/s on the cemetery leg (its skeletons rise on arrival; BEAST-POOL-BIND-LATE-01 hot queue binds them at once - before it, 10 m/s left one unbound > 45 steps)
   if (!BASE) { for (const i of goalRecs) if (sim.goal.on[i] && !(sim.state[i] >= 9) && sim.pool.lv[i] < 0) raidUnbound++; raidChecked++; }
   void before;
 }
