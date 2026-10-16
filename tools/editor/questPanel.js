@@ -3,7 +3,7 @@
 //   loadFiles() -> Promise<{ 'm1.quest.json': text, 'ch12/pack.json': text, 'sites.json': text, ... }>
 //   write(relPath, text) persists one quest file (editor supplies its own io; default = download).
 import { loadQuests, saveQuest, saveAll, applyZones, makeStack } from './quest/model.js';
-import { buildLintCtx, liveLint, presetOptions, playUrl } from './quest/wire.js';
+import { buildLintCtx, presetOptions, playUrl } from './quest/wire.js';
 import { questRows, filterRows, itemChoices } from './quest/flow.js';
 import * as ed from './quest/edit.js';
 import * as fe from './quest/formatEdit.js';
@@ -11,12 +11,13 @@ import { applyPick } from './quest/targets.js';
 import { createQuestPicker } from './questPick.js';
 import { renderLineEditor } from './questDialogue.js';
 import { createLiveSender, browserChannel } from './quest/liveSend.js';
+import { validateQuest, validateFooter } from './quest/validate.js';
 import { stripModel, CARDS } from './quest/questStrip.js';
 import { prereqRows, setRequiresKeepShape } from './quest/prereqs.js';
 import { originCards, setTurnInSameAsGiver } from './quest/originCards.js';
 import { objectiveCards, setStepKind, setStepCount, kindsFor, KIND_LABEL, MAX_TEXT } from './quest/objectiveCards.js';
 import { loadDialogues, saveDialogues, captureBaseline } from './quest/lines.js';
-import { conversationView, conversationLint } from './quest/conversation.js';
+import { conversationView } from './quest/conversation.js';
 import { rewardTiles, setRewardItems, rewardLint } from './quest/rewards.js';
 import { HEART_PIECE_ITEM } from './quest/format.js';
 
@@ -96,7 +97,6 @@ export async function mountQuestPanel(root, opts) {
   }
 
   // ED-QUI-05/06: conversation (Accept/Exit, dangling GOTO) and reward problems join the live lint list
-  const extraLint = (q, base) => [...base, ...conversationLint(dm, q, names), ...rewardLint(q, itemDefs, coinFlags)];
   const coinFlags = { coinPaid: false };   // runtime pays items only (questBook.js); flip when the grant pays rewards.coin
   // ED-QUI-06: card [05] reward tiles
   function rewardsBox(q) {
@@ -144,20 +144,32 @@ export async function mountQuestPanel(root, opts) {
 
   // ED-QUEST-05: live lint list, rebuilt on every redraw (every edit goes through run()/redraw)
   function goTo(t) {
+    if (t.kind === 'card') { const c = detail.querySelector('[data-card="' + t.id + '"]'); if (c) { c.classList.remove('closed'); c.scrollIntoView && c.scrollIntoView({ block: 'start' }); } return; }
     if (t.kind === 'objective') { const i = current.objectives.findIndex((o) => o.id === t.id); if (i >= 0) { selObj = i; redraw(); const b = detail.querySelector('[data-obj="' + i + '"]'); if (b && b.scrollIntoView) b.scrollIntoView({ block: 'nearest' }); } }
     else if (t.kind === 'giver' || t.kind === 'return') { opts.onFocus && t.id && opts.onFocus(t.id); const b = detail.querySelector('[data-pick="' + t.kind + '"]'); if (b && b.focus) b.focus(); }
     else { const f = detail.querySelector(t.kind === 'reward' ? '#quest-reward' : '[data-field="' + t.id + '"] input, [data-field="' + t.id + '"] textarea') || detail.querySelector('[data-field="title"] input'); if (f && f.focus) f.focus(); }
   }
+  // ED-QUI-07a: the whole static check of the open quest (lintQuest + format + R19 + conversation + reward), one result for the list, the footer and the strip chip
+  const lintCtx = () => ({ ...buildLintCtx({ world: getWorld(), itemDefs, names, floorAt, sites, getMesh: opts.getMesh }), names });
+  const validateOf = (q) => {
+    try { return validateQuest(model, q, lintCtx(), dm, (qq, items) => (items.some((x) => x.rule === 'QF' && x.target.id === 'rewards' && /rewards nothing/.test(x.text)) ? items : [...items, ...rewardLint(qq, itemDefs, coinFlags)])); }
+    catch (e) { return { errors: 0, warnings: 1, ok: true, items: [{ rule: 'R0', severity: 'warn', text: 'Validate failed: ' + (e && e.message), target: { kind: 'field', id: 'title' } }] }; }
+  };
   function lintBox(q) {
     const box = el('div', 'q-lint'); box.id = 'quest-lint';
-    let msgs = [];
-    try { msgs = extraLint(q, liveLint(model, q, buildLintCtx({ world: getWorld(), itemDefs, names, floorAt, sites, getMesh: opts.getMesh }))); } catch (e) { msgs = [{ rule: 'R0', severity: 'warn', text: 'Lint failed: ' + (e && e.message), target: { kind: 'field', id: 'title' } }]; }
-    box.append(el('b', null, msgs.length ? 'Problems (' + msgs.length + ')' : 'No problems'));
-    for (const m of msgs) {
-      const row = el('div', 'q-lint-row ' + m.severity); row.dataset.rule = m.rule;
+    const res = validateOf(q), ft = validateFooter(model, q, res);
+    const head = el('div', 'q-vhead'), vb = el('button', 'ed-btn primary', 'VALIDATE'); vb.id = 'quest-validate'; vb.title = 'Re-run every check for this quest';
+    vb.addEventListener('click', () => redraw());
+    head.append(vb, el('b', null, res.items.length ? 'Problems (' + res.items.length + ')' : 'No problems')); box.append(head);
+    for (const m of res.items) {
+      const row = el('div', 'q-vrow q-lint-row ' + m.severity); row.dataset.rule = m.rule;
       const go = el('button', 'ed-btn', 'Go to'); go.addEventListener('click', () => goTo(m.target));
-      row.append(el('span', null, m.text + ' '), go); box.append(row);
+      row.append(el('span', 'rule', m.rule), el('span', null, m.text + ' '), go); box.append(row);
     }
+    const foot = el('div', 'q-vfoot'); foot.id = 'quest-vfoot';
+    const vd = el('span', 'verdict ' + ft.kind, ft.verdict); vd.id = 'quest-verdict';
+    foot.append(el('span', null, 'FILE ' + ft.path), el('span', null, ft.bytes + ' bytes'), vd); box.append(foot);
+    const sim = el('div', 'q-vsim', 'STEP SIMULATOR: runs the quest end to end here (ED-QUI-07b).'); sim.id = 'quest-sim-area'; box.append(sim);   // placeholder for the 07b runner
     return box;
   }
 
@@ -269,9 +281,7 @@ export async function mountQuestPanel(root, opts) {
     const cards = {};
     let host = detail;
     if (!q) { host.append(stripBox(null, [])); host.append(el('div', 'q-hint', 'Pick a quest.')); return; }
-    let msgs = [];
-    try { msgs = extraLint(q, liveLint(model, q, buildLintCtx({ world: getWorld(), itemDefs, names, floorAt, sites, getMesh: opts.getMesh }))); } catch (e) { msgs = []; }
-    detail.append(stripBox(q, msgs));
+    detail.append(stripBox(q, validateOf(q).items));
     for (const c of CARDS) cards[c.id] = cardBox(c);
     const into = (id) => { host = cards[id].body; };
     for (const c of CARDS) detail.append(cards[c.id].box);

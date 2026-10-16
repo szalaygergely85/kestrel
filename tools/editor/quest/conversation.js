@@ -4,6 +4,15 @@ import { lineRows, STAGE_LABEL } from './lines.js';
 
 const ORDER = ['Offer', 'Accept', 'Progress', 'Hand-in', 'After'];
 
+const ROLE_BY_STAGE = { Offer: 'OFFER', Accept: 'ACCEPT', Progress: 'ACTIVE', 'Hand-in': 'HAND-IN', After: 'LATER' };
+/** Role tag of a node (ED-QUI-07a): the node's own id wins (meet / chatter chains), else its stage. A first-meeting chain reached through a hand-in is MEET, not HAND-IN. */
+export function nodeRole(n) {
+  const id = String(n.id || '');
+  if (/(^|[._-])meet([._-]|$)/.test(id)) return 'MEET';
+  if (/(^|[._-])(chatter|bark|idle|repeat)([._-]|$)/.test(id)) return 'CHATTER';
+  return ROLE_BY_STAGE[n.stage] || n.stage.toUpperCase();
+}
+
 /** Accept = a choice that sets q.<id>.accept (or the legacy s.<id>.accept); Exit = any other choice or a node with end:true. */
 const isAccept = (c, qid) => c.setFlag === 'q.' + qid + '.accept' || c.setFlag === 's.' + qid + '.accept';
 
