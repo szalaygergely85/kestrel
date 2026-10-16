@@ -213,11 +213,12 @@ import { wireHitSparks, hitSparksEnabled } from './fx/hitSparkWire.js'; // HIT-S
 import { parsePointShadows, presetPointShadowsOn } from './pointShadowOpt.js'; // ME-16e: ?pointshadows=0|N
 import { parseGlow } from './glowOpt.js'; // EMIS-03/04: bleed + halo knob
 import { setReduceMotion, isReduceMotion, eyeZ, gateKick, textSizeCols } from './ui/comfort.js'; // SETTINGS-APPLY-01
-import { PHYSICS, createUnderState, setApiWarnings, setFoliageDice, setFoliageLight, setFoliageEdge, setEdgeHold, setVoxelHold, setWindHold, setLeafUvHold, setTerrainSnapHold, setLeafLevelHold, setSeamHold } from '../../engine/index.js';
+import { PHYSICS, createUnderState, setApiWarnings, setFoliageDice, setFoliageLight, setFoliageEdge, setEdgeHold, setVoxelHold, setWindHold, setGrassShade, setLeafUvHold, setTerrainSnapHold, setLeafLevelHold, setSeamHold } from '../../engine/index.js';
 setFoliageDice(new URLSearchParams(location.search).get('aafol') !== '0'); // AA-15 (OB-208): leaf-card world glyph dice, ?aafol=0 = old per-card u/v dice
 setFoliageLight(new URLSearchParams(location.search).get('aafoll') !== '0'); // AA-16 (OB-208): leaf-card light smoothing, ?aafoll=0 = off
 setFoliageEdge(new URLSearchParams(location.search).get('aafoledge') !== '0'); // AA-17 (OB-208): resolve hysteresis keeps a leaf key across leaf cards, ?aafoledge=0 = off
 setEdgeHold(new URLSearchParams(location.search).get('aaedge') !== '0'); // AA-18 (OB-208): stable pass lets edge cells take history (glyph hold), ?aaedge=0 = off
+setGrassShade(new URLSearchParams(location.search).get('grassshade') === '0' ? 0 : 1); // OB-217: ?grassshade=0 = old shaded grass (before/after)
 { const aw = new URLSearchParams(location.search).get('aawind'); setWindHold(aw === null ? 3 : +aw | 0); } // AA-22 (OB-208): wind hold, ?aawind=0 off (1 far grass, 2 lean, 3 both)
 setVoxelHold(new URLSearchParams(location.search).get('aavox') !== '0'); // AA-21 (OB-208): resolve hysteresis keeps a voxel prop's face key (kind 8), ?aavox=0 = off
 setLeafUvHold(new URLSearchParams(location.search).get('aaleafuv') !== '0'); // AA-26 (OB-208): stable pass holds soft-edge leaf cells without the UV drift test, ?aaleafuv=0 = off
@@ -1539,6 +1540,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
     // OB-073-D2f: hand the GPU carpet pass the class map + near heights on every world load / band swap (version bump re-uploads)
     let carpetVer = 0;
     const pushCarpet = (wIn) => { const w = wIn || engine.world, nb = w && w.terrain && w.terrain.near; if (!wgPipeline || !wgPipeline.setCarpet) return; if (!w || !w.carpet || !nb) { wgPipeline.setCarpet(null, null, 0); return; } wgPipeline.setCarpet(w.carpet, { data: nb.hDraw, w: nb.w, h: nb.h, x0: nb.x0, y0: nb.y0, cell: nb.cell }, ++carpetVer); };
+    if (wgPipeline) wgPipeline._carpetHeal = pushCarpet; // OB-217: frame-loop self-heal when a world:loaded/scatter push left the carpet pass empty
     // ENV-01-WIRE: configure the decor pass once per world, then hand it the band's baked masks + near heights (re-uploaded only when they change)
     let decorWorld = null, decorLast = null, decorVer = 0, decorWarned = false; // decorVer: numeric version for setMasks + setNear, bumped per event (Terrain edits write hDraw in place, like the carpet)
     const pushDecor = (wIn) => {
@@ -2634,6 +2636,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       if (cinematicHours) applySunPair(engine.world, lightSet, cam.hour, cam.hour, worldSunPath, sunEnabled); // TEASER-QA-07 (moon, as above)
       fb.timeSec = simTime;
       syncFb(); // FB-01: same-frame appearance after unlock
+      if (wgPipeline && wgPipeline._carpetHeal && engine.world && engine.world.carpet && engine.world.terrain && engine.world.terrain.near && (!wgPipeline._carpetPass || !wgPipeline._carpetPass.active)) wgPipeline._carpetHeal(); // OB-217
       if (wgPipeline && wgPipeline.setCarpetFrame && engine.world && engine.world.carpet) { const wp = engine.world.wind && engine.world.wind.params; wgPipeline.setCarpetFrame(fb.timeSec, wp && wp.speed > 0 ? wp : null); } // OB-073-D2f: blade sway time + wind
       // Arch review 1 (US-017): `lightSet` is rebuilt by the 'world:loaded'
       // handler on every restart - rebind it here, or `fb.lights` would keep
