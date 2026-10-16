@@ -2,12 +2,12 @@
   "version": 1,
   "id": "teaser-grass",
   "fps": 30,
-  "note": "TEASER (owner 2026-10-15, TikTok 9:16, capture --portrait: 16:9 render VFOV ~47, centre crop keeps ~27 deg horizontal): eye ~0.45 m over the OB-101 north meadow carpet field (capsule 1450..1535 x 980, r 32) on the flat 2.4 m tower crown, NORTH of the tower and east of the flooded cellar. Lateral drift 8 m west -> east while facing north (yaw 350 -> 8), pitch -17..-19 so the horizon sits ~10-15 % below the top edge (sky/haze sliver). Tower, pond, cellar, woodpile all behind or far outside the narrow field. Floor estimate 2.36-2.39 (crown flatten r 20 + 60 m skirt) -> clearance ~0.45. Needs ?carpet=1 (capture has no quality preset, so the carpet is off otherwise). Wind gusts come from the world wind (carpet gustM 5), not from the path. Hour 17:00.",
+  "note": "TEASER (owner 2026-10-15, TikTok 9:16, capture --portrait: 16:9 render VFOV ~47, centre crop keeps ~27 deg horizontal): eye ~0.45 m over the OB-101 north meadow carpet field (capsule 1450..1535 x 980, r 32) on the flat 2.4 m tower crown, NORTH of the tower and east of the flooded cellar. Lateral drift 8 m west -> east while facing north (yaw 358 -> 16; TEASER-QA-05b: +8 deg so the portrait crop no longer looks through the mountain pass at yaw ~340, which showed a bright sky wedge between the capped-fog peaks), pitch -17..-19 so the horizon sits ~10-15 % below the top edge (sky/haze sliver). Tower, pond, cellar, woodpile all behind or far outside the narrow field. Floor estimate 2.36-2.39 (crown flatten r 20 + 60 m skirt) -> clearance ~0.45. Needs ?carpet=1 (capture has no quality preset, so the carpet is off otherwise). Wind gusts come from the world wind (carpet gustM 5), not from the path. Hour 17:00.",
   "keys": [
-    { "t": 0,    "x": 1501.0, "y": 1002.0, "z": 2.86, "yawDeg": 350, "pitchDeg": -17, "ease": "linear" },
-    { "t": 3.5,  "x": 1502.6, "y": 1001.6, "z": 2.84, "yawDeg": 354, "pitchDeg": -18, "ease": "linear" },
-    { "t": 7,    "x": 1505.0, "y": 1001.1, "z": 2.83, "yawDeg": 359, "pitchDeg": -19, "ease": "linear" },
-    { "t": 10.5, "x": 1507.4, "y": 1000.7, "z": 2.84, "yawDeg": 4,   "pitchDeg": -18, "ease": "linear" },
-    { "t": 14,   "x": 1509.0, "y": 1000.4, "z": 2.86, "yawDeg": 8,   "pitchDeg": -17, "ease": "linear" }
+    { "t": 0,    "x": 1501.0, "y": 1002.0, "z": 2.86, "yawDeg": 358, "pitchDeg": -17, "ease": "linear" },
+    { "t": 3.5,  "x": 1502.6, "y": 1001.6, "z": 2.84, "yawDeg": 2,   "pitchDeg": -18, "ease": "linear" },
+    { "t": 7,    "x": 1505.0, "y": 1001.1, "z": 2.83, "yawDeg": 7,   "pitchDeg": -19, "ease": "linear" },
+    { "t": 10.5, "x": 1507.4, "y": 1000.7, "z": 2.84, "yawDeg": 12,  "pitchDeg": -18, "ease": "linear" },
+    { "t": 14,   "x": 1509.0, "y": 1000.4, "z": 2.86, "yawDeg": 16,  "pitchDeg": -17, "ease": "linear" }
   ]
 }
