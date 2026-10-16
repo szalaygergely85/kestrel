@@ -524,6 +524,7 @@
     {"name":"setSampleType","area":"world","tier":"stable"},
     {"name":"setTint","area":"anim","tier":"stable"},
     {"name":"setVoxelHold","area":"render","tier":"experimental"},
+    {"name":"setWindHold","area":"render","tier":"experimental"},
     {"name":"setWorldSun","area":"render","tier":"stable"},
     {"name":"shadeTerrain","area":"render","tier":"experimental"},
     {"name":"shadeTerrainCells","area":"render","tier":"experimental"},
