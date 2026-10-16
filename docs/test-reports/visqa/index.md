@@ -12,9 +12,10 @@
 | bend | 1262,1042 yaw 0 pitch 0 - Bend relay/waystone | ![bend-09.png](bend-09.png) | ![bend-13.png](bend-13.png) | ![bend-22.png](bend-22.png) |
 | cemetery | 1644,1382 yaw 0 pitch 0 - cemetery1 | ![cemetery-09.png](cemetery-09.png) | ![cemetery-13.png](cemetery-13.png) | ![cemetery-22.png](cemetery-22.png) |
 | braid-falls | 1238,632 yaw 0 pitch 12 - braidFalls from below | ![braid-falls-09.png](braid-falls-09.png) | ![braid-falls-13.png](braid-falls-13.png) | ![braid-falls-22.png](braid-falls-22.png) |
-| cliff | 1552,490 yaw 0 pitch 14 - northwood hillside cliff face (~9 m rise at y 454-458), looking up from below (VISQA-09; the old 1250,596 spot stood in the outlet river) | ![cliff-09.png](cliff-09.png) | ![cliff-13.png](cliff-13.png) | ![cliff-22.png](cliff-22.png) |
+| cliff | 1552,468 yaw 0 pitch 12 - northwood hillside cliff face (~9 m rise at y 454-458), looking up from below (VISQA-09; the old 1250,596 spot stood in the outlet river) | ![cliff-09.png](cliff-09.png) | ![cliff-13.png](cliff-13.png) | ![cliff-22.png](cliff-22.png) |
 | lake-shore | 1215,547 yaw 0 pitch 0 - Glasswater south shore | ![lake-shore-09.png](lake-shore-09.png) | ![lake-shore-13.png](lake-shore-13.png) | ![lake-shore-22.png](lake-shore-22.png) |
 | burl-home | 1404,1019 yaw 0 pitch 4 - Burl's new home (1404,1010) | ![burl-home-09.png](burl-home-09.png) | ![burl-home-13.png](burl-home-13.png) | ![burl-home-22.png](burl-home-22.png) |
+| smoke-fire | 958,1011 yaw 0 pitch 6 - VISQA-15: smokeFire1 brazier at the base of the goblin smoke plume (958,1004) | ![smoke-fire-09.png](smoke-fire-09.png) | ![smoke-fire-13.png](smoke-fire-13.png) | ![smoke-fire-22.png](smoke-fire-22.png) |
 
 ## Set 2 (VISQA-10)
 
@@ -27,15 +28,18 @@
 | ![s2-sea-cave.png](s2-sea-cave.png) | 1618.5,1729.5 z -95.31 (now -95.31) yaw 0 | Strand sea cave chamber from the south mouth |
 | ![s2-goblin-tunnel.png](s2-goblin-tunnel.png) | 945,946 z -88.8 (now -88.8) yaw 0 | goblin tunnel room (level 19,30) looking north, torchRoom |
 | ![s2-bear-den.png](s2-bear-den.png) | 1584,437 z 11.76 (now 11.76) yaw 0 | northwood bear den chamber from the mouth side (no lights in level) |
-| ![s2-burl.png](s2-burl.png) | 1467.6,1030.0 -> 1471.0,1029.1 z 2.4 | Burl (npc bear) |
-| ![s2-rook.png](s2-rook.png) | 985.5,1059.8 -> 982.0,1060.0 z -86.4 | Rook |
-| ![s2-warden.png](s2-warden.png) | 1666.8,625.8 -> 1669.0,628.5 z -49.7 | region warden (char.kit) |
-| ![s2-boar.png](s2-boar.png) | 1460.2,1030.7 -> 1463.7,1030.4 z 2.4 | first boar |
-| ![s2-wolf.png](s2-wolf.png) | 849.8,997.1 -> 852.8,998.9 z -74.6 | first wolf |
-| ![s2-skeleton.png](s2-skeleton.png) | 1641.0,1376.5 -> 1641.0,1373.0 z -50.0 | first skeleton |
+| ![s2-burl.png](s2-burl.png) | cam 1440.0,1040.0 subject 1436.5,1040.0 z 1.3 yaw 76 (home 1471,1029,2,75) | Burl (npc bear) |
+| ![s2-rook.png](s2-rook.png) | cam 1440.0,1040.0 subject 1436.5,1040.0 z 1.3 yaw 90 (home 982,1060,-86,270) | Rook |
+| ![s2-warden.png](s2-warden.png) | cam 1440.0,1040.0 subject 1436.5,1040.0 z 1.3 yaw 90 (home 1669,629,-50,141) | region warden (char.kit) |
+| ![s2-boar.png](s2-boar.png) | cam 1440.0,1040.0 subject 1436.5,1040.0 z 1.3 yaw 90 (home 1463,1029,2,70) | first boar |
+| ![s2-wolf.png](s2-wolf.png) | cam 1440.0,1040.0 subject 1436.5,1040.0 z 1.3 yaw 90 (home 847,997,-74,260) | first wolf |
+| ![s2-skeleton.png](s2-skeleton.png) | cam 1440.0,1040.0 subject 1436.5,1040.0 z 1.3 yaw 90 (home 1738,202,211,0) | first surface skeleton (crypt ones do not render when pinned to the meadow) |
 | ![s2-ui-inventory.png](s2-ui-inventory.png) | KeyI | pack (I) |
 | ![s2-ui-character.png](s2-ui-character.png) | KeyC | character / equipment (C) |
 | ![s2-ui-journal.png](s2-ui-journal.png) | KeyJ | quest journal (J) |
 | ![s2-ui-map.png](s2-ui-map.png) | KeyM | map (M) |
 | ![s2-ui-pause.png](s2-ui-pause.png) | lock lost | pause menu (pointer lock lost = what Esc does in a real browser) |
 | ![s2-ui-settings.png](s2-ui-settings.png) | KeyS+Enter | Settings from the pause menu (S selects, Enter opens) |
+
+## Re-sweep results 2026-10-16 (merged build e11b9ba9, VISQA-20)
+Set 1 + set 2 re-run. Fixed (OK): 03 (burl-home-13), 06 (tower-door-22), 11 (s2-crypt, s2-ford-cellar), 14 (s2-ui-map), 15 (smoke-fire-22: brazier fire draws), 16, 17 (s2-ui-journal), 18 (s2-ui-settings). Not checkable: 02, 13. Not reproduced: 07. Still visible: 04 (lake-shore-09), 05 (braid-falls-22), 08 (door slab, ford-13), 09 (no Burl home in burl-home-09, cliff spot top-down), 12 (s2-bear-den), 19 (rook/burl/wolf close-ups; skeleton OK). New: VISQA-21..24 in docs/pc-b-queue.md. Burl is present at his spot (burl-home-09/13), the home building is not.

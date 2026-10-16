@@ -8,7 +8,7 @@
 import { MAX_VOX_INSTANCES, MAX_VOX_INSTANCES_MESH, MAX_VOX_PARTS, PART_STRIDE } from '../voxel/VoxelModel.js';
 import { packVoxelModel } from '../voxel/voxelPack.js';
 import { voxelPointWorld, FORWARD } from '../voxel/voxelPose.js';
-import { computeProjection, computeProjectionPitched, instanceRect } from '../voxel/instanceRect.js';
+import { computeProjection, computeProjectionPitched, instanceRect, rectFromForward } from '../voxel/instanceRect.js';
 import { createPitchedTerms, pitchedTerms, resolveProjection, isPitchedFamily } from './projection.js';
 import { lodCentreX, lodCentreY, lodCentreZ } from '../core/camFocus.js';
 import { buildVoxelAtlas } from './gpu/VoxelTextures.js';
@@ -45,6 +45,13 @@ function keepForward(out, pm) {
   for (let i = 0; i < n; i++) f[i] = FORWARD[i];
   out.fwdModel = pm;
 }
+/** PERF-02: true when projected slot `s` was posed from exactly `inst`'s current pose inputs (every field computeVoxelPose reads). */
+function samePoseInputs(s, inst) {
+  return s.fwdModel === inst.model && s.model === inst.model && s.x === inst.x && s.y === inst.y && s.z === inst.z && s.yawDeg === inst.yawDeg &&
+    s.clip === inst.clip && s.frame === inst.frame && s.tMs === inst.tMs && s.fromClip === inst.fromClip && s.fromFrame === inst.fromFrame &&
+    s.fromTMs === inst.fromTMs && s.fromW === inst.fromW && s.scale === inst.scale && s.addPart === inst.addPart && s.addRx === inst.addRx &&
+    s.addRy === inst.addRy && s.addRz === inst.addRz && s.legs === inst.legs && s.layers === inst.layers && s.look === inst.look;
+}
 function shrinkTo(arr, n) {
   while (arr.length > n) arr.pop();
 }
@@ -69,6 +76,10 @@ export class VoxelPool {
     this.raw = Array.from({ length: MAX_VOX_INSTANCES_MESH }, () => ({ model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, fromClip: -1, fromFrame: 0, fromTMs: 0, fromW: 0, scale: 1, seed: 0, entity: null, addPart: -1, addRx: 0, addRy: 0, addRz: 0, legs: null, layers: null, look: null }));
     this._rawCount = 0;
     this.reserve = 0;
+    // PERF-02: raw slot i -> project() slot of this frame (-1 = culled/skipped); valid while `_projEpoch === _epoch`.
+    // `_epoch` moves on every queue change (beginFrame, blend/leg/layerInstance), so projectShadow never reuses a stale pose.
+    this._epoch = 0; this._projEpoch = -1;
+    this._projSlotOf = new Int32Array(MAX_VOX_INSTANCES_MESH);
     // Projected + culled instances, compact 0..count-1 (list.length ===
     // stats.count after project()); each entry's `slot` index is what the
     // GPU instance rows / planeId's slot field key off.
@@ -162,6 +173,7 @@ export class VoxelPool {
    * loop but keeps this reset). */
   beginFrame() {
     this._rawCount = 0;
+    this._epoch++;
   }
 
   /** Test/dev harness feed (architecture.md 15.2 item 7's gpucompare poses):
@@ -203,20 +215,20 @@ export class VoxelPool {
   /** WILD-01 (38.31 item 8): sets the from-clip of raw slot `i` (a `pushInstance` return). `fromW` = weight of the old pose (1 -> 0). */
   blendInstance(i, fromClip, fromFrame, fromTMs, fromW) {
     if (i < 0 || i >= this._rawCount) return;
-    const slot = this.raw[i];
+    const slot = this.raw[i]; this._epoch++;
     slot.fromClip = fromClip; slot.fromFrame = fromFrame || 0; slot.fromTMs = fromTMs || 0; slot.fromW = fromW;
   }
 
   /** ANIM-C-04 (38.67 section 3): sets the LegPose (Float64Array(16), engine/entities/legDriver.js poseOf) of raw slot `i`; null = authored legs (byte-identical). Reference only, no copy. */
   legInstance(i, legPose) {
     if (i < 0 || i >= this._rawCount) return;
-    this.raw[i].legs = legPose || null;
+    this.raw[i].legs = legPose || null; this._epoch++;
   }
 
   /** ANIM-BLEND-01a (38.68): sets the AnimLayers (Float64Array(20)) of raw slot `i`; null = plain clip fields (byte-identical). Reference only. */
   layerInstance(i, rec) {
     if (i < 0 || i >= this._rawCount) return;
-    this.raw[i].layers = rec || null;
+    this.raw[i].layers = rec || null; this._epoch++;
   }
 
   /** 38.23: the G-buffer objectId (0x8000 | slot, same as voxelMesh's draw item) of `entity` in the last project(); -1 when it has no slot. */
@@ -374,13 +386,22 @@ export class VoxelPool {
    * Zero allocation once warm.
    */
   projectShadow() {
-    const n = Math.min(this._rawCount, this.cap);
+    const n = Math.min(this._rawCount, this.cap), reuse = this._projEpoch === this._epoch;
     for (let i = 0; i < n; i++) {
       const inst = this.raw[i];
       const out = this._shadowSlots[i];
       this.shadowList[i] = out; // references only: the posed records live in the never-shrinking `_shadowSlots`
-      instanceRect(_noCullProj, inst.model, inst, out.pose, null, out.rect);
-      keepForward(out, inst.model);
+      const ps = reuse ? this._projSlotOf[i] : -1, src = ps >= 0 ? this._slots[ps] : null;
+      if (src && samePoseInputs(src, inst)) { // PERF-02: project() posed this instance this frame from the same inputs: copy, don't re-pose
+        const pm = inst.model, np = pm.partCount * PART_STRIDE, nf = pm.partCount * 12, P = out.pose, Q = src.pose, F = out.fwd, G = src.fwd;
+        for (let k = 0; k < np; k++) P[k] = Q[k];
+        for (let k = 0; k < nf; k++) F[k] = G[k];
+        out.fwdModel = pm;
+        rectFromForward(_noCullProj, pm, F, null, out.rect);
+      } else {
+        instanceRect(_noCullProj, inst.model, inst, out.pose, null, out.rect);
+        keepForward(out, inst.model);
+      }
       out.model = inst.model; out.modelKey = inst.modelKey;
       out.x = inst.x; out.y = inst.y; out.z = inst.z; out.yawDeg = inst.yawDeg;
       out.clip = inst.clip; out.frame = inst.frame; out.tMs = inst.tMs; out.fromClip = inst.fromClip; out.fromFrame = inst.fromFrame; out.fromTMs = inst.fromTMs; out.fromW = inst.fromW; out.scale = inst.scale;
@@ -407,8 +428,11 @@ export class VoxelPool {
     this.eyeX = _proj.eyeX; this.eyeY = _proj.eyeY; this.eyeZ = _proj.eyeZ;
     let count = 0;
     let culled = 0;
+    const slotOf = this._projSlotOf;
+    this._projEpoch = this._epoch;
     for (let i = 0; i < Math.min(this._rawCount, this.cap); i++) {
       const inst = this.raw[i];
+      slotOf[i] = -1;
       // ME-22 (28.12 item 4): the single place instances are routed into
       // the per-frame DDA/CPU-oracle list - a meshOnly model is skipped
       // (one warn per modelKey, never thrown, no placeholder geometry)
@@ -430,6 +454,7 @@ export class VoxelPool {
       out.addPart = inst.addPart; out.addRx = inst.addRx; out.addRy = inst.addRy; out.addRz = inst.addRz; out.legs = inst.legs; out.layers = inst.layers; out.look = inst.look;
       out.slot = count;
       out.entity = inst.entity;
+      slotOf[i] = count;
       count++;
     }
     shrinkTo(this.list, count);

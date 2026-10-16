@@ -74,9 +74,9 @@ try {
     for (let k = 0; !r.gpu && k < 3; k++) { await sleep(2000); r = await evaluateAsync(cdp, SAMPLER(frames)); } // pass timers need a few frames after the overlay turns them on
     const row = { quality: c.q, grid: `${c.w}x${c.h}`, pose, trees: t, frames: r.cpu.length, loadMs, heapDeltaMb: r.heap0 != null && r.heap1 != null ? (r.heap1 - r.heap0) / 1048576 : null,
       gpuP50: r.gpu && r.gpu.p50, gpuP95: r.gpu && r.gpu.p95, cpuP50: pct(r.cpu, 0.5), cpuP95: pct(r.cpu, 0.95),
-      frameP50: pct(r.itv, 0.5), frameP95: pct(r.itv, 0.95), fps: 1000 / (r.itv.reduce((a, b) => a + b, 0) / r.itv.length) };
+      frameP50: pct(r.itv, 0.5), frameP95: pct(r.itv, 0.95), cpuP99: pct(r.cpu, 0.99), cpuMax: Math.max(...r.cpu), frameP99: pct(r.itv, 0.99), frameMax: Math.max(...r.itv), frameOver16: r.itv.filter((v) => v > 16.7).length, cpuOver8: r.cpu.filter((v) => v > 8).length, fps: 1000 / (r.itv.reduce((a, b) => a + b, 0) / r.itv.length) };
     if (process.env.CAP_LOG) console.error('[passStats]', JSON.stringify(r.gpu), r.rawAvail);
-    if (args.probe) console.log('[probe]', pose, JSON.stringify(await evaluate(cdp, args.probe)));
+    if (args.probe) console.log('[probe]', pose, JSON.stringify(await evaluateAsync(cdp, args.probe)));
     rows.push(row);
     console.log(JSON.stringify(row));
   }

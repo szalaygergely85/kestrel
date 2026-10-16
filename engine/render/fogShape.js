@@ -59,6 +59,7 @@ export function fogDirShear(hx, hy, tanE, out) {
  */
 export const fogShapeCtx = { on: false, mode: 0, camZ: 0, terms: null, sunX: 0, sunY: 0, sunZ: 0, sunI: 0,
   camX: 0, camY: 0, aaFol: true, // AA-15 (OB-208): camera x/y + the foliage world-dice switch (`?aafol=0` -> setFoliageDice(false))
+  aaFolL: true, // AA-16 (OB-208): leaf-card light smoothing switch (`?aafoll=0` -> setFoliageLight(false))
   // OB-089: outdoor MESH fog (terrain's far fog: palette.fog.far near->far colours over start..full, curve) instead of the interior fogV2.
   outdoor: false, tStart: 0, tFull: 1, tCurve: 1, tNear: /** @type {ArrayLike<number>|null} */ (null), tFar: /** @type {ArrayLike<number>|null} */ (null) };
 
@@ -76,6 +77,10 @@ export function meshOutdoorFog(world, cam, palette) {
 }
 /** AA-15 (OB-208): switch the foliage world-space glyph dice (default on). Read by the CPU twin (detailShade.js) and passShade.js (fogView.w). */
 export function setFoliageDice(on) { fogShapeCtx.aaFol = !!on; }
+/** AA-16 (OB-208): switch the leaf-card light smoothing (default on). Read by detailShade.js shadeSurfaces and passShade.js (fogView.w bit 2). */
+export function setFoliageLight(on) { fogShapeCtx.aaFolL = !!on; }
+/** AA-16: fogView.w bit field for passShade.js - 1 = world glyph dice (AA-15), 2 = leaf light smoothing (AA-16). */
+export function foliageBits() { return (fogShapeCtx.aaFol ? 1 : 0) + (fogShapeCtx.aaFolL ? 2 : 0); }
 
 /**
  * AA-15 (OB-208): glyph dice for soft-edge leaf cards (kind 9), keyed to a WORLD-space block instead of the per-card u/v (leaf cards

@@ -13,7 +13,7 @@ import { createFogHour, createAtmosState, mixAtmos, applyAtmosToPalette, gradeCe
 import { createFxHook, resolveFx } from './fxHook.js';
 import { resolveGI, createGIWire, giLoadOptions } from './look/giWire.js';
 import { resolveFootIk, createFootIkWire, createSupportGround } from './look/footIkWire.js'; // ANIM-IK-01b: kit character foot placement (?footik=0 off) // GI-PROBE-06
-import { sceneOf } from './look/sceneFlag.js'; import { resolvePost } from './look/postConfig.js'; // POST-STACK-01c // ENV-03: `?atmos=0` = no driver, palette untouched
+import { sceneOf, undergroundAmbient } from './look/sceneFlag.js'; import { resolvePost } from './look/postConfig.js'; // POST-STACK-01c // ENV-03: `?atmos=0` = no driver, palette untouched
 import { parseDecorMode, buildDecorConfig, guardDecorRun } from './decorHost.js'; // ENV-01-WIRE
 import { loadPresets, resolveQuality, saveQuality, knobsFor, dropStaleOverrides, carpetQualityFor, carpetBuildFor } from './ui/gfxPresets.js';
 import { loadQuestFiles, showBootErrors } from './questBoot.js';
@@ -211,8 +211,9 @@ import { wireHitSparks, hitSparksEnabled } from './fx/hitSparkWire.js'; // HIT-S
 import { parsePointShadows, presetPointShadowsOn } from './pointShadowOpt.js'; // ME-16e: ?pointshadows=0|N
 import { parseGlow } from './glowOpt.js'; // EMIS-03/04: bleed + halo knob
 import { setReduceMotion, isReduceMotion, eyeZ, gateKick, textSizeCols } from './ui/comfort.js'; // SETTINGS-APPLY-01
-import { PHYSICS, createUnderState, setApiWarnings, setFoliageDice } from '../../engine/index.js';
+import { PHYSICS, createUnderState, setApiWarnings, setFoliageDice, setFoliageLight } from '../../engine/index.js';
 setFoliageDice(new URLSearchParams(location.search).get('aafol') !== '0'); // AA-15 (OB-208): leaf-card world glyph dice, ?aafol=0 = old per-card u/v dice
+setFoliageLight(new URLSearchParams(location.search).get('aafoll') !== '0'); // AA-16 (OB-208): leaf-card light smoothing, ?aafoll=0 = off
 if (new URLSearchParams(window.location.search).get('debug') === '1') setApiWarnings(true); // ENG-API-01h: dev flag only - deprecated engine names warn once
 import { meshFeedStats, MAX_MESH_DRAWS, MAX_DRAW_ITEMS } from '../../engine/index.js'; // OB-039: F3 mesh draw cap line
 import { createModelPreview, createCharCache } from '../../engine/index.js'; // EQ-03/04: Character tab model preview
@@ -1270,7 +1271,7 @@ async function runGame(mode, cinematic = null) {
   } };
   const nextCtx = { resolve: (k, id, o) => compassResolver.resolve(k, id, o), x: 0, y: 0 }; // OB-183: 'Next:' line + journal name the nearest giver
   if (saveRelay) saveRelay.quest.nextCtx = nextCtx;
-  const combatHud = createCombatHud({ events: engine.events, rgb: assets.palette.rgb, band: worldBand }); // HPBAR-02 + DMGNUM-01: enemy bars + damage numbers
+  const combatHud = createCombatHud({ events: engine.events, rgb: assets.palette.rgb, band: worldBand, groundAt: (x, y) => { const T = engine.world && engine.world.terrain; return T ? T.groundAt(x, y) : null; } }); // VISQA-22: terrain LOS hides bars of hidden beasts // HPBAR-02 + DMGNUM-01: enemy bars + damage numbers
   combatHud.bars.bars.setDifficulty(savedSettings.difficulty); // HPBAR-03: saved Easy/Hard shifts the shown level from the start
   window.__debug.compass = compass; window.__debug.compassRetarget = () => { const b = saveRelay && saveRelay.quest.book; return b ? compass.target(b, compassResolver) : null; }; window.__debug.compassHidden = () => compassHide; // tools/verify-compass.mjs
   function compassFindMarker(w, markerId) { // structure marker -> world position (same lookup as audio/ambient.js; load-time-ish, cached)
@@ -1431,7 +1432,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
   const atmosLast = { w: null }; engine.events.on('world:loaded', () => { atmosLast.w = null; }); // REV-MAIN: forces a snap on the next atmosphere step
    let fogHour = null; const applyFogHour = (P, h) => { if (!fogHour && window.FOG_HOUR) fogHour = createFogHour(P, window.FOG_HOUR); if (fogHour) fogHour.apply(h); }; // NIGHT-HAZE-01: far fog colour follows the hour
    let atmosDrv = null, atmosCfg = null, atmosV = -1, atmosBase = null; const atmosState = createAtmosState(); // ENV-03: biome atmosphere driver (null = off)
-  const postQ = resolvedQuality && resolvedQuality.name, postCfg0 = resolvePost(window.POST_LOOK, params, postQ, 'outdoor'), postState = createPostState(); let postCfg = postCfg0, postV = -2; const sceneScratch = {}; let sceneNow = 'outdoor'; // SCENE-INTERIOR: sceneOf() flag; postCfg re-resolved only on change // POST-STACK-01c: `?post=0` = null = today's frames; scene stays 'outdoor' until an interior flag exists
+  const postQ = resolvedQuality && resolvedQuality.name, postCfg0 = resolvePost(window.POST_LOOK, params, postQ, 'outdoor'), postState = createPostState(); let postCfg = postCfg0, postV = -2; const sceneScratch = {}; let sceneNow = 'outdoor', postKey = 'outdoor'; const ugRgb = [0, 0, 0]; // VISQA-11: postKey adds 'underground' (keepTerrain site) // SCENE-INTERIOR: sceneOf() flag; postCfg re-resolved only on change // POST-STACK-01c: `?post=0` = null = today's frames; scene stays 'outdoor' until an interior flag exists
   let clockDriver = null; // DN-03: step-quantised sun/look/ambient driver, rebuilt on every 'world:loaded'
   let clockTimeApplied = false; // DN-03: ?time= seeds the clock once, not on every restart
   let worldSunPath = null; // US-122a: fit the load-time sun before static/cinematic hour writes.
@@ -2247,7 +2248,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
     }
     if (mode === 'world' && playerHandle && !paused) {
       if (clockDriver && !titleMenuActive) { const w = engine.world; tickClock(w.state, dt, clockCfg); clockDriver.update(w.state[CLOCK_KEY]);
-        if (atmosDrv) { const t = playerHandle.data.transform; const sceneNow2 = sceneOf(w, t, sceneScratch, dt, playerHandle.data.components.body); underScene = sceneNow2; if (sceneNow2 !== sceneNow) { sceneNow = sceneNow2; if (postCfg0) { postCfg = resolvePost(window.POST_LOOK, params, postQ, sceneNow); postV = -2; } } atmosDrv.step(t.x, t.y, clockHour(w.state, clockCfg), dt, sceneNow === 'outdoor' && !!w.terrain /* REV-MAIN ENV-03 #3: only the overworld terrain world is outdoor */); if (atmosLast.w !== w) { atmosDrv.snap(); atmosLast.w = w; } /* #2: new world (world:loaded / respawn / restart / travel) -> snap now; teleports > 50 m snap inside the driver (atmosDriver.js) */ if (atmosDrv.out.version !== atmosV) { atmosV = atmosDrv.out.version; mixAtmos(atmosCfg.table, atmosDrv.active ? atmosDrv.out : null, atmosBase, atmosState); applyAtmosToPalette(assets.palette, atmosState); } } } // ENV-03 // DN-03: stops on title/pause (this block), runs through respawn/restart/travel
+        if (atmosDrv) { const t = playerHandle.data.transform; const sceneNow2 = sceneOf(w, t, sceneScratch, dt, playerHandle.data.components.body); underScene = sceneNow2; sceneNow = sceneNow2; const ugA = sceneNow2 === 'interior' ? undergroundAmbient(w, t, assets.palette, ugRgb) : null, postKey2 = ugA ? 'underground' : sceneNow2; if (postKey2 !== postKey) { postKey = postKey2; if (postCfg0) { postCfg = resolvePost(window.POST_LOOK, params, postQ, postKey, ugA); postV = -2; } } /* VISQA-11: buried sites get a dark level-ambient mist */ atmosDrv.step(t.x, t.y, clockHour(w.state, clockCfg), dt, sceneNow === 'outdoor' && !!w.terrain /* REV-MAIN ENV-03 #3: only the overworld terrain world is outdoor */); if (atmosLast.w !== w) { atmosDrv.snap(); atmosLast.w = w; } /* #2: new world (world:loaded / respawn / restart / travel) -> snap now; teleports > 50 m snap inside the driver (atmosDriver.js) */ if (atmosDrv.out.version !== atmosV) { atmosV = atmosDrv.out.version; mixAtmos(atmosCfg.table, atmosDrv.active ? atmosDrv.out : null, atmosBase, atmosState); applyAtmosToPalette(assets.palette, atmosState); } } } // ENV-03 // DN-03: stops on title/pause (this block), runs through respawn/restart/travel
       if (ending || uiLocked || vLocked() || isNoteOpen()) { // OB-057 (owner): no movement while a note is open
         controls.forward = 0; controls.strafe = 0; controls.run = false; controls.jump = false;
       } else {

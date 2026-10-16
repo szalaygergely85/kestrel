@@ -1,0 +1,36 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Rock_Medium_1_bare",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Rock_Medium_1.mesh.bin",
+  "triCount": 342,
+  "bbox": [
+    -1.72729,
+    -1.83925,
+    -0.27113,
+    1.49786,
+    1.14988,
+    1.98867
+  ],
+  "ranges": [
+    {"count": 18, "part": "Rock_Medium_1#0:moss_cap", "start": 0},
+    {"count": 218, "part": "Rock_Medium_1#0:rock", "start": 18},
+    {"count": 106, "part": "Rock_Medium_1#0:rock_soft", "start": 236}
+  ],
+  "matKeys": [
+    "moss_cap",
+    "rock",
+    "rock_soft"
+  ],
+  "mats": {
+    "moss_cap": "rock",
+    "rock": "rock",
+    "rock_soft": "rock_soft"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "N4nhvyUGAT6DwIq+MzPDv+F6dL+DwIq+MzPDv+F6dL+Nl/4/N4nhvyUGAT6DwIq+MzPDv+F6dL+Nl/4/N4nhvyUGAT6Nl/4/MzPDv+F6dL+DwIq+ke18volB8L+DwIq+ke18volB8L+Nl/4/MzPDv+F6dL+DwIq+ke18volB8L+Nl/4/MzPDv+F6dL+Nl/4/ke18volB8L+DwIq+pHB9P5zEsL+DwIq+pHB9P5zEsL+Nl/4/ke18volB8L+DwIq+pHB9P5zEsL+Nl/4/ke18volB8L+Nl/4/pHB9P5zEsL+DwIq+L93EPwaBlb2DwIq+L93EPwaBlb2Nl/4/pHB9P5zEsL+DwIq+L93EPwaBlb2Nl/4/pHB9P5zEsL+Nl/4/L93EPwaBlb2DwIq+hetRPycxaD+DwIq+hetRPycxaD+Nl/4/L93EPwaBlb2DwIq+hetRPycxaD+Nl/4/L93EPwaBlb2Nl/4/hetRPycxaD+DwIq+exQuvj0Klz+DwIq+exQuvj0Klz+Nl/4/hetRPycxaD+DwIq+exQuvj0Klz+Nl/4/hetRPycxaD+Nl/4/exQuvj0Klz+DwIq+z/fDv166KT+DwIq+z/fDv166KT+Nl/4/exQuvj0Klz+DwIq+z/fDv166KT+Nl/4/exQuvj0Klz+Nl/4/z/fDv166KT+DwIq+N4nhvyUGAT6DwIq+N4nhvyUGAT6Nl/4/z/fDv166KT+DwIq+N4nhvyUGAT6Nl/4/z/fDv166KT+Nl/4/N4nhvyUGAT6Nl/4/MzPDv+F6dL+Nl/4/ke18volB8L+Nl/4/N4nhvyUGAT6DwIq+ke18volB8L+DwIq+MzPDv+F6dL+DwIq+N4nhvyUGAT6Nl/4/ke18volB8L+Nl/4/pHB9P5zEsL+Nl/4/N4nhvyUGAT6DwIq+pHB9P5zEsL+DwIq+ke18volB8L+DwIq+N4nhvyUGAT6Nl/4/pHB9P5zEsL+Nl/4/L93EPwaBlb2Nl/4/N4nhvyUGAT6DwIq+L93EPwaBlb2DwIq+pHB9P5zEsL+DwIq+N4nhvyUGAT6Nl/4/L93EPwaBlb2Nl/4/hetRPycxaD+Nl/4/N4nhvyUGAT6DwIq+hetRPycxaD+DwIq+L93EPwaBlb2DwIq+N4nhvyUGAT6Nl/4/hetRPycxaD+Nl/4/exQuvj0Klz+Nl/4/N4nhvyUGAT6DwIq+exQuvj0Klz+DwIq+hetRPycxaD+DwIq+N4nhvyUGAT6Nl/4/exQuvj0Klz+Nl/4/z/fDv166KT+Nl/4/N4nhvyUGAT6DwIq+z/fDv166KT+DwIq+exQuvj0Klz+DwIq+"
+}

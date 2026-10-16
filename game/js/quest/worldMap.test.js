@@ -66,6 +66,18 @@ for (const [cols, rows] of PRESETS) {
   ok('loaded region.seen restores names', t.includes('The Watchtower') && t.includes('The Crossroads'));
 }
 
+// VISQA-14: quest marks, relays and the player arrow never overwrite a region-name letter
+{
+  const { v } = mk(['tower', 'ford']); v.updatePose(0, 0, 0);
+  const L = v.labels, cx = L[0] + 2, cy = L[1], i = (cy + 1) * v.art.w + cx + 1; // a letter cell of the first name
+  const wx = v.box.x0 + (cx + 1.5) * (v.box.x1 - v.box.x0) / v.innerW, wy = v.box.y0 + (cy + 0.5) * (v.box.y1 - v.box.y0) / v.innerH;
+  v.setQuestMarkers([{ kind: 'quest', x: wx, y: wy }]); v.setMarker(wx, wy, 'relay'); v.setChartPieces();
+  v.updatePose(wx, wy, 0);
+  const t = text(v);
+  ok('names intact under markers/player (Watchtower, Crossroads)', t.includes('The Watchtower') && t.includes('The Crossroads'));
+  ok('player arrow still shown', v.position.code > 0 && v.index(wx, wy) === i || v.position.code > 0);
+}
+
 // 0 alloc per frame: heap growth over many updatePose calls stays ~0
 {
   const { v } = mk(['ford', 'tower']); v.updatePose(1200, 1000, 10);

@@ -92,22 +92,26 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
   const cnt = (row) => (row.counted ? '  ' + row.progress + '/' + row.target : '');
   /** OB-099: the m1 chain is NOT a quest of its own. While a step belongs to a `silent` section (covered by a giver quest) it is
    * not listed; otherwise it is ONE small entry named after the current step's section (its short title). Returns the section or null. */
+  let showSilent = false; // VISQA-17: open silent main step with no giver quest taken yet -> the journal lists the step the HUD shows
   function mainSection(def, rows) {
     if (!def.sections) return { title: def.title || def.id, id: undefined };
     const k = rows.findIndex(r => r.status === 'active'); if (k < 0) return { title: def.title || def.id, id: undefined };
     const sec = def.sections.find(x => x.id === def.objectives[k].section);
-    return sec && sec.silent ? null : { title: (sec && sec.title) || def.title, id: sec && sec.id };
+    return sec && sec.silent && !showSilent ? null : { title: (sec && sec.title) || def.title, id: sec && sec.id };
   }
   const mainRows = [];
   function rebuild() {
     built = book.version; quests = []; names = [];
     const n = book.count, act = [], mainAct = [], off = [], done = [];
+    showSilent = false; let silentOpen = false;
     for (let i = 0; i < n; i++) {
       const s = book.status(i);
-      if (i === 0 && s !== DONE && !mainSection(book.def(0), book.objectives(0, mainRows))) continue; // OB-099: covered by a giver quest
-      if (i === 0 && s !== DONE && typeof book.mainStepGated === 'function' && book.mainStepGated()) continue; // OB-201 (rule OB-156/D-082): m1 step owned by a giver quest not accepted yet -> no active entry / objective until accepted
+      const gated = i === 0 && s !== DONE && typeof book.mainStepGated === 'function' && book.mainStepGated();
+      if (i === 0 && s !== DONE && !gated && !mainSection(book.def(0), book.objectives(0, mainRows))) { silentOpen = s === 2; continue; } // OB-099: covered by a giver quest
+      if (gated) continue; // OB-201 (rule OB-156/D-082): m1 step owned by a giver quest not accepted yet -> no active entry / objective until accepted
       if (s === 2 || s === READY) (isMain(i) ? mainAct : act).push(i);
     }
+    if (silentOpen && !mainAct.length && !act.length) { showSilent = true; mainAct.push(0); } // VISQA-17: HUD shows this step (not gated) -> journal lists it too
     mainAct.sort((a, b) => (a === 0 ? -1 : b === 0 ? 1 : b - a)); act.sort((a, b) => b - a);
     // OB-100 (owner): a quest shows only once it is picked up (accepted) - offered / unlocked quests are not listed
     for (let i = 1; i < n; i++) if (book.status(i) === DONE && book.def(i).format) done.push(i); // QUEST-FORMAT: finished format quests stay listed below the active ones

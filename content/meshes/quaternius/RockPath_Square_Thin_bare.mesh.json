@@ -1,0 +1,37 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/RockPath_Square_Thin_bare",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "RockPath_Square_Thin.mesh.bin",
+  "triCount": 1793,
+  "bbox": [
+    -0.76819,
+    -0.98468,
+    -0.01015,
+    0.79169,
+    1.00226,
+    0.1662
+  ],
+  "ranges": [
+    {"count": 461, "part": "RockPath_Square_Thin#0:rock", "start": 0},
+    {"count": 676, "part": "RockPath_Square_Thin#0:moss_cap", "start": 461},
+    {"count": 656, "part": "RockPath_Square_Thin#0:rock_soft", "start": 1137}
+  ],
+  "matKeys": [
+    "rock",
+    "moss_cap",
+    "rock_soft"
+  ],
+  "mats": {
+    "moss_cap": "rock",
+    "rock": "rock",
+    "rock_soft": "rock_soft"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "collide": false,
+  "castShadow": false
+}

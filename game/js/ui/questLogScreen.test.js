@@ -14,8 +14,9 @@ log.open();
 let s = log.snapshot();
 const has = (re) => s.right.some(l => re.test(l)), upd = () => { log.draw(ui); s = log.snapshot(); };
 // OB-099: m1 is NOT a quest of its own. Its steps 1-4 are covered by the giver quests (silent sections) -> nothing listed yet
-assert.deepEqual(s.left, [], 'wake step: nothing listed - m1 is covered and Not Safe is only offered until the note is read (OB-100): ' + s.left);
-assert.ok(!has(/Objectives|Go up the tower/), 'offered: no objectives yet: ' + s.right);
+// VISQA-17: the open wake step is the one the HUD shows (not gated) -> the journal lists it too (as the covering quest's section) until a giver quest is accepted
+assert.deepEqual(s.left, ['A Blade in the Ashes'], 'wake step: the HUD step is listed: ' + s.left);
+assert.ok(!has(/Go up the tower/), 'offered: no future objectives yet: ' + s.right);
 book.feed({ type: 'flag:set', key: 'wake', value: true });
 // quest 1 "Not Safe": offered -> accepted (pick up the note)
 assert.equal(book.accept('tower.blade'), true); upd();

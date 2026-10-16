@@ -92,7 +92,7 @@
         },
         atmos: {
           A: { name: 'Green gloom',
-               fog: { day: '#7a9a7e', dusk: '#5a4a48', night: '#0e1820' }, fogDensity: 0.007,   // VISQA-04: 0.012 -> 0.007 (Glasswater bowl is biome 1: walls ~150 m were flat mint)
+               fog: { day: '#86a498', dusk: '#5a4a48', night: '#0e1820' }, fogDensity: 0.0042,   // VISQA-04: .012 -> .007 -> .0042 and fog hue #7a9a7e -> #86a498 (Glasswater bowl is biome 1 'forest' atmos: walls ~150 m were flat mint; k@150m .83 -> .47)
                haze: { day: '#b8d0b0', dusk: '#d09878', night: '#18263a' }, hazeAmount: 0.38,
                grade: { day:   { lift: [0.0, 0.02, 0.01],  gamma: [0.97, 1.0, 0.97], gain: [0.92, 1.0, 0.9],  sat: 0.95 },
                         dusk:  { lift: [0.02, 0.01, 0.02], gamma: [1, 0.97, 0.97],   gain: [1.0, 0.88, 0.8],  sat: 0.9 },

@@ -1,0 +1,37 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/RockPath_Round_Thin_bare",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "RockPath_Round_Thin.mesh.bin",
+  "triCount": 2254,
+  "bbox": [
+    -0.69707,
+    -1.0031,
+    -0.00886,
+    0.76028,
+    1.0861,
+    0.10148
+  ],
+  "ranges": [
+    {"count": 457, "part": "RockPath_Round_Thin#0:rock", "start": 0},
+    {"count": 772, "part": "RockPath_Round_Thin#0:moss_cap", "start": 457},
+    {"count": 1025, "part": "RockPath_Round_Thin#0:rock_soft", "start": 1229}
+  ],
+  "matKeys": [
+    "rock",
+    "moss_cap",
+    "rock_soft"
+  ],
+  "mats": {
+    "moss_cap": "rock",
+    "rock": "rock",
+    "rock_soft": "rock_soft"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "collide": false,
+  "castShadow": false
+}

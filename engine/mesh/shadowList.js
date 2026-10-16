@@ -80,7 +80,7 @@ export function buildShadowList(list, cameraList, world, planes, src) {
   if (src.terrainSet) src.terrainSet.addToDrawList(list, c, true);
   const vp = src.voxelPool;
   if (vp && vp.list.length > 0 && src.voxelMeshCache) {
-    addVoxelInstances(list, /** @type {any} */ (vp), src.voxelMeshCache, vp.partNamesFor);
+    addVoxelInstances(list, /** @type {any} */ (vp), src.voxelMeshCache, vp.partNamesFor, planes); // PERF-03: pre-cull = list.cull(planes) below
   }
   const ig = src.instances;
   if (ig && ((ig.pool && src.voxelMeshCache) || (src.meshCache && src.meshIdFor))) {

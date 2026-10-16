@@ -35,3 +35,16 @@ export function sceneOf(world, p, scratch, dt = 1 / 60, body = null) {
   else { scratch.f[0] += dt; if (scratch.f[0] >= HOLD) { scratch.scene = raw; scratch.f[0] = 0; } } // Float64Array: no boxed-double allocs
   return scratch.scene;
 }
+
+/** VISQA-11: inside a buried keepTerrain site (crypt, cellar, caves, den) -> `out` = the level ambient rgb (preset hue * intensity), else null.
+ *  0 alloc (one structureAt + isOutdoorAt). palette = the live palette ({lights, hue}). */
+export function undergroundAmbient(world, p, palette, out) {
+  if (!world || !world.structureAt || !palette || !palette.lights || !palette.hue) return null;
+  const s = world.structureAt(p.x, p.y);
+  if (!s || !s.keepMask || !s.level || (world.isOutdoorAt && world.isOutdoorAt(p.x, p.y, p.z + EYE))) return null;
+  const a = s.level.def && s.level.def.ambient, pr = palette.lights[(a && a.preset) || 'ambient'], hue = pr && palette.hue[pr.color];
+  if (!hue) return null;
+  const k = pr.intensity != null ? pr.intensity : 1;
+  out[0] = hue[0] * k; out[1] = hue[1] * k; out[2] = hue[2] * k;
+  return out;
+}

@@ -38,7 +38,7 @@ import { buildPrismProxy } from '../mesh/colliderProxy.js';
 
 /** GS-01f: terrainFloor cells draw no floor quad but keep a collision-only one (walkable, mesh physics). */
 const COLLIDER_MESH_OPTS = { collisionFloors: true };
-import { buildBvh, buildBvhFromMesh, refit } from '../physics/bvh.js';
+import { buildBvh, buildBvhFromMesh, refit, BvhBuilder } from '../physics/bvh.js';
 
 /** @typedef {import('../physics/meshCollide.js').MeshCollider} MeshCollider */
 
@@ -449,6 +449,11 @@ function buildMergedMeshCollider(parts) {
  */
 export function buildTrunkCollider(scatter, cfg) {
   if (!scatter || scatter.count === 0) return null;
+  return scatterCollider('scatter:trunks', buildBvh(trunkTris(scatter, cfg), null, null));
+}
+
+/** Unrolled world-space trunk prism walls (16 tris per tree) for `buildTrunkCollider` / `trunkColliderJob`. */
+function trunkTris(scatter, cfg) {
   const pos = new Float64Array(scatter.count * 8 * 2 * 9);
   let o = 0;
   for (let i = 0; i < scatter.count; i++) {
@@ -469,13 +474,47 @@ export function buildTrunkCollider(scatter, cfg) {
       pos[o++] = ax; pos[o++] = ay; pos[o++] = zt;
     }
   }
-  const bvh = buildBvh(pos, null, null);
+  return pos;
+}
+
+/** @returns {MeshCollider} */
+function scatterCollider(id, bvh) {
   return {
-    id: 'scatter:trunks', kind: 'trimesh', bvh,
+    id, kind: 'trimesh', bvh,
     min: Float64Array.from(bvh.nodeMin.subarray(0, 3)),
     max: Float64Array.from(bvh.nodeMax.subarray(0, 3)),
     enabled: true,
   };
+}
+
+/**
+ * PERF-03: the trunk / detail colliders as a time-sliced job for the band bake (bandBake.js phases 2-3), so a
+ * bake-ahead band never builds a whole BVH in one frame. Call order: triangles (1 call), BvhBuilder setup (1 call),
+ * then `BvhBuilder.step(ms)` slices. `result` (MeshCollider or null) is bit-identical to the one-call builders.
+ */
+export class ColliderBuildJob {
+  /** @param {string} id @param {() => (Float64Array|null)} makeTris */
+  constructor(id, makeTris) { this.id = id; this.makeTris = makeTris; this.pos = null; this.builder = null; this.done = false; /** @type {MeshCollider|null} */ this.result = null; }
+  /** >= 1 unit of work per call; true when `result` is final. @param {number} ms */
+  step(ms) {
+    if (this.done) return true;
+    if (!this.pos) { this.pos = this.makeTris(); if (!this.pos) { this.done = true; return true; } return false; }
+    if (!this.builder) { this.builder = new BvhBuilder(this.pos, null, null); return false; }
+    if (!this.builder.step(ms)) return false;
+    this.result = scatterCollider(this.id, /** @type {import('../physics/bvh.js').Bvh} */ (this.builder.result));
+    this.builder = null; this.pos = null; this.done = true;
+    return true;
+  }
+}
+
+/** Sliced `buildTrunkCollider`. */
+export function trunkColliderJob(scatter, cfg) {
+  return new ColliderBuildJob('scatter:trunks', () => (scatter && scatter.count ? trunkTris(scatter, cfg) : null));
+}
+
+/** Sliced `buildDetailCollider`. */
+export function detailColliderJob(detail) {
+  return new ColliderBuildJob('scatter:detail', () => detailTris(detail));
 }
 
 function colliderRing(cx, cy, yaw, prism, radius, hx, hy) {
@@ -541,6 +580,12 @@ function emitColliderFaces(pos, o, ring, cx, cy, zb, zt, prism, bottom) {
  * @returns {MeshCollider|null}
  */
 export function buildDetailCollider(detail) {
+  const pos = detailTris(detail);
+  return pos ? scatterCollider('scatter:detail', buildBvh(pos, null, null)) : null;
+}
+
+/** Unrolled detail collider triangles, or null when there are none. */
+function detailTris(detail) {
   if (!detail || detail.count === 0) return null;
   let triCount = 0;
   for (let i = 0; i < detail.count; i++) {
@@ -561,13 +606,7 @@ export function buildDetailCollider(detail) {
       c.prism ? c.prism.r * sc : 0, c.box ? c.box.hx * sc : 0, c.box ? c.box.hy * sc : 0);
     o = emitColliderFaces(pos, o, ring, detail.x[i], detail.y[i], zb, zt, !!c.prism, false);
   }
-  const bvh = buildBvh(pos, null, null);
-  return {
-    id: 'scatter:detail', kind: 'trimesh', bvh,
-    min: Float64Array.from(bvh.nodeMin.subarray(0, 3)),
-    max: Float64Array.from(bvh.nodeMax.subarray(0, 3)),
-    enabled: true,
-  };
+  return pos;
 }
 
 /**

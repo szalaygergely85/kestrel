@@ -22,5 +22,5 @@ assert.ok(differs, 'different blocks give different dice');
 assert.equal(fogShapeCtx.aaFol, true);
 setFoliageDice(false); assert.equal(fogShapeCtx.aaFol, false); setFoliageDice(true);
 // 5) WGSL twin present and gated on fogView.w + F_SOFT_EDGE (65536)
-assert.ok(/fn folDice\(/.test(SHADE_WGSL) && /su\.fogView\.w > 0\.5/.test(SHADE_WGSL) && /& 65536\) != 0/.test(SHADE_WGSL));
+assert.ok(/fn folDice\(/.test(SHADE_WGSL) && /\(folBits & 1u\) != 0u/.test(SHADE_WGSL) && /& 65536\) != 0/.test(SHADE_WGSL));
 console.log('folDice.test: ALL PASS');

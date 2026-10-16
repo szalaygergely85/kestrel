@@ -1,0 +1,36 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Rock_Medium_2_bare",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Rock_Medium_2.mesh.bin",
+  "triCount": 244,
+  "bbox": [
+    -1.71364,
+    -1.31995,
+    -0.05084,
+    1.33512,
+    1.15913,
+    1.84813
+  ],
+  "ranges": [
+    {"count": 2, "part": "Rock_Medium_2#0:moss_cap", "start": 0},
+    {"count": 189, "part": "Rock_Medium_2#0:rock", "start": 2},
+    {"count": 53, "part": "Rock_Medium_2#0:rock_soft", "start": 191}
+  ],
+  "matKeys": [
+    "moss_cap",
+    "rock",
+    "rock_soft"
+  ],
+  "mats": {
+    "moss_cap": "rock",
+    "rock": "rock",
+    "rock_soft": "rock_soft"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "IbDiv/p+Sj9g5VC9RIvcv/T91Lxg5VC9RIvcv/T91LxEi+w/IbDiv/p+Sj9g5VC9RIvcv/T91LxEi+w/IbDiv/p+Sj9Ei+w/RIvcv/T91Lxg5VC9DAKbv7bzXb9g5VC9DAKbv7bzXb9Ei+w/RIvcv/T91Lxg5VC9DAKbv7bzXb9Ei+w/RIvcv/T91LxEi+w/DAKbv7bzXb9g5VC9ObRIPQAAsL9g5VC9ObRIPQAAsL9Ei+w/DAKbv7bzXb9g5VC9ObRIPQAAsL9Ei+w/DAKbv7bzXb9Ei+w/ObRIPQAAsL9g5VC9g8CKP7bzfb9g5VC9g8CKP7bzfb9Ei+w/ObRIPQAAsL9g5VC9g8CKP7bzfb9Ei+w/ObRIPQAAsL9Ei+w/g8CKP7bzfb9g5VC9IbCyPwisPD9g5VC9IbCyPwisPD9Ei+w/g8CKP7bzfb9g5VC9IbCyPwisPD9Ei+w/g8CKP7bzfb9Ei+w/IbCyPwisPD9g5VC9Vg4tP7TIlj9g5VC9Vg4tP7TIlj9Ei+w/IbCyPwisPD9g5VC9Vg4tP7TIlj9Ei+w/IbCyPwisPD9Ei+w/Vg4tP7TIlj9g5VC9RIusvl66mT9g5VC9RIusvl66mT9Ei+w/Vg4tP7TIlj9g5VC9RIusvl66mT9Ei+w/Vg4tP7TIlj9Ei+w/RIusvl66mT9g5VC9IbDiv/p+Sj9g5VC9IbDiv/p+Sj9Ei+w/RIusvl66mT9g5VC9IbDiv/p+Sj9Ei+w/RIusvl66mT9Ei+w/IbDiv/p+Sj9Ei+w/RIvcv/T91LxEi+w/DAKbv7bzXb9Ei+w/IbDiv/p+Sj9g5VC9DAKbv7bzXb9g5VC9RIvcv/T91Lxg5VC9IbDiv/p+Sj9Ei+w/DAKbv7bzXb9Ei+w/ObRIPQAAsL9Ei+w/IbDiv/p+Sj9g5VC9ObRIPQAAsL9g5VC9DAKbv7bzXb9g5VC9IbDiv/p+Sj9Ei+w/ObRIPQAAsL9Ei+w/g8CKP7bzfb9Ei+w/IbDiv/p+Sj9g5VC9g8CKP7bzfb9g5VC9ObRIPQAAsL9g5VC9IbDiv/p+Sj9Ei+w/g8CKP7bzfb9Ei+w/IbCyPwisPD9Ei+w/IbDiv/p+Sj9g5VC9IbCyPwisPD9g5VC9g8CKP7bzfb9g5VC9IbDiv/p+Sj9Ei+w/IbCyPwisPD9Ei+w/Vg4tP7TIlj9Ei+w/IbDiv/p+Sj9g5VC9Vg4tP7TIlj9g5VC9IbCyPwisPD9g5VC9IbDiv/p+Sj9Ei+w/Vg4tP7TIlj9Ei+w/RIusvl66mT9Ei+w/IbDiv/p+Sj9g5VC9RIusvl66mT9g5VC9Vg4tP7TIlj9g5VC9"
+}

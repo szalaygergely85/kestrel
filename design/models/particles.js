@@ -95,7 +95,7 @@
       maxLive: 48, killBelow: null,
       glyphs:  "OOO%o;:~-'.",
       colors: ['ashLight', 'ashLight', 'ashLight', 'ashLight', 'ash', 'ash', 'ash', 'ashLight'],
-      emissive: true, emissiveFog: 0.6, sizeM: 1.5, sizeEndM: 7
+      emissive: false, emissiveFog: 0, sizeM: 1.5, sizeEndM: 7 // VISQA-23: was emissive (unlit) -> glowing white pillars at night; now lit by the emitter's light like smoke
     },
     // --- sparks: the sword-hit burst (burstAt, cone along the hit normal via setEmitterDir; default axis = up).
     // 10 sparks at 2.5-5 m/s in a wide 50 deg cone, real gravity, 0.3-0.4 s: a short bright spray that arcs down.

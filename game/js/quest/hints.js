@@ -204,8 +204,9 @@ export function drawHints(ui, uiStyle, lut) {
   const prefixLen = current.prefixLine.n;
   const y = ui.rows - hintStyle.yFromBottom;
   const x = hintStyle.x;
-  drawRichLine(ui, x, y, current.prefixLine, current.a, lut);
-  drawRichLine(ui, x + prefixLen, y, current.textLine, current.a, lut);
+  // VISQA-16: fade by colour only (lut null = no glyph stepping down the ramp), letters stay letters
+  drawRichLine(ui, x, y, current.prefixLine, current.a, null);
+  drawRichLine(ui, x + prefixLen, y, current.textLine, current.a, null);
 }
 
 /** FS-01: sets a hint's text/keys (live key labels after a rebind) and drops its cached lines. No-op for an unknown id or an unchanged text. */
