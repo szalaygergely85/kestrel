@@ -11,33 +11,36 @@ export const WOLF_ANCHOR_IDS = Object.freeze(['wolf1', 'wolf2', 'wolf3', 'wolf4'
 
 /** Tier-1 multipliers vs the boar (US-129a scales them later). */
 export const WOLF_TUNING = Object.freeze({
+  attack: 'melee',   // OB-220: 'melee' = close in, 0.4 s snap, short bite lunge, step back; 'charge' = the old 5 m leap (legacy numbers below)
+  biteR: 1.8, biteSec: 0.4, biteM: 2.0, biteLungeSec: 0.25, biteRetreatSec: 0.8, biteRetreatM: 2, // melee numbers (= kinds.json grey_wolf `bite`)
   hpMul: 0.75,       // HP 0.75x boar
   speedMul: 1.3,     // run speed 1.3x boar
   crouchSec: 0.5,    // telegraph: crouch before the leap (>= 0.5 s)
   leapM: 5,          // leap distance
   leapSec: 0.5,      // leap duration -> leap speed = leapM / leapSec
   retreatSec: 1.5,   // retreat after a bite
-  circleMin: 4, circleMax: 6, // circling band (m) while another wolf holds the token
+  circleMin: 2.4, circleMax: 3.4, // circling band (m) while another wolf holds the token
   circleSpeedMul: 0.7,        // circling speed as a share of the wolf's chase speed
   fleeHpFrac: 0.25,  // a LONE wolf below this share of max HP flees
   fleeM: 30,         // flee distance
   packR: 25,         // m, another living wolf within this = "not lone"
-  retreatM: 4,       // m, retreat waypoint distance
+  retreatM: 2,       // m, retreat waypoint distance (melee step back; charge mode used 4)
 });
 
 /** Per-slot cfg overrides for a wolf (merged over the boar defaults at createBeastSim). */
-export function wolfOverrides(base = BEAST_DEFAULTS) {
+export function wolfOverrides(base = BEAST_DEFAULTS, attack = WOLF_TUNING.attack) {
   const T = WOLF_TUNING;
+  const melee = attack === 'melee';
   return {
     hp: Math.max(1, Math.round(base.hp * T.hpMul)),
     chase: base.chase * T.speedMul,
     walk: base.walk * T.speedMul,
-    windupR: T.leapM,                 // crouch starts at leap range
-    windupSec: T.crouchSec,
-    charge: T.leapM / T.leapSec,      // 10 m/s
-    chargeMaxSec: T.leapSec,          // 0.5 s -> 5 m
-    recoverSec: T.retreatSec,
-    recoverWallSec: T.retreatSec,
+    windupR: melee ? T.biteR : T.leapM,                 // snap/crouch starts at bite (1.8 m) or leap (5 m) range
+    windupSec: melee ? T.biteSec : T.crouchSec,
+    charge: melee ? T.biteM / T.biteLungeSec : T.leapM / T.leapSec,
+    chargeMaxSec: melee ? T.biteLungeSec : T.leapSec,
+    recoverSec: melee ? T.biteRetreatSec : T.retreatSec,
+    recoverWallSec: melee ? T.biteRetreatSec : T.retreatSec,
   };
 }
 

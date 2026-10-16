@@ -386,7 +386,7 @@
       {"id": "shove", "type": "melee", "range": 1.5, "windupSec": 0.5, "activeSec": 0.2, "recoverSec": 0.8, "cooldownSec": 4, "dmgF": 0.2, "weight": 1}
     ],
     "walk": 1.6,
-    "run": 5.175
+    "run": 5.85
   },
   "goblin_spear_thrower": {
     "name": "Goblin Spear Thrower",

@@ -10,17 +10,19 @@ export const GOBLIN_MODEL = 'goblin';
 export const GOBLIN_TORCH_MODEL = 'goblinTorch';
 
 export const GOBLIN_TUNING = Object.freeze({
+  attack: 'melee',   // OB-220: 'melee' = close to ~1.5 m, 0.5 s raise, short jab, step back; 'charge' = the old 4.5 m lunge
+  jabR: 2.4, jabM: 3.0, jabSec: 0.3, // melee numbers (= kinds.json goblin_warrior `shove` reach)
   hpMul: 0.6,        // HP 0.6x boar (before the band-tier multiplier)
-  chaseMul: 1.15,    // run speed vs the boar
+  meleeChaseMul: 1.3, chaseMul: 1.15,    // run speed vs the boar
   walk: 1.6,         // m/s wander
   noticeR: 16,
   leashR: 25,        // default camp leash (brain.leashR overrides per camp)
   windupSec: 0.5,    // telegraph: the raise
   windupR: 4.5,      // m, the strike starts inside this (OB-150: was 3.5; a 3.5 m/s walker out-walked the short chase before the strike began)
   lungeM: 2.5, lungeSec: 0.3, // charge = lunge distance / duration
-  retreatM: 3,       // m, retreat waypoint distance after a strike or a hit
+  retreatM: 2,       // m, retreat waypoint distance after a strike or a hit (charge mode used 3)
   retreatSec: 0.6,   // s of retreat (about 3 m at the run speed)
-  circleMin: 3, circleMax: 5, circleSpeedMul: 0.7,
+  circleMin: 2.2, circleMax: 3.2, circleSpeedMul: 0.7,
   fleeHpFrac: 0.3,   // a LONE goblin below this share of max HP flees
   fleeM: 20,
   packR: 25,         // m, another living goblin within this = "not lone"
@@ -34,17 +36,18 @@ export const GOBLIN_TUNING = Object.freeze({
 });
 
 /** Per-slot cfg overrides for a goblin (merged over the boar defaults at createBeastSim). */
-export function goblinOverrides(base = BEAST_DEFAULTS, role = 'melee') {
+export function goblinOverrides(base = BEAST_DEFAULTS, role = 'melee', attack = GOBLIN_TUNING.attack) {
   const T = GOBLIN_TUNING;
   const thrower = role === 'thrower';
+  const melee = attack === 'melee' && !thrower;
   return {
     hp: Math.max(1, Math.round(base.hp * T.hpMul)),
-    chase: base.chase * T.chaseMul,
+    chase: base.chase * (melee ? T.meleeChaseMul : T.chaseMul), // OB-220: a melee goblin must catch a walker before the camp leash
     walk: T.walk,
     noticeR: T.noticeR, leashR: T.leashR,
-    windupR: T.windupR, windupSec: thrower ? T.throwWindupSec : T.windupSec,
-    charge: T.lungeM / T.lungeSec,
-    chargeMaxSec: T.lungeSec,
+    windupR: melee ? T.jabR : T.windupR, windupSec: thrower ? T.throwWindupSec : T.windupSec,
+    charge: melee ? T.jabM / T.jabSec : T.lungeM / T.lungeSec,
+    chargeMaxSec: melee ? T.jabSec : T.lungeSec,
     recoverSec: thrower ? T.reloadSec : T.retreatSec,
     recoverWallSec: thrower ? T.reloadSec : T.retreatSec,
   };

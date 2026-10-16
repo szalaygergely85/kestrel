@@ -125,8 +125,8 @@ const isTok = (s) => s === STATE_WINDUP || s === STATE_CHARGE;
   const { sim } = pack();
   ok('wolf hp = 3 (0.75 x boar 4)', sim.entities[0].components.health.max === 3, String(sim.entities[0].components.health.max));
   ok('wolf chase = 1.3 x boar', Math.abs(sim.scfg[0].chase - 4.5 * 1.3) < 1e-9);
-  ok('leap = 5 m (10 m/s x 0.5 s)', Math.abs(sim.scfg[0].charge * sim.scfg[0].chargeMaxSec - 5) < 1e-9);
-  ok('crouch >= 30 steps, retreat 90 steps', sim.ssteps[0].windup >= 30 && sim.ssteps[0].recover === 90);
+  ok('OB-220 bite lunge = 2 m (8 m/s x 0.25 s), reach 1.8 m', Math.abs(sim.scfg[0].charge * sim.scfg[0].chargeMaxSec - 2) < 1e-9 && sim.scfg[0].windupR === 1.8);
+  ok('snap >= 24 steps (0.4 s), step-back 48 steps', sim.ssteps[0].windup >= 24 && sim.ssteps[0].recover === 48);
 }
 
 // 2. token never shared over 10k ticks, telegraph >= 0.5 s, circling band, bites happen, 0 alloc
@@ -143,7 +143,7 @@ const isTok = (s) => s === STATE_WINDUP || s === STATE_CHARGE;
       else { if (crouch[i] > 0 && s === STATE_CHARGE) minCrouch = Math.min(minCrouch, crouch[i]); crouch[i] = 0; }
       if (s === STATE_CHASE && sim.waiting[i]) {
         const d = Math.hypot(sim.steer.x[i] - PX, sim.steer.y[i] - PY);
-        circ++; if (d < 2.5 || d > 7.5) circBad++;
+        circ++; if (d < 1.2 || d > 4.5) circBad++; // OB-220: melee circling stays close
       }
     }
     if (tok > maxTok) maxTok = tok;
@@ -152,15 +152,15 @@ const isTok = (s) => s === STATE_WINDUP || s === STATE_CHARGE;
   bites = hits.filter((h) => h.target === 'player').length;
   ok('at most 2 tokens (OB-150, 10k ticks)', maxTok <= 2, `max ${maxTok}`);
   ok('wolves attacked (bites > 5)', bites > 5, `bites ${bites}`);
-  ok('telegraph (crouch) >= 30 steps (0.5 s)', minCrouch >= 30, `min ${minCrouch}`);
-  ok('waiting wolves circled', circ > 20 && circBad / circ < 0.1, `circ ${circ} bad ${circBad}`);
+  ok('telegraph (snap) >= 24 steps (0.4 s)', minCrouch >= 24, `min ${minCrouch}`);
+  ok('waiting wolves circled', circ > 8 && circBad / circ < 0.1, `circ ${circ} bad ${circBad}`);
 }
 
 // 3. block = 0 damage path: blocked flag -> stagger, not recover; arrow cancels the crouch
 {
   const { sim, events } = freshSim([wolfEntity('wolf1', PX, PY - 8)]);
   events.on('combat:hit', (p) => { if (p.target === 'player') p.blocked = 1; });
-  sim.steer.x[0] = PX; sim.steer.y[0] = PY - 4;
+  sim.steer.x[0] = PX; sim.steer.y[0] = PY - 1.7;
   sim.state[0] = STATE_WINDUP; sim.timer[0] = 1; // last crouch step -> real enterCharge (leap accel) -> contact
   let n = 0;
   sim.step(PX, PY, 0);
@@ -200,6 +200,36 @@ const isTok = (s) => s === STATE_WINDUP || s === STATE_CHARGE;
   const out = { x: 0, y: 0 };
   circleTarget(5, 0, 0, 0, 5, 1, out);
   ok('circleTarget is tangent at radius', Math.abs(out.x - 5) < 1e-9 && Math.abs(out.y - 2) < 1e-9);
+}
+
+// OB-220: a wolf is a melee biter (closes to ~1.8 m, snap, short lunge, steps back); a boar still charges from range
+{
+  const run = (ent) => {
+    const { sim, hits } = freshSim([ent]);
+    sim.fx[0] = -1; sim.fy[0] = 0;
+    let minD = 99, crossed = false, maxWindD = 0, maxWindDBoar = 0; const hitT = []; let seen = 0;
+    for (let t = 0; t < 1500; t++) {
+      sim.step(PX, PY, groundZ(sim.world, PX, PY));
+      const dx = sim.steer.x[0] - PX, dy = sim.steer.y[0] - PY, d = Math.hypot(dx, dy);
+      if (d < minD) { minD = d;  }
+      if (dx < -0.05) crossed = crossed; else if (t > 0 && dx < 0.05 && d < 1.5 && seen) crossed = true; // east side start: x - PX > 0 always
+      const st = sim.state[0];
+      if (st === STATE_WINDUP || st === STATE_CHARGE) { seen = 1; if (d > maxWindD) maxWindD = d; }
+      const n = hits.filter((h) => h.target === 'player').length;
+      while (hitT.length < n) hitT.push(t / 60);
+    }
+    return { minD, crossed, maxWindD, hitT };
+  };
+  const wolf = run(wolfEntity('wolf1', PX + 8, PY));
+  ok('OB-220 wolf never reaches the player centre (minD > 0.4)', wolf.minD > 0.4, 'minD ' + wolf.minD.toFixed(2));
+  ok('OB-220 wolf attacks only from melee range (windup/lunge d <= 2.6 m)', wolf.maxWindD <= 2.6, 'max ' + wolf.maxWindD.toFixed(2));
+  ok('OB-220 wolf hits repeatedly (>= 4 in 25 s)', wolf.hitT.length >= 4, 'hits ' + wolf.hitT.length);
+  let gapMin = 99; for (let k = 1; k < wolf.hitT.length; k++) gapMin = Math.min(gapMin, wolf.hitT[k] - wolf.hitT[k - 1]);
+  ok('OB-220 wolf hits are on cooldown (gap >= 1.2 s)', gapMin >= 1.2, 'gap ' + gapMin.toFixed(2));
+  const boar = run(beastEntity('b1', PX + 8, PY));
+  ok('OB-220 boar still charges from range (windup start > 3.5 m)', boar.maxWindD > 3.5, 'max ' + boar.maxWindD.toFixed(2));
+  const same = run(wolfEntity('wolf1', PX + 8, PY));
+  ok('OB-220 deterministic (same hit times twice)', JSON.stringify(same.hitT) === JSON.stringify(wolf.hitT));
 }
 
 console.log(`${pass} passed, ${fail} failed.`);
