@@ -26,7 +26,7 @@ import { MAX_LEVELS } from '../ShadeTextures.js';
 import { GROUND_LOOK_WGSL, LOOK_BLOCK_FIELDS, LOOK_GA_HI_SHIFT, LOOK_GA_W_SHIFT } from '../../groundLook.js'; // ENV-02d
 import { TLOOK_WIDTH, MAX_FEATURES_PER_TYPE } from '../TerrainTextures.js';
 import { KIND_TERRAIN, KIND_MODEL, KIND_MESH, KIND_GRASS, FACE_PACKED } from '../../GBuffer.js';
-import { WET_DARK, WET_SPEC } from '../../detailShade.js';
+import { WET_DARK, WET_SPEC, FOL_LIGHT_R } from '../../detailShade.js'; // FOL_LIGHT_R: AA-16
 import { VEG_TINT_WGSL } from '../../../mesh/vegTint.js'; // AUD-47
 import { SUN_N_SHIFT, SUN_N_MASK, CLOUD_Q_SHIFT } from '../../shadowSun.js'; // CLOUD_Q_SHIFT: S8-B2-12c (38.13)
 import { SKY_GLOW_WGSL } from '../../skyGlow.js';
@@ -473,6 +473,28 @@ fn folDice(cell: vec2i, gridSize: vec2i, dist: f32, seed: i32) -> f32 {
   return hashFast(ix, iy + iz * 8191, seed);
 }
 
+// AA-16 (OB-208): mean light of a soft-edge leaf cell and its 3x3 soft-edge kind-9 neighbours whose (shade-scaled) depth is
+// within 15 pct + 0.5 m (twin: detailShade.js folLightJS; same order, f32 sums).
+fn folLight(cell: vec2i, gridSize: vec2i, d0: f32, Lc: vec3f) -> vec3f {
+  var s = Lc; var n = 1.0;
+  let tol = 0.15 * d0 + 0.5;
+  for (var dy = -${FOL_LIGHT_R}; dy <= ${FOL_LIGHT_R}; dy++) {
+    for (var dx = -${FOL_LIGHT_R}; dx <= ${FOL_LIGHT_R}; dx++) {
+      if (dx == 0 && dy == 0) { continue; }
+      let c = cell + vec2i(dx, dy);
+      if (c.x < 0 || c.y < 0 || c.x >= gridSize.x || c.y >= gridSize.y) { continue; }
+      let g = textureLoad(uGI, c, 0).y;
+      if (giKind(g) != ${KIND_MESH}u) { continue; }
+      if ((textureLoad(uMatI, vec2i(0, i32(giMat(g))), 0).y & 65536) == 0) { continue; }
+      var dn = bitcast<f32>(textureLoad(uDepth, c, 0).x);
+      if (su.projMode != 0) { dn *= fogScaleCell(c.y, gridSize.y); }
+      if (abs(dn - d0) > tol) { continue; }
+      s += bitcast<vec3f>(textureLoad(uLightTex, c, 0).xyz); n += 1.0;
+    }
+  }
+  return s / n;
+}
+
 fn pickCode(setId: i32, entryIdx: i32, hA: f32, useAlt: bool) -> i32 {
   let t = textureLoad(uSetI, vec2i(2 + entryIdx, setId), 0);
   let cnt = t.x;
@@ -915,7 +937,18 @@ ${look ? `    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceM
   var dist = bitcast<f32>(textureLoad(uDepth, cell, 0).x);
   if (su.projMode != 0) { dist *= fogScaleCell(cell.y, gridSize.y); } // RE-02a: horizontal forward distance
   // US-006: sampled once per fragment (constant over every sub-sample of this cell).
-  let Lc = bitcast<vec3f>(textureLoad(uLightTex, cell, 0).xyz);
+  var Lc = bitcast<vec3f>(textureLoad(uLightTex, cell, 0).xyz);
+  // AA-15 (OB-208): soft-edge leaf cards (F_SOFT_EDGE, kind 9) key the glyph dice on a world block, not the per-card u/v.
+  // AA-16 (OB-208): fogView.w is a bit field (1 = dice, 2 = leaf light smoothing); bit 2 averages the light over the 3x3
+  // soft-edge neighbours at a similar depth, so a cell landing on another leaf card (other normal) keeps its level.
+  var folOn = false; var folSeed = 0;
+  let folBits = u32(su.fogView.w + 0.5);
+  if (folBits != 0u && kindU == ${KIND_MESH}u) {
+    let mi0f = textureLoad(uMatI, vec2i(0, matId), 0);
+    let folSoft = (mi0f.y & 65536) != 0;
+    folOn = folSoft && (folBits & 1u) != 0u; folSeed = mi0f.x;
+    if (folSoft && (folBits & 2u) != 0u) { Lc = folLight(cell, gridSize, dist, Lc); }
+  }
   let Lm = max(Lc.x, max(Lc.y, Lc.z));
 
   // US-030b (14.2 item 3, pass D): average shadeCore's continuous outputs over the resolved winner's own sub-sample group
@@ -932,12 +965,6 @@ ${look ? `    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceM
   let hcolM = select(vec3f(1.0), Lc / Lm, Lm > 1e-6);
   var mnFg = vec3f(0.0); var mnBg = vec3f(0.0); var mnCount = 0;
 
-  // AA-15 (OB-208): soft-edge leaf cards (F_SOFT_EDGE, kind 9) key the glyph dice on a world block, not the per-card u/v
-  var folOn = false; var folSeed = 0;
-  if (su.fogView.w > 0.5 && kindU == ${KIND_MESH}u) {
-    let mi0f = textureLoad(uMatI, vec2i(0, matId), 0);
-    folOn = (mi0f.y & 65536) != 0; folSeed = mi0f.x;
-  }
   for (var j = 0; j < 4; j++) {
     if (j >= su.n) { break; }
     for (var i = 0; i < 4; i++) {
