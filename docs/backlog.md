@@ -1,5 +1,7 @@
 # Kestrel – Product Backlog
 
+> **!!! OWNER P0 (2026-10-16, PC-A): OB-209 (pale "building" silhouette on the far hill + navy far trees, reported ~4 times; OB-059/061/089/175/204 reopened) and OB-203 reopened (backpack: cannot leave gaps). Top of docs/pc-b-queue.md. Do these before anything else, with a regression gate so OB-209 cannot come back.**
+
 > **!!! OWNER PRIORITY 1 (2026-10-15, PC-A): fix ALL quests to the owner rule (OB-156/D-108: every quest = character giver, Accept/Exit, `?` + hand-in at a character) and add QUEST-E2E-ALL, a Node test that accepts, completes and hands in EVERY quest from the real content. Top section of docs/pc-b-queue.md. Before everything else, then BH-A1.**
 > **PC-A reviews 2026-10-15b:** arch `batch-review-2026-10-15-pca-C.md` (re-reviews: 6 OK, 4 still open) + `-pca-D.md` (new engine work: 6 CHANGES incl. GI never loads in grid worlds, foot IK uses terrain under floors), PO `po-batch-2026-10-15b-pca.md` (38 -> testing, 37 done, 3 rejects). Fix rows = docs/pc-b-queue.md "PC-A review 2026-10-15b fixes" (right after OWNER PRIORITY 1). **Alloc gates must pass on Node 22 AND 24 (PC-A runs Node 24; NODE24-ALLOC).**
 

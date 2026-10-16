@@ -1,5 +1,12 @@
 # PC-B queue
 
+## !!! OWNER P0 (2026-10-16, reported again while testing on port 8000) - do FIRST, before OWNER PRIORITY 1 leftovers (PC-A main session)
+
+| ID | Slot | AC | Status |
+|---|---|---|---|
+| OB-209 | kestrel-2 (render/world; PC-A arch-review) | A huge PALE flat "building"-like silhouette on the far hill behind the tree line (small dark fragment on top) + the far tree line again as flat dark navy blobs (owner screenshot, start meadow road). Reported ~4 times: OB-059 / OB-061 / OB-089 / OB-175 / OB-204 are REOPENED. (1) Find exactly what draws the pale shape at the owner's view (headless still with F3 at the start road looking at the hills; layer/mesh id: far terrain skirt / MAP-06b skyline / far mesh impostor / leftover far_ferrum structure); PC-A hypothesis: far terrain/skyline is fogged to a colour that does not match the sky at the horizon (same root as NIGHT-HAZE-01: far fog has its own colour), so distant hills read as a flat pale cut-out. (2) Fix the root cause once for day + dusk + night (far fog follows the sky horizon colour), and the navy far-tree regression. (3) Add a REGRESSION GATE so it cannot come back: a gpucompare/still row at this view that fails if far geometry is paler/darker than the sky+terrain around it by more than a set contrast (or a stable-image diff vs an approved baseline). Owner look before closing. | todo, START NOW |
+| OB-203-REOPEN | kestrel-1 (inventoryScreen.js / main.js) | Owner can still not reorganise the backpack: moving an item into an empty cell with gaps between does not stick (see docs/bugs.md OB-203). Repro in the browser first, then fix + Node test (move 0 -> 5 leaves 1-4 empty; survives save/load and the next pickup) + one headless drag check. | todo, START NOW |
+
 ## PC-B refill 2026-10-16 (PC-B 5th agent, PC-A to ratify)
 Owner priorities: (1) flicker / visual stability OB-208 / OB-198 / OB-194 (NOT the stable-pass glyph work: AA-10 runs in kestrel-3); (2) quest polish OB-209 / OB-181..183. Each row <= 1 programmer-day. Audit 2026-10-16 could only check `.git/logs` (no shell): 4 rows marked `done?`; PC-A please run the full `git log --all | grep` on the rest. Checked against the log: none of these IDs exist yet.
 
