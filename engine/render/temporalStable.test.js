@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import v8 from 'node:v8';
-import { encodeLevelByte, levelOfByte, covOfByte, vmTagOf, beginFrame, stabilize, createStableState, createStableBuffers, CHANNEL_SNAP, LEVEL_ANIM, LEVEL_NONE, UV_LIM_TEXELS, DEFAULT_DETAIL, uvDriftLimit, grazeUvLimit, GRAZE_K, GRAZE_CAP } from './temporalStable.js';
+import { encodeLevelByte, levelOfByte, covOfByte, vmTagOf, beginFrame, stabilize, createStableState, createStableBuffers, CHANNEL_SNAP, LEVEL_ANIM, LEVEL_NONE, UV_LIM_TEXELS, DEFAULT_DETAIL, uvDriftLimit, grazeUvLimit, GRAZE_K, GRAZE_CAP, hueShift } from './temporalStable.js';
 import { KIND_NONE, KIND_WALL, KIND_MODEL, KIND_MESH } from './GBuffer.js';
 import { makeOk } from '../test/assert.js';
 
@@ -467,5 +467,8 @@ for (const [leaf, soft, want] of [[true, 1, 0], [false, 1, 1], [true, 0, 1]]) {
   const b = wallInput(st); b.kind.fill(KIND_MESH); for (let k = 0; k < b.u.length; k++) b.u[k] += 3; b.soft = new Uint8Array(b.u.length).fill(soft);
   const out = createStableBuffers(COLS, ROWS); stabilize(b, h, out, st); ok(`AA-26 leaf=${leaf} soft=${soft}: fresh ${want}`, out.fresh[10 * COLS + 20] === want, String(out.fresh[10 * COLS + 20]));
 }
+// AA-28 (OB-208): hueShift = chromaticity change only (a canopy shadow halves the brightness: no shift; a tint does)
+for (const [a, b, want, why] of [[0x5a6e3c, 0x2d371e, false, 'half brightness'], [0x5a6e3c, 0x5a6e3c, false, 'same'], [0x5a6e3c, 0x8a6e3c, true, 'red +48'], [0x405020, 0x204828, true, 'green to teal'], [0x101010, 0x000000, true, 'to black']])
+  if (hueShift(a, b) !== want) { fail++; failures.push(`AA-28 hueShift ${why}: want ${want}`); }
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

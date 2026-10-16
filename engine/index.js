@@ -166,7 +166,7 @@ export { resolveWaterLooks } from './render/waterLook.js'; // US-055a2c Q12 item
 // (gpucompare parity harness) moved to engine/dev.js.
 export { flickerStep, flickerReprojStep, flickerGlyphReasons, GLYPH_REASONS, M255_KEYS, glyphClassTable } from './render/gpu/flicker.js';
 export { setWindHold } from './render/terrainShade.js'; // AA-22 (OB-208): ?aawind=0 old; bitmask 1 far-grass gust, 2 look lean
-export { setFoliageDice, setFoliageLight, setFoliageEdge, setEdgeHold, setVoxelHold, setLeafUvHold } from './render/fogShape.js'; // AA-15 (OB-208): ?aafol=0; AA-16: ?aafoll=0; AA-17: ?aafoledge=0; AA-18: ?aaedge=0
+export { setFoliageDice, setFoliageLight, setFoliageEdge, setEdgeHold, setVoxelHold, setLeafUvHold, setTerrainSnapHold } from './render/fogShape.js'; // AA-28: ?aaterrsnap=0; // AA-15 (OB-208): ?aafol=0; AA-16: ?aafoll=0; AA-17: ?aafoledge=0; AA-18: ?aaedge=0
 
 // ---- physics ----------------------------------------------------------------
 export { PHYSICS_DEFAULTS, PHYSICS } from './physics/config.js';

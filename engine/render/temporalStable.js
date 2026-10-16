@@ -12,7 +12,7 @@
 // Zero allocation per frame once `createStableState()` and the buffers exist.
 
 import { createPitchedTerms, pitchedTerms, unprojectPitched, worldToCell } from './projection.js';
-import { KIND_NONE, KIND_MODEL, KIND_MESH } from './GBuffer.js';
+import { KIND_NONE, KIND_MODEL, KIND_MESH, KIND_TERRAIN } from './GBuffer.js';
 
 /** Per-channel snap threshold (0-255): bigger jumps skip the blend. */
 export const CHANNEL_SNAP = 48;
@@ -144,6 +144,7 @@ export function createStableState() {
     aaAnchor: true, // AA-09: a both-255 hold of a static surface re-anchors (writes the CURRENT u/v) so cumulative drift cannot re-roll it; ?aaanchor=0
     aaGraze: true, // AA-20 (OB-208): UV drift limit follows the cell's own UV footprint on grazing surfaces (road ahead); ?aagraze=0
     aaLeafUv: true, // AA-26 (OB-208): soft-edge leaf cells (inp.soft) skip the UV drift test - their glyph dice is world-keyed (AA-15), card u/v is unrelated; set per frame from fogShapeCtx
+    aaTerrSnap: true, // AA-28 (OB-208): a terrain both-255 glyph (same material) survives an fg snap (canopy shadow, colour tier); set per frame from fogShapeCtx (?aaterrsnap=0)
     aaHue: true, // AA-23 (OB-208): colour snap per colour, not per channel (no hue split); ?aahue=0
     aaVox: true, // AA-21 (OB-208): a world voxel prop (kind 8, same planeId + material) re-anchors its both-255 hold like other static surfaces; ?aavox=0
     aaEdge: true, // AA-18 (OB-208): edge cells (final != shade) take history like any cell (glyph hold) instead of passing through; ?aaedge=0
@@ -200,6 +201,15 @@ export function beginFrame(st, cam, grid, flags, terms) {
   copyTerms(st.relCur, c); st.relCur.eyeX = 0; st.relCur.eyeY = 0; st.relCur.eyeZ = 0;
   copyTerms(st.relPrev, p); st.relPrev.eyeX = 0; st.relPrev.eyeY = 0; st.relPrev.eyeZ = 0;
   return valid;
+}
+
+/** AA-28 (OB-208): chromaticity of packed 0xRRGGBB `a` vs `b` differs (any channel share |a_c/sa - b_c/sb| > 1/HUE_K, sums + 1).
+ *  Integer cross products (< 2^24). A brightness-only change returns false. Diag only (flicker.js snap255 split snH/snL). */
+export const HUE_K = 16;
+export function hueShift(a, b) {
+  const ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255, br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
+  const sa = ar + ag + ab + 1, sb = br + bg + bb + 1, lim = sa * sb;
+  return Math.abs(ar * sb - br * sa) * HUE_K > lim || Math.abs(ag * sb - bg * sa) * HUE_K > lim || Math.abs(ab * sb - bb * sa) * HUE_K > lim;
 }
 
 /** AA-23 (OB-208): with `hue` the snap decision is per COLOUR - any channel past CHANNEL_SNAP snaps all three, else all three blend
@@ -304,7 +314,8 @@ export function stabilize(inp, hist, out, st) {
         const a = hist.fg[h], b = inp.fg[i];
         const snapped = Math.abs(((b >> 16) & 255) - ((a >> 16) & 255)) > CHANNEL_SNAP || Math.abs(((b >> 8) & 255) - ((a >> 8) & 255)) > CHANNEL_SNAP
           || Math.abs((b & 255) - (a & 255)) > CHANNEL_SNAP;
-        if (!snapped) {
+        // AA-28 (OB-208): a terrain glyph never depends on light or the colour tier - same terrain material keeps the glyph through a snap (colour is the current one)
+        if (!snapped || (st.aaTerrSnap && kind === KIND_TERRAIN && matSame)) {
           out.glyph[i] = hist.glyph[h]; out.held255[i] = 1;
           // AA-09: static surface (same planeId, mesh also same material, not a model) re-anchors: keep the CURRENT u/v already in out; else the old history anchor
           // AA-21: with aaVox a world voxel prop (kind 8, not the view model) re-anchors too when plane + material match

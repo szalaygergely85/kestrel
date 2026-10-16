@@ -15,7 +15,7 @@ import { packStableUniforms, WgStablePass } from '../wg/passStable.js';
 import { allocWgTargets } from '../wg/targets.js';
 import { WgShadePass } from '../wg/passShade.js';
 import { unprojectPitched } from '../../projection.js';
-import { KIND_NONE, KIND_WALL, KIND_FLOOR, KIND_MODEL, KIND_MESH } from '../../GBuffer.js';
+import { KIND_NONE, KIND_WALL, KIND_FLOOR, KIND_MODEL, KIND_MESH, KIND_TERRAIN } from '../../GBuffer.js';
 import { makeMockGpuDevice } from '../../../test/assert.js';
 
 // ---------------- string / layout rules ----------------
@@ -89,14 +89,15 @@ function makeFrame(st, cols, rows, plane, opts) {
   planeHit(st, plane, geo);
   const f = {
     cols, rows, geo,
-    kind: new Uint8Array(n), planeId: new Int32Array(n), level: new Uint8Array(n), glyph: new Uint16Array(n), shadeGlyph: new Uint16Array(n),
+    kind: new Uint8Array(n), mat: new Uint16Array(n), planeId: new Int32Array(n), level: new Uint8Array(n), glyph: new Uint16Array(n), shadeGlyph: new Uint16Array(n),
     shadeFg: new Uint32Array(n), shadeBg: new Uint32Array(n), finalFg: new Uint32Array(n), finalBg: new Uint32Array(n),
     waterX: new Uint32Array(n).fill(0x7f800000), waterW: new Uint32Array(n),
   };
-  const baseKind = plane.n[2] === 0 ? KIND_WALL : KIND_FLOOR;
+  const baseKind = plane.n[2] === 0 ? KIND_WALL : TERR ? KIND_TERRAIN : KIND_FLOOR; // AA-28: TERR = floor scenes are terrain
   for (let i = 0; i < n; i++) {
     const hit = geo.hit[i] === 1;
     f.kind[i] = !hit ? KIND_NONE : (rand() < 0.03 ? [KIND_MODEL, KIND_MESH, KIND_NONE][Math.floor(rand() * 3)] : baseKind);
+    if (TERR) f.mat[i] = rand() < 0.15 ? 2 : 1; // AA-28: terrain material (type) changes under some cells
     f.planeId[i] = 1 + (Math.floor((i % cols) / 12) + (opts.planeShift || 0) * 0) ;
     { const lr = rand(); f.level[i] = lr < 0.12 ? LEVEL_NONE : lr < 0.16 ? LEVEL_ANIM : 3 + Math.floor(rand() * 4); } // 38.25 C: 255 common (texel glyphs), 254 = animated terrain
     f.glyph[i] = 40 + Math.floor(rand() * 50); f.shadeGlyph[i] = f.glyph[i];
@@ -118,7 +119,7 @@ function makeFrame(st, cols, rows, plane, opts) {
 function toTextures(f, hist) {
   const { cols, rows } = f, n = cols * rows;
   const t = {};
-  t.uGI = tex(cols, rows, (i) => [f.planeId[i] >>> 0, f.kind[i] | 0, 0, 0]);
+  t.uGI = tex(cols, rows, (i) => [f.planeId[i] >>> 0, (f.kind[i] | (f.mat[i] << 16)) >>> 0, 0, 0]);
   t.uGA = tex(cols, rows, (i) => [f2u(f.geo.u[i]), f2u(f.geo.v[i]), 0, 0]);
   t.uDepth = tex(cols, rows, (i) => [f2u(f.geo.vd[i]), 0, 0, 0]);
   t.uShadeFg = tex(cols, rows, (i) => [...rgbF(f.shadeFg[i]), unorm(f.shadeGlyph[i])]);
@@ -141,10 +142,11 @@ const WALL = { n: [0, 1, 0], d: -5 }, FLOOR = { n: [0, 0, 1], d: 0 };
 let EDGE = false; // AA-18: aaEdge switch of the probe scenes (off keeps the edge pass-through mutations meaningful; a parity loop runs it on)
 let VOX = true; // AA-21: aaVox switch of the probe scenes
 let GRAZE = true; // AA-20: aaGraze switch (the old-rule mutations run with it off, the graze mutation with it on)
+let TERR = false, TERRSNAP = true; // AA-28: terrain floor scenes + the aaTerrSnap switch
 let HUE = true; // AA-23: aaHue switch (old per-channel blend mutations run with it off)
 let ANCHOR = true; // AA-09: aaAnchor switch of the probe scenes (the mutation loop runs both)
 function scene(src, cam0, cam1, plane, tweak) {
-  const st = createStableState(); st.aaAnchor = ANCHOR; st.aaEdge = EDGE; st.aaVox = VOX; st.aaGraze = GRAZE; st.aaHue = HUE;
+  const st = createStableState(); st.aaAnchor = ANCHOR; st.aaEdge = EDGE; st.aaVox = VOX; st.aaGraze = GRAZE; st.aaHue = HUE; st.aaTerrSnap = TERRSNAP;
   beginFrame(st, cam0, GRID);
   const fa = makeFrame(st, COLS, ROWS, plane, {});
   const hist = createStableBuffers(COLS, ROWS);
@@ -178,7 +180,7 @@ function twinInput(f) {
   const edge = edgeMaskFromShade(f.finalFg, f.finalBg, f.glyph, f.shadeFg, f.shadeBg, f.shadeGlyph, new Uint8Array(N));
   const water = waterMaskFromLayer(f.waterX, f.waterW, new Uint8Array(N));
   return {
-    cols: COLS, rows: ROWS, kind: f.kind, planeId: f.planeId, u: f.geo.u, v: f.geo.v, vd: f.geo.vd, level: f.level, glyph: f.glyph,
+    cols: COLS, rows: ROWS, kind: f.kind, mat: f.mat, planeId: f.planeId, u: f.geo.u, v: f.geo.v, vd: f.geo.vd, level: f.level, glyph: f.glyph,
     fg: f.finalFg, bg: f.finalBg, edge, water, detail: new Float32Array(N).fill(DETAIL),
   };
 }
@@ -247,6 +249,28 @@ for (HUE of [true, false]) for (const [name, c0, camK, plane] of cases) for (let
   assert.equal(r.mism, 0, `aaHue ${HUE} g-jitter ${name} k=${k}: ${r.mism} mismatches ${JSON.stringify(r.bad)}`);
 }
 HUE = true;
+// AA-28 (OB-208): terrain cells get brightness-only jumps (shadow: snap, same hue) and hue jumps; both switch states at parity, mutations caught
+const terrTweak = (fb, fa, i) => {
+  if (fb.finalFg[i] !== fb.shadeFg[i]) return;
+  const c = fb.shadeFg[i], r = rand();
+  if (r < 0.3) { const s = rand() < 0.5 ? 0.35 + rand() * 0.2 : 1.6 + rand() * 0.3, f = (x) => Math.min(255, Math.round(x * s));
+    fb.shadeFg[i] = (f((c >> 16) & 255) << 16) | (f((c >> 8) & 255) << 8) | f(c & 255); }
+  else if (r < 0.5) fb.shadeFg[i] = (c & 0x00ffff) | (Math.min(255, ((c >> 16) & 255) + 60) << 16);
+  fb.finalFg[i] = fb.shadeFg[i];
+};
+TERR = true;
+for (TERRSNAP of [true, false]) for (const [name, c0, camK, plane] of cases) for (let k = 1; k <= 4; k++) {
+  const r = runCase(STABLE_WGSL, name, c0, camK, plane, k, terrTweak);
+  assert.equal(r.mism, 0, `aaTerrSnap ${TERRSNAP} ${name} k=${k}: ${r.mism} mismatches ${JSON.stringify(r.bad)}`);
+}
+TERRSNAP = true;
+for (const [mn, from, to] of [['AA-28 material test dropped', 'kind == ${KIND_TERRAIN}u && matSame)', 'kind == ${KIND_TERRAIN}u)'], ['AA-28 bit ignored', '(u.aaFlags & 1024) != 0 && kind', 'false && kind']]) {
+  const a = from.replace('${KIND_TERRAIN}', String(KIND_TERRAIN)), b = to.replace('${KIND_TERRAIN}', String(KIND_TERRAIN));
+  assert.ok(STABLE_WGSL.includes(a), `mutation anchor missing: ${mn}`);
+  const src = STABLE_WGSL.replace(a, b);
+  assert.ok(cases.some(([name, c0, camK, plane]) => [1, 2, 3].some((k) => runCase(src, name, c0, camK, plane, k, terrTweak).mism > 0)), `mutation survived: ${mn}`);
+}
+TERR = false;
 VOX = false; // AA-21 (OB-208): aaVox off (kind 8 keeps the history anchor) stays at parity
 for (const [name, c0, camK, plane] of cases) for (let k = 1; k <= 4; k++) {
   const r = runCase(STABLE_WGSL, name, c0, camK, plane, k);
@@ -284,7 +308,7 @@ const mutations = [
   ['level 254 cur not rejected', ' || lvC == LEVEL_ANIM) { return o; }', ') { return o; }'],
   ['hist level 254 not rejected', 'if (lvP == LEVEL_ANIM) { return o; }', ''],
   ['mixed 255/ramp not rejected', 'if (c255 != (lvP == LEVEL_NONE) && !jointHold) { return o; }', ''],
-  ['255 hold ignores the fg snap', 'if (!snapped) {', 'if (true) {'],
+  ['255 hold ignores the fg snap', 'if (!snapped || (', 'if (true || ('],
   ['255 hold keeps the CURRENT u/v (no anchor)', 'o.ub = hh.y; o.vb = hh.z;', ''],
   ['255 hold never re-anchors (AA-09)', '(u.aaFlags & 16) != 0 && vmTag == 0u', 'false && vmTag == 0u'],
   ['255 snap test ignores red', 'let snapped = abs(i32((fgCur >> 16u) & 255u) - i32((sa >> 16u) & 255u)) > u.snap', 'let snapped = false'],
