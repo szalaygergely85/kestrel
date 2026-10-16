@@ -28,7 +28,7 @@ export const INTERIORS = [
   ['crypt', 1674, 1375.3, -56.8, 0, 4, 'crypt last room (level 24,29) looking north at torch1a/2b'],
   ['ford-cellar', 999.2, 1062.2, -92.5, 45, 0, 'Ford smugglers cellar SW corner looking NE (lantern + 2 torches)'],
   ['sea-cave', 1618.5, 1729.5, -95.31, 0, 4, 'Strand sea cave chamber from the south mouth'],
-  ['goblin-tunnel', 945, 946, -88.8, 0, 4, 'goblin tunnel room (level 19,30) looking north, torchRoom'],
+  ['goblin-tunnel', 944.5, 945.5, -88.8, 315, 8, 'VISQA-31: goblin tunnel room from its SE corner (level 21,31.5) looking NW at torchRoom (level 16.5,27.5)'],
   ['bear-den', 1584, 437, 11.76, 0, 4, 'northwood bear den chamber from the mouth side (no lights in level)'],
 ];
 // Close-ups: [name, finder js (an entity with .transform), note]; camera 3.5 m in front of the entity, looking back at it
@@ -84,7 +84,7 @@ async function runSet2() {
     const found = await evaluate(cdp, `(()=>{const e=${finder};return !!(e&&e.transform)})()`).catch(() => false);
     if (!found) { rows.push({ file: `s2-${name}.png`, pose: 'not found', note }); console.log('closeup', name, 'NOT FOUND'); continue; }
     if (mode === 'inplace') { // VISQA-19/24: npcs (Burl walks, Rook sits underground) stay where the sim keeps them; the camera goes 3.5 m in front of them, looking back
-      const cam = async () => { const q = await evaluate(cdp, `(()=>{const E0=${finder},B0=__debug.beasts,i0=B0.entities.indexOf(E0);if(i0>=0&&${name === 'wolf'}){const t=E0.transform,fx=B0.fx[i0],fy=B0.fy[i0],n=Math.hypot(fx,fy)||1,px=-fy/n,py=fx/n;return [t.x+px*${D},t.y+py*${D},t.z,(Math.atan2(-px,py)*180/Math.PI+360)%360]}const t=${finder}.transform,side=${name === 'rook' ? 1 : 0},a=((t.yawDeg||0)+(side?90:0))*Math.PI/180;return [t.x+Math.sin(a)*${D},t.y-Math.cos(a)*${D},t.z,((t.yawDeg||0)+(side?90:0)+180)%360]})()`); await place(q[0], q[1], name === 'rook' ? q[2] - 0.9 : null, q[3], 0); return q; };
+      const cam = async () => { const q = await evaluate(cdp, `(()=>{const E0=${finder},B0=__debug.beasts,i0=B0.entities.indexOf(E0);if(i0>=0&&${name === 'wolf'}){const t=E0.transform,fx=B0.fx[i0],fy=B0.fy[i0],n=Math.hypot(fx,fy)||1,px=fx/n,py=fy/n;return [t.x+px*${D},t.y+py*${D},t.z,(Math.atan2(-px,py)*180/Math.PI+360)%360]}const t=${finder}.transform,side=${name === 'rook' ? 1 : 0},a=((t.yawDeg||0)+(side?90:0))*Math.PI/180;return [t.x+Math.sin(a)*${D},t.y-Math.cos(a)*${D},t.z,((t.yawDeg||0)+(side?90:0)+180)%360]})()`); await place(q[0], q[1], name === 'rook' ? q[2] - 0.9 : null, q[3], name === 'wolf' ? -12 : 0); return q; };
       await cam(); await pause(2800); let q = await cam(); for (let k = 0; k < 3; k++) { await pause(250); q = await cam(); } await pause(120); q = await cam(); // wolves keep walking: re-aim right before the still
       const mi = await evaluate(cdp, `(()=>{const e=${finder};const v=e.components&&e.components.voxel;return 'model '+(v&&v.model)+' yaw '+((e.transform.yawDeg)||0).toFixed(0)+' at '+e.transform.x.toFixed(1)+','+e.transform.y.toFixed(1)+' z '+(+e.transform.z).toFixed(1)})()`);
       await shot(name, 'in place, camera ' + q.map((v) => Math.round(v)).join(',') + ' ' + mi, note); continue;
