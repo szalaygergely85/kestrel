@@ -37,9 +37,9 @@ const fresh = () => { const doc = createDoc(assets, bundle), f = doc.files.get(f
 const L = (bytes, tris = 0) => B.meterLevel({ bytes, tris });
 assert.equal(L(1 * B.MB), 'green'); assert.equal(L(B.BUNDLE_TARGET_BYTES), 'amber'); assert.equal(L(5 * B.MB), 'amber');
 assert.equal(L(B.BUNDLE_HARD_BYTES), 'red'); assert.equal(L(0, B.FOLIAGE_TRI_CAP), 'red'); assert.equal(L(0, B.FOLIAGE_TRI_TARGET), 'amber');
-assert.equal(B.FOLIAGE_TRI_CAP, 1.5e6, 'default before configure');
-assert.equal(json.triCap, 1500000);
-assert.deepEqual(B.configureFoliageCap(json), { cap: 1500000, warning: '' }); assert.equal(B.FOLIAGE_TRI_CAP, 1.5e6);
+assert.equal(B.FOLIAGE_TRI_CAP, 3e6, 'default before configure');
+assert.equal(json.triCap, 3000000);
+assert.deepEqual(B.configureFoliageCap(json), { cap: 3000000, warning: '' }); assert.equal(B.FOLIAGE_TRI_CAP, 3e6);
 
 // ---- checkBudget + hard-cap refusal through the controller ----
 const flat = { structureAt: () => null, sectorAt: () => null, floorAt: () => 0 };
@@ -123,5 +123,5 @@ console.log('foliageBudget.test.mjs OK');
   assert.equal(B.meterLevel({ bytes: 0, tris: 1000 }), 'red'); assert.equal(B.meterLevel({ bytes: 0, tris: 700 }), 'amber');
   assert.ok(B.checkBudget([], reg, [at(1)]).ok, '600 tris under 1000');
   const c = B.checkBudget([at(1)], reg, [at(2)]); assert.ok(!c.ok && /triangles/.test(c.reason), '1200 tris over 1000');
-  B.configureFoliageCap(json); assert.equal(B.FOLIAGE_TRI_CAP, 1.5e6);
+  B.configureFoliageCap(json); assert.equal(B.FOLIAGE_TRI_CAP, 3e6);
 }

@@ -9,7 +9,7 @@ export const BUNDLE_HARD_BYTES = 6 * MB;     // WMP-08 hard cap: red, strokes re
 export const MESH_RADIUS_M = 64, MESH_RADIUS_MAX = 60; // meshPlace warning (not enforced here)
 // UNCONFIRMED GUESS (architecture.md 38.69 open item): owner to confirm. LOD0 triangles of placed meshes per zone.
 // The cap lives in content/editor/foliage.json (`triCap`); configureFoliageCap() applies it. Default below is only the fallback.
-export const FOLIAGE_TRI_CAP_DEFAULT = 1500000;
+export const FOLIAGE_TRI_CAP_DEFAULT = 3000000; // D-118: RTX 4060 bench fits 3.0 M at ultra (GPU p95 5.7 ms)
 export let FOLIAGE_TRI_CAP = FOLIAGE_TRI_CAP_DEFAULT;
 export let FOLIAGE_TRI_TARGET = FOLIAGE_TRI_CAP * 2 / 3;   // amber from 2/3 of the cap (1.0 M at the default)
 export let foliageCapWarning = '';
