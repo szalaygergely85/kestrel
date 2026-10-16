@@ -3,7 +3,7 @@
 // from the tower (waypoints below) for --seconds by writing the game's own Input (KeyW + ShiftLeft) and look.yawDeg, like
 // tools/route-walk-browser.mjs. Prints one JSON row: frame counts > 16.7 / > 33 ms, max interval / CPU, and the spike
 // records ranked by cause. One config per process (high + ultra in one browser failed "page never booted" before, PERF-03).
-// Usage: node tools/perf-walk.mjs --port 9540 [--config ultra:480x180] [--seconds 60] [--settle 4000] [--out file.json] [--alloc 1] [--heap-profile 1] [--cpu-profile 1] [--js-flags "--log-deopt --logfile=X"]
+// Usage: node tools/perf-walk.mjs --port 9540 [--config ultra:480x180] [--seconds 60] [--settle 4000] [--out file.json] [--alloc 1] [--heap-profile 1] [--cpu-profile 1] [--cpu-raw file.json] [--js-flags "--log-deopt --logfile=X"]
 // PERF-08: --heap-profile 1 = CDP HeapProfiler sampling (32 KB, incl. GC'd objects) over the walk -> top 20 self-size sites (function + url:line)
 // written to docs/test-reports/perf-alloc-<date>.md (or --heap-out); --cpu-profile 1 adds a CDP Profiler self-time table to the same file.
 // PERF-06: p99 = 99th percentile rAF interval; --alloc 1 adds allocMb = JS heap growth per profiler section over the walk (heap read per lap).
@@ -98,6 +98,7 @@ try {
     writeFileSync(out, renderMd({ title: `Allocation profile: ${q} ${gw}x${gh} ${seconds} s road walk (${date})`, row, heap, cpu }));
     console.log('profile ->', out, heap ? `heap ${heap.totalMb.toFixed(0)} MB sampled` : '');
   }
+  if (cpuProf && args['cpu-raw']) writeFileSync(args['cpu-raw'], JSON.stringify(cpuProf));   // PERF-09: raw CDP profile (nodes carry deoptReason)
   if (args.out) writeFileSync(args.out, JSON.stringify({ row, spikes: r.spikes, probe: r.probe }, null, 1));
   cdp.close();
 } finally { cleanup(); }

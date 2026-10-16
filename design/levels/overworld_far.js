@@ -421,6 +421,22 @@
   // MAP-01a: world rect (128 m aligned) + protected keep rect (zones east+west + 64 m) for the geography layers.
   DEF.geo = { world: { x0: 0, y0: 0, x1: 4096, y1: 4096 }, keep: { x0: 704, y0: 832, x1: 1728, y1: 1344 } };
   var GEO = DEF.geo;
+  // PERF-09: recipeHeight/riverX read their constants from these closure vars (snapshotted once here; nothing changes them at
+  // runtime - only river.bedLine/halfWidth are swapped by tests, and bedLine stays a live read). Why: object literals share V8
+  // maps by property order, so `{ height: 1.6, ... }` elsewhere (World.navFloorProbe opts) turns the Smi `height` field of
+  // `recipe.ridge` into a double and DEPRECATES its map; the load IC then keeps the deprecated map, TurboFan discards it as
+  // "insufficient type feedback" and recipeHeight deopts ~400x per bake run (Node --trace-deopt) = runs unoptimised and boxes
+  // every double. Closure-var loads have no map. Same values and same expression order -> byte-identical heights.
+  var KRC = DEF.recipe, KT = DEF.tower, KT2 = DEF.farTower, K_SEED = DEF.seed;
+  var K_TX = KT.x, K_TY = KT.y, K_T2X = KT2.x, K_T2Y = KT2.y;
+  var K_HOME_TOP = KRC.home.top, K_HOME_DROP = KRC.home.drop, K_HOME_R = KRC.home.radius;
+  var K_HILL2_H = KRC.hill2.height, K_HILL2_R = KRC.hill2.radius;
+  var K_ROLL_SCALE = KRC.rolling.scale, K_ROLL_OCT = KRC.rolling.octaves, K_ROLL_GAIN = KRC.rolling.gain, K_ROLL_LAC = KRC.rolling.lacunarity,
+      K_ROLL_AMP = KRC.rolling.amp, K_ROLL_FT2 = KRC.rolling.flatNearTower2, K_ROLL_FH = KRC.rolling.flatNearHome;
+  var K_VAL_DEPTH = KRC.valley.depth, K_VAL_W = KRC.valley.width;
+  var K_RIDGE_H = KRC.ridge.height, K_RIDGE_X0 = KRC.ridge.x0, K_RIDGE_X1 = KRC.ridge.x1, K_RIDGE_SCALE = KRC.ridge.scale;
+  var K_CARVE = KRC.river.carve, K_CARVE_E0 = KRC.river.carveEdge[0], K_CARVE_E1 = KRC.river.carveEdge[1];
+  var KR_BASE = KRC.river.base, KR_A1 = KRC.river.a1, KR_P1 = KRC.river.p1, KR_A2 = KRC.river.a2, KR_P2 = KRC.river.p2, KR_PH2 = KRC.river.ph2;
 
   // ---------------- noise ----------------
   function hash(ix, iy, s) {
@@ -454,7 +470,7 @@
     return Math.sqrt(na * na + nb * nb) * m;
   }
   function smooth(a, b, x) { var t = (x - a) / (b - a); t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); }
-  function riverX(y) { var R = DEF.recipe.river; return R.base + R.a1 * Math.sin(y / R.p1) + R.a2 * Math.sin(y / R.p2 + R.ph2); }
+  function riverX(y) { return KR_BASE + KR_A1 * Math.sin(y / KR_P1) + KR_A2 * Math.sin(y / KR_P2 + KR_PH2); }
   function pathDist(px, py) {
     var pts = DEF.recipe.path.points, best = 1e9;
     for (var i = 1; i < pts.length; i++) {
@@ -468,18 +484,18 @@
 
   // ---------------- analytic height ----------------
   function recipeHeight(x, y) {
-    var R = DEF.recipe, s = DEF.seed, T = DEF.tower, T2 = DEF.farTower;
-    var d0 = hypot(x - T.x, y - T.y), dt = hypot(x - T2.x, y - T2.y);
-    var home = R.home.top - R.home.drop * (1 - gauss(d0 / R.home.radius));
-    var hill2 = R.hill2.height * gauss(dt / R.hill2.radius);
-    var roll = (fbm(x / R.rolling.scale, y / R.rolling.scale, s, R.rolling.octaves, R.rolling.gain, R.rolling.lacunarity) - 0.5) * R.rolling.amp *
-               (1 - gauss(dt / R.rolling.flatNearTower2)) * (1 - gauss(d0 / R.rolling.flatNearHome));
+    var s = K_SEED;
+    var d0 = hypot(x - K_TX, y - K_TY), dt = hypot(x - K_T2X, y - K_T2Y);
+    var home = K_HOME_TOP - K_HOME_DROP * (1 - gauss(d0 / K_HOME_R));
+    var hill2 = K_HILL2_H * gauss(dt / K_HILL2_R);
+    var roll = (fbm(x / K_ROLL_SCALE, y / K_ROLL_SCALE, s, K_ROLL_OCT, K_ROLL_GAIN, K_ROLL_LAC) - 0.5) * K_ROLL_AMP *
+               (1 - gauss(dt / K_ROLL_FT2)) * (1 - gauss(d0 / K_ROLL_FH));
     var dr = Math.abs(x - riverX(y));
-    var valley = -R.valley.depth * gauss(dr / R.valley.width);
-    var ridge = R.ridge.height * smooth(R.ridge.x0, R.ridge.x1, x) * (0.6 + 0.4 * fbm(x / R.ridge.scale, y / R.ridge.scale, s + 7, 3, 0.5, 2));
-    var carve = R.river.carve * smooth(R.river.carveEdge[0], R.river.carveEdge[1], dr);
+    var valley = -K_VAL_DEPTH * gauss(dr / K_VAL_W);
+    var ridge = K_RIDGE_H * smooth(K_RIDGE_X0, K_RIDGE_X1, x) * (0.6 + 0.4 * fbm(x / K_RIDGE_SCALE, y / K_RIDGE_SCALE, s + 7, 3, 0.5, 2));
+    var carve = K_CARVE * smooth(K_CARVE_E0, K_CARVE_E1, dr);
     var hh = home + hill2 + roll + valley + ridge - carve;
-    var BL = R.river.bedLine;
+    var BL = KRC.river.bedLine;
     if (BL !== undefined && dr < BL.reach) {
       var bp = BL.pts, by0 = bp[0][0], by1 = bp[bp.length - 1][0];
       if (y > by0 && y < by1) {
