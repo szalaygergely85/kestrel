@@ -1,8 +1,10 @@
 // VISQA-01: visual-QA sweep. Live clock (NOT ?at=/?pose=, those freeze liveLook), god mode + ground snap, ~11 spots x 3 hours.
 // Run: node tools/visqa-sweep.mjs <port> (PC-B 9500-9999, CDP = port+1)  -> docs/test-reports/visqa/<spot>-<hh>.png + index.md
 // Env: HOURS=9,13,22  ONLY=ford,bend (spot filter)  SETTLE=6000 (ms per spot)
+// VISQA-10: `node tools/visqa-sweep.mjs <port> --set 2` -> underground interiors, 3-4 m close-ups of characters/animals and
+// UI screens opened with real CDP key events, default game hour -> docs/test-reports/visqa/s2-<name>.png + "## Set 2" in index.md.
 import { spawn } from 'node:child_process';
-import { writeFileSync, readdirSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { writeFileSync, readFileSync, readdirSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
 import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, connectCdp, evaluate, evaluateAsync, killTree } from './capture-browser.mjs';
 
@@ -20,6 +22,33 @@ export const SPOTS = [
   ['lake-shore', 1215, 547, 0, 0, 'Glasswater south shore'],
   ['burl-home', 1404, 1019, 0, 4, "Burl's new home (1404,1010)"],
 ];
+// VISQA-10 set 2. Interiors: [name, x, y, zFloor (null = ground snap), yawDeg, pitchDeg, note] (world coords from the level origins in world_m1)
+export const INTERIORS = [
+  ['crypt', 1674, 1375.3, -56.8, 0, 4, 'crypt last room (level 24,29) looking north at torch1a/2b'],
+  ['ford-cellar', 999.2, 1062.2, -92.5, 45, 0, 'Ford smugglers cellar SW corner looking NE (lantern + 2 torches)'],
+  ['sea-cave', 1618.5, 1729.5, -95.31, 0, 4, 'Strand sea cave chamber from the south mouth'],
+  ['goblin-tunnel', 945, 946, -88.8, 0, 4, 'goblin tunnel room (level 19,30) looking north, torchRoom'],
+  ['bear-den', 1584, 437, 11.76, 0, 4, 'northwood bear den chamber from the mouth side (no lights in level)'],
+];
+// Close-ups: [name, finder js (an entity with .transform), note]; camera 3.5 m in front of the entity, looking back at it
+export const CLOSEUPS = [
+  ['burl', "__debug.world.entity('bear')", 'Burl (npc bear)'],
+  ['rook', "__debug.world.entity('rook')", 'Rook'],
+  ['warden', "__debug.world.entity('warden_northwood')", 'region warden (char.kit)'],
+  ['boar', "__debug.beasts.entities.find((e)=>e&&/boar/i.test(e.components&&e.components.voxel&&e.components.voxel.model||''))", 'first boar'],
+  ['wolf', "__debug.beasts.entities.find((e,i)=>e&&__debug.beasts.wolf&&__debug.beasts.wolf[i])", 'first wolf'],
+  ['skeleton', "__debug.beasts.entities.find((e)=>e&&/skel/i.test(e.components&&e.components.voxel&&e.components.voxel.model||''))", 'first skeleton'],
+];
+// UI: [name, keys pressed (CDP Input.dispatchKeyEvent), close keys, note]
+export const UI_SCREENS = [
+  ['inventory', ['KeyI'], ['KeyI'], 'pack (I)'],
+  ['character', ['KeyC'], ['KeyC'], 'character / equipment (C)'],
+  ['journal', ['KeyJ'], ['KeyJ'], 'quest journal (J)'],
+  ['map', ['KeyM'], ['KeyM'], 'map (M)'],
+  ['pause', [], [], 'pause menu (pointer lock lost = what Esc does in a real browser)'],
+  ['settings', ['KeyS', 'Enter'], ['Escape', 'Escape'], 'Settings from the pause menu (S selects, Enter opens)'],
+];
+const set2 = process.argv.includes('--set') && process.argv[process.argv.indexOf('--set') + 1] === '2';
 const port = Number(process.argv[2] || 9725); validatePort(port);
 const hours = (process.env.HOURS || '9,13,22').split(',').map(Number);
 const only = process.env.ONLY ? process.env.ONLY.split(',') : null;
@@ -30,6 +59,39 @@ const profile = mkdtempSync(path.join(os.tmpdir(), 'kestrel-visqa-'));
 const server = spawn('python', ['-c', 'import http.server,sys; http.server.ThreadingHTTPServer.request_queue_size=128; sys.argv=["tools/serve.py",sys.argv[1]]; import tools.serve; tools.serve.main()', String(port)], { cwd: ROOT, stdio: 'ignore', windowsHide: true });
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 let browser, cdp; const rows = [];
+const shot = async (name, pose, note) => { const r = await cdp.send('Page.captureScreenshot', { format: 'png' }); const file = `s2-${name}.png`; writeFileSync(path.join(outDir, file), Buffer.from(r.data, 'base64')); rows.push({ file, pose, note }); console.log('still', file, pose); };
+const key = async (code) => { const k = code.startsWith('Key') ? code.slice(3).toLowerCase() : code; await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', code, key: k }); await pause(120); await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', code, key: k }); await pause(120); };
+async function runSet2() {
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?save=0&nopause=1&quality=medium&backend=webgpu&title=0` });
+  let ok = false;
+  for (let i = 0; i < 600 && !ok; i++) { await pause(300); try { ok = !!(await evaluate(cdp, '!!(window.__debug && window.__debug.playerHandle && window.__debug.world && window.__debug.beasts) && !/Checking your graphics/.test(document.body.innerText||"")')); } catch { /* navigating */ } }
+  if (!ok) throw new Error('set 2: never ready');
+  await pause(12000); // let the opening title card fade (it sat over the first interior still)
+  await evaluate(cdp, '(__debug.vitals&&__debug.vitals.setGodMode&&__debug.vitals.setGodMode(true)),true');
+  const place = (x, y, z, yaw, pitch) => evaluate(cdp, `(()=>{const t=__debug.playerHandle.data.transform;t.x=${x};t.y=${y};const T=__debug.world.terrain;const g=${z == null ? `(T.groundAt||T.heightAt).call(T,${x},${y})` : z};t.z=(g==null?t.z:g+0.05);t.yawDeg=${yaw};t.pitchDeg=${pitch};const L=__debug.look;if(L){L.yawDeg=${yaw};L.pitchDeg=${pitch};}return +t.z.toFixed(2)})()`);
+  for (const [name, x, y, z, yaw, pitch, note] of INTERIORS) {
+    await place(x, y, z, yaw, pitch); await pause(settle);
+    const zNow = await evaluate(cdp, '+__debug.playerHandle.data.transform.z.toFixed(2)');
+    await shot(name, `${x},${y} z ${z} (now ${zNow}) yaw ${yaw}`, note);
+  }
+  for (const [name, finder, note] of CLOSEUPS) {
+    const pose = await evaluate(cdp, `(()=>{const e=${finder};if(!e||!e.transform)return null;const t=e.transform,a=(t.yawDeg||0)*Math.PI/180,d=3.5;
+      return {x:+(t.x-Math.sin(a)*d).toFixed(2),y:+(t.y+Math.cos(a)*d).toFixed(2),z:+t.z||null,yaw:(t.yawDeg||0)%360}})()`).catch(() => null);
+    if (!pose) { rows.push({ file: `s2-${name}.png`, pose: 'not found', note }); console.log('closeup', name, 'NOT FOUND'); continue; }
+    await place(pose.x, pose.y, pose.z, pose.yaw, -6); await pause(2500); // entity z, not terrain: Rook stands on the Ford trade-post floor
+    // the entity may have moved: re-aim at it from 3.5 m right before the still
+    const p2 = await evaluate(cdp, `(()=>{const e=${finder};const t=e.transform,p=__debug.playerHandle.data.transform;const dx0=t.x-p.x,dy0=t.y-p.y;const l=Math.hypot(dx0,dy0)||1;p.x=t.x-dx0/l*3.5;p.y=t.y-dy0/l*3.5;p.z=+t.z+0.05;const yaw=Math.atan2(dx0,-dy0)*180/Math.PI;p.yawDeg=yaw;p.pitchDeg=-6;if(__debug.look){__debug.look.yawDeg=yaw;__debug.look.pitchDeg=-6;}return p.x.toFixed(1)+','+p.y.toFixed(1)+' -> '+t.x.toFixed(1)+','+t.y.toFixed(1)+' z '+(+t.z).toFixed(1)})()`);
+    await pause(250); await shot(name, p2, note); // short: a wolf trots ~5 m in 0.7 s
+  }
+  await place(1440, 1040, null, 270, 0); await pause(2000); // start meadow behind the UI screens
+  for (const [name, open, close, note] of UI_SCREENS) {
+    if (name === 'pause') await evaluate(cdp, "Object.defineProperty(__debug.look,'locked',{get:()=>false,set:()=>{},configurable:true}),true");
+    for (const c of open) await key(c);
+    await pause(900); await shot('ui-' + name, open.join('+') || 'lock lost', note);
+    for (const c of close) await key(c);
+    await pause(400);
+  }
+}
 const killer = setTimeout(() => { console.error('visqa-sweep timeout'); if (browser?.pid) killTree(browser.pid); if (server.pid) killTree(server.pid); process.exit(2); }, 900000);
 try {
   await waitForHttp(`http://127.0.0.1:${port}/`, 10000);
@@ -39,7 +101,8 @@ try {
   await cdp.send('Page.enable'); await cdp.send('Runtime.enable');
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 700, deviceScaleFactor: 1, mobile: false });
   await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
-  for (const h of hours) {
+  if (set2) await runSet2();
+  for (const h of (set2 ? [] : hours)) {
     await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?save=0&nopause=1&quality=medium&backend=webgpu&title=0&time=${h}` });
     let ok = false;
     for (let i = 0; i < (Number(process.env.READY_TRIES) || 600) && !ok; i++) { await pause(300); try { ok = !!(await evaluate(cdp, '!!(window.__debug && window.__debug.playerHandle && window.__debug.world) && !/Checking your graphics/.test(document.body.innerText||"")')); } catch { /* navigating */ } }
@@ -60,6 +123,15 @@ try {
   clearTimeout(killer); cdp?.close(); if (browser?.pid) killTree(browser.pid); if (server.pid) killTree(server.pid);
   await pause(300); try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch {}
 }
+const idxPath = path.join(outDir, 'index.md');
+let oldIdx = ''; try { oldIdx = readFileSync(idxPath, 'utf8'); } catch {}
+const s2At = oldIdx.indexOf('\n## Set 2'), set2Old = s2At >= 0 ? oldIdx.slice(s2At) : '';
+if (set2) {
+  let s2 = `\n## Set 2 (VISQA-10)\n\n\`node tools/visqa-sweep.mjs <port> --set 2\` - default hour, god mode; interiors at the floor z, close-ups 3.5 m, UI via real key events.\n\n| still | pose / key | note |\n|---|---|---|\n`;
+  for (const r of rows) s2 += `| ${r.pose === 'not found' ? '-' : `![${r.file}](${r.file})`} | ${r.pose} | ${r.note} |\n`;
+  writeFileSync(idxPath, (s2At >= 0 ? oldIdx.slice(0, s2At) : oldIdx) + s2);
+  console.log('wrote', rows.length, 'set-2 stills + index.md'); process.exit(0);
+}
 // contact sheet from every still in the folder (a partial re-run with ONLY/HOURS keeps the other cells): one row per spot, one column per hour
 const files = readdirSync(outDir).filter((f) => /-\d\d\.png$/.test(f));
 const hs = [...new Set(files.map((f) => Number(f.slice(-6, -4))))].sort((a, b) => a - b);
@@ -72,5 +144,5 @@ let md = `# VISQA-01 sweep
 `;
 for (const [name, x, y, yaw, pitch, note] of SPOTS) md += `| ${name} | ${x},${y} yaw ${yaw} pitch ${pitch} - ${note} | ${hs.map((h) => { const f = `${name}-${String(h).padStart(2, '0')}.png`; return files.includes(f) ? `![${f}](${f})` : '-'; }).join(' | ')} |
 `;
-writeFileSync(path.join(outDir, 'index.md'), md);
+writeFileSync(idxPath, md + set2Old);
 console.log('wrote', rows.length, 'stills + index.md');

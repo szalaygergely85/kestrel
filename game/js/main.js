@@ -2771,7 +2771,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       }
       if (window.__debug) window.__debug.useHints = useHintSet; // tools/verify-use-hints.mjs
       if (questUiActive && !ending) {
-        if ((!isCaptureOrBench || params.get('save') === '1') && !wakeOut.inputLocked) { gameHooks.drawHud(ui); if (relayWake) relayWake.drawHud(ui); } // D-050 seam: today the quest relay's TEMPORARY objective line, top-left
+        if ((!isCaptureOrBench || params.get('save') === '1') && !wakeOut.inputLocked && !isMapOpen()) { gameHooks.drawHud(ui); if (relayWake) relayWake.drawHud(ui); } // VISQA-10: not under the open map (the objective chip poked out over the map frame); D-050 seam: today the quest relay's TEMPORARY objective line, top-left
         drawHints(ui, assets.uiStyle, fadeLut);
         if (regionBanner && !regionBannerBlocked) regionBanner.draw(ui); // REGION-01: top-centre, clear of the prompt (below the cross) and the bottom-left hints
         // 17.4: an eyelid over the 3D view, not UI text. BUG-WEBGPU-EYELID-01: once the WebGPU frame is complete its presenter shows the sprite-pass
