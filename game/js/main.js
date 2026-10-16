@@ -219,6 +219,7 @@ setEdgeHold(new URLSearchParams(location.search).get('aaedge') !== '0'); // AA-1
 setVoxelHold(new URLSearchParams(location.search).get('aavox') !== '0'); // AA-21 (OB-208): resolve hysteresis keeps a voxel prop's face key (kind 8), ?aavox=0 = off
 if (new URLSearchParams(window.location.search).get('debug') === '1') setApiWarnings(true); // ENG-API-01h: dev flag only - deprecated engine names warn once
 import { meshFeedStats, MAX_MESH_DRAWS, MAX_DRAW_ITEMS } from '../../engine/index.js'; // OB-039: F3 mesh draw cap line
+import { SpikeRecorder } from './dev/spikeRecorder.js'; // PERF-05 `?spikes=1`
 import { createModelPreview, createCharCache } from '../../engine/index.js'; // EQ-03/04: Character tab model preview
 import { composeCharacter, meshCharacter, collapseRig, riggedModelDef, HUMANOID_SPLIT_LEG_RIG, createFootIk, voxelPointWorld } from '../../engine/index.js'; // OB-086: the kit character in the world
 import { drawArrowCount, drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
@@ -757,8 +758,10 @@ let benchActive = false;
 // US-018 spike hunt: `?bench=1` only (null otherwise - every lap() below is
 // then a single null test). Section ids = index into PROF_SECTIONS.
 const PROF_SECTIONS = ['sim.input', 'sim.physics', 'sim.quest', 'r.bake', 'sim.events',
-  'r.lights', 'r.voxel', 'r.world', 'r.ui', 'r.gpuFrame', 'r.present', 'r.overlay'];
-const SEC = { input: 0, physics: 1, quest: 2, bake: 3, events: 4, lights: 5, voxel: 6, world: 7, ui: 8, gpuFrame: 9, present: 10, overlay: 11 };
+  'r.lights', 'r.voxel', 'r.world', 'r.ui', 'r.gpuFrame', 'r.present', 'r.overlay',
+  'sim.stream', 'r.terrainMesh', 'r.feedDetail', 'r.scene', 'gpu.feed', 'gpu.raster', 'gpu.sunShadow', 'gpu.ptShadow', 'gpu.cell', 'gpu.sprites']; // PERF-05: finer split
+const SEC = { input: 0, physics: 1, quest: 2, bake: 3, events: 4, lights: 5, voxel: 6, world: 7, ui: 8, gpuFrame: 9, present: 10, overlay: 11,
+  stream: 12, terrainMesh: 13, feedDetail: 14, scene: 15, gpuStage0: 16 }; // gpuStage0..+5 = WgCellPipeline.stageMs (r.present minus these = uploads + submit)
 let prof = null;
 let lapT = 0;
 function lapStart() { if (prof) lapT = performance.now(); }
@@ -2181,7 +2184,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
     syncMapQuestMarks();
     const invOpen = !!(invView && invView.isOpen) || !!(craftView && craftView.isOpen) || qlIsOpen(); // MAIN-WIRE-01: craft list locks input / pauses like the pack
     const cardOpen = !!(chestHook && chestHook.card.isOpen); // S8-B1-04: item-get card gates input same as invOpen
-    if (mode === 'world' && playerHandle && engine.world.terrainBands) { const pt = playerHandle.data.transform; engine.world.streamBand(pt.x, pt.y, 2); } // WS2-05 (38.38): near-band streaming, player pose only, <= 2 ms
+    lap(SEC.input); if (mode === 'world' && playerHandle && engine.world.terrainBands) { const pt = playerHandle.data.transform; engine.world.streamBand(pt.x, pt.y, 2); } lap(SEC.stream); // WS2-05 (38.38): near-band streaming, player pose only, <= 2 ms
     // ---- US-015: wake timeline + map card (world_m1 only, questUiActive) ----
     let uiLocked = false;
     let mPressedEdge = false;
@@ -2598,11 +2601,11 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
     // row), so a 1 ms target actually holds even on the first frame after
     // load/teleport instead of overrunning on one expensive row.
     if (mode === 'world' && engine.world.terrain) {
-      engine.world.terrain.bakeFarStep(1);
+      engine.world.terrain.bakeFarStep(1); lap(SEC.bake);
       // AUD-34: terrain-mesh row builds (2 ms) moved here from the raster prepare hook; passRaster skips its own step when this flag is set.
       if (wgPipeline && terrainEnabled) { wgPipeline.terrainStepExternal = true; terrainMeshSetFor(engine.world.terrain).step(2); }
     }
-    lap(SEC.bake);
+    lap(SEC.terrainMesh);
 
     if (mode === 'glyphs') {
       drawGlyphsScreen(rt);
@@ -2661,7 +2664,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       // US-017 (7.4 "Fade"): 1 = off outside the end sequence. CPU path
       // only (compositor.js's early-out on `fb.gpu`) - see US-017-gpu.
       fb.sceneFade = endFadeAmount(engine.world, assets.uiStyle);
-      engine.feedDetail(cam); // ENV-01a2: shared fed set before either render twin.
+      lap(SEC.world); engine.feedDetail(cam); lap(SEC.feedDetail); // ENV-01a2: shared fed set before either render twin.
       fb.frameNo = (fb.frameNo || 0) + 1; // RE-15a: one host-owned counter for instances.js addToDrawList's memo
       if (flickerLive) { flickerLive.beforeRender(cam, engine.world); fb.timeSec = 0; } // AA-01: ?flickerlive=1 camera override + frozen time
       renderWorld(fb, engine.world, cam);
@@ -2669,6 +2672,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       // cells right after its own sprite loop).
       engine.particleLayer.build(engine.particles, cam, rt, fb.lights, engine.world, assets.palette, renderer);
       sprites.render(fb, engine.world, cam, fbView ? (handFxOn ? handFbExtra : fbView.extra) : undefined); // US-030c (ARCH CHANGES item 1): after the surfaces, before present()
+      lap(SEC.scene); // PERF-05: renderWorld + particles + sprites
       if (postCfg && postV !== atmosV) { postV = atmosV; composePost(atmosState, postCfg, postState); creepMistBase = postState.mist[3] > 0 ? postState.mist[0] : 0; } if (postCfg && underCreep && creepMistBase > 0) postState.mist[0] = creepMistDensity(creepMistBase, underCreep.out.mist); if (postCfg && wgPipeline && wgPipeline._spritesPass) wgPipeline._spritesPass.post = postState; // POST-STACK-01c: compose for both paths (the GPU sprite pass reads the same state); the JS finish runs below, after the fade
       // US-017 ARCH CHANGES #1 item 2: CPU-path scene fade, moved here from
       // compositor.js so sprites fade too (oracle parity with the GPU
@@ -2876,6 +2880,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
     lap(SEC.gpuFrame);
     rt.present();
     lap(SEC.present);
+    if (prof && wgPipeline && wgPipeline.stageMs) { const sm = wgPipeline.stageMs; let s6 = 0; for (let i = 0; i < 6; i++) { prof.add(SEC.gpuStage0 + i, sm[i]); s6 += sm[i]; } prof.add(SEC.present, -s6); sm.fill(0); } // PERF-05
     if (flickerLive) flickerLive.afterPresent(); // AA-01
     if (autoBench && autoBench.phase !== 'done') { const t = performance.now(); lastFrameDt = lastFrameT ? t - lastFrameT : NaN; lastFrameT = t; autoBench.tick(); } // GFX-02
     // US-018 (architecture.md 16): "do not leave pass timing on when the
@@ -2926,6 +2931,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       { const g = engine.world && engine.world.placementGrid; if (g) extra += `
 stream act ${g.activeCount}/${g.memberCount} warm ${g.warmCount} cells ${g.cellCount}  cls ${Array.from(g.classCells).join('/')}${engine.world.streaming.enabled ? '' : '  [OFF]'}`; } // STREAM-01b
       if (bootPrinted) extra += '\nboot: ' + bootSummary();
+      if (prof && prof.lastLine) extra += '\n' + prof.lastLine; // PERF-05 `?spikes=1`
       overlay.update(engine.loop.fps, engine.loop.frameMs, extra);
     }
     lap(SEC.overlay);
@@ -2971,6 +2977,7 @@ stream act ${g.activeCount}/${g.memberCount} warm ${g.warmCount} cells ${g.cellC
     loop.stop();
     window.__cine = createPlayback(cinematic, update, render);
   }
+  if (!prof && params.get('spikes') === '1') { prof = new SpikeRecorder(PROF_SECTIONS); window.__spikes = prof.records; window.__spikeRec = prof; if (wgPipeline) wgPipeline.stageMs = new Float64Array(6); } // PERF-05
   loop.profiler = prof; // US-018 spike hunt (`?bench=1` only, else null)
   window.__debug.loop = loop;
   window.__debug.world = engine.world;

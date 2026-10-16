@@ -107,6 +107,7 @@ export class WgCellPipeline {
     this._shadowPass = null;
     this._pointShadowPass = null; // ME-16e (38.22)
     this._pshFails = 0;           // consecutive point-shadow run failures (2 = disabled for the session)
+    this.stageMs = null;          // PERF-05: Float64Array(6) set by a dev spike recorder: feed, raster, sun shadow, point shadow, cell(+stable+glow), sprites; null = off
     this.pointShadows = opts.pointShadows === undefined ? false : opts.pointShadows; // ME-16e: default OFF until the ME-16g gate + owner look (main session 2026-10-09); true / {n,res,faceCap,...} = on (`?pointshadows=N`), false / {n:0} = off
     this.pointShadowLevel = opts.pointShadowLevel;
     this._waterPass = null;
@@ -481,6 +482,8 @@ export class WgCellPipeline {
     // attached to any pass yet (only writeTexture ran) - ending it now is a no-op for that slot's data (nothing written) and
     // frees the single "active span" so each WG pass below can open its own (WebGpuTimer spans never nest - see passRaster.run).
     if (this._passTimingOn) d.timer.end();
+    const sm = this.stageMs; let ts = 0; // PERF-05: dev-only CPU stage times (null = off, one null test per stage)
+    if (sm) { sm.fill(0); ts = performance.now(); }
     if (this._cam && this._world) {
       try { this._rasterPass.run(this); const rc = this._rasterPass.cull; this.stats.culledOccl = this.occl && rc ? rc.stats.culledOccl : 0; }
       catch (e) { this._abortOpenPass('raster'); this.ready = false; this.setEnabled(false); console.warn('[WgCellPipeline] raster disabled:', e); return; }
@@ -489,12 +492,14 @@ export class WgCellPipeline {
       d.endPass();
       if (this._shadowPass) this._shadowPass.active = false; // no camera/world: no valid map (the light pass falls back to the dummy)
     }
+    if (sm) { const n = performance.now(); sm[1] = n - ts - sm[0]; ts = n; } // [0] = raster prepare (draw-list feed), [1] = raster encode
     const sh = this._shadowPass;
     if (sh && (sh.enabled || sh.off)) {
       try { sh.run(this, this._rasterPass); }
       catch (e) { this._abortOpenPass('sun shadow'); sh.active = false; console.warn('[WgCellPipeline] sun shadow map failed this frame (DDA sun):', e); }
       this.stats.shadowItems = sh.stats.shadowItems; this.stats.shadowDraws = sh.stats.shadowDraws; this.stats.shadowCpuMs = sh.stats.shadowCpuMs;
     }
+    if (sm) { const n = performance.now(); sm[2] = n - ts; ts = n; }
     const psp = this._pointShadowPass; // ME-16e: AFTER the sun pass (shares its wind uniforms + caster pipelines), BEFORE the light pass
     if (psp) {
       if (this._cam && this._world) {
@@ -508,13 +513,16 @@ export class WgCellPipeline {
         }
       } else psp.active = false;
     }
+    if (sm) { const n = performance.now(); sm[3] = n - ts; ts = n; }
     this._prepHyst(t);
     try { this._cellPass.run(this, t); }
     catch (e) { this._abortOpenPass('cell'); this.ready = false; this.setEnabled(false); console.warn('[WgCellPipeline] resolve/deriv/light/shade/edge disabled:', e); return; }
     this._cellsShaded = this._cellPass.shaded;
     this._runStable(t);
     this._runGlow(t);
+    if (sm) { const n = performance.now(); sm[4] = n - ts; ts = n; }
     this._runSprites(t);
+    if (sm) sm[5] = performance.now() - ts;
     if (!this.ready) return;
     if (this.debugMode < 0) return;
     if (!this._outTarget || this._outFg !== rt.fgTex || this._outBg !== rt.bgTex) {

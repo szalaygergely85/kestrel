@@ -1562,7 +1562,7 @@ export class World {
     const src = hit || j;
     if (terrain.realTrees) this.scatter = hit ? hit.scatter : j.scatter;
     if (this._detailCtx) { this.detail = hit ? hit.detail : j.detailSet; this.decor = hit ? hit.decor || null : (j.detail && j.detail.decor) || null; }
-    this._rebuildCarpet(true);
+    this._rebuildCarpet(true, hit ? hit.carpetClass : (j && j.detail && j.detail.carpet ? { map: j.detail.carpet, n: j.detail._carpetN } : null)); // PERF-05: prebuilt class map
     if (this.physicsMode === 'mesh') {
       this._setCollider('scatter:trunks', hit ? hit.trunks : j.trunks);
       this._setCollider('scatter:detail', hit ? hit.detailCol : j.detailCol);
@@ -1748,10 +1748,18 @@ export class World {
   }
 
   /** OB-073-D2a (38.52): (re)build the carpet class map for the current near band; reuses the buffer. */
-  _rebuildCarpet(sliced) {
+  _rebuildCarpet(sliced, pre) {
     const c = this._carpetCtx;
     if (!c || !this.terrain?.nearReady) return;
-    const m = buildCarpetClassMap(this.terrain, c.recipe, c.cfg, this.carpet, this.structures);
+    // PERF-05: a band bundle's class map (built sliced by its DetailScatterJob from the same near + structures) is copied instead of rebuilt (~15 ms on the swap frame)
+    const tn = this.terrain.near, pm = pre && pre.map;
+    const usePre = !!pm && pre.n === this.structures.length && pm.x0 === tn.x0 && pm.y0 === tn.y0 && pm.cellM === (c.cfg.classCellM || pm.cellM) &&
+      pm.w === Math.floor(tn.w * tn.cell / pm.cellM) && pm.h === Math.floor(tn.h * tn.cell / pm.cellM);
+    let m;
+    if (usePre) {
+      const old = this.carpet && this.carpet.classMap, arr = old && old.length === pm.classMap.length ? old : new Uint8Array(pm.classMap.length);
+      arr.set(pm.classMap); m = { classMap: arr, x0: pm.x0, y0: pm.y0, w: pm.w, h: pm.h, cellM: pm.cellM };
+    } else m = buildCarpetClassMap(this.terrain, c.recipe, c.cfg, this.carpet, this.structures);
     if (!this.carpet) this.carpet = { cfg: c.cfg, classMap: null, x0: 0, y0: 0, w: 0, h: 0, cellM: 0 };
     this.carpet.classMap = m.classMap; this.carpet.x0 = m.x0; this.carpet.y0 = m.y0; this.carpet.w = m.w; this.carpet.h = m.h; this.carpet.cellM = m.cellM; // D2f: cellM was dropped
     if (sliced && this.carpet.mask) { // band swap: old mask stays valid (own window) until the back buffer is complete
