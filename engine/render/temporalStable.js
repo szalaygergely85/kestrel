@@ -326,9 +326,10 @@ export function edgeMaskFromShade(finalFg, finalBg, finalGlyph, shadeFg, shadeBg
   return out;
 }
 
-/** Water mask as the WGSL pass sees it: the layer word holds a finite vD (x bits != +Inf) and is not flagged (bit 5 of w). */
+/** Water mask as the WGSL pass sees it: the layer word holds a finite vD (x bits != +Inf). VISQA-26: waterfall sheets (bit 5 of w)
+ * count too - with history their scrolling streak edges blended per channel (CHANNEL_SNAP on g/b only) = salmon/teal specks. */
 export function waterMaskFromLayer(layerX, layerW, out) {
-  for (let i = 0; i < out.length; i++) out[i] = (layerX[i] !== 0x7f800000 && (layerW[i] & 32) === 0) ? 1 : 0;
+  for (let i = 0; i < out.length; i++) out[i] = layerX[i] !== 0x7f800000 ? 1 : 0;
   return out;
 }
 
