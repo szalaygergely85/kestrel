@@ -104,19 +104,21 @@ const HINT_RGB = [110, 104, 90];
 const HINT = 'any key: next';
 
 export const SLIDE_BRIGHT = 1.15; // OB-219: owner found the slides dark
-const CELL_PX = 4; // overlay pixels per source cell (400x150 slide -> 1600x600 canvas)
+// OB-219 ratio fix: tools/img2ascii.py crops the still to 16:9 and resizes it to cols x rows, so one cell is 2:3 (w:h).
+// 4 x 6 px per cell -> 400x150 slide = 1600x900 canvas = 16:9, drawn letterboxed (never stretched).
+const CELL_W = 4, CELL_H = 6;
 
 /** OB-219: paint a slide cell-for-cell (native grid, no downsample) with a 2D-context-like `ctx`. Returns cells painted. */
-export function paintSlideNative(ctx, slide, cellPx = CELL_PX, bright = SLIDE_BRIGHT) {
+export function paintSlideNative(ctx, slide, cellW = CELL_W, cellH = CELL_H, bright = SLIDE_BRIGHT) {
   const { cols, rows, glyph, fg, bg, rgb } = slide;
   const c = (k) => Math.min(255, Math.round(rgb[k] * bright));
-  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cols * cellPx, rows * cellPx);
-  ctx.font = `${cellPx + 1}px monospace`; ctx.textBaseline = 'top';
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cols * cellW, rows * cellH);
+  ctx.font = `${cellH}px monospace`; ctx.textBaseline = 'top';
   let n = 0;
   for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
     const i = y * cols + x, f = fg[i] * 3, b = bg[i] * 3;
-    ctx.fillStyle = `rgb(${c(b)},${c(b + 1)},${c(b + 2)})`; ctx.fillRect(x * cellPx, y * cellPx, cellPx, cellPx);
-    if (glyph[i] > 0) { ctx.fillStyle = `rgb(${c(f)},${c(f + 1)},${c(f + 2)})`; ctx.fillText(String.fromCharCode(glyph[i] + 32), x * cellPx, y * cellPx); }
+    ctx.fillStyle = `rgb(${c(b)},${c(b + 1)},${c(b + 2)})`; ctx.fillRect(x * cellW, y * cellH, cellW, cellH);
+    if (glyph[i] > 0) { ctx.fillStyle = `rgb(${c(f)},${c(f + 1)},${c(f + 2)})`; ctx.fillText(String.fromCharCode(glyph[i] + 32), x * cellW, y * cellH); }
     n++;
   }
   return n;
@@ -136,13 +138,14 @@ export function createSlideOverlay(gameCanvas, doc = document) {
       if (alpha <= 0) { el.style.display = 'none'; return; }
       let src = cache.get(slide);
       if (!src) {
-        src = doc.createElement('canvas'); src.width = slide.cols * CELL_PX; src.height = slide.rows * CELL_PX;
+        src = doc.createElement('canvas'); src.width = slide.cols * CELL_W; src.height = slide.rows * CELL_H;
         paintSlideNative(src.getContext('2d'), slide); cache.set(slide, src);
       }
       if (el.width !== src.width) { el.width = src.width; el.height = src.height; }
       el.getContext('2d').drawImage(src, 0, 0);
-      const r = gameCanvas.getBoundingClientRect(), h = r.height * (uiRows - capRows) / uiRows;
-      el.style.left = r.left + 'px'; el.style.top = r.top + 'px'; el.style.width = r.width + 'px'; el.style.height = h + 'px';
+      const r = gameCanvas.getBoundingClientRect(), h = r.height * (uiRows - capRows) / uiRows, ar = src.width / src.height;
+      const w = Math.min(r.width, h * ar), hh = w / ar; // keep the slide's own aspect inside the area above the caption
+      el.style.left = (r.left + (r.width - w) / 2) + 'px'; el.style.top = (r.top + (h - hh) / 2) + 'px'; el.style.width = w + 'px'; el.style.height = hh + 'px';
       el.style.opacity = String(Math.min(1, alpha)); el.style.display = 'block';
     },
     hide() { el.style.display = 'none'; },
