@@ -1913,3 +1913,5 @@ Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-
 - 2026-10-16 kestrel-3: BEAST-POOL-BIND-LATE-FIX (6 phases, 12-15 s -> ~6.5 s same box, rest is other blocks) + OB193-TEST-FIX (exit moved to end, depth-40 = 0.16) dev done; suites + check-deps OK.
 - 2026-10-16 kestrel-3: AA-04-FIX -> arch-review. stableCompare.js compareResolveHyst (twin incl. AA-17 soft + AA-21 vox) + gpucompare rays-4 stable 'resolve-hyst' row: carpetMeadow 0 mismatches, 31 ties, 780 hyst-changed cells; arch 38.82 B keep-rule paragraph.
   Full run: only known signal tower PASS->FAIL + decorFord; filtered rerun (pose=carpetmeadow) after a compile-await fix. Suites resolve/stable/gpuCompare 10 PASS, check-deps OK.
+### FLICKER-F3-01 (kestrel-3, 2026-10-16) - po-review
+- game/js/dev/flickerMeter.js (+test: exact ratio, EMA, heap probe) + main.js 8 lines (import, f3Flicker, F3-only async readbackCells+Geometry, text line); `?flicker=0` removes. Still EMA + raw-moving only; no reprojected variant.

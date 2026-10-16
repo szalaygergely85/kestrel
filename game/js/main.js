@@ -56,6 +56,7 @@ import { prefetchLazyMeshesAtBoot, prefetchAllLazyMeshes } from './bootPrefetchH
 import { parseCloudShadowFlag, devCloudShadow, parseAoStrength } from './cloudParam.js'; // S8-B2-12a/S8-B2-20 NEEDS B1 item (2)/(1): `?cloudshadow=1`/`?ao=<0..1>` parse
 import { MODES } from './dev/modes/index.js';
 import { createFlickerLive, runLivePoses, parseFlickerDump, POSES_ALL } from './dev/flickerLive.js'; // AA-01
+import { createFlickerMeter } from './dev/flickerMeter.js'; // FLICKER-F3-01
 import { loadCinematic, evaluatePath, createPlayback } from './dev/modes/cinematic.js';
 import { createPauseResume } from './quest/pauseResume.js'; // OB-068
 import { entityTop, markZ } from './quest/markTop.js'; // OB-155h/OB-164: marker height from the model top
@@ -373,6 +374,7 @@ function redetectQuality() { return startAutoBench(bootOpts.quality ? bootOpts.q
 window.redetectQuality = redetectQuality;
 
 let bootPrinted = false; // BOOT-SPEED-01: true after the first frame (declared before runGame can run)
+const f3Flicker = { m: createFlickerMeter(0), busy: false }; // FLICKER-F3-01
 let bootStageAtFrame = 0; // S8-B1-20: bootNow() at first frame; F3 shows the stage breakdown for 10 s after this
 bootMark('main.js module start (imports done)');
 // Boot loading card with an ASCII progress bar (not on capture/bench/gpucompare pages; `?bootcard=0` off, `=1` forces it).
@@ -2884,6 +2886,11 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
     lap(SEC.present);
     if (prof && wgPipeline && wgPipeline.stageMs) { const sm = wgPipeline.stageMs; let s6 = 0; for (let i = 0; i < 6; i++) { prof.add(SEC.gpuStage0 + i, sm[i]); s6 += sm[i]; } prof.add(SEC.present, -s6); sm.fill(0); } // PERF-05
     if (flickerLive) flickerLive.afterPresent(); // AA-01
+    // FLICKER-F3-01 (OB-208): F3 only (0 cost closed), `?flicker=0` removes it. One async CPU readback in flight at a time.
+    if (overlay.visible && wgActive && wgPipeline.ready && params.get('flicker') !== '0' && !f3Flicker.busy && mode === 'world') {
+      f3Flicker.busy = true; const c0 = cam.x, c1 = cam.y, c2 = cam.z, c3 = cam.yawDeg, c4 = cam.pitchDeg;
+      Promise.all([wgPipeline.readbackCells(), wgPipeline.readbackGeometry()]).then(([cl, g]) => { if (cl && cl.fg && g && g.GI) f3Flicker.m.push(g.GI, cl.fg, rt.cols * rt.rows, c0, c1, c2, c3, c4); }).catch(() => {}).finally(() => { f3Flicker.busy = false; });
+    } else if (!overlay.visible) f3Flicker.m.reset();
     if (autoBench && autoBench.phase !== 'done') { const t = performance.now(); lastFrameDt = lastFrameT ? t - lastFrameT : NaN; lastFrameT = t; autoBench.tick(); } // GFX-02
     // US-018 (architecture.md 16): "do not leave pass timing on when the
     // overlay is hidden and no bench runs" - a plain boolean set, cheap
@@ -2932,6 +2939,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       extra += `\nmesh singles ${meshFeedStats.kept}/${meshFeedStats.requested} (cap ${MAX_MESH_DRAWS})${meshFeedStats.dropped ? '  DROPPED ' + meshFeedStats.dropped : ''}  draws ${meshFeedStats.drawItems}/${MAX_DRAW_ITEMS}${meshFeedStats.overflow || meshFeedStats.groupsDropped || meshFeedStats.instDropped ? `  OVERFLOW ${meshFeedStats.overflow} grp ${meshFeedStats.groupsDropped} inst ${meshFeedStats.instDropped}` : ''}`; // OB-039
       { const g = engine.world && engine.world.placementGrid; if (g) extra += `
 stream act ${g.activeCount}/${g.memberCount} warm ${g.warmCount} cells ${g.cellCount}  cls ${Array.from(g.classCells).join('/')}${engine.world.streaming.enabled ? '' : '  [OFF]'}`; } // STREAM-01b
+      if (params.get('flicker') !== '0') extra += '\n' + f3Flicker.m.text(); // FLICKER-F3-01
       if (bootPrinted) extra += '\nboot: ' + bootSummary();
       if (prof && prof.lastLine) extra += '\n' + prof.lastLine; // PERF-05 `?spikes=1`
       overlay.update(engine.loop.fps, engine.loop.frameMs, extra);
