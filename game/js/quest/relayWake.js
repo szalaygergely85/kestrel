@@ -28,15 +28,18 @@ const TOAST_SEC = 4, TOAST_Y = 6, FG = [236, 226, 190], BG = [10, 11, 16];
 const DEAD = 0, WAKING = 1, AWAKE = 2;
 const WAKE_MAX_EXTRA = 3; // s after light-on + grow before a stuck wake is forced awake
 
-// QL-07 (D-011 SOS): the Bend relay blinks 3 short + 3 long, 3 times, once after it first wakes (not replayed on reload).
-const BEND_WS = 'ws_roadBend', PULSE_CYCLES = 3, PULSE_GAP = 1.5, PULSE_OFF = 0.12;
-const PULSE_SEQ = [0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.75, 0.25, 0.75, 0.25, 0.75, 0.25]; // on, off, on, off ... (seconds)
-const PULSE_CYCLE = PULSE_SEQ.reduce((a, b) => a + b, 0) + PULSE_GAP;
+// QL-07 / SIGNAL-ALIVE-01 (D-112): the Bend relay blinks the Morse ALIVE signal (shared source ASSETS.signal, design/models/title.js)
+// 3 times, once after it first wakes (not replayed on reload).
+const BEND_WS = 'ws_roadBend', PULSE_CYCLES = 3, PULSE_OFF = 0.12;
+const sigSteps = () => (globalThis.ASSETS && globalThis.ASSETS.signal && globalThis.ASSETS.signal.steps) || null;
+function cycleLen(st) { let c = 0; for (let i = 0; i < st.length; i++) c += st[i][1]; return c; }
 /** Light factor 0..1 at pulse time t (seconds since the relay became awake); -1 when the pulse is over. Pure, allocation-free. */
 export function pulseFactor(t) {
-  if (t >= PULSE_CYCLES * PULSE_CYCLE) return -1;
-  let u = t % PULSE_CYCLE;
-  for (let i = 0; i < PULSE_SEQ.length; i++) { if (u < PULSE_SEQ[i]) return i % 2 === 0 ? 1 : PULSE_OFF; u -= PULSE_SEQ[i]; }
+  const st = sigSteps(); if (!st) return -1;
+  const cyc = cycleLen(st);
+  if (t >= PULSE_CYCLES * cyc) return -1;
+  let u = t % cyc;
+  for (let i = 0; i < st.length; i++) { if (u < st[i][1]) return st[i][0] ? 1 : PULSE_OFF; u -= st[i][1]; }
   return 1; // the gap between cycles: steady
 }
 const FORD_WS = 'ws_ford', FLAG_MIRROR = 'mq.ford.mirror.glass'; // set by errands.mainSync while relay.mirror is in the pack
@@ -164,7 +167,7 @@ export function createRelayWake(o) {
             const lh = lights.entityHandle.get(r.entId);
             if (lh !== undefined) { lights.baseIntensity[lh] = r.target; r.growDone = true; }
           }
-          if (r.wsId === BEND_WS && r.pulseT >= 0 && r.target !== null && lights) { // SOS blink
+          if (r.wsId === BEND_WS && r.pulseT >= 0 && r.target !== null && lights) { // ALIVE blink
             r.pulseT += dt;
             const lh = lights.entityHandle.get(r.entId), f = pulseFactor(r.pulseT);
             if (lh !== undefined) lights.baseIntensity[lh] = r.target * (f < 0 ? 1 : f);

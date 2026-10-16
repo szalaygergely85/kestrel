@@ -14,6 +14,33 @@
   var A = root.ASSETS = root.ASSETS || {};
   A.models = A.models || {};
 
+  // SIGNAL-ALIVE-01 (D-112/D-012/D-013): the ONE shared signal pattern = Morse "ALIVE". Title flourish, chart star, menu mark,
+  // far tower and the Bend relay blink (game/js/quest/relayWake.js, reads ASSETS.signal) all use it. Seconds.
+  A.signal = (function () {
+    var MORSE = { A: '.-', L: '.-..', I: '..', V: '...-', E: '.' }, WORD = 'ALIVE';
+    var T = { dot: 0.25, dash: 0.75, gap: 0.25, letterGap: 0.75, pause: 2.5 };
+    var letters = WORD.split('').map(function (c) { return MORSE[c]; }), marks = [], steps = [];   // steps: [on, seconds]
+    letters.forEach(function (code, li) {
+      code.split('').forEach(function (m, mi) {
+        var last = mi === code.length - 1, lastLetter = li === letters.length - 1;
+        marks.push(m);
+        steps.push([true, m === '.' ? T.dot : T.dash]);
+        steps.push([false, !last ? T.gap : lastLetter ? T.pause : T.letterGap]);
+      });
+    });
+    function decode(st) {   // on/off steps -> text (inverse of the above; pause/letter gap >= 0.5 s splits letters)
+      var rev = {}, out = '', cur = '';
+      Object.keys(MORSE).forEach(function (k) { rev[MORSE[k]] = k; });
+      st.forEach(function (x) {
+        if (x[0]) cur += x[1] >= 0.5 ? '-' : '.';
+        else if (x[1] >= 0.5) { out += rev[cur] || '?'; cur = ''; }
+      });
+      return out;
+    }
+    return { word: WORD, morse: letters, text: letters.join(' '), marks: marks, steps: steps, timing: T, decode: decode,
+             cycle: steps.reduce(function (a, x) { return a + x[1]; }, 0) };
+  })();
+
   // ---- block font, 6 rows ----
   var FONT = {
     K: ['##  ##', '## ## ', '####  ', '####  ', '## ## ', '##  ##'],
@@ -47,34 +74,33 @@
   for (y = H - 3; y >= 0; y--) for (x = W - 2; x >= 0; x--) {
     if (G[y][x] === '#' && G[y + 1][x + 1] === ' ') { G[y + 1][x + 1] = ':'; K[y + 1][x + 1] = 's'; }
   }
-  // Row 7 flourish: brass ends + the SOS signal ( 3 short, 3 long, 3 short ) in aether teal, centred.
-  // Each mark ('.' or '-') gets its own key char '0'..'8' so the pulse animation can light them in order.
-  var FL = '=-=-o  . . . - - - . . .  o-=-=';
+  // Row 7 flourish: brass ends + the ALIVE signal (Morse, ASSETS.signal) in aether teal, centred.
+  // Each mark ('.' or '-') gets its own key char '0'..'<' (13) so the pulse animation can light them in order.
+  var FL = '=-=-o  ' + A.signal.text + '  o-=-=';
   var fx = Math.floor((W - 1 - FL.length) / 2), mark = 0, MARKS = [];
   for (i = 0; i < FL.length; i++) {
     var fc = FL.charAt(i), kx = fx + i, kk;
     if (fc === ' ') continue;
-    if ((fc === '.' || fc === '-') && i > 5 && i < FL.length - 5) { kk = String(mark); MARKS.push({ x: kx, kind: fc === '.' ? 'short' : 'long' }); mark++; }
+    if ((fc === '.' || fc === '-') && i > 5 && i < FL.length - 5) { kk = String.fromCharCode(48 + mark); MARKS.push({ x: kx, kind: fc === '.' ? 'short' : 'long' }); mark++; }
     else kk = fc === 'o' ? 'L' : fc === '=' ? 'B' : 'D';
     G[7][kx] = fc; K[7][kx] = kk;
   }
   var glyphs = G.map(function (r) { return r.join(''); }), fgBase = K.map(function (r) { return r.join(''); });
 
-  // Pulse frames: frame n (0..8) lights mark n (aetherCore), the others sit at aetherDim; frame 9 = all dim (rest).
-  // Keys 'p' = lit mark, 'q' = dim mark. Durations: short 180 ms, long 480 ms, rest 1200 ms (3 short 3 long 3 short).
-  var SOS_MS = { short: 180, long: 480, rest: 1200 };
+  // Pulse frames from ASSETS.signal.steps: an 'on' step lights its mark (aetherCore), gaps are all dim (aetherDim).
+  // Keys 'p' = lit mark, 'q' = dim mark. Mark keys in fgBase are chars '0'..'<' (13 marks).
+  var SIG_MS = { short: Math.round(A.signal.timing.dot * 1000), long: Math.round(A.signal.timing.dash * 1000), rest: Math.round(A.signal.timing.pause * 1000) };
   function pulseFrame(n) {
-    var fg = fgBase.map(function (r) { return r.replace(/[0-8]/g, function (d) { return +d === n ? 'p' : 'q'; }); });
+    var fg = fgBase.map(function (r) { return r.replace(/[0-<]/g, function (d) { return d.charCodeAt(0) - 48 === n ? 'p' : 'q'; }); });
     return { S: { glyphs: glyphs, fg: fg } };
   }
   var tFrames = [], tDur = [];
-  for (i = 0; i < 9; i++) { tFrames.push(pulseFrame(i)); tDur.push(SOS_MS[MARKS[i].kind]); }
-  tFrames.push(pulseFrame(-1)); tDur.push(SOS_MS.rest);
+  A.signal.steps.forEach(function (st, k) { tFrames.push(pulseFrame(st[0] ? k >> 1 : -1)); tDur.push(Math.round(st[1] * 1000)); });
 
   A.models.title = {
     name: 'title',
     desc: 'KESTREL logo (the airship name board, D-011): brass block letters, bright brass top into copper at the foot, ' +
-          'brass-shadow drop shadow, a brass flourish carrying the SOS signal in aether teal (the one magic colour on the card).',
+          'brass-shadow drop shadow, a brass flourish carrying the ALIVE signal (Morse) in aether teal (the one magic colour on the card).',
     size: { w: W, h: H }, anchor: { x: Math.floor(W / 2), y: H - 1 },
     ui: true,
     keys: {
@@ -83,9 +109,9 @@
       D: { c: 'brassDark', e: true }, B: { c: 'brass', e: true }, L: { c: 'brassLight', e: true },
       p: { c: 'aetherCore', e: true }, q: { c: 'aetherDim', e: true }
     },
-    // 'show' loops the SOS pulse (10 frames, durations in ms). Frame 9 (all marks dim) is the calm state for fades.
+    // 'show' loops the ALIVE pulse (26 frames: mark, gap, ...; durations in ms). Gap frames (all marks dim) are the calm state for fades.
     animations: { show: { loop: true, durations: tDur, frames: tFrames } },
-    signal: { marks: MARKS, row: 7, pattern: '3 short, 3 long, 3 short', ms: SOS_MS,
+    signal: { marks: MARKS, row: 7, pattern: 'Morse ALIVE (ASSETS.signal)', ms: SIG_MS,
               note: 'same pattern the P2 signal-tower pulse uses (story.md proposal 2)' },
     // "alive" during the 3 s hold: a diagonal shine band sweeps left -> right once per 2.2 s
     shine: { period: 2.2, width: 3, slope: 2, color: 'white', amount: 0.55,
@@ -172,19 +198,15 @@
   MAP.forEach(function (l, n) { body(l, colourLine(l, SPANS[n]), n + 1); });
   body('', '', MAP.length + 1);
   er = edgeRow(false); mg.push(er.g); mk.push(er.k);
-  // star pulse: 'S' lit (aetherCore) / 'Z' dim (aetherDim) in the SOS rhythm: on/off pairs
+  // star pulse: 'S' lit (aetherCore) / 'Z' dim (aetherDim) in the ALIVE rhythm (ASSETS.signal.steps)
   var starOn = mk, starOff = mk.map(function (r) { return r.replace(/S/g, 'Z'); });
-  var mFrames = [], mDur = [], P9 = ['short', 'short', 'short', 'long', 'long', 'long', 'short', 'short', 'short'];
-  P9.forEach(function (kind) {
-    mFrames.push({ S: { glyphs: mg, fg: starOn } }); mDur.push(SOS_MS[kind]);
-    mFrames.push({ S: { glyphs: mg, fg: starOff } }); mDur.push(150);
-  });
-  mDur[mDur.length - 1] = SOS_MS.rest;
+  var mFrames = [], mDur = [];
+  A.signal.steps.forEach(function (st) { mFrames.push({ S: { glyphs: mg, fg: st[0] ? starOn : starOff } }); mDur.push(Math.round(st[1] * 1000)); });
 
   A.models.mapCard = {
     name: 'mapCard',
     desc: 'US-015 map card (D-011): the Crown sky-chart with Wick\'s pencil course. Crown print in faded red, pencil in warm ' +
-          'grey, Ferrum amber, the SIGNAL star pulsing SOS in aether teal, dead relays dim teal, "you are here" x in gold.',
+          'grey, Ferrum amber, the SIGNAL star pulsing ALIVE in aether teal, dead relays dim teal, "you are here" x in gold.',
     size: { w: MW, h: MH }, anchor: { x: Math.floor(MW / 2), y: 0 },   // anchor = top-centre (UI card, placed by layout.top)
     ui: true,
     keys: {

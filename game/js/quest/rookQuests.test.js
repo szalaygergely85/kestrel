@@ -75,14 +75,15 @@ assert.equal(st('mq.ford.mirror'), 3, 'READY, no auto hand-in');
 assert.equal(talk().length, 2); // rook.mirror.done = the hand-in talk
 assert.equal(st('mq.ford.mirror'), 4, 'handed in by talking to Rook'); assert.ok(state['mq.ford.mirror.done']);
 
-// QL-07/16 real content: knot + nest pickup entities exist, and the SOS pulse is 3 cycles of 3 short + 3 long
+// QL-07/16 real content: knot + nest pickup entities exist, and the Bend pulse is 3 cycles of Morse ALIVE (ASSETS.signal)
 const wd = rd('content/worlds/world_m1.world.json'), ent = (id) => wd.entities.find((e) => e.id === id);
 assert.deepEqual(ent('nest').components.questPickup, { item: 'relay.mirror', n: 1 }); assert.equal(ent('nest').components.voxel.model, 'pickup.relay.mirror'); // OB-132 voxel pickup
 assert.equal(ent('knot').components.inspect.text, 'note.knot');
 assert.equal(wd.entities.filter((e) => /^boarF\d$/.test(e.id) && e.components.brain.temperament === 'wary').length, 2);
+await import('../../../design/models/title.js'); // classic script: sets globalThis.ASSETS.signal (shared pattern source)
 const { pulseFactor } = await import('./relayWake.js');
-const on = (t) => pulseFactor(t) === 1; assert.ok(on(0.1) && !on(0.3) && on(0.6) && on(1.6) && !on(2.3) && on(2.6));
-assert.equal(pulseFactor(18.1), -1); assert.ok(pulseFactor(17) === 1 || pulseFactor(17) < 1);
-let blinks = 0, prev = false; for (let t = 0; t < 18; t += 0.05) { const o = pulseFactor(t) === 1; if (o && !prev) blinks++; prev = o; }
-assert.ok(blinks >= 18, 'at least 6 blinks x 3 cycles: ' + blinks);
+const on = (t) => pulseFactor(t) === 1; assert.ok(on(0.1) && !on(0.3) && on(0.6) && !on(1.4) && on(2.1));
+const CYC = globalThis.ASSETS.signal.cycle; assert.equal(pulseFactor(3 * CYC + 0.1), -1); assert.ok(pulseFactor(CYC - 1) < 1);
+let blinks = 0, prev = false; for (let t = 0; t < 3 * CYC; t += 0.05) { const o = pulseFactor(t) === 1; if (o && !prev) blinks++; prev = o; }
+assert.equal(blinks, 13 * 3, '13 marks x 3 cycles: ' + blinks);
 console.log('rookQuests: PASS');
