@@ -138,9 +138,10 @@ const WALL = { n: [0, 1, 0], d: -5 }, FLOOR = { n: [0, 0, 1], d: 0 };
 
 /** Two-frame scene: A (invalid) -> history from the twin; B with cam1. Returns twin out + emulated cells. */
 let EDGE = false; // AA-18: aaEdge switch of the probe scenes (off keeps the edge pass-through mutations meaningful; a parity loop runs it on)
+let VOX = true; // AA-21: aaVox switch of the probe scenes
 let ANCHOR = true; // AA-09: aaAnchor switch of the probe scenes (the mutation loop runs both)
 function scene(src, cam0, cam1, plane, tweak) {
-  const st = createStableState(); st.aaAnchor = ANCHOR; st.aaEdge = EDGE;
+  const st = createStableState(); st.aaAnchor = ANCHOR; st.aaEdge = EDGE; st.aaVox = VOX;
   beginFrame(st, cam0, GRID);
   const fa = makeFrame(st, COLS, ROWS, plane, {});
   const hist = createStableBuffers(COLS, ROWS);
@@ -225,6 +226,12 @@ for (const [name, c0, camK, plane] of cases) for (let k = 1; k <= 4; k++) {
   assert.equal(r.mism, 0, `aaAnchor off ${name} k=${k}: ${r.mism} mismatches`);
 }
 ANCHOR = true;
+VOX = false; // AA-21 (OB-208): aaVox off (kind 8 keeps the history anchor) stays at parity
+for (const [name, c0, camK, plane] of cases) for (let k = 1; k <= 4; k++) {
+  const r = runCase(STABLE_WGSL, name, c0, camK, plane, k);
+  assert.equal(r.mism, 0, `aaVox off ${name} k=${k}: ${r.mism} mismatches`);
+}
+VOX = true;
 EDGE = true; // AA-18 (OB-208): edge cells take history - WGSL == twin
 for (const [name, c0, camK, plane] of cases) for (let k = 1; k <= 4; k++) {
   const r = runCase(STABLE_WGSL, name, c0, camK, plane, k);

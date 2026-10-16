@@ -282,6 +282,10 @@ export function flickerGlyphReasons(d, p, hmap, cols, rows, terms, cnt) {
     if (octave && octave(d, i) !== octave(p, h)) cnt.octPop = (cnt.octPop || 0) + 1;
     cnt[r] = (cnt[r] || 0) + 1;
     const rk = r + ':' + kind; cnt.sub[rk] = (cnt.sub[rk] || 0) + 1;
+    if (kind === KIND_MODEL) { // AA-21 (OB-208): kind-8 split static prop (objectId 0) / entity (beast, NPC, view model: objectId > 0), plane kept or not
+      const ok = (d.GI[o + 3] ? 'k8e:' : 'k8s:') + r; cnt.sub[ok] = (cnt.sub[ok] || 0) + 1;
+      const pk = ok + (p.hist[h * 4] === d.GI[o] ? '/pl=' : '/pl!'); cnt.sub[pk] = (cnt.sub[pk] || 0) + 1;
+    }
   }
   cnt.n = (cnt.n || 0) + n; cnt.flips = (cnt.flips || 0) + flips;
   return cnt;
