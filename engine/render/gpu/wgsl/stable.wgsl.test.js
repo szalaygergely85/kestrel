@@ -109,7 +109,7 @@ function makeFrame(st, cols, rows, plane, opts) {
       else f.glyph[i] = (f.glyph[i] + 7) & 255; // final glyph differs from the shade glyph (shadeGlyph kept in shadeGlyph below)
     }
     if (rand() < 0.03) { f.waterX[i] = f2u(1 + rand() * 5); f.waterW[i] = 0; }
-    else if (rand() < 0.01) { f.waterX[i] = f2u(2); f.waterW[i] = 32; } // flagged layer word: not a water cell
+    else if (rand() < 0.01) { f.waterX[i] = f2u(2); f.waterW[i] = 32; } // sheet layer word (bit 5): a water cell too (VISQA-26)
   }
   return f;
 }
@@ -266,7 +266,7 @@ const mutations = [
   ['edge: fg.r ignored', '(fgC.x != sf.x || ', '('],
   ['edge: glyph ignored', 'fgC.w != sf.w || ', ''],
   ['edge: bg.b ignored', ' || bgC.z != sb.z)) { return o; }', ')) { return o; }'],
-  ['water cells take history', 'if (u.waterOn != 0 && wl.x != 0x7f800000u && (wl.w & 32u) == 0u) { return o; }', ''],
+  ['water cells take history', 'if (u.waterOn != 0 && wl.x != 0x7f800000u) { return o; }', ''],
   ['level 254 cur not rejected', ' || lvC == LEVEL_ANIM) { return o; }', ') { return o; }'],
   ['hist level 254 not rejected', 'if (lvP == LEVEL_ANIM) { return o; }', ''],
   ['mixed 255/ramp not rejected', 'if (c255 != (lvP == LEVEL_NONE) && !jointHold) { return o; }', ''],
