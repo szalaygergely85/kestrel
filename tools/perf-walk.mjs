@@ -3,7 +3,8 @@
 // from the tower (waypoints below) for --seconds by writing the game's own Input (KeyW + ShiftLeft) and look.yawDeg, like
 // tools/route-walk-browser.mjs. Prints one JSON row: frame counts > 16.7 / > 33 ms, max interval / CPU, and the spike
 // records ranked by cause. One config per process (high + ultra in one browser failed "page never booted" before, PERF-03).
-// Usage: node tools/perf-walk.mjs --port 9540 [--config ultra:480x180] [--seconds 60] [--settle 4000] [--out file.json]
+// Usage: node tools/perf-walk.mjs --port 9540 [--config ultra:480x180] [--seconds 60] [--settle 4000] [--out file.json] [--alloc 1]
+// PERF-06: p99 = 99th percentile rAF interval; --alloc 1 adds allocMb = JS heap growth per profiler section over the walk (heap read per lap).
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -26,7 +27,7 @@ const DRIVER = (secs) => `(async () => {
   const T = () => D.playerHandle.data.transform;
   const WPS = ${JSON.stringify(WPS)};
   const keys = (on) => { for (const k of ['KeyW', 'ShiftLeft']) { if (on) { if (!input._down.has(k)) input._pressedThisFrame.add(k); input._down.add(k); } else input._down.delete(k); } };
-  rec.records.length = 0; rec.count = 0; rec.frames = 0;
+  rec.records.length = 0; rec.count = 0; rec.frames = 0; rec.allocB.fill(0); rec.trackAlloc = ${args.alloc ? 'true' : 'false'};
   const start = { x: T().x, y: T().y }, cpu = [], itv = [];
   let wi = 0, best = 1e9, bestAt = 0, bias = 0, biasLeft = 0, tries = 0, f = 0;
   const t0 = performance.now();
@@ -42,7 +43,7 @@ const DRIVER = (secs) => `(async () => {
     cpu.push(st.jsMs); itv.push(st.intervalMs);
   }
   keys(false);
-  return { start, end: { x: T().x, y: T().y }, wpReached: wi, frames: f, cpu, itv, spikes: rec.records.slice(), spikeCount: rec.count, probe: window.__probeLog || null };
+  return { start, end: { x: T().x, y: T().y }, wpReached: wi, frames: f, cpu, itv, spikes: rec.records.slice(), spikeCount: rec.count, alloc: rec.allocReport(), probe: window.__probeLog || null };
 })()`;
 
 const binary = findBrowserBinary();
@@ -81,7 +82,7 @@ try {
   row = { quality: q, grid: `${gw}x${gh}`, pose, seconds, frames: r.frames, wpReached: r.wpReached, start: r.start, end: r.end,
     over16: r.itv.filter((v) => v > 16.7).length, over33: r.itv.filter((v) => v > 33).length, itvMax: +Math.max(...r.itv).toFixed(1),
     cpuOver16: r.cpu.filter((v) => v > 16.7).length, cpuMax: +Math.max(...r.cpu).toFixed(1),
-    fps: +(1000 / (r.itv.reduce((a, b) => a + b, 0) / r.itv.length)).toFixed(0), spikeCount: r.spikeCount, gcSpikes,
+    p99: +[...r.itv].sort((a, b) => a - b)[Math.floor(r.itv.length * 0.99)].toFixed(1), fps: +(1000 / (r.itv.reduce((a, b) => a + b, 0) / r.itv.length)).toFixed(0), spikeCount: r.spikeCount, gcSpikes, allocMb: r.alloc.slice(0, 8),
     rank: Object.entries(rank).sort((a, b) => b[1].sumMs - a[1].sumMs).map(([k, v]) => ({ cause: k, n: v.n, maxMs: +v.maxMs.toFixed(1) })) };
   console.log(JSON.stringify(row));
   if (args.out) writeFileSync(args.out, JSON.stringify({ row, spikes: r.spikes, probe: r.probe }, null, 1));
