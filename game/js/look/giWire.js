@@ -43,8 +43,10 @@ export function createGIWire(cfg, world, lights) {
  * A zone whose baked file does not match its manifest hash is ignored by the loader (one plain console note, field stays null).
  */
 export async function giLoadOptions(fetchText, url = 'content/gi/manifest.json') {
+  // GI-PATH-01: bins live next to the manifest; the loader's default 'content/gi/' is relative to the page (404 from game/index.html)
+  const baseUrl = url.slice(0, url.lastIndexOf('/') + 1);
   let m = null;
   try { const t = await fetchText(url); m = t ? JSON.parse(t) : null; } catch { m = null; }
-  if (!m || typeof m !== 'object') return {};
-  return { expectHash: (id) => (typeof m[id] === 'string' ? m[id] : null) };
+  if (!m || typeof m !== 'object') return { baseUrl };
+  return { baseUrl, expectHash: (id) => (typeof m[id] === 'string' ? m[id] : null) };
 }

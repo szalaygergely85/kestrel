@@ -1938,3 +1938,7 @@ Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-
 ### US-112 web demo bundle (kestrel-4, dev done, tooling only)
 - New `tools/build-web-demo.mjs [--out dist/web-demo] [--zip]` (+ `.test.mjs`): reuses desktop/pack-filter `shouldShip`, tracked files only (git ls-files), drops all html except game/index.html, strips the optional `design/local` script tag (404), writes root redirect index.html + README-ITCH.txt; own zip writer (zlib). dist/ already git-ignored. Result: 1168 files, 27.8 MB, zip 9.9 MB; no COOP/COEP needed; WebGPU required.
 - Headless boot on 9730 (static node server): title -> new game OK (player handle up), 0 console errors. 404s (same in dev, harmless): content/local/manifest.json, terrain/overworld_far.decorPaint.json, and BUG `game/content/gi/g4_7.gi.bin` - GI bins are fetched from game/content/gi/ (giLoader default baseUrl 'content/gi/', main.js passes none) so baked GI never loads; fix = baseUrl '../content/gi/' in giWire/main (changes the look, engine/ARCH).
+
+### GI-PATH-01 (kestrel-4, dev done, game-only)
+- `giLoadOptions` (game/js/look/giWire.js) now always returns `baseUrl` = manifest url's directory (main.js passes '../content/gi/manifest.json' -> '../content/gi/'), also when the manifest is missing; no main.js/engine change. Test: giWire.test.js updated.
+- New `tools/verify-gi-load.mjs <port>`: boots game/index.html?title=0&quality=high, asserts >=1 200 and no non-200 for content/gi/*.gi.bin. Run: `node tools/verify-gi-load.mjs 9730` (main session; look changes, take before/after stills).

@@ -19,7 +19,8 @@ console.log('giWire.test PASS');
 {
   const H = 'ab'.repeat(32), o1 = await giLoadOptions(async () => JSON.stringify({ z1: H }));
   assert.equal(o1.expectHash('z1'), H); assert.equal(o1.expectHash('zz'), null, 'zone not in manifest: no check');
-  for (const bad of [null, 'junk']) assert.deepEqual(await giLoadOptions(async () => bad), {});
-  assert.deepEqual(await giLoadOptions(async () => { throw new Error('x'); }), {});
+  for (const bad of [null, 'junk']) assert.deepEqual(await giLoadOptions(async () => bad), { baseUrl: 'content/gi/' });
+  assert.deepEqual(await giLoadOptions(async () => { throw new Error('x'); }, '../content/gi/manifest.json'), { baseUrl: '../content/gi/' }, 'GI-PATH-01: manifest missing still gives baseUrl');
+  assert.equal((await giLoadOptions(async () => '{}', '../content/gi/manifest.json')).baseUrl, '../content/gi/');
 }
 console.log('giWire manifest PASS');
