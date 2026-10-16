@@ -182,6 +182,25 @@
     .q-ocard.gold .q-ohead { color: var(--ed-gold); } .q-ocard.blue .q-ohead { color: var(--ed-blue); } .q-oname { font-size: 13px; color: var(--ed-fg-hi); } .q-ometa { font-size: 10px; color: var(--ed-fg-dim); }
     .q-orow { display: flex; flex-wrap: wrap; gap: 4px; align-items: flex-end; margin-top: 4px; } .q-ostep { padding: 6px; margin: 4px 0; border: 1px solid var(--ed-line); border-radius: 6px; background: var(--ed-void); } .q-ostep.active { border-color: var(--ed-cyan); }
 
+    /* ED-QUI-05/06 + wide view: conversation terminal boxes, reward tiles, the Quest tab as a wide 2-column card grid (mockup OB-214) */
+    #left-dock.q-wide:has(#quests-panel.active) { flex: 0 0 min(56vw, 720px); width: min(56vw, 720px); }
+    body:has(#left-dock.q-wide #quests-panel.active) #right-dock { display: none; }
+    #quests-panel.wide .q-list { flex: 0 0 auto; min-height: 60px; max-height: 74px; column-count: 3; column-gap: 8px; font-size: 10px; }
+    #quests-panel.wide .q-detail { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px 8px; align-items: start; }
+    #quests-panel.wide .q-detail > .q-strip, #quests-panel.wide .q-detail > .q-hint, #quests-panel.wide .q-card[data-card="objectives"], #quests-panel.wide .q-card[data-card="conversation"] { grid-column: 1 / -1; }
+    #quests-panel.wide .q-card { margin: 0; } #quests-panel.wide .q-strip { margin: 0; }
+    #quests-panel.wide .q-objs { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 6px; } #quests-panel.wide .q-objs > :not(.q-ostep) { grid-column: 1 / -1; } #quests-panel.wide .q-ostep { margin: 0; }
+    .q-nodes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 6px; }
+    .q-node { padding: 6px; border: 1px solid var(--ed-line); border-radius: 4px; background: var(--ed-void); font-family: var(--ed-font-mono); font-size: 10px; }
+    .q-node.bad, .q-branch.bad { border-color: var(--ed-red); } .q-node.bad { color: var(--ed-red); }
+    .q-node-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 4px; } .q-node-head .q-speaker { color: var(--ed-green); font-weight: 700; } .q-node-id { color: var(--ed-fg-dim); }
+    .q-line { display: flex; gap: 3px; align-items: center; margin: 2px 0; } .q-line input { flex: 1 1 auto; min-width: 0; background: transparent; color: var(--ed-green); border: none; border-bottom: 1px solid var(--ed-line); font: 11px var(--ed-font-mono); }
+    .q-line input.over, .q-count.over { color: var(--ed-red); border-color: var(--ed-red); } .q-quote, .q-count { color: var(--ed-fg-dim); } .q-line .ed-btn { padding: 0 3px; font-size: 9px; }
+    .q-branch { margin: 3px 0 0 6px; padding: 1px 4px; border-left: 2px solid var(--ed-line); color: var(--ed-fg-dim); display: flex; flex-wrap: wrap; gap: 6px; } .q-branch.accept { border-left-color: var(--ed-green); } .q-btext { color: var(--ed-fg-hi); }
+    .q-goto { background: none; border: none; color: var(--ed-cyan); cursor: pointer; font: 10px var(--ed-font-mono); padding: 0; text-decoration: underline; }
+    .q-rgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; } .q-rtile { padding: 6px; border: 1px solid var(--ed-line); border-radius: 6px; background: var(--ed-void); } .q-rtile.disabled { opacity: 0.55; }
+    .q-changed-box { margin-top: 4px; font-size: 10px; }
+
     /* US-067: Assets tab list */
     #assets-list { flex: 1 1 auto; overflow-y: auto; padding: 4px; }
     /* ED-FOLDERS-01: folder toolbar (create a user folder) + collapsible
