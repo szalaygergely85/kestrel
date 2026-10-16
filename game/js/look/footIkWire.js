@@ -8,7 +8,7 @@ export function resolveFootIk(params, isCaptureOrBench) { return params.get('foo
  * `refZ` is set by the wire to the entity root z before each update; the probe foot z is refZ + 0.6 (same step-up reach as the beast sim).
  */
 export function createSupportGround(world) {
-  const io = new Float64Array(10), opts = { height: 0, stepUpMax: 1.0, walkCos: -1 };
+  const io = new Float64Array(10), opts = { height: 0, stepUpMax: 1.0, walkCos: -1, heightOnly: true }; // PERF-02: only io[3] is read, no terrain normal
   const g = { refZ: 0, groundAt(x, y) { io[0] = x; io[1] = y; io[2] = g.refZ + 0.6; world.supportAtOut(true, opts, io); const h = io[3]; return h === h && h > -1e9 && h < 1e9 ? h : null; } };
   return g;
 }

@@ -356,6 +356,28 @@ if (global.gc) {
   ok('VOX-PRIO-01: remaining slots are the nearest', ys.filter((y) => y !== 54).sort((a, b) => a - b).join() === '0,1,2,3,4,5,6,7,8,9,10,11,12,13,14', ys.join(','));
 }
 
+// PERF-02: projectShadow copies project()'s pose of the same frame (no re-pose) and stays bit-identical to a fresh pose.
+{
+  const mk = () => { const q = new VoxelPool(); q.renderer = 'mesh'; q.bind(registry, table); return q; };
+  const feed = (q) => { q.beginFrame(); for (let i = 0; i < 8; i++) { const r = q.pushInstance('bear', i * 0.7 - 2, 1.5 + (i % 3), 0.1 * i, i * 37, i % 2 ? 0 : -1, i, i * 41); if (i === 3) q.blendInstance(r, -1, 0, 0, 0.4); } };
+  const a = mk(), b = mk(), c = { x: 0, y: -2, z: 1.2, yawDeg: 0, pitchDeg: -10 };
+  feed(a); a.project(c, rt); const posed = a._slots.slice(0, a.list.length).map((s) => s.pose.slice());
+  a.projectShadow();
+  feed(b); b.projectShadow(); // no project() this frame: posed from scratch
+  let same = a.shadowList.length === b.shadowList.length && a.list.length > 0, reused = 0;
+  for (let i = 0; i < a.shadowList.length; i++) {
+    const x = a.shadowList[i], y = b.shadowList[i];
+    for (let k = 0; k < x.pose.length; k++) if (!Object.is(x.pose[k], y.pose[k])) same = false;
+    for (let k = 0; k < x.fwd.length; k++) if (!Object.is(x.fwd[k], y.fwd[k])) same = false;
+    for (const f of ['minX', 'minY', 'minZ', 'maxX', 'maxY', 'maxZ']) if (!Object.is(x.rect[f], y.rect[f])) same = false;
+    if (a._projSlotOf[i] >= 0) reused++;
+  }
+  ok('PERF-02 projectShadow after project: pose/fwd/AABB bit-identical to a fresh pose', same && reused > 0, `reused ${reused}`);
+  ok('PERF-02 project slots untouched by projectShadow', a._slots.slice(0, a.list.length).every((s, i) => s.pose.every((v, k) => Object.is(v, posed[i][k]))));
+  a.legInstance(0, null); ok('PERF-02 a queue change after project() disables the reuse', a._projEpoch !== a._epoch);
+  feed(a); ok('PERF-02 next frame: stale project() slots are not reused', a._projEpoch !== a._epoch);
+}
+
 console.log(`${pass} pass, ${fail} fail`);
 if (fail) { console.log('FAILURES:\n' + failures.map((f) => '  ' + f).join('\n')); process.exit(1); }
 console.log('ALL PASS');

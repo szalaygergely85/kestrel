@@ -76,7 +76,7 @@ try {
       gpuP50: r.gpu && r.gpu.p50, gpuP95: r.gpu && r.gpu.p95, cpuP50: pct(r.cpu, 0.5), cpuP95: pct(r.cpu, 0.95),
       frameP50: pct(r.itv, 0.5), frameP95: pct(r.itv, 0.95), fps: 1000 / (r.itv.reduce((a, b) => a + b, 0) / r.itv.length) };
     if (process.env.CAP_LOG) console.error('[passStats]', JSON.stringify(r.gpu), r.rawAvail);
-    if (args.probe) console.log('[probe]', pose, JSON.stringify(await evaluate(cdp, args.probe)));
+    if (args.probe) console.log('[probe]', pose, JSON.stringify(await evaluateAsync(cdp, args.probe)));
     rows.push(row);
     console.log(JSON.stringify(row));
   }

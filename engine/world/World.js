@@ -1893,7 +1893,7 @@ export class World {
 
   /**
    * Caller-owned `supportAt` (BEAST-ALLOC-02, arch 38.61): same results bit for bit, no boxed returns/scratch objects.
-   * `io` (Float64Array >= 10, arch 38.61 2b: no double args cross the call): in [0] x, [1] y, [2] footZ; out [3] floorH, [4] nx, [5] ny, [6] nz, [7] terrain (0/1), [8] slope (0/1), [9] ceilH (NaN = sky).
+   * `io` (Float64Array >= 10, arch 38.61 2b: no double args cross the call): in [0] x, [1] y, [2] footZ; out [3] floorH, [4] nx, [5] ny, [6] nz (0 when terrain wins and `opts.heightOnly === true`, PERF-02), [7] terrain (0/1), [8] slope (0/1), [9] ceilH (NaN = sky).
    */
   supportAtOut(grounded, opts, io) {
     const x = io[0], y = io[1], out = io, footZ = io[2];
@@ -1904,7 +1904,7 @@ export class World {
     if (this.terrain && (!st || (st.keepMask && this._terrainSupports(x, y, footZ)))) {
       this.terrain.groundAtBuf(io);
       terrainZ = io[3];
-      if (terrainZ >= sup.floorZ) {
+      if (terrainZ >= sup.floorZ && opts.heightOnly !== true) { // PERF-02: heightOnly callers (foot IK) skip the 4 extra height reads of the normal
         this.terrain.groundNormalAtBuf(io);
         tnx = io[4]; tny = io[5]; tnz = io[6];
       }
