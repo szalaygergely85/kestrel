@@ -11,4 +11,10 @@ assert.deepEqual(cam, h.cam); assert.equal(w.wind.params.speed, 0);
 let n = 0; h.frames(2).then(() => { n = 1; });
 h.afterPresent(); await new Promise((r) => setTimeout(r, 0)); assert.equal(n, 0);
 h.afterPresent(); await new Promise((r) => setTimeout(r, 0)); assert.equal(n, 1);
+{ // OB198-DUMP-DIFF-01
+  const { parseFlickerDump, packDump } = await import('./flickerLive.js');
+  assert.deepEqual(parseFlickerDump('wallNear:3'), { pose: 'wallNear', step: 3 }); assert.equal(parseFlickerDump('x'), null); assert.equal(parseFlickerDump(null), null);
+  const fr = { GI: new Uint32Array([5, 0x00070001, 0, 0]), fg: new Uint8Array([1, 2, 3, 65]), bg: new Uint8Array([0, 0, 9, 255]) };
+  const dd = packDump('p', 0, fr, fr, 1, 1); assert.deepEqual([dd.A.glyph[0], dd.A.kind[0], dd.A.mat[0], dd.A.pid[0], dd.A.fg[0], dd.A.bg[0]], [65, 1, 7, 5, 0x010203, 9]);
+}
 console.log('[flickerLive.test.js] ok');

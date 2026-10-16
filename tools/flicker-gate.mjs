@@ -34,6 +34,18 @@ export function extractPoses(metrics) {
   return { poses, avg };
 }
 
+// AA-DIAG-01: metrics `poses.<pose>.why.<reason>` (only with &flickerdiag=1) -> text table, % of counted cells per reason; '' when absent.
+export const WHY_REASONS = ['heldChanged', 'edge', 'kind', 'plane', 'mat', 'anim', 'mixed255', 'uvDrift', 'snap255', 'levelJump', 'replayHold'];
+export function whyTable(metrics) {
+  const poses = {};
+  for (const k of Object.keys(metrics || {})) { const m = /^poses\.([^.]+)\.why\.([^.]+)$/.exec(k); if (m) (poses[m[1]] ||= {})[m[2]] = metrics[k]; }
+  const names = Object.keys(poses); if (!names.length) return '';
+  const c = (v) => (typeof v === 'number' ? v.toFixed(2) : '-').padStart(9);
+  const lines = ['WHY (glyph-only flips by reason, % of counted cells)', 'pose'.padEnd(14) + 'glyphOnly'.padStart(9) + WHY_REASONS.map((r) => r.slice(0, 9).padStart(10)).join('')];
+  for (const n of names) lines.push(n.padEnd(14) + c(poses[n].glyphOnlyPct) + WHY_REASONS.map((r) => c(poses[n][r]).padStart(10)).join(''));
+  return lines.join('\n');
+}
+
 const limit = (base, mg) => base * mg.rel + mg.abs;
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 
@@ -133,6 +145,7 @@ function main() {
     }
     if (r.status !== 0) throw new Error('capture-browser exited with ' + r.status + ' (run ' + (i + 1) + '/' + K + ')');
     const cap = JSON.parse(readFileSync(newestCapture(), 'utf8'));
+    const wt = whyTable(cap.rows?.[0]?.metrics); if (wt) console.log(wt);
     runs.push({ ...extractPoses(cap.rows?.[0]?.metrics), sha: cap.sha, date: cap.date });
   }
   const cur = K > 1 ? summarizeRuns(runs) : runs[0];

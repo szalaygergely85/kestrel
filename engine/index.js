@@ -164,7 +164,7 @@ export { WGSL_MODULES, summarizeCompilation } from './render/gpu/wgsl/index.js';
 export { resolveWaterLooks } from './render/waterLook.js'; // US-055a2c Q12 item 8: main.js's fb.waterLooks (JS twin)
 // US-047: runGpuCompare/compareCells/compareGeometry/compareLight/poison*
 // (gpucompare parity harness) moved to engine/dev.js.
-export { flickerStep, flickerReprojStep } from './render/gpu/flicker.js';
+export { flickerStep, flickerReprojStep, flickerGlyphReasons, GLYPH_REASONS } from './render/gpu/flicker.js';
 
 // ---- physics ----------------------------------------------------------------
 export { PHYSICS_DEFAULTS, PHYSICS } from './physics/config.js';
