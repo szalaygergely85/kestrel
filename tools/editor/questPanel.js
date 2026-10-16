@@ -20,6 +20,7 @@ import { loadDialogues, saveDialogues, captureBaseline } from './quest/lines.js'
 import { conversationView } from './quest/conversation.js';
 import { rewardTiles, setRewardItems, rewardLint } from './quest/rewards.js';
 import { HEART_PIECE_ITEM } from './quest/format.js';
+import { questDiff, diffText } from './quest/diff.js';
 import { buildEditorBundle, simSteps } from './quest/sim.js';
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -48,6 +49,9 @@ export async function mountQuestPanel(root, opts) {
   const dfiles = opts.loadDialogueFiles ? await opts.loadDialogueFiles() : {};
   const dm = loadDialogues('d', memFs(dfiles));
   const lineBase = captureBaseline(model);
+  const baseRaw = new Map(model.quests.map((x) => [x.id, structuredClone(x.raw)]));   // ED-QUI-08: text as loaded, for DIFF
+  const diffOpen = new Set();
+  const diffOf = (q) => questDiff(baseRaw.get(q.id) || {}, q, dm);
   let lineMsg = '';
   const stack = makeStack();
   let current = null, filter = '', pickMsg = '', selObj = -1, showAll = false, wide = true;   // wide: the Quest tab opens as a wide panel (mockup density)
@@ -164,6 +168,21 @@ export async function mountQuestPanel(root, opts) {
     if (current === q) redraw();
     goTo({ kind: 'card', id: 'validate' });
   }
+  function diffBox(q) {
+    const box = el('div', 'q-vsim q-diff'); box.id = 'quest-diff-area';
+    const rows = diffOf(q);
+    const cp = el('button', 'ed-btn', 'Copy'); cp.title = 'Copy the change list (commit message / writer)';
+    cp.addEventListener('click', () => { try { navigator.clipboard.writeText(diffText(rows)); } catch (e) { /* no clipboard */ } });
+    const head = el('div', 'q-vhead'); head.append(el('b', null, rows.length ? 'Changes (' + rows.length + ')' : 'No changes'), cp); box.append(head);
+    for (const r of rows) {
+      const row = el('div', 'q-vrow q-diffrow ' + r.kind); row.dataset.kind = r.kind;
+      const txt = r.kind === 'added' ? 'added ' + JSON.stringify(r.new) : r.kind === 'removed' ? 'removed ' + JSON.stringify(r.old) : JSON.stringify(r.old) + ' -> ' + JSON.stringify(r.new);
+      const kd = el('span', 'rule', r.kind); kd.style.cssText = 'width:auto;min-width:0;margin-right:8px;flex:none'; row.append(kd, el('span', null, r.label + ': ' + txt + ' '));
+      const go = el('button', 'ed-btn', 'Go to'); go.addEventListener('click', () => goTo(r.card ? { kind: 'card', id: r.card } : { kind: 'field', id: 'title' })); row.append(go);
+      box.append(row);
+    }
+    return box;
+  }
   function simBox(q) {
     const box = el('div', 'q-vsim'); box.id = 'quest-sim-area';
     const head = el('div', 'q-vhead');
@@ -174,7 +193,10 @@ export async function mountQuestPanel(root, opts) {
     live.addEventListener('click', () => { const b = document.getElementById('quest-play'); if (b) b.click(); });
     const r = simRuns.get(q.id);
     step.addEventListener('click', () => { if (!r || r.shown >= r.result.steps.length) runSim(q, true); else { r.shown++; redraw(); } });
-    head.append(run1, step, live); box.append(head);
+    const dif = el('button', 'ed-btn', 'DIFF'); dif.id = 'quest-diff'; dif.title = 'List every change since the editor loaded this quest';
+    dif.addEventListener('click', () => { if (diffOpen.has(q.id)) diffOpen.delete(q.id); else diffOpen.add(q.id); redraw(); });
+    head.append(run1, step, live, dif); box.append(head);
+    if (diffOpen.has(q.id)) box.append(diffBox(q));
     if (!r) { box.append(el('div', null, 'STEP SIMULATOR: SIM runs the quest end to end (offer, talk, accept, objectives, hand-in, reward) on the real quest runtime.')); return box; }
     const rows = simSteps(r.result), stale = r.stamp !== simStamp(q);
     const sum = el('div', 'q-simsum ' + (r.result.ok ? 'ok' : 'error'), (r.result.ok ? 'SIM PASS: ' + rows.length + ' steps' : 'SIM FAIL: ' + (r.result.firstFail ? r.result.firstFail.name + ' - ' + r.result.firstFail.detail : '')) + (stale ? ' (edited since this run - run SIM again)' : ''));
@@ -235,7 +257,8 @@ export async function mountQuestPanel(root, opts) {
     sim.addEventListener('click', () => runSim(q, false));
     const wb = el('button', 'ed-btn', wide ? 'NARROW' : 'WIDE'); wb.id = 'quest-wide'; wb.title = 'Toggle the wide quest panel';
     wb.addEventListener('click', () => { wide = !wide; applyWide(); redraw(); });
-    row.append(nb, sim, wb);
+    const nd = diffOf(q).length, cl = el('span', 'q-pill', 'CHANGES ' + nd); cl.id = 'quest-changes'; cl.title = 'Changes since the editor loaded this quest (DIFF in card [06])';
+    row.append(nb, sim, wb, cl);
     box.append(row, field('Title', q.title, (v) => run(ed.setTitle(q, v))));
     return box;
   }

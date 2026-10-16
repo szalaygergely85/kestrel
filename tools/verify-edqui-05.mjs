@@ -98,6 +98,16 @@ try {
   for (let i = 0; i < 40 && (await ev('document.querySelectorAll("#quest-sim-area .q-simrow").length')) < 10; i++) await pause(300);
   await snap('edqui-07b.png', 'validate');
   assert.equal(await ev('JSON.stringify(window.__questPanel.model.quests.find(q => q.id === "burl.road").raw)'), before, 'SIM must not change the quest');
+  // ED-QUI-08: DIFF shows exactly one edited objective title (edit in memory, like a typed edit), "No changes" on a clean quest
+  await ev('window.__questPanel.select("burl.road")'); await pause(250);
+  await ev('document.getElementById("quest-diff").click()'); await pause(250);
+  assert.equal(await ev('document.getElementById("quest-diff-area").innerText.includes("No changes")'), true, 'clean quest: No changes');
+  await ev(`(() => { const q = window.__questPanel.model.quests.find(x => x.id === "burl.road"); const o = q.raw.objectives || q.raw.steps; const k = "text" in o[0] ? "text" : "title"; o[0][k] = o[0][k] + " (edited)"; })()`);
+  await ev('document.getElementById("quest-diff").click()'); await pause(150); await ev('document.getElementById("quest-diff").click()'); await pause(300);
+  const dif = JSON.parse(await ev('JSON.stringify({ rows: [...document.querySelectorAll("#quest-diff-area .q-diffrow")].map(r => r.innerText), chip: document.getElementById("quest-changes").innerText })'));
+  console.log(JSON.stringify(dif));
+  assert.equal(dif.rows.length, 1, 'one diff row'); assert.match(dif.rows[0], /Objective 1/); assert.match(dif.rows[0], /\(edited\)/); assert.match(dif.chip, /CHANGES 1/);
+  await snap('edqui-08.png', 'validate');
   assert.deepEqual(errors, [], 'page errors: ' + JSON.stringify(errors));
   console.log('verify-edqui-05 PASS');
 } finally {
