@@ -97,5 +97,20 @@ check('a cell with an unchanged glyph is not a flip', (() => { const c = { kinds
   }
 }
 
+// AA-32b: seamShift = uvDrift sub-count; cell 2 has another plane in history, but history cell 1 holds its plane at a matching uv (seam moved with the image).
+{
+  const run = (nbPlane) => {
+    const P = frame(), D = frame(), hm = new Int32Array(N), KIND = 9; // KIND_MESH (plane change is not a 'plane' reason there)
+    for (let i = 0; i < N; i++) {
+      hm[i] = i; D.GI[i * 4] = P.hist[i * 4] = 100 + i; D.GI[i * 4 + 1] = P.GI[i * 4 + 1] = (MAT << 16) | KIND; D.Depth[i] = bits(5); P.hist[i * 4 + 3] = (MAT << 16) | (KIND << 8) | 4;
+      P.outFg[i * 4 + 3] = 10; D.preFg[i * 4 + 3] = D.outFg[i * 4 + 3] = D.shadeFg[i * 4 + 3] = 11; D.level[i] = 4;
+    }
+    D.GI[2 * 4] = 200; D.GA[2 * 4] = bits(1000); P.hist[1 * 4] = nbPlane; P.hist[1 * 4 + 1] = bits(1000); // cell 2: cur plane 200 uv 1000, hist plane 100+2, uv 0
+    const c = { kinds: {}, sub: {} }; flickerGlyphReasons(D, P, hm, cols, rows, { tanHalfX: 1, tanHalfY: 1, ortho: 0 }, c); return c;
+  };
+  const a = run(200); check('seam moved: cells stay counted as uvDrift (cells 1 and 2)', a.uvDrift === 2); check('seam moved: seamShift x1', a.seamShift === 1);
+  const b = run(300); check('no same-plane neighbour: uvDrift stays', b.uvDrift === 2 && !b.seamShift);
+}
+
 console.log(`[flickerReasons.test.js] ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

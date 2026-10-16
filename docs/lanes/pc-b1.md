@@ -1975,3 +1975,6 @@ Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-
 
 - PERF-10 (kestrel-2, perf09): uploadChangedRows now row-scans and sends gap-merged ranges (gap >= max(2, 4096 B / rowbytes) unchanged rows splits) instead of one first..last span; a HUD at top + bottom no longer re-uploads the grid. tools/bench-upload.mjs (240x90, HUD top/bottom every frame): old 1 write, 83.2 KB/frame -> new 2.02 writes, 4.3 KB/frame (-95 % bytes to writeTexture); JS time 128 -> 122 ms/6000 frames; final texture bytes identical to old and to src (bench assert + uploadChangedRows.test.js PASS).
 - Not touched (already alloc-free, no safe >5 % win seen): DrawList.addStructures, meshGroups.push, pushTerrainItem; depadRows only runs in device.readback (F3/diag), left alone.
+
+- AA-32b (kestrel-2, perf09): flicker diag `seamShift` = sub-count of uvDrift (same mat, other planeId, 3x3 same-plane history neighbour within the uv limit); added to M255_KEYS, so flickerLive emits `why.seamShift` and flicker-gate prints it as its own M255 column (missing = '-', baselines unaffected). glyphOnly and the gate pass/fail rule are UNCHANGED. Test: flickerReasons.test.js (seam moved -> seamShift; no neighbour -> plain uvDrift).
+- NEEDS PC-A + owner: count seamShift as motion? (arch 38.87 says out of glyphOnly; needs ratification like AA-14b before the gate changes.)

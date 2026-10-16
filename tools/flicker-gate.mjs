@@ -36,7 +36,7 @@ export function extractPoses(metrics) {
 
 // AA-DIAG-01: metrics `poses.<pose>.why.<reason>` (only with &flickerdiag=1) -> text table, % of counted cells per reason; '' when absent.
 export const WHY_REASONS = ['heldChanged', 'edge', 'kind', 'plane', 'mat', 'anim', 'mixed255', 'uvDrift', 'snap255', 'levelJump', 'replayHold'];
-export const M255_COLS = ['mixed255', 'lineShift', 'm255:line', 'm255:stip', 'm255:blank', 'm255:other', 'octPop'];
+export const M255_COLS = ['mixed255', 'lineShift', 'm255:line', 'm255:stip', 'm255:blank', 'm255:other', 'octPop', 'seamShift'];
 // AA-14a: lineShift as % of mixed255 (the AA-14b go/no-go is >= 70); '-' when there is no mixed255.
 export const shiftShare = (w) => (w && w.mixed255 > 0 ? 100 * (w.lineShift || 0) / w.mixed255 : null);
 export function m255Table(metrics) {

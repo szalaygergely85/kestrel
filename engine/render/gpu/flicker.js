@@ -204,8 +204,9 @@ function edgeWhy(d, p, i, h, cols, rows, sub) {
 // `terms` = pitchedTerms of the current camera (tanHalfX/Y). Adds per-reason counts into `cnt` (keys GLYPH_REASONS) and kind counts into cnt.kinds.
 export const GLYPH_REASONS = Object.freeze(['heldChanged', 'edge', 'kind', 'plane', 'mat', 'anim', 'mixed255', 'uvDrift', 'snap255', 'levelJump', 'replayHold']);
 // AA-14a (38.84): mixed255 split by the glyph on the 255 side + `lineShift` (the line moved with the image) + `octPop` (texel-hash octave change).
+// AA-32b: `seamShift` = sub-count of uvDrift (still in glyphOnly): same mat, other planeId, a 3x3 same-plane history neighbour within the uv limit (mesh face seam moved with the image).
 // Counts live next to the reasons in `cnt` (m255:* sum to mixed255; lineShift is a sub-count of m255:line; octPop counts any flip). Glyph byte = shade glyphCode (ascii - 32).
-export const M255_KEYS = Object.freeze(['m255:line', 'm255:stip', 'm255:blank', 'm255:other', 'lineShift', 'octPop']);
+export const M255_KEYS = Object.freeze(['m255:line', 'm255:stip', 'm255:blank', 'm255:other', 'lineShift', 'octPop', 'seamShift']);
 export const GC_LINE = 1, GC_STIP = 2;
 /** 256-entry glyph class table (0 other, GC_LINE, GC_STIP). Line codes = shade.wgsl lineGlyphCodeFast (- _ | / \); `extraLine` = e.g. a material's grid-cross code; `stipCodes` = fog haze/sparse codes. */
 export function glyphClassTable(stipCodes = [], extraLine = []) {
@@ -320,7 +321,8 @@ export function flickerGlyphReasons(d, p, hmap, cols, rows, terms, cnt) {
             for (let yy = hy - 1; yy <= hy + 1 && nb === 'uvNb-'; yy++) for (let xx = hx - 1; xx <= hx + 1; xx++) { if (xx < 0 || yy < 0 || xx >= cols || yy >= rows) continue;
               const j = yy * cols + xx; if (j === h || p.hist[j * 4] !== d.GI[o]) continue; const nu = bitsToF32(d.GA[o]) - bitsToF32(p.hist[j * 4 + 1]), nv = bitsToF32(d.GA[o + 1]) - bitsToF32(p.hist[j * 4 + 2]);
               if (Math.sqrt(nu * nu + nv * nv) < gl) { nb = 'uvNb+'; break; } }
-            const nk = nb + ':' + kind + (p.hist[h * 4] === d.GI[o] ? '/pl=' : '/pl!'); cnt.sub[nk] = (cnt.sub[nk] || 0) + 1; } }
+            const nk = nb + ':' + kind + (p.hist[h * 4] === d.GI[o] ? '/pl=' : '/pl!'); cnt.sub[nk] = (cnt.sub[nk] || 0) + 1;
+            if (nb === 'uvNb+' && p.hist[h * 4] !== d.GI[o] && (hw >>> 16) === mat) cnt.seamShift = (cnt.seamShift || 0) + 1; } }
         else if (joint) r = 'replayHold';
         else if (c255) {
           let snapped = false;
