@@ -534,7 +534,7 @@ for (const [name, breakFixture, finding] of areaCases) {
 }
 // QL-T2: site placement, reachability, gate key.
 {
-  const gq = (id, extra = {}) => ({ path: id + '.quest.json', def: { version: 1, id, objectives: [{ id: 'o', text: 'Go', when: { type: 'flag', id: 'f', equals: true } }], ...extra } });
+  const gq = (id, extra = {}) => ({ path: id + '.quest.json', def: { version: 1, id, objectives: [{ id: 'o', text: 'Go', when: { type: 'flag', id: 'f', equals: true } }], reward: { items: [{ id: 'sword', n: 1 }] }, ...extra } });
   const run = (mut, sites = { s1: { entity: 'boar1' } }) => {
     const f = questFixture();
     f.a.items.defs['key.gate'] = { id: 'key.gate', name: 'Gate key', desc: 'Opens the gate.' };

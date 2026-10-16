@@ -126,7 +126,7 @@ book2.accept('mq.ford.stones'); assert.equal(book2.tracked(), book2.index('mq.fo
 book2.feed({ type: 'area:entered', id: 'fordWest' });
 assert.equal(book2.statusOf('mq.ford.stones'), READY); book2.handIn('mq.ford.stones');
 assert.equal(book2.statusOf('mq.ford.stones'), DONE); assert.ok(ev.includes('quest:done:mq.river.road') && ev.includes('quest:done:mq.ford.stones'), ev.join());
-assert.equal(book2.lastReward.items.length, 0);
+assert.equal(book2.lastReward.items.length, 1); // D-106: mq.ford.stones pays arrows
 const marks = [[], []]; book2.giverMarks(marks[0], marks[1]); assert.ok(marks[0].every(Boolean) && marks[1].every(Boolean));
 assert.equal(book2.entityFor('rook'), 'rook'); assert.equal(book2.inspect('nobody'), null);
 // save round trip keeps the giverless state

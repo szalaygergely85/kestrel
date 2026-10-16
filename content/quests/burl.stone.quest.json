@@ -7,5 +7,6 @@
   "objectives": [
     { "id": "wake", "text": "Wake the waystone", "journal": "Burl brought you to an old stone in the meadow. It is dark. Wake it.", "when": { "type": "flag", "id": "waystone.waystone.woken", "equals": true } }
   ],
-  "returnText": "Talk to Burl"
+  "returnText": "Talk to Burl",
+  "reward": { "items": [{ "id": "arrow", "n": 5 }] }
 }

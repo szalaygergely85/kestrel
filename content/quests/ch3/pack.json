@@ -8,6 +8,7 @@
   "quests": [
     {
       "id": "mq.ow.path",
+      "reward": { "items": [{"id": "arrow", "n": 5}] },
       "title": "Cookfire Smoke",
       "main": true,
       "steps": [
@@ -34,6 +35,7 @@
     },
     {
       "id": "mq.ow.fence",
+      "reward": { "items": [{"id": "arrow", "n": 5}] },
       "title": "Wolves at the Fence",
       "main": true,
       "steps": [
@@ -112,6 +114,7 @@
     },
     {
       "id": "mq.ow.relay",
+      "reward": { "items": [{"id": "potion.hp", "n": 1},{"id": "arrow", "n": 10}] },
       "title": "The Village Waystone",
       "main": true,
       "site": "hesk",
