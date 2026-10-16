@@ -2917,3 +2917,32 @@ Plays once, the first time the player talks to Bram after the move while a moved
 | journal | You carry a brass cog for Joss. Hand it over at the Bend Waystone. |
 
 Notes: the "keep" lines were Bram's and read the same in Joss's mouth. Bram's old `sq.rb.parcel.done` ("Lid holds. The crow can't open it now.") goes away with the basket-lid reason. The QFIX-S5 Bram table rows for the moved ids are superseded by this section; Bram's hello lines are unchanged.
+
+## Ford/Outwall notes (QUEST-WRITER-FILL-01)
+
+Inspect texts in `content/dialogue/inspect.json` (written 2026-10-15; this item
+cleared the stale NEEDS WRITER dev notes in `world_m1.world.json`). Lines <= 56.
+
+**note.fordCellar** "A tally on a cellar beam" (cellarNote, Ford cellar)
+- Salt, six sacks. Oil, four jars. All from the strand.
+- Up the stairs by night. Never past the post lamp.
+- The graves run is off. Nobody carries there now.
+- Whoever goes down there, it is not one of ours.
+
+**note.smugglers** "A note under a crate" (strandCaveNote, sea cave)
+- Low tide only. By high water this floor is sea.
+- Salt and oil go to the cellar under the Ford.
+- Nothing more goes by the graves. Not after dark.
+- Names off the walls down there. We never did that.
+
+**note.owBoard** "Notices, nailed up" (owBoard, Outwall plaza)
+- Crown notices, printed in Ferrum. Rain-soft.
+- FELL BEYOND THE WALL. Name after name.
+- Carried out here and nailed up, one by one.
+- One line cut away. On the nail, a skyworks knot.
+
+**note.pierStone** "A standing stone" (pierStone, Outwall track)
+- A dressed block, set on end beside the track.
+- Old mortar on one face. Once part of a bridge pier.
+- A Crown stamp, half chiselled away.
+- The bridge was pulled down. Not by the river.

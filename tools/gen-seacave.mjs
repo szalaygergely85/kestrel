@@ -89,7 +89,7 @@ wallRocks.forEach(([x, y, s], i) => rock(RM[i % 3], x, y, FLW - 0.1, 37 * i, s))
   .forEach(([x, y, dz, yaw, s], i) => mesh('strandCaveCrate' + (i + 1), 'Prop_Crate', x, y, FLW + dz, yaw, s));
 const prop = (id, x, y, z, note, comp, yawDeg) => d.entities.push({ id, type: 'prop', x: r2(x), y: r2(y), z, ...(yawDeg !== undefined ? { yawDeg } : {}), components: comp, note });
 prop('strandCaveLamp', LIGHT.x, LIGHT.y, FLW, 'UNDER-05: smugglers lantern (existing floorLanternVox; light = level lights[lantern])', { voxel: { anim: 'lit', loop: true, model: 'floorLanternVox' } });
-prop('strandCaveNote', X0 + 2.6, Y0 + 2.9, FLW, 'UNDER-05: smugglers note (NEEDS WRITER placeholder; inspect.json note.smugglers)', { inspect: { text: 'note.smugglers' } });
+prop('strandCaveNote', X0 + 2.6, Y0 + 2.9, FLW, 'UNDER-05: smugglers note (inspect.json note.smugglers, written QUEST-WRITER-FILL-01)', { inspect: { text: 'note.smugglers' } });
 prop('chestStrandCave', XM + 0.4, Y0 + 0.9, FLW, 'UNDER-05: the earned chest at the back (guarded by the tortoise homes; chestDefs.js table)', { voxel: { anim: 'closed', loop: false, model: 'chestBig' } }, 180);
 Object.assign(d.state, { 'under.strandCave.chest.chestStrandCave': false });
 fs.writeFileSync(FILE, stringifyContent(d), 'utf8');
