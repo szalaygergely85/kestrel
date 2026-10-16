@@ -2138,7 +2138,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
     // US-090w: title menu up -> the sim stays frozen (wake timeline, autosave and quest poll start after it closes).
     if (menuHost && menuHost.active) {
       if (isSettingsOpen()) updateSettings(dt, input, { assets, engine, look, canOpen: false });
-      else menuHost.step((c) => input.pressed(c), dt);
+      else { const pk = (c) => input.pressed(c); pk.any = () => input.anyPressed(); menuHost.step(pk, dt); } // OB-216: pk.any = any key advances the intro
       input.consumePressed(); input.consumeMouseDelta();
       return;
     }
