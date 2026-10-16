@@ -243,7 +243,7 @@
       "chainEnd": true,
       "site": "hesk",
       "band": 6,
-      "steps": [{ "template": "explore", "params": { "areas": ["crossroads"] }, "objText": "Walk west to the crossroads", "journal": "The scrap's lines run west. Walk to the crossroads and look." }],
+      "steps": [{ "template": "explore", "params": { "areas": ["crossroads"] }, "objText": "Walk west to the crossroads", "journal": "Walk to the crossroads and look west." }],
       "requires": [{ "quest": "mq.ow.board", "done": true }],
       "reward": { "items": [{ "id": "arrow", "n": 15 }] },
       "returnText": "Tell Hesk what the road looks like",
