@@ -52,3 +52,6 @@ The 2026-10-07 audit in `docs/licences.md` and per-file `docs/licence-inventory.
 - Licence: **CC0 1.0** (public domain), each pack's `License.txt` / `License_Standard.txt` (the Fantasy Props one is the free Standard tier, a subset of the paid PRO kit). Author: Quaternius (quaternius.com). Credit appreciated, not required.
 - Source: quaternius.com packs (Textured Stylized Trees, Ultimate Stylized Nature, Fantasy Props MegaKit).
 
+
+## Intro slideshow stills
+content/intro/*.ascii.json are converted from images the project owner generated with ChatGPT (OpenAI). No third-party artwork.
