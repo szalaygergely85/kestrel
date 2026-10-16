@@ -1787,3 +1787,7 @@ Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-
 - Run: `node tools/flicker-gate.mjs --port {port} --repeat 1 --query "...&flickerdiag=1"`. Unverified on GPU: HIST word layout assumed (level lo8, kind bits 8-11, mat hi16) as in AA-10.
 
 - AA-14a (OB-208, kestrel-3 branch aa14a, uncommitted): flickerGlyphReasons now splits mixed255 into m255:line/stip/blank/other + lineShift (subset of m255:line, 4-neighbour, both directions) + octPop (hook `terms.octave(frame,i)`, NOT wired live - needs per-cell coverV/(maxCover*gv), reads 0). glyphClassTable/M255_KEYS exported (api-1.0.json regenerated); flicker-gate prints an M255 table. GPU run (grid 480x180, 1 run) shift%: wallNear 80.0, wallFar 87.2, crown 83.4, grassFar 79.0, bushes 0.02 (bushes mixed255 is only 0.67; its flips are uvDrift/levelJump). m255:stip ~0 on walls. Tests + check-deps OK.
+
+- VISQA-01 (kestrel-4, branch visqa, uncommitted, owner away): new `tools/visqa-sweep.mjs <port>` (11 spots x 09/13/22, live clock + god/ground snap) -> docs/test-reports/visqa/*.png + index.md (contact sheet + defect list).
+- Fixed: enemy bar for an off-screen beast pinned to the screen edge (game/js/ui/enemyBarView.js + test). ui suites 57/57, validate-content OK, check-deps OK; no render code touched (no gpucompare needed).
+- Queued VISQA-02..09 in docs/pc-b-queue.md (far cream mountains, pale far trees, lake haze, falls foam at night, hotbar at night, grass dash specks, ford stripes/door, sweep spots).
