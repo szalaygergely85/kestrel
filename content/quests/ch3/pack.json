@@ -181,6 +181,7 @@
       "id": "mq.ow.board",
       "title": "The Board of the Dead",
       "main": true,
+      "next": "mq.ow.close",
       "site": "hesk",
       "band": 6,
       "objectives": [
@@ -234,6 +235,20 @@
       },
       "abandonable": false,
       "returnText": "Tell Hesk what the board says"
+    },
+    {
+      "id": "mq.ow.close",
+      "title": "The Line West",
+      "main": true,
+      "chainEnd": true,
+      "writer": "NEEDS writer: neutral Ch3 close placeholder",
+      "site": "hesk",
+      "band": 6,
+      "steps": [{ "template": "explore", "params": { "areas": ["crossroads"] }, "objText": "Walk out to the crossroads", "journal": "Hesk: look west of the crossroads." }],
+      "requires": [{ "quest": "mq.ow.board", "done": true }],
+      "reward": { "items": [{ "id": "arrow", "n": 15 }] },
+      "returnText": "Tell Hesk what the road looks like",
+      "abandonable": false
     },
     {
       "id": "sq.hw.piers",

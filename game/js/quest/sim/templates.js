@@ -147,6 +147,8 @@ export function expandQuest(src, ctx = {}) {
   const reward = expandReward(src, ctx, src.band ?? pack.band);
   if (reward) def.reward = reward;
   def.main = src.main === true;
+  if (typeof src.next === "string") def.next = src.next;
+  if (src.chainEnd === true) def.chainEnd = true; // QL-MAIN-01: the one declared end of the main chain (dead-end test)
   if (src.objectGiver === true) def.objectGiver = true; // D-087/OB-156: a flagged object giver (Accept/Exit on the object, '?' at the turnIn character)
   def.abandonable = !def.main && !!def.giver && src.abandonable !== false;
   const band = src.band !== undefined ? src.band : pack.band;

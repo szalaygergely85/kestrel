@@ -9,6 +9,9 @@
   "entry": [
     {"node": "hesk.names.done.1", "requires": "q.mq.ow.names.ready"},
     {"node": "hesk.relay.done.1", "requires": "q.mq.ow.relay.ready"},
+    {"node": "hesk.close.done.1", "requires": "q.mq.ow.close.ready"},
+    {"node": "hesk.close.1", "requires": "q.mq.ow.close.available"},
+    {"node": "hesk.close.active.1", "requires": "q.mq.ow.close.active"},
     {"node": "hesk.board.done.1", "requires": "q.mq.ow.board.ready"},
     {"node": "hesk.fence.done.1", "requires": "q.mq.ow.fence.ready"},
     {"node": "hesk.path.done.1", "requires": "q.mq.ow.path.ready"},
@@ -105,6 +108,22 @@
       "I watched from the wall. You didn't run.",
       "Come to the gate."
     ], "setFlag": "q.mq.ow.fence.handin", "speaker": "hesk"},
+    "hesk.close.1": {"lines": [
+      "The chart scrap runs west. Past the crossroads.",
+      "I can't leave the gate. You can. Go and look."
+    ], "next": "hesk.close.2", "speaker": "hesk"},
+    "hesk.close.2": {"choices": [{"next": "hesk.close.3", "setFlag": "q.mq.ow.close.accept", "text": "I will look."}, {"next": "hesk.later", "text": "Not yet."}], "lines": [
+      "Walk out to the crossroads. Then tell me."
+    ], "speaker": "hesk"},
+    "hesk.close.3": {"end": true, "lines": [
+      "Mind the road. It's longer than it looks."
+    ], "speaker": "hesk"},
+    "hesk.close.active.1": {"end": true, "lines": [
+      "The crossroads, Wick. Then come back and tell me."
+    ], "speaker": "hesk"},
+    "hesk.close.done.1": {"end": true, "lines": [
+      "West, then. We'll keep the waystone lit for you."
+    ], "setFlag": "q.mq.ow.close.handin", "speaker": "hesk"},
     "hesk.board.2": {"choices": [{"next": "hesk.board.3", "setFlag": "q.mq.ow.board.accept", "text": "I will read it."}, {"next": "hesk.later", "text": "Not yet."}], "lines": [
       "Read every name. Then come back to me."
     ], "speaker": "hesk"},

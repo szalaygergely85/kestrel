@@ -35,6 +35,14 @@ h.advanceM1(m1.objectives[m1.objectives.length - 1].id);
 }
 for (const id of bundle.onDiskIds) if (!loadedIds.has(id)) rows.push({ id, ok: false, step: '0 loaded', msg: 'quest file on disk is not loaded (index.json legacy/packs)' });
 
+// Main chain has no dead end (QL-MAIN-01): every main quest has `next`, or a later quest requires it, or it is the one declared chain end.
+{
+  const reqd = new Set(defs.flatMap((d) => (d.requires || []).map((r) => r.quest)));
+  const ends = defs.filter((d) => d.main && !d.next && !reqd.has(d.id));
+  for (const d of ends) if (!d.chainEnd) rows.push({ id: 'chain:' + d.id, ok: false, step: '8 dead-end', msg: 'main quest ' + d.id + ' has no next and nothing requires it (declare chainEnd or add a next)' });
+  const declared = defs.filter((d) => d.chainEnd);
+  if (declared.length !== 1) rows.push({ id: 'chain:end', ok: false, step: '8 dead-end', msg: 'expected exactly 1 declared chainEnd, got ' + declared.length });
+}
 // ---------------------------------------------------------------- report
 const bad = rows.filter((r) => !r.ok), good = rows.filter((r) => r.ok);
 const pad = (s, n) => (s + ' '.repeat(n)).slice(0, n);
