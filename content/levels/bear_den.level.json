@@ -83,7 +83,7 @@
     "preset": "ambient"
   },
   "lights": [
-    {"id": "mouthSpill", "on": true, "preset": "lanternHook", "x": 7.0, "y": 7.0, "z": 5.4}
+    {"id": "mouthSpill", "on": true, "preset": "lanternHook", "x": 7, "y": 7, "z": 5.4}
   ],
   "props": [],
   "interactables": [],
