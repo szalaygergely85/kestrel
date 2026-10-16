@@ -32,7 +32,7 @@ import {
   createPitchedTerms, pitchedTermsInto, worldToCell, resolveProjection, hasLineOfSight, HFOV_DEG, // INT-HL-01
   ambientL, World, repackMaterials,
   updateInteraction, drawCrosshair,
-  buildLightSet, syncEntityLights, createLightBuffer, attachedLightPos, sunPathFrom, applySunHours, applySunPair, setWorldSun, blendLook,
+  buildLightSet, syncEntityLights, createLightBuffer, attachedLightPos, sunPathFrom, applySunHours, applySunPair, setWorldSun, blendLook, syncLiveSun,
   updateTriggers, moveCapsule, serialize, deserialize, createFadeLut, applySceneFade, clearMaskForSceneFade,
   createSceneDim, resetSceneDim, applySceneDim,
   loadContentPack, grassMaskFromJSON, createRng, prebuildTerrainMesh, hitSparks,
@@ -1601,8 +1601,9 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
           if (!(Math.abs(dh) <= SHADOW_SLOT_H * 1.01) || force) { shadowHour = target; dh = 0; steps = 0; } // load / jump / first step: snap
           else if (dh !== 0) { const st = SHADOW_SLOT_H / SHADOW_EASE_STEPS; shadowHour = Math.abs(dh) <= st + 1e-9 ? target : shadowHour + Math.sign(dh) * st; }
           shadowHour = ((shadowHour % 24) + 24) % 24;
-          const gMoon = applySunPair(world, lightSet, shadowHour, hq, worldSunPath, sunEnabled); if (giWire) giWire.clock(hq, gMoon); // GI-PROBE-06: mix on hour step only // AUD2-02: ONE sun/moon decision for the stepped light/shadow sun and the smooth world.sun
+          const gMoon = applySunPair(world, lightSet, shadowHour, hq, worldSunPath, sunEnabled); // AUD2-02: ONE sun/moon decision for the stepped light/shadow sun and the smooth world.sun
           const L = blendLook(P, hq, P.daySchedule);
+          syncLiveSun(lightSet, P); if (giWire) giWire.clock(hq, gMoon); // SUN-COL-LIVE: sun.col follows the live look (before the GI mix reads it) // GI-PROBE-06: mix on hour step only
           applyFogHour(P, hq);
           if (lightSet) { const hu = P.hue[L.ambient]; lightSet.ambient[0] = hu[0] * L.ambientI; lightSet.ambient[1] = hu[1] * L.ambientI; lightSet.ambient[2] = hu[2] * L.ambientI; creepSt.amb = 1; }
         });
@@ -1616,7 +1617,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         const P = assets.palette, hr = ((parseFloat(params.get('cinehour')) % 24) + 24) % 24;
         seedClockFromParam(world.state, hr); clockTimeApplied = true;
         applySunPair(world, lightSet, hr, hr, worldSunPath, sunEnabled);
-        const L = blendLook(P, hr, P.daySchedule);
+        const L = blendLook(P, hr, P.daySchedule); syncLiveSun(lightSet, P); // SUN-COL-LIVE
         applyFogHour(P, hr);
         if (lightSet) { const hu = P.hue[L.ambient]; for (let i = 0; i < 3; i++) lightSet.ambient[i] = hu[i] * L.ambientI; }
       } else if (Number.isFinite(timeHour)) { applyFogHour(assets.palette, timeHour); if (!clockTimeApplied) { seedClockFromParam(world.state, timeHour); clockTimeApplied = true; } applySunHours(world, lightSet, timeHour, worldSunPath, sunEnabled); } // frozen clock: the NPC schedules still read the ?time= hour

@@ -539,6 +539,7 @@
     {"name":"sunVisible","area":"render","tier":"stable"},
     {"name":"swayOffset","area":"render","tier":"experimental"},
     {"name":"syncEntityLights","area":"render","tier":"stable"},
+    {"name":"syncLiveSun","area":"render","tier":"experimental"},
     {"name":"texelG","area":"render","tier":"experimental"},
     {"name":"texelR","area":"render","tier":"experimental"},
     {"name":"tintAt","area":"anim","tier":"stable"},
