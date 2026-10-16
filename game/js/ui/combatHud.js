@@ -27,7 +27,19 @@ export function fillBeastRecord(sim, i, rec, px, py, now, targetId) {
   return rec;
 }
 
-export function createCombatHud({ events, rgb, band = null, hurtAnchor } = {}) {
+/** VISQA-22: terrain line of sight from the eye to a point. groundAt(x, y) -> metres or null. Samples the segment (last 10 % skipped: the point may stand on a slope). */
+export function terrainSees(groundAt, ex, ey, ez, x, y, z, steps = 14) {
+  if (!groundAt) return true;
+  for (let k = 1; k < steps; k++) {
+    const f = k / steps; if (f > 0.9) break;
+    const g = groundAt(ex + (x - ex) * f, ey + (y - ey) * f);
+    if (g !== null && g !== undefined && g > ez + (z - ez) * f + 0.2) return false;
+  }
+  return true;
+}
+
+export function createCombatHud({ events, rgb, band = null, hurtAnchor, groundAt = null } = {}) {
+  let ex = 0, ey = 0, ez = 0;
   const M = new Float64Array(16);
   let gridCols = 1, gridRows = 1, uiCols = 160, uiRows = 60, ready = false;
   const project = (x, y, z, out) => {
@@ -39,7 +51,7 @@ export function createCombatHud({ events, rgb, band = null, hurtAnchor } = {}) {
     out.c = cx * uiCols / gridCols; out.r = cy * uiRows / gridRows;
     return true;
   };
-  const bars = createEnemyBarView({ rgb, project, band });
+  const bars = createEnemyBarView({ rgb, project, band, seen: groundAt ? (x, y, z) => terrainSees(groundAt, ex, ey, ez, x, y, z) : null });
   const nums = createDamageNumbers({ rgb, project, hurtAnchor });
   let lastT = -1, sim = null, px = 0, py = 0, targetId = null, now = 0;
   const fill = (i, rec) => fillBeastRecord(sim, i, rec, px, py, now, targetId);
@@ -51,7 +63,7 @@ export function createCombatHud({ events, rgb, band = null, hurtAnchor } = {}) {
     /** once per rendered frame before draw: camera pose, scene grid {cols, rows}, UI grid, player position, lock-on id, clock (s), dt (s). */
     frame(cam, grid, ui, playerX, playerY, lockId, timeSec) {
       const dt = lastT < 0 ? 0 : Math.min(0.1, Math.max(0, timeSec - lastT)); lastT = timeSec;
-      frameMatrix(cam, grid, M); gridCols = grid.cols; gridRows = grid.rows; uiCols = ui.cols; uiRows = ui.rows; ready = true;
+      frameMatrix(cam, grid, M); ex = cam.x; ey = cam.y; ez = cam.z; gridCols = grid.cols; gridRows = grid.rows; uiCols = ui.cols; uiRows = ui.rows; ready = true;
       px = playerX; py = playerY; targetId = lockId; now = timeSec;
       bars.update(sim ? sim.entities.length : 0, fill, now, dt, band ? band.bandAt(px, py) : 1);
       nums.step(dt);

@@ -20,7 +20,8 @@ export function barLabel(frac, level, name, boss) {
   return s.length > MAX_WIDTH ? s.slice(0, MAX_WIDTH) : s;
 }
 
-export function createEnemyBarView({ rgb, project, band = null, select = null, enabled = enemyBarsOn, slots: nSlots = 6 } = {}) {
+// VISQA-22: `seen(x, y, z) -> bool` (host line-of-sight, optional): false = the head point is hidden behind terrain/props -> no bar (no plate over empty ground).
+export function createEnemyBarView({ rgb, project, band = null, select = null, enabled = enemyBarsOn, slots: nSlots = 6, seen = null } = {}) {
   const bars = createEnemyBars({ band });
   const pick = select || ((count, fill, now, pb) => bars.select(count, fill, now, pb));
   const slots = [];
@@ -72,6 +73,7 @@ export function createEnemyBarView({ rgb, project, band = null, select = null, e
       if (key !== s.key || s.textName !== s.name) { s.key = key; s.textName = s.name; s.text = barLabel(s.frac, s.level, s.name, s.boss); }
       if (!project(s.x, s.y, s.z + HEAD_LIFT, pt)) continue;
       if (pt.c < 0 || pt.c >= ui.cols || pt.r < 0 || pt.r >= ui.rows) continue; // VISQA-01: beast off-screen -> no bar pinned to the screen edge (the clamp below is only for heads near the edge)
+      if (seen && !seen(s.x, s.y, s.z + HEAD_LIFT)) continue; // VISQA-22: occluded beast
       const w = s.text.length;
       let x0 = (pt.c | 0) - (w >> 1), y0 = (pt.r | 0) - 1;
       x0 = x0 < 0 ? 0 : x0 + w > ui.cols ? ui.cols - w : x0;
