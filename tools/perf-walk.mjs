@@ -3,12 +3,15 @@
 // from the tower (waypoints below) for --seconds by writing the game's own Input (KeyW + ShiftLeft) and look.yawDeg, like
 // tools/route-walk-browser.mjs. Prints one JSON row: frame counts > 16.7 / > 33 ms, max interval / CPU, and the spike
 // records ranked by cause. One config per process (high + ultra in one browser failed "page never booted" before, PERF-03).
-// Usage: node tools/perf-walk.mjs --port 9540 [--config ultra:480x180] [--seconds 60] [--settle 4000] [--out file.json] [--alloc 1]
+// Usage: node tools/perf-walk.mjs --port 9540 [--config ultra:480x180] [--seconds 60] [--settle 4000] [--out file.json] [--alloc 1] [--heap-profile 1] [--cpu-profile 1] [--js-flags "--log-deopt --logfile=X"]
+// PERF-08: --heap-profile 1 = CDP HeapProfiler sampling (32 KB, incl. GC'd objects) over the walk -> top 20 self-size sites (function + url:line)
+// written to docs/test-reports/perf-alloc-<date>.md (or --heap-out); --cpu-profile 1 adds a CDP Profiler self-time table to the same file.
 // PERF-06: p99 = 99th percentile rAF interval; --alloc 1 adds allocMb = JS heap growth per profiler section over the walk (heap read per lap).
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { summariseHeap, summariseCpu, renderMd } from './heap-profile-summary.mjs';
 import { ROOT, findBrowserBinary, waitForHttp, killTree, connectCdp, evaluate, evaluateAsync, validatePort } from './capture-browser.mjs';
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, all) => (v.startsWith('--') ? [...a, [v.slice(2), all[i + 1]]] : a), []));
@@ -56,7 +59,7 @@ try {
   await waitForHttp(`http://127.0.0.1:${port}/`, 10000);
   browser = spawn(binary, [`--remote-debugging-port=${port + 1}`, '--headless=new', '--enable-unsafe-webgpu', '--ignore-gpu-blocklist',
     '--disable-gpu-vsync', '--disable-frame-rate-limit', '--enable-webgpu-developer-features', '--window-size=3840,2160', '--no-sandbox', '--enable-precise-memory-info',
-    '--disable-background-timer-throttling', '--disable-renderer-backgrounding', `--user-data-dir=${udd}`, 'about:blank'], { stdio: 'ignore' });
+    '--disable-background-timer-throttling', '--disable-renderer-backgrounding', `--user-data-dir=${udd}`, ...(args['js-flags'] ? [`--js-flags=${args['js-flags']}`] : []), 'about:blank'], { stdio: 'ignore' });
   const cdp = await connectCdp(port + 1, 15000);
   await cdp.send('Page.enable'); await cdp.send('Runtime.enable');
   if (process.env.CAP_LOG) cdp.onEvent((m, p) => { if (m === 'Runtime.consoleAPICalled' && p.type !== 'log') console.error('[page]', (p.args || []).map((a) => a.value ?? a.description ?? '').join(' ').slice(0, 300)); if (m === 'Runtime.exceptionThrown') console.error('[exc]', JSON.stringify(p.exceptionDetails).slice(0, 600)); });
@@ -68,7 +71,11 @@ try {
   await evaluate(cdp, `if (!window.__debug.overlay.visible) window.__debug.overlay.toggle(); window.__debug.engine.setGrid(${gw}, ${gh}, { immediate: true }); true`);
   await sleep(settle);
   if (args.probe) await evaluateAsync(cdp, readFileSync(args.probe, 'utf8')); // dev: a timing wrapper script (fills window.__probeLog)
+  if (args['heap-profile']) { await cdp.send('HeapProfiler.enable'); await cdp.send('HeapProfiler.startSampling', { samplingInterval: 32768, includeObjectsCollectedByMinorGC: true, includeObjectsCollectedByMajorGC: true }); }
+  if (args['cpu-profile']) { await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', { interval: 500 }); await cdp.send('Profiler.start'); }
   const r = await evaluateAsync(cdp, DRIVER(seconds), (seconds + 60) * 1000);
+  const heapProf = args['heap-profile'] ? (await cdp.send('HeapProfiler.stopSampling')).profile : null;
+  const cpuProf = args['cpu-profile'] ? (await cdp.send('Profiler.stop')).profile : null;
   // cause per spike: CPU spike -> top section (or "unattributed" when the uncovered rest is bigger); interval-only spike -> "wait" (GPU /
   // compositor / OS: the CPU frame and the previous one were both short) or the previous frame's top section.
   const cause = (s) => {
@@ -85,6 +92,12 @@ try {
     p99: +[...r.itv].sort((a, b) => a - b)[Math.floor(r.itv.length * 0.99)].toFixed(1), fps: +(1000 / (r.itv.reduce((a, b) => a + b, 0) / r.itv.length)).toFixed(0), spikeCount: r.spikeCount, gcSpikes, allocMb: r.alloc.slice(0, 8),
     rank: Object.entries(rank).sort((a, b) => b[1].sumMs - a[1].sumMs).map(([k, v]) => ({ cause: k, n: v.n, maxMs: +v.maxMs.toFixed(1) })) };
   console.log(JSON.stringify(row));
+  if (heapProf || cpuProf) {
+    const date = new Date().toISOString().slice(0, 10), out = args['heap-out'] || path.join(ROOT, 'docs', 'test-reports', `perf-alloc-${date}.md`);
+    const heap = heapProf && summariseHeap(heapProf, 20), cpu = cpuProf && summariseCpu(cpuProf, 20);
+    writeFileSync(out, renderMd({ title: `Allocation profile: ${q} ${gw}x${gh} ${seconds} s road walk (${date})`, row, heap, cpu }));
+    console.log('profile ->', out, heap ? `heap ${heap.totalMb.toFixed(0)} MB sampled` : '');
+  }
   if (args.out) writeFileSync(args.out, JSON.stringify({ row, spikes: r.spikes, probe: r.probe }, null, 1));
   cdp.close();
 } finally { cleanup(); }

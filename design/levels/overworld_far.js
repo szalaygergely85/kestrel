@@ -439,6 +439,20 @@
     for (var i = 0; i < oct; i++) { sum += amp * vnoise(x, y, s + i * 101); norm += amp; amp *= gain; x *= lac; y *= lac; }
     return sum / norm;
   }
+  // PERF-07: bit-exact JS copy of V8's 2-arg Math.hypot (math.tq: normalise by the max, sum of squares, sqrt * max; the
+  // Kahan term is 0 for two args). The builtin is not inlined by TurboFan and boxes its args/result: ~45 % of the GC churn.
+  // PERF-08: exp(-(t*t)) == Math.exp(-Math.pow(t, 2)) bit for bit (V8 pow special-cases y = 2 as x*x; 2e7 random + edge values 0 diffs);
+  // one builtin call instead of two, and the square never crosses a call boundary (no boxed double).
+  function gauss(t) { return Math.exp(-(t * t)); }
+  function hypot(a, b) {
+    a = a < 0 ? -a : a; b = b < 0 ? -b : b;
+    if (a === Infinity || b === Infinity) return Infinity;
+    if (a !== a || b !== b) return NaN;
+    var m = a > b ? a : b;
+    if (m === 0) return 0;
+    var na = a / m, nb = b / m;
+    return Math.sqrt(na * na + nb * nb) * m;
+  }
   function smooth(a, b, x) { var t = (x - a) / (b - a); t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); }
   function riverX(y) { var R = DEF.recipe.river; return R.base + R.a1 * Math.sin(y / R.p1) + R.a2 * Math.sin(y / R.p2 + R.ph2); }
   function pathDist(px, py) {
@@ -455,13 +469,13 @@
   // ---------------- analytic height ----------------
   function recipeHeight(x, y) {
     var R = DEF.recipe, s = DEF.seed, T = DEF.tower, T2 = DEF.farTower;
-    var d0 = Math.hypot(x - T.x, y - T.y), dt = Math.hypot(x - T2.x, y - T2.y);
-    var home = R.home.top - R.home.drop * (1 - Math.exp(-Math.pow(d0 / R.home.radius, 2)));
-    var hill2 = R.hill2.height * Math.exp(-Math.pow(dt / R.hill2.radius, 2));
+    var d0 = hypot(x - T.x, y - T.y), dt = hypot(x - T2.x, y - T2.y);
+    var home = R.home.top - R.home.drop * (1 - gauss(d0 / R.home.radius));
+    var hill2 = R.hill2.height * gauss(dt / R.hill2.radius);
     var roll = (fbm(x / R.rolling.scale, y / R.rolling.scale, s, R.rolling.octaves, R.rolling.gain, R.rolling.lacunarity) - 0.5) * R.rolling.amp *
-               (1 - Math.exp(-Math.pow(dt / R.rolling.flatNearTower2, 2))) * (1 - Math.exp(-Math.pow(d0 / R.rolling.flatNearHome, 2)));
+               (1 - gauss(dt / R.rolling.flatNearTower2)) * (1 - gauss(d0 / R.rolling.flatNearHome));
     var dr = Math.abs(x - riverX(y));
-    var valley = -R.valley.depth * Math.exp(-Math.pow(dr / R.valley.width, 2));
+    var valley = -R.valley.depth * gauss(dr / R.valley.width);
     var ridge = R.ridge.height * smooth(R.ridge.x0, R.ridge.x1, x) * (0.6 + 0.4 * fbm(x / R.ridge.scale, y / R.ridge.scale, s + 7, 3, 0.5, 2));
     var carve = R.river.carve * smooth(R.river.carveEdge[0], R.river.carveEdge[1], dr);
     var hh = home + hill2 + roll + valley + ridge - carve;
@@ -619,8 +633,8 @@
   }
   indexOverrides();
   function shapeDist(o, x, y) {         // 0 inside the shape, distance outside it
-    if (o.shape === 'rect') { var dx = Math.max(o.x - x, 0, x - (o.x + o.w)), dy = Math.max(o.y - y, 0, y - (o.y + o.h)); return Math.hypot(dx, dy); }
-    return Math.max(0, Math.hypot(x - o.x, y - o.y) - o.r);
+    if (o.shape === 'rect') { var dx = Math.max(o.x - x, 0, x - (o.x + o.w)), dy = Math.max(o.y - y, 0, y - (o.y + o.h)); return hypot(dx, dy); }
+    return Math.max(0, hypot(x - o.x, y - o.y) - o.r);
   }
   function applyStamps(h, x, y) {
     for (var i = 0; i < STAMPS.length; i++) {
@@ -641,7 +655,7 @@
       // itself; if it forgot, this throws on `undefined.x0` instead of blending wrong.
       var x0 = st.bbox.x0, y0 = st.bbox.y0;
       var x1 = st.bbox.x1, y1 = st.bbox.y1;
-      var dx = Math.max(x0 - x, 0, x - x1), dy = Math.max(y0 - y, 0, y - y1), d = Math.hypot(dx, dy);
+      var dx = Math.max(x0 - x, 0, x - x1), dy = Math.max(y0 - y, 0, y - y1), d = hypot(dx, dy);
       if (d >= st.blend) continue;
       var ring = st.ringHAt(x, y);                              // engine: floorH of the nearest outer-ring cell
       h = ring + (h - ring) * (d / st.blend);
@@ -691,7 +705,7 @@
     var e = R.slopeEps, hx, hy;
     if (hxp === undefined) { hx = (heightAt(x + e, y) - heightAt(x - e, y)) / (2 * e); hy = (heightAt(x, y + e) - heightAt(x, y - e)) / (2 * e); }
     else { hx = (hxp - hxm) / (2 * e); hy = (hyp - hym) / (2 * e); }
-    var slope = Math.sqrt(hx * hx + hy * hy), dh = Math.hypot(x - T.x, y - T.y), F = R.forest, K = R.rock;
+    var slope = Math.sqrt(hx * hx + hy * hy), dh = hypot(x - T.x, y - T.y), F = R.forest, K = R.rock;
     var rockHit = slope > K.slope || (dh > K.minHomeDist && fbm(x / K.scale, y / K.scale, s + 29, 2, 0.5, 2) > K.threshold);
     // OB-062b: the gentle carved bank beside the water (ring m past the band) is wet earth, not grey rock; only a real cliff stays rock
     if (rockHit && R.river.bankRock && dr < R.river.halfWidth + R.river.bankRock.ring && slope <= R.river.bankRock.slope) rockHit = false;

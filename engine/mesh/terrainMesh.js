@@ -440,7 +440,19 @@ function pushTerrainItem(list, mesh, ox, oy, oz, objectId, rangeIdx) {
 function distToRectXY(cx, cy, x0, y0, x1, y1) {
   const nx = Math.min(Math.max(cx, x0), x1);
   const ny = Math.min(Math.max(cy, y0), y1);
-  return Math.hypot(cx - nx, cy - ny);
+  return hypot2(cx - nx, cy - ny);
+}
+
+// PERF-08: bit-exact copy of V8's 2-arg Math.hypot (PERF-07: 10M-pair compare 0 diffs). The variadic builtin boxes its
+// arguments/result (~140 MB / 60 s walk in the shadow-list build); this one stays on unboxed doubles when inlined.
+function hypot2(a, b) {
+  a = a < 0 ? -a : a; b = b < 0 ? -b : b;
+  if (a === Infinity || b === Infinity) return Infinity;
+  if (a !== a || b !== b) return NaN;
+  const m = a > b ? a : b;
+  if (m === 0) return 0;
+  const na = a / m, nb = b / m;
+  return Math.sqrt(na * na + nb * nb) * m;
 }
 
 // ---------------------------------------------------------------------------

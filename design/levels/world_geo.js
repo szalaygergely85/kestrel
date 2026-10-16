@@ -173,10 +173,22 @@
     ]
   };
 
-  function smooth(a, b, x) { var t = (x - a) / (b - a); t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); }
+  // PERF-07: bit-exact copy of V8's 2-arg Math.hypot (same as overworld_far.js; the builtin boxes -> GC churn).
+  // PERF-08: exp(-(t*t)) == Math.exp(-Math.pow(t, 2)) bit for bit (V8 pow special-cases y = 2 as x*x; 2e7 random + edge values 0 diffs);
+  // one builtin call instead of two, and the square never crosses a call boundary (no boxed double).
+  function gauss(t) { return Math.exp(-(t * t)); }
+  function hypot(a, b) {
+    a = a < 0 ? -a : a; b = b < 0 ? -b : b;
+    if (a === Infinity || b === Infinity) return Infinity;
+    if (a !== a || b !== b) return NaN;
+    var m = a > b ? a : b;
+    if (m === 0) return 0;
+    var na = a / m, nb = b / m;
+    return Math.sqrt(na * na + nb * nb) * m;
+  }  function smooth(a, b, x) { var t = (x - a) / (b - a); t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); }
   function segDist(px, py, ax, ay, bx, by) {
     var dx = bx - ax, dy = by - ay, t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy); t = t < 0 ? 0 : t > 1 ? 1 : t;
-    return Math.hypot(ax + dx * t - px, ay + dy * t - py);
+    return hypot(ax + dx * t - px, ay + dy * t - py);
   }
   function lineDist(pts, x, y) { var b = 1e9; for (var i = 1; i < pts.length; i++) { var d = segDist(x, y, pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]); if (d < b) b = d; } return b; }
   function ell(o, x, y) { if (o._cs === undefined) Object.defineProperty(o, '_cs', { value: [Math.cos(o.rot), Math.sin(o.rot)] }); var c = o._cs[0], s = o._cs[1], dx = x - o.x, dy = y - o.y, u = (dx * c + dy * s) / o.rx, v = (-dx * s + dy * c) / o.ry; return Math.sqrt(u * u + v * v); }
@@ -192,13 +204,13 @@
   }
   function mask(x, y) {
     var P = G.protect, r = P.rect, dx = Math.max(r[0] - x, 0, x - r[2]), dy = Math.max(r[1] - y, 0, y - r[3]);
-    var mg = P.margin, m = (dx >= mg || dy >= mg) ? 1 : smooth(0, mg, Math.hypot(dx, dy));   // WM-01: hypot >= max(dx, dy) -> smooth is exactly 1
-    for (var i = 0; i < P.discs.length; i++) { var D = P.discs[i], ex = x - D.x, ey = y - D.y, lim = D.r + mg; if (ex >= lim || -ex >= lim || ey >= lim || -ey >= lim) continue; m *= smooth(D.r, lim, Math.hypot(ex, ey)); }
+    var mg = P.margin, m = (dx >= mg || dy >= mg) ? 1 : smooth(0, mg, hypot(dx, dy));   // WM-01: hypot >= max(dx, dy) -> smooth is exactly 1
+    for (var i = 0; i < P.discs.length; i++) { var D = P.discs[i], ex = x - D.x, ey = y - D.y, lim = D.r + mg; if (ex >= lim || -ex >= lim || ey >= lim || -ey >= lim) continue; m *= smooth(D.r, lim, hypot(ex, ey)); }
     return m;
   }
   // Lake bowl height at e<1: deep only inside the water-region rect (floor S-depth(1-e^2)), ramping up to the shelf S+0.8 over `shelf` m before the rect edge.
   function lakeFloor(L, e, x, y, h) {
-    var P = L.pond, dx = Math.max(P[0] - x, 0, x - P[2]), dy = Math.max(P[1] - y, 0, y - P[3]), out = Math.hypot(dx, dy);
+    var P = L.pond, dx = Math.max(P[0] - x, 0, x - P[2]), dy = Math.max(P[1] - y, 0, y - P[3]), out = hypot(dx, dy);
     var inside = Math.min(x - P[0], P[2] - x, y - P[1], P[3] - y);              // > 0 inside, depth below the rect edge
     var d = out > 0 ? -out : inside, floor = Math.min(h, L.surface - L.depth * (1 - e * e));
     return floor + (L.surface + 0.8 - floor) * smooth(L.shelf, 0, d);   // the shelf also fills the river valley, so the pond is dammed all round
@@ -212,14 +224,14 @@
     var h = h0 - G.southTilt.drop * smooth(G.southTilt.y0, G.southTilt.y1, y), i, e;
     var dr = Math.abs(x - U.riverX(y));
     for (i = 0; i < G.ranges.length; i++) {
-      var R = G.ranges[i], d = lineDist(R.pts, x, y), f = Math.exp(-Math.pow(d / R.w, 2));
+      var R = G.ranges[i], d = lineDist(R.pts, x, y), f = gauss(d / R.w);
       if (f < 0.002) continue;
       var n = U.fbm(x / R.ridged.scale, y / R.ridged.scale, G.seed + R.seedOff, 4, 0.5, 2), rn = 1 - Math.abs(2 * n - 1);
-      var add = R.h * f + R.ridged.amp * rn * rn * Math.exp(-Math.pow(d / (R.w * 0.7), 2));
-      if (R.gorge) add *= 1 - (1 - R.gorge.keep) * Math.exp(-Math.pow(dr / R.gorge.width, 2));
+      var add = R.h * f + R.ridged.amp * rn * rn * gauss(d / (R.w * 0.7));
+      if (R.gorge) add *= 1 - (1 - R.gorge.keep) * gauss(dr / R.gorge.width);
       h += add;
     }
-    for (i = 0; i < G.peaks.length; i++) { var p = G.peaks[i]; h += p.h * Math.exp(-Math.pow(Math.hypot(x - p.x, y - p.y) / p.r, 2)); }
+    for (i = 0; i < G.peaks.length; i++) { var p = G.peaks[i]; h += p.h * gauss(hypot(x - p.x, y - p.y) / p.r); }
     e = ell(G.gate.pass, x, y); if (e < 1) h += (G.gate.pass.floor - h) * smooth(1, 0.6, e);
     var Rv = G.river, bw = smooth(Rv.bedWidth, Rv.bedWidth * 0.4, dr);
     if (y < 780) h += (Math.min(h, interp(Rv.bedNorth, y)) - h) * bw;
@@ -233,7 +245,7 @@
     else {
       if (h < G.seaLevel + 0.6) h = G.seaLevel + 0.6;
       if (c.kind === 'beach') {
-        var bh = G.seaLevel + C.beachH + C.duneH * Math.exp(-Math.pow((c.sd - C.duneAt) / 25, 2)) * 2 * U.fbm(x / 35, y / 35, G.seed + 61, 2, 0.5, 2);
+        var bh = G.seaLevel + C.beachH + C.duneH * gauss((c.sd - C.duneAt) / 25) * 2 * U.fbm(x / 35, y / 35, G.seed + 61, 2, 0.5, 2);
         h = bh + (h - bh) * smooth(0, C.beachWidth, c.sd);
       } else {
         var top = h + Math.max(0, G.seaLevel + C.cliffH - h) * smooth(C.cliffBack, 0, c.sd);
@@ -295,7 +307,7 @@
   var KIND_BIOME = { broadleaf: 1, pine: 2, twisted: 3, dead: 4 };
   function rectSd(r, x, y) {   // signed distance to an axis rect (negative inside)
     var cx = (r[0] + r[2]) / 2, cy = (r[1] + r[3]) / 2, qx = Math.abs(x - cx) - (r[2] - r[0]) / 2, qy = Math.abs(y - cy) - (r[3] - r[1]) / 2;
-    return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0);
+    return hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0);
   }
   // {biomeId: sdf(x, y)}: union (min) of the region rects of one biome; beach strip along the 'beach' coast; fen = marsh ellipse.
   // The catch-all 'heartland' stays biome 0. Alpine/Downs override the pine/broadleaf kind of their region.
@@ -369,14 +381,14 @@
             var R = G.ranges[i], B = rangeBox[i];
             // WM-01: far from the range (bbox + 2.6 w + 32 m GeoFields slack) f < 0.002 for sure: skip sdf + exp
             if (x < B[0] || x > B[2] || y < B[1] || y > B[3]) continue;
-            var d = F.sdf(R.id, x, y), f = Math.exp(-Math.pow(d / R.w, 2));
+            var d = F.sdf(R.id, x, y), f = gauss(d / R.w);
             if (f < 0.002) continue;
             var n = U.fbm(x / R.ridged.scale, y / R.ridged.scale, G.seed + R.seedOff, 4, 0.5, 2), rn = 1 - Math.abs(2 * n - 1);
-            var add = R.h * f + R.ridged.amp * rn * rn * Math.exp(-Math.pow(d / (R.w * 0.7), 2));
-            if (R.gorge) add *= 1 - (1 - R.gorge.keep) * Math.exp(-Math.pow(dr / R.gorge.width, 2));
+            var add = R.h * f + R.ridged.amp * rn * rn * gauss(d / (R.w * 0.7));
+            if (R.gorge) add *= 1 - (1 - R.gorge.keep) * gauss(dr / R.gorge.width);
             h += add;
           }
-          for (i = 0; i < G.peaks.length; i++) { var p = G.peaks[i], px = x - p.x, py = y - p.y, pl = p.r * 28; if (px > pl || -px > pl || py > pl || -py > pl) continue; h += p.h * Math.exp(-Math.pow(Math.hypot(px, py) / p.r, 2)); }   // beyond 28 r exp underflows to exactly 0
+          for (i = 0; i < G.peaks.length; i++) { var p = G.peaks[i], px = x - p.x, py = y - p.y, pl = p.r * 28; if (px > pl || -px > pl || py > pl || -py > pl) continue; h += p.h * gauss(hypot(px, py) / p.r); }   // beyond 28 r exp underflows to exactly 0
           e = ell(G.gate.pass, x, y); if (e < 1) h += (G.gate.pass.floor - h) * smooth(1, 0.6, e);
           return h0 + m * (h - h0);
         } },
@@ -401,7 +413,7 @@
           else {
             if (hn < sea + 0.6) hn = sea + 0.6;
             if (F.sdf('beachK', x, y) > 0.5) {
-              var bh = sea + C.beachH + C.duneH * Math.exp(-Math.pow((sd - C.duneAt) / 25, 2)) * 2 * U.fbm(x / 35, y / 35, G.seed + 61, 2, 0.5, 2);
+              var bh = sea + C.beachH + C.duneH * gauss((sd - C.duneAt) / 25) * 2 * U.fbm(x / 35, y / 35, G.seed + 61, 2, 0.5, 2);
               hn = bh + (hn - bh) * smooth(0, C.beachWidth, sd);
             } else {
               var top = hn + Math.max(0, sea + C.cliffH - hn) * smooth(C.cliffBack, 0, sd);
