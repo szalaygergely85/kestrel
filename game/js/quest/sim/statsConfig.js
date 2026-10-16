@@ -58,3 +58,16 @@ export const REQ_ATTR = { sword: 'str', axe: 'str', spear: 'str', bow: 'dex', fi
 export const REQ_BASE = 5, REQ_PER_IL = 0.9, REQ_UNIQUE_MAX = 13;
 export const REQ_UNMET_MUL = 0.5; // not meeting the requirement: -50 % damage / armour (no hard block)
 export const ATTR_NAME = { str: 'STR', dex: 'DEX', int: 'INT' };
+
+// PLAYER-LEVEL-01 v2 (D-116, D-084): power score tables (docs/epics/ep-items-stats.md "PLAYER-LEVEL-01 v2").
+// itemPower = round10(POWER_BASE x iL^2 x slot weight x (rarity factor + 0.1 x sum over lines (1 + q))).
+export const POWER_BASE = 20;
+export const POWER_SLOT_WEIGHT = Object.freeze({ main: 3, body: 3, off: 2, ranged: 2, head: 2, legs: 2, hands: 1, feet: 1, cloak: 1, belt: 1, quiver: 0 });
+export const POWER_RARITY = Object.freeze([1.00, 1.05, 1.10, 1.15, 1.25]); // index = RARITY index (common..unique)
+export const POWER_LINE = 0.1;                       // a line adds 0.1 x (1 + q), q = roll quality 0..1
+export const POWER_UNROLLED_Q = 0.5;                 // plain gear without an instance: its lines count q 0.5
+// plain tier gear (no rolled instance) -> [iL, rarity index]
+export const POWER_TIER_MAP = Object.freeze({ worn: [1, 0], sturdy: [2, 1], fine: [4, 1], tempered: [6, 2], warden: [8, 2] });
+export const SPELL_POWER = Object.freeze([0, 250, 600, 1000]); // total power of one spell at level 0..3 (higher clamps to 3)
+// player level L (1..10) starts at LEVEL_POWER[L - 1]
+export const LEVEL_POWER = Object.freeze([0, 1000, 2500, 5000, 8000, 12000, 17000, 22000, 28000, 35000]);

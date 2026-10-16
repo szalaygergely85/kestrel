@@ -1917,3 +1917,5 @@ Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-
   glyphOnly (raw/shift): forest 1.93 (2.01/0.02) uvDrift:9+uv<4+uvLv=:7; town 1.20 (3.07/2.16) mixed255:9 2.68; crypt 2.72 (5.22/2.36) mixed255:1 1.67 + :6 1.40 + edge eTrig:other 1.18. Old poses within 0.01 of baseline (avg 1.52, roadWalk 0.67).
   No fix (browser cap): next = crypt wall/ceil (kind 1/6) mixed255 lineShift + edge class. Baseline re-saved with 9 poses from the same run. Gate timeout 240 -> 1200 s (run takes ~75 s).
   Files: game/js/dev/flickerLive.js (+test), game/js/main.js (1 line: place hook), tools/flicker-gate.mjs, docs/test-reports/flicker-baseline.json. Suites flicker* 11 PASS, check-deps OK.
+- 2026-10-16 kestrel-4 PLAYER-LEVEL-01 + SPELL-R8 -> po-review: game/js/quest/sim/power.js (+test, +alloc test 0 B/call), statsConfig POWER tables, inventoryScreen Power lines + header, levelHud.js (HUD Lv N, Level up! 2 s), main.js +2.
+  Stills docs/test-reports/playerlevel/{hud,character}.png (Power 2,110 - Level 2). D-069 gate helper exported, not wired (Burl flag stays). Spell page 'Power N' per card not done.

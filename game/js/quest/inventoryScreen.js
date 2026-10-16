@@ -10,6 +10,7 @@ import { wrapNoteLines } from './noteRead.js';
 import { gearRecipe } from './gearLook.js';
 import { createPreviewYaw } from './previewYaw.js';
 import { createSpellPageView } from './spellPageView.js'; // SPELL-03
+import { itemPower, slotPower, itemPowerTotal, spellPower, powerText, powerCompare, headerText, breakdownText, nextLevelText } from './sim/power.js'; // PLAYER-LEVEL-01
 
 // Panel-relative layout (panel 100 x 29). Slot boxes are the style's 9x5 boxes, pitch from `uiStyle.inventory.grid`.
 export const LAYOUT = Object.freeze({
@@ -84,6 +85,7 @@ export function createInventoryScreen(o) {
   let turning = false, dragPx = 0, rxLast = -1, dtAcc = 0, yawAcc = 0;
   let dragSrc = -1, dragMoved = false; // item drag (pack <-> gear)
   const flash = { node: -1, kind: 0, until: 0 };
+  let pwItems = -1, pwSpells = -1, pw1 = '', pw2 = '', pw3 = ''; // PLAYER-LEVEL-01: character view header (strings rebuilt on change only)
   let sHp = -1, sMax = -1, sDef = -1, sArr = -1, sDmg = -1, stat1 = '', stat2 = '', tipCur = -1, tipId = null, tipWorn = null, tipDef = -1, tipLines = [], tipFg = [];
   const EMPTY_EQ = {};
 
@@ -298,6 +300,11 @@ export function createInventoryScreen(o) {
     if (lockText) { add(lockText, C.uiDim); return; }
     if (q) {
       add((tierName[tier] || '') + ' ' + (slotLabel[q.slot] || q.slot).toLowerCase() + (q.def > 0 ? '  -  Defence ' + q.def : '') + (q.stats && q.stats.dmgMul ? '  -  Damage x' + q.stats.dmgMul : ''), C.uiHint);
+      if (d.kind !== 'spell') { // PLAYER-LEVEL-01: Power line (+ compare vs the worn piece of that slot)
+        const p = node.kind === 0 ? slotPower(eq(), node.slot, defs) : itemPower(id, defs);
+        add(powerText(p), C.uiText);
+        if (node.kind === 2) { const c = powerCompare(p, slotPower(eq(), q.slot, defs)); add(c.text, c.tone === 'up' ? C.heroGreen : c.tone === 'down' ? RED : C.uiDim); }
+      }
       if (node.kind === 2) { // compare with what is worn in that slot
         const wd = worn && defs[worn], delta = (q.def || 0) - (wd && wd.equip ? wd.equip.def || 0 : 0);
         const vs = wd ? ' vs ' + wd.name : ' (slot empty)';
@@ -469,6 +476,10 @@ export function createInventoryScreen(o) {
         stat2 = 'DMG x' + (Math.round(md * 100) / 100) + '   Arrows ' + arrows;
       }
       text(L.stats.x, L.stats.y, stat1, C.uiText, bg); text(L.stats.x, L.stats.y + 1, stat2, C.uiText, bg);
+      // PLAYER-LEVEL-01: "Power 5,300 - Level 4" / "Items 4,450 + Spells 850" / "Next level at 8,000" (derived, never saved)
+      const pi = itemPowerTotal(e, defs), ps = spellPower(o.spellPage ? o.spellPage.book : null);
+      if (pi !== pwItems || ps !== pwSpells) { pwItems = pi; pwSpells = ps; pw1 = headerText(pi + ps); pw2 = breakdownText(pi, ps); pw3 = nextLevelText(pi + ps); }
+      text(L.stats.x, L.stats.y - 2, pw1, C.uiText, bg); text(L.stats.x, L.stats.y - 1, pw2, C.uiDim, bg); text(L.stats.x, L.stats.y + 2, pw3, C.uiDim, bg);
       // details of the item under the cursor, under the pack
       const lk = lockHover >= 0 && slotDisabled(nodes[lockHover].i) && idAt(nodes[lockHover]) ? lockHover : -1;
       if (lk >= 0 && (tipLock !== lk || tipCur !== -3)) { tipLock = lk; tipCur = -3; tipId = null; buildTip(nodes[lk], idAt(nodes[lk]), null, o.slotLockText ? o.slotLockText(nodes[lk].i) : 'Locked'); }
