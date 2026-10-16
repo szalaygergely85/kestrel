@@ -84,7 +84,7 @@ const mirrorPitched = (terms) => { // == projectDirPitched(terms, p - eye, mirro
 const reflOk = (rowM, rows, wKind, kindArr, depth, mi) => reflAccept(rowM, rows, wKind[mi], kindArr[mi], depth[mi], _w[0]);
 const rippleHit = (n) => rippleAccAt(_rip, n, _p[0], _p[1]) >= RIPPLE_ACC_MIN;
 const reflectAt = (reflTerms) => waterReflectAt(reflTerms.eyeZ, _p[0] - reflTerms.eyeX, _p[1] - reflTerms.eyeY, _p[2] - reflTerms.eyeZ, _skyLut, _lutElevTop, _refl);
-const R_SKY = WATER_REFLECT.skyMix, R_DARK = WATER_REFLECT.darken;
+const R_SKY = WATER_REFLECT.skyMix, R_DARK = WATER_REFLECT.darken, R_FLOOR = WATER_REFLECT.skyFloor; // TEASER-QA-02 sky floor
 
 function byte(v) { return v <= 0 ? 0 : v >= 255 ? 255 : Math.floor(v + 0.5); }
 
@@ -181,7 +181,7 @@ export function waterCompositeJS(fb, world, terms, pterms, pitched, skyPass) {
       if (reflOn) { // AUD-42: sky tint at the mirrored elevation + fresnel (fg and bg)
         reflectAt(reflTerms);
         const F = _refl[0];
-        const kS = F * R_SKY, kA = 1 - R_DARK * (1 - F), kB = 1 - kS, s1 = _refl[1] * kS, s2 = _refl[2] * kS, s3 = _refl[3] * kS; // == waterReflectMix x6 (inlined)
+        const kS = (F > R_FLOOR ? F : R_FLOOR) * R_SKY, kA = 1 - R_DARK * (1 - F), kB = 1 - kS, s1 = _refl[1] * kS, s2 = _refl[2] * kS, s3 = _refl[3] * kS; // == waterReflectMix x6 (inlined)
         wr = wr * kA * kB + s1; wg = wg * kA * kB + s2; wb = wb * kA * kB + s3;
         br0 = br0 * kA * kB + s1; bg0 = bg0 * kA * kB + s2; bb0 = bb0 * kA * kB + s3;
         const rK = _fin[fb8 + 6];
