@@ -452,6 +452,17 @@ fn fogCellDir(cell: vec2i, gridSize: vec2i) -> vec3f {
   }
   return normalize(select(pitchedCellDir(vec2f(cell), gridSize), su.pitchA.xyz, su.projMode == 2));
 }
+// AA-15 (OB-208): world-space glyph dice for soft-edge leaf cards (twin: fogShape.js folDiceJS). Block q = 0.25/0.5/1/2 m by distance.
+fn folDice(cell: vec2i, gridSize: vec2i, dist: f32, seed: i32) -> f32 {
+  let d = fogCellDir(cell, gridSize);
+  var q = 0.5;
+  if (dist >= 16.0) { q = 1.0; } if (dist >= 32.0) { q = 2.0; } if (dist >= 64.0) { q = 4.0; }
+  let iq = 1.0 / q;
+  let px = su.underCam.x + d.x * dist; let py = su.underCam.y + d.y * dist; let pz = su.fogView.x + d.z * dist;
+  let ix = i32(floor(px * iq)); let iy = i32(floor(py * iq)); let iz = i32(floor(pz * iq));
+  return hashFast(ix, iy + iz * 8191, seed);
+}
+
 fn pickCode(setId: i32, entryIdx: i32, hA: f32, useAlt: bool) -> i32 {
   let t = textureLoad(uSetI, vec2i(2 + entryIdx, setId), 0);
   let cnt = t.x;
@@ -910,6 +921,12 @@ ${look ? `    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceM
   let hcolM = select(vec3f(1.0), Lc / Lm, Lm > 1e-6);
   var mnFg = vec3f(0.0); var mnBg = vec3f(0.0); var mnCount = 0;
 
+  // AA-15 (OB-208): soft-edge leaf cards (F_SOFT_EDGE, kind 9) key the glyph dice on a world block, not the per-card u/v
+  var folOn = false; var folSeed = 0;
+  if (su.fogView.w > 0.5 && kindU == ${KIND_MESH}u) {
+    let mi0f = textureLoad(uMatI, vec2i(0, matId), 0);
+    folOn = (mi0f.y & 65536) != 0; folSeed = mi0f.x;
+  }
   for (var j = 0; j < 4; j++) {
     if (j >= su.n) { break; }
     for (var i = 0; i < 4; i++) {
@@ -966,7 +983,8 @@ ${look ? `    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceM
   let bAvg = bSum * invCount; let gbAvg = gbSum * invCount;
   let crAvg = crSum * invCount; let cgAvg = cgSum * invCount; let cbAvg = cbSum * invCount;
   let bgKAvg = bgKSum * invCount;
-  let hAAvg = hAW; let hBAvg = hBW;
+  var hAAvg = hAW; let hBAvg = hBW;
+  if (folOn) { hAAvg = folDice(cell, gridSize, dist, folSeed + 977); } // AA-15: leaf cards pick the alternate glyph from a world block
 
   var f = select(select((dist - su.fogStart) / (su.fogFull - su.fogStart), 1.0, dist >= su.fogFull), 0.0, dist <= su.fogStart);
   var fogFgC = su.fogFg; var fogBgC = su.fogBg;

@@ -56,6 +56,7 @@ export function fogDirShear(hx, hy, tanE, out) {
  * 2 ortho. terms = shear ProjTerms (mode 0) or PitchedTerms (modes 1/2). sun = {dirX,dirY,dirZ,sunI}.
  */
 export const fogShapeCtx = { on: false, mode: 0, camZ: 0, terms: null, sunX: 0, sunY: 0, sunZ: 0, sunI: 0,
+  camX: 0, camY: 0, aaFol: true, // AA-15 (OB-208): camera x/y + the foliage world-dice switch (`?aafol=0` -> setFoliageDice(false))
   // OB-089: outdoor MESH fog (terrain's far fog: palette.fog.far near->far colours over start..full, curve) instead of the interior fogV2.
   outdoor: false, tStart: 0, tFull: 1, tCurve: 1, tNear: /** @type {ArrayLike<number>|null} */ (null), tFar: /** @type {ArrayLike<number>|null} */ (null) };
 
@@ -70,6 +71,26 @@ export function meshOutdoorFog(world, cam, palette) {
   if (!fr || !palette.rgb[fr.color] || !palette.rgb[fr.colorFar]) return false;
   if (typeof world.isOutdoorAt === 'function') return world.isOutdoorAt(cam.x, cam.y, cam.z); // OB-205: z-aware (above a buried cellar = outside)
   return !(typeof world.sectorAt === 'function' && world.sectorAt(cam.x, cam.y));
+}
+/** AA-15 (OB-208): switch the foliage world-space glyph dice (default on). Read by the CPU twin (detailShade.js) and passShade.js (fogView.w). */
+export function setFoliageDice(on) { fogShapeCtx.aaFol = !!on; }
+
+/**
+ * AA-15 (OB-208): glyph dice for soft-edge leaf cards (kind 9), keyed to a WORLD-space block instead of the per-card u/v (leaf cards
+ * have unrelated u/v, so a card change under the cell centre re-rolled the alternate glyph every step). Block edge q (m) doubles with
+ * distance (0.25 / 0.5 / 1 / 2 at < 16 / 32 / 64 m), ~3-8 cells everywhere. Point = cam + unit cell dir * shade dist (both f32-rounded
+ * like the WGSL `folDice`); not for ortho (mode 2). Needs fogShapeCtx terms/cam for this frame (on === true).
+ */
+export function folDiceJS(col, row, dist, seed) { // seed = material seed + salt (977)
+  const c = fogShapeCtx, d = fogCellDirJS(col, row), fr = Math.fround;
+  const q = dist >= 64 ? 4 : dist >= 32 ? 2 : dist >= 16 ? 1 : 0.5, iq = 1 / q;
+  const px = fr(fr(c.camX) + fr(fr(d[0]) * fr(dist))), py = fr(fr(c.camY) + fr(fr(d[1]) * fr(dist))), pz = fr(fr(c.camZ) + fr(fr(d[2]) * fr(dist)));
+  const ix = Math.floor(px * iq), iy = Math.floor(py * iq), iz = Math.floor(pz * iq);
+  let h = (Math.imul(ix | 0, 0x27d4eb2d) ^ Math.imul((iy + Math.imul(iz, 8191)) | 0, 0x165667b1) ^ Math.imul(seed | 0, 0x9e3779b1)) | 0;
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
 }
 const _dir = [0, 0, 0], _ray = { ox: 0, oy: 0, oz: 0, dx: 0, dy: 0, dz: 0 };
 

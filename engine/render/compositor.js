@@ -414,7 +414,7 @@ export function renderWorld(fb, world, cam) {
     if (fsc.outdoor) { const fr = fb.palette.fog.far; fsc.tStart = fr.start; fsc.tFull = fr.full; fsc.tCurve = fr.curve || 1; fsc.tNear = fb.palette.rgb[fr.color]; fsc.tFar = fb.palette.rgb[fr.colorFar]; }
     if (fsc.on) {
       const fsun = sunFromWorld(world, fb.palette, skySunScratch);
-      fsc.mode = meshPitched ? (meshPitchTerms.ortho ? 2 : 1) : 0; fsc.terms = meshPitched ? meshPitchTerms : meshTerms; fsc.camZ = cam.z;
+      fsc.mode = meshPitched ? (meshPitchTerms.ortho ? 2 : 1) : 0; fsc.terms = meshPitched ? meshPitchTerms : meshTerms; fsc.camZ = cam.z; fsc.camX = cam.x; fsc.camY = cam.y; // AA-15: + cam x/y for folDiceJS
       fsc.sunX = fsun.dirX; fsc.sunY = fsun.dirY; fsc.sunZ = fsun.dirZ; fsc.sunI = fsun.sunI;
     }
     shadeSurfaces(fb, fb.gbuf, fb.matTable, fb.detailPass, fb.light);
@@ -441,7 +441,7 @@ export function renderWorld(fb, world, cam) {
     updateUnderState(world, cam.x, cam.y, cam.z, fb.under);
     if (fb.under.on) {
       const fsc = fogShapeCtx; // reuse the fog ray context for per-cell view rays
-      fsc.mode = meshPitched ? (meshPitchTerms.ortho ? 2 : 1) : 0; fsc.terms = meshPitched ? meshPitchTerms : meshTerms; fsc.camZ = cam.z;
+      fsc.mode = meshPitched ? (meshPitchTerms.ortho ? 2 : 1) : 0; fsc.terms = meshPitched ? meshPitchTerms : meshTerms; fsc.camZ = cam.z; fsc.camX = cam.x; fsc.camY = cam.y; // AA-15: + cam x/y for folDiceJS
       underwaterPass(fb.rt, fb.gbuf, fb.depth.depth, cam.x, cam.y, cam.z, fb.timeSec || 0, fb.under);
     }
   }
