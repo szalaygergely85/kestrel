@@ -78,7 +78,7 @@ function build(camBUse) {
   assert.ok(!no255.ok && no255.held255 > 0 && no255.held255Gpu === 0, 'GPU dropping the level-255 hold FAILs');
 
   const sky = { ...B, GI: B.GI.slice(), outFg: B.finalFg.slice(), outBg: B.finalBg.slice() };
-  for (let i = 0; i < N; i++) sky.GI[i * 4 + 1] = 8; // KIND_MODEL: never takes history
+  for (let i = 0; i < N; i++) sky.GI[i * 4 + 1] = 0; // KIND_NONE: never takes history
   const lowLive = compareStableRow({ cols: COLS, rows: ROWS, camA, camB, grid, A, B: sky });
   assert.ok(lowLive.mismatches === 0 && !lowLive.liveOk && !lowLive.ok, 'twin that takes no history fails the liveness floor');
   // mutation: one GPU glyph byte differs on a history cell outside the tie mask

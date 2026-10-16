@@ -101,7 +101,8 @@ const R = 'q.tower.blade.ready';
   const reach = new Set(), st = comp.entry.map((e) => e.node);
   while (st.length) { const i = st.pop(); if (reach.has(i)) continue; reach.add(i); const n = comp.nodes[i]; if (n.next != null && n.next >= 0) st.push(n.next); for (const c of n.choices) st.push(c.next); }
   ok(`every node reachable (${reach.size}/${comp.nodes.length})`, reach.size === comp.nodes.length);
-  ok('13 entries, last is unconditional', comp.entry.length === 19 && comp.entry[18].requires === null);
+  ok('19 entries + 1 hand-routed stone hand-in, last is unconditional', comp.entry.length === 20 && comp.entry[19].requires === null);
+  ok('QUEST-WALK-OWNER: burl.stone ready is hand-routed to the woken talk (no generated hand-in hides the goodbye)', JSON.parse(readFileSync(new URL('dialogue/bear.dialogue.json', root), 'utf8')).entry.some((e) => e.requires === 'q.burl.stone.ready' && e.node === 'bear.woken.1'));
   const long = comp.nodes.flatMap((n) => n.lines).filter((l) => l.length > 56);
   ok('every line <= 56 chars', long.length === 0, long.join('|'));
   ok('D-013: no player name in the lines', !comp.nodes.flatMap((n) => n.lines).some((l) => /\bWick\b/.test(l)));

@@ -11,7 +11,7 @@ import {
   computeDerivatives, shadeSurfaces, edgePass, createShadowParityRunner, SKY_GLOW,
 } from '../../../../engine/dev.js';
 import { shaftRule8a } from './shaftRule8a.js'; // CANOPY-SHAFT-01b rule 8a
-import { quadruped16, makeRowGI, createContactAO, setDynamicBlobs, buildContactBlobs } from '../../../../engine/dev.js'; // VOX-PARTS-16b: 12-part fixture for the `vox12` row
+import { quadruped16, makeRowGI } from '../../../../engine/dev.js'; import { createContactAO, setDynamicBlobs, buildContactBlobs } from '../../../../engine/index.js'; // VOX-PARTS-16b: 12-part fixture for the `vox12` row
 import { POSES as GPU_COMPARE_POSES, GATE_POSES } from '../../../../content/dev-poses.js';
 import { fillUnitGrid, placeholderTeamSpec } from '../unitsHarness.js'; // RE-06: instanced-units pose helpers
 import { groundLookFromParams } from '../../look/groundLookConfig.js'; // ENV-02d-LIVE
@@ -1222,13 +1222,14 @@ async function runGpuCompareSceneMode(ctx) {
     const gpuFg = rbw ? rbw.fg : null, gpuBg = rbw ? rbw.bg : null;
     if (poseShaft && lights && lights.shaft && rbw && wg) { // CANOPY-SHAFT-01b (38.76 rule 8a): frame B = lift on; hard asserts vs frame A (frame A is what the twin compare below uses)
       const aFg = new Uint8Array(rbw.fg), aBg = new Uint8Array(rbw.bg), lightA = new Uint32Array(await gpuPipeline.readbackLight());
+      const sA = (await wg.readbackShade(new Uint8Array(n * 4), new Uint8Array(n * 4))) || { fg: null, bg: null }; // frame A shade-stage colours (direction check, see shaftRule8a.js)
       lights.shaft.liftOff = false;
-      const r8 = await shaftRule8a({ n, aFg, aBg, lightA, sunI: sunFromWorld(world, assets.palette, {}).sunI, tint: SKY_GLOW.tint,
+      const sunIdbg = sunFromWorld(world, assets.palette, {}).sunI; const r8 = await shaftRule8a({ n, aFg, aBg, aSFg: sA.fg, aSBg: sA.bg, readShade: (f, b) => wg.readbackShade(f, b), lightA, sunI: sunIdbg, tint: SKY_GLOW.tint,
         renderB: () => { fbCompare.gpu = true; renderWorld(fbCompare, world, cam); gpuPipeline.frame(fbCompare, lights, cam, world); engine.overlay.flush(cam); rt.present(); }, // frame B gets FRESH readback arrays (rbw stays frame A)
         readCells: (f, b) => wg.readbackCells(f, b) });
       const okB = r8.ok, { lifted, liftedPct, glyphDiff, nonShaft, wrongDir, maxLift } = r8.stats, fails = r8.fails; overallOk = overallOk && okB;
-      console.log(`[gpucompare] ${okB ? 'PASS' : 'FAIL'} ${poseName} [shaft frame B vs A]: lifted=${liftedPct.toFixed(2)}% (>=1) glyphDiff=${glyphDiff} nonShaftChanged=${nonShaft} wrongDir=${wrongDir} maxLift=${maxLift}${fails.length ? ' :: ' + fails.join('; ') : ''}`);
-      rowsOut.push({ pose: poseName + ' [shaft frame B]', ok: okB, shaftB: { lifted, liftedPct, glyphDiff, nonShaft, wrongDir, maxLift } });
+      console.log(`[gpucompare] ${okB ? 'PASS' : 'FAIL'} ${poseName} [shaft frame B vs A]: lifted=${liftedPct.toFixed(2)}% (>=1) glyphDiff=${glyphDiff} nonShaftChanged=${nonShaft} wrongDir=${wrongDir} maxLift=${maxLift} samples=[${r8.stats.samples}]${fails.length ? ' :: ' + fails.join('; ') : ''}`);
+      rowsOut.push({ pose: poseName + ' [shaft frame B]', ok: okB, shaftB: { lifted, liftedPct, glyphDiff, nonShaft, wrongDir, maxLift, samples: r8.stats.samples, sunI: sunIdbg } });
       lights.shaft.liftOff = true; // restore frame A for the twin compare
       fbCompare.gpu = true; renderWorld(fbCompare, world, cam); gpuPipeline.frame(fbCompare, lights, cam, world); engine.overlay.flush(cam); rt.present();
     }
@@ -1372,9 +1373,11 @@ async function runGpuCompareSceneMode(ctx) {
 
   let infoRows = null;
   // WG-3a: with `?rays=2` the WebGPU pipeline also gets the INFO n=2 geometry rows (resolved cell-res set, kind%/holes vs the JS twin, no cells compare yet).
-  if (rayParam === 2) {
+  // RTX-RAYS-BAND-01 (38.79): `?rays=4&raysFarM=40` adds the same INFO rows for the banded n=4 resolve (raysFarM omitted = band off).
+  const infoRays = rayParam === 2 || rayParam === 4 ? rayParam : 0, infoBandM = infoRays === 4 ? Math.max(0, Number(params.get('raysFarM')) || 0) : 0;
+  if (infoRays) {
     const base2 = wg; // same terrain/voxel/view-model/instance inputs as the rays-1 pipeline
-    const pipeline2 = new base2.constructor(rt, { rays: 2, terrainEnabled: base2.terrainEnabled, shadows: base2.shadowOpts, gpuCull: base2.gpuCull });
+    const pipeline2 = new base2.constructor(rt, { rays: infoRays, resolveBandM: infoBandM, terrainEnabled: base2.terrainEnabled, shadows: base2.shadowOpts, gpuCull: base2.gpuCull });
     if (pipeline2.ready) {
       pipeline2.bind(matTable, assets.palette);
       pipeline2.setSource('scene');
@@ -1416,7 +1419,7 @@ async function runGpuCompareSceneMode(ctx) {
         const cmpCells2 = { glyphMatchPct: NaN }; // WebGPU: cells are judged by the main rows
         const cmpGeom2 = compareGeometry(gbuf, depthBuffer.depth, GI2, GA2, Depth2, cols, rows);
         infoRows.push({ pose: poseName, cmpCells: cmpCells2, cmpGeom: cmpGeom2, kindOk: cmpGeom2.kindMatchPct >= 99.5 });
-        console.log(`[gpucompare] INFO n=2 ${poseName}: kind=${cmpGeom2.kindMatchPct.toFixed(2)}%(>=99.5% required) glyph=${cmpCells2.glyphMatchPct.toFixed(2)}%(reported only) holes=${cmpGeom2.holes}`);
+        console.log(`[gpucompare] INFO n=${infoRays}${infoBandM ? `/band${infoBandM}` : ''} ${poseName}: kind=${cmpGeom2.kindMatchPct.toFixed(2)}%(>=99.5% required) glyph=${cmpCells2.glyphMatchPct.toFixed(2)}%(reported only) holes=${cmpGeom2.holes}`);
       }
       // 38.8a 26b: the constructor re-hooked rt.setCellPass; release pipeline2's GPU resources and give the hook back to the rays-1 pipeline
       pipeline2.dispose();
@@ -1445,7 +1448,7 @@ async function runGpuCompareSceneMode(ctx) {
   console.log(`[gpucompare] ${overallOk ? 'ALL PASS' : 'FAILURES ABOVE'}`);
 
   if (infoRows) {
-    text += `\n\n--- INFO ONLY: n=2 coverage-vote resolve (?rays=2, does not affect ALL PASS/FAILURES above) ---\n`;
+    text += `\n\n--- INFO ONLY: n=${infoRays}${infoBandM ? ` band ${infoBandM} m` : ''} coverage-vote resolve (?rays=${infoRays}, does not affect ALL PASS/FAILURES above) ---\n`;
     for (const r of infoRows) {
       text += `${r.kindOk ? 'OK' : 'FAIL'}  ${r.pose}\n` +
         `  geometry: kind ${r.cmpGeom.kindMatchPct.toFixed(2)}% (must stay >=99.5%)  holes ${r.cmpGeom.holes}\n` +

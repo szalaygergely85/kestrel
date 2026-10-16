@@ -91,9 +91,13 @@ export function createVitals(world, events, cfg, hooks) {
     }
   }
 
+  /** BH2-G1: Settings > Difficulty playerDmg for sourceless damage (falls, drowning, fire, traps); hooks.dmgMul() is read per call so a live change applies. */
+  function envMul(n) { return typeof h.dmgMul === 'function' ? Math.round(n * h.dmgMul()) || (n > 0 ? 1 : 0) : n; }
+
   /** SWIM-05: environmental damage (drowning) - ignores the invuln window, still honours godMode. Kills with `cause`. */
   function hurt(n, cause) {
     if (sim.godMode || sim.dead || !health || !(n > 0)) return false;
+    n = envMul(n); // BH2-G1: playerDmg applies to environmental sources
     health.hp = Math.max(0, health.hp - n);
     sim.hurtTick = tick; hpSince = 0; hpAcc = 0;
     if (health.hp === 0) { kill(cause); return true; }
@@ -125,6 +129,7 @@ export function createVitals(world, events, cfg, hooks) {
   function onHit(p) {
     if (!p || p.target !== 'player' || !player || !health) return;
     const scale = p.source !== 'player' ? cfg.beastDamageScale : 1;
+    // BH2-G1: beast hits already carry the Enemy-damage factor (difficulty dmg), so playerDmg is NOT applied here - it covers falls/drowning/fire/traps only (envMul)
     let n = Math.round((p.damage || 0) * scale);
     let dirX, dirY;
     if (p.source != null) {
@@ -145,6 +150,11 @@ export function createVitals(world, events, cfg, hooks) {
     if (sh && sh.blocking && dirX !== undefined && sh.covers(dirX, dirY)) {
       p.blocked = 1;
       sh.blockTick = tick;
+      if (sh.onBlock) sh.onBlock(n); // SHIELD-STAMINA-01: stamina drain, drop at 0
+      if (p.cause === 'arrow' && sh.hasStamina === true) { // R6-FIX D: only with the stamina rules attached - arrows are only softened: half damage from the front, no knock, still hurts
+        applyDamage(Math.round(n * (sh.arrowFactor !== undefined ? sh.arrowFactor : 0.5)), dirX, dirY);
+        return;
+      }
       const body = player.components && player.components.body;
       if (body) {
         body.vx = (body.vx || 0) + dirX * (cfg.blockKnockSpeed || 5.5);
@@ -165,7 +175,7 @@ export function createVitals(world, events, cfg, hooks) {
     let n = 0;
     if (dist > cfg.fallThreshold10m) n = cfg.fallDamage10m;
     else if (dist > cfg.fallThreshold6m) n = cfg.fallDamage6m;
-    if (n > 0) applyDamage(n); // no source -> no knockback
+    if (n > 0) applyDamage(envMul(n)); // no source -> no knockback; BH2-G1 playerDmg
   }
 
   function enterDead() {

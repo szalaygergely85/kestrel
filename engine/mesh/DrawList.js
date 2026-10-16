@@ -68,7 +68,7 @@ export function instancedRanges(item) {
 export const MAX_DRAW_ITEMS = 512;
 /**
  * OB-043 (38.46): items the placed-mesh GROUP feed (meshGroups.push, the only feed that grows with content) leaves free for
- * the feeds pushed after it (terrain near+far+skirts, voxel pool <= 48, unit/tree/scatter instance groups, cloths <= 16).
+ * the feeds pushed after it (terrain near+far+skirts, voxel pool <= 128, unit/tree/scatter instance groups, cloths <= 16).
  */
 export const DRAW_TAIL_RESERVE = 192;
 /**
@@ -91,7 +91,7 @@ const MAX_STRUCTS = 8;
  * @property {number} rangeFirst - triangles (static/terrain); voxel items use mesh.ranges per part
  * @property {number} rangeCount
  * @property {number} planeIdOr - levels (structSeq&7)<<28; voxels (slot&0xF)<<24; terrain 0
- * @property {number} objectId - levels structSeq; terrain 0x7000|chunkIndex; voxels 0x8000|slot (slot < 48; units >= 0x10000, view models near 0xFFFF)
+ * @property {number} objectId - levels structSeq; terrain 0x7000|chunkIndex; voxels 0x8000|slot (slot < 128; units >= 0x10000, view models near 0xFFFF)
  * @property {number} mirror - 0|1: part matrices have det < 0 (HANDS-01a, view-model hand mirror); front faces wind CW on screen, both twins flip the cull sign
  * @property {number} zBase - G-buffer z = worldZ - zBase - aux.zRef
  * @property {number} flags - DRAW_FLAG_*

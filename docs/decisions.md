@@ -1309,3 +1309,21 @@ Owner 2026-10-15 (later): "Make those priority" - D-107 stories (pc-b-queue sect
 
 ## D-112
 **2026-10-15, owner (PC-A session; replaces the SOS pattern of D-013 and amends D-111).** The signal blinks real **Morse code for "ALIVE"**: `.- .-.. .. ...- .` (A L I V E). Timing keeps the D-013 units: dot (short) 0.25 s on, dash (long) 0.75 s on, 0.25 s gap inside a letter, 0.75 s between letters, 2.5 s pause before the word repeats. Story: Maren taught Wick Morse at the old merchant Factory (merchants signalled with shuttered lamps), and almost nobody in Ferrum still reads it, which is why only he understands the light. "Factor's Code" from the writer's v2 draft becomes just Morse (the Factory stays). Everything that shows the old SOS rhythm (title card flourish + chart star pulse, relay-keeper note text, menu marks, the Bend waystone wake blink, far-tower pulse note, intro captions) switches to ALIVE; the canon text in docs/game-design.md section 3 changes with it.
+
+## D-117 (was PC-B D-112; renumbered after the PC-A D-112 clash)
+**2026-10-15, owner (PC-B session): no stamina system.** Owner: "i dont think we need [stamina] right?" - no combat stamina bar and no shared sprint/swim/shield bar. The shield keeps today's behaviour: raised + frontal (+-60 deg) = melee and arrows fully blocked, no drain. SHIELD-STAMINA-01 sim code stays inert (only active if stamina is ever attached); SHIELD-STAMINA-WIRE is cancelled. A dodge roll, if wanted later, uses a cooldown, not stamina. Swim/dive breath is unchanged.
+
+## D-113
+**2026-10-15, owner (PC-B session): no dodge roll for now.** Owner: "I dont wannt rolling for now". COMBAT-DODGE-ROLL-01 parked. The CROC-SOFT "break free by a dodge roll" rule needs another escape (e.g. attack or mash) when croc work resumes; the `combatDodge` hint text must not promise a roll.
+
+## D-114
+**2026-10-15, owner (PC-B session): crypt chest = a magic upgrade, not a heart piece.** Owner: "yes you can add a health roll, oooor a magic lvl upgrade roll, health could be upgraded by items paramater". Health already grows through item stats, so the earned crypt chest (UNDER-02 AC4) gives a one-time **Fireball Scroll** (plain name) that raises the fireball spell level by 1 (spell tier = PLAYER-LEVEL-01 spell bonus input), plus coins and a Health Potion. No heart piece in the crypt.
+
+**D-114 amended 2026-10-15 (owner):** "Not fireball, a random choosen one, you can add a spelltree" - the crypt scroll is a **Spell Scroll** that upgrades a randomly chosen learned spell (kept until a spell is learned); a spell tree epic (EP-SPELLS, docs/epics/ep-spells.md) follows.
+**D-114 corrected 2026-10-15 (owner):** "Not randomly. One choosen one" - the player CHOOSES which learned spell the Spell Scroll strengthens (one spell per scroll; cancel keeps the scroll).
+
+## D-115
+**2026-10-15, owner (PC-B session): the spell list is D-021 - "we already said what spells can be".** EP-SPELLS (2026-10-15 PO draft with Spark / Light Orb / Ward / Fire Ring / Gust / Updraft) ignored D-021 and is REPLACED: the spells are exactly **Fireball, Freeze, Telekinesis, Teleport** (D-021), gained at beacons/wells and by finishing quests, in a small skill tree (each spell up to level 3; Spell Scrolls raise a player-chosen learned spell, D-114). The non-D-021 spells built today (kestrel-4 branch spellsall) do NOT ship; their code is reused where it fits (Spark stun -> Freeze, Gust push -> Telekinesis). Teleport needs a short architect note (collision-safe target, camera) per D-021. Process lesson: every new epic must grep docs/decisions.md for the topic first.
+
+## D-116
+**2026-10-15, owner (PC-B session): player level from a summed POWER score (Diablo-style).** Owner: "items should have a power level like in diablo. you can add everything together, well balanced. and like 1000-2500 lvl2 etc". Every item has a power number (from item level, rarity and its stat lines); learned spells add power per spell level; the player's total power = the sum; the player level 1..10 comes from total-power bands (e.g. 1000-2500 = level 2). Replaces the weighted-average formula in the PLAYER-LEVEL-01 proposal (D-084 stays: no XP, level from items + spells). PO proposes the power formula + band table, balanced so a full matching kit of item level N lands at player level ~N.

@@ -1,0 +1,129 @@
+// tools/flicker-gate.mjs (FLICKER-GATE-01): glyph-flicker regression gate.
+// This is the AA-05 / future render-change regression gate for OB-208.
+//
+// Run (needs a browser; use a port from your range):
+//   node tools/flicker-gate.mjs --port 9725 --save      # record docs/test-reports/flicker-baseline.json
+//   node tools/flicker-gate.mjs --port 9725             # compare against that baseline, exit 1 on FAIL
+//   node tools/flicker-gate.mjs --port 9725 --baseline other.json [--query <raw>]
+// It runs `tools/capture-browser.mjs --mode flicker --variant live --stable --rays 4 --port N`,
+// then reads the newest docs/test-reports/captures/*-flicker-live-grid.json (rows[0].metrics).
+// FAIL when any pose glyphOnly > baseline*1.15 + 0.3, or avg glyphOnly > baseline avg*1.10 + 0.2
+// (run-to-run noise is about +-0.3 %). A pose missing from the run also FAILs.
+import { spawnSync } from 'node:child_process';
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const ROOT = path.resolve(path.dirname(__filename), '..');
+const CAPTURES = path.join(ROOT, 'docs', 'test-reports', 'captures');
+export const DEFAULT_BASELINE = path.join(ROOT, 'docs', 'test-reports', 'flicker-baseline.json');
+
+export const POSE_MARGIN = { rel: 1.15, abs: 0.3 };
+export const AVG_MARGIN = { rel: 1.10, abs: 0.2 };
+
+// metrics -> { poses: {name: {totalPct, glyphOnlyPct}}, avg: {totalPct, glyphOnlyPct} }
+export function extractPoses(metrics) {
+  const m0 = metrics || {};
+  const poses = {};
+  for (const k of Object.keys(m0)) {
+    const m = /^poses\.([^.]+)\.(totalPct|glyphOnlyPct)$/.exec(k);
+    if (m) (poses[m[1]] ||= {})[m[2]] = m0[k];
+  }
+  const avg = { totalPct: m0['avg.totalPct'] ?? m0.avgTotalPct, glyphOnlyPct: m0['avg.glyphOnlyPct'] };
+  return { poses, avg };
+}
+
+const limit = (base, mg) => base * mg.rel + mg.abs;
+const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+
+// current/baseline: { poses, avg } -> { ok, rows:[{pose,total,glyphOnly,baseline,limit,verdict}], messages }
+export function compare(current, baseline) {
+  const rows = [];
+  const messages = [];
+  const names = [...new Set([...Object.keys(baseline.poses || {}), ...Object.keys(current.poses || {})])];
+  for (const pose of names) {
+    const b = baseline.poses?.[pose];
+    const c = current.poses?.[pose];
+    if (!c || !isNum(c.glyphOnlyPct)) {
+      rows.push({ pose, total: null, glyphOnly: null, baseline: b?.glyphOnlyPct ?? null, limit: null, verdict: 'FAIL' });
+      messages.push(`pose "${pose}" is in the baseline but missing from this run`);
+      continue;
+    }
+    if (!b || !isNum(b.glyphOnlyPct)) { // new pose: reported, not gated
+      rows.push({ pose, total: c.totalPct, glyphOnly: c.glyphOnlyPct, baseline: null, limit: null, verdict: 'NEW' });
+      continue;
+    }
+    const lim = limit(b.glyphOnlyPct, POSE_MARGIN);
+    const bad = c.glyphOnlyPct > lim;
+    rows.push({ pose, total: c.totalPct, glyphOnly: c.glyphOnlyPct, baseline: b.glyphOnlyPct, limit: lim, verdict: bad ? 'FAIL' : 'PASS' });
+    if (bad) messages.push(`pose "${pose}" glyphOnly ${c.glyphOnlyPct.toFixed(2)} % > limit ${lim.toFixed(2)} % (baseline ${b.glyphOnlyPct.toFixed(2)} %)`);
+  }
+  const ca = current.avg?.glyphOnlyPct, ba = baseline.avg?.glyphOnlyPct;
+  if (!isNum(ca)) {
+    rows.push({ pose: 'AVG', total: null, glyphOnly: null, baseline: ba ?? null, limit: null, verdict: 'FAIL' });
+    messages.push('avg glyphOnly missing from this run');
+  } else if (isNum(ba)) {
+    const lim = limit(ba, AVG_MARGIN);
+    const bad = ca > lim;
+    rows.push({ pose: 'AVG', total: current.avg.totalPct ?? null, glyphOnly: ca, baseline: ba, limit: lim, verdict: bad ? 'FAIL' : 'PASS' });
+    if (bad) messages.push(`avg glyphOnly ${ca.toFixed(2)} % > limit ${lim.toFixed(2)} % (baseline ${ba.toFixed(2)} %)`);
+  }
+  return { ok: rows.every((r) => r.verdict !== 'FAIL'), rows, messages };
+}
+
+const f = (v) => (isNum(v) ? v.toFixed(2) : '-');
+export function formatTable(result) {
+  const head = ['pose', 'total%', 'glyphOnly%', 'baseline%', 'limit%', 'verdict'];
+  const lines = result.rows.map((r) => [r.pose, f(r.total), f(r.glyphOnly), f(r.baseline), f(r.limit), r.verdict]);
+  const w = head.map((h, i) => Math.max(h.length, ...lines.map((l) => l[i].length)));
+  const fmt = (l) => l.map((c, i) => c.padEnd(w[i])).join('  ');
+  const out = [fmt(head), ...lines.map(fmt), '', result.ok ? 'FLICKER GATE: PASS' : 'FLICKER GATE: FAIL'];
+  for (const m of result.messages) out.push('  - ' + m);
+  return out.join('\n');
+}
+
+function newestCapture() {
+  const files = readdirSync(CAPTURES).filter((n) => /-flicker-live-grid\.json$/.test(n))
+    .map((n) => ({ n, t: statSync(path.join(CAPTURES, n)).mtimeMs })).sort((a, b) => b.t - a.t);
+  if (!files.length) throw new Error('no *-flicker-live-grid.json capture found');
+  return path.join(CAPTURES, files[0].n);
+}
+
+function parseArgs(argv) {
+  const o = {};
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--port') o.port = argv[++i];
+    else if (argv[i] === '--save') o.save = true;
+    else if (argv[i] === '--baseline') o.baseline = argv[++i];
+    else if (argv[i] === '--query') o.query = argv[++i];
+    else throw new Error('unknown arg ' + argv[i]);
+  }
+  return o;
+}
+
+function main() {
+  const o = parseArgs(process.argv.slice(2));
+  if (!o.port) throw new Error('--port <N> is required');
+  const args = [path.join(ROOT, 'tools', 'capture-browser.mjs'), '--mode', 'flicker', '--variant', 'live', '--stable', '--rays', '4', '--port', String(o.port)];
+  if (o.query) args.push('--query', o.query);
+  const r = spawnSync(process.execPath, args, { cwd: ROOT, stdio: 'inherit' });
+  if (r.status !== 0) throw new Error('capture-browser exited with ' + r.status);
+  const file = newestCapture();
+  const cap = JSON.parse(readFileSync(file, 'utf8'));
+  const cur = extractPoses(cap.rows?.[0]?.metrics);
+  const blPath = o.baseline || DEFAULT_BASELINE;
+  if (o.save) {
+    writeFileSync(blPath, JSON.stringify({ sha: cap.sha, date: cap.date, poses: cur.poses, avg: cur.avg }, null, 2) + '\n');
+    console.log('baseline written: ' + path.relative(ROOT, blPath));
+    return;
+  }
+  if (!existsSync(blPath)) throw new Error('no baseline at ' + blPath + ' (run with --save first)');
+  const res = compare(cur, JSON.parse(readFileSync(blPath, 'utf8')));
+  console.log(formatTable(res));
+  process.exitCode = res.ok ? 0 : 1;
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  try { main(); } catch (e) { console.error('flicker-gate: ' + e.message); process.exit(1); }
+}

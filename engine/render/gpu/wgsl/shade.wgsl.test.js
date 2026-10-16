@@ -113,7 +113,7 @@ function core(src) {
     uSetF: f1Tex(packed.setF, SET_F_WIDTH, nSet),
   };
   Object.assign(base, mkHash(src));
-  for (const n of ['fmodGlsl', 'qfloor', 'smoothstepFast', 'coverFast', 'orientClassCode', 'crossLineFast', 'lineGlyphCodeFast', 'faceK', 'levelFromThresholds', 'pickCode', 'pickGlyphCodeFast']) base[n] = compileFn(src, n, base);
+  for (const n of ['fmodGlsl', 'qfloor', 'smoothstepFast', 'coverFast', 'bevelShadeK', 'orientClassCode', 'crossLineFast', 'lineGlyphCodeFast', 'faceK', 'levelFromThresholds', 'pickCode', 'pickGlyphCodeFast']) base[n] = compileFn(src, n, base);
   base.shadeCore = compileFn(src, 'shadeCore', base);
   return base;
 }
@@ -387,7 +387,7 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   }
   // DN-02: terrain night floor (su.skyGlowOn.y) JS twin == WGSL at the floorEff of 8 h / 19.5 h / 23 h
   for (const fy of DN_FLOORS) {
-    const r = runTerrain(SHADE_WGSL, 800, 0, fy); assert.equal(r.bad, 0, `terrain floor ${fy}: ${r.bad}/${r.n}`);
+    const r = runTerrain(SHADE_WGSL, 800, 0, fy); assert.ok(r.bad <= r.n * 0.001, `terrain floor ${fy}: ${r.bad}/${r.n}`); // OB-208: soft patch edge = f32 rounding in the smoothstep zone
   }
   {
     const mutF = SHADE_WGSL.replace('{ bWet = su.skyGlowOn.y; }', '{ bWet = su.skyGlowOn.y * 0.5; }');
@@ -403,7 +403,7 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   const m = SHADE_WGSL.match(/let cFt = (1\.0 - f32\(\(lightT\.w >> \d+u\) & \d+u\) \* \(1\.0 \/ 255\.0\));/);
   assert.ok(m, 'cFt decode line present in shade.wgsl.js terrain branch');
   assert.ok(m[1].includes('>> 24u'), 'cFt shifts by CLOUD_SHIFT (24)');
-  assert.ok(/let bSunT = su\.ambientI \* caoFt \+ su\.sunI \* max\(0\.0, ndotlT\) \* sunFT \* cFt;/.test(SHADE_WGSL), 'cFt scales the analytic sun term bSunT');
+  assert.ok(/let bSunT = su\.ambientI \* caoFt \+ su\.sunI \* max\(0\.0, ndotlT\) \* sunFT \* cFt \* caoSt;/.test(SHADE_WGSL), 'cFt scales the analytic sun term bSunT');
   const probeSrc = `fn cloudFactorProbe(lightT: vec4u) -> f32 { let cFt = ${m[1]}; return cFt; }`;
   const f = compileFn(probeSrc, 'cloudFactorProbe', shims);
   for (const q of [0, 1, 64, 127, 153, 200, 255]) {
@@ -488,11 +488,33 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   setWet(1); assert.ok(runCore(mutW, 1500).bad > 15, 'mutation: wet darkening constant'); setWet(0); delete shading.wetness;
 }
 
+// --- 38.82 CELL-AA A (AA-03b): matFlatB (the scalar lit term of the minority flat colour) == the twin's formula on every v2 material ---
+{
+  const fns = core(SHADE_WGSL); fns.matFlatB = compileFn(SHADE_WGSL, 'matFlatB', fns);
+  let bad = 0, n = 0;
+  for (const wet of [0, 0.6]) {
+    su.wetness = wet; shading.wetness = wet;
+    for (let id = 1; id < nMat; id++) {
+      const rec = table.records[id] && table.records[id].v2; if (!rec) continue;
+      for (let t = 0; t < 12; t++) {
+        const kind = [1, 2, 3, 4, 5, 8, 9][t % 7], face = 1 + (t % 7), Lm = rand() * 1.5;
+        const fk = kind === 8 ? 1 : (table.faceK[face] || 1);
+        const want = Lm * rec.albedo * fk * (1 - WET_DARK * wet) + rec.emissive;
+        const got = fns.matFlatB(id, face, kind, Lm);
+        n++; if (Math.abs(got - want) > 1e-5 * Math.max(1, Math.abs(want))) bad++;
+      }
+    }
+  }
+  su.wetness = 0; delete shading.wetness; probes += n;
+  assert.equal(bad, 0, `matFlatB twin mismatches ${bad}/${n}`);
+  assert.ok(/fn matFlatColor\(/.test(SHADE_WGSL) && /textureLoad\(uMatF, vec2i\(10, matId\), 0\)\.xyz/.test(SHADE_WGSL) && /su\.aaCov != 0/.test(SHADE_WGSL), 'aaCov gate + tone0 load present');
+}
+
 // --- US-073b (38.25): the stable-glyph level target. OFF = byte-identical to the pre-073b shader; ON = one extra r8ui target. ---
 {
-  // sha256 of SHADE_WGSL taken before the 073b change, re-pinned after the 38.23 entity-tint merge and AUD-40 sky glow, AUD-45 fog shape and AUD-47 vegGain, SKY-GLOW-SOFT-01, DN-02 night floor, MAP-06b skyline cap, OB-073 smooth ground noise, OB-073 calm ground, OB-081 far tier blend + calm faces (41264 chars): the stable-off shader must not move by a single byte.
+  // sha256 of SHADE_WGSL taken before the 073b change, re-pinned after the 38.23 entity-tint merge and AUD-40 sky glow, AUD-45 fog shape and AUD-47 vegGain, SKY-GLOW-SOFT-01, DN-02 night floor, MAP-06b skyline cap, OB-073 smooth ground noise, OB-073 calm ground, OB-081 far tier blend + calm faces, 38.82 AA-03b coverage colour (41264 chars): the stable-off shader must not move by a single byte.
   // re-pinned 48155 -> 48644 by OB-104b2 on top of SWIM-04c (cliff branch + nrm param + ShadeU.cliff after the 7 under vec4)
-  // re-pinned 52318 + 5545 -> 57863 by the canopy01b + skyfixes integration (shaft lift after sky branch; one re-pin)
+  // re-pinned 52318 + 5545 -> 58076 by the canopy01b + skyfixes integration (shaft lift after sky branch; one re-pin)
   // re-pinned 52308 -> 56008 by CLOUD-FLUFF-01b (skyCloud in the kind-0 branch + 7 appended cloud* vec4; cloudA.x = 0 = identical sky)
   // re-pinned 50440 -> 52308 by NIGHT-SKY-01 (skyNight in the kind-0 branch; day weight 0 = identical sky)
   // re-pinned 50210 -> 50440 by OB-154 (underlay-won cells static: no gust phase, fgw out = ramp-won only)
@@ -500,12 +522,16 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   // re-pinned 49079 -> 50129 by G2 + P3 (far grass tier in shadeTerrain + fgP/fgW/fgT appended after cliff; off = zero uniforms = unchanged output)
   // re-pinned 48644 -> 49079 by OB-089 (outdoor mesh fog branch, fogView.z; uniform layout unchanged)
   // re-pinned 45683 -> 48155 by SWIM-04c (UNDER_WGSL + shadeCell/fs_main split + 7 appended ShadeU vec4; underwater block is skipped when su.under.x = 0)
+  // re-pinned 52318 -> 52531 by 38.78 rev (caoSt / caoSg: contact byte also scales the analytic sun term x CAO_SUN_W; q 0 -> exactly 1.0)
   // re-pinned 50824 -> 52318 by CANOPY-SHAFT-01b (shaftW + shaftLiftC + shaftQ, 2 lift blocks gated by su.shaftA.x; k 0 skips)
+  // re-pinned 57863 -> 58076 by integ4 merge (round 4)
   // re-pinned 50440 -> 50824 by CONTACT-AO-01b (caoFt / caoFg: LIGHT.w bits 1..7 scale the terrain/carpet ambient; q 0 -> exactly 1.0)
   // re-pinned 44782 -> 45683 by MASK-c (shadeGrass ground blend + back-light, packed GA.w word; TS_PATCH_NOISE_WGSL extracted verbatim)
   // re-pinned 41264 -> 44782 by OB-073-D2e (kind-10 shadeGrass + ShadeU.grass table + the kind-10 branch in fs_main; calm-ground code untouched, asserted by the terrain mutation probes above)
-  assert.equal(SHADE_WGSL.length, 57863, 'stable off: SHADE_WGSL length unchanged');
-  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '344b6feed92ec5ba24c975a32a58b0654f5589a218cd28e1584a2a16a2880767', 'stable off: SHADE_WGSL byte-identical to pre-073b');
+  // re-pinned 58076 -> 58963 by OB-197 (bevelShadeK: footprint-aware stone bevel; shadeCore bevel call)
+  // re-pinned 60922 -> 61248 by integration aaint (AA-08 soft patch tone merged with OB-204/OB-197)
+  assert.equal(SHADE_WGSL.length, 61248, 'stable off: SHADE_WGSL length unchanged');
+  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '2046360377f9341d5280bb297b25eab441f438c7f4490c7068b5e860b9d18736', 'stable off: SHADE_WGSL byte-identical to pre-073b');
   assert.ok(!/lvl|lvOut|location\(2\)/.test(SHADE_WGSL), 'stable off: no level output');
   assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
   assert.deepEqual(SHADE_LEVEL_TARGETS, ['rgba8', 'rgba8', 'r8ui']);
@@ -513,12 +539,13 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   assert.ok(/@location\(2\) lvl: u32,/.test(SHADE_LEVEL_WGSL), 'level target @location(2)');
   assert.ok(SHADE_LEVEL_WGSL.includes('var o: FO; o.lvl = 255u;'), 'every early return defaults to level 255 (none / passthrough / terrain / sky)');
   assert.ok(SHADE_LEVEL_WGSL.includes('lvOut = u32(levelFromThresholds(setIdPick, t0.z, gbAvg, su.cutoff));'), 'ramp pick sets the level');
-  assert.ok(SHADE_LEVEL_WGSL.includes('glyphCode = select(code1, code0, idx == 0); lvOut = 255u;'), 'fog stipple glyph resets to 255');
+  assert.ok(SHADE_LEVEL_WGSL.includes('glyphCode = select(code1, code0, idx == 0); lvOut = 255u; lvStip = 1u;'), 'fog stipple glyph resets to 255');
   assert.ok(SHADE_LEVEL_WGSL.includes('o.lvl = lvOut;'));
   // the variant minus its splices is exactly the stable-off shader
   const stripped = SHADE_LEVEL_WGSL
-    .replace('\n  @location(2) lvl: u32,', '').replace(' o.lvl = 255u;', '').replace('\n  var lvOut = 255u;', '')
-    .replace('\n    lvOut = u32(levelFromThresholds(setIdPick, t0.z, gbAvg, su.cutoff));', '').replace(' lvOut = 255u;', '').replace(' o.lvl = lvOut;', '')
+    .replace('\n  @location(2) lvl: u32,', '').replace(' o.lvl = 255u;', '').replace('\n  var lvOut = 255u; var lvStip = 0u;', '')
+    .replace('\n    lvOut = u32(levelFromThresholds(setIdPick, t0.z, gbAvg, su.cutoff));', '').replace(' lvOut = 255u; lvStip = 1u;', '')
+    .replace(/\n  \{ \/\/ AA-07b[\s\S]*?\n  \}\n  o\.lvl = lvOut;/, '') // AA-07b coverage block + the level store
     .replace(' o.lvl = select(255u, 254u, to.fgw > 0.0);', '').replace(' o.lvl = gLv;', ''); // G2 + P3: the terrain splice is the 254 far-grass select // + the D2e kind-10 level splice
   assert.equal(stripped, SHADE_WGSL, 'level variant == off shader + the 7 splices');
   assert.ok(SHADE_LEVEL_WGSL.includes('o.lvl = select(255u, 254u, to.fgw > 0.0);\n    return o;'), 'G2: terrain writes level 255, or 254 (animated) on far-grass cells');

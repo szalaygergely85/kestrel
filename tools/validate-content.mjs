@@ -67,9 +67,12 @@ addonChars.add('char.kit'); // OB-086: the default kit character is registered a
 // overworld_far's terrain RECIPE - still code, unaffected) already built.
 import { validateVoxelModel, loadContentPack, PROP_SCALE_MIN, PROP_SCALE_MAX, meshFromJSON, meshFromBin, validateMesh, validateUnderSite, validateLinks, validateLook, maskFromJSON, validateDialogue } from '../engine/index.js'; // engine/index.js: the public entry, never a deep import
 import { pathToFileURL, fileURLToPath } from 'node:url';
+import { normalizeQuestDef } from '../game/js/quest/sim/questFormat.js'; // UNDER-07: D-106 new-format quest files read as the legacy shape
 import { readFile } from 'node:fs/promises';
 import { validateQuestDefinition } from '../game/js/quest/sim/quest.js';
 import { createCrafting } from '../game/js/quest/sim/crafting.js';
+import { lintSpellPlacements } from '../game/js/quest/sim/spellBooks.js'; // SPELL-09
+import { CHEST_TABLES } from '../game/js/quest/sim/chestDefs.js';
 
 const CLASSIC_SCRIPTS = [
   '../design/palette.js',
@@ -252,7 +255,7 @@ const MAX_ENDTEXT_LINE = 40;
  * at the first) and counts every check attempted, whether it passed or not.
  * @returns {{ errors: string[], checks: number }}
  */
-const MAX_OBJECTIVE_TEXT = 38, MAX_ITEM_NAME = 14, MAX_ITEM_DESC = 38;
+const MAX_OBJECTIVE_TEXT = 38, MAX_ITEM_NAME = 14, MAX_BOOK_NAME = 21, MAX_ITEM_DESC = 38;
 export function validateContent(ASSETS, opts = {}) {
   const errors = [];
   const warnings = [];
@@ -617,7 +620,7 @@ export function validateContent(ASSETS, opts = {}) {
     inlineText(def?.name, `items.defs.${id}.name`);
     inlineText(def?.desc, `items.defs.${id}.desc`);
     // S8-C-17b: writer-contract length limits (docs/story.md Sprint 8 texts)
-    if (typeof def?.name === 'string') check(def.name.length <= MAX_ITEM_NAME, `items.defs.${id}.name`, `name is ${def.name.length} chars, expected <= ${MAX_ITEM_NAME}`);
+    if (typeof def?.name === 'string') { const max = id.startsWith('book.spell.') ? MAX_BOOK_NAME : MAX_ITEM_NAME; check(def.name.length <= max, `items.defs.${id}.name`, `name is ${def.name.length} chars, expected <= ${max}`); } // SPELL-09: "Spell Book: <Spell>" is 21 chars at most
     if (typeof def?.desc === 'string') check(def.desc.length <= MAX_ITEM_DESC, `items.defs.${id}.desc`, `desc is ${def.desc.length} chars, expected <= ${MAX_ITEM_DESC}`);
   }
   for (const [id, table] of Object.entries(ASSETS?.items?.loot || {})) {
@@ -918,6 +921,12 @@ export function validateContent(ASSETS, opts = {}) {
     warnings.push(...dl.warnings);
     checks += dl.checks;
   }
+  if (opts.spellLint && opts.quests && opts.quests.length) { // SPELL-09 (real content only: the CLI sets spellLint) AC1: every placed spell has exactly one learn source; no stray / unknown Spell Book
+    const rewards = new Map();
+    for (const q of opts.quests) { const d = q.def && normalizeQuestDef(q.def); const its = d && d.reward && d.reward.items; if (its) rewards.set(d.id, its.map((i) => i.id)); }
+    for (const m of lintSpellPlacements(CHEST_TABLES, rewards, itemDefs)) fail('spellBooks', m);
+    checks++;
+  }
   return { errors, warnings, infos, checks, meshOnlyCount };
 }
 
@@ -1122,7 +1131,7 @@ export function loadQuestFiles(dir) {
       const path = `${d}/${entry.name}`;
       if (entry.isDirectory()) walk(path);
       else if (entry.name.endsWith('.quest.json')) {
-        try { quests.push({ path, def: JSON.parse(readFileSync(path, 'utf8')) }); }
+        try { quests.push({ path, def: normalizeQuestDef(JSON.parse(readFileSync(path, 'utf8'))) }); }
         catch (e) { errors.push(`${path}: JSON parse failed: ${e.message}`); }
       }
     }
@@ -1179,7 +1188,7 @@ export function lintRegions(o) {
       }
     }
     // 4. region text present
-    const texts = [['title', q.title], ['returnText', q.returnText], ...(q.steps || []).flatMap((st, i) => [[`steps[${i}].journal`, st.journal], [`steps[${i}].objText`, st.objText]]), ...[...(q.lines?.offer || []), ...(q.lines?.done || [])].map((t, i) => [`lines[${i}]`, t])];
+    const texts = [['title', q.title], ['returnText', q.returnText], ...(q.steps || []).flatMap((st, i) => [[`steps[${i}].journal`, st.journal], [`steps[${i}].objText`, st.objText]]), ...[...(q.lines?.offer || []), ...(q.lines?.done || []), ...(q.lines?.accept || []), ...(q.lines?.decline || [])].map((t, i) => [`lines[${i}]`, t])];
     for (const [k, v] of texts) { if (typeof v !== 'string' || !v.trim()) out.push(`regions:${q.id}: ${k} is empty`); else if (/NEEDS WRITER/i.test(v)) out.push(`regions:${q.id}: ${k} still says NEEDS WRITER`); }
     if (!q.lines?.offer?.length) out.push(`regions:${q.id}: lines.offer is empty`);
   }
@@ -1205,6 +1214,67 @@ async function lintRegionsReal(ASSETS, sites) {
   return lintRegions({ geo: { bounds, regions }, quests: pack.quests, sites, relayIds: Object.keys(RELAY_WAKE), itemIds: new Set(Object.keys(ASSETS.items?.defs || {})), beastKinds: new Set(['boar', 'wolf', 'bear']), camps }); // kinds = quest.js kindOf() species
 }
 
+// QUEST-TEXT-LINT-01 (R19): player-visible quest + dialogue text. Pure; files = [{ path, json }] (path under content/quests or content/dialogue).
+// Visible keys only (ids in id/key/next/requires/setFlag/node fields are fine). Kinds: writer, id, esc, objlen (<= 38), talklen (<= 56).
+const R19_VISIBLE = new Set(['title', 'text', 'journal', 'returnText', 'objText', 'nextHint', 'hint', 'hintTitle', 'prompt', 'accept', 'later', 'lines']);
+const R19_OBJ_KEYS = new Set(['text', 'objText', 'journal', 'returnText']); // objective / journal lines (quest files)
+export const R19_OBJ_MAX = 38, R19_TALK_MAX = 56;
+export function lintQuestText(files) {
+  const out = [];
+  for (const { path, json } of files) {
+    const isDialogue = /(^|[\/])dialogue[\/]/.test(path);
+    const walk = (v, where, key, visible) => {
+      if (typeof v === 'string') {
+        if (!visible || !v) return;
+        const add = (kind, msg) => out.push({ file: path, where, kind, text: v, msg });
+        if (/NEEDS WRITER/i.test(v)) add('writer', 'NEEDS WRITER');
+        if (/\b(mq|sq|note|flag|item)\.[a-z]/i.test(v)) add('id', 'raw id in player text');
+        if (/\besc\b/i.test(v)) add('esc', 'Esc hint');
+        if (!isDialogue && R19_OBJ_KEYS.has(key) && v.length > R19_OBJ_MAX) add('objlen', `${v.length} chars > ${R19_OBJ_MAX}`);
+        if (isDialogue && (key === 'text' || key === 'lines') && v.length > R19_TALK_MAX) add('talklen', `${v.length} chars > ${R19_TALK_MAX}`);
+      } else if (Array.isArray(v)) v.forEach((x, i) => walk(x, `${where}[${i}]`, key, visible));
+      else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) walk(x, where ? `${where}.${k}` : k, k, visible || R19_VISIBLE.has(k));
+    };
+    walk(json, '', '', false);
+  }
+  return out;
+}
+
+// Named allow-list of today's hits: "<file>|<kind>" -> max hits. It may only shrink (a larger count fails; so does a stale, too-high entry).
+export const R19_ALLOW = { // today's journal-length hits (writer to shorten later; may only shrink)
+  'content/quests/burl.boars.quest.json|objlen': 1,
+  'content/quests/burl.follow.quest.json|objlen': 1,
+  'content/quests/burl.stone.quest.json|objlen': 1,
+  'content/quests/ch12/pack.json|objlen': 52,
+  'content/quests/ch3/pack.json|objlen': 17,
+  'content/quests/ch3b/pack.json|objlen': 6,
+  'content/quests/m1.quest.json|objlen': 13,
+  'content/quests/mq.bend.call.quest.json|objlen': 2,
+  'content/quests/mq.ford.mirror.quest.json|objlen': 2,
+  'content/quests/mq.ford.stones.quest.json|objlen': 1,
+  'content/quests/mq.river.road.quest.json|objlen': 1,
+  'content/quests/mq.smoke.quest.json|objlen': 2,
+  'content/quests/regions/pack.json|objlen': 10,
+  'content/quests/sq.burl.blue.quest.json|objlen': 2,
+  'content/quests/tower.blade.quest.json|objlen': 3,
+  'content/quests/under.crypt.quest.json|objlen': 3,
+  'content/quests/under.graves.quest.json|objlen': 2,
+};
+export function applyR19Allow(hits, allow = R19_ALLOW) {
+  const errors = [], counts = {};
+  for (const h of hits) { const k = `${h.file}|${h.kind}`; counts[k] = (counts[k] || 0) + 1; }
+  for (const h of hits) { const k = `${h.file}|${h.kind}`; if (counts[k] > (allow[k] || 0) && !h.reported) { for (const x of hits) if (`${x.file}|${x.kind}` === k) x.reported = true; errors.push(`R19 ${h.file}: ${counts[k]} ${h.kind} hit(s), allowed ${allow[k] || 0}; first: ${h.where} "${h.text.slice(0, 60)}" (${h.msg})`); } }
+  for (const [k, n] of Object.entries(allow)) if ((counts[k] || 0) < n) errors.push(`R19 allow-list '${k}' is stale (${counts[k] || 0} < ${n}): lower it`);
+  return errors;
+}
+
+function readJsonTree(dir, suffix) {
+  const out = [];
+  const walk = (d) => { for (const e of readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) { const p = `${d}/${e.name}`; if (e.isDirectory()) walk(p); else if (e.name.endsWith(suffix)) { try { out.push({ path: p, json: JSON.parse(readFileSync(p, 'utf8')) }); } catch { /* parse errors reported elsewhere */ } } } };
+  if (existsSync(dir)) walk(dir);
+  return out;
+}
+
 async function main() {
   const ASSETS = await loadDesignAssets();
   const meshFilesDir = fileURLToPath(new URL('../content/meshes', import.meta.url));
@@ -1215,7 +1285,7 @@ async function main() {
   const lootFile = loadLootFile(fileURLToPath(new URL('../content/items/loot.json', import.meta.url)));
   const packQuests = await loadPackQuests(fileURLToPath(new URL('../content/quests', import.meta.url)), ASSETS?.items?.defs);
   questFiles.quests.push(...packQuests.quests); questFiles.errors.push(...packQuests.errors);
-  const { errors: allErrors, warnings, infos, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir, maskFilesDir, dialogueFilesDir, sites: packQuests.sites, quests: questFiles.quests, areas: questFiles.areas, areaPath: questFiles.areaPath, ...recipeFile, ...lootFile });
+  const { errors: allErrors, warnings, infos, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir, maskFilesDir, dialogueFilesDir, sites: packQuests.sites, quests: questFiles.quests, spellLint: true, areas: questFiles.areas, areaPath: questFiles.areaPath, ...recipeFile, ...lootFile });
   allErrors.push(...questFiles.errors);
   try { // GI-PROBE-02b: baked GI probe files are optional; missing / stale = warning only (GI stays off in that zone)
     const gi = await import('./bake-gi.mjs'), def = JSON.parse(readFileSync(new URL('../content/worlds/world_m1.world.json', import.meta.url), 'utf8'));
@@ -1235,6 +1305,14 @@ async function main() {
     allErrors.push(...validateSpawnAreas(JSON.parse(readFileSync(`${bd}/spawnAreas.json`, 'utf8')), JSON.parse(readFileSync(`${bd}/kinds.json`, 'utf8'))).map((m) => `spawn areas: ${m}`));
   } catch (e) { allErrors.push(`beasts: could not validate content/beasts: ${e.message}`); }
   try { allErrors.push(...await lintRegionsReal(ASSETS, packQuests.sites || {})); } catch (e) { allErrors.push(`regions: lint crashed: ${e.message}`); }
+  { // QUEST-TEXT-LINT-01 R19
+    const root = fileURLToPath(new URL('..', import.meta.url)).split(String.fromCharCode(92)).join('/').replace(/[/]$/, '');
+    const rel = (f) => ({ ...f, path: f.path.split(String.fromCharCode(92)).join('/').replace(root + '/', '') });
+    const hits = lintQuestText([...readJsonTree(fileURLToPath(new URL('../content/quests', import.meta.url)), '.json'), ...readJsonTree(dialogueFilesDir, '.json')].map(rel));
+    const by = {}; for (const h of hits) by[h.kind] = (by[h.kind] || 0) + 1;
+    infos.push(`R19 quest/dialogue text: ${hits.length} hit(s) ${JSON.stringify(by)}; allow-list ${JSON.stringify(R19_ALLOW)}`);
+    allErrors.push(...applyR19Allow(hits));
+  }
   for (const w of warnings) console.warn(`WARN ${w}`);
   // CONTENT-LINT-01: `--lint` also runs tools/content-lint.mjs; its findings are printed as INFO/WARN and never fail validate-content
   if (process.argv.includes('--lint')) {

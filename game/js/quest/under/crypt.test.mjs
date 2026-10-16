@@ -2,6 +2,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { validateUnder } from '../../../../engine/index.js';
+import '../../../../design/palette.js';
+import '../../../../design/items.js';
 import { loadM1 } from './loadM1.mjs';
 import { CRYPT, cryptDoorAction, applyCryptDoor, cryptCleared, bindCryptFlags, syncCryptFlags, chestKey, DOOR_FLAG } from './crypt.js';
 import { buildChestDefs } from '../sim/chestDefs.js';
@@ -47,10 +49,10 @@ applyCryptDoor(world); ok(door.origin.z < z0 - 2.9, 'applyCryptDoor re-syncs aft
 
 // skeletons: crypt members are in rooms 2/3; the surface cemetery spawner ignores a player inside (dz rule), and vice versa
 const site = UNDER_SITES.find((s) => s.id === 'crypt');
-ok(site && site.members.length >= 4 && site.members.length <= 5 && !site.night && site.z === -56.8, 'crypt site: 4-5 skeletons, any time of day, at the crypt floor');
+ok(site && site.members.length >= 4 && site.members.length <= 6 && !site.night && site.z === -56.8, 'crypt site: 4-6 skeletons, any time of day, at the crypt floor');
 const pos = (m) => [site.anchor[0] + m[2], site.anchor[1] + m[3]];
 ok(site.members.every((m) => { const [x, y] = pos(m); return x > 1671 && x < 1678 && ((y > 1359 && y < 1366) || (y > 1349 && y < 1356)); }), 'every member home is inside room 2 or 3');
-ok(site.members.filter((m) => pos(m)[1] > 1357.5).length === 2, '2 skeletons in room 2, the rest in room 3');
+ok(site.members.filter((m) => pos(m)[1] > 1357.5).length === 3, '3 skeletons in room 2, the rest in room 3');
 const fake = (z) => ({ count: 1, down: [0], state: [0], entities: [{ transform: { z } }], slotOf: () => 0, riseMs: new Float32Array(1), cfgSteps: {}, steer: {}, setDown() {} });
 const cem = UNDER_SITES.find((s) => s.id === 'cemetery');
 const sp = createUnderSpawner({ sim: fake(groundAt(1644, 1372)), site: cem, state: {} });
@@ -72,4 +74,21 @@ ok(world.state[chestKey('chestCrypt')] === true && !world.state['under.crypt.che
 world.state[chestKey('chestCrypt')] = false; syncCryptFlags(world, ['chestCrypt']); ok(world.state[chestKey('chestCrypt')] === true, 'flag restored from the opened-chest list');
 const insp = JSON.parse(fs.readFileSync(new URL('../../../../content/dialogue/inspect.json', import.meta.url), 'utf8')), T = insp.texts || insp;
 for (const k of ['walls', 'coffin', 'banner', 'chest']) { const t = T['note.crypt.' + k]; ok(t && t.lines.length === 2 && t.lines.every((l) => l.length <= 56), 'inspect note.crypt.' + k); }
+// UNDER-CRYPT-REWARD-01: heart piece exactly once across save/load; locked until room 3 is cleared
+{
+  const { createChests } = await import('../sim/chest.js'), { ensureInventory, countOf } = await import('../sim/inventory.js');
+  const { collect, KEY_PIECES } = await import('../sim/heartPieces.js');
+  const items = globalThis.ASSETS.items.defs, d = buildChestDefs(world).find((q) => q.id === 'chestCrypt');
+  const pose = { x: d.x + d.frontX, y: d.y + d.frontY, z: d.z, forwardX: -d.frontX, forwardY: -d.frontY };
+  const hp = { hp: 5, max: 20 }, state = {}, inv = ensureInventory({ transform: {}, components: {} }, { pack: [], left: null, right: null });
+  const run = (opened) => { const c = createChests([d], { items, inventoryOf: () => inv, events: { emit() {} }, openedChests: opened, seed: 7 }); const r = c.open('chestCrypt', pose); c.step(1); return { r, c }; };
+  const g = { sim: { slotOf: () => 0, down: [0], state: [0] } };
+  ok(cryptCleared({ state: {} }, g.sim) === false, 'locked (cryptCleared false) while room 3 skeletons live');
+  const a = run([]); ok(a.r && countOf(inv, 'heart.piece') === 1, 'first open: 1 heart piece in the pack');
+  const got = collect(inv, hp, state); ok(got && got.n === 1 && state[KEY_PIECES] === 1, 'heart piece count +1');
+  const saved = a.c.openedIds(); const b = run(saved);
+  ok(!b.r && countOf(inv, 'heart.piece') === 0 && collect(inv, hp, state) === null && state[KEY_PIECES] === 1, 'after Continue: no second heart piece');
+  const t = (seed) => { const i2 = ensureInventory({ transform: {}, components: {} }, { pack: [], left: null, right: null }); const c = createChests([d], { items, inventoryOf: () => i2, events: { emit() {} }, seed }); c.open('chestCrypt', pose); c.step(1); return i2.slots.filter((s) => s.id).map((s) => s.id + 'x' + s.n).join(); };
+  ok(t(3) === t(3), 'deterministic for a seed');
+}
 console.log(`crypt.test: ${n} checks ok`);

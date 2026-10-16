@@ -14,7 +14,7 @@ import { compileEmitterDef, basisInto, D, DEF_STRIDE, MAX_RAMP, HZ } from './emi
 
 export const PARTICLE_CAP = 2048;
 export const MAX_EMITTERS = 64;
-export const MAX_PARTICLE_DEFS = 32;
+export const MAX_PARTICLE_DEFS = 64; // def ids are Uint8; 32 was exhausted by creepMotes (integ5 merge)
 const SLOT_BITS = 6; // handle = (generation << 6) | slot
 
 /**

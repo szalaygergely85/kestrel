@@ -120,6 +120,32 @@ export function addItem(inv, defs, id, n) {
 }
 
 /**
+ * OB-203: moves pack slot `a` onto pack slot `b` (drag in the inventory). Same item: stacks into `b` up to
+ * `defs[id].stackMax`, the rest stays in `a`; otherwise the two slots swap (an empty `b` = plain move).
+ * Hands reference item ids, not slots, so they are unaffected. Returns false when nothing changed.
+ * @param {{slots: Array<{id: string|null, n: number}>}} inv
+ * @param {Record<string, any>} defs
+ * @param {number} a
+ * @param {number} b
+ * @returns {boolean}
+ */
+export function moveSlot(inv, defs, a, b) {
+  if (a === b || !(a >= 0 && a < SLOTS && b >= 0 && b < SLOTS)) return false;
+  const sa = inv.slots[a], sb = inv.slots[b];
+  if (!sa.id) return false;
+  if (sb.id === sa.id) {
+    const max = (defs[sa.id] && defs[sa.id].stackMax) || 1, add = Math.min(max - sb.n, sa.n);
+    if (add <= 0) return false;
+    sb.n += add; sa.n -= add;
+    if (sa.n <= 0) { sa.id = null; sa.n = 0; }
+    return true;
+  }
+  const id = sa.id, n = sa.n;
+  sa.id = sb.id; sa.n = sb.n; sb.id = id; sb.n = n;
+  return true;
+}
+
+/**
  * Removes up to `n` of `id` from the pack (last slot first, so an earlier partial stack stays intact).
  * Returns how many were actually removed. When the item's total count reaches 0, a hand that still
  * referenced it is emptied (the "count 0 empties the hand" rule).

@@ -81,10 +81,12 @@ export function generateForNpc(raw, npcId, defs, snippets, opts = {}) {
         rows.ready.push({ node: k + '.ready', requires: 'q.' + d.id + '.ready' });
       } else if (state === 'available') {
         const off = linesFor(d, 'available', sn, giverName, opts.itemDefs), last = off[off.length - 1];
-        const choices = [{ next: k + '.accepted', setFlag: 'q.' + d.id + '.accept', text: cap(ch.accept || "I'll do it.", 40) }, { next: laterId, text: cap(ch.later || 'Not yet.', 40) }];
+        const dec = d.lines && d.lines.decline && d.lines.decline.length ? k + '.later' : null; // writer's per-quest decline reply (optional)
+        if (dec) nodes[dec] = mk(d.lines.decline.map((l) => cap(l)), { end: true });
+        const choices = [{ next: k + '.accepted', setFlag: 'q.' + d.id + '.accept', text: cap(ch.accept || "I'll do it.", 40) }, { next: dec || laterId, text: cap(ch.later || 'Not yet.', 40) }];
         if (off.length > 1) { nodes[k + '.offer.1'] = mk(off.slice(0, -1), { next: k + '.offer.2' }); nodes[k + '.offer.2'] = mk([last], { choices }); } else nodes[k + '.offer.1'] = mk([last], { choices });
-        nodes[k + '.accepted'] = mk(linesFor(d, 'active', sn, giverName, opts.itemDefs), { end: true });
-        usedLater = true;
+        nodes[k + '.accepted'] = mk(d.lines && d.lines.accept && d.lines.accept.length ? d.lines.accept.map((l) => cap(l)) : linesFor(d, 'active', sn, giverName, opts.itemDefs), { end: true });
+        if (!dec) usedLater = true;
         rows.available.push({ node: k + '.offer.1', requires: 'q.' + d.id + '.available' });
       } else {
         nodes[k + '.active'] = mk(linesFor(d, 'active', sn, giverName, opts.itemDefs), { end: true });
@@ -101,13 +103,19 @@ export function generateForNpc(raw, npcId, defs, snippets, opts = {}) {
   let at = opts.before ? entry.findIndex((e) => e.node === opts.before) : -1;
   if (at < 0) { at = 0; while (at < entry.length && /^q\./.test(entry[at].requires || '')) at++; }
   entry.splice(at, 0, ...gen);
+  // OB-206: a '!' (AVAILABLE) must open its Accept offer: among the q.* rows keep their slots but order ready ('?') < available ('!') < active chatter.
+  const rank = (e) => { const m = /^q\..+\.(ready|available|active)$/.exec(e.requires || ''); return m ? { ready: 0, available: 1, active: 2 }[m[1]] : -1; };
+  const lim = opts.before ? entry.findIndex((e) => e.node === opts.before) : -1; // only the block in front of the anchor
+  const slots = entry.map((e, i) => (rank(e) >= 0 && (lim < 0 || i < lim) ? i : -1)).filter((i) => i >= 0);
+  const sorted = slots.map((i) => entry[i]).map((e, k) => [e, k]).sort((x, y) => rank(x[0]) - rank(y[0]) || x[1] - y[1]).map((x) => x[0]);
+  slots.forEach((i, k) => { entry[i] = sorted[k]; });
   out.entry = entry;
   return out;
 }
 
 /** Where generated routes go when a dialogue needs a fixed anchor: Burl's errands sit before his home greeting. */
 // rook: Rook's main-quest hand-in/offer entries (call.ready/active, mirror.active/available) come first so an errand can never hide them (ch12 run beat 13); errands precede his repeat chatter.
-export const ANCHORS = { bear: 'bear.home.again', rook: 'rook.ford.repeat2' };
+export const ANCHORS = { bear: 'bear.home.again', rook: 'rook.ford.repeat2', hesk: 'hesk.after.1', dorrin: 'dorrin.done.1' };
 
 /** raws = {npcId: rawDialogue} -> same keys with generated routes. */
 export function generateAll(raws, defs, snippets, itemDefs) {

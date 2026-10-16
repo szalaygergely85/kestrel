@@ -30,7 +30,7 @@ const F_MODE = 0, F_PX = 1, F_LX = 4, F_GX = 7, F_T = 10, F_REPLAN = 11, F_PAT =
 const M_STANCE = 0, M_SWING = 1, M_STEP = 2;
 
 const _land = new Float64Array(3); // scratch return of landing()
-const _gz = new Float64Array(1);   // scratch return of groundZ()
+const _gz = new Float64Array(4);   // groundZ(): [0] result, [1] x, [2] y, [3] rootZ in (typed slots: no boxed double crosses the call)
 const _lf = new Float64Array(1);   // scratch return of swingPos() (lift)
 const _sp = new Float64Array(3);   // swingPos args: q, lift, zOff (typed: no boxed double args)
 const _li = new Float64Array(12);  // landing args, see call sites
@@ -78,10 +78,18 @@ export function createLegDriver(capacity = 48) {
 
   /** Ground height under (x,y) for a foot; falls back to the root height when the query fails or is far off (swim, odd floor). */
   let flatFrame = false; // set by a fallback: no more queries until the next update
-  function groundZ(ground, x, y, rootZ) { // result in _gz[0]
+  // Optional zero-alloc ground query: `ground.groundAtQ(q)` reads q[0]=x, q[1]=y and writes q[2]=height (NaN = no ground).
+  // Plain `groundAt(x, y)` still works but boxes its doubles on Node 24 (a callback we do not control).
+  const _gq = new Float64Array(3);
+  function groundZ(ground) { // in _gz[1..3] (x, y, rootZ), result in _gz[0]
+    const rootZ = _gz[3];
     if (flatFrame) { _gz[0] = rootZ; return; }
     drv.queries++;
-    const h = ground ? ground.groundAt(x, y) : null;
+    let h = null;
+    if (ground) {
+      if (ground.groundAtQ !== undefined) { _gq[0] = _gz[1]; _gq[1] = _gz[2]; _gq[2] = NaN; ground.groundAtQ(_gq); h = _gq[2]; if (h !== h) h = null; }
+      else h = ground.groundAt(_gz[1], _gz[2]);
+    }
     if (h === null || h === undefined || !(Math.abs(h - rootZ) <= FLAT_TOL)) { flatFrame = true; _gz[0] = rootZ; return; }
     _gz[0] = h;
   }
@@ -163,7 +171,7 @@ export function createLegDriver(capacity = 48) {
         const F = S + HDR + k * FOOT, o = k * 12;
         const mx = (geo[o + 11] - anc[0]) * cm, my = (restY(geo, o) - anc[1]) * cm;
         const px = x + cs * mx - sn * my, py = y + sn * mx + cs * my;
-        groundZ(ground, px, py, z); const gz = _gz[0];
+        _gz[1] = px; _gz[2] = py; _gz[3] = z; groundZ(ground); const gz = _gz[0];
         state[F + F_MODE] = M_STANCE; state[F + F_PX] = px; state[F + F_PX + 1] = py; state[F + F_PX + 2] = gz;
         state[F + F_REPLAN] = 0; state[F + F_PAT] = 0;
       }
@@ -199,7 +207,7 @@ export function createLegDriver(capacity = 48) {
             for (let m = k0; m < k0 + 2 && m < n; m++) if (m !== k && state[S + HDR + m * FOOT + F_MODE] === M_STEP) busy = true;
             if (!busy) {
               state[F + F_LX] = state[F + F_PX]; state[F + F_LX + 1] = state[F + F_PX + 1]; state[F + F_LX + 2] = state[F + F_PX + 2];
-              groundZ(ground, rx, ry, z); const gz = _gz[0];
+              _gz[1] = rx; _gz[2] = ry; _gz[3] = z; groundZ(ground); const gz = _gz[0];
               state[F + F_GX] = rx; state[F + F_GX + 1] = ry; state[F + F_GX + 2] = gz;
               state[F + F_T] = 0; state[F + F_MODE] = M_STEP;
               _sp[0] = 0; _sp[1] = lift; _sp[2] = zOff; swingPos(state, F, poses, T); _lift[k] = _lf[0];
@@ -295,7 +303,7 @@ export function createLegDriver(capacity = 48) {
     const dx = _li[0], dy = _li[1], mx = _li[2], my = _li[3], stride = _li[5], cs = _li[10], sn = _li[11];
     const adv = _li[4] * stride + _li[6] * stride * 0.5;
     const lx = _li[7] + cs * mx - sn * my + dx * adv, ly = _li[8] + sn * mx + cs * my + dy * adv;
-    _land[0] = lx; _land[1] = ly; groundZ(ground, lx, ly, _li[9]); _land[2] = _gz[0];
+    _land[0] = lx; _land[1] = ly; _gz[1] = lx; _gz[2] = ly; _gz[3] = _li[9]; groundZ(ground); _land[2] = _gz[0];
   }
 
   return drv;

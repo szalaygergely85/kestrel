@@ -7,7 +7,8 @@ export const GI_PRESET = { low: false, medium: true, high: true, ultra: true, ex
 export const GI_DEFAULTS = { emisK: 1, skyFloor: 0.15 };
 
 /** -> null (feature off) or {emisK, skyFloor}. */
-export function resolveGI(params, quality) {
+export function resolveGI(params, quality, wgActive = true) {
+  if (!wgActive) return null; // GI-PROBE-06-FIX: WebGPU only; the JS twin (+3.3 ms at 240x90) is oracle-only, so Canvas2D/WebGL2 keep today's ambient
   const f = params.get('gi');
   if (f === '0' || params.get('gpucompare')) return null;
   const on = f === '1' ? true : quality && GI_PRESET[quality] === true;

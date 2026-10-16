@@ -100,6 +100,7 @@ export function createSaveRelay({ storage, questDef, giverDefs = [], slot: slot0
         quest.reset(pending.quest ? pending.quest : null, pending.quests);
         for (const id of pending.openedChests) chests.add(id);
         for (const id of pending.deadBeasts) dead.add(id);
+        quest.seedDead(pending.deadBeasts); // R6-FIX C: the kill record survives Continue (a kill quest accepted after load still credits the dead pack)
         playSec = pending.meta.playTimeSec;
         look = pending.look || defaultLook;
         pending = null;

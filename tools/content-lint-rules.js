@@ -4,7 +4,7 @@
 import { validateLogic } from '../engine/index.js';
 import { formatProblems } from './editor/quest/format.js';
 export const MAX_FLOAT = 0.25, GIVER_MAX_UP = 2.5, GIVER_WALK_R = 3, ENT_MAX_FLOAT = 0.15, BURY_MIN = 0.1, BURY_MAX = 0.9, OBJECT_GIVER_MAX = 0.1, SMOKE_SRC_R = 3, CHIMNEY_R = 6, CHIMNEY_MIN = 3, CHEST_R = 25;
-export const LEVELS = { R1: 'error', R2: 'error', R3: 'error', R4: 'error', R5: 'error', R6: 'error', R7: 'error', R8: 'warn', R9: 'warn', R10: 'warn', R11: 'error', R12: 'error', R13: 'error', R14: 'error', R15: 'error', R16: 'warn', R17: 'error' };
+export const LEVELS = { R1: 'error', R2: 'error', R3: 'error', R4: 'error', R5: 'error', R6: 'error', R7: 'error', R8: 'warn', R9: 'warn', R10: 'warn', R11: 'error', R12: 'error', R13: 'error', R14: 'error', R15: 'error', R16: 'warn', R17: 'error', R19: 'error' };
 export const TITLES = {
   R1: 'floating placed prop/tree', R2: 'components.sprite in the world', R3: 'raw id in player text', R4: '"relay" in player text',
   R5: 'giver unreachable', R6: 'smoke without a source', R7: 'chimney outside a building', R8: 'chest with no guard/puzzle/giver nearby',
@@ -12,6 +12,7 @@ export const TITLES = {
   R12: 'entity not supported by ground/structure (floating or buried)', R13: 'prompt/marker anchor has no visible model', R14: 'quest flow (OB-156): character giver, Accept/Exit, character return',
   R15: 'logic blocks (ED-LOGIC-01d): refs exist, group spawned by one block, no flag loop',
   R17: 'quest format (D-106): begin, end, rewards, max 3 objectives, known next/requires ids, no xp',
+  R19: 'quest/dialogue text (QUEST-TEXT-LINT-01): no NEEDS WRITER, raw id, line > 56 chars, objective/journal line > 38 chars, Esc hint',
   R16: 'player-facing name looks like an id / placeholder / bare tier tag (OB-135 plain names)',
 };
 /** Legacy quests that do not follow the D-106 format yet: WARN instead of ERROR "until the D-106 chain rewrite". Every other id is an ERROR. */
@@ -53,6 +54,32 @@ export function badName(s) {
   if (/placeholder|todo/i.test(s)) return 'placeholder / TODO';
   if (/(^|[^A-Za-z0-9])T[1-9](?![A-Za-z0-9])/.test(s)) return 'bare tier tag';
   return null;
+}
+
+// ---- R19 quest/dialogue text (QUEST-TEXT-LINT-01) ----
+export const R19_OBJ_MAX = 38; // quest-log objective/step line (log pane clips longer)
+export const R19_LINE_MAX = 56; // = engine DIALOGUE_LINE_MAX (ED-QUEST-06)
+const R19_RAW = /(?:^|[^A-Za-z0-9])(?:sq|mq|note|flag|item)\.[A-Za-z][A-Za-z0-9_.]*/, R19_UNDER = /[A-Za-z]+_[A-Za-z_]+/;
+/** The failed sub-checks of one player-visible string: 'placeholder' | 'rawid' | 'long' | 'esc'. */
+export function r19Checks(s, opts = {}) {
+  const out = [];
+  if (/NEEDS WRITER/i.test(s)) out.push('placeholder');
+  if (R19_RAW.test(s) || R19_UNDER.test(s) || RAW_CAMEL.test(s)) out.push('rawid');
+  if (opts.line && s.length > R19_LINE_MAX) out.push('long');
+  if (opts.objective && s.length > R19_OBJ_MAX) out.push('objective');
+  if (/(^|[^A-Za-z])Esc([^A-Za-z]|$)/.test(s)) out.push('esc');
+  return out;
+}
+/** R19: ctx.questTexts = [{where, text, line?, only?}]; ctx.r19Allow = Set of "where|check" (shrink-only, tools/content-lint-r19-allow.json). Stale allow entries are errors. */
+function r19(c) {
+  const allow = c.r19Allow || new Set(), used = new Set(), out = [];
+  for (const t of c.questTexts || []) for (const k of r19Checks(t.text, { line: t.line, objective: t.objective }).filter((x) => !t.only || x === t.only)) {
+    const key = t.where + '|' + k;
+    if (allow.has(key)) { used.add(key); continue; }
+    out.push(F('R19', t.where, '-', '-', `${k}: "${t.text.slice(0, 60)}"`));
+  }
+  if (c.questTexts) for (const key of allow) if (!used.has(key)) out.push(F('R19', key, '-', '-', 'stale allow-list entry (no longer hit): remove it'));
+  return out;
 }
 
 // ---- per-item rule bodies, shared by RULES and tools/editor/quest/lintQuest.js (ED-QUEST-05) ----
@@ -191,6 +218,7 @@ export const RULES = {
   // R16 [OB-135, NAME-LINT] ctx.names = [{where, kind, name}]: resolved display names (item, quest, NPC, region, prop); warn level until the writer has cleaned the real list
   R16: (c) => (c.names || []).flatMap((n) => { const why = badName(n.name); return why ? [F('R16', n.where, '-', '-', `${n.kind} name "${n.name}": ${why}`)] : []; }),
   // R17 [QUEST-FORMAT, D-106] ctx.formatQuests = every quest def (legacy or new shape). ERROR, except the ids in R17_LEGACY (WARN until the chain rewrite).
+  R19: (c) => r19(c),
   R17: (c) => {
     const defs = c.formatQuests || [], ids = new Set(defs.map((q) => q.id));
     return defs.flatMap((q) => formatProblems(q, ids).map((p) => ({ ...F('R17', q.id, '-', '-', p), level: R17_LEGACY.has(q.id) ? 'warn' : 'error' })));

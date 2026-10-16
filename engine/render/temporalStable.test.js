@@ -2,11 +2,12 @@
 // Synthetic wall plane in front of the camera; static / 1-cell pan / cut / tie mask / reject rules / ortho / 0 alloc.
 // Re-spawns itself with the frameAlloc flags (big semi-space, sync tier-up) like horizonAo.alloc.test.js.
 // Run: node engine/render/temporalStable.test.js
+import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import v8 from 'node:v8';
-import { beginFrame, stabilize, createStableState, createStableBuffers, CHANNEL_SNAP, LEVEL_ANIM, LEVEL_NONE, UV_LIM_TEXELS, DEFAULT_DETAIL } from './temporalStable.js';
-import { KIND_NONE, KIND_WALL, KIND_MODEL } from './GBuffer.js';
+import { encodeLevelByte, levelOfByte, covOfByte, vmTagOf, beginFrame, stabilize, createStableState, createStableBuffers, CHANNEL_SNAP, LEVEL_ANIM, LEVEL_NONE, UV_LIM_TEXELS, DEFAULT_DETAIL, uvDriftLimit } from './temporalStable.js';
+import { KIND_NONE, KIND_WALL, KIND_MODEL, KIND_MESH } from './GBuffer.js';
 import { makeOk } from '../test/assert.js';
 
 const SELF = fileURLToPath(import.meta.url);
@@ -21,6 +22,7 @@ let pass = 0, fail = 0;
 const failures = [];
 const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
 
+let ANCHOR = false; // AA-09: the older anchor tests run with the re-anchor off (identical to the old behaviour)
 const COLS = 40, ROWS = 20;
 const GRID = { cols: COLS, rows: ROWS, pxCellW: 8, pxCellH: 16 };
 const cam0 = { x: 0, y: 0, z: 1.6, yawDeg: 0, pitchDeg: 0 };
@@ -166,7 +168,7 @@ function run(st, cam, inpFn, hist, flags) {
   ok('UV limit constant is 1.0/detail', UV_LIM_TEXELS === 1 && LIM === 0.0625);
   // setup: static camera, history = frame A exactly; `mut(inp, hist)` edits cells, then one stabilize
   const once = (mut, flags) => {
-    const st = createStableState();
+    const st = createStableState(); st.footK = 0; st.aaAnchor = ANCHOR;
     beginFrame(st, cam0, GRID);
     const h = colHist(wallInput(st));
     beginFrame(st, cam0, GRID, flags);
@@ -211,7 +213,7 @@ function run(st, cam, inpFn, hist, flags) {
   ok('hsrc = history cell on a reached lookup, -1 before', o.hsrc[at(2, 3)] === at(2, 3) && r2.out.hsrc[at(2, 6)] === -1);
 
   // slow-moving surface: u advances 0.3*lim per frame; the anchor stays on the first u, so the hold ends after 3 frames
-  const st = createStableState();
+  const st = createStableState(); st.footK = 0; st.aaAnchor = false;
   beginFrame(st, cam0, GRID);
   const a0 = wallInput(st);
   a0.level.fill(LEVEL_NONE);
@@ -229,6 +231,34 @@ function run(st, cam, inpFn, hist, flags) {
     if (seq[seq.length - 1] === 'fresh') break;
   }
   ok('slow drift: held 3 frames, refreshed once cumulative drift >= lim', seq.join() === 'hold,hold,hold,fresh', seq.join());
+}
+
+// 4b. AA-09: re-anchor of a both-255 hold on a static surface
+{
+  const LIM = UV_LIM_TEXELS / DEFAULT_DETAIL, at = (r, c) => r * COLS + c;
+  const slide = (aaAnchor, kind, frames = 40, fgStep = 0) => {
+    const st = createStableState(); st.footK = 0; st.aaAnchor = aaAnchor;
+    beginFrame(st, cam0, GRID);
+    const mk = (k) => { const inp = wallInput(st); inp.level.fill(LEVEL_NONE); inp.kind.fill(kind); for (let i = 0; i < COLS * ROWS; i++) { inp.u[i] += k * 0.3 * LIM; inp.glyph[i] = 7 + k; if (fgStep) { const b = (100 + k * fgStep) & 255; inp.fg[i] = (b << 16) | (b << 8) | b; } } return inp; };
+    let hist = createStableBuffers(COLS, ROWS), out = createStableBuffers(COLS, ROWS);
+    stabilize(mk(0), createStableBuffers(COLS, ROWS), hist, st); // frame 0: invalid
+    const g0 = hist.glyph[at(10, 10)];
+    let held = 0, fresh = 0;
+    for (let k = 1; k <= frames; k++) {
+      beginFrame(st, cam0, GRID);
+      stabilize(mk(k), hist, out, st);
+      if (out.glyph[at(10, 10)] === g0) held++; else fresh++;
+      const t = hist; hist = out; out = t;
+    }
+    return { held, fresh };
+  };
+  const on = slide(true, KIND_WALL), off = slide(false, KIND_WALL), mdl = slide(true, 8), msh = slide(true, KIND_MESH);
+  ok('AA-09 aaAnchor on: static surface panned 40 x 0.3*lim holds all frames', on.held === 40, JSON.stringify(on));
+  ok('AA-09 aaAnchor off: refreshes after cumulative drift (old behaviour)', off.fresh > 5 && off.held < 40, JSON.stringify(off));
+  ok('AA-09 model (kind 8) keeps the old anchor: refreshes', mdl.fresh > 5, JSON.stringify(mdl));
+  ok('AA-09 mesh with same plane+material re-anchors', msh.held === 40, JSON.stringify(msh));
+  const snap = slide(true, KIND_WALL, 6, 60);
+  ok('AA-09 fg snap still re-rolls the glyph', snap.fresh === 6, JSON.stringify(snap));
 }
 
 // 5. ortho pose: static identity, 1-cell pan
@@ -311,5 +341,97 @@ function run(st, cam, inpFn, hist, flags) {
 }
 
 console.log(`${pass} passed, ${fail} failed.`);
+// AA-07a: view-model cells (kind 8, GI.w >= 0xFFF8) take history from the SAME cell, key objectId + mat; the +-1 level hold applies
+{
+  const st = createStableState();
+  beginFrame(st, cam0, GRID); const a = wallInput(st); a.kind.fill(KIND_MODEL);
+  const n = COLS * ROWS, VM = 0xFFFF - 2; // hand 2
+  const h = colHist(a); h.vm.fill(vmTagOf(VM)); h.mat.fill(7);
+  beginFrame(st, { ...cam0, yawDeg: 0.5, x: 0.2 }, GRID); // the camera moves a little: the view model must NOT be reprojected
+  const mk = (oid, mat, lvl) => { const b = wallInput(st); b.kind.fill(KIND_MODEL); b.objectId = new Uint32Array(n).fill(oid); b.mat = new Uint16Array(n).fill(mat); b.level.fill(lvl);
+    b.u.set(a.u); b.v.set(a.v); b.fg.set(a.fg); return b; };
+  const at = 10 * COLS + 20;
+  let out = createStableBuffers(COLS, ROWS); stabilize(mk(VM, 7, 6), h, out, st);
+  ok('AA-07a: view-model cell, level +1, same object/mat -> held (history glyph, history level)', out.fresh[at] === 0 && out.glyph[at] === 100 + 20 && out.level[at] === 5 && out.hsrc[at] === at);
+  ok('AA-07a: view-model history is tagged', out.vm[at] === vmTagOf(VM) && vmTagOf(VM) === 3 && vmTagOf(100) === 0);
+  out = createStableBuffers(COLS, ROWS); stabilize(mk(VM + 1, 7, 6), h, out, st);
+  ok('AA-07a: a different object drops the history', out.fresh[at] === 1 && out.glyph[at] === 7);
+  out = createStableBuffers(COLS, ROWS); stabilize(mk(VM, 8, 6), h, out, st);
+  ok('AA-07a: a different material drops the history', out.fresh[at] === 1);
+  out = createStableBuffers(COLS, ROWS); stabilize(mk(VM, 7, 8), h, out, st);
+  ok('AA-07a: level +3 switches', out.fresh[at] === 0 && out.glyph[at] === 7);
+  st.aaVm = false; out = createStableBuffers(COLS, ROWS); stabilize(mk(VM, 7, 6), h, out, st);
+  ok('AA-07a: ?aavm=0 -> kind 8 always fresh', out.fresh[at] === 1 && out.vm[at] === 0);
+}
+// AA-07a: a world kind-8 prop (no view-model id) uses the material key across a plane change, with the normal reprojection
+{
+  const st = createStableState();
+  beginFrame(st, cam0, GRID); const a = wallInput(st); a.kind.fill(KIND_MODEL);
+  const h = colHist(a); h.mat.fill(4);
+  beginFrame(st, cam0, GRID);
+  const b = wallInput(st); b.kind.fill(KIND_MODEL); b.planeId.fill(9); b.mat = new Uint16Array(COLS * ROWS).fill(4); b.objectId = new Uint32Array(COLS * ROWS).fill(77);
+  const out = createStableBuffers(COLS, ROWS); stabilize(b, h, out, st);
+  ok('AA-07a: world kind-8 prop keeps history across a planeId change (same mat)', out.fresh[10 * COLS + 20] === 0);
+  b.mat.fill(5); const o2 = createStableBuffers(COLS, ROWS); stabilize(b, h, o2, st);
+  ok('AA-07a: world kind-8 prop with another mat -> fresh', o2.fresh[10 * COLS + 20] === 1);
+}
+// AA-07b: a line<->ramp mismatch is held while the joint coverage is 1/4..3/4
+{
+  const st = createStableState();
+  beginFrame(st, cam0, GRID); const a = wallInput(st);
+  const h = colHist(a); h.level.fill(LEVEL_NONE); // history = a line cell
+  beginFrame(st, cam0, GRID);
+  const at = 10 * COLS + 20, n = COLS * ROWS;
+  const run2 = (cov) => { const b = wallInput(st); b.level.fill(5); b.cov = new Uint8Array(n).fill(cov); const o = createStableBuffers(COLS, ROWS); stabilize(b, h, o, st); return o; };
+  let o = run2(2);
+  ok('AA-07b: coverage 2/4 + line->ramp mismatch -> history glyph held, history level kept', o.fresh[at] === 0 && o.glyph[at] === 120 && o.level[at] === LEVEL_NONE);
+  ok('AA-07b: coverage 1/4 and 3/4 hold too', run2(1).fresh[at] === 0 && run2(3).fresh[at] === 0);
+  ok('AA-07b: coverage 0/4 switches (fresh)', run2(0).fresh[at] === 1 && run2(0).glyph[at] === 7);
+  ok('AA-07b: coverage 4/4 -> encoded as 0 (no info) switches', run2(4).fresh[at] === 1);
+  st.aaJoint = false; ok('AA-07b: ?aajoint=0 -> mismatch always fresh', run2(2).fresh[at] === 1); st.aaJoint = true;
+  // encoding round trip (shade.wgsl.js writes it, stable.wgsl.js / stableCompare.js read it)
+  ok('AA-07b: level byte codec', levelOfByte(encodeLevelByte(5, 2, false)) === 5 && covOfByte(encodeLevelByte(5, 2, false)) === 2
+    && levelOfByte(encodeLevelByte(255, 3, true)) === 255 && covOfByte(encodeLevelByte(255, 3, true)) === 3
+    && encodeLevelByte(5, 0, false) === 5 && encodeLevelByte(5, 4, false) === 5 && encodeLevelByte(255, 2, false) === 255 && encodeLevelByte(254, 2, false) === 254
+    && covOfByte(255) === 0 && covOfByte(254) === 0 && levelOfByte(254) === 254);
+}
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');
+
+// OB-193: the drift limit grows with the cell footprint (distant walls keep their glyph), ortho keeps the texel limit.
+{
+  const near = uvDriftLimit(1, 0.5, 0.3, 400, 150, 16, false), far = uvDriftLimit(8, 0.5, 0.3, 400, 150, 16, false);
+  ok('OB-193 near wall keeps the texel limit', near === 1 / 16, String(near));
+  ok('OB-193 far wall limit = cell footprint', Math.abs(far - 8 * 2 * 0.5 / 400) < 1e-12 && far > 1 / 16, String(far));
+  ok('OB-193 ortho keeps the texel limit', uvDriftLimit(8, 0.5, 0.3, 400, 150, 16, true) === 1 / 16);
+}
+
+// ---------------- OB-198: glyph hysteresis + mesh material key (synthetic 2-frame cases) ----------------
+{
+  const mk = (kind, mat, plane, lvl) => {
+    const st = createStableState();
+    beginFrame(st, cam0, GRID);
+    const a = wallInput(st);
+    a.kind.fill(kind); a.planeId.fill(1); a.mat = new Uint16Array(COLS * ROWS).fill(5);
+    const h = colHist(a); h.mat = new Uint16Array(COLS * ROWS).fill(5); h.level.fill(5);
+    beginFrame(st, cam0, GRID);
+    const b = wallInput(st);
+    b.kind.fill(kind); b.planeId.fill(plane); b.mat = new Uint16Array(COLS * ROWS).fill(mat); b.level.fill(lvl);
+    const out = createStableBuffers(COLS, ROWS);
+    stabilize(b, h, out, st);
+    return { out, i: 10 * COLS + 20, st, b, h };
+  };
+  // glyph level +1 held, +2 switches (history glyph 100 + col; fresh glyph 7)
+  let r = mk(KIND_WALL, 5, 1, 6); assert.equal(r.out.glyph[r.i], 100 + 20, 'level +1 held');
+  r = mk(KIND_WALL, 5, 1, 7); assert.equal(r.out.glyph[r.i], 7, 'level +2 switches');
+  // aaGlyph off: strict equality only
+  { const st = createStableState(); st.aaGlyph = false; beginFrame(st, cam0, GRID); const a = wallInput(st); const h = colHist(a); beginFrame(st, cam0, GRID);
+    const b = wallInput(st); b.level.fill(6); const out = createStableBuffers(COLS, ROWS); stabilize(b, h, out, st); assert.equal(out.glyph[10 * COLS + 20], 7, 'aaGlyph=0: +1 switches'); }
+  // mesh: planeId flip with same material keeps history, different material drops it
+  r = mk(KIND_MESH, 5, 9, 5); assert.equal(r.out.fresh[r.i], 0, 'mesh planeId flip, same material: history kept');
+  r = mk(KIND_MESH, 6, 9, 5); assert.equal(r.out.fresh[r.i], 1, 'mesh planeId flip, other material: dropped');
+  r = mk(KIND_WALL, 5, 9, 5); assert.equal(r.out.fresh[r.i], 1, 'non-mesh planeId flip still drops');
+  { const st = createStableState(); st.aaMesh = false; beginFrame(st, cam0, GRID); const a = wallInput(st); a.kind.fill(KIND_MESH); const h = colHist(a); beginFrame(st, cam0, GRID);
+    const b = wallInput(st); b.kind.fill(KIND_MESH); b.planeId.fill(9); const out = createStableBuffers(COLS, ROWS); stabilize(b, h, out, st); assert.equal(out.fresh[10 * COLS + 20], 1, 'aaMesh=0: planeId flip drops'); }
+}
+console.log('temporalStable OB-198 cases ok');

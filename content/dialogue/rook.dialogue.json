@@ -7,39 +7,39 @@
     "you": {"label": "YOU", "player": true}
   },
   "entry": [
-    {"node": "rook.mirror.done.1", "requires": "s.mq.ford.mirror.ready"},
-    {"node": "rook.call.ready.1", "requires": "s.mq.bend.call.ready"},
-    {"node": "rook.road.ready", "requires": "s.mq.river.road.ready"},
-    {"node": "rook.stones.ready", "requires": "s.mq.ford.stones.ready"},
-    {"node": "rook.smoke.ready", "requires": "s.mq.smoke.ready"},
-    {"node": "rook.call.active", "requires": "s.mq.bend.call.active"},
-    {"node": "rook.road.active", "requires": "s.mq.river.road.active"},
-    {"node": "rook.stones.active", "requires": "s.mq.ford.stones.active"},
-    {"node": "rook.mirror.active", "requires": "s.mq.ford.mirror.active"},
-    {"node": "rook.smoke.active", "requires": "s.mq.smoke.active"},
-    {"node": "rook.smoke.1", "requires": "s.mq.smoke.available"},
-    {"node": "rook.road.1", "requires": "s.mq.river.road.available"},
-    {"node": "rook.stones.1", "requires": "s.mq.ford.stones.available"},
-    {"node": "rook.ford.1", "requires": "s.mq.ford.mirror.available"},
-    {"node": "rook.ford.repeat2", "requires": "s.mq.smoke.done"},
-    {"node": "rook.ford.repeat", "requires": "s.mq.ford.mirror.done"},
-    {"node": "rook.repeat", "requires": "s.mq.bend.call.done"},
+    {"node": "rook.mirror.done.1", "requires": "q.mq.ford.mirror.ready"},
+    {"node": "rook.call.ready.1", "requires": "q.mq.bend.call.ready"},
+    {"node": "rook.road.ready", "requires": "q.mq.river.road.ready"},
+    {"node": "rook.stones.ready", "requires": "q.mq.ford.stones.ready"},
+    {"node": "rook.smoke.ready", "requires": "q.mq.smoke.ready"},
+    {"node": "rook.call.active", "requires": "q.mq.bend.call.active"},
+    {"node": "rook.road.active", "requires": "q.mq.river.road.active"},
+    {"node": "rook.stones.active", "requires": "q.mq.ford.stones.active"},
+    {"node": "rook.mirror.active", "requires": "q.mq.ford.mirror.active"},
+    {"node": "rook.smoke.active", "requires": "q.mq.smoke.active"},
+    {"node": "rook.smoke.1", "requires": "q.mq.smoke.available"},
+    {"node": "rook.road.1", "requires": "q.mq.river.road.available"},
+    {"node": "rook.stones.1", "requires": "q.mq.ford.stones.available"},
+    {"node": "rook.ford.1", "requires": "q.mq.ford.mirror.available"},
+    {"node": "rook.ford.repeat2", "requires": "q.mq.smoke.done"},
+    {"node": "rook.ford.repeat", "requires": "q.mq.ford.mirror.done"},
+    {"node": "rook.repeat", "requires": "q.mq.bend.call.done"},
     {"node": "rook.meet.1"}
   ],
   "nodes": {
-    "rook.road.1": {"choices": [{"next": "rook.road.2", "setFlag": "s.mq.river.road.accept", "text": "I'll walk it."}, {"next": "rook.later", "text": "Not yet."}], "lines": [
+    "rook.road.1": {"choices": [{"next": "rook.road.2", "setFlag": "q.mq.river.road.accept", "text": "I'll walk it."}, {"next": "rook.later", "text": "Not yet."}], "lines": [
       "Paper says river. River says west. Follow the road."
     ], "speaker": "rook"},
     "rook.road.2": {"end": true, "lines": [
       "Road west, to the loud water. I fly ahead."
     ], "speaker": "rook"},
-    "rook.stones.1": {"choices": [{"next": "rook.stones.2", "setFlag": "s.mq.ford.stones.accept", "text": "I'll cross."}, {"next": "rook.later", "text": "Not yet."}], "lines": [
+    "rook.stones.1": {"choices": [{"next": "rook.stones.2", "setFlag": "q.mq.ford.stones.accept", "text": "I'll cross."}, {"next": "rook.later", "text": "Not yet."}], "lines": [
       "Stones in the water. Hop them to the west bank."
     ], "speaker": "rook"},
     "rook.stones.2": {"end": true, "lines": [
       "Hop. Hop. Hop. Do not stop to count fish."
     ], "speaker": "rook"},
-    "rook.smoke.1": {"choices": [{"next": "rook.smoke.2", "setFlag": "s.mq.smoke.accept", "text": "I'll look."}, {"next": "rook.later", "text": "Not yet."}], "lines": [
+    "rook.smoke.1": {"choices": [{"next": "rook.smoke.2", "setFlag": "q.mq.smoke.accept", "text": "I'll look."}, {"next": "rook.later", "text": "Not yet."}], "lines": [
       "A mark on the Ford stone. Cut, not scratched.",
       "Read it. Then the footpath north. Smoke there."
     ], "speaker": "rook"},
@@ -60,19 +60,19 @@
     ], "next": "rook.road.ready2", "speaker": "rook"},
     "rook.road.ready2": {"end": true, "lines": [
       "Stones cross it. I counted them twice. Next."
-    ], "setFlag": "s.mq.river.road.handin", "speaker": "rook"},
+    ], "setFlag": "q.mq.river.road.handin", "speaker": "rook"},
     "rook.stones.ready": {"lines": [
       "Across. Boots wet. I said so. I always say so."
     ], "next": "rook.stones.ready2", "speaker": "rook"},
     "rook.stones.ready2": {"end": true, "lines": [
       "Now look at the stone here. Cold. Very cold."
-    ], "setFlag": "s.mq.ford.stones.handin", "speaker": "rook"},
+    ], "setFlag": "q.mq.ford.stones.handin", "speaker": "rook"},
     "rook.smoke.ready": {"lines": [
       "Smoke means fire. Fire means hands. Many hands."
     ], "next": "rook.smoke.ready2", "speaker": "rook"},
     "rook.smoke.ready2": {"end": true, "lines": [
       "People. Go see. I stay. People throw stones."
-    ], "setFlag": "s.mq.smoke.handin", "speaker": "rook"},
+    ], "setFlag": "q.mq.smoke.handin", "speaker": "rook"},
     "rook.meet.1": {"clip": "caw", "lines": [
       "Ha. The fell-bird walks."
     ], "next": "rook.meet.2", "speaker": "rook"},
@@ -94,7 +94,7 @@
     "rook.meet.7": {"lines": [
       "The loud hill? The loud hill never listens."
     ], "next": "rook.meet.8", "speaker": "rook"},
-    "rook.meet.8": {"choices": [{"next": "rook.meet.9", "setFlag": "s.mq.bend.call.accept", "text": "I'll count."}, {"next": "rook.later", "text": "Not yet."}], "lines": [
+    "rook.meet.8": {"choices": [{"next": "rook.meet.9", "setFlag": "q.mq.bend.call.accept", "text": "I'll count."}, {"next": "rook.later", "text": "Not yet."}], "lines": [
       "Watch it blink. Count. Then see the knot."
     ], "speaker": "rook"},
     "rook.meet.9": {"end": true, "lines": [
@@ -123,7 +123,7 @@
     ], "next": "rook.call.ready.6", "speaker": "rook"},
     "rook.call.ready.6": {"clip": "caw", "end": true, "lines": [
       "I will be there first. Wings."
-    ], "setFlag": "s.mq.bend.call.handin", "speaker": "rook"},
+    ], "setFlag": "q.mq.bend.call.handin", "speaker": "rook"},
     "rook.repeat": {"end": true, "lines": [
       "River. West. Do not drown, fell-bird."
     ], "speaker": "rook"},
@@ -145,7 +145,7 @@
     "rook.ford.6": {"lines": [
       "Old house by the crossing. Inside, on the floor."
     ], "next": "rook.ford.7", "speaker": "rook"},
-    "rook.ford.7": {"choices": [{"next": "rook.ford.8", "setFlag": "s.mq.ford.mirror.accept", "text": "I'll fetch it."}, {"next": "rook.later", "text": "Not yet."}], "lines": [
+    "rook.ford.7": {"choices": [{"next": "rook.ford.8", "setFlag": "q.mq.ford.mirror.accept", "text": "I'll fetch it."}, {"next": "rook.later", "text": "Not yet."}], "lines": [
       "I have other shinies. Many."
     ], "speaker": "rook"},
     "rook.ford.8": {"end": true, "lines": [
@@ -159,7 +159,7 @@
     ], "next": "rook.mirror.done.2", "speaker": "rook"},
     "rook.mirror.done.2": {"end": true, "lines": [
       "My glass, your stone. A loan. I keep count."
-    ], "setFlag": "s.mq.ford.mirror.handin", "speaker": "rook"},
+    ], "setFlag": "q.mq.ford.mirror.handin", "speaker": "rook"},
     "rook.ford.repeat": {"end": true, "lines": [
       "North, smoke. Fires. People, maybe. Go look."
     ], "speaker": "rook"},

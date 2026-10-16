@@ -16,6 +16,41 @@ fn giCov(y: u32) -> u32 { return (y >> 13u) & 0x7u; }
 fn giMat(y: u32) -> u32 { return (y >> 16u) & 0xffffu; }
 `;
 
+// AA-04b (38.82): the stable pass reprojection, shared by stable.wgsl.js and resolve.wgsl.js (hysteresis). Terms are passed in so each pass
+// feeds its own uniform block. Current-camera cell ray (eye-relative) + dEye -> previous camera (eye 0). Returns (colF, rowF, vdPrev).
+// Twin: temporalStable.js reprojectF32.
+export const REPROJECT_WGSL = `
+fn reprojectCell(col: f32, row: f32, vd: f32, gridCols: i32, gridRows: i32, ortho: i32,
+  curA: vec4f, curB: vec4f, curC: vec4f, prevA: vec4f, prevB: vec4f, prevC: vec4f, dEye: vec4f) -> vec3f {
+  let colsF = f32(gridCols); let rowsF = f32(gridRows);
+  let a = ((2.0 * (col + 0.5)) / colsF - 1.0) * curA.w;
+  let b = (1.0 - (2.0 * row) / rowsF) * curC.y;
+  var px: f32; var py: f32; var pz: f32;
+  if (ortho == 1) {
+    px = a * curB.x + b * curB.z + vd * curA.x;
+    py = a * curB.y + b * curB.w + vd * curA.y;
+    pz = b * curC.x + vd * curA.z;
+  } else {
+    px = (curA.x + a * curB.x + b * curB.z) * vd;
+    py = (curA.y + a * curB.y + b * curB.w) * vd;
+    pz = (curA.z + b * curC.x) * vd;
+  }
+  let wx = px + dEye.x; let wy = py + dEye.y; let wz = pz + dEye.z;
+  let vdP = wx * prevA.x + wy * prevA.y + wz * prevA.z;
+  let vx = wx * prevB.x + wy * prevB.y;
+  let vy = wx * prevB.z + wy * prevB.w + wz * prevC.x;
+  var cf = 0.0; var rf = 0.0;
+  if (ortho == 1) {
+    cf = (vx / prevA.w + 1.0) * (colsF * 0.5) - 0.5;
+    rf = (1.0 - vy / prevC.y) * (rowsF * 0.5);
+  } else if (vdP > 0.0) {
+    cf = (vx / vdP / prevA.w + 1.0) * (colsF * 0.5) - 0.5;
+    rf = (1.0 - vy / vdP / prevC.y) * (rowsF * 0.5);
+  }
+  return vec3f(cf, rf, vdP);
+}
+`;
+
 // Fullscreen triangle (same vertex stage as present/debug); the fragment stage indexes with @builtin(position).xy.
 export const FULLSCREEN_VS_WGSL = `
 @vertex

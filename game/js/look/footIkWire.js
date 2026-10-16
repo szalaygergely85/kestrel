@@ -4,6 +4,16 @@
 export function resolveFootIk(params, isCaptureOrBench) { return params.get('footik') !== '0' && !isCaptureOrBench; }
 
 /**
+ * FOOTIK-WIRE-FIX: 0-alloc ground adapter over the world support query (placed floors/meshes + terrain), not bare `world.terrain`.
+ * `refZ` is set by the wire to the entity root z before each update; the probe foot z is refZ + 0.6 (same step-up reach as the beast sim).
+ */
+export function createSupportGround(world) {
+  const io = new Float64Array(10), opts = { height: 0, stepUpMax: 1.0, walkCos: -1 };
+  const g = { refZ: 0, groundAt(x, y) { io[0] = x; io[1] = y; io[2] = g.refZ + 0.6; world.supportAtOut(true, opts, io); const h = io[3]; return h === h && h > -1e9 && h < 1e9 ? h : null; } };
+  return g;
+}
+
+/**
  * deps: {pool, createFootIk, voxelPointWorld, footCells (per leg [x,y,z] cells, e.g. HUMANOID_SPLIT_LEG_RIG foot of the def), ground ({groundAt}),
  * offFor(entity) -> true while airborne/swimming}. step(dtMs) once per rendered frame.
  */
@@ -35,6 +45,7 @@ export function createFootIkWire(deps) {
         }
         inst.legs = saved;
         io[0] = inst.x; io[1] = inst.y; io[2] = inst.z; io[3] = inst.yawDeg; io[4] = dtMs; io[5] = offFor && offFor(ent) ? 1 : 0;
+        if (ground.refZ !== undefined) ground.refZ = inst.z;
         drv.update(rec.slot, pm, ground);
         const pose = drv.poseOf(rec.slot);
         if (pose[0] > 0) pool.legInstance(i, pose);

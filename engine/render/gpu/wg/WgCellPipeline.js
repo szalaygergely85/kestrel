@@ -46,13 +46,14 @@ const DEBUG_RAYS_WORD = DEBUG_BLOCK.field('rays').word;
 const DEBUG_DEPTH_WORD = DEBUG_BLOCK.field('depthK').word;
 
 export class WgCellPipeline {
-  /** @param {any} rt a RenderTargetWebGPU @param {{rays?: number, terrainEnabled?: boolean, shadows?: any}} [opts] */
+  /** @param {any} rt a RenderTargetWebGPU @param {{rays?: number, resolveBandM?: number, terrainEnabled?: boolean, shadows?: any}} [opts] */
   constructor(rt, opts = {}) {
     this.rt = rt;
     this.device = rt.device;
     this.cols = rt.cols;
     this.rows = rt.rows;
     this.rays = Math.max(1, Math.min(4, Math.round(opts.rays || 1)));
+    this.resolveBandM = Math.max(0, +opts.resolveBandM || 0); // RTX-RAYS-BAND-01 (38.79): far-band metres, read by the resolve pass only when rays == 4
     this.terrainEnabled = opts.terrainEnabled !== false;
     this.renderer = 'mesh';
     this.shadowOpts = opts.shadows || null;
@@ -60,6 +61,10 @@ export class WgCellPipeline {
     // S8-B2-10c two-phase HZB occlusion (`?occl=1`), default OFF
     this.gpuCull = opts.gpuCull !== false; // WG-4a compute cull of instance batches (`?gpucull=0` = CPU path)
     // US-073c (38.25): temporal glyph stability, `?stable=1`; absent = no pass, no extra target, frame byte-identical to before
+    this.aaHyst = opts.aaHyst !== false; // AA-04b (38.82 B): resolve winner hysteresis keyed by reprojected world position; needs stable + rays > 1; main.js wires ?aahyst=0
+    this._hystSp = null; this._stEarly = false;
+    this.aaGlyph = opts.aaGlyph !== false; this.aaMesh = opts.aaMesh !== false; this.aaVm = opts.aaVm !== false; this.aaJoint = opts.aaJoint !== false; this.aaAnchor = opts.aaAnchor !== false; // AA-07: ?aavm=0 / ?aajoint=0 // OB-198: ?aaglyph=0 / ?aamesh=0 -> stable pass options
+    this.aaCov = opts.aaCov !== false; // 38.82 A: default ON; main.js maps ?aacov=0 -> aaCov:false
     this.stableOpt = !!opts.stable; this._stablePass = null; this._stableOn = false; this._stableRan = false; this._stInp = { shadeFg: null, shadeBg: null, water: null, waterOn: false };
     // EMIS-03/04 (38.12): emissive bleed + halo, `opts.glow` = {radius, gain, haloBg, haloMin} (High/Ultra); absent = no pass, frame byte-identical to before
     this.glowOpt = opts.glow || null; this._glowPass = null; this._glowRan = false;
@@ -142,11 +147,11 @@ export class WgCellPipeline {
       this._waterPass = new WgWaterPass(this.device);
       this._waterPass.resize(this.cols, this.rows, this.rays);
       bootSpan('pass water (ctor total)', tp); tp = bootNow();
-      this._cellPass = new WgCellPass(this.device, this._shadowPass, this._waterPass, this.stableOpt ? { stable: true } : null);
+      this._cellPass = new WgCellPass(this.device, this._shadowPass, this._waterPass, { stable: this.stableOpt, aaCov: this.aaCov });
       if (this._carpetPass) this._cellPass.carpet = this._carpetPass;
       this._cellPass.lightPass.pointPass = this._pointShadowPass;
       bootSpan('pass cell (ctor total)', tp);
-      if (this.stableOpt) { this._stablePass = new WgStablePass(this.device); this._stablePass.resize(this.cols, this.rows); this._stableOn = true; }
+      if (this.stableOpt) { this._stablePass = new WgStablePass(this.device, { aaGlyph: this.aaGlyph, aaMesh: this.aaMesh, aaVm: this.aaVm, aaJoint: this.aaJoint, aaAnchor: this.aaAnchor }); this._stablePass.resize(this.cols, this.rows); this._stableOn = true; }
       if (this.glowOpt) { this._glowPass = new WgGlowPass(this.device); this._glowPass.resize(this.cols, this.rows); this._glowPass.configure(this.glowOpt); }
       this.shadowOpts = this._shadowPass.shadowOpts; // resolved (GL pipeline exposes the same field)
       this.portedPasses.push('debug', 'raster', 'resolve', 'deriv', 'light', 'shade', 'edge');
@@ -437,6 +442,13 @@ export class WgCellPipeline {
     await this.device.readback(sp ? sp.outBg : t.texFinalBg, rect, outBg);
     return { fg: outFg, bg: outBg };
   }
+  /** Shade-pass output (pre-edge colours, rgba8; dev/gpucompare only: CANOPY-SHAFT-01b rule 8a direction check). */
+  async readbackShade(outFg, outBg) {
+    const t = this._t; if (!t || !this._cellsShaded) return null;
+    const rect = { x: 0, y: 0, w: this.cols, h: this.rows };
+    await this.device.readback(t.texShadeFg, rect, outFg); await this.device.readback(t.texShadeBg, rect, outBg);
+    return { fg: outFg, bg: outBg };
+  }
   /** WG-3e: the WATER layer (rgba32uint, 4 words/cell); null when no water drew this frame. */
   /** S8-B2-10c: camera cut / teleport - the next frame's cull phase 1 runs with hzbOn 0 (no-op with occl off). */
   invalidateHzb() { if (this._rasterPass) this._rasterPass.invalidateHzb(); }
@@ -496,6 +508,7 @@ export class WgCellPipeline {
         }
       } else psp.active = false;
     }
+    this._prepHyst(t);
     try { this._cellPass.run(this, t); }
     catch (e) { this._abortOpenPass('cell'); this.ready = false; this.setEnabled(false); console.warn('[WgCellPipeline] resolve/deriv/light/shade/edge disabled:', e); return; }
     this._cellsShaded = this._cellPass.shaded;
@@ -526,9 +539,22 @@ export class WgCellPipeline {
     else { try { d.endPass(); } catch (_) { d._pass = null; } }
   }
 
+  /**
+   * AA-04b: the resolve hysteresis needs the stable camera terms of THIS frame before resolve. beginFrame runs once per frame, so it moves
+   * here and _runStable skips it (`_stEarly`). Off (aaHyst false, stable off, rays 1, no pitched raster) = `_hystSp` null, resolve unchanged.
+   */
+  _prepHyst(t) {
+    this._hystSp = null; this._stEarly = false;
+    const sp = this._stablePass, rp = this._rasterPass;
+    if (!this.aaHyst || !sp || !this._stableOn || this.rays < 2 || this.debugMode >= 0 || !rp || !rp.pitched || !this._cam || !t.texLevel) return;
+    try { sp.beginFrame(this._cam, rp.grid, null, rp.pitch); this._stEarly = true; this._hystSp = sp; }
+    catch (e) { console.warn('[WgCellPipeline] resolve hysteresis off this frame:', e); }
+  }
+
   /** US-073c (38.25 item 2): after edge, before sprites. History is invalidated on every frame it cannot run (not shaded, debug view, not pitched, error). */
   _runStable(t) {
     const sp = this._stablePass; this._stableRan = false;
+    const early = this._stEarly; if (!early || !sp || !this._stableOn) this._stEarly = false;
     if (!sp || !this._stableOn) return;
     const rp = this._rasterPass;
     if (!this._cellsShaded || this.debugMode >= 0 || !rp || !rp.pitched || !this._cam || !t.texLevel) { sp.invalidate(); return; }
@@ -536,7 +562,7 @@ export class WgCellPipeline {
     inp.shadeFg = wOn ? wp.edgeFg : t.texShadeFg; inp.shadeBg = wOn ? wp.edgeBg : t.texShadeBg; inp.water = wp ? wp.edgeWaterTexture : null; inp.waterOn = wOn;
     try {
       this._begin(WG_PASS_SLOT.stable);
-      try { sp.beginFrame(this._cam, rp.grid, null, rp.pitch); this._stableRan = sp.run(this, t, inp); } finally { this._end(); }
+      try { if (!this._stEarly) sp.beginFrame(this._cam, rp.grid, null, rp.pitch); this._stEarly = false; this._stableRan = sp.run(this, t, inp); } finally { this._end(); }
     } catch (e) {
       this._abortOpenPass('stable');
       this._stableOn = false; this._stableRan = false;

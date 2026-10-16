@@ -2767,3 +2767,182 @@ The last chest (before room 3 is clear):
 - `It will not open while the dead still walk here.`
 
 Notes: no family name on the crypt; the scraped names keep it canon-safe (a family name can be added later if the owner wants one). The banner and Bram's closing line only say that people once watched a light from a tower: no sender, no pattern, no date, so the deferred M4 "Signal Source" reveal stays open. Teal is the canon colour of magic; nothing here explains why the dead walk.
+
+## BEND-NPC-01 (D-110)
+
+PC-B writer, 2026-10-15. A second quest NPC, 2.5-3 m from the Bend Waystone. She gives and takes the Bend-area errands. Bram keeps the trade-post and ford ones. Dialogue lines are <= 56 chars, HUD objective/return lines <= 38, all ASCII, no raw ids, no "Esc". Accept / Not yet buttons stay generated; the accept/decline replies below are optional one-liners that play after the button (content may skip them).
+
+**Name:** **Joss the road-mender** (label `JOSS`, HUD "Joss"). No name clash in docs/content.
+
+**Who she is:** an exile like Bram. She keeps the road between the tower hill and the ford: she fills ruts, re-stacks the verge stones, and listens to the waystone's mount grind. She sits on an upturned bucket by the stone with a mallet and a sack of gravel.
+
+Canon guards (same as Bram, QFIX-S5): she never says "Wick", never names the village, and never explains the signal or the blink. She says "you" or "your ship", not "flier" (that word is Bram's). Rook may perch on the same stone; she does not talk about him.
+
+### Greeting (`joss.dialogue.json`)
+
+| key | line |
+|---|---|
+| joss.hello.1 (1) (first talk) | Mind the ruts. I just filled them. |
+| joss.hello.1 (2) | I'm Joss. I mend this road. Somebody has to. |
+| joss.hello.2 (repeat) | Road's holding. Mostly. |
+| joss.hello.3 (repeat, nothing to give) | Nothing for you today. The road's quiet. |
+
+### Bram's handover remark (`postkeeper.dialogue.json`)
+
+| key | line |
+|---|---|
+| postkeeper.handover (1) | Ask Joss by the Bend Waystone about that. |
+| postkeeper.handover (2) (optional) | The Bend's her road. I keep the ford. |
+
+Plays once, the first time the player talks to Bram after the move while a moved errand is open in an old save, or as a repeat line when Bram has nothing to offer.
+
+### Quest ids that move from Bram to Joss (giver AND turnIn)
+
+- `sq.rb.shield`, `sq.rb.regards`, `sq.rb.road`, `sq.rb.lamps`, `sq.rb.rocks`, `sq.rb.parcel` (the whole `sq.rb.*` set)
+- `sq.fc.cog` (the cog is for the Bend Waystone's mount). It still requires `sq.fc.jetty` (Bram), so Bram's ford chain leads into it.
+- `sq.rb.parcel` and `sq.fc.cog` are `deliver` steps: content must change `to: "postkeeper"` to the new NPC id. `sq.rb.parcel` gets a new reason (her mallet, not Bram's basket lid) and a new title, because "Ford" in the old title no longer fits.
+- Stay with Bram: `sq.fc.ford`, `sq.fc.smoke`, `sq.fc.cross`, `sq.fc.again`, `sq.fc.jetty`, `sq.fc.stores`, `sq.fc.shrine`, `sq.post.spare`, `sq.packet`, `sq.burl.parcel` (all have targets at the post, the ford or the crossroads).
+
+### Joss's errands (pack `lines`; giver and hand-in Joss)
+
+`ready` plays at Joss. Lines marked "keep" are unchanged from Bram's set.
+
+**sq.rb.shield "Left at the Bend"** (buckler given on offer)
+
+| field | text |
+|---|---|
+| offer (1) | Someone left this buckler by the stone. No name. |
+| offer (2) | Wear it down to the ford and back. Then show me. |
+| accept | Strap it tight. The ford road bites. |
+| decline | It'll keep. Nobody else came for it. |
+| active | Buckler on your arm. Down to the ford, then back. (keep) |
+| ready (1) | Fits you. Nobody came back for it. (keep) |
+| ready (2) | Keep it. And a health potion, for the knocks. (keep) |
+| done | Left for the next walker. That was you. |
+| objText | Wear the buckler to the ford (keep) |
+| returnText | Show the buckler to Joss |
+| journal | Someone left a buckler at the Bend Waystone. Wear it to the ford, then show Joss. |
+
+**sq.rb.regards "Word for Burl"**
+
+| field | text |
+|---|---|
+| offer (1) | Tell Burl, up on the tower hill: the road's clear. (keep) |
+| offer (2) | She asks after my road. Every season. |
+| accept | Up the hill. Say it plain. Bears like plain. |
+| decline | She'll wait. Bears are good at waiting. |
+| active | Burl. Tower hill. The road's clear. That's all. (keep) |
+| ready (1) | She heard? Good. She worries, for a bear. (keep) |
+| ready (2) | Five arrows. Straight ones. (keep) |
+| done | Road's clear, and the bear knows. Quiet day. (keep) |
+| objText | Tell Burl the road is clear (keep) |
+| returnText | Report to Joss at the Bend Waystone |
+| journal | Joss has word for Burl: the road is clear. Carry it up her hill. |
+
+**sq.rb.road "Down the Road West"**
+
+| field | text |
+|---|---|
+| offer (1) | Walk the road back toward your tower, would you? (keep) |
+| offer (2) | Then come back here to the stone. Tell me what moves. |
+| accept | Watch the verges. Things hide in the long grass. |
+| decline | Road's not going anywhere. Neither am I. |
+| active | Back along the road. Then here, to the stone. |
+| ready (1) | Nothing moving? Good. Nothing is good news. (keep) |
+| ready (2) | Five arrows. Fair, for a walk. (keep) |
+| done | Road walked. I'll sleep easier. (keep) |
+| objText 1 / 2 | Walk back along the road / Come back to the Bend Waystone (keep) |
+| returnText | Report to Joss at the Bend Waystone |
+
+**sq.rb.lamps "Lamps on the Verge"**
+
+| field | text |
+|---|---|
+| offer (1) | Old lamps stand along the road. Dark, mostly. (keep) |
+| offer (2) | Walk the line of them. See if any still burn. (keep) |
+| accept | All of them, mind. Not just the near ones. |
+| decline | They've been dark a while. Another day won't hurt. |
+| active | The lamps by the road. Walk the whole line. (keep) |
+| ready (1) | All dark? Thought so. Someone trimmed them, once. (keep) |
+| ready (2) | A health potion, for the walk. (keep) |
+| done | Dark lamps. I'll get to them. One day. |
+| objText | Walk along the lamps by the road (keep) |
+| returnText | Report to Joss at the Bend Waystone |
+
+**sq.rb.rocks "Rocks at the Forest Edge"**
+
+| field | text |
+|---|---|
+| offer (1) | Rocks piled at the forest edge. Too neat for chance. (keep) |
+| offer (2) | Not mine. I stack gravel, not cairns. Go and look. |
+| accept | Look, don't move them. Old things mind being moved. |
+| decline | They've stood this long. They'll stand a bit more. |
+| active | The rocks at the forest edge. Look close. (keep) |
+| ready (1) | Stacked, like a cairn? Old way-marks, then. (keep) |
+| ready (2) | Five arrows. Mind the edge after dark. (keep) |
+| done | Way-marks. Someone walked this road before us. (keep) |
+| objText | Check the rocks by the forest edge (keep) |
+| returnText | Report to Joss at the Bend Waystone |
+
+**sq.rb.parcel, new title "Brass for the Bend"** (deliver to Joss)
+
+| field | text |
+|---|---|
+| offer (1) | My mallet head works loose. Brass would hold it. |
+| offer (2) | Bring me a brass scrap. Your ship dropped plenty. (keep) |
+| accept | Any scrap. Flat is better. Bent will do. |
+| decline | I'll tie it with string again. It's held so far. |
+| active | One brass scrap. From your wreck, or anywhere. (keep) |
+| ready (1) | Good brass. That'll hold the head on. |
+| ready (2) | Ten arrows. Brass is worth that, out here. (keep) |
+| done | Mallet's tight. Listen. Hear it ring? |
+| objText | Bring the brass scrap to Joss |
+| returnText | Hand the brass to Joss |
+| journal | You carry a brass scrap for Joss. Hand it over at the Bend Waystone. |
+
+**sq.fc.cog "A Cog for the Bend"** (deliver to Joss)
+
+| field | text |
+|---|---|
+| offer (1) | The waystone's mount is short one cog. I hear it. |
+| offer (2) | Bring me a brass cog. I'll fit it myself. (keep) |
+| accept | Brass, toothed, about so big. You'll know it. |
+| decline | It'll grind a while longer. I'll hear it. |
+| active | One brass cog. You'll have one somewhere. (keep) |
+| ready (1) | That'll do. It'll turn smooth now. (keep) |
+| ready (2) | Ten arrows. Fair trade. (keep) |
+| done | You won't see the cog turn. I will. (keep) |
+| objText | Bring the cog to Joss |
+| returnText | Hand the cog to Joss |
+| journal | You carry a brass cog for Joss. Hand it over at the Bend Waystone. |
+
+Notes: the "keep" lines were Bram's and read the same in Joss's mouth. Bram's old `sq.rb.parcel.done` ("Lid holds. The crow can't open it now.") goes away with the basket-lid reason. The QFIX-S5 Bram table rows for the moved ids are superseded by this section; Bram's hello lines are unchanged.
+
+## Ford/Outwall notes (QUEST-WRITER-FILL-01)
+
+Inspect texts in `content/dialogue/inspect.json` (written 2026-10-15; this item
+cleared the stale NEEDS WRITER dev notes in `world_m1.world.json`). Lines <= 56.
+
+**note.fordCellar** "A tally on a cellar beam" (cellarNote, Ford cellar)
+- Salt, six sacks. Oil, four jars. All from the strand.
+- Up the stairs by night. Never past the post lamp.
+- The graves run is off. Nobody carries there now.
+- Whoever goes down there, it is not one of ours.
+
+**note.smugglers** "A note under a crate" (strandCaveNote, sea cave)
+- Low tide only. By high water this floor is sea.
+- Salt and oil go to the cellar under the Ford.
+- Nothing more goes by the graves. Not after dark.
+- Names off the walls down there. We never did that.
+
+**note.owBoard** "Notices, nailed up" (owBoard, Outwall plaza)
+- Crown notices, printed in Ferrum. Rain-soft.
+- FELL BEYOND THE WALL. Name after name.
+- Carried out here and nailed up, one by one.
+- One line cut away. On the nail, a skyworks knot.
+
+**note.pierStone** "A standing stone" (pierStone, Outwall track)
+- A dressed block, set on end beside the track.
+- Old mortar on one face. Once part of a bridge pier.
+- A Crown stamp, half chiselled away.
+- The bridge was pulled down. Not by the river.

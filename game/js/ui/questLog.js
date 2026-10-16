@@ -49,7 +49,7 @@ export function createQuestLog(def, {hudWidth=60,width=72,fg='#e8e2d0',bg='#0a0b
 // (title, story summary from the active objective's `journal`, objectives with counts). Strings are rebuilt only on open,
 // key input and a changed book.version; draw() never formats or allocates.
 export const QUEST_LOG_KEYS = ['ArrowUp', 'ArrowDown', 'KeyW', 'KeyS', 'ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD', 'Tab', 'KeyE', 'Backspace', 'Enter', 'KeyJ', 'Escape', 'KeyX', 'KeyT'];
-export const QUEST_LOG_TEXT = Object.freeze({ header: 'PENCIL NOTES', empty: 'Nothing yet. Not nothing.', paneL: 'QUESTS', abandon: '[X] Abandon quest', track: '[T] Track this quest', tracked: '[T] Tracked (compass + objective)', talkTo: 'Talk to ', abandonSure: '[X] again to abandon (progress resets)', finished: 'All done. Nothing left to do here.', footer: 'W/S select  T track  X abandon  J close', footerDone: 'W/S select  Enter re-read  J close', giver: 'Given by: ', returnTo: 'Return to ', next: 'Next: ', reward: 'Reward: ', objectives: 'Objectives' });
+export const QUEST_LOG_TEXT = Object.freeze({ header: 'PENCIL NOTES', empty: 'Nothing yet. Not nothing.', paneL: 'QUESTS', abandon: '[X] Abandon quest', track: '[T] Track this quest', tracked: '[T] Tracked (compass + objective)', talkTo: 'Talk to ', abandonSure: '[X] again to abandon (progress resets)', finished: 'All done. Nothing left to do here.', footer: 'W/S select  T track  X abandon  J close', footerDone: 'W/S select  Enter re-read  J close', giver: 'Given by: ', returnTo: 'Return to ', next: 'Next: ', reward: 'Reward: ', received: 'Received: ', handIn: 'Hand in to: ', objectives: 'Objectives' });
 const AVAILABLE = 1, READY = 3, DONE = 4, LIST_TOP = 6, LIST_ROWS = 14, LEFT_X = 4, LEFT_W = 22, DIV_X = 27, RIGHT_X = 29, RIGHT_W = 40;
 
 /** Word wrap into at most `max` lines of `w` chars (last line ellipsised). Rebuild-time only. */
@@ -105,6 +105,7 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
     for (let i = 0; i < n; i++) {
       const s = book.status(i);
       if (i === 0 && s !== DONE && !mainSection(book.def(0), book.objectives(0, mainRows))) continue; // OB-099: covered by a giver quest
+      if (i === 0 && s !== DONE && typeof book.mainStepGated === 'function' && book.mainStepGated()) continue; // OB-201 (rule OB-156/D-082): m1 step owned by a giver quest not accepted yet -> no active entry / objective until accepted
       if (s === 2 || s === READY) (isMain(i) ? mainAct : act).push(i);
     }
     mainAct.sort((a, b) => (a === 0 ? -1 : b === 0 ? 1 : b - a)); act.sort((a, b) => b - a);
@@ -151,7 +152,14 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
         right.push({ kind: 'step', status: row.status, text: clipped(mark + ascii(row.text), RIGHT_W - c.length) + c });
       }
     }
-    if (def.reward && def.reward.items && def.reward.items.length) right.push({ kind: 'dim', text: clipped(T.reward + def.reward.items.map(it => ascii(itemName(it.id)) + (it.n > 1 ? ' x' + it.n : '')).join(', '), RIGHT_W) });
+    if (def.reward) { // QUEST-LOG-REWARD-01: xp / coins / items in plain names; "Received" once handed in
+      const rw = def.reward, parts = [];
+      if (rw.xp) parts.push(rw.xp + ' XP');
+      if (rw.coin) parts.push(rw.coin + ' coins');
+      if (rw.items) for (const it of rw.items) parts.push(ascii(itemName(it.id)) + (it.n > 1 ? ' x' + it.n : ''));
+      if (parts.length) right.push({ kind: 'dim', text: clipped((isDone ? T.received : T.reward) + parts.join(', '), RIGHT_W) });
+    }
+    if (s === READY && i > 0) { const g = book.turnInOf ? book.turnInOf(i) : book.giverOf ? book.giverOf(i) : null; if (g) right.push({ kind: 'head', text: clipped(T.handIn + ascii(String(giverName(g))), RIGHT_W) }); }
     if (i > 0 && !isDone && s !== AVAILABLE && book.track) right.push({ kind: 'head', text: book.tracked() === i ? T.tracked : T.track });
     if (book.canAbandon && book.canAbandon(def.id)) right.push({ kind: 'head', text: sure ? T.abandonSure : T.abandon });
   }

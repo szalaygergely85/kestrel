@@ -40,9 +40,11 @@ export { validatePackageManifest, openPackage, mountPackages, loadPackageModels,
 export { readZip, writeZip, crc32, checkZipPath, ZIP_LIMITS } from './content/zip.js'; // KPKG-01/03 (38.30)
 
 // ---- world ----------------------------------------------------------------
+export { gustBand } from './world/wind.js'; // WIND-GUST-01b: injected into createLeafFall (fx/** may not import world/**)
 export { World, stepSectorAnims, PROP_SCALE_MIN, PROP_SCALE_MAX } from './world/World.js';
 export { GIBake, encodeRaw as encodeGIBake } from './world/giBake.js'; // GI-PROBE-02b
 export { createGIState, mixGIState } from './render/giProbe.js'; // GI-PROBE-06
+export { createContactAO, setDynamicBlobs, buildContactBlobs, CAO_MAX } from './render/contactAO.js'; export { SHAFT_DEFAULTS } from './render/lightShaft.js'; // CONTACT-AO-01c / CANOPY-SHAFT-01c game hookup
 export { writeGIFile, readGIFile, readGIHeader, isGIFileFresh } from './world/giFile.js';
 export { zoneAt, zoneId, CHUNK as BAND_CHUNK } from './world/bandGrid.js';
 export { makeGrid as createBandGrid } from './world/bandGrid.js'; // ENG-API-01c: makeGrid deprecated (generic word, area prefix)
@@ -71,6 +73,7 @@ export { makeTerrainShadeCtx as createTerrainShadeCtx } from './render/terrainSh
 export { packTerrainTextures, TLOOK_WIDTH } from './render/gpu/TerrainTextures.js';
 export { drawSprites, SpritePool, MAX_SPRITES } from './render/sprites.js';
 export { validatePost, createPostState, composePost, postCells } from './render/post.js'; // POST-STACK-01a (38.73): per-cell finish chain, JS twin
+export { createFogHour } from './render/fogHour.js'; // NIGHT-HAZE-01
 export { createAtmosState, mixAtmos, applyAtmosToPalette, gradeCells, gradeRGB, ATMOS_FOG_FIT } from './render/atmos.js'; // ENV-03c: biome atmosphere (game driver = ENV-03a)
 // ---- US-030c GPU sprite pass + atlas + parity harness ----------------------
 export { buildSpriteAtlas } from './render/gpu/spritesAtlas.js';
@@ -161,11 +164,12 @@ export { WGSL_MODULES, summarizeCompilation } from './render/gpu/wgsl/index.js';
 export { resolveWaterLooks } from './render/waterLook.js'; // US-055a2c Q12 item 8: main.js's fb.waterLooks (JS twin)
 // US-047: runGpuCompare/compareCells/compareGeometry/compareLight/poison*
 // (gpucompare parity harness) moved to engine/dev.js.
-export { flickerStep } from './render/gpu/flicker.js';
+export { flickerStep, flickerReprojStep } from './render/gpu/flicker.js';
 
 // ---- physics ----------------------------------------------------------------
 export { PHYSICS_DEFAULTS, PHYSICS } from './physics/config.js';
 export { moveCapsule, isSectorPassable, sectorOrOutside } from './physics/capsule.js';
+export { boundsOvershoot } from './physics/bounds.js'; // SPELL-R4: blink target bounds test
 export { moveSphere } from './physics/sphere.js';
 export { stepRollers, resolveBodyContacts, rollFrame } from './physics/roller.js';
 export { integrate } from './physics/integrate.js';
@@ -279,6 +283,7 @@ export { createEntityEmitters } from './world/entityEmitters.js';
 // ---- S8-B2-13b splash ripples (docs/architecture.md 38.14, the note of record) ----
 export { createRipples, RIPPLE_LIFE, RIPPLE_SPEED, RIPPLE_W } from './fx/ripples.js';
 export { defineHitSparks, hitSparks, HIT_SPARK_HUES } from './fx/hitSparks.js';
+export { defineLeafFall, createLeafFall, LEAF_FALL } from './fx/leafFall.js';
 export { defineWadeSplash, wadeSplashAt, arrowSplashAt, WADE_SPLASH } from './fx/wadeSplash.js';
 export { laneCells, laneAlpha, LANE_CELL_M, LANE_ALPHA_MAX } from './fx/chargeLane.js';
 

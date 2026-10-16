@@ -8,7 +8,7 @@
  * D-011 addendum: a small STATIC aether-teal light sits in the notch of the broken crown (where the bowl is), 1 cell in the
  * `min` frame (1-2 cells on screen at 240x90 after the minCells clamp, never smaller than 1 cell). The light cells are
  * emissive (ignore lighting) but take far fog capped at their key's `fogMax` (0.20), so they stay clearly teal.
- * The SOS pulse (D-013 timing, same as title.signal) is a later P2 story; in M1 the light is steady. US-022 (waking our relay)
+ * The ALIVE pulse (Morse, ASSETS.signal in title.js; D-112) is a later P2 story; in M1 the light is steady. US-022 (waking our relay)
  * does not change it.
  *
  * Two frames, chosen by projected height (rows), never animated:
@@ -79,7 +79,7 @@
     signalLight: {
       keys: ['L', 'G'], colorRamp: 'aether', rampIndex: { L: 2, G: 1 },
       cells: { min: [{ x: 1, y: 0 }], detail: [{ x: 2, y: 1 }, { x: 2, y: 0 }] },
-      steady: true, pulse: 'P2 story: SOS 3 short / 3 long / 3 short (title.signal.ms timing); not M1',
+      steady: true, pulse: 'P2 story: Morse ALIVE (ASSETS.signal.steps timing); not M1',
       unchangedBy: 'US-022 (waking our relay changes neither the signal tower nor Ferrum in M1)'
     },
 

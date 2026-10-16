@@ -982,10 +982,22 @@ export class World {
       this.structTable[o + 7] = structSeq;
     }
 
+    this._invalidateBandsFor(bbox); // BH-R1: band/zone key memos fold the structure list - drop them + overlapping cached bundles
     this.renderVersion++;
     this.structVersion++; // US-030a: the placed-structure LIST changed shape - see the constructor comment.
     if (this.events) this.events.emit('world:structurePlaced', { id: structId, origin: placed.origin });
     return placed;
+  }
+
+  /**
+   * BH-R1: a structure placed after load changes `nearBandKey` (heights, carve/keep masks, scatter), but the key memos
+   * (_bandKeys/_zoneKeys/_pinKeys) are only reset by _gridFill/onRebake. Reset them and drop cached bundles whose rect
+   * touches `bbox` (+ blend ring margin); unrelated bands keep their cache. The key change itself forces a fresh bake.
+   */
+  _invalidateBandsFor(bbox) {
+    const R = 16;
+    this._bandKeys.length = 0; this._bandKeysC.length = 0; this._zoneKeys.clear(); this._pinKeys = null; this._ahead = null; this._aheadIdle = -1;
+    this.bandCache.invalidateRect(bbox.x0 - R, bbox.y0 - R, bbox.x1 + R, bbox.y1 + R);
   }
 
   /** Place content MeshData; grid sectors and dynamic tags remain level-only. */
@@ -1116,6 +1128,23 @@ export class World {
   keepTerrainOpen(s, x, y, z) {
     if (!s || !s.keepMask || !this.terrain || !this._keepCell(s, x, y)) return false;
     return z >= this.terrain.groundAt(x, y) - KEEP_TERRAIN_SUPPORT_DROP;
+  }
+
+  /**
+   * OB-205/OB-175: true when the point (x, y, z) is in the open air/terrain: outside every grid structure, on a
+   * `terrainFloor` ring cell, or above a `keepTerrain` cell (cellar walls/room under the surface). Used for the
+   * outdoor-vs-interior fog/ambient choice (the 2D `sectorAt` alone says "inside" for a player standing on grass above a buried level).
+   * `z` omitted/NaN = 2D answer (sector present = inside).
+   */
+  isOutdoorAt(x, y, z) {
+    const s = this.structureAt(x, y);
+    if (!s) return true;
+    const g = gridLocal(s, x, y, this._grid);
+    const sec = s.level.sectorAt(g.x, g.y);
+    if (!sec) return true;
+    if (isTerrainFloor(sec)) return true;
+    if (z === undefined || z !== z || !this.terrain) return false;
+    return this.keepTerrainOpen(s, x, y, z);
   }
 
   sectorAt(x, y) {
@@ -1315,7 +1344,7 @@ export class World {
   }
 
   /** MAP-10: fills slot `k` with grid zone (i, j) (the id string allocates; prefetch/swap only). */
-  _gridFill(k, i, j) { const z = this.terrainBands[k]; zoneAt(this.terrainGrid, i, j, z); z.id = zoneId(z.i, z.j); this._bandKeys[k] = null; return z; }
+  _gridFill(k, i, j) { const z = this.terrainBands[k]; zoneAt(this.terrainGrid, i, j, z); z.id = zoneId(z.i, z.j); this._bandKeys[k] = null; const gl = this.giLoader; if (gl && !gl.state.has(z.id)) gl.load(z.id); return z; } // GI-PROBE-03-FIX: grid zones fetch their .gi.bin once (state.has guard = no promise per call)
 
   /** Drops a pending bake and its scatter job. */
   /** WS2-05: index of the terrain band being baked, -1 when none. */
@@ -1468,7 +1497,8 @@ export class World {
   loadGI(opts = {}) {
     const loader = this.giLoader = new GILoader({ ...opts, onLoad: (id, f) => this._giArrived(id, f) });
     for (const b of this.bandCache.map.values()) if (b.giId && !b.gi) { const f = loader.get(b.giId); if (f) this._giArrived(b.giId, f); }
-    return loader.loadAll(this.terrainBands && !this.terrainGrid ? this.terrainBands.map((z) => z.id) : []);
+    // GI-PROBE-03-FIX: grid worlds request the live band's zone now; later zones are requested by _gridFill (one fetch per zone)
+    return loader.loadAll(this.terrainBands ? (this.terrainGrid ? (this.bandId ? [this.bandId] : []) : this.terrainBands.map((z) => z.id)) : []);
   }
   /** Idle-time fetch of one grid zone's field (e.g. zones in the bake-ahead ring). */
   loadGIZone(id) { return this.giLoader ? this.giLoader.load(id) : Promise.resolve(null); }
@@ -1870,7 +1900,8 @@ export class World {
     const sup = this._meshSupportScratch;
     probeSupportIo(this.colliders, this.colliders.length, io, grounded, opts, sup);
     let terrainZ = NaN, tnx = 0, tny = 0, tnz = 0;
-    if (this.terrain && this._terrainSupports(x, y, footZ)) {
+    const st = this.terrain ? this.structureAt(x, y) : null; // HUNT-ALLOC-01: inline gate, no double args through a helper (arch 38.61 2b)
+    if (this.terrain && (!st || (st.keepMask && this._terrainSupports(x, y, footZ)))) {
       this.terrain.groundAtBuf(io);
       terrainZ = io[3];
       if (terrainZ >= sup.floorZ) {

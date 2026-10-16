@@ -60,5 +60,28 @@ function makeFg(glyphs) {
   check('moving line: totalPct = 100/3', Math.abs(out.totalPct - (100 / 3)) < 1e-9);
 }
 
+// AA-01: colourPct (max |delta| over fg.rgb and bg.rgb > 24, non-sky-in-both cells)
+{
+  const GI = makeGI(new Array(n).fill(1), new Array(n).fill(1), new Array(n).fill(5));
+  const mk = (r, g, b) => { const a = new Uint8Array(4 * n); for (let i = 0; i < n; i++) { a[i * 4] = r; a[i * 4 + 1] = g; a[i * 4 + 2] = b; a[i * 4 + 3] = 10; } return a; };
+  let out = flickerStep(GI, mk(100, 100, 100), GI, mk(100, 100, 100), cols, rows, {}, mk(5, 5, 5), mk(5, 5, 5));
+  check('colour: identical frames -> 0 %', out.colourPct === 0 && out.colourChanged === 0);
+  out = flickerStep(GI, mk(0, 0, 0), GI, mk(0, 0, 100), cols, rows, {}, mk(0, 0, 0), mk(0, 0, 0));
+  check('colour: all cells shift 100 in fg.b -> 100 %', out.colourPct === 100 && out.colourChanged === 9);
+  out = flickerStep(GI, mk(100, 100, 100), GI, mk(124, 100, 100), cols, rows, {}, mk(0, 0, 0), mk(0, 0, 0));
+  check('colour: delta exactly 24 (fg) is NOT counted (threshold exclusive)', out.colourPct === 0);
+  out = flickerStep(GI, mk(100, 100, 100), GI, mk(125, 100, 100), cols, rows, {}, mk(0, 0, 0), mk(0, 0, 0));
+  check('colour: delta 25 (fg) is counted', out.colourPct === 100);
+  out = flickerStep(GI, mk(0, 0, 0), GI, mk(0, 0, 0), cols, rows, {}, mk(50, 50, 50), mk(50, 50, 74));
+  check('colour: bg delta 24 not counted', out.colourPct === 0);
+  out = flickerStep(GI, mk(0, 0, 0), GI, mk(0, 0, 0), cols, rows, {}, mk(50, 50, 50), mk(50, 75, 50));
+  check('colour: bg delta 25 counted', out.colourPct === 100);
+  // one changed cell + one sky cell (not counted in the denominator)
+  const GIs = makeGI([1, 1, 1, 1, 0, 1, 1, 1, 1], new Array(n).fill(1), new Array(n).fill(5));
+  const b = mk(0, 0, 0); const c = mk(0, 0, 0); c[0] = 200;
+  out = flickerStep(GIs, mk(0, 0, 0), GIs, c, cols, rows, {}, b, b);
+  check('colour: sky cell excluded from the denominator (1/8)', out.total === 8 && out.colourChanged === 1 && Math.abs(out.colourPct - 12.5) < 1e-9);
+}
+
 console.log(`[flicker.test.js] ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

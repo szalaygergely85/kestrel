@@ -24,7 +24,7 @@ d.legRig.gaits = { walk: { tunedMps: 1.0, duty: 0.6, phase: [0, 0.5, 0.5, 0], li
 d.blend = { sets: { loco: { param: 'speed', clips: [{ clip: 'walk', at: 1 }, { clip: 'run', at: 3 }] } }, fades: { default: 150 } };
 const pm = packVoxelModel(d, () => 1);
 const ci = pm.clipIndex, LOCO = -1, lr = pm.legRig;
-const flat = { groundAt() { return 0; } };
+const flat = { groundAt() { return 0; }, groundAtQ(q) { q[2] = 0; } };
 const zOff = (lr.geo[1] + lr.geo[3] + lr.geo[5] - pm.anchor[2]) * pm.cellM;
 const outB = new Float64Array(pm.partCount * 20 + 64);
 
@@ -39,15 +39,19 @@ function frameC(r) {
   r.dr.io[11] = 0;
   if (!r.legacy) r.bl.update(r.bs, pm, DT, r.dr.io);
   const di = r.dr.io; di[0] = r.pos[0]; di[1] = r.pos[1]; di[2] = 0; di[3] = 0; di[4] = DT; di[5] = 0; di[6] = 0;
-  r.dr.update(r.ds, pm, r.legacy ? (speed > 2 ? ci.run : ci.walk) : req < 0 ? r.bl.io[6] : req, flat);
+  r.dr.update(r.ds, pm, r.legacy ? (speed > 2 ? ci.run : ci.walk) : (req < 0 ? r.bl.io[6] : req) | 0, flat);
 }
 
 // ---- 0. 0 alloc per step (first in the file: later scenarios make the JIT state noisy, see animBlend.test.js)
 {
   const r = rig();
-  const res = allocProbe((n) => { for (let i = 0; i < n; i++) { ctl[0] = (i % 200) < 100 ? LOCO : ci.attack; ctl[1] = (i % 90) / 25; frameC(r); } }, { n: 50000 });
+  // chunk: run() is a regular hot function (no per-window OSR re-entry, which boxed doubles in Maglev on Node 24); settle: the
+  // request-change helpers (enter / fadeMs, taken every 100 steps) tier up late. Steady-state garbage still fails (allocProbe.test).
+  const it = new Int32Array(1); // step counter across chunks: same LOCO/attack + speed pattern as one long loop
+  const res = allocProbe((n) => { for (let k = 0; k < n; k++) { const i = it[0]++; ctl[0] = (i % 200) < 100 ? LOCO : ci.attack; ctl[1] = (i % 90) / 25; frameC(r); } }, { n: 50000, chunk: 1000, settle: 20, limit: 0.5 });
   if (res.skipped) console.log('SKIP alloc (no --expose-gc)');
-  else ok(`0 B/step blender + driver ${res.perCall.toFixed(3)}`, res.perCall < 0.5);
+  else ok(`0 B/step blender + driver`, res.perCall < 0.5, `${res.perCall.toFixed(3)} B/step`);
+  if (process.env.ALLOC_DEBUG) console.log(`  info: ${res.perCall.toFixed(4)} B/step`);
 }
 
 // ---- 1. foot slide <= 12 mm over a 0 -> run -> 0 speed ramp (stance = foot on the ground)

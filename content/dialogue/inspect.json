@@ -58,7 +58,7 @@
     "inspect.well": {
       "prompt": "[E] Look at the well",
       "title": "A dry well",
-      "lines": ["Planks across the mouth. One brick gone.", "You drop a pebble. No splash. No echo.", "The bucket rope was cut, not rotted.", "Someone did not want it used again."]
+      "lines": ["Planks across the mouth. One brick gone.", "You drop a pebble. No splash. No echo.", "The bucket rope was cut, not rotted.", "Someone did not want it used again.", "Cold light rises from the dry well."]
     },
     "inspect.shrine": {
       "prompt": "[E] Look at the shrine",
@@ -96,12 +96,20 @@
       "afterItem": "relay.mirror"
     },
     "note.fordCellar": {
-      "note": "NEEDS WRITER (UNDER-03 placeholder, smugglers' voice; story.md to replace). <= 4 lines, <= 56 chars each.",
+      "note": "Writer 2026-10-15 (UNDER-03): smugglers' cellar tally; pairs with note.smugglers (graves run stopped, someone else goes there). No names.",
       "prompt": "[E] Read the tally",
-      "title": "A tally cut in a cellar beam",
-      "lines": ["Three crates paid, in a quick hand.", "THE FOURTH GOES TO THE CRYPT.", "Leave it at the stones. Do not ask who comes."],
+      "title": "A tally on a cellar beam",
+      "lines": ["Salt, six sacks. Oil, four jars. All from the strand.", "Up the stairs by night. Never past the post lamp.", "The graves run is off. Nobody carries there now.", "Whoever goes down there, it is not one of ours."],
       "radius": 2.2,
       "entities": ["cellarNote"]
+    },
+    "note.smugglers": {
+      "note": "Writer 2026-10-15 (UNDER-05): smugglers' voice; hints Ford cellar + crypt (scraped names), no spoilers.",
+      "prompt": "[E] Read the note",
+      "title": "A note under a crate",
+      "lines": ["Low tide only. By high water this floor is sea.", "Salt and oil go to the cellar under the Ford.", "Nothing more goes by the graves. Not after dark.", "Names off the walls down there. We never did that."],
+      "radius": 2.2,
+      "entities": ["strandCaveNote"]
     },
     "note.fordMark": {
       "prompt": "[E] Look at the mark",

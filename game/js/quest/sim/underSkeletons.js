@@ -15,10 +15,15 @@ export const UNDER_SITES = Object.freeze([
     ['skelwar.cemetery.1', 'skelwar', -3, 1], ['skelwar.cemetery.2', 'skelwar', 3, 2], ['skelarch.cemetery.1', 'skelarch', 0, -3]]) }),
   // UNDER-02: the crypt under the cemetery (any time of day; z = crypt floor, so the spawner's |dz| < 3 m rule keeps them apart from the surface cemetery)
   Object.freeze({ id: 'crypt', anchor: [1674.5, 1357.5], z: -56.8, night: false, group: '', members: Object.freeze([
-    ['skelwar.crypt.1', 'skelwar', -2, 4.5], ['skelarch.crypt.1', 'skelarch', 2, 6], // room 2
-    ['skelwar.crypt.2', 'skelwar', -2, -4], ['skelwar.crypt.3', 'skelwar', 2, -6], ['skelarch.crypt.2', 'skelarch', 0, -5]]) }), // room 3
+    ['skelwar.crypt.1', 'skelwar', -2, 4.5], ['skelwar.crypt.4', 'skelwar', 0, 3.5], ['skelarch.crypt.1', 'skelarch', 2, 6], // room 2: 2 Warrior + 1 Archer (UNDER-SKEL-VARIETY-01)
+    ['skelbrute.crypt.1', 'skelbrute', 0, -5], ['skelwar.crypt.2', 'skelwar', -2, -4], ['skelwar.crypt.3', 'skelwar', 2, -6]]) }), // room 3: 1 Brute + 2 Warrior
   // UNDER-04 (OB-191): the bear den in the northwood hillside (any time of day; z = chamber floor). ONE black bear 'sleeps' = temperament 'wary' (calm: notices at 5 m only, leash 12 m, full aggro once hit; no sleep state in beastSim)
   Object.freeze({ id: 'bearDen', anchor: [1584, 432], z: 11.76, night: false, group: '', members: Object.freeze([['bear.bearDen.1', 'bear', 0, 0]]) }),
+  // UNDER-05 (OB-191): the Long Strand sea cave (any time of day; z = chamber floor). TWO tortoises (wary = calm, no aggro) on the floor of the chamber.
+  Object.freeze({ id: 'strandCave', anchor: [1618.5, 1726], z: -95.31, night: false, group: '', members: Object.freeze([['turtle.strandCave.1', 'turtle', -2.5, 0.5], ['turtle.strandCave.2', 'turtle', 2.2, -0.8]]) }),
+  // UNDER-06 (OB-191): goblin tunnel stash room between campNorth and campEast (3 goblins, any time of day; z = tunnel stash floor, so the dz < 3 m rule keeps them off the surface)
+  Object.freeze({ id: 'goblinTunnel', anchor: [945.5, 946], z: -88.8, night: false, group: '', members: Object.freeze([
+    ['archer.goblinTunnel.1', 'archer', -2, 1.5], ['torch.goblinTunnel.1', 'torch', 2, 1.5], ['archer.goblinTunnel.2', 'archer', 0, -1.5]]) }),
   // existing OB-141 ruin POI ob141r06 (whitecombs arch at 1740,200, far side, zone band 5 = level 5)
   Object.freeze({ id: 'ruinWhite', anchor: [1740, 200], night: false, group: '', members: Object.freeze([
     ['skelwar.ruinWhite.1', 'skelwar', -2, 2], ['skelarch.ruinWhite.1', 'skelarch', 2, 3]]) }),

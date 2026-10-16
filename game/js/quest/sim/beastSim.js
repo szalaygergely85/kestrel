@@ -12,14 +12,15 @@ import { createAStar, findPath, findPathCells, smoothPath, createSteer, PHYSICS,
 import { BEAST_DEFAULTS, toSteps } from './beastConfig.js';
 import { tierMult } from './band.js';
 import { levelScale, LEVEL_TABLE, kindFactors } from './beastLevels.js';
-import { resolveDifficulty } from './difficulty.js'; // DIFF-MENU
+import { resolveDifficulty, DIFFICULTY, WINDUP_FLOOR_SEC } from './difficulty.js'; // DIFF-MENU
+import { hashU } from '../../life/schedule.js';
 import { canSee } from './sight.js';
 import { BEAR_TUNING, BEAR_MODEL, bearOverrides, bearPicksBite, isBearEntity } from './bearBrain.js'; // BEAR-01, BEAR-BITE
 import { WOLF_TUNING, wolfOverrides, isWolfEntity, circleTarget, awayTarget } from './wolfBrain.js'; // WOLF-01
 import { GOBLIN_TUNING, goblinOverrides, isGoblinEntity } from './goblinBrain.js'; // GOB-01
-import { KINDS, kindIndex, kindOfEntity } from './beastKinds.js'; // BEAST-03a
+import { KINDS, KIND_NAMES, kindIndex, kindOfEntity } from './beastKinds.js'; // BEAST-03a
 import { ARCHETYPES } from "./archetypes.js";
-import { createWaterBrain, stepWaterBrain, grabMash as wbGrabMash, waterBlocks, waterHit } from './brains/waterBrain.js'; // BEAST-08b
+import { createWaterBrain, stepWaterBrain, grabMash as wbGrabMash, waterBlocks, waterHit, waterFreeze } from './brains/waterBrain.js'; // BEAST-08b
 import { LAYERS } from './brains/layers.js'; // BEAST-03b: LAYERS[archIdx](sim, i, ctx)
 import { createTactics, tacticsSync, tacticsSteer, tacticsBand, tacticsAllies, TACT_MELEE, TACT_RANGED, TACT_CASTER, TACT_SWARM, TOK_M, TOK_R, TOK_S } from './tactics.js'; // BEAST-04
 import { archIndex, ARCH_NAMES } from './archetypes.js';
@@ -28,6 +29,7 @@ import { perceive, leashState, returnTarget, LEASH_HOME, LEASH_ENGAGE, LEASH_RET
 
 export const POOL = 128; // BEAST-POOL-b: live (bound) slots; records beyond it sleep unbound
 export const MAX_RECORDS = 1024; // BEAST-POOL-a (37.16.5): the public slot IS the record index 0..MAX_RECORDS-1 (stable for the run); loot.js imports this
+export const ELITE_HP_MUL = 1.5; // BH2-G1 (spec): an elite beast has x1.5 HP
 export const MAX_BEASTS = MAX_RECORDS; // legacy alias of MAX_RECORDS (tests / tools still import it)
 const PATH_SLOTS = 64; // waypoints kept per beast path (truncated, final = the exact goal - see `storePath`)
 
@@ -63,6 +65,7 @@ const TACT_ROLE_OF = Object.freeze({ melee: TACT_MELEE, ranged: TACT_RANGED, cas
 const ARCH_AGGRO_IDX = Object.freeze({ hostile: 0, whenHit: 1, never: 2, near: 3 });
 const FIRST_DEAD_STATE = STATE_DYING;
 const deadSt = (st) => st >= FIRST_DEAD_STATE && st <= STATE_GONE; // EAT (13) is alive
+export const isBeastDeadState = deadSt; // R6-FIX C: game-side living counts use the sim's own semantics
 const HUNT_PREY = { wolf: ['rabbit', 'deer'], bear: ['deer'] }; // LIFE-07: species-filtered prey (38.56 c)
 const GOAL_ARRIVE_R = 3, ALT_R = 14, ALT_HIT_R = 1.4, ALT_COOLDOWN_S = 6, MAX_ALT = 8; // LIFE-08 (38.56 d): raid goal + villager alt targets
 const HUNT_R = 18, HUNT_CATCH_R = 1.2, HUNT_MAX_S = 6, EAT_S = 8; // states >= this skip perception/path/steer and run stepDead instead
@@ -170,14 +173,17 @@ export function createBeastSim(world, opts) {
     // preallocated adapter scratch for engine/nav perceive + leash (zero alloc per step)
     _slot: 0,
     _pa: { x: 0, y: 0, fx: 0, fy: 0, coneCos: cfg.coneCos, range: cfg.noticeR, hearR: cfg.nearR, homeX: 0, homeY: 0, homeR: 0 },
-    _pt: { x: 0, y: 0, noise: 1 },
-    _po: { sees: false, hears: false, dist: 0, returnHome: false },
-    _lt: { x: 0, y: 0 },
-    _lret: { x: 0, y: 0, speed: 0 },
-    _ldef: { homeX: 0, homeY: 0, homeR: cfg.homeArriveR, leashR: cfg.leashR, aggroR: cfg.loseR / cfg.loseScale,
+    _sc: { // scratch objects folded into one key (SIMSHAPE-01: keeps the top-level key count in V8's fast-properties budget)
+      pt: { x: 0, y: 0, noise: 1 },
+      po: { sees: false, hears: false, dist: 0, returnHome: false },
+      lt: { x: 0, y: 0 },
+      lret: { x: 0, y: 0, speed: 0 },
+      def: { homeX: 0, homeY: 0, homeR: cfg.homeArriveR, leashR: cfg.leashR, aggroR: cfg.loseR / cfg.loseScale,
              loseScale: cfg.loseScale, returnSpeed: cfg.returnSpeed, giveUpT: cfg.giveUpSec },
+      ctx: { px: 0, py: 0 },
+      losFn: null,
+    },
     _lagents: null,
-    _losFn: null,
     entities: beastEntities.slice(0, count),
     ids: beastEntities.slice(0, count).map((e) => e.id),
     grp: beastEntities.slice(0, count).map((e) => (e.components.brain && typeof e.components.brain.group === 'string' ? e.components.brain.group : '')), // ED-LOGIC-01c: logic group name per slot ('' = none)
@@ -186,6 +192,8 @@ export function createBeastSim(world, opts) {
     tier: new Uint8Array(MAX_RECORDS),
     state: new Uint8Array(MAX_RECORDS),
     timer: new Int32Array(MAX_RECORDS),
+    wuTot: new Int32Array(MAX_RECORDS), // BH2-G1: the difficulty-scaled windup length of the current windup (for the scrape-kick clock)
+    dm: diffMults(opts && opts.difficulty), // BH2-G1: live difficulty ratios (windup / noticeR / noticeSec / leash), read at use so a live change applies to existing beasts
     unseen: new Int32Array(MAX_RECORDS), // also reused as the charge wall-slow streak counter (charge never needs "unseen")
     repathT: new Int32Array(MAX_RECORDS),
     homeX: new Float64Array(MAX_RECORDS),
@@ -204,6 +212,9 @@ export function createBeastSim(world, opts) {
       t: new Int32Array(MAX_RECORDS), ax: new Float64Array(MAX_RECORDS), ay: new Float64Array(MAX_RECORDS),
       fail: new Uint8Array(MAX_RECORDS), st: new Uint8Array(MAX_RECORDS),
       wall: new Uint8Array(MAX_RECORDS), // BH-A3: charge wall-slow streak (was aliased onto `unseen`, which perceiveOne rewrites)
+      lv: new Uint8Array(MAX_RECORDS),   // SPELL-05: zone level (OB-150) per slot, read by the Light Orb keep-out
+      cf: new Int32Array(MAX_RECORDS),   // SPELL-05: steps of calm-flee left (Light Orb Lv3), 0 = none
+      calm: { on: 0, x: 0, y: 0, r2: 0, lv: 0 }, // SPELL-05: Light Orb zone; beasts of level <= lv inside it do not START aggro
     },
     chargeLen: new Uint16Array(MAX_RECORDS), // OB-150: steps this charge may last (nominal chargeMax, longer when the player already backs away)
     bankT: new Int32Array(MAX_RECORDS),      // NAV-REACH-01: steps a chaser has held at the nearest reachable cell (partial path) before giving up
@@ -226,12 +237,12 @@ export function createBeastSim(world, opts) {
     cause: new Uint8Array(MAX_RECORDS),       // US-079b: 0 sword, 1 fire (indexes CAUSE_STR)
     knockV: new Float64Array(MAX_RECORDS),    // US-079b: per-slot stagger clamp speed (replaces shared cfg.staggerKnock)
     wolf: new Uint8Array(MAX_RECORDS),        // WOLF-01: brain.species==='wolf' (per-slot cfg below, pack token, circle, flee)
+    elite: new Uint8Array(MAX_RECORDS),       // BH2-G1: 1 = rolled elite at create (difficulty.eliteChance); name-tag hook, not hashed
     wat: new Uint8Array(MAX_RECORDS),         // BEAST-08b: 1 = water slot, run by brains/waterBrain.js (live() skips it)
     wb: null,
     kindIdx: new Uint8Array(MAX_RECORDS),     // BEAST-03a: index into KIND_NAMES (beastKinds.js); data only so far
     pNear: new Float64Array(MAX_RECORDS).fill(cfg.nearR), pCone: new Float64Array(MAX_RECORDS).fill(cfg.coneCos), // BEAST-03b per-slot perception
     pAggro: new Uint8Array(MAX_RECORDS),      // 0 hostile 1 whenHit 2 never 3 near (ARCH_AGGRO order)
-    _ctx: { px: 0, py: 0 },
     tactOn: new Uint8Array(MAX_RECORDS), tactRole: new Uint8Array(MAX_RECORDS), tactBand: new Float64Array(MAX_RECORDS * 3), // BEAST-04 (tactics.js)
     tactics: createTactics(MAX_RECORDS, (opts && opts.seed) || 0x9e3779b1), 
     sc: { allyN: 0, allyX: 0, allyY: 0, tS: { CHASE: STATE_CHASE, WINDUP: STATE_WINDUP, CHARGE: STATE_CHARGE, RECOVER: STATE_RECOVER }, prey: { x: 0, y: 0 }, thrX: new Float64Array(16), thrY: new Float64Array(16), tmp: { x: 0, y: 0 } }, // scratch
@@ -248,6 +259,7 @@ export function createBeastSim(world, opts) {
     dormCamp: new Uint8Array(MAX_RECORDS), dormTile: new Uint8Array(MAX_RECORDS), tileMode: false, // WM-04 reasons
     dormant: new Uint8Array(MAX_RECORDS),     // GOB-01: setDormant(slot, true) -> skipped like GONE, state kept
     fleeing: new Uint8Array(MAX_RECORDS),     // WOLF-01: STATE_RETURN that runs away from the player first
+    spell: { blindT: new Uint16Array(MAX_RECORDS) }, // SPELL-R4 (38.80/38.81): ONE key for all spell per-slot data; blindT = steps a beast cannot perceive (Teleport lv3)
     hunt: new Uint8Array(MAX_RECORDS),        // LIFE-07: 1 = STATE_WANDER leg chasing a fauna prey slot (huntSlot)
     huntSlot: new Int32Array(MAX_RECORDS), huntT: new Int32Array(MAX_RECORDS), preyMask: new Int32Array(MAX_RECORDS),
     goal: { on: new Uint8Array(MAX_RECORDS), tx: new Float64Array(MAX_RECORDS), ty: new Float64Array(MAX_RECORDS) }, // LIFE-08: setGoal override
@@ -275,14 +287,14 @@ export function createBeastSim(world, opts) {
       died: beastEntities.slice(0, count).map((e) => ({ id: e.id, x: 0, y: 0, z: 0, cause: 'sword' })),
       sink: beastEntities.slice(0, count).map((e) => ({ id: e.id, x: 0, y: 0, z: 0 })),
       scrape: beastEntities.slice(0, count).map((e) => ({ id: e.id, x: 0, y: 0, z: 0, dirX: 0, dirY: 0, dirZ: 0 })),
-      throw: { id: '', slot: 0, x: 0, y: 0, z: 0, tx: 0, ty: 0, tz: 0 }, // GOB-02: ONE preallocated beast:throw payload (reused)
+      throw: { id: '', slot: 0, dmgF: 1, x: 0, y: 0, z: 0, tx: 0, ty: 0, tz: 0 }, // GOB-02: ONE preallocated beast:throw payload (reused)
       alt: beastEntities.slice(0, count).map((e, k) => ({ slot: k, alt: 0, id: e.id })),
     },
   };
 
   sim._lagents = [];
   for (let i = 0; i < count; i++) sim._lagents.push({ x: 0, y: 0, leashMode: LEASH_HOME, leashT: 0 });
-  sim._losFn = () => sim.seen[sim._slot] === 1; // cached periodic LOS (sampled in perceiveOne), not a fresh ray
+  sim._sc.losFn = () => sim.seen[sim._slot] === 1; // cached periodic LOS (sampled in perceiveOne), not a fresh ray
 
   for (let i = 0; i < count; i++) {
     const e = sim.entities[i];
@@ -313,7 +325,9 @@ export function createBeastSim(world, opts) {
       // BEAST-03b: any other explicit kind takes perception/leash/speeds from its archetype row (boar + the 3 legacy species keep today's numbers)
       const A = sim.ap.tab[KINDS[e.components.brain.beastKind].arch];
       sim.scfg.push({ ...cfg });
-      sim.ssteps.push({ ...sim.cfgSteps });
+      { const kd = KINDS[e.components.brain.beastKind], ts = kd.telegraphSec, va = kd.arch === 'ranged' && kd.attacks && kd.attacks[0] && kd.attacks[0].type === 'projectile' ? kd.attacks[0] : null;
+        if (va) { const w = toSteps(va.windupSec); sim.ssteps.push({ ...sim.cfgSteps, windup: w, recover: Math.max(1, toSteps(va.cooldownSec) - w), volley: true, dmgF: va.dmgF }); } // SKEL-ARCHER-CADENCE-01: shot-to-shot gap = the kind's cooldownSec (windup + recover)
+        else sim.ssteps.push(ts > 0 ? { ...sim.cfgSteps, windup: toSteps(ts) } : { ...sim.cfgSteps }); } // UNDER-SKEL-VARIETY-01: brute telegraph 0.8 s
       sim.ap.slot[i] = 1;
       deriveArchSlot(sim, i, A);
     } else { sim.scfg.push(cfg); sim.ssteps.push(sim.cfgSteps); }
@@ -333,12 +347,16 @@ export function createBeastSim(world, opts) {
     const m = tierMult(tier);
     // OB-150: hp/damage scale with the zone LEVEL (band 1-10, placed tier override -> representative level) and difficulty (beastLevels.js)
     const lv = (br && br.tier >= 1 && br.tier <= 3) ? LEVEL_TABLE.tierLevel[br.tier | 0] : (band ? band.bandAt(e.transform.x, e.transform.y) : 1);
+    // BH2-G1 eliteChance: no elite concept existed, so the simplest one: a seeded per-slot roll (Normal 0 = never) -> x1.5 HP (ELITE_HP_MUL); sim.elite[i] is the name-tag hook.
+    const ec = resolveDifficulty(opts.difficulty).eliteChance;
+    sim.elite[i] = (ec > 0 && !sim.wat[i] && (hashU(((opts && opts.seed) || 0) >>> 0, i, 0xE11E) % 10000) < ec * 10000) ? 1 : 0;
     const ls = levelScale(lv, opts.difficulty);
     // KINDS-F (OB-153): kinds.json hpF/dmgF (x boar, missing = 1) multiply the level result. Wolf/bear slots already carry their own
     // tuning (WOLF_TUNING/BEAR_TUNING hpMul, swipe hearts) so they are skipped here to avoid double counting.
     const kf = kindFactors(e, sim.wolf[i] || sim.bear[i]);
-    sim.tier[i] = tier; sim.spdMul[i] = m.speed; sim._hitPayload[i].damage = (sim.bear[i] ? BEAR_TUNING.swipeHearts : 1) * ls.damage * kf.dmg; // BEAR-01: swipe base is 2 hearts
-    const maxHp = Math.max(1, Math.round(sim.scfg[i].hp * ls.hp * kf.hp));
+    sim.stk.lv[i] = lv > 255 ? 255 : lv < 0 ? 0 : lv | 0;
+    sim.tier[i] = tier; sim.spdMul[i] = m.speed * kf.spd; sim._hitPayload[i].damage = (sim.bear[i] ? BEAR_TUNING.swipeHearts : 1) * ls.damage * kf.dmg; // BEAR-01: swipe base is 2 hearts
+    const maxHp = Math.max(1, Math.round(sim.scfg[i].hp * ls.hp * kf.hp * (sim.elite[i] ? ELITE_HP_MUL : 1)));
     e.components.health = { hp: maxHp, max: maxHp, invuln: 0 };
     steer.addAgent(e.transform.x, e.transform.y, cfg.radius, 0, DEFAULT_ACCEL);
   }
@@ -370,7 +388,7 @@ export function createBeastSim(world, opts) {
       return;
     }
     if (p.damage > 0) { // 37.16.2 item 3: damage + cooldown + hurt + cause + aggro
-      health.hp -= p.damage;
+      health.hp -= p.damage * blockMul(sim, i); // UNDER-SKEL-VARIETY-01: kinds.json blockF (skeleton warrior shield) cuts frontal hits
       sim.dmgCd[i] = sim.cfgSteps.dmgCooldown;
       sim.hurtT[i] = 0;
       sim.cause[i] = p.cause === 'fire' ? 1 : 0;
@@ -441,6 +459,7 @@ export function createBeastSim(world, opts) {
     if (slot < 0 || slot >= sim.count) return;
     sim.dormCamp[slot] = on ? 1 : 0;
     applyDormant(slot);
+    if (!on) markHot(sim, slot);
   };
   /** WM-04: nav-tile / 200 m dormancy (separate reason from the camp's, so a camp wake never wakes a tile-dormant beast). */
   sim.setTileDormant = function setTileDormant(slot, on) { // BEAST-POOL-b shim: on = unbind now (binding is the binder's job)
@@ -469,9 +488,14 @@ export function createBeastSim(world, opts) {
   /** GOB-01b: on -> slot goes to STATE_GONE (steer agent dropped, hidden, skipped); off -> back alive at home, hp max. */
   // DIFF-MENU (D-083): live difficulty change from the Settings screen. Rescales live beasts' damage by the dmg ratio only;
   // hp / spawn tuning apply to the next created beast (opts.difficulty is read at create).
+  if (opts && opts.difficulty) sim.tactics.setDifficulty(resolveDifficulty(opts.difficulty).name); // BH2-G1: tokM + flank follow the create-time difficulty too
+  sim.difficulty = resolveDifficulty(opts && opts.difficulty); // resolved row, read by the game for playerDmg (kept current by setDifficulty)
   sim.setDifficulty = function setDifficulty(name) {
     const was = resolveDifficulty(opts.difficulty).dmg, now = resolveDifficulty(name);
     opts.difficulty = now.name;
+    // BH2-G1: windup/noticeR/noticeSec/leash are read live from sim.dm; tokM (attack tokens) follows; hp applies to the next created beast.
+    const dm = diffMults(now.name); sim.dm.windup = dm.windup; sim.dm.noticeR = dm.noticeR; sim.dm.noticeSec = dm.noticeSec; sim.dm.leash = dm.leash;
+    sim.difficulty = now; if (sim.tactics.setDifficulty) sim.tactics.setDifficulty(now.name);
     const r = was > 0 ? now.dmg / was : 1;
     if (r !== 1) for (let i = 0; i < sim._hitPayload.length; i++) if (sim._hitPayload[i]) sim._hitPayload[i].damage *= r;
     return now.name;
@@ -489,6 +513,7 @@ export function createBeastSim(world, opts) {
       if (sim.down[slot] === 2 && sim.pool.lv[slot] >= 0) sim.steer.active[slot] = 1;
       sim.down[slot] = 0; sim.dormant[slot] = 0; sim.dormCamp[slot] = 0; sim.dormTile[slot] = 0;
       resetSlotSim(sim, slot);
+      markHot(sim, slot);
       resyncLeash(sim);
     }
     if (sim.pool.lv[slot] < 0 && !sim.down[slot]) { sim.dormTile[slot] = 1; sim.dormant[slot] = 1; } // unbound records read as tile-dormant
@@ -498,6 +523,19 @@ export function createBeastSim(world, opts) {
   sim.flee = function flee(slot) {
     if (slot < 0 || slot >= sim.count || sim.down[slot] || sim.dormant[slot] || deadSt(sim.state[slot])) return;
     enterFlee(sim, slot, sim._px, sim._py);
+  };
+  /** SPELL-05: Light Orb zone (x,y,r metres, beasts of level <= lv keep out); on=false clears it. */
+  sim.setCalm = function setCalm(on, x, y, r, lv) { const c = sim.stk.calm; c.on = on ? 1 : 0; c.x = x; c.y = y; c.r2 = r * r; c.lv = lv; };
+  /** SPELL-05: live beasts of level <= lv within r (2D) of (x,y) run away from the player for `steps` steps. Returns how many. */
+  sim.calmFlee = function calmFlee(x, y, r, lv, steps) {
+    let n = 0;
+    for (let i = 0; i < sim.count; i++) {
+      if (sim.down[i] || sim.dormant[i] || deadSt(sim.state[i]) || sim.stk.lv[i] > lv || sim.fleeing[i]) continue;
+      const dx = sim.steer.x[i] - x, dy = sim.steer.y[i] - y;
+      if (dx * dx + dy * dy > r * r) continue;
+      sim.flee(i); if (sim.fleeing[i]) { sim.stk.cf[i] = steps; n++; }
+    }
+    return n;
   };
   sim.isDormant = function isDormant(slot) { return slot >= 0 && slot < sim.count && sim.dormant[slot] === 1; };
   /** LIFE-08: drop the goal override; a wandering beast walks back home (STATE_RETURN). */
@@ -560,6 +598,14 @@ export function createBeastSim(world, opts) {
 
 // ---- step pipeline (29.1 "Fixed-step order inside step") ----------------------------------------------------
 
+/** UNDER-SKEL-VARIETY-01: damage multiplier of a kind with `blockF` (shield) when the beast faces the player; else 1. No alloc. */
+function blockMul(sim, i) {
+  const bf = KINDS[KIND_NAMES[sim.kindIdx[i]]].blockF;
+  if (!(bf > 0)) return 1;
+  const dx = _pp[0] - sim.steer.x[i], dy = _pp[1] - sim.steer.y[i];
+  return dx * sim.fx[i] + dy * sim.fy[i] > 0 ? 1 - bf : 1;
+}
+
 /** GOB-01: a slot that perceives, paths, steers and posts (not dead/GONE, not dormant). */
 const live = (sim, i) => !deadSt(sim.state[i]) && sim.dormant[i] === 0 && sim.wat[i] === 0;
 
@@ -597,7 +643,7 @@ function createPool(count) {
   for (let i = 0; i < pn; i++) { lv[i] = i; rec[i] = i; } // the first POOL records start bound (identity); the binder swaps from the first update on
   return {
     lv, rec, n: pn, free, freeN: 0, cand: new Int16Array(MAX_RECORDS), candD: new Float64Array(MAX_RECORDS),
-    rIn: 150, rOut: 180, every: 30, nc: 0, phase: 0, primed: false, maxBind: 8, full: 0, evictGap: 20,
+    rIn: 150, rOut: 180, every: 30, hot: new Int16Array(64), hotN: 0, nc: 0, phase: 0, primed: false, maxBind: 8, full: 0, evictGap: 20,
     lastX: new Float64Array(MAX_RECORDS), lastY: new Float64Array(MAX_RECORDS), // last position of an unbound record (BEAST-POOL-b)
   };
 }
@@ -697,6 +743,27 @@ function poolUnbind(sim, px, py) {
   }
   P.n = w;
 }
+/** BIND-LATE-01: a record that wakes/respawns is queued here and bound at the next step (not at the next sliced scan, up to ~59 steps later). */
+function markHot(sim, r) {
+  const P = sim.pool;
+  if (P.lv[r] >= 0 || P.hotN >= P.hot.length) return; // bound already, or queue full (the sliced scan still catches it)
+  for (let k = 0; k < P.hotN; k++) if (P.hot[k] === r) return;
+  P.hot[P.hotN++] = r;
+}
+/** Bind the queued hot records that are alive, in the tile and < rIn, while a slot is free (no eviction: the sliced pass handles a full pool). */
+function poolHot(sim, px, py) {
+  const P = sim.pool, g = sim.grid, tile = sim.tileMode === true, rIn2 = P.rIn * P.rIn;
+  const x0 = tile ? g.x0 : 0, y0 = tile ? g.y0 : 0, x1 = tile ? x0 + g.w * g.cell : 0, y1 = tile ? y0 + g.h * g.cell : 0;
+  for (let k = 0; k < P.hotN; k++) {
+    const r = P.hot[k];
+    if (P.lv[r] >= 0 || sim.down[r] || sim.dormCamp[r] || deadSt(sim.state[r])) continue;
+    if (tile) { const hx = sim.homeX[r], hy = sim.homeY[r]; if (hx < x0 || hy < y0 || hx >= x1 || hy >= y1) continue; }
+    const dx = P.lastX[r] - px, dy = P.lastY[r] - py;
+    if (dx * dx + dy * dy >= rIn2) continue;
+    if (P.freeN > 0) bindRec(sim, r, P.free[--P.freeN]);
+  }
+  P.hotN = 0;
+}
 /** Append candidates (unbound, alive, in the tile, close or with a goal) among records [from, to). */
 function poolScan(sim, from, to, px, py) {
   const P = sim.pool, lv = P.lv, g = sim.grid, tile = sim.tileMode === true, rIn2 = P.rIn * P.rIn;
@@ -754,6 +821,7 @@ function poolStep(sim, px, py) {
   const P = sim.pool, e = P.every;
   if (!P.primed) { P.primed = true; poolUpdate(sim, px, py); return; } // the first step stays synchronous (records are bound before they act)
   if (!(px === px && py === py)) { poolUnbind(sim, px, py); return; }
+  if (P.hotN > 0) poolHot(sim, px, py);
   const ph = P.phase, chunk = Math.ceil(sim.count / (e - 1));
   if (ph === 0) P.nc = 0;
   if (ph < e - 1) { const from = ph * chunk; poolScan(sim, from, Math.min(sim.count, from + chunk), px, py); P.phase = ph + 1; return; }
@@ -777,9 +845,9 @@ function stepSim(sim, px, py, pz) {
   }
   if (sim.fauna) huntPass(sim);
   for (let k = 0; k < n; k++) { const i = rec[k]; if (live(sim, i)) { perceiveOne(sim, i, px, py, pz); leashOne(sim, i, px, py); } }
-  sim._ctx.px = px; sim._ctx.py = py;
+  sim._sc.ctx.px = px; sim._sc.ctx.py = py;
   tacticsSync(sim, sim.sc.tS); // BEAST-04: token release + flank re-assign
-  for (let k = 0; k < n; k++) { const i = rec[k]; if (live(sim, i)) { if (!LAYERS[sim.archIdx[i]](sim, i, sim._ctx)) transitionOne(sim, i, px, py); } }
+  for (let k = 0; k < n; k++) { const i = rec[k]; if (live(sim, i)) { if (!LAYERS[sim.archIdx[i]](sim, i, sim._sc.ctx)) transitionOne(sim, i, px, py); } }
   if (sim.wb) stepWaterBrain(sim.wb, px, py); // BEAST-08b: water slots (own grid, own movement)
   updatePathRequests(sim, px, py);
   servePathRequest(sim, px, py);
@@ -828,6 +896,7 @@ function huntStep(sim, i, px, py) {
 
 function perceiveOne(sim, i, px, py, pz) {
   const steer = sim.steer, cfg = sim.cfg;
+  if (sim.spell.blindT[i] > 0) { sim.spell.blindT[i]--; sim.seen[i] = 0; sim.unseen[i] = 0; return; } // SPELL-R4: blinded (lost track)
   const dx = px - steer.x[i], dy = py - steer.y[i];
   const d2 = dx * dx + dy * dy;
   const loseR2 = sim.scfg[i].loseR * sim.scfg[i].loseR; // BEAR-01: per-slot (same as cfg for boars/wolves)
@@ -851,15 +920,20 @@ function zOf(sim, i) {
 }
 
 function noticedOf(sim, i, px, py) {
+  if (sim.spell.blindT[i] > 0) return false; // SPELL-R4
+  const cz = sim.stk.calm; // SPELL-05: Light Orb keep-out (the 'woken waystone light' rule): no aggro START inside the light
+  if (cz.on === 1 && sim.stk.lv[i] <= cz.lv) { const cx = sim.steer.x[i] - cz.x, cy = sim.steer.y[i] - cz.y; if (cx * cx + cy * cy <= cz.r2) return false; }
   // BEAST-PERCEIVE-01w: engine/nav/perceive through a thin adapter. hearing = the "nearR" any-direction bubble
   // (scaled by the player's noise), sight = noticeR + cone + the cached LOS flag. Same numbers as before at noise 1.
-  const steer = sim.steer, a = sim._pa, t = sim._pt;
+  const steer = sim.steer, a = sim._pa, t = sim._sc.pt;
   a.x = steer.x[i]; a.y = steer.y[i]; a.fx = sim.fx[i]; a.fy = sim.fy[i];
   t.x = px; t.y = py; t.noise = sim.noise;
   const calm = sim.wary[i] === 1 && sim.provoked[i] === 0; // DRESS-01b: unprovoked ambient boar = short notice only
-  a.range = calm ? sim.cfg.calmNoticeR : sim.scfg[i].noticeR; /* BEAR-01: per-slot */ a.hearR = calm ? sim.cfg.calmNearR : sim.pNear[i]; a.coneCos = sim.pCone[i];
+  a.range = calm ? sim.cfg.calmNoticeR : sim.scfg[i].noticeR * sim.dm.noticeR; // BH2-G1: difficulty scales sight range (BEAR-01: per-slot)
+  a.hearR = calm ? sim.cfg.calmNearR : sim.pNear[i];
+  a.coneCos = sim.pCone[i];
   sim._slot = i;
-  const o = perceive(a, t, sim._losFn, sim._po);
+  const o = perceive(a, t, sim._sc.losFn, sim._sc.po);
   const ag = sim.pAggro[i]; // BEAST-03b: aggro mode (0 hostile = today's behaviour)
   if (ag === 0) return o.hears || o.sees;
   if (ag === 1) return sim.provoked[i] === 1 && (o.hears || o.sees);
@@ -869,7 +943,7 @@ function noticedOf(sim, i, px, py) {
 
 /** BEAST-PERCEIVE-01w: keep the engine leash mode in step with the brain state, then advance it (engaged states only). */
 function leashOne(sim, i, px, py) {
-  const ag = sim._lagents[i], def = sim._ldef, st = sim.state[i];
+  const ag = sim._lagents[i], def = sim._sc.def, st = sim.state[i];
   if (st === STATE_WANDER || st === STATE_EAT) { ag.leashMode = LEASH_HOME; ag.leashT = 0; return; }
   if (st === STATE_RETURN) { if (ag.leashMode !== LEASH_GIVEUP) ag.leashMode = LEASH_RETURN; return; }
   if (ag.leashMode === LEASH_HOME || ag.leashMode === LEASH_RETURN) { ag.leashMode = LEASH_ENGAGE; ag.leashT = 0; }
@@ -877,8 +951,8 @@ function leashOne(sim, i, px, py) {
   ag.x = sim.steer.x[i]; ag.y = sim.steer.y[i];
   def.homeX = sim.homeX[i]; def.homeY = sim.homeY[i];
   def.aggroR = sim.scfg[i].loseR / sim.cfg.loseScale; // BEAR-01: per-slot (identical for boars/wolves)
-  def.leashR = sim.wary[i] === 1 && sim.provoked[i] === 0 ? sim.cfg.calmLeashR : sim.scfg[i].leashR;
-  const t = sim._lt; t.x = px; t.y = py;
+  def.leashR = sim.wary[i] === 1 && sim.provoked[i] === 0 ? sim.cfg.calmLeashR : sim.scfg[i].leashR * sim.dm.leash; // BH2-G1
+  const t = sim._sc.lt; t.x = px; t.y = py;
   leashState(ag, def, t, SIM_STEP);
 }
 
@@ -990,7 +1064,7 @@ function checkChaseExit(sim, i, px, py) {
   if (lm === LEASH_RETURN || lm === LEASH_GIVEUP) { sim.waiting[i] = 0; enterReturn(sim, i); return; }
   if ((sim.wolf[i] || sim.goblin[i]) && shouldFlee(sim, i)) { enterFlee(sim, i, px, py); return; } // WOLF-01
   if (sim.ranged[i] && rangedChase(sim, i, px, py, d2)) return; // GOB-02
-  if (sim.tactOn[i] && (sim.tactRole[i] === TACT_RANGED || sim.tactRole[i] === TACT_CASTER) && tacticsBand(sim, i, d2)) return; // BEAST-04
+  if (sim.tactOn[i] && (sim.tactRole[i] === TACT_RANGED || sim.tactRole[i] === TACT_CASTER) && tacticsBand(sim, i, d2)) { if (sim.ssteps[i].volley && sim.waiting[i] === 1) enterWindup(sim, i); return; } // BEAST-04; SKEL-ARCHER-CADENCE-01: in the band with LOS -> volley
   if (sim.bear[i] && sim.seen[i] && sim.bite.cd[i] === 0 && sim.entities[i].components.voxel.model === BEAR_MODEL
       && d2 <= BEAR_TUNING.biteReachR * BEAR_TUNING.biteReachR && bearPicksBite(i, sim.bite.n[i])) { enterBite(sim, i); return; } // BEAR-BITE
   const wr = sim.scfg[i].windupR;
@@ -1030,12 +1104,12 @@ function rangedChase(sim, i, px, py, d2) {
 }
 
 /** GOB-02: the one `beast:throw` at windup end: hand = eye + handUp, target = the player's chest now (no lead). */
-function emitThrow(sim, i, px, py) {
+function emitThrow(sim, i, px, py, ev = 'beast:throw') {
   const p = sim.pl.throw, steer = sim.steer;
-  p.id = sim.ids[i]; p.slot = i;
+  p.id = sim.ids[i]; p.slot = i; p.dmgF = ev === 'beast:shoot' && sim.ssteps[i].dmgF > 0 ? sim.ssteps[i].dmgF : 1; // archer volley carries the kind's dmgF
   p.x = steer.x[i]; p.y = steer.y[i]; p.z = zOf(sim, i) + sim.cfg.eyeZ + GOBLIN_TUNING.handUp;
   p.tx = px; p.ty = py; p.tz = sim._pz + sim.cfg.targetZ;
-  sim.events.emit('beast:throw', p);
+  sim.events.emit(ev, p);
 }
 
 /** US-079c: true while any slot is in WINDUP or CHARGE (the single active charger). */
@@ -1054,10 +1128,11 @@ function windupStep(sim, i, px, py) {
   void px; void py;
   sim.timer[i]--;
   // US-079c: kick a dust burst at the forefeet at 150/300/450 ms into the windup (boarFx.scrape.kickSteps).
-  const elapsed = sim.ssteps[i].windup - sim.timer[i];
+  const elapsed = (sim.wuTot[i] || sim.ssteps[i].windup) - sim.timer[i];
   if (!sim.goblin[i] && (!sim.wolf[i] && elapsed === SCRAPE_KICKS[0] || elapsed === SCRAPE_KICKS[1] || elapsed === SCRAPE_KICKS[2])) emitScrape(sim, i);
   if (sim.timer[i] <= 0) {
     if (sim.ranged[i]) { emitThrow(sim, i, px, py); enterRecover(sim, i, false); } // GOB-02: release, then the reload
+    else if (sim.ssteps[i].volley) { emitThrow(sim, i, px, py, 'beast:shoot'); enterRecover(sim, i, false); } // SKEL-ARCHER-CADENCE-01: skeleton archer volley (goblinWire fires the arrow)
     else enterCharge(sim, i, px, py);
   }
 }
@@ -1112,6 +1187,7 @@ function recoverStep(sim, i, px, py) {
 
 function returnStep(sim, i, px, py) {
   if (sim.fleeing[i]) { // WOLF-01: keep running until 30 m from where it started / from the player, then walk home
+    if (sim.stk.cf[i] > 0 && --sim.stk.cf[i] === 0) { sim.fleeing[i] = 0; enterReturn(sim, i); return; } // SPELL-05: Light Orb Lv3 flee ends after its seconds
     const dx = px - sim.steer.x[i], dy = py - sim.steer.y[i], gx = sim.goalX[i] - sim.steer.x[i], gy = sim.goalY[i] - sim.steer.y[i];
     if (dx * dx + dy * dy >= fleeMOf(sim, i) * fleeMOf(sim, i) || gx * gx + gy * gy <= 1) { sim.fleeing[i] = 0; enterReturn(sim, i); }
     return;
@@ -1123,9 +1199,15 @@ function returnStep(sim, i, px, py) {
 
 // ---- state entry ------------------------------------------------------------------------------------------------
 
+/** BH2-G1: difficulty.js row -> sim ratios relative to Normal (noticeSec is absolute in the table; Normal = 0.6 s = ratio 1). */
+function diffMults(name) {
+  const d = resolveDifficulty(name), n = DIFFICULTY.normal;
+  return { windup: d.windup, noticeR: d.noticeR, noticeSec: d.noticeSec / n.noticeSec, leash: d.leash };
+}
+
 function enterNotice(sim, i) {
   sim.state[i] = STATE_NOTICE;
-  sim.timer[i] = sim.ssteps[i].notice;
+  sim.timer[i] = Math.max(1, Math.round(sim.ssteps[i].notice * sim.dm.noticeSec)); // BH2-G1
 }
 
 function enterChase(sim, i) {
@@ -1142,7 +1224,9 @@ function enterWindup(sim, i) {
   if (sim.bear[i]) sim.bite.n[i]++; // BEAR-BITE: the swipe (windup+charge) also consumes one bite-vs-swipe decision
   sim.state[i] = STATE_WINDUP;
   sim.waiting[i] = 0; // US-079c: it is the charger now, not a waiter
-  sim.timer[i] = sim.ssteps[i].windup;
+  const wu = sim.ssteps[i].windup; // BH2-G1: windup ratio (Easy longer / Hard shorter), floored at WINDUP_FLOOR_SEC
+  sim.wuTot[i] = sim.dm.windup === 1 ? wu : Math.max(Math.min(wu, Math.round(WINDUP_FLOOR_SEC / SIM_STEP)), Math.round(wu * sim.dm.windup));
+  sim.timer[i] = sim.wuTot[i];
 }
 
 /** OB-150: a boar/wolf charge is a straight line locked at the end of the wind-up. A player walking straight away (3.5 m/s) used
@@ -1209,8 +1293,8 @@ function enterBlocked(sim, i, awayX, awayY) {
 function enterReturn(sim, i) {
   sim.state[i] = STATE_RETURN;
   sim.fleeing[i] = 0;
-  sim._ldef.homeX = sim.homeX[i]; sim._ldef.homeY = sim.homeY[i];
-  const rt = returnTarget(sim._ldef, sim._lret);
+  sim._sc.def.homeX = sim.homeX[i]; sim._sc.def.homeY = sim.homeY[i];
+  const rt = returnTarget(sim._sc.def, sim._sc.lret);
   sim.goalX[i] = rt.x; sim.goalY[i] = rt.y;
   sim.pathLen[i] = 0; sim.pathIdx[i] = 0;
   sim.pathReq[i] = 0;
@@ -1235,6 +1319,7 @@ function shouldFlee(sim, i) {
 }
 /** WOLF-01: run WOLF_TUNING.fleeM straight away from the player (falls back to going home if that spot is a wall). */
 function enterFlee(sim, i, px, py) {
+  sim.stk.cf[i] = 0; // SPELL-ARCH8: a stale calm-flee count must not cut a later flee short (calmFlee re-sets it after sim.flee)
   const steer = sim.steer, t = sim.sc.tmp, S = 0.7071067811865476;
   awayTarget(steer.x[i], steer.y[i], px, py, fleeMOf(sim, i), t);
   // try straight away, then +-45 deg (vector rotation, no trig), then half distance; else just go home
@@ -1264,11 +1349,12 @@ function enterWander(sim, i) {
  * where the damage step was skipped but the physical/visual reaction still applies). `hurtT` was already reset for
  * a damaging hit, so "flash only" below is just "no state change" - the view flashes off `hurtT`. */
 function reactToHit(sim, i, p) {
+  if (p.freezeSec > 0) { applyFreeze(sim, i, p.freezeSec); return; } // SPELL-R2
   if (sim.wat[i] === 1) { waterHit(sim.wb, sim, i, p); return; } // BEAST-08b
   const st = sim.state[i];
   if (p.heavy) {
     const knock = p.knock > 0 ? p.knock : sim.cfg.staggerKnock;
-    if (knock >= 1) { enterStagger(sim, i, p.dirX, p.dirY, Math.min(knock, 12)); return; }
+    if (knock >= 1) { enterStagger(sim, i, p.dirX, p.dirY, Math.min(knock, 12)); if (p.stunSec > 0) sim.timer[i] = Math.round(p.stunSec * 60); return; } // SPELL-05: Spark sets its own stun time
     enterFlinch(sim, i); // fire with a tiny falloff (knock < 1) -> flinch
     return;
   }
@@ -1276,6 +1362,15 @@ function reactToHit(sim, i, p) {
   if (st === STATE_WINDUP && !sim.bear[i]) { enterRecover(sim, i, false); return; } // AC: a light hit cancels the charge
   if (st === STATE_CHARGE || st === STATE_STAGGER || ((st === STATE_WINDUP || st === STATE_BITE) && sim.bear[i])) return; // BEAR-01: an arrow doesn't break the bluff          // D-034: only a hard hit stops a charge
   enterFlinch(sim, i);
+}
+
+/** SPELL-R2 Freeze: stagger with zero knock = no move, no attack, for `sec` s (re-freeze refreshes, never stacks); level > 7 = half time. A croc releases its grab. */
+function applyFreeze(sim, i, sec) {
+  const steps = Math.max(1, Math.round(sec * 60 * (sim.stk.lv[i] > 7 ? 0.5 : 1)));
+  if (sim.wat[i] === 1) { waterFreeze(sim.wb, sim, i, steps); return; }
+  enterStagger(sim, i, 0, 0, 0);
+  sim.timer[i] = steps;
+  sim.steer.vx[i] = 0; sim.steer.vy[i] = 0;
 }
 
 function enterFlinch(sim, i) {
@@ -1762,6 +1857,8 @@ function hashSim(sim, h) {
   h.u32Array(sim.hurtT, 0, n);
   h.u32Array(sim.unseen, 0, n);
   h.u8Array(sim.stk.wall, 0, n);
+  h.u32Array(sim.stk.cf, 0, n); // SPELL-ARCH8: calm-flee steps and the Light Orb zone change beast behaviour
+  { const c = sim.stk.calm; h.i32(c.on); h.f64(c.x); h.f64(c.y); h.f64(c.r2); h.i32(c.lv); }
   h.u32Array(sim.repathT, 0, n);
   for (let i = 0; i < n; i++) {
     h.f64(sim.homeX[i]); h.f64(sim.homeY[i]); h.f64(sim.homeZ[i]);
@@ -1775,6 +1872,7 @@ function hashSim(sim, h) {
   h.u32Array(sim.pathLen, 0, n);
   h.u32Array(sim.pathIdx, 0, n);
   for (let i = 0; i < n; i++) h.i32(sim.pool.lv[i]); // BEAST-POOL-b: binding state
+  { const bt = sim.spell.blindT; let any = false; for (let i = 0; i < n; i++) if (bt[i]) { any = true; break; } if (any) h.u32Array(bt, 0, n); } // SPELL-R4: only while someone is blind (golden hash unchanged)
   h.u8Array(sim.seen, 0, n);
   h.u8Array(sim.pathReq, 0, n);
   h.u8Array(sim.pendingDied, 0, n);
@@ -1863,8 +1961,25 @@ function resetAllSim(sim) {
   sim.events.emit('beasts:reset'); // US-079b: loot clears its corpse state on this
 }
 
+/** SPELL-R4 (38.80): Teleport lv3. Live beasts in an aggro state within r m (2D) of (x, y) go to STATE_WANDER and cannot perceive for `sec` s. -> count. Cold path. */
+export function loseTrack(sim, x, y, r, sec) {
+  const r2 = r * r, steps = Math.min(65535, Math.round(sec / SIM_STEP));
+  let n = 0;
+  for (let i = 0; i < sim.count; i++) {
+    const st = sim.state[i];
+    if (FREE_ST[st] || st === STATE_RETURN || deadSt(st) || st === STATE_GONE) continue;
+    const dx = sim.steer.x[i] - x, dy = sim.steer.y[i] - y;
+    if (dx * dx + dy * dy > r2) continue;
+    sim.spell.blindT[i] = steps; sim.seen[i] = 0; sim.unseen[i] = 0; sim.fleeing[i] = 0;
+    sim.state[i] = STATE_WANDER; sim.timer[i] = sim.cfgSteps.pauseMin; sim.pathLen[i] = 0; sim.pathIdx[i] = 0; sim.pathReq[i] = 0;
+    sim.steer.setIdle(i); n++;
+  }
+  return n;
+}
+
 /** One slot back to home, alive, state wander (shared by resetAll and setDown(slot, false)). */
 function resetSlotSim(sim, i) {
+  sim.spell.blindT[i] = 0; // SPELL-R4
   sim.bite.cd[i] = 0; sim.bite.n[i] = 0; sim.bite.done[i] = 0; // BEAR-BITE
   // US-079b: dead steer slots are re-added in ascending order; addAgent hands out the lowest free slot, and the
   // live slots stay active (slots >= count are never used), so the lowest free slot is always the lowest dead one.

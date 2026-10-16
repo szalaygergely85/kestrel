@@ -829,7 +829,7 @@
     {
       "id": "sq.rb.shield",
       "title": "Left at the Bend",
-      "site": "postkeeper",
+      "site": "joss",
       "steps": [
         {
           "template": "explore",
@@ -839,7 +839,7 @@
             ]
           },
           "objText": "Wear the buckler to the ford",
-          "journal": "Someone left a buckler at the Bend Waystone. Wear it down to the ford."
+          "journal": "Someone left a buckler at the Bend Waystone. Wear it to the ford, then show Joss."
         }
       ],
       "requires": [
@@ -867,11 +867,11 @@
       ],
       "abandonable": false,
       "band": 2,
-      "returnText": "Show the buckler to the post-keeper",
+      "returnText": "Show the buckler to Joss",
       "lines": {
         "offer": [
-          "Someone left this buckler by the Bend Waystone.",
-          "Wear it down to the ford. Then show me."
+          "Someone left this buckler by the stone. No name.",
+          "Wear it down to the ford and back. Then show me."
         ],
         "active": [
           "Buckler on your arm. Down to the ford, then back."
@@ -881,14 +881,20 @@
           "Keep it. And a health potion, for the knocks."
         ],
         "done": [
-          "A buckler on a flier. Now I've seen it all."
+          "Left for the next walker. That was you."
+        ],
+        "accept": [
+          "Strap it tight. The ford road bites."
+        ],
+        "decline": [
+          "It'll keep. Nobody else came for it."
         ]
       }
     },
     {
       "id": "sq.rb.regards",
       "title": "Word for Burl",
-      "site": "postkeeper",
+      "site": "joss",
       "steps": [
         {
           "template": "talk",
@@ -896,7 +902,7 @@
             "to": "burl"
           },
           "objText": "Tell Burl the road is clear",
-          "journal": "The post-keeper has word for Burl: the road is clear. Carry it up her hill."
+          "journal": "Joss has word for Burl: the road is clear. Carry it up her hill."
         }
       ],
       "requires": [
@@ -918,11 +924,11 @@
         ]
       },
       "band": 2,
-      "returnText": "Report to the post-keeper",
+      "returnText": "Report to Joss at the Bend Waystone",
       "lines": {
         "offer": [
           "Tell Burl, up on the tower hill: the road's clear.",
-          "She asks after it. Don't ask me how."
+          "She asks after my road. Every season."
         ],
         "active": [
           "Burl. Tower hill. The road's clear. That's all."
@@ -933,13 +939,19 @@
         ],
         "done": [
           "Road's clear, and the bear knows. Quiet day."
+        ],
+        "accept": [
+          "Up the hill. Say it plain. Bears like plain."
+        ],
+        "decline": [
+          "She'll wait. Bears are good at waiting."
         ]
       }
     },
     {
       "id": "sq.rb.road",
       "title": "Down the Road West",
-      "site": "postkeeper",
+      "site": "joss",
       "steps": [
         {
           "template": "explore",
@@ -981,14 +993,14 @@
         ]
       },
       "band": 2,
-      "returnText": "Report to the post-keeper",
+      "returnText": "Report to Joss at the Bend Waystone",
       "lines": {
         "offer": [
           "Walk the road back toward your tower, would you?",
-          "Then on to the Bend Waystone. Tell me what moves."
+          "Then come back here to the stone. Tell me what moves."
         ],
         "active": [
-          "Back along the road. Then the Bend Waystone."
+          "Back along the road. Then here, to the stone."
         ],
         "ready": [
           "Nothing moving? Good. Nothing is good news.",
@@ -996,6 +1008,12 @@
         ],
         "done": [
           "Road walked. I'll sleep easier."
+        ],
+        "accept": [
+          "Watch the verges. Things hide in the long grass."
+        ],
+        "decline": [
+          "Road's not going anywhere. Neither am I."
         ]
       }
     },
@@ -1381,7 +1399,7 @@
     {
       "id": "sq.rb.lamps",
       "title": "Lamps on the Verge",
-      "site": "postkeeper",
+      "site": "joss",
       "steps": [
         {
           "template": "explore",
@@ -1409,7 +1427,7 @@
         ]
       },
       "band": 2,
-      "returnText": "Report to the post-keeper",
+      "returnText": "Report to Joss at the Bend Waystone",
       "lines": {
         "offer": [
           "Old lamps stand along the road. Dark, mostly.",
@@ -1423,14 +1441,20 @@
           "A health potion, for the walk."
         ],
         "done": [
-          "Dark lamps. Nobody left to trim them."
+          "Dark lamps. I'll get to them. One day."
+        ],
+        "accept": [
+          "All of them, mind. Not just the near ones."
+        ],
+        "decline": [
+          "They've been dark a while. Another day won't hurt."
         ]
       }
     },
     {
       "id": "sq.rb.rocks",
       "title": "Rocks at the Forest Edge",
-      "site": "postkeeper",
+      "site": "joss",
       "steps": [
         {
           "template": "explore",
@@ -1462,11 +1486,11 @@
         ]
       },
       "band": 2,
-      "returnText": "Report to the post-keeper",
+      "returnText": "Report to Joss at the Bend Waystone",
       "lines": {
         "offer": [
           "Rocks piled at the forest edge. Too neat for chance.",
-          "Go and look. Tell me what you make of them."
+          "Not mine. I stack gravel, not cairns. Go and look."
         ],
         "active": [
           "The rocks at the forest edge. Look close."
@@ -1477,23 +1501,29 @@
         ],
         "done": [
           "Way-marks. Someone walked this road before us."
+        ],
+        "accept": [
+          "Look, don't move them. Old things mind being moved."
+        ],
+        "decline": [
+          "They've stood this long. They'll stand a bit more."
         ]
       }
     },
     {
       "id": "sq.rb.parcel",
-      "title": "Brass for the Ford",
-      "site": "postkeeper",
+      "title": "Brass for the Bend",
+      "site": "joss",
       "steps": [
         {
           "template": "deliver",
           "params": {
             "item": "brass.scrap",
             "count": 1,
-            "to": "postkeeper"
+            "to": "joss"
           },
-          "objText": "Bring the brass to the post-keeper",
-          "journal": "You carry a brass scrap for the post-keeper. Hand it over at the trade post."
+          "objText": "Bring the brass scrap to Joss",
+          "journal": "You carry a brass scrap for Joss. Hand it over at the Bend Waystone."
         }
       ],
       "requires": [
@@ -1515,21 +1545,27 @@
         ]
       },
       "band": 2,
-      "returnText": "Hand the brass to the post-keeper",
+      "returnText": "Hand the brass to Joss",
       "lines": {
         "offer": [
-          "The basket lid hangs on string. Brass would hold.",
+          "My mallet head works loose. Brass would hold it.",
           "Bring me a brass scrap. Your ship dropped plenty."
         ],
         "active": [
           "One brass scrap. From your wreck, or anywhere."
         ],
         "ready": [
-          "Good brass. The lid will hold now.",
+          "Good brass. That'll hold the head on.",
           "Ten arrows. Brass is worth that, out here."
         ],
         "done": [
-          "Lid holds. The crow can't open it now."
+          "Mallet's tight. Listen. Hear it ring?"
+        ],
+        "accept": [
+          "Any scrap. Flat is better. Bent will do."
+        ],
+        "decline": [
+          "I'll tie it with string again. It's held so far."
         ]
       }
     },
@@ -1996,17 +2032,17 @@
     {
       "id": "sq.fc.cog",
       "title": "A Cog for the Bend",
-      "site": "postkeeper",
+      "site": "joss",
       "steps": [
         {
           "template": "deliver",
           "params": {
             "item": "cog",
             "count": 1,
-            "to": "postkeeper"
+            "to": "joss"
           },
-          "objText": "Bring the cog to the post-keeper",
-          "journal": "You carry a cog for the post-keeper. Hand it over at the trade post."
+          "objText": "Bring the cog to Joss",
+          "journal": "You carry a brass cog for Joss. Hand it over at the Bend Waystone."
         }
       ],
       "requires": [
@@ -2028,10 +2064,10 @@
         ]
       },
       "band": 5,
-      "returnText": "Hand the cog to the post-keeper",
+      "returnText": "Hand the cog to Joss",
       "lines": {
         "offer": [
-          "The Bend Waystone's mount is short one cog.",
+          "The waystone's mount is short one cog. I hear it.",
           "Bring me a brass cog. I'll fit it myself."
         ],
         "active": [
@@ -2043,6 +2079,12 @@
         ],
         "done": [
           "You won't see the cog turn. I will."
+        ],
+        "accept": [
+          "Brass, toothed, about so big. You'll know it."
+        ],
+        "decline": [
+          "It'll grind a while longer. I'll hear it."
         ]
       }
     },

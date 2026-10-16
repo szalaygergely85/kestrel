@@ -244,12 +244,11 @@ function drawMenu(U) {
   }
   text(U, px + ((pw - M.subtitle.text.length) >> 1), py + M.subtitle.row, M.subtitle.text, M.subtitle.fg);
   for (const sp of M.separators) { if (sp.row === 18 && st.mode !== 'main') continue; for (let c = sp.from; c <= sp.to; c++) put(U, px + c, py + sp.row, sp.glyph, sp.fg); }
-  // the SOS signal over the row-4 separator, pulsing in the title SOS rhythm
+  // the ALIVE signal (Morse, ASSETS.signal) over the row-4 separator, pulsing in the shared rhythm
   const sig = ' ' + M.signal.text + ' ', sx = px + ((pw - sig.length) >> 1), marks = [];
   for (let k = 0; k < sig.length; k++) { put(U, sx + k, py + M.signal.row, sig[k], M.signal.fg); if (sig[k] !== ' ') marks.push(k); }
-  const ms = A.models.title.signal.ms, seq = [ms.short, ms.short, ms.short, ms.long, ms.long, ms.long, ms.short, ms.short, ms.short, ms.rest];
-  const tot = seq.reduce((a, b) => a + b, 0); let t = performance.now() % tot, lit = 0; while (t > seq[lit]) { t -= seq[lit]; lit++; }
-  if (lit < 9) put(U, sx + marks[lit], py + M.signal.row, sig[marks[lit]], M.signal.litFg);
+  const seq = A.signal.steps, tot = A.signal.cycle; let t = (performance.now() / 1000) % tot, si = 0; while (t > seq[si][1]) { t -= seq[si][1]; si++; }
+  if (seq[si][0]) put(U, sx + marks[si >> 1], py + M.signal.row, sig[marks[si >> 1]], M.signal.litFg);
   // section labels / confirm text
   if (st.mode === 'main') text(U, px + M.sectionLabel.saves.col, py + M.sectionLabel.saves.row, M.sectionLabel.saves.text, M.sectionLabel.saves.fg);
   if (st.mode === 'new') text(U, px + M.sectionLabel.newGame.col, py + M.sectionLabel.newGame.row, M.sectionLabel.newGame.text, M.sectionLabel.newGame.fg);

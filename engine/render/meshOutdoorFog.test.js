@@ -41,6 +41,17 @@ const replay = (d) => { const f = Math.pow(Math.min(1, Math.max(0, (d - far.star
 const o1200 = shade(1200, true);
 for (const [d, got] of [[80, outFar.bg], [1200, o1200.bg]]) { const w = replay(d); for (let c = 0; c < 3; c++) assert.ok(Math.abs(got[c] - w[c]) <= 2.01, `outdoor ${d} m ch${c}: js ${got[c]} wgsl ${w[c].toFixed(1)}`); }
 assert.ok(lum(o1200.bg) > 90, '1200 m outdoor mesh is light haze, not navy');
+// OB-204: with the height-fog/in-scatter shape ON (terrain worlds) outdoor meshes must still take the plain terrain haze at equal distance
+// (terrain cells get no fogShapeF boost / sun tint, so the boosted mesh fog came out paler than the hills). 150 m and 300 m.
+{
+  const shapeOn = (d) => { const gbuf = new GBuffer(2, 2), depth = new DepthBuffer(2, 2), rt = new CellBuffer(2, 2);
+    for (let i = 0; i < 4; i++) { gbuf.kind[i] = 1; gbuf.mat[i] = 1; gbuf.u[i] = 1.3; gbuf.v[i] = 0.7; gbuf.z[i] = 1; depth.depth[i] = d; }
+    Object.assign(fogShapeCtx, { on: true, outdoor: true, camZ: 1.7, sunX: 0.6, sunY: 0.6, sunZ: 0.5, sunI: 1, terms: { cols: 2 }, tStart: far.start, tFull: far.full, tCurve: far.curve || 1, tNear: near, tFar: farC });
+    shadeSurfaces({ rt, depth, palette: P }, gbuf, table, assets.detailPass, { uniform: true, rgb: new Float32Array([0.9, 0.8, 0.7]) });
+    Object.assign(fogShapeCtx, { on: false, outdoor: false });
+    return [rt.bg[0], rt.bg[1], rt.bg[2]]; };
+  for (const d of [150, 300]) { const a = shapeOn(d), b = shade(d, true).bg; assert.deepEqual(a, b, `outdoor mesh haze at ${d} m must equal the shape-off terrain haze`); }
+}
 // gate helper: no terrain / indoors = off
 assert.equal(meshOutdoorFog({}, { x: 0, y: 0 }, P), false, 'no terrain world -> interior fog');
 const W = { terrain: {}, sectorAt: () => null };

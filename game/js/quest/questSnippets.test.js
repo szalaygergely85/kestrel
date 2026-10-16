@@ -47,12 +47,12 @@ assert.ok(!gb.entry.some((e) => e.node.startsWith('qs.burl.boars')), 'legacy han
 assert.ok(gb.entry.at(-1).node === 'bear.early' && gb.entry.some((e) => e.node === 'bear.home'), 'hand-written scenes kept');
 checkNoLock(gb); compileDialogue(gb);
 
-// 2. Rook: his non-main errands get routes, main quests keep the hand-written s.mq.* scenes; meet stays the fallback
+// 2. Rook: his non-main errands get routes, main quests keep the hand-written q.mq.* scenes; meet stays the fallback
 const gr = generateAll({ rook }, defs, snip).rook;
 const rookErr = defs.filter((d) => d.giver && d.giver.npc === 'rook' && !d.main);
 assert.ok(rookErr.length >= 4);
 for (const d of rookErr) for (const s of ['ready', 'available', 'active']) assert.ok(gr.entry.some((e) => e.requires === 'q.' + d.id + '.' + s), d.id + ' ' + s);
-assert.ok(!gr.entry.some((e) => /^q\.mq\./.test(e.requires || '')), 'no generated route for main quests');
+assert.ok(!gr.entry.some((e) => /^qs\.mq\./.test(e.node)), 'no generated route for main quests');
 assert.equal(gr.entry.at(-1).node, 'rook.meet.1'); checkNoLock(gr); compileDialogue(gr);
 assert.deepEqual(rook.entry.map((e) => e.node), JSON.parse(JSON.stringify(rook)).entry.map((e) => e.node), 'input untouched');
 
@@ -82,9 +82,12 @@ assert.ok(n >= 30, 'quests covered: ' + n);
 // 4b. ch12 run beat 13: generated Rook errands never hide his main-quest hand-in / offer entries (call.ready/active, mirror.active/available)
 {
   const gr = generateAll({ rook }, defs, snip).rook, at = (n) => gr.entry.findIndex((e) => e.node === n);
-  const firstGen = gr.entry.findIndex((e) => /^q\./.test(e.requires || ''));
+  const firstGen = gr.entry.findIndex((e) => /^qs\./.test(e.node));
   assert.ok(firstGen > 0, 'rook has generated errand rows');
-  for (const n of ['rook.call.ready.1', 'rook.call.active', 'rook.mirror.active', 'rook.ford.1']) assert.ok(at(n) >= 0 && at(n) < firstGen, n + ' precedes the errands');
+  const firstGenActive = gr.entry.findIndex((e) => /^qs\./.test(e.node) && /\.active$/.test(e.requires));
+  for (const n of ['rook.call.ready.1']) assert.ok(at(n) >= 0 && at(n) < firstGen, n + ' precedes the errands');
+  // OB-206: an errand OFFER ('!') goes before the mq ACTIVE chatter (else Rook shows '!' but cannot accept); the mq active rows still beat errand ACTIVE rows
+  for (const n of ['rook.call.active', 'rook.mirror.active']) assert.ok(at(n) >= 0 && at(n) < firstGenActive, n + ' precedes the errand active rows');
   assert.ok(at('rook.ford.repeat2') > firstGen, 'repeat chatter comes after the errands');
 }
 

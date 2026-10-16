@@ -81,7 +81,7 @@ for (const [diff, cap] of [['normal', 2], ['easy', 1], ['hard', 3]]) {
 { const dot = (a, b) => FLANK_X[a] * FLANK_X[b] + FLANK_Y[a] * FLANK_Y[b];
   ok('flank table unit vectors', FLANK_X.every((x, k) => Math.abs(x * x + FLANK_Y[k] * FLANK_Y[k] - 1) < 1e-9));
   ok('slots 0/2/4 and 1/3/5 are 120 deg apart (cos -0.5)', [[0, 2], [2, 4], [4, 0], [1, 3], [3, 5], [5, 1]].every(([a, b]) => Math.abs(dot(a, b) + 0.5) < 1e-9)); }
-{ const { world, sim } = mk(Array(6).fill('grey_wolf')); sim.tactics.setDifficulty('easy'); // 1 token -> circlers
+{ const { world, sim } = mk(Array(6).fill('grey_wolf')); sim.tactics.setDifficulty('normal'); // 2 tokens -> 4 circlers (Easy flank=0 stacks them on one side)
   const px = HX + 4, py = HY - 8, z = world.terrain.heightAt(px, py); let okSp = false, got = '';
   const d = (x, y) => Math.abs(FLANK_X[x] * FLANK_X[y] + FLANK_Y[x] * FLANK_Y[y] + 0.5) < 1e-9;
   for (let t = 0; t < 900 && !okSp; t++) { sim.step(px, py, z);
@@ -89,13 +89,25 @@ for (const [diff, cap] of [['normal', 2], ['easy', 1], ['hard', 3]]) {
     if (f.length >= 3) { okSp = d(f[0], f[1]) && d(f[1], f[2]) && d(f[2], f[0]); got = f.join(','); } }
   ok('live pack: first three circlers sit 120 deg apart', okSp, got); }
 
-// AC3: ranged keeps 10-14 m, backs off < 6 m; caster stays behind allies
+// SKEL-ARCHER-CADENCE-01: the skeleton archer's volley cooldown (3 s) drives the sim: consecutive shots >= 2.9 s apart (seeded, archer held at 10 m)
+{ const L = {}, ev = { emit(n, p) { for (const f of (L[n] || [])) f(p); }, on(n, f) { (L[n] = L[n] || []).push(f); return () => {}; } };
+  const entities = [{ id: 'sa', type: 'beast', x: HX, y: HY, z: 'ground', components: { voxel: { anim: 'idle', loop: true, model: 'goblin' }, brain: { kind: 'beast', home: [HX, HY], beastKind: 'skeleton_archer' }, targetable: { radius: 0.45, height: 0.7 } } }];
+  const world = World.load({ name: 't', terrain: 'overworld_far', structures: [], entities, state: {} }, assets, { physics: 'grid' });
+  const sim = createBeastSim(world, { nav: buildBeastNav(world, NAV_CFG), rng: createRng(1), seed: 1, events: ev });
+  const shots = []; let tick = 0; (L['beast:shoot'] = L['beast:shoot'] || []).push(() => shots.push(tick));
+  const px = HX, py = HY - 10, z = world.terrain.heightAt(px, py);
+  for (; tick < 60 * 40; tick++) sim.step(px, py, z);
+  let minGap = 1e9; for (let q = 1; q < shots.length; q++) minGap = Math.min(minGap, (shots[q] - shots[q - 1]) / 60);
+  ok('skeleton archer fires >= 3 volleys in 40 s', shots.length >= 3, 'n=' + shots.length);
+  ok('consecutive volleys >= 2.9 s apart (kind cooldownSec 3)', minGap >= 2.9, minGap.toFixed(2)); }
+
+// AC3: ranged (skeleton archer 8-12 m), backs off < 6 m; caster stays behind allies
 { const { world, sim } = mk(['skeleton_archer']);
   let px = HX, py = HY - 18, z = world.terrain.heightAt(px, py), minD = 1e9, maxD = 0;
   for (let t = 0; t < 1200; t++) { sim.step(px, py, z); if (t > 900) { const dd = Math.hypot(sim.steer.x[0] - px, sim.steer.y[0] - py); minD = Math.min(minD, dd); maxD = Math.max(maxD, dd); } }
-  ok('ranged settles in 9..15 m (strafe tolerance)', minD > 9 && maxD < 15, `${minD.toFixed(1)}..${maxD.toFixed(1)}`);
+  ok('ranged settles in 7..13 m (keeps 8-12, strafe tolerance)', minD > 7 && maxD < 13, `${minD.toFixed(1)}..${maxD.toFixed(1)}`);
   px = sim.steer.x[0]; py = sim.steer.y[0] + 3; z = world.terrain.heightAt(px, py);
-  sim.step(px, py, z); ok('inside 6 m -> back-off flag', sim.waiting[0] === 2, 'w=' + sim.waiting[0] + ' st=' + sim.state[0]);
+  for (let t = 0; t < 300; t++) { sim.step(px, py, z); if (sim.waiting[0] === 2) break; } /* SKEL-ARCHER-CADENCE-01: a volley in progress finishes first */ ok('inside 6 m -> back-off flag', sim.waiting[0] === 2, 'w=' + sim.waiting[0] + ' st=' + sim.state[0]);
   const d0 = Math.hypot(sim.steer.x[0] - px, sim.steer.y[0] - py);
   for (let t = 0; t < 60; t++) sim.step(px, py, z);
   const d1 = Math.hypot(sim.steer.x[0] - px, sim.steer.y[0] - py);
@@ -106,6 +118,28 @@ for (const [diff, cap] of [['normal', 2], ['easy', 1], ['hard', 3]]) {
     if (t > 600) { const st = sim.steer, cx = (st.x[0] + st.x[1]) / 2, cy = (st.y[0] + st.y[1]) / 2;
       n++; if (Math.hypot(st.x[2] - px, st.y[2] - py) > Math.hypot(cx - px, cy - py) - 0.5) good++; } }
   ok('caster stays behind its allies', good / n > 0.9, `${good}/${n}`); }
+
+// UNDER-SKEL-VARIETY-01: skeleton roles (Warrior shield block 30 %, Archer keeps 8-12 m, Brute slow 0.7x / 2x+ HP / 0.8 s telegraph)
+{ const L = [], ev = { emit(n, p) { for (const f of L) f(n, p); }, on(n, f) { const g = (m, p) => { if (m === n) f(p); }; L.push(g); return () => {}; } };
+  const { world, sim } = mk(['skeleton_warrior', 'skeleton_brute', 'skeleton_archer']);
+  const hp = (k) => sim.entities[k].components.health.max;
+  ok('brute: hpF 2.0 (2x the baseline beast), more HP than the warrior', KINDS.skeleton_brute.hpF === 2 && hp(1) > hp(0), hp(1) + ' vs ' + hp(0));
+  ok('brute: 0.7x speed (warrior 1.0x)', Math.abs(sim.spdMul[1] / sim.spdMul[0] - 0.7) < 1e-9, sim.spdMul[1] + '/' + sim.spdMul[0]);
+  ok('brute: telegraph >= 0.8 s, warrior 0.5 s unchanged', sim.ssteps[1].windup >= toSteps(0.8) && sim.ssteps[0].windup === sim.cfgSteps.windup, sim.ssteps[1].windup + '/' + sim.ssteps[0].windup);
+  ok('kinds: plain names + shield 30 % + archer band 8-12', KINDS.skeleton_brute.name === 'Skeleton Brute' && KINDS.skeleton_warrior.blockF === 0.3 && KINDS.skeleton_archer.keepMin === 8 && KINDS.skeleton_archer.keepMax === 12);
+  ok('archer: 0 melee attacks (projectile only), volley every 3 s', KINDS.skeleton_archer.attacks.every((a) => a.type === 'projectile') && KINDS.skeleton_archer.attacks[0].cooldownSec === 3);
+  ok('archer back-off radius 6 m (never closes under 6 m)', sim.tactBand[2 * 3 + 2] === 6, String(sim.tactBand[8]));
+  void world; void ev; }
+{ const L = {}, ev = { emit(n, p) { for (const f of (L[n] || [])) f(p); }, on(n, f) { (L[n] = L[n] || []).push(f); return () => {}; } };
+  const entities = ['skeleton_warrior', 'skeleton_brute'].map((k, n) => { const x = HX + n * 3, y = HY; return { id: 'b' + n, type: 'beast', x, y, z: 'ground',
+    components: { voxel: { anim: 'idle', loop: true, model: 'goblin' }, brain: { kind: 'beast', home: [x, y], beastKind: k }, targetable: { radius: 0.45, height: 0.7 } } }; });
+  const world = World.load({ name: 't', terrain: 'overworld_far', structures: [], entities, state: {} }, assets, { physics: 'grid' });
+  const sim = createBeastSim(world, { nav: buildBeastNav(world, NAV_CFG), rng: createRng(1), seed: 1, events: ev });
+  const hitFrom = (k, front) => { sim.fx[k] = 0; sim.fy[k] = 1; const px = sim.steer.x[k], py = sim.steer.y[k] + (front ? 3 : -3); sim.step(px, py, world.terrain.heightAt(px, py)); sim.fx[k] = 0; sim.fy[k] = 1; sim.dmgCd[k] = 0;
+    const h = sim.entities[k].components.health, b = h.hp; ev.emit('combat:hit', { source: 'player', target: sim.ids[k], damage: 1 }); const d = b - h.hp; sim.dmgCd[k] = 0; h.hp = h.max; return d; };
+  const df = hitFrom(0, true), db = hitFrom(0, false);
+  ok('warrior: shield blocks 30 % of frontal hits only', Math.abs(df - 0.7) < 1e-9 && Math.abs(db - 1) < 1e-9, df + '/' + db);
+  ok('brute: no shield', Math.abs(hitFrom(1, true) - 1) < 1e-9); }
 
 // AC4: wind-up floor
 { let worst = 1e9, who = ''; for (const k of Object.keys(KINDS)) for (const a of KINDS[k].attacks) if (a.windupSec < worst) { worst = a.windupSec; who = k + '/' + a.id; }

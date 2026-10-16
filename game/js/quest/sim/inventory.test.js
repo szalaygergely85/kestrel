@@ -11,7 +11,7 @@ import { loadTestAssets } from '../../../../tools/testing/content-node.mjs';
 import { makeOk } from '../../../../engine/test/assert.js';
 import {
   ensureInventory, addItem, removeItem, countOf, assignHand, swapHands, hashInto,
-  validateItemDefs, migrateSword, SLOTS,
+  validateItemDefs, migrateSword, SLOTS, moveSlot,
 } from './inventory.js';
 import { createVitals } from './vitals.js';
 import { VITALS_DEFAULTS as CFG } from './vitalsConfig.js';
@@ -270,6 +270,18 @@ function killAndRespawn(vitals, player) {
     const d = defs[id];
     ok(`${id} fits the approved card copy limits`, d.name.length <= 14 && d.desc.length <= 38 && /^[ -~]+$/.test(d.name + d.desc) && d.placeholderName === false);
   }
+}
+
+// OB-203: drag between pack cells - move to empty, swap, stack same item, refuse no-ops
+{
+  const defs = globalThis.ASSETS.items.defs;
+  const mk = () => { const slots = Array.from({ length: SLOTS }, () => ({ id: null, n: 0 })); return { slots, left: null, right: null }; };
+  const inv = mk(); inv.slots[0] = { id: 'boar.hide', n: 5 }; inv.slots[3] = { id: 'boar.meat', n: 2 };
+  ok('OB-203 move to an empty cell', moveSlot(inv, defs, 0, 7) && inv.slots[7].id === 'boar.hide' && inv.slots[7].n === 5 && inv.slots[0].id === null);
+  ok('OB-203 swap two items', moveSlot(inv, defs, 7, 3) && inv.slots[3].id === 'boar.hide' && inv.slots[7].id === 'boar.meat' && inv.slots[7].n === 2);
+  inv.slots[10] = { id: 'boar.hide', n: 18 };
+  ok('OB-203 same item stacks up to stackMax, rest stays', moveSlot(inv, defs, 3, 10) && inv.slots[10].n === defs['boar.hide'].stackMax && inv.slots[3].n === 5 + 18 - defs['boar.hide'].stackMax);
+  ok('OB-203 empty source / same cell / full stack refuse', !moveSlot(inv, defs, 5, 6) && !moveSlot(inv, defs, 3, 3) && !moveSlot(inv, defs, 3, 10));
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

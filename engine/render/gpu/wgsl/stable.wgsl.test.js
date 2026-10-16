@@ -29,7 +29,7 @@ const wgslTypes = { uint: 'texture_2d<u32>', sint: 'texture_2d<i32>', float: 'te
 STABLE_TEXTURES.forEach((k, i) => assert.ok(new RegExp(`@group\\(0\\) @binding\\(${i}\\) var \\w+: ${wgslTypes[k].replace(/[<>]/g, '\\$&')}`).test(STABLE_WGSL), `binding ${i} ${k}`));
 assert.ok(/@group\(1\) @binding\(0\) var<uniform> u: StableU/.test(STABLE_WGSL));
 assert.ok(STABLE_WGSL.includes(`const LEVEL_ANIM: u32 = ${LEVEL_ANIM}u;`) && LEVEL_ANIM === 254, 'LEVEL_ANIM interpolated from the twin');
-assert.ok(STABLE_WGSL.includes('dUV >= 1.0 / u.detailDefault') && UV_LIM_TEXELS === 1, 'UV drift limit 1.0/detail (38.25 B)');
+assert.ok(STABLE_WGSL.includes('1.0 / u.detailDefault') && STABLE_WGSL.includes('if (dUV >= uvLim)') && UV_LIM_TEXELS === 1, 'UV drift limit 1.0/detail (38.25 B)');
 assert.ok(STABLE_WGSL.includes(`const LEVEL_NONE: u32 = ${LEVEL_NONE}u;`) && LEVEL_NONE === 255, 'LEVEL_NONE interpolated from the twin');
 assert.ok(STABLE_WGSL.includes('floor(pc.x + 0.5)') && STABLE_WGSL.includes('floor(pc.y + 0.5)'), 'history cell = floor(x + 0.5)');
 assert.ok(STABLE_WGSL.includes('floor(v * 255.0 + 0.5)'), 'byte quantise floor(v+0.5)');
@@ -54,13 +54,13 @@ function uniformObject(words, ints) {
   const v4 = (n) => { const a = w(n); return { x: words[a], y: words[a + 1], z: words[a + 2], w: words[a + 3] }; };
   return {
     curA: v4('curA'), curB: v4('curB'), curC: v4('curC'), prevA: v4('prevA'), prevB: v4('prevB'), prevC: v4('prevC'), dEye: v4('dEye'),
-    gridCols: ints[w('gridCols')], gridRows: ints[w('gridRows')], histValid: ints[w('histValid')], ortho: ints[w('ortho')], snap: ints[w('snap')], waterOn: ints[w('waterOn')], detailDefault: words[w('detailDefault')],
+    gridCols: ints[w('gridCols')], gridRows: ints[w('gridRows')], histValid: ints[w('histValid')], ortho: ints[w('ortho')], snap: ints[w('snap')], waterOn: ints[w('waterOn')], aaFlags: ints[w('aaFlags')], detailDefault: words[w('detailDefault')],
   };
 }
 
 function compileStable(src, ctx) {
-  const base = { ...shims, textureLoad: tl, LEVEL_NONE, LEVEL_ANIM, ...ctx, giKind: (y) => y & 0xff, vec3f: (x, y, z) => ({ x, y, z }) };
-  for (const n of ['byteOf', 'packRgb', 'blendCh', 'blendPacked', 'reproject']) base[n] = compileFn(src, n, base);
+  const base = { ...shims, textureLoad: tl, LEVEL_NONE, LEVEL_ANIM, ...ctx, giKind: (y) => y & 0xff, giMat: (y) => (y >>> 16) & 0xffff, vec3f: (x, y, z) => ({ x, y, z }) };
+  for (const n of ['byteOf', 'packRgb', 'blendCh', 'blendPacked', 'reprojectCell', 'reproject']) base[n] = compileFn(src, n, base);
   return compileFn(src, 'stableCell', base);
 }
 
@@ -128,7 +128,7 @@ function toTextures(f, hist) {
   t.uWater = tex(cols, rows, (i) => [f.waterX[i], 0, 0, f.waterW[i]]);
   t.uHistFg = tex(cols, rows, (i) => [...rgbF(hist.fg[i]), unorm(hist.glyph[i])]);
   t.uHistBg = tex(cols, rows, (i) => [...rgbF(hist.bg[i]), 1]);
-  t.uHist = tex(cols, rows, (i) => [hist.planeId[i] >>> 0, f2u(hist.u[i]), f2u(hist.v[i]), hist.level[i] | (hist.kind[i] << 8)]);
+  t.uHist = tex(cols, rows, (i) => [hist.planeId[i] >>> 0, f2u(hist.u[i]), f2u(hist.v[i]), (hist.level[i] | (hist.kind[i] << 8) | (hist.mat[i] << 16)) >>> 0]);
   return t;
 }
 
@@ -137,8 +137,9 @@ const GRID = { cols: COLS, rows: ROWS, pxCellW: 8, pxCellH: 16 };
 const WALL = { n: [0, 1, 0], d: -5 }, FLOOR = { n: [0, 0, 1], d: 0 };
 
 /** Two-frame scene: A (invalid) -> history from the twin; B with cam1. Returns twin out + emulated cells. */
+let ANCHOR = true; // AA-09: aaAnchor switch of the probe scenes (the mutation loop runs both)
 function scene(src, cam0, cam1, plane, tweak) {
-  const st = createStableState();
+  const st = createStableState(); st.aaAnchor = ANCHOR;
   beginFrame(st, cam0, GRID);
   const fa = makeFrame(st, COLS, ROWS, plane, {});
   const hist = createStableBuffers(COLS, ROWS);
@@ -217,6 +218,12 @@ for (const [name, cam0, camK, plane] of cases) {
     totalUsed += r.used; totalHeld255 += r.held255; probes += N;
   }
 }
+ANCHOR = false; // AA-09: aaAnchor off (old history-anchor behaviour) stays at parity
+for (const [name, c0, camK, plane] of cases) for (let k = 1; k <= 4; k++) {
+  const r = runCase(STABLE_WGSL, name, c0, camK, plane, k);
+  assert.equal(r.mism, 0, `aaAnchor off ${name} k=${k}: ${r.mism} mismatches`);
+}
+ANCHOR = true;
 assert.ok(totalHeld255 > 30, `both-255 holds exercised (${totalHeld255})`);
 // invalid history: copy through, fresh everywhere (both sides)
 {
@@ -233,35 +240,38 @@ const mutations = [
   ['floor(y+0.5) -> floor(y)', 'floor(pc.y + 0.5)', 'floor(pc.y)'],
   ['snap threshold > -> >=', 'abs(d) > u.snap', 'abs(d) >= u.snap'],
   ['blend rounding (+1)', '(p + c + 1u) >> 1u', '(p + c) >> 1u'],
-  ['glyph hold window <=1 -> <1', 'abs(i32(lvC) - i32(lvP)) <= 1', 'abs(i32(lvC) - i32(lvP)) < 1'],
+  ['glyph hold window <=1 -> <1', 'lvDiff <= 1)', 'lvDiff < 1)'],
   ['edge: fg.r ignored', 'if (fgC.x != sf.x || ', 'if ('],
   ['edge: glyph ignored', 'fgC.w != sf.w || ', ''],
   ['edge: bg.b ignored', ' || bgC.z != sb.z) { return o; }', ') { return o; }'],
   ['water cells take history', 'if (u.waterOn != 0 && wl.x != 0x7f800000u && (wl.w & 32u) == 0u) { return o; }', ''],
   ['level 254 cur not rejected', ' || lvC == LEVEL_ANIM) { return o; }', ') { return o; }'],
   ['hist level 254 not rejected', 'if (lvP == LEVEL_ANIM) { return o; }', ''],
-  ['mixed 255/ramp not rejected', 'if (c255 != (lvP == LEVEL_NONE)) { return o; }', ''],
+  ['mixed 255/ramp not rejected', 'if (c255 != (lvP == LEVEL_NONE) && !jointHold) { return o; }', ''],
   ['255 hold ignores the fg snap', 'if (!snapped) {', 'if (true) {'],
   ['255 hold keeps the CURRENT u/v (no anchor)', 'o.ub = hh.y; o.vb = hh.z;', ''],
+  ['255 hold never re-anchors (AA-09)', '(u.aaFlags & 16) != 0 && vmTag == 0u', 'false && vmTag == 0u'],
   ['255 snap test ignores red', 'let snapped = abs(i32((fgCur >> 16u) & 255u) - i32((sa >> 16u) & 255u)) > u.snap', 'let snapped = false'],
   ['255 cells take the ramp hold rule', 'if (c255) {', 'if (false) {'],
-  ['sky/model not rejected', 'if (kind == 0u || kind == 8u || lvC', 'if (lvC'],
-  ['kind/plane match dropped', 'if (hk != kind || hh.x != gi.x) { return o; }', ''],
-  ['UV drift window x2', 'dUV >= 1.0 / u.detailDefault', 'dUV >= 2.0 / u.detailDefault'],
-  ['UV drift window back to 0.5', 'dUV >= 1.0 / u.detailDefault', 'dUV >= 0.5 / u.detailDefault'],
-  ['dEye.z dropped', 'let wz = pz + u.dEye.z;', 'let wz = pz;'],
-  ['ortho branch swapped in prev projection', 'cf = (vx / u.prevA.w + 1.0)', 'cf = (vx / vdP / u.prevA.w + 1.0)'],
-  ['perspective divide dropped in rows', 'rf = (1.0 - vy / vdP / u.prevC.y)', 'rf = (1.0 - vy / u.prevC.y)'],
+  ['models rejected although aaVm is on', '|| (kind == 8u && (u.aaFlags & 4) == 0) ||', '|| kind == 8u ||'],
+  ['kind match dropped', 'if (hk != kind) { return o; }', ''],
+  ['plane match dropped (OB-198: mesh/material exemption)', 'else if (hh.x != gi.x) {', 'else if (false) {'],
+  ['UV drift window x2', 'var uvLim = 1.0 / u.detailDefault', 'var uvLim = 2.0 / u.detailDefault'],
+  ['UV drift window back to 0.5', 'var uvLim = 1.0 / u.detailDefault', 'var uvLim = 0.5 / u.detailDefault'],
+  ['dEye.z dropped', 'let wz = pz + dEye.z;', 'let wz = pz;'],
+  ['ortho branch swapped in prev projection', 'cf = (vx / prevA.w + 1.0)', 'cf = (vx / vdP / prevA.w + 1.0)'],
+  ['perspective divide dropped in rows', 'rf = (1.0 - vy / vdP / prevC.y)', 'rf = (1.0 - vy / prevC.y)'],
 ];
 assert.ok(STABLE_WGSL.includes('u.waterOn != 0 && wl.x'), 'water test is gated by waterOn (waterOn): the 1x1 dummy reads 0 = water out of bounds');
 for (const [name, from, to] of mutations) {
   assert.ok(STABLE_WGSL.includes(from), `mutation anchor missing: ${name}`);
   const src = STABLE_WGSL.replace(from, to);
   let caught = 0;
-  for (const [cn, cam0, camK, plane] of cases) for (let k = 1; k <= 4 && !caught; k++) {
+  for (ANCHOR of [true, false]) for (const [cn, cam0, camK, plane] of cases) for (let k = 1; k <= 4 && !caught; k++) {
     const r = runCase(src, cn, cam0, camK, plane, k);
     if (r.mism > 0) caught++;
   }
+  ANCHOR = true;
   assert.ok(caught > 0, `mutation survived: ${name}`);
 }
 

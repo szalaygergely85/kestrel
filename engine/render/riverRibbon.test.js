@@ -10,6 +10,7 @@ import { renderWorld } from './compositor.js';
 import { makeLightBuffer } from './lighting.js';
 import { buildRiverMesh, packRiverTexel, RIVER_COLS, RIVER_CHUNK_ROWS } from '../mesh/waterMesh.js';
 import { selectWater, createWaterSelection, renderWaterJS, RIVER_RUNS_MAX, RIVER_RUNS_STRIDE, WATER_RIVER_SLOT0 } from './water.js';
+import { allocProbe } from '../../tools/allocProbe.mjs';
 import { createWater, collectWaterDefs } from '../world/water.js';
 import { projTerms, shearProjection, unprojectCell } from './projection.js';
 import { frustumPlanes } from '../mesh/culling.js';
@@ -305,8 +306,8 @@ function seeRiver(world) {
   const run = (n) => { for (let i = 0; i < n; i++) { selectWater(world, cam, planes, sel, looks); renderWaterJS(fb, world, cam, M, planes, false); } };
   run(1500);
   if (globalThis.gc) {
-    let grown = Infinity;
-    for (let r = 0; r < 3; r++) { globalThis.gc(); const m0 = process.memoryUsage().heapUsed; run(100); grown = Math.min(grown, process.memoryUsage().heapUsed - m0); }
+    // chunked + min of 5 windows (NODE24-ALLOC: a single run(100) per window is boxed in Maglev/OSR on Node 24)
+    const grown = allocProbe(run, { n: 100, chunk: 10, warm: 4, settle: 30, limit: 655 }).bytes;
     ok('zero allocation: 100 select + JS-twin frames with a river grow the heap < 64 KB', grown < 65536, `${grown} B`);
   } else console.log('(run with --expose-gc for the allocation check)');
   const t0 = process.hrtime.bigint(); run(20);

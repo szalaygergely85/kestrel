@@ -4,6 +4,8 @@ import { loadPresets, resolveQuality, knobsFor, saveQuality, dropStaleOverrides,
 const data = JSON.parse(readFileSync(new URL('../../../content/settings/gfx-presets.json', import.meta.url)));
 await loadPresets(data);
 assert.deepEqual(['low','medium','high','ultra'].map(n=>knobsFor(n).rays),[1,2,2,4]);
+assert.deepEqual(['low','medium','high','ultra','extreme'].map(n=>knobsFor(n).raysFarM),[0,0,0,40,0]); // RTX-RAYS-BAND-01
+assert.equal(resolveQuality({param:'quality=ultra&raysFarM=25'}).knobs.raysFarM,25);
 assert.equal(knobsFor('low').grid,'240x90');
 assert.equal(knobsFor('low').shadowQuality,'low');
 const resolve = opts => resolveQuality({...opts,warn:()=>{}});

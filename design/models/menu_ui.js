@@ -95,9 +95,9 @@
     },
     subtitle: { row: 3, align: 'center', text: 'someone is calling', fg: 'uiDim', optional: true,
                 note: 'lower-case whisper under the name board (canon: models.subtitle); writer may change via S8-A-12' },
-    signal: { row: 4, align: 'center', text: '. . . - - - . . .', fg: 'aetherDim', litFg: 'aether',
-              pulse: { use: 'models.title.signal.ms (short 180, long 480, rest 1200)', optional: true,
-                       rule: 'mark n lit (aether) in the SOS order, others aetherDim; static aetherDim is fine' },
+    signal: { row: 4, align: 'center', text: '.- .-.. .. ...- .', fg: 'aetherDim', litFg: 'aether',
+              pulse: { use: 'ASSETS.signal.steps (Morse ALIVE: dot 0.25, dash 0.75 s)', optional: true,
+                       rule: 'mark n lit (aether) in the ALIVE order (13 marks), others aetherDim; static aetherDim is fine' },
               note: 'the one magic colour on the card, sits centred in the row-4 separator' },
     separators: [
       { row: 4, from: 3, to: 68, glyph: '-', fg: 'brassShadow', note: 'under the title; the signal text is drawn over its centre (1 space each side)' },

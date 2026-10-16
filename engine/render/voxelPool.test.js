@@ -30,7 +30,7 @@ const table = { idFor(key) { if (!idMap.has(key)) idMap.set(key, nextId++); retu
 
 // ---- bind() ----------------------------------------------------------------
 const pool = new VoxelPool();
-ok('default renderer is mesh with 48 slots', pool.renderer === 'mesh' && pool.cap === MAX_VOX_INSTANCES_MESH);
+ok('default renderer is mesh with 128 slots', pool.renderer === 'mesh' && pool.cap === MAX_VOX_INSTANCES_MESH);
 pool.renderer = 'dda'; // Existing 16-slot caster oracle fixture, until ME-19b.
 pool.bind(registry, table);
 ok('bind: packs voxel models only', pool.models.has('bear') && !pool.models.has('notVoxel'));
@@ -274,35 +274,37 @@ if (global.gc) {
 // VOX-CAP-01: mesh selection, cap switches and constructor-owned storage.
 {
   const p = new VoxelPool(); p.renderer = 'mesh'; p.bind(registry, table);
-  const entities = Array.from({ length: 60 }, (_, i) => ({
+  const N0 = MAX_VOX_INSTANCES_MESH + 12; // OB-192: cap-relative
+  const entities = Array.from({ length: N0 }, (_, i) => ({
     components: { voxel: { model: 'bear' } },
-    transform: { x: 0, y: -(60 - i), z: 0, yawDeg: 0 },
+    transform: { x: 0, y: -(N0 - i), z: 0, yawDeg: 0 },
   }));
   const w = { renderVersion: 1, forEachEntity(fn) { for (const e of entities) fn(e); } };
   const c = { x: 0, y: 1, z: 1, yawDeg: 0, pitchDeg: 0 };
   const refs = { raw: p.raw.slice(), slots: p._slots.slice(), shadows: p._shadowSlots.slice(), idx: p._nearIdx, dist: p._nearDist };
-  ok('mesh cap is public and scratch is preallocated for 48', MAX_VOX_INSTANCES_MESH === 48 && p.cap === 48 && p.raw.length === 48 && p._slots.length === 48 && p._shadowSlots.length === 48);
+  ok('mesh cap is public and scratch is preallocated for 128', MAX_VOX_INSTANCES_MESH === 128 && p.cap === 128 && p.raw.length === 128 && p._slots.length === 128 && p._shadowSlots.length === 128);
   entities.length = 30;
   p.collect(w, c);
   ok('mesh queues all 30 in unchanged entity order below cap', p._rawCount === 30 && p.raw.slice(0, 30).every((r, i) => r.y === entities[i].transform.y));
   p.project(c, rt);
   ok('mesh projects all 30 visible props', p.list.length === 30 && p.stats.count === 30);
   ok('mesh shadows include all 30', p.projectShadow() === 30);
-  for (let i = 30; i < 60; i++) entities.push({ components: { voxel: { model: 'bear' } }, transform: { x: 0, y: -(60 - i), z: 0 } });
+  const M = MAX_VOX_INSTANCES_MESH, N = M + 12; // OB-192: cap-relative (was a literal 48 / 60)
+  for (let i = 30; i < N; i++) entities.push({ components: { voxel: { model: 'bear' } }, transform: { x: 0, y: -(N - i), z: 0 } });
   w.renderVersion++;
   const warnings = [], saveWarn = console.warn;
   console.warn = msg => warnings.push(msg);
   try { p.collect(w, c); p.collect(w, c); } finally { console.warn = saveWarn; }
-  ok('60 entities choose nearest 48 in increasing distance order', p._rawCount === 48 && p.raw.every((r, i) => r.y === -(i + 1)));
-  ok('overflow warning fires once and names 48', warnings.length === 1 && warnings[0].includes('(48)'));
+  ok(`${N} entities choose nearest ${M} in increasing distance order`, p._rawCount === M && p.raw.every((r, i) => r.y === -(i + 1)));
+  ok(`overflow warning fires once and names ${M}`, warnings.length === 1 && warnings[0].includes(`(${M})`));
   p.project(c, rt);
-  ok('mesh projects and shadows the full 48 cap', p.list.length === 48 && p.projectShadow() === 48);
+  ok(`mesh projects and shadows the full ${M} cap`, p.list.length === M && p.projectShadow() === M);
   // Switching back is covered by the existing frozen-path suites; here verify
   // renderer assignment updates only the cap, retaining every scratch record.
   p.renderer = 'dda';
   ok('renderer switch updates cap immediately', p.cap === 16);
   p.renderer = 'mesh';
-  entities.length = 48; w.renderVersion++;
+  entities.length = M; w.renderVersion++;
   p.collect(w, c); p.project(c, rt); p.projectShadow();
   let growth = 0;
   if (global.gc) {
@@ -315,14 +317,14 @@ if (global.gc) {
       global.gc(); const delta = process.memoryUsage().heapUsed - before;
       growth = trial === 0 ? delta : Math.min(growth, delta);
     }
-    ok('1000 frames at 48 including renderer switches grow heap <64KB', growth < 65536, String(growth));
+    ok(`1000 frames at ${M} including renderer switches grow heap <64KB`, growth < 65536, String(growth));
     console.log(`[VOX-CAP-01] heap growth ${growth} bytes`);
   }
   p.beginFrame(); p.pushInstance('bear', 0, -1, 0, 0); p.project(c, rt); p.projectShadow();
   p.collect(w, c); p.project(c, rt); p.projectShadow();
   ok('shrink/regrow and switches reuse all raw/project/shadow records', p.raw.every((r, i) => r === refs.raw[i]) && p.list.every((r, i) => r === refs.slots[i]) && p.shadowList.every((r, i) => r === refs.shadows[i]) && p._nearIdx === refs.idx && p._nearDist === refs.dist);
-  p.beginFrame(); for (let i = 0; i < 48; i++) p.pushInstance('bear', 0, -i - 1, 0, 0);
-  ok('mesh pushInstance accepts all 48', p._rawCount === 48);
+  p.beginFrame(); for (let i = 0; i < M; i++) p.pushInstance('bear', 0, -i - 1, 0, 0);
+  ok(`mesh pushInstance accepts all ${M}`, p._rawCount === M);
   p.project(c, rt);
 }
 

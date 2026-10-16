@@ -19,7 +19,7 @@ export const MAX_VOX_PARTS = 16;
 export const MAX_VOX_STEPS = 48;
 export const MAX_VOX_DIM = 32;
 export const MAX_VOX_INSTANCES = 16; // DDA texture/slot budget.
-export const MAX_VOX_INSTANCES_MESH = 48;
+export const MAX_VOX_INSTANCES_MESH = 128; // OB-192: was 48 - the tower region has ~500 voxel props and only the nearest 36 drew, so one step swapped lamps/stones in and out
 // ME-19b: mesh bounds are the only validation limits. Frozen atlas upload
 // constants remain until ME-19c; meshOnly is accepted for content compatibility.
 export const MESH_ONLY_MAX_DIM = 256;

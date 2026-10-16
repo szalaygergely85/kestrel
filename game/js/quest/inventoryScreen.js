@@ -5,10 +5,11 @@
 // click / E path. Layout, colours, glyphs and flash states come from `ASSETS.uiStyle.inventory`; numbers are UI-layer cells.
 // `draw` only walks cached strings and writes `ui.setCellRGB`. No text mentions Esc (owner rule).
 import { equip as eqEquip, unequip as eqUnequip, syncHands, defenceOf, reductionOf } from './sim/equipment.js';
-import { SLOTS as PACK_SLOTS, assignHand, removeItem } from './sim/inventory.js';
+import { SLOTS as PACK_SLOTS, assignHand, removeItem, moveSlot } from './sim/inventory.js';
 import { wrapNoteLines } from './noteRead.js';
 import { gearRecipe } from './gearLook.js';
 import { createPreviewYaw } from './previewYaw.js';
+import { createSpellPageView } from './spellPageView.js'; // SPELL-03
 
 // Panel-relative layout (panel 100 x 29). Slot boxes are the style's 9x5 boxes, pitch from `uiStyle.inventory.grid`.
 export const LAYOUT = Object.freeze({
@@ -27,7 +28,7 @@ export const DIGIT_CODES = ['Digit1', 'Digit2', 'Digit3', 'Digit4'];
 const RED = [230, 80, 70];
 const N_EQ = 11, VIEW = N_EQ, PACK0 = N_EQ + 1;
 const F_REFUSE = 1, F_OK = 2, F_USE = 3;
-const HINTS = [['W/A/S/D', true], [' select   ', false], ['E', true], [' use / wear   ', false], ['drag', true], [' equip   ', false], ['A/D', true], [' turn   ', false], ['I', true], [' close', false]];
+const HINTS = [['W/A/S/D', true], [' select   ', false], ['E', true], [' use / wear   ', false], ['drag', true], [' equip / move   ', false], ['A/D', true], [' turn   ', false], ['I', true], [' close', false]];
 
 /**
  * @param {object} o
@@ -39,6 +40,8 @@ const HINTS = [['W/A/S/D', true], [' select   ', false], ['E', true], [' use / w
  * @param {(i:number)=>boolean} [o.isSlotDisabled] host-owned pack locks @param {boolean} [o.characterKey] false: C belongs to crafting
  * @param {{assign:(n:number,id:string)=>boolean}} [o.quickbar] 1-4 over an item
  * @param {object} [o.character] {equipmentOf, createPreview, charCache, getLook, kit, onGearChanged}; absent = no gear slots / model
+ * @param {{options:()=>{id:string,name:string,level:number,max:number}[], pick:(id:string)=>number}} [o.spellChoice] D-114: Spell Scroll choice list (pick returns the new level or 0)
+ * @param {{defs:any, book:any, scrolls:()=>number, useScroll:(id:string)=>number}} [o.spellPage] SPELL-03: the Spells tab (T toggles); absent = no tab
  * @param {object} [o.layout] overrides for LAYOUT
  */
 export function createInventoryScreen(o) {
@@ -159,6 +162,7 @@ export function createInventoryScreen(o) {
     const d = defs[id];
     if (d.equip) { wear(n, null); return; }
     if (d.kind === 'food' && d.use && d.use.heal) { eat(n, id); return; }
+    if (d.use && d.use.chooseSpell && o.spellChoice) { openPick(n); return; }
     if (d.hand === true) { toHand(n, id, hand || 'right'); return; }
     say((d.use && d.use.none) || 'Nothing happens', C.uiDim);
     setFlash(n, F_REFUSE, slotCfg.flash.refuse.ms);
@@ -167,8 +171,9 @@ export function createInventoryScreen(o) {
   function release(src) {
     const s = nodes[src], dst = nodes[cur];
     if (cur === src || !dragMoved) { activate(src); return; }
-    if (s.kind === 2) { // pack item -> a gear slot or Wick equips; elsewhere does nothing
+    if (s.kind === 2) { // pack item -> a gear slot or Wick equips; -> another pack cell moves / swaps / stacks (OB-203)
       if (dst.kind === 0) wear(src, dst.slot); else if (dst.kind === 1) wear(src, null);
+      else if (dst.kind === 2) { const v = inv(); if (!(v && moveSlot(v, defs, s.i, dst.i))) setFlash(cur, F_REFUSE, slotCfg.flash.refuse.ms); }
     } else if (s.kind === 0 && dst.kind !== 0) takeOff(src); // worn item -> pack / Wick unequips
     else if (s.kind === 0) setFlash(cur, F_REFUSE, slotCfg.flash.refuse.ms);
   }
@@ -201,12 +206,49 @@ export function createInventoryScreen(o) {
     return PACK0 + (first < 0 ? 0 : first);
   }
 
+  // SPELL-03: the Spells tab (T toggles it; the pack screen is untouched)
+  let page = false;
+  const hints = o.spellPage ? HINTS.slice(0, -2).concat([['T', true], [' spells   ', false]], HINTS.slice(-2)) : HINTS;
+  const pageHints = [['W/A/S/D', true], [' select   ', false], ['E', true], [' use scroll   ', false], ['T', true], [' pack   ', false], ['I', true], [' close', false]];
+  const pageView = o.spellPage ? createSpellPageView({ ...o.spellPage, rgb: o.rgb, say: (m, c) => say(m, c),
+    colors: { text: C.uiText, dim: C.uiDim, hint: C.uiHint, gold: C.gold, frame: S.frame.fg, good: C.heroGreen } }) : null;
+  const putPage = (x, y, code, fg) => put(x, y, code, fg, bg);
+
+  // D-114: Spell Scroll choice list (small overlay; the last row "Cancel" keeps the scroll; closing the screen also cancels)
+  let pick = null;
+  function openPick(n) {
+    const opts = o.spellChoice.options();
+    if (!opts.length) { say('No spell can learn from this yet.', C.uiDim); setFlash(n, F_REFUSE, slotCfg.flash.refuse.ms); return; }
+    pick = { n, opts, sel: 0 };
+  }
+  function pickKey(input) {
+    const m = pick.opts.length + 1; // + Cancel
+    if (input.pressed('KeyW') || input.pressed('ArrowUp')) pick.sel = (pick.sel + m - 1) % m;
+    if (input.pressed('KeyS') || input.pressed('ArrowDown')) pick.sel = (pick.sel + 1) % m;
+    if (input.pressed('KeyE') || input.pressed('Enter') || input.pressed('NumpadEnter')) {
+      const p = pick; pick = null;
+      if (p.sel < p.opts.length) {
+        const op = p.opts[p.sel], l = o.spellChoice.pick(op.id);
+        if (l) { setFlash(p.n, F_USE, slotCfg.flash.use.ms); say(op.name + ' is now level ' + l, C.heroGreen); } else setFlash(p.n, F_REFUSE, slotCfg.flash.refuse.ms);
+      }
+    }
+    if (input.pressed('Backspace')) pick = null;
+  }
+  function drawPick() {
+    const lines = ['Choose a spell to strengthen'];
+    for (let i = 0; i < pick.opts.length; i++) { const q = pick.opts[i]; lines.push((pick.sel === i ? '> ' : '  ') + q.name + '  Lv ' + q.level + ' -> ' + (q.level + 1)); }
+    lines.push((pick.sel === pick.opts.length ? '> ' : '  ') + 'Cancel');
+    let w = 0; for (const l of lines) if (l.length > w) w = l.length;
+    w += 4; const h = lines.length + 2, x0 = (P.w - w) >> 1, y0 = (P.h - h) >> 1;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) put(x0 + x, y0 + y, (y === 0 || y === h - 1) ? 45 : (x === 0 || x === w - 1) ? 124 : 32, C.uiHint, bg);
+    for (let i = 0; i < lines.length; i++) text(x0 + 2, y0 + 1 + i, lines[i], i === 0 ? C.uiText : (i - 1 === pick.sel ? C.gold : C.uiText), bg);
+  }
   function doOpen() {
-    isOpen = true; cur = firstPack(); pxLast = pyLast = -1; turning = false; dragSrc = -1; dragMoved = false; dragPx = 0;
+    isOpen = true; page = false; if (pageView) pageView.reset(); cur = firstPack(); pxLast = pyLast = -1; turning = false; dragSrc = -1; dragMoved = false; dragPx = 0;
     yaw.reset(); subj.yawDeg = 180; flash.kind = 0; tipCur = -1; refreshModel();
     if (o.onOpen) o.onOpen();
   }
-  function doClose() { isOpen = false; turning = false; dragSrc = -1; if (o.onClose) o.onClose(); }
+  function doClose() { pick = null; page = false; isOpen = false; turning = false; dragSrc = -1; if (o.onClose) o.onClose(); }
 
   // ---- drawing helpers (hoisted: draw() must not create closures per frame) ----
   let U = null;
@@ -302,6 +344,11 @@ export function createInventoryScreen(o) {
         return;
       }
       if (input.pressed('Escape') || kI || kC || kTab) { doClose(); if (input.consumePressed) input.consumePressed(); return; }
+      if (pageView && !pick) {
+        if (input.pressed('KeyT') && !pageView.confirming) { page = !page; if (page) pageView.reset(); if (input.consumePressed) input.consumePressed(); return; }
+        if (page) { pageView.step(input); if (input.consumePressed) input.consumePressed(); return; }
+      }
+      if (pick) { pickKey(input); if (input.consumePressed) input.consumePressed(); return; }
       // 1-4 while an item is hovered / selected assigns it to that quick-bar slot
       if (o.quickbar) {
         for (let n = 0; n < 4; n++) {
@@ -359,6 +406,14 @@ export function createInventoryScreen(o) {
       put(0, 0, fc, F.cornerFg, bg); put(P.w - 1, 0, fc, F.cornerFg, bg); put(0, P.h - 1, fc, F.cornerFg, bg); put(P.w - 1, P.h - 1, fc, F.cornerFg, bg);
       text((P.w - F.title.text.length - 2) >> 1, 0, ' ' + F.title.text + ' ', F.title.fg, bg);
       text(F.pausedTag.col - 1, F.pausedTag.row, ' ' + F.pausedTag.text + ' ', F.pausedTag.fg, bg);
+      if (page) {
+        text(L.pack.x + 1, L.titleRow, ' SPELLS ', slotCfg.selected.fg, bg);
+        pageView.draw(putPage, P.w);
+        let pl = 0; for (let i = 0; i < pageHints.length; i++) pl += pageHints[i][0].length;
+        let px = (P.w - pl) >> 1;
+        for (let i = 0; i < pageHints.length; i++) { text(px, L.hintRow, pageHints[i][0], pageHints[i][1] ? S.keyHints.keyFg : S.keyHints.fg, bg); px += pageHints[i][0].length; }
+        return;
+      }
       text(L.pack.x + 1, L.titleRow, ' PACK ', slotCfg.selected.fg, bg);
       text(L.view.x + 9, L.titleRow, ' WICK ', slotCfg.selected.fg, bg);
       for (let y = 2; y < 27; y++) put(L.sepCol, y, 58, C.uiDim, bg); // ':'
@@ -421,10 +476,11 @@ export function createInventoryScreen(o) {
       for (let i = 0; i < tipLines.length; i++) text(L.details.x, L.details.y + i, tipLines[i], tipFg[i], bg);
       // the dragged icon rides the pointer
       if (dragSrc >= 0 && dragMoved) { const did = idAt(nodes[dragSrc]); if (did) iconAt(rx - 2, ry - 1, did, slotCfg.selected.innerBg); }
+      if (pick) drawPick();
       // key hints (gold keys); no Esc text anywhere
-      let hl = 0; for (let i = 0; i < HINTS.length; i++) hl += HINTS[i][0].length;
+      let hl = 0; for (let i = 0; i < hints.length; i++) hl += hints[i][0].length;
       let hx = (P.w - hl) >> 1;
-      for (let i = 0; i < HINTS.length; i++) { text(hx, L.hintRow, HINTS[i][0], HINTS[i][1] ? S.keyHints.keyFg : S.keyHints.fg, bg); hx += HINTS[i][0].length; }
+      for (let i = 0; i < hints.length; i++) { text(hx, L.hintRow, hints[i][0], hints[i][1] ? S.keyHints.keyFg : S.keyHints.fg, bg); hx += hints[i][0].length; }
     },
   };
   return view;

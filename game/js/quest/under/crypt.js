@@ -8,7 +8,7 @@
 import { STATE_DYING, STATE_GONE, STATE_EAT } from '../sim/beastSim.js';
 export const CRYPT = Object.freeze({
   site: 'crypt', key: 'key.crypt', doorMesh: 'cem36', doorSink: 3, reach: 2.6,
-  guards: Object.freeze(['skelwar.crypt.2', 'skelwar.crypt.3', 'skelarch.crypt.2']), // room 3
+  guards: Object.freeze(['skelbrute.crypt.1', 'skelwar.crypt.2', 'skelwar.crypt.3']), // room 3
   chests: Object.freeze(['chestCrypt']),
 });
 export const DOOR_FLAG = 'under.crypt.doorOpen', CLEARED_FLAG = 'under.crypt.cleared';

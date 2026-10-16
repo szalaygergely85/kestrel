@@ -40,6 +40,8 @@ export async function loadQuestFiles(getJson, { wantBarks = true, log = console.
   const names = legacy.slice(1);
   const loaded = await Promise.all(names.map((n) => fetchUrl(n === 'tower.blade' ? QUEST_FILES.tower : n === 'burl.boars' ? QUEST_FILES.burl : QDIR + n + '.quest.json')));
   const charKit = await get('charKit');
+  const srcF = await fetchUrl(QDIR + '../items/sources.json'); // OB-202: item -> where the compass sends the player
+  const itemSources = (srcF && srcF.items) || {};
   let giverDefs = loaded.every(Boolean) ? loaded : null; // all or none: a half book would mis-number the givers
   if (giverDefs && packNames.length) {
     const [sitesF, rewardsF, ...packs] = await Promise.all([fetchUrl(QDIR + 'sites.json'), fetchUrl(QDIR + 'rewards.json'), ...packNames.map((p) => fetchUrl(QDIR + p + '/pack.json'))]);
@@ -49,7 +51,7 @@ export async function loadQuestFiles(getJson, { wantBarks = true, log = console.
     giverDefs = giverDefs.concat(ex.defs);
   }
   if (giverDefs) giverDefs = giverDefs.map(normalizeQuestDef); // QUEST-FORMAT (D-106): new-format files read as the legacy shape everywhere
-  return { questDef, bearBarks, giverDefs, charKit, errors };
+  return { questDef, bearBarks, giverDefs, charKit, itemSources, errors };
 }
 
 /** Short on-screen notice (DOM); returns the element. */

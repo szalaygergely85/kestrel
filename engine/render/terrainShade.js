@@ -15,6 +15,7 @@ import { KIND_TERRAIN, KIND_GRASS } from './GBuffer.js';
 import { packTerrainTextures } from './gpu/TerrainTextures.js';
 import { unpackNormalOct } from '../voxel/octNormal.js';
 import { clampByte } from '../core/math.js';
+import { CAO_SUN_W } from './contactAO.js'; // 38.78 rev: contact zones also dim the analytic sun term
 import { sunFromWorld } from './lighting.js';
 import { WET_DARK, wetGain } from './detailShade.js';
 import { LEVEL_NONE, LEVEL_ANIM } from './temporalStable.js';
@@ -278,7 +279,12 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
   }
   const nP = lookOn ? 2 * GLq[6] - 1 : nN / (nWs > 0.55 ? nWs : 0.55);
   // OB-073 calm ground: colour tier only from the smooth noise (no per-cell dither dice); ONE glyph per type (no hash, no band/close/glint).
-  let off = Math.floor(nP * PATCH_K + 0.5);
+  // OB-208 (AA-08): soft patch edge. offC = k + smoothstep(0.5-w, 0.5+w, frac) is the round() step smeared over +-w (w from the cell
+  // footprint), colour only; interior/outside stay the integer tier (identical to the old hard step). WGSL twin: shadeTerrain.
+  const pk = nP * PATCH_K, pkF = Math.floor(pk);
+  let pw = PATCH_K * fp * (1 / NOISE_CELLS[0]); pw = pw < 0.08 ? 0.08 : pw > 0.5 ? 0.5 : pw;
+  let pq = (pk - pkF - (0.5 - pw)) / (2 * pw); pq = pq < 0 ? 0 : pq > 1 ? 1 : pq;
+  let off = pkF + pq * pq * (3 - 2 * pq);
   off = off < -1 ? -1 : off > 1 ? 1 : off;
 
   // S8-B2-14b wetness (follow-up to S8-B2-14): `ctx.shading.wetness` 0..1
@@ -790,8 +796,10 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
     if (giOn) giTerrainK(gi, gbuf, i, giInvSky);
     const ambK = giK[0];
     // CONTACT-AO-01a (38.78): contact-AO byte (light.caoQ, 0 = none -> factor exactly 1) multiplies the ambient part only.
-    const caoF = (light && !light.uniform && light.caoQ && light.caoQ[i] !== 0) ? (127 - light.caoQ[i]) * (1 / 127) : 1;
-    const b = sun.ambientI * ambK * caoF * (isG ? GRASS_AO_LO + (1 - GRASS_AO_LO) * u : 1) + sun.sunI * Math.max(0, ndotl) * (sunMapOn ? light.sunN[i] * 0.25 : 1) * cF;
+    const caoQ = (light && !light.uniform && light.caoQ) ? light.caoQ[i] : 0;
+    const caoF = caoQ !== 0 ? (127 - caoQ) * (1 / 127) : 1;
+    const caoS = caoQ !== 0 ? 1 - CAO_SUN_W * caoQ * (1 / 127) : 1; // 38.78 rev: sun part too (x CAO_SUN_W)
+    const b = sun.ambientI * ambK * caoF * (isG ? GRASS_AO_LO + (1 - GRASS_AO_LO) * u : 1) + sun.sunI * Math.max(0, ndotl) * (sunMapOn ? light.sunN[i] * 0.25 : 1) * cF * caoS;
     let lr = 0, lg = 0, lb = 0;
     if (light && !light.uniform) {
       const o = i * 3; lr = light.rgb[o]; lg = light.rgb[o + 1]; lb = light.rgb[o + 2];

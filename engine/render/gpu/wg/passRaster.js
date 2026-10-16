@@ -330,6 +330,7 @@ export class WgRasterPass {
       this.farLookVersion = terrain.farVersion; this.farLookWorld = world;
     }
     const nl = terrain.nearReady ? terrain.near.look : null;
+    if (terrain.nearReady && !nl) { this.lookActive = false; return; } // BH2-R1: band without look -> no-look pipeline, never a stale NEARLOOK
     if (nl && (this.nearLookVersion !== terrain.near.version || this.nearLookWorld !== world)) {
       this.nearLookTex = this._uploadLook(this.nearLookTex, this.nearLookDims, terrain.near.w, terrain.near.h, nl);
       this.nearLookVersion = terrain.near.version; this.nearLookWorld = world;

@@ -69,3 +69,23 @@ export function createDeathFlow({ onRespawn, enabled = true } = {}) {
 export function deathFlowEnabled(params, captureLike) {
   return !captureLike && params.get('capture') !== '1' && params.get('fx') !== '0';
 }
+
+/** SPELL-R4b: 0.12 s white fade on a Teleport blink (same dithered ui coverage as the death fade). */
+export const BLINK_FLASH_MS = 120;
+/** t ms since blink -> white coverage 1..0 (linear). */
+export function blinkFlashAt(tMs) { return tMs <= 0 ? 1 : tMs >= BLINK_FLASH_MS ? 0 : 1 - tMs / BLINK_FLASH_MS; }
+export function createBlinkFlash({ enabled = true } = {}) {
+  let t0 = -1e9;
+  return {
+    trigger(nowMs) { if (enabled) t0 = nowMs; },
+    alpha(nowMs) { return enabled ? blinkFlashAt(nowMs - t0) : 0; },
+    draw(ui, nowMs, cols = ui.cols, rows = ui.rows) {
+      const a = this.alpha(nowMs);
+      if (a <= 0.004) return;
+      for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+        if (a < 0.996) { const h = (((x * 73856093) ^ (y * 19349663)) >>> 0) % 1000; if (h >= a * 1000) continue; }
+        ui.setCellRGB(x, y, 0, 255, 255, 255, 255, 255, 255);
+      }
+    },
+  };
+}

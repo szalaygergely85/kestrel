@@ -22,4 +22,18 @@ assert.ok(found.size >= 3 && meshes.size >= 5, `layer walk found ${found.size} m
 const models = found;
 const missing = [...models].filter(id => !A.models?.[id]);
 assert.deepEqual(missing, [], 'detail models missing from ASSETS.models: ' + missing.join(', '));
+// OB-166: tree species voxel models of every recipe resolve too, and every material of each used model exists in palette + detail-pass
+// (the registry is not quality-preset dependent: presets only change gfx knobs, never ASSETS.models)
+const treeModels = new Set(), seen2 = new Set();
+const walk2 = o => {
+  if (!o || typeof o !== 'object' || seen2.has(o)) return;
+  seen2.add(o);
+  if (Array.isArray(o.species)) for (const sp of o.species) if (sp && sp.model && sp.mesh === undefined) treeModels.add(sp.model);
+  for (const k of Object.keys(o)) walk2(o[k]);
+};
+walk2(A.levels);
+const missingTrees = [...treeModels].filter(id => !A.models?.[id]);
+assert.deepEqual(missingTrees, [], 'tree species models missing from ASSETS.models: ' + missingTrees.join(', '));
+for (const id of [...models, ...treeModels]) for (const m of Object.values(A.models[id].voxel?.mats || {}))
+  assert.ok(A.palette.materials[m] && A.detailPass.materials[m], `model ${id}: material ${m} missing in palette/detail-pass`);
 console.log(`detailModelsResolve: ${models.size} detail model ids resolve in ASSETS.models PASS`);

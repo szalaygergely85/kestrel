@@ -86,6 +86,26 @@ function qfloor(x) { return Math.floor(x + (1 / 256)); }
 
 function smoothstepFast(a, b, x) { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); }
 function coverFast(cx, cy) { return Math.abs(cx) + Math.abs(cy); }
+/**
+ * OB-197: footprint-aware bevel. The old test (`gv - yv < top` -> topShade, else `yv < bottom` -> bottomShade) is a point
+ * sample of a thin periodic pattern, so as the cell's v-footprint `cov` (= |dvdx| + |dvdy|) grew/shrank with distance a
+ * different subset of cells fell in the 0.03 m bands and the light/dark blotches inside a block "transformed". This is the
+ * box-filter of that pattern over [yv - cov/2, yv + cov/2]: coverage fractions mix the two shades, a footprint of a
+ * full block or more gives the periodic mean. cov -> 0 is the old step function (edges differ only within half a footprint).
+ * WGSL twin: shade.wgsl.js bevelShadeK.
+ */
+export function bevelShadeK(yv, cov, gv, top, topShade, bottom, bottomShade) {
+  const mean = (top * (topShade - 1) + bottom * (bottomShade - 1)) / gv;
+  if (cov >= gv) return 1 + mean;
+  const h = (cov > 1e-6 ? cov : 1e-6) * 0.5, lo = yv - h, hi = yv + h, w = h * 2;
+  let tf = Math.min(hi, gv) - Math.max(lo, gv - top); tf = tf > 0 ? tf / w : 0;
+  let bf = Math.min(hi, bottom) - Math.max(lo, 0); bf = bf > 0 ? bf / w : 0;
+  // footprint hanging over a block edge continues into the neighbour course (period gv)
+  if (lo < 0) { const t2 = gv - Math.max(lo + gv, gv - top); if (t2 > 0) tf += t2 / w; }
+  else if (hi > gv) { const b2 = Math.min(hi - gv, bottom); if (b2 > 0) bf += b2 / w; }
+  if (tf > 1) tf = 1; if (bf > 1) bf = 1;
+  return 1 + tf * (topShade - 1) + bf * (bottomShade - 1);
+}
 function bandFactorFast(band, z) {
   if (!band || z == null) return 1;
   if (z <= band.full) return 1;
@@ -199,8 +219,7 @@ export function shadeV2(DP, rgb, m, s, L, out) {
 
   if (g && m.face.bevel && tier <= lodGates.bevel) {
     const bv = m.face.bevel, yv = fv * g.v;
-    if (g.v - yv < bv.top) shadeK *= bv.topShade;
-    else if (yv < bv.bottom) shadeK *= bv.bottomShade;
+    shadeK *= bevelShadeK(yv, Math.abs(s.dvdx) + Math.abs(s.dvdy), g.v, bv.top, bv.topShade, bv.bottom, bv.bottomShade);
   }
   const band = m.band;
   if (band) {
@@ -473,8 +492,7 @@ export function shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist
 
   if (g && rec.bevel && tier <= rec.bevelGate) {
     const bv = rec.bevel, yv = fv * g.v;
-    if (g.v - yv < bv.top) shadeK *= bv.topShade;
-    else if (yv < bv.bottom) shadeK *= bv.bottomShade;
+    shadeK *= bevelShadeK(yv, Math.abs(dvdx) + Math.abs(dvdy), g.v, bv.top, bv.topShade, bv.bottom, bv.bottomShade);
   }
   const band = rec.band;
   if (band) {
@@ -604,7 +622,7 @@ function shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff
     _fogOut[0] = nr[0] + (fr2[0] - nr[0]) * f; _fogOut[1] = nr[1] + (fr2[1] - nr[1]) * f; _fogOut[2] = nr[2] + (fr2[2] - nr[2]) * f;
     fogFgC = _fogOut; fogBgC = _fogOut;
   } // edge-pass gate (gbuf.fogF): the LINEAR factor - edge.wgsl fogF(dist) recomputes it without the AUD-45 boost
-  if (fogShapeCtx.on && f > 0) { // AUD-45 (twin of the WGSL block in fs_main): height fog + sun in-scatter
+  if (fogShapeCtx.on && !fogShapeCtx.outdoor && f > 0) { // OB-204: outdoor meshes take the plain terrain haze; AUD-45 (twin of the WGSL block in fs_main): height fog + sun in-scatter
     const sc = fogShapeCtx, cols = sc.terms.cols;
     const row = Math.floor(cellIdx / cols), col = cellIdx - row * cols;
     const d = fogCellDirJS(col, row);
@@ -681,7 +699,7 @@ function shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff
  * value itself and this split is a pure reorganisation (proven by
  * bench-cast.mjs's embedded checksums, unchanged by this refactor).
  */
-export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
+export function shadeDetailFast(table, rec, i, gbuf, dist, light, out, minor) {
   const shading = table.shading, cutoff = shading.cutoff, cellAspect = shading.cellAspect;
   const u = gbuf.u[i], v = gbuf.v[i], z = gbuf.z[i];
   const face = gbuf.face[i];
@@ -694,7 +712,58 @@ export function shadeDetailFast(table, rec, i, gbuf, dist, light, out) {
   const aoD = ((kind === KIND_MODEL || kind === KIND_MESH) && face === FACE_PACKED) ? Infinity : gbuf.aoD[i];
   const dudx = gbuf.dudx[i], dvdx = gbuf.dvdx[i], dudy = gbuf.dudy[i], dvdy = gbuf.dvdy[i];
   const core = shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist, face, kind, light, coreScratch);
-  return shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff, light, out, i);
+  shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff, light, out, i);
+  if (minor !== undefined && minor.count > 0 && minor.nTotal > 1) coverageMix(table, minor, light, out); // 38.82 A
+  return out;
+}
+
+/**
+ * 38.82 CELL-AA mechanism A (OB-198): flat colour of a material at a face under `light`, no hashes/bands/bevel:
+ * tone-0 rgb x tail gain of b = Lm*albedo*faceK*(1 - WET_DARK*wet) + emissive (hue tint like shadeTail). Writes bytes
+ * (0-255, pre-fog, unquantised) into fg[0..2] and bg[0..2] (bg = fg * rec.bgK). WGSL twin: shade.wgsl.js matFlatColor.
+ */
+export function matFlatColor(table, rec, face, kind, light, fg, bg) {
+  const shading = table.shading;
+  const Lm = Math.max(light[0], light[1], light[2]);
+  let hr = 1, hg = 1, hb = 1;
+  if (Lm > 1e-6) { hr = light[0] / Lm; hg = light[1] / Lm; hb = light[2] / Lm; }
+  const fk = kind === KIND_MODEL ? 1 : (table.faceK[face] || 1);
+  const b = Lm * rec.albedo * fk * (1 - WET_DARK * (shading.wetness || 0)) + rec.emissive;
+  const bc = b < 0 ? 0 : b;
+  let gain = shading.fgMin + (1 - shading.fgMin) * samplePowLUT(table.gainLUT, bc);
+  if (bc > 1) gain = Math.min(shading.fgMaxGain, gain + (bc - 1) * 0.5);
+  gain = wetGain(gain, bc, shading.wetness || 0, shading.fgMaxGain);
+  const k = shading.tint, tr = rec.toneRGB;
+  let r = tr[0] * (1 + (hr - 1) * k) * gain, g = tr[1] * (1 + (hg - 1) * k) * gain, bl = tr[2] * (1 + (hb - 1) * k) * gain;
+  if (r > 255) r = 255; if (g > 255) g = 255; if (bl > 255) bl = 255;
+  fg[0] = r; fg[1] = g; fg[2] = bl;
+  bg[0] = r * rec.bgK; bg[1] = g * rec.bgK; bg[2] = bl * rec.bgK;
+}
+
+const _mnFg = [0, 0, 0], _mnBg = [0, 0, 0];
+/**
+ * 38.82 A: `minor` = { count, nTotal, recs[], faces[], kinds[] } - the cell's same-kind sub-samples NOT in the winner
+ * group (nTotal = n*n). out.fg/bg (the winner's shaded, fogged colour) become mix(winner, mean(minority flat), count/nTotal);
+ * minority colours get the same linear fog factor (out.f). Glyph/set stay the winner's. count 0 / nTotal 1 = untouched.
+ */
+function coverageMix(table, minor, light, out) {
+  const n = minor.count, w = n / minor.nTotal, f = out.f, fog = table.fog;
+  let fr = 0, fgc = 0, fb = 0, br = 0, bgc = 0, bb = 0;
+  for (let j = 0; j < n; j++) {
+    matFlatColor(table, minor.recs[j], minor.faces[j], minor.kinds[j], light, _mnFg, _mnBg);
+    fr += _mnFg[0]; fgc += _mnFg[1]; fb += _mnFg[2];
+    br += _mnBg[0]; bgc += _mnBg[1]; bb += _mnBg[2];
+  }
+  const inv = 1 / n;
+  fr *= inv; fgc *= inv; fb *= inv; br *= inv; bgc *= inv; bb *= inv;
+  if (f > 0) {
+    const a = fog.fgRGB, c = fog.bgRGB;
+    fr += (a[0] - fr) * f; fgc += (a[1] - fgc) * f; fb += (a[2] - fb) * f;
+    br += (c[0] - br) * f; bgc += (c[1] - bgc) * f; bb += (c[2] - bb) * f;
+  }
+  const ow = out.fg, ob = out.bg, kw = 1 - w;
+  ow[0] = ow[0] * kw + fr * w; ow[1] = ow[1] * kw + fgc * w; ow[2] = ow[2] * kw + fb * w;
+  ob[0] = ob[0] * kw + br * w; ob[1] = ob[1] * kw + bgc * w; ob[2] = ob[2] * kw + bb * w;
 }
 
 /**

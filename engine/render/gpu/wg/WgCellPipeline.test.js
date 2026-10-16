@@ -94,7 +94,7 @@ assert.strictEqual(passes[0].t, p._t.targetRaster); assert.deepStrictEqual(passe
 hook(); assert.strictEqual(passes.length, 8, 'G-buffer cleared each frame');
 {
   const pd = p._cellPass;
-  assert.deepStrictEqual(pd.rTex.map(x => x.texture), [p._t.texSGI, p._t.texSGA, p._t.texSDepth, p._t.texMask]);
+  assert.deepStrictEqual(pd.rTex.map(x => x.texture), [p._t.texSGI, p._t.texSGA, p._t.texSDepth, p._t.texMask, pd.dummyHist]);
   assert.deepStrictEqual(pd.dTex.map(x => x.texture), [p._t.texGI, p._t.texGA, p._t.texDepth]);
   assert.strictEqual(pd.ri[0], 2, 'resolve n = rays');
   assert.deepStrictEqual([pd.di[0], pd.di[1]], [160, 60]);

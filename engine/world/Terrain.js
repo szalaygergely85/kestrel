@@ -265,7 +265,7 @@ export class Terrain {
     // farVersion bump (arch REV-ENV02D): hosts key FARLOOK on it; smaller than a new lookVersion (same set of consumers re-key, toggle is rare/editor-only)
     if (!cfg) { this.groundLook = null; this.farLook = null; if (this.near) delete this.near.look; if (this.farReady) this.farVersion++; return; }
     if (cfg.blendM !== undefined) assertBlendM(cfg.blendM, this.mapCell);
-    this.groundLook = new LookBaker(cfg, this.util);
+    this.groundLook = new LookBaker(cfg, this.util); this._lookGen = (this._lookGen | 0) + 1; // numeric (bundleBytes walks objects)
     this.farLook = new Uint8Array(this.mapW * this.mapH * 2);
     if (this.farReady) { this._fillFarLook(); this.farVersion++; }
     if (this.nearReady) { const g = this.near; g.look = new Uint8Array(g.w * g.h * 2); this._fillNearLook(g); g.version++; }
@@ -275,6 +275,7 @@ export class Terrain {
     for (let j = 0; j < this.mapH; j++) for (let i = 0; i < w; i++) L.bakeCell(this.mapX0 + (i + 0.5) * c, this.mapY0 + (j + 0.5) * c, this.farType[i + j * w], this.farLook, i + j * w);
   }
   _fillNearLook(g) {
+    g.lookSrc = this._lookGen; // BH2-R1: which look config baked this band (publishBand refills when it differs)
     const L = this.groundLook, c = g.cell;
     for (let j = 0; j < g.h; j++) for (let i = 0; i < g.w; i++) L.bakeCell(g.x0 + (i + 0.5) * c, g.y0 + (j + 0.5) * c, g.type[i + j * g.w], g.look, i + j * g.w);
   }
@@ -290,7 +291,7 @@ export class Terrain {
     const w = cw * n, h = ch * n, x0 = cx0 * this.chunkSize, y0 = cy0 * this.chunkSize;
     const HC = cur ? cur.height.constructor : Float32Array, TC = cur ? cur.type.constructor : Uint8Array, DC = cur ? cur.hDraw.constructor : Float32Array;
     const b = { x0, y0, w, h, cell: this.nearCell, height: new HC(w * h), type: new TC(w * h), hDraw: new DC(w * h), minH: 0, maxH: 0, version: 0 };
-    if (this.groundLook) b.look = new Uint8Array(w * h * 2); // ENV-02c: (lo | hi << 4, w_hi) per texel
+    if (this.groundLook) { b.look = new Uint8Array(w * h * 2); b.lookSrc = this._lookGen; } // ENV-02c: (lo | hi << 4, w_hi) per texel
     // overlap in new-band cell coords [ox0,ox1) x [oy0,oy1)
     let ox0 = 0, ox1 = 0, oy0 = 0, oy1 = 0;
     // AUD-31: minH/maxH accumulated while copying/baking (same formula swapNearBand used in its own full pass)
@@ -405,6 +406,7 @@ export class Terrain {
   /** OB109-B2 (38.58): makes a finished (possibly cached) band `near`; version = old + 1 (the only change a cached band ever gets). */
   publishBand(b) {
     b.version = (this.near ? this.near.version : 0) + 1;
+    if (this.groundLook && (!b.look || b.lookSrc !== this._lookGen)) { b.look = new Uint8Array(b.w * b.h * 2); this._fillNearLook(b); } // BH2-R1: cached bundle baked before a runtime setGroundLook
     this.near = b; this.nearReady = true;
     return b;
   }

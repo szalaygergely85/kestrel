@@ -8,7 +8,7 @@
 // so `playing` is false and the engine's `stepAnimations` never double-advances them; `hurt`/`flinch`/state clips
 // are let to play normally (playing true). `hidden` hides the instance at STATE_GONE (the US-079b0 voxel-pool skip).
 import { yawFromDelta } from '../../../engine/index.js';
-import { STATE_CHARGE, STATE_WANDER, STATE_EAT, STATE_WINDUP, STATE_RECOVER, STATE_BITE, STATE_NOTICE, STATE_RETURN, STATE_CHASE, STATE_FLINCH, STATE_DYING, STATE_CORPSE, STATE_SINK, STATE_GONE } from './sim/beastSim.js';
+import { STATE_CHARGE, STATE_WANDER, STATE_EAT, STATE_WINDUP, STATE_RECOVER, STATE_BITE, STATE_NOTICE, STATE_RETURN, STATE_CHASE, STATE_FLINCH, STATE_DYING, STATE_CORPSE, STATE_SINK, STATE_GONE, STATE_STAGGER } from './sim/beastSim.js';
 
 const STEP_MS = 1000 / 60; // one fixed sim step in ms (die/sink clip t is derived from sim step counters)
 const HURT_STEPS = 10;     // 37.16.2: the view shows `hurt` while hurtT < 10 (the flash + follow-through window)
@@ -106,6 +106,14 @@ export function frameTFromElapsed(elapsed, durations, out) {
   return out;
 }
 
+/** OB-171: voxel-pool priority tier of a beast: 2 while engaged (notice..flinch), 1 if hostile (pAggro 0) within 25 m of the camera, else 0. */
+export function beastVoxelPriority(st, aggro, t, cam) {
+  if (st === STATE_NOTICE || st === STATE_CHASE || st === STATE_WINDUP || st === STATE_CHARGE || st === STATE_RECOVER || st === STATE_STAGGER || st === STATE_FLINCH || st === STATE_BITE) return 2;
+  if (aggro !== 0 || !cam || st === STATE_DYING || st === STATE_CORPSE || st === STATE_SINK) return 0;
+  const dx = t.x - cam.x, dy = t.y - cam.y;
+  return dx * dx + dy * dy <= 625 ? 1 : 0;
+}
+
 /**
  * @param {ReturnType<import('./sim/beastSim.js').createBeastSim>} sim
  * @param {any} world
@@ -130,6 +138,8 @@ export function presentBeasts(sim, world, overlay, styleIds, anim, legs, cam, bl
 
     if (st === STATE_GONE) { v.hidden = true; if (legs) legs.release(i, v); if (blend) blend.release(i, v); if (look) look.release(i, v); continue; } // US-079b: hidden at GONE (voxel-pool skip)
     v.hidden = false;
+    // OB-171: when the voxel cap bites, an engaged beast (tier 2) or a hostile one within 25 m (tier 1) never loses its slot to ambient props/fauna.
+    v.priority = beastVoxelPriority(st, sim.pAggro ? sim.pAggro[i] : 0, t, cam);
 
     // US-079b ARCH (37.16.1 amendment): decide the clip, then reset the pose on every clip change (a clip entered
     // with a stale frame >= count never advances), and drive die/sink by converting elapsed ms -> (frame, t).

@@ -68,7 +68,7 @@ export async function run(ctx) {
       GI[i * 4] = gbuf.planeId[i] >>> 0;
       GI[i * 4 + 1] = (gbuf.kind[i] & 0xff) | ((gbuf.mat[i] & 0xffff) << 16);
     }
-    return { GI, fg: rt.cells.fg.slice() };
+    return { GI, fg: rt.cells.fg.slice(), bg: rt.cells.bg ? rt.cells.bg.slice() : undefined };
   }
 
   // STABLE-DIAG-01 (`&stablediag=1`, needs &stable=1): classify the N vs N-1 flips of the stable-on run by reject reason (stableDiag.js)
@@ -97,11 +97,11 @@ export async function run(ctx) {
     engine.overlay.flush(cam);
     rt.present();
     const cells = await gpuPipeline.readbackCells();
-    const fg = cells.fg.slice();
+    const fg = cells.fg.slice(), bg = cells.bg ? cells.bg.slice() : undefined;
     const { GI } = await gpuPipeline.readbackGeometry();
     if (diagOn && gpuPipeline._stableRan) await diagFrame();
     else diagPrev = null;
-    return { GI: GI.slice(), fg };
+    return { GI: GI.slice(), fg, bg };
   }
 
   const motions = {
@@ -124,6 +124,7 @@ export async function run(ctx) {
   const interiorOkVsN1 = gpuRow.avgInterior <= jsRow.avgInterior || gpuPipeline.rays === 1;
 
   const rowText = (name2, r) => `${name2}: fwd ${r.fwd.toFixed(2)}%  strafe ${r.strafe.toFixed(2)}%  yaw ${r.yaw.toFixed(2)}%  averaged ${r.avg.toFixed(2)}%` +
+    `  | colourPct (AA-01, max rgb delta > 24): averaged ${r.avgColour.toFixed(2)}%` +
     `  (interior-only, informational: fwd ${r.fwdInterior.toFixed(2)}%  strafe ${r.strafeInterior.toFixed(2)}%  yaw ${r.yawInterior.toFixed(2)}%  averaged ${r.avgInterior.toFixed(2)}%)`;
   const text = `?flicker=1${stableActive ? '&stable=1' : ''}${lit ? '&lit=1' : ''}  grid: ${rt.cols}x${rt.rows}  30 steps x {${STEP_M}m fwd, ${STEP_M}m strafe, ${STEP_DEG}deg yaw}  (main numbers = totalPct, item 1)\n` +
     `${rowText('JS   (1-ray)      ', jsRow)}\n` +

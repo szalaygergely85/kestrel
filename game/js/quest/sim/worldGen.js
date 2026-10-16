@@ -7,9 +7,9 @@ import { generateFarCamps } from '../../life/farCamps.js';
 export { authoredHomes };
 
 /** @returns {{herd:Array, camps:Array}} call after the authored goblin camps are in the world (their homes are authored avoid points). */
-export function planWorldLife(world, geo, seed = 12) {
+export function planWorldLife(world, geo, seed = 12, difficulty) {
   const authored = authoredHomes(world);
-  const herd = generateRegionalBeasts({ geo, terrain: world.terrain, seed, avoid: authored, safe: safeSpots(world), water: typeof world.waterAt === 'function' ? worldWaterProbe(world) : undefined }); // BEAST-09a: same water crocs as spawnRegionalBeasts
+  const herd = generateRegionalBeasts({ geo, terrain: world.terrain, seed, difficulty, avoid: authored, safe: safeSpots(world), water: typeof world.waterAt === 'function' ? worldWaterProbe(world) : undefined }); // BEAST-09a: same water crocs as spawnRegionalBeasts
   const camps = generateFarCamps({ geo, terrain: world.terrain, seed, avoid: authored.concat(herd.map((b) => [b.x, b.y])) });
   return { herd, camps };
 }
