@@ -1757,3 +1757,7 @@ Reviewer: PC-B architect (opus, D-066). **42a8cd4a ARCH OK -> po-review/testing:
 Root cause of bimodal results: the grid. flickerlive is not captureLike, so grid came from preset/saved/boot race: ~half the runs measured 240x90 (wallNear 7.5-7.7) vs 480x180 (5.06). Fix: capture-browser flicker live pins `grid=480x180`; main.js waits for the live grid (setGrid) before the 60 warm-up frames.
 Also: `flickerLive.hold` skips wgPipeline.frame during capture (readbacks see ONE frame); capture retries <=20x on throw/null readback (gpuFormat-null guard); settle 30->60; per-pose cols/rows/used diagnostics.
 `tools/flicker-gate.mjs --repeat K` (median + min/max spread, retries a failed browser start twice and reports count). New baseline values (480x180, stable, rays 4): wallNear 5.06 wallFar 4.92 bushes 4.18 crown 4.99 grassFar 3.73 avg 4.58 - the stored flicker-baseline.json predates this and must be re-saved (--save --repeat 3).
+
+### OB198-DUMP-DIFF-01 (kestrel-2, branch framediff) - built, browser not run
+- tools/frame-diff.mjs (+test): diffFrames/heatPng/crc32/report; dump opt-in in game/js/dev/flickerLive.js (`dump:{pose,step}` -> res.dump = glyph/kind/mat/pid/fg/bg per cell, A=prev B=cur) + main.js `&flickerdump=<pose>:<step>` (console log elides the dump).
+- E2E (main session): `node tools/capture-browser.mjs --mode flicker --variant live ... &flickerdump=wallNear:3`, save `window.__flicker` JSON, then `node tools/frame-diff.mjs <that.json> --out heat.png` (needs a way to write __flicker to file; check capture-browser flags).

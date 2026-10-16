@@ -104,13 +104,16 @@ export function flickerStep(prevGI, prevFg, curGI, curFg, cols, rows, out, prevB
 // Inputs: {GI, fg, bg?, Depth} readbacks (Depth channel 0 = f32 bits, `readbackGeometry().Depth`); camPrev/camCur =
 // {x,y,z,yawDeg,pitchDeg,vfovDeg?}; grid = {cols, rows, pxCellW, pxCellH}.
 import { createPitchedTerms, pitchedTermsInto, unprojectPitched, worldToCell } from '../projection.js';
+import { levelOfByte, covOfByte, uvDriftLimit, CHANNEL_SNAP, DEFAULT_DETAIL } from '../temporalStable.js';
+import { KIND_MESH, KIND_MODEL } from '../GBuffer.js';
 
 export const REPROJ_DEPTH_TOL = 0.05;
 const _f32 = new Float32Array(1), _u32 = new Uint32Array(_f32.buffer);
 const bitsToF32 = (b) => { _u32[0] = b; return _f32[0]; };
 let _tPrev = null, _tCur = null; const _w = new Float64Array(3), _pc = new Float64Array(3);
 
-export function flickerReprojStep(prev, cur, camPrev, camCur, grid, out) {
+export function flickerReprojStep(prev, cur, camPrev, camCur, grid, out, hmap = null) {
+  if (hmap) hmap.fill(-1); // AA-DIAG-01: history cell of every counted (n) cell, -1 = not counted
   if (!_tPrev) { _tPrev = createPitchedTerms(); _tCur = createPitchedTerms(); }
   pitchedTermsInto(_tPrev, camPrev, grid); pitchedTermsInto(_tCur, camCur, grid);
   const { cols, rows } = grid;
@@ -133,6 +136,7 @@ export function flickerReprojStep(prev, cur, camPrev, camCur, grid, out) {
       const pvd = bitsToF32(prev.Depth[h * 4]);
       if (pk === 0 || !(Math.abs(pvd - _pc[2]) <= REPROJ_DEPTH_TOL * _pc[2])) { excluded++; continue; }
       n++;
+      if (hmap) hmap[i] = h;
       if (pk !== ck) { kind++; continue; }
       if (((prev.GI[h * 4 + 1] >>> 16) & 0xffff) !== ((cur.GI[i * 4 + 1] >>> 16) & 0xffff)) { mat++; continue; }
       if (prev.fg[h * 4 + 3] !== cur.fg[i * 4 + 3]) { glyph++; continue; }
@@ -149,4 +153,56 @@ export function flickerReprojStep(prev, cur, camPrev, camCur, grid, out) {
   out.kindPct = pct(kind); out.materialPct = pct(mat); out.glyphOnlyPct = pct(glyph); out.colourOnlyPct = pct(colour);
   out.totalPct = pct(kind + mat + glyph + colour);
   return out;
+}
+
+// AA-DIAG-01 (OB-208, ex AA-10): why do glyph-only flips survive the stable pass? Replays stableCell's reject order (temporalStable.js / stable.wgsl.js)
+// for every counted cell (hmap from flickerReprojStep) whose surface key (kind, mat) is equal but whose STABLE OUTPUT glyph changed.
+// `d`/`p` = this/last frame's diag readback: {GI, GA (4-wide u32), Depth (1-wide u32 f32 bits), level (u8 raw shade level byte),
+// preFg (rgba8 edge output = stable input), shadeFg/shadeBg (rgba8 edge input), finalBg (rgba8), outFg (rgba8 stable output), hist (4-wide u32 OUT_HIST)}.
+// `terms` = pitchedTerms of the current camera (tanHalfX/Y). Adds per-reason counts into `cnt` (keys GLYPH_REASONS) and kind counts into cnt.kinds.
+export const GLYPH_REASONS = Object.freeze(['heldChanged', 'edge', 'kind', 'plane', 'mat', 'anim', 'mixed255', 'uvDrift', 'snap255', 'levelJump', 'replayHold']);
+export function flickerGlyphReasons(d, p, hmap, cols, rows, terms, cnt) {
+  let n = 0, flips = 0;
+  for (let i = 0; i < cols * rows; i++) {
+    const h = hmap[i]; if (h < 0) continue;
+    n++;
+    const giY = d.GI[i * 4 + 1], kind = giY & 0xff, mat = giY >>> 16;
+    const hw = p.hist[h * 4 + 3], pkind = p.GI[h * 4 + 1] & 0xff, pmat = p.GI[h * 4 + 1] >>> 16;
+    if (pkind !== kind || pmat !== mat) continue; // kind / material class of the metric
+    const og = d.outFg[i * 4 + 3];
+    if (og === p.outFg[h * 4 + 3]) continue;
+    flips++; cnt.kinds[kind] = (cnt.kinds[kind] || 0) + 1;
+    const o = i * 4;
+    let r;
+    if (og !== d.preFg[o + 3]) r = 'heldChanged'; // the output glyph came from history, but not from the measured last frame's glyph
+    else if (d.preFg[o] !== d.shadeFg[o] || d.preFg[o + 1] !== d.shadeFg[o + 1] || d.preFg[o + 2] !== d.shadeFg[o + 2] || d.preFg[o + 3] !== d.shadeFg[o + 3]
+      || d.finalBg[o] !== d.shadeBg[o] || d.finalBg[o + 1] !== d.shadeBg[o + 1] || d.finalBg[o + 2] !== d.shadeBg[o + 2]) r = 'edge';
+    else if (((hw >> 8) & 15) !== kind) r = 'kind';
+    else if (p.hist[h * 4] !== d.GI[o] && !((hw >>> 16) === mat && (kind === KIND_MESH || kind === KIND_MODEL))) r = (hw >>> 16) === mat ? 'plane' : 'mat';
+    else {
+      const lvC = levelOfByte(d.level[i]), cov = covOfByte(d.level[i]), lvP = hw & 255;
+      const c255 = lvC === 255, p255 = lvP === 255, joint = c255 !== p255 && cov >= 1 && cov <= 3;
+      if (lvC === 254 || lvP === 254) r = 'anim';
+      else if (c255 !== p255 && !joint) r = 'mixed255';
+      else {
+        const du = bitsToF32(d.GA[o]) - bitsToF32(p.hist[h * 4 + 1]), dv = bitsToF32(d.GA[o + 1]) - bitsToF32(p.hist[h * 4 + 2]);
+        const vd = bitsToF32(d.Depth[i]);
+        const lim = uvDriftLimit(vd, terms.tanHalfX, terms.tanHalfY, cols, rows, DEFAULT_DETAIL, terms.ortho === 1), dUV = Math.sqrt(du * du + dv * dv);
+        if (dUV >= lim) { r = 'uvDrift'; const b = 'uv' + (dUV < 2 * lim ? '<2' : dUV < 4 * lim ? '<4' : '4+'); cnt.sub[b] = (cnt.sub[b] || 0) + 1; }
+        else if (joint) r = 'replayHold';
+        else if (c255) {
+          let snapped = false;
+          for (let k = 0; k < 3; k++) if (Math.abs(d.preFg[o + k] - p.outFg[h * 4 + k]) > CHANNEL_SNAP) snapped = true;
+          r = snapped ? 'snap255' : 'replayHold';
+        } else {
+          const dl = Math.abs(lvC - lvP); r = dl > 1 ? 'levelJump' : 'replayHold';
+          if (dl > 1) { const b = 'dl' + (dl === 2 ? '2' : dl <= 4 ? '3-4' : '5+') + (cov ? 'cov' : ''); cnt.sub[b] = (cnt.sub[b] || 0) + 1; }
+        }
+      }
+    }
+    cnt[r] = (cnt[r] || 0) + 1;
+    const rk = r + ':' + kind; cnt.sub[rk] = (cnt.sub[rk] || 0) + 1;
+  }
+  cnt.n = (cnt.n || 0) + n; cnt.flips = (cnt.flips || 0) + flips;
+  return cnt;
 }
