@@ -50,7 +50,7 @@ export async function buildContext(opts = {}) {
   const post = { levels: globalThis.ASSETS.levels, worlds: globalThis.ASSETS.worlds };
   (await import('../game/js/quest/index.js')).registerQuestBehaviours();
   const def = assets.world('world_m1');
-  const w = World.load(def, assets, { physics: 'mesh', events: { on() { return () => {}; }, emit() {} } });
+  const w = World.load(def, assets, { strict: true, physics: 'mesh', events: { on() { return () => {}; }, emit() {} } });
   const quiet = (fn) => { const cw = console.warn; console.warn = () => {}; try { return fn(); } finally { console.warn = cw; } };
   quiet(() => spawnRegionalBeasts(w, G, 12));
   const gz = (x, y) => { w.ensureBandFor(x, y); return w.terrain.groundAt(x, y); };

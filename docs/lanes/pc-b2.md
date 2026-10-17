@@ -1346,3 +1346,8 @@ Verify (main session): `node tools/verify-editor-water.mjs {port} [backend]` (po
 
 - 2026-10-17 kestrel-3 OB-215 BURL-LEGS: FIXED (not committed). Cause: createBeastLegs driver capacity 48 was filled by 48 attached beasts, so Burl's stepNpc attach returned -1 (att 48, legPose null, stepNpc false). Fix game/js/quest/beastLegs.js: driver = beastCap(48)+8 NPC reserve, beasts (i<NPC_BASE) stop at 48. Test: beastLegs.test.js (OB-215 case, 15 pass). main.js: +1 line `window.__debug.burl` probe handle after escort.load() (~l.1857).
   Probe: `node tools/probe-burl-legs.mjs {port} [backend]` (headless; steps Burl's depart walk itself, player teleported 8 m away): after fix legPose w=1 on 189/189 walking frames, att 49; before: att 48, w null. Owner re-test: Burl walking within 35 m of the player (beyond that legPose is off by LOD, by design).
+
+### LOADROBUST (OB-166, OB-014) - arch-review
+World.load / bindScatterInstances are now tolerant: an unknown prop model or missing scatter voxel model/mesh warns ONCE per id (console.warn) and skips only that prop/species; detail (bindDetailInstances) already was. Strict flag `opts.strict` (World.load 3rd arg, bindScatterInstances 6th arg) keeps the throws; content-lint + content-smoke use it, validate-content has its own reference check.
+Files: engine/core/engine.js, engine/world/World.js, tools/content-lint.mjs, tools/content-smoke.test.mjs; tests engine/world/loadTolerant.test.js (new), engine/core/scatterInstances.test.js.
+Bug rows OB-166 / OB-014: load is now tolerant; root cause (stale cache) not reproducible.

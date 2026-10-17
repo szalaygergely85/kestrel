@@ -310,6 +310,7 @@ function detailOpts(w) {
   return { decorGpu: w.decorGpu, carpetCtx: w._carpetCtx, decorPaint: w.decorPaint };
 }
 
+const warnedPropModels = new Set(); // OB-014: warn once per unknown model id
 export class World {
   constructor() {
     this.terrain = null;
@@ -742,7 +743,12 @@ export class World {
           // packed by the atlas as `${model}#${n}` (AssetRegistry).
           const variantRaw = p.variant !== undefined ? p.variant : p.pose;
           const modelKey = typeof variantRaw === 'number' ? `${p.model}#${variantRaw}` : p.model;
-          if (!assets.has('model', modelKey)) throw new Error(`World.load: prop "${entId}" references unknown model "${modelKey}"`);
+          if (!assets.has('model', modelKey)) {
+            // OB-014: tolerant by default - warn once per model id, skip the prop (opts.strict = validators keep the throw)
+            if (opts.strict) throw new Error(`World.load: prop "${entId}" references unknown model "${modelKey}"`);
+            if (!warnedPropModels.has(modelKey)) { warnedPropModels.add(modelKey); console.warn(`World.load: prop "${entId}" references unknown model "${modelKey}" - prop skipped (further props with this model skipped silently)`); }
+            continue;
+          }
           const model = assets.model(modelKey);
           // US-041a (15.3 item 1, architect delta): "spawn picks `voxel` when
           // `registry.model(key).voxel` exists" - swapping a prop's art from
