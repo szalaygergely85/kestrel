@@ -2,7 +2,7 @@
 // than one sim step (keydown+keyup between steps), using the real Input + titleMenuHost + main.js's menu-step order
 // (step -> consumePressed). Run: node tools/verify-slot-enter.mjs   (--port accepted for symmetry, unused: no server)
 import assert from 'node:assert/strict';
-import { Input } from '../engine/core/input.js';
+import { Input } from '../engine/dev.js';
 import { createTitleMenuHost } from '../game/js/titleMenuHost.js';
 
 class T { constructor() { this.l = {}; } addEventListener(n, f) { (this.l[n] = this.l[n] || []).push(f); } removeEventListener() {} fire(n, e) { (this.l[n] || []).forEach((f) => f({ preventDefault() {}, ...e })); } }
