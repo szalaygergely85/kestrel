@@ -10,5 +10,5 @@
   ],
   "returnText": "Talk to Rook",
   "abandonable": false,
-  "reward": { "items": [{ "id": "arrow", "n": 5 }] }
+  "reward": { "coin": 30, "items": [{ "id": "arrow", "n": 5 }] }
 }

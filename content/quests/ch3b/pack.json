@@ -7,14 +7,14 @@
       "id": "sq.ow.night", "title": "The Night Fence", "site": "hesk",
       "steps": [{ "template": "kill", "params": { "kind": "wolf", "ids": ["wolf1", "wolf2", "wolf3", "wolf4", "wolf5"], "count": 5 }, "objText": "Clear all five wolves off the farm", "journal": "Wolves raid Hesk's farm after dark." }],
       "opensAfter": ["sq.ow.wolves"],
-      "reward": { "items": [{ "id": "potion.hp", "n": 2 }, { "id": "arrow", "n": 15 }] },
+      "reward": { "coin": 25, "items": [{ "id": "potion.hp", "n": 2 }, { "id": "arrow", "n": 15 }] },
       "returnText": "Back to Hesk"
     },
     {
       "id": "sq.ow.bears", "title": "Black Bears", "site": "hesk",
       "steps": [{ "template": "kill", "params": { "ids": ["blackBear1", "blackBear2", "blackBear3"], "count": 2 }, "objText": "Drive off two black bears", "journal": "Drive two bears off the fields." }],
       "opensAfter": ["sq.ow.night"],
-      "reward": { "items": [{ "id": "potion.hp", "n": 2 }] },
+      "reward": { "coin": 25, "items": [{ "id": "potion.hp", "n": 2 }] },
       "returnText": "Back to Hesk",
       "lines": { "offer": ["Black bears in the fields. Two too many.", "Drive two off. Big as doors, and hungry."], "active": ["Two black bears. The fields. Careful."], "ready": ["Gone? Good. The fields are ours again.", "Two health potions. For the claw marks."], "done": ["The fields are quiet. For now."] }
     },
@@ -22,27 +22,27 @@
       "id": "sq.ow.letters", "title": "Letters Down the Line", "site": "hesk",
       "steps": [{ "template": "deliver", "params": { "item": "arrow", "count": 5, "to": "dorrin" }, "objText": "Take Hesk's arrows to Dorrin", "journal": "Carry Hesk's arrows to the forge." }],
       "opensAfter": ["mq.ow.names"],
-      "reward": { "items": [{ "id": "arrow", "n": 20 }] }
+      "reward": { "coin": 25, "items": [{ "id": "arrow", "n": 20 }] }
     },
     {
       "id": "sq.ow.song", "title": "The Ones Before", "site": "hesk",
       "steps": [{ "template": "talk", "params": { "to": "dorrin" }, "objText": "Ask Dorrin for the old song", "journal": "Ask Dorrin for the unwritten song." }],
       "opensAfter": ["mq.ow.board"],
-      "reward": { "items": [{ "id": "potion.hp", "n": 1 }] },
+      "reward": { "coin": 20, "items": [{ "id": "potion.hp", "n": 1 }] },
       "returnText": "Tell Hesk what Dorrin said"
     },
     {
       "id": "sq.ow.trail", "title": "Walk the Track", "site": "owBoard", "turnIn": "hesk", "objectGiver": true,
       "steps": [{ "template": "explore", "params": { "areas": ["owPath"] }, "objText": "Walk the west bank track", "journal": "Scout the track along the west bank." }, { "template": "explore", "params": { "areas": ["crossroads"] }, "objText": "Reach the crossroads", "journal": "Follow the track on to the crossroads." }],
       "opensAfter": ["mq.ford.mirror"],
-      "reward": { "items": [{ "id": "arrow", "n": 15 }] },
+      "reward": { "coin": 25, "items": [{ "id": "arrow", "n": 15 }] },
       "returnText": "Back to Hesk"
     },
     {
       "id": "sq.ow.news", "title": "Word for Rook", "site": "dorrin",
       "steps": [{ "template": "talk", "params": { "to": "rook" }, "objText": "Tell Rook the forge is lit", "journal": "Tell Rook the Outwall forge is lit." }],
       "opensAfter": ["mq.ow.relay"],
-      "reward": { "items": [{ "id": "potion.hp", "n": 1 }, { "id": "arrow", "n": 10 }] },
+      "reward": { "coin": 25, "items": [{ "id": "potion.hp", "n": 1 }, { "id": "arrow", "n": 10 }] },
       "returnText": "Tell Dorrin"
     }
   ]

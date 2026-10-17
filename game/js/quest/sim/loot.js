@@ -9,10 +9,12 @@
 // next one (same "drop the old world's listeners first" precedent as beastSim/vitals/targeting - `events` lives for
 // the whole page). The corpse counts are runtime-only: boars always come back alive on a load (37.16.2), so a stale
 // `loot.*` flag from a save is deleted at create rather than restored.
+import { createRng } from '../../../../engine/index.js';
+import { KINDS, kindOfEntity } from './beastKinds.js';
 import { addItem } from './inventory.js';
 import { setItemPickupSink, PICKUP_AMOUNT } from './pickups.js';
 import { BAND_TABLE } from './band.js';
-import { LOOT_PROMPT, LOOT_TABLE, LOOT_TIERS, LOOT_SLOTS } from './lootConfig.js';
+import { LOOT_PROMPT, LOOT_TABLE, LOOT_TIERS, LOOT_SLOTS, ELITE_COIN } from './lootConfig.js';
 import { MAX_RECORDS } from './beastSim.js'; // BEAST-POOL-a: one record-table constant
 import { rollWolfWeapon, rollGoblinWeapon, rollChestWeapon, weaponRng } from './weaponLoot.js'; // EQ-20
 
@@ -86,6 +88,9 @@ export function createLoot(world, events, opts) {
 }
 
 function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band, goblinTable = LOOT_TABLE.goblin }) {
+  // Fork the seeded state without consuming the established item/orb stream.
+  const crng = createRng(((rng.s ? rng.s[0] : 1) ^ 0xC01A06) >>> 0);
+  const elite = beasts.entities.map((e) => !!KINDS[kindOfEntity(e)].elite || (e.components?.brain?.lingerSec > 0));
   const count = beasts.count;
   const ids = beasts.ids;
   for (const t of [table, goblinTable]) {
@@ -117,6 +122,8 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
   const loot = {
     count,
     corpseN: new Int8Array(MAX_SLOTS * ITEMS_PER_CORPSE),
+    rolled: new Uint8Array(MAX_SLOTS),
+    _coin: { n: 0 },
     gearHeld: new Array(MAX_SLOTS).fill(null), // OB-064: rolled gear id / tier waits IN the corpse; the drop spawns at E
     _gear: { id: '', n: 1 },
     gearTier: new Array(MAX_SLOTS).fill('worn'),
@@ -131,6 +138,7 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
   function clearSlot(i) {
     delete world.state[flagKey[i]];
     loot.gearHeld[i] = null; loot.orbHeld[i] = null;
+    loot.rolled[i] = 0;
     const o = i * ITEMS_PER_CORPSE;
     for (let k = 0; k < ITEMS_PER_CORPSE; k++) { loot.corpseN[o + k] = 0; loot.corpseItem[o + k] = null; }
   }
@@ -138,7 +146,16 @@ function buildLoot(world, events, { items, beasts, rng, inventoryOf, table, band
   // Roll at death: 3 draws per `rolls` row (chance, b, c) in order, then the 2 orb draws. Fixed rows always drop.
   function onDied(p) {
     const i = beasts.slotOf(p.id);
-    if (i < 0) return;
+    if (i < 0 || loot.rolled[i]) return;
+    loot.rolled[i] = 1;
+    const coin = elite[i] ? ELITE_COIN : tableFor(i).coin;
+    if (coin) {
+      const hit = crng.nextFloat() < coin.chance, amount = crng.nextFloat();
+      if (hit) {
+        loot._coin.n = coin.min + Math.floor(amount * (coin.max - coin.min + 1));
+        events.emit('coin:drop', loot._coin);
+      }
+    }
     const o = i * ITEMS_PER_CORPSE;
     const tb = tableFor(i), fixed = tb.fixed, rolls = tb.rolls;
     let col = 0;
@@ -308,7 +325,10 @@ function buildChestLoot(events, {items, table, rng, inventoryOf}) {
   // EQ-10: optional table.gear = {tier?} -> one gear roll at create (2 draws, after the weighted pick); tier fixed or rolled.
   if (!table || !Array.isArray(table.fixed) || !Array.isArray(table.weighted)) throw new Error('chest loot: invalid table');
   const ids = [], counts = [], caps = [];
-  let weight = 0, claimed = false;
+  let weight = 0, claimed = false, emitted = false;
+  const coinRange = table.coin;
+  if (coinRange && (!Array.isArray(coinRange) || coinRange.length !== 2 || !coinRange.every(Number.isSafeInteger)
+    || coinRange[0] < 0 || coinRange[1] < coinRange[0] || coinRange[1] > 9999)) throw new Error('chest loot: invalid coin');
   function validate(row, weighted) {
     const d = row && items[row.item];
     if (!d || !Number.isSafeInteger(row.n) || row.n < 1 || row.n > 2147483647
@@ -317,7 +337,7 @@ function buildChestLoot(events, {items, table, rng, inventoryOf}) {
   }
   for (const row of table.fixed) validate(row, false);
   for (const row of table.weighted) { validate(row, true); weight += row.weight; }
-  if (!Number.isFinite(weight) || !table.fixed.length && !table.weighted.length && !table.gear && !table.weapon) throw new Error('chest loot: empty or overflowing table');
+  if (!Number.isFinite(weight) || !table.fixed.length && !table.weighted.length && !table.gear && !table.weapon && !coinRange) throw new Error('chest loot: empty or overflowing table');
   function add(row) {
     let i = ids.indexOf(row.item);
     if (i < 0) { i = ids.length; ids.push(row.item); counts.push(0); caps.push(items[row.item].stackMax); }
@@ -347,6 +367,7 @@ function buildChestLoot(events, {items, table, rng, inventoryOf}) {
     if (!wid) throw new Error('chest loot: no weapon def for the roll');
     add({item: wid, n: 1});
   }
+  const coin = {n: coinRange ? coinRange[0] + Math.floor(rng.nextFloat() * (coinRange[1] - coinRange[0] + 1)) : 0};
   const added = {id:'', n:0};
   function fits(inv) {
     if (!inv) return false;
@@ -373,7 +394,9 @@ function buildChestLoot(events, {items, table, rng, inventoryOf}) {
     },
     // Caller commits its opened state BEFORE emitting, so an event-triggered save is consistent.
     emitAdded() {
-      if (!claimed) return;
+      if (!claimed || emitted) return;
+      emitted = true;
+      if (coin.n > 0) events.emit('coin:drop', coin);
       for (let i = 0; i < ids.length; i++) { added.id = ids[i]; added.n = counts[i]; events.emit('inventory:added', added); }
     },
   };

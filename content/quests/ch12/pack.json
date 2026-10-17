@@ -57,7 +57,8 @@
             "id": "heart.piece",
             "n": 1
           }
-        ]
+        ],
+        "coin": 35
       },
       "giveOnTalk": [
         {
@@ -127,7 +128,8 @@
             "id": "potion.hp",
             "n": 1
           }
-        ]
+        ],
+        "coin": 25
       },
       "band": 1,
       "returnText": "Tell Burl the north is quiet",
@@ -185,7 +187,8 @@
             "id": "arrow",
             "n": 10
           }
-        ]
+        ],
+        "coin": 30
       },
       "band": 1,
       "returnText": "Tell Burl the west is quiet",
@@ -239,7 +242,8 @@
         }
       ],
       "reward": {
-        "table": "gear.t1"
+        "table": "gear.t1",
+        "coin": 30
       },
       "band": 2,
       "returnText": "Tell Burl the south is quiet",
@@ -289,7 +293,8 @@
             "id": "potion.hp",
             "n": 1
           }
-        ]
+        ],
+        "coin": 20
       },
       "band": 1,
       "returnText": "Give Burl the boar meat",
@@ -353,7 +358,8 @@
             "id": "arrow",
             "n": 10
           }
-        ]
+        ],
+        "coin": 35
       },
       "band": 1,
       "returnText": "Tell Burl about the knot",
@@ -428,7 +434,8 @@
             "id": "arrow",
             "n": 10
           }
-        ]
+        ],
+        "coin": 35
       },
       "band": 1,
       "returnText": "Tell Burl about the foxes",
@@ -495,7 +502,8 @@
             "legs"
           ],
           "tier": 1
-        }
+        },
+        "coin": 30
       },
       "band": 2,
       "returnText": "Tell Burl about the river",
@@ -549,7 +557,8 @@
             "id": "potion.hp",
             "n": 1
           }
-        ]
+        ],
+        "coin": 20
       },
       "band": 4,
       "returnText": "Tell Burl what the post says",
@@ -600,7 +609,8 @@
             "id": "arrow",
             "n": 10
           }
-        ]
+        ],
+        "coin": 20
       },
       "band": 1,
       "returnText": "Talk to Burl at the Bend Waystone",
@@ -656,7 +666,8 @@
             "id": "arrow",
             "n": 20
           }
-        ]
+        ],
+        "coin": 30
       },
       "band": 2,
       "returnText": "Give the meat to the post-keeper",
@@ -713,7 +724,8 @@
             "id": "potion.hp",
             "n": 1
           }
-        ]
+        ],
+        "coin": 20
       },
       "band": 4,
       "returnText": "Give the arrows to the post-keeper",
@@ -750,7 +762,8 @@
             "id": "arrow",
             "n": 20
           }
-        ]
+        ],
+        "coin": 25
       },
       "band": 5,
       "turnIn": "rook",
@@ -833,7 +846,8 @@
             "id": "potion.hp",
             "n": 1
           }
-        ]
+        ],
+        "coin": 25
       },
       "giveOnTalk": [
         {
@@ -900,7 +914,8 @@
             "id": "arrow",
             "n": 5
           }
-        ]
+        ],
+        "coin": 25
       },
       "band": 2,
       "returnText": "Report to Joss at the Bend Waystone",
@@ -969,7 +984,8 @@
             "id": "arrow",
             "n": 5
           }
-        ]
+        ],
+        "coin": 25
       },
       "band": 2,
       "returnText": "Report to Joss at the Bend Waystone",
@@ -1033,7 +1049,8 @@
             "id": "arrow",
             "n": 10
           }
-        ]
+        ],
+        "coin": 25
       },
       "band": 4,
       "returnText": "Tell the post-keeper about the boots",
@@ -1086,7 +1103,8 @@
             "id": "arrow",
             "n": 10
           }
-        ]
+        ],
+        "coin": 30
       },
       "band": 5,
       "returnText": "Report to the post-keeper",
@@ -1139,7 +1157,8 @@
             "id": "potion.hp",
             "n": 1
           }
-        ]
+        ],
+        "coin": 30
       },
       "band": 5,
       "returnText": "Report to the post-keeper",
@@ -1191,7 +1210,8 @@
             "id": "arrow",
             "n": 5
           }
-        ]
+        ],
+        "coin": 20
       },
       "band": 1,
       "returnText": "Tell Burl about the fence",
@@ -1247,7 +1267,8 @@
             "id": "potion.hp",
             "n": 1
           }
-        ]
+        ],
+        "coin": 20
       },
       "band": 1,
       "returnText": "Tell Burl the stack is dry",
@@ -1326,7 +1347,8 @@
             "id": "arrow",
             "n": 10
           }
-        ]
+        ],
+        "coin": 30
       },
       "band": 1,
       "returnText": "Tell Burl about the cart",
@@ -1375,7 +1397,8 @@
             "id": "potion.hp",
             "n": 1
           }
-        ]
+        ],
+        "coin": 25
       },
       "band": 2,
       "returnText": "Report to Joss at the Bend Waystone",
@@ -1434,7 +1457,8 @@
             "id": "arrow",
             "n": 5
           }
-        ]
+        ],
+        "coin": 20
       },
       "band": 2,
       "returnText": "Report to Joss at the Bend Waystone",
@@ -1493,7 +1517,8 @@
             "id": "arrow",
             "n": 10
           }
-        ]
+        ],
+        "coin": 25
       },
       "band": 2,
       "returnText": "Hand the brass to Joss",
@@ -1564,7 +1589,8 @@
         }
       ],
       "reward": {
-        "table": "gear.t1"
+        "table": "gear.t1",
+        "coin": 60
       },
       "band": 2,
       "returnText": "Tell Rook about Old Tusk",
@@ -1584,7 +1610,8 @@
         "done": [
           "Eleven holes. I will fill them in."
         ]
-      }
+      },
+      "rewardBand": "elite"
     },
     {
       "id": "sq.he.farm",
@@ -1637,7 +1664,8 @@
         }
       ],
       "reward": {
-        "table": "gear.t2"
+        "table": "gear.t2",
+        "coin": 30
       },
       "band": 3,
       "returnText": "Tell Burl about the note",
@@ -1693,7 +1721,8 @@
             "id": "arrow",
             "n": 10
           }
-        ]
+        ],
+        "coin": 30
       },
       "band": 2,
       "returnText": "Tell Burl where the bees go",
@@ -1749,7 +1778,8 @@
             "id": "potion.hp",
             "n": 2
           }
-        ]
+        ],
+        "coin": 25
       },
       "band": 3,
       "returnText": "Tell Burl about the stones",
@@ -1796,7 +1826,8 @@
         }
       ],
       "reward": {
-        "table": "gear.t2"
+        "table": "gear.t2",
+        "coin": 25
       },
       "band": 5,
       "returnText": "Tell the post-keeper the boars fled",
@@ -1846,7 +1877,8 @@
             "id": "potion.hp",
             "n": 2
           }
-        ]
+        ],
+        "coin": 20
       },
       "band": 4,
       "returnText": "Bring the caps to Rook",
@@ -1903,7 +1935,8 @@
             "id": "potion.mp",
             "n": 1
           }
-        ]
+        ],
+        "coin": 30
       },
       "band": 4,
       "returnText": "Tell Rook about the well",
@@ -1964,7 +1997,8 @@
         }
       ],
       "reward": {
-        "table": "gear.t2"
+        "table": "gear.t2",
+        "coin": 30
       },
       "band": 4,
       "returnText": "Tell the post-keeper what rose",
@@ -2037,7 +2071,8 @@
             "id": "arrow",
             "n": 10
           }
-        ]
+        ],
+        "coin": 35
       },
       "band": 4,
       "returnText": "Report to the post-keeper",
@@ -2090,7 +2125,8 @@
             "id": "arrow",
             "n": 10
           }
-        ]
+        ],
+        "coin": 30
       },
       "band": 5,
       "returnText": "Hand the cog to Joss",
@@ -2150,7 +2186,8 @@
             "id": "potion.hp",
             "n": 1
           }
-        ]
+        ],
+        "coin": 30
       },
       "band": 4,
       "returnText": "Tell Rook what the bear said",
@@ -2210,7 +2247,8 @@
             "id": "arrow",
             "n": 10
           }
-        ]
+        ],
+        "coin": 20
       },
       "band": 5,
       "returnText": "Give Burl the brass scrap",
@@ -2257,7 +2295,8 @@
             "id": "shield",
             "n": 1
           }
-        ]
+        ],
+        "coin": 30
       },
       "abandonable": true,
       "band": 2,
@@ -2305,7 +2344,8 @@
             "id": "gear.head.hood.worn",
             "n": 1
           }
-        ]
+        ],
+        "coin": 30
       },
       "abandonable": true,
       "band": 3,
@@ -2356,7 +2396,8 @@
             "id": "potion.hp",
             "n": 2
           }
-        ]
+        ],
+        "coin": 25
       },
       "abandonable": true,
       "band": 3,
@@ -2402,7 +2443,8 @@
             "id": "arrow",
             "n": 20
           }
-        ]
+        ],
+        "coin": 25
       },
       "abandonable": true,
       "band": 3,
@@ -2453,7 +2495,8 @@
         ],
         "unlock": [
           "fireball"
-        ]
+        ],
+        "coin": 20
       },
       "abandonable": false,
       "band": 5,

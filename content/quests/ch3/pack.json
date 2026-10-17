@@ -8,7 +8,7 @@
   "quests": [
     {
       "id": "mq.ow.path",
-      "reward": { "items": [{"id": "arrow", "n": 5}] },
+      "reward": { "coin": 25, "items": [{"id": "arrow", "n": 5}] },
       "title": "Cookfire Smoke",
       "main": true,
       "steps": [
@@ -35,7 +35,7 @@
     },
     {
       "id": "mq.ow.fence",
-      "reward": { "items": [{"id": "arrow", "n": 5}] },
+      "reward": { "coin": 30, "items": [{"id": "arrow", "n": 5}] },
       "title": "Wolves at the Fence",
       "main": true,
       "steps": [
@@ -88,6 +88,7 @@
         }
       ],
       "reward": {
+        "coin": 30,
         "table": "gear.t3"
       },
       "abandonable": false,
@@ -114,7 +115,7 @@
     },
     {
       "id": "mq.ow.relay",
-      "reward": { "items": [{"id": "potion.hp", "n": 1},{"id": "arrow", "n": 10}] },
+      "reward": { "coin": 35, "items": [{"id": "potion.hp", "n": 1},{"id": "arrow", "n": 10}] },
       "title": "The Village Waystone",
       "main": true,
       "site": "hesk",
@@ -203,6 +204,7 @@
         }
       ],
       "reward": {
+        "coin": 25,
         "items": [
           {
             "id": "chart.westFells",
@@ -245,7 +247,7 @@
       "band": 6,
       "steps": [{ "template": "explore", "params": { "areas": ["crossroads"] }, "objText": "Walk west to the crossroads", "journal": "Walk to the crossroads and look west." }],
       "requires": [{ "quest": "mq.ow.board", "done": true }],
-      "reward": { "items": [{ "id": "arrow", "n": 15 }] },
+      "reward": { "coin": 30, "items": [{ "id": "arrow", "n": 15 }] },
       "returnText": "Tell Hesk what the road looks like",
       "abandonable": false
     },
@@ -269,6 +271,7 @@
         "mq.ford.mirror"
       ],
       "reward": {
+        "coin": 20,
         "items": [
           {
             "id": "arrow",
@@ -314,6 +317,7 @@
         "mq.ford.mirror"
       ],
       "reward": {
+        "coin": 30,
         "items": [
           {
             "id": "arrow",
@@ -365,6 +369,7 @@
         "mq.ford.mirror"
       ],
       "reward": {
+        "coin": 25,
         "items": [
           {
             "id": "arrow",
@@ -417,6 +422,7 @@
         "mq.ford.mirror"
       ],
       "reward": {
+        "coin": 25,
         "table": "gear.t2"
       },
       "returnText": "Back to Hesk",
@@ -456,6 +462,7 @@
         "mq.ford.mirror"
       ],
       "reward": {
+        "coin": 30,
         "items": [
           {
             "id": "potion.hp",
@@ -501,6 +508,7 @@
         "mq.ford.mirror"
       ],
       "reward": {
+        "coin": 25,
         "items": [
           {
             "id": "arrow",
@@ -544,6 +552,7 @@
         "mq.ford.mirror"
       ],
       "reward": {
+        "coin": 25,
         "items": [
           {
             "id": "potion.hp",
@@ -613,6 +622,7 @@
         "mq.ford.mirror"
       ],
       "reward": {
+        "coin": 35,
         "items": [
           {
             "id": "arrow",
@@ -658,6 +668,7 @@
         "mq.ford.mirror"
       ],
       "reward": {
+        "coin": 20,
         "items": [
           {
             "id": "potion.hp",

@@ -13,7 +13,7 @@ const coinOf = (d) => (d.rewards && d.rewards.coin !== undefined ? d.rewards.coi
 export function coinLint(defs) {
   const out = [];
   for (const d of defs) {
-    if (!d || !d.id) continue;
+    if (!d || !d.id || d.internal) continue; // internal trackers (m1) are not player quests
     const band = bandOf(d), [lo, hi] = BANDS[band], c = coinOf(d);
     if (c === undefined) { out.push({ rule: 'COIN-01', severity: 'warn', quest: d.id, msg: `no rewards.coin (band ${band} ${lo}-${hi})` }); continue; }
     if (!Number.isInteger(c) || c < 0 || c > COIN_MAX) { out.push({ rule: 'COIN-01', severity: 'error', quest: d.id, msg: `rewards.coin ${c} must be an integer 0..${COIN_MAX}` }); continue; }

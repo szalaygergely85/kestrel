@@ -10,5 +10,5 @@
     { "id": "bring", "text": "Bring the sprigs to Burl", "journal": "Bring the six blue sprigs to Burl.", "when": { "type": "deliver", "id": "berry.blue", "count": 6, "to": "bear" } }
   ],
   "returnText": "Take the blue sprigs to Burl",
-  "reward": { "items": [{ "id": "gear.cloak.cloak.worn", "n": 1 }] }
+  "reward": { "coin": 25, "items": [{ "id": "gear.cloak.cloak.worn", "n": 1 }] }
 }
