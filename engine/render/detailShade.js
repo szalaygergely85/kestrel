@@ -26,7 +26,7 @@ import { entityTintAt, tintChannel } from './entityTint.js';
 import { vegTintGain } from '../mesh/vegTint.js';
 import { KIND_MODEL, KIND_MESH, FACE_PACKED } from './GBuffer.js';
 import { clamp01, clampByte } from '../core/math.js';
-import { fogShapeCtx, fogShapeF, fogScatterW, fogScatterColor, fogCellDirJS, folDiceJS, farSkyActive, farSkyShiftJS } from './fogShape.js';
+import { fogShapeCtx, fogShapeF, fogScatterW, fogScatterColor, fogCellDirJS, folDiceJS, LEAF_Q_LO, LEAF_Q_HI, farSkyActive, farSkyShiftJS } from './fogShape.js';
 
 // --- fast level()/orientClass() (tech notes item 6) -------------------------
 const TAN22 = Math.tan(22 * Math.PI / 180);
@@ -397,9 +397,10 @@ function lineGlyphCodeFast(cx, cy, fr, cellAspect) {
 // flattened `SetRec` (MaterialTable.js) at brightness `gb`. `useAlt` = near
 // tier (hashed alternate) vs calm (first alt); `classIdx` only consulted for
 // oriented sets, once the level falls in the "fam" (grain-direction) range.
-function pickGlyphCodeFast(S, gb, hA, useAlt, classIdx, cutoff) {
-  const lv = levelFromThresholds(S.levels, gb, S.thresholds, cutoff);
+export function pickGlyphCodeFast(S, gb, hA, useAlt, classIdx, cutoff, leafQ) {
+  let lv = levelFromThresholds(S.levels, gb, S.thresholds, cutoff);
   if (lv === 0) return -1; // caller substitutes space (glyphIdx 0)
+  if (leafQ === true && S.levels > 2) lv = Math.min(S.levels - 1, (((lv - 1) >> 1) << 1) + 1) + 1; // FD-09a: ramp levels in pairs (twin: WGSL pickGlyphCodeFast)
   if (!S.oriented) {
     const li = lv - 1, cnt = S.altCount[li];
     const idx = useAlt ? Math.min(cnt - 1, Math.floor(hA * cnt)) : 0;
@@ -427,7 +428,7 @@ function pickCharCodeFast(codes, altCount, maxAlt, h) {
 // shade.frag"). Only one caller (shadeDetailFast, below) ever runs at a
 // time, no re-entrancy, so a single module-scope scratch is safe (no
 // per-cell allocation, architecture.md 9).
-const coreScratch = { b: 0, gb: 0, cr: 0, cg: 0, cb: 0, bgK: 0, hA: 0, hB: 0, onJoint: false, lineCode: -1, setId: 0 };
+const coreScratch = { b: 0, gb: 0, cr: 0, cg: 0, cb: 0, bgK: 0, hA: 0, hB: 0, onJoint: false, lineCode: -1, setId: 0, leafW: 0 };
 
 /**
  * shadeCore (docs/architecture.md 14.2 item 3): everything that depends on
@@ -595,6 +596,11 @@ export function shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist
 
   out.b = b; out.gb = gb; out.cr = cr; out.cg = cg; out.cb = cb; out.bgK = bgK;
   out.hA = hA; out.hB = hB; out.onJoint = onJoint; out.lineCode = lineCode; out.setId = setId;
+  out.leafW = 0;
+  if (g && !g.texel && rec.softEdge && fogShapeCtx.on && fogShapeCtx.leafQ && fogShapeCtx.mode !== 2) { // FD-09a: leaf footprint (grid blocks per cell) -> level pairing weight (twin: WGSL shadeCore)
+    const r = Math.max(tpcU / g.u, tpcV / g.v);
+    out.leafW = smoothstepFast(LEAF_Q_LO, LEAF_Q_HI, r);
+  }
   return out;
 }
 
@@ -643,7 +649,7 @@ function shadeTail(table, core, dudx, dvdx, dudy, dvdy, dist, cellAspect, cutoff
   else {
     const S = table.sets[core.setId];
     const classIdx = S.oriented ? orientClassCode(S.orientAxis === 0 ? dudx : dvdx, S.orientAxis === 0 ? dudy : dvdy, cellAspect) : 0;
-    const code = pickGlyphCodeFast(S, core.gb, core.hA, true, classIdx, cutoff);
+    const code = pickGlyphCodeFast(S, core.gb, core.hA, true, classIdx, cutoff, core.leafW >= 0.5);
     glyphCode = code < 0 ? 0 : code;
   }
   if (f > fog.stipple0 && core.hB < smoothstepFast(fog.stipple0, fog.stipple1, f)) {

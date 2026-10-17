@@ -10,7 +10,7 @@ import paletteModule from '../../../../design/palette.js';
 import detailPassModule from '../../../../design/detail-pass.js';
 import { loadLevel } from '../../../world/Level.js';
 import { shadeCore } from '../../detailShade.js';
-import { fogShapeCtx, folDiceJS, setAltDice, fogCellDirJS } from '../../fogShape.js';
+import { fogShapeCtx, folDiceJS, setAltDice, setFoliageDice2, setLeafQuant, fogCellDirJS } from '../../fogShape.js';
 import { packMaterialTable, MAT_F_WIDTH, MAT_I_WIDTH, SET_I_WIDTH, SET_F_WIDTH, MAX_LEVELS } from '../ShadeTextures.js';
 
 const palette = paletteModule.default || paletteModule;
@@ -56,7 +56,7 @@ function run(src, fw, trials) {
   const f = fns(src);
   su.fogView.w = fw;
   Object.assign(fogShapeCtx, { on: true, mode: 0, terms, camX, camY, camZ, aaFol: (fw & 1) !== 0, aaFolL: (fw & 2) !== 0 });
-  setAltDice((fw & 4) !== 0);
+  setAltDice((fw & 4) !== 0); setFoliageDice2((fw & 32) !== 0); setLeafQuant((fw & 16) !== 0); // FD-09: bits 16/32 off here (leafQuant.test.js covers them)
   let badCore = 0, badDice = 0, n = 0, m = 0;
   for (let t = 0; t < trials; t++) {
     const id = matIds[t % matIds.length], rec = table.records[id].v2;
@@ -80,8 +80,8 @@ for (const fw of [0, 4, 7]) {
   assert.ok(r.badDice <= r.m * 0.003, `folDice vs folDiceJS at fogView.w=${fw}: ${r.badDice}/${r.m}`);
 }
 // mutations (flag on): the 0.25 texel-die scale and the q *= 3.0 leaf block
-const m1 = run(mut('u * ds * 0.25', 'u * ds * 0.5'), 4, 3000), m2 = run(mut('q *= 3.0;', 'q *= 2.0;'), 4, 3000), m3 = run(mut('q *= 3.0;', ''), 7, 3000);
+const m1 = run(mut('u * ds * 0.25', 'u * ds * 0.5'), 4, 3000), m2 = run(mut('select(1.0, 3.0, (u32', 'select(1.0, 2.0, (u32'), 4, 3000), m3 = run(mut('select(1.0, 3.0, (u32', 'select(1.0, 1.0, (u32'), 7, 3000);
 assert.ok(m1.badCore > 5, 'mutation: 0.25 die scale (u) caught ' + m1.badCore);
 assert.ok(m2.badDice > 20 && m3.badDice > 20, `mutation: q *= 3.0 caught ${m2.badDice}/${m3.badDice}`);
-setAltDice(true); fogShapeCtx.on = false;
+setAltDice(true); setFoliageDice2(true); setLeafQuant(true); fogShapeCtx.on = false;
 console.log(`aaAlt.wgsl.test.js: ${total} flag-on/off probes (fogView.w 0/4/7) shadeCore + folDice vs JS twins passed, mutations caught (0.25 die scale ${m1.badCore}, q *= 3.0 ${m2.badDice}/${m3.badDice}).`);

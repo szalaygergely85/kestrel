@@ -46,5 +46,5 @@ setAltDice(false); const leafOff = leafFlips(); setAltDice(true); const leafOn =
 assert.ok(leafOn < leafOff, `leaf dice: ${leafOn} vs ${leafOff}`);
 // switch + WGSL twin
 assert.equal(foliageBits() & 4, 4); setAltDice(false); assert.equal(foliageBits() & 4, 0); setAltDice(true);
-assert.ok(/& 4u\) != 0u\) \{ hA = hashFast\(i32\(floor\(u \* ds \* 0\.25\)\)/.test(SHADE_WGSL) && /q \*= 3\.0/.test(SHADE_WGSL), 'WGSL twin present');
+assert.ok(/& 4u\) != 0u\) \{ hA = hashFast\(i32\(floor\(u \* ds \* 0\.25\)\)/.test(SHADE_WGSL) && /select\(1\.0, 3\.0, \(u32/.test(SHADE_WGSL), 'WGSL twin present');
 console.log(`aaAlt.test: ALL PASS (non-grid flips ${(offFlip * 100).toFixed(1)}% -> ${(onFlip * 100).toFixed(1)}%, leaf ${(leafOff * 100).toFixed(1)}% -> ${(leafOn * 100).toFixed(1)}%)`);

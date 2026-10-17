@@ -192,7 +192,7 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
       const oriented = t0.x, axis = t0.y;
       let classIdx = 0;
       if (oriented !== 0) { classIdx = fns.orientClassCode(axis === 0 ? dudx : dvdx, axis === 0 ? dudy : dvdy, su.cellAspect); orientedSeen++; }
-      const code = fns.pickGlyphCodeFast(c.setId, c.gb, c.hA, classIdx, su.cutoff);
+      const code = fns.pickGlyphCodeFast(c.setId, c.gb, c.hA, classIdx, su.cutoff, c.leafW >= 0.5);
       glyph = code < 0 ? 0 : code;
     }
     n++; if (glyph !== 0) nonZero++;
@@ -556,9 +556,9 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   // re-pinned 64622 -> 64993 by AA-22 (OB-208: wind hold, bucketed far-grass gust + appended fgQ; fgQ.x = 0 = old phase)
   // re-pinned 64985 -> 65357 by OB-217 (shaded grass value range, skyGlowOn.w = strength; 0 = identical)
   // re-pinned 65357 -> 66072 by OB-222 candidate (far forest face floor, su.faceK[1].w flag; 0 = identical output)
-  // re-pinned 66072 -> 66367 by FD-05 (alt-glyph dice bit: fogView.w bit 4; 0 = identical output)
-  assert.equal(SHADE_WGSL.length, 66367, 'stable off: SHADE_WGSL length unchanged');
-  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '3d36be08bdcbc33869e6592134175aa496a1ea94a6d2194fb14b647760fd00f4', 'stable off: SHADE_WGSL byte-identical to pre-073b');
+  // re-pinned 66072 -> 66367 by FD-05, -> 67401 by FD-09 (leaf level pairs bit 16 + dice spread bit 32) (alt-glyph dice bit: fogView.w bit 4; 0 = identical output)
+  assert.equal(SHADE_WGSL.length, 67401, 'stable off: SHADE_WGSL length unchanged');
+  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), 'b429c18461553e2e2f85b99b5182f77228aef02ee3b55529842be98ad828e20e', 'stable off: SHADE_WGSL byte-identical to pre-073b');
   assert.ok(!/lvl|lvOut|location\(2\)/.test(SHADE_WGSL), 'stable off: no level output');
   assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
   assert.deepEqual(SHADE_LEVEL_TARGETS, ['rgba8', 'rgba8', 'r8ui']);

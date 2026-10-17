@@ -59,6 +59,8 @@ export function fogDirShear(hx, hy, tanE, out) {
  */
 export const fogShapeCtx = { on: false, mode: 0, camZ: 0, terms: null, sunX: 0, sunY: 0, sunZ: 0, sunI: 0,
   camX: 0, camY: 0, aaFol: true, // AA-15 (OB-208): camera x/y + the foliage world-dice switch (`?aafol=0` -> setFoliageDice(false))
+  leafQ: true, // FD-09a (OB-198): merge leaf ramp levels in pairs when the leaf footprint is large (`?leafq=0` -> setLeafQuant(false))
+  aaDice2: true, // FD-09b (OB-198): per-block spread (+-15 pct) of the leaf dice 16/32/64 m switch distances (`?foldice2=0` -> setFoliageDice2(false))
   aaAlt: true, // FD-05 (OB-198/208): coarser world-stable alt-glyph dice (cell x2 non-grid, leaf block x3); `?aaalt=0` -> setAltDice(false) (main.js line to add by the main session)
   aaFolL: true, // AA-16 (OB-208): leaf-card light smoothing switch (`?aafoll=0` -> setFoliageLight(false))
   aaEdgeHold: true, // AA-18 (OB-208): stable pass lets edge cells take history (`?aaedge=0` -> setEdgeHold(false)); read by passStable.js
@@ -88,6 +90,14 @@ export function setFoliageDice(on) { fogShapeCtx.aaFol = !!on; }
 /** AA-16 (OB-208): switch the leaf-card light smoothing (default on). Read by detailShade.js shadeSurfaces and passShade.js (fogView.w bit 2). */
 /** FD-05: switch the coarse alt-glyph dice (default on; `?aaalt=0` off). Read by detailShade.js shadeCore + folDiceJS, passShade.js (fogView.w bit 4). */
 export function setAltDice(on) { fogShapeCtx.aaAlt = !!on; }
+/** FD-09a: leaf level pairs (default on; `?leafq=0` off). Read by detailShade.js shadeCore/shadeTail, passShade.js (fogView.w bit 16). */
+export function setLeafQuant(on) { fogShapeCtx.leafQ = !!on; }
+/** FD-09b: spread leaf dice band edges per world block (default on; `?foldice2=0` off). Read by folDiceJS, passShade.js (fogView.w bit 32). */
+export function setFoliageDice2(on) { fogShapeCtx.aaDice2 = !!on; }
+/** FD-09a: leaf footprint (grid blocks per cell) where the level pairing starts / is fully on: w = smoothstep(LO, HI, r), pairs when w >= 0.5 (twin: shade.wgsl.js shadeCore). */
+export const LEAF_Q_LO = 0.5, LEAF_Q_HI = 1.0;
+/** FD-09b: dice band edges (m) and the spread half-width (+-15 pct): block switches at edge * (1 - SPREAD + 2 * SPREAD * hash). */
+export const FOL_DICE_EDGES = [16, 32, 64], FOL_DICE_SPREAD = 0.15;
 export function setFoliageLight(on) { fogShapeCtx.aaFolL = !!on; }
 /** AA-17 (OB-208): switch the resolve-hysteresis soft-edge leaf match (kind + material, any planeId; default on). Read by passCell.js (ResolveU.folEdge). */
 export function setFoliageEdge(on) { fogShapeCtx.aaFolE = !!on; }
@@ -109,7 +119,7 @@ export function setEdgeCorner(eps) { fogShapeCtx.aaEdgeEps = Number.isFinite(eps
 /** FD-06: fogView.w bit for the ground-look lattice (shade.wgsl lkShade). Written from `aaAlt` ALONE (not through the fog-shape/ortho gate of foliageBits) so the ground never re-rolls when fog shape toggles. */
 export const GROUND_ALT_BIT = 8;
 export function groundAltBits() { return fogShapeCtx.aaAlt ? GROUND_ALT_BIT : 0; }
-export function foliageBits() { return (fogShapeCtx.aaFol ? 1 : 0) + (fogShapeCtx.aaFolL ? 2 : 0) + (fogShapeCtx.aaAlt ? 4 : 0); }
+export function foliageBits() { return (fogShapeCtx.aaFol ? 1 : 0) + (fogShapeCtx.aaFolL ? 2 : 0) + (fogShapeCtx.aaAlt ? 4 : 0) + (fogShapeCtx.leafQ ? 16 : 0) + (fogShapeCtx.aaDice2 ? 32 : 0); }
 
 /**
  * AA-15 (OB-208): glyph dice for soft-edge leaf cards (kind 9), keyed to a WORLD-space block instead of the per-card u/v (leaf cards
@@ -117,16 +127,27 @@ export function foliageBits() { return (fogShapeCtx.aaFol ? 1 : 0) + (fogShapeCt
  * distance (0.25 / 0.5 / 1 / 2 at < 16 / 32 / 64 m), ~3-8 cells everywhere. Point = cam + unit cell dir * shade dist (both f32-rounded
  * like the WGSL `folDice`); not for ortho (mode 2). Needs fogShapeCtx terms/cam for this frame (on === true).
  */
-export function folDiceJS(col, row, dist, seed) { // seed = material seed + salt (977)
-  const c = fogShapeCtx, d = fogCellDirJS(col, row), fr = Math.fround;
-  const q = (dist >= 64 ? 4 : dist >= 32 ? 2 : dist >= 16 ? 1 : 0.5) * (c.aaAlt ? 3 : 1), iq = 1 / q; // FD-05: x3 block when aaAlt
-  const px = fr(fr(c.camX) + fr(fr(d[0]) * fr(dist))), py = fr(fr(c.camY) + fr(fr(d[1]) * fr(dist))), pz = fr(fr(c.camZ) + fr(fr(d[2]) * fr(dist)));
-  const ix = Math.floor(px * iq), iy = Math.floor(py * iq), iz = Math.floor(pz * iq);
+function folHash(ix, iy, iz, seed) {
   let h = (Math.imul(ix | 0, 0x27d4eb2d) ^ Math.imul((iy + Math.imul(iz, 8191)) | 0, 0x165667b1) ^ Math.imul(seed | 0, 0x9e3779b1)) | 0;
   h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
   h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
   h ^= h >>> 16;
   return (h >>> 0) / 4294967296;
+}
+export function folDiceJS(col, row, dist, seed) { // seed = material seed + salt (977)
+  const c = fogShapeCtx, d = fogCellDirJS(col, row), fr = Math.fround, m = c.aaAlt ? 3 : 1;
+  const px = fr(fr(c.camX) + fr(fr(d[0]) * fr(dist))), py = fr(fr(c.camY) + fr(fr(d[1]) * fr(dist))), pz = fr(fr(c.camZ) + fr(fr(d[2]) * fr(dist)));
+  let q = 0.5 * m;
+  if (c.aaDice2) { // FD-09b: each coarser-band block switches at edge * (0.85 + 0.3 * hash(block)) - stateless, once per approach per block
+    const E = FOL_DICE_EDGES;
+    for (let k = 0; k < 3; k++) {
+      const qh = E[k] / 16 * m, iqh = 1 / qh;
+      const hs = folHash(Math.floor(px * iqh), Math.floor(py * iqh), Math.floor(pz * iqh), seed + 7919 * (k + 1));
+      if (dist >= fr(E[k] * fr(fr(0.85) + fr(fr(0.3) * hs)))) q = qh; else break;
+    }
+  } else q = (dist >= 64 ? 4 : dist >= 32 ? 2 : dist >= 16 ? 1 : 0.5) * m; // FD-05: x3 block when aaAlt
+  const iq = 1 / q;
+  return folHash(Math.floor(px * iq), Math.floor(py * iq), Math.floor(pz * iq), seed);
 }
 /**
  * VISQA-02 (OB-209 follow-up): far fog follows the sky gradient at the cell's own elevation. Per frame: skyW = P.atmos.farSkyW

@@ -33,7 +33,7 @@ import { SKY_GLOW_WGSL } from '../../skyGlow.js';
 import { SHADE_SHAFT_WGSL, SHAFT_SHIFT, SHAFT_Q } from '../../lightShaft.js'; // CANOPY-SHAFT-01b (38.76)
 import { SKY_NIGHT_WGSL } from '../../skyNight.js'; // NIGHT-SKY-01
 import { SKY_CLOUD_WGSL } from '../../skyCloud.js'; // CLOUD-FLUFF-01b
-import { FOG_SHAPE_WGSL } from '../../fogShape.js';
+import { FOG_SHAPE_WGSL, LEAF_Q_LO, LEAF_Q_HI } from '../../fogShape.js';
 import { SKYLINE_FOG_WGSL } from '../../skyline.js'; // MAP-06b (38.42)
 import { UNDER_WGSL } from '../../underwater.js'; // SWIM-04c (38.54)
 import { GI_SAMPLE_WGSL, giBindingWgsl } from '../../giGpu.js';
@@ -494,11 +494,20 @@ fn fogCellDir(cell: vec2i, gridSize: vec2i) -> vec3f {
 // AA-15 (OB-208): world-space glyph dice for soft-edge leaf cards (twin: fogShape.js folDiceJS). Block q = 0.25/0.5/1/2 m by distance.
 fn folDice(cell: vec2i, gridSize: vec2i, dist: f32, seed: i32) -> f32 {
   let d = fogCellDir(cell, gridSize);
-  var q = 0.5;
-  if (dist >= 16.0) { q = 1.0; } if (dist >= 32.0) { q = 2.0; } if (dist >= 64.0) { q = 4.0; }
-  if ((u32(su.fogView.w + 0.5) & 4u) != 0u) { q *= 3.0; } // FD-05: x3 block (twin: folDiceJS aaAlt)
-  let iq = 1.0 / q;
+  let m = select(1.0, 3.0, (u32(su.fogView.w + 0.5) & 4u) != 0u); // FD-05: x3 block (twin: folDiceJS aaAlt)
   let px = su.underCam.x + d.x * dist; let py = su.underCam.y + d.y * dist; let pz = su.fogView.x + d.z * dist;
+  var q = 0.5 * m;
+  if ((u32(su.fogView.w + 0.5) & 32u) != 0u) { // FD-09b: per-block spread of the 16/32/64 m switch (twin: folDiceJS aaDice2)
+    for (var k = 0; k < 3; k++) {
+      let ek = select(select(64.0, 32.0, k == 1), 16.0, k == 0);
+      let qh = ek / 16.0 * m; let iqh = 1.0 / qh;
+      let hs = hashFast(i32(floor(px * iqh)), i32(floor(py * iqh)) + i32(floor(pz * iqh)) * 8191, seed + 7919 * (k + 1));
+      if (dist >= ek * (0.85 + 0.3 * hs)) { q = qh; } else { break; }
+    }
+  } else {
+    if (dist >= 16.0) { q = 1.0 * m; } if (dist >= 32.0) { q = 2.0 * m; } if (dist >= 64.0) { q = 4.0 * m; }
+  }
+  let iq = 1.0 / q;
   let ix = i32(floor(px * iq)); let iy = i32(floor(py * iq)); let iz = i32(floor(pz * iq));
   return hashFast(ix, iy + iz * 8191, seed);
 }
@@ -537,12 +546,13 @@ fn pickCode(setId: i32, entryIdx: i32, hA: f32, useAlt: bool) -> i32 {
 }
 
 // Returns glyph code (already ASCII-32) or -1 (caller substitutes space).
-fn pickGlyphCodeFast(setId: i32, gb: f32, hA: f32, classIdx: i32, cutoff: f32) -> i32 {
+fn pickGlyphCodeFast(setId: i32, gb: f32, hA: f32, classIdx: i32, cutoff: f32, leafQ: bool) -> i32 {
   let t0 = textureLoad(uSetI, vec2i(0, setId), 0);
   let t1 = textureLoad(uSetI, vec2i(1, setId), 0);
   let oriented = t0.x; let levels = t0.z; let nDark = t0.w; let nFam = t1.y;
-  let lv = levelFromThresholds(setId, levels, gb, cutoff);
+  var lv = levelFromThresholds(setId, levels, gb, cutoff);
   if (lv == 0) { return -1; }
+  if (leafQ && levels > 2) { lv = min(levels - 1, (((lv - 1) >> 1) << 1) + 1) + 1; } // FD-09a: ramp levels in pairs (twin: detailShade.js pickGlyphCodeFast)
   var entryIdx: i32;
   if (oriented == 0) {
     entryIdx = lv - 1;
@@ -592,7 +602,7 @@ fn matFlatColor(matId: i32, face: i32, kind: u32, Lm: f32, hcol: vec3f) -> vec4f
 struct Core {
   b: f32, gb: f32, cr: f32, cg: f32, cb: f32, bgK: f32, hA: f32, hB: f32,
   onJoint: bool,
-  lineCode: i32, setId: i32,
+  lineCode: i32, setId: i32, leafW: f32,
 };
 
 fn shadeCore(u: f32, v: f32, z: f32, aoD: f32,
@@ -809,6 +819,11 @@ fn shadeCore(u: f32, v: f32, z: f32, aoD: f32,
   var c: Core;
   c.b = b; c.gb = gb; c.cr = cr; c.cg = cg; c.cb = cb; c.bgK = bgK;
   c.hA = hA; c.hB = hB; c.onJoint = onJoint; c.lineCode = lineCode; c.setId = setId;
+  c.leafW = 0.0;
+  if (hasGrid && !gridTexel && (flags & 65536) != 0 && (u32(su.fogView.w + 0.5) & 16u) != 0u) { // FD-09a: leaf footprint (grid blocks per cell) -> level pairing weight
+    let rLeaf = max(tpcU / gu, tpcV / gv);
+    c.leafW = smoothstepFast(${LEAF_Q_LO.toFixed(4)}, ${LEAF_Q_HI.toFixed(4)}, rLeaf);
+  }
   return c;
 }
 
@@ -988,7 +1003,7 @@ ${look ? `    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceM
   var bSum = 0.0; var gbSum = 0.0; var crSum = 0.0; var cgSum = 0.0; var cbSum = 0.0; var bgKSum = 0.0;
   var count = 0; var jointN = 0;
   // Item 3: hA/hB are discrete dice, taken from the single sub-sample nearest the cell centre, never averaged.
-  var bestMag = 1.0e30; var hAW = 0.0; var hBW = 0.0;
+  var bestMag = 1.0e30; var hAW = 0.0; var hBW = 0.0; var leafWW = 0.0;
   // Item 4: setId/lineCode split by joint membership (nearest ON-JOINT member / nearest NON-joint member).
   var bestJointMag = 1.0e30; var bestNonJointMag = 1.0e30;
   var onJointSetW = 0; var onJointLineW = -1; var nonJointSetW = 0;
@@ -1030,7 +1045,7 @@ ${look ? `    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceM
       let ox = (f32(i) + 0.5) / f32(su.n) - 0.5;
       let oy = (f32(j) + 0.5) / f32(su.n) - 0.5;
       let mag = ox * ox + oy * oy;
-      if (mag < bestMag) { bestMag = mag; hAW = c.hA; hBW = c.hB; }
+      if (mag < bestMag) { bestMag = mag; hAW = c.hA; hBW = c.hB; leafWW = c.leafW; }
       if (c.onJoint) {
         if (mag < bestJointMag) { bestJointMag = mag; onJointSetW = c.setId; onJointLineW = c.lineCode; }
       } else {
@@ -1081,7 +1096,7 @@ ${look ? `    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceM
     let oriented = t0.x; let orientAxis = t0.y;
     var classIdx = 0;
     if (oriented != 0) { classIdx = orientClassCode(select(dvdx, dudx, orientAxis == 0), select(dvdy, dudy, orientAxis == 0), su.cellAspect); }
-    let code = pickGlyphCodeFast(setIdPick, gbAvg, hAAvg, classIdx, su.cutoff);
+    let code = pickGlyphCodeFast(setIdPick, gbAvg, hAAvg, classIdx, su.cutoff, leafWW >= 0.5);
     glyphCode = select(code, 0, code < 0);${L.set}
   }
   if (f > su.fogStipple0 && hBAvg < smoothstepFast(su.fogStipple0, su.fogStipple1, f)) {

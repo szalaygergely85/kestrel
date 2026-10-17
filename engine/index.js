@@ -168,7 +168,7 @@ export { flickerStep, flickerReprojStep, flickerGlyphReasons, flickerDefaultReas
 export { setGrassShade, setFarForest } from './render/terrainShade.js'; // OB-217: ?grassshade=0 old shaded grass
 export { setWindHold } from './render/terrainShade.js'; // AA-22 (OB-208): ?aawind=0 old; bitmask 1 far-grass gust, 2 look lean
 export { setMoonRimEnabled } from './render/moonRim.js'; // RND-NIGHT-RIM-03: ?moonrim=0
-export { setAltDice, setFoliageDice, setFoliageLight, setFoliageEdge, setEdgeHold, setVoxelHold, setLeafUvHold, setTerrainSnapHold, setLeafLevelHold, setSeamHold } from './render/fogShape.js'; // AA-28: ?aaterrsnap=0; // AA-15 (OB-208): ?aafol=0; AA-16: ?aafoll=0; AA-17: ?aafoledge=0; AA-18: ?aaedge=0
+export { setLeafQuant, setFoliageDice2, setAltDice, setFoliageDice, setFoliageLight, setFoliageEdge, setEdgeHold, setVoxelHold, setLeafUvHold, setTerrainSnapHold, setLeafLevelHold, setSeamHold } from './render/fogShape.js'; // AA-28: ?aaterrsnap=0; // AA-15 (OB-208): ?aafol=0; AA-16: ?aafoll=0; AA-17: ?aafoledge=0; AA-18: ?aaedge=0
 
 // ---- physics ----------------------------------------------------------------
 export { PHYSICS_DEFAULTS, PHYSICS } from './physics/config.js';
