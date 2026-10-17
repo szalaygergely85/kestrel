@@ -16,7 +16,7 @@
     "barleySheaf": { "pickup": true },
     "packet": { "pickup": true },
     "arrow": { "giver": true },
-    "cog": { "giver": true },
+    "cog": { "pickup": true },
     "honeycomb": { "giver": true },
     "parcel": { "giver": true }
   }

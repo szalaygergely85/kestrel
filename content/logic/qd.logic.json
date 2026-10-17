@@ -1,0 +1,119 @@
+[
+  {
+    "id": "qd05.cart.search",
+    "rev": 1,
+    "name": "Tipped cart robbers (searched)",
+    "once": true,
+    "when": {
+      "on": "flag.set",
+      "flag": "talk.rsInspectWagon"
+    },
+    "if": [
+      {
+        "is": "quest",
+        "quest": "sq.tm.cart",
+        "state": "active"
+      }
+    ],
+    "do": [
+      {
+        "act": "beasts.spawn",
+        "group": "cart.bandits"
+      }
+    ]
+  },
+  {
+    "id": "qd05.cart.return",
+    "rev": 1,
+    "name": "Tipped cart robbers (back at the cart)",
+    "once": true,
+    "when": {
+      "on": "area.enter",
+      "area": "wagon"
+    },
+    "if": [
+      {
+        "is": "quest",
+        "quest": "sq.tm.cart",
+        "state": "active"
+      },
+      {
+        "is": "flag",
+        "flag": "talk.rsInspectWagon",
+        "eq": true
+      },
+      {
+        "is": "group",
+        "group": "cart.bandits",
+        "state": "reserve"
+      }
+    ],
+    "do": [
+      {
+        "act": "beasts.spawn",
+        "group": "cart.bandits"
+      }
+    ]
+  },
+  {
+    "id": "qd07.jetty.cog",
+    "rev": 1,
+    "name": "Reed eel strikes when the cog is taken",
+    "once": true,
+    "when": {
+      "on": "item.got",
+      "item": "cog"
+    },
+    "if": [
+      {
+        "is": "quest",
+        "quest": "sq.fc.jetty",
+        "state": "active"
+      },
+      {
+        "is": "group",
+        "group": "jetty.eel",
+        "state": "reserve"
+      }
+    ],
+    "do": [
+      {
+        "act": "beasts.spawn",
+        "group": "jetty.eel"
+      }
+    ]
+  },
+  {
+    "id": "qd07.jetty.return",
+    "rev": 1,
+    "name": "Reed eel (cog already in the pack)",
+    "once": true,
+    "when": {
+      "on": "area.enter",
+      "area": "jetty"
+    },
+    "if": [
+      {
+        "is": "quest",
+        "quest": "sq.fc.jetty",
+        "state": "active"
+      },
+      {
+        "is": "item",
+        "item": "cog",
+        "atLeast": 1
+      },
+      {
+        "is": "group",
+        "group": "jetty.eel",
+        "state": "reserve"
+      }
+    ],
+    "do": [
+      {
+        "act": "beasts.spawn",
+        "group": "jetty.eel"
+      }
+    ]
+  }
+]

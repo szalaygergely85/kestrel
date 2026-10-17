@@ -64,6 +64,8 @@ import '../design/models/chest.js'; // EQ-10: world_m1 chest* anchors use chestS
 import '../design/models/voxel_bear.js'; // NPC-BEAR-01: content/worlds/world_m1.world.json entity "bear"
 import '../design/models/voxel_bear_black.js'; // BEAR-01: world_m1 entities blackBear1..3 (model bearBlack)
 import '../design/models/voxel_bear_cub.js'; // NUB-01: world_m1 entity nub (model bearCub)
+import '../design/models/voxel_tortoise.js'; // QD-03: world_m1 qd03_turtle (model tortoise)
+import '../design/models/voxel_crocodile.js'; // QD-07: world_m1 qd07_eel (model crocodile, closest swimmer to a reed eel)
 import '../design/models/voxel_wildlife.js'; // QL-06: ASSETS.models.crow (world_m1 entity "rook")
 import '../design/models/m3_props.js'; // US-078d: content/levels/tower.level.json prop "practiceTarget"
 import '../design/models/far_tower.js';

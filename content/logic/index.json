@@ -1,6 +1,7 @@
 {
   "files": [
-    "farm.logic.json"
+    "farm.logic.json",
+    "qd.logic.json"
   ],
   "examples": [
     "example.logic.json"
