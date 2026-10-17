@@ -2063,3 +2063,13 @@ Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-
   ASK ARCHITECT/owner: need the owner's F3 pose (x,y,z,yaw,pitch), quality preset, window size and clock from one bad screenshot; headless (software/ANGLE WebGPU) may also differ from the owner's real GPU. Suggest a dev key that dumps pose+quality+size+clock+sun to the console/clipboard.
 
 - REPORT-KEY-01 (kestrel-2, reportkey): F8 = bug snapshot (game/js/dev/bugSnapshot.js, pure format/parse + takeSnapshot; line `KESTREL <build|load time> pos x,y,z yaw pitch | clock | quality renderer gpu | size grid | flags`) -> clipboard + console + toast "Bug snapshot copied - paste it in your report". main.js: 8 lines (import, F8 block next to F3, debug god mode moved to Shift+F8). tools/sweep-far-trees.mjs + verify-far-silhouette.mjs take SNAP="<line>" (pose/clock/quality/size/flags). No in-game key help exists for F3 -> none edited. Node only: browser path unrun (rt/look/toasts scope checked by grep).
+
+### 2026-10-17 OB-220 (a)(b) + OB-142 (slot kestrel-1, Node only)
+- (a) Audited all 88 quests: after hand-in none stays tracked/in active journal/mark lists/compass or is re-offered (new asserts in questRules.e2e R6); no relay-quest bug found in Node (could be the lamps case only; owner re-test).
+- (b) Real cause besides lamps: book.accept kept earlier area/talk facts, so a visited zone / talked NPC made a SIDE quest ready at accept (9 quests: burl.stone/tower, rb.road, fc.ford/again, ow.ford/song...). Fix: accept clears the quest's area + talk.* facts (side quests only), questRelay.pollAreas now edge-triggered (re-entry feeds; onPoll still first visit only). Pack-item carry (deliver/collect) still counts by design. New R4 guard + ob220ZoneAccept.test.js (giver not inside its zone).
+- OB-142: nothing lived within 96 m of the ford (main.js skips ambient fauna on ?at/?pose dev links - by design). Added rule fordBoars (3 boars, rect 1000,1075..1060,1125, ~53 m) in regionalBeasts.js + ob142River.test.js (>=3 land beasts <=60 m of ford).
+- Tests: --filter quest,beast,spawn,fauna,region,relay,save green; validate-content OK. Not committed.
+
+### 2026-10-17 FARFOREST-ON (slot kestrel-1, Node only)
+- game/js/main.js:221: missing `farforest` param = ON, `?farforest=0` = old look (tools/verify-far-silhouette.mjs AB=farforest already passes explicit 0/1). Engine module default untouched; farForestNoon.test.js already asserts `?farforest=0` byte-identical (comment updated). No cinematics/editor callers of setFarForest.
+- Tests: --filter farForest,api,shade green (4 suites); main.js --check ok. NOTE: gpucompare default-path rows change for far forest cells; main session reruns gpucompare and re-pins baseline. Not committed.

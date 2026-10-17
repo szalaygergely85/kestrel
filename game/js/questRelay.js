@@ -23,7 +23,7 @@ export function createQuestRelay(def, saved = null, giverDefs = [], savedQuests 
   let state = book.main;
   let rows = questObjectives(state, def, []);
   const fired = { wake: false, sword: false, waystone: false, breach: false }; // edge guards (cheap polling)
-  const firedAreas = new Set();
+  const firedAreas = new Set(), insideAreas = new Set();
   let dirty = false, lineFor = '', line = '';
 
   function syncFired() {
@@ -100,7 +100,7 @@ export function createQuestRelay(def, saved = null, giverDefs = [], savedQuests 
     /** Replace the quest (restore from a save, or a fresh run when `saved` is null). */
     reset(savedState = null, savedQuests = null) {
       const onChange = book.onChange;
-      book = mkBook(savedState, savedQuests); firedAreas.clear(); book.onChange = onChange; state = book.main; rows = questObjectives(state, def, []); syncFired(); dirty = false; seen = state.completed.length;
+      book = mkBook(savedState, savedQuests); firedAreas.clear(); insideAreas.clear(); book.onChange = onChange; state = book.main; rows = questObjectives(state, def, []); syncFired(); dirty = false; seen = state.completed.length;
     },
     /**
      * Per-fixed-step facts -> events. Every flag fires once (guards); cost is a few comparisons.
@@ -122,11 +122,15 @@ export function createQuestRelay(def, saved = null, giverDefs = [], savedQuests 
      * @param {number} x @param {number} y @param {number} z @param {{id:string,x:number,y:number,r:number,zMin:number}[]} zones
      */
     pollAreas(x, y, z, zones) {
+      // OB-220b: edge-triggered (enter), so a side quest accepted AFTER the player visited a zone still needs a fresh entry (book.accept clears the quest's area facts); onPoll fires only for the first visit.
       for (let i = 0; i < zones.length; i++) {
         const q = zones[i];
-        if (state.areas.includes(q.id) || firedAreas.has(q.id)) continue;
         const dx = x - q.x, dy = y - q.y;
-        if (dx * dx + dy * dy <= q.r * q.r && z >= q.zMin) { firedAreas.add(q.id); feed({ type: 'area:entered', id: q.id }); if (relay.onPoll) relay.onPoll('area:entered', q.id); }
+        if (dx * dx + dy * dy <= q.r * q.r && z >= q.zMin) {
+          if (insideAreas.has(q.id)) continue;
+          insideAreas.add(q.id); feed({ type: 'area:entered', id: q.id });
+          if (!firedAreas.has(q.id)) { firedAreas.add(q.id); if (relay.onPoll) relay.onPoll('area:entered', q.id); }
+        } else if (insideAreas.size) insideAreas.delete(q.id);
       }
     },
     /** HUD: objective line at the top-left of the UI layer (setCellRGB cells; no allocation).

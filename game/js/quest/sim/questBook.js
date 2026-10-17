@@ -256,6 +256,9 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
       let short = o.when.count - (book.livingOfKind(o.when.kind) | 0);
       for (const b of deadSeen) { if (short <= 0) break; if (kindOf(b) === o.when.kind && applyKindKill(e.state, o.when.kind, e.def)) short--; }
     }
+    // OB-220b: explore (area) steps count only from the accept on - a zone visited earlier must be entered again (items/kills keep counting earlier facts, see header)
+    if (!e.def.main) for (const o of e.def.objectives) if (o.when.type === 'flag' && /^talk\./.test(o.when.id)) { delete e.state.flags[o.when.id]; const ci = e.state.completed.indexOf(o.id); if (ci >= 0) e.state.completed.splice(ci, 1); } // talk steps likewise
+    if (!e.def.main) for (const o of e.def.objectives) if (o.when.type === 'area') { const ai = e.state.areas.indexOf(o.when.id); if (ai >= 0) e.state.areas.splice(ai, 1); const ci = e.state.completed.indexOf(o.id); if (ci >= 0) e.state.completed.splice(ci, 1); }
     e.given = []; // QL-04: items handed over on accept (taken back on abandon)
     if (book.packOps && book.packOps.add) for (const list of [e.def.giveOnAccept, e.def.giveOnTalk]) if (list) for (const it of list) { const k = book.packOps.add(it.id, it.n); if (k > 0) e.given.push({ id: it.id, n: k }); }
     emit('quest:accepted', id);
