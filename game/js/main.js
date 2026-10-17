@@ -196,6 +196,8 @@ import { createEquipPlay, registerGearItems } from './quest/equipPlay.js'; // EQ
 import { createStubItemSim } from './quest/sim/hands.js'; // EQ-07: no-op sims so the router arms shield / bow
 import { EQUIP_VIEW_MODELS, loadShieldView, presentShield, loadBowView, presentBow, drawBlockSpark, createArrowView } from './quest/equipView.js'; // EQ-07/09
 import { playShieldClank, playBowShot, playRelayHum } from './audio/sfx.js'; // EQ-07/09
+import { createCombatSfx } from './audio/combatSfx.js'; // EV17-01: swing / hit / hurt / beast death / heartbeat cues
+import { isMuted as audioIsMuted, playToneBurst as audioTone, playNoiseBurst as audioNoise } from './audio/synth.js';
 import { createTargetables } from './quest/sim/targetables.js';
 import { FIREBALL_CFG, refreshLocked } from './quest/spellConfig.js';
 import { createSpellDispatcher } from './quest/sim/spellCast.js'; // SPELL-04
@@ -346,6 +348,8 @@ const blinkFlash = createBlinkFlash({ enabled: deathFlowEnabled(params, isCaptur
 const deathFlow = createDeathFlow({ enabled: deathFlowEnabled(params, isCaptureOrBench), onRespawn: () => { deathRespawnDue = true; } });
 setReduceMotion(savedSettings.reduceMotion); // SETTINGS-APPLY-01: read at boot, the Settings panel updates it live
 setEnemyBarsOn(savedSettings.enemyBars); setDamageNumbersOn(savedSettings.dmgNumbers); // HPBAR-02 / DMGNUM-01: Combat HUD switches (default On)
+const combatSfx = createCombatSfx({ tone: audioTone, noise: audioNoise, isMuted: audioIsMuted }); let combatSwingPrev = false; // EV17-01 (cues no-op until audio exists; synth bursts bail without a ctx)
+window.__combatSfx = combatSfx; // dev handle for tools/verify-combat-sfx.mjs
 const hurtFx = createHurtFx({ enabled: hurtFxEnabled(params, isCaptureOrBench), reduceMotion: isReduceMotion }); // HURT-FX-01: off in capture/bench/compare and ?fx=0
 const bootOpts = resolveBootOptions({ params, resolved: resolvedQuality, savedSettings, captureLike: isCaptureOrBench, geometryCompare: isGeometryCompare,
   defaultCols: GRID_DEFAULT_COLS, shadowLevel: resolveShadowLevel });
@@ -1046,6 +1050,7 @@ const swordStyleIds = {
 };
 sprites.pool.renderer = renderer; // review item 1: sprite rects follow the pitched scene
 const wgActive = !!(wgPipeline && wgPipeline.ready && rt.backend === 'webgpu'); // WG-2b: geometry-only WebGPU pipeline (CPU still shades)
+engine.events.on('combat:hit', (p) => combatSfx.hit(p)); engine.events.on('beast:died', () => combatSfx.beastDied()); // EV17-01
 engine.events.on('combat:hit', (p) => { if (p && p.source === 'player') hitStop.trigger(p.heavy ? 'heavy' : 'light'); }); // HITSTOP-01
 const hzb = createHzbInvalidator(() => ((occlOpt.enabled || params.get('stable') === '1') && wgActive && wgPipeline.ready ? wgPipeline : null), { onCut: () => { if (engine.instances && engine.instances.resetLodHistory) engine.instances.resetLodHistory(); if (wgActive && wgPipeline.resetLodHistory) wgPipeline.resetLodHistory(); } }); // OCCL-MAIN-01 (+ US-073c): cuts invalidate the HZB and the stable-pass history
 if (wgActive) { wgPipeline.bindVoxels(gameVoxelPool); wgPipeline.bindViewModel(engine.viewModel); }
@@ -2433,6 +2438,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         if (wasDead && !vitals.dead) { if (swimWire) swimWire.reset(); deathRespawnDue = false; deathFlow.respawned(performance.now()); }
         deathFlow.step(performance.now());
         hurtFx.step(1000 / 60, vitals.hp, !vitals.dead); // HURT-FX-01
+        { const sw = !!(sword && sword.state >= ST_LIGHT && sword.state <= ST_HARD); if (sw && !combatSwingPrev) combatSfx.swing(); combatSwingPrev = sw; combatSfx.step(1000 / 60, hurtFx.low); } // EV17-01
         stepPickups(engine.world, playerHandle.data); // US-080b (30.2)
         // US-080a1 AC5 (`?debug=1` only): F8 toggles invulnerability, F9 deals 5 HP.
         if (params.get('debug') === '1') {

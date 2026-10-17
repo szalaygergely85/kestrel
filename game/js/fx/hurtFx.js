@@ -35,6 +35,8 @@ export function createHurtFx(opts = {}) {
         for (let y = n; y < rows - n; y++) { cell(ui, r, y, dens, g); cell(ui, cols - 1 - r, y, dens, g); }
       }
     },
+    /** true while the low-hearts pulse is active (drives the EV17-01 heartbeat cue). */
+    get low() { return enabled && lowHp; },
     get active() { return enabled; },
   };
   return fx;

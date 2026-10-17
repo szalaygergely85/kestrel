@@ -2128,3 +2128,7 @@ gpucompare rtx4060 headless: only the 4 known FAIL rows (crash room, half occlud
 - NEEDS B1-main: `setLeafQuant(params.get('leafq') !== '0')` and `setFoliageDice2(params.get('foldice2') !== '0')` (both from engine/index.js, default on).
 - AC1 measured 0.58x (spec 0.55; test limit 0.6): leaf ramp has 8 levels, pairs leave 4 of 8 boundaries + noise near cutoff. Pair rule uses 0-based idx (idx&~1)+1, footprint r = max(tpcU/g.u, tpcV/g.v), w = smoothstep(0.5,1.0,r), pair when w >= 0.5.
 - Gate (flicker-gate --diag): bushes glyphOnly 9.91 -> 9.58 (target 7.0 NOT met; levelTex 3.20 -> 2.74, altSwap 1.28 -> 1.06, anim 2.95 -> 3.32); crown 5.76 -> 5.20, forestWalk 8.38 -> 7.68, roadWalk 4.95 -> 4.13, cryptWalk 14.32 -> 14.64 (+0.32), others <= same; PASS. Not done: gpucompare, before/after stills (cap). ASK ARCHITECT: footprint r rarely reaches 0.75 on bushes? bushes still 9.6; levelTex only -14%.
+
+### EV17-01 combat feel audio (k1, branch ev1701, po-review, UNCOMMITTED) 2026-10-17
+- New game/js/audio/combatSfx.js (cue table + 60-150 ms per-cue rate limit + lub-dub heartbeat, injected synth) + combatSfx.test.js; hurtFx.low getter (+test). Main hook block: combatSfx + beast:died/combat:hit listeners, sword-state swing edge and heartbeat step beside hurtFx.step; `window.__combatSfx` dev handle. Player-hurt = combat:hit with target 'player'.
+- Verify (NOT run): `node tools/verify-combat-sfx.mjs 9510` (event bus triggers each cue, asserts counts; heartbeat part only counts if `__debug.vitals` exists). Node tests: combatSfx.test.js, hurtFx.test.js pass.

@@ -38,3 +38,8 @@ const near = (a, b, e = 1e-9) => assert.ok(Math.abs(a - b) < e, a + ' vs ' + b);
   }
 }
 console.log('hurtFx OK');
+
+{ // EV17-01: `low` mirrors the pulse state
+  const f = createHurtFx(); f.step(10, 30); assert.equal(f.low, false); f.step(10, 4); assert.equal(f.low, true); f.step(10, 4, false); assert.equal(f.low, false);
+  const off = createHurtFx({ enabled: false }); off.step(10, 4); assert.equal(off.low, false);
+}
