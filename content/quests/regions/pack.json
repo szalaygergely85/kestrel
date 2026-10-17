@@ -5,13 +5,13 @@
   ],
   "quests": [
     {"id": "sq.reg.glasswater", "lines": {"active": [
-      "Three boars, in the Glasswater shallows."
+      "Three boars, then what chased them."
     ], "done": [
       "Still water again. See how the light sits on it."
     ], "offer": [
       "The light shows boars in the shallows. Three.",
-      "Drive them out of the water, then come back."
-    ]}, "requires": [{"flag": "waystone.ws_glasswater.woken"}], "returnText": "Back to the Glasswater warden", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "warden_glasswater", "steps": [{"journal": "Boars churn the Glasswater shallows.", "objText": "Drive off 3 boars", "params": {"count": 3, "kind": "boar"}, "template": "kill"}], "title": "Tusks at the Water"},
+      "Drive them out of the water. Something chased them in.", "Then come back."
+    ]}, "requires": [{"flag": "waystone.ws_glasswater.woken"}], "returnText": "Back to the Glasswater warden", "reward": {"items": [{"id": "potion.hp", "n": 3}, {"id": "arrow", "n": 20}]}, "site": "warden_glasswater", "steps": [{"journal": "Boars churn the Glasswater shallows.", "objText": "Drive off 3 boars", "params": {"count": 3, "kind": "boar"}, "template": "kill"}, {"journal": "Something big hunts the shallows.", "objText": "Defeat the Crocodile", "params": {"count": 1, "ids": ["river_crocodile.qd-glass-croc.1"]}, "template": "kill"}], "title": "Tusks at the Water"},
     {"id": "sq.reg.northwood", "lines": {"active": [
       "Three wolves. Under the pines, near the stone."
     ], "done": [
@@ -21,13 +21,13 @@
       "Drive them off, then come back to me."
     ]}, "requires": [{"flag": "waystone.ws_northwood.woken"}], "returnText": "Back to the Northwood warden", "reward": {"items": [{"id": "arrow", "n": 15}]}, "site": "warden_northwood", "steps": [{"journal": "Wolves prowl the pines at Northwood.", "objText": "Drive off 3 wolves", "params": {"count": 3, "kind": "wolf"}, "template": "kill"}], "title": "Wolves Under the Pines"},
     {"id": "sq.reg.highPastures", "lines": {"active": [
-      "Two bears in the high grass. Both of them."
+      "Two bears, and a bigger one behind them."
     ], "done": [
       "Grass lies flat. The bears went over the hill."
     ], "offer": [
       "Two bears, out in the high grass. Too close.",
-      "Drive both off, then come back to me."
-    ]}, "requires": [{"flag": "waystone.ws_highPastures.woken"}], "returnText": "Back to the Pasture warden", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "warden_highpastures", "steps": [{"journal": "Two bears roam the High Pastures.", "objText": "Drive off 2 bears", "params": {"count": 2, "kind": "bear"}, "template": "kill"}], "title": "Bears in the High Grass"},
+      "Drive both off. Then Greyback comes down.", "Bring me word."
+    ]}, "requires": [{"flag": "waystone.ws_highPastures.woken"}], "returnText": "Back to the Pasture warden", "reward": {"table": "gear.t3", "items": [{"id": "potion.hp", "n": 2}]}, "site": "warden_highpastures", "steps": [{"journal": "Two bears roam the High Pastures.", "objText": "Drive off 2 bears", "params": {"count": 2, "kind": "bear"}, "template": "kill"}, {"journal": "A bigger bear leads the two.", "objText": "Defeat Greyback", "params": {"count": 1, "ids": ["cave_bear.qd-hp-greyback.1"]}, "template": "kill"}], "title": "Bears in the High Grass"},
     {"id": "sq.reg.ashMile", "lines": {"active": [
       "Two boars in the black ash. Go on."
     ], "done": [
@@ -45,13 +45,13 @@
       "Drive them off the downs, then come back."
     ]}, "requires": [{"flag": "waystone.ws_downs.woken"}], "returnText": "Back to the Downs warden", "reward": {"items": [{"id": "potion.hp", "n": 2}]}, "site": "warden_downs", "steps": [{"journal": "Four boars are loose on the Downs.", "objText": "Drive off 4 boars", "params": {"count": 4, "kind": "boar"}, "template": "kill"}], "title": "Four on the Downs"},
     {"id": "sq.reg.signalHill", "lines": {"active": [
-      "Three wolves, on the slope below the hill."
+      "Three wolves, and a white one behind."
     ], "done": [
       "The light runs clean. The hill answers again."
     ], "offer": [
       "Three wolves on the slope below. The light stutters.",
-      "Drive them off, then come back up to me."
-    ]}, "requires": [{"flag": "waystone.ws_signalHill.woken"}], "returnText": "Back to the Signal Hill warden", "reward": {"items": [{"id": "arrow", "n": 20}]}, "site": "warden_signalhill", "steps": [{"journal": "Wolves prowl below Signal Hill.", "objText": "Drive off 3 wolves", "params": {"count": 3, "kind": "wolf"}, "template": "kill"}], "title": "The Hill Pack"},
+      "Drive them off. The white one will come out.", "Then come back up."
+    ]}, "requires": [{"flag": "waystone.ws_signalHill.woken"}], "returnText": "Back to the Signal Hill warden", "reward": {"items": [{"id": "arrow", "n": 40}, {"id": "potion.hp", "n": 1}]}, "site": "warden_signalhill", "steps": [{"journal": "Wolves prowl below Signal Hill.", "objText": "Drive off 3 wolves", "params": {"count": 3, "kind": "wolf"}, "template": "kill"}, {"journal": "A white wolf leads the pack.", "objText": "Defeat the White Alpha", "params": {"count": 1, "ids": ["white_wolf.qd-sh-alpha.1"]}, "template": "kill"}], "title": "The Hill Pack"},
     {"id": "sq.reg.heath", "lines": {"active": [
       "Three boars in the heather. Near the stone."
     ], "done": [

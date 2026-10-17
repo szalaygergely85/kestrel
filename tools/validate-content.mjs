@@ -650,6 +650,7 @@ export function validateContent(ASSETS, opts = {}) {
   for (const world of Object.values(worlds)) {
     for (const entity of world.entities || []) if (entity.type === 'beast') beastIds.add(entity.id);
   }
+  for (const a of opts.spawnAreas || []) for (let k = 1; k <= (a.count || 1); k++) beastIds.add(a.kind + '.' + a.id + '.' + k); // QD-08: painted-area elites (areaMembers ids)
   const quests = opts.quests || [];
   // AREAS-01: level landmarks are named `markers` in the shipped JSON.
   // Qualify them by a world placement; trigger ids belong to that world.
@@ -1193,7 +1194,7 @@ export function lintRegions(o) {
     if (q.site && !Object.hasOwn(sites, q.site)) out.push(`regions:${q.id}: site '${q.site}' does not exist`);
     for (const st of q.steps || []) {
       const p = st.params || {};
-      if (st.template === 'kill' && o.beastKinds && !o.beastKinds.has(p.kind)) out.push(`regions:${q.id}: kill kind '${p.kind}' does not exist`);
+      if (st.template === 'kill' && p.kind !== undefined && o.beastKinds && !o.beastKinds.has(p.kind)) out.push(`regions:${q.id}: kill kind '${p.kind}' does not exist`);
       if (st.template === 'deliver') {
         if (p.to && !Object.hasOwn(sites, p.to)) out.push(`regions:${q.id}: deliver-to '${p.to}' does not exist`);
         if (o.itemIds && !o.itemIds.has(p.item)) out.push(`regions:${q.id}: deliver item '${p.item}' does not exist`);
@@ -1296,7 +1297,7 @@ async function main() {
   const lootFile = loadLootFile(fileURLToPath(new URL('../content/items/loot.json', import.meta.url)));
   const packQuests = await loadPackQuests(fileURLToPath(new URL('../content/quests', import.meta.url)), ASSETS?.items?.defs);
   questFiles.quests.push(...packQuests.quests); questFiles.errors.push(...packQuests.errors);
-  const { errors: allErrors, warnings, infos, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir, maskFilesDir, dialogueFilesDir, sites: packQuests.sites, quests: questFiles.quests, spellLint: true, areas: questFiles.areas, areaPath: questFiles.areaPath, ...recipeFile, ...lootFile });
+  const { errors: allErrors, warnings, infos, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir, maskFilesDir, dialogueFilesDir, sites: packQuests.sites, quests: questFiles.quests, spellLint: true, spawnAreas: JSON.parse(readFileSync(new URL('../content/beasts/spawnAreas.json', import.meta.url), 'utf8')).areas, areas: questFiles.areas, areaPath: questFiles.areaPath, ...recipeFile, ...lootFile });
   allErrors.push(...questFiles.errors);
   for (const h of await (await import('./quest-graph-lint.mjs')).lintRealContent({ quests: questFiles.quests, itemDefs: ASSETS?.items?.defs || {} })) allErrors.push(`${h.rule} ${h.quest}: ${h.msg}`); // QL-MAIN-04
   try { warnings.push(...await (await import('./quest-zone-lint.mjs')).lintRealZones({ quests: questFiles.quests })); } catch (e) { warnings.push(`quest-zone lint skipped (${e.message})`); } // QL-MAIN-02 (OB-136)

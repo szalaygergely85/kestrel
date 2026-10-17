@@ -7,7 +7,7 @@ for (let i = 0; i < 3; i++) list.push({ id: `boar.north.${i}`, species: 'boar', 
 const ids = list.map((b) => b.id), reset = [];
 const sim = { count: 8, slotOf: (id) => ids.indexOf(id), resetSlot: (s) => reset.push(s) };
 const handlers = {}; const events = { on: (n, f) => { handlers[n] = f; return () => { delete handlers[n]; }; } };
-const groups = buildGroups(regionalMembers(list, sim.slotOf), 1);
+const groups = buildGroups(regionalMembers(list, sim.slotOf), 1, null, []);
 let w = null;
 const dir = createSpawnDirector({ groups, dayLenSec: 1200, los: () => false, onRespawn: (gi, g) => w.respawn(gi, g) });
 w = createDirectorWire({ director: dir, sim, events });

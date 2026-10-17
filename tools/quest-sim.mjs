@@ -4,6 +4,7 @@
 // ED-QUI-07b1 (38.85): node tools/quest-sim.mjs --quest <id> [--json] [--root <dir>] runs ONE quest through the QUEST-E2E-ALL step
 // (ED-QUI-09: --all [--json] runs every giver quest on one shared runtime, one PASS/FAIL line each + total, exit 1 on any FAIL.)
 // chain (game/js/quest/questE2eRun.js, fresh runtime, prerequisites first) and prints every step; exit 1 names the first failing step.
+import fs from 'node:fs';
 import { staticReach } from './reach-check.mjs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createQuestBook, AVAILABLE, READY, DONE, ACTIVE, STATUS_NAMES } from '../game/js/quest/sim/questBook.js';
@@ -114,6 +115,7 @@ export function simulateQuests(defs, world, mainId = 'm1') {
 
 export function worldFacts(assets) {
   const w = { actors: new Set(), beasts: new Set(), areas: new Set(), pickups: new Map() };
+  try { for (const a of JSON.parse(fs.readFileSync(new URL('../content/beasts/spawnAreas.json', import.meta.url), 'utf8')).areas || []) for (let k = 1; k <= (a.count || 1); k++) w.beasts.add(a.kind + '.' + a.id + '.' + k); } catch { /* no painted areas */ } // QD-08: painted-area elites
   for (const world of Object.values(assets.worlds || {})) for (const e of world.entities || []) {
     w.actors.add(e.id);
     if (e.type === 'beast') w.beasts.add(e.id);

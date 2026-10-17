@@ -9,9 +9,9 @@ const disc = { id: 'east-meadow', shape: 'disc', x: 500, y: 400, r: 40, kind: 'b
 const poly = { id: 'tri', shape: 'polygon', pts: [[0, 0], [60, 0], [0, 60]], kind: 'grey_wolf', count: 4, respawnSec: 120, when: 'night' };
 
 // identity: shipped file is empty; an empty/absent areas list gives today's groups
-assert.equal(SPAWN_AREAS.length, 0);
+assert.ok(SPAWN_AREAS.every((a) => /^qd-/.test(a.id))); // QD-08: only the three warden elites are shipped
 const base = buildGroups(mem, 12, null, []);
-assert.deepEqual(buildGroups(mem, 12), base); assert.deepEqual(buildGroups(mem, 12, null, undefined), base); assert.deepEqual(buildGroups(mem, 12, null, null), base);
+assert.deepEqual(buildGroups(mem, 12).slice(0, base.length), base); assert.deepEqual(buildGroups(mem, 12, null, undefined).slice(0, base.length), base); assert.deepEqual(buildGroups(mem, 12, null, null), base); // QD-08: default = + shipped elite areas
 assert.equal(base.length, 2);
 
 // one painted area -> the expected group, appended after the rules; slots continue after the members
