@@ -50,7 +50,8 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
+import { selectSuites } from './testSelect.mjs';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -62,10 +63,11 @@ const SKIP_DIRS = new Set(['node_modules', '.git']);
 const SKIP_PATH_FRAGMENTS = ['design/preview'];
 
 function parseArgs(argv) {
-  const opts = { filter: [], json: null, timeoutMs: null };
+  const opts = { filter: [], json: null, timeoutMs: null, changed: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--filter') opts.filter.push(...String(argv[++i] ?? '').split(',').map((x) => x.trim()).filter(Boolean));
+    else if (a === '--changed') opts.changed = (argv[i + 1] && !argv[i + 1].startsWith('--')) ? argv[++i] : 'origin/master';
     else if (a === '--json') opts.json = argv[++i];
     else if (a === '--timeout-ms') opts.timeoutMs = Number(argv[++i]);
   }
@@ -192,7 +194,17 @@ async function main() {
     ? Number(process.env.KESTREL_TEST_TIMEOUT_MS)
     : 60000);
 
-  const suites = collectSuites(ROOT, opts.filter);
+  let suites = collectSuites(ROOT, opts.filter);
+  if (opts.changed) {
+    // RF17-19: only suites related to files changed vs the base (committed + working tree + untracked); check-deps always runs.
+    const git = (...a) => execFileSync('git', a, { cwd: ROOT, encoding: 'utf8' }).split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+    const changed = [...new Set([...git('diff', '--name-only', `${opts.changed}...HEAD`), ...git('diff', '--name-only', 'HEAD'), ...git('ls-files', '--others', '--exclude-standard')])];
+    const rel = (f) => toPosix(path.relative(ROOT, f));
+    const read = (f) => { try { return fs.readFileSync(path.join(ROOT, f), 'utf8'); } catch { return ''; } };
+    const keep = new Set(selectSuites(suites.map(rel), changed, read));
+    suites = suites.filter((f) => keep.has(rel(f)) || rel(f) === 'tools/check-deps.mjs');
+    console.log(`--changed ${opts.changed}: ${changed.length} changed file(s) -> ${suites.length} suite(s)`);
+  }
   const results = [];
   let anyFail = false;
   if (opts.filter.length) {

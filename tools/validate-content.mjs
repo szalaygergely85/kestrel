@@ -1279,6 +1279,13 @@ export function applyR19Allow(hits, allow = R19_ALLOW) {
   return errors;
 }
 
+// QUEST-WRITER-BATCH-01: pure grouping of allow-listed over-limit hits per quest pack (file path minus content/quests/). Returns { pack: [hits] }.
+export function groupR19ByPack(hits, allow = R19_ALLOW) {
+  const out = {};
+  for (const h of hits) if (allow[`${h.file}|${h.kind}`]) (out[h.file.replace(/^content[/]quests[/]/, '')] ||= []).push(h);
+  return out;
+}
+
 function readJsonTree(dir, suffix) {
   const out = [];
   const walk = (d) => { for (const e of readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) { const p = `${d}/${e.name}`; if (e.isDirectory()) walk(p); else if (e.name.endsWith(suffix)) { try { out.push({ path: p, json: JSON.parse(readFileSync(p, 'utf8')) }); } catch { /* parse errors reported elsewhere */ } } } };
@@ -1287,6 +1294,16 @@ function readJsonTree(dir, suffix) {
 }
 
 async function main() {
+  if (process.argv.includes('--r19-by-pack')) { // QUEST-WRITER-BATCH-01: report only, no full validation
+    const qd = fileURLToPath(new URL('../content/quests', import.meta.url)), dd = fileURLToPath(new URL('../content/dialogue', import.meta.url));
+    const root = fileURLToPath(new URL('..', import.meta.url)).split(String.fromCharCode(92)).join('/').replace(/[/]$/, '');
+    const rel = (f) => ({ ...f, path: f.path.split(String.fromCharCode(92)).join('/').replace(root + '/', '') });
+    const by = groupR19ByPack(lintQuestText([...readJsonTree(qd, '.json'), ...readJsonTree(dd, '.json')].map(rel)));
+    const li = process.argv.indexOf('--list'), want = li >= 0 ? process.argv[li + 1] : null;
+    if (want) { for (const h of by[want] || []) console.log(`${h.where}	${h.text.length}	${h.text}`); return; }
+    let sum = 0; for (const [k, v] of Object.entries(by).sort((a, b) => b[1].length - a[1].length)) { sum += v.length; console.log(`${String(v.length).padStart(4)}  ${k}`); }
+    console.log(`${String(sum).padStart(4)}  TOTAL`); return;
+  }
   const ASSETS = await loadDesignAssets();
   const meshFilesDir = fileURLToPath(new URL('../content/meshes', import.meta.url));
   const maskFilesDir = fileURLToPath(new URL('../content/masks', import.meta.url));
