@@ -5,7 +5,7 @@ import { buildGroups, createSpawnDirector, RESPAWN_SEC } from './spawnDirector.j
 import { SPAWN_AREAS, areaGid } from './spawnAreas.js';
 import { KINDS } from './beastKinds.js';
 
-const ELITES = { 'qd-hp-greyback': 'cave_bear', 'qd-sh-alpha': 'white_wolf', 'qd-glass-croc': 'river_crocodile' };
+const ELITES = { 'qd-hp-greyback': 'cave_bear', 'qd-sh-alpha': 'white_wolf', 'qd-glass-croc': 'river_crocodile', 'qd-downs-herder': 'goblin_torch_bearer' }; // QD-15 adds the Downs herder
 for (const [id, kind] of Object.entries(ELITES)) {
   const a = SPAWN_AREAS.find((x) => x.id === id);
   assert.ok(a && a.kind === kind && a.count === 1, 'area ' + id);
@@ -14,7 +14,7 @@ for (const [id, kind] of Object.entries(ELITES)) {
 }
 const areas = SPAWN_AREAS.filter((a) => ELITES[a.id]);
 const groups = buildGroups([], 12, null, areas);
-assert.equal(groups.length, 3);
+assert.equal(groups.length, 4);
 const respawned = [];
 const dir = createSpawnDirector({ groups, los: () => false, onRespawn: (g) => respawned.push(g) });
 const gi = groups.findIndex((g) => g.gid === areaGid(areas.find((a) => a.id === 'qd-hp-greyback')));

@@ -36,14 +36,7 @@
       "Two boars, rooting in the black ash.",
       "Drive them off and come back. Mind the dust."
     ]}, "requires": [{"flag": "waystone.ws_ashMile.woken"}], "returnText": "Back to the Ash Mile warden", "reward": {"coin": 25,"items": [{"id": "arrow", "n": 15}]}, "site": "warden_ashmile", "steps": [{"journal": "Boars root by the Ash Mile Waystone.", "objText": "Drive off 2 boars", "params": {"count": 2, "kind": "boar"}, "template": "kill"}], "title": "Rooting in the Ash"},
-    {"id": "sq.reg.downs", "lines": {"active": [
-      "Four boars, on the long green. Go."
-    ], "done": [
-      "Quiet green. Four fewer mouths on it."
-    ], "offer": [
-      "Four boars loose on the green. Four.",
-      "Drive them off the downs, then come back."
-    ]}, "requires": [{"flag": "waystone.ws_downs.woken"}], "returnText": "Back to the Downs warden", "reward": {"coin": 25,"items": [{"id": "potion.hp", "n": 2}]}, "site": "warden_downs", "steps": [{"journal": "Four boars are loose on the Downs.", "objText": "Drive off 4 boars", "params": {"count": 4, "kind": "boar"}, "template": "kill"}], "title": "Four on the Downs"},
+    {"id": "sq.reg.downs", "lines": {"active": ["Four boars, and a goblin driving them."], "done": ["Quiet green. Four fewer mouths on it."], "offer": ["Four boars on the green. Someone drives them.", "Drive them off, then find the herder."]}, "requires": [{"flag": "waystone.ws_downs.woken"}], "returnText": "Back to the Downs warden", "reward": {"items": [{"id": "potion.hp", "n": 3}], "coin": 25}, "site": "warden_downs", "steps": [{"journal": "Four boars are loose on the Downs.", "objText": "Drive off 4 boars", "params": {"count": 4, "kind": "boar"}, "template": "kill"}, {"journal": "A torch bearer drives the herd.", "objText": "Defeat the torch bearer", "params": {"count": 1, "ids": ["goblin_torch_bearer.qd-downs-herder.1"]}, "template": "kill"}], "title": "Four on the Downs"},
     {"id": "sq.reg.signalHill", "lines": {"active": [
       "Three wolves, and a white one behind."
     ], "done": [
@@ -52,14 +45,7 @@
       "Three wolves on the slope below. The light stutters.",
       "Drive them off. The white one will come out.", "Then come back up."
     ]}, "requires": [{"flag": "waystone.ws_signalHill.woken"}], "returnText": "Back to the Signal Hill warden", "reward": {"coin": 20,"items": [{"id": "arrow", "n": 40}, {"id": "potion.hp", "n": 1}]}, "site": "warden_signalhill", "steps": [{"journal": "Wolves prowl below Signal Hill.", "objText": "Drive off 3 wolves", "params": {"count": 3, "kind": "wolf"}, "template": "kill"}, {"journal": "A white wolf leads the pack.", "objText": "Defeat the White Alpha", "params": {"count": 1, "ids": ["white_wolf.qd-sh-alpha.1"]}, "template": "kill"}], "title": "The Hill Pack"},
-    {"id": "sq.reg.heath", "lines": {"active": [
-      "Three boars in the heather. Near the stone."
-    ], "done": [
-      "The heather springs back. It always does."
-    ], "offer": [
-      "Three boars tearing up the heather by the stone.",
-      "Drive them off, then come back here."
-    ]}, "requires": [{"flag": "waystone.ws_heath.woken"}], "returnText": "Back to the Heath warden", "reward": {"coin": 25,"items": [{"id": "potion.hp", "n": 2}]}, "site": "warden_heath", "steps": [{"journal": "Boars are tearing up the Heath.", "objText": "Drive off 3 boars", "params": {"count": 3, "kind": "boar"}, "template": "kill"}], "title": "Boars in the Heather"},
+    {"id": "sq.reg.heath", "lines": {"active": ["Three boars, then the dug-up lockbox."], "done": ["The heather springs back. It always does."], "offer": ["Three boars tore up the heather.", "Drive them off. Look for the box."]}, "requires": [{"flag": "waystone.ws_heath.woken"}], "returnText": "Back to the Heath warden", "reward": {"items": [{"id": "potion.hp", "n": 2}], "coin": 25}, "site": "warden_heath", "title": "Boars in the Heather", "objectives": [{"id": "boars", "text": "Drive off 3 boars", "journal": "Boars are tearing up the Heath.", "when": {"type": "beasts", "kind": "boar", "count": 3}}, {"id": "box", "text": "Open the dug-up lockbox", "journal": "Boars dug up a box in the heather.", "when": {"type": "flag", "id": "chest.chestHeath", "equals": true}}]},
     {"id": "sq.reg.reedmire", "lines": {"active": [
       "Three boars in the black water. In the reeds."
     ], "done": [

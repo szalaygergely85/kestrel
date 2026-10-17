@@ -112,7 +112,7 @@ export function createSpawnDirector(opts) {
     if (tick % CHECK_STEPS !== 0) return;
     if (D.pend.length) runPending();
     for (let g = 0; g < N; g++) {
-      if (!D.dead[g] || D.rule[g] === R_BOSS || tick < D.nextTry[g] || D.t < D.diedAt[g] + D.base[g] * D.mult) continue;
+      if (groups[g].when === 'night' || groups[g].reserve || !D.dead[g] || D.rule[g] === R_BOSS || tick < D.nextTry[g] || D.t < D.diedAt[g] + D.base[g] * D.mult) continue;
       const h = groups[g].home;
       if (!D.canSpawnAt(h[0], h[1], px, py, fx, fy)) { D.nextTry[g] = tick + RETRY_STEPS; D.deferred++; continue; }
       D.dead[g] = 0; D.alive[g] = groups[g].slots.length; D.respawns++;
@@ -129,7 +129,7 @@ export function createSpawnDirector(opts) {
     for (let g = 0; g < N; g++) {
       const gr = groups[g];
       for (let k = 0; k < gr.slots.length; k++) {
-        const m = gr.members[k], id = m && m.id, s = sim && id !== undefined && sim.slotOf ? sim.slotOf(id) : -1, slot = s >= 0 ? s : gr.slots[k];
+        const m = gr.members[k], id = m && m.id, s = sim && id !== undefined && sim.slotOf ? sim.slotOf(id) : -1, slot = sim && sim.slotOf && id !== undefined ? s : gr.slots[k];
         if (slot >= 0 && slot < max) D.groupOfSlot[slot] = g;
         gr.slots[k] = slot; // keep slots in step with the live sim
       }

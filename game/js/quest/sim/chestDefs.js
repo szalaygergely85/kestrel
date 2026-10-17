@@ -27,6 +27,7 @@ export const CHEST_TABLES = {
   chestBearDen: { fixed: [{ item: 'arrow', n: 12 }, { item: 'potion.hp', n: 1 }, { item: 'scroll.spell', n: 1 }], weighted: [], coin: [20, 40], gear: { tier: 'sturdy' } }, // UNDER-04: the stash behind the sleeping bear (guarded by the bear home, not by depth)
   chestStrandCave: { fixed: [{ item: 'arrow', n: 10 }, { item: 'potion.hp', n: 1 }], weighted: [], coin: [20, 40], gear: { tier: 'sturdy' } }, // UNDER-05: the smugglers' chest at the back of the Long Strand sea cave (guarded by the tortoise homes)
   chestGoblinTunnel: { fixed: [{ item: 'arrow', n: 12 }, { item: 'potion.hp', n: 1 }], weighted: [], coin: [20, 40], gear: { tier: 'sturdy' } }, // UNDER-06: the goblins' stash in the tunnel between campNorth and campEast (earned: opens when the 3 tunnel goblins are dead)
+  chestHeath: { fixed: [], weighted: [], coin: [5, 15], gear: { tier: 'sturdy' } }, // QD-15a dug-up lockbox
   chestWallow: { fixed: [{ item: 'boar.hide', n: 2 }], weighted: [], coin: [5, 15] }, // QD-09 Old Tusk stash
   chestCart: { fixed: [{ item: 'honeycomb', n: 1 }, { item: 'arrow', n: 10 }], weighted: [], coin: [5, 15], gear: { tier: 'worn' } }, // QD-05 The Tipped Cart strongbox (the honeycomb feeds sq.honey)
   chestHidden: { fixed: [], weighted: [], coin: [20, 40], gear: { tier: 'fine' } },

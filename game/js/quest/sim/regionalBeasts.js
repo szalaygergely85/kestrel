@@ -80,6 +80,8 @@ import { resolveDifficulty } from './difficulty.js';
 import { WOLF_MODEL } from './wolfBrain.js';
 import { UNDER_SITES, CEMETERY_TIER } from './underSkeletons.js'; // UNDER-01
 import { floorZ } from '../groundSnap.js';
+import { SPAWN_AREAS, areaGroupSpecs } from './spawnAreas.js';
+import { KINDS } from './beastKinds.js';
 export const MODEL = { boar: 'boarPlaceholder', wolf: WOLF_MODEL, bear: 'bearBlack', croc: 'crocodile', deer: 'deer', fox: 'fox', turtle: 'tortoise', goat: 'goat', whitewolf: WOLF_MODEL, cavebear: 'bearBlack', archer: 'goblin', shaman: 'goblin', chief: 'goblin', torch: 'goblinTorch', skelwar: 'skeleton', skelarch: 'skeletonArcher', skelbrute: 'skeleton', lynx: 'lynx', aurochs: 'aurochs' }; // BEAST-02: wolf packs use the real voxel_wolf model ('wolf')
 export const BODY = { boar: { height: 0.7, radius: 0.45 }, wolf: { height: 0.7, radius: 0.45 }, bear: { height: 1.1, radius: 0.7 }, croc: { height: 0.5, radius: 0.7 },
   deer: { height: 1.2, radius: 0.5 }, fox: { height: 0.6, radius: 0.35 }, turtle: { height: 0.5, radius: 0.5 }, goat: { height: 0.9, radius: 0.45 }, whitewolf: { height: 0.8, radius: 0.5 }, cavebear: { height: 1.3, radius: 0.8 }, archer: { height: 1.0, radius: 0.4 }, shaman: { height: 1.0, radius: 0.4 }, chief: { height: 1.3, radius: 0.5 }, torch: { height: 1.0, radius: 0.4 }, skelwar: { height: 1.8, radius: 0.35 }, skelarch: { height: 1.8, radius: 0.35 }, skelbrute: { height: 1.8, radius: 0.4 }, lynx: { height: 0.8, radius: 0.45 }, aurochs: { height: 1.5, radius: 0.8 } };
@@ -262,12 +264,32 @@ export function spawnRegionalBeasts(world, geo, seed, navArea, difficulty) { // 
       { voxel: { anim: 'idle', loop: true, model: MODEL[b.species] }, brain, targetable: { ...BODY[b.species] } }, b.id);
   }
   spawnUnderSkeletons(world);
+  spawnPaintedBeasts(world, seed ?? 12);
   return list;
+}
+
+/** Painted groups must exist before the sim allocates its stable records. Missing art stays a content blocker. */
+export function spawnPaintedBeasts(world, seed, areas = SPAWN_AREAS) {
+  for (const { area, members } of areaGroupSpecs(areas, seed, 0)) {
+    const kind = KINDS[area.kind];
+    if (!kind) continue;
+    const species = Object.keys(KIND_OF).find((s) => KIND_OF[s] === area.kind) || (area.kind === 'river_crocodile' ? 'croc' : area.kind);
+    const model = MODEL[species] || kind.model;
+    if (world.assets && !world.assets.has('model', model)) continue;
+    for (const m of members) {
+      if (world.get(m.id)) continue;
+      const brain = { kind: 'beast', beastKind: area.kind, home: [m.x, m.y], temperament: 'wary', group: area.id };
+      if (area.when === 'night' || area.reserve) brain.reserve = true;
+      world.spawn('beast', { x: m.x, y: m.y, z: spawnZ(world, m.x, m.y) },
+        { voxel: { anim: 'idle', loop: true, model }, brain, targetable: { ...(BODY[species] || BODY.boar) } }, m.id);
+    }
+  }
 }
 
 /** UNDER-01 (OB-191): the cemetery trio (reserve group, woken at night by underSkeletons.createUnderSpawner) + the idle pair in one ruin. Not in the returned list (the director does not own them). */
 export function spawnUnderSkeletons(world) {
   for (const site of UNDER_SITES) for (const m of site.members) {
+    if (site.painted) continue; // painted groups use their own kind/model below
     if (world.get(m[0])) continue; // restored from a save: already there
     const x = site.anchor[0] + m[2], y = site.anchor[1] + m[3], brain = { kind: 'beast', home: [x, y], temperament: 'wary' }; if (KIND_OF[m[1]]) brain.beastKind = KIND_OF[m[1]]; else brain.species = m[1]; // UNDER-04: legacy 'bear' keeps its brain.species
     if (site.night) { brain.group = site.group; brain.reserve = true; brain.tier = CEMETERY_TIER; }

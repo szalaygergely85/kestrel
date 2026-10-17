@@ -5,12 +5,17 @@
 // after beasts.step. beastView plays `rise` from sim.riseMs[slot] (Float32Array, created here).
 import { STATE_DYING, STATE_SINK, STATE_GONE, STATE_EAT } from './beastSim.js';
 import { isNightHour } from '../../audio/forestAmbience.js';
+import painted from '../../../../content/beasts/spawnAreas.json' with { type: 'json' };
 
 /** Cemetery sits in the downs band 2: tier 2 = level 5 (tower-side skeletons 3-5, kinds lv [3,10]); the ruin keeps its own zone band (whitecombs 5). */
 export const CEMETERY_TIER = 2;
 export const RISE_MS = 1200, WAKE_R = 30, NO_POP_R = 8, SAME_STRUCT_DZ = 3, VIEW_COS = 0.5;
 /** Sites. members: [id, species, dx, dy] (home = anchor + d). `night` sites are reserve groups; the ruin pair idles any time. */
 export const UNDER_SITES = Object.freeze([
+  ...(painted.areas || []).filter((a) => a.when === 'night').map((a) => Object.freeze({
+    id: a.id, anchor: [a.x, a.y], night: true, group: a.id, painted: true,
+    members: Object.freeze(Array.from({ length: a.count }, (_, k) => [`${a.kind}.${a.id}.${k + 1}`, a.kind, 0, 0])),
+  })),
   Object.freeze({ id: 'cemetery', anchor: [1644, 1372], night: true, group: 'under.cemetery', members: Object.freeze([
     ['skelwar.cemetery.1', 'skelwar', -3, 1], ['skelwar.cemetery.2', 'skelwar', 3, 2], ['skelarch.cemetery.1', 'skelarch', 0, -3]]) }),
   // UNDER-02: the crypt under the cemetery (any time of day; z = crypt floor, so the spawner's |dz| < 3 m rule keeps them apart from the surface cemetery)
@@ -38,7 +43,7 @@ export const key = (id, what) => `under.${id}.${what}`;
  */
 export function createUnderSpawner({ sim, site, state, structureAt }) {
   const slots = [], ids = [], homes = [];
-  for (const m of site.members) { const s = sim.slotOf(m[0]); if (s >= 0) { slots.push(s); ids.push(m[0]); homes.push([site.anchor[0] + m[2], site.anchor[1] + m[3]]); } }
+  for (const m of site.members) { const s = sim.slotOf(m[0]); if (s >= 0) { slots.push(s); ids.push(m[0]); const t = sim.entities[s].transform; homes.push(site.painted ? [t.x, t.y] : [site.anchor[0] + m[2], site.anchor[1] + m[3]]); } }
   const n = slots.length;
   if (!sim.riseMs || sim.riseMs.length < sim.count) sim.riseMs = new Float32Array(sim.count);
   const awake = new Uint8Array(n), deadNow = new Uint8Array(n), sinking = new Uint8Array(n);
@@ -77,6 +82,10 @@ export function createUnderSpawner({ sim, site, state, structureAt }) {
         if (d2 < NO_POP_R * NO_POP_R && dx * fx + dy * fy > VIEW_COS * Math.sqrt(d2)) continue; // never pop in within 8 m in view: wait until it is out of view
         if (!sim.down[s]) sim.setDown(s, true); // corpse / gone leftovers of an earlier night: park, then wake fresh (hp restored)
         sim.setDown(s, false); sim.riseMs[s] = RISE_MS; awake[k] = 1; sinking[k] = 0; S.wakes++;
+      } else if (site.painted) {
+        // Night-only quest targets are untargetable from the first daylight step.
+        if (!sim.down[s]) sim.setDown(s, true);
+        awake[k] = 0; sinking[k] = 0;
       } else if (awake[k] && !deadNow[k]) { // dawn: the living sink back
         if (!sinking[k]) { sinking[k] = 1; if (!sim.down[s] && !deadSt(st)) { sim.state[s] = STATE_SINK; sim.timer[s] = sim.cfgSteps.sink; sim.deathZ[s] = sim.entities[s].transform.z; sim.steer.vx[s] = 0; sim.steer.vy[s] = 0; } }
         else if (st === STATE_GONE && !sim.down[s]) { sim.setDown(s, true); awake[k] = 0; sinking[k] = 0; }

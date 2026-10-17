@@ -32,6 +32,17 @@
       "count": 1,
       "respawnSec": 1200,
       "when": "both"
+    },
+    {
+      "id": "qd-downs-herder",
+      "kind": "goblin_torch_bearer",
+      "shape": "disc",
+      "x": 1566,
+      "y": 1422,
+      "r": 6,
+      "count": 1,
+      "respawnSec": 1200,
+      "when": "both"
     }
   ]
 }
