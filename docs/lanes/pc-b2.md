@@ -1387,3 +1387,7 @@ Remaining R9 count: 3 (sq.reg.highPastures b8, sq.reg.signalHill b7, sq.reg.heat
 - engine/render/lighting.js: runtime scales on the palette flicker (FLICK_GENTLE hz x0.25, amount x0.45, jitter x0.4); URL `?torchflick=0` off / `old` pre-FD-07 / default gentle (setTorchFlicker). Noise was already smoothstep value noise; the problem was rate (10-16 Hz ~ random per frame) x depth. Max per-frame col step of the worst torch 0.135 -> 0.0155.
 - A/B flicker-gate default path --diag: cryptWalk glyphOnly old 16.87 / off 14.12 / gentle(0.3,0.7) 14.74 / final(0.25,0.45) ~14.4 (gate row 14.44, baseline 15.98); stillPct 5.81 -> 0.44 (off) -> 3.6. Torch = ~2.7 pts of 16.9 (16 %); remaining crypt flips are line/level/tex classes (see FD-03/04). townWalk unchanged (4.88 / 4.80, no torches in view).
 - Test: lighting.test.js FD-07 block (step <= 0.016, range >= 0.08) 248/248 PASS. gpucompare not run: JS-side light pos/col only, GPU and twin read the same buffers (no shader change).
+
+## FD-07 ARCH CHANGES F (kestrel-4, torchfix) - arch-review
+- lighting.js no longer reads location; setTorchFlicker('gentle'|'off'|'old') exported from engine/index.js + api-1.0.json (manifest regenerated, also picked up pre-existing setAltDice/DEFAULT_REASONS/flickerDefaultReasons). Lighting test unchanged (uses FLICK scales), lighting+api green, check-deps OK.
+- NEEDS B1-main: next to setFarForest: `setTorchFlicker(({ '0': 'off', old: 'old' })[params.get('torchflick')] || 'gentle');` (import setTorchFlicker from the engine entry).

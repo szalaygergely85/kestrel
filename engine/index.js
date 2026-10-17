@@ -61,7 +61,7 @@ export { serialize, deserialize } from './world/serialize.js';
 // remain stable clients of the mesh render path and editor.
 export { ambientL } from './render/sky.js';
 export { PROJ_HFOV_DEG as HFOV_DEG } from './render/projection.js';
-export { sunFromWorld } from './render/lighting.js';
+export { sunFromWorld, setTorchFlicker } from './render/lighting.js'; // FD-07: 'gentle' (default) | 'off' | 'old'
 export { shadeTerrainCells } from './render/terrainShade.js';
 export { buildTuftAtlas, tuftLookup, tuftPlaneT, texelR, texelG, TUFT_ATLAS_DEFAULTS } from './render/tuftAtlas.js';
 export { sunFromHours, sunPathFrom, SUN_PATH_DEFAULT } from './core/sunPath.js';
