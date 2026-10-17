@@ -34,11 +34,25 @@ try {
   await evaluate(cdp, 'window.__editor.rebuildNow()');
   assert.equal(await wet(1500, 1000), 'floodedCellar', 'the new area is water after the resize');
   assert.deepEqual(await evaluate(cdp, 'window.__editor.water.tool.current().rect'), [1485, 995, 1503, 1005]);
+  // circle: quietPond (c 1500,1010 r 4): drag the rim handle 2 m east -> r 6
+  assert.equal(await wet(1505, 1010), false, 'pond dry at 5 m before');
+  await evaluate(cdp, "window.__editor.water.tool.select('quietPond')");
+  const ok2 = await evaluate(cdp, `(() => { const t = window.__editor.water.tool; if (!t.down(1504, 1010)) return 'no-down'; t.move(1506, 1010); return t.up() ? 'ok' : 'no-up'; })()`);
+  assert.equal(ok2, 'ok');
+  await evaluate(cdp, 'window.__editor.rebuildNow()');
+  assert.equal(await wet(1505, 1010), 'quietPond', 'pond grew to r 6');
+  assert.equal(await evaluate(cdp, 'window.__editor.water.tool.current().r'), 6);
+  // frame the camera on the cellar (as the list select does) and take the still AFTER the framing
   mkdirSync(path.join(ROOT, 'docs/test-reports/edwater'), { recursive: true });
-  await evaluate(cdp, `window.__editor.setCamPose({ x: 1494, y: 975, z: window.__editor.world.floorAt(1494, 1000) + 14, yawDeg: 0, pitchDeg: -35 })`);
-  await pause(1500);
+  await evaluate(cdp, "window.__editor.water.tool.select('floodedCellar'); window.__editor.water.frame('floodedCellar')");
+  await pause(2000);
   const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });
   writeFileSync(path.join(ROOT, 'docs/test-reports/edwater/resized.png'), Buffer.from(shot.data, 'base64'));
+  await evaluate(cdp, "window.__editor.water.tool.select('quietPond'); window.__editor.water.frame('quietPond')");
+  await pause(2000);
+  writeFileSync(path.join(ROOT, 'docs/test-reports/edwater/pond.png'), Buffer.from((await cdp.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+  await evaluate(cdp, 'window.__editor.doUndo(); window.__editor.rebuildNow()'); // undoes the pond
+  assert.equal(await wet(1505, 1010), false, 'undo restores the small pond');
   // undo puts it back
   await evaluate(cdp, 'window.__editor.doUndo(); window.__editor.rebuildNow()');
   assert.equal(await wet(1500, 1000), false, 'undo restores the dry area');

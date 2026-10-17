@@ -18,7 +18,7 @@ import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clo
 import { createAxisGizmo } from './axisGizmo.js';
 import { createQuestOverlay } from './questOverlay.js';
 import { createAreaOverlay } from './aiAreaOverlay.js'; // ED-AI-05
-import { createWaterTool } from './waterTool.js'; // ED-WATER-01 (OB-223)
+import { createWaterTool, frameCamera } from './waterTool.js'; // ED-WATER-01 (OB-223)
 import { mountWaterPanel, createWaterOverlay } from './waterPanel.js';
 import { unprojectCell, rayPoint, projectPoint, screenCentreGroundHit } from './ray.js';
 import { pickAt, pickMarkers } from './pick.js';
@@ -2984,8 +2984,12 @@ function drawAssetGhost() {
 // ED-WATER-01 (OB-223): rect water regions of the world file; edits are normal commit() records (rebuild reloads world.water).
 let waterOn = false;
 const waterTool = createWaterTool({ doc, fileId: fileKey('world', doc.worldId), commit, onChange: () => { frame.markDirty(); waterPanel.refresh(); } });
-const waterPanel = mountWaterPanel(document.body, { tool: waterTool, onToggle: (on) => { waterOn = on; frame.markDirty(); } });
-const waterOverlay = createWaterOverlay({ rt, getCam: () => cam, renderer: RENDERER });
+const waterPanel = mountWaterPanel(document.body, { tool: waterTool, onToggle: (on) => { waterOn = on; frame.markDirty(); }, onFrame: (id) => frameWater(id) });
+function frameWater(id) { // list select: look at the water from above-south, region fills ~60% of the view
+  const b = waterTool.bounds(id); if (!b) return;
+  cam = createCameraPose({ ...cam, ...frameCamera(b, world.floorAt((b[0] + b[2]) / 2, (b[1] + b[3]) / 2), cam.fov) }); frame.markDirty();
+}
+const waterOverlay = createWaterOverlay({ rt, getCam: () => cam, renderer: RENDERER, floorAt: (x, y) => world.floorAt(x, y) });
 const overlayPlate = createOverlayTarget(engine.ui, rt);
 const overlayGlyph = createOverlayTarget(engine.ui, rt, { glyphOnly: true });
 const aiAreaOverlay = createAreaOverlay({ rt, getCam: () => cam, floorAt: (x, y) => world.floorAt(x, y), renderer: RENDERER, names: (k) => (aiTool() && aiTool().model && creaturesHandle.kindName ? creaturesHandle.kindName(k) : k) });
@@ -3068,7 +3072,7 @@ window.__editor = {
   doImportVox,
   // OB-218: model keys of the voxel instances queued for the last frame (verify-editor-characters.mjs)
   drawnModelKeys: () => { const p = frame.voxelPool; return p.raw.slice(0, p._rawCount).map((r) => r.modelKey); },
-  water: { tool: waterTool, panel: waterPanel, setOn: (on) => { const c = document.querySelector('#water-on'); c.checked = !!on; c.dispatchEvent(new Event('change')); } }, // ED-WATER-01 (verify-editor-water.mjs)
+  water: { overlay: waterOverlay, frame: frameWater, tool: waterTool, panel: waterPanel, setOn: (on) => { const c = document.querySelector('#water-on'); c.checked = !!on; c.dispatchEvent(new Event('change')); } }, // ED-WATER-01 (verify-editor-water.mjs)
   setCamPose: (o) => { cam = createCameraPose({ ...cam, ...o }); frame.markDirty(); },
 };
 

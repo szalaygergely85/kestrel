@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createStack } from './undo.js';
 import { applyEdit, invert } from './commands.js';
-import { isEditable, readOnlyReason, GENERATED_TIP, hitTest, hitHandle, handles, resizeRect, moveRect, setRectSize, createWaterTool } from './waterTool.js';
+import { isEditable, readOnlyReason, GENERATED_TIP, hitTest, hitHandle, handles, resizeRadius, circleHandles, frameCamera, resizeRect, moveRect, setRectSize, createWaterTool } from './waterTool.js';
 
 const mk = () => ({ water: [
   { id: 'big', look: 'sea', rect: [0, 0, 100, 100], shape: 'rect', z: 0 },
@@ -21,11 +21,11 @@ const redo = (s) => { const r = s.stack.redo(); applyEdit(s.doc, r); };
 
 // rect-only rule
 const d = mk().water;
-assert.ok(isEditable(d[0]) && isEditable(d[2])); assert.ok(!isEditable(d[3]) && !isEditable(d[4]));
+assert.ok(isEditable(d[0]) && isEditable(d[2]) && isEditable(d[3])); assert.ok(!isEditable(d[4]));
 assert.equal(readOnlyReason(d[4]), GENERATED_TIP); assert.equal(readOnlyReason(d[0]), '');
 // hit-test: smallest wins, read-only skipped
 assert.equal(hitTest(d, 1490, 1000).id, 'cellar'); assert.equal(hitTest(d, 15, 15).id, 'noshape'); assert.equal(hitTest(d, 50, 50).id, 'big');
-assert.equal(hitTest(d, 5, 5).id, 'big'); assert.equal(hitTest(d, 500, 500), null);
+assert.equal(hitTest(d, 5, 5).id, 'pond'); assert.equal(hitTest(d, 9.5, 5).id, 'big', 'outside the circle'); assert.equal(hitTest(d, 500, 500), null);
 // handles
 assert.equal(handles([0, 0, 10, 10]).length, 8);
 assert.equal(hitHandle([0, 0, 10, 10], 9.5, 9.8), 'ne'); assert.equal(hitHandle([0, 0, 10, 10], 5, 0.4), 's'); assert.equal(hitHandle([0, 0, 10, 10], 5, 5), null);
@@ -57,8 +57,18 @@ assert.ok(tool.down(1490, 998)); tool.move(1490, 998); assert.ok(!tool.up(), 'un
 assert.ok(!tool.down(0, 0));
 // read-only refuses
 tool.select('braid'); assert.ok(!tool.down(0, 0)); assert.ok(!tool.setSurfaceZ(1)); assert.equal(tool.st.msg, GENERATED_TIP);
-tool.select('pond'); assert.ok(!tool.setSize(3, 3));
-assert.equal(JSON.stringify(def.water[3]), JSON.stringify(mk().water[3]));
+tool.select('pond'); assert.ok(!tool.setSize(3, 3), 'size is for rects');
+// circle: move, radius handle, min 1 m, z, one undo step each
+const n0 = s.stack.size;
+assert.ok(tool.down(5, 5)); tool.move(7, 6); assert.ok(tool.up()); assert.deepEqual([def.water[3].c, def.water[3].r], [[7, 6], 4]); assert.equal(s.stack.size, n0 + 1);
+assert.ok(tool.down(11.2, 6)); tool.move(13, 6); assert.ok(tool.up()); assert.equal(def.water[3].r, 6); assert.equal(s.stack.size, n0 + 2);
+assert.ok(tool.down(13, 6)); tool.move(7.2, 6); tool.up(); assert.equal(def.water[3].r, 1, 'min radius');
+assert.ok(tool.setRadius(2.5)); assert.equal(def.water[3].r, 2.5); assert.ok(!tool.setRadius(2.5)); assert.ok(tool.setSurfaceZ(2.2));
+assert.ok(!tool.down(40, 40)); assert.equal(resizeRadius([0, 0], 0.2, 0), 1);
+assert.equal(circleHandles({ c: [1, 2], r: 3 })[0].x, 4);
+// framing
+const fc = frameCamera([0, 0, 10, 10], 2, 90); assert.equal(fc.x, 5); assert.ok(fc.y > 5 && fc.z > 2); // yaw 0 looks toward -y: camera on the +y side
+assert.deepEqual(tool.bounds('pond'), [7 - 2.5, 6 - 2.5, 7 + 2.5, 6 + 2.5]);
 // full undo restores byte-identical json; key order kept through a parse round trip
 while (s.stack.canUndo) undo(s); assert.equal(JSON.stringify(def), before);
 assert.equal(JSON.stringify(JSON.parse(JSON.stringify(def))), before);
