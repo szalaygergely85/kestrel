@@ -2021,3 +2021,5 @@ Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-
 
 - SUITES-RED-1016 / AA-03a-FIX / RENDER-ALLOC-01-GATE (kestrel-2, suitesred): re-ran groundLook, contactAO, geoLayers, compositor(.alloc), waterComposite(.alloc), coverageColour on this branch: all 12 suites PASS (Node here), already fixed upstream; no code/golden changed. Node 24 not available here, so alloc gates unverified there (compositor.alloc 14.5 s still > 5 s goal).
 - check-deps fixed: tools/verify-slot-enter.mjs imports Input from engine/index.js (was deep engine/core/input.js); no render change.
+
+- RF17-09 (kestrel-2, rf1709): per-frame light path measured, NOT optimised (valid result). tools/bench-lights.mjs (28 pool lights + 3 runtime, walking camera): selectPlaced+updateBuffered = 1.76 us/frame (0.0018 ms, limit 0.05 ms); selectPlaced 0.10 us (already cached: POOL_RESELECT_M 0.5 m early return + swap hysteresis), update 1.37 us. Caveat: stub world (structureAt -> null); real structureAt cost not included, but vis grids are cached by cell/version. No engine change. Status: done (no-op).
