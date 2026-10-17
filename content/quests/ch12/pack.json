@@ -1044,26 +1044,25 @@
       "id": "sq.fc.ford",
       "title": "Wet Boots",
       "site": "postkeeper",
-      "steps": [
+      "objectives": [
         {
-          "template": "explore",
-          "params": {
-            "areas": [
-              "riverBank"
-            ]
+          "id": "cross",
+          "text": "Cross to the west bank",
+          "when": {
+            "type": "area",
+            "id": "fordWest"
           },
-          "objText": "Walk down to the river bank",
-          "journal": "Wet boots ahead. Go down to the river."
+          "journal": "Wade across to the west bank."
         },
         {
-          "template": "explore",
-          "params": {
-            "areas": [
-              "fordWest"
-            ]
+          "id": "crate",
+          "text": "Open the sunk crate",
+          "when": {
+            "type": "flag",
+            "id": "chest.chestBoots",
+            "equals": true
           },
-          "objText": "Cross to the west bank",
-          "journal": "Wade across to the west bank."
+          "journal": "A boot crate sank by the ford stones."
         }
       ],
       "requires": [
@@ -1073,26 +1072,29 @@
         }
       ],
       "reward": {
-        "gear": {
-          "slot": "feet",
-          "tier": 2
-        }
+        "items": [
+          {
+            "id": "arrow",
+            "n": 10
+          }
+        ]
       },
       "band": 4,
-      "returnText": "Report to the post-keeper",
+      "returnText": "Tell the post-keeper about the boots",
       "lines": {
         "offer": [
-          "The ford's past the bend. Wet boots are the price.",
-          "Cross to the west bank, then come back to me."
+          "A boot-maker lost a crate in the ford, last spring.",
+          "Those boots never slip on wet stone. Fetch them?"
         ],
         "active": [
-          "Down to the river. Across to the west bank."
+          "West bank, below the stones. A turtle sits there."
         ],
         "ready": [
-          "Wet to the knee. Here. Dry boots. Better ones."
+          "River Boots. Sure on wet stone. Keep them.",
+          "Ten arrows too. For the turtle bites."
         ],
         "done": [
-          "Dry feet. Out here, that's half of living."
+          "Good boots. They never slip. Mind the moss."
         ]
       }
     },
@@ -1199,59 +1201,6 @@
         ],
         "done": [
           "Every road goes somewhere. Most go west."
-        ]
-      }
-    },
-    {
-      "id": "sq.fc.again",
-      "title": "Back Across",
-      "site": "postkeeper",
-      "steps": [
-        {
-          "template": "explore",
-          "params": {
-            "areas": [
-              "riverBank"
-            ]
-          },
-          "objText": "Come back to the river bank",
-          "journal": "Crossed. Now back to the river bank."
-        }
-      ],
-      "requires": [
-        {
-          "quest": "mq.river.road",
-          "step": "riverBank"
-        },
-        {
-          "quest": "sq.fc.cross",
-          "done": true
-        }
-      ],
-      "reward": {
-        "items": [
-          {
-            "id": "arrow",
-            "n": 10
-          }
-        ]
-      },
-      "band": 4,
-      "returnText": "Report to the post-keeper",
-      "lines": {
-        "offer": [
-          "One more crossing. Back to the river bank.",
-          "See the stones hold both ways. Then me."
-        ],
-        "active": [
-          "Back to the river bank. Mind the moss."
-        ],
-        "ready": [
-          "Both ways, then. The ford's sound.",
-          "Ten arrows. For the wet boots."
-        ],
-        "done": [
-          "Ford's sound. You're sound. Good day's work."
         ]
       }
     },
@@ -1367,16 +1316,39 @@
       "id": "sq.tm.cart",
       "title": "The Cart on the Road",
       "site": "burl",
-      "steps": [
+      "objectives": [
         {
-          "template": "explore",
-          "params": {
-            "areas": [
-              "wagon"
-            ]
+          "id": "look",
+          "text": "Search the tipped cart",
+          "when": {
+            "type": "flag",
+            "id": "talk.rsInspectWagon",
+            "equals": true
           },
-          "objText": "Look at the cart by the road",
-          "journal": "Look in the old cart by the road."
+          "journal": "Search the tipped cart by the road."
+        },
+        {
+          "id": "robbers",
+          "text": "Drive off the cart robbers",
+          "when": {
+            "type": "beasts",
+            "ids": [
+              "qd05_bandit1",
+              "qd05_bandit2"
+            ],
+            "count": 2
+          },
+          "journal": "Robbers hide in the verge grass."
+        },
+        {
+          "id": "box",
+          "text": "Open the strongbox",
+          "when": {
+            "type": "flag",
+            "id": "chest.chestCart",
+            "equals": true
+          },
+          "journal": "Open the strongbox under the cart."
         }
       ],
       "requires": [
@@ -1404,15 +1376,15 @@
       "returnText": "Tell Burl about the cart",
       "lines": {
         "offer": [
-          "I smell a cart on the road west. Wood, and old rope.",
-          "No horse. Go and tell me what it carried."
+          "I smell honey and fear on a cart, down the road.",
+          "Someone left in a hurry. Search it for me?"
         ],
         "active": [
-          "The cart, down the road west. Mind the crates."
+          "The tipped cart, west on the road. Watch the grass."
         ],
         "ready": [
-          "Empty and tipped. Whoever left it left in a hurry.",
-          "Feathered sticks. They were in the straw."
+          "Robbers, and a strongbox. Honey, too!",
+          "Ten arrows for you. The comb is mine."
         ],
         "done": [
           "A tipped cart. Many left in a hurry, that year."
@@ -2032,16 +2004,36 @@
       "id": "sq.fc.jetty",
       "title": "Rotten Planks",
       "site": "postkeeper",
-      "steps": [
+      "objectives": [
         {
-          "template": "explore",
-          "params": {
-            "areas": [
-              "jetty"
-            ]
+          "id": "walk",
+          "text": "Walk out on the old jetty",
+          "when": {
+            "type": "area",
+            "id": "jetty"
           },
-          "objText": "Walk out on the old jetty",
           "journal": "Walk out on the old jetty, carefully."
+        },
+        {
+          "id": "cog",
+          "text": "Take the brass cog",
+          "when": {
+            "type": "item",
+            "id": "cog"
+          },
+          "journal": "A brass cog lies at the jetty end."
+        },
+        {
+          "id": "eel",
+          "text": "Drive off the reed eel",
+          "when": {
+            "type": "beasts",
+            "ids": [
+              "qd07_eel"
+            ],
+            "count": 1
+          },
+          "journal": "A reed eel strikes from the water."
         }
       ],
       "requires": [
@@ -2058,7 +2050,7 @@
         "items": [
           {
             "id": "arrow",
-            "n": 5
+            "n": 10
           }
         ]
       },
@@ -2066,18 +2058,18 @@
       "returnText": "Report to the post-keeper",
       "lines": {
         "offer": [
-          "An old jetty runs out over the water. Rotten.",
-          "Walk out on it, slowly. Tell me if it holds."
+          "A brass cog washed onto the old jetty. Joss needs one.",
+          "Walk out on the planks, slowly. Bring it back."
         ],
         "active": [
-          "The jetty. Step light. Plank by plank."
+          "The jetty end. Step light. Something lurks below."
         ],
         "ready": [
-          "It held? Half of it, anyway. Good to know.",
-          "Five arrows. Dry ones, at least."
+          "You got the cog, and the eel let go. Good.",
+          "Ten arrows. Joss will be glad of it."
         ],
         "done": [
-          "Half a jetty. Better than none."
+          "Half a jetty. A whole cog. Fair trade."
         ]
       }
     },
