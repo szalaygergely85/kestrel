@@ -65,6 +65,7 @@ function projectedSlot() {
     rect: { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0, minCol: 0, maxCol: 0, minRow: 0, maxRow: 0, empty: false } };
 }
 
+const HYST_D2 = 0.9; // d^2 factor (~5% distance) for entities drawn last frame
 export class VoxelPool {
   constructor() {
     /** RE-02b F1: which renderer resolves an unset `cam.projection` ('mesh' -> pitched). */
@@ -122,6 +123,8 @@ export class VoxelPool {
     this._nearDist = new Float64Array(MAX_VOX_INSTANCES_MESH);
     this._nearPri = new Int8Array(MAX_VOX_INSTANCES_MESH); // VOX-PRIO-01: tier of each selected entry
     this._collectWarned = 0;
+    this.prioRange = 40; // RF17-11: tier-1 entities (NPCs/hostiles) outrank props only within this many metres
+    this._selFrame = 0;
     this._pushWarned = 0;
   }
 
@@ -340,6 +343,8 @@ export class VoxelPool {
     const cx = cam ? lodCentreX(cam) : 0, cy = cam ? lodCentreY(cam) : 0, cz = cam ? lodCentreZ(cam) : 0;
     const idx = this._nearIdx, dist = this._nearDist, pri = this._nearPri;
     let count = 0;
+    const prevFrame = this._selFrame, curFrame = prevFrame + 1, prioR2 = this.prioRange * this.prioRange;
+    this._selFrame = curFrame;
     for (let i = 0; i < n; i++) {
       // US-079b0 (37.16.1 item 1): a hidden entity does not take one of the
       // nearest `cap` slots (checked before the distance sort, so it can't
@@ -347,10 +352,14 @@ export class VoxelPool {
       const vc = ents[i].components.voxel;
       if (vc.hidden === true) continue;
       // VOX-PRIO-01 (OB-171): higher `priority` tier (0..3, default 0) ranks before any distance; distance breaks ties.
-      const p = vc.priority > 0 ? (vc.priority > 3 ? 3 : vc.priority | 0) : 0;
+      let p = vc.priority > 0 ? (vc.priority > 3 ? 3 : vc.priority | 0) : 0;
       const t = ents[i].transform;
       const dx = t.x - cx, dy = t.y - cy, dz = t.z - cz;
-      const d2 = dx * dx + dy * dy + dz * dz;
+      let d2 = dx * dx + dy * dy + dz * dz;
+      // RF17-11: tier 1 (NPCs/hostiles) only outranks plain props within `prioRange` m; farther it competes by distance like tier 0. Tier >= 2 (markers) always wins.
+      if (p === 1 && d2 > prioR2) p = 0;
+      // Hysteresis: an entity drawn last frame gets ~5% distance credit, so two near-equal entities never flip-flop under camera jitter.
+      if (ents[i]._voxSel === prevFrame) d2 *= HYST_D2;
       let j;
       if (count < ecap) {
         j = count - 1; count++;
@@ -360,7 +369,7 @@ export class VoxelPool {
       while (j >= 0 && (pri[j] < p || (pri[j] === p && dist[j] > d2))) { dist[j + 1] = dist[j]; idx[j + 1] = idx[j]; pri[j + 1] = pri[j]; j--; }
       dist[j + 1] = d2; idx[j + 1] = i; pri[j + 1] = p;
     }
-    for (let k = 0; k < count; k++) this._queueEntity(ents[idx[k]]);
+    for (let k = 0; k < count; k++) { ents[idx[k]]._voxSel = curFrame; this._queueEntity(ents[idx[k]]); }
   }
 
   /**

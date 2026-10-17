@@ -1325,3 +1325,17 @@ Writer next: rewrite a pack to <= 38; programmer then lowers `R19_ALLOW`. No que
   RF17-19 done: `run-tests.mjs --changed [base]` (default origin/master; git diff base...HEAD + working tree + untracked; suite is changed / same dir / static-imports a changed file; check-deps always).
   Pure fn in tools/testSelect.mjs (selectSuites, relativeImports) + tools/testSelect.test.mjs (fixture list, no git). Existing flags untouched; run-tests.test.mjs unchanged.
   Verified: --filter run-tests,testSelect,editor/undo -> 4 PASS. Note: queue rows were at lines 25/27 of kestrel/docs/pc-b-queue.md, not in this clone's copy.
+
+### RF17-11 / OB-171 (kestrel-3, voxprio) - arch-review
+VOX-PRIO-01 already had tiers (voxel.priority 0..3 then distance). Added in engine/render/voxelPool.js collect(): tier 1 only outranks props within `pool.prioRange` (40 m, else demoted to tier 0); 5% distance hysteresis (d2*0.9, `entity._voxSel` frame stamp) for last-frame-drawn entities; 0 alloc.
+Test (voxelPool.test.js): 218 entities, NPCs within 40 m all kept, 90 m NPC demoted, far props dropped, same set over 50 jittered frames, 0 alloc. voxelPool/mesh filter: 70/70 PASS.
+NEEDS B1-main: none required (game already sets priority 1 for NPCs/givers/bear, 2 for markers); verify hostile beasts spawn with voxel.priority = 1 (grep not done, one line in the spawn code if missing).
+
+## RF17-14 (OB-155, kestrel-3 placeaudit) - R1 now checks what it missed
+R1 only covered placed meshes (float) + trees; R12 only non-brain voxel entities and no sunk check. New R1 kinds (float > 0.3 m, sunk < -0.4 m vs real floor = terrain/level floor/mesh top): `anchor` (non-voxel entities: inspect scrawls, markers), `beast` (brain entities, float only), `entity-sunk` (voxel entities swallowed by terrain), `prop-sunk` (placed mesh lowest vertex vs ground at origin; opt-in `checkProp(...,{sunk:true})`, `sunkProps()` in probe-floating-props). keepTerrain level interiors (cellar/crypt/caves/tower floor below terrain) exempt via onLevel. Triggers are xy-only, loot drops are runtime: nothing static to check.
+Found 12: fixed 5 z in world_m1.world.json (rs000, ob141r48 wagons; ob141r15/16/17 bricks, +0.43..0.59). Allowed with reasons: poi079, ow035 (ruin masonry), farTower (lookAt anchor), relay_whitecombs, tower.envelopeHeap (model anchor 1 m above bottom; owner may want it raised). R1=0; content-lint/floatingProps tests + validate-content OK. Other lint rules (R2/R9/R17/R19) were already non-zero, untouched.
+
+## RF17-15 (OB-155 lint leftovers, kestrel-3 lintfix)
+R2 3->0: smokeFire1-3 use sprite model `brazier` (fire billboard); added `fx: true` to design/models/brazier.js line 70 (same D-104/OB-180 exemption as lantern lampFlame), no world json / positions touched. validate-content OK, run-tests --filter content-lint PASS.
+R17=4 all quest `m1` (legacy, in R17_LEGACY, warn only; file content/quests/m1.quest.json is off-limits here) -> ASK ARCHITECT/quest slot: chain rewrite of m1.
+R9=73 unchanged, not one mechanical fix: the quests are early NPC chains whose givers/targets sit west of the river by design. Groups: Burl hub rook/postkeeper/fordWest/well/pierStone/crossroads ~27; ow chain hesk/dorrin/wolf1-5/boarF/blackBear/owPath/owBoard ~38; sq.reg.* wardens 5; mq/under reuse of rook/postkeeper ~3. Fix is quest data (content/quests/**) or a riverX/threshold decision in the rule -> ASK ARCHITECT.

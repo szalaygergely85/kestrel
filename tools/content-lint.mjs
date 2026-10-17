@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 export * from './content-lint-rules.js';
-import { MAX_FLOAT, GIVER_MAX_UP, GIVER_WALK_R, ENT_MAX_FLOAT, BURY_MIN, BURY_MAX, OBJECT_GIVER_MAX, SMOKE_SRC_R, CHIMNEY_R, CHIMNEY_MIN, CHEST_R, RULES, LEVELS, TITLES, RAW_DOTTED, RAW_CAMEL, rawIn, r5One, r10Quest, r12One, r14Quest, meshTopAt, lint, line } from './content-lint-rules.js';
+import { MAX_FLOAT, GIVER_MAX_UP, GIVER_WALK_R, ENT_MAX_FLOAT, BURY_MIN, BURY_MAX, OBJECT_GIVER_MAX, SMOKE_SRC_R, CHIMNEY_R, CHIMNEY_MIN, CHEST_R, RULES, LEVELS, TITLES, RAW_DOTTED, RAW_CAMEL, rawIn, r5One, r10Quest, r12One, r14Quest, meshTopAt, lint, line, SUNK_MAX, R12_SKIP } from './content-lint-rules.js';
 
 // ---- real-content context (heavy: loads the world like the existing probes) ----
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -36,7 +36,7 @@ export async function buildContext(opts = {}) {
   const { generateFarCamps } = await import('../game/js/life/farCamps.js');
   const { activeCamps } = await import('../game/js/life/goblinCamps.js');
   const { labelOf } = await import('../game/js/quest/errands.js');
-  const { floatingProps } = await import('./probe-floating-props.mjs');
+  const { floatingProps, sunkProps } = await import('./probe-floating-props.mjs');
   const { loadDesignAssets, loadPackQuests, loadQuestFiles } = await import('./validate-content.mjs');
   const { supportBoxes } = await import('./prop-ground-lint.mjs');
   const G = globalThis.ASSETS.levels.world_geo, T = globalThis.ASSETS.levels.overworld_far;
@@ -65,7 +65,7 @@ export async function buildContext(opts = {}) {
   // R1: floating placed props (probe-floating-props) + placed trees (probe-floating) + optional scatter
   // prop-ground-lint loads its own assets (the tower/world_m1 JSON merge would collide with ours): hand it the pre-load globals
   Object.assign(globalThis.ASSETS, pre);
-  const fp = await floatingProps();
+  const fp = await floatingProps(), sp0 = await sunkProps();
   Object.assign(globalThis.ASSETS, post);
   const floating = fp.map((p) => ({ id: p.id, kind: 'prop', x: p.x, y: p.y, gap: p.float }));
   for (const s of def.structures) {
@@ -178,9 +178,8 @@ export async function buildContext(opts = {}) {
 
   // R12: entity base (z + model bottom x scale) vs ground + coarse AABB tops of placed meshes under 5 footprint samples (like the OB-155 scratch probe)
   const boxes = supportBoxes(def.structures, globalThis.ASSETS.meshes || {});
-  const entSupport = entities.filter((e) => e.components.voxel && !e.components.brain).map((e) => {
-    const v = e.components.voxel, mdl = globalThis.ASSETS.models?.[v.model]?.voxel, sc = v.scale || 1;
-    const base = e.z + (mdl ? -(mdl.anchor?.[2] || 0) * (mdl.cellM || 0.1) * sc : 0);
+  // support under a footprint (ground + level floor + exact mesh tops); shared by R12 (voxel entities) and the OB-155 R1 entity kinds
+  const supportOf = (e, base) => {
     let support = -Infinity, above = null;
     for (const [dx, dy] of [[0, 0], [0.3, 0], [-0.3, 0], [0, 0.3], [0, -0.3]]) {
       const x = e.x + dx, y = e.y + dy; support = Math.max(support, gz(x, y));
@@ -191,8 +190,25 @@ export async function buildContext(opts = {}) {
         if (top <= base + BURY_MIN) support = Math.max(support, top); else if (top <= base + BURY_MAX && dx === 0 && dy === 0) above = Math.max(above ?? 0, top - base);
       }
     }
+    return { support, above };
+  };
+  const baseOf = (e) => { const v = e.components.voxel, mdl = v && globalThis.ASSETS.models?.[v.model]?.voxel, sc = v?.scale || 1; return e.z + (mdl ? -(mdl.anchor?.[2] || 0) * (mdl.cellM || 0.1) * sc : 0); };
+  const entSupport = entities.filter((e) => e.components.voxel && !e.components.brain).map((e) => {
+    const base = baseOf(e), { support, above } = supportOf(e, base);
     return { id: e.id, x: e.x, y: e.y, base, support, floorAbove: above };
   });
+  // OB-155 R1 kinds: what R12 skips. 'entity-sunk' = voxel entity base > SUNK_M under its support; 'anchor' = invisible/other-visual entities (inspect scrawls, signs, triggers' markers; lights, emitters, sprites, the player and fx are not floor-bound);
+  // 'beast' = brain entities (authored + generated regional beasts). gap = base - support (float > 0.3 m, sunk < -0.4 m).
+  const onLevel = (x, y, z, wide) => { const f = w.floorAt(x, y); return typeof f === 'number' && (wide || Math.abs(f - z) < 0.8) && gz(x, y) - f > SUNK_MAX; }; // keepTerrain level interior (cellar, crypt, caves, tower): its floor lies deliberately below the terrain
+  for (const p of sp0) if (!onLevel(p.x, p.y, p.z, true)) floating.push({ id: p.id, kind: 'prop-sunk', x: p.x, y: p.y, gap: p.sunk }); // OB-155: placed mesh swallowed by the terrain
+  const done = new Set(entSupport.map((r) => r.id));
+  for (const r of entSupport) if (r.base - r.support < -SUNK_MAX && !R12_SKIP(r.id) && !onLevel(r.x, r.y, r.base)) floating.push({ id: r.id, kind: 'entity-sunk', x: r.x, y: r.y, gap: +(r.base - r.support).toFixed(2) });
+  for (const e of entities) {
+    if (done.has(e.id) || e.id === 'player' || R12_SKIP(e.id) || e.components.emitters || e.components.light || e.components.sprite) continue;
+    const base = baseOf(e), { support } = supportOf(e, base), gap = +(base - support).toFixed(2);
+    if (gap < -SUNK_MAX && (e.components.brain || onLevel(e.x, e.y, base))) continue; // beasts: foot offset is the brain's (float only); level interiors: see onLevel
+    floating.push({ id: e.id, kind: e.components.brain ? 'beast' : 'anchor', x: e.x, y: e.y, gap });
+  }
   // R13: inspect/quest anchors (inspect.json entity lists, components.inspect / questPickup) with a model or a visible mesh/voxel within 1 m
   const anchorIds = new Set(entities.filter((e) => e.components.inspect || e.components.questPickup).map((e) => e.id));
   for (const t of Object.values(inspect.texts)) for (const id of t.entities || []) anchorIds.add(id);

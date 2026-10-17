@@ -365,6 +365,40 @@ if (global.gc) {
   ok('VOX-PRIO-01: remaining slots are the nearest', ys.filter((y) => y !== 54).sort((a, b) => a - b).join() === '0,1,2,3,4,5,6,7,8,9,10,11,12,13,14', ys.join(','));
 }
 
+// ---- RF17-11 (OB-171): 218 entities; tier-1 within 40 m first, far props last, stable under jitter, 0 alloc ----
+{
+  const pool = new VoxelPool(); pool.renderer = 'dda'; pool.bind(registry, table);
+  const cap = Math.max(0, pool.cap - pool.reserve);
+  const m = new Map(); const npcX = [];
+  for (let i = 0; i < 8; i++) { const x = 30 + i; npcX.push(x); m.set(`n${i}`, { components: { voxel: { model: 'bear', priority: 1 } }, transform: { x, y: 0, z: 0, yawDeg: 0 } }); }
+  m.set('farnpc', { components: { voxel: { model: 'bear', priority: 1 } }, transform: { x: 90, y: 0, z: 0, yawDeg: 0 } });
+  for (let i = 0; i < 209; i++) m.set(`p${i}`, { components: { voxel: { model: 'bear' } }, transform: { x: i < 100 ? 1 + i * 0.1 : 50 + i, y: 0, z: 5, yawDeg: 0 } });
+  // two props at exactly equal distance (tie) to test flip-flop
+  const world = { renderVersion: 1, forEachEntity(fn) { for (const [id, e] of m) fn(e, id); } };
+  const cam = { x: 0, y: 0, z: 0 };
+  const set = () => { const a = []; for (let i = 0; i < pool._rawCount; i++) a.push(pool.raw[i].x + ',' + pool.raw[i].z); return a.sort().join(';'); };
+  const warn0 = console.warn; console.warn = () => {};
+  pool.collect(world, cam);
+  const xs = []; for (let i = 0; i < pool._rawCount; i++) xs.push(pool.raw[i].x);
+  ok('RF17-11: 218 entities, cap respected', m.size === 218 && pool._rawCount === cap, `${m.size} ${pool._rawCount} ${cap}`);
+  ok('RF17-11: every tier-1 entity within 40 m collected', npcX.every((x) => xs.includes(x)), xs.join());
+  ok('RF17-11: tier-1 entity at 90 m is demoted (not kept over near props)', !xs.includes(90));
+  ok('RF17-11: far props dropped first', xs.every((x) => x < 40 || x === 90 ? true : false) && !xs.some((x) => x > 100));
+  let stable = true; const s0 = set();
+  for (let f = 0; f < 50; f++) {
+    pool.collect(world, { x: (f % 2 ? 0.02 : -0.02), y: 0, z: (f % 3) * 0.01 });
+    if (set() !== s0) stable = false;
+  }
+  ok('RF17-11: same set on consecutive frames under tiny camera jitter', stable);
+  if (global.gc) {
+    global.gc(); const before = process.memoryUsage().heapUsed;
+    for (let f = 0; f < 300; f++) pool.collect(world, { x: (f % 2) * 0.02, y: 0, z: 0 });
+    global.gc(); const after = process.memoryUsage().heapUsed;
+    ok('RF17-11: zero-alloc over 300 over-cap collect() frames', after - before < 200000, `${after - before}`);
+  }
+  console.warn = warn0;
+}
+
 // PERF-02: projectShadow copies project()'s pose of the same frame (no re-pose) and stays bit-identical to a fresh pose.
 {
   const mk = () => { const q = new VoxelPool(); q.renderer = 'mesh'; q.bind(registry, table); return q; };

@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { World } from '../engine/index.js';
 import { getAssets } from './coplanar-lint.mjs';
 
-export const FLOAT_M = 0.15, STEEP_DEG = 20;
+export const FLOAT_M = 0.15, STEEP_DEG = 20, SUNK_M = 0.4;
 // deliberate: reviewed pieces that the rules flag (id -> why)
 export const ALLOW = {
   poi072: 'ruin tie beam spans the room at wall-top height (MAP-23 roof deck)',
@@ -16,7 +16,7 @@ export const ALLOW = {
 export const CHECKED = /Prop_Support|Roof_Support|Prop_Wagon|Prop_Crate|Prop_Barrel|Roof_Log|Floor_Wood|Wall_BottomCover|Plank|Beam/;
 
 /** Checks one placed mesh; returns null (ok) or {kind, float, slopeDeg, minZ}. */
-export function checkProp(s, mesh, groundAt, supports = []) {
+export function checkProp(s, mesh, groundAt, supports = [], opts = {}) {
   const sc = s.scale || 1, a = ((s.yawDeg || 0) * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a), o = s.origin, p = mesh.pos;
   let lowest = Infinity, gMin = Infinity, gMax = -Infinity, x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   for (let i = 0; i < p.length; i += 3) {
@@ -32,7 +32,10 @@ export function checkProp(s, mesh, groundAt, supports = []) {
   const base = lowestZ(p, sc, o.z), supported = supports.some((b) => b.id !== s.id && b.x0 < x1 && b.x1 > x0 && b.y0 < y1 && b.y1 > y0 && base - b.z1 < 0.3 && base - b.z1 > -0.6);
   if (lowest > FLOAT_M && !supported) kinds.push('float');
   if (slopeDeg > STEEP_DEG) kinds.push('steep');
-  return kinds.length ? { kind: kinds.join('+'), float: +lowest.toFixed(2), slopeDeg: +slopeDeg.toFixed(0) } : null;
+  // OB-155 sunk: the whole piece's lowest vertex is > SUNK_M below the ground at its origin (a prop swallowed by the terrain); opt-in so the default lint is unchanged
+  const sunk = opts.sunk ? base - groundAt(o.x, o.y) : 0;
+  if (opts.sunk && sunk < -SUNK_M && !supported) kinds.push('sunk');
+  return kinds.length ? { kind: kinds.join('+'), float: +lowest.toFixed(2), slopeDeg: +slopeDeg.toFixed(0), sunk: +sunk.toFixed(2) } : null;
 }
 
 function lowestZ(p, sc, oz) { let m = Infinity; for (let i = 2; i < p.length; i += 3) if (p[i] < m) m = p[i]; return m * sc + oz; }
@@ -52,7 +55,7 @@ export function supportBoxes(structs, meshes) {
   }
   return out;
 }
-export async function lintWorld(worldId = 'world_m1', all = false) {
+export async function lintWorld(worldId = 'world_m1', all = false, opts = {}) {
   // the ground the game shows = overworld_far + installed geography/river carving (main.js, every gen-*.mjs); coplanar-lint's loader lacks it
   globalThis.window = globalThis.window || globalThis;
   await import('../design/palette.js'); await import('../design/levels/overworld_far.js'); await import('../design/levels/world_geo.js');
@@ -66,7 +69,7 @@ export async function lintWorld(worldId = 'world_m1', all = false) {
     if (!m || !m.pos || m.lazy) continue;
     w.ensureBandFor(s.origin.x, s.origin.y); // fine terrain band (the far/coarse height is metres off)
     if (ALLOW[s.id]) continue;
-    const r = checkProp(s, m, g, sup);
+    const r = checkProp(s, m, g, sup, opts);
     if (r) out.push({ id: s.id, mesh: s.mesh, x: s.origin.x, y: s.origin.y, z: s.origin.z, ...r });
   }
   return out;

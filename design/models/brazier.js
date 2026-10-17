@@ -67,7 +67,7 @@
     name: 'brazier',
     desc: 'Iron brazier on the stone ring (the ring is sector geometry). Burning; the torch light source.',
     size: { w: 7, h: 9 }, anchor: { x: 3, y: 8 }, world: { w: 0.9, h: 1.4 },
-    directions: ['S'], billboard: true,
+    directions: ['S'], billboard: true, fx: true,   // OB-148 fire brazier billboard, exempt from lint R2 (D-104)
     keys: keys({
       i: { c: 'iron' }, I: { c: 'ironLight' }, d: { c: 'ironDark' },
       e: { c: 'ember', e: true }, E: { c: 'emberDark', e: true }
