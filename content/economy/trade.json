@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "trader": "postkeeper",
+  "stock": [
+    { "item": "potion.hp", "n": 1, "price": 20 },
+    { "item": "arrow", "n": 10, "price": 10 },
+    { "item": "bomb", "n": 1, "price": 15 },
+    { "item": "gear.body.jerkin.sturdy", "n": 1, "price": 80, "once": true },
+    { "item": "gear.feet.boots.sturdy", "n": 1, "price": 100, "once": true },
+    { "item": "gear.hands.gloves.sturdy", "n": 1, "price": 120, "once": true }
+  ]
+}

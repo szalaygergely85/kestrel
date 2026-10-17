@@ -804,6 +804,20 @@ export function validateContent(ASSETS, opts = {}) {
     }
   }
 
+  // COIN-02 (CUR-03): trade stock (content/economy/trade.json): known ids, price > 0, once-only is a boolean; never-sellable kinds carry no `value`.
+  if (opts.tradeFile !== undefined && opts.tradeFile !== null) {
+    const tp = opts.tradePath || 'content/economy/trade.json';
+    check(opts.tradeFile.version === 1 && Array.isArray(opts.tradeFile.stock), tp, 'expected version 1 and a stock array');
+    for (const [i, r] of (Array.isArray(opts.tradeFile.stock) ? opts.tradeFile.stock : []).entries()) {
+      const path = `${tp}.stock[${i}]`;
+      check(Object.hasOwn(itemDefs, r?.item), `${path}.item`, `item "${r?.item}" not found in item defs`);
+      check(Number.isInteger(r?.price) && r.price > 0, `${path}.price`, `buy price must be an integer > 0, got ${r?.price}`);
+      check(Number.isInteger(r?.n) && r.n >= 1, `${path}.n`, 'n must be an integer >= 1');
+      check(r?.once === undefined || typeof r.once === 'boolean', `${path}.once`, 'once must be true or false');
+    }
+    for (const d of Object.values(itemDefs)) if (['key', 'upgrade', 'spell', 'weapon', 'tool'].includes(d?.kind)) check(d.value === undefined, `items.defs.${d.id}.value`, `kind "${d.kind}" is never sellable, remove its value`);
+  }
+
   // EQ-11: gear loot tables (content/items/loot.json, data-only like recipes.json)
   const lootFile = opts.lootFile;
   const lootPath = opts.lootPath || 'content/items/loot.json';
@@ -1176,6 +1190,11 @@ export function loadRecipeFile(path) {
   catch (e) { return { recipeFile: null, recipePath: path, errors: [`${path}: recipe JSON read/parse failed: ${e.message}`] }; }
 }
 
+export function loadTradeFile(path) {
+  try { return { tradeFile: JSON.parse(readFileSync(path, 'utf8')), tradePath: path, errors: [] }; }
+  catch (e) { return { tradeFile: null, tradePath: path, errors: [`${path}: trade JSON read/parse failed: ${e.message}`] }; }
+}
+
 export function loadLootFile(path) {
   try { return { lootFile: JSON.parse(readFileSync(path, 'utf8')), lootPath: path, errors: [] }; }
   catch (e) { return { lootFile: null, lootPath: path, errors: [`${path}: loot JSON read/parse failed: ${e.message}`] }; }
@@ -1294,9 +1313,10 @@ async function main() {
   const questFiles = loadQuestFiles(fileURLToPath(new URL('../content/quests', import.meta.url)));
   const recipeFile = loadRecipeFile(fileURLToPath(new URL('../content/items/recipes.json', import.meta.url)));
   const lootFile = loadLootFile(fileURLToPath(new URL('../content/items/loot.json', import.meta.url)));
+  const tradeFile = loadTradeFile(fileURLToPath(new URL('../content/economy/trade.json', import.meta.url))); // COIN-02
   const packQuests = await loadPackQuests(fileURLToPath(new URL('../content/quests', import.meta.url)), ASSETS?.items?.defs);
   questFiles.quests.push(...packQuests.quests); questFiles.errors.push(...packQuests.errors);
-  const { errors: allErrors, warnings, infos, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir, maskFilesDir, dialogueFilesDir, sites: packQuests.sites, quests: questFiles.quests, spellLint: true, areas: questFiles.areas, areaPath: questFiles.areaPath, ...recipeFile, ...lootFile });
+  const { errors: allErrors, warnings, infos, checks: allChecks, meshOnlyCount } = validateContent(ASSETS, { meshFilesDir, maskFilesDir, dialogueFilesDir, sites: packQuests.sites, quests: questFiles.quests, spellLint: true, areas: questFiles.areas, areaPath: questFiles.areaPath, ...recipeFile, ...lootFile, ...tradeFile });
   allErrors.push(...questFiles.errors);
   for (const h of await (await import('./quest-graph-lint.mjs')).lintRealContent({ quests: questFiles.quests, itemDefs: ASSETS?.items?.defs || {} })) allErrors.push(`${h.rule} ${h.quest}: ${h.msg}`); // QL-MAIN-04
   try { warnings.push(...await (await import('./quest-zone-lint.mjs')).lintRealZones({ quests: questFiles.quests })); } catch (e) { warnings.push(`quest-zone lint skipped (${e.message})`); } // QL-MAIN-02 (OB-136)
@@ -1312,6 +1332,7 @@ async function main() {
     allErrors.push(...validateRiverEdits(wdef.riverEdits, Object.fromEntries((wdef.water || []).filter(isRiver).map((r) => [r.id, r.path.length]))).map((m) => `world_m1 ${m}`));
   } catch (e) { warnings.push(`riverEdits check skipped (${e.message})`); }
   allErrors.push(...lootFile.errors);
+  allErrors.push(...tradeFile.errors);
   allErrors.push(...recipeFile.errors);
   // ED-AI-01: content/beasts archetypes + kinds (plain-language range errors, tools/editor/ai/validate.js)
   try {
