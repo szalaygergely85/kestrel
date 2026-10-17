@@ -327,6 +327,14 @@
     icon: icon(['.---.', '|~~~|', "'---'"],
                ['hhhhh', 'hqqqh', 'hhhhh'])
   };
+  defs['lamp.hood'] = {
+    id: 'lamp.hood', name: 'Lamp Hood', kind: 'key', stackMax: 1, hand: false, inPack: true,
+    desc: 'A dented lamp hood. Off the Kestrel.',
+    use: { none: 'Quest item - Burl wants to see it' },
+    glyph: { ch: '^', c: 'brass' },
+    icon: icon([' .-. ', '(   )', "'---'"],
+               [' AAA ', 'A   A', 'AAAAA'])
+  };
   defs['relay.brass'] = {
     id: 'relay.brass', name: 'Brass Collar', kind: 'key', stackMax: 1, hand: false, inPack: true,
     desc: 'A green brass collar, cut with glyphs.',

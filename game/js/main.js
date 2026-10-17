@@ -1405,7 +1405,7 @@ const noteOffer = createNoteOffer({ getBook: () => (saveRelay ? saveRelay.quest.
 setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel itself offers [E] Accept / [Q] Close (no separate offer dialogue)
   // QL-WIRE: Ch1-2 errands: object givers (post / notePost / relays), talk.<site>, target1..3.hit (sword + arrow = combat:hit), escort flag
   const errands = createErrands({ getBook: () => (saveRelay ? saveRelay.quest.book : null), questFlag: (k, v) => saveRelay.quest.questFlag(k, v), inspect: inspectObject, note: (t, l) => notice.push(t, l), texts: inspectTexts });
-  setInspectSink((id) => errands.inspected(id));
+  setInspectSink((id) => { errands.inspected(id); gameHooks.emitSimple('flag:set', 'inspect.' + id, true); }); // QD-04: logic blocks hear every look-at (flag inspect.<id>)
   engine.events.on('combat:hit', (p) => errands.hit(p));
   gameHooks.register({ onEvent: (name, d) => errands.onEvent(name, d) });
   window.__debug.errands = errands; let errandTick = 0;
