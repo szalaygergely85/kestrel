@@ -233,6 +233,7 @@ import { createModelPreview, createCharCache } from '../../engine/index.js'; // 
 import { composeCharacter, meshCharacter, collapseRig, riggedModelDef, HUMANOID_SPLIT_LEG_RIG, createFootIk, voxelPointWorld } from '../../engine/index.js'; // OB-086: the kit character in the world
 import { drawArrowCount, drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { drawPlayerLevel } from './quest/levelHud.js'; // PLAYER-LEVEL-01 / SPELL-R8: HUD "Lv N" (power bands, D-116)
+import { floorZ } from './quest/groundSnap.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
 import { ensureInventory, validateItemDefs, migrateSword, addItem } from './quest/sim/inventory.js'; // US-091a1 (37.16.4)
 import { presentPickups } from './quest/pickupsView.js';
@@ -652,7 +653,7 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
       };
     };
     const MARK_ENT = { noteKeepLight: 'tower.noteKeepLight' }; // level props are world entities '<placementId>.<propId>'
-    const markResolve = (id, out) => { const h = markWorld && markWorld.get(MARK_ENT[id] || (saveRelay.quest.book ? saveRelay.quest.book.entityFor(id) : id)), t = h && h.data && h.data.transform; if (!t) { const a = MARK_AREA[id], tr = a && markWorld && areaTrigger(markWorld, a); if (!tr) return false; const at = MARK_AT[id] || tr, gz = markWorld.heightAt(at.x, at.y); out.x = at.x; out.y = at.y; out.z = (gz == null ? 0 : gz) + 2.2; return true; } out.x = t.x; out.y = t.y + (MARK_DY[id] || 0); out.z = markZ(t, entityTop(markWorld, h.data, (k) => gameVoxelPool.models.get(k)), MARK_TOP[id]); out.s = MARK_SCALE[id] || 1; return true; };
+    const markResolve = (id, out) => { const h = markWorld && markWorld.get(MARK_ENT[id] || (saveRelay.quest.book ? saveRelay.quest.book.entityFor(id) : id)), t = h && h.data && h.data.transform; if (!t) { const a = MARK_AREA[id], tr = a && markWorld && areaTrigger(markWorld, a); if (!tr) return false; const at = MARK_AT[id] || tr, gz = floorZ(markWorld, at.x, at.y, null); /* OB-155: mesh/structure floor + near terrain */ out.x = at.x; out.y = at.y; out.z = (gz == null ? 0 : gz) + 2.2; return true; } out.x = t.x; out.y = t.y + (MARK_DY[id] || 0); out.z = markZ(t, entityTop(markWorld, h.data, (k) => gameVoxelPool.models.get(k)), MARK_TOP[id]); out.s = MARK_SCALE[id] || 1; return true; };
     // MARK-GIVER-ONLY-01 (owner), amended OB-124b: objective steps get no per-step waypoint mark here; instead book.chainMarks (m1 objective.mark data) adds gold '!' at the start entity / '?' at the end entity of the current main step (below). Flip to re-enable if a distinct waypoint symbol is designed.
     const OBJECTIVE_MARKS = false;
     if (OBJECTIVE_MARKS) registerQuestMarks(gameHooks, { fx: window.ASSETS.questMarkFx, resolve: markResolve, create: () => markHandle('questMark') });
