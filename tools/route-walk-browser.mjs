@@ -118,9 +118,16 @@ const DRIVER = `(async () => {
   out.info.upperStairOpen = world().structures[0].level.sectorAt(18.5, 10.5).ceilH === 'sky';
   out.info.leverAbsent = !world().get('tower.lever') && !world().interactables.some(r => r.id === 'lever');
   await leg('5a open landing', [W(19, 10), W(18, 10)]);
-  await leg('5b upper steps', [W(17, 10), W(16, 10), W(15, 10), W(14, 10), W(14, 9), W(13, 9), W(13, 8), W(13, 7), W(12, 7)]);
+  await leg('5b upper steps + gap jump (SW)', [W(17, 10), W(16, 10), { ...W(14, 10), jump: true }, W(14, 9), W(13, 9), W(13, 8), W(13, 7), W(12, 7)]);
   await leg('6 doorway + summit', [W(11, 7), W(10, 7), W(10, 8), W(9, 8), W(8, 8), W(7, 8), W(7, 7)]);
-  await leg('7a breach + outcrop', [W(6, 7), W(5, 7)]);
+  await leg('7a breach (parapet overlook)', [W(6, 7)]);
+  // 7c (mirrors tools/route-walk.mjs, CH1-D1a): the breach is closed; open the SW door (real door.toggle), then walk down the summit -> upper steps -> alcove drop -> door -> outside.
+  out.info.doorToggled = world().fireInteraction('door.toggle', { structId: 'tower' }) === true;
+  world().state['tower.sword.taken'] = true;
+  const down = [[7, 7], [7, 8], [8, 8], [9, 8], [10, 8], [10, 7], [11, 7], [12, 7], [13, 7], [13, 8], [13, 9], [14, 9], [14, 10], [16, 10, true], [17, 10], [18, 10], [19, 10], [19, 9],
+    [20, 9], [20, 8], [20, 7], [20, 6], [20, 5], [20, 4], [19, 4], [19, 3], [18, 3], [17, 3], [16, 3], [15, 3], [15, 5], [16, 5], [16, 6], [17, 7], [17, 8], [17, 9], [16, 9], [15, 9],
+    [15, 10], [15, 11], [15, 12], [14, 12], [13, 12], [12, 12], [11, 12], [10, 12], [9, 12], [8, 12]].map(([x, y, jump]) => (jump ? { ...W(x, y), jump: true } : W(x, y)));
+  await leg('7c down -> door (E) -> outside', down, { maxFrames: 1500 });
   await leg('7b hillside -> waystone', [NEAR, WAY], { detour: true, maxFrames: 2400 });
   // WAYSTONE-NORMAL-01 (D-056): no end sequence any more - the walk reaches the stone, nothing ends, the player can still move.
   out.info.endTrigger = (world().triggers.find((x) => x.id === 'end' && x.structId === null) || {}).inside === 1; // reached the waystone zone
@@ -189,4 +196,9 @@ try {
   }
   console.log(JSON.stringify(res));
   cdp.close();
+  // Verdict (ROUTE-LEGS): every leg must complete without falling, else exit 1 (a leg may be exempt only via OPTIONAL_LEGS, with a reason).
+  const OPTIONAL_LEGS = {}; // name -> reason
+  const bad = res.legs.filter((l) => !OPTIONAL_LEGS[l.name] && (!l.completed || l.fell));
+  for (const l of bad) console.error(`ROUTE LEG FAILED: ${l.name} completed=${l.completed} fell=${l.fell} stuck=${JSON.stringify(l.stuck || null)}`);
+  if (bad.length) process.exitCode = 1;
 } finally { cleanup(); }
