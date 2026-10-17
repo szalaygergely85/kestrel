@@ -1,3 +1,37 @@
 {
-  "areas": []
+  "areas": [
+    {
+      "id": "qd-glass-croc",
+      "kind": "river_crocodile",
+      "shape": "disc",
+      "x": 1195,
+      "y": 676,
+      "r": 6,
+      "count": 1,
+      "respawnSec": 1200,
+      "when": "both"
+    },
+    {
+      "id": "qd-hp-greyback",
+      "kind": "cave_bear",
+      "shape": "disc",
+      "x": 672,
+      "y": 650,
+      "r": 6,
+      "count": 1,
+      "respawnSec": 1200,
+      "when": "both"
+    },
+    {
+      "id": "qd-sh-alpha",
+      "kind": "white_wolf",
+      "shape": "disc",
+      "x": 700,
+      "y": 1304,
+      "r": 6,
+      "count": 1,
+      "respawnSec": 1200,
+      "when": "both"
+    }
+  ]
 }

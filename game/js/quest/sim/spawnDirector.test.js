@@ -10,7 +10,7 @@ let fails = 0; const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m);
 const mem = [];
 const add = (kind, key, group, n, x, y) => { for (let k = 0; k < n; k++) mem.push({ kind, key, group, x: x + k * 3, y: y + k }); };
 add('boar', 'downs', 0, 3, 500, 500); add('boar', 'downs', 1, 3, 900, 500); add('grey_wolf', 'northwood', 0, 4, 1500, 800); add('deer', 'downs', 0, 4, 300, 300);
-const G1 = buildGroups(mem, 12), G2 = buildGroups(mem, 12), G3 = buildGroups(mem, 99);
+const G1 = buildGroups(mem, 12, null, []), G2 = buildGroups(mem, 12, null, []), G3 = buildGroups(mem, 99, null, []);
 ok(JSON.stringify(G1) === JSON.stringify(G2), 'same seed -> same group list');
 ok(JSON.stringify(G1) !== JSON.stringify(G3), 'other seed -> other routes');
 ok(G1.map((g) => g.gid).join() === 'downs/0,downs/1,northwood/0,downs/0:deer', 'gids ' + G1.map((g) => g.gid));
@@ -62,7 +62,7 @@ ok(d3.dead[0] === 1, 'boss stays dead after load');
 // bind + slotDied + wire (fake sim)
 {
   const ids = mem.map((_, i) => 'm' + i); mem.forEach((m, i) => { m.id = ids[i]; });
-  const G = buildGroups(mem, 12), d = createSpawnDirector({ groups: G, los: () => false });
+  const G = buildGroups(mem, 12, null, []), d = createSpawnDirector({ groups: G, los: () => false });
   const reset = [], handlers = {};
   const fake = { count: mem.length, slotOf: (id) => ids.indexOf(id), resetSlot: (sl) => reset.push(sl) };
   const w = createDirectorWire({ director: d, sim: fake, events: { on: (n, f) => { handlers[n] = f; return () => { delete handlers[n]; }; } } });

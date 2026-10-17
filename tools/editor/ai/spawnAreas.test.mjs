@@ -12,11 +12,12 @@ const disc = { id: 'east-meadow', shape: 'disc', x: 500, y: 400, r: 40, kind: 'b
 const poly = { id: 'tri', shape: 'polygon', pts: [[0, 0], [60, 0], [0, 60]], kind: 'grey_wolf', count: 4, respawnSec: 120, when: 'night' };
 
 // shipped file: empty, valid, byte-identical, nothing written
-const m = loadSpawnAreas(dir);
-assert.deepEqual(m.errors, []); assert.deepEqual(m.areas, []);
-assert.equal(spawnAreasText(m), readFileSync(join(dir, 'spawnAreas.json'), 'utf8'));
-assert.equal(saveSpawnAreas(m, { writeFileSync() { throw new Error('should not write'); } }).written.length, 0);
-assert.deepEqual(validateSpawnAreasModel(m, KINDS), []);
+const ms = loadSpawnAreas(dir);
+assert.deepEqual(ms.errors, []); assert.ok(ms.areas.every((a) => /^qd-/.test(a.id)));
+assert.equal(spawnAreasText(ms), readFileSync(join(dir, 'spawnAreas.json'), 'utf8'));
+assert.equal(saveSpawnAreas(ms, { writeFileSync() { throw new Error('should not write'); } }).written.length, 0);
+assert.deepEqual(validateSpawnAreasModel(ms, KINDS), []);
+const m = loadSpawnAreas('/x', { readFileSync: () => '{"areas":[]}' }); // QD-08: the shipped file now holds the 3 warden elites; the editor-model checks run on an empty file
 
 // validator
 assert.deepEqual(validateSpawnAreas({ areas: [disc, poly] }, KINDS), []);
