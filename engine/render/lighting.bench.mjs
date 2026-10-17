@@ -1,6 +1,6 @@
 // tools/bench-lights.mjs - RF17-09: per-frame light CPU cost (selectPlaced + update) with world_m1-like load.
 //   node --expose-gc tools/bench-lights.mjs
-import { LightSet } from '../engine/render/lighting.js';
+import { LightSet } from './lighting.js';
 const NO = { hzMin: 1, hzMax: 2, amount: 0.15, jitter: 0.05 };
 const defs = [];
 for (let i = 0; i < 28; i++) defs.push({ x: i * 9, y: (i % 3) * 2, z: 1, hue: [1, 0.7, 0.4], intensity: 1, radius: 6, key: 'P' + i, on: true, flicker: NO });

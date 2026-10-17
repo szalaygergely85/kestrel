@@ -2,7 +2,7 @@
 // looking at the far hills, still per hour, then tools/farSilhouette.mjs measures the far band against the sky above and the
 // terrain below. Exit 1 when the far band has pale cut-out or navy blob pixels over the limits.
 // Run: node tools/verify-far-silhouette.mjs 9650 [tag]   (PC-B ports; CDP = port+1)
-// Env: AB=gi (OB-222 GI on/off pair)  CLOCKS=12,19,22  SPOT="1466,1035,12,240" (x,y,z,yawDeg)  EXTRA="imp=0" (extra query)  PROBE="<js expr>"  NOGATE=1
+// Env: AB=gi (OB-222 GI on/off pair)  AB=farforest (OB-222 candidate: ?farforest=0 vs =1, tags -ff0/-ff1)  CLOCKS=12,19,22  SPOT="1466,1035,12,240" (x,y,z,yawDeg)  EXTRA="imp=0" (extra query)  PROBE="<js expr>"  NOGATE=1
 // VISQA-02 case `high` (burl-home view north, pitch 4, HIGH_CLOCKS=9,13): far mountains up to ~15 deg above the horizon must not be one
 // flat fill far from the sky right above their ridge (before: flat cream vs blue sky). CASES=meadow,high (default both).
 import { spawn } from 'node:child_process';
@@ -21,7 +21,7 @@ const CASES = [
 ].filter((c) => !process.env.CASES || process.env.CASES.split(',').includes(c.name));
 const extra = process.env.EXTRA ? '&' + process.env.EXTRA : '';
 // OB-222 A/B: AB=gi runs every case twice, GI on (tag <tag>-gion) and ?gi=0 (tag <tag>-gi0); compare the two rows / stills.
-const VARIANTS = process.env.AB === 'gi' ? [[tag + '-gion', extra], [tag + '-gi0', extra + '&gi=0']] : [[tag, extra]];
+const VARIANTS = process.env.AB === 'farforest' ? [[tag + '-ff0', extra + '&farforest=0'], [tag + '-ff1', extra + '&farforest=1']] : process.env.AB === 'gi' ? [[tag + '-gion', extra], [tag + '-gi0', extra + '&gi=0']] : [[tag, extra]];
 const out = path.join(ROOT, 'docs/test-reports');
 const profile = mkdtempSync(path.join(os.tmpdir(), 'kestrel-ob209-'));
 const server = spawn('python', ['-c', 'import http.server,sys; http.server.ThreadingHTTPServer.request_queue_size=128; sys.argv=["tools/serve.py",sys.argv[1]]; import tools.serve; tools.serve.main()', String(port)], { cwd: ROOT, stdio: 'ignore', windowsHide: true });
