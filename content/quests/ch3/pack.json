@@ -1,0 +1,702 @@
+{
+  "version": 1,
+  "region": "ch3",
+  "band": [
+    5,
+    10
+  ],
+  "quests": [
+    {
+      "id": "mq.ow.path",
+      "reward": { "coin": 25, "items": [{"id": "arrow", "n": 5}] },
+      "title": "Cookfire Smoke",
+      "main": true,
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "owPath"
+            ]
+          },
+          "objText": "Follow the track toward the smoke",
+          "journal": "Cookfire smoke. Follow the track."
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.smoke",
+          "step": "north"
+        }
+      ],
+      "abandonable": false,
+      "site": "hesk",
+      "returnText": "Tell Hesk you found the smoke"
+    },
+    {
+      "id": "mq.ow.fence",
+      "reward": { "coin": 30, "items": [{"id": "arrow", "n": 5}] },
+      "title": "Wolves at the Fence",
+      "main": true,
+      "steps": [
+        {
+          "template": "kill",
+          "params": {
+            "kind": "wolf",
+            "ids": [
+              "wolf1",
+              "wolf2",
+              "wolf3",
+              "wolf4",
+              "wolf5"
+            ],
+            "count": 5
+          },
+          "objText": "Drive the wolves from the goose pen",
+          "journal": "A palisade. Wolves at its goose pen."
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.ow.path",
+          "step": "explore"
+        }
+      ],
+      "abandonable": false,
+      "site": "hesk",
+      "returnText": "Tell Hesk the wolves are gone"
+    },
+    {
+      "id": "mq.ow.names",
+      "title": "A Name at the Gate",
+      "main": true,
+      "site": "hesk",
+      "steps": [
+        {
+          "template": "talk",
+          "params": {
+            "to": "hesk"
+          },
+          "objText": "Speak to the woman at the gate",
+          "journal": "The gate opens. Tell Hesk your name."
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.ow.fence",
+          "step": "kill"
+        }
+      ],
+      "reward": {
+        "coin": 30,
+        "table": "gear.t3"
+      },
+      "abandonable": false,
+      "lines": {
+        "offer": [
+          "Stop there. Hands where I can see them.",
+          "You came over the river. Nobody comes over the river.",
+          "Ferrum says we're dead. Who are you?"
+        ],
+        "active": [
+          "Well? A name. Or the river back the way you came."
+        ],
+        "ready": [
+          "You tell her your name. She turns it over, slowly.",
+          "Wick.",
+          "We watched you at the fence. The wolves, too.",
+          "I'm Hesk. Come in, Wick. Keep your blade low.",
+          "Here. Ferrum's dead don't let a guest go cold."
+        ],
+        "done": [
+          "Ferrum's dead are busy, Wick. Mind the geese."
+        ]
+      }
+    },
+    {
+      "id": "mq.ow.relay",
+      "reward": { "coin": 35, "items": [{"id": "potion.hp", "n": 1},{"id": "arrow", "n": 10}] },
+      "title": "The Village Waystone",
+      "main": true,
+      "site": "hesk",
+      "band": 6,
+      "objectives": [
+        {
+          "id": "talk",
+          "text": "Ask Dorrin at the forge",
+          "when": {
+            "type": "flag",
+            "id": "talk.dorrin",
+            "equals": true
+          },
+          "journal": "A waystone part is gone. Ask Dorrin."
+        },
+        {
+          "id": "brass",
+          "text": "Take the brass off the barley gate",
+          "when": {
+            "type": "item",
+            "id": "relay.brass"
+          },
+          "journal": "Get the collar off the barley gate."
+        },
+        {
+          "id": "wake",
+          "text": "Fit the collar to the village waystone",
+          "when": {
+            "type": "flag",
+            "id": "waystone.ws_outwall.woken",
+            "equals": true
+          },
+          "journal": "Wake the waystone with the collar."
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.ow.names",
+          "done": true
+        }
+      ],
+      "abandonable": false,
+      "returnText": "Fit the collar to the village waystone",
+      "lines": {
+        "offer": [
+          "The old waystone in the yard. You came for it, I think.",
+          "We hear the call too. Nights. The stone here stays dark.",
+          "Something's missing from it. Ask Dorrin. At the forge.",
+          "He'll look at his boots. Let him. Then ask again."
+        ],
+        "active": [
+          "Barley farm. East. Brass collar. Go on."
+        ],
+        "ready": [
+          "The collar seats with a soft, sure click.",
+          "The bowl wakes teal and takes up the call."
+        ],
+        "done": [
+          "Lit. Years, and it took a stranger and a gate."
+        ]
+      }
+    },
+    {
+      "id": "mq.ow.board",
+      "title": "The Board of the Dead",
+      "main": true,
+      "next": "mq.ow.close",
+      "site": "hesk",
+      "band": 6,
+      "objectives": [
+        {
+          "id": "read",
+          "text": "Read the notices on the board",
+          "when": {
+            "type": "flag",
+            "id": "lore.owBoard.read",
+            "equals": true
+          },
+          "journal": "Read the name board in the plaza."
+        }
+      ],
+      "requires": [
+        {
+          "quest": "mq.ow.relay",
+          "done": true
+        }
+      ],
+      "reward": {
+        "coin": 25,
+        "items": [
+          {
+            "id": "chart.westFells",
+            "n": 1
+          }
+        ]
+      },
+      "lines": {
+        "offer": [
+          "The board by the gate. Read it. That's who we are."
+        ],
+        "active": [
+          "The board by the gate. Read it. That's who we are."
+        ],
+        "ready": [
+          "Crown notices, carried out past the Wall and nailed up.",
+          "FELL BEYOND THE WALL. HESK, OF THE TANNERS' STAIR.",
+          "FELL BEYOND THE WALL. DORRIN, FORGE HAND, LOW WARDS.",
+          "LOST TO THE HUSH. THE CROWN GRIEVES. SPEAK NO MORE.",
+          "Under each name, in charcoal: HERE.",
+          "One notice is cut. A strip gone, name and all, neatly.",
+          "Above the cut: FELL BEYOND THE WALL.",
+          "On the nail, a knot. A skyworks hitch, tied tight.",
+          "Your hands know it. You were taught it on the skyworks."
+        ],
+        "done": [
+          "Pinned under the knot: a scrap of chart. Lines west.",
+          "You leave the knot where it is. The line runs west."
+        ]
+      },
+      "abandonable": false,
+      "returnText": "Tell Hesk what the board says"
+    },
+    {
+      "id": "mq.ow.close",
+      "title": "The Line West",
+      "main": true,
+      "chainEnd": true,
+      "site": "hesk",
+      "band": 6,
+      "steps": [{ "template": "explore", "params": { "areas": ["crossroads"] }, "objText": "Walk west to the crossroads", "journal": "Walk to the crossroads and look west." }],
+      "requires": [{ "quest": "mq.ow.board", "done": true }],
+      "reward": { "coin": 30, "items": [{ "id": "arrow", "n": 15 }] },
+      "returnText": "Tell Hesk what the road looks like",
+      "abandonable": false
+    },
+    {
+      "id": "sq.hw.piers",
+      "title": "The Pulled Bridge",
+      "site": "pierStone",
+      "objectives": [
+        {
+          "id": "read",
+          "text": "Read the stone north of the road",
+          "when": {
+            "type": "flag",
+            "id": "lore.pierStone.read",
+            "equals": true
+          },
+          "journal": "Read the stone north of the road."
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "coin": 20,
+        "items": [
+          {
+            "id": "arrow",
+            "n": 10
+          }
+        ]
+      },
+      "lines": {
+        "offer": [
+          "A tall stone by the track. Cut square, set on end.",
+          "Marks on one face. Too worn to read from here."
+        ],
+        "active": [
+          "The stone by the track. Read it up close."
+        ],
+        "ready": [
+          "The bridge stone. Aye. Pulled down, not washed out.",
+          "Not my work. Older than me. Here, arrows."
+        ],
+        "done": [
+          "The stone stands. The river runs where the bridge was."
+        ]
+      },
+      "turnIn": "dorrin",
+      "objectGiver": true,
+      "returnText": "Tell Dorrin what the stone says"
+    },
+    {
+      "id": "sq.fc.sign",
+      "title": "The West Arm",
+      "site": "postkeeper",
+      "steps": [
+        {
+          "template": "fetch",
+          "params": {
+            "item": "signArm"
+          },
+          "objText": "Find the sign arm in the shallows",
+          "journal": "The post sign lost its west arm."
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "coin": 30,
+        "items": [
+          {
+            "id": "arrow",
+            "n": 10
+          }
+        ]
+      },
+      "returnText": "Bring the sign arm to the post-keeper",
+      "lines": {
+        "offer": [
+          "My signpost lost its west arm in high water.",
+          "It's in the shallows somewhere. Find it for me?"
+        ],
+        "active": [
+          "The sign's west arm. Somewhere in the shallows."
+        ],
+        "ready": [
+          "That's it. West points west again.",
+          "Arrows. For your wet sleeves."
+        ],
+        "done": [
+          "West points west. As it should."
+        ]
+      }
+    },
+    {
+      "id": "sq.ow.wolves",
+      "title": "Wolf Bounty",
+      "site": "hesk",
+      "steps": [
+        {
+          "template": "kill",
+          "params": {
+            "kind": "wolf",
+            "ids": [
+              "wolf1",
+              "wolf2",
+              "wolf3",
+              "wolf4",
+              "wolf5"
+            ],
+            "count": 3
+          },
+          "objText": "Drive three wolves from the goose pen",
+          "journal": "Wolves still circle the goose pen."
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "coin": 25,
+        "items": [
+          {
+            "id": "arrow",
+            "n": 10
+          },
+          {
+            "id": "potion.hp",
+            "n": 1
+          }
+        ]
+      },
+      "returnText": "Back to Hesk",
+      "lines": {
+        "offer": [
+          "Wolves still circle the goose pen.",
+          "Drive three off. I pay in arrows."
+        ],
+        "active": [
+          "Three wolves. The goose pen. Go."
+        ],
+        "ready": [
+          "Three gone. The geese can sleep.",
+          "Arrows, and a health potion. Fair pay."
+        ],
+        "done": [
+          "Geese counted. All there."
+        ]
+      }
+    },
+    {
+      "id": "sq.ow.boars",
+      "title": "Boar Bounty",
+      "site": "hesk",
+      "steps": [
+        {
+          "template": "kill",
+          "params": {
+            "kind": "boar",
+            "ids": [
+              "boarF1",
+              "boarF2"
+            ],
+            "count": 2
+          },
+          "objText": "Drive off two boars on the west bank",
+          "journal": "Drive two boars off the west bank."
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "coin": 25,
+        "table": "gear.t2"
+      },
+      "returnText": "Back to Hesk",
+      "lines": {
+        "offer": [
+          "Two boars rooting on the west bank.",
+          "Drive them off. Mind the tusks."
+        ],
+        "active": [
+          "Two boars. West bank. Mind the tusks."
+        ],
+        "ready": [
+          "The bank's quiet. Good.",
+          "Take this. Old gear, but oiled."
+        ],
+        "done": [
+          "A quiet bank. A quiet night. Rare out here."
+        ]
+      }
+    },
+    {
+      "id": "sq.ow.parcel",
+      "title": "Parcel for the Forge",
+      "site": "hesk",
+      "steps": [
+        {
+          "template": "deliver",
+          "params": {
+            "item": "parcel",
+            "to": "dorrin"
+          },
+          "objText": "Take the parcel to the forge",
+          "journal": "Carry the parcel to the forge."
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "coin": 30,
+        "items": [
+          {
+            "id": "potion.hp",
+            "n": 2
+          }
+        ]
+      },
+      "returnText": "Take it to Dorrin",
+      "lines": {
+        "offer": [
+          "This parcel goes to the forge. For the smith.",
+          "Don't open it. It's his."
+        ],
+        "active": [
+          "The parcel. The smith, at the forge."
+        ],
+        "ready": [
+          "About time. Don't ask what's in it.",
+          "Here. Hesk would want you paid."
+        ],
+        "done": [
+          "He got it? Then he'll be up all night."
+        ]
+      }
+    },
+    {
+      "id": "sq.ow.ford",
+      "title": "Scout the Far Bank",
+      "site": "dorrin",
+      "steps": [
+        {
+          "template": "explore",
+          "params": {
+            "areas": [
+              "fordWest"
+            ]
+          },
+          "objText": "Cross the ford to the west bank",
+          "journal": "Cross the ford. Scout the far bank."
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "coin": 25,
+        "items": [
+          {
+            "id": "arrow",
+            "n": 15
+          }
+        ]
+      },
+      "returnText": "Back to Dorrin",
+      "lines": {
+        "offer": [
+          "Nobody's looked at the far bank in a while.",
+          "Cross the ford. Look around. Come back."
+        ],
+        "active": [
+          "Ford. Far bank. Look, then back here."
+        ],
+        "ready": [
+          "Quiet over there? Good. Quiet is good.",
+          "Arrows. Don't lose them all at once."
+        ],
+        "done": [
+          "Far bank's quiet. I'll sleep, then."
+        ]
+      }
+    },
+    {
+      "id": "sq.ow.barley",
+      "title": "Barley Sheaf",
+      "site": "hesk",
+      "steps": [
+        {
+          "template": "fetch",
+          "params": {
+            "item": "barleySheaf"
+          },
+          "objText": "Fetch the sheaf at the barley gate",
+          "journal": "Fetch a sheaf from the barley gate."
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "coin": 25,
+        "items": [
+          {
+            "id": "potion.hp",
+            "n": 1
+          },
+          {
+            "id": "arrow",
+            "n": 10
+          }
+        ]
+      },
+      "returnText": "Back to Hesk",
+      "lines": {
+        "offer": [
+          "The barley gate owes us a sheaf.",
+          "Bring it here before the crows find it."
+        ],
+        "active": [
+          "The sheaf. At the barley gate."
+        ],
+        "ready": [
+          "A good sheaf. Bread for a week.",
+          "Arrows, and a health potion. For the carrying."
+        ],
+        "done": [
+          "Bread tonight. Thank the barley, not me."
+        ]
+      }
+    },
+    {
+      "id": "sq.ow.range",
+      "title": "Track Targets",
+      "site": "hesk",
+      "objectives": [
+        {
+          "id": "t1",
+          "text": "Hit target 1",
+          "when": {
+            "type": "flag",
+            "id": "owTarget1.hit",
+            "equals": true
+          },
+          "journal": "Hit the first target on the track."
+        },
+        {
+          "id": "t2",
+          "text": "Hit target 2",
+          "when": {
+            "type": "flag",
+            "id": "owTarget2.hit",
+            "equals": true
+          },
+          "journal": "One target hit. Now the second."
+        },
+        {
+          "id": "t3",
+          "text": "Hit target 3",
+          "when": {
+            "type": "flag",
+            "id": "owTarget3.hit",
+            "equals": true
+          },
+          "journal": "One target left. Hit the third."
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "coin": 35,
+        "items": [
+          {
+            "id": "arrow",
+            "n": 15
+          }
+        ]
+      },
+      "returnText": "Back to Hesk",
+      "lines": {
+        "offer": [
+          "Three targets stand along the track. Can you shoot?",
+          "Hit all three. I'll be counting."
+        ],
+        "active": [
+          "Three targets, along the track. Hit them all."
+        ],
+        "ready": [
+          "Three. I counted. You can shoot.",
+          "More arrows. Waste them on targets, not on us."
+        ],
+        "done": [
+          "You shoot like you mean it. Good."
+        ]
+      }
+    },
+    {
+      "id": "sq.ow.raid",
+      "title": "Defend the Farm",
+      "site": "hesk",
+      "objectives": [
+        {
+          "id": "defend",
+          "text": "Hold the goose pen at night",
+          "when": {
+            "type": "flag",
+            "id": "life.raid.gooseFarm.defended",
+            "equals": true
+          },
+          "journal": "After dark, guard the goose pen."
+        }
+      ],
+      "opensAfter": [
+        "mq.ford.mirror"
+      ],
+      "reward": {
+        "coin": 20,
+        "items": [
+          {
+            "id": "potion.hp",
+            "n": 2
+          },
+          {
+            "id": "arrow",
+            "n": 15
+          }
+        ]
+      },
+      "returnText": "Back to Hesk",
+      "lines": {
+        "offer": [
+          "The pack comes back after dark. For the geese.",
+          "Stand at the goose pen tonight. Drive them off."
+        ],
+        "active": [
+          "After dark. The goose pen. Hold it."
+        ],
+        "ready": [
+          "The pen held. You held. Thank you.",
+          "Two health potions, and arrows. Sleep now."
+        ],
+        "done": [
+          "Geese counted. All here. Again."
+        ]
+      }
+    }
+  ]
+}

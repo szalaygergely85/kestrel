@@ -1,0 +1,164 @@
+{
+  "events": {
+    "area.enter": {
+      "label": "Player enters an area",
+      "args": {
+        "area": "ref:area"
+      }
+    },
+    "area.leave": {
+      "label": "Player leaves an area",
+      "args": {
+        "area": "ref:area"
+      }
+    },
+    "prop.touched": {
+      "label": "Player touches an object",
+      "args": {
+        "prop": "ref:prop"
+      }
+    },
+    "beast.died": {
+      "label": "A creature dies",
+      "args": {
+        "kind": "ref:beastKind?",
+        "group": "ref:group?"
+      }
+    },
+    "group.cleared": {
+      "label": "A creature group is wiped out",
+      "args": {
+        "group": "ref:group"
+      }
+    },
+    "item.got": {
+      "label": "Player picks up an item",
+      "args": {
+        "item": "ref:item"
+      }
+    },
+    "flag.set": {
+      "label": "A story flag is set",
+      "args": {
+        "flag": "ref:flag"
+      }
+    },
+    "quest.accepted": {
+      "label": "A quest is accepted",
+      "args": {
+        "quest": "ref:quest"
+      }
+    },
+    "quest.done": {
+      "label": "A quest is completed",
+      "args": {
+        "quest": "ref:quest"
+      }
+    },
+    "player.died": {
+      "label": "Player dies",
+      "args": {}
+    }
+  },
+  "conds": {
+    "quest": {
+      "label": "Quest is",
+      "args": {
+        "quest": "ref:quest",
+        "state": "available|active|ready|done|activeOrReady"
+      }
+    },
+    "flag": {
+      "label": "Story flag is",
+      "args": {
+        "flag": "ref:flag",
+        "eq": "bool"
+      }
+    },
+    "item": {
+      "label": "Player carries at least",
+      "args": {
+        "item": "ref:item",
+        "atLeast": "int"
+      }
+    },
+    "group": {
+      "label": "Creature group is",
+      "args": {
+        "group": "ref:group",
+        "state": "reserve|alive|cleared"
+      }
+    },
+    "prop": {
+      "label": "Object is in state",
+      "args": {
+        "prop": "ref:prop",
+        "state": "text"
+      }
+    }
+  },
+  "acts": {
+    "prop.state": {
+      "label": "Set object state",
+      "args": {
+        "prop": "ref:prop",
+        "state": "text"
+      }
+    },
+    "beasts.spawn": {
+      "label": "Spawn creature group",
+      "args": {
+        "group": "ref:group"
+      }
+    },
+    "beasts.despawn": {
+      "label": "Remove creature group",
+      "args": {
+        "group": "ref:group"
+      }
+    },
+    "flag.set": {
+      "label": "Set story flag",
+      "args": {
+        "flag": "ref:flag",
+        "value": "bool"
+      }
+    },
+    "hint": {
+      "label": "Show hint",
+      "args": {
+        "text": "ref:textId"
+      }
+    },
+    "sound": {
+      "label": "Play sound",
+      "args": {
+        "id": "text"
+      }
+    },
+    "quest.feed": {
+      "label": "Send quest event",
+      "args": {
+        "quest": "ref:quest",
+        "event": "text"
+      }
+    }
+  },
+  "argLabels": {
+    "area": "Area",
+    "prop": "Object",
+    "kind": "Creature kind",
+    "group": "Creature group",
+    "item": "Item",
+    "flag": "Story flag",
+    "quest": "Quest",
+    "state": "State",
+    "eq": "Is set",
+    "atLeast": "At least",
+    "value": "Set to",
+    "text": "Hint text",
+    "id": "Sound",
+    "event": "Event",
+    "after": "Delay (steps)"
+  }
+}

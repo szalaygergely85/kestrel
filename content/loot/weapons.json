@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "note": "EQ-20 weapon drops (data only; mirrored by game/js/quest/sim/weaponLoot.js, a test keeps the two equal). Items: gear.main.sword.<tier>, gear.ranged.bow.<tier>, gear.off.shield.<tier>.",
+  "fineMinBand": 5,
+  "fineShare": 0.25,
+  "sources": {
+    "wolf": { "chance": 0.03, "items": ["off.shield", "ranged.bow"] },
+    "goblin": { "chance": 0.06, "items": ["main.sword", "ranged.bow", "off.shield"] },
+    "chestForge": { "fixed": [{ "item": "gear.main.sword.sturdy", "n": 1 }] },
+    "chestBand5": { "pick": ["main.sword", "ranged.bow", "off.shield"], "tier": "fine" }
+  }
+}

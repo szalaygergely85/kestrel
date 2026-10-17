@@ -38,3 +38,16 @@ export function loadGoldenMatKeys(name) {
   if (t.format !== 1 || !Array.isArray(t.keys)) throw new Error(`Unknown mat-key fixture format: ${name}`);
   return t.keys;
 }
+
+/**
+ * TOWER-GOLDEN-STALE (2026-10-10): the levelMesh/rasterJS goldens were captured on the
+ * pre-CH1-D1a tower; tests that compare against them load this frozen copy, never the
+ * live content/levels/tower.level.json. Returns the level body as AssetRegistry.level()
+ * does (pack envelope kind/schema/id/nextId stripped).
+ */
+export function loadGoldenLevel(name) {
+  const obj = JSON.parse(readFileSync(new URL(`../../engine/mesh/fixtures/${name}.level.json`, import.meta.url), 'utf8'));
+  const { kind, schema, id, nextId, ...body } = obj;
+  if (kind !== 'level' || schema !== 1) throw new Error(`Golden level ${name}: expected kind level schema 1`);
+  return body;
+}

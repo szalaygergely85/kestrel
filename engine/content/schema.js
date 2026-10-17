@@ -3,7 +3,7 @@
 // module reads these instead of hard-coding shapes twice.
 
 /** Highest schema version this engine understands, per file kind. */
-export const LATEST_SCHEMA = { manifest: 1, level: 1, world: 1, mesh: 1, terrainEdits: 1, mask: 1, prefab: 1 };
+export const LATEST_SCHEMA = { manifest: 1, level: 1, world: 1, mesh: 1, terrainEdits: 1, grassMask: 1, mask: 1, prefab: 1, dialogue: 1 };
 
 /** Envelope keys every content file carries (21.2), first in `KEY_ORDER`. */
 export const ENVELOPE_KEYS = ['kind', 'schema', 'id', 'nextId'];
@@ -17,7 +17,9 @@ export const ENVELOPE_KEYS = ['kind', 'schema', 'id', 'nextId'];
 export const ID_COLLECTIONS = {
   mesh: [],
   terrainEdits: [],
+  grassMask: [],
   prefab: ['items'], // PREFAB-SEAM (38.11)
+  dialogue: [], // DIALOGUE-01a1 (38.28): nodes keyed by id inside the file
   level: ['props', 'lights', 'interactables', 'triggers'],
   // US-026a (architecture.md 23.2/23.7 S2): world-level triggers (circle/
   // terrain/bounds shapes, `structId: null`) are their own id collection,
@@ -53,12 +55,13 @@ export const KEY_ORDER = {
   mask: ['kind', 'schema', 'id', 'w', 'h', 'cutoffDefault', 'data'],
   mesh: [...ENVELOPE_KEYS, 'version', 'layout', 'bin', 'pos', 'uv', 'uvMask', 'nrm', 'flat', 'aux', 'idx', 'triCount', 'bbox', 'ranges', 'matKeys', 'mats', 'matsResolved', 'meshVersion', 'collide', 'collider', 'colliderB64', 'castShadow', 'colliderParts'],
   level: [...ENVELOPE_KEYS, 'name', 'title', 'version', 'cellSize', 'size', 'rows', 'legend', 'layers', 'tilt', 'start', 'sun', 'ambient', 'lights', 'props', 'interactables', 'triggers', 'markers', 'route', 'routeNotes'],
+  // OB-028: `editorGroups` ([{name, ids}]) is editor-only scene-tree metadata; the game ignores it.
   // US-026a (architecture.md 23.2): `bounds`/`triggers` are additive
   // optional keys - schema stays 1, a world file without them still loads.
   // CO-8 (docs/coordinates.md section 8): `sun` is a world property (moved
   // out of the level file in this same content commit) - additive, schema
   // stays 1.
-  world: [...ENVELOPE_KEYS, 'name', 'version', 'title', 'terrain', 'time', 'sun', 'structures', 'entities', 'horizon', 'state', 'bounds', 'triggers'],
+  world: [...ENVELOPE_KEYS, 'name', 'version', 'title', 'terrain', 'time', 'sun', 'structures', 'entities', 'horizon', 'state', 'bounds', 'triggers', 'editorGroups'],
   // CO-5 (docs/coordinates.md section 8): `WorldState` (engine/world/
   // serialize.js), not a content file - `stringifySave` tags it
   // `kind: 'save'` only to select this order, it is not an envelope key.
@@ -69,7 +72,9 @@ export const KEY_ORDER = {
   // ED-TERRAIN-1a (arch 37.12): no nextId/collections (a sparse grid, not an id-bearing file).
   // PREFAB-SEAM (38.11)
   prefab: [...ENVELOPE_KEYS, 'title', 'items'],
+  dialogue: ['kind', 'schema', 'id', 'speakers', 'entry', 'nodes'], // DIALOGUE-01a1 (38.28)
   terrainEdits: ['kind', 'schema', 'id', 'cell', 'chunkSize', 'chunks'],
+  grassMask: ['kind', 'schema', 'id', 'cell', 'chunkSize', 'chunks'], // MASK-e1
   save: ['kind', 'version', 'world', 'contentVersion', 'terrain', 'structures', 'entities', 'state', 'nextId', 'time', 'removed', 'horizon', 'bounds', 'triggers', 'visibility'],
 };
 
@@ -80,5 +85,6 @@ export const KEY_ORDER = {
 export const ORDERED_MAPS = {
   level: ['legend', 'markers', 'layers', 'routeNotes'],
   world: ['state'],
+  dialogue: ['speakers', 'nodes'],
   save: ['state'],
 };

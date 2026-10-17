@@ -543,7 +543,7 @@ function makeLargeDef(sx, sy, sz, meshOnly) {
   d5.meshOnly = true;
   for (let i = 0; i < 3; i++) d5.parts['extra' + i] = { box: [0, 0, 0, 1, 1, 1], pivot: [0, 0, 0], parent: 'body' };
   const r5 = validateVoxelModel(d5, { materialKeys: MATERIAL_KEYS });
-  ok('ME-22: 9 parts (flagged) still errors (MAX_VOX_PARTS unchanged)', r5.errors.some((e) => e.indexOf('> 8 parts') >= 0), JSON.stringify(r5.errors));
+  ok('VOX-PARTS-16: 11 parts (flagged) valid (<= MAX_VOX_PARTS)', !r5.errors.some((e) => e.indexOf('parts') >= 0 && e.indexOf('voxel.parts:') >= 0), JSON.stringify(r5.errors));
 
   // 6. non-boolean flag -> error.
   const d6 = clone(quadruped12);

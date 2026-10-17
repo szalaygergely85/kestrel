@@ -1,0 +1,22 @@
+import { createGrabPin } from './grabPin.js';
+import { createNpcLook } from './npcLook.js';
+let f = 0; const ok = (c, m) => { if (!c) { f++; console.error('FAIL', m); } };
+let mashed = []; const sim = { grabSlot: () => 3, grabMash: (s) => mashed.push(s) };
+const pin = createGrabPin(() => sim);
+const c = () => ({ forward: 1, strafe: -1, run: true, jump: true, swimUp: 1, yawDeg: 40, pitchDeg: 5 });
+let k = c(); ok(!pin.apply(k, true) && k.forward === 1 && mashed.length === 0, 'unpinned: untouched, no mash');
+pin.onGrab({ slot: 3, on: 1 }); k = c();
+ok(pin.apply(k, false) && k.forward === 0 && k.strafe === 0 && !k.run && !k.jump && k.swimUp === 0, 'pinned blocks movement');
+ok(k.yawDeg === 40 && k.pitchDeg === 5, 'look untouched'); ok(mashed.length === 0, 'no press, no mash');
+pin.apply(c(), true); pin.apply(c(), true); ok(mashed.length === 2 && mashed[0] === 3, 'mash fed per press to grabSlot');
+pin.onGrab({ slot: 3, on: 0 }); k = c(); ok(!pin.apply(k, true) && k.forward === 1 && mashed.length === 2, 'release');
+pin.onGrab({ on: 1 }); pin.reset(); ok(!pin.pinned, 'reset');
+// npcLook
+const calls = [];
+const look = { stepEntity: (key, e, v, a) => calls.push([key, a]) };
+const ents = [['p', { components: { voxel: { model: 'char.kit' } } }], ['a', { components: { voxel: { model: 'char.kit' } } }], ['b', { components: { voxel: { model: 'char.kit' } } }], ['w', { components: { voxel: { model: 'wolf' } } }]];
+const world = { forEachEntity: (fn) => { for (const [id, e] of ents) fn(e, id); } };
+let tid = 'b'; const nl = createNpcLook(look, () => tid, () => 'p');
+nl.step(world); ok(calls.length === 2 && calls[0][0] === 1024 && !calls[0][1] && calls[1][0] === 1025 && calls[1][1], 'npcs stepped, player+non-kit skipped, talker active');
+tid = null; calls.length = 0; nl.step(world); ok(calls[0][0] === 1024 && !calls[1][1], 'stable keys, all false when no dialogue');
+if (f) process.exit(1); console.log('grabPin/npcLook OK');

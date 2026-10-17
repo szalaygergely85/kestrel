@@ -3,7 +3,10 @@
 // and the "reset the pose on clip change" contract via presentBeasts.
 import { makeOk } from '../../../engine/test/assert.js';
 import { frameTFromElapsed, DIE_DURATIONS, SINK_DURATIONS, presentBeasts } from './beastView.js';
-import { STATE_DYING, STATE_SINK, STATE_NOTICE } from './sim/beastSim.js';
+import { STATE_DYING, STATE_SINK, STATE_NOTICE, STATE_WANDER, STATE_CHASE, STATE_WINDUP, STATE_CHARGE, STATE_RECOVER, STATE_RETURN, STATE_STAGGER } from './sim/beastSim.js';
+import '../../../design/palette.js';
+import '../../../design/detail-pass.js';
+import '../../../design/models/voxel_goblin.js'; // GOB-07a: ASSETS.goblinFx.clipFor
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -72,6 +75,57 @@ const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
   bars.length = 0;
   sim.timer[0] = 36; presentBeasts(sim, {}, overlay, { beastNotice: 7 });
   ok('falls back to beastNotice when beastNoticePop is not provided', bars[0].style === 7, `style=${bars[0].style}`);
+}
+
+// ---- GOB-07a: goblin clip map via ASSETS.goblinFx.clipFor, throw held 400 ms into RECOVER, torch clips ----
+{
+  const mk = (model, ranged) => {
+    const voxel = { anim: 'idle', frame: 0, t: 0, playing: true, hidden: false, model };
+    return { voxel, sim: { count: 1, cfgSteps: { die: 24, sink: 30, notice: 42 }, state: [STATE_WANDER], timer: [0], hurtT: [9999], fx: [0], fy: [-1], ranged: [ranged], fleeing: [0],
+      entities: [{ transform: { x: 0, y: 0, z: 0, yawDeg: 0 }, components: { voxel } }] } };
+  };
+  const clipAt = (g, st, fleeing) => { g.sim.state[0] = st; g.sim.fleeing[0] = fleeing ? 1 : 0; presentBeasts(g.sim, {}, { bar() {} }, { beastNotice: 0 }); return g.voxel.anim; };
+  const g = mk('goblin', 0);
+  ok('goblin: wander walk, chase run, windup attack, charge attack, recover run',
+    clipAt(g, STATE_WANDER) === 'walk' && clipAt(g, STATE_CHASE) === 'run' && clipAt(g, STATE_WINDUP) === 'attack' && clipAt(g, STATE_CHARGE) === 'attack' && clipAt(g, STATE_RECOVER) === 'run');
+  ok('goblin: return walk, fleeing run, stagger flinch', clipAt(g, STATE_RETURN) === 'walk' && clipAt(g, STATE_RETURN, true) === 'run' && clipAt(g, STATE_STAGGER) === 'flinch');
+  const th = mk('goblin', 1);
+  ok('thrower: windup -> throw', clipAt(th, STATE_WINDUP) === 'throw');
+  let held = 0; while (clipAt(th, STATE_RECOVER) === 'throw' && held < 100) held++;
+  ok('thrower: throw keeps playing 400 ms (24 steps) into RECOVER, then run', held === 24 && th.voxel.anim === 'run', `held=${held} anim=${th.voxel.anim}`);
+  const tr = mk('goblinTorch', 0);
+  ok('torch goblin: wander/chase/recover/return/flee -> carryTorch, windup -> attack',
+    clipAt(tr, STATE_WANDER) === 'carryTorch' && clipAt(tr, STATE_CHASE) === 'carryTorch' && clipAt(tr, STATE_RECOVER) === 'carryTorch' && clipAt(tr, STATE_RETURN, true) === 'carryTorch' && clipAt(tr, STATE_WINDUP) === 'attack');
+  clipAt(tr, STATE_CHASE);
+  ok('torch goblin chases at 1.6x clip rate, walks at 1x', tr.voxel.speed === 1.6 && (clipAt(tr, STATE_WANDER), tr.voxel.speed === 1));
+  const gd = mk('goblin', 0); gd.sim.hurtT[0] = 3;
+  ok('goblin: hurt flash wins over the state clip', clipAt(gd, STATE_CHASE) === 'hurt');
+  const dying = mk('goblin', 0); dying.sim.timer[0] = 12;
+  ok('goblin: death timeline unchanged', clipAt(dying, STATE_DYING) === 'die');
+}
+
+// ---- OB-171: real-game voxel pressure - an attacking wolf at 10 m survives 218 entities vs the cap ----
+{
+  const { VoxelPool } = await import('../../../engine/index.js');
+  const { beastVoxelPriority } = await import('./beastView.js');
+  const pool = new VoxelPool(); pool.cap = 36; pool.reserve = 0; // ecap 36 as in the owner log
+  const queued = new Set(); pool._queueEntity = (e) => { queued.add(e.transform.x); }; // selection only; no model binding needed
+  const cam = { x: 0, y: 0, z: 0 };
+  const ents = [];
+  const mk = (id, x, pr) => { const e = { id, components: { voxel: { model: 'bear', frame: 0, t: 0, playing: true, priority: pr } }, transform: { x, y: 0, z: 0, yawDeg: 0 } }; ents.push(e); return e; };
+  for (let i = 0; i < 40; i++) mk('crit' + i, 1 + i * 0.2, 0);          // 40 nearer ambient critters
+  const wolf = mk('wolf', 10, beastVoxelPriority(STATE_CHASE, 0, { x: 10, y: 0 }, cam)); // attacking wolf at 10 m
+  const idle = mk('idleWolf', 20, beastVoxelPriority(STATE_WANDER, 0, { x: 20, y: 0 }, cam)); // hostile, wandering, 20 m
+  const far = mk('farWolf', 60, beastVoxelPriority(STATE_WANDER, 0, { x: 60, y: 0 }, cam));
+  const giver = mk('giver', 90, 1), marker = mk('marker', 200, 2);
+  for (let i = 0; i < 173; i++) mk('prop' + i, 5 + i * 0.5, 0);
+  const world = { renderVersion: 1, forEachEntity: (fn) => ents.forEach(fn) };
+  pool.collect(world, { x: 0, y: 0, z: 0 });
+  ok('OB-171: ' + ents.length + ' entities > cap, pool capped', ents.length >= 218 && queued.size <= 36);
+  ok('OB-171: attacking wolf (10 m, behind 40 nearer critters) renders', queued.has(10), [...queued].join());
+  ok('OB-171: quest marker + giver render', queued.has(200) && queued.has(90));
+  ok('OB-171: hostile within 25 m renders, tier 0 far wolf does not', queued.has(20) && !queued.has(60));
+  ok('OB-171: tiers', wolf.components.voxel.priority === 2 && idle.components.voxel.priority === 1 && far.components.voxel.priority === 0 && beastVoxelPriority(STATE_WANDER, 2, { x: 1, y: 0 }, cam) === 0);
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

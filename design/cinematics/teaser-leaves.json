@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "id": "teaser-leaves",
+  "fps": 30,
+  "note": "TEASER (owner 2026-10-15, TikTok 9:16, capture --portrait). TEASER-QA-01 (2026-10-16) re-authored: the old groveNorthWest push (1466,1013) had ONE real tree within 15 m and looked at bare forest-type floor (near-black) into the 15:30 sun, with village roofs on the end horizon. Now: slow 9 m push WNW (yaw 295 -> 291) into the densest real-tree stand near Burl (12 trunks in r 12 m round 1406,916, 6-7 m spacing), eye ~1.0 -> 1.05 m over the downhill floor (-4.95 -> -6.25), between trunks (nearest 2.3 m at the end), tilting -20 -> -8 (trunks + crowns in frame from the first frame; the shaded floor under the dense stand renders near-black, so it must not fill the frame); the slope falls west, so the background is more forest and the western lowland, no buildings. Hour 10 (sun az ~110, behind the camera: lit trunks, readable floor).",
+  "keys": [
+    {
+      "t": 0,
+      "x": 1425.3,
+      "y": 925.2,
+      "z": -3.95,
+      "yawDeg": 295,
+      "pitchDeg": -20,
+      "ease": "linear"
+    },
+    {
+      "t": 3.25,
+      "x": 1423.62,
+      "y": 924.41,
+      "z": -4.2,
+      "yawDeg": 294,
+      "pitchDeg": -17,
+      "ease": "linear"
+    },
+    {
+      "t": 6.5,
+      "x": 1421.14,
+      "y": 923.25,
+      "z": -4.58,
+      "yawDeg": 293,
+      "pitchDeg": -14,
+      "ease": "linear"
+    },
+    {
+      "t": 9.75,
+      "x": 1418.68,
+      "y": 922.09,
+      "z": -4.95,
+      "yawDeg": 292,
+      "pitchDeg": -11,
+      "ease": "linear"
+    },
+    {
+      "t": 13,
+      "x": 1417,
+      "y": 921.3,
+      "z": -5.2,
+      "yawDeg": 291,
+      "pitchDeg": -8,
+      "ease": "linear"
+    }
+  ]
+}

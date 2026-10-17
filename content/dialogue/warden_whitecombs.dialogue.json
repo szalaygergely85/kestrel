@@ -1,0 +1,17 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "warden_whitecombs",
+  "speakers": {
+    "warden": {"label": "STEN"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "warden.hello"}
+  ],
+  "nodes": {
+    "warden.hello": {"end": true, "lines": [
+      "Sten. Cold up here. The light doesn't mind."
+    ], "speaker": "warden"}
+  }
+}

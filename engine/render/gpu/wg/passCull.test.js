@@ -8,7 +8,7 @@ import { frustumPlanes } from '../../../mesh/culling.js';
 import { projTerms, shearProjection } from '../../projection.js';
 import { CULL_WGSL, CULL_BLOCK } from '../wgsl/cull.wgsl.js';
 import { compileFn } from '../wgsl/wgslProbe.js';
-import { WgCullPass } from './passCull.js';
+import { WgCullPass, MAX_CULL_RANGES } from './passCull.js';
 
 const mock = makeMockGpuDevice(), d = mock.device;
 const f32 = (x) => Math.fround(x);
@@ -129,11 +129,29 @@ for (const [lodCells, maxDistM] of [[0, 0], [14, 0], [14, 120]]) {
   assert.equal(cull.argsBuffer._gpu.u32[ents[0].argsOffset / 4 + 1], 300, 'args reset to 0 each frame, then refilled');
   cull.invalidate(g); cull.begin({ planes: null }); cull.add(g, [mesh0, null]); cull.run();
   assert.equal(cull.stats.uploads, 1, 'invalidate -> re-upload');
+  { // LOD-RESET-01: resetLodHistory zeroes every batch's lodPrev (stale hysteresis -> fresh)
+    const b = cull.batches.get(g); b.lodPrev._gpu.u32.fill(1);
+    cull.resetLodHistory();
+    assert.ok(b.lodPrev._gpu.u32.every((v) => v === 0), 'lodPrev zeroed');
+    assert.equal(b.lodPrev._gpu.u32.length, 300);
+  }
   g.count = 0; cull.begin({ planes: null }); cull.add(g, [mesh0, null]); cull.run();
   assert.equal(cull.stats.dispatches, 0, 'empty batch: no dispatch');
   assert.throws(() => cull.add(makeGroup(4, 0), [{ ...mesh0, ranges: [{}, {}] }, null]), /multi-range/);
   cull.dispose();
   assert.equal(mock.liveCount(), live0, 'dispose frees every handle');
+}
+// ---- LOD-RESET-01 (arch): the shadow cull's lodPrev slot (shadow band) is zeroed by a reset too (WgShadowPass.resetLodHistory forwards to it) ----
+{
+  const cull = new WgCullPass(d, { shadow: true });
+  const g = makeGroup(64, 5);
+  cull.begin({ planes: null }); cull.add(g, [mesh0, null]); cull.run();
+  const b = cull.batches.get(g); b.lodPrev._gpu.u32.fill(2);
+  const { WgShadowPass } = await import('./passShadow.js');
+  assert.equal(typeof WgShadowPass.prototype.resetLodHistory, 'function', 'WgShadowPass forwards the reset');
+  WgShadowPass.prototype.resetLodHistory.call({ cull });
+  assert.ok(b.lodPrev._gpu.u32.every((v) => v === 0), 'shadow band buffer zeroed');
+  cull.dispose();
 }
 // ---- arch 2026-10-08 (WG-4a ARCH CHANGES): two groups marked static before add() both stay static; the args view is cached ----
 {
@@ -149,7 +167,13 @@ for (const [lodCells, maxDistM] of [[0, 0], [14, 0], [14, 120]]) {
   const gc = makeGroup(10, 5);
   cull.begin({ planes: null }); cull.add(gc, [mesh0, null]); cull.run();
   assert.notStrictEqual(cull._argsView, view, 'args view rebuilt when a batch slot is added');
-  assert.equal(cull._argsView.length, 6 * cull.argsCpu.length / (cull.maxBatches * 2), 'view covers the 6 used slots');
+  assert.equal(cull._argsView.length, 6 * cull.argsCpu.length / (cull.maxBatches * 2 * MAX_CULL_RANGES), 'view covers the 6 used slots');
+  { // CULL-CAP-01: a full args buffer makes supports() say no (non-cull path) instead of add() throwing mid-frame
+    const saved = cull._nextSlot, savedTop = cull._freeTop;
+    cull._nextSlot = cull.argsCpu.length / 5; cull._freeTop = 0;
+    assert.equal(cull.supports({ ib: { capacity: 8 }, mesh: null }, [mesh0, null]), false, 'full args buffer -> supports() false');
+    cull._nextSlot = saved; cull._freeTop = savedTop;
+  }
   cull.dispose();
 }
 // ---- 38.10a S8-B1-06: slot free list + idle sweep ----

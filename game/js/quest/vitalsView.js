@@ -11,6 +11,7 @@
 // RGB arrays directly.
 import { compileRichLine, drawRichLine, applySceneFade } from '../../../engine/index.js';
 import { VITALS_DEFAULTS } from './sim/vitalsConfig.js';
+import { quarters } from './sim/heartPieces.js'; // QL-08
 
 const DEFAULT_CELLS = 20; // uiStyle.vitals.layout.cells
 
@@ -66,7 +67,7 @@ function getBarState(key) {
 
 /** Test hook: clears all remembered bar/hurt/chip view state (a fresh "load"). */
 export function resetVitalsView() {
-  barState.clear();
+  barState.clear(); mpFadeStart = -1;
 }
 
 function writeChar(ui, x, y, ch, fg, bg) {
@@ -161,6 +162,7 @@ function drawBar(ui, key, value, max, style, def, row, simTime, flashAgeMs = Inf
   const text = def.number.format.replace('{hp}', String(value)).replace('{mp}', String(value)).replace('{max}', String(max));
   const numFg = a > 0 ? lerp3(def.number.fg, def.low.number.fgTo, a) : def.number.fg;
   for (let i = 0; i < text.length; i++) writeChar(ui, numberX + i, row, text[i], numFg, textBg);
+  if (text.length < 8) writeSpaces(ui, numberX + text.length, numberX + 7, row, textBg); // OB-137: blank the rest of the number field (up to the heart-piece marks at +8) so text drawn earlier on this row (e.g. the tail 'lay') never shows glued to '30/30'
 }
 
 /**
@@ -174,7 +176,16 @@ function drawBar(ui, key, value, max, style, def, row, simTime, flashAgeMs = Inf
  * @param {boolean} visible - false on title/map/end/death cards (caller's call)
  * @param {{tick:number, manaFlashTick?: number}} [vitals] - US-080b: the sim object, for the mana-short flash timing only
  */
-export function drawVitals(ui, world, style, simTime, visible, vitals) {
+/** FB-03: the MP bar fades in over MP_FADE_SEC after startMpFade(simTime) (main.js calls it on 'magic.unlocked'); never started = fully shown. */
+export const MP_FADE_SEC = 0.6;
+let mpFadeStart = -1;
+export function startMpFade(simTime) { mpFadeStart = simTime; }
+export function mpFadeAlpha(simTime) { if (mpFadeStart < 0) return 1; const e = simTime - mpFadeStart; return e <= 0 ? 0 : e >= MP_FADE_SEC ? 1 : e / MP_FADE_SEC; }
+// ui wrapper that scales fg/bg toward black by `a` (same layout, so the heart row never moves); one reused object, no per-frame allocation
+const fadeUi = { ui: null, a: 1, get cols() { return this.ui.cols; }, get rows() { return this.ui.rows; },
+  setCellRGB(x, y, code, fr, fg, fb, br, bg, bb) { const a = this.a; this.ui.setCellRGB(x, y, code, (fr * a) | 0, (fg * a) | 0, (fb * a) | 0, (br * a) | 0, (bg * a) | 0, (bb * a) | 0); } };
+
+export function drawVitals(ui, world, style, simTime, visible, vitals, showMp = true) {
   if (!visible || !style) return;
   const handle = world.get('player');
   const data = handle && handle.data;
@@ -182,11 +193,15 @@ export function drawVitals(ui, world, style, simTime, visible, vitals) {
   const mana = data && data.components && data.components.mana;
   if (!health) return;
   drawBar(ui, 'hp', health.hp, health.max, style, style.hp, style.layout.hpRow, simTime);
-  if (mana && style.mp) {
+  const q = quarters(world.state); // QL-08: 0-3 heart-piece marks after the HP number
+  for (let i = 0; i < q; i++) writeChar(ui, style.layout.x + style.layout.numberCol + 8 + i, style.layout.hpRow, 'v', [216, 52, 74], style.textBg);
+  if (showMp && mana && style.mp) { // showMp=false while the fireball is off (D-065): hearts/HP only
     // BUG-MANA-001: both ticks share the vitals clock, which pauses and resets independently of simTime.
     const flashAgeMs = vitals && vitals.manaFlashTick > 0
       ? ((vitals.tick - vitals.manaFlashTick) / 60) * 1000 : Infinity;
-    drawBar(ui, 'mp', mana.mp, mana.max, style, style.mp, style.layout.mpRow, simTime, flashAgeMs);
+    const fa = mpFadeAlpha(simTime);
+    if (fa >= 1) drawBar(ui, 'mp', mana.mp, mana.max, style, style.mp, style.layout.mpRow, simTime, flashAgeMs);
+    else if (fa > 0) { fadeUi.ui = ui; fadeUi.a = fa; drawBar(fadeUi, 'mp', mana.mp, mana.max, style, style.mp, style.layout.mpRow, simTime, flashAgeMs); fadeUi.ui = null; }
   }
 }
 
@@ -228,15 +243,16 @@ function drawRaggedCell(ui, x, y, code, fg, bg, coverage) {
  *   with `drawVitals`; see the Q9 item 2a note below)
  * @param {Object} style - `ASSETS.uiStyle.vitals`
  */
-export function drawHurtEdge(ui, vitals, simTime, style) {
+export function drawHurtEdge(ui, vitals, simTime, style, reduceMotion = false) {
   const cfg = style && style.hurtEdge;
   if (!cfg || !vitals || !vitals.hurtTick) return;
   // Q9 item 2a: aged against `vitals.tick` (the sim's own step count, reset to 0 on every `createVitals`), not
   // `simTime` (seconds since page boot, never reset) - comparing a per-load step count to a boot-time clock made
   // this never show again after a restart, once `simTime` had run past a few seconds.
   const elapsedMs = ((vitals.tick - vitals.hurtTick) / 60) * 1000;
-  const stage = hurtEdgeStage(elapsedMs, cfg);
+  let stage = hurtEdgeStage(elapsedMs, cfg);
   if (!stage) return;
+  if (reduceMotion) { stage = cfg.stages[0]; } // SETTINGS-APPLY-01: no fade/glyph animation, a steady tint for the same window
 
   const cols = ui.cols, rows = ui.rows;
   const { rows: thickRows, cols: thickCols } = cfg.thickness;
@@ -321,12 +337,23 @@ export function applyDeathFade(rt, vitals, fadeLut) {
 // call, same as every other per-frame draw-state object in this file.
 const _deathCardState = { visible: false, lines: [], cursorOn: false };
 
+// Sea monster / swim death card lines (writer 2026-10-13, docs/story.md "Sea monster"); shown in place of the typed
+// 'fall' line when vitals.deathCause is set. The variant alternates per death (counted on the alive -> dead edge).
+export const DEATH_CAUSE_LINES = {
+  eaten: ['Something rose under me. Then dark.', 'Next time, I stay inside the stakes.'],
+  drown: ['My breath ran out short of the shore.', 'Far above, the light still blinks.'],
+};
+let _deathWasAlive = true, _deathVariant = 0;
+
 export function computeDeathCardState(vitals, style) {
   const out = _deathCardState;
   out.visible = false;
   out.lines.length = 0;
   out.cursorOn = false;
-  if (!vitals || !vitals.dead || !style || !style.deathCard) return out;
+  if (!vitals || !vitals.dead) { _deathWasAlive = true; return out; }
+  if (_deathWasAlive) { _deathWasAlive = false; _deathVariant++; }
+  if (!style || !style.deathCard) return out;
+  const causeLines = vitals.deathCause ? DEATH_CAUSE_LINES[vitals.deathCause] : null;
   const { sinkSteps, fadeSteps } = VITALS_DEFAULTS;
   const total = sinkSteps + fadeSteps;
   if (vitals.deathStep < total) return out; // still sinking/fading - no card yet
@@ -336,7 +363,8 @@ export function computeDeathCardState(vitals, style) {
   let allTypedDone = true;
   for (const def of style.deathCard.lines) {
     if (!def.typed) continue;
-    const text = def.text != null ? def.text : def.placeholder;
+    let text = def.text != null ? def.text : def.placeholder;
+    if (causeLines && def.id === 'fall') text = causeLines[_deathVariant % causeLines.length];
     const cps = def.cps || 30;
     const shown = Math.min(text.length, Math.max(0, Math.floor(remaining * cps)));
     if (shown < text.length) allTypedDone = false;
@@ -388,4 +416,13 @@ export function drawDeathCard(ui, style, state) {
       writeChar(ui, x + ls.count, def.row, cur.glyph, fg, [0, 0, 0]);
     }
   }
+}
+
+/** EQ-09 AC3: the quiver count ("}> 12") right of the HP number while the bow set is out. Pure draw, no allocation beyond the text. */
+export function drawArrowCount(ui, style, n, visible) {
+  if (!visible || !style || !style.layout) return;
+  const L = style.layout, row = L.hpRow, x0 = L.x + L.numberCol + 9;
+  const bg = style.textBg || [0, 0, 0], fg = n > 0 ? [214, 188, 120] : [200, 70, 60];
+  const text = '}> ' + n;
+  for (let i = 0; i < text.length + 1; i++) writeChar(ui, x0 + i, row, i < text.length ? text[i] : ' ', fg, bg);
 }

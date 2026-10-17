@@ -38,5 +38,23 @@ for (const hand of ['left', 'right']) {
   const onPost = hits.filter(h => (h.target || h.targetId || (h.entity && h.entity.id)) === post.id || JSON.stringify(h).includes('practiceTarget'));
   ok(onPost.length >= 1, `${hand}-hand light swing at 1 m hits the solid practice post (hits: ${hits.length})`);
 }
+// COMBAT-REACH-01 (owner 2026-10-09): the post stands ~0.4 m from the north wall; the early slices' rays hit that wall
+// and used to abort the swing before the slice that reaches the post. Poses are the owner's F3 values (+ point-blank).
+const swingFrom = (x, y, yaw) => {
+  const hits = []; const listeners = new Map();
+  const events = { on(n, fn) { let s = listeners.get(n); if (!s) listeners.set(n, s = new Set()); s.add(fn); return () => s.delete(fn); },
+    emit(n, p) { if (n === 'combat:hit') hits.push(p); const s = listeners.get(n); if (s) for (const fn of [...s]) fn(p); } };
+  const sim = createSwordSim(w, events, { ...SWORD_CFG, hand: 'left' }, {});
+  const r = yaw * Math.PI / 180, fx = Math.sin(r), fy = -Math.cos(r);
+  const player = { id: 'player', transform: { x, y, z: post.transform.z, yawDeg: yaw }, components: { body: { grounded: true, speedScale: 1, vx: 0, vy: 0, vz: 0, eyeH: 1.6 } } };
+  sim.step(player, fx, fy, true); sim.step(player, fx, fy, false);
+  for (let i = 0; i < 40; i++) sim.step(player, fx, fy, false);
+  return hits.filter(h => h.target === post.id).length;
+};
+const dx0 = post.transform.x - 1494.6, dy0 = post.transform.y - 1024.6; // 0 in the shipped layout; keeps poses relative
+ok(swingFrom(1494.32 + dx0, 1023.12 + dy0, 168) >= 1, 'COMBAT-REACH-01 far pose (1.5 m) hits');
+ok(swingFrom(1494.49 + dx0, 1023.73 + dy0, 174) >= 1, 'COMBAT-REACH-01 close pose (0.88 m, beside the wall) hits');
+ok(swingFrom(1494.6 + dx0, 1024.45 + dy0, 180) >= 1, 'COMBAT-REACH-01 point-blank (0.15 m) hits');
+
 console.log(`practice-hit: ${checks} checks`);
 console.log('ALL PASS');

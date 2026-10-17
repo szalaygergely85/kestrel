@@ -5,6 +5,7 @@
 // takes the lantern, kills boar1, saves, reloads the SAME profile and checks: position within 0.01 m, hearts, quest objective,
 // dead beast stays gone, no console errors. Also checks that without save=1 (capture page) nothing loads or saves.
 import { spawn } from 'node:child_process';
+import { withTimeFreeze } from './tool-url.mjs'; // DN-04a
 import path from 'node:path';
 import os from 'node:os';
 import { rmSync, readFileSync } from 'node:fs';
@@ -13,7 +14,7 @@ import { ROOT, findBrowserBinary, waitForHttp, killTree, connectCdp, buildLaunch
 const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, all) => (v.startsWith('--') ? [...a, [v.slice(2), all[i + 1]]] : a), []));
 const port = Number(args.port); validatePort(port);
 const grid = args.grid || '240x90';
-const base = `http://127.0.0.1:${port}/game/index.html?voxelbench=0&grid=${grid}`;
+const base = `http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(`voxelbench=0&grid=${grid}`)}`;
 // expected objective text comes from the quest content (writer pass may change it)
 const BREACH_TEXT = JSON.parse(readFileSync(path.join(ROOT, 'content/quests/m1.quest.json'), 'utf8')).objectives.find((o) => o.id === 'breach').text;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

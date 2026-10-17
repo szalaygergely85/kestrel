@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "id": "mq.smoke",
+  "title": "Smoke in the North",
+  "giver": { "npc": "rook" },
+  "main": true,
+  "requires": [{ "quest": "mq.ford.mirror", "done": true }],
+  "objectives": [
+    { "id": "mark", "text": "Look at the mark on the waystone", "journal": "Ford Waystone hums. Look at its mark.", "when": { "type": "flag", "id": "lore.fordMark.read", "equals": true } },
+    { "id": "north", "text": "Follow the footpath north", "journal": "Smoke in the north. Take the footpath.", "when": { "type": "area", "id": "northLook" } }
+  ],
+  "returnText": "Talk to Rook",
+  "abandonable": false,
+  "reward": { "coin": 35, "items": [{ "id": "potion.hp", "n": 1 }] }
+}

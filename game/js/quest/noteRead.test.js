@@ -4,7 +4,7 @@
 // dim helper (pushNoteDim), and a light smoke of drawNotePanel with a fake ui.
 import { makeOk } from '../../../engine/test/assert.js';
 import {
-  wrapNoteLines, noteRead, resetNoteRead, stepNoteRead, isNoteOpen, getOpenNoteId, pushNoteDim, drawNotePanel,
+  wrapNoteLines, noteRead, resetNoteRead, stepNoteRead, isNoteOpen, isNoteEscGrace, FOOTER_TEXT, getOpenNoteId, pushNoteDim, drawNotePanel,
 } from './noteRead.js';
 
 let pass = 0, fail = 0;
@@ -128,6 +128,54 @@ function edgeInput() {
   ok('drawNotePanel keeps cells inside the UI grid', cells.every(([x, y]) => x >= 0 && x < 160 && y >= 0 && y < 60));
 }
 
+// ---- OB-048 / OB-049 / OB-050 ----
+{
+  const cfg = { note: { fadeIn: 0.1, fadeOut: 0.05, sceneDim: { bgMul: 0.35 } } };
+  const world = { state: {} };
+  const def = { noteId: 'keeperLog', x: 10, y: 20, z: 1, radius: 3 };
+  const none = { pressed: () => false };
+  const click = { pressed: (c) => c === 'Mouse0', consumePressed: () => {} };
+  const esc = { pressed: (c) => c === 'Escape', consumePressed: () => {} };
+  const openIt = () => { resetNoteRead(cfg); noteRead({ world, def }); stepNoteRead(0.2, none, true, { x: 10, y: 20, z: 1 }); };
+
+  ok('footer text is [Q] Close and has no Esc hint (OB-056)', FOOTER_TEXT === '[Q] Close' && !/esc/i.test(FOOTER_TEXT));
+  const cells = [];
+  const ui = { cols: 160, rows: 60, setCellRGB: (x, y, code) => cells.push(code) };
+  openIt();
+  drawNotePanel(ui, { keeperLog: { title: 'T', lines: ['a'] } }, { note: { rgb: { paper: [1, 1, 1], paperEdge: [1, 1, 1], edgeInk: [1, 1, 1], inkFaded: [1, 1, 1], inkKey: [1, 1, 1], inkTitle: [1, 1, 1], ink: [1, 1, 1], shadow: [1, 1, 1] }, panel: {}, frame: {}, text: {} } });
+  ok('footer glyph "[" drawn', cells.includes('['.charCodeAt(0) - 32));
+
+  openIt(); stepNoteRead(0.016, click, true, { x: 10, y: 20, z: 1 }); stepNoteRead(0.1, none, true);
+  ok('left click closes the note', !isNoteOpen());
+
+  openIt(); stepNoteRead(0.016, none, true, { x: 10 + 1.8 + 0.3, y: 20, z: 1 }); // inside min(3,1.8)+0.5 = 2.3
+  ok('under the walk-away threshold stays open', isNoteOpen() && getOpenNoteId() === 'keeperLog');
+  stepNoteRead(0.016, none, true, { x: 10 + 2.4, y: 20, z: 1 }); stepNoteRead(0.1, none, true, { x: 10 + 2.4, y: 20, z: 1 });
+  ok('far away still open: no walk-away close (OB-055/OB-057: movement is frozen instead)', isNoteOpen());
+
+  resetNoteRead(cfg); noteRead({ world, def: { noteId: 'keeperLog' } }); stepNoteRead(0.2, none, true, { x: 999, y: 999, z: 0 });
+  ok('note without a source never walk-away closes', isNoteOpen());
+
+  // Esc under pointer lock: lock lost closes the note and the pause menu stays down for that press
+  openIt(); stepNoteRead(0.016, none, false); stepNoteRead(0.1, none, false);
+  ok('Esc (lock lost) closes the note and is consumed (no pause)', !isNoteOpen() && isNoteEscGrace());
+  stepNoteRead(0.016, esc, false);
+  ok('a second Esc ends the grace (pause may open)', !isNoteEscGrace());
+  openIt(); stepNoteRead(0.016, none, false); stepNoteRead(0.1, none, true);
+  ok('grace ends when the pointer locks again', !isNoteEscGrace());
+  resetNoteRead(cfg);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { console.log('FAILURES:\n' + failures.map((f) => '  - ' + f).join('\n')); process.exit(1); }
 console.log('ALL PASS');
+
+// ---- OB-174: Q closes a note and the press is consumed ----
+{
+  resetNoteRead({ note: { fadeIn: 0.12, fadeOut: 0.08, sceneDim: { bgMul: 0.35 } } });
+  const world = { state: {} }; let consumed = 0; let q = false;
+  const inp = { pressed: (c) => q && c === 'KeyQ', consumePressed: () => { consumed++; } };
+  noteRead({ world, def: { noteId: 'keeperLog' } }); stepNoteRead(0.2, inp, true);
+  q = true; stepNoteRead(0.016, inp, true); q = false; stepNoteRead(0.2, inp, true);
+  ok('Q closes the note and consumes the press', !isNoteOpen() && consumed === 1);
+}

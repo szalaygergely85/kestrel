@@ -23,7 +23,7 @@ export function axisGizmoEndpoints(yawDeg, pitchDeg) {
  * DOM overlay in `parent` (bottom-left). `getView()` -> {yawDeg,pitchDeg};
  * `onPreset(name)` fires for the TOP/FRONT/ISO buttons. Returns {update, el}.
  */
-export function createAxisGizmo(parent, { getView, onPreset }) {
+export function createAxisGizmo(parent, { getView, onPreset, onAxis }) {
   const NS = 'http://www.w3.org/2000/svg';
   const el = document.createElement('div');
   el.id = 'axis-gizmo';
@@ -40,6 +40,8 @@ export function createAxisGizmo(parent, { getView, onPreset }) {
     text.setAttribute('fill', AXIS_COLORS[k]); text.setAttribute('font-size', '11');
     text.setAttribute('text-anchor', 'middle'); text.setAttribute('dominant-baseline', 'central');
     text.textContent = k.toUpperCase();
+    text.style.cursor = 'pointer'; text.style.pointerEvents = 'all';
+    text.addEventListener('click', () => { if (onAxis) onAxis(k); });
     svg.appendChild(line); svg.appendChild(text);
     parts[k] = { line, text };
   }

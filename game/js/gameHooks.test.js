@@ -62,6 +62,23 @@ bus.emit('interaction:fired', { key: 'lever1', name: 'lever' });
 assert.equal(H3.payload('prop:touched').id, 'lever1'); assert.equal(H3.payload('prop:touched').kind, 'lever');
 assert.deepEqual([H3.payload('prop:touched').x, H3.payload('prop:touched').y, H3.payload('prop:touched').z], [0, 0, 0]);
 
+// ED-LOGIC-01b: trigger:entered/left -> area:entered / area:left
+{ const B = { m: {}, on(n, f) { (this.m[n] ||= []).push(f); return () => {}; }, emit(n, p) { for (const f of this.m[n] || []) f(p); } };
+  const HB = createGameHooks(); const g = []; HB.register({ onEvent: (n, d) => g.push(n + ':' + d.id) });
+  bridgeEngineEvents(B, HB); B.emit('trigger:entered', { key: 's.z', id: 'z' }); B.emit('trigger:left', { key: 's.z', id: 'z' });
+  assert.deepEqual(g, ['zone:entered:z', 'zone:left:z']); assert.ok(EVENT_NAMES.includes('zone:left')); assert.ok(!g.some((x) => x.startsWith('area:'))); }
+
+// ED-LOGIC-01c: a walk through a quest area feeds the quest exactly once. The quest relay (saveRelay.handlers) feeds the book on every
+// 'area:entered'; the questRelay poll emits it once per area, the engine zone events must NOT add a second one (they are zone:*).
+{ const B = { m: {}, on(n, f) { (this.m[n] ||= []).push(f); return () => {}; }, emit(n, p) { for (const f of this.m[n] || []) f(p); } };
+  const HB = createGameHooks(); const fed = []; const zones = [];
+  HB.register({ onEvent: (n, d) => { if (n === 'area:entered') fed.push(d.id); if (n === 'zone:entered') zones.push(d.id); } });
+  bridgeEngineEvents(B, HB);
+  B.emit('trigger:entered', { key: 'world.towerDoor', id: 'towerDoor' }); // engine zone crossing
+  HB.emitSimple('area:entered', 'towerDoor'); // questRelay.pollAreas -> onPoll (the old, only source)
+  B.emit('trigger:left', { key: 'world.towerDoor', id: 'towerDoor' }); B.emit('trigger:entered', { key: 'world.towerDoor', id: 'towerDoor' });
+  assert.deepEqual(fed, ['towerDoor']); assert.deepEqual(zones, ['towerDoor', 'towerDoor']); }
+
 // no per-call allocation on the hot path (tick / emitSimple / drawHud with 3 handlers)
 const H4 = createGameHooks(); let n4 = 0; const hud = {};
 for (let i = 0; i < 3; i++) H4.register({ onTick: () => n4++, onEvent: () => n4++, drawHud: () => n4++ });

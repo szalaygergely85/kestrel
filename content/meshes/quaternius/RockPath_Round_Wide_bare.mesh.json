@@ -1,0 +1,37 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/RockPath_Round_Wide_bare",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "RockPath_Round_Wide.mesh.bin",
+  "triCount": 3500,
+  "bbox": [
+    -1.04798,
+    -1.0031,
+    -0.00888,
+    1.06264,
+    1.12593,
+    0.10395
+  ],
+  "ranges": [
+    {"count": 716, "part": "RockPath_Round_Wide#0:rock", "start": 0},
+    {"count": 1246, "part": "RockPath_Round_Wide#0:moss_cap", "start": 716},
+    {"count": 1538, "part": "RockPath_Round_Wide#0:rock_soft", "start": 1962}
+  ],
+  "matKeys": [
+    "rock",
+    "moss_cap",
+    "rock_soft"
+  ],
+  "mats": {
+    "moss_cap": "rock",
+    "rock": "rock",
+    "rock_soft": "rock_soft"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "collide": false,
+  "castShadow": false
+}

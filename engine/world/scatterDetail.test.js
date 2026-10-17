@@ -83,5 +83,42 @@ for (const [ground, key] of [[{ mud: [{ model: 'a', weight: 1 }] }, 'ground.mud'
 assert.throws(() => scatterDetail(flat, [], [], { layers: [layer], maxPlacements: 1 }), /detail.maxPlacements/); checks++;
 const degenerate = scatterDetail(flat, [], [{ shape: 'capsule', ax: 0, ay: 0, bx: 0, by: 0, r: 8 }], { layers: [layer] });
 ok([...degenerate.x].every((x, i) => Math.hypot(x, degenerate.y[i]) > 8));
+// GS-01c: carveMask keep-out. 10x10 box, 4x4 walled core (cells 3..6) non-flagged, the ring around it flagged (open ground).
+{
+  const mask = new Uint8Array(100).fill(0);
+  for (let r = 3; r < 7; r++) for (let c = 3; c < 7; c++) mask[r * 10 + c] = 1;
+  const box = { x0: 0, y0: 10, x1: 10, y1: 20 };
+  const masked = scatterDetail(flat, [{ kind: 'mesh', bbox: box, carveMask: mask }], [], { layers: [layer], structClearM: 2 });
+  const plain = scatterDetail(flat, [{ kind: 'mesh', bbox: box }], [], { layers: [layer], structClearM: 2 });
+  const none = scatterDetail(flat, [{ kind: 'mesh', bbox: box, carveMask: null }], [], { layers: [layer], structClearM: 2 });
+  assert.deepEqual(none.x, plain.x); assert.deepEqual(none.y, plain.y); checks += 2; // null mask = unflagged level, unchanged
+  let inRing = 0, plainIn = 0;
+  for (let i = 0; i < masked.count; i++) {
+    const x = masked.x[i], y = masked.y[i];
+    assert.ok(!(x >= 3 - 2 && x <= 7 + 2 && y >= 13 - 2 && y <= 17 + 2)); // 2 m clear of the walled core
+    if (x >= 0 && x < 10 && y >= 10 && y < 20) inRing++;
+  }
+  for (let i = 0; i < plain.count; i++) if (plain.x[i] >= 0 && plain.x[i] < 10 && plain.y[i] >= 10 && plain.y[i] < 20) plainIn++;
+  ok(inRing > 0 && plainIn === 0 && masked.count > plain.count);
+}
+// SAPLINGS (arch 37.4.1): species without `scale` -> hash-identical placements + scale all 1; with `scale` -> values in range, other draws untouched
+{
+  const plainCfg = { layers: [layer] };
+  const scaledLayer = { ...layer, ground: { grass: layer.ground.grass.map(sp => ({ ...sp, scale: [0.3, 0.5] })) } };
+  const p0 = scatterDetail(flat, [], [], plainCfg), p1 = scatterDetail(flat, [], [], { layers: [scaledLayer] });
+  ok(p0.scale instanceof Float32Array && p0.scale.every(v => v === 1));
+  for (const k of ['x', 'y', 'z', 'yawDeg', 'species', 'r2', 'tileStart']) { assert.deepEqual(p1[k], p0[k]); checks++; }
+  ok(p1.count === p0.count && p1.scale.every(v => v >= 0.3 - 1e-6 && v <= 0.5 + 1e-6) && new Set(p1.scale).size > 10);
+  assert.throws(() => validateDetailConfig({ layers: [{ ...layer, ground: { grass: [{ model: 'a', weight: 1, scale: [0.6, 0.5] }] } }] })); checks++;
+  assert.throws(() => validateDetailConfig({ layers: [{ ...layer, ground: { grass: [{ model: 'a', weight: 1, scale: [0.5, 2.5] }] } }] })); checks++;
+}
 const start = performance.now(); scatterDetail(flat, [], [], { layers: [layer] }); const ms = performance.now() - start;
 console.log(`scatterDetail synthetic: ${a.count} placements, 2-layer ${two.count}; ${ms.toFixed(3)} ms${ms > 40 ? ' WARN >40ms' : ''}; ${checks} checks ALL PASS`);
+
+{ // OB-184b: cluster validation
+  const cl = { treeR: 5, near: 1.4, far: 0.4, patchM: 18, patchAmt: 0.3 };
+  validateDetailConfig({ layers: [{ ...layer, cluster: cl }] });
+  for (const c of [{ ...cl, treeR: 9 }, { ...cl, treeR: 0 }, { ...cl, near: -1 }, { ...cl, far: NaN }])
+    assert.throws(() => validateDetailConfig({ layers: [{ ...layer, cluster: c }] }), /cluster/);
+  assert.throws(() => validateDetailConfig({ layers: [{ ...layer, gpu: true, cluster: cl }] }), /cluster/);
+}

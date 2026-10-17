@@ -45,6 +45,9 @@ export function ensureInventory(player, start) {
   return c.inventory;
 }
 
+export const EQUIP_SLOTS = ['head', 'body', 'cloak', 'hands', 'belt', 'legs', 'feet', 'main', 'off', 'ranged', 'quiver'];
+export const EQUIP_TIERS = ['worn', 'sturdy', 'fine', 'tempered', 'warden']; // EQ-21: T4/T5
+
 /**
  * Validates every item def once at load (id/name/kind/stackMax/icon); throws naming the bad id. Called by
  * main.js at boot. This checks the fields the inventory code actually depends on (the designer's own
@@ -53,7 +56,7 @@ export function ensureInventory(player, start) {
  * @param {Record<string, any>} defs
  */
 export function validateItemDefs(defs) {
-  const KINDS = { weapon: 1, spell: 1, tool: 1, food: 1, material: 1, pickup: 1, shield: 1, key: 1, upgrade: 1, currency: 1 };
+  const KINDS = { weapon: 1, spell: 1, tool: 1, food: 1, material: 1, pickup: 1, shield: 1, key: 1, upgrade: 1, currency: 1, gear: 1, ammo: 1, potion: 1 };
   for (const id in defs) {
     const d = defs[id];
     if (!d || d.id !== id) throw new Error(`[items] bad def "${id}": id mismatch`);
@@ -63,6 +66,13 @@ export function validateItemDefs(defs) {
     if (!d.icon || !Array.isArray(d.icon.glyphs) || !Array.isArray(d.icon.fg) || d.icon.glyphs.length !== 3 || d.icon.fg.length !== 3) {
       throw new Error(`[items] bad def "${id}": icon`);
     }
+    const q = d.equip; // EQ-01: { slot, tier, def, shell?, held? }
+    if (q !== undefined) {
+      if (!q || !EQUIP_SLOTS.includes(q.slot)) throw new Error(`[items] bad def "${id}": equip.slot "${q && q.slot}"`);
+      if (!EQUIP_TIERS.includes(q.tier)) throw new Error(`[items] bad def "${id}": equip.tier "${q.tier}"`);
+      if (typeof q.def !== 'number' || !(q.def >= 0)) throw new Error(`[items] bad def "${id}": equip.def`);
+    }
+    if (d.kind === 'gear' && !q) throw new Error(`[items] bad def "${id}": gear needs equip`);
   }
 }
 
@@ -107,6 +117,32 @@ export function addItem(inv, defs, id, n) {
     }
   }
   return n - remaining;
+}
+
+/**
+ * OB-203: moves pack slot `a` onto pack slot `b` (drag in the inventory). Same item: stacks into `b` up to
+ * `defs[id].stackMax`, the rest stays in `a`; otherwise the two slots swap (an empty `b` = plain move).
+ * Hands reference item ids, not slots, so they are unaffected. Returns false when nothing changed.
+ * @param {{slots: Array<{id: string|null, n: number}>}} inv
+ * @param {Record<string, any>} defs
+ * @param {number} a
+ * @param {number} b
+ * @returns {boolean}
+ */
+export function moveSlot(inv, defs, a, b) {
+  if (a === b || !(a >= 0 && a < SLOTS && b >= 0 && b < SLOTS)) return false;
+  const sa = inv.slots[a], sb = inv.slots[b];
+  if (!sa.id) return false;
+  if (sb.id === sa.id) {
+    const max = (defs[sa.id] && defs[sa.id].stackMax) || 1, add = Math.min(max - sb.n, sa.n);
+    if (add <= 0) return false;
+    sb.n += add; sa.n -= add;
+    if (sa.n <= 0) { sa.id = null; sa.n = 0; }
+    return true;
+  }
+  const id = sa.id, n = sa.n;
+  sa.id = sb.id; sa.n = sb.n; sb.id = id; sb.n = n;
+  return true;
 }
 
 /**
@@ -189,6 +225,7 @@ export function swapHands(inv) {
  */
 export function migrateSword(inv, defs) {
   if (countOf(inv, 'sword') > 0) return false;
+  if (inv.left === 'sword' || inv.right === 'sword') return false; // OB-079: a wielded sword has left the pack slots but is NOT missing - Continue used to duplicate it (hands sword/sword + a pack copy)
   if (addItem(inv, defs, 'sword', 1) === 0) return false;
   if (inv.left === null) inv.left = 'sword';
   else if (inv.right === null) inv.right = 'sword';

@@ -41,7 +41,7 @@
 // still +Inf (sky). One shared sprite pass/shader, no separate draw path.
 import { PROJ_HFOV_DEG as HFOV_DEG } from './projection.js';
 import { lightAt } from './lighting.js';
-import { createPitchedTerms, pitchedTerms, worldToCell, resolveProjection, isPitchedFamily, ORTHO_BACK_M } from './projection.js';
+import { createPitchedTerms, pitchedTermsInto, pitchedTerms, worldToCell, resolveProjection, isPitchedFamily, ORTHO_BACK_M } from './projection.js';
 
 export const MAX_SPRITES = 64;
 export const SPR_TEXELS = 5;
@@ -74,7 +74,7 @@ export function camBasis(cam, rt, out, renderer) {
     const pt = out.pt || (out.pt = createPitchedTerms());
     const g = out.grid || (out.grid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 });
     g.cols = cols; g.rows = rows; g.pxCellW = rt.pxCellW || 1; g.pxCellH = rt.pxCellH || 1;
-    pitchedTerms(cam, g, pt);
+    pitchedTermsInto(pt, cam, g);
     out.ptOn = true;
   } else {
     out.ptOn = false;
@@ -258,6 +258,16 @@ export class SpritePool {
     this._anim = new Array(MAX_SPRITES).fill('');
     this._frame = new Int32Array(MAX_SPRITES);
     this._pos = new Float64Array(MAX_SPRITES * 3);
+    // SPRITE-LIGHT-CACHE-01 (D-107): per-raw-index cached lightAt rgb + the position/frame it was taken at.
+    this.lightCache = true;                      // false = trace every sprite every frame (the old path)
+    this.lightCacheEvery = 4;                    // max lag in project() calls
+    this.lightCacheMove = 0.25;                  // m; a sprite that moved further refreshes at once
+    this.lightCacheStats = { hit: 0, miss: 0 };
+    this._lcRgb = new Float64Array(MAX_SPRITES * 3);
+    this._lcPos = new Float64Array(MAX_SPRITES * 3);
+    this._lcAt = new Int32Array(MAX_SPRITES).fill(-1);
+    this._lcFrame = 0; this._lcLight = null; this._lcWorld = null; this._lcCount = -1;
+    this._lcSun = new Float64Array(4);
     // US-016 (architecture.md 14.4 item 7): optional per-raw-sprite
     // billboard fields (`components.billboard` - unlit/fogModel/fogMax/
     // minCells/detailRows), null for an ordinary lit prop/entity sprite.
@@ -276,8 +286,9 @@ export class SpritePool {
   /**
    * Adds one raw sprite (model key, animation name, frame index, world
    * anchor/feet point). `billboard`: optional `{unlit, fogModel, fogMax,
-   * minCells:{w,h}, detailRows}` (architecture.md 14.4 item 7) - null for an
-   * ordinary lit sprite.
+   * minCells:{w,h}, detailRows, nearOk}` (architecture.md 14.4 item 7) - null for an
+   * ordinary lit sprite. `nearOk` (SPR T3.w, 37.8b): view-model attached only; skips the
+   * near cull but is still depth-tested; never for world sprites.
    */
   /** collect()'s internal entry: same as push() but reads the anchor from the transform (no double args, no `||` phi). */
   _pushEntity(s, t, billboard) {
@@ -356,6 +367,22 @@ export class SpritePool {
       uMulR = (1 + (hr - 1) * k) * gain; uMulG = (1 + (hg - 1) * k) * gain; uMulB = (1 + (hb - 1) * k) * gain;
     }
 
+    // SPRITE-LIGHT-CACHE-01: global invalidation (new light set / world / light count / sun moved or toggled).
+    let lcAll = false;
+    const lcFrame = ++this._lcFrame;
+    if (perSprite) {
+      const sd = light.sun ? light.sun.dir : null, sun = this._lcSun;
+      if (light !== this._lcLight || world !== this._lcWorld || light.count !== this._lcCount) lcAll = true;
+      if (light.sun) {
+        const on = light.sun.on ? 1 : 0;
+        if (on !== sun[3] || (sd && (Math.abs(sd[0] - sun[0]) + Math.abs(sd[1] - sun[1]) + Math.abs(sd[2] - sun[2])) > 1e-3)) lcAll = true;
+        if (lcAll) { sun[0] = sd ? sd[0] : 0; sun[1] = sd ? sd[1] : 0; sun[2] = sd ? sd[2] : 0; sun[3] = on; }
+      }
+      this._lcLight = light; this._lcWorld = world; this._lcCount = light.count;
+    }
+    const lcOn = perSprite && this.lightCache, lcEvery = this.lightCacheEvery, lcMove2 = this.lightCacheMove * this.lightCacheMove;
+    const lcRgb = this._lcRgb, lcPos = this._lcPos, lcAt = this._lcAt;
+
     let n = 0;
     for (let i = 0; i < this.rawCount; i++) {
       const m = this._model[i];
@@ -400,6 +427,7 @@ export class SpritePool {
       if (x0 >= cb.cols || y0 >= cb.rows || x0 + w <= 0 || y0 + h <= 0) continue;
 
       let mulR = uMulR, mulG = uMulG, mulB = uMulB, b = uB;
+      const nearOk = bb && bb.nearOk ? 1 : 0; // HAND-FIRE-WRAP-01: view-model attached sprite (T3.w): exempt from the near cull
       // US-016 (architecture.md 14.4 item 7): `unlit` - light = 1, no N.L
       // (skips `lightAt` even on the per-sprite `LightSet` path). Still
       // shaded through the ordinary gain curve at b = 1 (not a flat
@@ -410,7 +438,23 @@ export class SpritePool {
         const gain = S.fgMin + (1 - S.fgMin) * Math.pow(1, S.fgGamma);
         mulR = gain; mulG = gain; mulB = gain;
       } else if (perSprite) {
-        lightAt(light, world, px, py, pz + 0.5 * m.world.h, 0, 0, 1, sprLightScratch);
+        // Cache hit = reuse the last lightAt rgb (round-robin slot (i + frame) % every refreshes at least every `every` frames).
+        let hit = false;
+        if (lcOn && !lcAll && lcAt[i] >= 0 && lcFrame - lcAt[i] < lcEvery && (i + lcFrame) % lcEvery !== 0) {
+          const dx = px - lcPos[i * 3], dy = py - lcPos[i * 3 + 1], dz = pz - lcPos[i * 3 + 2];
+          if (dx * dx + dy * dy + dz * dz <= lcMove2) hit = true;
+        }
+        if (hit) {
+          sprLightScratch[0] = lcRgb[i * 3]; sprLightScratch[1] = lcRgb[i * 3 + 1]; sprLightScratch[2] = lcRgb[i * 3 + 2];
+          this.lightCacheStats.hit++;
+        } else {
+          lightAt(light, world, px, py, pz + 0.5 * m.world.h, 0, 0, 1, sprLightScratch);
+          this.lightCacheStats.miss++;
+          if (lcOn) {
+            lcRgb[i * 3] = sprLightScratch[0]; lcRgb[i * 3 + 1] = sprLightScratch[1]; lcRgb[i * 3 + 2] = sprLightScratch[2];
+            lcPos[i * 3] = px; lcPos[i * 3 + 1] = py; lcPos[i * 3 + 2] = pz; lcAt[i] = lcFrame;
+          }
+        }
         const Lm = Math.max(sprLightScratch[0], sprLightScratch[1], sprLightScratch[2]);
         b = Lm;
         const hr = Lm > 1e-6 ? sprLightScratch[0] / Lm : 1, hg = Lm > 1e-6 ? sprLightScratch[1] / Lm : 1, hb = Lm > 1e-6 ? sprLightScratch[2] / Lm : 1;
@@ -442,7 +486,7 @@ export class SpritePool {
       spr[o] = x0; spr[o + 1] = y0; spr[o + 2] = w; spr[o + 3] = h;
       spr[o + 4] = 1 / scale; spr[o + 5] = depth; spr[o + 6] = f; spr[o + 7] = visible;
       spr[o + 8] = fr.x; spr[o + 9] = fr.y; spr[o + 10] = fr.w; spr[o + 11] = fr.h;
-      spr[o + 12] = mulR; spr[o + 13] = mulG; spr[o + 14] = mulB; spr[o + 15] = 0;
+      spr[o + 12] = mulR; spr[o + 13] = mulG; spr[o + 14] = mulB; spr[o + 15] = nearOk;
       spr[o + 16] = fogR; spr[o + 17] = fogG; spr[o + 18] = fogB; spr[o + 19] = 0;
       this.frameOf[n] = anim.base;
       n++;
@@ -531,7 +575,7 @@ export function drawSprites(fb, pool, layer) {
     const o = s * SPR_STRIDE;
     const x0 = spr[o], y0 = spr[o + 1], w = spr[o + 2], h = spr[o + 3];
     const invScale = spr[o + 4], sDepth = spr[o + 5], fogF = spr[o + 6], visible = spr[o + 7] !== 0;
-    if (sDepth < SPRITE_NEAR_DEPTH) continue; // Cull even emissive texels when the eye enters a sprite.
+    if (sDepth < SPRITE_NEAR_DEPTH && spr[o + 15] === 0) continue; // nearOk (view-model attached, depth-tested against the hand voxels) skips it; // Cull even emissive texels when the eye enters a sprite.
     const ax = spr[o + 8], ay = spr[o + 9], srcW = spr[o + 10], srcH = spr[o + 11];
     const mulR = spr[o + 12], mulG = spr[o + 13], mulB = spr[o + 14];
     // US-016 (architecture.md 14.4 item 14): per-sprite fog colour (T4), not
@@ -584,7 +628,14 @@ export function drawSprites(fb, pool, layer) {
       if (!(pz > 0 && pz < depth[i] && pz < spriteDepth[i])) continue;
       const o4 = i * 4;
       const x = i % cols, y = (i / cols) | 0;
-      cells.setCellRGB(x, y, part[o4 + 3], part[o4], part[o4 + 1], part[o4 + 2], bg[o4], bg[o4 + 1], bg[o4 + 2]);
+      // PART-VIS-01: bg = bg*(1-a) + tint (tint premixed by the layer); a = 0 leaves bg untouched
+      const pb = layer.partBg, ma = pb ? pb[o4 + 3] : 0;
+      if (ma === 0) cells.setCellRGB(x, y, part[o4 + 3], part[o4], part[o4 + 1], part[o4 + 2], bg[o4], bg[o4 + 1], bg[o4 + 2]);
+      else {
+        const ia = 255 - ma;
+        cells.setCellRGB(x, y, part[o4 + 3], part[o4], part[o4 + 1], part[o4 + 2],
+          Math.min(255, Math.round((bg[o4] * ia) / 255) + pb[o4]), Math.min(255, Math.round((bg[o4 + 1] * ia) / 255) + pb[o4 + 1]), Math.min(255, Math.round((bg[o4 + 2] * ia) / 255) + pb[o4 + 2]));
+      }
     }
   }
 }

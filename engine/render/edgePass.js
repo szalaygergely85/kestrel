@@ -8,7 +8,7 @@
 // counter `shadeSurfaces` already incremented stays put - this pass only
 // ever touches cells `shadeSurfaces` wrote this same frame.
 //
-import { KIND_MODEL, KIND_MESH, KIND_TERRAIN, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_PACKED } from './GBuffer.js';
+import { KIND_MODEL, KIND_MESH, KIND_TERRAIN, KIND_GRASS, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_PACKED } from './GBuffer.js';
 
 // Rule codes (gbuf.rule, 0 = none), in `DP.edges.rules` order:
 export const RULE_CAP = 1;
@@ -38,7 +38,8 @@ function isUp(kind, face) {
 function farther(kind, planeId, depth, i, n, mat, soft, si) {
   if (n < 0) return false;
   if (kind[n] === 0) return true; // sky, or a cell never written this frame
-  if (si && kind[n] !== KIND_TERRAIN && soft[mat[n]] === 1) return false; // terrain cells carry a terrain type in `mat`, not a material id
+  if (kind[n] === KIND_GRASS) return false; // OB-073 D2c: carpet blades never make a neighbour's outline
+  if (si && kind[n] !== KIND_TERRAIN && kind[n] !== KIND_GRASS && soft[mat[n]] === 1) return false; // terrain cells carry a terrain type in `mat`, not a material id
   if (planeId[n] === planeId[i]) return false;
   return depth[n] > depth[i] * 1.18 + 0.35;
 }
@@ -56,13 +57,13 @@ export function edgeRules(kind, planeId, face, depth, fogF, cols, rows, fogMax, 
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const i = y * cols + x;
-      if (kind[i] === 0 || fogF[i] > fogMax || (suppress && suppress[i] !== 0)) continue;
+      if (kind[i] === 0 || kind[i] === KIND_GRASS || fogF[i] > fogMax || (suppress && suppress[i] !== 0)) continue;
       const up = y > 0 ? i - cols : -1;
       const dn = y < rows - 1 ? i + cols : -1;
       const lf = x > 0 ? i - 1 : -1;
       const rt2 = x < cols - 1 ? i + 1 : -1;
 
-      const si = !!(soft && mat) && kind[i] !== KIND_TERRAIN && soft[mat[i]] === 1;
+      const si = !!(soft && mat) && kind[i] !== KIND_TERRAIN && kind[i] !== KIND_GRASS && soft[mat[i]] === 1;
       let r = 0;
       if (farther(kind, planeId, depth, i, up, mat, soft, si)) r = RULE_CAP;
       else if (farther(kind, planeId, depth, i, dn, mat, soft, si)) r = RULE_LIP;
@@ -121,7 +122,7 @@ export function edgePass(gbuf, depth, rt, edges, suppress, soft) {
     glyphIdxArr[i] = code < 32 || code > 126 ? 0 : code - 32;
     const fi = i * 4;
     const rim = kind[i] === KIND_MODEL ? modelRim : 1;
-    const gain = softT !== null && kind[i] !== KIND_TERRAIN && softT[mat[i]] === 1 ? softGain : R.gain; // ALPHA-01d: soft cells keep the glyph, own gain
+    const gain = softT !== null && kind[i] !== KIND_TERRAIN && kind[i] !== KIND_GRASS && softT[mat[i]] === 1 ? softGain : R.gain; // ALPHA-01d: soft cells keep the glyph, own gain
     for (let k = 0; k < 3; k++) {
       let v = Math.round(Math.min(255, fgArr[fi + k] * gain * rim));
       if (v < 1) v = 1; // AC: edge colors are never pure black.

@@ -3,10 +3,12 @@
 // geometry/flags atlas (sun DDA); writes texLight (rgba32uint). The sun shadow MAP (WG-3d, passShadow.js) switches sunMode to 2 and binds its depth
 // texture; without an active map uSunShadow is a 1x1 dummy depth texture (= the GL `--shadows dda` path).
 // Pipeline + bind descriptor are built once (22b); per frame only uniform words change, textures upload only on change.
-import { LIGHT_BLOCK, LIGHT_WGSL, LIGHT_TEXTURES } from '../wgsl/light.wgsl.js';
+import { LIGHT_BLOCK, LIGHT_WGSL, LIGHT_TEXTURES, LIGHT_GI_WGSL, LIGHT_GI_BUFFERS } from '../wgsl/light.wgsl.js';
+import { giBufferFor } from './giUpload.js'; // GI-PROBE-05
 import { MAX_LIGHTS, MAX_VIS_DIM, MAX_VIS_CELLS } from '../../lighting.js';
 import { MAX_STRUCTS, buildWorldTextures, planFrameUpdate, makeFrameUpdatePlan } from '../WorldTextures.js';
-import { packCloudUniforms } from '../../cloudShadow.js';
+import { packCloudUniforms, syncLiveCloudShadow } from '../../cloudShadow.js';
+import { CAO_MAX, CAO_STRIDE } from '../../contactAO.js';
 import { PROJ_HFOV_DEG } from '../../projection.js';
 
 const W = (n) => LIGHT_BLOCK.field(n).word;
@@ -23,6 +25,13 @@ const W_SUN_M = W('sunShadowM'), W_SUN_RES = W('sunShadowRes'), W_SUN_TEXEL = W(
 const W_CLOUD_A = W('cloudA');
 // S8-B2-20 (38.17): `light.ao` (lighting.js LightSet.ao, horizon AO strength) -> aoStrength (word 31), cached word index, zero alloc.
 const W_AO_STRENGTH = W('aoStrength'), W_AO_P = W('aoP'); // aoP = (radiusM, bias, maxCells, 0)
+// ME-16e (38.22): point shadow words; pshA = (n, res, biasM, normalOffTexels), pshO[slot] = (origin xyz, far), pshSlot[light] = slot + 1
+const W_PSH_A = W('pshA'), W_PSH_O = W('pshO'), W_PSH_SLOT = W('pshSlot');
+
+// CONTACT-AO-01b (38.78): caoA.x = blob count, caoD = blob records (copied only when LightSet.cao.version changes)
+const W_CAO_A = W('caoA'), W_CAO_D = W('caoD');
+const W_RIM = W('rimA'); // RND-NIGHT-RIM-03: (k, farM, 0, 0) from light.moonRim (lighting.js syncMoonRim)
+const W_SHAFT = W('shaft'); // CANOPY-SHAFT-01b: (steps, maxM, on, 0) from light.shaft {steps, k, maxM}
 
 const NO_CAM = Object.freeze({ x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 });
 
@@ -41,14 +50,22 @@ export class WgLightPass {
     this.texSunDummy = device.createTexture({ format: 'depth24', sampled: true, width: 1, height: 1 });
     this.texGeom = device.createTexture({ format: 'rgba32f', width: 1, height: 1 });
     this.texFlags = device.createTexture({ format: 'rg8ui', width: 1, height: 1 });
+    // ME-16e: binding 7 always needs a depth array; this 1x1x6 dummy is bound while point shadows are off (pshA.x = 0: never sampled)
+    this.texPshDummy = device.createTexture({ format: 'depth24', sampled: true, width: 1, height: 1, layers: 6 });
+    this.pshOpt = new Float32Array(3); this.pshOptFor = null;
+    this.pointPass = null; // WgPointShadowPass (set by WgCellPipeline), null = off
     this.geomW = 1; this.geomH = 1;
     this.lvisUploaded = new Int32Array(MAX_LIGHTS).fill(-1);
     this.atlas = null; this.atlasWorld = null; this.plan = null;
-    this.tex = [0, 1, 2, 3, 4, 5, 6].map(slot => ({ slot, texture: null }));
+    this.tex = [0, 1, 2, 3, 4, 5, 6, 7].map(slot => ({ slot, texture: null }));
     this.bindDesc = { uniforms: this.lu, textures: this.tex };
+    // GI-PROBE-05: the GI variant pipeline is built lazily the first time a light set carries an active gi; GI off never touches it (today's pipeline + bind).
+    this.pipeGI = null; this.bindDescGI = null;
     this.visBox = new Float32Array(4 * MAX_LIGHTS);
     this.timeBuf = new Float64Array(1);
-    this.cam = { posX: 0, posY: 0, eyeH: 0, dirX: 0, dirY: 0, planeX: 0, planeY: 0, horizonRow: 0, planeDistY: 0 };
+    // passCell hands `cam` to shadePass.run (horizonRow/planeDistY); GATE-FLAKY-02b dropped it, so shade kept stale values (breach etc. colour fails). Doubles live in a Float64Array, getters read them (no boxed fields).
+    this.cam = { horizonRow: 0.5, planeDistY: 0.5 }; // double fields (non-Smi init) are updated in place, no per-frame garbage
+    this.caoFor = null; this.caoVer = -1;
   }
 
   /** _computeCamBasis twin (scalars the light pass reads). */
@@ -59,11 +76,12 @@ export class WgLightPass {
     const screenAspect = (cols * (rt.pxCellW || 1)) / (rows * (rt.pxCellH || 1));
     const planeDistY = (rows / 2) * screenAspect / tanHalfHFov;
     const pitchRad = cam.pitchDeg * Math.PI / 180;
-    const cb = this.cam;
-    cb.posX = cam.x; cb.posY = cam.y; cb.eyeH = cam.z; cb.dirX = dirX; cb.dirY = dirY;
-    cb.planeX = -dirY * tanHalfHFov; cb.planeY = dirX * tanHalfHFov;
-    cb.horizonRow = rows / 2 + Math.tan(pitchRad) * planeDistY; cb.planeDistY = planeDistY;
-    return cb;
+    // straight into the uniform words: an object of doubles would box a HeapNumber per field per frame (arch 38.61 GATE-FLAKY-02b)
+    const lu = this.lu;
+    lu[W_POSX] = cam.x; lu[W_POSY] = cam.y; lu[W_EYEH] = cam.z; lu[W_DIRX] = dirX; lu[W_DIRY] = dirY;
+    lu[W_PLANEX] = -dirY * tanHalfHFov; lu[W_PLANEY] = dirX * tanHalfHFov;
+    const horizon = rows / 2 + Math.tan(pitchRad) * planeDistY;
+    lu[W_HORIZON] = horizon; lu[W_PLANEDY] = planeDistY; this.cam.horizonRow = horizon; this.cam.planeDistY = planeDistY;
   }
 
   // world atlas upload: full on a different World / structVersion bump, else only the dirty rows (GL twin _ensureWorldTextures)
@@ -123,17 +141,29 @@ export class WgLightPass {
       lu[W_AMBIENT] = a[0] || 0; lu[W_AMBIENT + 1] = a[1] || 0; lu[W_AMBIENT + 2] = a[2] || 0;
       li[W_LIGHT_COUNT] = 0; li[W_SUN_ON] = 0; li[W_SUN_MODE] = 0;
       packCloudUniforms(null, 0, this.cloud8); lu.set(this.cloud8, W_CLOUD_A);
+      lu[W_CAO_A] = 0; lu[W_SHAFT] = 0; lu[W_SHAFT + 1] = 0; lu[W_SHAFT + 2] = 0;
       lu[W_AO_STRENGTH] = 0; lu[W_AO_P] = 0; lu[W_AO_P + 1] = 0; lu[W_AO_P + 2] = 0; lu[W_AO_P + 3] = 0;
       return;
     }
     lu[W_AMBIENT] = light.ambient[0]; lu[W_AMBIENT + 1] = light.ambient[1]; lu[W_AMBIENT + 2] = light.ambient[2];
     // S8-B2-12c: pack into the preallocated cloud8 (zero alloc), copy to cloudA/cloudB.
+    if (light.cloud) syncLiveCloudShadow(light);
     packCloudUniforms(light.cloud, this.timeBuf[0], this.cloud8); lu.set(this.cloud8, W_CLOUD_A);
     // S8-B2-20 (38.17): `light.ao` -> aoStrength, next to cloud upload above; zero on the no-ao path.
     const ao = light.ao;
     lu[W_AO_STRENGTH] = ao ? ao.strength : 0;
     lu[W_AO_P] = ao ? ao.radiusM : 0; lu[W_AO_P + 1] = ao ? ao.bias : 0; lu[W_AO_P + 2] = ao ? ao.maxCells : 0; lu[W_AO_P + 3] = 0;
+    // CONTACT-AO-01b: blob list; n = 0 / no cao -> caoA.x = 0 and the shader loop never runs. The 1 KB copy happens only on a version change.
+    const cao = light.cao;
+    if (cao && cao.n > 0) {
+      if (this.caoFor !== cao || this.caoVer !== cao.version) { lu.set(cao.data.subarray(0, cao.n * CAO_STRIDE), W_CAO_D); this.caoFor = cao; this.caoVer = cao.version; }
+      lu[W_CAO_A] = cao.n > CAO_MAX ? CAO_MAX : cao.n;
+    } else lu[W_CAO_A] = 0;
+    // CANOPY-SHAFT-01b: shaft march only with steps > 0 and strength k > 0 (preset low/medium = 0 -> skipped, bits 20..23 stay 0).
+    const shf = light.shaft, shOn = !!(shf && shf.steps > 0 && shf.k > 0);
+    lu[W_SHAFT] = shOn ? shf.steps : 0; lu[W_SHAFT + 1] = shOn ? shf.maxM : 0; lu[W_SHAFT + 2] = shOn ? 1 : 0;
     const sun = light.sun, on = !!(sun && sun.on);
+    const mr = light.moonRim; lu[W_RIM] = mr && on ? mr.k : 0; lu[W_RIM + 1] = mr ? mr.farM : 0;
     li[W_SUN_ON] = on ? 1 : 0;
     if (sun) {
       lu[W_SUNDIR] = sun.dir[0]; lu[W_SUNDIR + 1] = sun.dir[1]; lu[W_SUNDIR + 2] = sun.dir[2];
@@ -166,11 +196,8 @@ export class WgLightPass {
     const fb = p._fb;
     this.timeBuf[0] = fb ? fb.timeSec : 0; if (this.timeBuf[0] !== this.timeBuf[0]) this.timeBuf[0] = 0; // no `||` phi on the double (it boxes a HeapNumber)
     this._uploadLightT(p._light);
-    const cb = this._camBasis(p._cam || NO_CAM, p.cols, p.rows, p.rt);
+    this._camBasis(p._cam || NO_CAM, p.cols, p.rows, p.rt);
     li[W_GRID_COLS] = p.cols; li[W_GRID_ROWS] = p.rows;
-    lu[W_POSX] = cb.posX; lu[W_POSY] = cb.posY; lu[W_EYEH] = cb.eyeH;
-    lu[W_DIRX] = cb.dirX; lu[W_DIRY] = cb.dirY; lu[W_PLANEX] = cb.planeX; lu[W_PLANEY] = cb.planeY;
-    lu[W_HORIZON] = cb.horizonRow; lu[W_PLANEDY] = cb.planeDistY;
     // WG-3d: sun shadow map (GL: mapOn = shadowActive && sun.on); the map texture is bound below, the dummy 1x1 otherwise
     const sh = this.shadowPass;
     let sunTex = this.texSunDummy;
@@ -180,6 +207,24 @@ export class WgLightPass {
       lu.set(lp.matrix, W_SUN_M);
       lu[W_SUN_RES] = lp.res; lu[W_SUN_TEXEL] = lp.texelM; lu[W_SUN_BIAS] = lp.biasM; lu[W_SUN_NOFF] = lp.normalOffsetTexels;
       sunTex = lp.texture || this.texSunDummy; // GFX-03 'off': no map, the dummy is never sampled
+    }
+    // ME-16e: point shadow words + binding 7. Off (no pass / no ready slot): pshA.x = 0 and the dummy, so the shader output is unchanged.
+    const pp = this.pointPass;
+    let pshTex = this.texPshDummy;
+    lu[W_PSH_A] = 0; lu[W_PSH_A + 1] = 1; lu[W_PSH_A + 2] = 0.04; lu[W_PSH_A + 3] = 1.5;
+    if (pp && pp.enabled && pp.active && pp.depthTex) {
+      const ns = pp.n, pa = this.pshOpt;
+      if (this.pshOptFor !== pp) { const o = pp.opts; pa[0] = o.res; pa[1] = o.biasM; pa[2] = o.normalOffTexels; this.pshOptFor = pp; } // typed-array copy: no boxed doubles per frame
+      lu[W_PSH_A] = ns; lu[W_PSH_A + 1] = pa[0]; lu[W_PSH_A + 2] = pa[1]; lu[W_PSH_A + 3] = pa[2];
+      for (let k = 0; k < MAX_LIGHTS; k++) lu[W_PSH_SLOT + k] = 0;
+      for (let s = 0; s < ns; s++) {
+        const q = s * 4, h = pp.slotLight[s];
+        lu[W_PSH_O + q] = pp.renderedOrigins[q]; lu[W_PSH_O + q + 1] = pp.renderedOrigins[q + 1]; lu[W_PSH_O + q + 2] = pp.renderedOrigins[q + 2]; lu[W_PSH_O + q + 3] = pp.renderedOrigins[q + 3];
+        if (h >= 0 && h < MAX_LIGHTS && pp.ready[s]) lu[W_PSH_SLOT + h] = s + 1;
+      }
+      pshTex = pp.depthTex;
+    } else {
+      for (let k = 0; k < MAX_LIGHTS; k++) lu[W_PSH_SLOT + k] = 0;
     }
     const rp = p._rasterPass, pitched = !!(rp && rp.pitched);
     li[W_PROJ_MODE] = pitched ? (rp.ortho ? 2 : 1) : 0; // US-068b2: 2 = ortho (pitch words carry halfW/halfH in the tanHalf slots)
@@ -191,16 +236,27 @@ export class WgLightPass {
     }
     const tx = this.tex;
     tx[0].texture = t.texGI; tx[1].texture = t.texGA; tx[2].texture = t.texDepth; tx[3].texture = this.texLVis;
-    tx[4].texture = this.texGeom; tx[5].texture = this.texFlags; tx[6].texture = sunTex;
+    tx[4].texture = this.texGeom; tx[5].texture = this.texFlags; tx[6].texture = sunTex; tx[7].texture = pshTex;
+    const gl = p._light, gsto = gl && gl.gi ? giBufferFor(d).sync(gl.gi) : null; // light set array / no gi -> null
     d.beginPass(t.targetLight);
-    d.bind(this.pipe, this.bindDesc);
+    if (gsto) {
+      if (!this.pipeGI) {
+        this.pipeGI = d.createPipeline({
+          vertex: { src: { wgsl: LIGHT_GI_WGSL } }, fragment: { src: { wgsl: LIGHT_GI_WGSL }, targets: 1 },
+          bindings: { uniformBytes: LIGHT_BLOCK.sizeBytes, textures: LIGHT_TEXTURES.slice(), buffers: LIGHT_GI_BUFFERS.slice() },
+          targetFormats: ['rgba32ui'],
+        });
+        this.bindDescGI = { uniforms: this.lu, textures: this.tex, storageBuffers: gsto };
+      }
+      d.bind(this.pipeGI, this.bindDescGI);
+    } else d.bind(this.pipe, this.bindDesc);
     d.draw(3);
     d.endPass();
   }
 
   dispose() {
     const d = this.device;
-    for (const k of ['pipe', 'texLVis', 'texSunDummy', 'texGeom', 'texFlags']) {
+    for (const k of ['pipe', 'pipeGI', 'texLVis', 'texSunDummy', 'texPshDummy', 'texGeom', 'texFlags']) {
       if (this[k]) { try { d.dispose(this[k]); } catch (_) { /* best effort */ } this[k] = null; }
     }
   }

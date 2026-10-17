@@ -1,0 +1,41 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Stairs_Exterior_Straight",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Stairs_Exterior_Straight.mesh.bin",
+  "triCount": 62,
+  "bbox": [
+    -1,
+    -1.00067,
+    -0.20369,
+    1,
+    1.07725,
+    1
+  ],
+  "ranges": [
+    {"count": 50, "part": "Stairs_Exterior_Straight#0", "start": 0},
+    {"count": 12, "part": "Stairs_Exterior_Straight#1", "start": 50}
+  ],
+  "matKeys": [
+    "MI_RockTrim",
+    "MI_Brick"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "ivy",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "AACAvwAAgL8AAAAAAACAPwAAgD8AAIA/AACAvwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAAAAZmZmPyPbiT8IrBw/AACAPwAAgD8AAAAAAACAvwAAgD8AAIA/ZmZmPyPbiT8IrBw/AACAvwAAgD8AAIA/AACAPwAAgD8AAIA/ZmZmPyPbiT8IrBw/AACAPwAAgD8AAAAAAACAPwAAgD8AAIA/AACAPwAAgL8AAAAAAACAPwAAgD8AAIA/AACAvwAAgL8AAAAAAACAPwAAgL8AAAAAAACAvwAAgL8AAAAAZmZmP8UggL8K1yO8AACAPwAAgL8AAAAAZmZmP0w3Cb9g5VC+AACAPwAAgD8AAAAAAACAPwAAgL8AAAAAAACAvwAAgL8AAAAAAACAvwAAgD8AAIA/ZmZmv0w3Cb9g5VC+AACAvwAAgD8AAIA/AACAPwAAgD8AAAAAZmZmv0w3Cb9g5VC+AACAPwAAgD8AAAAAZmZmP0w3Cb9g5VC+ZmZmv0w3Cb9g5VC+ZmZmP0w3Cb9g5VC+AACAPwAAgL8AAAAAZmZmP8UggL9g5VC+AACAPwAAgL8AAAAAZmZmP8UggL8K1yO8ZmZmP8UggL9g5VC+ZmZmP8UggL8K1yO8AACAvwAAgL8AAAAAZmZmP8UggL9g5VC+AACAvwAAgL8AAAAAZmZmv0w3Cb9g5VC+ZmZmP8UggL9g5VC+ZmZmv0w3Cb9g5VC+ZmZmP0w3Cb9g5VC+ZmZmP8UggL9g5VC+",
+  "colliderHull": true
+}

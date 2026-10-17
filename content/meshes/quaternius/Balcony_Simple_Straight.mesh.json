@@ -1,0 +1,38 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Balcony_Simple_Straight",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Balcony_Simple_Straight.mesh.bin",
+  "triCount": 500,
+  "bbox": [
+    -1,
+    -1.10425,
+    -0.10509,
+    1,
+    -0.89797,
+    1.1248
+  ],
+  "ranges": [
+    {"count": 500, "part": "Balcony_Simple_Straight#0", "start": 0}
+  ],
+  "matKeys": [
+    "MI_WoodTrim"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "ivy",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "AACAv99Pjb89Cte9AACAP99Pjb89Cte9AACAP99Pjb8AAJA/AACAv99Pjb89Cte9AACAP99Pjb8AAJA/AACAv99Pjb8AAJA/AACAP99Pjb89Cte9AACAP1TjZb89Cte9AACAP1TjZb8AAJA/AACAP99Pjb89Cte9AACAP1TjZb8AAJA/AACAP99Pjb8AAJA/AACAP1TjZb89Cte9AACAv1TjZb89Cte9AACAv1TjZb8AAJA/AACAP1TjZb89Cte9AACAv1TjZb8AAJA/AACAP1TjZb8AAJA/AACAv1TjZb89Cte9AACAv99Pjb89Cte9AACAv99Pjb8AAJA/AACAv1TjZb89Cte9AACAv99Pjb8AAJA/AACAv1TjZb8AAJA/AACAv99Pjb8AAJA/AACAP99Pjb8AAJA/AACAP1TjZb8AAJA/AACAv99Pjb89Cte9AACAP1TjZb89Cte9AACAP99Pjb89Cte9AACAv99Pjb8AAJA/AACAP1TjZb8AAJA/AACAv1TjZb8AAJA/AACAv99Pjb89Cte9AACAv1TjZb89Cte9AACAP1TjZb89Cte9"
+}

@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "id": "under.graves",
+  "title": "Restless Graves",
+  "begin": { "npc": "postkeeper" },
+  "end": { "npc": "postkeeper" },
+  "abandonable": true,
+  "band": 4,
+  "requires": { "quests": ["burl.boars", "burl.stone"] },
+  "objectives": [
+    { "id": "see", "text": "Visit the graveyard at night", "journal": "Go to the old graveyard at night.", "when": { "type": "flag", "id": "under.cemetery.seen", "equals": true } },
+    { "id": "kill", "text": "Kill 3 skeletons", "journal": "Put down three of the risen dead.", "when": { "type": "beasts", "kind": "skeleton", "count": 3 } }
+  ],
+  "returnText": "Return to Bram at the post",
+  "rewards": { "coin": 20 },
+  "next": "under.crypt",
+  "nextHint": "Bram has more to say about the graves.",
+  "lines": {
+    "offer": [
+      "There's an old graveyard out along the road.",
+      "At night, something walks there. Bones, standing up.",
+      "I don't go there after dark. Not any more.",
+      "Go and look, after sundown. Will you?"
+    ],
+    "active": ["Go at night. After sundown. Be careful."],
+    "ready": [
+      "Three of them? And you walked back. Good.",
+      "Here, 20 coins. Grave work should pay.",
+      "There's more to this. Talk to me again."
+    ],
+    "done": ["The graves are quieter. For now."]
+  }
+}

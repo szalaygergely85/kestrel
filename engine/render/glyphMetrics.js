@@ -84,11 +84,33 @@ export function computeCellBox(measureCtx, cols, rows, availPxW, availPxH, maxRo
  * window. Display-only: pxCellW/H, the backing buffer and everything the cast reads stay untouched (aspect preserved).
  * @returns {{w:number,h:number}} CSS pixels
  */
-export function fitCssSize(cssW, cssH, availW, availH) {
-  const s = Math.min(1, availW / cssW, availH / cssH);
+export function fitCssSize(cssW, cssH, availW, availH, maxUp = 1) {
+  // QUALITY-BOOT-01: integer cell px lose area on finer grids (1717x790: 400x150 -> 1600x750, 480x180 -> 1440x720, a SMALLER picture).
+  // `maxUp` > 1 lets the live window upscale the canvas (smooth sampling) so every preset fills the same screen box.
+  const s = Math.min(maxUp, availW / cssW, availH / cssH);
   // BUG-SQUARES-01: a shrunk canvas must resample smoothly - `image-rendering: pixelated` drops whole pixel
   // rows/columns on a non-integer downscale (screen-fixed moire blocks). `smooth` -> style.imageRendering = 'auto'.
-  return { w: cssW * s, h: cssH * s, smooth: s < 1 };
+  return { w: cssW * s, h: cssH * s, smooth: s !== 1 };
+}
+
+/**
+ * OB-117 (owner): live-window CSS box = the whole window at every preset/window size (no letterbox, one constant picture
+ * shape). The backing store keeps its integer px cells (non-uniform CSS stretch); `smooth` when CSS != backing (not 1:1).
+ * @returns {{w:number,h:number,smooth:boolean}} CSS pixels
+ */
+export function fitCssFill(backW, backH, dpr, availW, availH) {
+  return { w: availW, h: availH, smooth: Math.abs(availW * dpr - backW) > 1e-6 || Math.abs(availH * dpr - backH) > 1e-6 };
+}
+
+/**
+ * OB-117 (owner): fixed picture ratio (w/h). Largest box of that ratio inside availW x availH (letterbox/pillarbox bars
+ * otherwise). `ratio` null/0 = fill the window (fitCssFill). Live-window path only.
+ */
+export function fitCssRatio(ratio, backW, backH, dpr, availW, availH) {
+  if (!(ratio > 0)) return fitCssFill(backW, backH, dpr, availW, availH);
+  let w = availW, h = w / ratio;
+  if (h > availH) { h = availH; w = h * ratio; }
+  return { w, h, smooth: Math.abs(w * dpr - backW) > 1e-6 || Math.abs(h * dpr - backH) > 1e-6 };
 }
 
 export { FONT_STACK };

@@ -28,6 +28,7 @@
 // The helpers `aabbOutside`, `distOut`, `pickLod`, `occProject/occNear/occTest/instOccluded`, `emit` and `cs_main` are JS-probeable (wgslProbe) against the CPU twins (cull.wgsl.test.js).
 import { defineUniformBlock } from './uniformBlock.js';
 import { INSTANCE_STRIDE } from '../../../mesh/instances.js';
+import { IMP_BAND_M } from '../../../mesh/impostorCard.js';
 
 export const CULL_WORKGROUP = 64;
 
@@ -56,6 +57,8 @@ export const CULL_BLOCK = defineUniformBlock('CullU', [
   { name: 'phase', type: 'u32' },             // 0/1 = main pass, 2 = re-test of the pending set against the fresh HZB
   { name: 'slot2', type: 'u32' },             // phase 2: args slot for LOD0 survivors (used instead of slot0)
   { name: 'slot3', type: 'u32' },             // phase 2: args slot for LOD1 survivors (used instead of slot1)
+  // ---- R6c part 2 (D-075 step 5, arch 2026-10-13c): impostor MESH-side band, appended AFTER slot3 (all earlier words unchanged; 0 = off = today's kernel) ----
+  { name: 'impM', type: 'f32' },               // impostor start distance (m); > 0: no mesh copy at d >= impM + 8, band bits on the mesh copy for impM <= d < impM + 8 (cards: impostor.wgsl.js cs_card)
 ]);
 
 /** Buffer access per slot of the compute pipeline (GpuDevice ComputePipelineDesc.bindings.buffers). 5 = hzb (f32), 6 = occl (u32 per instance);
@@ -203,8 +206,27 @@ fn instOccluded(tx: f32, ty: f32, tz: f32) -> bool {
   return occTest(occNear(tx, ty, tz, Rp));
 }
 
+// R6c part 2 (impostorCard.js rule 1, mesh side). 0xFFFFFFFFu = no mesh copy (d >= impM + 8); 0 = off / below impM (today's path);
+// else the flags-word bits of the mesh copy (lod 0, = impBandBits(d, impM, 0)) - the band REPLACES the LOD-hysteresis dither (compactGroup !inImpBand).
+const IMP_BAND_M: f32 = ${IMP_BAND_M}.0;
+fn impMeshBits(o: u32) -> u32 {
+  if (u.impM <= 0.0) { return 0u; }
+  let dx = bitcast<f32>(src[o + 3u]) - u.eye.x;
+  let dy = bitcast<f32>(src[o + 7u]) - u.eye.y;
+  let dz = bitcast<f32>(src[o + 11u]) - u.eye.z;
+  let d = sqrt(dx * dx + dy * dy + dz * dz);
+  if (d < u.impM) { return 0u; }
+  if (d >= u.impM + IMP_BAND_M) { return 0xFFFFFFFFu; }
+  let fr = clamp((d - u.impM) / ((u.impM + IMP_BAND_M) - u.impM), 0.0, 1.0);
+  return 0x4000000u | (min(u32(floor((1.0 - fr) * 256.0)), 256u) << 16u);
+}
+
 // append row \`o\` (band: both copies with complementary dither bits; else its LOD list) to the args slots s0/s1 (phase 1: slot0/slot1, phase 2: slot2/slot3)
-fn emit(o: u32, lod: u32, bf: f32, s0: u32, s1: u32) {
+fn emit(o: u32, lod: u32, bf0: f32, s0: u32, s1: u32) {
+  let mb = impMeshBits(o);
+  if (mb == 0xFFFFFFFFu) { return; } // R6c: card only
+  var bf = bf0;
+  if (mb != 0u) { bf = -1.0; }
   if (bf >= 0.0) { // crossfade band: both copies, flags word (+13) gets the complementary dither bits
     let wa = atomicAdd(&args[s0 + 1u], 1u) * STRIDE;
     for (var r = 1u; r < u.rangeCount0; r++) { atomicAdd(&args[s0 + r * ARGS_WORDS + 1u], 1u); } // ALPHA-01f (d): every range of this LOD shares instanceCount
@@ -219,10 +241,12 @@ fn emit(o: u32, lod: u32, bf: f32, s0: u32, s1: u32) {
     let w1 = atomicAdd(&args[s1 + 1u], 1u) * STRIDE;
     for (var r = 1u; r < u.rangeCount1; r++) { atomicAdd(&args[s1 + r * ARGS_WORDS + 1u], 1u); } // ALPHA-01f (d): per-range args, rangeCount1 0/1 = today's single slot (no extra bump)
     for (var c = 0u; c < STRIDE; c++) { dst1[w1 + c] = src[o + c]; }
+    dst1[w1 + 13u] = src[o + 13u] | mb;
   } else {
     let w0 = atomicAdd(&args[s0 + 1u], 1u) * STRIDE;
     for (var r = 1u; r < u.rangeCount0; r++) { atomicAdd(&args[s0 + r * ARGS_WORDS + 1u], 1u); }
     for (var c = 0u; c < STRIDE; c++) { dst0[w0 + c] = src[o + c]; }
+    dst0[w0 + 13u] = src[o + 13u] | mb;
   }
 }
 
@@ -239,7 +263,8 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3u) {
     if (!occOn) { return; }
     let ow = occl[i];
     if ((ow & 1u) == 0u) { return; }
-    if (instOccluded(tx, ty, tz)) { return; }
+    if (instOccluded(tx, ty, tz)) { return; } // still occluded: word keeps bit 0 (OCCL-STATS-01b: count = phase-1 parked minus phase-2 rescues)
+    occl[i] = 0u;
     let cwp = u.lodRow.x * tx + u.lodRow.y * ty + u.lodRow.z * tz + u.lodRow.w;
     emit(o, (ow >> 1u) & 1u, bandFrac(cwp), u.slot2, u.slot3);
     return;
@@ -250,7 +275,10 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3u) {
   if (u.lodOn != 0u) { lodPrev[i] = lod; }
   if (distOut(tx, ty, tz)) { return; }
   let cwb = u.lodRow.x * tx + u.lodRow.y * ty + u.lodRow.z * tz + u.lodRow.w;
-  let bf = bandFrac(cwb);
+  var bf = bandFrac(cwb);
+  let imb = impMeshBits(o); // R6c: a band (imb != 0) replaces the LOD-hysteresis dither
+  if (imb == 0xFFFFFFFFu) { return; } // R6c: card only, no mesh copy (nothing to occlusion-park)
+  if (imb != 0u) { bf = -1.0; }
   if (bf >= 0.0) { lodPrev[i] = select(1u, 0u, bf >= 0.5); }
   if (occOn && instOccluded(tx, ty, tz)) { occl[i] = 1u | (lod << 1u); return; } // parked for phase 2
   emit(o, lod, bf, u.slot0, u.slot1);

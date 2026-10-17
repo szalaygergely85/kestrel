@@ -187,7 +187,7 @@
     // US-079b hurt: every damaging hit. 6 steps (100 ms) white, the whole boar snaps head-UP (body rx -8) and jolts
     // 0.1 m back. Children at rest so the white shell covers everything.
     hurt:   { durations: [50, 50], loop: false, interp: 'step', frames: [
-      pose({ b: [-8, 0, 0, 0, 2, 0] }, true), pose({ b: [-5, 0, 0, 0, 2, 0] }, true)
+      pose({ b: [-8, 0, 0, 0, 2, 0] }, false), pose({ b: [-5, 0, 0, 0, 2, 0] }, false) /* HIT-BLEED-01: shell stays hidden; hurt = jolt + dark-red tint + blood */
     ] },
     // flinch follow-through: 9 steps (150 ms), flash off; the head drops past rest, the forelegs brace, tail clamps.
     flinch: { durations: [60, 90, 100], loop: false, frames: [
@@ -210,12 +210,18 @@
       pose({ b: [5, 0, 0, 0, 0, 0.6], h: 14, fl: 6, bl: -6, t: [75, 0] }, false)
     ] },
     // spare (not wired): trot for wander / return at 1.5 m/s, diagonal pairs, 280 ms loop
-    walk:   { durations: [70, 70, 70, 70], loop: true, frames: [
-      pose({ h: 3, fl: -22, br: -22, fr: 18, bl: 18, t: [20, 8] }, false),
-      pose({ b: [0, 0, 0, 0, 0, 0.5], h: 4 }, false),
-      pose({ h: 3, fl: 18, br: 18, fr: -22, bl: -22, t: [20, -8] }, false),
-      pose({ b: [0, 0, 0, 0, 0, 0.5], h: 4 }, false)
+    // GAIT-A BEGIN walk (tools/gen-gait.mjs: option A, diagonal gait, duty 0.5, tuned 1.5 m/s, 8 keys x 50 ms; re-run, do not hand-edit)
+    walk: { durations: [50,50,50,50,50,50,50,50], loop: true, frames: [
+        { body: { rot: [0.847,1.427,0], pos: [0,0,0.086] }, flash: { rot: [0.847,1.427,0], pos: [0,0,-63.914] }, head: { rot: [-0.254,0,0], pos: [0,0,0] }, legFL: { rot: [-48.59,0,0], pos: [0,0,-0.833] }, legFR: { rot: [48.59,0,0], pos: [0,0,-0.752] }, legBL: { rot: [48.59,0,0], pos: [0,0,-1.02] }, legBR: { rot: [-48.59,0,0], pos: [0,0,-0.801] }, tail: { rot: [22.524,0,5.592], pos: [0,0,0] } },
+        { body: { rot: [1.238,0.681,1.414], pos: [0,0,0.135] }, flash: { rot: [1.238,0.681,1.414], pos: [0,0,-63.865] }, head: { rot: [-0.371,0,-1.131], pos: [0,0,0] }, legFL: { rot: [-22.024,0,0], pos: [0,0,-0.102] }, legFR: { rot: [31.039,0,0], pos: [0,0,0.215] }, legBL: { rot: [31.039,0,0], pos: [0,0,-0.029] }, legBR: { rot: [-22.024,0,0], pos: [0,0,-0.204] }, tail: { rot: [21.621,0,5.492], pos: [0,0,0] } },
+        { body: { rot: [-0.847,-0.464,2], pos: [0,0,-0.086] }, flash: { rot: [-0.847,-0.464,2], pos: [0,0,-64.086] }, head: { rot: [0.254,0,-1.6], pos: [0,0,0] }, legFL: { rot: [0,0,0], pos: [0,0,0.143] }, legFR: { rot: [0,0,0], pos: [0,0,0.695] }, legBL: { rot: [0,0,0], pos: [0,0,0.861] }, legBR: { rot: [0,0,0], pos: [0,0,0.213] }, tail: { rot: [17.476,0,2.174], pos: [0,0,0] } },
+        { body: { rot: [-1.238,-1.337,1.414], pos: [0,0,-0.135] }, flash: { rot: [-1.238,-1.337,1.414], pos: [0,0,-64.135] }, head: { rot: [0.371,0,-1.131], pos: [0,0,0] }, legFL: { rot: [22.024,0,0], pos: [0,0,0.385] }, legFR: { rot: [-31.039,0,0], pos: [0,0,0.491] }, legBL: { rot: [-31.039,0,0], pos: [0,0,0.804] }, legBR: { rot: [22.024,0,0], pos: [0,0,0.418] }, tail: { rot: [18.379,0,-2.417], pos: [0,0,0] } },
+        { body: { rot: [0.847,-1.427,0], pos: [0,0,0.086] }, flash: { rot: [0.847,-1.427,0], pos: [0,0,-63.914] }, head: { rot: [-0.254,0,0], pos: [0,0,0] }, legFL: { rot: [48.59,0,0], pos: [0,0,-0.503] }, legFR: { rot: [-48.59,0,0], pos: [0,0,-0.583] }, legBL: { rot: [-48.59,0,0], pos: [0,0,-0.552] }, legBR: { rot: [48.59,0,0], pos: [0,0,-0.771] }, tail: { rot: [22.524,0,-5.592], pos: [0,0,0] } },
+        { body: { rot: [1.238,-0.681,-1.414], pos: [0,0,0.135] }, flash: { rot: [1.238,-0.681,-1.414], pos: [0,0,-63.865] }, head: { rot: [-0.371,0,1.131], pos: [0,0,0] }, legFL: { rot: [31.039,0,0], pos: [0,0,0.334] }, legFR: { rot: [-22.024,0,0], pos: [0,0,0.017] }, legBL: { rot: [-22.024,0,0], pos: [0,0,-0.085] }, legBR: { rot: [31.039,0,0], pos: [0,0,0.089] }, tail: { rot: [21.621,0,-5.492], pos: [0,0,0] } },
+        { body: { rot: [-0.847,0.464,-2], pos: [0,0,-0.086] }, flash: { rot: [-0.847,0.464,-2], pos: [0,0,-64.086] }, head: { rot: [0.254,0,1.6], pos: [0,0,0] }, legFL: { rot: [0,0,0], pos: [0,0,0.614] }, legFR: { rot: [0,0,0], pos: [0,0,0.062] }, legBL: { rot: [0,0,0], pos: [0,0,0.132] }, legBR: { rot: [0,0,0], pos: [0,0,0.781] }, tail: { rot: [17.476,0,-2.174], pos: [0,0,0] } },
+        { body: { rot: [-1.238,1.337,-1.414], pos: [0,0,-0.135] }, flash: { rot: [-1.238,1.337,-1.414], pos: [0,0,-64.135] }, head: { rot: [0.371,0,1.131], pos: [0,0,0] }, legFL: { rot: [-31.039,0,0], pos: [0,0,0.257] }, legFR: { rot: [22.024,0,0], pos: [0,0,0.152] }, legBL: { rot: [22.024,0,0], pos: [0,0,0.184] }, legBR: { rot: [-31.039,0,0], pos: [0,0,0.57] }, tail: { rot: [18.379,0,2.417], pos: [0,0,0] } }
     ] },
+    // GAIT-A END walk
     // US-079b die: 0.4 s (24 steps). Starts AFTER the killing hit's `hurt` (6 steps). Squeal (head up), legs buckle,
     // it rolls onto its right side about the right body edge, overshoots 8 deg into the ground with the legs kicking out
     // (the "thud" key at 320 ms, dust n 6 here) and settles at 90 with stiff splayed legs. 90 + 110 + 120 + 80 = 400 ms.
@@ -232,6 +238,8 @@
     // nothing is left to pop when the entity is hidden at the end). corpseDust bursts at 0 and 250 ms cover it.
     sink:   { durations: [500, 100], loop: false, frames: [DEAD, SUNK] }
   };
+  // ANIM-BLEND-02: additive hit (38.68): frame 0 = REST (delta 0), the two hurt keys, back to REST
+  animations.hitAdd = { durations: [40, 50, 70, 100], loop: false, frames: [REST, animations.hurt.frames[0], animations.hurt.frames[1], REST] };
 
   A.models.boarPlaceholder = {
     name: 'boarPlaceholder',
@@ -272,6 +280,14 @@
         tail:  { box: [5, 22, FZ + 7, 7, 24, FZ + 10], pivot: [6, 22, FZ + 9.5], parent: 'body' }
       },
       animations: animations,
+      // ANIM-BLEND-02 (38.68; OB-150). walk (spare trot, tuned 1.5 m/s) -> charge gallop (4 m/s, estimate: hand-keyed 200 ms loop). windup
+      // (525 ms, held scrape pose from 500) fades in <= 25 %; the charge snaps in (60); charge>idle recover takes 200 ms.
+      lookAt: { part: 'head', yawLimitDeg: 40, pitchLimitDeg: 20, hz: 1.8 }, // ANIM-LOOKAT-01 (38.69): boar, short neck
+      blend: {
+        sets: { locomotion: { param: 'speed', clips: [{ clip: 'walk', at: 1.5 }, { clip: 'charge', at: 4 }] } },
+        fades: { default: 150, into: { windup: 100, charge: 60 }, pairs: { 'windup>charge': 60, 'charge>idle': 200, 'charge>walk': 200 } },
+        additive: { hit: { clip: 'hitAdd', parts: ['body', 'head', 'tail'], inMs: 40, outMs: 160, gain: 1 } }
+      },
       // grid coords, rest pose, on part `body` (posed with the part where the engine supports it). z 15 = ground.
       // Same world points as v1.34 (cellM halved, coordinates doubled round the new anchor).
       mounts: {

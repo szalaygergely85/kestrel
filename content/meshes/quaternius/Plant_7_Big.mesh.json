@@ -1,0 +1,32 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Plant_7_Big",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Plant_7_Big.mesh.bin",
+  "triCount": 112,
+  "bbox": [
+    -0.70106,
+    -0.51165,
+    0.05031,
+    0.60976,
+    0.85053,
+    0.30374
+  ],
+  "ranges": [
+    {"count": 112, "mask": {"cutoff": 0.2, "tex": "quaternius/Leaves"}, "part": "Plant_7_Big#0", "start": 0}
+  ],
+  "matKeys": [
+    "Leaves"
+  ],
+  "mats": {
+    "Flowers": "petal_yellow",
+    "Leaves": "leaf"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "collide": false,
+  "castShadow": false
+}

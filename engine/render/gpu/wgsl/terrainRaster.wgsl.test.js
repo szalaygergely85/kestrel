@@ -24,7 +24,7 @@ function makeTypeAt(tex, u) {
   const toI = Math.trunc, vec2i = (x, y) => [x, y], load = (t, c) => t.data[c[1] * t.w + c[0]];
   const floor = Math.floor;
   const farFn = new Function('u', 'uFarType', 'toI', 'vec2i', 'load', 'floor', `return function(x, y){${js(far.code)}};`)(u, tex.far, toI, vec2i, load, floor);
-  return new Function('u', 'uNearType', 'toI', 'vec2i', 'load', 'floor', 'farTypeNearest', `return function(x, y){${js(tpa.code)}};`)(u, tex.near, toI, vec2i, load, floor, farFn);
+  return new Function('u', 'uNearType', 'toI', 'vec2i', 'load', 'floor', 'farTypeNearest', 'textureDimensions', `return function(x, y){${js(tpa.code)}};`)(u, tex.near, toI, vec2i, load, floor, farFn, (t) => ({ x: t.w, y: t.h }));
 }
 
 let seed = 7;
@@ -41,7 +41,7 @@ function oracle(x, y) { // TerrainMeshSet.typeAt, source of truth (engine/mesh/t
 }
 const u = { nearReady: 1, nearMap: { x: x0, y: y0, z: nearCell, w: nearW }, farMap: { x: 0, y: 0, z: mapCell, w: mapW } };
 // vec4 fields are .x/.y/.z/.w in WGSL, the fake block uses the same names
-const typeAt = makeTypeAt({ near: { w: nearW, data: nearType }, far: { w: mapW, data: farType } }, u);
+const typeAt = makeTypeAt({ near: { w: nearW, h: nearW, data: nearType }, far: { w: mapW, data: farType } }, u);
 let near = 0;
 for (let i = 0; i < 5000; i++) {
   const x = rand() * 160 - 16, y = rand() * 160 - 16;
@@ -52,24 +52,74 @@ assert.ok(near > 100, 'near band was exercised');
 u.nearReady = 0; terrain.nearReady = false;
 for (let i = 0; i < 1000; i++) { const x = rand() * 160 - 16, y = rand() * 160 - 16; assert.equal(typeAt(x, y), oracle(x, y)); }
 
+// MAP-06b (38.42): off-grid inside a sea skirt rect = sea (2), else 0 - twin of TerrainMeshSet.typeAt's skirt branch.
+{
+  const us = { nearReady: 0, nearMap: { x: 0, y: 0, z: 1, w: 1 }, farMap: { x: 0, y: 0, z: mapCell, w: mapW },
+    skirtCount: 1, skirt: [{ x: -6000, y: mapW * mapCell, z: mapW * mapCell + 6000, w: mapW * mapCell + 6000 }] };
+  const ts = makeTypeAt({ near: { w: 1, h: 1, data: new Uint8Array(1) }, far: { w: mapW, data: farType } }, us);
+  const sk = (x, y) => { const r = us.skirt[0]; return x >= r.x && x < r.z && y >= r.y && y < r.w; };
+  let inSk = 0;
+  for (let i = 0; i < 3000; i++) {
+    const x = rand() * 400 - 200, y = rand() * 400 - 200, ix = Math.floor(x / mapCell), iy = Math.floor(y / mapCell);
+    const off = ix < 0 || iy < 0 || ix >= mapW || iy >= mapW;
+    const want = !off ? farType[iy * mapW + ix] : sk(x, y) ? 2 : 0;
+    if (off && sk(x, y)) inSk++;
+    assert.equal(ts(x, y), want, `skirt typeAt(${x},${y})`);
+  }
+  assert.ok(inSk > 200, 'skirt exercised');
+}
+
+// WS1-03: non-square near bands (wide 5x3 and tall 3x5 texels-of-cells), vs the oracle; every texel and its outside edge.
+for (const [bw, bh] of [[10, 6], [6, 10], [12, 4]]) {
+  const nt = new Uint8Array(bw * bh).map(() => (rand() * 6) | 0);
+  terrain.near = { x0, y0, cell: nearCell, w: bw, h: bh, type: nt }; terrain.nearReady = true;
+  const un = { nearReady: 1, nearMap: { x: x0, y: y0, z: nearCell, w: bw }, farMap: { x: 0, y: 0, z: mapCell, w: mapW } };
+  const tn = makeTypeAt({ near: { w: bw, h: bh, data: nt }, far: { w: mapW, data: farType } }, un);
+  let inNear = 0;
+  for (let i = 0; i < 4000; i++) {
+    const x = rand() * 80 + x0 - 20, y = rand() * 80 + y0 - 20;
+    assert.equal(tn(x, y), oracle(x, y), `nonsquare ${bw}x${bh} typeAt(${x},${y})`);
+    if (terrain._nearGridType(x, y) !== null) inNear++;
+  }
+  assert.ok(inNear > 100, `non-square ${bw}x${bh} near band exercised`);
+}
+
 // Same-op-order string checks against the GLSL twin.
 const src = TERRAIN_RASTER_WGSL;
 assert.ok(src.includes('o.pos.y = -o.pos.y; o.pos.z = 0.5 * (o.pos.z + o.pos.w);'));
-assert.ok(src.includes('let dist = select(1.0 / v.pos.w, 0.05 + v.pos.z * (2000.0 - 0.05), u.projMode == 2u);'));
+assert.ok(src.includes('let dist = select(1.0 / v.pos.w, 0.05 + v.pos.z * (16000.0 - 0.05), u.projMode == 2u);'));
 assert.ok(src.includes('const PLANEID_TERRAIN: u32 = 0xFFFFFFFFu;')); // GL uint(-1)
 assert.ok(src.includes(`const KIND_TERRAIN: u32 = ${KIND_TERRAIN}u;`) && src.includes(`const FACE_PACKED: u32 = ${FACE_PACKED}u;`));
 assert.ok(src.includes('KIND_TERRAIN | (FACE_PACKED << 8u) | (u32(terrType) << 16u)'));
 assert.ok(src.includes('bitcast<u32>(1.0e30f)'));
-assert.ok(/x >= b\.x && .*x < b\.z && .*y >= b\.y && .*y < b\.w\) \{ discard; \}/.test(src.replace(/v\.vWorldPos\./g, '')), 'half-open footprint carve');
+assert.ok(/x >= b\.x && wp\.x < b\.z && wp\.y >= b\.y && wp\.y < b\.w\)/.test(src) && src.includes('if (inStructFoot(wp)) { discard; }'), 'half-open footprint carve (GS-01b: bbox then mask lookup, shared fn)');
 assert.ok(TERRAIN_RASTER_FRAG_SRC.includes('vWorldPos.x >= b.x && vWorldPos.x < b.z') && TERRAIN_VERT_SRC.includes('unpackNormalOct(aNrmBits)'));
 assert.ok(!/\bround\s*\(|dpdx|dpdy|fwidth|frag_depth|textureSample|%/.test(src));
 assert.ok(src.includes(`for (var i = 0; i < ${MAX_STRUCTS}; i++)`));
-assert.deepEqual(TERRAIN_TEXTURES, ['uint', 'uint']);
+assert.deepEqual(TERRAIN_TEXTURES, ['uint', 'uint', 'uint']);
+assert.ok(src.includes('@group(0) @binding(2) var uStructMask: texture_2d<u32>;') && TERRAIN_BLOCK.field('structMask').count === MAX_STRUCTS, 'GS-01b mask atlas binding + uniform');
 assert.ok(src.includes('@group(0) @binding(0) var uNearType: texture_2d<u32>;') && src.includes('@group(0) @binding(1) var uFarType: texture_2d<u32>;'));
 assert.ok(WGSL_MODULES.some((m) => m.name === 'rasterTerrain' && m.code === TERRAIN_RASTER_WGSL));
 assert.equal(TERRAIN_BLOCK.sizeBytes % 16, 0);
-// PREC-01a (37.9 step 6): clip from the rebased modelRel, vWorldPos still from the absolute model (kind-7 GA.xy = world metres).
+// PREC-01a (37.9 step 6): clip from the rebased modelRel; GA.xy = absolute world metres.
 assert.ok(TERRAIN_RASTER_WGSL.includes('o.pos = u.viewProj * (u.modelRel * vec4f(a.aPos, 1.0));'));
-assert.ok(TERRAIN_RASTER_WGSL.includes('let worldPos = u.model * vec4f(a.aPos, 1.0);') && TERRAIN_RASTER_WGSL.includes('o.vWorldPos = worldPos.xyz;'));
+// OB-041: the varying is world - O (O = worldO.xy, multiple of 16 m); O is added back once per fragment, so GA.xy/type/carve use
+// one f32 rounding of a ~1e-6 m-accurate value (absolute interpolation at |x| ~ 1500 m erred by 2-3 ulp = 3e-4 m and flipped
+// 0.125 m terrain hash cells vs the JS twin's f64 hit -> Float32 gbuf.u).
+assert.ok(TERRAIN_RASTER_WGSL.includes('let worldPos = u.model * vec4f(a.aPos, 1.0);') && TERRAIN_RASTER_WGSL.includes('o.vWorldRel = vec3f(worldPos.x - u.worldO.x, worldPos.y - u.worldO.y, worldPos.z);'));
+assert.ok(TERRAIN_RASTER_WGSL.includes('let wp = vec3f(v.vWorldRel.x + u.worldO.x, v.vWorldRel.y + u.worldO.y, v.vWorldRel.z);') && !TERRAIN_RASTER_WGSL.includes('vWorldPos'));
+assert.ok(TERRAIN_BLOCK.field('worldO').word * 4 >= TERRAIN_BLOCK.field('structMask').word * 4 + 16, 'worldO appended after structMask (earlier offsets unchanged)');
+{ // OB-041 numeric probe: f32 barycentric interpolation of absolute vs O-relative positions near x = 1461 (O = 1456)
+  const f = Math.fround, O = 1456; let absBad = 0, relBad = 0, n = 0;
+  for (let k = 0; k < 4000; k++) {
+    const x0 = 1460 + (k % 7) * 0.5, x1 = x0 + 0.5, x2 = x0, b1 = ((k * 7919) % 1000) / 1000, b2 = (1 - b1) * (((k * 104729) % 997) / 997), b0 = 1 - b1 - b2;
+    const exact = b0 * x0 + b1 * x1 + b2 * x2, js = f(exact), cell = Math.floor(js / 0.125);
+    const abs = f(f(f(f(b0) * f(x0)) + f(f(b1) * f(x1))) + f(f(b2) * f(x2)));
+    const r = f(f(f(f(b0) * f(x0 - O)) + f(f(b1) * f(x1 - O))) + f(f(b2) * f(x2 - O))), rel = f(r + O);
+    n++; if (Math.abs(abs - js) > 0) absBad++; if (Math.abs(rel - js) > 0) relBad++;
+    if (Math.floor(rel / 0.125) !== cell && Math.abs(exact / 0.125 - Math.round(exact / 0.125)) > 1e-4) relBad += 1000; // never a hash-cell flip away from a true tie
+  }
+  assert.ok(relBad * 4 < absBad && relBad < n * 0.02, `rel+O interpolation matches the f32-rounded f64 hit far more often (rel ${relBad} vs abs ${absBad} of ${n} ulp mismatches)`);
+}
 assert.ok(!/origin/.test(TERRAIN_RASTER_WGSL));
 console.log('terrainRaster.wgsl.test.js: 6000 type-lookup probes (near ' + near + ') and shader/layout checks passed. block ' + TERRAIN_BLOCK.sizeBytes + ' B');

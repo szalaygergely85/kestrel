@@ -7,8 +7,8 @@
 
 import { MAX_VOX_INSTANCES, MAX_VOX_INSTANCES_MESH, MAX_VOX_PARTS, PART_STRIDE } from '../voxel/VoxelModel.js';
 import { packVoxelModel } from '../voxel/voxelPack.js';
-import { voxelPointWorld } from '../voxel/voxelPose.js';
-import { computeProjection, computeProjectionPitched, instanceRect } from '../voxel/instanceRect.js';
+import { voxelPointWorld, FORWARD } from '../voxel/voxelPose.js';
+import { computeProjection, computeProjectionPitched, instanceRect, rectFromForward } from '../voxel/instanceRect.js';
 import { createPitchedTerms, pitchedTerms, resolveProjection, isPitchedFamily } from './projection.js';
 import { lodCentreX, lodCentreY, lodCentreZ } from '../core/camFocus.js';
 import { buildVoxelAtlas } from './gpu/VoxelTextures.js';
@@ -37,12 +37,35 @@ function warnOnce(pool, msg) {
   if (typeof console !== 'undefined' && console.warn) console.warn(msg);
 }
 
+// RIG-04b: `arr.length = n` with n < capacity/2 right-trims V8's backing store, so the next frame that grows the list again
+// allocates a new one (~600 B when a 48-instance list drops to 4 and back). pop() keeps the capacity: zero allocation.
+// PERF-01: keep FORWARD (filled by the instanceRect -> computeVoxelPose call just made for `out`) on the slot.
+function keepForward(out, pm) {
+  const n = pm.partCount * 12, f = out.fwd;
+  for (let i = 0; i < n; i++) f[i] = FORWARD[i];
+  out.fwdModel = pm;
+}
+/** PERF-02: true when projected slot `s` was posed from exactly `inst`'s current pose inputs (every field computeVoxelPose reads). */
+function samePoseInputs(s, inst) {
+  return s.fwdModel === inst.model && s.model === inst.model && s.x === inst.x && s.y === inst.y && s.z === inst.z && s.yawDeg === inst.yawDeg &&
+    s.clip === inst.clip && s.frame === inst.frame && s.tMs === inst.tMs && s.fromClip === inst.fromClip && s.fromFrame === inst.fromFrame &&
+    s.fromTMs === inst.fromTMs && s.fromW === inst.fromW && s.scale === inst.scale && s.addPart === inst.addPart && s.addRx === inst.addRx &&
+    s.addRy === inst.addRy && s.addRz === inst.addRz && s.legs === inst.legs && s.layers === inst.layers && s.look === inst.look;
+}
+function shrinkTo(arr, n) {
+  while (arr.length > n) arr.pop();
+}
+
 function projectedSlot() {
-  return { model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, scale: 1, slot: 0,
+  return { model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, fromClip: -1, fromFrame: 0, fromTMs: 0, fromW: 0, scale: 1, slot: 0, entity: null, addPart: -1, addRx: 0, addRy: 0, addRz: 0, legs: null, layers: null, look: null,
     pose: new Float64Array(MAX_VOX_PARTS * PART_STRIDE),
+    // PERF-01: copy of the forward part transforms (voxelPose FORWARD) of `pose`, so addVoxelInstances does not re-pose the slot.
+    // `fwdModel` = the model it was posed for (null = no valid copy; addVoxelInstances then poses again).
+    fwd: new Float64Array(MAX_VOX_PARTS * 12), fwdModel: null,
     rect: { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0, minCol: 0, maxCol: 0, minRow: 0, maxRow: 0, empty: false } };
 }
 
+const HYST_D2 = 0.9; // d^2 factor (~5% distance) for entities drawn last frame
 export class VoxelPool {
   constructor() {
     /** RE-02b F1: which renderer resolves an unset `cam.projection` ('mesh' -> pitched). */
@@ -51,8 +74,13 @@ export class VoxelPool {
     this.models = new Map();
     // This frame's pushInstance() queue - plain objects, reused slot by
     // slot across frames (no per-frame allocation once warm).
-    this.raw = Array.from({ length: MAX_VOX_INSTANCES_MESH }, () => ({ model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, scale: 1, seed: 0 }));
+    this.raw = Array.from({ length: MAX_VOX_INSTANCES_MESH }, () => ({ model: null, modelKey: '', x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, fromClip: -1, fromFrame: 0, fromTMs: 0, fromW: 0, scale: 1, seed: 0, entity: null, addPart: -1, addRx: 0, addRy: 0, addRz: 0, legs: null, layers: null, look: null }));
     this._rawCount = 0;
+    this.reserve = 0;
+    // PERF-02: raw slot i -> project() slot of this frame (-1 = culled/skipped); valid while `_projEpoch === _epoch`.
+    // `_epoch` moves on every queue change (beginFrame, blend/leg/layerInstance), so projectShadow never reuses a stale pose.
+    this._epoch = 0; this._projEpoch = -1;
+    this._projSlotOf = new Int32Array(MAX_VOX_INSTANCES_MESH);
     // Projected + culled instances, compact 0..count-1 (list.length ===
     // stats.count after project()); each entry's `slot` index is what the
     // GPU instance rows / planeId's slot field key off.
@@ -93,7 +121,14 @@ export class VoxelPool {
     // Per-renderer nearest selection; all storage covers the mesh cap once.
     this._nearIdx = new Int32Array(MAX_VOX_INSTANCES_MESH);
     this._nearDist = new Float64Array(MAX_VOX_INSTANCES_MESH);
+    this._nearPri = new Int8Array(MAX_VOX_INSTANCES_MESH); // VOX-PRIO-01: tier of each selected entry
     this._collectWarned = 0;
+    this.prioRange = Infinity; // RF17-11: tier-1 entities outrank props only within this many metres (opt-in; default off so far quest givers keep drawing - beasts already get tier 1 only within 25 m in beastView)
+    this._selFrame = 0;
+    // Per-pool stamps (arch batch 2026-10-17 item 3/4): two pools collecting one world no longer share state on the entity.
+    this._selStamp = new WeakMap(); // entity -> _selFrame it was selected in (hysteresis)
+    this._queueStamp = new WeakMap(); // entity -> _frameId it was queued in (isQueued, O(1))
+    this._frameId = 0;
     this._pushWarned = 0;
   }
 
@@ -137,28 +172,33 @@ export class VoxelPool {
     for (let i = 0; i < atlasKeys.length; i++) this._modelIndexByKey[atlasKeys[i]] = i;
   }
 
+  /** Instances queued this frame (raw, before the cap clamp). */
+  get rawCount() { return this._rawCount; }
+
   /** Clears this frame's instance queue. Call once before this frame's
    * pushInstance() calls (US-041a's collect(world) replaces the harness
    * loop but keeps this reset). */
   beginFrame() {
     this._rawCount = 0;
+    this._frameId++;
+    this._epoch++;
   }
 
   /** Test/dev harness feed (architecture.md 15.2 item 7's gpucompare poses):
    * queues one instance of `modelKey` (must be bound, i.e. have `.voxel`) at
    * world feet position (x,y,z), yaw `yawDeg`, playing `clip`/`frame`/`tMs`
    * (clip -1 or omitted = rest pose, matching voxelPose.js's samplePose).
-   * Past the active renderer cap, extra pushes are dropped (warn once). */
+   * Past the active renderer cap, extra pushes are dropped (warn once). Returns the raw slot index, -1 when dropped. */
   pushInstance(modelKey, x, y, z, yawDeg, clip, frame, tMs, scale = 1) {
     const pm = this.models.get(modelKey);
-    if (!pm) { warnOnce(this, `VoxelPool.pushInstance: unknown or non-voxel model '${modelKey}'`); return; }
+    if (!pm) { warnOnce(this, `VoxelPool.pushInstance: unknown or non-voxel model '${modelKey}'`); return -1; }
     if (this._rawCount >= this.cap) {
       const bit = this.cap === MAX_VOX_INSTANCES_MESH ? 2 : 1;
       if (!(this._pushWarned & bit)) {
         this._pushWarned |= bit;
         warnOnce(this, `VoxelPool.pushInstance: cap (${this.cap}) exceeded, extra instances dropped`);
       }
-      return;
+      return -1;
     }
     const slot = this._rawSlot(this._rawCount);
     slot.model = pm;
@@ -168,18 +208,51 @@ export class VoxelPool {
     slot.clip = clip === undefined ? -1 : clip;
     slot.frame = frame || 0;
     slot.tMs = tMs || 0;
+    slot.fromClip = -1; slot.fromW = 0;
     slot.scale = scale > 0 ? scale : 1; // ED-SCALE-1a (34.2 item 5)
     // EMIS-01b: harness instances have no entity id -> identity from model + position.
     // Integer hash (Math.round to 1cm buckets, Math.imul mixing) instead of string concat - no strings/allocation per push.
     slot.seed = pm.emissiveLight
       ? (hashInt(hashInt(hashInt(hashStr(modelKey), Math.round(x * 100)), Math.round(y * 100)), Math.round(z * 100)) || 1)
       : 0;
-    this._rawCount++;
+    slot.entity = null;
+    slot.addPart = -1;
+    return this._rawCount++;
+  }
+
+  /** WILD-01 (38.31 item 8): sets the from-clip of raw slot `i` (a `pushInstance` return). `fromW` = weight of the old pose (1 -> 0). */
+  blendInstance(i, fromClip, fromFrame, fromTMs, fromW) {
+    if (i < 0 || i >= this._rawCount) return;
+    const slot = this.raw[i]; this._epoch++;
+    slot.fromClip = fromClip; slot.fromFrame = fromFrame || 0; slot.fromTMs = fromTMs || 0; slot.fromW = fromW;
+  }
+
+  /** ANIM-C-04 (38.67 section 3): sets the LegPose (Float64Array(16), engine/entities/legDriver.js poseOf) of raw slot `i`; null = authored legs (byte-identical). Reference only, no copy. */
+  legInstance(i, legPose) {
+    if (i < 0 || i >= this._rawCount) return;
+    this.raw[i].legs = legPose || null; this._epoch++;
+  }
+
+  /** ANIM-BLEND-01a (38.68): sets the AnimLayers (Float64Array(20)) of raw slot `i`; null = plain clip fields (byte-identical). Reference only. */
+  layerInstance(i, rec) {
+    if (i < 0 || i >= this._rawCount) return;
+    this.raw[i].layers = rec || null; this._epoch++;
+  }
+
+  /** 38.23: the G-buffer objectId (0x8000 | slot, same as voxelMesh's draw item) of `entity` in the last project(); -1 when it has no slot. */
+  objectIdFor(entity) {
+    const list = this.list;
+    for (let i = 0; i < list.length; i++) if (list[i].entity === entity) return 0x8000 | list[i].slot;
+    return -1;
   }
 
   /** Reused per-slot raw-instance object at `this.raw[idx]` (no per-frame allocation once warm). */
   _rawSlot(idx) {
-    return this.raw[idx];
+    const s = this.raw[idx];
+    s.layers = null; // ANIM-BLEND-01a
+    s.look = null; // ANIM-LOOKAT-01
+    s.legs = null; // ANIM-C-04: reset here (not in pushInstance: an extra store there tipped rigPerf's 0-alloc gate)
+    return s;
   }
 
   /**
@@ -204,8 +277,19 @@ export class VoxelPool {
     slot.clip = idx;
     if (v.frame) slot.frame = v.frame; else slot.frame = 0;
     if (v.t) slot.tMs = v.t; else slot.tMs = 0;
+    slot.fromClip = -1; slot.fromW = 0;
     if (t.scale > 0) slot.scale = t.scale; else slot.scale = 1;
     // EMIS-01b: stable identity of the entity (numeric id as-is; string id hashed, no allocation)
+    this._queueStamp.set(e, this._frameId);
+    slot.entity = e; // 38.23: objectIdFor(entity)
+    // TALK-E1 (38.28 item 7): optional `components.voxel.partRot = {part, rx, ry, rz}`, added to the clip rotation.
+    const pr = v.partRot;
+    const ap = pr && pm.partIndex && pm.partIndex[pr.part] !== undefined ? pm.partIndex[pr.part] : -1;
+    slot.legs = v.legPose || null; // ANIM-C-04: components.voxel.legPose (set by the game view)
+    slot.layers = v.animLayers || null; // ANIM-BLEND-01a: components.voxel.animLayers (AnimLayers Float64Array(20))
+    slot.look = v.lookRot || null; // ANIM-LOOKAT-01: components.voxel.lookRot (Float64Array(5) from lookAt.js)
+    slot.addPart = ap;
+    if (ap >= 0) { slot.addRx = pr.rx || 0; slot.addRy = pr.ry || 0; slot.addRz = pr.rz || 0; }
     slot.seed = 0;
     if (pm.emissiveLight) slot.seed = (typeof e.id === 'number' ? (e.id | 0) : hashStr(e.id)) || 1;
     this._rawCount++;
@@ -235,13 +319,19 @@ export class VoxelPool {
     this._entWorld = world;
   }
 
+  /** GOB-INVIS: true when entity `e` was queued by this frame's collect() (not hidden, model known, inside the nearest-cap set). Host gates enemy bars on it. */
+  isQueued(e) {
+    return this._queueStamp.get(e) === this._frameId && this._rawCount > 0;
+  }
+
   collect(world, cam) {
     this.beginFrame();
     if (!world) return;
     if (world !== this._entWorld || world.renderVersion !== this._entVersion) this._rebuildEnts(world);
     const ents = this._ents;
     const n = ents.length;
-    if (n <= this.cap) {
+    const ecap = Math.max(0, this.cap - this.reserve); // `reserve` slots stay free for pushInstance feeds (ambient fauna)
+    if (n <= ecap) {
       for (let i = 0; i < n; i++) {
         // US-079b0 (37.16.1 item 1): a hidden voxel entity renders nothing.
         if (ents[i].components.voxel.hidden === true) continue;
@@ -253,31 +343,38 @@ export class VoxelPool {
     const bit = this.cap === MAX_VOX_INSTANCES_MESH ? 2 : 1;
     if (!(this._collectWarned & bit)) {
       this._collectWarned |= bit;
-      warnOnce(this, `VoxelPool.collect: ${n} voxel entities exceed cap (${this.cap}); only the nearest ${this.cap} render`);
+      warnOnce(this, `VoxelPool.collect: ${n} voxel entities exceed cap (${ecap}); only the nearest ${ecap} render`);
     }
     const cx = cam ? lodCentreX(cam) : 0, cy = cam ? lodCentreY(cam) : 0, cz = cam ? lodCentreZ(cam) : 0;
-    const idx = this._nearIdx, dist = this._nearDist;
+    const idx = this._nearIdx, dist = this._nearDist, pri = this._nearPri;
     let count = 0;
+    const prevFrame = this._selFrame, curFrame = prevFrame + 1, prioR2 = this.prioRange * this.prioRange;
+    this._selFrame = curFrame;
     for (let i = 0; i < n; i++) {
       // US-079b0 (37.16.1 item 1): a hidden entity does not take one of the
       // nearest `cap` slots (checked before the distance sort, so it can't
       // displace a visible entity).
-      if (ents[i].components.voxel.hidden === true) continue;
+      const vc = ents[i].components.voxel;
+      if (vc.hidden === true) continue;
+      // VOX-PRIO-01 (OB-171): higher `priority` tier (0..3, default 0) ranks before any distance; distance breaks ties.
+      let p = vc.priority > 0 ? (vc.priority > 3 ? 3 : vc.priority | 0) : 0;
       const t = ents[i].transform;
       const dx = t.x - cx, dy = t.y - cy, dz = t.z - cz;
-      const d2 = dx * dx + dy * dy + dz * dz;
-      if (count < this.cap) {
-        let j = count - 1;
-        while (j >= 0 && dist[j] > d2) { dist[j + 1] = dist[j]; idx[j + 1] = idx[j]; j--; }
-        dist[j + 1] = d2; idx[j + 1] = i;
-        count++;
-      } else if (d2 < dist[count - 1]) {
-        let j = count - 2;
-        while (j >= 0 && dist[j] > d2) { dist[j + 1] = dist[j]; idx[j + 1] = idx[j]; j--; }
-        dist[j + 1] = d2; idx[j + 1] = i;
-      }
+      let d2 = dx * dx + dy * dy + dz * dz;
+      // RF17-11: tier 1 (NPCs/hostiles) only outranks plain props within `prioRange` m; farther it competes by distance like tier 0. Tier >= 2 (markers) always wins.
+      if (p === 1 && d2 > prioR2) p = 0;
+      // Hysteresis: an entity drawn last frame gets ~5% distance credit, so two near-equal entities never flip-flop under camera jitter.
+      if (this._selStamp.get(ents[i]) === prevFrame) d2 *= HYST_D2;
+      let j;
+      if (count < ecap) {
+        j = count - 1; count++;
+      } else if (p > pri[count - 1] || (p === pri[count - 1] && d2 < dist[count - 1])) {
+        j = count - 2;
+      } else continue;
+      while (j >= 0 && (pri[j] < p || (pri[j] === p && dist[j] > d2))) { dist[j + 1] = dist[j]; idx[j + 1] = idx[j]; pri[j + 1] = pri[j]; j--; }
+      dist[j + 1] = d2; idx[j + 1] = i; pri[j + 1] = p;
     }
-    for (let k = 0; k < count; k++) this._queueEntity(ents[idx[k]]);
+    for (let k = 0; k < count; k++) { this._selStamp.set(ents[idx[k]], curFrame); this._queueEntity(ents[idx[k]]); }
   }
 
   /**
@@ -309,18 +406,29 @@ export class VoxelPool {
    * Zero allocation once warm.
    */
   projectShadow() {
-    const n = Math.min(this._rawCount, this.cap);
+    const n = Math.min(this._rawCount, this.cap), reuse = this._projEpoch === this._epoch;
     for (let i = 0; i < n; i++) {
       const inst = this.raw[i];
       const out = this._shadowSlots[i];
       this.shadowList[i] = out; // references only: the posed records live in the never-shrinking `_shadowSlots`
-      instanceRect(_noCullProj, inst.model, inst, out.pose, null, out.rect);
+      const ps = reuse ? this._projSlotOf[i] : -1, src = ps >= 0 ? this._slots[ps] : null;
+      if (src && samePoseInputs(src, inst)) { // PERF-02: project() posed this instance this frame from the same inputs: copy, don't re-pose
+        const pm = inst.model, np = pm.partCount * PART_STRIDE, nf = pm.partCount * 12, P = out.pose, Q = src.pose, F = out.fwd, G = src.fwd;
+        for (let k = 0; k < np; k++) P[k] = Q[k];
+        for (let k = 0; k < nf; k++) F[k] = G[k];
+        out.fwdModel = pm;
+        rectFromForward(_noCullProj, pm, F, null, out.rect);
+      } else {
+        instanceRect(_noCullProj, inst.model, inst, out.pose, null, out.rect);
+        keepForward(out, inst.model);
+      }
       out.model = inst.model; out.modelKey = inst.modelKey;
       out.x = inst.x; out.y = inst.y; out.z = inst.z; out.yawDeg = inst.yawDeg;
-      out.clip = inst.clip; out.frame = inst.frame; out.tMs = inst.tMs; out.scale = inst.scale;
+      out.clip = inst.clip; out.frame = inst.frame; out.tMs = inst.tMs; out.fromClip = inst.fromClip; out.fromFrame = inst.fromFrame; out.fromTMs = inst.fromTMs; out.fromW = inst.fromW; out.scale = inst.scale;
+      out.addPart = inst.addPart; out.addRx = inst.addRx; out.addRy = inst.addRy; out.addRz = inst.addRz; out.legs = inst.legs; out.layers = inst.layers; out.look = inst.look;
       out.slot = i;
     }
-    this.shadowList.length = n;
+    shrinkTo(this.shadowList, n);
     return n;
   }
 
@@ -340,8 +448,11 @@ export class VoxelPool {
     this.eyeX = _proj.eyeX; this.eyeY = _proj.eyeY; this.eyeZ = _proj.eyeZ;
     let count = 0;
     let culled = 0;
+    const slotOf = this._projSlotOf;
+    this._projEpoch = this._epoch;
     for (let i = 0; i < Math.min(this._rawCount, this.cap); i++) {
       const inst = this.raw[i];
+      slotOf[i] = -1;
       // ME-22 (28.12 item 4): the single place instances are routed into
       // the per-frame DDA/CPU-oracle list - a meshOnly model is skipped
       // (one warn per modelKey, never thrown, no placeholder geometry)
@@ -355,14 +466,18 @@ export class VoxelPool {
       const out = this._slots[count];
       this.list[count] = out;
       instanceRect(_proj, inst.model, inst, out.pose, null, out.rect);
-      if (out.rect.empty) { culled++; continue; }
+      if (out.rect.empty) { out.fwdModel = null; culled++; continue; }
+      keepForward(out, inst.model);
       out.model = inst.model; out.modelKey = inst.modelKey;
       out.x = inst.x; out.y = inst.y; out.z = inst.z; out.yawDeg = inst.yawDeg;
-      out.clip = inst.clip; out.frame = inst.frame; out.tMs = inst.tMs; out.scale = inst.scale;
+      out.clip = inst.clip; out.frame = inst.frame; out.tMs = inst.tMs; out.fromClip = inst.fromClip; out.fromFrame = inst.fromFrame; out.fromTMs = inst.fromTMs; out.fromW = inst.fromW; out.scale = inst.scale;
+      out.addPart = inst.addPart; out.addRx = inst.addRx; out.addRy = inst.addRy; out.addRz = inst.addRz; out.legs = inst.legs; out.layers = inst.layers; out.look = inst.look;
       out.slot = count;
+      out.entity = inst.entity;
+      slotOf[i] = count;
       count++;
     }
-    this.list.length = count;
+    shrinkTo(this.list, count);
     this.stats.count = count;
     this.stats.instancesCulled = culled + Math.max(0, this._rawCount - this.cap);
   }

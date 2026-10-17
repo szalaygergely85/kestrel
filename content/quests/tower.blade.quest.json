@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "id": "tower.blade",
+  "title": "Not Safe",
+  "giver": {
+    "npc": "noteKeepLight",
+    "turnIn": "bear"
+  },
+  "objectives": [
+    {
+      "id": "breach",
+      "text": "Go up the tower",
+      "journal": "It is not safe here. Find a blade.",
+      "when": {
+        "type": "area",
+        "id": "breach"
+      }
+    },
+    {
+      "id": "sword",
+      "text": "Take the sword from the ashes",
+      "journal": "Pick up the blade in the ashes.",
+      "when": {
+        "type": "item",
+        "id": "sword"
+      }
+    },
+    {
+      "id": "leave",
+      "text": "Now it is safe to go outside",
+      "journal": "Now go outside. A bear waits there.",
+      "when": {
+        "type": "area",
+        "id": "towerDoor"
+      }
+    }
+  ],
+  "returnText": "Talk to the bear",
+  "objectGiver": true,
+  "main": true,
+  "lines": {
+    "offer": [
+      "Pinned to the wall: Do not stay down here.",
+      "Climb the tower stair and find the blade?"
+    ]
+  },
+  "rewardBand": "elite",
+  "reward": { "coin": 65, "items": [{ "id": "arrow", "n": 5 }] }
+}

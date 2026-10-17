@@ -44,7 +44,7 @@
  *   r21  |   Settings                                                             |
  *   r23  |  ------------------------------------------------------------------    |
  *   r24  |   (message line)                                                       |
- *   r26  |     Arrows: select   Enter: choose   Del: delete   Esc: back           |
+ *   r26  |       Arrows: select   Enter: choose   Del: delete                     |
  *   r27  +==o================================================================o==+
  */
 (function (root) {
@@ -95,9 +95,9 @@
     },
     subtitle: { row: 3, align: 'center', text: 'someone is calling', fg: 'uiDim', optional: true,
                 note: 'lower-case whisper under the name board (canon: models.subtitle); writer may change via S8-A-12' },
-    signal: { row: 4, align: 'center', text: '. . . - - - . . .', fg: 'aetherDim', litFg: 'aether',
-              pulse: { use: 'models.title.signal.ms (short 180, long 480, rest 1200)', optional: true,
-                       rule: 'mark n lit (aether) in the SOS order, others aetherDim; static aetherDim is fine' },
+    signal: { row: 4, align: 'center', text: '.- .-.. .. ...- .', fg: 'aetherDim', litFg: 'aether',
+              pulse: { use: 'ASSETS.signal.steps (Morse ALIVE: dot 0.25, dash 0.75 s)', optional: true,
+                       rule: 'mark n lit (aether) in the ALIVE order (13 marks), others aetherDim; static aetherDim is fine' },
               note: 'the one magic colour on the card, sits centred in the row-4 separator' },
     separators: [
       { row: 4, from: 3, to: 68, glyph: '-', fg: 'brassShadow', note: 'under the title; the signal text is drawn over its centre (1 space each side)' },
@@ -148,8 +148,8 @@
     },
     message: { row: 24, col: 4, info: 'uiHint', error: 'softEmber', prefix: '> ', prefixFg: 'uiDim' },
     keyHints: { row: 26, align: 'center', fg: 'uiDim', keyFg: 'gold',
-                text: 'Arrows: select   Enter: choose   Del: delete   Esc: back',
-                keys: ['Arrows', 'Enter', 'Del', 'Esc'] },
+                text: 'Arrows: select   Enter: choose   Del: delete',
+                keys: ['Arrows', 'Enter', 'Del'] },
     version: { row: 27, colEnd: 67, fg: 'brassShadow', optional: true, note: 'build tag in the bottom frame, right; e.g. " v0.8 "' },
 
     adopt: [
@@ -220,14 +220,15 @@
   // The GFX-01 Quality row (game/js/ui/gfxPresets.js QUALITY_CHOICES). Writer may reword the notes (S8-A-12).
   S.quality = {
     id: 'quality', control: 'strip',
-    choices: ['low', 'medium', 'high', 'ultra', 'auto'],
-    text: { low: 'Low', medium: 'Medium', high: 'High', ultra: 'Ultra', auto: 'Auto' },
+    choices: ['low', 'medium', 'high', 'ultra', 'extreme', 'auto'], // OB-118: 'extreme' was missing -> blank strip entry
+    text: { low: 'Low', medium: 'Medium', high: 'High', ultra: 'Ultra', extreme: 'Extreme', auto: 'Auto' },
     autoResolved: { format: 'Auto ({name})', note: 'when auto is current, its strip text shows the preset it resolved to, e.g. "Auto (High)"' },
     notes: {
       low: 'Fastest. Fewer light rays, short shadows.',
       medium: 'Balanced for laptops.',
       high: 'Full look. Recommended.',
       ultra: 'Every effect on. Needs a fast GPU.',
+      extreme: 'Beyond Ultra. Needs a very fast GPU.',
       auto: 'Picks a preset from a short GPU test.',
       disabled: 'Not available on this device.'
     },
@@ -288,7 +289,7 @@
     note: { color: 'uiDim', col: 6, show: 'focus', note: 'the note line under the focused row only' },
     separator: { row: 21, glyph: '-', color: 'brassShadow', inset: 3 },
     keyHints: { row: 23, align: 'center', color: 'uiDim', key: 'gold',
-                text: 'W/S select   A/D change   Enter toggle   Esc back', keys: ['W/S', 'A/D', 'Enter', 'Esc'] },
+                text: 'W/S select   A/D change   Enter toggle', keys: ['W/S', 'A/D', 'Enter'] },
     stepRule: 'as uiStyle.settings.stepRule; Enter / Space on a toggle flips it, on Back = Esc',
     mock: {
       note: 'preview stand-in values; options.js is the source of truth in the game',

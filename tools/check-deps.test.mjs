@@ -30,6 +30,17 @@ function writeFile(root, rel, content) {
 }
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'check-deps-fixture-'));
+// Rule 18 (ED-WG-01c): tools/editor must not import GL-only modules.
+writeFile(tmp, 'tools/editor/bad18.js', `import { GpuCellPipeline } from '../../engine/render/gpu/GpuCellPipeline.js';
+import s from '../../engine/render/gpu/glsl/cast.js';
+export const g = [GpuCellPipeline, s];
+`);
+writeFile(tmp, 'tools/editor/good18.js', `import { createRenderer } from '../../engine/index.js';
+export const r = createRenderer;
+`);
+writeFile(tmp, 'tools/other18.js', `import { GpuCellPipeline } from '../../engine/render/gpu/GpuCellPipeline.js';
+export const g = GpuCellPipeline;
+`);
 // Rule 17 (WG-1b2): WebGPU globals only under engine/render/gpu/device/.
 writeFile(tmp, 'engine/render/gpu/device/good17.js', `export const a = navigator.gpu; export const b = GPUBufferUsage.COPY_DST | GPUTextureUsage.COPY_SRC | GPUShaderStage.FRAGMENT | GPUMapMode.READ;
 `);
@@ -44,6 +55,41 @@ export const x = 1;
 writeFile(tmp, 'game/js/bad17c.js', `export const d = GPUShaderStage.VERTEX;
 `);
 writeFile(tmp, 'game/js/bad17d.test.js', `export const e = navigator.gpu;
+`);
+
+// Rules 19/20 (CHARGEN-06): tools/export/** browser-safe imports; vendor/three only under tools/chargen/**.
+writeFile(tmp, 'tools/export/good19.js', `import { meshCharacter } from '../../engine/index.js';
+import { crc32 } from './png.js';
+export const a19 = [meshCharacter, crc32];
+`);
+writeFile(tmp, 'tools/export/png.js', `export const crc32 = 1;
+`);
+writeFile(tmp, 'tools/export/bad19a.js', `import fs from 'node:fs';
+export const b19 = fs;
+`);
+writeFile(tmp, 'tools/export/bad19b.js', `import { readPng } from '../png-read.mjs';
+export const c19 = readPng;
+`);
+writeFile(tmp, 'tools/export/bad19c.js', `import { x } from '../../engine/mesh/gltf.js';
+export const d19 = x;
+`);
+writeFile(tmp, 'tools/export/good19.test.mjs', `import zlib from 'node:zlib';
+import { readPng } from '../png-read.mjs';
+export const e19 = [zlib, readPng];
+`);
+writeFile(tmp, 'tools/png-read.mjs', `export const readPng = 1;
+`);
+writeFile(tmp, 'tools/chargen/good20.js', `import * as THREE from './vendor/three/three.module.js';
+export const t20 = THREE;
+`);
+writeFile(tmp, 'tools/bad20a.js', `import * as THREE from './chargen/vendor/three/three.module.js';
+export const u20 = THREE;
+`);
+writeFile(tmp, 'engine/render/bad20b.js', `import * as THREE from '../../tools/chargen/vendor/three/three.module.js';
+export const v20 = THREE;
+`);
+writeFile(tmp, 'game/js/bad20c.js', `import { GLTFLoader } from '../../tools/chargen/vendor/three/GLTFLoader.js';
+export const w20 = GLTFLoader;
 `);
 
 // Rule 1: engine file with a bare specifier + one that resolves outside engine/.
@@ -135,6 +181,44 @@ writeFile(tmp, 'engine/fx/particles.js', `export function f() { return Math.rand
 writeFile(tmp, 'engine/fx/emitterDef.js', `export function f() { return Math.tan(1); }
 `); // load-time compile: NOT in rule 15
 
+// Rule 19 (WILD-03): engine/fauna/** is a leaf (fauna, nav, core, entities/clipPlayer+gait; tests + engine/test).
+writeFile(tmp, 'engine/fauna/good19a.js', `import { IndexHeap } from '../nav/heap.js';
+import { createRng } from '../core/rng.js';
+import { clipPlay } from '../entities/clipPlayer.js';
+import { pickGait } from '../entities/gait.js';
+import { g } from './sibling19.js';
+export const q1 = [IndexHeap, createRng, clipPlay, pickGait, g];
+`);
+writeFile(tmp, 'engine/fauna/sibling19.js', `export const g = 1;
+`);
+writeFile(tmp, 'engine/entities/clipPlayer.js', `export function clipPlay() {}
+`);
+writeFile(tmp, 'engine/entities/gait.js', `export function pickGait() {}
+`);
+writeFile(tmp, 'engine/entities/Entity.js', `export class Entity {}
+`);
+writeFile(tmp, 'engine/core/rng.js', `export function createRng() {}
+`);
+writeFile(tmp, 'engine/fauna/bad19a.js', `import { Terrain } from '../world/Terrain.js';
+export const q2 = Terrain;
+`);
+writeFile(tmp, 'engine/fauna/bad19b.js', `import { Entity } from '../entities/Entity.js';
+export const q3 = Entity;
+`);
+writeFile(tmp, 'engine/fauna/good19b.test.js', `import { makeOk } from '../test/assert.js';
+import { g } from './sibling19.js';
+export const q4 = [makeOk, g];
+`);
+writeFile(tmp, 'engine/fauna/bad19c.test.js', `import { drawSprites } from '../render/sprites.js';
+export const q5 = drawSprites;
+`);
+writeFile(tmp, 'engine/render/bad19d.js', `import { g } from '../fauna/sibling19.js';
+export const q6 = g;
+`);
+writeFile(tmp, 'engine/world/bad19e.js', `import { g } from '../fauna/sibling19.js';
+export const q7 = g;
+`);
+
 // Rule 15 (RE-14): deterministic-sim leaves WARN on Math.random/Date.now/
 // performance.now/trig - engine/nav/**, engine/core/{commands,rng,hash,
 // replay}.js, engine/world/Visibility.js, game/js/rts/sim/**.
@@ -152,6 +236,29 @@ writeFile(tmp, 'game/js/rts/ui/good15.js', `export function f() { return Math.ra
 writeFile(tmp, 'game/js/quest/sim/bad15.js', `export function f() { return Math.random(); }\n`); // US-079a beast sim (29.1)
 writeFile(tmp, 'game/js/quest/beastView.js', `export function f() { return Math.random(); }\n`); // quest/, not quest/sim/: NOT in scope
 
+// ENG-API-01f/01g: tools deep imports are findings (no allowlist); rules 21/22 WARN.
+writeFile(tmp, 'tools/bench-deep.mjs', `import { x } from '../engine/mesh/DrawList.js';
+export const y = x;
+`);
+writeFile(tmp, 'tools/bench-shadow.mjs', `import { x } from '../engine/mesh/DrawList.js';
+export const y = x;
+`); // formerly allowlisted
+writeFile(tmp, 'engine/api-1.0.json', JSON.stringify({ version: '1.0', names: [{ name: 'oldThing', area: 'core', tier: 'deprecated', replacedBy: 'newThing' }, { name: 'OK', area: 'core', tier: 'stable' }] }));
+writeFile(tmp, 'game/js/bad21.js', `import { oldThing } from '../../engine/index.js';
+export const a = oldThing;
+`);
+writeFile(tmp, 'game/js/good21.js', `import { OK, newThing } from '../../engine/index.js';
+export const a = [OK, newThing];
+`);
+writeFile(tmp, 'game/js/bad22.js', `/** @type {import('../../engine/render/Deep22.js').Deep22} */
+export const a = null;
+`);
+writeFile(tmp, 'game/js/good22.js', `/** @type {import('../../engine/index.js').Thing} */
+export const a = null;
+`);
+writeFile(tmp, 'engine/render/inside22.js', `/** @type {import('./Deep22.js').Deep22} */
+export const a = null;
+`);
 // Control: a fully clean engine file and a clean game file (importing index.js only).
 writeFile(tmp, 'engine/index.js', `export const OK = 1;\n`);
 writeFile(tmp, 'engine/dev.js', `export const DEV_OK = 1;\n`);
@@ -169,6 +276,14 @@ try {
 }
 
 ok('exits non-zero when violations exist', exitCode !== 0, `exitCode=${exitCode}`);
+ok('ENG-API-01f: deep tools import flagged', /bench-deep\.mjs.*deep import/.test(output), output);
+ok('ENG-API-01f: formerly allowlisted tool path no longer exempt', /bench-shadow\.mjs.*deep import/.test(output), output);
+ok('rule 21: deprecated name import WARNs (with replacement)', /WARN game\/js\/bad21\.js.*deprecated "oldThing" \(use newThing\)/.test(output), output);
+ok('rule 21: non-deprecated import NOT flagged', !/good21\.js/.test(output), output);
+ok('rule 22: deep JSDoc type path outside engine/ is a finding', /game\/js\/bad22\.js.*rule 22/.test(output), output);
+ok('rule 22: JSDoc path to engine/index.js NOT flagged', !/good22\.js/.test(output), output);
+ok('rule 22: JSDoc import inside engine/ NOT flagged', !/inside22\.js/.test(output), output);
+ok('rule 22 is not downgraded to a WARN', !/WARN game\/js\/bad22/.test(output), output);
 ok('rule 1: bare specifier flagged', /bad1\.js.*bare specifier "node:fs"/.test(output), output);
 ok('rule 1: outside-engine import flagged', /bad1\.js.*resolves outside engine\//.test(output), output);
 ok('rule 2: forbidden global flagged', /bad2\.js.*window\.ASSETS/.test(output), output);
@@ -182,6 +297,11 @@ ok('rule 7: dev.js import from tools/** (outside editor) NOT flagged', !/bench-g
 ok('rule 7: dev.js import from game/js/quest/** flagged', /bad7\.js.*engine\/dev\.js.*only game\/js\/dev/.test(output), output);
 ok('rule 7: dev.js import from game/js/ui/** flagged', /bad7b\.js.*engine\/dev\.js.*only game\/js\/dev/.test(output), output);
 ok('rule 7: dev.js import from tools/editor/** flagged', /bad7c\.js.*engine\/dev\.js.*only game\/js\/dev/.test(output), output);
+ok('rule 20: tools/export importing engine/index.js + tools/export NOT flagged', !/good19\.js/.test(output), output);
+ok('rule 20: tools/export test importing node:zlib + png-read NOT flagged', !/good19\.test/.test(output), output);
+ok('rule 20: tools/export node: built-in flagged', /bad19a\.js.*rule 20/.test(output), output);
+ok('rule 20: tools/export importing another tools file flagged', /bad19b\.js.*rule 20/.test(output), output);
+ok('rule 20: tools/export deep engine import flagged', /bad19c\.js.*rule 20/.test(output), output);
 ok('rule 8: engine/test/assert.js import from a game .test.js NOT flagged', !/good8\.test\.js/.test(output), output);
 ok('rule 8: engine/test/assert.js import from a tools/editor .test.mjs NOT flagged', !/good8\.test\.mjs/.test(output), output);
 ok('rule 8: engine/test/assert.js import from a non-test file flagged', /bad8\.js.*deep import/.test(output), output);
@@ -201,6 +321,13 @@ ok('rule 14: mesh importing nav/ flagged', /bad14d\.js.*must not import engine\/
 ok('rule 14: ui importing nav/ flagged', /bad14e\.js.*must not import engine\/nav/.test(output), output);
 ok('rule 14: world importing nav/ flagged', /bad14f\.js.*must not import engine\/nav/.test(output), output);
 ok('rule 14: unrelated render file NOT flagged', !/[^d]good14\.js/.test(output), output);
+ok('rule 19: fauna importing nav+core+clipPlayer+gait+fauna NOT flagged', !/good19a\.js/.test(output), output);
+ok('rule 19: fauna importing world/ flagged', /fauna\/bad19a\.js.*engine\/fauna.*rule 19/.test(output), output);
+ok('rule 19: fauna importing other entities files flagged', /fauna\/bad19b\.js.*rule 19/.test(output), output);
+ok('rule 19: fauna test importing fauna+test NOT flagged', !/good19b\.test\.js/.test(output), output);
+ok('rule 19: fauna test importing render/ flagged', /bad19c\.test\.js.*rule 19/.test(output), output);
+ok('rule 19: render importing fauna/ flagged', /render\/bad19d\.js.*must not import engine\/fauna/.test(output), output);
+ok('rule 19: world importing fauna/ flagged', /world\/bad19e\.js.*must not import engine\/fauna/.test(output), output);
 ok('rule 16: fx non-test importing world/ flagged', /fx\/bad16a\.js.*non-test.*may only import engine\/fx.*engine\/core/.test(output), output);
 ok('rule 16: fx non-test importing render/ flagged', /fx\/bad16b\.js.*non-test/.test(output), output);
 ok('rule 16: fx importing fx+core NOT flagged', !/good16a\.js/.test(output), output);
@@ -233,6 +360,11 @@ ok('rule 17: engine/render GPUMapMode flagged (line 2)', /bad17b\.js:2:.*GPUMapM
 ok('rule 17: comment mention NOT flagged', !/comment17\.js/.test(output), output);
 ok('rule 17: game/ GPUShaderStage flagged', /game\/js\/bad17c\.js:1:.*GPUShaderStage/.test(output), output);
 ok('rule 17: game/ test file navigator.gpu flagged', /bad17d\.test\.js:1:.*navigator\.gpu/.test(output), output);
+
+ok('rule 18: editor GpuCellPipeline import flagged', /bad18\.js:1:.*GL-only/.test(output), output);
+ok('rule 18: editor glsl/ import flagged', /bad18\.js:2:.*GL-only/.test(output), output);
+ok('rule 18: clean editor file NOT flagged', !/good18\.js/.test(output), output);
+ok('rule 18 (WG-5b): engine-wide, non-editor tool flagged too', /other18\.js:1:.*GL-only/.test(output), output);
 
 // Installing a tool's dependencies must not change the project's findings or scan count.
 const installed = fs.mkdtempSync(path.join(os.tmpdir(), 'check-deps-installed-'));

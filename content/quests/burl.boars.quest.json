@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "id": "burl.boars",
+  "title": "Boars in the Woods",
+  "giver": { "npc": "bear" },
+  "requires": [{ "quest": "tower.blade", "done": true }],
+  "objectives": [
+    { "id": "beasts", "text": "Kill boars", "journal": "Kill all five boars in Burl's woods.", "when": { "type": "beasts", "kind": "boar", "ids": ["boar1", "boar2", "boar3", "boar4", "boar5"], "count": 5 } }
+  ],
+  "returnText": "Return to the bear",
+  "rewardBand": "errand",
+  "reward": { "coin": 10, "items": [{ "id": "arrow", "n": 10 }] }
+}

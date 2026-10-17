@@ -134,6 +134,7 @@ function resolveMaterial(P, key) {
   if (rec) return rec;
 
   const m = P.materials[key];
+  if (!m) throw new Error('fastShade: unknown material ' + JSON.stringify(key)); // ENV-GATEFIX: name the key instead of 'reading ramp'
   const ramp = P.ramps[m.ramp];
   const rampCodes = new Uint8Array(ramp.length);
   for (let i = 0; i < ramp.length; i++) rampCodes[i] = ramp.charCodeAt(i);
@@ -253,7 +254,8 @@ export function fastShade(P, matKey, u, v, dist, z, out) {
     if (tex.glyphOverride[idx] && tfFade > 0.5) glyphOverride = tex.glyphOverride[idx];
   }
 
-  const b = frameLm * rec.albedo * s + rec.emissive;
+  let b = frameLm * rec.albedo * s + rec.emissive;
+  const flo = P.liveLook ? P.liveLook.floorEff : 0; if (flo > 0 && b < flo) b = flo; // DN-02 night floor (same value the shade uniform carries)
 
   // glyph: exact Math.pow, see module doc.
   const cutoff = P.shading.cutoff;
@@ -312,7 +314,7 @@ export function fastShade(P, matKey, u, v, dist, z, out) {
  */
 export function fastShadeSky(P, az, elev, timeKey, out) {
   const rec = resolveSky(P);
-  const T = P.timeOfDay[timeKey || P.defaultTime];
+  const T = (P.liveLook && (!timeKey || timeKey === P.defaultTime)) ? P.liveLook : P.timeOfDay[timeKey || P.defaultTime]; // DN-01
   const stops = T.sky;
 
   // skyGradient, inlined (no array/string alloc): find the bracketing stops.
@@ -322,7 +324,9 @@ export function fastShadeSky(P, az, elev, timeKey, out) {
   if (i >= stops.length - 1) i = stops.length - 2;
   const a = P.rgb[stops[i].c], bcol = P.rgb[stops[i + 1].c];
   const kk = (t - stops[i].t) / ((stops[i + 1].t - stops[i].t) || 1);
-  const bgR = a[0] + (bcol[0] - a[0]) * kk, bgG = a[1] + (bcol[1] - a[1]) * kk, bgB = a[2] + (bcol[2] - a[2]) * kk;
+  let bgR = a[0] + (bcol[0] - a[0]) * kk, bgG = a[1] + (bcol[1] - a[1]) * kk, bgB = a[2] + (bcol[2] - a[2]) * kk;
+  const atm = P.atmos; // ENV-03b: horizon haze (same rule as atmos.js hazeRGB; absent/off = untouched)
+  if (atm && atm.on && atm.hazeK > 0) { const u = 1 - t, hk = atm.hazeK * u * u, hz = atm.haze; bgR += (hz[0] - bgR) * hk; bgG += (hz[1] - bgG) * hk; bgB += (hz[2] - bgB) * hk; }
 
   const tex = rec.texture;
   let tu = Math.floor(az * tex.scaleU) % tex.w; if (tu < 0) tu += tex.w;

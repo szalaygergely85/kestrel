@@ -10,7 +10,7 @@
 // into a module-level "open this note" request plus the optional persistent
 // read mark (`world.state['notes.<noteId>.read'] = true`, uiStyle.note.open
 // .state - nothing reads it yet, but world.state serializes so it survives a
-// save/load). The actual per-frame fade + `[E]`/`[Esc]` close + the paper
+// save/load). The actual per-frame fade + E / Esc close + the paper
 // panel draw live here too (called from main.js's fixed step / render loop,
 // next to the other quest UI gates), so the note panel knows no `ASSETS` of
 // its own - main.js hands it `notes` (ASSETS.notes) + `uiStyle` (ASSETS
@@ -24,6 +24,7 @@
 // primitives the end/map/death cards use (`compileRichLine`/`drawRichLine` +
 // `setCellRGB` on the duck-typed `UiLayer`), no new engine helper.
 import { compileRichLine, drawRichLine } from '../../../engine/index.js';
+import { createEscGrace } from './escGrace.js'; // OB-049
 
 // Module-level runtime state, rebuilt on every 'world:loaded' (architecture.md
 // 7.6 item 6 "runtime state is NOT world.state" - same as mapCard.js's `panel`
@@ -35,7 +36,6 @@ let noteId = null;        // ASSETS.notes key of the note currently open
 let noteA = 0;            // 0..1 fade alpha (uiStyle.note fadeIn/fadeOut)
 let fadeIn = 0.12;
 let fadeOut = 0.08;
-let prevLocked = false;   // pointer-lock state of the previous step (BUG-NOTE-ESC-01)
 let sceneMul = 0.35;      // uiStyle.note.sceneDim.bgMul (whole scene while open)
 
 // Per-note render cache, built once per open (NOT per frame - rule 9): the
@@ -44,7 +44,17 @@ let sceneMul = 0.35;      // uiStyle.note.sceneDim.bgMul (whole scene while open
 // changes (or after a reset).
 let noteRender = null; // { id, rows, h, panelX, panelY, titleLine, footerLine, textLines, titleX, footerStartX }
 
-const FOOTER_TEXT = '[E] / [Esc] close';
+const WALK_AWAY_ON = false;
+export const OFFER_FOOTER_TEXT = '[E] Accept   [Q] Close'; // OB-173: offer note (quest available): E accepts, Q closes without accepting
+export const FOOTER_TEXT = '[Q] Close'; // OB-056: say the key (was '<< CLOSE >>'); OB-048a: clickable close line (owner: never print an Esc hint; E / Esc / click all close)
+export const WALK_AWAY_MARGIN = 0.5; // OB-048b: note closes past min(radius, interact reach 1.8) + this (m)
+const INTERACT_REACH = 1.8; // engine/world/interaction.js DEFAULT_REACH
+let offerProvider = null; // OB-173: (noteId) -> {title, accept()} | null; set by main.js (objectOffer.js offerFor)
+let offer = null;         // the offer of the note currently open (resolved once per open)
+/** OB-173: wires the optional offer provider (call once at boot). */
+export function setNoteOfferProvider(fn) { offerProvider = typeof fn === 'function' ? fn : null; }
+let srcX = 0, srcY = 0, srcZ = 0, srcLimit = -1; // source interactable pos + close distance (-1 = no source: no walk-away)
+const grace = createEscGrace(); // OB-049: lock lost by Esc closed the note; that same press must not open the pause menu
 const PANEL_W = 64;
 
 /** ASCII 32-126 only (uiStyle.note.text.wrapRule): any other char -> "?". */
@@ -114,17 +124,25 @@ export function noteRead(ctx) {
   if (typeof id !== 'string') return false;
   world.state['notes.' + id + '.read'] = true; // optional read mark (persisted; nothing reads it yet)
   noteId = id;
+  offer = offerProvider ? offerProvider(id) : null; // OB-173
+  noteRender = null;
   noteState = 'opening';
   noteA = 0;
+  if (WALK_AWAY_ON && typeof def.x === 'number' && typeof def.y === 'number') { // OB-048b walk-away: OFF (OB-055 def x/y are level-local vs the world eye -> closed at once; OB-057 freezes movement instead) // OB-048b: remember the source for the walk-away close
+    srcX = def.x; srcY = def.y; srcZ = typeof def.z === 'number' ? def.z : 0;
+    const r = (typeof def.radius === 'number' && def.radius < INTERACT_REACH) ? def.radius : INTERACT_REACH;
+    srcLimit = r + WALK_AWAY_MARGIN;
+  } else srcLimit = -1;
   return true;
 }
 
 /** Rebuilds runtime state + the fade/panel config from `uiStyle.note`. Call on 'world:loaded'. */
 export function resetNoteRead(uiStyle) {
   noteState = 'closed';
-  noteId = null;
+  noteId = null; offer = null;
   noteA = 0;
   noteRender = null;
+  srcLimit = -1; grace.reset();
   const n = uiStyle && uiStyle.note;
   fadeIn = (n && typeof n.fadeIn === 'number') ? n.fadeIn : 0.12;
   fadeOut = (n && typeof n.fadeOut === 'number') ? n.fadeOut : 0.08;
@@ -141,26 +159,36 @@ export function resetNoteRead(uiStyle) {
  * @param {number} dt - seconds
  * @param {{pressed:(code:string)=>boolean, consumePressed?:()=>void}} input
  * @param {boolean} [locked] pointer-lock state this step (see BUG-NOTE-ESC-01 below)
+ * @param {{x:number,y:number,z:number}} [eye] player eye (OB-048b walk-away close; omitted = never)
  */
-export function stepNoteRead(dt, input, locked) {
+export function stepNoteRead(dt, input, locked, eye) {
   // BUG-NOTE-ESC-01: under pointer lock Chrome eats Esc (releases the lock, no keydown reaches the page), so a lock-lost
   // edge (true -> false) while a note is up closes it. `locked` undefined (old callers / no lock support) = never closes.
-  if (typeof locked === 'boolean') {
-    if (prevLocked && !locked && (noteState === 'open' || noteState === 'opening')) noteState = 'closing';
-    prevLocked = locked;
-  }
+  if (grace.lockLost(locked, noteState === 'open' || noteState === 'opening')) noteState = 'closing';
+  grace.tick(noteState === 'closed', input);
   if (noteState === 'opening') {
     noteA += fadeIn > 0 ? dt / fadeIn : 1;
     if (noteA >= 1) { noteA = 1; noteState = 'open'; }
   } else if (noteState === 'closing') {
     noteA -= fadeOut > 0 ? dt / fadeOut : 1;
-    if (noteA <= 0) { noteA = 0; noteState = 'closed'; noteId = null; }
+    if (noteA <= 0) { noteA = 0; noteState = 'closed'; noteId = null; offer = null; }
   }
-  if (noteState === 'open' && input && (input.pressed('KeyE') || input.pressed('Escape'))) {
+  if (noteState === 'open' && offer && input && input.pressed('KeyE')) { // OB-173: E on an offer note = accept (same book.accept as the Accept/Exit dialogue), then close
+    if (input.consumePressed) input.consumePressed();
+    const o = offer; offer = null; noteState = 'closing';
+    o.accept();
+  } else if (noteState === 'open' && input && (input.pressed('KeyE') || input.pressed('KeyQ') || input.pressed('Escape') || input.pressed('Mouse0'))) { // OB-048a: click closes too
     if (input.consumePressed) input.consumePressed();
     noteState = 'closing';
   }
+  if (noteState === 'open' && eye && srcLimit >= 0) { // OB-048b/OB-050: moving stays allowed; walking off closes
+    const dx = eye.x - srcX, dy = eye.y - srcY, dz = eye.z - srcZ;
+    if (dx * dx + dy * dy + dz * dz > srcLimit * srcLimit) noteState = 'closing';
+  }
 }
+
+/** OB-049: true while the pointer lock was lost by the Esc that closed a note: the pause menu stays down for that press. */
+export function isNoteEscGrace() { return grace.active; }
 
 /** Input gate (main.js ORs this into `uiLocked`, same as `isMapOpen()`). */
 export function isNoteOpen() { return noteState !== 'closed'; }
@@ -186,7 +214,7 @@ export function pushNoteDim(dim) {
  * Geometry (uiStyle.note.panel/frame/title/rule/text/footer): a 64-wide sheet
  * centred on `ui.cols`, height `8 + wrapped rows` clamped [minH, maxH], torn
  * top/bottom edges, `|` sides, a drop shadow, centred title, a rule, the
- * wrapped body, and the right-aligned "[E] / [Esc] close" footer. Fade: fg is
+ * wrapped body, and the right-aligned "[Q] Close" footer. Fade: fg is
  * scaled by `noteA` (the paper/edge/shadow backgrounds stay opaque - the same
  * "bg stays, fg fades" shape engine/ui/panel.js uses). No allocation per frame
  * (rule 9): the wrap + RichLine compile happens once per open, cached.
@@ -217,7 +245,7 @@ export function drawNotePanel(ui, notes, uiStyle) {
     const panelY = (ui.rows - h) >> 1;
     const title = note && typeof note.title === 'string' ? sanitizeLine(note.title) : '';
     const titleLine = compileRichLine(title, RGB.inkTitle, RGB.inkTitle, []);
-    const footerLine = compileRichLine(FOOTER_TEXT, RGB.inkFaded, RGB.inkKey, ['[Esc]', '[E]']);
+    const footerLine = compileRichLine(offer ? OFFER_FOOTER_TEXT : FOOTER_TEXT, RGB.inkFaded, RGB.inkKey, []);
     const textLines = rows.map((r) => compileRichLine(r, RGB.ink, RGB.ink, []));
     noteRender = {
       id: noteId, rows, h, panelX, panelY, titleLine, footerLine, textLines,

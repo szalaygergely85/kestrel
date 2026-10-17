@@ -90,6 +90,21 @@ export function createFrameRenderer({ engine, rt, pipeline = null, assets, idleS
     dirty = true;
   });
 
+  // ED-MESH-1e: model defs seen by the last voxelPool.bind (key -> def) so refreshAssets can tell "unchanged" from "new/replaced".
+  const boundModels = new Map();
+  function snapshotModels() {
+    boundModels.clear();
+    const keys = assets.keys('model');
+    for (let i = 0; i < keys.length; i++) boundModels.set(keys[i], assets.model(keys[i]));
+  }
+  function modelsChanged() {
+    const keys = assets.keys('model');
+    if (keys.length !== boundModels.size) return true;
+    for (let i = 0; i < keys.length; i++) if (boundModels.get(keys[i]) !== assets.model(keys[i])) return true;
+    return false;
+  }
+  snapshotModels();
+
   const dtBuf = new Float64Array(1);
   const api = {
     fb, voxelPool, sprites, ready,
@@ -118,12 +133,14 @@ export function createFrameRenderer({ engine, rt, pipeline = null, assets, idleS
 
       fb.lights = lightSet;
       if (lightSet) {
+        if (cam) lightSet.selectPlaced(cam); // VISQA-32: nearest placed lights get the slots (no-op <= MAX_LIGHTS)
         syncEntityLights(lightSet, world, palette, attachedLightPos, lightSyncScratch);
         lightSet.timeBuf[0] = fb.timeSec;
         lightSet.updateBuffered(world);
       }
       fb.gpu = !!pipeline && pipeline.frameComplete && rt.gpuActive;
       voxelPool.collect(world, cam);
+      if (engine.feedVoxels) engine.feedVoxels(voxelPool, cam); // WILD-05: ambient fauna pushes (before project)
       if (!fb.gpu) voxelPool.project(cam, rt, 'mesh');
       if (engine.feedDetail) engine.feedDetail(cam);
       fb.frameNo++;
@@ -134,8 +151,7 @@ export function createFrameRenderer({ engine, rt, pipeline = null, assets, idleS
       if (!fb.gpu) drawSprites(fb, spritePool);
       if (opts.beforePresent) opts.beforePresent(fb, world, cam);
       if (pipeline) pipeline.frame(fb, lightSet || ambientL, cam, world);
-      rt.present();
-      presented++;
+      if (opts.present !== false) { rt.present(); presented++; } // EQ-04a: `present: false` = CPU mini-stage, cells are read by the caller
       return true;
     },
 
@@ -146,11 +162,29 @@ export function createFrameRenderer({ engine, rt, pipeline = null, assets, idleS
       fb.gbuf = new GBuffer(cols, rows);
       fb.light = makeLightBuffer(cols, rows);
       fb.depth = engine.depthBuffer;
+      voxelPool.bind(assets, matTable); // 38.21 nit: the new matTable has new ids, so the packed models must follow
+      snapshotModels();
       if (pipeline) {
         if (pipeline.resizeGrid && (pipeline.cols !== cols || pipeline.rows !== rows)) pipeline.resizeGrid(cols, rows);
         pipeline.bind(matTable, palette);
+        if (wg) pipeline.bindVoxels(voxelPool);
       }
       dirty = true;
+    },
+
+    /**
+     * ED-MESH-1e (38.26): after a runtime import into the AssetRegistry, re-pack the voxel/mesh models and re-bind them to the
+     * pipeline without a reload. No-op (nothing re-created, atlas version unchanged) when no model was added or replaced.
+     * Click/import-only; may allocate. Returns whether a re-bind happened.
+     */
+    refreshAssets(newAssets) {
+      if (newAssets && newAssets !== assets) assets = newAssets;
+      if (!modelsChanged()) return false;
+      voxelPool.bind(assets, matTable);
+      snapshotModels();
+      if (wg) pipeline.bindVoxels(voxelPool);
+      dirty = true;
+      return true;
     },
 
     /**

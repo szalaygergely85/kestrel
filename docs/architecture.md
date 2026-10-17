@@ -1080,6 +1080,7 @@ Goal: N copies of one voxel model = one instanced draw per part, both twins. ME-
 2. **Pose split, no second pose implementation.** `world_p(v) = I * P_p * v`. `I` = instance rigid transform `[Rz(yaw) | x,y,z]`. `P_p` = the part matrix at the identity instance = `FORWARD` after `computeVoxelPose(pm, {x:0,y:0,z:0,yawDeg:0, clip, frame, tMs}, scratch)`. This works because `Aw = Rz*cellM` and `bw = inst - Aw*anchor`, so `FORWARD(inst) = I * FORWARD(identity)`. One pose per group: instances in different animation phases go in different groups (the game buckets them). Per-instance part poses (a texture) are later work, not RE-06.
 3. **Axis-aligned face rule (27.16 item 2):** aligned = identity `partFlags[p] & 1` AND the instance flag bit 0. The helper sets bit 0 when `((yaw%90)+90)%90 === 0`, the exact voxelPose test.
 4. **objectId:** per instance, u32, set by the game. Unit convention: `0x10000 | unitIndex` (bit 16 = unit space; 27.4 ranges <= 0x8FFF stay as they are). planeId = `flat0 | ((objectId & 0xF) << 24)`, the same slot bits as ME-08, so neighbouring units still outline.
+   **AUD-47 reserved bits:** instanced objectId bits 20-26 belong to the vegetation hue tint (bit 26 = marker, bits 20-25 = payload); unit ids (`0x10000 | unitIndex`) and game ids must stay below bit 20. The planeId slot bits (objectId & 0xF) are unaffected.
 5. **Team colour = material remap in the vertex stage.** `vMat` is flat, so the fragment's mat logic does not change. `engine/render/teamRemap.js`: `buildTeamRemap(table, spec) -> {slotIds: Uint32Array(TEAM_SLOTS=4), mat: Uint32Array(MAX_TEAMS=8 * 4)}`, where `spec = {slots:['team.a',...], teams:[null, {'team.a':'unitRed',...}, ...]}` (palette keys; the designer adds the `team.*` slot materials, neutral colour). Keys resolve through the same id lookup `MeshData.resolveMats` uses; an unknown key throws. Team 0 and unlisted slots = identity. It is stored on the bound table as `table.team` (rebuilt with `bindShading`). The game sets it through `engine.setTeamMaterials(spec)`. Both twins read `table.team`.
 
 **Per-instance buffer** (`engine/mesh/instances.js`): `INSTANCE_STRIDE = 16` words = 64 B, std layout. It is one ArrayBuffer with `f32`/`u32` views: `createInstanceBuffer(capacity) -> {f32, u32, capacity}`.
@@ -3002,6 +3003,15 @@ export function feedDetail(binding, eyeX, eyeY, force) // -> fed count
 4. **Fold-in (ME-06c3 review note):** in `bindScatterInstances` remove the `previous` groups **before** the validation that can throw, so a failed bind leaves 0 stale groups bound to the new world.
 5. **Tests (add to `scatterFeed.test.js`):** two species with the same model in two layers or ground types share one group and its fed set equals the brute force grouped by key; the same model with different `shadow` gives two groups; `groupOf` covers every species with placements; a canonical `world_m1` bind (Node, synthetic pool with the 19 keys) prints and asserts 19 detail groups.
 
+#### 37.4.1 SAPLINGS: per-instance scale on the CPU detail path (PC-B architect, 2026-10-15)
+- **Pick per-instance, not per-layer.** Both cost the same matrix write; per-instance gives a range (0.3-0.5) and matches the GPU decor layers, which already have per-species `scaleMin/scaleMax` (decor.wgsl.js / decorScatter.js).
+- **Zero-engine route first:** if saplings may be no-collider + `shadow:false`, author them as a `gpu: true` decor layer with `scaleMin 0.3, scaleMax 0.5`: content only, done.
+- **CPU route (collider and/or shadow wanted):** species field `scale: [min, max]` (validated in scatter.js `validateDetailConfig`: 0 < min <= max <= 2). `DetailScatterJob._row` draws it from a NEW hash slot `u(ix, iy, 6)` (existing slots 0..5 untouched, so every other placement stays bit-identical). Result `detail.scale` Float32Array, filled with 1 when no species has `scale`. Deterministic, derived, never serialized.
+- **Instance rows:** `instances.js` adds `writeScaledInstance(ib, i, x, y, z, yawDeg, s, objectId, team)` (the 3x3 times s; `writeUnitInstance` = s 1, no copy-paste). `scatterFeed.js bindDetailInstances` calls it. `feedDetail` copies words verbatim, so the JS raster and the GPU cull/raster read the same rows: no WGSL change, parity by construction.
+- **Bounds:** the group radius must cover the largest scale: `group R *= max species scale` (only matters for s > 1). LOD/shadow bands stay distance-based.
+- **Colliders:** `colliders.js` (detail at ~557) multiplies prism r/h and box hx/hy/hz by `detail.scale[i]`.
+- **Tests:** scatter: no `scale` -> placements and `u` draws identical to before (hash of x/y/yaw/species arrays); with `scale` all values in [min,max]. instances: `writeScaledInstance(s=1)` == `writeUnitInstance` word for word. colliders: scaled prism radius. One story (~1 day), files: engine/world/scatter.js, engine/mesh/instances.js, engine/mesh/scatterFeed.js, engine/world/colliders.js, design/levels/overworld_far.js.
+
 ### 37.5 Sprites for ground details? (owner question; architect, 2026-10-04)
 
 **Decision: no billboard sprites for scatter. 37.4 stays as written (voxel instances); there is no `kind: 'sprite'` species.** Reasons, from the code:
@@ -3258,7 +3268,7 @@ The flame and the carried light need **no** engine change:
 | **01b0** engine: static sprite props (amendment below) | PC-B (cross-track) -> arch-review (opus) | ~0.1 d | `engine/world/World.js` (`rebuildPropColliders`), `propColliders.test.js` | Sprite prop with a model-default prism -> `props:static` has its 32 tris at the right world AABB; sprite prop without `colliders` -> no shapes; `[]` opt-out; `dynamic` sprite still skipped with the warning; voxel cases unchanged | Full runner + check-deps green |
 | **01b** content: tower colliders | PC-B | ~0.25 d | `design/models/m3_props.js` (awk model colliders, floorLantern prism default), `content/levels/tower.level.json` (gondola, practiceTarget if not solid) | Tower load test: `props:static` exists. Route-walk legs green on mesh physics. Scripted walk through the wake -> burner -> stair corridor (>= 1.0 m clear, capsule passes). | Owner walk-test: crates/barrels/sacks/lanterns block, corridor walkable |
 
-**Amendment 2026-10-05 (01b, floor lanterns are sprite props):** static sprite props may be solid. `rebuildPropColliders` resolves colliders for a prop whose entity has `components.voxel` **or** `components.sprite`, with the same rule (`prop.colliders` if the key is present, else `assets.model(<voxel|sprite>.model).colliders`, else none); the model key comes from whichever component exists. `dynamic`/`roller` props stay skipped with the warning; billboards and non-prop entities (units, items, boars) are never read. Sprite colliders are authored only (no inference from the sprite image). Content: `floorLantern` gets a model-default prism (e.g. `{type:'prism', c:[0,0,0.21], r:0.12, h:0.42}`, designer/01b sizes it). Reason: one engine line, no new voxel asset, and the same data path the editor and saves already use. No voxel lamp asset is required.
+**Amendment 2026-10-05 (01b, floor lanterns are sprite props):** static sprite props may be solid. `rebuildPropColliders` resolves colliders for a prop whose entity has `components.voxel` **or** `components.sprite`, with the same rule (`prop.colliders` if the key is present, else `assets.model(<voxel|sprite>.model).colliders`, else none); the model key comes from whichever component exists. `dynamic`/`roller` props stay skipped with the warning; billboards and non-prop entities (units, items, boars) are never read. `components.collider {r,h}` on a world entity = a static prism built at load and re-snap; moving entities must not carry it. Sprite colliders are authored only (no inference from the sprite image). Content: `floorLantern` gets a model-default prism (e.g. `{type:'prism', c:[0,0,0.21], r:0.12, h:0.42}`, designer/01b sizes it). Reason: one engine line, no new voxel asset, and the same data path the editor and saves already use. No voxel lamp asset is required.
 
 ### 37.11 ED-GROUP-1 editor multi-select, groups, prefabs (architect, 2026-10-05)
 
@@ -3523,6 +3533,7 @@ Do not: delete across step boundaries (one step id per commit, each leaving boot
 - let a gate close produce a release edge on a held item.
 
 - **Golden material keys (2026-10-06):** frozen goldens compare material KEYS, never raw MaterialTable ids (a new palette material shifts every later id). Each fixture whose gbuf `mat` is a palette id ships `engine/mesh/fixtures/<name>.matkeys.json` (frozen id->key table built from palette.js + detail-pass.js at the capture commit, loaded by `loadGoldenMatKeys` in `tools/testing/mesh-golden.mjs`); the live side maps via `table.records[id].key`. Today: `levelMesh` (bced9b8). Synthetic-table goldens (voxel, voxelRaster) and kind-only users need none. ARCH OK required to change a matkeys file.
+- **Golden input levels (TOWER-GOLDEN-STALE, 2026-10-10, PC-B architect; PC-A to ratify):** a golden is only meaningful against the content it was captured from. The levelMesh/rasterJS goldens (bced9b8) were captured on the pre-CH1-D1a tower, and since ME-19b no CPU oracle exists to re-freeze them (Option B rejected: a "regenerated" golden would just be the mesh twin checked against itself). So golden-comparing tests load the frozen input `engine/mesh/fixtures/tower.pre-D1a.level.json` (tower at dfbf0c79^) via `loadGoldenLevel` in `tools/testing/mesh-golden.mjs`, never the live `content/levels/tower.level.json`; thresholds unchanged. The live tower (D-062 / CH1-D1b walls) is covered by route-walk + `?gpucompare=1`. Same rule for any future golden: freeze its input level next to it; ARCH OK to change either.
 
 ### 37.14 Fireball SPELL-01a/b (architect, 2026-10-05; D-040, owner answers 2026-10-05: known at start in the demo, no self-damage)
 
@@ -3774,6 +3785,31 @@ The sim is transient: not saved, a reload has no fireballs in flight.
 - persist dead boars or corpse loot in saves;
 - draw loot from the beast wander RNG.
 
+#### 37.16.5 BEAST-POOL: record table + pooled live slots (OB-185 follow-up) (PC-B architect, 2026-10-15; PC-A to ratify)
+**Why:** MAX_BEASTS 320 is near the ~260 regional beasts + camps. Every slot runs the per-step loops, owns a 1 KB path buffer and is only parked by the 200 m tile dormancy.
+**Model.** The public `slot` **becomes the record index `r`** (0..`MAX_RECORDS`-1, `MAX_RECORDS = 1024`). It is stable for the whole run and is what `slotOf(id)` returns. goblinCamps, raids, logicWire, loot, the director's `groupOfSlot`, saveRelay and tactics keep caching it, so none of them change. The current per-slot typed arrays (home xyz, kindIdx/archIdx, tier, wat, state, timer, flags) **are** the record table, resized to MAX_RECORDS. hp stays on `entity.components.health` (one entity per record, as today). Add `lastX/lastY` (Float64).
+**Pool:** one new sub-object (+1 top-level key, BITE-ALLOC cap stays <= 145): `sim.pool = { lv: Int16Array(MAX_RECORDS) /* -1 unbound */, rec: Int16Array(POOL), n, free: Int16Array(POOL), freeN, cand: Int16Array(MAX_RECORDS), candD: Float64Array(MAX_RECORDS), rIn: 150, rOut: 180, every: 30, maxBind: 8, full: 0 }`, `POOL = 128`. The step loops run `for (k < pool.n) i = pool.rec[k]` instead of `0..count`. Only the 1 KB path buffer moves to the pool index (`base = lv[i] * PATH_SLOTS * 2`). The engine steer stays sized MAX_RECORDS: inactive agents cost one branch, so `engine/nav/steer.js` is not touched.
+**Bind/unbind (`poolUpdate(sim, px, py)`, every 30 steps, staggered by the step counter, not wall clock):**
+1. **Unbind** a bound record when its distance to the player is > rOut, or its home is outside the live nav tile. It is **never** unbound while in NOTICE..RECOVER, FLINCH or RETURN, or while it has `hunt`, `fleeing`, `goal.on`, `tactics.held` or a croc grab pin. The nav-tile reason overrides this protection (it cannot path there).
+   - DYING/CORPSE/SINK keep their slot.
+   - GONE/down records release their slot at once.
+2. **Bind** alive, non-GONE, non-down records with distance < rIn (home inside the tile). Order: nearest first, then the lower `r` on a tie. Use a partial selection over `cand/candD` (no `Array.sort`, no closure). At most `maxBind` binds per update.
+3. **Pool full:** evict the farthest *unprotected* bound record if it is >= 20 m farther than the candidate. Otherwise `pool.full++` (debug stat). Never evict a protected record.
+**Carry on unbind:**
+- state -> WANDER (only unprotected records reach here) and timer = pauseMin;
+- `lastX/Y` = steer pos; if more than 30 m from home, snap `lastX/Y` + `transform` to home xyz;
+- `steer.removeAgent(i)`, `pathLen = 0`, release the tactics token/flank, return the pool index to `free`;
+- hp, dead state, tier, provoked = 0 and camp `dormant` stay on the record.
+
+**Bind:** `steer.activateAgent(i, lastX, lastY, ...)`, `mv/moving = 0`, `pathReq = 0`. Remove the BH-A1 "returned slot must equal i" throw for steer (record == agent index still holds because steer is sized MAX_RECORDS).
+**Respawn/reset:** `resetSlotSim` resets the record. It activates steer only if the record is bound; unbound records bind at the next update. The director's SPAWN_MIN_DIST 60 m and never-in-view rules are unchanged. `setGoal` (raids) on an unbound record sets `goal.on`, which forces a priority bind at the next update (it may evict, never a protected one).
+**Water slots (crocs):** same rules; waterBrain iterates the pool list with `wat[i]`. A croc that holds a grab pin is protected.
+**Determinism:** binding reads only player pos, records and the step counter; no rng draws at bind/unbind, so wander rng is consumed by bound records only. `beastGolden` hashes `pool.lv`, and it must stay identical while all records are bound (story a). Re-bless it once in story b, with the reason in the test header.
+**Save:** unchanged and slot-free. Records are rebuilt from world data at create. The saved truth is saveRelay's dead set (by id) and `spawnDirector.v1` (by gid). `applyDeadToBeasts` sets the record GONE (and unbinds it if bound). Never save `lv`, pool indices or `lastX/Y`.
+**Zero-alloc:** all arrays exist from create, there are no per-bind closures or events in the hot path, and `beast:bound/unbound` events are **not** added (consumers key by record). `loot.js` imports `MAX_RECORDS` instead of its own MAX_SLOTS copy.
+**Do not:** compact or renumber records at runtime, key anything by pool index outside beastSim, `world.remove` unbound beasts, or unbind on a timer alone.
+**Stories:** BEAST-POOL-a (records + pool loop, identity), BEAST-POOL-b (binder + hysteresis + carry, POOL 128), BEAST-POOL-c (integrations + real-world bench), rows in `docs/pc-b-queue.md` section F.
+
 ### 37.17 ALPHA-01 alpha-cutout materials for imported meshes (architect, 2026-10-05; D-041 Quaternius Stylized Nature)
 
 **Probe (2026-10-05, Node, `design/meshes/source/quaternius_stylized_nature/glTF/`, all 68 files + 20 PNGs decoded):** every material is `doubleSided`, one sampler (linear/mipmap). `alphaMode MASK @0.2` on: all `Leaves_*` / `Leaf_Pine` (texture alpha 0 on 70-75 %, 255 on 14-43 %, 1-9 % soft in between), `Flowers` (49.5 % alpha 0), `Leaves` (small plants, fern, clover, Flower_* leaves) - **and `Bark_NormalTree`, whose texture is 100 % alpha 255 (a mislabel: it is opaque)**. OPAQUE: `Bark_DeadTree`, `Bark_TwistedTree`, `Grass` (512^2, blades are geometry, UV is a 2 %-wide colour strip), `Mushrooms`, `PathRocks`, `Rocks`. Geometry: CommonTree_1 = 4,345 bark tris + 1,920 leaf tris (960 cards, median 0.54 m^2 => ~1 m cards, crown 4.3 x 4.7 x 4.7 m); Pine_1 = 3,177 + 770 (median 0.08 m^2 => ~0.3 m cards); Bush_Common 900 leaf tris (0.09 m^2); Flower_3_Group leaves are real geometry (0.002 m^2) with 45 petal cards; Petal_* are 13-30-tri cards. Textures 1024^2-2048^2; bark UV v runs to -10 (repeat). The Kenney Nature Kit is **not on disk** (only `Kenney.url`) - the far LOD cannot assume it.
@@ -4016,6 +4052,12 @@ Undo/redo: unchanged (`invert` + `applyEdit` + `applyAndSync`). Selection item: 
 **Do not:** mutate `world.structures[i]` or its frame from tools/editor (use `doc` + rebuild, or 01e's API); import engine/dev.js or `engine/world/colliders.js` from the editor; rely on `objectId`/planeId slots for mesh picks; write default-valued keys; re-sort or reflow the world file.
 
 ---
+
+### 37.8b View-model variants and near sprites (HAND-WIRE-01, HAND-FIRE-WRAP-01; architect, 2026-10-10)
+
+- **`def.variants = {name: modelKey}`** (VmDef, `engine/render/viewModel.js`): alternative bake-poses of `def.model`. Each variant model must be bound in the pool and have the same part count as the base (checked in `load()`; a mismatch throws there, not in play). `variantId(h, name)` gives the index; `setVariant(h, i|name)` swaps `pm`/`mesh`/`forward` (a field write; the first use of a variant builds its slot once, which allocates). `setVariant(h, -1)` restores the base model. Same index = no-op. `warmVariants(h, names?)` prebuilds the slots at load time and restores the variant that was current before (base when none was set).
+- **Mounts follow the drawn variant.** A variant has its own grid origin, so `mountEye` and `mountNowEye` both read `d.pm.mounts` of the ACTIVE model (mount ids are indices of the base `mountNames`; variants must carry the same mount names). `mountEye` is the pure clip-time sample without bob, `mountNowEye` the last pose plus bob.
+- **Sprite field T3.w = nearOk** (the SPR row layout of 14.4; T3.w is the free texel `spr[o+15]`, written by `SpritePool` from `billboard.nearOk`): 1 = view-model attached sprite, exempt from the 0.6 m `SPRITE_NEAR_DEPTH` cull in `drawSprites`, `sprites.wgsl` and the GLSL ref. Depth test and `MIN_DEPTH` still apply, so the hand voxels occlude it. Never set it for world sprites. `spriteNear.test.js` asserts the line in the CPU path, the GLSL ref and `SPRITES_WGSL`.
 
 ## 38. EP-WEBGPU: WebGPU backend behind `GpuDevice` (WG-0 note; architect, 2026-10-07; D-044, roadmap EP-WEBGPU)
 
@@ -4285,7 +4327,7 @@ Only the ambient term is scaled (point lights and sun are direct; AO on them wou
 
 **Tests (Node).** `horizonAO.test.js` on synthetic depth/G-buffer grids: flat floor -> exactly 1.0; inside corner (floor + 2 walls) < 0.85; convex edge -> 1.0; sky/out-of-grid taps ignored; 0 alloc over 60k cells. Probe: WGSL tap loop vs JS within 1e-5 on 2000 random cells (`compileFn`). `lighting.test.js`: strength 0 -> light buffers byte-identical. Cost: 4 depth + 4 GI loads + 4 cell rays per lit cell, est. 0.05-0.1 ms at 400x150 (WebGpuTimer slot `light`, report before/after). Size ~0.75 d B2 + 0.1 d B1. Order: after 38.13 (both patch `light.wgsl.js` + `lighting.js`; never in parallel).
 
-### 38.16a Addendum: PC-B facts kept from the superseded PC-B notes (main session PC-B, 2026-10-09; PC-A to ratify)
+### 38.16a Addendum: PC-B facts kept from the superseded PC-B notes (main session PC-B, 2026-10-09; ratified PC-A 2026-10-14)
 
 38.13-38.16 above (PC-A) are the notes of record. A PC-B architect run wrote parallel notes for the same stories 11 minutes after these landed (pc-b2 1d64a81, 2c773fe); those are dropped. The code already built from them (S8-B2-12a/12b cloud shadows from the base wind via `?clouds=`, word 30 + `cloud` vec4 at word 316; S8-B2-13 ripple rings on `world.water`; S8-B2-20 AO with fixed 2-cell taps, `LIGHT_BLOCK` word 31) is default-off and bit-identical, but differs from 38.13/38.14/38.16 and gets rework stories (S8-B2-12c, S8-B2-13b, S8-B2-20b). Two facts from those notes still hold:
 - **`--ao` meshes cannot be uploaded:** `MeshBuffers.buildMeshTriVertexData` (compact 32 B vertex, no aux) throws `has non-zero aux` for any mesh imported with `gltf-import --ao` (ME-20a writes aux[5..7]), and `raster.wgsl.js` writes no AO for `KIND_MESH`. Until a vertex-AO format note (ME-20c: vertex format, raster WGSL, G-buffer slot, `rasterJS` twin) lands, no `--ao` mesh may be committed to `content/meshes`.
@@ -4340,8 +4382,7 @@ Only the ambient term is scaled (point lights and sun are direct; AO on them wou
   - Tests: MeshBuffers: every existing fixture returns identical bytes and no `ao`; an AO fixture returns `ao` (length V, corner rule); lanes 0..4 non-zero still throw; an out-of-range lane 5..7 throws; dispose frees `aoBuffer`. passRaster: flag bit set iff strength > 0; `ao` pipeline only for entries with `aoBuffer` and the flag on; extra stream at location 11. Gate: one headless `capture-browser` WebGPU frame; gpucompare 0 metric change on both backends; then a local (uncommitted) `--ao` tree at `?ao=0` vs `?ao=1` for the owner look.
 
 **Size: ~1.4 d over 3 steps (a 0.5, b 0.4, c 0.5).** No manager decision. Owner decisions: (1) the single shared `?ao` knob with `min` combining (a separate knob later = an appended vec4, 6 ring slots, see 38.16 data layout); (2) which meshes get `--ao`, chosen from a preview.
-
-### 38.19 US-068 ortho camera + editor views (PC-B 5th agent, 2026-10-09; PC-A to ratify)
+### 38.19 US-068 ortho camera + editor views (PC-B 5th agent, 2026-10-09; ratified PC-A 2026-10-14)
 
 **Relation to D-052 / ED-WG-01.** Today the editor renders through `tools/editor/frame.js` -> WebGL2 `GpuCellPipeline` (GLSL). No new GLSL work (WG-5 deletes it): the ortho mode is built on the **WebGPU path + JS twin only**. So the axis gizmo + view presets (US-068c) ship now on the current editor, and the ortho toggle in the editor (US-068d) lands **after ED-WG-01**. 068a/068b do not depend on ED-WG-01.
 
@@ -4416,7 +4457,7 @@ Only the ambient term is scaled (point lights and sun are direct; AO on them wou
 
 **(2) Light choice, casters, update policy.** `selectShadowLights(lights, cam, n, state)` (pure, `shadowPoint.js`): candidates = on lights whose sphere meets the camera frustum; score = `intensity * radius / max(1, dist(eye, origin))`, entity-attached lights (carried torch) x2; top-n keep **stable slots** (holder replaced only when the challenger scores > 1.25x, as 38.12's derived pool). Map origin = **unjittered** `defX/defY/defZ` quantised to 1/64 m (flicker never re-renders; the sampler uses this origin, the lit term keeps the jittered one: a few cm mismatch, accepted). Casters per slot: `buildShadowList(list_s, cameraList, world, boxPlanes, src)` with boxPlanes = AABB `origin +- radius`, `src.eye = origin`, `src.instCastM = radius`, `src.gpu = null` (CPU banding in v1; WG-4b kernel stays sun-only); per face, `classifyAABB(facePlanes)` fills a per-face `Uint16Array` index scratch (`DrawList.cull` compacts: never call it per face). Key per slot = `shadowInputHash(list_s, faceMatrix0, structVersion, ...)` + origin bits + radius (+ `windShadowKey` only if a swaying group is in `list_s`). Unchanged key -> skip (wall torches render once). Changed slots queue; at most `faceCap` faces per frame, whole lights at a time, moving/carried light first, the rest round-robin (one stale frame accepted). n pre-allocated `DrawList`s, zero per-frame alloc.
 
-**(3) Sampling (light pass + twin).** `LIGHT_BLOCK` appends at the END (after `aoP`; no word moves): `pshA: vec4` (count n, res, biasM 0.04, normalOffTexels 1.5), `pshO: vec4 x 6` (origin xyz, far; per slot), `pshSlot: vec4 x 4` (16 floats: light i -> `slot + 1`, 0 = unshadowed). Binding 7 `uPointShadow: texture_depth_2d_array` (`LIGHT_TEXTURES += 'depthArray'`; off -> 1x1x6 dummy, never sampled). In the point loop only `if (u.pshA.x > 0.0 && s > 0)`: `vis = f32(pointShadowTaps(s - 1, P, N)) * 0.25` replaces `sampleVis`; else the old `sampleVis` line runs literally -> count 0 is bit-identical (D-039). `pointShadowTaps`: `Pp = P + N * normalOff * (2*ma/res) + toOrigin * biasM`, `v = Pp - O`, major axis -> face, `(uc, vc)` = minor/major per the face table, `sdm = 0.5 + 0.5*sd` (face NDC depth), 2x2 taps at `floor(uv*res - 0.5)` **clamped to the face** (no cross-face taps; edge seams accepted for ASCII), receiver beyond far / inside near -> 4. JS twin `pointShadowTaps(depthF32, res, slot, O, far, P, N, opts)` in `engine/render/shadowPoint.js`, same op order (no `%`, no `round`, `Math.fround` where WGSL is f32); `lighting.js lightAt` calls it when `lights.pointShadow` is set (maps from `rasterJS` depth-only mode with the same face matrices, as the sun oracle). Cost: 4 loads + ~20 ALU per shadowed light per lit cell, est. <= 0.1 ms at 400x150 with 2 lights in range.
+**(3) Sampling (light pass + twin).** `LIGHT_BLOCK` appends at the END (after `aoP`; no word moves): `pshA: vec4` (count n, res, biasM 0.04, normalOffTexels 1.5), `pshO: vec4 x 6` (origin xyz, far; per slot), `pshSlot: vec4 x 4` (16 floats: light i -> `slot + 1`, 0 = unshadowed). Binding 7 `uPointShadow: texture_depth_2d_array` (`LIGHT_TEXTURES += 'depthArray'`; off -> 1x1x6 dummy, never sampled). In the point loop only `if (u.pshA.x > 0.0 && s > 0)`: `vis = f32(pointShadowTaps(s - 1, P, N)) * 0.25` replaces `sampleVis`; else the old `sampleVis` line runs literally -> count 0 is bit-identical (D-039). `pointShadowTaps`: `Pp = P + N * normalOff * (2*ma/res) + toOrigin * biasM`, `v = Pp - O`, major axis -> face, `(uc, vc)` = minor/major per the face table, `sdm = 0.75 + 0.25*ndc` (face NDC depth; the point faces use the SHARED sun caster pipelines, so stored depth is the sun convention [0.5, 1] from `SHADOW_Z_LINE`, not [0, 1]; the twin encodes via `shadowDepthStore`, a z-sweep test checks it against `SHADOW_Z_LINE`; point faces inherit the sun `depthBias` [2,4], the twin models it with the same constant; caster options come from `pointCasterOpts()` in `shadowPoint.js`, fogFar = radius + 128), 2x2 taps at `floor(uv*res - 0.5)` **clamped to the face** (no cross-face taps; edge seams accepted for ASCII), receiver beyond far / inside near -> 4. JS twin `pointShadowTaps(depthF32, res, slot, O, far, P, N, opts)` in `engine/render/shadowPoint.js`, same op order (no `%`, no `round`, `Math.fround` where WGSL is f32); `lighting.js lightAt` calls it when `lights.pointShadow` is set (maps from `rasterJS` depth-only mode with the same face matrices, as the sun oracle). Cost: 4 loads + ~20 ALU per shadowed light per lit cell, est. <= 0.1 ms at 400x150 with 2 lights in range.
 
 **(4) What ME-19e deletes, and the gate.** With maps on, LVIS is only the fallback for lights ranked below n (far/dim: the loss accepted in 27.9), so **no WebGPU quality level is "point shadows off"** (Low = 2 x 128). ME-19e then deletes on the WebGPU path + twin: WGSL `sampleVis`, binding 3, the `texLVis` upload in `passLight.js`, `lightAt`'s LVIS call, `LightSet.vis/visVersion/visBox` compute for WebGPU. `visBox[]` and `lightCol.w` stay as **dead words** (append-only `LIGHT_BLOCK`; a re-layout is its own story). Frozen GLSL `light.frag`/`GpuCellPipeline` LVIS stays until WG-5 deletes the GL path, so `computeVisGrid` lives on for GL only (ME-19e row scope change: PO relay). Gate (D-039): every existing `?gpucompare=` mode forces `pointShadows` off -> rows byte-identical; new mode `?gpucompare=pointshadow` (tower interior: 3 torches + carried-lamp pose) compares L + `litCount`: mismatch <= 0.5 % of lit cells excluding the boundary set (taps within `2*biasM` or 0.01 texel of flipping, as `sunShadowInfo.boundary`). Owner check: lamps do not leak through tower walls with LVIS off.
 
@@ -4430,3 +4471,3110 @@ Only the ambient term is scaled (point lights and sun are direct; AO on them wou
 Order: 16a + 16b parallel -> 16c + 16d parallel -> 16e -> 16f -> 16g. 16d never in parallel with other `light.wgsl.js` work (38.13/38.16 reworks).
 
 **(6) Risks / perf.** (a) One light = 6 depth passes of near geometry: est. 4060 0.03-0.05 ms/face, Intel iGPU 0.08-0.15 ms/face -> a carried lamp ~0.5-0.9 ms iGPU per moving frame; `faceCap` bounds the worst case (High 12 faces ~1.8 ms iGPU); measure in 16g before tuning n/res. (b) CPU: n `buildShadowList` + hash per frame <= 0.2 ms (bench row); if over, skip rebuilds for slots whose origin did not move and whose box holds no dynamic item. (c) Swaying grass near a torch re-renders per sway quantum; if 16g shows thrash, drop sway groups from point casters. (d) Lights ranked below n are unshadowed after ME-19e. (e) Acne/peter-panning on perspective faces: tune only `biasM`/`normalOffTexels` (metres/texels at the receiver), never per-face polygon offset. (f) Do NOT: use hardware compare samplers, cube textures or `textureSample` (twin parity), call `DrawList.cull` per face, render from the jittered position, move any existing `LIGHT_BLOCK` word, or touch GLSL.
+
+### 38.23 Entity tint channel (TELEGRAPH-TINT-01 answer; PC-B architect 2026-10-09)
+
+**Decision: (B) exact rgb+k, but keyed per object and applied in the shade pass, NOT a per-instance or per-draw raster field.** Every entity draw (voxel slot `0x8000|slot`, unit/instanced `iMeta.x`, mesh, view model) already writes its `objectId` into G-buffer `GI.w`, and resolve carries it to the cell. So a small table `objectId -> (rgb, k)` read in `shade.wgsl.js` tints every draw path at once: no raster, instance-record, G-buffer or shadow-caster change, no cost on the WebGPU voxel or instanced vertex paths, and the instance record (`iMeta` vec2u) stays full. (A) is rejected: it needs a free instance bit plus a G-buffer bit to reach shade (`GI.y` is full), it does not cover the non-instanced voxel/mesh draws, and a palette ramp quantises the 80-300 ms fades into visible steps. **Relation:** EMIS-01 emissive is per material and feeds lighting. The tint is a display override AFTER lighting: it emits no light, does not touch LightSet or voxelPool lights, and does not cast. `hit_flash` (baked shell clip, `design/palette.js`) stays as content. New enemies use the `'hit'` envelope instead, and the designer may retire the shell later (no engine change).
+1. **Engine API** `engine/render/entityTint.js` (exported from `engine/index.js`): `createEntityTintTable()` returns `{count, ids: Uint32Array(8), rgbk: Float32Array(32)}`. Also `clearEntityTints(t)`, `pushEntityTint(t, objectId, r, g, b, k)` (rgb in 0..1; ignored if k <= 0 or the table is full, k clamped to [0,1]; zero alloc) and `entityTintAt(t, objectId, out4)` (twin lookup: first match, linear). The host fills the table once per frame from `sampleTint` (`tintEnvelope.js`). `voxelPool` exposes `objectIdFor(entity)` (`-1` when it has no slot). The table rides on the frame as `fb.entityTints` (null = off).
+2. **WGSL** (`shade.wgsl.js`, `passShade.js`): append at the END of the shade uniform block (no word moves): `etA: vec4` (x = count), `etId: vec4 x 2` (8 u32 ids written through a Uint32Array view, read with `bitcast<u32>`), `etC: vec4 x 8` (rgb 0..1, k). That is 176 B. In the fragment: `if (su.etA.x > 0.0)`, read `oid = textureLoad(uGI, cell, 0).w`, scan `i < count` (<= 8), and on the first match apply `fg = fg + (c.rgb*255.0 - fg) * c.a` and the same for `bg`. Apply after the lit surface colour and before fog/stipple, so the glyph and colour read through dim light but fog still hides far enemies. Sky/water/sprite cells are untouched because their `oid` never matches.
+3. **Bit-identity (D-039):** count 0 skips the branch, so every existing `?gpucompare=` row stays byte-identical. A test asserts that the shade words before `etA` are unchanged and that the tint-off output equals the pre-change output.
+4. **JS twin:** `detailShade.js shadeSurfaces` (and `fastShade` if it shades entities) applies the same formula at the same point from `gbuf.objectId`, with the same op order and `Math.fround` where WGSL is f32.
+5. **Tests (Node):** `entityTint.test.js` (push/clear/overflow/k clamp, zero alloc over 10k frames). `shade.wgsl.test.js` (block layout appended at the end, branch guarded by `etA.x`, WGSL probe == twin for 3 ids x 4 k values incl. 0 and 1). `passShade` test (words written, count 0 leaves them 0). Gate: `?gpucompare=shade` unchanged, plus one browser look at the boar windup with `?gpu=webgpu`. Cost: <= 8 compares per cell only while a tint is active, est. < 0.02 ms at 400x150. Split if > 1 d: **a** = API + twin + tests, **b** = WGSL + pass + gate.
+### 38.25 US-073 temporal glyph stability on WebGPU (PC-B architect, 2026-10-09; owner-authorised while PC-A is offline)
+
+**Facts (pc-b, kestrel-2).** `stable.js` (step 1) is shear-only, throws on pitched, is wired to nothing and dies with ME-19d (38 table row 12); its *rules* (25.6: edge cells recomputed, sky/degenerate depth skipped, kind+planeId match, UV drift `< 0.5/detail`, glyph held within one ramp level, `CHANNEL_SNAP` 48, yaw > 3 deg = off) carry over, its code does not. GLSL frozen (D-044), WebGL2 dropped (WG-5): WGSL + JS twin only. Cell targets (`wg/targets.js`): GI/GA/GD/Depth (`r32ui` = f32 bits of `vd`, 28.1 RE-02), shade `texShadeFg/Bg` (rgba8, `bg.a` = shaded flag), edge `texFinalFg/Bg` (rgba8, `fg.a` = glyph/255); `_hook` order: raster -> sun shadow -> point shadow -> cell (upload, resolve, deriv, light, shade+water composite, edge) -> sprites -> overlay. `unprojectPitched`/`worldToCell` already carry the ortho branch (`terms.ortho`, 38.19).
+
+1. **Parity reference.** New JS twin `engine/render/temporalStable.js` (`stable.js` untouched, deleted at ME-19d): `stabilize(inp, hist, out, st)`; per cell `P = unprojectPitched(curTerms, col, row, vd)` then `worldToCell(prevTerms, P)` -> `colF,rowF,vdP`; history cell = `floor(colF + 0.5), floor(rowF + 0.5)` (**never** WGSL `round()`, it is half-to-even). Precision: both twins work eye-relative (`P - eyePrev = dEye + vd*dirCur`, `dEye = eyeCur - eyePrev` subtracted on the host in f64). Terms come from `pitchedTerms(cam, grid)` with the real `pxCellW/pxCellH` grid (the step-1 `_gridScratch` bug). `vdP <= 0` (perspective), out of grid, or ortho/pitched mode change -> no history.
+2. **Pass order.** New `WgStablePass` (`wg/passStable.js`, one fullscreen fragment pass, timer slot `stable`) runs **after `_cellPass.run` (edge) and before `_runSprites`**; when it ran, sprites' `inp.edgeFg/edgeBg` and the non-sprite `readbackCells` path read its output instead of `texFinalFg/Bg`. Sprites, particles, overlay and UI are never in history (they are drawn on top every frame).
+3. **Buffers.** Per-cell rules need the current ramp level: shade gets one extra target `texLevel` (`r8uint`, cell-res, 255 = no ramp glyph / passthrough; shade JS twin returns the same byte). Edge cells are detected without touching edge: `final != shade` (any rgb byte or glyph) -> pass final through. Stable owns a **ping-pong pair k=0/1** of `{texOutFg, texOutBg: rgba8; texHist: rgba32uint}` (WebGPU attachment byte cost 8+8+16 = 32, exactly the 32 B default limit: add nothing to this pass), 24 B/cell x 2 = 2.9 MB at 400x150: `texHist` = `[planeId, u bits, v bits, level | kind<<8]`, the colours/glyph of history ARE last frame's `texOutFg/Bg[k^1]`. Two prebuilt bind groups + two targets; **`WgStablePass` alone flips `this._k ^= 1`, only after a successful run**. Camera terms: host keeps `_curTerms/_prevTerms` (`createPitchedTerms()`, f64) + `_prevEye`; uniform block `StableU` = cur terms, prev terms (eye-relative), `dEye`, `cols/rows`, `histValid`, `snap`, `detailDefault`; prev <- cur copied by field at the end of `run` (no alloc).
+4. **Invalidation (signal: `histValid = 0` in `StableU`; the pass then copies final -> out and writes fresh history).** Host sets it on: first frame after construct/`setEnabled(true)`; `resizeGrid` (and `rays` change = quality preset); any frame where `_cellsShaded` was false or `debugMode >= 0` (history skipped -> next frame invalid); `invalidateHistory()` (new public method; main.js calls it beside `invalidateHzb()` at teleport/camera cut/world load); projection mode or `orthoHalfH` change; auto cut `|dEye| > 2 m` or yaw/pitch delta > 3 deg (`YAW_DISABLE_DEG`). Grid switch = resize. Per-cell: kind 0 (sky), kind 8 (voxel models: no `playing` bit on GPU, so always fresh), cells with a water-layer word (bind `WgWaterPass` layer; ripples must not freeze), `level == 255` either side, kind/planeId mismatch, UV drift. Kind 9 meshes keep history; motion/sway is caught by the UV check.
+5. **Integer-only after the index.** Colours: bytes `c = u32(floor(x*255 + 0.5))`; `|c-p| > 48 ? c : (p + c + 1) >> 1` (== JS `Math.round((p+c)/2)`); glyph = `|lvC - lvP| <= 1 ? glyphP : glyphC`; write `byte/255` (exact through unorm8). Only the reprojection is float (f32 GPU vs f64 twin): the twin also returns a **tie mask** (`|frac(colF|rowF) - 0.5| < 1e-3`, or `|dUV - 0.5/detail| < 1e-4`); non-tie cells must be byte-identical.
+6. **Gates.** Default OFF: `?stable=1` (and `gfxPresets` key later, after the owner look) constructs the pass; absent = not constructed, frame byte-identical to today (gpucompare unchanged). gpucompare row `stable` (forced on in that mode): 2-frame sequence (frame A, pan 0.5 m + 1 deg, frame B), the twin runs on the GPU's own read-back inputs of B (GI/GA/Depth/shade/final/level/water) and A's history, compares out: 0 non-tie mismatches, ties <= 0.5 %. `?flicker=1&stable=1` on the route-walk pan poses: changed-glyph share <= 0.6 x stable-off (target; owner look decides default ON). Perf: GPU <= 0.15 ms p95 at 400x150 on the owner Intel iGPU (4060 ~0.03), CPU <= 0.02 ms (one uniform write), **0 B/frame** (`WgCellPipeline.frameAlloc.test.js` case with stable on). Do NOT: store history in `targets.js` sets, read history via sampler/`textureSample`, blend in float, hold edge/sprite cells, or add anything to GLSL.
+
+**Split (each <= 0.5 d).** **US-073a** [B1] twin `engine/render/temporalStable.js` + `temporalStable.test.js` (invalid -> copy, static camera -> output == hist after 2 frames, pan on a synthetic plane keeps glyphs, each per-cell reject rule, snap/blend bytes, tie mask, ortho pose, 0 alloc); no GPU. **US-073b** [B2, deps a] `wgsl/stable.wgsl.js` + `StableU` block, shade `texLevel` @location(2) + shade twin level byte, `stable.wgsl.test.js` (WGSL-vs-twin probes like `edge.wgsl.test.js`) and a `shade.wgsl.test.js` level case. **US-073c** [B1, deps b] `wg/passStable.js`, `WgCellPipeline` wiring (order, sprites input, readback, `resizeGrid`, `invalidateHistory`, timer slot), `?stable=1`, main.js invalidate call, gpucompare `stable` row, frameAlloc case; then one `?flicker=1` measure -> owner look (PC-A ARCH + PO later).
+
+#### 38.25 amendment (PC-B architect, 2026-10-09; owner-authorised while PC-A is offline; input: `docs/test-reports/stable-diag-2026-10-09.md`)
+
+After the water-gate fix, the pass reaches a ratio of 0.86 against the <= 0.6 target. Level-255 cells cause 60 % of the remaining flips (texel/alt glyphs, mortar, terrain packed codes, fog stipple). Three rows, in this order: GATE-TEST, UVLIM, LEVEL255.
+
+**A. STABLE-GATE-TEST-01: OK.** Rule (amends item 6): the gpucompare `stable` row runs **two** sub-cases on the same 2-frame sequence. (i) As today, with water drawn. (ii) With water inactive: the 1x1 dummy is bound and `waterOn = 0`, forced by disabling the water pass for that sub-case, not by picking a different pose. Each sub-case must pass: 0 non-tie mismatches (GPU out vs twin), ties <= 0.5 %, and a **liveness floor**: twin `used` >= 20 % of non-sky cells, and the GPU "held" count (`gpuGlyph == histGlyph && histGlyph != finalGlyph`) equal to the twin's count, excluding tie cells. That way a reject-everything bug cannot pass silently, in the twin or on the GPU. Parity: test-only, so no shader or twin change. Risk: none. Ratio: unchanged. Split: one step (~0.25 d, gpucompare mode + its Node test, if the mode has one).
+
+**B. STABLE-UVLIM-01: CHANGE (wider constant: yes; real texel density: no).** Rule (amends items 4 and 5): UV-drift reject becomes `dUV >= 1.0 / detail`, with `detail = detailDefault` (16) on the GPU and the twin keeping `inp.detail[i] || DEFAULT_DETAIL`. The tie mask becomes `|dUV - 1.0/detail| < 1e-4`. Do not use real texel density: it needs the cell's octave `ds` both from shade (another shade target) and in history, and the stable pass is already at the 32 B attachment limit. Parity: the one constant changes in `temporalStable.js` and `stable.wgsl.js`, and the tie epsilon is unchanged, so outputs stay byte-identical outside ties. Risk: a rigid prop or door moving at less than about 3.7 m/s (1/16 m per frame) can now keep a ramp glyph for a frame where it used to refresh. Colours still blend or snap, and ramp holds are still limited to +-1 level, so this is the class item 4 already accepts. Expected ratio: about -0.05 (recovers about 3-4k of 4905 uvDrift flips). Split: one step (~0.25 d: constant + tie + `temporalStable.test.js` boundary cases at 0.99/1.01 x lim + `stable.wgsl.test.js` text probe + gpucompare stable row).
+
+**C. STABLE-LEVEL255-01: CHANGE (both-sides-255 hold only, with three guards).** Rule (replaces "`level == 255` either side" in item 4 and extends item 5):
+1. Shade reserves **`level 254` = animated, never hold**. Shade writes 254 instead of 255 when the glyph is time-dependent. Today that is only the terrain shimmer branch (`t3.y > 0.5`, `hashFast(cx, cy, floor(timeSec*1.5))` in `shadeTerrain`). Write 254 for the whole branch, whatever `g` is, because the glyph can change on the next tick. Apply it in WGSL and in the shade JS twin. Ramp levels stay < 254 (assert in the twin test). Stable rejects `lvC == 254 || lvP == 254`, like sky.
+2. **Mixed (one side 255, the other a ramp level): always fresh**, as today. A ramp/non-ramp switch is a real pattern edge (mortar line, stipple tier), and holding it smears geometry.
+3. **Both sides 255**, after the existing order (kind 0/8, edge, water, vd, reproject, grid, kind+planeId, UV drift < lim): colours blend/snap exactly as for ramp cells (item 5). The glyph is held (`glyphP`) **unless the fg snapped**, meaning any fg rgb channel has `|c - p| > snap`. Then the glyph is fresh too: a light switching on, a door opening or a muzzle flash re-rolls the cell instead of ghosting. `out.level = 255`.
+4. **Anchor UV for 255 holds.** When a level-255 glyph is held, the history written for this cell keeps the **history's u/v bits** (`hh.y/hh.z` copied as u32, twin copies `hist.u[h]/hist.v[h]`), not the current u/v. A held texel glyph therefore cannot drift more than `lim` from the surface point it was computed at, and the pattern cannot stay pinned to the screen on a slowly moving prop. Ramp holds keep writing the current u/v (unchanged).
+
+Parity: every new decision is integer (level bytes, fg byte deltas from the same `blendCh` inputs, u32 copies), so non-tie cells stay byte-identical. The tie mask is unchanged (reprojection and UV ties only). Reject order is the same in both twins, and the early `lvC == 255` reject moves down to the kind/plane step. The shade twin and the WGSL shade change together, and the level target exists only in the stable shade variant, so other gpucompare rows are unaffected. The stable row pose must contain held 255 cells: assert twin `held255 > 0` and an equal GPU count. Risk: (a) colour-only changes below snap 48 (slow light fades) keep a 255 glyph, which is acceptable because the glyph is light-independent texture. (b) Sprites, particles and the overlay are never in history (item 2), so they cannot ghost. (c) Voxel models (kind 8) and water stay fresh. Expected: the diag gives no split between both-255 and mixed flips. Estimate both-255 at about 2/3 of the 40k level-255 flips, about 80 % of them held: ratio ~0.62, and ~0.57 together with UVLIM. If the measured ratio is still > 0.6, the owner look decides. No further rules without a new note.
+Split: **LEVEL255-a** (~0.5 d, B1-style twin step): `temporalStable.js` rules 1-4, shade JS twin 254 byte, and `temporalStable.test.js` cases: both-255 static -> held; mixed -> fresh; 254 either side -> fresh; fg snap -> fresh glyph; anchor u/v written on a 255 hold, not on a ramp hold; a slow-moving surface refreshes after cumulative drift >= lim; 0 alloc. Also add `both255 / mixed255 / anim254` classes to `stableDiag.js`. **LEVEL255-b** (~0.5 d, B2): the same in `stable.wgsl.js` + `shade.wgsl.js` (lvOut 254 in the shimmer branch), `stable.wgsl.test.js` / `shade.wgsl.test.js` probes, gpucompare stable row (both sub-cases from A), then one `?flicker=1&stable=1` measure written into the diag report -> owner look. Both steps end in `arch-review` (PC-A).
+
+### 38.24 Texel glyph variation inside grid blocks (GRID-TEXEL-GLYPH-01; PC-B architect 2026-10-09, owner-authorised while PC-A is offline)
+
+**Problem.** For grid materials the alternate-glyph die `hA` and the overlay/speckle die `hC` are keyed on the block `(bix, course)` (US-028a F1). Every block face is then one repeated glyph, and variety shows only at the `_` / `|` mortar, which is why the tower interior looks flat. Non-grid materials key on the world-anchored octave texel `cx = floor(u*ds*0.5), cy = floor(v*ds*0.5)` and look fine.
+**Decision.** Add an opt-in per material: `grid.glyph: 'texel'` (default `'block'` = today). When it is set, `hA`/`hC` use the octave texel (same formula as the non-grid branch, on raw `u`/`v`, not on the staggered `uo`). Tone (`hBlock`, salt +3), `hB` (tier dither / fog stipple, base texel, salt +7) and the mortar/bevel logic stay as they are. `jit` gets its own block die `hJ = hash(bix, course, seed)`. That is exactly today's grid `hA`, so per-block brightness stays bit-identical. Non-grid materials keep `hJ = hA`. Use a per-material flag, not a global switch, because wood planks, iron plates and gaps (`detail-pass.js` grids) may want the per-block look, and the flag keeps the gpucompare blast radius small. The designer opts in stone, brick and rock_soft.
+1. **F1 still holds.** The texel is world-anchored (surface u/v) and at least about 1 cell wide (`*0.5` on an octave chosen from the on-screen footprint), so sub-cell camera motion does not reroll it. This is the same guarantee leaf and ground already pass with `?flicker=1`. The new residual is an octave pop where `tpc` crosses a band, the same pop ground has. The block id never had it. Accept it, and check it in the browser pass.
+2. **Code points.** Change all four in the same way, hoisting `cx, cy` above the branch: the oracle `detailShade.js shadeDetail` (~l.165-175, `m.grid.glyph`), the fast twin `shadeCore` (~l.437-447, `rec.grid.texel`), WGSL `shade.wgsl.js` (~l.355-365) and GLSL `shade.frag.js` (~l.211-221, live as long as WebGL2 is; D-044). In each one, `jit` (JS l.250/553, WGSL l.504, GLSL l.359) reads `hJ`. Keep the texel formula text identical to the existing non-grid branch (`Math.floor(u * ds * 0.5)` / `i32(floor(u * ds * 0.5))`), no new `fround`. That branch already matches GPU and JS today. `design/detail-pass.js` (preview copy, l.~1267) is mirrored by the designer.
+3. **Packing.** `MaterialTable.js` grid record gets `texel: g.glyph === 'texel'`. `ShadeTextures.js` gets the new `F_GRID_TEXEL = 1 << 17` (bit 16 is soft-edge), and WGSL/GLSL get `let gridTexel = (flags & 131072) != 0`. The condition is `if (hasGrid && !gridTexel)`, so no texture layout or word moves.
+4. **gpucompare (D-039).** Both twins change together, so expect **0 PASS->FAIL** with flag off and on. Run `--baseline` on the same machine before and after the opt-in commit. Texel-boundary f32 ties are the same class leaf/ground already show (glyph metric >= 99 %). If an existing row flips, it is a regression under D-039 item 1. Fix the twin, or ESCALATE TO MANAGER with the counts. Do not re-baseline it away. The look change is deliberate and needs no baseline rewrite (rows are JS-vs-GPU). Record one headless capture of the tower interior before/after for the owner.
+5. **Tests.** `look.test.js` (or a new `gridTexel.test.js`): flag off gives byte-identical `shadeCore` output to before on a grid fixture (stone), across 200 seeded samples. With the flag on, one block at near oct shows >= 2 distinct glyph codes over a 4x4 texel sweep. Per-block `b` is unchanged when the flag flips (the `jit` move). Shifting u by 0.1 texel inside one texel leaves the glyph unchanged (F1). `ShadeTextures.test.js`: bit 17 is set only for `glyph:'texel'`. `shade.wgsl.test.js`/`glsl.test.js`: the flag literal and the `hJ` line are present, and the WGSL probe equals the twin on the fixture if the harness supports it.
+6. **Perf.** One extra `hashFast` per grid cell (3 instead of 2) and none for non-grid. That is about 10 integer ops, < 0.01 ms JS at 400x150 (the CPU path is the oracle only), and noise on the GPU. Zero allocation.
+7. **Split.** **a** (~0.5 d): flag + packing + JS oracle/twin + Node tests (flag off = identical). **b** (~0.5 d): WGSL + GLSL + gpucompare baseline run + designer opt-in of stone/brick/rock_soft + one browser look at the tower interior (`?flicker=1`).
+
+### 38.28 EP-TALK: dialogue runner, `dialogue` content kind, NPC talk, jaw override (PC-B architect, 2026-10-09; owner-authorised while PC-A is offline)
+
+Covers DIALOGUE-01a/b, NPC-BEAR-01 and NPC-TALK-ANIM-01. B2 steps end in `arch-review` (PC-A). B1 steps are game-only and go straight to `po-review`.
+1. **Runner = engine (D-006).** `engine/ui/dialogue.js` is pure: it imports nothing outside `engine/` and holds no text, clip names or world access. It is exported from `engine/index.js`. API: `compileDialogue(def) -> compiled` (frozen; node ids mapped to ints once at load), `validateDialogue(def) -> {errors: string[], warnings: string[]}`, and `createDialogueRunner({cps = 30, holdSec = 0.12, onEvent})`. The runner has `open(compiled, flags)`, `tick(dt)`, `press()`, `move(d)`, `choose()` and `close()`. It exposes the read-only fields `state` ('idle'|'typing'|'waiting'|'choosing'|'ended'), `speakerKey`, `speakerLabel`, `isPlayer`, `line` (a reference to the data string, never sliced), `visibleChars` (int), `choiceCount`, `choiceText(i)`, `selected` and `clip` (node clip or null). `flags` = `{ has(key): boolean, set(key): void }`, supplied by the game. `onEvent(name, arg)` passes `arg` as a string (node id or flag key), so no payload objects are created. Hold: when the char just revealed is `. , ! ?`, reveal pauses for `holdSec`. `press()` while typing sets `visibleChars = line.length`.
+2. **Content kind `dialogue`** (same seam as `prefab`, 38.11): `content/dialogue/<id>.dialogue.json` = `{kind:'dialogue', schema:1, id, speakers:{<key>:{label, player?:true}}, entry:[{requires?, node}], nodes:{<id>:{speaker, lines:[..], next?|choices?:[{text,next,setFlag?}]|end?:true, setFlag?, clip?}}}`. Files are listed in `manifest.files`. `schema.js`: `LATEST_SCHEMA.dialogue = 1`, `ID_COLLECTIONS.dialogue = []`, plus a KEY_ORDER. `loadPack`: add to `KNOWN_KINDS`; follow the `terrainEdits` path (no nextId); call `validateDialogue` and turn its errors into `ContentError`; store `compileDialogue` output in `bundle.dialogues[id]`. Engine (load) errors: no entry; the last `entry` has a `requires`; an entry/`next`/choice `next` points to a missing node; a node has none or more than one of `next`/`choices`/`end`; choices outside 2..3; a line > 56 chars or a choice > 40 chars; a char outside ASCII 32-126; an unknown speaker; a flag key that does not match `/^[a-z][a-zA-Z0-9_.]*$/`. Warning: unreachable node. `tools/validate-content.mjs` prints both and adds one cross-file check: every `clip` exists in the NPC model's clips. One fixture per rule.
+3. **Flags reach the save through `world.state`.** The game adapter is `has(k) = world.state['dlg.' + k] === true` and `set(k)`, which writes `true` there and fires the existing gameHooks `flag:set {key, value}`, so the quest sim can react. `collectSave`/`applySave` (US-089w) already persist `world.state`, so there is no new save field. A node's `setFlag` is set when the node is **entered**. A choice's `setFlag` is set on `choose()`. Esc means `close()`, so later nodes never set their flags. The string concat happens only on open/set, which is fine (not per step).
+4. **Input lock.** main.js keeps one `dialogueCtl` (owned by `game/js/quest/dialogueView.js`). Extend `vLocked()` to `... || dialogueCtl.locked`. `locked` stays true for the rest of the step in which the box closes. It clears at the start of the next step, so the closing E/Enter never swings, jumps or re-opens the dialogue. `uiLocked` already blocks the interact edge for `updateInteraction` while the box is open. The view reads its own key edges (E/Enter/Esc/W/S/Up/Down) only when `dialogueCtl.open` is true. Damage (`vitals` hit event) means `close()`.
+5. **Talk prompt (NPC-BEAR-01).** Use `world.addInteractable({name:'npc.talk', key:'npc.bear', ..., radius:2.2, prompt:'[E] Talk'})` plus a `world.fireInteraction` handler, the same path as US-079b0, polled by the existing `updateInteraction` call (main.js ~1476). The handler emits `npc:talk {id}`. Before DIALOGUE-01b lands, it shows the toast. After, it calls `dialogueCtl.openFor('bear')`. No new engine code. `components.collider {r,h}` on a world entity = a static prism built at load and re-snap; moving entities must not carry it.
+6. **Clips.** `animState` has a fixed state set (idle..die) and does not apply here. `npcBear.js` sets `components.voxel.anim` directly through `EntityHandle.play`. The clip follows the runner: `talk` while typing and `!isPlayer`; `listen` while waiting, choosing, or a player line types; a node `clip` plays once, then returns to talk/listen; `idle` on close. Play only when the clip changes, so there is no restart every step.
+7. **Jaw: there is no per-part override seam today.** `samplePose` reads only clip keys. Smallest API (B2): an optional `components.voxel.partRot = {part:'jaw', rx, ry, rz}` (degrees, part-local, **added** to the sampled clip rotation; children follow). `VoxelModel` pack adds a frozen `pm.partIndex` (name -> idx). `VoxelPool._queueEntity` sets `slot.addPart` (= partIndex or -1) and `addRx/addRy/addRz`. `pushInstance` and the `instances.js` `_idInst` set `addPart = -1`. `project`/`projectShadow` copy the four fields. `samplePose` ends with `if (inst.addPart >= 0 && inst.addPart < partCount) _rotOut[3*ap+i] += add*`. When `addPart` is undefined (object-literal callers such as `viewModel`) the comparison is false, so their output is byte-identical. Both backends take part matrices from JS `FORWARD`, so no shader change is needed. `jawSync.js` writes into the same `partRot` object (it never replaces it) and sets it to 0 on close. The field is view-only: it may serialize, but it is harmless.
+8. **Zero allocation per step.** Nodes and choices are compiled to int indices at load. The runner uses only numbers and string references. The view draws with `charCodeAt(i)` for `i < visibleChars` (no `substring`). Events pass strings, not objects. `partRot` is mutated in place. Each module test includes a 10k-step heap check. Determinism: no `Date` or `Math.random` anywhere.
+9. **Steps** (each ends with `node tools/run-tests.mjs` + check-deps green):
+   - **TALK-E1 [B2, 0.25 d]**: the item 7 seam. Tests: rest pose plus `partRot` 18 deg changes only the jaw and its children's `FORWARD`; no `partRot` gives a bit-identical result to the current output; 0 alloc. Then one `?gpucompare=1`, expecting 0 PASS->FAIL.
+   - **DIALOGUE-01a1 [B2, 0.5 d]**: `engine/ui/dialogue.js` + `dialogue.test.js` (AC walk/flags/repeat/heap) + the loadPack kind + `schema.js` + one loadPack test per rule.
+   - **DIALOGUE-01a2 [B1, 0.25 d]**: `content/dialogue/bear.dialogue.json` (placeholder text until BEAR-LINES-01 lands) + manifest + the validate-content cross-file check + fixtures.
+   - **NPC-BEAR-01 [B1, 0.5 d]**: as the AC (item 5). It needs no engine change.
+   - **DIALOGUE-01b1 [B1, 0.5 d]**: `dialogueView.js` draw + key handling against a fake runner (`dialogueView.test.js`: key-edge sequences, 0-alloc draw) + one 400x150 capture.
+   - **DIALOGUE-01b2 [B1, 0.5 d]**: main.js wiring: `dialogueCtl`, the `vLocked` extension, the flags adapter, `openFor`, damage close, and the npcBear clip hooks (item 6).
+   - **NPC-TALK-ANIM-01 [B1, 0.5 d]** (deps TALK-E1, 01b2): `jawSync.js` (the target from `line.charCodeAt(visibleChars-1)`, 40 ms ease `1-exp(-dt/0.04)`, clamped to [0,max], driven only when `!isPlayer && state==='typing'`, else target 0) + the owner walk.
+- Do not: put text, clip names or `world` access in `engine/ui/dialogue.js`; make the engine import the game flags adapter; replace the `partRot` object per step; add talk/listen states to `animState`.
+
+### 38.26 ED-MESH-1 (rescoped): mesh preview / selection / editing on the WebGPU editor (PC-B architect, 2026-10-09; owner-authorised while PC-A is offline)
+
+**Facts.** The editor already renders through `createFrameRenderer` (38.21, 01a/01b done), and mesh is the only renderer (ME-19a). Lane C shipped mesh place/pick/drag (`meshPlace.js`, `meshPick.js` `resolveMeshPick`, `meshDragPreview.js`, ED-MESH-01d). The engine has `World.setMeshPlacement` + `rebuildMeshColliders` (refit 0.65 ms for 329 placements, ED-MESH-01e). The original 31.x steps 1a-1d are closed. **What is left is proof plus three gaps on WebGPU:** (1) a mesh-only .vox imported at runtime must appear on the WebGPU frame without a reload; (2) the drag preview must move the real mesh (`setMeshPlacement` per pointer move) instead of a ghost only; (3) the selection/hover of mesh structures must decode from the async `frame.readSurface` (GI kind 9 + depth) with the same ids as the game. There is also dead code: `main.js:1632` (`RENDERER !== 'mesh'`) and the `RENDERER` argument plumbing.
+
+1. **Boundaries.** `tools/editor/**` owns the doc, the commands/undo, the overlay (`engine.ui`), and `resolveMeshPick`. The engine owns geometry upload and placement. The editor calls only public `engine/index.js` API: `World.setMeshPlacement`, `World.rebuildMeshColliders`, `frame.markDirty`, `frame.readSurface`, and one new `frame.refreshAssets(assets)` (B2) that re-runs the one-time binds (`voxelPool.bind(assets, matTable)`, `pipeline.bindVoxels`/mesh-geometry upload for new ids). This also closes the 38.21 review nit (resize does not re-bind the voxelPool). The engine never imports the editor; frameRenderer gets no editor flags.
+2. **Data flow.** Import: `AssetRegistry.add` -> `frame.refreshAssets` -> `markDirty`. Place/move: doc command -> `world.setMeshPlacement(id, scratchObj)` (one reused object per drag) -> `markDirty` -> next `step` draws it (renderVersion bump; no structVersion bump, no terrain re-bake). Release/undo/redo: `rebuildMeshColliders()` once. Click: sync CPU ray (ray.js) -> `await frame.readSurface` -> `resolveMeshPick(world, ray, depth)` -> `pickGuard` drops it if stale -> select.
+3. **Pick parity with the game.** Select a mesh by the structure id from `resolveMeshPick` (bbox + render triangles), never by the GI objectId/draw order (not stable, ED-MESH-01d). The game has no mesh picker; parity means the same GI/depth decode as `pick.js` and the same `screenRay`/`worldToCell` maths (`resolveProjection(cam,'mesh')`). Gate: `pickParity.mjs --check pick-golden-gl2.json` on `webgpu` (same kind/ids, world within 0.05 m). After it passes, write `pick-golden-webgpu.json` as the new reference (GL golden deleted with WG-5).
+4. **Perf.** A drag move = `setMeshPlacement` (O(1) bbox/frame) + one frame; no collider work during the drag. Collider rebuild only on release, <= 15 ms (37.20), refit path ~1 ms. `refreshAssets` is click/import-only (it may allocate). The `step` hot path stays zero-alloc (frameRenderer test). Readback is click-only (24.6).
+5. **Tests.** Node: `frameRenderer.test.js` (refreshAssets re-binds the pool + uploads only new ids, idempotent; resize re-binds); `meshPick.test.mjs` (async readSurface mock, kind 9 -> id; stale -> dropped); a drag test on the doc model (N moves -> 1 collider rebuild; undo restores bbox + capsule blocked at the old footprint). Headless: `verify-vox-import.mjs` on `webgpu` (import a >32/axis .vox, place, move, undo, cell non-sky under it) + `pickParity.mjs --check`. Gate: gpucompare rows unchanged (no shader change).
+6. **Split** (each <= 0.5 d, ends in arch-review; owner look after c):
+- **ED-MESH-1e (B2, engine)** `frame.refreshAssets(assets)` + resize re-bind. Files: `engine/render/frameRenderer.js` + test. AC: item 5 frameRenderer tests; check-deps green.
+- **ED-MESH-1f (B1, tools/editor)** import -> `refreshAssets`; delete the `RENDERER` flash branch/args; live drag through `setMeshPlacement` + collider rebuild on release/undo. Files: `main.js`, `meshDragPreview.js`, `commands.js` + tests. AC: item 5 drag test; headless vox import on webgpu.
+- **ED-MESH-1g (B1, tools/editor)** async mesh selection on WebGPU + parity. Files: `pick.js`, `meshPick.js`, `pickParity.mjs`, new `pick-golden-webgpu.json`. AC: parity check passes vs the GL golden; stale-pick test; selection outline drawn via `engine.ui` `setGlyph` on both `webgpu` and `?gpu=0`.
+
+### 38.27 AI-PERCEIVE-01 + AI-LEASH-01 pure AI helpers (programmer kestrel-3, 2026-10-09) - pending ARCH review
+- `engine/nav/perceive.js` (sight cone + noise-scaled hearing + injected LOS, `returnHome` flag when past `homeR`) and `engine/nav/leash.js` are leaf modules: no imports, no allocation, not wired into beastSim (lane C owns that).
+- `leashState(agent, def, target, dt)` mutates `agent.leashMode` (LEASH_HOME / ENGAGE / RETURN / GIVEUP) and `agent.leashT` (engaged seconds), returns the mode.
+- `def` = `{homeX, homeY, homeR, leashR, aggroR, loseScale=1.25, returnSpeed, giveUpT}`; keep `homeR < leashR`.
+- Hysteresis: HOME -> ENGAGE needs target within `aggroR` and agent within `homeR`; ENGAGE drops at `aggroR*loseScale` or past `leashR` (-> RETURN), or after `giveUpT` (-> GIVEUP).
+- RETURN and GIVEUP ignore the target until the agent is back within `homeR` (then HOME, timer reset), so there is no flicker at the edges.
+- `returnTarget(def, out)` fills `{x, y, speed}` = home point + `returnSpeed` scale for the steering layer.
+- Test: `engine/nav/leash.test.js` (transitions, hysteresis, give-up, return target, 1e5-step zero-alloc via --expose-gc re-spawn).
+- Open for review: whether GIVEUP should differ from RETURN beyond the cause (e.g. heal-to-full, target cooldown); left to the caller.
+
+### 38.29 EP-CHARGEN: voxel-styled character generator: real rigged meshes, standard exports, desktop app (PC-B architect, 2026-10-10; owner-authorised while PC-A is offline; D-053)
+**Owner direction (2026-10-10).**
+- Product: realistic humans (style-guide 0), for villagers and the player's look. It is meant to be sold.
+- Output is **real rigged meshes**. The geometry is cube-built and greedy-meshed, but it is a normal mesh. ASCII is only how our game happens to draw it.
+- Formats: glTF 2.0 `.glb` is the master. FBX, `.vox` and OBJ are also exported. A `.kestrel` package (38.30) is the distribution unit.
+- No `design/models/*.js` output.
+- The app is a desktop app: the shell is Tauri, and the preview is a lit three.js (MIT) mesh preview, not the ASCII renderer.
+- No new or separate engine. Smooth, non-voxel humans are out of scope.
+- The game loads the exported `.glb` from a `.kestrel` through the mesh import path.
+
+1. **Skeleton.**
+   - **The product rig: 22 humanoid bones**, named for Unity Humanoid and Godot `SkeletonProfileHumanoid`. Parent of each bone:
+
+     | Bone | Parent |
+     |---|---|
+     | `Hips` | (root) |
+     | `Spine` | Hips |
+     | `Chest` | Spine |
+     | `Neck` | Chest |
+     | `Head` | Neck |
+     | `Jaw` | Head |
+     | `Left/RightShoulder` | Chest |
+     | `Left/RightUpperArm` | Shoulder |
+     | `Left/RightLowerArm` | UpperArm |
+     | `Left/RightHand` | LowerArm |
+     | `Left/RightUpperLeg` | Hips |
+     | `Left/RightLowerLeg` | UpperLeg |
+     | `Left/RightFoot` | LowerLeg |
+     | `Left/RightToes` | Foot |
+
+     - No finger bones: fingers are sculpted voxels.
+     - A Mixamo rename map (`mixamorig:Hips`, `LeftArm`, `LeftForeArm`, `LeftUpLeg`, `LeftLeg`, ...) is an export option only.
+     - Skinning is **rigid**: each vertex belongs to exactly one bone with weight 1. This is the standard for voxel characters, and it keeps the in-game path simple (item 5).
+   - **In-game**, the engine poses at most `MAX_VOX_PARTS` = 8 parts. The import collapses the 22 bones through a data `partMap`. The humanoid default:
+
+     | Part | Bones |
+     |---|---|
+     | `body` | Hips, Spine |
+     | `chest` | Chest, Shoulders |
+     | `head` | Neck, Head |
+     | `jaw` | Jaw |
+     | `armL` / `armR` | UpperArm, LowerArm, Hand |
+     | `legL` / `legR` | UpperLeg, LowerLeg, Foot, Toes |
+
+     - Part pivot = the group's root joint.
+     - Part rotation = the root bone's rotation (body and head also compose the second bone), resampled to 50 ms keys in our Euler order `Rz*Ry*Rx`.
+     - Result: in-game limbs swing straight, with no elbows or knees. `jaw` keeps the 38.28 `partRot` seam.
+   - **ESCALATE TO MANAGER:** should the game show elbows and knees?
+     - A = keep 8 parts (v1).
+     - B = raise `MAX_VOX_PARTS` to 24, so the rig needs no collapse. This is a PC-A engine item: instance rows per instance go 9 -> 25, the pose scratch grows, and gpucompare must pass.
+     - **Recommendation: A now, decide B at the CHARGEN-16 owner walk.**
+2. **Grid and rest pose.**
+   - Cell size `0.025` m. An adult is ~70 rows tall. Grid about 36x20x76, about 4-6k quads per character.
+   - Authoring axes as in 15.1: the character faces north (-y), z is up, the anchor sits between the feet.
+   - Rest pose: standing, arms down. Keep a gap of >= 3 cells between arm and torso and >= 2 cells between the thighs.
+   - Bones have identity rest rotation and translation-only joints. Unity: Configure -> "Enforce T-Pose".
+3. **Kit = data** (`charkit` JSON, `content/chargen/human.charkit.json`, shipped in the package `kestrel.chargen.human`).
+   - The designer may generate it with a script under `design/chargen/`, but the JSON is the only source.
+   - **`skeleton`**: 22 bones, each `{name, parent}`.
+   - **`bases`**: `m_avg` and `f_avg` first; `*_slim` / `*_heavy` later. Each base is `{size, anchor, layers (slot chars), bones:{name:{joint, box}}, anchors, stretchRows}`.
+     - A voxel's bone = the first bone box (in skeleton order) that contains it.
+     - A voxel outside every box is a kit error.
+   - **`slots`**: char -> `{group, shade}`. Groups: skin, hair, eyes, lips, and the dyes top, legs, feet, outer and hat. `fixed` chars map straight to a material.
+   - **`ramps`**: per group, `id -> {shade -> material key}`.
+     - Material keys are our palette keys, so the game keeps its glyph shading.
+     - Each key also has an export colour (RGB) from the palette.
+     - The designer appends new ramps to `design/palette.js`.
+     - At most 255 materials per character.
+   - **`shells`** (clothing that fits every base): `{id, slot, regions:[{bone, t0, t1}], thick:0|1|2, paint}`.
+     - `t0`/`t1` = fraction along the bone.
+     - `thick 0` repaints the body surface. `thick n` grows n 6-neighbour layers outward.
+     - Grown voxels inherit the bone they grew from.
+   - **`attachments`** (hair, beard, hat, hood, belt, collar, elder overlay): `{id, slot, bone, anchor, offset, box, layers, paintOnly?, hides?}`.
+   - **`clips`** (master, on the 22 bones): idle, walk, run, talk (Jaw), listen, wave.
+     - Durations are multiples of 50 ms.
+     - `rot` is per bone, in degrees.
+     - `pos` exists only on Hips.
+     - Clips play in place (no root motion).
+4. **Core = `engine/chargen/`.**
+   - Pure, deterministic and UI-independent. Exported via `engine/index.js`. It imports only `engine/` math and mesh types, never design, game or tools.
+   - Kits, the palette RGB table (`rgbOf`) and the known material keys are passed in.
+   - Used by: the app, the Node CLI, the editor, and the game's New-game creation screen.
+   ```js
+   /** @typedef {{v:1, kit:string, base:string, height:number, age:'young'|'adult'|'elder', skin:string, eyes:string,
+    *   hair:Pick|null, beard:Pick|null, top:Pick|null, legs:Pick|null, feet:Pick|null, outer:Pick|null, hat:Pick|null,
+    *   seed?:number}} CharRecipe                 // Pick = {id, ramp}; height int -4..4 rows
+    *  @typedef {{cellM, size, anchor, mat:Uint8Array, bone:Uint8Array, matKeys:string[], bones, mounts, clips}} CharGrid
+    *  @typedef {{bones:{name,parent,joint:number[]}[], mesh:{pos:Float32Array, nrm:Int8Array, mat:Uint8Array,
+    *   ranges:{start,count}[] (one per bone)}, matKeys:string[], clips:Object, mounts:Object}} RiggedModel */
+   validateKit(kit, knownMats) -> {errors, warnings}
+   validateRecipe(kit, recipe) -> {errors}
+   composeCharacter(kit, recipe) -> CharGrid        // base -> shells -> attachments -> height rows
+   meshCharacter(grid) -> RiggedModel                // per-bone culled + greedy quads, never across bones
+   sampleClip(rigged, clip, tMs, outQuat, outHips)   // our Euler -> quaternions, sign-continuous
+   collapseRig(rigged, partMap) -> PartRig           // <= MAX_VOX_PARTS parts + 50 ms clips (item 1)
+   randomRecipe(kit, seed) -> CharRecipe             // xorshift32 + kit.random weights
+   ```
+   - **Compose order:** base, then shells (legs, feet, top, outer), then attachments (hair, beard, hat). The later layer wins. `hides` clears a slot first.
+   - **Height:** duplicate or delete rows from `stretchRows`: shin and waist rows; waist rows may cross Left/RightUpperArm and Left/RightLowerArm symmetrically, never a hand box.
+   - **Build:** pick an authored base.
+   - **Elder:** an overlay, height -1, clip tempo x1.15.
+   - **Determinism and cost:** the same recipe gives the same bytes. A build takes <= 10 ms, at load or on a UI change only, never per frame.
+5. **Game consumes the `.glb` (decision, per owner).**
+   - **Content.** The package (38.30) holds:
+     - `models/<id>.glb` (rigid-skinned, animated);
+     - the re-edit recipe `content/characters/<id>.character.json` = `{kind:'character', schema:1, id, recipe, model:'models/<id>.glb'}`.
+     - The game loads the `.glb`. The recipe is only for re-editing.
+   - **Material mapping.** Every `.glb` we write carries `extras.kestrel = {format:1, matKeys:[...], partMap, mounts, recipe}`. Palette texel i maps to `matKeys[i]` exactly.
+     - A third-party `.glb` without this extra must go through `tools/gltf-import.mjs --map` (nearest palette key, `voxAutoMap`) at authoring time.
+   - **Engine work (PC-A first review; core render):**
+     - **RIG-01:** extend `engine/mesh/gltf.js`. Add a rigid-skin + animation reader `readRiggedGlb(bytes) -> RiggedModel`.
+       - It accepts JOINTS_0/WEIGHTS_0 only when each vertex has a single weight of 1 (within 1e-3).
+       - It accepts rotation/translation channels (LINEAR/STEP).
+       - The existing static path is unchanged; everything else is still rejected with a clear error.
+       - Axes: convert back from glTF to ours (item 6).
+     - **RIG-02:** a "rigged model" in the model registry. `collapseRig(...)` gives parts (pivot, parent), a prebuilt MeshData with one range per part, clips and mounts. This is the same shape the voxel mesh path already draws: one draw per (instance, part), with part matrices from `samplePose`.
+       - `VoxelPool` / `instances.js` must accept a model whose mesh is prebuilt instead of built from `pm.vox`.
+       - **ARCH-NOTE NEEDED (PC-A, fable): the exact seam.**
+       - Then `EntityHandle.play`, `partRot` (jaw), mounts and shadows work unchanged.
+     - **RIG-03:** loadPack / KPKG asset type `model.rigged` (`.glb`) -> `bundle.models[id]`. main.js registers `char.<id>`.
+   - **Villagers** = a world entity with `model:'char.<id>'` plus a dialogue, like Burl (38.28).
+   - **Player look**
+     - Saved as `player.look = CharRecipe` (saveState.js; old saves get the kit default).
+     - **Today only the first-person hands are visible.** On New game and on load, every `design/models/hand.js` variant is re-tinted:
+       - skin keys -> the chosen tone (all 8 hand skin keys per tone; the fire keys stay);
+       - sleeve and wrap linen -> the top dye ramp.
+     - The re-tinted hands are registered as `hand@look`; viewModel loads that key.
+     - Later: third person, mirror and the player shadow use `char.player`, built at runtime with `composeCharacter -> meshCharacter -> collapseRig`. This is the same RiggedModel the `.glb` import gives. Test: importing an exported `.glb` gives a RiggedModel equal to the direct one (positions within 1e-5).
+   - **New-game creation screen** `game/js/ui/charCreate.js`, in the title-menu skin.
+     - Flow: `onNewGame(slot)` -> charCreate -> start.
+     - Rows: Body, Height, Age, Skin, Eyes, Hair, Beard, Top, Legs, Feet (+ colours), Random, Done.
+     - Preview: a studio scene on the game renderer (the in-game look).
+     - No Esc hint.
+6. **Exporters live in `tools/export/`.**
+   - UI-independent and browser-safe (no `fs`). They import only `engine/index.js` and `tools/export/*`; add a new check-deps rule for this.
+   - Determinism: the same recipe gives the same bytes in every format (golden SHA-256 test). No timestamps.
+   - Shared:
+     - `png.js`: the palette as a 16x16 RGBA PNG, zlib stored blocks.
+     - Mesh data: UV = the texel centre; COLOR_0 = the RGB.
+   - **`gltfWrite.js` -> `.glb`**
+     - Axes (X,Y,Z)_gltf = (-x, z, -y), in metres; the character faces +Z.
+     - 1 skinned mesh; 22 joint nodes; `inverseBindMatrices = translate(-joint)`.
+     - Material: `pbrMetallicRoughness`, palette `baseColorTexture` (NEAREST sampler), metallic 0, roughness 1.
+     - 6 animations: quaternion LINEAR at 30 fps + Hips translation.
+     - `extras.kestrel` (item 5).
+   - **`fbxWrite.js` -> binary FBX 7.4 (7400), our own writer**
+     - Binary, not ASCII: Blender rejects ASCII FBX.
+     - Uncompressed arrays; header and footer as in Blender's `encode_bin`.
+     - Y-up, centimetres.
+     - Geometry with UV and vertex colour; 1 material; the PNG as an external file.
+     - LimbNodes, Skin, 1 Cluster per bone, BindPose.
+     - 1 AnimationStack per clip (Euler XYZ).
+     - Contingency: if the Unity Humanoid AC fails after one attempt -> ESCALATE. Fallback: a Blender-CLI glb->fbx script (needs Blender installed).
+   - **`objWrite.js` -> OBJ + MTL**: rest pose, `g <bone>` per bone, `map_Kd` = the PNG.
+   - **`voxWrite.js` -> `.vox`** (split out of `tools/vox-export.mjs`, the same way `voxParse.js` was):
+     - one shape per bone, named `nTRN`, v200 scene graph;
+     - palette <= 255; every axis <= 256 (exceeding it is an error, never clipped);
+     - round-trip test with `voxParse`.
+7. **App** = `tools/chargen/`. Owner decision, 2026-10-10: the preview uses three.js (MIT). The main session records this in decisions.md, since it is an exception to the no-external-library rule that applies only to `tools/chargen/`.
+   - **Vendoring:** three.js is vendored as ES modules in `tools/chargen/vendor/three/` with its `LICENSE`:
+     - pinned release;
+     - only `three.module.js`, `GLTFLoader`, `OrbitControls`;
+     - no CDN, no npm at runtime.
+   - **check-deps rule:** only `tools/chargen/**` may import `vendor/three`; `engine/`, `game/` and `tools/editor/` never do.
+   - **Preview = the export (WYSIWYG).**
+     - A UI change runs `core.build()` -> `exportGlb()` -> `GLTFLoader.parse(bytes)` -> `SkinnedMesh` + `AnimationMixer`.
+     - The viewer therefore shows exactly the `.glb` that is shipped. The rebuild is debounced to 150 ms.
+   - **Rendering:**
+     - `MeshStandardMaterial`, palette texture with `NearestFilter`;
+     - a hemisphere light + a key directional light with a shadow onto a ground disc;
+     - `OrbitControls`;
+     - a clip dropdown with play/pause/scrub;
+     - a turntable toggle.
+   - **The ASCII renderer is never used in the app.** The in-game look appears only in the game's own creation screen.
+   - **Facade** `tools/chargen/core.js` (no DOM, no `fs`, no Tauri, no three):
+     ```js
+     createChargen({kit, rgbOf}) -> { recipe, setRecipe(r), random(seed), build() -> RiggedModel,
+       exportGlb(opts) -> Uint8Array, exportFbx() -> {fbx, png}, exportVox() -> Uint8Array,
+       exportObj() -> {obj, mtl, png}, exportAllZip() -> Promise<Uint8Array>,
+       savePackage(meta) -> Promise<Uint8Array>, openPackage(bytes) -> Promise<CharRecipe> }
+     ```
+     - Only these call it: the UI (`index.html` + `ui.js` + `viewer.js`), the CLI `tools/chargen/export.mjs`, the Tauri shell and, later, the editor.
+   - **UI:**
+     - recipe controls;
+     - Seed field and Random;
+     - export buttons: `.glb` (primary), `.fbx` (+ png), `.vox`, `.obj` (zip), "All formats (.zip)";
+     - Save / Open `.kestrel`;
+     - no Esc hint text.
+8. **Desktop shell: Tauri** (owner decision, 2026-10-10; Tauri is MIT/Apache-2.0). It is `tools/chargen-desktop/`:
+   - **Project:** `src-tauri/` (`tauri.conf.json`, `Cargo.toml`, a minimal `main.rs` with no custom commands). The frontend dist is the staged copy of `tools/chargen/`.
+   - **Plugins:** `tauri-plugin-dialog` + `tauri-plugin-fs`, scoped to user-picked paths only.
+   - **Platform adapter:** `tools/chargen/platform.js` tries `window.__TAURI__` (Tauri open/save dialog + fs `writeFile`) and otherwise falls back to the browser (`<input type=file>` + a download link). The core never sees it.
+   - **Security:**
+     - a strict CSP: `default-src 'self'`, no remote origins;
+     - `withGlobalTauri` limited to the dialog + fs plugins;
+     - no shell plugin.
+   - **Staging:** `stage.mjs` copies:
+     - `engine/` (only what `engine/index.js` reaches for chargen + content zip/package);
+     - `tools/export/`, `tools/chargen/`, the kit package;
+     - `palette.rgb.json`, baked from `design/palette.js`;
+     - never `game/`.
+   - **Builds:**
+     - Windows MSI/NSIS on WebView2: the primary target, Chromium-based, so it matches dev.
+     - macOS dmg on WKWebView.
+     - Linux AppImage on WebKitGTK.
+     - three.js on WebGL2 runs on all three. Test each OS once, because WebKit differs.
+   - **Toolchain:** Rust stable + the Tauri CLI, needed at build time only, not by programmers working on the core.
+   - **Signing:** Windows Authenticode or Azure Trusted Signing; Apple Developer ID + notarization; Tauri updater keys are optional, later.
+   - **ESCALATE TO MANAGER:** the remaining money and decision items:
+     - who buys the certificates (Apple ~99 USD/yr + a Windows cert);
+     - the store (itch.io / Steam Software / own site);
+     - the default licence for exported characters;
+     - item 1 option A/B (8 vs 24 parts in-game).
+9. **Do not:**
+   - Import three.js or Tauri anywhere outside `tools/chargen*`.
+   - Use the ASCII renderer in the app.
+   - Put chargen logic in UI files.
+   - Ship `.js` model files for characters.
+   - Use smooth/non-voxel humans (out of scope).
+   - Merge quads across bones, or use non-rigid weights.
+   - Allocate per frame in the game (`sampleClip` writes into caller arrays).
+   - Let `engine/` import design, game or tools.
+   - Put timestamps in exports.
+
+### 38.30 KPKG: the `.kestrel` package (PC-B architect, 2026-10-10; owner-authorised while PC-A is offline)
+Owner: one package file to distribute and use assets, like `.unitypackage`.
+1. **Container.** A ZIP named `*.kestrel`. Root layout:
+   - `kestrel.json`: the manifest.
+   - `content/`: a normal content tree (`content/manifest.json`, kind files such as prefab/NPC/dialogue/world JSON, `.mesh.bin`).
+   - `models/`: runtime `.glb` files (rigged characters, static meshes).
+   - `exports/`: `.fbx`, `.vox`, `.obj` for other tools. The runtime never loads these.
+   - `thumbs/<assetId>.png`: 256x256 thumbnails.
+   - `LICENSE.txt`.
+   - **Data only:** never JS or WGSL that we run.
+2. **`kestrel.json`:**
+   ```json
+   {"format":"kestrel-package","formatVersion":1,"id":"kestrel.chars.mara","name":"Mara","version":"1.0.0",
+    "license":{"spdx":"CC-BY-4.0","file":"LICENSE.txt","attribution":"..."},"authors":["..."],
+    "dependencies":[{"id":"kestrel.chargen.human","version":"^1.0.0"}],
+    "contentSchema":{"character":1},"content":"content/manifest.json","thumbnail":"thumbs/mara.png",
+    "assets":[{"path":"models/mara.glb","type":"model.rigged","id":"mara","thumb":"thumbs/mara.png"},
+              {"path":"content/characters/mara.character.json","type":"character","id":"mara"},
+              {"path":"exports/mara.fbx","type":"export.fbx"},{"path":"exports/mara.vox","type":"export.vox"}]}
+   ```
+   - `id` must match `/^[a-z][a-z0-9_.-]{2,63}$/`.
+   - `license.spdx` is required (`LicenseRef-*` allowed). The app default is `LicenseRef-AllRightsReserved`.
+   - No timestamps.
+3. **Engine** (`engine/content/`): no design or game imports, no new runtime dependency.
+   - **`zip.js`**
+     - API: `readZip(bytes) -> {paths, has, read(p) -> Promise<Uint8Array>}`; `writeZip([{path, bytes, store?}], {deflate}) -> Promise<Uint8Array>`.
+     - Compression: method 0 or 8, using the platform `DecompressionStream` / `CompressionStream('deflate-raw')` (WebGPU browsers, Electron, Node >= 18).
+     - Integrity: CRC32 is checked on read. UTF-8 names. No zip64, no encryption.
+     - Limits: 10000 entries, 512 MB uncompressed, plus a compression-ratio guard.
+     - Zip-slip guard: reject `..`, a leading `/`, `\` and `:` anywhere in a path (drive letters, NTFS alternate data streams such as `a.json:evil`).
+     - `openPackage` refuses any script-type entry (.js/.mjs/.cjs/.wgsl/.glsl/.html/.wasm) anywhere in the zip, referenced or not.
+     - Deterministic write: sorted entries, `kestrel.json` first, DOS time 1980-01-01.
+     - `.glb`, `.png`, `.bin` and `.vox` entries are stored uncompressed and read with a zero-copy `subarray`.
+   - **`package.js`**
+     - `validatePackageManifest(obj)`.
+     - `openPackage(bytes) -> KPackage`.
+     - `mountPackages(pkgs, fallback) -> {fetchText, fetchBytes}`: serves `kpkg://<id>/<path>` and passes any other URL to `fallback`. It plugs into the existing seam: `loadContentPack('kpkg://<id>/content/manifest.json', mountPackages(...))`, since loadPack already takes injected fetchers. Add a test that relative URLs resolve.
+     - Asset types: `model.rigged` and `model.static` (`.glb`) go through RIG-03 (38.29 item 5).
+     - Dependencies: caret or exact semver only. A missing dependency -> ContentError.
+     - The same content id in two packages -> ContentError that names both.
+     - A newer `formatVersion` -> refused. Older ones are accepted and their kinds go through `migrateContent`.
+4. **Repo vs ship.**
+   - Dev: loose files in `content/`, git-diffable.
+   - Ship: `tools/pack.mjs` builds `dist/*.kestrel` from `content/packages/<id>.pkg.json`. `tools/unpack.mjs` is the reverse.
+   - Planned packages:
+     - `kestrel.base`: the game content.
+     - `kestrel.chargen.human`: the kit.
+     - One package per character or asset set.
+   - Golden hashes are never taken on compressed zip bytes (deflate output is only stable within one runtime): hash entries, or pack with `deflate:false`.
+   - Only the first package with a content manifest is loaded.
+   - Boot is loose by default. `?pack=a.kestrel,b.kestrel` (and later the desktop build) mounts packages.
+   - Third-party and user assets come only as packages.
+5. **Size and streaming.**
+   - v1 fetches the whole package (today's content is ~9 MB). Keep each package <= 64 MB; split worlds by region.
+   - Later, KPKG-07: HTTP Range reads (EOCD -> central directory -> stored entries for `LazyMeshStore`). `python -m http.server` has no Range support, so fall back to a whole fetch.
+6. **Editor and generator.**
+   - Editor **Import .kestrel**: validate, mount, load, `AssetRegistry.add`, then list the assets with thumbnails.
+   - Editor **Export .kestrel**: the selected assets + the files they reference + dependencies + thumbnails.
+   - Generator **Save** = `.kestrel` (`models/<id>.glb` + recipe + `exports/` + thumbnail). The standalone `.glb`, `.fbx`, `.vox` and `.obj` exports stay as separate buttons.
+7. **Do not:**
+   - Execute package content.
+   - Use DOM or `window` in `engine/content`.
+   - Vendor a zip library.
+   - Put absolute paths or timestamps into a package.
+
+### 38.31 EP-WILD: ambient wildlife (fauna) system (PC-B architect, 2026-10-10; owner-authorised while PC-A is offline; D-053 "Living forest")
+Rabbits, deer, foxes, squirrels and birds live around the player. They are scenery: not combat, not saved, not hashed. The data is `ASSETS.wildlifeFx` (design/models/voxel_wildlife.js); the game passes it in, because the engine never reads `window.ASSETS`. Rows: WILD-01..08 + WILD-D1..D4 (docs/backlog.md, EP-WILD).
+
+**1. Layout and dependency rule**
+- New leaf folder `engine/fauna/`:
+  - `faunaDef.js` (validate + compile the def);
+  - `spawner.js`;
+  - `groundBrain.js`;
+  - `flyerBrain.js`;
+  - `fauna.js` (`createFauna`, the one public object);
+  - `feed.js` (draw selection).
+- `engine/fauna/**` may import only `engine/fauna/**`, `engine/nav/**` (perceive, leash), `engine/core/**` (rng, math) and `engine/entities/clipPlayer.js` + `gait.js`. It never imports world, render, mesh, physics, ui, game or design. Add this as check-deps rule 15, the same shape as rule 14.
+- Render and world never import `engine/fauna`. The frame renderer only calls an injected hook (item 9).
+- The world is reached only through an injected `env`. All its methods are allocation-free; the game builds it once:
+```js
+/** @typedef {Object} FaunaEnv
+ * @property {(x:number,y:number)=>number} groundAt      terrain z (Terrain.groundAt; animals never walk on structures)
+ * @property {(x:number,y:number)=>number} slopeZ        ground normal z (1 = flat)
+ * @property {(x:number,y:number)=>number} habitatAt     bitmask: 1 meadow, 2 edge, 4 forest, 0 = never (water, road, structure)
+ * @property {(x:number,y:number,r:number)=>boolean} blocked   structure footprint, tree trunk, water, placed-mesh collider
+ * @property {(x:number,y:number,dx:number,dy:number,r:number,out:{x:number,y:number})=>void} moveCircle  slide vs colliders (near animals only)
+ * @property {(x:number,y:number,minR:number,maxR:number,out:{x:number,y:number,z:number,tree:number})=>boolean} perchNear  a perch point on a tree in the ring; false if none
+ */
+```
+
+**2. Data (`compileFaunaDef(wildlifeFx, pool)`, compiled once)**
+- Per species:
+  - clip names -> clip indices (`pm.clipIndex`; a missing clip is a def error at load, never at runtime);
+  - gaits, speeds, `dist`, `times`, `flee`, `blendMs`, `groupSize`.
+- New `spawn` block per species (designer + PO data, WILD-D4). Defaults in brackets:
+  - `habitats` (['meadow','edge']);
+  - `cellChance` (0.35);
+  - `spawnMinM` (35);
+  - `spawnMaxM` (rabbit 60, deer 120, bird 70);
+  - `despawnM` (spawnMaxM * 1.25);
+  - `drawM` (rabbit 35, squirrel 25, bird 30, fox 60, deer 90): about the distance where the body is 2 cells high;
+  - `cap` (rabbit 10, deer 8, fox 2, squirrel 6, bird 16);
+  - `kind` ('ground' | 'climber' | 'flyer').
+- Unknown keys warn once.
+- Numbers are validated: `dist.flee < dist.alert < dist.notice < dist.safe`, and gait ranges must overlap or touch.
+
+**3. Spawning (spawner.js)**
+- **Cells:** the world is cut into 64 m fauna cells. The active set is a fixed 7 x 7 ring table around the player (Int32 cell keys, ring-buffer slots, no Map). It is rebuilt only when the player crosses a cell edge.
+- **Cell content:** fixed by `hash2(ix, iy, seed + speciesK)`.
+  - For each species, roll `cellChance`.
+  - Then try 4 hash-chosen spawn points in the cell. Keep the first one where `habitatAt & speciesMask` is set and the point is not `blocked`.
+  - So the same meadow always holds the same rabbits, and nothing is stored.
+- **When a cell spawns:** only when its spawn point is between `spawnMinM` and `spawnMaxM` from the player, AND it is either:
+  - outside the view cone (dot with the camera forward < cos(hfov/2 + 15 deg)), or
+  - farther than `drawM`.
+  This means no pop-in in view.
+- **Caps:** global `FAUNA_MAX = 40` slots (preallocated), plus the per-species `cap`. A full cap skips the spawn; it never steals a slot.
+- **Despawn:** past `despawnM`, or after a flee with `hideOrDespawn` once out of view.
+  - The cell then gets a 60-120 s cooldown (rng).
+  - The cooldown is kept only in the ring table, so it is lost when the cell leaves the ring. That is fine.
+- **Groups:** `groupSize` members around the spawn point, 1-4 m apart, with one shared home (the group anchor). Deer: `buckChance` picks `deerBuck` for one member.
+- **Seeded RNG:** `createRng(worldSeed ^ 0x57494C44)`, owned by the fauna object. It never touches the combat/sim RNG.
+
+**4. Ground behaviour (groundBrain.js; states = wildlifeFx.states + RETURN)**
+- **Slots** are plain preallocated objects carrying:
+  - the perceive fields: `x, y, fx, fy, coneCos, range, hearR, homeX, homeY, homeR`;
+  - the leash fields: `leashMode, leashT`;
+  - `state, stateT, speed, yaw, gait, groupId` and a clip player.
+- **Ticks:** a decision tick at 10 Hz, staggered (`slot % 6 === tick % 6`). Animals beyond `drawM` think at 2 Hz. Motion integrates every 60 Hz step.
+- **Sense:** `perceive(slot, player, null, out)`.
+  - Prey see almost all round: `coneCos = -0.5`, `range = dist.notice`, `hearR = dist.notice * 0.6`.
+  - Player `noise = NOISE_SPRINT` when sprinting, else 1.
+  - No LOS in v1: it costs time, and grass would block it anyway.
+  - React only when `sees || hears`.
+- **Rules,** checked in order:
+  1. `d < (running ? dist.fleeIfRunning : dist.flee)` -> FLEE.
+  2. `d < dist.alert` -> ALERT (the `enter` clip plays once, e.g. sitUp, then the state clip).
+  3. `d < dist.notice` -> stop grazing, idle, turn towards the player (turn rate limited).
+  4. Else IDLE / GRAZE / MOVE on the `times` timers.
+- **Leash:**
+  - `def = {homeX, homeY, homeR: wander radius (rabbit 12, deer 25), leashR: flee.maxDistM, aggroR: dist.flee, loseScale: dist.safe / dist.flee, returnSpeed: speeds.wander, giveUpT: 8}`.
+  - `leashState` runs on the decision tick. ENGAGE = fleeing.
+  - RETURN / GIVEUP = walk home via `returnTarget`, or despawn if `hideOrDespawn` and out of view.
+  - A threat inside `fleeR` always forces `leashMode = LEASH_ENGAGE`. In 38.27, RETURN ignores the target by design; prey must not.
+- **Flee:**
+  - heading away from the player, turn rate `flee.turnDegPerS`;
+  - rabbit zigzag (`zigzagDeg` every `zigzagEveryS`);
+  - deer trot for the first 1 s, then gallop;
+  - burst speed for the first 1 s.
+- **Group alarm:** a fleeing member makes group members within 15 m flee after 0.2-0.5 s (rng).
+- **Gait and clip:**
+  - `pickGait(gaits, speed, cur)` with a 0.15 m/s hysteresis;
+  - `rate = clamp(speed / tunedMps, rate[0], rate[1])`;
+  - a state switch crossfades with the species `blendMs`.
+
+**5. Navigation (cheap, no NavGrid)**
+- **Walkable(x, y)** = `habitatAt != 0 && slopeZ >= 0.8 (deer 0.75) && !blocked(x, y, bodyR)`.
+- **Wander target:** a point in the home disc at `times.wanderM`. If it is not walkable, retry up to 4 times per decision tick, then idle.
+- **Feeler:** on each decision tick while moving, probe `lookM = max(1, speed * 0.5)` ahead. If blocked, try the fixed offsets +-30, +-60, +-90 and 180 deg (precomputed cos/sin table) and take the first free one.
+- **Motion:**
+  - Within 40 m of the player, use `env.moveCircle` (slides on trunks, rocks and walls).
+  - Beyond 40 m, plain integration; collisions there are invisible.
+  - `z = groundAt(x, y)` each step. No body pitch in v1.
+- **Stuck:** moved < 25 % of the expected distance over 1 s -> new heading or target.
+- **Player contact:** animals do not push the player and are not colliders for the player (v1).
+- **Tree trunks:**
+  - The game builds a static bucket grid once at load: 16 m cells, Int32 index arrays, from `world.scatter` + species `trunkR`.
+  - `blocked` checks this grid first, then `world.structureAt`, then the collider probe.
+
+**6. Birds (flyerBrain.js, kind 'flyer')**
+- **States:** PERCH, HOP (ground forage on meadow, optional per species), TAKEOFF, FLY, LAND.
+- **Perches:**
+  - `env.perchNear` returns a point on a tree from the trunk grid: the tree base + a ring offset `r` at a height `z`.
+  - `r` and `z` per tree model come from data (`perchByModel` in the bird def). In WILD-D3 the designer measures them on the forest tree meshes.
+- **Flying away:**
+  - Trigger: the player is within `dist.flee` (or `fleeIfRunning`).
+  - Pick a new perch 30-70 m away, at least 15 m farther from the player than now.
+  - The flock shares the target tree. Each bird gets its own offset and a 0-0.4 s start delay.
+- **Path:**
+  - No collision.
+  - Climb to `cruiseZ` (canopy top at 3 samples along the path + 3-6 m), glide, then descend.
+  - Each leg is a quadratic Bezier, sampled by an arc-length parameter (cheap closed form, no allocation).
+  - Speed 6-9 m/s.
+- **Clips:** takeoff (once) -> flap while climbing, glide while level or descending -> land (once, the last 1.5 m) -> perch idle.
+- **No perch** within 70 m: fly out of view and despawn.
+
+**7. Squirrel (kind 'climber', WILD-08)**
+- Ground behaviour as in item 4.
+- **Flee** = run to the nearest trunk (trunk grid), then climb:
+  - x/y stay at the trunk surface: tree pos + trunkR, on the far side from the player;
+  - z rises at the climb speed to a random 2-5 m;
+  - then a peek idle.
+- The `climb` clip has the body pitched 90 deg inside the clip, because instances only have yaw. The instance yaw faces the trunk.
+
+**8. Engine features (WILD-01, WILD-02)**
+- **Crossfade (pose):**
+  - `VoxelPool.pushInstance(...)` now returns the raw slot index, or -1 when dropped (backward compatible).
+  - New `pool.blendInstance(i, fromClip, fromFrame, fromTMs, fromW)` sets a second clip on that slot. `fromW` is the weight of the old pose (1 -> 0).
+  - `voxelPose.sampleClip` samples the from-clip into a second module scratch, then lerps rot and pos component-wise: `v = cur + (from - cur) * fromW`.
+  - `fromW <= 0` or `fromClip < 0` must give byte-identical output to today (test).
+  - The projected and shadow slots copy the 4 fields.
+  - Lerping Euler degrees component-wise is accepted, so clips in a crossfade pair must not cross +-180 on any part. `faunaDef` warns when two clips of one species differ by more than 180 deg on any key.
+  - Entity `components.voxel` crossfade is NOT in scope (it would touch the serializer); a later row can add it.
+- **Clip player (`engine/entities/clipPlayer.js`):** a plain struct `{clip, frame, tMs, loop, rate, next, fromClip, fromFrame, fromTMs, fadeMs, fadeT}`.
+  - `clipPlay(p, pm, clipIdx, loop, fadeMs, next = -1)`: the current clip becomes the from-clip.
+  - `clipStep(p, pm, dtMs)`: advances both clips by `dtMs * rate`. A finished non-loop clip goes to `next` (the `once` map: sitUp -> alert), or holds its last frame.
+  - `clipSetPhase(p, pm, phase01)`: the random start phase (frame, tMs from a 0..1 fraction of the clip length).
+  - `clipFromW(p)`: `1 - smoothstep(fadeT / fadeMs)`.
+  - Same clip semantics as `stepAnimations` (durMs per frame, `MAX_STEPS_PER_CALL` guard). No events in v1.
+- **Gait (`engine/entities/gait.js`):** `pickGait(gaits, speed, cur) -> index` with hysteresis, and `gaitRate(gait, speed) -> rate`. Pure, no allocation.
+- **Entities:** entities already have a per-instance `components.voxel.speed` (stepAnimations). The random phase for entities is the `clipSetPhase` math applied to the spawn frame/t; no change needed.
+
+**9. Render: voxel pool, LOD, budgets (feed.js, WILD-05)**
+- Animals are NOT World entities: no `renderVersion` churn on spawn/despawn, no serialization, no `world.forEachEntity` cost.
+- **Hook:** `frameRenderer` gets one optional hook after `voxelPool.collect(world, cam)`: `if (engine.feedVoxels) engine.feedVoxels(voxelPool, cam)` (same pattern as `engine.feedDetail`). The game sets it to `fauna.feed`.
+- **`feed(pool, cam)`:**
+  - Candidates are alive animals with `d < drawM` that are either in the view cone (+ 10 deg margin) or at `d < 6 m`.
+  - Select the nearest with the fixed-array insertion select (as in `VoxelPool.collect`), up to `min(WILD_DRAW_MAX = 20, pool.cap - pool._rawCount - 4)`. The 4 spare slots stay free for later gameplay pushes; the mesh cap is 48.
+  - Per drawn animal: `pushInstance`, plus `blendInstance` while a fade runs.
+- **LOD:**
+  - (a) `drawM` per species;
+  - (b) animals that are not drawn are still simulated, deciding at 2 Hz beyond `drawM`;
+  - (c) shadows come from the queued instances (`projectShadow`), so the cap also bounds the shadow cost.
+- **Budgets:**
+  - JS fauna step (40 alive): <= 0.15 ms p95;
+  - feed: <= 0.05 ms;
+  - pose: the existing per-instance `computeVoxelPose` (8 parts) x <= 20;
+  - GPU: <= 2.5k quads per ground model and <= 0.4k per bird, so <= 30k wildlife quads drawn;
+  - all within the D-053 flat 8 ms GPU p95 combat budget.
+  `tools/bench-fauna.mjs` (WILD-05) measures the JS numbers at 40 alive / 20 drawn.
+
+**10. Determinism, save, zero allocation**
+- **Ambient only:**
+  - Fauna is not part of `beastSim.hashInto`, the replay or the combat RNG.
+  - It may read the player position and the camera. Nothing reads fauna state except the render feed.
+  - Gameplay never depends on it, so frame-rate or order differences are harmless.
+  - It is still seeded and reproducible for tests: the same seed + the same player path give the same positions.
+- **Save:** nothing is saved. `fauna.reset()` on load, new game or waystone teleport clears the slots and the ring; cells repopulate by hash.
+- **Zero allocation** per step and per frame after `createFauna`:
+  - preallocated slots, typed arrays, module-level scratch;
+  - no closures in the step, no string building (the warn-once Set grows only on bad data);
+  - every row has a `--expose-gc` heap test (1e4 steps, as in leash.test.js).
+
+**11. Public API (`engine/index.js`)**
+```js
+createFauna(def /* compiled by compileFaunaDef */, env /* FaunaEnv */, { seed, maxAlive = 40, drawMax = 20 }) -> fauna
+fauna.step(dtSec, playerX, playerY, playerRunning, camX, camY, camFx, camFy, hfovRad)  // once per fixed step, after the player
+fauna.feed(pool, cam)    // the feedVoxels hook
+fauna.reset()
+fauna.stats              // { alive, drawn, bySpecies: Int32Array } for the debug overlay
+compileFaunaDef(wildlifeFx, pool) -> def   // throws messages naming the species and key
+createClipPlayer(), clipPlay, clipStep, clipSetPhase, clipFromW, pickGait, gaitRate
+```
+
+**12. Tests (Node first)**
+- **clipPlayer:**
+  - rate x2 = half the wall time per lap;
+  - phase 0.5 lands mid-clip;
+  - once -> next;
+  - the fade weight is monotone 1 -> 0 over fadeMs;
+  - zero alloc.
+- **voxelPose crossfade:** `fromW = 0` is byte-identical; `fromW = 1` equals the from-clip pose; 0.5 is the mid lerp.
+- **spawner:**
+  - the same seed and path give the same spawns;
+  - no spawn inside the view cone within `drawM`;
+  - caps hold;
+  - cooldown after despawn;
+  - the ring re-centres without allocation.
+- **groundBrain** (fake env: flat ground, one blocked disc, a water strip):
+  - an approaching player gives notice -> alert -> flee;
+  - running doubles the reaction distance (`fleeIfRunning`);
+  - the flee path never enters a blocked cell;
+  - safe -> return home;
+  - the group alarm reaches members within 15 m;
+  - the gait rate stays inside `rate[]`.
+- **flyerBrain:**
+  - takeoff when the player is near;
+  - the new perch is farther from the player;
+  - a landing ends at the perch point (< 0.05 m);
+  - no perch -> despawn.
+- **Integration (WILD-06):** the beastSim replay hash is identical with fauna on and off (600 steps).
+- **Bench:** `tools/bench-fauna.mjs`, plus one headless `tools/capture-browser.mjs` frame with rabbits + deer in view.
+
+**13. arch-review needs**
+- Engine rows (01-05, 07, 08) end in `arch-review` for PC-A. WILD-06 (game wiring) goes to po-review with an owner walk.
+- The reviewer checks:
+  - the rule-15 imports;
+  - zero-allocation tests present and green;
+  - the `fromW = 0` byte-identity test;
+  - no fauna state in `hashInto` or the save;
+  - the feed respects the pool cap with boars + NPCs present;
+  - bench numbers against item 9;
+  - no `Math.random`.
+- Open for the PO, not in v1: hunting or hitting animals, time-of-day activity (deer at dusk), sounds (an EP-SOUND hook later via a `fauna.events` ring).
+
+### 38.32 RIG-00: rigged-model seam (PC-B architect opus, 2026-10-10; owner-authorised while PC-A is offline; ratified PC-A 2026-10-14)
+Goal: a character from chargen (`composeCharacter -> meshCharacter -> collapseRig`) or from a `.kestrel` `.glb` (`readRiggedGlb`) is drawn by the existing voxel-model path. `EntityHandle.play`, `animState`, `partRot` (jaw), mounts, sun shadows, culling and the 48-instance mesh cap work unchanged. No new per-frame code.
+
+**1. The seam in one line.** A rigged model is registered as an ordinary `ModelDef` with `def.voxel` = a VoxelModelDef **header without `layers`** plus `def.voxel.rig` = the prebuilt quads. `packVoxelModel` branches on `def.voxel.rig`. `buildVoxelMesh` builds the MeshData from `pm.rig` instead of `pm.vox`. Everything downstream already reads only `pm.parts/partCount/partIndex/clips/clipIndex/mounts/anchor/cellM` (voxelPose, instanceRect, VoxelPool, instances.js, shadowList) or `def.voxel.animations` (EntityHandle, animation.js, World.js, animClips.js).
+
+**2. Registered shape** (runtime only: holds typed arrays, so it is never serialized, never in a save, and never written by the editor; entities reference it by key):
+```js
+/** @typedef {{
+ *   version: 1, cellM: number,                  // rig cellM (0.025)
+ *   size: [sx,sy,sz],                            // ints = ceil(max local coord) per axis
+ *   anchor: [ax,ay,az],                          // local cells of the feet point (= offset G, item 3)
+ *   mats: {}, layers: [],                        // empty: no voxel grid
+ *   meshOnly: true,                              // forced: never enters the DDA atlas / non-mesh renderers
+ *   parts: {[name]: {box:[x0,y0,z0,x1,y1,z1], pivot:[x,y,z], parent?:string}},  // partMap order, <= MAX_VOX_PARTS
+ *   animations: {[clip]: VoxelClipDef},          // = PartRig.clips as-is ({loop, interp:'linear', durations:[50..], frames:[{part:{rot,pos?}}]})
+ *   mounts: {[name]: {at:[x,y,z], part:string}},
+ *   rig: {quads:number, pos:Float32Array(12q) local cells (ints), nrm:Int8Array(12q), mat:Uint8Array(q) 1-based into matKeys,
+ *         ranges:{start,count}[] (one per part, quads, part order), matKeys:string[]}
+ * }} RiggedVoxelDef */
+riggedModelDef(partRig, opts?) -> {voxel: RiggedVoxelDef}   // engine/chargen/rigModel.js, load time, pure
+// opts.mountParts?: {[mount]: partName}   override of the nearest-joint rule (item 3)
+```
+- Registry API: **no new method.** Use `registry.add('model', 'char.<id>', riggedModelDef(...))` (or `replace` for a re-built `char.player`). Register before `VoxelPool.bind`. A later add/replace needs a re-`bind` (load or New-game time only, same as the editor import).
+- main.js (RIG-03 line, B1-main): `riggedModelDef(collapseRig(riggedFromGlb(entry.model), entry.model.extras.partMap || HUMANOID_PART_MAP))`.
+
+**3. Units and spaces** (all conversion at load time in `riggedModelDef`).
+- Mesh-local space = **cells**, like 15.1, with the anchor at `G`. `G[a] = round3(-min over all mesh vertices of posM[a]/cellM)`, where posM = metres from the anchor (meshCharacter/PartRig `mesh.pos`). So every local coordinate is >= 0, as `flat0`'s 18-bit layer needs.
+  - local vertex = `posM/cellM + G`, snapped to the nearest integer. A vertex more than 1e-3 off the grid throws (`not a voxel-grid mesh`).
+  - pivot = `pivotM/cellM + G` (not snapped; joints sit on cell centres).
+  - mount = `(mountCells - anchorCells) + G`.
+  - box = the integer AABB of that part's local vertices (used only for the cull / instanceRect).
+- `collapseRig` change (RIG-02a): each part gets `pivotM` (= the root bone's `joint`, metres from the anchor). The PartRig gets `anchorCells` (= `root.jointCells - root.joint/cellM`). Today `pivot` (absolute grid cells) and `mesh.pos` (metres from the anchor) are in different spaces, and the PartRig carries no anchor.
+- Clip `pos` (Hips only, part `body`) is already in cells (`collapseRig`: hips/cellM). Clip `rot` is degrees, Rz*Ry*Rx, the same as `setRot`. Unchanged.
+- Mount part: `opts.mountParts[name]`, else the part of the bone whose joint is nearest the mount (ties: skeleton order). Kit v0 gives: hand_r -> armR, hand_l -> armL, mouth -> jaw, eyes/head_top -> head, back/belt -> chest/body. Pinned by a test.
+
+**4. Engine changes (where `pm.vox` is replaced).**
+- `engine/voxel/voxelPack.js`: `packVoxelModel(def, matIdFor)`: when `def.rig` is set, skip `assertVoxelModel` (it checks layers) and run a small `checkRiggedHeader(def)`: partCount 1..8, parents earlier, clip frames well-formed, rig.ranges.length === partCount, mats 1..matKeys.length.
+  - Then pack `parts`, `clips`, `clipIndex`, `mounts` and `partIndex` with the **same code** as the voxel path: extract the clip/mount/partIndex blocks into local helpers. Existing pack output must stay byte-identical.
+  - Set `vox = new Uint8Array(0)`, atlas fields `parts[10..13] = 0`, and `matIds = Uint16Array(n+1)` with `matIds[i] = matIdFor(rig.matKeys[i-1])`.
+  - Set `pm.rig = def.rig` (a reference), `emissiveLight = null` (v1; `deriveEmissiveLight` reads layers), and `sx/sy/sz` from `size`.
+- `engine/render/voxelPool.js`: `bind` sets `pm.meshOnly = def.voxel.meshOnly === true`. That is already true for rig defs, so **no change** is expected. The meshOnly routing (atlas skip, DDA skip with warn) already handles rig models.
+- `engine/mesh/voxelMesh.js`:
+  - `buildVoxelMesh(pm, opts)`: `if (pm.rig) return buildRiggedMesh(pm, opts)`. This is a module-private function.
+  - `buildRiggedMesh`: for each part range, `builder.beginRange(partNames[p])`, then for each quad derive `face`, `layer` and the rect from its 4 corners and call the existing `emitFaceQuad(builder, pm, face, 0,0,0, layer, a0,a1,b0,b1, mat, pm.cellM, p)`. This gives the same winding, uv (`a*cellM`), `flat0` (part/face/layer) and `flat1` (`KIND_MODEL`, matId) as a native voxel model. Glyph shading, edges and planeIds then match.
+  - Face from the normal: -x W (layer = X), +x E (layer = X-1), -y N (Y), +y S (Y-1), +z U (Z-1), -z D (Z). a/b axes: W/E (y, z), N/S (x, z), U/D (x, y).
+  - Throw if the 4 corners are not one axis-aligned rectangle on one plane.
+  - Same quad budget (`MESH_ONLY_MAX_QUADS`).
+  - `VoxelMeshCache.get(pm, key, names, 1)`: when `pm.rig` is set, return (and cache) the LOD0 mesh. `downsamplePart` reads `pm.vox`, and a ~5k-quad character needs no LOD1.
+- Not touched: voxelPose.js, instanceRect.js, instances.js, shadowList.js, VoxelTextures.js, EntityHandle.js, animation.js, the GPU/WGSL side.
+
+**5. glb -> RiggedModel** (`engine/chargen/fromGlb.js`, `riggedFromGlb(glb) -> RiggedModel` in the meshCharacter shape; load time). It needs `glb.extras` = `extras.kestrel` format 1, or it throws "not a Kestrel character .glb; use tools/gltf-import".
+- **Bones:** names, parent name (`null` for the root) and `joint` (metres, ours) = minus the IBM translation. `jointCells = joint/cellM`, so `anchorCells` = 0. Each `rest.r` must be identity (within 1e-4), or it throws.
+- **Mesh:** vertices in groups of 4 (= the exporter's quads). All 4 vertices must have the same bone, and the index pattern is checked. `pos` = positions. `nrm` = rounded normals. `mat` = 1 + texel index from `TEXCOORD_0` (`floor(u*16) + 16*floor(v*16)`, the inverse of tools/export/png.js `texelUv`; PALETTE_TEX_SIZE 16). `matKeys` = `extras.matKeys`. Ranges come per bone after a stable sort of the quads by bone.
+- **Clips:** `duration` = round to 50 ms of glb seconds x 1000 (the exporter has already applied tempo); `loop` from the clip. Keys every 50 ms: `rot[bone]` = quatToEuler(sampleRiggedClip local rotation), `pos.Hips` = (t - rest.t)/cellM.
+- **Mounts:** `extras.mounts` (metres from the anchor) / cellM.
+
+**6. RIG-01 reader defects found while writing this note** (probe: `tools/chargen/export.mjs buildGlb` -> `readRiggedGlb`). These are input for PC-A's RIG-01 review, to be fixed in RIG-02a.
+1. WEIGHTS_0 written by our exporter is UNSIGNED_BYTE normalized. `readRiggedGlb` throws "componentType 5121 is not FLOAT", so **it cannot read our own files**. It must accept normalized u8/u16 weights (value/255, value/65535) and u8/u16 joints.
+2. **Mirror:** the reader uses the static map `(X,-Z,Y)`, but `gltfWrite.js` writes `(-x, z, -y)`, a reflection. The round trip negates x: LeftHand lands at +x, and the vertices and IBM are mirrored.
+   - The rigged reader must be the exact inverse of the exporter: ours = `(-X, -Z, Y)`, quaternion `(x,y,z,w)_gltf -> (x, z, -y, w)`, IBM translation the same way, triangle winding flipped.
+   - The static `loadGltf` map stays as it is (see risk 3).
+3. Clip `loop` (the exporter's `animations[].extras.kestrel.loop`) is dropped. Return `clip.loop` (default true).
+
+**7. Steps (each <= 1 programmer-day).**
+- **RIG-02a (0.5 d):**
+  - the item 6 fixes in `engine/mesh/gltf.js`;
+  - `engine/chargen/fromGlb.js`;
+  - `collapseRig` `pivotM` / `anchorCells`;
+  - tests.
+- **RIG-02b (0.75 d):**
+  - `engine/chargen/rigModel.js` `riggedModelDef`;
+  - the voxelPack.js rig branch;
+  - the voxelMesh.js `buildRiggedMesh` + LOD1 rule;
+  - exports in `engine/chargen/index.js` + `engine/index.js`;
+  - tests.
+
+**8. Node tests RIG-02 must add.**
+- **(a) Round trip** (`tools/chargen/rig.test.mjs`; it may import tools/ and design/): `riggedFromGlb(readRiggedGlb(buildGlb(kit, recipe, {clips: DEMO_CLIPS}).glb))` vs the direct `meshCharacter`.
+  - Bones and joints within 1e-5 m, LeftHand at -x.
+  - Quad positions equal within 1e-5 m, in the same per-bone order.
+  - `mat`/`matKeys` equal.
+  - `collapseRig` of both: clip rot within 0.5 deg at every 50 ms key; Hips pos within 1e-3 cells.
+- **(b) Pose equivalence** (`engine/chargen/rig.test.js`). The key check, because it pins the Euler/handedness chain. Use a synthetic clip that rotates only `LeftUpperArm` (45 deg about x, then about z) and only `Jaw`:
+  - Take the vertices of that bone through `computeVoxelPose`'s FORWARD (rest part matrices: cellM, anchor G).
+  - Take the same vertices through rigid FK from chargen `sampleClip` quaternions.
+  - They must agree within 1e-3 cells.
+  - Also check the Hips translation clip.
+- **(c) Mesh parity:** `buildVoxelMesh` of a rig pm vs a native voxel model of the same tiny 2-part grid.
+  - The native model is built as a VoxelModelDef with layers. The rig pm comes from `meshCharacter` on the same cells, through `collapseRig` with a 2-part map.
+  - They must have the same triangle count, the same multiset of `flat1`, and the same per-range bbox.
+  - Every rig `flat0` layer must be >= 0.
+- **(d) Pool:** `VoxelPool.bind` with a registry holding one rig model and one voxel model.
+  - The rig model is `meshOnly` and not in the atlas.
+  - `pushInstance` + `project` + `projectShadow` + `addVoxelInstances` give `partCount` part matrices.
+  - `objectIdFor`, `partRot` on `jaw` (pose differs only in the jaw part) and `voxelMountWorld('hand_r')` all work.
+  - The second `project` call allocates nothing (same pattern as the existing alloc tests).
+  - LOD1 `get` returns the LOD0 mesh.
+- **(e) Errors:** a non-Kestrel glb, a non-identity rest rotation, an off-grid vertex, and > 8 parts each throw a clear message.
+- **(f) Regression:** the existing voxelPack / voxelMesh / voxelPool / chargen / gltf suites stay green. The static `loadGltf` outputs do not change. `node tools/check-deps.mjs` passes (engine/chargen may import `../mesh/gltf.js` and its own files only; no voxel/render import from chargen).
+
+**9. Files RIG-02 may touch:**
+- `engine/mesh/gltf.js` (rigged reader only);
+- `engine/chargen/{collapse.js, fromGlb.js (new), rigModel.js (new), index.js}`;
+- `engine/voxel/voxelPack.js`;
+- `engine/mesh/voxelMesh.js`;
+- `engine/index.js` (exports `riggedFromGlb`, `riggedModelDef`);
+- tests: `engine/chargen/rig.test.js`, `tools/chargen/rig.test.mjs`, additions to `engine/render/voxelPool.test.js`.
+
+Not to touch: voxelPose, instanceRect, instances, shadowList, gpu/*, EntityHandle, animation.js, `game/` (the main.js line is RIG-03 / B1-main).
+
+**10. Zero-allocation and cost.** All new code runs at load / New-game time: glb parse, collapse, def build, pack and mesh build (<= 10 ms per character, as in 38.29 item 4). Per frame the rig model runs exactly the existing voxel code (one draw per instance x part, FORWARD part matrices). A rig quad count of 4-6k counts against the mesh raster budget like any mesh-only voxel model.
+
+**11. Risks / open items.**
+1. Rigged models render only on the mesh renderer. The DDA / non-mesh fallback skips them (meshOnly, warn once). Accepted for v1.
+2. Limbs are rigid (8 parts, no elbows/knees): the 38.29 item 1 ESCALATE (A/B) is unchanged. B would need `MAX_VOX_PARTS` 24 and touches voxelPose/instances/GPU rows (PC-A).
+3. **For PC-A to check (not a RIG-02 change):** the static `loadGltf` map `(X,-Z,Y)` is a proper rotation that puts glTF +X (the model's left, per the glTF spec, which faces +Z) at our +x (east). For a model facing north (-y), its left lands on east, so third-party static meshes may be mirrored. Our exporter and the rigged reader follow the exporter map. If PC-A confirms, unifying the two maps is a separate item: it changes every imported static mesh, a re-import plus gpucompare (ESCALATE only if PC-A wants to change the static map).
+4. Re-resampling (exporter 30 fps -> 50 ms keys -> linear Euler) can soften fast clips slightly; the tolerances in test (a) bound it.
+
+### 38.33 Add-on packages at boot (CHARGEN-15) (PC-B architect opus, 2026-10-10; owner-authorised while PC-A is offline; ratified PC-A 2026-10-14)
+**Decision: option (a).** Every boot mounts the add-on packages listed in an index file on top of the base content (loose or `?pack=`) and merges their `bundle.models`. A villager package stays models-only (`.glb` + recipe + thumb, as CHARGEN Save writes it, 38.29 item 5); it never needs its own content manifest. 38.30 is unchanged: still only one content manifest is loaded, add-ons add models only.
+1. **Finding packages: an index file, no directory listing** (the static server has none). `content/packages/index.json` = `{"format":"kestrel-addons","formatVersion":1,"packages":["villager.mara-1.0.0.kestrel", ...]}`; paths relative to the index, same zip-slip rules as 38.30 (no `..`, `/`, `\`, `:`). The `.kestrel` files sit next to it and are checked in (data). `kestrel.base.pkg.json` already excludes `packages/**`, so add-ons never end up inside the base package. Index 404 = no add-ons (one info log); a malformed index or a failed package fetch = boot error naming the file.
+2. **Boot flow** (all in `game/js/packBoot.js`, replaces today's `loadBundleFromPackages` body; main.js keeps one call site at line ~258):
+   ```js
+   /** @returns {Promise<Bundle>} never null; loose boot when no package carries content */
+   loadBootBundle(params, {lazyMeshes, baseManifest:'../content/manifest.json', addonIndex:'../content/packages/index.json', fetch?}, log)
+   ```
+   - pkgs = `?pack=` packages, then index packages (that order). The same package id twice -> error naming both sources.
+   - `mount = mountPackages(pkgs, {})`: dependency and content-id checks as in 38.30. A dependency on `kestrel.base` is satisfied by a loose boot (pass it as a virtual entry with the version from `content/packages/kestrel.base.pkg.json`; do not change `checkDependencies`' rules).
+   - Content: the first `?pack=` package with a content manifest; else the loose `baseManifest` (fetched through the mount's fallback). **An index add-on that carries a content manifest -> error** ("add-on content is not supported in v1, use ?pack="). `?pack=` with only models-only packages is now valid (loose base + their models), no longer "none carries a content manifest".
+   - Models: `bundle.models = mount.loadModels()` (loadPackageModels already rejects duplicate model ids naming both paths). Merging into an existing `bundle.models` or registering `char.<id>` over an existing registry name -> error naming the package and "base content". No silent override.
+3. **Capture / bench / compare:** add-ons load on every page, including capture, bench and gpucompare (world data references them, and the index is versioned data, so runs stay comparable). Adding a package to the index changes gpucompare/route goldens once: rerun them in the same commit. `?addons=0` = dev switch to skip the index; world entities whose `char.*` model is missing then warn once and are skipped (throw under `?strict=1`). Cost: load time only (one fetch + readRiggedGlb per package), nothing per frame.
+4. **Files CHARGEN-15 may touch:** `game/js/packBoot.js`, new `game/js/packBoot.test.js`, `game/js/main.js` (the call site + the RIG-03 `char.<id>` registration only), `content/packages/index.json`, `content/packages/<villager>.kestrel`, `content/worlds/world_m1.world.json`, its dialogue file, docs. **No engine changes** (`mountPackages` / `loadPackageModels` already suffice); anything else -> ASK ARCHITECT.
+5. **Node tests** (`game/js/packBoot.test.js`, injected `fetch`, packages built with `writeZip` in memory): (a) no index (404) -> loose bundle, no models; (b) index with a models-only package -> loose bundle + `models.<id>.kind==='rigged'`; (c) `?pack=` models-only -> loose base + models; (d) `?pack=` content package + index add-on -> content from `?pack=`, models from both; (e) two packages with the same model id -> error text names both; (f) add-on with a content manifest -> error; (g) same package id in `?pack=` and index -> error; (h) bad index path (`../x.kestrel`) -> error; (i) `?addons=0` skips the index.
+6. **Do not:** list directories, auto-pick "latest" versions, load add-on content manifests, let an add-on override a base model, or put package lookup into `engine/` (the engine stays URL-agnostic; packBoot is game code).
+
+### 38.34 Fine head grid and per-recipe detail (D-055 + owner follow-up 2026-10-10) (PC-B architect opus, 2026-10-10; owner-authorised while PC-A is offline; ratified PC-A 2026-10-14)
+Owner: the face is too coarse at 2.5 cm, and the cell size is a **recipe choice**: `recipe.res = {body: 1|2, head: 1|2|4}` (cells per 2.5 cm: 1 = 2.5 cm, 2 = 1.25 cm, 4 = 0.625 cm). Skeleton, bones, joints, clips, partMap, mounts, anchors, stretchRows and the 8-part collapse are the **same at every resolution** (the kit keeps them in continuous level-1 cell coordinates). Nothing per frame changes.
+
+**1. Kit format (schema 1, additive).**
+- `kit.regions = {head: {bones: ['Head','Jaw'], box: [x0,y0,z0,x1,y1,z1]}}` (level-1 cells, inclusive, integers). `box` = the region volume (skull + hair room); it may be larger than the bone boxes. Every bone not in a region belongs to the implicit region `body` (the whole grid).
+- `kit.resLevels = {body: [1] | [1,2], head: [1,2] | [1,2,4]}`: the levels this kit offers (the UI and validateRecipe read it).
+- `base.layers` = level 1 for everything (as today). It always exists and **wins at level 1**, so face v2 stays the Standard head (the designer may refresh it from L2 with the downsample tool).
+- `base.detail = {<region>: {"<L>": {layers, bones?}}}`: an authored finer level of one region. Origin = the region box min (level-1 cells; body: 0,0,0). Size = box extent x L. `layers[z][y]` = strings of x, as today. `bones?: {Head:{box}, Jaw:{box}}` in block cells (default: the level-1 bone boxes x L). A voxel's bone = the first box in skeleton order that contains it; outside every box = kit error.
+- **Derived levels:** a level in `resLevels` that is not authored = `downsample2` of the next finer level (authored or derived), repeated (4 -> 2 -> 1). Never upsample authored detail to make a finer level: listing a level finer than the finest authored one is a validateKit error.
+- `kit.slots[ch].keep` (optional int 0..9, default 0) = downsample priority. The designer sets it on iris, eye white, catchlight, lid line, lips and brows.
+- `downsample2(layers, slots)` (new `engine/chargen/downsample.js`, pure): each 2x2x2 block (odd sizes padded with empty) -> one cell. If any filled cell has `keep > 0`: the char with the highest keep (ties: higher count, then lower char code). Else if >= 4 of 8 are filled: the majority char (ties: lower char code). Else empty. Bones of derived cells come from the box rule at that level, not from a vote.
+- **validateKit adds:**
+  - region bones exist and are in at most one region; the region box is inside the grid;
+  - detail `size` = box extent x L; L in {2, 4}; every `resLevels` entry is authored or derivable;
+  - **seam rule:** a filled detail cell whose level-1 cell holds a filled voxel of a non-region bone = error ("head L2 overlaps Neck at x,y,z");
+  - no `stretchRows` row inside a non-body region box;
+  - attachments: `res` (below) is in `resLevels` of their bone's region.
+- Attachments get `res` (default 1 = the level their layers are authored at); anchor + offset stay level-1 cells. Shells: `thick` stays in 2.5 cm units; a region at level L grows `thick*L` layers (the same physical thickness).
+
+**2. Recipe + compose.**
+- `recipe.res` is optional; **missing = {body:1, head:1}**, so old recipes and the CHARGEN-15 villager keep their bytes. New recipes from the app / `randomRecipe` use `kit.defaults.res` = {body:1, head:2} once head L2 is authored (CHARGEN-23). validateRecipe: levels must be in `kit.resLevels`, and **head >= body** (no coarser block inside a finer grid). `res` is part of the recipe hash / share string.
+- CharGrid (additive): the main grid = region `body` at level `B = res.body`: `cellM = kit.cellM / B`; `size`, `anchor`, joints and mounts are in main cells (x B). At 1/1 the output is **byte-identical** to today plus `blocks: []`.
+- A region with `res == B` is pasted into the main grid (the main-grid cells of its bones are cleared first). A region with `res = H > B` becomes `blocks[i] = {region, k: H/B, origin:[x,y,z] main cells (ints), size, mat, bone}`, and its bones' cells in the main grid are cleared.
+- Order per region (main grid or block, each at its own level): base cells -> shells -> attachments (resampled to the block level: downsample2, or nearest-cell upsample) -> elder overlay. Attachment cells outside the block are clipped (validateKit warns at kit build). The main grid and the blocks share one matKeys (<= 255).
+- Height: `heightBase(base, h)` also remaps blocks. The origin z goes through mapZ, which is an integer shift because no stretch row lies inside a region box. A body detail level duplicates/deletes L fine rows per stretch row.
+- **Neck seam:** no gap and no overlap by construction (the block origin sits on an integer main cell; the seam rule above). Nothing culls across bones today (each bone is a closed shell, 38.29 item 4), so nothing culls across the seam. The coincident Neck cap (+z) and Head cap (-z) face away from each other and are back-face culled, as at 1/1.
+- Cost: compose + mesh <= 10 ms at body 1 with head <= 2 (1/1 measures ~11 ms cold in Node, including JIT). <= 60 ms for body 2 / head 4. UI changes only, never per frame.
+
+**3. meshCharacter.**
+- Refactor the per-bone greedy loop into `meshBlock(size, mat, bone, b, k, origin, out)`. For each bone in skeleton order, mesh it in the one grid that owns it (the main grid or its block).
+- Output space = the **finest grid G**: `F = max(res)`, `rigged.cellM = kit.cellM / F`. A vertex = `((origin + q/k) - anchor) * mainCellM` metres (exact multiples of cellM). `jointCells`, `mounts` and the Hips clip pos scale to F cells.
+- collapseRig, clip.js and fromGlb need **no change** (they already use `rigged.cellM`). `riggedModelDef` needs **no change**: it snaps to `partRig.cellM` (= G), and the off-grid throw stays. Ranges and per-bone ordering are unchanged.
+- Pin by a test: body-bone quads at {1,2} == at {1,1} (a region kept at level 1 meshes the same).
+
+**4. Budget + in-game.**
+- Today m_avg has 1845 quads (head 164 + jaw 34). Estimates: head L2 ~0.8k, head L4 ~3.2k, body L2 ~6.6k; the max combination ~10k, under `MESH_ONLY_MAX_QUADS` 32768 (unchanged).
+- The voxel def `cellM` = G (0.0125 or 0.00625). voxelPose, instanceRect, mounts and shadows already use the per-model `pm.cellM`, and the 18-bit flat0 layer is ample.
+- `CHAR_GAME_MAX_QUADS = 4096` and `GAME_SAFE_RES = {body:1, head:2}` (engine/chargen/recipe.js).
+- The game (creation screen CHARGEN-17, and package Save "for the game") **auto-clamps** res to GAME_SAFE_RES with a visible warning. The character.json records `gameRes`; the clamp is pure, so it stays deterministic.
+- The game loader **refuses** a rigged glb over CHAR_GAME_MAX_QUADS (the error names the file). Meshes are never downsampled at runtime.
+- Honest limit: in-game, a 1.25 cm feature at 3 m is smaller than one ASCII glyph. The fine head pays off in the generator viewer, the exports and close dialogue shots. Owner walk-check at CHARGEN-23.
+
+**5. Exports.**
+- glb / fbx / obj: plain meshes at G; the only change is the finer `cellM` (glb `extras.kestrel.cellM` = G, which fromGlb reads).
+- **.vox: option (a).** `flattenGrid(grid, F)` (tools/export, not engine) builds one dense grid at the finest level (the main grid upsampled by k). `exportVoxGrid` keeps one shape per bone, so MagicaVoxel shows correct relative sizes.
+  - Why not (b): separate shapes each at its own scale are impossible, because .vox has no per-shape scale.
+  - Why not (c): downsampling the head throws away the detail the user picked.
+- The existing per-axis <= 256 check applies **per bone shape** (worst: a leg of ~35 rows x 4 = 140, OK).
+- Upsampling multiplies the body voxel count (x8 / x64). Files of up to ~5 MB are fine; body 2 + head 4 warns "large .vox".
+
+**6. ASCII renderer: no change.**
+- Shading keys on uv in metres (`a*cellM`, physical), so the texel/glyph density is the same on body and head.
+- Edges come from planeId changes (part/face/layer). The finer head therefore has more voxel steps, which means more outline glyphs on the face at close range. Check at CHARGEN-23; if it looks busy, the designer smooths the steps (no engine knob).
+
+**7. Steps.**
+- **CHARGEN-22a (0.75 d, engine/kit):**
+  - kit.regions / resLevels / detail / keep in `kit.js` validateKit;
+  - `downsample.js`;
+  - `recipe.js`: res, head >= body, GAME_SAFE_RES / CHAR_GAME_MAX_QUADS;
+  - tests.
+- **CHARGEN-22b (1 d, engine):**
+  - compose blocks + paste + shells/attachments per level;
+  - the `height.js` block remap;
+  - `mesh.js`: meshBlock + finest-grid output;
+  - tests.
+- **CHARGEN-22c (0.5 d, tools):**
+  - `flattenGrid` + `.vox` per (a);
+  - glb cellM;
+  - the game loader quad cap;
+  - `tools/chargen-build-kit.mjs` stats per level.
+- **CHARGEN-22d (0.5 d, app UI):**
+  - rows **Body detail** (Standard 2.5 cm / Fine 1.25 cm) and **Head detail** (Standard / Fine / Ultra 0.625 cm); options not in `kit.resLevels` are disabled;
+  - a live quad count + a "game uses Fine max" note;
+  - the package Save clamp + `gameRes`;
+  - the CHARGEN-17 creation screen offers Head Standard/Fine only, with the body at Standard.
+- **Designer:**
+  - **CHARGEN-23:** head L2 (`base.detail.head["2"]` + `keep`);
+  - **CHARGEN-23b:** head L4 (procedural script, optional);
+  - **CHARGEN-24:** body L2 (re-evaluate the body shapes at 2x; the hand/foot tables are nearest-upsampled first).
+
+**8. Tests** (engine/chargen/*.test.js unless noted).
+- (a) 1/1 regression: CharGrid and RiggedModel bytes are identical to before for `kit.defaults` and the villager recipe.
+- (b) downsample2: keep priority (a 1-cell iris survives L2 -> L1), majority, 3-of-8 -> empty, odd sizes, determinism.
+- (c) validateKit: seam overlap, a stretch row in the head box, a detail size mismatch, an unauthorable resLevel, attachment res.
+- (d) compose {1,2} on a tiny synthetic kit:
+  - block origin and size are right;
+  - head bones are absent from the main grid;
+  - height +2/-2 shifts only the block origin.
+- (e) mesh:
+  - every vertex is an integer multiple of G;
+  - body-bone quads at {1,2} == at {1,1};
+  - `riggedModelDef` accepts {1,2} and {1,4} and rejects a hand-made off-grid vertex.
+- (f) pose: the 38.32 test (b) repeated at F = 2 (jaw + head part through the voxelPose FORWARD vs FK, within 1e-3 cells).
+- (g) recipe: missing res = {1,1}; head < body is rejected; the clamp to GAME_SAFE_RES is deterministic.
+- (h) tools:
+  - `flattenGrid` .vox: one shape per bone, sizes x k, palette unchanged;
+  - glb round trip at F = 2 (38.32 test a).
+- (i) all suites + `node tools/check-deps.mjs` green (downsample.js imports only engine/chargen).
+
+**9. Do not:**
+- store a per-voxel scale;
+- make `cellM` per part in the voxel def or the pool;
+- add cross-bone culling;
+- upsample authored data into a "finer" level;
+- downsample meshes in the game;
+- change the skeleton, partMap, clips or mounts per resolution.
+
+### 38.35 Quest giver flow (D-058) (PC-B architect opus, 2026-10-10; owner-authorised while PC-A is offline; ratified PC-A 2026-10-14)
+
+Owner: "see, pick up, and finish" quests. First user: Burl's boar quest. **No engine change**: the dialogue runner's `requires`/`setFlag` (38.28) already carry everything; all work is game-side (`game/js/quest/**`, `game/js/ui/**`, main.js) + content. Keep compatible with D-057 (waystone travel) and WAYSTONE-NORMAL-01 (the waystone no longer ends the game).
+
+1. **Quest data.** One file per quest, `content/quests/<id>.quest.json`, same `version:1` shape as `m1` (`objectives[]` with today's `when` types flag/item/area/beasts, so `quest.js` is reused unchanged). Giver quests add optional fields that `validateQuestDefinition` already ignores; a new `validateGiverQuest(def)` in `questBook.js` checks them:
+   `{ version:1, id:'burl.boars', title, giver:{npc:'bear'}, requires:[{quest:'m1', step:'sword'}], objectives:[{id:'beasts', text, when:{type:'beasts', ids:[boar1..boar5], count:5}}], returnText, reward:{items:[{id:'coin', n:10}]} }`.
+   Quest ids match `/^[a-z][a-zA-Z0-9_.]*$/` (the stricter dialogue flag regex, so `q.<id>.<op>` keys stay valid). `requires` = every listed `(quest, step)` pair is in that quest's completed prefix. `reward.items` go through `addItem`; coins are a stackable item `coin` (design/items.js def, `stackMax` 999), no separate wallet.
+2. **States** (derived ints, never stored as strings): `unavailable` (requires not met) -> `available` (met, `!accepted`) -> `active` (accepted, completed < n) -> `ready` (accepted, all steps complete, `!handedIn`) -> `done` (`handedIn`). Stored per giver quest: its `quest.js` state + `accepted:boolean` + `handedIn:boolean`. **Facts count before accept**: `applyQuestEvent` runs for every quest from boot, so boars killed before talking to Burl count (boars stay dead in the save; anything else could soft-lock). Accepting with all steps already complete goes straight to `ready`.
+3. **m1 chain mapping.** wake, lantern, breach, sword stay auto (no giver, always "accepted"). The `beasts` objective **keeps its id and index** (the saved completed prefix stays valid) but its `when` becomes `{type:'flag', id:'quest.burl.boars.done', equals:true}` and its text becomes the writer's "go see Burl" line. The book feeds that flag (a normal `flag:set`) at hand-in. The boar `when` moves to `content/quests/burl.boars.quest.json`. `waystone` stays the last m1 step, untouched (WAYSTONE-NORMAL-01 owns what touching it does; D-057 owns travel).
+4. **Module `game/js/quest/sim/questBook.js`** (pure, Node-testable, no world/DOM):
+   `createQuestBook(mainDef, giverDefs[], saved?) -> book` with `book.main` (the m1 quest state), `feed(event) -> bool` (fans out to every quest), `status(i) -> 0..4` (`STATUS_NAMES` frozen for UI), `accept(id) -> bool`, `handIn(id) -> rewardDef|null` (only when ready; sets `handedIn`, feeds the `quest.<id>.done` flag), `hasKey(key) -> bool` / `actKey(key) -> bool` for the dialogue adapter (item 5), `giverMarks(outAvail, outReady)` (fills two caller-owned arrays with NPC ids, sets `length`), `tracked() -> index|-1` (most recently accepted quest that is active or ready), `version` (int, ++ on any change), `toSave()` / restore via `saved`, `hashInto(h)`. Events out via `onChange(name, questId)`: `quest:accepted`, `quest:ready`, `quest:done` (main.js forwards to `gameHooks.emitSimple`). questRelay/saveRelay hold the book instead of the bare m1 state; `relay.quest.state` keeps returning the m1 state so existing readers (questMarkers, save) keep working.
+5. **Dialogue hooks** (no engine change). `dialogueCtl`'s flags adapter routes keys that start with `q.` to the book, everything else to `world.state['dlg.'+k]` as today:
+   - `has('q.burl.boars.available' | '.active' | '.ready' | '.done')` = status test;
+   - `set('q.burl.boars.accept')` = `book.accept`; `set('q.burl.boars.handin')` = `book.handIn` + reward grant + toast. `q.*` keys are never written to `world.state`.
+   The book builds a `Map<fullKey, {quest, op}>` once at create, so a lookup is one `Map.get`, no slicing. `bear.dialogue.json` entry order: `q..ready -> q..active -> q..available -> bear.talked -> intro`. Offer node = quest text lines + choices `[{text:<accept>, setFlag:'q.burl.boars.accept', next:'bear.q.accepted'}, {text:<later>, next:'bear.q.later'}]` ("Later" sets nothing, so the `!` stays). Hand-in = the ready entry node (Burl line) -> `next` a thanks node with a **node** `setFlag:'q.burl.boars.handin'` (set on enter, so Esc on the first line hands in nothing). Active entry = one reminder line, end. `tools/validate-content.mjs` gains one cross-file check: every `q.<id>.<op>` key names a loaded quest and a known op.
+6. **Reward + toast.** `handIn` returns the frozen reward; the main.js handler calls `addItem` per item (fires `inventory:added` -> `item:got`, harmless) and `spawnDrop`s any remainder at the player's feet when the pack is full (a reward is never lost). Toasts via `toastView` message lines: "Quest accepted" on accept, "Quest complete" on hand-in (plus the normal loot lines), optional `returnText` on `quest:ready`. Strings come from the writer row / quest file, not the sim.
+7. **Markers.** `!` over the giver while `available`, `?` while `ready`, nothing while active/done. Reuse `wire/questMarks.js`: add an optional `host.source(out)` (default `hooks.questObjective`) so two more instances run with sources filled from `book.giverMarks`, models `questMark` / `questMarkReady` (designer: a `?` voxel twin of the `!`, same fx curves). Resolve = giver entity transform + model top. **Map (M):** `mapCard` marker kinds gain `quest` (`!`) and `questReady` (`?`) in `CHART_GLYPHS` + colours; main.js rebuilds the chart marker list when the card opens and `book.version` changed (open-time allocation is fine). D-057 adds touched-waystone markers to the same list; whichever lands second rebases the kind table, kinds stay distinct.
+8. **Quest log screen** (key `J`, new binding `questLog` in `quest/input/bindings.js`, rebindable; locks input like the inventory). Extend `game/js/ui/questLog.js` to take the book: list = Active (incl. ready, tagged with the return line) / Done, newest first, m1 listed as the main quest; detail = the selected quest's steps `[x]/[>]/[ ]` with `n/target` for counted steps. Rows rebuild only when `book.version` changed; `drawLog` never formats or allocates. HUD objective line: the `tracked()` quest's active step (or its `returnText` when ready), else the m1 line - one line only (D-050 note in questRelay).
+9. **Save + migration.** `save.game.quest` stays the m1 state (unchanged shape). New optional `save.game.quests = {<id>: {quest:<quest.js state>, accepted, handedIn}}`; absent = old save. `migrateQuestSave(game, defs)` in `questBook.js` (pure, tested), applied where the save is restored:
+   - m1 completed prefix includes `beasts` -> `burl.boars` done (accepted, handedIn, steps complete), **no** retroactive reward;
+   - prefix ends right after `sword` (mid boar fight) -> `burl.boars` **accepted** (the player already had this objective); its `deadBeasts` = old m1 `deadBeasts` union `game.deadBeasts`; may be `ready` at once -> Burl shows `?`;
+   - earlier -> nothing; the quest derives unavailable/available from facts.
+   `validateSave` accepts the optional field (each entry through `createQuest` + two booleans). `SAVE_VERSION` stays 1 (additive field).
+10. **Zero alloc + determinism.** Per step: `feed` loops fixed arrays, statuses are ints, marker arrays are reused, key lookups are `Map.get` on data strings, no `Date`/`Math.random`. Allocation only on accept / hand-in / save / log open. `hashInto` folds statuses + per-quest `questHash`.
+11. **Tests.** `questBook.test.js`: walk unavailable->done; facts before accept; accept when complete -> ready; handIn only when ready (twice = null); the done flag advances m1 `beasts`; `hasKey/actKey` table incl. unknown keys = false; giverMarks; 10k-step heap check; hash stable across save/load. `questSave.test.js`: the three migration fixtures + round trip + old-save shape unchanged. `questMarks.test.js`: custom `source`. `questLog.test.js`: grouped list, 0-alloc draw. `bearDialogue.test.js`: entry per status, Esc on the ready line hands in nothing, "Later" keeps `available`.
+- Do not: add quest logic to `engine/ui/dialogue.js`; store `q.*` keys in `world.state`; store status strings in saves; grant rewards from the sim (it returns the reward, the game grants it); change `quest.js` semantics or the m1 objective ids/order.
+
+### 38.36 World stage 1: road west + relay waystones (D-060) (PC-B architect opus, 2026-10-10; owner-authorised while PC-A is offline; ratified PC-A 2026-10-14)
+
+Scope = D-060 stage 1 only: the play area grows west along the road to the bend; dead relay #1 at `ws_roadBend` (1262, 1033) (docs/proposals/waystones-2026-10-10.md); a woken relay = heal + save + travel point; travel from the M card (D-057). Dressing from existing meshes only (D-053). Rows: backlog `## World stage 1 (D-060)` (WS1-*).
+
+**Facts found (2026-10-10, read, not probed):**
+- Walk bound = `world_m1.world.json` `bounds {shape:'circle', x 1496.5, y 1024.5, r 96}`. Enforced in `engine/physics/integrate.js` 4b (projection + velocity clip), read by `engine/world/triggers.js` (`shape:'bounds'`, the `boundsEdge` hint), validated in `World.js validateBounds` (circle only), copied in `serialize.js` (shallow).
+- **The near terrain band does not reach the bend.** `World.load` bakes one 3x3-chunk band (384 m, 2 m cells), centred on the chunk of the non-mesh structures' bbox centre (tower -> chunk 11,8) = x 1280..1664, y 896..1280. The relay at x 1262 is 18 m outside it. There the ground renders from the 8 m far grid, `groundAt` falls back to analytic `heightAt` (small seam), and `scatterTrees` / ground detail (both band-only) stop. Fixing the band is the only real engine work in stage 1.
+- The WGSL type fetch assumes a square band (`terrainRaster.wgsl.js terrainTypeAt`: `W = nearMap.w` is used for both axes).
+- Already there: the far terrain (2048 m: road, river, forest recipe); the `roadL###` south-verge meshes run to u 250 (x ~1250); the south `detail.exclude` capsules run to x 1230; the voxel `relay` model (`design/models/relay.js` + `voxel_tower.js`) with clips `dead` / `wake` / `awake`, `wakeLightFrame` and palette light `relay`; `world.addInteractable` (dialogueCtl uses it); fauna resets on a > 25 m jump (`wildEnv.js TELEPORT_M`); HZB + stable-history invalidation (`occlGate.js createHzbInvalidator`, `trackPose` > 6 m); vitals `respawn()` (pose, zero velocity, beasts reset, targeting clear).
+- Bug to fix on the way: `tools/gen-roadside-meshes.mjs` sets `st.scale` (PLANT-SCALE-01) but `fmt()` never writes it, so a re-run drops the plant scales.
+
+**1. Play area growth.**
+- Shape: a **union of convex parts**, not a bigger circle. A circle big enough for the bend (r ~245) takes in hills and forest north/south that lie outside any band we can afford. New bound shape (engine, data-driven, editor friendly):
+  `bounds: { shape:'union', parts:[ {shape:'circle', x, y, r}, {shape:'capsule', ax, ay, bx, by, r}, ... ] }` (1..8 parts; capsule field names = the `detail.exclude` ones). `shape:'circle'` stays valid as is.
+- Stage-1 data: `circle (1496.5, 1024.5) r 96` (today, unchanged) + `capsule (1440,1034)-(1350,1048) r 40` + `capsule (1350,1048)-(1240,1047) r 40`. West edge x ~1200; the relay has a ~20 m apron inside; the corridor is ~80 m wide (road in the middle, the forest edge north is a natural limit).
+- Engine helper `engine/physics/bounds.js` (physics stays stand-alone): `projectBounds(bounds, x, y, radius, out) -> boolean`. Inside any part (`d <= r - radius`) = no hit; otherwise project onto the part with the smallest overshoot, `out = {x, y, nx, ny}`, and the caller clips velocity on that normal. Also `boundsOvershoot(bounds, x, y, radius) -> number` (<= 0 inside). integrate 4b and the triggers `'bounds'` shape both call it (one rule). Projecting onto the nearest convex part from outside always lands inside the union. Cost: <= 8 parts x a few flops, 0 alloc (caller-owned `out`).
+- `validateBounds`: union -> validated deep copy (parts array copied). `serialize.js` deep-copies parts (the current `{...world.bounds}` would share the array).
+- **Near band**: new optional world field `terrainBand: { cx0, cy0, cw, ch }` (chunk indices, cw/ch 1..6). Absent = today's auto 3x3 (byte-identical for every other world). Stage 1: `{cx0: 8, cy0: 7, cw: 5, ch: 3}` = x 1024..1664, y 896..1280 = 320 x 192 cells (1.67x today). Margins: tower east bound 72 m (same as today), west bound edge 176 m, corridor >= 100 m north/south. `Terrain.bakeNearBand(cx0, cy0, cw, ch)` (the old `(cx, cy)` call = `(cx-1, cy-1, 3, 3)`); `nearBandKey` includes the rect. Stage 2 (ford, x 992) will need band streaming (US-026b `setCenter`/`bakeChunkStep`) or a wider rect; not now.
+- Non-square band: the JS consumers of `near.w`/`near.h` (Terrain, scatter, terrainShade, detailShade, ShadeTextures, TerrainTextures, the terrain mesh set, temporalStable/projection reads) are audited for a `w == h` assumption. The WGSL `terrainTypeAt` uses separate W/H (`textureDimensions(uNearType)` or one more uniform word). The JS twin must match (gpucompare parity).
+- Nav: `nav.area` stays 192 x 192 at (1400, 928). Boars live in the meadow; wild fauna does not use nav. No beasts are placed west of x 1400 in stage 1 (rule for WS1-04).
+- Budgets (gate, D-053 + D-007): band bake once at load <= 160 ms (today ~80 ms). Per frame: JS <= 8 ms and GPU p95 <= 8 ms on ultra, at the tower pose AND at the bend pose. The tree count stays under `maxTrees 1500` and detail under `maxPlacements 40000` (print both; if the tree cap clips, raise it in data, never silently truncate the west end). Fallback if the GPU gate fails: `cw: 4` (x 1152..1664, west margin 48 m), recorded in the story.
+
+**2. Dressing the new stretch (existing meshes only).**
+- Extend `tools/gen-roadside-meshes.mjs` with flags, not a new tool: `--prefix <name>` (default `roadL`; only rows with that prefix are replaced), `--side left|right`, `--u0 --u1 --v0 --v1 --count`. The existing `roadL###` rows are NOT regenerated (no churn in bench/gpucompare scenes).
+- Stage-1 runs: `roadW` south verge u 250..300 (x ~1250..1205), count ~60; `roadN` north verge (right side walking west) u 110..300, v 8..26, count ~140, same cluster recipes but `tree` quota 0.25 (keeps the bend readable from the meadow). Both use `PLANT_SCALE` and actually write `scale` (fix `fmt`).
+- Keep-outs (generator circles + `detail.exclude`): relay disc (1262, 1033) r 8 (relay + base + travel anchor + wake approach); the new route-walk leg (road centre line, `ROUTE_CLEAR` 2 m); the road itself (`nearest().d >= v0`); forest/rock/water types (already `groundTypeAt === 0`); slope < 0.6. The generator prints the matching `detail.exclude` capsules; they go into `overworld_far.js` next to the existing ones (the generator warns if any are missing).
+- No new forest paints, no recipe change. Relay base = an existing Quaternius rock/stone mesh (flat top, ~0.6-1.0 m), placed as a mesh structure under the relay so it reads as a plinth like the summit one. No designer work unless the owner later asks for a mast.
+
+**3. Relay as waystone.**
+- Data marks a travel point with a game component on the entity (World ignores unknown components; check once in WS1-04): `"waystone": {"id": "...", "label": "...", "kind": "stone"|"relay", "order": n}`. `endMarker` gets `{id:'waystone', kind:'stone', order:1}`. **The id stays `'waystone'`**: the saved `state.waystone.waystoneId`, `prop:touched {id:'waystone'}`, `saveRelay`'s quest feed and the m1 `waystone` step all keep working, no migration. New entity `relayBend` at (1262, 1033): `voxel {model:'relay', anim:'dead', loop:true}`, `collider`, `light {preset:'relay', on:false, offset 1.1 m up (attach.js: down < 0 = up)}`, `waystone {id:'ws_roadBend', kind:'relay', order:2}`.
+- Meadow stone: touch as today (walk-in or E) = heal + save + joins the list. Relay: **E only** (a prompt, no walk-in wake): `world.addInteractable({key:'relay.ws_roadBend', name:'relay.wake', x, y, z+1, radius 2.2, prompt (WRITER), def:{waystoneId}})`, behaviour `relay.wake` registered in `game/js/quest/index.js`. Wake = the M1 look reused: `entity.play('wake')`, `playRelayHum()`, at `wakeLightFrame` set `light.on = true` (+ the palette `lights.relay.grow` ramp through `lights.entityHandle.get(id)` if LightSet can set intensity; otherwise plain on, noted in the story), clip `wake` -> `awake` when it ends. Generalise beacon.js's step into `game/js/quest/relayWake.js` (per-relay state in a small fixed array built at boot; the tower beacon keys stay untouched). E on an awake relay = touch (heal + save, no replay).
+- Waking = `waystone.touch(id)` (heal + one `requestSave` + toast) + flag `waystone.<id>.woken = true` + emit `prop:touched {id:'ws_roadBend', kind:'relay'}`.
+- Save shape (additive, `SAVE_VERSION` stays 1, all in `world.state`, which the save already serialises): keep `waystone: {waystoneId, pos}` (current respawn) and add `'waystone.points': { <id>: {x, y, z, yawDeg} }` = the touched/woken list + travel anchors (anchor = the player's pose at the touch, the existing "known-safe spot" rule, no literal coordinates in code). An old save with `waystone.waystoneId === 'waystone'` and no points map gets the map seeded with that entry on load. Woken relays restore on load: points has the id -> clip `awake`, light on, no hum.
+- Sim: extend `game/js/quest/sim/waystone.js` (`points` registry from the entity list at boot, `touch(id, pose)`, `list(out)` in `order`, `anchor(id)`). The wire/touch modules become list-driven (`waystoneTouch.js` loops the `kind:'stone'` points; relays go through the interactable). Per step: no allocation, fixed arrays.
+
+**4. Travel from the map (D-057).**
+- On the open M card, each touched point's marker cell shows its digit (`1`..`9`, by `order`) instead of `O`; a bottom line lists them ("1 Meadow stone  2 Road-bend relay", WRITER labels). A digit key = travel; any other key keeps today's close rule (digits are checked first). Untouched relays show `o` (aetherDim) and are always revealed (landmark, like today's markers). `createChartCard` gets `setMarker(x, y, kind|digit)` (one-cell update, no re-raster), so a wake updates the card without `initMapCard`.
+- Gates: travel only while alive, with no dialogue/inventory/quest log open, after the wake intro, and not when already within 6 m of the target (no-op).
+- Sequence (`game/js/quest/travel.js`, pure state machine, fixed step): `fadeOut 0.35 s` (input locked; reuse the vitals death-card fade colour) -> at black: set the transform to the anchor, zero velocity, re-ground (`terrain.groundAt` + the existing spawn snap, never below the anchor), `yawDeg` from the anchor, `hzb.invalidate('travel')` (also drops the stable history), `beasts.resetAll()`, `targeting.clear()`, `syncFacing`, vitals `lastSafe` cleared (add `vitals.clearSafe()`, same reason as respawn), respawn point = the target (a travel counts as a touch: heal + save; the arrival is inside TOUCH_R anyway) -> `fadeIn 0.35 s`. Fauna resets itself (> 25 m jump). Respawn after death keeps using `waystone.onDeath()` (= last touched / travelled point).
+- Travel targets are always inside `bounds` (test).
+
+**5. Quest hook (optional, only if trivial).** Giver quests need an NPC (`questBook validateGiverQuest`), so the only cheap hook is a **7th m1 objective** `relay1` "Wake the relay at the road bend" (WRITER), `when {type:'flag', id:'waystone.ws_roadBend.woken', equals:true}`. Trivial only if `createQuest` accepts an old save with 6/6 done (step 7 becomes current, no "quest complete" replay) and `saveRelay`'s `ending:true` save on the waystone step still fires once. If either needs code, drop the hook (stage 1 ships without it).
+
+**6. Tests and gates.**
+- Node: `engine/physics/bounds.test.js` (inside each part, the circle/capsule seam, outside corner -> lands inside, velocity clip, 0 alloc over 10k steps, circle shape identical to the old projection); `world.test.js` union validate + serialize round-trip; `terrainBand.test.js` (5x3 rect bake == stitched `bakeChunk`s, `groundAt` continuous across the old band edge x 1280, absent field = old key/bake); waystone sim/wire tests (list order, touch, old-save seed, wake once, reload awake); `travel.test.js` (fade timings, gates, pose, invalidate called, beasts reset, 0 alloc); mapCard digits + `setMarker`.
+- `tools/route-walk.mjs`: new leg 8 "waystone -> road bend relay" (waypoints (1420,1032) -> (1350,1050) -> (1270,1042)), grid + mesh physics, completes, no fall, ends within 3 m of the relay; plus a bound probe: walking west past x 1200 stops at the bound.
+- gpucompare (`gpucompare` skill): all existing rows within tolerance after WS1-02/03 (the band change alters what is near-sampled: parity, not a baseline); add one row at the bend pose (1268, 1040, yaw 270).
+- Perf (`tools/perf-gate.mjs` / bench-poses): tower pose + a new `roadBend` pose; JS <= 8 ms, GPU p95 <= 8 ms ultra; heap flat over 10k frames; load-time delta printed.
+- check-deps: `engine/physics/bounds.js` imports nothing outside physics; no game/design import in engine.
+
+**Do not:** add a second walk-bound mechanism in game code; hard-code coordinates in game modules (anchors come from touches, points from entity data); regenerate `roadL###`; place beasts outside the nav area; change the `waystone` id; start band streaming in stage 1; put travel/waystone logic in `engine/`.
+
+
+### 38.37 Chapter 1 build (D-062) (PC-B architect opus, 2026-10-10; owner-authorised while PC-A is offline; ratified PC-A 2026-10-14)
+
+This section builds the owner script `docs/chapters/chapter-1-beyond-the-wall.md` with the D-062 changes: no lamp, killing the boars gives an aether crystal, the breach climb stays required, and Fen comes back as a male wanderer made with the chargen (D-059). It also covers the owner's tower request (2026-10-10: "should be taller ... the top is the sword ... come down and entrance is there on the bottom"). It reuses 38.35 (questBook, giver flow, markers, J log, compass D-061) and 38.36 (relay waystones, `relayWake.js`, travel), and duplicates none of the WS1 rows. Rows: backlog `## Chapter 1 build (D-062)` (CH1-*).
+
+**What the code does today (read, not probed):**
+- `quest.js` only accepts a strict ordered prefix. `advance` walks `objectives[completed.length]`, and a restore throws when the saved prefix does not match the def ids. So removing `lantern` or inserting steps needs a save migration.
+- The sword is on the ground floor today (tower level `sword` prop and interactable at (12.86, 6.12), with note `noteSteelHush` beside it).
+- The current exit is the breach at the summit (marker `breach` (6.5, 7, z 6)), then the outer steps `l k j x X b` down the west outcrop.
+- The interior ground floor is at z ~0, but the outer ring cells (`,` `;`) and the terrain crown are at 2.4 m (`overworld_far` `towerCrown` flatten h 2.4). A door at ground level therefore needs about 2.4 m of steps.
+- Wall tops are 6.5-8.5 m today.
+- Entity colliders (`components.collider`) are **static** prisms baked into `props:static` at load. A walking Burl needs engine work.
+- `components.voxel.hidden` already hides an entity (voxelPool).
+- An interactable's `requires` is one `world.state` key that must be truthy.
+- A prop with `colliderOffVariant` already drops its collider when its variant changes (the lantern hook).
+- The bear model has a `walk` clip tuned to about 1.0 m/s.
+- Loot drops (`pickups.js`) exist only at runtime and despawn, so they cannot safely carry a key item.
+- The `createQuestMarkers` bindings live in main.js. Today there is only `waystone -> endMarker`.
+
+**1. The m1 chain (the id stays `m1`; `content/quests/m1.quest.json`).**
+- m1 stays one main quest. Each objective gets an optional `section` (the script quest id), and the def gets `sections: [{id, title}]`. `validateQuestDefinition` ignores both fields; a new `validateSections` in questBook checks them.
+- When the last objective of a section completes, the game shows the toast "Quest complete: <title>" (strings come from the quest file / WRITER).
+- Order and `when`:
+
+| # | id | section | when | kind |
+|---|---|---|---|---|
+| 1 | wake | q01 A Blade in the Ashes | flag `wake` | auto |
+| 2 | breach | q01 | area `breach` (now the top of the tower) | auto |
+| 3 | sword | q01 | item `sword` | auto |
+| 4 | leave | q02 Leave the Tower | area `towerDoor` (outside the new ground-floor door) | auto |
+| 5 | beasts | q03 Boars in the Woods | flag `quest.burl.boars.done` (giver quest, same mechanics as now) | giver (Burl) |
+| 6 | follow | q04 Follow the Bear | flag `burl.arrived` | auto, started from Burl's dialogue |
+| 7 | waystone | q05 Awaken the Stone | flag `waystone.waystone.woken` (was area `waystone`) | auto |
+| 8 | road | q06 The Next Light | area `roadWest` | auto |
+| 9 | relayFound | q06 | area `bendRelay` | auto |
+| 10 | relay1 | q06 | flag `waystone.ws_roadBend.woken` | auto |
+| 11 | fen | q07 Not Alone | flag `fen.met` | auto, set by the end node of Fen's dialogue |
+
+- `lantern` is removed.
+- `burl.boars` keeps `requires m1 sword`. Its title becomes "Boars in the Woods" (WRITER).
+- Facts count early (the quest.js rule), so doing things out of order never soft-locks the chain. Example: waking the relay before the meadow stone.
+- New areas in `content/quests/areas.json`, each with a world-level area-only trigger (same as the existing `end` zone):
+  - `towerDoor`: circle r 3 just outside the door.
+  - `roadWest`: r 10 on the road at about (1340, 1048).
+  - `bendRelay`: r 12 at (1262, 1033).
+  - The `waystone` area stays defined; only old saves and the migration use it.
+- **Quest flags set by game code** go through one helper, `questFlag(key, value=true)` in `questRelay.js`. It sets `world.state[key] = value` and calls `book.feed({type:'flag:set', key, value})`. Every new flag above uses it (wake modules, escort, dialogue). Never set these flags by writing `world.state` alone.
+- Marker and compass bindings (main.js `createQuestMarkers(m1, ...)`):
+  - `leave -> doorMarker` (a prop or marker at the door)
+  - `follow -> bear`
+  - `waystone -> endMarker`
+  - `road -> roadWest` marker
+  - `relayFound` and `relay1 -> relayBend`
+  - `fen -> fen`
+  - Item steps (sword) get no marker (existing rule).
+- This chain replaces WS1-09: close WS1-09 as won't-do, pointing here. The notice (item 4) replaces WS1-W1's relay wake toast.
+
+**2. Tower: sword at the top, door at the bottom, taller shell (owner 2026-10-10).**
+- Flow:
+  1. Wake on the ground floor, at the wreck.
+  2. Climb: the stair and the gap jump, unchanged.
+  3. Reach the top (the summit around the breach).
+  4. Take the sword and read note 1.
+  5. Read note 2 at the head of the way down.
+  6. Go back down.
+  7. Leave through the ground-floor door into the meadow.
+- **Level data (`content/levels/tower.level.json`, designer):**
+  - Move the `sword` prop and interactable, and `noteSteelHush`, to the summit floor near the breach. The sword must be visible from where the player enters the summit. `noteSteelHush` becomes note 1, with the text from the script.
+  - Add interactable `noteLeave` (note 2) at the head of the way down, with `requires: 'tower.sword.taken'` so its prompt stays hidden until then.
+  - **The breach is no longer an exit.** The outer outcrop steps become solid rubble or a parapet no higher than 1.2 m, above a sheer drop the player cannot use. Keep the view west: it is the overlook moment.
+  - **Way down:** only walking and jumping, with no drop bigger than the existing gap jump and no jump up. The 2.7 <-> 3.0 gap is crossed downward. If the current route cannot be walked in reverse, the designer adds a rubble ramp or a ledge.
+  - **Door:** one doorway, 1.2 m wide, in the south-west wall of the ground floor. It opens onto steps of no more than 0.3 m each (the stair rule) that rise from 0 to 2.4 m to the outer ring. The steps are level cells (grow `size.h` by 2-3 rows if needed), so physics and collision stay sector-native.
+  - **The door is barred until the sword is taken:** prop `doorBar` (with a collider and `colliderOffVariant: 'open'`) plus interactable `door.unbar` (`requires: 'tower.sword.taken'`, WRITER prompt) that switches the variant. No engine change. This keeps the climb required, as the owner wants, without relying on the player choosing to climb.
+- **Taller shell, in two layers.** Both are data/content; no engine change.
+  - (a) Raise the `floorH` of the solid wall cells (sector walls) to the owner's target height (see OWNER QUESTION). Recommendation: walls 12-14 m, with jagged crumbled steps of 0.5-1.5 m between neighbouring cells, and the west/breach side kept lowest. Chamfer the outer wall cells so the footprint reads round. Collision and shadows come for free.
+  - (b) A designer voxel model `towerCrown`: a round broken crown ring with the Kestrel's torn envelope snagged on it and rope ends hanging down. Place it as a world entity at the tower origin, above the wall tops. The player cannot reach it, so it has no collider. Budget: at most 8k surface voxels at 0.125-0.25 m and the shadow cost of one caster. If it does not fit, cut detail, not the silhouette.
+- The interior look must survive (the owner likes it). The east `#` wall casts the edge of the sun shaft. Any height change on the sun side is checked with a headless capture of the wake pose and the shaft pose, before and after. If the shaft is lost, keep the east wall at its current height and add height only on the N/S/W walls and the crown.
+- Far view / horizon: from anywhere inside the stage-1 bounds the tower stays inside the near band, so it needs no far proxy. If the footprint grows, update the `overworld_far` `structures[0]` note and the `towerCrown` flatten disc. The map chart glyph does not change.
+- **Lamp removal:**
+  - Remove the `lantern.take` interactable. The hook and lamp props stay as wreck dressing, with no prompt.
+  - `beacon.light` keeps `requires: 'tower.lantern.taken'`. That flag is never set in new games, so the beacon stays dormant. A later chapter may give it a new gate.
+  - `questRelay` stops feeding `lantern`.
+  - `hintBurner`'s `skipIfState` and the `hintExit` text ("the way out ends the chapter") are WRITER rewrites.
+  - Old saves that already took the lamp keep its light. It is harmless and not worth code.
+  - The designer checks interior exposure without the carried lantern (capture). If it is too dark, fix it with level lights, never by bringing the lamp back.
+
+**3. Aether crystal (the key that wakes the stones).**
+- Item `aetherCrystal`: a design/items.js def with `stackMax 1`. Make it a key item (no drop/sell) if the inventory supports that tag; otherwise a plain item.
+- The real gate is the flag **`aether.attuned`**. The item is only visible proof, so dropping it can never soft-lock.
+- Grant rule (game code, `game/js/quest/crystal.js`). When `burl.boars` reaches `ready` (5/5 boars) and `aether.attuned` is not set:
+  - `addItem('aetherCrystal')`. If the pack is full, the player is still attuned; the flag decides, and no retry is needed.
+  - `questFlag('aether.attuned')`.
+  - A teal particle burst at the last boar's corpse (existing preset, `particleHooks`).
+  - A toast (WRITER).
+- **Self-healing:** the same check runs once on every `world:loaded`. Old saves that are past the boar quest get the crystal with no migration code.
+- **One crystal wakes any stone.** The script gives no per-stone cost, so the meadow stone and every relay need `aether.attuned`. The crystal is not consumed.
+
+**4. Waking the meadow stone + notices.**
+- In new games the meadow waystone (`endMarker`, `waystone {id:'waystone', kind:'stone'}`) starts **dormant**: no walk-in touch and no heal/save until it is woken. `waystoneTouch.js` (list-driven after WS1-06a) skips points that have `dormant: true` in their `waystone` component while `waystone.<id>.woken` is false. Only `endMarker` gets `dormant`; relays are E-only anyway.
+- Waking reuses the WS1-06b `relayWake.js`, extended to `kind:'stone'`:
+  - Interactable `stone.waystone`: E, `requires: 'dlg.bear.stone.told'`. Burl's stone-talk node sets that flag, and the talk itself can only be reached with the crystal.
+  - Sequence: clip `wake` -> light on at the wake frame -> `awake` loop -> `waystone.touch` (heal + save) -> `questFlag('waystone.waystone.woken')` -> notice.
+  - Relays use interactable `requires: 'aether.attuned'`.
+- Designer work on the waystone model:
+  - `dead` / `wake` / `awake` clips (the aether mark goes from dark to teal).
+  - A small brass crystal bowl on top. It is the script's "crystal bowl" and keeps Wick's "old machine" line true.
+  - A light preset.
+  - The existing `idle` clip stays, as an alias of `awake`, for old saves.
+- **Notice view** `game/js/ui/noticeView.js` (pure layout + draw, mounted in main.js):
+  - A centred banner: a title row (at most 30 chars) and up to 3 body lines (at most 38 each).
+  - Fade in 0.3 s, hold 3.5 s, fade out 0.5 s.
+  - Non-blocking: input stays live. Queue of 2.
+  - No allocation in draw (strings are formatted when pushed).
+  - Used for "WAYSTONE AWAKENED" and "BEND RELAY AWAKENED". Each point's `waystone` component names its text with `notice: '<textKey>'`, and the WRITER strings live in a game text table.
+  - Hidden in menus and dialogue, like the compass.
+
+**5. NPC walks: Burl's escort and departure, Fen's entrance.**
+- **Engine (generic, kestrel-3):**
+  - `engine/nav/pathFollow.js` (pure, no world): `createPathFollower(points:Float64Array /*x,y pairs*/, {speed, arriveR}) -> {step(dt, speedScale) -> boolean /*moved*/, x, y, yawDeg, seg, s, done, reset(seg)}`.
+    - Follows a polyline at constant speed, rounding corners by looking ahead (arriveR), with yaw from `yawFromDelta`.
+    - No allocation; deterministic (fixed dt, no random).
+    - Tests: arrives at the end, `seg` counts correctly, `reset(seg)` resumes at a waypoint, speedScale 0 means no movement, heap stays flat over 10k steps.
+  - **Kinematic entity colliders:** `World.setEntityCollider(id, x, y, z)` moves an entity's collider prism.
+    - Entities whose collider has `kinematic: true` go into a separate `npcs:kinematic` collider (at most 8 prisms) instead of `props:static`.
+    - An update writes the shape in place and refits its bounds: no allocation, O(1).
+    - Static colliders (Burl today) behave byte-identically when the flag is absent.
+    - Physics stays stand-alone: the collider set is owned by the world, and physics imports do not change.
+    - Tests: the player capsule is blocked at the new spot and free at the old one, the static set is unchanged, no allocation over 10k moves.
+    - If the collider structure cannot be updated in place, ASK ARCHITECT before rebuilding it every step.
+- **Game (`game/js/quest/npcWalk.js`, generic, used by Burl and Fen):**
+  - Each NPC gets a small state built from its entity data: `components.walks = { <name>: [[x,y], ...] }`. These are authored polylines in world data, so there are no coordinates in code.
+  - API: `createNpcWalk(world, id, {questFlag, emit})` -> `{start(name, opts), step(dt, px, py), phase, wp}`, with `opts = {lead: true, waitFar: 10, resumeNear: 6, barks: {<wpIndex>: '<barkId>'}, onArrive, hideAtEnd}`.
+  - Movement:
+    - x/y come from the follower; `z = terrain.groundAt(x, y)` (feet); `transform.yawDeg` comes from the follower.
+    - Clip `walk` while moving, `idle`/`listen` while waiting.
+    - Call `World.setEntityCollider` on every step the NPC moves.
+    - `npcBear`'s turn-to-player is paused while walking.
+  - **Wait for the player** (lead mode): when the player is more than `waitFar` m away, stop and turn toward the player; resume when the player is closer than `resumeNear`. The NPC never runs away from the player and never teleports in view.
+  - **Walking dialogue = barks:** speaker lines that do not lock input (`game/js/quest/barks.js`, dialogue box style).
+    - Typed at dialogue speed; each line auto-advances after 1.6 s; a real dialogue interrupts them.
+    - Each bark id fires once (flag `bark.<id>`), when Burl reaches its waypoint index and the player is within 8 m.
+    - Bark text lives in `content/dialogue/bear.barks.json`: `{kind:'barks', schema:1, id, speakers, barks:{<id>: [{speaker, line}]}}`. This kind is game-side, validated in `barks.js` and in `tools/validate-content.mjs`. At most 56 chars per line.
+  - `hideAtEnd`: at the last waypoint, set `components.voxel.hidden = true`, remove the collider (move it far away or disable it with `setEntityCollider`), and remove the dialogue interactable.
+- **Burl's phases.** `world.state['burl.phase']` and `world.state['burl.wp']` are ints, saved with world.state.
+  - 0 home.
+  - 1 walking to the stone. Started by the follow node's `setFlag 's.burl.follow'`.
+  - 2 at the stone. `questFlag('burl.arrived')`; the stone talk opens on its own when the player is within 4 m, otherwise Burl waits there with a talk prompt (like `!`).
+  - 3 departing. Set by the after-wake node.
+  - 4 gone (hidden).
+  - Load rules: phase 1 -> Burl stands at waypoint `burl.wp` and resumes when the player is near; phase 2 -> at the end of the walk; phases 3 and 4 -> gone (the departure is not replayed).
+  - The departure walk is the authored `depart` polyline into the forest: at least 20 m, ending out of sight of the road. Burl is hidden at the end.
+- **First call** (script: "As Wick approaches the trees, a deep voice calls"): one bark `bear.call` the first time the player comes within 14 m of Burl after `leave`.
+- **Fen:**
+  - The `fen` entity stands at Bend Relay: `type: 'npc'`, model `char.fen` from the add-on package, `collider {r, h, kinematic: true}`, `dialogue: 'fen'`, and `walks: {emerge: [...]}` from behind the fallen wall to about 4 m from the relay.
+  - He stays `voxel.hidden = true`, with no interactable, until `waystone.ws_roadBend.woken`.
+  - After the notice he walks `emerge` (no lead, no waiting). His dialogue opens on its own when the player is within 4 m; otherwise the compass and marker point at him, and E opens it too.
+  - The end node of the `fen` graph sets `s.fen.met` -> m1 step `fen` -> chapter complete.
+  - Load: if the relay is woken, Fen is visible at the end of `emerge`.
+
+**6. Dialogue graphs (content, written after the WRITER rows).**
+- New adapter route in dialogueCtl for keys starting with `s.`: `has` = `!!world.state[<rest>]`, `set` = `questFlag(<rest>)`. These keys go into the same `Map` that is built once at open for the `q.` routes. `q.*` keys and plain keys (-> `dlg.*`) work as before. validate-content checks that `s.` keys match the quest id regex.
+- `bear.dialogue.json` entries (first match wins):
+  1. `s.burl.departing` -> farewell repeat line.
+  2. `s.waystone.waystone.woken` -> after-wake lines; the last node sets `s.burl.depart` (-> phase 3).
+  3. `s.burl.arrived` -> the stone talk. Its last node sets `bear.stone.told`. The lamp line is rewritten to the crystal.
+  4. `q.burl.boars.done` -> follow offer ("Come along, sky-cub" ...); a node sets `s.burl.follow`.
+  5. `q.burl.boars.ready` -> the after-five lines -> thanks node (sets `q.burl.boars.handin`) -> `next` the follow lines. So the hand-in flows straight into Follow the Bear; if the player presses Esc after the hand-in, the follow offer is the next entry.
+  6. `q.burl.boars.active` -> the two "while active" lines.
+  7. `q.burl.boars.available` -> the script's Offer block: Accept "I'll clear the path." / Later "Not yet.", then the accepted lines.
+  8. `bear.talked` -> repeat line.
+  9. Default -> first encounter: the script lines, with the optional crash exchange as a choice branch. It ends by setting `bear.talked` and flows into the offer when the quest is available.
+- `content/dialogue/fen.dialogue.json`:
+  - The script, split into nodes at each change of speaker.
+  - 3 choice points where Wick asks questions in the script ("Who are you?" / "What kind of things?" / the chart). Every choice leads back into the main line, so no lines are lost.
+  - Repeat entry (`s.fen.met`): 2-3 lines pointing at the river road.
+  - Speaker `fen` with label "FEN", player "YOU" (existing convention). At most 56 chars per line.
+
+**7. Chapter complete card + journal.**
+- `game/js/quest/chapterCard.js`: a pure state machine + draw, in the end.js timing style. When m1 completes (book `onChange`, main quest done):
+  1. The scene dims to 50 % over 1.0 s. No full black, and play does not reset (D-056).
+  2. "CHAPTER COMPLETE" and the chapter name are typed at `TYPE_CPS`.
+  3. "Next chapter: The River and the Forgotten".
+  4. After 2 s, the journal page opens in the existing note panel (`noteRead.js`, `ASSETS.notes.journalCh1`, title and lines from the script; WRITER fits them to the panel width).
+  5. E or Esc closes it and play continues.
+  - Input is locked while the card runs.
+- Flags: `chapter.ch1.done = true` (saved) and `chapter.next = 'ch2'`. Nothing reads `chapter.next` yet; stage 2 / chapter 2 will gate on it later. The card shows only once: it checks the flag on load and never replays.
+- Quest log (J): the Done list shows "Beyond the Wall" as the m1 entry, and Enter on it opens the journal page again.
+
+**8. Save migration (old saves, partway through the chain).**
+- A pure function `migrateM1Ch1(game)` in `game/js/quest/sim/questBook.js` (or `ch1Migrate.js`), run on restore **before** `createQuest`.
+- It runs when the saved `completed` list is not a prefix of the new ids. It maps the old completed set to the longest new prefix in which every step is implied:
+  - wake <- old `wake`
+  - breach <- old `breach`
+  - sword <- old `sword`
+  - leave <- old `beasts` (or old `sword` plus a saved pose outside the tower footprint)
+  - beasts <- old `beasts`
+  - follow + waystone <- old `waystone` (touched). This also sets `waystone.waystone.woken`, `burl.phase = 4` and `aether.attuned` (the self-heal adds the crystal item).
+  - Later steps are never implied.
+  - Old `lantern` is dropped. The facts arrays (flags/items/areas/deadBeasts) are kept unchanged.
+- Old save with the boars done but the waystone not touched -> Burl is at home with the follow offer as his entry, and the escort plays.
+- Old 6/6 save -> the next step is `road`, Burl is gone, the stone is awake, and no "Quest complete" toasts replay. Section toasts fire only on a live completion, never on restore.
+- Pose safety: if a saved pose is inside a cell that is now solid (removed outcrop steps, raised walls) or below the ground, use the existing spawn snap to the nearest valid spot. If none is within 4 m, use the last touched waystone, else the level start. Test it with a pose on the old outcrop.
+- `SAVE_VERSION` stays 1: the new flags in `world.state` are additive, and the m1 prefix is rewritten in place on load.
+
+**9. Tests and gates.**
+- Node:
+  - `questBook`/`ch1Migrate` fixtures: fresh game; mid-tower `[wake, lantern]` -> `[wake]`; `[.., sword]`; `[.., beasts]` -> follow offer; 6/6 -> `road`; round trip; no section toast on restore.
+  - m1 def validation, including sections.
+  - `crystal.test.js`: granted once at ready, self-heal on load, still attuned with a full pack.
+  - `pathFollow.test.js`.
+  - Kinematic collider test (engine).
+  - `npcWalk.test.js`: wait/resume thresholds, each bark fires once, phase save/load for every phase, hideAtEnd, no allocation.
+  - `barks.test.js`.
+  - `noticeView.test.js`: queue, timings, no allocation in draw.
+  - `chapterCard.test.js`: shows once, flags, hand-off to the journal.
+  - `bearDialogue.test.js` + `fenDialogue.test.js`: entry for each state, every node reachable, every line at most 56 chars.
+  - **`ch1Walkthrough.test.js`:** a scripted sim run that feeds the event sequence wake -> breach -> sword -> door -> accept -> 5 boars -> hand-in -> follow/arrive -> wake stone -> road -> relay -> Fen end node. It asserts that the chain completes and that every section toast fires once, in order.
+- Route walk (`tools/route-walk.mjs`):
+  - Replace the tower legs: wake -> top (sword spot) -> down -> door -> outside. Grid and mesh physics, no fall damage, no getting stuck.
+  - Probe: there is no exit through the breach (walking off the parapet fails).
+  - Probe: the door is closed before the sword is taken.
+  - Clearance of Burl's `follow` and `depart` polylines: no trunk or rock collider within 0.8 m, slope below 0.6, and `follow` stays inside the nav area.
+  - Clearance of Fen's `emerge` polyline.
+- Perf (`tools/perf-gate.mjs`): tower interior pose, tower exterior pose (from the meadow, crown in view) and `roadBend`. JS at most 8 ms and GPU p95 at most 8 ms on ultra. Escort cost per step at most 0.05 ms, no allocation.
+- gpucompare: the tower rows are re-baselined once, in the tower-shell commit, after the owner has looked. New row: tower exterior.
+- Do not:
+  - Put chapter or escort logic in `engine/`. Only `pathFollow` and kinematic colliders go there, and both are generic.
+  - Hard-code coordinates in game code. Paths, the door and markers come from data.
+  - Grant the crystal as a world drop.
+  - Replay section toasts or the chapter card on load.
+  - Add back any lamp step.
+  - Leave the breach usable as an exit.
+
+### 38.38 World stage 2: river ford + near-band streaming (PC-B architect opus, 2026-10-10; owner-authorised while PC-A is offline; ratified PC-A 2026-10-14)
+
+Scope: D-060 stage 2 (relay #2 `ws_fordWest` (992, 1079), road end on the west bank; the road crosses the river at x ~1027). Starts after the owner walks stage 1 (D-060). Only the band/engine plan is decided here; the ford look, bounds and dressing are owner/content (queue `## World stage 2 (38.38)`). Rows: WS2-*.
+
+**Decision: authored band zones + double-buffered background bake + atomic swap. No wider static rect, no revival of the US-026b 3x3 chunk ring.**
+- A static rect cannot do it: tower east margin (x 1664) to a ford west margin (x <= 896) = 6+ chunks wide, > 1.2x the 5x3 bake that already measures ~200 ms on the laptop (gate 160 ms), and the cw <= 6 cap.
+- The US-026b ring (`setCenter`/`bakeChunkStep`, `_chunks[9]`) feeds nobody: every consumer (groundAt, scatter, terrainMesh, TerrainTextures, wg passRaster, terrainShade/detailShade) reads the contiguous `terrain.near`. It stays dormant; do not wire it up.
+- A continuous sliding window would change the band at the tower/bend poses (gpucompare and bench churn). Authored zones keep stage-1 rect A byte-identical.
+
+**Data (world json, engine-validated):** `terrainBands: [{id, cx0, cy0, cw, ch}, ...]` (1..4 zones, each cw/ch 1..6, all the same w x h in v1 so textures/mesh grids never realloc) + optional `bandSwitch: {prefetchM: 176, switchM: 112}`. `terrainBand` (WS1-02) = a one-zone list, and having both is an error. Stage 2: A `{id:'east', cx0:8, cy0:7, cw:5, ch:3}` (x 1024..1664, today) and B `{id:'west', cx0:6, cy0:7, cw:5, ch:3}` (x 768..1408). The overlap x 1024..1408 is 384 m. Margin(zone, x, y) = the distance from the pose to the nearest zone edge.
+
+**Selection (engine, deterministic, hysteresis):** keep the current zone while its margin >= `switchM`. When margin < `prefetchM`, start baking the zone with the largest margin at the pose, if it differs. Swap when margin < `switchM` AND the pending bake is ready. If margin < 32 m and the bake is still pending, finish it synchronously and log `band:late` (a hitch; the route walk fails on it). Walking west, the prefetch starts at x ~1200 and the swap happens at x ~1136. Back east, B's margin hits 176/112 at x ~1232/1296.
+
+**API.**
+- `Terrain.beginNearBand(cx0, cy0, cw, ch)` allocates fresh back arrays (rare event, no pooling: a reused `near` object would break terrainMesh's identity check) and copies the cells that overlap the current `near`. This is valid because the bake is per-cell pure (the WS1-02 "rect == stitched chunks" test; a new test pins the byte equality).
+- `Terrain.nearBandStep(msBudget) -> boolean ready` bakes the missing cells in row slices via `util.bake(x0, y0+r, cell, wCols, rows)` (per-slice alloc <= 16 KB is the one documented exception; do not change the recipe API in stage 2).
+- `Terrain.swapNearBand()` makes the back object `terrain.near` (new identity, `version+1`), recomputes min/max, and `nearReady` stays true.
+- `World.streamBand(px, py, msBudget) -> 0 idle | 1 baking | 2 swapped`: zone pick + bake steps + scatter steps (below). On swap it emits `world:band {from, to}` and then `world:scatter`.
+- `World.ensureBandFor(x, y)` is the synchronous path for load, travel and respawn: pick the zone, bake, scatter, swap.
+- `World.bandId` (read-only).
+
+**Data flow on swap (all pointer flips in one frame):** `terrain.near`, `world.scatter`, `world.detail`, and the `scatter:trunks`/`scatter:detail` colliders, all prepared during the steps (the stepped twin of `refreshTerrainScatter`, which reads a given near object, not `terrain.near`). Consumers react by identity/version, as they do today:
+- terrainMesh rebuilds rows under its own budget. **Fix needed:** on a swap (not the first load) the far exclusion moves at `_publishNear`, not when the build starts. The old near mesh stays drawn until then, so there is no hole and no far/near z-fight.
+- TerrainTextures and passRaster re-upload on `near.version` (same dims, no realloc). The band origin uniforms follow.
+- groundAt/physics read the new arrays atomically. The player is always >= 112 m from the changing cells.
+- main.js on `world:band` calls `hzb.invalidate('band')` (this also drops the stable history), and the instance bindings refresh on `world:scatter`.
+
+**What pops (accepted, >= 112 m away):** the near/far seam jumps 256 m. Trees and ground detail inside the dropped strip switch to the far look (forest canopy from the far grid), and the gained strip gains them. Nothing near the player changes: overlap cells, trees and detail are byte-identical (test). Fauna are not affected (they live in the meadow; no beasts west of the nav area, same rule as 38.36).
+
+**Save/load/travel:** the band is derived and never serialised. Load calls `ensureBandFor(spawn or saved pose)` instead of the fixed rect. A load at the ford bakes B (same size as A, so no change to the load budget). Travel and respawn call `ensureBandFor(target)` at the fade-black, and the fade-in waits for it (the 0.35 s black hides the ~80-200 ms). The `nearBandKey` cache keys on the zone rect, as WS1-02 does.
+
+**Perf plan (gate):**
+- Load: unchanged from stage 1 (one 5x3 bake). The laptop's ~200 ms vs the 160 ms gate is a stage-1 finding, and stage 2 adds nothing. PC-A to ratify the reference machine, or move the load bake under the title screen.
+- Streaming: `streamBand` <= 2 ms JS per frame inside the 8 ms frame (D-007), with 0 alloc when idle.
+- Swap frame: <= 16 ms JS (at most one dropped frame). If the measured scatter+collider flip exceeds that, split the collider build further; never do it on one frame.
+- B costs ~6 new chunks to bake (overlap copied), ~80 ms laptop, so ~40 frames at 2 ms. The prefetch-to-swap walk is 64 m (>= 8 s at a sprint).
+- Memory: 2 bands x 320x192 x 9 B ~ 1.1 MB, plus the scatter twins.
+
+**Tests and gates:**
+- Node: zone pick + hysteresis table; sliced bake == `bakeNearBand` bytes; overlap copy == re-bake; swap atomicity (groundAt continuous at the player); idle 0 alloc over 10k calls; scatter/detail in the overlap identical across zones; `terrainBand` worlds byte-identical; validate errors.
+- Route walk leg 9: bend -> ford -> back. Assert one swap each way, no `band:late`, no fall, and the max frame / swap frame times printed.
+- gpucompare: all rows unchanged (zone A), plus a new `ford` row (pose ~(1000, 1072), yaw 270, zone B via `ensureBandFor`).
+- Bench: a `ford` pose. JS <= 8 ms, GPU p95 <= 8 ms ultra.
+
+**Do not:**
+- Wire the US-026b ring or `setCenter`/`bakeChunkStep` into anything.
+- Pool or reuse `near` objects across swaps.
+- Move the far exclusion before the new near mesh is published.
+- Stream on a timer or by camera pose; it is player pose only.
+- Serialise band state.
+- Bake on the swap frame.
+- Allow zones of different sizes in v1.
+- Put zone choice in game code; the game only passes the pose and the budget.
+- Add river/water physics or a bridge here (content, owner questions).
+
+### 38.39 Day/night in play (D-064, AUD-41/21) (PC-B architect opus, 2026-10-10; owner-authorised while PC-A offline; ratified PC-A 2026-10-14)
+Today `applySunHours(world, lights, h, path, on)` (engine/render/lighting.js) + `sunFromHours`/`sunPathFrom` (engine/core/sunPath.js) only run for `?time=` (main.js ~1181) and cinematics (~1538, ~1923). The palette has 4 looks (`timeOfDay.morning|noon|dusk|night`), but the sky LUT (`_bakeSky`, passShade.js), fastShade, waterReflect and `lighting.js:1306` read only `P.defaultTime`. Sky glow (skyGlow.js) and fog (fogShape.js) already follow sunDir/sunI.
+1. **Clock = game data, not engine.** `world.state['clock.hour']` (float 0..24, wraps), owned by `game/js/quest/worldClock.js` (`tickClock(state, dtSim, cfg)`, `cfg.dayLenS`). It is saved and loaded with `save.world.state` like the other quest keys, so no new save field is needed. A missing key (old saves) starts at `cfg.startHour` = 8.0 (morning, matches today's look). The engine only takes an hour or a look. It never ticks time.
+2. **Cycle length (proposal, OWNER QUESTION DN-Q1):** 24 real minutes = 1 game day (0.25 deg of sun per second). Default split: day 06:00-19:00, dusk 19-21, night 21-05, dawn 05-06. Dev params: `?daylen=<sec>` (e.g. 60 for a quick cycle), `?time=<h>` (start hour; time still runs), `?timefreeze=1`. Clock ticks in fixed 60 Hz sim steps (dtSim), not wall time, so replays and route-walks are deterministic.
+3. **Engine API (kestrel-3):** `blendLook(P, hour, schedule, out)` in engine/render/look.js. It writes one live look record `out` (same shape as `timeOfDay[key]`: ambient rgb+I, sun rgb+I, sky stops, cloud, fog) by lerping the two neighbouring keys from a data `schedule` (`[{h:5,key:'night'},{h:6.5,key:'morning'},{h:12,key:'noon'},{h:19,key:'dusk'},{h:21,key:'night'}]`). The schedule lives in design/palette.js (`P.daySchedule`); the engine only gets the default. Allocation-free (scratch `out`, rgb arrays reused). Every reader of `P.timeOfDay[P.defaultTime]` (passShade `_bakeSky`, fastShade:315, waterReflect, lighting:1306) switches to `P.liveLook || P.timeOfDay[P.defaultTime]`, so `liveLook` unset = byte-identical output today. Night: `sun` record = moon. `applySunHours` keeps the geometric sun. Below -6 deg elevation the light dir switches to a moon path (sun path + 12 h), using `night.sunI`.
+4. **Per frame vs throttled (steps quantised, so dirty-skips keep working):**
+   - Per frame: `tickClock` (1 add). Nothing else.
+   - **Step** = each 1/240 h of game time (= 0.25 deg sun = 1 s real at 24 min/day), or when the hour jumps (load, skip, `?time=`): `applySunHours` with the step hour (not the raw hour). Then `blendLook` into `P.liveLook`, `LightSet` ambient + sun color/I, and bump `P.liveLookVersion`.
+   - On `liveLookVersion` change (GPU, kestrel-2): re-bake the sky LUT (32 texels, << 0.05 ms) and re-upload the shade uniforms. The shadow map re-renders on its dirty key (sun matrix change), so at most 1 shadow render per step (1/s), not 60/s. With the bench pose (bench-shadow.mjs) 1 render/s must stay < 0.1 ms/frame averaged. If a step render costs > 4 ms (hitch), DN-02 spreads it (cascade split per frame), no smaller step.
+   - Budget: clock + step <= 0.05 ms JS averaged, 0 allocations per frame (D-007 JS 8 ms unchanged). Emissive/LVIS, decals and particles are unchanged.
+5. **Night readability:** the effective ambient never drops below `P.nightFloor` (proposal: ambientI 0.06, plus the moon's 0.25 sunI, plus a value floor so glyph luminance stays >= ~18% on the darkest lit ramp step). Night must stay readable without a torch. OWNER QUESTION DN-Q3 sets the darkness. At night the point lights (torches, relay beacons, the spell hand coal) and the emissive glow (EMIS-01) do the mood. No new light kinds in this story. Low quality: emissive off as today; night uses ambient + floor only.
+6. **Determinism / tools (kestrel-4):** gpucompare, capture-browser, capture-cinematic, bench-*, route-walk and `?units` all force `?timefreeze=1` at the pinned hour (8.0 = morning). With the clock frozen, `liveLook` stays unset and output is byte-identical to today's baselines. Each tool also gets `--time=<h>` (frozen at h), and gpucompare gets 2 extra rows (dusk 19.5, night 23) so both paths are checked under `liveLook`. Cinematics keep `cam.hour` (they override the clock while they play).
+7. **Save/load, travel, respawn:** time keeps running. Respawn, restart (`R` reload) and waystone travel do NOT reset or skip the hour (it lives in state, and `world:loaded` reads it back). A forced step runs on `world:loaded`, so the first frame is already correct. Title menu / pause: the clock stops (sim not stepping).
+8. **Out of scope (this story):** quest, beast, spawn or AI effects of time; sleeping or time skip (DN-Q2); weather; moon phases; stars. All time readers go through `world.state['clock.hour']` only, so later behaviours just read the key.
+9. **Do NOT:** tick the clock in the engine or from `performance.now`; call `blendLook`/`applySunHours`/re-bake every frame; allocate a look per step; change `P.defaultTime` at runtime (other readers cache on it); let a tool baseline depend on wall time.
+Tests: worldClock.test.js (wrap, save round-trip, missing key = 8.0, dt determinism); look.test.js (`blendLook` at schedule keys == the raw key record; midpoint lerp; 0 alloc); a lighting test (moon switch at -6 deg, floor holds); gpucompare rows at 8 / 19.5 / 23 h.
+
+### 38.40 EQ-A1 Character view in the Items|Character menu (PC-B architect opus, 2026-10-11; final per D-066)
+**Decision: CPU mini-stage, copied into the UI layer.** The menu pauses the sim, so the preview uses the real mesh CPU twin (the gpucompare reference look) on a private, detached engine, the same way the editor icons do (36.3). Its cells are copied into the view box of the UI layer with `setCellRGB`. Both backends present the UI layer, so WebGPU and WebGL2 show the same cells. There is no second GPU context and no WGSL work. The menu is never open in a compare pose, so existing gpucompare rows cannot change.
+1. **Module `engine/preview/modelPreview.js`.** New folder. It imports only `core/engine.js`, `render/frameRenderer.js` and `world/World.js`, and is exported from `engine/index.js`. render/world/ui/physics never import `engine/preview`. The charCreate studio-preview ASK ARCHITECT can reuse it later.
+```js
+/** @typedef {{x:number,y:number,w:number,h:number}} CellRect  // UI cells
+ *  @typedef {{key:string, yawDeg:number, clip?:string}} PreviewSubject
+ *  @typedef {{key:string, mount:string, yawDeg:number}} PreviewHeld */
+createModelPreview(baseAssets, opts?) -> ModelPreview   // lazy: built on the first menu open, kept for the session
+// opts: {lights?: PreviewLight[3], bg?: [r,g,b]}  default 3-point: key warm front-left 45 deg up, fill cool front-right, rim behind
+ModelPreview.setModel(key, def)        // add/replace `key` in a PRIVATE facade registry + rebind the private VoxelPool (<= 10 ms)
+ModelPreview.setHeld(list /* PreviewHeld[] <= 3 */)   // EQ-04b
+ModelPreview.render(subject, dtSec, ui, rect) -> boolean   // steps the idle clip, renders if changed, copies cells; false = nothing redrawn
+ModelPreview.dispose()
+```
+2. **Stage.** A detached `createEngine({canvas, assets: facade, cols: 160, gpu: false, force2d: true, inputTarget: <div>})` plus `createFrameRenderer({..., idleSkip: true})`.
+   - Mini world: an in-memory 6x6 m closed sector with a solid ceiling at 4 m. The subject is ONE entity at the centre (an entity, not a prop, so `EntityHandle.play(clip)` runs the idle clip).
+   - Lights: 3 static point lights through the level-doc light list (same schema as the `tower.level.json` lights). No flicker, no shadows.
+   - If the in-memory doc cannot carry lights: stop and ASK ARCHITECT.
+3. **Camera.** New pure, tested `fitPreviewCamera(bounds, rect, grid) -> cam`. The camera is fixed. It frames the bounds (character ~1.8 m + 10 %) into the centred `rect.w x rect.h` sub-rect of the 160x60 stage. UI and scene cells have the same aspect (`UI_GRID_ASPECT = GRID_ASPECT`), so the copy is 1:1. **Rotation turns the entity's yaw**, not the camera, so the lights stay fixed to the viewer.
+4. **Frame and copy.** Call `frame.step(world, cam, {animate: true, dt, present: false})`.
+   - `present: false` is a **new option**: it skips `rt.present()` (no canvas fillText). It is a 2-line change plus a test in `frameRenderer.js`; the default stays as it is.
+   - Then, for each cell of the sub-rect: where `gbuf.kind === KIND_MODEL`, `ui.setCellRGB(rect.x+c, rect.y+r, glyphIdx, fg, bg)` from `rt.cells`; else the panel bg. This is the iconRender `kindBounds` rule.
+5. **Change detection and rate.** Re-render only when `yaw`, the model/held version, or the clip key changes (the clip key is quantised to the 50 ms clip step). At most one preview render per rAF and at most 20 Hz. While the menu is open the main scene is not re-rendered: its last frame stays under the menu. If `main.js` still renders it while `invOpen`, EQ-04a adds that skip.
+6. **Recompose (EQ-05). Answer to epic section 6: use a separate preview key, `char.preview`, in the private registry.**
+   - The main registry and the main VoxelPool are NOT touched (first person never draws the player body). `registry.replace` plus a re-`bind` of the main pool stays load/New-game time only (38.32 item 2). Third person can later re-register `char.player` at load time from the same cache.
+   - Engine, `engine/chargen/cache.js`: `createCharCache(kit, max = 4) -> {get(recipe) -> RiggedVoxelDef, size}`.
+     - Key = fnv1a32 of the recipe's canonical JSON (sorted keys). LRU eviction.
+     - On a miss it runs `composeCharacter -> meshCharacter -> collapseRig -> riggedModelDef` (<= 50 ms). It throws above `CHAR_GAME_MAX_QUADS`.
+   - Game, pure, `game/js/quest/gearLook.js`: `gearRecipe(look, equipment, itemDefs) -> recipe`.
+     - Each equipped `equip.shell` overrides the look's pick for its kit slot (`{id: shell, ramp: paint}`).
+     - An empty slot keeps the look's own pick (the underclothes).
+     - Slot map (EQ-D2 may change it in the kit): head -> `hat`, body -> `top`, cloak -> `cloak`, hands -> `hands`, belt -> `belt`, legs -> `legs`, feet -> `feet`.
+   - Kit: `SHELL_ORDER = ['legs','feet','top','hands','belt','outer','cloak']`. A missing pick must add nothing, so today's recipes stay byte-identical (EQ-05 AC3). `charCreate` keeps its explicit row list (no gear rows).
+7. **Input (characterView, game).**
+   - A/D and Left/Right turn the model at 150 deg/s. If EQ-03's pack grid uses the arrow keys, they rotate only while the view box has focus or hover.
+   - Mouse drag turns 0.6 deg per UI px.
+   - After 3 s with no input, the model eases back to face the viewer (yaw 180) at 60 deg/s.
+   - Yaw is view state only and is never saved.
+8. **Budget (EQ-04 AC3).**
+   - Stage frame at 160x60, without present: <= 6 ms median. Only the character is drawn, and empty-kind cells are cheap.
+   - With the 20 Hz cap and the main scene paused, the menu adds <= 4 ms median per rAF over 3 s (idle and rotating) and <= 10 ms p95. The review uses F3 numbers.
+   - Recompose: <= 50 ms, once per equip change.
+   - Zero allocation per preview render. Test `render` and the copy loop with the alloc-probe pattern (`engine/chargen/allocProbe.mjs`).
+9. **Steps:**
+   - **EQ-05 (0.75 d):** the cache, `SHELL_ORDER`, `gearRecipe`.
+   - **EQ-04a (1 d):** modelPreview, `present: false`, `fitPreviewCamera`, characterView wiring, rotation.
+   - **EQ-04b (0.5 d):** held items.
+     - The `main`/`off`/`ranged` models are extra entities, placed on each render at `voxelPool.voxelMountWorld(subject, 'hand_r'|'hand_l'|'back')`, with yaw = subject yaw + held yaw.
+     - v1 does not follow part rotation. The idle clip barely moves the hands.
+10. **Tests:**
+   - `fitPreviewCamera`: the bounds land inside the rect +-1 cell.
+   - Cache: hit, miss and LRU; the same recipe returns the same object. Today's 6 sample looks are byte-equal through `gearRecipe` with empty equipment.
+   - modelPreview, in Node with a Canvas2D stub as in the iconRender tests:
+     - `setModel` + `render` fills only the rect cells.
+     - A second `render` with nothing changed returns false.
+     - Yaw 0 and yaw 90 give different cells.
+     - 0 alloc over 200 renders.
+   - frameRenderer with `present: false`: `presented` does not change.
+   - run-tests and check-deps green.
+11. **Do not:**
+   - render the preview on the GPU pipeline or open a second WebGL/WebGPU context;
+   - touch the main registry, the main VoxelPool or `char.player` at equip time;
+   - recompose per frame;
+   - draw the stage canvas (`present`);
+   - allocate in `render`;
+   - import game/ or design/ from `engine/preview`;
+   - save the preview yaw.
+
+### 38.41 EQ-A2 Shield block + arrows (PC-B architect opus, 2026-10-11; final per D-066)
+**Where the code lives:** game sim, `game/js/quest/sim/`, under rule 15: no Math.random, no trig, integer step counters, zero alloc in `step`. Arrows are game-specific (beasts, targetables, quiver). They only need `world.raySegment`, which already covers the mesh colliders and the terrain/sector march. So **`engine/physics` is not touched** (stand-alone rule, 27.10). A generic engine projectile can come later, when a second game needs one.
+
+**(a) Shield block: the damage-path hook.**
+1. **Sim, `game/js/quest/sim/shield.js`:** `createShieldSim(cfg) -> {step(down, has, fx, fy), raised, raiseFrac, blocking, speedScale, blockTick, hashInto}`.
+   - `has` = the `off` slot holds a shield. `fx, fy` = the unit look direction, computed by the caller (no trig in the sim).
+   - Raise takes 7 steps (0.12 s), lower takes 9 steps (0.15 s). `blocking` = fully raised and not lowering.
+   - `speedScale` = 0.6 while raised or raising, else 1.
+   - While `raised`, the caller passes `down = false` to the sword (no swing). Drinking (EQ-12) forces `down = false`.
+2. **Hook in `vitals.onHit`.** This is the single player damage path for every `combat:hit` with `target: 'player'`. Pass `hooks.block = shield` to `createVitals`. After the existing source-direction code (`dirX, dirY` = player minus source):
+   - **Blocked** when `shield.blocking` and `-(dirX*fx + dirY*fy) >= 0.5` (cos 60 deg: the source is within +-60 deg of the look direction). Then:
+     - set `p.blocked = 1`;
+     - no damage, no invuln, no `hurtTick`;
+     - set `blockTick = tick` (the view shows a spark and plays the clank);
+     - push the player back at `cfg.blockKnockSpeed` along `dirX, dirY`, tuned so the test measures 0.3 m +-0.1.
+   - No source position = no block.
+   - Otherwise: the EQ-02 defence scaling, then `applyDamage`.
+3. **Attacker reaction, with no re-entrant emit.**
+   - The payload gets an out field, `blocked` (0/1). The sender clears it before `emit`.
+   - In beastSim's contact (line ~759): `p.blocked = 0; emit(...); if (p.blocked) enterBlocked(sim, i, -dx, -dy); else enterRecover(sim, i, false);`
+   - `enterBlocked` = `STATE_STAGGER` with timer `cfgSteps.blockStagger` (24 steps = 0.4 s) and a shove of `cfg.blockKnock` (2 m/s) away from the player.
+   - Future senders (enemy arrows) read `blocked` the same way.
+   - Never emit `combat:hit` from inside the vitals listener.
+4. **View, `game/js/quest/shieldView.js`:**
+   - It drives the existing left-hand view-model slot (the hands.js path the sword and torch use). The pose lerps from rest to raised by `raiseFrac`.
+   - On a `blockTick` edge: a spark (an existing particle preset, at the shield) and the `clank` audio cue.
+   - No new engine API.
+
+**(b) Arrows: `game/js/quest/sim/arrows.js`.**
+5. **Shared sweep.** Move fireball's `sweep` into `game/js/quest/sim/sweep.js` as `sweepSegment(world, targets, pad, x0,y0,z0, x1,y1,z1, hit)`.
+   - It runs `world.raySegment` plus the cylinder test; ties go to the target.
+   - Fireball calls it with unchanged behaviour; `fireball.test` stays byte-identical.
+   - Arrows call it with `pad = cfg.hitPad` (0.05) and a zero-radius ray.
+6. **API:**
+```js
+createArrowSim(world, events, cfg, targets) -> {
+  fire(x,y,z, fx,fy,fz, draw /*0..1*/, damage) -> boolean   // false = pool full; caller decrements quiver only on true
+  step(), pickup(px,py,pz, radius) -> n                     // frees picked stuck slots that are pickable
+  nearestPickable(px,py,pz, maxR) -> slot|-1, take(slot)    // E key (EQ-09)
+  flying: SoA, stuck: SoA, hashInto(h)
+}
+// cfg (game/js/quest/bowConfig.js): vMin 20, vMax 45, g 9.8, drawSteps 48, maxFlightSteps 240, stickSteps 1800,
+// survivePct 70, maxFlying 8, maxStuck 16, hitPad 0.05, stuckBack 0.05
+```
+7. **Step.** Fixed 60 Hz, in the same place in the step order as `fireball.step` (before `beastSim.step`).
+   - Launch velocity: `v = (vMin + (vMax - vMin) * draw) * dir`.
+   - Each step (semi-implicit): `vz -= g*dt`, then sweep `p -> p + v*dt`.
+   - **Target hit:**
+     - `emit('combat:hit', payload{source: 'player', target: id, damage, heavy: 0, cause: 'arrow', dirX, dirY})`, then free the slot (v1: no arrows stuck in beasts).
+     - The caller passes `damage = round(sword * (1 + 2*draw))`, min 1.
+   - **World hit:**
+     - Move the arrow to `stuck` at `hit - dir*stuckBack`, keeping `dir` for the view, with `age = 0`.
+     - `pickable = ((serial*2654435761) >>> 0) % 100 < survivePct`. This is deterministic and keeps no rng state.
+     - A full stuck pool recycles its oldest slot.
+   - **Expiry:** flight longer than `maxFlightSteps` = arrow lost. A stuck arrow with `age >= stickSteps` is freed.
+   - **No tunnelling:** at 45 m/s one step is 0.75 m, but the sweep is continuous (mesh colliders are exact, and the march samples every 0.1 m), so a 0.3 m wall cannot be tunnelled.
+8. **Ownership:** the quiver count lives in `equipment.quiver.n` (EQ-02); the sim owns only flying and stuck arrows, both transient (not saved, lost on reload, like fireballs). Arrow hits change beast hp through the existing listener, so the beast replay hash stays deterministic for a given input stream.
+9. **View (EQ-09):** flying arrows (<= 8) are voxel instances of `arrow`; stuck arrows are drawn only within 20 m, the nearest 8 at most, so the 48-instance mesh cap holds (undrawn ones stay pickable). The view, never the sim, turns `dir` into an orientation.
+10. **Perf:** shield step O(1). Arrows: <= 8 sweeps per step (raySegment <= 20 samples + 16 cylinders) + 16 stuck ages = **<= 0.1 ms per step**. Zero alloc: one preallocated payload and one hit object.
+11. **Tests:**
+   - **`shield.test.js`:** raise/lower in 7/9 steps; angle table (0, 45, 59 deg block; 61, 90, 180 deg do not); a blocked hit = 0 hp lost, `p.blocked = 1`, knockback 0.3 m +-0.1; the beast stays in STAGGER for 24 steps after a blocked charge; no swing while raised.
+   - **`arrows.test.js`:** speed at draw 0/1; range parabola within 2 % of analytic; 45 m/s vs a 0.3 m wall on grid AND mesh physics sticks before the wall; beast hit damage 1..3x; 70 % pickable over 1000 serials (+-3); expiry at 1800 steps; pool full -> `fire` false; 0 alloc over 1000 steps; equal hash across two runs. `fireball.test` unchanged.
+12. **Do not:** put arrows or the shield in `engine/physics` (or import `game/` there); use trig or Math.random in the sim; emit `combat:hit` inside a `combat:hit` listener; save stuck arrows; let the sim touch the quiver or inventory; add a new event type for blocks (use the `blocked` out field).
+
+### 38.42 MAP-A1 Geography recipe layers + skyline (PC-B architect opus, 2026-10-11; final per D-066)
+
+Scope: D-067 enclosed world (river through the middle from the mountains to the sea, sea + beach/dunes/estuary on one side, mountains on the others, locked gate pass) built on the existing analytic recipe `design/levels/overworld_far.js` (contract: `heightAt`/`typeAt` are pure in (x, y)). Geography values come from MAP-00 (`docs/world-map-2026-10-11.md`). This note fixes the shape, not the coordinates. **Coordinates: engine convention (metres, x east, y SOUTH).** The MAP-00 draft row says "y north", so the designer converts before any data lands.
+
+**World rect.** New recipe key `geo.world: {x0, y0, x1, y1}`, 128 m aligned, inside `[0, 4096]^2` (chunk indices and `terrainBand.cx0/cy0` are >= 0, so no negative coords). The far grid covers exactly this rect: `map: {x0, y0, w, h, cell: 8}` with `w, h <= 512`. `x0/y0` default to 0 (today: 0, 0, 256, 256 = byte-identical). The rect must contain the keep rect below.
+
+**Keep mask (the gate for every layer).** `geo.keep: {x0: 704, y0: 832, x1: 1728, y1: 1344}` = zones east + west (x 768..1664, y 896..1280) + 64 m. Inside it every layer is a no-op **by branch, not by weight** (`if (inside keep) skip` before any float op), so near bakes, far texels and scatter there stay bit-identical. Layers fade in OUTSIDE it (the falloff starts at the keep edge). The validator throws if a layer's hard core overlaps the keep rect.
+
+**Layer API (design file; pure; 0 alloc per sample):**
+```js
+/** @typedef {{id: string, rect: [number, number, number, number],     // AABB incl. falloff; outside = skipped
+ *   heightFn?: (h: number, x: number, y: number, F: GeoFields) => number,
+ *   typeFn?: (t: number, x: number, y: number, h: number, slope: number, F: GeoFields) => number}} GeoLayer */
+```
+The order is fixed: `sea/coast -> ridges/peaks -> lake basin -> marsh -> river (carves last) -> biome types`. `recipeHeight` = today's sum, then the layers. Stamps, structureBlend and edits still apply after the layers (authored content wins). `typeAt`: the river halfWidth, edit paint, path and paints keep their priority as today, then the base rock/forest/grass pick runs, then the layers' `typeFn` (sea = 2, plus sand, snow, reeds, fen, flowers, alpine).
+- **GeoFields** are built once at recipe load as a pure function of the data. Each region (coast line, each ridge polyline, lake, marsh, each biome polygon, river polyline) gets one Float32 signed-distance grid at 16 m over the world rect: <= 16 fields x 256^2 x 4 B <= 4 MB. `sdf(id, x, y)` samples it bilinearly. Polygons have <= 32 verts and polylines <= 64. No per-sample polygon loops.
+- **Sea + coast:** a `seaLevel` z. The seabed beyond the beach is flattened to `seaLevel - 0.3` (type 2), so the far grid itself reads as sea. The beach band is `beachM` wide (sand, slope <= 0.15). Dunes = low fbm on sand. The estuary = a river width ramp plus a delta fan into the sea. Water: one world `water` rect region `sea` at `seaLevel`, `waves: 'sea'` (existing renderer; WATER_MAX 32 unchanged). No swimming: the walk bound sits on the beach (38.43).
+- **Ridges + peaks:** a ridge polyline with `width` and `baseH`, plus peaks `{x, y, h, r}`. Height = smoothstep(width) * (baseH + ridged fbm) + gaussian peaks. **Height budget: peaks <= +800 m above sea.** Foothill slopes steeper than `rock.slope` become rock (a natural wall). Snow type where `h > snowLine + 25 * fbm` and slope < rock slope. Steep faces above the snow line stay rock.
+- **River:** one polyline from source to mouth with per-vertex `[x, y, halfWidth, carve]`. Inside `keep.y0..y1` the river IS today's `riverX(y)` (ford x ~1029 at y 1068 unchanged). Outside it the polyline takes over, blended over 128 m at the keep edges. The carve reaches `seaLevel` at the mouth with no step (MAP-04 test).
+- **Lake:** the basin SDF shapes a bowl to `lakeZ - depth`, with a water region `lake` (circle/rect) at `lakeZ` and a sand/reeds shore band.
+- **Biomes (type layer + scatter driver):** `biomeAt(x, y) -> u8` = argmax over the biome SDF weights `w_i = smooth(blendM, 0, sdf_i) + 0.25 * (hash01(floor(x/2), floor(y/2)) - 0.5)`. This gives a soft, deterministic, stochastic edge. Inside keep the biome is 0 (`meadow`, today). Table: `geo.biomes[id] = {name, ground: typeName, forest: {fill, species: {meshId: weight}}, detail: {layerName: densityMult}}`. The different forest kinds all use ground type `forest` (id 1, canopy rule unchanged), with per-biome species weights over existing meshes (memory rule: no new env designs).
+
+**Terrain types (engine).** Append only: `sand 5, snow 6, reeds 7, fen 8, flowers 9, alpine 10` (ids 0-4 untouched). `Terrain.js TYPE_NAMES` and `scatter.js DETAIL_TYPES` become data-sized from the recipe `types` table (<= 16 entries, id = table order; the validator throws on gaps). The shade/glyph LUTs size from the same table. The GBuffer already carries the type in bits 16+. New palette entries are append-only in `design/palette.js`.
+
+**Skyline (what reads from the meadow at 1460,1030).**
+- The far grid covers the whole world rect: LOD0 8 m near, LOD1 32 m (`FAR_LOD1_STEP`) beyond. A 512^2 world is ~16k LOD1 quads, which is fine on both GPUs.
+- Fog: `far.full` stays 1500 (no global re-baseline). New look key `haze.skyline: {fogMax: 0.55, fromZ, seaFogMax: 0.7}`. The fog factor of FAR terrain texels is capped at `fogMax` where world z > `fromZ` (peaks), and at `seaFogMax` for type-2 texels at `seaLevel` (the sea line). Precedent: `farTower.fogMax`. Only far pixels change.
+- Sea beyond the world rect: a flat "horizon skirt" far tile at `seaLevel`, type 2, reaching `geo.seaSkirtM: 6000` out from the sea-side edge(s) only (4 verts per side, fixed index layout, no far exclusion). The water clipmap skirt (`WATER_SKIRT_HALF` 1900) is NOT widened.
+- MAP-06a verifies three things: the camera far clip and depth range are >= 6 km; far tiles stay out of the sun-shadow caster set beyond the existing cast range; and the larger `farMaxH` does not defeat the per-tile 23.4 early-out (per-tile bbox).
+- MAP-06b decisions (architect, 2026-10-11): (1) Texel z for the cap = the RASTERISED surface z of the kind-7 cell, not a far-grid lookup: GPU `GA.z` (terrainRaster writes world z), JS `gbuf.z` (rasterJS: wz - zBase - zRef, both 0 for terrain). Both twins read the same interpolated value; `farHeightAt` is gone. (2) Far clip: both twins clip at `PROJ_FAR` (GPU hardware z <= w, JS raster `zn > 1` per pixel; the outcode has no far plane but the pixel test does), so 2000 m cut the skirt on BOTH. `PROJ_FAR` = 16000 (rule: >= far grid reach + `geo.seaSkirtM`). Perspective depth precision depends on `PROJ_NEAR` only; ortho linear depth spacing ~1 mm. Mesh/structure range caps (`addStructures` 2000, `fogFullM`) are unchanged, so no new draws. (3) GPU skirt typeAt: `TERRAIN_BLOCK.skirt[4]` + `skirtCount` (rects from `TerrainMeshSet.skirts`), off-grid inside a rect = 2. (4) `ShadeU.skyline` vec4 (fogMax, fromZ, seaFogMax, seaLevel; x = 0 = off), written per frame from the shared `skylineFor(terrain, palette)`; WGSL body `SKYLINE_FOG_WGSL` lives in skyline.js next to the JS twin.
+
+**Perf budget.**
+- Per heightAt sample: a layer outside its `rect` costs one AABB test (<= 8 layers).
+- Near zone bake (5x3, AUD-30 path): +<= 10 % inside keep; <= 1.4x today's zone bake in mountain/coast zones.
+- Far bake (512^2, 5 heightAt per texel because cell 8 != slopeEps): measure it. Gate: <= 1.5 s total on the laptop, stepped at <= 4 ms/frame under the title/loading screen. If it is over, ASK ARCHITECT (worker, or a far-bake cache keyed like `nearBandKey`).
+- GeoFields build: <= 60 ms at load. GPU skyline (fog cap + skirt): <= 0.3 ms p95 ultra.
+
+**Tests.**
+- `geoLayers.test.js` (Node): an empty layer list gives today's bytes. With all layers on: `bakeNearBand` east + west hashes equal the pinned pre-change hashes, and far texels inside keep are equal. 0 alloc over 100k samples. River continuity at the keep edges (|dh| < 0.05 per 2 m); mouth z == seaLevel +- 0.05. Biome table validator. Type ids 0-4 unchanged.
+- Gates: route-walk all legs PASS. gpucompare: existing rows PASS, or show only far-pixel deltas with metrics (D-039). New row `meadowSkyline`.
+
+**Story split (rows in docs/pc-b-queue.md):**
+- MAP-01a: composer + keep mask + GeoFields (design file + test, ~0.75 d).
+- MAP-01b: engine work: world rect / far grid origin + size, data-sized type table, far bake timing (~1 d).
+- MAP-01c: biome scatter: per-biome species weights + detail density in `engine/world/scatter.js` (~0.75 d).
+- MAP-02..05: content layers (as written).
+- MAP-06a: JS twin: skyline fog cap + horizon skirt (~0.75 d).
+- MAP-06b: WGSL/GLSL + gpucompare row (~0.5 d).
+
+**Do not:**
+- Use weights or lerps inside the keep rect (branch out instead).
+- Evaluate polygons per sample.
+- Renumber or reuse type ids 0-4, or add per-biome forest TYPES (species vary by biome only).
+- Widen the water clipmap skirt or change the global fog.
+- Put geography or biome names in `engine/` (the engine sees layers, fields and a type table).
+- Add swimming or river physics, or place new Ruins-pack pieces.
+- Raise peaks past the 800 m budget without a re-measure.
+
+### 38.43 MAP-A2 Walk anywhere: band grid, map bounds, budgets (PC-B architect opus, 2026-10-11; final per D-066)
+
+Scope: generalise the 38.38 authored zones (WS2-01..05: `World.streamBand`, `ensureBandFor`, `Terrain.beginNearBand/nearBandStep/swapNearBand`, stepped scatter, terrainMesh swap, `band:late`) into a generated zone GRID over the 38.42 world rect, with walk bounds from the map. **Everything in 38.38 "Do not" still holds.** The old `terrainBand`/`terrainBands` paths stay byte-identical.
+
+**Data (world json, engine-validated; mutually exclusive with `terrainBand`/`terrainBands`):**
+```js
+terrainGrid: { cx0: 0, cy0: 0, cx1: 32, cy1: 32,   // chunk bounds of the world rect (128 m chunks), cx0/cy0 >= 0
+               cw: 5, ch: 3, stepX: 2, stepY: 1,    // zone size + pitch in chunks (v1: exactly these)
+               ox: 0, oy: 0,                        // origin phase: zone (i,j) starts at chunk (ox + i*stepX, oy + j*stepY)
+               switch: { prefetchX: 176, switchX: 112, prefetchY: 120, switchY: 88 } }
+```
+With `ox` even, zones `(4,7)` and `(3,7)` ARE today's east `{8,7}` and west `{6,7}`. The bake is per-cell pure, so stage 0-2 band bytes and gpucompare rows do not move. Zones are clamped to the chunk bounds, and all zones are the same size (5x3 = 640 x 384 m).
+
+**Selection (engine, deterministic; `engine/world/bandGrid.js`, pure, 0 alloc):**
+- `marginX/marginY(zone, x, y)` = the distance to the nearest x / y edge.
+- Keep the current zone while `mX >= switchX && mY >= switchY`.
+- When `mX < prefetchX || mY < prefetchY`, pick the target = the zone maximising `slack = min(mX - switchX, mY - switchY)` among the <= 3x3 zones around the pose (ties: lower j, then lower i). Prefetch only if the target differs from both the current and the pending zone.
+- Swap when the current zone is under its switch threshold on either axis AND the pending zone is ready. A pending zone that is no longer the target is dropped (its arrays are released, never pooled).
+- Proof against thrash: with ch 3 / stepY 1 the best zone always has `mY >= 128 > prefetchY 120`; with stepX 2 the best zone has `mX >= 192 > prefetchX 176`. At a zone corner a single swap fixes both axes (the slack picks the diagonal zone). At the world edge no zone improves the slack, so the target == current and nothing happens.
+- `band:late` (sync finish, logged) fires if `mX < 32 || mY < 32` while the bake is still pending.
+- y swaps drop or gain strips >= 88 m from the player (vs 112 m in x). Accepted: detail `drawM` is 70, trees beyond that switch canopy <-> instances as in 38.38.
+
+**API (additions only):** `World.load` accepts `terrainGrid`. `World.streamBand`/`ensureBandFor`/`bandId` keep their signatures; `bandId` = `"g{i}_{j}"`. `bandGrid.zoneAt(grid, i, j, out)`, `bandGrid.pick(grid, cur, x, y, out) -> 0 keep | 1 prefetch | 2 swap-ready-check`. `Terrain.beginNearBand` already copies overlap cells: stepX 2 = 6 new chunks, stepY 1 = 5 new chunks, ~80 ms laptop = <= 40 frames at 2 ms. Max 2 bands in memory (current + pending, ~2.2 MB with scatter twins).
+
+**Far coverage:** the far grid = the world rect (38.42 MAP-01b), so no zone sits outside it. `terrainMesh._updateFarExclusion` works for any band rect (no change), and the exclusion still moves at `_publishNear`. TerrainTextures/passRaster upload any band origin (MAP-12; today they are only exercised at east/west).
+
+**Walk bounds from the map.** New `bounds.shape: 'polygon'`: `{shape: 'polygon', pts: [[x, y], ...]}`, 3..128 verts, simple (validator checks for no self-intersection), walk = inside. MAP-00 traces it along the beach (no swimming), the mountain foot (where slopes turn to rock), the Wall and the gate pass (the gate itself = solid colliders, MAP-09). At load: edges go into a 64 m bucket grid, and the clamp is point-in-polygon + nearest-edge push-back over the <= 9 buckets around the pose (<= 0.02 ms/step, 0 alloc). The `union` capsule list stays for old worlds. When `terrainGrid` is set, the authored capsule bounds are replaced (MAP-11). Terrain steepness stays a second, natural wall. It is not a substitute for the polygon.
+
+**Save / load / travel / respawn.** Band state is derived and never saved. Load, travel, respawn and void-respawn call `ensureBandFor(pose)` anywhere in the grid behind the fade, and the fade-in waits for it. A saved pose outside the polygon (old save, edited map) is moved to the last woken relay. Save size is unchanged.
+
+**Scatter / instance budgets (dense biomes, per 640 x 384 m band = 0.246 km^2):**
+- Trees: <= 3000 placements per band (dense forest ~12k/km^2 peak, average <= 6k). `maxTrees` comes from the band, not the world. Drawn after GPU cull + LOD (`lodCells`): <= 2500 instances/frame. Beyond the band = far canopy only (no instances).
+- Detail (grass, flowers, reeds, rocks): `maxPlacements` <= 40000 per band, `maxDraw` 768 (unchanged). Per-biome `densityMult` (38.42) must keep a band under the cap (the validator sums the worst case). Colliders only for `collide` species (trunks, rocks), built in the stepped job.
+- Stepped scatter + collider jobs share the `streamBand` budget: <= 2 ms JS/frame total. The swap frame stays <= 16 ms (split the collider build if it is over).
+
+**Perf targets (bench poses `lakeEdge`, `denseForest`, `coast`, `ridgeFoot`, plus the existing ones):**
+- Intel iGPU laptop, WebGL2 + WebGPU, default quality 240x90: JS <= 8 ms (D-007), GPU p95 <= 14 ms, `streamBand` <= 2 ms, swap <= 16 ms, load bake <= 220 ms (the 38.38 stage-1 finding stands; PC-A to ratify).
+- RTX 4060, ultra 480x180: GPU p95 <= 8 ms, JS <= 6 ms.
+- Memory: 2 bands + far 512^2 (2.4 MB) + GeoFields (<= 4 MB) <= 12 MB terrain total.
+
+**Tests.**
+- `bandGrid.test.js`: zone math; east/west equal grid zones; pick table; 3x3 walk path = one swap per crossing; corner circle (r 40 m around a 4-zone corner, 2000 steps) <= 2 swaps total; idle 0 alloc over 10k calls.
+- `terrainGrid.test.js`: grid world bakes == `terrainBands` bakes at east/west.
+- `boundsPolygon.test.js`: inside/outside, push-back, concave notch, bucket edges, 0 alloc.
+- Fake-world travel test (MAP-13). Route-walk leg 10 (MAP-14): swaps printed, no `band:late`, no fall, max swap frame <= 16 ms.
+- gpucompare row `gridZone` (MAP-12).
+
+**Story split:**
+- MAP-10: `bandGrid.js` + World grid wiring + tests (~1 d).
+- MAP-11: polygon bounds + far coverage check (~0.75 d).
+- MAP-12: GPU band origin at any zone (~0.5 d).
+- MAP-13: travel/load (~0.5 d).
+- MAP-14: long walk + benches (~0.5 d).
+
+**Do not:**
+- Allow zones of different sizes, or more than 2 live bands.
+- Pick zones from the camera or a timer (player pose only).
+- Serialise band ids.
+- Let game code choose zones.
+- Run the polygon clamp outside the physics step.
+- Rebuild the far grid on a swap.
+- Raise `maxDraw`/`maxPlacements` per band instead of thinning with `densityMult`.
+- Revive the US-026b ring.
+### 38.44 Scalable quest pipeline (~100 quests) (PC-B architect opus, 2026-10-11; final per D-066)
+
+Owner (D-067): ~100 quests (main + side) before release, simple errands, giver `!` / hand-in `?` (D-058, marks only over givers), compass guides, never lock the player, zone bands 1-5 / 5-10 by river side, gear rewards (D-065), no XP (D-020). Builds on 38.35 (questBook) and QL-01/QL-04 (`pickups`, `deliver`, abandon). **`quest.js` semantics stay as they are**: templates expand at load to the plain `version:1` defs it already runs. No engine change (game-side + content + tools only).
+
+1. **Files.** `content/quests/index.json` = `{version:1, packs:["ch1","west","ford",...], legacy:["m1","tower.blade","burl.boars"]}` (the static server has no dir listing). One pack per region: `content/quests/<region>/pack.json` = `{version:1, region, band:[1,5], quests:[src...]}` (~10-20 quests each). Shared tables: `content/quests/sites.json`, `content/quests/rewards.json`, `content/dialogue/quest-snippets.json`. `questBoot.js` loads index -> packs in parallel (<= 12 fetches), then `expandAll`.
+2. **Template source shape** (one pack row, data only):
+   `{ id:"sq.rook.shiny", template:"collect", main:false, title, site:"rook.bend", turnIn?:"<site>", opensAfter:["mq.bend.call"], band?:2, params:{...}, reward:{table:"side.b1"} | {items:[{id,n}]}, lines?:{offer:[],active:[],ready:[],done:[]}, objText?:"..." }`
+
+   | template | params | expands to (`when`) |
+   |---|---|---|
+   | collect | `ids[], count` | `{type:"pickups", ids, count}` (QL-01) |
+   | deliver | `item, to:<site>` | accept gives `item` (`giveOnTalk`); `{type:"deliver", item, to}` (QL-04) |
+   | fetch | `item` | `{type:"item", id:item}`; hand-in at the giver consumes it (`requireItem`) |
+   | kill | `ids[], count` | `{type:"beasts", ids, count}` |
+   | talk | `to:<site>` | `{type:"flag", id:"talk.<site>", equals:true}` (set by the generated talk node, item 5) |
+   | escort | `npc, to:<area>` | `{type:"flag", id:"escort.<npc>.<area>", equals:true}`; follow = burlEscort generalised by npc id; waits, never blocks |
+   | explore | `areas[]` | one `{type:"area", id}` objective per area, in order |
+
+   Main quests may chain: `steps:[{template, params, objText}, ...]` -> objectives in order. A row with `objectives:[...]` and no `template` passes through unchanged (escape hatch).
+3. **API** `game/js/quest/sim/templates.js` (pure, Node): `expandQuest(src, ctx) -> def`, `expandAll(packs, ctx) -> {defs[], errors[]}`, `ctx = {sites, rewards, snippets, items}`. Output frozen and checked by `validateGiverQuest`. `opensAfter:[id]` -> `requires:[{quest:id, done:true}]`; `site` -> `giver:{npc:<site.entity>, turnIn}` plus `def.site`, `def.band`, `def.main`, `def.region`. Deterministic (no random/clock) and idempotent (same src -> byte-identical JSON).
+4. **Sites** `sites.json`: `{"rook.bend":{kind:"npc", entity:"rook", pos:[x,y], whileFlag?:"!s.rook.ford", label:"Rook"}, "post.ws":{kind:"prop", entity:"post1", pos:[x,y]}}`. One NPC may own several sites (Rook at the relay, later the ford; the entity moves out of view as today). Marks + compass resolve `giver` via `world.resolve('giver', entity)` as now; site `pos` is the fallback when the entity is not streamed in (the compass keeps pointing, never hides a ready quest).
+5. **Dialogue snippets.** At load the GAME (not the engine runner) generates entry rows + nodes per site, inserted BEFORE the hand-written entries of that NPC's dialogue: per quest `q.<id>.ready -> <id>.ready`, `.active -> <id>.active`, `.available -> <id>.offer`. Lines = `src.lines.<state>` if the writer wrote them, else the snippet with slots `{title} {objective} {giver} {reward} {count} {target}`. Offer choices = accept (`setFlag q.<id>.accept`) / later (sets nothing). Walking away closes any node (never lock). Main beats keep hand-written nodes above the generated ones.
+6. **Rewards** `rewards.json`: `{"side.b1":{items:[{id:"arrow",n:10}], gear:{tier:1, slots:["boots","belt","gloves"]}}, ...}`. Gear picked at EXPAND time, deterministic: `slots[fnv1a(questId) % len]` -> the tier-N item for that slot from design/items.js (`tier` field, EQ epic). Band = `src.band ?? pack.band`; tables per band (`side.b1..b3` for 1-5, `side.b4..b6` for 5-10). Heart/chart pieces, arrows, potions are plain items. The sim returns the reward, the game grants it (38.35 item 6; full pack -> drop at feet).
+7. **Gating.** Only `opensAfter` (quest done) + reachability (the river-crossing main quests ARE the band gate; no level stat, no XP). `main:true` cannot be abandoned (QL-03). The last main quest's reward is `key.gate` (exactly once, lint).
+8. **Save v2 (small).** `save.game.quests = {v:2, done:[ids], active:{<id>:{c:<completed count>}}, tracked:<id>|null}`, ~100 ids = ~2-3 KB. Not-accepted quests and per-quest fact lists are NOT stored: on load the book replays the global fact stores already in the save (world.state flags, `game.deadBeasts`, `game.pickedUp` (QL-01), `game.areasSeen` (add if missing), inventory) through `feed`, then applies `done`/`active`. `migrateQuestSave` maps the 38.35 v1 map -> v2; `SAVE_VERSION` unchanged (additive `v`). Unknown ids (quest removed) are dropped with a console warning, never throw.
+9. **Perf.** At create build `Map<"type:id", Int16Array>` (fact -> listening quest indices) and reverse `opensAfter` edges; `feed` touches only listeners (typ. 1-3) and recomputes status ints only for them + dependents. Events are rare; per-step cost is 0 when nothing happens. `giverMarks` + compass `target()` stay on book change / 2 Hz and scan only quests of streamed-in sites (site -> quest index list). Budget: load + expand 100 quests <= 20 ms, one `feed` <= 0.02 ms, 0 alloc per step (10k-step heap test).
+10. **Lint** (`tools/validate-content.mjs`, extends QL-02): template known + params complete; every site exists and its entity is placed in world data; `opensAfter` graph acyclic and every quest reachable from the start (BFS); pickups/beasts/areas/deliver targets exist; reward tables/items exist; no pickup id shared by two quests; `key.gate` given exactly once, by the last main quest; `objText` <= 38 chars; heart pieces total % 4 == 0 (warning); every generated dialogue key resolves.
+11. **Headless simulator** `tools/quest-sim.mjs [--region r] [--json]`: loads index + packs + world data in Node, builds the book, walks quests in `opensAfter` topological order: talk(site) -> accept -> synthesise each objective's facts FROM WORLD DATA (placed pickup props, beast spawns, area triggers, site entities; missing = FAIL) -> hand-in -> grant. Prints one row per quest (id, template, region, steps, reward, OK/FAIL reason) + totals (heart pieces, arrows, gear per band). Exit 1 on any FAIL. `quest-sim.test.mjs` (real content + 3 broken fixtures) runs in `run-tests.mjs`.
+12. **Authoring workflow** (a new errand needs no code): writer -> row in `docs/quest-roadmap.md` (QL-R1) + text keys in docs/story.md (title, objText, optional lines); designer -> placed pickups/beasts/areas/site entity in level data; programmer -> one pack row (template + params + reward table). Then `node tools/validate-content.mjs` and `node tools/quest-sim.mjs` must be clean.
+13. **Story split.** QL-T1 templates.js + index/pack loader + sites/rewards tables (items 1-4, 6, 7) ~1 d. QL-T2 lint + quest-sim (items 10-11) ~0.75 d. QL-T3 indexed feed + save v2 + migration (items 8-9) ~0.75 d. QL-T4 dialogue snippet generation + talk/escort flags (item 5) ~0.75 d. Order: T1 -> (T2 | T3 | T4).
+14. **Tests.** `templates.test.js`: each template -> the documented `when`; hand-written vs template Ch1-2 quest = identical runtime state after the same events; 100 synthetic quests expand <= 20 ms; gear pick stable. `questBook.test.js` (T3): listener-indexed feed == brute-force feed over 1k seeded events; save v2 round trip; v1 -> v2 fixture; save with a removed quest loads. `questSnippets.test.js` (T4): generated entry order, writer lines override snippets, every node exits without a forced choice.
+- **Do not:** add a quest DSL, scripts or callbacks in json; put quest/template logic in `engine/`; use random or the clock at expand/reward time; store per-quest fact lists or status strings in saves; poll every quest every step; let a template block movement or force a dialogue; show `!`/`?` from anything but book state; hand-edit generated dialogue nodes.
+
+### 38.45 RIVER-A1 River water v2 (PC-B architect opus, 2026-10-11; final per D-066)
+
+Scope: OB-019 v2. Replaces the 49 flat `river_NN` rects (gen-river-water.mjs v1) with ONE sloped, path-following water shape. Ford, Glasswater, sea, pond, cellar regions stay. Read with 32.2, 35.1-35.7, 36.1. **Decision: a `river` shape = polyline baked at load into (a) a bucketed query table and (b) a static ribbon mesh drawn in the existing water layer pass (the river analogue of the 35.5 waterfall sheet).** Rejected: more rects (steps + 8-draw cap), clipmap clamped to the river AABB (the clipmap is flat and its skirt can't follow a slope), a per-vertex nearest-segment search in the VS (13.6k verts x 200 segments, JS twin too slow).
+
+**(1) Data + query (`engine/world/water.js`, `engine/world/river.js` new, pure).**
+- Def: `{id, shape: "river", path: [[x, y, z, halfW, speed?], ...], look: "river", feather: 1.5, clip: [regionId <= 2], draw?: true}`. 2..256 verts, segment length 1..64 m, `z` non-increasing downstream (+0.01 tol), `halfW` 0.5..60, `|dz|/ds <= 0.6`, `speed` 0.1..`FLOW_MAX` (default `clamp(0.6 + 8*slope, 0.6, 3)`), `clip` ids must be existing rect/circle regions. `waves` forced `none`. Validation throws naming id + vertex. Max `RIVER_MAX 4` rivers (own counter; `WATER_MAX` back to 32 for regions).
+- Any region may carry `draw: false` (physics/`block` only, not selected for render) - the ford uses it.
+- Compile at load (may allocate): x/y Catmull-Rom (uniform), z/halfW/speed linear, resampled every `RIVER_DS 2` m of arc into SoA `Float64Array`s: `x, y, z, hw, tx, ty, s, tau` (`tau` = cumulative `ds/speed`, s). Throws if the inner bend radius < `halfW + feather` (ribbon self-overlap). Bucket grid 16 m over the AABB grown by `max(hw)+feather`; CSR `cellStart Int32 / segIdx Int32` of samples-segments whose capsule meets the cell.
+- The river is kind 3 in the region SoA (`ids/look/flow/x0..y1` = AABB, `z` = min z) + `wt.rivers[k]`. `find(x, y)` for kind 3 calls `riverLocate(rv, x, y)` -> module scratch `{s, lat, z, hw, tx, ty, v}`: candidates of the cell, project on each segment, keep min `|lat|` (tie: lower seg), inside iff `|lat| <= hw` (the feather is render-only). Highest local z still wins over regions. Cost <= 0.003 ms, 0 alloc.
+- `waterAt`: `surfaceZ = flatZ = z(s)`, floor probe as today from `z(s)+0.01`. `flowInto` kind 3: `(tx, ty) * v * (1 - 0.5*(lat/hw)^2)` (faster mid-channel). Content only: `waterDef` round-trips, nothing new in save/hash.
+
+**(2) Render (WGSL `water.wgsl.js` + JS twin `rasterJS DRAW_WATER` / `waterVertexJS`; `waterComposite` both twins).**
+- `buildRiverMesh(rv)` in `engine/mesh/waterMesh.js`, static, uploaded once: per sample row 8 verts across at `lat = +-(hw+feather), +-hw, +-0.6hw, +-0.2hw`, local to a per-river origin (uniform `shape.xy = origin - O`, f64 on the CPU, like sheets). Vertex layout gains `@location(1) aB: vec4f = (edgeDist e, nx, ny, rapid)` (0 for clipmap/sheets); `aL = (lx, ly, z, tau)`. Chunks of 32 rows (64 m) with an AABB and two index ranges: LOD0 (all rows/cols) and LOD1 (every 4th row, cols 0,1,6,7). River ~1700 m: ~6.8k verts, LOD0 ~12k tris.
+- Select (`selectWater`): rivers get their own slots 12-13 (`WATER_SLOTS 14`, `WL_SLOTS 14`; 14*56 vec4 = 196 < 224), never compete with the 8 region slots. Per chunk: frustum cull, cull beyond `look.riverFarM` (1200), LOD0 if AABB dist < 192 m else LOD1; adjacent same-LOD chunks merge into runs, <= 8 runs/river (gaps beyond that are drawn, cheap). This draws the whole visible river, not the 8 nearest.
+- FS: discard inside a `clip` region (shape test, the lake/sea draws there: no coplanar overlap), then the normal occluder rule; WATER texel `z = floatBits(tau)`, `y = oct(normalize(nx, ny, 1))`, `w = slot | back<<4 | sheet<<5 | 1<<6 | rapidQ<<8 | min(65535, u32(e*1000+0.5))<<16`. The terrain cuts the flat cross-section, so the shoreline is the bank contour (organic, not a rect).
+- Composite for ribbon texels (36.1 rules otherwise): depth colour by column `col` (unchanged); **alpha feather** `a *= clamp(e/feather, 0, 1) * clamp(col/look.shoreFade(0.15), 0, 1)` -> no hard edge, no floating sheet edge; shore/stone foam = the 36.1 shore band with `s = col/foamDepth` only (stones poke through -> small `col` -> foam ring). **Flow streaks** (replaces 35.4 for kind 3): `key = hash(floor(tau/look.streakT - o) & 1023, floor(e/W) & 1023, SALT_FLOW)`, `o = (t/streakT) mod 1024` folded in f64 on the CPU: material coordinate, so streaks move at the local speed and stretch in rapids. Rapids: `rapidQ = clamp(slope/0.25)*255`; foam glyph when `hash01 < rapidQ/255 * look.rapidFoam`.
+- Budget p95 400x150 (D-029): `_passWater` rivers <= 0.1 ms; composite extra <= 0.05 ms; `selectWater` rivers <= 0.03 ms; 0 per-frame upload/alloc; JS twin <= 2 ms at 160x60 (warn). GLSL WebGL2 fallback: rivers not drawn (painted type-2 ground remains), documented limitation.
+- gpucompare (35.10 bars, `setTickForTest(600)`): new mesh rows `riverBend` (keep-side bend, LOD0 + LOD1 in view), `riverFord` (stones, grazing), `riverSteep` (y ~300, rapids).
+
+**(3) Physics (game reads, engine adds one body field).**
+- `engine/physics/integrate.js`: `body.pushX/pushY` (m/s, default 0) added to the horizontal move before collide (same wall/step path); reset by the caller. Wading slowdown uses the existing `body.speedScale`.
+- `game/js/quest/sim/wading.js` (new), each step before `integrate`: `imm = surfaceZ - body.z` (feet, NOT `depth`, so stepping stones above the surface stay dry). `k = clamp(imm/0.9, 0, 1)`: `speedScale = min(other, 1 - 0.5k)`; `push = flowAt * 0.7k`, |push| <= 3 m/s.
+- **No swimming (D-064): deep = wall.** After `integrate`, if grounded and `imm(new) > DEEP 1.0` while `imm(prev) <= DEEP`: revert to `(newX, prevY)`, else `(prevX, newY)`, else `prev` (z restored), zero vx/vy. Spawn/fall into deep: push toward the nearer bank (`-sign(lat)` normal) at 2 m/s; > 3 s -> the OB-016 void rescue. Beasts: nav blocks `depth >= 0.6`.
+- Arrows: hitting the surface -> splash ripple, the arrow becomes a floater (8 s). Floaters (`floaters.js`): `x += flow*dt`, `z = surfaceZ - draft`, stop where `waterAt` is false. Ford `block` colliders unchanged.
+- **ASK PO (gameplay, my recommendation):** with the deep rule, shallow river stretches are wadeable anywhere. To keep D-064 "cross on the stones", the keep stretch should be >= 1.2 m deep (needs the MAP-04 bed carved >= 1.4 m below the banks there). Default if no answer: generator depth 0.4 m, ford blocks only.
+
+**(4) Migration (content, `tools/gen-river-water.mjs` v2).** Removes `river_01..49`; emits `braid_upper` (source y 100 -> Glasswater, `clip: [glasswater]`) and `braid` (Glasswater -> mouth, `clip: [sea]`), path every 8 m along `x = riverX(y)`, `halfW` = `interp3(G.river.poly, y, 2)`. `z` = min ground over the inner 60 % of the cross-section + depth, then running-min downstream, then `<= min(bank ground at +-halfW) - 0.1`; flat = ford `z` over the ford and = lake `z` inside the clip. Ford: `draw: false` (keeps `block`). Ribbons meet the clip regions at their z (+-0.02, test).
+
+**(5) Steps** (rows in `docs/pc-b-queue.md`, River water v2): RIVER-01a data+query, RIVER-01b physics, RIVER-02 mesh + JS twin, RIVER-03 WGSL + gpucompare, RIVER-04 content/generator. **Do not:** add waves/under view to rivers, put the river in the G-buffer or the draw list, rebuild the mesh per frame, search segments without the bucket grid, use `depth` (floor-based) for wading, add swimming, touch the ford stones or Glasswater/sea defs beyond `draw`/`clip`.
+
+**(6) RIVER-04 resolution (PC-B architect opus, 2026-10-11; ASK ARCHITECT OB-019).**
+- **Cause.** The generator and the game read the same terrain (`groundAt` == recipe `heightAt`; no band/path mismatch). Downstream of the ford, y 1086-1344 lies INSIDE `geo.keep` (38.42), where the MAP-04 river layer is a no-op by branch, and y 1344-1472 is its 128 m fade. So the bed there is the old recipe valley + 2 m carve, which rises ~3 m (-90.2 at the ford to -87.1 at y 1232). The poly's "-92 at 1344" only starts to act beyond the fade. Outside the keep, the poly sat above the ground at y 100-300 (source humps) and 600-760 (a 1.5 m hump at y 680), and it never cut the Glasswater dam shelf (-57.2) or the outlet cliff.
+- **Decision.** (a) **Carve, never raise.** Inside the keep the base recipe gets `recipe.river.bedLine`: `h = min(h, bed(y) + lift + 0.45 * max(0, |dr| - 8))`. `bed` is monotone (-90.45 at y 1070 to -91.3 at y 1420). `lift` is 50 m at both ends over `ramp` 8 m, so the carve is continuous and carve-only. **Keep exception (explicit):** the keep's byte-identical rule no longer holds for the river channel south of the stone lane (y > 1070, |dr| < ~17 m). There is no authored content there (all ford structures are at y <= 1088 and |dr| >= 13.8 m). Ford rect, stones, block and ford z are unchanged. `geoLayers.test` compares the pinned pre-change bytes with the bedLine off. (b) MAP-04 poly: below the ground at the source (y 128-300); a lake-z - 0.4 channel through the dam shelf (y 352-540; hw 22 over the inlet hollow y 362-412 so the ribbon edge never floats); a vertical **notch** at the outlet cliff (y 603 -> 605, -60.2 -> -77); and under the y 680 hump. The layer's bed lookup uses the along-flow coordinate `ys = y + (x - xr) * xr'(y)` (cross-sections perpendicular to the flow). `inset: 2` puts the shoreline inside the ribbon. (c) **Waterfall** at the outlet: world `waterfalls[braidFalls]` (lip = the outlet ribbon's end row at y 603.5, drop ~16.6 m into the plunge reach, outDeg ~191, look `waterfall`). The river is not one ribbon over the cliff (slope > 0.6). (d) Generator rules: cross-sections and banks are sampled along the flow normal, banks at `hw + 1.5`; each free run between pinned vertices (lake z, ford z, sea z) is fitted on its own, starts at <= the previous pin and never drops below the next pin (backwater). The mouth runs to y 1480 and is pinned at the sea z (no ease). braid_upper runs to the lake rect (clip glasswater). braid starts at the cliff foot y 605.
+- **Accepted deep pools (> 1.0 m, walls by the wading rule):** the ford pool y 960-1016 (<= 1.6 m, dammed by the authored ford bar), and the Glasswater inlet hollow y 366-402 (<= 5 m, at lake level, part of the lake). Everything else is <= 0.8 m (Node probe y 100-1424: 0 dry except the ford bar y 1074-1076 at <= 0.06 m).
+- **Open (engine, programmer): river end caps.** `riverLocate` clamps `t` to [0,1] on every segment, so each river has a round cap of radius `hw` past its first and last vertex. The ribbon ends at the end row. This puts 17 m-deep "water" at the waterfall foot (outlet cap y 603-613) and lake-z water past the lake joins. Fix: in `riverLocate`, keep the unclamped `t` of the best segment. If `best === 0 && t < 0` or `best === n-2 && t > 1`, return false (loc[9] = 0). Add a test in `river.test.js` (point 1 m past each end, on the centre line -> false; 1 m inside -> true) and keep 0 alloc.
+
+### 38.46 OB-043 draw-list / instance budgets + MAP-08 far bake (PC-B architect opus, 2026-10-11; final per D-066) - ferrumGlow dropped (D-086)
+- **Never throw in the game path.** `DrawList.push` past `capacity` writes into a private sink item (never drawn) and counts `list.overflow`; `list.strict = true` keeps the old throw for tests/dev. Push order is the priority (levels, mesh singles, mesh groups, terrain, voxels, instances, cloths), so both twins drop the same items (gpucompare parity). `addInstances` drops a whole item past `MAX_LIST_INSTANCES` 6144 (= 4096 engine instances + 2048 grouped), counted in `list.instDropped`; the WebGPU raster `throw` past 4096 became an unreachable `break`.
+- **Budgets.** `MAX_DRAW_ITEMS` 256 -> **512** (counted BEFORE `cull()`; measured roadBend pre-cull peak 214 = 2 static + 45 voxel + 81 terrain + 86 groups, post-cull 121). Uniform ring follows (`MAX_DRAW_ITEMS * 16 + 64` = 8256 slots, 2.1 MB). Sun-shadow trim keeps its own **`MAX_SHADOW_ITEMS` 256** (unchanged output). `MAX_GROUPED_INSTANCES` 2048 -> **4096** (build-time CPU rows only), `MAX_GROUPED_KEPT` 1536 -> **2048**/frame.
+- **Group overflow = farthest dropped.** `MeshGroupSet.push(list, planes, cam)` pushes at most `capacity - count - DRAW_TAIL_RESERVE` (192: terrain near/far/skirts, <= 48 voxels, instance groups, <= 16 cloths) group items; past that the groups whose nearest survivor is farthest from the eye (xy; ties: later group) are dropped whole. Counters: `meshFeedStats.{drawItems, overflow, instDropped, groupsDropped}` (`noteListOverflow(list)` before `cull` in both feeds), F3 line `draws N/512 [OVERFLOW ...]`.
+- **Measured (2026-10-11, rtx4060, ultra 480x180, perf-pose 1500 frames, 4 agents on the box):** roadBend GPU p95 2.32 / JS p95 8.00 ms, meadowDetail 4.39 / 7.50, fordDetail 3.68 / 7.90 - all PASS (<= 8). No per-frame cost added below the caps (one branch per push; the group sort runs only on overflow frames).
+- **Far-only content rule (MAP-08).** Skyline silhouettes are ONE baked static mesh per landmark, never hundreds of placements: `tools/gen-ferrum-far.mjs` bakes 262 slab/spire copies (Wall_UnevenBrick_Straight solid courses, Wall_Arch top course, Corner_Exterior_Brick spires; each source simplified once) into `content/meshes/far/ferrum_far` (5440 tris, 184 KB bin), placed once as `fr000` (`collide:false`, `castShadow:false`) = 1 single draw, 0 group slots; plus the `ferrumGlow` billboard (`ferrumLights.world` 640 x 71 m).
+
+### 38.47 US-055a wade splash + ripples (PC-B 5th agent, 2026-10-11; ratified PC-A 2026-10-14)
+
+**Decision: no new pool, no new WGSL.** Both halves already exist with GPU parity: droplets = the pooled CPU sim `engine/fx/particles.js` (cap 2048, 32.1; GPU draw via `particleLayer.js`, which both twins read, so parity is by construction, 38.15 "no GPU particles" stands); rings = `engine/fx/ripples.js` (cap 8) + the `waterComposite` JS/WGSL/GLSL twins (38.14). US-055a is a preset module (engine) + a game hook, the same pattern as `hitSparks.js` and `waterfallHooks.js`.
+
+**Engine: `engine/fx/wadeSplash.js`** (new, exported from `engine/index.js`; imports nothing but `./particles.js` constants if needed):
+```
+export const WADE_SPLASH = Object.freeze({ maxLive: 64, entryMin: 6, entryMax: 10, arrowN: 4, entrySpeed: 1.0 /* m/s */,
+  ringPeriodSteps: 24 /* 0.4 s */, ringAmp: 0.4 });
+defineWadeSplash(particles, look = {}) -> defId          // idempotent, key 'wadeSplash'; life [0.5, 0.7] s, speed [1.2, 2.4], dir [0,0,1],
+                                                         // spreadDeg 50, accelZ -9.8, maxLive 64, glyphs ". ' ,", colors = look.foam ramp
+                                                         // (caller passes the water look foam rgb; default a light blue-white ramp), sizeM 0.12
+wadeSplashAt(particles, x, y, z, speed01) -> void       // n = entryMin + round(speed01 * (entryMax-entryMin)); burstAt(id, x, y, z, n, 0, 0, 1)
+arrowSplashAt(particles, x, y, z) -> void               // burstAt(id, ..., WADE_SPLASH.arrowN, 0, 0, 1)
+```
+Cap 64 = the def's `maxLive` (per burst emitter) plus the hook never having more than 6 transient emitters alive (entries are edge-triggered, arrows rare); AC1 "pool cap 64" is tested as `particles.stats.live` from wadeSplash defs <= 64 under a 600-step worst case. Seeded: the particles' own RNG stream (rule 15), no Math.random.
+
+**Game: `game/js/quest/sim/wadeFx.js`** (new; `createWadeFx(particles, ripples, cfg = WADE_SPLASH)` -> `{ step(entity, timeSec), arrowHit(x, y, z, timeSec) }`), called in `main.js` right after `wading.after(...)`. Reads only `body.wadeImm` (set by `wading.before`), `body.vx/vy`, transform. Per step, zero alloc: (1) entry edge = `prevImm <= 0 && wadeImm > 0 && hypot(vx,vy) > entrySpeed` -> `wadeSplashAt` at the feet (z = surface = feet z + wadeImm) + `ripples.add(x, y, 0.8, t)`; (2) while `wadeImm > 0 && hypot > 0.3`, every `ringPeriodSteps` (integer tick counter, reset on entry) -> `ripples.add(x, y, ringAmp, t)`. `arrows.js` calls `arrowHit` where RIVER-01b starts an arrow floating. Engine never imports this file.
+
+**Ring timing vs the story.** Ripple constants are global (RIPPLE_SPEED 1.2 m/s, LIFE 2 s, draw threshold acc >= 0.2) and feed existing rows: do NOT change them. With `ringAmp` 0.4 a ring is visible until age 1.0 s, radius 0 -> 1.2 m (story asked 0.8 s; PO: accept 1.0 s). Ring budget: one ring / 0.4 s with a 2 s life = 5 live of cap 8; the entry ring can evict the oldest (by design).
+
+**gpucompare row `wadeSplash`** (game/js/dev/modes/gpucompare.js, after `riverFord`, same `riverPose('cmp.riverFord', ...)`): `before()` = `particles.clear()`, `defineWadeSplash`, `wadeSplashAt` at a ford point 3 m ahead of the camera with speed01 1, `ripples.add` x3 at ages 0.2/0.5/0.8 s (fixed timeSec), 12 particle steps, frozen; the row sets `fb.ripples` for this pose only and restores it in the existing per-pose reset (next to the `particles.clear()` at ~line 937). No other row changes (AC2).
+
+**Perf.** Hook: O(1) per step, 0 alloc. Sim: 64 live is ~0.003 ms/step (2048 = 0.105 ms, 38.15); layer build adds <= 64 projections. Composite: already paid by 38.14 (<= 8 rings). Budget: <= 0.05 ms/frame JS total at 64 live + 8 rings (AC1 bar 0.1 ms stands).
+
+**Tests (Node).** `engine/fx/wadeSplash.test.js`: idempotent define; burst counts 6/10/4; same seed -> same px/py/pz after 30 steps; all dead after 0.7 s (42 steps); 0 alloc over 10k bursts+steps; live <= 64. `game/js/quest/sim/wadeFx.test.js`: entry edge fires once (no re-fire while staying in), no splash below 1 m/s, ring every 24 steps while moving, none while standing, arrowHit = 4.
+
+**Particle visibility (OB-045 report: one fg glyph, no bg) -> separate story, not here.** Fixing it changes `particleLayer.js` + the sprites pass twins and the existing `particles` row for every emitter, so it is its own small engine step (proposed `PART-VIS-01`: optional def field `bgMix` 0..1 blending the particle colour into the cell bg, layer word gains bg, WGSL/JS twins + `particles` row re-baseline). US-055a stays visible without it by using `sizeM` 0.12 (2x2 cells near the camera) and the bright foam ramp; if AC3's still is still too faint, PO files PART-VIS-01 rather than widening this story.
+
+### 38.48 OB-051 2x UI text (scaled cells) (PC-B 5th agent opus, 2026-10-11; ratified PC-A 2026-10-14)
+**Live present paths:** WebGPU `present.wgsl.js` (UI pass, `u.layer==1`) and Canvas2D (`?force2d=1`, CPU raster after `_mergeUiLayer`). WebGL2 is gone (WG-5b); nothing else.
+**Encoding (no new buffers, 0 alloc):** a 2x glyph is a 2x2 block of UI cells, all holding the same glyph, with **bit 7 of `fg[i*4+3]`** set (`UI_SCALE2_BIT = 128`; glyphIdx is 0..94 so the bit is free; `cells.glyphIdx[i]` keeps the plain index). The block origin is snapped to **even x,y**, so a shader/raster knows its quadrant from cell parity: `qx = cx & 1, qy = cy & 1`. bg/mask are untouched: a scaled cell is opaque (255) or glyph-only (128) exactly like today, so plates and the glyph-only branch compose unchanged. Only the UI layer ever sets the bit; the scene path never sees it.
+**API (engine/ui/uiLayer.js + engine/render/textDraw.js):**
+- `layer.setCellScaled(x, y, glyph, fg, bg)` -> writes the 4 cells of the block at `(x & ~1, y & ~1)` via `cells.setCell`, then ORs 128 into each fg alpha. Out-of-range cells skipped. Export `UI_SCALE2_BIT`.
+- `drawTextScaled(rt, x, y, text, fg, bg)` in textDraw.js: char i -> `setCellScaled(x + 2*i, y, ...)`; if `rt.setCellScaled` is missing (scene RT), falls back to `drawText` (1x). Per-cell flag, not an overlay run list: no extra pass, no list to clear, same upload.
+**WGSL (present.wgsl.js, layer 1 only):** `let s = layer == 1 && raw >= 128` (raw = fg.a byte); `glyphIdx = raw & 127`; `frac = s ? (cellFrac + vec2f(f32(cell.x & 1), f32(cell.y & 1))) * 0.5 : cellFrac`. The UI atlas is already nearest + whole texels (OB-021), so the 2x glyph is pixel-doubled with the same sharpness as 1x; no new atlas, no filter change.
+**Canvas2D:** fast merge copies fg[3] as is (bit included). Raster loop: `scaled = fg[fi+3] & 128`; if set, mask index = `((qy*pxCellH + j) >> 1) * pxCellW + ((qx*pxCellW + k) >> 1)`. Rare merge path (cpuGrid != ui grid): write the glyph only in the qx=qy=0 cell, space in the other 3 (acceptable degrade, dev-only path).
+**Parity / gpucompare:** gpucompare rows compare the scene pipeline, not the UI pass -> no re-baseline. Parity = one pure JS helper `scaledFrac(raw, cx, cy, fx, fy, out)` in `engine/ui/uiScale.js` used by the Canvas2D raster math tests, and a Node string test that present.wgsl.js contains `& 127` and the `* 0.5` frac line.
+**Game use (crosshair.js):** `style.prompt.scale` (data, default 1; main.js uiStyle sets 2). When 2: prompt row `py = (cy + 2 + 1) & ~1` (below the 3x3 cross), `px = (cx - text.length) & ~1`, plate + key/rest via `drawTextScaled`. Prompt text <= ~40 chars fits 160 cols.
+**Split.** **OB-051a (engine, ~20 calls):** uiLayer.setCellScaled + UI_SCALE2_BIT, textDraw.drawTextScaled, uiScale.js, WGSL lines, Canvas2D raster + rare merge. Tests: `uiLayer.test.js` (block snapped to even origin, 4 cells bit set, glyphIdx plain, odd x/y snaps, edge clip, 0 alloc over 10k calls); `textDraw` (fallback on a plain CellBuffer = 1x); `uiScale.test.js` (4 quadrants map frac to [0,0.5)/[0.5,1), unscaled passes through); Canvas2D raster test: a scaled 'I' block at pxCell 4x8 equals the 1x mask upsampled 2x; WGSL string test. **OB-051b (game, ~15 calls):** crosshair.js scale path + `style.prompt.scale` in main.js + crosshair.test.js (scale 1 unchanged golden; scale 2: width 2*len, even origin, rows py/py+1, never overlaps cross cells); `tools/verify-prompt-scale.mjs {port}` (boots a pose with an interactable in reach, waits for a prompt, asserts the UI cells of the prompt row carry bit 7 with even origin and width 2*len, saves `docs/test-reports/ob051/prompt.png`), run once by the main session. Status: arch-review after each step.
+
+### 38.49 OB-053 coplanar surfaces flicker: depth tiers + lint (PC-B architect opus, 2026-10-11; ratified PC-A 2026-10-14)
+**Cause (measured, headless WebGPU at the OB-053 pose, GI readback over 10 camera nudges of 0.005-0.02 deg):** 8353 of 86400 cells change winner; the top pairs (~5000 cells) are KIND_MODEL 8 (voxel prop `envelopeHeap`, balloon mats 76-81, rope 41) vs KIND_FLOOR 4 (tower level floor, mat 8) at the same depth. `?terrain=0` changes nothing, so it is not near/far terrain or the carve. The prop is `z: 'ground'` -> `terrain.groundAt` = 2.4 (World.js ~l.681); its voxel layer at anchor + 0.6 m (cellM 0.2) lies exactly on the 'j' gully floor (3.0). Content heights sit on round grids (level floors 0.3 m, voxel layers 0.2 m, ring 2.4 m), so exact coplanar faces from DIFFERENT draws (different matrices -> different f32 clip rounding) are systematic, and the depth test (`less`, no tie rule) picks a per-pixel winner that changes with the camera. The coplanar lint missed it: it covers level faces + placed meshes only, not voxel props or terrain.
+**General fix (engine, both twins): per-draw depth tier.** `DrawItem.depthTier` (0..3, default 0) set where items are pushed: level grid + terrain (incl. far, skirts) 0, placed meshes (single + grouped/instanced) 1, voxel/model items (DRAW_VOXEL, entities, props) 2; view models keep their own path. WGSL: every raster vertex stage that draws these items, AFTER `RASTER_Z_LINE`, does `o.pos.z -= u.depthTier * DEPTH_TIER * o.pos.w;` (new appended uniform field in RASTER_BLOCK and the instanced/mask blocks; terrainRaster gets nothing, it is tier 0). `DEPTH_TIER = 2^-21` in [0,1] depth (8 depth24 ulps; world shift d^2*2^-21/near = 0.5 mm at 5 m, 9.5 cm at 100 m). Only the depth TEST moves: the written `Depth`/`dist` (1/pos.w) and GA stay unbiased, so gpucompare depth/uv metrics do not move. JS twin rasterJS: same tier per item, `zn -= 2 * tier * DEPTH_TIER` (NDC [-1,1]) next to the existing `biasAdd` line, compare only, `zbuf` stores the biased value (same as the GPU depth attachment), the written vD stays raw. Shadow passes: unchanged (they already have depthBias). Result: a lower tier never beats a higher tier at a tie, so prop-on-floor / mesh-on-terrain / prop-on-mesh ties have one fixed winner everywhere; real separations larger than the shift keep their order: per tier 2.4 cm at 50 m, 9.5 cm at 100 m (tier 2 = double); correction OB-053a review, see the "Precision" line below.
+**Precision (arch review 2026-10-11):** the bias stays a constant in [0,1] depth on purpose. The tie noise it must beat is constant in depth space too (measured max 2^-23 in depthTier.test, plus ~1 depth24 ulp of raster quantization), so a view-space-metre or slope-scaled bias that shrinks with distance would drop under the noise exactly where the flicker lives. The world-space cost grows as d^2 because depth precision does; in cells it grows only linearly (~1/8 cell at 50 m, ~1/4 cell at 100 m for tier 2). Accepted. Do not lower DEPTH_TIER below 2^-21 (2^-22 leaves < 2x margin). If far-field bleed ever matters, the fix is reversed-Z with a float depth buffer (ESCALATE, not a tweak here).
+**Same-tier ties (mesh x mesh, 845 lint pairs: sg Wall_UnevenBrick x Floor_UnevenBrick, ow Roof_Wooden x2, poi stairs, crates) are content defects:** fix them in their generators (tools/gen-sealed-gate.mjs, gen-outwall.mjs, gen-poi-props.mjs, gen-roadside*.mjs: drop the duplicate piece or offset it >= 2 cm) as a separate PC-B content step. Do not give meshes per-object sub-tiers (hides duplicates, costs nothing to fix at the source).
+**Lint (regression gate):** tools/coplanar-lint.mjs also emits voxel props (level props + world entities with a voxel component, via the engine voxelMesh build at their resolved pose) and the near-terrain heightfield as candidate faces; it reports pairs per tier class and exits 1 when a SAME-tier pair is found that is not in `tools/coplanar-allow.json` (empty after the content step). Cross-tier pairs are listed as info only (the tiers resolve them).
+**Files:** engine/mesh/DrawList.js (field + doc), engine/mesh/meshGroups.js / addMeshStructures / voxel + level item builders (set tier), engine/render/gpu/wgsl/raster.wgsl.js (+ instanced/mask blocks), engine/render/gpu/wg/passRaster.js (write the field per item/group), engine/mesh/rasterJS.js, engine/render/projection.js (`DEPTH_TIER`), tools/coplanar-lint.mjs.
+**Node ACs:** (1) new `engine/mesh/depthTier.test.js`: two coplanar quads from different matrices (level-local frame vs a voxel frame at |x| ~1500, 0.2 m grid) over 500 seeded cameras 1-300 m with f32 clip emulation (Math.fround, like the GPU): without tiers the winner flips on >= 1 pose; with tiers the tier-2 quad wins 100 % and the measured max |zn_a - zn_b| stays < DEPTH_TIER; (2) quads 2 cm apart at <= 50 m keep their true order with tiers; (3) raster.wgsl.test: the tier line follows RASTER_Z_LINE in every raster variant, the field is appended (old offsets unchanged); terrainRaster unchanged; (4) rasterJS: written depth plane identical with/without tiers on a non-coplanar fixture; (5) coplanar-lint.test: a voxel-prop-on-floor fixture is found; same-tier pair -> exit 1, allow-listed -> exit 0; 0 alloc per frame (tier is a per-item number).
+**gpucompare:** expect 0 PASS->FAIL; rows with prop/mesh contact ties (tower interior, meadow, crossroads) may only improve (both twins now pick the same winner). Add a row `ob053Heap` at `at=1481.85,1024.30,2.40,104,-24`. Browser check (main session): the same GI readback probe (10 nudges) must show 0 kind-8/kind-4 winner flips at that pose.
+**Split:** OB-053a engine tiers + tests (sonnet, ~30-35 tool calls); OB-053b lint extension + allow file (~15); OB-053c content generators for the 845 mesh x mesh pairs (PC-B content, separate).
+### 38.50 OB-054 ground shimmer while moving: options (PC-B architect opus, 2026-10-11; ratified PC-A 2026-10-14; owner picks the look)
+**Cause (from code; confirm with step a).** (1) **Sub-cell hash aliasing on terrain.** `shadeTerrain` (WGSL l.87, twin `terrainShade.js`) picks glyph/tier from a world hash cell `cellSz = pow2ceil(t*k)` clamped 0.125..2 m (per-cell mode, 28.11c). `t*k` is the *column* footprint only; along the view depth a ground cell covers `~t*k / sin(grazing)`, i.e. 3-10x more at 10-40 m. One screen cell then spans several hash cells, the cell centre lands in a different one every frame you move, and glyph + tier (+-1 via `hA`) re-roll = "shimmering squares". (2) **Moving rings:** the pow2 `cellSz` steps, `bandNear/bandMid` glyph-set switches and `closeBand` jitter/features are distance rings that travel with the player; every cell a ring front crosses re-rolls. (3) **Grass scatter at distance:** voxel cards < ~1 cell tall flip coverage cell to cell, and wind sway adds sub-cell motion there. (4) Glint branch (1.5 Hz timer) only on glint types, minor. Temporal reprojection (38.25) can only damp (1): 255-holds refresh every `1/16 m` of anchor drift (~every 3 frames at walk speed), hence the measured ratio 0.80.
+**Options.**
+- **(a) `?stable=1` ON by default.** Cost ~0.25 d (gfxPreset key + main.js default + owner look); GPU <= 0.15 ms iGPU, 0 B/frame. Look risk low (lag/smear on held glyphs). Effect: ~-20 % flips, does not remove the aliasing. Missing: owner look, preset key, a walk (not pan) measurement.
+- **(b) Calmer distant ground (root fix).** Footprint-aware hash cell (column AND depth footprint, so a cell never spans > 1 hash cell) + no tier dither and a low-contrast glyph set (`. , ' space`, small colour jitter) past `bandMid`, near band unchanged. Cost ~1.5 d (split below); perf ~+5 ALU/cell, 0 alloc. Look risk medium: far ground plainer; near keeps full detail, owner judges.
+- **(c) "Billboard" grass near the player.** Real sprites stay NO (37.5: 64-sprite cap, O(64)/cell loop, near cull). The same look = ENV-01d cross-card voxel tufts via scatter, denser in 0-15 m, culled where a card is < ~1.5 cells tall, sway faded with distance. Cost ~0.5 d (data + scatter maxDist/sway fade); perf within 37.4 item 7 (0.6 ms GPU). Look risk low, but alone it does not calm the ground; it is the "not boring" half of (b).
+**Recommendation: (b) + (c), then (a) as a preset after re-measuring.** Fix the cause, keep life near the player, use reprojection only for the rest.
+**Measurement (gate for every step).** `node tools/capture-browser.mjs --mode flicker --walk` (new flag): scripted forward walk 1.4 m/s + 0.3 deg/frame yaw, 60 frames, at `?pose=meadow` and `?pose=forestWalk`; `flicker.js` reports changed-glyph share split by kind (terrain / kind 9 + instances / other) and by depth band (0-10, 10-30, > 30 m, from the Depth readback). Baseline JSON in `docs/test-reports/ob054/`.
+**Steps (each <= 1 d; engine steps -> arch-review).**
+- **OB-054a** [tools, 0.5 d] `--walk` + kind/band split in `flicker.js`. AC: Node test on synthetic frames (split sums = total, 0 alloc in the step); two runs reproduce within +-0.3 pp; baseline recorded.
+- **OB-054b** [engine, 1 d] footprint-aware `cellSz` in `terrainShade.js` + `shade.wgsl.js` (same text both twins): `cellSz = pow2ceil(t*k / max(|dir.z|, 0.15))` clamped 0.125..8 (or the cell's uv derivatives if the terrain branch has them). AC: terrain flips in 10-30 and > 30 m bands <= 0.5x baseline; 0-10 m within +-10 %; gpucompare 0 PASS->FAIL (D-039); `terrainShade` test: shifting the eye 0.1 m forward changes < 5 % of far ground glyphs.
+- **OB-054c** [design + engine flag, 0.5 d] far-band calm: TLOOK far glyph set (texel 6) re-authored low-contrast by the designer; engine flag `farCalm` = tier dither off past `bandMid` (both twins). AC: far-band flips <= 0.3x baseline after b+c; owner look side-by-side (meadow, crossroads) "not blank".
+- **OB-054d** [game data, 0.5 d] near tufts: card species denser 0-15 m, scatter `maxDist` where card < 1.5 cells, sway amplitude -> 0 by that distance. AC: kind-9/instance flips <= 0.6x baseline; GPU p95 within 37.4 item 7.
+- **OB-054e** [main session, 0.25 d] re-run the walk with `--stable`; if total ratio <= 0.6 vs stable-off, add `stable` to the high preset (default ON) after the owner look.
+
+### 38.51 STREAM-01 placement residency by distance (US-026b step 1) (PC-B architect opus, 2026-10-12; owner-authorised, ratified PC-A 2026-10-14)
+No prior placement-streaming note exists (origin/master, origin/pc-a; 26.6 chunk files are a different, unbuilt path and stay parked). **State today (from code):** `world_m1` has 2288 `kind:'mesh'` placements over 1265 x 522 m (95 meshes). Both camera feeds (`compositor.js` l.242, `passRaster.js` l.358) pass `fogFarM = 2000`, so every placement is a candidate every frame: `addMeshStructures` scans all structures (camera + sun-shadow feed), `MeshGroupSet.push` scans every member, `_snapshotValid` re-checks every member, and `lazyMesh` requests/holds every payload within 2020/2080 m, i.e. the whole map stays loaded. Worse: every lazy load or LRU evict bumps `lazyMeshVersion()`, which makes `MeshGroupSet` do a FULL rebuild (allocating, O(N)), so real eviction would cause hitches.
+**Decision: "not submitted", never unloaded from World.** `world.structures` is never added to or removed from by streaming: structure index = object id/pick id stays stable, `structVersion` does not move, saves and the editor are unaffected, and residency is derived data that is never serialized. Only the render feeds and the payload LRU obey residency.
+- **Grid (new `engine/world/placementGrid.js`, owned by World as `world.placementGrid`, built at the end of `World.load` and rebuilt on a `structVersion` change or when `setMeshPlacement` marks it dirty).** Square cells `cellM` 64. Per placement: `reach = clamp(r * reachPerM, minM, farM)`, with `r` = bbox half-diagonal (scale included). Per cell: `cellReach = max(member reach)`, plus members as an ascending Int32Array of structure indices. Defaults `{ cellM: 64, reachPerM: 400, minM: 160, farM: 2000, hystM: 16, warmM: 120, maxCellsPerFrame: 8 }`, overridable by an optional `def.streaming` (same keys; engine constants are defaults only, no game literal). `reachPerM` 400: a 2 m prop at 400 m is about 1 cell at 480 columns.
+- **Rings per cell** (`d` = xy distance from the eye to the cell AABB): **active** (drawn + shadowed; payload touched) enters at `d <= cellReach + hystM` and leaves at `d > cellReach + 2*hystM`. **Warm** (`d <= cellReach + warmM`, not drawn): payload requested and touched, so it is decoded before it becomes active. **Cold:** not iterated and not touched; the existing LRU (`EVICT_AFTER_MS` 20 s) frees the payload, and `MeshBuffers.release` frees the GPU buffers (unchanged path). Within an active cell each placement still checks its own `reach` (one `d2 <= reach2` compare), so small props stop being drawn before big ones do.
+- **Update:** `grid.update(eyeX, eyeY)` runs once per *rendered* frame from the camera feed (never inside a fixed step). It returns at O(1) while the eye is within `hystM/2` of the last evaluated position. Otherwise it classifies all cells (<= 1024 cells even for a 2 km map, < 0.05 ms) and applies at most `maxCellsPerFrame` ring changes, nearest-entering first, the rest on the next frames. When the active set changed, it rebuilds `activeList` (ascending structure indices: a byte-mask scan of N, about 5 us) and `warmList`. Budget: <= 0.1 ms on a transition frame, <= 0.01 ms otherwise. 0 allocation after the build (all lists preallocated to N).
+- **Feeds:** `addMeshStructures` (camera + shadow) and the lazy request/touch loop iterate `activeList` / `warmList` instead of `0..N`. The order stays ascending, so the cap ranking, ties and object ids are unchanged. The shadow `cutM` is always <= `minM` (assert at build). `MeshGroupSet.push` walks `activeList` through `groupOf[si]` / `slotOf[si]` maps, so the compaction order inside a group stays the member order (bit-identical items). `_snapshotValid` runs only when `world.renderVersion` changed. **Lazy changes rebuild one group only:** keep one fixed group slot per distinct mesh (first-placement order, empty while the mesh is a shell). A load or evict of mesh M rebuilds only M's slot (it allocates once per load, never per frame). Drop the global `lazyMeshVersion` full-rebuild trigger.
+- **Caps:** the grid only removes candidates before the existing limits apply: OB-039 frustum cull, `MAX_MESH_DRAWS` 64 singles, `MAX_DRAW_ITEMS` 512 / `DRAW_TAIL_RESERVE` 192 and group overflow (38.46) stay unchanged. A group with 0 active survivors pushes no item, so draw items drop on the far legs.
+- **Colliders and interactables stay global.** The merged `meshes:static` BVH is built once at load and never rebuilt on a ring change. Reasons: the sim must not depend on the camera (determinism, replay, beasts off-screen), a rebuild would cost a frame hitch, and a BVH query is O(log N). Chests, doors, signs and NPCs are entities, not grid members, and stay untouched. Sim activity near the player is a game rule (beastSim, fixed step, from the player position) and **must never read `placementGrid`**. 01a records the `meshes:static` bytes; if they are > 24 MB -> ESCALATE (collider chunking is a later story).
+- **Memory target:** grid about 12 B per placement plus cells (< 64 KB). The resident payload count (`lazy ready`) at the Outwall leg is <= 60 % of the count at the tower leg, after 20 s of standing still. F3 line: `stream act A/N warm W cells c/C`.
+- **Steps (each <= 1 d, engine -> arch-review):**
+  - **STREAM-01a** [Node] `placementGrid.js` + `placementGrid.test.js`, World build/rebuild hooks. AC: (1) the ring rules and hysteresis hold: walking +-3 m across a border 200 times gives 0 extra transitions; (2) at most `maxCellsPerFrame` changes per update, and after the queue drains the set equals a fresh classify; (3) the same eye trace gives the same lists (determinism); (4) 0 alloc per `update` (gc probe); (5) on world_m1 the active count at the tower is less than N, and the `meshes:static` bytes are recorded.
+  - **STREAM-01b** [Node] the feeds (`DrawList.js` `addMeshStructures`, `shadowList.js`, `meshGroups.js` push/slots/snapshot, `lazyMesh.js` request/touch through `warmList`), plus `world.streaming.enabled` (off = today's path, `?stream=0`). AC: (1) with `reachPerM = Infinity`, the DrawList is bit-identical to the old path on a synthetic world and on a world_m1 pose; (2) with streaming on, all items within `minM` are identical; (3) a lazy load or evict rebuilds 1 group (spy), and the build count stays flat over a 600-frame walk; (4) 0 alloc per frame.
+  - **STREAM-01c** [Node + 1 browser pass] a route-walk trace test (tower -> ford -> Outwall, `tools/route-walk.mjs` poses): at every step, every placement with projected size >= 1 cell (480 columns) is active. Bench p95 (perf-pose / `?bench=1`) is not worse than `?stream=0`, and the resident mesh count per leg is recorded in the story. gpucompare all PASS. Headless stills at 2 cell borders, `?stream=0` vs on: 0 differing cells with depth < `minM`, <= 0.2 % overall. `game/js/bootPrefetchHook.js` prefetches `grid.warmList` instead of the 2020 m radius.
+- **NEEDS B1-main:** in `main.js`, pass `def.streaming` through (no change if the defaults are used), add the `?stream=0` flag -> `engine.world.streaming.enabled = false`, and add the F3 overlay line (<= 6 lines).
+- **Do not:** touch the ground or terrain shader files (OB-073); mutate or splice `world.structures` for streaming; update the grid in a fixed step or from sim code; unload colliders; serialize residency; allocate per frame; reintroduce a global group rebuild on lazy events.
+
+#### 38.51 amendment (PC-B architect opus, 2026-10-12; owner-authorised, ratified PC-A 2026-10-14; input: STREAM-01a finding in `docs/lanes/pc-b1.md`)
+Finding: on world_m1 all 25 cells are active at the tower, because one big mesh (reach `farM` 2000) per cell lifts `cellReach` to 2000. The per-placement compare does the culling (1750/2288 drawn). The grid stays (it is needed for bigger maps), but **one max reach per cell is not enough: add 2 reach classes per cell.**
+- **STREAM-01a2** [Node, <= 0.5 d, `placementGrid.js` + test]: each cell has a `small` and a `big` member sub-list (both ascending). A placement is `big` when `reach > bigReachM` (default 500, key in `def.streaming`). Each class has its own `classReach` = max reach of its members and its own ring state/hysteresis. Both classes count against `maxCellsPerFrame`. `activeList`/`warmList` stay one ascending list (the byte-mask scan over N is unchanged). New AC: on world_m1 at the Outwall leg, the active small sub-lists are < 50 % of the cells; an F3 line `cells s a/C b a/C`.
+- **STREAM-01b** (unchanged otherwise): the lazy request/touch tests the **per-placement** `d2 <= (reach + warmM)^2` inside active/warm class lists, so a far big mesh keeps its payload and the small props go cold. The memory AC (resident payloads at the Outwall <= 60 % of the tower) is the gate. If it fails because the big meshes dominate the bytes, that is a LOD/payload question for PC-A (ESCALATE), not a grid change.
+- Do not: add more than 2 classes; make the class threshold depend on the camera or the resolution.
+
+### 38.52 OB-073 D2 near-field grass carpet (PC-B architect opus, 2026-10-12; owner-authorised, ratified PC-A 2026-10-14)
+Spec: `docs/bugs.md` OB-073 step D2 (owner): dense short blades near the player, a dark-base -> light-tip gradient in our palette, variants per ground type/area, wind waves, and a fade before a blade is smaller than one cell. Technique reference: SMM Stylized Grass (Unity, MIT, SirMishMash). The repo is not on this machine, so this note is designed from the description. We use the technique only (gradient by blade height, scrolling noise wind). Its `grassblade.png`/`Noise.tga` are not needed, because the procedural value noise replaces them. Credit goes in `docs/licences.md` (D2f).
+**Blade source: a gbuffer carpet pass that traces a world-anchored blade lattice per screen cell. No instances, no CPU scatter.** Reasons, for a 240x90..480x180 cell grid:
+- **Instanced blades (GPU-generated or CPU scatter) are rejected.** A carpet needs ~10-30 blades/m2 over a 10-14 m disc, i.e. 5k-15k blades. That is over `MAX_INSTANCES_PER_FRAME` 4096 (trees + 768 detail already use it) and over the 37.4 item 7 budget. Worse, a blade 3-6 cm wide rasterised into cells is sub-cell geometry, so its coverage flips cell to cell while the eye moves. That is exactly the 38.50 cause (3) shimmer that step 1 removed. A GPU-generated version would also need a new compute+indirect path and a JS twin of it.
+- **A cell trace** costs per cell, not per blade: <= 86k cells, of which only the carpet part (usually the lower 30-45 % of the screen) traces. It can test analytically whether a blade is at least one cell wide (footprint fade). It reuses the existing twins (`terrainShade.js` hash + `groundFootprint`, the `WIND_AT_WGSL` wind), and gives correct occlusion: blades write depth and hide boar hooves and the player's feet.
+- **A shade-only glyph layer is rejected.** It cannot draw blade tips above the ground row with correct depth, and the lighting, edge and stable passes would not see it.
+**Model (normative).**
+1. **Lattice:** square world cells of `cellM` (content, default 0.10 m). Each lattice cell `(ix, iy) = floor(xy / cellM)` holds at most one blade. Its root is the cell centre + `(hashFast01(ix,iy,s1..s2)*2-1) * 0.4 * cellM`. Present when `rank = hashFast01(ix,iy,s3) < density(variant) * fade`. Height `h = heightM[0] + (heightM[1]-heightM[0]) * hashFast01(ix,iy,s4)`, times `0.75 + 0.5 * valueNoise(root / patchM)` (soft fields, no square edges). Half-width `w = bladeW/2` (content, default 0.03 m). Everything depends only on world position and the content seed, never on the eye, the frame or `Math.random`.
+2. **Variant per blade:** `variant = classMap[root jittered by +-classJitterM]`. The class map is a Uint8 grid of `classCellM` (2 m) over the near band, built at load (item 6). The jitter is a per-lattice-cell hash, so borders between variants are organic dither with no straight edges (the OB-073 lesson). Variant 0 = no carpet (path, water, rock, sand, structures' footprints).
+3. **Wind:** the blade axis leans linearly, `axis(z) = root + lean * (z / h)`, with `lean = windAt(root, t) * h * swayGain * (0.6 + 0.4 * valueNoise((root - windDir * t * travelM) / gustM))`, capped at `0.6 * h`. `windAt` is the existing world wind (`engine/world/wind.js`, the same field and clock that drive `INST_FLAG_SWAY` tufts). The scrolling value noise gives the visible "waves". Calm wind = no lean, bit-identical between frames.
+4. **Trace (per cell):** take the ray segment from the eye where it is (a) within `radiusM` of the eye in xy and (b) below `ground + maxH` (maxH = max variant height). End it at `min(tHit, segment exit)`. Walk lattice cells front to back with a 2D DDA. In each cell: sample ground `g` at the root (near-band height texture), and take the ray height `zr` at its closest xy approach to the axis. The blade is hit when the lateral distance to `axis(zr - g)` is `< w` and `0 <= zr - g <= h`. The first hit wins: `tB`, `h01 = (zr - g)/h`, `variant`, lean sign. **Step cap `NMAX` = 128 (OB-101, was 24); a segment that needs more lattice steps is truncated from the far side (the nearest cells are walked, nearest blade wins); it used to draw nothing, which cut grass at ~2.4 m for a standing eye.** So coverage never depends on a step window that slides with the eye.
+5. **Fade (no sub-cell blades, no re-roll):** `fp = groundFootprint(tB)` (OB-073 twin, with depth anisotropy). `fade = 1 - smoothstep(0.5, 1.0, fp / (2w))`, times `1 - smoothstep(0.8, 1, dXY / radiusM)`. It is applied to the **density threshold** (item 1 `rank`), so each blade has one fixed distance where it disappears. Walking only moves that front across each blade once: no flicker back and forth, and no moving hash cells. At 480 columns (k ~ 1/240 m per m) 6 cm blades last to ~10-14 m; at 240 columns to ~5-7 m (the low preset is shorter on purpose). Past the fade, the calm ground (OB-073 step 1) shows; the designer matches the ground type colour to the carpet's mean colour so there is no visible ring.
+6. **Data (content, not engine literals).** The engine takes it as World opt `carpet` (null = off).
+```js
+/** @typedef {{name:string, ground:string[], biomes?:number[], density:number, heightM:[number,number], bladeW?:number,
+ *   ramp:string[],            // 2..4 palette keys base -> tip (e.g. grassDeep, grass, grassLight, grassTip), resolved to RGB at load by the game
+ *   glyphs?:{base:string, mid:string, tip:string, leanL:string, leanR:string}, swayGain?:number}} CarpetVariant  // default glyphs , | ' / \
+ *  @typedef {{seed:number, cellM?:number, radiusM?:number, patchM?:number, classCellM?:number, classJitterM?:number,
+ *   gustM?:number, travelM?:number, variants:CarpetVariant[]}} CarpetConfig   // <= 15 variants (id 1..15) */
+```
+   It lives in `recipe.carpet` in `design/levels/overworld_far.js`, next to `recipe.detail`. A variant matches a cell when the cell's ground type name is in `ground`, and either `biomes` is absent or `recipe.util.biomeAt(x,y)` is in `biomes` (the existing 38.42 hook, as `scatter.js` uses it). The first match wins. Examples for the designer: `meadow` (grass, biomes 0/6, 0.10-0.22 m, greens), `straw` (grassTall/fields, 0.35-0.55 m, dry golds), `riverbank` (reeds/shore, dark lush, density 0.9), `outwall` (wallGround, grey-green, density 0.25). Ramps are RGB triplets after load; the engine never imports `design/` or reads palette keys.
+7. **Gbuffer contract:** new `KIND_GRASS = 10` (`GBuffer.js`, both twins). A carpet cell sets `kind` 10, `mat` = variant, `u` = h01, `v` = signed screen lean (-1..1), `face` U, the depth `tB` (DepthBuffer / GPU depth target), and `z` = world z. objectId/pick stay those of the terrain cell (blades are never pickable, OB-084 aim is unaffected). **Light:** it is lit like terrain (sun-map shadow and cloud shadow on the blade point), normal up tilted by the lean, with AO `mix(0.55, 1, h01)` (dark base). It never casts shadow and is not in the shadow map. **Shade:** colour = ramp(h01 + hash shift +-0.08); glyph = tip when h01 > 0.75, base when < 0.2, else mid, and leanL/leanR when |v| > 0.35. Fog as terrain. **Edge/glow:** treated like terrain (no outlines). **Stable pass (38.25):** a carpet cell writes its ramp level like a mesh cell, so held glyphs follow the normal stable rules (the stable pass stays default ON). **HZB** is built from the depth before the carpet pass (blades must not occlude-cull objects seen through gaps).
+8. **Pass order:** WebGPU `cast, terrain, voxel, resolve, carpet, light, shade, ...`. `carpet` is a compute pass over the cell grid that reads depth/kind and the class-map + near-band height textures and writes the gbuffer targets in place; `PASS_NAMES`/WG timer slot `carpet`. JS twin: `carpetCells(gbuf, fb, cam, ctx, timeSec)` called at the same point of the JS frame (after resolve, before lighting). It is used by gpucompare/Node only; live JS/Canvas2D fallback runs with the carpet off.
+**Budgets (p95, 480x180, meadow pose, carpet on minus off):** GPU <= 0.35 ms on the Intel iGPU, <= 0.05 ms on the RTX 4060; at 240x90 <= 0.12 ms on the iGPU. If over: lower `radiusM`, then NMAX, then density (in that order; a gfx preset key `carpetRadiusScale` 0.6 / 1 / 1.2). JS per frame: uniform pack only, <= 0.01 ms, **0 alloc** (gc probe). Load: class map (near band at 2 m ~ 192x192 B = 37 KB) <= 50 ms in Node (warn only). It is rebuilt with the same hook as a near-band rebake (38.38), never per frame. Instances used: 0. GPU memory: class map + a 16 x 64 B variant table.
+**Determinism / save:** the carpet is derived render data. `world.carpet` (config + class map) is never serialized, and the world hash is unchanged. It depends only on content, the eye and the wind clock. The sim never reads it.
+**Twins / gpucompare (D-039):** both twins use the same constants and order (one `CARPET_WGSL` string built from the same constant exports as `carpet.js`). Existing poses keep the carpet off, so 0 rows change. New pose `carpetMeadow`: eye 1.6 m on the walk-out meadow looking slightly down, 2 m s wind, carpet on, `t` fixed. The bar: kind-10 coverage agrees on >= 98 % of cells and colour error is within the existing per-pose thresholds. Never widen thresholds. A walk check with `tools/capture-browser.mjs --mode flicker --walk` at the meadow: terrain + kind-10 flips with wind 0 are <= the step-1 calm-ground baseline + 2 pp.
+**Do not:** use `Math.random` or per-frame re-rolls; size lattice cells by distance (no moving rings); put blades in `world.structures`, entities or instance groups; let the sim or pick read the carpet; hard-code variant names, colours or heights in `engine/`; read `design/` or palette keys in the engine; touch the step-1 calm-ground glyph code beyond the KIND_GRASS branch.
+**Steps:** `docs/sprints/ob073-d2-stories.md` (D2a..D2g, each <= 1 d).
+**NEEDS B1-main:** in `game/js/main.js`, pass `recipe.carpet` (with the ramp keys resolved to RGB through the palette) as World opt `carpet`. Add `?carpet=0`, and the gfx preset key `carpetRadiusScale` (low 0.6, med 1, high 1.2) (<= 8 lines). The F3 line `carpet r R m cells c` is optional.
+
+### 38.53 FB-01 fireball unlock path (PC-B architect opus, 2026-10-12; owner-authorised, ratified PC-A 2026-10-14)
+D-069 (Burl gives the fireball ~level 5). Game-only; `engine/` untouched (check-deps stays green).
+**Flag + save:** `world.state['magic.fireball'] === true`. `world.state` is already saved by `serialize` (`structuredClone(world.state)`), so **no schema/version bump**: an old save has no key -> locked; a new game starts with fresh level state -> locked. MP max/current already live in the player entity components (saved WorldState), nothing new.
+**Read (live, not boot capture):** `game/js/quest/features.js` adds `export function fireballOn(world, features) { return features.fireball === true || world.state['magic.fireball'] === true; }`. `FEATURES` stays captured once at boot from the URL (dev override = a per-session constant, so it does not break determinism); the flag itself always comes from world state.
+**Single writer:** `features.js` `export function unlockFireball(world, events)`: if already set, return false (no event); else set the flag, `events.emit('magic.unlocked', UNLOCK_EV)` (frozen module constant `{ spell: 'fireball' }`), return true. Nothing else writes the key (grep check in review). FB-02 reward kind `unlock:fireball` calls it; dev/test may call it directly.
+**Sim:** `createFireballSim` hooks gain `isEnabled?: () => boolean` (the old `enabled:false` stays for tests). `cast()` returns at the top when `hooks.isEnabled && !hooks.isEnabled()`: 0 projectile, 0 MP. main.js passes `isEnabled: () => fireballOn(world, FEATURES)` (closure made once per `world:loaded`, not per frame).
+**HUD, one branch, 0 alloc:** main.js computes `const fbOn = fireballOn(engine.world, FEATURES)` once per frame at the start of the step/present block and passes that boolean to: fist-charge / `stepHandFx` / hand fire present (~l.1995-1999, 2289; locked = plain hand path), `drawVitals(..., fbOn)` (~l.2366), quick-bar picker filter (skip mana potions), Character/Items tabs (skip the spell slot). No new arrays, no per-frame closures; the pickers/tabs read the boolean, they do not rebuild lists unless they already did on change. Same-frame appearance follows from the per-frame read.
+**Files:** FB-01a: `features.js`, `sim/fireball.js` (isEnabled), test `game/js/quest/sim/fireballUnlock.test.js`. FB-01b: `main.js` wiring (1427, step, present, 2366) + `vitalsView.js` (no change if the `showMp` arg is enough) + quick-bar/tab gating. Both fit in one ~1 d story; split only if the quick-bar/tab gating takes more than ~2 h.
+**Tests (Node):** `node game/js/quest/sim/fireballUnlock.test.js`: (1) locked: charged + tap cast -> 0 alive, MP unchanged; (2) `unlockFireball` -> true + exactly one `magic.unlocked`; second call -> false, no event; then cast works and spends MP; (3) save round-trip through `serialize`/`deserialize` (or the saveState helpers) keeps the flag; a state without the key -> `fireballOn` false; (4) `?fireball=1` features -> on with no flag; (5) 0-alloc: 1000 locked `step`+`fireballOn` calls with `--expose-gc` heap delta ~0 (same pattern as the other sim 0-alloc checks). Also run `node game/js/quest/save/saveState.test.js`, `node tools/run-tests.mjs`, `node tools/check-deps.mjs`.
+**Do not:** capture the flag at boot; read the URL in the sim; add a save version; write the flag outside `unlockFireball`; touch `engine/`.
+
+#### 38.52 amendment (pitched frames) (PC-B architect opus, 2026-10-12; OB-073-D2e question)
+- **The carpet runs only on perspective pitched-family frames** (pitched / first-person, the live WebGPU projection and the `carpetMeadow` pose). It is **off on shear frames and on ortho frames** in both twins. Reason: the trace (item 4) is a true 3D eye ray. Shear rows are not such rays, and ortho has no eye point/footprint fade.
+- **GPU is correct** (`passCarpet.js` `run`: `rp.pitched && !rp.ortho`). **JS is wrong:** `compositor.js` `renderWorld` gates on `!meshPitched`, i.e. it runs only on shear, the opposite of the GPU. Fix: `if (world.carpet && fb.carpet !== false && meshPitched && !<ortho of the same resolveProjection(cam, fb.renderer) value>)`. Read the ortho flag from the projection that `renderWorldMesh` resolved; do not re-derive it from the camera.
+- `carpetCells` builds its rays from the same pitched terms the mesh raster used (`meshPitchTerms`, which matches `rp.pitch` fX/fY/fZ/tanHalfX on the GPU). No second projection maths, so per-cell rays agree and the >= 98 % kind-10 coverage bar is meaningful.
+- gpucompare: `carpetMeadow` must be a pitched perspective pose. Existing shear/ortho poses keep 0 rows changed in both twins by construction.
+
+#### 38.52 amendment (OB-096) (PC-B architect opus, 2026-10-12; owner-authorised, ratified PC-A 2026-10-14)
+One story (<= 1 d), JS + WGSL twins in the same order; `carpetMeadow` gpucompare must still PASS (never widen thresholds).
+- **(a) Never in/under structures: mask the class map (data), not a depth test.** A depth/kind test cannot work: the tower ground floor is `terrainFloor` (the cell *is* terrain), and walls let rays cross interior ground before `tHit`. `buildCarpetClassMap(terrain, recipe, cfg, out, structures)` zeroes every class cell whose rect overlaps a placed structure's `bbox` (all kinds, world AABB, conservative for yaw) dilated by `m = classJitterM + LEAN_CAP * maxH` (the jittered lookup of a root inside the bbox then always reads 0, and no blade leans in). World.js:1354 passes `this.structures` (same call on rebake). No shader change. Content areas (D2f) stay the main gate; the default "rest of the grass" variant goes (designer).
+- **(b) Not square: cap the blade's screen width, keep the stroke glyphs.** In `bladeHit` compute `fp` *before* the lateral test and test against `wHit = min(w, WMAX_CELLS * 0.5 * fp)`, `WMAX_CELLS = 1.25` (exported from `engine/render/carpet.js`, interpolated into the WGSL). Near blades become 1-cell columns of the existing `, | ' / \` glyphs instead of multi-cell blocks; density is unchanged (no bare ring at the feet, no re-roll: the cap depends only on `tc`). The density fade (item 5) keeps using the true `w`. `rej`/`wMax` bounds stay valid (`wHit <= w`).
+- **(c) Size variety (hash, world-anchored).** New salts `SALT_TUFT = 108`, `SALT_W = 109`. `h *= hash(SALT_TUFT) < tuftP ? tuftMul : 1` (variant opt `tuft:{p,mul}`, defaults 0.06 / 1.8, validated p 0..1, mul >= 1); half-width `w *= 0.7 + 0.6 * hash(SALT_W)`. `maxH` includes `tuftMul`, `wMax` includes 1.3 (else setRay/rej cull real blades). WGSL: put tuftP/tuftMul in the free `row1.y/.z` of the variant table. Designers widen `heightM` ranges (e.g. 0.06-0.30).
+- **Files:** `engine/world/carpet.js` (+ validate `tuft`), `engine/world/World.js` (1 arg), `engine/render/carpet.js` (`bladeHit`, `bladeAtCell`, `makeCarpetCtx`), `engine/render/gpu/wgsl/carpet.wgsl.js` (`bladeHit` + vtab pack in `passCarpet.js`).
+- **Tests:** `engine/world/carpet.test.js`: class cells overlapping a fake bbox + m are 0, a cell 3 m outside unchanged. `carpet` render test: a ray from inside a masked bbox looking down -> 0 hits; near blade (tc 0.5 m) hit width <= 1.25 fp; tuft share over 10k lattice cells ~6 % +-1; `traceCarpetIn` vs brute still agree; 0-alloc gc probe unchanged. Then `run-tests.mjs`, `check-deps.mjs`, `?gpucompare=1` (carpetMeadow + all old poses 0 rows changed).
+- **Do not:** gate on `kind` or depth for (a); fade blades out near the eye (bare ring); widen the gpucompare bar.
+
+#### 38.52 amendment (OB-096 grass mask) (PC-B architect opus, 2026-10-12; owner-authorised, ratified PC-A 2026-10-14)
+Technique: UE4 stylized-grass virtual-texture mask. **Class map = which variant; new density mask = how much (0..1), soft.** Derived render data: never in saves, world hash unchanged, sim never reads it.
+- **(a) Paint layer (content):** `engine/world/grassMask.js` - sparse chunk layer like `terrainEdits.js` (reuse its b64 helpers, export `toB64/fromB64` from there): `cell 0.5 m`, `chunkSize 64` (128x128 u8 = 16 KB/chunk), absent chunk = 0. API: `createGrassMask(cell, chunkSize)`, `maskAt(layer,x,y)` (bilinear, 0..1), `setSample/sampleAt`, `grassMaskFromJSON(obj)` / `grassMaskToJSON(layer,id)` (`kind:'grassMask', schema:1`, sorted keys, empty chunks dropped), `bakeAreasToMask(layer, variants, featherM)` (disc/capsule/rect, smooth01 edge). World opt `carpet.mask` (layer or null). **No layer = paint 1 everywhere** (today's behaviour, old poses unchanged).
+- **(b) Near-band mask (built at load / band swap / stroke end, never per frame):** `buildCarpetMask(terrain, cfg, layer, stamps, out)` -> `{mask: Uint8Array, x0,y0,w,h,cellM:0.5}` over the class-map window (~768x768 = 590 KB, buffers reused). `m = paint * (1 - stamp)`. Stamp channel (1 = no grass): every `world.structures` bbox (all kinds: buildings/interiors, rocks, crates, wreck, mesh rows) + scatter tree trunk discs (r + 0.3 m) + near-band cells whose ground type is in `cfg.cutGround` (content, e.g. path/road/water names). Then **dilate (max) by `featherM` and box-blur once by `featherM`** (default 0.75 m, separable, 2 scratch rows) so stamp cores stay exactly 1 and edges ramp outward. The OB-096 (a) class-map bbox zeroing stays (hard guarantee for floors). `world.carpet.maskVersion++` on rebuild; editor rebuild = rect only. Budget: full build <= 40 ms Node (warn), rect <= 3 ms.
+- **(c) Blade use (twins, same order):** after the variant pick, `m = bilerp(mask, root)` (manual 4-tap `textureLoad`, no sampler, for twin agreement). `if (m < MASK_MIN=0.04) no blade`; `h *= m` (height falls gradually = soft edge; density unchanged so no bald dither ring). `maxH`/`rej` bounds unchanged (m <= 1). **Colour:** `g = groundAlbedo(typeAtRoot, root)` - new export in `terrainShade.js` (+WGSL): the calm-ground tier-1 type colour with the same `patchNoise` offset as `shadeTerrain`, unlit, no fog. `col = mix(g, ramp(h01), clamp(h01 * 1/groundTint, 0, 1))`, variant opt `groundTint` (default 0.6; base = ground, tip = variant ramp). Lighting/AO unchanged.
+- **(d) GPU:** `passCarpet` owns one `r8unorm` texture (w x h), `writeTexture` whole on `maskVersion` change (no per-frame upload), uniforms `maskX0,maskY0,maskInvCell,maskW,maskH`. Per frame JS: 0 alloc, compare an int. gpucompare: no new pose; `carpetMeadow` must PASS with content mask on, old poses 0 rows changed.
+- **(e) Editor:** `tools/editor/grassBrush.js` `applyGrassDab(layer, op 'paint'|'erase', x, y, r, strength, outRect)` (smooth01 falloff, u8 add/sub, clamp), undo like `terrainBrush.js`, a "grass" tool (radius, strength), saved/loaded through `io.js` as `bundle.grassMask` exactly like `terrainEdits`; stroke end -> `world.rebuildCarpetMask(rect)`.
+- **Do not:** sample the mask through a filtering sampler in WGSL only (twin drift); blur the paint layer at runtime (the brush is already soft); stamp per frame; read `design/` in engine; serialize the mask in saves.
+**Stories (each <= 1 d, Node-tested):**
+- **MASK-a (PC-B, engine/world):** `grassMask.js` layer + JSON + `bakeAreasToMask`; test `engine/world/grassMask.test.js` (round-trip byte-identical, bilinear at chunk seams, absent = 0, area bake edge ramps).
+- **MASK-b (PC-B, engine/world):** `buildCarpetMask` + stamps + dilate/blur + World hooks (load, band swap, `rebuildCarpetMask(rect)`); tests: crate bbox core = 0, 0.75 m ramp outside, cutGround cell = 0, no layer = 255 off-stamp, gc probe 0 alloc on repeat rect rebuild, timing warn.
+- **MASK-c (PC-B, engine/render):** `bladeHit` mask + `groundAlbedo` twins + `passCarpet` r8 upload; tests: masked root -> 0 hits, m 0.5 -> h halves, `groundAlbedo` JS==WGSL-mirror values, 0-alloc probe; `?gpucompare=1` PASS.
+- **MASK-d (PC-B, tools/editor):** grass brush + undo + io save/load; tests `grassBrush.test.mjs`, io round-trip.
+- **MASK-e (PC-B, content + main.js <= 6 lines):** bake today's `recipe.carpet` meadow areas into `design/levels/overworld_far.grassMask.json` (one-off tool script), load it as `carpet.mask`, drop `areas` from the meadow variant (keep them on straw/riverbank for variant choice), add `cutGround`; owner walk-check at the tower + road.
+- **Review amendments (2026-10-12e, batch-review-2026-10-12e-pcb.md):** result field is `data` (not `mask`); ramp = 1 cell dilate + 3-tap blur (~1 m) accepted; the full build is **never in the swap frame** (swap <= 16 ms): band swap / scatter refresh build it row-sliced on a back buffer in the `streamBand` budget, swap + `maskVersion++` at the end (load stays sync); `carpet.mask` accepts a GrassMaskLayer directly (engine adapts, fast numeric-key chunk lookup); texel = cell centre `x0 + (i+0.5)*0.5`, outside window = no mask.
+
+#### 38.52 amendment (tuft atlas) (PC-B architect opus, 2026-10-12; owner-authorised "do this now", UE4 grass article; ratified PC-A 2026-10-14; lands after MASK-c)
+**Single blades -> tufts.** Each lattice cell holds at most one TUFT: a precomputed 2D silhouette on 2 crossed vertical planes through the root. A ray/plane solve + one atlas texel decide hit/miss. Items 1-5/7 otherwise unchanged (density rank, class/variant pick, MASK-c mask + groundAlbedo, fade-on-rank, gbuffer contract).
+- **Lattice:** `CARPET_DEFAULTS.cellM` 0.10 -> **0.35 m**, `ROOT_JITTER` 0.4 -> 0.25. Tuft half-width `R = tuftR * cellM` (content `tuftR`, default 0.45) `* (W_JIT_LO + W_JIT_RANGE * hash(SALT_W))` (SALT_W now jitters R). Height: same `h` chain (patch noise, `SALT_TUFT` tall tufts, `h *= mask m`, `m < MASK_MIN` = no tuft). `wMax` -> max R (incl. 1.3), so `rej`/`margin` stay conservative. RING = 1 + prev-step dedupe stay; NMAX 128 (OB-101, far side truncated) (the coarser lattice needs ~3.5x fewer steps, so the "past NMAX = nothing" rule binds less). **Target: <= 2 tuft cells tested per screen cell mean (<= 4 plane solves), worst <= 9** (`out.tests` counts cells; bench in the test).
+- **Atlas (engine, deterministic, built once):** `engine/render/tuftAtlas.js` `buildTuftAtlas(seed, opts) -> {data: Uint8Array, n, w, h}`, defaults `n 8, w 16, h 24`, opts `{blades:[5,9], curl, widthTex}` from content `cfg.tuftAtlas` (optional). Integer hash (`hashFast24`) only; each shape = 5-9 curved tapered strokes from the base row. **2 bytes/texel (rg8uint array, layer = shape):** `r` = 0 empty, else `1 + round(253 * yFrac)` = height fraction along *that* blade (short blades get their own tips); `g` = |distance from the texel centre to its blade's centre line| in 1/32 texel. The bytes are the single source: JS reads `data`, GPU gets the same bytes once (`writeTexture` at pass create, binding next to `uClass`, `textureLoad`, no sampler) -> bit-identical lookups.
+- **Hit (`tuftHit`, replaces `bladeHit`, both twins same order):** shape `k = hash(SALT_SHAPE=112) % n`, plane angle `a = hash(SALT_ROT=113) * PI`, planes `a` and `a + PI/2`, `nrm = (cos, sin)`, `tan = (-sin, cos)`. **Lean = shear:** the plane through `root + L * (z - g)` (L = `leanRatio` at the root, as now), solved exactly, no iterations: `t = dot(root + L*(ez - g) - e, nrm) / dot(d - L*dz, nrm)` (|denominator| < 1e-6 -> miss). Then `sr = ez + t*dz - g` in `[0, h]`, `t` in `[t0, t1]`, `u = dot(p - root - L*sr, tan) / R` in `[-1, 1]`; texel `(floor((u*0.5+0.5)*w), floor(sr/h*h_tex))` clamped. Hit when `r > 0` AND `g/32 * (2R/w) < wHit`, `wHit = min(bladeW*0.5, WMAX_CELLS*0.5*fp)` (OB-096 screen-width cap per stroke, fp at `t`). Nearer of the two planes wins; `h01 = (r-1)/253`, `s[S_TB] = t`, `z`, lean as today.
+- **Fade:** unchanged formula on the rank with the *stroke* width `bladeW` (one fixed vanish distance per tuft, no re-roll, no bare ring at the feet).
+- **Zero alloc:** atlas + ctx built once in `makeCarpetCtx(carpet, ground, wind, atlas)`; per-cell maths on `ctx.r/s/q` only; trig per tuft (cos/sin of the hash) is scalar locals. JS per frame: 0 alloc (gc probe), no upload after create.
+- **Files:** new `engine/render/tuftAtlas.js` (+ `engine/index.js` export), `engine/render/carpet.js` (`tuftHit`, `bladeAtCell` -> tuft root/shape/angle, ctx, constants), `engine/world/carpet.js` (defaults, validate `tuftR` 0.1..0.5, `tuftAtlas`), `engine/render/gpu/wgsl/carpet.wgsl.js` (`tuftHit`, atlas binding, consts interpolated from carpet.js), `engine/render/gpu/passes/passCarpet.js` (atlas texture + bind group). Content `cellM` overrides in `design/levels/overworld_far.js` are removed (designer, 1 line).
+- **Do not:** filter/sample the atlas (textureLoad only); generate the atlas in WGSL or per frame; use floats from `Math.random`/time in the generator; re-introduce the 3-pass closest-approach loop; widen gpucompare thresholds.
+**TUFT-01 (PC-B, engine/render, 2 steps <= 1 d each):** **a (JS):** `tuftAtlas.js` + `tuftHit` + defaults. ACs: same seed -> byte-identical atlas (hash of `data` pinned); every shape has >= 1 texel on the base row and r codes monotonic up each stroke; sheared plane solve == brute-force bisection within 1e-9 m on 1k random rays; `traceCarpetIn` vs `bruteCarpet` agree on 10k rays; mean `out.tests` <= 2, max <= 9 on the meadow ray set; near tuft (t 0.5 m) per-stroke hit width <= 1.25 fp; masked root (MASK-c) -> 0 hits; 0-alloc gc probe; calm wind bit-identical frame to frame. **b (WGSL):** atlas `rg8uint` array upload once + `tuftHit` twin; ACs: `?gpucompare=1` `carpetMeadow` PASS (kind-10 coverage >= 98 %, colour within the existing thresholds, never widened), all old poses 0 rows changed; GPU p95 within the 38.52 budget (iGPU <= 0.35 ms at 480x180); `run-tests.mjs` + `check-deps.mjs` green; owner walk-check (tufts read as clumps, no squares up close).
+
+#### 38.52 amendment (TUFT-PERF-01) (PC-B architect opus, 2026-10-12; owner-authorised, ratified PC-A 2026-10-14)
+Measured (`tools/bench-carpet.mjs`, Intel iGPU, frame GPU p50 on minus off, pose (1470,1035) eye 1.7 m): 480x180 pitch -12 **3.18 ms**, pitch -35 **3.29 ms**, 240x90 **1.42 ms**; budget 0.35 / 0.12 ms (9-12x over).
+**Cause (Node probe: instrumented `carpet.js` twin, 480x180, flat field, the 4 content variants, live `fpK` 0, pitch -12):** every non-sky cell is traced (77k rays), mean **28.3 DDA steps** (max 50), **91 `tuftHit` calls/ray**, 20.9 reach the plane solve, 1.2 atlas fetches, 11 % hit. Four bounds are far too loose, and all four are exact to tighten:
+1. **`maxH` is global** = straw 0.9 x PATCH_MAX 1.25 x tuftMul 1.8 = **2.02 m > eye 1.7 m**, so `t0` = 0 on every ray (the walk starts at the feet) although the meadow around the pose tops out at 0.9 m. It also inflates `rej`/`reach` via `LEAN_CAP * maxH` = 1.2 m.
+2. **The fade ends long before `radiusM`:** `setFootprintK` is never called, so live `fp = 0.01 t` and `fade` = 0 past `t = max bladeW / 0.01` = 7 m. The walk still goes to 12 m, so 28 % of steps cannot hit anything.
+3. **Ascending non-sky rays** (trees, tower, hills) walk to `radiusM` even after they have climbed above the blade layer: 40 of the 91 calls/ray come from rays with dz >= -0.05.
+4. **Wind:** `reach` uses `LEAN_CAP * maxH`, so the cheap root cull never fires (0/ray). 42.8 calls/ray run class + mask + rank + patch vnoise + `leanRatio` (windAt + vnoise) before cull 2. On top of that, every step pays ground (4 loads) + windAt + vnoise for the lean shift.
+With 1-4 fixed (probe, the same image by construction): steps **28.3 -> 5.3** (max 16), calls 91 -> 19.8, plane tests 20.9 -> 5.1, traced rays 77k -> 49.6k. At pitch -35: steps 16.2 -> 6.4, calls 54 -> 25.
+**Caveat:** the bench does not scale with trace work. Pitch -35 does ~40 % less trace work than -12 but costs the same ms, and 240x90 (1/4 of the cells) costs 45 %. A trace-independent share of ~0.8 ms is therefore likely: the 36 B/cell GI/GA/DEPTH copy of the scratch-target render pass, the kind-10 light/shade cost, or a fixed pass cost. Measure that first (a).
+**Stories (PC-B, engine/render, each <= 1 d; JS + WGSL twins in the same order, constants from `carpet.js` interpolated into `carpet.wgsl.js`, new uniforms in `CARPET_BLOCK` packed by `passCarpet.js`, never retyped):**
+- **TUFT-PERF-01a (measure, 0.5 d, no look change):** `bench-carpet.mjs --split` turns `setPassTiming(true)` on and prints the p50 of `passMs` carpet / light / shade for on and off. A dev uniform `traceOff` (`?carpetTrace=0`) makes the pass copy only, which isolates the fixed/copy cost. `tools/probe-carpet-cost.mjs` (Node) counts rays traced, mean/max steps, calls, plane tests and atlas fetches over a 480x180 frame of the OB-101 field fixture with the content variants (JS-only counters `out.calls`, `out.planes`). AC: a table for the 3 bench poses in the story row. It decides whether 01c is needed.
+- **TUFT-PERF-01b (exact culls, 1 d, bit-identical image):** (1) **`maxHNear`** (uniform, JS ctx field): the max over the class cells within `rW = min(radiusM, tFade) + classJitterM + 1.3 * tuftR * cellM + LEAN_CAP * maxH + classCellM` of the eye of `hMax * PATCH_MAX * tuftMul[v]` (variant 0 = 0). Recompute in JS only when the eye's class cell or the class-map version changes (a scan of <= 200 B, 0 alloc). It replaces `maxH` in `setRay` zTop, `rej` and `reach`. The global `maxH` stays only as the upper bound for validation. (2) **`tFade`** (uniform): the smallest `t` with `fp(t) >= FADE_FP1 * max bladeW` (closed form over the 3 `groundFootprint` pieces; `fpK > 0` = fixed fp: the carpet is off when `fp >= max bladeW`, else no clip). `setRay`: `t1 = min(t1, tFade)`. (3) **Ascending clip:** when `dz > 0`, `t1 = min(t1, (max(g(eye), g(end)) + maxHNear - ez) / dz)` (`t1 <= t0` -> 0). The `t0` rule is unchanged. (4) **Lean bound:** `leanMaxR = min(LEAN_CAP, speed * (1 + amp) * LEAN_PER_MS * max swayGain * (GUST_LO + GUST_RANGE))` from the wind params (0 when calm). `rej`, `reach` and `margin` use `leanMaxR * maxHNear` instead of `LEAN_CAP * maxH`. The per-step lean shift is skipped when `leanMaxR * maxHNear` = 0. ACs: a golden hash of (hit, t, ix, iy) over the AC2 grid + the OB-101 field + the AC5 ray sets, pinned BEFORE the change, is unchanged after it (calm and wind); AC5 DDA == brute unchanged; `carpet.wgsl.test.js` 0 mismatches; 0-alloc gc probe; probe at the bench pose: mean steps <= 7, calls <= 25; `?gpucompare=1` `carpetMeadow` PASS and old poses 0 rows changed; the `bench-carpet.mjs` re-measure goes in the row. Straw-field poses stay expensive (the 2 m layer is real there); the budget pose is the meadow.
+- **TUFT-PERF-01c (only if 01a shows a copy/fixed cost >= 0.15 ms):** stop copying all 3 targets for every cell. Preferred: scissor the pass to the candidate row band (rows whose rays can reach `g + maxHNear` before `tFade`, computed in JS from the pitch terms) and fill the rows above with one `copyTextureToTexture`. Alternative: a compact carpet-hit overlay target that light/shade substitute (that one touches 2 more twins: ASK ARCHITECT with the 01a numbers before starting). ACs: gpucompare as in 01b, bench re-measure, image unchanged.
+- **TUFT-PERF-01d (fallback, CHANGES THE LOOK, owner look needed; only if still over after b/c):** in this order: the gfx preset `carpetRadiusScale` (low 0.5 -> radius 6 m, below `tFade`, so it binds), the 240x90 preset on low; then a per-variant height cap in content (straw `heightM` / `tuft.mul`, designer); then `NMAX` 128 -> 32 (after 01b the max is 16 steps, so this only clips straw). Each step with a bench re-measure and an owner walk-check.
+**Do not:** change `fpK`/`setFootprintK` wiring in these stories (that would move the fade distance: a look change, and at k = 1/480 it puts `tFade` back near 12 m, which costs more); widen the gpucompare thresholds; drop the brute/golden checks for speed.
+
+#### 38.52 amendment (OB-103 far grass) (PC-B architect opus, 2026-10-12; owner-authorised, ratified PC-A 2026-10-14; supersedes the TUFT-PERF-01 "do not change fpK" line)
+**Cause:** `tuftHit` fades on footprint, `f1 = smoothstep(FADE_FP0, FADE_FP1, fp / (2 * wStroke))`, with wStroke = 0.03 m and the live `fp = FP_DEFAULT_K 0.01 * t` (`setFootprintK` never called). Strokes therefore start to vanish at 3 m and are gone at 6 m, whatever `radiusM` says. Also `wHit = min(wStroke, WMAX * 0.5 * fp)` lets a far stroke be narrower than a cell, so it only aliases. **Rule from now on: the screen width of a far stroke is floored at about one cell, and distance thins the density. The footprint no longer removes grass.**
+- **(1) Stroke width floor:** `wHit = clamp(wStroke, MINW_CELLS * 0.5 * fp, WMAX_CELLS * 0.5 * fp)`, with new `MINW_CELLS = 0.85` (export, < WMAX_CELLS 1.25; it is the default of uniform `minWCells`). **Far LOD (strokes shortened from the base):** `lod = clamp(MINW_CELLS * 0.5 * fp / wStroke - 1, 0, 1)`. A texel hits only when `(r - 1) / 253 >= LOD_CUT * lod`, with `LOD_CUT = 0.35` (export). Reason: atlas strokes fan out from a shared base, so widened strokes merge at the base first. Cutting the base keeps separate tips that read as a tuft, not a blob. The shade and glyphs (`, | ' / \`) stay as they are.
+- **(2) Density fade instead of footprint fade:** drop `f1` in both twins. `fade = 1 - smoothstep(fadeStart, 1, dXY / radiusM)`. `fadeStart` is a content `CarpetConfig.fadeStart` (default 0.6, validated 0..0.95) and replaces the FADE_R0 literal (FADE_FP0/FP1 and FADE_R0 are removed; carpet.wgsl.test's constant list is updated). It is still applied to the rank (one fixed vanish distance per tuft, no re-roll). `dens[v]` becomes `min(1, dens[v] * densScale)` (uniform).
+- **(3) Live footprint:** set `fpK = -k` per view, where `k` = the per-metre cell size that the terrain shade's `groundFootprint` uses (`2 * tan(hfovX / 2) / cols`, one helper beside `groundFootprint`, both twins read the result). Set it only when cols/fov change, through `passCarpet.setFootprintK(-k)` (GPU) and `ctx.fpK` in `carpetCells` (JS), 0 alloc. FP_DEFAULT_K stays only as the fallback when the value is unset.
+- **(4) TUFT-PERF-01b bounds:** with no footprint fade, `setCarpetBounds` sets `tFade = Infinity` (uniform packed as 1e30; keep the field for 01c's scissor). `setRay`'s `radiusM / hxy` clip is now the binding far limit, and `maxHNear`'s `rW` uses `radiusM` automatically. `radiusM` must be the scaled one, `cfg.radiusM * radiusScale`, set in ctx and in the uniform. The classMap/mask window must cover `radiusM * 1.5 + rW slack` (assert on load and warn). Expect the trace cost to go up: steps out to 12 m count again.
+- **(5) Quality knobs (engine API, no preset literals in engine):** `world.setCarpetQuality({ on, radiusScale, densScale, minWCells })` sets the ctx fields and the uniforms `radiusM`, `densScale`, `minWCells`, packed by `passCarpet` in `CARPET_BLOCK`, never retyped. Defaults are `{ true, 1, 1, MINW_CELLS }`. Validate radiusScale 0.25..2, densScale 0..2, minWCells 0.5..1.25. Preset values live in content, as a `carpet` knob in `content/settings/gfx-presets.json` + `KNOBS`/`validKnob` in `game/js/ui/gfxPresets.js`. Proposed values, owner to confirm: low `{on:false}`; medium `{radiusScale:0.5, densScale:0.6}` (6 m, sparse, Intel); high `{1, 1}` (12 m); ultra `{1.4, 1.25}` (about 17 m, RTX).
+- **Budgets:** the 38.52 iGPU budget now applies to **medium** at 480x180. High and ultra are measured on the RTX and recorded; the new RTX figure is <= 0.15 ms for ultra (PC-A to ratify). Over budget -> lower that preset's radiusScale first.
+**OB-103a (PC-B, engine/render + engine/world, <= 1 d), items (1)-(5) API with default quality, in the JS and WGSL twins in the same order:** `engine/render/carpet.js` (tuftHit, the bladeHit twin, setCarpetBounds, ctx), `engine/render/gpu/wgsl/carpet.wgsl.js`, `engine/render/gpu/wg/passCarpet.js`, `engine/world/carpet.js` (fadeStart validation), World `setCarpetQuality`, and the fpK helper + calls in compositor/WgCellPipeline. ACs:
+  - The `carpet.test` golden hash (TUFT-PERF-01b) is **re-pinned**, with the reason "OB-103: fade model changed" in the test comment. AC5 DDA == brute still agrees.
+  - New test `engine/render/carpetFar.test.js`: a 480x180 frame, eye 1.7 m on the OB-101 field fixture, content variants, live k, pitch -12. The share of non-sky cells whose ground hit lies in each xy band [1.5-2.5], [3.5-4.5], [5.5-6.5], [7.5-8.5], [9.5-10.5] m and that are kind 10 must be **>= 30 / 30 / 25 / 20 / 10 %**. The pre-change values (expected about 0 at 6 m and beyond) are logged in the row. Also: the hit width at t = 10 m is >= MINW_CELLS * 0.5 * fp, and for radiusScale 0.5 there are 0 hits beyond 6 m.
+  - `carpet.wgsl.test.js` 0 mismatches; 0-alloc gc probe, including `setCarpetQuality` repeats; `run-tests.mjs` + `check-deps.mjs` green.
+  - `?gpucompare=1`: `carpetMeadow` is re-baselined **only if** JS == GPU kind-10 coverage >= 98 % (thresholds never widened); old poses 0 rows changed.
+  - `bench-carpet.mjs` re-measure at 480x180 and 240x90 (radiusScale 0.5 and 1) in the row.
+  - Owner walk-check at the tower meadow: grass reads out to the radius, no ring, no shimmer (`capture-browser --mode flicker --walk` <= the TUFT-01 baseline + 2 pp).
+**OB-103b (PC-B, game + content, <= 0.5 d, after the owner's preset answer):** the `carpet` knob in gfx-presets.json + `gfxPresets.js` validation + main.js wiring (`setCarpetQuality` on boot and on settings change, <= 8 lines), and the optional F3 field `carpet r R m d D`. Tests: `gfxPresets.test.js` (an invalid knob is rejected), `settings.test.js`, a bench per preset.
+**Do not:** fade on footprint again; scale lattice cells by distance; hard-code preset values in `engine/`; widen gpucompare thresholds.
+
+### 38.54 SWIM-01 swimming + diving (D-070) (PC-B architect opus 2026-10-13, owner-authorised, ratified PC-A 2026-10-14)
+Note number: 38.53 was already taken (FB-01), so SWIM-01 is 38.54. This note supersedes the "no swimming / deep = wall" lines in 38.43, 38.45 (3)+(5) and 35.7 (D-070 corrects the D-064 record).
+
+**Decisions**
+1. **Swim lives in `engine/physics`** as a new branch of `integrate`, in the new file `engine/physics/swim.js` (it imports only `engine/physics/**`, as the 27.10 rule requires). Physics never calls `waterAt`. The game feeds the water as plain numbers on the body before `integrate`, the same way it feeds `pushX` today:
+   - `body.waterZ`: the live surface z, or `NaN` when there is no water;
+   - `body.waterFloorZ`: the floor under the water at (x, y), from `waterAt(...).surfaceZ - depth`.
+   The game side is `game/js/quest/sim/swimFeed.js`. It handles every region kind (rect / circle / river), not only rivers.
+2. **Depth thresholds**, measured from the feet: `imm = waterZ - floorZ` at the body's (x, y).
+   - Wading as now: `imm <= wadeMax 1.0` (the RIVER-01b slow + push stay).
+   - **Enter swim** when `imm > swimIn 1.15`.
+   - **Leave swim** when `imm < swimOut 0.95` **and** the floor is within `stepUpMax` of the feet. The hysteresis means a bank edge cannot flicker.
+   - The wading deep-wall (`wading.after`) is **deleted**. `wading.before` stays for imm <= 1.0 and skips itself when `body.swimming`.
+3. **Surface lock + buoyancy.** At the surface the feet sit at `floatZ = waterZ - floatDepth 1.25`, so the eye (1.6) is 0.35 m above the water.
+   - Vertical uses a critically damped approach: `vz = (floatZ - z) * buoyK 6`, clamped to +-`buoyMaxV 2.5` m/s. There is no gravity while swimming.
+   - The waves move `waterZ`, so bobbing comes for free (35.7 143c).
+   - A fall into deep water: on the step where `swimming` turns on, `vz *= 0.3`, `fallDistance = 0` and `landed = false`. So there is no fall damage into water.
+4. **Horizontal speed.** The step 3 accel code is reused, with `targetSpeed = (run ? swimFast 2.6 : swimSpeed 1.8) * speedScale` and the accel time x2 (it feels floaty).
+   - The current is the existing `pushX/Y`: `swimFeed` sets it to `flow * 0.7`, capped at 3 m/s, the same as wading at k = 1.
+   - The horizontal collide is unchanged (moveCircle / mesh capsule).
+   - No jump while swimming. `controls.jump` is the "rise" input instead.
+5. **Climb-out.** While surfaced, if the floor at the new (x, y) is above the feet by more than `stepUpMax`:
+   - if `floorH <= waterZ + climbOut 0.9`, put the body on the ledge (`z = floorH`, grounded, swimming off, `body.climbedOut = true` for one step: the anim and splash hook);
+   - else revert x/y to prev (a wall).
+   This covers the Glasswater shelf (surface + 0.8) and the river banks.
+6. **Diving** (SWIM-04a). New control `controls.swimUp`, in -1..1 (game: Space = +1, dive key = -1; see the owner question).
+   - Under the surface, `vz` approaches `swimUp * diveSpeed 1.6` (accel 4 m/s^2).
+   - With no input: `vz` approaches `+buoyRise 0.5` (a slow float up).
+   - Clamps: `z >= waterFloorZ` (the body rests on the bottom, still swimming, `body.onBottom = true` so chests can be opened) and `z <= floatZ`, where it snaps back to the surface lock. The ceiling clamp stays as in step 5.
+   - `body.diving = eyeZ < waterZ - 0.05`; it turns off at `eyeZ > waterZ + 0.05` (the same hysteresis as the 35.6 under state).
+7. **New body fields**, all created by `ensureScratch`:
+   - `swimming`, `diving`, `onBottom`, `climbedOut`: booleans, outputs;
+   - `waterZ`, `waterFloorZ`: inputs, `NaN` by default.
+   - With `waterZ` NaN the old path runs bit-identical, so every existing physics test is unchanged.
+   - Tuning lives in `PHYSICS.swim = {swimIn, swimOut, floatDepth, buoyK, buoyMaxV, swimSpeed, swimFast, diveSpeed, buoyRise, climbOut}` in `config.js`.
+   - The body state is plain numbers. Save: the game saves the player pose as now. A load inside water re-enters swim on the first step, because the water feed is live.
+8. **Gear stowed** (game, D-070 assumption). While `swimming`, main.js passes `gateOpen = false` to `hands.step` and calls `hands.disarm()` on entry. The held-item views (gearLook / handFireView / bow) hide on `body.swimming`. Worn armour stays visible. Fireball, bow and sword are unavailable while swimming.
+9. **Vitals.**
+   - The void rule skips while `body.swimming`.
+   - `wadeRescue` is removed, because a deep spawn now just swims.
+   - New `vitals.kill(cause)` and `sim.deathCause` (`'drown' | 'eaten' | ...`): the death card picks its line from the cause (NEEDS WRITER keys `death.drown`, `death.eaten`).
+   - SWIM-02 `stepStamina` is driven with `{swimming, diving}` from the body. Its `onDamage` hook calls `vitals.applyDamage(n)` and returns `vitals.dead`, so the module's own `hearts` is not used in the game.
+   - Stamina is not saved (it refills on land), and it resets on respawn.
+
+**Underwater look (SWIM-04b/c): the cheapest path on WebGPU + JS twin.** This is a reduced 35.6 that replaces 144a1 for v1.
+- **One function, two twins:** `engine/render/underwater.js` exports `underShade(rgbFg, rgbBg, glyph, L, Pz, Px, Py, nz, timeSec, U, out)` (JS) and `UNDER_WGSL` (the same maths as a string, the fogShape.js pattern).
+  - It runs once per cell at the **end** of the shade pass (every kind: terrain, mesh, sky, water), in passShade (WGSL) and the CPU compositor shade.
+  - It is gated by `U.on`, so it costs 0 when the eye is dry.
+- **State (CPU, per frame, presentation only):**
+  - `world.waterAt(eye)`; on when `eyeZ < surfaceZ - 0.05 && depth >= 0.3`, off when `eyeZ > surfaceZ + 0.05`.
+  - The result goes into two **appended** ShadeU fields: `under: vec4(on, waterZ, fogM, causticK)` and `underTint: vec4(rgb, swapAt)`. Never retype the existing fields.
+  - The look values come from the eye region's water look (`look.under = {tint, fogM 12, swapAt 0.5, ceil, caustic 0.35}`; content default in the water look table).
+- **Maths** (no `exp`, the 32.6 parity rule):
+  1. `s = min(1, L / fogM)`, `f = s * (2 - s)`.
+  2. `fg = mix(fg, tint * (ambient + sunI * 0.5), f)`; `bg = mix(bg, tint * 0.35, f)`.
+  3. Glyph: if `f >= swapAt`, glyph = `bubbleRamp[floor(lum * 4)]` (`" .:o"` style, designer data).
+  4. **Ceiling:** a sky cell, or `Pz >= waterZ - 0.02`, gets fg = `ceil` colour, glyph from `"~-~="` by `hash(floor(Px*2), floor(Py*2), floor(t*2)) & 3`, then the same fog over L.
+  5. **Caustics:** on cells with `Pz < waterZ`, `nz > 0.6` and `L < 10`: if `hash(floor(Px/0.7), floor(Py/0.7), floor(t*3)) > 1 - causticK`, the glyph is `'~'` or `'*'` (hash bit) and `fg += causticCol * (1 - f)`.
+  6. Hash = the existing `hashFastU` twin (exact in f32 on the lattice).
+- **Sprites + particles:** the CPU colour gets `underFogK(L, U)` from the same file (the 35.6 144a2 rule). Edges are suppressed where `f >= swapAt`.
+- **No** light shafts, no Snell window, no refraction, no new pass, no new texture.
+- **Budget:** <= 0.05 ms GPU at 480x180 when under, and 0 when dry. JS twin <= 0.6 ms (fallback only).
+- **gpucompare row `underwaterLake`:** eye at Glasswater pond (1235, 505), feet at -61.5 (eye about 1.9 m under the -58 surface), yaw 0, pitch -10 and +25, t fixed 10 s. Thresholds are the standard ones, never widened.
+
+**Sea monster edge (SWIM-06b, game only).**
+- The trigger is `seaEdge.js` (SWIM-06a). The shore is built once from world_geo coast data at load.
+- Call `seaEdgeState` at 4 Hz (every 15th step), and only while `body.swimming` and inside the sea region (`waterAt(...).region === 'sea'`).
+- `game/js/quest/seaMonster.js` is a 4-state machine with integer step timers and no `Math.random`:
+  - `hidden` -> `circle`: warn band. The monster entity orbits the spawn point at 10-14 m from the player and 0.6 rad/s, with z = `surfaceZ - 1.0` so only the back/fin shows above the sheet. A ripple ring (engine/fx/ripples) every 0.5 s at its head. Writer warning sign at the strand: NEEDS WRITER.
+  - `circle` -> `rise`: kill band. It moves to 3 m in front of the player and rises to `surfaceZ + 1.5` over 0.8 s (clip `rise`).
+  - `strike` at 0.6 s: `vitals.kill('eaten')`. The death screen and the normal respawn follow; the owner allows this lock (D-064 menus/death).
+  - Back in the safe band, or on respawn: `hidden` again (entity parked at HIDE_Z, collider none).
+- **Model:** one voxel/mesh entity `seaMonster` (designer: model + clips `circle`, `rise`, `strike`), placed once in the world data and parked. It is drawn by the normal entity path. The dark read in the circle state uses the 38.23 entity tint (rgb dark, k 0.6). It is not a beast (no beastSim slot), and it cannot be targeted or hit.
+
+**Steps** (build in this order; each <= 1 d; Node first, ONE browser pass at the end)
+
+| Step | Track / slot | What | Node ACs |
+|---|---|---|---|
+| **SWIM-03a** | engine/physics, k2 | `swim.js` + the `integrate` branch (items 2-5, 7) + `PHYSICS.swim` | New `engine/physics/swim.test.js`: (1) `waterZ` NaN gives a bit-identical hash vs today on the `physics.test` + `jump.test` fixtures. (2) Walking into a 3 m deep basin: swimming turns on at imm > 1.15, and feet settle at `waterZ - 1.25` +-0.02 within 1 s. (3) A 10 m fall into water: no `landed`, fallDistance 0. (4) A shelf edge 0.8 above the surface climbs out; 1.2 above is a wall. (5) The current pushes at 0.7 x flow. (6) Swim 1.8 / fast 2.6 m/s +-2 %. (7) 0 alloc (gc probe, 10k steps). (8) `check-deps` green (physics stand-alone). |
+| **SWIM-03b** | game, k3 | `swimFeed.js` (water -> body fields + current) + the wading changes (item 2) + vitals (item 9 void/rescue) | `swimFeed.test.js` + updated `wading.test` / `wadingWired.test`: crossing the deepest river reach and the Glasswater pond end to end on the real world data with a scripted stick, no wall, no rescue, out on the far bank. The rect sea region feeds too. |
+| **SWIM-03c** | game, **k1** (main.js) | Wiring <= 25 lines: the feed before integrate, `hands` gate + disarm, gear views hidden, swim/tread clip pick (placeholder = the idle clip until the designer clips land) | `wadingWired.test` / a main-wiring test where the repo has one. Browser: walk into Glasswater, swim, climb out. |
+| **SWIM-04a** | engine/physics, k2 | Dive (item 6) + `controls.swimUp` | `swim.test.js`: dive to the 10 m bottom, `onBottom`, rise on release, the diving hysteresis, ceiling clamp, 0 alloc. |
+| **SWIM-04b** | engine/render JS, k4 | `underwater.js` JS twin + `underFogK` + the under state in the compositor | `underwater.test.js`: f ramp values, glyph swap at swapAt, ceiling on sky / Pz >= waterZ, caustic hash determinism, no-op when `on = 0` (golden frame unchanged). 0 alloc. |
+| **SWIM-04c** | engine/render GPU, k4 | `UNDER_WGSL` in passShade + the appended ShadeU fields + the gpucompare row | `shade.wgsl` constant/layout test (append only); JS == GPU on the `underwaterLake` pose; old poses: 0 rows changed. `?gpucompare=1` run by the main session. |
+| **SWIM-04d** | game, k1 | Dive key + the bottom-chest data (existing chest.js, z on the bed) + under-state sound mute hook (none if no audio bus) | `chest.test`: open at `onBottom`. |
+| **SWIM-05** | game, k3 + k1 hook | Stamina wiring (item 9) + the HUD ring (existing vitals HUD style) + `vitals.kill` / `deathCause` | `stamina` wired test: 12 s swim -> drown ticks -> death cause `drown`; refill on land; reset on respawn. |
+| **SWIM-06b** | game, k2 + k1 hook | `seaMonster.js` + the designer model | `seaMonster.test.js`: a scripted swim out (safe -> circle -> rise -> strike -> `deathCause 'eaten'`), back inside -> hidden, respawn -> hidden, 4 Hz check, 0 alloc per step. |
+
+**Do not:** let physics call `waterAt` or import `engine/world`; keep the deep-water wall or `wadeRescue`; add gravity while swimming; save stamina; use `exp` / `Math.random` in the under shade; add a new render pass or texture for the under look; retype ShadeU fields (append only); make the monster a beastSim slot or hittable; put a hard invisible wall at the sea edge (the monster is the boundary).
+
+### 38.55 OB-104b Glasswater outlet-notch cliff (PC-B architect opus 2026-10-13, owner-authorised, ratified PC-A 2026-10-14)
+**Cause.**
+- At (1237, 600-606) the river poly drops 17 m in 2 m (`[603, -60.2] -> [605, -77]`, the `braidFalls` lip).
+- The terrain type there comes from the grid type map (world_geo `slope > 0.9 -> rock`, evaluated at grid resolution). It stays grass/path on the narrow notch.
+- `shadeTerrain` keys its noise on the world (u, v) = (x, y). On a near-vertical face every cell in a column gets the same (u, v), so the ground texture smears into vertical stripes.
+- With D-070 the player can now swim up to the plunge pool, so the spot is reachable.
+
+**Chosen approach (one): rock look on steep faces, at shade time, in both twins.**
+- Reshaping the notch would kill the waterfall, and rock meshes would only fix this one site. This fix is general: every cliff gets it (Shearcliffs, Whitecombs, the bowl wall).
+- In `shadeTerrain` (JS `engine/render/terrainShade.js`, WGSL `shade.wgsl.js`), before the TLOOK lookup:
+  - if the cell normal `N.z < CLIFF_NZ 0.5` (60 degrees) **and** the type has no forest-face glyphs (TLOOK row 3 `.w == 0`, so ME-06b canopy faces keep working), then:
+    - `type = ctx.cliffType` (the recipe's `rock` id, a uniform; -1 = off);
+    - `(u, v) = (|N.x| > |N.y| ? y : x, z)` (biplanar: the horizontal axis along the wall, plus the height).
+  - `z` is already passed in (MAP-06b `gaT.z`) and the normal is already unpacked for the faceMode check. So the cost is one compare plus two selects per terrain cell: < 0.01 ms GPU, no new data.
+- **The white strip at the wall base** (the waterfall foam sheet edge, OB-045) is out of scope. File it as OB-104c if it still shows after this.
+
+**Steps**
+
+| Step | Track / slot | What | ACs |
+|---|---|---|---|
+| **OB-104b1** | engine/render JS, k4, <= 0.5 d | `CLIFF_NZ` export, `ctx.cliffType` from the recipe type names, the JS twin | `terrainShade.test`: (1) a 70-degree fixture face gives the rock type, and its glyph / colour varies with z (no two vertically adjacent cells share a (u, v)); (2) a 50-degree slope and a forest face are unchanged; (3) the golden terrain frame changes only on cells with `N.z < 0.5` (count logged); 0 alloc. |
+| **OB-104b2** | engine/render GPU, k4, <= 0.5 d | The WGSL twin + the `cliffType` uniform (appended) | `shade.wgsl` layout test; gpucompare: a new pose `lakeEdge` (1237, 606, yaw 0) with JS == GPU; terrain poses re-baselined only where JS == GPU (reason "OB-104b cliff rock"). Owner check at `?pose=lakeEdge`: no vertical stripes on slopes > 60 degrees, waterfall unchanged. |
+
+The route stays as designed: the notch shape and the colliders are unchanged.
+
+**Do not:** edit the river poly or the lake bowl for this; place rock meshes; change the grid type map / world_geo `rock` rule; touch the carpet classMap (grass tufts on cliffs is its own issue if it ever shows); change the forest face mode.
+
+### 38.56 EP-LIFE living world AI (D-071) (PC-B architect opus 2026-10-13, owner-authorised, PC-A to ratify)
+**Layering.**
+- Villagers, chat and raids are **game** code in the new `game/js/life/`.
+- Predator-prey among ambient animals is an **engine/fauna** extension: generic, with no species names in code.
+- Wolves and bears stay in the game beastSim.
+- Everything follows rule 15 of `sim/**`, applied to `game/js/life/**` too: no `Math.random`, no wall clock, no trig in steps, integer step timers, 0 alloc per step. The hashes are `hashFastU(npcIdx, dayIndex, salt)` style.
+
+**(a) Villager schedules** (`game/js/life/schedule.js`, `villagers.js`)
+- **Data** (`content/life/outwall.life.json`; an OUT-02 `ROUTINES` stop is a valid activity):
+  - each NPC: `{id, home: anchor, activities: [{kind: 'sleep'|'work'|'eat'|'walk'|'idle'|'chat', at: anchor | [x, y], from, to, dwell, pose, need?}]}`;
+  - plus `needs: {energy, hunger, social}` start values.
+- **Needs** (0..1) drift per game hour: energy -0.06 awake / +0.15 asleep; hunger +0.08; social +0.05 (-0.4 after a chat).
+- **Choice** (a decision tick every 1 s, staggered by `idx % 60`):
+  - a `sleep` window is forced;
+  - otherwise, among the activities whose window is open, take the highest of `prio + needBonus(kind)`, tie-broken by hash;
+  - `eat` cuts hunger, `chat` cuts social.
+- **Sleep** = walk to the home door anchor, then park (npcWalk's HIDE_Z, collider parked) until the window ends, then reappear at the door.
+- **Movement:** new `game/js/life/npcMover.js` = free-target walking on the existing beast NavGrid (world `nav` block):
+  - `findPath` (maxNodes 1500) + `smoothPath` into a preallocated 32-waypoint buffer + `createPathFollower` reused per NPC (`setPath(buf, n)`: add this reuse API to the engine pathFollow if missing; it is an engine step, k4);
+  - z from `terrain.groundAt`, collider via `world.setEntityCollider`, clips walk/idle/work/talk;
+  - npcWalk's polylines stay for scripted walks (escorts). A scripted walk owns the NPC: schedules pause while `npcWalk.active`.
+- **No save:** the villager state is a pure function of the clock. On load / teleport / > 120 m, each NPC is snapped to its current activity spot (`resolveAt(hour)`), and needs are reset from the hour.
+- The player talk interrupt keeps OUT-02's `setTalking`.
+
+**(b) NPC-NPC chat** (`game/js/life/chat.js`)
+- **Pairing tick:** 1 Hz, O(n^2), n <= 24.
+- **Two NPCs pair** when all of these hold:
+  - both are idle, or dwelling at a stop;
+  - they are within 3 m;
+  - both have `social > 0.5`;
+  - both are off cooldown (90 s);
+  - neither is talking to the player.
+- **Paired:**
+  - both stop and turn to face each other (turn rate 240 deg/s, `yawFromDelta` in the view);
+  - they alternate the `talk` clip every 2.5 s (A, B, A ...);
+  - the length is 8-14 s (hash).
+- **Overheard lines:**
+  - keys `life.chat.<a>.<b>.<n>` with fallback `life.chat.any.<n>` (NEEDS WRITER), in `content/dialogue/life.barks.json`;
+  - shown only when the player is within 8 m, through `barks.js`, which gets a **`repeat: true`** mode (no once-flag, not saved), with a global 6 s gap;
+  - outside 8 m the chat runs silent.
+- The player interacting with either NPC ends the chat.
+
+**(c) Predator-prey in the wild**
+- **engine/fauna (generic):**
+  - species def keys `hunts: [speciesName]`, `huntR`, `chaseMaxS`, `eatS`;
+  - prey def keys `fleeFrom: 'predators'`.
+  - A new ground state `HUNT`:
+    - on the 10 Hz decision tick, the nearest prey slot within `huntR` (linear scan of <= 40 slots, only for predator species) is chased at run speed with the existing feeler steering;
+    - a catch within 0.6 m runs `spawner.despawn(prey, true)` (the cell cooldown) and the predator plays `eat` for `eatS`;
+    - it gives up after `chaseMaxS` or when the prey is > `dist.safe` away.
+  - Prey run the existing flee code with the threat = the nearest predator or player.
+  - **Herds:** on the decision tick a group member > 8 m from its group centroid steers toward it (a per-group centroid, summed once per tick into preallocated arrays).
+  - **New API:**
+    - `fauna.setThreats(n, xs, ys)`: up to 16 external threats (beasts), copied into preallocated arrays;
+    - `fauna.nearestPrey(x, y, r, out)`: returns slot index or -1, plus x/y.
+  - **Kill API:** `fauna.kill(slotIdx)`.
+  - The fox gets `hunts: ['rabbit']` in `wildlifeFx` (designer data, and an `eat` clip or the idle fallback).
+- **beastSim (game):**
+  - Wolves and bears in `STATE_WANDER` with no player notice query `fauna.nearestPrey` every 1 s (staggered), species-filtered (wolf: rabbit + deer; bear: deer).
+  - They chase with a direct steer goal (no A*; the NavGrid still blocks), at most 6 s.
+  - A catch calls `fauna.kill` and enters a new `STATE_EAT` (8 s, which counts as wander for perception, so the player can still interrupt).
+  - main.js passes live beast positions to `fauna.setThreats` each step.
+  - The fauna handle is optional: with `null`, beastSim is bit-identical to today (every existing beastSim test unchanged).
+- **Determinism:** fauna is seeded and runs on the fixed step, and its inputs are the player + camera state. So the coupling is deterministic. It is not saved, which is fine: beasts reset on load as today.
+
+**(d) Wolf pack raids + the defend hook** (`game/js/life/raids.js`)
+- **Data** (`content/life/raids.json`): `{id, pack: [wolf ids], target: anchor ('gooseFarm', 'owEdge'), from: 21, to: 5, chancePerNight: 0.35, requires?: flag, cooldownDays: 2}`.
+- **Start:** at `from` each game night, roll `hash(dayIndex, raidIdx) < chancePerNight`.
+- **Raid behaviour:**
+  - the pack's beastSim slots get a **goal override**: new `sim.setGoal(slot, x, y)` / `clearGoal(slot)`, which uses the existing travel / A* path (TRAVEL_MAX_NODES);
+  - at the target they treat villagers as targets: beastSim gets **alt targets**, `sim.setAltTargets(n, xs, ys)` (<= 8 SoA). It picks the nearer of the player and an alt target for perceive / chase.
+  - A hit on an alt target emits `life:npcHit {npc}`. Villagers never die: they switch to a `flee` activity (run home, park) for the raid.
+- **Ends:**
+  - all pack wolves dead -> flag `life.raid.<id>.defended` + event `life:raid:defended`;
+  - time out at `to` -> `life:raid:lost` (flavour: a goose missing, a writer line) and the wolves go home.
+- **Saved** in `world.state`: `life.raid.<id>.lastDay`, and the `defended` flag. A raid in progress at save is not resumed (it restarts the next night).
+- **Quest:** "Defend the farm" is a template-pipeline quest with a `flag` objective on `life.raid.<id>.defended` (no new objective type). It is the giver's quest (`requires` gates the first raid). An `area` objective leads the player there.
+
+**(e) Simulation budget**
+- **Caps:**
+  - `MAX_VILLAGERS 24`;
+  - <= 1 A* request served per step for all villagers (queue, FIFO), maxNodes 1500;
+  - fauna FAUNA_MAX 40 unchanged; threats <= 16;
+  - beast prey queries <= 4 per step.
+- **LOD by distance to the player:**
+  - **near** (< 60 m, or in view): full 60 Hz movement + clips;
+  - **mid** (60-150 m): movement at 15 Hz (dt x4, the same integrator), no clip update;
+  - **far** (> 150 m): abstract. No movement. Activity changes happen at the decision tick by `resolveAt(hour)` snapping; the entity stays parked or hidden. A chat only pairs in the near band.
+- **ms caps** (Node bench `tools/bench-life.mjs`, 24 villagers + 40 fauna + 32 beasts, worst step):
+  - life <= 0.25 ms mean / 0.6 ms p99;
+  - fauna incl. hunts <= 0.15 ms;
+  - beastSim hunt/raid extras <= 0.1 ms.
+  - Over the cap, lower the mid-band Hz first.
+- **Per step:** 0 alloc (gc probe in each test). Fixed step only; no `performance.now()` in decisions.
+
+**Steps** (each <= 1 d; game unless marked engine; k1 = the only main.js editor)
+
+| Step | Track / slot | What | Node ACs |
+|---|---|---|---|
+| **LIFE-01** | engine/nav, k4 | `pathFollow` `setPath(buf, n)` reuse + a free-target `planPath(grid, astar, sx, sy, gx, gy, outBuf, maxNodes)` helper | `pathFollow.test`, `astar.test` extended; 0 alloc on reuse. |
+| **LIFE-02** | game, k3 | `schedule.js` (needs + choice + `resolveAt`) + the life data format, importing the OUT-02 table | `schedule.test.js`: a 24 h loop per NPC, the sleep window forced, need-driven eat / chat picks, `resolveAt` == the stepped result at 6 hours, determinism (2 runs, same hash). |
+| **LIFE-03** | game, k3 | `npcMover.js` + `villagers.js` (sleep park, LOD bands, A* queue) | `villagers.test.js` on the real world nav: 5 Outwall NPCs over a game day, no position inside a collider, <= 1 A* per step, the LOD snap, 0 alloc, bench row. |
+| **LIFE-04** | game, k1 | main.js wiring (<= 20 lines; replaces the OUT-02 spawn hook) | Browser pass at Outwall day / night. |
+| **LIFE-05** | game, k2 | `chat.js` + `barks.js` `repeat` mode + the writer key table | `chat.test.js`: pairing rules, facing, clip alternation, cooldown, the 8 m bark gate, the 6 s gap, player interrupt; `barks.test` repeat mode not saved. |
+| **LIFE-06** | engine/fauna, k4 | `hunts` / HUNT state, `setThreats`, `nearestPrey`, `kill`, herd cohesion | `groundBrain.test` + `faunaDef.test`: fox catches a scripted rabbit, the rabbit flees a predator, the give-up timer, a herd regroups, threats flee; old fixtures unchanged without `hunts`; 0 alloc; check-deps rule 19 green. |
+| **LIFE-07** | game, k2 | beastSim `STATE_EAT` + the prey query + fox data / designer `eat` clip | `beastSim.test`: wolf hunts and eats a deer, the player notice preempts; `null` fauna is bit-identical on all old tests. |
+| **LIFE-08** | game, k3 | beastSim `setGoal` / `setAltTargets` + `raids.js` | `raids.test.js`: the night roll by hash, the pack travels to gooseFarm, hits an alt target -> the villager flee, the defended flag on the pack kill, timeout -> lost, cooldown, save keys. |
+| **LIFE-09** | game, k4 (content) | "Defend the farm" quest on the template pipeline + `raids.json` + NEEDS WRITER keys | `validate-content` green; quest-sim reaches the flag. |
+| **LIFE-10** | tools, k2 | `tools/bench-life.mjs` + the budget rows | The budgets in (e) are met, or the step is flagged. |
+
+**Order:** LIFE-01 -> 02 -> 03 -> 04 (Outwall alive); then 05 (chat); 06 -> 07 (the wild); 08 -> 09 (raids); 10 alongside 03. Lanes: k3 = 02 / 03 / 08, k2 = 05 / 07 / 10, k4 = 01 / 06 / 09, k1 = 04 + hooks.
+
+**Do not:** save villager positions or needs (they derive from the clock); let villagers die in raids; run A* for more than one request per step or give fauna a NavGrid; let fauna import game or beastSim (beasts are passed in only as threat points); use `Math.random` / wall clock / Map iteration in steps; make barks' once-flags for overheard chat; put species or villager names in engine code; add a new quest objective type for raids.
+
+### 38.57 Goblins (D-072) (PC-B architect opus 2026-10-13, owner-authorised, ratified PC-A 2026-10-14)
+**Layering.**
+- All goblin code is **game** code. There is **no engine change**: the torch light is the existing EMIS-01b derived light (38.12 (1)).
+- Rule 15 applies to `sim/**` and `game/js/life/**`: no `Math.random`, no trig, no clock, integer step timers, 0 alloc per step.
+
+**(1) Brain: a beastSim species, not a new state machine.**
+- **New file** `game/js/quest/sim/goblinBrain.js`, built like `wolfBrain.js`. It exports:
+  - `GOBLIN_MODEL = 'goblin'`, `GOBLIN_TORCH_MODEL = 'goblinTorch'`;
+  - `GOBLIN_TUNING`, `goblinOverrides(base)`;
+  - `isGoblinEntity(e)`: true for `brain.species === 'goblin'`. The role is `brain.role`, `'melee' | 'thrower'`;
+  - `ensureGoblins(world, ids)`.
+- **beastSim: attack tokens per group.**
+  - New `sim.group[i]` (Uint8): 0 = boar/bear, 1 = wolf, 2 = goblin.
+  - In `hasActiveCharger` it replaces the test `sim.wolf[k] !== sim.wolf[me]`. The function now counts token holders against `tokens` per group: boar/bear/wolf 1, goblin melee 2.
+  - Boar, bear and wolf behaviour and hashes stay bit-identical.
+- **beastSim: melee goblins.**
+  - They reuse the wolf branch of `setSteerTarget`: circle at 3-5 m while waiting, retreat after the strike. Gate that branch on a new `sim.packer[i]` flag (wolf or goblin melee) instead of `sim.wolf[i]`.
+  - Windup 0.5 s (clip `attack`, the raise).
+  - Charge = a 2.5 m lunge (0.3 s).
+  - Retreat 3 m. A damaging hit on a goblin also enters the retreat (this is "scatter when hurt").
+  - Flee: a lone goblin under 30 % HP flees. `fleeM` is per slot (goblin 20 m).
+- **Tuning:** hp 0.6x boar; chase 1.15x; walk 1.6 m/s; noticeR 16; leashR from the camp (see (3)). The tier multiplier comes from `band`, as today.
+- **Dormant slots:** new `sim.setDormant(slot, on)`.
+  - A dormant slot is skipped like GONE (no perceive, path, steer or post) but keeps its state.
+  - `goblinCamps.js` makes a camp dormant when it is > 160 m from the player and wakes it at < 140 m.
+- **MAX_BEASTS 32 -> 48** (26 slots are used today). Change `loot.js MAX_SLOTS` in the same commit.
+
+**(2) Throwers and the enemy projectile.**
+- **beastSim, role `thrower`** (new `sim.ranged[i]`):
+  - **In CHASE it keeps a distance band:**
+    - d > 14 m: path toward the player;
+    - d < 7 m: back off with `awayTarget`;
+    - otherwise: hold and face the player.
+  - **WINDUP** (0.6 s, clip `throw`) starts when all of these hold:
+    - it is in the band;
+    - `seen[i]` is set (cached LOS);
+    - its reload is done;
+    - fewer than 2 throwers of the group are in WINDUP.
+  - **At windup end** it emits ONE preallocated `beast:throw` with `{id, x, y, z, tx, ty, tz}`:
+    - `x, y, z` = the hand, at eyeZ + 0.4;
+    - `tx, ty, tz` = the player's chest at release, with no lead.
+  - Then it enters RECOVER (the reload, 2.0 s).
+  - beastSim never imports the projectile sim.
+- **Projectile = the arrow sim with an owner flag:** `createArrowSim(world, events, cfg, targets, onWaterHit, opts)` with `opts.owner = 'enemy'`.
+  - The default is `'player'`. Player mode stays bit-identical: every `arrows.test` is unchanged.
+  - **New calls:**
+    - `fireVel(x, y, z, vx, vy, vz, damage, srcId)`: a per-flying `src` slot feeds `payload.source`;
+    - the pure export `lobVelocity(x0, y0, z0, tx, ty, tz, speedH, g, out)`: t = dH / speedH, vz = dz/t + g t/2 (trig-free).
+  - **Targets:** `createPlayerTarget(world)`.
+    - Same SoA shape as targetables, count 1: player x, y, z; r 0.35; h 1.7; r = -1 while the player is dead.
+    - So goblins are never hit by their own spears.
+  - **Payload:** `{source: srcId, target: 'player', damage, ranged: 1, dirX, dirY}`, where dirX/dirY = the flight direction.
+  - **Config** `GOBLIN_SPEAR_CFG`:
+    - speedH 13 m/s;
+    - `survivePct 0` (never pickable);
+    - maxFlying 8, maxStuck 8, maxFloat 0;
+    - stuck spears last 10 s.
+  - **Blocked:** if `p.blocked === 1` after the emit, the spear drops (stuck at the hit point, pointing down) and `beast:spearBlocked` is emitted for the clank fx.
+- **vitals.onHit:**
+  - When `p.ranged === 1`, the hit direction is `(p.dirX, p.dirY)` (the flight direction), not thrower -> player.
+  - Both the EQ-06 arc test `sh.covers` and the knock use it.
+  - Damage = 1 heart x the tier damage, with `beastDamageScale` as today.
+- **Dodge:** there is no dodge move, so dodging = sidestepping. There is no aim lead, a 0.6 s telegraph and about 0.9 s of flight at 12 m.
+
+**(3) Camps** (`game/js/life/goblinCamps.js`, data `content/life/goblinCamps.json`)
+- **Def:** `{id, at: [x, y], props: [{model, at: [dx, dy], yaw}], members: [{id, role, at: [dx, dy]}], leashR: 25, respawnDays: 3}`.
+  - Each camp has 4-6 members.
+  - Props are existing meshes / voxel props only: the brazier as the camp fire, crates, logs. A missing tent is marked `NEEDS DESIGNER`; it does not block the step.
+- **Spawn:** members become goblin beast entities at world build, before `createBeastSim` (like `ensureWolves`). `home` = their spot; `leashR` = the camp's.
+- **Placement rule (tested):** every camp has `band.bandAt(at) >= 5` and `x < WEST_X` (the west bank).
+- **Cleared** (all members dead):
+  - set `life.camp.<id>.cleared = true` and `life.camp.<id>.day = dayIndex`;
+  - emit `life:camp:cleared`.
+- **Down and respawn:**
+  - On create / load / `resetAll`, a cleared camp's slots are put to GONE.
+  - They come back when `dayIndex - day >= respawnDays` and the player is > 150 m away.
+  - `cleared` stays true for quests. A second key, `life.camp.<id>.down`, drives the GONE state.
+- **Morale:** when half the members are dead, the rest flee once (`sim.flee(slot)`, a wrapper on `enterFlee`), then return to the camp.
+- **Saved:** only those three `world.state` keys. The goblins themselves reset on load, like all beasts.
+
+**(4) Night torch raids** (on LIFE-08: `raids.js`, `content/life/raids.json`)
+- **New raid-def keys:**
+  - `campId`: there is no raid while that camp is down;
+  - `torches: 0..3`.
+- **Pack:** the camp's members, by id.
+- **Torches:** at raid start the first `torches` members get `voxel.model = GOBLIN_TORCH_MODEL`. The model reverts at raid end, or when that member enters DYING.
+- **Light:**
+  - `goblinTorch` has an emissive flame part, so the voxel pool's `offerEmissive` derives a point light. No new light code.
+  - Ranking = intensity / distance, with the 1.25 hysteresis.
+  - Cap = `MAX_LIGHTS` (16 in lighting.js) minus the placed lights, so torches can never starve placed lights.
+  - At most 3 raid torches, plus the camp brazier.
+- **Unchanged from 38.56 (d):** villagers never die; the defended / lost events and the "defend" quest pipeline stay as they are.
+
+**(5) Loot and tiers**
+- **`LOOT_TABLE.goblin`:**
+  - fixed drops: none;
+  - rolls: `arrow` 2-4 (chance 0.3); `goblin.trinket` x1 (chance 0.25; a sell item, icon NEEDS DESIGNER);
+  - orb chance 0.4.
+- **Weapons:** `weapons.json sources.goblin {chance: 0.06, items: [main.sword, ranged.bow, off.shield]}`.
+  - The tier is forced by `BAND_TABLE.gearItemTier[gearTierAt]`: band 5-6 fine, 7-8 tempered, 9-10 warden.
+- **Table choice:** `loot.js` picks the table per slot by `sim.group`. The boar table is unchanged.
+- **Prompt:** `LOOT_PROMPT.goblin`.
+
+**(6) Budget**
+- Goblins use beast slots. Worst case: 3 camps x 6 + 1 raid = 18-24 live slots, but dormant camps cost almost nothing.
+- New `tools/bench-life.mjs` row: "48 beasts (20 goblins awake, 6 throwers, 8 spears flying)". Caps:
+  - beastSim goblin extras <= 0.1 ms mean;
+  - enemy projectiles <= 0.03 ms;
+  - 0 alloc.
+- Over the cap: lower the dormant radius first.
+
+**Model contract (designer)** - `design/models/voxel_goblin.js`:
+- **Models:**
+  - `goblin`;
+  - `goblinTorch`: the same rig plus a torch in the off hand, with an emissive flame voxel;
+  - `goblinSpear`: the flying / stuck spear.
+- **Clips:** `idle walk run attack throw hurt die dead sink carryTorch`.
+  - `carryTorch` = walk/run with the torch raised. `goblinTorch` uses it in place of walk/run.
+  - The `die` / `sink` frame timings must equal beastView's `DIE_DURATIONS` / `SINK_DURATIONS`.
+- **State -> clip map** (`goblinFx.clipFor.state`):
+  - wander -> walk;
+  - chase / recover -> run;
+  - windup -> `attack` (melee) or `throw` (thrower);
+  - charge -> attack;
+  - stagger -> hurt.
+  - In beastView, generalise `wolfClip` into an fx lookup by model.
+
+**Steps** (each <= 1 d; game; k1 = the only main.js editor)
+
+| Step | Slot | What |
+|---|---|---|
+| GOB-01 | k3 (after LIFE-08) | goblinBrain + beastSim `group` / tokens / `packer`, melee lunge + retreat, flee, `setDormant`, MAX_BEASTS 48 |
+| GOB-02 | k3 | thrower role: keep-distance band, throw windup, `beast:throw` |
+| GOB-03 | k2 | arrows enemy mode + `lobVelocity` + `createPlayerTarget` + vitals `ranged` direction |
+| GOB-04 | k4 | goblinCamps.js + json (cleared / down / respawn / dormant / morale) |
+| GOB-05 | k4 | goblin loot table + weapons.json source + per-group table choice in loot.js |
+| GOB-06 | k3 (after LIFE-08, GOB-04) | raids `campId` + `torches` model swap |
+| GOB-07 | k1 | beastView clip map + spear view + main.js wiring, one browser pass |
+| GOB-08 | k2 (after LIFE-10) | bench-life goblin row |
+
+**Do not:**
+- write a second beast state machine;
+- let beastSim import the arrow sim;
+- let enemy spears hit goblins or be picked up;
+- add a light API or a goblin light slot (use the emissive model);
+- save goblin positions;
+- place goblins east of WEST_X or below band 5;
+- change boar / wolf / bear numbers or hashes.
+
+### 38.58 Terrain band cache + pre-bake (OB-109) (PC-B architect opus 2026-10-13, owner-authorised, ratified PC-A 2026-10-14)
+Problem: `World.ensureBandFor` / `streamBand` keep only current + pending; every swap re-bakes terrain + tree/detail scatter + colliders (measured Node, world_m1: `ensureBandFor` 311-512 ms per zone, swap frame `lastSwapMs` 3-24 ms). Owner wants nothing baked in play.
+
+**Decision: a per-World `BandCache` of finished band bundles. Authored zones: bake ALL behind the loading bar and keep them. Grid (MAP-10): byte-capped LRU with pins, filled ahead in idle slices. A swap in play is a cache hit = pointer flips + GPU re-upload, never a bake.** This amends 38.38 "Do not pool or reuse `near` objects": a cached bundle may be re-published later (new `version`, identity differs from the outgoing `near`, so terrainMesh/TerrainTextures rebuild as today). Bundles are never mutated after bake, except `near.version` at publish and editor edits (below).
+
+**Memory (measured from typed-array bytes, world_m1 Node probe, mesh physics, trees + detail on):** near 320x192 x 9 B = 0.53 MB per band (fixed); trees 0-1150 (<= 0.03 MB); detail <= 824 (<= 0.03 MB); trunk collider 0-2.0 MB; detail collider 0-1.5 MB. Per band: east 2.9, west 3.9, south1 2.2, south2 0.7, south3 0.5 MB = **10.3 MB for the 5 zones; budget 16 MB for 6**. Worst case at the 38.43 caps (3000 trees, 40k detail) ~8 MB/band. Carpet (off by default, OB-096): cache only `classMap` per band if on (mask stays the sliced MASK-b job). Default cap `bandCache.maxBytes = 24 MB`; authored zones that fit are all pinned.
+
+**API (engine/world/bandCache.js, new; World owns it, never serialised):**
+```js
+/** @typedef {{key:string, zone:number, near:object, scatter:object|null, detail:object|null,
+ *   trunks:object|null, detailCol:object|null, classMap:Uint8Array|null, bytes:number, pinned:boolean, lastUse:number}} BandBundle */
+new BandCache({ maxBytes })        // get(key) -> BandBundle|null; put(b); pin(key, on); evict() LRU unpinned, never current/pending; clear()
+bandCache.stats() -> { entries, bytes, hits, misses, bakes, evictions }   // reused object, F3 + verify tools
+World.prebakeBands(msBudget) -> { done, total, bytes }                     // sliced, loading bar only; reused out object
+World.bandCache                                                            // read-only
+```
+Key = `_nearKey` form (`nearBandKey(zone) + realTrees + detail cfg id`). Bundle bytes = sum of `byteLength` of its typed arrays (incl. collider arrays).
+
+**Bake without touching the live band.** Today the bake lives in `terrain._bb` + `world._bandJob` (one pending slot). Step a turns these into a reusable `BandBakeJob` (terrain rows via `util.bake` slices + the 4 scatter/collider phases, view `Object.create(terrain)` with `near = job.b`), so `_bb`/`_bandJob` become "the job for the pending swap" and `prebakeBands` / bake-ahead run their own job. Overlap copy only from `terrain.near` or a cached bundle (per-cell pure, byte-identical).
+
+**Swap on hit (`_publishBand`):** `get(key)` hit -> skip `_bandJobStep` and `swapNearBand` bake; set `terrain.near = bundle.near` (version = old + 1), `scatter/detail` refs, collider slot replace (indexed, no closure), `carpet.classMap` from bundle, ground snap, events with preallocated payloads. JS swap frame <= 4 ms, 0 alloc (when no ground-snap entity moved). GPU: TerrainTextures re-upload on `near.version` (0.55 MB texSubImage, ~0.3-1 ms iGPU), instance buffers on `world:scatter` (< 2k instances, < 0.1 ms), terrainMesh rows stay under their own sliced budget (unchanged, far exclusion still moves at `_publishNear`). Miss in play = today's sliced 2 ms bake + `put` (never a new sync path); `band:late` stays as the logged last resort.
+
+**Loading bar:** "Shaping the land" (bootCard / far hold) gets a second progress slice: after `World.load` (start band baked + `put` + pinned), the bar loop calls `world.prebakeBands(12)` per rAF until `done === total` (order: zones by distance from the spawn/saved pose). Continue / Load / restart reuse the cache if the World instance is the same; a new World re-prebakes. `?prebake=0` = old behaviour (baseline). Expected ~2 s laptop for 5 zones, under the bar.
+
+**Grid (MAP-10, 17+ regions):** same cache, cap 24 MB, pinned = current + start zone + `terrainGrid.pin: [[i,j],...]` (main roads, data). Bake-ahead: when `streamBand` returns 0 and frame budget is left (<= 2 ms total with the band work), bake the next uncached zone by priority (the <= 3x3 ring around the current zone, ordered by distance to the zone edge the player approaches) into the cache. Never synchronous in play; never more than one bake-ahead job; a job for a zone that left the ring is dropped.
+
+**Editor:** `Terrain.rebakeRect` / `refreshTerrainScatter` mutate the live band: drop every cached bundle whose rect overlaps the edit, then re-`put` the current band after `refreshTerrainScatter`.
+
+**Steps (each <= 1 programmer-day, Node ACs; PC-A track `engine/world`, PC-B may take per cross-track rule, ends in `arch-review`):**
+- **OB109-B1 BandBakeJob refactor.** Terrain + scatter/collider job independent of `_bb`/`_bandJob`; existing tests unchanged; new: a job baked for each world_m1 zone == `ensureBandFor` result bytes (near arrays, scatter/detail arrays, collider positions).
+- **OB109-B2 BandCache + hit path.** `bandCache.js` + `_publishBand`/`ensureBandFor`/`streamBand` hit path. ACs: second visit = 0 calls to `util.bake`/`TreeScatterJob`/`DetailScatterJob` (spy counters); cached bundle byte-identical to a fresh bake; `stats().bytes` == summed byteLength; LRU evicts unpinned only, never current/pending; swap-on-hit 0 alloc (heap delta over 100 east<->west swaps, `--expose-gc`) and `lastSwapMs` reported; editor invalidation test.
+- **OB109-B3 prebakeBands + loading bar (PC-B, main.js/bootCard).** ACs: `prebakeBands(ms)` never exceeds ms+one slice; after done all 5 zones cached, walking route legs 8-10 logs 0 bakes and 0 `band:late`; headless `tools/verify-ob109.mjs` prints bar time + cache MB + max in-game frame.
+- **OB109-B4 grid bake-ahead (with/after MAP-10).** ACs: ring priority table; idle bake-ahead stays <= 2 ms/frame; route walk across 4 grid zones: 0 sync bakes, cache <= maxBytes, pins never evicted.
+
+**Do not:** bake on a swap frame or synchronously in play (except the logged `band:late`); mutate a cached bundle other than `version`; serialise the cache; let game code pick zones (it passes pose, budget, pins in data); keep the cache across World instances.
+
+### 38.59 Whole-map walkable (D-076) (PC-B architect opus 2026-10-13, owner-authorised, ratified PC-A 2026-10-14)
+Goal: every region of `world_geo` walkable; the real limits stay (sea monster out at sea, mountain foot/slope, the Wall killing ground x 1880, the locked Sealed Gate). **Build on what exists:** MAP-10..14 are done (`bandGrid.js`; `?grid=1` = `gridVariant` terrainGrid + polygon bounds; MAP-12 GPU any-zone origin; MAP-13 load/travel at any pose; route-walk leg 10), OB109-B1..B3 are done (BandBakeJob, BandCache, prebake). OB109-B4 (grid bake-ahead) is NOT built. Everything in 38.38/38.43/38.58 "Do not" still holds.
+
+**Measured (Node, 2026-10-13, world_m1 + `installGeo`, realTrees + detail + mesh physics, GRID_DEF zones 640 x 384 m, pitch 256 x 128 m):**
+- Walk polygon (`world_geo.bounds` today) 2.77 km^2, 20 verts; **108 grid zones** touch it (of 15 x 30).
+- Bundle per zone (54 sampled): avg **1.84 MB**, max 4.58 MB; trees avg 389, max 1499; detail max 869 (under the 3000 / 40k caps). All 108 zones = ~199 MB, so whole-map prebake is out.
+- Bake per zone: terrain rows full avg **1403 ms** (max 2399), with the overlap copy from a neighbour avg **609 ms**; scatter + colliders avg 142 ms (max 641). Geo layers dominate: `heightAt` outside the keep ~6.8 us/sample (the 38.58 authored-zone 311-512 ms were in/near the keep).
+- Nav: one 2 m grid over the polygon bbox = 930 x 830 = 772k cells x 9 B = 6.9 MB (+6 MB build temp), ~5 s via `heightAt`: no. Per-band tile `NavGrid.buildFromArrays` 320 x 192 (= the near grid) **2.0 ms**, 0.55 MB.
+- Content today (world json): structures only in tower/roadWest/ford/outwall/westFells (gate)/heartland; Glasswater, Northwood, High Pastures, Ash Mile, Downs, Signal Hill, Heath, Reedmire, Strand and the Whitecombs foot have 0-4 placements. Biome planting (MAP-01c) already gives trees + detail everywhere; ambient fauna (WILD-03 hash cells) already works anywhere.
+
+**Decisions.**
+1. **Bounds = one world polygon** (`world_geo.bounds`, MAP-11 engine path, 64 m buckets, <= 128 verts) instead of capsule unions. Sea side: the polygon runs **coast + 110 m out** (seaEdge `killM` 90 + margin), so the sea monster is the limit, not a wall. North: mountain foot (slope does the rest). East: x 1880. Gate: solid colliders (MAP-09), the polygon passes in front of it. Old saves outside -> last relay (MAP-13 `placeLoaded`).
+2. **Near terrain = band grid + BandCache LRU + idle bake-ahead (OB109-B4)**, never synchronous in play (only behind a fade: load/travel/respawn). Cache `maxBytes` **32 MB** (24 MB holds only ~5 worst bands; a 3x3 ring is ~17 MB avg, the top-8 worst 32 MB). Pins from data: the 5 authored zones (`terrainGrid.pin` = today's east/west/south1-3, byte-identical with `ox/oy` even) + current + pending. Bake-ahead copies the overlap from the **best cached neighbour** (largest overlap); priority = the zone ahead in the movement heading, then the sides, then the rest of the 3x3 ring; one job at a time; <= 2 ms/frame shared with `streamBand`.
+   **Speed check:** overlap bake ~0.75 s Node (x1.5 laptop ~1.1 s) at 2 ms/frame = 120 ms/s -> ~9 s game time per zone. Running at 6 m/s needs a new zone every 21 s (y pitch 128 m) / 43 s (x pitch 256 m): the heading zone is ready with ~2x margin; sideways ring zones fill later (a miss there is the logged sliced path, never a sync bake). WM-01 halves the bake.
+3. **Nav = per-band tile**, built from the bundle's near arrays (`buildFromArrays`, same 2 m grid and rect as the band) as phase 4 of `BandBakeJob`, cached in the bundle (`bundle.nav`, counted in bytes) and swapped with the band (`world.nav` + `world:band`). **No A* across tiles:** the player stays >= 88 m (switchY) / 112 m (switchX) inside the live band, beasts outside the live tile are dormant (GOB-01 `setDormant`), and a swap re-plans live paths on the new tile. Worlds with a fixed `nav.area` keep today's single grid byte-identical.
+4. **Placements/props/beasts by region:** `placementGrid` (STREAM-01) already culls by distance: no change. Beasts + goblin camps: dormant when the home is outside the live nav tile or > 200 m from the player (state kept, saved as today). Fauna: the `wildEnv` trunk grid is built once at load today (stale after a grid swap): rebuild on `world:scatter`.
+5. **Content by rules, not by hand:** empty regions get per-biome rows (rocks/boulders/ruin stubs as `collide` scatter species, reeds/flowers via detail `densityMult`) in `geo.biomes`; per-band caps unchanged (3000 trees, 40k detail), bundle <= 6 MB. Sites with `ex: 0` (villages, camps) stay unbuilt (separate stories).
+6. **Save:** a pose anywhere is already serialised with the grid def (MAP-10/13); a saved pose in an uncached zone = sync `ensureBandFor` behind the load fade (allowed). The cache is never serialised.
+
+**Budgets (per step and at the end):** JS <= 8 ms (D-007); idle bake-ahead + `streamBand` <= 2 ms/frame; cache-hit swap <= 4 ms JS, 0 alloc; nav tile phase <= 3 ms slice; GPU re-upload per swap 0.55 MB (unchanged). Memory: cache 32 MB (bundles incl. nav tiles) + far 2.4 MB + GeoFields <= 4 MB = **<= 40 MB terrain total** (replaces the 12 MB line in 38.43 and the 24 MB default in 38.58).
+
+**Steps (each <= 1 programmer-day, Node ACs; the grid stays behind `?grid=1` until WM-05, so each step leaves the game working):**
+- **WM-01 GEO-PERF** [engine recipe path + design/levels, arch-review, 1 d]: cut the geo per-sample cost (layer AABB skip before any float op, hoisted per-row terms, cached coast/ridge lookups). AC: byte-identical near/far bytes (bakeParity, geoLayers, gpucompare unchanged); probe zones terrain full avg <= 700 ms, overlap <= 300 ms Node.
+- **WM-02 OB109-B4 bake-ahead** [engine/world, arch-review, 1 d]: as 38.58 + heading priority + best-neighbour overlap + `terrainGrid.pin` + `maxBytes` 32 MB. AC: priority table test; <= 2 ms/frame; fake 12-zone walk at 6 m/s: 0 sync bakes, 0 `band:late`, cache <= maxBytes, pins never evicted; cached bundle == fresh bake bytes.
+- **WM-03 NAV-TILE** [engine/world + nav, arch-review, 0.75 d]: bundle phase 4 nav tile, `world.nav` swap on publish. AC: tile walkability == `buildFromWorld` on the same rect for >= 99.5 % of cells (100 % inside the keep); existing nav tests + beast fixtures unchanged on fixed-area worlds; swap 0 alloc.
+- **WM-04 beasts/fauna across tiles** [game, PC-B, 0.75 d]: beastSim/goblinCamps rebind nav on `world:band`, dormancy by tile + 200 m, path re-plan; wildEnv trunk grid on `world:scatter`. AC (Node): a chase across a swap keeps a path; out-of-tile beasts dormant and restored on return; save/load round trip.
+- **WM-05 map switch** [data + game, 0.75 d]: designer re-traces `world_geo.bounds` (sea + 110 m, mountain foot, x 1880, gate); validator (simple, <= 128 verts, contains the spawn, every `ex:1` site and relay); world_m1 ships `terrainGrid` (pins = the 5 zones) + polygon bounds; `?grid=0` = old terrainBands for one sprint. AC: strandOpen, route-walk legs 1-10 + strand unchanged; the 5 zones byte-identical.
+- **WM-06 gates** [tools, 0.5 d]: route-walk leg `mapLoop` (tower -> Glasswater -> Northwood -> Ash Mile -> Downs -> Strand -> Reedmire -> Signal Head -> Heath -> Thornwood -> High Pastures -> Gate -> back, run speed): 0 `band:late`, 0 sync bakes, no fall/stuck, max swap <= 4 ms, cache <= 32 MB; bench-life at northwood/downs/westHeath JS p95 <= 8 ms; gpucompare rows unchanged + gridZone; save/load at 6 poses.
+- **WM-07 region dressing** [content/designer, 1 d]: biome rows for the 10 empty regions (item 5). AC: probe placements/km^2 per region >= target, band bytes <= 6 MB, bench poses still <= 8 ms.
+
+**Do not:** prebake the whole map (199 MB); build one nav grid for the whole map; run A* across tiles; hand-place props to fill regions; bake synchronously in play; change the bytes of the 5 authored zones.
+
+- WM-12 rule (architect 2026-10-13e): beastSim.save() is not part of the game save; slot order is deterministic (authored, then generated in REGION_RULES order). If beast state ever enters the save it must be keyed by id, never by slot.
+### 38.60 D-075 step 5: HZB gate (R3) + tree card impostors (R6) (PC-B architect opus 2026-10-13, owner-authorised D-075, ratified PC-A 2026-10-14)
+
+**Facts.** HZB occlusion exists (38.20; `wg/passHzb.js`, `wg/passCull.js` phases 1/2, twin `engine/mesh/occlusion.js`, spans via OCCL-STATS-01), opt-in `?occl=1`, WebGPU only. Kinds 0-10 in `engine/render/GBuffer.js` (9 = KIND_MESH). Trees stop at `maxDistM` 140; OB-089: dark unlit LOD silhouettes beyond the near range are rejected by the owner. Targets (proposal): RTX 4060 ultra <= 7.5 ms GPU with trees to 300 m; Intel (preset high, D-075: ultra = RTX only) <= 10 ms.
+
+**R3 HZB gate (0.25 d, measure only, no build).**
+1. Rule (38.20 (6), unchanged): `raster + raster2 + hzb + cull2 (occl=1) <= raster (occl=0) - 0.3 ms`, median of 3 runs of `tools/bench-presets.mjs` with `occl` 0/1, poses roadSouth, northwood (forest), crossroads (town), meadow (open).
+2. Per preset, not per GPU: `ultra` is decided on the RTX numbers only, `high` and below on the Intel numbers. Result = new preset field `occl: boolean` (content; `?occl=` still overrides). ON only if the rule holds on the dense poses AND meadow loses <= 0.1 ms.
+3. Re-run the gate after R6d (cards make far trees cheap occludees; the gain moves). GL2 / CPU path: occl stays off. Record the table in the story.
+
+**R6 tree card impostors - design (decisions).**
+1. **Kind: reuse KIND_MESH, no new G-buffer kind, no flag.** A card fragment writes an ordinary mesh cell (kind 9, mat, face, oct normal, linear depth) read from the atlas, so light, resolve, fog, shadow lookup and HZB need no change; only the two raster twins change. This keeps D-039 scope to raster + cull.
+2. **Atlas bake (runtime, deterministic, both twins read the same bytes):** `engine/mesh/impostorBake.js` `bakeImpostor(meshAsset, opts) -> {views:8, size:32, bytes:Uint8Array, radius, height}`. Source = LOD1 (LOD0 if none), rendered with the existing JS mesh raster into a private 32x32 G-buffer, ortho, 8 yaws (0, 45, ... deg), one elevation (8 deg down). Texel = 8 B (as built in R6a, impostorBake.js header): [0] mat u8, [1] face u8, [2] oct nx HIGH byte, [3] oct ny HIGH byte, [4] depth offset i8 (signed, radius/127 units from the card plane, along the bake view dir), [5] coverage u8 (0 = empty), [6] oct nx LOW byte, [7] oct ny LOW byte. The oct normal is 16 bits per axis (q = floor((o*0.5+0.5)*65535+0.5), view-local, rotated by -view yaw): the spec's 2 pad bytes carry the low bytes because 8-bit oct only reaches 0.014 error (> 1/127). Decode = `(hi << 8 | lo)` per axis, `bits = qx | qy << 16`, then unpackNormalOct (impostorBake.js decodeImpNormal; WGSL impFetch + impOctDecode, bit-exact). The bake does NOT use the full mesh raster (it needs a DrawList/ctx and writes cell G-buffers): it has its own mini raster, a private 32x32 f32 z-buffer triangle fill, ortho, 8 views x 32/16/8 mips (2x2 majority coverage, nearest-depth pick). Layout view-major: per view mip0 32x32, mip1 16x16, mip2 8x8, row-major, row 0 = top (86016 B/species). GPU atlas (R6c) = one read-only `array<u32>` storage buffer of these bytes, `atlasBase` word offset per species. Mips 32/16/8 baked by majority-coverage, nearest pick (no filtering: cell art). Bake runs in the OB-109 loading-bar pre-bake, once per species, cached by mesh id; never in a frame.
+3. **Memory:** 8 x (32^2 + 16^2 + 8^2) x 8 B = 86 KB per species; budget <= 2 MB GPU (~20 species), one shared `r32uint` x2 atlas texture (WGSL) / Uint8Array (JS). Over budget -> bake skips the species (logged), trees fall back to today's cut.
+4. **Card + LOD:** cylindrical billboard around z through the instance origin, width 2*radius, height `height`. View = round((bearing camera->tree - instance yaw) / 45 deg) mod 8; the stored normal is rotated back to world by (view yaw + instance yaw). Card from `impM` (preset, default 60 m ultra / 45 m high) to `maxDistM` (ultra 300, high 200); dither band 8 m at `impM` using the existing LOD dither hash (one instance = exactly one of mesh/card outside the band, both copies in the band, the same rule as 38.20 (4)). Cards are a 4th LOD level of the instanced group in the GPU cull (frustum + HZB apply; 2 tris per tree).
+5. **Shading:** light pass shades the stored normal and mat like any mesh cell -> lit trees, fixes the OB-089 navy silhouettes; depth = card plane depth + texel offset (so terrain/fog/HZB see a real silhouette). The far forest terrain tint stays beyond `maxDistM`.
+6. **Shadow:** cards do NOT cast (they start beyond `instCastM` 32-48 m); they receive via the normal shadow lookup on the reconstructed position.
+7. **D-039:** JS raster twin is the oracle; card cells must be cell-identical on GPU (view pick, oct decode, depth offset are integer/f32-exact; compileFn probes). Any diff = bug; tie-cell re-baselines only with an architect note in the story.
+8. **gpucompare rows (new):** `impMid` (roadSouth towards the hills, cards 60-300 m), `impBand` (camera 4 m inside the dither band of a tree row); existing rows unchanged when `impostor` is off.
+9. **Do not:** bake per frame or on the GPU; blend between views; add a G-buffer kind; let cards cast shadows; ship atlas files in content (bake is runtime from the mesh); touch light/resolve shaders.
+
+**Steps (each <= 1 programmer-day, Node ACs).**
+- **R6a bake** [engine/mesh, 0.75 d]: `impostorBake.js` + test. AC: two bakes give identical bytes (hash); every view coverage > 0; oct normal round-trip error <= 1/127; depth offset within +-radius; 86 KB per species; Node bake <= 20 ms per species for a 1.5k-tri LOD1.
+- **R6b JS twin** [engine render JS raster, 1 d, deps a]: card LOD level in the CPU instance path (`impM`, band, `maxDistM`), view pick, card raster writing KIND_MESH cells. AC: view-pick table over 360 deg x instance yaws; band complementarity (outside the band each instance drawn once, in the band hash-split); card depth = plane + offset; normal rotated to world matches the baked mesh normal at the same view within 1/127; 0 allocations per frame after warm-up.
+- **R6c WGSL twin** [gpu/wg + wgsl, 1 d, deps b]: atlas upload, cull LOD level 3, card vertex/fragment pipeline. AC: compileFn probes of view pick / oct decode / depth offset vs the R6b twin bit-exact on 2000 random cases; passCull.test LOD-3 counts match the twin; `impMid`/`impBand` gpucompare rows added and identical (gpucompare skill).
+- **R6c status (kestrel-3, r6c, 2026-10-13):** DONE: `wgsl/impostor.wgsl.js` (IMP_CULL_WGSL `cs_card` + IMP_CARD_WGSL vs/fs; every rule helper probe-bit-exact vs impostorCard.js, `impostor.wgsl.test.js`), JS frame wiring (`DrawList.addCards` -> compositor `rasterCards`, off = byte-identical), gpucompare rows impMid/impBand (opt-in `?imp=1`). OPEN (host, needs a browser): WgCardPass (pipelines, args slot, atlas upload), cull.wgsl mesh-side half (drop the mesh copy at d >= impM+8, band bits on the mesh copy), frame call after the mesh raster. ARCH DECISION asked: card fragment uses `@builtin(frag_depth)` (index.test.js exempts impostorCard only) to depth-test the texel-shifted point exactly like the JS twin; alternative = test the plane depth and change the JS twin.
+- **R6d presets + gate** [content/presets + tools, 0.5 d, deps c]: preset fields `impM`, `maxDistM` (ultra 300, high 200), species opt-in `impostor: true` for scatter trees, budget skip logged. AC: preset schema + validate-content tests; bench-presets ultra RTX <= 7.5 ms GPU at roadSouth, high Intel <= 10 ms; R3 gate re-run, table in the story; owner look on the band (OB-089 closed or re-opened).
+
+### 38.61 Alloc probes and the gate (PC-B architect opus 2026-10-13, ratified PC-A 2026-10-14)
+- **(1) Gate:** yes, `tools/run-tests.mjs` spawns every suite with `--expose-gc`; a probe without `gc` prints `SKIP (no --expose-gc)`, never PASS. Probe recipe (shared helper `tools/allocProbe.mjs`, one copy, no per-test variants): warm-up >= 2 windows (optimise), then `gc(); gc();` + `heapUsed` before/after each window, report the **min of 5 windows** in B/call. Window small (<= ~1 MB expected garbage) so no scavenge hides it. Thresholds unchanged.
+- **(2) Double args:** public `(x, y, out)` APIs keep their signature. A probe measures **through the real hot call site** (the per-tick consumer: wading/swim sim, physics step), not a bare test loop that V8 may not inline into. If the real call site still allocates, fix the call site/consumer (out-param, hoisted scratch); no module-global query scratch (`WQ`) shared across modules (re-entrancy, hidden coupling, unreadable API).
+- **(2a) Boxed doubles (GATE-FLAKY-02a, PC-B architect opus 2026-10-14, PC-A to ratify):** hot paths keep public double-arg signatures. Internally a per-tick consumer makes ONE call per query (e.g. `riverAt` carries z + fx,fy; never riverAt paired with waterAt/flowAt in one caller, measured 31-86 B/call), and a module's inner helpers read a module-private Float64Array scratch (e.g. bvh.js `RAY`) instead of taking double args. The probe is strict per call (< 8 B). Retained-only checks never replace it.
+- **(2b)** Exported functions taking more than ~6 double args box at the call boundary when the args vary. Hot paths use a caller-owned Float64Array form (`raycastRay`/`raycastAnyRay`, layout `[ox,oy,oz,dx,dy,dz,tMax]`). The scalar-arg form is a cold-path wrapper with an explicit ALLOC_EXEMPT. Alloc probes on exported hot APIs must use varying args. Functions with about 6 or fewer double args keep the scalar API; a probe under one box per call (< 12 B) is accepted with an explicit ALLOC_EXEMPT. (PC-B architect opus 2026-10-14, PC-A to ratify)
+- **(3) WIP 2:** drop the WQ/`*Q` refactor (`World._waterAtQ/_flowAtQ`, `riverLocateQ`, `findQ/flowIntoQ/waveHeightQ`). Keep only local, API-neutral wins: `Math.hypot -> sqrt`, inlining `zAt` in `waterAt` if it measurably removes a boxed return, per-river `loc` scratch, the probe's precomputed coords. Re-measure via (2).
+- **(4) Order:** river/waterAt (2) -> passLight.pointShadow -> terrainGrid (render hot paths, 0 B required) -> chargen rigPerf (per-frame per-character: fix to <= 64 B, no exemption) -> deathFade/waystone -> dialogueView draw. Only UI draws that run while a modal/menu is open (dialogueView) may be exempted, and only explicitly: `ALLOC_EXEMPT = { cap: <B/frame>, reason: '...' , ref: 'arch 38.61' }` in the test, cap = measured + 25 %, still asserted. Any other loosening = ARCH CHANGES.
+- **(5) geoLayers timing:** median-of-3 runs, ratio vs a same-process baseline measured interleaved (A,B,A,B,A,B); keep +10 %. If still noisy under the full gate, the timing check moves to `tools/bench-*` (report-only) and the test keeps the correctness asserts.
+- Split: GATE-FLAKY-02a (probe helper + (3) revert + river via real call site), 02b (pointShadow + terrainGrid), 02c (rigPerf + deathFade/waystone + dialogueView exemption + geoLayers median). Merge only when full `run-tests` passes 3x in a row.
+
+### 38.62 ENV-01 GPU decor scatter (PC-B architect opus 2026-10-14, owner 2026-10-13, ratified PC-A 2026-10-14)
+(PC-B 5th agent, PC-A to ratify.) IDs ENV-01a..d below are new; they are NOT the 37.4 ENV-01a1/a2/b/c/d (2026-10-04, done). Builds on 37.4 (detail layers), 38.52 (carpet), 38.58 (BandCache), 38.60 (passCull).
+**What moves (decided by data, not by name): a detail layer moves when NONE of its species has a `collider` and all have `shadow:false`.** Today in `recipe.detail` that is `reeds`, `wildflowers`, `pebbles` (Quaternius grass/flower/fern/pebble meshes, sway allowed). Layer flag `gpu: true` (content, validated: throws if a species has a collider or casts). **Stays CPU:** `rocks` (logs/stumps), `boulders`, `ruins` (colliders), every tree, every authored placement (world_m1 rows, `content/local` overlay: ids, saves, editor, pick). The grass carpet (38.52) stays as is.
+**Data flow.** (1) **Bake (CPU, per band, in BandBakeJob):** for each `gpu` layer, a lattice anchored to the WORLD origin (`ix = floor(x / cellM)`, so overlapping bands agree) over the band rect. Per lattice cell the existing 37.4 rules (ground type, slope, clearM, structures, keepOut, exclude, entity discs, biome `detail[layer]` mult) are evaluated at the cell's jittered root (jitter from the twin hash below) and stored as ONE byte: bits 0-6 = keep probability `round(fill * mult * 127)` (0 = never), bit 7 = root inside a carpet area (`carpet.classMap != 0`). `bundle.decor = {layers:[{mask:Uint8Array, ix0, iy0, w, h}]}`, cached/pinned/evicted with the bundle (38.58), never serialized, world hash unchanged. Size ~37 KB/band (reeds 3.5 m over 640x384 m ~20 KB, wildflowers ~7 KB, pebbles ~10 KB). (2) **Per frame (GPU compute `decor`, after `cull.run()`, before raster):** one dispatch per `gpu` layer over the fixed square of lattice cells around the eye (`side = 2*ceil(drawM/cellM)+1`, CPU-known, no indirect dispatch). Per thread: mask byte -> hash rank `< prob * densityScale` -> species by weight table -> root, yaw, scale -> z from the near-band height texture (the carpet twin sampler) -> integer distance/LOD/fade/carpet test -> frustum test (the cull.wgsl plane fn, shared) -> `atomicAdd(&args[slot + 1], 1)` and write the 16-word instance row (`INST_FLAG_SWAY`, objectId = `vegTintObjectId`, never pickable) into that (species, LOD) dst buffer. Slots and dst buffers come from WgCullPass: new `cull.addGenerated(group, [lod0, lod1], cap) -> CullEntry[]` (args slot like `add`, no rows upload, no cull dispatch; `run()` still zeroes instanceCount in its ONE args write). `cap` = layer lattice size, so the append can never overflow (no clamp pass). Raster draws them with `drawIndirect` exactly like cull entries. No HZB for decor in v1; decor never casts shadows.
+**Twin and bit-exact rule (D-017/D-039).** `engine/mesh/decorScatter.js` is the source of truth; `DECOR_WGSL` is built from its exported constants. Hash = integer only (`Math.imul`/`>>>`, u32 in WGSL), the 38.52 `hashFast` family keyed by `(ix, iy, layer.seed, k)`. Positions in **integer centimetres**: root = `ix*cellCm + jq`, `jq = (((h >>> 16) * (2*jitCm + 1)) >>> 16) - jitCm` (u32 math), converted to f32 once (exact below 2^24 cm). Yaw = 8-bit step, scale = 8-bit step of `[min,max]`. Distance = `dx*dx + dy*dy` in i32 cm^2 vs the eye in cm (per-axis reject, exact to 320 m). No trig, no `Math.random`, no f32 in any keep/species/LOD/fade decision. Bit-exact over >= 2000 random cells: present, species, LOD, `jq`, yaw q, scale q, fade/carpet drop. Only `z` (bilinear f32) may differ, <= 1 mm (FMA contraction), as for the carpet sampler.
+**LOD, fade, carpet (no flicker, no double grass).** LOD1 from a per-species `lodCm`; cut at `maxDistM`. Footprint fade (38.50): per species `fadeCm = sizeM * cellsPerM(preset fov, columns) * (0.8 + 0.2 * hash01)`, so each placement has ONE fixed distance where it goes (per preset/resolution) and walking crosses it once. CPU packs `fadeCm[]` when fov/grid change, not per frame. Carpet: species with `grassLike: true` (the reeds' Grass_* meshes) drop when bit 7 is set AND `d < (carpet.radiusM + 2) * 100` cm; beyond the carpet radius they draw (a hand-off ring, never two grass layers). Non-grass decor (flowers, pebbles) may sit on the carpet.
+**Instance budget.** Generated dst buffers are their own allocation, outside the CPU `MAX_INSTANCES_PER_FRAME` 4096; separate cap `DECOR_MAX_ROWS = 8192` (sum of layer lattice sizes x 2 LODs, checked at bind, throws naming the layer). CPU detail `maxDraw` 768 now serves only logs/stumps/boulders/ruins. `densityScale` = gfx preset key `decorDensity` (low 0.5, med 1, high 1.5, ultra 2; prob clamped at 127).
+**Bundle MB (honest):** the moved classes cost ~0.02-0.03 MB per band today (38.58: detail <= 0.03 MB, colliders dominate) and the mask adds ~0.04 MB, so the zone-MB win is ~0. The win is CPU feed time (no `feedDetail` rows for them), uploads, and density beyond 768 instances. ENV-01b still prints the before/after table per zone (detail placements, detail bytes, mask bytes, bundle total).
+**Old path flag (one sprint).** World opt `decorGpu` (main.js: true on the WebGPU mesh renderer; `?decor=cpu` = false). False = today's CPU layers byte-identical (no mask baked). WebGL2/JS/Canvas2D run with false this sprint. Sprint review decides: delete the CPU path for `gpu` layers, or keep the twin as the fallback feeder.
+**gpucompare (main session runs):** existing rows run with `decor=cpu` and stay identical. New rows `decorMeadow` (flower biome, carpet on, eye 1.6 m: carpet hand-off) and `decorFord` (fen/sand at the ford: reeds + pebbles), `decorGpu` on, GPU vs the twin-fed JS raster, existing thresholds, never widened. `detailWalkout` with `decorGpu` on = one-time new baseline (new hash), before/after listed in ENV-01d.
+**Budgets (p95, 480x180, preset high):** `decor` compute <= 0.10 ms Intel iGPU / <= 0.02 ms RTX at roadSouth and meadowDetail (~1.8k threads); frame GPU delta (compute + extra raster) <= +0.3 ms iGPU at `decorDensity` 1 (if over: lower density, then `drawM`). JS per frame: one uniform write (eye cm, lattice origins) <= 0.02 ms, **0 alloc** (38.61 allocProbe). Bake: mask <= 30 ms per band Node, inside the BandBakeJob slices. GPU memory: masks ~0.04 MB/band + dst <= 8192 x 64 B = 0.5 MB.
+**Risks:** (1) eligibility tested at the jittered root only (same clearM radius as 37.4, so no new overlaps); (2) sinkM on slopes uses the root z (as today); (3) bilinear z drift -> 1 mm tolerance, never in a decision; (4) new hash = a new arrangement of flowers/reeds/pebbles (owner sees it once); (5) `addGenerated` slots count against MAX_CULL_BATCHES 128 (+ ~10).
+**Do not:** move anything with a collider, id, save state or shadow; read `design/` or palette keys in engine; use float hashes or trig in decisions; read counts back to the CPU; bake masks per frame; use HZB on decor in v1.
+**Steps (each <= 1 programmer-day, Node ACs; all end in arch-review):**
+- **ENV-01a JS twin** [kestrel-3, 1 d]: `engine/mesh/decorScatter.js` (+ test): constants, `decorHash`, `packDecorLayers(cfg) -> {words:Uint32Array}`, `decorCell(packed, layer, ix, iy, maskByte, eyeXcm, eyeYcm, fadeCm, carpetCutCm, out) -> 0|1|2` (none/LOD0/LOD1; `out` = 16-word row + species), `decorFrame(...)` into preallocated per-(species, LOD) lists. AC: two runs identical; species frequencies within 3 % of weights over 100k cells; distance/LOD/fade cases incl. exact boundary cm; carpet hand-off cases; `jq` in [-jitCm, jitCm]; 0 alloc (allocProbe).
+- **ENV-01b mask bake + content** [kestrel-3, 1 d, deps a]: `engine/world/scatter.js` (`bakeDecorMask`; `validateDetailConfig` `gpu`/`grassLike`), `engine/world/bandBake.js` + `bandCache.js` (bundle `decor`, bytes), `World.js` opt `decorGpu`, `design/levels/overworld_far.js` (`gpu: true` on reeds/wildflowers/pebbles, `grassLike` on reeds). AC: mask byte == the 37.4 rule result at the twin root for every lattice cell of a synthetic band; overlapping bands agree on shared cells; `decorGpu:false` = scatterDetail output byte-identical to today; `decorGpu:true` = gpu layers absent from `detail`; validator throws on a gpu species with collider/shadow; bundle MB before/after table for the world_m1 zones.
+- **ENV-01c WGSL module** [kestrel-2, 0.75 d, deps a]: `engine/render/gpu/wgsl/decor.wgsl.js` (`DECOR_WGSL` from the twin constants, plane test shared with cull.wgsl). AC: compileFn probes vs `decorCell` bit-exact on >= 2000 random cells x 3 layers (present, species, LOD, jq, yaw q, scale q), z within 1 mm; WGSL lint test passes.
+- **ENV-01d host + gates** [kestrel-2, 1 d, deps b, c]: `engine/render/gpu/wg/passDecor.js` (pipeline, mask upload on `near.version`, uniform pack), `wg/passCull.js` `addGenerated`, frame call after `cull.run()`, timer slot `decor`, `gpucompare.js` rows. AC: passCull.test generated slots zeroed per run and drawn like cull entries; mock-device dispatch sizes == layer sides; 0 alloc per frame; `decorMeadow`/`decorFord` rows added (main session runs them); bench vs the budget in the row. **NEEDS B1-main** (kestrel-1, <= 6 lines): `decorGpu` + `?decor=cpu`, preset key `decorDensity`.
+
+### 38.63 ENV-02 ground richness per biome (PC-B architect opus 2026-10-14, owner D-079, ratified PC-A 2026-10-14)
+Source of the look: `design/look/biomeLook.js`, `ground[pick.ground]` (A for all six, D-079). `design/preview/look-lib.js` `groundCell` is the **reference look**, not code to port: the engine reimplements it with its own twin hashes (`hashFast24`/`valueNoise`), so the patterns differ but the statistics match. No PC-A ENV-02 note exists (checked origin/master + origin/pc-a). Note: the old "ENV-02 tower dressing" in 38.x PREC-03 is a different, older item.
+**1. Biome id per cell: a new look byte is needed, and it supersedes P3-REGION-BYTE.** The ground `type` (NEARTYPE/FARTYPE R8UI, <= 16 types, TLOOK rows) cannot express the looks: meadow, fields and glade are all `grass`-type, and the forest kinds all share `forest` (38.42). `biomeAt(x,y)` (geo.biomes ids 0..9) exists only in content and at bake time. Rule: **look = f(type, biome)**, resolved at bake into a per-texel `LOOK` byte pair. P3-REGION-BYTE is folded in: its `FG_TYPES` load assert already exists (`farGrassFill` G2), so P3 is closed as "superseded by ENV-02c".
+- Content `lookMap` (in biomeLook.js, next to the looks): ordered rules `{look:'shore', ground:['sand','reeds']}`, `{look:'glade', biomes:[5]}`, `{look:'fields', biomes:[6]}`, `{look:'forest', ground:['forest']}`, `{look:'foothills', biomes:[9], ground:['grass','rock']}`, `{look:'meadow', ground:['grass','grassTall'], biomes:[0]}`. The first match wins. No match = look 0 = today's TLOOK path, byte-identical. Biome 3/4/7/8 (twisted, Ash Mile, dunes, fen) get only what a ground rule gives them (owner question 1).
+- **Borders without seams:** content util `biomeBlend(x, y, out)` (new, next to `biomeAt` in `overworld_far.js`, from the same 16 m GeoFields SDF weights, **without** the 2 m hash term) returns the top-2 biome ids + `w` = the share of the 2nd, smooth over the biome's `blendM` (20-60 m). The bake resolves both through `lookMap` and stores RG8UI per texel: `r = lo | hi << 4` (look ids 0..15, lo < hi so the order is canonical), `g = round(w_hi * 255)`. If both resolve to the same look, then `w = 0`. Type-driven rules (sand, forest) take their edge from the type paint (hard by design, and the type colour already changes there today).
+**2. Shade (both twins, one branch in `shadeTerrain`, `cliffType` and face paths unchanged).** `lookId = 0` -> the current code, untouched. Otherwise, with `fp` = the existing ground footprint:
+- tone = look-lib formula: 2 fine octaves at `noiseScale` (x1, x2.3) + macro at `macroScale`, each faded `1 - ss(0.15 s, 0.5 s, fp)`, times `contrast`. It **replaces** the 3-octave `nP` loop for look cells (`nP := 2 tone - 1` feeds far grass `sg`), so the hash count stays about the same (12 -> 12).
+- fg = `mix(ramp_lo(tone), ramp_hi(tone), w)` x `(0.94 + 0.12 h2)` x the existing lighting `gain` (wet, floorLum and fog unchanged); bg = the same mix of the `bg` ramps x gain (this replaces `fg * 0.3` for look cells). The ramps are piecewise-linear (4 stops), exactly as `L.ramp`.
+- **Glyph (38.50 rule, no re-roll):** the hashes h1..h4 are keyed by a **fixed** world lattice `LOOK_CELL_M = 0.25` (c, never distance-sized). Their dither amplitude fades by footprint: `h' = 0.5 + (h - 0.5)(1 - ss(0.5 c, c, fp))`. Far glyphs are then a function of the smooth tone only. `gi = floor(clamp(tone*0.55 + h1'*0.6 - 0.08) * n * 0.9999)` from the look whose side wins (`hi` if `w > h4'`): the border dithers near the eye and turns into a stable 0.5 cut far away.
+- **Accents** (<= 2 per look): present when `hash(cell, 40+i) < d * cluster(...) * (1 - ss(0.6 maxDist, maxDist, t)) * (1 - ss(0.5c, c, fp))`. Each accent therefore vanishes once at a fixed eye distance (the 38.52 item 5 rule). `t` = camera distance (look-lib used screen depth `zw`).
+- **Shimmer:** `kk = amp * wind01 * gust`, where gust = `ss(0.45, 0.85, valueNoise(world gust coords - t*0.35*(0.5+wind01)))` (look-lib formula, twin hash). `wind01` = a host uniform from `world.wind` strength. **Calm: wind01 == 0 -> the branch is skipped, and the output is byte-identical every frame** (Node test). Sheen lerps fg toward `ramp[3]`. `lean` swaps the glyph to `lean[gi]` when `kk > 0.15 + 0.6 h3'`. A cell whose glyph can change sets `level = LEVEL_ANIM` (as far grass does), else `LEVEL_NONE`.
+- **Far grass (G2/P3):** for look cells the FG glyph override picks `glyphs[0 | n>>1 | n-1]` from `sg` instead of `FG_CODES`, and the tint target is `ramp(0.6)` instead of `FGR.types[type]`. The FG wind phase is unchanged. **Carpet (38.52):** `shadeGrass`'s ground-tint branch takes the root colour through the same look function (look id + w in free `gx` bits; if there are not enough free bits, ASK ARCHITECT), so the blade base matches the new ground and the fade edge shows no ring. Carpet variants (38.52 item 6) keep their own ramps. The designer later re-tints them per biome (a content row, not ENV-02).
+**3. Data path.** biomeLook.js (content, `design/look/`, loaded with the content pack) -> game `game/js/look/groundLookConfig.js` resolves the picks + hex -> linear RGB, and names -> ids for `lookMap` (validator: <= 15 looks, glyph strings 1..4 printable ASCII, `lean.length == glyphs.length`, ramp 4, bg 2) -> World opt `groundLook` (null = off, the whole feature byte-identical to today). Engine `engine/render/groundLook.js`: constants, `packLookTable(cfg, Float32Array)` (LOOK_ROWS = 10 vec4 per look: 4 ramp + 2 bg rgb with scalar params in .w, packed glyph/lean codes, 2 accent rows) and `GROUND_LOOK_WGSL`, generated from the same constants. No `design/` import, no palette keys, no hex parsing in the engine.
+**4. Bake/textures.** `bandBake` writes `near.look` (Uint8Array 2/cell) and the far bake writes `farLook` with the type, both via `recipe.util.biomeBlend` + the resolved map (engine gets `lookMap` as id arrays, it never reads names). `bandCache`/prebake bytes += 2 per cell (record the MB). Upload NEARLOOK/FARLOOK RG8UI on `near.version` / at load only, never per frame. Sampled `textureLoad` nearest from the same texel as the type.
+**Budgets.** GPU 480x180 meadow, looks on minus off: <= 0.15 ms on the Intel iGPU, <= 0.03 ms on the RTX 4060. Per frame: JS = uniform `wind01` only, 0 alloc (allocProbe, 38.61). Table upload only on a config change. Bake +<= 10 % per band, swap stays <= 4 ms. JS twin `shadeTerrain` stays 0 alloc (inlined, no helpers returning doubles).
+**gpucompare (D-039):** existing poses run with `groundLook` null -> 0 rows change. New rows: `lookMeadow` (wind 0 and 2 m/s, fixed t), `lookForestEdge` (a broadleaf/meadow border in view), `lookShore`. Bar = existing thresholds, never widened. Flicker gate: `capture-browser --mode flicker --walk` at meadow + forestWalk, terrain flips <= OB-054 calm baseline + 2 pp with wind 0.
+**Risks.** (a) The far look texel is coarser than `blendM`/3 -> visible steps (assert `blendM >= 3 x` the far texel). (b) Triple points: top-2 only -> a small colour step (accept, test the bound). (c) Bundle bytes of prebaked bands. (d) The preview hash differs -> the owner sees "same look, different pattern": the main session shows one capture before ENV-02d closes.
+**Steps (each <= 1 d; engine -> arch-review, content -> po-review). Four steps, not three: the bake and the WGSL do not fit into one day together.**
+- **ENV-02a** [kestrel-4, content/game] `lookMap` in biomeLook.js, `util.biomeBlend` in `design/levels/overworld_far.js` (+ world_geo hook), `game/js/look/groundLookConfig.js` + test. AC: the `biomeBlend` top id == `biomeAt` id wherever `w < 0.4` (100k samples; the hash term excluded); `w` continuous (|dw| <= 2 m / blendM per 2 m); the validator throws on each bad field; the config is deterministic and contains no hex strings.
+- **ENV-02b** [kestrel-2, engine JS twin] `engine/render/groundLook.js` + the `shadeTerrain`/`shadeGrass` look branch + `groundLook.test.js` on synthetic look bytes. AC: look 0 == the old output bit-exact over 50k random cells; wind01 = 0 -> two frames (t, t+1 s) byte-identical; moving the eye 0.1 m changes < 5 % of the glyphs at > 10 m; w = 0.5 is symmetric (lo/hi swap gives the same colour); 0 alloc.
+- **ENV-02c** [kestrel-2, engine bake + textures] `bandBake.js`, far bake, `bandCache.js`, `TerrainTextures.js` (NEARLOOK/FARLOOK), World opt `groundLook`. AC: `groundLook` null -> band bytes and hashes unchanged; overlapping bands agree on the look bytes; bake time and MB before/after table; `blendM` assert.
+- **ENV-02d** [kestrel-2 (+ kestrel-1 NEEDS B1-main)] `GROUND_LOOK_WGSL` + the shade.wgsl splice + host table/uniform upload + gpucompare rows. AC: compileFn probes bit-exact vs `shadeTerrain` on >= 3000 cells (looks 0..6, w, wind), WGSL lint passes, 0 alloc per frame, budget bench. main.js (<= 6 lines): pass `groundLook`, `?look=0`.
+**Do not:** put look literals in `engine/`; key any hash by a distance-sized cell or by screen position; re-roll with time when calm; widen gpucompare thresholds; change the TLOOK path for look-0 cells; read `biomeAt` per frame.
+
+### 38.64 Bestiary AI framework (PC-B architect opus 2026-10-14, owner D-083, PC-A to ratify)
+Scope: `docs/epics/ep-bestiary.md` sections 2-4, built on beastSim (29.1, rule 15), the wolf/bear/goblin brains, engine `perceive`/`leashState`, WM-04 dormancy and the 38.61 alloc rules. New files go in `game/js/quest/sim/` unless noted. The engine gets nothing new: fauna stays ambient (deer, fox and goat keep engine groundBrain through the fauna feed).
+1. **Data, not code** (cold and frozen, read once at create): `archetypes.js` `ARCHETYPES[name] = { noticeR, nearR, coneCos, noticeSec, aggro: 'hostile'|'whenHit'|'never'|'near', loseR, loseSightSec, leashR, walk, run, role: 'melee'|'ranged'|'caster'|'swarm'|'flyer'|'water'|'ambush'|'tank', keepMin, keepMax, backOffR, medium: 'land'|'water'|'air', when: 'any'|'day'|'night' }` (epic table 2). `beastKinds.js` `KINDS[kind] = { arch, model, hpF, dmgF, group: [min,max], respawn: 'grazer'|'common'|'pack'|'elite'|'camp'|'boss', attacks: Attack[] (<= 3), elite?, boss? }` (epic table 1). `Attack = { id, type: 'melee'|'charge'|'lunge'|'projectile'|'aoe'|'grab'|'dive'|'heal'|'cast', range, windupSec (>= COMBAT_TARGETS.windupMinSec; big attacks >= 0.8 s + ground marker), activeSec, recoverSec, cooldownSec, dmgF, weight }`. Entities carry `brain.kind`. `isWolfEntity` and the other checks become `KINDS[kind].arch` lookups (kept as thin wrappers until BEAST-13). Each slot gets at create: `kindIdx`/`archIdx` (Uint8) and `scfg[i]` = defaults + archetype + kind + difficulty (the existing per-slot cfg path, beastSim ~236-255), with step counts from `toSteps`.
+2. **One state set for all brains** (append to the beastSim enum; never renumber 0-13; the `deadSt` range 9-12 stays): WANDER 0 (idle = WANDER with a pause timer), NOTICE 1 (= alert), CHASE 2, WINDUP 3 / CHARGE 4 (= the strike for every Attack type; the type picks the motion) / RECOVER 5, RETURN 6, STAGGER 7, FLINCH 8, dead 9-12, EAT 13, **GRAZE 14, PATROL 15, FLEE 16, STUCK 17 (sidestep/replan), CIRCLE 18 (waits for a token on a flank slot), HIDDEN 19 (ambush), SUBMERGED 20, GRAB 21, AIRBORNE 22 (flyer cruise/circle), CAST 23**. Max 31. Pipeline per slot per step: dormancy -> perceive (staggered by i % 6, cached LOS) -> leash -> `LAYERS[archIdx](sim, i, ctx)` -> steer. A layer is a plain module function (`sim/brains/{ground,pack,ranged,caster,ambush,water,flyer,swarm,tank}.js`) stored in a fixed array. It returns true if it handled the state; otherwise the common handler runs. No closures and no per-slot objects in step.
+3. **Speed + stuck (BEAST-01):** the sim stores `spd` (Float32, measured from the previous position). The view picks the gait from `spd` only: `beastView.pickGait(spd, nominal, out)` gives idle below 0.15 m/s and a rate clamped to 0.6-1.6. Stuck rule, using `progT`/`progX,Y` per slot: progress < 0.3 m in 60 steps -> repath; 2nd time -> STUCK (sidestep 90 deg along the perpendicular of (fx,fy) for 60 steps); 3rd time -> new wander target (calm) or RETURN (engaged). `stuckN` resets after 1 m of progress.
+4. **Tactics** (`tactics.js`, one instance per sim, preallocated). Token pools: melee `tokM` (Easy 1 / Normal 2 / Hard 3), ranged 2, swarm 2 per swarm group (its own pool). A slot requests a token on CHASE->WINDUP. It releases it at the end of RECOVER, on death, STAGGER, dormancy or RETURN, and after a 180-step holder timeout (leak guard). A slot without a token goes to CIRCLE on a flank slot. Flank slots: 8 ring slots around the player at archetype keepMin..keepMax (melee 4-6 m), unit vectors from a literal 8-entry table (no trig), assigned nearest-free and re-assigned every 30 steps. A pack uses slots 120 deg apart (indices 0, 3, 5) and feints (Hard: feint lunge 1 m). Ranged: holds keepMin..keepMax; inside backOffR -> `awayTarget`; strafes 2 m between shots; projectiles from the arrows.js/fireball.js pools. Healer: target point = allyCentroid + norm(allyCentroid - player) * 6 m; heals the lowest ally under 60 % HP within 18 m; any hit cancels CAST. Engaged cap 12: CHASE is allowed only while `engaged < 12`; otherwise the slot stays in NOTICE facing the player. Easy: no CIRCLE (straight chase plus the token queue).
+5. **Water** (`brains/water.js`). Needs a per-nav-tile **water mask** (Uint8 over the nav rect: 1 = depth >= 0.6 m, 2 = bank band within 4 m of water), built in the same tile build as nav (WM-03 phase 4, or `buildFromWorld` for fixed worlds) with ONE `waterAt` call per cell (38.61 2a). Swim pathing uses a second `createAStar` over a NavGrid whose walkable cells are mask 1 (croc: 1 or 2). Swimmer z = surface - 0.4 in SUBMERGED (the view shows the eyes only) and z = surface when attacking. Croc: SUBMERGED approach -> 'lunge' Attack (4 m) -> GRAB -> back to depth. GRAB: the sim emits `beast:grab {slot}`; the game's player controller applies a MOVEMENT-ONLY pin (D-088: camera, attack, block, items stay free, never an input lock, D-064) and reports mashes through `sim.grabMash(i)`; 3 damage ticks of 4 % player HP every 30 steps (12 %, 15 % hard cap, D-096 B); release on the mash goal (8) or after 90 steps. Bank time <= 300 steps. Eel: aggroes only when `player.swimming` (engine swim.js state). Turtle: front block = damage x0 when dot(facing, toAttacker) > 0.5. Land kinds never path into mask 1: they hold at the bank and throw if they have a ranged attack.
+6. **Flyers** (`brains/flyer.js`): their own `alt` (Float32, height above ground). AIRBORNE circles the player at 8-15 m. Each 3D waypoint = (slot x, slot y, ground + alt). Dive = 'dive' Attack: windup at altitude, then a straight line to the player position frozen at windup end, with `alt` lerping to 1 m. After a hit: STAGGER grounded for 120 steps, then climb. Crows = swarm layer with medium air. Air movement uses no nav path: LOS-only steering, and a blocked flyer climbs 2 m.
+7. **Ambush:** HIDDEN = no wander drift and no idle animation; perception uses nearR only. Pounce = 'lunge' Attack, range <= 8 m. The slot re-hides at home after `loseSightSec` unseen.
+8. **Spawn director** (`spawnDirector.js`; across BEAST-06/13 it replaces the ad-hoc respawn in regionalBeasts/goblinCamps). At load: per-region rules (kind, groups, size, when) -> a deterministic group list `{gid: '<kind>.<region>.<n>', kind, slots[], home, route[3..6]}` from the seed and region order (GENERATED_ID kept). Each member has a static slot (no pooling). `MAX_BEASTS` goes from 96 to **160** (loot.js MAX_SLOTS must match; typed arrays only, ~30 KB). **Active cap 48:** every 30 steps, pick the nearest <= 48 non-dead slots inside the live tile and within 200 m (preallocated index + distance arrays, insertion select); all others are dormant (WM-04). Respawn is per group and starts when the last member dies. The timer counts game seconds while unpaused: grazer 180, common 360, pack/swarm 480, elite 1200, times the difficulty multiplier. Camps: `clearedKey` + 3 in-game days (farCamps RESPAWN_DAYS). Bosses never respawn. A respawn calls `resetSlot` for each member at home, and only when home is > 60 m from the player AND outside hfov/2 + VIEW_MARGIN_RAD AND has no LOS to the player. Otherwise it retries every 300 steps. Night set (`when: 'night'`): spawns at 20:00; at 05:00 it fades, but only while out of view. Day grazers get perception x0.6 at night.
+9. **Difficulty** (`difficulty.js`): `DIFFICULTY = { easy, normal, hard }`, rows = epic table 4; `resolveDifficulty(name)` returns frozen numbers. Exactly two consumers: `applyDifficulty(sim, d)` (rebuilds per-slot step counts, notice/leash/windup with a 0.4 s floor, `tactics.tokM` and the director timers; HP and group size change only on the next spawn) and the player-damage hook (one multiply in the game's damage entry). Nothing else reads difficulty names. A setting change is refused while `engaged > 0`.
+10. **Save** (WM-12: keyed by id, never by slot): `state['beast.v1'] = { diff: 'normal', t: gameSec, g: { [gid]: { dead: 1, at: respawnAtSec } }, boss: { [region]: 1 } }`. Only groups with something to remember are written; camps keep their `life.camp.*` keys. Positions are not saved: members reload at home or at the route start. An unknown gid on load is ignored.
+11. **Determinism:** rule 15 applies to every new file (no Math.random, no trig, no wall clock, integer step timers, no Map iteration in step). Create-time picks use the sim's seeded `rng`. Per-step picks (attack by weight, feint, slot tie-break) use `hashU(seed, slot, tick)` (life/schedule.js), so results do not depend on iteration order. Test: same seed + same inputs -> identical state after 10k steps.
+12. **Perf / alloc:** 0 B per step after warm-up, measured through the real `sim.step` (38.61 probe). JS p95 per 60 Hz step at 160 slots / 48 active / 12 engaged: beastSim incl. layers <= 1.2 ms, tactics <= 0.1 ms, director <= 0.15 ms (amortised). A* requests: at most 2 per step, queued (TRAVEL_MAX_NODES 3000). A dormant slot costs one compare. Gate: `bench-life` caps-full scene, total JS p95 <= 8 ms (D-007).
+**Do not:** add game kinds or literals to `engine/`; branch on model names in step (use kindIdx/archIdx); allocate in layers (no `{...}`, no arrays, no closures); renumber states; save per-slot arrays; spawn in view; let any code except `difficulty.js` hold a multiplier.
+**Split** (replaces the BEAST-03/04/06/08 rows in the epic; the other rows stay): 03a data tables + kind mapping + new state enums, no behaviour change (existing fixtures identical) -> 03b layer dispatch + per-archetype perception/leash; 04 tactics; 06a director groups + respawn timers + never-in-view + save v1; 06b MAX_BEASTS 160 + active cap 48 / engaged 12 + bench; 08a water mask + swim nav + SUBMERGED movement; 08b croc lunge/grab-roll, eel, turtle.
+
+### 38.65 ENV-03 biome atmosphere (PC-B architect opus 2026-10-14, owner D-085, PC-A to ratify)
+Source: `design/look/biomeLook.js` `biomes[k].atmos[pick.atmos]` (A for all six; preview `design/preview/biome-atmos.html` as approved): fog colour per day/dusk/night + `fogDensity`, horizon `haze` + `hazeAmount`, grade lift/gamma/gain/sat per day/dusk/night (formula = `look-lib.js L.grade`, Rec.709 luma). Day/night = D-064/DN-02 (`blendLook`, `P.daySchedule`). The three outputs go to three existing places: **fog** -> the terrain far-fog params (`palette.fog.far`: start/full/curve + near/far colour; read by shadeTerrain/shade.wgsl, mesh outdoor fog OB-089, sprites far fog, water, compositor, edge gate `gbuf.fogF`); **haze** -> the sky LUT (baked in JS: `passShade._bakeSky`, `skyLutFromPalette` for water, `fillSky`); **grade** -> new, a per-cell colour op at the end of the sprite composite. That is the last pass that writes every world cell, and the overlay/UI layer drawn after it stays ungraded. No new pass.
+**1. Resolution (game, per 60 Hz step, 0 alloc).** `game/js/look/atmosDriver.js` `createAtmosDriver({ nEntries, biomeToEntry: Int8Array(16) (-1 = none), biomeBlend, schedule, slotOf, fadeSec: 1.5 })`, `step(camX, camY, hour, dt, outdoor)`, `snap()`. Output (preallocated, read by the engine): `{ w: Float32Array(nEntries), wNone, tod: Float32Array(3) (day/dusk/night), version }`.
+- Target: `biomeBlend(cam)` -> `{a, b, w}`; `T[entry(a)] += 1 - w`, `T[entry(b)] += w`, and unmapped ids add to `none`. Spatial width = the biome `blendM` (20-60 m, so the >= 20 m rule holds; the config asserts `blendM >= 20` for every mapped biome).
+- **Hysteresis / no pops:** (i) the target is re-sampled only when the camera has moved >= 2 m since the last sample (no jitter at rest); (ii) each weight moves toward its target by at most `dt / fadeSec` per step, so a full swap (e.g. a triple-point top-2 switch or the keep-rect edge) takes >= 1.5 s; (iii) `version` bumps only when a weight or tod has moved >= 1/256 since the last bump (no re-bakes while standing); (iv) the feature turns off (the engine sees `null`) only after `wNone >= 0.999`, and turns on again below 0.995. `snap()` (load, teleport > 50 m, region load) jumps straight to the target. `outdoor === false` (no terrain, interior, underwater) = target all `none`.
+- tod: the `blendLook` segment rule over `P.daySchedule` (a, b, f), mapped by `slotOf` (content: morning/noon -> day, dusk -> dusk, night -> night); frozen clock = `slotOf[defaultTime]`.
+**2. Engine math (`engine/render/atmos.js`, new, pure, no design import).** Typedefs: `AtmosRec = { fog: F32(3) 0..255, fogDensity, haze: F32(3), hazeAmount, lift: F32(3), gamma: F32(3), gain: F32(3), sat }`; `AtmosTable = { n, recs: AtmosRec[n*3] }` (index `e*3 + slot`). `createAtmosState()` -> `{ on, version, fogNear, fogFar: F32(3), fogStart, fogFull, fogCurve, haze: F32(3), hazeK, lift, invGamma, gain: F32(3), sat }`. `mixAtmos(table, drv, baseFog, out)`: each field = `sum_e w_e * sum_s tod_s * rec`, plus `wNone` x the identity (fog = `baseFog` = today's `fog.far` resolved, haze 0, lift 0, gamma 1, gain 1, sat 1). Fog density blends in 1/full space: `full = 1 / (wNone / baseFull + sum w_e fogDensity_e / ATMOS_FOG_FIT.fullK)`. Start and curve blend linearly; for entries, near = far = the biome fog colour.
+- **Fog fit (no fog shader change):** the existing shape `((t - start)/(full - start))^curve` with `start 0, full = fullK / fogDensity` and `ATMOS_FOG_FIT = { fullK: 2.5, curve: 0.55 }` stays within 0.09 of the preview's `1 - exp(-d t)` for `d t` in [0, 3] (test). So every fog consumer follows the biome without code of its own.
+- `applyAtmosToPalette(P, state)`: on first use it keeps `P.fog.farBase = P.fog.far` and installs ONE persistent live record `{ color: 'liveFogNear', colorFar: 'liveFogFar', start, full, curve }`. The colours are written into those two synthetic `P.rgb`/`P.hue` keys in place (the `blendLook` liveKey pattern). Each call bumps `P.liveFogVersion`. `state.on === false` -> restores `P.fog.far = farBase` and bumps the version once. Never called = palette untouched.
+- Cached consumers re-read on `P.liveFogVersion` (list from `grep -rn "fog.far" engine/render`): `makeTerrainShadeCtx` scalars, passShade `_ensureTerrain` fog uniforms (today only on a new far bake), compositor `fsc`, sprites far fog, water fog, shadowSun. The sky LUT bakes also re-bake on it.
+- `applySkyHaze(lut, n, state)`: for LUT sample t (0 = horizon .. 1 = elevTop), `c = mix(c, haze, hazeK * (1 - t)^2)` (the preview rule). Called at the end of the three LUT bakes; JS only, no WGSL.
+- `gradeRGB(rgb 0..255 in/out, state)` and `ATMOS_GRADE_WGSL` (`fn atmosGrade(c: vec3f) -> vec3f`, 0..1) are generated from the same constants. Uniform = 3 vec4 appended at the END of `SpritesU`: `atmosLift.xyz + on`, `atmosInvGamma.xyz + sat`, `atmosGain.xyz`. The grade applies to fg.rgb and bg.rgb after sceneFade/dim; the glyph never changes. JS twin: the same call over the RT cells right after `sprites.render` in the JS frame path (the spot where sprites get the scene fade).
+**3. Data path.** biomeLook.js + new content `atmosMap: { 0:'meadow', 1:'forest', 2:'forest', 5:'glade', 6:'fields', 9:'foothills', 7:'shore', 8:'shore' }` (ids 3/4 unmapped = today's look; owner question) -> `game/js/look/atmosConfig.js`: resolves the picks, hex -> 0..255 floats, names -> entry ids, and validates (3 slots each, density 0.0005..0.05, hazeAmount 0..1, gamma > 0, sat 0..2, lift 0..0.1) -> `AtmosTable` + `biomeToEntry` -> driver + `mixAtmos` in main.js. The engine sees numbers only; `atmos` absent/null = byte-identical.
+**4. Budgets.** JS per step: at most 1 `biomeBlend` call (only after 2 m); driver + `mixAtmos` + apply <= 0.03 ms; 0 B/step (allocProbe 38.61). LUT re-bake (32 samples) and fog uniform rewrite only on a version bump. GPU grade at 480x180: <= 0.05 ms Intel iGPU, <= 0.01 ms RTX 4060 (on minus off). JS twin grade <= 0.6 ms at 480x180 (Canvas2D/oracle path only).
+**5. gpucompare (D-039).** Existing rows run with `atmos` null -> 0 changes (all thresholds unchanged). New rows use fixed driver weights (pose field `atmos: { entry, w2?, hour }`, no driver): `atmosForestDay`, `atmosMeadowDusk`, `atmosBorderNight` (meadow/fields, w = 0.5). Bar = existing thresholds, never widened.
+**Risks.** (a) The fit fogs from 0 m (today: 50 m), which adds a little near haze in dense biomes (within 0.09 of the preview). (b) Fog colour vs sky haze at the horizon: the preview shows the same pair; the main session takes one capture per biome before ENV-03c closes. (c) The night grade gain of 0.5-0.6 sits on top of the DN-02 night light (the preview did the same; the designer retunes data only). (d) A fade bumps the version every frame: 1.5 s = 90 LUT bakes of 32 samples, which is fine.
+**Steps (each <= 1 d).**
+- **ENV-03a** [kestrel-4, content/game] `atmosMap` in biomeLook.js, `game/js/look/atmosConfig.js`, `game/js/look/atmosDriver.js` + tests. AC: validator throws per bad field; table deterministic, no hex strings. Driver: sum(w) + wNone == 1 (1e-6) every step; a border walk at 10 m/s and a 3-biome path give per-step |dw| <= dt/1.5; standing still for 600 steps -> 0 version bumps; +-1 m jitter on a border -> 0 bumps after settling; `snap()` reaches the target in 1 step; outdoor false -> wNone reaches 1 within 1.5 s; 0 alloc per step. Ends: po-review.
+- **ENV-03b** [kestrel-2, engine JS twin] `engine/render/atmos.js` + `atmos.test.js`; `applyAtmosToPalette`; JS consumers refresh on `liveFogVersion`; `applySkyHaze` in `skyLutFromPalette` + `fillSky`; JS grade after sprites. AC: fit error <= 0.09; state off / never applied -> JS frames byte-identical for 3 poses (hash vs pre-change); wNone = 1 with on = true gives the identity (fog == base, grade == identity, bytes identical); a w lo/hi swap is symmetric; grade matches `L.grade` within 1/255; 0 alloc. Ends: arch-review.
+- **ENV-03c** [kestrel-2 GPU + kestrel-1 main.js <= 6 lines] `ATMOS_GRADE_WGSL` splice + `SpritesU` append + per-frame upload; passShade `_ensureTerrain` fog + `_bakeSky` and the passWater LUT on `liveFogVersion` + haze; gpucompare rows; budget bench. main.js: build the config + driver when `BIOME_LOOK` and terrain exist, `driver.step` next to the clock driver, `mixAtmos` + `applyAtmosToPalette`, `?atmos=0`. AC: compileFn probes `atmosGrade` == `gradeRGB` within 1/255 on >= 3000 colours x 4 states; WGSL lint; 0 alloc per frame; existing gpucompare rows unchanged (the main session runs them), 3 new rows pass; GPU budget bench. Ends: arch-review.
+**Do not:** import design/ or name biomes in `engine/`; read `biomeBlend` per frame without the 2 m gate; change the fog shape function or any glyph; grade the overlay/UI; allocate the live fog record per bump; save atmosphere state (view-only, rebuilt on load).
+
+### 38.67 Voxel knees + runtime leg solve (D-101) (architect, PC-A, 2026-10-14)
+Scope: D-101 (B = knee rigs, C = runtime leg solve ASAP), `design/animal-look-options.md` + its preview (reference maths: `packLocal`/`poseLocal`/`gaitFrame`), RIG-00 38.32, alloc 38.61, beasts 38.64, D-017/D-039/D-053/D-085. Conventions: cells, x east, y south (model front = -y), z up; part rot in degrees, Rz*Ry*Rx; Rx: `y' = c*y - s*z, z' = s*y + c*z` (rx + = foot back).
+
+**Facts that shape this note (checked in code).**
+1. WebGPU draws a voxel instance as **one draw per part range**, with ONE model matrix in the per-draw uniform (`passRaster._voxels`, `passShadow` "one draw per part"). There is no `8 x 12` uniform array, so nothing on the GPU side doubles.
+2. `flat0`'s part index is **never decoded**. Every WGSL and JS consumer only ORs it (`planeId = aFlat.x | planeIdOr | slot<<24`) and compares planeIds for equality (`deriv.wgsl`). **No WGSL change.**
+3. The voxel slot bits 24-27 (`planeIdOr`) sit right above the part field, so the 4th part bit cannot go to bit 24.
+
+#### 1. VOX-PARTS-16: MAX_VOX_PARTS 8 -> 16
+| File | Change |
+|---|---|
+| `engine/voxel/VoxelModel.js` | `MAX_VOX_PARTS = 16`. The validator's hard-coded `1..8` / `> 8` messages use the const. **New rule:** `parts > 8` requires `meshOnly: true` (error `voxel.parts: > 8 parts needs meshOnly (no DDA atlas)`). Doc comment `0..7` -> `0..15`. |
+| `engine/voxel/voxelPose.js`, `engine/render/voxelPool.js`, `engine/render/viewModel.js`, `engine/mesh/instances.js` (`makeParts`, `_poseScratch`), `engine/mesh/voxelMesh.js` (`_poseScratch`), `engine/mesh/fixtures/voxelFrame.js`, `design/preview/lib/voxelMarch.js` (`_pose`) | They follow the const; no code change. |
+| `engine/mesh/DrawList.js` | Import the const: `partMatrices: new Float64Array(MAX_VOX_PARTS * 12)`, `partFlags: new Uint8Array(MAX_VOX_PARTS)`. In `_addInstancesCore`, loop `p < 8` -> `p < MAX_VOX_PARTS`. `resetDrawItem`'s `fill(0)` stays (a memset of 1.5 KB; <= 30 us/frame at 512 items, check it in the bench). JSDoc `8*12` -> `MAX_VOX_PARTS*12`. |
+| `engine/mesh/voxelMesh.js` `emitFaceQuad` | `flat0 = (0xF<<28) \| ((p & 7) << 21) \| ((face & 7) << 18) \| (((p >> 3) & 1) << 17) \| (layer & 0x1FFFF)`, plus `if (layer > 0x1FFFF) throw` (MESH_ONLY_MAX_DIM 256 keeps layers far below that). Bit-identical for every part < 8, so for every shipped model. Use the same formula in `design/preview/lib/voxelMarch.js` line 339 (the DDA oracle). |
+| `engine/mesh/meshGroups.js` | **Pin** a local `MAX_GROUP_RANGES = 8`, so today's grouping set does not change: meshes with 9-16 ranges stay single draws. |
+| `engine/render/gpu/VoxelTextures.js` | **Pin** `DDA_MAX_PARTS = 8` for `VOXINST_ROWS_PER_INSTANCE` (DDA only, texture size unchanged). The meshOnly rule above keeps > 8-part models out of it. |
+| `engine/mesh/instances.js` `meshGroup` | The masked-range limit follows the const (it only gets looser). |
+| `engine/chargen` | **Decoupled.** `MAX_PARTS` / `MAX_PARTS_KIT` stay 8 (humanoid v0). `mesh.test.js` pins `MAX_PARTS <= MAX_VOX_PARTS` instead of `===`. |
+| `tools/voxParse.js`, `tools/vox-import.mjs` doc line | The message and the doc follow the const. |
+- **Byte-identical:** every shipped model's pack, mesh (`flat`, ranges), pose, DrawList and frame.
+- **gpucompare:** every existing row unchanged (same numbers), plus ONE new row `vox12`. It uses the 12-part test fixture (below) with parts 8-11 rotated 30-60 deg, close enough to fill >= 400 cells, with the sun shadow on.
+- **Fixture:** `engine/voxel/fixtures/quadruped16.js` (no GDD words). It is `quadruped12.js` with each leg split into an upper part and a lower part `<name>2` (12 parts), plus a `legRig` block (section 2).
+- **Cost:**
+  - 8-part models pay nothing per frame: pose loops run `partCount`, draw loops run `ranges.length`.
+  - A 12-part instance: the pose adds 4 chained 3x3 products (~+0.3 us per `computeVoxelPose`), and **+4 draws in every pass that sees it** (raster, sun shadow, point shadow slots), at <= 2 us JS encode each (38.4 budget). The split seams add ~4 % quads.
+  - 30 knee animals, all drawn and shadowed: ~+0.5-0.7 ms JS encode, GPU ~+0.1-0.3 ms (Intel high). This fits inside D-007 / D-085 but is not free. If the 30-animal bench shows more, the fix is a later "one draw per voxel instance" story (part matrices in a storage buffer), not a cap.
+- **0 alloc:** no new per-frame objects. Probe `addVoxelInstances` + `passRaster` with a 12-part instance (38.61 recipe).
+
+#### 2. Rig data for B (knee rigs)
+- **Part naming:**
+  - The upper part **keeps today's name and pivot** (`armL`, `legFL`, `legBR`, ...; pivot at the shoulder/hip).
+  - The lower part is named **`<upper>2`** (`armL2`, `legBR2`). Its parent is its upper part, and its pivot is the knee/elbow/hock/ankle centre.
+  - The tail stays `tail`.
+  - New parts are **appended after index 7**, so indices 0-7 do not change: partIndex, `partRot`, mounts and existing ids keep working.
+- **Conversion = a box split only.**
+  - The upper box keeps `z >= split`; the lower box takes `z < split` over the same x/y range.
+  - Because the first box claims a voxel, only ownership moves; the voxels and materials do not change.
+  - Every existing clip stays valid: an unkeyed lower part has rot 0, so it is rigid with its upper part, and **all old clips pose every voxel exactly as before**.
+  - Test per converted model: the owned-voxel count and the per-voxel material equal the old def; posed voxel centres are equal (1e-9) for every clip x frame.
+  - Visible difference: seam quads at the split, inside the leg at rest.
+  - Risk: the two parts get different planeIds, so the edge pass may draw a thin line at the knee seam at rest. The designer checks it in the owner look.
+- **Bend direction:** the rest pose decides.
+  - `sigma = sign(wrap(atan2(w) - atan2(u)))`, with `u = K - H` and `w = F - K` in (y, z) (H = upper pivot, K = lower pivot, F = foot point).
+  - `sigma = +1`: the joint apex points to the front (-y). `-1`: it points to the back (+y).
+  - Digitigrade hind legs (wolf, deer, goat, fox) and the heron are drawn with the hock behind the hip-foot line (`-1`). The bear's plantigrade hind split at the ankle comes out `+1`, which is correct for its rig.
+  - `legRig.legs[i].bend: 'front'|'back'` may state the direction explicitly. It must agree with the rest pose when the rest bend is > 2 deg, and it is **required** when the rest leg is straight (< 2 deg).
+- **`def.voxel.legRig`** (optional; plain JSON; cold, read once by `packVoxelModel`):
+```js
+/** @typedef {{
+ *   body: string,                                  // root part that gets slope pitch/roll/drop
+ *   legs: {upper: string, lower: string, foot: [x,y,z], bend?: 'front'|'back'}[],   // 2..4, foot = paw contact point, model cells
+ *   gaits: {[clip: string]: {tunedMps: number, duty: number, phase: number[], liftM: number}},  // phase[i] per leg, 0..1
+ *   stand: string[],                               // clips where the feet plant at stride 0 (idle, eat, notice ...)
+ *   maxPitchDeg?: number, maxRollDeg?: number      // default 20 / 8
+ * }} LegRigDef */
+```
+- **Validator (`validateVoxelModel`):**
+  - `upper` and `lower` exist, and `lower.parent === upper`.
+  - The foot point is inside the lower box, +-1 cell.
+  - |u| and |w| are >= 2 cells.
+  - The bend rule above holds.
+  - Every `gaits` key and every `stand` entry is a clip of the model.
+  - `duty` is 0.3..0.9; `phase.length === legs.length`, each value in [0, 1); `tunedMps > 0`; `liftM` is 0..0.5.
+  - There are 2..4 legs.
+  - Unknown keys are an error.
+- **Clips address parts by name** (format unchanged, `n x partCount x 6` keys).
+  - Gait clips (walk, run/charge) are generated with the preview's `gaitFrame`, using the SAME `duty`/`phase`/`tunedMps` that go into `legRig.gaits`. One source of truth in the model file: a `const GAIT = {...}` used by both.
+  - The clip length T sets the stride: `strideM = tunedMps * T`.
+  - The Node test: planted-foot error <= 12 mm over stance (the preview's check).
+
+#### 3. C: runtime leg solve
+- **Where: view-only.**
+  - It reads the positions and speed the sim already produced, and writes only pose data.
+  - beastSim, fauna brains, colliders and saves are untouched. `beastGolden` and the fauna fixtures stay byte-identical (AC).
+  - Its state is not serialized; a reset on spawn/load rebuilds it.
+- **Rig packing:** `engine/voxel/legRig.js` `packLegRig(def, partNames) -> PackedLegRig|null` (load time, called from `packVoxelModel`) sets:
+  - `pm.legRig = {bodyIdx, n, upper: Uint8Array, lower: Uint8Array, geo, gaitClip, standClip, gait, maxPitch, maxRoll}`, where
+  - `geo: Float64Array(n*12)` = `[Hy,Hz, uy,uz, wy,wz, a, b, phiU, phiW, sigma, footX]`,
+  - `gaitClip: Int16Array(clipCount)` maps clip -> gait index (-1 = none), `standClip: Uint8Array(clipCount)`,
+  - `gait: Float64Array(g*(4+n))` = `[tunedMps, duty, liftM, T, phase...]`.
+  - `null` when there is no `legRig`, which leaves everything byte-identical.
+- **The 2-bone solve runs inside `computeVoxelPose`.** That is where the exact parent transform is, so planting stays exact under clip bob/pitch, and `instanceRect`, mounts and shadows see the same pose.
+  - **Input** on the pool instance: `inst.legs`, a `LegPose` Float64Array(16) `[w, bodyRx, bodyRy, bodyZcells, (tx,ty,tz) x 4 world m]`, or `null`. `null` (the default) or `w === 0` gives today's output, bit-identical.
+  - **Body:** in `samplePose`, after the crossfade and before `addPart`: `_rotOut[body] += bodyRx, bodyRy` and `_posOut[body].z += bodyZ`. The driver has already weighted these.
+  - **Target to parent space:** in the part loop, when `p` is a leg's upper part (its parent is already done): `c = RzYaw^T (T - bw) / cellM`, `x = Ak_par^T (c - bk_par)`.
+  - **Solve:** `d = (x.y - Hy, x.z - Hz)`. `D = |d|`, clamped to `[|a-b| + 0.01(a+b), a + b - 0.01(a+b)]`. `cK = clamp((D^2 - a^2 - b^2) / (2ab), -1, 1)`. `r2 = phiU - phiW + sigma * acos(cK)`. `r1 = atan2(d) - atan2(u + rot(r2) w)`.
+  - **Limits:** clamp `sigma*r2` to [-10, 150] deg and `r1` to [-80, 80] deg.
+  - **Write:** upper `rx = clip + wrap(r1deg - clip) * w`; `ry, rz -> clip * (1 - w)`; upper pos -> `clip * (1 - w)`. Do the same for the lower part with `r2` (the loop reaches it later).
+  - Legs rotate about x only. The lateral foot error from body roll is accepted (roll <= 8 deg).
+  - **Oracle (D-017):** a Node test runs the preview's FK (a `poseLocal` copy in the test) and checks four things: the posed foot point hits a reachable target within 0.05 cell; the branch matches the rest sign; the limits hold; `w = 0` is bit-identical. C changes nothing on the GPU, so it gets no new gpucompare row.
+- **Driver** `engine/entities/legDriver.js` (per frame, view):
+  - API: `createLegDriver(capacity = 48)`; `attach(pm) -> slot` (-1 when `pm.legRig` is null or the driver is full; cold); `release(slot)`; `reset(slot)`; `poseOf(slot) -> LegPose` (a subarray made at create); `update(slot, pm, clipIdx, ground)`.
+  - Inputs go in `driver.io` (Float64Array, 38.61 2b): `[x, y, z, yawDeg, dtMs, camX, camY]`. Outputs come back in `io[8..10]`: `[phase01, speed, active]`.
+  - `ground` = anything with `groundAt(x, y) -> number|null` (`World.groundAt`: terrain band or structure floor).
+  - State: one struct-of-arrays Float64Array per slot (Phi, speed EMA, w, and per foot the planted, lift-off and landing xyz, plus flags). No objects per frame.
+  - **Speed and rate:**
+    - `v` = EMA of the root xy displacement per update (`alpha = 1 - exp(-dt/0.15 s)`, the BEAST-01 smoothing). A root jump > 1.5 m is a teleport -> `reset`.
+    - The gait is `pm.legRig.gaitClip[clipIdx]`. `S = tunedMps * T * clamp(sqrt(v / tunedMps), 0.8, 1.25)`, and `Phi += v * dt / S`.
+    - Below 0.15 m/s, or on a `stand` clip, the driver is in stand mode (stride 0).
+  - **Feet:**
+    - `phi_k = frac(Phi - phase_k)`.
+    - Stance (`phi_k < duty`): the target is the planted point, a fixed world xyz, so **there is no slide at any speed, by construction**.
+    - Swing start: lift-off = the planted point. Landing = the predicted root at touchdown + the yaw-rotated rest foot xy + forward * `duty*S/2`. Make ONE `groundAt` there. At q = 0.5, re-predict and make ONE more `groundAt`.
+    - Swing target: `xy = lerp(liftOff, landing, smoothstep(q))`, `z = lerp(zLift, zLand, q) + liftM * sin(pi*q)`.
+    - Touchdown plants the landing point (no query).
+    - Stand mode: the feet stay planted. A foot more than `max(0.25*(a+b)*cellM, 0.15 m)` from its rest point takes a 0.25 s step there (one foot per pair at a time).
+    - Reset: all feet go to their rest points (4 queries, once).
+  - **Queries and cache:** 2 `groundAt` per foot per stride (~0.2 per animal per frame at a walk), at most 5 in one frame (on reset). If `|groundAt(root) - z| > 0.25 m` (swimming, an odd floor), the driver uses flat ground at `z` and makes no further queries that frame.
+  - **Body on slopes:**
+    - From the heights of the 4 foot targets: `pitch = -atan2(hFront - hHind, LfH)` (nose up when going uphill; on `body`, rx + = nose down), and `roll = 0.5 * atan2(hL - hR, width)` (ry + = top to the right/east).
+    - Clamp them to `maxPitchDeg` / `maxRollDeg` and damp them critically (tau 0.12 s).
+    - `bodyZ` = the lowest foot's residual below the tilted body plane, clamped to [-0.35 * leg length, 0], so the downhill feet stay in reach.
+    - Bipeds (2 legs): pitch 0, roll only.
+  - **Clips:**
+    - While a gait clip runs, the view drives its time from Phi (`playing = false`; frame/t via the `clipSetPhase` maths on a scratch). Head nod, ears, tail and body bob stay authored and in phase; the solve overrides only the legs.
+    - The `w` target is 1 on gait and stand clips within LOD, else 0. So attack, windup, hurt, flinch, die, dead, sink and any clip not listed keep the authored legs.
+    - `w` moves linearly at 1/0.15 s, so attacks and deaths fade the legs back to the clip in 150 ms.
+  - **LOD:** solve only for the nearest `SOLVE_MAX = 16` attached animals within `SOLVE_R = 35 m` of the camera (hysteresis +3 m). The others fade `w` to 0 and keep the Phi-driven clip time (plain clips, rate from speed). The pool already skips off-screen culled instances.
+  - **Wiring:**
+    - `VoxelPool` gets a slot field `legs`: reset to null in `pushInstance`/`_queueEntity`, copied in both projection copies (lines ~355/397), and `_idInst.legs = null`.
+    - Entity path: `components.voxel.legPose` (a LegPose reference, set by the game view). Feed path: `pool.legInstance(i, legPose)` (like `blendInstance`).
+    - The engine fauna feed (deer/fox/goat) and the game `beastView` (bear, wolf, goblin) each own a driver.
+    - Kill switch `?legik=0`: the driver never attaches.
+- **Determinism:** no Math.random, no wall clock; the same inputs give the same LegPose (test). Trig is allowed (view only, so rule 15 does not apply).
+- **Budget:**
+  - JS (D-007): the driver costs ~1.5 us per solved animal per frame. The in-pose solve costs ~0.15 us per leg per `computeVoxelPose` call, and there are <= 3 calls per frame. Together that is ~3.5 us per solved animal, ~0.06 ms for 16 solved. Add section 1's draw cost for 30 knee animals (~0.5-0.7 ms).
+  - GPU (D-085): only section 1's +4 draws per animal per pass.
+  - **0 B per frame** after warm-up, measured through the real present path (38.61 probe).
+- **Do not:** move leg IK into the sim; store LegPose in saves; query the ground every frame per foot; solve beyond the LOD cap; add game kinds or model names to `engine/`; change the WGSL; let a missing `legRig` change anything.
+
+#### 4. Stories (each <= 1 programmer-day; E = engine, PC-A arch-review)
+| ID | E | What | Deps | Parallel with |
+|---|---|---|---|---|
+| VOX-PARTS-16a | E | The section 1 table: const, validator (+ the meshOnly rule), DrawList, flat0 bit 17 (+ voxelMarch), the pins (meshGroups, VoxelTextures), the chargen decouple. The `quadruped16` fixture (parts + `legRig` block). Tests: byte-identical pack/mesh/pose for every shipped model, 12-part pose/mesh, 0 alloc. | note | ANIM-A-01 |
+| VOX-PARTS-16b | E | gpucompare `vox12` row, with the existing rows unchanged. A 30-animal draw/JS-encode bench (12-part fixture x 30, sun shadow), reported against section 1's estimate. | 16a | ANIM-B-01a, ANIM-C-01 |
+| ANIM-B-01a | - | Bear + black bear: box split (the upper part keeps its name, `<name>2` appended), voxel-identity test, `legRig` block, walk / charge / idle-stand clips from the generator, planted-foot test. Owner look (including the seam line). | 16a | 16b, C-01 |
+| ANIM-B-01b..d | - | The same for wolf + fox (b), deer + goat (c), heron + goblin (d: 2 legs, 10 parts). | 16a | C-01..C-05 |
+| ANIM-C-01 | E | `legRig` validator, `packLegRig`, and the in-pose 2-bone solve (`inst.legs`, LegPose). Tests: oracle vs the preview FK, bit-identical when null, 0 alloc. | 16a | B-01a |
+| ANIM-C-02 | E | `legDriver` core on flat ground: speed EMA, Phi, stance/swing planning, plant/landing cache + `groundAt`, stand mode + stand steps, teleport reset, w fades, LOD cap. Tests: foot slide <= 12 mm over stance at 0.5x/1x/1.5x tuned, query count, determinism, 0 alloc. | C-01 | B-01b..d |
+| ANIM-C-03 | E | Slopes: body pitch/roll/drop + damping + clamps + flat fallback. Tests on a synthetic 20 deg slope and a step (feet on the ground +-1 cm, downhill reach). | C-02 | B-01b..d |
+| ANIM-C-04 | E | Pool plumbing (`legs` slot field, `legInstance`, projection copies), engine fauna feed wiring (deer/fox/goat), `?legik=0`, bench-life with 30 animals (JS p95 within D-007, report). | C-03 | - |
+| ANIM-C-05 | - (kestrel-1, game) | `beastView` wiring, bear first (then wolf/goblin): driver attach/release on spawn/death, gait clip time from Phi, `legPose` on the voxel component. Owner walk on a hill with Burl. | C-04, B-01a | - |
+
+Order: 16a -> {16b, B-01a, C-01} -> C-02 -> C-03 -> C-04 -> C-05 (bear first). B-01b..d run alongside C-02..C-04. Each animal gets C as soon as its B data and C-04 exist (one wiring line + an owner look).
+
+### 38.68 ANIM-BLEND: clip blending, cross-fades, additive hits (D-090 stage 2) (PC-B architect opus 2026-10-14, PC-A to ratify)
+Builds on RIG-00 38.32 (rigged models use the same `pm.clips` path), 38.67 (leg solve), 38.61 (0 alloc), WILD-01/02 (38.31 item 8).
+**Facts checked in code.** (1) `voxelPose.js` `sampleClip` = one clip + an optional from-clip lerp (`inst.fromClip/fromFrame/fromTMs/fromW`; the from pose is a single clip); `samplePose` then adds the leg-driver body tilt (`inst.legs`) and `addPart` (jaw); the 2-bone solve overrides leg `rx` in `computeVoxelPose` with weight `legs[0]`. (2) Only the fauna feed cross-fades (`clipPlayer.js` + `pool.blendInstance`). The entity path `VoxelPool._queueEntity` forces `fromW = 0`, so player, beasts, goblins and NPCs **pop on every clip change** (beastView sets `v.anim/t` directly; `hurt`/`flinch` are full clips). (3) `animState.js` `BLEND_MS = 80` is a weight nobody feeds into the pose. (4) `gait.js` `pickGait` is a hard switch with hysteresis. (5) `legDriver.update` takes the gait from `lr.gaitClip[clipIdx]` and computes `stride = tuned * T * clamp(sqrt(v/tuned), 0.8, 1.25)`; `io[7]` and `io[11..]` are free.
+
+**1. Pose layers (in `samplePose`, fixed order, all optional; absent = today's bytes).**
+- (a) **Base source** = clip A at (frame, tMs), lerped toward clip B at (frame2, tMs2) by `w2` (the parameter blend). (b) **From source** (the previous state) = the same A/B/w2 shape, advanced like `clipStep` does; the result lerps toward it by `fromW`, so leaving a half-walk/half-run blend never pops. (c) **Additive** = `addW * delta(addClip, addFrame, addTMs)` on the parts in `addMask` (delta keys precomputed at pack = keys minus frame 0, so frame 0 adds exactly 0). (d) Then the existing leg body tilt, `addPart`, and the leg solve.
+- Input: one `AnimLayers` Float64Array(20) per instance, `inst.layers` (null = byte-identical): `[on, clip, frame, tMs, clip2, frame2, tMs2, w2, fClip, fFrame, fTMs, fClip2, fFrame2, fTMs2, fW2, fromW, addIdx, addFrame, addTMs, addW]`. When `on = 1`, base clip/frame/tMs come from the record, not from `v.anim` (the serialized name stays the game's job, for saves only).
+- Scratch: module-level rot/pos arrays (MAX_VOX_PARTS*3) per extra source. Worst case 5 `sampleInto` per pose.
+
+**2. Data format** (`def.voxel.blend`, plain JSON, cold, validated in `validateVoxelModel`; unknown keys error; same for voxel and RIG-00 rigged defs):
+```js
+/** @typedef {{
+ *   sets?: {[name]: {param: 'speed', clips: {clip: string, at: number}[]}},   // 2..4 looping clips, `at` m/s strictly increasing, phase-synced
+ *   fades?: {default: number, into?: {[clip]: number}, pairs?: {[fromGtTo]: number}},  // key 'walk>attack'; ms 0..400; default 150 (= legDriver w fade)
+ *   additive?: {[name]: {clip: string, parts: string[], inMs: number, outMs: number, gain?: number}}  // clip non-looping; parts = mask
+ * }} BlendDef */
+```
+- Pack: `engine/voxel/blendPack.js` `packBlend(def, pm) -> pm.blend | null`, called from `packVoxelModel` like `packLegRig`: `setClip: Int16Array`, `setAt: Float64Array`, `fadeInto: Uint16Array(clipCount)` (0xFFFF = default), `fadePair: Uint16Array(clipCount*clipCount)` (0xFFFF = none; <= 32 clips -> 2 KB), `addKeys: Float64Array` per additive clip, `addMask: Uint16Array`. A clip may sit in only one set.
+
+**3. Blender** `engine/entities/animBlend.js` (view only, like legDriver): `createAnimBlender(capacity = 64)`, `attach(pm) -> slot` (-1 when full), `release`, `reset(slot, clipIdx)` (no fade: spawn/load/teleport), `layersOf(slot) -> AnimLayers` (subarray made at create), `update(slot, pm, dtMs)`. Inputs in `blender.io` Float64Array: `[reqClip | -(set+1), speed, phase01 (-1 = self-advance), hit (additive index, -1 none), rate]`.
+- **Fade on every change:** a new request copies the current source into the from slot, `fromW = 1 - smoothstep(t/ms)`; ms = `fadePair[from,to]` else `fadeInto[to]` else default. A change during a fade restarts from the current blended source (the older from is dropped; at most 2 sources in flight).
+- **Parameter blend:** in a set, `at_i <= speed < at_(i+1)` gives `w2 = smoothstep((speed - at_i)/(at_(i+1) - at_i))`; below `at_0` clip 0 only, above the last the last only. Both clips are sampled at the SAME phase01 (`clipSetPhase` maths on scratch). Self-advance: `phase += speed * dt / lerp(stride_i, stride_j, w2)`, `stride = at * T` (T = clip length), rate clamped [0.6, 1.6]. Replaces `pickGait` for models that have `blend.sets`.
+- **Additive hit:** `hit >= 0` (re)starts the envelope: up in `inMs`, clip time runs, down in `outMs`; `addW = gain * env`. Hurt/flinch become additive on top of walk/run/attack instead of replacing them (the game may still play a full `hurt` clip for knock-downs).
+- **Readable wind-up / recover (OB-150):** `windup` and `recover` are ordinary non-looping states with their own fades. Rule tested per model: `into[windup] <= 0.25 * windup length`, the windup reaches its last key (held) before the sim's windup time ends, `into[attack] <= 80`, `attack>recover >= 150`.
+
+**4. Composition with the leg solve (38.67): the blend never fights a planted foot.**
+- While the solve is on (`legs[0] = w > 0`) it overrides leg `rx` after all layers, so blends/fades/additives only move body, head, tail. Additive `parts` naming a `legRig` upper/lower part is a validator error.
+- Phase: with a driver attached the blender takes `phase01 = driver io[8]` (no self-advance), so both set clips stay in step with the feet.
+- Stride: the blender writes the blended stride (m) to driver `io[11]`; `legDriver.update` uses it instead of its formula when > 0 (0 = byte-identical). Footfall pattern (duty, phase[]) = the dominant clip (`w2 < 0.5` ? A : B), passed as `clipIdx`; a pattern change takes effect per foot at its next touchdown (stance feet stay planted; new per-foot state `H_PAT`).
+- Gait -> attack/die: the driver fades `w` to 0 in 150 ms and the default fade is 150 ms, so the legs leave the solve and the old clip together.
+
+**5. Cost / alloc / determinism.** Per pose <= 5 `sampleInto` (16 parts x 6 lerps) ~0.5 us, <= 3 pose calls/frame; blender update ~0.3 us. 48 instances <= 0.1 ms JS (D-007). GPU 0. **0 B/frame** after attach (38.61 probe through the present path). No Math.random, no wall clock; never serialized (reset on spawn/load).
+**Do not:** blend in the sim; serialize AnimLayers; name game clips (`hurt`, `charge`) in engine code; change WGSL; change any byte when `blend`/`layers` are absent.
+
+**Steps (each <= 1 programmer-day; E = engine, ends in arch-review on PC-A).**
+| ID | E | What | Deps |
+|---|---|---|---|
+| ANIM-BLEND-01a | E | `blend` validator + `blendPack.js` + pose layers in `voxelPose.js` (`inst.layers`) + VoxelPool `layers` slot field (`_queueEntity` reads `components.voxel.animLayers`, `layerInstance(i, rec)`, both projection copies). Tests: every shipped model bit-identical without `blend`/`layers`; w2/fromW/additive maths vs a reference lerp; delta at frame 0 = 0; mask; a RIG-00 rigged fixture works; 0 alloc. | none |
+| ANIM-BLEND-01b | E | `animBlend.js`: requests, fade table, phase-synced sets, self-advance, additive envelope. Tests: **no pop** (max per-part rot step between 60 Hz frames across every state change <= the largest in-clip step + 1 deg), set sync, determinism, 0 alloc. | 01a |
+| ANIM-BLEND-01c | E | legDriver composition: `io[11]` stride, pattern switch at touchdown, phase hand-off. Tests: foot slide <= 12 mm over a 0 -> run -> 0 speed ramp; walk -> attack legs reach the clip within 150 ms, no step > 1 deg/frame; `io[11] = 0` byte-identical. | 01b, ANIM-C-02 |
+| ANIM-BLEND-02 | - | Content (designer + kestrel-4): `blend` blocks, `hitAdd` clips, windup/recover fades for player rig, bear, wolf, boar, goblin. Node: validators + the OB-150 windup rule. | 01a |
+| ANIM-BLEND-03 | - | Game wiring (kestrel-1): beastView + beastLegs + player view own a blender; hurt -> additive; `?animblend=0` kill switch. Owner look: walk -> run ramp, hit while running, boar windup. | 01b, 01c, 02 |
+
+### 38.69 ED-FOLIAGE: foliage brush (placements + decor paint) (D-102) (PC-B architect opus 2026-10-14, PC-A to ratify)
+Builds on MASK-d `tools/editor/grassBrush.js` (38.52 amendment (e)), ED-MESH-01b `meshPlace.js` (37.20), `commands.js` batch records (24.9), ENV-01 38.62 (decor mask), 38.58 (`bundleBytes`), 38.43/38.59 caps.
+**Facts checked in code.** (1) grassBrush is pure: `applyGrassDab` (smoothstep falloff, `onTouch` undo snapshot), `beginStroke`/`endStroke` -> one record `{kind:'grass', key, rect, entries:[i,j,before,after]}`, `applyGrassSide`, `rebuildCarpet(world, rect)`, save `content/terrain/<key>.grassMask.json`. (2) `createMeshPlacement(file, key, pt, {assets, world, yawDeg, scale})` validates, ground-snaps via `snapMeshOrigin` (highest of centre + 4 footprint samples + `LIFT[meshClass]`, refuses courtyard gaps / no floor) and mints the id; it does not insert. (3) `World.placeMesh(..., collide)` + `colliders.js proxySource`: a mesh collides through its `collider` proxy (tools/gen-mesh-colliders.mjs) or, with a warning, its render triangles; `collide:false` = walk-through. (4) `commands.js` `makeInsertRecord`/`makeDeleteRecord` + `{label, batch:[...]}` invert as one undo step. (5) The detail keep probability is `fill * biome detail mult` in BOTH paths: CPU `scatterDetail` (scatter.js ~376-379) and the ENV-01b mask bake (~429-434, `prob = round(fill*127)`). (6) `bandCache.js` `bundleBytes(b)` is the real per-band MB; `tools/probe-heavy-zones.mjs` bakes zones with `BandBakeJob`.
+
+**1. Two brush modes, one panel ("Foliage" tab).**
+- **Placements mode** (species with an id/collider: trees, rocks, logs, stumps, boulders): every dab makes real mesh placements in the open world file (`def.structures`, ids minted `fol_<n>`, via `createMeshPlacement`), so they are pickable, movable, saved, collide, cast shadows.
+- **Decor mode** (no collider, no id: flowers, tufts, pebbles, reeds = the 38.62 `gpu` layers): paints a density multiplier layer per detail layer. It never makes placements.
+- A palette entry decides the mode by data: a species with a mesh that has a `collider` proxy or a tree trunk -> placements; a detail layer name -> decor. A placement species whose mesh has no proxy is refused at palette load (no render-triangle colliders from a brush).
+
+**2. Palette data** (`content/editor/foliage.json`, editor-only, validated at load, unknown keys error):
+```js
+/** @typedef {{ version: 1, palettes: {[id]: {
+ *   place?: {mesh: string, w: number, gapM: number, scale: [number, number], maxSlopeDeg: number, collide?: boolean, shadow?: boolean}[],
+ *   decor?: {layer: string, target: number}[]          // detail layer name, target multiplier 0..2
+ * }}}} FoliagePalettes */
+```
+Brush params (UI, not saved): radius 1..24 m, falloff (hard/smooth = smoothstep), density (placements per 100 m^2 at the centre, 0.1..20) or decor strength %, op paint/erase (decor also: reset to neutral).
+
+**3. Placement dab** (`tools/editor/foliageBrush.js`, pure, no DOM):
+- Candidates: a 1 m world lattice inside the dab; per cell `h = hash2(ix, iy, strokeSeed)` (scatter.js `hash2`, no Math.random); keep when `h01 < density/100 * falloff(d/r)`; jitter + species pick + yaw + scale from the next hash words. Deterministic for a given seed (tests).
+- Rejects: `snapMeshOrigin` null (no floor, courtyard gap); slope from 4 `world.floorAt` samples at the footprint > `maxSlopeDeg`; inside any structure bbox or `classifyPlacement` zone != world; closer than `max(gapA, gapB)` to an existing mesh placement (a grid hash of the file's mesh placements built at stroke start, updated as the stroke adds); water (`floorAt` below the water level where the world reports one). Max 200 placements per stroke (message when hit).
+- **Snap always (OB-155):** z only from `snapMeshOrigin`; never a typed z in this mode. Terrain brush strokes re-snap every `fol_` placement inside the stroke rect, as part of the SAME undo record (field-edit records in the batch). AC with `tools/probe-floating.mjs`: 0 floating `fol_` placements after paint + terrain edit + undo.
+- Erase: deletes the placements whose mesh is in the active palette within the radius (falloff = keep chance), refusing referenced items (`findReferrers`); `Shift` erases any mesh species.
+- During the stroke placements show as ghosts (meshDragPreview path); stroke end = ONE `{label:'foliage paint', batch:[insert...]}` record, applied through `applyEdit` + livepatch once, then `world.rebuildMeshColliders` once.
+
+**4. Decor paint layer (engine part).**
+- Storage: one GrassMaskLayer (engine/world/grassMask.js, 0.5 m lattice) per detail layer, with a new optional `neutral` byte: `createGrassMask(cell, chunkSize, neutral = 0)`; absent chunks read `neutral`, new chunks fill with it (0 = today, byte-identical). Decor layers use `neutral = 128`, multiplier = `v / 128` (0..~2).
+- Rule: `fill = min(1, fill * biomeMult * paint(x, y))` at the same line in CPU `scatterDetail` and `bakeDecorMask` (one shared helper), so both paths and the GPU twin agree. No paint file = exact old bytes.
+- Save: `content/terrain/<key>.decorPaint.json` = `{version:1, layers:{<layerName>: grassMaskToJSON(...)}}` (manifest entry like grassMask). World opt `decorPaint` (loaded layers); never in saves; world hash unchanged.
+- Live: `World.rebuildDecor(rect)` re-runs the detail/mask bake for the near-band cells in `rect` and bumps `decor.version` / `renderVersion` (passDecor re-uploads on version, 38.62 ENV-01d).
+- Editor side reuses grassBrush unchanged: `wrapLayer` over the decor layer; ops paint (toward `target*128`), erase (toward 0), reset (toward 128); record `{kind:'decor', layer, key, rect, entries}` + `applyGrassSide`.
+
+**5. Budget meter** (`tools/editor/foliageBudget.js`, pure):
+- Zone = the 38.43 band cell under the cursor. Live estimate per zone: mesh placement count, LOD0 triangles (sum of `assets.mesh(k).triCount`), collider bytes (sum of proxy bytes per species, computed once at palette load), plus the zone's last measured base bytes.
+- Caps (constants, one place): bundle <= 6 MB hard / 4 MB target (WMP-08), <= 60 meshes within 64 m (meshPlace warning), placed-mesh triangles per zone <= `FOLIAGE_TRI_CAP` = 1.5 M LOD0 (proposal, see open item). Bar green < target, amber < cap, red >= cap; a stroke that would pass a hard cap is refused with the reason.
+- "Measure" button: bakes that zone with `BandBakeJob` and reads `bundleBytes` (seconds, on demand; replaces the zone's base bytes).
+
+**6. Risks.** (1) Mesh placement count per world file grows fast; 200/stroke + the 60-in-64-m rule bound it, and saves stay JSON (ids). (2) `rebuildMeshColliders` per stroke on a full file: measure; if > 50 ms, rebuild only the touched rect (later). (3) Re-snap ties foliage to the terrain brush; placements made by hand (not `fol_`) are not re-snapped (OB-155 for those = probe-floating). (4) Decor paint above 128 can raise density above the authored layer; prob still clamps at 127 and `DECOR_MAX_ROWS` (38.62) bounds the GPU side.
+**Do not:** write into `content/` silently (save = existing editor save); let the brush set z by hand; make placements for collider-less decor; read `design/` from engine; use Math.random.
+
+**Steps (each <= 1 programmer-day; E = engine, ends in arch-review on PC-A).**
+| ID | E | What | Deps |
+|---|---|---|---|
+| ED-FOLIAGE-01 | - | kestrel-1: `foliageBrush.js` + palette validator + `content/editor/foliage.json` (2 palettes: forest edge, rock field). Node: deterministic per seed; density within 10 % of target over a 20 m disc on flat ground; every reject rule; gap rule; erase + referrer refusal; one batch record, undo restores the doc byte-identical. | none |
+| ED-FOLIAGE-02 | - | kestrel-1: editor wiring: Foliage tab, ring cursor, ghosts, stroke commit (applyEdit + livepatch + colliders once), undo/redo, save. Node (panel/undo tests) + one browser pass. | 01 |
+| ED-FOLIAGE-03 | E | kestrel-3: `grassMask` `neutral`; shared paint multiplier in `scatterDetail` + `bakeDecorMask`; `decorPaint` load + JSON; `World.rebuildDecor(rect)`. Tests: no paint = byte-identical (detail, mask, hashes); paint 0 = none, 255 = ~2x placements; CPU and mask agree per cell; rebuild touches only rect cells. | ENV-01b |
+| ED-FOLIAGE-04 | - | kestrel-1: decor mode on grassBrush (`wrapLayer` over decor layers, paint/erase/reset, `kind:'decor'` record, save `decorPaint.json`, `rebuildDecor` hook). Node: record round trip, save text canonical. | 03, 02 |
+| ED-FOLIAGE-05 | - | kestrel-1: `foliageBudget.js` + meter UI + Measure; terrain-stroke re-snap of `fol_` placements (same record). Node: meter numbers vs a hand sum; hard-cap refusal; probe-floating 0 after paint + terrain edit + undo. | 02 |
+
+### 38.70 ED-LOGIC: logic blocks When -> If -> Do (D-102) (PC-B architect opus 2026-10-14, PC-A to ratify)
+Goal: designers wire simple world reactions as **content data**, no code. First use (acceptance): a gate closes + 3 goblins appear when the player enters an area while quest X is active. Builds on what exists: world triggers (`engine/world/triggers.js`, `updateTriggers` per fixed step), the gameHooks seam (`game/js/gameHooks.js`: `area:entered`, `prop:touched`, `beast:died`, `item:got`, `player:died`, `flag:set`), `questBook.statusOf(id)`, beastSim `setDown(slot, on)`, the door pattern (`doorToggle.js`: prop variant + `colliderOffVariant` + `rebuildPropColliders`, state in `world.state`).
+
+**Data** (`content/logic/<region>.logic.json`, array of blocks; canonical JSON like ED-QUEST-01):
+```
+{ "id": "rook.ambush", "rev": 1, "name": "Rook ambush", "once": true,
+  "when": { "on": "area.enter", "area": "rook.yard" },
+  "if":   [ { "is": "quest", "quest": "sq.rook.x", "state": "active" } ],
+  "do":   [ { "act": "prop.state", "prop": "rook.gate", "state": "closed" },
+            { "act": "beasts.spawn", "group": "rook.goblins" },
+            { "act": "hint", "text": "hint.rook.ambush", "after": 30 } ] }
+```
+`once` (default false) or `max` fires; `after` = delay in fixed steps (0..3600). The same data feeds the list editor now and the node-graph view later (ED-LOGIC-GRAPH): the graph only adds an optional `"ui": {x, y}` per block, which the interpreter ignores.
+
+**Vocabulary v1.** Each entry declares `args: {name: type}`, types `int | bool | text | ref:area | ref:quest | ref:prop | ref:group | ref:item | ref:flag | ref:beastKind | ref:textId`. Editor dropdowns and the validator are driven by this schema, never by hand lists.
+- When: `area.enter {area}`, `area.leave {area}`, `prop.touched {prop}`, `beast.died {kind? | group?}`, `group.cleared {group}` (last live slot of the group died), `item.got {item}`, `flag.set {flag}`, `quest.accepted {quest}`, `quest.done {quest}`, `player.died {}`.
+- If (all must hold; pure reads, 0 alloc): `quest {quest, state: available|active|ready|done|activeOrReady}`, `flag {flag, eq}`, `item {item, atLeast}`, `group {group, state: reserve|alive|cleared}`, `prop {prop, state}`, `not {one condition}`.
+- Do: `prop.state {prop, state}`, `beasts.spawn {group}`, `beasts.despawn {group}`, `flag.set {flag, value}`, `hint {text}`, `sound {id}`, `quest.feed {quest, event}` (goes through `book` like any event; actions never write quest state directly).
+
+**Layers (the engine stays generic).**
+- `engine/core/logic.js` (new, exported from `engine/index.js`): `compileLogic(blocks, vocab) -> LogicProgram` (load time, may allocate: interns every string arg to an int, builds `eventKind -> Int32Array blockIdx`, per-block typed condition/action lists); `createLogic(program, {maxPerStep = 32, ring = 64, pending = 32}) -> logic` with `push(kindId, argId)`, `step(ctx)`, `save()`, `load(obj)`, `hashInto(h)`. `vocab = {events: {name: {args}}, conds: {name: {args, test(ctx, a)}}, acts: {name: {args, run(ctx, a)}}}` is supplied by the game. `validateLogic(blocks, vocab, refs?) -> string[]` is pure (schema, unique ids, limits, `after` range; ref existence when `refs` is given).
+- Game: `game/js/logic/vocab.js` (conds/acts over questBook, inventory, world.state, beastSim, props), `game/js/logic/logicWire.js` (gameHooks handler: `onEvent` -> `push`, `onTick` -> `step`, save relay key `logic`), `game/js/logic/propState.js` (generalises doorToggle: variant + collider rebuild + nav `blockWorldRect`/`unblock` on the prop footprint; state `world.state['prop.<id>.state']`, re-applied on `world:loaded`).
+- Engine trigger change: `updateTriggers` emits `trigger:entered {key, id}` / `trigger:left {key, id}` for **every** zone incl. area-only ones (today an area-only zone `continue`s before the emit); reused payload objects, 0 alloc. `bridgeEngineEvents` maps them to `area:entered` / new `area:left`.
+- Beast groups: world beast entries get `group: "<id>"` and `reserve: true` (created with `setDown(slot, true)`); `beasts.spawn` = `setDown(slot, false)` for the group's slots in slot order (alive at the authored home, hp max).
+
+**Interpreter rules (determinism, 0 alloc per step).** Runs only in the fixed step (gameHooks `tick`, main.js ~2304; assert `dt` == the fixed step). Events that arrive during a step go into a fixed ring; `step` drains the events present at step start, in arrival order; per event the matching blocks run in **content order** (files sorted by name, then array order); conditions and actions run immediately, in list order. Events raised by actions (`flag.set`, `quest.feed`, spawns) land in the ring for the **next** step, so chains never recurse and an A->B->A loop costs one step per hop. `after > 0` parks the action in the pending table (stepsLeft per step; ties in insertion order). No wall-clock, no `Math.random`, no Map/Set iteration in `step`. A `prop.state` close stays pending (retried each step) while the player overlaps the prop's collider box (door rule: never trap the player in geometry).
+
+**Limits** (validator errors; runtime caps warn once): 128 blocks per file, 512 per world; 8 conditions + 8 actions per block; `maxPerStep` 32 actions (the rest waits in the ring for the next step); ring 64 events (overflow: drop newest, count, warn once); pending 32; group size <= 8.
+
+**Save-safe state** (`logic.save()`, keyed by **block id**, never by index; cf. the WM-12 rule): `{v: 1, b: {<id>: {n, rev}}, p: [[blockId, actIdx, stepsLeft]], g: {<group>: 0 reserve | 1 spawned | 2 cleared}}`. Effects live where they already save: `world.state` (flags, prop states), questBook, inventory. beastSim `down` is not saved (WM-12), so on load the wire re-applies groups: 0 -> down, 1 -> up fresh at home, 2 -> down. Migration: unknown block id in a save -> dropped; block missing in the save -> fresh; saved `rev` != content `rev` -> fire count reset (the editor bumps `rev` when When/If change, not for text); pending entries whose block/action no longer exists -> dropped; no `logic` key -> fresh.
+
+**Validation.** `validate-content` runs `validateLogic` (schema). `tools/content-lint.mjs` gets the next free rule (R15 at time of writing): refs exist (area = world trigger id, prop has that variant, group has `reserve` beasts, quest/item/text ids); a group spawned by two blocks without `once`; flag cycles (a block whose action re-triggers itself through `flag.set`) without `once`/`max` = error.
+
+**Budget:** `step` <= 0.05 ms at 512 blocks / 16 events (Node, warn-only unless `PERF_STRICT=1`); 0 alloc after warm-up (38.61 probe).
+
+**Steps (each <= 1 d, Node ACs):**
+- **ED-LOGIC-01a** interpreter [engine/core, kestrel-3, arch-review PC-A, 1 d]: `logic.js` + test with a fake vocab: replay twice -> same `hashInto`; next-step chaining (A->B->A advances one hop per step); `after` timing exact; caps; save/load mid-pending == uninterrupted run; migration cases (unknown id, missing, rev change); `validateLogic` error list per broken fixture; 0 alloc per `step`.
+- **ED-LOGIC-01b** trigger enter/leave events [engine/world/triggers.js + game/js/gameHooks.js, kestrel-3, arch-review PC-A, 0.5 d]: `trigger:entered/left` for every zone, 0 alloc; `area:left` in `EVENT_NAMES`; existing trigger tests + used-key semantics unchanged; restored-inside counts as enter (today's rule).
+- **ED-LOGIC-01c** game vocab + wire [game/js/logic/*, beastSim `group`/`reserve`, kestrel-3, PO review, 1 d]: vocab with schema; propState (variant, collider, nav block); save relay `logic`; load re-applies groups + prop states. Node fixture: enter area with quest active -> gate closed + 3 goblins alive within 1 step; quest not active -> nothing; save/load after the ambush -> gate closed, goblins alive, block not refired; `group.cleared` fires once.
+- **ED-LOGIC-01d** first-use content + lint [content/logic, world json, tools/content-lint.mjs, kestrel-4, 0.75 d]: area trigger, an existing gate mesh with open/closed variants (no new env design), 3 reserve goblins, the block; R15 + validate-content; 4 hand-broken fixtures each fire exactly the expected rule; repo lint otherwise unchanged. Owner walk: the ambush.
+- **ED-LOGIC-02a** editor model [tools/editor/logic/model.js, kestrel-1, 0.75 d]: load/save every `*.logic.json` byte-identical (canonical); undoable commands (add/move/delete block/cond/act, set arg); `rev` bump rule.
+- **ED-LOGIC-02b** editor list UI [tools/editor/logicPanel.js, kestrel-1, 1 d]: When/If/Do rows, dropdowns from the vocab schema; `ref:*` args use the ED-QUEST-03 pick (area, prop, character); live `validateLogic` + R15 list with "Go to"; plain names, never raw ids in labels.
+
+**Do not:** put game names (quest, goblin, gate) in `engine/core/logic.js`; run blocks from frame time; let actions write quest state directly; key saved state by slot or index; add expressions/scripting (`eval`, string formulas) in v1.
+
+### 38.71 NAV-LAYERS: multi-level nav (bridge decks, floors, stairs) + links (D-089, OB-139) (PC-B architect opus 2026-10-14, PC-A to ratify)
+Goal: agents path over the two bridges, into the Rook ruin room and up the 2-storey house stair (OB-139). Today (28.2) a NavGrid is one 2D layer; `buildFromWorld` marks every `structureAt` cell unwalkable, so structure interiors and decks are holes. Keep that ground layer **byte-identical** and add sparse **sheets** on top. Nav stays a leaf (rule 14): it never imports world/physics; geometry comes in through a probe callback.
+
+**Model.** A sheet = a small rect sub-grid with its own origin, `cell` (= grid.cell / 2^k, k 0..2; 0.5 m for house interiors so 1 m doors survive, 1 m for decks) and per-cell `height`. Cell index space: ground `0..N-1`, sheet cells `N..N+L-1` (`sheetBase[s] + ly*sw + lx`). `grid.layers` is `null` for worlds without sources (every existing path untouched).
+```
+grid.layers = { count, x0/y0 Float64(S), w/h Int16(S), cell Float32(S), base Int32(S+1),
+  cost Uint8(L), height Float32(L), linkFlag Uint8(N+L),
+  links: from Int32(K), to Int32(K), cost Uint16(K), kind Uint8(K), flags Uint8(K), stateIdx Int16(K) }  // sorted by (from, to)
+grid.totalCells = N + L;  grid.cellZ(i);  grid.locate(x, y, z) -> cell index (sheet if |height - z| <= 1.0, sheet order, else ground)
+```
+Neighbours: in-sheet 8-neighbour moves (corner rule as ground) allowed only if `|dz| <= maxStepM` (0.5); plus links of cells with `linkFlag` (binary search in the sorted table, 0 alloc). Link kinds: 0 step (auto, both ways), 1 door (closed when `world.state[stateKey]` false; the game sets `flags` bit via `grid.setLinkOpen(stateIdx, on)`, bumps version + dirty), 2 drop (one way), 3 ladder, 4 authored. RE-10 `block/unblock` gains an optional `sheet` arg (gate/door footprints inside sheets; ED-LOGIC propState uses it).
+
+**Cost units.** With layers present, step costs are in the finest cell unit: straight `10*cost*u`, diagonal `14*cost*u`, `u = cell / finestCell`. Without layers `u = 1` (byte-identical). Heuristic = octile on metres / finestCell * minCost (admissible); `validateLinks` requires `link.cost >= 10*minCost*octile(xy distance of its ends)/finestCell`.
+
+**Bake** `bakeSheets(grid, sources, probe, opts)` (`engine/nav/sheets.js`, load time / tile phase): `sources` = sorted list of bboxes (+ yaw) of structures and of placements with content flag `nav: "floors"` (both bridges, Rook ruin, the house); `probe(x, y, footZ, out)` is passed by the caller (World wraps `probeSupport` over static colliders + `structureAt` sectors; never `groundAt`, never prop colliders of doors/gates). Per cell of a source bbox: probe from bbox top down, collect up to 4 floor z's (next `footZ = z - 0.3`); keep a floor if `normal.z >= cos(maxSlopeDeg)` and headroom to the next floor above >= `agentHeight` (1.6). Surfaces are split into sheets by flood fill (4-neighbour, `|dz| <= maxStepM`, lowest index first). Boundary pass: every edge sheet cell gets auto step links to ground/other-sheet cells within one cell in xy and `|dz| <= maxStepM`; drop links (one way) for `maxStepM < dz <= 3 m` only when `opts.autoDrops`. Same (def, yaw) bakes once per load (cache by key). Order fixed: sources sorted by id, cells by index, links sorted -> same bytes every run.
+
+**Memory / time** (record a before/after table in 01d): per sheet cell 6 B grid + 16 B A* scratch + 9 B flow; house 12x10 m x 2 floors at 0.5 m ~ 1k cells (~31 KB); bridge 30x4 m at 1 m ~ 120 cells; links ~ 4 per edge cell x 8 B. Cap per tile `maxSheetCells` 32k (~1 MB) and 4k links; overflow = bake error naming the source. Bake <= 2 ms per source slice; whole tile layer phase inside the 38.59 nav slice budget (<= 3 ms per slice, sliced by source).
+
+**Streaming (WM-03).** Sheets are part of the tile: a tile bakes every source whose bbox intersects its rect (the whole sheet, links only to in-tile ground); bytes count in `bundle.nav` / BandCache. Still no A* across tiles (38.59 item 3). Fixed-area worlds bake once in `buildBeastNav`.
+
+**Consumers.** `createAStar`/`createFlowField` size their arrays by `totalCells`; flow gets an `Int32Array next` (only when layers) so `dirAt` can point along links. `smoothPath` line-of-sight never crosses a sheet/ground switch or a link (path keeps the link ends). Steer: agents get a `z` field (set by the game from `world.supportAt` each step) and the blocked-cell test uses `locate(x, y, z)`. Waypoint z = `cellZ`.
+
+**NAV-LINKS-01 is covered by the link table** (kinds above). It stays a separate, smaller split for the authored side: content link data + validation + per-kind tests (01a), and ford wade as a **cost class**, not a link: water-mask depth < 0.6 m (38.64 item 5 mask) = walkable with `typeCost.ford` (01b).
+
+**Steps (each <= 1 d, Node ACs; engine steps end in arch-review PC-A):**
+- **NAV-LAYERS-01a** sheets in NavGrid + A* [engine/nav/NavGrid.js, sheets.js (data only), astar.js, kestrel-3, 1 d]: `buildLayersFromArrays` fixture API; path ground -> stair sheet -> upper sheet -> back; corner + step rule in sheets; cost units; ground-only grids byte-identical (all nav tests + beast goldens unchanged); seeded random queries twice -> same paths; 0 alloc per query.
+- **NAV-LAYERS-01b** bake from geometry [engine/nav/sheets.js `bakeSheets`, kestrel-3, 1 d]: fake-probe fixtures for a 2-storey house (stair, 1 m door), a bridge over unwalkable water, a ruin room: sheet count, cell walkability, headroom cut, auto links; bake twice -> identical bytes; time per source.
+- **NAV-LAYERS-01c** flow, smooth, steer [flowField.js, astar.js smoothPath, steer.js, kestrel-3, 1 d]: flow descends across links; `smoothPath` keeps link ends; steer with `z`/`locate` never ends in a cost-0 cell on any sheet; RE-08/09 tests unchanged without layers; 0 alloc.
+- **NAV-LAYERS-01d** wiring + content [buildBeastNav, WM-03 tile phase, World probe adapter, `nav: "floors"` on the 4 sources (kestrel-4 data), kestrel-3, 1 d]: beast fixtures path over both bridges, into the Rook room, up the house stair (OB-139); bake time + MB table before/after; ground-only worlds byte-identical; validate-content accepts `nav` only on placements with colliders.
+- **NAV-LINKS-01a** authored links [engine/nav link validation + content link data, kestrel-3 + kestrel-4, 1 d]: ladder, drop, door (`stateKey`, `setLinkOpen`) from content; `validateLinks` (ends walkable, cost rule, one-way drop dz) in validate-content; per-kind astar + flow tests; same result every run.
+- **NAV-LINKS-01b** ford wade [NavGrid build option + beastNav, kestrel-3, 0.5 d]: depth < 0.6 m water cells walkable at `typeCost.ford`; deeper still blocked; the Ford route test.
+
+**Do not:** change ground-layer bytes; import world/physics into nav; sample `groundAt` or door/gate prop colliders in the bake; make one 3D voxel nav volume; A* across tiles; float-compare heights for adjacency without the `maxStepM` threshold from options.
+
+### 38.72 GI-PROBE: baked bounce light (D-090 stage 2) (PC-B architect opus 2026-10-14, PC-A to ratify)
+**Facts (code, 2026-10-14).** Light pass `light.wgsl.js` fs_main: `L = u.ambient + sum point lights + sun`; ME-20c vertex AO does `L -= u.ambient * (1 - aoF)`; terrain (kind 7) and carpet (kind 10) skip it and are lit analytically in `shade.wgsl.js` (`b = su.ambientI + su.sunI * max(0, N.L) ...`). `LightSet` (lighting.js) holds `ambient`, `sun`, `hemi {sky, ground, tint}` (ART-01a), `ao` (38.16); JS twin = `lightAt` / shadeTerrain. Day/night (38.39): `blendLook` -> `P.liveLook` + `P.liveLookVersion`, sun by `applySunHours` / `applySunPair` (moon = path + 12 h below `MOON_SWITCH_DEG`). Emissive: derived lights (38.12 (1), `MAX_LIGHTS` 24) + screen-space glow (`glow.js`, after stable). Bands: `BandBakeJob` (engine/world/bandBake.js) phases -1 terrain rows .. 4 nav tile, `DONE = 5`; `BandCache` (38.58) bundles, 24 MB cap, ~10.3 MB used for 5 zones; near band = 320x192 cells at `nearCell` 2 m (640 x 384 m).
+**Decision: a per-band probe field, baked OFFLINE by a Node tool, shipped as data, attached to the BandCache bundle. Nothing is baked in play (38.58 rule).** Runtime only samples and mixes.
+**1. Field (engine/render/giProbe.js, pure, no design import).** Grid over the band rect: `cellM = 8` (80 x 48 columns per band), `layers = 3` terrain-following heights above `base[col]` (ground min of the 8 m column): +1.0, +4.0, +10.0 m (data `layerDz`). Per probe L1 SH (4 coeffs), uint8 with per-channel scale/bias in the header:
+- `sky`: mono sky-visibility SH (4 B). Runtime x the live sky colour (`liveLook` ambient, or `hemi.sky` when hemi is on).
+- `sun[k]`: RGB bounce SH from the sun at `nKeys = 6` hour keys on the data sun path (06, 09, 12, 15, 18, 20 h; 12 B each). Runtime: lerp the two keys around the step hour x live sun colour x sunI; night = the key of the moon direction (hour + 12) x moon colour (same rule as `applySunPair`).
+- `emis`: RGB SH from static emissive sources (placed level lights + derived lights of static placements, 38.12 (1)) (12 B). Runtime x `gi.emisK` (data). Moving / carried lights stay live in the light pass only.
+- `valid` bit per probe (inside solid or below ground -> 0; trilinear weights skip it and renormalise; all 8 invalid -> today's ambient).
+Total 88 B/probe x 11 520 = **1.0 MB per band (5 zones ~5 MB; the 38.58 24 MB cap still fits; counted in `BandBundle.bytes`)**. Optional `giVolumes` (content: boxes per zone, 2 m spacing, 3-6 layers, cap 4096 probes/zone, +0.36 MB) for ruin interiors and the tower; inside its box a volume wins over the base grid (no blend band in v1).
+```js
+/** @typedef {{x0:number,y0:number,cellM:number,w:number,h:number,layers:number,layerDz:Float32Array,base:Float32Array,
+ *   keyHours:Float32Array,scale:Float32Array,bias:Float32Array,data:Uint8Array,valid:Uint8Array,volumes:GIVolume[],version:number}} GIField */
+createGIState() -> { on, field, skyRGB:F32(3), sunRGB:F32(3), k0, k1, kf, emisK, skyFloor, version }   // reused, 0 alloc
+mixGIState(state, liveLook, lights, hour, cfg)          // only on a liveLookVersion bump
+sampleGI(state, x, y, z, nx, ny, nz, out:F32(3)) -> out // manual trilinear over 8 byte-decoded probes, SH L1 eval, clamp >= 0
+GI_SAMPLE_WGSL                                          // generated from the same constants (decode, weights, SH basis)
+```
+**2. Use in lighting (GI on).** Non-terrain cells: `L = ambient * max(skyFloor, skyVis(N)) + bounce(N) + points + sun`, `bounce = sunMix + emis`; vertex AO / horizon AO keep multiplying the ambient part only (macro GI x micro AO). Terrain/carpet in shade: `ambientI` -> `ambientI * skyVis + lum(bounce)`, coloured through the existing tint path. GI off / field null = path skipped, frames byte-identical.
+**3. Bake (engine/world/giBake.js, pure, sliced `step(ms)`; tool `tools/bake-gi.mjs`).** Per probe 64 fixed Fibonacci-sphere directions (no RNG -> deterministic bytes). Each ray marches heightfield + structure voxels / mesh colliders in the `sunVisible` style (<= 48 steps); miss -> sky SH; hit -> albedo(hit) x N.L x `sunVisible(hit)` per sun key, + albedo x static emissive irradiance at the hit (one bounce). ~165 M march steps per band -> **est. 20-60 s per zone in Node**: too slow for the loading bar, so offline. Output `content/gi/<world>/<zoneKey>.gi.bin` (32-byte header + JSON meta + bytes). Key = the 38.58 `_nearKey` + a content hash of terrain + placements; a stale file is ignored with a warning (GI off in that zone). Editor: `rebakeRect` marks the field stale in the rect (today's ambient there) until "Bake GI" runs the sliced job inside the editor.
+**4. Streaming.** No new `BandBakeJob` phase. `World.load` fetches the zone files with the band data; at `put` the loader attaches `bundle.gi`; swap on hit sets `world.giField` (pointer flip, 0 alloc). GPU: `rgba8uint` 2D-array textures (sky+emis, sun keys), re-uploaded on field change like TerrainTextures (~1 MB texSubImage, <= 1 ms iGPU, inside the 38.58 swap-frame budget).
+**5. Budgets (D-085: 8 ms RTX, 10 ms Intel high).** GPU: 8 probe fetches x 3 data planes + SH eval per lit cell: <= 0.25 ms Intel high, <= 0.06 ms RTX 4060 at 480x180 (bench, on minus off). JS twin <= 2 ms/frame at 240x90 (Canvas2D path only). Per frame JS 0 B (allocProbe 38.61); `mixGIState` at most once per look step (~1/s). Preset: off at low, on at medium/high/ultra (data).
+**6. Twin + gpucompare (D-017/D-039).** The shader decodes bytes and weights exactly like `sampleGI` (no hardware filtering). compileFn probes `GI_SAMPLE_WGSL` == `sampleGI` within 1/255 on >= 2000 points x 4 states. Existing rows run with `gi` null -> unchanged. New rows (fixed hour, fixture field from a tiny Node bake): `giMeadowNoon`, `giForestDusk`, `giRuinInterior`, `giEmisNight`. Thresholds never widened.
+**Risks.** (a) Light leaks through thin walls at 8 m spacing: `valid` bits + normal-offset sampling (+0.5 m along N) + `giVolumes` for interiors; owner stills decide where volumes go. (b) Double-dark with AO: `gi.skyFloor` (default 0.15), designer tunes. (c) Dynamic geometry (opened doors, burned props) is not in the bake: accepted. (d) **OWNER QUESTION GI-Q1:** ship ~5 MB of binary `.gi.bin` per world revision in git (recommended) vs bake at load (+20-60 s per zone; against the 38.58 "nothing baked" rule). (e) Hash churn: any placement edit makes the zone's file stale -> bake tool is a content-pipeline step; validate-content warns on stale/missing GI.
+**Steps (each <= 1 programmer-day, Node ACs; engine steps -> arch-review on PC-A).**
+| ID | Slot | Files | Scope + ACs |
+|---|---|---|---|
+| GI-PROBE-01 | kestrel-2 | engine/render/giProbe.js + test | Format, encode/decode, `sampleGI`, `mixGIState`. AC: constant field -> same value everywhere (1e-6); decode round trip <= 1/255; invalid-probe renormalise; key lerp continuous over 24 h incl. moon; 0 alloc over 10k samples (`--expose-gc`). |
+| GI-PROBE-02a | kestrel-4 | engine/world/giBake.js + test | Sliced bake core on a fixture world. AC: two runs byte-identical; open plane skyVis(up) >= 0.95; under a 4x4 m roof skyVis(up) <= 0.2; flat albedo-a plane bounce within 5 % of analytic; `step(ms)` overruns by <= 1 probe. |
+| GI-PROBE-02b | kestrel-4 | tools/bake-gi.mjs, content/gi/, validate-content | Bake world_m1 zones to `.gi.bin`, print s/zone + MB table; stale-hash detection; validate-content warns. AC: two tool runs -> identical files; header round trip. |
+| GI-PROBE-03 | kestrel-4 | World.js, bandCache.js, loader | `bundle.gi` at `put`, `world.giField` on swap, bytes counted; missing/stale -> null. AC: hit path 0 alloc; `stats().bytes` includes gi; 0 bakes in play (spy). |
+| GI-PROBE-04 | kestrel-2 | lighting.js `lightAt`, shadeTerrain (JS) | JS twin lighting with GI. AC: gi null -> 3 poses byte-identical; fixture room interior ambient < 0.3 x outdoor; 0 alloc per frame. |
+| GI-PROBE-05 | kestrel-2 | passLight/passShade, light/shade.wgsl, upload | GPU path + 4 gpucompare rows + budget bench. AC: compileFn probes within 1/255; WGSL lint; existing rows unchanged (main session runs); GPU cost within section 5. |
+| GI-PROBE-06 | kestrel-1 | main.js (<= 8 lines), preset data | `?gi=0`, preset on/off, liveLook hookup. Owner look: before/after stills meadow, forest, ruin interior, dusk. Ends: po-review. |
+**Do not:** bake in play or on the loading bar; use RNG in the bake; sample with hardware filtering (parity); let GI replace dynamic lights; save GI state; import design/ in engine.
+
+### 38.73 POST-STACK: data-driven post effects (D-090 stage 2) (PC-B architect opus 2026-10-14, PC-A to ratify)
+**Facts (code, 2026-10-14).** WgCellPipeline frame order: raster -> sun shadow -> point shadow -> cell pass (resolve/deriv/light/shade/edge) -> stable -> **glow** (`passGlow`, EMIS-03/04: screen-space bleed + halo from emissive cells over the final cells; `opts.glow`, `runtimeGlow(P)`; `GLOW_LEVELS` low/medium null, high/ultra `GLOW_TUNE`; picked by `game/js/glowOpt.js parseGlow`) -> **sprites** (sceneFade/dim, then the ENV-03c grade `atmosGrade` on fg/bg when `su.atmosLift.w > 0.5`, glyph untouched) -> overlay/UI (ungraded) -> present. JS twin: `gradeCells(rt, atmosState)` right after `sprites.render` (main.js ~2478). Depth fog already exists per consumer from `palette.fog.far` (shade, mesh outdoor fog, sprites far fog, water, compositor), driven by ENV-03 via `applyAtmosToPalette`. The sprites pass already binds `uDepth`.
+**Decision: no new GPU pass. "Post" = one data config that (a) drives the existing glow pass as the bloom and (b) adds a per-cell finish chain at the end of the sprites fragment, where the ENV-03 grade already sits. ONE grade op per cell: the biome grade and the preset grade are composed in JS into one uniform set, so nothing is graded twice.**
+**1. Module (engine/render/post.js, pure).**
+```js
+/** @typedef {{ bloom: null|{radius,gain,haloBg,haloMin},                  // GLOW_TUNE shape; null = no glow pass
+ *   grade: null|{lift:F32(3), gamma:F32(3), gain:F32(3), sat:number},    // preset look, on top of the biome grade
+ *   vignette: null|{k:number, r0:number, r1:number, rgb:F32(3)},       // k 0..0.6; r = aspect-corrected screen radius
+ *   mist: null|{rgb:F32(3), density:number, start:number, heightK:number} }} PostConfig   // scene depth fog, risk (a) */
+validatePost(cfg) -> cfg                 // throws per bad field (k 0..0.6, r0 < r1, density 0..0.2, gamma > 0, sat 0..2)
+createPostState() -> { gradeOn, lift, invGamma, gain:F32(3), sat, vig:F32(4), vigRGB, mist:F32(4), mistRGB, version }
+composePost(atmosState|null, cfg, out)   // lift = a.lift + p.lift; gain = a.gain * p.gain; invGamma = a.invGamma / p.gamma; sat = a.sat * p.sat
+                                         //   identity post grade -> bit-equal atmos values; atmos off -> post grade alone
+postCells(rt, depthF32, state)           // JS twin; replaces the gradeCells call site (gradeCells stays exported, used inside)
+POST_WGSL                                // fn postFinish(c, cellUV, depth) generated from the same constants as postCells
+```
+**2. Order inside the sprites fragment (fixed):** sceneFade/dim -> mist (cell depth: `1 - exp(-density * max(0, d - start))`, x `exp(-heightK * z)` when heightK > 0) -> grade (composed) -> vignette (`c = mix(c, rgb, k * smoothstep(r0, r1, r))`). Fog before grade so the grade sees the fog colour (as with the atmos fog upstream); vignette last so it stays screen-fixed. fg and bg both; glyph never changes; overlay/UI never touched. Uniforms: the 3 existing atmos vec4 now carry the composed grade (same slots, no layout move) + 4 vec4 appended at the END of `SpritesU`: `vig (k, r0, r1, on)`, `vigRGB + aspect`, `mist (rgb, density)`, `mistStart, heightK, on, 0`.
+**3. Data + presets (game/content).** `design/look/post.js` (designer): `{ base: PostConfig, presets: { low:{bloom:false, vignette:true, mist:true}, medium, high, ultra }, scenes: { interior: {...}, ... } }`. `game/js/look/postConfig.js` resolves quality preset + scene -> `PostConfig` (numbers only) + the glow option; `parseGlow` becomes a thin wrapper over it (`?emissive=` keeps working; every `?gpucompare=` mode still forces post null except the post rows). `?post=0` = all off. A preset only switches effects on/off; parameters are shared, so a preset never changes how an effect looks.
+**4. Budgets (D-085).** Finish chain <= 0.04 ms Intel high, <= 0.01 ms RTX at 480x180 (on minus off); bloom = today's glow pass cost (High/Ultra, unchanged). JS: `composePost` only on an atmos version / config change; 0 B per frame; twin `postCells` <= 0.8 ms at 480x180 (Canvas2D path only).
+**5. gpucompare.** Existing rows: post null + atmos null -> unchanged. New rows: `postVignette`, `postGradeOverAtmos` (atmosForestDay + a preset grade), `postMistInterior`, `postAllHigh` (bloom + grade + vignette + mist). compileFn probes `postFinish` == `postCells` within 1/255 on >= 3000 colours x 4 states x 8 uv/depth points. Thresholds unchanged.
+**Risks.** (a) Mist on top of the palette far fog outdoors = double fog: mist is for scenes (interiors, caves, swamp); `validatePost` warns when `base.mist` is on with terrain far fog; outdoor presets ship mist off. (b) Composed lift/gamma/gain only approximates grading twice; the identity case is exact, the designer judges the rest in `design/preview/post.html` (composed vs two-step side by side). (c) Vignette darkens only the world layer; overlay text stays readable by construction. (d) Bloom is the glow pass: no new threshold knob in v1 (`GLOW_EMIS_MIN` stays a constant).
+**Steps (each <= 1 programmer-day, Node ACs; engine steps -> arch-review on PC-A).**
+| ID | Slot | Files | Scope + ACs |
+|---|---|---|---|
+| POST-STACK-01a | kestrel-2 | engine/render/post.js + test, engine/index.js export | Typedefs, `validatePost`, `composePost`, `postCells`. AC: identity post + atmos -> bit-equal to `gradeCells` alone on 3 poses; post null + atmos off -> RT untouched; validator throws per bad field; vignette symmetric + aspect-correct; mist 0 at d <= start; 0 alloc. |
+| POST-STACK-01b | kestrel-2 | sprites.wgsl.js, passSprites.js, gpucompare rows | `POST_WGSL` splice in the section 2 order, `SpritesU` append, composed grade in the atmos slots. AC: compileFn probes within 1/255; WGSL lint; existing rows unchanged (main session runs); 4 new rows pass; budget bench within section 4; 0 alloc per frame. |
+| POST-STACK-01c | kestrel-4 + kestrel-1 | design/look/post.js, game/js/look/postConfig.js + test, glowOpt.js, main.js (<= 6 lines), design/preview/post.html | Preset/scene resolution, `?post=0`, glow via post. AC: low..ultra table test; existing glowOpt tests green (`?emissive=`, gpucompare forcing); JS path calls `postCells` instead of `gradeCells`. Owner look: preview + in-game stills day/dusk/interior. Ends: po-review. |
+**Do not:** add a second grade anywhere (passShade, compositor, overlay); grade or vignette the overlay/UI; change glyphs; let a preset change effect parameters; add a full-screen pass for per-cell ops; import design/ in engine.
+
+### 38.74 ENG-API-01: clean public API for engine 1.0 (D-090 stage 3) (PC-B architect opus 2026-10-14, PC-A to ratify)
+**Facts (2026-10-14, pc-b `1b6b03dd`).**
+
+`engine/index.js` has 162 `export` lines exporting **551 names**, in ~38 `// ----` groups: bootstrap, coords, content, world, render passes, GPU, voxel, lighting, physics, entities/anim, ui, nav, RTS layer, sim, fx, water, fauna.
+
+`engine/dev.js` exports 52 names: parity harnesses, pass internals, fixtures and glue code. **3 names are exported from both files.**
+
+`engine/index.exports.test.js` checks only 38 of the RTS names. `node tools/check-deps.mjs` passes with 81 WARN.
+
+check-deps rules already in force:
+- **Rule 3:** game/ and tools/ may import only `engine/index.js`.
+- **Rule 5:** JSDoc `import()` paths are ignored.
+- **Rule 6:** the editor never imports from game/.
+- **Rule 7:** `engine/dev.js` may be imported only from game/js/dev/**, game/js/main.js and tools/** (but not tools/editor/**).
+- **Rule 8:** tests may also import `engine/test/assert.js` (128 import lines today).
+
+Deep imports today:
+- **game/ runtime: 0.**
+- **game/ JSDoc type paths into engine internals: 5.** They are in dev/demoScene (RenderTarget), quest/beacon and quest/lantern (LightSet), rts/ui/minimapView (Minimap) and wild/wildEnv (FaunaEnv). `RenderTarget` and `Minimap` are not exported from index.js.
+- **tools/ runtime: 24 import lines in 5 files**, all on `RULE3_TOOL_ALLOWLIST`:
+  - bench-shadow: 6
+  - bench-vox-parts: 7
+  - compare-detail-export: 6
+  - mesh-tri-budget: 3
+  - mesh-place-budget: 2
+
+  They reach these engine modules:
+  - render: shadowSun, GBuffer, MaterialTable, detailShade, edgePass, sky, projection
+  - mesh: shadowList, DrawList, voxelMesh, culling, instances
+  - gpu/wg: passShadow, passPointShadow, passRaster
+  - voxel: voxelPack and its fixtures
+  - world: Level
+- The hits in check-deps.test.mjs and wg5a-plan.test.mjs are fixture strings, not real imports.
+
+So the main work is cataloguing and freezing the 551 names. There is very little import migration to do.
+
+**1.0 surface.** Each exported name gets one area (the manifest `area` field):
+
+| Area | What it covers |
+|---|---|
+| `core` | createEngine, loop/STEP, bootMarks, coordinate math. Input/events stay in dev.js. |
+| `content` | pack loader, asset registry, validators |
+| `world` | World, Level, terrain, water, collider build, roof/look maps |
+| `render` | RenderTarget, quality presets, lighting, shadows, sprites, post, GI, minimap, projection/picking |
+| `physics` | capsule, moveCircleMesh, BVH, config |
+| `nav` | NavGrid, A*, flow field, steer, visibility |
+| `anim` | voxel models, rig, animState/clips, fauna |
+| `ui` | UI layer, panels, rich text, DebugOverlay |
+| `sim` | command queue, rng, hasher, replay |
+| `fx` | particles, fire, ripples |
+| `editor` | helpers the editor needs: picking, serialize, validators |
+
+Each name also gets one tier:
+- `stable`: frozen for 1.x. Never renamed or removed. A signature may only grow by optional trailing args or fields.
+- `experimental`: exported from index.js, but may change in a minor release (with a changelog line).
+- `deprecated`: still re-exported for one release, then removed.
+
+**Naming rules.**
+- Factories are `createX`.
+- Classes are PascalCase.
+- Constants are UPPER_SNAKE.
+- Pure functions are verbNoun.
+- Generic words get an area prefix (`anim*`, `rts*`, `minimap*`), following the RE-13/RE-03 precedent.
+- No default exports.
+- index.js never has two names for the same symbol, except a `deprecated` alias.
+
+**What stays internal or moves to dev.js.**
+- Stays internal: pass encoders (`pass*`), WGSL/GLSL modules, DrawList internals, the G-buffer.
+- Moves to dev.js:
+  - parity/compare harnesses (`run*Compare`, `*Parity*`, `selfTestDevice`, the shade tests)
+  - fixtures (`quadruped*`, `FIXTURE_FX`, `fixtureModels`, `makeRowGI`)
+  - bench helpers
+
+Rule of thumb: a name used only by tools, benches or tests belongs in dev.js. A name a game or the editor needs belongs in index.js. To move a name out of index.js, keep it in index.js as `deprecated` for one release and add the real export to dev.js.
+
+**Deprecation path.**
+- New `engine/core/deprecate.js`:
+  - `deprecated(fn, oldName, newName)` returns a wrapper.
+  - The wrapper calls `console.warn` once per name, and only after `setApiWarnings(true)` has been called.
+- The engine never reads `location` (rule 2), so game/js/main.js turns the warnings on under its own dev flag.
+- Classes and constants cannot warn at runtime. For them, new check-deps rule **21** (WARN) flags any game/ or tools/ import of a name marked `deprecated` in the manifest.
+- Deprecated names are removed in the minor release after the one that deprecated them.
+
+**Manifest and test.**
+
+`engine/api-1.0.json` has this shape, with sorted keys and one name per line so diffs stay readable:
+
+```json
+{ "version": "1.0.0", "names": { "<name>": { "area", "tier", "since", "replacedBy"? } } }
+```
+
+`engine/api.test.js` replaces index.exports.test.js. It checks that:
+- `Object.keys(index)` equals the manifest keys exactly;
+- every `replacedBy` target exists;
+- no name is exported from both index.js and dev.js unless it is `deprecated`;
+- every `stable` name is still defined (`!== undefined`) and keeps the same `typeof`.
+
+`api.test.js --write` adds missing names as `experimental`, taking the area from the index.js group comment. It never changes existing entries.
+
+So adding an export needs a manifest line in the same commit, and removing or renaming a stable name fails the test.
+
+**check-deps after this work.**
+- The rule 3 allowlist is emptied, then deleted.
+- Rule 7 is unchanged: tools/ may import index.js and dev.js.
+- New rule **22**: a JSDoc `import('...engine/...')` path in game/** or tools/editor/** that is not index.js or dev.js. It is a WARN after 01g and becomes a finding in 01h.
+- Rule 5 keeps ignoring JSDoc imports inside engine/ itself.
+
+**Story split.** Each story is at most 1 programmer-day and has Node ACs. Engine stories end in arch-review.
+
+| ID | Slot | Files | AC (Node) | Deps |
+|---|---|---|---|---|
+| ENG-API-01a | kestrel-2 | engine/api-1.0.json, engine/api.test.js; delete index.exports.test.js | Manifest seeded with all 551 names (area from the group comment, tier `experimental`). Test passes. Adding a dummy export to index.js makes it fail. `--write` is idempotent. | - |
+| ENG-API-01b | kestrel-3 | engine/core/deprecate.js + test, engine/dev.js, engine/index.js, manifest | `deprecated()` warns once per name, only when enabled, and returns the wrapped function's result. Fixtures, harnesses and `selfTestDevice` are exported from dev.js; index.js keeps them as `deprecated`. The 3 overlaps are resolved. api.test is green. | 01a |
+| ENG-API-01c | kestrel-2 | engine/index.js, manifest, engine/README.md | Tier triage: names used by game/editor become `stable`, the rest stay `experimental`; the commit message lists them, based on grep. `RenderTarget`, `Minimap` and the `FaunaEnv` typedef are exported. Each name that breaks a naming rule gets a `deprecated` alias with `replacedBy`. README lists the areas and links the manifest. | 01b |
+| ENG-API-01d | kestrel-3 | engine/dev.js only | dev.js re-exports every internal the 5 allowlisted tools use (list in Facts). A Node test imports each one through dev.js and asserts it is defined (`!== undefined`). | 01b |
+| ENG-API-01e | kestrel-4 | tools/bench-shadow.mjs, bench-vox-parts.mjs, compare-detail-export.mjs | Imports switched to engine/dev.js. Each tool runs with its usual flags and gives the same output as before (numbers within noise). | 01d |
+| ENG-API-01f | kestrel-4 | tools/mesh-tri-budget.mjs, mesh-place-budget.mjs, tools/check-deps.mjs (+ test) | Imports switched. `RULE3_TOOL_ALLOWLIST` deleted. A fixture test shows a deep tools import is a finding. check-deps OK. | 01e |
+| ENG-API-01g | kestrel-4 | tools/check-deps.mjs, check-deps.test.mjs | Rule 21 reads engine/api-1.0.json and WARNs on a deprecated-name import. Rule 22 WARNs on a deep JSDoc type path. Fixture cases for both, including a JSDoc import inside engine/ that is not flagged. | 01b |
+| ENG-API-01h | kestrel-1 | game/js/dev/demoScene.js, quest/beacon.js, quest/lantern.js, rts/ui/minimapView.js, wild/wildEnv.js, game/js/main.js (<= 3 lines) | The 5 JSDoc paths point to `engine/index.js`. main.js calls `setApiWarnings(true)` under its dev flag. Rule 22 becomes a finding. All suites and check-deps green with 0 rule-21/22 WARN. | 01c, 01g |
+
+Order within each slot:
+- kestrel-2: 01a, then 01c.
+- kestrel-3: 01b, then 01d.
+- kestrel-4: 01e, then 01f, then 01g.
+- kestrel-1: 01h, last.
+
+No two stories edit the same file at the same time. Only 01b and 01c touch index.js, and 01c runs after 01b.
+
+**Do not:**
+- rename a stable-bound name without a `deprecated` alias;
+- add logic to index.js or dev.js (the `deprecated()` wrapper calls are the only exception);
+- let tools/editor import dev.js;
+- put the manifest under docs/ (the test must read it from engine/);
+- freeze GPU pass internals as `stable`.
+
+### 38.75 EP-UNDER: underground spaces (caves, cellars, crypt) (PC-B architect opus, 2026-10-15; PC-A to ratify)
+Probed: only grid-level structures (`structureAt`, today only `tower`) carve terrain (render `structFoot`/`carveMask`, sun shadow too), gate terrain physics (`supportAt` uses terrain only when `!structureAt`), give the roof map a finite ceiling (`sceneOf` -> `'interior'`) and block ground nav (NavGrid `structureAt`). Mesh structures do none of this. Caps: `MAX_STRUCTS` = `MAX_ROOF_BOXES` = 8 grid structures (structSeq 3 bits): tower + <= 5 EP-UNDER sites, one level per site (rooms + stair in one grid).
+**1. Build = a grid level placed below ground (like the tower), resident, no separate scene.** `content/levels/<site>.level.json` + one `structures[]` entry with `origin.z` below the surface. Rooms: normal sectors (`floorH`, `ceilH`, `topH` = ceilH + 0.3). Look: wall/brick materials for the crypt/cellar; caves get the same grid shell for collision + nav and are **dressed inside with existing rock meshes** (props, their own colliders) so no square edges show. The terrain above is NOT cut: new legend flag `keepTerrain: true` (step UNDER-00b) on every cell under the surface. Only the entrance cells (stair/mouth) carve, framed by meshes (mausoleum, rock arch, bulkhead).
+- **UNDER-00b (engine, ~1 d, PC-A arch-review):** (a) `buildCarveMask`: `keepTerrain` cells -> 0 (terrain, scatter, carpet and shadow draw as today). (b) `supportAt`/`supportAtOut`/`outsideSector`: on a keepTerrain cell, terrain is a support candidate only when `footZ >= groundAt - 0.6` (above the room = terrain world; inside = level only, terrain never lifts the player). (c) ground nav: `structureAt` predicate false on keepTerrain cells. (d) `validateUnder(world)` (Node tool test): `groundAt >= origin.z + topH + 0.3` on every keepTerrain cell, else an error naming the cell. Tests: fixture level under a sloped stub terrain: support inside = room floor, above = terrain, Continue pose inside resolves to the room floor; carve mask; tower byte-identical; gpucompare 0 PASS->FAIL (no existing level uses the flag).
+- **UNDER-00c rule (2026-10-15):** grid physics is not supported over keepTerrain levels (mesh physics only): under grid physics `placeStructure` skips keepTerrain structures with one `console.warn` (not placed; the game runs mesh physics). LOS/mesh rays treat keepTerrain cells at `z >= groundAt - 0.6` as outside (`keepTerrainOpen`). validate-content runs the static `validateUnderSite` (unrotated, cellSize 1, numeric tops); the terrain-height check (`validateUnder`) needs a built World (tests).
+**2. Darkness: no new flag.** The room ceiling + the terrain above (still a shadow caster) occlude the sun; the roof map says indoor, so hemi sky ambient is off there and `LightSet.ambient` (indoor 0.12) is the floor; `sceneOf` flips to `'interior'` (post/atmos interior scene, mist). Lights: level `lights[]` (torch/brazier/lantern), <= 4 per room, <= 8 per site in view (global `MAX_LIGHTS` 24 ranked, point shadows to the top-ranked). No player lantern (38.37 rule: too dark = add level lights or a GI volume, never the lamp). Bear den: mouth sun + ambient only; designer checks a capture, one dim fill light allowed.
+**3. Enter/leave: walk-through stair, seamless (no fade/load).** The site is resident like the tower: lights, shadows, physics, nav and save stay one world; gpucompare poses work as for the tower interior; no off-map scene breaking streaming, band cache, map or Continue. The cellar trapdoor = an interactable ladder (E): a 0.3 s climb that moves the player between two anchors of the same world (nav link kind 3 for beasts). Strand cave floor >= sea level + 0.3 (no water plane inside).
+**4. Nav + spawn.** The grid structure is a NAV-LAYERS source (`nav: "floors"`, 38.71): rooms bake into sheets, the stair is in-sheet steps, the door a kind 1 link on `world.state[doorKey]`. Spawner anchors carry `z`; activation uses **same structure + |dz| < 3 m**, never a 2D radius (the UNDER-01 cemetery spawner sits above the crypt: it ignores a player inside it, and vice versa). Leash to the site (leash.js); beasts may follow up the stair.
+**5. Save.** Flags in `world.state` (already serialised): `under.<site>.door`, `under.<site>.chest.<id>`, `under.<site>.cleared`. Continue inside = the saved x, y, z (needs 1b); fallback to the site `entrance` anchor when `supportAt` finds no floor within 1 m.
+**6. Audio.** No engine hook: the game reads `sceneOf(...) === 'interior'` and `world.structureAt(p).level` meta `ambience` (`'crypt'|'cave'|'cellar'`, absent = none); 1 s cross-fade in UNDER-08.
+**Do not:** use mesh-only shells below ground (no terrain gate -> the player stands on the surface), cut/flatten terrain over rooms, add an indoor zone flag or a load-on-enter scene, add a 7th+ grid structure without checking the cap of 8.
+- **Cap status (2026-10-15):** 6 of 8 grid structures used (tower, fordCellar, crypt, bearDen, strandCave, goblinTunnel). Note: `DrawList.addStructures` keeps the NEAREST 8, but `compositor.js` structFoot/carveMask takes the FIRST 8 in array order, so a 9th grid structure would silently lose its carve/mouth. A 9th site needs a PC-A engine story first: either nearest-8 selection in compositor (same as DrawList, plus roof boxes `MAX_ROOF_BOXES`) or a wider structSeq field (4 bits -> 16) across DrawList/compositor/GPU raster.
+
+### 38.76 CANOPY-SHAFT: sun shafts through the canopy (review B4, D-107.5) (PC-B architect, 2026-10-15; PC-A to ratify)
+**Facts.** The light pass (`light.wgsl.js fs_main`) owns the sun shadow map (`uSunShadow`, binding 6, NEAREST `textureLoad`) and returns early on kind 0 (sky). `LIGHT.w`: bit 0 sunlit, 8..15 litCount, 16..18 sunN, 19 OUTDOOR (reserved, lighting.js), 24..31 cloud; **bits 20..23 are free**. Shade has no spare texture slot (16/16). AUD-45 in-scatter (`fogScatterW`, `FOG_SUN_TINT`) acts only where fog f > 0.
+**Decision: shadow-map march in the light pass, result in LIGHT.w bits 20..23, applied in shade as a fg/bg colour lift. No new pass, no new texture, glyph never changes. High/ultra only.**
+1. **Module `engine/render/lightShaft.js` (pure):** `SHAFT_SHIFT = 20`, `SHAFT_Q = 15`; `shaftLitQ(map, M, eye, dir, len, steps, col, row) -> 0..15` (JS oracle); `shaftLift(fg, bg, q, len, cosSun, sunI, A, out)`; `LIGHT_SHAFT_WGSL` + `SHADE_SHAFT_WGSL` generated from the same constants.
+2. **March (light pass, every cell incl. kind 0, before the early return):** `len = min(dist, maxM)` (sky: `maxM`), `maxM = min(look 28 m, shadow instCastM, box half)`; `steps` = data (high 6, ultra 10, low/medium 0 = skipped, bits stay 0). Fixed per-cell jitter `j = IGN(col,row)` (interleaved gradient noise, **no time term**: stable dust, no shimmer, deterministic). `t_k = (k + j) / steps * len`; one NEAREST texel compare per step (no PCF); outside box/map = lit. `q = round(lit / steps * 15)`.
+3. **Apply (shade, after the AUD-45 fog colour, before the glyph pick):** `lenF = min(dist, maxM) / maxM`; `phase = iso + (1 - iso) * pow(max(cosSun, 0), pw)`; `w = k * phase * (q / 15) * lenF * (1 - f)`; `bg += (FOG_SUN_TINT * sunI - bg) * w`, `fg += (FOG_SUN_TINT * sunI - fg) * w * 0.5`. Sun below the horizon or sunI = 0 -> w = 0 (no moon shafts in v1). Sky cells get the same lift in the kind-0 branch.
+4. **Data:** `k` per biome from the ENV-03 atmos state (forest ~0.35, meadow ~0.08, cave mouth ~0.4; designer), `iso 0.25`, `pw 4`; `shaftSteps` per preset in `gfx-presets.json`. Uniforms appended at the END of LightU (`shaft: vec4(steps, maxM, on, 0)`) and ShadeU (`shaftA: vec4(k, iso, pw, maxM)`); existing fields never retyped.
+5. **Composition with 38.73:** shafts are scene light (shade). Downstream order unchanged: water composite -> glow -> sprites fragment (fade -> mist -> composed grade -> vignette). The grade tints shafts and mist hides distant ones; post never adds shafts.
+6. **Budgets (on minus off, 480x180):** <= 0.4 ms RTX 4060 ultra (10 steps), <= 0.6 ms Intel high (6 steps; over -> high drops to 4 steps, data only). JS 0 B/frame; uniform writes only on a version change.
+7. **Twin (D-107):** `shaftLitQ` is **oracle-only** (compileFn probes + gpucompare rows); the Canvas2D path never marches. compileFn probe: WGSL q == `shaftLitQ` on >= 2000 cells x 3 sun poses, exact except cells with a step within 2*biasM of the stored depth (27.9a item 10 boundary rule): +-1 there.
+8. **gpucompare:** existing rows run with steps 0 -> byte-identical. New rows: `shaftForestNoon` (fixture forest, sun 60 deg, view toward the sun), `shaftCaveMouth` (or `shaftRuinWindow` until UNDER-04 lands). Thresholds unchanged.
+8a. **Parity rule (ARCH batch 2026-10-15):** the JS twin never marches and never gets the lift (that would be an unbudgeted second JS march), and rows are never warn-only. Each shaft row renders 2 GPU frames: (A) march on, lift off (dev-only `lights.shaft.liftOff` -> `ShadeU.shaftA.x = 0`), compared with the JS twin under the unchanged D-039 thresholds (this also proves bits 20..23 leak into no other field); (B) lift on, checked against frame A with hard asserts: glyphs identical, changed cells only where LIGHT.w bits 20..23 > 0, every changed channel moves toward `FOG_SUN_TINT * sunI` (direction measured on the shade-stage readback `readbackShade`: the edge pass multiplies fg by a gain after the lift and can overshoot; a null shade readback FAILs the row, no fallback to final cells), final cells keep a zero-tolerance sign assert (sign of final B - A equals sign of shade B - A per channel and plane, no final change where the shade delta is 0), >= 1 % of cells lifted. The march and the lift are proven in Node: compileFn probes of `shaftLitQ` (item 7) and of shade `shaftW` + `shaftLiftC` vs `shaftLift`. LIGHT.w is now full (0 sunlit, 1..7 cao, 8..15 litCount, 16..18 sunN, 19 outdoor, 20..23 shaft, 24..31 cloud): a new per-cell light flag needs a new decision. Final-cell sign assert (main-session ruling 2026-10-15): a final delta of 0 is OK when |shade delta| == 1 (one quantum lost to edge-pass rounding, counted as `quantized`); it still FAILS on opposite sign, on any final change where the shade delta is 0, and on final 0 where |shade delta| >= 2.
+**Do not:** add a radial screen-space smear, a time term in the jitter, PCF in the march, a post pass or a new shade texture binding; enable shafts at low/medium; touch bit 19.
+
+### 38.77 WATER-FINISH: screen reflection + shallow caustics (review B8, D-107) (PC-B architect, 2026-10-15; PC-A to ratify)
+**Facts.** Water already has: depth tint (`shallow`/`deep` over `tintDepth`), AUD-42 sky reflection at the mirrored elevation + fresnel (`waterReflect.js`), shore + rapids foam, glint, flow streaks, ripples. `waterComposite.wgsl.js` reads the shaded `uShadeFg/uShadeBg` and `uDepth`, `uWater` as textures, so neighbour reads are legal. Underwater caustics (SWIM-04, `underwater.js`) use `hashFastU(floor(P/0.7), floor(t*3))` and only run with the eye under water.
+**Pick (best look per ms): (A) screen-space reflection of the far bank and trees, (B) caustic flicker on see-through shallow beds.** Wet-bank darkening is skipped (needs a water-distance field in shade: no texture slot left, cost too high).
+**A. Screen reflection** (opaque water cells, `a >= seeThrough`): mirror cell `rowM = 2 * horizonRow - row` in shear mode (exact for distant objects, which dominate river/ford reflections); pitched: project the reflected view direction `(dx, dy, -dz)` with the pitched terms (new pure helper `projectDirPitched` in projection.js, 0 alloc); ortho: skip. Accept iff `rowM` is on screen, `depth(rowM) > dW + 1 m` and that cell has no water (`uWater.x` = +Inf); else today's sky reflection. Colour: `refl = accept ? shadedBg(rowM) * reflDim : skyRefl`, mixed with the existing fresnel x new look key `reflScreenK` (default 0). fg/bg colour only; the ramp/flow/ripple glyph stays; rows with ripple acc > 0 offset `rowM` by +-1 (cheap wobble).
+**B. Shallow caustics** (`a < seeThrough`, column < `causticDepth` 0.8 m, sun up): `hashFastU(floor(Px/0.7), floor(Py/0.7), floor(t*3)) / 2^32 > 1 - causticK` -> glyph `look.causticGlyph` (default `~`) and `fg += causticRGB * kS * (1 - a)`; the hash constants are shared with SWIM-04 (import, no copy). New look keys `causticK` (default 0), `causticDepth`, `causticRGB`, `causticGlyph`, `reflScreenK`, `reflDim`: appended after the last used WL table slot, never renumbered.
+**Budgets (on minus off):** GPU <= 0.05 ms RTX, <= 0.12 ms Intel high (per opaque water cell 2 colour + 1 depth + 1 water load; caustics are hash only). JS twin full (cheap): <= 0.3 ms at 240x90, 0 B/frame.
+**Twin + gpucompare (D-039):** existing rows: both keys default 0 in `defaultWaterLooks` and in the gpucompare water looks -> byte-identical. New rows `waterReflectFord` (far treeline over the ford), `waterCausticShallows`. compileFn probe: `rowM`/accept and the caustic hit exact on >= 2000 cells. Content (design water looks) switches the keys on afterwards.
+**Do not:** march for reflections, read the mesh G-buffer, change water geometry, add a pass, or reflect sprites/UI.
+
+### 38.78 CONTACT-AO: grounding blobs under props, trees, beasts and the player (review B9, D-107) (PC-B architect, 2026-10-15; PC-A to ratify)
+**Facts.** ME-20c vertex AO darkens meshes only; terrain (kind 7) and carpet (10) skip it and are lit analytically in shade. The light pass has P and N for every surface cell; `LIGHT.w` **bits 1..7 are free**. Screen-space AO over the cell depth is rejected: 480x180 cells are too coarse, it halos at silhouettes, and the twin would need the depth neighbourhood.
+**Decision: analytic blob AO from a small per-frame occluder list, evaluated in the light pass, 7-bit result in LIGHT.w bits 1..7, applied to the ambient part only.** Parity is trivial (same list, same float formula, same quantisation).
+1. **Module `engine/render/contactAO.js` (pure):** `CAO_SHIFT = 1`, `CAO_MAX = 32`; `createContactAO()` -> `{ n, data: Float32Array(32*8), version }` (per blob: cx, cy, zBase, rx, ry, h, k, 0); `buildContactBlobs(cao, cam, staticSrc, opts)`; `setDynamicBlobs(cao, list)`; `contactAOAt(cao, Px, Py, Pz, Nz) -> 0..1`; `CONTACT_AO_WGSL`.
+2. **Blob:** ellipse footprint from the placement collider/mesh AABB x scale (trees: trunk radius x `treeK` 2.5, never the crown); beasts/player from the entity radius. `occl = k * (1 - smoothstep(0.6, 1.6, dE)) * (1 - smoothstep(0, max(0.5 * h, CAO_ZWIN_MIN = 0.4), Pz - zBase)) * (0.5 + 0.5 * max(Nz, 0))`, `dE` = ellipse distance; `ao = 1 - max_i occl` (max, not product: order-free, no double dark). `q = round(ao * 127)`.
+3. **List (CPU, once per frame, 0 alloc):** statics from `placementGrid` cells within `caoM` (data 24 m) + the dynamics the game passes (player + beasts in view). Sort by (distance, id) with an in-place insertion sort, cap 32; upload one 1 KB UBO (light pass, next free binding) only when `version` changes.
+4. **Apply:** light pass meshes `L -= ambient * (1 - ao)` next to the vertex AO term (macro x micro); shade terrain/carpet: `ambientI * ao` inside `b`. With GI (38.72) on, the GI ambient is multiplied the same way.
+**Rev 2026-10-15 (ASK ARCHITECT, FX-TUNE-01: AO invisible in game).** Probe at the Ford trade post 12:00 high WebGPU: upload, version and blob space were correct (LIGHT.w bits 1..7 non-zero on 14k terrain cells, max q 114). Causes: (a) noon ambientI 0.16 vs sun ~1.07 and b > 1 sits on the soft gain cap (slope 0.5), so ambient-only AO moved ground colour ~5 %; (b) props sit 0.1-0.2 m sunk, so the 0.5*h height window (0.1-0.3 m for h 0.2-0.6) faded the ground under them to ~0 (mean ground q 28). Changes: height window floor `CAO_ZWIN_MIN` 0.4 m (both twins, WGSL text = JS); **terrain/carpet also scale the analytic sun term** by `caoS = 1 - CAO_SUN_W * q/127`, `CAO_SUN_W` 0.6 (contactAO.js; shade.wgsl `caoSt`/`caoSg`, terrainShade.js `caoS`; q 0 -> exactly 1, gpucompare n = 0 rows unchanged). Meshes stay ambient-only (vertex AO covers them). Result: 5-15 % darker soft halo under props at noon, unchanged elsewhere.
+**Budgets (on minus off, 480x180, 32 blobs):** GPU <= 0.08 ms RTX, <= 0.25 ms Intel high; off at low (n = 0, loop skipped). JS: list build <= 0.1 ms, twin in `lightAt`/shadeTerrain <= 0.5 ms at 240x90; 0 B/frame.
+**Twin + gpucompare:** existing rows have n = 0 -> byte-identical. compileFn probe: WGSL q == JS q on >= 3000 points x 4 blob sets (exact; +-1 only where |ao*127 - (q +- 0.5)| < 1e-3). New rows `caoPropsMeadow` (crates, rocks, trees), `caoBeastPlayer` (fixture wolf + player blobs).
+**Do not:** add SSAO, a new texture, a decal mesh pass or a per-blob draw; use a product of blobs; touch LIGHT.w bits 0 or 8..31; let the game write the UBO directly.
+
+### 38.79 RTX-RAYS-BAND-01: per-band resolve rays at ultra (review S8) (PC-B architect opus, 2026-10-15; PC-A to ratify)
+**Facts.** Rays live in `ResolveU.n` (`engine/render/gpu/wgsl/resolve.wgsl.js`, written by `passCell.js` from `p.rays`; presets `rays` low 1 / medium 2 / high 2 / ultra 4, `game/js/ui/gfxPresets.js`). The resolve loads n*n sub-samples and runs an O(n2^2) vote over `array<_,16>`; at n = 4 that is 1.5 ms on RTX. The raster still runs at (cols*4)x(rows*4); this item only cuts the resolve. `?gpucompare=1` forces rays 1 (`gfxBoot.js`), so no cell row runs at n = 4 today.
+**Rule (n == 4 and `bandM > 0` only; n < 4 is byte-identical):**
+1. `ResolveU` gains `bandM: f32` (after `n`; pad to 16 B). Engine option `resolveBandM` (default 0 = off) on the pipeline, passed by `passCell` once per frame in the existing `ri`/rf write; game preset knob `raysFarM` (ultra 40, others 0, `?raysFarM=` override, validated 0..200).
+2. Per cell, first load the 4 rotated-grid sub-samples RG4 = (1,0),(3,1),(0,2),(2,3) (sub coords i,j). `dMin` = min of their depths (inf for kind 0). Threshold `t = bandM * (1 + 0.15 * (bayer4(cell.x & 3, cell.y & 3) / 15 - 0.5))` (ordered 4x4 Bayer, +-7.5 %: dithers the seam at ~40 m into a 3 m band, deterministic, no history).
+3. If `dMin > t`: vote over the RG4 set only (n2_eff = 4; same key/tie rules; nearest-to-centre over RG4 offsets, ties -> smallest RG4 index; `cov = clamp(bestCount*8/4 - 1, 0, 7)`); winner texel coords from the RG4 table. Else: the unchanged 16-sample path (re-use the 4 loaded values; no second load of them).
+4. Write the far path as its own small function with `array<_,4>` so the near path's register use does not grow.
+**JS twin (D-017):** new pure `engine/render/resolveBand.js`: `RG4` (frozen), `bayer4(x,y)`, `bandThreshold(bandM, cx, cy)`, `resolveCellJS(sub, n, bandM, cx, cy, out)` (sub = typed views; out preallocated). WGSL constants are generated from `RG4`/Bayer tables in that module (one source). Tests: `resolveBand.test.js` (rule, ties, seam dither, n<4 ignores bandM) + compileFn probe WGSL == JS on >= 3000 random 4x4 cells x 3 bandM (0, 40, 5), exact.
+**gpucompare:** all existing rows unchanged (rays 1, bandM 0). New INFO row set `?rays=4&raysFarM=40` (kind%/holes vs JS twin, same as the WG-3a `?rays=2` INFO rows). One-time re-record rule: if any row that runs at n = 4 exists by merge time, re-record it ONCE in this commit, thresholds unchanged, stated in the commit message.
+**Bench:** `tools/bench-presets.mjs --gpu rtx`, ultra, `raysFarM` 40 vs 0 at 3 poses (meadow, town, forest): resolve <= 0.9 ms (from 1.5); Intel/high (rays 2) numbers identical within noise. JS: 0 B/frame (one f32 into the existing uniform scratch), no new buffers/textures.
+**Risks.** Far thin features (fence posts, poles, cable) lose 75 % of their sub-samples beyond ~40 m -> occasional flicker; mitigated by the RG4 pattern (covers every row and column once). Visible seam at 40 m -> Bayer dither; if the owner still sees a ring, raise `raysFarM` (data only). Near water/glass cells keep the 16-sample path because `dMin` is the nearest depth.
+**Do not:** change the raster resolution, add a temporal/history term, branch on preset names in the engine, or touch the n = 1/2 path.
+
+### 38.80 SPELL-R4 Teleport (blink): collision-safe target + camera cut (D-021, D-115; PC-B architect opus, 2026-10-15; PC-A to ratify)
+**Files.** New `game/js/quest/sim/teleport.js` (+ `teleport.test.js`, `teleport.alloc.test.js`); game side only, no engine edit. `createTeleport(world, hooks)` -> `{ cast(level, eye, aim) -> 0 ok | 1 refused, hashInto(h) }`; `hooks = { spendMana(n), blink(x, y, z), loseTrack(x, y, r, sec), say(text) }`. Per-level numbers (mana 8/7/6, cd 6/5/4, maxD 8/12/16, rise 0.6/1.5/3) live in spellDefs, not in teleport.js.
+**Target search (cast only, cold path, <= 0.5 ms on the cast step).** Only existing queries:
+1. Aim ray: `world.raySegmentRay(seg, hit)` from the eye (feet + `PHYSICS.eyeHeight`) along the camera aim, length maxD. It covers grid sectors, closed doors / grates (sector `solid`), mesh colliders and terrain (keepTerrain aware via `_rayBlocked`). End point E = hit point pulled back `PHYSICS.radius + 0.05` m (or the full length).
+2. Candidates: from E's horizontal distance d down to 1.0 m in 0.5 m steps (<= 32 tries) along the horizontal aim; candidate (x, y). For each, reject on the first failing test:
+   a. bounds: `world.bounds && boundsOvershoot(world.bounds, x, y, PHYSICS.radius) > -0.05` (same test as `triggers.js`).
+   b. floor: `world.supportAtOut(false, null, io)` with io[0..2] = x, y, startFoot + rise + 0.05 (probe from the rise cap down; structures / keepTerrain interiors / mesh floors all handled there). Need io[3] finite, io[3] <= startFoot + rise, io[3] >= rayFootZ - 1.5 (rayFootZ = ray z at that d - eyeHeight), io[8] == 0 (no steep slope).
+   c. headroom: io[9] is NaN (sky) or io[9] - io[3] >= `PHYSICS.height` + 0.05.
+   d. water: `world.waterAt(x, y, wScratch)` and `wScratch.depth >= PHYSICS.swim.swimIn` -> reject (read io BEFORE waterAt: shared mesh scratch, World.js note).
+   e. capsule fit: zero-length move, same branch as `integrate.js` step 4 (`world.physicsMode === 'mesh' ? world.collideCircle(...) : moveCapsule(world, ...)`) at footZ = io[3], grounded true: fits if out x/y move < 1e-3 and no blocked flag. If the Node test shows a zero move does not report overlap in one mode, ASK ARCHITECT (do not invent a new overlap query).
+   f. path: `raySegmentRay` start eye -> target eye (io[3] + eyeHeight) must not hit (stops ledge-climbs through a wall lip and blinks under a door into a room).
+3. First passing candidate wins. None: return 1, no mana, no cooldown, `hooks.say('No room to blink.')`. "Locked areas" = closed doors/grates/sector walls, already caught by 1 and 2f; no new region data in R4.
+**Apply (main.js `blink` hook, <= 10 lines).** Set transform x/y/z (z = io[3]), body vx = vy = vz = 0, `fallDistance = 0`, `peakZ = z`, `grounded = true`, eye-feel `stepOffset = 0` (no eased step on a 3 m rise), `hzb.invalidate('blink')`, `ensureBand(engine.world, pose)` (no-op inside the band). Do NOT call `placePlayer` (it resets all beasts and the lock). Yaw/pitch and Z-lock unchanged. Burst view = fireball/particle presets at both ends; 0.12 s white fade is a UI overlay, sim does not wait.
+**Beasts (Lv3).** `hooks.loseTrack(startX, startY, 6, 2)` -> beastSim module export `loseTrack(sim, x, y, r, sec)` (see 38.81 key rule): live slots in aggro states within r go to STATE_WANDER with `sim.spell.blindT[i] = sec*60`; perception skipped while > 0.
+**State / determinism.** Blink is instant: nothing to save beyond the player pose (saved already) and spellCast mana/cd. `blindT` is in `hashSim`, not in `saveSim` (<= 2 s transient, zeroed on load/resetAll). No `Math.random`, no time reads.
+**0 alloc.** Module scratch: `seg = new Float64Array(6)`, `hit = {t,x,y,z}`, `io = new Float64Array(10)`, `wScratch`, move `out`, opts objects; no closures per cast. Alloc test like `arrows.alloc.test.js` (100 casts, 0 B).
+**Tests (Node, test World from engine/world/fixtures or a hand-built grid + one mesh collider):** open ground lands at maxD; wall at 5 m -> lands <= wall - 0.35, never past; closed door and grate block, open door passes; low ceiling rejects; ledge 0.6/1.5/3 m per level; swim-deep water skipped (back-off lands before it), all-water -> refused, mana unchanged; out of bounds back-off; keepTerrain interior (target floor = room floor, not terrain); mesh and grid mode both; hash twice equal; no i-frames (D-113: no damage flag touched).
+**Do not:** add engine APIs, step the capsule through the world, lerp the camera, or touch `placePlayer`.
+
+### 38.81 SPELL-R7 Telekinesis level 3: lift + throw without D-018 rigid bodies (PC-B architect opus, 2026-10-15; PC-A to ratify)
+**Files.** New `game/js/quest/sim/telekinesis.js` (+ test, alloc test); small edits in `beastSim.js` (2 states, one key); no engine edit. Target pick reuses R3 targeting (cone + LOS). Deny list (bear, croc, boss) is spellDefs data (`liftDeny` kinds), not code.
+**Key budget (simShape <= 145, today 142).** ONE new top-level key `sim.spell = { blindT: Uint16Array(MAX_RECORDS), held: -1, hx, hy, hz, vx, vy, vz, flyT, hitMask: Uint8Array(MAX_RECORDS) }`, shared with 38.80 `loseTrack` (and R2 Freeze if it needs per-slot data). New entry points are module exports `holdBeast(sim, i)`, `setHoldPoint(sim, x, y, z)`, `throwBeast(sim, vx, vy, vz)`, `releaseBeast(sim)`, `loseTrack(sim, ...)` - NOT `sim.x = function` (each would be a key). `simShape.test.js` must still pass.
+**Beast held.** `STATE_HELD = 25`, `STATE_THROWN = 26` (0-24 used; never renumber). In `stepSim`'s switch: HELD skips perception/path/steer/attacks; it moves toward (hx, hy, hz) via `world.collideCircle` / `moveCapsule` (same branch as `integrate.js` step 4) with the horizontal step clamped to 0.2 m (< smallest beast radius -> no tunnelling) and z eased toward hz, capped at `supportAtOut` ceil - beast height and >= floor. So the held body only ever reaches places a sweep allows (AC2). Sword hits still apply; death / `resetAll` / player blink or travel -> `releaseBeast` (drops, normal gravity).
+**Hold point.** telekinesis.js each step: eye + horizontal aim * 2.5 m at eye height; if `world.raySegmentRay(eye -> point)` hits, pull back to hit - 0.5 m. Eye -> held ray blocked for 0.25 s, or 3 s, or mana out (6 + 1/s via `spendMana`) -> throw/drop.
+**Throw.** THROWN: velocity = aim * 14 m/s, gravity `PHYSICS.gravity`, integrated in 2 substeps per sim step (<= 0.12 m each) through the same sweep. Impact = blockedX/Y, landing on support, or overlap with another live beast (2D dist < r_a + r_b and z overlap; `hitMask` = once per beast). Damage: 6 * INT mul via the existing `combat:hit` event (same payload shape as gust.js line 56, source `'tk'`) to the thrown beast on its first impact and to each beast it touches; then STATE_STAGGER 0.5 s. Flight cap 1.5 s.
+**Rollers / props (no rigid.js).** Any entity from `hooks.forEachProp` with `components.body` (rollers today; US-052 props later, same call, AC3 dummy prop test). Hold: before `stepRollers`, set `body.vx/vy = clamp((h - p)/dt, 12)`, `body.vz = clamp((hz - z)/dt, 8) + gravity*dt` (cancels the roller's own gravity), wake the roller the way gust.js does; the roller's own `moveSphere` sweep keeps it out of walls. Throw: `applyImpulse(body, z, ...)` - rollers are capped by `IMPULSE_MAX_H` 12 / `IMPULSE_MAX_V` 8 (engine no-tunnel rule; do not raise it). Thrown roller hits a beast within 1.5 s -> same 6 dmg `combat:hit`, once per beast.
+**Save / hash.** Hold is never saved: on save the target is released first (state THROWN/HELD -> STAGGER/WANDER on load). `sim.spell` fields in `hashSim`; telekinesis.js `hashInto(h)` hashes held kind/index/timers. 0 alloc: module scratch only (alloc test 300 steps holding + throw = 0 B). Budget <= 0.02 ms/step.
+**Tests:** hold small beast 3 s against a wall: never inside a collider (check every step with a zero-move collide); throw into wall -> 6 dmg + stagger; throw into a second beast -> both 6; bear/croc/boss refused; roller hold + throw (speed <= 12); dummy prop via forEachProp; mana drain and timeout; hash twice equal; simShape <= 145.
+**Do not:** write `engine/physics/rigid.js` or any engine code, move a held body by direct position writes without the sweep, or add sim.* methods.
+
+### 38.82 CELL-AA: stable cell colour/glyph under small camera moves (OB-193, OB-197, OB-198) (architect fable, owner-requested, 2026-10-16; PC-B)
+
+**Where a cell is decided today (WebGPU, grid 400x150, ultra `rays` n = 4).**
+1. `wgsl/raster.wgsl.js` `fs_main` writes one G-buffer sample per **sub-sample** at (cols*n) x (rows*n): GI (planeId, kind|face|mat), GA (u, v, z, aoD/normal), Depth. Nothing is filtered here.
+2. `wgsl/resolve.wgsl.js` `fs_main` (twin `resolveBand.js resolveCellJS`): groups the n*n sub-samples by key (kind, planeId, mat), **winner = largest group** (ties -> nearer), GA/Depth from the winner's sub-sample nearest the cell centre, `cov` = winner share (3 bits, written to GI.y but read by nobody).
+3. `wgsl/deriv.wgsl.js` (twin `detailShade.js computeDerivatives`): per-cell du/dv footprint from neighbours.
+4. `wgsl/shade.wgsl.js` `shadeCell` (twin `detailShade.js shadeDetailFast`): runs `shadeCore` **only on the winner group's sub-samples** and averages b/gb/colour/bgK; the dice `hA/hB` and setId come from the one sub-sample nearest the centre. `shadeCore` point-tests thin features (`gv - yv < top` bevel, `pos < width` band, speckle/overlay dice, hash octave `oct` from `tpc`); then the glyph pick (`levelFromThresholds` / `pickGlyphCodeFast`) and byte quantise.
+5. `wgsl/edge.wgsl.js`, then `wgsl/stable.wgsl.js` `stableCell` (twin `temporalStable.js stabilize`): reprojects the cell into the previous camera, keeps history only when kind + planeId match and UV drift < `uvDriftLimit` (OB-193 fix 2c08557b), blends colour bytes (snap 48) and holds the glyph. History `HIST.w = level | kind << 8`; **bits 16-31 are free**.
+
+**Root cause per symptom.** (c) OB-193: step 5 rejected history on every wall > 2 m; fixed. (a) OB-197: step 4 point-samples bands 0.03 m wide with a footprint of ~4 cm at 10 m; the 16-tap group average quantises band coverage to 1/16 steps and the per-feature step tests flip with the sample phase; `oct` band crossings re-roll the hash texel (38.24 F1 residual) -> the blotch pattern "transforms" with distance. (b) OB-198: step 2 is **winner-takes-all per cell**. A berry/flower/lit-voxel material covering 7/16 of a cell is invisible; at 9/16 the whole cell (fg + bg + glyph set) becomes that material. A 5 cm step moves the geometry by ~1 cell at 10 m, so the count crosses 8/16 in many cells every frame; step 5 cannot hold them (mat differs -> colour snap > 48 -> fresh). This is geometry/colour aliasing; no texture filter can fix it.
+
+**Decision: ONE mix of three mechanisms, each independent and switchable, no new render target, no extra rays.**
+- **A. Coverage-weighted colour (spatial AA) in shade.** `shadeCell` keeps the winner group's full `shadeCore` average for b/gb/glyph; for every **other** same-kind sub-sample of the cell it adds a cheap *flat material colour* `matFlatColor(matId, face, Lm)` = tone-0 rgb x albedo x faceK x Lm x (1 - WET_DARK*wet) (2 `uMatF` loads, no hashes, no bands). Final `fg = mix(fgWinner, avgMinority, 1 - cov)`, `bg` likewise, with `cov = winnerCount / n^2` (exact k/16 weights). The glyph stays the winner's. A berry at 7/16 now tints the cell 44 % yellow instead of 0 %, at 9/16 56 % instead of 100 %: the per-step change is <= 1/16 of the colour range instead of the full range. At n = 1 (low) A does nothing (no minority exists): that preset has no spatial AA by construction.
+- **B. Winner hysteresis in resolve, keyed by world position.** Stable's HIST gets `mat << 16` in the free bits. Resolve binds `uHist` (slot 4) and the stable camera terms (the same `packStableUniforms` words, appended to `ResolveU`); per cell it reprojects the cell centre with the best group's min depth (the `reproject()` of stable.wgsl.js, extracted into `common.wgsl.js`; f32 twin in `temporalStable.js`), reads the history key (planeId, mat, kind) and **keeps that key as winner if its group count >= bestCount - HYST**, `HYST = max(1, n*n/8)` (2 at ultra). `histValid = 0` (stable off, cut, first frame, gpucompare single-frame rows) = today's rule, byte-identical. Ties: same `floor(x + 0.5)` cell and tie mask as 38.25.
+  - **B keep rule as built (AA-04-FIX, ratified by PC-A arch review F, 2026-10-16; merge 12a5ec0f).** Last frame's key is kept while its group in this cell has **>= max(1, n^2/4) samples** (4/16 at ultra) **or** >= bestCount - HYST; it flips only below both. The band is symmetric (a key enters at > 1/2, leaves below 1/4 when a rival holds 3/4), so 6/16 vs 10/16 now **keeps** (the AC text "6/16 vs 10/16 flips" above is superseded; 3/16 vs 13/16 flips). **Sky is included**: a sky history key matches any sky sample (kind only), and a sky winner reprojects with the nearest geometry depth in the cell (none -> 1e4 m). Models (kind 8) never take a non-model key and vice versa; with AA-21 `vox` a model winner may keep a model key. AA-17 soft-edge leaf keys match on kind + mat. Twin = WGSL (`resolveBand.js resolveCellJS` / `resolve.wgsl.js`); gate = the gpucompare `resolve-hyst` row (rays-4 stable pipeline, aaHyst on, 0 non-tie mismatches; ties = reprojection within 1e-3 of a cell border or an equal-count/equal-depth vote). No feature code in merge commits.
+- **C. Footprint box-filter of thin material features** (kestrel-2 WIP `bevelShadeK`, OB-197): keep it as AA-02, it has the right shape (analytic coverage over the cell's v-footprint, period-aware). Extend the same pattern to the speckle/overlay step tests only if the owner still sees blotches after A + C. No octave crossfade (discrete dice cannot blend; accept the F1 residual).
+Nothing in kestrel-2 is superseded: AA-02 lands as is, A and B are added around it. **Not chosen:** more rays (raster cost x4, 36 B attachment cap), screen-space blur (kills the ASCII look), colour accumulation beyond the stable blend (ghosting), per-cell hysteresis without reprojection (useless at ~1 cell/step strafe), a texture-mip path for minority groups (the G-buffer is not textured; mats are flat tones).
+
+**Cost (ultra, 400x150).** A: <= 15 extra flat-colour evaluations per cell, only at material boundaries (0-4 typical), 2 texture loads each: +0.05-0.10 ms on shade (0.4 -> ~0.5). B: +1 `textureLoad` + ~40 flops per cell in resolve: +0.02 ms (0.3 -> ~0.32); `ResolveU` grows by 7 vec4 + 4 ints (uniform ring only). C: ALU only, ~0. JS: 0 per frame (terms already computed by stable's `beginFrame`; the same typed view is reused). Memory: 0 new textures. Budget: shade + resolve stay < 1.0 ms of the 4 ms GPU budget.
+
+**JS twin / gpucompare (D-039).** A and C change twin + WGSL in the same commit (`shadeDetailFast` + `shadeCore` and shade.wgsl.js): existing single-frame rows must show 0 PASS->FAIL; new +-1 byte colour outliers at the quantise boundary are the D-039 "colour outlier" class only, geometry rows untouched. B is inert on every single-frame row (histValid 0). The `stable` 2-frame row (38.25 item 6) gains a `resolve-hyst` sub-check: the twin's `resolveCellJS(sub, n, bandM, cx, cy, out, histKey)` runs on frame B with the GPU's own HIST readback of frame A; 0 non-tie mismatches. Thresholds are never widened. Kill switches: `?aacov=0` (A), `?aahyst=0` (B); both default ON once AA-05 passes; `?gpucompare=1` runs with A on and B off except in the stable row.
+
+**Stability metric (normative for the ACs).** Extend `engine/render/gpu/flicker.js flickerStep` with `colourPct` = % of non-sky cells where max |delta| over fg.rgb and bg.rgb (bytes, prev vs cur) > 24, next to the existing `totalPct` (key or glyph flip). `?flicker=1` prints both; `tools/capture-browser.mjs --mode flicker` writes them per pose. Poses: `wallNear` (tower wall 6 m), `wallFar` (20 m), `bushes` (meadow berry bushes), `crown` (tree crown, camera 8 m); each 30 steps of 5 cm strafe + 5 cm forward, static scene (wind off, time frozen), stable on. The baseline before AA-02/03 is recorded in the AA-01 row.
+
+**Stories (each <= 1 programmer-day, one topic; PC-B lanes, engine code ends in arch-review).**
+| ID | Files | Done when |
+|---|---|---|
+| **AA-01** metric + baseline (0.5 d) | `engine/render/gpu/flicker.js` (+test), `game/js/dev/modes/flicker.js`, `flickerMeasure.js`, `tools/capture-browser.mjs` (`--mode flicker`) | `colourPct` Node-tested (synthetic 2-frame fixtures: 0 %, 100 %, threshold 24 inclusive/exclusive); the 4 poses exist; baseline table (totalPct, colourPct per pose) pasted into the OB-197/OB-198 rows |
+| **AA-02** footprint bevel (kestrel-2 WIP, 0.5 d) | `detailShade.js bevelShadeK`, `shade.wgsl.js`, tests | twin == WGSL probe on 200 seeded (yv, cov) incl. wrap cases; cov -> 0 equals the old step; gpucompare 0 PASS->FAIL; `wallFar` colourPct <= 0.6 x baseline |
+| **AA-03a** coverage colour, twin (1 d) | `detailShade.js` (`matFlatColor`, `shadeDetailFast` minority loop), tests | fixture cell 9/16 berry + 7/16 leaf: fg within 1 byte of 0.5625*berry + 0.4375*leaf flat colours; n = 1 and single-key cells byte-identical to before; 0 alloc |
+| **AA-03b** coverage colour, WGSL (1 d) | `shade.wgsl.js shadeCell`, `shade.wgsl.test.js` probe, `?aacov` knob (`main.js` -> `WgCellPipeline` opts) | probe == twin on the AA-03a fixtures; gpucompare 0 PASS->FAIL; shade GPU p95 <= +0.12 ms; `bushes` + `crown` colourPct <= 0.5 x baseline |
+| **AA-04a** HIST carries mat (0.5 d) | `temporalStable.js`, `stable.wgsl.js`, `passStable.js`, tests | `HIST.w = level | kind<<8 | mat<<16`; `stableCell` masks unchanged; stable row still 0 non-tie mismatches |
+| **AA-04b** resolve hysteresis (1 d) | `resolve.wgsl.js` (+`ResolveU`, `uHist`), `common.wgsl.js` (`reproject`), `resolveBand.js resolveCellJS(..., histKey)`, `passCell.js`, `temporalStable.js` (f32 twin of reproject), tests | histValid 0 = byte-identical; synthetic 2-frame test: an 8/16 vs 8/16 cell keeps last frame's key, 6/16 vs 10/16 flips; stable-row `resolve-hyst` sub-check passes; `bushes` totalPct <= 0.6 x (post-AA-03) |
+| **AA-05** gate + default ON (0.5 d, PC-B main + architect) | docs, `main.js` defaults | full gpucompare run 0 regressions; flicker table after vs baseline in the OB rows; F3 shade/resolve ms; owner look on 8000; OB-197/198 -> fixed |
+Order: AA-01 -> AA-03a/b (the owner's worst symptom), AA-02 in parallel (kestrel-2) -> AA-04a/b -> AA-05.
+**Do not:** raise `rays`; filter in the present pass; blend the glyph index; make resolve read anything but HIST from the stable pass (`stableOpt` off = B off); change the `cov` semantics in GI.y; touch `engine/physics/`.
+
+### 38.82b AA-11 mesh hold + AA-12 joint-vote hysteresis (OB-208) (PC-B 5th agent, PC-A to ratify; architect opus, 2026-10-16)
+**A. AA-11 mesh hold (kind 9 only; `?aamesh2=0` = today).** Kind 8 stays on the UV path with the history anchor: animals are voxel models, and their u/v is continuous, so the UV drift is the right motion detector there. For kind 9 the u/v is per leaf card and not continuous, so a "UV jump" means a different card under the cell centre, not motion.
+1. HIST.x for a kind-9 cell = `bitcast<u32>(vd)` (this frame's forward view depth) instead of planeId. The twin adds `z: Float32Array(n)` (= `Math.fround(vd)`) to `createStableBuffers`. Resolve hysteresis (AA-04b, resolve.wgsl.js + `resolveCellJS`) matches a kind-9 history key on (kind, mat) only and ignores `pk`; mesh planeIds flip per step anyway (OB-198 (2)).
+2. Stable, kind 9, matSame (the planeId test is skipped): `dz = |pc.z - histZ[h]|` with `pc.z` = the reprojected point's depth in the previous camera (the same forward-depth measure as vd; assert in the test). `zTol = KZ * foot(vd)`, `KZ = 2`, foot = the uvDriftLimit footprint term (ortho: cell size). `dz > zTol` -> fresh. This catches depth motion, sway toward/away from the camera, and a leaf or background at another depth.
+3. `dz <= zTol`: `dUV < lim` -> hold and keep the history anchor u/v (today's rule, so a slow slide still re-rolls). `dUV >= JUMP*lim` (`JUMP = 4`) -> card jump: hold and **re-anchor** (write the current u/v + z). `lim <= dUV < JUMP*lim` -> fresh: a continuous slide on one card is real motion. Ties: `|dz - zTol| < 1e-4*vd` or `|dUV - JUMP*lim| < TIE_EPS_UV` -> tie mask. AA-09's `hh.x == gi.x` reAnchor test is replaced by `jumpHold` for kind 9.
+Sketch (WGSL; the twin is the same branch in `stabilize`): `if (kind == MESH && aaMesh2) { let dz = abs(pc.z - bitcast<f32>(hh.x)); if (dz > KZ*foot) {return o;} if (dUV >= lim && dUV < JUMP*lim) {return o;} jumpHold = dUV >= lim; }` ... `o.hist.x = select(plane, bitcast<u32>(vd), kind == MESH && aaMesh2)`.
+Wind sway: sway is a horizontal sub-cell displacement. Above one cell, the static reprojection lands on another leaf, sky or ground: depth / kind / mat reject. In-depth sway -> dz reject. Colours still blend/snap every frame; only the glyph is held.
+Tests: `temporalStable.test.js` cases: static card jump -> held + re-anchored; dz > zTol -> fresh; slide in the middle band -> fresh; slow slide < lim re-rolls after cumulative lim; kind 8 unchanged; aamesh2 off = byte-identical; 0 alloc. `stable.wgsl.test.js` probe == twin; gpucompare stable row 0 non-tie mismatches; flickerGlyphReasons gains `meshJumpHold` / `meshDz`.
+Expected: removes most of the >= 4x-lim half: bushes 2.31 -> ~1.2 %, crown 1.58 -> ~0.8 %. Risks: (a) a kind-9 object moving laterally at constant depth by > 4*lim per frame keeps a pinned glyph (only glTF NPCs, if any; colour still refreshes); fallback: raise JUMP or gate on the instanced flag. (b) Grazing leaves reject on dz, which is today's behaviour.
+Split: **AA-11a** twin + resolveCellJS + tests (0.5 d), **AA-11b** WGSL stable + resolve + probes + gpucompare + one flicker measure (0.5 d). Both end in arch-review.
+
+**B. AA-12 joint-vote hysteresis in shade (replaces AA-10).** Measured: AA-10 only delays the line<->ramp flip by one frame, because HIST stores the cell's own 0/4 or 4/4 coverage. Root: the 50 % vote `lineWins = 2*jointN >= count` has no memory. Rule: on a fringe cell (`0 < jointN < count`, histValid, aaJointHyst), shade reprojects the cell centre (the `reproject` from common.wgsl.js + the f32 twin, same stable terms as resolve AA-04b, appended to ShadeU) and reads HIST at the history cell. `histLine = level byte of HIST.w == 255 && hh.x == planeId && kind same`. Then `lineWins = histLine ? 4*jointN >= count : 4*jointN >= 3*count` (keep a line until < 1/4, start one only at >= 3/4). On a joint one cell wide the handoff between two neighbours is exact (covA + covB ~ 1): no double line, no gap. On wider or narrower joints there is a one-frame double or gap at the handoff instead of today's alternation. Non-fringe cells and histValid 0 stay byte-identical, so the single-frame gpucompare rows are inert. The darkening `0.5 + 0.5*jointN/count` is unchanged. AA-10 (`?aajointhist`) defaults off after AA-12 lands, and AA-12b deletes it if the gain holds. Switch `?aajointhyst=0`. Never blend glyphs.
+Tests: synthetic fixtures for the twin vote: hist line + 5/16 -> line; hist ramp + 10/16 -> ramp; hist ramp + 12/16 -> line; no history -> the 50 % vote; 0 alloc. WGSL probe == twin. Stable 2-frame gpucompare row 0 non-tie mismatches. Cost: +1 textureLoad + ~40 flops on fringe cells only (<= 0.02 ms). Expected: levelJump + mixed255 on wallNear 4.4 -> <= 1.5 %. Split: **AA-12a** twin (shadeDetailFast vote + histLine input) 0.5 d, **AA-12b** WGSL + ShadeU/uHist bind + measure 0.5 d.
+
+**Test bug (temporalStable.test.js "OB-193 far wall limit").** The expectation is wrong; the code is right. At vd = 8, foot = 8*2*0.5/400 = 0.02 < 1/16, so `uvDriftLimit` returns the texel limit 0.0625 by design (max). The assert asks for both `== 0.02` and `> 1/16`, which is impossible. Fix: use vd = 40 (foot 0.1 > 0.0625, expect 0.1), and move the OB-193/OB-198 blocks above the `ALL PASS` exit, so they count. Do it in AA-11a.
+
+### 38.83 CELL-TAA: accumulate the glyph-pick inputs, quantise with hysteresis (OB-208) (PC-B architect, owner-requested, PC-A to ratify; architect opus, 2026-10-16)
+**Why.** AA-06..AA-12 hold the FINAL glyph (discrete). Big-engine TAA (Unity/Unreal) instead accumulates the CONTINUOUS signal (reprojected history, neighbourhood clamp, exponential blend) and only then quantises. In kestrel the "pixel" is a glyph pick, so we accumulate the pick's inputs and quantise with a Schmitt margin. AA-12 failed because its vote memory was a 1-bit line state behind a strict `hh.x == planeId` match. CELL-TAA keeps the continuous fraction and matches on depth, so it does not have those two problems.
+**What decides the glyph today (shade.wgsl.js `shadeCell`, twin `shadeDetailFast`).** (i) `gbAvg` (winner-group mean ramp brightness) -> `pickGlyphCodeFast` / `levelFromThresholds`. This produces the ramp levelJump flips (dl5+ = gb near a threshold plus `lvStip`). (ii) `jointN/count` -> `lineWins = 2*jointN >= count`. This produces the mixed255 line<->ramp flips. (iii) `hA` (world-anchored dice, nearest-centre sub-sample) and `classIdx` (deriv orientation) are stable on planes: hold, do not accumulate. (iv) Winner key (resolve). This is a discrete flip that dominates bushes/crown, and CELL-TAA does NOT touch it (AA-04b territory).
+**Decision.** Accumulate exactly two scalars per cell: `g` = gbAvg and `j` = jointN/count. `acc = mix(clamp(hist, lo, hi), cur, ALPHA)`, `ALPHA = 0.25`. `lo/hi` = the min/max of the winner group's per-sub-sample gb (and on-joint 0/1 for j), widened by `0.5*gap`, where gap = the set's threshold spacing at the current level. The cell's own n*n sub-samples are its "neighbourhood". Reading 3x3 neighbour cells would need a second pass. Quantise: `L = level(acc)`. If prevL is valid and `acc` is within prevL's threshold band widened by `SCHMITT = 0.35*gap` on each side, keep prevL. Line: keep it while `jAcc >= 0.30`, start one at `jAcc >= 0.70`. The glyph is then picked from (L, hA, classIdx) as today. Colour stays unaccumulated (the stable pass already blends it). Never blend glyph indices.
+**Storage (no 17th sampled texture).** Shade gets a 3rd target `ACC rg32uint` (8 B; shade total 16 B <= 32 B cap): x = `pack2x16unorm(gAcc/GMAX, jAcc)`, y = `level | line<<8 | kind<<9 | mat<<13 | zq<<21` (zq = 11-bit log depth). After shade, `copyTextureToBuffer` copies it into `accPrev` (storage buffer, rows padded to 256 B). Next frame shade reads it as `var<storage, read> accPrev: array<vec2u>` (read-only storage in fragment shaders works at default limits). The same buffer pair is ping-ponged. ShadeU gets the stable camera terms (same words as resolve AA-04b) and `histValid`, `taaOn`. Reproject the cell centre with the resolved depth (`reprojectCell`, common.wgsl.js, f32 twin), then take the nearest history cell. Accept history only if kind and mat are the same and `|zq - zqPrev| <= 2` steps (~3 % depth). Otherwise use cur (disocclusion).
+**Both sides.** WGSL: ~30 lines after the group loop (fringe and ramp cells only, sky/gb<=0 skip). Twin: `shadeDetailFast(..., accIn, accOut)` with `Math.fround` and exact `pack2x16unorm` rounding (`floor(0.5 + 65535*clamp(x))`). `temporalStable.js` gets the f32 `reprojectCell`. Knob `?aataa=0`.
+**D-039.** When histValid = 0 (first frame, cut, stable off, every single-frame gpucompare row) `acc = cur` and the Schmitt test is off, so the output is byte-identical to today. The 2-frame stable row gets a `taa` sub-check: the twin runs frame B with the GPU's own `accPrev` readback, and the result must have 0 non-tie mismatches. A tie is `|acc - threshold| < 1e-4`, or a key that sits exactly on a quantisation step. Thresholds are never widened.
+**Jitter (Q2): not now.** Rotating sub-sample offsets (rays 4 -> effective 16 over 4 frames) would make a STATIC camera produce different G-buffers every frame. That breaks AA-09's static re-anchor, puts resolve-winner flips into the static metric, and needs per-frame jitter in raster plus the twin. It only pays once the winner key is accumulated as well. That would be AA-13d, and only if bushes/crown are still above 4 % after AA-13c and AA-04b.
+**Cost (480x180 ultra).** Per cell: +1 storage load, ~45 flops, +1 8-byte target write. Copy 691 KB/frame. GPU: shade +0.04-0.07 ms, copy ~0.02 ms. JS: 0 per frame (a uniform-ring write only). Memory: about 1.4 MB (target + 2 buffers).
+**Expected (glyphOnly, estimate).** wallNear 5.1 -> ~3.2, wallFar 4.9 -> ~3.4, grassFar 3.7 -> ~3.1, crown 5.0 -> ~4.4, bushes 4.2 -> ~3.9 (winner flips remain). avg 4.58 -> ~3.6 (target <= 4).
+**Risks/guards.** (a) Lag under fast light change (torch flicker, sun cut): ALPHA 0.25 means ~4 frames. The clamp to the current sub-sample range bounds it, and `|cur - hist| > 1.5*gap` snaps to cur. (b) Ghosting on moving entities: the kind/mat/zq reject, plus kind 8 with `vmTag` opts out. (c) Wind sway on kind 9: the zq reject plus the clamp. Measure crown, and if it is worse, gate kind 9 off. (d) A ramp may hold up to 0.35 gap too dark or too bright, which is the visible cost of the hysteresis.
+**Do not.** Accumulate colour bytes, the winner key, hA or setId. Read HIST from shade (shade has no free slot). Raise rays. Touch present/HUD.
+**Stories (each <= 1 d, arch-review).** **AA-13a** twin: accumulate + clamp + Schmitt in `shadeDetailFast`, plus fixtures. Gate: twin-path flicker replay of the 5 poses gives avg glyphOnly <= 4.0; if not, stop. **AA-13b** WGSL: ACC target, `accPrev` buffer + copy, ShadeU terms, probe == twin. **AA-13c** gpucompare `taa` sub-check + flicker measure + `?aataa` default-ON gate (main session, owner look).
+**AA-SNAP-01 note.** Snapping the camera to the cell grid is exact only for ortho, or for ONE chosen depth plane under perspective: nearer and farther layers still swim. It does nothing for forward steps (half of the metric's moves) or for yaw/pitch. The stable/TAA reprojection must use the snapped render camera for both frames. Picking, audio and physics keep the true camera. The HUD and view model must sit on an unshifted layer, and the extra margin column/row must be rendered (cols+1, rows+1). It is cheap to try as a strafe-only experiment, but it does not replace AA-13.
+
+### 38.84 MIXED255 (OB-208) (PC-B architect, PC-A to ratify; architect opus, 2026-10-16)
+**Root cause (from the 201affe9 capture `why.sub`).** mixed255 is kind 1 (KIND_WALL) only: wallNear 4.55 of 4.57, wallFar 4.07/4.21, grassFar 3.08/3.25 (the far ruin walls), crown 1.47/1.92; kind 8 is the rest. Terrain (kind 7) is never mixed255: `shadeTerrain` writes level 255/254 on every cell (shade.wgsl.js:353, twin terrainShade.js:417), so both sides are 255. Its flips are uvDrift/snap255 (0.2 % in grassFar). Premise (b) is wrong.
+On a wall, a ramp<->255 switch comes from three shade branches (shade.wgsl.js:986-1007): (1) the line glyph `lineWins && onJointLineW >= 0` (l.988, vote l.963); (2) the fog stipple (l.1000, `hBW` = base-texel die of sub-sample (1,1)); (3) `gbAvg <= 0` (blank). Branch (1) is the bulk, by geometry. Each sub-sample runs `crossLineFast` with the CELL footprint `hw = 0.5*(|dvdx|+|dvdy|)` (common.wgsl.js:203; grid lines shade.wgsl.js:658-694). Sub-sample rows sit at -3/8, -1/8, 1/8, 3/8 of a cell, so for a joint at offset d (in cells) from the cell centre the coverage is 4/4 at |d| <= 1/8, 3/4 up to 3/8, 2/4 up to 5/8, 1/4 up to 7/8. The vote (>= 2/4) gives **exactly one line row, the cell nearest the joint**. That rendering is correct, with no gap and no double line.
+**Why it toggles.** The metric (flicker.js:132) and stable (stable.wgsl.js) compare cell i with the history cell h = floor(colF + 0.5). Under a 5 cm step the image moves by an integer T plus a phase phi (|phi| <= 1/2). The line row in B maps to the line row of A only when round(lB) = round(lB + phi), which fails with probability ~|phi|. Phases between 1/8 and 3/8 land in cov 1..3 and are held by AA-07b `jointHold` (and then sometimes create a one-frame gap or double line). |phi| > 3/8 gives the remaining cov 4 vs cov 0 pairs, which the diag counts as mixed255, **twice per line column** (the new row and the old row). So this is a 1-cell feature moving with the image, measured through a rounded reprojection: motion, not a flipping decision. That is why AA-10/AA-12 (hysteresis on the vote) gained nothing. Any per-cell hold of 255<->ramp drops the line (gap) or doubles it, because the two rows decide independently. Not chosen: a margin hold in stable, a footprint prefilter (the decision is already a footprint coverage), and more TAA on j (38.83's j-Schmitt keeps the line at its old row, which is lag, not stability; keep only the g part of AA-13 for this class).
+Secondary, unmeasured: (a) the `maxCover` period doubling (l.663-679, `coverV` vs `maxCover*gv`). A forward step moves this distance threshold, so every other course's joints switch on or off along an iso-depth contour (wallFar/grassFar). (b) Fog stipple `hBW`: a base texel (1/16 m) is smaller than a cell beyond ~25 m, so the die re-rolls with the sub-sample phase.
+**Decision.** Measure first, then fix the metric class, then only the real pops.
+- **AA-14a, diag split (0.5 d; `engine/render/gpu/flicker.js` + `flickerReasons.test.js`, `tools/flicker-gate.mjs` print).** Classify mixed255 by the glyph on the 255 side: `m255:line` (codes - _ | / \ and the grid cross), `m255:stip` (the fog haze/sparse codes in the uniform), `m255:blank` (0), and other. Add `lineShift`: the 255-side line glyph sits at a 4-neighbour of the ramp side's cell in the other frame (cur line at i: prev line at h +- 1; cur ramp at i: cur line at i +- 1 with the same code as prev h). Add `octPop`: the cell's `coverV/(maxCover*gv)` crosses 1, 2 or 4 between the frames (recompute from GD; diag only). Fixtures: a line shifted 1 row = lineShift; a line appearing with no neighbour = m255:line, not shift; a stipple fixture; 0 alloc. AC: per-pose table in OB-208.
+- **AA-14b, the metric counts motion as motion (0.5 d, gated on AA-14a lineShift >= 70 % of mixed255; PC-A + owner ratify, because it changes the gate definition).** `flickerStep`/`flickerGlyphReasons`: a glyph change at i where the cur glyph is a line code present at a 4-neighbour of h in prev, AND the prev glyph is present at a 4-neighbour of i in cur, goes to a new `shiftPct` and leaves glyphOnly. This is restricted to line codes, so ramp noise in flat areas cannot hide. The gate target stays glyphOnly <= 4. `shiftPct` is reported next to it. No shader change, so gpucompare is untouched. Also: if AA-14a shows AA-07b `jointHold` producing gaps (cov 1..3 hold next to a cov 0 fresh cell), set `aaFlags` bit 3 off by default after one owner look.
+- **AA-14c (only if octPop + m255:stip >= 0.5 % in any pose; separate note).** World-anchored hysteresis on the period choice: a per-course dither `coverV < maxCover*gv*(1 + 0.25*(hash(course) - 0.5))`, so courses switch at different distances instead of along one contour. The stipple die keys on the octave texel `cx, cy` (as hA does, 38.24) instead of the base texel.
+**Expected gain (estimate, confirmed or refuted by AA-14a).** If ~85 % of wall mixed255 is lineShift: glyphOnly wallNear 5.06 -> ~1.2, wallFar 4.93 -> ~1.4, grassFar 3.73 -> ~1.1, crown 4.99 -> ~3.7, bushes unchanged ~4.2-4.9, avg 4.58 -> ~2.4 to 2.6. That removes metric noise; on screen nothing changes. If the owner still sees wall flicker after that, the cause is in another class (stipple/octPop/jointHold gaps), and AA-14a will have counted it. Cost: Node only, 0 per-frame (dev diag path only), GPU 0. Risks: (1) the shift rule hides a real line that pops at the old position and reappears one row away in the same frame; the bidirectional test plus the line-only restriction bound this. (2) Ratifying a metric change looks like moving the goalposts, so report both numbers in every OB-208 update.
+
+### 38.85 ED-QUI-07b quest simulator (PC-B architect, OB-214, PC-A to ratify)
+**Decision: option (a), the runner runs in the browser editor.** All runtime modules the e2e drives (questBoot `loadQuestFiles(fetch)`, questRelay, questBook, questSnippets, dialogueCtl/dialogueView, compileDialogue, errands, questPickups, objectOffer, inventory) are DOM-free, node-free ESM; only the e2e's *content loading* uses `node:fs` (+ `loadDesignAssets` from validate-content.mjs). So split loading from stepping. Rejected: (b) dev endpoint = new server code + server state + saved-file-only (cannot sim unsaved edits); (c) request file + CLI = stale results, two-step UX.
+**Data flow.** `content bundle` (plain object) -> `runQuestE2e(bundle, questId) -> {ok, steps:[{id, label, ok, reason}], firstFail}`. Bundle = `{ fetchJson(path) (fed to loadQuestFiles), raws (dialogue id -> raw json), snip, itemDefs, areaIds:Set, entDlg (entity id -> dialogue id) }`. Node builds it from disk; the editor builds it with `fetch` plus an in-memory overlay of the open documents (unsaved quest text + changed dialogue lines, the same overlay liveSend sends; io.js `mem` pattern). Each call creates a fresh relay/book/inventory/pickups/bus (no module-level state, no `globalThis.ASSETS` writes), so runs are deterministic and repeatable.
+**Files.** (1) `game/js/quest/questE2eRun.js` (pure: harness + step chain moved out of allQuests.e2e.test.js; no `node:*`, no tools/ imports). (2) `tools/quest-e2e-content.mjs` (Node bundle loader: fs + loadDesignAssets). (3) `allQuests.e2e.test.js` = loader + loop over ids calling `runQuestE2e`; rules, output table and exit codes unchanged. (4) `tools/quest-sim.mjs --quest <id> [--json]` = same loader + runner for one quest (existing all-quests QL-T2 mode stays as is). (5) `tools/editor/quest/sim.js`: `buildEditorBundle(ctx, overlay)` + pure `simSteps(result)` view model (rows: label, PASS/FAIL, reason, "Go to" card); questPanel [06] SIM button = run + render; STEP = reveal the next row (UI over the already-computed list, no re-run).
+**Play live (step 2).** Enabled after a SIM run (warn, not block, on FAIL): opens playUrl ("Play from here", preset select) and liveSend pushes the same overlay over BroadcastChannel `kestrel-quest-patch`; Play/Stop = open/close the tab; no pause. SIM = logic proof, Play live = feel check on the same text.
+**Tests (Node).** e2e green and table byte-identical before/after the extraction; `node tools/quest-sim.mjs --quest burl.road` exit 0, broken fixture exit 1 naming the step; a parity test runs `runQuestE2e` with a bundle built via `buildEditorBundle` over a disk-backed fake fetch and asserts equal steps to the Node loader for 3 quests; `simSteps` fixtures; `node tools/check-deps.mjs` (game/js/quest must not import tools/ or node:*; grep guard in the parity test).
+**Risks.** (i) Hidden node imports via transitive deps: guard test imports questE2eRun.js with `node:*` resolution blocked (or greps its import graph). (ii) entDlg/areas: the editor must take them from the loaded worlds/areas.json, incl. the git-ignored `content/local/placements.json` overlay, else "not a character" false FAILs - parity test covers it. (iii) Cost: one quest is ms-scale; run on click only, never per keystroke. (iv) Split into 07b1 (extraction + loader + CLI, e2e unchanged) and 07b2 (editor bundle + panel), each <= 1 day.
+
+### 38.86 joint-line stability (PC-B architect, PC-A to ratify)
+**Root cause (AA-25 cryptWalk, line non-shift ~0.7 of glyphOnly 2.72).** `crossLineFast` already tests a zero-width joint centreline, but every sub-sample uses a **whole-cell** window `hw = 0.5*(|cx|+|cy|)` centred on itself (offsets +-1/8, +-3/8). The 50 % vote (`lineWins`, shade.wgsl.js l.1029) then fires when the centreline is within ~0.625 cell of the cell centre, so the per-cell line regions are 1.25 cells wide and overlap. A joint draws 1 row or 2 rows depending on the sub-cell phase. Under a forward walk the phase sweeps, so lines "breathe" (1 <-> 2 rows, a double or a gap). AA-14b cannot see this as motion, and history cannot fix it: AA-10/AA-12/the blank hold only delayed it (38.84). The joint lines on close walls must still draw, so (a) a distance LOD does not touch the crypt and adds an iso-depth pop contour (same as maxCover). (b) A resolve histLine bit is lag, not stability (38.84). Rejected.
+**Decision (c): one row per joint, stateless.** The line GLYPH is decided once per cell from the cell centre with a half-open, dominant-axis window. The vote does not decide it any more.
+- `vC = vS - (ox*dvdx + oy*dvdy)` (and the same for u), where S = the winner sub-sample nearest the centre, and (ox, oy) = its offset from the cell centre in cell units. The twin uses the same f32 order.
+- `crossLineCell(c, cx, cy, period, offset)`: `hw = 0.5*max(|cx|,|cy|)`, line iff `k = floor((c + hw - offset)/period)` gives `line = offset + k*period` in `(c - hw, c + hw]`. A half-open window tiles adjacent cells along the dominant screen axis, so an axis-aligned joint is exactly 1 row for every phase, and a slanted one is 8-connected with 1 cell per column/row. Periods and maxCover stay unchanged (periodH/periodV from the existing code).
+- Shade: `lineCell = fhC >= 0 || fuC >= 0` (cross if both + hasCross), `lineCode` from `lineGlyphCodeFast` with the centre fr. It replaces `lineWins` ONLY in the glyph branch (l.1055) and in setIdPick. `jointN/count` keeps the colour darkening (l.1088) and gap sets. Knob `aaFlags` bit `aajoint1` (`?aajoint1=0` = old vote). AA-07b `jointHold` stays; measure with it on/off (it should become a no-op).
+- **Not here:** blank 255 (m255:blank 0.69) is a monotonic light-falloff contour (one change per cell per walk), not flicker. Accept it, never hold it (AA-25 measured that a hold is worse). The kind-6 `edge` 0.91 is a diag-order artefact: separate diag item.
+**Expected.** cryptWalk line non-shift 0.7 -> <= 0.2. Raw lineShift also drops (no doubles). glyphOnly 2.72 -> ~2.2. wallNear/wallFar each -0.3..-0.6 (fewer fringe doubles). Static (camera still) poses unchanged. Look: joints are 1 row everywhere (today they are sometimes 2). Owner look required.
+**Cost.** Per cell: 2 crossLineCell + 2 fma, ~25 flops. No new target, texture or history. JS 0 per frame. GPU <= +0.01 ms.
+**Parity / D-039.** The twin `shadeDetailFast` mirrors it with `Math.fround` and the same op order. Tie = `|line - (c +- hw)| < 1e-5*period` -> the tie list. Single-frame gpucompare: 0 PASS->FAIL. With n = 1 (S = centre, offset 0) the twin equals the vote's result except on windows that are max- vs L1-only (slanted). Fixture-pin these.
+**Tests.** (1) Sweep the centreline phase over 3 vertically adjacent cells in 1/64 steps: exactly 1 cell draws for every phase (axis-aligned). Slanted 30 deg/60 deg: 1 per column/row, 8-connected. (2) Old vote fixture: `aajoint1=0` byte-identical to today. (3) WGSL probe == twin on 200 seeded (v, dv, offset) cases. (4) Mutation: L1 instead of max, or a closed interval, makes (1) fail. 0 alloc.
+**Story AA-27** (kestrel-1, <= 1 d): twin + WGSL + tests + flicker-gate cryptWalk/wallNear/wallFar A/B with `?aajoint1=0`; arch-review.
+
+### 38.87 world-anchored joint ownership + seam class (OB-208, AA-27b/AA-30 follow-up; PC-B architect opus 2026-10-16, PC-A to ratify)
+**Why AA-27b failed.** Any hold that fetches the glyph from the reprojected cell `h = round(colF,rowF)` is wrong for a 1-row feature: the reprojection error (up to ~0.5 cell) is wider than the line band, so the held line lands one row off (double/gap; cryptWalk 3.23-4.68). The hold must not use screen reprojection to find **where** the line is, only **which side owned it**. The owner key is world: (surface key, axis, joint index k).
+**Rule (Schmitt on the AA-27 window, consistent across the two candidate rows).** AA-27 gives, per cell and axis, the joint `k` and its signed phase `phi = (line - cC)/(2hw)` in cells (owner iff `phi` in `(-0.5, 0.5]`). Band = `|phi| > 0.5 - M` with `M = 0.15` (the cell or its dominant-axis neighbour may own the joint). Outside the band: the AA-27 result as is, stateless. In the band, the history says which side owned joint K last frame: `s = +1` if the owner's phase was > 0 (the line sat on the cell's "+" side), else -1. A band cell owns K iff `sign(phi) == s` and `|phi| < 0.5 + M`. Fallback: no history entry, or `|phi| >= 0.5 + M` -> the AA-27 result. The two candidates have `phi_b = phi_a -+ 1`, so with the same `s` exactly one of them owns K. Tiling holds, so there is no double and no gap, by construction. The side switches only after the phase has gone M past the boundary, and the switch is a real 1-row move (lineShift, motion).
+**Finding s without trusting reprojection.** The history cell stores `jkey`. The band cell searches hist `h` and `h +- 1` along the dominant axis of the joint's screen gradient (3 reads, fixed order h, h-1, h+1) for the first entry with `jkey == K` and the owner bit set, and takes its stored sign. That tolerates the ~0.5 cell error. Both candidates search the same 3-4 history cells for the same K, so they agree. Test (3) pins that they agree even when they reach different first hits.
+**Key K (u32).** `K = hash22(surfKey, k) << 10 | axis << 9 | 1` (low bit 1, so K != 0). The history `jkey = K | owner << 8 | signBit << 7`, compared on `jkey >> 9 == K >> 9`. `surfKey` = planeId for walls/floors (kind 1/2). For a kind-6 mesh it is mat, because mesh planeIds flip (OB-198) and k on a mesh comes from its face uv. `k` is the AA-27 `floor((c + hw - offset)/period)` for the dominant joint (the smaller |phi| of u/v). Crosses (both axes in the window) stay stateless AA-27.
+**Data per cell.** Shade -> stable (new G-buffer word, rg32uint or 2 u32 in the existing gi pack): `jA = K` as above (0 = no joint near), `jB = rampGlyph(8) | rampLevel(8) | lineGlyph(8) | phiQ(8, signed 1/64 cell)`. Stable has to swap line<->ramp, so shade emits BOTH glyphs for band cells (it computes both today; the ramp result was thrown away when the line won). History: `jkey` u32 per cell (owner bit + sign + K) in the stable history buffer (+4 B/cell, 400x225 = 360 KB).
+**Where.** Shade (`shadeDetailFast` twin + shade.wgsl.js glyph branch): k, phi, band, both glyphs (no state). Stable (`stabilize` twin + stable.wgsl.js): the band decision. It runs BEFORE the jointHold/mixed-255 reject, writes glyph/level from jB, and writes `out.jkey`. With aajoint2 on, AA-07b jointHold is skipped for band cells (it would re-introduce the row error). Not in resolve: it has no history key.
+**Parity / D-039.** Integer decision on f32 `phi`. Twin: `Math.fround`, same op order as AA-27. Tie list: `||phi| - (0.5 - M)| < 1e-4` or `||phi| - (0.5 + M)| < 1e-4`, or more than one hist hit with a different sign. Single-frame gpucompare unchanged (no history = AA-27 path): 0 PASS->FAIL. The stable twin vs the WGSL probe on 200 seeded 2-frame cases.
+**Switch.** `aaFlags` = the next free bit after AA-27's `aajoint1` (stable + shade uniform). `?aajoint2=0` = AA-27 stateless, byte-identical (fixture). It needs aajoint1 on; with `aajoint1=0` the bit is ignored.
+**Tests (Node, 0 alloc).** (1) Phase sweep with hysteresis: drive phi through 3 rows at 1/64 cell per frame, forward then back. Every frame exactly 1 row owns K; the owner changes once per boundary crossing, M late. Reverse direction: no toggling inside the band. (2) Reprojection jitter: add +-0.5 cell random error to h. The owner row is identical to (1) (AA-27b-style hold fails this, kept as a mutation). (3) Two candidates with different first hits: same decision. (4) Mutations: closed band, sign from `h` only (no +-1 search), key without planeId -> a test fails. (5) WGSL probe == twin (200 seeds). (6) `aajoint2=0` byte-identical to AA-27.
+**A/B acceptance (tools/flicker-gate.mjs, owner look after).** On cryptWalk, wallNear, wallFar: glyphOnly AND line non-shift lower than BOTH `?aajoint1=0` and `?aajoint2=0`. Target cryptWalk glyphOnly <= 2.2 (from 2.72), line non-shift <= 0.15. Static poses unchanged (+-0.02). townWalk not worse.
+**Cost.** Shade +~10 flops plus 2 u32 writes. Stable: band cells only (~3-8 % of wall cells), 3 history reads. GPU <= +0.03 ms, JS twin 0 alloc, memory +2 G-buffer words and +1 history word per cell.
+**townWalk mesh face seams (AA-30 uvDrift 0.16): option (a), a `seamShift` metric class. (b) rejected.** AA-30 found that 0.15 of the 0.16 have a 3x3 history neighbour on the cell's own plane within the uv limit. So the seam (a geometric edge of the mesh) moved with the image, and the nearest-cell reprojection crossed it. That is motion, the same class as lineShift. (b) world-planar UVs would change the look of every mesh brick/plank pattern. It needs mesh-import/shader changes, a triplanar blend at corners, gpucompare churn and an owner look, all for 0.16 %. A seam would still exist at corners. **seamShift** (flicker.js diag + gate print, Node only): a uvDrift change at i where hist(h).planeId != planeId(i), same mat, and a 3x3 hist neighbour of h with planeId(i) is within the limit -> `seamShift`, out of glyphOnly, reported next to it (same ratify rule as AA-14b). If the owner still sees seam crawl afterwards, the follow-up is a stable 3x3 same-plane history search (separate note), not world UVs.
+
+### 38.9x PC-B ASK batch 2026-10-17 (PC-B architect, PC-A to ratify)
+**Q1 TEASER-QA-06 coast stair steps: option (a), per-tile LOD1 step.** Each far tile is built once and has its own skirt, so a per-tile step needs no stitching. In `engine/mesh/terrainMesh.js`, the far tile builder picks `lod1Step = 2` (16 m) when the tile's min |coast sd| over its 4 corners and centre is < 150 m. Otherwise it keeps `FAR_LOD1_STEP` (4). The step is fixed at build time (no runtime switching). The index layout stays fixed per tile, and `ranges` come from that tile's own counts. Not (b): the sea skirt does not touch cliff tops. Not the tent filter: it makes mean error worse. AC: coast-band max neighbour jump <= 55 m, band mean err <= 0.35. Total LOD1 verts <= 1.5x today. Off-coast tiles byte-identical (gpucompare). Node test with a synthetic coast recipe.
+**Q2 content-lint R9: re-scope, no allow-list.** D-070 made crossing free, and difficulty is set by the zone bands (1-5 / 5-10), not by the river line. 73 allow-list entries would only be noise that goes stale. New R9: an early quest target gets a warning when the zone band at its position has min level > 5 (`ctx.bandMinAt(x, y)`, from the same zone data the game uses). The river test goes away. Real exceptions go in `R9_OK` with a one-line reason each, like `R8_OK`. Owner answer for OB-136: yes, crossing before level 5 is intended.
+**Q3 structureAt flat-bbox: not now.** At 0.29 ms/step the whole sim uses about 3.6 % of the 8 ms budget, and the gain (about 0.1 ms) does not justify the risk to the ray alloc gate. Reopen only if sim > 1 ms/step or beast count x2. Safe pattern if reopened: keep the method shape the same (same args, returns object|null). In `_gridStructures()` rebuild, also fill `this._gsBox = new Float64Array(4 * n)`. The loop reads `_gsBox[4i..4i+3]` and returns `gs[i]`. No new helper, no index-or-null return, no closures. `rayStatic.test.js` must stay at <= 130 B/ray, unchanged.
+**Q4 OB-222 far forest: lift default ON now, F8 snapshot as well.** The owner has reported this 6 times, and the owner eye counts over the metric (D-119). Headless did measure the case: (37,45,49) at luma 44-52 is a blue-grey that reads as navy on a darker or warmer-calibrated screen. The sweep's "navy" threshold is what misses it, not the render. The lift is cheap, local (luma < 70, 250-500 m fade, day only) and keeps `?farforest=0` for A/B. Also add the F8 bug snapshot (time, weather, quality, camera, URL flags) so the next report can be reproduced. AC: gpucompare fixtures updated, sweep min far-forest G > B at all 6x8x3 spots, owner look on 8000 after merge.
+
+### 38.9y FLICKER-DEFAULT (PC-B architect, PC-A to ratify; architect opus 2026-10-17; OB-198, OB-208, D-119)
+**Frame.** D-119: the stable pass stays OFF; the owner judges the default path. Every fix here is per-frame and stateless (no history, no hold, no reprojection in the renderer). Reprojection exists ONLY in the dev metric (`engine/render/gpu/flicker.js`, `game/js/dev/flickerLive.js`), which already runs `flickerReprojStep` from GI/fg/Depth without the stable pass; only the reason classifier (`diagCapture` + `flickerGlyphReasons`) needs it today. Baseline (FLICKER-DEFAULT-01, glyphOnly %): wallNear 2.86, wallFar 6.54, bushes 11.04, crown 6.0, grassFar 3.87, roadWalk 4.96, forestWalk 11.35, townWalk 5.62, cryptWalk 15.39 (avg 6.06; stable path 0.97, so ~5 points are per-frame noise the stable pass used to hide).
+**Principle.** A reprojected flip = the value at the cell's world point differs from the value at the history cell's world point (<= ~0.5 cell apart) across a level threshold or a line/shadow boundary. Rate ~ (discontinuities per screen area) x (their size in quantisation steps). Stateless levers: (a) make the level input continuous in WORLD space (no 25 % jumps), (b) band-limit it to >= the cell footprint (fewer contours), (c) give 1-cell features (joint lines) exactly one owner cell. Dither alone does not lower the rate (it only decorrelates contours); hysteresis needs history (forbidden). This is why the smooth alt dice / ao=0 / rays=8 experiments gained nothing: none of them touches the level input.
+
+**(1) Default-path classifier + gate mode (FD-01).**
+- `flickerLive.js diagCapture(wg)`: when the stable pass did not run, return the default set `{mode:'default', GI, GA, Depth, level, shadeFg, shadeBg, preFg (= texFinalFg), finalBg, Light}` (no `hist`/`outFg`). If `texLevel` is not written with stable off, write it from shade unconditionally (it is a shade output, no new pass); if that needs a new target: ASK ARCHITECT.
+- `flicker.js`: new pure `flickerDefaultReasons(d, p, hmap, cols, rows, terms, cnt)` (0 alloc, exported via engine/index.js next to `flickerGlyphReasons`; keys `DEFAULT_REASONS`). For each counted cell with equal kind+mat and a glyph change (i in cur, h = hmap[i] in prev), first match wins: `edge` (preFg.a != shadeFg.a at i or at h) -> `lineShift` (existing AA-14b rule) -> `linePop` (line code on one side, ramp/blank on the other, no neighbour match) -> `lineCode` (line on both sides, other code) -> `m255:stip` / `m255:blank` -> ramp levels `lp = levelOfByte(p.level[h])`, `lc = levelOfByte(d.level[i])`: `lc == lp` -> `altSwap` (dice/setId); else `r = |Lc - Lp| / max(Lc, Lp, 1e-3)` with L = max channel of the Light f32 bits: `r > 0.06` -> `levelLight`, else `levelTex`; sub-tag `/jump` when |lc - lp| >= 2. Per-kind counts in `cnt.kinds` as today. `flickerLive.js` calls it when `d.mode === 'default'`, else the old stable replay.
+- **Still control:** each pose first takes 3 zero-move steps (camera unchanged, time running) -> `stillPct` (wind sway, torches, cloud shadows = time, not camera). Printed next to glyphOnly, not subtracted.
+- `tools/flicker-gate.mjs`: `--path default|stable`, **default `default`** (no `--stable` passed to capture-browser); `--path stable` = today's run. One baseline file per path (`flicker-baseline-default.json` new; the existing one = stable). Default-path rule: no pose worse than its baseline + 0.3 abs; `--diag` prints the reason table per pose on both paths. Walk poses reported per pose; avg stays over the 5 static poses.
+- **AC (Node, `engine/render/gpu/flickerDefault.test.js`):** 8x4 synthetic frames with a hand-built hmap, one cell per class (edge, lineShift, linePop, lineCode, m255:blank, altSwap, levelLight, levelTex, levelTex/jump) -> exact counts; kind/mat change or hmap -1 not counted; 1000 calls allocate 0 (heap guard as in flickerReasons.test.js); `flicker-gate.mjs --path default` builds a query without `stable=1` (pure arg test). Deliverable: the 9-pose reason table in OB-208.
+
+**(2) The 3 most likely per-frame causes and their fixes.** Each behind a query/`aaFlags` bit, default on only after the A/B on the default path + owner look. Twin + WGSL in the same op order; D-039 single-frame gpucompare 0 PASS->FAIL outside the listed tie cases.
+- **C1 light jumps in quarters (kinds 7/8/9: bushes, crown, forestWalk; confirmed if `levelLight` dominates).** `sunShadowTaps` is a nearest 2x2 count n in 0..4, so sun light changes in 25 % steps along every shadow edge (dappled canopy shadow = many edges). With the sun ~70 % of the light, one tap moves L by ~17 %, i.e. >= 1 level on a ~10 % ramp spacing; the receiver point slides inside the cell as the camera moves, so edge cells flip. **Fix FD-02:** bilinear PCF `sunShadowFrac(...)` in [0,1] (same 4 taps, weights from `fract(uv*res - 0.5)`): continuous in world space, edge width <= 1 shadow texel. Files: `engine/render/shadowSun.js` (twin, new export; `sunShadowTaps` stays for the boundary flag), `engine/render/gpu/wgsl/light.wgsl.js` (light pass uses the fraction when `aaShBil`), `?aashbil=0`. Point shadows unchanged unless crypt shows `levelLight`. AC: Node sweep of P across a shadow edge in 1 mm steps: old has 0.25 jumps, new is monotonic with |delta| <= step/texelM + 1e-6; WGSL probe == twin on 200 seeds (1e-5); gate: forestWalk and bushes glyphOnly each -2.0 abs or better, `levelLight` -40 %, colourOnly not +0.2. Cost +4 fma per lit cell.
+- **C2 joint lines breathe 1 <-> 2 rows and courses pop (kinds 1/4/6: cryptWalk, wallFar, townWalk; confirmed by `linePop` + `lineCode`).** AA-27 (38.86, stateless) is not in this tree: the 50 % vote with whole-cell windows draws a joint on 1 or 2 rows by sub-cell phase. Also the `maxCover` period doubling (shade.wgsl.js ~l.731) switches every other course along one iso-depth contour that sweeps the floor/walls while walking. **Fix FD-03:** land AA-27 exactly as 38.86 (`crossLineCell`, half-open dominant-axis window, line glyph from the centre-reconstructed `vC`, `?aajoint1=0`), plus AA-14c's per-course threshold `coverV < maxCover*period*(1 + 0.25*(hash(planeId, floor(v/(2*period))) - 0.5))` so courses switch at spread distances (still once per approach, no state). Files: `engine/render/detailShade.js` (twin), `engine/render/gpu/wgsl/shade.wgsl.js`, `common.wgsl.js`. 38.87 (aajoint2) is NOT part of this: it needs history. AC: 38.86 tests (1)-(4); course fixture: a 0..40 m distance sweep switches each course exactly once, switch distances spread over +-12.5 %; gate cryptWalk glyphOnly <= 8 (from 15.39), wallFar -1.0 abs, static poses not worse.
+- **C3 sub-texel texture detail drives the level (all kinds beyond ~20 m: wallFar, grassFar, leaves; confirmed by `levelTex`).** `gbAvg` averages shadeCore over the sub-samples, but texels/hash speckle smaller than the sub-sample spacing alias, so the cell mean depends on the screen phase and crosses thresholds. **Fix FD-04:** the LEVEL uses a band-limited input, colour keeps `gbAvg`: `gbLevel = mix(gbAvg, Lm * matMeanB[mat], w)`, `w = smoothstep(0.5, 2.0, cover / texelM)` (cell footprint in base texels; continuous in distance, no octave contour). F_SOFT_EDGE leaf cards (kind 9): `w = 1` (level = AA-16 smoothed light x mean; variety stays in the AA-15 world dice). `matMeanB` = mean shadeCore b over 64x64 base texels at oct 0, computed once at MaterialTable build, in a spare `uMatF` slot. Files: `engine/render/MaterialTable.js`, `detailShade.js`, `shade.wgsl.js` (one mix before `pickGlyphCodeFast`), `?aalvbl=0`. AC: speckle material, footprint 2 texels, 16 sub-sample phases -> one level for all phases; footprint 0.25 texel -> byte-identical to today (near poses' gpucompare unchanged); gate wallFar/grassFar -1.0 abs, bushes -2.0 abs; owner look (far surfaces keep texel noise in colour, not in the glyph).
+
+**(3) Order (each <= 1 programmer-day, one topic; arch-review on either PC per D-066).**
+1. **FD-01** classifier + still control + gate `--path default`. Node + one capture run, no shader change. Output: 9-pose reason table in OB-208.
+2. **FD-02** bilinear sun PCF (if `levelLight` >= 1.0 abs in bushes/forestWalk/crown).
+3. **FD-03** AA-27 one-row joints + per-course period dither (if `linePop + lineCode` >= 1.0 abs in cryptWalk); split FD-03a (AA-27) / FD-03b (dither) if AA-27 fills the day.
+4. **FD-04** band-limited level input (if `levelTex` >= 1.0 abs in any pose).
+Re-order FD-02..04 by the FD-01 table (largest share first). If `stillPct` is the largest share in a pose, that is time animation (wind/torch/clouds): separate story. Not allowed: the stable pass, any history buffer, per-cell holds, temporal blends.
+
+### 38.9z PC-B ASK batch 2 2026-10-17 (PC-B architect, PC-A to ratify)
+**Q1 BUSHES flicker (OB-198, FD-08 follow-up): no world-hash threshold dither; fewer leaf levels at distance + spread dice band edges.** A threshold offset hashed per world voxel does not lower the rate: with a uniform offset the chance that a light change dL crosses a threshold is still dL / step (38.9y principle: dither only decorrelates). A dead-band needs the previous level, which is history (D-119, not allowed). The stateless levers are: make the step bigger, or remove the discontinuity.
+- **FD-09a (levelTex):** for F_SOFT_EDGE leaf materials only, merge ramp levels in pairs when the leaf footprint is large: `w = smoothstep(0.5, 1.0, cover / folBlock)` (same footprint term as leafMean). When `w >= 0.5` use `lv' = min(n-1, (lv & ~1) + (n > 2 ? 1 : 0))`, a hard switch per material band, not per cell. Ramps with n <= 2 stay as they are. Files: `engine/render/detailShade.js` (twin), `engine/render/gpu/wgsl/shade.wgsl.js` (one line before `pickGlyphCodeFast`), flag `aaFlags` bit + `?leafq=0` (main.js line). Expected: the levelTex 'NONE' share roughly halves (2.68 -> <= 1.4).
+- **FD-09b (altSwap):** folDice q steps 0.5/1/2/4 at 16/32/64 m, so a whole iso-depth contour re-dices together while walking. Make the switch per block: block `b_hi` (the coarser q) moves to the coarser band when `dist >= edge * (0.85 + 0.3 * hash(b_hi))`. This is still once per approach and stateless, but spread over +-15 %. Twin `folDiceJS` + WGSL `folDice` in the same op order. Flag `?foldice2=0`.
+- **Before coding:** run FD-01 `stillPct` on the bushes pose. If still >= 1.5 %, the 'nothing moved' share is wind/time and goes in a separate story; FD-09 then targets only the camera share.
+- **AC (Node, `engine/render/leafQuant.test.js`):** (1) leaf L sweep 0..1 in 1e-3 steps plus +-2 % noise, 1000 seeds: level changes with FD-09a <= 0.55x of today. (2) Footprint < 0.5 block: byte-identical. (3) Fixed world point, dist 10..80 m in 1 cm steps: the dice value changes at most once per band edge, and the switch distances of 500 blocks span >= 25 % of each edge. (4) Flags off: byte-identical. (5) WGSL == twin on 200 seeds. **Gate:** bushes glyphOnly <= 7.0 (from 9.66), crown / forestWalk not worse +0.3, colourOnly not +0.2, then an owner look on a clone before 8000.
+
+**Q2 SUN WEDGE (TEASER-QA-05 / VISQA-25): yes, with the haze part only.** The V is sky (`applySkyGlow` horizon haze: lift `1 + w*0.22` plus `hazeWarm*w*s`, where `w = 1 - smooth(0, 9 deg, e)`) next to far fog that targets the sky LUT without that haze. So the fog has to target the same colour.
+- **Change:** in `engine/render/skyGlow.js`, split out `skyHazeRGB(rgb, elevDeg, s)` (JS) / `fn skyHaze(col, elevDeg, s)` (WGSL): the lift + warm only. `applySkyGlow` / `skyGlow` call it, so the sky output stays byte-identical. In `fogShape.js farSkyShiftJS` and WGSL `farSkyShift`: `e' = max(e, 0)` (no early return for e <= 0); `shift = farSkyW * (skyHaze(lut[idx(e')], e', s) - lut[0])`. `s = skyGlowStrength(sunZ, sunI)` is the same value the sky pass uses. In JS, take it in `farSkyPrep` from the frame's sun. In WGSL, use the inputs the sky branch already passes to `skyGlow`.
+- **Do NOT include** the halo/core/dither. Sun-direction in-scatter on terrain already comes from `fogScatterW` (AUD-45), and adding the halo again would make far buildings toward the sun pale (the OB-209 family).
+- Still gated by `farSkyW > 0`, so `wNone = 1` biomes stay byte-identical. Expect all fully fogged far terrain to get about +22 % lighter, matching the sky.
+- **AC:** (1) `farSky.test.js`: at f = 1 and elev -5/0/2/5/9/15 deg, the fog colour is within 0.5 of `applySkyGlow` with g = 0, at s = 0 / 0.5 / 1. (2) farSkyW = 0: byte-identical. (3) `shade.wgsl.test.js` parity. (4) GPU readback at the TEASER-QA-05 pose: luma difference between the V interior and the cells beside it <= 4. (5) gpucompare: 0 new PASS->FAIL except the far-fog fixtures, which get re-pinned and listed. (6) `tools/verify-far-silhouette.mjs` PASS at all poses. (7) Owner look on a clone at 06/12/19 h before 8000.
+
+**Q3 k3 cloud horizon fade (3..12 deg): keep.** Clouds that thin into the horizon haze are physically right (long optical path, foreshortening), and the fade removes hard cloud cut lines against far ridges. It is not the wedge (Q2), so it stands on its own merits. Conditions: a stateless function of ray elevation only; JS twin == WGSL; `setCloudsEnabled(false)` stays byte-identical; gpucompare clean apart from listed cloud fixtures.

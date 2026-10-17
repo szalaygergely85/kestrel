@@ -4,7 +4,7 @@
 //
 //   node tools/editor/camera.test.mjs
 
-import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose } from './camera.js';
+import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose, toggleOrtho, adjustOrthoHalfH, applyViewPreset, lookAlongAxis } from './camera.js';
 import { makeOk, approxEqual as approxEqualCore } from '../../engine/test/assert.js';
 
 let pass = 0;

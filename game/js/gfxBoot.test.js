@@ -20,7 +20,7 @@ assert.equal(o.shadowOpts.sun, 'map'); assert.equal(o.shadowOpts.instCastM, 32);
 assert.deepEqual(o.gfx, { scatterDensity: 1, lodScale: 1 });
 
 // every preset
-const expect = { low: [240, 90, 1, 1024, 0.5, 0.6], medium: [240, 90, 2, 1536, 0.75, 0.8], high: [400, 150, 2, 2048, 1, 1], ultra: [480, 180, 4, 2048, 1, 1.25] };
+const expect = { low: [240, 90, 1, 1024, 0.5, 0.6], medium: [240, 90, 2, 1536, 0.75, 0.8], high: [400, 150, 2, 2048, 1, 1], ultra: [480, 180, 4, 2048, 1, 1] };
 for (const [name, [c, r, rays, res, sc, lod]] of Object.entries(expect)) {
   o = boot(`quality=${name}`);
   assert.deepEqual([o.reqCols, o.reqRows, o.rays, o.shadowOpts.res, o.gfx.scatterDensity, o.gfx.lodScale], [c, r, rays, res, sc, lod], name);
@@ -31,8 +31,8 @@ for (const [name, [c, r, rays, res, sc, lod]] of Object.entries(expect)) {
 assert.equal(boot('', { saved: { quality: 'low' }, auto: 'ultra' }).quality.name, 'low');
 assert.equal(boot('', { auto: 'ultra' }).quality.name, 'ultra');
 assert.equal(boot('quality=medium', { saved: { quality: 'low' } }).quality.name, 'medium');
-o = boot('quality=low&grid=320x120&rays=4&scatter=0.25&lodScale=2&shadows=dda');
-assert.deepEqual([o.reqCols, o.reqRows, o.rays, o.gfx.scatterDensity, o.gfx.lodScale, o.shadowOpts.sun], [320, 120, 4, 0.25, 2, 'dda']);
+o = boot('quality=low&grid=320x120&rays=4&scatter=0.25&lodScale=2&shadows=dda'); // dda -> map (ME-19c2)
+assert.deepEqual([o.reqCols, o.reqRows, o.rays, o.gfx.scatterDensity, o.gfx.lodScale, o.shadowOpts.sun], [320, 120, 4, 0.25, 2, 'map']);
 assert.equal(boot('quality=high&shadows=off').shadowOpts.sun, 'off');
 assert.equal(boot('quality=high&shadowQuality=off').shadowOpts.sun, 'off');
 assert.equal(boot('quality=low&shadowinst=10').shadowOpts.meshLod0M, 10);
@@ -44,6 +44,15 @@ o = boot('quality=nope&rays=9&grid=abc&scatter=5'); assert.equal(o.quality.name,
 // legacy non-default saved grid survives while no quality is chosen
 assert.equal(boot('', { saved: { grid: '320x120' } }).reqCols, 320);
 assert.equal(boot('', { saved: { grid: '320x120', quality: 'low' } }).reqCols, 240);
+// QUALITY-GRID-01: a saved legacy grid never beats a saved/chosen quality (incl. 'auto'), only an explicit ?grid= does
+for (const q of ['low', 'medium', 'high', 'ultra']) {
+  o = boot('', { saved: { grid: '480x180', quality: q } });
+  assert.deepEqual([o.reqCols, o.reqRows], [expect[q][0], expect[q][1]], `saved 480x180 + quality ${q}`);
+}
+o = boot('', { saved: { grid: '480x180', quality: 'auto' }, auto: 'low' }); assert.deepEqual([o.reqCols, o.reqRows, o.quality.source], [240, 90, 'auto']);
+o = boot('', { saved: { grid: '480x180' }, auto: 'low' }); assert.deepEqual([o.reqCols, o.quality.source], [240, 'auto']); // auto-picked preset also owns the grid
+o = boot('grid=320x120', { saved: { grid: '480x180', quality: 'low' } }); assert.deepEqual([o.reqCols, o.reqRows, o.sources.grid], [320, 120, 'param']);
+o = boot('quality=ultra', { saved: { grid: '320x120', quality: 'low' } }); assert.equal(o.reqCols, 480);
 // gpucompare forces its grid/rays; capture pages keep today's options unless ?quality=
 o = boot('gpucompare=1', { captureLike: true, geometryCompare: true }); assert.deepEqual([o.reqCols, o.reqRows, o.rays], [160, 60, 1]);
 // GFX-04-pc: ?gpucompare=1&quality=<preset> changes only the preset knobs (shadows/scatter/lodScale); grid + rays stay forced
@@ -53,7 +62,7 @@ for (const p of ['low', 'medium', 'high', 'ultra']) {
   assert.deepEqual([o.reqCols, o.reqRows, o.rays, o.quality.name], [160, 60, 1, p]);
   gcKnobs[p] = [o.shadowLevel, o.gfx.scatterDensity, o.gfx.lodScale];
 }
-assert.deepEqual(gcKnobs, { low: ['low', 0.5, 0.6], medium: ['mid', 0.75, 0.8], high: ['high', 1, 1], ultra: ['high', 1, 1.25] });
+assert.deepEqual(gcKnobs, { low: ['low', 0.5, 0.6], medium: ['mid', 0.75, 0.8], high: ['high', 1, 1], ultra: ['ultra', 1, 1] });
 o = boot('gpucompare=1', { captureLike: true, geometryCompare: true }); assert.deepEqual([o.quality, o.gfx], [null, undefined]); // no preset = today
 o = boot('bench=1', { captureLike: true, saved: { quality: 'ultra', grid: '480x180' } });
 assert.deepEqual([o.reqCols, o.reqRows, o.rays, o.quality, o.gfx], [240, undefined, 2, null, undefined]);
@@ -61,7 +70,19 @@ assert.equal(boot('bench=1&quality=low', { captureLike: true }).rays, 1);
 // presets missing = today's boot options
 o = boot('', { noPresets: true }); assert.deepEqual([o.reqCols, o.rays, o.quality, o.gfx, o.shadowOpts], [240, 2, null, undefined, { sun: 'map', instCastM: 32 }]);
 o = boot('', { noPresets: true, saved: { grid: '400x150' } }); assert.equal(o.reqCols, 400);
-o = boot('shadows=dda&rays=4', { noPresets: true }); assert.deepEqual([o.shadowOpts.sun, o.rays], ['dda', 4]);
+o = boot('shadows=dda&rays=4', { noPresets: true }); assert.deepEqual([o.shadowOpts.sun, o.rays], ['map', 4]);
 // F3 line
 assert.match(describeQuality(boot('quality=low'), 240, 90, 1), /^quality: low \(param\)  grid 240x90  rays 1  shadows low  scatter 0.5  lodScale 0.6$/);
 console.log('gfxBoot.test.js ok');
+
+// QUALITY-BOOT-01: a saved Ultra boots with the full Ultra knobs (grid/rays/shadows/scatter/LOD), whatever legacy grid is in the blob.
+for (const grid of ['240x90', '400x150', '480x180']) {
+  const u = boot('', { saved: { quality: 'ultra', grid } });
+  assert.deepEqual([u.reqCols, u.reqRows, u.rays, u.shadowLevel, u.gfx.scatterDensity, u.gfx.lodScale], [480, 180, 4, 'ultra', 1, 1], 'saved ultra ' + grid);
+  assert.equal(u.quality.name, 'ultra'); assert.equal(u.quality.source, 'saved');
+}
+console.log('gfxBoot: saved Ultra applies fully at boot PASS');
+
+{ const u = boot('quality=ultra'), x = boot('quality=extreme'), h = boot('quality=high');
+  assert.deepEqual([u.shadowOpts.meshLod0M, u.shadowOpts.instCastM, x.shadowOpts.meshLod0M, x.shadowOpts.instCastM, x.gfx.lodScale], [16, 32, 16, 32, 1], 'ultra/extreme shadow tier');
+  assert.deepEqual([h.shadowOpts.meshLod0M, h.shadowOpts.instCastM], [16, 32], 'high trimmed (SHADOW-TRIM-01)'); }

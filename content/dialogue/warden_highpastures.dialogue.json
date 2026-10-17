@@ -1,0 +1,17 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "warden_highpastures",
+  "speakers": {
+    "warden": {"label": "EWAN"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "warden.hello"}
+  ],
+  "nodes": {
+    "warden.hello": {"end": true, "lines": [
+      "Ewan. Long grass, long wind. I keep the light."
+    ], "speaker": "warden"}
+  }
+}

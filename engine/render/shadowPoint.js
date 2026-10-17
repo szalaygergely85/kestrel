@@ -1,7 +1,7 @@
 // engine/render/shadowPoint.js (ME-16a, note 38.22): pure JS twin of the point-light shadow maps.
 // World is Z-up. One light = 6 faces (layer = slot*6 + face, order +X,-X,+Y,-Y,+Z,-Z), each a proper rotation (det +1)
-// x perspective 90 deg, near PSH_NEAR, far = light radius. Stored depth = 0.5 + 0.5 * NDC depth (GL NDC [-1,1]), i.e. [0, 1] (near 0, far 1)
-// (the sun map stores [0.5,1]; point maps use the full range). Layout of the depth array: ((slot*6+face)*res + ty)*res + tx, ty up = +v.
+// x perspective 90 deg, near PSH_NEAR, far = light radius. Stored depth = 0.75 + 0.25 * NDC depth (GL NDC [-1,1]), i.e. [0.5, 1] (near 0.5, far 1):
+// the point faces go through the SHARED sun caster pipelines whose vertex stage (raster.wgsl.js SHADOW_Z_LINE) maps z to [0.5, 1] (ME-16d ARCH fix). Layout of the depth array: ((slot*6+face)*res + ty)*res + tx, ty up = +v.
 // Matrices are column-major Float64 (world -> clip, w = depth along the face axis). No allocation in any per-call function.
 
 export const PSH_NEAR = 0.05;
@@ -89,13 +89,32 @@ export function pointSphereBounds(O, radius, out6) {
   return out6;
 }
 
-/** Stored depth for a point at depth c along the face axis: 0.5 + 0.5 * NDC depth. */
+/** Sun-map convention (SHADOW_Z_LINE: z' = 0.25 (z + w) + 0.5 w, so stored = 0.75 + 0.25 * ndc). The WGSL sampler uses the same literals. */
+export const SHADOW_DEPTH_OFFSET = 0.75, SHADOW_DEPTH_SCALE = 0.25;
+/** NDC depth [-1, 1] -> depth as stored by the shadow caster pipelines ([0.5, 1]). */
+export function shadowDepthStore(ndc) { return SHADOW_DEPTH_OFFSET + SHADOW_DEPTH_SCALE * ndc; }
+/** Stored depth for a point at depth c along the face axis. */
 export function pointDepthEncode(c, far, near = PSH_NEAR) {
-  return 0.5 + 0.5 * ((far + near) / (far - near) - 2 * far * near / ((far - near) * c));
+  return shadowDepthStore((far + near) / (far - near) - 2 * far * near / ((far - near) * c));
 }
 /** Inverse: stored depth -> metres along the face axis. */
 export function pointDepthDecode(sdm, far, near = PSH_NEAR) {
-  return 2 * far * near / ((far + near) - (far - near) * (2 * sdm - 1));
+  return 2 * far * near / ((far + near) - (far - near) * ((sdm - SHADOW_DEPTH_OFFSET) / SHADOW_DEPTH_SCALE));
+}
+
+/** Point-face caster margin beyond the light radius for the fog-far cull (metres). */
+export const POINT_FOG_MARGIN_M = 128;
+const SO_FALLBACK = { meshLod0M: 25, meshCastM: undefined, meshCastCap: undefined };
+/**
+ * ONE source of the point-face caster options (GPU WgPointShadowPass._build and the compositor twin both call it; they drifted before):
+ * writes instCastM = radius, fogFarM = radius + 128, and meshLod0M / meshCastM / meshCastCap from the sun shadow options `so`
+ * into the buildShadowList `src`. No allocation. `so` = fb.shadowOpts / casters.shadowOpts.
+ */
+export function pointCasterOpts(src, radius, so) {
+  const o = so || SO_FALLBACK;
+  src.instCastM = radius; src.fogFarM = radius + POINT_FOG_MARGIN_M;
+  src.meshLod0M = o.meshLod0M; src.meshCastM = o.meshCastM; src.meshCastCap = o.meshCastCap;
+  return src;
 }
 
 export const pointShadowInfo = { boundary: 0 }; // taps whose receiver depth is within BOUNDARY_EPS of the stored depth (gpucompare excludes them)
@@ -117,7 +136,7 @@ export function pointShadowTaps(depthF32, res, slot, O, far, P, N, opts = POINT_
   const a = vx * FT[b] + vy * FT[b + 1] + vz * FT[b + 2], bb = vx * FT[b + 3] + vy * FT[b + 4] + vz * FT[b + 5], c = vx * FT[b + 6] + vy * FT[b + 7] + vz * FT[b + 8];
   const near = opts.near === undefined ? PSH_NEAR : opts.near;
   if (c >= far || c <= near) return 4;
-  const rd = Math.fround(0.5 + 0.5 * ((far + near) / (far - near) - 2 * far * near / ((far - near) * c)));
+  const rd = Math.fround(pointDepthEncode(c, far, near));
   const fu = (a / c * 0.5 + 0.5) * res - 0.5, fv = (bb / c * 0.5 + 0.5) * res - 0.5;
   const x0 = Math.floor(fu), y0 = Math.floor(fv), last = res - 1, base = (slot * 6 + face) * res * res;
   let lit = 0;
@@ -199,6 +218,13 @@ export function selectShadowLights(lights, cam, n, state, hysteresis = 1.25) {
  * (pass 0 unless the list holds a swaying group: sway quantum). Flicker jitter / colour / intensity never change it.
  */
 export function pointShadowKey(out2, ox, oy, oz, radius, casterH0, casterH1, structVersion, windKey, q = 64) {
+  _o4[0] = ox; _o4[1] = oy; _o4[2] = oz; _o4[3] = radius;
+  return pointShadowKeyO(out2, _o4, casterH0, casterH1, structVersion, windKey, q);
+}
+const _o4 = new Float64Array(4);
+/** Same key, origin + radius read from `o4` (xyz, radius): no boxed-double call arguments, so the per-frame key is allocation-free. */
+export function pointShadowKeyO(out2, o4, casterH0, casterH1, structVersion, windKey, q = 64) {
+  const ox = o4[0], oy = o4[1], oz = o4[2], radius = o4[3];
   let h0 = 0x811c9dc5 | 0, h1 = 0x1b873593 | 0;
   const w0 = Math.floor(ox * q + 0.5) | 0, w1 = Math.floor(oy * q + 0.5) | 0, w2 = Math.floor(oz * q + 0.5) | 0, w3 = Math.floor(radius * 16 + 0.5) | 0;
   h0 = Math.imul(h0 ^ w0, 0x01000193); h1 = Math.imul(h1 ^ w0, 0x85ebca6b);

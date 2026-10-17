@@ -16,7 +16,7 @@ export function makeBaseline(rows, { backend, adapter, sha, date, grid } = {}) {
   const rowsV = rowVerdicts(rows);
   const v = Object.values(rowsV);
   return {
-    backend: backend || 'webgl2', adapter: adapter || 'unknown', sha: sha || null, date: date || null, grid: grid || null,
+    backend: backend || 'webgpu', adapter: adapter || 'unknown', sha: sha || null, date: date || null, grid: grid || null,
     pass: v.filter((x) => x === 'PASS').length, fail: v.filter((x) => x === 'FAIL').length,
     rows: rowsV,
   };
@@ -24,7 +24,7 @@ export function makeBaseline(rows, { backend, adapter, sha, date, grid } = {}) {
 
 // null when the baseline matches this run's backend + adapter, else a message (different machine = different baseline).
 export function baselineMismatch(baseline, { backend, adapter }) {
-  if ((baseline.backend || 'webgl2') !== (backend || 'webgl2')) return `baseline backend '${baseline.backend}' != run backend '${backend}'`;
+  if ((baseline.backend || 'webgpu') !== (backend || 'webgpu')) return `baseline backend '${baseline.backend}' != run backend '${backend}'`;
   if (baseline.adapter !== (adapter || 'unknown')) return `baseline adapter '${baseline.adapter}' != run adapter '${adapter}'`;
   return null;
 }

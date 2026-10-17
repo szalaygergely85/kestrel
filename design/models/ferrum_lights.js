@@ -1,5 +1,6 @@
 /*
  * Kestrel - US-016 D-011 addendum: FERRUM'S LIGHTS on the far eastern horizon (behind the player at the breach).
+ * D-086: NOT used by the world any more (no ferrumGlow billboard, no horizon sprite); kept only as a model asset. See tools/ferrum-nosprite.test.mjs.
  * Format: design/README.md section 4 (sprite model) + section 4.3 (horizon billboard). Sets ASSETS.models.ferrumLights.
  *
  * Ferrum, the walled machine city Wick escaped from, is ~9 km east, beyond the terrain far limit. It is NOT terrain and NOT a

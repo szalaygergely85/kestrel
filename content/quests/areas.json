@@ -1,7 +1,98 @@
 {
   "version": 1,
   "areas": {
-    "breach": { "world": "world_m1", "structure": "tower", "marker": "breach" },
-    "waystone": { "world": "world_m1", "trigger": "end" }
+    "breach": {
+      "world": "world_m1",
+      "structure": "tower",
+      "marker": "breach"
+    },
+    "waystone": {
+      "world": "world_m1",
+      "trigger": "end"
+    },
+    "towerDoor": {
+      "world": "world_m1",
+      "trigger": "towerDoor"
+    },
+    "roadWest": {
+      "world": "world_m1",
+      "trigger": "roadWest"
+    },
+    "bendRelay": {
+      "world": "world_m1",
+      "trigger": "bendRelay"
+    },
+    "riverBank": {
+      "world": "world_m1",
+      "trigger": "riverBank"
+    },
+    "fordWest": {
+      "world": "world_m1",
+      "trigger": "fordWest"
+    },
+    "northLook": {
+      "world": "world_m1",
+      "trigger": "northLook"
+    },
+    "crossroads": {
+      "world": "world_m1",
+      "trigger": "crossroads"
+    },
+    "hintStone": {
+      "world": "world_m1",
+      "trigger": "hillPath"
+    },
+    "fenceGap": {
+      "world": "world_m1",
+      "trigger": "fenceGap"
+    },
+    "woodpile": {
+      "world": "world_m1",
+      "trigger": "woodpile"
+    },
+    "wagon": {
+      "world": "world_m1",
+      "trigger": "wagon"
+    },
+    "lamps": {
+      "world": "world_m1",
+      "trigger": "lamps"
+    },
+    "forestEdge": {
+      "world": "world_m1",
+      "trigger": "forestEdge"
+    },
+    "wallow": {
+      "world": "world_m1",
+      "trigger": "wallow"
+    },
+    "farmGate": {
+      "world": "world_m1",
+      "trigger": "farmGate"
+    },
+    "beeFarm": {
+      "world": "world_m1",
+      "trigger": "beeFarm"
+    },
+    "standStones": {
+      "world": "world_m1",
+      "trigger": "standStones"
+    },
+    "well": {
+      "world": "world_m1",
+      "trigger": "well"
+    },
+    "shrine": {
+      "world": "world_m1",
+      "trigger": "shrine"
+    },
+    "owPath": {
+      "world": "world_m1",
+      "trigger": "owPath"
+    },
+    "jetty": {
+      "world": "world_m1",
+      "trigger": "jetty"
+    }
   }
 }

@@ -26,7 +26,7 @@ assert.ok(EDGE_WGSL.includes('0x7f800000u') && /textureLoad\(uWater/.test(EDGE_W
 
 // ALPHA-01d string rules: the flag bit, the MAT_I bind, the soft gain uniform, and the soft gates
 assert.ok(F_SOFT_EDGE === 65536 && EDGE_WGSL.includes(`& ${F_SOFT_EDGE}) != 0`), 'F_SOFT_EDGE interpolated from ShadeTextures.js');
-assert.ok(/fn softMat\(k: u32, m: i32\) -> bool \{ return k != \d+u && \(textureLoad\(uMatI, vec2i\(0, m\), 0\)\.y &/.test(EDGE_WGSL), 'softMat reads MAT_I row m texel 0 .y');
+assert.ok(/fn softMat\(k: u32, m: i32\) -> bool \{ return k != \d+u && k != \d+u && \(textureLoad\(uMatI, vec2i\(0, m\), 0\)\.y &/.test(EDGE_WGSL), 'softMat reads MAT_I row m texel 0 .y');
 assert.ok(EDGE_WGSL.includes('if (si && softMat(nk, matAt(nc))) { return false; }') && EDGE_WGSL.includes('if (si) { return rule; }') && EDGE_WGSL.includes('gain = u.softGain'), 'soft gates');
 assert.equal(EDGE_BLOCK.field('softGain').word, 11, 'softGain replaces pad0 (layout unchanged)');
 
@@ -34,8 +34,8 @@ assert.equal(EDGE_BLOCK.field('softGain').word, 11, 'softGain replaces pad0 (lay
 const w = (n) => EDGE_BLOCK.field(n).word;
 assert.deepEqual(['gridCols', 'fogMax', 'waterOn', 'terrainFogStart', 'pitchC', 'edgeGlyph', 'edgeGain', 'wos'].map(w), [0, 2, 4, 8, 12, 16, 24, 32]);
 assert.equal(EDGE_BLOCK.field('edgeGlyph').words, 8);
-assert.equal(EDGE_BLOCK.field('wos').words, 24);
-assert.equal(EDGE_BLOCK.sizeBytes, 224);
+assert.equal(EDGE_BLOCK.field('wos').words, 28);
+assert.equal(EDGE_BLOCK.sizeBytes, 240);
 
 // --- decideRule vs edgeRules ---
 let seed = 31;

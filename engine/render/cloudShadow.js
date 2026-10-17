@@ -81,3 +81,14 @@ export function packCloudUniforms(C, timeSec, out) {
   out[4] = C.cover; out[5] = C.soft; out[6] = C.deckH; out[7] = C.seed;
   return out;
 }
+
+/**
+ * CLOUD-FLUFF-01d: copies the live (day/night blended) shadow params `palette.liveLook.cloudShadow` into `lights.cloud`
+ * (strength/scale/cover/soft/deckH; seed + wind stay from the look). No live look / no live block (frozen path): untouched.
+ * Allocation-free; runs per frame before the JS cloud pass and the WGSL light upload.
+ */
+export function syncLiveCloudShadow(lights) {
+  const c = lights.cloud, P = lights.cloudPal, L = P && P.liveLook, s = L && L.cloudShadow;
+  if (!c || !s) return;
+  c.strength = s.strength; c.scale = s.scale; c.cover = s.cover; c.soft = s.soft; c.deckH = s.deckH;
+}

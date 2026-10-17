@@ -158,7 +158,7 @@ export function applyLightPatch(ls, handle, item, frame, palette, scratch, posit
 /**
  * Finds a light's handle by its `${structureId}.${lightId}` key (`LightSet.
  * key[]`, set by `buildLightSet` - engine/render/lighting.js). Linear scan
- * over `ls.count` (<= `MAX_LIGHTS`, 16) - an edit-time lookup, not a
+ * over `ls.count` (<= `MAX_LIGHTS`, 24) - an edit-time lookup, not a
  * per-frame one, so this is not the "no per-frame allocation/scan" rule's
  * concern.
  * @param {{count:number, key:Array<string|null>}} ls

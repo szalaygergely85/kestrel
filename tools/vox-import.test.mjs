@@ -447,11 +447,11 @@ test('OWN-REQ-005b: overlapping part boxes is a clear error', () => {
   );
 });
 
-test('OWN-REQ-005b: more than 8 named layers is a clear error', () => {
+test('OWN-REQ-005b: more than MAX_VOX_PARTS (16, VOX-PARTS-16a) named layers is a clear error', () => {
   const models = [];
   const sceneChunks = [nTRNChunk(0, { childId: 1 }), nGRPChunk(1, [])];
   const children = [];
-  for (let i = 0; i < 9; i++) {
+  for (let i = 0; i < 17; i++) {
     const trnId = 2 + i * 2;
     const shpId = trnId + 1;
     models.push({ size: [1, 1, 1], voxels: [{ x: 0, y: 0, z: 0, c: 1 }] });
@@ -468,8 +468,8 @@ test('OWN-REQ-005b: more than 8 named layers is a clear error', () => {
   assert.throws(
     () => buildVoxelModel(parsed, { 1: 'stone' }, 0.05),
     (err) => {
-      assert.ok(err.message.includes('9 parts'), err.message);
-      assert.ok(err.message.includes('8'), err.message);
+      assert.ok(err.message.includes('17 parts'), err.message);
+      assert.ok(err.message.includes('16'), err.message);
       return true;
     }
   );

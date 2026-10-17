@@ -22,13 +22,16 @@
 // falls back to its default the same way an unknown field does - this file
 // stays a thin, generic storage adapter, not a second copy of the option
 // definitions.
-import { GRID_VALUES } from '../settings/options.js';
+import { GRID_VALUES, ASPECT_VALUES } from '../settings/options.js';
 import { QUALITY_CHOICES, SHADOW_CHOICES } from '../ui/gfxPresets.js';
 
 const STORAGE_KEY = 'kestrel.settings';
 const SETTINGS_VERSION = 1;
+const TEXT_SIZES = ['small', 'normal', 'large'];
+const validLod = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0.25 && v <= 4;
 const MOUSE_SENS_MIN = 0.05, MOUSE_SENS_MAX = 0.40;
 
+export const DIFFICULTIES = Object.freeze(['easy', 'normal', 'hard']); // DIFF-MENU (D-083)
 export const DEFAULT_SETTINGS = Object.freeze({
   settingsVersion: SETTINGS_VERSION,
   muted: false,
@@ -37,6 +40,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   fullscreen: false,
   mouseSensitivity: 0.15,
   invertY: false,
+  difficulty: 'normal',
 });
 
 // US-034 (docs/architecture.md 24.11): the editor's play-test handoff writes
@@ -129,7 +133,15 @@ export function loadSettings() {
   if (isBoolean(parsed.invertY)) out.invertY = parsed.invertY;
   // GFX-01w: optional quality choice + shadow level (absent = never chosen; unknown values dropped)
   if (QUALITY_CHOICES.includes(parsed.quality)) out.quality = parsed.quality;
+  if (ASPECT_VALUES.includes(parsed.aspect)) out.aspect = parsed.aspect; // OB-117: optional (absent = default 16:9)
   if (SHADOW_CHOICES.includes(parsed.shadowQuality)) out.shadowQuality = parsed.shadowQuality;
+  // SETTINGS-MOUNT-01: optional comfort + LOD choices (absent = never chosen)
+  if (TEXT_SIZES.includes(parsed.textSize)) out.textSize = parsed.textSize;
+  if (isBoolean(parsed.reduceMotion)) out.reduceMotion = parsed.reduceMotion;
+  if (isBoolean(parsed.showIntro)) out.showIntro = parsed.showIntro; // INTRO-PLAYER-01 (absent = on)
+  if (DIFFICULTIES.includes(parsed.difficulty)) out.difficulty = parsed.difficulty; // DIFF-MENU (D-083)
+  if (validLod(parsed.lodScale)) out.lodScale = parsed.lodScale;
+  if (parsed.gfxOverrides === true) out.gfxOverrides = true; // QUALITY-STALE-01: shadow/LOD rows changed after the preset pick
   // BINDINGS-WIRE-01: optional saved control bindings (plain object; the bindings module validates the contents)
   if (isPlainObject(parsed.bindings)) out.bindings = parsed.bindings;
   // settingsVersion is informational only for now (single version exists);
@@ -161,8 +173,24 @@ export function saveSettings(partial) {
   // GFX-01w: only written once chosen, so existing blobs stay byte-identical
   const quality = QUALITY_CHOICES.includes(p.quality) ? p.quality : current.quality;
   if (quality !== undefined) next.quality = quality;
-  const shadowQuality = SHADOW_CHOICES.includes(p.shadowQuality) ? p.shadowQuality : current.shadowQuality;
+  // QUALITY-STALE-01: an explicit undefined removes the key (a preset pick clears per-knob overrides)
+  const clears = k => k in p && p[k] === undefined;
+  const shadowQuality = clears('shadowQuality') ? undefined : SHADOW_CHOICES.includes(p.shadowQuality) ? p.shadowQuality : current.shadowQuality;
   if (shadowQuality !== undefined) next.shadowQuality = shadowQuality;
+  const aspect = ASPECT_VALUES.includes(p.aspect) ? p.aspect : current.aspect;
+  if (aspect !== undefined) next.aspect = aspect;
+  const textSize = TEXT_SIZES.includes(p.textSize) ? p.textSize : current.textSize;
+  if (textSize !== undefined) next.textSize = textSize;
+  const reduceMotion = isBoolean(p.reduceMotion) ? p.reduceMotion : current.reduceMotion;
+  if (reduceMotion !== undefined) next.reduceMotion = reduceMotion;
+  const showIntro = isBoolean(p.showIntro) ? p.showIntro : current.showIntro;
+  if (showIntro !== undefined) next.showIntro = showIntro;
+  const difficulty = DIFFICULTIES.includes(p.difficulty) ? p.difficulty : current.difficulty;
+  if (difficulty !== undefined) next.difficulty = difficulty;
+  const lodScale = clears('lodScale') ? undefined : validLod(p.lodScale) ? p.lodScale : current.lodScale;
+  if (lodScale !== undefined) next.lodScale = lodScale;
+  const gfxOverrides = clears('gfxOverrides') ? undefined : p.gfxOverrides === true ? true : current.gfxOverrides;
+  if (gfxOverrides) next.gfxOverrides = true;
   const bindings = isPlainObject(p.bindings) ? p.bindings : current.bindings;
   if (bindings !== undefined) next.bindings = bindings;
   if (!storage) return next; // no persistence available, but callers still get a valid object back

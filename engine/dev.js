@@ -28,13 +28,16 @@ export { edgePass } from './render/edgePass.js';
 
 // ---- GPU/CPU parity harness (?gpucompare=1) --------------------------------
 export {
-  runGpuCompare, compareCells, compareGeometry, compareLight, describeCellNormals, poisonNonSky, poisonAllCells, unpackReadback,
-  classifyMigrationCells, MIGRATION_CATS, compareShadowDepth,
+  runGpuCompare, compareCells, meshCellCap, compareGeometry, compareLight, describeCellNormals, poisonNonSky, poisonAllCells, unpackReadback,
+  classifyMigrationCells, MIGRATION_CATS, compareShadowDepth, compareGlow, emisFromPacked,
 } from './render/gpu/gpuCompare.js';
 // ME-15b (27.9a item 10): GPU sun shadow depth vs the rasterJS depth-only twin.
 export { createShadowParityRunner } from './render/gpu/shadowParity.js';
+export { runStableRow, compareStableRow } from './render/gpu/wg/stableCompare.js'; // US-073c: gpucompare `stable` row
 // ME-06 (27.15.5a item 6): compare harnesses settle the shared terrain mesh set before each pose.
+export { default as quadruped16 } from './voxel/fixtures/quadruped16.js'; // ANIM-C-04: tools/bench-life.mjs --legs (rigged stand-in)
 export { terrainMeshSetFor } from './mesh/terrainMesh.js';
+export { buildLevelMesh } from './mesh/levelMesh.js'; // OB-053: tools/coplanar-lint.mjs (level triangles)
 
 // ---- GPU/CPU sprite parity harness (?spritecompare=1, US-030c) -------------
 // Item 6b fix pass: moved from engine/index.js - its only real caller is
@@ -45,7 +48,7 @@ export { runSpriteCompare } from './render/gpu/spritesCompare.js';
 // Item 6b fix pass: added so tools/perf/uiDraw.perf.test.mjs can build a raw
 // scene RenderTarget without importing engine/render/CellBuffer.js directly
 // (tools/* may only import engine/index.js + engine/dev.js, check-deps rule 3/7).
-export { CellBuffer } from './render/CellBuffer.js';
+// CellBuffer: stable, import from engine/index.js (ENG-API-01b overlap fix)
 
 // ---- "may change without notice" glue (docs/architecture.md section 5) ----
 // PlayerLook has no reusable-engine home per architecture.md section 2's
@@ -58,10 +61,42 @@ export { Events } from './core/events.js';
 export { FrameProfiler } from './core/FrameProfiler.js'; // US-018 spike hunt (worst-frame section breakdown)
 
 // ---- pitched camera helpers (RE-02a: gpucompare's focus-driven RTS poses) ----
-export { pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG } from './render/projection.js';
+// (pitchedEyeFromFocus / PROJ_PITCHED_VFOV_DEG: stable, import from engine/index.js - ENG-API-01b overlap fix)
 
 // ---- mesh-collision bench internals (MESH-PHYS-01, tools/bench-mesh-collide.mjs) ----
 export { buildWorldColliders } from './world/colliders.js';
 export { moveCircleMesh, probeSupport } from './physics/meshCollide.js';
 export { buildBvhFromMesh } from './physics/bvh.js';
 export { frameMatrix12 } from './mesh/DrawList.js';
+export { packWaterLook, packRiverLook, riverAlpha, riverStreakHit, WL_STRIDE } from './render/waterLook.js'; // OB-062 test (tools/ob062-river-look.test.mjs)
+
+// ENG-API-01b: GPU device self test (index.js keeps a deprecated alias)
+export { selfTestDevice } from './render/gpu/device/createGpuDevice.js';
+
+// ---- test/bench fixtures (INT-1013) ----------------------------------------
+export { FIXTURE_FX, fixtureModels } from './fauna/wildlifeFx.fixture.js';
+
+// ---- WM-07 tools (tools/probe-region-dress.mjs) ----
+export { BandBakeJob } from './world/bandBake.js';
+export { bundleBytes } from './world/bandCache.js';
+
+// ---- VOX-PARTS-16b: 12-part test fixture for the gpucompare `vox12` row (game/js/dev/modes/gpucompare.js) ----
+
+// ---- GI-PROBE-05 gpucompare rows (analytic probe field standing in for a baked .gi.bin) -------------
+export { makeRowGI } from './render/giFixture.js';
+
+// ---- ENG-API-01d: internals used by tools/bench-shadow, bench-vox-parts, compare-detail-export, mesh-tri-budget, mesh-place-budget ----
+export { createSunShadowMatrix, shadowSunMatrix, sunShadowCentre, shadowInputHash } from './render/shadowSun.js';
+export { createShadowList, buildShadowList, shadowWorldZ } from './mesh/shadowList.js';
+export { LevelMeshCache, DrawList, addStructures } from './mesh/DrawList.js';
+export { VoxelMeshCache, addVoxelInstances } from './mesh/voxelMesh.js';
+export { InstanceGroups, compactGroup } from './mesh/instances.js';
+export { frustumPlanes, classifyAABB, CULL_OUT } from './mesh/culling.js';
+
+export { default as quadruped12 } from './voxel/fixtures/quadruped12.js';
+export { WgShadowPass } from './render/gpu/wg/passShadow.js';
+export { WgPointShadowPass } from './render/gpu/wg/passPointShadow.js';
+export { WgRasterPass } from './render/gpu/wg/passRaster.js';
+
+export { makeMockGpuDevice } from './test/assert.js'; // mock GPU device for CPU-side pass benches
+export { SKY_GLOW } from './render/skyGlow.js'; // CANOPY-SHAFT-01b: gpucompare rule 8a reads the sun tint

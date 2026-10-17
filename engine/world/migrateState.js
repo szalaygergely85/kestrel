@@ -5,7 +5,7 @@
 // error rather than a silent best-effort pass.
 
 /** Highest `WorldState.version` this engine writes/understands. */
-export const LATEST_VERSION = 2;
+export const LATEST_VERSION = 3;
 
 /**
  * Best-effort `parent` for an entity id, from the `<structId>.` id-prefix
@@ -39,6 +39,10 @@ export const MIGRATIONS = [
     }));
     return state;
   },
+  // v2 -> v3 (QFIX-S6, OB-155g): shape unchanged. The bump marks the rule
+  // change in `deserialize`: content-owned entities + structures come from
+  // CURRENT content, the save keeps player/body state + removed flags only.
+  (state) => state,
 ];
 
 /**

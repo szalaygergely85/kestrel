@@ -1,23 +1,33 @@
 // US-096w: bridges game events/facts into the lane-C quest sim (quest/sim/quest.js) and exposes the current
 // objective text for the HUD. Pure data + a small UI-layer draw; no world/engine imports, so it runs in Node.
-import { createQuest, applyQuestEvent, questObjectives } from './quest/sim/quest.js';
+import { questObjectives, whenCounted } from './quest/sim/quest.js';
+import { nextLine, EXPLORE_TEXT } from './questNext.js'; // OB-183
+import { createQuestBook, READY } from './quest/sim/questBook.js'; // QG-03: the relay's m1 state IS book.main
 
 const BREACH_R2 = 3 * 3, BREACH_DZ = 2.5; // "reached the breach": within 3 m (xy) of the marker and 2.5 m in z
+const scratch = [];
 export const DONE_TEXT = 'The pencil line runs on.';
+export const HUD_ROW = 4; // OB-190: rows 1-2 are the HP/MP bars (vitals layout hpRow 1 / mpRow 2, drawn after this line and covering it); row 4 leaves a gap
 const PLATE = [10, 11, 16], TEXT = [226, 214, 176], DIM = [140, 134, 112];
 
 /**
  * @param {any} def quest definition (content/quests/m1.quest.json)
  * @param {any} [saved] quest snapshot from a save
+ * @param {any[]} [giverDefs] giver quests (content/quests/*.quest.json with `giver`); QG-03
+ * @param {any} [savedQuests] save.game.quests map (or migrated)
  */
-export function createQuestRelay(def, saved = null) {
-  let state = createQuest(def, saved);
+export function createQuestRelay(def, saved = null, giverDefs = [], savedQuests = null) {
+  let livingFn = null; // R6-FIX C: SOFTLOCK-01 hook, installed on EVERY book this relay creates (new game, load, reset)
+  const mkBook = (q, qs) => { const b = createQuestBook(def, giverDefs, { quest: q, quests: qs }); if (livingFn) b.livingOfKind = livingFn; return b; };
+  let book = mkBook(saved, savedQuests);
+  let state = book.main;
   let rows = questObjectives(state, def, []);
-  const fired = { wake: false, lantern: false, sword: false, waystone: false, breach: false }; // edge guards (cheap polling)
+  const fired = { wake: false, sword: false, waystone: false, breach: false }; // edge guards (cheap polling)
+  const firedAreas = new Set(), insideAreas = new Set();
   let dirty = false, lineFor = '', line = '';
 
   function syncFired() {
-    fired.wake = state.flags.wake === true; fired.lantern = state.items.includes('lantern');
+    fired.wake = state.flags.wake === true;
     fired.sword = state.items.includes('sword'); fired.waystone = state.areas.includes('waystone'); fired.breach = state.areas.includes('breach');
   }
   syncFired();
@@ -25,13 +35,48 @@ export function createQuestRelay(def, saved = null) {
   /** Feeds one quest event (see quest.js); returns true when the quest changed. Malformed ids are ignored. */
   function feed(event) {
     let changed = false;
-    try { changed = applyQuestEvent(state, event, def); } catch (e) { return false; }
+    try { changed = book.feed(event); } catch (e) { return false; }
     if (changed) { questObjectives(state, def, rows); dirty = true; }
+    relay.checkSections();
     return changed;
+  }
+
+  /** CH1-02: "Quest complete" callback(title) for every section whose last step completed in objectives [from, to). */
+  let seen = state.completed.length; // steps already accounted for (restore sets it, so a restore never toasts)
+  function sectionToasts(from, to) {
+    const objs = def.objectives, titles = new Map((def.sections || []).filter(x => x.silent !== true).map(x => [x.id, x.title])); // PO-CH1-04: silent sections (owned by a giver quest's own toast) never toast
+    if (def.internal) { if (to >= objs.length && from < to) relay.onSection(''); return; } // M1-RETIRE: no section toasts; one silent call when the chain ends (chapter card)
+    for (let i = from; i < to; i++) {
+      const sec = objs[i].section;
+      if (sec && (i + 1 >= objs.length || objs[i + 1].section !== sec) && titles.has(sec)) relay.onSection(titles.get(sec));
+    }
   }
 
   const relay = {
     def,
+    /** Optional (title) callback: a section's last step completed live (main.js shows "Quest complete: <title>"). */
+    onSection: null,
+    /** Fires onSection for steps completed since the last call (feed() calls it; saveRelay.stepGame too, for giver hand-ins that bypass feed). */
+    checkSections() {
+      const n = state.completed.length;
+      if (n > seen && relay.onSection) sectionToasts(seen, n);
+      seen = n;
+    },
+    /** OB-183: optional { resolve(kind,id,out), x, y } (main.js keeps x/y = player) so the 'Next:' line names the NEAREST giver. */
+    nextCtx: null,
+    /** World the quest flags are written to (set by saveRelay each step / on boot). */
+    world: null,
+    /** CH1-02 (38.37 item 1): the one way game code sets a quest flag: world.state[key] = value AND book.feed. */
+    questFlag(key, value = true) {
+      if (relay.world) relay.world.state[key] = value;
+      return feed({ type: 'flag:set', key, value });
+    },
+    /** QG-03: the quest book (m1 + giver quests); replaced on reset(), so read it through the relay each time. */
+    get book() { return book; },
+    /** R6-FIX C: (kind) => living beasts of that kind; kept across resets. */
+    setLivingOfKind(fn) { livingFn = typeof fn === 'function' ? fn : null; book.livingOfKind = livingFn || undefined; },
+    /** R6-FIX C: replay the saved dead-beast ids into the book's kill record. */
+    seedDead(ids) { book.seedDead(ids); },
     /** Optional (name, a, b) callback for every event poll() fires (main.js points it at the gameHooks seam). */
     onPoll: null,
     get state() { return state; },
@@ -41,20 +86,31 @@ export function createQuestRelay(def, saved = null) {
     feed,
     /** Current objective text (first not-complete objective) or the done line (writer: "The pencil line runs on."). */
     objectiveText() {
-      return state.completed.length < def.objectives.length ? def.objectives[state.completed.length].text : (def.doneText || DONE_TEXT);
+      const t = book.tracked(); // QG-03: an accepted giver quest owns the HUD line (its step, or its return line when ready)
+      // OB-099: current objective only; "n/m" suffix only for item / kill steps
+      if (t >= 0) {
+        const d = book.def(t); if (book.status(t) === READY && d.returnText) return d.returnText;
+        const k = Math.min(book.questState(t).completed.length, d.objectives.length - 1), o = d.objectives[k];
+        return whenCounted(o.when) ? o.text + ' ' + book.objectives(t, scratch)[k].progress + '/' + (o.when.count ?? 1) : o.text;
+      }
+      if (def.internal) { const h = nextLine(book, relay.nextCtx); return state.completed.length >= def.objectives.length ? h || def.doneText || DONE_TEXT : h && h !== EXPLORE_TEXT ? h : ''; } // M1-RETIRE (OB-224): never an m1 step; the next giver or nothing
+      if (state.completed.length >= def.objectives.length) return nextLine(book, relay.nextCtx) || def.doneText || DONE_TEXT; // OB-183: never stuck - name the next giver
+      if (book.mainStepGated && book.mainStepGated()) return ''; // OB-199: step not accepted yet -> no HUD line (only the giver's '!')
+      const o = def.objectives[state.completed.length];
+      return whenCounted(o.when) ? o.text + ' ' + questObjectives(state, def, scratch)[state.completed.length].progress + '/' + (o.when.count ?? 1) : o.text;
     },
     /** Replace the quest (restore from a save, or a fresh run when `saved` is null). */
-    reset(savedState = null) {
-      state = createQuest(def, savedState); rows = questObjectives(state, def, []); syncFired(); dirty = false;
+    reset(savedState = null, savedQuests = null) {
+      const onChange = book.onChange;
+      book = mkBook(savedState, savedQuests); firedAreas.clear(); insideAreas.clear(); book.onChange = onChange; state = book.main; rows = questObjectives(state, def, []); syncFired(); dirty = false; seen = state.completed.length;
     },
     /**
      * Per-fixed-step facts -> events. Every flag fires once (guards); cost is a few comparisons.
-     * @param {{wakeDone:boolean, lanternTaken:boolean, swordTaken:boolean, endStarted:boolean, x:number, y:number, z:number}} f
+     * @param {{wakeDone:boolean, swordTaken:boolean, endStarted:boolean, x:number, y:number, z:number}} f
      * @param {{x:number,y:number,z:number}|null} breach world-space breach marker
      */
     poll(f, breach) {
       if (f.wakeDone && !fired.wake) { fired.wake = true; feed({ type: 'flag:set', key: 'wake', value: true }); if (relay.onPoll) relay.onPoll('flag:set', 'wake', true); }
-      if (f.lanternTaken && !fired.lantern) { fired.lantern = true; feed({ type: 'item:got', id: 'lantern' }); if (relay.onPoll) relay.onPoll('item:got', 'lantern', 1); }
       if (f.swordTaken && !fired.sword) { fired.sword = true; feed({ type: 'item:got', id: 'sword' }); if (relay.onPoll) relay.onPoll('item:got', 'sword', 1); }
       if (breach && !fired.breach) {
         const dx = f.x - breach.x, dy = f.y - breach.y;
@@ -62,13 +118,31 @@ export function createQuestRelay(def, saved = null) {
       }
       if (f.endStarted && !fired.waystone) { fired.waystone = true; feed({ type: 'area:entered', id: 'waystone' }); if (relay.onPoll) relay.onPoll('area:entered', 'waystone'); }
     },
+    /**
+     * QUEST-CHAIN-Q-01: area-only world zones (towerDoor / roadWest / bendRelay: circle x,y,r,zMin) -> area:entered once.
+     * Nothing else emitted these live (triggers.js skips nameless zones), so the 'leave' / 'road' / 'relay' steps never completed.
+     * @param {number} x @param {number} y @param {number} z @param {{id:string,x:number,y:number,r:number,zMin:number}[]} zones
+     */
+    pollAreas(x, y, z, zones) {
+      // OB-220b: edge-triggered (enter), so a side quest accepted AFTER the player visited a zone still needs a fresh entry (book.accept clears the quest's area facts); onPoll fires only for the first visit.
+      for (let i = 0; i < zones.length; i++) {
+        const q = zones[i];
+        const dx = x - q.x, dy = y - q.y;
+        if (dx * dx + dy * dy <= q.r * q.r && z >= q.zMin) {
+          if (insideAreas.has(q.id)) continue;
+          insideAreas.add(q.id); feed({ type: 'area:entered', id: q.id });
+          if (!firedAreas.has(q.id)) { firedAreas.add(q.id); if (relay.onPoll) relay.onPoll('area:entered', q.id); }
+        } else if (insideAreas.size) insideAreas.delete(q.id);
+      }
+    },
     /** HUD: objective line at the top-left of the UI layer (setCellRGB cells; no allocation).
      *  TEMPORARY (D-050): lane C's quest HUD replaces this line; until then it is the only objective line (never draw two). */
     draw(ui) {
       const text = relay.objectiveText();
-      if (text !== lineFor) { lineFor = text; line = relay.done ? text : '> ' + text; } // rebuilt only when the text changes
+      if (text === '') return; // OB-199: nothing accepted to show
+      if (text !== lineFor) { lineFor = text; line = relay.done && !text.startsWith('Next:') ? text : '> ' + text; } // rebuilt only when the text changes
       const s = line;
-      const fg = relay.done ? DIM : TEXT, x0 = 2, y = 1;
+      const fg = relay.done && !s.startsWith('> Next:') ? DIM : TEXT, x0 = 2, y = HUD_ROW;
       for (let j = -1; j <= s.length; j++) put(ui, x0 + j, y, 32, fg, PLATE);
       for (let j = 0; j < s.length; j++) put(ui, x0 + j, y, s.charCodeAt(j), fg, PLATE);
     },

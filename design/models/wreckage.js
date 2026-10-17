@@ -437,6 +437,7 @@
   }
   A.models.burnerFire = {
     name: 'burnerFire',
+    fx: true,                                  // OB-172/D-104: fire is a billboard, exempt from lint R2
     desc: 'US-053c / 36.2: the burner\'s fire body, Build-engine style - a white-yellow core low in the mouth, ' +
           'orange licking tongues with ragged red tips and detached flicks, over a bed of embers. All emissive. ' +
           'Particles add embers + smoke above it.',
@@ -545,6 +546,10 @@
                          ['o', '|', ')', '(', ')', '(', ':', ','], -1, [1500, 700])
     ]
   };
+  // OB-098: registry host for the drape rope tethers (tower.level.json prop "ropeTether"); voxel_tower.js attaches the voxel
+  // model the game draws. Defined HERE (next to rope) so every loader that knows `rope` also knows `ropeTether`.
+  (function () { var rb = A.models.rope.variants[0], h = {}, k; for (k in rb) h[k] = rb[k]; h.name = "ropeTether";
+    h.desc = "OB-098 rope tethers on the drape hem; billboard fallback = rope variant 0, the game draws the voxel."; A.models.ropeTether = h; })();
 
   // =====================================================================================================
   // BENT STRUT 12x4 (ART-OWN-001, was 4x3): a gondola frame bar lying on the rubble, bent up at a verdigris kink.

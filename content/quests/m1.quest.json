@@ -1,12 +1,188 @@
 {
   "version": 1,
   "id": "m1",
+  "title": "Beyond the Wall",
+  "internal": true,
+  "note": "M1-RETIRE (OB-224): internal chapter-progress tracker only. Never a quest the player sees (journal, HUD line, compass, marks, toasts); every step is owned by a small giver quest or is the wake beat.",
+  "sections": [
+    {
+      "id": "q01",
+      "title": "A Blade in the Ashes",
+      "silent": true
+    },
+    {
+      "id": "q03",
+      "title": "Boars in the Woods",
+      "silent": true
+    },
+    {
+      "id": "q04",
+      "title": "Follow the Bear"
+    },
+    {
+      "id": "q05",
+      "title": "Awaken the Stone"
+    },
+    {
+      "id": "q06",
+      "title": "The Next Light"
+    }
+  ],
   "objectives": [
-    { "id": "wake", "text": "Get up from the wreck", "when": { "type": "flag", "id": "wake", "equals": true } },
-    { "id": "lantern", "text": "Take the Kestrel's lamp", "when": { "type": "item", "id": "lantern" } },
-    { "id": "breach", "text": "Climb to the breach at the top", "when": { "type": "area", "id": "breach" } },
-    { "id": "sword", "text": "Take up the ruin steel", "when": { "type": "item", "id": "sword" } },
-    { "id": "beasts", "text": "Bring down the two wild boars", "when": { "type": "beasts", "ids": ["boar1", "boar2"], "count": 2 } },
-    { "id": "waystone", "text": "Walk the pencil line to the waystone", "when": { "type": "area", "id": "waystone" } }
+    {
+      "id": "wake",
+      "section": "q01",
+      "text": "Get up from the wreck",
+      "journal": "The Kestrel crashed. Get up and look.",
+      "when": {
+        "type": "flag",
+        "id": "wake",
+        "equals": true
+      }
+    },
+    {
+      "id": "breach",
+      "section": "q01",
+      "text": "Climb to the top of the tower",
+      "journal": "Alive. Climb to the top of the tower.",
+      "when": {
+        "type": "area",
+        "id": "breach"
+      }
+    },
+    {
+      "id": "sword",
+      "section": "q01",
+      "text": "Take up the ruin steel",
+      "journal": "Take the ruin steel from the ashes.",
+      "when": {
+        "type": "item",
+        "id": "sword"
+      }
+    },
+    {
+      "id": "leave",
+      "section": "q01",
+      "text": "Leave through the tower door",
+      "journal": "Sword in hand. Go out the tower door.",
+      "when": {
+        "type": "area",
+        "id": "towerDoor"
+      },
+      "mark": {
+        "end": "doorMarker"
+      }
+    },
+    {
+      "id": "bladeDone",
+      "section": "q01",
+      "text": "Tell Burl you are out",
+      "journal": "A bear waits outside. Talk to her.",
+      "when": {
+        "type": "flag",
+        "id": "quest.tower.blade.done",
+        "equals": true
+      }
+    },
+    {
+      "id": "beasts",
+      "section": "q03",
+      "text": "Help Burl with the boars",
+      "journal": "Help the bear drive out the boars.",
+      "when": {
+        "type": "flag",
+        "id": "quest.burl.boars.done",
+        "equals": true
+      }
+    },
+    {
+      "id": "follow",
+      "section": "q04",
+      "text": "Follow the bear",
+      "journal": "The bear is Burl. Follow her lead.",
+      "when": {
+        "type": "flag",
+        "id": "quest.burl.follow.done",
+        "equals": true
+      }
+    },
+    {
+      "id": "waystone",
+      "section": "q05",
+      "text": "Wake the waystone",
+      "journal": "Burl led you to a dark stone. Wake it.",
+      "when": {
+        "type": "flag",
+        "id": "waystone.waystone.woken",
+        "equals": true
+      },
+      "mark": {
+        "end": "endMarker"
+      }
+    },
+    {
+      "id": "stoneDone",
+      "section": "q05",
+      "text": "Tell Burl the stone is awake",
+      "journal": "The stone glows. Go back to Burl.",
+      "when": {
+        "type": "flag",
+        "id": "quest.burl.stone.done",
+        "equals": true
+      }
+    },
+    {
+      "id": "road",
+      "section": "q06",
+      "text": "Take the road west",
+      "journal": "Take the road west to the next light.",
+      "when": {
+        "type": "area",
+        "id": "roadWest"
+      },
+      "mark": {
+        "start": "bear",
+        "end": "relayBend",
+        "taken": "burl.departing"
+      }
+    },
+    {
+      "id": "relayFound",
+      "section": "q06",
+      "text": "Find the dead waystone at the bend",
+      "journal": "Find the dead waystone by the bend.",
+      "when": {
+        "type": "area",
+        "id": "bendRelay"
+      },
+      "mark": {
+        "end": "relayBend"
+      }
+    },
+    {
+      "id": "relay1",
+      "section": "q06",
+      "text": "Wake the waystone",
+      "journal": "The Bend waystone is cold. Wake it.",
+      "when": {
+        "type": "flag",
+        "id": "waystone.ws_roadBend.woken",
+        "equals": true
+      },
+      "mark": {
+        "end": "relayBend"
+      }
+    },
+    {
+      "id": "bendCall",
+      "section": "q06",
+      "text": "Tell Rook about the Bend stone",
+      "journal": "Talk to Rook, the crow in the ruin.",
+      "when": {
+        "type": "flag",
+        "id": "quest.mq.bend.call.done",
+        "equals": true
+      }
+    }
   ]
 }

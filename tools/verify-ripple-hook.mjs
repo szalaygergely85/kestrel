@@ -4,8 +4,9 @@
 // (engine/fx/ripples.js) and hands the ring buffer to the renderer via `fb.ripples`. Same CDP approach as
 // tools/verify-device-lost.mjs, reusing capture-browser.mjs's exported helpers - PC-B lane B1 port range only
 // (9500-9574).
-// Run: node tools/verify-ripple-hook.mjs 9513 (webgpu, default) or: node tools/verify-ripple-hook.mjs 9513 webgl2
+// Run: node tools/verify-ripple-hook.mjs 9513 (webgpu, default)
 import { spawn } from 'node:child_process';
+import { withTimeFreeze } from './tool-url.mjs'; // DN-04a
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
@@ -15,7 +16,7 @@ const port = Number(process.argv[2] || 9513);
 validatePort(port);
 if (port < 9500 || port + 1 > 9574) throw new Error('PC-B lane B1 range is 9500-9574 (next port is CDP)');
 const backend = process.argv[3] || 'webgpu';
-assert.ok(['webgpu', 'webgl2'].includes(backend), 'backend must be webgpu or webgl2');
+assert.ok(['webgpu'].includes(backend), 'backend must be webgpu');
 
 const profile = mkdtempSync(path.join(os.tmpdir(), 'kestrel-ripple-hook-'));
 const server = spawn('python', ['-c', 'import http.server,sys; http.server.ThreadingHTTPServer.request_queue_size=128; sys.argv=["tools/serve.py",sys.argv[1]]; import tools.serve; tools.serve.main()', String(port)], { cwd: ROOT, stdio: 'ignore', windowsHide: true });
@@ -31,7 +32,7 @@ try {
 
   // `?dev=1` is required for window.__kestrel.ripple(...) to exist. `?voxelbench=0` keeps the real
   // wake-then-play timeline out of the way (no title menu/pause overlay).
-  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?dev=1&voxelbench=0&grid=400x150&backend=${backend}` });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(`dev=1&voxelbench=0&grid=400x150&backend=${backend}`)}` });
   let ready = false;
   for (let i = 0; i < 100; i++) { await pause(300); if (await evaluate(cdp, '!!(window.__debug && window.__debug.world)')) { ready = true; break; } }
   assert.ok(ready, 'world:loaded never fired: ' + JSON.stringify(errors));

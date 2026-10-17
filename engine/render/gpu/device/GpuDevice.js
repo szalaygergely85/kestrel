@@ -81,6 +81,7 @@
  * @property {GpuHandle} [indexBuffer]
  * @property {GpuHandle} [instanceBuffer] - WG-1b1 (38.3): per-instance vertex buffer for `PipelineStageDesc.instanceLayout`
  * @property {GpuHandle[]} [extraBuffers] - WG-2b: buffers for `PipelineStageDesc.extraLayouts`, same order
+ * @property {number} [instanceOffset] - ENV-01d: byte offset into `instanceBuffer` (multiple of 4; WebGPU only, GL2 ignores)
  * @property {number} [uniformOffsetBytes] - WG-1b1 (38.4): dynamic offset of this draw's block in the uniform ring (WebGPU; GL2 ignores)
  */
 
@@ -90,13 +91,14 @@
  * Entry point default `cs_main` (`src.entry` overrides). WebGPU only.
  * @typedef {Object} ComputePipelineDesc
  * @property {{wgsl: string, entry?: string}} src
- * @property {{uniformBytes: number, buffers: ('read'|'rw')[]}} bindings
+ * @property {{uniformBytes: number, buffers: ('read'|'rw')[], textures?: ('float'|'uint')[]}} bindings - ENV-01d: textures bind after the buffers (binding = buffers.length + i)
  * @property {string} [label]
  */
 
 /**
  * @typedef {Object} ComputeBindDesc
  * @property {{slot: number, buffer: GpuHandle}[]} buffers - every slot of the pipeline; the bind group is cached per distinct handle set
+ * @property {{slot: number, texture: GpuHandle}[]} [textures] - ENV-01d: one per pipeline texture
  * @property {Float32Array|Int32Array|Uint32Array} [uniforms]
  * @property {number} [uniformOffsetBytes]
  */
@@ -152,7 +154,7 @@ export class GpuDevice {
    * `queue.writeBuffer`; GL2 `bufferSubData`). Never allocates a new buffer: callers upload only when their data changed.
    * @param {GpuHandle} handle @param {ArrayBufferView} data @param {number} [dstOffsetBytes]
    */
-  writeBuffer(handle, data, dstOffsetBytes) { throw new Error('GpuDevice.writeBuffer: not implemented'); }
+  writeBuffer(handle, data, dstOffsetBytes, byteLength) { throw new Error('GpuDevice.writeBuffer: not implemented'); }
   /** @param {GpuHandle} target @param {PassDesc} [opts] */
   beginPass(target, opts) { throw new Error('GpuDevice.beginPass: not implemented'); }
   /** @param {GpuHandle} pipeline @param {BindDesc} desc */

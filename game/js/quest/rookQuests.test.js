@@ -1,0 +1,95 @@
+// Rook's main quests (mq.bend.call, mq.ford.mirror) on the REAL content + the errands.mainSync flag bridge + Rook's dialogue.
+// Run: node game/js/quest/rookQuests.test.js
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { loadQuestFiles } from '../questBoot.js';
+import { createQuestBook } from './sim/questBook.js';
+import { loadContentPack, createDialogueRunner } from '../../../engine/index.js';
+import { loadDesignAssets } from '../../../tools/validate-content.mjs';
+import { createErrands } from './errands.js';
+
+const ROOT = new URL('../../../', import.meta.url);
+const rd = (p) => JSON.parse(readFileSync(new URL(p, ROOT), 'utf8'));
+const A = await loadDesignAssets();
+assert.ok(A.items.defs['chart.river'] && A.items.defs['relay.mirror'], 'item defs');
+const items = Object.values(A.items.defs).map((d) => ({ id: d.id, slot: d.equip && d.equip.slot, tier: d.equip && d.equip.tier }));
+const files = await loadQuestFiles(async (u) => rd('game/' + u), { items, log: () => {} });
+assert.deepEqual(files.errors, []);
+for (const id of ['mq.bend.call', 'mq.ford.mirror']) assert.ok(files.giverDefs.some((d) => d.id === id && d.giver.npc === 'rook'), id + ' loaded');
+
+const pack = new Map(), state = {};
+const book = createQuestBook(files.questDef, files.giverDefs, null);
+book.packOps = { count: (id) => pack.get(id) || 0, remove() {}, add: (id, n) => { pack.set(id, (pack.get(id) || 0) + n); return n; }, equipped: () => false };
+const questFlag = (k, v = true) => { state[k] = v; book.feed({ type: 'flag:set', key: k, value: v }); };
+const world = { state, get: () => null, interactables: [], addInteractable() {} };
+const notes = [];
+const er = createErrands({ getBook: () => book, questFlag, inspect() {}, note: (t, l) => notes.push([t, l]), texts: JSON.parse(readFileSync(new URL('../../../content/dialogue/inspect.json', import.meta.url), 'utf8')) });
+er.load(world);
+
+// Rook's real dialogue, driven by the bridge flags
+const small = { kind: 'manifest', schema: 1, id: 'rook-test', contentVersion: 1, files: ['dialogue/rook.dialogue.json'] };
+const bundle = await loadContentPack(new URL('content/manifest.json', ROOT).href, { fetchText: async (u) => (u.endsWith('manifest.json') ? JSON.stringify(small) : readFileSync(new URL(u), 'utf8')) });
+const talk = () => { // like dialogueCtl: s.<k> reads world.state, sets go through questFlag
+  const said = [], r = createDialogueRunner({ pageLines: 1 });
+  r.open(bundle.dialogues.rook, { has: (k) => (k.startsWith('q.') ? book.hasKey(k) : k.startsWith('s.') ? !!state[k.slice(2)] : state['dlg.' + k] === true), set: (k) => { if (k.startsWith('q.')) book.actKey(k); else if (k.startsWith('s.')) questFlag(k.slice(2)); else state['dlg.' + k] = true; } });
+  for (let g = 0; g < 60 && r.state !== 'ended'; g++) { if (r.state === 'typing') { said.push(r.line); r.press(); } else if (r.state === 'choosing') r.choose(); else r.press(); }
+  er.talked('rook'); return said;
+};
+const st = (id) => book.statusOf(id);
+
+// before the Bend relay wakes: talk is harmless, the accept flag is dropped
+assert.equal(st('mq.bend.call'), 0);
+talk(); assert.equal(st('mq.bend.call'), 0); assert.ok(!state['mq.bend.call.accept'], 'stale accept dropped');
+
+// m1 step relay1 (the Bend relay) -> available; pulse flag 4 s after the wake
+for (const o of files.questDef.objectives) { const w = o.when; if (w.type === 'flag') questFlag(w.id); else if (w.type === 'area') book.feed({ type: 'area:entered', id: w.id }); else if (w.type === 'item') book.feed({ type: 'item:got', id: w.id }); else if (w.type === 'beasts') for (const id of w.ids) book.feed({ type: 'beast:died', id }); if (o.id === 'relay1') break; }
+questFlag('waystone.ws_roadBend.woken');
+// OB-210: mq.bend.call opens once Burl's "The Road West" (burl.road) is handed in at Rook; hand the Burl chain in with real events
+for (const id of ['tower.blade', 'burl.boars', 'burl.follow', 'burl.stone', 'burl.road']) {
+  const d = book.def(book.index(id)); book.accept(id);
+  for (const o of d.objectives) { const w = o.when; if (w.type === 'flag') questFlag(w.id); else if (w.type === 'area') book.feed({ type: 'area:entered', id: w.id }); else if (w.type === 'item') book.feed({ type: 'item:got', id: w.id }); else if (w.type === 'beasts') for (let n = 0; n < w.count; n++) book.feed({ type: 'beast:died', id: w.kind !== undefined ? w.kind + 'R' + n : w.ids[n] }); }
+  book.handIn(id);
+}
+er.mainSync(0); assert.equal(st('mq.bend.call'), 1); assert.ok(state['mq.bend.call.available']);
+er.mainSync(3); assert.ok(!state['relay.bend.pulseSeen']); er.mainSync(1.5); assert.ok(state['relay.bend.pulseSeen'], 'pulse seen');
+const meet = talk(); assert.equal(meet.length, 9); assert.equal(st('mq.bend.call'), 2, 'accepted via dialogue'); assert.ok(state['mq.bend.call.active']);
+assert.match(talk()[0], /Count the blinks/);
+er.inspected('knot'); er.mainSync(0); assert.equal(notes.length, 1); assert.equal(notes[0][0], 'A knot on the brass');
+assert.equal(st('mq.bend.call'), 3); assert.ok(state['mq.bend.call.ready']);
+const ready = talk(); assert.equal(ready.length, 6);
+assert.equal(st('mq.bend.call'), 4, 'handed in via dialogue'); assert.deepEqual(book.lastReward.items, [{ id: 'chart.river', n: 1 }]);
+assert.ok(state['mq.bend.call.done']);
+// OB-156 (QFIX-S5a-4): river road + stones are Rook's Accept/Not yet + hand-in talks too
+assert.equal(st('mq.river.road'), 1); assert.match(talk()[0], /Paper says river/); assert.equal(st('mq.river.road'), 2, 'accepted via dialogue');
+book.feed({ type: 'area:entered', id: 'riverBank' }); er.mainSync(0); assert.equal(st('mq.river.road'), 3);
+talk(); assert.equal(st('mq.river.road'), 4, 'handed in via dialogue'); assert.equal(st('mq.ford.stones'), 1);
+assert.match(talk()[0], /Stones in the water/); assert.equal(st('mq.ford.stones'), 2);
+book.feed({ type: 'area:entered', id: 'fordWest' }); er.mainSync(0); assert.equal(st('mq.ford.stones'), 3);
+talk(); assert.equal(st('mq.ford.stones'), 4, 'handed in via dialogue');
+
+// Ch2: stones crossed -> mirror available; relay gate flag follows the pack; auto hand-in once the relay wakes
+assert.equal(st('mq.ford.mirror'), 1);
+er.mainSync(0);
+assert.equal(st('mq.ford.mirror'), 1);
+assert.match(talk()[0], /Wet boots/); assert.equal(st('mq.ford.mirror'), 2);
+assert.match(talk()[0], /Look on the floor/);
+assert.ok(!state['mq.ford.mirror.glass']);
+pack.set('relay.mirror', 1); book.feed({ type: 'item:got', id: 'relay.mirror' }); er.mainSync(0);
+assert.ok(state['mq.ford.mirror.glass'], 'gate flag follows the pack');
+questFlag('waystone.ws_ford.woken'); er.mainSync(0);
+assert.equal(st('mq.ford.mirror'), 3, 'READY, no auto hand-in');
+assert.equal(talk().length, 2); // rook.mirror.done = the hand-in talk
+assert.equal(st('mq.ford.mirror'), 4, 'handed in by talking to Rook'); assert.ok(state['mq.ford.mirror.done']);
+
+// QL-07/16 real content: knot + nest pickup entities exist, and the Bend pulse is 3 cycles of Morse ALIVE (ASSETS.signal)
+const wd = rd('content/worlds/world_m1.world.json'), ent = (id) => wd.entities.find((e) => e.id === id);
+assert.deepEqual(ent('nest').components.questPickup, { item: 'relay.mirror', n: 1 }); assert.equal(ent('nest').components.voxel.model, 'pickup.relay.mirror'); // OB-132 voxel pickup
+assert.equal(ent('knot').components.inspect.text, 'note.knot');
+assert.equal(wd.entities.filter((e) => /^boarF\d$/.test(e.id) && e.components.brain.temperament === 'wary').length, 2);
+await import('../../../design/models/title.js'); // classic script: sets globalThis.ASSETS.signal (shared pattern source)
+const { pulseFactor } = await import('./relayWake.js');
+const on = (t) => pulseFactor(t) === 1; assert.ok(on(0.1) && !on(0.3) && on(0.6) && !on(1.4) && on(2.1));
+const CYC = globalThis.ASSETS.signal.cycle; assert.equal(pulseFactor(3 * CYC + 0.1), -1); assert.ok(pulseFactor(CYC - 1) < 1);
+let blinks = 0, prev = false; for (let t = 0; t < 3 * CYC; t += 0.05) { const o = pulseFactor(t) === 1; if (o && !prev) blinks++; prev = o; }
+assert.equal(blinks, 13 * 3, '13 marks x 3 cycles: ' + blinks);
+console.log('rookQuests: PASS');

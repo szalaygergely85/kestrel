@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "id": "burl.stone",
+  "title": "Wake the Waystone",
+  "giver": { "npc": "bear" },
+  "requires": [{ "quest": "burl.follow", "done": true }],
+  "objectives": [
+    { "id": "wake", "text": "Wake the waystone", "journal": "Burl led you to a dark stone. Wake it.", "when": { "type": "flag", "id": "waystone.waystone.woken", "equals": true } }
+  ],
+  "returnText": "Talk to Burl",
+  "rewardBand": "errand",
+  "reward": { "coin": 5, "items": [{ "id": "arrow", "n": 5 }] }
+}

@@ -62,17 +62,19 @@
   var defs = {
     // ---------------- hand items ----------------
     sword: {
-      id: 'sword', name: 'Ruin Steel', kind: 'weapon', stackMax: 1, hand: true, inPack: true,
+      id: 'sword', name: 'Old Sword', kind: 'weapon', stackMax: 1, hand: true, inPack: true,
       desc: 'Old watch steel. Nicked, still true.',
       glyph: { ch: '/', c: 'mirror' },
       //  .        cross-guard top
       // o+==>     pommel, guard, blade, point
       //  '        cross-guard bottom
       icon: icon([' .   ', 'o+==>', " '   "],
-                 [' Z   ', 'zZSSW', ' z   '])
+                 [' Z   ', 'zZSSW', ' z   ']),
+      equip: { slot: 'main', tier: 'worn', def: 0, held: 'sword' }   // EQ-01
     },
     'spell.fireball': {
-      id: 'spell.fireball', name: 'Ember', kind: 'spell', stackMax: 1, hand: true, inPack: true,
+      id: 'spell.fireball', name: 'Fireball', kind: 'spell', stackMax: 1, hand: true, inPack: true,
+      equip: { slot: 'off', tier: 'worn', def: 0 }, // FB-01 fix: hands are derived from equipment (OB-017); without an off-slot the spell could never reach a hand
       desc: 'A coal that answers the hand.',
       glyph: { ch: '*', c: 'flameMid' },
       //  .^,      flame tips
@@ -128,9 +130,18 @@
       icon: icon(["   ,'", '  // ', '(=/  '],
                  ['   TW', '  uT ', 'nnu  '])
     },
+    'goblin.trinket': { // GOB-05: a sell item; icon + sprite are the tusk's placeholders (NEEDS DESIGNER)
+      id: 'goblin.trinket', name: 'Goblin Trinket', kind: 'material', stackMax: 20, hand: false, inPack: true,
+      desc: 'Bent wire and bone. Sells well.',
+      use: { none: 'Material - sell it' },
+      glyph: { ch: '*', c: 'linenLight' },
+      sprite: 'lootTusk',
+      icon: icon(["   ,'", '  // ', '(=/  '],
+                 ['   TW', '  uT ', 'nnu  '])
+    },
     // ---------------- ground orbs (US-080b drops; NOT stored: used on touch) ----------------
     'orb.hp': {
-      id: 'orb.hp', name: 'Herb Flask', kind: 'pickup', stackMax: 0, hand: false, inPack: false,
+      id: 'orb.hp', name: 'Health Orb', kind: 'pickup', stackMax: 0, hand: false, inPack: false,
       desc: 'Bitter herbs under red wax. Heals.',
       use: { heal: 10, onTouch: true, note: 'existing pickups.js kind hp (PICKUP_AMOUNT 10); def is for the toast only' },
       glyph: { ch: '+', c: 'vital' },
@@ -139,7 +150,7 @@
                  [' cPc ', 'gLWLG', ' GGG '])
     },
     'orb.mp': {
-      id: 'orb.mp', name: 'Cold Shard', kind: 'pickup', stackMax: 0, hand: false, inPack: false,
+      id: 'orb.mp', name: 'Mana Orb', kind: 'pickup', stackMax: 0, hand: false, inPack: false,
       desc: 'A sliver of teal light. Restores MP.',
       use: { mana: 10, onTouch: true, note: 'existing pickups.js kind mp (PICKUP_AMOUNT 10); def is for the toast only' },
       glyph: { ch: '*', c: 'manaLight' },
@@ -164,17 +175,18 @@
   keys.X = { c: 'lantern', e: true };
 
   defs.shield = {
-    id: 'shield', name: 'Brass Buckler', kind: 'shield', stackMax: 1, hand: true, inPack: true,
+    id: 'shield', name: 'Brass Shield', kind: 'shield', stackMax: 1, hand: true, inPack: true,
     desc: 'Gondola plate, bent round a strap.',
     glyph: { ch: 'O', c: 'brass' },
     // /=o=\     rim + top rivet
     // |:@:|     dented plate, bright boss
     // \___/     lower rim in shadow
     icon: icon(['/=o=\\', '|:@:|', '\\___/'],
-               ['ABVBA', 'BjAjJ', 'JjjjJ'])
+               ['ABVBA', 'BjAjJ', 'JjjjJ']),
+    equip: { slot: 'off', tier: 'worn', def: 2, held: 'shield' }   // EQ-01 (shield counts x2)
   };
   defs.lantern = {
-    id: 'lantern', name: 'Kestrel Lamp', kind: 'tool', stackMax: 1, hand: true, inPack: true,
+    id: 'lantern', name: 'Lantern', kind: 'tool', stackMax: 1, hand: true, inPack: true,
     desc: "The gondola's lamp. It still burns.",
     note: 'quest item id (M1 objective `lantern`); today lantern.take sets a flag, S8-C-08 decides if it also adds this item',
     glyph: { ch: '#', c: 'lantern' },
@@ -203,10 +215,11 @@
     // (-+->     grip, fletch, nock on the string, shaft, iron head
     //  \|       lower limb + string
     icon: icon([' /|  ', '(-+->', ' \\|  '],
-               [' Hu  ', 'hfuws', ' lu  '])
+               [' Hu  ', 'hfuws', ' lu  ']),
+    equip: { slot: 'ranged', tier: 'worn', def: 0, held: 'bow' }   // EQ-01
   };
   defs.bomb = {
-    id: 'bomb', name: 'Blast Pot', kind: 'tool', stackMax: 10, hand: true, inPack: true,
+    id: 'bomb', name: 'Bomb', kind: 'tool', stackMax: 10, hand: true, inPack: true,
     desc: 'Clay, black powder, a short fuse.',
     use: { note: 'throw: a later story (no sim yet)' },
     glyph: { ch: 'o', c: 'copper' },
@@ -215,6 +228,68 @@
     // `-=-'     foot in shadow
     icon: icon([" .-'*", '(=#=)', "`-=-'"],
                [' FpDE', 'FpDpo', 'oopoo'])
+  };
+  defs['berry.blue'] = {
+    id: 'berry.blue', name: 'Blue Sprig', kind: 'material', stackMax: 20, hand: false, inPack: true,
+    desc: 'Blue berries. Burl is counting.',
+    use: { none: 'Material - quest errand (sq.burl.blue)' },
+    glyph: { ch: 'o', c: 'manaLight' },
+    //  .o.      berry cluster
+    // (oQo)
+    //   |       stem
+    icon: icon([' .o. ', '(oQo)', '  |  '],
+               [' qQq ', 'qQqQq', '  h  '])
+  };
+  defs.redcap = {
+    id: 'redcap', name: 'Red Cap', kind: 'material', stackMax: 10, hand: false, inPack: true,
+    desc: 'East-bank mushroom. Rook wants some.',
+    use: { none: 'Material - quest errand (sq.rook.caps)' },
+    glyph: { ch: 'n', c: 'goreRed' },
+    //  .-.      red cap, white warts
+    // (o:o)
+    //  |=|      stem
+    icon: icon([' .-. ', '(obo)', ' |=| '],
+               [' rRr ', 'RbRbR', ' ffb '])
+  };
+  defs.signArm = {
+    id: 'signArm', name: 'Signpost Arm', kind: 'material', stackMax: 1, hand: false, inPack: true,
+    desc: 'Washed up. For the crossroads post.',
+    use: { none: 'Material - quest errand (sq.fc.sign, MAP-26 pickup)' },
+    glyph: { ch: '=', c: 'goreRed' },
+    icon: icon(['=---=', '  |  ', '  |  '],
+               ['bbbbb', '  b  ', '  b  '])
+  };
+  defs.barleySheaf = {
+    id: 'barleySheaf', name: 'Barley Sheaf', kind: 'material', stackMax: 1, hand: false, inPack: true,
+    desc: 'A tied sheaf from the barley gate.',
+    use: { none: 'Material - quest errand (sq.ow.barley, QL-22b pickup)' },
+    glyph: { ch: '#', c: 'goreRed' },
+    icon: icon([' .|. ', ' ||| ', '=====' ],
+               [' bbb ', ' bbb ', 'bbbbb'])
+  };
+  defs.emberpod = {
+    id: 'emberpod', name: 'Emberpod', kind: 'material', stackMax: 3, hand: false, inPack: true,
+    desc: 'A dry red pod. Warm as a held coal.',
+    use: { none: 'Material - quest item (sq.burl.fire, FB-02; handed to Burl)' },
+    glyph: { ch: 'o', c: 'goreRed' },
+    icon: icon([' .-. ', '(ooo)', " '-' "],
+               [' rRr ', 'RoRoR', ' rRr '])
+  };
+  defs.parcel = {
+    id: 'parcel', name: 'Forge Parcel', kind: 'key', stackMax: 1, hand: false, inPack: true,
+    desc: 'Heavy for its size. FOR THE FORGE.',
+    use: { none: 'Quest item - leave it at the forge (sq.ow.parcel, QL-22 texts)' },
+    glyph: { ch: '=', c: 'brass' },
+    icon: icon(['.---.', '|=+=|', "'---'"],
+               ['hhhhh', 'hAfAh', 'hhhhh'])
+  };
+  defs['key.crypt'] = {
+    id: 'key.crypt', name: 'Crypt Key', kind: 'key', stackMax: 1, hand: false, inPack: true,
+    desc: 'Old black iron. Opens the crypt door.',
+    use: { opens: 'lock', note: 'UNDER-02: opens the cemetery crypt door (game/js/quest/under/crypt.js); given by Bram in UNDER-07' },
+    glyph: { ch: 'F', c: 'ironLight' },
+    icon: icon([',-.  ', '(o)=E', "`-'  "],
+               ['sss  ', 'sKUiU', 'iUi  '])
   };
   defs['heart.piece'] = {
     id: 'heart.piece', name: 'Heart Piece', kind: 'upgrade', stackMax: 3, hand: false, inPack: true,
@@ -226,6 +301,55 @@
     //   v
     icon: icon(['(#v#)', ' \\#/ ', '  v  '],
                ['LPddd', ' Ldd ', '  d  '])
+  };
+  // SPELL-R1 (D-115): no Spell Book items; spells come from Burl, a well, a Waystone or a quest (no pack item).
+  defs['scroll.spell'] = {
+    id: 'scroll.spell', name: 'Spell Scroll', kind: 'upgrade', stackMax: 9, hand: false, inPack: true,
+    desc: 'One of your spells grows stronger.',
+    use: { chooseSpell: true, note: 'D-114: E in the inventory opens a list of learned spells; the pick gains +1 level and the scroll is used (quest/sim/spellBook.js spellBook + spellScroll.js)' },
+    glyph: { ch: '*', c: 'flameMid' },
+    icon: icon([' .^, ', '(*@*)', " `~' "],
+               [' tOt ', 'OMCMO', ' eke '])
+  };
+  defs['relay.mirror'] = {
+    id: 'relay.mirror', name: 'Waystone Glass', kind: 'key', stackMax: 1, hand: false, inPack: true,
+    desc: 'Round, silvered, scratched by claws.',
+    use: { none: 'Quest item - the Ford Waystone needs it (mq.ford.mirror)' },
+    glyph: { ch: 'o', c: 'mirror' },
+    icon: icon([' .-. ', '( o )', " '-' "],
+               [' sss ', 's S s', ' sss '])
+  };
+  defs['chart.river'] = {
+    id: 'chart.river', name: 'River Chart', kind: 'upgrade', stackMax: 1, hand: false, inPack: true,
+    desc: 'Crow paper. A river is drawn on it.',
+    use: { none: 'Chart piece - the map card shows the ford (mq.bend.call)' },
+    glyph: { ch: '~', c: 'manaLight' },
+    icon: icon(['.---.', '|~~~|', "'---'"],
+               ['hhhhh', 'hqqqh', 'hhhhh'])
+  };
+  defs['lamp.hood'] = {
+    id: 'lamp.hood', name: 'Lamp Hood', kind: 'key', stackMax: 1, hand: false, inPack: true,
+    desc: 'A dented lamp hood. Off the Kestrel.',
+    use: { none: 'Quest item - Burl wants to see it' },
+    glyph: { ch: '^', c: 'brass' },
+    icon: icon([' .-. ', '(   )', "'---'"],
+               [' AAA ', 'A   A', 'AAAAA'])
+  };
+  defs['relay.brass'] = {
+    id: 'relay.brass', name: 'Brass Collar', kind: 'key', stackMax: 1, hand: false, inPack: true,
+    desc: 'A green brass collar, cut with glyphs.',
+    use: { none: 'Quest item - the Outwall Waystone needs it' },
+    glyph: { ch: '=', c: 'brass' },
+    icon: icon([' .=. ', '( o )', " '=' "],
+               [' AAA ', 'A J A', ' AAA '])
+  };
+  defs['chart.westFells'] = {
+    id: 'chart.westFells', name: 'West Chart', kind: 'upgrade', stackMax: 1, hand: false, inPack: true,
+    desc: 'Crow paper. The West Fells on it.',
+    use: { none: 'Chart piece - the map card shows the West Fells (mq.ow.board)' },
+    glyph: { ch: '^', c: 'manaLight' },
+    icon: icon(['.---.', '|^^^|', "'---'"],
+               ['hhhhh', 'hqqqh', 'hhhhh'])
   };
   defs.cog = {
     id: 'cog', name: 'Brass Cog', kind: 'currency', stackMax: 99, hand: false, inPack: true,
@@ -248,6 +372,42 @@
     // `~-'      bent lower lip
     icon: icon([' ._/|', '/%o=/', "`~-' "],
                [' ABAB', 'BvVBJ', 'JvjJ '])
+  };
+  // M4 story quests (QL-10 sq.honey, QL-12 sq.packet): two quest carry items, no use.
+  defs.honeycomb = {
+    id: 'honeycomb', name: 'Honeycomb', kind: 'key', stackMax: 1, hand: false, inPack: true,
+    desc: 'Sticky gold. It is for the crow.',
+    use: { none: 'Quest item - bring it to Rook (sq.honey)' },
+    glyph: { ch: '%', c: 'brass' },
+    icon: icon([' ._. ', '(%o%)', " '-' "],
+               [' AAA ', 'AJAJA', ' AAA '])
+  };
+  defs.packet = {
+    id: 'packet', name: 'Cloth Packet', kind: 'key', stackMax: 1, hand: false, inPack: true,
+    desc: 'Tied with twine. FOR THE FORD POST.',
+    use: { none: 'Quest item - leave it at the trade post (sq.packet)' },
+    glyph: { ch: '=', c: 'brass' },
+    icon: icon(['.---.', '|=+=|', "'---'"],
+               ['hhhhh', 'hAfAh', 'hhhhh'])
+  };
+  // CH1-D2 (architecture.md 38.37 item 3): the crystal the boars were rooting for. Name + desc = docs/story.md CH1-W3
+  // (item.aetherCrystal.*; the in-world name avoids "aether"). stackMax 1. The inventory has NO key-item / no-drop tag
+  // today (game/js/quest/sim/inventory.js), so this is a plain item of kind 'key'; the real gate is the flag
+  // aether.attuned, the item is only proof (dropping it can never soft-lock). Not consumed when it wakes a stone.
+  keys.N = { c: 'aether', e: true };  keys.I = { c: 'aetherLight', e: true };
+  keys.x = { c: 'aetherCore', e: true }; keys['1'] = { c: 'aetherMid', e: true };
+  defs.aetherCrystal = {
+    id: 'aetherCrystal', name: 'Teal Crystal', kind: 'key', stackMax: 1, hand: false, inPack: true,
+    desc: 'Warm, and it hums like the old stones.',
+    use: { none: 'not used from the pack', note: 'proof of aether.attuned (game/js/quest/crystal.js grants it); ' +
+           'held up at a stone by relayWake.js, never consumed' },
+    keyItem: false, keyItemNote: 'set true once the inventory supports a no-drop / no-sell tag',
+    glyph: { ch: '*', c: 'aether' },
+    //   /\'     the tip, a sparkle off it
+    //  |*:|     the prism, white-hot core, shaded right facet
+    //  \__/     the broken base
+    icon: icon(["  /\\'", ' |*:|', ' \\__/'],
+               ['  INx', ' IxN1', ' N11N'])
   };
   // the S8-A-07 icon list in sheet order (sword, shield, lantern, potion, key, bow, bomb, heart piece, currency, 3 materials)
   var iconSet = ['sword', 'shield', 'lantern', 'orb.hp', 'key.small', 'bow', 'bomb', 'heart.piece', 'cog',
@@ -346,10 +506,74 @@
     return true;
   }
 
+  // ==================================================================================================================
+  // EQ-01 (equipment epic, docs/equipment-epic-2026-10-10.md s1): equip data. PLACEHOLDER icons (EQ-D1/D2 replace them).
+  // equip: { slot, tier: worn|sturdy|fine|tempered|warden, def, shell?, held? }. 11 slots; 7 wearable bases x 5 tiers = 35 gear ids (EQ-21: tempered/warden)
+  // `gear.<slot>.<base>.<tier>`; def worn 1 / sturdy 2 / fine 3 / tempered 4 / warden 5, body x2. Ammo `arrow` (quiver), `potion.hp` / `potion.mp`.
+  // ==================================================================================================================
+  var EQUIP_SLOTS = ['head', 'body', 'cloak', 'hands', 'belt', 'legs', 'feet', 'main', 'off', 'ranged', 'quiver'];
+  var EQUIP_TIERS = ['worn', 'sturdy', 'fine', 'tempered', 'warden'];
+  var tierPrefix = { worn: 'Worn', sturdy: 'Sturdy', fine: 'Fine', tempered: 'Elite', warden: 'Warden' }; // OB-135 plain names
+  var tierKey = { worn: 'h', sturdy: 'v', fine: 'Y', tempered: 'i', warden: 's' }; // placeholder icon colour per tier (wood / verdigris / gold / iron / light iron)
+  var tierGlyphC = { worn: 'wood', sturdy: 'verdigris', fine: 'gold', tempered: 'iron', warden: 'ironLight' };
+  var gearBases = [
+    { slot: 'head', base: 'hood', name: 'Hood', ch: 'n', rows: [' ,-. ', '(   )', '     '], shell: 'hat' },
+    { slot: 'body', base: 'jerkin', name: 'Jerkin', ch: 'T', rows: ['\\   /', ' |#| ', ' |_| '], shell: 'top' },
+    { slot: 'cloak', base: 'cloak', name: 'Cloak', ch: 'A', rows: [' ,-. ', '/ | \\', '/_|_\\'], shell: 'outer' },
+    { slot: 'hands', base: 'gloves', name: 'Gloves', ch: 'm', rows: ['     ', '|||||', '\\___/'], shell: 'gloves' },
+    { slot: 'belt', base: 'belt', name: 'Belt', ch: '=', rows: ['     ', '=[o]=', '     '], shell: 'belt' },
+    { slot: 'legs', base: 'pants', name: 'Pants', ch: 'H', rows: ['|===|', '| | |', '|_|_|'], shell: 'legs' },
+    { slot: 'feet', base: 'boots', name: 'Boots', ch: 'L', rows: ['     ', '|_| |', '|_|_|'], shell: 'feet' }
+  ];
+  gearBases.forEach(function (b) {
+    EQUIP_TIERS.forEach(function (tier, ti) {
+      var id = 'gear.' + b.slot + '.' + b.base + '.' + tier, k = tierKey[tier];
+      var fg = b.rows.map(function (r) { return r.replace(/[^ ]/g, k); });
+      defs[id] = {
+        id: id, name: tierPrefix[tier] + ' ' + b.name, kind: 'gear', stackMax: 1, hand: false, inPack: true,
+        desc: 'A ' + tierPrefix[tier].toLowerCase() + ' ' + b.name.toLowerCase() + '. Gives ' + (ti + 1) * (b.slot === 'body' ? 2 : 1) + ' defence.',
+        glyph: { ch: b.ch, c: tierGlyphC[tier] },
+        icon: icon(b.rows, fg),
+        equip: { slot: b.slot, tier: tier, def: (ti + 1) * (b.slot === 'body' ? 2 : 1), shell: b.shell }
+      };
+      if (b.slot === 'cloak') defs[id].equip.passive = { nightDef: 0.1 }; // QL-19: +10 % damage reduction at night (clock 21-05), inside the 0.6 cap
+    });
+  });
+  // QL-16/QL-19: River Boots (mq.ford.mirror chest by Rook's nest). `unique` keeps it OUT of the random gear rolls (loot.js gearIdFor skips it).
+  defs['gear.feet.riverBoots'] = {
+    id: 'gear.feet.riverBoots', name: 'River Boots', kind: 'gear', stackMax: 1, hand: false, inPack: true, unique: true,
+    desc: 'Greased leather. Sure on wet stones.',
+    glyph: { ch: 'L', c: 'verdigris' },
+    icon: icon(['     ', '|_| |', '|_|_|'], ['     ', 'vvv v', 'vvvvv']),
+    equip: { slot: 'feet', tier: 'sturdy', def: 2, shell: 'feet', passive: { wetStone: true } } // QL-19: no stumble on wet stepping stones
+  };
+  defs.arrow = {
+    id: 'arrow', name: 'Arrow', kind: 'ammo', stackMax: 30, hand: false, inPack: true,
+    desc: 'Yew shaft, iron head.',
+    glyph: { ch: '>', c: 'woodLight' },
+    icon: icon(['     ', '-->>>', '     '], ['     ', 'hhhss', '     ']),
+    equip: { slot: 'quiver', tier: 'worn', def: 0 }
+  };
+  defs['potion.hp'] = {
+    id: 'potion.hp', name: 'Health Potion', kind: 'potion', stackMax: 5, hand: false, inPack: true,
+    desc: 'Heals two hearts.',
+    use: { heal: 2, unit: 'hearts', time: 0.6 },
+    glyph: { ch: '!', c: 'vital' },
+    icon: icon(['  _  ', ' (R) ', ' \\_/ '], ['  g  ', ' cLc ', ' ccc '])
+  };
+  defs['potion.mp'] = {
+    id: 'potion.mp', name: 'Mana Potion', kind: 'potion', stackMax: 5, hand: false, inPack: true,
+    desc: 'Restores magic.',
+    use: { mp: 2, unit: 'mana', time: 0.6, dropped: false },
+    glyph: { ch: '!', c: 'mana' },
+    icon: icon(['  _  ', ' (M) ', ' \\_/ '], ['  g  ', ' qmq ', ' qqq '])
+  };
+
+
   // Data self-check: [] = OK. palette = ASSETS.palette (optional: checks colour keys exist).
   function validate(palette) {
     var errs = [], rgb = palette && palette.rgb, id, d, r, j, cc, ch;
-    var KINDS = { weapon: 1, spell: 1, tool: 1, food: 1, material: 1, pickup: 1, shield: 1, key: 1, upgrade: 1, currency: 1 };
+    var KINDS = { weapon: 1, spell: 1, tool: 1, food: 1, material: 1, pickup: 1, shield: 1, key: 1, upgrade: 1, currency: 1, gear: 1, ammo: 1, potion: 1 };
     for (ch in keys) if (rgb && !rgb[keys[ch].c]) errs.push('keys.' + ch + ': unknown colour ' + keys[ch].c);
     for (id in defs) {
       d = defs[id];
@@ -371,6 +595,13 @@
         }
       }
     }
+    for (id in defs) {
+      var q = defs[id].equip;
+      if (q && EQUIP_SLOTS.indexOf(q.slot) < 0) errs.push(id + ': bad equip.slot ' + q.slot);
+      if (q && EQUIP_TIERS.indexOf(q.tier) < 0) errs.push(id + ': bad equip.tier ' + q.tier);
+      if (q && !(q.def >= 0)) errs.push(id + ': bad equip.def');
+      if (defs[id].kind === 'gear' && !q) errs.push(id + ': gear without equip');
+    }
     var e = loot.boar.entries;
     for (j = 0; j < e.length; j++) if (!defs[e[j].item]) errs.push('loot.boar: unknown item ' + e[j].item);
     return errs;
@@ -384,12 +615,54 @@
     loot: loot,
     toast: toast,
     attachSprites: attachSprites,
-    validate: validate
+    validate: validate,
+    equipSlots: EQUIP_SLOTS,
+    equipTiers: EQUIP_TIERS
   };
 
   // S8-A-07 (appended): new ids at the end of the pack display order + the 12-icon set
   A.items.order.push('shield', 'lantern', 'key.small', 'bow', 'bomb', 'heart.piece', 'cog', 'brass.scrap');
+  A.items.order.push('aetherCrystal');
+  Object.keys(defs).forEach(function (k) { if (A.items.order.indexOf(k) < 0 && (defs[k].kind === 'gear' || k === 'arrow' || k.indexOf('potion.') === 0)) A.items.order.push(k); });  // EQ-01                                   // CH1-D2
   A.items.iconSet = iconSet;
 
+  // CUR-03 (currency epic D-121): base trade `value`; Bram pays floor(value / 4), min 1 (game/js/quest/sim/trade.js). Only
+  // sellable things carry one: materials, food, gear worn/sturdy/fine. Keys, upgrades, spells, weapons, tools, quest items have none.
+  var SELL_VALUE = { 'boar.hide': 12, 'boar.tusk': 16, 'goblin.trinket': 20, 'berry.blue': 4, 'redcap': 8, 'boar.meat': 8 };
+  var TIER_VALUE = { worn: 20, sturdy: 60, fine: 160 };
+  Object.keys(SELL_VALUE).forEach(function (k) { if (defs[k]) defs[k].value = SELL_VALUE[k]; });
+  Object.keys(defs).forEach(function (k) { var d = defs[k]; if (d.kind === 'gear' && d.equip && TIER_VALUE[d.equip.tier]) d.value = TIER_VALUE[d.equip.tier]; });
+
+  // EQ-D1 (appended): equipment icons (5x3, existing keys only). The shield + bow icons now match the voxel models in
+  // models/equipment.js (round plank shield, iron rim + boss; plain wooden longbow, gut string). arrow / potion.hp /
+  // potion.mp have no defs yet (EQ-01 adds them): their icons wait here, keyed by the planned item id.
+  A.items.eqIcons = {
+    //  .=-=.     iron rim, lit top
+    //  (H@H)     planks either side of the bright boss
+    //  `=-='     rim underside in shadow
+    shield: icon(['.=-=.', '(H@H)', "`=-='"],
+                 ['sSsSs', 'iHShi', 'KiKiK']),
+    //  /'|       upper limb, horn nock, string
+    // (#  |      grip wrap ... string        (the D of a braced bow)
+    //  \,|       lower limb, horn nock, string
+    bow: icon([" /'| ", '(#  |', ' \\,| '],
+              [' HnT ', 'hl  T', ' hnT ']),
+    // \\         fletching (grey goose, red cock feather)
+    // =-->       nock, shaft, iron socket, steel head
+    // //
+    arrow: icon(['\\\\   ', '=--=>', '//   '],
+                ['Tr   ', 'nwwiS', 'Tr   ']),
+    //  _#_       glass shoulders, wooden cork
+    // (*%%)      round flask, highlight, red draught
+    // `-=-'      dark bottom
+    'potion.hp': icon([' _#_ ', '(*%%)', "`-=-'"],
+                      [' GhG ', 'gPLcG', 'GdddG']),
+    'potion.mp': icon([' _#_ ', '(*%%)', "`-=-'"],
+                      [' GhG ', 'gQmmG', 'GqqqG'])
+  };
+  defs.shield.icon = A.items.eqIcons.shield; defs.shield.glyph = { ch: 'O', c: 'wood' };
+  defs.bow.icon = A.items.eqIcons.bow;
+
+  if (typeof module === 'object' && module && module.exports && typeof require === 'function') require('./itemsWeapons.js'); // EQ-20 (browser: own script tag)
   if (typeof module === 'object' && module && module.exports) module.exports = { items: A.items, lootSprites: A.lootSprites };
 })(typeof window !== 'undefined' ? window : globalThis);

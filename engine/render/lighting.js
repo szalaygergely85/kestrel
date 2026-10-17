@@ -28,16 +28,20 @@
 // and documents its own version of this deviation.
 
 import { PROJ_HFOV_DEG as HFOV_DEG } from './projection.js';
+import { moonRimK, moonRimAmount, MOON_RIM_COL, MOON_RIM_FAR_M } from './moonRim.js'; // RND-NIGHT-RIM-03
 import { dirFromAzEl, localToWorld } from '../core/transform.js';
 import { sunFromHours } from '../core/sunPath.js';
 import { gridLocal } from '../world/gridLocal.js';
-import { FACE_PACKED, KIND_TERRAIN, KIND_MESH } from './GBuffer.js';
+import { FACE_PACKED, KIND_TERRAIN, KIND_MESH, KIND_GRASS } from './GBuffer.js';
 import { unpackNormalOct } from '../voxel/octNormal.js';
-import { createPitchedTerms, pitchedTerms, unprojectPitched, resolveProjection, isPitchedFamily } from './projection.js';
+import { createPitchedTerms, pitchedTermsInto, unprojectPitched, resolveProjection, isPitchedFamily } from './projection.js';
 import { sunShadowTaps, sunShadowInfo } from './shadowSun.js';
+import { pointShadowTaps } from './shadowPoint.js';
 import { resolveLook } from './look.js'; // ART-01a (37.18 item 3)
-import { cloudShadeQP } from './cloudShadow.js'; // S8-B2-12c (38.13)
+import { cloudShadeQP, syncLiveCloudShadow } from './cloudShadow.js'; // S8-B2-12c (38.13)
 import { cloudDriftOffset } from './sky.js';
+import { sampleGIBuf } from './giProbe.js'; // GI-PROBE-04
+import { contactOcclAt } from './contactAO.js'; // CONTACT-AO-01a (38.78)
 import { aoTapOcc, aoFactor, aoTapCells, AO_DEFAULTS, AO_MAX } from './horizonAo.js'; // S8-B2-20 (38.17)
 
 // RE-02a: scratch for lightSurfaces' pitched branch (zero allocation per frame).
@@ -46,13 +50,17 @@ const litGrid = { cols: 0, rows: 0, pxCellW: 1, pxCellH: 1 };
 const litP3 = new Float64Array(3);
 // S8-B2-20 (38.17): scratch for lightSurfaces' AO tap block (zero allocation per frame/cell).
 const aoTapP = new Float64Array(3);
+const _psO = new Float64Array(3), _psP = new Float64Array(3), _psN = new Float64Array(3); // ME-16d scratch
 const aoPar = new Float64Array(14); // per-cell AO tap parameters (cam, dir, plane, horizon, normal, radius, bias)
 const aoAcc = new Float64Array(1); // tap occlusion accumulator (no boxed-double returns across calls)
 
-export const MAX_LIGHTS = 16;
+export const MAX_LIGHTS = 24; // LIGHTS-24-01: was 16 while GLSL was frozen (38.x); WGSL-only since WG-5
 /** EMIS-01b: derived-light candidate list size and the replace margin (38.12 (1)). */
 export const DERIVED_MAX_CAND = 64;
 export const DERIVED_HYSTERESIS = 1.25;
+export const POOL_SWAP_MARGIN_M = 4; // VISQA-32: a parked placed light must be this much closer than the worst active one
+export const POOL_RESELECT_M = 0.5;  // VISQA-32: camera travel between two placed-light re-rankings
+const NO_FLICKER = Object.freeze({});
 // ART-01a (37.18 item 3/8): `LIGHT.w` bit written once the hemi/haze light pass
 // lands (ART-01b). Exported now so the pixel code can land without touching this file's API.
 export const OUTDOOR_SHIFT = 19;
@@ -71,9 +79,35 @@ export function setWorldSun(world, lights, elevationDeg, azimuthDeg, on) {
   }
 }
 
-export function applySunHours(world, lights, h, path, on) {
+export const MOON_SWITCH_DEG = -6; // DN-01: below this sun elevation the light dir is the moon (sun path + 12 h)
+/** `moon` (DN-01, default false = unchanged): below MOON_SWITCH_DEG light from the moon, i.e. the sun path at h + 12. */
+export function applySunHours(world, lights, h, path, on, moon = false) {
   sunFromHours(h, path, hourSunScratch);
+  const isMoon = moon && hourSunScratch.elevationDeg < MOON_SWITCH_DEG;
+  if (isMoon) sunFromHours(h + 12, path, hourSunScratch);
+  if (lights) lights.moonActive = isMoon; // RND-NIGHT-RIM-03: the light slot carries the moon (rim gate)
   setWorldSun(world, lights, hourSunScratch.elevationDeg, hourSunScratch.azimuthDeg, on);
+}
+/** AUD2-02: dark gap (deg below MOON_SWITCH_DEG) in which the moon-lit light stays off, so the sun<->moon direction flip is never visible. */
+export const MOON_GAP_DEG = 2;
+/**
+ * AUD2-02: ONE sun/moon decision per clock step, shared by the stepped shadow/light sun (`shadowH`, lags in slots)
+ * and the smooth world sun (`h`). The decision is taken on the smooth sun; the light is off across the switch
+ * (sun below the horizon, then the MOON_GAP_DEG gap), so no 180 deg flip can show. Returns true when it is the moon.
+ */
+export function applySunPair(world, lights, shadowH, h, path, on) {
+  sunFromHours(h, path, hourSunScratch);
+  const moon = hourSunScratch.elevationDeg < MOON_SWITCH_DEG;
+  const gap = moon && hourSunScratch.elevationDeg > MOON_SWITCH_DEG - MOON_GAP_DEG;
+  if (lights) {
+    lights.moonActive = moon; // RND-NIGHT-RIM-03: slot carries the moon only when the pair decided moon (the rim must not use a low dusk sun)
+    sunFromHours(shadowH + (moon ? 12 : 0), path, hourSunScratch);
+    worldSunScratch.elevation = hourSunScratch.elevationDeg; worldSunScratch.azimuth = hourSunScratch.azimuthDeg; worldSunScratch.on = on && !gap;
+    lights.setSun(worldSunScratch);
+  }
+  sunFromHours(h + (moon ? 12 : 0), path, hourSunScratch);
+  setWorldSun(world, null, hourSunScratch.elevationDeg, hourSunScratch.azimuthDeg, on);
+  return moon;
 }
 // PO REJECT item 1: CPU fallback (`?gpu=0`) evaluates at most this many
 // nearest `on` lights per frame (tech notes item 7, "reduced light count
@@ -112,6 +146,17 @@ export function h01(a, b = 0, c = 0) {
   return (h >>> 0) / 4294967296;
 }
 
+// FD-07: gentle torch flicker (owner OB-198/208). The noise below is already low-passed value noise (smoothstep
+// between hashed knots); what makes it visible is rate x depth. Scales applied at runtime to the palette values:
+// HZ_MUL slows the knots, AMOUNT_MUL / JITTER_MUL shrink the depth. setTorchFlicker('off'|'old'|'gentle') is
+// called by the game (?torchflick=0 / old); engine never reads the URL. Default = gentle. Light.pos/col are read by both GPU and JS twin.
+export const FLICK_GENTLE = { hz: 0.25, amount: 0.45, jitter: 0.4 };
+const FLICK_OLD = { hz: 1, amount: 1, jitter: 1 };
+const FLICK_OFF = { hz: 1, amount: 0, jitter: 0 };
+export const FLICK_MODES = { gentle: FLICK_GENTLE, old: FLICK_OLD, off: FLICK_OFF };
+let flick = FLICK_GENTLE;
+export function setTorchFlicker(mode) { flick = FLICK_MODES[mode] || FLICK_GENTLE; }
+
 // FRAME-ALLOC-01: scratch-writing twin of h01 (same bits) so LightSet.update keeps its doubles unboxed.
 const _hs = new Float64Array(8);
 function h01s(slot, a, b, c) {
@@ -138,18 +183,21 @@ function seedFor(key) {
 export class LightSet {
   constructor() {
     this.ambient = new Float32Array(3);
-    this.sun = { on: false, elevation: 0, azimuth: 0, dir: new Float32Array(3), col: new Float32Array(3) };
+    // SUN-COL-LIVE: baseCol = the load-time (default-time) sun colour that syncLiveSun scales from; null until buildLightSet / first sync.
+    this.sun = { on: false, elevation: 0, azimuth: 0, dir: new Float32Array(3), col: new Float32Array(3), baseCol: null };
     // ART-01a (37.18 item 3): allocated once. `hemi` = the hemisphere-ambient
     // look state (off until `setLook` turns it on); `roof` = the roof map the
     // light pass samples for indoor/outdoor (null until a look needs it, set by
     // the game's per-frame roof bind in ART-01b).
     this.timeBuf = new Float64Array(1); // FRAME-ALLOC-01: unboxed time hand-off for updateBuffered
+    this.gi = null; // GI-PROBE-04: a giProbe state (createGIState + field) or null = flat ambient, byte-identical old path
     this.hemi = { on: false, sky: new Float32Array(3), ground: new Float32Array(3), tint: new Float32Array(3), tintK: 0 };
     this.roof = null;
     this.cloud = null; // S8-B2-12c: null | {strength, scale, cover, soft, deckH, seed, wind} (setLook from look.clouds.shadow)
     this.cloudOff = new Float32Array(2); // per-frame deck drift, set by lightSurfaces from fb.timeSec
     // S8-B2-20b (38.16): null | {strength, radiusM, bias, maxCells} (setLook from look.ao); null = AO off.
     this.ao = null;
+    this.cao = null; // CONTACT-AO-01a (38.78): a contactAO state (createContactAO) or null = off, byte-identical old path
 
     this.count = 0; // active (alive) lights, compacted into [0, count)
     this.pos = new Float32Array(4 * MAX_LIGHTS);   // x, y, z (jittered), radius     -> uLightPos
@@ -212,6 +260,18 @@ export class LightSet {
     this._dHas = new Uint8Array(MAX_LIGHTS); // scratch: derived slot still wanted this frame
     this.derivedStats = { swaps: 0, count: 0 }; // swaps = slot assignments changed (bench / EMIS-02)
 
+    // VISQA-32 (LIGHT-PRIORITY): when a world places more lights than MAX_LIGHTS, ALL of them go into a
+    // load-time pool and `selectPlaced` (per frame, camera position) keeps the nearest ones in their slots.
+    // Pool slots are rewritten in place (no handle of another light ever moves). poolN = 0 -> old path.
+    this.poolN = 0;
+    this.pool = null;          // [{x,y,z,hue(own copy),intensity,radius,flicker,on,key,seed}] (load-time)
+    this.poolX = null; this.poolY = null; this.poolZ = null; this.poolE = null; // Float32Array(poolN); poolE = scratch score
+    this.poolSlot = null;      // Int32Array(poolN): slot holding the pool light, -1 = parked
+    this.slotPool = new Int32Array(MAX_LIGHTS).fill(-1); // slot -> pool index, -1 = not a pool light
+    this._selX = NaN; this._selY = 0; this._selZ = 0; // camera at the last selection (NaN = never)
+    this.poolStats = { swaps: 0, active: 0 };
+    this._warnedFull = false;
+
     // PO REJECT item 1 (CPU fallback light cap): preallocated 4-nearest
     // scratch, filled by `selectCpuLights` - CPU (`?gpu=0`) path only, never
     // touched by the GPU/GLSL path or `?gpucompare=1` (both keep the full
@@ -230,7 +290,15 @@ export class LightSet {
     const nd = this.count - this.baseCount; // derived lights in the tail
     if (this.count >= MAX_LIGHTS && nd > 0) this.count--; // a derived light yields its slot to a placed one
     if (this.count >= MAX_LIGHTS) {
-      console.warn('[LightSet] MAX_LIGHTS reached, dropping light', def.key || '');
+      // VISQA-32: a pooled world light (the least relevant one) yields its slot to a runtime light
+      const s = this._worstPoolSlot();
+      if (s >= 0) {
+        this._park(s);
+        this._write(s, def);
+        this.dKey[s] = 0;
+        return s;
+      }
+      if (!this._warnedFull) { this._warnedFull = true; console.warn('[LightSet] MAX_LIGHTS reached, dropping light', def.key || '', '(warned once)'); }
       return -1;
     }
     if (this.count - this.baseCount > 0) {
@@ -263,6 +331,7 @@ export class LightSet {
     this.flickerJitter[h] = fl.jitter || 0;
     this.seed[h] = (def.seed | 0) || seedFor(def.key || String(h));
     this.key[h] = def.key || null;
+    this.slotPool[h] = -1; // VISQA-32: a pool write sets it right after
     this._visKeyX[h] = 0x7fffffff; this._visKeyY[h] = 0x7fffffff; this._visStructVersion[h] = -1; this._visPackedVersion[h] = -2;
     // Seed pos/col immediately (radius/z at least) so a read before the
     // first `update()` call is well-formed (zero flicker).
@@ -283,6 +352,8 @@ export class LightSet {
     this.seed[dst] = this.seed[src];
     this.key[dst] = this.key[src];
     this.dKey[dst] = this.dKey[src];
+    const p = this.slotPool[src]; // VISQA-32: a pool light keeps its mapping when compaction moves it
+    this.slotPool[dst] = p; if (p >= 0) this.poolSlot[p] = dst;
     this.visVersion[dst] = this.visVersion[src];
     this._visKeyX[dst] = 0x7fffffff; this._visKeyY[dst] = 0x7fffffff; this._visStructVersion[dst] = -1; this._visPackedVersion[dst] = -2;
   }
@@ -347,6 +418,7 @@ export class LightSet {
    */
   remove(handle) {
     if (handle < 0 || handle >= this.count) return;
+    if (this.slotPool[handle] >= 0) this._park(handle); // VISQA-32: back to the pool (parked), slot freed
     const last = this.count - 1;
     if (handle < this.baseCount) {
       // placed/entity light: swap the last placed light in, then close the hole with the last derived one
@@ -357,7 +429,95 @@ export class LightSet {
     } else if (handle !== last) {
       this._copySlot(handle, last);
     }
+    this.slotPool[last] = -1;
     this.count = last;
+  }
+
+  // ---- VISQA-32 (LIGHT-PRIORITY): placed-light pool ---------------------------------------------
+  // buildLightSet hands every placed light to `setPool` when there are more than MAX_LIGHTS of them.
+  // Score = distance from the camera to the light's sphere (dist - radius); the active ones get
+  // POOL_SWAP_MARGIN_M of hysteresis, so a pair only swaps back after the camera moved that far.
+
+  /** Load time: fills the free slots with the first pool lights (the next `selectPlaced` re-ranks them). */
+  setPool(defs) {
+    const n = defs.length;
+    this.poolN = n;
+    this.pool = defs.map((d) => ({ x: d.x, y: d.y, z: d.z, hue: Float32Array.from(d.hue || [1, 1, 1]),
+      intensity: d.intensity || 0, radius: d.radius, flicker: d.flicker || NO_FLICKER, on: d.on !== false,
+      key: d.key || null, seed: (d.seed | 0) || seedFor(d.key || 'pool' + n) }));
+    this.poolX = new Float32Array(n); this.poolY = new Float32Array(n); this.poolZ = new Float32Array(n);
+    this.poolE = new Float32Array(n);
+    this.poolSlot = new Int32Array(n).fill(-1);
+    for (let i = 0; i < n; i++) { this.poolX[i] = defs[i].x; this.poolY[i] = defs[i].y; this.poolZ[i] = defs[i].z; }
+    for (let i = 0; i < n && this.count < MAX_LIGHTS; i++) {
+      const h = this.add(this.pool[i]);
+      this.slotPool[h] = i; this.poolSlot[i] = h;
+    }
+    this._selX = NaN;
+    this.poolStats.active = this._poolActive();
+  }
+
+  _poolActive() { let a = 0; for (let h = 0; h < this.count; h++) if (this.slotPool[h] >= 0) a++; return a; }
+
+  /** Writes a pool slot's live state (setOn / beacon ramp / setParams) back to its pool entry and parks it. */
+  _park(h) {
+    const p = this.slotPool[h];
+    if (p < 0) return;
+    const e = this.pool[p];
+    e.on = this.on[h] !== 0; e.intensity = this.baseIntensity[h]; e.radius = this.radius[h];
+    e.hue[0] = this.baseHue[h * 3]; e.hue[1] = this.baseHue[h * 3 + 1]; e.hue[2] = this.baseHue[h * 3 + 2];
+    this.poolSlot[p] = -1; this.slotPool[h] = -1;
+  }
+
+  /** The active pool slot farthest (dist - radius) from the last selection camera; -1 if none. */
+  _worstPoolSlot() {
+    let best = -1, bestE = -Infinity;
+    const has = this._selX === this._selX; // false before the first selectPlaced: take the last pool slot
+    for (let h = 0; h < this.count; h++) {
+      const p = this.slotPool[h];
+      if (p < 0) continue;
+      let e = h;
+      if (has) {
+        const dx = this.poolX[p] - this._selX, dy = this.poolY[p] - this._selY, dz = this.poolZ[p] - this._selZ;
+        e = Math.sqrt(dx * dx + dy * dy + dz * dz) - this.radius[h];
+      }
+      if (e > bestE) { bestE = e; best = h; }
+    }
+    return best;
+  }
+
+  /**
+   * Per frame (before `update`): keeps the pool lights nearest to the camera in the pool slots.
+   * Re-ranks only after the camera moved POOL_RESELECT_M; a parked light replaces the worst active
+   * one only when it is POOL_SWAP_MARGIN_M closer. No-op without a pool. 0 allocation: takes the
+   * camera object ({x, y, z}), not three doubles (a non-inlined call would box them, FRAME-ALLOC-01).
+   */
+  selectPlaced(cam) {
+    const n = this.poolN;
+    if (n === 0) return;
+    const cx = cam.x, cy = cam.y, cz = cam.z;
+    const mx = cx - this._selX, my = cy - this._selY, mz = cz - this._selZ;
+    if (mx * mx + my * my + mz * mz < POOL_RESELECT_M * POOL_RESELECT_M) return; // NaN (first call) falls through
+    this._selX = cx; this._selY = cy; this._selZ = cz;
+    const E = this.poolE;
+    for (let i = 0; i < n; i++) {
+      const dx = this.poolX[i] - cx, dy = this.poolY[i] - cy, dz = this.poolZ[i] - cz;
+      const h = this.poolSlot[i];
+      E[i] = Math.sqrt(dx * dx + dy * dy + dz * dz) - (h >= 0 ? this.radius[h] : this.pool[i].radius);
+    }
+    for (let guard = 0; guard < n; guard++) {
+      let cand = -1, candE = Infinity, worst = -1, worstE = -Infinity;
+      for (let i = 0; i < n; i++) {
+        if (this.poolSlot[i] < 0) { if (E[i] < candE) { candE = E[i]; cand = i; } } else if (E[i] > worstE) { worstE = E[i]; worst = i; }
+      }
+      if (cand < 0 || worst < 0 || candE + POOL_SWAP_MARGIN_M >= worstE) break;
+      const h = this.poolSlot[worst];
+      this._park(h);
+      this._write(h, this.pool[cand]);
+      this.dKey[h] = 0;
+      this.slotPool[h] = cand; this.poolSlot[cand] = h;
+      this.poolStats.swaps++;
+    }
   }
 
   // ---- EMIS-01b (38.12 (1)): derived emissive lights ---------------------------------------------
@@ -458,8 +618,8 @@ export class LightSet {
     const timeSec = this.timeBuf[0];
     for (let i = 0; i < this.count; i++) {
       const seed = this.seed[i];
-      const hzMin = this.flickerHzMin[i], hzMax = this.flickerHzMax[i];
-      const amount = this.flickerAmount[i], jitter = this.flickerJitter[i];
+      const hzMin = this.flickerHzMin[i] * flick.hz, hzMax = this.flickerHzMax[i] * flick.hz;
+      const amount = this.flickerAmount[i] * flick.amount, jitter = this.flickerJitter[i] * flick.jitter;
       _hs[5] = 0; _hs[6] = 0; _hs[7] = 0; // v0, v1, v2
       if (amount > 0 || jitter > 0) {
         h01s(0, seed, 0, 0);
@@ -549,6 +709,7 @@ export function buildLightSet(world, palette) {
     ls.sun.col[2] = sunHue[2] * sunPreset.intensity;
   }
 
+  const placed = []; // VISQA-32: collected first; more than MAX_LIGHTS -> the distance-ranked pool
   for (const s of world.structures) {
     const def = s.level && s.level.def;
     const lightDefs = def && def.lights;
@@ -558,7 +719,7 @@ export function buildLightSet(world, palette) {
       if (!preset) { console.warn(`[lighting] unknown light preset "${ld.preset}" (${s.id}.${ld.id})`); continue; }
       const hue = palette.hue[preset.color];
       localToWorld(s.frame, ld.x, ld.y, ld.z, lightW);
-      ls.add({
+      placed.push({
         x: lightW.x, y: lightW.y, z: lightW.z,
         hue, intensity: preset.intensity, radius: preset.radius,
         flicker: preset.flicker || null,
@@ -567,11 +728,52 @@ export function buildLightSet(world, palette) {
       });
     }
   }
+  if (placed.length > MAX_LIGHTS) ls.setPool(placed);
+  else for (let i = 0; i < placed.length; i++) ls.add(placed[i]); // byte-identical old path
   // ART-01a (37.18 item 3): the active look's hemi block (if any) is resolved
   // once here and copied into the LightSet. Absent block = `setLook` no-op, so
   // `ambient`/`sun.col` above are the byte-identical "today" values.
-  setLook(ls, resolveLook(palette));
+  setLook(ls, resolveLook(palette), palette);
+  ls.sun.baseCol = Float32Array.from(ls.sun.col); // SUN-COL-LIVE: the default-time colour the day/night clock scales from
   return ls;
+}
+
+/**
+ * VISQA-05 / SUN-COL-LIVE: live sun strength relative to the look the LightSet's base `sun.col` was built from
+ * (the palette's default time), clamped to <= 1 so day (noon > morning) stays bit-identical. 1 without a live look.
+ * @param {any} P palette @returns {number}
+ */
+export function liveSunScale(P) {
+  const live = P && P.liveLook, ref = P && P.timeOfDay && P.timeOfDay[P.defaultTime];
+  if (!live || !ref || !(ref.sunI > 0) || !Number.isFinite(live.sunI)) return 1;
+  const k = live.sunI / ref.sunI;
+  return k < 0 ? 0 : k > 1 ? 1 : k;
+}
+
+/** RND-NIGHT-RIM-03: per-frame moon-rim strength (lights.moonRim = {k, farM}); 0 = off. The sun slot carries the moon at night (applySunPair). */
+function syncMoonRim(lights, P) {
+  const m = lights.moonRim || (lights.moonRim = { k: 0, farM: MOON_RIM_FAR_M });
+  const live = P && P.liveLook, s = lights.sun;
+  m.k = live && s && lights.moonActive === true && Number.isFinite(live.sunI) ? moonRimK(live.sunI, !!s.on, s.dir[2]) : 0;
+}
+
+/**
+ * SUN-COL-LIVE: makes `lights.sun.col` follow the day/night look (`P.liveLook`, blendLook) so every sun consumer
+ * (light pass JS + WGSL via passLight's sunCol uniform, sprites, particles, GI mix) agrees with the terrain's live
+ * `sunI`. k = liveSunScale; the hue moves from the base hue toward the live sun/moon hue by (1 - k):
+ *   col = (base * (1 - w) + hue(live.sun) * max(base) * w) * k,  w = 1 - k.
+ * Day (k = 1, w = 0) writes `base` back exactly (noon byte-identical); no live look = base. Allocation-free after the first call.
+ * @param {LightSet} lights @param {any} P palette
+ */
+export function syncLiveSun(lights, P) {
+  if (!lights) return;
+  const s = lights.sun;
+  syncMoonRim(lights, P);
+  if (!s.baseCol) s.baseCol = Float32Array.from(s.col);
+  const b = s.baseCol, k = liveSunScale(P);
+  if (k >= 1) { s.col[0] = b[0]; s.col[1] = b[1]; s.col[2] = b[2]; return; }
+  const w = 1 - k, hu = P.hue && P.hue[P.liveLook.sun], m = Math.max(b[0], b[1], b[2]);
+  for (let i = 0; i < 3; i++) s.col[i] = (b[i] * (1 - w) + (hu ? hu[i] : b[i] / (m || 1)) * m * w) * k;
 }
 
 /**
@@ -583,7 +785,7 @@ export function buildLightSet(world, palette) {
  * @param {LightSet} lights
  * @param {import('./look.js').LookRec|null} look
  */
-export function setLook(lights, look) {
+export function setLook(lights, look, palette) {
   const hemi = look && look.hemi;
   lights.hemi.on = !!hemi;
   // S8-B2-12c (38.13): look.clouds.shadow -> lights.cloud (null = off). Load/bind time only (allocates the object).
@@ -591,6 +793,7 @@ export function setLook(lights, look) {
   lights.cloud = cs && cs.strength > 0
     ? { strength: cs.strength, scale: cs.scale, cover: cs.cover, soft: cs.soft, deckH: cs.deckH, seed: look.clouds.seed, wind: look.clouds.wind }
     : null;
+  lights.cloudPal = lights.cloud ? (palette || null) : null; // CLOUD-FLUFF-01d: live look source (syncLiveCloudShadow)
   // S8-B2-20b (38.16): look.ao -> lights.ao (null = off). Load/bind time only (allocates the object).
   const ao = look && look.ao;
   lights.ao = ao && ao.strength > 0 ? { strength: ao.strength, radiusM: ao.radiusM, bias: ao.bias, maxCells: ao.maxCells } : null;
@@ -599,7 +802,7 @@ export function setLook(lights, look) {
   lights.hemi.ground.set(hemi.ground);
   lights.hemi.tint.set(hemi.tint);
   lights.hemi.tintK = hemi.tintK;
-  if (hemi.sunFromLook) lights.sun.col.set(look.sun);
+  if (hemi.sunFromLook) { lights.sun.col.set(look.sun); if (lights.sun.baseCol) lights.sun.baseCol.set(look.sun); } // SUN-COL-LIVE base follows
 }
 
 /**
@@ -763,9 +966,18 @@ export function lightAt(lights, world, x, y, z, nx, ny, nz, out, idxList, idxCou
   return lightAtScratch(lights, world, out, idxList, idxCount, skipSun, sunMap);
 }
 /** LIGHT-ALLOC-01: `lightAt` body reading P/N from the lightP/lightN scratch (6 double args would be boxed per call, ~48 B/cell). */
+const giIo = new Float64Array(6), giAmb = new Float32Array(3);
 function lightAtScratch(lights, world, out, idxList, idxCount, skipSun, sunMap) {
   const x = lightP[0], y = lightP[1], z = lightP[2], nx = lightN[0], ny = lightN[1], nz = lightN[2];
-  out[0] = lights.ambient[0]; out[1] = lights.ambient[1]; out[2] = lights.ambient[2];
+  const gi = lights.gi;
+  if (gi != null && gi.on && gi.field != null) {
+    // GI-PROBE-04: sky/bounce ambient from the probe field. Engine z is up, giProbe y is up -> swap y/z.
+    giIo[0] = x; giIo[1] = z; giIo[2] = y; giIo[3] = nx; giIo[4] = nz; giIo[5] = ny;
+    sampleGIBuf(gi, giIo, giAmb);
+    out[0] = giAmb[0]; out[1] = giAmb[1]; out[2] = giAmb[2];
+  } else {
+    out[0] = lights.ambient[0]; out[1] = lights.ambient[1]; out[2] = lights.ambient[2];
+  }
   let litCount = 0;
   const n = idxList ? idxCount : lights.count;
   for (let k = 0; k < n; k++) {
@@ -791,7 +1003,15 @@ function lightAtScratch(lights, world, out, idxList, idxCount, skipSun, sunMap) 
     // "boulder mid-roll" repro - a far step top directly above a near wall
     // face on screen), which is what let this bug through the old US-006
     // fix. `dx,dy,d` above are already `(light - P)`/its length; reuse them.
-    const vis = sampleVis(lights, i, x + (dx / d) * 0.02, y + (dy / d) * 0.02);
+    // ME-16d (38.22): shadowed point lights (lights.pointShadow = {depth, res, slot: light -> slot+1, O: stride 4 origin+far, opts}) use the
+    // map taps instead of LVIS; unset (default) runs the old line unchanged.
+    const ps = lights.pointShadow;
+    let vis;
+    if (ps && ps.slot[i] > 0) {
+      const sl = ps.slot[i] - 1, o = sl * 4;
+      _psO[0] = ps.O[o]; _psO[1] = ps.O[o + 1]; _psO[2] = ps.O[o + 2]; _psP[0] = x; _psP[1] = y; _psP[2] = z; _psN[0] = nx; _psN[1] = ny; _psN[2] = nz;
+      vis = pointShadowTaps(ps.depth, ps.res, sl, _psO, ps.O[o + 3], _psP, _psN, ps.opts) * 0.25;
+    } else vis = sampleVis(lights, i, x + (dx / d) * 0.02, y + (dy / d) * 0.02);
     if (vis <= 0) continue;
     const amt = fo * ndotl * vis;
     out[0] += lights.col[o4] * amt;
@@ -1014,9 +1234,10 @@ function sunVisibleP(world, P, dir) {
   // blocks and costs no fetch, but keeps going (a structure across a gap
   // still shadows) until `h0` clears this bound.
   let worldMaxH = 0;
-  for (let i = 0; i < world.structures.length; i++) {
-    const s = world.structures[i];
-    if (s.kind === 'mesh') continue; // ME-14c1: no sun-DDA grid for imported meshes
+  const gs = world._gridStructures ? world._gridStructures() : world.structures; // ME-14c1: imported meshes have no sun-DDA grid
+  for (let i = 0; i < gs.length; i++) {
+    const s = gs[i];
+    if (s.kind === 'mesh') continue;
     const m = s.frame.z + s.packed.maxH;
     if (m > worldMaxH) worldMaxH = m;
   }
@@ -1157,6 +1378,7 @@ function aoTapInto(tx, ty, kind, depth, cols, rows, pitched, terms, P) {
   aoAcc[0] += aoTapOcc(aoPar[9], aoPar[10], aoPar[11], aoTapP[0] - P[0], aoTapP[1] - P[1], aoTapP[2] - P[2], aoPar[12], aoPar[13]);
 }
 
+const rimD = new Float64Array(3);
 export function lightSurfaces(fb, lights, cam, world) {
   const lb = fb.light;
   // Architect review 1 item 3: `lightSurfaces` sets `uniform = false` ITSELF
@@ -1168,6 +1390,7 @@ export function lightSurfaces(fb, lights, cam, world) {
   if (!lb || !lights) return;
   lb.uniform = false;
   // S8-B2-12c: deck drift for the cloud-shadow twin, once per frame (same offset the sky uses).
+  if (lights.cloud) syncLiveCloudShadow(lights);
   if (lights.cloud) cloudDriftOffset(lights.cloud, fb.timeSec || 0, lights.cloudOff);
   // PO REJECT item 1: `fb.cpuLightCap` is set only on the real gameplay
   // frame buffer's CPU-fallback path (game/js/main.js) - never on
@@ -1195,6 +1418,12 @@ export function lightSurfaces(fb, lights, cam, world) {
   const horizonRow = rows / 2 + Math.tan(pitchRad) * planeDistY;
 
   const kind = gbuf.kind, face = gbuf.face, rgb = lb.rgb;
+  // CONTACT-AO-01a: per-cell occlusion byte (LIGHT.w bits 1..7 twin); stale bytes cleared once when the feature turns off.
+  const caoOn = lights.cao != null && lights.cao.n > 0 && !!lb.caoQ;
+  const rimK = lights.moonRim && lights.sun && lights.sun.on ? lights.moonRim.k : 0, rimFar = lights.moonRim ? lights.moonRim.farM : MOON_RIM_FAR_M; // RND-NIGHT-RIM-03
+  if (rimK > 0) { rimD[0] = lights.sun.dir[0]; rimD[1] = lights.sun.dir[1]; rimD[2] = lights.sun.dir[2]; }
+  if (!caoOn && lb.caoQ && lb.caoDirty) { lb.caoQ.fill(0); lb.caoDirty = false; }
+  if (caoOn) lb.caoDirty = true;
   // ME-15c: the JS sun shadow map (compositor.js, mesh renderer + shadows.sun 'map') replaces the sun DDA; shade reads `lb.sunMapOn`.
   const sunMap = fb.sunMap || null;
   lb.sunMapOn = !!sunMap;
@@ -1202,7 +1431,7 @@ export function lightSurfaces(fb, lights, cam, world) {
   const pitched = isPitchedFamily(resolveProjection(cam, fb.renderer));
   if (pitched) {
     litGrid.cols = cols; litGrid.rows = rows; litGrid.pxCellW = rt.pxCellW || 1; litGrid.pxCellH = rt.pxCellH || 1;
-    pitchedTerms(cam, litGrid, litPitchTerms);
+    pitchedTermsInto(litPitchTerms, cam, litGrid);
   }
   for (let y = 0; y < rows; y++) {
     const slope = -(y - horizonRow) / planeDistY;
@@ -1237,7 +1466,7 @@ export function lightSurfaces(fb, lights, cam, world) {
       // added analytically by the terrain shade pass instead (D-007, no
       // terrain shadow rays).
       lightP[0] = px; lightP[1] = py; lightP[2] = pz; lightN[0] = nx; lightN[1] = ny; lightN[2] = nz;
-      lightAtScratch(lights, world, evalScratch, idxList, idxCount, kind[i] === KIND_TERRAIN, sunMap);
+      lightAtScratch(lights, world, evalScratch, idxList, idxCount, kind[i] === KIND_TERRAIN || kind[i] === KIND_GRASS, sunMap); // OB-073 D2c: grass = terrain (sun term analytic in shade)
       const o = i * 3;
       rgb[o] = evalScratch[0]; rgb[o + 1] = evalScratch[1]; rgb[o + 2] = evalScratch[2];
       // US-007 (14.3 item 3, `LIGHT.w = sunlit | litCount << 8`, debug/
@@ -1251,7 +1480,7 @@ export function lightSurfaces(fb, lights, cam, world) {
 
       // S8-B2-20 (38.17): horizon AO, LAST operation on this cell's rgb (after points/sun/cloud). Uniform branch -
       // strength 0 runs none of this (bit-identical). Terrain excluded (D-007, analytic ambient in shade).
-      if (lights.ao && lights.ao.strength > 0 && kind[i] !== KIND_TERRAIN) {
+      if (lights.ao && lights.ao.strength > 0 && kind[i] !== KIND_TERRAIN && kind[i] !== KIND_GRASS) {
         const ao = lights.ao, aoR = ao.radiusM, aoB = ao.bias;
         litP3[0] = px; litP3[1] = py; litP3[2] = pz; // reuse: P is not read again for this cell after this point
         const rc = aoTapCells(aoR, planeDistY, depth[i], ao.maxCells);
@@ -1267,7 +1496,28 @@ export function lightSurfaces(fb, lights, cam, world) {
         // ME-20c (38.18): baked vertex AO on kind-9 cells. min (not product): both estimate the same ambient visibility, so they never double-darken.
         if (kind[i] === KIND_MESH) { const va = gbuf.vao[i]; aoF = Math.min(aoF, 1 - ao.strength * AO_MAX * (1 - (va < 0 ? 0 : va > 1 ? 1 : va))); }
         const k = 1 - aoF;
-        rgb[o] -= lights.ambient[0] * k; rgb[o + 1] -= lights.ambient[1] * k; rgb[o + 2] -= lights.ambient[2] * k;
+        if (lights.gi != null && lights.gi.on && lights.gi.field != null) { // GI: AO multiplies the GI ambient part only
+          giIo[0] = px; giIo[1] = pz; giIo[2] = py; giIo[3] = nx; giIo[4] = nz; giIo[5] = ny; sampleGIBuf(lights.gi, giIo, giAmb);
+          rgb[o] -= giAmb[0] * k; rgb[o + 1] -= giAmb[1] * k; rgb[o + 2] -= giAmb[2] * k;
+        } else { rgb[o] -= lights.ambient[0] * k; rgb[o + 1] -= lights.ambient[1] * k; rgb[o + 2] -= lights.ambient[2] * k; }
+      }
+      // RND-NIGHT-RIM-03: moon rim (additive, order-independent of the CAO subtract), every kind incl. terrain/grass (WGSL twin: light.wgsl.js fs_main; rule: moonRim.js).
+      if (rimK > 0) {
+        const ex = cam.x - px, ey = cam.y - py, ez = cam.z - pz, il = 1 / (Math.sqrt(ex * ex + ey * ey + ez * ez) || 1);
+        const ra = moonRimAmount(nx, ny, nz, ex * il, ey * il, ez * il, rimD[0], rimD[1], rimD[2], depth[i], rimK, rimFar);
+        rgb[o] += MOON_RIM_COL[0] * ra; rgb[o + 1] += MOON_RIM_COL[1] * ra; rgb[o + 2] += MOON_RIM_COL[2] * ra;
+      }
+      // CONTACT-AO-01a (38.78): blob contact AO, ambient only. Terrain/grass cells only record the byte (shade applies it to b).
+      if (caoOn) {
+        const q = Math.round(contactOcclAt(lights.cao, px, py, pz, nz) * 127);
+        lb.caoQ[i] = q;
+        if (q !== 0 && kind[i] !== KIND_TERRAIN && kind[i] !== KIND_GRASS) {
+          const ck = q * (1 / 127);
+          if (lights.gi != null && lights.gi.on && lights.gi.field != null) {
+            giIo[0] = px; giIo[1] = pz; giIo[2] = py; giIo[3] = nx; giIo[4] = nz; giIo[5] = ny; sampleGIBuf(lights.gi, giIo, giAmb);
+            rgb[o] -= giAmb[0] * ck; rgb[o + 1] -= giAmb[1] * ck; rgb[o + 2] -= giAmb[2] * ck;
+          } else { rgb[o] -= lights.ambient[0] * ck; rgb[o + 1] -= lights.ambient[1] * ck; rgb[o + 2] -= lights.ambient[2] * ck; }
+        }
       }
     }
   }
@@ -1287,18 +1537,20 @@ export function makeLightBuffer(cols, rows) {
     outdoor: new Uint8Array(cols * rows),
     // S8-B2-12a (38.13): per-cell cloud-darkening byte (`LIGHT.w` bits 24..31 JS twin), 0 at strength 0.
     cloudQ: new Uint8Array(cols * rows),
+    // CONTACT-AO-01a (38.78): per-cell contact-AO occlusion byte (LIGHT.w bits 1..7 JS twin), 0 = none.
+    caoQ: new Uint8Array(cols * rows), caoDirty: false,
   };
 }
 
 // ME-19b: shared sun uniform source, moved from terrainCaster.
 const _sunScratch = { dirX: 0, dirY: 0, dirZ: 0, ambientI: 0, sunI: 0 };
 export function sunFromWorld(world, palette, out = _sunScratch) {
-  const T = palette.timeOfDay[palette.defaultTime];
+  const T = palette.liveLook || palette.timeOfDay[palette.defaultTime]; // DN-01
   let az = 112.5, elev = T.sunElev;
   let sun = world.sun;
   if (!sun) {
-    const s0 = world.structures.find((s) => s.kind !== 'mesh'); // first LEVEL structure (ME-14c1)
-    sun = s0?.level?.def?.sun;
+    const sts = world.structures; // first LEVEL structure (ME-14c1); plain loop, no per-call closure
+    for (let i = 0; i < sts.length; i++) if (sts[i].kind !== 'mesh') { sun = sts[i]?.level?.def?.sun; break; }
   }
   if (sun && sun.azimuth != null) {
     az = sun.azimuth; elev = sun.elevation;

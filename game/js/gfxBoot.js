@@ -63,6 +63,12 @@ export function resolveBootOptions({ params, resolved, savedSettings = {}, captu
   else if (preset) { rays = preset.knobs.rays; raysSource = preset.knobSources.rays; }
   if (geometryCompare) rays = 1;
   sources.rays = raysSource;
+  // RTX-RAYS-BAND-01 (38.79): far-band metres for rays-4 resolve (preset knob raysFarM, `?raysFarM=` wins even without a preset); only used when rays == 4
+  const farParam = numParam(params, 'raysFarM');
+  let raysFarM = preset ? preset.knobs.raysFarM : 0;
+  if (farParam !== undefined && farParam >= 0 && farParam <= 200) raysFarM = farParam;
+  if (geometryCompare && farParam === undefined) raysFarM = 0;
+  if (rays !== 4) raysFarM = 0;
 
   // ---- shadows ----
   const shadowParam = params.get('shadows');
@@ -75,7 +81,8 @@ export function resolveBootOptions({ params, resolved, savedSettings = {}, captu
   } else {
     Object.assign(shadowOpts, { sun: 'map', instCastM: LEGACY_INST_CAST_M });
   }
-  if (shadowParam === 'dda' || shadowParam === 'off' || shadowParam === 'map') shadowOpts.sun = shadowParam;
+  if (shadowParam === 'dda') { warn('[gfx] ?shadows=dda is retired (ME-19c2): using the shadow map'); shadowOpts.sun = 'map'; } // DDA sun retired
+  else if (shadowParam === 'off' || shadowParam === 'map') shadowOpts.sun = shadowParam;
   else if (!preset) shadowOpts.sun = 'map';
   const inst = numParam(params, 'shadowinst'); if (inst !== undefined) shadowOpts.instCastM = inst;
   if (params.get('shadowres')) shadowOpts.res = Number(params.get('shadowres'));
@@ -88,7 +95,7 @@ export function resolveBootOptions({ params, resolved, savedSettings = {}, captu
   if (preset) { sources.scatter = preset.knobSources.scatter; sources.lodScale = preset.knobSources.lodScale; }
 
   return {
-    reqCols, reqRows, rays, shadowOpts, gfx, gridParam, sources,
+    reqCols, reqRows, rays, raysFarM, shadowOpts, gfx, gridParam, sources,
     quality: preset ? { name: preset.name, source: preset.source } : null,
     shadowLevel: level,
   };

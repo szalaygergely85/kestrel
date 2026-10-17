@@ -1,4 +1,4 @@
-// Opt-in diagnostic run; captures the unmodified file:// boot and platform capabilities.
+// Opt-in diagnostic run (dev repo or packed app): boot, WebGPU, notice, grid, errors -> JSON + PNG.
 const fs = require('node:fs');
 const path = require('node:path');
 const { app } = require('electron');
@@ -52,21 +52,15 @@ exports.runProbe = async function (window, output, messages) {
     } catch (error) { return {error:error.message}; }
   })()`);
   fs.mkdirSync(path.dirname(output), { recursive:true });
-  const image = await window.webContents.capturePage();
-  fs.writeFileSync(output.replace(/\.json$/, '') + '.png', image.toPNG());
-  // Diagnostic only: inspect the scene behind the notice using the public grid API.
-  // The normal launcher deliberately keeps the game's notice and startup grid untouched.
-  const gridRequest = await evaluate(`window.__debug?.engine.setGrid(400,150)`);
-  await pause(500);
-  const scene = await evaluate(`(() => {
-    const d = window.__debug;
-    document.getElementById('file-protocol-notice')?.remove();
-    return {gridRequest:${JSON.stringify(gridRequest)},grid:d?.rt ? [d.rt.cols,d.rt.rows] : null};
-  })()`);
-  await pause(1500);
-  scene.gpuActive = await evaluate('window.__debug?.rt.gpuActive || false');
-  fs.writeFileSync(output.replace(/\.json$/, '') + '-scene.png', (await window.webContents.capturePage()).toPNG());
-  fs.writeFileSync(output, JSON.stringify({ versions:process.versions, platform:process.platform,
-    profile:app.getPath('userData'), gpu:await app.getGPUInfo('complete'), page, storage, scene, messages }, null, 2) + '\n');
-  console.log(`desktop probe: ${output}`);
+  await pause(2500);
+  const scene = await evaluate(`(() => { const d = window.__debug;
+    return {grid:d?.rt ? [d.rt.cols,d.rt.rows] : null, gpuActive:d?.rt?.gpuActive || false,
+      desktopMarker:window.__kestrelDesktop || null, noticeVisible:!!document.getElementById('file-protocol-notice')}; })()`);
+  fs.writeFileSync(output.replace(/\.json$/, '') + '.png', (await window.webContents.capturePage()).toPNG());
+  const errors = messages.filter(m => m.level === 'error' || m.level === 3 || m.code || m.blockedNetwork);
+  const summary = { webgpuDeviceOk:!!page.deviceCreated, noticeVisible:scene.noticeVisible, worldLoaded:page.worldLoaded,
+    grid:scene.grid, gpuActive:scene.gpuActive, desktopMarker:!!scene.desktopMarker, errorCount:errors.length };
+  fs.writeFileSync(output, JSON.stringify({ summary, versions:process.versions, platform:process.platform,
+    profile:app.getPath('userData'), gpu:await app.getGPUInfo('complete'), page, storage, scene, errors, messages }, null, 2) + '\n');
+  console.log(`desktop probe: ${output} ${JSON.stringify(summary)}`);
 };

@@ -15,7 +15,8 @@ import { MAX_VOX_INSTANCES, MAX_VOX_PARTS, PART_STRIDE } from '../../voxel/Voxel
 export const VOX_ATLAS_WIDTH = 256;
 
 export const VOXINST_WIDTH = 8;
-export const VOXINST_ROWS_PER_INSTANCE = 1 + MAX_VOX_PARTS; // header + up to MAX_VOX_PARTS part rows
+const DDA_MAX_PARTS = 8; // pinned: > 8-part models are meshOnly (no DDA atlas)
+export const VOXINST_ROWS_PER_INSTANCE = 1 + DDA_MAX_PARTS; // header + up to DDA_MAX_PARTS part rows
 export const VOXINST_HEIGHT = MAX_VOX_INSTANCES * VOXINST_ROWS_PER_INSTANCE;
 
 /**

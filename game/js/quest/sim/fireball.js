@@ -5,9 +5,9 @@
 // The sim is transient (like the sword): not saved; a reload has no balls in flight.
 import { explosionHits, applyImpulse, PHYSICS, SIM_STEP } from '../../../../engine/index.js';
 import { MAX_TARGETABLES } from './targetables.js';
+import { sweepSegment, NO_HIT, WORLD_HIT, TARGET_HIT } from './sweep.js';
 
 export const FB_IDLE = 0, FB_HOLD = 1, FB_CHARGE = 2;
-const NO_HIT = 0, WORLD_HIT = 1, TARGET_HIT = 2;
 const MAXC = MAX_TARGETABLES + 1; // targets + the player
 
 /**
@@ -15,7 +15,7 @@ const MAXC = MAX_TARGETABLES + 1; // targets + the player
  * @param {{emit:Function}} events
  * @param {typeof import('../spellConfig.js').FIREBALL_CFG} cfg
  * @param {ReturnType<typeof import('./targetables.js').createTargetables>} targets
- * @param {{spendMana?: (n:number)=>boolean}} [hooks]
+ * @param {{spendMana?: (n:number)=>boolean, enabled?: boolean, isEnabled?: () => boolean}} [hooks] `enabled:false` = casting disabled (D-065); `damageMul()` = INT multiplier read at cast (default 1); `tier()` = learned tier 1..3 (default 1; numbers from cfg.tiers[tier], else cfg.tap/charged)
  */
 export function createFireballSim(world, events, cfg, targets, hooks) {
   const spendMana = (n) => (hooks && typeof hooks.spendMana === 'function' ? hooks.spendMana(n) : true);
@@ -40,6 +40,7 @@ export function createFireballSim(world, events, cfg, targets, hooks) {
   // scratch
   const _ray = { t: 0, x: 0, y: 0, z: 0 };
   const _aim = { t: 0, x: 0, y: 0, z: 0 };
+  const _aimSeg = new Float64Array(6); // World.raySegmentRay arg (arch 38.61 2b)
   const hit = { kind: NO_HIT, t: 0, idx: -1, x: 0, y: 0, z: 0 };
   const cand = { count: 0, x: new Float64Array(MAXC), y: new Float64Array(MAXC), z: new Float64Array(MAXC), r: new Float64Array(MAXC), h: new Float64Array(MAXC) };
   const outIdx = new Int32Array(MAXC), outF = new Float64Array(MAXC), outDir = new Float64Array(MAXC * 3);
@@ -47,51 +48,7 @@ export function createFireballSim(world, events, cfg, targets, hooks) {
   const castPayload = { hand: 'right', charged: false, x: 0, y: 0, z: 0 };
   const burstPayload = { x: 0, y: 0, z: 0, radius: 0, charged: false };
 
-  /** Segment p0 -> p1 vs world + targets. Fills `hit` (kind, fraction t, target idx, point). Ties go to the target. */
-  function sweep(x0, y0, z0, x1, y1, z1) {
-    hit.kind = NO_HIT; hit.idx = -1; hit.t = 1;
-    const dx = x1 - x0, dy = y1 - y0, dz = z1 - z0;
-    let tw = 2;
-    if (dx * dx + dy * dy + dz * dz > 1e-12 && world.raySegment(x0, y0, z0, x1, y1, z1, _ray)) tw = _ray.t;
-    let tt = 2, ti = -1;
-    const pad = cfg.hitPad, a = dx * dx + dy * dy;
-    for (let i = 0; i < targets.count; i++) {
-      const R = targets.r[i];
-      if (R < 0) continue;
-      const Rp = R + pad, fx = x0 - targets.x[i], fy = y0 - targets.y[i];
-      let lo, hi;
-      if (a < 1e-12) {
-        if (fx * fx + fy * fy > Rp * Rp) continue;
-        lo = 0; hi = 1;
-      } else {
-        const b = 2 * (fx * dx + fy * dy), c = fx * fx + fy * fy - Rp * Rp;
-        const disc = b * b - 4 * a * c;
-        if (disc < 0) continue;
-        const sq = Math.sqrt(disc);
-        lo = (-b - sq) / (2 * a); hi = (-b + sq) / (2 * a);
-        if (lo < 0) lo = 0;
-        if (hi > 1) hi = 1;
-        if (lo > hi) continue;
-      }
-      const zl = targets.z[i] - pad, zh = targets.z[i] + targets.h[i] + pad;
-      if (dz > -1e-12 && dz < 1e-12) {
-        if (z0 < zl || z0 > zh) continue;
-      } else {
-        let s1 = (zl - z0) / dz, s2 = (zh - z0) / dz;
-        if (s1 > s2) { const s = s1; s1 = s2; s2 = s; }
-        if (s1 > lo) lo = s1;
-        if (s2 < hi) hi = s2;
-        if (lo > hi) continue;
-      }
-      if (lo < tt) { tt = lo; ti = i; }
-    }
-    if (ti >= 0 && tt <= tw) {
-      hit.kind = TARGET_HIT; hit.t = tt; hit.idx = ti;
-    } else if (tw <= 1) {
-      hit.kind = WORLD_HIT; hit.t = tw;
-    } else return;
-    hit.x = x0 + dx * hit.t; hit.y = y0 + dy * hit.t; hit.z = z0 + dz * hit.t;
-  }
+  const sweep = (x0, y0, z0, x1, y1, z1) => sweepSegment(world, targets, cfg.hitPad, x0, y0, z0, x1, y1, z1, hit);
 
   function burst(cx, cy, cz, radius, damage, knock, charged, direct, ddx, ddy, player) {
     targets.refresh(); // cheap; keeps a cast-time (point-blank) burst exact
@@ -143,14 +100,21 @@ export function createFireballSim(world, events, cfg, targets, hooks) {
     burst(x, y, z, r, dmg, kn, ch, direct, dx, dy, curPlayer);
   }
 
+  const tierCfg = () => { const t = hooks && typeof hooks.tier === 'function' ? hooks.tier() | 0 : 1; return (cfg.tiers && cfg.tiers[t < 1 ? 1 : t > 3 ? 3 : t]) || cfg; };
+  const dmgMul = () => { const m = hooks && typeof hooks.damageMul === 'function' ? hooks.damageMul() : 1; return m > 0 ? m : 1; }; // SPELL-04: INT (stats fireDmgMul) at cast
+  let pendingTap = false; // SPELL-04: key-slot tap request, consumed by the next step
+
   function cast(player, charged, fx, fy, ax, ay, az) {
+    if (hooks && hooks.enabled === false) return; // D-065 flag off: no projectile, burst, damage or mana (hand visual keeps its state)
+    if (hooks && hooks.isEnabled && !hooks.isEnabled()) return; // FB-01: locked until unlocked (live getter; 0 MP, no projectile)
     if (aliveCount >= cfg.maxAlive) return; // refused at the cap, no mana
-    let C = cfg.tap;
+    const TC = tierCfg(), tapC = TC.tap, chC = TC.charged; // SPELL-04: numbers of the learned tier
+    let C = tapC;
     if (charged) {
-      if (spendMana(cfg.charged.mana)) C = cfg.charged;
-      else if (!spendMana(cfg.tap.mana)) return;
-    } else if (!spendMana(cfg.tap.mana)) return;
-    const isCharged = C === cfg.charged;
+      if (spendMana(chC.mana)) C = chC;
+      else if (!spendMana(tapC.mana)) return;
+    } else if (!spendMana(tapC.mana)) return;
+    const isCharged = C === chC;
     cooldown = cfg.cooldown; castTick = tick; lastCharged = isCharged ? 1 : 0;
 
     const t = player.transform, body = player.components && player.components.body;
@@ -161,7 +125,8 @@ export function createFireballSim(world, events, cfg, targets, hooks) {
     // aim point under the crosshair
     const R = cfg.maxRange;
     let px = ex + ax * R, py = ey + ay * R, pz = ez + az * R;
-    if (world.raySegment(ex, ey, ez, px, py, pz, _aim)) { px = _aim.x; py = _aim.y; pz = _aim.z; }
+    _aimSeg[0] = ex; _aimSeg[1] = ey; _aimSeg[2] = ez; _aimSeg[3] = px; _aimSeg[4] = py; _aimSeg[5] = pz;
+    if (world.raySegmentRay(_aimSeg, _aim)) { px = _aim.x; py = _aim.y; pz = _aim.z; }
     let dx = px - ox, dy = py - oy, dz = pz - oz;
     const dl = Math.sqrt(dx * dx + dy * dy + dz * dz);
     if (dl < cfg.aimMin) { dx = ax; dy = ay; dz = az; } else { dx /= dl; dy /= dl; dz /= dl; }
@@ -175,7 +140,7 @@ export function createFireballSim(world, events, cfg, targets, hooks) {
     slots.serial[s] = ++serialNo; slots.age[s] = 0;
     slots.x[s] = ox; slots.y[s] = oy; slots.z[s] = oz;
     slots.dx[s] = dx; slots.dy[s] = dy; slots.dz[s] = dz;
-    slots.speed[s] = C.speed; slots.radius[s] = C.radius; slots.damage[s] = C.damage; slots.knock[s] = C.knock;
+    slots.speed[s] = C.speed; slots.radius[s] = C.radius; slots.damage[s] = C.damage * dmgMul(); slots.knock[s] = C.knock;
     slots.travelled[s] = 0; slots.charged[s] = isCharged ? 1 : 0; slots.hand[s] = hand === 'left' ? 0 : 1;
 
     // point-blank sweep eye -> origin: a wall/boar in the way bursts at once
@@ -237,6 +202,7 @@ export function createFireballSim(world, events, cfg, targets, hooks) {
       const d = down ? 1 : 0;
       const pressed = d === 1 && prevDown === 0, released = d === 0 && prevDown === 1;
       prevDown = d;
+      if (pendingTap) { pendingTap = false; if (state === FB_IDLE && cooldown === 0 && d === 0) cast(player, false, fx, fy, ax, ay, az); }
       if (state === FB_IDLE) {
         if (pressed && cooldown === 0) { state = FB_HOLD; holdSteps = 1; } // holdSteps = steps the button was down, press included
       } else if (released) {
@@ -249,9 +215,11 @@ export function createFireballSim(world, events, cfg, targets, hooks) {
       }
       if (aliveCount > 0) flight();
     },
+    /** SPELL-04: quickbar key tap (no charge). Returns 'cast' (queued for the next step) or 'busy'. */
+    requestTap() { if (state !== FB_IDLE || cooldown > 0 || pendingTap) return 'busy'; pendingTap = true; return 'cast'; },
     dispose() {},
     hashInto(h) {
-      h.u32(state); h.u32(holdSteps); h.u32(prevDown); h.u32(cooldown); h.u32(castTick & 0x7fffffff); h.u32(hand === 'left' ? 0 : 1);
+      h.u32(state); h.u32(holdSteps); h.u32(prevDown); h.u32(cooldown); h.u32(castTick & 0x7fffffff); h.u32(hand === 'left' ? 0 : 1); h.u32(pendingTap ? 1 : 0);
       h.u32(aliveCount);
       for (let s = 0; s < N; s++) {
         h.u32(slots.alive[s]);

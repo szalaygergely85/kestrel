@@ -16,7 +16,7 @@
 // must not import engine/mesh/** at runtime). Tests build synthetic/real
 // meshes via `buildBvh` directly, same as bvh.test.js.
 
-import { queryAABB, raycast } from './bvh.js';
+import { queryAABB, raycastRay, RAY_LEN } from './bvh.js';
 
 /** @typedef {Object} MeshCollider
  * @property {string} id              `${structure.id}` (base) or `${structure.id}:${tag}` (dynamic tag)
@@ -25,7 +25,13 @@ import { queryAABB, raycast } from './bvh.js';
  * @property {Float64Array} min       3, world AABB = bvh.nodeMin[0..2] (refreshed after refit)
  * @property {Float64Array} max       3
  * @property {boolean} enabled
- * @property {Array<{id:string,start:number,count:number}>} [parts]  MESH-PHYS-01: per-structure triangle ranges of the merged `meshes:static` collider (debug/tools only) */
+ * @property {Array<{id:string,start:number,count:number}>} [parts]  MESH-PHYS-01: per-structure triangle ranges of the merged `meshes:static` collider (debug/tools only)
+ * @property {Float64Array} [_pos]  world-space vertex positions kept for refit (colliders.js)
+ * @property {number} [_refits]
+ * @property {number} [_vol0]
+ * @property {Float64Array} [_cx]  kinematic npc collider centre (x/y/z)
+ * @property {Float64Array} [_cy]
+ * @property {Float64Array} [_cz] */
 
 /** @typedef {{x:number, y:number, blockedX:boolean, blockedY:boolean, nx:number, ny:number, overflow:boolean}} CircleMove   moveCapsule's out + overflow */
 
@@ -60,6 +66,10 @@ const _clipB = new Float64Array(5 * 3);
 // probeSupport's two raycasts (floor down, ceiling up) reuse one RayHit-shaped
 // scratch object each - not re-entrant, as bvh.js's own queries.
 const _floorRay = { t: 0, tri: -1, u: 0, v: 0, nx: 0, ny: 0, nz: 0 };
+// Caller-owned ray arrays for bvh.raycastRay (scalar-arg raycast boxes doubles, arch 38.61 2b); one per call site.
+const _floorArg = new Float64Array(RAY_LEN);
+const _ceilArg = new Float64Array(RAY_LEN);
+const _rcArg = new Float64Array(RAY_LEN);
 const _ceilRay = { t: 0, tri: -1, u: 0, v: 0, nx: 0, ny: 0, nz: 0 };
 
 // ---------------------------------------------------------------------------
@@ -373,7 +383,8 @@ export function probeSupport(colliders, count, x, y, footZ, grounded, opts, out)
     if (!c.enabled || c.kind !== 'trimesh') continue;
     const min = c.min, max = c.max;
     if (x < min[0] || x > max[0] || y < min[1] || y > max[1]) continue;
-    if (raycast(c.bvh, x, y, originZ, 0, 0, -1, floorT, _floorRay)) {
+    _floorArg[0] = x; _floorArg[1] = y; _floorArg[2] = originZ; _floorArg[3] = 0; _floorArg[4] = 0; _floorArg[5] = -1; _floorArg[6] = floorT;
+    if (raycastRay(c.bvh, _floorArg, _floorRay)) {
       floorHit = true;
       floorT = _floorRay.t;
       floorCollider = ci;
@@ -392,7 +403,72 @@ export function probeSupport(colliders, count, x, y, footZ, grounded, opts, out)
     if (!c.enabled || c.kind !== 'trimesh') continue;
     const min = c.min, max = c.max;
     if (x < min[0] || x > max[0] || y < min[1] || y > max[1]) continue;
-    if (raycast(c.bvh, x, y, ceilOriginZ, 0, 0, 1, ceilT, _ceilRay)) {
+    _ceilArg[0] = x; _ceilArg[1] = y; _ceilArg[2] = ceilOriginZ; _ceilArg[3] = 0; _ceilArg[4] = 0; _ceilArg[5] = 1; _ceilArg[6] = ceilT;
+    if (raycastRay(c.bvh, _ceilArg, _ceilRay)) {
+      ceilHit = true;
+      ceilT = _ceilRay.t;
+    }
+  }
+  const ceilZ = ceilHit ? ceilOriginZ + ceilT : Infinity;
+
+  out.floorZ = floorZ;
+  out.floorHit = floorHit;
+  out.fnx = fnx; out.fny = fny; out.fnz = fnz;
+  out.floorCollider = floorCollider;
+  out.floorTri = floorTri;
+  out.ceilZ = ceilZ;
+  out.ceilHit = ceilHit;
+  return out;
+}
+
+/**
+ * `probeSupport` with the query point in a caller-owned buffer (BEAST-ALLOC-02, arch 38.61 2b): io[0]=x, io[1]=y, io[2]=footZ.
+ * No double args cross the call, so a per-tick caller (beast sim via World.supportAtOut) allocates nothing. Same results.
+ */
+// NOTE: body duplicated from probeSupport on purpose - a wrapper boxed doubles (11 B/call); keep the two in sync.
+export function probeSupportIo(colliders, count, io, grounded, opts, out) {
+  const x = io[0], y = io[1], footZ = io[2];
+  // BUG-GONDOLA-FALL: a body may opt in (opts.airStepUp, integrate.js sets it) to probe up to that far above the feet while
+  // airborne. A depenetration squeeze (prop box face vs a stepped tower wall, gap < capsule width) can leave the feet a
+  // few cm BELOW a floor top they stand in; with up = SKIN that floor was missed and the player fell out of the world.
+  // Grid twin: airborne z <= floorH lands. Other callers (null opts, water, AI) keep the strict airborne probe.
+  const up = (grounded ? opts.stepUpMax : (opts && opts.airStepUp) || 0) + SKIN;
+  const originZ = footZ + up;
+  const tMaxDrop = up + MESH_PROBE_DROP + SKIN;
+
+  let floorHit = false;
+  let floorT = tMaxDrop;
+  let floorCollider = -1;
+  let floorTri = -1;
+  let fnx = 0, fny = 0, fnz = 0;
+
+  for (let ci = 0; ci < count; ci++) {
+    const c = colliders[ci];
+    if (!c.enabled || c.kind !== 'trimesh') continue;
+    const min = c.min, max = c.max;
+    if (x < min[0] || x > max[0] || y < min[1] || y > max[1]) continue;
+    _floorArg[0] = x; _floorArg[1] = y; _floorArg[2] = originZ; _floorArg[3] = 0; _floorArg[4] = 0; _floorArg[5] = -1; _floorArg[6] = floorT;
+    if (raycastRay(c.bvh, _floorArg, _floorRay)) {
+      floorHit = true;
+      floorT = _floorRay.t;
+      floorCollider = ci;
+      floorTri = _floorRay.tri;
+      fnx = _floorRay.nx; fny = _floorRay.ny; fnz = _floorRay.nz;
+    }
+  }
+  if (floorHit && fnz < 0) { fnx = -fnx; fny = -fny; fnz = -fnz; }
+  const floorZ = floorHit ? originZ - floorT : FLOOR_NONE;
+
+  const ceilOriginZ = Math.max(footZ, floorZ) + SKIN; // floorZ = FLOOR_NONE when !floorHit -> footZ wins
+  let ceilHit = false;
+  let ceilT = MESH_PROBE_RISE;
+  for (let ci = 0; ci < count; ci++) {
+    const c = colliders[ci];
+    if (!c.enabled || c.kind !== 'trimesh') continue;
+    const min = c.min, max = c.max;
+    if (x < min[0] || x > max[0] || y < min[1] || y > max[1]) continue;
+    _ceilArg[0] = x; _ceilArg[1] = y; _ceilArg[2] = ceilOriginZ; _ceilArg[3] = 0; _ceilArg[4] = 0; _ceilArg[5] = 1; _ceilArg[6] = ceilT;
+    if (raycastRay(c.bvh, _ceilArg, _ceilRay)) {
       ceilHit = true;
       ceilT = _ceilRay.t;
     }
@@ -492,14 +568,13 @@ const _rcHit = { t: 0, tri: -1, u: 0, v: 0, nx: 0, ny: 0, nz: 0 };
  * and returns true on a hit; `out` is left untouched on a miss. Zero
  * allocation, not re-entrant (module scratch).
  * @param {MeshCollider[]} colliders @param {number} count
- * @param {number} ox @param {number} oy @param {number} oz
- * @param {number} dx @param {number} dy @param {number} dz
- * @param {number} tMax
+ * @param {Float64Array} ray caller-owned `[ox,oy,oz,dx,dy,dz,tMax]`
  * @param {{t:number, tri:number, u:number, v:number, nx:number, ny:number, nz:number, collider?:number}} out
  * @returns {boolean}
  */
-export function raycastColliders(colliders, count, ox, oy, oz, dx, dy, dz, tMax, out) {
-  let best = tMax;
+export function raycastCollidersRay(colliders, count, ray, out) {
+  const ox = ray[0], oy = ray[1], oz = ray[2], dx = ray[3], dy = ray[4], dz = ray[5];
+  let best = ray[6];
   let found = false;
   for (let ci = 0; ci < count; ci++) {
     const c = colliders[ci];
@@ -522,7 +597,8 @@ export function raycastColliders(colliders, count, ox, oy, oz, dx, dy, dz, tMax,
       }
     }
     if (!ok) continue;
-    if (raycast(c.bvh, ox, oy, oz, dx, dy, dz, best, _rcHit)) {
+    _rcArg[0] = ox; _rcArg[1] = oy; _rcArg[2] = oz; _rcArg[3] = dx; _rcArg[4] = dy; _rcArg[5] = dz; _rcArg[6] = best;
+    if (raycastRay(c.bvh, _rcArg, _rcHit)) {
       best = _rcHit.t;
       found = true;
       out.t = _rcHit.t; out.tri = _rcHit.tri; out.u = _rcHit.u; out.v = _rcHit.v;
@@ -531,4 +607,15 @@ export function raycastColliders(colliders, count, ox, oy, oz, dx, dy, dz, tMax,
     }
   }
   return found;
+}
+
+const _rcWrapRay = new Float64Array(7);
+
+/**
+ * Cold-path scalar wrapper (boxes doubles at the call boundary, arch 38.61 2b); hot callers use `raycastCollidersRay`.
+ * ALLOC_EXEMPT: cold path only.
+ */
+export function raycastColliders(colliders, count, ox, oy, oz, dx, dy, dz, tMax, out) {
+  _rcWrapRay[0] = ox; _rcWrapRay[1] = oy; _rcWrapRay[2] = oz; _rcWrapRay[3] = dx; _rcWrapRay[4] = dy; _rcWrapRay[5] = dz; _rcWrapRay[6] = tMax;
+  return raycastCollidersRay(colliders, count, _rcWrapRay, out);
 }

@@ -1,5 +1,6 @@
 // @ts-check
 import { minNormalZFromSlopeDeg } from '../core/transform.js';
+import { buildLayersFromArrays, sheetOfLocal, LINK_OPEN } from './sheets.js';
 
 // engine/nav/NavGrid.js (RE-05, docs/architecture.md 28.2). Leaf module:
 // engine/nav/** may only import engine/nav/** + engine/core/** (check-deps
@@ -35,6 +36,9 @@ import { minNormalZFromSlopeDeg } from '../core/transform.js';
 
 const DIRTY_RING_SIZE = 8;
 
+/** Scratch query vector for locateQ / steer walkableQ (zero-alloc layered lookups). */
+export const LQ = new Float64Array(3);
+
 export class NavGrid {
   /** @param {{x0:number, y0:number, w:number, h:number, cell?:number, maxBlockers?:number, maxFootprintCells?:number}} opts */
   constructor({ x0, y0, w, h, cell = 1, maxBlockers = 1024, maxFootprintCells = 1024 }) {
@@ -50,6 +54,10 @@ export class NavGrid {
     this.height = new Float32Array(n);
     this.version = 0;
     this.minCost = 1;
+    // NAV-LAYERS-01a (38.71): null = ground-only (every existing path untouched).
+    /** @type {any} */
+    this.layers = null;
+    this.totalCells = n;
 
     // Cost histogram over currently-walkable cells (index = terrainCost
     // value 1..254), kept in sync by `_recomputeCost`/`block`/`unblock` so
@@ -89,6 +97,67 @@ export class NavGrid {
   cellCenterY(cy) { return this.y0 + (cy + 0.5) * this.cell; }
   index(cx, cy) { return cy * this.w + cx; }
   inBounds(cx, cy) { return cx >= 0 && cy >= 0 && cx < this.w && cy < this.h; }
+
+  // ---- NAV-LAYERS-01a: sheets over the ground grid (engine/nav/sheets.js) ----
+  /** See sheets.js `buildLayersFromArrays`. */
+  buildLayersFromArrays(spec, opts) { return buildLayersFromArrays(this, spec, opts); }
+
+  /** Walkable-surface z of any cell index (ground or sheet). */
+  cellZ(i) {
+    const n = this.w * this.h;
+    return i < n ? this.height[i] : this.layers.height[i - n];
+  }
+
+  /** Cell centre of any index into out {x,y,z}. Zero allocation. */
+  cellPos(i, out) {
+    const n = this.w * this.h;
+    if (i < n) {
+      out.x = this.cellCenterX(i % this.w); out.y = this.cellCenterY((i / this.w) | 0); out.z = this.height[i];
+      return out;
+    }
+    const L = this.layers, local = i - n, s = sheetOfLocal(L, local), l = local - L.base[s];
+    out.x = L.x0[s] + ((l % L.w[s]) + 0.5) * L.cell[s];
+    out.y = L.y0[s] + (((l / L.w[s]) | 0) + 0.5) * L.cell[s];
+    out.z = L.height[local];
+    return out;
+  }
+
+  /** Cell index for a world position: first walkable sheet cell holding (x,y) with |height - z| <= 1.0, else the
+   * ground cell, else -1 (off grid). Zero allocation. */
+  locate(x, y, z) {
+    LQ[0] = x; LQ[1] = y; LQ[2] = z;
+    return this.locateQ();
+  }
+
+  /** Same as `locate` with the query in the module scratch `LQ` ([x, y, z]); hot callers fill LQ so no double is boxed
+   * across the (non-inlined) call. */
+  locateQ() {
+    const x = LQ[0], y = LQ[1], z = LQ[2];
+    const L = this.layers, n = this.w * this.h;
+    if (L) {
+      for (let s = 0; s < L.count; s++) {
+        const c = L.cell[s];
+        const lx = Math.floor((x - L.x0[s]) / c), ly = Math.floor((y - L.y0[s]) / c);
+        if (lx < 0 || ly < 0 || lx >= L.w[s] || ly >= L.h[s]) continue;
+        const local = L.base[s] + ly * L.w[s] + lx;
+        if (L.cost[local] !== 0 && Math.abs(L.height[local] - z) <= 1.0) return n + local;
+      }
+    }
+    const cx = this.cellX(x), cy = this.cellY(y);
+    return this.inBounds(cx, cy) ? cy * this.w + cx : -1;
+  }
+
+  /** Opens/closes every door link (kind 1) with `stateIdx`: flags bit set = open. Bumps version + one dirty rect. */
+  setLinkOpen(stateIdx, on) {
+    const L = this.layers;
+    if (!L) return;
+    for (let k = 0; k < L.nLinks; k++) {
+      if (L.stateIdx[k] !== stateIdx || L.kind[k] !== 1) continue;
+      L.flags[k] = on ? (L.flags[k] | LINK_OPEN) : (L.flags[k] & ~LINK_OPEN);
+    }
+    this.version++;
+    this._pushDirty(0, 0, this.w, this.h);
+  }
 
   /** Recomputes `cost`/`minCost`/`_costHist` from `terrainCost`/`blockCount`
    * over the whole grid. Called after a full build (`buildFromWorld`/
@@ -352,6 +421,15 @@ export class NavGrid {
     const blockCount = this.blockCount;
     for (let i = 0; i < blockCount.length; i++) h.u32(blockCount[i]);
     h.u8Array(this.cost, 0, this.cost.length);
+    // NAV-LAYERS-01b: sheets + links (incl. door open flags) join the hash; ground-only grids hash as before.
+    const L = this.layers;
+    if (L) {
+      h.u32(L.count); h.u32(L.nLinks);
+      h.u8Array(L.cost, 0, L.cost.length);
+      h.u8Array(new Uint8Array(L.height.buffer, L.height.byteOffset, L.height.byteLength), 0, L.height.byteLength);
+      for (let k = 0; k < L.nLinks; k++) { h.u32(L.from[k]); h.u32(L.to[k]); h.u32(L.lcost[k]); }
+      h.u8Array(L.kind, 0, L.nLinks); h.u8Array(L.flags, 0, L.nLinks);
+    }
   }
 
   /**
@@ -414,7 +492,7 @@ export class NavGrid {
    * an in-grid 8-neighbour whose height differs by more than `maxStepM` -
    * see `_applyMaxStepM`.
    * @param {{terrain: {heightAt(x:number,y:number):number, normalAt(x:number,y:number,out:{x:number,y:number,z:number}):void, typeAt(x:number,y:number):number, typeName(id:number):string}, structureAt?: (x:number,y:number)=>boolean}} world
-   * @param {{maxSlopeDeg?:number, minNormalZ?:number, blockedTypes?:string[], typeCost?:Record<string,number>, mask?:Uint8Array|null, maxStepM?:number}} [opts]
+   * @param {{maxSlopeDeg?:number, minNormalZ?:number, blockedTypes?:string[], typeCost?:Record<string,number>, mask?:Uint8Array|null, maxStepM?:number, ford?:{depthAt:(x:number,y:number)=>number, maxDepth?:number, cost?:number}}} [opts]
    */
   buildFromWorld(world, opts = {}) {
     const cosThresh = opts.minNormalZ ?? minNormalZFromSlopeDeg(opts.maxSlopeDeg ?? 30);
@@ -422,22 +500,52 @@ export class NavGrid {
     const typeCost = opts.typeCost ?? {};
     const mask = opts.mask ?? null;
     const maxStepM = opts.maxStepM ?? Infinity;
+    // NAV-LINKS-01b (38.71): ford wade. `opts.ford = {depthAt(x,y) -> m (<0 = no water region), maxDepth (default 0.6), cost (default typeCost.ford ?? 4)}`:
+    // a cell blocked ONLY by its water terrain type is walkable at the ford cost when the water there is shallower than maxDepth. No `ford` = unchanged.
+    const ford = opts.ford ?? null;
+    const fordMax = ford ? (ford.maxDepth ?? 0.6) : 0;
+    const fordCost = ford ? (ford.cost ?? typeCost.ford ?? 4) : 1;
     const terrain = world.terrain;
     const normal = { x: 0, y: 0, z: 0 };
+    // NAV-PERF-01: when the cell size equals the terrain's normal/slope step, the +-step heights ARE the neighbour cell centres: sample
+    // ONE padded height ring (1 heightAt per cell instead of 9) and derive normal + type from it (bit-identical to normalAt/typeAt).
+    const e = terrain.normalEps;
+    const padded = typeof terrain.typeAtWithHeights === 'function' && e === this.cell;
+    const w = this.w, h = this.h, pw = w + 2;
+    const H = padded ? new Float64Array(pw * (h + 2)) : null;
+    if (padded) {
+      for (let j = 0; j < h + 2; j++) {
+        const y = this.cellCenterY(j - 1);
+        for (let i = 0; i < pw; i++) H[i + j * pw] = terrain.heightAt(this.cellCenterX(i - 1), y);
+      }
+    }
     for (let cy = 0; cy < this.h; cy++) {
       const y = this.cellCenterY(cy);
       for (let cx = 0; cx < this.w; cx++) {
         const i = this.index(cx, cy);
         const x = this.cellCenterX(cx);
-        this.height[i] = terrain.heightAt(x, y);
-        terrain.normalAt(x, y, normal);
-        const typeId = terrain.typeAt(x, y);
+        let typeId;
+        if (padded) {
+          const q = (cx + 1) + (cy + 1) * pw;
+          const hL = H[q - 1], hR = H[q + 1], hD = H[q - pw], hU = H[q + pw];
+          this.height[i] = H[q];
+          const dhdx = (hR - hL) / (2 * e), dhdy = (hU - hD) / (2 * e);
+          normal.z = 1 / Math.sqrt(dhdx * dhdx + dhdy * dhdy + 1);
+          typeId = terrain.typeAtWithHeights(x, y, hR, hL, hU, hD);
+        } else {
+          this.height[i] = terrain.heightAt(x, y);
+          terrain.normalAt(x, y, normal);
+          typeId = terrain.typeAt(x, y);
+        }
         const typeName = terrain.typeName(typeId);
         let unwalkable = normal.z < cosThresh;
-        if (!unwalkable && blockedTypes.indexOf(typeName) !== -1) unwalkable = true;
-        if (!unwalkable && world.structureAt && world.structureAt(x, y)) unwalkable = true;
+        let wade = false;
+        if (!unwalkable && blockedTypes.indexOf(typeName) !== -1) {
+          if (ford) { const d = ford.depthAt(x, y); if (d >= 0 && d < fordMax) wade = true; else unwalkable = true; } else unwalkable = true;
+        }
+        if (!unwalkable && world.structureAt && world.structureAt(x, y) && !(world.keepTerrainAt && world.keepTerrainAt(x, y))) unwalkable = true; // UNDER-00b: keepTerrain cells stay a normal field
         if (!unwalkable && mask && mask[i]) unwalkable = true;
-        this.terrainCost[i] = unwalkable ? 0 : (typeCost[typeName] ?? 1);
+        this.terrainCost[i] = unwalkable ? 0 : (wade ? fordCost : (typeCost[typeName] ?? 1));
       }
     }
     this._applyMaxStepM(maxStepM);

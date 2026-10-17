@@ -1,0 +1,17 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "warden_ashmile",
+  "speakers": {
+    "warden": {"label": "TULL"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "warden.hello"}
+  ],
+  "nodes": {
+    "warden.hello": {"end": true, "lines": [
+      "Tull. Ash on everything here. Even on the light."
+    ], "speaker": "warden"}
+  }
+}

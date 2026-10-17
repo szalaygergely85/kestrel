@@ -52,15 +52,74 @@
       ],
       source: 'docs/story.md "The keeper\'s corner" (log book lines + the tally / signal that were the scrawlKeeper decals)'
     },
+    journalCh1: {
+      title: 'Pencil, on the back of the chart',
+      lines: [
+        'I thought the Wall kept the world out.',
+        '',
+        'Now I wonder what it kept hidden.',
+        '',
+        'A talking bear. Stones that shine without fire.',
+        'A crystal that wakes the old stones.',
+        '',
+        'And somewhere ahead, that same blinking light.',
+        '',
+        'Three short. Three long. Three short.',
+        '',
+        'Someone is still calling.',
+        '- W.'
+      ],
+      source: 'docs/story.md "Chapter complete + journal (CH1-W5)"'
+    },
+    journalCh2: {
+      title: 'Pencil, under the river',
+      lines: [
+        'The relays are not lamps. They are a voice.',
+        '',
+        'Someone built a line to reach the city.',
+        'Ferrum stopped answering.',
+        '',
+        'North of the ford, smoke. People.',
+        'If people live out here, so could she.',
+        '- W.'
+      ],
+      source: 'docs/story.md "Chapter 2 card + journal (QL-W1)"'
+    },
     keepLight: {
       title: 'A scrap, nailed up',
-      lines: ['KEEP THE LIGHT'],
-      source: 'US-021 scrawl text (was the decal `scrawl`)'
+      lines: [
+        'Up. Do not stay down here.',
+        '',
+        'Climb the stair to the very top.',
+        'A blade waits by the broken wall.',
+        '',
+        'Do not go out without it.'
+      ],
+      source: 'docs/story.md q01 note 0 `note.keepLight` (PC-B writer, owner request 2026-10-10: first quest, sends the player up to the sword; was the scrawl KEEP THE LIGHT)'
     },
     steelHush: {
-      title: 'A scrap by the sword',
-      lines: ['STEEL FOR THE HUSH'],
-      source: 'docs/story.md "Scrawl" (US-078, was the decal `scrawlSword`)'
+      title: 'A note by the sword',
+      lines: [
+        'To whoever finds this place:',
+        '',
+        'The road beyond is no longer safe.',
+        'Take the blade. You may need it.',
+        '',
+        'And if something follows you at dusk, do not run.'
+      ],
+      source: 'docs/story.md q01 note 1 `note.steelHush` (CH1-D1a: page by the sword on the summit; was the scrawl STEEL FOR THE HUSH)'
+    },
+    leave: {
+      title: 'A note by the stair',
+      lines: [
+        'These stones are not as dead as they seem.',
+        '',
+        'Do not stay here after dark.',
+        'Something walks the woods at night.',
+        '',
+        'Leave while there is still light.'
+      ],
+      source: 'docs/story.md q01 note 2 `note.leave` (CH1-D1a: summit doorway, prompt only after tower.sword.taken)'
     },
     masonChit: {
       title: 'Mason\'s chit',
@@ -135,9 +194,7 @@
     },
     footer: {
       row: 'h - 2', alignRight: 59,
-      parts: [{ text: '[E]', fg: RGB.inkKey }, { text: ' / ', fg: RGB.inkFaded }, { text: '[Esc]', fg: RGB.inkKey },
-              { text: ' close', fg: RGB.inkFaded }],
-      note: '"[E] / [Esc] close" (17 cols) ends on col 59'
+      parts: [], note: 'owner 2026-10-09: no close hint is printed'
     },
     sound: { open: 'optional: a short paper rustle (audio may reuse any cloth / UI tick); none required for READ-01' },
     mock: { noteId: 'keeperLog', note: 'the preview / test fixture' }

@@ -128,26 +128,8 @@
   // ROCKS. Heightfields; Build-style terraces. Bands by z: dark foot, pale lit body, optional moss cushion.
   var ROCK_SMALL_A = ['12210', '23321', '13332', '01210'];
   var ROCK_SMALL_B = ['01221', '12332', '12321', '01110'];
-  var ROCK_A = [                 // rounded boulder, peak a little north-west of centre
-    '0122210',
-    '1344321',
-    '2455432',
-    '2355441',
-    '1233321',
-    '0112100'
-  ];
-  var ROCK_B = [                 // broad split slab, moss cushion on every column top of height >= 3
-    '1223320',
-    '2334431',
-    '2334442',
-    '1333432',
-    '0223321',
-    '0011210'
-  ];
   function bandSmallGranite(z) { return z < 1 ? 'd' : 'l'; }
   function bandSmallBlock(z) { return z < 1 ? 'k' : 'p'; }
-  function bandRockA(z) { return z < 2 ? 'd' : 'l'; }
-  function bandRockB(z, h) { return z < 1 ? 'd' : (h >= 3 && z === h - 1 ? 'm' : 'l'); }
 
   // PEBBLES: 7 loose stones on a 0.6 m patch, pale and dark granite mixed (boxes [x0,y0,z0,x1,y1,z1,ch]).
   function pebbles() {
@@ -249,10 +231,6 @@
   var DEFS = [
     { key: 'rockSmallA', group: 'rock', label: 'Small granite stone', cellM: 0.10, build: function () { return heightfield(ROCK_SMALL_A, bandSmallGranite); }, est: 70 },
     { key: 'rockSmallB', group: 'rock', label: 'Small lime-washed block stone (warm)', cellM: 0.11, build: function () { return heightfield(ROCK_SMALL_B, bandSmallBlock); }, est: 70 },
-    { key: 'rockMedA', group: 'rock', label: 'Granite boulder, knee high', cellM: 0.16, build: function () { return heightfield(ROCK_A, bandRockA); }, est: 175, collider: 'prism', rVox: 2.75, hVox: 4.75 },
-    { key: 'rockMedB', group: 'rock', label: 'Split slab with moss cushion', cellM: 0.20, build: function () { return heightfield(ROCK_B, bandRockB); }, est: 210, collider: 'prism', rVox: 2.75, hVox: 3.75 },
-    { key: 'rockLargeA', group: 'rock', label: 'Granite boulder, chest high (rockMedA voxels x2)', cellM: 0.32, build: function () { return heightfield(ROCK_A, bandRockA); }, est: 175, collider: 'prism', rVox: 2.75, hVox: 4.75 },
-    { key: 'rockLargeB', group: 'rock', label: 'Mossy slab boulder (rockMedB voxels x2)', cellM: 0.40, build: function () { return heightfield(ROCK_B, bandRockB); }, est: 210, collider: 'prism', rVox: 2.75, hVox: 3.75 },
     { key: 'pebbles', group: 'pebble', label: 'Pebble cluster', cellM: 0.06, build: pebbles, est: 95 },
     { key: 'tuftMeadow', group: 'tuft', label: 'Tall meadow grass, dry seed tips', cellM: 0.07, build: tuftMeadow, est: 120 },
     { key: 'tuftLush', group: 'tuft', label: 'Lush grass, fresh tips', cellM: 0.06, build: tuftLush, est: 115 },
@@ -334,6 +312,7 @@
       if (!m || A.models[k]) return;
       for (i in m.voxel.mats) if (!A.palette.materials[m.voxel.mats[i]] || !A.detailPass.materials[m.voxel.mats[i]]) ok = false;
       if (ok) A.models[k] = m;
+      else if (typeof console !== 'undefined') console.warn('ground_detail: model ' + k + ' NOT registered (a material is missing from palette.js/detail-pass.js - stale browser cache? hard reload)'); // OB-166
     });
   }
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -5,7 +5,15 @@ const rep = (v, n = 60) => Array.from({ length: n }, () => v);
 const t = (name, fn) => { fn(); console.log('ok', name); };
 
 const ARC_IGPU = { vendor: 'intel', architecture: 'xe-lpg', description: 'Intel(R) Graphics (0x00007D45)', label: 'ANGLE (Intel, Intel(R) Graphics (0x00007D45) Direct3D11)' };
-const RTX4060 = { vendor: 'nvidia', architecture: 'ada', description: 'NVIDIA GeForce RTX 4060 Laptop GPU' };
+const RTX4060 = { vendor: 'nvidia', architecture: 'turing', description: 'NVIDIA GeForce GTX 1660' }; // D-118: a discrete-NVIDIA 'high' candidate for the step policy (RTX cards now start at ultra, see below)
+const RTX4060_REAL = { vendor: 'nvidia', architecture: 'ada', description: 'NVIDIA GeForce RTX 4060 Laptop GPU' };
+t('D-118 RTX starts at ultra, the benchmark still steps down', () => {
+  assert.equal(tierFromAdapter(RTX4060_REAL).tier, 'ultra');
+  assert.equal(pickQuality(RTX4060_REAL, []).name, 'ultra');
+  assert.equal(pickQuality(RTX4060_REAL, rep(9)).name, 'ultra');
+  assert.equal(pickQuality(RTX4060_REAL, rep(20)).name, 'high');
+  assert.equal(pickQuality(RTX4060_REAL, rep(90)).name, 'medium');
+});
 t('tiers', () => {
   assert.equal(tierFromAdapter(RTX4060).tier, 'high');
   assert.equal(tierFromAdapter(ARC_IGPU).tier, 'medium');

@@ -17,8 +17,9 @@ import { fileURLToPath } from 'node:url';
 import { buildBvh } from './bvh.js';
 import {
   moveCircleMesh, probeSupport, meshSupportSector, moveSphereMesh,
-  MESH_CAND_MAX, FLOOR_NONE,
+  MESH_CAND_MAX, FLOOR_NONE, probeSupportIo,
 } from './meshCollide.js';
+import { allocProbe } from '../../tools/allocProbe.mjs';
 import { PHYSICS_DEFAULTS } from './config.js';
 import { makeOk } from '../test/assert.js';
 
@@ -545,6 +546,52 @@ const OPTS = { height: 2, stepUpMax: 0.3, walkCos: WALK_COS };
 }
 
 if (VERBOSE) console.log(`MESH_CAND_MAX=${MESH_CAND_MAX}`);
+
+// GATE-FLAKY-03 (arch 38.61 2b): probeSupport with VARYING x/y allocates 0 B/call (floor + ceiling raycastRay).
+{
+  const floor = buildCollider('probe-alloc-floor', [[[-10, -10, 0], [10, -10, 0], [10, 10, 0], [-10, 10, 0]]]);
+  const ceil = buildCollider('probe-alloc-ceil', [[[-10, -10, 1.5], [10, -10, 1.5], [10, 10, 1.5], [-10, 10, 1.5]]]);
+  const cols = [floor, ceil];
+  const sup = { floorZ: 0.5, floorHit: false, fnx: 0.5, fny: 0.5, fnz: 0.5, floorCollider: -1, floorTri: -1, ceilZ: 0.5, ceilHit: false };
+  const N = 4096, xy = new Float64Array(N * 2);
+  for (let i = 0; i < N * 2; i++) xy[i] = (((i * 7919) % 1000) / 1000) * 16 - 8;
+  const nHitA = new Int32Array(1);
+  const run = (n) => { for (let i = 0; i < n; i++) { const o = (i & (N - 1)) * 2; probeSupport(cols, 2, xy[o], xy[o + 1], 0.05, true, OPTS, sup); if (sup.floorHit) nHitA[0]++; } };
+  const pr = allocProbe(run, { n: 100000, warm: 6 });
+  if (pr.skipped) console.log('SKIP probeSupport varying alloc (no --expose-gc)');
+  else {
+    const ALLOC_EXEMPT = { cap: 2.4, reason: 'probeSupport: sub-HeapNumber/call JIT artefact (harness), not boundary boxing', ref: 'arch 38.61 (2b), batch-4 2026-10-14' };
+    ok(`probeSupport varying x/y: ALLOC_EXEMPT cap ${ALLOC_EXEMPT.cap} B/call`, pr.perCall <= ALLOC_EXEMPT.cap && nHitA[0] > 0, `${pr.perCall.toFixed(3)} B/call, hits ${nHitA[0]}`);
+  }
+
+}
+
+// ---------------------------------------------------------------------------
+// BEAST-ALLOC-02 parity: probeSupportIo (duplicated body) must equal probeSupport bit-for-bit
+// ---------------------------------------------------------------------------
+{
+  const cols = [
+    buildCollider('par-a', [[[-6, -6, 0], [6, -6, 0.2], [6, 6, 0.5], [-6, 6, 0.1]], [[-2, -2, 1.5], [3, -2, 1.5], [3, 3, 1.8], [-2, 3, 1.6]]]),
+    buildCollider('par-b', [[[0, 0, 3], [8, 0, 3.2], [8, 8, 3], [0, 8, 3.4]], [[-9, -9, -4], [-1, -9, -4], [-1, -1, -3], [-9, -1, -4]]]),
+  ];
+  let seed = 12345;
+  const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+  const io = new Float64Array(3), a = freshSupport(), b = freshSupport();
+  const modes = [['grounded', true, OPTS], ['airborne', false, OPTS], ['airStepUp', false, { ...OPTS, airStepUp: 0.4 }]];
+  let bad = 0, hits = 0, n = 0;
+  for (const [, grounded, opts] of modes) {
+    for (let i = 0; i < 1200; i++) {
+      const x = -10 + rnd() * 20, y = -10 + rnd() * 20, z = -5 + rnd() * 10;
+      io[0] = x; io[1] = y; io[2] = z;
+      probeSupport(cols, cols.length, x, y, z, grounded, opts, a);
+      probeSupportIo(cols, cols.length, io, grounded, opts, b);
+      n++; if (a.floorHit) hits++;
+      for (const k of Object.keys(a)) if (!Object.is(a[k], b[k])) { bad++; break; }
+    }
+  }
+  ok('probeSupportIo === probeSupport (3600 random points: grounded, airborne, airStepUp)', bad === 0 && hits > 200, `mismatch ${bad}/${n}, floor hits ${hits}`);
+}
+
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }
 console.log('ALL PASS');

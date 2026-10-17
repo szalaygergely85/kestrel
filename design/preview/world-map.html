@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - World Map (PROPOSED, 2026-10-11)</title>
+<style>
+  body { background: #0d0f12; color: #cfd6dc; font: 13px/1.4 Consolas, monospace; margin: 12px; }
+  h1 { font-size: 16px; color: #f0d58a; margin: 0 0 6px; }
+  #wrap { display: flex; gap: 14px; align-items: flex-start; }
+  canvas { border: 1px solid #333; max-width: 100%; height: auto; cursor: crosshair; }
+  #side { width: 300px; }
+  .sw { display: inline-block; width: 12px; height: 12px; border: 1px solid #222; vertical-align: middle; margin-right: 4px; }
+  .row { margin: 2px 0; }
+  label { display: block; margin: 3px 0; }
+  #info { white-space: pre; background: #15191e; padding: 6px; min-height: 100px; border: 1px solid #2a2f35; }
+  .muted { color: #7e8891; }
+</style>
+</head>
+<body>
+<h1>Kestrel - the world (2048 x 2048 m) - geography PROPOSED by the designer, 2026-10-11</h1>
+<div class="muted">Data: design/levels/world_geo.js on top of design/levels/overworld_far.js. Doc: docs/world-map-2026-10-11.md. (P) = proposed name. North is up, x east, y south.</div>
+<div id="wrap">
+  <canvas id="map"></canvas>
+  <div id="side">
+    <label><input type="radio" name="mode" value="geo" checked> proposed geography</label>
+    <label><input type="radio" name="mode" value="now"> today's recipe only</label>
+    <label>light azimuth <input id="light" type="range" min="0" max="360" value="315"> <span id="lightV">315</span></label>
+    <label><input id="cLv" type="checkbox" checked> level bands (Lv tags + tint)</label>
+    <label><input id="cSites" type="checkbox" checked> sites</label>
+    <label><input id="cNames" type="checkbox"> site names</label>
+    <label><input id="cRoads" type="checkbox" checked> roads + relay line</label>
+    <label><input id="cWalk" type="checkbox" checked> walkable area today</label>
+    <label><input id="cProt" type="checkbox"> protect zone (layers = 0)</label>
+    <div id="info">hover the map</div>
+    <div id="legend"></div>
+  </div>
+</div>
+<script src="../levels/overworld_far.js"></script>
+<script src="../levels/world_geo.js"></script>
+<script>
+(function () {
+  'use strict';
+  var OW = window.ASSETS.levels.overworld_far, U = OW.util, G = window.ASSETS.levels.world_geo, GU = G.util;
+  var N = 256, CELL = 8, S = 0.5, VIEW_W = 2560, WORLD = 2048;
+  var cv = document.getElementById('map'), ctx = cv.getContext('2d');
+  cv.width = VIEW_W * S; cv.height = WORLD * S;
+  var BIOMES = {
+    sea: ['#1f5784', 'sea'], lake: ['#2f78ad', 'lake'], river: ['#3f95d6', 'river'], marshPool: ['#3b6a80', 'fen pools'],
+    marsh: ['#5d7448', 'fen / marsh'], sand: ['#e6d397', 'sand beach'], dunes: ['#cbbd84', 'dunes + beach grass'],
+    cliff: ['#8c8172', 'sea cliff'], snow: ['#f1f4f9', 'snow / ice'], rock: ['#8e8b85', 'rock, scree, foothills'],
+    alpine: ['#a4bb6c', 'alpine meadow'], shore: ['#bdb38c', 'lake shore'], reeds: ['#7c9a4c', 'riverbank reeds'],
+    pine: ['#2d5a3d', 'pine forest'], broadleaf: ['#3f7a33', 'broadleaf forest'], twisted: ['#46562b', 'old twisted wood'],
+    dead: ['#6f6150', 'burnt / dead wood'], ash: ['#86795c', 'burnt heath (Ash Mile)'], flowers: ['#a9c85a', 'flower fields'],
+    grassTall: ['#86b14d', 'tall wispy grass'], grass: ['#73a548', 'grass meadow'], wallGround: ['#57524b', 'killing ground (off-limits)']
+  };
+  var BKEYS = Object.keys(BIOMES);
+  var H0 = new Float32Array(N * N), H = new Float32Array(N * N), B = new Uint8Array(N * N), LV = new Int8Array(N * N);
+  function hex(c) { return [parseInt(c.substr(1, 2), 16), parseInt(c.substr(3, 2), 16), parseInt(c.substr(5, 2), 16)]; }
+  var BRGB = BKEYS.map(function (k) { return hex(BIOMES[k][0]); });
+  function lvOf(x, y) {
+    var r = GU.regionAt(x, y); if (!r.lv) return 0;
+    if (r.id === 'heartland') return (x < U.riverX(y) ? r.lvWest : r.lv)[0];
+    return r.lv[0];
+  }
+  var i, j, x, y;
+  for (j = 0; j < N; j++) for (i = 0; i < N; i++) {
+    x = i * CELL + 4; y = j * CELL + 4;
+    var h0 = U.recipeHeight(x, y); H0[j * N + i] = h0; H[j * N + i] = GU.geoHeight(x, y, h0, U); LV[j * N + i] = lvOf(x, y);
+  }
+  function slopeAt(A, i, j) {
+    var a = A[j * N + Math.max(0, i - 1)], b = A[j * N + Math.min(N - 1, i + 1)], c = A[Math.max(0, j - 1) * N + i], d = A[Math.min(N - 1, j + 1) * N + i];
+    return [(b - a) / (2 * CELL), (d - c) / (2 * CELL)];
+  }
+  for (j = 0; j < N; j++) for (i = 0; i < N; i++) {
+    x = i * CELL + 4; y = j * CELL + 4; var g = slopeAt(H, i, j);
+    B[j * N + i] = BKEYS.indexOf(GU.biomeAt(x, y, H[j * N + i], Math.hypot(g[0], g[1]), U));
+  }
+  var LVC = { 1: [80, 200, 90], 2: [130, 210, 80], 3: [190, 210, 70], 4: [230, 200, 60], 5: [240, 160, 50], 6: [240, 130, 50],
+              7: [235, 100, 50], 8: [225, 70, 50], 9: [205, 45, 60], 10: [180, 30, 80] };
+  function lvColor(a, b) { var c = LVC[a] || [200, 200, 200]; return 'rgb(' + c.join(',') + ')'; }
+
+  var off = document.createElement('canvas'); off.width = N; off.height = N; var octx = off.getContext('2d');
+  function hash(i, j) { var h = (i * 374761393 + j * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
+  function paintTerrain() {
+    var mode = document.querySelector('input[name=mode]:checked').value, A = mode === 'geo' ? H : H0;
+    var az = +document.getElementById('light').value * Math.PI / 180, lx = Math.sin(az), ly = -Math.cos(az), lz = 0.9;
+    var img = octx.createImageData(N, N), d = img.data, showLv = document.getElementById('cLv').checked && mode === 'geo';
+    for (var j = 0; j < N; j++) for (var i = 0; i < N; i++) {
+      var k = j * N + i, g = slopeAt(A, i, j), nx = -g[0] * 2.2, ny = -g[1] * 2.2, nl = Math.hypot(nx, ny, 1);
+      var lam = Math.max(0, (nx * lx + ny * ly + lz) / (nl * Math.hypot(lx, ly, lz))), col, x = i * CELL + 4, y = j * CELL + 4;
+      if (mode === 'geo') col = BRGB[B[k]].slice();
+      else {
+        var h = A[k], t = Math.max(0, Math.min(1, (h + 100) / 120));
+        col = Math.abs(x - U.riverX(y)) < 10 ? [63, 149, 214] : [90 + 80 * t, 140 + 50 * t, 70 + 60 * t];
+      }
+      var key = BKEYS[B[k]], water = mode === 'geo' && (key === 'sea' || key === 'lake' || key === 'river' || key === 'marshPool');
+      var sh = water ? 1 : 0.5 + 0.75 * lam;
+      if (mode === 'geo' && key === 'sea') sh = 0.75 + 0.25 * Math.max(0, 1 + (A[k] - G.seaLevel) / 14);
+      if (mode === 'geo' && key === 'flowers') { var r = hash(i, j); if (r < 0.18) col = [230, 90, 120]; else if (r < 0.3) col = [240, 220, 90]; else if (r < 0.38) col = [200, 150, 230]; }
+      if (mode === 'geo' && (key === 'broadleaf' || key === 'pine' || key === 'twisted' || key === 'dead')) sh *= 0.8 + 0.35 * hash(i + 7, j + 3);
+      for (var c = 0; c < 3; c++) {
+        var v = col[c] * sh;
+        if (showLv && LV[k] > 0 && !water) v = v * 0.78 + LVC[LV[k]][c] * 0.22;
+        d[k * 4 + c] = Math.max(0, Math.min(255, v));
+      }
+      d[k * 4 + 3] = 255;
+    }
+    octx.putImageData(img, 0, 0);
+  }
+  function P(x) { return x * S; }
+  function poly(pts, close) { ctx.beginPath(); pts.forEach(function (p, n) { n ? ctx.lineTo(P(p[0]), P(p[1])) : ctx.moveTo(P(p[0]), P(p[1])); }); if (close) ctx.closePath(); }
+  function text(s, x, y, col, size, bold) {
+    ctx.font = (bold ? 'bold ' : '') + (size || 11) + 'px Consolas, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)'; ctx.strokeText(s, P(x), P(y)); ctx.fillStyle = col || '#fff'; ctx.fillText(s, P(x), P(y));
+  }
+  var LABELS = {
+    whitecombs: [1000, 40], westFells: [120, 1000], northwood: [1660, 820], glasswater: [1330, 640], alpine: [640, 520],
+    thornwood: [700, 1010], outwall: [880, 820], ashMile: [1780, 1150], downs: [1600, 1380], signalHill: [640, 1330],
+    westHeath: [440, 1250], reedmire: [1040, 1420], strand: [1600, 1660], tower: [1500, 960], roadWest: [1250, 1100], ford: [1020, 1120]
+  };
+  var SITE_COL = { V: '#ffd27a', F: '#e6c06a', R: '#c9b8a0', C: '#ff9a5a', K: '#7fd6ff', M: '#d0a0ff', T: '#ffffff', L: '#5ff0e0', W: '#5ff0e0', G: '#ff5050', P: '#f4f4a0' };
+  var WALK = [{ c: [1496.5, 1024.5, 96] }, { a: [1440, 1034], b: [1350, 1048] }, { a: [1350, 1048], b: [1240, 1047] }, { a: [1240, 1047], b: [1180, 1062] },
+              { a: [1180, 1062], b: [1090, 1070] }, { a: [1090, 1070], b: [1000, 1070] }];
+
+  function draw() {
+    paintTerrain();
+    ctx.imageSmoothingEnabled = true; ctx.fillStyle = '#121418'; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.drawImage(off, 0, 0, P(WORLD), P(WORLD));
+    var mode = document.querySelector('input[name=mode]:checked').value;
+    // ---- beyond the map: Ferrum (horizon backdrop) ----
+    var F = G.ferrum, grd = ctx.createLinearGradient(P(WORLD), 0, P(VIEW_W), 0); grd.addColorStop(0, '#1c1a18'); grd.addColorStop(1, '#2a2118');
+    ctx.fillStyle = grd; ctx.fillRect(P(WORLD), 0, P(VIEW_W - WORLD), P(WORLD));
+    ctx.save(); ctx.beginPath(); ctx.rect(P(WORLD), 0, P(VIEW_W - WORLD), P(WORLD)); ctx.clip();
+    F.tiers.forEach(function (t, n) { ctx.beginPath(); ctx.arc(P(F.x), P(F.y), P(t.r), 0, Math.PI * 2); ctx.fillStyle = ['#3a3229', '#4a3d2e', '#5b4a33'][n]; ctx.fill();
+      ctx.strokeStyle = '#8a6a3a'; ctx.lineWidth = 2; ctx.stroke(); });
+    for (var k = 0; k < 260; k++) { var a = hash(k, 1) * Math.PI * 2, rr = Math.sqrt(hash(k, 2)) * 430; ctx.fillStyle = hash(k, 3) < 0.5 ? '#ffb347' : '#ffd27a';
+      ctx.fillRect(P(F.x + Math.cos(a) * rr), P(F.y + Math.sin(a) * rr), 2, 2); }
+    ctx.restore();
+    text('FERRUM', 2300, 1000, '#ffb347', 18, true); text('(beyond the map: horizon backdrop)', 2300, 1040, '#c9a36a', 10);
+    text('the Crown', 2420, 960, '#ffe0a0', 10); text('Low Wards', 2180, 1330, '#d9a860', 10);
+    text('BEYOND THE WALL: NOTHING', 2300, 300, '#8a7a66', 10); text('- Crown sky-chart', 2300, 330, '#6a5e50', 9);
+    if (mode === 'geo') {
+      // ---- the Wall ----
+      var W = G.wall, wp = []; for (var yy = W.y0; yy <= W.y1; yy += 10) wp.push([GU.wallX(yy), yy]);
+      ctx.strokeStyle = '#2b2622'; ctx.lineWidth = 7; poly(wp); ctx.stroke(); ctx.strokeStyle = '#b8aa94'; ctx.lineWidth = 3; poly(wp); ctx.stroke();
+      for (yy = W.y0; yy <= W.y1; yy += W.towerEvery) { ctx.fillStyle = '#d6c7ad'; ctx.fillRect(P(GU.wallX(yy)) - 5, P(yy) - 5, 10, 10); ctx.fillStyle = '#ffb347'; ctx.fillRect(P(GU.wallX(yy)) - 1, P(yy) - 1, 3, 3); }
+      ctx.save(); ctx.translate(P(2022), P(1350)); ctx.rotate(Math.PI / 2); ctx.font = 'bold 12px Consolas'; ctx.fillStyle = '#e8dcc4'; ctx.textAlign = 'center'; ctx.fillText('THE WALL  (ballistae)', 0, 0); ctx.restore();
+      ctx.setLineDash([4, 4]); ctx.strokeStyle = 'rgba(255,90,80,0.8)'; ctx.lineWidth = 1.5; poly([[W.walkLimitX, W.y0], [W.walkLimitX, W.y1]]); ctx.stroke(); ctx.setLineDash([]);
+      // ---- the Sealed Gate ----
+      var Gt = G.gate; ctx.strokeStyle = '#2b2622'; ctx.lineWidth = 6; poly(Gt.wall); ctx.stroke(); ctx.strokeStyle = '#d8ccb6'; ctx.lineWidth = 3; poly(Gt.wall); ctx.stroke();
+      Gt.towers.forEach(function (t) { ctx.fillStyle = '#e6dac2'; ctx.fillRect(P(t[0]) - 6, P(t[1]) - 6, 12, 12); });
+      ctx.fillStyle = '#ff5050'; ctx.fillRect(P(Gt.x) - 4, P(Gt.y) - 4, 8, 8);
+      text('THE SEALED GATE (P)', 240, 735, '#ffd0c0', 12, true); text('locked - key: Part II final quest', 240, 755, '#ff9a8a', 10);
+      text('beyond: not built', 100, 860, '#b0a090', 9);
+      // ---- names of water / mountains ----
+      text('the Whitecombs (P)', 600, 150, '#ffffff', 14, true); text('Old Pale (P)', 880, 95, '#e8eef5', 10);
+      text('Highspring tarn', 1193, 152, '#bfe6ff', 9); text('Glasswater (P)', 1235, 505, '#e0f4ff', 12, true);
+      text('the river', 1160, 920, '#bfe6ff', 10); text('the Reedmire (P)', 1110, 1560, '#e8f0d0', 11, true);
+      text('the sea', 1000, 1900, '#bfe0ff', 16, true); text('the Long Strand (P) - sand + dunes', 1560, 1815, '#fff2c0', 11);
+      text('estuary', 1190, 1765, '#bfe6ff', 9); text('Signal Head cliffs', 700, 1465, '#e0d6c8', 9); text('Gull Cove', 910, 1560, '#bfe6ff', 9);
+    }
+    // ---- level band tags + region names ----
+    if (mode === 'geo') G.regions.forEach(function (r) {
+      var L = LABELS[r.id]; if (!L) return;
+      if (r.id !== 'whitecombs') text(r.name, L[0], L[1], '#f6f0dc', 10, true);
+      if (document.getElementById('cLv').checked && r.lv) {
+        var s = 'Lv ' + r.lv[0] + (r.lv[1] !== r.lv[0] ? '-' + r.lv[1] : ''); text(s, L[0], L[1] + 16, lvColor(r.lv[0]), 11, true);
+      }
+    });
+    if (mode === 'geo' && document.getElementById('cLv').checked) {
+      text('heartland Lv 2-3', 1310, 1235, lvColor(2), 11, true); text('Lv 5-6', 960, 1235, lvColor(5), 11, true);
+      text('Whitecombs: Lv 5 east ... 9-10 west', 1000, 62, '#ffcc88', 10);
+      text('river = level border: tower side Lv 1-5 | far side Lv 5-10', 1100, 1990, '#ffe6a0', 11, true);
+    }
+    // ---- roads, relay line, Kestrel fall ----
+    if (document.getElementById('cRoads').checked) {
+      G.roads.forEach(function (r) {
+        if (mode !== 'geo' && r.id !== 'main') return;
+        ctx.strokeStyle = r.id === 'main' ? '#e8c890' : '#c8a878'; ctx.lineWidth = r.id === 'main' ? 2.5 : 1.5; ctx.setLineDash(r.hw < 2 ? [3, 3] : []); poly(r.pts); ctx.stroke();
+      });
+      ctx.setLineDash([2, 5]); ctx.strokeStyle = '#d8d8e8'; ctx.lineWidth = 1.5; poly(G.relayLine); ctx.stroke();
+      ctx.setLineDash([6, 4]); ctx.strokeStyle = '#ff9a3c'; poly([G.kestrelFall.from, G.kestrelFall.to]); ctx.stroke(); ctx.setLineDash([]);
+      G.kestrelFall.scraps.forEach(function (p) { ctx.fillStyle = '#ffcf6a'; ctx.fillRect(P(p[0]) - 1.5, P(p[1]) - 1.5, 3, 3); });
+      text('Kestrel fall line', 1740, 985, '#ffb070', 9);
+      text('pencil line (relays)', 860, 1112, '#e6e6f4', 9);
+    }
+    // ---- walkable today + protect ----
+    if (document.getElementById('cWalk').checked) {
+      ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5;
+      WALK.forEach(function (w) {
+        ctx.beginPath(); if (w.c) ctx.arc(P(w.c[0]), P(w.c[1]), P(w.c[2]), 0, Math.PI * 2);
+        else { var dx = w.b[0] - w.a[0], dy = w.b[1] - w.a[1], l = Math.hypot(dx, dy), nx = -dy / l * 40, ny = dx / l * 40, an = Math.atan2(dy, dx);
+          ctx.moveTo(P(w.a[0] + nx), P(w.a[1] + ny)); ctx.lineTo(P(w.b[0] + nx), P(w.b[1] + ny)); ctx.arc(P(w.b[0]), P(w.b[1]), P(40), an + Math.PI / 2, an - Math.PI / 2, true);
+          ctx.lineTo(P(w.a[0] - nx), P(w.a[1] - ny)); ctx.arc(P(w.a[0]), P(w.a[1]), P(40), an - Math.PI / 2, an + Math.PI / 2, true); }
+        ctx.fill();
+      });
+      text('walkable today (stage 0-2)', 1250, 990, '#ffffff', 10, true);
+    }
+    if (document.getElementById('cProt').checked) {
+      var R = G.protect.rect; ctx.setLineDash([8, 4]); ctx.strokeStyle = '#ff60ff'; ctx.lineWidth = 1.5; ctx.strokeRect(P(R[0]), P(R[1]), P(R[2] - R[0]), P(R[3] - R[1]));
+      G.protect.discs.forEach(function (D) { ctx.beginPath(); ctx.arc(P(D.x), P(D.y), P(D.r), 0, Math.PI * 2); ctx.stroke(); }); ctx.setLineDash([]);
+      text('protect: today\'s heights kept', (R[0] + R[2]) / 2, R[1] - 12, '#ff9aff', 10);
+    }
+    // ---- sites ----
+    if (document.getElementById('cSites').checked) G.sites.forEach(function (s) {
+      if (mode !== 'geo' && !s.ex) return;
+      ctx.fillStyle = 'rgba(10,10,14,0.85)'; ctx.fillRect(P(s.x) - 6, P(s.y) - 7, 12, 14);
+      ctx.strokeStyle = SITE_COL[s.t]; ctx.lineWidth = 1; ctx.strokeRect(P(s.x) - 6, P(s.y) - 7, 12, 14);
+      ctx.font = 'bold 11px Consolas'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = SITE_COL[s.t]; ctx.fillText(s.t, P(s.x), P(s.y) + 1);
+      if (document.getElementById('cNames').checked) text(s.n, s.x, s.y + 20, '#e8e8e8', 9);
+    });
+    // tower + signal tower emphasis
+    text('Hollow Watchtower', 1496, 1062, '#5ff0e0', 10, true); text('Signal tower', 714, 1200, '#5ff0e0', 10, true);
+    // ---- north arrow + scale bar ----
+    var ax = 60, ay = 70; ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.beginPath(); ctx.arc(ax, ay, 30, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f0d58a'; ctx.beginPath(); ctx.moveTo(ax, ay - 24); ctx.lineTo(ax + 8, ay + 8); ctx.lineTo(ax, ay + 2); ctx.lineTo(ax - 8, ay + 8); ctx.closePath(); ctx.fill();
+    ctx.font = 'bold 13px Consolas'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.fillText('N', ax, ay + 22);
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(16, cv.height - 40, P(500) + 20, 28); ctx.fillStyle = '#fff'; ctx.fillRect(26, cv.height - 22, P(500), 4);
+    ctx.font = '11px Consolas'; ctx.textAlign = 'left'; ctx.fillText('0      250 m     500 m', 26, cv.height - 30);
+  }
+  // ---- legend ----
+  var lg = '<div class="row"><b>Biomes</b></div>';
+  BKEYS.forEach(function (k) { lg += '<div class="row"><span class="sw" style="background:' + BIOMES[k][0] + '"></span>' + BIOMES[k][1] + '</div>'; });
+  lg += '<div class="row" style="margin-top:6px"><b>Sites</b></div>';
+  [['V', 'village'], ['F', 'farm / post / mill'], ['R', 'ruin'], ['C', 'camp'], ['K', 'cove / beach'], ['M', 'mine / cave (shallow, no dungeon)'],
+   ['T', 'watchtower'], ['L', 'relay (waystone when woken)'], ['W', 'waystone'], ['G', 'the Sealed Gate'], ['P', 'landmark']].forEach(function (s) {
+    lg += '<div class="row"><b style="color:' + SITE_COL[s[0]] + '">' + s[0] + '</b> ' + s[1] + '</div>'; });
+  lg += '<div class="row" style="margin-top:6px"><b>Level bands</b> ' + [1, 3, 5, 7, 9].map(function (n) { return '<span style="color:' + lvColor(n) + '">Lv' + n + '</span>'; }).join(' ') + '</div>';
+  lg += '<div class="row muted">Borders: N Whitecombs, W West Fells + Sealed Gate, S sea + beaches, E Ferrum\'s Wall.</div>';
+  document.getElementById('legend').innerHTML = lg;
+  // ---- hover ----
+  cv.addEventListener('mousemove', function (ev) {
+    var rc = cv.getBoundingClientRect(), x = (ev.clientX - rc.left) * (cv.width / rc.width) / S, y = (ev.clientY - rc.top) * (cv.height / rc.height) / S;
+    if (x >= WORLD) { document.getElementById('info').textContent = 'beyond the map: Ferrum (horizon only)'; return; }
+    var i = Math.min(N - 1, Math.floor(x / CELL)), j = Math.min(N - 1, Math.floor(y / CELL)), k = j * N + i, r = GU.regionAt(x, y);
+    var lv = r.id === 'heartland' ? (x < U.riverX(y) ? r.lvWest : r.lv) : r.lv, near = null, bd = 30;
+    G.sites.forEach(function (s) { var d = Math.hypot(s.x - x, s.y - y); if (d < bd) { bd = d; near = s; } });
+    document.getElementById('info').textContent = 'x ' + x.toFixed(0) + '  y ' + y.toFixed(0) + '\nh now ' + H0[k].toFixed(1) + ' m  geo ' + H[k].toFixed(1) + ' m' +
+      '\nbiome ' + BIOMES[BKEYS[B[k]]][1] + '\nregion ' + r.name + '\nlevel ' + (lv ? 'Lv ' + lv[0] + '-' + lv[1] : '-') + '\nmask ' + GU.mask(x, y).toFixed(2) +
+      (near ? '\nsite: ' + near.n + ' (' + near.t + ')' : '') + '\nriver x here ' + U.riverX(y).toFixed(0);
+  });
+  ['light', 'cLv', 'cSites', 'cNames', 'cRoads', 'cWalk', 'cProt'].forEach(function (id) { document.getElementById(id).addEventListener('input', function () {
+    document.getElementById('lightV').textContent = document.getElementById('light').value; draw(); }); });
+  document.querySelectorAll('input[name=mode]').forEach(function (e) { e.addEventListener('change', draw); });
+  draw();
+})();
+</script>
+</body>
+</html>

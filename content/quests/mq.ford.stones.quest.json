@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "id": "mq.ford.stones",
+  "title": "Stones in the Water",
+  "giver": { "npc": "rook" },
+  "main": true,
+  "requires": [{ "quest": "mq.river.road", "step": "riverBank" }],
+  "objectives": [
+    { "id": "fordWest", "text": "Cross the stepping stones", "journal": "Wide river. Cross on stepping stones.", "when": { "type": "area", "id": "fordWest" } }
+  ],
+  "returnText": "Talk to Rook",
+  "abandonable": false,
+  "reward": { "coin": 25, "items": [{ "id": "arrow", "n": 5 }] }
+}

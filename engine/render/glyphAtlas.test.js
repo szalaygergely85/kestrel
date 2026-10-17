@@ -1,7 +1,7 @@
 // engine/render/glyphAtlas.test.js - WG-1c2 (38.8a item 13). rasterizeGlyphAtlas is shared by RenderTargetGL and
 // RenderTargetWebGPU, so a regression moves both identically and presentdiff cannot see it: pin it with a fake 2D context.
 //   node engine/render/glyphAtlas.test.js
-import { rasterizeGlyphAtlas, glyphAtlasPixels, GLYPH_COUNT } from './glyphAtlas.js';
+import { rasterizeGlyphAtlas, glyphAtlasPixels, blankGlyphs, GLYPH_COUNT } from './glyphAtlas.js';
 import { FONT_STACK } from './glyphMetrics.js';
 import { makeOk } from '../test/assert.js';
 
@@ -39,6 +39,20 @@ ok('each glyph at (idx*pxCellW, ascent)', pos);
 ok('first/last glyph are "!" and "~"', texts[0][1] === '!' && texts[93][1] === '~');
 const px = glyphAtlasPixels(canvas, ctx);
 ok('glyphAtlasPixels reads the whole strip', px.length === 9 * 95 * 18 * 4);
+
+// ATLAS-GUARD blankGlyphs
+{
+  const lay = { pxCellW: 3, pxCellH: 2 }, W = 3 * 95;
+  const full = new Uint8ClampedArray(W * 2 * 4).fill(255);
+  ok('blankGlyphs: all filled -> []', blankGlyphs(full, lay).length === 0);
+  const a = new Uint8ClampedArray(W * 2 * 4); // all blank
+  ok('blankGlyphs: all blank = 94 codes, space ignored', blankGlyphs(a, lay).length === 94 && !blankGlyphs(a, lay).includes(32));
+  const b = full.slice();
+  for (const code of [109, 116]) for (let y = 0; y < 2; y++) for (let x = 0; x < 3; x++) b[(y * W + (code - 32) * 3 + x) * 4 + 3] = 0;
+  ok('blankGlyphs: two blank cells -> those codes', JSON.stringify(blankGlyphs(b, lay)) === '[109,116]');
+  const c = new Uint8ClampedArray(W * 2 * 4); c[(1 * W + (65 - 32) * 3 + 2) * 4 + 3] = 1;
+  ok('blankGlyphs: a single lit texel counts as filled', !blankGlyphs(c, lay, [65]).includes(65));
+}
 
 console.log(`\n${pass} passed, ${fail} failed.`);
 if (fail > 0) { console.log('Failures:'); for (const f of failures) console.log(`  - ${f}`); process.exit(1); }

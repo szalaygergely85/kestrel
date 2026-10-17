@@ -26,5 +26,6 @@
   },
   "matsResolved": false,
   "meshVersion": 1,
-  "colliderB64": "7FF4v6abxLzXo3C+iUHgvgRWbr/Xo3C+iUHgvgRWbr9/aqw/7FF4v6abxLzXo3C+iUHgvgRWbr9/aqw/7FF4v6abxLx/aqw/iUHgvgRWbr/Xo3C+308Nvlg5hL/Xo3C+308Nvlg5hL9/aqw/iUHgvgRWbr/Xo3C+308Nvlg5hL9/aqw/iUHgvgRWbr9/aqw/308Nvlg5hL/Xo3C+cT1KP4/CFb/Xo3C+cT1KP4/CFb9/aqw/308Nvlg5hL/Xo3C+cT1KP4/CFb9/aqw/308Nvlg5hL9/aqw/cT1KP4/CFb/Xo3C++FODPwaBFb7Xo3C++FODPwaBFb5/aqw/cT1KP4/CFb/Xo3C++FODPwaBFb5/aqw/cT1KP4/CFb9/aqw/+FODPwaBFb7Xo3C+7FFYP5zEID/Xo3C+7FFYP5zEID9/aqw/+FODPwaBFb7Xo3C+7FFYP5zEID9/aqw/+FODPwaBFb5/aqw/7FFYP5zEID/Xo3C+okX2PmQ7fz/Xo3C+okX2PmQ7fz9/aqw/7FFYP5zEID/Xo3C+okX2PmQ7fz9/aqw/7FFYP5zEID9/aqw/okX2PmQ7fz/Xo3C+exQuv4/CNT/Xo3C+exQuv4/CNT9/aqw/okX2PmQ7fz/Xo3C+exQuv4/CNT9/aqw/okX2PmQ7fz9/aqw/exQuv4/CNT/Xo3C+7FF4v6abxLzXo3C+7FF4v6abxLx/aqw/exQuv4/CNT/Xo3C+7FF4v6abxLx/aqw/exQuv4/CNT9/aqw/7FF4v6abxLx/aqw/iUHgvgRWbr9/aqw/308Nvlg5hL9/aqw/7FF4v6abxLzXo3C+308Nvlg5hL/Xo3C+iUHgvgRWbr/Xo3C+7FF4v6abxLx/aqw/308Nvlg5hL9/aqw/cT1KP4/CFb9/aqw/7FF4v6abxLzXo3C+cT1KP4/CFb/Xo3C+308Nvlg5hL/Xo3C+7FF4v6abxLx/aqw/cT1KP4/CFb9/aqw/+FODPwaBFb5/aqw/7FF4v6abxLzXo3C++FODPwaBFb7Xo3C+cT1KP4/CFb/Xo3C+7FF4v6abxLx/aqw/+FODPwaBFb5/aqw/7FFYP5zEID9/aqw/7FF4v6abxLzXo3C+7FFYP5zEID/Xo3C++FODPwaBFb7Xo3C+7FF4v6abxLx/aqw/7FFYP5zEID9/aqw/okX2PmQ7fz9/aqw/7FF4v6abxLzXo3C+okX2PmQ7fz/Xo3C+7FFYP5zEID/Xo3C+7FF4v6abxLx/aqw/okX2PmQ7fz9/aqw/exQuv4/CNT9/aqw/7FF4v6abxLzXo3C+exQuv4/CNT/Xo3C+okX2PmQ7fz/Xo3C+"
+  "collide": false,
+  "castShadow": false
 }

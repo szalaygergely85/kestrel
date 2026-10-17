@@ -52,9 +52,11 @@ export function sampleType(layer, gi, gj) {
 export function setSampleDh(layer, gi, gj, cm) {
   const c = chunkAt(layer, gi, gj, true);
   c.dh[mod(gi, layer.n) + mod(gj, layer.n) * layer.n] = Math.max(-32768, Math.min(32767, Math.round(cm)));
+  layer.version = (layer.version | 0) + 1; // PERF-04: Terrain's out-of-band height cache flushes on a version change
 }
 export function setSampleType(layer, gi, gj, t) {
   chunkAt(layer, gi, gj, true).type[mod(gi, layer.n) + mod(gj, layer.n) * layer.n] = t;
+  layer.version = (layer.version | 0) + 1;
 }
 
 /** Bilinear height delta in metres (0 for an empty layer). */
@@ -77,12 +79,12 @@ export function typePaint(layer, x, y) {
 
 // ---- JSON (base64 little-endian) -------------------------------------------
 
-function toB64(bytes) {
+export function toB64(bytes) {
   let s = '';
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
   return btoa(s);
 }
-function fromB64(str, expectLen, what) {
+export function fromB64(str, expectLen, what) {
   let s;
   try { s = atob(str); } catch (e) { throw new Error(`terrainEdits: ${what} is not valid base64`); }
   if (s.length !== expectLen) throw new Error(`terrainEdits: ${what} has ${s.length} bytes, expected ${expectLen}`);

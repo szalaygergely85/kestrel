@@ -30,7 +30,13 @@ import { gridLocal } from './gridLocal.js';
 /** @typedef {{targetKey:string|null, prompt:string, dist:number, angleDeg:number}} InteractionState */
 
 const DEFAULT_REACH = 1.8;
-const DEFAULT_CONE_DEG = 20;
+export const HYST_REACH = 0.3;   // the held target survives this far beyond reach
+export const PICK_PAD = 0.06;    // OB-066: every pick volume is inflated by this (OB-088: was 0.15 - a note prompted from the wall above it)
+export const HYST_PAD = 0.06;    // ...and the held target's volume by this much more (OB-088: was 0.1)
+const DEFAULT_HALF_W = 0.15;     // default pick volume: 0.3 m wide (OB-088: was 0.5; a wall note is flat paper - a deep box stuck out of the wall),
+const DEFAULT_HEIGHT = 0.4;      // ...0.4 m tall (OB-088: was 0.8; rec.height overrides), centred on rec.x/y/z
+const INSIDE_COS = Math.cos(35 * Math.PI / 180); // OB-084: eye inside a pick box -> the box centre must be within 35 deg of the crosshair
+const LOS_BACKOFF = 0.05;       // LOS is checked to just in front of the hit point (a note sits flush on a wall)
 const LOS_STEP = 0.1;
 const LOS_MAX_SAMPLES = 20;
 const losGrid = { x: 0, y: 0, z: 0 }; // gridLocal scratch (rule 9)
@@ -40,8 +46,31 @@ const losGrid = { x: 0, y: 0, z: 0 }; // gridLocal scratch (rule 9)
  * on grid physics): true if the world point is inside solid / below the floor
  * / above a numeric ceiling. Pure, zero allocation.
  */
+const losPt = new Float64Array(3); // pointBlocked's outsideFloorHBuf scratch
+/**
+ * OB-084: a level item on a prop picks on the prop's whole collider box. Resolved here (World.load after the props spawn,
+ * addInteractable, and whenever a prop moves via rebuildPropColliders), never inside findInteractTarget's hot loop.
+ */
+export function resolvePropPicks(world) {
+  const list = world.interactables;
+  if (!list || !world.propPickBox) return;
+  for (let i = 0; i < list.length; i++) {
+    const rec = list[i];
+    if (rec.propId && !rec.bodyId) { rec.pick = world.propPickBox(rec.propId) || null; rec.pickShapes = (world.propPickShapes && world.propPickShapes(rec.propId)) || null; }
+  }
+}
+
 export function pointBlocked(world, x, y, z) {
-  const s = world.structureAt(x, y);
+  losP[0] = x; losP[1] = y; losP[2] = z;
+  return pointBlockedBuf(world, losP);
+}
+const losP = new Float64Array(3);
+
+/** `pointBlocked` with the point in a caller buffer p[0..2] (BEAST-ALLOC-02b: hasLineOfSight samples without boxing 3 doubles per sample). */
+function pointBlockedBuf(world, p) {
+  const x = p[0], y = p[1], z = p[2];
+  let s = world.structureAt(x, y);
+  if (s && s.keepMask && world.keepTerrainOpen && world.keepTerrainOpen(s, x, y, z)) s = null; // UNDER-00c: terrain/sky above a keepTerrain room
   let floorH, ceilH, solid;
   if (s) {
     const g = gridLocal(s, x, y, losGrid);
@@ -53,6 +82,13 @@ export function pointBlocked(world, x, y, z) {
   } else {
     // MESH-PHYS-02: LOS only needs floor/solid; `outsideSector` also computes the ground normal (4 more groundAt) + type + material.
     // `outsideFloorH` answers undefined when unavailable (not a World, or `outsideSector` overridden) -> the full query.
+    // BEAST-ALLOC-02b: buffer form first (no boxed doubles per sample); -1 = unavailable -> the value form / full query.
+    if (world.outsideFloorHBuf) {
+      losPt[0] = x; losPt[1] = y;
+      const r = world.outsideFloorHBuf(losPt);
+      if (r === 0) return true; // no terrain = solid outside
+      if (r === 1) return z < losPt[2];
+    }
     const f = world.outsideFloorH ? world.outsideFloorH(x, y) : undefined;
     if (f !== undefined) return f === null || z < f; // null = no terrain = solid outside; ceiling is 'sky'
     const sector = world.outsideSector(x, y);
@@ -86,27 +122,45 @@ export function hasLineOfSight(world, ax, ay, az, bx, by, bz) {
     const t = i / steps;
     const x = ax + dx * t, y = ay + dy * t, z = az + dz * t;
 
-    if (pointBlocked(world, x, y, z)) return false;
+    losP[0] = x; losP[1] = y; losP[2] = z;
+    if (pointBlockedBuf(world, losP)) return false;
   }
   return true;
 }
 
 /**
- * Finds the interaction target (a candidate is: not used, `requires` met,
- * `|p - eye| <= min(rec.radius, reach)`, `angle(viewDir, p - eye) <= coneDeg`,
- * has line of sight). Winner: smallest angle, then smaller distance, then
- * array order. Fills and returns `out` - never allocates. Reads `rec.x/y/z`
- * LIVE (a runtime rec may be moved by its owner after add, US-079b0).
+ * OB-088: entry distance of the view ray into ONE oriented collider shape {cx,cy,cz,hx,hy,hz,c,s} (c/s = cos/sin of its yaw),
+ * inflated by `pad`; -1 = miss within maxT. The eye inside the shape gives 0. Allocation-free.
+ */
+function shapeEntry(sh, ex, ey, ez, vx, vy, vz, pad, maxT) {
+  const dx = ex - sh.cx, dy = ey - sh.cy, c = sh.c, s = sh.s;
+  const ox = c * dx + s * dy, oy = -s * dx + c * dy, oz = ez - sh.cz; // world -> shape local (rotate by -yaw about z)
+  const lx = c * vx + s * vy, ly = -s * vx + c * vy, lz = vz;
+  let tn = 0, tf = maxT;
+  const hx = sh.hx + pad, hy = sh.hy + pad, hz = sh.hz + pad;
+  if (lx > -1e-9 && lx < 1e-9) { if (ox < -hx || ox > hx) return -1; }
+  else { let t0 = (-hx - ox) / lx, t1 = (hx - ox) / lx; if (t0 > t1) { const q = t0; t0 = t1; t1 = q; } if (t0 > tn) tn = t0; if (t1 < tf) tf = t1; if (tn > tf) return -1; }
+  if (ly > -1e-9 && ly < 1e-9) { if (oy < -hy || oy > hy) return -1; }
+  else { let t0 = (-hy - oy) / ly, t1 = (hy - oy) / ly; if (t0 > t1) { const q = t0; t0 = t1; t1 = q; } if (t0 > tn) tn = t0; if (t1 < tf) tf = t1; if (tn > tf) return -1; }
+  if (lz > -1e-9 && lz < 1e-9) { if (oz < -hz || oz > hz) return -1; }
+  else { let t0 = (-hz - oz) / lz, t1 = (hz - oz) / lz; if (t0 > t1) { const q = t0; t0 = t1; t1 = q; } if (t0 > tn) tn = t0; if (t1 < tf) tf = t1; if (tn > tf) return -1; }
+  return tn;
+}
+
+/**
+ * Finds the interaction target by CROSSHAIR RAY (OB-066, replaces the angular cone). Each candidate (not used,
+ * `requires` met) has a pick volume: `rec.pick` {x0,y0,z0,x1,y1,z1} (world AABB, e.g. a prop's collider box) or a
+ * default box (0.5 m wide, rec.height tall, centred on rec.x/y/z), inflated by PICK_PAD (+HYST_PAD when it is the
+ * held target). The target is the nearest volume the view ray enters within min(rec.radius, reach) (+HYST_REACH for the
+ * held one) that has line of sight to the hit point. Fills and returns `out` - never allocates. Reads rec.x/y/z LIVE.
  * @param {import('./World.js').World} world
  * @param {{x:number,y:number,z:number,yawDeg:number,pitchDeg:number}} eye
- * @param {{reach?:number, coneDeg?:number}} [cfg]
+ * @param {{reach?:number}} [cfg]
  * @param {InteractionState} out
  * @returns {InteractionState}
  */
 export function findInteractTarget(world, eye, cfg, out) {
   const reach = (cfg && typeof cfg.reach === 'number') ? cfg.reach : DEFAULT_REACH;
-  const coneDeg = (cfg && typeof cfg.coneDeg === 'number') ? cfg.coneDeg : DEFAULT_CONE_DEG;
-
   const yawRad = eye.yawDeg * Math.PI / 180;
   const pitchRad = eye.pitchDeg * Math.PI / 180;
   const cosPitch = Math.cos(pitchRad);
@@ -116,29 +170,69 @@ export function findInteractTarget(world, eye, cfg, out) {
   const vz = Math.sin(pitchRad);
 
   const list = world.interactables;
-  let bestIdx = -1, bestAngle = Infinity, bestDist = Infinity;
+  const prevKey = out.targetKey;
+  let bestIdx = -1, bestT = Infinity;
   for (let i = 0; i < list.length; i++) {
     const rec = list[i];
     if (rec.usedKey && world.state[rec.usedKey]) continue;
     if (rec.requires && !world.state[rec.requires]) continue;
 
-    const dx = rec.x - eye.x, dy = rec.y - eye.y, dz = rec.z - eye.z;
-    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    const maxReach = rec.radius < reach ? rec.radius : reach;
-    if (dist > maxReach) continue;
-
-    let cosAngle = dist < 1e-9 ? 1 : (dx * vx + dy * vy + dz * vz) / dist;
-    if (cosAngle > 1) cosAngle = 1; else if (cosAngle < -1) cosAngle = -1;
-    const angleDeg = Math.acos(cosAngle) * 180 / Math.PI;
-    if (angleDeg > coneDeg) continue;
-
-    if (!hasLineOfSight(world, eye.x, eye.y, eye.z, rec.x, rec.y, rec.z)) continue;
-
-    if (angleDeg < bestAngle - 1e-9 || (angleDeg <= bestAngle + 1e-9 && dist < bestDist)) {
-      bestAngle = angleDeg;
-      bestDist = dist;
-      bestIdx = i;
+    const isPrev = prevKey !== null && rec.key === prevKey;
+    const maxT = (rec.radius < reach ? rec.radius : reach) + (isPrev ? HYST_REACH : 0);
+    const pad = PICK_PAD + (isPrev ? HYST_PAD : 0);
+    let x0, y0, z0, x1, y1, z1;
+    const pk = rec.pick;
+    const be = rec.bodyId ? world.entity(rec.bodyId) : null;
+    if (pk) { x0 = pk.x0; y0 = pk.y0; z0 = pk.z0; x1 = pk.x1; y1 = pk.y1; z1 = pk.z1; }
+    else if (be) { // OB-084: a moving body (NPC, corpse, pickup): a box around the LIVE entity, bodyR wide, bodyH tall from its feet
+      const bt = be.transform, br = rec.bodyR, bh = rec.bodyH;
+      x0 = bt.x - br; x1 = bt.x + br; y0 = bt.y - br; y1 = bt.y + br; z0 = bt.z; z1 = bt.z + bh;
+    } else {
+      const hh = (typeof rec.height === 'number' ? rec.height : DEFAULT_HEIGHT) * 0.5;
+      x0 = rec.x - DEFAULT_HALF_W; x1 = rec.x + DEFAULT_HALF_W;
+      y0 = rec.y - DEFAULT_HALF_W; y1 = rec.y + DEFAULT_HALF_W;
+      z0 = rec.z - hh; z1 = rec.z + hh;
     }
+    x0 -= pad; y0 -= pad; z0 -= pad; x1 += pad; y1 += pad; z1 += pad;
+
+    // Slab test: entry distance tn along the (unit) view ray; the eye inside the box gives tn = 0.
+    let tn = 0, tf = maxT;
+    let o = eye.x, v = vx;
+    if (v > -1e-9 && v < 1e-9) { if (o < x0 || o > x1) continue; }
+    else { let t0 = (x0 - o) / v, t1 = (x1 - o) / v; if (t0 > t1) { const q = t0; t0 = t1; t1 = q; } if (t0 > tn) tn = t0; if (t1 < tf) tf = t1; if (tn > tf) continue; }
+    o = eye.y; v = vy;
+    if (v > -1e-9 && v < 1e-9) { if (o < y0 || o > y1) continue; }
+    else { let t0 = (y0 - o) / v, t1 = (y1 - o) / v; if (t0 > t1) { const q = t0; t0 = t1; t1 = q; } if (t0 > tn) tn = t0; if (t1 < tf) tf = t1; if (tn > tf) continue; }
+    o = eye.z; v = vz;
+    if (v > -1e-9 && v < 1e-9) { if (o < z0 || o > z1) continue; }
+    else { let t0 = (z0 - o) / v, t1 = (z1 - o) / v; if (t0 > t1) { const q = t0; t0 = t1; t1 = q; } if (t0 > tn) tn = t0; if (t1 < tf) tf = t1; if (tn > tf) continue; }
+    if (tn >= bestT) continue;
+    // OB-088: a prop with collider shapes picks on the shapes themselves (oriented boxes), not their union AABB (a rotated,
+    // many-piece wreck made a box far bigger than the object). The AABB above is only the broadphase.
+    let ccx = (x0 + x1) * 0.5, ccy = (y0 + y1) * 0.5, ccz = (z0 + z1) * 0.5;
+    const shapes = pk ? rec.pickShapes : null;
+    if (shapes) {
+      let best = -1;
+      for (let k = 0; k < shapes.length; k++) {
+        const sh = shapes[k], t = shapeEntry(sh, eye.x, eye.y, eye.z, vx, vy, vz, pad, maxT);
+        if (t >= 0 && (best < 0 || t < best)) { best = t; ccx = sh.cx; ccy = sh.cy; ccz = sh.cz; }
+      }
+      if (best < 0 || best >= bestT) continue;
+      tn = best;
+    }
+    // OB-084: the eye INSIDE the (padded) box hits in every direction -> only when the box centre is within INSIDE_CONE of the crosshair
+    if (tn === 0) {
+      const cx = ccx - eye.x, cy = ccy - eye.y, cz = ccz - eye.z;
+      const cl = Math.sqrt(cx * cx + cy * cy + cz * cz);
+      if (cl > 1e-6 && (cx * vx + cy * vy + cz * vz) / cl < INSIDE_COS) continue;
+    }
+
+    if (tn > LOS_BACKOFF) {
+      const tl = tn - LOS_BACKOFF;
+      if (!hasLineOfSight(world, eye.x, eye.y, eye.z, eye.x + vx * tl, eye.y + vy * tl, eye.z + vz * tl)) continue;
+    }
+    bestT = tn;
+    bestIdx = i;
   }
 
   if (bestIdx === -1) {
@@ -148,15 +242,19 @@ export function findInteractTarget(world, eye, cfg, out) {
     out.angleDeg = 0;
   } else {
     const rec = list[bestIdx];
+    const dx = rec.x - eye.x, dy = rec.y - eye.y, dz = rec.z - eye.z;
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    let cosA = dist < 1e-9 ? 1 : (dx * vx + dy * vy + dz * vz) / dist;
+    if (cosA > 1) cosA = 1; else if (cosA < -1) cosA = -1;
     out.targetKey = rec.key;
     out.prompt = rec.prompt;
-    out.dist = bestDist;
-    out.angleDeg = bestAngle;
+    out.dist = dist;
+    out.angleDeg = Math.acos(cosA) * 180 / Math.PI;
   }
   return out;
 }
 
-const INTERACT_CFG = { reach: DEFAULT_REACH, coneDeg: DEFAULT_CONE_DEG }; // reused (rule 9)
+const INTERACT_CFG = { reach: DEFAULT_REACH }; // reused (rule 9)
 
 function findRecByKey(world, key) {
   const list = world.interactables;

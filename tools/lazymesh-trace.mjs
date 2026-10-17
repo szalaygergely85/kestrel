@@ -3,6 +3,7 @@
 // boot fetch counts, the longest frame and how many mesh loads happened per frame. Own server/browser on --port, cleans up only those.
 //   node tools/lazymesh-trace.mjs --port 9653 [--lazy 1|0] [--grid 400x150] [--out file.json]
 import { spawn } from 'node:child_process';
+import { withTimeFreeze } from './tool-url.mjs'; // DN-04a
 import { writeFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -77,7 +78,7 @@ try {
   const cdp = await connectCdp(dbg, 15000);
   await cdp.send('Page.enable'); await cdp.send('Runtime.enable');
   const loaded = new Promise((r) => cdp.onEvent((m) => { if (m === 'Page.loadEventFired') r(); }));
-  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?${query}` });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(`${query}`)}` });
   await loaded;
   const r = await cdp.send('Runtime.evaluate', { expression: DRIVER, returnByValue: true, awaitPromise: true, timeout: 300000 });
   if (r.exceptionDetails) throw new Error('driver threw: ' + JSON.stringify(r.exceptionDetails).slice(0, 800));

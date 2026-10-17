@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "id": "teaser-crypt-night",
+  "fps": 30,
+  "note": "TEASER (owner 2026-10-16, TikTok 9:16, capture --portrait --hour 22): 8 s walk-height push east through the OB-191 cemetery between the graves (x 1638-1640) toward the crypt facade + round door (cem32/cem36 at x ~1651, y ~1373). Eye ~1.6 m over the ground (ground -49.9 at x 1637 -> -50.7 at x 1648), pitch -4 -> +2 so the door rises into the frame centre. Ends ~2.5 m before the door. TEASER-QA 2026-10-16: end pulled back to ~5.6 m from the door (x 1645.3) and yaw 88 -> 89.5 so the round door sits in the 9:16 centre crop instead of a wall-filling, right-shifted last frame.",
+  "keys": [
+    {
+      "t": 0,
+      "x": 1636.5,
+      "y": 1373.6,
+      "z": -48.25,
+      "yawDeg": 88,
+      "pitchDeg": -4,
+      "ease": "linear"
+    },
+    {
+      "t": 2.667,
+      "x": 1639.5,
+      "y": 1373.4,
+      "z": -48.45,
+      "yawDeg": 88.5,
+      "pitchDeg": -2,
+      "ease": "linear"
+    },
+    {
+      "t": 5.333,
+      "x": 1642.5,
+      "y": 1373.2,
+      "z": -48.7,
+      "yawDeg": 89,
+      "pitchDeg": 0,
+      "ease": "linear"
+    },
+    {
+      "t": 8,
+      "x": 1645.3,
+      "y": 1373.0,
+      "z": -48.9,
+      "yawDeg": 89.5,
+      "pitchDeg": 1,
+      "ease": "linear"
+    }
+  ]
+}

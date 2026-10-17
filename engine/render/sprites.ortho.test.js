@@ -99,8 +99,10 @@ const orthoCam = (fx) => ({ x: 0, y: 0, z: 0, yawDeg: 45, pitchDeg: -35.264, pro
 // 7. US-068b3b sky: ortho takes the pitched-family path - every cell is the sky of direction F, same F as pitched
 {
   const cols = 16, rows = 8;
+  // The ortho==sky(F) check compares against the bare gradient (fastShadeSky); fillSky adds the look's cloud deck on top, so drop clouds here (twin parity: gpucompare).
+  const noCloudP = Object.create(palette); noCloudP.liveLook = null; noCloudP.timeOfDay = Object.fromEntries(Object.entries(palette.timeOfDay || {}).map(([k, v]) => [k, { ...v, clouds: null }]));
   const mk = () => { const r = new CellBuffer(cols, rows); r.pxCellW = 8; r.pxCellH = 16;
-    return { rt: r, depth: new DepthBuffer(cols, rows), gbuf: new GBuffer(cols, rows), palette, renderer: 'mesh' }; };
+    return { rt: r, depth: new DepthBuffer(cols, rows), gbuf: new GBuffer(cols, rows), palette: noCloudP, renderer: 'mesh' }; };
   for (const [yaw, pitch] of [[45, -35.264], [200, 10]]) {
     const fo = mk(), fp = mk(); beginFrame(fo); beginFrame(fp);
     const oc = { x: 0, y: 0, z: 0, yawDeg: yaw, pitchDeg: pitch, projection: 'ortho', orthoHalfH: 10, focusX: 0, focusY: 0, focusZ: 0 };

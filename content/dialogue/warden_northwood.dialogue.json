@@ -1,0 +1,17 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "warden_northwood",
+  "speakers": {
+    "warden": {"label": "BRENNA"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "warden.hello"}
+  ],
+  "nodes": {
+    "warden.hello": {"end": true, "lines": [
+      "Brenna. I keep the light. The pines keep the dark."
+    ], "speaker": "warden"}
+  }
+}

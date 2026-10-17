@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "id": "mq.bend.call",
+  "title": "The Call Carries",
+  "giver": { "npc": "rook" },
+  "main": true,
+  "requires": [{ "quest": "burl.road", "done": true }],
+  "objectives": [
+    { "id": "pulse", "text": "Watch the Bend waystone pulse", "journal": "Count the blinks of the Bend waystone.", "when": { "type": "flag", "id": "relay.bend.pulseSeen", "equals": true } },
+    { "id": "knot", "text": "Read the knot on the mount", "journal": "It blinks in threes. Read its knot.", "when": { "type": "flag", "id": "lore.knot.read", "equals": true } }
+  ],
+  "returnText": "Talk to Rook",
+  "reward": { "coin": 35, "items": [{ "id": "chart.river", "n": 1 }] },
+  "abandonable": false
+}

@@ -12,10 +12,17 @@ import {
   listOutlinerItems, frameFor, itemToWorld, worldToItem, mintId, fileKey,
 } from './doc.js';
 import { createOverlayTarget } from './overlayTarget.js';
-import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose, applyViewPreset } from './camera.js';
+import { registerKitChar } from './charKit.js'; // OB-218
+import { makePickGuard } from './pickGuard.js';
+import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clonePose, applyViewPreset, toggleOrtho, adjustOrthoHalfH, lookAlongAxis } from './camera.js';
 import { createAxisGizmo } from './axisGizmo.js';
-import { unprojectCell, rayPoint, projectPoint } from './ray.js';
+import { createQuestOverlay } from './questOverlay.js';
+import { createAreaOverlay } from './aiAreaOverlay.js'; // ED-AI-05
+import { createWaterTool, frameCamera } from './waterTool.js'; // ED-WATER-01 (OB-223)
+import { mountWaterPanel, createWaterOverlay } from './waterPanel.js';
+import { unprojectCell, rayPoint, projectPoint, screenCentreGroundHit } from './ray.js';
 import { pickAt, pickMarkers } from './pick.js';
+import { resolveMeshClick } from './meshClick.js';
 import { drawSelectionHighlight, drawMarkers, drawHoverOutline, drawMeshHighlightRect } from './select.js';
 import {
   makeRecord, makeFieldEditRecord, makeDeleteRecord, makeInsertRecord, makeRenameBatch,
@@ -32,8 +39,19 @@ import {
   createAssetFoldersState, parseAssetFolders, serializeAssetFolders, listUserFolders,
   createUserFolder, renameUserFolder, deleteUserFolder, moveAssetToFolder, groupAssetFolders,
 } from './panel.js';
+import {
+  itemKey, buildTreeGroups, parseFold, serializeFold, toggleFold, addUserGroup, removeFromUserGroups,
+  pruneUserGroups, writeUserGroups, readUserGroups, revealKeys,
+} from './treeGroups.js';
+import { findUnusedAssets, planAssetDelete, serializePendingDeletes } from './assetRefs.js';
 import { nextScale, fineScale, clampScale } from './scale.js';
-import { validateDoc, saveAll, loadFile, launchPlaytest, anyDirty, pickBinaryFile, saveTerrainEdits, addPrefabFile, savePrefabFile } from './io.js';
+import { applySnapshot, snapshotDiffers, formatAge, startAutosave, getSnapshot, clearSnapshot } from './autosave.js';
+import { validateDoc, saveAll, saveFile, loadFile, launchPlaytest, anyDirty, pickBinaryFile, saveTerrainEdits, addPrefabFile, savePrefabFile, saveGrassMask, saveDecorPaint } from './io.js';
+import * as ENG from '../../engine/index.js';
+import * as GB from './grassBrush.js';
+import * as FP from './foliagePanel.js';
+import * as FB from './foliageBudget.js';
+import { resnapFoliage } from './foliageBrush.js';
 import {
   BRUSH_OPS, PAINT_TYPES, effectiveStrength, beginStroke, endStroke, isTerrainRecord, applyTerrainSide, rectToWorld, ringPoints,
 } from './terrainBrush.js';
@@ -166,21 +184,87 @@ drawerTabs.forEach((tab) => {
   });
 });
 
+// ---- ED-QUEST-02: Quests tab - mounts questPanel.js once, on first open.
+let questPanelHandle = null;
+async function openQuestsTab() {
+  if (questPanelHandle) return;
+  const root = document.getElementById('quests-panel');
+  try {
+    const qp = await import('./questPanel.js'), fl = await import('./quest/flow.js');
+    const A = window.ASSETS || {}, itemDefs = (A.items && A.items.defs) || {};
+    questPanelHandle = await qp.mountQuestPanel(root, { names: fl.makeNames({ itemDefs }), itemDefs, loadFiles: () => qp.fetchQuestFiles(), loadDialogueFiles: () => qp.fetchDialogueFiles(), write: qp.downloadWrite, remove: (rel) => qp.removeQuestFile(rel), getWorld: () => assets.world(doc.worldId), floorAt: (x, y) => world.floorAt(x, y), getMesh: (k) => assets.mesh(k), onMarkers: () => frame.markDirty(),
+      worldId: doc.worldId, // ED-QUEST-WIRE: applyPick needs model + worldId (areas.json world field)
+      saveWorld: () => { const f = doc.files.get(fileKey('world', doc.worldId)); if (f) { f.dirty = true; saveFile(f).then(() => refreshIoStatus(), (e) => flash('world save failed: ' + (e && e.message))); } }, // 03b: area-only zones land in the world json
+      getCamGround: () => ({ x: cam.x, y: cam.y, z: world.floorAt(cam.x, cam.y) }), // 07: Play from here
+      onFocus: (id) => { const e = (assets.world(doc.worldId).entities || []).find((x) => x.id === id); if (e && Number.isFinite(e.x)) { cam = createCameraPose({ ...cam, x: e.x, y: e.y - 6, z: world.floorAt(e.x, e.y) + 6, yawDeg: 0, pitchDeg: -40 }); frame.markDirty(); } } }); // 05: lint "Go to"
+    window.__questPanel = questPanelHandle;
+  } catch (e) { root.textContent = 'Quests failed to load: ' + e.message; console.error(e); }
+}
+
+// ---- ED-AI-03: Creatures tab - mounts aiPanel.js once, on first open.
+let creaturesHandle = null;
+// ED-AI-05: ground snap + walkable test for the spawn-area tool (floor under the point, not in water deeper than a wade).
+const aiWaterScratch = { surfaceZ: 0, flatZ: 0, depth: 0, region: '', index: 0, look: 0 };
+function aiAreaProbe(x, y) {
+  const z = world.floorAt(x, y);
+  if (!(z === z) || z === null || z <= -1e6) return { z: 0, walkable: false };
+  const wet = world.waterAt && world.waterAt(x, y, aiWaterScratch) && aiWaterScratch.depth > 0.6;
+  return { z, walkable: !wet };
+}
+const aiTool = () => (creaturesHandle && creaturesHandle.areaTool) || null;
+async function openCreaturesTab() {
+  if (creaturesHandle) return;
+  const root = document.getElementById('creatures-panel');
+  try { creaturesHandle = await (await import('./aiPanel.js')).mountCreaturesTab(root, { probe: aiAreaProbe, reload: () => launchPlaytest(doc), onAreasChange: () => frame.markDirty() }); window.__creatures = creaturesHandle; }
+  catch (e) { root.textContent = 'Creatures failed to load: ' + e.message; console.error(e); }
+}
+// ---- ED-LOGIC-02b: Logic tab - mounts logicPanel.js once, on first open.
+let logicPanelHandle = null;
+async function openLogicTab() {
+  if (logicPanelHandle) return;
+  const root = document.getElementById('logic-panel');
+  try {
+    const lp = await import('./logicPanel.js'), qp = await import('./questPanel.js'), fl = await import('./quest/flow.js');
+    const schema = await (await fetch('../../content/logic/vocab.schema.json')).json();
+    const A = window.ASSETS || {}, itemDefs = (A.items && A.items.defs) || {};
+    const qfiles = await qp.fetchQuestFiles(), areasObj = JSON.parse(qfiles['areas.json'] || '{"areas":{}}').areas || {};
+    const { loadQuests } = await import('./quest/model.js');
+    const quests = loadQuests('q', qp.memFs({ ...qfiles, 'areas.json': qfiles['areas.json'] || '{"version":1,"areas":{}}' })).quests.map((q) => ({ id: q.id, name: q.title || q.id }));
+    const areaGeo = () => { // area id -> {x, y, r} from the world entity/zone the area points at (quests/areas.json: {trigger})
+      const out = {}, ents = (assets.world(doc.worldId).entities || []);
+      for (const id of Object.keys(areasObj)) { const e = ents.find((x) => x.id === (areasObj[id].trigger || id)); out[id] = e && Number.isFinite(e.x) ? { x: e.x, y: e.y, r: e.radius || e.r || 4 } : {}; }
+      return out;
+    };
+    logicPanelHandle = await lp.mountLogicPanel(root, { schema, loadFiles: () => lp.fetchLogicFiles(), write: lp.downloadLogic, getWorld: () => assets.world(doc.worldId), getAreaGeo: areaGeo,
+      choices: { quest: quests, item: fl.itemChoices(itemDefs) } });
+    window.__logicPanel = logicPanelHandle;
+  } catch (e) { root.textContent = 'Logic failed to load: ' + e.message; console.error(e); }
+}
+
 // ---- US-067: left-dock tabs (Scene Tree / Assets) --------------------------
 leftDockTabsEl.querySelectorAll('.dock-tab').forEach((tab) => {
   tab.addEventListener('click', () => {
     leftDockTabsEl.querySelectorAll('.dock-tab').forEach((t) => t.classList.remove('active'));
     tab.classList.add('active');
-    const isTree = tab.dataset.dockTab === 'tree';
-    treePanelEl.classList.toggle('active', isTree);
-    assetsPanelEl.classList.toggle('active', !isTree);
-    if (!isTree) renderAssetsList(assetsSearchInput.value);
+    const which = tab.dataset.dockTab;
+    treePanelEl.classList.toggle('active', which === 'tree');
+    assetsPanelEl.classList.toggle('active', which === 'assets');
+    document.getElementById('quests-panel').classList.toggle('active', which === 'quests');
+    document.getElementById('logic-panel').classList.toggle('active', which === 'logic');
+    if (which === 'quests') openQuestsTab();
+    document.getElementById('creatures-panel').classList.toggle('active', which === 'creatures');
+    if (which === 'creatures') openCreaturesTab();
+    if (which === 'logic') openLogicTab();
+    if (which === 'assets') renderAssetsList(assetsSearchInput.value);
   });
 });
 
 // ---- US-066: keyboard focus (design/editor-ui.md AC 6) - Esc blurs a
 // focused tree-search/inspector field so editor keys resume; clicking the
 // viewport already does this via canvas's own mousedown->focus() below.
+const questPickerArmed = () => !!(questPanelHandle && questPanelHandle.picker.armed);
+document.addEventListener('keydown', (e) => { if (questPanelHandle) questPanelHandle.picker.onKey(e); if (logicPanelHandle) logicPanelHandle.picker.onKey(e); });
+const logicPickerArmed = () => !!(logicPanelHandle && logicPanelHandle.picker.armed);
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   const a = document.activeElement;
@@ -205,6 +289,7 @@ try {
 }
 window.__editorBoot?.stage('asset/world init', 'Preparing assets and world');
 const assets = bundle ? AssetRegistry.fromJSON(bundle, window.ASSETS) : AssetRegistry.fromGlobals(window.ASSETS);
+await registerKitChar(assets); // OB-218: char.kit (Hesk, Dorrin) before the VoxelPool binds
 
 // `?world=<id>` (US-063): already just a normal `assets.world(id)` lookup
 // below (`assets.world` throws with a clear "unknown world" message +known
@@ -224,12 +309,12 @@ for (const name of validateBehaviours(World.load(assets.world(doc.worldId), asse
 // WebGPU start run the CPU path at the CPU grid). The editor never builds a GL cell pipeline.
 const g = clampGrid(gridFromParam(params, GRID_DEFAULT_COLS));
 window.__editorBoot?.stage('renderer init', 'Starting renderer');
-const { rt: builtRt, pipeline: wgPipeline, info: rendererInfo } = await createRenderer({ canvas, cols: g.cols, rows: g.rows, backend: params.get('backend') || 'webgpu', gpu: params.get('gpu') !== '0', shadows: { sun: params.get('shadows') === 'map' ? 'map' : 'dda' } });
+const { rt: builtRt, pipeline: wgPipeline, info: rendererInfo } = await createRenderer({ canvas, cols: g.cols, rows: g.rows, backend: params.get('backend') || 'webgpu', gpu: params.get('gpu') !== '0', shadows: { sun: params.get('shadows') === 'off' ? 'off' : 'map' } });
 window.__editorBoot?.stage('scene init', 'Preparing scene');
 const engine = createEngine({
   canvas, assets, cols: g.cols, rows: g.rows, rays: 1, renderTarget: builtRt, renderPipeline: wgPipeline,
   gpu: params.get('gpu') !== '0', inputTarget: canvas,
-  shadows: { sun: params.get('shadows') === 'map' ? 'map' : 'dda' }, // 31.6 passthrough
+  shadows: { sun: params.get('shadows') === 'off' ? 'off' : 'map' }, // 31.6 passthrough
   uiGrid: (assets.uiStyle && assets.uiStyle.uiGrid) || { cols: 160, rows: 60 },
 });
 const { renderTarget: rt, input } = engine;
@@ -238,14 +323,6 @@ const { renderTarget: rt, input } = engine;
 const RENDERER = 'mesh'; // ME-19a: the only renderer
 const pipeline = wgPipeline && wgPipeline.ready ? wgPipeline : null;
 const frame = createFrameRenderer({ engine, rt, pipeline, assets, idleSkip: true });
-// No GPU frame owner (webgl2 / ?gpu=0 / failed WebGPU): the CPU caster runs at the CPU grid (same rule as game main.js).
-if (!pipeline && rt.backend === 'gl2') {
-  const { cols: cpuCols, rows: cpuRows } = engine.gridRequest.cpuGrid;
-  if (rt.cols !== cpuCols || rt.rows !== cpuRows) {
-    engine.setGrid(cpuCols, cpuRows, { immediate: true });
-    frame.resize(rt.cols, rt.rows);
-  }
-}
 await frame.ready;
 // createRenderer builds the webgpu target at the CPU grid (38.8a item 14); once the pipeline owns the whole frame apply the requested grid
 // (240x90 default, same as the old GL editor and the game).
@@ -301,7 +378,9 @@ function startPose() {
   return s ? startPoseForStructure(s.frame, s.level) : createCameraPose({ z: 8, pitchDeg: -15 });
 }
 
-let world = engine.loadWorld(assets.world(doc.worldId), { physics: params.get('physics') === 'mesh' ? 'mesh' : 'grid' });
+const GRASS_MASK_ID = 'overworld_far'; // the game loads content/grassmask/<id>.grassMask.json (main.js MASK-e2)
+let edGrassLayer = null; // one layer for the session, kept across rebuild() (World.load re-reads it from editorCarpetOpt)
+let world = engine.loadWorld(assets.world(doc.worldId), { carpet: editorCarpetOpt() }); // OB-196: grass carpet as in the game
 const saved = loadSavedPose();
 let cam = saved ? createCameraPose(saved) : startPose();
 frame.markDirty();
@@ -438,6 +517,8 @@ function terrainStrokeEnd(cancel) {
   const t0 = performance.now();
   const sc = world.refreshTerrainScatter();
   if (cancel) { flash('terrain: stroke cancelled'); return; }
+  const fb = resnapFoliage({ doc, fileId: `world/${doc.worldId}`, assets, world }, rectToWorld(tb.layer, rec.rect)); // ED-FOLIAGE-05: fol_ placements follow the new floor, same undo record
+  if (fb) { rec.foliage = fb; applyEdit(doc, fb); applyAndSync(fb); }
   undoStack.push(rec);
   tb.dirty = true;
   refreshIoStatus();
@@ -467,6 +548,236 @@ function drawTerrainCursor() {
   }
 }
 
+
+// ---- MASK-d: grass mask brush (docs/architecture.md 38.52 amendment (e)) ---------------------------------
+// Same stroke shape as the terrain brush; the paint layer is world.grassMask (else a fresh engine layer when the
+// engine exports createGrassMask). Stroke end / undo -> world.rebuildCarpetMask(rect) when the world has it.
+const gb = { op: 'paint', radius: 6, pct: 40, gm: null, key: null, handle: null, dirty: false, stroke: null, hover: null };
+const grassToolbarEl = document.getElementById('grass-toolbar');
+const gbRadiusEl = document.getElementById('gb-radius');
+const gbStrengthEl = document.getElementById('gb-strength');
+const gbStatusEl = document.getElementById('gb-status');
+
+// OB-196: the paint layer is the carpet's own mask (world._carpetCtx.cfg.mask, the one buildCarpetMask reads) - it used to be
+// world.grassMask, which nothing in the engine reads, so strokes changed an orphan layer and no grass appeared.
+/** OB-196: the game's carpet config (overworld_far recipe, palette ramps) + the shared paint layer; undefined = no carpet recipe. */
+function editorCarpetOpt() {
+  const lvl = window.ASSETS && window.ASSETS.levels && window.ASSETS.levels.overworld_far, rcp = lvl && lvl.recipe && lvl.recipe.carpet;
+  if (!rcp || !Array.isArray(rcp.variants)) return undefined;
+  if (!edGrassLayer) { const raw = bundle && bundle.grassMasks && bundle.grassMasks[GRASS_MASK_ID]; edGrassLayer = raw ? ENG.grassMaskFromJSON(raw) : ENG.createGrassMask(0.5, 64); }
+  return { ...rcp, mask: edGrassLayer, variants: rcp.variants.map((v) => ({ ...v, ramp: v.ramp.map((k) => Array.from(ENG.hexToRgb(assets.palette.colors[k]))) })) };
+}
+function attachGrass() {
+  if (!world) { gb.gm = null; return; }
+  gb.key = GRASS_MASK_ID;
+  const cfg = world._carpetCtx && world._carpetCtx.cfg;
+  const layer = cfg && cfg.mask && cfg.mask.chunks instanceof Map ? cfg.mask : null;
+  if (!layer || typeof ENG.setGrassSample !== 'function') { gb.gm = null; return; }
+  if (!gb.gm || gb.gm.layer !== layer) gb.gm = GB.wrapLayer(layer, { sampleAt: ENG.grassSampleAt, setSample: ENG.setGrassSample, grassMaskToJSON: ENG.grassMaskToJSON });
+}
+function updateGrassToolbar() {
+  grassToolbarEl.classList.toggle('on', toolMode === 'grass');
+  grassToolbarEl.querySelectorAll('.gb-op').forEach((b) => b.classList.toggle('active', b.dataset.op === gb.op));
+  gbRadiusEl.nextElementSibling.textContent = `${gb.radius} m`;
+  gbStrengthEl.nextElementSibling.textContent = `${gb.pct}%`;
+  if (toolMode === 'grass') { attachGrass(); gbStatusEl.textContent = gb.gm ? `grass mask "${gb.key}" (save to content/grassmask/)` : 'no grass carpet in this world (overworld_far recipe.carpet missing)'; }
+  frame.markDirty();
+}
+gbRadiusEl.addEventListener('input', () => { gb.radius = Number(gbRadiusEl.value); updateGrassToolbar(); });
+gbStrengthEl.addEventListener('input', () => { gb.pct = Number(gbStrengthEl.value); updateGrassToolbar(); });
+grassToolbarEl.querySelectorAll('.gb-op').forEach((b) => b.addEventListener('click', () => {
+  if (GB.GRASS_OPS.includes(b.dataset.op)) { gb.op = b.dataset.op; updateGrassToolbar(); }
+}));
+document.getElementById('gb-save').addEventListener('click', async () => {
+  if (!gb.gm) { flash('grass: nothing to save'); return; }
+  try { await saveGrassMask(gb, { forceDownload: !!doc.readOnly }); flash(`saved: grassMask/${gb.key}`); } catch (e) { flash(`grass save failed: ${e && e.message ? e.message : e}`); }
+  refreshIoStatus();
+});
+
+function rebuildGrass(rect) { GB.rebuildCarpet(world, rect); world.renderVersion++; frame.markDirty(); }
+
+function grassStrokeStart(pt) {
+  attachGrass();
+  if (!gb.gm) { flash('grass: no grass carpet in this world'); return; }
+  gb.stroke = GB.beginStroke({ gm: gb.gm, key: gb.key }, { op: gb.op, radius: gb.radius, strength: GB.effectiveStrength(gb.pct), x: pt.x, y: pt.y });
+  grassStrokeMove(pt);
+}
+function grassStrokeMove(pt) {
+  const s = gb.stroke;
+  if (!s) return;
+  for (const [x, y] of s.points(pt.x, pt.y)) { const r = s.dab(x, y); if (r) rebuildGrass(r); }
+  frame.markDirty();
+}
+function grassStrokeEnd(cancel) {
+  const s = gb.stroke;
+  gb.stroke = null;
+  if (!s) return;
+  const rec = GB.endStroke({ gm: gb.gm, key: gb.key }, s);
+  if (!rec) return;
+  if (cancel) { GB.applyGrassSide(gb.gm, rec, 'before'); rebuildGrass(rec.rect); flash('grass: stroke cancelled'); return; }
+  undoStack.push(rec);
+  gb.dirty = true;
+  refreshIoStatus();
+  flash(`grass ${s.op}: ${s.dabs} dabs`);
+}
+function applyGrassRecordSide(rec, side) {
+  attachGrass();
+  if (!gb.gm) return;
+  rebuildGrass(GB.applyGrassSide(gb.gm, rec, side));
+  gb.dirty = true;
+  refreshIoStatus();
+}
+
+/** Cursor ring + tint of painted grass (green dots, brighter = more coverage) around the cursor. */
+function drawGrassCursor() {
+  if (toolMode !== 'grass' || !gb.hover || !world || !world.terrain) return;
+  const radius = gb.stroke ? gb.stroke.radius : gb.radius;
+  const put = (x, y, ch, hex) => {
+    const p = projectPoint(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, { x, y, z: world.terrain.heightAt(x, y) + 0.15 }, RENDERER);
+    if (!(p.depth > 0)) return;
+    const c = Math.round(p.col), r = Math.round(p.row);
+    if (c >= 0 && c < rt.cols && r >= 0 && r < rt.rows) overlayPlate.setCell(c, r, ch, hex, EDITOR_PLATE_BG);
+  };
+  if (gb.gm) {
+    for (const [x, y, v] of GB.paintedPoints(gb.gm, gb.hover.x, gb.hover.y, Math.max(12, radius * 2), 1.5)) put(x, y, '"', v > 0.66 ? '#3fbf3f' : v > 0.33 ? '#6fa04a' : '#8a8a4a');
+  }
+  const hex = gb.stroke ? '#ffd24a' : (gb.op === 'erase' ? '#ff7a7a' : '#7CFC7C');
+  for (const [x, y] of ringPoints(gb.hover.x, gb.hover.y, radius)) put(x, y, 'o', hex);
+}
+
+// ---- ED-FOLIAGE-02: Foliage tab (architecture.md 38.69). Logic in foliagePanel.js; this is the thin DOM/canvas wiring. ----
+const fl = { st: FP.createFoliageState(null), json: null, ctl: null, hover: null, refs: () => [], base: new Map(), zoneKey: null }; // base = zoneKey -> last measured bundleBytes
+const foliageToolbarEl = document.getElementById('foliage-toolbar');
+const flEl = (id) => document.getElementById(id);
+async function loadFoliageData() {
+  try { fl.json = await (await fetch('../../content/editor/foliage.json')).json(); fl.st = FP.createFoliageState(fl.json); } catch { fl.json = null; }
+  FB.configureFoliageCap(fl.json);
+  try { // quest files -> externalRefs so erase refuses quest-referenced placements
+    const base = '../../content/quests/', idx = await (await fetch(base + 'index.json')).json(), texts = {};
+    const names = [...(idx.packs || []).map((n) => `${n}/pack.json`), ...(idx.legacy || []).map((n) => `${n}.quest.json`)];
+    await Promise.all(names.map(async (n) => { try { texts[n] = await (await fetch(base + n)).text(); } catch { /* missing file: skipped */ } }));
+    fl.refs = FP.buildExternalRefs(texts);
+  } catch { /* no quests reachable: in-file referrers still apply */ }
+  const sel = flEl('fl-palette');
+  sel.innerHTML = ''; for (const id of fl.st.ids) sel.add(new Option(id, id));
+  updateFoliageToolbar();
+}
+function foliageController() {
+  fl.ctl = fl.ctl || FP.createFoliageController({ doc, fileId: `world/${doc.worldId}`, assets, json: fl.json, getWorld: () => world, commit: (rec) => { commit(rec); updateFoliageMeter(); }, flash, externalRefs: (id) => fl.refs(id), budget: (items) => FB.checkBudget(doc.files.get(`world/${doc.worldId}`).def.structures, assets, items, (k) => fl.base.get(k) || 0) }, fl.st);
+  return fl.ctl;
+}
+/** Budget meter for the zone under the cursor (green/amber/red, 38.69 section 5). */
+function updateFoliageMeter() {
+  const el = flEl('fl-meter'); if (!el || toolMode !== 'foliage' || !fl.hover || !doc) return;
+  const z = FB.zoneOf(fl.hover.x, fl.hover.y), k = FB.zoneKey(z.cx, z.cy);
+  const st = FB.zoneStats(doc.files.get(`world/${doc.worldId}`).def.structures, assets, z, { baseBytes: fl.base.get(k) || 0 });
+  el.dataset.level = FB.meterLevel(st); el.style.setProperty('--fill', `${Math.round(FB.meterFill(st) * 100)}%`);
+  el.textContent = `zone ${k}: ${FB.meterText(st)}${fl.base.has(k) ? '' : ' (not measured)'}`;
+}
+async function measureFoliageZone() {
+  if (!fl.hover || !world) { flash('foliage: hover the terrain first'); return; }
+  const z = FB.zoneOf(fl.hover.x, fl.hover.y); flash('foliage: measuring zone ...');
+  try { const dev = await import('../foliageMeasure.js'); fl.base.set(FB.zoneKey(z.cx, z.cy), FB.measureZone(world, z, dev)); updateFoliageMeter(); flash('foliage: zone measured'); }
+  catch (e) { flash(`foliage: measure failed (${e.message})`); }
+}
+function updateFoliageToolbar() {
+  foliageToolbarEl.classList.toggle('on', toolMode === 'foliage');
+  foliageToolbarEl.querySelectorAll('.fl-op').forEach((b) => b.classList.toggle('active', b.dataset.op === fl.st.op));
+  updateDecorToolbar();
+  flEl('fl-radius').nextElementSibling.textContent = `${fl.st.radius} m`;
+  flEl('fl-density').nextElementSibling.textContent = `${fl.st.density}/100m2`;
+  flEl('fl-status').textContent = fl.json ? `palette "${fl.st.palette}"` : 'content/editor/foliage.json not loaded';
+  if (FB.foliageCapWarning) flEl('fl-status').textContent += ` - ${FB.foliageCapWarning}`;
+  updateFoliageMeter();
+  frame.markDirty();
+}
+for (const [id, k] of [['fl-radius', 'radius'], ['fl-density', 'density'], ['fl-seed', 'seed'], ['fl-palette', 'palette'], ['fl-falloff', 'falloff']]) {
+  flEl(id).addEventListener('input', () => { FP.setFoliageParam(fl.st, k, flEl(id).value); updateFoliageToolbar(); });
+}
+foliageToolbarEl.querySelectorAll('.fl-op').forEach((b) => b.addEventListener('click', () => { FP.setFoliageParam(fl.st, 'op', b.dataset.op); updateFoliageToolbar(); }));
+flEl('fl-measure').addEventListener('click', measureFoliageZone);
+flEl('fl-save').addEventListener('click', () => flEl('save-btn').click()); // placements live in the world file: same save as Ctrl+S
+loadFoliageData();
+window.__foliage = { fl, controller: foliageController, dp: () => dp, decorStrokeStart, decorStrokeMove, decorStrokeEnd }; // verify-edfol-02/04.mjs drive strokes through this
+
+// ---- ED-FOLIAGE-04: decor mode = density paint on the detail layers (grassBrush decor ops, content/terrain/<key>.decorPaint.json) ----
+const dp = { layers: null, key: null, handle: null, dirty: false, stroke: null, loaded: false };
+const dpApi = { createGrassMask: ENG.createGrassMask, sampleAt: ENG.grassSampleAt, setSample: ENG.setGrassSample, grassMaskToJSON: ENG.grassMaskToJSON, grassMaskFromJSON: ENG.grassMaskFromJSON };
+function decorNames() {
+  const w = world && world._detailCtx && world._detailCtx.cfg && world._detailCtx.cfg.layers;
+  return [...new Set([...(w || []).map((l) => l.name), ...fl.st.decorLayers])].sort();
+}
+/** Loads the layers once (file if present, else neutral); a no-paint world keeps dp.layers null until the first stroke. */
+async function decorAttach() {
+  if (!world) return false;
+  dp.key = world.terrainKey || world.id || 'world';
+  if (dp.layers) { for (const n of decorNames()) if (!dp.layers[n]) Object.assign(dp.layers, GB.createDecorLayers([n], dpApi)); return true; }
+  let obj = null;
+  try { const r = await fetch(`../../content/${GB.decorPaintPath(dp.key)}`); if (r.ok) obj = await r.json(); } catch { /* no paint file: neutral */ }
+  dp.layers = GB.parseDecorPaint(obj, decorNames(), dpApi);
+  if (obj) rebuild(); // world was loaded without the paint: reload it once with the layers
+  return true;
+}
+function decorRebuild(rect) { GB.rebuildDecor(world, rect); if (world) world.renderVersion++; frame.markDirty(); }
+async function decorStrokeStart(pt) {
+  if (!(await decorAttach()) || !fl.st.decorLayer) { flash('decor: no layer'); return false; }
+  const gm = dp.layers[fl.st.decorLayer];
+  if (!gm) { flash(`decor: unknown layer ${fl.st.decorLayer}`); return false; }
+  if (!world.decorPaint) world.decorPaint = GB.decorWorldOpt(dp.layers); // live world gets the layers without a reload
+  dp.stroke = GB.beginDecorStroke({ gm, key: dp.key }, { layer: fl.st.decorLayer, op: fl.st.op, target: fl.st.target, radius: fl.st.radius, strength: GB.effectiveStrength(fl.st.density * 5), x: pt.x, y: pt.y });
+  decorStrokeMove(pt);
+  return true;
+}
+function decorStrokeMove(pt) { if (dp.stroke) { dp.stroke.points(pt.x, pt.y).forEach(([x, y]) => dp.stroke.dab(x, y)); frame.markDirty(); } }
+function decorStrokeEnd(cancel) {
+  const s = dp.stroke; dp.stroke = null;
+  if (!s) return null;
+  const rec = GB.endStroke({ gm: dp.layers[s.layer], key: dp.key }, s);
+  if (!rec) return null;
+  if (cancel) { GB.applyDecorSide(dp.layers, rec, 'before'); return null; }
+  undoStack.push(rec); dp.dirty = true;
+  decorRebuild(rec.rect); // live: World.rebuildDecor on the stroke rect only
+  refreshIoStatus(); flash(`${rec.label} (${s.layer}): ${rec.entries.length} texels`);
+  return rec;
+}
+function applyDecorRecordSide(rec, side) {
+  if (!dp.layers) return;
+  const rect = GB.applyDecorSide(dp.layers, rec, side);
+  if (rect) { dp.dirty = true; decorRebuild(rect); refreshIoStatus(); }
+}
+async function saveDecor() {
+  if (!dp.layers) return false;
+  await saveDecorPaint(dp, GB.decorPaintText(dp.layers, dp.key), { forceDownload: !!doc.readOnly });
+  return true;
+}
+function updateDecorToolbar() {
+  const d = fl.st.mode === 'decor';
+  flEl('fl-mode').textContent = d ? 'Mode: decor' : 'Mode: placements';
+  flEl('fl-decor').style.display = d ? '' : 'none'; flEl('fl-target-l').style.display = d ? '' : 'none'; flEl('fl-reset').style.display = d ? '' : 'none';
+  flEl('fl-palette').style.display = d ? 'none' : '';
+  flEl('fl-target').nextElementSibling.textContent = `x${fl.st.target}`;
+  const sel = flEl('fl-decor'); if (sel.options.length !== fl.st.decorLayers.length) { sel.innerHTML = ''; for (const n of fl.st.decorLayers) sel.add(new Option(n, n)); }
+}
+flEl('fl-mode').addEventListener('click', async () => { FP.setFoliageParam(fl.st, 'mode', fl.st.mode === 'decor' ? 'place' : 'decor'); if (fl.st.mode === 'decor') { fl.st.decorLayers = decorNames(); if (!fl.st.decorLayer) fl.st.decorLayer = fl.st.decorLayers[0] || null; await decorAttach(); } updateFoliageToolbar(); });
+flEl('fl-decor').addEventListener('input', () => { FP.setFoliageParam(fl.st, 'decorLayer', flEl('fl-decor').value); });
+flEl('fl-target').addEventListener('input', () => { FP.setFoliageParam(fl.st, 'target', flEl('fl-target').value); updateFoliageToolbar(); });
+
+function foliageStrokeEnd(cancel) { if (dp.stroke) { decorStrokeEnd(cancel); frame.markDirty(); return; } if (fl.ctl && fl.ctl.active) { fl.ctl.end(cancel); frame.markDirty(); } }
+
+/** Ring cursor (red = erase, green = paint, gold = running stroke) + placement ghosts while dragging. */
+function drawFoliageCursor() {
+  if (toolMode !== 'foliage' || !fl.hover || !world || !world.terrain) return;
+  const put = (x, y, z, ch, hex) => {
+    const p = projectPoint(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, { x, y, z }, RENDERER);
+    if (!(p.depth > 0)) return;
+    const c = Math.round(p.col), r = Math.round(p.row);
+    if (c >= 0 && c < rt.cols && r >= 0 && r < rt.rows) overlayPlate.setCell(c, r, ch, hex, EDITOR_PLATE_BG);
+  };
+  const active = fl.ctl && fl.ctl.active;
+  for (const [x, y] of ringPoints(fl.hover.x, fl.hover.y, fl.st.radius)) put(x, y, world.terrain.heightAt(x, y) + 0.15, 'o', active ? '#ffd24a' : fl.st.op === 'erase' ? '#ff7a7a' : '#7CFC7C');
+  if (active) for (const o of fl.ctl.ghosts()) put(o.x, o.y, o.z + 1, 'T', '#9be59b');
+}
+
 // ---- US-066: ribbon readouts (tool mode / snap / place toolbar) -----------
 function updateToolModeButtons() {
   toolModeGroupEl.querySelectorAll('.tool-mode-btn').forEach((btn) => {
@@ -478,6 +789,8 @@ toolModeGroupEl.querySelectorAll('.tool-mode-btn').forEach((btn) => {
     toolMode = btn.dataset.mode;
     updateToolModeButtons();
     updateTerrainToolbar();
+    updateGrassToolbar();
+    updateFoliageToolbar();
   });
 });
 updateToolModeButtons();
@@ -720,7 +1033,7 @@ function snapTo(v, snap) { return normZero(Math.round(v / snap) * snap); }
 /** `engine.setWorld(World.load(...))` - the one mutation path's rebuild (24.8). <= 5 ms budget. */
 function rebuild() {
   const t0 = performance.now();
-  const w = World.load(assets.world(doc.worldId), assets, { events: engine.events, terrain: engine.world && engine.world.terrain, physics: world.physicsMode });
+  const w = World.load(assets.world(doc.worldId), assets, { events: engine.events, terrain: engine.world && engine.world.terrain, spawn: { x: cam.x, y: cam.y }, physics: world.physicsMode, decorPaint: dp.layers ? GB.decorWorldOpt(dp.layers) : undefined, carpet: editorCarpetOpt() }); // OB-196: carpet + paint layer as in the game // WS2: start in the band under the camera
   engine.setWorld(w);
   reapplyVisibility(); // US-067: hide/lock survives this rebuild (in-memory overlay, never in `doc`)
   const ms = performance.now() - t0;
@@ -794,7 +1107,9 @@ function applyAndSync(appliedRec) {
 function doUndo() {
   const rec = undoStack.undo();
   if (!rec) { flash('undo: nothing to undo'); return; }
-  if (isTerrainRecord(rec)) { applyTerrainRecordSide(rec, rec.before); flash(`undo: ${rec.label}`); return; }
+  if (GB.isDecorRecord(rec)) { applyDecorRecordSide(rec, 'before'); flash(`undo: ${rec.label}`); return; }
+  if (GB.isGrassRecord(rec)) { applyGrassRecordSide(rec, 'before'); flash(`undo: ${rec.label}`); return; }
+  if (isTerrainRecord(rec)) { applyTerrainRecordSide(rec, rec.before); if (rec.foliage) { const inv = invert(rec.foliage); applyEdit(doc, inv); applyAndSync(inv); } flash(`undo: ${rec.label}`); return; }
   const inv = invert(rec);
   followRename(inv);
   applyEdit(doc, inv);
@@ -805,7 +1120,9 @@ function doUndo() {
 function doRedo() {
   const rec = undoStack.redo();
   if (!rec) { flash('redo: nothing to redo'); return; }
-  if (isTerrainRecord(rec)) { applyTerrainRecordSide(rec, rec.after); flash(`redo: ${rec.label}`); return; }
+  if (GB.isDecorRecord(rec)) { applyDecorRecordSide(rec, 'after'); flash(`redo: ${rec.label}`); return; }
+  if (GB.isGrassRecord(rec)) { applyGrassRecordSide(rec, 'after'); flash(`redo: ${rec.label}`); return; }
+  if (isTerrainRecord(rec)) { applyTerrainRecordSide(rec, rec.after); if (rec.foliage) { applyEdit(doc, rec.foliage); applyAndSync(rec.foliage); } flash(`redo: ${rec.label}`); return; }
   followRename(rec);
   applyEdit(doc, rec);
   applyAndSync(rec);
@@ -1023,9 +1340,9 @@ function deleteSelected() {
   renderProperties();
 }
 
-function teleportToSelection() {
+function selectionPoint() {
   const selection = primarySelection();
-  if (!selection) return;
+  if (!selection) return null;
   let point = null;
   const entId = selectionEntityId(world, selection);
   if (entId) {
@@ -1041,6 +1358,11 @@ function teleportToSelection() {
       point = itemToWorld(sFrame, item.x, item.y, z);
     }
   }
+  return point;
+}
+function teleportToSelection() {
+  if (!primarySelection()) return;
+  const point = selectionPoint();
   if (!point) { flash('teleport: no position for this item'); return; }
   cam.x = point.x;
   cam.y = point.y + 2; // 2 m south (+y), looking north at it (24.5)
@@ -1073,48 +1395,70 @@ treeChipsEl.querySelectorAll('.tree-chip').forEach((chip) => {
   });
 });
 
+// OB-028: category groups + user groups, foldable (fold state in localStorage, try/catch).
+const FOLD_KEY = 'kestrel.editor.treeFolds';
+let treeClosed = new Set();
+try { treeClosed = parseFold(localStorage.getItem(FOLD_KEY) || '[]'); } catch (_) { /* storage blocked */ }
+function persistFold() { try { localStorage.setItem(FOLD_KEY, serializeFold(treeClosed)); } catch (_) { /* ignore */ } }
+let lastRevealSig = '';
+const worldFileForGroups = () => doc.files.get(fileKey('world', doc.worldId));
+
+function foldHeader(key, title, count, open, cls) {
+  const h = document.createElement('div');
+  h.className = `tree-cat-header ${cls}`;
+  h.dataset.groupKey = key;
+  const arrow = document.createElement('span');
+  arrow.textContent = open ? '▾' : '▸';
+  const t = document.createElement('span');
+  t.textContent = title;
+  const c = document.createElement('span');
+  c.className = 'tree-cat-count';
+  c.textContent = String(count);
+  h.append(arrow, t, c);
+  h.addEventListener('click', () => { treeClosed = toggleFold(treeClosed, key); persistFold(); renderOutliner(); });
+  return h;
+}
+
 function renderOutliner() {
   outlinerEl.textContent = '';
-  const allItems = listOutlinerItems(doc, world); // CO-7: attaches structId per level-owned item
+  const realItems = listOutlinerItems(doc, world); // CO-7: attaches structId per level-owned item
+  const levelRows = (world.structures || []).filter((st) => st.level).map((st) => ({ fileId: fileKey('world', doc.worldId), collection: 'levels', id: st.id, item: st, structId: null }));
+  const allItems = realItems.concat(levelRows);
 
-  const counts = { all: allItems.length, entities: 0, props: 0, lights: 0, triggers: 0, interactables: 0 };
-  for (const o of allItems) counts[o.collection] = (counts[o.collection] || 0) + 1;
+  const counts = { all: realItems.length, entities: 0, props: 0, lights: 0, triggers: 0, interactables: 0 };
+  for (const o of realItems) counts[o.collection] = (counts[o.collection] || 0) + 1;
   treeChipsEl.querySelectorAll('.tree-chip').forEach((chip) => {
     const key = chip.dataset.filter;
     chip.textContent = `${TREE_CHIP_LABELS[key]} (${counts[key] || 0})`;
   });
 
-  const q = treeSearch.trim().toLowerCase();
-  const filtered = allItems.filter((o) => {
-    if (treeFilter !== 'all' && o.collection !== treeFilter) return false;
-    if (q && !o.id.toLowerCase().includes(q)) return false;
-    return true;
-  });
-
-  if (!filtered.length) {
+  const wf = worldFileForGroups();
+  const userGroups = pruneUserGroups(readUserGroups(wf && wf.def), allItems.map(itemKey));
+  // Selection from the 3D view: open (and persistently unfold) the group of the newly selected row.
+  const sig = sel.items.map((it) => `${it.fileId}|${it.collection}|${it.id}`).join(',');
+  if (sig !== lastRevealSig) {
+    lastRevealSig = sig;
+    const first = sel.items[0] && allItems.find((o) => o.fileId === sel.items[0].fileId && o.collection === sel.items[0].collection && o.id === sel.items[0].id);
+    if (first) { for (const k of revealKeys(allItems, first, userGroups)) treeClosed.delete(k); persistFold(); }
+  }
+  const groups = buildTreeGroups(allItems, { userGroups, query: treeSearch, filter: treeFilter, closed: treeClosed });
+  if (!groups.length) {
     const empty = document.createElement('div');
     empty.className = 'tree-empty';
-    empty.textContent = allItems.length ? '(no match)' : '(no props/lights/interactables/entities)';
+    empty.textContent = realItems.length ? '(no match)' : '(no props/lights/interactables/entities)';
     outlinerEl.appendChild(empty);
     return;
   }
-
-  // Group by fileId (a level or the world file) so the tree reads as
-  // structure -> its props/lights/... , with `├─`/`└─` branch glyphs
-  // (design/editor-ui.md 4) - purely a visual grouping, same flat
-  // `listOutlinerItems` data and the same `selectItem` click path as before.
-  const groups = new Map();
-  for (const o of filtered) {
-    const group = o.collection === 'structures' ? `${o.fileId} / Meshes` : o.fileId;
-    if (!groups.has(group)) groups.set(group, []);
-    groups.get(group).push(o);
-  }
-  for (const [fileId, items] of groups) {
-    const header = document.createElement('div');
-    header.className = 'tree-group-header';
-    header.textContent = fileId;
-    outlinerEl.appendChild(header);
-    items.forEach((o, i) => {
+  for (const g of groups) {
+    outlinerEl.appendChild(foldHeader(g.key, (g.user ? '★ ' : '') + g.title, g.count, g.open, g.user ? 'user' : 'cat'));
+    if (!g.open) continue;
+    for (const sub of g.subs) {
+      if (sub.title) {
+        outlinerEl.appendChild(foldHeader(sub.key, sub.title, sub.count, sub.open, 'sub'));
+        if (!sub.open) continue;
+      }
+      const items = sub.items;
+      items.forEach((o, i) => {
       const item = { fileId: o.fileId, collection: o.collection, id: o.id };
       const row = document.createElement('div');
       row.className = 'tree-row';
@@ -1159,13 +1503,44 @@ function renderOutliner() {
       lockBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleItemLocked(item); });
       icons.appendChild(eyeBtn);
       icons.appendChild(lockBtn);
-      if (o.collection !== 'structures') row.appendChild(icons);
-      row.addEventListener('click', (e) => selectItem({ fileId: o.fileId, collection: o.collection, id: o.id, structId: o.structId }, e.shiftKey || e.ctrlKey, e.altKey));
-      row.addEventListener('dblclick', () => { selectItem({ fileId: o.fileId, collection: o.collection, id: o.id, structId: o.structId }); teleportToSelection(); });
+      if (o.collection !== 'structures' && o.collection !== 'levels') row.appendChild(icons);
+      if (o.collection === 'levels') row.classList.add('row-locked');
+      else row.addEventListener('click', (e) => selectItem({ fileId: o.fileId, collection: o.collection, id: o.id, structId: o.structId }, e.shiftKey || e.ctrlKey, e.altKey));
+      if (o.collection !== 'levels') row.addEventListener('dblclick', () => { selectItem({ fileId: o.fileId, collection: o.collection, id: o.id, structId: o.structId }); teleportToSelection(); });
       outlinerEl.appendChild(row);
-    });
+      });
+    }
   }
+  const selRow = outlinerEl.querySelector('.tree-row.selected');
+  if (selRow && selRow.scrollIntoView) selRow.scrollIntoView({ block: 'nearest' });
 }
+
+document.getElementById('tree-group-btn').addEventListener('click', () => {
+  const keys = sel.items.map((it) => itemKey(it));
+  if (!keys.length) { flash('group: select items first'); return; }
+  const name = (window.prompt('Group name', 'Group') || '').trim();
+  if (!name) return;
+  const wf = worldFileForGroups();
+  if (!wf) { flash('group: no world file'); return; }
+  writeUserGroups(wf.def, addUserGroup(readUserGroups(wf.def), name, keys));
+  wf.dirty = true;
+  treeClosed.delete(`user:${name}`);
+  refreshIoStatus();
+  renderOutliner();
+  flash(`grouped ${keys.length} as "${name}" (saved with the world)`);
+});
+document.getElementById('tree-ungroup-btn').addEventListener('click', () => {
+  const wf = worldFileForGroups();
+  if (!wf) return;
+  const before = readUserGroups(wf.def), keys = sel.items.map((it) => itemKey(it));
+  const next = removeFromUserGroups(before, keys);
+  if (JSON.stringify(next) === JSON.stringify(before)) { flash('ungroup: selection is in no group'); return; }
+  writeUserGroups(wf.def, next);
+  wf.dirty = true;
+  refreshIoStatus();
+  renderOutliner();
+  flash('ungrouped');
+});
 renderOutliner();
 renderProperties();
 
@@ -1456,6 +1831,11 @@ function buildAssetRow(key, priority = false) {
     row.dataset.meshKey = meshKey;
     row.classList.add('mesh-asset-row');
     row.title = `Mesh: ${meshKey} (${assets.mesh(meshKey).triCount.toLocaleString()} triangles)`;
+    const del = document.createElement('button');
+    del.type = 'button'; del.className = 'asset-del-btn'; del.title = 'Delete this mesh asset (scans references first)'; del.textContent = '✕';
+    del.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+    del.addEventListener('click', (e) => { e.stopPropagation(); deleteMeshAsset(meshKey); });
+    row.appendChild(del);
   }
   // mousedown (not click): same reasoning as the US-063 model-picker rows -
   // fires before the search input's blur / the canvas's own mousedown
@@ -1539,10 +1919,85 @@ function buildFolderSection(folderName, keys) {
   return section;
 }
 
+// ---- OB-029: delete assets (reference scan, pending-deletes file) ----------
+const assetsUnusedChk = document.getElementById('assets-unused-chk');
+const pendingDeletes = new Map(); // mesh key -> plan; written to content/.pending-deletes.json
+let packageSources = {}; // best effort: content/packages/*.json, fetched on first use
+async function loadPackageSources() {
+  try {
+    const idx = await (await fetch('../../content/packages/index.json', { cache: 'no-store' })).json();
+    packageSources['package/index'] = idx;
+    for (const p of idx.packages || []) {
+      const name = typeof p === 'string' ? p : p && (p.file || p.path || p.id);
+      if (!name) continue;
+      try { packageSources[`package/${name}`] = await (await fetch(`../../content/packages/${name}`, { cache: 'no-store' })).json(); } catch (_) { /* skip */ }
+    }
+  } catch (_) { /* packages optional */ }
+}
+function buildAssetSources() {
+  const src = { ...packageSources };
+  for (const [k, f] of doc.files) src[k] = f.def;
+  for (const k of assets.keys('model')) { try { src[`model/${k}`] = assets.model(k); } catch (_) { /* skip */ } }
+  return src;
+}
+async function writePendingDeletes() {
+  const text = serializePendingDeletes([...pendingDeletes.values()]);
+  const name = '.pending-deletes.json';
+  try {
+    if (typeof window.showSaveFilePicker === 'function') {
+      const h = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: 'Pending deletes', accept: { 'application/json': ['.json'] } }] });
+      const w = await h.createWritable(); await w.write(text); await w.close();
+    } else {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' })); a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+    flash('pending deletes written: save it as content/.pending-deletes.json (the main session applies it)');
+  } catch (e) { flash(e && e.name === 'AbortError' ? 'pending deletes: cancelled' : `pending deletes failed: ${e && e.message}`); }
+}
+async function deleteMeshAsset(key) {
+  const plan = planAssetDelete('mesh', key, buildAssetSources());
+  if (!plan.ok && !plan.refs.length) { flash(`cannot delete "${key}": ${plan.reason}`); return; }
+  if (!plan.ok) {
+    const list = plan.refs.slice(0, 12).map((r) => `${r.source} ${r.path}`).join(', ');
+    const removable = plan.refs.every((r) => /^(world|level)\//.test(r.source) && /^(structures|entities|props)\[\d+\]\./.test(r.path));
+    if (!removable) { window.alert(`"${key}" is still used by:
+${list}
+
+Remove those users first (some are not editor placements).`); return; }
+    if (!window.confirm(`"${key}" is used by ${plan.refs.length} placement(s):
+${list}
+
+Delete all those placements AND the asset?`)) return;
+    const byFile = new Map();
+    for (const r of plan.refs) {
+      const m = /^(\w+)\[(\d+)\]/.exec(r.path);
+      if (!byFile.has(r.source)) byFile.set(r.source, []);
+      byFile.get(r.source).push([m[1], Number(m[2])]);
+    }
+    const recs = [];
+    for (const [fileId, list2] of byFile) {
+      const file = doc.files.get(fileId);
+      for (const [coll, idx] of [...new Set(list2.map((x) => x.join(':')))].map((x) => x.split(':')).sort((a, b) => b[1] - a[1])) {
+        recs.push(makeDeleteRecord(fileId, coll, file.def[coll][idx], Number(idx)));
+      }
+    }
+    for (const rec of recs) commit(rec);
+  } else if (!window.confirm(`Delete mesh asset "${key}"? Nothing references it. Its files are queued for deletion.`)) return;
+  pendingDeletes.set(key, { ...plan, files: plan.files, manifest: plan.manifest });
+  renderAssetsList(assetsSearchInput.value);
+  await writePendingDeletes();
+}
+assetsUnusedChk.addEventListener('change', async () => { await loadPackageSources(); renderAssetsList(assetsSearchInput.value); });
+
 function renderAssetsList(query) {
   assetsListEl.textContent = '';
-  const keys = filterModelKeys(listPlaceableModels(assets), query || '');
-  const meshGroups = listMeshAssetGroups(assets, query || '');
+  const showUnused = assetsUnusedChk.checked;
+  const keys = showUnused ? [] : filterModelKeys(listPlaceableModels(assets), query || '');
+  let meshGroups = listMeshAssetGroups(assets, query || '');
+  // OB-029: hide meshes queued for deletion; "unused" keeps only meshes nothing references.
+  const unusedSet = showUnused ? new Set(findUnusedAssets(assets.keys('mesh'), buildAssetSources())) : null;
+  meshGroups = meshGroups.map((g) => ({ pack: g.pack, keys: g.keys.filter((k) => !pendingDeletes.has(k) && (!unusedSet || unusedSet.has(k))) })).filter((g) => g.keys.length);
   const prefabs = [...doc.files.values()].filter(f=>f.kind === 'prefab' &&
     `${f.id} ${f.def.title}`.toLowerCase().includes((query || '').trim().toLowerCase()));
   for (const file of prefabs) {
@@ -1656,14 +2111,12 @@ async function doImportVox() {
     // runtime add is invisible to it until re-bound (placed prop rendered
     // nothing). Re-bind with the live material table; bumps atlas.version so
     // the GPU re-uploads lazily.
-    frame.voxelPool.bind(assets, frame.fb.matTable);
+    frame.refreshAssets(assets); // ED-MESH-1e: re-binds the pool + pipeline voxels, marks dirty
     frame.markDirty();
     requestIcon(name, true);
     renderAssetsList(assetsSearchInput.value);
     armModelPlacement(name);
-    flash(def.meshOnly && RENDERER !== 'mesh'
-      ? `imported: ${name} (too large for the editor view: mesh-only model, placed but NOT drawn here - only on ?renderer=mesh; max 32 per axis to see it)`
-      : `imported: ${name} (click viewport to place)`);
+    flash(`imported: ${name} (click viewport to place)`);
   } catch (e) {
     flash(`import .vox failed: ${e && e.message ? e.message : e}`);
   }
@@ -1686,7 +2139,7 @@ async function refreshIoStatus() {
   const gen = ++ioGeneration;
   const err = await validateDoc(doc, window.ASSETS, { reference: bundle });
   if (gen !== ioGeneration) return; // a newer edit landed while this was in flight
-  const dirty = anyDirty(doc) || tb.dirty;
+  const dirty = anyDirty(doc) || tb.dirty || gb.dirty;
   saveBtn.disabled = !!err;
   saveBtn.title = err ? err.message : '';
   ioStatusEl.textContent = err ? `invalid: ${err.message}` : (dirty ? 'unsaved changes' : 'saved');
@@ -1699,7 +2152,10 @@ async function doSave() {
   try {
     const saved = await saveAll(doc);
     if (tb.dirty && tb.layer) { await saveTerrainEdits(tb, { forceDownload: !!doc.readOnly }); saved.push(`terrainEdits/${tb.key}`); }
+    if (gb.dirty && gb.gm) { await saveGrassMask(gb, { forceDownload: !!doc.readOnly }); saved.push(`grassMask/${gb.key}`); }
+    if (dp.dirty && dp.layers) { await saveDecor(); saved.push(`decorPaint/${dp.key}`); }
     flash(saved.length ? `saved: ${saved.join(', ')}` : 'save: nothing dirty');
+    if (!anyDirty(doc) && !tb.dirty && !gb.dirty && !dp.dirty) autosaver.flush(); // clears the OB-030 autosave record
   } catch (e) {
     flash(`save failed: ${e && e.message ? e.message : e}`);
   }
@@ -1740,9 +2196,30 @@ window.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && ['KeyS','KeyP','KeyD','KeyG'].includes(e.code) && editorKeysActive()) e.preventDefault();
 });
 
+// OB-030: autosave dirty files to IndexedDB every 5 s + on hide; offer restore on open.
+const autosaver = startAutosave(() => doc);
+(async function offerRestore() {
+  let snap = null;
+  try { snap = await getSnapshot(doc.worldId); } catch (e) { return; }
+  if (!snap || !snapshotDiffers(doc, snap).length) return;
+  const bar = document.createElement('div');
+  bar.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:9999;background:#222;color:#fd8;border:1px solid #fd8;padding:8px 12px;font:13px monospace;display:flex;gap:10px;align-items:center';
+  const txt = document.createElement('span');
+  txt.textContent = `Restore unsaved changes from ${new Date(snap.savedAt).toLocaleTimeString()} (${formatAge(snap.savedAt)})?`;
+  const mk = (label, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'ed-btn'; b.textContent = label; b.onclick = () => { bar.remove(); fn(); }; return b; };
+  bar.append(txt,
+    mk('Restore', () => {
+      const keys = applySnapshot(doc, assets, snap);
+      undoStack.clear(); sel = replaceSelection(); rebuild(); refreshIcons(); refreshIoStatus();
+      flash(`restored unsaved changes: ${keys.join(', ')}`);
+    }),
+    mk('Discard', () => { clearSnapshot(doc.worldId).catch(() => {}); }));
+  document.body.appendChild(bar);
+})();
+
 // 24.10: "beforeunload warns while any file is dirty".
 window.addEventListener('beforeunload', (e) => {
-  if (!anyDirty(doc) && !tb.dirty) return;
+  if (!anyDirty(doc) && !tb.dirty && !gb.dirty) return;
   e.preventDefault();
   e.returnValue = '';
 });
@@ -1915,25 +2392,72 @@ function beginSelectionBox(e, col, row) {
     rect:{minCol:col,maxCol:col,minRow:row,maxRow:row} };
 }
 
-let pickSeq = 0, moveSeq = 0;
+const clickGuard = makePickGuard(() => world), hoverGuard = makePickGuard(() => world); // one guard per pick channel (click vs hover)
 canvas.addEventListener('mousedown', async (e) => {
   if (e.button !== 0 || !editorKeysActive()) return;
   if (modelPickerEl.style.display !== 'none') return; // US-063: the model picker modal owns clicks while open
   const { col, row } = computeMouseCell(e);
-  const seq = ++pickSeq, stamp = world;
+  const tok = clickGuard.begin();
   if (col < 0 || col >= rt.cols || row < 0 || row >= rt.rows) return;
 
+  if (waterOn) { // ED-WATER-01: the Water tool owns the left button (pick region / drag handle / drag inside)
+    const hit = await pickAt(col, row, pickCtx());
+    if (clickGuard.isStale(tok)) return;
+    if (hit.world && (hit.kind === 'terrain' || hit.kind === 'surface')) { if (!waterTool.down(hit.world.x, hit.world.y)) waterTool.pick(hit.world.x, hit.world.y); }
+    frame.markDirty(); return;
+  }
+  if (questPanelHandle && !questPickerArmed()) { // ED-QUEST-04: a click on a quest pin selects that objective in the panel
+    const pin = questOverlay.pinAt(col, row);
+    if (pin) { questPanelHandle.selectObjective(pin.qid, pin.obj); return; }
+  }
+  if (logicPickerArmed()) { // ED-LOGIC-02b: same pick mechanism, the logic panel decides what the hit means
+    const hit = await pickAt(col, row, pickCtx());
+    if (clickGuard.isStale(tok)) return;
+    logicPanelHandle.picker.handle({ entityId: hit.kind === 'entity' ? hit.entityId : null, point: hit.world && (hit.kind === 'terrain' || hit.kind === 'surface') ? hit.world : null });
+    return;
+  }
+  if (questPickerArmed()) { // ED-QUEST-03: Pick mode owns the left button; the quest panel decides what the hit means
+    const hit = await pickAt(col, row, pickCtx());
+    if (clickGuard.isStale(tok)) return;
+    questPanelHandle.picker.handle({ entityId: hit.kind === 'entity' ? hit.entityId : null, point: hit.world && (hit.kind === 'terrain' || hit.kind === 'surface') ? hit.world : null });
+    return;
+  }
+  if (aiTool() && (aiTool().st.armed || aiTool().st.dropArmed)) { // ED-AI-05/06: the Creatures tab owns the left button (paint area / drop pack)
+    const hit = await pickAt(col, row, pickCtx());
+    if (clickGuard.isStale(tok)) return;
+    if (hit.kind === 'terrain' && hit.world) {
+      const t = aiTool();
+      if (t.st.dropArmed) { t.dropPack(hit.world.x, hit.world.y); t.st.dropArmed = false; t.arm(t.st.armed); }
+      else t.pointerDown(hit.world.x, hit.world.y);
+      frame.markDirty();
+    } else flash("Can't spawn here.");
+    return;
+  }
   if (toolMode === 'terrain') { // ED-TERRAIN-1c: the brush owns the left button
     const hit = await pickAt(col, row, pickCtx());
-    if (seq !== pickSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+    if (clickGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
     if (hit.kind === 'terrain' && hit.world) { tb.hover = { x: hit.world.x, y: hit.world.y }; terrainStrokeStart(tb.hover); }
     else flash('terrain: click on the terrain');
+    return;
+  }
+  if (toolMode === 'grass') { // MASK-d: the grass brush owns the left button
+    const hit = await pickAt(col, row, pickCtx());
+    if (clickGuard.isStale(tok)) return;
+    if (hit.kind === 'terrain' && hit.world) { gb.hover = { x: hit.world.x, y: hit.world.y }; grassStrokeStart(gb.hover); }
+    else flash('grass: click on the terrain');
+    return;
+  }
+  if (toolMode === 'foliage') { // ED-FOLIAGE-02: the foliage brush owns the left button
+    const hit = await pickAt(col, row, pickCtx());
+    if (clickGuard.isStale(tok)) return;
+    if (hit.kind === 'terrain' && hit.world) { fl.hover = { x: hit.world.x, y: hit.world.y }; fl.st.shift = !!e.shiftKey; if (fl.st.mode === 'decor') decorStrokeStart(fl.hover); else foliageController().start(fl.hover); frame.markDirty(); }
+    else flash('foliage: click on the terrain');
     return;
   }
 
   if (placeMode) {
     const result = await pickAt(col, row, pickCtx());
-    if (seq !== pickSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+    if (clickGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
     const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row, RENDERER);
     // 24.9: "at a picked point or cursor ray" - a surface/terrain/entity hit
     // gives a real point; looking at open sky falls back to a point 8 m out
@@ -1956,17 +2480,18 @@ canvas.addEventListener('mousedown', async (e) => {
     return;
   }
 
-  const result = await pickAt(col, row, pickCtx());
-  if (seq !== pickSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+  const decision = await resolveMeshClick(clickGuard, col, row, pickCtx(), tok); // ED-MESH-1g: the one click-resolution path
+  if (decision.action === 'stale') return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+  const result = decision.result;
   lastPickText = formatPickResult(result);
 
-  if (result.kind === 'meshStructure' && result.structureId) {
-    const item = { fileId: fileKey('world', doc.worldId), collection:'structures', id:result.structureId, structId:null };
+  if (decision.action === 'mesh') {
+    const item = { fileId: fileKey('world', doc.worldId), collection:'structures', id:decision.structureId, structId:null };
     const already = primarySelection()?.collection === 'structures' && primarySelection().id === item.id;
     selectItem(item);
     if (already && toolMode === 'move') {
       const data = selectionItemData(doc,item), s=world.structures.find(s=>s.id===item.id);
-      if(data?.mesh && s) meshDrag={ item, startOrigin:{...data.origin}, point:result.world, origin:null, preview:beginMeshDragPreview(world,item.id) };
+      if(data?.mesh && s) meshDrag={ item, startOrigin:{...data.origin}, point:decision.world, origin:null, preview:beginMeshDragPreview(world,item.id) };
     }
     return;
   }
@@ -1980,7 +2505,7 @@ canvas.addEventListener('mousedown', async (e) => {
     const item = pickSelectionOrNull(visState, rawItem);
     if (!item) {
       const marker = await pickMarkers(col, row, pickCtx());
-      if (seq !== pickSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+      if (clickGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
       if (marker) { selectMarker(e,col,row,marker); return; }
       beginSelectionBox(e,col,row);
       return;
@@ -2032,14 +2557,14 @@ canvas.addEventListener('mousedown', async (e) => {
     return;
   }
   const marker = await pickMarkers(col, row, pickCtx());
-  if (seq !== pickSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+  if (clickGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
   if (marker) { selectMarker(e,col,row,marker); return; }
   beginSelectionBox(e,col,row);
 });
 
 window.addEventListener('mousemove', async (e) => {
   const { col, row } = computeMouseCell(e);
-  const seq = ++moveSeq, stamp = world;
+  const tok = hoverGuard.begin();
   if (col >= 0 && col < rt.cols && row >= 0 && row < rt.rows) { hoverCol = col; hoverRow = row; frame.markDirty(); }
   if (boxDrag) {
     const dx=e.clientX-boxDrag.startX,dy=e.clientY-boxDrag.startY;
@@ -2101,7 +2626,7 @@ window.addEventListener('mousemove', async (e) => {
       assetDrag.lastCol = col;
       assetDrag.lastRow = row;
       const result = await pickAt(col, row, pickCtx());
-      if (seq !== moveSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+      if (hoverGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
       const ray = unprojectCell(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, col, row, RENDERER);
       const point = result.world || rayPoint(ray, 8);
       assetDrag.rawPoint = point;
@@ -2175,7 +2700,11 @@ window.addEventListener('mouseup', (e) => {
     if(rec) commit(rec);
     return;
   }
+  if (waterTool.st.drag) { waterTool.up(); frame.markDirty(); return; }
+  if (aiTool() && aiTool().st.draft && aiTool().st.draft.type === 'disc') { aiTool().pointerUp(); frame.markDirty(); return; }
   if (tb.stroke) { terrainStrokeEnd(false); return; }
+  if (gb.stroke) { grassStrokeEnd(false); return; }
+  if ((fl.ctl && fl.ctl.active) || dp.stroke) { foliageStrokeEnd(false); return; }
   if (boxDrag) {
     const box=boxDrag;boxDrag=null;
     if (box.moved) {
@@ -2254,13 +2783,19 @@ window.addEventListener('mouseup', (e) => {
 
 // ED-TERRAIN-1c: cursor ring + stroke dabs follow the pointer over the terrain.
 canvas.addEventListener('mousemove', async (e) => {
-  if (toolMode !== 'terrain') return;
+  const aiDrag = aiTool() && aiTool().st.draft && aiTool().st.draft.type === 'disc';
+  const waterDrag = !!waterTool.st.drag;
+  if (toolMode !== 'terrain' && toolMode !== 'grass' && toolMode !== 'foliage' && !aiDrag && !waterDrag) return;
   const { col, row } = computeMouseCell(e);
-  const seq = ++moveSeq, stamp = world;
+  const tok = hoverGuard.begin();
   if (col < 0 || col >= rt.cols || row < 0 || row >= rt.rows) return;
   const hit = await pickAt(col, row, pickCtx());
-  if (seq !== moveSeq || stamp !== world) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+  if (hoverGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+  if (waterDrag && hit.world) { waterTool.move(hit.world.x, hit.world.y); frame.markDirty(); return; }
+  if (aiDrag && hit.kind === 'terrain' && hit.world) { aiTool().pointerMove(hit.world.x, hit.world.y); frame.markDirty(); return; }
   if (hit.kind === 'terrain' && hit.world) {
+    if (toolMode === 'foliage') { fl.hover = { x: hit.world.x, y: hit.world.y }; { const z = FB.zoneOf(fl.hover.x, fl.hover.y), k = FB.zoneKey(z.cx, z.cy); if (k !== fl.zoneKey) { fl.zoneKey = k; updateFoliageMeter(); } } if (dp.stroke) decorStrokeMove(fl.hover); else if (fl.ctl && fl.ctl.active) fl.ctl.move(fl.hover); frame.markDirty(); return; }
+    if (toolMode === 'grass') { gb.hover = { x: hit.world.x, y: hit.world.y }; if (gb.stroke) grassStrokeMove(gb.hover); frame.markDirty(); return; }
     tb.hover = { x: hit.world.x, y: hit.world.y };
     if (tb.stroke) terrainStrokeMove(tb.hover);
     frame.markDirty();
@@ -2294,6 +2829,7 @@ speedInput.addEventListener('change', () => {
 });
 canvas.addEventListener('wheel', (e) => {
   if (!editorKeysActive()) return;
+  if (cam.projection === 'ortho') { cam.orthoHalfH = adjustOrthoHalfH(cam.orthoHalfH, e.deltaY); frame.markDirty(); e.preventDefault(); return; }
   speed = adjustSpeed(speed, e.deltaY);
   speedInput.value = speed.toFixed(2);
   e.preventDefault();
@@ -2304,6 +2840,24 @@ animateToggle.addEventListener('change', () => { animate = animateToggle.checked
 
 // US-068c view presets: orbit around the point VIEW_PIVOT_M ahead of the eye (no selection logic), perspective only.
 const VIEW_PIVOT_M = 10;
+// US-068d: focus = selection centre, else the pivot ahead of the eye
+function currentFocus() {
+  const sp = selectionPoint();
+  if (sp) return { x: sp.x, y: sp.y, z: sp.z };
+  if (cam.projection === 'ortho') return { x: cam.x, y: cam.y, z: cam.z };
+  // 38.19 item 3: terrain hit under screen centre (sync CPU march), else the point VIEW_PIVOT_M ahead
+  try {
+    const hit = tb?.terrain && screenCentreGroundHit(cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, (x, y) => tb.terrain.heightAt(x, y));
+    if (hit) return hit;
+  } catch (_) { /* fall through */ }
+  const y = cam.yawDeg * Math.PI / 180, p = cam.pitchDeg * Math.PI / 180;
+  return {
+    x: cam.x + Math.sin(y) * Math.cos(p) * VIEW_PIVOT_M,
+    y: cam.y - Math.cos(y) * Math.cos(p) * VIEW_PIVOT_M,
+    z: cam.z + Math.sin(p) * VIEW_PIVOT_M,
+  };
+}
+function toggleOrthoView() { toggleOrtho(cam, currentFocus()); axisGizmo.update(); frame.markDirty(); }
 function setViewPreset(name) {
   const y = cam.yawDeg * Math.PI / 180, p = cam.pitchDeg * Math.PI / 180;
   const focus = {
@@ -2315,12 +2869,14 @@ function setViewPreset(name) {
   axisGizmo.update();
   frame.markDirty();
 }
-const axisGizmo = createAxisGizmo(document.getElementById('viewport'), { getView: () => cam, onPreset: setViewPreset });
+const axisGizmo = createAxisGizmo(document.getElementById('viewport'), { getView: () => cam, onPreset: setViewPreset,
+  onAxis: (k) => { lookAlongAxis(cam, k, currentFocus()); axisGizmo.update(); frame.markDirty(); } });
 
 function update(dt) {
   if (!editorKeysActive()) { input.endFrame(); return; }
   if (input.pressed('F3')) overlay.toggle();
   if (input.pressed('Home')) { cam = startPose(); axisGizmo.update(); frame.markDirty(); }
+  if (input.pressed('Numpad5')) toggleOrthoView();
   if (input.pressed('Numpad7')) setViewPreset('TOP');
   if (input.pressed('Numpad1')) setViewPreset('FRONT');
   if (input.pressed('Numpad9')) setViewPreset('ISO');
@@ -2335,6 +2891,8 @@ function update(dt) {
     restoreGroupDrag(groupDrag);groupDrag=null;
   } else if (input.pressed('Escape') && boxDrag) {
     boxDrag=null;frame.markDirty();
+  } else if (input.pressed('Escape') && fl.ctl && fl.ctl.active) {
+    foliageStrokeEnd(true); // ED-FOLIAGE-02: Esc drops the stroke in progress (nothing committed)
   } else if (input.pressed('Escape') && tb.stroke) {
     terrainStrokeEnd(true); // ED-TERRAIN-1c: Esc reverts the stroke in progress (no record)
   } else if (input.pressed('Escape') && meshDrag) {
@@ -2410,6 +2968,7 @@ function update(dt) {
   const changed = updateCamera(cam, input, dt, { speed, lookDx: rmbDown ? dx : 0, lookDy: rmbDown ? dy : 0, pitchClampDeg });
   if (changed) {
     frame.markDirty();
+    clickGuard.bump(); hoverGuard.bump(); // 38.26: a camera move invalidates any in-flight readSurface pick
     axisGizmo.update();
     savePoseDebounced(cam);
   }
@@ -2470,16 +3029,33 @@ function drawAssetGhost() {
   drawText(overlayPlate, c + 1, r, ` ${meshKeyFromIcon(assetDrag.modelKey) ?? assetDrag.modelKey}`, dimHex, bgHex);
 }
 
+// ED-WATER-01 (OB-223): rect water regions of the world file; edits are normal commit() records (rebuild reloads world.water).
+let waterOn = false;
+const waterTool = createWaterTool({ doc, fileId: fileKey('world', doc.worldId), commit, floorAt: (x, y) => world.floorAt(x, y), onChange: () => { frame.markDirty(); waterPanel.refresh(); } });
+const waterPanel = mountWaterPanel(document.body, { tool: waterTool, onToggle: (on) => { waterOn = on; frame.markDirty(); }, onFrame: (id) => frameWater(id), onNewPool: async (shape) => { const h = await pickAt(Math.floor(rt.cols / 2), Math.floor(rt.rows / 2), pickCtx()); const p = h && h.world ? h.world : { x: cam.x, y: cam.y }; waterTool.createPool(p.x, p.y, shape); } });
+function frameWater(id) { // list select: look at the water from above-south, region fills ~60% of the view
+  const b = waterTool.bounds(id); if (!b) return;
+  cam = createCameraPose({ ...cam, ...frameCamera(b, world.floorAt((b[0] + b[2]) / 2, (b[1] + b[3]) / 2), cam.fov) }); frame.markDirty();
+}
+const waterOverlay = createWaterOverlay({ rt, getCam: () => cam, renderer: RENDERER, floorAt: (x, y) => world.floorAt(x, y) });
 const overlayPlate = createOverlayTarget(engine.ui, rt);
 const overlayGlyph = createOverlayTarget(engine.ui, rt, { glyphOnly: true });
+const aiAreaOverlay = createAreaOverlay({ rt, getCam: () => cam, floorAt: (x, y) => world.floorAt(x, y), renderer: RENDERER, names: (k) => (aiTool() && aiTool().model && creaturesHandle.kindName ? creaturesHandle.kindName(k) : k) });
+const questOverlay = createQuestOverlay({ rt, getCam: () => cam, getWorld: () => assets.world(doc.worldId), floorAt: (x, y) => world.floorAt(x, y), renderer: RENDERER,
+  getAreasFile: () => (questPanelHandle && questPanelHandle.areasFile) || null });
 function drawOverlay(fb) {
   const selection = primarySelection();
+  if (questPanelHandle) questOverlay.draw(overlayPlate, questPanelHandle.markerState());   // ED-QUEST-04
+  if (aiTool()) aiAreaOverlay.draw(overlayPlate, aiTool());   // ED-AI-05
+  if (waterOn) waterOverlay.draw(overlayPlate, waterTool);   // ED-WATER-01
   if (markersOn) drawMarkers(overlayPlate, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets.palette, selection, RENDERER, groupDrag?.previewItems);
   for (const item of sel.items) drawSelectionHighlight(overlayPlate, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets, doc, item, '#ffd24a', RENDERER, groupDrag?.previewItems);
   if (boxDrag?.moved) drawMeshHighlightRect(overlayPlate,boxDrag.rect,'#ffd24a');
   drawHoverOutline(overlayGlyph, hoverCol, hoverRow, '#7CFC7C');
   drawAssetGhost();
   drawTerrainCursor();
+  drawGrassCursor();
+  drawFoliageCursor();
   if (helpOn) drawHelpOverlay();
   void fb;
 }
@@ -2492,6 +3068,8 @@ let lastPlateRefresh = -Infinity;
 function refreshViewportPlates(nowMs) {
   if (nowMs - lastPlateRefresh < 250) return;
   lastPlateRefresh = nowMs;
+  // WS2: the editor camera flies anywhere; keep the near band under it (else the far-canopy edge skirt shows as a green block)
+  if (world && world.ensureBandFor && world.ensureBandFor(cam.x, cam.y, world.bandSwitch.switchM)) frame.markDirty();
   camPlateEl.textContent = `CAM ${cam.x.toFixed(1)} ${cam.y.toFixed(1)} ${cam.z.toFixed(1)}  yaw ${cam.yawDeg.toFixed(0)} pitch ${cam.pitchDeg.toFixed(0)}  SPD ${speed.toFixed(1)} m/s`;
   const fps = engine.loop.stats.intervalMs > 0 ? 1000 / engine.loop.stats.intervalMs : 0;
   statsPlateEl.textContent = `${fps.toFixed(0)} fps  grid ${rt.cols}x${rt.rows}  presented ${lastPresented}`;
@@ -2540,6 +3118,10 @@ window.__editor = {
   icons: { stats: iconStats, queue: iconQueue, cache: iconCache, refresh: refreshIcons,
     get renderer() { return iconRenderer; } },
   doImportVox,
+  // OB-218: model keys of the voxel instances queued for the last frame (verify-editor-characters.mjs)
+  drawnModelKeys: () => { const p = frame.voxelPool; return p.raw.slice(0, p._rawCount).map((r) => r.modelKey); },
+  water: { overlay: waterOverlay, frame: frameWater, tool: waterTool, panel: waterPanel, setOn: (on) => { const c = document.querySelector('#water-on'); c.checked = !!on; c.dispatchEvent(new Event('change')); } }, // ED-WATER-01 (verify-editor-water.mjs)
+  setCamPose: (o) => { cam = createCameraPose({ ...cam, ...o }); frame.markDirty(); },
 };
 
 engine.run({ update, render });

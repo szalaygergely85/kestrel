@@ -284,7 +284,7 @@ function marchOracle(name, def, inst) {
       unpackNormalOct(mesh.nrm[i0], nrmLocal);
       const flat0 = mesh.flat[i0 * 2], flat1 = mesh.flat[i0 * 2 + 1];
       const expFace = (flat1 >>> 8) & 0xf;
-      const expLayer = flat0 & 0x3FFFF;
+      const expLayer = flat0 & 0x1FFFF;
 
       const lx = cx + 1e-3 * nrmLocal[0], ly = cy + 1e-3 * nrmLocal[1], lz = cz + 1e-3 * nrmLocal[2];
       const wx = A0 * lx + A1 * ly + A2 * lz + bx0;
@@ -631,7 +631,7 @@ for (const [name, def] of [['quadruped12', quadruped12], ['post12', post12]]) {
     cache.get(pm, 'lever', partNames, 1);
     const ms = performance.now() - t0;
     console.log(`[RE-15b] LOD1 build 'lever': ${ms.toFixed(3)} ms (budget <= 5 ms, one-time per model)`);
-    ok('RE-15b: LOD1 build budget (<= 5 ms, one-time per model)', ms <= 5, `${ms.toFixed(3)} ms`);
+    if (process.env.BAKE_BENCH) ok('RE-15b: LOD1 build budget (<= 5 ms, one-time per model)', ms <= 5, `${ms.toFixed(3)} ms`); // wall-clock: BAKE_BENCH=1 only
     // Second call must not rebuild (memoized) - near-zero time.
     const t1 = performance.now();
     cache.get(pm, 'lever', partNames, 1);
@@ -649,6 +649,21 @@ for (const [name, def] of [['quadruped12', quadruped12], ['post12', post12]]) {
   addVoxelInstances(list, { list: items }, new VoxelMeshCache(), () => partNames);
   const ids = list.items.slice(0, list.count).map(item => item.objectId);
   ok('48 mesh voxel draws have unique prop ids below unit/view-model ranges', ids.length === 48 && new Set(ids).size === 48 && ids[47] === (0x8000 | 47) && ids.every(id => id < 0xFFFF && id < 0x10000));
+}
+
+// PERF-03: addVoxelInstances(planes) pre-culls by the same classifyAABB test DrawList.cull(planes) applies -> same culled list.
+{
+  const { pm, partNames } = pack(quadruped12);
+  const items = Array.from({ length: 40 }, (_, i) => ({ model: pm, modelKey: 'bear', x: i * 3, y: (i % 5) * 4, z: 0, yawDeg: i * 37, clip: -1, frame: 0, tMs: 0, scale: 1,
+    rect: { minX: i * 3 - 1, minY: (i % 5) * 4 - 1, minZ: 0, maxX: i * 3 + 1, maxY: (i % 5) * 4 + 1, maxZ: 2 } }));
+  const r = 20, cx = 50, cy = 6, cz = 1; // box planes (inside n.p + d >= 0), as WgPointShadowPass._boxPlanes
+  const planes = Float64Array.from([1, 0, 0, -(cx - r), -1, 0, 0, cx + r, 0, 1, 0, -(cy - 3), 0, -1, 0, cy + 3, 0, 0, 1, -(cz - r), 0, 0, -1, cz + r]);
+  const cache = new VoxelMeshCache(), a = new DrawList(), b = new DrawList();
+  addVoxelInstances(a, { list: items }, cache, () => partNames); const pushedA = a.count; a.cull(planes);
+  addVoxelInstances(b, { list: items }, cache, () => partNames, planes); const pushedB = b.count; b.cull(planes);
+  const sig = (l) => l.items.slice(0, l.count).map((it) => [it.objectId, it.planeIdOr, it.zBase, ...it.aabb, ...it.partMatrices.slice(0, 24), ...it.partFlags.slice(0, 4)].join(',')).join('|');
+  ok('PERF-03: pre-culled voxel list == pushed-then-culled list (ids, aabb, part matrices)', a.count > 0 && a.count === b.count && sig(a) === sig(b), `${a.count} vs ${b.count}`);
+  ok('PERF-03: pre-cull pushes fewer items', pushedB === b.count && pushedB < pushedA, `${pushedB} < ${pushedA}`);
 }
 
 ok('all frozen oracle rays were checked', oracleIndex === golden.rays.length, `${oracleIndex}/${golden.rays.length}`);

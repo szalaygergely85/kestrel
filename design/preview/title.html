@@ -21,7 +21,7 @@
 </head>
 <body>
 <h1>Kestrel : title card, map card, hints, prompts, end text (US-015 / D-011) at 160x60 / 240x90 / 320x120</h1>
-<div class="note"><b>D-011 reskin:</b> logo <b>KESTREL</b> (the airship's brass name board) with the SOS signal (3 short, 3 long, 3 short) pulsing teal in the flourish,
+<div class="note"><b>D-011 reskin:</b> logo <b>KESTREL</b> (the airship's brass name board) with the ALIVE signal (Morse .- .-.. .. ...- .) pulsing teal in the flourish,
   subtitle <b>SOMEONE IS CALLING</b>, and the US-015 <b>map card</b> (the Crown sky-chart with Wick's pencil, text verbatim from <code>docs/story.md</code> 5).
   The start sequence runs per the US-015 ACs: black, blink, title, 0.5 s gap, <b>map card</b> (auto-dismissed after 5 s here, "any key" after 1.0 s in game),
   then the move hint, and 20 s after the dismissal the story hint "Press M to read the chart." (one hint on screen at a time).
@@ -64,7 +64,7 @@
 <h2>Logo at a larger font, with the hold-phase shine</h2>
 <canvas id="logo"></canvas>
 
-<h2>Map card at a larger font (SIGNAL star pulses SOS)</h2>
+<h2>Map card at a larger font (SIGNAL star pulses ALIVE)</h2>
 <canvas id="mapBig"></canvas>
 
 <h2>Fade steps (glyphs dim down the ramp): a = 0.15, 0.3, 0.5, 0.7, 0.85, 1.0</h2>
@@ -140,8 +140,8 @@
   check('All UI colors are palette keys (logo, subtitle, map card)', keysOk);
   var rowCols = S1.fg.slice(0, 6).map(function (r) { var m = r.replace(/[^a-e]/g, ''); return m.charAt(0); }).join('');
   check('Brass name board: bright brass top into copper foot (row keys ' + rowCols + ' = ' + ['a', 'b', 'c', 'd', 'e'].map(function (k) { return T.keys[k].c; }).join(' > ') + ')', rowCols === 'abccde');
-  check('Flourish carries the SOS: 9 marks, 3 short / 3 long / 3 short, teal (aetherCore lit, aetherDim rest)',
-    T.signal.marks.length === 9 && T.signal.marks.map(function (m) { return m.kind.charAt(0); }).join('') === 'ssslllsss' && T.keys.p.c === 'aetherCore' && T.keys.q.c === 'aetherDim');
+  check('Flourish carries the Morse ALIVE: 13 marks, teal (aetherCore lit, aetherDim rest)',
+    T.signal.marks.length === 13 && ASSETS.signal.decode(ASSETS.signal.steps) === 'ALIVE' && T.keys.p.c === 'aetherCore' && T.keys.q.c === 'aetherDim');
   check('Subtitle reads SOMEONE IS CALLING (story.md 5)', SUB.animations.show.frames[0].S.glyphs[0].replace(/[^A-Z ]/g, '').replace(/ (?! )/g, '').replace(/\s+/g, ' ').trim() === 'SOMEONE IS CALLING');
   var mcRows = MC.animations.show.frames[0].S.glyphs, verbatim = MC.text.every(function (l) { return mcRows.some(function (r) { return r.indexOf(l.replace(/\s+$/, '')) >= 0; }); });
   check('Map card: all ' + MC.text.length + ' story.md lines verbatim inside the card; frames consistent; fits the 160x60 UI grid (' + MC.size.w + 'x' + MC.size.h + ' at top ' + MC.layout.top + ')',

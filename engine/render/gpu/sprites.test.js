@@ -12,7 +12,6 @@ import { CellBuffer } from '../CellBuffer.js';
 import { DepthBuffer } from '../DepthBuffer.js';
 import { buildSpriteAtlas, NORMAL_CODES } from './spritesAtlas.js';
 import { SpritePool, drawSprites, lastSpriteDepth, MAX_SPRITES, SPR_STRIDE, HORIZON_DEPTH } from '../sprites.js';
-import { spritesFragSrc } from './glsl/sprites.frag.js';
 import { World } from '../../world/World.js';
 import { buildLightSet } from '../lighting.js';
 import paletteMod from '../../../design/palette.js';
@@ -305,6 +304,20 @@ const camE = { x: 2.5, y: 2.5, z: 1.6, yawDeg: 90, pitchDeg: 0 }; // facing east
   ok('particle in front of a wall: drawn (glyph + colour from the layer)',
     cells.glyphIdx[i0] === 1 && cells.fg[i0 * 4] === 200 && cells.fg[i0 * 4 + 1] === 50 && cells.fg[i0 * 4 + 2] === 50);
 
+  // PART-VIS-01: partBg a=0 leaves the bg untouched; a>0 blends bg*(1-a) + premixed tint
+  {
+    cells.clear('#000000'); depth.depth.fill(10); pool.reset(); pool.project(camE, cells, light);
+    const bgBefore = [cells.bg[i0 * 4], cells.bg[i0 * 4 + 1], cells.bg[i0 * 4 + 2]];
+    const lb = fakeLayer(); lb.partBg = new Uint8Array(COLS * ROWS * 4);
+    writeParticle(lb, i0, 5, 1, 200, 100, 50);
+    drawSprites(fb, pool, lb);
+    ok('partBg a=0: bg untouched', cells.bg[i0 * 4] === bgBefore[0] && cells.bg[i0 * 4 + 1] === bgBefore[1] && cells.bg[i0 * 4 + 2] === bgBefore[2]);
+    cells.clear('#000000'); pool.reset(); pool.project(camE, cells, light);
+    lb.partBg.set([80, 40, 20, 102], i0 * 4); // 0.4 mix of (200,100,50)
+    drawSprites(fb, pool, lb);
+    ok('partBg a>0: bg = 0*(1-a) + tint', cells.bg[i0 * 4] === 80 && cells.bg[i0 * 4 + 1] === 40 && cells.bg[i0 * 4 + 2] === 20);
+  }
+
   // sprite vs particle at the exact same depth: the sprite wins (strict `<` for the particle to override)
   cells.clear('#000000'); depth.depth.fill(100);
   pool.reset(); pool.push('lantern', 'unlit', 0, 6.5, 2.5, 1.6); pool.project(camE, cells, light); // depth = 4.0 exactly (camE at x=2.5 facing +x)
@@ -345,47 +358,6 @@ const camE = { x: 2.5, y: 2.5, z: 1.6, yawDeg: 90, pitchDeg: 0 }; // facing east
     for (let i = 0; i < 300; i++) frame();
     ok('300 frames of project()+drawSprites run (use --expose-gc for the heap check)', true);
   }
-}
-
-// ---- shader source rules (14.1 section 5 lexical checks, same as glsl.test.js) ---------------
-for (const depthUint of [true, false]) {
-  const src = spritesFragSrc({ depthUint });
-  const lines = src.split('\n').filter((l) => l.includes('gl_FragCoord'));
-  ok(`sprites.frag (depthUint=${depthUint}): gl_FragCoord only as ivec2(gl_FragCoord.xy)`, lines.length === 1 && /ivec2\s*\(\s*gl_FragCoord\.xy\s*\)/.test(lines[0]));
-  ok(`sprites.frag (depthUint=${depthUint}): no round(`, !src.replace(/\/\/.*$/gm, '').includes('round('));
-  ok(`sprites.frag (depthUint=${depthUint}): MAX_SPRITES const from sprites.js`, src.includes(`const int MAX_SPRITES = ${MAX_SPRITES};`));
-  ok(`sprites.frag (depthUint=${depthUint}): depth sampler kind`, depthUint ? src.includes('uintBitsToFloat') : src.includes('uniform sampler2D uDepth'));
-  ok(`sprites.frag (depthUint=${depthUint}): no EXT_color_buffer_float / std140`, !src.includes('EXT_color_buffer_float') && !src.includes('std140'));
-  // US-017 ARCH CHANGES #1 item 1/3: GPU scene fade uniforms/textures present.
-  ok(`sprites.frag (depthUint=${depthUint}): uSceneFade uniform`, src.includes('uniform float uSceneFade;'));
-  ok(`sprites.frag (depthUint=${depthUint}): uFadeLut/uFadeRamp R8UI textures`, src.includes('uniform usampler2D uFadeLut;') && src.includes('uniform usampler2D uFadeRamp;'));
-  ok(`sprites.frag (depthUint=${depthUint}): fade skipped when uSceneFade >= 1.0 (identity)`, /if\s*\(\s*uSceneFade\s*<\s*1\.0\s*\)/.test(src));
-  // US-015 (docs/architecture.md 7.6 item 3/9): GPU scene dim uniforms present, applied after the fade block, identity-skipped.
-  ok(`sprites.frag (depthUint=${depthUint}): uDimAll/uDimCount/uDimRect/uDimMul uniforms`,
-    src.includes('uniform float uDimAll;') && src.includes('uniform int uDimCount;') &&
-    src.includes('uniform vec4 uDimRect[4];') && src.includes('uniform float uDimMul[4];'));
-  ok(`sprites.frag (depthUint=${depthUint}): dim block runs after the fade block`, src.indexOf('uDimAll < 1.0') > src.indexOf('uSceneFade < 1.0'));
-  ok(`sprites.frag (depthUint=${depthUint}): dim identity guard (uDimAll<1.0 || uDimCount>0)`, /if\s*\(\s*uDimAll\s*<\s*1\.0\s*\|\|\s*uDimCount\s*>\s*0\s*\)/.test(src));
-}
-
-// ---------------------------------------------------------------------------
-// US-015 (7.6 item 9): GpuSpritePass.setSceneDim copies a SceneDim into the
-// per-uniform fields run() uploads (no gl needed for this part - pure data copy).
-{
-  const { GpuSpritePass } = await import('./spritesPass.js');
-  const fakeThis = { dimAll: 1, dimCount: 0, dimRect: new Float32Array(16), dimMul: new Float32Array(4) };
-  const dim = { all: 0.35, n: 2, rects: new Float32Array(20) };
-  dim.rects.set([2, 2, 10, 10, 0.35, 5, 50, 8, 53, 0.18]); // rect0: x0,y0,x1,y1,mul ; rect1: same
-  GpuSpritePass.prototype.setSceneDim.call(fakeThis, dim);
-  ok('setSceneDim copies dimAll/dimCount', fakeThis.dimAll === 0.35 && fakeThis.dimCount === 2);
-  ok('setSceneDim copies rect0 xyxy', fakeThis.dimRect[0] === 2 && fakeThis.dimRect[1] === 2 && fakeThis.dimRect[2] === 10 && fakeThis.dimRect[3] === 10);
-  ok('setSceneDim copies rect1 xyxy at offset 4', fakeThis.dimRect[4] === 5 && fakeThis.dimRect[5] === 50 && fakeThis.dimRect[6] === 8 && fakeThis.dimRect[7] === 53);
-  const approx = (a, b) => Math.abs(a - b) < 1e-5; // Float32Array storage - not exact vs a JS double literal
-  ok('setSceneDim copies mul per rect', approx(fakeThis.dimMul[0], 0.35) && approx(fakeThis.dimMul[1], 0.18));
-  ok('setSceneDim(null) is a no-op (keeps the previous frame\'s values)', (() => {
-    GpuSpritePass.prototype.setSceneDim.call(fakeThis, null);
-    return approx(fakeThis.dimAll, 0.35) && fakeThis.dimCount === 2;
-  })());
 }
 
 // ---------------------------------------------------------------------------
@@ -449,6 +421,48 @@ for (const depthUint of [true, false]) {
   const camFar = { x: far.x - 2, y: far.y, z: far.z, yawDeg: 90, pitchDeg: 0 };
   poolL.reset(); poolL.push('lantern', 'unlit', 0, far.x, far.y, far.z); poolL.project(camFar, cellsL, lights2, world2);
   const farMul = poolL.spr[12];
+
+  // ---- SPRITE-LIGHT-CACHE-01 (D-107): cached per-sprite lightAt, round-robin refresh, <= 4 frames lag ----
+  {
+    const N = 20, cc = new CellBuffer(COLS, ROWS); cc.pxCellW = 1; cc.pxCellH = 2;
+    const mk = (cache) => { const q = new SpritePool(atlas2, assets2.palette); q.lightCache = cache; return q; };
+    const fill = (q, dx = 0) => {
+      q.reset();
+      for (let i = 0; i < N; i++) q.push('lantern', 'unlit', 0, near.x + (i % 5) * 0.4 + (i === 3 ? dx : 0), near.y + Math.floor(i / 5) * 0.4, near.z);
+      q.project(camNear, cc, lights2, world2);
+    };
+    const on = mk(true), off = mk(false);
+    fill(on); fill(off);
+    ok('cache: a fresh single frame is byte-identical with the cache on or off',
+      on.count === off.count && Buffer.compare(Buffer.from(on.spr.buffer, 0, on.count * SPR_STRIDE * 4), Buffer.from(off.spr.buffer, 0, off.count * SPR_STRIDE * 4)) === 0);
+    ok('cache: first frame traces every sprite (miss = N)', on.lightCacheStats.miss === N && on.lightCacheStats.hit === 0);
+    on.lightCacheStats.miss = 0; on.lightCacheStats.hit = 0;
+    let maxAge = 0;
+    for (let f = 0; f < 12; f++) { fill(on); for (let i = 0; i < N; i++) maxAge = Math.max(maxAge, on._lcFrame - on._lcAt[i]); }
+    ok('cache: static sprites are served from the cache most frames', on.lightCacheStats.hit > on.lightCacheStats.miss, JSON.stringify(on.lightCacheStats));
+    ok('cache: max lag is < 4 project() calls for every sprite (' + maxAge + ')', maxAge < 4);
+    // static lights: cached output equals a fresh trace (nothing changed, so the lag is invisible)
+    ok('cache: static scene output stays byte-identical to the uncached pool',
+      (fill(off), Buffer.compare(Buffer.from(on.spr.buffer, 0, on.count * SPR_STRIDE * 4), Buffer.from(off.spr.buffer, 0, off.count * SPR_STRIDE * 4)) === 0));
+    fill(on, 1.0);
+    ok('cache: a sprite that moved > 0.25 m is re-traced the same frame', on._lcAt[3] === on._lcFrame);
+    const before = on.lightCacheStats.miss; fill(on, 1.0);
+    ok('cache: a sprite that stays put is not re-traced every frame', on.lightCacheStats.miss - before < N);
+    lights2.sun.on = true; lights2.update(0, world2); fill(on); // sun toggled: global refresh
+    ok('cache: sun toggle refreshes every sprite at once', Array.from({ length: N }, (_, i) => on._lcAt[i]).every((a) => a === on._lcFrame));
+    // 0 allocation per frame (heap delta over many frames; only meaningful with --expose-gc)
+    if (globalThis.gc) {
+      for (let f = 0; f < 200; f++) fill(on); globalThis.gc();
+      const h0 = process.memoryUsage().heapUsed;
+      for (let f = 0; f < 2000; f++) fill(on);
+      globalThis.gc();
+      const grew = process.memoryUsage().heapUsed - h0;
+      ok('cache: project() with the cache on allocates nothing steady-state (' + grew + ' B / 2000 frames)', grew < 200000);
+    }
+    // JS-twin micro-bench (ms per frame, 20 sprites; informational)
+    const bench = (q) => { for (let f = 0; f < 100; f++) fill(q); const t = process.hrtime.bigint(); for (let f = 0; f < 600; f++) fill(q); return Number(process.hrtime.bigint() - t) / 1e6 / 600; };
+    console.log(`[sprite light cache bench] 20 sprites: cache off ${bench(off).toFixed(3)} ms/frame, on ${bench(on).toFixed(3)} ms/frame`);
+  }
 
   ok('per-sprite light near the burner torch is brighter than far from every light',
     nearMul > farMul, `near=${nearMul} far=${farMul}`);

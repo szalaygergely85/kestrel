@@ -1,3 +1,4 @@
+import { boundsOvershoot } from '../physics/bounds.js';
 import { localToWorld } from '../core/transform.js';
 
 // engine/world/triggers.js (US-017, D-006/D-008). Generic trigger-zone
@@ -186,9 +187,8 @@ function isInside(rec, world, ax, ay, az, actor) {
   // hint fires on first touch, not after the slide already clipped it).
   if (rec.shape === 'bounds') {
     if (!world.bounds) return false;
-    const dx = ax - world.bounds.x, dy = ay - world.bounds.y;
     const radius = (actor && actor.components && actor.components.body && actor.components.body.radius) || 0;
-    return Math.hypot(dx, dy) >= world.bounds.r - radius - 0.05;
+    return boundsOvershoot(world.bounds, ax, ay, radius) >= -0.05;
   }
   // 'cells' (default, structure-local)
   const lx = Math.floor(ax - rec.x), ly = Math.floor(ay - rec.y);
@@ -206,11 +206,15 @@ function isInside(rec, world, ax, ay, az, actor) {
  * `World.load`/`deserialize` right after the actor was already standing
  * inside counts as a fresh enter on the very next call, so a used trigger
  * (already-set flag) never refires and an unused one fires exactly once,
- * whether the player walked in or is restored inside it.
+ * whether the player walked in or is restored inside it. Also emits
+ * `'trigger:entered'` / `'trigger:left'` `{key, id}` (reused objects: copy what you keep) for every zone.
  * @param {import('./World.js').World} world
  * @param {import('../core/engine.js').Engine} engine
  * @param {{transform:{x:number,y:number,z:number}}} actor
  */
+const enteredPayload = { key: '', id: '' };
+const leftPayload = { key: '', id: '' };
+
 export function updateTriggers(world, engine, actor) {
   const list = world.triggers;
   const t = actor.transform;
@@ -218,8 +222,13 @@ export function updateTriggers(world, engine, actor) {
     const rec = list[i];
     const cur = isInside(rec, world, t.x, t.y, t.z, actor) ? 1 : 0;
     const entered = rec.inside === 0 && cur === 1;
+    const left = rec.inside === 1 && cur === 0;
     rec.inside = cur;
+    // ED-LOGIC-01b (38.70): enter/leave for EVERY zone (area-only too); reused payloads, 0 alloc.
+    if (left && world.events) { leftPayload.key = rec.key; leftPayload.id = rec.id; world.events.emit('trigger:left', leftPayload); }
     if (!entered) continue;
+    if (world.events) { enteredPayload.key = rec.key; enteredPayload.id = rec.id; world.events.emit('trigger:entered', enteredPayload); }
+    if (typeof rec.name !== 'string') continue; // area-only zone (no behaviour), e.g. world_m1 'end' (WAYSTONE-NORMAL-01)
     if (rec.usedKey && world.state[rec.usedKey]) continue;
 
     const result = world.fireTrigger(rec.name, { engine, def: rec.def, entity: actor, structId: rec.structId });

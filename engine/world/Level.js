@@ -79,6 +79,24 @@ const OUTSIDE_SECTOR = Object.freeze({
  *   route, layers, ...).
  * @returns {Level|null} null if validation failed (errors are logged to console.error).
  */
+/**
+ * GS-01a: legend flag `terrainFloor: true` = no level floor quad here, the open-world terrain shows through
+ * (collision sectors are unchanged). Only honoured on non-solid cells with `zone: 'outside'`.
+ * @param {{terrainFloor?: boolean, solid?: boolean, zone?: string}|null|undefined} sec
+ */
+export function isTerrainFloor(sec) {
+  return !!sec && sec.terrainFloor === true && !sec.solid && sec.zone === 'outside';
+}
+
+/**
+ * UNDER-00b (arch 38.75): legend flag `keepTerrain: true` = a room cell under the surface: the terrain above is NOT carved
+ * (draws, shadows, scatter as today) and the cell's level floor stays. Terrain support only counts when footZ >= groundAt - 0.6.
+ * @param {{keepTerrain?: boolean, solid?: boolean}|null|undefined} sec
+ */
+export function isKeepTerrain(sec) {
+  return !!sec && sec.keepTerrain === true;
+}
+
 export function loadLevel(def) {
   const name = (def && def.name) || '(unnamed level)';
   const tag = `[Level ${name}]`;

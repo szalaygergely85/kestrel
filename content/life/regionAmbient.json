@@ -1,0 +1,15 @@
+{
+  "_doc": "WMP-03: per-region ambient life. fauna = species-name -> density multiplier (scales the species spawn cap); cues = ambient sound cue id -> volume 0..1. Regions not listed here keep the current behaviour exactly. Cue ids unknown to the audio registry are listed as NEEDS AUDIO (silent, never an error).",
+  "cueNames": { "birdsong": "Birdsong", "insects": "Grass insects", "windLoop": "Wind" },
+  "regions": {
+    "tower":      { "fauna": { "songbird": 1.4, "rabbit": 1.2 }, "cues": { "birdsong": 0.5, "insects": 0.3 } },
+    "downs":      { "fauna": { "rabbit": 1.6, "deer": 1.2, "songbird": 1.3 }, "cues": { "birdsong": 0.6, "windLoop": 0.3 } },
+    "glasswater": { "fauna": { "songbird": 1.2, "deer": 1.3 }, "cues": { "birdsong": 0.4, "insects": 0.5 } },
+    "northwood":  { "fauna": { "deer": 1.5, "squirrel": 1.6, "fox": 1.3 }, "cues": { "birdsong": 0.3, "windLoop": 0.3 } },
+    "thornwood":  { "fauna": { "songbird": 0.3, "rabbit": 0.5, "crow": 1.8 }, "cues": { "windLoop": 0.5 } },
+    "ashMile":    { "fauna": { "songbird": 0.0, "rabbit": 0.2, "squirrel": 0.0, "crow": 2.0 }, "cues": { "windLoop": 0.7 } },
+    "whitecombs": { "fauna": { "songbird": 0.4, "rabbit": 0.5, "squirrel": 0.4 }, "cues": { "windLoop": 0.8 } },
+    "westFells":  { "fauna": { "songbird": 0.4, "deer": 0.6, "crow": 1.4 }, "cues": { "windLoop": 0.7 } },
+    "alpine":     { "fauna": { "songbird": 0.7, "deer": 0.8 }, "cues": { "windLoop": 0.6, "birdsong": 0.2 } }
+  }
+}

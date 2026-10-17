@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - BEAST-D1 preview: river crocodile (day / dusk)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:17px; margin:26px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  .note { color:#8a8778; font-size:12px; max-width:1400px; }
+  .pass { color:#4fd66a; } .fail { color:#ff3b3b; } .info { color:#8fb4e0; } .warn { color:#ffb84a; }
+  canvas { display:block; background:#000; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:12px; align-items:center; font-size:13px; }
+  .controls label { display:flex; align-items:center; gap:5px; }
+  .controls input[type=range] { width:110px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:36px; display:inline-block; }
+  button { background:#15171f; color:#d8d2c0; border:1px solid #333845; border-radius:3px; padding:3px 9px; cursor:pointer; font-size:12px; }
+  button.on { border-color:#ffd24a; color:#ffd24a; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start; margin:6px 0 12px; }
+  .cap { font-size:11px; color:#8a8778; font-family:Consolas, monospace; margin-top:2px; }
+  #checks div, #clips div { font-family:Consolas, monospace; font-size:12px; }
+</style>
+</head>
+<body>
+<h1>Kestrel : BEAST-D1 - river crocodile (crocodile), day and dusk</h1>
+<div class="note">
+  <code>design/models/voxel_crocodile.js</code>: a 2.9 m river crocodile on four sprawling legs. Long flat snout with interlocking teeth,
+  nostril knob, bulging yellow eyes, nuchal plate, keeled osteoderm rows, long crested tail with dark bands, cream belly, webbed hind feet.
+  14 parts (knee rig, 3-segment tail). Pick a clip below: idle (basking gape), walk (belly crawl), run (burst), swim (tail-driven, legs
+  tucked; the ground turns to water), attack (lunge + jaw snap at 200 ms), grab, recover, hurt, hitAdd, flinch, die (rolls belly up), dead, sink.
+  Day = <code>palette.timeOfDay.morning</code>, dusk = <code>.dusk</code>; custom = the sliders. The light azimuth slider moves the sun in every row.
+  Rendering: engine <code>packVoxelModel</code> / <code>computeVoxelPose</code>, the preview CPU march, <code>palette.util.shade</code>,
+  approximate edge pass (as <code>black-bear.html</code>). The preview plays each clip alone with authored legs (the game adds the leg
+  solve and cross-fades). <b>Needs http</b>: <code>python -m http.server</code> from the repo root, open <code>/design/preview/crocodile.html</code>.
+</div>
+<div id="fatal" class="fail"></div>
+
+<div class="controls">
+  <label>light az <input type="range" id="az" min="-180" max="180" step="1" value="-40"><span class="val" id="azV"></span></label>
+  <label>custom elev <input type="range" id="el" min="-10" max="85" step="1" value="40"><span class="val" id="elV"></span></label>
+  <label>custom sun <input type="range" id="int" min="0" max="1.5" step="0.01" value="1.0"><span class="val" id="intV"></span></label>
+  <label>custom ambient x <input type="range" id="amb" min="0" max="3" step="0.05" value="1.2"><span class="val" id="ambV"></span></label>
+  <label>edges <select id="edges"><option value="rim">rules + model rim</option><option value="eng">rules, no rim</option><option value="off">off</option></select></label>
+  <label>in-game view angle <input type="range" id="vaz" min="-180" max="180" step="5" value="-60"><span class="val" id="vazV"></span></label>
+  <label>speed <input type="range" id="spd" min="0.1" max="2" step="0.05" value="1"><span class="val" id="spdV"></span></label>
+  <span id="clipBar"></span>
+</div>
+
+<h2>Checks</h2>
+<div id="checks"><div class="info">loading engine modules ...</div></div>
+<h2>Clips and timing</h2>
+<div id="clips"></div>
+
+<div id="sections"></div>
+
+<script src="../palette.js"></script>
+<script src="../detail-pass.js"></script>
+<script src="../models/voxel_crocodile.js"></script>
+<script>
+  setTimeout(function () {
+    if (!window.__crocOK) document.getElementById('fatal').textContent =
+      'Engine modules did not load (or the page script threw - see the console). Serve over http: python -m http.server from the repo root.';
+  }, 2500);
+</script>
+<script type="module">
+import { validateVoxelModel, MAX_VOX_PARTS, PART_STRIDE } from '../../engine/voxel/VoxelModel.js';
+import { packVoxelModel } from '../../engine/voxel/voxelPack.js';
+import { computeVoxelPose } from '../../engine/voxel/voxelPose.js';
+import { buildVoxelMesh } from '../../engine/mesh/voxelMesh.js';
+import * as VM from './lib/voxelMarch.js';
+import { FACE_N, FACE_E, FACE_S, FACE_W, FACE_U } from '../../engine/render/GBuffer.js';
+
+window.__crocOK = true;
+const A = window.ASSETS, P = A.palette, U = P.util, DP = A.detailPass, FX = A.crocFx, D2R = Math.PI / 180;
+const DEF = A.models.crocodile.voxel;
+const FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
+const $ = (id) => document.getElementById(id);
+const WATER = [63, 127, 196];                 // palette river (#3f7fc4): the ground tint while `swim` plays
+
+const matKeys = [];
+const matId = (k) => { let i = matKeys.indexOf(k); if (i < 0) { matKeys.push(k); i = matKeys.length - 1; } return i + 1; };
+const PM = packVoxelModel(DEF, matId);
+const CLIPS = Object.keys(DEF.animations);
+let sel = CLIPS[0], clipT = 0, lastNow = performance.now();
+
+// ------------------------------------------------------------------ controls
+const ctl = {}; let ver = 1;
+function readCtl() {
+  ctl.az = +$('az').value; ctl.el = +$('el').value; ctl.int = +$('int').value; ctl.amb = +$('amb').value;
+  ctl.edges = $('edges').value; ctl.vaz = +$('vaz').value; ctl.spd = +$('spd').value;
+  $('azV').textContent = ctl.az; $('elV').textContent = ctl.el; $('intV').textContent = ctl.int.toFixed(2);
+  $('ambV').textContent = ctl.amb.toFixed(2); $('vazV').textContent = ctl.vaz; $('spdV').textContent = ctl.spd.toFixed(2) + 'x';
+  ver++;
+}
+document.querySelectorAll('.controls input, .controls select').forEach((el) => el.addEventListener('input', readCtl));
+readCtl();
+const cbtn = [];
+for (const c of CLIPS) {
+  const b = document.createElement('button'); b.textContent = c; cbtn.push(b); if (c === sel) b.classList.add('on');
+  b.onclick = () => { sel = c; clipT = 0; cbtn.forEach((x) => x.classList.toggle('on', x === b)); ver++; };
+  $('clipBar').appendChild(b);
+}
+function lightOf(kind) {
+  if (kind === 'custom') return { amb: 'ambient', ambI: 0.14 * ctl.amb, sun: 'sun', sunI: ctl.int, el: ctl.el, fog: 'far' };
+  const T = (P.timeOfDay && P.timeOfDay[kind === 'day' ? 'morning' : 'dusk']) || {};
+  return { amb: T.ambient || 'ambient', ambI: (T.ambientI || 0.12) * 1.4, sun: T.sun || 'sun', sunI: T.sunI || 1, el: T.sunElev || 40, fog: 'far' };
+}
+
+// ------------------------------------------------------------------ trace + shade
+const HIT = new Float64Array(8), NL = [0, 0, 0], Lacc = [0, 0, 0];
+function faceNormal(face, o) {
+  o[0] = 0; o[1] = 0; o[2] = 0;
+  if (face === FACE_N) o[1] = -1; else if (face === FACE_S) o[1] = 1; else if (face === FACE_E) o[0] = 1;
+  else if (face === FACE_W) o[0] = -1; else if (face === FACE_U) o[2] = 1; else o[2] = -1;
+}
+function trace(sc, ox, oy, oz, dx, dy, dz, res) {
+  let best = Infinity, kind = 0;
+  for (let k = 0; k < PM.partCount; k++) {
+    if (VM.marchVoxelRay(PM, k, sc.pose, ox, oy, oz, dx, dy, dz, best, HIT)) {
+      best = HIT[0]; kind = 8; res.k = k; res.face = HIT[4]; res.lx = HIT[1]; res.ly = HIT[2]; res.lz = HIT[3]; res.mat = VM.LAST_MAT_LOCAL;
+    }
+  }
+  if (sc.ground && dz < 0) { const t = -oz / dz; if (t > 0 && t < best) { best = t; kind = 1; } }
+  res.kind = kind; res.t = best;
+  return kind;
+}
+function shadeHit(sc, res, ox, oy, oz, dx, dy, dz, dist, fog, out) {
+  const t = res.t, px = ox + dx * t, py = oy + dy * t, L = sc.light;
+  let nx, ny, nz, mat, u, v;
+  if (res.kind === 8) {
+    const A9 = sc.pose, b = res.k * PART_STRIDE, cm = PM.cellM;
+    faceNormal(res.face, NL);
+    nx = cm * (A9[b] * NL[0] + A9[b + 3] * NL[1] + A9[b + 6] * NL[2]);
+    ny = cm * (A9[b + 1] * NL[0] + A9[b + 4] * NL[1] + A9[b + 7] * NL[2]);
+    nz = cm * (A9[b + 2] * NL[0] + A9[b + 5] * NL[1] + A9[b + 8] * NL[2]);
+    const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+    mat = P.materials[matKeys[PM.matIds[res.mat] - 1]];
+    if (res.face === FACE_E || res.face === FACE_W) { u = res.ly * cm; v = res.lz * cm; }
+    else if (res.face === FACE_N || res.face === FACE_S) { u = res.lx * cm; v = res.lz * cm; }
+    else { u = res.lx * cm; v = res.ly * cm; }
+  } else { nx = 0; ny = 0; nz = 1; mat = P.materials.grass; u = px; v = py; }
+  Lacc[0] = 0; Lacc[1] = 0; Lacc[2] = 0;
+  U.addLight(Lacc, L.amb, L.ambI);
+  const a = ctl.az * D2R, e = L.el * D2R;
+  const ndl = nx * Math.sin(a) * Math.cos(e) - ny * Math.cos(a) * Math.cos(e) + nz * Math.sin(e);
+  if (ndl > 0) U.addLight(Lacc, L.sun, L.sunI * ndl);
+  U.shade(mat, Lacc, u, v, dist, out, { fog: fog ? L.fog : null, z: v });
+  if (res.kind === 1 && sel === 'swim') {      // water stand-in: tint the ground plane toward river blue, swap the glyph
+    for (let k = 0; k < 3; k++) { out.fg[k] = out.fg[k] * 0.35 + WATER[k] * 0.9; out.bg[k] = out.bg[k] * 0.3 + WATER[k] * 0.35; }
+    out.glyph = ((Math.floor(px * 6) + Math.floor(py * 3)) & 3) === 0 ? '~' : '-';
+  }
+}
+function makeCanvas(cols, rows, cw, ch) {
+  const cv = document.createElement('canvas'), dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(cols * cw * dpr); cv.height = Math.round(rows * ch * dpr);
+  cv.style.width = cols * cw + 'px'; cv.style.height = rows * ch + 'px';
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.font = Math.round(ch * 0.9) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  return { cv, ctx, cols, rows, cw, ch };
+}
+const RES = { kind: 0, t: 0, k: 0, face: 0, lx: 0, ly: 0, lz: 0, mat: 0 }, SH = { fg: [0, 0, 0], bg: [0, 0, 0] };
+const Ov = [0, 0, 0], Dv = [0, 0, 0];
+function renderView(view, sc) {
+  const { cols, rows, ctx, cw, ch } = view.grid, n = cols * rows, cam = view.cam;
+  if (!view.buf) view.buf = { kind: new Int8Array(n), depth: new Float64Array(n), glyph: new Array(n), fg: new Float32Array(n * 3), bg: new Float32Array(n * 3) };
+  const B = view.buf;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c;
+    cam.ray(c, r, Ov, Dv);
+    const kind = trace(sc, Ov[0], Ov[1], Ov[2], Dv[0], Dv[1], Dv[2], RES);
+    B.kind[i] = kind; B.depth[i] = RES.t;
+    if (!kind) { B.glyph[i] = ' '; B.fg.fill(0, i * 3, i * 3 + 3); B.bg[i * 3] = 7; B.bg[i * 3 + 1] = 8; B.bg[i * 3 + 2] = 12; continue; }
+    const dist = cam.persp ? RES.t * Math.hypot(Dv[0], Dv[1], Dv[2]) : 3;
+    shadeHit(sc, RES, Ov[0], Ov[1], Ov[2], Dv[0], Dv[1], Dv[2], dist, cam.persp, SH);
+    B.glyph[i] = SH.glyph;
+    for (let k = 0; k < 3; k++) { B.fg[i * 3 + k] = Math.min(255, SH.fg[k]); B.bg[i * 3 + k] = Math.min(255, SH.bg[k]); }
+  }
+  if (ctl.edges !== 'off') {
+    const E = DP.edges, rim = ctl.edges === 'rim' ? (E.modelRim || 0.55) : 1;
+    const far = (i, j) => B.kind[j] === 0 || B.depth[j] > B.depth[i] * E.depthRatio + E.depthAbs;
+    const rule = new Int8Array(n);
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const i = r * cols + c;
+      if (B.kind[i] !== 8) continue;
+      if (r > 0 && far(i, i - cols)) rule[i] = 1;
+      else if ((c > 0 && far(i, i - 1)) || (c < cols - 1 && far(i, i + 1))) rule[i] = 2;
+      else if (r < rows - 1 && far(i, i + cols)) rule[i] = 3;
+    }
+    for (let i = 0; i < n; i++) {
+      if (!rule[i]) continue;
+      const R = rule[i] === 1 ? E.rules.cap : rule[i] === 2 ? E.rules.side : E.rules.lip;
+      if (B.glyph[i] !== ' ') B.glyph[i] = R.glyph;
+      for (let k = 0; k < 3; k++) { B.fg[i * 3 + k] = Math.min(255, B.fg[i * 3 + k] * R.gain) * rim; B.bg[i * 3 + k] *= rim; }
+    }
+  }
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c, x = c * cw, y = r * ch;
+    ctx.fillStyle = 'rgb(' + (B.bg[i * 3] | 0) + ',' + (B.bg[i * 3 + 1] | 0) + ',' + (B.bg[i * 3 + 2] | 0) + ')';
+    ctx.fillRect(x, y, cw + 0.5, ch + 0.5);
+    const gl = B.glyph[i];
+    if (gl && gl !== ' ') {
+      ctx.fillStyle = 'rgb(' + (B.fg[i * 3] | 0) + ',' + (B.fg[i * 3 + 1] | 0) + ',' + (B.fg[i * 3 + 2] | 0) + ')';
+      ctx.fillText(gl, x + cw / 2, y + ch / 2 + 1);
+    }
+  }
+  if (view.cap) view.cap.textContent = view.label();
+}
+
+// ------------------------------------------------------------------ cameras
+function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+function norm(a) { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
+function orthoCam(center, yawDeg, pitchDeg, cols, rows, chM) {
+  const a = yawDeg * D2R, p = pitchDeg * D2R, R = 12;
+  const pos = [center[0] + R * Math.sin(a) * Math.cos(p), center[1] - R * Math.cos(a) * Math.cos(p), center[2] + R * Math.sin(p)];
+  const fwd = norm([center[0] - pos[0], center[1] - pos[1], center[2] - pos[2]]);
+  const right = norm(cross([0, 0, 1], fwd)), up = cross(fwd, right), cwM = chM / 2;
+  return { persp: false, ray(c, r, O, D) {
+    const sx = (c + 0.5 - cols / 2) * cwM, sy = (rows / 2 - (r + 0.5)) * chM;
+    O[0] = pos[0] + right[0] * sx + up[0] * sy; O[1] = pos[1] + right[1] * sx + up[1] * sy; O[2] = pos[2] + right[2] * sx + up[2] * sy;
+    D[0] = fwd[0]; D[1] = fwd[1]; D[2] = fwd[2];
+  } };
+}
+const TAN_HALF = Math.tan(37.5 * D2R);
+function perspCam(gridCols, gridRows, cropCols, cropRows, target, azDeg, dist, eyeZ) {
+  const planeDistY = (gridRows / 2) * (16 / 9) / TAN_HALF, a = azDeg * D2R;
+  const fh = [-Math.sin(a), Math.cos(a), 0], rh = [-Math.cos(a), -Math.sin(a), 0];
+  const eye = [target[0] + Math.sin(a) * dist, target[1] - Math.cos(a) * dist, eyeZ];
+  const pitch = Math.atan((target[2] - eyeZ) / dist), horizonRow = gridRows / 2 + Math.tan(pitch) * planeDistY;
+  const c0 = Math.floor(gridCols / 2 - cropCols / 2), r0 = Math.floor(gridRows / 2 - cropRows / 2);
+  return { persp: true, ray(c, r, O, D) {
+    const camX = 2 * (c0 + c + 0.5) / gridCols - 1;
+    O[0] = eye[0]; O[1] = eye[1]; O[2] = eye[2];
+    D[0] = fh[0] + rh[0] * camX * TAN_HALF; D[1] = fh[1] + rh[1] * camX * TAN_HALF;
+    D[2] = (horizonRow - (r0 + r + 0.5)) / planeDistY;
+  } };
+}
+
+// ------------------------------------------------------------------ page: per light setup, 4 ortho views + 2 in-game crops
+const views = [];
+// the croc faces north (-y) at yaw 0; anchor = mid trunk, so the snout is 1.15 m north and the tail tip 1.75 m south
+const CENTER = [0, 0.3, 0.2];
+function addView(host, opt) {
+  const g = makeCanvas(opt.cols, opt.rows, opt.cw, opt.ch);
+  const wrap = document.createElement('div'), cap = document.createElement('div'); cap.className = 'cap';
+  wrap.appendChild(g.cv); wrap.appendChild(cap); host.appendChild(wrap);
+  views.push(Object.assign({ grid: g, cap, key: '', pose: new Float64Array(MAX_VOX_PARTS * PART_STRIDE) }, opt));
+}
+const ORTHO = [
+  // [yaw, pitch, cols, rows, chM, label]
+  [90, 6, 150, 26, 0.05, 'right side'],
+  [-40, 28, 120, 40, 0.06, '3/4 front-left'],
+  [0, 8, 60, 24, 0.05, 'front (teeth line)'],
+  [90, 72, 150, 30, 0.05, 'top (osteoderm rows, crests)'],
+  [200, 18, 110, 34, 0.06, '3/4 rear-right']
+];
+const LIGHTS = [['day', 'Day (palette timeOfDay.morning)'], ['dusk', 'Dusk (palette timeOfDay.dusk: low warm sun)'], ['custom', 'Custom (sliders)']];
+for (const [lk, title] of LIGHTS) {
+  const h = document.createElement('h2'); h.textContent = title; $('sections').appendChild(h);
+  const row = document.createElement('div'); row.className = 'row'; $('sections').appendChild(row);
+  for (const [yaw, pitch, cols, rows, chM, lab] of ORTHO) {
+    addView(row, { light: lk, cols, rows, cw: 5, ch: 10, ground: true,
+      label: () => 'crocodile - ' + lab + ' (' + sel + ')', cam: orthoCam(CENTER, yaw, pitch, cols, rows, chM) });
+  }
+  const row2 = document.createElement('div'); row2.className = 'row'; $('sections').appendChild(row2);
+  for (const dist of [10, 20]) {
+    addView(row2, { light: lk, cols: 90, rows: 45, cw: 6.4, ch: 9.6, ground: true, dist,
+      label: () => '240x90 crop at ' + dist + ' m, eye 1.6 m (' + sel + ')' });
+  }
+}
+
+function clipState(name, e) {
+  const ci = PM.clipIndex[name], c = PM.clips[ci];
+  let total = 0; for (let i = 0; i < c.n; i++) total += c.durMs[i];
+  e = c.loop ? e % total : Math.min(e, total - 1);
+  let f = 0; while (f < c.n - 1 && e >= c.durMs[f]) { e -= c.durMs[f]; f++; }
+  return { clip: ci, frame: f, tMs: e };
+}
+function frame() {
+  const now = performance.now();
+  clipT += (now - lastNow) * ctl.spd; lastNow = now;
+  const st = clipState(sel, clipT);
+  for (const v of views) {
+    computeVoxelPose(PM, { x: 0, y: 0, z: 0, yawDeg: v.dist ? 90 : 0, scale: 1, clip: st.clip, frame: st.frame, tMs: st.tMs }, v.pose);
+    if (v.dist) v.cam = perspCam(240, 90, 90, 45, [0, 0, 0.25], ctl.vaz, v.dist, 1.6);
+    const key = sel + '|' + ver + '|' + st.frame + '|' + Math.round(st.tMs);
+    if (v.key === key) continue;
+    renderView(v, { pose: v.pose, ground: !!v.ground, light: lightOf(v.light) });
+    v.key = key;
+  }
+  setTimeout(() => requestAnimationFrame(frame), 40);
+}
+
+// ------------------------------------------------------------------ checks + clip table
+function runChecks() {
+  const out = [];
+  const ok = (c, m) => out.push([c ? 'pass' : 'fail', (c ? 'PASS ' : 'FAIL ') + m]);
+  const both = Object.keys(P.materials).filter((k) => DP.materials[k]);
+  const PARTS = Object.keys(DEF.parts);
+  const vr = validateVoxelModel(DEF, { materialKeys: both });
+  ok(vr.errors.length === 0 && vr.warnings.length === 0, 'validateVoxelModel (legRig, blend, lookAt, mounts): ' + (vr.errors.concat(vr.warnings).slice(0, 6).join(' ; ') || 'no errors, no warnings'));
+  ok(PARTS.length <= MAX_VOX_PARTS && DEF.meshOnly === true, PARTS.length + ' parts (<= ' + MAX_VOX_PARTS + ', meshOnly): ' + PARTS.join(' '));
+  const sums = PARTS.map((p) => { const b = DEF.parts[p].box; return (b[3] - b[0]) + (b[4] - b[1]) + (b[5] - b[2]); });
+  ok(sums.every((s) => s <= 48), 'part box sums <= 48 (style 5.14): max ' + Math.max(...sums));
+  let vox = 0; DEF.layers.forEach((l) => l.forEach((r) => { for (const c of r) if (c !== '.') vox++; }));
+  const tris = buildVoxelMesh(PM, { id: 'crocodile', partNames: PARTS }).triCount;
+  ok(tris <= 3500, 'LOD0 ' + tris + ' tris (beast budget 3500, as the bears); ' + vox + ' voxels');
+  out.push([FX.finalMats ? 'pass' : 'warn', FX.finalMats ? 'final scale_croc* materials active'
+    : 'INTERIM hide materials (block_dark / waystone_dark / canvas_dark): dark warm grey-brown, not yet olive. Main session appends ' +
+      'scale_croc / scale_croc_dark / scale_croc_light to palette.js + detail-pass.js -> switches automatically.']);
+  const LR = DEF.legRig, BD = DEF.blend;
+  ok(BD.sets.locomotion.clips.every((s) => LR.gaits[s.clip] && LR.gaits[s.clip].tunedMps === s.at),
+     'blend set ' + BD.sets.locomotion.clips.map((s) => s.clip + ' @ ' + s.at + ' m/s').join(' -> ') + ' == legRig tunedMps; additive hit on ' + BD.additive.hit.parts.join(' / '));
+  const at = DEF.animations.attack, d = at.durations, snapStart = d.slice(0, FX.lunge.snapKey).reduce((a, b) => a + b, 0);
+  const total = d.reduce((a, b) => a + b, 0);
+  ok(snapStart === FX.lunge.snapMs && at.frames[FX.lunge.snapKey].jaw.rot[0] === 0 && at.frames[1].jaw.rot[0] >= 30 && total === FX.lunge.ms,
+     'lunge: jaws widest ' + at.frames[1].jaw.rot[0] + ' deg at 100 ms, SNAP shut at ' + snapStart + ' ms of ' + total + ' ms (key ' + FX.lunge.snapKey + '), hit ' + FX.lunge.hitMs.join('..') + ' ms');
+  ok(DEF.animations.grab.frames.every((f) => f.jaw.rot[0] === 0), 'grab: jaws held shut on every key, body roll <= ' + FX.grab.rollDeg + ' deg');
+  const mapped = Object.values(FX.clipFor.state)
+    .concat(Object.keys(FX.clipFor.water).filter((k) => k !== 'note').map((k) => FX.clipFor.water[k]))
+    .concat(['hurt', 'flinch', 'die', 'dead', 'sink'].map((k) => FX.clipFor[k]));
+  const bad = mapped.filter((c) => !DEF.animations[c]);
+  ok(bad.length === 0, 'crocFx.clipFor: every state maps to a clip (wander / swim / lunge / grab / recover / hurt / die ...)' + (bad.length ? ' missing: ' + bad.join(', ') : ''));
+  const host = $('checks'); host.innerHTML = '';
+  for (const [c, m] of out) { const dv = document.createElement('div'); dv.className = c; dv.textContent = m; host.appendChild(dv); }
+  const ch = $('clips');
+  for (const k of CLIPS) {
+    const c = DEF.animations[k], ms = c.durations.reduce((a, b) => a + b, 0);
+    const dv = document.createElement('div'); dv.className = 'info';
+    dv.textContent = k + ': ' + c.frames.length + ' keys, ' + ms + ' ms' + (c.loop ? ' loop' : ' once') + (c.interp === 'step' ? ' (step)' : '') +
+      (LR.gaits[k] ? '  gait: ' + LR.gaits[k].tunedMps + ' m/s, duty ' + LR.gaits[k].duty + ', phase FL FR HL HR ' + LR.gaits[k].phase.join(' ') : '');
+    ch.appendChild(dv);
+  }
+  const dv = document.createElement('div'); dv.className = 'info';
+  dv.textContent = 'die thud key ' + FX.death.thudKey + ' (' + FX.death.thudMs + ' ms), dead = belly up, sink ' + FX.death.sink.depthM + ' m. ' +
+    'Water: eyes ' + FX.water.eyesUpM + ' m, nostrils ' + FX.water.nostrilsUpM + ' m above the entity (ambush silhouette).';
+  ch.appendChild(dv);
+}
+try { runChecks(); } catch (err) { $('checks').innerHTML = '<div class="fail">checks threw: ' + err.message + '</div>'; console.error(err); }
+frame();
+</script>
+</body>
+</html>

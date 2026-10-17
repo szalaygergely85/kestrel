@@ -20,7 +20,7 @@ export const WALK_OVER_H = 0.3;
 /** Prism side cap (28 tris at 8). */
 export const PROXY_MAX_SIDES = 8;
 /** Mesh-id basenames that never collide (soft / decorative pieces regardless of height). */
-export const SOFT_NAME_RE = /(^|\/)(Pebble|Grass|Mushroom)/i;
+export const SOFT_NAME_RE = /(^|\/)(Pebble|Grass|Mushroom|Bush|Fern|Clover|Plant|Flower|Petal)/i; // owner 2026-10-10: vegetation is walk-through (MESH-PLACE-01)
 
 /** Monotone-chain convex hull of [x,y,...] pairs; CCW, no repeated points. */
 function hull2(pts) {

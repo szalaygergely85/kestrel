@@ -34,9 +34,9 @@ for (let f = 0; f < 6; f++) {
   const cx = m16[0] * p[0] + m16[4] * p[1] + m16[8] * p[2] + m16[12], cy = m16[1] * p[0] + m16[5] * p[1] + m16[9] * p[2] + m16[13];
   const cz = m16[2] * p[0] + m16[6] * p[1] + m16[10] * p[2] + m16[14], cw = m16[3] * p[0] + m16[7] * p[1] + m16[11] * p[2] + m16[15];
   ok(Math.abs(cw - 3) < 1e-12 && Math.abs(cx / cw - 1 / 3) < 1e-12 && Math.abs(cy / cw + 2 / 3) < 1e-12, 'ndc xy face ' + f);
-  ok(Math.abs((0.5 + 0.5 * cz / cw) - S.pointDepthEncode(3, far)) < 1e-12, 'depth enc face ' + f);
+  ok(Math.abs((0.75 + 0.25 * cz / cw) - S.pointDepthEncode(3, far)) < 1e-12, 'depth enc face ' + f);
   ok(Math.abs(S.pointDepthDecode(S.pointDepthEncode(3, far), far) - 3) < 1e-9, 'decode');
-  ok(Math.abs(S.pointDepthEncode(S.PSH_NEAR, far)) < 1e-12 && Math.abs(S.pointDepthEncode(far, far) - 1) < 1e-12, 'depth range [0,1]');
+  ok(Math.abs(S.pointDepthEncode(S.PSH_NEAR, far) - 0.5) < 1e-12 && Math.abs(S.pointDepthEncode(far, far) - 1) < 1e-12, 'depth range [0.5,1]');
   let inside = true; for (let k = 0; k < 6; k++) if (pl[k * 4] * p[0] + pl[k * 4 + 1] * p[1] + pl[k * 4 + 2] * p[2] + pl[k * 4 + 3] < 0) inside = false;
   ok(inside, 'planes contain point face ' + f);
   const back = [0, 1, 2].map((i) => O[i] - t.f[i]); let outside = false;
@@ -116,6 +116,27 @@ ok(changed(1.05), 'move changes'); ok(changed(1, 2, 3, 7), 'radius changes'); ok
 ok(changed(1, 2, 3, 6, 11, 22, 6), 'struct'); ok(changed(1, 2, 3, 6, 11, 22, 5, 9), 'sway quantum');
 const q = S.resolvePointShadowOptions({ n: 0 }, 'high'); ok(q.n === 0 && q.res === 256 && q.faceCap === 12, 'options');
 
+// 7b. ME-16d ARCH: the encode must equal the ACTUAL shadow caster depth (SHADOW_Z_LINE of raster.wgsl.js, shared with the sun pass), f32, within 1 ULP
+{
+  const { SHADOW_Z_LINE } = await import('./gpu/wgsl/raster.wgsl.js');
+  const shadowZ = new Function('o', SHADOW_Z_LINE), f32 = Math.fround;
+  const O = [1.5, -2, 0.25], M = new Float64Array(16), far = 12, ulp = 2 ** -23;
+  let worst = 0;
+  for (let f = 0; f < 6; f++) {
+    S.pointFaceMatrix(O, far, f, M);
+    for (let i = 0; i <= 400; i++) {
+      const c = S.PSH_NEAR + (far - S.PSH_NEAR) * i / 400, p = [O[0] + S.FACE_TABLE[f].f[0] * c, O[1] + S.FACE_TABLE[f].f[1] * c, O[2] + S.FACE_TABLE[f].f[2] * c];
+      const o = { pos: { z: f32(M[2] * p[0] + M[6] * p[1] + M[10] * p[2] + M[14]), w: f32(M[3] * p[0] + M[7] * p[1] + M[11] * p[2] + M[15]) } };
+      shadowZ(o);
+      worst = Math.max(worst, Math.abs(f32(o.pos.z / o.pos.w) - f32(S.pointDepthEncode(c, far))) / ulp);
+    }
+  }
+  ok(worst <= 2, 'z-sweep: caster SHADOW_Z_LINE depth == pointDepthEncode within 2 ULP of 2^-23 (worst ' + worst.toFixed(2) + ')');
+  ok(S.pointDepthEncode(S.PSH_NEAR, far) >= 0.5 - 1e-9, 'encode never below 0.5 (the old 0.5+0.5*ndc reached 0)');
+  ok(Math.abs(S.pointDepthDecode(S.pointDepthEncode(4, far), far) - 4) < 1e-9, 'decode round trip');
+  const src = {}; S.pointCasterOpts(src, 10, { meshLod0M: 18, meshCastM: 40, meshCastCap: 32 });
+  ok(src.instCastM === 10 && src.fogFarM === 10 + S.POINT_FOG_MARGIN_M && src.meshLod0M === 18 && src.meshCastM === 40 && src.meshCastCap === 32, 'pointCasterOpts fills the shared fields');
+}
 // 8. zero alloc
 const newUsed = () => { for (const x of v8.getHeapSpaceStatistics()) if (x.space_name === 'new_space') return x.space_used_size; return 0; };
 L.on[4] = 1; L.entity[4] = 0; N[2] = 1;

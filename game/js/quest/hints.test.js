@@ -19,7 +19,7 @@ function makeUiStyle() {
       { id: 'capture', text: 'Click to capture mouse', keys: ['Click'], on: { type: 'pointerUnlocked' } },
     ],
     storyHints: [
-      { id: 'burner', text: 'The burner still glows. Take what light you can.', keys: [], on: { type: 'zone', zone: 'hintBurner', skipIfState: 'tower.lantern.taken' } },
+      { id: 'burner', text: 'The burner ticks. The Kestrel is done.', keys: [], on: { type: 'zone', zone: 'hintBurner', skipIfState: 'tower.sword.taken' } },
       { id: 'climb', text: 'Climb. You cannot see the signal from down here.', keys: [], on: { type: 'zone', zone: 'hintClimb' } },
       { id: 'chart', text: 'Press M to read the chart.', keys: ['M'], on: { type: 'timer', sec: 20, skipIfState: 'ui.mapCard.opened' } },
     ],
@@ -49,7 +49,7 @@ function noSignals() { return { walking: false, pointerUnlocked: false, moveOrLo
 {
   resetHints();
   const uiStyle = makeUiStyle();
-  const world = makeWorld({ 'tower.lantern.taken': true });
+  const world = makeWorld({ 'tower.sword.taken': true });
   request(world, uiStyle, 'burner');
   ok('skipIfState true: never queued', currentHintId() === null);
   stepHints(world, uiStyle, 0.001, noSignals());
@@ -141,6 +141,12 @@ function noSignals() { return { walking: false, pointerUnlocked: false, moveOrLo
   ok('pushHintDim with a current hint pushes one plate rect', dim.n === 1);
   drawHints(rt, uiStyle, null); // should not throw
   ok('drawHints with a current hint does not throw', true);
+  // VISQA-16: a partly faded hint keeps its letters: glyph codes identical with and without a ramp lut
+  const grab = () => { const o = []; return { cols: 160, rows: 60, o, setCellRGB(x, y, g) { o.push(x + ':' + g); } }; };
+  const a1 = grab(), a2 = grab();
+  drawHints(a1, uiStyle, null);
+  drawHints(a2, uiStyle, { idx: new Uint8Array(128), ramp: new Uint8Array([32, 46, 58, 35]), minGain: 0 });
+  ok('hint glyphs independent of the fade lut', a1.o.length > 0 && a1.o.join() === a2.o.join());
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

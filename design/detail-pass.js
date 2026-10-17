@@ -119,29 +119,31 @@
     // densities, no reduced sets). Far = mid. Only the speckle layer (chips / knots / tufts) stays near-only.
     // Blank-share rule kept: no '.' at level 3 (floor sets: level 3 and 4).
     stoneMid:   [".'`", ".,`'", ",:;'", ":;,+", ";+:x", "+x=%", "x%#+", "%#&x"],
-    stoneFar:   [".'`", ".,`'", ",:;'", ":;,+", ";+:x", "+x=%", "x%#+", "%#&x"],
+    stoneFar:   [".'`", ".,`'", ",:;'", ":;,+", ";+:x", "+x=%", "x%#&+", "%#&@x"], // GS-01e: top two levels denser than stoneMid so far block tones keep contrast
     chip:       [".", "'", "'`", "`'", "\"'", "%'", "%&", "&%"],
-    moss:       [".", ",", ",'", "\",", "\";", "\"%", "%&", "&@"],
+    moss:       [".'", ",'", ",'", "\",", "\";", "\"%", "%&", "&@"],
     // US-028 D2 (blank share): with lift 0.12 + gamma 0.70 an 8-level set never lands below level 3 when
     // b >= cutoff, so level 3 (and floor level 4) must not contain '.': soot, floor* and woodFar L2 lost their dots.
-    soot:       [".", ".", ",'", ",:", ":;", ";%", "%#", "#&"],
-    brickFace:  [".", ".,", ",:", ":=", "=:", "=+", "#=", "#%"],
+    soot:       [".'", ".,", ",'", ",:", ":;", ";%", "%#", "#&"],
+    // OB-189: near sets level 1-2 carry >=2 equal-density alternates (was a single "."): a close wall/floor with one glyph per
+    // level shows as regular horizontal dot rows (light stripes); the per-cell hash now breaks the rows up like stoneFace does.
+    brickFace:  [".'", ".,'", ",:", ":=", "=:", "=+", "#=", "#%"],
     brickMid:   [".'`", ".,'", ",:;'", ":=;,", "=:+;", "=+:x", "#=+%", "#%=&"],
     brickFar:   [".'`", ".,'", ",:;'", ":=;,", "=:+;", "=+:x", "#=+%", "#%=&"],
-    floorFace:  [".", ".'", ",`'", ",`:'", ",:;", ":;=", ";=+", "=+*"],
+    floorFace:  [".'", ".'`", ",`'", ",`:'", ",:;", ":;=", ";=+", "=+*"],
     floorMid:   [".`'", ".',`", ",`'", ",`:'", ",:;'", ":;=,", ";=+:", "=+*;"],
     floorFar:   [".`'", ".',`", ",`'", ",`:'", ",:;'", ":;=,", ";=+:", "=+*;"],
     dust:       [".", "'", "'`", "'\"", "\"'", "\"^", "^*", "*"],
     gap:        [".", ".", ",", ",", ",.", ";", ";", ":"],
-    rubbleFace: [".", ".,", ",:o", ":;o", "oO;", "O%o", "%#O", "#&@"],
+    rubbleFace: [".'", ".,'", ",:o", ":;o", "oO;", "O%o", "%#O", "#&@"],
     rubbleMid:  [".,'", ".,:", ",:o;", ":;o,", "oO;:", "O%o;", "%#O&", "#&@%"],
     rubbleFar:  [".,'", ".,:", ",:o;", ":;o,", "oO;:", "O%o;", "%#O&", "#&@%"],
-    grassFace:  [".", ",'", "',\"", "\";,", "\"v;", "v\";", "vw\"", "wv\""],
+    grassFace:  [".'", ",'.", "',\"", "\";,", "\"v;", "v\";", "vw\"", "wv\""],
     grassMid:   [".,'", ",'.", "',\";", "\";,'", "\"v;,", "v\";w", "vw\";", "wv\"v"],
     grassFar:   [".,'", ",'.", "',\";", "\";,'", "\"v;,", "v\";w", "vw\";", "wv\"v"],
     tuft:       ["'", "\"", "\"v", "v\"", "vw", "wv", "w", "w"],
     // v1.33 (owner 2026-10-04): calm TURF ladders for the grass ground (no " v w foliage glyphs; no '.' at levels 3-4)
-    turfFace:   [".", ".,", ",'", "',`", ",';", ";',", ";:'", ";:"],
+    turfFace:   [".'", ".,'", ",'", "',`", ",';", ";',", ";:'", ";:"],
     turfMid:    [".,'", ",'.", "',`,", ",';'", ";',:", ";:',", ":;',", ";:;'"],
     turfFar:    [".,'", ",'.", "',`,", ",';'", ";',:", ";:',", ":;',", ";:;'"],
     knot:       [".", "o", "o", "o", "@", "@", "@"],
@@ -162,11 +164,11 @@
     rockFar:    [".'`", ".,:'", ",:;%", ":;%,", ";%#:", "%#;&", "#%&@", "&#@%"],
     // D-011 "Kestrel" reskin (v1.9): ivy, mossy tops, machine brass / copper, balloon canvas. Same rules: 3-4
     // alternates, no '.' at level 3 (walls) / levels 3-4 (floors), ASCII only. Mid / far = the near set (US-028).
-    ivy:        [".", ",", ",'", "\";", ";\",", "%;\"", "&%;", "@&%"],
-    mossTop:    [".", ".'", ",'`", "\",'", ",;\"", ";\"%", "\"%&", "%&@"],
+    ivy:        [".'", ",.", ",'", "\";", ";\",", "%;\"", "&%;", "@&%"],
+    mossTop:    [".'", ".,", ",'`", "\",'", ",;\"", ";\"%", "\"%&", "%&@"],
     brassFace:  [".'", ".:'", ":-;", "-=:~", "=-+:", "+=o-", "o+=#", "#o=*"],
     copperFace: [".'", ".:'", ":-;", "-=:~", "=-+x", "+=x-", "x#+=", "#x%="],
-    verdigris:  [".", ",", ",:", ":%,", "%:;", "%;:", "%&:", "&%"],
+    verdigris:  [".'", ",.", ",:", ":%,", "%:;", "%;:", "%&:", "&%"],
     canvasFace: [".'", ".~'", "~-'", "~)-", ")~(", ")(~", "()~=", "(=)%"],
     glint:      ["'", "'+", "+'", "+*", "*+", "*", "*", "*"],   // v1.14: the voxel lamp's sparkle (emissive, always near the top)
     rune:       ["'", ".'", ":'", ":;", "=:", "=+", "#=", "#"],  // v1.16: the waystone's carved teal mark (emissive: solid cut lines at the top levels)
@@ -182,19 +184,20 @@
     fabricFace: [".'", ".'`", "'`~", "~-'", "~)-(", ")~(-", "()~'", "()~\""],
     woodFar:    [".,", "-,", "-_", "=-", "=_", "=#", "#="],   // no longer referenced (wood / ceiling far = grain sets); kept for old exports
     fog:        [". ", ".:"],     // fog stipple: [0] sparse (f > 0.8), [1] haze
-    grainU: { orient: 'u', dark: ["."], fam: {
-      h:  ["-", "-", "-~", "~=", "=", "="],
-      v:  ["!", "|", "|", "|!", "|", "|"],
+    // OB-189b: bark/wood rows: levels 1-2 of h and v carry equal-density alternates (one "-" per level = regular stripes on a close trunk).
+    grainU: { orient: 'u', dark: [".'"], fam: {
+      h:  ["-_", "-~", "-~_", "~=-", "=-", "=~"],
+      v:  ["!|", "|!", "|'", "|!", "|!", "|!"],
       d1: ["/", "/", "/", "/", "/", "/"],
       d2: ["\\", "\\", "\\", "\\", "\\", "\\"] } },
-    grainV: { orient: 'v', dark: ["."], fam: {
-      h:  ["-", "-", "-~", "~=", "=", "="],
-      v:  ["!", "|", "|", "|!", "|", "|"],
+    grainV: { orient: 'v', dark: [".'"], fam: {
+      h:  ["-_", "-~", "-~_", "~=-", "=-", "=~"],
+      v:  ["!|", "|!", "|'", "|!", "|!", "|!"],
       d1: ["/", "/", "/", "/", "/", "/"],
       d2: ["\\", "\\", "\\", "\\", "\\", "\\"] } },
-    beam: { orient: 'v', dark: ["."], fam: {
-      h:  ["-", "=", "=", "=", "#=", "#"],
-      v:  ["|", "|", "|", "|", "#", "#"],
+    beam: { orient: 'v', dark: [".'"], fam: {
+      h:  ["-_", "=-", "=-", "=~", "#=", "#="],
+      v:  ["|!", "|!", "|!", "|!", "#|", "#|"],
       d1: ["/", "/", "/", "/", "#", "#"],
       d2: ["\\", "\\", "\\", "\\", "#", "#"] } }
   };
@@ -220,10 +223,10 @@
   // ---------------------------------------------------------------------------
   var STONE = {
     albedo: 0.85, bgK: 0.28, seed: 11, detail: 18, jitter: 0.08,
-    tones: [['stoneMid', 4], ['stoneCool', 3], ['stoneWarm', 2], ['stoneDeep', 1]],
-    grid: { u: 0.8, v: 0.4, stagger: 0.5, shade: 0.55, tint: 'mortar', amount: 0.5, bgK: 0.16, cross: '|', maxCover: 0.25, tie: true },
+    tones: [['stoneMid', 3], ['stoneMidHi', 2], ['stoneMidLo', 2], ['stoneDeep', 2]],  // WALL-BRICK-02: 4 tones (GPU MAX_TONES)
+    grid: { u: 0.4, v: 0.25, stagger: 0.5, shade: 0.42, tint: 'mortar', amount: 0.65, bgK: 0.12, cross: '|', maxCover: 0.5, tie: true },
     face: { set: 'stoneFace', mid: 'stoneMid', far: 'stoneFar',
-            bevel: { top: 0.05, topShade: 1.15, bottom: 0.05, bottomShade: 0.80 } },
+            bevel: { top: 0.03, topShade: 1.15, bottom: 0.03, bottomShade: 0.78 } },
     speckle: { set: 'chip', chance: 0.05, shade: 0.72 },
     lod: { mid: 12, far: 25, dither: 3 }
   };
@@ -237,8 +240,8 @@
   var materials = {
     stone: ext(STONE, {
       v1: 'stone',
-      desc: 'Tower wall: coursed ashlar 0.8 x 0.4 m, half bond. Mortar = 1-cell lines ( _ | ) at every distance up to ~12 m, ' +
-            'every block its own tone (4 greys: mid, cool, warm, deep), rough face : ; , + x, rare chips.'
+      desc: 'Tower wall: coursed ashlar 0.4 x 0.25 m (WALL-BRICK-02), half bond. Mortar = 1-cell lines ( _ | ) at every distance up to ~12 m, ' +
+            'every block its own tone (3 greys of one hue: mid, mid-hi, mid-lo (MESH-TONE-AMP-01)), rough face : ; , + x, rare chips.'
     }),
     stone_moss: ext(STONE, {
       v1: 'stone_moss', seed: 12,
@@ -303,7 +306,7 @@
       v1: 'rubble', seed: 61,
       desc: 'Fallen blocks and gravel: irregular stones ~0.3 m with dark gaps ( , ; ) instead of lines, round o O pebbles.',
       albedo: 0.80, bgK: 0.26, detail: 18, jitter: 0.14,
-      tones: [['rubble', 3], ['stoneDeep', 2], ['stoneCool', 2], ['stoneLight', 1]],
+      tones: [['rubble', 3], ['rubbleHi', 2], ['rubbleLo', 2]],
       grid: { u: 0.3, v: 0.22, stagger: 0.5, kind: 'gap', set: 'gap', shade: 0.40, bgK: 0.10, maxCover: 0.6 },
       face: { set: 'rubbleFace', mid: 'rubbleMid', far: 'rubbleFar' },
       lod: { mid: 12, far: 25, dither: 3 }
@@ -362,8 +365,8 @@
       desc: 'Natural hill rock (outcrop, spur, path walls): no mortar grid. Irregular facets 1.1 x 0.7 m (tones only, ' +
             'offset 0.37 so no bond reads) in 4 greys, rough : ; % # & glyphs, moss on some facets.',
       albedo: 0.80, bgK: 0.20, detail: 16, jitter: 0.14,
-      tones: [['rock', 4], ['stoneCool', 2], ['stoneDeep', 2], ['stoneLight', 1]],
-      grid: { u: 1.1, v: 0.7, stagger: 0.37, lines: false },
+      tones: [['rock', 4], ['rockHi', 2], ['rockLo', 3]],
+      grid: { u: 1.1, v: 0.7, stagger: 0.37, lines: false },   // ROCK-NATURAL-01 (owner: rocks looked built from bricks): back to natural facets, no mortar
       face: { set: 'rockFace', mid: 'rockMid', far: 'rockFar' },
       overlay: { set: 'moss', tints: ['mossDark', 'moss'], amount: 0.55, shade: 0.95, joint: 0.0, face: 0.12 },
       lod: { mid: 12, far: 25, dither: 3 }
@@ -373,8 +376,8 @@
       desc: 'Stylized boulder stone for imported Quaternius meshes: soft 2.6 x 1.9 m tone patches, few greys, light moss. Irregular facets 1.1 x 0.7 m (tones only, ' +
             'offset 0.37 so no bond reads) in 4 greys, rough : ; % # & glyphs, moss on some facets.',
       albedo: 0.80, bgK: 0.20, detail: 16, jitter: 0.14,
-      tones: [['rock', 5], ['stoneCool', 3], ['stoneLight', 1]],
-      grid: { u: 2.6, v: 1.9, stagger: 0.5, lines: false },
+      tones: [['rock', 5], ['rockHi', 2], ['rockLo', 2]],
+      grid: { u: 2.6, v: 1.9, stagger: 0.5, lines: false, glyph: 'texel' },
       face: { set: 'rockFace', mid: 'rockMid', far: 'rockFar' },
       overlay: { set: 'moss', tints: ['mossDark', 'moss'], amount: 0.25, shade: 0.97, joint: 0.0, face: 0.08 },
       lod: { mid: 12, far: 25, dither: 3 }
@@ -392,7 +395,7 @@
       desc: 'Cap stones on wall tops / ledges (floor-sampled, face U): slabs 0.75 x 0.5 m, grout full of moss, cushions ' +
             '" , ; on 45 % of the slabs, the odd tuft. Reads green from above, stone from the side.',
       albedo: 0.76, bgK: 0.26, detail: 14, jitter: 0.10,
-      tones: [['flagstone', 3], ['stoneDeep', 2], ['flagCool', 2]],
+      tones: [['flagstone', 3], ['flagHi', 2], ['flagLo', 2]],
       grid: { u: 0.75, v: 0.5, stagger: 0.5, shade: 0.55, tint: 'mossDark', amount: 0.70, bgK: 0.14, cross: '+', maxCover: 0.25 },
       face: { set: 'floorFace', mid: 'floorMid', far: 'floorFar' },
       overlay: { set: 'mossTop', tints: ['moss', 'mossDark', 'mossLight', 'ivy'], amount: 0.85, shade: 0.95, joint: 0.85, face: 0.45 },
@@ -559,6 +562,33 @@
             'separates from the mid-value rubble floor and the wall behind it.',
       albedo: 0.62, bgK: 0.12, detail: 32, jitter: 0.06,
       tones: [['stoneDark', 3], ['ashDark', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'rubbleFace', mid: 'rubbleFace', far: 'rubbleFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    scale_croc: {
+      v1: 'scale_croc', seed: 1226,
+      desc: 'VOXEL BEASTS (crocodile). Scaled hide material.',
+      albedo: 0.62, bgK: 0.12, detail: 32, jitter: 0.06,
+      tones: [['crocHide', 3], ['crocSeam', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'rubbleFace', mid: 'rubbleFace', far: 'rubbleFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    scale_croc_dark: {
+      v1: 'scale_croc_dark', seed: 1227,
+      desc: 'VOXEL BEASTS (crocodile). Scaled hide material.',
+      albedo: 0.45, bgK: 0.12, detail: 32, jitter: 0.06,
+      tones: [['crocSeam', 3], ['crocSeam', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'rubbleFace', mid: 'rubbleFace', far: 'rubbleFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    scale_croc_light: {
+      v1: 'scale_croc_light', seed: 1228,
+      desc: 'VOXEL BEASTS (crocodile). Scaled hide material.',
+      albedo: 0.80, bgK: 0.12, detail: 32, jitter: 0.06,
+      tones: [['crocMottle', 3], ['crocSeam', 1]],
       grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
       face: { set: 'rubbleFace', mid: 'rubbleFace', far: 'rubbleFace' },
       lod: { mid: 12, far: 25, dither: 3 }
@@ -1075,6 +1105,210 @@
       grid: { u: 0.01, v: 0.01, stagger: 0, lines: false },
       face: { set: 'glint', mid: 'glint', far: 'glint' },
       lod: { mid: 12, far: 25, dither: 3 }, emissive: 0.75
+    },
+    // HAND-FIRE-02 (v1.52, design/models/hand.js; palette.js v1 records of the same key).
+    skin_flush: {
+      v1: 'skin_flush', seed: 918,
+      desc: 'HAND (HAND-FIRE-02). Warmer flushed skin: knuckle rims, fingertip pulp, palm pads.',
+      albedo: 0.88, bgK: 0.15, detail: 32, jitter: 0.04,
+      tones: [['skinFlush', 4], ['skin', 1]],
+      grid: { u: 0.01, v: 0.01, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    skin_deep: {
+      v1: 'skin_deep', seed: 919,
+      desc: 'HAND (HAND-FIRE-02). Deep creases between fingers and at the joints.',
+      albedo: 0.70, bgK: 0.12, detail: 32, jitter: 0.04,
+      tones: [['skinDeep', 4], ['skinShade', 1]],
+      grid: { u: 0.01, v: 0.01, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    skin_vein: {
+      v1: 'skin_vein', seed: 920,
+      desc: 'HAND (HAND-FIRE-02). Muted veins, back of the hand and inner wrist.',
+      albedo: 0.84, bgK: 0.14, detail: 32, jitter: 0.04,
+      tones: [['skinVein', 3], ['skin', 1]],
+      grid: { u: 0.01, v: 0.01, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    flame_mid: {
+      v1: 'flame_mid', seed: 921,
+      desc: 'HAND (HAND-FIRE-02). Yellow flame body: flameMid / flameCore, emissive 0.95.',
+      albedo: 1.00, bgK: 0.32, detail: 40, jitter: 0.05,
+      tones: [['flameMid', 3], ['flameCore', 1]],
+      grid: { u: 0.01, v: 0.01, stagger: 0, lines: false },
+      face: { set: 'glint', mid: 'glint', far: 'glint' },
+      lod: { mid: 12, far: 25, dither: 3 }, emissive: 0.95
+    },
+    // EP-WILD (v1.53, design/models/voxel_wildlife.js; palette.js v1 records of the same key). Fur: 2.5 cm tone grid.
+    fur_agouti: {
+      v1: 'fur_agouti', seed: 922,
+      desc: 'WILDLIFE (EP-WILD). Wild rabbit back and flanks: ticked grey-brown.',
+      albedo: 0.86, bgK: 0.15, detail: 32, jitter: 0.06,
+      tones: [['furAgouti', 4], ['furAgoutiDark', 1], ['furAgoutiLight', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    fur_agouti_dark: {
+      v1: 'fur_agouti_dark', seed: 923,
+      desc: 'WILDLIFE (EP-WILD). Rabbit dorsal ticking, ear tips, tail top, foot soles.',
+      albedo: 0.72, bgK: 0.13, detail: 32, jitter: 0.05,
+      tones: [['furAgoutiDark', 4], ['furAgouti', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    fur_agouti_light: {
+      v1: 'fur_agouti_light', seed: 924,
+      desc: 'WILDLIFE (EP-WILD). Rabbit lower flanks, cheeks, legs: buff.',
+      albedo: 0.90, bgK: 0.16, detail: 32, jitter: 0.05,
+      tones: [['furAgoutiLight', 4], ['furAgouti', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    fur_cream: {
+      v1: 'fur_cream', seed: 925,
+      desc: 'WILDLIFE (EP-WILD). Bellies, rabbit tail underside, deer rump patch, throat, inner ears.',
+      albedo: 0.94, bgK: 0.18, detail: 32, jitter: 0.04,
+      tones: [['furCream', 4], ['linen', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    fur_roe: {
+      v1: 'fur_roe', seed: 926,
+      desc: 'WILDLIFE (EP-WILD). Deer body: red-brown summer coat.',
+      albedo: 0.86, bgK: 0.15, detail: 32, jitter: 0.06,
+      tones: [['furRoe', 4], ['furRoeDark', 1], ['furRoeLight', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    fur_roe_dark: {
+      v1: 'fur_roe_dark', seed: 927,
+      desc: 'WILDLIFE (EP-WILD). Deer dorsal line, mane, crown, ear rims, tail top.',
+      albedo: 0.72, bgK: 0.13, detail: 32, jitter: 0.05,
+      tones: [['furRoeDark', 4], ['furRoe', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    fur_roe_light: {
+      v1: 'fur_roe_light', seed: 928,
+      desc: 'WILDLIFE (EP-WILD). Deer lower flanks and muzzle; rabbit rufous nape.',
+      albedo: 0.90, bgK: 0.16, detail: 32, jitter: 0.05,
+      tones: [['furRoeLight', 4], ['furRoe', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    antler: {
+      v1: 'antler', seed: 929,
+      desc: 'WILDLIFE (EP-WILD). Roe buck antlers: pale horn, rough pearling.',
+      albedo: 0.90, bgK: 0.16, detail: 32, jitter: 0.05,
+      tones: [['antler', 4], ['woodDark', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    // EP-WILD step 2 (v1.58, voxel_wildlife.js fox / squirrel / robin; palette.js v1 records of the same key).
+    fur_fox: {
+      v1: 'fur_fox', seed: 1210,
+      desc: 'WILDLIFE (EP-WILD v1.58). Red fox coat: orange-red with darker guard-hair ticks.',
+      albedo: 0.88, bgK: 0.15, detail: 32, jitter: 0.06,
+      tones: [['furFox', 4], ['furRoeDark', 1], ['furFoxLight', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    fur_fox_light: {
+      v1: 'fur_fox_light', seed: 1211,
+      desc: 'WILDLIFE (EP-WILD v1.58). Fox lower flanks, muzzle bridge; squirrel tail fringe.',
+      albedo: 0.90, bgK: 0.16, detail: 32, jitter: 0.05,
+      tones: [['furFoxLight', 4], ['furFox', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    // WOLF-D1 (v1.60, design/models/voxel_wolf.js; palette.js v1 records of the same key).
+    fur_wolf: {
+      v1: 'fur_wolf', seed: 1220,
+      desc: 'WILDLIFE (WOLF-D1 v1.60). Grey wolf flanks and head: grizzled grey-brown.',
+      albedo: 0.86, bgK: 0.15, detail: 32, jitter: 0.06,
+      tones: [['furWolf', 4], ['furWolfDark', 1], ['furWolfLight', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    fur_wolf_dark: {
+      v1: 'fur_wolf_dark', seed: 1221,
+      desc: 'WILDLIFE (WOLF-D1 v1.60). Wolf saddle, dorsal cape, ear backs, tail tip.',
+      albedo: 0.72, bgK: 0.13, detail: 32, jitter: 0.05,
+      tones: [['furWolfDark', 4], ['furWolf', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    fur_wolf_light: {
+      v1: 'fur_wolf_light', seed: 1222,
+      desc: 'WILDLIFE (WOLF-D1 v1.60). Wolf legs, belly, lower flanks, brows: pale buff-grey.',
+      albedo: 0.90, bgK: 0.16, detail: 32, jitter: 0.05,
+      tones: [['furWolfLight', 4], ['furWolf', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    // QM-SLIM (v1.57, design/models/quest_mark.js; palette.js v1 records of the same key): the slim quest-sign gold.
+    mark_gold: {
+      v1: 'mark_gold', seed: 1201,
+      desc: 'QUEST MARK (QM-SLIM). Gold body of the floating ! / ? sign, emissive 0.40.',
+      albedo: 1.00, bgK: 0.22, detail: 40, jitter: 0.04,
+      tones: [['gold', 4], ['brassLight', 1]],
+      grid: { u: 0.035, v: 0.035, stagger: 0, lines: false },
+      face: { set: 'brassFace', mid: 'brassFace', far: 'brassFace' },
+      lod: { mid: 12, far: 25, dither: 3 }, emissive: 0.40
+    },
+    mark_shine: {
+      v1: 'mark_shine', seed: 1202,
+      desc: 'QUEST MARK (QM-SLIM). Polished shine edge of the sign strokes, emissive 0.45.',
+      albedo: 1.00, bgK: 0.24, detail: 40, jitter: 0.04,
+      tones: [['brassHot', 3], ['white', 1]],
+      grid: { u: 0.035, v: 0.035, stagger: 0, lines: false },
+      face: { set: 'brassFace', mid: 'brassFace', far: 'brassFace' },
+      lod: { mid: 12, far: 25, dither: 3 }, emissive: 0.45
+    },
+    // BEAR-D1 (D-069): black bear coat (palette.js v1 records of the same keys)
+    fur_bear: {
+      v1: 'fur_bear', seed: 1223,
+      desc: 'WILDLIFE (BEAR-D1). Black bear coat: near-black.',
+      albedo: 0.70, bgK: 0.13, detail: 32, jitter: 0.06,
+      tones: [['furBear', 4], ['furBearDark', 1], ['furBearSheen', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    fur_bear_dark: {
+      v1: 'fur_bear_dark', seed: 1224,
+      desc: 'WILDLIFE (BEAR-D1). Black bear ridge, legs, paws, belly shadow.',
+      albedo: 0.62, bgK: 0.12, detail: 32, jitter: 0.05,
+      tones: [['furBearDark', 4], ['furBear', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
+    },
+    fur_bear_sheen: {
+      v1: 'fur_bear_sheen', seed: 1225,
+      desc: 'WILDLIFE (BEAR-D1). Black bear lit guard-hair tips: blue-grey gloss.',
+      albedo: 0.84, bgK: 0.15, detail: 32, jitter: 0.05,
+      tones: [['furBearSheen', 4], ['furBear', 1]],
+      grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+      face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+      lod: { mid: 12, far: 25, dither: 3 }
     }
   };
 
@@ -1117,8 +1351,37 @@
     skin: 'skin', hair_dark: 'hair_dark',
     // HAND-ART-01 / HAND-BURN-01 (design/models/hand.js), same key in both files.
     skin_light: 'skin_light', skin_shade: 'skin_shade', skin_nail: 'skin_nail', skin_glow: 'skin_glow', skin_char: 'skin_char',
-    flame_tip: 'flame_tip'
+    flame_tip: 'flame_tip',
+    // HAND-FIRE-02 (v1.52), same key in both files.
+    skin_flush: 'skin_flush', skin_deep: 'skin_deep', skin_vein: 'skin_vein', flame_mid: 'flame_mid',
+    // EP-WILD (v1.53, design/models/voxel_wildlife.js), same key in both files.
+    fur_agouti: 'fur_agouti', fur_agouti_dark: 'fur_agouti_dark', fur_agouti_light: 'fur_agouti_light', fur_cream: 'fur_cream',
+    fur_roe: 'fur_roe', fur_roe_dark: 'fur_roe_dark', fur_roe_light: 'fur_roe_light', antler: 'antler',
+    fur_fox: 'fur_fox', fur_fox_light: 'fur_fox_light',   // EP-WILD step 2 (v1.58)
+    fur_wolf: 'fur_wolf', fur_wolf_dark: 'fur_wolf_dark', fur_wolf_light: 'fur_wolf_light',   // WOLF-D1 (v1.60)
+    // QM-SLIM (v1.57, design/models/quest_mark.js), same key in both files.
+    mark_gold: 'mark_gold', mark_shine: 'mark_shine'
   };
+  // CHARGEN-01 (v1.54): one v2 record (+ remap k -> k) per key appended by palette.js `chargen.newMaterials`
+  // (skin tones, hair, eyes, natural dyes). Generated from the same table, so the two files cannot drift.
+  // Seeds 930 + i in table order; 2.5 cm grid (the character cell).
+  (function () {
+    var list = (P.chargen && P.chargen.newMaterials) || [], i, r;
+    for (i = 0; i < list.length; i++) {
+      r = list[i];
+      if (materials[r.key]) continue;
+      materials[r.key] = {
+        v1: r.key, seed: 930 + i, desc: r.desc,
+        albedo: r.albedo, bgK: r.bgK, detail: 32, jitter: r.kind === 'eye' ? 0.02 : 0.04,
+        tones: r.emissive ? [[r.color, 3], [r.accent, 1], ['flameOuter', 1]] : [[r.color, 4], [r.accent, 1]],
+        grid: { u: 0.025, v: 0.025, stagger: 0, lines: false },
+        face: { set: 'fabricFace', mid: 'fabricFace', far: 'fabricFace' },
+        lod: { mid: 12, far: 25, dither: 3 }
+      };
+      if (r.emissive) materials[r.key].emissive = r.emissive;
+      remap[r.key] = r.key;
+    }
+  })();
   // Proposed level data changes (NOT applied: game/js/world/levels/test_room.js belongs to the programmer).
   // kind -> { v1 key -> v2 key }. test_room ceilings are 'stone' today, identical to its walls.
   var levelOverrides = {
@@ -1273,10 +1536,13 @@
     var oct = tpc >= 4 ? -3 : tpc >= 2 ? -2 : tpc >= 1 ? -1 : tpc >= 0.5 ? 0 : tpc >= 0.25 ? 1 : 2;
     var ds = base * OCT_POW2[oct + 3];
     var ax, ay;
-    if (g) { ax = bix; ay = course; }
+    // GRID-TEXEL-GLYPH-01: grid.glyph 'texel' keys hA/hC on the octave texel; jit keeps the block die hJ
+    var gTexel = g && g.glyph === 'texel';
+    if (g && !gTexel) { ax = bix; ay = course; }
     else { ax = Math.floor(u * ds * 0.5); ay = Math.floor(v * ds * 0.5); }
     var btx = Math.floor(u * base), bty = Math.floor(v * base);
     var hA = hash(ax, ay, m.seed), hB = hash(btx, bty, m.seed + 7), hC = hash(ax, ay, m.seed + 13);
+    var hJ = gTexel ? hash(bix, course, m.seed) : hA;
     var hBlock = hash(bix, course, m.seed + 3);
 
     // --- tone (per block) ---
@@ -1362,7 +1628,7 @@
     var fk = F.faces ? (faceShade[s.normal] || 1) : 1;
     var aok = 1;
     if (F.ao && s.aoD != null && s.aoD < ao.r) aok = ao.k + (1 - ao.k) * smoothstep(0, ao.r, s.aoD);
-    var jit = F.tones ? 1 + (m.jitter || 0) * (hA * 2 - 1) : 1;
+    var jit = F.tones ? 1 + (m.jitter || 0) * (hJ * 2 - 1) : 1;
     var b = Lm * m.albedo * shadeK * fk * aok * jit + (m.emissive || 0);
     var lift = F.lift ? shading.lift : 0;
     var gb = b < shading.cutoff ? 0 : lift + (1 - lift) * Math.min(b, 1);

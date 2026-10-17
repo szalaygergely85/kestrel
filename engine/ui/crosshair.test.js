@@ -12,7 +12,6 @@ import { createUiLayer, GLYPH_BG_ALPHA } from './uiLayer.js';
 import { drawCrosshair } from './crosshair.js';
 import { CellBuffer } from '../render/CellBuffer.js';
 import { RenderTargetCanvas2D } from '../render/RenderTargetCanvas2D.js';
-import { FRAGMENT_SRC } from '../render/RenderTargetGL.js';
 import { makeOk } from '../test/assert.js';
 
 let pass = 0, fail = 0;
@@ -97,6 +96,36 @@ const style = {
   ok('prompt: crosshair stays glyph-only (128)', bgAlphaAt(ui, cx, cy) === GLYPH_BG_ALPHA);
 }
 
+// ---- OB-051: prompt.scale 2 ----
+{
+  const text = '[E] Take lamp';
+  const s2 = { ...style, prompt: { ...style.prompt, scale: 2 } };
+  const ui = createUiLayer({ cols: 160, rows: 60 });
+  drawCrosshair(ui, s2, { targetKey: 'E', prompt: text });
+  const cx = ui.cols >> 1, cy = ui.rows >> 1;
+  const px = (cx - text.length) & ~1, py = (cy + 3) & ~1;
+  ok('scale2: even origin', px % 2 === 0 && py % 2 === 0);
+  let rowCells = 0, flagged = 0, minX = 999, maxX = -1, onlyRows = true;
+  for (let y = 0; y < ui.rows; y++) for (let x = 0; x < ui.cols; x++) {
+    if (!maskAt(ui, x, y) || bgAlphaAt(ui, x, y) === GLYPH_BG_ALPHA) continue;
+    if (y !== py && y !== py + 1) onlyRows = false;
+    rowCells++; if (ui.cells.fg[(y * ui.cols + x) * 4 + 3] & 128) flagged++;
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+  }
+  ok('scale2: opaque cells only on rows py,py+1', onlyRows);
+  ok('scale2: width 2*len, all flagged', rowCells === 2 * 2 * text.length && flagged === rowCells && minX === px && maxX === px + 2 * text.length - 1);
+  ok('scale2: never overlaps cross cell', py > cy + 1 && bgAlphaAt(ui, cx, cy) === GLYPH_BG_ALPHA);
+  ok('scale2: key colour on first block', fgAt(ui, px, py)[0] === 255 && fgAt(ui, px + 6, py)[0] === 0xcc);
+  // scale 1 / absent stays exactly as before; a plain RT falls back to 1x
+  const ui1 = createUiLayer({ cols: 160, rows: 60 });
+  drawCrosshair(ui1, { ...style, prompt: { ...style.prompt, scale: 1 } }, { targetKey: 'E', prompt: text });
+  const p1 = cx - (text.length >> 1);
+  ok('scale1: unchanged layout (cy+2, no flag)', maskAt(ui1, p1, cy + 2) === 1 && (ui1.cells.fg[((cy + 2) * ui1.cols + p1) * 4 + 3] & 128) === 0);
+  const cb = new CellBuffer(160, 60);
+  drawCrosshair(Object.assign(cb, { setGlyph() {} }), s2, { targetKey: 'E', prompt: text });
+  ok('scale2 on non-UI rt falls back to 1x', cb.mask[(cy + 2) * 160 + p1] === 1);
+}
+
 // ---- Canvas2D present path: glyph-only keeps the scene bg, opaque replaces ----
 {
   const ui = createUiLayer({ cols: 160, rows: 60 });
@@ -118,18 +147,6 @@ const style = {
   const oi = 5 * ui.cols + 5, ofi = oi * 4;
   ok('canvas2d: opaque cell replaces the bg',
     rt.cells.bg[ofi] === 0x11 && rt.cells.bg[ofi + 1] === 0x22 && rt.cells.bg[ofi + 2] === 0x33 && rt.cells.bg[ofi + 3] === 255);
-}
-
-// ---- GL present path (source-string, glsl.test.js's technique) ----
-{
-  const alpha128 = 128 / 255, alpha255 = 255 / 255;
-  ok('GL: 128/255 (bg alpha) falls in the glyph-only band [0.5, 0.75)', alpha128 >= 0.5 && alpha128 < 0.75);
-  ok('GL: 255/255 (bg alpha) stays in the opaque band (>= 0.75)', alpha255 >= 0.75);
-  ok('GL: transparent cells (bg.a < 0.5) still discard', FRAGMENT_SRC.includes('if (uLayer == 1 && bg.a < 0.5) discard;'));
-  ok('GL: glyph-only branch gates on bg.a < 0.75', FRAGMENT_SRC.includes('if (uLayer == 1 && bg.a < 0.75)'));
-  ok('GL: glyph-only discards where glyph coverage < 0.5 (scene shows through)', FRAGMENT_SRC.includes('if (a < 0.5) discard;'));
-  ok('GL: glyph-only outputs only fg over the scene (no bg box)', FRAGMENT_SRC.includes('fragColor = vec4(fg.rgb, 1.0);'));
-  ok('GL: opaque cells still mix bg<->fg by coverage', FRAGMENT_SRC.includes('fragColor = vec4(mix(bg.rgb, fg.rgb, a), 1.0);'));
 }
 
 console.log(`crosshair.test.js: ${pass} passed, ${fail} failed`);

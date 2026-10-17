@@ -30,6 +30,8 @@ import { DRAW_TERRAIN } from './DrawList.js';
 export const FAR_TILE_QUADS = 32;
 /** LOD1 far tiles keep every 4th vertex column/row (32 m effective spacing). */
 export const FAR_LOD1_STEP = 4;
+/** COAST-LOD (TEASER-QA-06): LOD1 step (16 m) for far tiles near a feature, see `farLod1StepFor`. */
+export const FAR_LOD1_STEP_FINE = 2;
 /** Far tiles within this 2D distance of the eye draw at LOD0 (8 m); beyond it, LOD1. */
 export const RING0_M = 512;
 
@@ -152,7 +154,7 @@ function fillFarLevel(terrain, level, cell, pos, nrm, idx, vertBase, idxMainOff,
     for (let cp = 0; cp < nc; cp++) {
       const i = cols[cp];
       const vi = vertBase + cp + rp * nc;
-      const x = (i + 0.5) * cell, y = (j + 0.5) * cell;
+      const x = terrain.mapX0 + (i + 0.5) * cell, y = terrain.mapY0 + (j + 0.5) * cell;
       const z = terrain.farHDraw[i + j * terrain.mapW];
       pos[vi * 3] = x; pos[vi * 3 + 1] = y; pos[vi * 3 + 2] = z;
       farNormalAt(terrain, x, y, scratchN);
@@ -174,7 +176,7 @@ function fillFarLevel(terrain, level, cell, pos, nrm, idx, vertBase, idxMainOff,
   for (let k = 0; k < perim.length; k++) {
     const cp = perim[k][0], rp = perim[k][1];
     const i = cols[cp], j = rows[rp];
-    const x = (i + 0.5) * cell, y = (j + 0.5) * cell;
+    const x = terrain.mapX0 + (i + 0.5) * cell, y = terrain.mapY0 + (j + 0.5) * cell;
     const topI = vertBase + cp + rp * nc;
     const bi = bottomBase + k;
     pos[bi * 3] = x; pos[bi * 3 + 1] = y; pos[bi * 3 + 2] = skirtZ;
@@ -219,11 +221,21 @@ function fillFarTile(terrain, lod0, lod1, pos, nrm, idx, bb) {
   bb[0] = x0; bb[1] = y0; bb[2] = z0; bb[3] = x1; bb[4] = y1; bb[5] = z1;
 }
 
+/** COAST-LOD (TEASER-QA-06): LOD1 step of a far tile, fixed at tile build (no runtime switching). Fine (`FAR_LOD1_STEP_FINE`, 16 m) when the recipe's generic `geo.farDetail = {distAt(x, y), radius}` puts the tile (4 corners + centre) within `radius` of a feature (|distAt| < radius, e.g. the coast); every other tile keeps `FAR_LOD1_STEP`. The field comes from the recipe: the engine stays game-agnostic. */
+function farLod1StepFor(terrain, desc) {
+  const fd = terrain.recipe && terrain.recipe.geo && terrain.recipe.geo.farDetail;
+  if (!fd || typeof fd.distAt !== 'function') return FAR_LOD1_STEP;
+  const r = desc.worldRect, cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
+  const pts = [r.x0, r.y0, r.x1, r.y0, r.x0, r.y1, r.x1, r.y1, cx, cy];
+  for (let k = 0; k < 10; k += 2) if (Math.abs(fd.distAt(pts[k], pts[k + 1])) < fd.radius) return FAR_LOD1_STEP_FINE;
+  return FAR_LOD1_STEP;
+}
+
 /** Builds one far tile's MeshData (LOD0 + LOD1, both with skirts) once. Index layout is FIXED forever (`ranges` never change size): band-under exclusion (`applyFarExclusion`) only ever rewrites LOD0 main-quad index VALUES in place (real quad <-> degenerate 0,0,0 triangle), never resizes anything.
  * @returns {FarTileMesh} */
 function buildFarTileMesh(terrain, desc) {
   const lod0 = buildFarLodLayout(desc, 1);
-  const lod1 = buildFarLodLayout(desc, FAR_LOD1_STEP);
+  const lod1 = buildFarLodLayout(desc, farLod1StepFor(terrain, desc));
   const nc0 = lod0.cols.length, nr0 = lod0.rows.length, perim0 = lod0.perim.length;
   const nc1 = lod1.cols.length, nr1 = lod1.rows.length, perim1 = lod1.perim.length;
   const vCount0 = nc0 * nr0 + perim0, vCount1 = nc1 * nr1 + perim1;
@@ -257,6 +269,43 @@ function buildFarTileMesh(terrain, desc) {
   return mesh;
 }
 
+// ---------------------------------------------------------------------------
+// Sea horizon skirt (MAP-06a, architecture.md 38.42 Skyline)
+// ---------------------------------------------------------------------------
+
+/**
+ * One flat quad per sea-side edge of the far grid ('n' | 's' | 'w' | 'e' in `recipe.geo.seaSides`), reaching
+ * `recipe.geo.seaSkirtM` metres out from the edge at `recipe.geo.seaLevel` (the strip is widened by the same amount along
+ * the edge so corners leave no gap). 4 verts + 2 tris per side, fixed layout, never excluded by the near band.
+ * `typeAt` reports sea (type 2) inside it. Returns [] when the recipe has no sea skirt (today's worlds).
+ * @returns {{mesh: Object, rect: {x0:number,y0:number,x1:number,y1:number}}[]}
+ */
+export function buildSeaSkirts(terrain) {
+  const geo = terrain.recipe && terrain.recipe.geo;
+  if (!geo || !(geo.seaSkirtM > 0) || !Number.isFinite(geo.seaLevel) || !Array.isArray(geo.seaSides)) return [];
+  const M = geo.seaSkirtM, z = geo.seaLevel, c = terrain.mapCell;
+  const gx0 = terrain.mapX0, gy0 = terrain.mapY0, gx1 = gx0 + terrain.mapW * c, gy1 = gy0 + terrain.mapH * c;
+  const out = [];
+  for (const side of geo.seaSides) {
+    let x0 = gx0 - M, x1 = gx1 + M, y0 = gy0 - M, y1 = gy1 + M;
+    if (side === 'n') y1 = gy0; else if (side === 's') y0 = gy1; else if (side === 'w') x1 = gx0; else if (side === 'e') x0 = gx1;
+    else throw new Error('terrainMesh: geo.seaSides entry must be n|s|w|e, got ' + side);
+    const pos = new Float32Array([x0, y0, z, x1, y0, z, x1, y1, z, x0, y1, z]);
+    const n = packNormalOct(0, 0, 1);
+    out.push({
+      rect: { x0, y0, x1, y1 },
+      mesh: {
+        version: /** @type {1} */ (1), id: 'terrain:skirt' + side, layout: /** @type {'terrain'} */ ('terrain'),
+        pos, uv: new Float32Array(0), nrm: new Uint32Array([n, n, n, n]), flat: new Uint32Array(0), aux: new Float32Array(0),
+        idx: new Uint32Array([0, 1, 2, 0, 2, 3]), triCount: 2,
+        bbox: new Float64Array([x0, y0, z, x1, y1, z]),
+        ranges: [{ start: 0, count: 2 }], matKeys: [], matsResolved: true, meshVersion: 1,
+      },
+    });
+  }
+  return out;
+}
+
 /** Sets far tile `mesh`'s LOD0 main quad `(qx, qy)` (tile-local, 0-based) real or degenerate (0,0,0 - zero area, `rasterFanTri`'s `A2 === 0` skips it for free). */
 function setFarMainQuad0(mesh, qx, qy, real) {
   const nc0 = mesh._lod0.cols.length;
@@ -281,9 +330,9 @@ function setFarSkirt0(mesh, k, real) {
 }
 
 /** True iff far quad `(i, j)` (world rect `[8i+4, 8i+12] x [8j+4, 8j+12]`) intersects the near band's OPEN surface rectangle. */
-function farQuadUnderBand(cell, i, j, bandRect) {
-  const qx0 = cell * i + cell / 2, qx1 = cell * (i + 1) + cell / 2;
-  const qy0 = cell * j + cell / 2, qy1 = cell * (j + 1) + cell / 2;
+function farQuadUnderBand(cell, i, j, bandRect, ox = 0, oy = 0) { // ox/oy = far grid origin (MAP-01b)
+  const qx0 = ox + cell * i + cell / 2, qx1 = ox + cell * (i + 1) + cell / 2;
+  const qy0 = oy + cell * j + cell / 2, qy1 = oy + cell * (j + 1) + cell / 2;
   return qx0 < bandRect.x1 && qx1 > bandRect.x0 && qy0 < bandRect.y1 && qy1 > bandRect.y0;
 }
 
@@ -295,7 +344,7 @@ function applyFarExclusion(terrain, mesh, bandRect) {
   for (let qy = 0; qy < nr0 - 1; qy++) {
     for (let qx = 0; qx < nc0 - 1; qx++) {
       const i = lod0.cols[qx], j = lod0.rows[qy];
-      const under = bandRect && farQuadUnderBand(cell, i, j, bandRect);
+      const under = bandRect && farQuadUnderBand(cell, i, j, bandRect, terrain.mapX0, terrain.mapY0);
       setFarMainQuad0(mesh, qx, qy, !under);
     }
   }
@@ -307,7 +356,7 @@ function applyFarExclusion(terrain, mesh, bandRect) {
   for (let k = 0; k < perimLen; k++) {
     const p0 = perim[k], p1 = perim[(k + 1) % perimLen];
     const qx = Math.min(p0[0], p1[0], nc0 - 2), qy = Math.min(p0[1], p1[1], nr0 - 2);
-    const under = bandRect && farQuadUnderBand(cell, lod0.cols[qx], lod0.rows[qy], bandRect);
+    const under = bandRect && farQuadUnderBand(cell, lod0.cols[qx], lod0.rows[qy], bandRect, terrain.mapX0, terrain.mapY0);
     setFarSkirt0(mesh, k, !under);
   }
   mesh.meshVersion++;
@@ -403,7 +452,19 @@ function pushTerrainItem(list, mesh, ox, oy, oz, objectId, rangeIdx) {
 function distToRectXY(cx, cy, x0, y0, x1, y1) {
   const nx = Math.min(Math.max(cx, x0), x1);
   const ny = Math.min(Math.max(cy, y0), y1);
-  return Math.hypot(cx - nx, cy - ny);
+  return hypot2(cx - nx, cy - ny);
+}
+
+// PERF-08: bit-exact copy of V8's 2-arg Math.hypot (PERF-07: 10M-pair compare 0 diffs). The variadic builtin boxes its
+// arguments/result (~140 MB / 60 s walk in the shadow-list build); this one stays on unboxed doubles when inlined.
+function hypot2(a, b) {
+  a = a < 0 ? -a : a; b = b < 0 ? -b : b;
+  if (a === Infinity || b === Infinity) return Infinity;
+  if (a !== a || b !== b) return NaN;
+  const m = a > b ? a : b;
+  if (m === 0) return 0;
+  const na = a / m, nb = b / m;
+  return Math.sqrt(na * na + nb * nb) * m;
 }
 
 // ---------------------------------------------------------------------------
@@ -421,6 +482,8 @@ function distToRectXY(cx, cy, x0, y0, x1, y1) {
  * (LOD0/LOD1, band-under quads carved out). See docs/architecture.md 27.15.5
  * for the full spec this is built against.
  */
+const EMPTY = Object.freeze([]);
+
 export class TerrainMeshSet {
   /**
    * @param {import('../world/Terrain.js').Terrain} terrain
@@ -436,40 +499,16 @@ export class TerrainMeshSet {
     if (chunkSize % nearCell !== 0) throw new Error(`TerrainMeshSet: chunkSize (${chunkSize}) must be a multiple of nearCell (${nearCell})`);
     if (chunkSize % farCell !== 0) throw new Error(`TerrainMeshSet: chunkSize (${chunkSize}) must be a multiple of the far cell (${farCell})`);
     const n = chunkSize / nearCell;
-    const bandW = 3 * n;
-    if (terrain.near) {
-      const g = terrain.near;
-      if (g.w !== bandW || g.h !== bandW) throw new Error(`TerrainMeshSet: terrain.near is ${g.w}x${g.h}, expected ${bandW}x${bandW} (3 * chunkSize/nearCell)`);
-      if (g.x0 % farCell !== 0 || g.y0 % farCell !== 0) throw new Error('TerrainMeshSet: terrain.near.x0/y0 must be multiples of the far cell');
+    this._n = n;
+    this._nearVersion = 1; // one counter for both near sets (they share ids) - see `_publishNear`
+    // WS1-02: the chunk grid follows the baked band (cw x ch chunks, default 3x3); re-laid out if a later band has other dims.
+    const g0 = terrain.near;
+    if (g0) {
+      if (g0.w % n !== 0 || g0.h % n !== 0) throw new Error(`TerrainMeshSet: terrain.near is ${g0.w}x${g0.h}, not a multiple of ${n} (chunkSize/nearCell)`);
+      if (g0.x0 % farCell !== 0 || g0.y0 % farCell !== 0) throw new Error('TerrainMeshSet: terrain.near.x0/y0 must be multiples of the far cell');
     }
-    this._bandW = bandW;
+    this._layout(g0 ? g0.w / n : 3, g0 ? g0.h / n : 3);
 
-    // Chunk (kx) column bounds: [n*kx, min(n*kx+n, bandW-1)] - the shared
-    // boundary column/row is duplicated across neighbours (watertight by
-    // construction: both read the SAME `hDraw`/normal value there).
-    this._chunkCol = [];
-    for (let k = 0; k < 3; k++) {
-      const start = n * k, end = Math.min(n * k + n, bandW - 1);
-      this._chunkCol.push({ start, end, count: end - start + 1 });
-    }
-    this._chunkRow = this._chunkCol; // square band
-
-    /** @type {NearChunkMesh[]} */
-    this._nearA = new Array(9);
-    /** @type {NearChunkMesh[]} */
-    this._nearB = new Array(9);
-    for (let ky = 0; ky < 3; ky++) {
-      for (let kx = 0; kx < 3; kx++) {
-        const i9 = ky * 3 + kx;
-        const cc = this._chunkCol[kx].count, rc = this._chunkRow[ky].count;
-        const idxBuf = buildGridIndex(cc, rc); // shared topology - same idx array reused by both buffers
-        this._nearA[i9] = makeNearChunkMesh(`terrain:near${i9}`, cc, rc, idxBuf);
-        this._nearB[i9] = makeNearChunkMesh(`terrain:near${i9}`, cc, rc, idxBuf);
-      }
-    }
-    /** @type {NearChunkMesh[]} published (front) near chunks - `addToDrawList` reads this. */
-    this.near = this._nearA;
-    /** One counter for both near sets (they share ids) - see `_publishNear`. */
     this._nearVersion = 1;
 
     /** @type {MeshData} */
@@ -490,7 +529,7 @@ export class TerrainMeshSet {
           tx, ty, colStart, colEnd, colCount: colEnd - colStart + 1,
           rowStart, rowEnd, rowCount: rowEnd - rowStart + 1,
           tileIndex: ty * tilesX + tx,
-          worldRect: { x0: colStart * cell, y0: rowStart * cell, x1: (colEnd + 1) * cell, y1: (rowEnd + 1) * cell },
+          worldRect: { x0: terrain.mapX0 + colStart * cell, y0: terrain.mapY0 + rowStart * cell, x1: terrain.mapX0 + (colEnd + 1) * cell, y1: terrain.mapY0 + (rowEnd + 1) * cell },
         });
       }
     }
@@ -505,16 +544,57 @@ export class TerrainMeshSet {
     this._builtFor = null;      // the `near` object the PUBLISHED (front) set matches
     this._buildingFor = null;   // the `near` object currently being built into the back set
     this._buildRow = 0;
-    this._bandNrm = new Float32Array(bandW * bandW * 3); // scratch: per-band-vertex normal, filled row by row
     this._scratchN = { x: 0, y: 0, z: 1 };
     // Far-tile scratch for _updateFarExclusion (avoids a per-call array literal).
     this._farOrder = new Int32Array(this._farTiles.length);
     this._farDist = new Float64Array(this._farTiles.length);
 
+    /** MAP-06a: sea horizon skirts ([] = none); drawn after the far tiles, not subject to `fogFullM` (they reach `geo.seaSkirtM`). */
+    this.skirts = buildSeaSkirts(terrain);
+
     this.pending = !!terrain.near; // a near band already present at construction still needs its first mesh build
   }
 
   // -- near band --------------------------------------------------------
+
+  /** (Re)build the near chunk grid for a `cw x ch`-chunk band: column/row bounds, front/back chunk meshes, normal scratch. */
+  _layout(cw, ch) {
+    const n = this._n, bandW = cw * n, bandH = ch * n;
+    this._cw = cw; this._ch = ch;
+    // Chunk (kx) column bounds: [n*kx, min(n*kx+n, bandW-1)] - the shared boundary column/row is duplicated
+    // across neighbours (watertight by construction: both read the SAME `hDraw`/normal value there).
+    this._chunkCol = [];
+    for (let k = 0; k < cw; k++) {
+      const start = n * k, end = Math.min(n * k + n, bandW - 1);
+      this._chunkCol.push({ start, end, count: end - start + 1 });
+    }
+    this._chunkRow = [];
+    for (let k = 0; k < ch; k++) {
+      const start = n * k, end = Math.min(n * k + n, bandH - 1);
+      this._chunkRow.push({ start, end, count: end - start + 1 });
+    }
+    const total = cw * ch;
+    /** @type {NearChunkMesh[]} */
+    this._nearA = new Array(total);
+    /** @type {NearChunkMesh[]} */
+    this._nearB = new Array(total);
+    for (let ky = 0; ky < ch; ky++) {
+      for (let kx = 0; kx < cw; kx++) {
+        const i9 = ky * cw + kx;
+        const cc = this._chunkCol[kx].count, rc = this._chunkRow[ky].count;
+        const idxBuf = buildGridIndex(cc, rc); // shared topology - same idx array reused by both buffers
+        this._nearA[i9] = makeNearChunkMesh(`terrain:near${i9}`, cc, rc, idxBuf);
+        this._nearB[i9] = makeNearChunkMesh(`terrain:near${i9}`, cc, rc, idxBuf);
+      }
+    }
+    /** @type {NearChunkMesh[]} published (front) near chunks - `addToDrawList` reads this. */
+    this.near = this._nearA;
+    this._builtFor = null; this._buildingFor = null; this._buildRow = 0;
+    this._bandNrm = new Float32Array(bandW * bandH * 3); // scratch: per-band-vertex normal, filled row by row
+    this._chunkZ = new Float64Array(total * 2); // PERF-06: per back chunk [minZ, maxZ], accumulated row by row
+    // Draw-list keys: near chunks 0..total-1, stitch = total (9 for 3x3), far tiles from `_farKey0` (16 for 3x3)
+    this._farKey0 = Math.max(16, total + 1);
+  }
 
   _buildRowData(j) {
     const g = this._buildingFor;
@@ -528,46 +608,52 @@ export class TerrainMeshSet {
       const o3 = (rowBase + i) * 3;
       this._bandNrm[o3] = sN.x; this._bandNrm[o3 + 1] = sN.y; this._bandNrm[o3 + 2] = sN.z;
     }
+    this._fillBackRow(g, j);
   }
 
+  /** PERF-06: copies band row `j` (height, packed normal, local xy) into every BACK chunk that holds it and grows that chunk's
+   * z range - the vertex fill `_publishNear` used to do for the whole band in the flip frame (13 ms), now spread over the
+   * budgeted row build. The back set is never drawn before `_publishNear` flips it, so writing it early is invisible. */
+  _fillBackRow(g, j) {
+    const back = this.near === this._nearA ? this._nearB : this._nearA, cz = this._chunkZ, cw = this._cw;
+    if (j === 0) for (let k = 0; k < cz.length; k += 2) { cz[k] = Infinity; cz[k + 1] = -Infinity; }
+    for (let ky = 0; ky < this._ch; ky++) {
+      const rowInfo = this._chunkRow[ky];
+      if (j < rowInfo.start || j > rowInfo.end) continue; // shared boundary rows belong to two chunk rows
+      const lj = j - rowInfo.start, ly = (lj + 0.5) * g.cell;
+      for (let kx = 0; kx < cw; kx++) {
+        const i9 = ky * cw + kx, mesh = back[i9], colInfo = this._chunkCol[kx], cc = colInfo.count;
+        const pos = mesh.pos, nrm = mesh.nrm, bn = this._bandNrm;
+        let minZ = cz[i9 * 2], maxZ = cz[i9 * 2 + 1];
+        for (let li = 0; li < cc; li++) {
+          const srcIdx = colInfo.start + li + j * g.w, dstV = li + lj * cc, z = g.hDraw[srcIdx];
+          // Band vertex (i, j) sits at the CELL CENTRE `x0 + (i + 0.5) cell` (27.15.5) - the same sample point
+          // `util.gridHeight`'s bilinear, the far tiles and the stitch ring use (architect fix ME-06: was the cell corner).
+          pos[dstV * 3] = (li + 0.5) * g.cell; pos[dstV * 3 + 1] = ly; pos[dstV * 3 + 2] = z;
+          const nOff = srcIdx * 3;
+          nrm[dstV] = packNormalOct(bn[nOff], bn[nOff + 1], bn[nOff + 2]);
+          if (z < minZ) minZ = z;
+          if (z > maxZ) maxZ = z;
+        }
+        cz[i9 * 2] = minZ; cz[i9 * 2 + 1] = maxZ;
+      }
+    }
+  }
+
+  /** Flips the back chunk set (vertices already filled row by row in `_fillBackRow`): origin, bbox, version only. */
   _publishNear(g) {
-    const back = this.near === this._nearA ? this._nearB : this._nearA;
-    for (let ky = 0; ky < 3; ky++) {
-      for (let kx = 0; kx < 3; kx++) {
-        const i9 = ky * 3 + kx;
+    const back = this.near === this._nearA ? this._nearB : this._nearA, cz = this._chunkZ;
+    for (let ky = 0; ky < this._ch; ky++) {
+      for (let kx = 0; kx < this._cw; kx++) {
+        const i9 = ky * this._cw + kx;
         const mesh = back[i9];
         const colInfo = this._chunkCol[kx], rowInfo = this._chunkRow[ky];
         const cc = colInfo.count, rc = rowInfo.count;
-        const ox = g.x0 + colInfo.start * g.cell, oy = g.y0 + rowInfo.start * g.cell;
-        mesh._origin.x = ox; mesh._origin.y = oy; mesh._origin.z = 0;
-        let minZ = Infinity, maxZ = -Infinity;
-        for (let lj = 0; lj < rc; lj++) {
-          const gj = rowInfo.start + lj;
-          for (let li = 0; li < cc; li++) {
-            const gi = colInfo.start + li;
-            const srcIdx = gi + gj * g.w;
-            const z = g.hDraw[srcIdx];
-            const dstV = li + lj * cc;
-            // Band vertex (i, j) sits at the CELL CENTRE `x0 + (i + 0.5) cell`
-            // (27.15.5) - the same sample point `util.gridHeight`'s bilinear
-            // (`fx = x/cell - 0.5`), the far tiles and the stitch ring use.
-            // Architect fix (ME-06): this was `li * cell` (cell corner), a
-            // 1 m shift of the whole band vs the DDA oracle and the stitch.
-            mesh.pos[dstV * 3] = (li + 0.5) * g.cell;
-            mesh.pos[dstV * 3 + 1] = (lj + 0.5) * g.cell;
-            mesh.pos[dstV * 3 + 2] = z;
-            const nOff = srcIdx * 3;
-            mesh.nrm[dstV] = packNormalOct(this._bandNrm[nOff], this._bandNrm[nOff + 1], this._bandNrm[nOff + 2]);
-            if (z < minZ) minZ = z;
-            if (z > maxZ) maxZ = z;
-          }
-        }
-        mesh.bbox[0] = 0.5 * g.cell; mesh.bbox[1] = 0.5 * g.cell; mesh.bbox[2] = minZ;
-        mesh.bbox[3] = (cc - 0.5) * g.cell; mesh.bbox[4] = (rc - 0.5) * g.cell; mesh.bbox[5] = maxZ;
-        // Architect fix (ME-06): front/back chunks share one `id` (the GPU
-        // cache key, MeshBuffers.js) so the version must be unique across
-        // BOTH sets - a per-mesh `++` gave A and B the same numbers and the
-        // second flip re-used a stale vertex buffer.
+        mesh._origin.x = g.x0 + colInfo.start * g.cell; mesh._origin.y = g.y0 + rowInfo.start * g.cell; mesh._origin.z = 0;
+        mesh.bbox[0] = 0.5 * g.cell; mesh.bbox[1] = 0.5 * g.cell; mesh.bbox[2] = cz[i9 * 2];
+        mesh.bbox[3] = (cc - 0.5) * g.cell; mesh.bbox[4] = (rc - 0.5) * g.cell; mesh.bbox[5] = cz[i9 * 2 + 1];
+        // Architect fix (ME-06): front/back chunks share one `id` (the GPU cache key, MeshBuffers.js) so the version must be
+        // unique across BOTH sets - a per-mesh `++` gave A and B the same numbers and the second flip re-used a stale buffer.
         mesh.meshVersion = ++this._nearVersion;
       }
     }
@@ -576,7 +662,7 @@ export class TerrainMeshSet {
 
   _rebuildStitch(g) {
     const terrain = this.terrain, w = g.w;
-    const nearIJ = perimeterIJList(0, w - 1, 0, w - 1);
+    const nearIJ = perimeterIJList(0, w - 1, 0, g.h - 1);
     const nearVerts = new Array(nearIJ.length);
     for (let k = 0; k < nearIJ.length; k++) {
       const i = nearIJ[k][0], j = nearIJ[k][1];
@@ -589,12 +675,12 @@ export class TerrainMeshSet {
 
     const bandRect = this._bandRectFor(g);
     const cell = terrain.mapCell;
-    const iLo = Math.max(0, Math.floor(bandRect.x0 / cell) - 2), iHi = Math.min(terrain.mapW - 2, Math.ceil(bandRect.x1 / cell) + 2);
-    const jLo = Math.max(0, Math.floor(bandRect.y0 / cell) - 2), jHi = Math.min(terrain.mapH - 2, Math.ceil(bandRect.y1 / cell) + 2);
+    const iLo = Math.max(0, Math.floor((bandRect.x0 - terrain.mapX0) / cell) - 2), iHi = Math.min(terrain.mapW - 2, Math.ceil((bandRect.x1 - terrain.mapX0) / cell) + 2);
+    const jLo = Math.max(0, Math.floor((bandRect.y0 - terrain.mapY0) / cell) - 2), jHi = Math.min(terrain.mapH - 2, Math.ceil((bandRect.y1 - terrain.mapY0) / cell) + 2);
     let iMin = Infinity, iMax = -Infinity, jMin = Infinity, jMax = -Infinity;
     for (let j = jLo; j <= jHi; j++) {
       for (let i = iLo; i <= iHi; i++) {
-        if (farQuadUnderBand(cell, i, j, bandRect)) {
+        if (farQuadUnderBand(cell, i, j, bandRect, terrain.mapX0, terrain.mapY0)) {
           if (i < iMin) iMin = i; if (i > iMax) iMax = i;
           if (j < jMin) jMin = j; if (j > jMax) jMax = j;
         }
@@ -613,7 +699,7 @@ export class TerrainMeshSet {
     const sN = this._scratchN;
     for (let k = 0; k < farIJ.length; k++) {
       const i = farIJ[k][0], j = farIJ[k][1];
-      const x = (i + 0.5) * cell, y = (j + 0.5) * cell;
+      const x = terrain.mapX0 + (i + 0.5) * cell, y = terrain.mapY0 + (j + 0.5) * cell;
       farNormalAt(terrain, x, y, sN);
       farVerts[k] = { x, y, z: terrain.farHDraw[i + j * terrain.mapW], nx: sN.x, ny: sN.y, nz: sN.z };
     }
@@ -646,6 +732,7 @@ export class TerrainMeshSet {
     for (const k of this._excludedTileSet) if (!nextExcluded.has(k)) applyFarExclusion(this.terrain, this.far[k], null);
     for (const k of nextExcluded) applyFarExclusion(this.terrain, this.far[k], bandRect);
     this._excludedTileSet = nextExcluded;
+    this._exclRect = bandRect; // the rect the far grid is currently carved for (test/debug: must equal the published near rect)
   }
 
   // -- live terrain edits (ED-TERRAIN-1b, arch 37.12) ------------------------
@@ -674,13 +761,13 @@ export class TerrainMeshSet {
           this._bandNrm[o3] = sN.x; this._bandNrm[o3 + 1] = sN.y; this._bandNrm[o3 + 2] = sN.z;
         }
       }
-      for (let ky = 0; ky < 3; ky++) {
+      for (let ky = 0; ky < this._ch; ky++) {
         const rowInfo = this._chunkRow[ky];
         if (r.j1 < rowInfo.start || r.j0 > rowInfo.end) continue;
-        for (let kx = 0; kx < 3; kx++) {
+        for (let kx = 0; kx < this._cw; kx++) {
           const colInfo = this._chunkCol[kx];
           if (r.i1 < colInfo.start || r.i0 > colInfo.end) continue;
-          this._patchNearChunk(this.near[ky * 3 + kx], g, colInfo, rowInfo, r);
+          this._patchNearChunk(this.near[ky * this._cw + kx], g, colInfo, rowInfo, r);
         }
       }
       const m = 20; // samples (40 m): the far ring + far normals reach ~20 m past a rect
@@ -741,13 +828,17 @@ export class TerrainMeshSet {
       // grid (+ canopy) then pokes through the tower floor for those frames
       // (spawn pose kind 4 %). The hole is the lesser evil and matches the
       // DDA's own "no terrain until baked" transient.
-      if (terrain.near) this._updateFarExclusion(this._bandRectFor(terrain.near));
+      // WS2-03 (arch 38.38): on a band SWAP (a near mesh is already published) a far re-bake must carve for the
+      // PUBLISHED band, not the pending `terrain.near` - the exclusion moves only at `_publishNear`.
+      if (terrain.near) this._updateFarExclusion(this._builtFor ? this._bandRect : this._bandRectFor(terrain.near));
     }
 
     if (terrain.near && terrain.near !== this._builtFor) {
+      const nw = terrain.near.w / this._n, nh = terrain.near.h / this._n;
+      if (nw !== this._cw || nh !== this._ch) this._layout(nw, nh); // WS1-02: a band with other dims -> new chunk grid
       if (this._buildingFor !== terrain.near) { this._buildingFor = terrain.near; this._buildRow = 0; } // retarget: restart from row 0 on the newest `near`
-      const w = this._buildingFor.w;
-      while (this._buildRow < w) {
+      const h = this._buildingFor.h; // rows to build (was .w: wrong for non-square bands)
+      while (this._buildRow < h) {
         this._buildRowData(this._buildRow);
         this._buildRow++;
         if (now() - t0 >= msBudget) { this.pending = true; return true; }
@@ -769,14 +860,16 @@ export class TerrainMeshSet {
    * skipped beyond `fogFullM`) into `list`.
    * @param {import('./DrawList.js').DrawList} list
    * @param {{x:number,y:number,z:number}} cam
+   * @param {boolean} [noSkirt] MAP-06a: sun-shadow list - the flat sea skirt (the lowest surface) never casts
    */
-  addToDrawList(list, cam) {
-    for (let i = 0; i < 9; i++) {
+  addToDrawList(list, cam, noSkirt) {
+    const nNear = this._cw * this._ch;
+    for (let i = 0; i < nNear; i++) {
       const mesh = this.near[i];
       if (mesh.triCount === 0) continue;
       pushTerrainItem(list, mesh, mesh._origin.x, mesh._origin.y, mesh._origin.z, 0x7000 | i);
     }
-    if (this.stitch.triCount > 0) pushTerrainItem(list, this.stitch, 0, 0, 0, 0x7000 | 9);
+    if (this.stitch.triCount > 0) pushTerrainItem(list, this.stitch, 0, 0, 0, 0x7000 | nNear);
 
     const tiles = this._farTiles, order = this._farOrder, dist = this._farDist;
     // US-068b2 (38.19 risk d): ortho keys ring/fade distance on the FOCUS (the ortho eye sits 500 m behind it); perspective unchanged
@@ -801,7 +894,14 @@ export class TerrainMeshSet {
       const useLod0 = this._excludedTileSet.has(k) || dist[s] < RING0_M;
       const rangeIdx = useLod0 ? 0 : 1;
       if (mesh.ranges[rangeIdx].count === 0) continue;
-      pushTerrainItem(list, mesh, 0, 0, 0, 0x7000 | (16 + k), rangeIdx);
+      pushTerrainItem(list, mesh, 0, 0, 0, 0x7000 | (this._farKey0 + k), rangeIdx);
+    }
+    // MAP-06a: sea horizon skirts (<= 4), far to the camera's draw order end; culled only beyond their own reach
+    const sk = noSkirt ? EMPTY : this.skirts;
+    for (let s = 0; s < sk.length; s++) {
+      const r = sk[s].rect;
+      if (distToRectXY(rcx, rcy, r.x0, r.y0, r.x1, r.y1) > this.terrain.recipe.geo.seaSkirtM) continue;
+      pushTerrainItem(list, sk[s].mesh, 0, 0, 0, 0x7000 | (this._farKey0 + tiles.length + s));
     }
   }
 
@@ -817,8 +917,12 @@ export class TerrainMeshSet {
       const t = terrain._nearGridType(x, y);
       if (t !== null) return t;
     }
-    const ix = Math.floor(x / terrain.mapCell), iy = Math.floor(y / terrain.mapCell);
-    if (ix < 0 || iy < 0 || ix >= terrain.mapW || iy >= terrain.mapH) return 0;
+    const ix = Math.floor((x - terrain.mapX0) / terrain.mapCell), iy = Math.floor((y - terrain.mapY0) / terrain.mapCell);
+    if (ix < 0 || iy < 0 || ix >= terrain.mapW || iy >= terrain.mapH) {
+      const sk = this.skirts; // MAP-06a: off-grid inside a sea skirt = sea (type 2); else grass as before
+      for (let s = 0; s < sk.length; s++) { const r = sk[s].rect; if (x >= r.x0 && x < r.x1 && y >= r.y0 && y < r.y1) return 2; }
+      return 0;
+    }
     return terrain.farType[iy * terrain.mapW + ix];
   }
 }

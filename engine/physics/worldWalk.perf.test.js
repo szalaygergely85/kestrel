@@ -116,8 +116,14 @@ function makePlayer(x, y, z) {
   };
 }
 
+// WM-05/D-077: world_m1's real bound is now one far-away coast polygon; this walk needs a bound contact next to the
+// tower, so it uses a test-local polygon box around the old tower circle (same def otherwise).
+function m1Def() {
+  const w = assets.world('world_m1');
+  return { ...w, bounds: { shape: 'polygon', pts: [[1330, 930], [1700, 930], [1700, 1120], [1330, 1120]] } };
+}
 function loadWorld({ physics } = {}) {
-  const w = World.load(assets.world('world_m1'), assets, { physics });
+  const w = World.load(m1Def(), assets, { physics });
   return w;
 }
 
@@ -140,10 +146,9 @@ const toWorld = ([lx, ly]) => ({ x: TOWER_ORIGIN.x + lx, y: TOWER_ORIGIN.y + ly,
 // do-not list for game/js/quest/* - this is a physics probe, not that
 // module, but it still reads the real values off the loaded world below).
 function buildWaypoints(world) {
-  const b = world.bounds;
-  const terrainNear = { x: 1470, y: 1029 }; // real terrain, just past the breach/outcrop (outside the tower's 24x14 bbox)
+    const terrainNear = { x: 1470, y: 1029 }; // real terrain, just past the breach/outcrop (outside the tower's 24x14 bbox)
   const waystone = { x: 1428, y: 1040 }; // content/worlds/world_m1.world.json endMarker/trigger
-  const boundEdge = { x: b.x - (b.r + 5), y: b.y }; // past the walk bound, along -x from centre
+  const boundEdge = { x: 1320, y: 1040 }; // WS2-07: the road corridor now runs to the ford; walk north off it (capsule y 1047 - r 40 = 1007)
   return [
     ...routeLocal.map(toWorld), // ground floor -> stairs -> breach (structure interior)
     { x: terrainNear.x, y: terrainNear.y }, // onto real terrain, just past the breach
@@ -236,7 +241,7 @@ function walk(world, player, waypoints, steps, onStep) {
 // =============================================================================
 // Detailed run: full per-step timing + position report, worst 5 steps.
 // =============================================================================
-const world = World.load(assets.world('world_m1'), assets, {});
+const world = World.load(m1Def(), assets, {});
 ok('world_m1 near band ready', world.terrain.nearReady === true);
 ok('world_m1 has bounds (23.2 content)', !!world.bounds);
 ok('upper stair landing is open without animation', world.structures.find(s => s.id === 'tower').level.sectorAt(18.5, 10.5).ceilH === 'sky');
@@ -244,7 +249,7 @@ ok('upper stair landing is open without animation', world.structures.find(s => s
 const waypoints = buildWaypoints(world);
 const player = makePlayer(TOWER_ORIGIN.x + startPose.x, TOWER_ORIGIN.y + startPose.y, 1);
 
-const endTriggerRec = world.triggers.find((t) => t.name === 'quest.end');
+const endTriggerRec = world.triggers.find((t) => t.id === 'end' && t.structId === null) // area-only zone since WAYSTONE-NORMAL-01;
 const boundsTriggerRec = world.triggers.find((t) => t.def && t.def.hint === 'boundsEdge');
 let sawEndTrigger = false, sawBoundsTrigger = false, sawOutsideStructure = false, sawInsideStructure = false;
 
@@ -280,7 +285,7 @@ ok('route visited the tower structure at some point', sawInsideStructure);
 // actually proves the route reached both real triggers is each TriggerRec's
 // own runtime `inside` flag (rebuilt every step by `updateTriggers`),
 // latched into `sawEndTrigger`/`sawBoundsTrigger` above the instant it read 1.
-ok('route actually entered the waystone `end` trigger circle', !!endTriggerRec && sawEndTrigger, `found=${!!endTriggerRec} entered=${sawEndTrigger}`);
+ok('route actually entered the waystone `end` zone circle', !!endTriggerRec && sawEndTrigger, `found=${!!endTriggerRec} entered=${sawEndTrigger}`);
 ok('route actually entered the `boundsEdge` bounds trigger', !!boundsTriggerRec && sawBoundsTrigger, `found=${!!boundsTriggerRec} entered=${sawBoundsTrigger}`);
 
 // =============================================================================
@@ -410,8 +415,10 @@ const PARITY_TOL = 0.01; // 1 cm, per the ME-11c spec
     const level = assets.level(key);
     return { ...level, props: (level.props || []).map(p => ({ ...p, colliders: [] })) };
   };
-  const wg = World.load(assets.world('world_m1'), parityAssets, {});
-  const wm = World.load(assets.world('world_m1'), parityAssets, { physics: 'mesh' });
+  // NPC-BEAR-01: world-level entity colliders (Burl) are authored solids too - strip them for the same structural fixture.
+  const parityWorld = (() => { const w = m1Def(); return { ...w, entities: (w.entities || []).map(e => (e.components && e.components.collider) ? { ...e, components: { ...e.components, collider: undefined } } : e) }; })();
+  const wg = World.load(parityWorld, parityAssets, {});
+  const wm = World.load(parityWorld, parityAssets, { physics: 'mesh' });
   ok('structural parity fixture explicitly opts out of authored prop colliders', !wm.colliders.some(c => c.id === 'props:static'));
   ok('grid-mode world_m1 loads with physicsMode "grid"', wg.physicsMode === 'grid', `physicsMode=${wg.physicsMode}`);
   const pg = makePlayer(TOWER_ORIGIN.x + startPose.x, TOWER_ORIGIN.y + startPose.y, 1);

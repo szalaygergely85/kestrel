@@ -12,19 +12,18 @@
 // the forest recipe's `lodCells` (same field the voxel species use). (3) TwistedTree has no content mesh and no LOD1: its LOD0 tri
 // count and bbox are read from design/meshes/quaternius/glTF/TwistedTree_N.gltf and it is reported as LOD0 only. (4) frustum + LOD
 // only: no drawM/fog distance cull, no sun-shadow pass, no terrain/detail/structure triangles.
+import { writeUnitInstance, frameMatrix } from '../engine/index.js';
+import { InstanceGroups, compactGroup, frustumPlanes } from '../engine/dev.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { InstanceGroups, writeUnitInstance, compactGroup } from '../engine/mesh/instances.js';
-import { frustumPlanes } from '../engine/mesh/culling.js';
-import { frameMatrix } from '../engine/render/projection.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const GRID = { cols: 240, rows: 90, pxCellW: 1, pxCellH: 1 }; // GRID_DEFAULT_COLS x round(cols*3/8), the default
 export const VARIANT_WEIGHTS = {
   CommonTree: [14, 14, 12, 10, 10], Pine: [10, 10, 8, 6, 6], TwistedTree: [1, 1, 1, 1, 1],
 };
-export const SPECIES_FAMILY = [[/oak/i, 'CommonTree'], [/birch/i, 'TwistedTree'], [/pine/i, 'Pine']];
+export const SPECIES_FAMILY = [[/oak|CommonTree/i, 'CommonTree'], [/birch|Twisted/i, 'TwistedTree'], [/pine/i, 'Pine']];
 
 /** Deterministic weighted variant (1-based) for placement index i. */
 export function pickVariant(i, weights) {
@@ -95,7 +94,7 @@ export function forestWalkPose(sc, spawn, groundAt, eyeH) {
 
 /** Mesh table for Pine/CommonTree (content LOD0 + _LOD1 json/bin) and TwistedTree (glTF, LOD0 only). */
 export async function loadMeshTable() {
-  const { meshFromBin } = await import('../engine/mesh/meshBin.js');
+  const { meshFromBin } = await import('../engine/index.js');
   const out = {}, qdir = path.join(ROOT, 'content/meshes/quaternius');
   const read = (n) => {
     const j = path.join(qdir, n + '.mesh.json');
@@ -103,13 +102,15 @@ export async function loadMeshTable() {
     const meta = JSON.parse(fs.readFileSync(j, 'utf8'));
     return meshFromBin(meta, fs.readFileSync(path.join(qdir, meta.bin)));
   };
-  for (const fam of ['CommonTree', 'Pine']) {
+  for (const fam of ['CommonTree', 'Pine', 'TwistedTree']) {
     for (let v = 1; v <= 5; v++) {
       const m0 = read(`${fam}_${v}`), m1 = read(`${fam}_${v}_LOD1`);
+      if (!m0) continue; // TwistedTree before TWISTED-LOD-01: glTF estimate below
       out[`${fam}_${v}`] = { family: fam, tri0: m0.triCount, tri1: m1 ? m1.triCount : null, bbox0: Array.from(m0.bbox), bbox1: m1 ? Array.from(m1.bbox) : null };
     }
   }
   for (let v = 1; v <= 5; v++) {
+    if (out[`TwistedTree_${v}`]) continue; // real content mesh present
     const g = JSON.parse(fs.readFileSync(path.join(ROOT, `design/meshes/quaternius/glTF/TwistedTree_${v}.gltf`), 'utf8'));
     let tris = 0;
     const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
@@ -155,7 +156,7 @@ async function main() {
   const lodCells = Number(opt('--lod-cells', cfg.lodCells));
   const family = new Array(sc.count);
   for (let i = 0; i < sc.count; i++) {
-    const model = cfg.species[sc.species[i]].model;
+    const sp = cfg.species[sc.species[i]], model = sp.model !== undefined ? sp.model : sp.mesh;
     const hit = SPECIES_FAMILY.find(([re]) => re.test(model));
     if (!hit) throw new Error(`mesh-tri-budget: no family for species ${model}`);
     family[i] = hit[1];
@@ -171,7 +172,7 @@ async function main() {
   const reports = {};
   for (const [name, cam] of Object.entries(poses)) if (!which || which === name) reports[name] = computeBudget({ placements, meshes, variantOf, cam, lodCells, lod0Cap });
   const notes = ['voxel scatter mapped to mesh families (Oak->CommonTree, Birch->TwistedTree, Pine->Pine), variants by weighted hash',
-    'TwistedTree has no LOD1 asset: counted as LOD0', 'frustum + RE-15 LOD only (no drawM/fog cull, no shadows)'];
+    'frustum + RE-15 LOD only (no drawM/fog cull, no shadows)'];
   if (args.includes('--json')) process.stdout.write(JSON.stringify({ notes, reports }, null, 2) + '\n');
   else process.stdout.write(formatTable(reports) + '\n' + notes.map((n) => 'note: ' + n).join('\n') + '\n');
 }

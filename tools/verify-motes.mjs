@@ -2,8 +2,9 @@
 // scene. Same CDP approach as tools/verify-chest-hook.mjs, reusing capture-browser.mjs's
 // exported helpers - PC-B port range only (9500-9574). Starts its own server, kills only
 // the processes it spawned, screenshots into docs/test-reports/captures/.
-// Run: node tools/verify-motes.mjs 9500 (webgpu, default) or: node tools/verify-motes.mjs 9500 webgl2
+// Run: node tools/verify-motes.mjs 9500 (webgpu, default)
 import { spawn } from 'node:child_process';
+import { withTimeFreeze } from './tool-url.mjs'; // DN-04a
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
@@ -13,7 +14,7 @@ const port = Number(process.argv[2] || 9500);
 validatePort(port);
 if (port < 9500 || port + 1 > 9574) throw new Error('PC-B lane B1 range is 9500-9574 (next port is CDP)');
 const backend = process.argv[3] || 'webgpu';
-assert.ok(['webgpu', 'webgl2'].includes(backend), 'backend must be webgpu or webgl2');
+assert.ok(['webgpu'].includes(backend), 'backend must be webgpu');
 
 const profile = mkdtempSync(path.join(os.tmpdir(), 'kestrel-verify-motes-'));
 const out = path.join(ROOT, 'docs/test-reports/captures'); mkdirSync(out, { recursive: true });
@@ -29,7 +30,7 @@ try {
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 720, deviceScaleFactor: 1, mobile: false });
   async function shot(name) { await pause(350); const s = await cdp.send('Page.captureScreenshot', { format: 'png' }); writeFileSync(path.join(out, name + '.png'), Buffer.from(s.data, 'base64')); }
 
-  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?dev=1&title=0&ambient=1&pose=${process.env.POSE || 'roadSouth'}&backend=${backend}` });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(`dev=1&title=0&ambient=1&pose=${process.env.POSE || 'roadSouth'}&backend=${backend}`)}` });
   let ready = false;
   for (let i = 0; i < 100; i++) { await pause(300); if (await evaluate(cdp, '!!window.__kestrel')) { ready = true; break; } }
   assert.ok(ready, JSON.stringify(errors));

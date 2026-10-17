@@ -1,18 +1,21 @@
 // WG-2b/2c: device-only mesh + terrain raster (kind 7, ME-06 twin); cell shading stays on the CPU until WG-3c.
 import { MeshBuffers, CLOTH_DYN_LAYOUT, CLOTH_UV_LAYOUT, CLOTH_STRIDE_BYTES, STATIC_VERTEX_LAYOUT, STATIC_STRIDE_BYTES, MASK_UV_LAYOUT, MASK_UV_STRIDE_BYTES, VAO_LAYOUT, VAO_STRIDE_BYTES, TERRAIN_VERTEX_LAYOUT, TERRAIN_STRIDE_BYTES, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES } from '../MeshBuffers.js';
 import { RASTER_BLOCK, RASTER_BASE_BLOCK, RASTER_MASK_BLOCK, RASTER_MASK_WGSL, RASTER_WGSL, RASTER_VOXEL_WGSL, RASTER_INSTANCED_WGSL, RASTER_CLOTH_WGSL, RASTER_INSTANCED_MASK_BLOCK, RASTER_INSTANCED_MASK_WGSL, RASTER_FLAG_VAO, rasterWgsl } from '../wgsl/raster.wgsl.js';
-import { TERRAIN_BLOCK, TERRAIN_RASTER_WGSL, TERRAIN_TEXTURES } from '../wgsl/terrainRaster.wgsl.js';
+import { TERRAIN_BLOCK, TERRAIN_RASTER_WGSL, TERRAIN_RASTER_LOOK_WGSL, TERRAIN_LOOK_TEXTURES, TERRAIN_TEXTURES, SKIRT_MAX } from '../wgsl/terrainRaster.wgsl.js';
 import { MAX_STRUCTS } from '../WorldTextures.js';
-import { DrawList, LevelMeshCache, MeshDrawCache, addStructures, addMeshStructures, addCloths, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, DRAW_INSTANCED, DRAW_CLOTH, MAX_DRAW_ITEMS } from '../../../mesh/DrawList.js';
+import { StructMaskAtlas } from '../StructMaskAtlas.js';
+import { DrawList, LevelMeshCache, MeshDrawCache, addStructures, addMeshStructures, addCloths, DRAW_STATIC, DRAW_TERRAIN, DRAW_VOXEL, DRAW_INSTANCED, DRAW_CLOTH, DRAW_FLAG_NO_CULL, MAX_DRAW_ITEMS } from '../../../mesh/DrawList.js';
 import { MeshGroupSet, addMeshStructuresBatched } from '../../../mesh/meshGroups.js';
-import { instancedRanges } from '../../../mesh/DrawList.js';
+import { instancedRanges, noteListOverflow, MAX_LIST_INSTANCES } from '../../../mesh/DrawList.js';
 import { terrainMeshSetFor } from '../../../mesh/terrainMesh.js';
 import { addVoxelInstances, sharedVoxelMeshCache } from '../../../mesh/voxelMesh.js';
-import { INSTANCE_BYTES, MAX_INSTANCES_PER_FRAME } from '../../../mesh/instances.js';
+import { INSTANCE_BYTES, meshIsMasked } from '../../../mesh/instances.js';
 import { KIND_MODEL, FACE_PACKED } from '../../GBuffer.js';
-import { projTerms, shearProjection, pitchedTerms, createPitchedTerms, resolveProjection, viewProjAtOrigin } from '../../projection.js';
+import { projTerms, shearProjection, pitchedTermsInto, createPitchedTerms, resolveProjection, viewProjAtOrigin } from '../../projection.js';
 import { frustumPlanes } from '../../../mesh/culling.js';
 import { WgCullPass } from './passCull.js';
+import { WgCardPass } from './WgCardPass.js'; // R6c part 2
+import { WgDecorPass } from './passDecor.js'; // ENV-01d
 import { WgHzbPass } from './passHzb.js'; // S8-B2-10c
 import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // S8-B1-07: per-pass GPU timer slots
 import { windSwayOn, packWindUniforms, SWAY_MAX } from '../../../mesh/sway.js'; // S8-B2-05/06 host wiring: per-frame wind uniforms + cull swayPad
@@ -20,7 +23,7 @@ import { windSwayOn, packWindUniforms, SWAY_MAX } from '../../../mesh/sway.js'; 
 const MODEL = RASTER_BLOCK.field('model').word, VIEW = RASTER_BLOCK.field('viewProj').word;
 const PLANE = RASTER_BLOCK.field('planeIdOr').word, ZBASE = RASTER_BLOCK.field('zBase').word;
 const OBJECT = RASTER_BLOCK.field('objectId').word, AXIS = RASTER_BLOCK.field('axisAligned').word;
-const FLAT = RASTER_BLOCK.field('flat').word;
+const FLAT = RASTER_BLOCK.field('flat').word, TIER = RASTER_BLOCK.field('depthTier').word; // OB-053 (38.49)
 const TEAM_SLOT = RASTER_BLOCK.field('teamSlot').word, TEAM_MAT = RASTER_BLOCK.field('teamMat').word;
 const M_X0 = RASTER_MASK_BLOCK.field('maskX0').word, M_Y0 = RASTER_MASK_BLOCK.field('maskY0').word, M_W = RASTER_MASK_BLOCK.field('maskW').word;
 const M_H = RASTER_MASK_BLOCK.field('maskH').word, M_CUT = RASTER_MASK_BLOCK.field('maskCut').word;
@@ -33,7 +36,9 @@ const ORIGIN = RASTER_BLOCK.field('origin').word, T_MODEL_REL = TERRAIN_BLOCK.fi
 // S8-B2-05/06: wind/sway uniforms (RASTER_BLOCK, instanced variant only; the base/mask blocks end before them).
 const WIND = RASTER_BLOCK.field('wind').word, WIND_T = RASTER_BLOCK.field('windT').word, WIND_K = RASTER_BLOCK.field('windK').word;
 const T_MODEL = TERRAIN_BLOCK.field('model').word, T_VIEW = TERRAIN_BLOCK.field('viewProj').word;
-const T_NEAR = TERRAIN_BLOCK.field('nearMap').word, T_FAR = TERRAIN_BLOCK.field('farMap').word, T_FOOT = TERRAIN_BLOCK.field('structFoot').word;
+const T_NEAR = TERRAIN_BLOCK.field('nearMap').word, T_FAR = TERRAIN_BLOCK.field('farMap').word, T_FOOT = TERRAIN_BLOCK.field('structFoot').word, T_MASK = TERRAIN_BLOCK.field('structMask').word;
+const T_ORIGIN = TERRAIN_BLOCK.field('worldO').word; // OB-041
+const T_SKIRT = TERRAIN_BLOCK.field('skirt').word, T_SKIRT_N = TERRAIN_BLOCK.field('skirtCount').word; // MAP-06b
 const T_OBJECT = TERRAIN_BLOCK.field('objectId').word, T_READY = TERRAIN_BLOCK.field('nearReady').word, T_COUNT = TERRAIN_BLOCK.field('structCount').word;
 /**
  * PREC-01b (37.9 step 6) switch. true = terrain clip is camera-relative too (viewRel + modelRel = model - O). Measured 2026-10-08: with it ON the PASS row
@@ -73,7 +78,8 @@ export class WgRasterPass {
     this.bindDesc = { uniforms: this.u, vertexBuffer: null, indexBuffer: null, instanceBuffer: null };
     this.clearOpts = { clear: { color: [[0, 0, 0, 0], [0, 0, 0, 0], [0x7f800000, 0, 0, 0]], depth: 1 } };
     this.vmClearOpts = { clear: { depth: 1 } };
-    this.instanceBuffers = new Map();
+    /** @type {Map<any, {buffer: any, version: number, count: number}>} AUD-02: GPU copy per InstanceBuffer + what it holds (shadow passes may share it) */
+    this.instanceBuffers = new Map(); this.instUploads = 0; this.instSkips = 0;
     // ALPHA-01c: mask-discard static pipeline state (own uniform copy: the base `u` also holds the instanced team rows), R8UI atlas texture
     this.mu = new Float32Array(RASTER_MASK_BLOCK.sizeWords); this.mbits = new Uint32Array(this.mu.buffer);
     this.maskDraws = 0; this.maskTex = null; this.maskDims = [1, 1]; this.maskAtlas = null; this.maskVersion = -1; this.maskUploads = 0; this.maskReady = false;
@@ -86,25 +92,32 @@ export class WgRasterPass {
     this.pipes = [];
     // ME-20c-c (38.18): vertex AO. `vaoOn` = lights.ao.strength > 0 this frame (set in prepare); `(variant, ao)` pipelines are built lazily the first time an
     // entry with `aoBuffer` is drawn while on. Extra streams are preallocated (zero per-frame allocation).
-    this.vaoOn = false; this.aoPipes = { voxel: null, mirror: null, instance: null, instanceMask: null };
+    this.vaoOn = false; this.aoPipes = { voxel: null, mirror: null, instance: null, instanceMask: null, instanceOpen: null };
     this.aoExtra = [null]; this.maskExtraInstAo = [null, null];
     this.clothStreams = [null];
     // WG-4a: GPU cull of InstanceGroups batches (meshGroup + single-range voxel units). instances.js hands each supported group to `accept` instead of
     // compacting it on the CPU; MeshGroupSet groups (nearest-64 `chosen` selection is CPU-side) and multi-range voxel units keep the CPU path.
     this.cull = null;
+    /** @type {any} ENV-01d: WgDecorPass (GPU decor scatter), null until enableDecor(); drawn like cull entries */ this.decor = null; this._decorFr = { eye: { x: 0, y: 0 }, planes: /** @type {Float64Array|null} */ (null), swayPad: 0 };
     /** @type {any} S8-B2-10c HZB builder (only with opts.occl) */ this.hzb = null;
-    this._hzbFwd = { x: 0, y: 1, z: 0 }; this._eye = { x: 0, y: 0, z: 0 }; this._phase2 = false; // _eye: world-space camera for the cull kernel's occNear
+    this._hzbFwd = { x: 0, y: 1, z: 0 }; this._eye = { x: 0, y: 0, z: 0 }; this._phase2 = false; this._beginArgs = { planes: null, viewProj: null, rows: 0, eye: null, maxDistM: 0, swayPad: 0, hzb: null }; // _eye: world-space camera for the cull kernel's occNear
     this.gpuGroups = []; this.gpuM0 = []; this.gpuM1 = []; this.gpuEntries = []; this.gpuN = 0; this._pair = [null, null];
     this._gpuHook = { accept: (g, m0, m1) => this._accept(g, m0, m1) };
     // Terrain (ME-06 twin): own uniform block + the near/far type textures (r8ui, 1x1 placeholders until a bake is uploaded).
     this.tu = new Float32Array(TERRAIN_BLOCK.sizeWords); this.tbits = new Uint32Array(this.tu.buffer);
-    this.terrainTex = [{ slot: 0, texture: null }, { slot: 1, texture: null }];
+    this.terrainTex = [{ slot: 0, texture: null }, { slot: 1, texture: null }, { slot: 2, texture: null }]; // 2 = GS-01b carve mask atlas
+    this.structMasks = null; // StructMaskAtlas, built with the terrain pipeline
     this.terrainBind = { uniforms: this.tu, vertexBuffer: null, indexBuffer: null, instanceBuffer: null, extraBuffers: null, textures: this.terrainTex };
-    this.nearTex = null; this.farTex = null; this.nearDims = [1, 1]; this.farDims = [1, 1]; this.nearVersion = -1; this.farVersion = -1; this.farWorld = null;
+    // ENV-02d (38.63): look variant, built lazily on the first world with groundLook (null groundLook = none of this exists, byte-identical path)
+    this.lookActive = false; this.terrainPipeLook = null; this.nearLookTex = null; this.farLookTex = null; this.nearLookDims = [1, 1]; this.farLookDims = [1, 1]; this.nearLookVersion = -1; this.farLookVersion = -1; this.nearLookWorld = null; this.farLookWorld = null;
+    this.terrainTexL = [{ slot: 0, texture: null }, { slot: 1, texture: null }, { slot: 2, texture: null }, { slot: 3, texture: null }, { slot: 4, texture: null }];
+    this.terrainBindL = { uniforms: this.tu, vertexBuffer: null, indexBuffer: null, instanceBuffer: null, extraBuffers: null, textures: this.terrainTexL };
+    this.nearTex = null; this.farTex = null; this.nearDims = [1, 1]; this.farDims = [1, 1]; this.nearVersion = -1; this.farVersion = -1; this.farWorld = null; this.nearWorld = null;
     try {
       this.nearTex = device.createTexture({ format: 'r8ui', width: 1, height: 1 });
       this.farTex = device.createTexture({ format: 'r8ui', width: 1, height: 1 });
       this.terrainTex[0].texture = this.nearTex; this.terrainTex[1].texture = this.farTex;
+      this.structMasks = new StructMaskAtlas(device); this.terrainTex[2].texture = this.structMasks.tex;
       this.terrainPipe = device.createPipeline({ vertex: { src: { wgsl: TERRAIN_RASTER_WGSL }, layout: TERRAIN_VERTEX_LAYOUT, strideBytes: TERRAIN_STRIDE_BYTES },
         fragment: { src: { wgsl: TERRAIN_RASTER_WGSL }, targets: 3 }, bindings: { uniformBytes: TERRAIN_BLOCK.sizeBytes, textures: TERRAIN_TEXTURES.slice() },
         targetFormats: ['rgba32ui', 'rgba32ui', 'r32ui'], depthFormat: 'depth24', depth: { test: true, write: true }, cull: 'none', frontFace: 'cw' });
@@ -116,16 +129,27 @@ export class WgRasterPass {
       this.voxelPipe = this._pipeline(RASTER_VOXEL_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back');
       this.mirrorPipe = this._pipeline(RASTER_VOXEL_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'ccw');
       this.instancePipe = this._pipeline(RASTER_INSTANCED_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'cw', true);
+      // MESH-INST-02: instanced open (thin / one-sided) mesh groups - same shader, no back-face cull (DRAW_FLAG_NO_CULL; JS twin: rasterInstanced _noCull)
+      this.instanceOpenPipe = this._pipeline(RASTER_INSTANCED_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'none', 'cw', true);
       // ALPHA-01f (b): instanced mesh-group masked draw - same state as instancePipe + the mask-uv extra stream (location 10) + texMask at slot 0
-      this.instanceMaskPipe = this._pipeline(RASTER_INSTANCED_MASK_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'cw', true, [{ layout: MASK_UV_LAYOUT, strideBytes: MASK_UV_STRIDE_BYTES }], RASTER_INSTANCED_MASK_BLOCK, ['uint']);
+      this.instanceMaskPipe = this._pipeline(RASTER_INSTANCED_MASK_WGSL, VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'none', 'cw', true, [{ layout: MASK_UV_LAYOUT, strideBytes: MASK_UV_STRIDE_BYTES }], RASTER_INSTANCED_MASK_BLOCK, ['uint']);
       // Cloth: dynamic pos+oct normal (slot 0) + static uv (extra stream), two-sided (GL: CULL_FACE off, CCW = 'cw' after the clip-y flip).
       this.clothPipe = this._pipeline(RASTER_CLOTH_WGSL, CLOTH_DYN_LAYOUT, CLOTH_STRIDE_BYTES, 'none', 'cw', false, [{ layout: CLOTH_UV_LAYOUT, strideBytes: 8 }]);
       if (opts.gpuCull !== false && typeof device.createComputePipeline === 'function') {
         // S8-B2-10c: `opts.occl` (default OFF, `?occl=1`) = two-phase HZB occlusion; this.hzb is created lazily with the pass (same device)
-        this.cull = new WgCullPass(device, { occl: !!opts.occl });
+        this.cull = new WgCullPass(device, { occl: opts.occl === 2 ? 2 : !!opts.occl, occlStats: !!opts.occlStats });
         if (opts.occl) this.hzb = new WgHzbPass(device);
+        this.card = new WgCardPass(device, this.cull); // R6c part 2: card impostors (off unless a species opts in; guarded by the vertex-stage storage limit)
+        this._cardFr = { w: 0, h: 0, ox: 0, oy: 0, viewRel: this.viewRel, vaoOn: false };
       }
     } catch (e) { this.dispose(); throw e; }
+  }
+
+  /** ENV-01d (38.62): creates the decor pass (needs the GPU cull; returns null without it). Content is supplied via `this.decor.configure/setMasks/setNear`. */
+  enableDecor() {
+    if (!this.cull) return null;
+    if (!this.decor) this.decor = new WgDecorPass(this.device, this.cull);
+    return this.decor;
   }
 
   _accept(g, m0, m1) {
@@ -140,7 +164,8 @@ export class WgRasterPass {
   // Before the raster pass (outside any pass): queue the accepted batches and run the kernel (one dispatch each).
   _cullRun(p) {
     const n = this.gpuN, cull = this.cull, pair = this._pair;
-    if (!n) return;
+    const dec = this.decor && this.decor.on ? this.decor : null; // ENV-01d: decor alone still needs cull.begin/run (args zeroing)
+    if (!n && !dec) return;
     // S8-B2-10c: the previous frame's HZB, or null (first frame / resize / invalidateHzb / ortho = no usable forward) -> cull phase 1 runs with hzbOn 0
     let hz = null; this._phase2 = false;
     const hp = this.hzb;
@@ -150,10 +175,18 @@ export class WgRasterPass {
       if (fl > 1e-9) { const f = this._hzbFwd; f.x = fx / fl; f.y = fy / fl; f.z = fz / fl; hz = hp.descriptor(f); }
     }
     const eye = this._eye, cam = p._cam; if (cam) { eye.x = cam.x; eye.y = cam.y; eye.z = cam.z; }
-    cull.begin({ planes: this.planes, viewProj: this.view, rows: p.rows, eye, maxDistM: 0, swayPad: this.windOn ? SWAY_MAX : 0, hzb: hz });
+    const bf = this._beginArgs; bf.planes = this.planes; bf.viewProj = this.view; bf.rows = p.rows; bf.eye = eye; bf.maxDistM = 0; bf.swayPad = this.windOn ? SWAY_MAX : 0; bf.hzb = hz;
+    const card = this.card;
+    if (card && card.on) for (let i = 0; i < n; i++) card.ensure(this.gpuGroups[i]); // R6c: sets g._cardOk BEFORE the kernel's impM word is written
+    cull.begin(bf); // reused arg object: no per-frame literal
     this._phase2 = !!hz;
     for (let i = 0; i < n; i++) { pair[0] = this.gpuM0[i]; pair[1] = this.gpuM1[i]; this.gpuEntries[i] = cull.add(this.gpuGroups[i], pair); }
+    if (dec) dec.queue(); // generated args slots / slabs (after the adds, before the ONE args write in run())
     cull.run();
+    if (n && card && card.on) { // R6c: cs_card in the cull span, after the mesh cull wrote the args (instanceCount 0) and the batch rows
+      const cf = this._cardFr; cf.w = p._t.subCols; cf.h = p._t.subRows; cf.ox = this.ox; cf.oy = this.oy; cf.vaoOn = this.vaoOn;
+      card.dispatch(this.gpuGroups, n, cf);
+    }
   }
 
   // ALPHA-01f (d): entries are laid out `[lod*R + r]` (R = entries.length/2, fixed per batch); R = 1 (today's ONE_PART shape) is
@@ -168,7 +201,7 @@ export class WgRasterPass {
         for (let r = 0; r < R; r++) {
           const e = entries[lod * R + r];
           if (!e.active) continue;
-          this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0
+          this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0; this.bits[TIER] = 1
           this._model(e.parts.m, 0);
           const entry = this.buffers.getVoxel(e.mesh); this.bits[AXIS] = this._axis(e.parts.flags[0], entry);
           const mr = e.mesh.maskRanges;
@@ -181,11 +214,36 @@ export class WgRasterPass {
             this.device.bind(this._instMask(entry), bd); this.device.drawIndirect(e.argsBuffer, e.argsOffset);
           } else {
             b.uniforms = this.u; b.vertexBuffer = entry.vertexBuffer; b.indexBuffer = entry.indexBuffer || null; b.instanceBuffer = e.instanceBuffer;
-            if (this.vaoOn && entry.aoBuffer) { this.aoExtra[0] = entry.aoBuffer; b.extraBuffers = this.aoExtra; this.device.bind(this._aoPipe('instance'), b); }
-            else { b.extraBuffers = null; this.device.bind(this.instancePipe, b); } this.device.drawIndirect(e.argsBuffer, e.argsOffset);
+            // OB-089 (OB-061 on the GPU cull path): LOD1 of a masked LOD0 (opaque leaf cards) must draw WITHOUT back-face cull, like the CPU item's NO_CULL|TWO_SIDED.
+            const open = lod === 1 && !!e.group.mesh && meshIsMasked(e.group.mesh);
+            if (this.vaoOn && entry.aoBuffer) { this.aoExtra[0] = entry.aoBuffer; b.extraBuffers = this.aoExtra; this.device.bind(this._aoPipe(open ? 'instanceOpen' : 'instance'), b); }
+            else { b.extraBuffers = null; this.device.bind(open ? this.instanceOpenPipe : this.instancePipe, b); } this.device.drawIndirect(e.argsBuffer, e.argsOffset);
           }
           draws++;
         }
+      }
+    }
+    return draws;
+  }
+
+  // ENV-01d: decor entries (species*2 + lod per layer) through instancePipe exactly like an unmasked cull entry; the slab offset rides in bindDesc.instanceOffset.
+  _decorDraw() {
+    let draws = 0;
+    const b = this.bindDesc, dc = this.decor;
+    for (let l = 0; l < dc.entries.length; l++) {
+      const es = dc.entries[l];
+      for (let k = 0; k < es.length; k++) {
+        const e = es[k];
+        if (!e.active) continue;
+        this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0; this.bits[TIER] = 1;
+        this._model(e.parts.m, 0);
+        const entry = this.buffers.getVoxel(e.mesh); this.bits[AXIS] = this._axis(e.parts.flags[0], entry);
+        b.uniforms = this.u; b.vertexBuffer = entry.vertexBuffer; b.indexBuffer = entry.indexBuffer || null; b.instanceBuffer = e.instanceBuffer; b.instanceOffset = e.instanceOffset;
+        if (this.vaoOn && entry.aoBuffer) { this.aoExtra[0] = entry.aoBuffer; b.extraBuffers = this.aoExtra; this.device.bind(this._aoPipe('instance'), b); }
+        else { b.extraBuffers = null; this.device.bind(this.instancePipe, b); }
+        this.device.drawIndirect(e.argsBuffer, e.argsOffset);
+        b.instanceOffset = 0;
+        draws++;
       }
     }
     return draws;
@@ -199,7 +257,8 @@ export class WgRasterPass {
     if (k === 'voxel') pp = this._pipeline(rasterWgsl('voxel', opt), VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'cw', false, ao);
     else if (k === 'mirror') pp = this._pipeline(rasterWgsl('voxel', opt), VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'ccw', false, ao);
     else if (k === 'instance') pp = this._pipeline(rasterWgsl('instanced', opt), VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'cw', true, ao);
-    else pp = this._pipeline(rasterWgsl('instancedMask', opt), VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'back', 'cw', true,
+    else if (k === 'instanceOpen') pp = this._pipeline(rasterWgsl('instanced', opt), VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'none', 'cw', true, ao);
+    else pp = this._pipeline(rasterWgsl('instancedMask', opt), VOXEL_VERTEX_LAYOUT, VOXEL_STRIDE_BYTES, 'none', 'cw', true, // two-sided leaf cards (JS twin draws masked ranges two-sided)
       [{ layout: MASK_UV_LAYOUT, strideBytes: MASK_UV_STRIDE_BYTES }, ao[0]], RASTER_INSTANCED_MASK_BLOCK, ['uint']);
     return (this.aoPipes[k] = pp);
   }
@@ -239,16 +298,52 @@ export class WgRasterPass {
   // GpuCellPipeline._ensureTerrainTextures twin: far type on (farVersion | world), near type on near.version; never per frame.
   _terrainTextures(world) {
     const terrain = world && world.terrain;
+    this.lookActive = false;
     if (!terrain || !terrain.farReady) return;
     if (this.farVersion !== terrain.farVersion || this.farWorld !== world) {
       this.farTex = this._uploadType(this.farTex, this.farDims, terrain.mapW, terrain.mapH, terrain.farType);
       this.farVersion = terrain.farVersion; this.farWorld = world;
     }
-    if (terrain.nearReady && this.nearVersion !== terrain.near.version) {
+    if (terrain.nearReady && (this.nearVersion !== terrain.near.version || this.nearWorld !== world)) { // MAP-12: also on a new world (grid zones of two worlds can share a version number)
       this.nearTex = this._uploadType(this.nearTex, this.nearDims, terrain.near.w, terrain.near.h, terrain.near.type);
-      this.nearVersion = terrain.near.version;
+      this.nearVersion = terrain.near.version; this.nearWorld = world;
     }
     this.terrainTex[0].texture = this.nearTex; this.terrainTex[1].texture = this.farTex;
+    this._lookTextures(world, terrain);
+  }
+
+  /** ENV-02d: NEARLOOK / FARLOOK (rg8ui, 2 B per texel) upload on near.version / farVersion / world change only; sets lookActive (0 alloc per frame). */
+  _lookTextures(world, terrain) {
+    this.lookActive = false;
+    const fl = terrain.groundLook ? terrain.farLook : null;
+    if (!fl) return;
+    if (!this.terrainPipeLook) { // lazy: the look pipeline + 1x1 placeholders, once
+      this.terrainPipeLook = this.device.createPipeline({ vertex: { src: { wgsl: TERRAIN_RASTER_LOOK_WGSL }, layout: TERRAIN_VERTEX_LAYOUT, strideBytes: TERRAIN_STRIDE_BYTES },
+        fragment: { src: { wgsl: TERRAIN_RASTER_LOOK_WGSL }, targets: 3 }, bindings: { uniformBytes: TERRAIN_BLOCK.sizeBytes, textures: TERRAIN_LOOK_TEXTURES.slice() },
+        targetFormats: ['rgba32ui', 'rgba32ui', 'r32ui'], depthFormat: 'depth24', depth: { test: true, write: true }, cull: 'none', frontFace: 'cw' });
+      this.pipes.push(this.terrainPipeLook);
+      this.nearLookTex = this.device.createTexture({ format: 'rg8ui', width: 1, height: 1 });
+      this.farLookTex = this.device.createTexture({ format: 'rg8ui', width: 1, height: 1 });
+    }
+    if (this.farLookVersion !== terrain.farVersion || this.farLookWorld !== world) { // set the world only on an actual upload (MAP-12 pattern)
+      this.farLookTex = this._uploadLook(this.farLookTex, this.farLookDims, terrain.mapW, terrain.mapH, fl);
+      this.farLookVersion = terrain.farVersion; this.farLookWorld = world;
+    }
+    const nl = terrain.nearReady ? terrain.near.look : null;
+    if (terrain.nearReady && !nl) { this.lookActive = false; return; } // BH2-R1: band without look -> no-look pipeline, never a stale NEARLOOK
+    if (nl && (this.nearLookVersion !== terrain.near.version || this.nearLookWorld !== world)) {
+      this.nearLookTex = this._uploadLook(this.nearLookTex, this.nearLookDims, terrain.near.w, terrain.near.h, nl);
+      this.nearLookVersion = terrain.near.version; this.nearLookWorld = world;
+    }
+    const T = this.terrainTexL;
+    T[0].texture = this.nearTex; T[1].texture = this.farTex; T[2].texture = this.terrainTex[2].texture; T[3].texture = this.nearLookTex; T[4].texture = this.farLookTex;
+    this.lookActive = true;
+  }
+
+  _uploadLook(tex, dims, w, h, data) {
+    if (dims[0] !== w || dims[1] !== h) { this.device.dispose(tex); tex = this.device.createTexture({ format: 'rg8ui', width: w, height: h }); dims[0] = w; dims[1] = h; }
+    this.device.writeTexture(tex, data);
+    return tex;
   }
 
   // ALPHA-01c: the R8UI mask atlas texture, re-uploaded only when the atlas object or its version changes (never per frame). Placeholder 1x1 until a world carries masks.
@@ -282,12 +377,22 @@ export class WgRasterPass {
       const o = T_FOOT + n * 4; tu[o] = b.x0; tu[o + 1] = b.y0; tu[o + 2] = b.x1; tu[o + 3] = b.y1; n++;
     }
     this.tbits[T_COUNT] = n;
+    this.structMasks.sync(structs, tu, T_MASK); this.terrainTex[2].texture = this.structMasks.tex; // GS-01b: carve masks (same box order as above)
     this.tbits[T_PROJ] = this.ortho ? 2 : 0; // US-068b2
+    tu[T_ORIGIN] = this.ox; tu[T_ORIGIN + 1] = this.oy; // OB-041: vWorldRel origin (same O as the mesh raster; set in prepare() before this call)
+  }
+
+  /** MAP-06b (38.42): the set's sea skirt rects for the off-grid typeAt (<= SKIRT_MAX; 0 on worlds without a sea). */
+  _skirtUniforms(set) {
+    const sk = set.skirts || NO_STRUCTURES, tu = this.tu, nSk = sk.length < SKIRT_MAX ? sk.length : SKIRT_MAX;
+    for (let s = 0; s < nSk; s++) { const r = sk[s].rect, o = T_SKIRT + s * 4; tu[o] = r.x0; tu[o + 1] = r.y0; tu[o + 2] = r.x1; tu[o + 3] = r.y1; }
+    this.tbits[T_SKIRT_N] = nSk;
   }
 
   _terrain(list) {
     let draws = 0;
-    const b = this.terrainBind, tu = this.tu;
+    const lk = this.lookActive, b = lk ? this.terrainBindL : this.terrainBind, tu = this.tu, pipe = lk ? this.terrainPipeLook : this.terrainPipe;
+    if (lk) this.terrainTexL[2].texture = this.terrainTex[2].texture; // carve mask atlas is refreshed by _terrainUniforms after the texture step
     for (let i = 0; i < list.count; i++) {
       const item = list.items[i];
       if (item.type !== DRAW_TERRAIN || !item.mesh || item.rangeCount <= 0) continue;
@@ -302,7 +407,7 @@ export class WgRasterPass {
       tu[r + 12] = TERRAIN_REBASE ? mm[9] - this.ox : mm[9]; tu[r + 13] = TERRAIN_REBASE ? mm[10] - this.oy : mm[10]; tu[r + 14] = mm[11]; tu[r + 15] = 1;
       this.tbits[T_OBJECT] = item.objectId;
       b.vertexBuffer = entry.vertexBuffer; b.indexBuffer = entry.indexBuffer;
-      this.device.bind(this.terrainPipe, b); this.device.draw(item.rangeCount * 3, item.rangeFirst * 3, 1);
+      this.device.bind(pipe, b); this.device.draw(item.rangeCount * 3, item.rangeFirst * 3, 1);
       draws++;
     }
     return draws;
@@ -325,7 +430,7 @@ export class WgRasterPass {
     this.pitched = rproj === 'pitched' || rproj === 'ortho'; this.ortho = rproj === 'ortho'; this.projMode = this.ortho ? 2 : this.pitched ? 1 : 0;
     this.bits[P_RASTER] = this.ortho ? 2 : 0;
     const lt = p._light; this.vaoOn = !!(lt && lt.ao && lt.ao.strength > 0); // ME-20c-c
-    if (this.pitched) { pitchedTerms(cam, grid, this.pitch); this.view.set(this.pitch.M); }
+    if (this.pitched) { pitchedTermsInto(this.pitch, cam, grid); this.view.set(this.pitch.M); }
     else { projTerms(cam, grid, this.terms); shearProjection(this.terms, this.view); }
     this.ox = Math.floor(cam.x / 16) * 16; this.oy = Math.floor(cam.y / 16) * 16;
     viewProjAtOrigin(this.view, this.ox, this.oy, this.viewRel);
@@ -339,21 +444,24 @@ export class WgRasterPass {
     if (this.strictMatIdFor) addMeshStructuresBatched(list, world, cam, this.meshCache, this.strictMatIdFor, 2000, this.meshGroups, this.planes);
     if (p.terrainEnabled && world.terrain) {
       this._terrainTextures(world); this._terrainUniforms(world);
-      const set = terrainMeshSetFor(world.terrain); set.step(2); set.addToDrawList(list, cam);
+      const set = terrainMeshSetFor(world.terrain); if (!p.terrainStepExternal) set.step(2); // AUD-34: the host may step it at frame start (shared budget with bakeFarStep)
+      set.addToDrawList(list, cam);
+      this._skirtUniforms(set);
     }
     const pool = p._voxelPool;
     if (pool) { pool.project(cam, p.rt, 'mesh'); if (pool.list.length) addVoxelInstances(list, pool, sharedVoxelMeshCache, pool.partNamesFor); }
     // S8-B2-05/06: per-frame wind uniforms (zero when sway is off: bit-identical to before) + the cull/instance sway padding.
     this.windOn = windSwayOn(world.wind);
     const fbT = p._fb; let tSec = 0; if (fbT) { const v = fbT.timeSec; if (v) tSec = v; } // no tagged phi: avoids a per-frame HeapNumber
-    packWindUniforms(world.wind, tSec, this.windV, this.windTV, this.windKV);
+    packWindUniforms(world.wind, tSec, this.windV, this.windTV, this.windKV, p.rt && p.rt.cols ? p.rt.cols * 0.5 : 0); // OB-144 halfCols
     if (p._instances) {
-      p._instances.swayPad = this.windOn ? SWAY_MAX : 0;
+      p._instances.swayPad = this.windOn ? SWAY_MAX : 0; p._instances.eye = p._cam || null; // OB-089
       this.meshDrawArg.cache = this.meshCache; this.meshDrawArg.idFor = this.strictMatIdFor || null; this.meshDrawArg.maskAtlas = (world && world.maskAtlas) || null; // ALPHA-01f-fix2: instanced masked groups share the static cache entry
       p._instances.addToDrawList(list, sharedVoxelMeshCache, this.planes, p._fb.frameNo, this.view, p.rows, this.meshDrawArg);
       p.stats.instancesCulled = p._instances.stats.instancesCulled; p.stats.instancesLod1 = p._instances.stats.instancesLod1;
     }
     if (world.cloths && world.cloths.count) addCloths(list, world.cloths, this.planes, p._table ? p._table.idFor : undefined);
+    noteListOverflow(list); // OB-043
     list.cull(this.planes);
     this.vmList = p._viewModel ? p._viewModel.buildList(cam, this.pitched) : null;
     const team = p._table && p._table.team;
@@ -372,19 +480,19 @@ export class WgRasterPass {
 
   _item(item) {
     this.bits[PLANE] = item.planeIdOr; this.u[ZBASE] = item.zBase;
-    this.bits[OBJECT] = item.objectId; this.bits[AXIS] = 0;
+    this.bits[OBJECT] = item.objectId; this.bits[AXIS] = 0; this.bits[TIER] = item.depthTier;
   }
 
   _draw(pipe, entry, count, first, instanceBuffer = null, instances = 1) {
     const b = this.bindDesc;
     const ao = this.vaoOn && entry.aoBuffer; // ME-20c-c: swap to the ao pipeline of the kind-9 variants; static/mask-less paths keep `pipe`
     if (ao) {
-      if (pipe === this.voxelPipe) pipe = this._aoPipe('voxel'); else if (pipe === this.mirrorPipe) pipe = this._aoPipe('mirror'); else if (pipe === this.instancePipe) pipe = this._aoPipe('instance');
+      if (pipe === this.voxelPipe) pipe = this._aoPipe('voxel'); else if (pipe === this.mirrorPipe) pipe = this._aoPipe('mirror'); else if (pipe === this.instancePipe) pipe = this._aoPipe('instance'); else if (pipe === this.instanceOpenPipe) pipe = this._aoPipe('instanceOpen');
     }
-    if (pipe === this.instancePipe || pipe === this.aoPipes.instance) b.uniforms = this.u;
+    if (pipe === this.instancePipe || pipe === this.aoPipes.instance || pipe === this.instanceOpenPipe || pipe === this.aoPipes.instanceOpen) b.uniforms = this.u;
     else b.uniforms = this.baseU;
     b.vertexBuffer = entry.vertexBuffer; b.indexBuffer = entry.indexBuffer || null; b.instanceBuffer = instanceBuffer;
-    if (pipe === this.aoPipes.voxel || pipe === this.aoPipes.mirror || pipe === this.aoPipes.instance) { this.aoExtra[0] = entry.aoBuffer; b.extraBuffers = this.aoExtra; } else b.extraBuffers = null;
+    if (pipe === this.aoPipes.voxel || pipe === this.aoPipes.mirror || pipe === this.aoPipes.instance || pipe === this.aoPipes.instanceOpen) { this.aoExtra[0] = entry.aoBuffer; b.extraBuffers = this.aoExtra; } else b.extraBuffers = null;
     this.device.bind(pipe, b); this.device.draw(count, first, instances);
   }
 
@@ -461,11 +569,18 @@ export class WgRasterPass {
   }
 
   run(p) {
+    const sm = p.stageMs, t0 = sm ? performance.now() : 0; // PERF-05: dev-only, null = off
     this.prepare(p);
+    if (sm) sm[0] = performance.now() - t0;
     const list = this.list, d = this.device;
     // S8-B1-07: cull (compute) and raster (render) are separate timer slots - one span each, never nested.
     wgSpanBegin(p, WG_PASS_SLOT.cull);
     try { this._cullRun(p); } finally { wgSpanEnd(p); }
+    if (this.decor && this.decor.on) { // ENV-01d: own timer slot `decor` (spans never nest), after cull.run() zeroed the args, before the raster pass
+      const fr = this._decorFr, cam = p._cam; if (cam) { fr.eye.x = cam.x; fr.eye.y = cam.y; }
+      fr.planes = this.planes; fr.swayPad = this.windOn ? SWAY_MAX : 0;
+      this.decor.run(fr, p);
+    }
     let staticDraws = 0, instancedDraws = 0, instances = 0;
     this.maskDraws = 0;
     wgSpanBegin(p, WG_PASS_SLOT.raster);
@@ -483,11 +598,16 @@ export class WgRasterPass {
           const item = list.items[i];
           if (item.type !== DRAW_INSTANCED || !item.mesh || !item.instBuf) continue;
           instances += item.instCount;
-          if (instances > MAX_INSTANCES_PER_FRAME) throw new Error(`instanced units over ${MAX_INSTANCES_PER_FRAME} per frame`);
-          let buffer = this.instanceBuffers.get(item.instBuf);
-          if (!buffer) { buffer = d.createBuffer({ usage: 'vertex', data: item.instBuf.f32, dynamic: true }); this.instanceBuffers.set(item.instBuf, buffer); }
-          else d.writeBuffer(buffer, item.instBuf.f32, 0);
-          this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0;
+          if (instances > MAX_LIST_INSTANCES) break; // OB-043: unreachable (DrawList.addInstances caps the list); never throw mid-pass
+          // AUD-02: upload only the used rows, and nothing when the buffer's version is unchanged (writers bump `ib.version`; a buffer without one always uploads)
+          const ib = item.instBuf, cnt = item.instCount;
+          let ent = this.instanceBuffers.get(ib);
+          if (!ent) { ent = { buffer: d.createBuffer({ usage: 'vertex', data: ib.f32, dynamic: true }), version: ib.version, count: cnt }; this.instanceBuffers.set(ib, ent); }
+          else if (ib.version === undefined || ent.version !== ib.version || ent.count < cnt) {
+            d.writeBuffer(ent.buffer, ib.f32, 0, cnt * INSTANCE_BYTES); ent.version = ib.version; ent.count = cnt; this.instUploads++;
+          } else this.instSkips++;
+          const buffer = ent.buffer;
+          this.bits[PLANE] = 0; this.u[ZBASE] = 0; this.bits[OBJECT] = 0; this.bits[TIER] = item.depthTier;
           const entry = this.buffers.getVoxel(item.mesh);
           const ranges = instancedRanges(item);
           const mr = item.mesh.maskRanges; // ALPHA-01f (b): per-range mask lookup, same shape as _staticMesh's
@@ -497,28 +617,35 @@ export class WgRasterPass {
             if (mr && this.maskReady && entry.uvMaskBuffer && mr[part * 5 + 2] >= 0) {
               this._instancedMaskedRange(entry, r, mr, part, buffer, item.instCount); instancedDraws++;
             } else {
-              this._draw(this.instancePipe, entry, r.count * 3, r.start * 3, buffer, item.instCount); instancedDraws++;
+              this._draw((item.flags & DRAW_FLAG_NO_CULL) ? this.instanceOpenPipe : this.instancePipe, entry, r.count * 3, r.start * 3, buffer, item.instCount); instancedDraws++;
             }
           }
         }
         if (this.gpuN) { const gd = this._cullDraw(); instancedDraws += gd; p.stats.gpuCullDraws = gd; } else p.stats.gpuCullDraws = 0;
+        if (this.decor && this.decor.on) { const dd = this._decorDraw(); instancedDraws += dd; p.stats.decorDraws = dd; } else p.stats.decorDraws = 0;
+        if (this.card && this.gpuN) this.card.draw(); // R6c: after the instanced mesh draws, before the view-model depth clear; shadows never see cards
         p.stats.clothDraws = this._cloths(list);
         p.stats.terrainDraws = this._terrain(list);
       } finally { d.endPass(); }
-      if (this.hzb) this._occlPhase2(p); // S8-B2-10c: HZB build -> cull phase 2 -> raster B (before the viewmodel pass: it clears depth)
-      if (this.vmList) {
+    } finally { wgSpanEnd(p); } // OCCL-STATS-01: spans never nest - raster A closes before the phase-2 spans (hzb, cull2, raster2)
+    if (this.hzb) this._occlPhase2(p); // S8-B2-10c: HZB build -> cull phase 2 -> raster B (before the viewmodel pass: it clears depth)
+    if (this.vmList) {
+      wgSpanBegin(p, WG_PASS_SLOT.raster); // viewmodel pass accumulates into the raster slot
+      try {
         // A depth-only target clears the same depth attachment, preserving all colour G-buffer values.
         d.beginPass(p._t.targetVmDepth, this.vmClearOpts); d.endPass();
         d.beginPass(p._t.targetRaster);
         try { p.stats.vmDraws = this._voxels(this.vmList); } finally { d.endPass(); }
-      } else p.stats.vmDraws = 0;
-    } finally { wgSpanEnd(p); }
+      } finally { wgSpanEnd(p); }
+    } else p.stats.vmDraws = 0;
     p.stats.meshDraws = staticDraws; p.stats.maskDraws = this.maskDraws; p.stats.maskUploads = this.maskUploads; p.stats.instancedDraws = instancedDraws; p.stats.instances = instances;
     p.stats.voxelDraws += instancedDraws;
   }
 
   /** Camera cut / teleport (main.js): the next frame's cull phase 1 runs with hzbOn 0. */
   invalidateHzb() { if (this.hzb) this.hzb.invalidate(); }
+  /** LOD-RESET-01: camera cut - GPU LOD hysteresis (`lodPrev`) back to a fresh state. */
+  resetLodHistory() { if (this.cull) this.cull.resetLodHistory(); }
 
   /**
    * S8-B2-10c, after raster pass A (outside any pass): copy the depth G-buffer (texSDepth, f32 bits of linear depth) -> ONE HZB build (it is phase 1's input NEXT frame),
@@ -529,15 +656,19 @@ export class WgRasterPass {
     const hp = this.hzb;
     if (!this.gpuN) { hp.invalidate(); return; } // no batches this frame: the pyramid would go stale -> never reuse it
     const d = this.device;
-    hp.build(p._t.texSDepth);
+    hp.build(p._t.texSDepth, p);
     if (!this._phase2) return;
     const fresh = hp.fresh(this._hzbFwd);
-    this.cull.runPhase2(fresh);
-    d.beginPass(p._t.targetRaster); // load-only: keeps colour G-buffers and depth24 of pass A
-    try { p.stats.gpuCullDraws2 = this._cullDraw(true); } finally { d.endPass(); }
+    this.cull.runPhase2(fresh, p);
+    wgSpanBegin(p, WG_PASS_SLOT.raster2);
+    try {
+      d.beginPass(p._t.targetRaster); // load-only: keeps colour G-buffers and depth24 of pass A
+      try { p.stats.gpuCullDraws2 = this._cullDraw(true); } finally { d.endPass(); }
+    } finally { wgSpanEnd(p); }
   }
 
   dispose() {
+    if (this.card) { this.card.dispose(); this.card = null; }
     if (this.hzb) { this.hzb.dispose(); this.hzb = null; }
     this.buffers.dispose();
     for (const pipe of this.pipes) this.device.dispose(pipe);
@@ -547,8 +678,13 @@ export class WgRasterPass {
     if (this.nearTex) this.device.dispose(this.nearTex);
     if (this.farTex) this.device.dispose(this.farTex);
     this.nearTex = this.farTex = null;
+    if (this.nearLookTex) this.device.dispose(this.nearLookTex);
+    if (this.farLookTex) this.device.dispose(this.farLookTex);
+    this.nearLookTex = this.farLookTex = null; this.lookActive = false;
+    if (this.decor) { this.decor.dispose(); this.decor = null; }
     if (this.cull) { this.cull.dispose(); this.cull = null; }
-    for (const buffer of this.instanceBuffers.values()) this.device.dispose(buffer);
+    for (const ent of this.instanceBuffers.values()) this.device.dispose(ent.buffer);
     this.instanceBuffers.clear();
+    if (this.structMasks) this.structMasks.dispose(); // kept (tests poke uniforms after dispose); dispose is idempotent
   }
 }

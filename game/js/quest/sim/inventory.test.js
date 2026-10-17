@@ -11,7 +11,7 @@ import { loadTestAssets } from '../../../../tools/testing/content-node.mjs';
 import { makeOk } from '../../../../engine/test/assert.js';
 import {
   ensureInventory, addItem, removeItem, countOf, assignHand, swapHands, hashInto,
-  validateItemDefs, migrateSword, SLOTS,
+  validateItemDefs, migrateSword, SLOTS, moveSlot,
 } from './inventory.js';
 import { createVitals } from './vitals.js';
 import { VITALS_DEFAULTS as CFG } from './vitalsConfig.js';
@@ -177,6 +177,8 @@ function killAndRespawn(vitals, player) {
   const inv = freshInv();
   ok('migrateSword on a sword-less pack adds sword + left', migrateSword(inv, defs) === true && countOf(inv, 'sword') === 1 && inv.left === 'sword');
   ok('migrateSword is idempotent (sword already present)', migrateSword(inv, defs) === false && countOf(inv, 'sword') === 1);
+  const held = freshInv(); held.right = 'sword'; // OB-079: wielded sword (in hand, not in pack slots) must not be re-added on Continue
+  ok('migrateSword leaves a wielded sword alone', migrateSword(held, defs) === false && countOf(held, 'sword') === 0 && held.left === null);
 }
 {
   const world = buildWorld([playerEntity()]);
@@ -231,6 +233,20 @@ function killAndRespawn(vitals, player) {
   ok('a bad def throws naming its id', !!threw && /bad\.item/.test(threw.message), threw && threw.message);
 }
 
+// EQ-01: equip data validated; 35 gear ids (EQ-21); bad slot/tier throws.
+{
+  const gear = Object.values(defs).filter((d) => d.kind === 'gear' && !d.unique);
+  ok('35 rollable gear ids over 7 slots x 5 tiers (+ unique River Boots)', gear.length === 35 && new Set(gear.map((d) => d.equip.slot)).size === 7);
+  ok('arrow quiver stack 30', defs.arrow.kind === 'ammo' && defs.arrow.stackMax === 30 && defs.arrow.equip.slot === 'quiver');
+  ok('potions', defs['potion.hp'].stackMax === 5 && defs['potion.hp'].use.heal === 2 && defs['potion.mp'].kind === 'potion');
+  ok('sword/shield/bow equip slots', defs.sword.equip.slot === 'main' && defs.shield.equip.slot === 'off' && defs.bow.equip.slot === 'ranged');
+  const mk = (equip) => ({ ...defs, 'bad.gear': { ...defs['gear.head.hood.worn'], id: 'bad.gear', equip } });
+  for (const [label, equip] of [['slot', { slot: 'tail', tier: 'worn', def: 1 }], ['tier', { slot: 'head', tier: 'epic', def: 1 }], ['def', { slot: 'head', tier: 'fine', def: -1 }]]) {
+    let t = null; try { validateItemDefs(mk(equip)); } catch (e) { t = e; }
+    ok(`bad equip.${label} throws`, !!t && /bad\.gear/.test(t.message), t && t.message);
+  }
+}
+
 // S8-C-08: explicit kinds preserve authored stack limits, hand assignment and saved ids.
 {
   const expected = { shield: 'shield', 'key.small': 'key', 'heart.piece': 'upgrade', cog: 'currency' };
@@ -254,6 +270,18 @@ function killAndRespawn(vitals, player) {
     const d = defs[id];
     ok(`${id} fits the approved card copy limits`, d.name.length <= 14 && d.desc.length <= 38 && /^[ -~]+$/.test(d.name + d.desc) && d.placeholderName === false);
   }
+}
+
+// OB-203: drag between pack cells - move to empty, swap, stack same item, refuse no-ops
+{
+  const defs = globalThis.ASSETS.items.defs;
+  const mk = () => { const slots = Array.from({ length: SLOTS }, () => ({ id: null, n: 0 })); return { slots, left: null, right: null }; };
+  const inv = mk(); inv.slots[0] = { id: 'boar.hide', n: 5 }; inv.slots[3] = { id: 'boar.meat', n: 2 };
+  ok('OB-203 move to an empty cell', moveSlot(inv, defs, 0, 7) && inv.slots[7].id === 'boar.hide' && inv.slots[7].n === 5 && inv.slots[0].id === null);
+  ok('OB-203 swap two items', moveSlot(inv, defs, 7, 3) && inv.slots[3].id === 'boar.hide' && inv.slots[7].id === 'boar.meat' && inv.slots[7].n === 2);
+  inv.slots[10] = { id: 'boar.hide', n: 18 };
+  ok('OB-203 same item stacks up to stackMax, rest stays', moveSlot(inv, defs, 3, 10) && inv.slots[10].n === defs['boar.hide'].stackMax && inv.slots[3].n === 5 + 18 - defs['boar.hide'].stackMax);
+  ok('OB-203 empty source / same cell / full stack refuse', !moveSlot(inv, defs, 5, 6) && !moveSlot(inv, defs, 3, 3) && !moveSlot(inv, defs, 3, 10));
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

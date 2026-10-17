@@ -1,0 +1,536 @@
+{
+  "boar": {
+    "name": "Boar",
+    "arch": "grazer",
+    "model": "boarPlaceholder",
+    "todo": "",
+    "lv": [1, 3],
+    "hpF": 1,
+    "dmgF": 1,
+    "group": [1, 2],
+    "respawn": "grazer",
+    "attacks": [
+      {"id": "charge", "type": "charge", "range": 5, "windupSec": 0.5, "activeSec": 1.2, "recoverSec": 1, "cooldownSec": 1.5, "dmgF": 1, "weight": 1}
+    ]
+  },
+  "mountain_goat": {
+    "name": "Mountain Goat",
+    "arch": "grazer",
+    "model": "goat",
+    "todo": "",
+    "lv": [8, 9],
+    "hpF": 0.8,
+    "dmgF": 0.7,
+    "group": [1, 3],
+    "respawn": "grazer",
+    "attacks": [
+      {"id": "headbutt", "type": "melee", "range": 2, "windupSec": 0.5, "activeSec": 0.3, "recoverSec": 1, "cooldownSec": 2, "dmgF": 0.7, "weight": 1}
+    ]
+  },
+  "aurochs": {
+    "name": "Aurochs",
+    "arch": "grazer",
+    "model": "aurochs",
+    "todo": "",
+    "lv": [2, 4],
+    "hpF": 2.5,
+    "dmgF": 1.5,
+    "group": [3, 5],
+    "respawn": "grazer",
+    "attacks": [
+      {"id": "stampede", "type": "charge", "range": 7, "windupSec": 0.6, "activeSec": 1.4, "recoverSec": 1.2, "cooldownSec": 2, "dmgF": 1.5, "weight": 1}
+    ]
+  },
+  "red_deer": {
+    "name": "Red Deer",
+    "arch": "skittish",
+    "model": "redDeer",
+    "todo": "designer D1: red deer model",
+    "lv": [1, 5],
+    "hpF": 0.8,
+    "dmgF": 0.6,
+    "group": [2, 4],
+    "respawn": "grazer",
+    "attacks": [
+      {"id": "kick", "type": "melee", "range": 2, "windupSec": 0.5, "activeSec": 0.3, "recoverSec": 1, "cooldownSec": 3, "dmgF": 0.6, "weight": 1}
+    ]
+  },
+  "fox": {
+    "name": "Fox",
+    "arch": "skittish",
+    "model": "fox",
+    "todo": "",
+    "lv": [1, 3],
+    "hpF": 0.4,
+    "dmgF": 0.3,
+    "group": [1, 1],
+    "respawn": "grazer",
+    "attacks": [
+      {"id": "nip", "type": "melee", "range": 1.5, "windupSec": 0.4, "activeSec": 0.2, "recoverSec": 0.8, "cooldownSec": 2, "dmgF": 0.3, "weight": 1}
+    ]
+  },
+  "grey_wolf": {
+    "name": "Grey Wolf",
+    "arch": "packHunter",
+    "model": "wolf",
+    "todo": "",
+    "lv": [4, 8],
+    "hpF": 0.9,
+    "dmgF": 1,
+    "group": [3, 5],
+    "respawn": "pack",
+    "attacks": [
+      {"id": "leap", "type": "lunge", "range": 5, "windupSec": 0.5, "activeSec": 0.5, "recoverSec": 1.5, "cooldownSec": 2, "dmgF": 1, "weight": 3},
+      {"id": "bite", "type": "melee", "range": 1.8, "windupSec": 0.4, "activeSec": 0.2, "recoverSec": 0.8, "cooldownSec": 1.5, "dmgF": 0.8, "weight": 2}
+    ],
+    "walk": 1.95,
+    "run": 5.85
+  },
+  "white_wolf": {
+    "name": "White Wolf",
+    "arch": "packHunter",
+    "model": "wolf",
+    "todo": "variant: white fur, larger",
+    "lv": [8, 10],
+    "hpF": 2,
+    "dmgF": 1.4,
+    "group": [1, 1],
+    "respawn": "elite",
+    "attacks": [
+      {"id": "leap", "type": "lunge", "range": 5, "windupSec": 0.5, "activeSec": 0.5, "recoverSec": 1.5, "cooldownSec": 2, "dmgF": 1.4, "weight": 3},
+      {"id": "howl", "type": "cast", "range": 12, "windupSec": 0.8, "activeSec": 1, "recoverSec": 1, "cooldownSec": 12, "dmgF": 0, "weight": 1}
+    ],
+    "elite": true
+  },
+  "lynx": {
+    "name": "Lynx",
+    "arch": "ambusher",
+    "model": "lynx",
+    "todo": "",
+    "lv": [5, 7],
+    "hpF": 0.8,
+    "dmgF": 1.4,
+    "group": [1, 1],
+    "respawn": "common",
+    "attacks": [
+      {"id": "pounce", "type": "lunge", "range": 8, "windupSec": 0.4, "activeSec": 0.5, "recoverSec": 1.5, "cooldownSec": 3, "dmgF": 1.4, "weight": 1}
+    ]
+  },
+  "black_bear": {
+    "name": "Black Bear",
+    "arch": "tank",
+    "model": "bearBlack",
+    "todo": "",
+    "lv": [5, 9],
+    "hpF": 3.5,
+    "dmgF": 2,
+    "group": [1, 1],
+    "respawn": "common",
+    "attacks": [
+      {"id": "swipe", "type": "charge", "range": 6, "windupSec": 0.8, "activeSec": 1.4, "recoverSec": 1.5, "cooldownSec": 2, "dmgF": 2, "weight": 3},
+      {"id": "slam", "type": "aoe", "range": 2.5, "windupSec": 0.8, "activeSec": 0.4, "recoverSec": 1.5, "cooldownSec": 6, "dmgF": 2, "weight": 1}
+    ],
+    "walk": 1,
+    "run": 4
+  },
+  "cave_bear": {
+    "name": "Cave Bear",
+    "arch": "tank",
+    "model": "bearBlack",
+    "todo": "variant: pale cave bear",
+    "lv": [9, 10],
+    "hpF": 4.5,
+    "dmgF": 2.4,
+    "group": [1, 1],
+    "respawn": "elite",
+    "attacks": [
+      {"id": "swipe", "type": "charge", "range": 6, "windupSec": 0.8, "activeSec": 1.4, "recoverSec": 1.5, "cooldownSec": 2, "dmgF": 2.4, "weight": 3},
+      {"id": "roar", "type": "aoe", "range": 6, "windupSec": 0.9, "activeSec": 0.4, "recoverSec": 1.2, "cooldownSec": 10, "dmgF": 0.3, "weight": 1}
+    ],
+    "elite": true,
+    "walk": 1,
+    "run": 4
+  },
+  "river_crocodile": {
+    "name": "River Crocodile",
+    "arch": "waterAmbusher",
+    "model": "crocodile",
+    "todo": "",
+    "lv": [4, 7],
+    "hpF": 2.5,
+    "dmgF": 2,
+    "group": [1, 1],
+    "respawn": "common",
+    "attacks": [
+      {"id": "lunge", "type": "lunge", "range": 4, "windupSec": 0.5, "activeSec": 0.4, "recoverSec": 1.5, "cooldownSec": 3, "dmgF": 2, "weight": 1},
+      {"id": "grab", "type": "grab", "range": 2, "windupSec": 0.5, "activeSec": 3, "recoverSec": 2, "cooldownSec": 8, "dmgF": 0.8, "weight": 1}
+    ]
+  },
+  "reed_eel": {
+    "name": "Reed Eel",
+    "arch": "swimmer",
+    "model": "eel",
+    "todo": "designer D1: eel model",
+    "lv": [5, 7],
+    "hpF": 0.7,
+    "dmgF": 0.8,
+    "group": [1, 2],
+    "respawn": "common",
+    "attacks": [
+      {"id": "bite", "type": "melee", "range": 1.8, "windupSec": 0.4, "activeSec": 0.2, "recoverSec": 1, "cooldownSec": 2, "dmgF": 0.8, "weight": 1},
+      {"id": "coil", "type": "melee", "range": 1.8, "windupSec": 0.6, "activeSec": 0.5, "recoverSec": 1.2, "cooldownSec": 6, "dmgF": 0.4, "weight": 1}
+    ]
+  },
+  "snapping_turtle": {
+    "name": "Snapping Turtle",
+    "arch": "swimmer",
+    "model": "tortoise",
+    "todo": "variant: snapping turtle",
+    "lv": [3, 5],
+    "hpF": 2,
+    "dmgF": 1.2,
+    "group": [1, 1],
+    "respawn": "common",
+    "attacks": [
+      {"id": "snap", "type": "melee", "range": 1.8, "windupSec": 0.6, "activeSec": 0.3, "recoverSec": 1.5, "cooldownSec": 2.5, "dmgF": 1.2, "weight": 1}
+    ],
+    "walk": 0.8,
+    "run": 2.5
+  },
+  "shore_crab": {
+    "name": "Shore Crab",
+    "arch": "swarm",
+    "model": "crab",
+    "todo": "designer D1: crab model",
+    "lv": [3, 4],
+    "hpF": 0.4,
+    "dmgF": 0.5,
+    "group": [3, 6],
+    "respawn": "pack",
+    "attacks": [
+      {"id": "pincer", "type": "melee", "range": 1.2, "windupSec": 0.4, "activeSec": 0.2, "recoverSec": 0.8, "cooldownSec": 1.5, "dmgF": 0.5, "weight": 1}
+    ]
+  },
+  "wood_spider": {
+    "name": "Wood Spider",
+    "arch": "ambusher",
+    "model": "woodSpider",
+    "todo": "designer D2: spider model",
+    "lv": [5, 7],
+    "hpF": 1,
+    "dmgF": 1.1,
+    "group": [1, 1],
+    "respawn": "common",
+    "attacks": [
+      {"id": "drop", "type": "lunge", "range": 6, "windupSec": 0.5, "activeSec": 0.4, "recoverSec": 1.2, "cooldownSec": 3, "dmgF": 1.1, "weight": 2},
+      {"id": "web", "type": "projectile", "range": 12, "windupSec": 0.6, "activeSec": 0.3, "recoverSec": 1.2, "cooldownSec": 5, "dmgF": 0.2, "weight": 1}
+    ]
+  },
+  "spiderling": {
+    "name": "Spiderling",
+    "arch": "swarm",
+    "model": "woodSpider",
+    "todo": "variant: spider x0.4",
+    "lv": [5, 9],
+    "hpF": 0.15,
+    "dmgF": 0.3,
+    "group": [6, 10],
+    "respawn": "pack",
+    "attacks": [
+      {"id": "bite", "type": "melee", "range": 1, "windupSec": 0.4, "activeSec": 0.2, "recoverSec": 0.7, "cooldownSec": 1.2, "dmgF": 0.3, "weight": 1}
+    ]
+  },
+  "harpy": {
+    "name": "Harpy",
+    "arch": "flyer",
+    "model": "harpy",
+    "todo": "designer D2: harpy model",
+    "lv": [7, 9],
+    "hpF": 1.2,
+    "dmgF": 1.3,
+    "group": [1, 2],
+    "respawn": "common",
+    "attacks": [
+      {"id": "dive", "type": "dive", "range": 15, "windupSec": 0.8, "activeSec": 0.8, "recoverSec": 1.5, "cooldownSec": 5, "dmgF": 1.3, "weight": 3},
+      {"id": "screech", "type": "cast", "range": 10, "windupSec": 0.6, "activeSec": 0.5, "recoverSec": 1, "cooldownSec": 10, "dmgF": 0.1, "weight": 1}
+    ]
+  },
+  "carrion_crow": {
+    "name": "Carrion Crow",
+    "arch": "flyer",
+    "model": "crow",
+    "todo": "",
+    "lv": [3, 4],
+    "hpF": 0.2,
+    "dmgF": 0.3,
+    "group": [5, 8],
+    "respawn": "pack",
+    "attacks": [
+      {"id": "peck", "type": "dive", "range": 8, "windupSec": 0.5, "activeSec": 0.5, "recoverSec": 1, "cooldownSec": 3, "dmgF": 0.3, "weight": 1}
+    ]
+  },
+  "dusk_bat": {
+    "name": "Dusk Bat",
+    "arch": "swarm",
+    "model": "bat",
+    "todo": "designer D2: bat model",
+    "lv": [6, 10],
+    "hpF": 0.15,
+    "dmgF": 0.3,
+    "group": [6, 10],
+    "respawn": "pack",
+    "attacks": [
+      {"id": "swoop", "type": "dive", "range": 6, "windupSec": 0.4, "activeSec": 0.5, "recoverSec": 0.8, "cooldownSec": 2, "dmgF": 0.3, "weight": 1}
+    ],
+    "when": "night",
+    "medium": "air"
+  },
+  "skeleton_warrior": {
+    "name": "Skeleton Warrior",
+    "arch": "packHunter",
+    "model": "skeleton",
+    "todo": "",
+    "lv": [3, 10],
+    "hpF": 1.3,
+    "dmgF": 1.2,
+    "group": [1, 3],
+    "respawn": "common",
+    "attacks": [
+      {"id": "slash", "type": "melee", "range": 2, "windupSec": 0.5, "activeSec": 0.3, "recoverSec": 1, "cooldownSec": 1.5, "dmgF": 1.2, "weight": 1}
+    ],
+    "when": "night",
+    "walk": 1.4,
+    "run": 4,
+    "blockF": 0.3
+  },
+  "skeleton_archer": {
+    "name": "Skeleton Archer",
+    "arch": "ranged",
+    "model": "skeletonArcher",
+    "todo": "",
+    "lv": [3, 10],
+    "hpF": 0.8,
+    "dmgF": 1,
+    "group": [1, 2],
+    "respawn": "common",
+    "attacks": [
+      {"id": "volley", "type": "projectile", "range": 18, "windupSec": 0.7, "activeSec": 0.3, "recoverSec": 1.5, "cooldownSec": 3, "dmgF": 1, "weight": 1}
+    ],
+    "when": "night",
+    "keepMin": 8,
+    "keepMax": 12
+  },
+  "wisp": {
+    "name": "Wisp",
+    "arch": "caster",
+    "model": "wisp",
+    "todo": "designer D3: wisp model",
+    "lv": [5, 7],
+    "hpF": 0.5,
+    "dmgF": 0.8,
+    "group": [1, 2],
+    "respawn": "common",
+    "attacks": [
+      {"id": "burn", "type": "cast", "range": 14, "windupSec": 1, "activeSec": 0.4, "recoverSec": 1.5, "cooldownSec": 4, "dmgF": 0.8, "weight": 1}
+    ],
+    "when": "night",
+    "medium": "air",
+    "walk": 1.5,
+    "run": 3
+  },
+  "treant": {
+    "name": "Treant",
+    "arch": "ambusher",
+    "model": "treant",
+    "todo": "designer D2: treant model",
+    "lv": [6, 7],
+    "hpF": 4,
+    "dmgF": 1.8,
+    "group": [1, 1],
+    "respawn": "elite",
+    "attacks": [
+      {"id": "rootslam", "type": "aoe", "range": 3, "windupSec": 0.9, "activeSec": 0.4, "recoverSec": 2, "cooldownSec": 5, "dmgF": 1.8, "weight": 1}
+    ],
+    "elite": true,
+    "walk": 0.8,
+    "run": 2.5
+  },
+  "troll": {
+    "name": "Troll",
+    "arch": "tank",
+    "model": "troll",
+    "todo": "designer D2: troll model",
+    "lv": [8, 10],
+    "hpF": 5,
+    "dmgF": 2.5,
+    "group": [1, 1],
+    "respawn": "elite",
+    "attacks": [
+      {"id": "sweep", "type": "melee", "range": 3, "windupSec": 0.8, "activeSec": 0.4, "recoverSec": 1.5, "cooldownSec": 3, "dmgF": 2.5, "weight": 3},
+      {"id": "boulder", "type": "projectile", "range": 20, "windupSec": 1, "activeSec": 0.4, "recoverSec": 2, "cooldownSec": 8, "dmgF": 2, "weight": 1}
+    ],
+    "elite": true
+  },
+  "goblin_warrior": {
+    "name": "Goblin Warrior",
+    "arch": "packHunter",
+    "model": "goblin",
+    "todo": "",
+    "lv": [2, 8],
+    "hpF": 1.2,
+    "dmgF": 1,
+    "group": [2, 4],
+    "respawn": "camp",
+    "attacks": [
+      {"id": "slash", "type": "lunge", "range": 3.5, "windupSec": 0.5, "activeSec": 0.3, "recoverSec": 0.6, "cooldownSec": 1.5, "dmgF": 1, "weight": 1},
+      {"id": "shove", "type": "melee", "range": 1.5, "windupSec": 0.5, "activeSec": 0.2, "recoverSec": 0.8, "cooldownSec": 4, "dmgF": 0.2, "weight": 1}
+    ],
+    "walk": 1.6,
+    "run": 5.85
+  },
+  "goblin_spear_thrower": {
+    "name": "Goblin Spear Thrower",
+    "arch": "ranged",
+    "model": "goblinSpear",
+    "todo": "",
+    "lv": [2, 8],
+    "hpF": 0.8,
+    "dmgF": 1,
+    "group": [1, 3],
+    "respawn": "camp",
+    "attacks": [
+      {"id": "throw", "type": "projectile", "range": 14, "windupSec": 0.6, "activeSec": 0.3, "recoverSec": 2, "cooldownSec": 2.5, "dmgF": 1, "weight": 1}
+    ],
+    "walk": 1.6,
+    "run": 5.175,
+    "keepMin": 7,
+    "keepMax": 14
+  },
+  "goblin_archer": {
+    "name": "Goblin Archer",
+    "arch": "ranged",
+    "model": "goblin",
+    "todo": "designer D3: goblin + bow",
+    "lv": [4, 8],
+    "hpF": 0.7,
+    "dmgF": 0.9,
+    "group": [1, 3],
+    "respawn": "camp",
+    "attacks": [
+      {"id": "shoot", "type": "projectile", "range": 20, "windupSec": 0.7, "activeSec": 0.3, "recoverSec": 1.8, "cooldownSec": 2.5, "dmgF": 0.9, "weight": 1}
+    ],
+    "keepMin": 10,
+    "keepMax": 14
+  },
+  "goblin_torch_bearer": {
+    "name": "Goblin Torch-Bearer",
+    "arch": "packHunter",
+    "model": "goblinTorch",
+    "todo": "",
+    "lv": [2, 8],
+    "hpF": 1.2,
+    "dmgF": 1.1,
+    "group": [1, 1],
+    "respawn": "camp",
+    "attacks": [
+      {"id": "swing", "type": "melee", "range": 2, "windupSec": 0.5, "activeSec": 0.3, "recoverSec": 1, "cooldownSec": 2, "dmgF": 1.1, "weight": 1},
+      {"id": "alarm", "type": "cast", "range": 20, "windupSec": 0.6, "activeSec": 0.5, "recoverSec": 1, "cooldownSec": 30, "dmgF": 0, "weight": 1}
+    ],
+    "walk": 1.6,
+    "run": 5.175
+  },
+  "goblin_shaman": {
+    "name": "Goblin Shaman",
+    "arch": "caster",
+    "model": "goblin",
+    "todo": "designer D3: goblin + staff/mask",
+    "lv": [5, 8],
+    "hpF": 0.8,
+    "dmgF": 0.8,
+    "group": [1, 1],
+    "respawn": "camp",
+    "attacks": [
+      {"id": "heal", "type": "heal", "range": 18, "windupSec": 1.2, "activeSec": 0.4, "recoverSec": 1, "cooldownSec": 6, "dmgF": 0, "weight": 1},
+      {"id": "hex", "type": "cast", "range": 16, "windupSec": 1, "activeSec": 0.4, "recoverSec": 1.5, "cooldownSec": 4, "dmgF": 0.8, "weight": 1}
+    ]
+  },
+  "goblin_chief": {
+    "name": "Goblin Chief",
+    "arch": "tank",
+    "model": "goblin",
+    "todo": "designer D3: goblin x1.3 + armour",
+    "lv": [3, 9],
+    "hpF": 3,
+    "dmgF": 1.6,
+    "group": [1, 1],
+    "respawn": "camp",
+    "attacks": [
+      {"id": "smash", "type": "melee", "range": 2.5, "windupSec": 0.9, "activeSec": 0.4, "recoverSec": 1.8, "cooldownSec": 3, "dmgF": 1.6, "weight": 3},
+      {"id": "warhorn", "type": "cast", "range": 25, "windupSec": 0.8, "activeSec": 0.5, "recoverSec": 1, "cooldownSec": 20, "dmgF": 0, "weight": 1}
+    ],
+    "elite": true
+  },
+  "bandit_cutthroat": {
+    "name": "Bandit Cutthroat",
+    "arch": "packHunter",
+    "model": "humanKit",
+    "todo": "designer D3: bandit outfit (human_kit)",
+    "lv": [3, 8],
+    "hpF": 1.3,
+    "dmgF": 1.2,
+    "group": [2, 4],
+    "respawn": "pack",
+    "attacks": [
+      {"id": "combo", "type": "melee", "range": 2, "windupSec": 0.4, "activeSec": 0.5, "recoverSec": 1, "cooldownSec": 1.5, "dmgF": 1.2, "weight": 1}
+    ],
+    "walk": 1.6,
+    "run": 5
+  },
+  "bandit_archer": {
+    "name": "Bandit Archer",
+    "arch": "ranged",
+    "model": "humanKit",
+    "todo": "designer D3: bandit outfit + bow",
+    "lv": [3, 8],
+    "hpF": 0.8,
+    "dmgF": 1,
+    "group": [1, 2],
+    "respawn": "pack",
+    "attacks": [
+      {"id": "shoot", "type": "projectile", "range": 20, "windupSec": 0.7, "activeSec": 0.3, "recoverSec": 1.8, "cooldownSec": 2.5, "dmgF": 1, "weight": 1}
+    ],
+    "keepMin": 10,
+    "keepMax": 14
+  },
+  "skeleton_brute": {
+    "name": "Skeleton Brute",
+    "arch": "packHunter",
+    "model": "skeleton",
+    "todo": "",
+    "lv": [3, 10],
+    "hpF": 2,
+    "dmgF": 1.4,
+    "group": [1, 1],
+    "respawn": "common",
+    "attacks": [
+      {"id": "smash", "type": "melee", "range": 2, "windupSec": 0.8, "activeSec": 0.3, "recoverSec": 1.2, "cooldownSec": 2, "dmgF": 1.4, "weight": 1}
+    ],
+    "when": "night",
+    "spdF": 0.7,
+    "telegraphSec": 0.8
+  },
+  "fox_raider": {
+    "name": "Den Fox",
+    "arch": "packHunter",
+    "model": "fox",
+    "todo": "QD-04: den foxes that fight (the plain fox is skittish); reuses the fox model",
+    "lv": [1, 3],
+    "hpF": 0.5,
+    "dmgF": 0.4,
+    "group": [2, 2],
+    "respawn": "pack",
+    "attacks": [
+      {"id": "bite", "type": "melee", "range": 1.5, "windupSec": 0.4, "activeSec": 0.2, "recoverSec": 0.8, "cooldownSec": 2, "dmgF": 0.4, "weight": 1}
+    ]
+  }
+}

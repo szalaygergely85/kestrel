@@ -1,0 +1,34 @@
+// OB-195: Burl's marker colour along the opening chain: gold '!'/'?' while a MAIN step is hers, no blue '!' before she is home.
+//   node game/js/quest/burlMarkColour.test.js
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { loadQuestFiles } from '../questBoot.js';
+import { createQuestRelay } from '../questRelay.js';
+import { gateOnMeet } from './errands.js';
+import { loadDesignAssets } from '../../../tools/validate-content.mjs';
+const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
+const rd = (p) => JSON.parse(readFileSync(ROOT + p, 'utf8'));
+const assets = await loadDesignAssets();
+const itemList = Object.values(assets.items?.defs || {}).map((d) => ({ id: d.id, slot: d.equip && d.equip.slot, tier: d.equip && d.equip.tier }));
+const qb = await loadQuestFiles((u) => Promise.resolve(rd(u.replace(/^(\.\.\/)+/, ''))), { wantBarks: false, log: () => {}, items: itemList });
+const defs = gateOnMeet(qb.giverDefs);
+const r = createQuestRelay(qb.questDef, null, defs, null); r.world = { state: {} };
+const book = r.book;
+const f = (e) => r.feed(e), BO = ['boar1', 'boar2', 'boar3', 'boar4', 'boar5'];
+const marks = () => { const a = [], R = [], sa = [], sr = []; book.markLists(a, R, sa, sr); return { gA: a.includes('bear'), gR: R.includes('bear'), sA: sa.includes('bear'), sR: sr.includes('bear') }; };
+const gold = (k) => { const m = marks(); assert.deepEqual([m.gA || m.gR, m.sA || m.sR], [true, false], k + ' ' + JSON.stringify(m)); assert.equal(m.sA, false); };
+const none = (k) => { const m = marks(); assert.deepEqual([m.gA, m.gR, m.sA, m.sR], [false, false, false, false], k + ' ' + JSON.stringify(m)); };
+book.actKey('q.tower.blade.accept'); none('blade active');
+f({ type: 'flag:set', key: 'wake', value: true }); f({ type: 'area:entered', id: 'breach' }); f({ type: 'item:got', id: 'sword' }); f({ type: 'area:entered', id: 'towerDoor' });
+gold('left tower: gold ?');
+book.handIn('tower.blade'); gold('boars offered: gold !'); book.accept('burl.boars'); none('boars active');
+for (const b of BO) f({ type: 'beast:died', id: b }); gold('boars ready: gold ?');
+book.handIn('burl.boars'); gold('follow offered: gold !'); book.accept('burl.follow'); none('following Burl: no blue !');
+f({ type: 'flag:set', key: 'burl.arrived', value: true }); gold('arrived: gold ?');
+book.handIn('burl.follow'); gold('stone offered: gold !'); book.accept('burl.stone'); none('stone active');
+f({ type: 'flag:set', key: 'waystone.waystone.woken', value: true }); gold('stone ready: gold ?');
+book.handIn('burl.stone'); gold('OB-210: Burl offers The Road West: gold !');
+book.accept('burl.road');
+r.questFlag('burl.departing'); none('Burl walks off: road handed, no blue ! before she is home');
+console.log('burlMarkColour OK');

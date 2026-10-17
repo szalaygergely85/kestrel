@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "note": "Look-at texts (writer: docs/story.md 'This side - look-at texts'). Key = entity components.inspect.text. Optional: entities[] = extra anchor ids without that component, afterItem = the anchor only appears once that item has been taken (never clashes with its pickup prompt), radius, hint/hintTitle = second banner. Never locks: banner only.",
+  "texts": {
+    "note.farmTable": {"prompt": "[E] Read the note", "title": "A note on the crate", "lines": ["Three plates on an upturned crate. Dusty.","Scratched on a board: GONE TO THE OUTWALL.","BACK BY SPRING. DO NOT LET THE FIRE DIE."], "radius": 3.0, "entities": ["qd01_farmTable"]},
+    "note.towerScratch": {"prompt": "[E] Read the claw marks", "title": "Marks by the tower door", "lines": ["Claw marks, low and fresh. Two sizes.","Something small, and something smaller.","They dig at the door from the inside."], "radius": 3.0, "entities": ["qd04_towerScratch"]},
+    "note.strand.monster": {
+      "prompt": "[E] Read the sign",
+      "title": "A sign on the Long Strand",
+      "lines": ["Carved in a driftwood post, worn salt-white:", "SWIM TO THE STAKES. NOT ONE STROKE PAST.", "Under it, newer, in charcoal: IT CIRCLES FIRST."],
+      "radius": 3.0,
+      "entities": ["strandSign"]
+    },
+    "note.knot": {
+      "prompt": "[E] Look at the knot",
+      "title": "A knot on the brass",
+      "lines": ["A skyworks hitch. Lamp-trimmers tie it.", "Pulled tight. Weathered grey. Years old."],
+      "entities": ["knot"]
+    },
+    "note.sealedGate": {
+      "prompt": "[E] Look at the gate",
+      "title": "A gate across the pass",
+      "lines": ["Iron bars. A lock the size of a fist.", "", "The keyhole is clean. No rust in it.", "Someone still keeps a key."],
+      "again": "note.sealedGate.again",
+      "hintTitle": "The Sealed Gate",
+      "hint": "Locked. The bars do not even rattle.",
+      "radius": 3.2,
+      "entities": ["sealedGate"]
+    },
+    "note.sealedGate.again": {
+      "title": "A gate across the pass",
+      "lines": ["Oil on the hinges. Fresh this season.", "Whoever keeps the key keeps the gate."]
+    },
+    "inspect.wagon": {
+      "prompt": "[E] Look at the cart",
+      "title": "A cart off the road",
+      "lines": ["Tipped on its side. The axle snapped clean.", "Crates split open. Straw gone grey. Nothing in them.", "The ruts run east, toward the Wall.", "Nobody came back for it."]
+    },
+    "note.westRuin": {"prompt": "[E] Read the scratches", "title": "A gatehouse wall", "lines": ["Tally marks, forty or fifty, then a gap.", "Under them, scratched deep: NOT ALL OF US WENT NORTH.", "Whoever wrote it meant to come back."]},
+    "note.westMeadow": {"prompt": "[E] Look at the cart", "title": "A cart in the grass", "lines": ["Tall grass, and deep hoof prints all round.", "The boars were here before you came."]},
+    "note.westStones": {"prompt": "[E] Look at the stones", "title": "A ring of stones", "lines": ["Six stones, set on the hill by hand.", "You can see the ford and the trade post from here.", "Whoever stood here watched the road."]},
+    "note.cemetery.crypt": {"prompt": "[E] Look at the door", "title": "The crypt door", "lines": ["The crypt door is sealed.","Something scratches inside."]},
+    "note.crypt.walls": {"prompt": "[E] Look at the wall", "title": "The crypt wall", "lines": ["Old brick, black with smoke. Names cut in rows.","Every name scraped off. Someone did not want them read."]},
+    "note.crypt.coffin": {"prompt": "[E] Look at the coffin", "title": "A coffin", "lines": ["The lid is pushed aside. From the inside.","Dust and dry earth. Nothing lies in it now."]},
+    "note.crypt.banner": {"prompt": "[E] Look at the banner", "title": "An old banner", "lines": ["A rotted banner. Under the dirt: a tower and a light.","The light is stitched in thread that is still teal."]},
+    "note.crypt.chest": {"prompt": "[E] Look at the chest", "title": "A sealed chest", "lines": ["Iron bands and a grey wax seal. Shut tight.","It will not open while the dead still walk here."]},
+    "note.poi.whitecombs.1": {"prompt": "[E] Look at the stones", "title": "A ring of stones", "lines": ["Set upright by hand, long ago.","The grass inside is still short."]},
+    "note.poi.whitecombs.2": {"prompt": "[E] Read the marks", "title": "A broken arch", "lines": ["Someone scratched tally marks on the stone.","Forty-one, and then they stop."]},
+    "note.poi.westFells.1": {"prompt": "[E] Read the marks", "title": "A broken arch", "lines": ["Someone scratched tally marks on the stone.","Forty-one, and then they stop."]},
+    "note.poi.westFells.2": {"prompt": "[E] Look at the stones", "title": "A ring of stones", "lines": ["Set upright by hand, long ago.","The grass inside is still short."]},
+    "note.poi.westFells.3": {"prompt": "[E] Look at the wreck", "title": "A wrecked wagon", "lines": ["The wheels are gone and the bed is split.","A faded cross is chalked on the tailboard."]},
+    "note.poi.heartlandE.1": {"prompt": "[E] Look at the stones", "title": "A ring of stones", "lines": ["Set upright by hand, long ago.","The grass inside is still short."]},
+    "note.poi.heartlandE.2": {"prompt": "[E] Look at the wreck", "title": "A wrecked wagon", "lines": ["The wheels are gone and the bed is split.","A faded cross is chalked on the tailboard."]},
+    "note.poi.heartlandE.3": {"prompt": "[E] Read the marks", "title": "A broken arch", "lines": ["Someone scratched tally marks on the stone.","Forty-one, and then they stop."]},
+    "note.poi.downs.1": {"prompt": "[E] Read the marks", "title": "A broken arch", "lines": ["Someone scratched tally marks on the stone.","Forty-one, and then they stop."]},
+    "note.poi.downs.2": {"prompt": "[E] Look at the wreck", "title": "A wrecked wagon", "lines": ["The wheels are gone and the bed is split.","A faded cross is chalked on the tailboard."]},
+    "note.poi.downs.3": {"prompt": "[E] Look at the stones", "title": "A ring of stones", "lines": ["Set upright by hand, long ago.","The grass inside is still short."]},
+    "note.poi.northwood.1": {"prompt": "[E] Look at the stones", "title": "A ring of stones", "lines": ["Set upright by hand, long ago.","The grass inside is still short."]},
+    "note.poi.northwood.2": {"prompt": "[E] Look at the wreck", "title": "A wrecked wagon", "lines": ["The wheels are gone and the bed is split.","A faded cross is chalked on the tailboard."]},
+    "inspect.well": {
+      "prompt": "[E] Look at the well",
+      "title": "A dry well",
+      "lines": ["Planks across the mouth. One brick gone.", "You drop a pebble. No splash. No echo.", "The bucket rope was cut, not rotted.", "Someone did not want it used again.", "Cold light rises from the dry well."]
+    },
+    "inspect.shrine": {
+      "prompt": "[E] Look at the shrine",
+      "title": "A fallen shrine",
+      "lines": ["A stone niche on its back. The pillar leans west.", "Three rings cut in the base, worn soft.", "The same mark as the waystones.", "In the niche, a cup of rainwater. Fresh.", "The base is scraped from below. It was pushed."]
+    },
+    "inspect.woodpile": {
+      "prompt": "[E] Look at the woodpile",
+      "title": "A woodcutter's stack",
+      "lines": ["Split logs, stacked bark-up against the rain.", "Grey with age. Moss along the top row.", "A tally cut in the end post stops mid-row.", "Ash on the top logs. Blown from the tower."]
+    },
+    "inspect.gateLamp": {
+      "prompt": "[E] Look at the lanterns",
+      "title": "Lanterns at the gate",
+      "lines": ["Floor lanterns, set in a row. Burning.", "Out here, at the far end of the road.", "Someone wants this gate found."],
+      "entities": ["sgLamp1", "sgLamp2", "sgLamp3", "sgLamp4", "sgLamp5", "sgLamp6"]
+    },
+    "inspect.roadLamp": {
+      "prompt": "[E] Look at the lamp",
+      "title": "A lamp on a crate",
+      "lines": ["Brass, set on an old crate by the road.", "It is lit. Nobody comes to light it.", "The oil never seems to go down."],
+      "entities": ["rsLamp1", "rsLamp2"]
+    },
+    "inspect.tradeLamp": {
+      "prompt": "[E] Look at the lamp",
+      "title": "A lamp on the counter",
+      "lines": ["Brass, on the trade post counter. Lit.", "The flame is trimmed low and even.", "Skyworks neat. Out here."],
+      "entities": ["tradeLamp"]
+    },
+    "inspect.nest.empty": {
+      "prompt": "[E] Look at the nest",
+      "title": "A crow's nest",
+      "lines": ["Sticks, wire, a bootlace, a bent spoon.", "A round hollow where the glass sat.", "Someone has already counted what is left."],
+      "entities": ["nest"],
+      "afterItem": "relay.mirror"
+    },
+    "note.fordCellar": {
+      "note": "Writer 2026-10-15 (UNDER-03): smugglers' cellar tally; pairs with note.smugglers (graves run stopped, someone else goes there). No names.",
+      "prompt": "[E] Read the tally",
+      "title": "A tally on a cellar beam",
+      "lines": ["Salt, six sacks. Oil, four jars. All from the strand.", "Up the stairs by night. Never past the post lamp.", "The graves run is off. Nobody carries there now.", "Whoever goes down there, it is not one of ours."],
+      "radius": 2.2,
+      "entities": ["cellarNote"]
+    },
+    "note.smugglers": {
+      "note": "Writer 2026-10-15 (UNDER-05): smugglers' voice; hints Ford cellar + crypt (scraped names), no spoilers.",
+      "prompt": "[E] Read the note",
+      "title": "A note under a crate",
+      "lines": ["Low tide only. By high water this floor is sea.", "Salt and oil go to the cellar under the Ford.", "Nothing more goes by the graves. Not after dark.", "Names off the walls down there. We never did that."],
+      "radius": 2.2,
+      "entities": ["strandCaveNote"]
+    },
+    "note.fordMark": {
+      "prompt": "[E] Look at the mark",
+      "title": "A mark cut in the base",
+      "lines": ["Three rings and a line through them.", "The same mark as the stones under the Wards.", "The ones that hum."],
+      "entities": ["fordMark"]
+    },
+    "note.owBoard": {
+      "prompt": "[E] Read the board",
+      "title": "Notices, nailed up",
+      "lines": ["Crown notices, printed in Ferrum. Rain-soft.", "FELL BEYOND THE WALL. Name after name.", "Carried out here and nailed up, one by one.", "One line cut away. On the nail, a skyworks knot."]
+    },
+    "note.pierStone": {
+      "prompt": "[E] Read the stone",
+      "title": "A standing stone",
+      "lines": ["A dressed block, set on end beside the track.", "Old mortar on one face. Once part of a bridge pier.", "A Crown stamp, half chiselled away.", "The bridge was pulled down. Not by the river."]
+    },
+    "note.stoneKnot": {
+      "prompt": "[E] Look at the knot",
+      "title": "A knot at the stone's foot",
+      "lines": ["A cord tied round a root at the stone's foot.", "A lamp-trimmer's hitch, old and grey.", "Whoever tied it knew the stone by name."],
+      "entities": ["qd06_stoneKnot"]
+    }
+  }
+}

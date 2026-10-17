@@ -18,8 +18,11 @@ export const D = {
   ACCEL_Z: 18, DRAG_K: 19, WIND: 20, MAX_LIVE: 21, KILL_BELOW: 22, BURST: 23,
   EMISSIVE: 24, EMISSIVE_FOG: 25, RAMP_LEN: 26,
   SIZE_M: 27, // world diameter of one particle in metres (0 = one cell); read by render/particleLayer.js
+  SIZE_END_M: 28, // diameter at end of life (m); size lerps SIZE_M -> SIZE_END_M with age (default = SIZE_M)
+  BG_MIX: 29, // PART-VIS-01: 0..1, share of the particle colour also blended into the cell background (0 = glyph only)
 };
-export const DEF_STRIDE = 28;
+export const DEF_STRIDE = 30;
+export const MAX_SIZE_M = 12; // validated max diameter; the layer clamps the screen footprint (MAX_FOOT cells)
 
 /** Orthonormal basis (a, b) of the unit axis (dx,dy,dz), written to out[o..o+5]. No trig. */
 export function basisInto(dx, dy, dz, out, o) {
@@ -91,7 +94,9 @@ export function compileEmitterDef(key, def) {
   rec[D.KILL_BELOW] = def.killBelow === undefined || def.killBelow === null ? NaN : num(key, def, 'killBelow', 0, 0);
   rec[D.EMISSIVE] = def.emissive ? 1 : 0;
   rec[D.EMISSIVE_FOG] = num(key, def, 'emissiveFog', 0, 0, 1);
-  rec[D.SIZE_M] = num(key, def, 'sizeM', 0, 0, 1);
+  rec[D.SIZE_M] = num(key, def, 'sizeM', 0, 0, MAX_SIZE_M);
+  rec[D.SIZE_END_M] = num(key, def, 'sizeEndM', rec[D.SIZE_M], 0, MAX_SIZE_M);
+  rec[D.BG_MIX] = num(key, def, 'bgMix', 0, 0, 1);
 
   if (typeof def.glyphs !== 'string' || def.glyphs.length < 1) fail(key, 'glyphs', 'must be a non-empty string');
   const cps = Array.from(def.glyphs);

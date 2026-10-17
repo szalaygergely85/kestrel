@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "id": "under.crypt",
+  "title": "The Sealed Crypt",
+  "begin": { "npc": "postkeeper" },
+  "end": { "npc": "postkeeper" },
+  "abandonable": true,
+  "band": 4,
+  "requires": { "quests": ["under.graves"] },
+  "giveOnAccept": [{ "id": "key.crypt", "n": 1 }],
+  "objectives": [
+    { "id": "open", "text": "Open the crypt", "journal": "Bram's Crypt Key opens the crypt.", "when": { "type": "flag", "id": "under.crypt.doorOpen", "equals": true } },
+    { "id": "room", "text": "Reach the last room", "journal": "Go past the dead to the last room.", "when": { "type": "flag", "id": "under.crypt.lastRoom", "equals": true } },
+    { "id": "chest", "text": "Take what was sealed in", "journal": "Put down the dead to open the chest.", "when": { "type": "flag", "id": "under.crypt.chest.chestCrypt", "equals": true } }
+  ],
+  "returnText": "Return to Bram at the post",
+  "rewardBand": "elite",
+  "rewards": { "coin": 95, "items": [{ "id": "potion.hp", "n": 2 }] },
+  "lines": {
+    "offer": [
+      "By the graves there's a crypt. Sealed, years back.",
+      "This is its key. I've kept it long enough.",
+      "Go down and end what keeps them walking. Will you?"
+    ],
+    "active": ["The key opens the crypt door. Go down."],
+    "ready": [
+      "Quiet down there now? Then it's done.",
+      "Keep what was in the chest. It's yours now.",
+      "And 2 Health Potions. Mind the stairs."
+    ],
+    "done": [
+      "That banner down there. A tower with a light on it.",
+      "Like the far one. Folk here watched it too, once."
+    ]
+  }
+}

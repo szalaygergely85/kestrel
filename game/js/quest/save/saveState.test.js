@@ -24,7 +24,7 @@ assert.equal(stringifyGameSave(collectSave(restored.world,{...restored,...restor
 world.get('player').data.components.health.hp=1;assert.equal(save.world.entities[0].components.health.hp,3,'snapshot has no aliases');
 restored.quest.flags.wake=false;assert.equal(save.game.quest.flags.wake,true,'restore has no aliases');
 const legacy=structuredClone(save);legacy.world.version=1;for(const e of legacy.world.entities)delete e.parent;
-assert.equal(collectSave(applySave(legacy,assets,{questDef}).world).world.version,2,'public deserialize migrates WorldState v1');
+assert.equal(collectSave(applySave(legacy,assets,{questDef}).world).world.version,3,'public deserialize migrates WorldState v1');
 const newer=structuredClone(save);newer.saveVersion=2;assert.throws(()=>applySave(newer,assets,{questDef}));
 const bad=structuredClone(save);bad.meta.playTimeSec=NaN;assert.throws(()=>stringifyGameSave(bad));
 const adapter=createMemoryAdapter();assert.equal(adapter.readSlot(0).save,null);
@@ -63,3 +63,49 @@ const overflow = createPlayTime(Number.MAX_VALUE);
 assert.throws(()=>overflow.tick(Number.MAX_VALUE,true),RangeError);
 assert.equal(overflow.seconds,Number.MAX_VALUE);
 console.log('saveState: player components/hands, quest/chests/deaths, byte-stable round trip, CO-5 migration, isolated/error-safe slots and active play time PASS');
+
+// SAVE-TIME-01: savedAt written (ms epoch); old saves without it still load.
+{
+  assert.equal(collectSave(world, {}).meta.savedAt, undefined, 'pure collect stays deterministic (saveRelay stamps savedAt)');
+  const t0 = Date.now(), fresh = collectSave(world, { savedAt: Date.now() });
+  assert.ok(Number.isFinite(fresh.meta.savedAt) && fresh.meta.savedAt >= t0, 'save writes meta.savedAt when passed');
+  assert.equal(collectSave(world, { savedAt: 42 }).meta.savedAt, 42);
+  const old = structuredClone(fresh); delete old.meta.savedAt;
+  assert.doesNotThrow(() => applySave(parseGameSave(stringifyGameSave(old)), assets, {}), 'old save without savedAt loads');
+  const bad2 = structuredClone(fresh); bad2.meta.savedAt = 'x'; assert.throws(() => stringifyGameSave(bad2));
+}
+
+// OB-079: transient questMark_* entities (scale 0.05 mid-pop) are not saved, and old saves holding them still load; player vitals survive
+{
+  const w2=World.load({name:'save_fixture2',terrain:null,structures:[],entities:[]},assets,{});
+  w2.spawn('unit',{x:1,y:2,z:0,yawDeg:0,pitchDeg:0},{health:{hp:17,max:30,invuln:0}},'player');
+  w2.spawn('prop',{x:3,y:3,z:0,yawDeg:0,scale:0.05},{voxel:{model:'questMark',anim:'idle',loop:true,hidden:false}},'questMark_0');
+  const s2=collectSave(w2,{});
+  assert.ok(!s2.world.entities.some(e=>/^questMark/.test(e.id)),'marker not persisted');
+  const old=structuredClone(s2);old.world.entities.push({id:'questMark_0',kind:'prop',transform:{x:3,y:3,z:0,yawDeg:0,scale:0.05},components:{voxel:{model:'questMark',anim:'idle',loop:true,hidden:false}}});
+  const r2=applySave(old,assets,{});
+  assert.equal(r2.world.get('player').data.components.health.hp,17,'hp restored on Continue');
+  assert.ok(!r2.world.get('questMark_0'));
+}
+
+// Browser finding (verify-continue): swim.js leaves body.waterZ/waterFloorZ = NaN ("no water") on every body -> save threw 'expected finite JSON data'.
+{
+  const w=World.load({name:'nowater',terrain:null,structures:[],entities:[]},assets,{});
+  const p=w.spawn('unit',{x:1,y:2,z:0,yawDeg:0,pitchDeg:0},{health:{hp:3,max:5,invuln:0}},'player');
+  p.data.components.body={waterZ:NaN,waterFloorZ:NaN,swimming:false};
+  const s=collectSave(w,{});
+  assert.doesNotThrow(()=>stringifyGameSave(s),'NaN water feed must not break save');
+  assert.ok(!('waterZ' in (s.world.entities.find(e=>e.id==='player').components.body||{})),'NaN water feed dropped');
+  assert.ok(Number.isNaN(p.data.components.body.waterZ),'live body untouched');
+}
+
+// CUR-01: the wallet round-trips through game.coin; an old save (no field) loads 0; bad values are refused.
+{
+  const s0=collectSave(world,options);
+  assert.equal(s0.game.coin,undefined,'zero wallet writes no field');
+  assert.equal(applySave(s0,assets,{questDef}).coin,0,'old save -> 0 coin');
+  const s1=collectSave(world,{...options,coin:135});
+  assert.equal(s1.game.coin,135);
+  assert.equal(applySave(parseGameSave(stringifyGameSave(s1)),assets,{questDef}).coin,135,'round trip');
+  for (const bad of [-1,1.5,10000,'5']) { const b=structuredClone(s1); b.game.coin=bad; assert.throws(()=>applySave(b,assets,{questDef}),/invalid coin/); }
+}

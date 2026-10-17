@@ -34,9 +34,13 @@
 //    arrows, Esc) is fully implemented; mouse interaction needs an engine
 //    change first.
 import { createPanel } from '../../../engine/index.js';
-import { OPTIONS, findOption, getDefaultValues, stepOptionValue } from '../settings/options.js';
+import { OPTIONS, findOption, getDefaultValues, stepOptionValue, ASPECT_VALUES, DEFAULT_ASPECT, aspectRatio } from '../settings/options.js';
 import { loadSettings, saveSettings } from '../platform/index.js';
-import { setMuted, isMuted } from '../audio/synth.js';
+import { setEnemyBarsOn, setDamageNumbersOn } from './combatHudFlags.js'; // HPBAR-02 / DMGNUM-01: Combat HUD switches
+import { setMuted, isMuted, setVolume } from '../audio/synth.js';
+import { knobsFor, saveQuality, applyCarpetPreset } from './gfxPresets.js';
+import { reapplyImpostorPreset } from './impostorPreset.js'; // R6-WIRE
+import { setReduceMotion } from './comfort.js'; // SETTINGS-APPLY-01
 
 let panel = null;          // createPanel()'s fade/open-close state machine (fake `{w,h}` art - see header)
 let values = { ...getDefaultValues(), ...toOptionValues(loadSettings()) };
@@ -47,7 +51,7 @@ const gridFailed = new Set(); // grid values `engine.setGrid` refused this sessi
 /** Maps the platform's flat settings blob onto options.js ids (`muted` -> `mute`). */
 function toOptionValues(saved) {
   return {
-    grid: saved.grid, fullscreen: saved.fullscreen,
+    grid: saved.grid, quality: saved.quality || 'auto', fullscreen: saved.fullscreen,
     mouseSensitivity: saved.mouseSensitivity, invertY: saved.invertY,
     mute: saved.muted,
   };
@@ -74,8 +78,11 @@ function openPanel(ctx) {
   // toggled via the `N` key (or fullscreen toggled by the browser/Esc) while
   // the panel was closed would show stale on reopen - refresh both live here.
   values.mute = isMuted();
+  values.quality = loadSettings().quality || 'auto'; // the auto-bench may have saved a pick since boot
   if (typeof document !== 'undefined') values.fullscreen = !!document.fullscreenElement;
   selected = 0;
+  fullCtx = ctx;
+  fullView = canMountFull(ctx.assets) ? buildFullView(ctx.assets, null) : null; // SETTINGS-MOUNT-01
   panel.open();
 }
 
@@ -125,11 +132,41 @@ function applyValue(id, value, ctx) {
   saveSettings(id === 'mute' ? { muted: value } : { [id]: value });
 }
 
+/**
+ * QUALITY-GRID-01: choosing a quality saves it AND moves the grid to the preset's grid live (the preset owns the grid).
+ * 'auto' only saves the choice (the next boot benchmarks). A manual Grid row pick afterwards is a session/legacy tweak:
+ * boot ignores a saved grid whenever a quality is saved (gfxBoot.js).
+ */
+function applyQuality(name, ctx) {
+  if (name === values.quality) return;
+  const r = saveQuality(name, { save: saveSettings, load: loadSettings });
+  if (!r.saved) return; // storage refused: keep the old row value, nothing half-applied
+  values.quality = name;
+  if (name === 'auto') return;
+  let grid;
+  try { grid = knobsFor(name).grid; } catch { return; } // presets not loaded (embed/test): quality saved, grid untouched
+  try { reapplyImpostorPreset(ctx.engine, knobsFor(name)); } catch { /* no engine/instances in embed/test */ } // R6-WIRE: impostor cards on/off, no re-bake
+  applyCarpetPreset(name, ctx.engine && ctx.engine.world); // OB-103b: grass carpet radius/density from the preset, live (no reload)
+  const m = /^(\d+)x(\d+)$/.exec(grid);
+  if (!m || !ctx.engine || typeof ctx.engine.setGrid !== 'function') return;
+  const result = ctx.engine.setGrid(Number(m[1]), Number(m[2]));
+  if (result && !result.error) applyValue('grid', `${result.cols}x${result.rows}`, ctx);
+}
+
+/** OB-117: saves the picture ratio and applies it live (RenderTarget.setAspect re-fits the canvas at once). */
+export function applyAspect(name, ctx) {
+  if (!ASPECT_VALUES.includes(name)) return;
+  saveSettings({ aspect: name });
+  const rt = ctx && ctx.engine && ctx.engine.renderTarget;
+  if (rt && typeof rt.setAspect === 'function') rt.setAspect(aspectRatio(name));
+}
+
 function applyStep(dir, ctx) {
   const id = visibleRows[selected];
   if (id === 'back') return;
   const opt = findOption(id);
   if (!opt) return;
+  if (id === 'quality') { applyQuality(stepOptionValue(opt, values.quality, dir), ctx); return; }
   const isDisabled = id === 'grid' ? (v) => gridFailed.has(v) : () => false;
   const next = stepOptionValue(opt, values[id], dir, isDisabled);
   if (next === values[id]) return;
@@ -174,6 +211,7 @@ export function updateSettings(dt, input, ctx) {
     return;
   }
 
+  if (fullView) { stepFullView(input); return; } // SETTINGS-MOUNT-01: full panel owns the keys
   if (input.pressed('Escape')) { input.consumePressed(); closePanel(); return; }
   if (input.pressed('KeyW') || input.pressed('ArrowUp')) { input.consumePressed(); moveSelection(-1); return; }
   if (input.pressed('KeyS') || input.pressed('ArrowDown')) { input.consumePressed(); moveSelection(1); return; }
@@ -219,7 +257,7 @@ function formatValue(opt, raw) {
  * header note, and lets this module draw last, right where the pause
  * overlay already does, with no extra `render()` hook).
  */
-function dimSceneRect(rt, ui, ux0, uy0, uw, uh, mul) {
+export function dimSceneRect(rt, ui, ux0, uy0, uw, uh, mul) {
   const sx = ui.sx, sy = ui.sy;
   const r0 = Math.max(0, Math.floor(uy0 * sy));
   const r1 = Math.min(rt.rows - 1, Math.ceil((uy0 + uh) * sy) - 1);
@@ -325,6 +363,12 @@ export function drawSettingsPanel(ui, rt, assets, ctx = {}) {
     return;
   }
 
+  if (fullView) {
+    const dim = assets.uiStyle.menu ? assets.uiStyle.menu.sceneDim.bgMul : style.sceneDim.bgMul;
+    dimSceneRect(rt, ui, 0, 0, ui.cols, ui.rows, 1 + (dim - 1) * panel.a);
+    fullView.draw(ui);
+    return;
+  }
   if (assets.uiStyle.menu) {
     dimSceneRect(rt, ui, 0, 0, ui.cols, ui.rows, 1 + (assets.uiStyle.menu.sceneDim.bgMul - 1) * panel.a);
     drawMenuSettingsPanel(ui, assets);
@@ -406,8 +450,8 @@ function drawMenuSettingsPanel(ui, assets) {
 // the existing pause-panel exports above remain available to legacy callers.
 const FULL_OPTIONS = [
   { id: 'quality', values: ['low', 'medium', 'high', 'ultra', 'auto'], default: 'high' },
-  { id: 'shadows', values: ['off', 'low', 'mid', 'high'], default: 'high' },
-  { id: 'grid', values: ['240x90', '320x120', '400x150', '480x180'], default: '400x150' },
+  { id: 'shadows', values: ['off', 'low', 'mid', 'high', 'ultra'], default: 'high' },
+  { id: 'grid', values: ['240x90', '320x120', '400x150', '480x180', '560x210'], default: '400x150' },
   { id: 'volume', type: 'range', min: 0, max: 1, step: 0.1, default: 1 },
   { id: 'mute', values: [false, true], default: false },
   { id: 'textSize', values: ['small', 'normal', 'large'], default: 'normal' },
@@ -416,7 +460,7 @@ const FULL_OPTIONS = [
 
 // Reuse the title card's skin without changing designer-owned assets or option data.
 function menuSettingsStyle(style, menu, full = true) {
-  const h = full ? 36 : menu.panel.h, w = menu.panel.w;
+  const h = full ? 46 : menu.panel.h, w = menu.panel.w;
   return {
     ...style,
     panel: { x: Math.floor((160 - w) / 2), y: Math.floor((60 - h) / 2), w, h },
@@ -429,13 +473,13 @@ function menuSettingsStyle(style, menu, full = true) {
     section: { ...style.section, color: menu.title.decorFg[0],
       rule: { glyph: menu.separators[0].glyph, color: menu.separators[0].fg, toCol: menu.separators[0].to } },
     layout: [{section:'GRAPHICS',y:4},{id:'quality',y:6},{id:'shadows',y:8},
-      {id:'lodScale',y:10},{id:'grid',y:12},{section:'SOUND',y:15},{id:'volume',y:17},
-      {id:'mute',y:19},{section:'COMFORT',y:22},{id:'textSize',y:24},
-      {id:'reduceMotion',y:26},{id:'back',y:29}],
-    rowOrder: ['quality','shadows','lodScale','grid','volume','mute','textSize','reduceMotion','back'],
-    labels: { ...style.labels, grid: 'Resolution', lodScale: 'LOD distance' },
-    controlOf: { ...style.controlOf, lodScale: 'select' },
-    valueText: { ...style.valueText, lodScale: {0.6:'0.6x',0.8:'0.8x',1:'1x',1.25:'1.25x'} },
+      {id:'lodScale',y:10},{id:'grid',y:12},{id:'aspect',y:14},{section:'SOUND',y:16},{id:'volume',y:18},
+      {id:'mute',y:20},{section:'COMFORT',y:22},{id:'textSize',y:24},
+      {id:'reduceMotion',y:26},{section:'COMBAT HUD',y:28},{id:'enemyBars',y:30},{id:'dmgNumbers',y:32},{section:'GAMEPLAY',y:34},{id:'difficulty',y:36},{id:'showIntro',y:38},{id:'back',y:40}],
+    rowOrder: ['quality','shadows','lodScale','grid','aspect','volume','mute','textSize','reduceMotion','enemyBars','dmgNumbers','difficulty','showIntro','back'],
+    labels: { ...style.labels, grid: 'Resolution', lodScale: 'LOD distance', aspect: 'Aspect ratio', enemyBars: 'Enemy health bars', dmgNumbers: 'Damage numbers', difficulty: 'Difficulty', showIntro: 'Show intro' },
+    controlOf: { ...style.controlOf, lodScale: 'select', aspect: 'select', enemyBars: 'toggle', dmgNumbers: 'toggle', showIntro: 'toggle', difficulty: 'select' },
+    valueText: { ...style.valueText, lodScale: {0.6:'0.6x',0.8:'0.8x',1:'1x',1.25:'1.25x'}, difficulty: {easy:'Easy',normal:'Normal',hard:'Hard'} },
     notes: { ...style.notes, lodScale: {default:'Restart to apply'} },
     note: { ...style.note, color: menu.keyHints.fg },
     separator: { row: h - 5, glyph: menu.separators[0].glyph, color: menu.separators[0].fg, inset: menu.separators[0].from },
@@ -454,7 +498,8 @@ function settingsTitle(style) {
  */
 export function createSettingsView(options = {}, { style, controls, quality, rgb, onChange, isDisabled, menuStyle = globalThis.ASSETS?.uiStyle?.menu } = {}) {
   if (!style || !controls || !quality || !rgb) throw new TypeError('Settings style, controls, quality and rgb required');
-  const optionDefs = menuStyle ? [...FULL_OPTIONS, {id:'lodScale', values:[0.6,0.8,1,1.25], default:1}] : FULL_OPTIONS;
+  const optionDefs = menuStyle ? [...FULL_OPTIONS, {id:'lodScale', values:[0.6,0.8,1,1.25], default:1}, {id:'aspect', values:ASPECT_VALUES, default:DEFAULT_ASPECT},
+    {id:'enemyBars', values:[false, true], default:true}, {id:'dmgNumbers', values:[false, true], default:true}, {id:'showIntro', values:[false, true], default:true}, {id:'difficulty', values:['easy','normal','hard'], default:'normal'}] : FULL_OPTIONS; // HPBAR-02 / DMGNUM-01: "Combat HUD" group
   if (menuStyle) {
     style = menuSettingsStyle(style, menuStyle);
     controls = { ...controls, label: {normal:menuStyle.row.normal.fg, focus:menuStyle.row.focus.fg, disabled:menuStyle.row.disabled.fg},
@@ -462,7 +507,8 @@ export function createSettingsView(options = {}, { style, controls, quality, rgb
   }
   const state = {};
   for (const opt of optionDefs) {
-    const value = options[opt.id] ?? opt.default;
+    let value = options[opt.id] ?? opt.default;
+    if (opt.id === 'quality' && value === 'extreme') value = 'ultra'; // HIDE-EXTREME-01: stale saved 'extreme' -> ultra
     if (opt.type === 'range' ? typeof value !== 'number' || !Number.isFinite(value) || value < opt.min || value > opt.max : !opt.values.includes(value)) {
       throw new TypeError('Invalid settings option: ' + opt.id);
     }
@@ -487,7 +533,7 @@ export function createSettingsView(options = {}, { style, controls, quality, rgb
       const token = value ? controls.toggle.on : controls.toggle.off;
       labels[id] = token.box + ' ' + token.text;
     } else labels[id] = '< ' + (id === 'shadows' && value === 'mid' ? 'Mid' : style.valueText[id]?.[value] || value) + ' >';
-    notes[id] = id === 'quality' || id === 'shadows' ? 'Restart to apply' : id === 'reduceMotion' ? 'Less head bob and camera kick' : (style.notes[id]?.[value] || style.notes[id]?.default || '');
+    notes[id] = id === 'quality' || id === 'shadows' ? 'Restart to apply' : id === 'reduceMotion' ? 'Less head bob and camera kick' : id === 'enemyBars' ? 'Level and health above enemies' : id === 'dmgNumbers' ? 'Numbers rise from each hit' : id === 'showIntro' ? 'Slideshow after New game' : id === 'difficulty' ? 'Applies to new enemies' : id === 'textSize' ? 'Restart to apply' : (style.notes[id]?.[value] || style.notes[id]?.default || '');
   }
   for (const opt of optionDefs) refresh(opt.id);
   function disabled(id, value) { return !!isDisabled && !!isDisabled(id, value); }
@@ -520,7 +566,7 @@ export function createSettingsView(options = {}, { style, controls, quality, rgb
   let drawingUi;
   const titleText = settingsTitle(style);
   const titleStart = Math.floor((p.w - titleText.length) / 2);
-  const stripLabels = quality.choices.map(choice => ({choice, normal: ' ' + quality.text[choice] + ' ', current: '[' + quality.text[choice] + ']'}));
+  const stripLabels = quality.choices.filter(c => optionDefs.find(o => o.id === 'quality').values.includes(c)).map(choice => ({choice, normal: ' ' + quality.text[choice] + ' ', current: '[' + quality.text[choice] + ']'}));
   function cell(x, y, ch, fg, backing = bg) {
     if (x < 0 || x >= drawingUi.cols || y < 0 || y >= drawingUi.rows) return;
     const c = rgb[fg];
@@ -586,7 +632,12 @@ export function createSettingsView(options = {}, { style, controls, quality, rgb
           cell(p.x + r.valueCol + j, y, ch, fg, band);
         }
       }
-      if (selected) text(p.x + style.note.col, y + r.noteOffset, off ? controls.disabledSuffix.text : notes[id], style.note.color, bg, p.w - style.note.col - 1);
+    }
+    // VISQA-18: the focused row's note sits in the footer gap (between separator and key hints), centred - never squeezed between two rows
+    if (rows[focus] && rows[focus] !== 'back') {
+      const fid = rows[focus], note = disabled(fid) ? controls.disabledSuffix.text : notes[fid];
+      const noteRow = style.separator.row + 1 < style.keyHints.row ? style.separator.row + 1 : rowY[fid] + r.noteOffset;
+      if (note) text(p.x + Math.max(1, (p.w - note.length) >> 1), p.y + noteRow, note, style.note.color, bg, p.w - 2);
     }
     for (let x = style.separator.inset; x < p.w - style.separator.inset; x++) cell(p.x + x, p.y + style.separator.row, style.separator.glyph, style.separator.color);
     const hints = style.keyHints;
@@ -602,4 +653,88 @@ export function createSettingsView(options = {}, { style, controls, quality, rgb
     selectedId: () => rows[focus],
     takeAction() { const result = action; action = null; return result; },
   };
+}
+
+// ---- SETTINGS-MOUNT-01: full panel mounted in the title + pause Settings ----------------------------------------
+// One view per open (allocated on open only; draw/step allocate nothing). The host half of the createSettingsView
+// contract: persistence + live application. Who reads what:
+//   quality  -> saved + its grid applied live (QUALITY-GRID-01); boot reads it (gfxBoot)
+//   shadows  -> saved as shadowQuality; boot reads it via resolveQuality (restart to apply)
+//   lodScale -> saved; boot reads it via resolveQuality (restart to apply)
+//   grid     -> engine.setGrid live (a refusal disables that choice) + saved
+//   volume / mute -> audio/synth setVolume / setMuted live + saved; boot re-applies
+//   reduceMotion -> comfort.js flag, live: head bob, hurt/blast camera kick, hurt-edge + low-hp pulse, itemGetCard (SETTINGS-APPLY-01)
+//   textSize -> saved; main.js maps it to the UI grid cols at boot (comfort.textSizeCols; restart to apply)
+let fullView = null, fullCtx = null, fullRebuild = false;
+const FULL_KEYS = ['Escape', 'KeyW', 'ArrowUp', 'KeyS', 'ArrowDown', 'KeyA', 'ArrowLeft', 'KeyD', 'ArrowRight', 'Enter', 'Space'];
+const FULL_GRIDS = [240, 320, 400, 480, 560, 640, 720, 800];
+const FULL_LODS = [0.6, 0.8, 1, 1.25];
+
+function canMountFull(assets) {
+  const st = assets && assets.uiStyle && assets.uiStyle.settings;
+  return !!(st && st.full && st.controls && st.quality && assets.palette && assets.palette.rgb);
+}
+function nearest(list, v) {
+  let best = list[0];
+  for (const x of list) if (Math.abs(x - v) < Math.abs(best - v)) best = x;
+  return best;
+}
+function gridChoice(g) {
+  const cols = Number(String(g).split('x')[0]);
+  const c = nearest(FULL_GRIDS, Number.isFinite(cols) ? cols : 400);
+  return c + 'x' + c * 3 / 8; // 240x90 / 320x120 / 400x150 / 480x180
+}
+function buildFullView(assets, over) {
+  const st = assets.uiStyle.settings, saved = loadSettings();
+  const q = values.quality || 'auto';
+  let knobs = null;
+  try { knobs = knobsFor(q === 'auto' ? 'high' : q); } catch { /* presets not loaded: defaults */ }
+  const opts = {
+    quality: q,
+    shadows: saved.shadowQuality || (knobs ? knobs.shadowQuality : 'high'),
+    lodScale: nearest(FULL_LODS, saved.lodScale ?? (knobs ? knobs.lodScale : 1)),
+    grid: gridChoice(values.grid),
+    aspect: ASPECT_VALUES.includes(saved.aspect) ? saved.aspect : DEFAULT_ASPECT,
+    volume: Math.round(Math.min(1, Math.max(0, saved.volume)) * 10) / 10,
+    mute: isMuted(),
+    textSize: saved.textSize || 'normal',
+    reduceMotion: !!saved.reduceMotion,
+    enemyBars: saved.enemyBars !== false, dmgNumbers: saved.dmgNumbers !== false, showIntro: saved.showIntro !== false, difficulty: saved.difficulty || 'normal',
+    ...over,
+  };
+  return createSettingsView(opts, { style: st.full, controls: st.controls, quality: st.quality, rgb: assets.palette.rgb,
+    menuStyle: assets.uiStyle.menu, onChange: onFullChange,
+    isDisabled: (id, value) => id === 'grid' && value !== undefined && gridFailed.has(value) });
+}
+function onFullChange(id, v) {
+  const ctx = fullCtx;
+  if (id === 'quality') { applyQuality(v, ctx); fullRebuild = true; } // refused save / new grid: rebuild from `values`
+  else if (id === 'shadows') saveSettings({ shadowQuality: v, gfxOverrides: true });
+  else if (id === 'lodScale') saveSettings({ lodScale: v, gfxOverrides: true });
+  else if (id === 'aspect') applyAspect(v, ctx); // OB-117
+  else if (id === 'grid') {
+    const m = /^(\d+)x(\d+)$/.exec(v);
+    const r = m && ctx.engine && typeof ctx.engine.setGrid === 'function' ? ctx.engine.setGrid(Number(m[1]), Number(m[2])) : { error: true };
+    if (r.error) { gridFailed.add(v); fullRebuild = true; } // refused (canHoldGrid): choice disabled, old value restored
+    else applyValue('grid', r.cols + 'x' + r.rows, ctx);
+  } else if (id === 'volume') { setVolume(v); saveSettings({ volume: v }); }
+  else if (id === 'mute') { values.mute = v; setMuted(v); saveSettings({ muted: v }); }
+  else if (id === 'enemyBars') { setEnemyBarsOn(v); saveSettings({ enemyBars: v }); } // HPBAR-02
+  else if (id === 'dmgNumbers') { setDamageNumbersOn(v); saveSettings({ dmgNumbers: v }); } // DMGNUM-01
+  else if (id === 'showIntro') saveSettings({ showIntro: v }); // INTRO-PLAYER-01
+  else if (id === 'difficulty') { saveSettings({ difficulty: v }); if (ctx && typeof ctx.onDifficulty === 'function') ctx.onDifficulty(v); } // DIFF-MENU (D-083)
+  else if (id === 'textSize' || id === 'reduceMotion') { if (id === 'reduceMotion') setReduceMotion(v); saveSettings({ [id]: v }); } // SETTINGS-APPLY-01
+}
+function stepFullView(input) {
+  for (let i = 0; i < FULL_KEYS.length; i++) {
+    if (input.pressed(FULL_KEYS[i])) { input.consumePressed(); fullView.handleKey(FULL_KEYS[i]); break; }
+  }
+  if (fullView.takeAction() === 'back') { closePanel(); return; }
+  if (fullRebuild) {
+    fullRebuild = false;
+    const focus = fullView.selectedId(), snap = fullView.snapshot();
+    snap.quality = values.quality; snap.grid = gridChoice(values.grid);
+    fullView = buildFullView(fullCtx.assets, snap);
+    for (let i = 0; i < 12 && fullView.selectedId() !== focus; i++) fullView.handleKey('ArrowDown');
+  }
 }

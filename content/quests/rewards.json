@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "tables": {
+    "gear.t1": {
+      "items": [],
+      "gear": {
+        "slots": [
+          "head",
+          "body",
+          "cloak",
+          "hands",
+          "belt",
+          "legs",
+          "feet"
+        ],
+        "tier": 1
+      }
+    },
+    "gear.t2": {
+      "items": [],
+      "gear": {
+        "slots": [
+          "head",
+          "body",
+          "cloak",
+          "hands",
+          "belt",
+          "legs",
+          "feet"
+        ],
+        "tier": 2
+      }
+    },
+    "gear.t3": {
+      "items": [],
+      "gear": {
+        "slots": [
+          "head",
+          "body",
+          "cloak",
+          "hands",
+          "belt",
+          "legs",
+          "feet"
+        ],
+        "tier": 3
+      }
+    }
+  }
+}

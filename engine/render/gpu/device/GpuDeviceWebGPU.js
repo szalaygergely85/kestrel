@@ -21,7 +21,10 @@ import { bootNow, span as bootSpan } from '../../../core/bootMarks.js'; // BOOT-
 /** @typedef {import('./GpuDevice.js').GpuHandle} GpuHandle */
 
 /** Ring size (38.4): MAX_DRAW_ITEMS * 3 + 64 slots of 256 B. */
-export const DEFAULT_RING_SLOTS = MAX_DRAW_ITEMS * 3 + 64;
+// FIX-RING (owner crash 2026-10-11): 832 slots overflowed in the sun-shadow caster loop on the dressed world; 1 MB ring.
+/** FIX-PASS: how many passes carry an owner stack after an abort (bounded; then beginPass is allocation-free again). */
+export const TRACE_PASSES_AFTER_ABORT = 8;
+export const DEFAULT_RING_SLOTS = MAX_DRAW_ITEMS * 16 + 64;
 const ZERO4 = [0, 0, 0, 0];
 
 /** The GPU* constant tables, read lazily so this module imports in Node. @returns {{buf: any, tex: any, stage: any, map: any}} */
@@ -73,9 +76,15 @@ export class GpuDeviceWebGPU {
     /** WG-1c2: for the F3 backend line */
     this.adapterInfo = { vendor: String(info.vendor || ''), architecture: String(info.architecture || ''), description: String(info.description || ''), fallback: this._software };
     this.timer = new WebGpuTimer(gpuDevice, this._c);
+    /** @type {{destroy: () => void}[]} OB-119: disposed while the frame encoder holds commands; destroyed after submit */
+    this._zombies = [];
     this._live = /** @type {{destroy: () => void}[]} */ ([]);
     /** @type {any[]} every computePipeline handle (38.10a: dispose(buffer) prunes their dispatch bind-group caches) */
     this._computePipes = [];
+    /** @type {Map<any,{gpu:any,bytes:number,busy:boolean}>} OCCL-STATS-01b: readBufferAsync staging per source buffer handle */
+    this._readStaging = new Map();
+    /** @type {any[]} readBufferAsync reads whose copy is recorded; mapped after the next submit() */
+    this._pendingMaps = [];
     this._moduleCache = new Map();
     // uniform ring (CPU ArrayBuffer + one GPU buffer; one writeBuffer at submit)
     const slots = opts.ringSlots || DEFAULT_RING_SLOTS;
@@ -85,10 +94,50 @@ export class GpuDeviceWebGPU {
     // frame state
     /** @type {any} */ this._encoder = null;
     /** @type {any} */ this._pass = null;
+    /** FIX-PASS: capture an owner stack at every beginPass (off: allocation-free; abortPass turns it on). */ this.tracePasses = false;
+    /** FIX-PASS: passes still to be traced after an abort (bounded: tracePasses switches itself off again at 0). */ this._traceLeft = 0;
+    /** FIX-PASS: counters exposed through `stats` (see passStats). */ this.abortedPasses = 0;
+    /** @type {string|null} */ this._passStack = null;
     /** @type {any} */ this._curPipeline = null;
+    /** PERF-11 per-pass encoder state cache + removed-call counter. */ this.skippedCalls = 0;
+    /** @type {any} */ this._bg0 = null; /** @type {any} */ this._bg1 = null; this._bg1Off = -1; /** @type {any} */ this._ib = null; /** @type {any} */ this._ibFmt = null;
+    /** @type {any[]} */ this._vb = new Array(16).fill(null); this._vbOff = new Array(16).fill(0);
     this._dyn = [0];
+    /** D-107 dev counter (`?gpucount=1`): per-frame writeBuffer/setBindGroup counts, see enableCount. */ this.gpuCount = null;
     /** @type {Map<number, any[]>} */ this._staging = new Map();
     this._canvasTarget = null;
+  }
+
+  /**
+   * D-107: dev-only call counter (game/js/main.js parses `?gpucount=1[&stacks=1]`, window.__gpuCount). Wraps queue.writeBuffer (every caller) and each render-pass setBindGroup/setPipeline/
+   * setVertexBuffer/draw; totals are per run, per-frame averages = total / frames. `byBuf`: per destination buffer {n, bytes}. Zero cost when off.
+   */
+  enableCount(stacks = false) {
+    const c = this.gpuCount = { frames: 0, writes: 0, writeBytes: 0, setBindGroup: 0, setPipeline: 0, setVertexBuffer: 0, draws: 0, passes: 0, skipped: 0, byBuf: new Map(), bufIds: new WeakMap(), nextId: 0, byPass: {}, last: new Map(), same: 0, sameBytes: 0, stacks: stacks ? {} : null };
+    const q = this.gpu.queue, orig = q.writeBuffer.bind(q);
+    q.writeBuffer = (buf, off, data, dOff, size) => {
+      const n = size !== undefined ? size : (data.byteLength - (dOff || 0));
+      c.writes++; c.writeBytes += n;
+      let id = c.bufIds.get(buf); if (id === undefined) { id = c.nextId++; c.bufIds.set(buf, id); }
+      let e = c.byBuf.get(id); if (!e) { e = { size: buf.size, n: 0, bytes: 0 }; c.byBuf.set(id, e); }
+      e.n++; e.bytes += n;
+      { // identical-bytes detector: hash of the last write to this (buffer, offset); same hash + size = a redundant upload
+        const dd = data instanceof ArrayBuffer ? data : data.buffer, base = (dOff || 0) + (data instanceof ArrayBuffer ? 0 : data.byteOffset);
+        const u = (base & 3) === 0 ? new Uint32Array(dd, base, n >> 2) : null; let h = 0x811c9dc5 ^ n;
+        if (u) { for (let i = 0; i < u.length; i++) h = Math.imul(h ^ u[i], 16777619); const key = id * 4096 + (off >> 2 & 4095); if (c.last.get(key) === h) { c.same++; c.sameBytes += n; e.same = (e.same || 0) + 1; } c.last.set(key, h); }
+      }
+      if (c.stacks) { const k = (new Error().stack || '').split(String.fromCharCode(10)).slice(2, 5).map((l) => l.trim().replace(/^at /, '').replace(/https?:\/\/[^/]+\//, '')).join(' < '); const o = c.stacks[k] || (c.stacks[k] = { n: 0, bytes: 0 }); o.n++; o.bytes += n; }
+      return orig(buf, off, data, dOff, size);
+    };
+    globalThis.__gpuCount = c;
+  }
+
+  /** @param {any} pass wrap one render pass for the D-107 counter */
+  _countPass(pass) {
+    const c = this.gpuCount; c.passes++;
+    const w = (name, key) => { const f = pass[name].bind(pass); pass[name] = (...a) => { c[key]++; return f(...a); }; };
+    w('setBindGroup', 'setBindGroup'); w('setPipeline', 'setPipeline'); w('setVertexBuffer', 'setVertexBuffer'); w('draw', 'draws'); w('drawIndexed', 'draws');
+    return pass;
   }
 
   /** WG-1b2: bind the canvas (called by createGpuDevice after adapter/device/self-test succeeded, so a failed webgpu request leaves the canvas free for WebGL2). @param {any} canvas */
@@ -101,7 +150,7 @@ export class GpuDeviceWebGPU {
 
   /** @returns {import('./GpuDevice.js').GpuDeviceCaps} */
   get caps() {
-    return { maxColorAttachments: this.gpu.limits ? this.gpu.limits.maxColorAttachments : 4, timerQueries: this.timer.available, softwareRenderer: this._software };
+    return { maxColorAttachments: this.gpu.limits ? this.gpu.limits.maxColorAttachments : 4, timerQueries: this.timer.available, softwareRenderer: this._software, maxStorageBuffersInVertexStage: this.gpu.limits ? this.gpu.limits.maxStorageBuffersInVertexStage : undefined };
   }
 
   // ---- resources ---------------------------------------------------------------------------------------------
@@ -121,15 +170,16 @@ export class GpuDeviceWebGPU {
     return h;
   }
 
-  /** @param {GpuHandle} handle @param {ArrayBufferView} data @param {number} [dstOffsetBytes] */
-  writeBuffer(handle, data, dstOffsetBytes = 0) {
-    let view = data;
-    if (data.byteLength & 3) { // queue.writeBuffer wants a multiple of 4: pad (rare: odd Uint16 index counts)
-      const padded = new Uint8Array((data.byteLength + 3) & ~3);
-      padded.set(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
-      view = padded;
+  /** @param {GpuHandle} handle @param {ArrayBufferView} data @param {number} [dstOffsetBytes] @param {number} [byteLength] AUD-02: upload only the first `byteLength` bytes of `data` (default all; no subarray allocation) */
+  writeBuffer(handle, data, dstOffsetBytes = 0, byteLength = data.byteLength) {
+    const n = byteLength < data.byteLength ? byteLength : data.byteLength;
+    if (n & 3) { // queue.writeBuffer wants a multiple of 4: pad (rare: odd Uint16 index counts)
+      const padded = new Uint8Array((n + 3) & ~3);
+      padded.set(new Uint8Array(data.buffer, data.byteOffset, n));
+      this.gpu.queue.writeBuffer(handle.gpu, dstOffsetBytes, padded.buffer, padded.byteOffset, padded.byteLength);
+      return;
     }
-    this.gpu.queue.writeBuffer(handle.gpu, dstOffsetBytes, view.buffer, view.byteOffset, view.byteLength);
+    this.gpu.queue.writeBuffer(handle.gpu, dstOffsetBytes, data.buffer, data.byteOffset, n);
   }
 
   /** @param {import('./GpuDevice.js').TextureDesc} desc */
@@ -172,7 +222,8 @@ export class GpuDeviceWebGPU {
     const x = rect ? rect.x : 0, y = rect ? rect.y : 0, w = rect ? rect.w : tex.width, h = rect ? rect.h : tex.height;
     wt.dst.texture = tex.gpu; wt.dst.origin[0] = x; wt.dst.origin[1] = y;
     wt.layout.offset = dataOffset ? dataOffset * /** @type {any} */ (data).BYTES_PER_ELEMENT : 0;
-    wt.layout.bytesPerRow = w * tex.bpp; wt.layout.rowsPerImage = h;
+    wt.layout.bytesPerRow = (rect && rect.stride ? rect.stride : w) * tex.bpp; // rect.stride (texels): source row pitch of a cropped rect
+    wt.layout.rowsPerImage = h;
     wt.size[0] = w; wt.size[1] = h;
     this.gpu.queue.writeTexture(wt.dst, data, wt.layout, wt.size);
   }
@@ -254,6 +305,10 @@ export class GpuDeviceWebGPU {
       samplerBinding.push(b);
       e0.push({ binding: b, visibility: vis, sampler: { type: 'filtering' } });
     });
+    // R6c part 2 (arch 2026-10-13c b): read-only storage buffers after the textures/samplers (card impostor vertex+fragment reads); binding = stoBase + i
+    const stoKinds = bindings.buffers || [];
+    const stoBase = e0.length;
+    for (let i = 0; i < stoKinds.length; i++) e0.push({ binding: stoBase + i, visibility: vis, buffer: { type: 'read-only-storage' } });
     const bgl0 = this.gpu.createBindGroupLayout({ entries: e0 });
     const uBytes = bindings.uniformBytes || 0;
     // group 1 exists only when there is a uniform block: every group in the layout is set before draw (spec)
@@ -298,7 +353,8 @@ export class GpuDeviceWebGPU {
     }
     const handle = {
       kind: 'pipeline', gpu: null, failed: false, label: bootLabel(desc, 'render'), extraBase, bgl0, uniformGroup, uniformBytes: uBytes, texKinds, samplerBinding,
-      texCur: new Array(texKinds.length).fill(null), texGroup: null, texDirty: texKinds.length > 0, indexed: false,
+      texCur: new Array(texKinds.length).fill(null), texGroup: null, texDirty: texKinds.length > 0 || stoKinds.length > 0, indexed: false,
+      stoBase, nsto: stoKinds.length, stoCur: new Array(stoKinds.length).fill(null),
     };
     this._makePipe('createRenderPipeline', pd, handle);
     return handle;
@@ -373,7 +429,10 @@ export class GpuDeviceWebGPU {
   createComputePipeline(desc) {
     const stage = this._c.stage;
     const kinds = desc.bindings.buffers || [];
-    const bgl0 = this.gpu.createBindGroupLayout({ entries: kinds.map((k, i) => ({ binding: i, visibility: stage.COMPUTE, buffer: { type: k === 'rw' ? 'storage' : 'read-only-storage' } })) });
+    // ENV-01d: optional textures after the buffers (binding = buffers.length + i); 'float' = textureLoad only (unfilterable-float), 'uint' = integer
+    const texKinds = desc.bindings.textures || [];
+    const bgl0 = this.gpu.createBindGroupLayout({ entries: kinds.map((k, i) => ({ binding: i, visibility: stage.COMPUTE, buffer: { type: k === 'rw' ? 'storage' : 'read-only-storage' } }))
+      .concat(texKinds.map((k, i) => ({ binding: kinds.length + i, visibility: stage.COMPUTE, texture: { sampleType: k === 'uint' ? 'uint' : 'unfilterable-float' } }))) });
     const uBytes = desc.bindings.uniformBytes || 0;
     const bgl1 = uBytes > 0
       ? this.gpu.createBindGroupLayout({ entries: [{ binding: 0, visibility: stage.COMPUTE, buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: uBytes } }] })
@@ -382,7 +441,7 @@ export class GpuDeviceWebGPU {
     const uniformGroup = uBytes > 0
       ? this._validatedCreate('createBindGroup', { layout: bgl1, entries: [{ binding: 0, resource: { buffer: this._ringBuf, offset: 0, size: uBytes } }] })
       : null;
-    const handle = { kind: 'computePipeline', gpu: null, failed: false, label: bootLabel(desc, 'cs_main'), bgl0, uniformGroup, uniformBytes: uBytes, nbuf: kinds.length, groups: /** @type {{bufs: any[], group: any}[]} */ ([]) };
+    const handle = { kind: 'computePipeline', gpu: null, failed: false, label: bootLabel(desc, 'cs_main'), bgl0, uniformGroup, uniformBytes: uBytes, nbuf: kinds.length, ntex: texKinds.length, groups: /** @type {{bufs: any[], texs: any[], group: any}[]} */ ([]) };
     this._makePipe('createComputePipeline', { layout, compute: { module: this._module(desc.src), entryPoint: desc.src.entry || 'cs_main' } }, handle);
     this._computePipes.push(handle);
     return handle;
@@ -404,14 +463,21 @@ export class GpuDeviceWebGPU {
       const cur = p.groups[g].bufs;
       let same = true;
       for (let i = 0; i < bufs.length; i++) if (cur[bufs[i].slot] !== bufs[i].buffer) { same = false; break; }
+      const tx = desc.textures, ct = p.groups[g].texs;
+      for (let i = 0; same && i < p.ntex; i++) if (!tx || ct[tx[i].slot] !== tx[i].texture) same = false;
       if (same) grp = p.groups[g].group;
     }
     if (!grp) {
       const cur = new Array(p.nbuf).fill(null);
       const entries = [];
       for (let i = 0; i < bufs.length; i++) { cur[bufs[i].slot] = bufs[i].buffer; entries.push({ binding: bufs[i].slot, resource: { buffer: bufs[i].buffer.gpu } }); }
+      const ctex = new Array(p.ntex).fill(null), tx = desc.textures;
+      for (let i = 0; i < p.ntex; i++) {
+        if (!tx || !tx[i]) throw new Error(`GpuDeviceWebGPU.dispatch: pipeline has ${p.ntex} textures, BindDesc.textures lacks #${i}`);
+        ctex[tx[i].slot] = tx[i].texture; entries.push({ binding: p.nbuf + tx[i].slot, resource: tx[i].texture.view });
+      }
       grp = this._validatedCreate('createBindGroup', { layout: p.bgl0, entries });
-      p.groups.push({ bufs: cur, group: grp });
+      p.groups.push({ bufs: cur, texs: ctex, group: grp });
     }
     if (!this._encoder) this._encoder = this.gpu.createCommandEncoder();
     // S8-B1-07: one reused descriptor (mutated per call, read synchronously by beginComputePass - never held across
@@ -473,9 +539,46 @@ export class GpuDeviceWebGPU {
     }
     this.timer.attach(pd);
     this._pass = this._encoder.beginRenderPass(pd);
-    this._curPipeline = null;
+    if (this.gpuCount) this._countPass(this._pass);
+    this._curPipeline = null; this._resetPassState();
     this._boundTarget = target;
+    if (this.tracePasses) { // FIX-PASS: owner stack only for the TRACE_PASSES_AFTER_ABORT passes after a stale pass was seen, then 0-alloc again
+      this._passStack = new Error('pass opened here').stack;
+      if (--this._traceLeft <= 0) { this._traceLeft = 0; this.tracePasses = false; }
+    } else this._passStack = null;
   }
+
+  /** FIX-PASS: true while a render pass is open (between beginPass and endPass/abortPass). */
+  get passOpen() { return !!this._pass; }
+
+  /**
+   * FIX-PASS: ends the open pass (if any) without throwing - for catch blocks that swallow an error thrown inside a pass, and for
+   * present()'s stale-pass recovery. Returns null when no pass was open, else a short description of the pass owner (target size +
+   * attachments, plus the opening stack once `tracePasses` is on - it turns itself on here, so a repeat is fully attributed).
+   * @param {string} [reason] @returns {string|null}
+   */
+  abortPass(reason) {
+    if (!this._pass) return null;
+    const t = this._boundTarget;
+    let owner = t ? (t.isCanvas ? 'canvas' : `target ${t.width}x${t.height} colour=${t.colorCount} depth=${t.hasDepth}`) : 'unknown target';
+    if (this._passStack) owner += ' | opened at: ' + this._passStack;
+    try { this._pass.end(); } catch (_) { /* an encoder already invalid: dropping the pass is all we can do */ }
+    this._pass = null; this._curPipeline = null; this._resetPassState(); this._boundTarget = null; this._passStack = null;
+    this.tracePasses = true; this._traceLeft = TRACE_PASSES_AFTER_ABORT;
+    this.abortedPasses++;
+    if (reason) console.warn(`[GpuDeviceWebGPU] aborted open pass (${reason}): ${owner}`);
+    return owner;
+  }
+
+  /** FIX-RING: drop a failed frame - end any open pass, drop the encoder, reset the uniform ring. Never throws. */
+  resetFrame() {
+    this.abortPass();
+    this._encoder = null; this._flushZombies();
+    this.uniformRing.reset();
+  }
+
+  /** FIX-PASS: copy the abort counter into a stats object (no allocation). */
+  writePassStats(stats) { stats.abortedPasses = this.abortedPasses; }
 
   /** @param {GpuHandle} pipeline @param {import('./GpuDevice.js').BindDesc} desc */
   bind(pipeline, desc) {
@@ -485,7 +588,7 @@ export class GpuDeviceWebGPU {
     if (p.gpu === null) throw new Error('pipeline still compiling: ' + p.label);
     if (p !== this._curPipeline) {
       pass.setPipeline(p.gpu); this._curPipeline = p;
-      if (p.texKinds.length === 0) pass.setBindGroup(0, this._emptyGroup()); // group 0 is in the layout: always set
+      if (p.texKinds.length === 0 && p.nsto === 0) this._setBg0(pass, this._emptyGroup()); // group 0 is in the layout: always set
     }
     // textures: rebuild the cached bind group only when a handle differs (element-wise compare, no alloc)
     const texs = desc.textures;
@@ -495,9 +598,32 @@ export class GpuDeviceWebGPU {
         if (p.texCur[s] !== texs[i].texture) { p.texCur[s] = texs[i].texture; p.texDirty = true; }
       }
     }
-    if (p.texKinds.length > 0) {
-      if (p.texDirty) this._buildTexGroup(p);
-      pass.setBindGroup(0, p.texGroup);
+    const sto = desc.storageBuffers; // R6c part 2: [{slot, buffer}], same cache rule as the textures
+    let hit = false;
+    if (sto && p.texKinds.length === 0) {
+      // per-desc group cache (N species share one pipeline but each keeps its own group): valid while pipeline + buffers are unchanged
+      const c = desc._grp;
+      if (c && c.p === p && c.n === sto.length) {
+        hit = true;
+        for (let i = 0; i < sto.length; i++) if (c.bufs[i] !== sto[i].buffer) { hit = false; break; }
+      }
+      if (hit) {
+        for (let i = 0; i < sto.length; i++) p.stoCur[sto[i].slot] = sto[i].buffer;
+        p.texGroup = desc._grp.grp; p.texDirty = false;
+      }
+    }
+    if (sto && !hit) {
+      for (let i = 0; i < sto.length; i++) {
+        const s = sto[i].slot;
+        if (p.stoCur[s] !== sto[i].buffer) { p.stoCur[s] = sto[i].buffer; p.texDirty = true; }
+      }
+    }
+    if (p.texKinds.length > 0 || p.nsto > 0) {
+      if (p.texDirty) {
+        this._buildTexGroup(p);
+        if (sto && p.texKinds.length === 0) desc._grp = { p, grp: p.texGroup, n: sto.length, bufs: sto.map((e) => e.buffer) }; // miss only: allocates once per change
+      }
+      this._setBg0(pass, p.texGroup);
     }
     // uniforms: caller-allocated ring slot (uniformOffsetBytes) or alloc + copy `uniforms` here
     if (p.uniformGroup) {
@@ -513,15 +639,33 @@ export class GpuDeviceWebGPU {
         (u instanceof Int32Array ? ring.i32 : ring.f32).set(/** @type {any} */ (u), off >> 2);
       }
       this._dyn[0] = off;
-      pass.setBindGroup(1, p.uniformGroup, this._dyn);
+      if (this._bg1 !== p.uniformGroup || this._bg1Off !== off) { this._bg1 = p.uniformGroup; this._bg1Off = off; pass.setBindGroup(1, p.uniformGroup, this._dyn); } else this.skippedCalls++;
     }
-    if (desc.vertexBuffer) pass.setVertexBuffer(0, desc.vertexBuffer.gpu);
-    if (desc.instanceBuffer) pass.setVertexBuffer(1, desc.instanceBuffer.gpu);
+    // redundant-state elimination (PERF-11): vertex/index state persists inside a pass (setPipeline does not reset it)
+    if (desc.vertexBuffer) this._setVb(pass, 0, desc.vertexBuffer.gpu, 0);
+    if (desc.instanceBuffer) this._setVb(pass, 1, desc.instanceBuffer.gpu, desc.instanceOffset || 0); // ENV-01d: instanceOffset = byte offset into a shared slab (decor species)
     const xb = desc.extraBuffers;
-    if (xb) for (let i = 0; i < xb.length; i++) pass.setVertexBuffer(p.extraBase + i, xb[i].gpu);
-    if (desc.indexBuffer) { pass.setIndexBuffer(desc.indexBuffer.gpu, desc.indexBuffer.indexFormat); p.indexed = true; }
+    if (xb) for (let i = 0; i < xb.length; i++) this._setVb(pass, p.extraBase + i, xb[i].gpu, 0);
+    if (desc.indexBuffer) {
+      const ib = desc.indexBuffer.gpu, fmt = desc.indexBuffer.indexFormat;
+      if (this._ib !== ib || this._ibFmt !== fmt) { this._ib = ib; this._ibFmt = fmt; pass.setIndexBuffer(ib, fmt); } else this.skippedCalls++;
+      p.indexed = true;
+    }
     else if (desc.vertexBuffer) p.indexed = false;
   }
+
+  /** @param {any} pass @param {any} g */
+  _setBg0(pass, g) { if (this._bg0 === g) { this.skippedCalls++; return; } this._bg0 = g; pass.setBindGroup(0, g); }
+
+  /** @param {any} pass @param {number} slot @param {any} buf @param {number} off */
+  _setVb(pass, slot, buf, off) {
+    if (this._vb[slot] === buf && this._vbOff[slot] === off) { this.skippedCalls++; return; }
+    this._vb[slot] = buf; this._vbOff[slot] = off;
+    if (off) pass.setVertexBuffer(slot, buf, off); else pass.setVertexBuffer(slot, buf);
+  }
+
+  /** Per-pass encoder-state cache reset (beginPass / endPass / abortPass). */
+  _resetPassState() { this._bg0 = null; this._bg1 = null; this._bg1Off = -1; this._ib = null; this._ibFmt = null; this._vb.fill(null); this._vbOff.fill(0); }
 
   /** Device-level cached empty bind group for pipelines without textures. */
   _emptyGroup() {
@@ -538,6 +682,11 @@ export class GpuDeviceWebGPU {
       entries.push({ binding: i, resource: t.view });
       if (p.samplerBinding[i] >= 0) entries.push({ binding: p.samplerBinding[i], resource: t.sampler });
     }
+    for (let i = 0; i < p.nsto; i++) {
+      const b = p.stoCur[i];
+      if (!b) throw new Error(`GpuDeviceWebGPU.bind: storage slot ${i} not bound`);
+      entries.push({ binding: p.stoBase + i, resource: { buffer: b.gpu } });
+    }
     p.texGroup = this._validatedCreate('createBindGroup', { layout: p.bgl0, entries });
     p.texDirty = false;
   }
@@ -552,7 +701,14 @@ export class GpuDeviceWebGPU {
   endPass() {
     if (!this._pass) throw new Error('GpuDeviceWebGPU.endPass: no open pass');
     this._pass.end();
-    this._pass = null; this._curPipeline = null; this._boundTarget = null;
+    this._pass = null; this._curPipeline = null; this._resetPassState(); this._boundTarget = null; this._passStack = null;
+  }
+
+  /** OB-119: destroys the resources dispose() deferred while commands were recorded (call after queue.submit). */
+  _flushZombies() {
+    const z = this._zombies;
+    for (let i = 0; i < z.length; i++) z[i].destroy();
+    z.length = 0;
   }
 
   /** End of frame: one ring `writeBuffer` of the used range, then `queue.submit` (38.4). */
@@ -561,10 +717,13 @@ export class GpuDeviceWebGPU {
     const ring = this.uniformRing;
     if (ring.usedBytes > 0) this.gpu.queue.writeBuffer(this._ringBuf, 0, ring.buffer, 0, ring.usedBytes);
     ring.reset();
+    if (this.gpuCount) { this.gpuCount.frames++; this.gpuCount.skipped = this.skippedCalls; }
     if (this._encoder) {
       const timing = this.timer.resolve(this._encoder);
       this.gpu.queue.submit([this._encoder.finish()]); this._encoder = null;
+      this._flushZombies();
       this.timer.collect(timing);
+      if (this._pendingMaps.length) this._startPendingMaps();
     } else this.timer.resolve(null);
   }
 
@@ -585,6 +744,46 @@ export class GpuDeviceWebGPU {
     if (this._pass) throw new Error('GpuDeviceWebGPU.copyBufferToBuffer: a pass is still open');
     if (!this._encoder) this._encoder = this.gpu.createCommandEncoder();
     this._encoder.copyBufferToBuffer(src.gpu, srcOff, dst.gpu, dstOff, bytes);
+  }
+
+  /**
+   * OCCL-STATS-01b: non-blocking buffer readback for stats. Records buf -> a cached MAP_READ staging buffer (one per source
+   * buffer, created once, recreated only if `bytes` grows) into the FRAME encoder (no submit here); submit() then starts
+   * `mapAsync(READ)` and copies into the caller's preallocated `outU32`. ONE callback contract: `cb(err, outU32)` - err null on
+   * success, 'busy' (called synchronously, returns false) when a read is already in flight, or the mapAsync rejection.
+   * Returns true when started. At most one read in flight per source buffer. Per call the only allocations are
+   * what the WebGPU API returns (the mapAsync Promise, the mapped ArrayBuffer view); staging buffers are released by dispose.
+   * @param {GpuHandle} buf @param {number} bytes multiple of 4, <= buffer size @param {Uint32Array} outU32 @param {(err:any, out:Uint32Array)=>void} cb
+   * @returns {boolean}
+   */
+  readBufferAsync(buf, bytes, outU32, cb) {
+    if (this._pass) throw new Error('GpuDeviceWebGPU.readBufferAsync: a pass is still open');
+    if (!buf || buf.kind !== 'buffer') throw new Error('GpuDeviceWebGPU.readBufferAsync: buf must be a buffer handle');
+    if (!(bytes > 0) || bytes % 4 || bytes > buf.gpu.size) throw new Error('GpuDeviceWebGPU.readBufferAsync: bytes must be a positive multiple of 4 and <= the buffer size');
+    if (!(outU32 instanceof Uint32Array) || outU32.length * 4 < bytes) throw new Error('GpuDeviceWebGPU.readBufferAsync: outU32 too small');
+    let st = this._readStaging.get(buf);
+    if (st && st.busy) { cb('busy', outU32); return false; }
+    if (st && st.bytes < bytes) { st.gpu.destroy(); st = null; }
+    if (!st) { st = { gpu: this.gpu.createBuffer({ size: bytes, usage: this._c.buf.MAP_READ | this._c.buf.COPY_DST }), bytes, busy: false }; this._readStaging.set(buf, st); }
+    st.busy = true;
+    if (!this._encoder) this._encoder = this.gpu.createCommandEncoder();
+    this._encoder.copyBufferToBuffer(buf.gpu, 0, st.gpu, 0, bytes);
+    this._pendingMaps.push({ st, bytes, outU32, cb }); // mapAsync starts in submit(), after the frame's own queue.submit (no extra mid-frame submit)
+    return true;
+  }
+
+  /** Starts the mapAsync of every readBufferAsync copy recorded in the encoder that was just submitted. */
+  _startPendingMaps() {
+    const pm = this._pendingMaps;
+    for (let i = 0; i < pm.length; i++) {
+      const { st, bytes, outU32, cb } = pm[i];
+      st.gpu.mapAsync(this._c.map.READ).then(() => {
+        outU32.set(new Uint32Array(st.gpu.getMappedRange(0, bytes)));
+        st.gpu.unmap(); st.busy = false;
+        cb(null, outU32);
+      }, (err) => { st.busy = false; cb(err || new Error('mapAsync rejected')); }); // destroyed/lost mid-flight: report, never stay busy
+    }
+    pm.length = 0;
   }
 
   /**
@@ -661,16 +860,24 @@ export class GpuDeviceWebGPU {
         const pi = this._computePipes.indexOf(handle);
         if (pi >= 0) this._computePipes.splice(pi, 1);
       }
+      const rs = this._readStaging.get(handle);
+      if (rs) { this._readStaging.delete(handle); rs.gpu.destroy(); }
       const o = handle.gpu;
       const i = this._live.indexOf(o);
-      if (i >= 0) { this._live.splice(i, 1); o.destroy(); }
+      // OB-119: the frame encoder is submitted only in submit(); destroying a resource a recorded dispatch/draw still
+      // references makes queue.submit fail ("used in submit while destroyed"). While commands are recorded, defer the
+      // destroy until after that submit (_zombies); with no open encoder destroy at once.
+      if (i >= 0) { this._live.splice(i, 1); if (this._encoder) this._zombies.push(o); else o.destroy(); }
       return;
     }
     this.timer.dispose();
+    this._flushZombies();
     for (const o of this._live) o.destroy();
     this._live.length = 0;
     for (const pool of this._staging.values()) for (const b of pool) b.destroy();
     this._staging.clear();
+    for (const rs of this._readStaging.values()) rs.gpu.destroy();
+    this._readStaging.clear();
     this._computePipes.length = 0;
   }
 }

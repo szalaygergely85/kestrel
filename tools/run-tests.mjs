@@ -27,6 +27,9 @@
 // requirement everywhere run-tests.mjs runs (see docs/architecture.md
 // section 11).
 //
+// A suite is FAIL on a nonzero exit code OR a "<tool> FAILED" line; each suite's
+// line is written the moment it finishes (streamed), the summary comes last.
+//
 // WARN: this project's suites are hand-rolled (no test framework) and most
 // print a line starting with "FAIL" per failed check (see e.g.
 // engine/core/behaviours.test.js: `console.error('FAIL:', f)`) while also
@@ -47,7 +50,8 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
+import { selectSuites } from './testSelect.mjs';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -59,10 +63,11 @@ const SKIP_DIRS = new Set(['node_modules', '.git']);
 const SKIP_PATH_FRAGMENTS = ['design/preview'];
 
 function parseArgs(argv) {
-  const opts = { filter: [], json: null, timeoutMs: null };
+  const opts = { filter: [], json: null, timeoutMs: null, changed: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--filter') opts.filter.push(...String(argv[++i] ?? '').split(',').map((x) => x.trim()).filter(Boolean));
+    else if (a === '--changed') opts.changed = (argv[i + 1] && !argv[i + 1].startsWith('--')) ? argv[++i] : 'origin/master';
     else if (a === '--json') opts.json = argv[++i];
     else if (a === '--timeout-ms') opts.timeoutMs = Number(argv[++i]);
   }
@@ -126,7 +131,7 @@ function collectSuites(root, filter) {
 function runSuite(file, timeoutMs, warnOnFail) {
   return new Promise((resolve) => {
     const start = Date.now();
-    const child = spawn(process.execPath, [file], { cwd: ROOT });
+    const child = spawn(process.execPath, ["--expose-gc", file], { cwd: ROOT });
     let output = '';
     let settled = false;
     let timedOut = false;
@@ -152,6 +157,11 @@ function runSuite(file, timeoutMs, warnOnFail) {
         resolve({ status: warnOnFail ? 'WARN' : 'FAIL', ms, output });
         return;
       }
+      // Exit 0 but a "<tool> FAILED" verdict line (check-deps style): FAIL (AUD-07); not for *.test.* (fixtures print it on purpose).
+      if (!/\.test\.(js|mjs)$/.test(file) && /(^|\n)[\w./-]+ FAILED\b/.test(output)) {
+        resolve({ status: warnOnFail ? 'WARN' : 'FAIL', ms, output });
+        return;
+      }
       // Exit 0: check for a suite that printed a FAIL-shaped line anyway.
       const printedFail = /(^|\n)\s*FAIL\b/.test(output);
       resolve({ status: printedFail ? 'WARN' : 'PASS', ms, output });
@@ -168,6 +178,11 @@ function runSuite(file, timeoutMs, warnOnFail) {
   });
 }
 
+/** Synchronous write so each suite line reaches a pipe/file as soon as the suite ends (AUD-07). */
+function emit(line) {
+  try { fs.writeSync(1, line + '\n'); } catch { console.log(line); }
+}
+
 function lastLines(text, n) {
   const lines = text.split(/\r?\n/);
   return lines.slice(Math.max(0, lines.length - n));
@@ -179,7 +194,17 @@ async function main() {
     ? Number(process.env.KESTREL_TEST_TIMEOUT_MS)
     : 60000);
 
-  const suites = collectSuites(ROOT, opts.filter);
+  let suites = collectSuites(ROOT, opts.filter);
+  if (opts.changed) {
+    // RF17-19: only suites related to files changed vs the base (committed + working tree + untracked); check-deps always runs.
+    const git = (...a) => execFileSync('git', a, { cwd: ROOT, encoding: 'utf8' }).split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+    const changed = [...new Set([...git('diff', '--name-only', `${opts.changed}...HEAD`), ...git('diff', '--name-only', 'HEAD'), ...git('ls-files', '--others', '--exclude-standard')])];
+    const rel = (f) => toPosix(path.relative(ROOT, f));
+    const read = (f) => { try { return fs.readFileSync(path.join(ROOT, f), 'utf8'); } catch { return ''; } };
+    const keep = new Set(selectSuites(suites.map(rel), changed, read));
+    suites = suites.filter((f) => keep.has(rel(f)) || rel(f) === 'tools/check-deps.mjs');
+    console.log(`--changed ${opts.changed}: ${changed.length} changed file(s) -> ${suites.length} suite(s)`);
+  }
   const results = [];
   let anyFail = false;
   if (opts.filter.length) {
@@ -194,7 +219,7 @@ async function main() {
     const name = toPosix(path.relative(ROOT, file));
     const { status, ms, output } = await runSuite(file, timeoutMs, WARN_ON_FAIL.has(name));
     if (status === 'FAIL' || status === 'TIMEOUT') anyFail = true;
-    console.log(`${status} ${name} ${ms}ms`);
+    emit(`${status} ${name} ${ms}ms`);
     results.push({ name, status, ms, output });
   }
 

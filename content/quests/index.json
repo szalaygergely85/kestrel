@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "packs": [
+    "ch12",
+    "ch3",
+    "ch3b",
+    "regions"
+  ],
+  "legacy": [
+    "m1",
+    "tower.blade",
+    "burl.boars",
+    "burl.follow",
+    "burl.stone",
+    "burl.road",
+    "sq.burl.blue",
+    "under.graves",
+    "under.crypt",
+    "mq.river.road",
+    "mq.ford.stones",
+    "mq.bend.call",
+    "mq.ford.mirror",
+    "mq.smoke"
+  ]
+}

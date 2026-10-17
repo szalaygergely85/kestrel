@@ -24,6 +24,10 @@ ok(rock.id === 'scatter:detail' && rock.kind === 'trimesh' && rock.enabled);
 ok(rock.bvh.triCount === 24 && log.bvh.triCount === 10);
 ok(rock.min[2] === -0.5 && rock.max[2] === 0.8);
 ok(Math.abs(rock.max[0] - 0.7 / Math.cos(Math.PI / 8)) < 1e-12);
+{ // SAPLINGS: collider radius/height follow detail.scale (absent scale = 1)
+  const sc = { ...placement(1), scale: Float32Array.of(0.5) }, scaled = buildDetailCollider(sc);
+  ok(Math.abs(scaled.max[0] - 0.35 / Math.cos(Math.PI / 8)) < 1e-6 && Math.abs(scaled.max[2] - 0.4) < 1e-6 && scaled.bvh.triCount === 24);
+}
 ok(buildDetailCollider(null) === null && buildDetailCollider({ count: 0 }) === null);
 ok(buildDetailCollider(placement(0)) === null);
 const mixed = { count: 3, x: Float64Array.of(0, 5, 100), y: Float64Array.of(0, 0, 100),

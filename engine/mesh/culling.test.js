@@ -4,7 +4,7 @@
 // Run: node engine/mesh/culling.test.js
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, worldToCell, PROJ_NEAR } from '../render/projection.js';
+import { projTerms, shearProjection, createPitchedTerms, pitchedTerms, worldToCell, PROJ_NEAR, PROJ_FAR } from '../render/projection.js';
 import { frustumPlanes, classifyAABB, CULL_IN, CULL_OUT, CULL_STRADDLE } from './culling.js';
 import { makeOk } from '../test/assert.js';
 
@@ -61,7 +61,7 @@ const { planes: straightPlanes } = planesFor(straightCam);
 
 // ---- outside: a box far past the far plane -----------------------------
 {
-  const r = classifyAABB(straightPlanes, -1, -3000, 0, 1, -2500, 2);
+  const r = classifyAABB(straightPlanes, -1, -PROJ_FAR - 1000, 0, 1, -PROJ_FAR - 500, 2);
   ok('box beyond the far plane -> CULL_OUT', r === CULL_OUT, `got ${r}`);
 }
 

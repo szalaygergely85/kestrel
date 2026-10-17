@@ -236,6 +236,8 @@ export class MeshBuffers {
     this.cache = new Map();
     /** RE-06b: voxel-only entries (32 B vertex + index buffer), separate from `cache` so `get()` is untouched. @type {Map<string, {vertexBuffer: any, indexBuffer: any, indexType: 'u16'|'u32', version: number, mesh: any, vertexCount: number, indexCount: number, uvMaskBuffer?: any, aoBuffer?: any}>} */
     this.voxelCache = new Map();
+    /** VOX-MESH-CACHE-01: number of `getVoxel` builds+uploads (test/diagnostic counter). */
+    this.voxelBuilds = 0;
     /** CLOTH-1b2: cloth entries (dynamic 16 B vertex buffer + static uv + static index), keyed by `mesh.id`. @type {Map<string, any>} */
     this.clothCache = new Map();
     /** S8-B2-03: a lazy mesh whose payload was evicted frees its GPU buffers (re-uploaded by `get` when it loads again). */
@@ -257,12 +259,17 @@ export class MeshBuffers {
     }
     const v = this.voxelCache.get(mesh.id);
     if (v) {
-      this.device.dispose(v.vertexBuffer);
-      this.device.dispose(v.indexBuffer);
-      if (v.uvMaskBuffer) this.device.dispose(v.uvMaskBuffer);
-      if (v.aoBuffer) this.device.dispose(v.aoBuffer);
+      for (let n = v; n; n = n.alt) this._disposeVoxel(n);
       this.voxelCache.delete(mesh.id);
     }
+  }
+
+  /** @param {any} v voxel entry */
+  _disposeVoxel(v) {
+    this.device.dispose(v.vertexBuffer);
+    this.device.dispose(v.indexBuffer);
+    if (v.uvMaskBuffer) this.device.dispose(v.uvMaskBuffer);
+    if (v.aoBuffer) this.device.dispose(v.aoBuffer);
   }
 
   /**
@@ -305,20 +312,28 @@ export class MeshBuffers {
    * @param {import('../../mesh/MeshData.js').MeshData} mesh
    */
   getVoxel(mesh) {
-    const existing = this.voxelCache.get(mesh.id);
-    if (existing && existing.version === mesh.meshVersion && existing.mesh === mesh) return existing;
-    if (existing) {
-      this.device.dispose(existing.vertexBuffer);
-      this.device.dispose(existing.indexBuffer);
-      if (existing.uvMaskBuffer) this.device.dispose(existing.uvMaskBuffer);
-      if (existing.aoBuffer) this.device.dispose(existing.aoBuffer);
+    // VOX-MESH-CACHE-01: one id can be drawn through SEVERAL mesh objects at the same meshVersion (the registry mesh the decor pass
+    // gets vs the MeshDrawCache draw copy the cull/raster/shadow paths get). The old single-slot-per-id check thrashed between
+    // them (rebuild + re-upload on every alternation, every frame). Entries for one id form a short `alt` chain, matched by object
+    // identity; a node whose version differs from the requested mesh's is stale (hot reload / in-place rebuild) and is replaced.
+    const head = this.voxelCache.get(mesh.id);
+    let n = head;
+    for (; n; n = n.alt) if (n.mesh === mesh && n.version === mesh.meshVersion) return n;
+    // miss: keep up to 3 same-version siblings (other mesh objects), dispose everything else (stale version / same object)
+    let keep = null, tail = null, kept = 0;
+    for (n = head; n; ) {
+      const next = n.alt;
+      if (n.version === mesh.meshVersion && n.mesh !== mesh && kept < 3) { n.alt = null; if (tail) tail.alt = n; else keep = n; tail = n; kept++; }
+      else this._disposeVoxel(n);
+      n = next;
     }
+    this.voxelBuilds++;
     const d = buildVoxelVertexData(mesh);
     const vertexBuffer = this.device.createBuffer({ usage: 'vertex', data: new Uint8Array(d.vertex) });
     const indexBuffer = this.device.createBuffer({ usage: 'index', data: d.index });
     const entry = {
       vertexBuffer, indexBuffer, indexType: /** @type {'u16'|'u32'} */ (d.index instanceof Uint16Array ? 'u16' : 'u32'),
-      version: mesh.meshVersion, mesh, vertexCount: d.vertexCount ?? d.quadCount * 4, indexCount: d.indexCount ?? d.quadCount * 6,
+      version: mesh.meshVersion, mesh, vertexCount: d.vertexCount ?? d.quadCount * 4, indexCount: d.indexCount ?? d.quadCount * 6, alt: keep,
     };
     // ALPHA-01f (b) host: instanced mesh-group entries (TREES-LP-b, static-layout meshes) get the same mask-uv stream as
     // static entries above (`get()`), reusing MASK_UV_LAYOUT location 10 so passRaster.js's instanced masked draw can bind it.
@@ -375,12 +390,7 @@ export class MeshBuffers {
       if (entry.uvMaskBuffer) this.device.dispose(entry.uvMaskBuffer);
     }
     this.cache.clear();
-    for (const entry of this.voxelCache.values()) {
-      this.device.dispose(entry.vertexBuffer);
-      this.device.dispose(entry.indexBuffer);
-      if (entry.uvMaskBuffer) this.device.dispose(entry.uvMaskBuffer);
-      if (entry.aoBuffer) this.device.dispose(entry.aoBuffer);
-    }
+    for (const head of this.voxelCache.values()) for (let n = head; n; n = n.alt) this._disposeVoxel(n);
     this.voxelCache.clear();
     for (const entry of this.clothCache.values()) {
       this.device.dispose(entry.vertexBuffer);

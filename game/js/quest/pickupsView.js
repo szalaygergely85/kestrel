@@ -48,9 +48,13 @@ export function presentPickups(world, pickupStyle, simTime) {
   world.forEachEntity((e, id) => {
     const p = e.components && e.components.pickup;
     if (!p) return;
+    const t = e.transform;
+    if (p.kind === 'item') { // OB-155f: item drops lie on the ground (no hover / bob); blink still applies
+      t.z = blinkVisible(p.life, pickupStyle.blink) ? p.baseZ : HIDE_Z;
+      return;
+    }
     const def = p.kind === 'mp' ? pickupStyle.mp : pickupStyle.hp;
     if (!def) return;
-    const t = e.transform;
     if (!blinkVisible(p.life, pickupStyle.blink)) { t.z = HIDE_Z; return; }
     t.z = p.baseZ + def.hoverM + bobOffset(id, simTime, def.bob);
   });

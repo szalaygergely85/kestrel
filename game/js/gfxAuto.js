@@ -14,7 +14,8 @@ export function tierFromAdapter(info) {
   if (!info) return { tier: 'medium', why: 'no adapter info' };
   const text = [info.vendor, info.architecture, info.description, info.label].filter(Boolean).join(' ').toLowerCase();
   if (info.fallback || /swiftshader|llvmpipe|software|basic render|softpipe/.test(text)) return { tier: 'low', why: 'software adapter' };
-  if (/nvidia|geforce|\brtx\b|\bgtx\b|quadro/.test(text)) return { tier: 'high', why: 'discrete NVIDIA' };
+  if (/\brtx\b/.test(text)) return { tier: 'ultra', why: 'NVIDIA RTX' }; // D-118 owner 2026-10-16: the 4060 fits ultra
+  if (/nvidia|geforce|\bgtx\b|quadro/.test(text)) return { tier: 'high', why: 'discrete NVIDIA' };
   if (/\barc\(?(tm)?\)?\s*[ab]\d{3}/.test(text)) return { tier: 'high', why: 'discrete Intel Arc' };
   if (/intel/.test(text)) {
     if (/xe-lpg|xe2|arc\(?(tm)?\)? graphics|0x0*7d|0x0*64/.test(text)) return { tier: 'medium', why: 'Intel Arc integrated' };

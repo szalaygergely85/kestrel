@@ -19,13 +19,15 @@
 //   Stats: sp.stats.{sprites, uploadMs}. Readback (gpucompare): `await sp.readbackCells(outFg?, outBg?)` -> {fg, bg} Uint8Array(cols*rows*4) or null.
 //   dispose() frees everything.
 //
-// Deviations from the GL pass (flagged): (1) [fixed] ATLAS is 'rgba8ui' (uploaded as is, no widening); the WGSL reads .r/.g/.b/.a as u32 either way. (2) [fixed] the particle layer uploads only the dirty-row slice via writeTexture's dataOffset. (3) Sprite rows upload `pool.spr` with rect h = count (no subarray).
+// Deviations from the GL pass (flagged): (1) [fixed] ATLAS is 'rgba8ui' (uploaded as is, no widening); the WGSL reads .r/.g/.b/.a as u32 either way. (2) [fixed] the particle layer uploads only the dirty rect (rows + columns, rect.stride = layer width) via writeTexture's dataOffset. (3) Sprite rows upload `pool.spr` with rect h = count (no subarray).
 import { SPRITES_BLOCK, SPRITES_WGSL, SPRITES_TEXTURES } from '../wgsl/sprites.wgsl.js';
 import { MAX_SPRITES, SPR_TEXELS } from '../../sprites.js';
 
 const F = (n) => SPRITES_BLOCK.field(n).word;
 const W_COUNT = F('count'), W_FADE = F('sceneFade'), W_MING = F('fadeMinGain'), W_RAMP = F('fadeRampLen');
 const W_DIMALL = F('dimAll'), W_DIMN = F('dimCount'), W_DIMMUL = F('dimMul'), W_DIMRECT = F('dimRect');
+const W_ALIFT = F('atmosLift'), W_AIG = F('atmosInvGamma'), W_AGAIN = F('atmosGain'); // ENV-03c
+const W_PVIG = F('postVig'), W_PVRGB = F('postVigRGB'), W_PMIST = F('postMist'), W_PMISTB = F('postMistB'); // POST-STACK-01b
 
 export const ATLAS_FORMAT = 'rgba8ui';
 
@@ -40,9 +42,13 @@ export class WgSpritesPass {
     this.cols = 0; this.rows = 0;
     // timeUploads (default false): the two performance.now() calls allocate ~32 B/frame; when off, stats.uploadMs stays 0.
     this.timeUploads = !!opts.timeUploads;
-    this.stats = { sprites: 0, uploadMs: 0 };
+    this.stats = { sprites: 0, uploadMs: 0, partBytes: 0 }; // partBytes: cumulative particle-layer upload bytes (both textures)
+    this.cropColumns = true; // PARTICLE-UPLOAD-02 (false = row band only, for the equivalence test)
     this.ran = false;
-    this._rowRect = { x: 0, y: 0, w: 0, h: 0 }; // reused dirty-row rect for writeTexture (no per-frame allocation)
+    // POST-STACK-01b: `post` = a composePost() state (engine/render/post.js) or null (= today's pipeline). When set it carries the COMPOSED grade
+    // (biome + preset, so nothing is graded twice) and replaces palette.atmos below; `postAspect` = displayed picture ratio for the vignette (0 = cols/rows).
+    this.post = null; this.postAspect = 0;
+    this._rowRect = { x: 0, y: 0, w: 0, h: 0, stride: 0 }; // reused dirty-row rect for writeTexture (no per-frame allocation)
     this.sceneFade = 1; this.fadeMinGain = 0; this.fadeRampLen = 1;
     this.dimAll = 1; this.dimCount = 0;
     this.dimRect = new Float32Array(16); this.dimMul = new Float32Array(4);
@@ -51,7 +57,7 @@ export class WgSpritesPass {
     this.atlas = null; this.texAtlas = null; this.texPal = null;
     this._lutRef = null; this._rampLen = 1;
     this.layer = null; this._partCols = 1; this._partRows = 1; this._partRef = null; this._partDirty = true;
-    this.texSpr = this.texFadeLut = this.texFadeRamp = this.texPart = this.texPartZ = null; this.pipe = null;
+    this.texSpr = this.texFadeLut = this.texFadeRamp = this.texPart = this.texPartZ = this.texPartBg = null; this.pipe = null;
     this.tex = [];
     this.bindDesc = null;
     try {
@@ -65,7 +71,8 @@ export class WgSpritesPass {
       this.texFadeRamp = device.createTexture({ format: 'r8ui', width: 1, height: 1 });
       this.texPart = device.createTexture({ format: 'rgba8', width: 1, height: 1 });
       this.texPartZ = device.createTexture({ format: 'r32f', width: 1, height: 1 });
-      this.tex = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((slot) => ({ slot, texture: null }));
+      this.texPartBg = device.createTexture({ format: 'rgba8', width: 1, height: 1 });
+      this.tex = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((slot) => ({ slot, texture: null }));
       this.bindDesc = { uniforms: this.u, textures: this.tex };
       if (opts.atlas) this.setAtlas(opts.atlas);
     } catch (e) { this.dispose(); throw e; }
@@ -134,9 +141,10 @@ export class WgSpritesPass {
     const d = this.device;
     if (l.cols !== this._partCols || l.rows !== this._partRows) {
       if (!(l.cols > 0 && l.rows > 0)) return;
-      d.dispose(this.texPart); d.dispose(this.texPartZ);
+      d.dispose(this.texPart); d.dispose(this.texPartZ); d.dispose(this.texPartBg);
       this.texPart = d.createTexture({ format: 'rgba8', width: l.cols, height: l.rows });
       this.texPartZ = d.createTexture({ format: 'r32f', width: l.cols, height: l.rows });
+      this.texPartBg = d.createTexture({ format: 'rgba8', width: l.cols, height: l.rows });
       this._partCols = l.cols; this._partRows = l.rows; this._partDirty = true;
     }
     if (l.part !== this._partRef) { this._partRef = l.part; this._partDirty = true; }
@@ -146,12 +154,23 @@ export class WgSpritesPass {
     let r0 = this._partRows, r1 = -1;
     if (hasNow) { r0 = l.minRow; r1 = l.maxRow; }
     if (hadPrev) { if (l.prevMinRow < r0) r0 = l.prevMinRow; if (l.prevMaxRow > r1) r1 = l.prevMaxRow; }
-    if (this._partDirty) { r0 = 0; r1 = this._partRows - 1; this._partDirty = false; }
+    const fullRect = this._partDirty;
+    if (fullRect) { r0 = 0; r1 = this._partRows - 1; this._partDirty = false; }
     if (r0 < 0) r0 = 0; if (r1 > this._partRows - 1) r1 = this._partRows - 1;
     if (r1 < r0) return;
-    const rect = this._rowRect; rect.y = r0; rect.w = this._partCols; rect.h = r1 - r0 + 1;
-    d.writeTexture(this.texPart, l.part, rect, r0 * this._partCols * 4);
-    d.writeTexture(this.texPartZ, l.partZ, rect, r0 * this._partCols);
+    // PARTICLE-UPLOAD-02: crop columns too (touched span now + last frame's footprint); full width when it covers > 75% or is degenerate
+    const C = this._partCols;
+    let c0 = C, c1 = -1;
+    if (hasNow) { c0 = l.minCol; c1 = l.maxCol; }
+    if (hadPrev) { if (l.prevMinCol < c0) c0 = l.prevMinCol; if (l.prevMaxCol > c1) c1 = l.prevMaxCol; }
+    const full = fullRect || !this.cropColumns || c0 < 0 || c1 >= C || c1 < c0 || (c1 - c0 + 1) * 4 > C * 3;
+    if (full) { c0 = 0; c1 = C - 1; }
+    const rect = this._rowRect; rect.x = c0; rect.y = r0; rect.w = c1 - c0 + 1; rect.h = r1 - r0 + 1; rect.stride = full ? 0 : C;
+    const off = r0 * C + c0;
+    d.writeTexture(this.texPart, l.part, rect, off * 4);
+    d.writeTexture(this.texPartZ, l.partZ, rect, off);
+    d.writeTexture(this.texPartBg, l.partBg, rect, off * 4);
+    this.stats.partBytes += rect.w * rect.h * 12; // rgba8 (4 B) + r32f (4 B) + rgba8 bg (4 B) per texel
   }
 
   /**
@@ -168,10 +187,25 @@ export class WgSpritesPass {
     ui[W_COUNT] = count; u[W_FADE] = this.sceneFade; u[W_MING] = this.fadeMinGain; ui[W_RAMP] = this.fadeRampLen;
     u[W_DIMALL] = this.dimAll; ui[W_DIMN] = this.dimCount;
     u.set(this.dimMul, W_DIMMUL); u.set(this.dimRect, W_DIMRECT);
+    const PS = this.post; // POST-STACK-01b: composed state wins over palette.atmos (composePost already folded the biome grade in)
+    const A = PS ? (PS.gradeOn && !PS.gradeId ? PS : null) : this.palette && this.palette.atmos; // ENV-03c: published by applyAtmosToPalette; absent/off/identity = w 0 (shader skips)
+    if (A && A.on && !A.gradeId) {
+      const l = A.lift, ig = A.invGamma, g = A.gain;
+      u[W_ALIFT] = l[0]; u[W_ALIFT + 1] = l[1]; u[W_ALIFT + 2] = l[2]; u[W_ALIFT + 3] = 1;
+      u[W_AIG] = ig[0]; u[W_AIG + 1] = ig[1]; u[W_AIG + 2] = ig[2]; u[W_AIG + 3] = A.sat;
+      u[W_AGAIN] = g[0]; u[W_AGAIN + 1] = g[1]; u[W_AGAIN + 2] = g[2];
+    } else u[W_ALIFT + 3] = 0;
+    if (PS && (PS.vig[3] > 0 || PS.mist[3] > 0)) {
+      const v = PS.vig, vr = PS.vigRGB, m = PS.mist, mr = PS.mistRGB;
+      u[W_PVIG] = v[0]; u[W_PVIG + 1] = v[1]; u[W_PVIG + 2] = v[2]; u[W_PVIG + 3] = v[3];
+      u[W_PVRGB] = vr[0]; u[W_PVRGB + 1] = vr[1]; u[W_PVRGB + 2] = vr[2]; u[W_PVRGB + 3] = this.postAspect > 0 ? this.postAspect : this.cols / (this.rows || 1);
+      u[W_PMIST] = mr[0]; u[W_PMIST + 1] = mr[1]; u[W_PMIST + 2] = mr[2]; u[W_PMIST + 3] = m[0];
+      u[W_PMISTB] = m[1]; u[W_PMISTB + 1] = m[2]; u[W_PMISTB + 2] = m[3]; u[W_PMISTB + 3] = 0;
+    } else { u[W_PVIG + 3] = 0; u[W_PMISTB + 2] = 0; }
     const tx = this.tex;
     tx[0].texture = inp.gi; tx[1].texture = inp.depth; tx[2].texture = inp.edgeFg; tx[3].texture = inp.edgeBg;
     tx[4].texture = this.texSpr; tx[5].texture = this.texAtlas; tx[6].texture = this.texPal;
-    tx[7].texture = this.texFadeLut; tx[8].texture = this.texFadeRamp; tx[9].texture = this.texPart; tx[10].texture = this.texPartZ;
+    tx[7].texture = this.texFadeLut; tx[8].texture = this.texFadeRamp; tx[9].texture = this.texPart; tx[10].texture = this.texPartZ; tx[11].texture = this.texPartBg;
     if (this.timeUploads) this.stats.uploadMs = now() - t0;
     d.beginPass(this.target);
     d.bind(this.pipe, this.bindDesc);
@@ -195,7 +229,7 @@ export class WgSpritesPass {
   dispose() {
     const d = this.device;
     this._freeTarget();
-    for (const k of ['pipe', 'texSpr', 'texFadeLut', 'texFadeRamp', 'texPart', 'texPartZ', 'texAtlas', 'texPal']) {
+    for (const k of ['pipe', 'texSpr', 'texFadeLut', 'texFadeRamp', 'texPart', 'texPartZ', 'texPartBg', 'texAtlas', 'texPal']) {
       if (this[k]) { try { d.dispose(this[k]); } catch (_) { /* best effort */ } this[k] = null; }
     }
     this.atlas = null;

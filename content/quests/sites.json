@@ -1,0 +1,122 @@
+{
+  "version": 1,
+  "sites": {
+    "burl": {
+      "entity": "bear"
+    },
+    "post": {
+      "entity": "post"
+    },
+    "notePost": {
+      "entity": "notePost"
+    },
+    "qd06_stoneKnot": {
+      "entity": "qd06_stoneKnot"
+    },
+    "relayBend": {
+      "entity": "relayBend"
+    },
+    "relayFord": {
+      "entity": "relayFord"
+    },
+    "rook": {
+      "entity": "rook"
+    },
+    "gondola": {
+      "entity": "gondola"
+    },
+    "packet": {
+      "entity": "packet"
+    },
+    "pierStone": {
+      "entity": "pierStone"
+    },
+    "owBoard": {
+      "entity": "owBoard"
+    },
+    "owForge": {
+      "entity": "owForge"
+    },
+    "hesk": {
+      "entity": "hesk"
+    },
+    "dorrin": {
+      "entity": "dorrin"
+    },
+    "warden_glasswater": {
+      "entity": "warden_glasswater"
+    },
+    "warden_whitecombs": {
+      "entity": "warden_whitecombs"
+    },
+    "warden_strand": {
+      "entity": "warden_strand"
+    },
+    "warden_reedmire": {
+      "entity": "warden_reedmire"
+    },
+    "warden_heath": {
+      "entity": "warden_heath"
+    },
+    "warden_signalhill": {
+      "entity": "warden_signalhill"
+    },
+    "warden_downs": {
+      "entity": "warden_downs"
+    },
+    "warden_ashmile": {
+      "entity": "warden_ashmile"
+    },
+    "warden_highpastures": {
+      "entity": "warden_highpastures"
+    },
+    "warden_northwood": {
+      "entity": "warden_northwood"
+    },
+    "relay_glasswater": {
+      "entity": "relay_glasswater"
+    },
+    "relay_northwood": {
+      "entity": "relay_northwood"
+    },
+    "relay_highPastures": {
+      "entity": "relay_highPastures"
+    },
+    "relay_ashMile": {
+      "entity": "relay_ashMile"
+    },
+    "relay_downs": {
+      "entity": "relay_downs"
+    },
+    "relay_signalHill": {
+      "entity": "relay_signalHill"
+    },
+    "relay_heath": {
+      "entity": "relay_heath"
+    },
+    "relay_reedmire": {
+      "entity": "relay_reedmire"
+    },
+    "relay_strand": {
+      "entity": "relay_strand"
+    },
+    "relay_whitecombs": {
+      "entity": "relay_whitecombs"
+    },
+    "postkeeper": {
+      "entity": "postkeeper"
+    },
+    "joss": {
+      "entity": "joss"
+    },
+    "qd01_farmTable": {
+      "entity": "qd01_farmTable"
+    },
+    "rsInspectWell": {
+      "entity": "rsInspectWell"
+    },
+    "qd04_towerScratch": {
+      "entity": "qd04_towerScratch"
+    }
+  }
+}

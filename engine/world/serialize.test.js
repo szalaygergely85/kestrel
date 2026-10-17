@@ -3,6 +3,7 @@ import { dynamicTowerAssets } from '../../tools/testing/dynamic-tower.mjs';
 // Headless Node ESM, no framework. Run: node engine/world/serialize.test.js
 import { World } from './World.js';
 import { serialize, deserialize } from './serialize.js';
+import { normState } from '../test/normState.js';
 import paletteMod from '../../design/palette.js';
 import detailPassMod from '../../design/detail-pass.js';
 import terrainDef from '../../design/levels/overworld_far.js';
@@ -53,9 +54,9 @@ function roundTrip(w) {
 
 const { s1, s2, w2 } = roundTrip(world);
 
-ok('round trip is deep-equal (serialize -> JSON -> deserialize -> serialize)', JSON.stringify(s1) === JSON.stringify(s2));
+ok('round trip is deep-equal (serialize -> JSON -> deserialize -> serialize)', JSON.stringify(normState(s1)) === JSON.stringify(normState(s2)));
 // CO-5 (docs/coordinates.md 8): WorldState is version 2 going forward.
-ok('serialize writes version 2', s1.version === 2);
+ok('serialize writes version 3', s1.version === 3);
 ok('positions are bit-exact (no rounding)', s2.entities.find((e) => e.id === 'player').transform.x === player.data.transform.x);
 ok('grate dynamics survive the round trip', s2.structures.find((s) => s.id === 'tower').dynamics.grate.t === 0.5);
 ok('boulder-style / arbitrary state survives the round trip', s2.state['tower.lantern.taken'] === true);
@@ -86,6 +87,13 @@ ok('deserialize with an unknown version throws a clear error', threw);
 ok('serialize writes world.horizon back unchanged', JSON.stringify(s1.horizon) === JSON.stringify(world.horizon));
 ok('deserialize gives w2 the same horizon content', JSON.stringify(w2.horizon) === JSON.stringify(world.horizon));
 ok('deserialized horizon is its own array (content not state, not shared with the source world)', w2.horizon !== world.horizon);
+
+// MAP-11 nit: a polygon bounds round-trips as a deep copy (cloneBounds copies pts once)
+{
+  const sb = serialize(world); const had = world.bounds;
+  if (had && Array.isArray(had.pts)) ok('serialize: polygon bounds pts are a copy with equal content', sb.bounds.pts !== had.pts && JSON.stringify(sb.bounds.pts) === JSON.stringify(had.pts));
+  else ok('serialize: bounds absent or non-polygon in this fixture (cloneBounds covered by mapBounds.test.js)', true);
+}
 
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }

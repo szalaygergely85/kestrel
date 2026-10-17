@@ -96,7 +96,7 @@ export function lanternTake(ctx) {
  * pickup. `lights` may be null (`?lights=0` or before the first
  * `buildLightSet`) - then the switch is simply skipped, same as `stepBeacon`.
  * @param {import('../../../engine/index.js').World} world
- * @param {import('../../../engine/render/lighting.js').LightSet|null} lights
+ * @param {import('../../../engine/index.js').LightSet|null} lights
  */
 export function stepLantern(world, lights) {
   const key = world.state['tower.lantern.hookLightOff'];

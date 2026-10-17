@@ -50,9 +50,13 @@ fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4f {
   let bg = textureLoad(uBg, cell, 0);
   let layer = i32(u.layer);
   if (layer == 1 && bg.a < 0.5) { discard; }
-  let glyphIdx = floor(fg.a * 255.0 + 0.5);
+  let raw = u32(floor(fg.a * 255.0 + 0.5));
+  // OB-051: UI fg.a bit 7 = cell of a 2x2 scaled glyph block; quadrant = cell parity (even-origin blocks).
+  let scaled = layer == 1 && raw >= 128u;
+  let glyphIdx = f32(raw & 127u);
+  let frac = select(cellFrac, (cellFrac + vec2f(f32(cell.x & 1), f32(cell.y & 1))) * 0.5, scaled);
 
-  let atlasUv = vec2f((glyphIdx + cellFrac.x) / GLYPH_COUNT, cellFrac.y);
+  let atlasUv = vec2f((glyphIdx + frac.x) / GLYPH_COUNT, frac.y);
   let a = textureSampleLevel(uAtlas, uAtlasSampler, atlasUv, 0.0).a;
 
   if (layer == 1 && bg.a < 0.75) {

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "id": "burl.follow",
+  "title": "Follow the Bear",
+  "giver": { "npc": "bear" },
+  "requires": [{ "quest": "burl.boars", "done": true }],
+  "objectives": [
+    { "id": "arrive", "text": "Follow Burl", "journal": "The bear is Burl. Follow her lead.", "when": { "type": "flag", "id": "burl.arrived", "equals": true } }
+  ],
+  "returnText": "Talk to Burl at the stone",
+  "rewardBand": "errand",
+  "reward": { "coin": 10, "items": [{ "id": "arrow", "n": 5 }] }
+}

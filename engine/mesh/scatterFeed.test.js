@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { vegTintObjectId } from './vegTint.js';
 import { bindDetailInstances, feedDetail, removeDetailInstances, DETAIL_OBJECT_BASE } from './scatterFeed.js';
 import { InstanceGroups, createInstanceBuffer, writeUnitInstance, INSTANCE_STRIDE,
   INST_OBJECT_ID, INST_FLAGS, MAX_INSTANCE_GROUPS, MAX_INSTANCES_PER_FRAME } from './instances.js';
@@ -62,7 +63,7 @@ ok(binding.groupOf instanceof Uint8Array && binding.groupOf[2] === 255);
 const one = createInstanceBuffer(1);
 for (let i = 0; i < detail.count; i++) {
   writeUnitInstance(one, 0, detail.x[i], detail.y[i], detail.z[i], detail.yawDeg[i], DETAIL_OBJECT_BASE | i, 0);
-  if (detail.speciesDefs[detail.species[i]].sway) one.u32[INST_FLAGS] |= INST_FLAG_SWAY; // FOLIAGE-SWAY-01 part 2
+  if (detail.speciesDefs[detail.species[i]].sway) { one.u32[INST_FLAGS] |= INST_FLAG_SWAY; one.u32[INST_OBJECT_ID] = vegTintObjectId(DETAIL_OBJECT_BASE | i, i, detail.x[i], detail.y[i]); } // FOLIAGE-SWAY-01 part 2 + AUD-47
   for (let w = 0; w < INSTANCE_STRIDE; w++) assert.equal(binding.master.u32[i * INSTANCE_STRIDE + w], one.u32[w]);
 }
 checks++;
@@ -101,7 +102,7 @@ for (let p = 0; p < 20; p++) {
   for (let s = 0; s < 2; s++) {
     const g = binding.groups[s]; assert.equal(g.count, selected[s].length);
     for (let j = 0; j < g.count; j++) {
-      assert.equal(g.ib.u32[j * INSTANCE_STRIDE + INST_OBJECT_ID], DETAIL_OBJECT_BASE | selected[s][j]);
+      assert.equal(g.ib.u32[j * INSTANCE_STRIDE + INST_OBJECT_ID] & 0xFFFFF, (DETAIL_OBJECT_BASE | selected[s][j]) & 0xFFFFF); // AUD-47: bits 20+ may carry the veg tint
       for (let w = 0; w < INSTANCE_STRIDE; w++) {
         assert.equal(g.ib.u32[j * INSTANCE_STRIDE + w], binding.master.u32[selected[s][j] * INSTANCE_STRIDE + w]);
       }
@@ -136,18 +137,22 @@ const unbounded = bindDetailInstances(detail, registry(), { ...cfg, maxDraw: det
 const px = detail.x[0], py = detail.y[0], r = Math.sqrt(detail.r2[0]);
 feedDetail(unbounded, px + r, py, true);
 ok(!unbounded.groups[0].ib.u32.some((word, i) => i % INSTANCE_STRIDE === INST_OBJECT_ID &&
-  i < unbounded.groups[0].count * INSTANCE_STRIDE && word === DETAIL_OBJECT_BASE));
+  i < unbounded.groups[0].count * INSTANCE_STRIDE && (word & 0xFFFFF) === DETAIL_OBJECT_BASE));
 feedDetail(unbounded, px + r - 0.0001, py, true);
 ok(unbounded.groups[0].ib.u32.some((word, i) => i % INSTANCE_STRIDE === INST_OBJECT_ID &&
-  i < unbounded.groups[0].count * INSTANCE_STRIDE && word === DETAIL_OBJECT_BASE));
+  i < unbounded.groups[0].count * INSTANCE_STRIDE && (word & 0xFFFFF) === DETAIL_OBJECT_BASE));
 const tiny = { ...detail, count: 1, tileStart: new Uint32Array(tilesX * tilesY + 1).fill(1) };
 tiny.tileStart[0] = 0;
 const tinyBinding = bindDetailInstances(tiny, registry(), cfg);
 ok(tinyBinding.groups.length === 1 && tinyBinding.groups[0].ib.capacity === 1);
 
 const missing = registry(); missing.pool.models.delete('rock');
-assert.throws(() => bindDetailInstances(detail, missing, cfg), /missing voxel model rock/); checks++;
-ok(missing.groups.length === 0);
+{ // OB-166: a missing model skips the species with ONE warn, never throws
+  const warns = [], w0 = console.warn; console.warn = m => warns.push(m);
+  let mb; try { mb = bindDetailInstances(detail, missing, cfg); } finally { console.warn = w0; }
+  ok(warns.length === 1 && /rock/.test(warns[0]) && mb.skipped > 0 && mb.missingIds.includes('rock'));
+  ok(!mb.groups.some(g => g.modelKey === 'rock') && feedDetail(mb, 0, 0, true) >= 0);
+}
 const full = registry();
 for (let i = 0; i < MAX_INSTANCE_GROUPS - 1; i++) full.group('tuft', 1);
 assert.throws(() => bindDetailInstances(detail, full, cfg), /over 32 groups/); checks++;
@@ -195,9 +200,9 @@ canonicalRegistry.bindPool({ models: new Map(canonical.detail.speciesDefs.map(d 
 // Existing trees and the compare harness's unit group count against the cap.
 for (let i = 0; i < 7; i++) canonicalRegistry.group('tree-or-unit', 1);
 const canonicalBinding = bindDetailInstances(canonical.detail, canonicalRegistry, canonical.terrain.recipe.recipe.detail, 485);
-ok(canonicalBinding.groups.length === 19 && canonicalRegistry.groups.length === 26);
+ok(canonicalBinding.groups.length === 3 && canonicalRegistry.groups.length === 10); // ROCKS-VOXEL-OFF-01 (7/14 -> 3/10); PLANT-VOXEL-OFF-01 + STONES-VOXEL-OFF-01: voxel plants + stones removed (was 19 / 26, then 10 / 17)
 const active = new Set(canonical.detail.species);
-ok(canonical.detail.speciesDefs.every((d, s) => active.has(s) ? canonicalBinding.groupOf[s] < 19 : canonicalBinding.groupOf[s] === 255));
+ok(canonical.detail.speciesDefs.every((d, s) => active.has(s) ? canonicalBinding.groupOf[s] < 7 : canonicalBinding.groupOf[s] === 255));
 feedDetail(canonicalBinding, 1474.5, 1025, true);
 ok(canonicalBinding.fed > 0 && canonicalBinding.fed <= canonicalBinding.maxDraw);
 console.log(`world_m1: ${canonical.detail.count} placements, ${canonicalBinding.groups.length} detail groups`);
@@ -216,4 +221,13 @@ const sum = frames();
 global.gc(); const growth = process.memoryUsage().heapUsed - before;
 ok(growth < 64 * 1024 && sum > 0);
 ok(walk.groups.every((g, i) => g.ib.u32 === buffers[i]));
+// SAPLINGS: cull radius follows the largest per-instance scale (> 1 only); unscaled groups keep radiusScale 1
+{
+  ok(bindDetailInstances(detail, registry(), cfg).groups.every(g => g.radiusScale === 1));
+  const sc2 = new Float32Array(detail.count).fill(0.5); sc2[0] = 2;
+  const scaled = bindDetailInstances({ ...detail, scale: sc2 }, registry(), cfg);
+  ok(scaled.groups.some(g => g.radiusScale === 2) && scaled.groups.every(g => g.radiusScale === 1 || g.radiusScale === 2));
+  const small = bindDetailInstances({ ...detail, scale: new Float32Array(detail.count).fill(0.5) }, registry(), cfg);
+  ok(small.groups.every(g => g.radiusScale === 1));
+}
 console.log(`scatterFeed: ${checks} checks PASS (1000 frames, retained heap delta ${growth} bytes)`);

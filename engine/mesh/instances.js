@@ -14,9 +14,11 @@
 import { computeVoxelPose, FORWARD, cosSinDeg } from '../voxel/voxelPose.js';
 import { MAX_VOX_PARTS, PART_STRIDE } from '../voxel/VoxelModel.js';
 import { classifyAABB, CULL_OUT } from './culling.js';
+import { releaseGroupImpostor } from './impostorCard.js';
 import { lodBandFrac, lodDitherBits } from './lodDither.js';
+import { impBandBits, IMP_BAND_M } from './impostorCard.js';
 import { requestMeshForGroup } from './lazyMesh.js';
-import { DRAW_FLAG_ONE_PART } from './DrawList.js'; // runtime use only (DrawList imports groupRadius from here)
+import { DRAW_FLAG_ONE_PART, DRAW_FLAG_NO_CULL, DRAW_FLAG_TWO_SIDED } from './DrawList.js'; // runtime use only (DrawList imports groupRadius from here)
 
 /** Words / bytes per instance. */
 export const INSTANCE_STRIDE = 16;
@@ -61,16 +63,22 @@ const _old = new Uint32Array(INSTANCE_STRIDE);
  * @param {InstanceBuffer} ib
  * @param {number} i
  * @param {number} objectId - game-set; convention `UNIT_OBJECT_BASE | unitIndex`
+ *   Bits 20-26 are reserved for the AUD-47 vegetation tint (marker bit 26); units/game ids must not use them.
  * @param {number} team - 0..7
  */
 export function writeUnitInstance(ib, i, x, y, z, yawDeg, objectId, team) {
+  writeScaledInstance(ib, i, x, y, z, yawDeg, 1, objectId, team);
+}
+
+/** SAPLINGS: `writeUnitInstance` with a uniform scale `sc` on the 3x3 (sc 1 = identical words). Same row layout, so JS raster and GPU read it alike. */
+export function writeScaledInstance(ib, i, x, y, z, yawDeg, sc, objectId, team) {
   cosSinDeg(yawDeg, _cs);
   const c = _cs[0], s = _cs[1];
   const f = ib.f32, o = i * INSTANCE_STRIDE, u = ib.u32;
   for (let w = 0; w < INSTANCE_STRIDE; w++) _old[w] = u[o + w];
-  f[o] = c; f[o + 1] = -s; f[o + 2] = 0; f[o + 3] = x;
-  f[o + 4] = s; f[o + 5] = c; f[o + 6] = 0; f[o + 7] = y;
-  f[o + 8] = 0; f[o + 9] = 0; f[o + 10] = 1; f[o + 11] = z;
+  f[o] = c * sc; f[o + 1] = -s * sc; f[o + 2] = 0; f[o + 3] = x;
+  f[o + 4] = s * sc; f[o + 5] = c * sc; f[o + 6] = 0; f[o + 7] = y;
+  f[o + 8] = 0; f[o + 9] = 0; f[o + 10] = sc; f[o + 11] = z;
   const aligned = (((yawDeg % 90) + 90) % 90 === 0) ? INST_FLAG_ALIGNED : 0; // the exact voxelPose test
   ib.u32[o + 12] = objectId >>> 0;
   ib.u32[o + 13] = (aligned | ((team & 7) << INST_TEAM_SHIFT)) >>> 0;
@@ -90,7 +98,7 @@ export function createInstanceParts() {
   return { m: new Float64Array(MAX_VOX_PARTS * 12), flags: new Uint8Array(MAX_VOX_PARTS), count: 0 };
 }
 
-const _idInst = { x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, scale: 1 };
+const _idInst = { x: 0, y: 0, z: 0, yawDeg: 0, clip: -1, frame: 0, tMs: 0, scale: 1, addPart: -1, legs: null };
 const _poseScratch = new Float64Array(MAX_VOX_PARTS * PART_STRIDE);
 
 /**
@@ -139,6 +147,16 @@ export function groupRadius(mesh, parts) {
 }
 
 /**
+ * LOD-RESET-01: forget the LOD / shadow-band hysteresis of `g` (camera cut / teleport / world load): the next compactGroup
+ * picks like a freshly made group. GPU twin: `WgCullPass.resetLodHistory`.
+ * @param {InstanceGroup} g
+ */
+export function resetLodHistory(g) {
+  if (g.lodPrev) g.lodPrev.fill(0);
+  if (g.shadowBand) g.shadowBand.fill(0);
+}
+
+/**
  * RE-15a/c (28.13 points 2, 3, 6): compacts the survivors of `classifyAABB(planes,
  * t-R, t+R)` (t = instance translation, words 3/7/11) from `g.ib` (game-owned,
  * never written) into the engine-owned `g.drawIb[0]` (LOD0) / `g.drawIb[1]`
@@ -156,7 +174,9 @@ export function groupRadius(mesh, parts) {
  * @param {number} rows
  * @param {number} [swayPad] - S8-B2-06: extra metres on the cull sphere (SWAY_MAX while wind sway is on); the LOD cell estimate keeps plain `R`
  */
-export function compactGroup(g, planes, R, vp, rows, swayPad = 0) {
+export function compactGroup(g, planes, R, vp, rows, swayPad = 0, eye = null) {
+  // OB-089: per-group draw-distance cut (twin of passCull.js's per-batch eye.w = g.maxDistM^2): 3D distance from the eye > maxDistM -> not drawn
+  const md2 = eye && g.maxDistM > 0 ? g.maxDistM * g.maxDistM : 0;
   const srcF = g.ib.f32, srcU = g.ib.u32;
   const dst0 = g.drawIb[0].u32, dst1 = g.drawIb[1].u32;
   const n = g.count;
@@ -166,6 +186,12 @@ export function compactGroup(g, planes, R, vp, rows, swayPad = 0) {
   if (lodOn) k = R * Math.sqrt(vp[1] * vp[1] + vp[5] * vp[5] + vp[9] * vp[9]) * rows;
   const lodPrev = g.lodPrev;
   const Rc = R + swayPad;
+  // R6b: card impostor (rules in impostorCard.js). impOn false = nothing below changes.
+  const impOn = !!(g.imp && g.impM > 0 && eye && g.cardIb);
+  const cardDst = impOn ? g.cardIb.u32 : null;
+  const bandBits = impOn ? (g._bandBits || (g._bandBits = new Uint32Array(g.ib.capacity))) : null;
+  const impFar = impOn ? g.impM + IMP_BAND_M : 0;
+  let wc = 0;
   // QUAT-LOD-01 part 2: near-LOD0 cap, only meaningful with LOD on (there must be an LOD1 bucket to push the excess into).
   // Natural LOD0 survivors are buffered (index + projected `cells`) instead of written straight to dst0, so the top
   // `g.lod0Cap` by `cells` (= nearest by the engine's own LOD metric) can be picked after the loop. `lodPrev` is left as the
@@ -178,6 +204,21 @@ export function compactGroup(g, planes, R, vp, rows, swayPad = 0) {
     const o = i * INSTANCE_STRIDE;
     const tx = srcF[o + 3], ty = srcF[o + 7], tz = srcF[o + 11];
     if (planes && classifyAABB(planes, tx - Rc, ty - Rc, tz - Rc, tx + Rc, ty + Rc, tz + Rc) === CULL_OUT) continue;
+    if (md2 > 0) { const dx = tx - eye.x, dy = ty - eye.y, dz = tz - eye.z; if (dx * dx + dy * dy + dz * dz > md2) continue; }
+    let inImpBand = false;
+    if (impOn) {
+      const dx = tx - eye.x, dy = ty - eye.y, dz = tz - eye.z;
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      bandBits[i] = 0;
+      if (d >= g.impM) {
+        const co = wc * INSTANCE_STRIDE;
+        for (let c = 0; c < INSTANCE_STRIDE; c++) cardDst[co + c] = srcU[o + c];
+        if (d >= impFar) { wc++; continue; } // card only
+        cardDst[co + 13] = (srcU[o + 13] | impBandBits(d, g.impM, 1)) >>> 0; // band: card copy (inverted) + mesh copy below
+        wc++;
+        bandBits[i] = impBandBits(d, g.impM, 0); inImpBand = true;
+      }
+    }
     let lod = 0;
     let cellsForCap = Infinity; // w <= 1e-6 (behind/at the eye): no projected size, treat as nearest (top cap priority)
     if (lodOn) {
@@ -186,7 +227,7 @@ export function compactGroup(g, planes, R, vp, rows, swayPad = 0) {
         const cells = k / cw;
         cellsForCap = cells;
         lod = cells < lo ? 1 : cells > hi ? 0 : lodPrev[i];
-        if (g.lodDither && cells >= lo && cells <= hi) { // S8-B2-07: screen-door crossfade, both copies with complementary coverage bits
+        if (g.lodDither && !inImpBand && cells >= lo && cells <= hi) { // S8-B2-07: screen-door crossfade, both copies with complementary coverage bits
           const f = lodBandFrac(cells, lo, hi);
           for (let c = 0; c < INSTANCE_STRIDE; c++) { dst0[w0 * INSTANCE_STRIDE + c] = srcU[o + c]; dst1[w1 * INSTANCE_STRIDE + c] = srcU[o + c]; }
           dst0[w0 * INSTANCE_STRIDE + 13] = (srcU[o + 13] | lodDitherBits(f, 0)) >>> 0;
@@ -201,19 +242,21 @@ export function compactGroup(g, planes, R, vp, rows, swayPad = 0) {
     if (lod) {
       const wo = w1 * INSTANCE_STRIDE;
       for (let c = 0; c < INSTANCE_STRIDE; c++) dst1[wo + c] = srcU[o + c];
+      if (inImpBand) dst1[wo + 13] = (srcU[o + 13] | bandBits[i]) >>> 0;
       w1++;
     } else if (capOn) {
       lod0Idx[nat0] = i; lod0Cells[nat0] = cellsForCap; nat0++;
     } else {
       const wo = w0 * INSTANCE_STRIDE;
       for (let c = 0; c < INSTANCE_STRIDE; c++) dst0[wo + c] = srcU[o + c];
+      if (inImpBand) dst0[wo + 13] = (srcU[o + 13] | bandBits[i]) >>> 0;
       w0++;
     }
   }
   if (capOn) {
     const cap = g.lod0Cap;
     if (nat0 <= cap) {
-      for (let j = 0; j < nat0; j++) { const o = lod0Idx[j] * INSTANCE_STRIDE, wo = w0 * INSTANCE_STRIDE; for (let c = 0; c < INSTANCE_STRIDE; c++) dst0[wo + c] = srcU[o + c]; w0++; }
+      for (let j = 0; j < nat0; j++) { const o = lod0Idx[j] * INSTANCE_STRIDE, wo = w0 * INSTANCE_STRIDE; for (let c = 0; c < INSTANCE_STRIDE; c++) dst0[wo + c] = srcU[o + c]; if (impOn) dst0[wo + 13] = (dst0[wo + 13] | bandBits[lod0Idx[j]]) >>> 0; w0++; }
     } else {
       // Partial selection: the `cap` largest-`cells` entries end up in [0,cap) (order scrambled), the rest in [cap,nat0).
       for (let s = 0; s < cap; s++) {
@@ -226,11 +269,13 @@ export function compactGroup(g, planes, R, vp, rows, swayPad = 0) {
       }
       _insertionSortByIdx(lod0Idx, 0, cap); // stable game order within each written bucket
       _insertionSortByIdx(lod0Idx, cap, nat0);
-      for (let j = 0; j < cap; j++) { const o = lod0Idx[j] * INSTANCE_STRIDE, wo = w0 * INSTANCE_STRIDE; for (let c = 0; c < INSTANCE_STRIDE; c++) dst0[wo + c] = srcU[o + c]; w0++; }
-      for (let j = cap; j < nat0; j++) { const o = lod0Idx[j] * INSTANCE_STRIDE, wo = w1 * INSTANCE_STRIDE; for (let c = 0; c < INSTANCE_STRIDE; c++) dst1[wo + c] = srcU[o + c]; w1++; }
+      for (let j = 0; j < cap; j++) { const o = lod0Idx[j] * INSTANCE_STRIDE, wo = w0 * INSTANCE_STRIDE; for (let c = 0; c < INSTANCE_STRIDE; c++) dst0[wo + c] = srcU[o + c]; if (impOn) dst0[wo + 13] = (dst0[wo + 13] | bandBits[lod0Idx[j]]) >>> 0; w0++; }
+      for (let j = cap; j < nat0; j++) { const o = lod0Idx[j] * INSTANCE_STRIDE, wo = w1 * INSTANCE_STRIDE; for (let c = 0; c < INSTANCE_STRIDE; c++) dst1[wo + c] = srcU[o + c]; if (impOn) dst1[wo + 13] = (dst1[wo + 13] | bandBits[lod0Idx[j]]) >>> 0; w1++; }
     }
   }
   g.drawCount[0] = w0; g.drawCount[1] = w1;
+  if (impOn) { g.cardCount = wc; touchInstances(g.cardIb); } else if (g.cardIb) g.cardCount = 0;
+  touchInstances(g.drawIb[0]); touchInstances(g.drawIb[1]); // AUD-02: raw compaction writes -> version bump (the GPU upload skips an unchanged version)
   return w0 + w1;
 }
 
@@ -290,6 +335,7 @@ export function fillShadowBands(g, ex, ey, lod0M, castM, planes, R, swayPad = 0)
     if (b) w1++; else w0++;
   }
   g.shadowCount[0] = w0; g.shadowCount[1] = w1;
+  touchInstances(g.shadowIb[0]); touchInstances(g.shadowIb[1]); // AUD-02 (see compactGroup)
   return w0 + w1;
 }
 
@@ -305,6 +351,7 @@ export function fillShadowBands(g, ex, ey, lod0M, castM, planes, R, swayPad = 0)
  * @property {[InstanceBuffer, InstanceBuffer]} drawIb - RE-15a/c: engine-owned compacted scratch, 0 = LOD0, 1 = LOD1
  * @property {number} _R - cached group radius (both LODs) for the memoized frame
  * @property {boolean} [lodDither] - S8-B2-07: crossfade the LOD hysteresis band by screen-door dither (lodDither.js); undefined/false = off
+ * @property {number} maxDistM - OB-089: draw-distance cut in metres from the eye (0 = none; trees: forest.trees.maxDistM)
  * @property {number} lodCells - RE-15c: projected-size LOD threshold in cells; 0 (default) = LOD off
  * @property {number} lod0Cap - QUAT-LOD-01 part 2: max LOD0 instances drawn per frame (0 default = no cap); the nearest
  *   (largest projected `cells`) `lod0Cap` naturally-LOD0 instances stay LOD0, the rest draw at LOD1 (needs a ready LOD1 mesh).
@@ -348,9 +395,11 @@ export function makeInstanceGroup(modelKey, capacity) {
     drawCount: /** @type {[number, number]} */ ([0, 0]),
     shadowIb: /** @type {[InstanceBuffer, InstanceBuffer]} */ ([createInstanceBuffer(capacity), createInstanceBuffer(capacity)]),
     shadowCount: /** @type {[number, number]} */ ([0, 0]), shadowBand: new Uint8Array(capacity),
-    lodCells: 0, castShadow: true, lodPrev: new Uint8Array(capacity), _R: 0,
+    lodCells: 0, maxDistM: 0, castShadow: true, lodPrev: new Uint8Array(capacity), _R: 0, radiusScale: 1,
     _memoFrameNo: /** @type {number|null} */ (null),
     // QUAT-LOD-01 part 2: near-LOD0 cap (0 = off) + its scratch, and the lazily-resolved LOD1 registry mesh for `g.mesh` groups.
+    // R6b (38.60): tree card impostor, OFF unless the host calls enableGroupImpostor (impostorCard.js). cardIb = engine-owned card bucket.
+    imp: null, impM: 0, cardIb: null, cardCount: 0, _bandBits: null,
     lod0Cap: 0, _mesh1: undefined, _lod0Idx: new Uint32Array(capacity), _lod0Cells: new Float32Array(capacity),
   };
   return g;
@@ -389,6 +438,8 @@ export class InstanceGroups {
     this.stats = { instances: 0, instancesCulled: 0, instancesLod1: 0 };
     /** S8-B2-06: metres added to every group's cull / shadow-cull sphere; the host sets SWAY_MAX while wind sway is on (windSwayOn), else 0. */
     this.swayPad = 0;
+    /** OB-089: camera {x,y,z} for the per-group maxDistM cut (set by the compositor / passRaster each frame; null = no cut) @type {{x:number,y:number,z:number}|null} */
+    this.eye = null;
     /** @type {number|null} the last `frameNo` seen by `addToDrawList` */
     this._lastFrameNo = null;
     /** @type {((id: string) => any)|null} QUAT-LOD-01 part 2: resolves a registry mesh id to its MeshData, for `g.mesh.lods[0].mesh`; unbound (null) = mesh groups never get LOD1 (`resolveGroupLod1` always returns null). */
@@ -441,6 +492,7 @@ export class InstanceGroups {
   remove(g) {
     const i = this.groups.indexOf(g);
     if (i >= 0) this.groups.splice(i, 1);
+    releaseGroupImpostor(g); // R6e: card bucket back to the pool (no-op for groups without an impostor)
   }
 
   /**
@@ -490,8 +542,8 @@ export class InstanceGroups {
         if (!memo || g._memoFrameNo !== frameNo) {
           let R = groupRadius(draw, g.parts);
           if (draw1) { const R1 = groupRadius(draw1, g.parts); if (R1 > R) R = R1; }
-          g._R = R;
-          const kept = compactGroup(g, planes, R, draw1 ? viewProj : null, draw1 ? (rows || 0) : 0, this.swayPad);
+          g._R = g.radiusScale > 1 ? R * g.radiusScale : R; // SAPLINGS: per-instance scale > 1 grows the cull radius
+          const kept = compactGroup(g, planes, R, draw1 ? viewProj : null, draw1 ? (rows || 0) : 0, this.swayPad, this.eye);
           g._memoFrameNo = frameNo;
           this.stats.instances += kept;
           this.stats.instancesCulled += g.count - kept;
@@ -500,8 +552,16 @@ export class InstanceGroups {
         // ALPHA-01f (b): ONE_PART collapses instancedRanges() to one synthetic whole-mesh range (rasterJS.js rasterInstanced's
         // `onePart` guard then drops per-range masking) - only opaque-only groups get it; a masked group keeps its real
         // mesh.ranges so passRaster.js's instanced-masked draw sees each range's mask rect (JS-twin parity, ALPHA-01f a).
+        if (g.cardCount > 0 && g.imp) list.addCards(g.cardIb, g.cardCount, g.imp, this.eye); // R6c: card bucket (opt-in species only)
         if (g.drawCount[0] > 0) { const it = list.addInstances(draw, g.parts, g.drawIb[0], g.drawCount[0], g._R); if (it && !meshIsMasked(g.mesh)) it.flags |= DRAW_FLAG_ONE_PART; }
-        if (draw1 && g.drawCount[1] > 0) { const it1 = list.addInstances(draw1, g.parts, g.drawIb[1], g.drawCount[1], g._R); if (it1 && !meshIsMasked(lod1Mesh)) it1.flags |= DRAW_FLAG_ONE_PART; }
+        if (draw1 && g.drawCount[1] > 0) {
+          const it1 = list.addInstances(draw1, g.parts, g.drawIb[1], g.drawCount[1], g._R);
+          if (it1 && !meshIsMasked(lod1Mesh)) it1.flags |= DRAW_FLAG_ONE_PART;
+          // OB-061: LOD1 leaf cards import opaque (no mask) while LOD0 is masked = two-sided (normal flipped to the viewer). Back-face culling
+          // left only the cards whose stored normal faces the eye (about half pointing away from the sun = ambient-only navy blobs),
+          // so draw LOD1 of a masked LOD0 without cull; both twins then flip N on back faces like LOD0 (rasterJS _twoSided).
+          if (it1 && meshIsMasked(g.mesh) && !meshIsMasked(lod1Mesh)) it1.flags |= DRAW_FLAG_NO_CULL | DRAW_FLAG_TWO_SIDED;
+        }
         continue;
       }
       if (!pool) continue;
@@ -515,15 +575,15 @@ export class InstanceGroups {
         computeGroupParts(pm, g.pose, g.parts);
         let R = groupRadius(mesh, g.parts);
         if (mesh1) { const R1 = groupRadius(mesh1, g.parts); if (R1 > R) R = R1; }
-        g._R = R;
+        g._R = g.radiusScale > 1 ? R * g.radiusScale : R; // SAPLINGS: per-instance scale > 1 grows the cull radius
         continue;
       }
       if (!memo || g._memoFrameNo !== frameNo) {
         computeGroupParts(pm, g.pose, g.parts);
         let R = groupRadius(mesh, g.parts);
         if (mesh1) { const R1 = groupRadius(mesh1, g.parts); if (R1 > R) R = R1; }
-        g._R = R;
-        const kept = compactGroup(g, planes, R, viewProj || null, rows || 0, this.swayPad);
+        g._R = g.radiusScale > 1 ? R * g.radiusScale : R; // SAPLINGS: per-instance scale > 1 grows the cull radius
+        const kept = compactGroup(g, planes, R, viewProj || null, rows || 0, this.swayPad, this.eye);
         g._memoFrameNo = frameNo;
         this.stats.instances += kept;
         this.stats.instancesCulled += g.count - kept;

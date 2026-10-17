@@ -12,11 +12,14 @@
 //   4b. Walk bound (US-026a, architecture.md 23.3) - only when `world.bounds`.
 //   5. Vertical, gated on the CURRENT grounded; terrain slope rule (US-026a).
 //   6. updateEyeFeel (visual only).
+import { projectBounds } from './bounds.js';
 import { moveCapsule, sectorOrOutside } from './capsule.js';
 import { updateEyeFeel } from '../entities/EyeFeel.js';
 import { clamp, approach } from '../core/math.js';
+import { swimCfg, ensureSwimFields, updateSwimState, swimVertical } from './swim.js';
 
 const EPS = 1e-6;
+const _bp = { x: 0, y: 0, nx: 0, ny: 0 }; // step 4b scratch (WS1-01)
 
 // Per-body scratch (architecture.md section 9: no per-step allocations) -
 // created once per entity (on first `integrate` call for it) and reused
@@ -43,12 +46,15 @@ function ensureScratch(body, cfg) {
   if (typeof body.jumpHeldPrev !== 'boolean') body.jumpHeldPrev = false;
   if (typeof body.peakZ !== 'number') body.peakZ = 0;
   if (typeof body.speedScale !== 'number') body.speedScale = 1; // US-013: <1 while pushing a roller
+  if (typeof body.pushX !== 'number') body.pushX = 0; // 38.45: external horizontal push (m/s, e.g. river current); added to the move only, never to vx/vy; the caller resets it
+  if (typeof body.pushY !== 'number') body.pushY = 0;
   if (typeof body.prevX !== 'number') body.prevX = 0;
   if (typeof body.prevY !== 'number') body.prevY = 0;
   if (typeof body.sliding !== 'boolean') body.sliding = false; // US-026a slope rule (23.3)
   if (typeof body.slideNx !== 'number') body.slideNx = 0; // downhill unit (x, y), set in step 5, read by step 3 next step
   if (typeof body.slideNy !== 'number') body.slideNy = 0;
   if (typeof body.boundsHit !== 'boolean') body.boundsHit = false; // US-026a walk bound (23.3 step 4b)
+  ensureSwimFields(body); // SWIM-03a (38.54 item 7)
 }
 
 /**
@@ -85,11 +91,15 @@ export function integrate(entity, dt, controls, world, cfg) {
   body.landed = false;
   body.stepDelta = 0;
 
+  // ---- 1b. Swim state (SWIM-03a, 38.54): only when the game fed water ----
+  const swimming = updateSwimState(body, t.z, P);
+
   // ---- 2. Jump decision ---------------------------------------------------
   const jumpHeld = !!(controls && controls.jump);
   const pressed = jumpHeld && !body.jumpHeldPrev;
   body.jumpHeldPrev = jumpHeld;
   if (pressed) body.buffer = P.jumpBufferTime;
+  if (swimming) body.buffer = 0; // no jump while swimming
   if (body.buffer > EPS && (body.grounded || body.coyote > EPS)) {
     body.vz = P.jumpSpeed; // SET, not added
     body.grounded = false;
@@ -133,13 +143,16 @@ export function integrate(entity, dt, controls, world, cfg) {
     if (Math.hypot(wishX, wishY) <= 1e-6) slideFreeze = true;
   }
 
-  const targetSpeed = (run ? P.runSpeed : P.walkSpeed) * Math.min(1, wishLen) * body.speedScale; // US-013
+  const SW = swimming ? swimCfg(P) : null;
+  const targetSpeed = (swimming ? (run ? SW.swimFast : SW.swimSpeed) : (run ? P.runSpeed : P.walkSpeed)) * Math.min(1, wishLen) * body.speedScale; // US-013
   const targetVelX = wishX * targetSpeed;
   const targetVelY = wishY * targetSpeed;
 
   const accelerating = wishLen > 1e-6;
-  const baseSpeed = run ? P.runSpeed : P.walkSpeed;
-  const rate = (baseSpeed / (accelerating ? P.accelTime : P.decelTime)) * (body.grounded ? 1 : P.airControl);
+  const baseSpeed = swimming ? (run ? SW.swimFast : SW.swimSpeed) : (run ? P.runSpeed : P.walkSpeed);
+  const rate = swimming
+    ? baseSpeed / ((accelerating ? P.accelTime : P.decelTime) * SW.accelMul) // floaty (38.54 item 4)
+    : (baseSpeed / (accelerating ? P.accelTime : P.decelTime)) * (body.grounded ? 1 : P.airControl);
 
   if (!slideFreeze) {
     body.vx = approach(body.vx, targetVelX, rate * dt);
@@ -149,11 +162,11 @@ export function integrate(entity, dt, controls, world, cfg) {
   // ---- 4. Resolve horizontal movement against the grid --------------------
   const moved = world.physicsMode === 'mesh'
     ? world.collideCircle(
-      t.x, t.y, body.vx * dt, body.vy * dt,
+      t.x, t.y, (body.vx + body.pushX) * dt, (body.vy + body.pushY) * dt,
       body.radius, t.z, body.grounded, body._collideOpts, body._move
     )
     : moveCapsule(
-      world, t.x, t.y, body.vx * dt, body.vy * dt,
+      world, t.x, t.y, (body.vx + body.pushX) * dt, (body.vy + body.pushY) * dt,
       body.radius, t.z, body.grounded, body._collideOpts, body._move
     );
   t.x = moved.x;
@@ -175,18 +188,13 @@ export function integrate(entity, dt, controls, world, cfg) {
   // inside integrate (flags only; `world.triggers`' `'bounds'` shape reads
   // position against `world.bounds` separately, per 23.5).
   if (world.bounds) {
-    const bx = world.bounds.x, by = world.bounds.y, r = world.bounds.r;
-    const dx = t.x - bx, dy = t.y - by;
-    const d = Math.hypot(dx, dy);
-    const lim = r - body.radius;
-    if (d > lim && d > EPS) {
-      const nx2 = dx / d, ny2 = dy / d;
-      t.x = bx + nx2 * lim;
-      t.y = by + ny2 * lim;
-      const vn = body.vx * nx2 + body.vy * ny2;
+    if (projectBounds(world.bounds, t.x, t.y, body.radius, _bp)) {
+      t.x = _bp.x;
+      t.y = _bp.y;
+      const vn = body.vx * _bp.nx + body.vy * _bp.ny;
       if (vn > 0) {
-        body.vx -= vn * nx2;
-        body.vy -= vn * ny2;
+        body.vx -= vn * _bp.nx;
+        body.vy -= vn * _bp.ny;
       }
       body.boundsHit = true;
     } else {
@@ -201,6 +209,12 @@ export function integrate(entity, dt, controls, world, cfg) {
     ? world.supportAt(t.x, t.y, t.z, body.grounded, body._collideOpts)
     : sectorOrOutside(world, t.x, t.y);
   const floorH = sector.floorH;
+
+  if (swimming) {
+    swimVertical(body, t, dt, P, floorH, sector.ceilH, controls ? controls.swimUp : 0);
+    updateEyeFeel(body.feel, dt, body, P);
+    return;
+  }
 
   if (body.grounded) {
     const floorDiff = floorH - t.z;
@@ -237,6 +251,12 @@ export function integrate(entity, dt, controls, world, cfg) {
       } else {
         body.sliding = false;
       }
+    } else if (floorDiff > P.stepUpMax) {
+      // AUD-03: a ledge higher than stepUpMax is a wall, not a drop. Stay put (grounded, z unchanged); the old path went
+      // airborne and "landed" the same step on the ledge top (pop) with a negative fallDistance.
+      body.stepDelta = 0;
+      body.vz = 0;
+      body.sliding = false;
     } else {
       body.grounded = false;
       body.vz = 0;
@@ -261,7 +281,7 @@ export function integrate(entity, dt, controls, world, cfg) {
       body.grounded = true;
       body.coyote = 0;
       body.landed = true;
-      body.fallDistance = body.peakZ - t.z;
+      body.fallDistance = Math.max(0, body.peakZ - t.z);
     }
   }
 

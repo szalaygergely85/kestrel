@@ -123,7 +123,9 @@ export class Input {
   // OS auto-repeat).
   consumePressed() {
     for (const code of this._pressedThisFrame) {
-      this._consumed.add(code);
+      // OB-221: a key already released again (tap shorter than one frame: keydown+keyup before this step) has no keyup
+      // left to clear `_consumed`, which would swallow the NEXT press. Only keys still held need the guard.
+      if (this._down.has(code)) this._consumed.add(code);
       this._down.delete(code);
     }
     this._pressedThisFrame.clear();

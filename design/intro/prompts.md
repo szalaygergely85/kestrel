@@ -1,0 +1,71 @@
+# Intro slideshow: ChatGPT image prompts (D-111)
+
+Captions and image notes: `docs/story.md` "Opening sequence v2 (D-111, slideshow)". Owner generates the stills in ChatGPT; our ASCII converter turns them into real glyphs afterwards. Generated images stay OUT of git (public repo); record the source in `docs/licences.md` / `THIRD_PARTY_NOTICES.md`.
+
+**How to use (owner workflow, 2026-10-15):** generate all slides in ONE ChatGPT chat, one prompt per message. Start every prompt from slide 2 on with: *"Create a NEW image in the same series as the previous images in this chat. Keep the same style, palette and lighting."* Then name the earlier image by what it shows (e.g. "the same young man from the rooftop image with the teal light", "the same airship and city as in the first image (Ferrum)"). Only if ChatGPT drifts, attach that one image again. Wick is only ever seen from behind (D-111): never his face.
+
+**Style block** (already included at the end of every prompt below):
+> Style: moody painterly illustration, 16:9, strong contrast, limited palette: deep night blue and navy for sky and shadow, warm amber, orange and brass gold for lamps, fire and metal, a single cold teal for the distant signal light. Bold readable shapes, clear silhouettes, soft glow around lights. Steampunk-fantasy, brass and stone and timber. No text, no letters, no logos, no UI unless the prompt asks for one word.
+
+---
+
+## 1. Ferrum
+```
+Wide establishing shot of Ferrum at dusk, seen from a high distance: a walled steampunk-fantasy city built in tiered rings of stone and timber up a steep hill. Amber lamps glow on every tier, steam and chimney smoke drift over the lower rings, the top tier has tall brass spires and an airship mooring mast. A massive dark wall rings the base of the hill. Beyond the wall the land is completely dark: black rolling hills and forest, no lights anywhere outside. Sky fading from dusk blue to night with the first stars.
+Style: moody painterly illustration, 16:9, strong contrast, limited palette: deep night blue and navy for sky and shadow, warm amber, orange and brass gold for lamps, fire and metal, a single cold teal for the distant signal light. Bold readable shapes, clear silhouettes, soft glow around lights. Steampunk-fantasy, brass and stone and timber. No text, no letters, no logos, no UI.
+```
+
+## 1b. Before (owner addition: the sister, before she vanished)
+```
+Dusk on the high skyworks rooftop of a steampunk city, among chimneys, rigging and tall brass lamp posts. A young woman in a worn work coat, seen from behind and in soft silhouette, reaches up to trim the flame of a tall brass street lamp with small shears. Beside her a younger boy, seen from behind, holds up a small brass oil can for her. Warm amber lamplight on their shoulders; below them the glowing tiered city falls away toward the dark wall and the black land beyond. A gentle, warm, happy moment. Faces not visible.
+Style: moody painterly illustration, 16:9, strong contrast, limited palette: deep dusk blue and navy for sky and shadow, warm amber, orange and brass gold for lamps and metal. Bold readable shapes, clear silhouettes, soft glow around lights. Steampunk-fantasy. No text, no logos, no UI.
+```
+
+## 2. Her lamp
+```
+Close still life in cold grey morning light through a small window of a poor workers' home: a brass hand-lamp stands on a bare wooden table, its wick neatly trimmed and its shutter closed. Beside it lies a small official paper notice slip with the single printed word "FELL". Dust in the light beam, peeling plaster wall, no people.
+Style: moody painterly illustration, 16:9, strong contrast, limited palette: deep night blue and navy for shadow, cold grey-blue morning light, warm brass gold for the lamp. Bold readable shapes, soft light. Steampunk-fantasy. No other text, no logos, no UI.
+```
+
+## 3. The light
+```
+Night, on a high rooftop of the city's skyworks among chimneys, lamp posts and rigging. A young man seen from behind, small in the frame, stands at the roof edge looking out over the city wall into completely black land. On the far horizon, one tiny cold teal point of light, the only light beyond the wall. Starry deep blue sky, a few warm amber lamps around him on the roof.
+Style: moody painterly illustration, 16:9, strong contrast, limited palette: deep night blue and navy for sky and shadow, warm amber and brass gold for lamps and metal, a single cold teal for the distant signal light. Bold readable shapes, clear silhouettes, soft glow around lights. Steampunk-fantasy. Face never visible. No text, no logos, no UI.
+```
+
+## 4. Factor's Code (memory)
+```
+A warm, dim memory scene inside an abandoned old merchant trading hall: dusty ledger shelves, old crates, a big brass signal lamp with shutter slats on a window sill, the slats half open so one beam of warm light crosses the dusty floor. Two children seen from behind at the sill: a taller girl working the lamp shutter, a younger boy watching her. Faces not visible. Soft golden haze, slightly dreamlike edges.
+Style: moody painterly illustration, 16:9, warm amber and brass gold light against deep blue shadows, bold readable shapes, soft glow. Steampunk-fantasy. No text, no logos, no UI.
+```
+
+## 5. ALIVE
+```
+Night, a small cramped room lit by one oil lamp. Over the shoulder of a young man hunched at a desk, pencil in hand, his face not visible: on the desk a printed old sky-chart with a pencilled line running off the printed edge toward a small star mark, and the word "ALIVE" pencilled in the margin. Through the window behind the desk, far away in the dark, one tiny cold teal point of light.
+Style: moody painterly illustration, 16:9, strong contrast, limited palette: deep night blue and navy, warm amber lamplight and brass gold, a single cold teal for the distant signal light. Bold readable shapes, soft glow. Steampunk-fantasy. No other text, no logos, no UI.
+```
+
+## 6. The rope gives
+```
+Midnight on a high airship mooring deck of a steampunk city, lit by warm amber lamps. A small brass patrol airship named Kestrel: a patched balloon envelope above a small riveted brass gondola with a copper burner, straining against one last mooring rope. A young man seen from behind stands in the gondola, cutting the rope with a knife, the rope half through. The glowing tiered city falls away behind and below him. Starry night sky.
+Style: moody painterly illustration, 16:9, strong contrast, limited palette: deep night blue and navy for sky and shadow, warm amber, orange and brass gold for lamps, burner and metal. Bold readable shapes, clear silhouettes, soft glow around lights. Steampunk-fantasy. Face never visible. No text, no logos, no UI.
+```
+
+## 7. The Wall wakes
+```
+Night, view over the shoulder of a young man gripping the rail of a small brass airship gondola, looking down at a massive dark city wall far below. Along the wall a line of lamps flares on from left to right. One huge wall ballista is swung up toward the sky and a bright bolt streak rises toward the airship; at the top of the frame the balloon canvas is tearing. Face not visible.
+Style: moody painterly illustration, 16:9, strong contrast, limited palette: deep night blue and navy, warm amber and orange for lamps and the bolt flash, brass gold for metal. Bold readable shapes, dramatic motion, soft glow around lights. Steampunk-fantasy. No text, no logos, no UI.
+```
+
+## 8. The fall
+```
+Falling, pre-dawn blue light. Seen from above: a roofless ruined round stone tower overgrown with moss, its broken rim rushing up toward the viewer. In the foreground a young man seen from behind clings to a tilted brass airship gondola, a folded paper chart crushed in his fist; a copper burner flares white-hot in the corner of the frame. Torn balloon canvas whips overhead. Face not visible.
+Style: moody painterly illustration, 16:9, strong contrast, limited palette: cold pre-dawn blue and navy, green-grey moss and stone, white-hot and orange burner glare, brass gold metal. Bold readable shapes, dramatic falling motion. Steampunk-fantasy. No text, no logos, no UI.
+```
+
+---
+
+**Notes:**
+- Slides 2 and 5 ask for one word in the image ("FELL", "ALIVE"). If ChatGPT garbles it, re-roll or drop the word: the caption already says it, and the ASCII conversion may blur small text anyway.
+- **Wick's look (locked by the owner's slide 1b image, 2026-10-15):** messy brown hair, red neckerchief, leather braces over a worn work shirt; as a boy in 1b, about 18 from slide 3 ("The light") on. Upload the 1b image as the reference for him on every slide where he appears. Maren: hair in a bun, long worn work coat, seen from behind.
+- Owner progress: ALL 9 slides generated and approved (2026-10-16). Put the source images in `design/intro/src/` (git-ignored) as 01-ferrum, 01b-before, 02-lamp, 03-light, 04-memory, 05-alive, 06-rope, 07-wall, 08-fall.

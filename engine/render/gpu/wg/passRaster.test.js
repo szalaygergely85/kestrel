@@ -76,7 +76,7 @@ assert.ok(td, 'terrain draw issued'); assert.equal(td.pipe.desc.cull, 'none'); a
 assert.equal(td.count, 6); assert.equal(td.first, 3); assert.equal(td.bind.indexBuffer, tib);
 assert.equal(td.uniforms[TERRAIN_BLOCK.field('objectId').word], 0x7003);
 assert.deepEqual([...new Float32Array(td.uniforms.buffer)].slice(TERRAIN_BLOCK.field('model').word + 12, TERRAIN_BLOCK.field('model').word + 16), [16, 32, 2, 1]);
-assert.deepEqual(td.bind.textures.map((t) => t.slot), [0, 1]); assert.deepEqual(td.pipe.desc.bindings.textures, ['uint', 'uint']);
+assert.deepEqual(td.bind.textures.map((t) => t.slot), [0, 1, 2]); assert.deepEqual(td.pipe.desc.bindings.textures, ['uint', 'uint', 'uint']);
 assert.equal(p.stats.terrainDraws, 1);
 // Type textures: uploaded on version change only (r8ui, resized when the bake size differs), never per frame.
 const world = { terrain: { farReady: true, farVersion: 1, mapW: 4, mapH: 4, farType: new Uint8Array(16), nearReady: true, near: { version: 1, w: 3, h: 3, type: new Uint8Array(9) } } };
@@ -257,6 +257,9 @@ console.log('passRaster.test.js (WG-4a): all checks passed.');
     it.partMatrices.set(T, 0); it.partMatrices.set(T, 12); // not DRAW_FLAG_ONE_PART: instancedRanges() returns mesh.ranges, both parts identity
   };
   ps.vmList = null;
+  // ALPHA-01f-fix3: masked leaf cards are two-sided (JS twin), opaque instancing stays back-face culled
+  assert.equal(ps.instanceMaskPipe.desc.cull, 'none'); assert.equal(ps._aoPipe('instanceMask').desc.cull, 'none');
+  assert.equal(ps.instancePipe.desc.cull, 'back'); assert.equal(ps._aoPipe('instance').desc.cull, 'back');
   const pp = { _t: { targetRaster: {}, targetVmDepth: {} }, stats: {} };
   ps.run(pp);
   assert.deepEqual(dr.map((x) => [x.pipe === ps.instanceMaskPipe ? 'mask' : (x.pipe === ps.instancePipe ? 'opaque' : '?'), x.c, x.f, x.i]),
@@ -274,6 +277,26 @@ console.log('passRaster.test.js (WG-4a): all checks passed.');
   assert.deepEqual(dr.map((x) => [x.pipe === ps.instancePipe, x.c, x.f, x.i]), [[true, 6, 0, 4], [true, 9, 6, 4]], 'opaque-only group: both ranges through instancePipe unchanged');
   ps.dispose(); dev.dispose(vb); dev.dispose(uvb); assert.equal(m4.liveCount(), 0, 'mask texture + pipelines disposed');
   console.log('passRaster.test.js (ALPHA-01f b): all checks passed.');
+}
+
+// OB-089 (OB-061 on the GPU cull path): LOD1 of a masked LOD0 tree group (opaque leaf cards) draws through the no-cull pipe; LOD0 and unmasked groups keep back-face culling.
+{
+  const m6 = makeMockGpuDevice(), dev = m6.device, bound = [];
+  dev.drawIndirect = () => bound.push(dev._activePipeline);
+  const ps = new WgRasterPass(dev, { gpuCull: false });
+  const vb = dev.createBuffer({ usage: 'vertex', bytes: 64 });
+  ps.buffers.getVoxel = () => ({ vertexBuffer: vb });
+  const parts = { m: new Float32Array(12), flags: new Uint32Array(1) };
+  const ent = (group, lod) => ({ group, lod, mesh: { ranges: [{ start: 0, count: 2 }] }, instanceBuffer: vb, argsBuffer: vb, argsOffset: 0, parts, active: true });
+  for (const [masked, expect] of [[true, [ 'instancePipe', 'instanceOpenPipe' ]], [false, ['instancePipe', 'instancePipe']]]) {
+    bound.length = 0;
+    const g = { mesh: { ranges: [{ start: 0, count: 2 }], maskRanges: masked ? new Int32Array([0, 0, 4, 4, 128]) : undefined } };
+    ps.gpuN = 1; ps.gpuGroups[0] = g; ps.gpuEntries[0] = [ent(g, 0), ent(g, 1)];
+    ps._cullDraw();
+    assert.deepEqual(bound.map((b) => (b === ps.instancePipe ? 'instancePipe' : b === ps.instanceOpenPipe ? 'instanceOpenPipe' : '?')), expect, `OB-089 masked LOD0=${masked}: [LOD0, LOD1] pipes`);
+  }
+  ps.dispose(); dev.dispose(vb);
+  console.log('passRaster.test.js (OB-089): all checks passed.');
 }
 
 // PREC-01a (37.9, WebGPU twin): camera-relative raster. view/planes stay absolute f64; every camera raster uniform carries view * T(O) and model - O.

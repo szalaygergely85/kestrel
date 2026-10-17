@@ -1,0 +1,38 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Prop_Chimney2",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Prop_Chimney2.mesh.bin",
+  "triCount": 130,
+  "bbox": [
+    -0.5,
+    -0.49401,
+    0,
+    0.44578,
+    0.49401,
+    3
+  ],
+  "ranges": [
+    {"count": 130, "part": "Prop_Chimney2#0", "start": 0}
+  ],
+  "matKeys": [
+    "MI_UnevenBrick"
+  ],
+  "mats": {
+    "MI_Brick": "brick",
+    "MI_MetalOrnaments": "iron",
+    "MI_Plaster": "mortar",
+    "MI_RockTrim": "rock_soft",
+    "MI_UnevenBrick": "brick",
+    "MI_Vine": "ivy",
+    "MI_WindowGlass": "iron",
+    "MI_WoodTrim": "wood",
+    "MI_WoodTrim_Wear": "wood"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "EoMAvwRWzr4AAAAAlkPLvrbz/b4AAAAAlkPLvrbz/b4AAEBAEoMAvwRWzr4AAAAAlkPLvrbz/b4AAEBAEoMAvwRWzr4AAEBAlkPLvrbz/b4AAAAAfT+1Pp7v574AAAAAfT+1Pp7v574AAEBAlkPLvrbz/b4AAAAAfT+1Pp7v574AAEBAlkPLvrbz/b4AAEBAfT+1Pp7v574AAAAAQmDlPiGwsr4AAAAAQmDlPiGwsr4AAEBAfT+1Pp7v574AAAAAQmDlPiGwsr4AAEBAfT+1Pp7v574AAEBAQmDlPiGwsr4AAAAAQmDlPiGwsj4AAAAAQmDlPiGwsj4AAEBAQmDlPiGwsr4AAAAAQmDlPiGwsj4AAEBAQmDlPiGwsr4AAEBAQmDlPiGwsj4AAAAAfT+1Pp7v5z4AAAAAfT+1Pp7v5z4AAEBAQmDlPiGwsj4AAAAAfT+1Pp7v5z4AAEBAQmDlPiGwsj4AAEBAfT+1Pp7v5z4AAAAAlkPLvrbz/T4AAAAAlkPLvrbz/T4AAEBAfT+1Pp7v5z4AAAAAlkPLvrbz/T4AAEBAfT+1Pp7v5z4AAEBAlkPLvrbz/T4AAAAAEoMAvwRWzj4AAAAAEoMAvwRWzj4AAEBAlkPLvrbz/T4AAAAAEoMAvwRWzj4AAEBAlkPLvrbz/T4AAEBAEoMAvwRWzj4AAAAAEoMAvwRWzr4AAAAAEoMAvwRWzr4AAEBAEoMAvwRWzj4AAAAAEoMAvwRWzr4AAEBAEoMAvwRWzj4AAEBAEoMAvwRWzr4AAEBAlkPLvrbz/b4AAEBAfT+1Pp7v574AAEBAEoMAvwRWzr4AAAAAfT+1Pp7v574AAAAAlkPLvrbz/b4AAAAAEoMAvwRWzr4AAEBAfT+1Pp7v574AAEBAQmDlPiGwsr4AAEBAEoMAvwRWzr4AAAAAQmDlPiGwsr4AAAAAfT+1Pp7v574AAAAAEoMAvwRWzr4AAEBAQmDlPiGwsr4AAEBAQmDlPiGwsj4AAEBAEoMAvwRWzr4AAAAAQmDlPiGwsj4AAAAAQmDlPiGwsr4AAAAAEoMAvwRWzr4AAEBAQmDlPiGwsj4AAEBAfT+1Pp7v5z4AAEBAEoMAvwRWzr4AAAAAfT+1Pp7v5z4AAAAAQmDlPiGwsj4AAAAAEoMAvwRWzr4AAEBAfT+1Pp7v5z4AAEBAlkPLvrbz/T4AAEBAEoMAvwRWzr4AAAAAlkPLvrbz/T4AAAAAfT+1Pp7v5z4AAAAAEoMAvwRWzr4AAEBAlkPLvrbz/T4AAEBAEoMAvwRWzj4AAEBAEoMAvwRWzr4AAAAAEoMAvwRWzj4AAAAAlkPLvrbz/T4AAAAA"
+}

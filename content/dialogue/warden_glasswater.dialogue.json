@@ -1,0 +1,17 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "warden_glasswater",
+  "speakers": {
+    "warden": {"label": "LIN"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "warden.hello"}
+  ],
+  "nodes": {
+    "warden.hello": {"end": true, "lines": [
+      "Lin. I keep this waystone. The water keeps me."
+    ], "speaker": "warden"}
+  }
+}

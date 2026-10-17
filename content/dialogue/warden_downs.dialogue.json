@@ -1,0 +1,17 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "warden_downs",
+  "speakers": {
+    "warden": {"label": "EDDA"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "warden.hello"}
+  ],
+  "nodes": {
+    "warden.hello": {"end": true, "lines": [
+      "Edda. The downs are wide. I watch all of them."
+    ], "speaker": "warden"}
+  }
+}

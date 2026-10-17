@@ -36,6 +36,8 @@
 //   *receives* full-strength separation from moving neighbours and can be
 //   nudged out of the way, which is what avoids permanent gap deadlock.
 
+import { LQ } from './NavGrid.js';
+
 const MODE_IDLE = 0;
 const MODE_WAYPOINT = 1;
 const MODE_FLOW = 2;
@@ -50,7 +52,8 @@ const FNV_OFFSET = 0x811c9dc5 | 0;
 const FNV_PRIME = 16777619;
 
 /** cx/cy of the hash cell containing (x,y), clamped into [0,hw)/[0,hh). */
-function hashCellOf(steer, x, y) {
+function hashCellOf(steer, slot) { // slot, not (x, y): a double passed to a non-inlined call is boxed on Node 24
+  const x = steer.x[slot], y = steer.y[slot];
   let cx = Math.floor((x - steer.bounds.x0) / steer.hashCell);
   let cy = Math.floor((y - steer.bounds.y0) / steer.hashCell);
   if (cx < 0) cx = 0; else if (cx >= steer._hw) cx = steer._hw - 1;
@@ -63,6 +66,26 @@ function cellWalkable(grid, x, y) {
   const cx = grid.cellX(x);
   const cy = grid.cellY(y);
   return grid.inBounds(cx, cy) && grid.cost[grid.index(cx, cy)] !== 0;
+}
+
+/**
+ * NAV-LAYERS-01c: walkability at (x,y) for an agent at height z on a layered grid. A sheet cell within 1.0 m of z
+ * decides (cost 0 = blocked, even if the ground below is open); otherwise the ground cell. Zero allocation: the query
+ * (x, y, z) is passed in the NavGrid scratch `LQ` so no double is boxed.
+ */
+function walkableQ(grid) {
+  const x = LQ[0], y = LQ[1], z = LQ[2];
+  const L = grid.layers;
+  for (let s = 0; s < L.count; s++) {
+    const c = L.cell[s];
+    const lx = Math.floor((x - L.x0[s]) / c), ly = Math.floor((y - L.y0[s]) / c);
+    if (lx < 0 || ly < 0 || lx >= L.w[s] || ly >= L.h[s]) continue;
+    const local = L.base[s] + ly * L.w[s] + lx;
+    if (Math.abs(L.height[local] - z) <= 1.0) return L.cost[local] !== 0;
+  }
+  // ground cell, inlined (no double crosses a call)
+  const gx = Math.floor((x - grid.x0) / grid.cell), gy = Math.floor((y - grid.y0) / grid.cell);
+  return gx >= 0 && gy >= 0 && gx < grid.w && gy < grid.h && grid.cost[gy * grid.w + gx] !== 0;
 }
 
 // Same straight-step integer cost flowField.js uses, so a flow-follow
@@ -100,7 +123,8 @@ function computeDesired(steer, slot, grid, out) {
     if (!ff) { out.vx = 0; out.vy = 0; out.stopped = true; return; }
     const x = steer.x[slot], y = steer.y[slot];
     const fo = steer._flowOut;
-    ff.dirAt(x, y, fo);
+    if (grid.layers !== null && ff.dirAtQ !== undefined) { LQ[0] = x; LQ[1] = y; LQ[2] = steer.z[slot]; ff.dirAtQ(fo); }
+    else ff.dirAt(x, y, fo, steer.z[slot]);
     if (fo.x === 0 && fo.y === 0) { out.vx = 0; out.vy = 0; out.stopped = true; return; }
 
     // Arrive slowdown (28.2 doesn't pin this down for flow-follow; without
@@ -115,8 +139,17 @@ function computeDesired(steer, slot, grid, out) {
     const arriveR = steer.arriveR[slot];
     let speedScale = 1;
     if (arriveR > 0) {
-      const cx = grid.cellX(x), cy = grid.cellY(y);
-      if (grid.inBounds(cx, cy)) {
+      if (grid.layers !== null) {
+        LQ[0] = x; LQ[1] = y; LQ[2] = steer.z[slot];
+        const li = grid.locateQ();
+        if (li >= 0) {
+          const thresh = (arriveR / grid.layers.finest) * FLOW_STRAIGHT_COST;
+          const integ = ff.integ[li];
+          if (integ < thresh) speedScale = integ / thresh;
+          if (speedScale < 0) speedScale = 0;
+        }
+      } else if (grid.inBounds(grid.cellX(x), grid.cellY(y))) {
+        const cx = grid.cellX(x), cy = grid.cellY(y);
         const integ = ff.integ[grid.index(cx, cy)];
         const thresh = (arriveR / grid.cell) * FLOW_STRAIGHT_COST;
         if (integ < thresh) speedScale = integ / thresh;
@@ -207,6 +240,8 @@ export function createSteer(opts) {
 
     x: new Float64Array(maxAgents),
     y: new Float64Array(maxAgents),
+    /** Agent height (layered grids): set by the game each step (world.supportAt) or followed from the cell by step(). */
+    z: new Float64Array(maxAgents),
     vx: new Float64Array(maxAgents),
     vy: new Float64Array(maxAgents),
     radius: new Float64Array(maxAgents),
@@ -259,20 +294,27 @@ export function createSteer(opts) {
   steer.addAgent = function addAgent(x, y, radius, maxSpeed, accel) {
     for (let slot = 0; slot < maxAgents; slot++) {
       if (steer.active[slot]) continue;
-      steer.active[slot] = 1;
-      steer.mode[slot] = MODE_IDLE;
-      steer.x[slot] = x; steer.y[slot] = y;
-      steer.vx[slot] = 0; steer.vy[slot] = 0;
-      steer.radius[slot] = radius;
-      steer.maxSpeed[slot] = maxSpeed;
-      steer.accel[slot] = accel;
-      steer.tx[slot] = x; steer.ty[slot] = y;
-      steer.arriveR[slot] = 0;
-      steer._flowRef[slot] = null;
-      if (slot + 1 > steer._hi) steer._hi = slot + 1;
-      return slot;
+      return steer.activateAgent(slot, x, y, radius, maxSpeed, accel);
     }
     return -1;
+  };
+
+  /** Activates exactly `slot` (must be free) instead of the lowest free one; returns `slot`, or -1 if it is
+   * out of range or already active. Same initial state as addAgent. */
+  steer.activateAgent = function activateAgent(slot, x, y, radius, maxSpeed, accel) {
+    if (slot < 0 || slot >= maxAgents || steer.active[slot]) return -1;
+    steer.active[slot] = 1;
+    steer.mode[slot] = MODE_IDLE;
+    steer.x[slot] = x; steer.y[slot] = y; steer.z[slot] = 0;
+    steer.vx[slot] = 0; steer.vy[slot] = 0;
+    steer.radius[slot] = radius;
+    steer.maxSpeed[slot] = maxSpeed;
+    steer.accel[slot] = accel;
+    steer.tx[slot] = x; steer.ty[slot] = y;
+    steer.arriveR[slot] = 0;
+    steer._flowRef[slot] = null;
+    if (slot + 1 > steer._hi) steer._hi = slot + 1;
+    return slot;
   };
 
   /** Frees `id`'s slot (mode -> idle, fields zeroed) for reuse. No-op if
@@ -281,12 +323,15 @@ export function createSteer(opts) {
     if (!steer.active[id]) return;
     steer.active[id] = 0;
     steer.mode[id] = MODE_IDLE;
-    steer.x[id] = 0; steer.y[id] = 0;
+    steer.x[id] = 0; steer.y[id] = 0; steer.z[id] = 0;
     steer.vx[id] = 0; steer.vy[id] = 0;
     steer.radius[id] = 0; steer.maxSpeed[id] = 0; steer.accel[id] = 0;
     steer.tx[id] = 0; steer.ty[id] = 0; steer.arriveR[id] = 0;
     steer._flowRef[id] = null;
   };
+
+  /** Sets agent `id`'s height (layered grids; ignored by ground-only grids). */
+  steer.setZ = function setZ(id, z) { steer.z[id] = z; };
 
   /** Sets `id` to waypoint-seek mode 1 toward (tx,ty); `arriveR` is the
    * distance at which speed starts scaling down to 0 (0 = no slow-down,
@@ -334,7 +379,8 @@ export function createSteer(opts) {
   steer.step = function step(dt, grid) {
     const hi = steer._hi;
     const active = steer.active;
-    const halfCell = grid.cell / 2;
+    const layers = grid.layers;
+    const halfCell = (layers !== null ? layers.finest : grid.cell) / 2;
 
     for (let i = 0; i < hi; i++) {
       if (active[i] && steer.maxSpeed[i] * dt >= halfCell) {
@@ -350,7 +396,7 @@ export function createSteer(opts) {
     head.fill(-1);
     for (let i = 0; i < hi; i++) {
       if (!active[i]) continue;
-      const idx = hashCellOf(steer, steer.x[i], steer.y[i]);
+      const idx = hashCellOf(steer, i);
       next[i] = head[idx];
       head[idx] = i;
     }
@@ -432,14 +478,31 @@ export function createSteer(opts) {
       const oldX = steer.x[i], oldY = steer.y[i];
       const nx = oldX + vxN * dt;
       const ny = oldY + vyN * dt;
-      if (cellWalkable(grid, nx, ny)) {
-        steer.x[i] = nx; steer.y[i] = ny;
-      } else if (cellWalkable(grid, nx, oldY)) {
-        steer.x[i] = nx;
-      } else if (cellWalkable(grid, oldX, ny)) {
-        steer.y[i] = ny;
+      if (layers === null) {
+        if (cellWalkable(grid, nx, ny)) {
+          steer.x[i] = nx; steer.y[i] = ny;
+        } else if (cellWalkable(grid, nx, oldY)) {
+          steer.x[i] = nx;
+        } else if (cellWalkable(grid, oldX, ny)) {
+          steer.y[i] = ny;
+        }
+        // else: blocked on both axes, stays at (oldX, oldY).
+      } else {
+        // Layered: test against the sheet/ground cell at the agent's height, then follow that cell's z
+        // (a stair link end puts the agent on the next level; the game may overwrite z from supportAt).
+        const z = steer.z[i];
+        let moved = false;
+        LQ[0] = nx; LQ[1] = ny; LQ[2] = z;
+        if (walkableQ(grid)) { steer.x[i] = nx; steer.y[i] = ny; moved = true; }
+        else { LQ[0] = nx; LQ[1] = oldY;
+          if (walkableQ(grid)) { steer.x[i] = nx; moved = true; }
+          else { LQ[0] = oldX; LQ[1] = ny; if (walkableQ(grid)) { steer.y[i] = ny; moved = true; } } }
+        if (moved) {
+          LQ[0] = steer.x[i]; LQ[1] = steer.y[i]; LQ[2] = z;
+          const li = grid.locateQ();
+          if (li >= 0) { const nn = grid.w * grid.h; steer.z[i] = li < nn ? grid.height[li] : layers.height[li - nn]; } // cellZ inlined: no boxed return
+        }
       }
-      // else: blocked on both axes, stays at (oldX, oldY).
     }
   };
 

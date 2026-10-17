@@ -23,15 +23,26 @@ import {
 export const MAX_SUB = 16; // 4x4, matches resolve.wgsl.js's cap
 import { SKY_LUT_N } from './skyLut.js';
 import { MAX_LEVELS } from '../ShadeTextures.js';
+import { GROUND_LOOK_WGSL, LOOK_BLOCK_FIELDS, LOOK_GA_HI_SHIFT, LOOK_GA_W_SHIFT } from '../../groundLook.js'; // ENV-02d
 import { TLOOK_WIDTH, MAX_FEATURES_PER_TYPE } from '../TerrainTextures.js';
-import { KIND_TERRAIN, KIND_MODEL, KIND_MESH, FACE_PACKED } from '../../GBuffer.js';
-import { WET_DARK, WET_SPEC } from '../../detailShade.js';
+import { KIND_TERRAIN, KIND_MODEL, KIND_MESH, KIND_GRASS, FACE_PACKED } from '../../GBuffer.js';
+import { WET_DARK, WET_SPEC, FOL_LIGHT_R } from '../../detailShade.js'; // FOL_LIGHT_R: AA-16
+import { VEG_TINT_WGSL } from '../../../mesh/vegTint.js'; // AUD-47
 import { SUN_N_SHIFT, SUN_N_MASK, CLOUD_Q_SHIFT } from '../../shadowSun.js'; // CLOUD_Q_SHIFT: S8-B2-12c (38.13)
-import { FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE } from '../../terrainShade.js';
+import { SKY_GLOW_WGSL } from '../../skyGlow.js';
+import { SHADE_SHAFT_WGSL, SHAFT_SHIFT, SHAFT_Q } from '../../lightShaft.js'; // CANOPY-SHAFT-01b (38.76)
+import { SKY_NIGHT_WGSL } from '../../skyNight.js'; // NIGHT-SKY-01
+import { SKY_CLOUD_WGSL } from '../../skyCloud.js'; // CLOUD-FLUFF-01b
+import { FOG_SHAPE_WGSL, LEAF_Q_LO, LEAF_Q_HI } from '../../fogShape.js';
+import { SKYLINE_FOG_WGSL } from '../../skyline.js'; // MAP-06b (38.42)
+import { UNDER_WGSL } from '../../underwater.js'; // SWIM-04c (38.54)
+import { GI_SAMPLE_WGSL, giBindingWgsl } from '../../giGpu.js';
+import { CAO_SUN_W } from '../../contactAO.js'; // 38.78 rev
+import { CLIFF_NZ, FOREST_FACE_NZ, FOREST_FACE_K, FF_FLOOR, FF_RANGE, FF_FADE_A, FF_FADE_B, FF_SUN_REF, FF_ELEV_LO, FF_ELEV_HI, FF_TGT, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE, FAR_GLYPH_CELL, FAR_BLEND_FP0, FAR_BLEND_FP1, NOISE_CELLS, NOISE_W, NOISE_SALT, PATCH_K, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX, GRASS_AO_LO, GRASS_TIP_H, GRASS_BASE_H, GRASS_LEAN_G, GRASS_LEVELS, GRASS_ROWS, GRASS_TINT_AMP, GRASS_GX_HAS, GRASS_BACKLIGHT_K, GRASS_SHADE_LO, GRASS_SHADE_HI, GRASS_SHADE_DAY_SUN, GRASS_SHADE_LIFT, GRASS_SHADE_SPREAD, FG_SLOPE, FG_GUST, FG_MOD, FG_CODES, FG_TYPES } from '../../terrainShade.js';
 
 
 
-export const SHADE_BLOCK = defineUniformBlock('ShadeU', [
+const SHADE_FIELDS = [
   { name: 'fogFg', type: 'vec3' }, { name: 'fogStart', type: 'f32' },
   { name: 'fogBg', type: 'vec3' }, { name: 'fogFull', type: 'f32' },
   { name: 'sunDir', type: 'vec3' }, { name: 'ambientI', type: 'f32' },
@@ -48,20 +59,71 @@ export const SHADE_BLOCK = defineUniformBlock('ShadeU', [
   { name: 'projMode', type: 'i32' }, { name: 'sunMapOn', type: 'i32' }, { name: 'nearDetailOn', type: 'i32' },
   { name: 'fogSparseAlt', type: 'i32' }, { name: 'fogHazeAlt', type: 'i32' },
   { name: 'fogSparseCode0', type: 'i32' }, { name: 'fogSparseCode1', type: 'i32' }, { name: 'fogHazeCode0', type: 'i32' }, { name: 'fogHazeCode1', type: 'i32' },
-  { name: 'pad1', type: 'i32' }, { name: 'pad2', type: 'i32' },
+  { name: 'aaCov', type: 'i32' }, { name: 'pad2', type: 'i32' }, // aaCov (38.82 A, was pad1): 1 = coverage-weighted colour of same-kind minority materials
   { name: 'pitchA', type: 'vec4' }, // fX, fY, fZ, tanHalfX
   { name: 'pitchB', type: 'vec4' }, // rX, rY, uX, uY
   { name: 'pitchC', type: 'vec4' }, // uZ, tanHalfY, cosP, sinP
   { name: 'faceK', type: 'vec4', count: 2 }, // float[7] (index = face 1..6), contiguous
-]);
+  // 38.23 entity tint table, APPENDED (no earlier word moves): etA.x = count (0 = branch skipped), etId = 8 u32 ids (written through a Uint32Array view), etC = rgb 0..1 + k
+  { name: 'etA', type: 'vec4' }, { name: 'etId', type: 'vec4', count: 2 }, { name: 'etC', type: 'vec4', count: 8 },
+  { name: 'skyCam', type: 'vec4' }, // AUD-40, APPENDED: shear-mode sky ray = (dirX + planeX*cx, dirY + planeY*cx): dirX, dirY, planeX, planeY
+  { name: 'fogView', type: 'vec4' }, // AUD-45, APPENDED: x = eye height (m), y = 1 when height fog + sun in-scatter are on (terrain worlds), z = 1 outdoor mesh fog (OB-089), w unused
+  { name: 'skyGlowOn', type: 'vec4' }, // AUD-40 fix, APPENDED: x = 1 when sky glow + horizon haze apply (compositor gate: terrain world + timeOfDay palette), written every frame; DN-02 y = night glyph-luminance floor (liveLook.floorEff, 0 = off); VISQA-02 z = far-fog sky shift weight (atmos farSkyW)
+  { name: 'skyline', type: 'vec4' }, // MAP-06b (38.42), APPENDED: far-terrain fog cap x fogMax (0 = off), y fromZ, z seaFogMax, w seaLevel
+  { name: 'grass', type: 'vec4', count: 80 }, // OB-073 D2e, APPENDED: carpet variant table, 16 variants x GRASS_ROWS vec4 (terrainShade.js packGrassTable); all 0 = no carpet
+  // SWIM-04c (38.54), APPENDED after grass: underwater look (underwater.js UNDER_WGSL). under.x = 0 skips the whole block.
+  { name: 'under', type: 'vec4' }, // on, waterZ, fogM, causticK
+  { name: 'underTint', type: 'vec4' }, // tint rgb 0..255, swapAt
+  { name: 'underCam', type: 'vec4' }, // camera x, y, z (cell position = cam + ray * depth), lightK
+  { name: 'underCeil', type: 'vec4' }, // ceil rgb
+  { name: 'underCaus', type: 'vec4' }, // causticCol rgb
+  { name: 'underRampB', type: 'vec4' }, // bubble ramp glyph indices (ascii - 32)
+  { name: 'underRampC', type: 'vec4' }, // ceiling ramp glyph indices
+  { name: 'cliff', type: 'vec4' }, // OB-104b2 (38.55), APPENDED after grass: x = rock type id (recipe.terrain.rock.id), y = 1 when the cliff look is on (0 = off; twin: ctx.cliffType >= 0)
+  { name: 'fgP', type: 'vec4' }, // G2 + P3 (D-075 step 4), APPENDED: far grass tier. x = on, y = startM (carpet radius), z = fadeM, w = colour mix (terrainShade.js farGrassFill)
+  { name: 'fgW', type: 'vec4' }, // far grass gust phase: dirX, dirY, cycles per second, 1 / travel (m/s)
+  { name: 'fgT', type: 'vec4', count: FG_TYPES }, // far grass per ground type id: rgb bytes (carpet ramp middle), w = strength (0 = type has no far grass)
+  { name: 'shaftA', type: 'vec4' }, // CANOPY-SHAFT-01b (38.76 item 4), APPENDED: (k, iso, pw, maxM); k = 0 skips the whole lift (byte-identical)
+  // CLOUD-FLUFF-01b, APPENDED: GPU sky cloud deck (skyCloud.js). cloudA = on, seed, scale, bias | B = cover, puffK, wispCover, wispK | C = litK, litDy, bodyK, - | D = driftX, driftY, cloudBand0, cloudBand1 | E = cloudBand2 | lit/shade rgb 0..255. All 0 = no clouds.
+  { name: 'cloudA', type: 'vec4' }, { name: 'cloudB', type: 'vec4' }, { name: 'cloudC', type: 'vec4' }, { name: 'cloudD', type: 'vec4' }, { name: 'cloudE', type: 'vec4' },
+  { name: 'cloudLit', type: 'vec4' }, { name: 'cloudShade', type: 'vec4' },
+  { name: 'fgQ', type: 'vec4' }, // AA-22 (OB-208), APPENDED: wind hold. x = far-grass gust buckets per cycle (0 = off), y = previous shade time, z = lean clock steps/s (0 = off) (twin: farGrassFill rec.qb/tPrev/qt)
+];
+export const SHADE_BLOCK = defineUniformBlock('ShadeU', SHADE_FIELDS);
+/** ENV-02d: ShadeU + look table (appended: earlier word offsets unchanged); look pipelines only. */
+export const SHADE_LOOK_BLOCK = defineUniformBlock('ShadeU', [...SHADE_FIELDS, ...LOOK_BLOCK_FIELDS]);
 
 export const SHADE_TEXTURES = Object.freeze([
   'uint', 'uint', 'uint', 'uint', 'uint', 'uint', 'float', 'float', 'float', 'float', 'sint', 'sint', 'float', 'float', 'uint', 'float',
 ]);
 export const SHADE_TARGETS = Object.freeze(['rgba8', 'rgba8']);
 
+// MASK-c: band-limited patch noise (octave fade / value noise / patch field), shared with carpet.wgsl.js (needs hashFast from HASH_FAST_WGSL).
+export const TS_PATCH_NOISE_WGSL = `fn tsOctFade(cell: f32, fp: f32) -> f32 {
+  let s = clamp((cell / max(fp, 0.000001) - 1.5) / 1.5, 0.0, 1.0);
+  return s * s * (3.0 - 2.0 * s);
+}
+fn tsValueNoise(x: f32, y: f32, salt: i32) -> f32 {
+  let x0 = floor(x); let y0 = floor(y);
+  let ix = i32(x0); let iy = i32(y0);
+  var fx = x - x0; var fy = y - y0;
+  fx = fx * fx * (3.0 - 2.0 * fx); fy = fy * fy * (3.0 - 2.0 * fy);
+  let a = hashFast(ix, iy, salt); let b = hashFast(ix + 1, iy, salt); let c = hashFast(ix, iy + 1, salt); let d = hashFast(ix + 1, iy + 1, salt);
+  return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
+}
+fn tsPatchNoise(u: f32, v: f32, fp: f32, v8: f32) -> f32 {
+  let f0 = tsOctFade(${NOISE_CELLS[0].toFixed(4)}, fp);
+  var ws = ${NOISE_W[0].toFixed(4)} * f0; var n = ws * (v8 * 2.0 - 1.0);
+  let f1 = tsOctFade(${NOISE_CELLS[1].toFixed(4)}, fp);
+  if (f1 > 0.0) { let w1 = ${NOISE_W[1].toFixed(4)} * f1; n += w1 * (tsValueNoise(u * ${(1 / NOISE_CELLS[1]).toFixed(4)}, v * ${(1 / NOISE_CELLS[1]).toFixed(4)}, ${NOISE_SALT + 1}) * 2.0 - 1.0); ws += w1; }
+  let f2 = tsOctFade(${NOISE_CELLS[2].toFixed(4)}, fp);
+  if (f2 > 0.0) { let w2 = ${NOISE_W[2].toFixed(4)} * f2; n += w2 * (tsValueNoise(u * ${(1 / NOISE_CELLS[2]).toFixed(4)}, v * ${(1 / NOISE_CELLS[2]).toFixed(4)}, ${NOISE_SALT + 2}) * 2.0 - 1.0); ws += w2; }
+  return n / max(ws, 0.55);
+}
+`;
+
 // glsl/terrain.frag.js TERRAIN_SHADE_GLSL (shadeTerrain), literal twin of terrainShade.js shadeTerrain.
-export const TERRAIN_SHADE_WGSL = `
+const terrainShadeWgsl = (LK) => `
 const MAX_FEATURES_PER_TYPE: i32 = ${MAX_FEATURES_PER_TYPE};
 // ME-06b: literal twin of terrainShade.js's faceMode (0 surface, 1 canopy face, 2 foot row).
 const FOREST_FACE_NZ: f32 = ${FOREST_FACE_NZ.toFixed(4)};
@@ -71,40 +133,71 @@ fn pickCodeFromPacked(x: i32, count: i32, idx: i32) -> i32 {
   return (x >> u32(8 * i)) & 0xff;
 }
 
-struct TerrainOut { fr: f32, fg: f32, fb: f32, br: f32, bg: f32, bb: f32, glyph: i32 };
+// OB-073: literal twins of terrainShade.js groundFootprint / octaveFade / valueNoise / patchNoise (power-of-two cells: u * inv exact in f32).
+fn tsFootprint(t: f32) -> f32 {
+  if (su.hashCell > 0.0) { return su.hashCell; }
+  let k = select(${FP_DEFAULT_K.toFixed(4)}, -su.hashCell, su.hashCell < 0.0);
+  return k * t * clamp(t / ${FP_ANISO_T.toFixed(4)}, 1.0, ${FP_ANISO_MAX.toFixed(4)});
+}
+${TS_PATCH_NOISE_WGSL}
 
-fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceMode: i32) -> TerrainOut {
-  // 23.4 near-detail: hash cell 2 m inside the near-handover band, else 8 m. BUG-FP-002: hashCell < 0 = per-cell mode.
-  var cellSz: f32;
-  if (su.hashCell < 0.0) {
-    if (su.nearDetailOn != 0 && !(t < su.handover.y)) { cellSz = 8.0; }
-    else { cellSz = clamp(exp2(ceil(log2(max(t * -su.hashCell, 1e-6)))), 0.125, 2.0); }
-  } else {
-    if (su.hashCell > 0.0) { cellSz = su.hashCell; }
-    else { cellSz = select(8.0, 2.0, su.nearDetailOn != 0 && t < su.handover.y); }
+struct TerrainOut { fr: f32, fg: f32, fb: f32, br: f32, bg: f32, bb: f32, glyph: i32, fgw: f32 };
+var<private> gFarSky: vec3f; // VISQA-02: per-cell sky-gradient shift of the far fog colour (set in shadeCell; twin: fogShape.js farSkyShiftJS)
+
+${SKYLINE_FOG_WGSL}
+fn shadeTerrain(t: f32, typeIdIn: i32, b: f32, uIn: f32, vIn: f32, timeSec: f32, faceMode: i32, z: f32, nrm: vec3f${LK ? ', lookLo: i32, lookHi: i32, lookW: f32' : ''}) -> TerrainOut {
+  // OB-104b (38.55) cliff: steep cell (N.z < CLIFF_NZ) of a type without forest-face glyphs -> rock type, (u, v) = (horizontal axis along the wall, z). Twin: terrainShade.js shadeTerrain, same 4 lines.
+  var typeId = typeIdIn; var u = uIn; var v = vIn;
+  if (su.cliff.y > 0.5 && nrm.z < ${CLIFF_NZ.toFixed(4)} && !(textureLoad(uTlook, vec2i(3, typeIdIn), 0).w > 0.0)) {
+    typeId = i32(su.cliff.x);
+    v = z;
+    u = select(uIn, vIn, abs(nrm.x) > abs(nrm.y));
   }
-  let cx = i32(floor(u / cellSz)); let cy = i32(floor(v / cellSz));
-  let hA = hashFast(cx, cy, typeId);
-  let hB = hashFast(cx, cy, 7);
+  // OB-073: band-limited smooth value noise for the patch tier + 0.25 m glyph cell with one per-point switch (twin: terrainShade.js).
+  let fp = tsFootprint(t);
+  ${LK ? `var lk: LookOut;
+  let lookOn = (lookLo | lookHi) != 0;
+  var nP = 0.0;
+  let lqt = select(0.0, su.fgQ.z, su.fgP.x > 0.5); // AA-22: lean clock steps/s (twin: lqt = FGR.on ? FGR.qt : 0)
+  let leanStep = lqt <= 0.0 || floor(timeSec * lqt) != floor(su.fgQ.y * lqt);
+  let lkT = select(timeSec, floor(timeSec * lqt) / max(lqt, 1.0), lqt > 0.0);
+  if (lookOn) { lk = lkShade(u, v, fp, t, lkT, lookLo, lookHi, lookW); nP = 2.0 * lk.tone - 1.0; } // ENV-02d: look tone replaces the patch noise (twin: shadeTerrain lookOn)
+  else { nP = tsPatchNoise(u, v, fp, tsValueNoise(u * ${(1 / NOISE_CELLS[0]).toFixed(4)}, v * ${(1 / NOISE_CELLS[0]).toFixed(4)}, ${NOISE_SALT})); }` : `let v8 = tsValueNoise(u * ${(1 / NOISE_CELLS[0]).toFixed(4)}, v * ${(1 / NOISE_CELLS[0]).toFixed(4)}, ${NOISE_SALT});
+  let nP = tsPatchNoise(u, v, fp, v8);`}
+  // OB-073 calm ground: colour tier only from the smooth noise (no per-cell dither dice); ONE glyph per type (no hash, no band/close/glint).
+  let pk = nP * ${PATCH_K.toFixed(4)}; let pkF = floor(pk); // OB-208 soft patch edge (twin: terrainShade.js)
+  let pw = clamp(${PATCH_K.toFixed(4)} * fp * ${(1 / NOISE_CELLS[0]).toFixed(10)}, 0.08, 0.5);
+  let pq = clamp((pk - pkF - (0.5 - pw)) / (2.0 * pw), 0.0, 1.0);
+  let off = clamp(pkF + pq * pq * (3.0 - 2.0 * pq), -1.0, 1.0);
 
   // S8-B2-14b wetness: darkens the lit term entering the tier/gain pick, same WET_DARK as detailShade.js/shadeCore
   // (terrain has no emissive term to keep separate - the whole incoming b is the "lit term" here).
-  let bWet = b * (1.0 - ${WET_DARK.toFixed(4)} * su.wetness);
+  var bWet = b * (1.0 - ${WET_DARK.toFixed(4)} * su.wetness);
+  if (su.skyGlowOn.y > 0.0 && bWet < su.skyGlowOn.y) { bWet = su.skyGlowOn.y; } // DN-02 night floor (twin: terrainShade.js)
 
   // 23.4 near-detail: close (< closeBand) gets a +-0.08 brightness jitter (own hash salt 10, per-cell).
   let close = su.nearDetailOn != 0 && t < su.closeBand;
   var bEff = bWet;
-  if (close) { bEff = bWet + (hashFast(cx, cy, 10) * 2.0 - 1.0) * 0.08; }
+  if (close) { // OB-054: jitter fades smoothstep to 0 over closeBand/2..closeBand (twin: terrainShade.js)
+    let q = clamp((t - su.closeBand * 0.5) / (su.closeBand * 0.5), 0.0, 1.0);
+    bEff = bWet + nP * 0.05 * (1.0 - q * q * (3.0 - 2.0 * q));
+  }
 
   var tier = 2;
   if (bEff < 0.45) { tier = 0; } else if (bEff < 0.8) { tier = 1; }
-  var ii = tier + (i32(floor(hA * 3.0)) - 1);
-  ii = clamp(ii, 0, 2);
+  var ii = clamp(f32(tier) + off, 0.0, 2.0);
+  // OB-081: far ground blends the tier colours continuously (twin: terrainShade.js FAR_BLEND_FP0/FP1); fw 0 = hard tiers.
+  let sc = clamp(0.5 + (bEff - 0.45) * ${(1 / 0.35).toFixed(10)} + off, 0.0, 2.0);
+  var fw = clamp((fp - ${FAR_BLEND_FP0.toFixed(4)}) * ${(1 / (FAR_BLEND_FP1 - FAR_BLEND_FP0)).toFixed(10)}, 0.0, 1.0);
+  fw = fw * fw * (3.0 - 2.0 * fw);
+  let xf = ii + (sc - ii) * fw;
+  let i0 = i32(floor(xf)); let i1 = min(i0 + 1, 2); let fxb = xf - f32(i0);
 
   let base = typeId; // TLOOK row = type id (texel x = 0..6, see TerrainTextures.js)
-  let t0 = textureLoad(uTlook, vec2i(ii, base), 0);
+  let t0a = textureLoad(uTlook, vec2i(i0, base), 0);
+  let t0b = textureLoad(uTlook, vec2i(i1, base), 0);
   // TLOOK colours are linear 0..1 (GPU texel layout); bytes are 0..255 (BUG-OWN-004).
-  var fr = t0.r * 255.0; var fgc = t0.g * 255.0; var fbc = t0.b * 255.0;
+  var fr = (t0a.r + (t0b.r - t0a.r) * fxb) * 255.0; var fgc = (t0a.g + (t0b.g - t0a.g) * fxb) * 255.0; var fbc = (t0a.b + (t0b.b - t0a.b) * fxb) * 255.0;
   // gainOf(bEff, shading) port - same gain formula shadeCore uses.
   let bcc = max(bEff, 0.0);
   var gain = su.fgMin + (1.0 - su.fgMin) * samplePowLUT(min(bcc, 1.0));
@@ -113,50 +206,61 @@ fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceM
   fr *= gain; fgc *= gain; fbc *= gain;
   var br = fr * 0.3; var bgc = fgc * 0.3; var bbc = fbc * 0.3;
 
-  var bandIdx = 2;
-  if (t < su.bandNear) { bandIdx = 0; } else if (t < su.bandMid) { bandIdx = 1; }
-  // 23.4 near-detail: close wins over the near/mid/far tier (TLOOK texel 7, fixed).
-  var gT: vec4f;
-  if (close) { gT = textureLoad(uTlook, vec2i(7, base), 0); } else { gT = textureLoad(uTlook, vec2i(4 + bandIdx, base), 0); }
+  // OB-073: the calm glyph = middle entry of the NEAR glyph set (TLOOK texel 4), same at every distance/time/point.
+  let gT = textureLoad(uTlook, vec2i(4, base), 0);
   let packedX = i32(gT.x); let packedCount = i32(gT.y);
-  var code = pickCodeFromPacked(packedX, packedCount, i32(hB * f32(packedCount)));
+  var code = pickCodeFromPacked(packedX, packedCount, packedCount >> 1u);
+${LK ? `  if (lookOn) { fr = lk.fr * 255.0 * gain; fgc = lk.fg * 255.0 * gain; fbc = lk.fb * 255.0 * gain; br = lk.br * 255.0 * gain; bgc = lk.bg * 255.0 * gain; bbc = lk.bb * 255.0 * gain; code = lk.code; }
+` : ''}
+  // G2 + P3 far grass tier (twin: terrainShade.js shadeTerrain, same lines). fgw = weight, > 0 = stable level 254.
+  var fgw = 0.0; var fgAnimW = 0.0;
+  if (su.fgP.x > 0.5 && (!close || su.fgP.x > 1.0)) { // OB-121b: fgP.x = on * (1 + underlay)
+    let fst = su.fgT[typeId].w;
+    if (fst > 0.0) {
+      let fw0 = clamp((t - su.fgP.y) / su.fgP.z, 0.0, 1.0);
+      let fwr = fw0 * fw0 * (3.0 - 2.0 * fw0);
+      let fstat = (su.fgP.x - 1.0) > fwr; // OB-154: underlay-won cell = static (no gust phase)
+      fgw = max(su.fgP.x - 1.0, fwr) * fst; fgAnimW = select(fgw, 0.0, fstat);
+      if (fgw > 0.0) {
+        var tri = 0.5;
+        if (!fstat) {
+          let lag = (u * su.fgW.x + v * su.fgW.y) * su.fgW.w;
+          var ph = (timeSec - lag) * su.fgW.z;
+          if (su.fgQ.x > 0.0) { // AA-22: bucketed gust phase; animated only on the bucket change since fgQ.y (twin: shadeTerrain)
+            let bk = floor(ph * su.fgQ.x);
+            if (bk == floor((su.fgQ.y - lag) * su.fgW.z * su.fgQ.x)) { fgAnimW = 0.0; }
+            ph = (bk + 0.5) * (1.0 / su.fgQ.x);
+          }
+          ph = ph - floor(ph);
+          tri = 1.0 - abs(2.0 * ph - 1.0); tri = tri * tri * (3.0 - 2.0 * tri);
+        }
+        let sg = clamp(nP * ${FG_SLOPE.toFixed(4)} + (tri - 0.5) * ${FG_GUST.toFixed(4)}, -1.0, 1.0);
+${LK ? `        if (fgw > 0.5 - 0.4 * sg) { code = select(select(${FG_CODES[1]}, ${FG_CODES[2]}, sg > 0.33), ${FG_CODES[0]}, sg < -0.33); if (lookOn) { code = select(select(lk.g1, lk.g2, sg > 0.33), lk.g0, sg < -0.33); } }
+        let km = fgw * su.fgP.w * (1.0 + ${FG_MOD.toFixed(4)} * sg);
+        if (lookOn) { fr += (lk.tr * 255.0 * gain - fr) * km; fgc += (lk.tg * 255.0 * gain - fgc) * km; fbc += (lk.tb * 255.0 * gain - fbc) * km; }
+        else {
+          fr += (su.fgT[typeId].x * gain - fr) * km; fgc += (su.fgT[typeId].y * gain - fgc) * km; fbc += (su.fgT[typeId].z * gain - fbc) * km;
+          br = fr * 0.3; bgc = fgc * 0.3; bbc = fbc * 0.3;
+        }
+` : `        if (fgw > 0.5 - 0.4 * sg) { code = select(select(${FG_CODES[1]}, ${FG_CODES[2]}, sg > 0.33), ${FG_CODES[0]}, sg < -0.33); }
+        let km = fgw * su.fgP.w * (1.0 + ${FG_MOD.toFixed(4)} * sg);
+        fr += (su.fgT[typeId].x * gain - fr) * km; fgc += (su.fgT[typeId].y * gain - fgc) * km; fbc += (su.fgT[typeId].z * gain - fbc) * km;
+        br = fr * 0.3; bgc = fgc * 0.3; bbc = fbc * 0.3;
+`}      }
+    }
+  }
 
   let t3 = textureLoad(uTlook, vec2i(3, base), 0);
-  if (t3.y > 0.5) {
-    let g = hashFast(cx, cy, i32(floor(timeSec * 1.5)));
-    if (g > 0.5) {
-      let alt = pickCodeFromPacked(packedX, packedCount, imod(i32(hB * f32(packedCount)) + 1, max(1, packedCount)));
-      code = alt;
-      let lightC = textureLoad(uTlook, vec2i(2, base), 0);
-      let lr = lightC.r * 255.0 * gain; let lg = lightC.g * 255.0 * gain; let lb = lightC.b * 255.0 * gain;
-      fr += (lr - fr) * 0.35; fgc += (lg - fgc) * 0.35; fbc += (lb - fbc) * 0.35;
-    }
-  }
-
-  // 23.4 close-band features (wildflower/pebble): up to MAX_FEATURES_PER_TYPE slots packed into TLOOK texels 8-15; fi (texel .w
-  // of the "A" slot) is the feature's index in the FLAT list the JS oracle hashes with the SAME salt (20+fi).
-  if (close) {
-    for (var slot = 0; slot < MAX_FEATURES_PER_TYPE; slot++) {
-      let fa = textureLoad(uTlook, vec2i(8 + slot * 2, base), 0);
-      let fchance = fa.x;
-      if (fchance <= 0.0) { continue; }
-      let fi = i32(fa.w);
-      let fh = hashFast(cx, cy, 20 + fi);
-      if (fh >= fchance) { continue; }
-      code = select(i32(fa.z), i32(fa.y), fh < fchance * 0.5);
-      let fbCol = textureLoad(uTlook, vec2i(9 + slot * 2, base), 0);
-      fr = fbCol.x * 255.0; fgc = fbCol.y * 255.0; fbc = fbCol.z * 255.0;
-      br = fr * 0.3; bgc = fgc * 0.3; bbc = fbc * 0.3;
-      break;
-    }
-  }
 
   // ME-06b: background canopy FACE look: TLOOK texel 3 .z/.w = face glyphs + count (forest only), texel 16 = trunk colour.
   if (faceMode != 0 && t3.w > 0.5 && !close && t >= su.bandNear) {
     let faceCount = i32(t3.w);
-    let trunk = faceMode == 2 && hashFast(cx, cy, ${FOREST_TRUNK_SALT}) < ${FOREST_TRUNK_CHANCE.toFixed(10)};
+    let fx4 = i32(floor(u / ${FAR_GLYPH_CELL.toFixed(4)})); let fy4 = i32(floor(v / ${FAR_GLYPH_CELL.toFixed(4)}));
+    let fpH = select(select(${FP_DEFAULT_K.toFixed(4)}, -su.hashCell, su.hashCell < 0.0) * t, su.hashCell, su.hashCell > 0.0); // faces stand upright: cell WIDTH
+    let calm = fpH > ${(FAR_GLYPH_CELL * 0.5).toFixed(4)}; // OB-081: fixed face glyph + no trunks once a cell covers half a face cell
+    let trunk = !calm && faceMode == 2 && hashFast(fx4, fy4, ${FOREST_TRUNK_SALT}) < ${FOREST_TRUNK_CHANCE.toFixed(10)};
     if (trunk) { code = ${FOREST_TRUNK_CODE}; }
-    else { code = pickCodeFromPacked(i32(t3.z), faceCount, select(i32(hB * f32(faceCount)), faceCount - 1, faceMode == 2)); }
+    else { code = pickCodeFromPacked(i32(t3.z), faceCount, select(select(i32(hashFast(fx4, fy4, 7) * f32(faceCount)), faceCount >> 1u, calm), faceCount - 1, faceMode == 2)); }
     if (trunk) {
       let tc = textureLoad(uTlook, vec2i(16, base), 0);
       fr = tc.r * 255.0 * gain; fgc = tc.g * 255.0 * gain; fbc = tc.b * 255.0 * gain;
@@ -165,8 +269,73 @@ fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceM
     br = dk.r * 255.0 * gain * 0.3; bgc = dk.g * 255.0 * gain * 0.3; bbc = dk.b * 255.0 * gain * 0.3;
     fr *= ${FOREST_FACE_K.toFixed(4)}; fgc *= ${FOREST_FACE_K.toFixed(4)}; fbc *= ${FOREST_FACE_K.toFixed(4)};
     br *= ${FOREST_FACE_K.toFixed(4)}; bgc *= ${FOREST_FACE_K.toFixed(4)}; bbc *= ${FOREST_FACE_K.toFixed(4)};
+    if (su.faceK[1].w > 0.0) { // OB-222 candidate (?farforest=1; twin: terrainShade.js)
+      let ffA = clamp(su.sunI / ${FF_SUN_REF.toFixed(4)}, 0.0, 1.0);
+      let ffE = clamp((su.sunDir.z - ${FF_ELEV_LO.toFixed(4)}) / ${(FF_ELEV_HI - FF_ELEV_LO).toFixed(4)}, 0.0, 1.0);
+      let ffD = ffA * ffE * ffE * (3.0 - 2.0 * ffE);
+      let ffF = clamp((t - ${FF_FADE_A.toFixed(4)}) / ${(FF_FADE_B - FF_FADE_A).toFixed(4)}, 0.0, 1.0);
+      let ffS = clamp((${FF_FLOOR.toFixed(4)} - (0.2126 * fr + 0.7152 * fgc + 0.0722 * fbc)) / ${(FF_FLOOR * FF_RANGE).toFixed(4)}, 0.0, 1.0);
+      let ffL = ffD * (1.0 - ffF * ffF * (3.0 - 2.0 * ffF)) * ffS;
+      if (ffL > 0.0) {
+        fr += (${FF_TGT[0].toFixed(4)} - fr) * ffL; fgc += (${FF_TGT[1].toFixed(4)} - fgc) * ffL; fbc += (${FF_TGT[2].toFixed(4)} - fbc) * ffL;
+        br += (${(FF_TGT[0] * 0.3).toFixed(4)} - br) * ffL; bgc += (${(FF_TGT[1] * 0.3).toFixed(4)} - bgc) * ffL; bbc += (${(FF_TGT[2] * 0.3).toFixed(4)} - bbc) * ffL;
+      }
+    }
   }
 
+  var f = (t - su.terrainFogStart) / (su.terrainFogFull - su.terrainFogStart);
+  f = clamp(f, 0.0, 1.0);
+  f = pow(f, su.terrainFogCurve);
+  f = skylineFogF(f, t, typeId, z, su.skyline); // MAP-06b (38.42): far peaks / sea line fog cap (x = 0: unchanged)
+  let fcr = su.terrainFogNearRGB.x + (su.terrainFogFarRGB.x + gFarSky.x - su.terrainFogNearRGB.x) * f;
+  let fcg = su.terrainFogNearRGB.y + (su.terrainFogFarRGB.y + gFarSky.y - su.terrainFogNearRGB.y) * f;
+  let fcb = su.terrainFogNearRGB.z + (su.terrainFogFarRGB.z + gFarSky.z - su.terrainFogNearRGB.z) * f;
+  fr += (fcr - fr) * f; fgc += (fcg - fgc) * f; fbc += (fcb - fbc) * f;
+  let fBg = min(1.0, 1.1 * f);
+  br += (fcr - br) * fBg; bgc += (fcg - bgc) * fBg; bbc += (fcb - bbc) * fBg;
+  if (f > 0.85) { code = 0; }
+
+  var o: TerrainOut;
+  o.fr = fr; o.fg = fgc; o.fb = fbc; o.br = br; o.bg = bgc; o.bb = bbc; o.glyph = code; o.fgw = ${LK ? 'select(fgAnimW, 1.0, lookOn && lk.anim > 0.0 && leanStep)' : 'fgAnimW'};
+  return o;
+}
+// OB-073 D2e: kind-10 carpet blade (twin: terrainShade.js shadeGrass). No skyline cap, glyph by h01 / lean, colour = ramp(h01 + tint).
+fn shadeGrass(t: f32, variant: i32, h01: f32, lean: f32, tint: f32, b: f32, gx: u32, sunI: f32) -> TerrainOut {
+  var bE = b * (1.0 - ${WET_DARK.toFixed(4)} * su.wetness);
+  if (su.skyGlowOn.y > 0.0 && bE < su.skyGlowOn.y) { bE = su.skyGlowOn.y; }
+  let bcc = max(bE, 0.0);
+  var gain = su.fgMin + (1.0 - su.fgMin) * samplePowLUT(min(bcc, 1.0));
+  if (bcc > 1.0) { gain = min(su.fgMaxGain, gain + (bcc - 1.0) * 0.5); }
+  gain = wetGain(gain, bE);
+  let x = clamp(h01 + tint, 0.0, 1.0);
+  if (su.skyGlowOn.w > 0.0) { // OB-217 shaded grass value range (twin: terrainShade.js grassShadeS)
+    let gd = clamp(sunI / ${GRASS_SHADE_DAY_SUN.toFixed(4)}, 0.0, 1.0);
+    let gt = clamp((bE - ${GRASS_SHADE_LO.toFixed(4)}) / ${(GRASS_SHADE_HI - GRASS_SHADE_LO).toFixed(4)}, 0.0, 1.0);
+    let gs = su.skyGlowOn.w * (1.0 - gt * gt * (3.0 - 2.0 * gt)) * gd;
+    if (gs > 0.0) { gain = gain * (1.0 + ${GRASS_SHADE_LIFT.toFixed(4)} * gs) * (1.0 + ${GRASS_SHADE_SPREAD.toFixed(4)} * gs * (2.0 * x - 1.0)); }
+  }
+  let gb = variant * ${GRASS_ROWS};
+  let n = max(i32(su.grass[gb].w), 2);
+  let xf = x * f32(n - 1);
+  let i0 = min(i32(floor(xf)), n - 2);
+  let fx = xf - f32(i0);
+  let c0 = su.grass[gb + i0].xyz; let c1 = su.grass[gb + i0 + 1].xyz;
+  var cr = c0.x + (c1.x - c0.x) * fx; var cg = c0.y + (c1.y - c0.y) * fx; var cb = c0.z + (c1.z - c0.z) * fx;
+  // MASK-c: base = calm ground under the root (TLOOK tier colour), tip = the variant ramp; w = h01 / groundTint (twin: terrainShade.js shadeGrass)
+  if ((gx & ${GRASS_GX_HAS}u) != 0u) {
+    let gt = textureLoad(uTlook, vec2i(i32((gx >> 24u) & 3u), i32((gx >> 16u) & 255u)), 0);
+    let w = clamp(h01 / su.grass[gb + 4].z, 0.0, 1.0);
+    cr = gt.r * 255.0 + (cr - gt.r * 255.0) * w; cg = gt.g * 255.0 + (cg - gt.g * 255.0) * w; cb = gt.b * 255.0 + (cb - gt.b * 255.0) * w;
+  }
+  var fr = cr * gain; var fgc = cg * gain; var fbc = cb * gain;
+  let bl = f32((gx >> 8u) & 255u) * (1.0 / 255.0);
+  if (bl > 0.0) { // MASK-c back-light: sun behind the blade warm-brightens the upper part, capped
+    let gl = ${GRASS_BACKLIGHT_K.toFixed(4)} * bl * h01 * h01 * min(sunI, 1.0);
+    fr *= 1.0 + gl; fgc *= 1.0 + gl * 0.75; fbc *= 1.0 + gl * 0.25;
+  }
+  var br = fr * 0.3; var bgc = fgc * 0.3; var bbc = fbc * 0.3;
+  var code = i32(select(select(su.grass[gb + 2].w, su.grass[gb + 1].w, h01 < ${GRASS_BASE_H.toFixed(4)}), su.grass[gb + 3].w, h01 > ${GRASS_TIP_H.toFixed(4)}));
+  if (lean < -${GRASS_LEAN_G.toFixed(4)}) { code = i32(su.grass[gb + 4].x); } else if (lean > ${GRASS_LEAN_G.toFixed(4)}) { code = i32(su.grass[gb + 4].y); }
   var f = (t - su.terrainFogStart) / (su.terrainFogFull - su.terrainFogStart);
   f = clamp(f, 0.0, 1.0);
   f = pow(f, su.terrainFogCurve);
@@ -177,15 +346,46 @@ fn shadeTerrain(t: f32, typeId: i32, b: f32, u: f32, v: f32, timeSec: f32, faceM
   let fBg = min(1.0, 1.1 * f);
   br += (fcr - br) * fBg; bgc += (fcg - bgc) * fBg; bbc += (fcb - bbc) * fBg;
   if (f > 0.85) { code = 0; }
-
   var o: TerrainOut;
   o.fr = fr; o.fg = fgc; o.fb = fbc; o.br = br; o.bg = bgc; o.bb = bbc; o.glyph = code;
   return o;
 }
 `;
+export const TERRAIN_SHADE_WGSL = terrainShadeWgsl(false);
+/** ENV-02d: shadeTerrain with the look splice (+ GROUND_LOOK_WGSL); only used by the look pipelines. */
+export const TERRAIN_SHADE_LOOK_WGSL = GROUND_LOOK_WGSL + terrainShadeWgsl(true);
 
-export const SHADE_WGSL = `
-${SHADE_BLOCK.wgsl}
+// US-073b (38.25): the stable-glyph variant adds one r8uint target `lvl` (@location(2)) = the ramp level of the picked glyph (255 = none /
+// passthrough / terrain / line / fog stipple). `L` holds the four text splices; with withLevel=false every splice is '' and the
+// string is byte-identical to the pre-073b shader (asserted by sha in shade.wgsl.test.js).
+function buildShadeWgsl(withLevel, look = false) {
+  const L = withLevel
+    ? {
+      field: `
+  @location(2) lvl: u32,`,
+      init: ' o.lvl = 255u;',
+      vars: `
+  var lvOut = 255u; var lvStip = 0u;`,
+      set: `
+    lvOut = u32(levelFromThresholds(setIdPick, t0.z, gbAvg, su.cutoff));`,
+      stip: ' lvOut = 255u; lvStip = 1u;',
+      out: `
+  { // AA-07b: joint coverage in quarters into the spare level-byte bits (twin: temporalStable.js encodeLevelByte; 0/4 and 4/4 carry none)
+    let covQ = u32(floor(4.0 * f32(jointN) / f32(count) + 0.5));
+    let isLine = lineWins && onJointLineW >= 0 && gbAvg > 0.0 && lvStip == 0u;
+    if (covQ >= 1u && covQ <= 3u) {
+      if (lvOut == 255u) { if (isLine) { lvOut = 128u | (covQ << 5u); } }
+      else if (lvOut < 32u) { lvOut = lvOut | (covQ << 5u); }
+    }
+  }
+  o.lvl = lvOut;`,
+      // OB-073 calm ground: no shimmer branch any more (glint removed), terrain is always level 255 (twin: terrainShade.js LEVEL_NONE)
+      terr: ' o.lvl = select(255u, 254u, to.fgw > 0.0);', // G2 + P3: far-grass cells animate (twin: terrainShade.js out.level)
+      grass: ' o.lvl = gLv;', // OB-073 D2e: kind-10 stable level = ramp position bucket (twin: shadeGrass out.level)
+    }
+    : { field: '', init: '', vars: '', set: '', stip: '', out: '', terr: '', grass: '' };
+  return `
+${look ? SHADE_LOOK_BLOCK.wgsl : SHADE_BLOCK.wgsl}
 @group(0) @binding(0) var uGI: texture_2d<u32>;    // resolved: x = planeId, y = kind|face|mask|cov|mat, z = packed normal (terrain)
 @group(0) @binding(1) var uGA: texture_2d<u32>;    // bitcast u, v, z, aoD - resolved (nearest-centre winner sample)
 @group(0) @binding(2) var uGD: texture_2d<u32>;    // bitcast dudx, dvdx, dudy, dvdy - resolved, shared over a cell's sub-samples
@@ -219,6 +419,17 @@ const MAX_SUB: i32 = ${MAX_SUB};
 const MAX_LEVELS: i32 = ${MAX_LEVELS};
 var<private> POW2: array<f32, 6> = array<f32, 6>(0.125, 0.25, 0.5, 1.0, 2.0, 4.0);
 
+// 38.23: one channel of the entity tint, literal twin of entityTint.js tintChannel (c on the 0..255 scale, t = rgb 0..1).
+fn tintCh(c: f32, t: f32, k: f32) -> f32 { return c + (t * 255.0 - c) * k; }
+${VEG_TINT_WGSL}// First table entry matching objectId, or -1 (twin: entityTintAt).
+fn tintIndex(oid: u32, count: i32) -> i32 {
+  for (var i = 0; i < 8; i++) {
+    if (i >= count) { break; }
+    if (bitcast<u32>(su.etId[i >> 2][i & 3]) == oid) { return i; }
+  }
+  return -1;
+}
+
 fn samplePowLUT(x: f32) -> f32 {
   let xc = clamp(x, 0.0, 1.0);
   let idx = i32(xc * 255.0 + 0.5);
@@ -249,7 +460,79 @@ fn fogScaleCell(row: i32, rows: i32) -> f32 {
 }
 fn faceK(face: i32) -> f32 { return su.faceK[u32(face) >> 2u][u32(face) & 3u]; }
 
-${TERRAIN_SHADE_WGSL}
+${look ? TERRAIN_SHADE_LOOK_WGSL : TERRAIN_SHADE_WGSL}
+
+${SKY_GLOW_WGSL}
+${SKY_NIGHT_WGSL}
+${SKY_CLOUD_WGSL}
+${FOG_SHAPE_WGSL}
+${SHADE_SHAFT_WGSL}
+// CANOPY-SHAFT-01b: lift colour toward FOG_SUN_TINT * sunI by weight w (oracle lightShaft.js shaftLift: bg w, fg w * 0.5).
+fn shaftLiftC(c: vec3f, w: f32, sunI: f32) -> vec3f { return c + (FOG_SUN_TINT * sunI - c) * w; }
+fn shaftQ(cell: vec2i) -> i32 { return i32((textureLoad(uLightTex, cell, 0).w >> ${SHAFT_SHIFT}u) & ${SHAFT_Q}u); }
+${UNDER_WGSL}
+// AUD-45: unit view direction of a cell for the standard fog (same rays as the sky: shear basis / pitched / ortho F).
+// VISQA-02: far fog -> the sky at the cell's own elevation: skyGlowOn.z (atmos farSkyW) * (uSky[idx(elev)] - uSky[0]), elev > 0 only.
+fn farSkyShift(cell: vec2i, gridSize: vec2i) -> vec3f {
+  if (su.skyGlowOn.z <= 0.0 || su.skyElevTop <= 0.0) { return vec3f(0.0); }
+  let d = fogCellDir(cell, gridSize);
+  let e = degrees(atan2(d.z, length(d.xy)));
+  if (!(e > 0.0)) { return vec3f(0.0); }
+  let idx = i32(min(1.0, e / su.skyElevTop) * ${SKY_LUT_N - 1}.0 + 0.5);
+  return su.skyGlowOn.z * (textureLoad(uSky, vec2i(idx, 0), 0).rgb - textureLoad(uSky, vec2i(0, 0), 0).rgb);
+}
+fn fogCellDir(cell: vec2i, gridSize: vec2i) -> vec3f {
+  if (su.projMode == 0) {
+    let cx = (2.0 * (f32(cell.x) + 0.5)) / f32(gridSize.x) - 1.0;
+    let hx = su.skyCam.x + su.skyCam.z * cx; let hy = su.skyCam.y + su.skyCam.w * cx;
+    let tanE = (su.horizonRow - f32(cell.y)) / su.planeDistY;
+    let ce = inverseSqrt(1.0 + tanE * tanE);
+    return vec3f(vec2f(hx, hy) * (inverseSqrt(max(hx * hx + hy * hy, 1e-12)) * ce), tanE * ce);
+  }
+  return normalize(select(pitchedCellDir(vec2f(cell), gridSize), su.pitchA.xyz, su.projMode == 2));
+}
+// AA-15 (OB-208): world-space glyph dice for soft-edge leaf cards (twin: fogShape.js folDiceJS). Block q = 0.25/0.5/1/2 m by distance.
+fn folDice(cell: vec2i, gridSize: vec2i, dist: f32, seed: i32) -> f32 {
+  let d = fogCellDir(cell, gridSize);
+  let m = select(1.0, 3.0, (u32(su.fogView.w + 0.5) & 4u) != 0u); // FD-05: x3 block (twin: folDiceJS aaAlt)
+  let px = su.underCam.x + d.x * dist; let py = su.underCam.y + d.y * dist; let pz = su.fogView.x + d.z * dist;
+  var q = 0.5 * m;
+  if ((u32(su.fogView.w + 0.5) & 32u) != 0u) { // FD-09b: per-block spread of the 16/32/64 m switch (twin: folDiceJS aaDice2)
+    for (var k = 0; k < 3; k++) {
+      let ek = select(select(64.0, 32.0, k == 1), 16.0, k == 0);
+      let qh = ek / 16.0 * m; let iqh = 1.0 / qh;
+      let hs = hashFast(i32(floor(px * iqh)), i32(floor(py * iqh)) + i32(floor(pz * iqh)) * 8191, seed + 7919 * (k + 1));
+      if (dist >= ek * (0.85 + 0.3 * hs)) { q = qh; } else { break; }
+    }
+  } else {
+    if (dist >= 16.0) { q = 1.0 * m; } if (dist >= 32.0) { q = 2.0 * m; } if (dist >= 64.0) { q = 4.0 * m; }
+  }
+  let iq = 1.0 / q;
+  let ix = i32(floor(px * iq)); let iy = i32(floor(py * iq)); let iz = i32(floor(pz * iq));
+  return hashFast(ix, iy + iz * 8191, seed);
+}
+
+// AA-16 (OB-208): mean light of a soft-edge leaf cell and its 3x3 soft-edge kind-9 neighbours whose (shade-scaled) depth is
+// within 15 pct + 0.5 m (twin: detailShade.js folLightJS; same order, f32 sums).
+fn folLight(cell: vec2i, gridSize: vec2i, d0: f32, Lc: vec3f) -> vec3f {
+  var s = Lc; var n = 1.0;
+  let tol = 0.15 * d0 + 0.5;
+  for (var dy = -${FOL_LIGHT_R}; dy <= ${FOL_LIGHT_R}; dy++) {
+    for (var dx = -${FOL_LIGHT_R}; dx <= ${FOL_LIGHT_R}; dx++) {
+      if (dx == 0 && dy == 0) { continue; }
+      let c = cell + vec2i(dx, dy);
+      if (c.x < 0 || c.y < 0 || c.x >= gridSize.x || c.y >= gridSize.y) { continue; }
+      let g = textureLoad(uGI, c, 0).y;
+      if (giKind(g) != ${KIND_MESH}u) { continue; }
+      if ((textureLoad(uMatI, vec2i(0, i32(giMat(g))), 0).y & 65536) == 0) { continue; }
+      var dn = bitcast<f32>(textureLoad(uDepth, c, 0).x);
+      if (su.projMode != 0) { dn *= fogScaleCell(c.y, gridSize.y); }
+      if (abs(dn - d0) > tol) { continue; }
+      s += bitcast<vec3f>(textureLoad(uLightTex, c, 0).xyz); n += 1.0;
+    }
+  }
+  return s / n;
+}
 
 fn pickCode(setId: i32, entryIdx: i32, hA: f32, useAlt: bool) -> i32 {
   let t = textureLoad(uSetI, vec2i(2 + entryIdx, setId), 0);
@@ -263,12 +546,13 @@ fn pickCode(setId: i32, entryIdx: i32, hA: f32, useAlt: bool) -> i32 {
 }
 
 // Returns glyph code (already ASCII-32) or -1 (caller substitutes space).
-fn pickGlyphCodeFast(setId: i32, gb: f32, hA: f32, classIdx: i32, cutoff: f32) -> i32 {
+fn pickGlyphCodeFast(setId: i32, gb: f32, hA: f32, classIdx: i32, cutoff: f32, leafQ: bool) -> i32 {
   let t0 = textureLoad(uSetI, vec2i(0, setId), 0);
   let t1 = textureLoad(uSetI, vec2i(1, setId), 0);
   let oriented = t0.x; let levels = t0.z; let nDark = t0.w; let nFam = t1.y;
-  let lv = levelFromThresholds(setId, levels, gb, cutoff);
+  var lv = levelFromThresholds(setId, levels, gb, cutoff);
   if (lv == 0) { return -1; }
+  if (leafQ && levels > 2) { lv = min(levels - 1, (((lv - 1) >> 1) << 1) + 1) + 1; } // FD-09a: ramp levels in pairs (twin: detailShade.js pickGlyphCodeFast)
   var entryIdx: i32;
   if (oriented == 0) {
     entryIdx = lv - 1;
@@ -282,10 +566,43 @@ fn pickGlyphCodeFast(setId: i32, gb: f32, hA: f32, classIdx: i32, cutoff: f32) -
 
 // --- shadeCore (14.2 item 3): everything that depends on THIS sub-sample's own u/v/z/aoD, up to (but excluding) the discrete
 // glyph pick and the gain/hue/overbright/fog/byte-quantise tail - those run once per CELL in fs_main on the group average.
+// OB-197: footprint-aware bevel (twin of detailShade.js bevelShadeK): box-filter of the top/bottom bevel bands over the cell's v-footprint.
+fn bevelShadeK(yv: f32, cov: f32, gv: f32, top: f32, topShade: f32, bottom: f32, bottomShade: f32) -> f32 {
+  let mean = (top * (topShade - 1.0) + bottom * (bottomShade - 1.0)) / gv;
+  if (cov >= gv) { return 1.0 + mean; }
+  let h = max(cov, 1.0e-6) * 0.5; let lo = yv - h; let hi = yv + h; let w = h * 2.0;
+  var tf = min(hi, gv) - max(lo, gv - top); tf = select(0.0, tf / w, tf > 0.0);
+  var bf = min(hi, bottom) - max(lo, 0.0); bf = select(0.0, bf / w, bf > 0.0);
+  if (lo < 0.0) { let t2 = gv - max(lo + gv, gv - top); if (t2 > 0.0) { tf += t2 / w; } }
+  else if (hi > gv) { let b2 = min(hi - gv, bottom); if (b2 > 0.0) { bf += b2 / w; } }
+  tf = min(tf, 1.0); bf = min(bf, 1.0);
+  return 1.0 + tf * (topShade - 1.0) + bf * (bottomShade - 1.0);
+}
+
+// 38.82 CELL-AA A (twin: detailShade.js matFlatColor): flat lit term of a material, 2 uMatF loads (albedo/bgK/emissive here, tone0 in matFlatColor)
+fn matFlatB(matId: i32, face: i32, kind: u32, Lm: f32) -> f32 {
+  let mf0 = textureLoad(uMatF, vec2i(0, matId), 0);
+  let mf1 = textureLoad(uMatF, vec2i(1, matId), 0);
+  var fk = 1.0;
+  if (face >= 1 && face <= 6 && kind != ${KIND_MODEL}u) { fk = faceK(face); }
+  return Lm * mf0.x * fk * (1.0 - ${WET_DARK.toFixed(4)} * su.wetness) + mf1.x + 0.0;
+}
+
+// rgb = fg byte colour (0..255, pre-fog), bgK in the returned .w
+fn matFlatColor(matId: i32, face: i32, kind: u32, Lm: f32, hcol: vec3f) -> vec4f {
+  let bc = max(matFlatB(matId, face, kind, Lm), 0.0);
+  var gain = su.fgMin + (1.0 - su.fgMin) * samplePowLUT(bc);
+  if (bc > 1.0) { gain = min(su.fgMaxGain, gain + (bc - 1.0) * 0.5); }
+  gain = wetGain(gain, bc);
+  let tone = textureLoad(uMatF, vec2i(10, matId), 0).xyz;
+  let rgb = clamp(tone * (1.0 + (hcol - 1.0) * su.tintK) * gain, vec3f(0.0), vec3f(255.0));
+  return vec4f(rgb, textureLoad(uMatF, vec2i(0, matId), 0).y);
+}
+
 struct Core {
   b: f32, gb: f32, cr: f32, cg: f32, cb: f32, bgK: f32, hA: f32, hB: f32,
   onJoint: bool,
-  lineCode: i32, setId: i32,
+  lineCode: i32, setId: i32, leafW: f32,
 };
 
 fn shadeCore(u: f32, v: f32, z: f32, aoD: f32,
@@ -312,6 +629,7 @@ fn shadeCore(u: f32, v: f32, z: f32, aoD: f32,
   let hasBevel = (flags & 128) != 0; let hasBand = (flags & 256) != 0; let bandIsU = (flags & 512) != 0;
   let bandTone = (flags & 1024) != 0; let bandBgK = (flags & 2048) != 0;
   let hasOverlay = (flags & 4096) != 0; let ovBand = (flags & 8192) != 0; let hasSpeckle = (flags & 16384) != 0; let hasLod = (flags & 32768) != 0;
+  let gridTexel = (flags & 131072) != 0; // GRID-TEXEL-GLYPH-01 (F_GRID_TEXEL)
 
   let detail = mf0.z; let jitter = mf0.w;
   let albedo = mf0.x;
@@ -339,14 +657,17 @@ fn shadeCore(u: f32, v: f32, z: f32, aoD: f32,
   let ds = detail * POW2[oct + 3];
 
   let btx = i32(floor(u * detail)); let bty = i32(floor(v * detail));
-  var hA: f32; var hC: f32;
-  if (hasGrid) {
+  var hA: f32; var hC: f32; var hJ: f32;
+  if (hasGrid && !gridTexel) {
     hA = hashFast(bix, courseI, seed);
     hC = hashFast(bix, courseI, seed + 13);
+    hJ = hA;
   } else {
     let cx = i32(floor(u * ds * 0.5)); let cy = i32(floor(v * ds * 0.5));
-    hA = hashFast(cx, cy, seed);
     hC = hashFast(cx, cy, seed + 13);
+    if ((u32(su.fogView.w + 0.5) & 4u) != 0u) { hA = hashFast(i32(floor(u * ds * 0.25)), i32(floor(v * ds * 0.25)), seed); } // FD-05: 2x coarser alt-glyph die (twin of detailShade.js)
+    else { hA = hashFast(cx, cy, seed); }
+    hJ = select(hA, hashFast(bix, courseI, seed), hasGrid);
   }
   let hB = hashFast(btx, bty, seed + 7);
   let hBlock = hashFast(bix, courseI, seed + 3);
@@ -384,8 +705,7 @@ fn shadeCore(u: f32, v: f32, z: f32, aoD: f32,
   if (hasGrid && hasBevel && tier <= bevelGate) {
     let top = mf5.x; let topShade = mf5.y; let bottom = mf5.z; let bottomShade = mf5.w;
     let yv = fv * gv;
-    if (gv - yv < top) { shadeK *= topShade; }
-    else if (yv < bottom) { shadeK *= bottomShade; }
+    shadeK *= bevelShadeK(yv, abs(dvdx) + abs(dvdy), gv, top, topShade, bottom, bottomShade);
   }
 
   if (hasBand) {
@@ -488,8 +808,9 @@ fn shadeCore(u: f32, v: f32, z: f32, aoD: f32,
   if (kind != ${KIND_MODEL}u && face >= 1 && face <= 6) { fk = faceK(face); }
   var aok = 1.0;
   if (aoD < su.aoR) { aok = su.aoK + (1.0 - su.aoK) * smoothstepFast(0.0, su.aoR, aoD); }
-  let jit = 1.0 + jitter * (hA * 2.0 - 1.0);
-  let b = Lm * albedo * shadeK * fk * aok * jit * (1.0 - ${WET_DARK.toFixed(4)} * su.wetness) + mf1.x;
+  let jit = 1.0 + jitter * (hJ * 2.0 - 1.0);
+  var b = Lm * albedo * shadeK * fk * aok * jit * (1.0 - ${WET_DARK.toFixed(4)} * su.wetness) + mf1.x;
+  if (su.skyGlowOn.y > 0.0 && b < su.skyGlowOn.y) { b = su.skyGlowOn.y; } // DN-02 night floor (twin: detailShade.js shadeCore)
   var gb = 0.0;
   if (!(b < su.cutoff)) { gb = su.lift + (1.0 - su.lift) * min(b, 1.0); }
 
@@ -498,16 +819,20 @@ fn shadeCore(u: f32, v: f32, z: f32, aoD: f32,
   var c: Core;
   c.b = b; c.gb = gb; c.cr = cr; c.cg = cg; c.cb = cb; c.bgK = bgK;
   c.hA = hA; c.hB = hB; c.onJoint = onJoint; c.lineCode = lineCode; c.setId = setId;
+  c.leafW = 0.0;
+  if (hasGrid && !gridTexel && (flags & 65536) != 0 && (u32(su.fogView.w + 0.5) & 16u) != 0u) { // FD-09a: leaf footprint (grid blocks per cell) -> level pairing weight
+    let rLeaf = max(tpcU / gu, tpcV / gv);
+    c.leafW = smoothstepFast(${LEAF_Q_LO.toFixed(4)}, ${LEAF_Q_HI.toFixed(4)}, rLeaf);
+  }
   return c;
 }
 
 struct FO {
   @location(0) fg: vec4f,
-  @location(1) bg: vec4f,
+  @location(1) bg: vec4f,${L.field}
 };
 
-@fragment
-fn fs_main(@builtin(position) frag: vec4f) -> FO {
+fn shadeCell(frag: vec4f) -> FO {
   let cell = vec2i(floor(frag.xy));
   let gi = textureLoad(uGI, cell, 0).xy;
   let kindU = giKind(gi.y);
@@ -515,7 +840,8 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
   let jsFg = textureLoad(uFgTex, cell, 0);
   let jsBg = textureLoad(uBgTex, cell, 0);
   let gridSize = vec2i(textureDimensions(uGI));
-  var o: FO;
+  if (kindU != 0u) { gFarSky = farSkyShift(cell, gridSize); } // VISQA-02 (0 when off)
+  var o: FO;${L.init}
 
   if (kindU == 0u) {
     // US-030a: on the DDA path (gpuSky), fillSky never runs - a masked-over-sky cell (HUD over open sky) still passes through to
@@ -531,8 +857,38 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
       }
       let t = clamp(elevDeg / su.skyElevTop, 0.0, 1.0);
       let idx = i32(t * ${SKY_LUT_N - 1}.0 + 0.5);
-      let col255 = textureLoad(uSky, vec2i(idx, 0), 0).rgb;
-      o.fg = vec4f(toByte01(col255.r), toByte01(col255.g), toByte01(col255.b), 0.0);
+      var skyDir: vec3f;
+      if (su.projMode == 0) {
+        // AUD-40: shear mode has no per-cell 3D ray; rebuild it from the camera basis (same cameraX as the CPU fillSky).
+        let cx = (2.0 * (f32(cell.x) + 0.5)) / f32(gridSize.x) - 1.0;
+        let hx = su.skyCam.x + su.skyCam.z * cx; let hy = su.skyCam.y + su.skyCam.w * cx;
+        let er = radians(elevDeg);
+        skyDir = vec3f(hx, hy, 0.0) * (cos(er) * inverseSqrt(max(hx * hx + hy * hy, 1e-12)));
+        skyDir.z = sin(er);
+      } else {
+        skyDir = normalize(select(pitchedCellDir(vec2f(cell), gridSize), su.pitchA.xyz, su.projMode == 2));
+      }
+      var col255 = textureLoad(uSky, vec2i(idx, 0), 0).rgb;
+      var fg255 = col255; var starG = 0;
+      var cloudG = 0;
+      if (su.cloudA.x > 0.5) { // CLOUD-FLUFF-01b (twin: sky.js cloudAt); off = branch skipped = byte-identical
+        let cl = skyCloud(col255, skyDir, elevDeg, select(1.0, su.sunI, su.skyGlowOn.x > 0.5));
+        col255 = cl.bg; fg255 = cl.fg; cloudG = cl.g;
+      }
+      if (su.skyGlowOn.x > 0.5) { // gated like compositor.js (sun === null skips glow+haze)
+        col255 = skyGlow(col255, skyDir, elevDeg, su.sunDir, su.sunI, u32(cell.x), u32(cell.y));
+        if (cloudG != 0) { fg255 = skyGlow(fg255, skyDir, elevDeg, su.sunDir, su.sunI, u32(cell.x), u32(cell.y)); }
+        let sn = skyNight(col255, skyDir, elevDeg, su.sunDir, su.sunI, su.timeSec); // NIGHT-SKY-01 (twin: skyNight.js applySkyNight; day = untouched)
+        if (cloudG == 0) { fg255 = sn.fg; starG = sn.g; }
+        else if (any(sn.bg != col255)) { fg255 = sn.bg; } // moon disc covers cloud fg too; stars never replace a cloud glyph
+        col255 = sn.bg;
+      } else if (cloudG == 0) { fg255 = col255; }
+      if (cloudG != 0) { starG = cloudG; }
+      if (su.shaftA.x > 0.0) { // CANOPY-SHAFT-01b: sky cells get the same lift (len = maxM, f = 0); glyph untouched
+        let sq = shaftQ(cell);
+        if (sq > 0) { let sw = shaftW(sq, su.shaftA.w, dot(skyDir, su.sunDir), su.sunI, su.shaftA.x, 0.0, su.shaftA.z, su.shaftA.w, 0.0); col255 = shaftLiftC(col255, sw, su.sunI); fg255 = shaftLiftC(fg255, sw * 0.5, su.sunI); }
+      }
+      o.fg = vec4f(toByte01(fg255.r), toByte01(fg255.g), toByte01(fg255.b), f32(starG) / 255.0);
       o.bg = vec4f(toByte01(col255.r), toByte01(col255.g), toByte01(col255.b), 1.0);
     } else {
       o.fg = jsFg;
@@ -561,7 +917,11 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
     // S8-B2-12b (38.13): cloud-darkening byte (bits 24..31 of LIGHT.w, written by the light pass regardless of
     // strength - q is 0 unless strength > 0) scales the whole analytic sun term; q 0 -> cFt 1.0 -> bit-identical.
     let cFt = 1.0 - f32((lightT.w >> ${CLOUD_Q_SHIFT}u) & 255u) * (1.0 / 255.0);
-    let bSunT = su.ambientI + su.sunI * max(0.0, ndotlT) * sunFT * cFt;
+    // CONTACT-AO-01b (38.78): contact-AO byte (LIGHT.w bits 1..7) scales the analytic ambient; q 0 -> exactly 1.0 (bit-identical).
+    let caoQT = (lightT.w >> 1u) & 127u;
+    let caoFt = select(1.0, f32(127u - caoQT) * (1.0 / 127.0), caoQT != 0u);
+    let caoSt = select(1.0, 1.0 - ${CAO_SUN_W.toFixed(4)} * f32(caoQT) * (1.0 / 127.0), caoQT != 0u); // 38.78 rev: sun part too
+    let bSunT = su.ambientI * caoFt + su.sunI * max(0.0, ndotlT) * sunFT * cFt * caoSt;
     let LcT = bitcast<vec3f>(lightT.xyz);
     let bT = bSunT + max(LcT.x, max(LcT.y, LcT.z));
     // RE-02a (28.1 A2 item 3): the horizontal forward distance (mode 0: unchanged).
@@ -578,12 +938,39 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
         if (giKind(giDn.y) == ${KIND_TERRAIN}u && i32(giMat(giDn.y)) == typeId && unpackNormalOct(giDn.z).z < FOREST_FACE_NZ) { faceModeT = 1; }
       }
     }
-    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceModeT);
+${look ? `    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceModeT, bitcast<f32>(gaT.z), Nt, i32(gaT.w & 15u), i32((gaT.w >> ${LOOK_GA_HI_SHIFT}u) & 15u), f32((gaT.w >> ${LOOK_GA_W_SHIFT}u) & 255u) * (1.0 / 255.0));` : `    let to = shadeTerrain(distT, typeId, bT, uT, vT, su.timeSec, faceModeT, bitcast<f32>(gaT.z), Nt);`}
     let frQ = floor(clamp(to.fr, 0.0, 255.0) + 0.5);
     let fgQ = floor(clamp(to.fg, 0.0, 255.0) + 0.5);
     let fbQ = floor(clamp(to.fb, 0.0, 255.0) + 0.5);
     o.fg = vec4f(toByte01(frQ + LcT.x * 0.5 * 255.0), toByte01(fgQ + LcT.y * 0.5 * 255.0), toByte01(fbQ + LcT.z * 0.5 * 255.0), toByte01(f32(to.glyph)));
-    o.bg = vec4f(toByte01(to.br), toByte01(to.bg), toByte01(to.bb), 1.0);
+    o.bg = vec4f(toByte01(to.br), toByte01(to.bg), toByte01(to.bb), 1.0);${L.terr}
+    return o;
+  }
+
+  // OB-073 D2e: kind 10 (carpet blade): lit like terrain (GI.z = lean-tilted normal, GA.w = colour shift), AO mix(0.55, 1, h01) on the ambient.
+  if (kindU == ${KIND_GRASS}u) {
+    let gaG = textureLoad(uGA, cell, 0);
+    let hG = bitcast<f32>(gaG.x); let lnG = bitcast<f32>(gaG.y); let tnG = (f32(gaG.w & 255u) * (1.0 / 255.0) * 2.0 - 1.0) * ${GRASS_TINT_AMP.toFixed(4)}; // MASK-c: tint byte of the packed GA.w word
+    let NG = unpackNormalOct(textureLoad(uGI, cell, 0).z);
+    let ndotlG = NG.x * su.sunDir.x + NG.y * su.sunDir.y + NG.z * su.sunDir.z;
+    let lightG = textureLoad(uLightTex, cell, 0);
+    var sunFG = 1.0;
+    if (su.sunMapOn != 0) { sunFG = f32((lightG.w >> ${SUN_N_SHIFT}u) & ${SUN_N_MASK}u) * 0.25; }
+    let cFg = 1.0 - f32((lightG.w >> ${CLOUD_Q_SHIFT}u) & 255u) * (1.0 / 255.0);
+    let caoQG = (lightG.w >> 1u) & 127u;
+    let caoFg = select(1.0, f32(127u - caoQG) * (1.0 / 127.0), caoQG != 0u);
+    let caoSg = select(1.0, 1.0 - ${CAO_SUN_W.toFixed(4)} * f32(caoQG) * (1.0 / 127.0), caoQG != 0u);
+    let bG = su.ambientI * (${GRASS_AO_LO.toFixed(4)} + ${(1 - GRASS_AO_LO).toFixed(4)} * hG) * caoFg + su.sunI * max(0.0, ndotlG) * sunFG * cFg * caoSg;
+    let LcG = bitcast<vec3f>(lightG.xyz);
+    var distG = bitcast<f32>(textureLoad(uDepth, cell, 0).x);
+    if (su.projMode != 0) { distG *= fogScaleCell(cell.y, gridSize.y); }
+    let go = shadeGrass(distG, i32(giMat(gi.y)), hG, lnG, tnG, bG + max(LcG.x, max(LcG.y, LcG.z)), gaG.w, su.sunI);
+    let gLv = u32(floor(clamp(hG + tnG, 0.0, 1.0) * ${GRASS_LEVELS}));
+    let grQ = floor(clamp(go.fr, 0.0, 255.0) + 0.5);
+    let ggQ = floor(clamp(go.fg, 0.0, 255.0) + 0.5);
+    let gbQ = floor(clamp(go.fb, 0.0, 255.0) + 0.5);
+    o.fg = vec4f(toByte01(grQ + LcG.x * 0.5 * 255.0), toByte01(ggQ + LcG.y * 0.5 * 255.0), toByte01(gbQ + LcG.z * 0.5 * 255.0), toByte01(f32(go.glyph)));
+    o.bg = vec4f(toByte01(go.br), toByte01(go.bg), toByte01(go.bb), 1.0);${L.grass}
     return o;
   }
 
@@ -596,7 +983,18 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
   var dist = bitcast<f32>(textureLoad(uDepth, cell, 0).x);
   if (su.projMode != 0) { dist *= fogScaleCell(cell.y, gridSize.y); } // RE-02a: horizontal forward distance
   // US-006: sampled once per fragment (constant over every sub-sample of this cell).
-  let Lc = bitcast<vec3f>(textureLoad(uLightTex, cell, 0).xyz);
+  var Lc = bitcast<vec3f>(textureLoad(uLightTex, cell, 0).xyz);
+  // AA-15 (OB-208): soft-edge leaf cards (F_SOFT_EDGE, kind 9) key the glyph dice on a world block, not the per-card u/v.
+  // AA-16 (OB-208): fogView.w is a bit field (1 = dice, 2 = leaf light smoothing); bit 2 averages the light over the 3x3
+  // soft-edge neighbours at a similar depth, so a cell landing on another leaf card (other normal) keeps its level.
+  var folOn = false; var folSeed = 0;
+  let folBits = u32(su.fogView.w + 0.5);
+  if (folBits != 0u && kindU == ${KIND_MESH}u) {
+    let mi0f = textureLoad(uMatI, vec2i(0, matId), 0);
+    let folSoft = (mi0f.y & 65536) != 0;
+    folOn = folSoft && (folBits & 1u) != 0u; folSeed = mi0f.x;
+    if (folSoft && (folBits & 2u) != 0u) { Lc = folLight(cell, gridSize, dist, Lc); }
+  }
   let Lm = max(Lc.x, max(Lc.y, Lc.z));
 
   // US-030b (14.2 item 3, pass D): average shadeCore's continuous outputs over the resolved winner's own sub-sample group
@@ -605,10 +1003,13 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
   var bSum = 0.0; var gbSum = 0.0; var crSum = 0.0; var cgSum = 0.0; var cbSum = 0.0; var bgKSum = 0.0;
   var count = 0; var jointN = 0;
   // Item 3: hA/hB are discrete dice, taken from the single sub-sample nearest the cell centre, never averaged.
-  var bestMag = 1.0e30; var hAW = 0.0; var hBW = 0.0;
+  var bestMag = 1.0e30; var hAW = 0.0; var hBW = 0.0; var leafWW = 0.0;
   // Item 4: setId/lineCode split by joint membership (nearest ON-JOINT member / nearest NON-joint member).
   var bestJointMag = 1.0e30; var bestNonJointMag = 1.0e30;
   var onJointSetW = 0; var onJointLineW = -1; var nonJointSetW = 0;
+  // 38.82 A: same-kind sub-samples outside the winner group -> mean flat colour (mixed in after fog)
+  let hcolM = select(vec3f(1.0), Lc / Lm, Lm > 1e-6);
+  var mnFg = vec3f(0.0); var mnBg = vec3f(0.0); var mnCount = 0;
 
   for (var j = 0; j < 4; j++) {
     if (j >= su.n) { break; }
@@ -617,8 +1018,16 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
       let sc = vec2i(cell.x * su.n + i, cell.y * su.n + j);
       let sgiFull = textureLoad(uSGI, sc, 0).xy;
       if (giKind(sgiFull.y) != kindU) { continue; }
-      if (i32(sgiFull.x) != pidResolved) { continue; }
-      if (giMat(sgiFull.y) != u32(matId)) { continue; }
+      if (i32(sgiFull.x) != pidResolved || giMat(sgiFull.y) != u32(matId)) {
+        if (su.aaCov != 0 && giMat(sgiFull.y) != 0u) {
+          let mm = i32(giMat(sgiFull.y));
+          if (textureLoad(uMatF, vec2i(0, mm), 0).x > 0.0) {
+            let fc = matFlatColor(mm, i32(giFace(sgiFull.y)), kindU, Lm, hcolM);
+            mnFg += fc.xyz; mnBg += fc.xyz * fc.w; mnCount++;
+          }
+        }
+        continue;
+      }
 
       let sgaU = textureLoad(uSGA, sc, 0);
       let uA = bitcast<f32>(sgaU.x); let vA = bitcast<f32>(sgaU.y);
@@ -636,7 +1045,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
       let ox = (f32(i) + 0.5) / f32(su.n) - 0.5;
       let oy = (f32(j) + 0.5) / f32(su.n) - 0.5;
       let mag = ox * ox + oy * oy;
-      if (mag < bestMag) { bestMag = mag; hAW = c.hA; hBW = c.hB; }
+      if (mag < bestMag) { bestMag = mag; hAW = c.hA; hBW = c.hB; leafWW = c.leafW; }
       if (c.onJoint) {
         if (mag < bestJointMag) { bestJointMag = mag; onJointSetW = c.setId; onJointLineW = c.lineCode; }
       } else {
@@ -658,11 +1067,25 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
   let bAvg = bSum * invCount; let gbAvg = gbSum * invCount;
   let crAvg = crSum * invCount; let cgAvg = cgSum * invCount; let cbAvg = cbSum * invCount;
   let bgKAvg = bgKSum * invCount;
-  let hAAvg = hAW; let hBAvg = hBW;
+  var hAAvg = hAW; let hBAvg = hBW;
+  if (folOn) { hAAvg = folDice(cell, gridSize, dist, folSeed + 977); } // AA-15: leaf cards pick the alternate glyph from a world block
 
-  let f = select(select((dist - su.fogStart) / (su.fogFull - su.fogStart), 1.0, dist >= su.fogFull), 0.0, dist <= su.fogStart);
+  var f = select(select((dist - su.fogStart) / (su.fogFull - su.fogStart), 1.0, dist >= su.fogFull), 0.0, dist <= su.fogStart);
+  var fogFgC = su.fogFg; var fogBgC = su.fogBg;
+  if (su.fogView.z > 0.5) { // OB-089: outdoor mesh fog = the terrain's far fog (twin: detailShade.js shadeTail, fogShapeCtx.outdoor); fg == bg
+    f = clamp((dist - su.terrainFogStart) / (su.terrainFogFull - su.terrainFogStart), 0.0, 1.0);
+    f = select(pow(f, su.terrainFogCurve), f, su.terrainFogCurve == 1.0);
+    let oc = su.terrainFogNearRGB + (su.terrainFogFarRGB + gFarSky - su.terrainFogNearRGB) * f; // VISQA-02: + sky shift
+    fogFgC = oc; fogBgC = oc;
+  }
+  if (su.fogView.y > 0.5 && su.fogView.z < 0.5 && f > 0.0) { // AUD-45: height fog + sun in-scatter (only where f > 0); OB-204: not for outdoor meshes (terrain has none, so far meshes came out paler than the hills)
+    let fd = fogCellDir(cell, gridSize);
+    f = fogShapeF(f, dist, su.fogView.x, fd.z * inverseSqrt(max(fd.x * fd.x + fd.y * fd.y, 1e-12)));
+    let sw = fogScatterW(dot(fd, su.sunDir), su.sunDir.z, su.sunI);
+    fogFgC += (FOG_SUN_TINT - fogFgC) * sw; fogBgC += (FOG_SUN_TINT - fogBgC) * sw;
+  }
 
-  var glyphCode: i32;
+  var glyphCode: i32;${L.vars}
   if (gbAvg <= 0.0) { glyphCode = 0; }
   else if (lineWins && onJointLineW >= 0) { glyphCode = onJointLineW; }
   else {
@@ -673,8 +1096,8 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
     let oriented = t0.x; let orientAxis = t0.y;
     var classIdx = 0;
     if (oriented != 0) { classIdx = orientClassCode(select(dvdx, dudx, orientAxis == 0), select(dvdy, dudy, orientAxis == 0), su.cellAspect); }
-    let code = pickGlyphCodeFast(setIdPick, gbAvg, hAAvg, classIdx, su.cutoff);
-    glyphCode = select(code, 0, code < 0);
+    let code = pickGlyphCodeFast(setIdPick, gbAvg, hAAvg, classIdx, su.cutoff, leafWW >= 0.5);
+    glyphCode = select(code, 0, code < 0);${L.set}
   }
   if (f > su.fogStipple0 && hBAvg < smoothstepFast(su.fogStipple0, su.fogStipple1, f)) {
     let sparse = f > su.fogSparse;
@@ -682,7 +1105,7 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
     let idx = min(cnt - 1, i32(hAAvg * f32(cnt)));
     let code0 = select(su.fogHazeCode0, su.fogSparseCode0, sparse);
     let code1 = select(su.fogHazeCode1, su.fogSparseCode1, sparse);
-    glyphCode = select(code1, code0, idx == 0);
+    glyphCode = select(code1, code0, idx == 0);${L.stip}
   }
 
   let hcol = select(vec3f(1.0), Lc / Lm, Lm > 1e-6);
@@ -699,13 +1122,85 @@ fn fs_main(@builtin(position) frag: vec4f) -> FO {
   // Item 4: dim a firing line by sub-sample agreement (2-of-4 tie fades to half strength, 4-of-4 stays full).
   if (lineWins) { rgbF *= 0.5 + 0.5 * f32(jointN) / f32(count); }
   var rgbBg = rgbF * bgKAvg;
+  { // AUD-47 vegetation colour variation (objectId tint bits; marker-less ids multiply by 1.0 -> bit-identical)
+    let vg = vegGain(textureLoad(uGI, cell, 0).w);
+    rgbF *= vg; rgbBg *= vg;
+  }
+  // 38.23 entity tint: display override after lighting, before fog; count 0 skips the whole branch (bit-identical).
+  if (su.etA.x > 0.0) {
+    let ti = tintIndex(textureLoad(uGI, cell, 0).w, i32(su.etA.x));
+    if (ti >= 0) {
+      let tc = su.etC[ti];
+      rgbF = vec3f(tintCh(rgbF.x, tc.x, tc.w), tintCh(rgbF.y, tc.y, tc.w), tintCh(rgbF.z, tc.z, tc.w));
+      rgbBg = vec3f(tintCh(rgbBg.x, tc.x, tc.w), tintCh(rgbBg.y, tc.y, tc.w), tintCh(rgbBg.z, tc.z, tc.w));
+    }
+  }
   if (f > 0.0) {
-    rgbF += (su.fogFg - rgbF) * f;
-    rgbBg += (su.fogBg - rgbBg) * f;
+    rgbF += (fogFgC - rgbF) * f;
+    rgbBg += (fogBgC - rgbBg) * f;
+  }
+  if (mnCount > 0) { // 38.82 A (twin: detailShade.js coverageMix): winner x (1-w) + mean(minority flat, fogged) x w
+    let wM = f32(mnCount) / f32(count + mnCount);
+    var mF = mnFg / f32(mnCount); var mB = mnBg / f32(mnCount);
+    mF += (fogFgC - mF) * f; mB += (fogBgC - mB) * f;
+    rgbF = rgbF * (1.0 - wM) + mF * wM;
+    rgbBg = rgbBg * (1.0 - wM) + mB * wM;
+  }
+  if (su.shaftA.x > 0.0) { // CANOPY-SHAFT-01b: colour lift after fog, before the output pack; glyph never changes
+    let sq = shaftQ(cell);
+    if (sq > 0) {
+      let sfd = fogCellDir(cell, gridSize);
+      let sw = shaftW(sq, dist, dot(sfd, su.sunDir), su.sunI, su.shaftA.x, su.shaftA.y, su.shaftA.z, su.shaftA.w, f);
+      rgbBg = shaftLiftC(rgbBg, sw, su.sunI); rgbF = shaftLiftC(rgbF, sw * 0.5, su.sunI);
+    }
   }
 
   o.fg = vec4f(toByte01(rgbF.x), toByte01(rgbF.y), toByte01(rgbF.z), toByte01(f32(glyphCode)));
-  o.bg = vec4f(toByte01(rgbBg.x), toByte01(rgbBg.y), toByte01(rgbBg.z), 1.0);
+  o.bg = vec4f(toByte01(rgbBg.x), toByte01(rgbBg.y), toByte01(rgbBg.z), 1.0);${L.out}
+  return o;
+}
+
+// SWIM-04c: the underwater look runs once per GPU-shaded cell (bg.a = 1; passthrough/masked cells keep the JS layer) at the end of the pass.
+@fragment
+fn fs_main(@builtin(position) frag: vec4f) -> FO {
+  var o = shadeCell(frag);
+  if (su.under.x < 0.5 || o.bg.a < 0.5) { return o; }
+  let cell = vec2i(floor(frag.xy));
+  let gridSize = vec2i(textureDimensions(uGI));
+  let dRaw = bitcast<f32>(textureLoad(uDepth, cell, 0).x);
+  let sky = giKind(textureLoad(uGI, cell, 0).y) == 0u || !(dRaw < 1e8);
+  let fd = fogCellDir(cell, gridSize);
+  var Px = su.underCam.x; var Py = su.underCam.y; var Pz = 1e30; var Lw = 1e9;
+  if (sky) { Px = fd.x * 64.0; Py = fd.y * 64.0; }
+  else { Lw = dRaw; Px += fd.x * Lw; Py += fd.y * Lw; Pz = su.underCam.z + fd.z * Lw; }
+  let r = underShadeW(o.fg.xyz * 255.0, o.bg.xyz * 255.0, i32(o.fg.w * 255.0 + 0.5), Lw, Pz, Px, Py, su.timeSec);
+  o.fg = vec4f(toByte01(r.fg.x), toByte01(r.fg.y), toByte01(r.fg.z), toByte01(f32(r.glyph)));
+  o.bg = vec4f(toByte01(r.bg.x), toByte01(r.bg.y), toByte01(r.bg.z), 1.0);
   return o;
 }
 `;
+}
+
+export const SHADE_WGSL = buildShadeWgsl(false);
+export const SHADE_LEVEL_WGSL = buildShadeWgsl(true);
+/** ENV-02d: ShadeU + the look table (uniform), look pipelines only; the plain SHADE_WGSL / SHADE_LEVEL_WGSL stay byte-identical. */
+export const SHADE_LOOK_WGSL = buildShadeWgsl(false, true);
+export const SHADE_LEVEL_LOOK_WGSL = buildShadeWgsl(true, true);
+export const SHADE_LEVEL_TARGETS = Object.freeze(['rgba8', 'rgba8', 'r8ui']);
+
+
+// GI-PROBE-05 (arch 38.72): GI variants of the shade pipelines. The terrain / carpet analytic ambient `ambientI` is scaled by
+// (GI ambient / flat sky colour) from the baked probe field (storage buffer binding 16, after the 16 textures: the texture limit is full).
+// Exact text splices on the plain builders, so SHADE_WGSL & co (GI off) stay byte-identical. Twin: terrainShade.js giTerrainK.
+function giSplice(src, from, to) { if (!src.includes(from)) throw new Error('shade.wgsl GI splice: anchor missing: ' + from); return src.replace(from, to); }
+function shadeGi(src) {
+  let s = giSplice(src, '@group(1) @binding(0) var<uniform> su: ShadeU;', '@group(1) @binding(0) var<uniform> su: ShadeU;\n' + giBindingWgsl(16) + '\n' + GI_SAMPLE_WGSL);
+  s = giSplice(s, 'let bSunT = su.ambientI * caoFt + su.sunI', 'let bSunT = su.ambientI * giTerrK(uT, vT, bitcast<f32>(gaT.z), Nt) * caoFt + su.sunI');
+  s = giSplice(s, 'let bG = su.ambientI * (', 'let bG = su.ambientI * giTerrK(hG, lnG, bitcast<f32>(gaG.z), NG) * (');
+  return s;
+}
+export const SHADE_GI_WGSL = shadeGi(SHADE_WGSL);
+export const SHADE_LEVEL_GI_WGSL = shadeGi(SHADE_LEVEL_WGSL);
+export const SHADE_LOOK_GI_WGSL = shadeGi(SHADE_LOOK_WGSL);
+export const SHADE_LEVEL_LOOK_GI_WGSL = shadeGi(SHADE_LEVEL_LOOK_WGSL);
+export const SHADE_GI_BUFFERS = Object.freeze(['read']);

@@ -24,6 +24,7 @@ import farTowerMod from '../../design/models/far_tower.js';
 import ferrumLightsMod from '../../design/models/ferrum_lights.js';
 // US-027b: tower moved to content/levels/tower.level.json.
 import { loadTestAssets } from '../../tools/testing/content-node.mjs';
+import { allocProbe, skipNote } from '../../tools/allocProbe.mjs';
 import { makeOk } from '../test/assert.js';
 
 globalThis.window = globalThis.window || globalThis;
@@ -205,9 +206,36 @@ function registerFakeBehaviours(world) {
   ok('6a: the tower level itself no longer has its own "end" trigger',
     !world.triggers.some((t) => t.structId === 'tower' && t.id === 'end'));
   const end = world.triggers.find((t) => t.structId === null && t.id === 'end');
-  ok('6a-2: real world_m1 has a world-level "end" trigger at the waystone instead',
-    !!end && end.shape === 'circle' && end.name === 'quest.end', end && JSON.stringify(end));
+  ok('6a-2: real world_m1 has a world-level "end" zone at the waystone, area-only (no behaviour since WAYSTONE-NORMAL-01)',
+    !!end && end.shape === 'circle' && end.name === undefined && end.once === false, end && JSON.stringify(end));
   ok('6b: no mismatch warning on real content', !warnings.some((w) => w.includes('differ')), warnings.join('|'));
+}
+
+// ---------------------------------------------------------------------------
+// 7. ED-LOGIC-01b: trigger:entered / trigger:left for every zone (area-only too).
+// ---------------------------------------------------------------------------
+{
+  const circ = (key, x, r, name, once) => ({ key, id: key, name, once: !!once, shape: 'circle', mask: null, x, y: 0, r, zMin: -Infinity, def: {}, inside: 0, usedKey: once ? 'used.' + key : null, levelW: 0, levelH: 0 });
+  const mk = () => {
+    const log = [];
+    const events = { emit(n, p) { log.push(n + ':' + p.key + ':' + p.id); } };
+    const w = { triggers: [circ('A', 0, 2, 'fa', true), circ('B', 3, 2), circ('C', 6, 1, 'fc')], state: {}, events, fireTrigger: () => true };
+    return { w, log, actor: { transform: { x: -5, y: 0, z: 0 } } };
+  };
+  const walk = (m) => { for (let x = -5; x <= 9; x += 0.5) { m.actor.transform.x = x; updateTriggers(m.w, fakeEngine, m.actor); } return m.log.filter((l) => !l.startsWith('trigger:fired')); };
+  // alloc check first (needs --expose-gc; SKIP otherwise)
+  allocProbe(() => {}, { n: 1 }); // prime the probe (own first-call noise)
+  const am = mk(); let cnt = 0; am.w.events = { emit() { cnt++; } };
+  const ar = allocProbe((n) => { for (let i = 0; i < n; i++) { am.actor.transform.x = (i & 1) ? -5 : 1.5; updateTriggers(am.w, fakeEngine, am.actor); } }, { n: 4000 });
+  if (!skipNote(ar, 'triggers 0-alloc')) ok('7a: updateTriggers + enter/leave events allocate nothing per step', ar.bytes < 4096 && cnt > 0, `${ar.bytes} B`);
+  const a = walk(mk());
+  ok('7b: enter/leave sequence through overlapping zones (area-only B included)', a.join(',') === 'trigger:entered:A:A,trigger:entered:B:B,trigger:left:A:A,trigger:entered:C:C,trigger:left:B:B,trigger:left:C:C', a.join(','));
+  const m = mk(); m.actor.transform.x = 1; updateTriggers(m.w, fakeEngine, m.actor); const n0 = m.log.length;
+  for (let i = 0; i < 10; i++) updateTriggers(m.w, fakeEngine, m.actor);
+  ok('7c: no events while standing still', m.log.length === n0 && n0 >= 2, String(m.log.length));
+  ok('7d: deterministic (two walks identical)', walk(mk()).join() === a.join());
+  const u = mk(); u.w.state['used.A'] = true; u.actor.transform.x = 0; updateTriggers(u.w, fakeEngine, u.actor);
+  ok('7e: used-key rule unchanged (used zone: no fire, still entered event)', u.log.join() === 'trigger:entered:A:A', u.log.join());
 }
 
 console.log(`${pass} passed, ${fail} failed.`);

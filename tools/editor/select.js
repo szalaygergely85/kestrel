@@ -81,7 +81,7 @@ export function drawMeshHighlightRect(rt, rect, fgHex) {
   const {minCol,maxCol,minRow,maxRow}=rect;
   const w=maxCol-minCol,h=maxRow-minRow;
   if(w<0||h<0)return;
-  if(w*h<=MAX_HIGHLIGHT_CELLS && 2*(w+h)+8<=MAX_HIGHLIGHT_CELLS) { drawHighlightRect(rt,rect,fgHex);return; }
+  if(2*(w+h)+8<=MAX_HIGHLIGHT_CELLS) { drawHighlightRect(rt,rect,fgHex);return; }
   for(let i=0;i<4;i++) {
     const right=!!(i&1), bottom=!!(i&2), x=right?maxCol+1:minCol-1,y=bottom?maxRow+1:minRow-1;
     rt.setCell(x,y,'+',fgHex,EDITOR_PLATE_BG);
@@ -94,7 +94,7 @@ export function drawMeshHighlightRect(rt, rect, fgHex) {
 export function drawHighlightRect(rt, rect, fgHex) {
   const { minCol, maxCol, minRow, maxRow } = rect;
   const w = maxCol - minCol, h = maxRow - minRow;
-  if (w < 0 || h < 0 || w * h > MAX_HIGHLIGHT_CELLS) return;
+  if (w < 0 || h < 0 || 2 * (w + h) + 8 > MAX_HIGHLIGHT_CELLS) return; // perimeter budget (only the outline is drawn; an area cap hid the box on the 240x90 grid)
   rt.setCell(minCol - 1, minRow - 1, '+', fgHex, EDITOR_PLATE_BG);
   rt.setCell(maxCol + 1, minRow - 1, '+', fgHex, EDITOR_PLATE_BG);
   rt.setCell(minCol - 1, maxRow + 1, '+', fgHex, EDITOR_PLATE_BG);

@@ -1,0 +1,39 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/TwistedTree_5",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "TwistedTree_5.mesh.bin",
+  "triCount": 10104,
+  "bbox": [
+    -3.74644,
+    -3.04803,
+    -0.20147,
+    5.74827,
+    6.339,
+    15.4607
+  ],
+  "ranges": [
+    {"count": 7082, "part": "TwistedTree_5#0", "start": 0},
+    {"count": 3022, "mask": {"cutoff": 0.2, "tex": "quaternius/Leaves_TwistedTree_C"}, "part": "TwistedTree_5#1", "start": 7082}
+  ],
+  "matKeys": [
+    "Bark_TwistedTree",
+    "Leaves_TwistedTree"
+  ],
+  "mats": {
+    "Bark_TwistedTree": "timber_old",
+    "Leaves_TwistedTree": "leaf_light"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "colliderB64": "Zmamv0oMgj7y0k2+pHBdv1CNh7/y0k2+pHBdv1CNh7/8qWVBZmamv0oMgj7y0k2+pHBdv1CNh7/8qWVBZmamv0oMgj78qWVBpHBdv1CNh7/y0k2+pHBdP1CNh7/y0k2+pHBdP1CNh7/8qWVBpHBdv1CNh7/y0k2+pHBdP1CNh7/8qWVBpHBdv1CNh7/8qWVBpHBdP1CNh7/y0k2+ZmamP0oMgj7y0k2+ZmamP0oMgj78qWVBpHBdP1CNh7/y0k2+ZmamP0oMgj78qWVBpHBdP1CNh7/8qWVBZmamP0oMgj7y0k2+xSCgP/hTAz/y0k2+xSCgP/hTAz/8qWVBZmamP0oMgj7y0k2+xSCgP/hTAz/8qWVBZmamP0oMgj78qWVBxSCgP/hTAz/y0k2+3SQGPnE9qj/y0k2+3SQGPnE9qj/8qWVBxSCgP/hTAz/y0k2+3SQGPnE9qj/8qWVBxSCgP/hTAz/8qWVB3SQGPnE9qj/y0k2+3SQGvnE9qj/y0k2+3SQGvnE9qj/8qWVB3SQGPnE9qj/y0k2+3SQGvnE9qj/8qWVB3SQGPnE9qj/8qWVB3SQGvnE9qj/y0k2+xSCgv/hTAz/y0k2+xSCgv/hTAz/8qWVB3SQGvnE9qj/y0k2+xSCgv/hTAz/8qWVB3SQGvnE9qj/8qWVBxSCgv/hTAz/y0k2+Zmamv0oMgj7y0k2+Zmamv0oMgj78qWVBxSCgv/hTAz/y0k2+Zmamv0oMgj78qWVBxSCgv/hTAz/8qWVBZmamv0oMgj78qWVBpHBdv1CNh7/8qWVBpHBdP1CNh7/8qWVBZmamv0oMgj7y0k2+pHBdP1CNh7/y0k2+pHBdv1CNh7/y0k2+Zmamv0oMgj78qWVBpHBdP1CNh7/8qWVBZmamP0oMgj78qWVBZmamv0oMgj7y0k2+ZmamP0oMgj7y0k2+pHBdP1CNh7/y0k2+Zmamv0oMgj78qWVBZmamP0oMgj78qWVBxSCgP/hTAz/8qWVBZmamv0oMgj7y0k2+xSCgP/hTAz/y0k2+ZmamP0oMgj7y0k2+Zmamv0oMgj78qWVBxSCgP/hTAz/8qWVB3SQGPnE9qj/8qWVBZmamv0oMgj7y0k2+3SQGPnE9qj/y0k2+xSCgP/hTAz/y0k2+Zmamv0oMgj78qWVB3SQGPnE9qj/8qWVB3SQGvnE9qj/8qWVBZmamv0oMgj7y0k2+3SQGvnE9qj/y0k2+3SQGPnE9qj/y0k2+Zmamv0oMgj78qWVB3SQGvnE9qj/8qWVBxSCgv/hTAz/8qWVBZmamv0oMgj7y0k2+xSCgv/hTAz/y0k2+3SQGvnE9qj/y0k2+",
+  "colliderParts": [
+    "TwistedTree_5#0"
+  ],
+  "lods": [
+    {"mesh": "quaternius/TwistedTree_5_LOD1", "ratio": 0.15, "tris": 1516}
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Plant_7",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Plant_7.mesh.bin",
+  "triCount": 48,
+  "bbox": [
+    -0.44815,
+    -0.49826,
+    0.0791,
+    0.59968,
+    0.46387,
+    0.32862
+  ],
+  "ranges": [
+    {"count": 48, "mask": {"cutoff": 0.2, "tex": "quaternius/Leaves"}, "part": "Plant_7#0", "start": 0}
+  ],
+  "matKeys": [
+    "Leaves"
+  ],
+  "mats": {
+    "Flowers": "petal_yellow",
+    "Leaves": "leaf"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "collide": false,
+  "castShadow": false
+}

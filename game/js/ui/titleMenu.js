@@ -5,22 +5,39 @@ const PLATE = '#0a0b10'; // PC-A-authorised placeholder plate [10,11,16].
 const TEXT = '#e8e2d0'; // Existing title/file-notice foreground; final design is pending.
 const ascii = value => String(value).replace(/[^\x20-\x7e]/g, '?');
 
-function slotLabel(slot) {
+/** SAVE-TIME-01: "2026-10-09 21:14" (local time) or '' for old saves without meta.savedAt. */
+export function formatSavedAt(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return '';
+  const d = new Date(ms), p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** SAVE-TIME-01: the slot Continue resumes = newest meta.savedAt among readable saves (missing = 0), first valid slot on ties. */
+export function newestSlot(slots) {
+  let best = null;
+  for (const s of slots) {
+    if (!s.ok || !s.meta) continue;
+    if (!best || (s.meta.savedAt || 0) > (best.meta.savedAt || 0)) best = s;
+  }
+  return best ? best.slot : -1;
+}
+
+export function slotLabel(slot) {
   if (!slot.ok) return `Slot ${slot.slot + 1}: Unreadable`;
   if (!slot.meta) return `Slot ${slot.slot + 1}: Empty`;
   const minutes = Math.floor(slot.meta.playTimeSec / 60);
   const time = `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}`;
-  return `Slot ${slot.slot + 1}: ${ascii(slot.meta.playerName)} - ${ascii(slot.meta.place)} - ${time}`;
+  return `Slot ${slot.slot + 1}: ${ascii(slot.meta.playerName)} - ${ascii(slot.meta.place)} - ${time}${slot.meta.savedAt ? ' - ' + formatSavedAt(slot.meta.savedAt) : ''}`;
 }
 
 /**
  * adapter = US-089a createStorageAdapter/createMemoryAdapter; no browser globals here.
  * handlePointer receives UI-grid cells (the host maps its own canvas coordinates).
- * takeAction returns {type:'newGame'|'continue'|'load'|'settings'|'credits', slot?, save?} once.
+ * takeAction returns {type:'newGame'|'continue'|'settings', slot?, save?} once.
  * Storage reads, formatting and allocations happen on input/refresh, never in draw.
  */
 export function createTitleMenu(adapter, { title = 'KESTREL', fg = TEXT, bg = PLATE, style = null } = {}) {
-  if (!adapter || ['listSlots','readSlot'].some(key => typeof adapter[key] !== 'function')) throw new Error('titleMenu: save adapter required');
+  if (!adapter || ['listSlots','readSlot','deleteSlot'].some(key => typeof adapter[key] !== 'function')) throw new Error('titleMenu: save adapter required');
   const colour = key => style?.hex[key] || style?.bg[key] || fg;
   if (style) { fg = colour(style.row.normal.fg); bg = style.bg.plate; }
   const heading = ascii(title).slice(0, 66);
@@ -30,28 +47,33 @@ export function createTitleMenu(adapter, { title = 'KESTREL', fg = TEXT, bg = PL
     const ch=titleText[i];
     if ('-=[]'.includes(ch)) titleDecor.push({x:i,ch,fg:colour(ch==='-' ? style.title.decorFg[0] : ch==='=' ? style.frame.fg : style.title.bracketFg)});
   }
-  const hints = 'Arrows select  Enter choose  Esc back';
-  const hintParts = ['Arrows','Enter','Esc'].map(text => ({text,x:hints.indexOf(text)}));
+  const hintsMain = 'Arrows select  Enter choose', hintsLoad = 'Arrows select  Enter choose  Del delete'; // Del only inside Load
+  const partsOf = h => ['Arrows','Enter','Del'].filter(t => h.includes(t)).map(text => ({text,x:h.indexOf(text)}));
+  const hintPartsMain = partsOf(hintsMain), hintPartsLoad = partsOf(hintsLoad);
   const bounds = {x:0,y:0,w:72,h:28};
   let slots = [], rows = [], selected = 0, selectedSlot = 0, mode = 'main';
-  let confirm = null, action = null, message = '', error = null;
+  let confirmFrom = 'main', confirm = null, action = null, message = '', error = null;
   let confirmText = '';
 
   function buildRows() {
     if (mode === 'confirm') {
       rows = [{id:'cancel',text:'Cancel',y:12,enabled:true},{id:'yes',text:'Yes',y:15,enabled:true}];
-    } else if (mode === 'new' || mode === 'load') {
-      rows = slots.map(slot => ({id:'slot',slot:slot.slot,text:slot.label,y:8+slot.slot*3,
-        enabled:mode === 'new' || !!(slot.ok && slot.meta)}));
+    } else if (mode === 'new') {
+      rows = slots.map(slot => ({id:'slot',slot:slot.slot,text:slot.label,y:8+slot.slot*3,enabled:true}));
       rows.push({id:'back',text:'Back',y:20,enabled:true});
+    } else if (mode === 'load') { // TITLE-LOAD-SUBMENU-01: slots + Delete live inside the Load sub-card
+      rows = [...slots.map(slot => ({id:'slot',slot:slot.slot,text:slot.label,y:8+slot.slot*2,enabled:true})),
+        {id:'delete',text:'Delete slot',y:15,enabled:!!slots[selectedSlot]?.meta || slots[selectedSlot]?.ok === false},
+        {id:'back',text:'Back',y:17,enabled:true}];
     } else {
+      const anySave = slots.some(slot => slot.ok && slot.meta);
       rows = [{id:'new',text:'New game',y:6,enabled:true},
-        {id:'continue',text:'Continue',y:9,enabled:slots.some(slot => slot.ok && slot.meta)},
-        {id:'load',text:'Load game',y:12,enabled:true},
-        {id:'settings',text:'Settings',y:15,enabled:true},
-        {id:'credits',text:'Credits',y:18,enabled:true}];
+        {id:'continue',text:'Continue',y:8,enabled:anySave},
+        {id:'load',text:'Load',y:10,enabled:anySave},
+        {id:'settings',text:'Settings',y:12,enabled:true}];
     }
-    for (const row of rows) row.display = (row.id === 'continue' && !row.enabled ? 'Continue (no save)' : row.text).slice(0,bounds.w-6);
+    // Cache full clipped labels, including disabled hints, away from the frame loop.
+    for (const row of rows) row.display = (row.id === 'continue' && !row.enabled ? 'Continue (no save)' : row.id === 'load' && !row.enabled ? 'Load (no save)' : row.text + (row.enabled ? '' : ' (unavailable)')).slice(0,bounds.w-6);
     selected = Math.min(selected, rows.length-1);
   }
 
@@ -67,6 +89,7 @@ export function createTitleMenu(adapter, { title = 'KESTREL', fg = TEXT, bg = PL
     buildRows();
   }
   function root() { mode = 'main'; confirm = null; selected = 0; buildRows(); }
+  function back() { if (mode === 'confirm' && confirmFrom === 'load') { mode = 'load'; confirm = null; selected = 0; buildRows(); } else root(); }
   function focus(index) {
     selected = index;
     if (rows[index].id === 'slot') { selectedSlot = rows[index].slot; buildRows(); }
@@ -77,46 +100,50 @@ export function createTitleMenu(adapter, { title = 'KESTREL', fg = TEXT, bg = PL
     if (save !== undefined) action.save = save;
     root();
   }
-  function ask(slot) {
-    mode = 'confirm'; confirm = {type:'replace',slot}; selected = 0;
-    confirmText = `Overwrite slot ${slot+1}?`;
-    message = ''; buildRows();
+  function ask(type, slot) {
+    confirmFrom = mode === 'load' ? 'load' : 'main'; mode = 'confirm'; confirm = {type,slot}; selected = 0;
+    confirmText = `${type === 'delete' ? 'Delete' : 'Overwrite'} slot ${slot+1}?`;
+    message = ''; buildRows(); // Cancel is always selected first.
   }
-  function load(slot, type = 'continue') {
+  function load(slot) {
     try {
       const result = adapter.readSlot(slot);
       if (!result.ok || !result.save) { message = result.ok ? 'This slot is empty.' : 'Could not read slot.'; error = result.error || null; refresh(); return; }
-      emit(type,slot,type === 'continue' ? result.save : undefined);
+      emit('continue',slot,result.save);
     } catch (e) { error = String(e); message = 'Could not read slot.'; refresh(); }
+  }
+  function acceptConfirmation() {
+    if (confirm.type === 'replace') { emit('newGame',confirm.slot); return; }
+    try {
+      const result = adapter.deleteSlot(confirm.slot);
+      if (!result.ok) { message = 'Could not delete.'; error = result.error || null; return; }
+      message = 'Slot deleted.'; back(); refresh(); if (confirmFrom === 'load' && !slots.some(x => x.ok && x.meta)) root();
+    } catch (e) { error = String(e); message = 'Could not delete.'; }
   }
   function activate() {
     if (action || !rows[selected].enabled) return false;
     const row = rows[selected]; message = ''; error = null;
-    if (mode === 'confirm') { if (row.id === 'yes') emit('newGame',confirm.slot); else root(); }
+    if (mode === 'confirm') { if (row.id === 'yes') acceptConfirmation(); else back(); }
     else if (row.id === 'back') root();
-    else if (row.id === 'new' || row.id === 'load') {
-      mode = row.id; selected = slots.findIndex(slot=>mode === 'new' ? slot.ok && !slot.meta : slot.ok && slot.meta);
-      if (selected < 0) selected = mode === 'load' ? slots.length : 0;
-      buildRows();
-    } else if (row.id === 'continue') {
-      // Host adapters may provide savedAt; legacy adapters retain stable first-slot fallback.
-      let latest = null;
-      for (const slot of slots) if (slot.ok && slot.meta && (!latest || (slot.meta.savedAt ?? 0) > (latest.meta.savedAt ?? 0))) latest = slot;
-      load(latest.slot);
+    else if (row.id === 'load') { mode = 'load'; selected = Math.max(0, selectedSlot); buildRows(); }
+    else if (row.id === 'new') { mode = 'new'; selected = slots.findIndex(slot => slot.ok && !slot.meta); if (selected < 0) selected = 0; buildRows(); }
+    else if (row.id === 'continue') {
+      load(newestSlot(slots));
     } else if (row.id === 'settings') emit('settings');
-    else if (row.id === 'credits') emit('credits');
+    else if (row.id === 'delete') ask('delete',selectedSlot);
     else if (row.id === 'slot') {
       selectedSlot = row.slot;
-      if (mode === 'load') load(row.slot,'load');
+      if (mode !== 'new') load(row.slot);
       else if (slots[row.slot].ok && !slots[row.slot].meta) emit('newGame',row.slot);
-      else ask(row.slot);
+      else ask('replace',row.slot);
     }
     return true;
   }
   function handleKey(code) {
     if (action) return false;
-    if (code === 'Escape') { if (mode !== 'main') { message = ''; root(); return true; } return false; }
+    if (code === 'Escape') { if (mode !== 'main') { message = ''; back(); return true; } return false; }
     if (code === 'Enter' || code === 'Space') return activate();
+    if (code === 'Delete' && mode === 'load' && (!!slots[selectedSlot].meta || !slots[selectedSlot].ok)) { ask('delete',selectedSlot); return true; }
     const delta = ['ArrowUp','KeyW','ArrowLeft'].includes(code) ? -1 : ['ArrowDown','KeyS','ArrowRight'].includes(code) ? 1 : 0;
     if (!delta) return false;
     for (let step = 1; step <= rows.length; step++) {
@@ -148,7 +175,7 @@ export function createTitleMenu(adapter, { title = 'KESTREL', fg = TEXT, bg = PL
         ui.setCell(bounds.x+x,bounds.y+bounds.h-1,frame.rivets.glyph,colour(frame.rivets.fg),bg);
       }
       for (const line of style.separators) {
-        if (line.row===18 && mode==='main') continue;
+        if (line.row===18 && mode!=='main') continue;
         for (let x=line.from;x<=line.to;x++) ui.setCell(bounds.x+x,bounds.y+line.row,line.glyph,colour(line.fg),bg);
       }
       drawText(ui,bounds.x+Math.floor((bounds.w-style.subtitle.text.length)/2),bounds.y+style.subtitle.row,style.subtitle.text,colour(style.subtitle.fg),bg);
@@ -162,7 +189,7 @@ export function createTitleMenu(adapter, { title = 'KESTREL', fg = TEXT, bg = PL
     for (let i = 0; i < rows.length; i++) {
       const row=rows[i], focus=i===selected;
       const state=style && (focus ? style.row.focus : row.enabled ? style.row.normal : style.row.disabled);
-      const destructive=false;
+      const destructive=style && (row.id==='delete' || row.id==='yes' && confirm?.type==='delete');
       const ink=style ? colour(destructive && row.enabled ? (focus ? style.row.destructive.focusFg : style.row.destructive.fg) : state.fg) : fg;
       const back=style ? style.bg[state.bg] : bg;
       if (focus && style) for(let x=style.row.bandFrom;x<=style.row.bandTo;x++) ui.setCell(bounds.x+x,bounds.y+row.y,' ',ink,back);
@@ -177,6 +204,7 @@ export function createTitleMenu(adapter, { title = 'KESTREL', fg = TEXT, bg = PL
       drawText(ui,bounds.x+4,bounds.y+24,message,style ? colour(error ? style.message.error : style.message.info) : fg,bg);
       if(style) ui.setCell(bounds.x+2,bounds.y+24,'>',colour(style.message.prefixFg),bg);
     }
+    const hints = mode === 'load' ? hintsLoad : hintsMain, hintParts = mode === 'load' ? hintPartsLoad : hintPartsMain;
     const hintX=bounds.x+Math.floor((bounds.w-hints.length)/2);
     drawText(ui,hintX,bounds.y+26,hints,style ? colour(style.keyHints.fg) : fg,bg);
     if(style) for(const part of hintParts) drawText(ui,hintX+part.x,bounds.y+26,part.text,colour(style.keyHints.keyFg),bg);

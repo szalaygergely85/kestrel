@@ -74,7 +74,14 @@ export function computeProjectionPitched(pt, proj) {
  */
 export function instanceRect(proj, pm, inst, pose, partAABB, rect) {
   computeVoxelPose(pm, inst, pose);
+  rectFromForward(proj, pm, FORWARD, partAABB, rect);
+}
 
+/**
+ * PERF-02: the AABB + screen-rect half of `instanceRect` for a pose computed earlier: `F` = that pose's forward part
+ * transforms (a copy of `FORWARD`, e.g. a VoxelPool slot's `fwd`). Same arithmetic -> bit-identical rect.
+ */
+export function rectFromForward(proj, pm, F, partAABB, rect) {
   let minX = Infinity, minY = Infinity, minZ = Infinity;
   let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
   const partCount = pm.partCount;
@@ -83,24 +90,28 @@ export function instanceRect(proj, pm, inst, pose, partAABB, rect) {
     const x0 = pm.parts[pb], y0 = pm.parts[pb + 1], z0 = pm.parts[pb + 2];
     const x1 = pm.parts[pb + 3], y1 = pm.parts[pb + 4], z1 = pm.parts[pb + 5];
     const fb12 = p * 12;
-    const A0 = FORWARD[fb12], A1 = FORWARD[fb12 + 1], A2 = FORWARD[fb12 + 2];
-    const A3 = FORWARD[fb12 + 3], A4 = FORWARD[fb12 + 4], A5 = FORWARD[fb12 + 5];
-    const A6 = FORWARD[fb12 + 6], A7 = FORWARD[fb12 + 7], A8 = FORWARD[fb12 + 8];
-    const Bx = FORWARD[fb12 + 9], By = FORWARD[fb12 + 10], Bz = FORWARD[fb12 + 11];
+    const A0 = F[fb12], A1 = F[fb12 + 1], A2 = F[fb12 + 2];
+    const A3 = F[fb12 + 3], A4 = F[fb12 + 4], A5 = F[fb12 + 5];
+    const A6 = F[fb12 + 6], A7 = F[fb12 + 7], A8 = F[fb12 + 8];
+    const Bx = F[fb12 + 9], By = F[fb12 + 10], Bz = F[fb12 + 11];
     let pMinX = Infinity, pMinY = Infinity, pMinZ = Infinity;
     let pMaxX = -Infinity, pMaxY = -Infinity, pMaxZ = -Infinity;
+    // PERF-09: the 18 per-axis products are shared by all 8 corners (same operands, same add order -> identical bits)
+    const ax0 = A0 * x0, ax1 = A0 * x1, bx0 = A3 * x0, bx1 = A3 * x1, cx0 = A6 * x0, cx1 = A6 * x1;
+    const ay0 = A1 * y0, ay1 = A1 * y1, by0 = A4 * y0, by1 = A4 * y1, cy0 = A7 * y0, cy1 = A7 * y1;
+    const az0 = A2 * z0, az1 = A2 * z1, bz0 = A5 * z0, bz1 = A5 * z1, cz0 = A8 * z0, cz1 = A8 * z1;
     for (let c = 0; c < 8; c++) {
-      const cx = (c & 1) ? x1 : x0, cy = (c & 2) ? y1 : y0, cz = (c & 4) ? z1 : z0;
-      const wx = A0 * cx + A1 * cy + A2 * cz + Bx;
-      const wy = A3 * cx + A4 * cy + A5 * cz + By;
-      const wz = A6 * cx + A7 * cy + A8 * cz + Bz;
-      if (wx < minX) minX = wx; if (wx > maxX) maxX = wx;
-      if (wy < minY) minY = wy; if (wy > maxY) maxY = wy;
-      if (wz < minZ) minZ = wz; if (wz > maxZ) maxZ = wz;
+      const i1 = c & 1, i2 = c & 2, i4 = c & 4;
+      const wx = (i1 ? ax1 : ax0) + (i2 ? ay1 : ay0) + (i4 ? az1 : az0) + Bx;
+      const wy = (i1 ? bx1 : bx0) + (i2 ? by1 : by0) + (i4 ? bz1 : bz0) + By;
+      const wz = (i1 ? cx1 : cx0) + (i2 ? cy1 : cy0) + (i4 ? cz1 : cz0) + Bz;
       if (wx < pMinX) pMinX = wx; if (wx > pMaxX) pMaxX = wx;
       if (wy < pMinY) pMinY = wy; if (wy > pMaxY) pMaxY = wy;
       if (wz < pMinZ) pMinZ = wz; if (wz > pMaxZ) pMaxZ = wz;
     }
+    if (pMinX < minX) minX = pMinX; if (pMaxX > maxX) maxX = pMaxX;
+    if (pMinY < minY) minY = pMinY; if (pMaxY > maxY) maxY = pMaxY;
+    if (pMinZ < minZ) minZ = pMinZ; if (pMaxZ > maxZ) maxZ = pMaxZ;
     if (partAABB) {
       const pab = p * 6;
       partAABB[pab] = pMinX; partAABB[pab + 1] = pMinY; partAABB[pab + 2] = pMinZ;

@@ -1,0 +1,17 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "warden_heath",
+  "speakers": {
+    "warden": {"label": "NELL"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "warden.hello"}
+  ],
+  "nodes": {
+    "warden.hello": {"end": true, "lines": [
+      "Nell. Heather and boars, and the heather's winning."
+    ], "speaker": "warden"}
+  }
+}

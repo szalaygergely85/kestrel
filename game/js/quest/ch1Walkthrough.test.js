@@ -1,0 +1,101 @@
+// CH1-10 part B: scripted Chapter 1 walkthrough through the real questRelay + book + dialogueCtl + save round trip.
+//   node game/js/quest/ch1Walkthrough.test.js
+import { offerIndices } from './dialogueView.js';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { compileDialogue, World, AssetRegistry } from '../../../engine/index.js';
+import { createDialogueCtl } from './dialogueCtl.js';
+import { createQuestRelay } from '../questRelay.js';
+import { applySave, collectSave } from './save/saveState.js';
+
+const rd = (p) => JSON.parse(readFileSync(new URL('../../../' + p, import.meta.url), 'utf8'));
+const m1 = { ...rd('content/quests/m1.quest.json'), internal: false }, /* M1-RETIRE: legacy-mechanism test on a VISIBLE copy of m1 (the real m1 is internal; m1Retire.test.js covers the player view) */ burl = rd('content/quests/burl.boars.quest.json'), blade = rd('content/quests/tower.blade.quest.json');
+const dialogues = { bear: compileDialogue(rd('content/dialogue/bear.dialogue.json')) };
+const BOARS = burl.objectives[0].when.ids;
+const assets = new AssetRegistry({ palette: {} });
+const world0 = World.load({ name: 'walk', terrain: null, structures: [], entities: [] }, assets, {});
+const TITLES = m1.sections.filter((s) => !s.silent).map((s) => s.title); // PO-CH1-04: q01-q03 are silent (the giver quests own those toasts)
+
+const toasts = [];
+const mkRelay = (saved, sq) => {
+  const r = createQuestRelay(m1, saved, [blade, burl], sq);
+  r.world = { state: {} };
+  r.onSection = (t) => toasts.push(t);
+  return r;
+};
+
+// Real Burl dialogue on the real book; confirms every line (pick = choice index).
+function talk(relay, pick = 0) {
+  const keys = new Set();
+  const comp = { model: 'bear', anim: 'idle', playing: false, loop: true };
+  const handle = { data: { transform: { x: 0, y: 0, z: 0 }, components: { voxel: comp, dialogue: 'bear' } }, play() { return this; } };
+  const world = { state: relay.world.state, get: (id) => (id === 'bear' ? handle : null), addInteractable: (s) => s };
+  const ctl = createDialogueCtl({ world, dialogues, book: () => relay.book, onFlag: (k) => relay.questFlag(k) });
+  const input = { pressed: (c) => keys.has(c) };
+  const tick = (...k) => { keys.clear(); k.forEach((c) => keys.add(c)); ctl.step(1 / 60, input, true); };
+  assert.equal(ctl.openFor('bear'), true);
+  for (let i = 0; i < 300 && ctl.open; i++) {
+    if (ctl.runner.state === 'choosing') { if (offerIndices(ctl.runner)) tick(); /* OB-186 redo: release before the deliberate accept */ for (let k = 0; k < pick; k++) tick('ArrowDown'); tick('KeyE'); continue; }
+    tick('KeyE');
+  }
+  tick();
+}
+const done = (r) => r.state.completed.slice();
+const expectToasts = (n, msg) => assert.deepEqual(toasts, TITLES.slice(0, n), msg);
+
+let r = mkRelay();
+assert.equal(toasts.length, 0);
+
+// note on the wake-spot wall: '!' ; reading it accepts 'A Blade in the Ashes'
+assert.equal(r.book.statusOf('burl.boars'), 0, 'Burl has no quest yet');
+assert.equal(r.book.actKey('q.tower.blade.accept'), true);
+// q01: wake -> breach -> sword
+r.feed({ type: 'flag:set', key: 'wake', value: true }); expectToasts(0, 'wake alone: no toast');
+r.feed({ type: 'area:entered', id: 'breach' }); expectToasts(0);
+r.feed({ type: 'item:got', id: 'sword' }); expectToasts(0, 'q01 silent (blade giver quest owns it)');
+// q02: door
+r.feed({ type: 'area:entered', id: 'towerDoor' }); expectToasts(0, 'q02 silent');
+// first talk with Burl turns the blade quest in, then he offers the boars (q03): accept, 5 boars, hand in
+assert.equal(r.book.statusOf('tower.blade'), 3, "left the tower: blade ready ('?' over Burl)");
+talk(r, 0);
+assert.equal(r.book.statusOf('tower.blade'), 4, 'blade turned in at Burl');
+assert.equal(r.book.statusOf('burl.boars'), 2, 'accepted');
+for (let i = 0; i < 4; i++) r.feed({ type: 'beast:died', id: BOARS[i] });
+expectToasts(0, 'no toast before the 5th boar');
+r.feed({ type: 'beast:died', id: BOARS[4] });
+assert.equal(r.book.statusOf('burl.boars'), 3, 'ready');
+expectToasts(0, 'no toast at ready (needs the hand-in)');
+talk(r);
+assert.equal(r.book.statusOf('burl.boars'), 4, 'handed in');
+r.checkSections(); // saveRelay.stepGame does this each step for hand-ins that bypass feed
+expectToasts(0, 'q03 silent (burl.boars owns the toast)');
+r.checkSections(); r.feed({ type: 'item:got', id: 'sword' }); expectToasts(0, 'no replay on repeated checks/events');
+
+// ---- save/load round trip midway (between q03 and q04) ----
+{
+  const save = collectSave(world0, { quest: r.state, questDef: m1, quests: r.book.toSave().quests, giverDefs: [blade, burl], deadBeasts: BOARS });
+  const a = applySave(JSON.parse(JSON.stringify(save)), assets, { questDef: m1, giverDefs: [blade, burl] });
+  const before = toasts.length, w = r.world;
+  r = mkRelay(a.quest, a.quests); r.world = w;
+  r.checkSections();
+  assert.equal(toasts.length, before, 'restore never toasts');
+  assert.deepEqual(done(r), ['wake', 'breach', 'sword', 'leave', 'bladeDone', 'beasts'], 'restored progress');
+  assert.equal(r.book.statusOf('burl.boars'), 4);
+}
+
+// q04 follow -> arrive
+r.questFlag('burl.arrived'); r.questFlag('quest.burl.follow.done'); /* handed in at the stone (m1FollowChain.test.js drives the real talk) */ expectToasts(1, 'q04 toast on arrival');
+// q05: wake stone
+r.questFlag('waystone.waystone.woken'); expectToasts(1, 'q05 not before the hand-in at Burl'); r.questFlag('quest.burl.stone.done'); expectToasts(2, 'q05 toast after the stone hand-in');
+assert.equal(r.world.state['waystone.waystone.woken'], true, 'questFlag writes world.state');
+// q06: road -> relay found -> relay woken
+r.feed({ type: 'area:entered', id: 'roadWest' }); expectToasts(2);
+r.feed({ type: 'area:entered', id: 'bendRelay' }); expectToasts(2, 'q06 not before the relay wakes');
+r.questFlag('waystone.ws_roadBend.woken'); expectToasts(2, 'q06 not before the hand-in at Rook'); r.questFlag('quest.mq.bend.call.done'); expectToasts(3, 'q06 toast after the Rook hand-in');
+assert.equal(r.done, true);
+// FEN-OFF-01: q07 removed; the chain ends at the relay step
+assert.equal(r.done, true, 'chain complete at the relay');
+assert.deepEqual(done(r).length, m1.objectives.length);
+assert.deepEqual(toasts, TITLES, 'every section toast exactly once, in order');
+r.checkSections(); r.questFlag('fen.met'); /* retired flag: ignored */ assert.equal(toasts.length, TITLES.length, 'no extra toast at the end');
+console.log('ch1Walkthrough: wake..relay, 3 section toasts (q04-q06) once in order, q01-q03 silent, save/load no replay PASS');

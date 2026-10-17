@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - ENV-02-DESIGN ground richness per biome (PROPOSAL, owner pick)</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:17px; margin:30px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  h3 { font-size:14px; margin:14px 0 4px; color:#e8c27a; }
+  .note { color:#8a8778; font-size:12px; max-width:1300px; }
+  .pass { color:#6fdc7a; } .warn { color:#ffb04a; }
+  canvas { display:block; background:#000; width:100%; max-width:1440px; image-rendering:auto; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:13px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:34px; display:inline-block; }
+  .cap { font:12px Consolas, monospace; color:#a9a390; margin:2px 0 8px; }
+  .sw { display:inline-block; width:22px; height:12px; border:1px solid #333; vertical-align:middle; margin-right:2px; }
+  code, .g { color:#e8c27a; font-family:Consolas, monospace; }
+  .var { border:1px solid #22252e; border-radius:4px; padding:6px 10px; margin:8px 0 14px; }
+  .var.picked { border-color:#6fdc7a; }
+  pre.json { background:#0b0c12; border:1px solid #22252e; padding:8px; font:11px/1.35 Consolas, monospace; color:#cfe3c0; white-space:pre; overflow:auto; }
+  button { background:#1d3a22; color:#8fe09a; border:1px solid #2e5a35; border-radius:3px; padding:3px 9px; cursor:pointer; }
+</style>
+</head>
+<body>
+<h1>Kestrel : ENV-02-DESIGN : ground richness per biome</h1>
+<div class="note">
+  <b>Proposal for the owner, nothing in the game changes.</b> Each biome has 3 ground looks (A / B / C), drawn at the real cell grid
+  (<b>240 x 90</b> or <b>480 x 180</b>, one canvas pixel block = one game cell, camera 1.7 m high looking along the ground).
+  Each look = a glyph set (sparse to dense), a 4-tone colour ramp (blended smoothly, never hard bands), a patch size (noise scale, metres)
+  and a wind shimmer amount. Decor-sized speckles (petals, pebbles, reeds) are shown as accents. They are candidates for the GPU decor pass (ENV-01).
+  <br><b>No flicker by design</b> (OB-054 / OB-067 / OB-073): patches are soft value noise in world metres, small octaves fade to their mean
+  once a cell is too big to show them (far rows), every glyph is keyed by its world cell, and with <b>wind = 0 the picture is byte-identical every frame</b>
+  (the "changed cells" counter under each panel stays 0). Wind moves a slow, coherent gust wave, not random cells.
+  <br>Data: <code>design/look/biomeLook.js</code> (read by this page and by <code>biome-atmos.html</code>). Tick "pick" on a look and press
+  "copy picks", or tell the main session the letters. Overlap: the far-grass region byte (P3-REGION-BYTE) and the carpet variants (38.52 item 2) should key off the same biome id.
+</div>
+
+<div class="controls">
+  <label>biome <select id="biome"></select></label>
+  <label>grid <select id="grid"><option value="240x90" selected>240 x 90</option><option value="480x180">480 x 180</option></select></label>
+  <label>wind <input type="range" id="wind" min="0" max="100" step="1" value="0"><span class="val" id="windV">0</span></label>
+  <label><input type="checkbox" id="anim" checked> animate</label>
+  <label><input type="checkbox" id="fog" checked> distance fog (picked atmos, day)</label>
+  <button id="copy">copy picks</button> <span class="note" id="perf"></span>
+</div>
+<div id="out"></div>
+<h2>Picks</h2>
+<pre class="json" id="picks"></pre>
+
+<script src="../look/biomeLook.js"></script>
+<script src="look-lib.js"></script>
+<script>
+(function () {
+  var L = LOOKLIB, BL = BIOME_LOOK, $ = function (id) { return document.getElementById(id); };
+  var picks = L.picks(), panels = [], t0 = performance.now();
+  var sel = $('biome');
+  sel.innerHTML = '<option value="all">all biomes</option>' + BL.order.map(function (id) {
+    return '<option value="' + id + '">' + BL.biomes[id].label + '</option>'; }).join('');
+  sel.value = 'meadow';
+
+  function sw(hex) { return '<span class="sw" style="background:' + hex + '" title="' + hex + '"></span>'; }
+  function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/ /g, '&middot;'); }
+
+  function build() {
+    var grid = $('grid').value.split('x'), W = +grid[0], H = +grid[1];
+    var cw = 1920 / W, ch = 1080 / H, hz = Math.round(H * 0.28), top = hz - 4;
+    var ids = sel.value === 'all' ? BL.order : [sel.value];
+    var html = '';
+    panels = [];
+    ids.forEach(function (id) {
+      var bio = BL.biomes[id];
+      html += '<h2>' + bio.label + ' <span class="note">(' + id + ')</span></h2>';
+      ['A', 'B', 'C'].forEach(function (v) {
+        var gv = bio.ground[v], sh = gv.shimmer, key = id + v;
+        html += '<div class="var' + (picks[id].ground === v ? ' picked' : '') + '" id="box' + key + '"><h3>' + v + ' - ' + gv.name +
+          ' <label class="note"><input type="radio" name="pk' + id + '" value="' + v + '"' + (picks[id].ground === v ? ' checked' : '') + '> pick</label></h3>' +
+          '<div class="cap">glyphs <span class="g">' + esc(gv.glyphs) + '</span> &nbsp; ramp ' + gv.ramp.map(sw).join('') +
+          ' &nbsp; bg ' + gv.bg.map(sw).join('') + ' &nbsp; patches ' + gv.noiseScale + ' m (drift ' + gv.macroScale + ' m), contrast ' + gv.contrast +
+          ' &nbsp; shimmer ' + sh.amp + ' ' + sh.mode + (sh.mode === 'lean' ? ' -> <span class="g">' + esc(sh.lean) + '</span>' : '') +
+          (gv.accents.length ? ' &nbsp; accents ' + gv.accents.map(function (a) { return '<span style="color:' + a.c + '">' + esc(a.g) + '</span> ' + (a.d * 100).toFixed(1) + '%'; }).join(', ') : '') +
+          (gv.water ? ' &nbsp; water from ' + gv.water.from + ' m' : '') + '</div>' +
+          '<canvas id="cv' + key + '"></canvas><div class="cap" id="ch' + key + '"></div></div>';
+        panels.push({ id: id, v: v, gv: gv, key: key });
+      });
+    });
+    $('out').innerHTML = html;
+    panels.forEach(function (p) {
+      p.panel = new L.Panel($('cv' + p.key), W, H - top, cw, ch);
+      p.W = W; p.H = H; p.hz = hz; p.top = top; p.cap = $('ch' + p.key);
+    });
+    ids.forEach(function (id) {
+      document.querySelectorAll('input[name=pk' + id + ']').forEach(function (r) {
+        r.onchange = function () {
+          picks[id].ground = r.value; L.savePicks(picks); showPicks();
+          ['A', 'B', 'C'].forEach(function (v) { $('box' + id + v).className = 'var' + (v === r.value ? ' picked' : ''); });
+        };
+      });
+    });
+    drawAll();
+  }
+
+  function drawPanel(p, t, wind01) {
+    var W = p.W, H = p.H, hz = p.hz, f = H * 0.9, camH = 1.7, P = p.panel;
+    var atm = BL.biomes[p.id].atmos[picks[p.id].atmos];
+    var fog = L.rgb(atm.fog.day), haze = L.rgb(atm.haze.day), useFog = $('fog').checked;
+    P.changed = 0;
+    for (var y = p.top; y < H; y++) {
+      var row = y - p.top;
+      if (y < hz) {
+        var sc = L.css(L.mix(haze, fog, (y - p.top) / (hz - p.top) * 0.5));
+        for (var x0 = 0; x0 < W; x0++) P.put(x0, row, ' ', sc, sc);
+        continue;
+      }
+      var z = camH * f / (y - hz + 0.5), fpD = z * z / (camH * f);
+      var kf = useFog ? 1 - Math.exp(-atm.fogDensity * z) : 0;
+      for (var x = 0; x < W; x++) {
+        var xw = (x - W / 2 + 0.5) / 2 * z / f;
+        var c = L.groundCell(p.gv, xw, z, fpD, x, y, wind01, t);
+        var fc = kf ? L.mix(c.f, fog, kf) : c.f, bc = kf ? L.mix(c.b, fog, kf) : c.b;
+        P.put(x, row, c.g, L.css(fc), L.css(bc));
+      }
+    }
+    p.cap.innerHTML = 'changed cells last frame: <b class="' + (wind01 === 0 ? 'pass' : 'warn') + '">' + P.changed + '</b>' +
+      (wind01 === 0 ? ' (calm: must be 0 after the first frame)' : ' (gust wave)') + ' &nbsp; grid ' + W + 'x' + H + ', rows ' + p.top + '..' + (H - 1);
+  }
+
+  var lastT = 0;
+  function drawAll() {
+    var t = (performance.now() - t0) / 1000, w = +$('wind').value / 100, s = performance.now();
+    panels.forEach(function (p) { drawPanel(p, t, w); });
+    $('perf').textContent = Math.round(performance.now() - s) + ' ms / frame';
+  }
+  function loop(now) {
+    if ($('anim').checked && now - lastT > 100) { lastT = now; drawAll(); }
+    requestAnimationFrame(loop);
+  }
+  function showPicks() {
+    var o = {}; BL.order.forEach(function (id) { o[id] = picks[id]; });
+    $('picks').textContent = JSON.stringify(o, null, 1);
+  }
+  $('wind').oninput = function () { $('windV').textContent = this.value; drawAll(); };
+  $('grid').onchange = build; sel.onchange = build; $('fog').onchange = drawAll;
+  $('copy').onclick = function () { navigator.clipboard && navigator.clipboard.writeText($('picks').textContent); };
+  showPicks(); build(); requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

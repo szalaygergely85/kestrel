@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - CRAG-D1 preview: Crag (old goat) next to Burl</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:17px; margin:26px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  .note { color:#8a8778; font-size:12px; max-width:1400px; }
+  .pass { color:#4fd66a; } .fail { color:#ff3b3b; } .info { color:#8fb4e0; } .warn { color:#ffb84a; }
+  canvas { display:block; background:#000; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:12px; align-items:center; font-size:13px; }
+  .controls label { display:flex; align-items:center; gap:5px; }
+  .controls input[type=range] { width:110px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:36px; display:inline-block; }
+  button { background:#15171f; color:#d8d2c0; border:1px solid #333845; border-radius:3px; padding:3px 9px; cursor:pointer; font-size:12px; }
+  button.on { border-color:#ffd24a; color:#ffd24a; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start; margin:6px 0 12px; }
+  .cap { font-size:11px; color:#8a8778; font-family:Consolas, monospace; margin-top:2px; }
+  #checks div, #clips div { font-family:Consolas, monospace; font-size:12px; }
+  #line { font-family:Consolas, monospace; color:#e8e0c8; background:#101218; border:1px solid #2a2d38; padding:6px 10px; max-width:900px; min-height:20px; }
+</style>
+</head>
+<body>
+<h1>Kestrel : CRAG-D1 - Crag, the old goat of Signal Head (goat) next to Burl (bear)</h1>
+<div class="note">
+  <code>design/models/voxel_goat.js</code> = an old feral billy on the deer's 4-leg rig + Burl's jaw (cellM 0.037, 0.81 m at the withers):
+  shaggy greyed white-brown coat with a ragged skirt, neck mane, long beard on the jaw (wags while he talks), big backward-curving ridged
+  horns, sideways ears, amber eyes, sagging back, black hooves. Clips (all four hooves down except steps / the ledge lift, style-guide 0.2):
+  idle, walk, climbStep, lead, grumbleTalk, listen, headshake, lieDown, lie, getUp. "talk demo" types goatFx.sampleLine with the
+  goatFx.talk rule (grumbleTalk + punctuation holds, then listen). Burl plays his matching clip if he has one, else idle.
+  <b>Needs http</b>: <code>python -m http.server</code> from the repo root, open <code>/design/preview/goat.html</code>.
+  Node checks: <code>node tools/voxel-goat.test.mjs</code>.
+</div>
+<div id="fatal" class="fail"></div>
+
+<div class="controls">
+  <label>light az <input type="range" id="az" min="-180" max="180" step="1" value="-40"><span class="val" id="azV"></span></label>
+  <label>custom elev <input type="range" id="el" min="-10" max="85" step="1" value="40"><span class="val" id="elV"></span></label>
+  <label>custom sun <input type="range" id="int" min="0" max="1.5" step="0.01" value="1.0"><span class="val" id="intV"></span></label>
+  <label>custom ambient x <input type="range" id="amb" min="0" max="3" step="0.05" value="1.2"><span class="val" id="ambV"></span></label>
+  <label>edges <select id="edges"><option value="rim">rules + model rim</option><option value="eng">rules, no rim</option><option value="off">off</option></select></label>
+  <label>in-game view angle <input type="range" id="vaz" min="-180" max="180" step="5" value="-60"><span class="val" id="vazV"></span></label>
+  <span id="clipBar"></span>
+</div>
+<div id="line"></div>
+
+<h2>Checks</h2>
+<div id="checks"><div class="info">loading engine modules ...</div></div>
+<h2>Clips</h2>
+<div id="clips"></div>
+
+<div id="sections"></div>
+
+<script src="../palette.js"></script>
+<script src="../detail-pass.js"></script>
+<script src="../models/voxel_bear.js"></script>
+<script src="../models/voxel_goat.js"></script>
+<script src="../models/voxel_beast_clips.js"></script><!-- OB-153: beast clips (hurt, flinch, windup, attack, die, dead, sink, charge) -->
+
+<script>
+  setTimeout(function () {
+    if (!window.__gtOK) document.getElementById('fatal').textContent =
+      'Engine modules did not load (or the page script threw - see the console). Serve over http: python -m http.server from the repo root.';
+  }, 2500);
+</script>
+<script type="module">
+import { validateVoxelModel, MAX_VOX_PARTS, PART_STRIDE } from '../../engine/voxel/VoxelModel.js';
+import { packVoxelModel } from '../../engine/voxel/voxelPack.js';
+import { computeVoxelPose } from '../../engine/voxel/voxelPose.js';
+import { buildVoxelMesh } from '../../engine/mesh/voxelMesh.js';
+import * as VM from './lib/voxelMarch.js';
+import { FACE_N, FACE_E, FACE_S, FACE_W, FACE_U } from '../../engine/render/GBuffer.js';
+
+window.__gtOK = true;
+const A = window.ASSETS, P = A.palette, U = P.util, DP = A.detailPass, FX = A.goatFx, D2R = Math.PI / 180;
+const FONT = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace';
+const $ = (id) => document.getElementById(id);
+
+const matKeys = [];
+const matId = (k) => { let i = matKeys.indexOf(k); if (i < 0) { matKeys.push(k); i = matKeys.length - 1; } return i + 1; };
+const MODELS = ['bear', 'goat'];
+const PMS = {};
+for (const k of MODELS) PMS[k] = packVoxelModel(A.models[k].voxel, matId);
+const CLIPS = Object.keys(A.models.goat.voxel.animations);
+let sel = CLIPS[0], selT0 = performance.now();
+const BURL_FOR = { grumbleTalk: 'talk', lead: 'walk' };   // Burl's stand-in when he lacks the clip (else idle)
+
+// ------------------------------------------------------------------ talk demo (goatFx.talk rule)
+const talk = { on: false, i: 0, t0: 0, holdUntil: 0, clipT: 0, last: 0 };
+function startTalk() { talk.on = true; talk.i = 0; talk.t0 = performance.now(); talk.holdUntil = 0; talk.clipT = 0; talk.last = talk.t0; sel = 'grumbleTalk'; ver++; }
+function talkStep(now) {      // returns the goat's clip + elapsed ms while the demo runs, else null
+  if (!talk.on) return null;
+  const T = FX.talk, text = FX.sampleLine.text, dt = now - talk.last; talk.last = now;
+  if (talk.i >= text.length) { $('line').textContent = FX.sampleLine.name + ': ' + text; return { name: 'listen', e: now - talk.doneAt }; }
+  if (now < talk.holdUntil) return { name: 'grumbleTalk', e: T.pauseAtMs };
+  talk.clipT += dt;
+  const n = Math.floor((now - talk.t0) * T.textCps / 1000);
+  while (talk.i < Math.min(n, text.length)) {
+    const ch = text[talk.i++];
+    if (T.pauseMs[ch]) { talk.holdUntil = now + T.pauseMs[ch]; talk.clipT = T.pauseAtMs; talk.t0 = now - talk.i * 1000 / T.textCps + T.pauseMs[ch]; break; }
+  }
+  if (talk.i >= text.length) talk.doneAt = now;
+  $('line').textContent = FX.sampleLine.name + ': ' + text.slice(0, talk.i);
+  return { name: 'grumbleTalk', e: talk.clipT };
+}
+
+// ------------------------------------------------------------------ controls
+const ctl = {}; let ver = 1;
+function readCtl() {
+  ctl.az = +$('az').value; ctl.el = +$('el').value; ctl.int = +$('int').value; ctl.amb = +$('amb').value;
+  ctl.edges = $('edges').value; ctl.vaz = +$('vaz').value;
+  $('azV').textContent = ctl.az; $('elV').textContent = ctl.el; $('intV').textContent = ctl.int.toFixed(2);
+  $('ambV').textContent = ctl.amb.toFixed(2); $('vazV').textContent = ctl.vaz;
+  ver++;
+}
+document.querySelectorAll('.controls input, .controls select').forEach((el) => el.addEventListener('input', readCtl));
+readCtl();
+const cbtn = [];
+for (const c of CLIPS.concat(['talk demo'])) {
+  const b = document.createElement('button'); b.textContent = c; cbtn.push(b); if (c === sel) b.classList.add('on');
+  b.onclick = () => {
+    cbtn.forEach((x) => x.classList.toggle('on', x === b));
+    if (c === 'talk demo') { startTalk(); return; }
+    talk.on = false; $('line').textContent = ''; sel = c; selT0 = performance.now(); ver++;
+  };
+  $('clipBar').appendChild(b);
+}
+function lightOf(kind) {
+  if (kind === 'custom') return { amb: 'ambient', ambI: 0.14 * ctl.amb, sun: 'sun', sunI: ctl.int, el: ctl.el, fog: 'far' };
+  const T = (P.timeOfDay && P.timeOfDay[kind === 'day' ? 'morning' : 'dusk']) || {};
+  return { amb: T.ambient || 'ambient', ambI: (T.ambientI || 0.12) * 1.4, sun: T.sun || 'sun', sunI: T.sunI || 1, el: T.sunElev || 40, fog: 'far' };
+}
+
+// ------------------------------------------------------------------ trace + shade (same as bear-cub.html)
+const HIT = new Float64Array(8), NL = [0, 0, 0], Lacc = [0, 0, 0];
+function faceNormal(face, o) {
+  o[0] = 0; o[1] = 0; o[2] = 0;
+  if (face === FACE_N) o[1] = -1; else if (face === FACE_S) o[1] = 1; else if (face === FACE_E) o[0] = 1;
+  else if (face === FACE_W) o[0] = -1; else if (face === FACE_U) o[2] = 1; else o[2] = -1;
+}
+function trace(sc, ox, oy, oz, dx, dy, dz, res) {
+  let best = Infinity, kind = 0;
+  for (let it = 0; it < sc.items.length; it++) {
+    const I = sc.items[it], PM = I.PM;
+    for (let k = 0; k < PM.partCount; k++) {
+      if (VM.marchVoxelRay(PM, k, I.pose, ox, oy, oz, dx, dy, dz, best, HIT)) {
+        best = HIT[0]; kind = 8; res.it = it; res.k = k; res.face = HIT[4]; res.lx = HIT[1]; res.ly = HIT[2]; res.lz = HIT[3]; res.mat = VM.LAST_MAT_LOCAL;
+      }
+    }
+  }
+  if (sc.ground && dz < 0) { const t = -oz / dz; if (t > 0 && t < best) { best = t; kind = 1; } }
+  res.kind = kind; res.t = best;
+  return kind;
+}
+function shadeHit(sc, res, ox, oy, oz, dx, dy, dz, dist, fog, out) {
+  const t = res.t, px = ox + dx * t, py = oy + dy * t, L = sc.light;
+  let nx, ny, nz, mat, u, v;
+  if (res.kind === 8) {
+    const I = sc.items[res.it], PM = I.PM, A9 = I.pose, b = res.k * PART_STRIDE, cm = PM.cellM;
+    faceNormal(res.face, NL);
+    nx = cm * (A9[b] * NL[0] + A9[b + 3] * NL[1] + A9[b + 6] * NL[2]);
+    ny = cm * (A9[b + 1] * NL[0] + A9[b + 4] * NL[1] + A9[b + 7] * NL[2]);
+    nz = cm * (A9[b + 2] * NL[0] + A9[b + 5] * NL[1] + A9[b + 8] * NL[2]);
+    const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+    mat = P.materials[matKeys[PM.matIds[res.mat] - 1]];
+    if (res.face === FACE_E || res.face === FACE_W) { u = res.ly * cm; v = res.lz * cm; }
+    else if (res.face === FACE_N || res.face === FACE_S) { u = res.lx * cm; v = res.lz * cm; }
+    else { u = res.lx * cm; v = res.ly * cm; }
+  } else { nx = 0; ny = 0; nz = 1; mat = P.materials.grass; u = px; v = py; }
+  Lacc[0] = 0; Lacc[1] = 0; Lacc[2] = 0;
+  U.addLight(Lacc, L.amb, L.ambI);
+  const a = ctl.az * D2R, e = L.el * D2R;
+  const ndl = nx * Math.sin(a) * Math.cos(e) - ny * Math.cos(a) * Math.cos(e) + nz * Math.sin(e);
+  if (ndl > 0) U.addLight(Lacc, L.sun, L.sunI * ndl);
+  U.shade(mat, Lacc, u, v, dist, out, { fog: fog ? L.fog : null, z: v });
+}
+function makeCanvas(cols, rows, cw, ch) {
+  const cv = document.createElement('canvas'), dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(cols * cw * dpr); cv.height = Math.round(rows * ch * dpr);
+  cv.style.width = cols * cw + 'px'; cv.style.height = rows * ch + 'px';
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.font = Math.round(ch * 0.9) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  return { cv, ctx, cols, rows, cw, ch };
+}
+const RES = { kind: 0, t: 0, it: 0, k: 0, face: 0, lx: 0, ly: 0, lz: 0, mat: 0 }, SH = { fg: [0, 0, 0], bg: [0, 0, 0] };
+const Ov = [0, 0, 0], Dv = [0, 0, 0];
+function renderView(view, sc) {
+  const { cols, rows, ctx, cw, ch } = view.grid, n = cols * rows, cam = view.cam;
+  if (!view.buf) view.buf = { kind: new Int8Array(n), depth: new Float64Array(n), glyph: new Array(n), fg: new Float32Array(n * 3), bg: new Float32Array(n * 3) };
+  const B = view.buf;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c;
+    cam.ray(c, r, Ov, Dv);
+    const kind = trace(sc, Ov[0], Ov[1], Ov[2], Dv[0], Dv[1], Dv[2], RES);
+    B.kind[i] = kind; B.depth[i] = RES.t;
+    if (!kind) { B.glyph[i] = ' '; B.fg.fill(0, i * 3, i * 3 + 3); B.bg[i * 3] = 7; B.bg[i * 3 + 1] = 8; B.bg[i * 3 + 2] = 12; continue; }
+    const dist = cam.persp ? RES.t * Math.hypot(Dv[0], Dv[1], Dv[2]) : 3;
+    shadeHit(sc, RES, Ov[0], Ov[1], Ov[2], Dv[0], Dv[1], Dv[2], dist, cam.persp, SH);
+    B.glyph[i] = SH.glyph;
+    for (let k = 0; k < 3; k++) { B.fg[i * 3 + k] = SH.fg[k]; B.bg[i * 3 + k] = SH.bg[k]; }
+  }
+  if (ctl.edges !== 'off') {
+    const E = DP.edges, rim = ctl.edges === 'rim' ? (E.modelRim || 0.55) : 1;
+    const far = (i, j) => B.kind[j] === 0 || B.depth[j] > B.depth[i] * E.depthRatio + E.depthAbs;
+    const rule = new Int8Array(n);
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const i = r * cols + c;
+      if (B.kind[i] !== 8) continue;
+      if (r > 0 && far(i, i - cols)) rule[i] = 1;
+      else if ((c > 0 && far(i, i - 1)) || (c < cols - 1 && far(i, i + 1))) rule[i] = 2;
+      else if (r < rows - 1 && far(i, i + cols)) rule[i] = 3;
+    }
+    for (let i = 0; i < n; i++) {
+      if (!rule[i]) continue;
+      const R = rule[i] === 1 ? E.rules.cap : rule[i] === 2 ? E.rules.side : E.rules.lip;
+      if (B.glyph[i] !== ' ') B.glyph[i] = R.glyph;
+      for (let k = 0; k < 3; k++) { B.fg[i * 3 + k] = Math.min(255, B.fg[i * 3 + k] * R.gain) * rim; B.bg[i * 3 + k] *= rim; }
+    }
+  }
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c, x = c * cw, y = r * ch;
+    ctx.fillStyle = 'rgb(' + (B.bg[i * 3] | 0) + ',' + (B.bg[i * 3 + 1] | 0) + ',' + (B.bg[i * 3 + 2] | 0) + ')';
+    ctx.fillRect(x, y, cw + 0.5, ch + 0.5);
+    const gl = B.glyph[i];
+    if (gl && gl !== ' ') {
+      ctx.fillStyle = 'rgb(' + (B.fg[i * 3] | 0) + ',' + (B.fg[i * 3 + 1] | 0) + ',' + (B.fg[i * 3 + 2] | 0) + ')';
+      ctx.fillText(gl, x + cw / 2, y + ch / 2 + 1);
+    }
+  }
+  if (view.cap) view.cap.textContent = view.label();
+}
+
+// ------------------------------------------------------------------ cameras
+function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+function norm(a) { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
+function orthoCam(center, yawDeg, pitchDeg, cols, rows, chM) {
+  const a = yawDeg * D2R, p = pitchDeg * D2R, R = 12;
+  const pos = [center[0] + R * Math.sin(a) * Math.cos(p), center[1] - R * Math.cos(a) * Math.cos(p), center[2] + R * Math.sin(p)];
+  const fwd = norm([center[0] - pos[0], center[1] - pos[1], center[2] - pos[2]]);
+  const right = norm(cross([0, 0, 1], fwd)), up = cross(fwd, right), cwM = chM / 2;
+  return { persp: false, ray(c, r, O, D) {
+    const sx = (c + 0.5 - cols / 2) * cwM, sy = (rows / 2 - (r + 0.5)) * chM;
+    O[0] = pos[0] + right[0] * sx + up[0] * sy; O[1] = pos[1] + right[1] * sx + up[1] * sy; O[2] = pos[2] + right[2] * sx + up[2] * sy;
+    D[0] = fwd[0]; D[1] = fwd[1]; D[2] = fwd[2];
+  } };
+}
+const TAN_HALF = Math.tan(37.5 * D2R);
+function perspCam(gridCols, gridRows, cropCols, cropRows, target, azDeg, dist, eyeZ) {
+  const planeDistY = (gridRows / 2) * (16 / 9) / TAN_HALF, a = azDeg * D2R;
+  const fh = [-Math.sin(a), Math.cos(a), 0], rh = [-Math.cos(a), -Math.sin(a), 0];
+  const eye = [target[0] + Math.sin(a) * dist, target[1] - Math.cos(a) * dist, eyeZ];
+  const pitch = Math.atan((target[2] - eyeZ) / dist), horizonRow = gridRows / 2 + Math.tan(pitch) * planeDistY;
+  const c0 = Math.floor(gridCols / 2 - cropCols / 2), r0 = Math.floor(gridRows / 2 - cropRows / 2);
+  return { persp: true, ray(c, r, O, D) {
+    const camX = 2 * (c0 + c + 0.5) / gridCols - 1;
+    O[0] = eye[0]; O[1] = eye[1]; O[2] = eye[2];
+    D[0] = fh[0] + rh[0] * camX * TAN_HALF; D[1] = fh[1] + rh[1] * camX * TAN_HALF;
+    D[2] = (horizonRow - (r0 + r + 0.5)) / planeDistY;
+  } };
+}
+
+// ------------------------------------------------------------------ page: Burl + Crag side by side (same scale)
+const views = [];
+function addView(host, opt) {
+  const g = makeCanvas(opt.cols, opt.rows, opt.cw, opt.ch);
+  const wrap = document.createElement('div'), cap = document.createElement('div'); cap.className = 'cap';
+  wrap.appendChild(g.cv); wrap.appendChild(cap); host.appendChild(wrap);
+  const v = Object.assign({ grid: g, cap, key: '', poses: opt.models.map(() => new Float64Array(MAX_VOX_PARTS * PART_STRIDE)) }, opt);
+  views.push(v);
+}
+const LIGHTS = [['day', 'Day (palette timeOfDay.morning)'], ['dusk', 'Dusk (palette timeOfDay.dusk)'], ['custom', 'Custom (sliders)']];
+for (const [lk, title] of LIGHTS) {
+  const h = document.createElement('h2'); h.textContent = title; $('sections').appendChild(h);
+  const row = document.createElement('div'); row.className = 'row'; $('sections').appendChild(row);
+  for (const [yaw, lab] of [[90, 'right side'], [-40, '3/4 front-left'], [0, 'front']]) {
+    const rows = 30;
+    addView(row, { light: lk, models: ['bear', 'goat'], offs: yaw === 90 ? [[0, -0.9], [0, 1.0]] : [[-0.85, 0], [0.75, 0]],
+      cols: rows * 3, rows, cw: 5, ch: 10, ground: false,
+      label: () => 'Burl + Crag - ' + lab + ' (' + sel + ')',
+      cam: orthoCam([0, 0, 0.6], yaw, yaw === -40 ? 24 : 6, rows * 3, rows, 2.0 / rows) });
+  }
+  // Crag close-up (horns, beard, jaw)
+  addView(row, { light: lk, models: ['goat'], offs: [[0, 0]], cols: 60, rows: 30, cw: 5, ch: 10,
+    label: () => 'Crag close-up 3/4 (' + sel + ')', cam: orthoCam([0, -0.25, 0.75], -40, 14, 60, 30, 0.75 / 30) });
+  const row2 = document.createElement('div'); row2.className = 'row'; $('sections').appendChild(row2);
+  for (const dist of [6, 12]) {
+    addView(row2, { light: lk, models: ['bear', 'goat'], offs: [[-1.0, 0], [0.6, 0]], cols: 90, rows: 45, cw: 6.4, ch: 9.6, ground: true, dist,
+      label: () => '240x90 at ' + dist + ' m: Burl left, Crag right (' + sel + ')' });
+  }
+}
+
+function clipState(PM, name, e) {
+  const ci = PM.clipIndex[name], c = PM.clips[ci];
+  let total = 0; for (let i = 0; i < c.n; i++) total += c.durMs[i];
+  e = c.loop ? e % total : Math.min(e, total - 1);
+  let f = 0; while (f < c.n - 1 && e >= c.durMs[f]) { e -= c.durMs[f]; f++; }
+  return { clip: ci, frame: f, tMs: e };
+}
+function clipFor(m) {
+  const PM = PMS[m];
+  if (PM.clipIndex[sel] !== undefined) return sel;
+  if (BURL_FOR[sel] && PM.clipIndex[BURL_FOR[sel]] !== undefined) return BURL_FOR[sel];
+  return 'idle';
+}
+function frame() {
+  const now = performance.now(), tk = talkStep(now);
+  for (const v of views) {
+    const items = [];
+    let key = sel + '|' + ver;
+    v.models.forEach((m, i) => {
+      const PM = PMS[m];
+      const st = (tk && m === 'goat') ? clipState(PM, tk.name, Math.max(0, tk.e)) : clipState(PM, clipFor(m), now - selT0);
+      computeVoxelPose(PM, { x: v.offs[i][0], y: v.offs[i][1], z: 0, yawDeg: v.dist ? 90 : 0, scale: 1, clip: st.clip, frame: st.frame, tMs: st.tMs }, v.poses[i]);
+      items.push({ PM, pose: v.poses[i] });
+      key += '|' + st.clip + '|' + st.frame + '|' + Math.round(st.tMs);
+    });
+    if (v.dist) v.cam = perspCam(240, 90, 90, 45, [0, 0, 0.4], ctl.vaz, v.dist, 1.6);
+    if (v.key === key) continue;
+    renderView(v, { items, ground: !!v.ground, light: lightOf(v.light) });
+    v.key = key;
+  }
+  setTimeout(() => requestAnimationFrame(frame), 40);
+}
+
+// ------------------------------------------------------------------ checks + clip list
+function runChecks() {
+  const out = [];
+  const ok = (c, m) => out.push([c ? 'pass' : 'fail', (c ? 'PASS ' : 'FAIL ') + m]);
+  const both = Object.keys(P.materials).filter((k) => DP.materials[k]);
+  const tri = {};
+  for (const k of MODELS) {
+    const DEF = A.models[k].voxel, PARTS = Object.keys(DEF.parts);
+    const vr = validateVoxelModel(DEF, { materialKeys: both });
+    ok(vr.errors.length === 0 && vr.warnings.length === 0, k + ': validateVoxelModel: ' + (vr.errors.concat(vr.warnings).slice(0, 6).join(' ; ') || 'no errors, no warnings'));
+    tri[k] = buildVoxelMesh(PMS[k], { id: k, partNames: PARTS }).triCount;
+  }
+  ok(tri.goat <= 3500, 'LOD0 Crag ' + tri.goat + ' tris <= 3500 (Burl ' + tri.bear + ')');
+  const host = $('checks'); host.innerHTML = '';
+  for (const [c, m] of out) { const d = document.createElement('div'); d.className = c; d.textContent = m; host.appendChild(d); }
+  const ch = $('clips'), DA = A.models.goat.voxel.animations;
+  for (const k of CLIPS) {
+    const c = DA[k], d = document.createElement('div'); d.className = 'info';
+    d.textContent = k + ': ' + c.frames.length + ' keys, ' + c.durations.reduce((a, b) => a + b, 0) + ' ms' + (c.loop ? ' loop' : ' once');
+    ch.appendChild(d);
+  }
+  const d = document.createElement('div'); d.className = 'info';
+  d.textContent = 'clipFor: ' + Object.entries(FX.clipFor.state).map(([s, c]) => s + '->' + c).join(', ') + '. ' + FX.clipFor.note;
+  ch.appendChild(d);
+}
+try { runChecks(); } catch (err) { $('checks').innerHTML = '<div class="fail">checks threw: ' + err.message + '</div>'; console.error(err); }
+frame();
+</script>
+</body>
+</html>

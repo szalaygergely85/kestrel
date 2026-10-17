@@ -15,11 +15,20 @@
 // GPU" treatment) - NOT the "400x150/480x180 both ultra" shorthand used
 // elsewhere; the bench data + the shipped design asset agree and are the
 // more specific source, so options.js follows them.
-export const GRID_VALUES = ['240x90', '320x120', '400x150', '480x180'];
+export const GRID_VALUES = ['240x90', '320x120', '400x150', '480x180', '560x210']; // owner 2026-10-11: max one step above ultra
+// OB-117 (owner): displayed picture ratio; 'fill' = whole window. Default 16:9.
+export const ASPECT_VALUES = ['16:9', '16:10', '21:9', '4:3', 'fill'];
+export const DEFAULT_ASPECT = '16:9';
+const ASPECT_RATIOS = { '16:9': 16 / 9, '16:10': 16 / 10, '21:9': 21 / 9, '4:3': 4 / 3 };
+/** @returns {number|null} w/h for RenderTarget.setAspect (null = fill the window; unknown names -> the default ratio). */
+export function aspectRatio(name) { return name === 'fill' ? null : (ASPECT_RATIOS[name] || ASPECT_RATIOS[DEFAULT_ASPECT]); }
 export const ULTRA_GRID_VALUES = ['480x180'];
 
 export const OPTIONS = [
   { id: 'grid', type: 'choice', label: 'Grid', values: GRID_VALUES, default: '240x90' },
+  // QUALITY-GRID-01: the quality preset owns the grid (settings.js applies knobsFor(q).grid live and saves both).
+  { id: 'quality', type: 'choice', label: 'Quality', values: ['low', 'medium', 'high', 'ultra', 'auto'], default: 'auto' },
+  { id: 'aspect', type: 'choice', label: 'Aspect ratio', values: ASPECT_VALUES, default: DEFAULT_ASPECT },
   { id: 'fullscreen', type: 'toggle', label: 'Fullscreen', values: [false, true], default: false },
   // GDD 4 / US-038 AC: 0.05-0.40 deg/px, step 0.025, default 0.15.
   { id: 'mouseSensitivity', type: 'range', label: 'Mouse sensitivity', min: 0.05, max: 0.40, step: 0.025, default: 0.15 },

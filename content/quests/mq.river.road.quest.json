@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "id": "mq.river.road",
+  "title": "The River Road",
+  "giver": { "npc": "rook" },
+  "main": true,
+  "requires": [{ "quest": "mq.bend.call", "done": true }],
+  "objectives": [
+    { "id": "riverBank", "text": "Follow the road to the river", "journal": "Take Rook's chart west to the river.", "when": { "type": "area", "id": "riverBank" } }
+  ],
+  "returnText": "Talk to Rook",
+  "abandonable": false,
+  "reward": { "coin": 30, "items": [{ "id": "arrow", "n": 5 }] }
+}

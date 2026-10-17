@@ -18,6 +18,8 @@
 import { getCtx, isMuted, playNoiseBurst, playToneBurst } from './synth.js';
 // US-020b: burner crackle+hiss / breach wind - two looping ambient beds,
 // each driven by distance to a level-data position (game/js/audio/ambient.js).
+import { stepForestAmbience, resetForestAmbience } from './forestAmbience.js';
+import { stepUndergroundAmbience, resetUndergroundAmbience } from './undergroundAmbience.js';
 import { HISS_BED_PEAK, CRACKLE_BURST_PEAK, WIND_BED_PEAK, resetAmbientAudio, stepAmbientAudio } from './ambient.js';
 // US-020c: floor-material -> footstep timbre (stone/wood/iron), game/js/audio/surfaces.js.
 import { surfaceTimbre } from './surfaces.js';
@@ -271,6 +273,8 @@ export function stepGameAudio(playerEntity) {
   if (playerEntity) stepFootstepAudio(playerEntity);
   stepBoulderAudio();
   stepAmbientAudio(playerEntity); // US-020b: burner crackle+hiss / breach wind
+  stepUndergroundAmbience(playerEntity); // UNDER-08: picks the bed first (suppresses forest)
+  stepForestAmbience(playerEntity); // OB-184: forest bed / birds / night set
 }
 
 // ---- combined reset (main.js's 'world:loaded' handler - runs on the first
@@ -280,6 +284,8 @@ export function resetGameAudio(world) {
   resetSectorAudio();
   resetFootstepAudio(world);
   resetBoulderAudio(world);
+  resetForestAmbience();
+  resetUndergroundAmbience();
   resetAmbientAudio(world); // US-020b: re-reads brazier/breach positions, tears down + will lazily rebuild the two loops
 }
 
@@ -291,3 +297,13 @@ export function resetGameAudio(world) {
 export function __test_setFootWorld(world) { footWorld = world; }
 export function __test_floorMatAt(x, y) { return floorMatAt(x, y); }
 export function __test_footstepDesignFor(mat) { return FOOTSTEP_TIMBRES[surfaceTimbre(mat)]; }
+
+// EQ-07/EQ-09: shield clank (iron on plank) and bow shot (string snap). Built from the same synth bursts; not in GAIN_DESIGNS (one-shots).
+export function playShieldClank() {
+  playToneBurst({ type: 'triangle', freq: 420, freqEnd: 260, duration: 0.05, attack: 0.001, release: 0.12, peak: 0.12 });
+  playNoiseBurst({ duration: 0.03, attack: 0.001, release: 0.06, peak: 0.1, filterType: 'bandpass', filterFreq: 2400, filterQ: 1.2 });
+}
+export function playBowShot() {
+  playToneBurst({ type: 'triangle', freq: 180, freqEnd: 90, duration: 0.03, attack: 0.001, release: 0.08, peak: 0.1 });
+  playNoiseBurst({ duration: 0.02, attack: 0.001, release: 0.05, peak: 0.06, filterType: 'highpass', filterFreq: 3000 });
+}

@@ -34,7 +34,11 @@
 import { makeFrame } from '../core/transform.js';
 import { placementMatrix12 } from '../mesh/DrawList.js';
 import { buildLevelMesh } from '../mesh/levelMesh.js';
-import { buildBvh, buildBvhFromMesh, refit } from '../physics/bvh.js';
+import { buildPrismProxy } from '../mesh/colliderProxy.js';
+
+/** GS-01f: terrainFloor cells draw no floor quad but keep a collision-only one (walkable, mesh physics). */
+const COLLIDER_MESH_OPTS = { collisionFloors: true };
+import { buildBvh, buildBvhFromMesh, refit, BvhBuilder } from '../physics/bvh.js';
 
 /** @typedef {import('../physics/meshCollide.js').MeshCollider} MeshCollider */
 
@@ -171,7 +175,7 @@ function refitColliderInPlace(collider, ceilH) {
  * Allocates every call; that's accepted here in exchange for correctness.
  */
 function rebuildDynColliderFallback(collider, structure, tag) {
-  const set = buildLevelMesh(structure.level);
+  const set = buildLevelMesh(structure.level, COLLIDER_MESH_OPTS);
   const dynEntry = set.dyn.find((d) => d.tag === tag);
   if (!dynEntry) { collider.enabled = false; return; }
   const ch = structure.tagMap.get(tag);
@@ -197,7 +201,7 @@ function buildDynCollider(structure, tag, normalBaseMesh, matrix12) {
   sector.ceilH = sentinel;
   let sentinelSet;
   try {
-    sentinelSet = buildLevelMesh(level);
+    sentinelSet = buildLevelMesh(level, COLLIDER_MESH_OPTS);
   } finally {
     sector.ceilH = currentCeilH;
   }
@@ -208,7 +212,7 @@ function buildDynCollider(structure, tag, normalBaseMesh, matrix12) {
       _warnedSentinelMismatch.add(key);
       console.warn(`engine/world/colliders.js: "${key}": the sentinel build's base mesh differs from the normal base - a base face depends on this tag's ceilH. Falling back to a full mesh rebuild on every refit for this tag (allocates).`);
     }
-    const normalSet = buildLevelMesh(level); // level is back at currentCeilH here
+    const normalSet = buildLevelMesh(level, COLLIDER_MESH_OPTS); // level is back at currentCeilH here
     const normalDyn = normalSet.dyn.find((d) => d.tag === tag);
     if (!normalDyn) return null;
     const fbPos = posWithBarriers(normalDyn.mesh, level, ch, currentCeilH);
@@ -271,7 +275,7 @@ export function buildWorldColliders(world) {
     // Imported meshes have no grid sectors or dynamic legend tags.
     if (s.mesh) continue; // merged below by buildStaticMeshCollider
     const matrix12 = translationMatrix(s.origin);
-    const set = buildLevelMesh(s.level);
+    const set = buildLevelMesh(s.level, COLLIDER_MESH_OPTS);
 
     const base = colliderFromMesh(s.id, set.base, matrix12);
     if (base) colliders.push(base);
@@ -295,6 +299,7 @@ export function buildWorldColliders(world) {
  * order, so a rebuild after an edit is bit-identical to a fresh load). `null` when nothing collides.
  * @param {import('./World.js').World} world
  * @returns {MeshCollider|null}
+ * @param {MeshCollider|null} [prev] previous merged collider (rebuild reuse)
  */
 export function buildStaticMeshCollider(world, prev) {
   const meshParts = [];
@@ -306,6 +311,7 @@ export function buildStaticMeshCollider(world, prev) {
     const src = proxySource(mesh, s);
     if (src) meshParts.push({ id: s.id, src, matrix12 });
   }
+  for (const p of waterBlockParts(world)) meshParts.push(p);
   if (prev && refitMergedMeshCollider(prev, meshParts)) return prev;
   return buildMergedMeshCollider(meshParts);
 }
@@ -355,6 +361,7 @@ const PROXY_WARN_TRIS = 64;
  * @returns {{pos: ArrayLike<number>, triCount: number}|null}
  */
 function proxySource(mesh, placement) {
+  if (mesh && mesh.collide === false && placement.collide === true && mesh.pos) return forcedPrismSource(mesh); // WS2-07b: walk-over mesh made solid by THIS placement (stepping stone)
   if (!mesh || mesh.collide === false || placement.collide === false) return null;
   if (mesh.collider && mesh.collider.length >= 9) return { pos: mesh.collider, triCount: mesh.collider.length / 9 };
   if (!mesh.triCount) return null;
@@ -363,6 +370,47 @@ function proxySource(mesh, placement) {
     console.warn(`engine/world/colliders.js: mesh "${mesh.id}" collides with its ${mesh.triCount} render triangles - run tools/gen-mesh-colliders.mjs to add a proxy.`);
   }
   return { pos: mesh.pos, triCount: mesh.triCount };
+}
+
+const _forcedPrism = new Map();
+/** Prism proxy (flat top at the mesh's highest vertex) for a placement that opts a walk-over mesh into collision (`collide: true`). */
+function forcedPrismSource(mesh) {
+  let src = _forcedPrism.get(mesh.id);
+  if (src === undefined) {
+    const tris = buildPrismProxy(mesh.pos);
+    src = tris ? { pos: Float64Array.from(tris), triCount: tris.length / 9 } : null;
+    _forcedPrism.set(mesh.id, src);
+  }
+  return src;
+}
+
+/** Closed axis-aligned box, 12 CCW-outward triangles (9 floats each). */
+function boxTris(x0, y0, z0, x1, y1, z1) {
+  const c = (i) => [i & 1 ? x1 : x0, i & 2 ? y1 : y0, i & 4 ? z1 : z0];
+  const quads = [[0, 4, 6, 2], [1, 3, 7, 5], [0, 1, 5, 4], [2, 6, 7, 3], [0, 2, 3, 1], [4, 5, 7, 6]]; // -x +x -y +y -z +z
+  const out = [];
+  for (const q of quads) for (const t of [[q[0], q[1], q[2]], [q[0], q[2], q[3]]]) for (const i of t) out.push(...c(i));
+  return out;
+}
+
+/**
+ * WS2-07b (D-064): water region `block: {rect:[x0,y0,x1,y1], lane:[ya,yb], z0, z1}` = no wading. Two solid walls fill
+ * `rect` except the lane y in [ya,yb] (where the stepping stones are), so the water can only be crossed on the stones.
+ * Merged into `meshes:static` (same BVH, no extra collider). z0..z1 must reach well above the banks (step-up 0.45).
+ */
+function waterBlockParts(world) {
+  const parts = [];
+  for (const r of world.waterDef || []) {
+    const b = r && r.block;
+    if (!b) continue;
+    const [x0, y0, x1, y1] = b.rect, [ya, yb] = b.lane;
+    const mk = (suffix, ay, by) => {
+      const pos = Float64Array.from(boxTris(x0, ay, b.z0, x1, by, b.z1));
+      parts.push({ id: `${r.id}:block${suffix}`, src: { pos, triCount: pos.length / 9 }, matrix12: translationMatrix({ x: 0, y: 0, z: 0 }) });
+    };
+    mk('N', y0, ya); mk('S', yb, y1);
+  }
+  return parts;
 }
 
 /**
@@ -401,6 +449,11 @@ function buildMergedMeshCollider(parts) {
  */
 export function buildTrunkCollider(scatter, cfg) {
   if (!scatter || scatter.count === 0) return null;
+  return scatterCollider('scatter:trunks', buildBvh(trunkTris(scatter, cfg), null, null));
+}
+
+/** Unrolled world-space trunk prism walls (16 tris per tree) for `buildTrunkCollider` / `trunkColliderJob`. */
+function trunkTris(scatter, cfg) {
   const pos = new Float64Array(scatter.count * 8 * 2 * 9);
   let o = 0;
   for (let i = 0; i < scatter.count; i++) {
@@ -421,13 +474,47 @@ export function buildTrunkCollider(scatter, cfg) {
       pos[o++] = ax; pos[o++] = ay; pos[o++] = zt;
     }
   }
-  const bvh = buildBvh(pos, null, null);
+  return pos;
+}
+
+/** @returns {MeshCollider} */
+function scatterCollider(id, bvh) {
   return {
-    id: 'scatter:trunks', kind: 'trimesh', bvh,
+    id, kind: 'trimesh', bvh,
     min: Float64Array.from(bvh.nodeMin.subarray(0, 3)),
     max: Float64Array.from(bvh.nodeMax.subarray(0, 3)),
     enabled: true,
   };
+}
+
+/**
+ * PERF-03: the trunk / detail colliders as a time-sliced job for the band bake (bandBake.js phases 2-3), so a
+ * bake-ahead band never builds a whole BVH in one frame. Call order: triangles (1 call), BvhBuilder setup (1 call),
+ * then `BvhBuilder.step(ms)` slices. `result` (MeshCollider or null) is bit-identical to the one-call builders.
+ */
+export class ColliderBuildJob {
+  /** @param {string} id @param {() => (Float64Array|null)} makeTris */
+  constructor(id, makeTris) { this.id = id; this.makeTris = makeTris; this.pos = null; this.builder = null; this.done = false; /** @type {MeshCollider|null} */ this.result = null; }
+  /** >= 1 unit of work per call; true when `result` is final. @param {number} ms */
+  step(ms) {
+    if (this.done) return true;
+    if (!this.pos) { this.pos = this.makeTris(); if (!this.pos) { this.done = true; return true; } return false; }
+    if (!this.builder) { this.builder = new BvhBuilder(this.pos, null, null); return false; }
+    if (!this.builder.step(ms)) return false;
+    this.result = scatterCollider(this.id, /** @type {import('../physics/bvh.js').Bvh} */ (this.builder.result));
+    this.builder = null; this.pos = null; this.done = true;
+    return true;
+  }
+}
+
+/** Sliced `buildTrunkCollider`. */
+export function trunkColliderJob(scatter, cfg) {
+  return new ColliderBuildJob('scatter:trunks', () => (scatter && scatter.count ? trunkTris(scatter, cfg) : null));
+}
+
+/** Sliced `buildDetailCollider`. */
+export function detailColliderJob(detail) {
+  return new ColliderBuildJob('scatter:detail', () => detailTris(detail));
 }
 
 function colliderRing(cx, cy, yaw, prism, radius, hx, hy) {
@@ -493,6 +580,12 @@ function emitColliderFaces(pos, o, ring, cx, cy, zb, zt, prism, bottom) {
  * @returns {MeshCollider|null}
  */
 export function buildDetailCollider(detail) {
+  const pos = detailTris(detail);
+  return pos ? scatterCollider('scatter:detail', buildBvh(pos, null, null)) : null;
+}
+
+/** Unrolled detail collider triangles, or null when there are none. */
+function detailTris(detail) {
   if (!detail || detail.count === 0) return null;
   let triCount = 0;
   for (let i = 0; i < detail.count; i++) {
@@ -507,18 +600,13 @@ export function buildDetailCollider(detail) {
     if (!c) continue;
     const shape = c.prism || c.box;
     const yaw = detail.yawDeg[i] * Math.PI / 180;
-    const zb = detail.z[i] - 0.5, zt = detail.z[i] + shape.h;
+    const sc = detail.scale ? detail.scale[i] : 1;   // SAPLINGS: collider follows the instance scale
+    const zb = detail.z[i] - 0.5, zt = detail.z[i] + shape.h * sc;
     const ring = colliderRing(detail.x[i], detail.y[i], yaw, !!c.prism,
-      c.prism ? c.prism.r : 0, c.box ? c.box.hx : 0, c.box ? c.box.hy : 0);
+      c.prism ? c.prism.r * sc : 0, c.box ? c.box.hx * sc : 0, c.box ? c.box.hy * sc : 0);
     o = emitColliderFaces(pos, o, ring, detail.x[i], detail.y[i], zb, zt, !!c.prism, false);
   }
-  const bvh = buildBvh(pos, null, null);
-  return {
-    id: 'scatter:detail', kind: 'trimesh', bvh,
-    min: Float64Array.from(bvh.nodeMin.subarray(0, 3)),
-    max: Float64Array.from(bvh.nodeMax.subarray(0, 3)),
-    enabled: true,
-  };
+  return pos;
 }
 
 /**
@@ -543,6 +631,41 @@ export function buildPropCollider(shapes, count) {
   return { id: 'props:static', kind: 'trimesh', bvh,
     min: Float64Array.from(bvh.nodeMin.subarray(0, 3)),
     max: Float64Array.from(bvh.nodeMax.subarray(0, 3)), enabled: true };
+}
+
+/**
+ * CH1-E2 (38.37): movable NPC prisms, one upright prism per slot (<= 8). Same geometry as
+ * `buildPropCollider` prisms; `moveKinematicPrism` shifts a slot in place and refits (0 alloc).
+ * @param {Array<{x:number,y:number,zc:number,r:number,h:number}>} shapes
+ * @returns {MeshCollider|null}
+ */
+export function buildKinematicCollider(shapes) {
+  const n = shapes.length;
+  if (!n) return null;
+  const pos = new Float64Array(n * 32 * 9);
+  const cx = new Float64Array(n), cy = new Float64Array(n), cz = new Float64Array(n);
+  let o = 0;
+  for (let i = 0; i < n; i++) {
+    const s = shapes[i];
+    cx[i] = s.x; cy[i] = s.y; cz[i] = s.zc;
+    o = emitColliderFaces(pos, o, colliderRing(s.x, s.y, 0, true, s.r, 0, 0), s.x, s.y, s.zc - s.h / 2, s.zc + s.h / 2, true, true);
+  }
+  const bvh = buildBvh(pos, null, null);
+  return { id: 'npcs:kinematic', kind: 'trimesh', bvh,
+    min: Float64Array.from(bvh.nodeMin.subarray(0, 3)),
+    max: Float64Array.from(bvh.nodeMax.subarray(0, 3)), enabled: true,
+    _pos: pos, _cx: cx, _cy: cy, _cz: cz };
+}
+
+/** Moves prism `slot` so its centre is (x, y, zc); rewrites its 32 triangles' vertices and refits. */
+export function moveKinematicPrism(collider, slot, x, y, zc) {
+  const dx = x - collider._cx[slot], dy = y - collider._cy[slot], dz = zc - collider._cz[slot];
+  if (dx === 0 && dy === 0 && dz === 0) return;
+  const pos = collider._pos, a = slot * 32 * 9, b = a + 32 * 9;
+  for (let i = a; i < b; i += 3) { pos[i] += dx; pos[i + 1] += dy; pos[i + 2] += dz; }
+  collider._cx[slot] = x; collider._cy[slot] = y; collider._cz[slot] = zc;
+  refit(collider.bvh, pos, null, null);
+  refreshAabb(collider);
 }
 
 /**

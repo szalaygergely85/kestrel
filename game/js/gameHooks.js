@@ -10,13 +10,15 @@
 // `interactRaw` is the ungated E edge (S8-B1-04: lets a handler's own modal, e.g. the item-get card, consume the
 // E key to dismiss itself even though its own `isOpen` is what makes `interactPressed` false this same tick).
 // Events (payloads are REUSED objects from payload(name): receivers copy what they keep):
-//   area:entered {id}  prop:touched {id, kind, x, y, z}  beast:died {id}  item:got {id, n}  player:died {x, y, z}  flag:set {key, value}
+//   area:entered {id}  zone:entered {id}  zone:left {id}  prop:touched {id, kind, x, y, z}  beast:died {id}  item:got {id, n}  player:died {x, y, z}  flag:set {key, value}
 // onRespawn() returns {x, y, z, yawDeg} or null; the first non-null wins (null = today's spawn / save point).
 
-export const EVENT_NAMES = ['area:entered', 'prop:touched', 'beast:died', 'item:got', 'player:died', 'flag:set'];
+export const EVENT_NAMES = ['area:entered', 'zone:entered', 'zone:left', 'prop:touched', 'beast:died', 'item:got', 'player:died', 'flag:set'];
 
 const payloads = {
   'area:entered': { id: '' },
+  'zone:entered': { id: '' },
+  'zone:left': { id: '' },
   'prop:touched': { id: '', kind: '', x: 0, y: 0, z: 0 },
   'beast:died': { id: '' },
   'item:got': { id: '', n: 1 },
@@ -24,10 +26,16 @@ const payloads = {
   'flag:set': { key: '', value: null },
 };
 
+const EMPTY_TARGETS = Object.freeze([]);
+
 export function createGameHooks() {
   /** @type {{h:any, warned:Set<string>}[]} */
   let list = [];
   const ctx = { world: null, player: null, events: null, vitals: null, inventory: null, requestSave: null, state: { wakeDone: false, canSave: false, ending: false, interactPressed: false, interactRaw: false, playerYawDeg: 0 } };
+  // QUEST-MARK-01w: read-only active-objective getter. main.js (or a wire) sets ONE source fn(out); questObjective() refills
+  // and returns the SAME reused object { id, done, targets }, targets = the frozen marker-target id array (never mutate).
+  const questOut = { id: '', done: true, targets: EMPTY_TARGETS };
+  let questSource = null;
   ctx.requestSave = () => { for (let i = 0; i < saveListeners.length; i++) saveListeners[i](); };
   const saveListeners = [];
 
@@ -90,16 +98,28 @@ export function createGameHooks() {
       }
       return null;
     },
+    /** Points questObjective() at the quest (fn(out) fills out.id/done/targets). Returns an unset fn. */
+    setQuestSource(fn) { questSource = fn; return () => { if (questSource === fn) questSource = null; }; },
+    /** Active objective { id, done, targets } (reused object, zero alloc). No source / throwing source -> done, no targets. */
+    questObjective() {
+      questOut.id = ''; questOut.done = true; questOut.targets = EMPTY_TARGETS;
+      if (questSource) { try { questSource(questOut); } catch (e) { questSource = null; } }
+      return questOut;
+    },
     get count() { return list.length; },
   };
   return api;
 }
 
-/** Engine event bus -> seam events (beast:died, inventory:added -> item:got). Returns an unsubscribe. */
+/** ED-LOGIC-01c: engine trigger enter/leave -> zone:entered/left (logic blocks ONLY). area:entered keeps its old sources (questRelay/saveRelay polls),
+ *  so quests never get a second feed or events for zones they never listened to.
+ *  Engine event bus -> seam events (beast:died, inventory:added -> item:got). Returns an unsubscribe. */
 export function bridgeEngineEvents(events, hooks) {
   const offs = [
     events.on('beast:died', (p) => { if (p && typeof p.id === 'string') hooks.emitSimple('beast:died', p.id); }),
     events.on('inventory:added', (p) => { if (p && typeof p.id === 'string') hooks.emitSimple('item:got', p.id, p.n || 1); }),
+    events.on('trigger:entered', (p) => { if (p && typeof p.id === 'string') hooks.emitSimple('zone:entered', p.id); }),
+    events.on('trigger:left', (p) => { if (p && typeof p.id === 'string') hooks.emitSimple('zone:left', p.id); }),
     // interaction:fired {key, name} carries no position (interaction.js:191) -> no 4th arg, coords default to 0,0,0.
     events.on('interaction:fired', (p) => { if (p && typeof p.key === 'string') hooks.emitSimple('prop:touched', p.key, p.name); }),
   ];

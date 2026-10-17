@@ -18,7 +18,9 @@ for (let i = 0; i < 5000; i++) {
   const x = (rnd() - 0.5) * 4000, y = (rnd() - 0.5) * 4000, t = rnd() * 7200 - 100;
   f._baseInto(x, y, t / STEP, w);
   f.sampleInto(x, y, 0, t / STEP, s3); // no zones: the full sample equals the base vector
-  assert.ok(Math.abs(s3[0] - w[0]) < 1e-12 && Math.abs(s3[1] - w[1]) < 1e-12);
+  // WIND-GUST-01: the base vector carries the travelling gust bands; sampleInto (gameplay) does not. base = sample * gustMul.
+  const gm = f.gustMul(x, y, t / STEP);
+  assert.ok(Math.abs(s3[0] * gm - w[0]) < 1e-9 && Math.abs(s3[1] * gm - w[1]) < 1e-9);
   const g = windAt(x, y, t, p.dirX, p.dirY, p.speed, p.amp, p.P, p.travel);
   maxErr = Math.max(maxErr, Math.abs(w[0] - g.x), Math.abs(w[1] - g.y));
 }

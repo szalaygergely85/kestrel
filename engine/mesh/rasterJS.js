@@ -16,7 +16,7 @@
 // Zero allocation per frame (27.15.0 "hard gate"): every scratch buffer
 // below is module-level and reused; no closures, array literals or
 // destructuring inside the hot per-triangle/per-pixel path.
-import { PROJ_NEAR, PROJ_FAR } from '../render/projection.js';
+import { PROJ_NEAR, PROJ_FAR, DEPTH_TIER } from '../render/projection.js';
 import {
   KIND_TERRAIN, KIND_MODEL, KIND_MESH, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D, FACE_PACKED, PLANEID_TERRAIN,
 } from '../render/GBuffer.js';
@@ -24,10 +24,11 @@ import { packNormalOct, unpackNormalOct } from '../voxel/octNormal.js';
 import {
   flatKind, flatFace, flatMat, AO_NONE, AO_WALL, AO_PLANE, AUX_STRIDE, FLAT_STRIDE,
 } from './MeshData.js';
-import { DRAW_VOXEL, DRAW_INSTANCED, DRAW_WATER, DRAW_FLAG_DEPTH_BIAS, DRAW_FLAG_ONE_PART, instancedRanges } from './DrawList.js';
+import { DRAW_VOXEL, DRAW_INSTANCED, DRAW_WATER, DRAW_FLAG_DEPTH_BIAS, DRAW_FLAG_ONE_PART, DRAW_FLAG_NO_CULL, DRAW_FLAG_TWO_SIDED, instancedRanges } from './DrawList.js';
 import { MaskAtlas } from '../render/MaskAtlas.js';
-import { INST_FLAG_SWAY, swayOffset, windSwayOn } from './sway.js';
+import { INST_FLAG_SWAY, swayOffset, windSwayOn, swayFade, swayCellsPerMetre } from './sway.js';
 import { ditherKeep } from './lodDither.js';
+import { impViewPick, impMipPick, impDecodeTexel, IMP_CE, IMP_SE } from './impostorCard.js';
 import { meshHasVertexAo, vertexAoAt } from './vertexAo.js';
 import { getClipmap, WATER_U_STRIDE, U_KIND, U_Z, U_AABB, U_SHAPE, U_SLOT } from './waterMesh.js';
 
@@ -71,6 +72,7 @@ export const BIAS_UNITS = 1;
  * @property {Float64Array|Float32Array} [structFoot] - x0, y0, x1, y1 per placed structure (world m): terrain
  *   fragments inside any box are skipped (the DDA `buildSkips` rule; GPU twin: terrain.vert.js `uStructFoot`)
  * @property {number} [structCount] - boxes used in `structFoot`
+ * @property {(Uint8Array|null)[]} [structMask] - GS-01a: per box, carve mask (stride = box width) or null = carve the whole box
  * @property {import('../render/MaskAtlas.js').MaskAtlas|null} [maskAtlas] - ALPHA-01b: needed for meshes with `maskRanges`
  * @property {{field: import('./sway.js').SwayWind, t: number}|null} [wind] - S8-B2-06: the world wind field (createWind) + seconds; instances flagged INST_FLAG_SWAY sway (absent/speed 0 = off)
  * @property {{slotIds: Uint32Array, mat: Uint32Array}|null} [team] - RE-06: `table.team` (teamRemap.js); DRAW_INSTANCED mat remap
@@ -159,9 +161,12 @@ const _instItem = {
 let _atlas = /** @type {MaskAtlas|null} */ (null);
 let _mW = -1, _mX0 = 0, _mY0 = 0, _mH = 0, _mCut = 0;
 // S8-B2-06: foliage sway state of the instance being rasterised (off outside DRAW_INSTANCED / for unflagged instances / zero wind)
+let _swayF2 = 1; // OB-144 per-instance sway factor
 let _swayOn = false, _swayBx = 0, _swayBy = 0, _swayBz = 0, _swayT = 0, _swayF = /** @type {import('./sway.js').SwayWind|null} */ (null);
 const _swayD = { x: 0, y: 0 };
 let _dither = 0; // S8-B2-07: (flags >>> 16) & 0x7ff of the instance being rasterised (0 = not dithered; lodDither.js)
+let _twoSided = false; // OB-061: DRAW_FLAG_TWO_SIDED instanced item (LOD1 leaf cards of a masked LOD0)
+let _noCull = false; // MESH-INST-02: DRAW_FLAG_NO_CULL instanced item (open mesh): no back-face cull
 let _team = 0; // team index of the instance being rasterised (0 outside DRAW_INSTANCED)
 /** Per-triangle constant fragment data, reused every triangle (no per-call allocation). */
 const _info = {
@@ -169,18 +174,29 @@ const _info = {
   mirror: 0, // HANDS-01a: item.mirror (det<0 part matrices) flips the cullBack sign
   kind: 0, face: 0, mat: 0, planeId: 0, aoMode: 0, zRef: 0,
   aux2: 0, aux3: 0, aux4: 0, aux5: 0,
-  dither: 0, zBase: 0, objectId: 0, isTerrain: false, isVoxel: false, isMesh: false,
+  card: false, dither: 0, zBase: 0, objectId: 0, isTerrain: false, isVoxel: false, isMesh: false,
   partAxisAligned: false, kind7Mat: /** @type {((x:number,y:number)=>number)|null} */ (null),
+  depthTier: 0, // OB-053 (38.49): item.depthTier; the depth TEST is pulled forward by 2 * tier * DEPTH_TIER (NDC [-1,1]); 0 in depth-bias (shadow) passes
   biasFlag: 0, biasFactor: BIAS_FACTOR, biasUnits: BIAS_UNITS, twoSided: false,
   maskW: -1, maskX0: 0, maskY0: 0, maskH: 0, maskCut: 0, // ALPHA-01b: maskW < 0 = opaque range (no discard)
   structFoot: /** @type {Float64Array|Float32Array|null} */ (null), structCount: 0,
+  structMask: /** @type {(Uint8Array|null)[]|null} */ (null), // GS-01a: per-box carve mask (null entry = whole box)
 };
 
-/** True when world (x, y) is inside any `[x0, x1) x [y0, y1)` box of `foot` (structure footprint carve, terrain only). */
-function insideStructFoot(foot, count, x, y) {
+/**
+ * True when world (x, y) is inside any `[x0, x1) x [y0, y1)` box of `foot` (structure footprint carve, terrain only).
+ * GS-01a: when `masks[i]` is set, the box test is followed by a per-cell lookup (mask stride = box width, 1 = carve);
+ * unflagged structures (null / no masks) carve the whole box as before.
+ */
+export function insideStructFoot(foot, count, x, y, masks) {
   for (let i = 0; i < count; i++) {
     const o = i * 4;
-    if (x >= foot[o] && x < foot[o + 2] && y >= foot[o + 1] && y < foot[o + 3]) return true;
+    if (x >= foot[o] && x < foot[o + 2] && y >= foot[o + 1] && y < foot[o + 3]) {
+      const m = masks ? masks[i] : null;
+      if (m === null || m === undefined) return true;
+      const w = (foot[o + 2] - foot[o]) | 0;
+      if (m[((y - foot[o + 1]) | 0) * w + ((x - foot[o]) | 0)] !== 0) return true;
+    }
   }
   return false;
 }
@@ -238,7 +254,7 @@ function transformVertex(mesh, matArr, vIdx, M, outBuf, off) {
   let wx = a00 * px + a01 * py + a02 * pz + tx;
   let wy = a10 * px + a11 * py + a12 * pz + ty;
   const wz = a20 * px + a21 * py + a22 * pz + tz;
-  if (_swayOn) { swayOffset(_swayBx, _swayBy, wz - _swayBz, _swayT, /** @type {import('./sway.js').SwayWind} */ (_swayF), _swayD); wx += _swayD.x; wy += _swayD.y; }
+  if (_swayOn) { swayOffset(_swayBx, _swayBy, wz - _swayBz, _swayT, /** @type {import('./sway.js').SwayWind} */ (_swayF), _swayD); wx += _swayD.x * _swayF2; wy += _swayD.y * _swayF2; }
 
   _nrmScratch[0] = 0; _nrmScratch[1] = 0; _nrmScratch[2] = 1;
   unpackNormalOct(mesh.nrm[vIdx], _nrmScratch);
@@ -246,7 +262,7 @@ function transformVertex(mesh, matArr, vIdx, M, outBuf, off) {
   let nx = a00 * lnx + a01 * lny + a02 * lnz;
   let ny = a10 * lnx + a11 * lny + a12 * lnz;
   let nz = a20 * lnx + a21 * lny + a22 * lnz;
-  const nlen = Math.hypot(nx, ny, nz) || 1;
+  const nlen = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
   nx /= nlen; ny /= nlen; nz /= nlen;
 
   let u = 0, v = 0;
@@ -393,6 +409,7 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
     biasAdd = info.biasFactor * Math.max(Math.abs(dznX), Math.abs(dznY)) + 2 * info.biasUnits * Math.pow(2, -24);
   }
 
+  const tierShift = 2 * info.depthTier * DEPTH_TIER;
   for (let py = pyMin; py <= pyMax; py++) {
     const Py = py * 256 + 128;
     const rowBase = py * W;
@@ -410,8 +427,19 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
       let zn = l0 * zn0 + l1 * zn1 + l2 * zn2;
       const znRaw = zn; // fragment position.z has no rasterizer bias (ortho depth below)
       if (info.biasFlag) zn += biasAdd;
+      if (info.depthTier !== 0) zn -= tierShift; // OB-053: compare + zbuf only, the written depth (vD) stays raw
       if (zn > 1) continue;
       if (info.dither !== 0 && !ditherKeep(info.dither, px, py)) continue; // S8-B2-07: the GPU discards before the depth test, so does this
+      if (info.card) { // R6b (impostorCard.js rules 5-7): texel lookup + depth offset; zn becomes the shifted-point depth
+        const iqc = 1 / (l0 * iw0 + l1 * iw1 + l2 * iw2);
+        if (!cardFragment(
+          (l0 * u0a * iw0 + l1 * u1a * iw1 + l2 * u2a * iw2) * iqc, (l0 * v0a * iw0 + l1 * v1a * iw1 + l2 * v2a * iw2) * iqc,
+          (l0 * wx0 * iw0 + l1 * wx1 * iw1 + l2 * wx2 * iw2) * iqc, (l0 * wy0 * iw0 + l1 * wy1 * iw1 + l2 * wy2 * iw2) * iqc,
+          (l0 * wz0 * iw0 + l1 * wz1 * iw1 + l2 * wz2 * iw2) * iqc, ctx.M)) continue;
+        zn = _cF[CF_ZN];
+        if (info.depthTier !== 0) zn -= tierShift;
+        if (zn > 1) continue;
+      }
 
       const idx = rowBase + px;
       if (target.depthOnly) {
@@ -427,7 +455,7 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
             const iq = 1 / (l0 * iw0 + l1 * iw1 + l2 * iw2);
             const cwx = (l0 * wx0 * iw0 + l1 * wx1 * iw1 + l2 * wx2 * iw2) * iq;
             const cwy = (l0 * wy0 * iw0 + l1 * wy1 * iw1 + l2 * wy2 * iw2) * iq;
-            if (insideStructFoot(info.structFoot, info.structCount, cwx, cwy)) continue;
+            if (insideStructFoot(info.structFoot, info.structCount, cwx, cwy, info.structMask)) continue;
           }
           target.zbuf[idx] = zn;
           if (target.writes) target.writes[idx]++;
@@ -445,7 +473,7 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
         let wnx = (l0 * nx0 * iw0 + l1 * nx1 * iw1 + l2 * nx2 * iw2) * invq;
         let wny = (l0 * ny0 * iw0 + l1 * ny1 * iw1 + l2 * ny2 * iw2) * invq;
         let wnz = (l0 * nz0 * iw0 + l1 * nz1 * iw1 + l2 * nz2 * iw2) * invq;
-        const nlen = Math.hypot(wnx, wny, wnz) || 1;
+        const nlen = Math.sqrt(wnx * wnx + wny * wny + wnz * wnz) || 1;
         wnx /= nlen; wny /= nlen; wnz /= nlen;
         if (info.maskW >= 0) { // ALPHA-01b (37.17 item 3): discard below the cutoff before any G-buffer write (zbuf untouched)
           const mU = (l0 * mu0 * iw0 + l1 * mu1 * iw1 + l2 * mu2 * iw2) * invq;
@@ -453,15 +481,17 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
           if (_atlas.sample(info.maskX0, info.maskY0, info.maskW, info.maskH, mU, mV) < info.maskCut) continue;
         }
         if (flipN) { wnx = -wnx; wny = -wny; wnz = -wnz; }
+        if (info.card) { wnx = _cF[CF_NX]; wny = _cF[CF_NY]; wnz = _cF[CF_NZ]; }
 
         let face = info.face, mat = info.mat, outU = u, outV = v;
         if (info.isTerrain) {
-          if (info.structCount > 0 && insideStructFoot(info.structFoot, info.structCount, wx, wy)) continue;
+          if (info.structCount > 0 && insideStructFoot(info.structFoot, info.structCount, wx, wy, info.structMask)) continue;
           outU = wx; outV = wy;
           mat = info.kind7Mat ? info.kind7Mat(wx, wy) : 0;
         } else if (info.isVoxel) {
           face = info.partAxisAligned ? roundedFace(wnx, wny, wnz) : FACE_PACKED;
         } else if (info.isMesh) {
+          if (info.card) mat = _cMat;
           // ME-14c2 (37.1 item 1): axis face when the world normal is within ~26 deg of an axis, else packed (face 7).
           face = Math.max(Math.abs(wnx), Math.abs(wny), Math.abs(wnz)) >= 0.9 ? roundedFace(wnx, wny, wnz) : FACE_PACKED;
         }
@@ -479,7 +509,7 @@ function rasterFanTri(buf, o0, o1, o2, target, ctx, info) {
         target.vao[idx] = (l0 * ao0 * iw0 + l1 * ao1 * iw1 + l2 * ao2 * iw2) * invq; // ME-20c, perspective-correct like u/v
         target.objectId[idx] = info.objectId;
         // US-068b1 (38.19): ortho has w = 1, so 1/w is a trap: depth = linear z = near + z01 * (far - near) (GPU twin: select(1/pos.w, ..., projMode == 2u))
-        target.depth[idx] = ortho ? PROJ_NEAR + (0.5 * (znRaw + 1)) * (PROJ_FAR - PROJ_NEAR) : invq;
+        target.depth[idx] = info.card ? _cF[CF_D] : ortho ? PROJ_NEAR + (0.5 * (znRaw + 1)) * (PROJ_FAR - PROJ_NEAR) : invq;
         target.zbuf[idx] = zn;
         if (target.writes) target.writes[idx]++;
       }
@@ -558,10 +588,11 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
       _info.kind7Mat = ctx.kind7Mat || null;
       _info.structFoot = ctx.structFoot || null;
       _info.structCount = ctx.structFoot ? (ctx.structCount || 0) : 0;
+      _info.structMask = ctx.structMask || null;
       _info.biasFlag = item.flags & DRAW_FLAG_DEPTH_BIAS;
       _info.cullBack = false;
     } else {
-      _info.twoSided = _mW >= 0; // ALPHA-01b (37.17 item 4): masked ranges flip N on back faces like cloth
+      _info.twoSided = _mW >= 0 || _twoSided; // ALPHA-01b (37.17 item 4): masked ranges flip N on back faces like cloth; OB-061: so do DRAW_FLAG_TWO_SIDED items (GPU flips on !front_facing everywhere)
       v0 = t * 3; v1 = t * 3 + 1; v2 = t * 3 + 2;
       const flat0 = mesh.flat[v0 * FLAT_STRIDE];
       const flat1 = mesh.flat[v0 * FLAT_STRIDE + 1];
@@ -582,8 +613,9 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
       _info.partAxisAligned = instAligned !== undefined ? instAligned : (isVoxelItem && (item.partFlags[partIdx] & 1) !== 0);
       _info.kind7Mat = null;
       _info.biasFlag = 0;
-      _info.cullBack = (isVoxelItem || instAligned !== undefined) && _mW < 0;
+      _info.cullBack = (isVoxelItem || instAligned !== undefined) && _mW < 0 && !_noCull;
     }
+    _info.depthTier = ctx.depthBias ? 0 : (item.depthTier | 0); // OB-053: colour pass only (shadow casters keep their depthBias)
     if (ctx.depthBias) { // ME-15a: the shadow pass biases every caster
       _info.biasFlag = 1; _info.biasFactor = ctx.depthBias.factor; _info.biasUnits = ctx.depthBias.units;
     } else {
@@ -607,6 +639,8 @@ function rasterRange(mesh, item, target, ctx, triStart, triCount, partIdx, isVox
  */
 function rasterInstanced(mesh, item, target, ctx) {
   const ranges = instancedRanges(item); // 38.9: ONE_PART = whole mesh as one range
+  _noCull = (item.flags & DRAW_FLAG_NO_CULL) !== 0;
+  _twoSided = (item.flags & DRAW_FLAG_TWO_SIDED) !== 0;
   const onePart = !!(item.flags & DRAW_FLAG_ONE_PART); // ALPHA-01f (a): the synthetic single range has no per-range mask
   const ib = item.instBuf;
   if (!ib) return;
@@ -649,12 +683,119 @@ function rasterInstanced(mesh, item, target, ctx) {
       _team = (meta >>> 8) & 0xff;
       _dither = (meta >>> 16) & 0x7ff;
       _swayOn = windOn && (meta & INST_FLAG_SWAY) !== 0;
+      if (_swayOn) {
+        _swayF2 = swayFade(swayCellsPerMetre(ctx.M, itx, ity, itz, wind.halfCols || 0));
+        if (_swayF2 <= 0) _swayOn = false;
+      }
       if (_swayOn) { _swayBx = itx; _swayBy = ity; _swayBz = itz; _swayT = wind.t; _swayF = wind.field; }
       rasterRange(mesh, _instItem, target, ctx, range.start, range.count, p, false, partAligned && (meta & 1) !== 0);
     }
   }
   _mW = -1; // ALPHA-01f(a): leave the module mask state clean for whatever draws next (mirrors rasterDrawList's static-masked reset)
-  _team = 0; _swayOn = false; _dither = 0;
+  _team = 0; _swayOn = false; _dither = 0; _noCull = false; _twoSided = false;
+}
+
+// ---------------------------------------------------------------------------
+// R6b (38.60): card impostors. Rules: impostorCard.js header (the WGSL twin mirrors them). Called by the host after the
+// DrawList pass with the group's engine-owned card bucket (`g.cardIb`, `g.cardCount`, filled by compactGroup). Zero allocation.
+// ---------------------------------------------------------------------------
+let _cImp = /** @type {any} */ (null), _cView = 0, _cMip = 0, _cMat = 0;
+// doubles live in a typed array: module-level `let` doubles are boxed by V8 (one heap number per write = per fragment)
+const _cF = new Float64Array(9); // 0 zn, 1 depth, 2-4 world normal, 5 scale, 6 yaw, 7-8 dir.xy
+const CF_ZN = 0, CF_D = 1, CF_NX = 2, CF_NY = 3, CF_NZ = 4, CF_SCALE = 5, CF_YAW = 6, CF_DX = 7, CF_DY = 8;
+const _cTex = { mat: 0, o: 0, nx: 0, ny: 0, nz: 1 };
+
+/** Per-fragment card work (rules 5-7). true = covered; sets _cF[CF_ZN]/_cF[CF_D]/_cMat/_cN*. */
+function cardFragment(u, v, wx, wy, wz, M) {
+  if (!impDecodeTexel(_cImp, _cView, _cMip, u, v, _cF[CF_YAW], _cTex)) return false;
+  const so = _cTex.o * _cF[CF_SCALE];
+  const px = wx + so * _cF[CF_DX] * IMP_CE, py = wy + so * _cF[CF_DY] * IMP_CE, pz = wz - so * IMP_SE;
+  const zc = M[2] * px + M[6] * py + M[10] * pz + M[14];
+  const wc = M[3] * px + M[7] * py + M[11] * pz + M[15];
+  _cF[CF_ZN] = zc / wc; _cF[CF_D] = wc;
+  _cMat = _cTex.mat; _cF[CF_NX] = _cTex.nx; _cF[CF_NY] = _cTex.ny; _cF[CF_NZ] = _cTex.nz;
+  return true;
+}
+
+function cardVert(off, M, wx, wy, wz, u, v) {
+  buf4(_bufA, off, M, wx, wy, wz);
+  _bufA[off + 7] = u; _bufA[off + 8] = v;
+  _bufA[off + 9] = 0; _bufA[off + 10] = 0; _bufA[off + 11] = 1;
+  _bufA[off + 12] = 0; _bufA[off + 13] = 0; _bufA[off + 14] = 1;
+}
+function buf4(b, off, M, wx, wy, wz) {
+  b[off] = M[0] * wx + M[4] * wy + M[8] * wz + M[12];
+  b[off + 1] = M[1] * wx + M[5] * wy + M[9] * wz + M[13];
+  b[off + 2] = M[2] * wx + M[6] * wy + M[10] * wz + M[14];
+  b[off + 3] = M[3] * wx + M[7] * wy + M[11] * wz + M[15];
+  b[off + 4] = wx; b[off + 5] = wy; b[off + 6] = wz;
+}
+const _cQuad = new Float64Array(12); // 4 corners world xyz
+const _cQU = new Float64Array([-1, 1, 1, -1]);
+
+function cardClipRaster(t0, t1, t2, target, ctx) {
+  let curBuf = _bufA, curCount = 3, otherBuf = _bufB;
+  // triangle t0,t1,t2 already copied into _bufA[0..3*STRIDE)
+  for (let p = 0; p < 5 && curCount > 0; p++) {
+    const outCount = clipAgainstPlane(curBuf, curCount, otherBuf, p);
+    const tmp = curBuf; curBuf = otherBuf; otherBuf = tmp;
+    curCount = outCount;
+  }
+  if (curCount < 3) return;
+  for (let k = 1; k < curCount - 1; k++) rasterFanTri(curBuf, 0, k * STRIDE, (k + 1) * STRIDE, target, ctx, _info);
+}
+
+/**
+ * @param {import('./instances.js').InstanceBuffer} ib @param {number} count
+ * @param {{bytes: Uint8Array, radius: number, vMin: number, vMax: number}} imp
+ * @param {RasterTarget} target @param {RasterCtx} ctx @param {{x:number,y:number,z:number}} eye
+ */
+export function rasterCards(ib, count, imp, target, ctx, eye) {
+  if (count <= 0 || target.depthOnly || ctx.depthBias || ctx.ortho === true || ctx.ortho === 1) return; // cards never cast; perspective only
+  const f = ib.f32, u32 = ib.u32, M = ctx.M, R = imp.radius, vMin = imp.vMin, vMax = imp.vMax;
+  _cImp = imp;
+  _info.card = true; _info.isTerrain = false; _info.isVoxel = false; _info.isMesh = true; _info.kind = KIND_MESH;
+  _info.face = FACE_PACKED; _info.planeId = 0; _info.aoMode = AO_NONE; _info.zRef = 0; _info.cullBack = false; _info.twoSided = false;
+  _info.partAxisAligned = false; _info.kind7Mat = null; _info.biasFlag = 0; _info.maskW = -1; _info.depthTier = 1; _info.mirror = 0;
+  _info.biasFactor = BIAS_FACTOR; _info.biasUnits = BIAS_UNITS;
+  _vaoOn = false;
+  for (let i = 0; i < count; i++) {
+    const b = i * 16;
+    const m00 = f[b], m10 = f[b + 4], tx = f[b + 3], ty = f[b + 7], tz = f[b + 11];
+    const hx0 = tx - eye.x, hy0 = ty - eye.y, hl = Math.sqrt(hx0 * hx0 + hy0 * hy0);
+    if (hl < 1e-6) continue;
+    const hx = hx0 / hl, hy = hy0 / hl;
+    _cF[CF_YAW] = Math.atan2(m10, m00);
+    _cF[CF_SCALE] = Math.sqrt(m00 * m00 + m10 * m10);
+    _cView = impViewPick(eye.x, eye.y, tx, ty, _cF[CF_YAW]);
+    _cF[CF_DX] = hx; _cF[CF_DY] = hy;
+    const s = _cF[CF_SCALE], rx = hy, ry = -hx;
+    // corners (rule 3): u*r + v*up, up = (hx*SE, hy*SE, CE)
+    for (let k = 0; k < 4; k++) {
+      const u = _cQU[k] * R, v = k < 2 ? vMax : vMin;
+      _cQuad[k * 3] = tx + s * (u * rx + v * hx * IMP_SE);
+      _cQuad[k * 3 + 1] = ty + s * (u * ry + v * hy * IMP_SE);
+      _cQuad[k * 3 + 2] = tz + s * (v * IMP_CE);
+    }
+    // mip (rule 4) from corners 0 -> 1 in raster sample px
+    const c0w = M[3] * _cQuad[0] + M[7] * _cQuad[1] + M[11] * _cQuad[2] + M[15];
+    const c1w = M[3] * _cQuad[3] + M[7] * _cQuad[4] + M[11] * _cQuad[5] + M[15];
+    if (c0w < PROJ_NEAR || c1w < PROJ_NEAR) continue; // card straddles the eye plane: far-LOD only, never happens beyond impM
+    const c0x = (M[0] * _cQuad[0] + M[4] * _cQuad[1] + M[8] * _cQuad[2] + M[12]) / c0w, c0y = (M[1] * _cQuad[0] + M[5] * _cQuad[1] + M[9] * _cQuad[2] + M[13]) / c0w;
+    const c1x = (M[0] * _cQuad[3] + M[4] * _cQuad[4] + M[8] * _cQuad[5] + M[12]) / c1w, c1y = (M[1] * _cQuad[3] + M[5] * _cQuad[4] + M[9] * _cQuad[5] + M[13]) / c1w;
+    _cMip = impMipPick(Math.sqrt(((c1x - c0x) * target.W / 2) ** 2 + ((c1y - c0y) * target.H / 2) ** 2));
+    const meta = u32[b + 13];
+    _info.objectId = u32[b + 12]; _info.zBase = tz; _info.dither = (meta >>> 16) & 0x7ff;
+    // two triangles: (0,1,2) (0,2,3)
+    for (let tri = 0; tri < 2; tri++) {
+      const a = 0, bI = tri === 0 ? 1 : 2, cI = tri === 0 ? 2 : 3;
+      cardVert(0, M, _cQuad[a * 3], _cQuad[a * 3 + 1], _cQuad[a * 3 + 2], _cQU[a] * R, a < 2 ? vMax : vMin);
+      cardVert(STRIDE, M, _cQuad[bI * 3], _cQuad[bI * 3 + 1], _cQuad[bI * 3 + 2], _cQU[bI] * R, bI < 2 ? vMax : vMin);
+      cardVert(STRIDE * 2, M, _cQuad[cI * 3], _cQuad[cI * 3 + 1], _cQuad[cI * 3 + 2], _cQU[cI] * R, cI < 2 ? vMax : vMin);
+      cardClipRaster(0, 1, 2, target, ctx);
+    }
+  }
+  _info.card = false; _info.dither = 0; _cImp = null;
 }
 
 /**
@@ -717,6 +858,7 @@ function waterOutcode(buf, off) {
  * @param {RasterTarget} target @param {any} ctx
  */
 function rasterWaterSlot(sel, slot, target, ctx) {
+  if (sel.u[slot * WATER_U_STRIDE + U_KIND] === 3) { rasterRiverSlot(sel, slot, target, ctx); return; } // OB-019 RIVER-02 (38.45)
   const sheet = sel.sheets && sel.sheets[slot];
   const cm = sheet ? sheet.mesh : getClipmap(), M = ctx.M, u = sel.u, ub = slot * WATER_U_STRIDE;
   const verts = cm.verts, index = cm.index;
@@ -756,6 +898,133 @@ function rasterWaterSlot(sel, slot, target, ctx) {
       }
       if (curCount < 3) continue;
       for (let k = 1; k < curCount - 1; k++) rasterWaterTri(curBuf, 0, k * STRIDE, (k + 1) * STRIDE, target, ctx, sel, ub);
+    }
+  }
+}
+
+/**
+ * OB-019 RIVER-02 (38.45 (2)): one river ribbon slot. Vertices: lx, ly (local to the river origin; the slot uniform shape.xy =
+ * origin - O), z, tau, e, nx, ny, rapid; the draw runs are the selection's <= 8 (first, count) index ranges (chunk LOD).
+ * Attributes ride in the fan-vertex slots 7..11 = tau, e, rapid, nx, ny; world xy in 4..5.
+ */
+function rasterRiverSlot(sel, slot, target, ctx) {
+  const k = slot - 12, mesh = sel.riverMesh[k], M = ctx.M, u = sel.u, ub = slot * WATER_U_STRIDE;
+  if (!mesh) return;
+  const verts = mesh.verts, index = mesh.index;
+  const bx = sel.O[0] + u[ub + U_SHAPE], by = sel.O[1] + u[ub + U_SHAPE + 1];
+  const ro = k * 17, nRuns = sel.riverRuns[ro];
+  for (let r = 0; r < nRuns; r++) {
+    const first = sel.riverRuns[ro + 1 + r * 2], end = first + sel.riverRuns[ro + 2 + r * 2];
+    for (let t = first; t < end; t += 3) {
+      for (let c = 0; c < 3; c++) {
+        const vi = index[t + c] * 8, o = c * STRIDE;
+        const wx = bx + verts[vi], wy = by + verts[vi + 1], wz = verts[vi + 2];
+        _bufA[o] = M[0] * wx + M[4] * wy + M[8] * wz + M[12];
+        _bufA[o + 1] = M[1] * wx + M[5] * wy + M[9] * wz + M[13];
+        _bufA[o + 2] = M[2] * wx + M[6] * wy + M[10] * wz + M[14];
+        _bufA[o + 3] = M[3] * wx + M[7] * wy + M[11] * wz + M[15];
+        _bufA[o + 4] = wx; _bufA[o + 5] = wy; _bufA[o + 6] = wz;
+        _bufA[o + 7] = verts[vi + 3]; _bufA[o + 8] = verts[vi + 4]; _bufA[o + 9] = verts[vi + 7]; _bufA[o + 10] = verts[vi + 5]; _bufA[o + 11] = verts[vi + 6];
+      }
+      const c0 = waterOutcode(_bufA, 0), c1 = waterOutcode(_bufA, STRIDE), c2 = waterOutcode(_bufA, 2 * STRIDE);
+      if (c0 & c1 & c2) continue;
+      if ((c0 | c1 | c2) === 0) { rasterRiverTri(_bufA, 0, STRIDE, 2 * STRIDE, target, ctx, sel, slot); continue; }
+      let curBuf = _bufA, curCount = 3, otherBuf = _bufB;
+      for (let p = 0; p < 5 && curCount > 0; p++) {
+        const outCount = clipAgainstPlane(curBuf, curCount, otherBuf, p);
+        const tmp = curBuf; curBuf = otherBuf; otherBuf = tmp;
+        curCount = outCount;
+      }
+      if (curCount < 3) continue;
+      for (let q = 1; q < curCount - 1; q++) rasterRiverTri(curBuf, 0, q * STRIDE, (q + 1) * STRIDE, target, ctx, sel, slot);
+    }
+  }
+}
+
+/** Is world point (x, y) inside water region ri (rect half-open, circle inclusive; same rules as waterAt)? Rivers never clip. */
+function inClipRegion(wt, ri, x, y) {
+  if (ri < 0 || x < wt.x0[ri] || y < wt.y0[ri]) return false;
+  if (wt.kind[ri] === 1) {
+    if (x > wt.x1[ri] || y > wt.y1[ri]) return false;
+    const dx = x - wt.cx[ri], dy = y - wt.cy[ri];
+    return dx * dx + dy * dy <= wt.r2[ri];
+  }
+  return wt.kind[ri] === 0 && x < wt.x1[ri] && y < wt.y1[ri];
+}
+
+/**
+ * Ribbon fragment stage (38.45 (2)): same coverage / top-left / depth rules as rasterWaterTri; discard inside a clip region
+ * (the lake / sea draws there), then the occluder. Texel: kind 1, depth vD, nrm = oct(normalize(nx, ny, 1)), z = tau,
+ * objectId = slot | back << 4 | 1 << 6 | rapidQ << 8 | min(65535, round(e * 1000)) << 16.
+ */
+function rasterRiverTri(buf, o0, o1, o2, target, ctx, sel, slot) {
+  const ortho = ctx.ortho === true || ctx.ortho === 1;
+  const w0 = buf[o0 + 3], w1 = buf[o1 + 3], w2 = buf[o2 + 3];
+  const W = target.W, H = target.H;
+  const X0 = (W / 2) * (buf[o0] / w0) + W / 2, Y0 = (H / 2) * (buf[o0 + 1] / w0) + H / 2;
+  const X1 = (W / 2) * (buf[o1] / w1) + W / 2, Y1 = (H / 2) * (buf[o1 + 1] / w1) + H / 2;
+  const X2 = (W / 2) * (buf[o2] / w2) + W / 2, Y2 = (H / 2) * (buf[o2 + 1] / w2) + H / 2;
+  const zn0 = buf[o0 + 2] / w0, iw0 = 1 / w0;
+  let zn1 = buf[o1 + 2] / w1, zn2 = buf[o2 + 2] / w2, iw1 = 1 / w1, iw2 = 1 / w2;
+  let Xs0, Ys0, Xs1, Ys1, Xs2, Ys2;
+  if (ctx.snap === false) {
+    Xs0 = X0 * SUBPIX; Ys0 = Y0 * SUBPIX; Xs1 = X1 * SUBPIX; Ys1 = Y1 * SUBPIX; Xs2 = X2 * SUBPIX; Ys2 = Y2 * SUBPIX;
+  } else {
+    Xs0 = Math.round(X0 * SUBPIX); Ys0 = Math.round(Y0 * SUBPIX);
+    Xs1 = Math.round(X1 * SUBPIX); Ys1 = Math.round(Y1 * SUBPIX);
+    Xs2 = Math.round(X2 * SUBPIX); Ys2 = Math.round(Y2 * SUBPIX);
+  }
+  let A2 = (Xs1 - Xs0) * (Ys2 - Ys0) - (Ys1 - Ys0) * (Xs2 - Xs0);
+  if (A2 === 0) return;
+  const back = A2 < 0 ? 1 : 0;
+  if (A2 < 0) { // swap vertices 1 and 2 (attributes are read through the offsets)
+    let t;
+    t = Xs1; Xs1 = Xs2; Xs2 = t; t = Ys1; Ys1 = Ys2; Ys2 = t;
+    t = zn1; zn1 = zn2; zn2 = t; t = iw1; iw1 = iw2; iw2 = t; t = o1; o1 = o2; o2 = t;
+    A2 = -A2;
+  }
+  const topLeft01 = (Ys1 === Ys0 && Xs1 > Xs0) || Ys1 < Ys0;
+  const topLeft12 = (Ys2 === Ys1 && Xs2 > Xs1) || Ys2 < Ys1;
+  const topLeft20 = (Ys0 === Ys2 && Xs0 > Xs2) || Ys0 < Ys2;
+  const minX = Math.min(Xs0, Xs1, Xs2), maxX = Math.max(Xs0, Xs1, Xs2);
+  const minY = Math.min(Ys0, Ys1, Ys2), maxY = Math.max(Ys0, Ys1, Ys2);
+  const pxMin = Math.max(0, Math.ceil((minX - 128) / 256)), pxMax = Math.min(W - 1, Math.floor((maxX - 128) / 256));
+  const pyMin = Math.max(0, Math.ceil((minY - 128) / 256)), pyMax = Math.min(H - 1, Math.floor((maxY - 128) / 256));
+  if (pxMin > pxMax || pyMin > pyMax) return;
+  const sceneDepth = ctx.sceneDepth, wr = target.writes, wt = sel.wtab;
+  const cl0 = sel.clip[(slot - 12) * 2], cl1 = sel.clip[(slot - 12) * 2 + 1];
+  for (let py = pyMin; py <= pyMax; py++) {
+    const Py = py * 256 + 128, rowBase = py * W;
+    for (let px = pxMin; px <= pxMax; px++) {
+      const Px = px * 256 + 128;
+      const e12 = (Xs2 - Xs1) * (Py - Ys1) - (Ys2 - Ys1) * (Px - Xs1);
+      const e20 = (Xs0 - Xs2) * (Py - Ys2) - (Ys0 - Ys2) * (Px - Xs2);
+      const e01 = (Xs1 - Xs0) * (Py - Ys0) - (Ys1 - Ys0) * (Px - Xs0);
+      if (!((e12 > 0 || (e12 === 0 && topLeft12)) && (e20 > 0 || (e20 === 0 && topLeft20)) && (e01 > 0 || (e01 === 0 && topLeft01)))) continue;
+      const idx = rowBase + px;
+      if (wr) wr[idx]++;
+      const l0 = e12 / A2, l1 = e20 / A2, l2 = e01 / A2;
+      const zn = l0 * zn0 + l1 * zn1 + l2 * zn2;
+      if (zn > 1 || !(zn < target.zbuf[idx])) continue;
+      const q = l0 * iw0 + l1 * iw1 + l2 * iw2, invq = 1 / q;
+      const vD = ortho ? PROJ_NEAR + (0.5 * (zn + 1)) * (PROJ_FAR - PROJ_NEAR) : invq;
+      const a0 = l0 * iw0 * invq, a1 = l1 * iw1 * invq, a2 = l2 * iw2 * invq; // perspective-correct weights
+      if (wt && (cl0 >= 0 || cl1 >= 0)) {
+        const wx = a0 * buf[o0 + 4] + a1 * buf[o1 + 4] + a2 * buf[o2 + 4], wy = a0 * buf[o0 + 5] + a1 * buf[o1 + 5] + a2 * buf[o2 + 5];
+        if (inClipRegion(wt, cl0, wx, wy) || inClipRegion(wt, cl1, wx, wy)) continue;
+      }
+      if (sceneDepth && !(vD < sceneDepth[idx])) continue;
+      const tau = a0 * buf[o0 + 7] + a1 * buf[o1 + 7] + a2 * buf[o2 + 7];
+      const e = a0 * buf[o0 + 8] + a1 * buf[o1 + 8] + a2 * buf[o2 + 8];
+      const rapid = a0 * buf[o0 + 9] + a1 * buf[o1 + 9] + a2 * buf[o2 + 9];
+      const nx = a0 * buf[o0 + 10] + a1 * buf[o1 + 10] + a2 * buf[o2 + 10], ny = a0 * buf[o0 + 11] + a1 * buf[o1 + 11] + a2 * buf[o2 + 11];
+      const rq = Math.min(255, Math.max(0, Math.floor(rapid * 255 + 0.5))), eq = Math.min(65535, Math.max(0, Math.floor(e * 1000 + 0.5)));
+      target.kind[idx] = 1;
+      target.depth[idx] = vD;
+      target.nrm[idx] = packNormalOct(nx, ny, 1);
+      target.z[idx] = tau;
+      target.objectId[idx] = ((slot & 15) | (back << 4) | 64 | (rq << 8) | (eq << 16)) >>> 0;
+      target.zbuf[idx] = zn;
     }
   }
 }
@@ -884,6 +1153,7 @@ export function copyToGBuffer(target, gbuf, depthArr) {
     const aoD = face === FACE_PACKED ? 0 : target.aoD[i];
     gbuf.writeSample(i, kind, target.mat[i], face, target.planeId[i], target.u[i], target.v[i], target.z[i], aoD);
     gbuf.vao[i] = target.vao[i]; // ME-20c (38.18)
+    gbuf.objectId[i] = target.objectId[i]; // 38.23 entity tint key
     if (face === FACE_PACKED) {
       if (!alias) alias = getAoAlias(gbuf);
       alias[i] = target.nrm[i];

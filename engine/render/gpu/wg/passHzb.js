@@ -9,6 +9,7 @@
 // reads/writes separate buffers and the packed buffer is only ever a copy destination (then read by the cull dispatches).
 // Buffers are created in `resize` only (zero allocation per frame). `valid` is false until the first build and after resize/invalidate();
 // the host then runs cull phase 1 with hzbOn 0 (descriptor() returns null).
+import { WG_PASS_SLOT, wgSpanBegin, wgSpanEnd } from '../device/WebGpuTimer.js'; // OCCL-STATS-01
 import { HZB_BLOCK, HZB_BUFFERS, HZB_WGSL, HZB_WORKGROUP } from '../wgsl/hzb.wgsl.js';
 import { hzbLevelSizes } from '../../../mesh/hzb.js';
 
@@ -72,10 +73,15 @@ export class WgHzbPass {
 
   /**
    * Builds the pyramid from `depthTex` (w x h r32ui). Must run outside a render pass. Afterwards `valid` is true and `fresh(fwd)` is the
-   * descriptor for cull phase 2. @param {any} depthTex
+   * descriptor for cull phase 2. @param {any} depthTex @param {any} [p] pipeline (timer slot `hzb` when pass timing is on; the caller must have no span open)
    */
-  build(depthTex) {
+  build(depthTex, p = null) {
     if (!this.buffer) throw new Error('WgHzbPass.build: resize() first');
+    wgSpanBegin(p, WG_PASS_SLOT.hzb);
+    try { this._build(depthTex); } finally { wgSpanEnd(p); }
+  }
+
+  _build(depthTex) {
     const d = this.device, f = this._uv.u32, s = this.stats, sz = this._sizes;
     d.copyTextureToBuffer(depthTex, this._lv[0], this.w, this.h, this.pitch * 4); s.copies++;
     d.copyBufferToBuffer(this._lv[0], 0, this.buffer, 0, this.pitch * sz[0].h * 4); s.copies++;

@@ -1,0 +1,145 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "hesk",
+  "speakers": {
+    "hesk": {"label": "HESK"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "hesk.names.done.1", "requires": "q.mq.ow.names.ready"},
+    {"node": "hesk.relay.done.1", "requires": "q.mq.ow.relay.ready"},
+    {"node": "hesk.close.done.1", "requires": "q.mq.ow.close.ready"},
+    {"node": "hesk.close.1", "requires": "q.mq.ow.close.available"},
+    {"node": "hesk.close.active.1", "requires": "q.mq.ow.close.active"},
+    {"node": "hesk.board.done.1", "requires": "q.mq.ow.board.ready"},
+    {"node": "hesk.fence.done.1", "requires": "q.mq.ow.fence.ready"},
+    {"node": "hesk.path.done.1", "requires": "q.mq.ow.path.ready"},
+    {"node": "hesk.board.1", "requires": "q.mq.ow.board.available"},
+    {"node": "hesk.board.active.1", "requires": "q.mq.ow.board.active"},
+    {"node": "hesk.relay.active.1", "requires": "q.mq.ow.relay.active"},
+    {"node": "hesk.relay.1", "requires": "q.mq.ow.relay.available"},
+    {"node": "hesk.fence.1", "requires": "q.mq.ow.fence.available"},
+    {"node": "hesk.fence.active.1", "requires": "q.mq.ow.fence.active"},
+    {"node": "hesk.path.1", "requires": "q.mq.ow.path.available"},
+    {"node": "hesk.path.active.1", "requires": "q.mq.ow.path.active"},
+    {"node": "hesk.names.1", "requires": "q.mq.ow.names.available"},
+    {"node": "hesk.after.1", "requires": "q.mq.ow.names.done"},
+    {"node": "hesk.meet.1"}
+  ],
+  "nodes": {
+    "hesk.names.1": {"lines": [
+      "Stop there. Now, before the gate opens:",
+      "You came over the river. Nobody comes over the river."
+    ], "next": "hesk.names.2", "speaker": "hesk"},
+    "hesk.names.2": {"lines": [
+      "Ferrum says we're dead. Who are you?"
+    ], "next": "hesk.names.3", "speaker": "hesk"},
+    "hesk.names.3": {"lines": [
+      "Well? A name. Or the river back the way you came."
+    ], "next": "hesk.names.4", "speaker": "hesk"},
+    "hesk.names.4": {"choices": [{"next": "hesk.names.5", "setFlag": "q.mq.ow.names.accept", "text": "Wick."}, {"next": "hesk.later", "text": "Not yet."}], "lines": [
+      "Your name. Or the river."
+    ], "speaker": "hesk"},
+    "hesk.names.5": {"end": true, "lines": [
+      "Wick. Say it again at the gate, so the yard hears."
+    ], "speaker": "hesk"},
+    "hesk.names.done.1": {"end": true, "lines": [
+      "Wick.",
+      "I'm Hesk. Come in, Wick. Keep your blade low."
+    ], "setFlag": "q.mq.ow.names.handin", "speaker": "hesk"},
+    "hesk.later": {"end": true, "lines": [
+      "The river is still there, Wick."
+    ], "speaker": "hesk"},
+    "hesk.relay.1": {"lines": [
+      "The old waystone in the yard. You came for it, I think.",
+      "We hear the call too. Nights. The stone here stays dark."
+    ], "next": "hesk.relay.2", "speaker": "hesk"},
+    "hesk.relay.2": {"lines": [
+      "Something's missing from it. Ask Dorrin. At the forge."
+    ], "next": "hesk.relay.3", "speaker": "hesk"},
+    "hesk.relay.3": {"choices": [{"next": "hesk.relay.4", "setFlag": "q.mq.ow.relay.accept", "text": "I'll ask him."}, {"next": "hesk.later", "text": "Not yet."}], "lines": [
+      "He'll look at his boots. Let him. Then ask again."
+    ], "speaker": "hesk"},
+    "hesk.relay.4": {"end": true, "lines": [
+      "Dorrin. At the forge. Barley gate, then the waystone."
+    ], "speaker": "hesk"},
+    "hesk.relay.done.1": {"end": true, "lines": [
+      "The stone blinks. Nights will be shorter. Good work."
+    ], "setFlag": "q.mq.ow.relay.handin", "speaker": "hesk"},
+    "hesk.relay.active.1": {"end": true, "lines": [
+      "Dorrin. At the forge. Barley gate, then the waystone."
+    ], "speaker": "hesk"},
+    "hesk.after.1": {"end": true, "lines": [
+      "Ferrum's dead are busy, Wick. Mind the geese."
+    ], "speaker": "hesk"},
+    "hesk.meet.1": {"end": true, "lines": [
+      "Keep your blade low, Wick."
+    ], "speaker": "hesk"},
+    "hesk.path.1": {"lines": [
+      "That's close enough. You followed our smoke.",
+      "Walk the last of the track to the gate. Slowly."
+    ], "next": "hesk.path.2", "speaker": "hesk"},
+    "hesk.path.2": {"choices": [{"next": "hesk.path.3", "setFlag": "q.mq.ow.path.accept", "text": "I will look."}, {"next": "hesk.later", "text": "Not yet."}], "lines": [
+      "Slowly. So I can see your hands."
+    ], "speaker": "hesk"},
+    "hesk.path.3": {"end": true, "lines": [
+      "The track, to the gate. I'm watching."
+    ], "speaker": "hesk"},
+    "hesk.fence.1": {"lines": [
+      "Wolves at our goose pen. Every night, more."
+    ], "next": "hesk.fence.2", "speaker": "hesk"},
+    "hesk.fence.2": {"choices": [{"next": "hesk.fence.3", "setFlag": "q.mq.ow.fence.accept", "text": "I will do it."}, {"next": "hesk.later", "text": "Not yet."}], "lines": [
+      "Drive them off the pen. Then we'll talk."
+    ], "speaker": "hesk"},
+    "hesk.fence.3": {"end": true, "lines": [
+      "The goose pen, along the fence. Go on."
+    ], "speaker": "hesk"},
+    "hesk.path.active.1": {"end": true, "lines": [
+      "The gate. Walk to it. Slowly."
+    ], "speaker": "hesk"},
+    "hesk.fence.active.1": {"end": true, "lines": [
+      "The goose pen. The wolves. Then me."
+    ], "speaker": "hesk"},
+    "hesk.path.done.1": {"end": true, "lines": [
+      "You walk straight. Good. Stay there a moment."
+    ], "setFlag": "q.mq.ow.path.handin", "speaker": "hesk"},
+    "hesk.fence.done.1": {"end": true, "lines": [
+      "I watched from the wall. You didn't run.",
+      "Come to the gate."
+    ], "setFlag": "q.mq.ow.fence.handin", "speaker": "hesk"},
+    "hesk.close.1": {"lines": [
+      "That scrap from the board. Its lines run west.",
+      "Past the crossroads. I can't leave the gate. You can."
+    ], "next": "hesk.close.2", "speaker": "hesk"},
+    "hesk.close.2": {"choices": [{"next": "hesk.close.3", "setFlag": "q.mq.ow.close.accept", "text": "I'll go and look."}, {"next": "hesk.later", "text": "Not yet."}], "lines": [
+      "Walk out to the crossroads. Look west. Then tell me."
+    ], "speaker": "hesk"},
+    "hesk.close.3": {"end": true, "lines": [
+      "Mind the road, Wick. It's longer than it looks."
+    ], "speaker": "hesk"},
+    "hesk.close.active.1": {"end": true, "lines": [
+      "The crossroads, Wick. Look west, then come back."
+    ], "speaker": "hesk"},
+    "hesk.close.done.1": {"end": true, "lines": [
+      "So the road goes on. Someone walked it before you.",
+      "Take these. West, then. We'll keep the waystone lit."
+    ], "setFlag": "q.mq.ow.close.handin", "speaker": "hesk"},
+    "hesk.board.2": {"choices": [{"next": "hesk.board.3", "setFlag": "q.mq.ow.board.accept", "text": "I will read it."}, {"next": "hesk.later", "text": "Not yet."}], "lines": [
+      "Read every name. Then come back to me."
+    ], "speaker": "hesk"},
+    "hesk.board.3": {"end": true, "lines": [
+      "Take your time. They waited long enough."
+    ], "speaker": "hesk"},
+    "hesk.board.1": {"lines": [
+      "The board by the gate. Read it, Wick.",
+      "That's who we are. What Ferrum says we are."
+    ], "next": "hesk.board.2", "speaker": "hesk"},
+    "hesk.board.active.1": {"end": true, "lines": [
+      "The board, Wick. Read it, then come back."
+    ], "speaker": "hesk"},
+    "hesk.board.done.1": {"end": true, "lines": [
+      "Now you know us. Dead, all of us. And here."
+    ], "setFlag": "q.mq.ow.board.handin", "speaker": "hesk"}
+  }
+}

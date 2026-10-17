@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - POST-STACK-01c post effects: day / dusk / interior, effects off vs on</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 40px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; } h2 { font-size:15px; margin:22px 0 6px; color:#ffc23c; }
+  .note { color:#8a8778; font-size:12px; max-width:1100px; }
+  .row { display:flex; gap:16px; flex-wrap:wrap; } figure { margin:0; } figcaption { font-size:12px; color:#b8b2a0; }
+  canvas { border:1px solid #22252e; image-rendering:pixelated; }
+  label { margin-right:14px; } table { border-collapse:collapse; font-size:12px; } td,th { border:1px solid #22252e; padding:2px 8px; }
+</style>
+</head>
+<body>
+<h1>Post effects (POST-STACK-01c)</h1>
+<p class="note">Synthetic ASCII scenes run through the engine's own <code>postCells</code> (the JS twin of the GPU finish chain) with the data of <code>design/look/post.js</code>. Left = effects off (today's frame), right = preset on. Bloom is the EMIS glow pass (High/Ultra) and is not simulated here; see emissive-glow.html. Outdoor presets ship with mist off.</p>
+<div class="controls">
+  <label>Preset <select id="lv"><option>low</option><option>medium</option><option selected>high</option><option>ultra</option></select></label>
+  <label><input type="checkbox" id="mist"> force mist on outdoor scenes</label>
+</div>
+<div id="out"></div>
+<h2>Preset table</h2>
+<table id="tbl"></table>
+<script src="../look/post.js"></script>
+<script type="module">
+import { createPostState, composePost, postCells } from '../../engine/index.js';
+const look = window.POST_LOOK;
+const COLS = 120, ROWS = 45, CW = 8, CH = 14;
+const SCENES = {
+  day:      { sky: [[110,170,230],[190,215,240]], ground: [90,130,60],  bgG: [40,60,30],  fog: 0.0, scene: 'outdoor' },
+  dusk:     { sky: [[200,110,70],[250,190,110]],  ground: [120,90,60],  bgG: [50,36,28],  fog: 0.0, scene: 'outdoor' },
+  interior: { sky: [[40,34,30],[60,50,40]],       ground: [120,100,80], bgG: [38,30,24], fog: 0.0, scene: 'interior' },
+};
+function build(s) {
+  const fg = new Uint8Array(COLS * ROWS * 4), bg = new Uint8Array(COLS * ROWS * 4), depth = new Float32Array(COLS * ROWS), glyph = [];
+  const hor = Math.floor(ROWS * 0.45);
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+    const c = y * COLS + x, o = c * 4; let f, b, d, g;
+    if (y < hor) { const t = y / hor; f = s.sky[0].map((v, i) => v + (s.sky[1][i] - v) * t); b = f.map(v => v * 0.8); d = 200; g = '.'; }
+    else { const t = (y - hor) / (ROWS - hor), n = ((x * 7 + y * 13) % 5) / 10; f = s.ground.map(v => v * (0.7 + 0.5 * t + n)); b = s.bgG.map(v => v * (0.8 + 0.4 * t)); d = 60 / (0.05 + t * 2); g = '"\',;'[(x + y) % 4]; }
+    fg.set([f[0], f[1], f[2], 255], o); bg.set([b[0], b[1], b[2], 255], o); depth[c] = d; glyph.push(g);
+  }
+  return { fg, bg, depth, glyph };
+}
+function draw(cv, buf, st, on) {
+  const fg = buf.fg.slice(), bg = buf.bg.slice(), rt = { cols: COLS, rows: ROWS, fg, bg };
+  if (on) postCells(rt, buf.depth, st);
+  const ctx = cv.getContext('2d'); ctx.font = CH + 'px monospace'; ctx.textBaseline = 'top';
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+    const o = (y * COLS + x) * 4;
+    ctx.fillStyle = `rgb(${bg[o]},${bg[o+1]},${bg[o+2]})`; ctx.fillRect(x * CW, y * CH, CW, CH);
+    ctx.fillStyle = `rgb(${fg[o]},${fg[o+1]},${fg[o+2]})`; ctx.fillText(buf.glyph[y * COLS + x], x * CW, y * CH);
+  }
+}
+function render() {
+  const lv = document.getElementById('lv').value, forceMist = document.getElementById('mist').checked, out = document.getElementById('out');
+  out.innerHTML = '';
+  for (const [name, s] of Object.entries(SCENES)) {
+    const pre = look.presets[lv], sc = look.scenes[s.scene] || {}, b = look.base;
+    const on = (k) => !!pre[k] && sc[k] !== false;
+    const cfg = { bloom: null, grade: on('grade') ? b.grade : null, vignette: on('vignette') ? b.vignette : null, mist: (on('mist') || (forceMist && pre.mist)) ? b.mist : null };
+    const st = createPostState(); composePost(null, cfg, st);
+    const buf = build(s), h = document.createElement('h2'); h.textContent = name + ' (' + s.scene + ', ' + lv + ')'; out.append(h);
+    const row = document.createElement('div'); row.className = 'row'; out.append(row);
+    for (const [cap, flag] of [['effects off (today)', false], ['effects on', true]]) {
+      const fig = document.createElement('figure'), cv = document.createElement('canvas'); cv.width = COLS * CW; cv.height = ROWS * CH;
+      draw(cv, buf, st, flag); fig.append(cv); const fc = document.createElement('figcaption'); fc.textContent = cap + (flag ? ` - grade ${!!cfg.grade}, vignette ${!!cfg.vignette}, mist ${!!cfg.mist}` : ''); fig.append(fc); row.append(fig);
+    }
+  }
+  const t = document.getElementById('tbl'); t.innerHTML = '<tr><th>preset</th><th>bloom</th><th>grade</th><th>vignette</th><th>mist (outdoor / interior)</th></tr>' +
+    Object.entries(look.presets).map(([k, p]) => `<tr><td>${k}</td><td>${p.bloom}</td><td>${p.grade}</td><td>${p.vignette}</td><td>${p.mist && look.scenes.outdoor.mist !== false} / ${p.mist && look.scenes.interior.mist !== false}</td></tr>`).join('');
+}
+document.getElementById('lv').onchange = render; document.getElementById('mist').onchange = render; render();
+</script>
+</body>
+</html>

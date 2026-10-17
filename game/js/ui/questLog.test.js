@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createUiLayer } from '../../../engine/index.js';
-import { createQuest,applyQuestEvent } from '../quest/sim/quest.js';
+import { createQuest,applyQuestEvent,questObjectives } from '../quest/sim/quest.js';
 import { createQuestLog } from './questLog.js';
 
-const def=JSON.parse(readFileSync(new URL('../../../content/quests/m1.quest.json',import.meta.url)));
+const def=JSON.parse(readFileSync(new URL('../quest/sim/fixtures/m1.legacy.quest.json',import.meta.url)));
+def.objectives[4].when={type:'beasts',ids:['boar1','boar2','boar3','boar4','boar5'],count:5}; // legacy m1 shape (QG-03)
+
 const state=createQuest(def), view=createQuestLog(def,{hudWidth:12}), ui=createUiLayer({cols:160});
 assert.equal(view.update(state),'Get up fr...');
 applyQuestEvent(state,{type:'flag:set',key:'wake',value:true},def);
@@ -19,7 +21,7 @@ for(let i=0;i<100;i++){view.drawLog(ui);view.drawHud(ui,1,1);}
 assert.deepEqual(state,original,'drawing never changes quest state');
 const snapshot=view.snapshot(); snapshot[0].status='locked'; assert.equal(view.snapshot()[0].status,'complete');
 for(const event of [{type:'area:entered',id:'breach'},{type:'item:got',id:'sword'},
-  {type:'beast:died',id:'boar1'},{type:'beast:died',id:'boar2'},{type:'area:entered',id:'waystone'}]) {
+  {type:'beast:died',id:'boar1'},{type:'beast:died',id:'boar2'},{type:'beast:died',id:'boar3'},{type:'beast:died',id:'boar4'},{type:'beast:died',id:'boar5'},{type:'area:entered',id:'waystone'}]) {
   applyQuestEvent(state,event,def); view.update(state);
 }
 assert.equal(view.getObjectiveLine(),''); assert.ok(view.snapshot().every(row=>row.status==='complete'));
@@ -28,3 +30,10 @@ assert.ok(ui.cells.glyphIdx.slice(ui.cols+1,ui.cols+13).every(code=>code===0),'s
 assert.throws(()=>createQuestLog(def,{hudWidth:2}),RangeError);
 assert.throws(()=>view.update({...state,questId:'other'}),/incompatible/);
 console.log('questLog: active/done chain, clipped text, opaque plate, reused draw layout and cleared HUD PASS');
+// OB-097: optional objective `journal` accepted by the validator, surfaced on rows, bad values rejected
+{
+  const d = structuredClone(def); d.objectives[0].journal = 'You woke.';
+  createQuestLog(d); assert.equal(questObjectives(createQuest(d), d)[0].journal, 'You woke.');
+  for (const bad of ['', 5, 'x'.repeat(241)]) { const e = structuredClone(def); e.objectives[0].journal = bad; assert.throws(() => createQuestLog(e), /journal/); }
+  console.log('questLog: objective journal field validated PASS');
+}

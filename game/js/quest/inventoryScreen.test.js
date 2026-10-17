@@ -1,0 +1,176 @@
+// OB-112: the one inventory screen. Run: node game/js/quest/inventoryScreen.test.js
+import { makeOk } from '../../../engine/test/assert.js';
+import paletteMod from '../../../design/palette.js';
+import itemsMod from '../../../design/items.js';
+import invStyleMod from '../../../design/models/inventory_ui.js';
+import { createInventoryScreen, LAYOUT } from './inventoryScreen.js';
+import { ensureInventory, addItem } from './sim/inventory.js';
+import { ensureEquipment, defenceOf } from './sim/equipment.js';
+
+paletteMod; itemsMod; invStyleMod;
+const A = globalThis.ASSETS, style = A.uiStyle.inventory, items = A.items, defs = items.defs, P = style.panel;
+const rgb = A.palette.rgb;
+let pass = 0, fail = 0; const failures = [];
+const ok = makeOk(() => pass++, () => fail++, (m) => failures.push(m));
+
+function makeUi(cols = 160, rows = 60) {
+  const ch = new Int32Array(cols * rows).fill(-1);
+  return { cols, rows, ch, setCellRGB(x, y, code) { ch[y * cols + x] = code + 32; }, clear() { ch.fill(-1); },
+    all() { let s = ''; for (let y = 0; y < rows; y++) { for (let x = 0; x < cols; x++) { const c = ch[y * cols + x]; s += c < 0 ? ' ' : String.fromCharCode(c); } s += '\n'; } return s; } };
+}
+function makeInput() {
+  const edge = new Set(), held = new Set();
+  return { press(...c) { c.forEach((k) => edge.add(k)); }, hold(...c) { c.forEach((k) => held.add(k)); }, release(...c) { c.forEach((k) => held.delete(k)); },
+    pressed: (k) => edge.has(k), isDown: (k) => held.has(k), consumePressed() { edge.clear(); } };
+}
+function rig(extra = {}) {
+  const player = { components: { health: { hp: 20, max: 30, invuln: 0 } } };
+  const inv = ensureInventory(player, { pack: [{ id: 'sword', n: 1 }], left: null, right: null });
+  const eq = ensureEquipment(player);
+  addItem(inv, defs, 'gear.head.hood.sturdy', 1); addItem(inv, defs, 'gear.head.hood.worn', 1); addItem(inv, defs, 'boar.meat', 2);
+  const calls = { gear: 0, qb: [] };
+  const preview = { setModel() {}, render() { return true; } };
+  const cache = new Map();
+  const charCache = { get(recipe) { const k = JSON.stringify(recipe); if (!cache.has(k)) cache.set(k, { k }); return cache.get(k); } };
+  const locked = new Set();
+  const view = createInventoryScreen({ style, items, rgb, inventoryOf: () => inv, healthOf: () => player.components.health, isSlotDisabled: (i) => locked.has(i),
+    quickbar: { assign: (n, id) => { calls.qb.push([n, id]); return true; } },
+    character: { equipmentOf: () => eq, getLook: () => ({ body: 'm_avg' }), charCache, createPreview: () => preview, onGearChanged: () => calls.gear++ }, ...extra });
+  const input = makeInput(), ui = makeUi();
+  const step = (...k) => { input.press(...k); view.step(1 / 60, input, true); };
+  const draw = () => { ui.clear(); view.draw(ui); return ui.all(); };
+  return { player, inv, eq, view, input, ui, step, draw, calls, locked };
+}
+const ptr = (r, rx, ry) => r.view.setPointer(P.x + rx, P.y + ry);
+const packPtr = (r, i) => ptr(r, LAYOUT.pack.x + 1 + (i % 6) * 8, LAYOUT.pack.y + 1 + ((i / 6) | 0) * 4);
+const slotPtr = (r, slot) => { const s = LAYOUT.slots.find((q) => q[0] === slot); ptr(r, s[1] + 1, s[2] + 1); };
+const idx = (r, id) => r.inv.slots.findIndex((s) => s.id === id);
+/** press at the current pointer, move to a target, release */
+function drag(r, from, to) {
+  from(); r.input.press('Mouse0'); r.input.hold('Mouse0'); r.view.step(1 / 60, r.input, true);
+  to(); r.view.step(1 / 60, r.input, true);
+  r.input.release('Mouse0'); r.view.step(1 / 60, r.input, true);
+}
+
+// ---- layout fits every grid size ----
+for (const [cols, rows] of [[160, 60], [240, 90], [480, 180], [560, 210]]) {
+  ok(`panel fits ${cols}x${rows}`, P.x >= 0 && P.y >= 0 && P.x + P.w <= cols && P.y + P.h <= rows);
+  const r = rig(); r.step('KeyI'); const ui = makeUi(cols, rows); ui.clear(); r.view.draw(ui);
+  ok(`draws on ${cols}x${rows}`, /PACK/.test(ui.all()) && /WICK/.test(ui.all()));
+}
+{
+  const b = style.slot.box, G = style.grid; let maxX = 0, maxY = 0;
+  for (const s of LAYOUT.slots) { maxX = Math.max(maxX, s[1] + b.w); maxY = Math.max(maxY, s[2] + b.h); }
+  maxX = Math.max(maxX, LAYOUT.pack.x + 5 * G.pitchX + b.w); maxY = Math.max(maxY, LAYOUT.pack.y + 3 * G.pitchY + b.h);
+  ok('every box inside the panel frame', maxX < P.w && maxY < P.h - 3, maxX + 'x' + maxY);
+}
+// ---- I / C / Tab open and close the SAME screen ----
+for (const k of ['KeyI', 'KeyC', 'Tab']) {
+  const r = rig(); r.step(k); ok(k + ' opens', r.view.isOpen);
+  for (const k2 of ['KeyI', 'KeyC', 'Tab', 'Escape']) { const r2 = rig(); r2.step(k); r2.step(k2); ok(k + ' open, ' + k2 + ' closes', !r2.view.isOpen); }
+}
+{
+  const r = rig(); r.input.press('KeyI'); r.view.step(1 / 60, r.input, false); ok('canOpen=false blocks I', !r.view.isOpen);
+  const noKey = rig({ characterKey: false }); noKey.step('KeyC'); ok('characterKey:false leaves C to crafting', !noKey.view.isOpen);
+  const plain = rig({ character: undefined }); plain.step('KeyI'); const t = plain.draw(); ok('no character option still shows the pack', plain.view.isOpen && /PACK/.test(t));
+  const rr = rig(); rr.step('KeyI'); const txt = rr.draw();
+  ok('no Esc text', !/esc/i.test(txt));
+  ok('no tab bar, one screen', !/Items|Character/.test(txt));
+  ok('11 slot labels', ['Head', 'Chest', 'Gloves', 'Belt', 'Legs', 'Boots', 'Cloak', 'L hand', 'R hand', 'Ranged', 'Quiver'].every((l) => txt.includes(l)));
+  ok('stats HP / DEF / DMG', /HP 20\/30 {3}DEF 0 \(-0%\)/.test(txt) && /DMG x1/.test(txt));
+}
+// ---- click / E path + details + stats ----
+{
+  const r = rig(); r.step('KeyI');
+  const hood = idx(r, 'gear.head.hood.sturdy'); packPtr(r, hood);
+  let txt = r.draw(); ok('details under the pack name the item and delta', /Sturdy Hood/.test(txt) && /Defence \+2 \(slot empty\)/.test(txt));
+  r.step('KeyE'); ok('E wears it', r.eq.head === 'gear.head.hood.sturdy' && r.calls.gear === 1);
+  txt = r.draw(); ok('stats update after wearing', /DEF 2 \(-6%\)/.test(txt));
+  packPtr(r, idx(r, 'gear.head.hood.worn')); r.step('Enter'); ok('Enter swaps, old piece returns', r.eq.head === 'gear.head.hood.worn' && idx(r, 'gear.head.hood.sturdy') >= 0);
+  packPtr(r, idx(r, 'boar.meat')); const hp = r.player.components.health.hp; r.step('KeyE');
+  ok('E on food eats it', r.player.components.health.hp > hp && r.inv.slots.some((s) => s.id === 'boar.meat' && s.n === 1));
+  packPtr(r, idx(r, 'sword')); r.step('Digit2'); ok('1-4 assigns the hovered item to the quick bar', r.calls.qb.length === 1 && r.calls.qb[0][0] === 1 && r.calls.qb[0][1] === 'sword');
+  slotPtr(r, 'head'); r.step('KeyE'); ok('E on a worn slot takes it off', r.eq.head === null);
+  r.step('KeyE'); ok('E on an empty slot refuses', r.eq.head === null);
+}
+// ---- drag to equip / unequip ----
+{
+  const r = rig(); r.step('KeyI');
+  const hood = idx(r, 'gear.head.hood.sturdy');
+  drag(r, () => packPtr(r, hood), () => slotPtr(r, 'head'));
+  ok('drag pack -> head slot equips', r.eq.head === 'gear.head.hood.sturdy' && idx(r, 'gear.head.hood.sturdy') < 0);
+  ok('stats follow the drag', defenceOf(r.eq, defs) === 2 && /DEF 2/.test(r.draw()));
+  drag(r, () => slotPtr(r, 'head'), () => packPtr(r, 20));
+  ok('drag worn -> pack unequips', r.eq.head === null && idx(r, 'gear.head.hood.sturdy') >= 0);
+  const sw = idx(r, 'sword');
+  drag(r, () => packPtr(r, sw), () => slotPtr(r, 'legs'));
+  ok('drop on the wrong slot refuses', r.eq.main !== 'sword' && r.eq.legs == null);
+  drag(r, () => packPtr(r, idx(r, 'gear.head.hood.worn')), () => ptr(r, LAYOUT.view.x + 8, LAYOUT.view.y + 6));
+  ok('drop on Wick equips', r.eq.head === 'gear.head.hood.worn');
+  const r2 = rig(); r2.step('KeyI'); packPtr(r2, idx(r2, 'gear.head.hood.sturdy'));
+  r2.input.press('Mouse0'); r2.input.hold('Mouse0'); r2.view.step(1 / 60, r2.input, true); r2.input.release('Mouse0'); r2.view.step(1 / 60, r2.input, true);
+  ok('click without moving still equips', r2.eq.head === 'gear.head.hood.sturdy');
+  r.eq.legs = 'gear.legs.pants.worn'; // full pack: unequip refuses
+  for (let i = 0; i < r.inv.slots.length; i++) if (!r.inv.slots[i].id) r.inv.slots[i] = { id: 'boar.hide', n: 1 };
+  drag(r, () => slotPtr(r, 'legs'), () => packPtr(r, 0));
+  ok('unequip into a full pack refuses', r.eq.legs === 'gear.legs.pants.worn');
+}
+// ---- OB-203 reopen: pack -> EMPTY pack cell leaves a gap and sticks ----
+{
+  const r = rig(); r.step('KeyI');
+  const sw = idx(r, 'sword'); const before = r.inv.slots.filter((s) => s.id).length;
+  drag(r, () => packPtr(r, sw), () => packPtr(r, 9));
+  ok('OB-203 drag to empty cell 9', r.inv.slots[9].id === 'sword' && r.inv.slots[sw].id === null && r.inv.slots.filter((s) => s.id).length === before, JSON.stringify(r.inv.slots.slice(0, 10).map((s) => s.id)));
+  ok('OB-203 gap cells stay empty', [4, 5, 6, 7, 8].every((i) => !r.inv.slots[i].id));
+  addItem(r.inv, defs, 'boar.hide', 1);
+  ok('OB-203 next pickup takes the first empty cell, moved item stays', r.inv.slots[9].id === 'sword' && r.inv.slots.findIndex((s) => s.id === 'boar.hide') < 9);
+  r.step('KeyI'); r.step('KeyI');
+  ok('OB-203 reopen keeps the gap', r.inv.slots[9].id === 'sword');
+}
+// OB-203: real input eats isDown('Mouse0') via consumePressed; the drag must follow o.mouseHeld instead
+{
+  let btn = false; const r = rig({ mouseHeld: () => btn }); r.step('KeyI');
+  const realConsume = r.input.consumePressed; r.input.consumePressed = () => { r.input.release('Mouse0'); realConsume(); }; // mimic engine Input
+  const sw = idx(r, 'sword'); packPtr(r, sw); btn = true; r.input.press('Mouse0'); r.input.hold('Mouse0'); r.view.step(1 / 60, r.input, true);
+  packPtr(r, 14); r.view.step(1 / 60, r.input, true); btn = false; r.view.step(1 / 60, r.input, true);
+  ok('OB-203 drag survives consumePressed (real input)', r.inv.slots[14].id === 'sword' && r.inv.slots[sw].id === null);
+  const copy = JSON.parse(JSON.stringify(r.player.components.inventory));
+  ok('OB-203 gap survives a save round trip', copy.slots[14].id === 'sword' && !copy.slots[sw].id && !copy.slots[5].id);
+}
+// ---- locked slots ----
+{
+  const r = rig(); r.locked.add(0); r.locked.add(1); r.step('KeyI');
+  ok('cursor opens on a live slot', r.view.cursor >= 12 && !r.locked.has(r.view.cursor - 12));
+  const before = r.view.cursor; packPtr(r, 0); ok('pointer cannot select a locked slot', r.view.cursor === before);
+  const nx = (t) => (t.match(/x/g) || []).length;
+  const rE = rig(); rE.inv.slots[0].id = null; rE.locked.add(0); rE.step('KeyI'); const rI = rig(); rI.locked.add(0); rI.step('KeyI');
+  ok('empty locked cell draws x, one holding an item does not', nx(rE.draw()) === nx(rI.draw()) + 1, nx(rE.draw()) + '/' + nx(rI.draw()));
+  const rl = rig({ slotLockText: () => 'Locked - learn fire first' }); rl.locked.add(0); rl.locked.add(23); rl.step('KeyI');
+  ok('locked item icon still drawn', /Sword/i.test('Sword') && rl.draw().length > 0);
+  packPtr(rl, 0); const tip = rl.draw();
+  ok('hovering a locked item shows its name + lock line', /Old Sword/.test(tip) && /Locked - learn fire first/.test(tip), 'tip');
+  ok('cursor still refuses the locked cell', rl.view.cursor !== 12);
+}
+// ---- Wick turns: A/D held on the model, mouse drag ----
+{
+  const r = rig(); r.step('KeyI'); ptr(r, LAYOUT.view.x + 4, LAYOUT.view.y + 4);
+  r.input.hold('KeyD'); for (let i = 0; i < 60; i++) r.view.step(1 / 60, r.input, true); r.input.release('KeyD');
+  ok('D held 1 s turns ~150 deg', Math.abs(r.view.yawDeg - 330) < 2, String(r.view.yawDeg));
+  const r4 = rig(); r4.step('KeyI'); ptr(r4, 70, 10); r4.input.press('Mouse0'); r4.input.hold('Mouse0'); r4.view.step(1 / 60, r4.input, true);
+  ptr(r4, 80, 10); r4.view.step(1 / 60, r4.input, true);
+  ok('mouse drag of 10 px turns ~6 deg', Math.abs(r4.view.yawDeg - 186) < 0.5, String(r4.view.yawDeg));
+}
+if (global.gc) {
+  const r = rig(); r.step('KeyI'); r.draw(); for (let i = 0; i < 100; i++) r.view.draw(r.ui);
+  global.gc(); const before = process.memoryUsage().heapUsed;
+  for (let i = 0; i < 3000; i++) r.view.draw(r.ui);
+  global.gc(); ok('draw allocates ~nothing', process.memoryUsage().heapUsed <= before + 3e5);
+}
+{ // CUR-02: "Coin N" always on the inventory screen
+  let coin = 0; const r = rig({ coinOf: () => coin }); r.step('KeyI');
+  ok('coin line Coin 0', /Coin 0/.test(r.draw()));
+  coin = 47; ok('coin line Coin 47', /Coin 47/.test(r.draw()));
+  ok('no coin line without coinOf', !/Coin \d/.test(rig().draw()));
+}
+console.log(`${pass} passed, ${fail} failed.`);
+if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }

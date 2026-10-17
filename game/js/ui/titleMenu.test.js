@@ -1,31 +1,107 @@
 import assert from 'node:assert/strict';
-import {createUiLayer} from '../../../engine/index.js';
-import {createMemoryAdapter} from '../quest/save/saveState.js';
-import {createTitleMenu} from './titleMenu.js';
+import { createUiLayer } from '../../../engine/index.js';
+import { createMemoryAdapter, createStorageAdapter, stringifyGameSave } from '../quest/save/saveState.js';
+import { createTitleMenu } from './titleMenu.js';
 import '../../../design/models/title.js';
 import '../../../design/models/menu_ui.js';
-const save={saveVersion:1,world:{version:2,entities:[],structures:[]},game:{quest:null,openedChests:[],deadBeasts:[]},meta:{playerName:'Wick',place:'Tower',playTimeSec:3661}};
-const adapter=createMemoryAdapter();adapter.writeSlot(0,save);adapter.writeSlot(2,save);
-const menu=createTitleMenu(adapter,{style:ASSETS.uiStyle.menu}),ui=createUiLayer({cols:160}),b=menu.draw(ui);
-const click=y=>menu.handlePointer(b.x+5,b.y+y);
-assert.deepEqual(menu.snapshot().rows.map(r=>r.text),['New game','Continue','Load game','Settings','Credits']);
-assert.equal(menu.handleKey('Delete'),false);assert.equal(menu.snapshot().mode,'main');
-click(12);assert.equal(menu.snapshot().mode,'load');assert.deepEqual(menu.snapshot().rows.map(r=>r.enabled),[true,false,true,true]);
-menu.handleKey('ArrowDown');assert.equal(menu.snapshot().selected,2,'empty slot skipped');
-menu.handleKey('Enter');assert.deepEqual(menu.takeAction(),{type:'load',slot:2});assert.equal(menu.takeAction(),null);
-click(12);assert.equal(click(11),false,'empty slot cannot load');menu.handleKey('Escape');assert.equal(menu.snapshot().mode,'main');
-click(12);click(20);assert.equal(menu.snapshot().mode,'main');
-click(9);assert.deepEqual(menu.takeAction(),{type:'continue',slot:0,save:adapter.readSlot(0).save});
-click(15);assert.deepEqual(menu.takeAction(),{type:'settings'});
-menu.handleKey('ArrowUp');menu.handleKey('Enter');assert.deepEqual(menu.takeAction(),{type:'credits'});
-click(18);assert.deepEqual(menu.takeAction(),{type:'credits'});
-menu.handleKey('Enter');assert.equal(menu.snapshot().mode,'new');menu.handleKey('Enter');assert.deepEqual(menu.takeAction(),{type:'newGame',slot:1});
-menu.handleKey('Enter');click(8);assert.equal(menu.snapshot().mode,'confirm');assert.equal(menu.snapshot().selected,0);menu.handleKey('Enter');assert.equal(menu.takeAction(),null);assert.ok(adapter.readSlot(0).save);
-menu.handleKey('Enter');click(8);menu.handleKey('ArrowDown');menu.handleKey('Enter');assert.deepEqual(menu.takeAction(),{type:'newGame',slot:0});assert.ok(adapter.readSlot(0).save,'view does not overwrite storage');
-const empty=createTitleMenu(createMemoryAdapter());assert.equal(empty.snapshot().rows[1].enabled,false);empty.handleKey('ArrowDown');assert.equal(empty.snapshot().rows[empty.snapshot().selected].id,'load');empty.handleKey('Enter');assert.equal(empty.snapshot().selected,3);empty.handleKey('Enter');assert.equal(empty.snapshot().mode,'main');
-const timestamped=createTitleMenu({listSlots:()=>[{slot:0,ok:true,meta:{...save.meta,savedAt:1}},{slot:2,ok:true,meta:{...save.meta,savedAt:2}}],readSlot:()=>({ok:true,save})});timestamped.handleKey('ArrowDown');timestamped.handleKey('Enter');assert.equal(timestamped.takeAction().slot,2);
-const unreadable=createTitleMenu({listSlots:()=>[{slot:0,ok:false,meta:null}],readSlot:()=>({ok:false})});unreadable.draw(ui);unreadable.handlePointer(b.x+5,b.y+12);assert.equal(unreadable.snapshot().rows[0].enabled,false);
+
+const save = {saveVersion:1,world:{version:2,entities:[],structures:[]},
+  game:{quest:null,openedChests:[],deadBeasts:[]},meta:{playerName:'Wick',place:'Tower',playTimeSec:3661}};
+const adapter = createMemoryAdapter(); adapter.writeSlot(0,save); adapter.writeSlot(2,save);
+const menu = createTitleMenu(adapter), ui = createUiLayer({cols:160});
+const bounds = menu.draw(ui);
+const rowsOf = m => m.snapshot().rows;
+// TITLE-LOAD-SUBMENU-01: main card = New game, Continue, Load, Settings; slots live inside Load.
+assert.deepEqual(rowsOf(menu).map(r=>r.id),['new','continue','load','settings'],'no slots/delete on the main card');
+assert.ok(rowsOf(menu).every(r=>r.enabled));
+menu.handleKey('ArrowDown'); menu.handleKey('ArrowDown'); menu.handleKey('Enter');
+assert.equal(menu.snapshot().mode,'load');
+assert.deepEqual(rowsOf(menu).map(r=>r.id),['slot','slot','slot','delete','back']);
+assert.ok(rowsOf(menu)[0].text.includes('Wick - Tower - 1:01'));
+menu.handleKey('Escape'); assert.equal(menu.snapshot().mode,'main','Esc returns to the main card');
+const pixel = (bounds.y+4)*ui.cols+bounds.x+4;
+assert.deepEqual([...ui.cells.bg.slice(pixel*4,pixel*4+4)],[10,11,16,255]);
+assert.equal(menu.draw(ui),bounds,'draw reuses its bounds object');
+assert.equal(menu.handlePointer(-1,-1),false); assert.equal(menu.handleKey('KeyZ'),false);
+assert.equal(menu.handleKey('Delete'),false,'Del does nothing on the main card');
+
+// New games target an empty slot and leave existing saves intact until host boot/save.
+menu.handleKey('Enter'); assert.equal(menu.snapshot().mode,'new');
+menu.handleKey('Enter'); assert.deepEqual(menu.takeAction(),{type:'newGame',slot:1});
+assert.equal(menu.takeAction(),null,'action consumed once'); assert.ok(adapter.readSlot(0).save);
+menu.handleKey('Enter'); menu.draw(ui); menu.handlePointer(bounds.x+5,bounds.y+8);
+assert.equal(menu.snapshot().mode,'confirm'); menu.handleKey('Enter'); // default Cancel
+assert.equal(menu.takeAction(),null); assert.ok(adapter.readSlot(0).save);
+menu.handleKey('Enter'); menu.handlePointer(bounds.x+5,bounds.y+8);
+menu.handleKey('ArrowDown'); menu.handleKey('Enter');
+assert.deepEqual(menu.takeAction(),{type:'newGame',slot:0}); assert.ok(adapter.readSlot(0).save,'replacement action does not prematurely delete');
+
+// Delete (inside Load) asks to confirm, defaults to Cancel, returns to Load, never touches other slots.
+const toLoad = m => { m.handleKey('ArrowDown'); m.handleKey('ArrowDown'); m.handleKey('Enter'); };
+toLoad(menu);
+menu.handleKey('Delete'); assert.equal(menu.snapshot().selected,0); assert.equal(menu.snapshot().mode,'confirm');
+menu.handleKey('Escape'); assert.equal(menu.snapshot().mode,'load','cancel returns to Load'); assert.ok(adapter.readSlot(0).save);
+menu.handleKey('Delete'); menu.handleKey('ArrowDown'); menu.handleKey('Enter');
+assert.equal(adapter.readSlot(0).save,null); assert.ok(adapter.readSlot(2).save);
+assert.equal(menu.snapshot().mode,'load','still in Load while saves remain');
+menu.handleKey('ArrowDown'); menu.handleKey('ArrowDown'); menu.handleKey('Enter');
+const continued = menu.takeAction(); assert.equal(continued.type,'continue'); assert.equal(continued.slot,2);
+assert.deepEqual(continued.save,adapter.readSlot(2).save);
+menu.draw(ui); menu.handlePointer(bounds.x+5,bounds.y+12); assert.deepEqual(menu.takeAction(),{type:'settings'});
+menu.handlePointer(bounds.x+5,bounds.y+10); assert.equal(menu.snapshot().mode,'load');
+menu.handlePointer(bounds.x+5,bounds.y+12); assert.equal(menu.takeAction().slot,2,'mouse slot load');
+
+// Persisted slots are re-read, including a corrupt slot and denied deletion.
+const data = new Map([['kestrel.save.slot.0',stringifyGameSave(save)],['kestrel.save.slot.1','{bad']]);
+const storage = {getItem:key=>data.get(key) ?? null,setItem:(key,value)=>data.set(key,value),removeItem:()=>{throw Error('denied');}};
+const failed = createTitleMenu(createStorageAdapter(storage));
+toLoad(failed);
+failed.handleKey('Delete'); failed.handleKey('ArrowDown'); failed.handleKey('Enter');
+assert.equal(failed.snapshot().mode,'confirm'); assert.match(failed.snapshot().message,/Could not delete/);
+assert.ok(data.has('kestrel.save.slot.0'));
+failed.handleKey('Escape'); failed.draw(ui); failed.handlePointer(bounds.x+5,bounds.y+10);
+assert.equal(failed.takeAction(),null); assert.match(failed.snapshot().message,/Could not read/);
+const unavailable = createTitleMenu({listSlots:()=>{throw Error('privacy');},readSlot:()=>({ok:false}),deleteSlot:()=>({ok:false})});
+assert.equal(unavailable.snapshot().rows[1].enabled,false);
+assert.equal(unavailable.snapshot().rows[2].enabled,false,'Load greyed without saves');
+unavailable.handleKey('ArrowDown'); assert.equal(unavailable.snapshot().selected,3,'disabled Continue and Load skipped');
+const empty = createTitleMenu(createMemoryAdapter());
+empty.handleKey('Delete'); assert.equal(empty.snapshot().mode,'main');
+assert.equal(empty.snapshot().rows[1].enabled,false);
+assert.equal(empty.snapshot().rows[2].display,'Load (no save)');
 assert.throws(()=>createTitleMenu({}),/adapter required/);
-const before=JSON.stringify(menu.snapshot());for(let i=0;i<100;i++)assert.equal(menu.draw(ui),b);assert.equal(JSON.stringify(menu.snapshot()),before);
-assert.deepEqual([...ui.cells.bg.slice(((b.y+6)*ui.cols+b.x+10)*4,((b.y+6)*ui.cols+b.x+10)*4+4)],[52,42,16,255]);
-console.log('Five-row menu, Load slots/grey empty/back, no delete, New overwrite safety, Continue/Settings/Credits actions and stable styled draw PASS');
+const style = globalThis.ASSETS.uiStyle.menu;
+const styled = createTitleMenu(createMemoryAdapter(),{style});
+const styledBounds = styled.draw(ui);
+const bgAt = (x,y) => [...ui.cells.bg.slice(((styledBounds.y+y)*ui.cols+styledBounds.x+x)*4,((styledBounds.y+y)*ui.cols+styledBounds.x+x)*4+4)];
+assert.deepEqual(bgAt(10,6),[52,42,16,255],'designer gold band for focused row');
+assert.deepEqual(bgAt(10,8),[10,11,16,255],'disabled Continue keeps opaque plate');
+assert.equal(styled.snapshot().rows[1].display,'Continue (no save)','writer disabled label');
+styled.handleKey('ArrowDown'); styled.draw(ui);
+assert.deepEqual(bgAt(10,6),[10,11,16,255],'moving focus clears old band');
+assert.deepEqual(bgAt(10,12),[52,42,16,255],'focus skips disabled Continue and Load');
+const beforeDraw = JSON.stringify(styled.snapshot());
+for(let i=0;i<100;i++) assert.equal(styled.draw(ui),styledBounds);
+assert.equal(JSON.stringify(styled.snapshot()),beforeDraw,'styled drawing leaves controller state unchanged');
+const styledAdapter=createMemoryAdapter(); styledAdapter.writeSlot(0,save); styledAdapter.writeSlot(2,save);
+const occupied = createTitleMenu(styledAdapter,{style}); occupied.draw(ui); toLoad(occupied); occupied.draw(ui); occupied.handleKey('Delete');
+assert.equal(occupied.snapshot().selected,0,'styled confirmation still defaults to Cancel');
+occupied.draw(ui); assert.equal(occupied.snapshot().mode,'confirm');
+occupied.handleKey('Escape'); assert.ok(styledAdapter.readSlot(0).save && styledAdapter.readSlot(2).save,'styled cancel retains slots');
+console.log('titleMenu: new/load sub-card/settings, keyboard/mouse, cancel/replacement/delete isolation and corrupt/denied storage PASS');
+
+// SAVE-TIME-01: Continue = newest savedAt; none have it -> first valid slot; label shows the date.
+{
+  const { newestSlot, formatSavedAt } = await import('./titleMenu.js');
+  const mk = (savedAt) => { const s = JSON.parse(JSON.stringify(save)); if (savedAt !== undefined) s.meta.savedAt = savedAt; return s; };
+  const a = createMemoryAdapter(); a.writeSlot(0, mk(1000)); a.writeSlot(1, mk(3000)); a.writeSlot(2, mk(2000));
+  const m = createTitleMenu(a); m.draw(createUiLayer({cols:160}));
+  m.handleKey('ArrowDown'); m.handleKey('ArrowDown'); m.handleKey('Enter'); assert.ok(m.snapshot().rows.some(r => /\d{4}-\d\d-\d\d \d\d:\d\d/.test(r.text)), 'label shows saved date'); m.handleKey('Escape');
+  m.handleKey('ArrowDown'); m.handleKey('Enter'); assert.equal(m.takeAction().slot, 1, 'Continue picks newest of 3');
+  const b = createMemoryAdapter(); b.writeSlot(1, mk()); b.writeSlot(2, mk());
+  const m2 = createTitleMenu(b); m2.draw(createUiLayer({cols:160}));
+  m2.handleKey('ArrowDown'); m2.handleKey('Enter'); assert.equal(m2.takeAction().slot, 1, 'no savedAt: first valid slot');
+  assert.equal(newestSlot([{slot:0,ok:true,meta:{}},{slot:1,ok:true,meta:{savedAt:5}}]), 1, 'old save sorts oldest');
+  assert.equal(newestSlot([{slot:0,ok:false,meta:null}]), -1);
+  assert.equal(formatSavedAt(undefined), '');
+}

@@ -218,6 +218,17 @@ global.gc(); const grew = process.memoryUsage().heapUsed - h0;
 assert.equal(mock.createCount, created, 'warm frames create no resources'); assert.equal(wp.wu, wu); assert.equal(wp.cu, cu);
 assert.ok(grew < 64 * 1024, `heap growth over 1000 frames ${grew} B`);
 
+// ---- DN-02: water sky LUT re-bakes on a liveLookVersion bump, not otherwise (twin: waterComposite.js) ----
+{
+  const b0 = wp._lutBakes;
+  wp.runComposite({ shadeFg, shadeBg, gi, depth, light }, p); wp.runComposite({ shadeFg, shadeBg, gi, depth, light }, p);
+  assert.equal(wp._lutBakes, b0, 'same palette + version: no re-bake');
+  p._palette.liveLookVersion = (p._palette.liveLookVersion | 0) + 1;
+  wp.runComposite({ shadeFg, shadeBg, gi, depth, light }, p); wp.runComposite({ shadeFg, shadeBg, gi, depth, light }, p);
+  assert.equal(wp._lutBakes, b0 + 1, 'liveLookVersion bump: exactly one re-bake');
+  delete p._palette.liveLookVersion;
+}
+
 wp.dispose();
 d.dispose(sceneDepth); d.dispose(shadeFg); d.dispose(shadeBg); d.dispose(gi); d.dispose(light);
 assert.equal(mock.liveCount(), 0, 'dispose frees everything');

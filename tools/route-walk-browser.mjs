@@ -18,9 +18,11 @@ import os from 'node:os';
 import {
   ROOT, findBrowserBinary, waitForHttp, killTree, connectCdp, evaluate, buildLaunchFlags, validatePort,
 } from './capture-browser.mjs';
+import { mapLoopFull } from './map-loop-waypoints.mjs'; // WM-06
+import { withTimeFreeze, parseTimeArg } from './tool-url.mjs'; // DN-04a
 import { buildFrameTrace, toCSV } from './frameTrace.mjs'; // S8-B1-14: per-frame p50/p95/p99/max per leg + worst-frame list
 
-const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, all) => (v.startsWith('--') ? [...a, [v.slice(2), all[i + 1]]] : a), []));
+const args = Object.fromEntries(process.argv.slice(2).map((v) => (/^--time=/.test(v) ? ['--time', v.slice(7)] : v)).reduce((a, v, i, all) => (v.startsWith('--') ? [...a, [v.slice(2), all[i + 1]]] : a), []));
 const port = Number(args.port);
 validatePort(port);
 if (args.renderer !== undefined) throw new Error('--renderer was removed; the geometry path is mesh');
@@ -28,13 +30,17 @@ const grid = args.grid || '400x150', physics = args.physics;
 const preset = args.preset || 'default'; // S8-B1-14: carried into the default --out file name alongside the backend
 const noSkip = args.noskip === '1'; // ME-15d: --noskip 1 forces the shadow map to re-render every frame (worst case row)
 const shadows = args.shadows; // ME-15c: `--shadows map` appends &shadows=map (sun shadow map instead of the sun DDA)
-const query = `voxelbench=0&grid=${grid}${physics ? `&physics=${physics}` : ''}${shadows ? `&shadows=${shadows}` : ''}${args.extra ? `&${args.extra}` : ''}`; // --extra "shadowres=1536" (ME-15e)
+const query = withTimeFreeze(`voxelbench=0&grid=${grid}${physics ? `&physics=${physics}` : ''}${shadows ? `&shadows=${shadows}` : ''}${args.extra ? `&${args.extra}` : ''}`, parseTimeArg(args.time)); // --extra "shadowres=1536" (ME-15e)
+const mapLoop = args['map-loop'] === '1'; // WM-06: --map-loop 1 --grid 1 appends the whole-map loop leg `mapLoop` after leg 8 (long: ~15 min real time)
+const MAPLOOP_WPS = mapLoop ? mapLoopFull() : [];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // The in-page driver (runs inside the game page). Returns a Promise resolved with the result object.
 const DRIVER = `(async () => {
+  const MAPLOOP = ${JSON.stringify(MAPLOOP_WPS)};
   const NOSKIP = ${noSkip};
   for (let i = 0; i < 3000 && !(window.__debug && window.__debug.engine); i++) await new Promise((r) => setTimeout(r, 50));
+  if (!(window.__debug && window.__debug.engine)) throw new Error('route-walk: window.__debug.engine not ready after 150 s - the game never finished booting (check [boot] console / the Loading overlay; boot normally takes ~4 s)');
   const D = window.__debug, eng = D.engine, input = D.input, loop = eng.loop;
   const sleepF = () => new Promise((r) => requestAnimationFrame(r));
   const O = { x: 1480, y: 1018 };
@@ -44,6 +50,7 @@ const DRIVER = `(async () => {
   const pH = () => window.__debug.playerHandle, T = () => pH().data.transform, B = () => pH().data.components.body;
   const world = () => window.__debug.world || eng.world;
   for (let i = 0; i < 4000 && !(window.__debug.playerHandle); i++) await sleepF();
+  if (!window.__debug.playerHandle) throw new Error('route-walk: window.__debug.playerHandle not ready after 200 s (engine up, player never spawned)');
   const out = { grid: D.rt.cols + 'x' + D.rt.rows, backend: D.rt.backend, physicsMode: world().physicsMode, legs: [], info: {} };
   out.info.initialGeometry = { trees: world().scatter ? world().scatter.count : 0, detail: world().detail ? world().detail.count : 0, colliders: world().colliders.map(c => c.id) };
   const sim = [], js = [], gpu = [], ivl = [], shp = [], shc = [];
@@ -111,12 +118,33 @@ const DRIVER = `(async () => {
   out.info.upperStairOpen = world().structures[0].level.sectorAt(18.5, 10.5).ceilH === 'sky';
   out.info.leverAbsent = !world().get('tower.lever') && !world().interactables.some(r => r.id === 'lever');
   await leg('5a open landing', [W(19, 10), W(18, 10)]);
-  await leg('5b upper steps', [W(17, 10), W(16, 10), W(15, 10), W(14, 10), W(14, 9), W(13, 9), W(13, 8), W(13, 7), W(12, 7)]);
+  await leg('5b upper steps + gap jump (SW)', [W(17, 10), W(16, 10), { ...W(14, 10), jump: true }, W(14, 9), W(13, 9), W(13, 8), W(13, 7), W(12, 7)]);
   await leg('6 doorway + summit', [W(11, 7), W(10, 7), W(10, 8), W(9, 8), W(8, 8), W(7, 8), W(7, 7)]);
-  await leg('7a breach + outcrop', [W(6, 7), W(5, 7)]);
-  await leg('7b hillside -> waystone', [NEAR, WAY], { detour: true, maxFrames: 2400, untilEnd: true });
-  out.info.endTrigger = world().state['quest.endT'] >= 0 || (world().triggers.find((x) => x.name === 'quest.end') || {}).inside === 1;
+  await leg('7a breach (parapet overlook)', [W(6, 7)]);
+  // 7c (mirrors tools/route-walk.mjs, CH1-D1a): the breach is closed; open the SW door (real door.toggle), then walk down the summit -> upper steps -> alcove drop -> door -> outside.
+  out.info.doorToggled = world().fireInteraction('door.toggle', { structId: 'tower' }) === true;
+  world().state['tower.sword.taken'] = true;
+  const down = [[7, 7], [7, 8], [8, 8], [9, 8], [10, 8], [10, 7], [11, 7], [12, 7], [13, 7], [13, 8], [13, 9], [14, 9], [14, 10], [16, 10, true], [17, 10], [18, 10], [19, 10], [19, 9],
+    [20, 9], [20, 8], [20, 7], [20, 6], [20, 5], [20, 4], [19, 4], [19, 3], [18, 3], [17, 3], [16, 3], [15, 3], [15, 5], [16, 5], [16, 6], [17, 7], [17, 8], [17, 9], [16, 9], [15, 9],
+    [15, 10], [15, 11], [15, 12], [14, 12], [13, 12], [12, 12], [11, 12], [10, 12], [9, 12], [8, 12]].map(([x, y, jump]) => (jump ? { ...W(x, y), jump: true } : W(x, y)));
+  await leg('7c down -> door (E) -> outside', down, { maxFrames: 1500 });
+  await leg('7b hillside -> waystone', [NEAR, WAY], { detour: true, maxFrames: 2400 });
+  // WAYSTONE-NORMAL-01 (D-056): no end sequence any more - the walk reaches the stone, nothing ends, the player can still move.
+  out.info.endTrigger = (world().triggers.find((x) => x.id === 'end' && x.structId === null) || {}).inside === 1; // reached the waystone zone
   out.info.endT = world().state['quest.endT'];
+  out.info.noEnd = !(world().state['quest.endT'] >= 0); // asserted true: no end card / restart
+  { const a = T(); await leg('8 move after waystone', [{ x: a.x + 3, y: a.y }], { maxFrames: 600 }); const b = T(); out.info.movedAfterWaystone = Math.hypot(b.x - a.x, b.y - a.y) > 1.5; }
+  // WM-06 (38.59) leg mapLoop (only with --map-loop 1 --grid 1): tower -> ... -> Gate -> back at run speed; a leg stuck at the bound (WM-05 not landed) shows as completed=false.
+  if (MAPLOOP.length) {
+    const w = world(); let late = 0, swaps = 0, maxSwap = 0; const m0 = w.bandMisses || 0, ev = w.events || eng.events;
+    if (ev && ev.on) { ev.on('band:late', () => { late++; }); ev.on('world:band', () => { swaps++; maxSwap = Math.max(maxSwap, w.lastSwapMs || 0); }); }
+    let cacheMax = 0; const cm = setInterval(() => { if (w.bandCache) cacheMax = Math.max(cacheMax, w.bandCache.bytes); }, 250);
+    const legsDone = [];
+    for (let i = 1; i < MAPLOOP.length; i++) legsDone.push(await leg('mapLoop ' + MAPLOOP[i - 1].n + ' -> ' + MAPLOOP[i].n, [{ x: MAPLOOP[i].x, y: MAPLOOP[i].y }], { detour: true, maxFrames: 12000 }));
+    clearInterval(cm);
+    out.info.mapLoop = { legs: legsDone.length, completed: legsDone.every((l) => l.completed), fell: legsDone.some((l) => l.fell), swaps, bandLate: late, syncBakes: (w.bandMisses || 0) - m0, maxSwapMs: +maxSwap.toFixed(2), cacheMB: +(cacheMax / 1048576).toFixed(1),
+      pass: legsDone.every((l) => l.completed && !l.fell) && late === 0 && (w.bandMisses || 0) === m0 && maxSwap <= 4 && cacheMax <= 32 * 1048576 };
+  }
   sampling = false;
   const mean = (a) => { const v = a.filter((x) => Number.isFinite(x)); return v.length ? v.reduce((p, q) => p + q, 0) / v.length : null; };
   out.shadowCpuMean = mean(shc);
@@ -145,11 +173,16 @@ try {
   handles.b = spawn(binary, [`--remote-debugging-port=${dbg}`, '--headless=new', ...buildLaunchFlags({}), '--no-sandbox', `--user-data-dir=${handles.dir}`, 'about:blank'], { stdio: 'ignore' });
   const cdp = await connectCdp(dbg, 15000);
   await cdp.send('Page.enable'); await cdp.send('Runtime.enable');
+  const bootLog = []; // [boot] page exceptions + console errors, printed when the driver throws (boot never finishing)
+  cdp.onEvent((m, p) => {
+    if (m === 'Runtime.exceptionThrown') bootLog.push('exception: ' + JSON.stringify(p.exceptionDetails).slice(0, 600));
+    else if (m === 'Runtime.consoleAPICalled' && (p.type === 'error' || p.type === 'warning')) bootLog.push('console.' + p.type + ': ' + (p.args || []).map((x) => x.value ?? x.description).join(' ').slice(0, 400));
+  });
   const loaded = new Promise((r) => cdp.onEvent((m) => { if (m === 'Page.loadEventFired') r(); }));
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?${query}` });
   await loaded;
   const r = await cdp.send('Runtime.evaluate', { expression: DRIVER, returnByValue: true, awaitPromise: true, timeout: 400000 });
-  if (r.exceptionDetails) throw new Error('driver threw: ' + JSON.stringify(r.exceptionDetails).slice(0, 800));
+  if (r.exceptionDetails) { for (const l of bootLog.slice(0, 20)) console.error('[boot] ' + l); throw new Error('driver threw: ' + JSON.stringify(r.exceptionDetails).slice(0, 800)); }
   const res = { query, ...r.result.value };
   if (res.physicsMode !== (physics === 'grid' ? 'grid' : 'mesh')) throw new Error('mesh physics default/override mismatch: ' + res.physicsMode);
   // S8-B1-14: fixed-schema frame-time trace (p50/p95/p99/max per leg + worst-frame list),
@@ -163,4 +196,9 @@ try {
   }
   console.log(JSON.stringify(res));
   cdp.close();
+  // Verdict (ROUTE-LEGS): every leg must complete without falling, else exit 1 (a leg may be exempt only via OPTIONAL_LEGS, with a reason).
+  const OPTIONAL_LEGS = {}; // name -> reason
+  const bad = res.legs.filter((l) => !OPTIONAL_LEGS[l.name] && (!l.completed || l.fell));
+  for (const l of bad) console.error(`ROUTE LEG FAILED: ${l.name} completed=${l.completed} fell=${l.fell} stuck=${JSON.stringify(l.stuck || null)}`);
+  if (bad.length) process.exitCode = 1;
 } finally { cleanup(); }

@@ -17,7 +17,8 @@ assert.strictEqual(summarizeCompilation('z', undefined).errors, 0);
 // present WGSL string rules (38.5): no raw %, no round/dpdx/fwidth/frag_depth, entry points + bindings per 38.8a
 for (const m of WGSL_MODULES) {
   assert.ok(!/[^%]%[^%]/.test(m.code.replace(/%%/g, '')) || m.name === 'common', `${m.name}: raw %`);
-  assert.ok(!/\bround\s*\(|dpdx|dpdy|fwidth|frag_depth/.test(m.code), `${m.name}: forbidden builtin`);
+  // R6c (38.60 items 5/7): the card fragment writes the depth of the texel-shifted point (rule 6) = the only frag_depth user (architect to ratify)
+  assert.ok(!/\bround\s*\(|dpdx|dpdy|fwidth/.test(m.code) && (m.name === 'impostorCard' || !/frag_depth/.test(m.code)), `${m.name}: forbidden builtin`);
 }
 assert.ok(/fn vs_main/.test(PRESENT_WGSL) && /fn fs_main/.test(PRESENT_WGSL));
 assert.ok(/@group\(0\) @binding\(3\) var uAtlasSampler: sampler/.test(PRESENT_WGSL), 'sampler at binding textures.length + 0');
@@ -25,6 +26,7 @@ assert.strictEqual(PRESENT_TEXTURES.length, 3);
 assert.deepStrictEqual(PRESENT_TEXTURES, ['float', 'float', 'filtered']);
 assert.ok(/const GLYPH_COUNT: f32 = 95\.0;/.test(PRESENT_WGSL), 'constant interpolated from glyphAtlas');
 assert.ok(!/1\.0 - /.test(PRESENT_WGSL.split('fn fs_main')[1].split('let atlasUv')[0]), 'no GL row flip');
+assert.ok(/raw & 127u/.test(PRESENT_WGSL) && /\* 0\.5, scaled\)/.test(PRESENT_WGSL), 'OB-051 scaled-cell lines');
 assert.strictEqual(PRESENT_BLOCK.sizeBytes, 32);
 assert.deepStrictEqual([PRESENT_BLOCK.field('grid').word, PRESENT_BLOCK.field('size').word, PRESENT_BLOCK.field('layer').word], [0, 2, 4]);
 // WG-2a debug module (38.5): registered, entry points, integer textures via textureLoad only, no GLSL leftovers

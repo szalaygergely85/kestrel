@@ -5,38 +5,57 @@
 import { localToWorld } from '../../engine/index.js';
 import { collectSave, applySave, createStorageAdapter } from './quest/save/saveState.js';
 import { createQuestRelay } from './questRelay.js';
+import { migrateM1Ch1 } from './quest/sim/questBook.js';
+import { createWallet } from './quest/sim/wallet.js';
 
 export const AUTOSAVE_SEC = 60;
 const STATE_GONE = 12; // beastSim.STATE_GONE (hidden, skipped everywhere) - same literal beastSim exports
 
 /**
- * @param {{storage:any, questDef:any, slot?:number, enabled?:boolean, autosaveSec?:number, playerName?:string, place?:string}} o
+ * @param {{storage:any, questDef:any, giverDefs?:any[], slot?:number, enabled?:boolean, autosaveSec?:number, playerName?:string, place?:string}} o
  */
-export function createSaveRelay({ storage, questDef, slot: slot0 = 0, enabled = true, autosaveSec = AUTOSAVE_SEC, playerName = 'Wick', place = 'Kestrel' }) {
+/** AUD2-03: saved player xy (world coordinates) or null; World.load uses it as `opts.spawn` so only one terrain band bakes. */
+export function savedSpawn(save) {
+  const es = save && save.world && save.world.entities;
+  const p = Array.isArray(es) ? es.find((e) => e && e.id === 'player') : null;
+  const t = p && p.transform;
+  return t && Number.isFinite(t.x) && Number.isFinite(t.y) ? { x: t.x, y: t.y } : null;
+}
+
+export function createSaveRelay({ storage, questDef, giverDefs = [], slot: slot0 = 0, enabled = true, autosaveSec = AUTOSAVE_SEC, playerName = 'Wick', place = 'Kestrel', defaultLook = null, freshPreset = null }) {
   let slot = slot0; // US-090w: the title menu picks the slot (setSlot)
   const adapter = storage ? createStorageAdapter(storage) : null;
-  const quest = createQuestRelay(questDef);
+  const quest = createQuestRelay(questDef, null, giverDefs);
   const chests = new Set(), dead = new Set();
-  const facts = { wakeDone: false, lanternTaken: false, swordTaken: false, endStarted: false, x: 0, y: 0, z: 0 };
+  let walletBus = null; // CUR-01: set by main (bindEvents) -> 'wallet:changed' {value, delta}
+  const wallet = createWallet(0, (value, delta) => { if (walletBus) walletBus.emit('wallet:changed', { value, delta }); }); // survives world reloads/death; only a slot load replaces it
+  const facts = { wakeDone: false, swordTaken: false, endStarted: false, x: 0, y: 0, z: 0 };
   const tmp = { x: 0, y: 0, z: 0 };
-  let breach = null, breachFor = null;
+  let breach = null, breachFor = null, zones = [];
   let playSec = 0, sinceSave = 0, pending = null, lastResult = null;
+  let look = defaultLook; // CHARGEN-16: player.look (CharRecipe); new game = kit default, restored from the save on load
 
   const relay = {
-    enabled, quest, adapter,
+    enabled, quest, adapter, wallet,
     get slot() { return slot; },
     /** US-090w: target slot for load/save (title menu choice). */
     setSlot(n) { if (Number.isInteger(n) && n >= 0) slot = n; },
     get openedChests() { return [...chests]; },
     get deadBeasts() { return [...dead]; },
     get playTimeSec() { return playSec; },
+    /** PAUSE-MENU-01: true when play time has passed since the last save/load (asks "Save first?"). */
+    get dirty() { return sinceSave > 0; },
     get lastResult() { return lastResult; },
+    get look() { return look; },
+    set look(v) { look = v; },
 
     /** Subscribes to engine events the seam has no name for (chest:opened); beast:died / item:got arrive via handlers().
      *  Returns an unsubscribe function. */
     bindEvents(events) {
+      walletBus = events;
       const offs = [
         events.on('chest:opened', (p) => { if (p && typeof p.id === 'string') chests.add(p.id); }),
+        events.on('beast:respawned', (p) => { if (p && typeof p.id === 'string') dead.delete(p.id); }), // BH-S5: a respawned beast must not be re-killed on Continue
       ];
       return () => { for (const off of offs) off(); };
     },
@@ -45,11 +64,12 @@ export function createSaveRelay({ storage, questDef, slot: slot0 = 0, enabled = 
     handlers() {
       let ctx = null;
       return {
-        onBoot(c) { ctx = c; },
+        onBoot(c) { ctx = c; quest.world = c && c.world || null; },
         onTick(dt) { if (ctx && ctx.world && ctx.player) relay.stepGame(dt, ctx.world, ctx.player.transform, ctx.state); },
         onEvent(name, d) {
           if (name === 'beast:died') { dead.add(d.id); quest.feed({ type: name, id: d.id }); }
           else if (name === 'item:got' || name === 'area:entered') quest.feed({ type: name, id: d.id });
+          else if (name === 'prop:touched' && d.id === 'waystone') quest.feed({ type: 'area:entered', id: 'waystone' }); // WAYSTONE-NORMAL-01: touching the stone completes the last objective (no end sequence any more)
           else if (name === 'flag:set') quest.feed({ type: name, key: d.key, value: d.value });
         },
         drawHud(ui) { relay.quest.draw(ui); },
@@ -63,7 +83,14 @@ export function createSaveRelay({ storage, questDef, slot: slot0 = 0, enabled = 
       if (!r.ok) { lastResult = { op: 'load', ok: false, error: r.error }; return null; }
       if (!r.save) return null;
       try {
-        const a = applySave(r.save, assets, { questDef, worldOptions: worldOpts });
+        // CH1-02: old m1 chain (with `lantern`) -> new 11-step chain BEFORE the book is built (38.37 item 8)
+        // The migration's world flags (6/6 saves) go to the WorldState at save.world.state, not save.game.
+        let save = r.save;
+        if (save.game && save.game.quest) {
+          const m = migrateM1Ch1({ quest: save.game.quest, world: save.world }, questDef.objectives.map(o => o.id));
+          if (m.quest !== save.game.quest) save = { ...save, game: { ...save.game, quest: m.quest }, world: m.world || save.world };
+        }
+        const a = applySave(save, assets, { questDef, giverDefs, worldOptions: { ...worldOpts, spawn: savedSpawn(save) || worldOpts.spawn }, defaultLook }); // AUD2-03: saved player pose picks the first band (one bake, not two)
         pending = a;
         lastResult = { op: 'load', ok: true };
         return a.world;
@@ -74,12 +101,15 @@ export function createSaveRelay({ storage, questDef, slot: slot0 = 0, enabled = 
     onWorldLoaded() {
       chests.clear(); dead.clear(); sinceSave = 0;
       if (pending) {
-        quest.reset(pending.quest ? pending.quest : null);
+        quest.reset(pending.quest ? pending.quest : null, pending.quests);
         for (const id of pending.openedChests) chests.add(id);
         for (const id of pending.deadBeasts) dead.add(id);
+        quest.seedDead(pending.deadBeasts); // R6-FIX C: the kill record survives Continue (a kill quest accepted after load still credits the dead pack)
         playSec = pending.meta.playTimeSec;
+        look = pending.look || defaultLook;
+        wallet.set(pending.coin || 0); // CUR-01: old saves load 0
         pending = null;
-      } else { quest.reset(null); playSec = 0; }
+      } else { const fp = freshPreset ? freshPreset() : null; if (fp) quest.reset(fp.quest || null, fp.quests); else quest.reset(null); playSec = 0; look = defaultLook; } // ED-QUEST-07: ?qstate preset only on a fresh run, never from/to a slot
     },
 
     /** After createBeastSim: restored dead beasts stay gone (the sim made them alive again). */
@@ -100,7 +130,7 @@ export function createSaveRelay({ storage, questDef, slot: slot0 = 0, enabled = 
       if (!enabled || !adapter || !world) return false;
       let save;
       try {
-        save = collectSave(world, { quest: quest.state, questDef, openedChests: [...chests], deadBeasts: [...dead], playerName, place, playTimeSec: playSec });
+        save = collectSave(world, { quest: quest.state, questDef, quests: quest.book.toSave().quests, /* collectSave writes it as v2 */ giverDefs, openedChests: [...chests], deadBeasts: [...dead], coin: wallet.get(), playerName, place, playTimeSec: playSec, savedAt: Date.now(), look }); // SAVE-TIME-01: only the real writer stamps time (pure collect stays deterministic)
         if (ending && save.world.state) save.world.state['quest.endT'] = -1;
       } catch (e) { lastResult = { op: 'save', ok: false, error: String(e) }; return false; }
       const r = adapter.writeSlot(slot, save);
@@ -117,12 +147,14 @@ export function createSaveRelay({ storage, questDef, slot: slot0 = 0, enabled = 
      * @param {{wakeDone:boolean, canSave:boolean}} o
      */
     stepGame(dt, world, pos, o) {
-      if (breachFor !== world) { breachFor = world; breach = resolveBreach(world, tmp); }
+      if (breachFor !== world) { breachFor = world; breach = resolveBreach(world, tmp); zones = resolveZones(world); }
+      quest.world = world; quest.checkSections();
       const ws = world.state, wasWay = quest.state.areas.includes('waystone');
-      facts.wakeDone = o.wakeDone; facts.lanternTaken = ws['tower.lantern.taken'] === true; facts.swordTaken = ws['tower.sword.taken'] === true;
+      facts.wakeDone = o.wakeDone; facts.swordTaken = ws['tower.sword.taken'] === true;
       facts.endStarted = typeof ws['quest.endT'] === 'number' && ws['quest.endT'] >= 0;
       facts.x = pos.x; facts.y = pos.y; facts.z = pos.z;
       quest.poll(facts, breach);
+      quest.pollAreas(pos.x, pos.y, pos.z, zones);
       if (!wasWay && quest.state.areas.includes('waystone')) { relay.save(world, { ending: true }); playSec += dt; return; }
       relay.tick(dt, world, o.canSave && !facts.endStarted);
     },
@@ -148,4 +180,19 @@ function resolveBreach(world, out) {
     return { x: out.x, y: out.y, z: out.z };
   }
   return null;
+}
+
+/** QUEST-CHAIN-Q-01 + QL-B2 follow-up: EVERY area-only world circle zone (trigger key `world.<id>`, no structure) -> area:entered once.
+ *  Data-driven (was a hand list of 3, so the other quest areas never fired). `hillPath` also answers to the area id `hintStone`.
+ *  `end` is the waystone (own path). zMin null/absent = any height (a bare `z >= null` is `z >= 0`, false below sea level). */
+const ZONE_ALIAS = { hillPath: 'hintStone' };
+function resolveZones(world) {
+  const out = [];
+  for (const t of world.triggers || []) {
+    if (t.shape !== 'circle' || t.structId || typeof t.key !== 'string' || !t.key.startsWith('world.') || t.key === 'world.end') continue;
+    const id = t.key.slice(6), zMin = typeof t.zMin === 'number' ? t.zMin : -Infinity;
+    out.push({ id, x: t.x, y: t.y, r: t.r, zMin });
+    if (ZONE_ALIAS[id]) out.push({ id: ZONE_ALIAS[id], x: t.x, y: t.y, r: t.r, zMin });
+  }
+  return out;
 }

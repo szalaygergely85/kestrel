@@ -1,0 +1,35 @@
+# PO batch verdicts - PC-B, 2026-10-17 (sonnet, D-066, claims-only)
+
+1. GRASS-VARIETY-01: PO OK -> testing. Walk: meadows show 3 patch types (low clover with '*' tips, normal, tall '!' seed heads), patches >= ~6 m, no speckle. Owner to-do: `node tools/verify-grassvar.mjs {port}` stills + look/ramp tuning (browser-only).
+2. OB-171 VoxelPool priority: PO OK -> testing. Walk: crowd town (Burl), nearby NPCs/enemies never vanish while far props draw; no cap warning for near ones.
+3. GOB-INVIS enemy bar: PO OK -> testing. Walk: at the OB-218 F3 spot (1091,1083,-79.7) no `Lv 4 Gobl` bar over empty grass. Owner to-do: per-record dump + underwater check not done.
+4. OB-166/OB-014 tolerant load: PO OK -> testing. Walk: game still loads; a bad model id gives one console warn, no crash (strict kept in lint).
+5. TEASER-QA-06 coast LOD: PO OK -> testing (AC deviations accepted by arch: radius 60, jump 55.43 m cliff). Walk: `node tools/teaser-stills.mjs --port {port} --ids teaser-strand-dawn` and judge the coast stairs. NOTE: commit only on k1/coastlod, must be merged to pc-b first.
+6. OB-215 Burl legs: PO OK -> testing. Walk: watch Burl walk home within 35 m; legs animate. Probe `node tools/probe-burl-legs.mjs {port}` (189/189 frames).
+7. OB-220b accept facts + Lamps on the Verge zone: PO OK -> testing. Walk: accept "Lamps on the Verge" from Joss: quest must not finish at once; walk to the lamps (zone r 14). Owner to-do: check lamp positions vs r 14 in game.
+8. OB-221 journal Main/Side: PO OK -> testing. Walk: J shows gold "Main" and blue "Side" headings, main first; headings not selectable. Also confirm Enter-after-tap input fix (ob221b) on 8000. Browser look not checked.
+9. OB-219 abandon by mouse: PO OK -> testing. Walk: J, click Abandon on sq.packet (click-click) -> quest returns to available, pin cleared. Owner to-do: check the new 400x150 intro slide overlay look.
+10. OB-217 fireball out of the pack: PO OK -> testing. Walk: new game pack has no locked fireball; unlock magic -> fireball lands in off hand; load an old save, stray cell gone. Node only, browser unverified.
+11. OB-223 + ED-WATER-02 editor water tool: PO OK -> testing. Walk: editor Water tool: select/resize a pool, New pool, Delete (2-click), undo each. Owner to-do: `node tools/verify-editor-water.mjs {port}` (browser path never run).
+12. ED-QUI-10 branch edit: PO OK -> testing. Walk: quest editor dialogue: edit choice text (n/38), GOTO select, flag; dangling GOTO refused. Owner to-do: `node tools/verify-edqui-10.mjs {port}`; CSS for .q-btext-in/.q-bgoto/.q-bflag untuned (cosmetic).
+13. ED-QUI-09 quest-sim --all: PO OK -> testing. Walk: `node tools/quest-sim.mjs --all` -> `88 quest(s): 88 PASS, 0 FAIL`, exit 1 on a broken fixture.
+14. QUEST-WRITER-BATCH-01 (R19 119 -> 0): PO OK -> testing (main session correction: writer batches 1-3 landed, R19_ALLOW empty, validate-content R19 0 hits; the PO read a stale lane entry). Walk: open J, every journal line fits one row.
+15. OB-155 lint + VISQA-13 interior moss: PO OK -> testing. Walk: crypt, ford cellar, goblin tunnel, bear den have no green moss on rocks/pebbles. R2 3 -> 0 and R1=0 accepted. Open, not blockers: R9 left 3 (wardens) plus the ow chain in R9_OK (PO confirms: accepted, wolves at band 6 are fine); R17 m1 legacy.
+16. OB-142 ford boars: PO OK -> testing. Walk: go down to the ford by normal start (not a ?at link): >= 3 boars within ~60 m (rule fordBoars).
+17. VISQA-28 sea cave lights: PO OK -> testing, with caveat. Walk: strand_cave shows two low raking lights. Owner to-do: GI zone g4_9 is stale (needs tools/bake-gi.mjs, not run) and stills `node tools/verify-visqa12-28-08.mjs {port}` not run; also check for the "MAX_LIGHTS reached" warning.
+18. OB-214 falls pool: PO OK -> testing. Walk: `node tools/teaser-stills.mjs --port {port} --ids teaser-river-falls`: waterfall sheet no wider than the pool, east edge no longer lands on grass. Owner decides (a) vs (b); GI for the zone stale.
+19. REPORT-KEY-01 F8 snapshot: PO OK -> testing. Walk: press F8 in game: toast "Bug snapshot copied", paste shows `KESTREL ... pos ... | clock | quality ...`. Browser path unrun; debug god mode moved to Shift+F8.
+
+## Batch 2 (PC-B PO, sonnet, 2026-10-17, claims-only; arch fixes for D/E/F/G taken as landed per the task)
+
+1. OB-222 far-forest lift (default ON): PO OK -> testing. Walk: Ctrl+F5, look at distant forest from the hill back at day, dusk and dawn; far tree line should no longer be navy/black. Owner look to-do: send an F8 line if navy trees persist (not reproduced headless); `?farforest=0` for A/B.
+2. SPELL-R7 telekinesis lv3: PO OK -> testing. Walk: unlock lv3, hold and throw an object, save/load mid-hold and mid-throw; state restores, no stagger loop. Node only, browser unverified.
+3. FD-01 default-path flicker gate: PO OK -> testing. Walk: `node tools/flicker-gate.mjs --port N --repeat 1` vs docs/test-reports/flicker-baseline-default.json. To-do: arch's one-off `?flickerdef=1` vs plain default byte-identical capture pair, result recorded in 38.9y.
+4. FD-05 leaf alt dice: PO OK -> testing. Walk: forest/bush walk, leaves shimmer less (forestWalk 11.4 -> ~7). Owner look to-do: leaf texture still reads as leaves; A/B with `?aaalt=0` (confirm the main.js line landed).
+5. FD-06 ground alt dice (0.5 m): PO OK -> testing. Walk: road and meadow at the feet, day + dusk, plus cross a tower door/interior (no ground re-roll on fog-shape toggle). Owner look to-do (required by arch): no visible square patches/tiles on road or grass; A/B `?aaalt=0`; reject-back if tiles seen.
+6. FD-07 gentle torches: PO OK -> testing. Walk: crypt/goblin tunnel torches breathe softly, no hard strobe; `?torchflick=` modes work from main.js, engine has no location read (check-deps OK). Owner look to-do: is the glow still alive enough, not dead-flat.
+7. RND-NIGHT-RIM-03 moon rim: PO OK -> testing. Walk: night (22:00) in the open, cool rim on silhouettes/trees facing the moon, none by day. To-do: `?gpucompare=1&at=22` once; owner look to-do: rim strength K 0.45 and that dusk rim follows the moon, not a low sun.
+8. TEASER-QA-01 LOOK-LINEAR default ON: PO OK -> testing. Walk: grove/forest floor no longer black at day and dusk; A/B `?looklin=0`. Owner look to-do (required): biome ground colours overall (grass, road, forest D) read right, not washed out or too bright.
+9. D-107 GPU-CALLS: PO OK -> testing. Walk: play 2 min on RTX, visuals identical, `?gpucount=1` shows ~2 writeBuffer/submit; gpucompare = the 4 known rows only. Owner: just confirm nothing looks different or stutters.
+10. D-107 legDriver LOD scan: PO OK -> testing. Walk: NPCs/beasts in a crowd (Burl town, ford boars) still animate legs; the full-scan reference test passes. Pure perf refactor, no look change expected.
+11. OB-155 NPC/beast floor snap: PO OK -> testing. Walk: Burl town, ford and farm NPCs/boars/wolves stand on the ground, not floating or sunk, also after moving off-screen and back. Owner to-do: report any still-floating NPC with an F8 line.

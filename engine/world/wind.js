@@ -21,6 +21,21 @@ export const WIND_K_SIZE = 64;
 export const WIND_MAX_ZONES = 16;
 export const WIND_PUSH_MAX = 1.5; // m/s, architecture.md 32.5
 
+// WIND-GUST-01: travelling gust BANDS for the visual wind (sway, carpet lean). A pure function of (x, y, t) and the field's dir/speed (no table, no trig):
+// two triangle->smoothstep waves along the wind axis (broad, ~70 m and ~29 m + a crosswind skew) that move downwind at GUST_BAND_V0 + GUST_BAND_VK * speed m/s.
+// gustBandMul in [1 - GUST_BAND_AMP, 1 + GUST_BAND_AMP] scales the base speed in `_baseInto` (sway) - NOT in sampleInto/pushAt (gameplay, particles). Twin: WIND_AT_WGSL.
+export const GUST_BAND_AMP = 0.6, GUST_BAND_V0 = 4, GUST_BAND_VK = 0.5;
+export const GUST_BAND_L1 = 70, GUST_BAND_L2 = 29, GUST_BAND_LC = 110;
+function triSm(a) { const f = Math.abs(a - Math.floor(a) - 0.5) * 2; return f * f * (3 - 2 * f); }
+/** Band factor in [0,1] at world (x, y), time t in seconds, wind direction (dirX, dirY) and base speed. */
+export function gustBand(x, y, t, dirX, dirY, speed) {
+  const u = x * dirX + y * dirY - (GUST_BAND_V0 + GUST_BAND_VK * speed) * t;
+  const c = y * dirX - x * dirY;
+  return 0.65 * triSm(u / GUST_BAND_L1) + 0.35 * triSm(u / GUST_BAND_L2 + c / GUST_BAND_LC);
+}
+/** Speed multiplier of the band at the point (1 +- GUST_BAND_AMP). */
+export function gustBandMul(x, y, t, dirX, dirY, speed) { return 1 + GUST_BAND_AMP * (2 * gustBand(x, y, t, dirX, dirY, speed) - 1); }
+
 function posMod(a, n) {
   const m = a % n;
   return m < 0 ? m + n : m;
@@ -137,7 +152,7 @@ export function createWind(def, seed) {
   /** Base (zone-free) wind vector at (x, y, tick), into caller's out2. */
   function baseInto(x, y, tick, out) {
     const g = gustG(x, y, tick);
-    const s = speedAt(speed, g);
+    const s = speedAt(speed, g) * (speed > 0 ? gustBandMul(x, y, tick * STEP, dirX, dirY, speed) : 1);
     out[0] = dirX * s;
     out[1] = dirY * s;
     return out;
@@ -238,6 +253,8 @@ export function createWind(def, seed) {
   // isolation). Not part of the documented API surface in 32.5, but zero
   // allocation and harmless to expose.
   field._baseInto = baseInto;
+  /** WIND-GUST-01: the visual gust multiplier at (x, y, tick) (1 when calm); carpet's JS twin applies it on top of sampleInto. */
+  field.gustMul = (x, y, tick) => (speed > 0 ? gustBandMul(x, y, tick * STEP, dirX, dirY, speed) : 1);
 
   // S8-B2-06: the static config the GPU twin needs (engine/mesh/sway.js packs it; WIND_AT_WGSL in common.wgsl.js is the twin of
   // `baseInto`: base vector from forwardOf, gust kernel table K, zones off). Read-only by convention.

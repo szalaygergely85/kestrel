@@ -24,7 +24,7 @@ export const EYE_H = 1.60;
 // unlike every other GATE_POSES entry, `cam` here is a function of
 // `(rt, world)`, not a static object. `main.js`'s one `gatePose.cam` call
 // site resolves either shape.
-import { pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG } from '../engine/dev.js';
+import { pitchedEyeFromFocus, PROJ_PITCHED_VFOV_DEG } from '../engine/index.js';
 const RTS_HILL_FX = 1440, RTS_HILL_FY = 1040, RTS_HILL_YAW = 20, RTS_HILL_PITCH = -58, RTS_HILL_WIDTH_M = 30;
 
 export const POSES = [
@@ -56,7 +56,28 @@ export const GATE_POSES = [
   { slug: 'breach', name: 'breach (looking out)', cam: { x: 1486.5, y: 1025.0, z: 7.6, yawDeg: 270, pitchDeg: 0 } },
   // ME-15c: signal tower seen from the NNW looking SE (towards the sun), its sun shadow (az 135) lies on the grass between, for the sun shadow map captures (`?pose=towerShadow&shadows=map`, sun az 135 el 30 set by the capture script)
   { slug: 'towerShadow', name: 'signal tower + its NW shadow, seen from the NNW (ME-15c)', cam: { x: 1474, y: 1006, z: 9.0, yawDeg: 137, pitchDeg: -17, groundEye: true } },
+  // NPC-BEAR-01: Burl the bear at (1471, 1029.1), seen from 3.2 m east on the path (he faces east, towards the breach).
+  { slug: 'burl', name: 'Burl the bear on the walk-out path (NPC-BEAR-01)', cam: { x: 1474.2, y: 1029.4, z: 1.7, yawDeg: 270, pitchDeg: 4, groundEye: true } },
+  // MAP-14 / OB-104: Glasswater south shore shelf (ground -57.2, water edge y 540), looking north across the lake; perf-pose JS p95 <= 8 ms. (Was 1237,606 = the bottom of the outlet-cliff notch, ground -77: OB-104.)
+  { slug: 'lakeEdge', name: 'Glasswater lake edge, looking north over the water (MAP-14 perf pose)', cam: { x: 1215, y: 556, z: 1.7, yawDeg: 0, pitchDeg: 2, groundEye: true } },
+  // MAP-26: Outwall. `outwall` = just inside the south-east gate looking at the relay on the plaza (perf pose, JS p95 <= 8 ms); `outwallFord` = ford west bank looking at the walled settlement.
+  { slug: 'outwall', name: 'Outwall, inside the gate looking at the relay (MAP-26 perf pose)', cam: { x: 937, y: 927, z: 1.7, yawDeg: 314, pitchDeg: 4, groundEye: true } },
+  { slug: 'outwallFord', name: 'ford west bank looking at the Outwall palisade (MAP-26 still)', cam: { x: 998, y: 1066, z: 1.7, yawDeg: 217, pitchDeg: 4, groundEye: true } },
   { slug: 'roadSouth', name: 'walk-out road, looking west-south-west at the cleaned south verge + placed meshes (ME-14c3)', cam: { x: 1466, y: 1035, z: 1.7, yawDeg: 240, pitchDeg: 6, groundEye: true } },
+  { slug: 'roadBend', name: 'road bend, looking west at the relay waystone (WS1-08 gate pose)', cam: { x: 1268, y: 1040, z: 1.7, yawDeg: 270, pitchDeg: 0, groundEye: true } },
+  // WS1-08 / CH1-10 C perf-gate poses (tools/perf-pose.mjs default --poses): interior = the brazier view inside the tower (same cam as 'brazier'); exterior = from the walk-out meadow 29 m west of the tower, looking east (+x) with the towerCrown prop (world_m1 entity at 1497,1025, z 12-14) in view (pitch +14).
+  { slug: 'towerInterior', name: 'tower interior, brazier view (WS1-08 perf pose)', cam: { x: 1496.0, y: 1024.5, z: EYE_H, yawDeg: 90, pitchDeg: -5 } },
+  { slug: 'towerExterior', name: 'tower from the meadow, crown in view (WS1-08 perf pose)', cam: { x: 1468, y: 1025.5, z: 1.7, yawDeg: 90, pitchDeg: 14, groundEye: true } },
+  // PERF-2026-10-11 poses: meadow toward the tower through the rs### flowers/ferns, and the ford bank looking west.
+  { slug: 'meadowDetail', name: 'meadow toward the tower through the roadside plants (perf 2026-10-11)', cam: { x: 1450, y: 1035, z: 1.7, yawDeg: 102, pitchDeg: 0, groundEye: true } },
+  // MAP-07: meadow looking south-west at the sea line + sea skirt (MAP-06b skyline), still for docs/test-reports/MAP-geo.md.
+  { slug: 'meadowSea', name: 'meadow looking south-west at the sea line (MAP-07 still)', cam: { x: 1460, y: 1030, z: 1.7, yawDeg: 235, pitchDeg: 0, groundEye: true } },
+  { slug: 'fordDetail', name: 'ford bank looking west (perf 2026-10-11)', cam: { x: 1040, y: 1068, z: 1.7, yawDeg: 270, pitchDeg: 0, groundEye: true } },
+  // ENV-02d gpucompare look poses (ground look on the GPU vs the JS twin; need a world with `groundLook` on). Positions are reused gate spots, retune once the biome edges are known.
+  { slug: 'lookMeadow', name: 'ground look: meadow grass (ENV-02d)', cam: { x: 1450, y: 1035, z: 1.7, yawDeg: 102, pitchDeg: -12, groundEye: true } },
+  { slug: 'lookForestEdge', name: 'ground look: ford bank at the forest edge (ENV-02d)', cam: { x: 1040, y: 1068, z: 1.7, yawDeg: 270, pitchDeg: -12, groundEye: true } },
+  { slug: 'lookShore', name: 'ground look: lake shore (ENV-02d)', cam: { x: 1215, y: 556, z: 1.7, yawDeg: 0, pitchDeg: -15, groundEye: true } },
+  { slug: 'forestFloor', name: 'forest floor in Northwood (OB-184 undergrowth, saplings, ground look D)', cam: { x: 1550.75, y: 550.66, z: 1.7, yawDeg: 155, pitchDeg: -14, groundEye: true } },
   { slug: 'roadLeft', name: 'walk-out road, looking south-west across the left (south) verge scatter roadL### (tools/gen-roadside-meshes.mjs)', cam: { x: 1440, y: 1030, z: 1.7, yawDeg: 215, pitchDeg: 4, groundEye: true } },
   { slug: 'hillside', name: 'hillside outside (owner pose A)', cam: { x: 1464.33, y: 1045.50, z: 3.92, yawDeg: 54, pitchDeg: 19 } },
   // waystoneLookBack: eye 2 m back along -forward from (1428, 1040) so it is not inside the model

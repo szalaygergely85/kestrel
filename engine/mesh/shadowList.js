@@ -11,7 +11,7 @@
 // cast) and RE-06 instanced groups (`src.instances`) are added with their FULL
 // instance buffer `g.ib` (not the camera-compacted `drawIb`): units in the sun
 // outside the view still shadow what is on screen; the sun-plane cull is per group.
-import { DrawList, addStructures, addMeshStructures, pushClothItem, DRAW_TERRAIN, DRAW_FLAG_ONE_PART, MAX_DRAW_ITEMS, MAX_MESH_DRAWS } from './DrawList.js';
+import { DrawList, addStructures, addMeshStructures, pushClothItem, DRAW_TERRAIN, DRAW_FLAG_ONE_PART, MAX_MESH_DRAWS } from './DrawList.js';
 import { addVoxelInstances } from './voxelMesh.js';
 import { fillShadowBands, groupRadius, resolveGroupLod1, meshIsMasked } from './instances.js';
 
@@ -24,7 +24,10 @@ import { fillShadowBands, groupRadius, resolveGroupLod1, meshIsMasked } from './
  */
 const _budget = { eye: /** @type {any} */ (null), cutM: 25, cap: MAX_MESH_DRAWS };
 
-/** Builder output capacity before the overflow trim (the trim keeps `MAX_DRAW_ITEMS`). */
+/** OB-043: sun-shadow list size after the overflow trim (was MAX_DRAW_ITEMS = 256; kept when the camera list went to 512). */
+export const MAX_SHADOW_ITEMS = 256;
+
+/** Builder output capacity before the overflow trim (the trim keeps `MAX_SHADOW_ITEMS`). */
 export const SHADOW_BUILD_CAPACITY = 1024;
 
 /** @param {number} [capacity] @returns {DrawList} a list sized for `buildShadowList`. */
@@ -68,16 +71,16 @@ export function buildShadowList(list, cameraList, world, planes, src) {
   addStructures(list, world, c, src.cache, src.fogFarM || 2000);
   if (src.meshCache && src.meshIdFor) {
     let b = null;
-    if (src.eye && src.meshCastM && src.meshCastM > 0) { b = _budget; b.eye = src.eye; b.cutM = src.meshCastM; b.cap = src.meshCastCap == null ? MAX_MESH_DRAWS : src.meshCastCap; } // MESH-SHADOW-02; no eye = old behaviour
+    if (src.eye && src.meshCastM && src.meshCastM > 0) { b = _budget; b.eye = src.eye; b.cutM = world.placementGrid && world.streaming && world.streaming.enabled ? Math.min(src.meshCastM, world.placementGrid.opts.minM) : src.meshCastM; b.cap = src.meshCastCap == null ? MAX_MESH_DRAWS : src.meshCastCap; } // MESH-SHADOW-02; no eye = old behaviour
     // SHADOW-ROT fix: the nearest-MAX_MESH_DRAWS (64) pick is ranked from the EYE (as the camera feed), never from the
     // yaw-dependent box centre (aheadM in front): ranking from the centre swapped out the props around the player when the
     // camera turned (world_m1 has > 64 placements in range). Same set as the camera draws; the sun-plane cull decides.
     addMeshStructures(list, world, src.eye || c, src.meshCache, src.meshIdFor, src.fogFarM || 2000, true, b); // ME-14c2 (37.1 item 6)
   }
-  if (src.terrainSet) src.terrainSet.addToDrawList(list, c);
+  if (src.terrainSet) src.terrainSet.addToDrawList(list, c, true);
   const vp = src.voxelPool;
   if (vp && vp.list.length > 0 && src.voxelMeshCache) {
-    addVoxelInstances(list, /** @type {any} */ (vp), src.voxelMeshCache, vp.partNamesFor);
+    addVoxelInstances(list, /** @type {any} */ (vp), src.voxelMeshCache, vp.partNamesFor, planes); // PERF-03: pre-cull = list.cull(planes) below
   }
   const ig = src.instances;
   if (ig && ((ig.pool && src.voxelMeshCache) || (src.meshCache && src.meshIdFor))) {
@@ -154,10 +157,10 @@ function syncTerrainLod(list, cameraList) {
   }
 }
 
-/** Drops farthest-from-centre items (ties: the later one) until `count <= MAX_DRAW_ITEMS`; stable order otherwise. */
+/** Drops farthest-from-centre items (ties: the later one) until `count <= MAX_SHADOW_ITEMS`; stable order otherwise. */
 export function trimShadowList(list, cx, cy) {
   const items = list.items;
-  while (list.count > MAX_DRAW_ITEMS) {
+  while (list.count > MAX_SHADOW_ITEMS) {
     let worst = 0, worstD = -1;
     for (let i = 0; i < list.count; i++) {
       const a = items[i].aabb;

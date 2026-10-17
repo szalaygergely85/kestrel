@@ -1,0 +1,25 @@
+[
+  {
+    "id": "qd04.scratch",
+    "rev": 1,
+    "name": "Foxes burst from the tower door",
+    "once": true,
+    "when": {
+      "on": "flag.set",
+      "flag": "inspect.qd04_towerScratch"
+    },
+    "if": [
+      {
+        "is": "quest",
+        "quest": "sq.burl.tower",
+        "state": "active"
+      }
+    ],
+    "do": [
+      {
+        "act": "beasts.spawn",
+        "group": "qd04.foxes"
+      }
+    ]
+  }
+]

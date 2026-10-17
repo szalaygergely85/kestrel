@@ -2,7 +2,7 @@
 // Run: node [--expose-gc] engine/render/particleLayer.test.js
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { createParticleLayer } from './particleLayer.js';
+import { createParticleLayer, liveSunScale, smokeDimRatio } from './particleLayer.js';
 import { camBasis, projectSprite } from './sprites.js';
 import { createParticles } from '../fx/particles.js';
 import { D, DEF_STRIDE, MAX_RAMP } from '../fx/emitterDef.js';
@@ -232,5 +232,22 @@ function cellBytes(layer, col, row) {
   ok('budget (warn-only): 2048 live build() <= 0.3 ms', true, `${b2048.ms.toFixed(4)} ms (bar 0.3 ms, informational)`);
 }
 
+// VISQA-05: live sun scale for the emitter light sample (day clamps to 1 = bit-identical; night = sunI ratio).
+{
+  const tod = { morning: { sunI: 1 }, noon: { sunI: 1.1 }, night: { sunI: 0.25 } };
+  ok('liveSunScale: no live look -> 1', liveSunScale({ timeOfDay: tod, defaultTime: 'morning' }) === 1);
+  ok('liveSunScale: noon (above ref) clamps to 1', liveSunScale({ timeOfDay: tod, defaultTime: 'morning', liveLook: { sunI: 1.1 } }) === 1);
+  ok('liveSunScale: night = 0.25', Math.abs(liveSunScale({ timeOfDay: tod, defaultTime: 'morning', liveLook: { sunI: 0.25 } }) - 0.25) < 1e-12);
+}
+
+
+// VISQA-23: smoke follows the real light (no fgMin floor): night -> far darker than the floored gain, day -> ~unchanged.
+{
+  const S = { fgMin: 0.32, fgGamma: 0.75 };
+  ok('smokeDimRatio: full light = 1', Math.abs(smokeDimRatio(S, 1, 1, 1) - 1) < 1e-12);
+  ok('smokeDimRatio: night (0.05) < 0.3', smokeDimRatio(S, 0.05, 0.05, 0.05) < 0.3);
+  ok('smokeDimRatio: pitch dark = 0', smokeDimRatio(S, 0, 0, 0) === 0);
+  ok('smokeDimRatio: monotonic in light', smokeDimRatio(S, 0.1, 0.1, 0.1) < smokeDimRatio(S, 0.5, 0.5, 0.5));
+}
 console.log(`\n[particleLayer.test.js] ${pass} passed, ${fail} failed`);
 if (fail) { failures.forEach((m) => console.error(`  FAIL: ${m}`)); process.exit(1); }

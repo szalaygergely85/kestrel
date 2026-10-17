@@ -1,0 +1,32 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Clover_2",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Clover_2.mesh.bin",
+  "triCount": 615,
+  "bbox": [
+    -0.5023,
+    -0.36432,
+    -0.00235,
+    0.34883,
+    0.47231,
+    1.26143
+  ],
+  "ranges": [
+    {"count": 615, "mask": {"cutoff": 0.2, "tex": "quaternius/Leaves"}, "part": "Clover_2#0", "start": 0}
+  ],
+  "matKeys": [
+    "Leaves"
+  ],
+  "mats": {
+    "Flowers": "petal_yellow",
+    "Leaves": "leaf"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "collide": false,
+  "castShadow": false
+}

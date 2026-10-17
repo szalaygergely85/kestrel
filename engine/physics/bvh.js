@@ -81,74 +81,132 @@ function srcVertIndices(idx, t, out) {
 // Build
 // ---------------------------------------------------------------------------
 
+const nowMs = () => performance.now();
+
+/** Triangles of node work between two clock reads in `BvhBuilder.step`. */
+const STEP_CHECK_TRIS = 2048;
+
 /**
- * @param {Float32Array|Float64Array} pos
- * @param {Uint16Array|Uint32Array|null} idx - null = unrolled (3 verts/triangle in `pos`)
- * @param {Float64Array|null} matrix12 - null = identity
- * @returns {Bvh}
+ * Centroid order on one axis: key, then source index. A strict total order, so the sorted (or partitioned)
+ * result never depends on the input order.
+ * @param {Float64Array} key @param {number} a @param {number} b
  */
-export function buildBvh(pos, idx, matrix12) {
-  const srcTriCount = idx ? Math.floor(idx.length / 3) : Math.floor(pos.length / 9);
+function lessC(key, a, b) { const ka = key[a], kb = key[b]; return ka < kb || (ka === kb && a < b); }
 
-  // World-space triangle vertex data, SOURCE order (9 floats/tri).
-  const srcTri = new Float64Array(srcTriCount * 9);
-  const vi = new Int32Array(3);
-  for (let t = 0; t < srcTriCount; t++) {
-    srcVertIndices(idx, t, vi);
-    const o = t * 9;
-    transformPoint(matrix12, pos[vi[0] * 3], pos[vi[0] * 3 + 1], pos[vi[0] * 3 + 2], srcTri, o);
-    transformPoint(matrix12, pos[vi[1] * 3], pos[vi[1] * 3 + 1], pos[vi[1] * 3 + 2], srcTri, o + 3);
-    transformPoint(matrix12, pos[vi[2] * 3], pos[vi[2] * 3 + 1], pos[vi[2] * 3 + 2], srcTri, o + 6);
+/** Insertion sort of order[lo..hi] (inclusive) by `lessC`. @param {Int32Array} order @param {Float64Array} key @param {number} lo @param {number} hi */
+function sortSmall(order, key, lo, hi) {
+  for (let i = lo + 1; i <= hi; i++) {
+    const v = order[i];
+    let j = i - 1;
+    while (j >= lo && lessC(key, v, order[j])) { order[j + 1] = order[j]; j--; }
+    order[j + 1] = v;
+  }
+}
+
+/**
+ * Quickselect: afterwards order[lo..nth-1] are the (nth-lo) smallest of order[lo..hi] (inclusive) by `lessC`.
+ * Same split as a full sort (strict total order), O(n) instead of O(n log n).
+ * @param {Int32Array} order @param {Float64Array} key @param {number} lo @param {number} hi @param {number} nth
+ */
+function selectNth(order, key, lo, hi, nth) {
+  while (hi > lo) {
+    if (hi - lo < 16) { sortSmall(order, key, lo, hi); return; }
+    const m = (lo + hi) >> 1;
+    let a = order[lo], b = order[m], t;
+    const c = order[hi];
+    if (lessC(key, b, a)) { t = a; a = b; b = t; }
+    if (lessC(key, c, b)) { b = c; if (lessC(key, b, a)) b = a; }
+    const pv = b; // median of three
+    let i = lo, j = hi;
+    while (i <= j) {
+      while (lessC(key, order[i], pv)) i++;
+      while (lessC(key, pv, order[j])) j--;
+      if (i <= j) { t = order[i]; order[i] = order[j]; order[j] = t; i++; j--; }
+    }
+    if (nth <= j) hi = j; else if (nth >= i) lo = i; else return;
+  }
+}
+
+/**
+ * PERF-03: resumable static-BVH build (`step(ms)` until true, then `result`). Produces the SAME Bvh bit for bit as
+ * the former recursive build: the explicit stack visits nodes depth-first left-before-right (same node indices),
+ * the centroid order is a strict total order (so a quickselect split at `mid` = the old full sort's halves), and a
+ * half that becomes a leaf is fully sorted (its triangle order = the old sorted order). Allocates (load/bake time).
+ */
+export class BvhBuilder {
+  /**
+   * @param {Float32Array|Float64Array} pos
+   * @param {Uint16Array|Uint32Array|null} idx - null = unrolled (3 verts/triangle in `pos`)
+   * @param {Float64Array|null} matrix12 - null = identity
+   */
+  constructor(pos, idx, matrix12) {
+    const n = idx ? Math.floor(idx.length / 3) : Math.floor(pos.length / 9);
+    this.n = n;
+    // World-space triangle vertex data, SOURCE order (9 floats/tri).
+    const srcTri = new Float64Array(n * 9);
+    const vi = new Int32Array(3);
+    for (let t = 0; t < n; t++) {
+      srcVertIndices(idx, t, vi);
+      const o = t * 9;
+      transformPoint(matrix12, pos[vi[0] * 3], pos[vi[0] * 3 + 1], pos[vi[0] * 3 + 2], srcTri, o);
+      transformPoint(matrix12, pos[vi[1] * 3], pos[vi[1] * 3 + 1], pos[vi[1] * 3 + 2], srcTri, o + 3);
+      transformPoint(matrix12, pos[vi[2] * 3], pos[vi[2] * 3 + 1], pos[vi[2] * 3 + 2], srcTri, o + 6);
+    }
+    // Centroids (float64, per 27.15.7).
+    const ccx = new Float64Array(n), ccy = new Float64Array(n), ccz = new Float64Array(n);
+    for (let t = 0; t < n; t++) {
+      const o = t * 9;
+      ccx[t] = (srcTri[o] + srcTri[o + 3] + srcTri[o + 6]) / 3;
+      ccy[t] = (srcTri[o + 1] + srcTri[o + 4] + srcTri[o + 7]) / 3;
+      ccz[t] = (srcTri[o + 2] + srcTri[o + 5] + srcTri[o + 8]) / 3;
+    }
+    // `order[i]` = source triangle at BVH position i; permuted in place, ends as the BVH-order -> source map.
+    const order = new Int32Array(n);
+    for (let t = 0; t < n; t++) order[t] = t;
+    /** @type {{srcTri:Float64Array, ccx:Float64Array, ccy:Float64Array, ccz:Float64Array, order:Int32Array}|null} build buffers, dropped by _finish */
+    this.buf = { srcTri, ccx, ccy, ccz, order };
+    // Full binary tree: L <= n leaves -> 2L-1 nodes. Upper bound, trimmed at the end.
+    const maxNodes = n > 0 ? Math.max(1, 2 * n - 1) : 1;
+    this.nodeMin = new Float64Array(maxNodes * 3);
+    this.nodeMax = new Float64Array(maxNodes * 3);
+    this.nodeStart = new Int32Array(maxNodes);
+    this.nodeTriCount = new Int32Array(maxNodes);
+    this.nodesUsed = 1; // root = node 0
+    this.maxDepth = 0;
+    /** @type {number[]} pending nodes, 4 ints each: nodeIdx, start, count, depth */
+    this.stack = [0, 0, n, 0];
+    /** @type {Bvh|null} */
+    this.result = null;
   }
 
-  // Centroids (float64, per 27.15.7).
-  const ccx = new Float64Array(srcTriCount);
-  const ccy = new Float64Array(srcTriCount);
-  const ccz = new Float64Array(srcTriCount);
-  for (let t = 0; t < srcTriCount; t++) {
-    const o = t * 9;
-    ccx[t] = (srcTri[o] + srcTri[o + 3] + srcTri[o + 6]) / 3;
-    ccy[t] = (srcTri[o + 1] + srcTri[o + 4] + srcTri[o + 7]) / 3;
-    ccz[t] = (srcTri[o + 2] + srcTri[o + 5] + srcTri[o + 8]) / 3;
-  }
-
-  // `order[i]` = source triangle index currently at BVH position i; permuted
-  // in place while building, ends up as the final BVH-order -> source map.
-  const order = new Int32Array(srcTriCount);
-  for (let t = 0; t < srcTriCount; t++) order[t] = t;
-
-  // Full binary tree: L leaves (L <= srcTriCount, when srcTriCount > 0) ->
-  // 2L-1 nodes total. Upper bound, trimmed after build.
-  const maxNodes = srcTriCount > 0 ? Math.max(1, 2 * srcTriCount - 1) : 1;
-  const nodeMin = new Float64Array(maxNodes * 3);
-  const nodeMax = new Float64Array(maxNodes * 3);
-  const nodeStart = new Int32Array(maxNodes);
-  const nodeTriCount = new Int32Array(maxNodes);
-  let nodesUsed = 0;
-  let maxDepth = 0;
-
-  /** @param {number[]} arr - source triangle ids, sorted in place by centroid on `axis` */
-  function sortByCentroid(arr, axis) {
-    const key = axis === 0 ? ccx : axis === 1 ? ccy : ccz;
-    arr.sort((a, b) => {
-      const va = key[a], vb = key[b];
-      if (va < vb) return -1;
-      if (va > vb) return 1;
-      return a - b; // deterministic tie-break: source index
-    });
+  /** Builds nodes for about `ms` milliseconds (>= 1 node per call). True when `result` is set. @param {number} ms */
+  step(ms) {
+    if (this.result) return true;
+    const st = this.stack, t0 = nowMs();
+    let work = 0, nodes = 0;
+    while (st.length) {
+      const depth = /** @type {number} */ (st.pop()), count = /** @type {number} */ (st.pop());
+      const start = /** @type {number} */ (st.pop()), nodeIdx = /** @type {number} */ (st.pop());
+      this._node(nodeIdx, start, count, depth);
+      work += count; nodes++;
+      if (work >= STEP_CHECK_TRIS) { work = 0; if (nowMs() - t0 >= ms) return false; }
+    }
+    if (nodes && nowMs() - t0 >= ms) return false; // budget spent: the final copy gets a call of its own
+    this._finish();
+    return true;
   }
 
   /**
-   * Fills the already-allocated node slot `nodeIdx` for range [start, start+count).
+   * Fills node `nodeIdx` for range [start, start+count) and queues its children (left is popped first).
    * @param {number} nodeIdx @param {number} start @param {number} count @param {number} depth
    */
-  function buildRange(nodeIdx, start, count, depth) {
-    if (depth > maxDepth) maxDepth = depth;
+  _node(nodeIdx, start, count, depth) {
+    const { srcTri, ccx, ccy, ccz, order } = /** @type {NonNullable<BvhBuilder['buf']>} */ (this.buf);
+    if (depth > this.maxDepth) this.maxDepth = depth;
     let minx = Infinity, miny = Infinity, minz = Infinity;
     let maxx = -Infinity, maxy = -Infinity, maxz = -Infinity;
     for (let i = start; i < start + count; i++) {
-      const t = order[i];
-      const o = t * 9;
+      const o = order[i] * 9;
       for (let k = 0; k < 3; k++) {
         const vx = srcTri[o + k * 3], vy = srcTri[o + k * 3 + 1], vz = srcTri[o + k * 3 + 2];
         if (vx < minx) minx = vx; if (vy < miny) miny = vy; if (vz < minz) minz = vz;
@@ -156,12 +214,12 @@ export function buildBvh(pos, idx, matrix12) {
       }
     }
     const b = nodeIdx * 3;
-    nodeMin[b] = minx; nodeMin[b + 1] = miny; nodeMin[b + 2] = minz;
-    nodeMax[b] = maxx; nodeMax[b + 1] = maxy; nodeMax[b + 2] = maxz;
+    this.nodeMin[b] = minx; this.nodeMin[b + 1] = miny; this.nodeMin[b + 2] = minz;
+    this.nodeMax[b] = maxx; this.nodeMax[b + 1] = maxy; this.nodeMax[b + 2] = maxz;
 
     if (count <= BVH_LEAF_MAX) {
-      nodeStart[nodeIdx] = start;
-      nodeTriCount[nodeIdx] = count;
+      this.nodeStart[nodeIdx] = start;
+      this.nodeTriCount[nodeIdx] = count;
       return;
     }
 
@@ -178,44 +236,57 @@ export function buildBvh(pos, idx, matrix12) {
     let axis = 0;
     if (ey > ex) axis = 1;
     if (axis === 0 ? ez > ex : ez > ey) axis = 2;
+    const key = axis === 0 ? ccx : axis === 1 ? ccy : ccz;
 
-    const slice = Array.from(order.subarray(start, start + count));
-    sortByCentroid(slice, axis);
-    for (let i = 0; i < count; i++) order[start + i] = slice[i];
+    const mid = start + (count >> 1), end = start + count - 1;
+    selectNth(order, key, start, end, mid);
+    if (mid - start <= BVH_LEAF_MAX) sortSmall(order, key, start, mid - 1); // leaf halves keep the sorted order
+    if (end + 1 - mid <= BVH_LEAF_MAX) sortSmall(order, key, mid, end);
 
-    const mid = start + (count >> 1);
-    const leftIdx = nodesUsed++;
-    const rightIdx = nodesUsed++; // adjacent: rightIdx === leftIdx + 1
-    nodeStart[nodeIdx] = leftIdx;
-    nodeTriCount[nodeIdx] = 0;
-    buildRange(leftIdx, start, mid - start, depth + 1);
-    buildRange(rightIdx, mid, start + count - mid, depth + 1);
+    const leftIdx = this.nodesUsed++;
+    const rightIdx = this.nodesUsed++; // adjacent: rightIdx === leftIdx + 1
+    this.nodeStart[nodeIdx] = leftIdx;
+    this.nodeTriCount[nodeIdx] = 0;
+    this.stack.push(rightIdx, mid, start + count - mid, depth + 1, leftIdx, start, mid - start, depth + 1);
   }
 
-  const rootIdx = nodesUsed++;
-  buildRange(rootIdx, 0, srcTriCount, 0);
-
-  // Trim to actual size and reorder tri/triId into final BVH order.
-  const tri = new Float64Array(srcTriCount * 9);
-  const triId = new Int32Array(srcTriCount);
-  for (let i = 0; i < srcTriCount; i++) {
-    const t = order[i];
-    triId[i] = t;
-    const so = t * 9, o = i * 9;
-    for (let k = 0; k < 9; k++) tri[o + k] = srcTri[so + k];
+  /** Trims to the used node count and reorders tri/triId into BVH order. */
+  _finish() {
+    const { srcTri, order } = /** @type {NonNullable<BvhBuilder['buf']>} */ (this.buf);
+    const n = this.n, nu = this.nodesUsed;
+    const tri = new Float64Array(n * 9);
+    const triId = new Int32Array(n);
+    for (let i = 0; i < n; i++) {
+      const t = order[i];
+      triId[i] = t;
+      const so = t * 9, o = i * 9;
+      for (let k = 0; k < 9; k++) tri[o + k] = srcTri[so + k];
+    }
+    this.result = {
+      triCount: n,
+      nodeCount: nu,
+      tri,
+      triId,
+      nodeMin: this.nodeMin.slice(0, nu * 3),
+      nodeMax: this.nodeMax.slice(0, nu * 3),
+      nodeStart: this.nodeStart.slice(0, nu),
+      nodeTriCount: this.nodeTriCount.slice(0, nu),
+      stack: new Int32Array(this.maxDepth + 2),
+    };
+    this.buf = null; // free the build buffers
   }
+}
 
-  return {
-    triCount: srcTriCount,
-    nodeCount: nodesUsed,
-    tri,
-    triId,
-    nodeMin: nodeMin.slice(0, nodesUsed * 3),
-    nodeMax: nodeMax.slice(0, nodesUsed * 3),
-    nodeStart: nodeStart.slice(0, nodesUsed),
-    nodeTriCount: nodeTriCount.slice(0, nodesUsed),
-    stack: new Int32Array(maxDepth + 2),
-  };
+/**
+ * @param {Float32Array|Float64Array} pos
+ * @param {Uint16Array|Uint32Array|null} idx - null = unrolled (3 verts/triangle in `pos`)
+ * @param {Float64Array|null} matrix12 - null = identity
+ * @returns {Bvh}
+ */
+export function buildBvh(pos, idx, matrix12) {
+  const b = new BvhBuilder(pos, idx, matrix12);
+  b.step(Infinity);
+  return /** @type {Bvh} */ (b.result);
 }
 
 /**
@@ -335,43 +406,55 @@ export function queryAABB(bvh, x0, y0, z0, x1, y1, z1, out, maxOut) {
   return count;
 }
 
+// Ray scratch: ox,oy,oz,dx,dy,dz, tMaxCur (6), slab entry t (7). Passing doubles as args/returns to the non-inlined helpers boxes
+// them (~128 B/ray, GATE-FLAKY-02a part A2). Re-entrancy-safe: raycast/raycastAny never call themselves or user code while RAY is live.
+const RAY = new Float64Array(8);
+/** Layout length of the caller-owned ray array `[ox,oy,oz,dx,dy,dz,tMax]` taken by `raycastRay`/`raycastAnyRay`. */
+export const RAY_LEN = 7;
+// Private arg array for the scalar wrappers (`raycast`, `raycastAny`, `segment`). Convenience, cold paths only.
+const _ARG = new Float64Array(RAY_LEN);
 /**
- * Robust slab test (handles axis-parallel rays without NaN): returns entry t
- * in [0, tMaxCur], or -1 on a miss.
+ * Robust slab test (handles axis-parallel rays without NaN) of node `node` against RAY (tMaxCur = RAY[6]):
+ * returns true on a hit and writes the entry t in [0, tMaxCur] to RAY[7]; false on a miss.
  */
-function slabEntry(minX, minY, minZ, maxX, maxY, maxZ, ox, oy, oz, dx, dy, dz, tMaxCur) {
-  let t0 = 0, t1 = tMaxCur;
+function slabEntry(bvh, node) {
+  const b = node * 3;
+  const minX = bvh.nodeMin[b], minY = bvh.nodeMin[b + 1], minZ = bvh.nodeMin[b + 2];
+  const maxX = bvh.nodeMax[b], maxY = bvh.nodeMax[b + 1], maxZ = bvh.nodeMax[b + 2];
+  const ox = RAY[0], oy = RAY[1], oz = RAY[2], dx = RAY[3], dy = RAY[4], dz = RAY[5];
+  let t0 = 0, t1 = RAY[6];
   if (dx === 0) {
-    if (ox < minX || ox > maxX) return -1;
+    if (ox < minX || ox > maxX) return false;
   } else {
     const invD = 1 / dx;
     let tn = (minX - ox) * invD, tf = (maxX - ox) * invD;
     if (tn > tf) { const tmp = tn; tn = tf; tf = tmp; }
     if (tn > t0) t0 = tn;
     if (tf < t1) t1 = tf;
-    if (t0 > t1) return -1;
+    if (t0 > t1) return false;
   }
   if (dy === 0) {
-    if (oy < minY || oy > maxY) return -1;
+    if (oy < minY || oy > maxY) return false;
   } else {
     const invD = 1 / dy;
     let tn = (minY - oy) * invD, tf = (maxY - oy) * invD;
     if (tn > tf) { const tmp = tn; tn = tf; tf = tmp; }
     if (tn > t0) t0 = tn;
     if (tf < t1) t1 = tf;
-    if (t0 > t1) return -1;
+    if (t0 > t1) return false;
   }
   if (dz === 0) {
-    if (oz < minZ || oz > maxZ) return -1;
+    if (oz < minZ || oz > maxZ) return false;
   } else {
     const invD = 1 / dz;
     let tn = (minZ - oz) * invD, tf = (maxZ - oz) * invD;
     if (tn > tf) { const tmp = tn; tn = tf; tf = tmp; }
     if (tn > t0) t0 = tn;
     if (tf < t1) t1 = tf;
-    if (t0 > t1) return -1;
+    if (t0 > t1) return false;
   }
-  return t0;
+  RAY[7] = t0;
+  return true;
 }
 
 /**
@@ -380,7 +463,8 @@ function slabEntry(minX, minY, minZ, maxX, maxY, maxZ, ox, oy, oz, dx, dy, dz, t
  * returns true on a strictly-closer hit than `hit.t` on entry (caller resets
  * `hit.t = tMax` first, or use the `raycast` wrapper below).
  */
-function intersectTri(bvh, ti, ox, oy, oz, dx, dy, dz, bestT, hit) {
+function intersectTri(bvh, ti, hit) {
+  const ox = RAY[0], oy = RAY[1], oz = RAY[2], dx = RAY[3], dy = RAY[4], dz = RAY[5], bestT = RAY[6];
   const o = ti * 9;
   const p0x = bvh.tri[o], p0y = bvh.tri[o + 1], p0z = bvh.tri[o + 2];
   const p1x = bvh.tri[o + 3], p1y = bvh.tri[o + 4], p1z = bvh.tri[o + 5];
@@ -412,7 +496,7 @@ function writeHitNormal(bvh, ti, out) {
   const e1x = p1x - p0x, e1y = p1y - p0y, e1z = p1z - p0z;
   const e2x = p2x - p0x, e2y = p2y - p0y, e2z = p2z - p0z;
   let nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
-  const len = Math.hypot(nx, ny, nz) || 1;
+  const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
   out.nx = nx / len; out.ny = ny / len; out.nz = nz / len;
 }
 
@@ -426,50 +510,47 @@ function writeHitNormal(bvh, ti, out) {
  * @param {number} tMax
  * @param {RayHit} out
  * @returns {boolean}
+ * Convenience, cold paths only (scalar args box at the call boundary); hot callers use `raycastRay`.
  */
 export function raycast(bvh, ox, oy, oz, dx, dy, dz, tMax, out) {
+  const r = _ARG;
+  r[0] = ox; r[1] = oy; r[2] = oz; r[3] = dx; r[4] = dy; r[5] = dz; r[6] = tMax;
+  return raycastRay(bvh, r, out);
+}
+
+/**
+ * Hot-path form of `raycast`: `ray` is a caller-owned Float64Array(RAY_LEN) `[ox,oy,oz,dx,dy,dz,tMax]`, read-only here.
+ * @param {Bvh} bvh @param {Float64Array} ray @param {RayHit} out
+ * @returns {boolean}
+ */
+export function raycastRay(bvh, ray, out) {
   if (bvh.nodeCount === 0) return false;
   const stack = bvh.stack;
   let sp = 0;
   stack[sp++] = 0;
-  let bestT = tMax;
+  let bestT = ray[6];
+  RAY[0] = ray[0]; RAY[1] = ray[1]; RAY[2] = ray[2]; RAY[3] = ray[3]; RAY[4] = ray[4]; RAY[5] = ray[5]; RAY[6] = bestT;
   let bestTri = -1;
   const hit = out; // reuse caller's object as scratch (zero allocation)
   hit.t = bestT;
   while (sp > 0) {
     const nodeIdx = stack[--sp];
-    const b = nodeIdx * 3;
-    const entry = slabEntry(
-      bvh.nodeMin[b], bvh.nodeMin[b + 1], bvh.nodeMin[b + 2],
-      bvh.nodeMax[b], bvh.nodeMax[b + 1], bvh.nodeMax[b + 2],
-      ox, oy, oz, dx, dy, dz, bestT,
-    );
-    if (entry < 0 || entry > bestT) continue;
+    if (!slabEntry(bvh, nodeIdx) || RAY[7] > bestT) continue;
     const cnt = bvh.nodeTriCount[nodeIdx];
     if (cnt > 0) {
       const start = bvh.nodeStart[nodeIdx];
       for (let i = 0; i < cnt; i++) {
         const ti = start + i;
-        if (intersectTri(bvh, ti, ox, oy, oz, dx, dy, dz, bestT, hit)) {
-          bestT = hit.t;
+        if (intersectTri(bvh, ti, hit)) {
+          bestT = hit.t; RAY[6] = bestT;
           bestTri = ti;
         }
       }
     } else {
       const left = bvh.nodeStart[nodeIdx];
       const right = left + 1;
-      const lb = left * 3, rb = right * 3;
-      const entryL = slabEntry(
-        bvh.nodeMin[lb], bvh.nodeMin[lb + 1], bvh.nodeMin[lb + 2],
-        bvh.nodeMax[lb], bvh.nodeMax[lb + 1], bvh.nodeMax[lb + 2],
-        ox, oy, oz, dx, dy, dz, bestT,
-      );
-      const entryR = slabEntry(
-        bvh.nodeMin[rb], bvh.nodeMin[rb + 1], bvh.nodeMin[rb + 2],
-        bvh.nodeMax[rb], bvh.nodeMax[rb + 1], bvh.nodeMax[rb + 2],
-        ox, oy, oz, dx, dy, dz, bestT,
-      );
-      const hitL = entryL >= 0, hitR = entryR >= 0;
+      const hitL = slabEntry(bvh, left), entryL = RAY[7];
+      const hitR = slabEntry(bvh, right), entryR = RAY[7];
       if (hitL && hitR) {
         // Nearer first; tie -> left. LIFO stack: push the farther one first.
         if (entryL <= entryR) { stack[sp++] = right; stack[sp++] = left; }
@@ -495,28 +576,35 @@ export function raycast(bvh, ox, oy, oz, dx, dy, dz, tMax, out) {
  * @param {number} dx @param {number} dy @param {number} dz
  * @param {number} tMax
  * @returns {boolean}
+ * Convenience, cold paths only; hot callers use `raycastAnyRay`.
  */
 export function raycastAny(bvh, ox, oy, oz, dx, dy, dz, tMax) {
+  const r = _ARG;
+  r[0] = ox; r[1] = oy; r[2] = oz; r[3] = dx; r[4] = dy; r[5] = dz; r[6] = tMax;
+  return raycastAnyRay(bvh, r);
+}
+
+/**
+ * Hot-path form of `raycastAny`: `ray` = caller-owned Float64Array(RAY_LEN) `[ox,oy,oz,dx,dy,dz,tMax]`, read-only.
+ * @param {Bvh} bvh @param {Float64Array} ray
+ * @returns {boolean}
+ */
+export function raycastAnyRay(bvh, ray) {
   if (bvh.nodeCount === 0) return false;
   const stack = bvh.stack;
   let sp = 0;
   stack[sp++] = 0;
   const scratch = _anyScratch;
-  scratch.t = tMax;
+  scratch.t = ray[6];
+  RAY[0] = ray[0]; RAY[1] = ray[1]; RAY[2] = ray[2]; RAY[3] = ray[3]; RAY[4] = ray[4]; RAY[5] = ray[5]; RAY[6] = ray[6];
   while (sp > 0) {
     const nodeIdx = stack[--sp];
-    const b = nodeIdx * 3;
-    const entry = slabEntry(
-      bvh.nodeMin[b], bvh.nodeMin[b + 1], bvh.nodeMin[b + 2],
-      bvh.nodeMax[b], bvh.nodeMax[b + 1], bvh.nodeMax[b + 2],
-      ox, oy, oz, dx, dy, dz, tMax,
-    );
-    if (entry < 0) continue;
+    if (!slabEntry(bvh, nodeIdx)) continue;
     const cnt = bvh.nodeTriCount[nodeIdx];
     if (cnt > 0) {
       const start = bvh.nodeStart[nodeIdx];
       for (let i = 0; i < cnt; i++) {
-        if (intersectTri(bvh, start + i, ox, oy, oz, dx, dy, dz, tMax, scratch)) return true;
+        if (intersectTri(bvh, start + i, scratch)) return true;
       }
     } else {
       const left = bvh.nodeStart[nodeIdx];
@@ -539,5 +627,7 @@ const _anyScratch = { t: 0, tri: -1, u: 0, v: 0, nx: 0, ny: 0, nz: 0 };
  * @returns {boolean}
  */
 export function segment(bvh, ax, ay, az, bx, by, bz, out) {
-  return raycast(bvh, ax, ay, az, bx - ax, by - ay, bz - az, 1, out);
+  const r = _ARG;
+  r[0] = ax; r[1] = ay; r[2] = az; r[3] = bx - ax; r[4] = by - ay; r[5] = bz - az; r[6] = 1;
+  return raycastRay(bvh, r, out);
 }

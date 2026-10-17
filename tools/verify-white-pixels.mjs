@@ -1,6 +1,7 @@
 // BUG-WHITE-PIXELS-02 repro: load the owner pose, let the sim run 3 s, screenshot, and list near-white cells in the wall region.
-// Run: node tools/verify-white-pixels.mjs 9520 [webgl2|webgpu] [--grid 480x180] [--quality low|high]
+// Run: node tools/verify-white-pixels.mjs 9520 [webgpu] [--grid 480x180] [--quality low|high]
 import { spawn } from 'node:child_process';
+import { withTimeFreeze } from './tool-url.mjs'; // DN-04a
 import assert from 'node:assert/strict';
 import { writeFileSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
@@ -13,8 +14,8 @@ const grid = opt('--grid', '480x180'), quality = opt('--quality', 'low');
 const frames = Number(opt('--frames', 120)), motion = opt('--motion', 'idle'), keys = opt('--keys', ''); // --frames N: sample N screenshots; --motion idle|jitter|strafe; --keys 'f,1' pressed once before sampling
 const port = Number(args[0] || 9520); validatePort(port);
 if (port < 9500 || port + 1 > 9574) throw new Error('PC-B lane B1 range is 9500-9574');
-const backend = args[1] || 'webgl2';
-assert.ok(['webgpu', 'webgl2'].includes(backend));
+const backend = args[1] || 'webgpu';
+assert.ok(['webgpu'].includes(backend));
 const [gc, gr] = grid.split('x').map(Number);
 const profile = mkdtempSync(path.join(os.tmpdir(), 'kestrel-white-'));
 const out = path.join(ROOT, 'docs/test-reports/captures'); mkdirSync(out, { recursive: true });
@@ -28,7 +29,7 @@ try {
   await cdp.send('Page.enable'); await cdp.send('Runtime.enable');
   const errors = []; cdp.onEvent((m, p) => { if (m === 'Runtime.exceptionThrown') errors.push(p.exceptionDetails); });
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 540, deviceScaleFactor: 1, mobile: false });
-  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?dev=1&title=0&at=1500.70,1027.88,3.00,329,-24&backend=${backend}&grid=${grid}&quality=${quality}` });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(`dev=1&title=0&at=1500.70,1027.88,3.00,329,-24&backend=${backend}&grid=${grid}&quality=${quality}`)}` });
   let ready = false;
   for (let i = 0; i < 100; i++) { await pause(300); if (await evaluate(cdp, '!!window.__kestrel && !!window.__debug')) { ready = true; break; } }
   assert.ok(ready, JSON.stringify(errors));

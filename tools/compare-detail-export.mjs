@@ -24,13 +24,8 @@
 // Exits 0 when glyph/fg/bg each match in >= 95% of the same-surface cells.
 
 import fs from 'node:fs';
-import { loadLevel } from '../engine/world/Level.js';
-import { World, renderWorld } from '../engine/index.js';
-import { GBuffer } from '../engine/render/GBuffer.js';
-import { bindShading, bindLevel } from '../engine/render/MaterialTable.js';
-import { computeDerivatives, shadeSurfaces } from '../engine/render/detailShade.js';
-import { edgePass } from '../engine/render/edgePass.js';
-import { ambientL } from '../engine/render/sky.js';
+import { World, renderWorld, loadLevel, GBuffer, bindShading, bindLevel, ambientL } from '../engine/index.js';
+import { computeDerivatives, shadeSurfaces, edgePass } from '../engine/dev.js';
 // US-027b: test_room moved to content/levels/test_room.level.json.
 import { loadTestAssets } from './testing/content-node.mjs';
 import paletteModule from '../design/palette.js';

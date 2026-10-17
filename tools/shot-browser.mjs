@@ -7,12 +7,13 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
 import { rmSync, writeFileSync } from 'node:fs';
+import { withTimeFreeze, parseTimeArg } from './tool-url.mjs'; // DN-04a
 import { ROOT, findBrowserBinary, waitForHttp, killTree, connectCdp, buildLaunchFlags, validatePort } from './capture-browser.mjs';
 
-const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, all) => (v.startsWith('--') ? [...a, [v.slice(2), all[i + 1]]] : a), []));
+const args = Object.fromEntries(process.argv.slice(2).map((v) => (/^--time=/.test(v) ? ['--time', v.slice(7)] : v)).reduce((a, v, i, all) => (v.startsWith('--') ? [...a, [v.slice(2), all[i + 1]]] : a), []));
 const port = Number(args.port); validatePort(port);
 const backend = args.backend || 'webgl2';
-const url = `http://127.0.0.1:${port}/game/index.html?backend=${backend}&${args.query || 'save=0'}`;
+const url = `http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(`backend=${backend}&${args.query || 'save=0'}`, parseTimeArg(args.time))}`;
 const handles = {};
 function cleanup() {
   if (handles.b) killTree(handles.b.pid);
@@ -22,7 +23,8 @@ function cleanup() {
 const killer = setTimeout(() => { console.error('shot-browser: overall timeout'); cleanup(); process.exit(2); }, Number(args.timeout || 80) * 1000);
 process.once('SIGINT', () => { cleanup(); process.exit(1); });
 const WAIT = (frames) => `(async () => { for (let i = 0; i < 4000 && !(window.__debug && window.__debug.playerHandle && window.__debug.world); i++) await new Promise((r) => setTimeout(r, 50));
-  const fr = () => new Promise((r) => requestAnimationFrame(r)); for (let i = 0; i < ${frames}; i++) await fr(); return true; })()`;
+  const fr = () => new Promise((r) => requestAnimationFrame(r)); for (let i = 0; i < 1200 && /Checking your graphics/.test(document.body.innerText || ''); i++) await new Promise((r) => setTimeout(r, 50)); /* boot overlay gone */
+  for (let i = 0; i < ${frames}; i++) await fr(); return true; })()`;
 async function evalIn(cdp, expression) {
   const r = await cdp.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true, timeout: 120000 });
   if (r.exceptionDetails) throw new Error('eval threw: ' + JSON.stringify(r.exceptionDetails).slice(0, 2000));
@@ -43,6 +45,7 @@ try {
     if (args.log && m === 'Runtime.consoleAPICalled') console.error('[page ' + p.type + '] ' + (p.args || []).map((a) => a.value ?? a.description).join(' ').slice(0, 200));
     if (m === 'Runtime.consoleAPICalled' && p.type === 'error') errors.push('console.error: ' + (p.args || []).map((a) => a.value ?? a.description).join(' ').slice(0, 300));
   });
+  if (args.viewport) { const [vw, vh] = args.viewport.split('x').map(Number); await cdp.send('Emulation.setDeviceMetricsOverride', { width: vw, height: vh, deviceScaleFactor: 1, mobile: false }); } // optional --viewport WxH
   const loaded = new Promise((r) => cdp.onEvent((m) => { if (m === 'Page.loadEventFired') r(); }));
   await cdp.send('Page.navigate', { url });
   await loaded;

@@ -1,7 +1,8 @@
 // WG-2b: literal port of mesh.vert/frag.js. Static, compact voxel, instanced and cloth input layouts.
 import { defineUniformBlock } from './uniformBlock.js';
-import { INST_FLAG_SWAY, SWAY_K, SWAY_MAX } from '../../../mesh/sway.js';
+import { INST_FLAG_SWAY, SWAY_K, SWAY_MAX, SWAY_FADE_LO, SWAY_FADE_HI } from '../../../mesh/sway.js';
 import { WIND_AT_WGSL, ORTHO_NEAR_WGSL, ORTHO_FAR_WGSL } from './common.wgsl.js';
+import { DEPTH_TIER } from '../../projection.js';
 import { KIND_MODEL, KIND_MESH, FACE_N, FACE_E, FACE_S, FACE_W, FACE_U, FACE_D, FACE_PACKED } from '../../GBuffer.js';
 
 const RASTER_FIELDS = [
@@ -9,7 +10,9 @@ const RASTER_FIELDS = [
   { name: 'planeIdOr', type: 'u32' }, { name: 'zBase', type: 'f32' },
   { name: 'objectId', type: 'u32' }, { name: 'axisAligned', type: 'u32' },
   // US-068b1/b2 (38.19): `projMode` (2 = ortho) sits in the shared prefix, so every raster block has it at the same word; the host writes it once per frame; fragment dist = linear z when 2.
-  { name: 'projMode', type: 'u32' }, { name: 'flat', type: 'vec2' },
+  { name: 'projMode', type: 'u32' },
+  // OB-053 (38.49): `depthTier` fills the 4-byte hole before `flat` (vec2 align 8): no other offset or block size moves.
+  { name: 'depthTier', type: 'u32' }, { name: 'flat', type: 'vec2' },
 ];
 export const RASTER_BASE_BLOCK = defineUniformBlock('RasterU', [...RASTER_FIELDS]);
 // ALPHA-01c: static mesh with a mask range (one draw per masked range): the base block + the atlas rect (x0,y0,w,h) and the cutoff byte
@@ -41,6 +44,12 @@ ${WIND_AT_WGSL}
 const SWAY_K: f32 = ${SWAY_K};
 const SWAY_MAX: f32 = ${SWAY_MAX};
 const INST_FLAG_SWAY: u32 = ${INST_FLAG_SWAY}u;
+const SWAY_FADE_LO: f32 = ${SWAY_FADE_LO};
+const SWAY_FADE_HI: f32 = ${SWAY_FADE_HI};
+fn swayFade(cpm: f32) -> f32 { // OB-144: twin of sway.js swayFade (cells per metre at the instance base)
+  let x = clamp((cpm - SWAY_FADE_LO) / (SWAY_FADE_HI - SWAY_FADE_LO), 0.0, 1.0);
+  return x * x * (3.0 - 2.0 * x);
+}
 fn swayDisp(bx: f32, by: f32, h: f32, t: f32, dirX: f32, dirY: f32, speed: f32, amp: f32, period: f32, travel: f32) -> vec2f {
   let wv = windAt(bx, by, t, dirX, dirY, speed, amp, period, travel);
   let k = max(h, 0.0) * max(h, 0.0) * SWAY_K;
@@ -161,8 +170,19 @@ ${ao ? '  @location(8) vAo: f32,' : ''}
 ${instanced ? `  let lp = (u.model * vec4f(a.aPos, 1.0)).xyz;
   var wp = vec3f(dot(a.iRow0.xyz, lp) + (a.iRow0.w - u.origin.x), dot(a.iRow1.xyz, lp) + (a.iRow1.w - u.origin.y), dot(a.iRow2.xyz, lp) + a.iRow2.w);
   if ((a.iMeta.y & INST_FLAG_SWAY) != 0u && u.wind.z > 0.0) { // S8-B2-06: base fixed, crown moves by h^2; wind sampled at the absolute instance base
-    let sd = swayDisp(a.iRow0.w, a.iRow1.w, wp.z - a.iRow2.w, u.windT.x, u.wind.x, u.wind.y, u.wind.z, u.wind.w, u.windT.y, u.windT.z);
-    wp = vec3f(wp.x + sd.x, wp.y + sd.y, wp.z);
+    var sf = 1.0; // OB-144: per-instance distance fade (windT.w = half grid cols, 0 = off e.g. shadow passes)
+    if (u.windT.w > 0.0) {
+      let bp = vec4f(a.iRow0.w - u.origin.x, a.iRow1.w - u.origin.y, a.iRow2.w, 1.0);
+      let bw = dot(vec4f(u.viewProj[0].w, u.viewProj[1].w, u.viewProj[2].w, u.viewProj[3].w), bp);
+      if (bw > 0.0001) {
+        let sxl = length(vec3f(u.viewProj[0].x, u.viewProj[1].x, u.viewProj[2].x));
+        sf = swayFade(u.windT.w * sxl / bw);
+      }
+    }
+    if (sf > 0.0) {
+      let sd = swayDisp(a.iRow0.w, a.iRow1.w, wp.z - a.iRow2.w, u.windT.x, u.wind.x, u.wind.y, u.wind.z, u.wind.w, u.windT.y, u.windT.z);
+      wp = vec3f(wp.x + sd.x * sf, wp.y + sd.y * sf, wp.z);
+    }
   }
   let worldPos = vec4f(wp, 1.0);
   let planeId = a.aFlat.x | u.planeIdOr | ((a.iMeta.x & 0xFu) << 24u);
@@ -189,7 +209,8 @@ ${cloth || compact ? '' : '  o.aux0123 = a.aAux0123; o.aux4567 = vec4f(a.aAux456
 ${mask ? '  o.vUVMask = a.aUVMask;' : ''}
 ${ao ? '  o.vAo = a.aAo;' : ''}
   o.pos = u.viewProj * worldPos;
-  o.pos.y = -o.pos.y; o.pos.z = 0.5 * (o.pos.z + o.pos.w);
+  o.pos.y = -o.pos.y; ${RASTER_Z_LINE}
+  ${RASTER_TIER_LINE}
   return o;
 }
 const KIND_MODEL: u32 = ${KIND_MODEL}u;
@@ -261,6 +282,8 @@ ${mask ? `@fragment fn fs_mask_shadow(v: VertexOut) {
 
 /** The raster vertex stages' depth line (z -> [0,1], the GL2 convention after the y flip). */
 export const RASTER_Z_LINE = 'o.pos.z = 0.5 * (o.pos.z + o.pos.w);';
+/** OB-053 (38.49): depth tier pull-forward of the depth TEST (fragment Depth / GA come from 1/pos.w and stay unbiased). Raster colour passes only; the shadow variant drops it. */
+export const RASTER_TIER_LINE = `o.pos.z -= f32(u.depthTier) * ${DEPTH_TIER.toExponential()} * o.pos.w;`;
 /**
  * Sun shadow vertex line (38.5 item 6, depth32float): clip z lands in [0.5, 1] so one float ULP / depthBias unit is 2^-24 at every
  * depth (= the twin's 24-bit model). light.wgsl.js sunShadowTaps compares against 0.5 + 0.5 * sd; shadowParity converts back (d - 0.5) * 2.
@@ -270,7 +293,8 @@ export const SHADOW_Z_LINE = 'o.pos.z = 0.25 * (o.pos.z + o.pos.w) + 0.5 * o.pos
 export function toShadowVertexWgsl(code) {
   const parts = code.split(RASTER_Z_LINE);
   if (parts.length !== 2) throw new Error(`toShadowVertexWgsl: expected exactly one raster z line, found ${parts.length - 1}`);
-  return parts.join(SHADOW_Z_LINE);
+  return parts.join(SHADOW_Z_LINE).replace(`
+  ${RASTER_TIER_LINE}`, '');
 }
 
 export const RASTER_WGSL = rasterWgsl('static');

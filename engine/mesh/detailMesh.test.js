@@ -27,7 +27,9 @@ const detail = { count: points.length, tileM, tx0: 0, ty0: 0, tilesX: 4, tilesY:
 const cfg = { maxDraw: 100, refeedM: 4, layers: [{ drawM: 10 }] };
 const mk = () => { const g = new InstanceGroups(); g.bindPool({ models: new Map([['tuft', {}]]) }); return g; };
 
-assert.throws(() => bindDetailInstances(detail, mk(), cfg, 0, undefined, null), /unresolved mesh trees\/oakA/); checks++;
+{ const w0 = console.warn, w = []; console.warn = m => w.push(m); // OB-166: unresolved mesh = skipped + one warn
+  try { const sb = bindDetailInstances(detail, mk(), cfg, 0, undefined, null); ok(sb.skipped > 0 && sb.missingIds.includes('mesh:trees/oakA')); } finally { console.warn = w0; }
+  ok(w.length === 1 && /trees\/oakA/.test(w[0])); }
 const inst = mk(), b = bindDetailInstances(detail, inst, cfg, 0, undefined, { 'trees/oakA': oak });
 ok(b.groups.length === 2);
 const gv = b.groups.find(g => !g.mesh), gm = b.groups.find(g => g.mesh);

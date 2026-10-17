@@ -1,0 +1,177 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "rook",
+  "speakers": {
+    "rook": {"label": "ROOK"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "rook.bend.ready.1", "requires": "q.burl.road.ready"},
+    {"node": "rook.mirror.done.1", "requires": "q.mq.ford.mirror.ready"},
+    {"node": "rook.call.ready.1", "requires": "q.mq.bend.call.ready"},
+    {"node": "rook.road.ready", "requires": "q.mq.river.road.ready"},
+    {"node": "rook.stones.ready", "requires": "q.mq.ford.stones.ready"},
+    {"node": "rook.smoke.ready", "requires": "q.mq.smoke.ready"},
+    {"node": "rook.call.active", "requires": "q.mq.bend.call.active"},
+    {"node": "rook.road.active", "requires": "q.mq.river.road.active"},
+    {"node": "rook.stones.active", "requires": "q.mq.ford.stones.active"},
+    {"node": "rook.mirror.active", "requires": "q.mq.ford.mirror.active"},
+    {"node": "rook.smoke.active", "requires": "q.mq.smoke.active"},
+    {"node": "rook.smoke.1", "requires": "q.mq.smoke.available"},
+    {"node": "rook.road.1", "requires": "q.mq.river.road.available"},
+    {"node": "rook.stones.1", "requires": "q.mq.ford.stones.available"},
+    {"node": "rook.ford.1", "requires": "q.mq.ford.mirror.available"},
+    {"node": "rook.ford.repeat2", "requires": "q.mq.smoke.done"},
+    {"node": "rook.ford.repeat", "requires": "q.mq.ford.mirror.done"},
+    {"node": "rook.repeat", "requires": "q.mq.bend.call.done"},
+    {"node": "rook.meet.1"}
+  ],
+  "nodes": {
+    "rook.bend.ready.1": {"lines": [
+      "Cold stone, warm now. I watched it wake."
+    ], "next": "rook.bend.ready.2", "setFlag": "q.burl.road.handin", "speaker": "rook"},
+    "rook.bend.ready.2": {"lines": [
+      "The bear sent you. Big paws. Slow. Like you."
+    ], "next": "rook.meet.1", "speaker": "rook"},
+    "rook.road.1": {"choices": [{"next": "rook.road.2", "setFlag": "q.mq.river.road.accept", "text": "I'll walk it."}, {"next": "rook.later", "text": "Not yet."}], "lines": [
+      "Paper says river. River says west. Follow the road."
+    ], "speaker": "rook"},
+    "rook.road.2": {"end": true, "lines": [
+      "Road west, to the loud water. I fly ahead."
+    ], "speaker": "rook"},
+    "rook.stones.1": {"choices": [{"next": "rook.stones.2", "setFlag": "q.mq.ford.stones.accept", "text": "I'll cross."}, {"next": "rook.later", "text": "Not yet."}], "lines": [
+      "Stones in the water. Hop them to the west bank."
+    ], "speaker": "rook"},
+    "rook.stones.2": {"end": true, "lines": [
+      "Hop. Hop. Hop. Do not stop to count fish."
+    ], "speaker": "rook"},
+    "rook.smoke.1": {"choices": [{"next": "rook.smoke.2", "setFlag": "q.mq.smoke.accept", "text": "I'll look."}, {"next": "rook.later", "text": "Not yet."}], "lines": [
+      "A mark on the Ford stone. Cut, not scratched.",
+      "Read it. Then the footpath north. Smoke there."
+    ], "speaker": "rook"},
+    "rook.smoke.2": {"end": true, "lines": [
+      "Mark first. Smoke after. I keep away from fire."
+    ], "speaker": "rook"},
+    "rook.road.active": {"end": true, "lines": [
+      "Road west. Walk till the ground gets wet."
+    ], "speaker": "rook"},
+    "rook.stones.active": {"end": true, "lines": [
+      "The stones. Hop them. West bank, then me."
+    ], "speaker": "rook"},
+    "rook.smoke.active": {"end": true, "lines": [
+      "The mark on the Ford stone. Then north, to smoke."
+    ], "speaker": "rook"},
+    "rook.road.ready": {"lines": [
+      "Loud water. You found it. Wet feet? Not yet."
+    ], "next": "rook.road.ready2", "speaker": "rook"},
+    "rook.road.ready2": {"end": true, "lines": [
+      "Stones cross it. I counted them twice. Next."
+    ], "setFlag": "q.mq.river.road.handin", "speaker": "rook"},
+    "rook.stones.ready": {"lines": [
+      "Across. Boots wet. I said so. I always say so."
+    ], "next": "rook.stones.ready2", "speaker": "rook"},
+    "rook.stones.ready2": {"end": true, "lines": [
+      "Now look at the stone here. Cold. Very cold."
+    ], "setFlag": "q.mq.ford.stones.handin", "speaker": "rook"},
+    "rook.smoke.ready": {"lines": [
+      "Smoke means fire. Fire means hands. Many hands."
+    ], "next": "rook.smoke.ready2", "speaker": "rook"},
+    "rook.smoke.ready2": {"end": true, "lines": [
+      "People. Go see. I stay. People throw stones."
+    ], "setFlag": "q.mq.smoke.handin", "speaker": "rook"},
+    "rook.meet.1": {"clip": "caw", "lines": [
+      "Ha. The fell-bird walks."
+    ], "next": "rook.meet.2", "speaker": "rook"},
+    "rook.meet.2": {"lines": [
+      "...You talk too."
+    ], "next": "rook.meet.3", "speaker": "you"},
+    "rook.meet.3": {"lines": [
+      "Talk. Count. Keep. Crows do all three."
+    ], "next": "rook.meet.4", "speaker": "rook"},
+    "rook.meet.4": {"lines": [
+      "Rook, the others call me."
+    ], "next": "rook.meet.5", "speaker": "rook"},
+    "rook.meet.5": {"lines": [
+      "Your stone blinks now. Like the far one."
+    ], "next": "rook.meet.6", "speaker": "rook"},
+    "rook.meet.6": {"lines": [
+      "It's passing the call along. Toward home."
+    ], "next": "rook.meet.7", "speaker": "you"},
+    "rook.meet.7": {"lines": [
+      "The loud hill? The loud hill never listens."
+    ], "next": "rook.meet.8", "speaker": "rook"},
+    "rook.meet.8": {"choices": [{"next": "rook.meet.9", "setFlag": "q.mq.bend.call.accept", "text": "I'll count."}, {"next": "rook.later", "text": "Not yet."}], "lines": [
+      "Watch it blink. Count. Then see the knot."
+    ], "speaker": "rook"},
+    "rook.meet.9": {"end": true, "lines": [
+      "Nine blinks. Then quiet. Then me."
+    ], "speaker": "rook"},
+    "rook.later": {"end": true, "lines": [
+      "Slow walker. The stone will wait."
+    ], "speaker": "rook"},
+    "rook.call.active": {"end": true, "lines": [
+      "Count the blinks. Then the knot. Then me."
+    ], "speaker": "rook"},
+    "rook.call.ready.1": {"lines": [
+      "Counted? Nine blinks, then quiet. Again."
+    ], "next": "rook.call.ready.2", "speaker": "rook"},
+    "rook.call.ready.2": {"lines": [
+      "That knot. A lamp-trimmer tied it."
+    ], "next": "rook.call.ready.3", "speaker": "you"},
+    "rook.call.ready.3": {"clip": "tilt", "lines": [
+      "Long ago. Nobody untied it. I tried."
+    ], "next": "rook.call.ready.4", "speaker": "rook"},
+    "rook.call.ready.4": {"lines": [
+      "Here. Paper. River on it. Not shiny."
+    ], "next": "rook.call.ready.5", "speaker": "rook"},
+    "rook.call.ready.5": {"lines": [
+      "West is the river. The next stone is cold."
+    ], "next": "rook.call.ready.6", "speaker": "rook"},
+    "rook.call.ready.6": {"clip": "caw", "end": true, "lines": [
+      "I will be there first. Wings."
+    ], "setFlag": "q.mq.bend.call.handin", "speaker": "rook"},
+    "rook.repeat": {"end": true, "lines": [
+      "River. West. Do not drown, fell-bird."
+    ], "speaker": "rook"},
+    "rook.ford.1": {"lines": [
+      "Slow walker. Wet boots?"
+    ], "next": "rook.ford.2", "speaker": "rook"},
+    "rook.ford.2": {"lines": [
+      "The waystone here is dead. Its glass is gone."
+    ], "next": "rook.ford.3", "speaker": "you"},
+    "rook.ford.3": {"clip": "tilt", "lines": [
+      "Gone? No. Kept. Kept is different."
+    ], "next": "rook.ford.4", "speaker": "rook"},
+    "rook.ford.4": {"lines": [
+      "You took it."
+    ], "next": "rook.ford.5", "speaker": "you"},
+    "rook.ford.5": {"lines": [
+      "It fell. I found it. Then it was mine."
+    ], "next": "rook.ford.6", "speaker": "rook"},
+    "rook.ford.6": {"lines": [
+      "Old house by the crossing. Inside, on the floor."
+    ], "next": "rook.ford.7", "speaker": "rook"},
+    "rook.ford.7": {"choices": [{"next": "rook.ford.8", "setFlag": "q.mq.ford.mirror.accept", "text": "I'll fetch it."}, {"next": "rook.later", "text": "Not yet."}], "lines": [
+      "I have other shinies. Many."
+    ], "speaker": "rook"},
+    "rook.ford.8": {"end": true, "lines": [
+      "Old house by the crossing. Bring the glass to the stone."
+    ], "speaker": "rook"},
+    "rook.mirror.active": {"end": true, "lines": [
+      "Old house by the crossing. Look on the floor."
+    ], "speaker": "rook"},
+    "rook.mirror.done.1": {"clip": "caw", "lines": [
+      "Blink, blink. Bend, Ford, the far one. Three."
+    ], "next": "rook.mirror.done.2", "speaker": "rook"},
+    "rook.mirror.done.2": {"end": true, "lines": [
+      "My glass, your stone. A loan. I keep count."
+    ], "setFlag": "q.mq.ford.mirror.handin", "speaker": "rook"},
+    "rook.ford.repeat": {"end": true, "lines": [
+      "North, smoke. Fires. People, maybe. Go look."
+    ], "speaker": "rook"},
+    "rook.ford.repeat2": {"end": true, "lines": [
+      "Wet boots, full pack. Still a slow walker."
+    ], "speaker": "rook"}
+  }
+}

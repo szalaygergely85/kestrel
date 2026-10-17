@@ -1,0 +1,17 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "warden_reedmire",
+  "speakers": {
+    "warden": {"label": "ORLA"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "warden.hello"}
+  ],
+  "nodes": {
+    "warden.hello": {"end": true, "lines": [
+      "Orla. Mind your feet. The mire keeps what it takes."
+    ], "speaker": "warden"}
+  }
+}

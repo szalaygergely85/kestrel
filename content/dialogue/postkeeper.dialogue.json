@@ -1,0 +1,40 @@
+{
+  "kind": "dialogue",
+  "schema": 1,
+  "id": "postkeeper",
+  "speakers": {
+    "postkeeper": {"label": "BRAM"},
+    "you": {"label": "YOU", "player": true}
+  },
+  "entry": [
+    {"node": "postkeeper.handover", "requires": "q.sq.rb.shield.ready"},
+    {"node": "postkeeper.handover", "requires": "q.sq.rb.shield.active"},
+    {"node": "postkeeper.handover", "requires": "q.sq.rb.regards.ready"},
+    {"node": "postkeeper.handover", "requires": "q.sq.rb.regards.active"},
+    {"node": "postkeeper.handover", "requires": "q.sq.rb.road.ready"},
+    {"node": "postkeeper.handover", "requires": "q.sq.rb.road.active"},
+    {"node": "postkeeper.handover", "requires": "q.sq.rb.lamps.ready"},
+    {"node": "postkeeper.handover", "requires": "q.sq.rb.lamps.active"},
+    {"node": "postkeeper.handover", "requires": "q.sq.rb.rocks.ready"},
+    {"node": "postkeeper.handover", "requires": "q.sq.rb.rocks.active"},
+    {"node": "postkeeper.handover", "requires": "q.sq.rb.parcel.ready"},
+    {"node": "postkeeper.handover", "requires": "q.sq.rb.parcel.active"},
+    {"node": "postkeeper.handover", "requires": "q.sq.fc.cog.ready"},
+    {"node": "postkeeper.handover", "requires": "q.sq.fc.cog.active"},
+    {"node": "postkeeper.hello.2", "requires": "met.postkeeper"},
+    {"node": "postkeeper.hello.1"}
+  ],
+  "nodes": {
+    "postkeeper.hello.1": {"end": true, "lines": [
+      "Saw your ship come down. Loud, for a bird.",
+      "I'm Bram. I keep the post. Leave what you can."
+    ], "setFlag": "met.postkeeper", "speaker": "postkeeper"},
+    "postkeeper.hello.2": {"end": true, "lines": [
+      "Post's open. Take what you need."
+    ], "speaker": "postkeeper"},
+    "postkeeper.handover": {"end": true, "lines": [
+      "Ask Joss by the Bend Waystone about that.",
+      "The Bend's her road. I keep the ford."
+    ], "speaker": "postkeeper"}
+  }
+}

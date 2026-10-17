@@ -15,7 +15,7 @@
 // down) is evicted first (`world.remove`).
 
 export const PICKUP_AMOUNT = 10;   // hp or mp restored on collect
-export const PICKUP_LIFE = 1200;   // steps, 20 s @ 60 Hz - despawns when life reaches 0
+export const PICKUP_LIFE = 3600;   // steps, 60 s @ 60 Hz (EQ-23 AC) - despawns when life reaches 0
 export const COLLECT_RADIUS = 0.8; // m, 3D distance
 export const MAX_DROPS = 16;
 
@@ -66,8 +66,77 @@ export function spawnDrop(world, kind, x, y, z) {
     // which writes `transform.z` every render frame for presentation only) can never feed back into the sim's
     // own collect-distance check below - the sim always measures from the drop point, not the bobbing sprite.
     pickup: { kind, amount: PICKUP_AMOUNT, life: PICKUP_LIFE, baseZ: z },
-    sprite: { model: kind === 'mp' ? 'pickupMp' : 'pickupHp', anim: 'idle', frame: 0 },
+    voxel: { model: pickupModel(kind === 'mp' ? 'potion.mp' : 'potion.hp'), anim: 'idle', loop: true },
   }, id);
+  return id;
+}
+
+/** OB-132: voxel model for a drop (design/models/pickups_voxel.js). Unknown item -> pickup.gear.body + one warning. */
+let warnedModel = false;
+function pickupModel(itemId, slot) {
+  const pv = globalThis.ASSETS && globalThis.ASSETS.pickupsVoxel;
+  const m = pv && pv.pickupModelFor(itemId, slot);
+  if (m) return m;
+  if (!warnedModel) { warnedModel = true; console.warn('[pickup] no voxel model for', itemId, '- using pickup.gear.body'); }
+  return 'pickup.gear.body';
+}
+function itemSlot(itemId) {
+  const items = globalThis.ASSETS && globalThis.ASSETS.items;
+  const def = items && items.defs && items.defs[itemId];
+  return def && def.equip && def.equip.slot;
+}
+
+/**
+ * EQ-10: a gear drop = a world pickup of kind 'item' (`itemId`, amount 1). Same slot table, life and bob as the
+ * orbs. Sprite 'pickupGear' (design/models/m3_props.js; clips idle = worn, sturdy, fine).
+ */
+export function spawnItemDrop(world, itemId, x, y, z, tier = 'worn') {
+  let id;
+  do { id = `pickup_${nextId++}`; } while (world.entity(id));
+  const slot = findSlot(world);
+  slots[slot] = id;
+  world.spawn('pickup', { x, y, z, yawDeg: 0, pitchDeg: 0 }, {
+    pickup: { kind: 'item', itemId, amount: 1, life: PICKUP_LIFE, baseZ: z },
+    voxel: { model: pickupModel(itemId, itemSlot(itemId)), anim: 'idle', loop: true },
+  }, id);
+  return id;
+}
+
+/** EQ-10: loot.js installs (per world load) the function that moves a collected item drop into the pack. Returns false = pack full, drop stays. */
+let itemSink = null;
+export function setItemPickupSink(fn) { itemSink = fn; }
+
+/** EQ-23: stack sink (installed per world load by questPickups.js). (itemId, n) -> number actually put in the pack (0..n). */
+let stackSink = null;
+export function setStackPickupSink(fn) { stackSink = fn; }
+
+// 8 fixed ring offsets at 0.6 m (no trig: Rule 15). Drops of a full pack pick the first one not already occupied.
+const RING = [[0.6, 0], [0.424, 0.424], [0, 0.6], [-0.424, 0.424], [-0.6, 0], [-0.424, -0.424], [0, -0.6], [0.424, -0.424]];
+
+/**
+ * EQ-23: a leftover stack (pack full / partly full) lands at the player's feet as a world pickup {itemId, amount}.
+ * `questReward` drops never despawn; loot leftovers use the normal life. Same-id drops at the spot merge.
+ */
+export function spawnLeftoverDrop(world, itemId, n, x, y, z, questReward = false, groundFn = null) {
+  let best = 0, bestD = -1;
+  for (let k = 0; k < RING.length; k++) {
+    const px = x + RING[k][0], py = y + RING[k][1];
+    let nearest = Infinity;
+    for (let i = 0; i < MAX_DROPS; i++) {
+      const e = slots[i] !== null ? world.entity(slots[i]) : null;
+      if (!e) continue;
+      const dx = e.transform.x - px, dy = e.transform.y - py, d = dx * dx + dy * dy;
+      if (d < nearest) nearest = d;
+    }
+    if (nearest > 0.09) { best = k; bestD = nearest; break; }
+    if (nearest > bestD) { bestD = nearest; best = k; }
+  }
+  const gx = x + RING[best][0], gy = y + RING[best][1];
+  const gz = groundFn ? groundFn(gx, gy) : z; // OB-155f: baseZ from the ring point's own ground, not the player's z
+  const id = spawnItemDrop(world, itemId, gx, gy, Number.isFinite(gz) ? gz : z);
+  const p = world.entity(id).components.pickup;
+  p.amount = n;
+  if (questReward) p.questReward = true;
   return id;
 }
 
@@ -89,13 +158,19 @@ export function stepPickups(world, player) {
     if (!e) { slots[i] = null; continue; }
     const p = e.components.pickup;
     if (!p) { slots[i] = null; continue; }
-    p.life--;
+    if (!p.questReward) p.life--;
     if (p.life <= 0) { world.remove(id); slots[i] = null; continue; }
     const t = e.transform;
     const dx = t.x - pt.x, dy = t.y - pt.y, dz = p.baseZ - pt.z;
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
     if (dist <= COLLECT_RADIUS) {
-      if (p.kind === 'hp' && health) health.hp = Math.min(health.max, health.hp + p.amount);
+      if (p.kind === 'item') {
+        // Sinks may return a boolean (all-or-nothing) or the count actually stored (partial fit): the rest stays lying.
+        let took = 0;
+        if (p.amount > 1 && stackSink) took = stackSink(p.itemId, p.amount);
+        else if (itemSink) { const r = itemSink(p.itemId, p.amount); took = r === true ? p.amount : r === false ? 0 : (r | 0); }
+        if (took < p.amount) { p.amount -= Math.max(0, took); continue; }
+      } else if (p.kind === 'hp' && health) health.hp = Math.min(health.max, health.hp + p.amount);
       else if (p.kind === 'mp' && mana) mana.mp = Math.min(mana.max, mana.mp + p.amount);
       world.remove(id);
       slots[i] = null;

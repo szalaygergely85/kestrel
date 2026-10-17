@@ -8,10 +8,13 @@
 // its own cached bind group (no rebuild per frame). The atlas textures are rebuilt only on resize/DPR change.
 
 import { CellBuffer } from './CellBuffer.js';
-import { computeCellBox, fitCssSize } from './glyphMetrics.js';
-import { rasterizeGlyphAtlas, glyphAtlasPixels, GLYPH_COUNT } from './glyphAtlas.js';
+import { computeCellBox, fitCssSize, fitCssRatio } from './glyphMetrics.js';
+import { rasterizeGlyphAtlas, glyphAtlasPixels, blankGlyphs, GLYPH_COUNT, SOFT_ROWS_MAX_H } from './glyphAtlas.js';
 import { PRESENT_WGSL, PRESENT_BLOCK, PRESENT_TEXTURES } from './gpu/wgsl/present.wgsl.js';
 import { FRAME_TIMER_SLOT } from './gpu/device/WebGpuTimer.js';
+
+/** GRID-MAX-01: estimated render-target VRAM ceiling for a live grid (800x300 at 4 rays ~ 190 MB, so this only trips on tiny-limit devices). */
+export const GRID_VRAM_BUDGET = 512 * 1048576;
 
 const GRID_W = PRESENT_BLOCK.field('grid').word;
 const SIZE_W = PRESENT_BLOCK.field('size').word;
@@ -31,16 +34,18 @@ export class RenderTargetWebGPU {
     this.rows = rows;
     this.cells = new CellBuffer(cols, rows);
     this.cellW = 1; this.cellH = 1;
+    this._aspect = 16 / 9; // OB-117: displayed picture ratio (w/h); null = fill the window. setAspect() changes it live
     this.pxCellW = 1; this.pxCellH = 1;
     this.glyphAscent = 1;
     this.fontSize = 16;
     this.dpr = 1;
     this.ready = true;
-    this.stats = { gpuMs: NaN, gpuMsP50: NaN, gpuMsP95: NaN };
+    this.stats = { gpuMs: NaN, gpuMsP50: NaN, gpuMsP95: NaN, abortedPasses: 0, droppedFrames: 0 };
     this._warnedLost = false;
     this._uiLayer = null;
     this._clearOpts = { clear: true }; // hoisted: present() runs every frame
     this._pf = null; this._pb = null;
+    this._upFg = makeUploadState(); this._upBg = makeUploadState(); this._upUiFg = makeUploadState(); this._upUiBg = makeUploadState(); // PERF-04
     this._cellPass = null; this._spritePass = null; this._overlayPass = null;
     this._measureCanvas = document.createElement('canvas');
     this._measureCtx = this._measureCanvas.getContext('2d', { willReadFrequently: true });
@@ -76,25 +81,49 @@ export class RenderTargetWebGPU {
   }
 
   /** Rasterizes the glyph strip at the current cell size into a (re)created linear rgba8 atlas texture. @returns {any} */
-  _buildAtlas(old, m) {
+  _buildAtlas(old, m, filter = 'linear') {
     const ac = rasterizeGlyphAtlas(this._atlasCanvas, this._atlasCtx, m);
     if (old) this.device.dispose(old);
-    const tex = this.device.createTexture({ format: 'rgba8', width: ac.width, height: ac.height, filter: 'linear' });
-    this.device.writeTexture(tex, glyphAtlasPixels(ac, this._atlasCtx));
+    const tex = this.device.createTexture({ format: 'rgba8', width: ac.width, height: ac.height, filter });
+    const px = glyphAtlasPixels(ac, this._atlasCtx);
+    this.device.writeTexture(tex, px);
+    // ATLAS-GUARD (OB-175): blank cells = font not ready / canvas race. Wait for fonts, re-rasterize once, warn if still blank.
+    if (blankGlyphs(px, m).length) {
+      const retry = () => {
+        if (this.atlasTex !== tex && this._uiAtlasTex !== tex) return; // atlas was rebuilt meanwhile
+        const ac2 = rasterizeGlyphAtlas(this._atlasCanvas, this._atlasCtx, m);
+        const px2 = glyphAtlasPixels(ac2, this._atlasCtx);
+        const still = blankGlyphs(px2, m);
+        if (still.length && !this._warnedBlankAtlas) { this._warnedBlankAtlas = true; console.warn('[RenderTargetWebGPU] glyph atlas has blank cells: ' + still.map((c) => String.fromCharCode(c)).join('')); }
+        this.device.writeTexture(tex, px2);
+      };
+      const fr = typeof document !== 'undefined' && document.fonts && document.fonts.ready;
+      if (fr && typeof fr.then === 'function') fr.then(retry, retry); else retry();
+    }
     return tex;
   }
 
   _rebuildAtlas() {
-    this.atlasTex = this._buildAtlas(this.atlasTex, { pxCellW: this.pxCellW, pxCellH: this.pxCellH, fontPx: this.fontSize, ascent: this.glyphAscent });
+    this.atlasTex = this._buildAtlas(this.atlasTex, { pxCellW: this.pxCellW, pxCellH: this.pxCellH, fontPx: this.fontSize, ascent: this.glyphAscent, softRows: this.pxCellH <= SOFT_ROWS_MAX_H });
   }
 
   // Same math as RenderTargetGL._rebuildUiAtlas (UI cell size = scene cell size * ui.sx/sy).
   _rebuildUiAtlas() {
     const ui = this._uiLayer;
     if (!ui) return;
-    this._uiAtlasTex = this._buildAtlas(this._uiAtlasTex, {
-      pxCellW: this.pxCellW * ui.sx, pxCellH: this.pxCellH * ui.sy, fontPx: this.fontSize * ui.sy, ascent: this.glyphAscent * ui.sy,
-    });
+    // OB-021: the UI cell is pxCell * ui.sx/sy, non-integer at 560x210 (3.5 x 3 px rows = 10.5): the old fractional atlas
+    // truncated its canvas height (clipped descenders) and was bilinear-resampled (blurry). Round up to whole texels, scale the
+    // font/ascent with the rounded cell, sample the atlas nearest. At integer ratios (<= 480x180) the numbers are unchanged.
+    const w = Math.max(1, Math.ceil(this.pxCellW * ui.sx - 1e-6)), h = Math.max(1, Math.ceil(this.pxCellH * ui.sy - 1e-6));
+    const kx = w / (this.pxCellW * ui.sx), ky = h / (this.pxCellH * ui.sy);
+    let m = { pxCellW: w, pxCellH: h, fontPx: this.fontSize * ui.sy * ky, ascent: this.glyphAscent * ui.sy * ky };
+    if (w !== this.pxCellW * ui.sx || h !== this.pxCellH * ui.sy) {
+      // The scene cell (2x3 px at 560x210) is clamped to the budget so its ascent == the cell height: scaled up, the
+      // descenders have no room (cut off). Fractional ratio -> fit the font to the rounded UI cell with real metrics.
+      const b = computeCellBox(this._measureCtx, 1, 1, w, h, Infinity, true);
+      m = { pxCellW: w, pxCellH: h, fontPx: b.fontPx, ascent: b.glyphAscent };
+    }
+    this._uiAtlasTex = this._buildAtlas(this._uiAtlasTex, m, 'nearest');
   }
 
   _buildUiTextures() {
@@ -111,6 +140,13 @@ export class RenderTargetWebGPU {
     this._rebuildUiAtlas();
   }
 
+  /** OB-117: picture ratio (number w/h, e.g. 16/9) or null = fill the window; re-fits the live window at once. */
+  setAspect(ratio) {
+    this._aspect = ratio > 0 ? ratio : null;
+    const rb = this._refBox || {};
+    this.resize(rb.availW, rb.availH, rb.dpr);
+  }
+
   resize(refAvailW, refAvailH, refDpr) {
     const dpr = refDpr != null ? refDpr : (window.devicePixelRatio || 1);
     const availW = refAvailW != null ? refAvailW : window.innerWidth;
@@ -125,9 +161,12 @@ export class RenderTargetWebGPU {
     this.glyphAscent = box.glyphAscent;
     this.cellW = this.pxCellW / dpr;
     this.cellH = this.pxCellH / dpr;
-    const css = fitCssSize(this.cellW * this.cols, this.cellH * this.rows, availW, availH); // display-only fit
-    this.canvas.style.width = css.w + 'px';
-    this.canvas.style.height = css.h + 'px';
+    // OB-117: live window = fixed ratio this._aspect (null = fill the window), see fitCssRatio; the ref-box (gpucompare) path is unchanged.
+    const css = refAvailW == null
+      ? fitCssRatio(this._aspect, this.pxCellW * this.cols, this.pxCellH * this.rows, dpr, availW, availH)
+      : fitCssSize(this.cellW * this.cols, this.cellH * this.rows, availW, availH, 1);
+    this.canvas.style.width = (css.w > 0 ? css.w : availW) + 'px';
+    this.canvas.style.height = (css.h > 0 ? css.h : availH) + 'px';
     this.canvas.style.imageRendering = css.smooth ? 'auto' : ''; // BUG-SQUARES-01: '' = page CSS (pixelated) at 1:1
     this.canvas.width = this.pxCellW * this.cols; // the configured context follows the canvas size
     this.canvas.height = this.pxCellH * this.rows;
@@ -135,11 +174,21 @@ export class RenderTargetWebGPU {
     if (this._uiLayer) this._rebuildUiAtlas();
   }
 
-  /** WebGPU twin of the GL pre-flight: only the 2D texture dimension limit matters for the cell textures. */
-  canHoldGrid(cols, rows) {
+  /**
+   * GRID-MAX-01: pre-flight for engine.setGrid. Checks (a) the raster G-buffer sub-sample size (cols*rays x rows*rays) against
+   * maxTextureDimension2D, (b) an estimated total VRAM for the per-grid targets (36 B per sub-sample raster G-buffer +
+   * ~170 B per cell for resolve/deriv/light/shade/final/stable/glow/hzb) against GRID_VRAM_BUDGET.
+   */
+  canHoldGrid(cols, rows, rays = 1) {
     const lim = this.device.gpu && this.device.gpu.limits;
-    const max = lim ? lim.maxTextureDimension2D : 8192;
-    return (cols > max || rows > max) ? { ok: false, reason: `grid ${cols}x${rows} exceeds maxTextureDimension2D ${max}` } : { ok: true };
+    const maxTex = lim ? lim.maxTextureDimension2D : 8192;
+    const r = Math.max(1, rays | 0);
+    const subC = cols * r, subR = rows * r;
+    if (subC > maxTex || subR > maxTex) return { ok: false, reason: `grid ${cols}x${rows} at ${r} rays needs a ${subC}x${subR} G-buffer, exceeds maxTextureDimension2D ${maxTex}` };
+    const subBytes = subC * subR * 36;
+    const total = subBytes + cols * rows * 170;
+    if (total > GRID_VRAM_BUDGET) return { ok: false, reason: `grid ${cols}x${rows} at ${r} rays needs ~${(total / 1048576).toFixed(0)} MB of render targets, over the ${(GRID_VRAM_BUDGET / 1048576).toFixed(0)} MB budget` };
+    return { ok: true };
   }
 
   setGrid(cols, rows) {
@@ -161,6 +210,8 @@ export class RenderTargetWebGPU {
   setCellPass(fn) { this._cellPass = fn || null; }
   setSpritePass(fn) { this._spritePass = fn || null; }
   setOverlayPass(fn) { this._overlayPass = fn || null; }
+  /** PERF-04: something other than present() drew into fgTex/bgTex (the pipeline debug view): re-upload the whole CPU layer next frame. */
+  invalidateCellUpload() { if (this._upFg) { this._upFg.tex = null; this._upBg.tex = null; } }
   /** WG-3f: present these textures (pipeline sprite/overlay output) instead of the CPU cell textures; null = back to fgTex/bgTex. */
   setPresentCells(fg, bg) { this._pf = fg || null; this._pb = bg || null; }
 
@@ -194,32 +245,92 @@ export class RenderTargetWebGPU {
   present() {
     if (!this.ready) return;
     const d = this.device;
+    // FIX-PASS: a pass some earlier code opened and never ended (an error swallowed inside a pass) used to crash here forever
+    // ("beginPass: previous pass not ended"); end it, name its owner once per frame it happens, and carry on.
+    if (d._pass && typeof d.abortPass === 'function') console.error('[RenderTargetWebGPU] stale GPU pass left open before present (aborted): ' + d.abortPass());
     d.timer.begin(FRAME_TIMER_SLOT); // WG-1b3: whole GPU present, including the cell-pass hook.
-    d.writeTexture(this.fgTex, this.cells.fg);
-    d.writeTexture(this.bgTex, this.cells.bg);
-    if (this._cellPass) this._cellPass();
-    if (this._spritePass) this._spritePass();
-    if (this._overlayPass) this._overlayPass();
+    try { // FIX-PASS: a throw anywhere below must not leave the frame's pass or timer span open (the next present would crash)
+      if (!this._upFg) { this._upFg = makeUploadState(); this._upBg = makeUploadState(); this._upUiFg = makeUploadState(); this._upUiBg = makeUploadState(); } // targets built without init (tests)
+      uploadChangedRows(d, this.fgTex, this.cells.fg, this.cols, this.rows, this._upFg); // PERF-04: only rows that changed since the last upload
+      uploadChangedRows(d, this.bgTex, this.cells.bg, this.cols, this.rows, this._upBg);
+      if (this._cellPass) this._cellPass();
+      if (this._spritePass) this._spritePass();
+      if (this._overlayPass) this._overlayPass();
+      if (d._pass && typeof d.abortPass === 'function') console.error('[RenderTargetWebGPU] cell-pass hook left a GPU pass open (aborted): ' + d.abortPass());
 
-    d.beginPass(this._target, this._clearOpts);
-    this._grid = this._grid || [null, null, null];
-    const own = !(this._pf && this._pb); // WG-3f: the pipeline's sprite/overlay output replaces the CPU cell textures
-    const pf = own ? this.fgTex : this._pf, pb = own ? this.bgTex : this._pb;
-    this._grid[0] = pf; this._grid[1] = pb; this._grid[2] = this.atlasTex;
-    this._draw(this._pipeScene, this._bindScene, this._texScene, this._grid, this.cols, this.rows, 0);
-    this._presentFg = pf; this._presentBg = pb;
-    if (this._uiLayer && this._uiFgTex) {
-      const ui = this._uiLayer;
-      d.writeTexture(this._uiFgTex, ui.cells.fg);
-      d.writeTexture(this._uiBgTex, ui.cells.bg);
-      this._grid[0] = this._uiFgTex; this._grid[1] = this._uiBgTex; this._grid[2] = this._uiAtlasTex;
-      this._draw(this._pipeUi, this._bindUi, this._texUi, this._grid, ui.cols, ui.rows, 1);
+      d.beginPass(this._target, this._clearOpts);
+      this._grid = this._grid || [null, null, null];
+      const own = !(this._pf && this._pb); // WG-3f: the pipeline's sprite/overlay output replaces the CPU cell textures
+      const pf = own ? this.fgTex : this._pf, pb = own ? this.bgTex : this._pb;
+      this._grid[0] = pf; this._grid[1] = pb; this._grid[2] = this.atlasTex;
+      this._draw(this._pipeScene, this._bindScene, this._texScene, this._grid, this.cols, this.rows, 0);
+      this._presentFg = pf; this._presentBg = pb;
+      if (this._uiLayer && this._uiFgTex) {
+        const ui = this._uiLayer;
+        uploadChangedRows(d, this._uiFgTex, ui.cells.fg, ui.cols, ui.rows, this._upUiFg);
+        uploadChangedRows(d, this._uiBgTex, ui.cells.bg, ui.cols, ui.rows, this._upUiBg);
+        this._grid[0] = this._uiFgTex; this._grid[1] = this._uiBgTex; this._grid[2] = this._uiAtlasTex;
+        this._draw(this._pipeUi, this._bindUi, this._texUi, this._grid, ui.cols, ui.rows, 1);
+      }
+    } catch (e) {
+      // FIX-RING: a failed frame used to skip submit(), so the uniform ring never reset and every later frame overflowed
+      // ("uniform ring overflow" -> fatal). End the pass, submit what was recorded (resets the ring), drop this frame only.
+      if (typeof d.abortPass === 'function') d.abortPass();
+      d.timer.end();
+      try { d.submit(); } catch (_) { d.resetFrame(); }
+      this.failedFrames = (this.failedFrames || 0) + 1; this.stats.droppedFrames = this.failedFrames;
+      if (this.failedFrames <= 3 || this.failedFrames % 600 === 0) console.error(`[RenderTargetWebGPU] frame dropped (${this.failedFrames}):`, e);
+      return;
     }
     d.endPass();
     d.timer.end();
     d.submit();
     if (d.timer.writeStats) d.timer.writeStats(this.stats);
+    if (d.writePassStats) d.writePassStats(this.stats);
   }
+}
+
+/** PERF-04 upload state of one CPU cell array -> texture pair: `prev` = the u32 words last uploaded into `tex`. */
+export function makeUploadState() { return { tex: null, src: null, src32: null, prev: null, rect: { x: 0, y: 0, w: 0, h: 0 } }; }
+
+/**
+ * PERF-04: upload `src` (RGBA8 cells, cols x rows) into `tex`, sending only the row span [first changed row, last changed row]
+ * since the last upload through the same `st`. The texture ends up byte-identical to a full upload as long as nothing else
+ * writes `tex` (callers that do must clear `st.tex`). A new texture / source array (resize, device restore) = full upload.
+ * The CPU layer is mostly static (a clear + HUD), so most frames upload nothing. Zero allocation after the first call per size.
+ * @param {any} d device @param {any} tex @param {Uint8Array|Uint8ClampedArray} src @param {number} cols @param {number} rows @param {ReturnType<typeof makeUploadState>} st
+ * @returns {number} rows uploaded
+ */
+export function uploadChangedRows(d, tex, src, cols, rows, st) {
+  const n = cols * rows, odd = !src || !src.buffer || (src.byteOffset & 3) !== 0 || src.length !== n * 4;
+  if (odd || st.tex !== tex || st.src !== src || !st.prev || st.prev.length !== n) {
+    d.writeTexture(tex, src);
+    if (odd) { st.tex = null; return rows; } // unaligned / odd source (test fakes): always full
+    if (!st.prev || st.prev.length !== n) st.prev = new Uint32Array(n);
+    st.src32 = new Uint32Array(src.buffer, src.byteOffset, n);
+    st.prev.set(st.src32);
+    st.tex = tex; st.src = src;
+    return rows;
+  }
+  const a = st.src32, p = st.prev;
+  // PERF-10: row-wise scan; changed rows are grouped into ranges, and runs separated by fewer than `gap` unchanged rows are
+  // merged (one writeTexture per range). A HUD at the top and bottom no longer drags the whole grid through writeTexture.
+  const gap = Math.max(2, (4096 / (cols * 4)) | 0), rect = st.rect;
+  let sent = 0, r = 0, start = -1, last = -1;
+  for (; r <= rows; r++) {
+    let ch = false;
+    if (r < rows) {
+      for (let k = r * cols, e = k + cols; k < e; k++) if (a[k] !== p[k]) { ch = true; break; }
+    }
+    if (ch) { if (start < 0) start = r; last = r; continue; }
+    if (start >= 0 && (r === rows || r - last > gap)) {
+      for (let k = start * cols, e = (last + 1) * cols; k < e; k++) p[k] = a[k];
+      rect.x = 0; rect.y = start; rect.w = cols; rect.h = last - start + 1;
+      d.writeTexture(tex, src, rect, start * cols * 4);
+      sent += rect.h; start = -1;
+    }
+  }
+  return sent;
 }
 
 export { GLYPH_COUNT };

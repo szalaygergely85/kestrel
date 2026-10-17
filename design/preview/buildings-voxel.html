@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kestrel - our own buildings (OB-139 proposal): cottages, two-storey house, ruin, trade post, stairs / wall / fence, watchtower</title>
+<style>
+  body { background:#07080c; color:#d8d2c0; font:14px/1.45 "Segoe UI", system-ui, sans-serif; margin:0; padding:0 24px 60px; }
+  h1 { font-size:20px; margin:16px 0 2px; color:#ffd24a; }
+  h2 { font-size:16px; margin:22px 0 6px; color:#ffc23c; border-bottom:1px solid #22252e; padding-bottom:4px; }
+  .note { color:#8a8778; font-size:12px; max-width:1400px; }
+  .pass { color:#4fd66a; } .fail { color:#ff3b3b; } .info { color:#8fb4e0; } .warn { color:#ffb03c; }
+  canvas { display:block; background:#000; }
+  .controls { position:sticky; top:0; z-index:5; background:#0d0f16f0; border:1px solid #22252e; border-radius:4px;
+              padding:8px 12px; margin:10px 0; display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:13px; }
+  .controls label { display:flex; align-items:center; gap:5px; }
+  .controls input[type=range] { width:110px; }
+  .val { font-family:Consolas, monospace; color:#ffd27a; min-width:36px; display:inline-block; }
+  .row { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-start; margin:6px 0 12px; }
+  .cap { font-size:11px; color:#8a8778; font-family:Consolas, monospace; margin-top:2px; max-width:960px; }
+  #checks div { font-family:Consolas, monospace; font-size:12px; }
+  .tile { cursor:pointer; border:1px solid #22252e; } .tile.on { border-color:#ffd24a; }
+  .legend span { display:inline-block; margin-right:10px; font:11px Consolas, monospace; }
+</style>
+</head>
+<body>
+<h1>Kestrel : our own buildings (OB-139, proposal - the owner picks before code)</h1>
+<div class="note">
+  Voxel buildings built by us instead of the kit-assembled Medieval Village houses (OB-138 / OB-129 / OB-147). Data:
+  <code>design/models/buildings_voxel.js</code> (cellM 0.1 m, architecture.md 15.1 format + <code>colliders</code> + <code>walk</code>, see design/README.md).
+  Left: the building turning (ASCII cells, glyph + colour from <code>palette.materials</code>, light from the sliders; <b>colliders</b> draws the box list as wire frames).
+  Right: top-down plan of the chosen level with every collider box by kind, doors (cyan), NPC spots (white dots) and
+  <span class="fail">red cells = a pocket narrower than 0.9 m</span>. Checks below: steps (rise &lt;= 0.3, depth &gt;= 0.3, width &gt;= 1.2, headroom &gt;= 2.0),
+  doors (&gt;= 1.0 x 2.1, nothing in the way), floating voxels (flood fill from the ground), collider support, materials.
+  The renderer here is a light stand-alone splat preview (no engine imports); the engine format check runs only over http.
+</div>
+<div id="fatal" class="fail"></div>
+
+<div class="controls">
+  <label>model <select id="model"></select></label>
+  <label><input type="checkbox" id="turn" checked> turn</label>
+  <label>yaw <input type="range" id="yaw" min="0" max="359" value="35"><span class="val" id="yawV"></span></label>
+  <label>camera elev <input type="range" id="cel" min="5" max="89" value="28"><span class="val" id="celV"></span></label>
+  <label>light az <input type="range" id="laz" min="-180" max="180" value="-50"><span class="val" id="lazV"></span></label>
+  <label>light elev <input type="range" id="lel" min="0" max="89" value="40"><span class="val" id="lelV"></span></label>
+  <label><input type="checkbox" id="c3d"> colliders</label>
+  <label>plan level <select id="lvl"></select></label>
+</div>
+
+<div class="row">
+  <div><canvas id="view" width="980" height="620"></canvas><div class="cap" id="cap"></div></div>
+  <div><canvas id="top" width="470" height="470"></canvas>
+    <div class="legend" id="legend"></div>
+    <div class="cap">plan: north (front, y0) is UP; anchor = +; faint boxes = other levels</div></div>
+</div>
+<h2>Checks</h2>
+<div id="checks"></div>
+<h2>All buildings (click to select)</h2>
+<div class="row" id="gallery"></div>
+
+<script src="../palette.js"></script>
+<script src="../models/buildings_voxel.js"></script>
+<script>
+(function () {
+  'use strict';
+  var PAL = ASSETS.palette, BV = ASSETS.buildingsVoxel, VMS = ASSETS.voxelModels;
+  if (!PAL || !BV) { document.getElementById('fatal').textContent = 'palette.js or buildings_voxel.js did not load'; return; }
+  var FALLRAMP = ' .:-=+*#%@';
+  var KIND = { wall: '#ff8a3c', floor: '#4fd66a', step: '#ffd24a', landing: '#9be37a', rail: '#c58cff', post: '#ff5ad0',
+               rubble: '#c9a46a', prop: '#5ab4ff', roof: '#9a9a9a' };
+  var $ = function (id) { return document.getElementById(id); };
+  var CACHE = {};
+
+  function matInfo(key) {
+    var m = PAL.materials[key];
+    if (!m) return { key: key, rgb: [255, 0, 255], ramp: FALLRAMP, missing: true };
+    var rgb = (PAL.rgb && PAL.rgb[m.base]) || [190, 190, 190];
+    var ramp = (m.ramp && PAL.ramps[m.ramp]) || FALLRAMP;
+    return { key: key, rgb: rgb, ramp: ramp, missing: false };
+  }
+
+  function prep(id) {
+    if (CACHE[id]) return CACHE[id];
+    var M = VMS[id], v = M.voxel, sx = v.size[0], sy = v.size[1], sz = v.size[2], cm = v.cellM;
+    var chars = Object.keys(v.mats), idx = {}, mats = [];
+    chars.forEach(function (c, i) { idx[c] = i + 1; mats.push(matInfo(v.mats[c])); });
+    var g = new Uint8Array(sx * sy * sz), x, y, z, i;
+    for (z = 0; z < sz; z++) for (y = 0; y < sy; y++) {
+      var row = v.layers[z][y];
+      for (x = 0; x < sx; x++) { var c = row.charAt(x); if (c !== '.') g[x + sx * (y + sy * z)] = idx[c] || 1; }
+    }
+    function at(x, y, z) { return (x < 0 || y < 0 || z < 0 || x >= sx || y >= sy || z >= sz) ? 0 : g[x + sx * (y + sy * z)]; }
+    var pts = [], count = 0, ax = v.anchor[0], ay = v.anchor[1], az = v.anchor[2];
+    var topZ = new Int16Array(sx * sy).fill(-1), topM = new Uint8Array(sx * sy), rx = 0, ry = 0, hz = 0;
+    for (z = 0; z < sz; z++) for (y = 0; y < sy; y++) for (x = 0; x < sx; x++) {
+      var m = g[x + sx * (y + sy * z)]; if (!m) continue; count++;
+      topZ[x + sx * y] = z; topM[x + sx * y] = m;
+      var ox = at(x + 1, y, z) ? 0 : 1, oxm = at(x - 1, y, z) ? 0 : 1, oy = at(x, y + 1, z) ? 0 : 1, oym = at(x, y - 1, z) ? 0 : 1;
+      var oz = at(x, y, z + 1) ? 0 : 1, ozm = at(x, y, z - 1) ? 0 : 1;
+      if (!(ox || oxm || oy || oym || oz || ozm)) continue;
+      var nx = ox - oxm, ny = oy - oym, nz = oz - ozm, l = Math.sqrt(nx * nx + ny * ny + nz * nz);
+      var px = (x + 0.5 - ax) * cm, py = (y + 0.5 - ay) * cm, pz = (z + 0.5 - az) * cm;
+      rx = Math.max(rx, Math.abs(px)); ry = Math.max(ry, Math.abs(py)); hz = Math.max(hz, pz);
+      if (l === 0) pts.push(px, py, pz, 0, 0, 0, m - 1);
+      else pts.push(px, py, pz, nx / l, ny / l, nz / l, m - 1);
+    }
+    // floating voxels: 6-connected flood fill from the z = 0 layer
+    var seen = new Uint8Array(g.length), q = new Int32Array(count + 1), h = 0, t = 0, sxy = sx * sy;
+    for (i = 0; i < sxy; i++) if (g[i]) { seen[i] = 1; q[t++] = i; }
+    while (h < t) {
+      i = q[h++]; x = i % sx; y = ((i / sx) | 0) % sy; z = (i / sxy) | 0;
+      var nb = [[x + 1, y, z], [x - 1, y, z], [x, y + 1, z], [x, y - 1, z], [x, y, z + 1], [x, y, z - 1]];
+      for (var k = 0; k < 6; k++) {
+        var X = nb[k][0], Y = nb[k][1], Z = nb[k][2];
+        if (X < 0 || Y < 0 || Z < 0 || X >= sx || Y >= sy || Z >= sz) continue;
+        var j = X + sx * (Y + sy * Z);
+        if (g[j] && !seen[j]) { seen[j] = 1; q[t++] = j; }
+      }
+    }
+    var floatAt = null;
+    if (t < count) for (i = 0; i < g.length && !floatAt; i++) if (g[i] && !seen[i]) {
+      floatAt = [((i % sx) + 0.5 - ax) * cm, ((((i / sx) | 0) % sy) + 0.5 - ay) * cm, (((i / sxy) | 0) + 0.5) * cm];
+    }
+    var P = { id: id, M: M, cm: cm, sx: sx, sy: sy, ax: ax, ay: ay, mats: mats, pts: new Float32Array(pts), count: count,
+              floating: count - t, floatAt: floatAt, topZ: topZ, topM: topM, rad: Math.max(Math.sqrt(rx * rx + ry * ry), hz * 0.62), hz: hz,
+              ext: [-ax * cm, -ay * cm, (sx - ax) * cm, (sy - ay) * cm] };
+    CACHE[id] = P;
+    return P;
+  }
+
+  // ---------------------------------------------------------------- 3/4 view (point splat into ASCII cells)
+  function render(ctx, P, o) {
+    var W = ctx.canvas.width, H = ctx.canvas.height, cw = o.cw, chh = o.ch, cols = Math.floor(W / cw), rows = Math.floor(H / chh);
+    var N = cols * rows, dep = new Float32Array(N).fill(1e9), mat = new Int16Array(N).fill(-1), br = new Float32Array(N);
+    var yaw = o.yaw * Math.PI / 180, cy = Math.cos(yaw), sy = Math.sin(yaw), el = o.cel * Math.PI / 180, ce = Math.cos(el), se = Math.sin(el);
+    var la = o.laz * Math.PI / 180, le = o.lel * Math.PI / 180, L0 = Math.cos(le) * Math.sin(la), L1 = -Math.cos(le) * Math.cos(la), L2 = Math.sin(le);
+    var s = Math.min(W, H * 1.15) / (P.rad * 2.25), ox = W / 2, oy = H / 2 + (P.hz / 2) * ce * s, half = P.cm * s * 0.62;
+    var a = P.pts, n = a.length;
+    for (var k = 0; k < n; k += 7) {
+      var x = a[k], y = a[k + 1], z = a[k + 2], xr = x * cy - y * sy, yr = x * sy + y * cy;
+      var px = ox - xr * s, py = oy - (yr * se + z * ce) * s, d = yr * ce - z * se;
+      var nx = a[k + 3] * cy - a[k + 4] * sy, ny = a[k + 3] * sy + a[k + 4] * cy, nz = a[k + 5], thin = (nx === 0 && ny === 0 && nz === 0);
+      if (!thin && (-ny * ce + nz * se) < -0.25) continue;                    // faces away from the camera
+      var b = thin ? 0.5 : 0.16 + 0.92 * Math.max(0, nx * L0 + ny * L1 + nz * L2);
+      var c0 = Math.floor((px - half) / cw), c1 = Math.floor((px + half) / cw), r0 = Math.floor((py - half) / chh), r1 = Math.floor((py + half) / chh);
+      for (var r = r0; r <= r1; r++) { if (r < 0 || r >= rows) continue;
+        for (var c = c0; c <= c1; c++) { if (c < 0 || c >= cols) continue;
+          var id = c + r * cols; if (d < dep[id]) { dep[id] = d; mat[id] = a[k + 6]; br[id] = b; } } }
+    }
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+    ctx.font = chh + 'px Consolas, "Courier New", monospace'; ctx.textBaseline = 'top';
+    for (var i = 0; i < N; i++) {
+      if (mat[i] < 0) continue;
+      var mi = P.mats[mat[i]], bb = Math.min(1, br[i]), rc = i % cols, rr = (i / cols) | 0;
+      var edge = (rc > 0 && mat[i - 1] < 0) || (rc < cols - 1 && mat[i + 1] < 0) || (rr > 0 && mat[i - cols] < 0) ||
+                 (rr > 0 && dep[i - cols] < dep[i] - 0.6);
+      var f = edge ? 0.55 : 1, kf = (0.22 + 0.9 * bb) * f;
+      var R = Math.min(255, mi.rgb[0] * kf) | 0, G = Math.min(255, mi.rgb[1] * kf) | 0, B = Math.min(255, mi.rgb[2] * kf) | 0;
+      ctx.fillStyle = 'rgb(' + ((R * 0.2) | 0) + ',' + ((G * 0.2) | 0) + ',' + ((B * 0.22) | 0) + ')';
+      ctx.fillRect(rc * cw, rr * chh, cw, chh);
+      var ramp = mi.ramp, gi = 1 + Math.min(ramp.length - 2, Math.floor(bb * (ramp.length - 1)));
+      ctx.fillStyle = 'rgb(' + R + ',' + G + ',' + B + ')';
+      ctx.fillText(ramp.charAt(Math.max(1, gi)), rc * cw, rr * chh);
+    }
+    if (o.colliders) {
+      ctx.lineWidth = 1;
+      P.M.colliders.forEach(function (cl) {
+        var bx = cl.box, pts2 = [];
+        for (var q = 0; q < 8; q++) {
+          var X = (q & 1) ? bx[3] : bx[0], Y = (q & 2) ? bx[4] : bx[1], Z = (q & 4) ? bx[5] : bx[2];
+          var xr = X * cy - Y * sy, yr = X * sy + Y * cy;
+          pts2.push([ox - xr * s, oy - (yr * se + Z * ce) * s]);
+        }
+        ctx.strokeStyle = KIND[cl.kind] || '#fff'; ctx.globalAlpha = cl.kind === 'roof' ? 0.35 : 0.85;
+        [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]].forEach(function (e) {
+          ctx.beginPath(); ctx.moveTo(pts2[e[0]][0], pts2[e[0]][1]); ctx.lineTo(pts2[e[1]][0], pts2[e[1]][1]); ctx.stroke();
+        });
+      });
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // ---------------------------------------------------------------- walk checks
+  function overlapXY(a, b, e) { return a[0] < b[3] - e && b[0] < a[3] - e && a[1] < b[4] - e && b[1] < a[4] - e; }
+  function pockets(M, lz, ext) {
+    var r = 0.1, x0 = ext[0] - 1, y0 = ext[1] - 1, nx = Math.round((ext[2] - ext[0] + 2) / r), ny = Math.round((ext[3] - ext[1] + 2) / r);
+    var free = new Uint8Array(nx * ny), cl = M.colliders, i, j, k;
+    for (j = 0; j < ny; j++) for (i = 0; i < nx; i++) {
+      var cx = x0 + (i + 0.5) * r, cy = y0 + (j + 0.5) * r, walk = lz <= 0.001, blocked = false;
+      for (k = 0; k < cl.length; k++) {
+        var b = cl[k].box; if (cx < b[0] || cx > b[3] || cy < b[1] || cy > b[4]) continue;
+        if (b[5] > lz + 0.45 && b[2] < lz + 1.8) blocked = true;
+        if (b[5] > lz - 0.06 && b[5] <= lz + 0.45) walk = true;
+      }
+      free[i + nx * j] = walk && !blocked ? 1 : 0;
+    }
+    var S = new Int32Array((nx + 1) * (ny + 1)), w = 9, cover = new Uint8Array(nx * ny), narrow = new Uint8Array(nx * ny), cnt = 0;
+    for (j = 0; j < ny; j++) for (i = 0; i < nx; i++) S[(i + 1) + (nx + 1) * (j + 1)] = free[i + nx * j] + S[i + (nx + 1) * (j + 1)] + S[(i + 1) + (nx + 1) * j] - S[i + (nx + 1) * j];
+    for (j = 0; j + w <= ny; j++) for (i = 0; i + w <= nx; i++) {
+      var sum = S[(i + w) + (nx + 1) * (j + w)] - S[i + (nx + 1) * (j + w)] - S[(i + w) + (nx + 1) * j] + S[i + (nx + 1) * j];
+      if (sum === w * w) for (var b2 = 0; b2 < w; b2++) for (var a2 = 0; a2 < w; a2++) cover[(i + a2) + nx * (j + b2)] = 1;
+    }
+    for (i = 0; i < nx * ny; i++) if (free[i] && !cover[i]) { narrow[i] = 1; cnt++; }
+    return { x0: x0, y0: y0, nx: nx, ny: ny, r: r, narrow: narrow, count: cnt };
+  }
+  function stairCheck(M, st) {
+    var byId = {}, out = [], ok = true, prev = null, ax = st.axis.charAt(1) === 'x' ? 0 : 1;
+    M.colliders.forEach(function (c) { byId[c.id] = c; });
+    st.steps.forEach(function (id, n) {
+      var c = byId[id]; if (!c) { out.push(id + ' MISSING'); ok = false; return; }
+      var b = c.box, top = b[5], rise = top - (prev === null ? b[2] : prev), last = n === st.steps.length - 1;
+      var depth = b[3 + ax] - b[ax], width = b[4 - ax] - b[1 - ax], head = 99;
+      M.colliders.forEach(function (o) {
+        if (o === c || o.kind === 'rail') return;
+        if (overlapXY(o.box, b, 0.001) && o.box[2] >= top - 0.001) head = Math.min(head, o.box[2] - top);
+      });
+      var good = rise > 0 && rise <= 0.301 && depth >= (last ? 0.799 : 0.299) && width >= 1.199 && head >= 1.999;
+      if (!good) ok = false;
+      out.push(id + ' rise ' + rise.toFixed(2) + ' depth ' + depth.toFixed(2) + ' width ' + width.toFixed(2) +
+               ' head ' + (head > 50 ? 'open' : head.toFixed(2)) + (good ? '' : '  <-- FAIL'));
+      prev = top;
+    });
+    return { ok: ok, lines: out };
+  }
+  function doorCheck(M, d) {
+    var b = d.box, w = (d.wall === 'N' || d.wall === 'S') ? b[3] - b[0] : b[4] - b[1], h = b[5] - b[2], hit = [];
+    M.colliders.forEach(function (o) {
+      if (o.box[5] <= b[2] + 0.31) return;                                     // floors, thresholds, rubble steps
+      if (overlapXY(o.box, b, 0.02) && o.box[2] < b[5] - 0.02 && o.box[5] > b[2] + 0.02) hit.push(o.id);
+    });
+    return { ok: w >= 0.999 && h >= 2.099 && !hit.length, text: d.id + ' ' + w.toFixed(2) + ' x ' + h.toFixed(2) + ' m' + (hit.length ? ' blocked by ' + hit.join(',') : '') };
+  }
+  function restCheck(M) {
+    var bad = [];
+    M.colliders.forEach(function (c) {
+      var b = c.box; if (b[2] <= 0.001) return;
+      var ok = M.colliders.some(function (o) {
+        return o !== c && o.box[2] < b[2] + 0.001 && o.box[5] >= b[2] - 0.011 && overlapXY(o.box, b, -0.011);
+      });
+      if (!ok) bad.push(c.id);
+    });
+    return bad;
+  }
+
+  // ---------------------------------------------------------------- plan view
+  function plan(ctx, P, lvl) {
+    var W = ctx.canvas.width, H = ctx.canvas.height, M = P.M, e = P.ext, pad = 1.0;
+    var s = Math.min((W - 20) / (e[2] - e[0] + 2 * pad), (H - 20) / (e[3] - e[1] + 2 * pad));
+    var ox = 10 + (pad - e[0]) * s, oy = 10 + (pad - e[1]) * s, x, y, cm = P.cm;
+    ctx.fillStyle = '#0a0b10'; ctx.fillRect(0, 0, W, H);
+    for (y = 0; y < P.sy; y++) for (x = 0; x < P.sx; x++) {
+      var z = P.topZ[x + P.sx * y]; if (z < 0) continue;
+      var mi = P.mats[P.topM[x + P.sx * y] - 1], f = 0.25 + 0.55 * ((z + 1) * cm / Math.max(1, P.hz));
+      ctx.fillStyle = 'rgb(' + ((mi.rgb[0] * f) | 0) + ',' + ((mi.rgb[1] * f) | 0) + ',' + ((mi.rgb[2] * f) | 0) + ')';
+      ctx.fillRect(ox + (x - P.ax) * cm * s, oy + (y - P.ay) * cm * s, Math.ceil(cm * s), Math.ceil(cm * s));
+    }
+    var lz = lvl.z, pk = pockets(M, lz, e);
+    M.colliders.forEach(function (c) {
+      var b = c.box, on = b[5] > lz - 0.06 && b[2] < lz + 2.0;
+      ctx.globalAlpha = on ? 0.9 : 0.18; ctx.strokeStyle = KIND[c.kind] || '#fff'; ctx.lineWidth = on ? 1.5 : 1;
+      ctx.strokeRect(ox + b[0] * s + 0.5, oy + b[1] * s + 0.5, (b[3] - b[0]) * s - 1, (b[4] - b[1]) * s - 1);
+      if (on && (c.kind === 'step' || c.kind === 'landing' || c.kind === 'rubble') && (b[3] - b[0]) * s > 18) {
+        ctx.fillStyle = KIND[c.kind]; ctx.font = '9px Consolas, monospace';
+        ctx.fillText(b[5].toFixed(2), ox + b[0] * s + 2, oy + (b[1] + b[4]) / 2 * s + 3);
+      }
+    });
+    ctx.globalAlpha = 0.85; ctx.fillStyle = '#ff2b2b';
+    for (y = 0; y < pk.ny; y++) for (x = 0; x < pk.nx; x++) if (pk.narrow[x + pk.nx * y]) ctx.fillRect(ox + (pk.x0 + x * pk.r) * s, oy + (pk.y0 + y * pk.r) * s, Math.ceil(pk.r * s), Math.ceil(pk.r * s));
+    ctx.globalAlpha = 1;
+    (M.walk.doors || []).forEach(function (d) {
+      var b = d.box; if (Math.abs(b[2] - lz) > 0.5) return;
+      ctx.strokeStyle = '#3ff0ff'; ctx.lineWidth = 3; ctx.strokeRect(ox + b[0] * s, oy + b[1] * s, (b[3] - b[0]) * s, (b[4] - b[1]) * s);
+    });
+    var sp = M.walk.spots || {};
+    Object.keys(sp).forEach(function (k) {
+      var p = sp[k]; if (Math.abs(p[2] - lz) > 0.5) return;
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ox + p[0] * s, oy + p[1] * s, 4, 0, 7); ctx.fill();
+      ctx.font = '10px Consolas, monospace'; ctx.fillText(k, ox + p[0] * s + 6, oy + p[1] * s - 4);
+    });
+    ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 1; ctx.beginPath();
+    ctx.moveTo(ox - 6, oy); ctx.lineTo(ox + 6, oy); ctx.moveTo(ox, oy - 6); ctx.lineTo(ox, oy + 6); ctx.stroke();
+    ctx.fillStyle = '#8a8778'; ctx.font = '10px Consolas, monospace'; ctx.fillText('N (front)', W / 2 - 24, 10);
+    return pk;
+  }
+
+  // ---------------------------------------------------------------- checks panel
+  var ENGINE = null;
+  function checks(P) {
+    var M = P.M, out = [], all = true;
+    function line(ok, t) { out.push('<div class="' + (ok === null ? 'info' : ok ? 'pass' : 'fail') + '">' + (ok === null ? 'INFO ' : ok ? 'PASS ' : 'FAIL ') + t + '</div>'); if (ok === false) all = false; }
+    var miss = P.mats.filter(function (m) { return m.missing; }).map(function (m) { return m.key; });
+    line(!miss.length, 'materials (' + P.mats.map(function (m) { return m.key; }).join(', ') + ')' + (miss.length ? ' MISSING: ' + miss.join(', ') : ' all in palette.materials'));
+    line(P.floating === 0, 'floating voxels: ' + P.floating + (P.floatAt ? ' (first at ' + P.floatAt.map(function (v) { return v.toFixed(2); }).join(', ') + ' m)' : ''));
+    var rb = restCheck(M); line(!rb.length, 'collider support: ' + (rb.length ? 'unsupported ' + rb.join(', ') : 'every box stands on the ground or another box'));
+    (M.walk.doors || []).forEach(function (d) { var r = doorCheck(M, d); line(r.ok, 'door ' + r.text); });
+    (M.walk.stairs || []).forEach(function (st) {
+      var r = stairCheck(M, st); line(r.ok, 'stair ' + st.id + ' (' + st.steps.length + ' boxes, axis ' + st.axis + ')');
+      r.lines.forEach(function (l) { out.push('<div class="' + (l.indexOf('FAIL') >= 0 ? 'fail' : 'info') + '">&nbsp;&nbsp;&nbsp;&nbsp;' + l + '</div>'); });
+    });
+    (M.walk.levels || []).forEach(function (lv) { var pk = pockets(M, lv.z, P.ext); line(pk.count === 0, 'pockets < 0.9 m on level ' + lv.name + ' (z ' + lv.z + '): ' + pk.count + ' cells of 0.1 m'); });
+    if (ENGINE) {
+      var res = ENGINE.validateVoxelModel(M.voxel, { materialKeys: Object.keys(PAL.materials) });
+      line(!res.errors.length, 'engine validateVoxelModel: ' + res.errors.length + ' errors, ' + res.warnings.length + ' warnings ' + res.errors.slice(0, 3).join(' | '));
+    } else line(null, 'engine validateVoxelModel: not loaded (open over http to run it)');
+    line(null, 'colliders: ' + M.colliders.length + ' boxes; voxels ' + P.count + ' (' + (P.pts.length / 7) + ' exposed); grid ' + M.voxel.size.join(' x ') + ' @ ' + M.voxel.cellM + ' m');
+    $('checks').innerHTML = out.join('');
+    return all;
+  }
+
+  // ---------------------------------------------------------------- UI
+  var ids = BV.ids, cur = ids[0], yaw = 35, last = 0;
+  ids.forEach(function (id) { var o = document.createElement('option'); o.value = id; o.textContent = id; $('model').appendChild(o); });
+  $('legend').innerHTML = Object.keys(KIND).map(function (k) { return '<span style="color:' + KIND[k] + '">&#9632; ' + k + '</span>'; }).join('') +
+    '<span style="color:#3ff0ff">&#9632; door</span><span class="fail">&#9632; pocket</span>';
+  function opts(big) {
+    return { yaw: yaw, cel: +$('cel').value, laz: +$('laz').value, lel: +$('lel').value, colliders: big && $('c3d').checked, cw: big ? 7 : 4, ch: big ? 12 : 7 };
+  }
+  function setLevels() {
+    var lv = VMS[cur].walk.levels; $('lvl').innerHTML = '';
+    lv.forEach(function (l, i) { var o = document.createElement('option'); o.value = i; o.textContent = l.name + ' (z ' + l.z + ')'; $('lvl').appendChild(o); });
+  }
+  function drawMain() {
+    var P = prep(cur);
+    render($('view').getContext('2d'), P, opts(true));
+    ['yaw', 'cel', 'laz', 'lel'].forEach(function (k) { $(k + 'V').textContent = (k === 'yaw' ? Math.round(yaw) : $(k).value) + '°'; });
+    $('cap').textContent = cur + '  ' + P.M.sizeM.join(' x ') + ' m  -  ' + P.M.desc;
+  }
+  function drawSide() {
+    var P = prep(cur);
+    plan($('top').getContext('2d'), P, VMS[cur].walk.levels[+$('lvl').value || 0]);
+    checks(P);
+  }
+  function select(id) {
+    cur = id; $('model').value = id; setLevels(); drawSide(); drawMain();
+    Array.prototype.forEach.call(document.querySelectorAll('.tile'), function (t) { t.classList.toggle('on', t.dataset.id === id); });
+  }
+  $('model').onchange = function () { select(this.value); };
+  $('lvl').onchange = drawSide;
+  $('yaw').oninput = function () { yaw = +this.value; drawMain(); };
+  ['cel', 'laz', 'lel', 'c3d'].forEach(function (k) { $(k).oninput = drawMain; $(k).onchange = drawMain; });
+  // gallery
+  ids.forEach(function (id) {
+    var d = document.createElement('div'), c = document.createElement('canvas'), cap = document.createElement('div');
+    c.width = 300; c.height = 220; c.className = 'tile'; c.dataset.id = id; cap.className = 'cap'; cap.textContent = id + '  ' + VMS[id].sizeM.join(' x ') + ' m';
+    d.appendChild(c); d.appendChild(cap); $('gallery').appendChild(d);
+    c.onclick = function () { select(id); window.scrollTo(0, 0); };
+    setTimeout(function () { var o = opts(false); o.yaw = 35; render(c.getContext('2d'), prep(id), o); }, 30);
+  });
+  select(cur);
+  function tick(ts) {
+    if ($('turn').checked && ts - last > 90) { yaw = (yaw + 4) % 360; $('yaw').value = Math.round(yaw); drawMain(); last = ts; }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+  // optional: the engine's own format validator (needs http, ES modules)
+  if (location.protocol.indexOf('http') === 0) {
+    import('../../engine/voxel/VoxelModel.js').then(function (m) { ENGINE = m; drawSide(); }).catch(function () {});
+  }
+})();
+</script>
+</body>
+</html>

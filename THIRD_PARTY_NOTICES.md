@@ -34,6 +34,10 @@ The 2026-10-07 audit in `docs/licences.md` and per-file `docs/licence-inventory.
 - Licence: **CC0 1.0** (public domain), see `design/meshes/quaternius/License_Standard.txt`. Author: Quaternius (quaternius.com). Credit appreciated, not required. D-041.
 - Source: [Quaternius Stylized Nature MegaKit](https://quaternius.com/packs/stylizednaturemegakit.html). Commercial use and redistribution permitted by CC0 for the identified Standard inputs and derivatives.
 
+## Quaternius - Medieval Village MegaKit [Standard] (CC0)
+- Files: 34 derived `.mesh.json`/`.mesh.bin` props and modular pieces (crate, wagon, fences, stairs, floors, roof parts, doors, shutters ...) **committed** in `content/meshes/quaternius/` (converted via `tools/gltf-import.mjs`; list in `docs/test-reports/import-medieval-2026-10-10.md`). The 198-model source pack (glTF + textures) stays owner-local and untracked.
+- Licence: **CC0 1.0** (public domain), per the pack's `License_Standard.txt`. Author: Quaternius (quaternius.com). Credit appreciated, not required.
+
 ## Kenney - Nature Kit 2.1 (CC0)
 - Files: the 329 Collada `.dae` models, **committed** in `design/meshes/kenney/dae/` (~8 MB) for the TREES-LP-a importer; the rest of the zip stays in git-ignored `design/meshes/source/kenney_nature-kit/`.
 - Licence: **CC0 1.0** (public domain), see `design/meshes/kenney/License.txt`. Author: Kenney (kenney.nl). D-042 item 4.
@@ -48,3 +52,6 @@ The 2026-10-07 audit in `docs/licences.md` and per-file `docs/licence-inventory.
 - Licence: **CC0 1.0** (public domain), each pack's `License.txt` / `License_Standard.txt` (the Fantasy Props one is the free Standard tier, a subset of the paid PRO kit). Author: Quaternius (quaternius.com). Credit appreciated, not required.
 - Source: quaternius.com packs (Textured Stylized Trees, Ultimate Stylized Nature, Fantasy Props MegaKit).
 
+
+## Intro slideshow stills
+content/intro/*.ascii.json are converted from images the project owner generated with ChatGPT (OpenAI). No third-party artwork.

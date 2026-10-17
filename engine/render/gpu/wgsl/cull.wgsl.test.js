@@ -221,7 +221,7 @@ import { instanceOccluded } from '../../../mesh/occlusion.js';
   assert.equal(F('rangeCount1'), 43);
   const want = { vp: 44, fwd: 60, hzbOn: 64, hzbW: 65, hzbH: 66, hzbLevels: 67, hzbPitch: 68, phase: 69, slot2: 70, slot3: 71 };
   for (const k of Object.keys(want)) assert.equal(F(k), want[k], 'CullU.' + k);
-  assert.equal(CULL_BLOCK.sizeBytes, 72 * 4, 'CullU = 72 words (288 B), 16 B aligned');
+  assert.equal(CULL_BLOCK.sizeBytes, 76 * 4, 'CullU = 73 words padded to 76 (304 B, R6c part 2: impM appended after slot3), 16 B aligned');
   assert.ok(/@group\(0\) @binding\(5\) var<storage, read> hzb: array<f32>;/.test(CULL_WGSL));
   assert.ok(/@group\(0\) @binding\(6\) var<storage, read_write> occl: array<u32>;/.test(CULL_WGSL));
   assert.ok(/occl\[i\] = 1u \| \(lod << 1u\)/.test(CULL_WGSL) && /if \(occOn\) \{ occl\[i\] = 0u; \}/.test(CULL_WGSL), 'pending word + clear only when hzbOn');
@@ -275,9 +275,10 @@ import { instanceOccluded } from '../../../mesh/occlusion.js';
   const rect = { x: 0, y: 0, z: 0, w: 0 };
   const compileAll = (code0, ctx) => {
     const code = code0.replace(/atomicAdd\(&args\[([^\]]+)\], 1u\)/g, 'atomicAdd(args, $1, 1u)'); // pointer-to-element -> (array, index) shim
-    const base = { ...ctx, rect, STRIDE: INSTANCE_STRIDE, ARGS_WORDS: CULL_ARGS_WORDS, ceil: Math.ceil, atomicAdd: (a, i, v) => { const o = a[i]; a[i] = o + v; return o; } };
+    // R6c part 2: CullU.impM (0 = off) + IMP_BAND_M for impMeshBits; fixtures built before the field existed default to off
+    const base = { ...ctx, u: { impM: 0, ...ctx.u }, IMP_BAND_M: 8, rect, STRIDE: INSTANCE_STRIDE, ARGS_WORDS: CULL_ARGS_WORDS, ceil: Math.ceil, atomicAdd: (a, i, v) => { const o = a[i]; a[i] = o + v; return o; } };
     const fns = {};
-    for (const n of ['aabbOutside', 'pickLod', 'bandFrac', 'ditherBits', 'distOut', 'occProject', 'occNear', 'occTest', 'instOccluded', 'emit']) fns[n] = compileFn(code, n, { ...base, ...fns });
+    for (const n of ['aabbOutside', 'pickLod', 'bandFrac', 'ditherBits', 'distOut', 'occProject', 'occNear', 'occTest', 'instOccluded', 'impMeshBits', 'emit']) fns[n] = compileFn(code, n, { ...base, ...fns });
     return { fns, cs: compileFn(code, 'cs_main', { ...base, ...fns }) };
   };
   for (const [w, h, pitch, pad] of [[157, 61, 192, 0], [157, 61, 157, 1.5], [9, 3, 12, 0], [5, 1, 5, 0], [64, 1, 64, 0], [1, 1, 1, 0]]) {
@@ -368,6 +369,11 @@ import { instanceOccluded } from '../../../mesh/occlusion.js';
       const exp = baseRows[l].filter((k) => pend.has(idOf(k)) && !freshOcc.has(idOf(k)));
       assert.deepEqual(got, exp, `phase 2 LOD${l} rows == pending minus still-occluded (stored lod, band copies, dither bits)`);
       for (let r = 0; r < rc; r++) assert.equal(b.args[slot + r * CULL_ARGS_WORDS + 1], got.length, `phase 2 LOD${l} range ${r} instanceCount`);
+    }
+    // OCCL-STATS-01b: after phase 2 rescued rows have occl word 0; remaining bit-0 count == brute-force still-occluded
+    {
+      let left = 0; for (let i = 0; i < N; i++) { const id = 1000 + i; if (pend.has(id)) { if (freshOcc.has(id)) { assert.equal(occl[i] & 1, 1, 'still occluded keeps bit 0: ' + id); left++; } else assert.equal(occl[i], 0, 'rescued row cleared: ' + id); } else assert.equal(occl[i], 0, 'non-pending row 0: ' + id); }
+      assert.equal(left, freshOcc.size, 'occl counter == brute-force occluded');
     }
     // union of both phases = baseline minus still-occluded: nothing wrongly culled
     for (let l = 0; l < 2; l++) {

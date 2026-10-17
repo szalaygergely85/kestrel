@@ -30,7 +30,7 @@ const table = { idFor(key) { if (!idMap.has(key)) idMap.set(key, nextId++); retu
 
 // ---- bind() ----------------------------------------------------------------
 const pool = new VoxelPool();
-ok('default renderer is mesh with 48 slots', pool.renderer === 'mesh' && pool.cap === MAX_VOX_INSTANCES_MESH);
+ok('default renderer is mesh with 128 slots', pool.renderer === 'mesh' && pool.cap === MAX_VOX_INSTANCES_MESH);
 pool.renderer = 'dda'; // Existing 16-slot caster oracle fixture, until ME-19b.
 pool.bind(registry, table);
 ok('bind: packs voxel models only', pool.models.has('bear') && !pool.models.has('notVoxel'));
@@ -74,6 +74,19 @@ pool.beginFrame();
 pool.pushInstance('bear', 3, 0, 2, 0);
 pool.project(cam, rt);
 ok('pool keeps the instance castModels draws (no cull disagreement)', pool.list.length === 1);
+
+// ---- 38.23 objectIdFor(entity): 0x8000 | compact slot, -1 when no slot ----
+{
+  const entA = { id: 1, transform: { x: 3, y: 0, z: 2, yawDeg: 0 }, components: { voxel: { model: 'bear' } } };
+  const entB = { id: 2, transform: { x: 3, y: -500, z: 2, yawDeg: 0 }, components: { voxel: { model: 'bear' } } };
+  const entC = { id: 3, transform: { x: 3, y: 1, z: 2, yawDeg: 0 }, components: { voxel: { model: 'bear' } } };
+  pool.beginFrame();
+  pool._queueEntity(entA); pool._queueEntity(entB); pool._queueEntity(entC);
+  pool.project(cam, rt);
+  ok('objectIdFor: slot = queue/compact index', pool.objectIdFor(entA) === (0x8000 | 0) && pool.objectIdFor(entB) === (0x8000 | 1) && pool.objectIdFor(entC) === (0x8000 | 2) && pool.objectIdFor({}) === -1);
+  pool.beginFrame(); pool.pushInstance('bear', 3, 0, 2, 0); pool.project(cam, rt);
+  ok('objectIdFor: harness instance has no entity; stale entity -> -1', pool.objectIdFor(entA) === -1);
+}
 
 // ---- zero allocation on repeated pushInstance/project once warm -----------
 pool.beginFrame();
@@ -200,6 +213,38 @@ if (global.gc) {
   const hiddenYsSorted = hiddenYs.slice().sort((a, b) => a - b);
   ok('US-079b0 collect (nearest-16): its freed slot goes to the next visible entity (y=16)',
     JSON.stringify(hiddenYsSorted) === JSON.stringify([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]), hiddenYsSorted.join(','));
+
+  // GOB-INVIS: isQueued(entity) = drawn set (hidden, cut by the cap, unknown model -> false)
+  const eHid = ents.get('hidden0'), eNear = ents.get('e1');
+  ok('GOB-INVIS isQueued: hidden entity false, queued entity true', poolH.isQueued(eHid) === false && poolH.isQueued(eNear) === true);
+  const cut = { components: { voxel: { model: 'bear' } }, transform: { x: 0, y: 99, z: 0, yawDeg: 0 } };
+  const unk = { components: { voxel: { model: 'nope_model' } }, transform: { x: 0, y: 0.1, z: 0, yawDeg: 0 } };
+  ents.set('cut', cut); ents.set('unk', unk); (fakeWorld(ents)).renderVersion = 2;
+  const w2 = fakeWorld(ents); w2.renderVersion = 2; poolH.collect(w2, camH);
+  ok('GOB-INVIS isQueued: cut by cap false, unknown model false', poolH.isQueued(cut) === false && poolH.isQueued(unk) === false);
+
+  // Arch batch 2026-10-17 (3/4/8): per-pool hysteresis stamp + O(1) isQueued
+  const hw = new Map();
+  for (let i = 0; i < 20; i++) hw.set(`h${i}`, { components: { voxel: { model: 'bear', frame: 0, t: 0 } }, transform: { x: (i % 2) * 0.01, y: 1 + i * 0.5, z: 0, yawDeg: 0 } });
+  const mkPool = () => { const p = new VoxelPool(); p.renderer = 'dda'; p.bind(registry, table); return p; };
+  const cams = [0, 0.3, -0.2, 0.45, 0.1, -0.4, 0.25].map((y) => ({ x: 0, y, z: 0 }));
+  const selOf = (p) => { const r = []; for (let i = 0; i < p._rawCount; i++) r.push(p.raw[i].y); return r.sort((u, v) => u - v).join(','); };
+  const pa = mkPool(), pb = mkPool(), pc = mkPool(), wa = fakeWorld(hw);
+  const alone = [], mixed = [];
+  for (const c of cams) { pa.collect(wa, c); alone.push(selOf(pa)); }
+  for (let k = 0; k < cams.length; k++) { pb.collect(wa, cams[k]); mixed.push(selOf(pb)); pc.collect(wa, cams[(k * 3 + 5) % cams.length]); } // pc fights over the same entities
+  ok('pool hysteresis independent: pool selection identical with a second pool on the same world', JSON.stringify(alone) === JSON.stringify(mixed));
+  let qOk = true;
+  for (const e of hw.values()) { let scan = false; for (let i = 0; i < pc._rawCount; i++) if (pc.raw[i].entity === e) scan = true; if (pc.isQueued(e) !== scan) qOk = false; }
+  ok('isQueued O(1) equals the raw-list scan on the fixture', qOk && pc.isQueued(hw.get('h0')) && !pc.isQueued(hw.get('h19')));
+  pc.beginFrame(); ok('isQueued false after beginFrame (nothing queued)', !pc.isQueued(hw.get('h0')));
+  if (typeof globalThis.gc === 'function') {
+    for (let i = 0; i < 300; i++) pa.collect(wa, cams[i % cams.length]);
+    gc(); gc(); const h0 = process.memoryUsage().heapUsed;
+    for (let i = 0; i < 3000; i++) { pa.collect(wa, cams[i % cams.length]); pa.isQueued(hw.get('h3')); }
+    gc(); gc(); const grow = process.memoryUsage().heapUsed - h0;
+    ok('collect + isQueued 0 alloc per frame', grow < 100000, String(grow));
+  }
 }
 
 // ---- ME-22 (28.12 item 4): meshOnly router - dda never receives a mesh-
@@ -261,35 +306,37 @@ if (global.gc) {
 // VOX-CAP-01: mesh selection, cap switches and constructor-owned storage.
 {
   const p = new VoxelPool(); p.renderer = 'mesh'; p.bind(registry, table);
-  const entities = Array.from({ length: 60 }, (_, i) => ({
+  const N0 = MAX_VOX_INSTANCES_MESH + 12; // OB-192: cap-relative
+  const entities = Array.from({ length: N0 }, (_, i) => ({
     components: { voxel: { model: 'bear' } },
-    transform: { x: 0, y: -(60 - i), z: 0, yawDeg: 0 },
+    transform: { x: 0, y: -(N0 - i), z: 0, yawDeg: 0 },
   }));
   const w = { renderVersion: 1, forEachEntity(fn) { for (const e of entities) fn(e); } };
   const c = { x: 0, y: 1, z: 1, yawDeg: 0, pitchDeg: 0 };
   const refs = { raw: p.raw.slice(), slots: p._slots.slice(), shadows: p._shadowSlots.slice(), idx: p._nearIdx, dist: p._nearDist };
-  ok('mesh cap is public and scratch is preallocated for 48', MAX_VOX_INSTANCES_MESH === 48 && p.cap === 48 && p.raw.length === 48 && p._slots.length === 48 && p._shadowSlots.length === 48);
+  ok('mesh cap is public and scratch is preallocated for 128', MAX_VOX_INSTANCES_MESH === 128 && p.cap === 128 && p.raw.length === 128 && p._slots.length === 128 && p._shadowSlots.length === 128);
   entities.length = 30;
   p.collect(w, c);
   ok('mesh queues all 30 in unchanged entity order below cap', p._rawCount === 30 && p.raw.slice(0, 30).every((r, i) => r.y === entities[i].transform.y));
   p.project(c, rt);
   ok('mesh projects all 30 visible props', p.list.length === 30 && p.stats.count === 30);
   ok('mesh shadows include all 30', p.projectShadow() === 30);
-  for (let i = 30; i < 60; i++) entities.push({ components: { voxel: { model: 'bear' } }, transform: { x: 0, y: -(60 - i), z: 0 } });
+  const M = MAX_VOX_INSTANCES_MESH, N = M + 12; // OB-192: cap-relative (was a literal 48 / 60)
+  for (let i = 30; i < N; i++) entities.push({ components: { voxel: { model: 'bear' } }, transform: { x: 0, y: -(N - i), z: 0 } });
   w.renderVersion++;
   const warnings = [], saveWarn = console.warn;
   console.warn = msg => warnings.push(msg);
   try { p.collect(w, c); p.collect(w, c); } finally { console.warn = saveWarn; }
-  ok('60 entities choose nearest 48 in increasing distance order', p._rawCount === 48 && p.raw.every((r, i) => r.y === -(i + 1)));
-  ok('overflow warning fires once and names 48', warnings.length === 1 && warnings[0].includes('(48)'));
+  ok(`${N} entities choose nearest ${M} in increasing distance order`, p._rawCount === M && p.raw.every((r, i) => r.y === -(i + 1)));
+  ok(`overflow warning fires once and names ${M}`, warnings.length === 1 && warnings[0].includes(`(${M})`));
   p.project(c, rt);
-  ok('mesh projects and shadows the full 48 cap', p.list.length === 48 && p.projectShadow() === 48);
+  ok(`mesh projects and shadows the full ${M} cap`, p.list.length === M && p.projectShadow() === M);
   // Switching back is covered by the existing frozen-path suites; here verify
   // renderer assignment updates only the cap, retaining every scratch record.
   p.renderer = 'dda';
   ok('renderer switch updates cap immediately', p.cap === 16);
   p.renderer = 'mesh';
-  entities.length = 48; w.renderVersion++;
+  entities.length = M; w.renderVersion++;
   p.collect(w, c); p.project(c, rt); p.projectShadow();
   let growth = 0;
   if (global.gc) {
@@ -302,15 +349,99 @@ if (global.gc) {
       global.gc(); const delta = process.memoryUsage().heapUsed - before;
       growth = trial === 0 ? delta : Math.min(growth, delta);
     }
-    ok('1000 frames at 48 including renderer switches grow heap <64KB', growth < 65536, String(growth));
+    ok(`1000 frames at ${M} including renderer switches grow heap <64KB`, growth < 65536, String(growth));
     console.log(`[VOX-CAP-01] heap growth ${growth} bytes`);
   }
   p.beginFrame(); p.pushInstance('bear', 0, -1, 0, 0); p.project(c, rt); p.projectShadow();
   p.collect(w, c); p.project(c, rt); p.projectShadow();
   ok('shrink/regrow and switches reuse all raw/project/shadow records', p.raw.every((r, i) => r === refs.raw[i]) && p.list.every((r, i) => r === refs.slots[i]) && p.shadowList.every((r, i) => r === refs.shadows[i]) && p._nearIdx === refs.idx && p._nearDist === refs.dist);
-  p.beginFrame(); for (let i = 0; i < 48; i++) p.pushInstance('bear', 0, -i - 1, 0, 0);
-  ok('mesh pushInstance accepts all 48', p._rawCount === 48);
+  p.beginFrame(); for (let i = 0; i < M; i++) p.pushInstance('bear', 0, -i - 1, 0, 0);
+  ok(`mesh pushInstance accepts all ${M}`, p._rawCount === M);
   p.project(c, rt);
+}
+
+// FIX-BROWSER-3 nit: reserve >= cap clamps the entity cap to 0 (never negative)
+{
+  const p = new VoxelPool(); p.renderer = 'mesh'; p.bind(registry, table); p.reserve = p.cap + 10;
+  const ents = [{ components: { voxel: { model: 'bear' } }, transform: { x: 0, y: -3, z: 0, yawDeg: 0 } }];
+  const w = { renderVersion: 1, forEachEntity(fn) { for (const e of ents) fn(e); } };
+  const warn0 = console.warn; console.warn = () => {};
+  let threw = false; try { p.collect(w, { x: 0, y: 1, z: 1, yawDeg: 0, pitchDeg: 0 }); } catch (_) { threw = true; }
+  console.warn = warn0;
+  ok('reserve > cap: no throw, no entity queued, no negative cap', !threw && p._rawCount === 0);
+}
+
+
+// ---- VOX-PRIO-01 (OB-171): priority tier beats distance; hidden still wins ----
+{
+  const fakeWorld = (entities) => ({ renderVersion: 1, forEachEntity(fn) { for (const [id, e] of entities) fn(e, id); } });
+  const pool = new VoxelPool(); pool.renderer = 'dda';
+  pool.bind(registry, table);
+  const m = new Map();
+  for (let i = 0; i < 60; i++) m.set(`e${i}`, { components: { voxel: { model: 'bear', frame: 0, t: 0, playing: true } }, transform: { x: 0, y: i, z: 0, yawDeg: 0 } });
+  m.get('e54').components.voxel.priority = 2; // 55th by distance
+  m.set('hid', { components: { voxel: { model: 'bear', hidden: true, priority: 3 } }, transform: { x: 0, y: 0.1, z: 0, yawDeg: 0 } });
+  pool.collect(fakeWorld(m), { x: 0, y: 0, z: 0 });
+  const ys = []; for (let i = 0; i < pool._rawCount; i++) ys.push(pool.raw[i].y);
+  ok('VOX-PRIO-01: marker ranked 55th (priority 2) still renders, cap respected', ys.includes(54) && pool._rawCount === 16, ys.join(','));
+  ok('VOX-PRIO-01: hidden flag beats priority', !ys.includes(0.1));
+  ok('VOX-PRIO-01: remaining slots are the nearest', ys.filter((y) => y !== 54).sort((a, b) => a - b).join() === '0,1,2,3,4,5,6,7,8,9,10,11,12,13,14', ys.join(','));
+}
+
+// ---- RF17-11 (OB-171): 218 entities; tier-1 within 40 m first, far props last, stable under jitter, 0 alloc ----
+{
+  const pool = new VoxelPool(); pool.renderer = 'dda'; pool.bind(registry, table); pool.prioRange = 40; // opt-in range (default Infinity: quest givers stay drawn far away)
+  const cap = Math.max(0, pool.cap - pool.reserve);
+  const m = new Map(); const npcX = [];
+  for (let i = 0; i < 8; i++) { const x = 30 + i; npcX.push(x); m.set(`n${i}`, { components: { voxel: { model: 'bear', priority: 1 } }, transform: { x, y: 0, z: 0, yawDeg: 0 } }); }
+  m.set('farnpc', { components: { voxel: { model: 'bear', priority: 1 } }, transform: { x: 90, y: 0, z: 0, yawDeg: 0 } });
+  for (let i = 0; i < 209; i++) m.set(`p${i}`, { components: { voxel: { model: 'bear' } }, transform: { x: i < 100 ? 1 + i * 0.1 : 50 + i, y: 0, z: 5, yawDeg: 0 } });
+  // two props at exactly equal distance (tie) to test flip-flop
+  const world = { renderVersion: 1, forEachEntity(fn) { for (const [id, e] of m) fn(e, id); } };
+  const cam = { x: 0, y: 0, z: 0 };
+  const set = () => { const a = []; for (let i = 0; i < pool._rawCount; i++) a.push(pool.raw[i].x + ',' + pool.raw[i].z); return a.sort().join(';'); };
+  const warn0 = console.warn; console.warn = () => {};
+  pool.collect(world, cam);
+  const xs = []; for (let i = 0; i < pool._rawCount; i++) xs.push(pool.raw[i].x);
+  ok('RF17-11: 218 entities, cap respected', m.size === 218 && pool._rawCount === cap, `${m.size} ${pool._rawCount} ${cap}`);
+  ok('RF17-11: every tier-1 entity within 40 m collected', npcX.every((x) => xs.includes(x)), xs.join());
+  ok('RF17-11: tier-1 entity at 90 m is demoted (not kept over near props)', !xs.includes(90));
+  ok('RF17-11: far props dropped first', xs.every((x) => x < 40 || x === 90 ? true : false) && !xs.some((x) => x > 100));
+  let stable = true; const s0 = set();
+  for (let f = 0; f < 50; f++) {
+    pool.collect(world, { x: (f % 2 ? 0.02 : -0.02), y: 0, z: (f % 3) * 0.01 });
+    if (set() !== s0) stable = false;
+  }
+  ok('RF17-11: same set on consecutive frames under tiny camera jitter', stable);
+  if (global.gc) {
+    global.gc(); const before = process.memoryUsage().heapUsed;
+    for (let f = 0; f < 300; f++) pool.collect(world, { x: (f % 2) * 0.02, y: 0, z: 0 });
+    global.gc(); const after = process.memoryUsage().heapUsed;
+    ok('RF17-11: zero-alloc over 300 over-cap collect() frames', after - before < 200000, `${after - before}`);
+  }
+  console.warn = warn0;
+}
+
+// PERF-02: projectShadow copies project()'s pose of the same frame (no re-pose) and stays bit-identical to a fresh pose.
+{
+  const mk = () => { const q = new VoxelPool(); q.renderer = 'mesh'; q.bind(registry, table); return q; };
+  const feed = (q) => { q.beginFrame(); for (let i = 0; i < 8; i++) { const r = q.pushInstance('bear', i * 0.7 - 2, 1.5 + (i % 3), 0.1 * i, i * 37, i % 2 ? 0 : -1, i, i * 41); if (i === 3) q.blendInstance(r, -1, 0, 0, 0.4); } };
+  const a = mk(), b = mk(), c = { x: 0, y: -2, z: 1.2, yawDeg: 0, pitchDeg: -10 };
+  feed(a); a.project(c, rt); const posed = a._slots.slice(0, a.list.length).map((s) => s.pose.slice());
+  a.projectShadow();
+  feed(b); b.projectShadow(); // no project() this frame: posed from scratch
+  let same = a.shadowList.length === b.shadowList.length && a.list.length > 0, reused = 0;
+  for (let i = 0; i < a.shadowList.length; i++) {
+    const x = a.shadowList[i], y = b.shadowList[i];
+    for (let k = 0; k < x.pose.length; k++) if (!Object.is(x.pose[k], y.pose[k])) same = false;
+    for (let k = 0; k < x.fwd.length; k++) if (!Object.is(x.fwd[k], y.fwd[k])) same = false;
+    for (const f of ['minX', 'minY', 'minZ', 'maxX', 'maxY', 'maxZ']) if (!Object.is(x.rect[f], y.rect[f])) same = false;
+    if (a._projSlotOf[i] >= 0) reused++;
+  }
+  ok('PERF-02 projectShadow after project: pose/fwd/AABB bit-identical to a fresh pose', same && reused > 0, `reused ${reused}`);
+  ok('PERF-02 project slots untouched by projectShadow', a._slots.slice(0, a.list.length).every((s, i) => s.pose.every((v, k) => Object.is(v, posed[i][k]))));
+  a.legInstance(0, null); ok('PERF-02 a queue change after project() disables the reuse', a._projEpoch !== a._epoch);
+  feed(a); ok('PERF-02 next frame: stale project() slots are not reused', a._projEpoch !== a._epoch);
 }
 
 console.log(`${pass} pass, ${fail} fail`);

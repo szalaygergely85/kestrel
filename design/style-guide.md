@@ -2,6 +2,15 @@
 
 Owner: Designer. Data formats: `design/README.md`. Colors, ramps and materials: `design/palette.js`. Preview: `design/preview/palette.html`.
 
+## 0. Owner art rules (binding, owner 2026-10-09) - read BEFORE modelling anything
+Models are expensive; a model made against these rules gets redone. Check every new model, clip and effect against this list first.
+1. **Realistic things, built from squares.** Realistic anatomy, proportions and posture, made of voxels. Not cartoony, chibi or anthropomorphic. Use real reference (animal and hand anatomy).
+2. **Animals stay natural.** Four-legged animals stand and move on all four legs in every clip, talking NPCs included (they talk with head, jaw and ears, not by standing up). Example: Burl the bear v1 was upright and was rejected.
+3. **No boxy look.** No flat cube faces readable at 3-6 m: round the body, head, limbs and paws with chamfers and tapered slices, and vary the colour naturally (fur, skin).
+4. **The first-person hand is realistic**: knuckles, tendons, finger joints, a natural thumb, skin variation. The fire burns around the hand ALL THE TIME; closing the hand (fist) charges.
+5. **UI text: never print "Esc to close" / "[Esc] close" / "Esc: leave"** hints. Esc may close; it is just not written.
+6. When unsure about pose or style, make one small preview first and ask the owner before building the full model and all clips.
+
 ## 1. Order of importance
 From GDD pillar 4, the same order decides every art call:
 1. **Silhouette**: can you tell what the shape is from its outline alone?
@@ -136,6 +145,8 @@ Once the engine supports v2, these rules apply:
 - **Skin in 4 tones:** `skin_light` (knuckles, finger ridges, tendons), `skin`, `skin_shade` (creases between fingers, palm lines, joint folds), `skin_nail`. Muted warm skin, never pink; the sleeve / wrap stay in linen and leather (<= 3 hue families: skin, fire, cloth).
 - **A burning hand burns all round:** a broken flame shell on every side (dense on the up side, thin under the back of the hand), tongues that climb the fingers, lick out between them and curl round the edges, a white-hot core in the palm, red ragged tips that break away, ember cubes above. Heat walks `ember_core` (white-yellow root) -> `ember_glow` (orange body) -> `flame_tip` (red tip). Skin touching the fire is `skin_glow`; the hand must still read as a hand through the fire (fingers visible between tongues).
 - **Fire life without part clips:** 4 baked flicker frames at 12 fps + the carried light flicker + sim-side embers. Flicker frames differ in tongue placement, not in the hand.
+- **Realistic hand (v1.52, owner rule 0.4):** every finger joint swells and the shaft between narrows; knuckles = lit dome + flushed rim, PIP wrinkles, deep palmar creases; tendons on the back are raised geometry (not just paint), veins muted (`skin_vein`, never blue-teal); palm pads and fingertip pulp warmer (`skin_flush`); tone varies in soft 2-3 cm patches. Deep creases (`skin_deep`) only where skin folds or digits touch.
+- **The fire is always on; fist = charge.** Open hand: flames curl up and in over the hand, a teardrop flame over the palm, heat walks white -> yellow (`flame_mid`) -> orange -> red. Charge: the fist turns knuckles-up and the fire gathers INTO it (white-hot gaps between the fingers, tight bright shell, embers spiralling in); full charge is brighter and tighter, never bigger. Only the hot fire (white / yellow) turns skin to `skin_glow`, so knuckles and tendons stay readable; the always-on fire never chars the nails.
 
 ## 8. Mood target for M1 (the Awakening)
 **D-011 update:** the same room, now the site of the crash. The brazier pool of light is the *Kestrel's* copper burner. The brass gondola with its KESTREL board sits on the floor, torn canvas hangs in the stairwell, and ivy spills in where the crown broke. At the summit a dead relay sits grey until the lamp wakes it: then the scene's first cold teal light appears. Reference picture: `preview/wreckage.html`.

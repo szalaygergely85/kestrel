@@ -2,6 +2,7 @@
 // (numericLiterals sets), and JS-evaluated (wgslProbe) probes vs the JS oracles: waterInside (region shape test of rasterWaterTri: rect half-open,
 // circle inclusive, sheet always) and diamondAngle (waterLook.js). Mutation-checked. Not probed (no vec3/vec4 shim): fs_main bodies, composite glyph/
 // flow/shore/fog math -> compile check + the WG gpucompare water rows. node engine/render/gpu/wgsl/water.wgsl.test.js
+import { WATER_REFLECT } from '../../waterReflect.js';
 import assert from 'node:assert/strict';
 import { WATER_WGSL, WATER_BLOCK, WATER_TEXTURES, WATER_TARGETS } from './water.wgsl.js';
 import { WATER_COMPOSITE_WGSL, WATER_COMPOSITE_BLOCK, WATER_COMPOSITE_TEXTURES, WATER_COMPOSITE_TARGETS } from './waterComposite.wgsl.js';
@@ -10,7 +11,9 @@ import { WATER_FRAG_SRC } from './waterFrag.glslref.js';
 import { WATER_COMPOSITE_FRAG_SRC } from './waterComposite.glslref.js';
 import { WGSL_MODULES } from './index.js';
 import { compileFn, shims, numericLiterals } from './wgslProbe.js';
-import { diamondAngle, WL_SLOTS, WL_STRIDE, WATER_HASH_SALT, WATER_FLOW_SALT, WATER_FALL_SALT, RIPPLE_SLOTS, RIPPLE_ACC_MIN, rippleAccAt } from '../../waterLook.js';
+import { WATER_RIVER_WGSL, WATER_RIVER_VERTEX_LAYOUT, WATER_RIVER_VERTEX_STRIDE_BYTES } from './waterRiver.wgsl.js';
+import { RIVER_VERT_STRIDE, packRiverTexel } from '../../../mesh/waterMesh.js';
+import { diamondAngle, WL_TABLE_SLOTS, WL_SLOTS, WL_STRIDE, WATER_HASH_SALT, WATER_FLOW_SALT, WATER_FALL_SALT, RIPPLE_SLOTS, RIPPLE_ACC_MIN, rippleAccAt } from '../../waterLook.js';
 import { CLOUD_Q_SHIFT as CLOUD_SHIFT } from '../../shadowSun.js'; // S8-B2-12b (38.13)
 import { RIPPLE_SPEED, RIPPLE_W, RIPPLE_LIFE } from '../../../fx/ripples.js'; // S8-B2-13b (38.14, the note of record)
 
@@ -24,19 +27,19 @@ for (const [n, c] of [['water', WATER_WGSL], ['waterComposite', WATER_COMPOSITE_
 // --- water: raster rules + layout ---
 assert.equal((WATER_WGSL.match(/o\.pos\.y = -o\.pos\.y; o\.pos\.z = 0\.5 \* \(o\.pos\.z \+ o\.pos\.w\);/g) || []).length, 2, 'both vertex exits flip y / remap z');
 assert.ok(/fn vs_main\(@location\(0\) aL: vec4f\)/.test(WATER_WGSL) && /@builtin\(front_facing\) front: bool/.test(WATER_WGSL));
-assert.ok(/let vD = select\(1\.0 \/ v\.pos\.w, 0\.05 \+ v\.pos\.z \* \(2000\.0 - 0\.05\), wu\.projMode == 2u\);/.test(WATER_WGSL) && /if \(!\(vD < sceneD\)\) \{ discard;/.test(WATER_WGSL), 'vD = 1/w and strict occluder test');
+assert.ok(/let vD = select\(1\.0 \/ v\.pos\.w, 0\.05 \+ v\.pos\.z \* \(16000\.0 - 0\.05\), wu\.projMode == 2u\);/.test(WATER_WGSL) && /if \(!\(vD < sceneD\)\) \{ discard;/.test(WATER_WGSL), 'vD = 1/w and strict occluder test');
 assert.ok(/let back = select\(1u, 0u, front\);/.test(WATER_WGSL) && /wu\.slot \| \(back << 4u\) \| select\(0u, 32u, wu\.kind == 2\)/.test(WATER_WGSL), 'slot | back << 4 | sheet << 5');
 assert.ok(/packNormalOct\(vec3f\(0\.0, 0\.0, 1\.0\)\)/.test(WATER_WGSL) && /bitcast<u32>\(v\.vArc\)/.test(WATER_WGSL));
 assert.ok(/@group\(0\) @binding\(0\) var uSceneDepth: texture_2d<u32>/.test(WATER_WGSL) && /@group\(1\) @binding\(0\) var<uniform> wu: WaterU/.test(WATER_WGSL));
 assert.deepEqual(WATER_TEXTURES, ['uint']); assert.deepEqual(WATER_TARGETS, ['rgba32uint']);
-assert.deepEqual(['mvp', 'aabb', 'shape', 'z', 'kind', 'slot'].map((n) => WATER_BLOCK.field(n).offset), [0, 64, 80, 96, 100, 104]);
-assert.equal(WATER_BLOCK.sizeBytes, 112);
+assert.deepEqual(['mvp', 'aabb', 'shape', 'z', 'kind', 'slot', 'projMode', 'clipK0', 'clipK1', 'clip0', 'clip1'].map((n) => WATER_BLOCK.field(n).offset), [0, 64, 80, 96, 100, 104, 108, 112, 116, 128, 144], 'RIVER-03: clip fields appended, earlier offsets unchanged');
+assert.equal(WATER_BLOCK.sizeBytes, 160);
 // constants / ops parity with GLSL (water.vert + water.frag bodies)
 const glslWater = WATER_VERT_SRC.slice(WATER_VERT_SRC.indexOf('void main')) + WATER_FRAG_SRC.slice(WATER_FRAG_SRC.indexOf('void main'));
 const wgslWater = WATER_WGSL.slice(WATER_WGSL.indexOf('@vertex'));
 const litEq = (a, b, what) => assert.deepEqual([...numericLiterals(a)].sort((x, y) => x - y), [...numericLiterals(b)].sort((x, y) => x - y), what);
 // WGSL adds the y/z raster remap (0.5) the GLSL does not have
-const gW = numericLiterals(glslWater), wW = numericLiterals(wgslWater); wW.delete(0.5); wW.delete(0.05); wW.delete(2000); // + 38.19 ortho linear-z near/far (WGSL only)
+const gW = numericLiterals(glslWater), wW = numericLiterals(wgslWater); wW.delete(0.5); wW.delete(0.05); wW.delete(16000); // + 38.19 ortho linear-z near/far (WGSL only)
 assert.deepEqual([...gW].sort((x, y) => x - y), [...wW].sort((x, y) => x - y), 'water literals');
 assert.ok(WATER_FRAG_SRC.includes('inside = vL.x >= uShape.x && vL.x < uShape.z && vL.y >= uShape.y && vL.y < uShape.w;'));
 
@@ -76,8 +79,8 @@ assert.deepEqual(['gridCols', 'sunMapOn', 'projMode', 'sunDir', 'ambientI', 'sun
   [0, 8, 12, 16, 28, 32, 36, 48, 64, 72, 76, 80, 96, 112, 128, 128 + WL_SLOTS * WL_STRIDE * 4, 128 + (WL_SLOTS * WL_STRIDE + 5 * 4) * 4, 128 + (WL_SLOTS * WL_STRIDE + 5 * 4) * 4 + 4, 128 + (WL_SLOTS * WL_STRIDE + 5 * 4) * 4 + 16]);
 assert.equal(C.field('wl').count, WL_SLOTS * (WL_STRIDE / 4)); assert.equal(C.field('wfog').count, 5);
 assert.equal(C.field('ripple').count, RIPPLE_SLOTS); // S8-B2-13b (38.14): 8 vec4 rings, appended after rippleGlyph/rippleGain + 2 pad words
-assert.equal(C.field('ripple').offset, 2912);
-assert.equal(C.sizeBytes, 128 + (WL_SLOTS * (WL_STRIDE / 4) + 5) * 16 + 16 + RIPPLE_SLOTS * 16); // 3040 B (was 3024)
+assert.equal(C.field('ripple').offset, 128 + (WL_SLOTS * WL_STRIDE + 5 * 4) * 4 + 16);
+assert.equal(C.sizeBytes, 128 + (WL_SLOTS * (WL_STRIDE / 4) + 5) * 16 + 16 + RIPPLE_SLOTS * 16 + 16 + 32 * 16 + 28 * 16); // WATER-FINISH-01b: + fin (14 slots x 2 vec4) = 4464 B; was 4016 B (AUD-42: + reflectU vec4 + 32-sample sky LUT; was 3040)
 assert.deepEqual(WATER_COMPOSITE_TEXTURES, ['float', 'float', 'uint', 'uint', 'uint', 'uint']);
 assert.deepEqual(WATER_COMPOSITE_TARGETS, ['rgba8', 'rgba8']);
 const kinds = { float: 'texture_2d<f32>', uint: 'texture_2d<u32>' };
@@ -91,8 +94,10 @@ assert.ok(/if \(w\.x == 0x7f800000u\) \{ return o; \}/.test(WATER_COMPOSITE_WGSL
 const glslC = WATER_COMPOSITE_FRAG_SRC.slice(WATER_COMPOSITE_FRAG_SRC.indexOf('// US-141a'));
 const wgslC = WATER_COMPOSITE_WGSL.slice(WATER_COMPOSITE_WGSL.indexOf('// diamond angle'));
 const gC = numericLiterals(glslC), wC = numericLiterals(wgslC);
+wC.delete(64); wC.delete(0.001); // RIVER-03 (38.45): ribbon flag bit + e*1000 decode, no GLSL equivalent (GLSL frozen, D-044)
 wC.delete(24); // S8-B2-12b (38.13): CLOUD_SHIFT, the cloud-darkening byte's bit shift - no GLSL equivalent (GLSL frozen, D-044)
 for (const v of [RIPPLE_SPEED, RIPPLE_W]) wC.delete(v); // S8-B2-13b (38.14): ripple-only constants (2, 0.2, 255 are already required by unrelated GLSL text), no GLSL equivalent (GLSL frozen, D-044)
+wC.delete(0.000001); for (const v of [WATER_REFLECT.f0, WATER_REFLECT.skyMix, WATER_REFLECT.darken, WATER_REFLECT.skyFloor]) wC.delete(v); // AUD-42: reflection-only constants (GLSL frozen, D-044)
 assert.deepEqual([...gC].filter((v) => !wC.has(v)), [], 'GLSL constants missing in WGSL');
 assert.deepEqual([...wC].filter((v) => !gC.has(v)), [], 'WGSL constants not in GLSL');
 
@@ -101,12 +106,12 @@ assert.ok(numericLiterals(wgslC.replaceAll('0.4794', '0.4795')).has(0.4795) && !
 // --- ripples (S8-B2-13b, 38.14, the note of record): WGSL ring-loop twin probe vs waterLook.rippleAccAt + mutation ---
 {
   const rStart = WATER_COMPOSITE_WGSL.indexOf('var acc: f32 = 0.0;');
-  const rEnd = WATER_COMPOSITE_WGSL.indexOf('if (acc >= ', rStart);
+  const rEnd = WATER_COMPOSITE_WGSL.indexOf('return acc;', rStart); // WATER-FINISH-01b: the loop now lives in fn rippleAccAt(px, py)
   assert.ok(rStart > 0 && rEnd > rStart, 'ripple ring loop text found');
   const build = (transform) => {
     let loopText = WATER_COMPOSITE_WGSL.slice(rStart, rEnd).replace('wu.rippleCount', 'cnt').replace('wu.ripple[ri]', 'rip[ri]');
     if (transform) loopText = transform(loopText);
-    const probeSrc = `alias Ring8 = array<vec4f, ${RIPPLE_SLOTS}>;\nfn rippleProbe(cnt: i32, rip: Ring8, P: vec3f) -> f32 {\n${loopText}\nreturn acc;\n}`;
+    const probeSrc = `alias Ring8 = array<vec4f, ${RIPPLE_SLOTS}>;\nfn rippleProbe(cnt: i32, rip: Ring8, P: vec3f) -> f32 {\nlet px = P.x; let py = P.y;\n${loopText}\nreturn acc;\n}`;
     return compileFn(probeSrc, 'rippleProbe', shims);
   };
   const f = build();
@@ -170,4 +175,31 @@ const mutC = (a, b) => { assert.ok(WATER_COMPOSITE_WGSL.includes(a), 'anchor ' +
 assert.ok(runDiamond(mutC('4.0 + p', '4.0 - p'), 3000) > 0, 'mutation: third quadrant');
 assert.ok(runDiamond(mutC('2.0 - p', '2.0 + p'), 3000) > 0, 'mutation: left half');
 assert.ok(runDiamond(mutC('d < 1.0e-9', 'd < 0.5'), 3000) > 0, 'mutation: epsilon');
+// --- RIVER-03 (38.45): ribbon shader + composite river branch vs the JS twin layout ---
+{
+  assert.ok(WGSL_MODULES.some((m) => m.name === 'waterRiver' && m.code === WATER_RIVER_WGSL), 'registered waterRiver');
+  assert.ok(!BAD.test(WATER_RIVER_WGSL), 'no raw % / GLSL names in waterRiver');
+  assert.equal(WL_SLOTS, 14); assert.equal(WL_TABLE_SLOTS, WL_SLOTS, 'GPU look table holds the 2 river slots');
+  assert.equal(WATER_RIVER_VERTEX_STRIDE_BYTES, RIVER_VERT_STRIDE * 4, 'ribbon vertex = 8 floats');
+  assert.deepEqual(WATER_RIVER_VERTEX_LAYOUT.map((a) => [a.location, a.components, a.offsetBytes]), [[0, 4, 0], [1, 4, 16]], 'aL = lx,ly,z,tau; aB = e,nx,ny,rapid');
+  assert.ok(/fn vs_main\(@location\(0\) aL: vec4f, @location\(1\) aB: vec4f\)/.test(WATER_RIVER_WGSL));
+  assert.ok(/o\.vT = vec3f\(aL\.w, aB\.x, aB\.w\);/.test(WATER_RIVER_WGSL) && /o\.vN = aB\.yz;/.test(WATER_RIVER_WGSL), 'attribute order = tau, e, rapid / nx, ny');
+  assert.ok(/o\.vL = aL\.xy \+ wu\.shape\.xy;/.test(WATER_RIVER_WGSL), 'origin offset from the uniform shape.xy');
+  assert.equal((WATER_RIVER_WGSL.match(/o\.pos\.y = -o\.pos\.y; o\.pos\.z = 0\.5 \* \(o\.pos\.z \+ o\.pos\.w\);/g) || []).length, 1);
+  assert.ok(/\(wu\.slot & 15u\) \| \(back << 4u\) \| 64u \| \(rq << 8u\) \| \(eq << 16u\)/.test(WATER_RIVER_WGSL) && /packNormalOct\(vec3f\(v\.vN, 1\.0\)\)/.test(WATER_RIVER_WGSL) && /bitcast<u32>\(v\.vT\.x\)/.test(WATER_RIVER_WGSL), 'texel word layout');
+  assert.ok(/clamp\(floor\(v\.vT\.z \* 255\.0 \+ 0\.5\), 0\.0, 255\.0\)/.test(WATER_RIVER_WGSL) && /clamp\(floor\(v\.vT\.y \* 1000\.0 \+ 0\.5\), 0\.0, 65535\.0\)/.test(WATER_RIVER_WGSL), 'rapidQ / e*1000 rounding = packRiverTexel');
+  // texel packing formula evaluated in JS == packRiverTexel (the fixture the shader line mirrors)
+  const pack = (slot, back, rapid, e) => ((slot & 15) | (back << 4) | 64 | (Math.min(255, Math.max(0, Math.floor(rapid * 255 + 0.5))) << 8) | (Math.min(65535, Math.max(0, Math.floor(e * 1000 + 0.5))) << 16)) >>> 0;
+  for (const [s, b, r, e] of [[12, 0, 0, 0], [13, 1, 1, 70], [12, 1, 0.37, 1.2345], [13, 0, 0.99, 0.0004]]) assert.equal(pack(s, b, r, e), packRiverTexel(s, b, Math.min(255, Math.max(0, Math.floor(r * 255 + 0.5))), e));
+  assert.ok(/p\.x >= shape\.x && p\.x < shape\.z && p\.y >= shape\.y && p\.y < shape\.w/.test(WATER_RIVER_WGSL) && /dot\(d, d\) <= shape\.z/.test(WATER_RIVER_WGSL), 'clip test = inClipRegion (rect half-open, circle inclusive)');
+  // composite river branch: texel flag, alpha feather (riverAlpha), streak (riverStreakHit), rapid foam, shore by column
+  assert.ok(WATER_COMPOSITE_WGSL.includes('let ribbon = (w.w & 64u) != 0u;'));
+  assert.ok(/rE = f32\(w\.w >> 16u\) \* 0\.001; rRapid = f32\(\(w\.w >> 8u\) & 255u\) \* \(1\.0 \/ 255\.0\);/.test(WATER_COMPOSITE_WGSL), 'e / rapid decode');
+  assert.ok(/a = a \* select\(1\.0, min\(1\.0, rE \/ rr7\.z\), rr7\.z > 0\.0\) \* min\(1\.0, column \/ rr7\.w\);/.test(WATER_COMPOSITE_WGSL), 'riverAlpha');
+  assert.ok(/floor\(bitcast<f32>\(w\.z\) \/ r7\.y - r7\.x\)/.test(WATER_COMPOSITE_WGSL) && /floor\(rE \/ r6\.z\)/.test(WATER_COMPOSITE_WGSL), 'riverStreakHit: tau / streakT - o, e / W');
+  assert.ok(/rRapid \* r8\.y/.test(WATER_COMPOSITE_WGSL) && /ribbon\) \{ shoreS = max\(0\.0, min\(column \/ shoreParams\.x, 1\.0\)\)/.test(WATER_COMPOSITE_WGSL), 'rapid foam (row 33 = r8.y) + column-only shore');
+  // the look row layout the shader reads (waterLook.js fillWaterSlotTable): 28 o, 29 streakT, 30 feather, 31 shoreFade, 32 mode 3, 33 rapidFoam, 51 kind 3
+  assert.equal(WL_STRIDE, 56);
+}
+
 console.log(`water.wgsl.test.js: string/layout/literal-parity rules, ${base.n} waterInside probes (${base.hits} inside, 4 mutations caught), 3000 diamondAngle probes (3 mutations caught). water block ${WATER_BLOCK.sizeBytes} B, composite block ${C.sizeBytes} B`);

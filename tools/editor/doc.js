@@ -59,6 +59,7 @@ export function createDoc(assets, bundle, opts = {}) {
     for (const id of ids) {
       const def = kind === 'level' ? assets.level(id) : assets.world(id);
       const metaSrc = bundle && bundle.meta && bundle.meta[kind] && bundle.meta[kind][id];
+      if (!metaSrc && def && def.util && typeof def.util === 'object') continue; // code-only helpers (world_geo: functions, not a content file)
       const meta = metaSrc
         ? { schema: metaSrc.schema, nextId: metaSrc.nextId, url: metaSrc.url }
         : { schema: LATEST_SCHEMA[kind], nextId: computeNextId(kind, def), url: null };

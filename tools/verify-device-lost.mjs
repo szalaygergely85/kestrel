@@ -3,10 +3,11 @@
 // script drives the REAL game (game/index.html) so `?dev=1`'s `window.__kestrel.loseDevice()` dev hook
 // (GpuDeviceWebGPU.js `_forceLost`) exercises the real device.lost wiring in game/js/main.js end to end:
 // the card appears within 2 s, R reloads, and the player's position is restored (from the one synchronous
-// autosave taken at the moment of loss) within 0.01 m. webgpu only (webgl2 has no device to lose here, 38.10c).
-// Run: node tools/verify-device-lost.mjs 9512 (webgpu, default) or: node tools/verify-device-lost.mjs 9512 webgl2
+// autosave taken at the moment of loss) within 0.01 m. webgpu only.
+// Run: node tools/verify-device-lost.mjs 9512 (webgpu, default)
 // PC-B lane B1 port range only (9500-9574).
 import { spawn } from 'node:child_process';
+import { withTimeFreeze } from './tool-url.mjs'; // DN-04a
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
@@ -16,8 +17,7 @@ const port = Number(process.argv[2] || 9512);
 validatePort(port);
 if (port < 9500 || port + 1 > 9574) throw new Error('PC-B lane B1 range is 9500-9574 (next port is CDP)');
 const backend = process.argv[3] || 'webgpu';
-assert.ok(['webgpu', 'webgl2'].includes(backend), 'backend must be webgpu or webgl2');
-if (backend === 'webgl2') throw new Error('device-lost only applies to webgpu (webgl2 has no GpuDevice to lose, 38.10c)');
+assert.ok(['webgpu'].includes(backend), 'backend must be webgpu');
 
 const profile = mkdtempSync(path.join(os.tmpdir(), 'kestrel-device-lost-'));
 const server = spawn('python', ['-c', 'import http.server,sys; http.server.ThreadingHTTPServer.request_queue_size=128; sys.argv=["tools/serve.py",sys.argv[1]]; import tools.serve; tools.serve.main()', String(port)], { cwd: ROOT, stdio: 'ignore', windowsHide: true });
@@ -34,7 +34,7 @@ try {
   // `?dev=1` is required for window.__kestrel.loseDevice() to exist (38.10c dev hook gate). `?voxelbench=0` keeps
   // the real wake-then-play timeline out of the way (no title menu/pause overlay); `?save=1` forces the autosave
   // path on in this headless browser (main.js's saveEnabled would otherwise see navigator.webdriver and skip it).
-  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?dev=1&save=1&voxelbench=0&grid=400x150&backend=${backend}` });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?${withTimeFreeze(`dev=1&save=1&voxelbench=0&grid=400x150&backend=${backend}`)}` });
   let ready = false;
   for (let i = 0; i < 100; i++) { await pause(300); if (await evaluate(cdp, '!!(window.__debug && window.__debug.world)')) { ready = true; break; } }
   assert.ok(ready, 'world:loaded never fired: ' + JSON.stringify(errors));
