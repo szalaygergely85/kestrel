@@ -105,6 +105,21 @@ function walkFrames(legs, rig, ground, n, slope) {
   const grow = heapGrowth(() => go(5000), () => go(8000));
   ok('0 retained bytes over 5000 steps (' + grow + ' B)', grow < 8192);
 }
+// OB-215: 48 attached beasts must not starve Burl (scripted NPC) of a leg slot
+{
+  const legs = createBeastLegs({ pool });
+  const ground = { groundAt: () => 0 };
+  for (let i = 0; i < 60; i++) {
+    const v = { model: 'bear', anim: 'walk', frame: 0, t: 0, playing: true, hidden: false };
+    legs.step(i, { transform: { x: i, y: 0, z: 0, yawDeg: 0 } }, v, 0, -5, ground);
+  }
+  ok('OB-215: beasts stop at 48 slots (' + legs.stats.attached + ')', legs.stats.attached === 48);
+  const voxel = { model: 'bear', anim: 'walk', frame: 0, t: 0, playing: true, hidden: false };
+  const e = { transform: { x: 0, y: 0, z: 0, yawDeg: 0 } };
+  let w = 0;
+  for (let s = 0; s < 60; s++) { e.transform.y += 1 / 60; voxel.anim = 'walk'; legs.stepNpc('bear', e, voxel, 0, -5, ground); if (voxel.legPose && voxel.legPose[0] > 0) w++; }
+  ok('OB-215: Burl gets legPose with 48 beasts attached (' + w + ')', w >= 55 && legs.stats.attached === 49);
+}
 console.log(`beastLegs: ${pass} pass, ${fail} fail`);
 for (const f of failures) console.log('FAIL', f);
 process.exit(fail ? 1 : 0);

@@ -49,7 +49,7 @@ ok(groups.length === 0 && instances.groups.length === 1 && instances.groups[0] =
 ok(bindScatterInstances({ scatter: null }, instances).length === 0);
 ok(bindScatterInstances({ ...world, scatter: { ...scatter, count: 0 } }, instances).length === 0);
 instances.pool.models.delete('birch');
-assert.throws(() => bindScatterInstances(world, instances), /missing voxel model birch/); checks++;
+assert.throws(() => bindScatterInstances(world, instances, [], null, undefined, { strict: true }), /missing voxel model birch/); checks++;
 ok(instances.groups.length === 1);
 instances.pool.models.set('birch', {});
 for (let i = 1; i < MAX_INSTANCE_GROUPS; i++) instances.group('units', 1);
@@ -116,7 +116,7 @@ ok(owner._detail === null && !detailRegistry.groups.includes(oldDetailGroup) && 
 detailRegistry.pool.models.set('birch', {});
 let previousTrees = bindScatterInstances(world, detailRegistry);
 detailRegistry.pool.models.delete('birch');
-assert.throws(() => bindScatterInstances(world, detailRegistry, previousTrees), /missing voxel model birch/); checks++;
+assert.throws(() => bindScatterInstances(world, detailRegistry, previousTrees, null, undefined, { strict: true }), /missing voxel model birch/); checks++;
 ok(detailRegistry.groups.length === 1 && previousTrees.every(g => !detailRegistry.groups.includes(g)));
 detailRegistry.pool.models.set('birch', {});
 previousTrees = bindScatterInstances(world, detailRegistry);
@@ -155,5 +155,14 @@ ok(engine._detail === null && engine.instances.groups.length === 0);
   ok((oakGroup.ib.u32[0 * INSTANCE_STRIDE + INST_FLAGS] & INST_FLAG_ALIGNED) !== 0); // yaw 0
   ok((oakGroup.ib.u32[1 * INSTANCE_STRIDE + INST_FLAGS] & INST_FLAG_ALIGNED) === 0); // yaw 45
   ok((oakGroup.ib.u32[0 * INSTANCE_STRIDE + INST_FLAGS] >>> 8) === 0 && (oakGroup.ib.u32[1 * INSTANCE_STRIDE + INST_FLAGS] >>> 8) === 0);
+}
+// OB-166: tolerant default - a missing species model warns once and is skipped, no throw
+{
+  detailRegistry.pool.models.delete('birch');
+  const warns = []; const ow = console.warn; console.warn = (m) => warns.push(String(m));
+  let tol; try { tol = bindScatterInstances(world, detailRegistry); bindScatterInstances(world, detailRegistry, tol); } finally { console.warn = ow; }
+  ok(warns.length === 1 && /birch/.test(warns[0]));
+  ok(tol.every(g => g.modelKey !== 'birch') && tol.length === 1);
+  detailRegistry.pool.models.set('birch', {});
 }
 console.log(`${checks} passed, 0 failed. ALL PASS`);

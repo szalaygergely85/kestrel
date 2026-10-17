@@ -312,7 +312,7 @@ function checkTriggerBehaviours(worldKey, world) {
 
 for (const worldKey of assets.keys('world')) {
   const worldDef = assets.world(worldKey);
-  const { result: world, threw, error, warnings } = captured(() => World.load(worldDef, assets, { physics: 'mesh' }));
+  const { result: world, threw, error, warnings } = captured(() => World.load(worldDef, assets, { physics: 'mesh', strict: true }));
   ok(`world "${worldKey}" loads through World.load with no throw`, !threw, error && error.message);
   ok(`world "${worldKey}" loads through World.load with no console warning`, warnings.length === 0, warnings.join(' | '));
   if (threw || !world) continue;
