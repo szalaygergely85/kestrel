@@ -87,9 +87,9 @@
     {"id": "denBack1", "on": true, "preset": "lanternHook", "x": 3.5, "y": 3.5, "z": 4.6},
     {"id": "denBack2", "on": true, "preset": "lanternHook", "x": 10, "y": 3.5, "z": 4.6},
     {"id": "denMouth", "on": true, "preset": "lanternHook", "x": 7, "y": 8.5, "z": 4.6},
-    {"id":"denEast","on":true,"preset":"lanternHook","x":11.3,"y":8.8,"z":4.6},
-    {"id":"denCorrW","on":true,"preset":"lanternHook","x":6.3,"y":13.5,"z":5.8},
-    {"id":"denCorrE","on":true,"preset":"lanternHook","x":8.7,"y":17.5,"z":6.8}
+    {"id": "denEast", "on": true, "preset": "lanternHook", "x": 11.3, "y": 8.8, "z": 4.6},
+    {"id": "denCorrW", "on": true, "preset": "lanternHook", "x": 6.3, "y": 13.5, "z": 5.8},
+    {"id": "denCorrE", "on": true, "preset": "lanternHook", "x": 8.7, "y": 17.5, "z": 6.8}
   ],
   "props": [],
   "interactables": [],
