@@ -10,7 +10,7 @@ const PROJ_NEAR = 0.05; // = engine/render/projection.js PROJ_NEAR (not re-expor
 const STEP_HZ = 60; // beastSim hurtT counts 60 Hz steps
 
 /** Fills the reused beast record for slot i (HPBAR-01 contract). Exported for the test. */
-export function fillBeastRecord(sim, i, rec, px, py, now, targetId) {
+export function fillBeastRecord(sim, i, rec, px, py, now, targetId, drawn = null) {
   const e = sim.entities[i], t = e.transform, h = e.components.health, br = e.components.brain || {};
   const st = sim.state[i], dx = t.x - px, dy = t.y - py;
   rec.id = sim.ids[i]; rec.name = KINDS[KIND_NAMES[sim.kindIdx[i]]].name;
@@ -19,7 +19,7 @@ export function fillBeastRecord(sim, i, rec, px, py, now, targetId) {
   rec.hp = h ? h.hp : 0; rec.maxHp = h ? h.max : 0;
   rec.dead = st === STATE_DYING || st === STATE_CORPSE || sim.dormant[i] !== 0;
   rec.dist = Math.sqrt(dx * dx + dy * dy);
-  rec.visible = true; // on-screen / in-front is decided by project() in the view
+  rec.visible = drawn ? drawn(e) === true : true; // GOB-INVIS: an undrawn beast (hidden / unknown model / cut by the voxel cap) gets no bar; on-screen / in-front is decided by project() in the view
   rec.engaged = st !== STATE_WANDER && st !== STATE_EAT && st !== STATE_RETURN;
   rec.targeted = targetId !== null && rec.id === targetId;
   rec.hitAt = now - sim.hurtT[i] / STEP_HZ;
@@ -38,7 +38,7 @@ export function terrainSees(groundAt, ex, ey, ez, x, y, z, steps = 14) {
   return true;
 }
 
-export function createCombatHud({ events, rgb, band = null, hurtAnchor, groundAt = null } = {}) {
+export function createCombatHud({ events, rgb, band = null, hurtAnchor, groundAt = null, drawn = null } = {}) {
   let ex = 0, ey = 0, ez = 0;
   const M = new Float64Array(16);
   let gridCols = 1, gridRows = 1, uiCols = 160, uiRows = 60, ready = false;
@@ -54,7 +54,7 @@ export function createCombatHud({ events, rgb, band = null, hurtAnchor, groundAt
   const bars = createEnemyBarView({ rgb, project, band, seen: groundAt ? (x, y, z) => terrainSees(groundAt, ex, ey, ez, x, y, z) : null });
   const nums = createDamageNumbers({ rgb, project, hurtAnchor });
   let lastT = -1, sim = null, px = 0, py = 0, targetId = null, now = 0;
-  const fill = (i, rec) => fillBeastRecord(sim, i, rec, px, py, now, targetId);
+  const fill = (i, rec) => fillBeastRecord(sim, i, rec, px, py, now, targetId, drawn);
   const off = events ? events.on('combat:hit', (p) => nums.onHit(p)) : null;
   return {
     bars, nums,

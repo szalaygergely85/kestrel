@@ -213,6 +213,15 @@ if (global.gc) {
   const hiddenYsSorted = hiddenYs.slice().sort((a, b) => a - b);
   ok('US-079b0 collect (nearest-16): its freed slot goes to the next visible entity (y=16)',
     JSON.stringify(hiddenYsSorted) === JSON.stringify([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]), hiddenYsSorted.join(','));
+
+  // GOB-INVIS: isQueued(entity) = drawn set (hidden, cut by the cap, unknown model -> false)
+  const eHid = ents.get('hidden0'), eNear = ents.get('e1');
+  ok('GOB-INVIS isQueued: hidden entity false, queued entity true', poolH.isQueued(eHid) === false && poolH.isQueued(eNear) === true);
+  const cut = { components: { voxel: { model: 'bear' } }, transform: { x: 0, y: 99, z: 0, yawDeg: 0 } };
+  const unk = { components: { voxel: { model: 'nope_model' } }, transform: { x: 0, y: 0.1, z: 0, yawDeg: 0 } };
+  ents.set('cut', cut); ents.set('unk', unk); (fakeWorld(ents)).renderVersion = 2;
+  const w2 = fakeWorld(ents); w2.renderVersion = 2; poolH.collect(w2, camH);
+  ok('GOB-INVIS isQueued: cut by cap false, unknown model false', poolH.isQueued(cut) === false && poolH.isQueued(unk) === false);
 }
 
 // ---- ME-22 (28.12 item 4): meshOnly router - dda never receives a mesh-

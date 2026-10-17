@@ -1,0 +1,21 @@
+// tools/flicker-walk.test.mjs: node tools/flicker-walk.test.mjs
+import { compareBaseline, formatReport, spotFromFlicker, SPOTS } from './flicker-walk.mjs';
+let fail = 0;
+const ok = (c, m) => { if (!c) { fail++; console.error('FAIL ' + m); } };
+const mk = (a, b, c, d) => ({ spots: { meadow: { score: a }, forestEdge: { score: b }, cemetery: { score: c }, ford: { score: d } } });
+const base = mk(1, 2, 3, 4);
+ok(compareBaseline(mk(1, 2, 3, 4), base).ok, 'equal passes');
+ok(compareBaseline(mk(1.5, 3, 4.5, 6), base).ok, 'exactly 1.5x passes');
+const bad = compareBaseline(mk(1, 3.01, 3, 4), base);
+ok(!bad.ok && bad.rows.find((r) => r.spot === 'forestEdge').verdict === 'FAIL' && bad.messages.length === 1, '>1.5x fails that spot only');
+ok(compareBaseline(mk(0.04, 2, 3, 4), mk(0, 2, 3, 4)).ok, 'zero baseline tolerates eps');
+ok(!compareBaseline(mk(0.2, 2, 3, 4), mk(0, 2, 3, 4)).ok, 'zero baseline fails above eps');
+const miss = compareBaseline({ spots: { meadow: { score: 1 } } }, base);
+ok(!miss.ok && miss.messages.some((m) => /missing/.test(m)), 'missing spot fails');
+ok(compareBaseline({ spots: { ...mk(1, 2, 3, 4).spots, extra: { score: 9 } } }, base).ok, 'new spot reported, not gated');
+ok(SPOTS.length === 4, '4 spots');
+const rep = formatReport({ spots: { meadow: { score: 1.234, cols: 480, rows: 180 } }, backend: 'webgpu' }, bad);
+ok(/stable pass OFF \(D-119\)/.test(rep) && /1\.23/.test(rep) && /FAIL/.test(rep), 'report header + rows');
+ok(spotFromFlicker({ poses: { a: { glyphOnlyPct: 2, totalPct: 3 } } }, 'a').score === 2, 'spotFromFlicker');
+let threw = false; try { spotFromFlicker({ poses: {} }, 'a'); } catch { threw = true; } ok(threw, 'missing pose throws');
+if (fail) process.exit(1); console.log('flicker-walk tests PASS');

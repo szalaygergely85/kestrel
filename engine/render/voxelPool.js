@@ -310,6 +310,12 @@ export class VoxelPool {
     this._entWorld = world;
   }
 
+  /** GOB-INVIS: true when entity `e` was queued by this frame's collect() (not hidden, model known, inside the nearest-cap set). Host gates enemy bars on it. */
+  isQueued(e) {
+    for (let i = 0; i < this._rawCount; i++) if (this.raw[i].entity === e) return true;
+    return false;
+  }
+
   collect(world, cam) {
     this.beginFrame();
     if (!world) return;
