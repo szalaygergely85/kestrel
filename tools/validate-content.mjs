@@ -1252,14 +1252,7 @@ export function lintQuestText(files) {
 }
 
 // Named allow-list of today's hits: "<file>|<kind>" -> max hits. It may only shrink (a larger count fails; so does a stale, too-high entry).
-export const R19_ALLOW = { // today's journal-length hits (writer to shorten later; may only shrink)
-  'content/quests/ch3/pack.json|objlen': 17,
-  'content/quests/ch3b/pack.json|objlen': 6,
-  'content/quests/regions/pack.json|objlen': 10,
-  'content/quests/tower.blade.quest.json|objlen': 3,
-  'content/quests/under.crypt.quest.json|objlen': 3,
-  'content/quests/under.graves.quest.json|objlen': 2,
-};
+export const R19_ALLOW = {}; // empty since QUEST-WRITER-BATCH-01 batch 3: every R19 hit is now an error (may only stay empty)
 export function applyR19Allow(hits, allow = R19_ALLOW) {
   const errors = [], counts = {};
   for (const h of hits) { const k = `${h.file}|${h.kind}`; counts[k] = (counts[k] || 0) + 1; }

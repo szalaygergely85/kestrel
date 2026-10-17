@@ -20,7 +20,7 @@
             ]
           },
           "objText": "Follow the track toward the smoke",
-          "journal": "Cookfire smoke, so someone lives out here. Follow the track toward it."
+          "journal": "Cookfire smoke. Follow the track."
         }
       ],
       "requires": [
@@ -53,7 +53,7 @@
             "count": 5
           },
           "objText": "Drive the wolves from the goose pen",
-          "journal": "A palisade, and wolves at its goose pen. Drive them off."
+          "journal": "A palisade. Wolves at its goose pen."
         }
       ],
       "requires": [
@@ -78,7 +78,7 @@
             "to": "hesk"
           },
           "objText": "Speak to the woman at the gate",
-          "journal": "The wolves are gone, and the gate opens a crack. Tell Hesk who you are."
+          "journal": "The gate opens. Tell Hesk your name."
         }
       ],
       "requires": [
@@ -128,7 +128,7 @@
             "id": "talk.dorrin",
             "equals": true
           },
-          "journal": "The village waystone is dark. Part of it is missing. Ask Dorrin at the forge."
+          "journal": "A waystone part is gone. Ask Dorrin."
         },
         {
           "id": "brass",
@@ -137,7 +137,7 @@
             "type": "item",
             "id": "relay.brass"
           },
-          "journal": "Dorrin took the waystone's brass collar for a gate. Pull it off the barley gate."
+          "journal": "Get the collar off the barley gate."
         },
         {
           "id": "wake",
@@ -147,7 +147,7 @@
             "id": "waystone.ws_outwall.woken",
             "equals": true
           },
-          "journal": "You have the brass collar. Fit it to the village waystone and wake it."
+          "journal": "Wake the waystone with the collar."
         }
       ],
       "requires": [
@@ -193,7 +193,7 @@
             "id": "lore.owBoard.read",
             "equals": true
           },
-          "journal": "The village waystone burns teal. In the plaza stands a board of names. Read it."
+          "journal": "Read the name board in the plaza."
         }
       ],
       "requires": [
@@ -262,7 +262,7 @@
             "id": "lore.pierStone.read",
             "equals": true
           },
-          "journal": "A bridge once stood here. Only the piers are left. Read the stone north of the road."
+          "journal": "Read the stone north of the road."
         }
       ],
       "opensAfter": [
@@ -307,7 +307,7 @@
             "item": "signArm"
           },
           "objText": "Find the sign arm in the shallows",
-          "journal": "The post sign has lost its west arm. Find it in the shallows."
+          "journal": "The post sign lost its west arm."
         }
       ],
       "opensAfter": [
@@ -358,7 +358,7 @@
             "count": 3
           },
           "objText": "Drive three wolves from the goose pen",
-          "journal": "Wolves still circle the goose pen. Drive three of them off."
+          "journal": "Wolves still circle the goose pen."
         }
       ],
       "opensAfter": [
@@ -410,7 +410,7 @@
             "count": 2
           },
           "objText": "Drive off two boars on the west bank",
-          "journal": "Boars raid the west bank. Drive two of them off."
+          "journal": "Drive two boars off the west bank."
         }
       ],
       "opensAfter": [
@@ -449,7 +449,7 @@
             "to": "dorrin"
           },
           "objText": "Take the parcel to the forge",
-          "journal": "A parcel waits for the forge. Carry it there."
+          "journal": "Carry the parcel to the forge."
         }
       ],
       "opensAfter": [
@@ -494,7 +494,7 @@
             ]
           },
           "objText": "Cross the ford to the west bank",
-          "journal": "Nobody here has scouted the far bank in a while. Cross the ford to it."
+          "journal": "Cross the ford. Scout the far bank."
         }
       ],
       "opensAfter": [
@@ -537,7 +537,7 @@
             "item": "barleySheaf"
           },
           "objText": "Fetch the sheaf at the barley gate",
-          "journal": "A sheaf is due from the barley gate. Fetch it."
+          "journal": "Fetch a sheaf from the barley gate."
         }
       ],
       "opensAfter": [
@@ -586,7 +586,7 @@
             "id": "owTarget1.hit",
             "equals": true
           },
-          "journal": "Three targets stand along the track. Hit the first."
+          "journal": "Hit the first target on the track."
         },
         {
           "id": "t2",
@@ -606,7 +606,7 @@
             "id": "owTarget3.hit",
             "equals": true
           },
-          "journal": "Two hit. One target left on the track. Hit the third."
+          "journal": "One target left. Hit the third."
         }
       ],
       "opensAfter": [
@@ -651,7 +651,7 @@
             "id": "life.raid.gooseFarm.defended",
             "equals": true
           },
-          "journal": "Wolves raid the goose pen by night. Wait there after dark, drive off the pack."
+          "journal": "After dark, guard the goose pen."
         }
       ],
       "opensAfter": [
