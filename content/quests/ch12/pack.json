@@ -312,7 +312,7 @@
     },
     {
       "id": "sq.burl.stone",
-      "title": "Check on the Stone",
+      "title": "The Humming Stone",
       "site": "burl",
       "steps": [
         {
@@ -322,60 +322,16 @@
               "waystone"
             ]
           },
-          "objText": "Go and look at the waystone",
-          "journal": "Check that the waystone still glows."
-        }
-      ],
-      "requires": [
-        {
-          "quest": "burl.boars",
-          "done": true
+          "objText": "Put your hand on the waystone",
+          "journal": "Touch the humming waystone."
         },
         {
-          "flag": "burl.home"
-        }
-      ],
-      "reward": {
-        "items": [
-          {
-            "id": "arrow",
-            "n": 5
-          }
-        ]
-      },
-      "band": 1,
-      "returnText": "Tell Burl the stone hums",
-      "lines": {
-        "offer": [
-          "The stone by the meadow hums at night now.",
-          "I don't go near it. Old habit. Go see it for me?"
-        ],
-        "active": [
-          "The stone. Put your paw on it. Your hand. Whichever."
-        ],
-        "ready": [
-          "Warm, and humming. Like a hive in the ground.",
-          "I'll sleep near it, then. Here. Feathered sticks."
-        ],
-        "done": [
-          "The stone hums. I hum back. Nobody minds."
-        ]
-      }
-    },
-    {
-      "id": "sq.burl.hint",
-      "title": "The Hill Path",
-      "site": "burl",
-      "steps": [
-        {
-          "template": "explore",
+          "template": "talk",
           "params": {
-            "areas": [
-              "hintStone"
-            ]
+            "to": "qd06_stoneKnot"
           },
-          "objText": "Walk the hill path below the tower",
-          "journal": "Walk Burl's path below the tower."
+          "objText": "Read the knot at its foot",
+          "journal": "Read the knot at the stone."
         }
       ],
       "requires": [
@@ -385,10 +341,6 @@
         },
         {
           "flag": "burl.home"
-        },
-        {
-          "quest": "sq.burl.stone",
-          "done": true
         }
       ],
       "reward": {
@@ -396,25 +348,29 @@
           {
             "id": "potion.hp",
             "n": 1
+          },
+          {
+            "id": "arrow",
+            "n": 10
           }
         ]
       },
       "band": 1,
-      "returnText": "Tell Burl the hill path is clear",
+      "returnText": "Tell Burl about the knot",
       "lines": {
         "offer": [
-          "The path down from your tower. The boars dug at it.",
-          "Walk it for me. Tell me if it still holds a foot."
+          "The stone hums at night now. And I smell old rope there.",
+          "Put a hand on it. Look at its foot. Tell me."
         ],
         "active": [
-          "The hill path, under your tower. Walk it."
+          "The stone, then the foot of it. Rope, I think."
         ],
         "ready": [
-          "Holds, does it? Good. Old legs like a sure path.",
-          "A red one. For the bruises you didn't tell me about."
+          "A trimmer's knot. Old. Someone sat by that stone once.",
+          "Hm. The stone hums back. Take this, sky-cub."
         ],
         "done": [
-          "Path holds, stone hums. Good hill, this."
+          "The stone hums. I hum back. Nobody minds."
         ]
       }
     },

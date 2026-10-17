@@ -2585,7 +2585,8 @@
     {"id": "strandCaveLamp", "components": {"voxel": {"anim": "lit", "loop": true, "model": "floorLanternVox"}}, "note": "UNDER-05: smugglers lantern (existing floorLanternVox; light = level lights[lantern])", "type": "prop", "x": 1613.9, "y": 1723, "z": -95.31},
     {"id": "strandCaveNote", "components": {"inspect": {"text": "note.smugglers"}}, "note": "UNDER-05: smugglers note (text inspect.json note.smugglers, written QUEST-WRITER-FILL-01)", "type": "prop", "x": 1615.6, "y": 1724.9, "z": -95.31},
     {"id": "chestStrandCave", "components": {"voxel": {"anim": "closed", "loop": false, "model": "chestBig"}}, "note": "UNDER-05: the earned chest at the back (guarded by the tortoise homes; chestDefs.js table)", "type": "prop", "x": 1618.9, "y": 1722.9, "yawDeg": 180, "z": -95.31},
-    {"id": "chestGoblinTunnel", "components": {"voxel": {"anim": "closed", "loop": false, "model": "chestBig"}}, "note": "UNDER-06: the goblins' stash (chestDefs.js table); earned: opens once the 3 tunnel goblins are dead", "type": "prop", "x": 945.5, "y": 948.3, "yawDeg": 0, "z": -88.8}
+    {"id": "chestGoblinTunnel", "components": {"voxel": {"anim": "closed", "loop": false, "model": "chestBig"}}, "note": "UNDER-06: the goblins' stash (chestDefs.js table); earned: opens once the 3 tunnel goblins are dead", "type": "prop", "x": 945.5, "y": 948.3, "yawDeg": 0, "z": -88.8},
+    {"id": "qd06_stoneKnot", "components": {"inspect": {"text": "note.stoneKnot"}}, "note": "QD-06 knot tied at the foot of the meadow waystone: inspect sets talk.qd06_stoneKnot (sq.burl.stone obj 2)", "type": "prop", "x": 1429.6, "y": 1041.8, "z": "ground"}
   ],
   "horizon": [],
   "state": {
