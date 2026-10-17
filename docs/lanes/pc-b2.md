@@ -1351,3 +1351,9 @@ Verify (main session): `node tools/verify-editor-water.mjs {port} [backend]` (po
 World.load / bindScatterInstances are now tolerant: an unknown prop model or missing scatter voxel model/mesh warns ONCE per id (console.warn) and skips only that prop/species; detail (bindDetailInstances) already was. Strict flag `opts.strict` (World.load 3rd arg, bindScatterInstances 6th arg) keeps the throws; content-lint + content-smoke use it, validate-content has its own reference check.
 Files: engine/core/engine.js, engine/world/World.js, tools/content-lint.mjs, tools/content-smoke.test.mjs; tests engine/world/loadTolerant.test.js (new), engine/core/scatterInstances.test.js.
 Bug rows OB-166 / OB-014: load is now tolerant; root cause (stale cache) not reproducible.
+
+### VISQA-13 INTERIOR-GREEN (kestrel-3, undergreen) - dev, arch-review not needed (content only, no engine change)
+- Diagnosis: carpet/decor/scatter are NOT the source (crypt still identical with ?carpet=0&decor=cpu; structures are bbox-excluded already). The green = `moss_cap` part on world-placed non-bare rocks + all Pebble_* meshes inside the 4 level boxes.
+- Fix (data): 8 new `Pebble_*_bare` mesh json (moss_cap -> rock, manifest rows) + 52 placements in the crypt/fordCellar/goblinTunnel/bearDen boxes switched to `_bare` meshes (world_m1.world.json); outside the boxes untouched.
+- Test: tools/interiorGreen.test.mjs (245 placements, 4 zones, 0 moss meshes); run-tests --filter world 86 PASS. Stills: docs/test-reports/visqa/visqa13-<spot>-before|after.png.
+- Note: default s2 stills show only ~4-10 faintly green px before AND after (blue-grey blob in crypt is a pebble, now bare); the queue's "bush clumps" were mostly dark moss-cap tint. Owner check at 8000 recommended.
