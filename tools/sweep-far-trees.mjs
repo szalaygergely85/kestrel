@@ -4,18 +4,21 @@
 import { spawn } from 'node:child_process';
 import { writeFileSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
+import { snapEnv } from '../game/js/dev/bugSnapshot.js';
 import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, connectCdp, evaluate, evaluateAsync, killTree } from './capture-browser.mjs';
 
+// REPORT-KEY-01: SNAP="<F8 report line>" replays the owner's view (pose, clock, quality, size, flags) instead of the sweep grid.
+const SNAP = snapEnv(process.env.SNAP); if (SNAP) Object.assign(process.env, { HOURS: SNAP.HOUR || SNAP.HOURS, QUALITY: SNAP.QUALITY || 'high', W: SNAP.W, H: SNAP.H, EXTRA: SNAP.EXTRA, YAWS: '1' });
 const port = Number(process.argv[2] || 9575); validatePort(port);
 const backend = process.argv[3] || 'webgpu';
 const hours = (process.env.HOURS || '9,12,17').split(',');
 const tag = process.env.TAG || 'now';
 const nYaw = Number(process.env.YAWS || 8), keep = Number(process.env.KEEP || 6);
 const extra = process.env.EXTRA ? '&' + process.env.EXTRA : '';
-const SPOTS = [
+const SPOTS = SNAP ? [{ name: 'snap', x: SNAP.x, y: SNAP.y, snap: true }] : [
   { name: 'meadow', x: 1466, y: 1035 }, { name: 'burl', x: 1404, y: 1010 }, { name: 'tower', x: 1471, y: 1025 },
   { name: 'ford', x: 1010, y: 1060 }, { name: 'crossroads', x: 1380, y: 1040 }, { name: 'hilltop', hill: true },
-].filter((s, i) => !process.env.SPOTS || process.env.SPOTS.split(',').includes(String(i)));
+].filter((s, i) => SNAP || !process.env.SPOTS || process.env.SPOTS.split(',').includes(String(i)));
 const outDir = path.join(ROOT, 'docs/test-reports/navysweep'); mkdirSync(outDir, { recursive: true });
 const profile = mkdtempSync(path.join(os.tmpdir(), 'kestrel-navy-'));
 const server = spawn('python', ['-c', 'import http.server,sys; http.server.ThreadingHTTPServer.request_queue_size=128; sys.argv=["tools/serve.py",sys.argv[1]]; import tools.serve; tools.serve.main()', String(port)], { cwd: ROOT, stdio: 'ignore', windowsHide: true });
@@ -42,8 +45,8 @@ try {
       await evaluate(cdp, `(()=>{const t=__debug.playerHandle.data.transform;t.x=${sx};t.y=${sy};if(__debug.vitals&&__debug.vitals.setGodMode)__debug.vitals.setGodMode(true);const T=__debug.world.terrain,gz=(T.groundAt||T.heightAt).call(T,${sx},${sy});t.z=(gz==null?12:gz+0.2);})()`);
       await pause(9000);
       for (let k = 0; k < nYaw; k++) {
-        const yaw = k * 360 / nYaw;
-        await evaluate(cdp, `(()=>{const t=__debug.playerHandle.data.transform;t.yawDeg=${yaw};t.pitchDeg=0;const L=__debug.look;if(L){L.yawDeg=${yaw};L.pitchDeg=0;}})()`);
+        const yaw = SNAP ? SNAP.yaw : k * 360 / nYaw;
+        await evaluate(cdp, `(()=>{const t=__debug.playerHandle.data.transform;t.yawDeg=${yaw};t.pitchDeg=${SNAP ? SNAP.pitch : 0};const L=__debug.look;if(L){L.yawDeg=${yaw};L.pitchDeg=${SNAP ? SNAP.pitch : 0};}})()`);
         await pause(1800);
         const s = await cdp.send('Page.captureScreenshot', { format: 'png' });
         const m = await evaluateAsync(cdp, `(${COUNT})(${JSON.stringify(s.data)})`);

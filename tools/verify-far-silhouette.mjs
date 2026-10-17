@@ -8,15 +8,18 @@
 import { spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
+import { snapEnv } from '../game/js/dev/bugSnapshot.js';
 import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, connectCdp, evaluate, evaluateAsync, killTree } from './capture-browser.mjs';
 import { luma, bandMean, measureFarBand, measureRidge, farGateFails } from './farSilhouette.mjs';
 
+// REPORT-KEY-01: SNAP="<F8 report line>" replays the owner's view (pose, clock, quality, size, flags); runs the meadow case only.
+const SNAP = snapEnv(process.env.SNAP); if (SNAP) Object.assign(process.env, { SPOT: SNAP.SPOT, CLOCKS: SNAP.CLOCKS, CASES: 'meadow', EXTRA: SNAP.EXTRA, NOGATE: process.env.NOGATE || '1' });
 const port = Number(process.argv[2] || 9650); validatePort(port);
 const tag = process.argv[3] || 'now';
 const clocks = (process.env.CLOCKS || '12,19,22').split(',');
 const [sx, sy, sz, syaw] = (process.env.SPOT || '1466,1035,12,240').split(',').map(Number);
 const CASES = [
-  { name: 'meadow', x: sx, y: sy, z: sz, yaw: syaw, pitch: 0, clocks, fn: 'measureFarBand', opts: {} },
+  { name: 'meadow', x: sx, y: sy, z: sz, yaw: syaw, pitch: SNAP ? SNAP.pitch : 0, clocks, fn: 'measureFarBand', opts: {} },
   { name: 'high', x: 1404, y: 1019, z: 12, yaw: 0, pitch: 4, clocks: (process.env.HIGH_CLOCKS || '9,13').split(','), fn: 'measureRidge', opts: {} } // before (VISQA-01 stills): 09 43.0, 13 61.0 FAIL; 22 16.0,
 ].filter((c) => !process.env.CASES || process.env.CASES.split(',').includes(c.name));
 const extra = process.env.EXTRA ? '&' + process.env.EXTRA : '';
@@ -33,12 +36,12 @@ try {
   browser = spawn(findBrowserBinary(), ['--headless=new', `--remote-debugging-port=${port + 1}`, ...buildLaunchFlags({}), '--no-sandbox', `--user-data-dir=${profile}`, 'about:blank'], { stdio: 'ignore', windowsHide: true });
   cdp = await connectCdp(port + 1, 15000);
   await cdp.send('Page.enable'); await cdp.send('Runtime.enable');
-  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 700, deviceScaleFactor: 1, mobile: false });
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: Number(SNAP ? SNAP.W : 1000), height: Number(SNAP ? SNAP.H : 700), deviceScaleFactor: 1, mobile: false });
   await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
   const rows = [];
   for (const [vTag, vExtra] of VARIANTS) for (const C of CASES) for (const clock of C.clocks) {
     console.log('case', C.name, 'clock', clock, 'variant', vTag);
-    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?save=0&dev=1&title=0&nopause=1&backend=webgpu&quality=high&time=${clock}${vExtra}` });
+    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?save=0&dev=1&title=0&nopause=1&backend=webgpu&quality=${SNAP && SNAP.QUALITY ? SNAP.QUALITY : 'high'}&time=${clock}${vExtra}` });
     let ok = false;
     for (let i = 0; i < 400 && !ok; i++) { await pause(300); try { ok = !!(await evaluate(cdp, '!!(window.__debug && window.__debug.playerHandle && window.__debug.world)')); } catch { /* navigating */ } }
     if (!ok) throw new Error('world never became ready');
