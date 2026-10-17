@@ -5,7 +5,8 @@
 // Level 2: a pushed beast that reaches a wall within WALL_SEC takes row.wallDmg once (x INT damageMul). Level 3 lift/throw is SPELL-R7.
 // Rule 15: no trig, 0 allocation per cast/step. Numbers: spellDefs.js only.
 import { SPELL_DEFS } from '../spellDefs.js';
-import { applyImpulse, SIM_STEP } from '../../../../engine/index.js';
+import { applyImpulse, SIM_STEP, PHYSICS } from '../../../../engine/index.js';
+import { holdBeast, setHoldPoint, throwBeast, releaseBeast, heldBeast, STATE_HELD } from './beastSim.js';
 
 export const COS30 = 0.8660254037844387;
 export const PROP_MAX = 8; // m/s impulse ceiling for props
@@ -13,7 +14,9 @@ export const HOLD_SEC = 0.4; // hold >= this on release = pull
 export const PULL_STOP = 1.5; // m a pulled target stops short of the player
 export const WALL_SEC = 0.5;  // window for the Lv2 wall-impact damage
 const BEAST_DECEL = 12, PROP_DECEL = 6; // m/s^2: beast stagger slide (beastSim DEFAULT_ACCEL) / rough roller friction; pull speed = sqrt(2 a (d - stop))
+export const HOLD_DIST = 2.5, HOLD_MAX_SEC = 3, THROW_SPEED = 14, PROP_THROW = 12, LOS_SEC = 0.25, FLIGHT_SEC = 1.5; // Lv3 (38.81)
 const EYE = 1.2; // m above the feet: cone origin / LOS start
+const MAX_SEC_STEPS = Math.round(HOLD_MAX_SEC / SIM_STEP), LOS_STEPS = Math.round(LOS_SEC / SIM_STEP), FLIGHT_STEPS = Math.round(FLIGHT_SEC / SIM_STEP);
 const HOLD_STEPS = Math.round(HOLD_SEC / SIM_STEP), WALL_STEPS = Math.round(WALL_SEC / SIM_STEP);
 /** @param {any} world @param {any} events @param {any} targets createTargetables() @param {{spendMana?:(n:number)=>boolean, tier?:()=>number, forEachProp?:(fn:Function)=>void, damageMul?:()=>number}} [hooks] */
 export function createTelekinesisSim(world, events, targets, hooks) {
@@ -23,6 +26,9 @@ export function createTelekinesisSim(world, events, targets, hooks) {
   const hitP = { source: 'player', target: null, damage: 0, heavy: 1, cause: 'wind', knock: 0, stunSec: 0, dirX: 0, dirY: 0, px: 0, py: 0, pz: 0 };
   const castP = { x: 0, y: 0, z: 0, fx: 0, fy: 0, range: 0, pull: 0 };
   let row = null, bestProp = null;
+  // Lv3 hold: gMode 0 none, 1 beast (gSlot), 2 roller (gEnt); a thrown roller is watched for FLIGHT_STEPS
+  let gMode = 0, gSlot = -1, gEnt = null, gSteps = 0, gLos = 0, tEnt = null, tEnd = 0, tDmg = 0, holds = 0, throws = 0, propThrowHits = 0;
+  const tHit = new Uint8Array(1024);
   const O = new Float64Array(5); // ox, oy, oz, fx, fy (typed array: a closure-captured double would allocate a HeapNumber per write)
   const B = new Float64Array(2); // best distance: [0] prop, [1] beast
   // Lv2 wall watch (one pushed beast): entity, deadline tick, push dir, INT multiplier
@@ -76,7 +82,7 @@ export function createTelekinesisSim(world, events, targets, hooks) {
       const dx = targets.x[bi] - O[0], dy = targets.y[bi] - O[1], d = B[1], p = hitP;
       let ux = d > 1e-6 ? dx / d : O[3], uy = d > 1e-6 ? dy / d : O[4], knock = row.knock;
       if (pull) { knock = pullSpeed(knock, d, BEAST_DECEL); ux = -ux; uy = -uy; if (knock < 1) return; } // beastSim: knock < 1 = flinch only
-      p.target = targets.ent[bi].id; p.damage = row.dmg * dmgMul; p.heavy = 1; p.knock = knock; p.stunSec = row.stagger;
+      p.source = 'player'; p.target = targets.ent[bi].id; p.damage = row.dmg * dmgMul; p.heavy = 1; p.knock = knock; p.stunSec = row.stagger;
       p.dirX = ux; p.dirY = uy; p.px = targets.x[bi]; p.py = targets.y[bi]; p.pz = targets.z[bi] + targets.h[bi] * 0.5;
       events.emit('combat:hit', p);
       hits++;
@@ -99,13 +105,91 @@ export function createTelekinesisSim(world, events, targets, hooks) {
     const tr = wEnt.transform, tg = wEnt.components.targetable, reach = (tg ? tg.radius : 0.3) + 0.4;
     seg[0] = tr.x; seg[1] = tr.y; seg[2] = tr.z + 0.5; seg[3] = tr.x + W[0] * reach; seg[4] = tr.y + W[1] * reach; seg[5] = seg[2];
     if (!world.raySegmentRay(seg, ray)) return;
-    const p = hitP;
+    const p = hitP; p.source = 'player';
     p.target = wEnt.id; p.damage = row.wallDmg * W[2]; p.knock = 0; p.stunSec = 0; p.heavy = 0;
     p.dirX = W[0]; p.dirY = W[1]; p.px = tr.x; p.py = tr.y; p.pz = tr.z + 0.5;
     events.emit('combat:hit', p);
     wEnt = null; wallHits++;
   }
+  /** Lv3: hold the nearest valid beast / roller in the cone. Beasts the sim refuses (bear, croc, boss) are skipped. -> true if holding. */
+  function tryGrab(player, fx, fy) {
+    const sim = hooks.beastSim, t = player.transform;
+    O[0] = t.x; O[1] = t.y; O[2] = t.z + EYE; O[3] = fx; O[4] = fy; row = tiers[2];
+    targets.refresh();
+    B[0] = 1e9; bestProp = null;
+    if (typeof hooks.forEachProp === 'function') hooks.forEachProp(propVisit);
+    let minD = -1;
+    for (let guard = 0; guard < 8; guard++) { // nearest beast farther than the last refusal
+      B[1] = 1e9; let bi = -1;
+      for (let i = 0; i < targets.count; i++) {
+        if (targets.r[i] < 0) continue;
+        const e = targets.ent[i];
+        if (e === player || e.id === 'player') continue;
+        const dx = targets.x[i] - O[0], dy = targets.y[i] - O[1], d = Math.sqrt(dx * dx + dy * dy);
+        if (d <= minD || d >= B[1] || !inCone(targets.x[i], targets.y[i], targets.z[i], targets.r[i], targets.h[i])) continue;
+        B[1] = d; bi = i;
+      }
+      if (bi < 0 || B[1] > B[0]) break; // a closer roller wins
+      const slot = sim.slotOf(targets.ent[bi].id);
+      if (slot >= 0 && holdBeast(sim, slot, SPELL_DEFS.telekinesis.liftDeny)) { gMode = 1; gSlot = slot; break; }
+      minD = B[1];
+    }
+    if (gMode === 0 && bestProp) { gMode = 2; gEnt = bestProp; }
+    if (gMode === 0) return false;
+    gSteps = 0; gLos = 0; holds++;
+    return true;
+  }
+  /** end of a hold: throw (release / timeout) or drop (mana out, line of sight lost, taken away). */
+  function endHold(throwIt) {
+    const dmgMul = hooks && typeof hooks.damageMul === 'function' ? hooks.damageMul() : 1, sim = hooks.beastSim;
+    if (gMode === 1) {
+      if (heldBeast(sim) === gSlot && sim.state[gSlot] === STATE_HELD) {
+        if (throwIt) { throwBeast(sim, O[3] * THROW_SPEED, O[4] * THROW_SPEED, 0, row.throwDmg * dmgMul); throws++; } else releaseBeast(sim);
+      }
+    } else if (gMode === 2 && throwIt) {
+      applyImpulse(gEnt.components.body, gEnt.transform.z, O[3] * PROP_THROW, O[4] * PROP_THROW, 1);
+      tEnt = gEnt; tEnd = tick + FLIGHT_STEPS; tDmg = row.throwDmg * dmgMul; tHit.fill(0); throws++;
+    }
+    gMode = 0; gSlot = -1; gEnt = null;
+  }
+  /** one step of the hold: point 2.5 m ahead at eye height (pulled back from walls), mana drain, timeout, line of sight. */
+  function holdStep(player, fx, fy, down) {
+    const t = player.transform, sim = hooks.beastSim;
+    O[0] = t.x; O[1] = t.y; O[2] = t.z + EYE; O[3] = fx; O[4] = fy;
+    if (gMode === 1 && (heldBeast(sim) !== gSlot || sim.state[gSlot] !== STATE_HELD)) { gMode = 0; gSlot = -1; return; } // hit / killed / reset: the sim let go
+    let hx = O[0] + fx * HOLD_DIST, hy = O[1] + fy * HOLD_DIST;
+    seg[0] = O[0]; seg[1] = O[1]; seg[2] = O[2]; seg[3] = hx; seg[4] = hy; seg[5] = O[2];
+    if (world.raySegmentRay(seg, ray)) { const k = Math.max(0, ray.t * HOLD_DIST - 0.5); hx = O[0] + fx * k; hy = O[1] + fy * k; }
+    const tr = gMode === 1 ? sim.entities[gSlot].transform : gEnt.transform;
+    seg[0] = O[0]; seg[1] = O[1]; seg[2] = O[2]; seg[3] = tr.x; seg[4] = tr.y; seg[5] = tr.z + 0.5; // eye -> held body
+    if (world.raySegmentRay(seg, ray) && ray.t < 0.9) gLos++; else gLos = 0;
+    gSteps++;
+    if (!down || gSteps >= MAX_SEC_STEPS) { endHold(true); return; }
+    if (gLos >= LOS_STEPS) { endHold(false); return; }
+    if (gSteps % 60 === 0 && !(typeof hooks.spendMana === 'function' ? hooks.spendMana(1) : true)) { endHold(false); return; }
+    const hz = O[2] - 0.4 > t.z ? O[2] - 0.4 : t.z;
+    if (gMode === 1) { setHoldPoint(sim, hx, hy, hz); return; }
+    const b = gEnt.components.body, dt = SIM_STEP, c = (v, m) => (v > m ? m : v < -m ? -m : v);
+    b.vx = c((hx - tr.x) / dt, 12); b.vy = c((hy - tr.y) / dt, 12);
+    b.vz = c((hz - tr.z) / dt, 8) + PHYSICS.gravity * dt; // cancels the roller's own gravity this step
+    if ('grounded' in b) b.grounded = false;
+  }
+  /** a thrown roller damages each beast it touches once (6 x INT) inside FLIGHT_SEC. */
+  function thrownWatch() {
+    if (tick > tEnd) { tEnt = null; return; }
+    const tr = tEnt.transform;
+    for (let i = 0; i < targets.count && i < 1024; i++) {
+      if (targets.r[i] < 0 || tHit[i] || targets.ent[i] === tEnt) continue;
+      const dx = targets.x[i] - tr.x, dy = targets.y[i] - tr.y, rr = targets.r[i] + 0.3;
+      if (dx * dx + dy * dy >= rr * rr) continue;
+      tHit[i] = 1; const p = hitP, d = Math.sqrt(dx * dx + dy * dy) || 1; p.source = 'tk';
+      p.target = targets.ent[i].id; p.damage = tDmg; p.heavy = 0; p.knock = 0; p.stunSec = 0; p.dirX = dx / d; p.dirY = dy / d;
+      p.px = targets.x[i]; p.py = targets.y[i]; p.pz = targets.z[i] + 0.5;
+      events.emit('combat:hit', p); propThrowHits++;
+    }
+  }
   return {
+    get holds() { return holds; }, get throws() { return throws; }, get propThrowHits() { return propThrowHits; }, get grabbing() { return gMode; },
     get cooldown() { return cooldown; },
     get castTick() { return castTick; },
     get hits() { return hits; },
@@ -120,8 +204,18 @@ export function createTelekinesisSim(world, events, targets, hooks) {
       tick++;
       if (cooldown > 0) cooldown--;
       wallWatch();
+      if (tEnt) { targets.refresh(); thrownWatch(); }
+      if (gMode) { holdStep(player, fx, fy, down === true); return; }
       if (!armed) return;
-      if (down === true) { held++; return; }
+      if (down === true) {
+        held++;
+        if (held === HOLD_STEPS && cooldown === 0 && hooks && hooks.beastSim && typeof hooks.tier === 'function' && (hooks.tier() | 0) >= 3 && tryGrab(player, fx, fy)) {
+          armed = false;
+          if (typeof hooks.spendMana === 'function' && !hooks.spendMana(tiers[2].mana)) { endHold(false); return; } // no mana: nothing happens
+          cooldown = Math.round(tiers[2].cd / SIM_STEP); castTick = tick;
+        }
+        return;
+      }
       armed = false;
       if (cooldown > 0) return;
       const t = hooks && typeof hooks.tier === 'function' ? hooks.tier() | 0 : 1;
@@ -135,6 +229,6 @@ export function createTelekinesisSim(world, events, targets, hooks) {
       events.emit('telekinesis:cast', castP);
       fire(player, pull);
     },
-    hashInto(h) { h.u32(cooldown); h.u32(armed ? 1 : 0); h.u32(held); h.u32(castTick & 0x7fffffff); h.u32(wEnt ? 1 : 0); },
+    hashInto(h) { h.u32(cooldown); h.u32(armed ? 1 : 0); h.u32(held); h.u32(castTick & 0x7fffffff); h.u32(wEnt ? 1 : 0); h.u32(gMode); h.u32(gSlot + 1); h.u32(gSteps); },
   };
 }

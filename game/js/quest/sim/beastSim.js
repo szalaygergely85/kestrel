@@ -60,6 +60,8 @@ export const STATE_SUBMERGED = 20; // water: eyes-only approach
 export const STATE_GRAB = 21;      // croc hold + roll
 export const STATE_AIRBORNE = 22;  // flyer cruise / circle
 export const STATE_BITE = 24;      // BEAR-BITE: black bear lunge-bite (clip attack); damage once at biteHitMs
+export const STATE_HELD = 25;   // SPELL-R7 (38.81): Telekinesis lv3, floats at the hold point (never renumber)
+export const STATE_THROWN = 26; // SPELL-R7: ballistic flight after a throw / drop
 export const STATE_CAST = 23;      // caster / healer cast (a hit cancels)
 const TACT_ROLE_OF = Object.freeze({ melee: TACT_MELEE, ranged: TACT_RANGED, caster: TACT_CASTER, swarm: TACT_SWARM }); // archetype role -> tactical role (BEAST-04)
 const ARCH_AGGRO_IDX = Object.freeze({ hostile: 0, whenHit: 1, never: 2, near: 3 });
@@ -259,7 +261,7 @@ export function createBeastSim(world, opts) {
     dormCamp: new Uint8Array(MAX_RECORDS), dormTile: new Uint8Array(MAX_RECORDS), tileMode: false, // WM-04 reasons
     dormant: new Uint8Array(MAX_RECORDS),     // GOB-01: setDormant(slot, true) -> skipped like GONE, state kept
     fleeing: new Uint8Array(MAX_RECORDS),     // WOLF-01: STATE_RETURN that runs away from the player first
-    spell: { blindT: new Uint16Array(MAX_RECORDS) }, // SPELL-R4 (38.80/38.81): ONE key for all spell per-slot data; blindT = steps a beast cannot perceive (Teleport lv3)
+    spell: { blindT: new Uint16Array(MAX_RECORDS), held: -1, flyT: 0, p: new Float64Array(8), hitMask: new Uint8Array(MAX_RECORDS) }, // R7: p = hx,hy,hz,vx,vy,vz,dmg; // SPELL-R4 (38.80/38.81): ONE key for all spell per-slot data; blindT = steps a beast cannot perceive (Teleport lv3)
     hunt: new Uint8Array(MAX_RECORDS),        // LIFE-07: 1 = STATE_WANDER leg chasing a fauna prey slot (huntSlot)
     huntSlot: new Int32Array(MAX_RECORDS), huntT: new Int32Array(MAX_RECORDS), preyMask: new Int32Array(MAX_RECORDS),
     goal: { on: new Uint8Array(MAX_RECORDS), tx: new Float64Array(MAX_RECORDS), ty: new Float64Array(MAX_RECORDS) }, // LIFE-08: setGoal override
@@ -844,18 +846,19 @@ function stepSim(sim, px, py, pz) {
     if (deadSt(sim.state[i])) stepDead(sim, i);
   }
   if (sim.fauna) huntPass(sim);
-  for (let k = 0; k < n; k++) { const i = rec[k]; if (live(sim, i)) { perceiveOne(sim, i, px, py, pz); leashOne(sim, i, px, py); } }
+  for (let k = 0; k < n; k++) { const i = rec[k]; if (live(sim, i) && sim.state[i] < STATE_HELD) { perceiveOne(sim, i, px, py, pz); leashOne(sim, i, px, py); } }
   sim._sc.ctx.px = px; sim._sc.ctx.py = py;
   tacticsSync(sim, sim.sc.tS); // BEAST-04: token release + flank re-assign
-  for (let k = 0; k < n; k++) { const i = rec[k]; if (live(sim, i)) { if (!LAYERS[sim.archIdx[i]](sim, i, sim._sc.ctx)) transitionOne(sim, i, px, py); } }
+  for (let k = 0; k < n; k++) { const i = rec[k]; if (live(sim, i) && sim.state[i] < STATE_HELD) { if (!LAYERS[sim.archIdx[i]](sim, i, sim._sc.ctx)) transitionOne(sim, i, px, py); } }
   if (sim.wb) stepWaterBrain(sim.wb, px, py); // BEAST-08b: water slots (own grid, own movement)
   updatePathRequests(sim, px, py);
   servePathRequest(sim, px, py);
-  for (let k = 0; k < n; k++) { const i = rec[k]; if (live(sim, i)) setSteerTarget(sim, i) }
+  for (let k = 0; k < n; k++) { const i = rec[k]; if (live(sim, i) && sim.state[i] < STATE_HELD) setSteerTarget(sim, i) }
   sim.steer.step(SIM_STEP, sim.grid);
   deOverlap(sim); // US-079c (BUG-BOAR-OVERLAP): hard pairwise push-apart, after the soft steer step, before post
   _pp[0] = px; _pp[1] = py; _pp[2] = pz; // BEAST-ALLOC-01: player pos via scratch (double args box per non-inlined call)
-  for (let k = 0; k < n; k++) { const i = rec[k]; if (live(sim, i)) postOne(sim, i) }
+  if (sim.spell.held >= 0) stepSpellBody(sim); // SPELL-R7
+  for (let k = 0; k < n; k++) { const i = rec[k]; if (live(sim, i) && sim.state[i] < STATE_HELD) postOne(sim, i) }
   sim.tick++;
 }
 
@@ -1873,6 +1876,7 @@ function hashSim(sim, h) {
   h.u32Array(sim.pathIdx, 0, n);
   for (let i = 0; i < n; i++) h.i32(sim.pool.lv[i]); // BEAST-POOL-b: binding state
   { const bt = sim.spell.blindT; let any = false; for (let i = 0; i < n; i++) if (bt[i]) { any = true; break; } if (any) h.u32Array(bt, 0, n); } // SPELL-R4: only while someone is blind (golden hash unchanged)
+  if (sim.spell.held >= 0) { const q = sim.spell.p; h.u32(sim.spell.held); h.u32(sim.spell.flyT); for (let k = 0; k < 7; k++) h.f64(q[k]); } // SPELL-R7: only while a body is held
   h.u8Array(sim.seen, 0, n);
   h.u8Array(sim.pathReq, 0, n);
   h.u8Array(sim.pendingDied, 0, n);
@@ -1961,6 +1965,97 @@ function resetAllSim(sim) {
   sim.events.emit('beasts:reset'); // US-079b: loot clears its corpse state on this
 }
 
+// ---- SPELL-R7 (38.81): Telekinesis lv3 lift + throw. One body at a time (sim.spell.held = slot). Every move goes through the
+// collideCircle sweep (<= 0.2 m per sweep < smallest beast radius -> no tunnelling) and the NavGrid walkable test. 0 allocation.
+const HOLD_STEP = 0.2, HOLD_ZRATE = 0.15, FLY_STEPS = 90, HIT_DZ = 1.2, STAGGER_STEPS = 30, SPELL_G = PHYSICS.gravity;
+const _spCol = { x: 0, y: 0, blockedX: false, blockedY: false, nx: 0, ny: 0, overflow: false };
+const _spOpts = { height: 0.7, stepUpMax: 0.3, walkCos: -1 };
+const _spHit = { source: 'tk', target: null, damage: 0, heavy: 0, cause: 'tk', knock: 0, stunSec: 0, dirX: 0, dirY: 0, px: 0, py: 0, pz: 0 };
+
+/** Sweep slot i by (dx, dy); writes steer.x/y only to a collider-free, walkable spot. -> true if not blocked. */
+function spellMove(sim, i, dx, dy) {
+  const steer = sim.steer, z = sim.entities[i].transform.z, r = steer.radius[i] > 0 ? steer.radius[i] : sim.cfg.radius;
+  const o = sim.world.collideCircle(steer.x[i], steer.y[i], dx, dy, r, z, false, _spOpts, _spCol) || _spCol;
+  let nx = o.x, ny = o.y, blocked = o.blockedX || o.blockedY;
+  if (sim.grid && !walkable(sim.grid, nx, ny, z)) { nx = steer.x[i]; ny = steer.y[i]; blocked = true; }
+  steer.x[i] = nx; steer.y[i] = ny; steer.vx[i] = 0; steer.vy[i] = 0;
+  return !blocked;
+}
+function spellFloor(sim, i) {
+  const t = sim.entities[i].transform;
+  _supportOut[0] = sim.steer.x[i]; _supportOut[1] = sim.steer.y[i]; _supportOut[2] = t.z + 0.6;
+  sim.world.supportAtOut(true, _supportOpts, _supportOut);
+  return _supportOut[3];
+}
+function spellDamage(sim, j, dmg, dx, dy) {
+  const e = sim.entities[j], h = _spHit, t = e.transform;
+  h.target = e.id; h.damage = dmg; h.dirX = dx; h.dirY = dy; h.px = t.x; h.py = t.y; h.pz = t.z + 0.4;
+  sim.events.emit('combat:hit', h);
+}
+function spellEnd(sim, i) {
+  const sp = sim.spell, dmg = sp.p[6];
+  sp.held = -1; sp.hitMask.fill(0);
+  enterStagger(sim, i, 0, 0, 0); sim.timer[i] = STAGGER_STEPS; sim.seen[i] = 0;
+  if (dmg > 0) spellDamage(sim, i, dmg, 0, 0);
+}
+/** Hold a live, non-water beast; `deny` (kind names, spellDefs liftDeny), bears and elites (bosses) refuse. Cold path. -> true if now held. */
+export function holdBeast(sim, i, deny) {
+  const sp = sim.spell;
+  if (sp.held >= 0 || i < 0 || i >= sim.count || !live(sim, i) || sim.state[i] >= STATE_HELD || sim.bear[i]) return false;
+  const kn = KIND_NAMES[sim.kindIdx[i]], K = KINDS[kn];
+  if (K && K.elite) return false;
+  if (deny) for (let k = 0; k < deny.length; k++) if (deny[k] === kn) return false;
+  sp.held = i; sp.flyT = 0; sp.hitMask.fill(0);
+  const t = sim.entities[i].transform;
+  sp.p[0] = sim.steer.x[i]; sp.p[1] = sim.steer.y[i]; sp.p[2] = t.z; sp.p[3] = sp.p[4] = sp.p[5] = sp.p[6] = 0;
+  sim.state[i] = STATE_HELD; sim.timer[i] = 0; sim.hunt[i] = 0; sim.pathLen[i] = 0; sim.pathIdx[i] = 0; sim.pathReq[i] = 0;
+  sim.steer.setIdle(i); sim.steer.vx[i] = 0; sim.steer.vy[i] = 0;
+  return true;
+}
+export function setHoldPoint(sim, x, y, z) { const p = sim.spell.p; p[0] = x; p[1] = y; p[2] = z; }
+/** Throw the held beast: velocity (vx, vy, vz), impact damage `dmg` (already INT-scaled) to it and to each beast it touches. */
+export function throwBeast(sim, vx, vy, vz, dmg) {
+  const sp = sim.spell, i = sp.held;
+  if (i < 0 || sim.state[i] !== STATE_HELD) return false;
+  sp.p[3] = vx; sp.p[4] = vy; sp.p[5] = vz; sp.p[6] = dmg; sp.flyT = FLY_STEPS; sim.state[i] = STATE_THROWN;
+  return true;
+}
+/** Let go: it just falls (no velocity, no damage). */
+export function releaseBeast(sim) { return throwBeast(sim, 0, 0, 0, 0); }
+export function heldBeast(sim) { return sim.spell.held; }
+
+function stepSpellBody(sim) {
+  const sp = sim.spell, i = sp.held, st = sim.state[i], p = sp.p, t = sim.entities[i].transform, steer = sim.steer;
+  if (st !== STATE_HELD && st !== STATE_THROWN) { sp.held = -1; sp.hitMask.fill(0); return; } // a hit / death took it out of the spell
+  if (st === STATE_HELD) {
+    const dx = p[0] - steer.x[i], dy = p[1] - steer.y[i], d = Math.sqrt(dx * dx + dy * dy), k = d > HOLD_STEP ? HOLD_STEP / d : 1;
+    if (d > 1e-6) spellMove(sim, i, dx * k, dy * k);
+    const fl = spellFloor(sim, i), want = p[2] < fl ? fl : p[2], dz = want - t.z;
+    t.z += dz > HOLD_ZRATE ? HOLD_ZRATE : dz < -HOLD_ZRATE ? -HOLD_ZRATE : dz;
+    t.x = steer.x[i]; t.y = steer.y[i];
+    return;
+  }
+  const h = SIM_STEP / 2; // THROWN: 2 substeps (<= 0.12 m at 14 m/s)
+  for (let s = 0; s < 2; s++) {
+    p[5] -= SPELL_G * h;
+    const free = spellMove(sim, i, p[3] * h, p[4] * h);
+    t.z += p[5] * h; t.x = steer.x[i]; t.y = steer.y[i];
+    const fl = spellFloor(sim, i);
+    let hit = !free;
+    if (t.z <= fl && p[5] <= 0) { t.z = fl; hit = true; }
+    for (let a = 0; a < sim.pool.n; a++) { // overlap with another live beast (once per beast)
+      const j = sim.pool.rec[a];
+      if (j === i || !live(sim, j) || sp.hitMask[j]) continue;
+      const ex = steer.x[j] - steer.x[i], ey = steer.y[j] - steer.y[i], rr = steer.radius[i] + steer.radius[j];
+      if (ex * ex + ey * ey >= rr * rr || Math.abs(sim.entities[j].transform.z - t.z) > HIT_DZ) continue;
+      sp.hitMask[j] = 1;
+      if (p[6] > 0) { const d = Math.sqrt(ex * ex + ey * ey) || 1; spellDamage(sim, j, p[6], ex / d, ey / d); }
+    }
+    if (hit) { spellEnd(sim, i); return; }
+  }
+  if (--sp.flyT <= 0) spellEnd(sim, i);
+}
+
 /** SPELL-R4 (38.80): Teleport lv3. Live beasts in an aggro state within r m (2D) of (x, y) go to STATE_WANDER and cannot perceive for `sec` s. -> count. Cold path. */
 export function loseTrack(sim, x, y, r, sec) {
   const r2 = r * r, steps = Math.min(65535, Math.round(sec / SIM_STEP));
@@ -1980,6 +2075,7 @@ export function loseTrack(sim, x, y, r, sec) {
 /** One slot back to home, alive, state wander (shared by resetAll and setDown(slot, false)). */
 function resetSlotSim(sim, i) {
   sim.spell.blindT[i] = 0; // SPELL-R4
+  sim.spell.hitMask[i] = 0; if (sim.spell.held === i) sim.spell.held = -1; // SPELL-R7
   sim.bite.cd[i] = 0; sim.bite.n[i] = 0; sim.bite.done[i] = 0; // BEAR-BITE
   // US-079b: dead steer slots are re-added in ascending order; addAgent hands out the lowest free slot, and the
   // live slots stay active (slots >= count are never used), so the lowest free slot is always the lowest dead one.
