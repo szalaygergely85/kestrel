@@ -1305,6 +1305,11 @@ async function main() {
     const mf = fileURLToPath(new URL('../content/gi/manifest.json', import.meta.url)); // GI-PROBE-07: manifest vs current inputs
     if (existsSync(mf)) { const cur = gi.inputHash(), m = JSON.parse(readFileSync(mf, 'utf8')); for (const [id, h] of Object.entries(m)) if (h !== cur) warnings.push(`content/gi/manifest.json: zone ${id} is stale (inputs changed; run node tools/bake-gi.mjs, GI is ignored at runtime)`); }
   } catch (e) { warnings.push(`content/gi: GI check skipped (${e.message})`); }
+  try { // ED-WATER-03: world.riverEdits block (editor river surface edits; tools/editor/riverEdits.js)
+    const wdef = JSON.parse(readFileSync(new URL('../content/worlds/world_m1.world.json', import.meta.url), 'utf8'));
+    const { validateRiverEdits, isRiver } = await import('./editor/riverEdits.js');
+    allErrors.push(...validateRiverEdits(wdef.riverEdits, Object.fromEntries((wdef.water || []).filter(isRiver).map((r) => [r.id, r.path.length]))).map((m) => `world_m1 ${m}`));
+  } catch (e) { warnings.push(`riverEdits check skipped (${e.message})`); }
   allErrors.push(...lootFile.errors);
   allErrors.push(...recipeFile.errors);
   // ED-AI-01: content/beasts archetypes + kinds (plain-language range errors, tools/editor/ai/validate.js)

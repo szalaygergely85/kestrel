@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // TEASER-QA: headless stills of every design/cinematics/teaser-*.json path (one browser run).
-// node tools/teaser-stills.mjs --port 95xx [--ids a,b] [--hours id=H,..] [--quality ultra] [--grid 480x180] [--view 1920x1080] [--out dir]
+// node tools/teaser-stills.mjs --port 95xx [--ids a,b] [--hours id=H,..] [--quality high] [--grid 480x180] [--timeout 300] [--retries 1]
+// (QUALITY= / GRID= env also work; default quality high. Each shot has its own timeout + one automatic retry with a fresh page load; one PASS/FAIL line per shot.)
+// [--view 1920x1080] [--view 1920x1080] [--out dir]
 // Plays each path at its intended hour (README table / note) and saves frames at start / middle / end:
 //   <out>/<id>-start.png, -mid.png, -end.png + <id>-sheet.png (3 frames side by side, the portrait 9:16 centre crop outlined).
 import { spawn } from 'node:child_process';
@@ -10,6 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ROOT, validatePort, buildLaunchFlags, findBrowserBinary, waitForHttp, connectCdp, evaluate, killTree } from './capture-browser.mjs';
 import { buildQuery } from './capture-cinematic.mjs';
+import { pickQuality, parseGrid, runShot, resultLine } from './still-robust.mjs';
 
 // Intended capture hour per teaser (design/cinematics/README.md table + each file's note). teaser-water 17 -> 12 (TEASER-QA: water near-black at 17:00).
 export const TEASER_HOURS = Object.freeze({
@@ -18,16 +21,18 @@ export const TEASER_HOURS = Object.freeze({
 });
 
 function parse(argv) {
-  const o = { port: NaN, ids: null, quality: 'ultra', grid: '480x180', view: '1920x1080', out: path.join(ROOT, 'docs', 'test-reports', 'teaser') };
+  const o = { port: NaN, ids: null, quality: null, grid: process.env.GRID || '480x180', timeout: 300, retries: 1, view: '1920x1080', out: path.join(ROOT, 'docs', 'test-reports', 'teaser') };
   for (let i = 0; i < argv.length; i += 2) {
     const k = argv[i], v = argv[i + 1];
     if (k === '--port') o.port = Number(v); else if (k === '--ids') o.ids = v.split(',');
     else if (k === '--quality') o.quality = v; else if (k === '--grid') o.grid = v;
     else if (k === '--hours') o.hours = Object.fromEntries(v.split(',').map((kv) => kv.split('=')).map(([a, b]) => [a, Number(b)]));
+    else if (k === '--timeout') o.timeout = Number(v); else if (k === '--retries') o.retries = Number(v);
     else if (k === '--view') o.view = v; else if (k === '--out') o.out = path.resolve(v);
     else throw new Error(`unknown argument ${k}`);
   }
   validatePort(o.port); validatePort(o.port + 1);
+  o.quality = pickQuality(o.quality, process.env); parseGrid(o.grid);
   o.ids ||= readdirSync(path.join(ROOT, 'design', 'cinematics')).filter((f) => /^teaser-[\w-]+\.json$/.test(f)).map((f) => f.slice(0, -5));
   return o;
 }
@@ -50,18 +55,18 @@ async function main() {
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: vw, height: vh, deviceScaleFactor: 1, mobile: false });
     const exceptions = [];
     cdp.onEvent((m, p) => { if (m === 'Runtime.exceptionThrown') exceptions.push(p.exceptionDetails?.exception?.description || p.exceptionDetails?.text); });
-    for (const id of o.ids) {
+    const shotOnce = async (id) => {
       exceptions.length = 0;
       const hour = o.hours?.[id] ?? TEASER_HOURS[id] ?? 12;
       const q = buildQuery({ grid: o.grid, hour, clean: true }, id) + `&quality=${o.quality}`;
+      await cdp.send('Page.navigate', { url: 'about:blank' });
       await cdp.send('Page.navigate', { url: `http://127.0.0.1:${o.port}/game/index.html?${q}` });
-      const deadline = Date.now() + 240000;
+      const deadline = Date.now() + o.timeout * 1000 - 5000;
       while (!(await evaluate(cdp, '!!window.__cine'))) {
         const err = await evaluate(cdp, 'window.__cineError');
-        if (err || Date.now() > deadline) { report.push({ id, error: String(err || 'timeout') }); break; }
+        if (err || Date.now() > deadline) throw new Error(String(err || 'world not ready'));
         await new Promise((r) => setTimeout(r, 200));
       }
-      if (report.at(-1)?.id === id) continue;
       const frames = await evaluate(cdp, '__cine.frames');
       const picks = { start: 0, mid: Math.floor((frames - 1) / 2), end: frames - 1 };
       // Step through every frame (playback is sequential); grab PNGs only at the picks, then build the sheet in-page.
@@ -76,11 +81,16 @@ async function main() {
         out.sheet = c.toDataURL('image/png');
         return out;
       })()` });
-      if (res.exceptionDetails) { report.push({ id, error: JSON.stringify(res.exceptionDetails).slice(0, 300) }); continue; }
+      if (res.exceptionDetails) throw new Error(JSON.stringify(res.exceptionDetails).slice(0, 300));
       for (const [k, url] of Object.entries(res.result.value)) writeFileSync(path.join(o.out, `${id}-${k}.png`), Buffer.from(url.split(',')[1], 'base64'));
-      report.push({ id, hour, frames, picks, exceptions: exceptions.slice(0, 3) });
-      console.log(JSON.stringify(report.at(-1)));
+      return { id, hour, frames, picks, exceptions: exceptions.slice(0, 3) };
+    };
+    for (const id of o.ids) {
+      const r = await runShot(() => shotOnce(id), { timeoutMs: o.timeout * 1000, retries: o.retries, label: id });
+      console.log(resultLine(id, r));
+      report.push(r.ok ? r.value : { id, error: r.error });
     }
+    if (report.some((r) => r.error)) process.exitCode = 1;
     writeFileSync(path.join(o.out, 'stills.json'), JSON.stringify({ quality: o.quality, grid: o.grid, view: o.view, shots: report }, null, 2) + '\n');
   } finally {
     if (cdp) { try { await cdp.send('Browser.close'); } catch { /* closed */ } cdp.close(); }

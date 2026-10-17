@@ -95,3 +95,46 @@ const rg = tool.regions(); assert.equal(rg.find((r) => r.id === 'cellar').w, 10)
   t.select('big'); assert.equal(t.depth(), -1); assert.equal(maxDepth({ rect: [0, 0, 4, 4], z: 5 }, () => 2), 3); assert.equal(maxDepth({ c: [0, 0], r: 2, z: 1, shape: 'circle' }, (x) => (x > 2.5 ? -50 : 1)), 0);
 }
 console.log('waterTool tests PASS');
+
+// ---- ED-WATER-03: river surface edits
+{
+  const { applyRiverEdit, applyAllRiverEdits, normalizeEdit, withDz, withWidth, validateRiverEdits, isRiver } = await import('./riverEdits.js');
+  const river = { id: 'braid', shape: 'river', look: 'river', clip: ['sea'], path: [[0, 0, -1, 10], [0, 8, -1.5, 12], [0, 16, -2, 12]] };
+  const s0 = JSON.stringify(river);
+  assert.equal(applyRiverEdit(river, null), river, 'no edit -> same object');
+  assert.equal(applyAllRiverEdits([river], undefined)[0], river);
+  const a = applyRiverEdit(river, { dz: 0.5, hw: { 1: 20 } });
+  assert.deepEqual(a.path, [[0, 0, -0.5, 10], [0, 8, -1, 20], [0, 16, -1.5, 12]]);
+  assert.deepEqual(a.riverApplied, { dz: 0.5, hw: { 1: 12 } });
+  assert.equal(JSON.stringify(river), s0, 'input not mutated');
+  // idempotent + same input -> same ribbon (gen script and editor share this function)
+  assert.deepEqual(applyRiverEdit(a, { dz: 0.5, hw: { 1: 20 } }), a);
+  assert.deepEqual(applyAllRiverEdits([river], [{ id: 'braid', dz: 0.5, hw: { 1: 20 } }])[0], a);
+  // changing / removing the edit restores from the true base
+  assert.deepEqual(applyRiverEdit(a, { dz: -0.25 }).path.map((p) => p[2]), [-1.25, -1.75, -2.25]);
+  assert.deepEqual(applyRiverEdit(a, { dz: -0.25 }).path.map((p) => p[3]), [10, 12, 12]);
+  assert.deepEqual(applyRiverEdit(a, null), river);
+  assert.deepEqual(normalizeEdit({ dz: 0, hw: {} }), null); assert.deepEqual(normalizeEdit({ dz: 1, hw: { 9: 3 } }, 3), { dz: 1, hw: {} });
+  assert.deepEqual(withWidth({ dz: 1, hw: { 1: 20 } }, 1, 12, 12), { dz: 1, hw: {} }); assert.equal(withDz(null, 0), null);
+  // schema
+  assert.deepEqual(validateRiverEdits(undefined), []); assert.deepEqual(validateRiverEdits([{ id: 'braid', dz: 0.5, hw: { 1: 20 } }], { braid: 3 }), []);
+  assert.ok(validateRiverEdits({}).length); assert.ok(validateRiverEdits([{ id: 'x', dz: 99 }]).length); assert.ok(validateRiverEdits([{ id: 'braid', hw: { 5: 4 } }], { braid: 3 }).length);
+  assert.ok(validateRiverEdits([{ id: 'nope', dz: 1 }], { braid: 3 }).length); assert.ok(validateRiverEdits([{ id: 'braid', hw: { 1: 0 } }], { braid: 3 }).length);
+  assert.ok(validateRiverEdits([{ id: 'braid', foo: 1 }], { braid: 3 }).length); assert.ok(validateRiverEdits([{ id: 'braid' }, { id: 'braid' }], { braid: 3 }).length);
+  // tool: river selected -> z offset + width, one undo step each, doc round trip
+  const full = { water: [{ id: 'braid', shape: 'river', look: 'river', clip: ['sea'], path: river.path.map((p) => p.slice()) }, ...mk().water.slice(0, 1)] };
+  const doc = { files: new Map([['world/m1', { def: full, dirty: false }]]) }, stack = createStack();
+  const tool = createWaterTool({ doc, fileId: 'world/m1', commit: (rec) => { applyEdit(doc, rec); stack.push(rec); } });
+  const before = JSON.stringify(full);
+  assert.ok(tool.select('braid') && tool.st.msg === '' && tool.isRiverSel() && tool.riverInfo().points.length === 3);
+  assert.equal(tool.pickPoint(0, 7.5), 1); assert.ok(tool.down(0, 16));
+  assert.ok(tool.setRiverDz(0.5)); assert.equal(tool.setRiverDz(0.5), false, 'no-op adds no undo step');
+  assert.deepEqual(full.riverEdits, [{ id: 'braid', dz: 0.5 }]); assert.equal(full.water[0].path[1][2], -1);
+  assert.ok(tool.setRiverWidth(1, 20)); assert.deepEqual(full.riverEdits, [{ id: 'braid', dz: 0.5, hw: { 1: 20 } }]); assert.equal(full.water[0].path[1][3], 20);
+  assert.deepEqual(full.water[0], applyRiverEdit(river, { dz: 0.5, hw: { 1: 20 } }), 'editor result == gen result');
+  assert.equal(tool.riverInfo().points[1].hw0, 12);
+  const u = () => applyEdit(doc, invert(stack.undo()));
+  u(); assert.deepEqual(full.riverEdits, [{ id: 'braid', dz: 0.5 }]); assert.equal(full.water[0].path[1][3], 12, 'one undo = width back');
+  u(); assert.ok(!('riverEdits' in full), 'riverEdits key removed'); assert.equal(JSON.stringify(full.water), JSON.stringify(JSON.parse(before).water), 'undo restores the ribbon byte for byte'); assert.equal(JSON.stringify(full), before, 'whole def byte-identical');
+}
+console.log('river edits OK');

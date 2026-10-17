@@ -70,6 +70,14 @@ try {
   // undo puts it back
   await evaluate(cdp, 'window.__editor.doUndo(); window.__editor.rebuildNow()');
   assert.equal(await wet(1500, 1000), false, 'undo restores the dry area');
+  // ED-WATER-03: river ribbon surface z offset (+0.5 m on braid): path z follows live, one undo restores it, riverEdits written
+  const rz0 = await evaluate(cdp, "window.__editor.world.waterAt(1244.25, 605, {}) && 0, window.__editor.water.tool.select('braid'), window.__editor.water.tool.riverInfo().points[1].z");
+  assert.equal(await evaluate(cdp, "window.__editor.water.tool.setRiverDz(0.5)"), true);
+  await evaluate(cdp, 'window.__editor.rebuildNow()');
+  assert.equal(await evaluate(cdp, "+window.__editor.water.tool.riverInfo().points[1].z.toFixed(3)"), +(rz0 + 0.5).toFixed(3), 'ribbon surface z raised by 0.5');
+  assert.deepEqual(await evaluate(cdp, "window.__editor.water.tool.riverInfo().edit"), { dz: 0.5, hw: {} });
+  await evaluate(cdp, 'window.__editor.doUndo(); window.__editor.rebuildNow()');
+  assert.equal(await evaluate(cdp, "window.__editor.water.tool.riverInfo().points[1].z"), rz0, 'undo restores the ribbon z');
   assert.deepEqual(errors, [], 'page errors: ' + JSON.stringify(errors));
   console.log('verify-editor-water PASS: resize + undo change world.waterAt');
 } finally {
