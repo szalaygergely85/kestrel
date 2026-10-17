@@ -142,6 +142,21 @@ export function h01(a, b = 0, c = 0) {
   return (h >>> 0) / 4294967296;
 }
 
+// FD-07: gentle torch flicker (owner OB-198/208). The noise below is already low-passed value noise (smoothstep
+// between hashed knots); what makes it visible is rate x depth. Scales applied at runtime to the palette values:
+// HZ_MUL slows the knots, AMOUNT_MUL / JITTER_MUL shrink the depth. Dev switch (URL) ?torchflick=0 = off
+// (no flicker), ?torchflick=old = pre-FD-07 values, default = gentle. Light.pos/col are read by both GPU and JS twin.
+export const FLICK_GENTLE = { hz: 0.25, amount: 0.45, jitter: 0.4 };
+const FLICK_OLD = { hz: 1, amount: 1, jitter: 1 };
+const FLICK_OFF = { hz: 1, amount: 0, jitter: 0 };
+export const FLICK_MODES = { gentle: FLICK_GENTLE, old: FLICK_OLD, off: FLICK_OFF };
+let flick = FLICK_GENTLE;
+export function setTorchFlicker(mode) { flick = FLICK_MODES[mode] || FLICK_GENTLE; }
+try { // dev switch; harmless where there is no location (Node)
+  const q = globalThis.location && /[?&]torchflick=([a-z0-9]+)/.exec(globalThis.location.search);
+  if (q) setTorchFlicker(q[1] === '0' ? 'off' : q[1]);
+} catch { /* ignore */ }
+
 // FRAME-ALLOC-01: scratch-writing twin of h01 (same bits) so LightSet.update keeps its doubles unboxed.
 const _hs = new Float64Array(8);
 function h01s(slot, a, b, c) {
@@ -603,8 +618,8 @@ export class LightSet {
     const timeSec = this.timeBuf[0];
     for (let i = 0; i < this.count; i++) {
       const seed = this.seed[i];
-      const hzMin = this.flickerHzMin[i], hzMax = this.flickerHzMax[i];
-      const amount = this.flickerAmount[i], jitter = this.flickerJitter[i];
+      const hzMin = this.flickerHzMin[i] * flick.hz, hzMax = this.flickerHzMax[i] * flick.hz;
+      const amount = this.flickerAmount[i] * flick.amount, jitter = this.flickerJitter[i] * flick.jitter;
       _hs[5] = 0; _hs[6] = 0; _hs[7] = 0; // v0, v1, v2
       if (amount > 0 || jitter > 0) {
         h01s(0, seed, 0, 0);

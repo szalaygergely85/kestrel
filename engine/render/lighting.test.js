@@ -67,6 +67,22 @@ function approx(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }
   ok('wall facing the light is lit', out[0] > 0.01, String(out[0]));
 }
 
+// --- FD-07 gentle torch flicker: per-frame (1/60 s) delta stays small, still visibly breathes ---
+{
+  const ls = new LightSet();
+  // worst palette torch: hz 10-16, amount 0.20
+  ls.add({ x: 0, y: 0, z: 0, hue: [1, 1, 1], intensity: 1, radius: 6, on: true, flicker: { hzMin: 10, hzMax: 16, amount: 0.20, jitter: 0.05 }, seed: 7 });
+  let prev = null, maxStep = 0, mn = Infinity, mx = -Infinity;
+  for (let f = 0; f < 60 * 60; f++) {
+    ls.update(f / 60, null);
+    const v = ls.col[0];
+    if (prev !== null) maxStep = Math.max(maxStep, Math.abs(v - prev));
+    prev = v; mn = Math.min(mn, v); mx = Math.max(mx, v);
+  }
+  ok('FD-07 torch per-frame light delta <= 0.016 (max step ' + maxStep.toFixed(4) + ')', maxStep <= 0.016, String(maxStep));
+  ok('FD-07 torch still breathes (range >= 0.08, got ' + (mx - mn).toFixed(3) + ')', mx - mn >= 0.08, String(mx - mn));
+}
+
 // --- flicker: deterministic (same timeSec -> same value), bounded, and varies over time ---
 {
   const ls = new LightSet();
