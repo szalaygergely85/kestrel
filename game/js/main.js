@@ -1854,6 +1854,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
             dialogueOpen: () => dialogueCtl.open, afterLeave: () => rq.state.completed.includes('leave'), requestOpen: nearTalk, noticeBusy: () => notice.active,
             restore: () => dialogueCtl.addNpc('bear'), hideSafe: true, leadStatus: () => rq.book.statusOf('sq.burl.walk') }); // sq.burl.walk: Burl leads along walks.toBend // QL-05: Burl's home switch re-adds her [E] Talk
           escort.load();
+          (window.__debug = window.__debug || {}).burl = { walk: bw, get legs() { return beastLegs; }, pool: gameVoxelPool }; // OB-215 probe handle (tools/probe-burl-legs.mjs)
           const nubH = world.get('nub'); // NUB-01
           nub = nubH ? createNubFollow({ handle: nubH, groundAt: (x, y) => (world.terrain ? world.terrain.groundAt(x, y) : bt.z), isWater: (x, y) => world.waterAt(x, y, nubWtmp), seed: 1, burl: { x: () => bt.x, y: () => bt.y, walking: () => bw.walking, hidden: () => bw.hidden } }) : null;
         }

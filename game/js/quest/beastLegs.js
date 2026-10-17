@@ -8,7 +8,8 @@ const NPC_BASE = 1024; // slot indices of scripted NPCs start here (beast sim in
 export function createBeastLegs(opts) {
   const o = opts || {};
   const enabled = o.enabled !== false;
-  const driver = enabled ? createLegDriver(o.capacity || 48) : null;
+  const beastCap = o.capacity || 48, NPC_RESERVE = 8; // OB-215: 48 beasts filled every slot so Burl (stepNpc) never attached -> reserve extra slots for scripted NPCs
+  const driver = enabled ? createLegDriver(beastCap + NPC_RESERVE) : null;
   let slot = new Int32Array(64).fill(-1);
   let ent = new Array(64).fill(null);
   let mod = new Array(64).fill(null);
@@ -17,6 +18,7 @@ export function createBeastLegs(opts) {
   const npcKeys = [];
   const api = { driver, pool: o.pool, dtMs: 1000 / 60, stats: { attached: 0 }, get phase() { return phase; }, step, stepNpc, release, releaseAll };
 
+  function beastsAttached() { let n = 0; for (let i = 0; i < slot.length && i < NPC_BASE; i++) if (slot[i] >= 0) n++; return n; }
   function grow(i) {
     if (i < slot.length) return;
     const n = Math.max(i + 1, slot.length * 2);
@@ -40,6 +42,7 @@ export function createBeastLegs(opts) {
     grow(i);
     if (slot[i] >= 0 && (ent[i] !== e || mod[i] !== pm)) release(i, v); // respawn into the slot / model swap
     if (slot[i] < 0) {
+      if (i < NPC_BASE && beastsAttached() >= beastCap) return false; // beasts stop at beastCap, NPCs use the reserve
       slot[i] = driver.attach(pm); ent[i] = e; mod[i] = pm;
       if (slot[i] < 0) return false;
       api.stats.attached++;
