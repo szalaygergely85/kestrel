@@ -66,6 +66,11 @@ for (const [rule, mutate] of Object.entries(cases)) {
 // R12 level floor: support = the level floor under the entity (tower interior): on floor = ok, floating above it = error
 { const c = clean(); c.entSupport.push({ id: 'tower.crate', x: 1, y: 1, base: 5.7, support: 5.7, floorAbove: null }); assert.equal(RULES.R12(c).length, 0, 'on the level floor'); }
 { const c = clean(); c.entSupport.push({ id: 'tower.crate', x: 1, y: 1, base: 6.4, support: 5.7, floorAbove: null }); assert.equal(RULES.R12(c).length, 1, 'floating above the level floor'); }
+// OB-155 R1 kinds: anchor / beast / entity-sunk / prop-sunk (float > 0.3, sunk < -0.4 vs the real floor); old kinds keep the 0.25 float rule and ignore negative gaps
+for (const kind of ['anchor', 'beast', 'entity-sunk', 'prop-sunk']) {
+  for (const [gap, n] of [[0.31, kind === 'entity-sunk' || kind === 'prop-sunk' ? 1 : 1], [0.2, 0], [-0.41, 1], [-0.39, 0]]) { const c = clean(); c.floating = [{ id: 'f1', kind, x: 1, y: 1, gap }]; assert.equal(RULES.R1(c).length, n, `R1 ${kind} gap ${gap}`); }
+}
+{ const c = clean(); c.floating = [{ id: 't1', kind: 'tree', x: 1, y: 1, gap: -1 }, { id: 'p1', kind: 'prop', x: 1, y: 1, gap: 0.26 }]; assert.equal(RULES.R1(c).length, 1, 'trees may be planted low; props float > 0.25'); }
 // meshTopAt: exact stair top (two steps: z 0.2 for x<1, z 0.4 for 1<=x<2), not the AABB top 0.4
 {
   const q = (x0, x1, z) => [x0, 0, z, x1, 0, z, x1, 2, z, x0, 0, z, x1, 2, z, x0, 2, z];

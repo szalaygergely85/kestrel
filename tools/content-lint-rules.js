@@ -3,7 +3,7 @@
 
 import { validateLogic } from '../engine/index.js';
 import { formatProblems } from './editor/quest/format.js';
-export const MAX_FLOAT = 0.25, GIVER_MAX_UP = 2.5, GIVER_WALK_R = 3, ENT_MAX_FLOAT = 0.15, BURY_MIN = 0.1, BURY_MAX = 0.9, OBJECT_GIVER_MAX = 0.1, SMOKE_SRC_R = 3, CHIMNEY_R = 6, CHIMNEY_MIN = 3, CHEST_R = 25;
+export const MAX_FLOAT = 0.25, GIVER_MAX_UP = 2.5, GIVER_WALK_R = 3, ENT_MAX_FLOAT = 0.15, SUNK_MAX = 0.4, ENT_FLOAT_NEW = 0.3, BURY_MIN = 0.1, BURY_MAX = 0.9, OBJECT_GIVER_MAX = 0.1, SMOKE_SRC_R = 3, CHIMNEY_R = 6, CHIMNEY_MIN = 3, CHEST_R = 25;
 export const LEVELS = { R1: 'error', R2: 'error', R3: 'error', R4: 'error', R5: 'error', R6: 'error', R7: 'error', R8: 'warn', R9: 'warn', R10: 'warn', R11: 'error', R12: 'error', R13: 'error', R14: 'error', R15: 'error', R16: 'warn', R17: 'error', R19: 'error' };
 export const TITLES = {
   R1: 'floating placed prop/tree', R2: 'components.sprite in the world', R3: 'raw id in player text', R4: '"relay" in player text',
@@ -121,6 +121,9 @@ export function meshTopAt(mesh, s, x, y, maxZ) {
   }
   return best;
 }
+/** Entities exempt from the floor checks (wall-mounted / hung / water-borne, same list as R12). */
+export const R12_SKIP = (id) => WALL_MOUNTED.test(id) || R12_OK.has(id) || R1_ENT_OK.has(id);
+const R1_ENT_OK = new Map([['farTower', 'invisible lookAt target for the far tower, deliberately hung at its roof height'], ['tower.envelopeHeap', 'crash heap placed z:ground; its model anchor sits 1 m above the voxel bottom so the heap is half-buried in the scree on purpose (anchor intent, not decidable)'], ['relay_whitecombs', 'waystone foot seated into its slope on purpose (ground-resolved on a 0.43 m slope), like relayBend']]);
 /** R12 for one entSupport record (wall-mounted lamps/notes allow-listed). */
 export function r12One(e) {
   if (WALL_MOUNTED.test(e.id) || R12_OK.has(e.id)) return [];
@@ -150,7 +153,14 @@ export function r14Quest(c, q, opts = {}) {
 // ---- rules ----
 export const RULES = {
   // R1 [OB-131/143] ctx.floating = [{id, kind:'prop'|'tree'|'scatter', x, y, gap}]
-  R1: (c) => (c.floating || []).filter((p) => p.gap > MAX_FLOAT).map((p) => F('R1', p.id, p.x, p.y, `${p.kind} floats ${p.gap} m above the ground (> ${MAX_FLOAT})`)),
+  // OB-155 kinds: 'entity-sunk' | 'anchor' | 'beast' (float > 0.3, sunk < -0.4 vs the real floor under it) and 'prop-sunk' (gap = lowest vertex vs ground at the origin, < -0.4)
+  R1: (c) => (c.floating || []).flatMap((p) => {
+    const nk = /^(anchor|beast|entity-sunk|prop-sunk)$/.test(p.kind);
+    if (!nk) return p.gap > MAX_FLOAT ? [F('R1', p.id, p.x, p.y, `${p.kind} floats ${p.gap} m above the ground (> ${MAX_FLOAT})`)] : [];
+    if (p.gap > ENT_FLOAT_NEW) return [F('R1', p.id, p.x, p.y, `${p.kind} floats ${p.gap} m above its floor (> ${ENT_FLOAT_NEW})`)];
+    if (p.gap < -SUNK_MAX) return [F('R1', p.id, p.x, p.y, `${p.kind} sunk ${-p.gap} m below its floor (> ${SUNK_MAX})`)];
+    return [];
+  }),
   // R2 [OB-132] ctx.entities = [{id, x, y, z, components}]; ctx.fxModels = Set of model ids with fx:true (fire/glow/spark/smoke billboards, D-104) are allowed
   R2: (c) => c.entities.filter((e) => e.components?.sprite && !(c.fxModels && c.fxModels.has(e.components.sprite.model))).map((e) => F('R2', e.id, e.x, e.y, 'has components.sprite (' + (e.components.sprite.model || '?') + '): use a voxel model')),
   // R3 [OB-137] ctx.texts = [{where, text}], ctx.quests, ctx.itemDefs, ctx.labelOf

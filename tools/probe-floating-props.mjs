@@ -13,6 +13,13 @@ export async function floatingProps() {
   const r = await lintWorld('world_m1', true);
   return r.filter((p) => !/Tree|Pine|Mushroom_Laetiporus|Wall_/.test(p.mesh) && !p.id.startsWith('strandStake') && (p.float > MAX_FLOAT || (p.kind.includes('steep') && CHECKED.test(p.mesh))));
 }
+/** OB-155: placed meshes swallowed by the terrain (lowest vertex > SUNK_M under the ground at the origin). Rocks/trees/plants/walls/fences embed on purpose. */
+export const SUNK_SKIP = /Tree|Pine|Rock|Boulder|Cliff|Stone|Bush|Grass|Fern|Plant|Flower|Clover|Mushroom|Pebble|Wall_|Fence|Path|Stump|Log/;
+export const SUNK_ALLOW = { poi079: 'stairs descend into the rook ruin (nav floors)', ow035: 'ruin corner foundation, scale 1.9, sunk into the slope on purpose' };
+export async function sunkProps() {
+  const r = await lintWorld('world_m1', true, { sunk: true });
+  return r.filter((p) => p.kind.includes('sunk') && !SUNK_SKIP.test(p.mesh) && !p.id.startsWith('strandStake') && !SUNK_ALLOW[p.id]);
+}
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const bad = await floatingProps(), by = {};
   for (const p of bad) (by[p.mesh] ||= []).push(p.id + ':' + p.float + (p.kind.includes('steep') ? 's' : ''));
