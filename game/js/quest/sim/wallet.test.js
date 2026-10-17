@@ -18,6 +18,26 @@ assert.equal(createWallet(-4).get(), 0); assert.equal(createWallet(1e9).get(), M
 const c = createWallet(MAX_COIN - 1); assert.equal(c.add(10), 1, 'clamped at max');
 assert.equal(coinText(1), '+1 coin'); assert.equal(coinText(20), '+20 coins');
 
+// Run the production drop hook with its host dependencies; no browser bootstrap needed.
+{
+  const source = readFileSync(new URL('../../main.js', import.meta.url), 'utf8');
+  const hook = source.split('\n').find(line => line.trim().startsWith("engine.events.on('coin:drop',"));
+  assert.ok(hook, 'production coin drop hook exists');
+  const bind = new Function('engine', 'saveRelay', 'lootToast', 'coinText', hook);
+  const wallet = createWallet(MAX_COIN - 1), messages = [];
+  let drop;
+  const engine = { events: { on(name, fn) { assert.equal(name, 'coin:drop'); drop = fn; } } };
+  bind(engine, {wallet}, {say(text) {messages.push(text);}}, coinText);
+  drop({n:20});
+  assert.equal(wallet.get(), MAX_COIN);
+  assert.deepEqual(messages, ['+1 coin'], 'capped drop toast reports actual gain');
+  drop({n:20}); drop({n:-1}); drop({n:1.5}); drop(null);
+  assert.deepEqual(messages, ['+1 coin'], 'full wallet/invalid drop has no toast');
+  wallet.set(0);
+  bind(engine, {wallet}, null, coinText);
+  drop({n:20}); assert.equal(wallet.get(),20,'missing toast view still receives coin');
+}
+
 // grantReward pays coin once per call, items unchanged, emits coin:got
 {
   const ev = []; const wl = createWallet(0);

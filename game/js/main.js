@@ -647,7 +647,7 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
   saveRelay.bindEvents(engine.events);
   // CUR-01 (D-121): coin hooks. 'coin:got' {n} = already paid (quest hand-in) -> toast; 'coin:drop' {n} = chest / beast drop (CUR-06 emits it) -> wallet + toast. 'wallet:changed' {value,delta} is emitted by the wallet (HUD, CUR-02).
   engine.events.on('coin:got', (p) => { if (p && lootToast) lootToast.say(coinText(p.n), [226, 214, 176]); });
-  engine.events.on('coin:drop', (p) => { const n = p && p.n; if (Number.isInteger(n) && n > 0 && saveRelay.wallet.add(n) > 0 && lootToast) lootToast.say(coinText(n), [226, 214, 176]); });
+  engine.events.on('coin:drop', (p) => { const n = p && p.n; const got = Number.isInteger(n) && n > 0 ? saveRelay.wallet.add(n) : 0; if (got > 0 && lootToast) lootToast.say(coinText(got), [226, 214, 176]); });
   engine.events.on('wallet:changed', () => coinHud.touch()); // CUR-02: HUD line shows for COIN_HUD_SEC
   gameHooks.register(saveRelay.handlers());
   saveRelay.quest.onPoll = (name, a, b) => gameHooks.emitSimple(name, a, b);
