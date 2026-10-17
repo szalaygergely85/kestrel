@@ -22,6 +22,7 @@ export const SPOTS = [
   ['cliff', 1552, 468, 0, 12, 'northwood hillside cliff face (~9 m rise at y 454-458), looking up from below (VISQA-09; the old 1250,596 spot stood in the outlet river)'],
   ['lake-shore', 1215, 547, 0, 0, 'Glasswater south shore'],
   ['burl-home', 1407.5, 1014.5, 322, 4, "VISQA-09: Burl at his post-departure home waypoint walks.home (1404,1010), seen from 5.7 m SE. NOTE: no home BUILDING exists in tracked content (the waypoint is just a clearing; content/local/placements.json has no structures), so this frames Burl only"],
+  ['grove-nw', 1406, 916, 0, 8, 'TEASER-QA-01: grove north-west teaser-leaves stand'],
   ['smoke-fire', 958, 1011, 0, 6, 'VISQA-15: smokeFire1 brazier at the base of the goblin smoke plume (958,1004)'],
 ];
 // VISQA-10 set 2. Interiors: [name, x, y, zFloor (null = ground snap), yawDeg, pitchDeg, note] (world coords from the level origins in world_m1)
