@@ -1,5 +1,7 @@
 # PC-B queue
 
+> **OWNER LOOK LOCK D-123 (2026-10-17):** preserve the approved lake reflections and vista. Reference: `docs/test-reports/owner-approved/lake-reflections-2026-10-17.png`. River coverage/intersection and waterfall fixes must retain this look.
+
 > **Recovery 2026-10-17:** QD-01..09 and CUR-01/02/03/05/06 integrated; QD-15a Downs/Heath complete. Recovery verification (QD-15 choices resolved by D-122): `docs/test-reports/pc-b-recovery-2026-10-17.md`. CUR-04 trade screen is next; no new epic work was started during recovery.
 
 ## QD-15 decisions approved (D-122, 2026-10-17)
