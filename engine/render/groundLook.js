@@ -17,7 +17,9 @@ const INV24 = 1 / 16777216;
 
 import { fogShapeCtx } from './fogShape.js'; // FD-06
 export const LOOK_CELL_M = 0.25;
-const INV_CELL = 1 / LOOK_CELL_M, INV_CELL_ALT = 1 / (LOOK_CELL_M * 3); // FD-06          // fixed world lattice of the glyph / colour / accent hashes
+/** FD-06 (OB-198/208): world lattice (m) of the glyph/colour/accent dice while `aaAlt` is on. Single knob: 0.5 here = the 2x fallback. */
+export const GROUND_ALT_M = 0.75;
+const INV_CELL = 1 / LOOK_CELL_M, INV_CELL_ALT = 1 / GROUND_ALT_M; // FD-06          // fixed world lattice of the glyph / colour / accent hashes
 export const LOOK_MAX = 16;               // ids 0..15 (nibbles in the bake); row 0 stays zero
 export const LOOK_ROWS = 11;              // vec4 rows per look (38.63 said 10; accents need 2 more scalars rows, see layout)
 export const LOOK_W = [0.4, 0.25, 0.35];  // octave weights: fine (noiseScale), fine x2.3, macro (macroScale)
@@ -88,7 +90,7 @@ export function shadeLookCell(GL, lo, hi, q) {
   }
   let tone = 0.5 + ct * nsum; tone = tone < 0 ? 0 : tone > 1 ? 1 : tone;
   // glyph / colour dice on the fixed world lattice, dither amplitude faded by footprint -> far glyphs depend on the smooth tone only
-  const lci = fogShapeCtx.aaAlt ? INV_CELL_ALT : INV_CELL; // FD-06 (OB-198/208): 3x coarser glyph/colour dice lattice (fade unchanged) (twin: lkShade, fogView.w bit 4)
+  const lci = fogShapeCtx.aaAlt ? INV_CELL_ALT : INV_CELL; // FD-06 (OB-198/208): 3x coarser glyph/colour dice lattice (fade unchanged) (twin: lkShade, fogView.w bit 8 = GROUND_ALT_BIT, set from aaAlt alone)
   const cx = Math.floor(fu * lci), cy = Math.floor(fv * lci);
   let df = (fp - 0.5 * LOOK_CELL_M) / (0.5 * LOOK_CELL_M); df = df < 0 ? 0 : df > 1 ? 1 : df;
   const dith = 1 - df * df * (3 - 2 * df);
@@ -207,7 +209,7 @@ fn lkShade(fu: f32, fv: f32, fp: f32, t: f32, timeSec: f32, loIn: i32, hiIn: i32
   nsum += lkOct(fu, fv, fp, ns * ${F(1 / LOOK_FINE2)}, ${LOOK_SALT + 1}, ${F(LOOK_W[1])});
   nsum += lkOct(fu, fv, fp, ms, ${LOOK_SALT + 2}, ${F(LOOK_W[2])});
   let tone = clamp(0.5 + ct * nsum, 0.0, 1.0);
-  let lcm = select(${F(LOOK_CELL_M)}, ${F(LOOK_CELL_M * 3)}, (u32(su.fogView.w + 0.5) & 4u) != 0u); // FD-06: twin of lcm in shadeLookCell
+  let lcm = select(${F(LOOK_CELL_M)}, ${F(GROUND_ALT_M)}, (u32(su.fogView.w + 0.5) & 8u) != 0u); // FD-06: twin of lcm in shadeLookCell
   let cx = i32(floor(fu * (1.0 / lcm))); let cy = i32(floor(fv * (1.0 / lcm)));
   let df = clamp((fp - ${F(0.5 * LOOK_CELL_M)}) / ${F(0.5 * LOOK_CELL_M)}, 0.0, 1.0);
   let dith = 1.0 - df * df * (3.0 - 2.0 * df);

@@ -106,6 +106,9 @@ export function setLeafLevelHold(on) { fogShapeCtx.aaLeafLv = !!on; }
 export function setSeamHold(on) { fogShapeCtx.aaSeam = !!on; }
 export function setEdgeCorner(eps) { fogShapeCtx.aaEdgeEps = Number.isFinite(eps) ? eps : 0; }
 /** AA-16: fogView.w bit field for passShade.js - 1 = world glyph dice (AA-15), 2 = leaf light smoothing (AA-16). */
+/** FD-06: fogView.w bit for the ground-look lattice (shade.wgsl lkShade). Written from `aaAlt` ALONE (not through the fog-shape/ortho gate of foliageBits) so the ground never re-rolls when fog shape toggles. */
+export const GROUND_ALT_BIT = 8;
+export function groundAltBits() { return fogShapeCtx.aaAlt ? GROUND_ALT_BIT : 0; }
 export function foliageBits() { return (fogShapeCtx.aaFol ? 1 : 0) + (fogShapeCtx.aaFolL ? 2 : 0) + (fogShapeCtx.aaAlt ? 4 : 0); }
 
 /**

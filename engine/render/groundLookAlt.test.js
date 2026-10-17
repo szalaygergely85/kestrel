@@ -1,4 +1,4 @@
-// FD-06 (OB-198/208): terrain ground-look glyph dice on a 2x coarser world lattice (setAltDice). A 1/4-screen-cell camera shift over
+// FD-06 (OB-198/208): terrain ground-look glyph dice on a 3x coarser (GROUND_ALT_M) world lattice (setAltDice). A 1/4-screen-cell camera shift over
 // road/grass ground keeps >= 95 % of glyph choices; off = old lattice. Run: node engine/render/groundLookAlt.test.js
 import assert from 'node:assert/strict';
 import { packLookTable, makeGroundLook, shadeLookCell, LOOK_MAX, LOOK_ROWS } from './groundLook.js';
