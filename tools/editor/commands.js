@@ -86,6 +86,7 @@ export function applyEdit(doc, rec) {
     const idx = findIndexById(arr, rec.id, rec.index);
     if (idx !== -1) arr[idx] = structuredClone(rec.after);
   }
+  if (rec.collection === 'riverEdits' && arr.length === 0) delete def.riverEdits; // ED-WATER-03: no edits -> no key (file byte-identical)
   file.dirty = true;
 }
 

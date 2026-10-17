@@ -17,6 +17,7 @@ globalThis.ASSETS.levels.world_geo.util.installGeo(globalThis.ASSETS.levels.over
 for (const m of ['lantern', 'lever', 'voxel_props', 'voxel_tower', 'voxel_world', 'boulder', 'rubble', 'wreckage', 'relay', 'sword', 'voxel_beast', 'chest', 'm3_props', 'far_tower', 'ferrum_lights', 'title', 'voxel_bear', 'voxel_wildlife', 'voxel_tower_crown']) { try { await import(`../design/models/${m}.js`); } catch { /* optional */ } }
 import { World, stringifyContent } from '../engine/index.js';
 import { loadTestAssets } from './testing/content-node.mjs';
+import { applyAllRiverEdits } from './editor/riverEdits.js'; // ED-WATER-03: world.riverEdits (water-surface z offset + per-point width), same function as the editor
 
 export const RIVER = { y0: 128, upEnd: 470, lakeOut: 544, shelfEnd: 603, cliffEnd: 605, yEnd: 1480, step: 8, depth: 0.4, bankGap: 0.1, bankOut: 1.5, fordY0: 1058, fordY1: 1088, fordZ: -89.85, /* OB-090 */ /* OB-090: was -90.04 = ford bar level (-90.05): zero depth = a pale foam sheet */
   lakeZ: -58, seaZ: -96, fallsY: 603.5 };
@@ -80,11 +81,12 @@ for (const v of up) v.z = Math.max(v.z, R.lakeZ);                               
 const all = [up, shelf, down];
 let worst = 0; for (const l of all) for (let i = 1; i < l.length; i++) worst = Math.max(worst, (l[i - 1].z - l[i].z) / Math.hypot(l[i].x - l[i - 1].x, l[i].y - l[i - 1].y));
 const path = (l) => l.map((v) => [v.x, v.y, +v.z.toFixed(3), v.hw]);
-const rivers = [
+const rivers0 = [
   { id: 'braid_upper', shape: 'river', look: 'river', path: path(up), clip: ['glasswater'] },
   { id: 'braid_outlet', shape: 'river', look: 'river', path: path(shelf), clip: ['glasswater'] },
   { id: 'braid', shape: 'river', look: 'river', path: path(down), clip: ['sea'] },
 ];
+const rivers = applyAllRiverEdits(rivers0, data.riverEdits); // no riverEdits -> identical regions, output byte-identical
 if (dry) { console.log(`${up.length}+${shelf.length}+${down.length} verts, worst slope ${worst.toFixed(3)}`); for (const r of rivers) console.log(r.id, JSON.stringify(r.path.filter((_, i) => i % 12 === 0))); process.exit(0); }
 const out = JSON.parse(fs.readFileSync(FILE, 'utf8'));
 out.water = out.water.filter((w) => !/^river_\d+$/.test(w.id) && !/^braid/.test(w.id));
