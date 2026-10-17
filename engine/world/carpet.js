@@ -21,6 +21,28 @@ function inArea(a, x, y) {
   let t = l2 > 0 ? ((x - a.ax) * ex + (y - a.ay) * ey) / l2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
   const dx = x - a.ax - ex * t, dy = y - a.ay - ey * t; return dx * dx + dy * dy <= a.r * a.r;
 }
+// GRASS-VARIETY-01: world-space patch picker. A variant may carry `patch: {scaleM, lo, hi, salt}`; it only claims a class cell where the smooth
+// value noise at the cell centre (period scaleM metres) lies in [lo, hi). Variants that share ground/areas but own disjoint [lo,hi) bands
+// therefore split the field into coherent patches of different grass types. Pure + deterministic: same (x, y) -> same value; no Math.random.
+export const PATCH_SALT_DEFAULT = 7919;
+function patchHash(ix, iy, salt) { // int32 mix -> 0..1
+  let h = (Math.imul(ix, 374761393) + Math.imul(iy, 668265263) + Math.imul(salt | 0, 1274126177)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16;
+  return (h >>> 8) / 16777216;
+}
+/** smooth value noise 0..1 at world (x, y), lattice period scaleM metres */
+export function grassPatchValue(x, y, scaleM, salt) {
+  const fx0 = x / scaleM, fy0 = y / scaleM, ix = Math.floor(fx0), iy = Math.floor(fy0);
+  let fx = fx0 - ix, fy = fy0 - iy; fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+  const a = patchHash(ix, iy, salt), b = patchHash(ix + 1, iy, salt), c = patchHash(ix, iy + 1, salt), d = patchHash(ix + 1, iy + 1, salt);
+  return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
+}
+/** true when variant patch `p` (or none) claims world (x, y) */
+export function inPatch(p, x, y) {
+  if (!p) return true;
+  const n = grassPatchValue(x, y, p.scaleM, p.salt === undefined ? PATCH_SALT_DEFAULT : p.salt);
+  return n >= p.lo && n < p.hi;
+}
 function inAreas(as, x, y) { for (let k = 0; k < as.length; k++) if (inArea(as[k], x, y)) return true; return false; }
 
 /** Throws an Error naming the offending key (e.g. `carpet.variants[2].heightM`). Returns cfg. */
@@ -55,6 +77,10 @@ export function validateCarpetConfig(cfg, typeNames) {
     if (v.areas !== undefined) {
       if (!Array.isArray(v.areas) || v.areas.length < 1) fail(`${p}.areas`, 'must be a non-empty array of shapes');
       v.areas.forEach((a, k) => { if (!areaOk(a)) fail(`${p}.areas[${k}]`, 'must be {shape:"disc",x,y,r} | {shape:"capsule",ax,ay,bx,by,r} | {shape:"rect",x0,y0,x1,y1}'); });
+    }
+    if (v.patch !== undefined) {
+      const q = v.patch;
+      if (!q || !isNum(q.scaleM) || q.scaleM < 2 || !isNum(q.lo) || !isNum(q.hi) || q.lo < 0 || q.hi > 1.0001 || q.lo >= q.hi || (q.salt !== undefined && !Number.isInteger(q.salt))) fail(`${p}.patch`, 'must be {scaleM >= 2, lo, hi (0 <= lo < hi <= 1), salt?:int}');
     }
     if (v.tuft !== undefined) {
       if (!v.tuft || typeof v.tuft !== 'object') fail(`${p}.tuft`, 'must be {p, mul}');
@@ -129,6 +155,7 @@ export class CarpetClassMapJob {
             const bs = vs[v].biomes;
             if (bs && (b < 0 || bs.indexOf(b) < 0)) continue;
             if (vs[v].areas && !inAreas(vs[v].areas, x, y)) continue;
+            if (vs[v].patch && !inPatch(vs[v].patch, x, y)) continue; // GRASS-VARIETY-01
             id = v + 1; break;
           }
         }
