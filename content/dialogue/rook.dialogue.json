@@ -105,7 +105,7 @@
       "Watch it blink. Count. Then see the knot."
     ], "speaker": "rook"},
     "rook.meet.9": {"end": true, "lines": [
-      "Nine blinks. Then quiet. Then me."
+      "Thirteen blinks. Then quiet. Then me."
     ], "speaker": "rook"},
     "rook.later": {"end": true, "lines": [
       "Slow walker. The stone will wait."
@@ -114,7 +114,7 @@
       "Count the blinks. Then the knot. Then me."
     ], "speaker": "rook"},
     "rook.call.ready.1": {"lines": [
-      "Counted? Nine blinks, then quiet. Again."
+      "Counted? Thirteen blinks, then quiet. Again."
     ], "next": "rook.call.ready.2", "speaker": "rook"},
     "rook.call.ready.2": {"lines": [
       "That knot. A lamp-trimmer tied it."

@@ -1,5 +1,13 @@
 # Kestrel – Product Backlog
 
+> **PC-B handoff 2026-10-18 — ALIVE text.** The intro, readable notes, Rook and Signal Hill now describe the same Morse ALIVE signal.
+> - Owner-requested correction follows D-112; the lake reflections and rendering are unchanged.
+> - Ready for PC-A PO review after checks; report: docs/test-reports/signal-alive-text-2026-10-18.md.
+
+| Owner correction | Status | Files and checks |
+|---|---|---|
+| SIGNAL-ALIVE-TEXT | NEEDS PC-A: PO review | Intro captions, notes, Rook dialogue, Signal Hill relay; story/GDD/design docs and signal regression test. Focused 2/2 PASS; full 1052 PASS, 3 harness FAIL resolved by 3/3 reruns, 1 optional WARN; GPU caption still and details in docs/test-reports/signal-alive-text-2026-10-18.md. Follows D-112; no rendering changes. |
+
 > **PC-B handoff 2026-10-17 recovery - START HERE.** Claude hit its weekly limit; its unpublished quest/currency batch is recovered on pc-b.
 > - Owner can test coin rewards and HUD/inventory counts, the reworked quests, the Downs herder and Heath lockbox.
 > - Ready for PC-A technical/PO review; checks and exact scope: docs/test-reports/pc-b-recovery-2026-10-17.md.

@@ -48,7 +48,7 @@
         '',
         'IIII IIII IIII IIII IIII',
         'IIII IIII IIII IIII III',
-        '... --- ...  STILL'
+        '.- .-.. .. ...- .  ALIVE'
       ],
       source: 'docs/story.md "The keeper\'s corner" (log book lines + the tally / signal that were the scrawlKeeper decals)'
     },
@@ -64,7 +64,7 @@
         '',
         'And somewhere ahead, that same blinking light.',
         '',
-        'Three short. Three long. Three short.',
+        'ALIVE. In Morse.',
         '',
         'Someone is still calling.',
         '- W.'

@@ -8,7 +8,7 @@ Owner: Writer. Canon source: `docs/game-design.md` section 3 (D-011, incl. owner
 
 **Ferrum.** The city climbs a hill in rings of stone and timber, and it runs on machines: brass, steam and gears. Up top the Crown keeps the airships, the gear-gates and the lamps that never gutter. Down in the Low Wards people haul coal, grease cogs and mend rope. Magic is a tale for children, and saying it too loudly gets you fined. Everyone knows the Wall Law: nobody leaves, because beyond the Wall no one survives. Out there is only the wild, the Hush.
 
-**The signal.** Then one night a light blinks on the far horizon. Three short, three long, three short. The old relay stones under the Low Wards start to hum along with it. The Crown says it is marsh-fire, and later says there was no light at all. It comes back every night anyway. If nobody lives out there, who is asking for help?
+**The signal.** Then one night a light blinks on the far horizon. Morse spells ALIVE. The old relay stones under the Low Wards start to hum along with it. The Crown says it is marsh-fire, and later says there was no light at all. It comes back every night anyway. If nobody lives out there, who is asking for help?
 
 **Wick.** He is a Low Wards lad who trims the skyworks lamps and patches Crown balloons he will never fly. He remembers every alley and every valve. He has never set foot outside the Wall. He is curious, braver than is sensible, and he knows nothing about the wild except what the Crown told him.
 
@@ -45,7 +45,7 @@ Wick grew up with machines only. Out here every upgrade is something he was told
 
 ```
 Day 1. Relay cold. Wall says no one is out here. Liar.
-The far tower blinks at night. 3 short, 3 long, 3 short.
+The far tower blinks at night. Morse ALIVE.
 Mirror cracked. Bowl still holds light if you feed it.
 No reply from Ferrum. They hear it. They choose not to.
 If you read this, keep climbing. The light is up top.
@@ -79,14 +79,14 @@ Press M to read the chart.
 ## 6. Proposals (ESCALATE TO MANAGER)
 
 1. **Hero name: Wick.** It is short, it suits a lamp-trimmer's boy, and it fits pillar 1 "Light is life". It is already the internal name, so nothing internal changes. GDD 3 still says "nameless on screen". Amendment 2 asks for a name, so the manager should confirm where it shows (the title card, the log, or the exiles in M3).
-2. **SOS pattern.** The pulse is 3 short, 3 long, 3 short, the old sailor's SOS. It is used in the log and in the story. It needs canon confirmation, and the P2 pulse animation should match it.
-3. **The log is old.** The keeper counted the same signal years ago. That hints the SOS is older than Wick's escape. It is kept vague on purpose, but it constrains the eventual reveal.
+2. **ALIVE pattern (D-112).** The light repeats Morse `.- .-.. .. ...- .`, the word ALIVE. The log, story and pulse animation use that same word.
+3. **The log is old.** The keeper counted the same signal years ago. That hints the ALIVE signal is older than Wick's escape. It is kept vague on purpose, but it constrains the eventual reveal.
 4. **Exile village name.** It is still unnamed. Candidate: **Outwall**.
 5. **GDD section 3 is stale.** It still lists partial amnesia, the "Crown mages" and a handwritten map. The PO needs to update it to amendment 2: no amnesia, a machine-only Ferrum, magic real outside, and the map as a Crown sky-chart with Wick's pencil course.
 
 ## 7. M4 reveal candidates (for manager)
 
-Per D-013 item 3. Each keeps "the SOS has been sending for years" and "nobody is there".
+Per D-013 item 3. Each keeps "the ALIVE signal has been sending for years" and "nobody is there".
 
 **A. The shut-out people.** The caller was built by the people who lived here before the Wall. When the Crown's founders sealed the gates, they left them outside to die, and the machine still repeats their last call. The Crown has always heard it, and the Wall exists so no one inside has to answer.
 - Setups: relay glyphs older than Crown script (M2); the log line "They hear it. They choose not to." (M1, done); exiles' songs about "the ones before" (M3).
@@ -94,7 +94,7 @@ Per D-013 item 3. Each keeps "the SOS has been sending for years" and "nobody is
 **B. The keeper's lamp.** The relay-keeper was an exile who found the dead caller and re-woke it years ago, hoping someone in Ferrum would come. He walked the line to keep it fed and never came back. The machine calls on alone, and now Wick is the one feeding it.
 - Setups: the same hand in every log (M1-M3); a keeper's empty camp at one relay (M2); exiles remember "the lamp man" who went to the far tower (M3).
 
-**C. The land is calling.** The crystals are one living web, and the SOS is the wild itself asking for help. Ferrum's lamps that never gutter burn stolen aether, and the drain is what turns beasts wrong. Nobody is at the source because the source is everywhere.
+**C. The land is calling.** The crystals are one living web, and the ALIVE signal is the wild itself asking for help. Ferrum's lamps that never gutter burn stolen aether, and the drain is what turns beasts wrong. Nobody is at the source because the source is everywhere.
 - Setups: "lamps that never gutter" (M1, done); relays dimmer and Hush beasts thicker near the Wall (M2); a Crown crystal crate at the sentinel (M3).
 
 ## 8. Talking animals: sample dialogue (US-042)
@@ -132,14 +132,14 @@ Why Maren: she was the one who said the relay stones under the Low Wards *sing*.
 **2. How she vanished (seven years ago)**
 Maren was fined twice for "stone-talk". One winter night she didn't come down from the skyworks. The Crown posted her name on the Low Wards board: FELL. LOST TO THE HUSH. They returned her lamp to the family, and it was the reason Wick never believed them. It had been trimmed, shuttered and set down neatly. Nobody trims a wick before they fall. She put that light out herself. (Fits canon: the exiles are "people Ferrum cast out and swore had died".)
 
-**3. The SOS and the jump (hope, not proof)**
+**3. The ALIVE signal and the jump (hope, not proof)**
 - There is no signature in the signal. The logic is simple: nobody lives beyond the Wall, so a call for help from out there means *someone is alive*. If one person can be, then so can Maren. Wick has no proof, only hope.
-- **The ambiguous detail:** the SOS makes the relay stones under the Low Wards hum, and those are the stones Maren was fined for saying *sing*. That doesn't prove anything, but Wick can't stop thinking about it.
+- **The ambiguous detail:** the ALIVE signal makes the relay stones under the Low Wards hum, and those are the stones Maren was fined for saying *sing*. That doesn't prove anything, but Wick can't stop thinking about it.
 - The call is old (canon), and nobody in Ferrum will say for how long. That leaves room to hope it started around the winter she disappeared.
 - **Why alone, and why now:** telling anyone means telling the Crown, and the Low Wards only shrug that the dead don't signal. After a month of charting, Crown masons come down to mortar over the humming stones. That night, before the last thread to her is sealed, he cuts the *Kestrel* loose.
 
 **4. Crash intro (~38 s, ends on the current wake)**
-1. (4 s) Black screen. A far teal `*` pulses 3 short, 3 long, 3 short, and the stones below hum `~ ~ ~` in time with it.
+1. (4 s) Black screen. A far teal `*` pulses Morse ALIVE, and the stones below hum `~ ~ ~` in time with it.
 2. (6 s) A skyworks roof at night under Ferrum's amber lamps. A knife saws through a mooring rope `|` until it snaps, and the *Kestrel* lifts in `~ )` canvas.
 3. (5 s) Burner flare. The Wall slides past below, and its lamps snap on one by one, left to right.
 4. (5 s) A ballista swivels. A bolt streaks up as a `---->` line.
@@ -158,7 +158,7 @@ Maren was fined twice for "stone-talk". One winter night she didn't come down fr
 - It stays compatible with the section 7 candidates. She may have found the caller (A or C) or fed it (B). In M4, "nobody is there" still holds, because she had been there and was gone.
 
 **6. M1 lines to adjust later (not changed here)**
-- Section 1 "The signal" says "one night a light blinks". Canon says the SOS has been sending for years, so this should read that it was always there and one night it *ended differently*.
+- Section 1 "The signal" says "one night a light blinks". Canon says the ALIVE signal has been sending for years, so this should read that it was always there and one night it *ended differently*.
 - Map card: `Your pencil: "Then who is blinking?"` could become `Your pencil: "Someone is alive. So she could be. W."`, which also adds the canon "W." that the card still lacks.
 - Hint `The burner still glows. Take what light you can.` could echo her: `Trim the wick. Take what light you can.`
 - End card `Someone is out there.` could become `She is out there.` (the relay-woken variant only), or stay as it is to keep M1 unspoiled.
@@ -179,7 +179,7 @@ Scratched on the north face of the grate column, by the bedroll, the log book, t
 ```
 IIII IIII IIII IIII IIII
 IIII IIII IIII IIII III
-... --- ...  STILL
+.- .-.. .. ...- .  STILL
 ```
 - The tallies are nights. Two rows of them show a long vigil without any number to pin the reveal to.
 - The last group stops at `III`. The count was never finished. That is enough, and it doesn't say why.
@@ -191,11 +191,11 @@ IIII IIII IIII IIII III
 ```
 IIII IIII IIII IIII IIII
 IIII IIII II
-... --- ...  NO ONE YET
+.- .-.. .. ...- .  NO ONE YET
 ```
 2. The pattern never changes:
 ```
-... --- ...
+.- .-.. .. ...- .
 IIII IIII IIII IIII IIII
 SAME. SAME. SAME.
 ```
@@ -277,20 +277,20 @@ IMAGE: Close still life, cold grey morning light through a Low Wards window. A b
 **3.**
 ```
 One night, far beyond the Wall, a light.
-Three short. Three long. Three short. Again. Again.
+Short and long. A word. Again. Again.
 ```
 IMAGE: Night from the skyworks roof, looking out over the Wall into black land. One tiny teal point on the far horizon; the only light past the Wall. Wick from behind at the roof edge, small in frame, face never shown.
 
 **4.**
 ```
-I know it: Factor's Code, the old merchant lamp-talk.
-She taught me in the shut Factory, with a shuttered lamp.
+Morse. She taught me with a shuttered lamp.
+In the shut Factory, where merchants once signalled.
 ```
 IMAGE: Memory, warm and dim. Inside an empty merchant hall: dusty ledger shelves, a big shuttered signal lamp on a sill, its slats half open, one beam across the floor. Two children from behind at the sill, the taller girl working the shutter, the boy (young Wick) watching; no faces.
 
 **5.**
 ```
-In Factor's Code it is one word: ALIVE.
+It is one word: ALIVE.
 The Crown says marsh-fire. Thirty nights, I map it.
 ```
 IMAGE: Lamplit desk at night. A printed Crown sky-chart, a pencil line running off the printed edge toward a small star mark, the word ALIVE pencilled in the margin. Over Wick's shoulder as he hunches over the chart, pencil in hand, the far teal point in the window beyond.
@@ -318,22 +318,22 @@ IMAGE: Falling, pre-dawn blue. A roofless round stone tower seen from above, mos
 
 "Then nothing" keeps the echo of the Crown print `BEYOND THE WALL: NOTHING`; the wake shows it is not nothing.
 
-Why the shuttered lamp twice: a shutter is how you talk in Factor's Code. Her lamp came back shuttered (section 9.2), and she taught him the code with a shuttered lamp. The image does the work; nobody says it.
+Why the shuttered lamp twice: a shutter is how you talk in Morse. Her lamp came back shuttered (section 9.2), and she taught him the code with a shuttered lamp. The image does the work; nobody says it.
 
 **The Factory (lore, not on screen):** a shut merchant trading house in the Low Wards, from before the Wall Law, when caravans and river barges still went out. Its factors talked tower to tower with shuttered lamps. Children play in it; Maren took Wick there and taught him the code for fun. Old enough that nobody in Ferrum reads it any more, which is why only he sees a word in the light.
 
 **Alternatives: the code's name**
-1. **Factor's Code** (chosen above). Plain, period, ties to "factory".
+1. **Morse** (D-112). Learned at the Factory; this supersedes the earlier code-name alternatives.
 2. **Tally-light.** A clerk's word: lamps counting cargo, tower to tower.
 3. **Barge-blink.** River-trade slang; warmer, more Low Wards.
 
 **Alternatives: how "alive" is phrased (slide 5, line 1)**
-1. `In Factor's Code it is one word: ALIVE.` (chosen above)
+1. `It is one word: ALIVE.` (chosen above)
 2. `In the old code it means: STILL ALIVE.` - softer, sounds like a reply to a question.
 3. `On the Factory ledgers that mark meant: crew alive.` - the caravan meaning (cargo lost, crew alive), so "alive" is his reading, not a fact.
 
 ESCALATE TO MANAGER (proposals for `docs/game-design.md` section 3; not edited here):
-1. **Signal meaning:** keep "repeating SOS, 3 short 3 long 3 short" (D-013), and add: in the old merchant lamp-code (Factor's Code) the same pattern reads ALIVE. Both readings stand; neither names a sender, so M4 is still open (fits A, B and C in section 7; A best, the code is older than the Wall).
+1. **Signal meaning (resolved by D-112):** the light repeats Morse ALIVE, `.- .-.. .. ...- .`. Maren taught Wick with a shuttered lamp at the Factory. The word names no sender; M4 stays open.
 2. **Motive:** add Maren (section 9, approved 2025-09-25) to canon: the vanished sister is why Wick flies. Her name stays off screen in M1.
 3. **New place:** the Factory, a shut pre-Wall merchant house in the Low Wards where Wick learned the code from her.
 4. **Hero on screen:** canon says "first-person, never seen". Owner decided (2026-10-15): the intro stills show Wick from behind / over the shoulder, face never shown. Add that exception to section 3.
@@ -500,7 +500,7 @@ Wall-scrawl system as US-078. Capitals are knife-cut and ASCII, one glyph per ce
 | `scrawl.hiddenChest` | Hillside, on the rock that hides the chest, low and facing the chest | `FOR THE NEXT ONE OUT` | 20 | Someone else got out before, and left something for whoever came after. This fits the exiles ("cast out") and all three M4 candidates. |
 | `scrawl.breach` | Summit, inside face of the breach parapet, at eye height as you step out | `NOT NOTHING` | 11 | Answers the chart's `BEYOND THE WALL: NOTHING` at the exact place where the world opens. Not the same text as the death card. |
 | `scrawl.boarRock` | Hillside, a boulder on the path down where the boars roam | `THEY FEAR THE LIGHT` | 19 | A quiet tip that matches canon (beasts avoid relay light). It foreshadows the woken stones (no lamp, D-062). |
-| `scrawl.waystone` | Base of the waystone, half under moss | `... --- ...  FURTHER ON` | 23 | The SOS pattern in the keeper's notation, pointing on along the line. It hints that the signal goes further without saying who sends it. |
+| `scrawl.waystone` | Base of the waystone, half under moss | `.- .-.. .. ...- .  FURTHER ON` | 27 | The ALIVE signal pattern in the keeper's notation, pointing on along the line. It hints that the signal goes further without saying who sends it. |
 
 NPC lines: M1 has no NPCs and no dialogue (GDD 7). The first speaking NPC is the bear (section 8, M2), so no new NPC lines are written here.
 
@@ -521,7 +521,7 @@ The quest `done` line `The stone hums. The signal answers.` stays on the objecti
 
 ## Sprint 8 texts - M3 additions (PC-B writer, 2026-10-09)
 
-ASCII only, lengths counted by hand. No line names Wick (D-013). The notes are unsigned and say nothing about who sends the SOS (M4 reason stays open).
+ASCII only, lengths counted by hand. No line names Wick (D-013). The notes are unsigned and say nothing about who sends the ALIVE signal (M4 reason stays open).
 
 | Key | Where | Text | len |
 |---|---|---|---|
@@ -547,7 +547,7 @@ Notes:
 
 **Personality:** Burl is an old, unhurried bear who talks like a grandmother by a hearth: dry, kind, and not at all surprised by you. She wants a quiet afternoon, a full berry bush and someone to share the bush with, as long as they don't take the blue ones. She calls Ferrum "the loud hill" and its people "cubs", and she sees it as a nest of noisy children who never come out to play.
 
-**From the section 8 sample:** kept the ideas "check my ears for brass", "my grandmother was a cub", "sky-cub" and "the loud hill". Everything else is replaced. Section 8 stays as the old sample. The sample line "It asked for help then, too" is dropped because it gets too close to explaining the SOS.
+**From the section 8 sample:** kept the ideas "check my ears for brass", "my grandmother was a cub", "sky-cub" and "the loud hill". Everything else is replaced. Section 8 stays as the old sample. The sample line "It asked for help then, too" is dropped because it gets too close to explaining the ALIVE signal.
 
 Rules: ASCII 32-126, each line <= 56 chars, each reply <= 40 chars, lengths counted by hand (text only; the speaker label is the frame's name tag). Burl never says "Wick" or explains the light. The player disbelieves, and the magic is just a bear talking.
 
@@ -976,7 +976,7 @@ Graph: `fen.meet` -> choice 1 -> `fen.who` | `fen.startled` -> `fen.ask` ... -> 
 | `fen.chart` | FEN | `And that line?` | 14 |
 | `fen.nothing` | FEN | `Crown ink, and a pencil line. Not nothing.` | 42 |
 | `fen.signal` (1) | YOU | `Something is sending a signal.` | 29 |
-| `fen.signal` (2) | YOU | `Three short. Three long. Three short.` | 37 |
+| `fen.signal` (2) | YOU | `ALIVE. In Morse.` | 16 |
 | `fen.signal` (3) | FEN | `A signal?` | 9 |
 | `fen.signal` (4) | YOU | `From beyond the Wall.` | 20 |
 | `fen.signal` (5) | FEN | `Well...` | 7 |
@@ -1025,7 +1025,7 @@ Notes:
 | `journalCh1` (7) | note | `` (empty row) | 0 |
 | `journalCh1` (8) | note | `And somewhere ahead, that same blinking light.` | 46 |
 | `journalCh1` (9) | note | `` (empty row) | 0 |
-| `journalCh1` (10) | note | `Three short. Three long. Three short.` | 37 |
+| `journalCh1` (10) | note | `ALIVE. In Morse.` | 16 |
 | `journalCh1` (11) | note | `` (empty row) | 0 |
 | `journalCh1` (12) | note | `Someone is still calling.` | 25 |
 | `journalCh1` (13) | note | `- W.` | 4 |
@@ -1090,7 +1090,7 @@ Existing (kept): `m1` Beyond the Wall, `tower.blade` A Blade in the Ashes, `burl
 
 | key | who | text | chars |
 |---|---|---|---|
-| `bark.wick.relayPulse` | YOU | `It's blinking. Three short. Three long.` | 39 |
+| `bark.wick.relayPulse` | YOU | `It's blinking. The same word: ALIVE.` | 35 |
 | `bark.wick.relayPulse2` | YOU | `It's passing the call along.` | 28 |
 | `prompt.knot` | prompt | `[E] Look at the knot` | 20 |
 | `note.knot.title` | note | `A knot on the brass` | 19 |
@@ -1106,7 +1106,7 @@ Existing (kept): `m1` Beyond the Wall, `tower.blade` A Blade in the Ashes, `burl
 | `rook.meet` (7) | ROOK | `The loud hill? The loud hill never listens.` | 43 |
 | `rook.meet` (8) | ROOK | `Watch it blink. Count. Then see the knot.` | 41 |
 | `rook.call.active` | ROOK | `Count the blinks. Then the knot. Then me.` | 41 |
-| `rook.call.ready` (1) | ROOK | `Counted? Nine blinks, then quiet. Again.` | 40 |
+| `rook.call.ready` (1) | ROOK | `Counted? Thirteen blinks, then quiet. Again.` | 44 |
 | `rook.call.ready` (2) | YOU | `That knot. A lamp-trimmer tied it.` | 34 |
 | `rook.call.ready` (3) | ROOK | `Long ago. Nobody untied it. I tried.` | 36 |
 | `rook.call.ready` (4) | ROOK | `Here. Paper. River on it. Not shiny.` | 36 |
@@ -1115,7 +1115,7 @@ Existing (kept): `m1` Beyond the Wall, `tower.blade` A Blade in the Ashes, `burl
 | `rook.repeat` | ROOK | `River. West. Do not drown, fell-bird.` | 37 |
 | `toast.chart.river` | toast | `Chart piece: the river and the ford.` | 36 |
 
-Notes: `rook.meet` gives the quest (main quest, no choice). `rook.call.ready` is the hand-in; its last node grants `chart.river` and plays the Ch1 chapter card (`journalCh1` unchanged). The knot is the Maren hook (section 9.5); nobody names her. "Nine blinks" = 3+3+3, the SOS, without naming it.
+Notes: `rook.meet` gives the quest (main quest, no choice). `rook.call.ready` is the hand-in; its last node grants `chart.river` and plays the Ch1 chapter card (`journalCh1` unchanged). The knot is the Maren hook (section 9.5); nobody names her. "Thirteen blinks" = the 13 marks of Morse ALIVE (D-112).
 
 ### Chapter 2 main
 
@@ -1809,7 +1809,7 @@ Notes:
 - The board's `read` lines replace the 4-line QL-21 `note.owBoard` once this quest is live. They are the same board and the same facts, with more of them. The QL-22 errand notes stay nailed over the other FELL notices.
 - The cut and the knot are a soft Maren echo (story section 9: the lamp "set down neatly"; she taught him the trade). They are not proof. No line names her, and none says who cut the strip. Hesk's `after` line says the cut came out with the notices, so nobody in the village did it. A stronger hook, if the manager wants one: read (7) `Above the cut: FELL BEYOND THE WALL. SKYW` (41). The writer advises against it for Ch3.
 - The chart scrap is unsigned pencil and is not Wick's "W." hand. Whose hand it is stays open (M4 reason, GDD 3). "Tanners' Stair" is a new Low Wards place name. It is minor and can be swapped.
-- No line says why the SOS calls or who sends it, and the "older than the Wall" reveal is kept for Ch4.
+- No line says why the ALIVE signal calls or who sends it, and the "older than the Wall" reveal is kept for Ch4.
 
 **mq.ow.close** "The Line West" (Ch3 close; giver and hand-in Hesk at the gate; explore crossroads; reward 15 arrows)
 
@@ -1999,7 +1999,7 @@ Notes:
 
 ## Goblins (D-072)
 
-(PC-B writer 2026-10-13, owner-authorised.) This section uses the D-072 raiders of the west bank (the level 5-10 side). They are the one fantasy people in a world of real animals. Ferrum keeps them as a nursery tale, the same way it keeps magic, so they fit GDD 3 without a canon change. Their origin stays open, and nothing ties them to the SOS (M4). Lines are <= 56 characters, ASCII only.
+(PC-B writer 2026-10-13, owner-authorised.) This section uses the D-072 raiders of the west bank (the level 5-10 side). They are the one fantasy people in a world of real animals. Ferrum keeps them as a nursery tale, the same way it keeps magic, so they fit GDD 3 without a canon change. Their origin stays open, and nothing ties them to the ALIVE signal (M4). Lines are <= 56 characters, ASCII only.
 
 | key | text | chars |
 |---|---|---|
@@ -2131,7 +2131,7 @@ PC-B writer, 2026-10-13. One dormant relay per region (wake = save + respawn + t
 | `place.relay.ws_highPastures` | `Pasture Relay` (13) | `Wind combs the high grass. The bowl hums with it.` (49) |
 | `place.relay.ws_ashMile` | `Ash Mile Relay` (14) | `Teal light on black ash. The wind carries it off.` (49) |
 | `place.relay.ws_downs` | `Downs Relay` (11) | `The hum rolls out over the long green downs.` (44) |
-| `place.relay.ws_signalHill` | `Signal Hill Relay` (17) | `Three short, three long, three short. The hill answers.` (55) |
+| `place.relay.ws_signalHill` | `Signal Hill Relay` (17) | `ALIVE. The hill answers in Morse.` (32) |
 | `place.relay.ws_heath` | `Heath Relay` (11) | `The heather bends away from the hum, then back.` (47) |
 | `place.relay.ws_reedmire` | `Reedmire Relay` (14) | `The reeds hiss. Teal light lies on black water.` (47) |
 | `place.relay.ws_strand` | `Strand Relay` (12) | `The hum goes out over the sand, out to the sea.` (47) |
