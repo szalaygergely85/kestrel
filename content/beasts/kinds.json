@@ -56,7 +56,7 @@
     ]
   },
   "fox_raider": {
-    "name": "Fox",
+    "name": "Den Fox",
     "arch": "packHunter",
     "model": "fox",
     "todo": "QD-04: den foxes that fight (the plain fox is skittish); reuses the fox model",

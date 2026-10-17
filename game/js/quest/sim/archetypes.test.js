@@ -24,7 +24,7 @@ for (const n of ARCH_NAMES) {
 }
 ok('arch count fits Uint8', ARCH_NAMES.length < 256);
 
-ok('33 kinds', KIND_NAMES.length === 33, String(KIND_NAMES.length));
+ok('34 kinds', KIND_NAMES.length === 34, /* QD-04 fox_raider */ String(KIND_NAMES.length));
 const names = new Set(), models = [];
 const RESP = ['grazer', 'common', 'pack', 'elite', 'camp', 'boss'];
 for (const k of KIND_NAMES) {
