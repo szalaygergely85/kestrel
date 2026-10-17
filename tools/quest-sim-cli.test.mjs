@@ -19,6 +19,9 @@ const run = (...args) => spawnSync(process.execPath, [CLI, ...args], { encoding:
   const j = run('--quest', 'burl.road', '--json');
   let o = null; try { o = JSON.parse(j.stdout); } catch { /* checked below */ }
   ok('--json: parseable, ok, steps', j.status === 0 && o && o.quest === 'burl.road' && o.ok === true && Array.isArray(o.steps) && o.firstFail === null, j.stdout.slice(0, 200));
+  const a = run('--all');
+  ok('--all prints a total line and one line per quest', /^\d+ quest\(s\): \d+ PASS, \d+ FAIL$/m.test(a.stdout) && /^PASS burl\.road$/m.test(a.stdout), a.stdout.slice(-300));
+  ok('--all exit code matches FAIL count', (a.status === 0) === /, 0 FAIL/.test(a.stdout), 'status ' + a.status);
   ok('no --quest id -> usage, exit 2', run('--quest').status === 2);
 }
 
@@ -33,6 +36,8 @@ try {
   ok('broken fixture names the failing step', /FAIL at 5 objectives: area 'bendRelay'/.test(r.stdout), r.stdout.slice(-300));
   const j = run('--quest', 'burl.road', '--root', tmp, '--json');
   let o = null; try { o = JSON.parse(j.stdout); } catch { /* checked below */ }
+  const al = run('--all', '--root', tmp);
+  ok('--all on broken fixture: exit 1 + FAIL burl.road line', al.status === 1 && /^FAIL burl\.road at /m.test(al.stdout), al.stdout.slice(-300));
   ok('broken fixture --json firstFail', j.status === 1 && o && o.firstFail && o.firstFail.name === '5 objectives', j.stdout.slice(0, 200));
 } finally { rmSync(tmp, { recursive: true, force: true }); }
 

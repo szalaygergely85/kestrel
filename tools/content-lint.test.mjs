@@ -17,7 +17,7 @@ const clean = () => ({
   itemDefs: { arrow: { id: 'arrow', name: 'Arrow' } }, labelOf,
   giverIds: new Set(['rook']), pos: (id) => (id === 'rook' ? { x: 10, y: 10, z: 1 } : null), groundAt: () => 0, walkable: () => true,
   characters: new Set(['rook']), chests: [{ id: 'chestA', x: 60, y: 55 }], guards: [{ x: 60, y: 60, kind: 'camp' }],
-  riverX: () => 1030, riverHalf: 10,
+  bandMinAt: (x) => (x < 1030 ? 6 : 1),
   entSupport: [{ id: 'chestA', x: 60, y: 55, base: 0.05, support: 0, floorAbove: null }, { id: 'tower.lantern', x: 1, y: 1, base: 4, support: 0, floorAbove: null }],
   logic: { vocab: LV, propStates: { gate: new Set(['open', 'closed']) }, refs: { area: new Set(['yard']), quest: new Set(['q1']), prop: new Set(['gate']), group: new Set(['gobs']) },
     blocks: [{ id: 'a.ambush', rev: 1, once: true, when: { on: 'area.enter', area: 'yard' }, if: [{ is: 'quest', quest: 'q1', state: 'active' }], do: [{ act: 'prop.state', prop: 'gate', state: 'closed' }, { act: 'beasts.spawn', group: 'gobs' }] }] },

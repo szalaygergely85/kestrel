@@ -39,9 +39,13 @@ export const GRID_ASPECT = 3 / 8; // rows = round(cols * GRID_ASPECT) - 160x60 .
 
 export const SCATTER_OBJECT_BASE = 0x20000;
 
+const warnedModels = new Set();
+/** OB-166: one console.warn per missing-model key for the page's lifetime. */
+function warnOnce(key, msg) { if (warnedModels.has(key)) return; warnedModels.add(key); console.warn(msg); }
+
 // ME-06c3 (37.2): load-time writes only; RE-15 owns per-frame cull/LOD.
 // GFX-03: `gfx` = { scatterDensity, lodScale, tuftDrawScale } (mesh/gfxKnobs.js), defaults = unchanged.
-export function bindScatterInstances(world, instances, previous = [], owner = null, gfx = undefined) {
+export function bindScatterInstances(world, instances, previous = [], owner = null, gfx = undefined, opts = {}) {
   const knobs = resolveGfxKnobs(gfx);
   if (owner?._detail) {
     removeDetailInstances(owner._detail, instances);
@@ -52,6 +56,7 @@ export function bindScatterInstances(world, instances, previous = [], owner = nu
   const cfg = world?.terrain?.recipe?.recipe?.forest?.trees;
   const counts = cfg && scatter ? new Uint32Array(cfg.species.length) : null;
   let needed = 0;
+  const skipSp = counts ? new Uint8Array(counts.length) : null; // OB-166/OB-014: species with a missing model are skipped (warn once) unless opts.strict
   const keep = counts && knobs.scatterDensity < 1 ? new Uint8Array(scatter.count) : null; // GFX-03: hash-thinned placements (null = keep all)
   if (counts) {
     for (let i = 0; i < scatter.count; i++) {
@@ -62,10 +67,18 @@ export function bindScatterInstances(world, instances, previous = [], owner = nu
       if (!counts[s]) continue;
       const key = cfg.species[s].model;
       if (cfg.species[s].mesh !== undefined) { // TREES-LP-b: kind-9 mesh species (World.load resolved it)
-        if (!world.scatterMeshes?.[s]) throw new Error(`bindScatterInstances: unresolved mesh ${cfg.species[s].mesh}`);
+        if (!world.scatterMeshes?.[s]) {
+          if (opts.strict) throw new Error(`bindScatterInstances: unresolved mesh ${cfg.species[s].mesh}`);
+          warnOnce(`mesh:${cfg.species[s].mesh}`, `bindScatterInstances: unresolved mesh ${cfg.species[s].mesh} - its trees are skipped`);
+          skipSp[s] = 1; continue;
+        }
         needed++; continue;
       }
-      if (!instances.pool?.models.has(key)) throw new Error(`bindScatterInstances: missing voxel model ${key}`);
+      if (!instances.pool?.models.has(key)) {
+        if (opts.strict) throw new Error(`bindScatterInstances: missing voxel model ${key}`);
+        warnOnce(key, `bindScatterInstances: missing voxel model ${key} - its trees are skipped`);
+        skipSp[s] = 1; continue;
+      }
       needed++;
     }
     if (instances.groups.length + needed > MAX_INSTANCE_GROUPS) {
@@ -74,7 +87,7 @@ export function bindScatterInstances(world, instances, previous = [], owner = nu
   }
   const groups = [];
   for (let s = 0; counts && s < counts.length; s++) {
-    if (!counts[s]) continue;
+    if (!counts[s] || skipSp[s]) continue;
     const sp = cfg.species[s];
     const group = sp.mesh !== undefined ? instances.meshGroup(world.scatterMeshes[s], counts[s]) : instances.group(sp.model, counts[s]);
     if (sp.mesh !== undefined) group.castShadow = sp.shadow !== false; // mesh groups: LOD off unless the species sets lodCells

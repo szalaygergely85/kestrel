@@ -42,6 +42,7 @@ export async function createQuestE2e(bundle) {
   const newRelay = (saved, sq) => createQuestRelay(m1, saved || null, defs, sq || null);
   const relay = newRelay();
   const initialStatus = Object.fromEntries(defs.map((d) => [d.id, relay.book.statusOf(d.id)]));
+  const enterArea = (id) => { const z = [{ id, x: 500, y: 500, r: 3, zMin: 0 }]; relay.pollAreas(-9999, -9999, 2, z); relay.pollAreas(500, 500, 2, z); }; // OB-220b: pollAreas is edge-triggered: step out, then in
 
   const inv = ensureInventory({}, null);
   const world = { state: {}, get: (id) => (isChar(id) ? { data: { transform: { x: 0, y: 0, z: 0 }, components: { dialogue: entDlg[id], voxel: { model: 'x', anim: 'idle', playing: false, loop: true } } }, play() { return this; } } : null), addInteractable: (s) => s };
@@ -267,7 +268,7 @@ export async function createQuestE2e(bundle) {
       case 'area': {
         if (!areaIds.has(w.id)) fail('5 objectives', "area '" + w.id + "' is not in content/quests/areas.json (no trigger zone)");
         player.transform.x = 500; player.transform.y = 500; player.transform.z = 2;
-        relay.pollAreas(500, 500, 2, [{ id: w.id, x: 500, y: 500, r: 3, zMin: 0 }]); break;
+        enterArea(w.id); break;
       }
       case 'beasts': {
         const ids = w.kind !== undefined ? Array.from({ length: w.count }, (_, n) => w.kind + 'E2E' + (n + 1)) : w.ids.slice(0, w.count); // kind: right kind prefix (kindOf), count of kills
@@ -303,7 +304,7 @@ export async function createQuestE2e(bundle) {
       if (w.type === 'flag' && /^quest\..+\.done$/.test(w.id)) { const dep = defs.find((d) => 'quest.' + d.id + '.done' === w.id); if (dep) runQuest(dep); }
       else if (w.type === 'flag') relay.questFlag(w.id, w.equals === undefined ? true : w.equals);
       else if (w.type === 'item') relay.feed({ type: 'item:got', id: w.id });
-      else if (w.type === 'area') relay.pollAreas(500, 500, 2, [{ id: w.id, x: 500, y: 500, r: 3, zMin: 0 }]);
+      else if (w.type === 'area') enterArea(w.id);
       if (o.id === stepId) return;
     }
   }

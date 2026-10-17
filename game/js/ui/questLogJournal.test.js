@@ -10,8 +10,8 @@ log.open(); const ui = createUiLayer({ cols: 160 }); log.draw(ui);
 let s = log.snapshot();
 assert.ok(s.left.includes('Beyond the Wall'), 'done main listed as Beyond the Wall: ' + s.left);
 assert.ok(!s.left.some(l => l.includes('A Blade')), 'old title replaced');
-assert.equal(s.left[s.left.length - 1], 'Beyond the Wall', 'done listed after active');
-log.handleKey('KeyS'); // select the done main row
+assert.equal(s.left[0], 'Beyond the Wall', 'OB-221: the finished chapter row sits in the Main group, before the Side quests');
+// the done main row is selected first (Main group first)
 assert.ok(log.handleKey('Enter')); assert.deepEqual(calls, [0], 'journal callback'); assert.equal(log.isOpen(), false);
 // without callback / not done: Enter does nothing, stays open
 const plain = createQuestLogScreen(mk(4)); plain.open(); plain.handleKey('KeyS'); plain.handleKey('Enter'); assert.equal(plain.isOpen(), true);

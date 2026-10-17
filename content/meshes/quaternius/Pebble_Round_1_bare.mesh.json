@@ -1,0 +1,37 @@
+{
+  "kind": "mesh",
+  "schema": 1,
+  "id": "quaternius/Pebble_Round_1_bare",
+  "nextId": 1,
+  "version": 1,
+  "layout": "static",
+  "bin": "Pebble_Round_1.mesh.bin",
+  "triCount": 136,
+  "bbox": [
+    -0.21981,
+    -0.20741,
+    -0.0078,
+    0.28023,
+    0.15961,
+    0.08768
+  ],
+  "ranges": [
+    {"count": 30, "part": "Pebble_Round_1#0:rock", "start": 0},
+    {"count": 43, "part": "Pebble_Round_1#0:moss_cap", "start": 30},
+    {"count": 63, "part": "Pebble_Round_1#0:rock_soft", "start": 73}
+  ],
+  "matKeys": [
+    "rock",
+    "moss_cap",
+    "rock_soft"
+  ],
+  "mats": {
+    "moss_cap": "rock",
+    "rock": "rock",
+    "rock_soft": "rock_soft"
+  },
+  "matsResolved": false,
+  "meshVersion": 1,
+  "collide": false,
+  "castShadow": false
+}

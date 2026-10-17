@@ -122,3 +122,14 @@ function rigKind(kind) {
   if (ra.skipped) console.log('  alloc probe SKIPPED (run with node --expose-gc)'); else { console.log('  alloc: spell cycle adds ' + ra.perCall.toFixed(1) + ' B/step over baseline ' + base.perCall.toFixed(1)  + ' B/step, throws ' + R.tk.throws); assert.ok(R.tk.throws > 0 && ra.perCall < 16, 'allocation while holding/throwing'); }
 }
 console.log('telekinesis.lv3.test.js OK');
+{ // OB save/load mid-hold and mid-flight: beast is freed into stagger, never stuck in 25/26
+  for (const thrown of [false, true]) {
+    const R = rig(); R.press(30); const a = R.slot('a');
+    if (thrown) { R.step(false); assert.equal(R.sim.state[a], STATE_THROWN); } else assert.equal(R.sim.state[a], STATE_HELD);
+    const snap = JSON.parse(JSON.stringify(R.sim.save()));
+    const R2 = rig(); R2.sim.load(snap);
+    assert.equal(R2.sim.state[a], STATE_STAGGER); assert.equal(R2.sim.spell.held, -1);
+    for (let i = 0; i < 120; i++) R2.step(false);
+    assert.ok(R2.sim.state[a] !== STATE_HELD && R2.sim.state[a] !== STATE_THROWN && R2.sim.state[a] !== STATE_STAGGER, 'recovered: ' + R2.sim.state[a]);
+  }
+}

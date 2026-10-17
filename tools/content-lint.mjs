@@ -39,6 +39,7 @@ export async function buildContext(opts = {}) {
   const { floatingProps, sunkProps } = await import('./probe-floating-props.mjs');
   const { loadDesignAssets, loadPackQuests, loadQuestFiles } = await import('./validate-content.mjs');
   const { supportBoxes } = await import('./prop-ground-lint.mjs');
+  const { createBand } = await import('../game/js/quest/sim/band.js');
   const G = globalThis.ASSETS.levels.world_geo, T = globalThis.ASSETS.levels.overworld_far;
   G.util.installGeo(T.util);
   // JSON-pack levels/worlds merged into the globals by an earlier loadTestAssets (e.g. validate-content --lint) would trip fromJSON's dual-source check
@@ -50,7 +51,7 @@ export async function buildContext(opts = {}) {
   const post = { levels: globalThis.ASSETS.levels, worlds: globalThis.ASSETS.worlds };
   (await import('../game/js/quest/index.js')).registerQuestBehaviours();
   const def = assets.world('world_m1');
-  const w = World.load(def, assets, { physics: 'mesh', events: { on() { return () => {}; }, emit() {} } });
+  const w = World.load(def, assets, { strict: true, physics: 'mesh', events: { on() { return () => {}; }, emit() {} } });
   const quiet = (fn) => { const cw = console.warn; console.warn = () => {}; try { return fn(); } finally { console.warn = cw; } };
   quiet(() => spawnRegionalBeasts(w, G, 12));
   const gz = (x, y) => { w.ensureBandFor(x, y); return w.terrain.groundAt(x, y); };
@@ -148,7 +149,7 @@ export async function buildContext(opts = {}) {
   const LV5 = /level5|lvl5|fireball|burl\.lvl/i, qById = new Map(quests.map((q) => [q.id, q]));
   const gated = (q, seen = new Set()) => {
     if (!q || seen.has(q.id)) return false; seen.add(q.id);
-    if ((q.band || 0) >= 5) return true;
+    if ((Array.isArray(q.band) ? q.band[0] : (q.band || 0)) >= 5) return true; // pack bands are [lo,hi] arrays
     return (q.requires || []).some((r) => (r.flag && LV5.test(r.flag)) || (r.quest && gated(qById.get(r.quest), seen)));
   };
   const posAny = (id) => { const e = pos(id); if (e) return e; const a = areas[id], t = a && trig.get(a.trigger); return t ? { x: t.x, y: t.y } : null; };
@@ -244,7 +245,8 @@ export async function buildContext(opts = {}) {
     fxModels: new Set(Object.entries(globalThis.ASSETS.models || {}).filter(([, m]) => m && m.fx === true).map(([k]) => k)),
     formatQuests: quests, questTexts, r19Allow, names: nameList, logic, entSupport, anchors, entities, structures: def.structures, floating, texts, jsTexts, quests: qs, itemDefs: assets.items?.defs || (await loadDesignAssets()).items?.defs,
     labelOf, giverIds, pos, groundAt: gz, walkable, characters, levelIds: new Set((JSON.parse(fs.readFileSync(path.join(root, 'content/levels/tower.level.json'), 'utf8')).props || []).map((p) => p.id)), chests: entities.filter((e) => /^chest/.test(e.id)), guards,
-    riverX: (y) => T.util.riverX(y), riverHalf: 10,
+    riverX: (y) => T.util.riverX(y), riverHalf: 10, // kept for jossPlacement.test (R9 itself no longer uses the river)
+    bandMinAt: createBand(G.regions).bandAt,
   };
 }
 

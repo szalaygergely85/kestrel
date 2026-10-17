@@ -72,6 +72,7 @@ import { initAudio, setMuted, setVolume, toggleMute, isMuted } from './audio/syn
 import { resetGameAudio, stepGameAudio } from './audio/sfx.js';
 // ---- end US-020a ----
 import { createSafeBindings, resolveGameKeys } from './gameKeys.js'; // BINDINGS-WIRE-01
+const DEBUG_MOD = 'ShiftLeft'; // REPORT-KEY-01: dev-only modifier (Shift+F8 god mode under ?debug=1), not a rebindable gameplay key
 import { loadSettings, saveSettings, getSaveStorage } from './platform/index.js'; // US-060: remembered mute (D-012)
 import { loadBootBundle } from './packBoot.js';
 import { applyLocalOverlay } from './localOverlay.js';
@@ -219,7 +220,7 @@ setFoliageDice(new URLSearchParams(location.search).get('aafol') !== '0'); // AA
 setFoliageLight(new URLSearchParams(location.search).get('aafoll') !== '0'); // AA-16 (OB-208): leaf-card light smoothing, ?aafoll=0 = off
 setFoliageEdge(new URLSearchParams(location.search).get('aafoledge') !== '0'); // AA-17 (OB-208): resolve hysteresis keeps a leaf key across leaf cards, ?aafoledge=0 = off
 setEdgeHold(new URLSearchParams(location.search).get('aaedge') !== '0'); // AA-18 (OB-208): stable pass lets edge cells take history (glyph hold), ?aaedge=0 = off
-setFarForest(new URLSearchParams(location.search).get('farforest') === '1' ? 1 : 0); // OB-222 candidate: ?farforest=1 = green far forest faces + luma floor (default off until the owner A/B)
+setFarForest(new URLSearchParams(location.search).get('farforest') === '0' ? 0 : 1); // OB-222: far-forest green faces + luma floor default ON (architect 38.9x Q4); ?farforest=0 = old look
 setGrassShade(new URLSearchParams(location.search).get('grassshade') === '0' ? 0 : 1); // OB-217: ?grassshade=0 = old shaded grass (before/after)
 { const aw = new URLSearchParams(location.search).get('aawind'); setWindHold(aw === null ? 3 : +aw | 0); } // AA-22 (OB-208): wind hold, ?aawind=0 off (1 far grass, 2 lean, 3 both)
 setVoxelHold(new URLSearchParams(location.search).get('aavox') !== '0'); // AA-21 (OB-208): resolve hysteresis keeps a voxel prop's face key (kind 8), ?aavox=0 = off
@@ -1855,6 +1856,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
             dialogueOpen: () => dialogueCtl.open, afterLeave: () => rq.state.completed.includes('leave'), requestOpen: nearTalk, noticeBusy: () => notice.active,
             restore: () => dialogueCtl.addNpc('bear'), hideSafe: true, leadStatus: () => rq.book.statusOf('sq.burl.walk') }); // sq.burl.walk: Burl leads along walks.toBend // QL-05: Burl's home switch re-adds her [E] Talk
           escort.load();
+          (window.__debug = window.__debug || {}).burl = { walk: bw, get legs() { return beastLegs; }, pool: gameVoxelPool }; // OB-215 probe handle (tools/probe-burl-legs.mjs)
           const nubH = world.get('nub'); // NUB-01
           nub = nubH ? createNubFollow({ handle: nubH, groundAt: (x, y) => (world.terrain ? world.terrain.groundAt(x, y) : bt.z), isWater: (x, y) => world.waterAt(x, y, nubWtmp), seed: 1, burl: { x: () => bt.x, y: () => bt.y, walking: () => bw.walking, hidden: () => bw.hidden } }) : null;
         }
@@ -2155,7 +2157,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
     if (demoEnd) demoEnd.step((c) => input.pressed(c));
     if (input.pressed(gameKeys.mute)) { toggleMute(); saveSettings({ muted: isMuted() }); } // US-060: remember across reload
     if (input.pressed('F3')) overlay.toggle();
-    if (input.pressed('F8') && !(params.get('debug') === '1' && input.isDown('ShiftLeft'))) { // REPORT-KEY-01: bug snapshot (debug god mode = Shift+F8)
+    if (input.pressed('F8') && !(params.get('debug') === '1' && input.isDown(DEBUG_MOD))) { // REPORT-KEY-01: bug snapshot (debug god mode = Shift+F8)
       const t = playerHandle.data.transform, qn = bootOpts.quality ? bootOpts.quality.name : 'none';
       takeSnapshot({ build: window.__buildId || new Date(performance.timeOrigin).toISOString().slice(0, 16), x: t.x, y: t.y, z: t.z, yaw: look.yawDeg, pitch: look.pitchDeg, hour: clockHour(engine.world.state, clockCfg), quality: qn, renderer: rendererInfo.label, w: window.innerWidth, h: window.innerHeight, cols: rt.cols, rows: rt.rows, flags: window.location.search })
         .then(() => { if (toasts) toasts.say('Bug snapshot copied - paste it in your report', [226, 214, 176]); });
@@ -2420,7 +2422,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         stepPickups(engine.world, playerHandle.data); // US-080b (30.2)
         // US-080a1 AC5 (`?debug=1` only): F8 toggles invulnerability, F9 deals 5 HP.
         if (params.get('debug') === '1') {
-          if (input.pressed('F8') && input.isDown('ShiftLeft')) vitals.setGodMode(!vitals.godMode);
+          if (input.pressed('F8') && input.isDown(DEBUG_MOD)) vitals.setGodMode(!vitals.godMode);
           if (input.pressed('F9')) vitals.debugHit();
         }
       }

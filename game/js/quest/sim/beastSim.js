@@ -1947,6 +1947,9 @@ function loadSim(sim, obj) {
     P.n = o.n; for (let k = 0; k < o.n; k++) P.rec[k] = o.rec[k];
     P.freeN = o.freeN; for (let k = 0; k < o.freeN; k++) P.free[k] = o.free[k];
   }
+  // SPELL-R7: the spell block (held/flyT/p) is not saved, so a beast saved mid hold/flight is freed (throw lost) into stagger.
+  if (sim.spell) { sim.spell.held = -1; sim.spell.flyT = 0; sim.spell.hitMask.fill(0); }
+  for (let i = 0; i < n; i++) if (sim.state[i] === STATE_HELD || sim.state[i] === STATE_THROWN) { sim.state[i] = STATE_STAGGER; sim.timer[i] = STAGGER_STEPS; sim.seen[i] = 0; }
   resyncLeash(sim);
 }
 
