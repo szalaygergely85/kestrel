@@ -53,9 +53,9 @@
              // The bed falls monotonically; it ends at seaLevel - 1.5 = the sea floor at the shoreline (coast layer), so no step at the mouth.
              // RIVER-04: 100-300 under the source-reach humps (y 126, 198); 372-400 = the inlet hollow below lake z (ribbon widened, no floating edge);
              // 352-540 = a channel through the Glasswater dam shelf at lake z - 0.4 (the river enters the lake); 600 = the outlet lip,
-             // 603/605 = a vertical notch at the outlet cliff (waterfall `braidFalls` lip y 603.5, ~17 m into a plunge reach at -77); 628-760 below the old -75 hump.
+             // 603/605 = a vertical notch at the outlet cliff (waterfall `braidFalls` lip y 603.5, ~17 m into a plunge reach at -77); OB-214: the plunge pool is 15 m wide (605-650) so the 20 m sheet lands in water; 628-760 below the old -75 hump.
              poly: [[100, -10, 10], [128, -13.3, 10], [174, -25.6, 10], [204, -26.0, 10], [232, -27.2, 10], [300, -45.6, 10], [352, -57.6, 10], [362, -58.4, 22],
-                    [412, -58.4, 22], [424, -58.4, 10], [540, -58.6, 10], [600, -60, 10], [603, -60.2, 10], [605, -77, 10], [628, -77.1, 10],
+                    [412, -58.4, 22], [424, -58.4, 10], [540, -58.6, 10], [600, -60, 10], [603, -60.2, 10], [605, -77, 10], [611, -77.03, 15], [628, -77.1, 15], [650, -77.2, 15],
                     [700, -77.4, 10], [760, -78.4, 10], [832, -83, 10],
                     [1344, -92, 10], [1420, -95, 10], [1470, -96.6, 14], [1600, -97, 24], [1725, -97.5, 42], [1760, -97.6, 46]],
              fade: 128, bank: 0.4, bankW: 60, inset: 2, corridor: [880, 100, 1360, 1760] },

@@ -116,7 +116,9 @@
     {"id": "dressTorch1", "on": true, "preset": "torch", "x": 12.200000000000045, "y": 6.5, "z": 1.5},
     {"id": "caveMid", "on": true, "preset": "torch", "x": 7.5, "y": 5.5, "z": 4.8},
     {"id": "caveEast", "on": true, "preset": "lanternHook", "x": 11, "y": 3.5, "z": 4.6},
-    {"id": "caveMouth", "on": true, "preset": "lanternHook", "x": 4, "y": 8, "z": 4.6}
+    {"id": "caveMouth", "on": true, "preset": "lanternHook", "x": 4, "y": 8, "z": 4.6},
+    {"id": "caveRakeW", "on": true, "preset": "lanternFloor", "x": 2.4, "y": 7.2, "z": 3.9, "note": "VISQA-28: low raking glow along the west wall (off-axis) so wall + ceiling read as shape"},
+    {"id": "caveRakeE", "on": true, "preset": "lanternFloor", "x": 12.4, "y": 2.6, "z": 3.9, "note": "VISQA-28: low raking glow on the east wall, opposite corner"}
   ],
   "props": [],
   "interactables": [],
