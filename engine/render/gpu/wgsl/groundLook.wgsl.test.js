@@ -74,7 +74,7 @@ const makeSu = (hashCell, wind, FG) => ({
   terrainFogNearRGB: { x: fog.nearRGB[0], y: fog.nearRGB[1], z: fog.nearRGB[2] }, terrainFogFarRGB: { x: fog.farRGB[0], y: fog.farRGB[1], z: fog.farRGB[2] },
   wetness: 0, fgP: FG ? { x: 1, y: FG.startM, z: FG.fadeM, w: FG.mix } : { x: 0, y: 0, z: 1, w: 0 }, fgW: FG ? { x: FG.dirX, y: FG.dirY, z: FG.cyc, w: FG.invTravel } : { x: 0, y: 0, z: 0, w: 0 }, fgQ: FG ? { x: FG.qb, y: FG.tPrev, z: FG.qt, w: 0 } : { x: 0, y: 0, z: 0, w: 0 }, /* AA-22 */
   fgT: Array.from({ length: FG_TYPES }, (_, i) => FG ? { x: FG.types[i * 4], y: FG.types[i * 4 + 1], z: FG.types[i * 4 + 2], w: FG.types[i * 4 + 3] } : { x: 0, y: 0, z: 0, w: 0 }),
-  cliff: { x: 1, y: 1, z: 0, w: 0 }, skyGlowOn: { x: 0, y: 0, z: 0, w: 0 }, faceK: [{ w: 0 }, { w: 0 }], lookT, lookP: { x: wind, y: 0, z: 0, w: 0 },
+  cliff: { x: 1, y: 1, z: 0, w: 0 }, skyGlowOn: { x: 0, y: 0, z: 0, w: 0 }, faceK: [{ w: 0 }, { w: 0 }], lookT, fogView: { x: 0, y: 0, z: 0, w: 4 }, lookP: { x: wind, y: 0, z: 0, w: 0 },
 });
 const q = (x) => Math.floor(Math.min(255, Math.max(0, x)) + 0.5);
 function compileAll(src, su) {
