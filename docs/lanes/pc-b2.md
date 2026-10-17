@@ -1378,3 +1378,4 @@ Remaining R9 count: 3 (sq.reg.highPastures b8, sq.reg.signalHill b7, sq.reg.heat
 - Fix (data): 8 new `Pebble_*_bare` mesh json (moss_cap -> rock, manifest rows) + 52 placements in the crypt/fordCellar/goblinTunnel/bearDen boxes switched to `_bare` meshes (world_m1.world.json); outside the boxes untouched.
 - Test: tools/interiorGreen.test.mjs (245 placements, 4 zones, 0 moss meshes); run-tests --filter world 86 PASS. Stills: docs/test-reports/visqa/visqa13-<spot>-before|after.png.
 - Note: default s2 stills show only ~4-10 faintly green px before AND after (blue-grey blob in crypt is a pebble, now bare); the queue's "bush clumps" were mostly dark moss-cap tint. Owner check at 8000 recommended.
+- SPELL-R7 ARCH CHANGES (tkfix): loadSim frees beasts saved in STATE_HELD/THROWN into stagger (spell block reset); holdStep clamp hoisted to module scope clampAbs; lv3 test save/load mid-hold + mid-flight. telekinesis,beast,save suites 33/33 PASS.

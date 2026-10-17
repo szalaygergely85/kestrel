@@ -19,6 +19,7 @@ const EYE = 1.2; // m above the feet: cone origin / LOS start
 const MAX_SEC_STEPS = Math.round(HOLD_MAX_SEC / SIM_STEP), LOS_STEPS = Math.round(LOS_SEC / SIM_STEP), FLIGHT_STEPS = Math.round(FLIGHT_SEC / SIM_STEP);
 const HOLD_STEPS = Math.round(HOLD_SEC / SIM_STEP), WALL_STEPS = Math.round(WALL_SEC / SIM_STEP);
 /** @param {any} world @param {any} events @param {any} targets createTargetables() @param {{spendMana?:(n:number)=>boolean, tier?:()=>number, forEachProp?:(fn:Function)=>void, damageMul?:()=>number}} [hooks] */
+const clampAbs = (v, m) => (v > m ? m : v < -m ? -m : v); // module scope: no per-step closure (rule 15)
 export function createTelekinesisSim(world, events, targets, hooks) {
   const tiers = SPELL_DEFS.telekinesis.tiers;
   let cooldown = 0, armed = false, held = 0, castTick = -1000000, tick = 0, hits = 0, propHits = 0, pulls = 0, wallHits = 0;
@@ -169,9 +170,9 @@ export function createTelekinesisSim(world, events, targets, hooks) {
     if (gSteps % 60 === 0 && !(typeof hooks.spendMana === 'function' ? hooks.spendMana(1) : true)) { endHold(false); return; }
     const hz = O[2] - 0.4 > t.z ? O[2] - 0.4 : t.z;
     if (gMode === 1) { setHoldPoint(sim, hx, hy, hz); return; }
-    const b = gEnt.components.body, dt = SIM_STEP, c = (v, m) => (v > m ? m : v < -m ? -m : v);
-    b.vx = c((hx - tr.x) / dt, 12); b.vy = c((hy - tr.y) / dt, 12);
-    b.vz = c((hz - tr.z) / dt, 8) + PHYSICS.gravity * dt; // cancels the roller's own gravity this step
+    const b = gEnt.components.body, dt = SIM_STEP;
+    b.vx = clampAbs((hx - tr.x) / dt, 12); b.vy = clampAbs((hy - tr.y) / dt, 12);
+    b.vz = clampAbs((hz - tr.z) / dt, 8) + PHYSICS.gravity * dt; // cancels the roller's own gravity this step
     if ('grounded' in b) b.grounded = false;
   }
   /** a thrown roller damages each beast it touches once (6 x INT) inside FLIGHT_SEC. */
