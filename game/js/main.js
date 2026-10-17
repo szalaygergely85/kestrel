@@ -57,6 +57,7 @@ import { parseCloudShadowFlag, devCloudShadow, parseAoStrength } from './cloudPa
 import { MODES } from './dev/modes/index.js';
 import { createFlickerLive, runLivePoses, parseFlickerDump, POSES_ALL } from './dev/flickerLive.js'; // AA-01
 import { createFlickerMeter } from './dev/flickerMeter.js'; // FLICKER-F3-01
+import { takeSnapshot } from './dev/bugSnapshot.js'; // REPORT-KEY-01
 import { loadCinematic, evaluatePath, createPlayback } from './dev/modes/cinematic.js';
 import { createPauseResume } from './quest/pauseResume.js'; // OB-068
 import { entityTop, markZ } from './quest/markTop.js'; // OB-155h/OB-164: marker height from the model top
@@ -2154,6 +2155,11 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
     if (demoEnd) demoEnd.step((c) => input.pressed(c));
     if (input.pressed(gameKeys.mute)) { toggleMute(); saveSettings({ muted: isMuted() }); } // US-060: remember across reload
     if (input.pressed('F3')) overlay.toggle();
+    if (input.pressed('F8') && !(params.get('debug') === '1' && input.isDown('ShiftLeft'))) { // REPORT-KEY-01: bug snapshot (debug god mode = Shift+F8)
+      const t = playerHandle.data.transform, qn = bootOpts.quality ? bootOpts.quality.name : 'none';
+      takeSnapshot({ build: window.__buildId || new Date(performance.timeOrigin).toISOString().slice(0, 16), x: t.x, y: t.y, z: t.z, yaw: look.yawDeg, pitch: look.pitchDeg, hour: clockHour(engine.world.state, clockCfg), quality: qn, renderer: rendererInfo.label, w: window.innerWidth, h: window.innerHeight, cols: rt.cols, rows: rt.rows, flags: window.location.search })
+        .then(() => { if (toasts) toasts.say('Bug snapshot copied - paste it in your report', [226, 214, 176]); });
+    }
     // D-025 (US-038a AC "dev switch until US-038b ships"): `?debug=1` only -
     // cycles the 4 player grids; `engine.setGrid` no-ops off a gl2 backend.
     if (params.get('debug') === '1' && input.pressed('F4')) {
@@ -2414,7 +2420,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         stepPickups(engine.world, playerHandle.data); // US-080b (30.2)
         // US-080a1 AC5 (`?debug=1` only): F8 toggles invulnerability, F9 deals 5 HP.
         if (params.get('debug') === '1') {
-          if (input.pressed('F8')) vitals.setGodMode(!vitals.godMode);
+          if (input.pressed('F8') && input.isDown('ShiftLeft')) vitals.setGodMode(!vitals.godMode);
           if (input.pressed('F9')) vitals.debugHit();
         }
       }
