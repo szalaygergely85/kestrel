@@ -198,7 +198,7 @@ import { createTargetables } from './quest/sim/targetables.js';
 import { FIREBALL_CFG, refreshLocked } from './quest/spellConfig.js';
 import { createSpellDispatcher } from './quest/sim/spellCast.js'; // SPELL-04
 import { featuresFromParams, fireballOn } from './quest/features.js'; // D-065: fireball off unless ?fireball=1
-import { START_DEMO, START_FULL, startFor } from './quest/startConfig.js';
+import { START_DEMO, START_FULL, startFor, stripPackSpell, grantSpellHand } from './quest/startConfig.js';
 import { createPracticeTarget, applyPropTargetables } from './quest/practiceTarget.js';
 import { createParticleHooks, applyPropEmitters } from './quest/particleHooks.js'; // US-053c
 import { createWaterfallHooks } from './quest/waterfallHooks.js';
@@ -1296,7 +1296,7 @@ async function runGame(mode, cinematic = null) {
     return null;
   }
   const vLocked = () => !!(vitals && vitals.inputLocked) || (travel && travel.inputLocked) || deathFlow.inputLocked; // DIALOGUE-LOCK-01 (owner: never lock during game): dialogue/notes/chapter card/notices no longer lock movement or look; only menus, death, travel fade and the intro wake do. // DEATH-FLOW-01 part 2: the flow lock gates move/attack/jump/interact like the vitals lock (the virtual [E] bypasses it)
-  const syncFb = () => { fbOn = fireballOn(engine.world, FEATURES); if (spellBook) { refreshLocked(LOCKED, spellBook.tiers()); if (fbOn) { delete LOCKED['spell.fireball']; delete LOCKED['potion.mp']; } } }; // SPELL-04
+  const syncFb = () => { fbOn = fireballOn(engine.world, FEATURES); if (fbOn && itemDefs && playerHandle) { const c = playerHandle.data.components; if (c.inventory && c.equipment && c.equipment.off === null) grantSpellHand(c.inventory, c.equipment, itemDefs, equipItem, addItem); } /* OB-217: known spell is equipped the moment the off hand is free */ if (spellBook) { refreshLocked(LOCKED, spellBook.tiers()); if (fbOn) { delete LOCKED['spell.fireball']; delete LOCKED['potion.mp']; } } }; // SPELL-04
   const qbToast = (res) => { // EQ-12: quick-bar / potion feedback (no menu, never locks)
     const T = { none: 'No potions', full: 'Not hurt', refuse: 'Cannot use that now', empty: '' };
     if (toasts && T[res]) toasts.say(T[res], [226, 214, 176]);
@@ -1792,12 +1792,13 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       // fireball is known from the start in the right hand; the sword is taken in the tower (swordTake.js
       // adds it to the pack + left hand), so the demo pack holds the fireball only. `?demo=0` = empty pack.
       // An old save whose sword flag is already set migrates: sword in the pack + left hand.
-      ensureInventory(playerHandle.data, startFor(params.get('demo') !== '0', fireballOn(engine.world, FEATURES))); // startConfig.js (fireball locked -> empty right hand)
-      if (!window.__fbEquipHooked) window.__fbEquipHooked = true, engine.events.on('magic.unlocked', () => { const c = playerHandle && playerHandle.data.components; if (c && c.inventory && c.equipment && itemDefs && c.equipment.off === null && c.equipment.set !== 'ranged') equipItem(c.inventory, c.equipment, itemDefs, 'spell.fireball'); }); // FB-01/03 fix: the unlock puts the spell into the free off hand (RMB); hands are derived from equipment, so inventory.right alone never held it
+      ensureInventory(playerHandle.data, startFor(params.get('demo') !== '0', fireballOn(engine.world, FEATURES))); // startConfig.js: locked start = empty pack/hands (OB-217)
+      if (!window.__fbEquipHooked) window.__fbEquipHooked = true, engine.events.on('magic.unlocked', () => { const c = playerHandle && playerHandle.data.components; if (c && c.inventory && c.equipment && itemDefs) grantSpellHand(c.inventory, c.equipment, itemDefs, equipItem, addItem); }); // OB-217: spell goes straight to the off hand, never sits in the pack // FB-01/03 fix: the unlock puts the spell into the free off hand (RMB); hands are derived from equipment, so inventory.right alone never held it
       if (world.state['tower.sword.taken'] && itemDefs) migrateSword(playerHandle.data.components.inventory, itemDefs);
       if (qstateItems && itemDefs) { for (const it of qstateItems) addItem(playerHandle.data.components.inventory, itemDefs, it.id, it.n); qstateItems = null; } // ED-QUEST-07: preset grants
       if (params.get('spells') === '1' && spellBook) applyDevSpells(spellBook, playerHandle.data.components.inventory, itemDefs); // SPELL-DEV-01: dev override (the 4 D-021 spells at level 1 + 2 Spell Scrolls); in memory only
       if (itemDefs) migrateEquipment(playerHandle.data, itemDefs); // EQ-02: old saves sword->main, shield->off (before initialState)
+      { const c0 = playerHandle.data.components; if (c0.inventory && stripPackSpell(c0.inventory) && c0.equipment && itemDefs && fireballOn(engine.world, FEATURES)) grantSpellHand(c0.inventory, c0.equipment, itemDefs, equipItem, addItem); } // OB-217 save migration: stray locked spell cell removed, spell to the off hand if unlocked // startConfig.js (fireball locked -> empty right hand)
       // US-091a2 (37.16.3): corpse loot + toast. Own RNG stream (nav seed ^ salt) so the beast wander RNG is never
       // perturbed; `beast.loot` (quest/index.js) reaches this load's sim through setLootApi.
       if (loot) loot.dispose();
