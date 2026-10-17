@@ -1,0 +1,9 @@
+# CONTENT-DB-01 - 2026-10-17
+
+Offline content editing through built-in Node SQLite (Node 22.13+), with no runtime dependency. Export creates one table per explicit kind or top-level content directory. The document column is editable; original bytes and canonical baseline preserve unchanged JSON exactly. Import uses the public stringifyContent writer for edited documents, including array-root logic through a temporary envelope. No production content is reformatted.
+
+The supplied SQL views list quests by region, placements by mesh and loot by source. README documents export/import, SQL edits, exact-byte/file-set check mode, and review-directory imports. Import preflights paths and metadata, refuses traversal, links, Windows duplicate/invalid names, foreign databases and corrupted baselines. Each file replacement is atomic; an I/O failure may leave earlier files imported. Import does not delete files.
+
+Focused suite PASS: fixture edits, BOM/CRLF preservation, array roots, SQL views, CLI status, malformed metadata, temporary-file preservation and path refusal. All 252 current production JSON files round-trip byte-identically; check mode agrees. Focused elapsed 3.463 s. Full gate: 1059 suites, 1057 PASS, 1 FAIL, 0 TIMEOUT, 1 existing optional typecheck WARN. The unchanged passDecor allocation probe reported 20.07 B/frame versus <1; immediate direct rerun passed at 0.00 B/frame and repository-runner filtered rerun also PASS (227 ms). Thus every runtime suite passes including rerun; no test/threshold was changed or suppressed. The optional typecheck warning remains the previously approved upstream limitation. Standalone check-deps OK (1757 files), 90 existing warnings. Final fetch/merge brought documentation/screenshots only from pc-b 52be27e3; master/pc-a were already included.
+
+This is tooling only; no owner-visible game change or screenshot required. Original owner checkout and its mesh placements remain untouched.

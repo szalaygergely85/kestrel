@@ -25,3 +25,47 @@ For models that only exist as Unity assets (FBX + mask shaders, e.g. Synty POLYG
    `node tools/gltf-import.mjs design/local/<pack>/character.gltf <pack>/<Name> --uvmap auto --palette-map design/local/<pack>/palette-map.json --out content/local/meshes/<pack>/<Name>.mesh.json`
 4. Licence-restricted assets stay local: list the mesh in `content/local/manifest.json` (a normal manifest, `"files": ["meshes/<pack>/<Name>.mesh.json"]`) and place it in `content/local/placements.json` (`{"world": "world_m1", "structures": [{"id", "mesh", "origin": {x,y,z}, "yawDeg"}]}`). `game/js/localOverlay.js` merges both at boot on that PC only (`?nolocal=1` and `?gpucompare` skip it). Assets whose licence allows redistribution go into `content/meshes/` + `content/manifest.json` instead.
 5. Any new palette material needs a v1 record in `design/palette.js` AND a v2 record + `remap` entry in `design/detail-pass.js`; a missing v2 record switches the whole GPU cell pipeline off (console: `GpuCellPipeline inactive (missingV2: ...)`, F3 `path: cpu`).
+
+## SQLite content editing (CONTENT-DB-01)
+
+Requires Node 22.13+ with built-in `node:sqlite`; no npm dependency. Export every
+JSON object or array below `content/`, including standalone quests/items/life/logic data:
+
+```sh
+node tools/content-db.mjs export dist/content.sqlite
+node tools/content-db.mjs check dist/content.sqlite
+node tools/content-db.mjs import dist/content.sqlite --root dist/content-review
+node tools/content-db.mjs import dist/content.sqlite --check
+```
+
+Export refuses an existing database. `--root` selects the JSON source or import
+destination; default `content`. `check` / `--check` compare the exact file set and
+bytes, return 1 on missing/changed/extra files, and write nothing. Review into a
+new directory first; import overwrites changed JSON files at its destination.
+Binary mesh files and other non-JSON assets remain outside this tool.
+
+Each `content_<kind>` table has `path`, `id`, editable `document` JSON, and
+`original_json`/`source` round-trip metadata. Files without `kind` use their
+top-level content directory (for example `quests`, `items`, `life`). Edit
+`document` with SQLite JSON functions; keep metadata unchanged. The `id` column
+is an export-time convenience; the authoritative id is inside `document`.
+`_content_all` and [content-db/views.sql](content-db/views.sql) provide read-only
+`quests_by_region`, `placements_by_mesh`, and `loot_by_source` projections.
+
+```sql
+SELECT quest_id, title FROM quests_by_region WHERE region = 'downs';
+SELECT mesh, count(*) FROM placements_by_mesh GROUP BY mesh;
+SELECT * FROM loot_by_source WHERE source = 'boar';
+UPDATE content_world SET document = json_set(document, '$.title', 'New title')
+WHERE path = 'worlds/world_m1.world.json';
+```
+
+Unchanged documents retain original bytes (including CRLF/BOM/legacy spacing);
+edited documents use the public `stringifyContent` writer with LF. Array-root
+logic files use that writer's array layout through a temporary envelope.
+Every row and output path is checked before import starts; traversal, links, duplicate Windows
+paths and corrupted baseline metadata refuse the import. Writes replace each
+file atomically; a disk failure may leave earlier files imported. Removing a row
+does not delete an existing JSON file (`--check` reports it as extra). Imports
+are offline edits: run `node tools/validate-content.mjs` afterward for gameplay
+schema/reference checks. Tests: `node tools/content-db.test.mjs`.
