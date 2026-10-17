@@ -15,7 +15,7 @@ ok(st && st.keepMask, 'site bearDen placed (keepTerrain)');
 const errs = validateUnder(world);
 ok(errs.length === 0, 'validateUnder: ' + errs.slice(0, 2).join('; '));
 const lv = JSON.parse(fs.readFileSync(new URL('../../../../content/levels/bear_den.level.json', import.meta.url), 'utf8'));
-ok(lv.ambience === 'cave' && lv.lights.length >= 2 && lv.lights.length <= 6 && lv.props.length === 0, 'cave ambience, a few light presets, no props (VISQA-12: readable den, wild = no torch props)');
+ok(lv.ambience === 'cave' && lv.lights.length >= 2 && lv.lights.length <= 8 && /* EV17-10 light coverage (levelLight.test) added corridor hooks */ lv.props.length === 0, 'cave ambience, a few light presets, no props (VISQA-12: readable den, wild = no torch props)');
 const FL = UNDER_SITES.find((s) => s.id === 'bearDen').z;
 ok(Math.abs(st.origin.z + 3.2 - FL) < 0.02, 'site z = chamber floor ' + FL);
 

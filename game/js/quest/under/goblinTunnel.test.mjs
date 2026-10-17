@@ -16,7 +16,7 @@ const errs = validateUnder(world);
 ok(errs.length === 0, 'validateUnder: ' + errs.slice(0, 2).join('; '));
 const lv = JSON.parse(fs.readFileSync(new URL('../../../../content/levels/goblin_tunnel.level.json', import.meta.url), 'utf8'));
 ok(lv.ambience === 'cave', 'ambience cave');
-ok(lv.lights.length >= 2 && lv.lights.length <= 3, 'goblin torches: ' + lv.lights.length);
+ok(lv.lights.length >= 2 && lv.lights.length <= 12, /* EV17-10 light coverage added room/elbow hooks (levelLight.test guards coverage) */ 'goblin torches: ' + lv.lights.length);
 const camps = JSON.parse(fs.readFileSync(new URL('../../../../content/life/goblinCamps.json', import.meta.url), 'utf8')).camps;
 const cN = camps.find((c) => c.id === 'campNorth').at, cE = camps.find((c) => c.id === 'campEast').at;
 const dist = Math.hypot(cN[0] - cE[0], cN[1] - cE[1]); ok(dist > 60 && dist < 200, 'camps 60-200 m apart: ' + dist.toFixed(1));
