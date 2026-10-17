@@ -17,6 +17,7 @@ import { AO_MAX } from '../../horizonAo.js';
 import { PSH_NEAR } from '../../shadowPoint.js';
 import { CONTACT_AO_WGSL, CAO_SHIFT, CAO_MAX } from '../../contactAO.js';
 import { LIGHT_SHAFT_WGSL, SHAFT_SHIFT } from '../../lightShaft.js'; // CANOPY-SHAFT-01b (38.76)
+import { MOON_RIM_WGSL } from '../../moonRim.js'; // RND-NIGHT-RIM-03
 import { GI_SAMPLE_WGSL, giBindingWgsl } from '../../giGpu.js';
 
 export const PSH_MAX_SLOTS = 6;
@@ -63,6 +64,8 @@ export const LIGHT_BLOCK = defineUniformBlock('LightU', [
   { name: 'caoD', type: 'vec4', count: CAO_MAX * 2 },
   // CANOPY-SHAFT-01b (38.76 item 4): shaft = (steps, maxM, on, 0), appended at the very END. steps 0 = march skipped, LIGHT.w bits 20..23 stay 0 (byte-identical).
   { name: 'shaft', type: 'vec4' },
+  // RND-NIGHT-RIM-03: rimA = (k, farM, 0, 0), appended at the very END. k 0 = no moon rim (byte-identical).
+  { name: 'rimA', type: 'vec4' },
 ]);
 
 /** Texture slot kinds for PipelineDesc.bindings.textures. */
@@ -305,6 +308,7 @@ fn sampleVis(i: i32, px: f32, py: f32) -> f32 {
 ${CONTACT_AO_WGSL}
 
 ${LIGHT_SHAFT_WGSL}
+${MOON_RIM_WGSL}
 // CANOPY-SHAFT-01b: view ray through the cell (P1 = the cell's ray at dist 1, linear in dist for shear + pitched), len = min(euclid dist, maxM),
 // sky cells march the full maxM. Shadow-map sun only; ortho (projMode 2) has no shafts. Result is already shifted into bits 20..23.
 fn shaftBitsAt(cell: vec2i, kindU: u32) -> u32 {
@@ -444,6 +448,12 @@ fn fs_main(@builtin(position) frag: vec4f) -> @location(0) vec4u {
     let caoQ = contactOcclQ(P.x, P.y, P.z, N.z);
     caoBits = caoQ << ${CAO_SHIFT}u;
     if (caoQ != 0u && !isTer) { L -= u.ambient * (f32(caoQ) * (1.0 / 127.0)); } // CAO_AMB
+  }
+
+  // RND-NIGHT-RIM-03: moon rim, LAST (after AO/CAO), every kind incl. terrain (twin: moonRim.js, lighting.js lightSurfaces).
+  if (u.rimA.x > 0.0) {
+    let Vr = normalize(vec3f(u.posX, u.posY, u.eyeH) - P);
+    L += MOON_RIM_COL * moonRimAmount(N, Vr, u.sunDir, dist, u.rimA.x, u.rimA.y);
   }
 
   return vec4u(bitcast<vec3u>(L), u32(sunlit) | caoBits | (u32(litCount) << 8u) | (u32(sunN) << SUN_N_SHIFT) | shaftBits | cloudBits);

@@ -30,6 +30,7 @@ const W_PSH_A = W('pshA'), W_PSH_O = W('pshO'), W_PSH_SLOT = W('pshSlot');
 
 // CONTACT-AO-01b (38.78): caoA.x = blob count, caoD = blob records (copied only when LightSet.cao.version changes)
 const W_CAO_A = W('caoA'), W_CAO_D = W('caoD');
+const W_RIM = W('rimA'); // RND-NIGHT-RIM-03: (k, farM, 0, 0) from light.moonRim (lighting.js syncMoonRim)
 const W_SHAFT = W('shaft'); // CANOPY-SHAFT-01b: (steps, maxM, on, 0) from light.shaft {steps, k, maxM}
 
 const NO_CAM = Object.freeze({ x: 0, y: 0, z: 0, yawDeg: 0, pitchDeg: 0 });
@@ -162,6 +163,7 @@ export class WgLightPass {
     const shf = light.shaft, shOn = !!(shf && shf.steps > 0 && shf.k > 0);
     lu[W_SHAFT] = shOn ? shf.steps : 0; lu[W_SHAFT + 1] = shOn ? shf.maxM : 0; lu[W_SHAFT + 2] = shOn ? 1 : 0;
     const sun = light.sun, on = !!(sun && sun.on);
+    const mr = light.moonRim; lu[W_RIM] = mr && on ? mr.k : 0; lu[W_RIM + 1] = mr ? mr.farM : 0;
     li[W_SUN_ON] = on ? 1 : 0;
     if (sun) {
       lu[W_SUNDIR] = sun.dir[0]; lu[W_SUNDIR + 1] = sun.dir[1]; lu[W_SUNDIR + 2] = sun.dir[2];
