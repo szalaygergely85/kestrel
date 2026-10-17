@@ -228,8 +228,11 @@ export const GENERATED_ID = /^[A-Za-z]+\.[A-Za-z]+\.\d+$/; // regional herd '<sp
 
 /** Homes of AUTHORED beasts only (never generated ids): the generators are pure in (geo, terrain, seed, authored homes), so a world restored from a save regenerates the same defs. */
 export function authoredHomes(world) {
-  const avoid = [];
-  world.forEachEntity((e) => { const b = e.components && e.components.brain; if (b && b.kind === 'beast' && b.home && !GENERATED_ID.test(String(e.id))) avoid.push([b.home[0], b.home[1]]); });
+  const avoid = [], paintedIds = new Set();
+  // Painted members are spawned after the herd on fresh boot, but already exist on restore.
+  // Exclude only their exact authored area/member ids so both generation passes see the same homes.
+  for (const a of SPAWN_AREAS) for (let i = 1; i <= a.count; i++) paintedIds.add(`${a.kind}.${a.id}.${i}`);
+  world.forEachEntity((e) => { const b = e.components && e.components.brain; if (b && b.kind === 'beast' && b.home && !GENERATED_ID.test(String(e.id)) && !paintedIds.has(String(e.id))) avoid.push([b.home[0], b.home[1]]); });
   return avoid;
 }
 

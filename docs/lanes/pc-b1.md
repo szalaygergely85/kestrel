@@ -2160,6 +2160,6 @@ gpucompare rtx4060 headless: only the 4 known FAIL rows (crash room, half occlud
 ### QD-15a recovery (kestrel-2, 2026-10-17) - NEEDS PC-A: PO review
 - Downs adds the existing torch herder; Heath adds a dug-up sturdy-gear chest at (513,1359). Painted QD-08/15 creatures now enter the World before stable sim slots bind; absent records never claim unrelated slots. D-120 elite respawns retained.
 - Night painted groups reuse the existing night spawner, park on the first dawn tick, and cannot be revived by the daytime director. Missing model assets are skipped.
-- Checks: spawn filter 7/7; paintedSpawn, directorWire, chestDefs PASS; underSkeletons 26/26; quest-sim 88/88; graph/zone 0 hits; check-deps OK. Full suite/GPU look deferred to main. LOOK RISK: new Heath chest not visually checked.
+- Checks: spawn filter 7/7; paintedSpawn, directorWire, chestDefs PASS; underSkeletons 26/26; quest-sim 88/88; graph/zone 0 hits; check-deps OK. Main browser: gpucompare no new regressions, route walk PASS, opening chain 7/7 PASS. Heath 400x150 scene still: visible yes, brown/iron chest stands out on green ground at about 2 m. Full Node gate recorded in recovery report.
 - NEEDS PC-A: Ash/Reed require bat/wisp art, Northwood horn and Whitecombs rope need approved item IDs (recommend designer supplies them; alternative trim those beats). These four retain original quests.
 - NEEDS PC-A: Strand retains its original delivery; recommend intermediate delivery support because deliver.to must equal final hand-in NPC; alternative split outbound/return quests.

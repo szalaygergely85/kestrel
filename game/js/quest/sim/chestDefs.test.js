@@ -18,6 +18,10 @@ assert.deepEqual(defs.map((d) => d.id).sort(), Object.keys(CHEST_TABLES).sort(),
 for (const d of defs) {
   if (d.id.startsWith('chestCellar') || d.id === 'chestCrypt' || d.id === 'chestBearDen' || d.id === 'chestStrandCave' || d.id === 'chestGoblinTunnel') continue; // UNDER-03 / UNDER-02: crates / chestBig placed on their own walls
   assert.equal(byId.get(d.id).components.voxel.model, 'chestSmall', d.id + ' carries the chest model');
+  if (d.id === 'chestWallow') { // QD-09 faces across the wallow at 200 degrees.
+    assert.ok(Math.abs(d.frontX + 0.34202014332566866) < 1e-9 && Math.abs(d.frontY - 0.9396926207859084) < 1e-9, 'Wallow authored front');
+    continue;
+  }
   if (!d.id.startsWith('secret') && !d.id.startsWith('chestCellar')) // UNDER-03: cellar crates face the room (yaw 90/270)
     assert.ok(Math.abs(d.frontY - 1) < 1e-9 && Math.abs(d.frontX) < 1e-9, 'yaw 180 -> front +y');
 }

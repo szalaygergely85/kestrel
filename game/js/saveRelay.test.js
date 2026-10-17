@@ -74,7 +74,7 @@ assert.equal(A.quest.book.accept('burl.boars'), true); assert.equal(A.quest.book
 for (const id of ['boarN1', 'boarN2', 'boarW1', 'boarW2', 'boarR1']) events.emit('beast:died', { id }); // OB-115: any boar after accept counts
 assert.equal(A.quest.book.statusOf('burl.boars'), 3, 'five boars after accept -> ready');
 assert.equal(A.quest.objectiveText(), burl.returnText);
-assert.deepEqual(A.quest.book.handIn('burl.boars'), { items: [{ id: 'arrow', n: 10 }] }); // QUEST-REWARD-AUDIT: burl.boars pays 10 arrows assert.equal(A.quest.state.completed.includes('beasts'), true, 'hand-in completes m1 beasts');
+assert.deepEqual(A.quest.book.handIn('burl.boars'), { coin: 10, items: [{ id: 'arrow', n: 10 }] }); // CUR-06: burl.boars pays 10 arrows and 10 coins assert.equal(A.quest.state.completed.includes('beasts'), true, 'hand-in completes m1 beasts');
 A.quest.checkSections(); // main.js: stepGame does this each step
 assert.deepEqual(toasts, [], 'q03 silent');
 assert.equal(A.quest.objectiveText(), OBJ.follow);

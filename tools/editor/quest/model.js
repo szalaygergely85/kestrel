@@ -65,23 +65,30 @@ export function splitPack(text) {
       else if (c === '{' || c === '[') depth++;
       else if (c === '}' || c === ']') { depth--; if (depth === 0) { i++; break; } }
     }
-    const t = text.slice(start, i);
+    const t = text.slice(start, i), before = rows.length ? text.slice(lastEnd, start) : '';
     lastEnd = i;
-    rows.push({ text: t, snap: JSON.stringify(JSON.parse(t)) });
+    const row = JSON.parse(t);
+    rows.push({ text: t, snap: JSON.stringify(row), id: row.id, before });
   }
   if (head === null) head = text.slice(0, open + 1) + '\n    ';
   return { head, tail: text.slice(lastEnd), rows };
 }
 
 function packText(f) {
+  if (f.snap !== undefined && JSON.stringify(f.obj) === f.snap) return f.originalText;
   const sp = f.split;
   if (!sp) return stringifyPack(f.obj);
-  const parts = f.obj.quests.map((row) => {
+  const shell = (o) => JSON.stringify({ ...o, quests: null });
+  if (f.shell !== undefined && shell(f.obj) !== f.shell) return stringifyPack(f.obj);
+  const separator = sp.rows.find((r) => r.before)?.before || (f.text.includes('\r\n') ? ',\r\n    ' : ',\n    ');
+  const parts = f.obj.quests.map((row, i) => {
     const snap = JSON.stringify(row);
     const hit = sp.rows.find((r) => r.snap === snap);
-    return hit ? hit.text : JSON.stringify(row, null, 2).split('\n').join('\n    ');
+    const source = hit || sp.rows.find((r) => r.id === row.id);
+    const body = hit ? hit.text : JSON.stringify(row, null, 2).split('\n').join(f.text.includes('\r\n') ? '\r\n    ' : '\n    ');
+    return (i ? source?.before || separator : '') + body;
   });
-  return sp.head + parts.join(',\n    ') + sp.tail;
+  return sp.head + parts.join('') + sp.tail;
 }
 
 /**
@@ -116,7 +123,7 @@ export function loadQuests(dir, fs = REAL_FS) {
       const text = rd(n); files.set(n, { kind: 'sites', obj: JSON.parse(text), text });
     } else if (fs.statSync(join(dir, n)).isDirectory() && fs.existsSync(join(dir, n, 'pack.json'))) {
       const rel = n + '/pack.json', text = rd(rel), obj = JSON.parse(text);
-      files.set(rel, { kind: 'pack', obj, text, split: splitPack(text) });
+      files.set(rel, { kind: 'pack', obj, text, originalText: text, snap: JSON.stringify(obj), shell: JSON.stringify({ ...obj, quests: null }), split: splitPack(text) });
       (obj.quests || []).forEach((row, i) => quests.push(normalize(row, 'pack', rel, i)));
     }
   }

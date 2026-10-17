@@ -55,20 +55,6 @@
       {"id": "kick", "type": "melee", "range": 2, "windupSec": 0.5, "activeSec": 0.3, "recoverSec": 1, "cooldownSec": 3, "dmgF": 0.6, "weight": 1}
     ]
   },
-  "fox_raider": {
-    "name": "Den Fox",
-    "arch": "packHunter",
-    "model": "fox",
-    "todo": "QD-04: den foxes that fight (the plain fox is skittish); reuses the fox model",
-    "lv": [1, 3],
-    "hpF": 0.5,
-    "dmgF": 0.4,
-    "group": [2, 2],
-    "respawn": "pack",
-    "attacks": [
-      {"id": "bite", "type": "melee", "range": 1.5, "windupSec": 0.4, "activeSec": 0.2, "recoverSec": 0.8, "cooldownSec": 2, "dmgF": 0.4, "weight": 1}
-    ]
-  },
   "fox": {
     "name": "Fox",
     "arch": "skittish",
@@ -532,5 +518,19 @@
     "when": "night",
     "spdF": 0.7,
     "telegraphSec": 0.8
+  },
+  "fox_raider": {
+    "name": "Den Fox",
+    "arch": "packHunter",
+    "model": "fox",
+    "todo": "QD-04: den foxes that fight (the plain fox is skittish); reuses the fox model",
+    "lv": [1, 3],
+    "hpF": 0.5,
+    "dmgF": 0.4,
+    "group": [2, 2],
+    "respawn": "pack",
+    "attacks": [
+      {"id": "bite", "type": "melee", "range": 1.5, "windupSec": 0.4, "activeSec": 0.2, "recoverSec": 0.8, "cooldownSec": 2, "dmgF": 0.4, "weight": 1}
+    ]
   }
 }

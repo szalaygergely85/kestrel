@@ -48,7 +48,7 @@ function run(group, x, y, seed) {
   const beasts = { count: 1, ids: ['b0'], entities: ents, slotOf: (id) => (id === 'b0' ? 0 : -1), group: new Uint8Array([group]) };
   const band = { bandAt: () => 5, gearTierAt: (bx, by) => BAND_TABLE.gearTier[Math.floor(bx) - 1] }; // x = the band in this stub
   const loot = createLoot(world, events, { items, beasts, rng: createRng(seed), inventoryOf: () => null, table: LOOT_TABLE.boar, band });
-  loot.die = () => events.emit('beast:died', { id: 'b0', x, y, z: 0 }); // repeated deaths advance the loot + weapon streams
+  loot.die = () => { events.emit('beast:sink', { id: 'b0' }); events.emit('beast:died', { id: 'b0', x, y, z: 0 }); }; // each simulated life clears its prior corpse before the next death
   return loot;
 }
 {

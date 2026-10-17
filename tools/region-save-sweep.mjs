@@ -97,10 +97,21 @@ export async function runSweep() {
     ok(JSON.stringify(B.quest.book.toSave().quests[qid] ?? null) === JSON.stringify(A.quest.book.toSave().quests[qid] ?? null), g.errand + ': errand progress count kept');
     ok(w2.state[flag] === true, g.errand + ': relay woken kept');
     if (campId) ok(w2.state[clearedKey(campId)] === true, campId + ': camp cleared kept');
-    if (need > 1) { // progress keeps counting after the load
-      for (let i = 1; i < need; i++) B.handlers().onEvent('beast:died', { id: kind + 'L' + i });
-      ok(B.quest.book.statusOf(qid) === READY, g.errand + ': reaches READY after load');
+    // Complete every actual objective after restore (elite ids and chest flags are distinct steps).
+    for (let oi = 0; oi < qd.objectives.length; oi++) {
+      const when = qd.objectives[oi].when;
+      if (when.type === 'beasts') {
+        const remaining = when.count - (oi === 0 ? 1 : 0);
+        for (let i = 0; i < remaining; i++) {
+          const id = when.ids ? when.ids[i + (oi === 0 ? 1 : 0)] : when.kind + 'L' + oi + '_' + i;
+          B.handlers().onEvent('beast:died', {id});
+        }
+      } else if (when.type === 'flag') {
+        w2.state[when.id] = when.equals;
+        B.handlers().onEvent('flag:set', {key:when.id, value:when.equals});
+      } else throw new Error(`${qid}: unsupported sweep objective ${when.type}`);
     }
+    ok(B.quest.book.statusOf(qid) === READY, g.errand + ': reaches READY after all objectives after load');
     // beasts: a fresh world regenerates the same regional beasts, alive, at home, unique ids, finite positions; the dead id stays in the save
     const gen2 = addBeasts(w2), seen = new Set(); let beasts = 0, bad = 0;
     w2.forEachEntity((e) => {

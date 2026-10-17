@@ -167,6 +167,7 @@ const unaccountedFor = allJsonFiles.filter((rel) => {
   if (rel === 'gi/manifest.json') return false; // GI-PROBE-07 bake hash manifest, read by giWire/validate-content
   if (rel === 'items/loot.json') return false; // EQ-11 data only, schema/refs checked by validate-content.mjs
   if (rel === 'items/recipes.json') return false; // RECIPES-01 data only, schema/refs checked by validate-content.mjs
+  if (rel === 'economy/trade.json') return false; // CUR-03: standalone trade table, checked by validate-content and trade.test.js
   if (rel === 'loot/weapons.json') return false; // EQ-20 data only, mirrored + checked by game/js/quest/sim/weaponTiers.test.js
   if (rel === 'chart/world_m1.chart.json') return false; // MAP-01b baked data, validated/freshness-checked by bake-chart.test.mjs
   if (rel.startsWith('vox/') && rel.endsWith('.map.json')) return false;

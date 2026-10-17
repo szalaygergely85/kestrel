@@ -52,4 +52,29 @@ writes.length = 0;
 const bad = saveQuest(m, p, fsMock);
 assert.ok(!bad.ok && writes.length === 0 && bad.errors.length);
 p.raw.title = t; p.title = t;
+
+// Mixed row separators and CRLF must survive no-op saves and edits of another row.
+{
+  const text = '{\r\n  "rewardBand": {"future": [2, 7]},\r\n  "quests": [\r\n    ' +
+    '{"id":"sq.a","title":"A"},\r\n\t' +
+    '{"id":"sq.b","title":"B"},\r\n      ' +
+    '{"id":"sq.c","title":"C"}\r\n  ]\r\n}\r\n';
+  const fixture = loadQuests('fixture', {
+    readdirSync: () => ['region'], statSync: () => ({ isDirectory: () => true }),
+    existsSync: () => true, readFileSync: () => text,
+  });
+  const f = fixture.files.get('region/pack.json'), writes = [];
+  const io = { writeFileSync: (p, t) => writes.push(t) };
+  assert.equal(fileText(f), text);
+  assert.deepEqual(saveAll(fixture, io).written, [], 'CRLF no-op writes nothing');
+  const cmd = setQuestField(fixture.quests[1], 'title', 'Edited'); cmd.apply();
+  const edited = fileText(f);
+  assert.ok(edited.includes('{"id":"sq.a","title":"A"},\r\n\t'));
+  assert.ok(edited.includes(',\r\n      {"id":"sq.c","title":"C"}'));
+  assert.deepEqual(JSON.parse(edited).rewardBand, { future: [2, 7] });
+  assert.deepEqual(saveAll(fixture, io).written, ['region/pack.json']);
+  cmd.undo(); assert.equal(fileText(f), text, 'undo after save restores original bytes');
+  f.obj.rewardBand.future.push(9);
+  assert.deepEqual(JSON.parse(fileText(f)).rewardBand.future, [2, 7, 9], 'unknown top-level edits are preserved');
+}
 console.log('quest model OK');
