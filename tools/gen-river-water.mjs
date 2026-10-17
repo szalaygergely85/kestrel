@@ -44,6 +44,7 @@ function raw(list) {
   });
 }
 const up = raw(ys(R.y0, R.upEnd)), shelf = raw(ys(R.lakeOut, R.shelfEnd)), down = raw(ys(R.cliffEnd, R.yEnd));
+{ const lipV = shelf[shelf.length - 1], prev = shelf[shelf.length - 2]; lipV.z = prev.z - 0.4; } // OB-214: the lip vertex (y 603) samples the notch below it (bed -77 within the perpendicular cross-section): hold it 0.4 m under the vertex before, as the committed json always did (-60.013)
 shelf[0].z = R.lakeZ; shelf[0].pin = true; up[up.length - 1].z = R.lakeZ; up[up.length - 1].pin = true; // upper reach ends in the lake (dam-shelf channel, arch RIVER-04)                                        // leaves the Glasswater rect at the lake surface (the rect draws inside)
 for (const v of down) if (v.y >= R.fordY0 && v.y <= R.fordY1) { v.z = R.fordZ; v.pin = true; }
 down[down.length - 1].z = R.seaZ; down[down.length - 1].pin = true;                    // ends inside the sea rect at its z // flat over the ford region (ties go to the river: it comes first in the list)
