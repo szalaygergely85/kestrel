@@ -653,6 +653,20 @@ for (const [name, breakFixture, finding] of areaCases) {
 }
 
 
+// COIN-02 (CUR-03): trade.json validation (real file, then broken copies)
+{
+  const { loadDesignAssets } = await import('./validate-content.mjs');
+  const A = await loadDesignAssets();
+  const trade = JSON.parse(readFileSync(new URL('../content/economy/trade.json', import.meta.url), 'utf8'));
+  const run = (tradeFile) => validateContent(A, { tradeFile }).errors.filter((e) => String(e).includes('trade.json') || String(e).includes('.value'));
+  ok('real trade.json validates', run(trade).length === 0, JSON.stringify(run(trade)));
+  const bad = (name, fn, text) => { const c = JSON.parse(JSON.stringify(trade)); fn(c); const e = run(c); ok(`trade lint: ${name}`, e.some((x) => String(x).includes(text)), JSON.stringify(e)); };
+  bad('unknown item', (c) => { c.stock[0].item = 'nope'; }, 'not found');
+  bad('price 0', (c) => { c.stock[1].price = 0; }, 'price');
+  bad('once not boolean', (c) => { c.stock[3].once = 'yes'; }, 'once');
+}
+
+
 // WMP-04: region lint. One fixture per case, each must give exactly its finding; the clean control gives none.
 {
   const { lintRegions } = await import('./validate-content.mjs');

@@ -618,6 +618,13 @@
   Object.keys(defs).forEach(function (k) { if (A.items.order.indexOf(k) < 0 && (defs[k].kind === 'gear' || k === 'arrow' || k.indexOf('potion.') === 0)) A.items.order.push(k); });  // EQ-01                                   // CH1-D2
   A.items.iconSet = iconSet;
 
+  // CUR-03 (currency epic D-121): base trade `value`; Bram pays floor(value / 4), min 1 (game/js/quest/sim/trade.js). Only
+  // sellable things carry one: materials, food, gear worn/sturdy/fine. Keys, upgrades, spells, weapons, tools, quest items have none.
+  var SELL_VALUE = { 'boar.hide': 12, 'boar.tusk': 16, 'goblin.trinket': 20, 'berry.blue': 4, 'redcap': 8, 'boar.meat': 8 };
+  var TIER_VALUE = { worn: 20, sturdy: 60, fine: 160 };
+  Object.keys(SELL_VALUE).forEach(function (k) { if (defs[k]) defs[k].value = SELL_VALUE[k]; });
+  Object.keys(defs).forEach(function (k) { var d = defs[k]; if (d.kind === 'gear' && d.equip && TIER_VALUE[d.equip.tier]) d.value = TIER_VALUE[d.equip.tier]; });
+
   // EQ-D1 (appended): equipment icons (5x3, existing keys only). The shield + bow icons now match the voxel models in
   // models/equipment.js (round plank shield, iron rim + boss; plain wooden longbow, gut string). arrow / potion.hp /
   // potion.mp have no defs yet (EQ-01 adds them): their icons wait here, keyed by the planned item id.
