@@ -16,6 +16,7 @@ export const CHEST_TABLES = {
   chestBend: HEART,
   chestCrossroads: HEART,
   chestRook: { fixed: [{ item: 'arrow', n: 15 }], weighted: [], gear: { tier: 'sturdy' } },
+  chestHeath: { fixed: [], weighted: [], gear: { tier: 'sturdy' } }, // QD-15a: the box dug up by the Heath boars
   chestBoots: { fixed: [{ item: 'gear.feet.riverBoots', n: 1 }], weighted: [] }, // QL-16: River Boots (unique, never rolled)
   chestWest: { fixed: [{ item: 'arrow', n: 10 }], weighted: [], gear: { tier: 'sturdy' } }, // OB-141: the one chest of the west gatehouse ruin
   // UNDER-03 (OB-191): the three small crates of the Ford trade post cellar (food, a little ammunition, one potion; no coin item exists yet)
