@@ -149,7 +149,7 @@ export async function buildContext(opts = {}) {
   const LV5 = /level5|lvl5|fireball|burl\.lvl/i, qById = new Map(quests.map((q) => [q.id, q]));
   const gated = (q, seen = new Set()) => {
     if (!q || seen.has(q.id)) return false; seen.add(q.id);
-    if ((q.band || 0) >= 5) return true;
+    if ((Array.isArray(q.band) ? q.band[0] : (q.band || 0)) >= 5) return true; // pack bands are [lo,hi] arrays
     return (q.requires || []).some((r) => (r.flag && LV5.test(r.flag)) || (r.quest && gated(qById.get(r.quest), seen)));
   };
   const posAny = (id) => { const e = pos(id); if (e) return e; const a = areas[id], t = a && trig.get(a.trigger); return t ? { x: t.x, y: t.y } : null; };
