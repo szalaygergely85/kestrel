@@ -98,3 +98,14 @@ console.log('saveState: player components/hands, quest/chests/deaths, byte-stabl
   assert.ok(!('waterZ' in (s.world.entities.find(e=>e.id==='player').components.body||{})),'NaN water feed dropped');
   assert.ok(Number.isNaN(p.data.components.body.waterZ),'live body untouched');
 }
+
+// CUR-01: the wallet round-trips through game.coin; an old save (no field) loads 0; bad values are refused.
+{
+  const s0=collectSave(world,options);
+  assert.equal(s0.game.coin,undefined,'zero wallet writes no field');
+  assert.equal(applySave(s0,assets,{questDef}).coin,0,'old save -> 0 coin');
+  const s1=collectSave(world,{...options,coin:135});
+  assert.equal(s1.game.coin,135);
+  assert.equal(applySave(parseGameSave(stringifyGameSave(s1)),assets,{questDef}).coin,135,'round trip');
+  for (const bad of [-1,1.5,10000,'5']) { const b=structuredClone(s1); b.game.coin=bad; assert.throws(()=>applySave(b,assets,{questDef}),/invalid coin/); }
+}

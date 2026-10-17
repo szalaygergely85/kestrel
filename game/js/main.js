@@ -113,6 +113,9 @@ import { createSaveRelay } from './saveRelay.js'; // US-089w/US-096w: save + aut
 import { parseOccl, createHzbInvalidator } from './occlGate.js'; // OCCL-MAIN-01
 import { watchDeviceLost } from './deviceLost.js'; // S8-B1-10 (38.10c): device-lost card
 import { createQuestPickups, itemLabel } from './questPickups.js'; // QUESTS-01
+import { coinText } from './quest/sim/wallet.js'; // CUR-01
+import { createCoinHud } from './ui/coinHud.js'; // CUR-02
+let coinHudT = 0; const coinHud = createCoinHud({ get: () => (saveRelay ? saveRelay.wallet.get() : 0) });
 import { setInspectSink, wrapText } from './quest/questInspect.js'; // QL-04
 import { createErrands, labelOf, gateOnMeet, isWorn, bannerLines } from './quest/errands.js'; // QL-WIRE: Ch1-2 errands
 import { generateAll, generateForNpc } from './quest/questSnippets.js'; // QL-T4: generated q.<id>.* dialogue routes
@@ -642,6 +645,10 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
     } });
   window.__charKit = charKit;
   saveRelay.bindEvents(engine.events);
+  // CUR-01 (D-121): coin hooks. 'coin:got' {n} = already paid (quest hand-in) -> toast; 'coin:drop' {n} = chest / beast drop (CUR-06 emits it) -> wallet + toast. 'wallet:changed' {value,delta} is emitted by the wallet (HUD, CUR-02).
+  engine.events.on('coin:got', (p) => { if (p && lootToast) lootToast.say(coinText(p.n), [226, 214, 176]); });
+  engine.events.on('coin:drop', (p) => { const n = p && p.n; if (Number.isInteger(n) && n > 0 && saveRelay.wallet.add(n) > 0 && lootToast) lootToast.say(coinText(n), [226, 214, 176]); });
+  engine.events.on('wallet:changed', () => coinHud.touch()); // CUR-02: HUD line shows for COIN_HUD_SEC
   gameHooks.register(saveRelay.handlers());
   saveRelay.quest.onPoll = (name, a, b) => gameHooks.emitSimple(name, a, b);
   gameHooks.onSaveRequest(() => { if (saveRelay && gameHooks.ctx.world) { if (dirWire) dirWire.save(gameHooks.ctx.world.state); } if (saveRelay && gameHooks.ctx.world) saveRelay.save(gameHooks.ctx.world, { ending: gameHooks.ctx.state.ending }); });
@@ -752,7 +759,7 @@ gameHooks.register(createSpellBookHook({ getBook: () => spellBookHolder, getDefs
 // QUESTS-01: generic world pickup prop + pack counts for collect/deliver objectives + hand-in reward grant (game/js/questPickups.js)
 let questBeastSim = null; // SOFTLOCK-01: the live beast sim for the kill-quest accept rule (set where the sim is built)
 if (saveRelay) saveRelay.quest.setLivingOfKind((kind) => { const s = questBeastSim; if (!s || !s.ids) return 99; let n = 0; for (let i = 0; i < s.ids.length; i++) if (kindOf(s.ids[i]) === kind && !s.down[i] && !isBeastDeadState(s.state[i])) n++; return n; }); // SOFTLOCK-01 + R6-FIX C: installed on every book the relay creates/loads (not lazily in questPickups.sync)
-const questPickups = (itemDefs && saveRelay) ? createQuestPickups({ getBook: () => saveRelay.quest.book, feed: (e) => saveRelay.quest.feed(e), defs: itemDefs, isWorn }) : null; // QL-WIRE: requireEquipped hand-ins
+const questPickups = (itemDefs && saveRelay) ? createQuestPickups({ getBook: () => saveRelay.quest.book, feed: (e) => saveRelay.quest.feed(e), defs: itemDefs, isWorn, wallet: saveRelay.wallet }) : null; // QL-WIRE: requireEquipped hand-ins
 if (questPickups) gameHooks.register(questPickups);
 // US-090w: title menu before play. Off for `?title=0`, capture/bench/compare/cinematic pages, `?capture=1`, `?at=`/`?pose=` dev poses and bare `?level=` rooms.
 const menuWanted = params.get('title') !== '0' && !isCaptureOrBench && params.get('capture') !== '1' && !params.has('at') && !params.has('pose') && !params.get('level') && !params.get('cinematic');
@@ -1125,6 +1132,7 @@ engine.events.on('grid:changed', ({ cols, rows }) => {
 window.__debug = { chestHook, input, overlay, rt, engine, gbuf, matTable, ambientL, depthBuffer, sprites, wgPipeline, hzb, meshFeedStats };
 bridgeEngineEvents(engine.events, gameHooks); // beast:died / inventory:added -> seam events
 window.__debug.saveRelay = saveRelay; // US-089w: test hook (headless reload check)
+window.__debug.coinHud = coinHud; // CUR-02 verify hook
 
 // US-048 (PC-B QUEUE 4 item 2): the shared `ctx` every game/js/dev/modes/*
 // module's `run(ctx)` reads from - built once here, after every module-scope
@@ -1916,6 +1924,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         slotLockText: () => 'Locked - learn fire first', // OB-156
         isSlotDisabled: (i) => { if (!playerHandle) return false; const inv = playerHandle.data.components.inventory, sl = inv && inv.slots[i]; return !!(sl && sl.id && LOCKED[sl.id]); }, // FB-01: spell + mana potion cells show as locked until unlocked (Items + Character tabs)
         healthOf: () => (playerHandle && playerHandle.data.components.health) || null,
+        coinOf: () => saveRelay.wallet.get(), // CUR-02
         spellChoice: { // D-114: Spell Scroll -> the player chooses a learned spell (the fireball is today's only spell)
           options: () => (spellBook ? raisable(spellBook) : []),
           pick: (id) => spendSpellScroll(id),
@@ -2855,6 +2864,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
           // not just while dead - the end card is already covered by the `!ending` gate around this whole block.
           drawVitals(ui, engine.world, assets.uiStyle.vitals, fb.timeSec, !vitals.dead && !wakeOut.inputLocked && !isMapOpen(), vitals, fbOn);
           drawPlayerLevel(ui, engine.world, assets.uiStyle.vitals, fb.timeSec, !vitals.dead && !wakeOut.inputLocked && !isMapOpen(), spellBookHolder, itemDefs); // PLAYER-LEVEL-01: recomputed each frame (equip / learn / scroll)
+          if (coinHud) { coinHud.step(Math.max(0, Math.min(0.25, fb.timeSec - coinHudT))); coinHudT = fb.timeSec; const vl = assets.uiStyle.vitals.layout; coinHud.draw(ui, vl.x + vl.numberCol + 9, vl.mpRow, assets.uiStyle.vitals.textBg || [0, 0, 0], !vitals.dead && !wakeOut.inputLocked && !isMapOpen() && !(invView && invView.isOpen)); } // CUR-02: Coin N beside the MP bar for 3 s after a change
           if (swimWire) swimWire.draw(ui, assets.uiStyle.vitals, playerHandle.data, fb.timeSec); // SWIM-HOOKS-01
           drawHurtEdge(ui, vitals, fb.timeSec, assets.uiStyle.vitals, isReduceMotion());
           if (equipPlay) { // EQ-07/09: block spark + the arrow count next to the hearts while the bow set is out

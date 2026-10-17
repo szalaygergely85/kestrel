@@ -1,0 +1,20 @@
+// CUR-02: node game/js/ui/coinHud.test.js
+import assert from 'node:assert/strict';
+import { coinLabel, coinAlpha, createCoinHud, COIN_HUD_SEC } from './coinHud.js';
+assert.equal(coinLabel(0), 'Coin 0'); assert.equal(coinLabel(125), 'Coin 125'); assert.equal(coinLabel(-3), 'Coin 0'); assert.equal(coinLabel(NaN), 'Coin 0');
+assert.equal(COIN_HUD_SEC, 3);
+assert.equal(coinAlpha(-1), 0, 'hidden at start');
+assert.equal(coinAlpha(0), 1); assert.equal(coinAlpha(2.9), 1);
+assert.ok(coinAlpha(3.25) > 0.4 && coinAlpha(3.25) < 0.6, 'mid fade');
+assert.equal(coinAlpha(3.6), 0); assert.equal(coinAlpha(3.5), 0);
+assert.equal(coinAlpha(99, 0), 1, 'hold 0 = always on'); assert.equal(coinAlpha(-1, 0), 1);
+let v = 5; const hud = createCoinHud({ get: () => v });
+assert.equal(hud.alpha(), 0);
+const cells = []; const ui = { setCellRGB: (x, y, c, ...r) => cells.push([x, y, c, ...r]) };
+hud.draw(ui, 10, 2, [0, 0, 0], true); assert.equal(cells.length, 0, 'no draw while unchanged');
+hud.touch(); hud.step(2.9); assert.equal(hud.alpha(), 1);
+hud.draw(ui, 10, 2, [0, 0, 0], true); assert.equal(cells.length, 'Coin 5'.length + 1); assert.equal(cells[0][2], 'C'.charCodeAt(0) - 32);
+cells.length = 0; hud.draw(ui, 10, 2, [0, 0, 0], false); assert.equal(cells.length, 0, 'hidden when not visible');
+hud.step(0.7); assert.equal(hud.alpha(), 0);
+hud.touch(); v = 6; hud.step(0.1); assert.equal(hud.alpha(), 1, 'new change restarts');
+console.log('coinHud: all passed');

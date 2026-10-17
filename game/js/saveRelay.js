@@ -6,6 +6,7 @@ import { localToWorld } from '../../engine/index.js';
 import { collectSave, applySave, createStorageAdapter } from './quest/save/saveState.js';
 import { createQuestRelay } from './questRelay.js';
 import { migrateM1Ch1 } from './quest/sim/questBook.js';
+import { createWallet } from './quest/sim/wallet.js';
 
 export const AUTOSAVE_SEC = 60;
 const STATE_GONE = 12; // beastSim.STATE_GONE (hidden, skipped everywhere) - same literal beastSim exports
@@ -26,6 +27,8 @@ export function createSaveRelay({ storage, questDef, giverDefs = [], slot: slot0
   const adapter = storage ? createStorageAdapter(storage) : null;
   const quest = createQuestRelay(questDef, null, giverDefs);
   const chests = new Set(), dead = new Set();
+  let walletBus = null; // CUR-01: set by main (bindEvents) -> 'wallet:changed' {value, delta}
+  const wallet = createWallet(0, (value, delta) => { if (walletBus) walletBus.emit('wallet:changed', { value, delta }); }); // survives world reloads/death; only a slot load replaces it
   const facts = { wakeDone: false, swordTaken: false, endStarted: false, x: 0, y: 0, z: 0 };
   const tmp = { x: 0, y: 0, z: 0 };
   let breach = null, breachFor = null, zones = [];
@@ -33,7 +36,7 @@ export function createSaveRelay({ storage, questDef, giverDefs = [], slot: slot0
   let look = defaultLook; // CHARGEN-16: player.look (CharRecipe); new game = kit default, restored from the save on load
 
   const relay = {
-    enabled, quest, adapter,
+    enabled, quest, adapter, wallet,
     get slot() { return slot; },
     /** US-090w: target slot for load/save (title menu choice). */
     setSlot(n) { if (Number.isInteger(n) && n >= 0) slot = n; },
@@ -49,6 +52,7 @@ export function createSaveRelay({ storage, questDef, giverDefs = [], slot: slot0
     /** Subscribes to engine events the seam has no name for (chest:opened); beast:died / item:got arrive via handlers().
      *  Returns an unsubscribe function. */
     bindEvents(events) {
+      walletBus = events;
       const offs = [
         events.on('chest:opened', (p) => { if (p && typeof p.id === 'string') chests.add(p.id); }),
         events.on('beast:respawned', (p) => { if (p && typeof p.id === 'string') dead.delete(p.id); }), // BH-S5: a respawned beast must not be re-killed on Continue
@@ -103,6 +107,7 @@ export function createSaveRelay({ storage, questDef, giverDefs = [], slot: slot0
         quest.seedDead(pending.deadBeasts); // R6-FIX C: the kill record survives Continue (a kill quest accepted after load still credits the dead pack)
         playSec = pending.meta.playTimeSec;
         look = pending.look || defaultLook;
+        wallet.set(pending.coin || 0); // CUR-01: old saves load 0
         pending = null;
       } else { const fp = freshPreset ? freshPreset() : null; if (fp) quest.reset(fp.quest || null, fp.quests); else quest.reset(null); playSec = 0; look = defaultLook; } // ED-QUEST-07: ?qstate preset only on a fresh run, never from/to a slot
     },
@@ -125,7 +130,7 @@ export function createSaveRelay({ storage, questDef, giverDefs = [], slot: slot0
       if (!enabled || !adapter || !world) return false;
       let save;
       try {
-        save = collectSave(world, { quest: quest.state, questDef, quests: quest.book.toSave().quests, /* collectSave writes it as v2 */ giverDefs, openedChests: [...chests], deadBeasts: [...dead], playerName, place, playTimeSec: playSec, savedAt: Date.now(), look }); // SAVE-TIME-01: only the real writer stamps time (pure collect stays deterministic)
+        save = collectSave(world, { quest: quest.state, questDef, quests: quest.book.toSave().quests, /* collectSave writes it as v2 */ giverDefs, openedChests: [...chests], deadBeasts: [...dead], coin: wallet.get(), playerName, place, playTimeSec: playSec, savedAt: Date.now(), look }); // SAVE-TIME-01: only the real writer stamps time (pure collect stays deterministic)
         if (ending && save.world.state) save.world.state['quest.endT'] = -1;
       } catch (e) { lastResult = { op: 'save', ok: false, error: String(e) }; return false; }
       const r = adapter.writeSlot(slot, save);

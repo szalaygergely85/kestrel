@@ -74,6 +74,7 @@ export function validateSave(save) {
     || !Number.isFinite(save.meta.playTimeSec) || save.meta.playTimeSec < 0
     || (save.meta.savedAt !== undefined && !(Number.isFinite(save.meta.savedAt) && save.meta.savedAt >= 0))) throw new Error('save: invalid metadata');
   ids(save.game.openedChests); ids(save.game.deadBeasts);
+  if (save.game.coin !== undefined && !(Number.isInteger(save.game.coin) && save.game.coin >= 0 && save.game.coin <= 9999)) throw new Error('save: invalid coin'); // CUR-01
   if (save.game.quest !== null && (!save.game.quest || save.game.quest.questVersion !== 1)) throw new Error('save: invalid quest');
   if (save.game.quests !== undefined) { // QG-02: optional {<id>:{quest,accepted,handedIn}}; absent = old save
     const q = save.game.quests;
@@ -106,11 +107,12 @@ function stripNoWater(e) {
 }
 
 /** Player transform, hearts/mana, pack and hands have one source: WorldState entity components. */
-export function collectSave(world, { quest = null, questDef = null, quests = null, giverDefs = [], openedChests = [], deadBeasts = [], playerName = 'Wick', place = '', playTimeSec = 0, savedAt, look } = {}) {
+export function collectSave(world, { quest = null, questDef = null, quests = null, giverDefs = [], openedChests = [], deadBeasts = [], coin = 0, playerName = 'Wick', place = '', playTimeSec = 0, savedAt, look } = {}) {
   if (quest && !questDef) throw new Error('save: quest definition required');
   const save = { saveVersion:SAVE_VERSION, world:dropTransient(serialize(world)),
     game:{quest:quest ? createQuest(questDef,quest) : null,openedChests:ids(openedChests),deadBeasts:ids(deadBeasts)},
     meta: savedAt === undefined ? {playerName,place,playTimeSec} : {playerName,place,playTimeSec,savedAt} }; // SAVE-TIME-01: ms epoch; optional on read (old saves sort oldest)
+  if (coin) save.game.coin = coin; // CUR-01: wallet (absent = 0 = old-save shape)
   if (quests) { // QG-02: each entry re-validated through createQuest against its giver def; QL-T3: written as compact v2
     if (quests.v === 2) save.game.quests = validateQuestSaveV2(quests);
     else {
@@ -148,7 +150,7 @@ export function applySave(save, assets, { questDef = null, giverDefs = null, wor
       if (Array.isArray(raw[id].given) && raw[id].given.length) quests[id].given = raw[id].given.map(g => ({ id: g.id, n: g.n }));
     }
   }
-  return { world,quest,quests,openedChests:ids(save.game.openedChests),deadBeasts:ids(save.game.deadBeasts),look:save.player && save.player.look ? canonical(save.player.look) : defaultLook,meta:canonical(save.meta) };
+  return { world,quest,quests,openedChests:ids(save.game.openedChests),deadBeasts:ids(save.game.deadBeasts),coin:save.game.coin || 0,look:save.player && save.player.look ? canonical(save.player.look) : defaultLook,meta:canonical(save.meta) };
 }
 
 export function stringifyGameSave(save) { validateSave(save); return JSON.stringify(canonical(save)); }
