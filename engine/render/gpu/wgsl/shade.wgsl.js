@@ -496,6 +496,7 @@ fn folDice(cell: vec2i, gridSize: vec2i, dist: f32, seed: i32) -> f32 {
   let d = fogCellDir(cell, gridSize);
   var q = 0.5;
   if (dist >= 16.0) { q = 1.0; } if (dist >= 32.0) { q = 2.0; } if (dist >= 64.0) { q = 4.0; }
+  if ((u32(su.fogView.w + 0.5) & 4u) != 0u) { q *= 3.0; } // FD-05: x3 block (twin: folDiceJS aaAlt)
   let iq = 1.0 / q;
   let px = su.underCam.x + d.x * dist; let py = su.underCam.y + d.y * dist; let pz = su.fogView.x + d.z * dist;
   let ix = i32(floor(px * iq)); let iy = i32(floor(py * iq)); let iz = i32(floor(pz * iq));
@@ -653,8 +654,9 @@ fn shadeCore(u: f32, v: f32, z: f32, aoD: f32,
     hJ = hA;
   } else {
     let cx = i32(floor(u * ds * 0.5)); let cy = i32(floor(v * ds * 0.5));
-    hA = hashFast(cx, cy, seed);
     hC = hashFast(cx, cy, seed + 13);
+    if ((u32(su.fogView.w + 0.5) & 4u) != 0u) { hA = hashFast(i32(floor(u * ds * 0.25)), i32(floor(v * ds * 0.25)), seed); } // FD-05: 2x coarser alt-glyph die (twin of detailShade.js)
+    else { hA = hashFast(cx, cy, seed); }
     hJ = select(hA, hashFast(bix, courseI, seed), hasGrid);
   }
   let hB = hashFast(btx, bty, seed + 7);

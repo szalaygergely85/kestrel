@@ -367,3 +367,53 @@ export function flickerGlyphReasons(d, p, hmap, cols, rows, terms, cnt) {
   cnt.n = (cnt.n || 0) + n; cnt.flips = (cnt.flips || 0) + flips;
   return cnt;
 }
+
+// FD-01 (architecture.md 38.9y, OB-198/OB-208, D-119): the DEFAULT-path classifier. The stable pass is OFF, so there is no hist/outFg:
+// the measured glyph is the edge output `preFg.a` (texFinalFg) and the shade glyph/level are those of the frame itself. For every counted cell
+// (hmap from flickerReprojStep) with equal kind+mat and a changed glyph the FIRST matching class wins:
+//   edge -> lineShift -> linePop -> lineCode -> m255:stip | m255:blank | m255:other -> anim -> altSwap (same ramp level, other glyph: dice/setId)
+//   -> levelLight (|dL|/L > LIGHT_REL) | levelTex (light the same: the texture/hash moved the level); `/jump` = sub-count of that class with a level step of 2+.
+// `d`/`p` = {GI, Depth, level (u8 raw shade level), preFg (final fg rgba8), shadeFg (rgba8), Light (rgba32 f32 bits)}. 0 alloc per call once the
+// count keys exist (cnt.kinds[kind] / cnt[key] are plain number slots). Returns cnt (n, flips, kinds, per-class counts).
+export const DEFAULT_REASONS = Object.freeze(['edge', 'lineShift', 'linePop', 'lineCode', 'm255:stip', 'm255:blank', 'm255:other', 'anim', 'altSwap', 'levelLight', 'levelTex', 'levelLight/jump', 'levelTex/jump']);
+export const LIGHT_REL = 0.06;
+const lightMax = (L, o) => {
+  _u32[0] = L[o]; let m = _f32[0]; _u32[0] = L[o + 1]; if (_f32[0] > m) m = _f32[0]; _u32[0] = L[o + 2]; if (_f32[0] > m) m = _f32[0];
+  return m;
+};
+export function flickerDefaultReasons(d, p, hmap, cols, rows, terms, cnt) {
+  const gcls = (terms && terms.gcls) || DEFAULT_GCLS, N = cols * rows, kinds = cnt.kinds;
+  let n = 0, flips = 0;
+  for (let i = 0; i < N; i++) {
+    const h = hmap[i]; if (h < 0) continue;
+    n++;
+    const giY = d.GI[i * 4 + 1], kind = giY & 0xff;
+    if (((p.GI[h * 4 + 1] & 0xff) !== kind) || ((p.GI[h * 4 + 1] >>> 16) !== (giY >>> 16))) continue;
+    const cg = d.preFg[i * 4 + 3], pg = p.preFg[h * 4 + 3];
+    if (cg === pg) continue;
+    flips++; kinds[kind] = (kinds[kind] || 0) + 1;
+    const cl = gcls[cg] === GC_LINE, pl = gcls[pg] === GC_LINE;
+    const lc = levelOfByte(d.level[i]), lp = levelOfByte(p.level[h]);
+    let key;
+    if (d.preFg[i * 4 + 3] !== d.shadeFg[i * 4 + 3] || p.preFg[h * 4 + 3] !== p.shadeFg[h * 4 + 3]) key = 'edge';
+    else if ((cl || pl) && glyphAtNeighbour(p.preFg, h, cols, rows, cg) && glyphAtNeighbour(d.preFg, i, cols, rows, pg)) key = 'lineShift';
+    else if (cl !== pl) key = 'linePop';
+    else if (cl && pl) key = 'lineCode';
+    else if ((lc === 255) !== (lp === 255)) {
+      const g = lc === 255 ? cg : pg;
+      key = g === 0 ? 'm255:blank' : gcls[g] === GC_STIP ? 'm255:stip' : 'm255:other';
+    }
+    else if (lc === 254 || lp === 254) key = 'anim';
+    else if (lc === lp) key = 'altSwap';
+    else {
+      const Lc = lightMax(d.Light, i * 4), Lp = lightMax(p.Light, h * 4);
+      let mx = Lc > Lp ? Lc : Lp; if (mx < 1e-3) mx = 1e-3;
+      const dl = lc > lp ? lc - lp : lp - lc, light = (Lc > Lp ? Lc - Lp : Lp - Lc) / mx > LIGHT_REL;
+      key = light ? 'levelLight' : 'levelTex';
+      if (dl >= 2) { const jk = light ? 'levelLight/jump' : 'levelTex/jump'; cnt[jk] = (cnt[jk] || 0) + 1; } // sub-count of its class
+    }
+    cnt[key] = (cnt[key] || 0) + 1;
+  }
+  cnt.n = (cnt.n || 0) + n; cnt.flips = (cnt.flips || 0) + flips;
+  return cnt;
+}

@@ -1,0 +1,67 @@
+{
+  "sha": "dbf389af",
+  "date": "2026-10-17",
+  "repeat": 1,
+  "poses": {
+    "wallNear": {
+      "totalPct": 7.0641257487998095,
+      "glyphOnlyPct": 3.6923714032542976,
+      "glyphOnlyRawPct": 4.465092689697541,
+      "shiftPct": 0.7727212864432451
+    },
+    "wallFar": {
+      "totalPct": 10.560701466658566,
+      "glyphOnlyPct": 6.53514889061132,
+      "glyphOnlyRawPct": 9.941417975539858,
+      "shiftPct": 3.406269084928539
+    },
+    "bushes": {
+      "totalPct": 17.074432970922544,
+      "glyphOnlyPct": 10.921807025929619,
+      "glyphOnlyRawPct": 13.566570929616082,
+      "shiftPct": 2.6447639036864605
+    },
+    "crown": {
+      "totalPct": 11.902127100995866,
+      "glyphOnlyPct": 5.998321754964608,
+      "glyphOnlyRawPct": 10.391235046929824,
+      "shiftPct": 4.392913291965216
+    },
+    "grassFar": {
+      "totalPct": 6.088827011001521,
+      "glyphOnlyPct": 3.8744610723043413,
+      "glyphOnlyRawPct": 5.24940562993261,
+      "shiftPct": 1.3749445576282693
+    },
+    "roadWalk": {
+      "totalPct": 6.520520991658162,
+      "glyphOnlyPct": 5.0652894983302,
+      "glyphOnlyRawPct": 5.5075013985112475,
+      "shiftPct": 0.44221190018104667
+    },
+    "forestWalk": {
+      "totalPct": 13.515805047563642,
+      "glyphOnlyPct": 11.39619084729271,
+      "glyphOnlyRawPct": 12.715559215253121,
+      "shiftPct": 1.3193683679604074
+    },
+    "townWalk": {
+      "totalPct": 9.93746419242395,
+      "glyphOnlyPct": 4.8016498244137775,
+      "glyphOnlyRawPct": 8.962553606718476,
+      "shiftPct": 4.160903782304699
+    },
+    "cryptWalk": {
+      "totalPct": 20.135143301223227,
+      "glyphOnlyPct": 15.978399099635544,
+      "glyphOnlyRawPct": 19.507135150410573,
+      "shiftPct": 3.5287360507750303
+    }
+  },
+  "avg": {
+    "totalPct": 10.53804285967566,
+    "glyphOnlyPct": 6.204422029412838,
+    "glyphOnlyRawPct": 8.722744454343182,
+    "shiftPct": 2.518322424930346
+  }
+}

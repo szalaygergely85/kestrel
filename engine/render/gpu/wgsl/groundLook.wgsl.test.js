@@ -5,6 +5,7 @@ import { SHADE_WGSL, SHADE_LEVEL_WGSL, SHADE_LOOK_WGSL, SHADE_LEVEL_LOOK_WGSL, S
 import { compileFn, makeTex, textureLoad as texLoad, shims } from './wgslProbe.js';
 import { shadeTerrain, makeFarGrass, FOREST_FACE_NZ, FG_TYPES } from '../../terrainShade.js';
 import { packLookTable, makeGroundLook, shadeLookCell, LOOK_MAX, LOOK_ROWS, LOOK_TABLE_WORDS, GROUND_LOOK_WGSL } from '../../groundLook.js';
+import { setAltDice, GROUND_ALT_BIT } from '../../fogShape.js';
 import { TLOOK_WIDTH, MAX_FEATURES_PER_TYPE } from '../TerrainTextures.js';
 
 // --- look off: nothing of the look leaks into the plain shaders ---
@@ -68,13 +69,13 @@ const mkFg = () => {
   for (let i = 0; i < 3; i++) { for (let c = 0; c < 3; c++) r.types[i * 4 + c] = Math.fround(rand() * 255); r.types[i * 4 + 3] = 1; }
   return r;
 };
-const makeSu = (hashCell, wind, FG) => ({
+const makeSu = (hashCell, wind, FG, fw = GROUND_ALT_BIT) => ({
   skyline: { x: 0, y: 0, z: 0, w: 0 }, hashCell, nearDetailOn: 1, handover: { x: 40, y: 90 }, closeBand: 40, fgMin: shadingT.fgMin, fgMaxGain: shadingT.fgMaxGain, bandNear: bands.near, bandMid: bands.mid,
   terrainFogStart: fog.start, terrainFogFull: fog.full, terrainFogCurve: fog.curve,
   terrainFogNearRGB: { x: fog.nearRGB[0], y: fog.nearRGB[1], z: fog.nearRGB[2] }, terrainFogFarRGB: { x: fog.farRGB[0], y: fog.farRGB[1], z: fog.farRGB[2] },
   wetness: 0, fgP: FG ? { x: 1, y: FG.startM, z: FG.fadeM, w: FG.mix } : { x: 0, y: 0, z: 1, w: 0 }, fgW: FG ? { x: FG.dirX, y: FG.dirY, z: FG.cyc, w: FG.invTravel } : { x: 0, y: 0, z: 0, w: 0 }, fgQ: FG ? { x: FG.qb, y: FG.tPrev, z: FG.qt, w: 0 } : { x: 0, y: 0, z: 0, w: 0 }, /* AA-22 */
   fgT: Array.from({ length: FG_TYPES }, (_, i) => FG ? { x: FG.types[i * 4], y: FG.types[i * 4 + 1], z: FG.types[i * 4 + 2], w: FG.types[i * 4 + 3] } : { x: 0, y: 0, z: 0, w: 0 }),
-  cliff: { x: 1, y: 1, z: 0, w: 0 }, skyGlowOn: { x: 0, y: 0, z: 0, w: 0 }, faceK: [{ w: 0 }, { w: 0 }], lookT, lookP: { x: wind, y: 0, z: 0, w: 0 },
+  cliff: { x: 1, y: 1, z: 0, w: 0 }, skyGlowOn: { x: 0, y: 0, z: 0, w: 0 }, faceK: [{ w: 0 }, { w: 0 }], lookT, fogView: { x: 0, y: 0, z: 0, w: fw }, lookP: { x: wind, y: 0, z: 0, w: 0 },
 });
 const q = (x) => Math.floor(Math.min(255, Math.max(0, x)) + 0.5);
 function compileAll(src, su) {
@@ -93,10 +94,12 @@ function compileAll(src, su) {
 const LOOKSRC = SHADE_LOOK_WGSL;
 const rLo = () => Math.floor(rand() * 7) % 7;
 const rW = () => { const r = rand(); return r < 0.2 ? 0 : r < 0.3 ? 0.5 : Math.fround(Math.round(rand() * 255) / 255); };
-function run(src, trials, FG) {
+// fw = fogView.w; the twin's aaAlt follows bit 8 (GROUND_ALT_BIT) only, whatever the foliage bits (4/1/2) say
+function run(src, trials, FG, fw = GROUND_ALT_BIT) {
+  setAltDice((fw & GROUND_ALT_BIT) !== 0);
   let bad = 0, n = 0, anim = 0, lean = 0, blend = 0, maxErr = 0, lkBad = 0, lkN = 0;
   for (const hashCell of [0, 3, -0.05]) for (const wind of [0, 1.5]) {
-    const su = makeSu(hashCell, wind, FG);
+    const su = makeSu(hashCell, wind, FG, fw);
     const { base, st } = compileAll(src, su);
     GL.wind01 = wind;
     const ctx = { tlook, tlookWidth: TLOOK_WIDTH, bands, fog, shading: { ...shadingT, wetness: 0, floorLum: 0 }, closeBand: 40, handover: [40, 90], features: null, hashCell, skyline: null, cliffType: 1, farGrass: FG || undefined, groundLook: GL };
@@ -130,6 +133,10 @@ function run(src, trials, FG) {
 const r1 = run(LOOKSRC, 600, null);
 assert.ok(r1.n >= 3000 && r1.bad <= r1.n * 0.001, `look shadeTerrain vs JS: ${r1.bad}/${r1.n} differ`);
 const r2 = run(LOOKSRC, 600, mkFg());
+// both lattices, and independence from the foliage bits: w = 0 (0.25 m), 8 (0.75 m), 12 (8 + foliage bit 4), 4 (foliage bit alone: ground stays 0.25 m)
+let rw = 0;
+for (const fw of [0, 4, 12]) { const r = run(LOOKSRC, 300, null, fw); rw += r.n; assert.ok(r.bad <= r.n * 0.001 && r.lkBad <= r.lkN * 0.002 && r.maxErr < 2e-4, `look parity fogView.w=${fw}: ${r.bad}/${r.n}, lk ${r.lkBad}/${r.lkN}, err ${r.maxErr}`); }
+setAltDice(true);
 assert.ok(r2.bad <= r2.n * 0.001, `look + far grass shadeTerrain vs JS: ${r2.bad}/${r2.n} differ`);
 assert.ok(r1.lkBad <= r1.lkN * 0.002 && r1.maxErr < 2e-4, `lkShade vs shadeLookCell: codes ${r1.lkBad}/${r1.lkN}, max err ${r1.maxErr}`);
 assert.ok(r1.blend > 500 && r1.anim > 100 && r1.lean > 50, `coverage blend ${r1.blend} anim ${r1.anim} lean ${r1.lean}`);
@@ -144,6 +151,9 @@ assert.ok(r1.blend > 500 && r1.anim > 100 && r1.lean > 50, `coverage blend ${r1.
   const mc = (a, b) => { const m = LOOKSRC.replace(a, b); assert.ok(m !== LOOKSRC, 'mutation target present: ' + a); return m; };
   assert.ok(run(mc('select(lo, hi, w > h4)', 'select(lo, hi, w < h4)'), 250, null).bad > 5, 'mutation: border dither side caught');
   assert.ok(run(mc('let dith = 1.0 - df * df * (3.0 - 2.0 * df);', 'let dith = 1.0;'), 250, null).bad > 5, 'mutation: dither fade caught');
+  assert.ok(run(mc('& 8u) != 0u)', '& 4u) != 0u)'), 250, null, 8).bad > 5, 'mutation: lattice gate bit caught');
+  assert.ok(run(mc('0.7500000000, (u32', '0.5000000000, (u32'), 250, null, 8).bad > 5, 'mutation: ground alt size caught');
+  setAltDice(true);
   assert.ok(run(mc('hashFast(cx, cy, 71)', 'hashFast(cx, cy, 72)'), 250, null).bad > 5, 'mutation: colour dice salt caught');
 }
 console.log(`groundLook.wgsl.test.js: look off byte-identical, ${r1.n + r2.n} shadeTerrain probes (looks 0..6, ${r1.blend + r2.blend} blends, wind 0/1.5) + ${r1.lkN + r2.lkN} lkShade probes vs JS twin, max float err ${Math.max(r1.maxErr, r2.maxErr).toExponential(1)}, mutations caught.`);
