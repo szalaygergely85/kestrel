@@ -1314,3 +1314,8 @@ Run: 12 suites PASS, validate-content OK, check-deps OK (no model fixes needed).
 ### QUEST-WRITER-BATCH-01 programmer half (kestrel-4, r19pack) - po-review
 Added `groupR19ByPack` + `--r19-by-pack [--list <pack>]` in tools/validate-content.mjs, test in validate-content.test.mjs (grouping fixture + allow-list total <= 119; shrink-only was already enforced by the stale-entry test). Table in docs/story.md "R19 writer batches". Output: ch12/pack 52, ch3/pack 17, m1 13, regions/pack 10, ch3b/pack 6, tower.blade 3, under.crypt 3, 5 files x2, 5 files x1 -> TOTAL 119.
 Writer next: rewrite a pack to <= 38; programmer then lowers `R19_ALLOW`. No quest text touched.
+
+- RF17-19 + RF17-17 (k4, rf1719): RF17-17 SKIPPED - already exists (tools/editor/terrainBrush.js endStroke = one undo record per stroke; terrainBrush.test.mjs covers undo/redo bit-identical; commit 50c76d0f).
+  RF17-19 done: `run-tests.mjs --changed [base]` (default origin/master; git diff base...HEAD + working tree + untracked; suite is changed / same dir / static-imports a changed file; check-deps always).
+  Pure fn in tools/testSelect.mjs (selectSuites, relativeImports) + tools/testSelect.test.mjs (fixture list, no git). Existing flags untouched; run-tests.test.mjs unchanged.
+  Verified: --filter run-tests,testSelect,editor/undo -> 4 PASS. Note: queue rows were at lines 25/27 of kestrel/docs/pc-b-queue.md, not in this clone's copy.
