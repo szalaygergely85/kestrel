@@ -1341,3 +1341,6 @@ Owner 2026-10-15 (later): "Make those priority" - D-107 stories (pc-b-queue sect
 
 ## D-120
 **2026-10-17, owner (PC-B session, OB-225 quest rework).** "I think beasts can respawn in the area": elite/named beasts in the reworked quests (Greyback, Old Tusk, white wolf alpha, ...) respawn in their area like other regional beasts, but with a LONGER respawn (linger) time (owner: "Elite too, just linger time"); the quest objective still counts the kill once while the quest is active. Owner agreed the side quests are "super boring" and approved the quest-depth rework (design/quests/quest-depth-proposal.md); build order QD-01..QD-08 first. Maren clues (QD-06) and the N1/N2 new-mechanic quests wait for an owner answer.
+
+## D-121
+**2026-10-17, owner (PC-B session).** "Currency can be": the game gets a currency (coin). Quest rewards may pay coin (`rewards.coin` already exists in the quest format and the editor reward card waits on this); next: a small PO epic (where coin shows in the HUD/inventory, what it buys - trader/post-keeper - and drop/reward amounts), no XP still (D-084/D-116).
