@@ -498,6 +498,7 @@
     far.setGeoLayers(geoLayers(far, rockSlope), geoFieldFns());
     // MAP-06a (38.42 Skyline): the sea is on the south edge; the engine adds a flat sea horizon skirt there and caps the sea-line fog.
     var gd = root.ASSETS.levels.overworld_far.geo; gd.seaLevel = G.seaLevel; gd.seaSides = ['s']; gd.seaSkirtM = 6000;
+    gd.farDetail = { distAt: function (x, y) { return coastSD(x, y).sd; }, radius: 60 }; // COAST-LOD (QA-06): far tiles within 60 m (150 m busts the 1.5x vertex budget: x1.76) of the coast get a 16 m LOD1
     return installBiomes(far);
   }
 
