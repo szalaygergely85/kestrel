@@ -6,6 +6,7 @@ import { loadQuests, saveQuest, saveAll, applyZones, makeStack } from './quest/m
 import { buildLintCtx, presetOptions, playUrl } from './quest/wire.js';
 import { questRows, filterRows, itemChoices } from './quest/flow.js';
 import * as ed from './quest/edit.js';
+import { duplicateQuest, deleteQuest } from './quest/duplicate.js';
 import * as fe from './quest/formatEdit.js';
 import { applyPick } from './quest/targets.js';
 import { createQuestPicker } from './questPick.js';
@@ -81,6 +82,7 @@ export async function mountQuestPanel(root, opts) {
 
   const live = createLiveSender({ channel: opts.liveChannel !== undefined ? opts.liveChannel : browserChannel() }); // ED-QUEST-07b: unsaved edits -> running game tab
   const redraw = () => { renderList(); renderDetail(); opts.onMarkers && opts.onMarkers(); live.schedule(current, dm); };
+  let delArmed = null, delMsg = ''; // EV17-15
   const run = (cmd) => { stack.run(cmd); redraw(); };
 
   function renderList() {
@@ -258,8 +260,19 @@ export async function mountQuestPanel(root, opts) {
     const wb = el('button', 'ed-btn', wide ? 'NARROW' : 'WIDE'); wb.id = 'quest-wide'; wb.title = 'Toggle the wide quest panel';
     wb.addEventListener('click', () => { wide = !wide; applyWide(); redraw(); });
     const nd = diffOf(q).length, cl = el('span', 'q-pill', 'CHANGES ' + nd); cl.id = 'quest-changes'; cl.title = 'Changes since the editor loaded this quest (DIFF in card [06])';
-    row.append(nb, sim, wb, cl);
-    box.append(row, field('Title', q.title, (v) => run(ed.setTitle(q, v))));
+    // EV17-15: Duplicate (free id, giver cleared) and Delete (second click confirms; refused with a blocker list)
+    const dup = el('button', 'ed-btn', 'DUPLICATE'); dup.id = 'quest-dup'; dup.title = 'Copy this quest (pick a giver and turn-in for the copy)';
+    dup.addEventListener('click', () => { const c = duplicateQuest(model, q, dm); stack.run(c); current = c.quest; selObj = -1; redraw(); });
+    const del = el('button', 'ed-btn', delArmed === q.id ? 'REALLY DELETE?' : 'DELETE'); del.id = 'quest-del'; del.title = 'Delete this quest (only when nothing refers to it)';
+    del.addEventListener('click', () => {
+      const r = deleteQuest(model, q, dm);
+      if (!r.cmd) { delArmed = null; delMsg = 'Cannot delete: ' + r.blockers.join('; '); redraw(); return; }
+      if (delArmed !== q.id) { delArmed = q.id; delMsg = ''; redraw(); return; }
+      delArmed = null; delMsg = ''; stack.run(r.cmd); current = null; selObj = -1; redraw();
+    });
+    row.append(nb, dup, del, sim, wb, cl);
+    if (delMsg) { const dmsg = el('div', 'q-msg', delMsg); dmsg.id = 'quest-del-msg'; box.append(row, dmsg); } else box.append(row);
+    box.append(field('Title', q.title, (v) => run(ed.setTitle(q, v))));
     return box;
   }
   // ED-QUI-02: card [01] prerequisites
@@ -375,7 +388,7 @@ export async function mountQuestPanel(root, opts) {
     save.addEventListener('click', () => {
       const r = saveQuest(model, q, { writeFileSync: (p, t) => write(p.replace(/^q\//, ''), t) });
       // ED-QUEST-03b: areas.json (game format) + the world json's area-only zones are saved with the quest
-      const aw = r.ok ? saveAll(model, { writeFileSync: (p, t) => write(p.replace(/^q\//, ''), t) }) : { written: [] };
+      const aw = r.ok ? saveAll(model, { unlinkSync: opts.remove ? (p) => opts.remove(p.replace(/^q\//, '')) : undefined, writeFileSync: (p, t) => write(p.replace(/^q\//, ''), t) }) : { written: [] };
       const zones = r.ok && model.zones.length && opts.saveWorld ? (applyZones(model, getWorld()), opts.saveWorld(), 'world') : null;
       const dw = r.ok ? saveDialogues(dm, { writeFileSync: (p2, t) => write('dialogue/' + p2.replace(/^d\//, ''), t) }) : [];
       msg.textContent = r.ok ? 'Saved ' + [r.file, ...aw.written.filter((n) => n !== r.file), ...(zones ? ['world'] : []), ...dw.map((n) => 'dialogue/' + n)].join(', ') : r.errors.join('; ');
@@ -425,4 +438,17 @@ export async function fetchQuestFiles(base = '../../content/quests/') {
 export function downloadWrite(rel, text) {
   const a = el('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
   a.download = rel.replace(/\//g, '_'); a.click(); URL.revokeObjectURL(a.href);
+}
+
+/** EV17-15: delete a quest file on disk through tools/serve.py and drop it from content/quests/index.json. */
+export async function removeQuestFile(rel, doFetch = fetch, base = '/content/quests/') {
+  const idx = JSON.parse(await (await doFetch(base + 'index.json')).text());
+  const name = rel.replace(/\.quest\.json$/, '');
+  if (Array.isArray(idx.legacy) && idx.legacy.includes(name)) {
+    idx.legacy = idx.legacy.filter((n) => n !== name);
+    const r = await doFetch(base + 'index.json', { method: 'PUT', body: JSON.stringify(idx, null, 2) + String.fromCharCode(10), headers: { 'Content-Type': 'application/json' } });
+    if (!r.ok) throw new Error('index.json ' + r.status);
+  }
+  const d = await doFetch(base + rel, { method: 'DELETE' });
+  if (!d.ok) throw new Error(rel + ' ' + d.status);
 }

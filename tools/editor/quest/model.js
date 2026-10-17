@@ -161,6 +161,8 @@ export function saveAll(model, fs = { writeFileSync }) {
     const text = fileText(f);
     if (text !== f.text) { fs.writeFileSync(join(model.dir, rel), text); f.text = text; if (f.kind === 'legacy') f.snap = JSON.stringify(f.obj); written.push(rel); }
   }
+  // EV17-15: quests deleted in the editor -> their legacy files go (only when the host gives an unlink hook)
+  if (model.removedFiles && fs.unlinkSync) { for (const rel of model.removedFiles) fs.unlinkSync(join(model.dir, rel)); written.push(...[...model.removedFiles].map((r) => '-' + r)); model.removedFiles.clear(); }
   return { ok: true, errors: [], written };
 }
 
