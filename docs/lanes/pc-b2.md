@@ -1382,3 +1382,12 @@ Remaining R9 count: 3 (sq.reg.highPastures b8, sq.reg.signalHill b7, sq.reg.heat
 - OB-222 far-forest WGSL probes (ARCH CHANGES, kestrel-4/ffparity): shade.wgsl.test.js runTerrain got an `ff` option (faceK[1].w=1, su.sunI/sunDir.z, setFarForest(1)+setFarForestDay(farForestDayOf)); noon + dusk x t 200/350/600 m on forest faces, JS twin == WGSL (<=0.1 % f32 slack).
 - 6 in-test mutations (FF_FLOOR, FF_RANGE, FF_FADE_A/B, FF_SUN_REF, FF_ELEV_LO/HI, FF_TGT) each give >20 mismatches, so changing any WGSL FF_ term fails; no shader change. Proven by the mutation asserts (edit applied to the shader string in memory, not on disk).
 - `run-tests --filter shade,farForest,wgsl`: 35 PASS; shade.wgsl.test.js ~1.7 s.
+
+## FD-07 crypt torch flicker (kestrel-4, fd07) - arch-review
+- engine/render/lighting.js: runtime scales on the palette flicker (FLICK_GENTLE hz x0.25, amount x0.45, jitter x0.4); URL `?torchflick=0` off / `old` pre-FD-07 / default gentle (setTorchFlicker). Noise was already smoothstep value noise; the problem was rate (10-16 Hz ~ random per frame) x depth. Max per-frame col step of the worst torch 0.135 -> 0.0155.
+- A/B flicker-gate default path --diag: cryptWalk glyphOnly old 16.87 / off 14.12 / gentle(0.3,0.7) 14.74 / final(0.25,0.45) ~14.4 (gate row 14.44, baseline 15.98); stillPct 5.81 -> 0.44 (off) -> 3.6. Torch = ~2.7 pts of 16.9 (16 %); remaining crypt flips are line/level/tex classes (see FD-03/04). townWalk unchanged (4.88 / 4.80, no torches in view).
+- Test: lighting.test.js FD-07 block (step <= 0.016, range >= 0.08) 248/248 PASS. gpucompare not run: JS-side light pos/col only, GPU and twin read the same buffers (no shader change).
+
+## FD-07 ARCH CHANGES F (kestrel-4, torchfix) - arch-review
+- lighting.js no longer reads location; setTorchFlicker('gentle'|'off'|'old') exported from engine/index.js + api-1.0.json (manifest regenerated, also picked up pre-existing setAltDice/DEFAULT_REASONS/flickerDefaultReasons). Lighting test unchanged (uses FLICK scales), lighting+api green, check-deps OK.
+- NEEDS B1-main: next to setFarForest: `setTorchFlicker(({ '0': 'off', old: 'old' })[params.get('torchflick')] || 'gentle');` (import setTorchFlicker from the engine entry).
