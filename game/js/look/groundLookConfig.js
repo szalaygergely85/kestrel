@@ -99,5 +99,5 @@ export function resolveLook(cfg, groundId, biomeId) {
 export function groundLookFromParams(params, biomeLook, recipe) {
   if (params.get('look') === '0' || !biomeLook || !recipe || !recipe.terrain) return null;
   const T = {}; for (const [k, v] of Object.entries(recipe.terrain)) T[k] = v.id;
-  return buildGroundLookConfig(biomeLook, T, { authored: params.get('looklin') === '1' }); // LOOK-LINEAR-01 (default off)
+  return buildGroundLookConfig(biomeLook, T, { authored: params.get('looklin') !== '0' }); // LOOK-LINEAR-01 (TEASER-QA-01: default ON; ?looklin=0 = old decode for A/B)
 }
