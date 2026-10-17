@@ -19,7 +19,7 @@
             ]
           },
           "objText": "Look for small tracks by the stone",
-          "journal": "Burl's cub Nub has wandered off again. Look for small tracks by the stone."
+          "journal": "Burl's cub Nub is lost. Find tracks."
         },
         {
           "template": "explore",
@@ -29,7 +29,7 @@
             ]
           },
           "objText": "Follow the tracks to the tower door",
-          "journal": "Small tracks lead away from the stone. Follow them to the tower door."
+          "journal": "Small tracks lead to the tower door."
         },
         {
           "template": "explore",
@@ -39,7 +39,7 @@
             ]
           },
           "objText": "Follow the wet prints down the road",
-          "journal": "No Nub at the door, only wet prints. Follow them down the road."
+          "journal": "No Nub, only wet prints. Follow them."
         }
       ],
       "requires": [
@@ -109,7 +109,7 @@
             "count": 3
           },
           "objText": "Drive off the three north boars",
-          "journal": "More boars dig in the north woods. Burl wants three of them driven off."
+          "journal": "North woods: drive off three boars."
         }
       ],
       "requires": [
@@ -163,7 +163,7 @@
             "count": 2
           },
           "objText": "Drive off the two west boars",
-          "journal": "Two boars root on the west side. Drive them off for Burl."
+          "journal": "Drive two boars off the west side."
         }
       ],
       "requires": [
@@ -222,7 +222,7 @@
             "count": 3
           },
           "objText": "Drive off the three south boars",
-          "journal": "The south woods have boars again. Drive off all three for Burl."
+          "journal": "South woods: drive off three boars."
         }
       ],
       "requires": [
@@ -271,7 +271,7 @@
             "item": "boar.meat"
           },
           "objText": "Bring Burl a piece of boar meat",
-          "journal": "Winter is coming and Burl's den is bare. Bring her a piece of boar meat."
+          "journal": "Winter nears. Bring Burl boar meat."
         }
       ],
       "requires": [
@@ -323,7 +323,7 @@
             ]
           },
           "objText": "Go and look at the waystone",
-          "journal": "Burl worries about the waystone. Go and see that it still glows."
+          "journal": "Check that the waystone still glows."
         }
       ],
       "requires": [
@@ -375,7 +375,7 @@
             ]
           },
           "objText": "Walk the hill path below the tower",
-          "journal": "Burl knows a path along the hill below the tower. Walk it."
+          "journal": "Walk Burl's path below the tower."
         }
       ],
       "requires": [
@@ -431,7 +431,7 @@
             ]
           },
           "objText": "Look at the tower door",
-          "journal": "Burl does not trust the tower. Go back and look at its door."
+          "journal": "Burl fears the tower. Check its door."
         }
       ],
       "requires": [
@@ -483,7 +483,7 @@
             ]
           },
           "objText": "Walk down to the river bank",
-          "journal": "Burl wants to know if the river is safe. Walk down to the bank."
+          "journal": "Is the river safe? Walk to the bank."
         },
         {
           "template": "explore",
@@ -493,7 +493,7 @@
             ]
           },
           "objText": "Find the stones at the ford",
-          "journal": "The bank is quiet. Find the stones where the river can be crossed."
+          "journal": "Find the stones to cross the river."
         }
       ],
       "requires": [
@@ -548,7 +548,7 @@
             "to": "notePost"
           },
           "objText": "Read the note post at the crossroads",
-          "journal": "Burl asks what the crossroads post says. Go and read it."
+          "journal": "Read the crossroads post for Burl."
         }
       ],
       "requires": [
@@ -603,7 +603,7 @@
             "to": "relayBend"
           },
           "objText": "Walk with Burl to the Bend Waystone",
-          "journal": "Burl wants to see the Bend Waystone blink. Walk with her to it."
+          "journal": "Walk with Burl to the Bend Waystone."
         }
       ],
       "requires": [
@@ -655,7 +655,7 @@
             "to": "postkeeper"
           },
           "objText": "Bring the meat to the post-keeper",
-          "journal": "Burl gave you two pieces of meat. Bring them to the post-keeper."
+          "journal": "Two cuts of meat for the post-keeper."
         }
       ],
       "requires": [
@@ -712,7 +712,7 @@
             "to": "postkeeper"
           },
           "objText": "Take 3 arrows to the post-keeper",
-          "journal": "The post-keeper asks travellers to spare a little. Bring three arrows."
+          "journal": "Spare the post-keeper three arrows."
         }
       ],
       "requires": [
@@ -784,7 +784,7 @@
             "id": "target1.hit",
             "equals": true
           },
-          "journal": "Three straw men stand by the note post. Hit the first with an arrow."
+          "journal": "Shoot the first of three straw men."
         },
         {
           "id": "t2",
@@ -794,7 +794,7 @@
             "id": "target2.hit",
             "equals": true
           },
-          "journal": "One straw man hit. Now put an arrow in the second."
+          "journal": "One hit. Now shoot the second."
         },
         {
           "id": "t3",
@@ -804,7 +804,7 @@
             "id": "target3.hit",
             "equals": true
           },
-          "journal": "Two down. One straw man still stands. Hit the third."
+          "journal": "Two down. Shoot the third straw man."
         }
       ],
       "returnText": "Tell Rook the straw men are down",
@@ -839,7 +839,7 @@
             ]
           },
           "objText": "Wear the buckler to the ford",
-          "journal": "Someone left a buckler at the Bend Waystone. Wear it to the ford, then show Joss."
+          "journal": "Wear the buckler to the ford for Joss."
         }
       ],
       "requires": [
@@ -902,7 +902,7 @@
             "to": "burl"
           },
           "objText": "Tell Burl the road is clear",
-          "journal": "Joss has word for Burl: the road is clear. Carry it up her hill."
+          "journal": "Road is clear, says Joss. Tell Burl."
         }
       ],
       "requires": [
@@ -961,7 +961,7 @@
             ]
           },
           "objText": "Walk back along the road",
-          "journal": "Something on the road west needs a second look. Walk back along it."
+          "journal": "Walk back along the west road."
         },
         {
           "template": "explore",
@@ -971,7 +971,7 @@
             ]
           },
           "objText": "Come back to the Bend Waystone",
-          "journal": "You walked the road. Now come back to the Bend Waystone."
+          "journal": "Now return to the Bend Waystone."
         }
       ],
       "requires": [
@@ -1030,7 +1030,7 @@
             ]
           },
           "objText": "Walk down to the river bank",
-          "journal": "Wet boots are the price of the far bank. Walk down to the river."
+          "journal": "Wet boots ahead. Go down to the river."
         },
         {
           "template": "explore",
@@ -1040,7 +1040,7 @@
             ]
           },
           "objText": "Cross to the west bank",
-          "journal": "You stand at the water's edge. Cross over to the west bank."
+          "journal": "Wade across to the west bank."
         }
       ],
       "requires": [
@@ -1086,7 +1086,7 @@
             ]
           },
           "objText": "Climb the north lookout",
-          "journal": "From the ford, a thread of smoke shows in the north. Climb the lookout."
+          "journal": "Smoke rises north. Climb the lookout."
         }
       ],
       "requires": [
@@ -1139,7 +1139,7 @@
             ]
           },
           "objText": "Walk to the west crossroads",
-          "journal": "The west road leads to a crossroads. Walk it and see what is there."
+          "journal": "Walk the west road to the crossroads."
         }
       ],
       "requires": [
@@ -1192,7 +1192,7 @@
             ]
           },
           "objText": "Come back to the river bank",
-          "journal": "You have been across. Come back to the river bank."
+          "journal": "Crossed. Now back to the river bank."
         }
       ],
       "requires": [
@@ -1245,7 +1245,7 @@
             ]
           },
           "objText": "Look at the gap in the meadow fence",
-          "journal": "Something got through the meadow fence. Look at the gap for Burl."
+          "journal": "Check the meadow fence gap for Burl."
         }
       ],
       "requires": [
@@ -1297,7 +1297,7 @@
             ]
           },
           "objText": "Check the woodcutter's stack",
-          "journal": "Burl smelled something at the woodcutter's corner. Check the stack."
+          "journal": "Check the woodcutter's stack for Burl."
         }
       ],
       "requires": [
@@ -1353,7 +1353,7 @@
             ]
           },
           "objText": "Look at the cart by the road",
-          "journal": "An old cart sits by the road. Burl wants to know what is in it."
+          "journal": "Look in the old cart by the road."
         }
       ],
       "requires": [
@@ -1409,7 +1409,7 @@
             ]
           },
           "objText": "Walk along the lamps by the road",
-          "journal": "Old lamps line the verge of the road. Walk along them."
+          "journal": "Walk the old lamps along the road."
         }
       ],
       "requires": [
@@ -1464,7 +1464,7 @@
             ]
           },
           "objText": "Check the rocks by the forest edge",
-          "journal": "Rocks pile up at the forest edge, too neat to be chance. Check them."
+          "journal": "Check the rock piles at forest edge."
         }
       ],
       "requires": [
@@ -1523,7 +1523,7 @@
             "to": "joss"
           },
           "objText": "Bring the brass scrap to Joss",
-          "journal": "You carry a brass scrap for Joss. Hand it over at the Bend Waystone."
+          "journal": "Brass scrap to Joss at Bend Waystone."
         }
       ],
       "requires": [
@@ -1582,7 +1582,7 @@
             ]
           },
           "objText": "Look at the wallow south of the road",
-          "journal": "Rook saw boars rolling in mud. Look at the wallow south of the road."
+          "journal": "Check the wallow south of the road."
         }
       ],
       "requires": [
@@ -1627,7 +1627,7 @@
             ]
           },
           "objText": "Look at the river farm gate",
-          "journal": "Burl remembers a farm by the river. Go and look at its gate."
+          "journal": "Check the farm gate by the river."
         }
       ],
       "requires": [
@@ -1678,7 +1678,7 @@
             ]
           },
           "objText": "Follow the bees to the old bee farm",
-          "journal": "Bees drift past Burl's slope, heavy with pollen. Follow them home."
+          "journal": "Follow the bees from Burl's slope."
         }
       ],
       "requires": [
@@ -1734,7 +1734,7 @@
             ]
           },
           "objText": "Walk to the ring of standing stones",
-          "journal": "Burl speaks of a ring of standing stones. Walk out and find it."
+          "journal": "Find the ring of standing stones."
         }
       ],
       "requires": [
@@ -1793,7 +1793,7 @@
             "count": 2
           },
           "objText": "Drive off the two boars at the post",
-          "journal": "Two boars broke into the stores at the post. Drive them off."
+          "journal": "Drive two boars from the post stores."
         }
       ],
       "requires": [
@@ -1806,7 +1806,7 @@
         "table": "gear.t2"
       },
       "band": 5,
-      "returnText": "Tell the post-keeper the boars are gone",
+      "returnText": "Tell the post-keeper the boars fled",
       "lines": {
         "offer": [
           "Two boars broke into my stores. Right there.",
@@ -1838,7 +1838,7 @@
             "count": 5
           },
           "objText": "Pick five red caps on tree trunks",
-          "journal": "Rook wants red caps, the ones that grow on tree trunks. Pick five."
+          "journal": "Pick five red caps from tree trunks."
         }
       ],
       "requires": [
@@ -1887,7 +1887,7 @@
             ]
           },
           "objText": "Look at the dry well north of the post",
-          "journal": "Rook heard something in the dry well north of the post. Look at it."
+          "journal": "Check the dry well north of the post."
         }
       ],
       "requires": [
@@ -1936,7 +1936,7 @@
             ]
           },
           "objText": "Look at the fallen shrine",
-          "journal": "A shrine lies fallen by the note post. Go and look at it."
+          "journal": "Fallen shrine by the note post. Look."
         }
       ],
       "requires": [
@@ -1989,7 +1989,7 @@
             ]
           },
           "objText": "Walk out on the old jetty",
-          "journal": "An old jetty runs out over the water. Walk out on its planks, carefully."
+          "journal": "Walk out on the old jetty, carefully."
         }
       ],
       "requires": [
@@ -2042,7 +2042,7 @@
             "to": "joss"
           },
           "objText": "Bring the cog to Joss",
-          "journal": "You carry a brass cog for Joss. Hand it over at the Bend Waystone."
+          "journal": "Brass cog to Joss at Bend Waystone."
         }
       ],
       "requires": [
@@ -2099,7 +2099,7 @@
             "to": "burl"
           },
           "objText": "Ask Burl if bears eat crows",
-          "journal": "Rook wants to know if bears eat crows. Go and ask Burl."
+          "journal": "Ask Burl: do bears eat crows?"
         }
       ],
       "requires": [
@@ -2155,7 +2155,7 @@
             "to": "burl"
           },
           "objText": "Give the brass scrap to Burl",
-          "journal": "Rook sends a brass scrap to Burl, as a peace gift. Give it to her."
+          "journal": "Give Burl the brass scrap from Rook."
         }
       ],
       "requires": [
@@ -2213,7 +2213,7 @@
             "item": "boar.hide"
           },
           "objText": "Find hide for a strap",
-          "journal": "A plate from the Kestrel's gondola would make a shield. Find hide for a strap."
+          "journal": "Find hide to strap the gondola plate."
         }
       ],
       "requires": [
@@ -2260,7 +2260,7 @@
             "to": "rook"
           },
           "objText": "Bring Burl's honeycomb to Rook",
-          "journal": "Burl sent honeycomb for the crow. Bring it to Rook."
+          "journal": "Bring Burl's honeycomb to Rook."
         }
       ],
       "opensAfter": [
@@ -2311,7 +2311,7 @@
             "count": 4
           },
           "objText": "Find four brass scraps",
-          "journal": "Rook loves shiny things. Find four brass scraps and bring them back."
+          "journal": "Bring Rook four shiny brass scraps."
         }
       ],
       "opensAfter": [
@@ -2361,7 +2361,7 @@
             "to": "postkeeper"
           },
           "objText": "Bring the packet to the post-keeper",
-          "journal": "You found an oilcloth packet. Bring it to the post-keeper."
+          "journal": "Oilcloth packet to the post-keeper."
         }
       ],
       "opensAfter": [
@@ -2409,7 +2409,7 @@
             "count": 3
           },
           "objText": "Find three emberpods in Cinder Hollow",
-          "journal": "Burl promised to show you fire. Find three red emberpods in Cinder Hollow."
+          "journal": "Get three emberpods in Cinder Hollow."
         }
       ],
       "opensAfter": [
