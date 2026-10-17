@@ -2,13 +2,14 @@
 // questBook on a fake world: talk -> accept -> feed the facts each objective needs -> hand in -> reward.
 // Usage: node tools/quest-sim.mjs [--json]    (exit 1 when any quest FAILs)
 // ED-QUI-07b1 (38.85): node tools/quest-sim.mjs --quest <id> [--json] [--root <dir>] runs ONE quest through the QUEST-E2E-ALL step
+// (ED-QUI-09: --all [--json] runs every giver quest on one shared runtime, one PASS/FAIL line each + total, exit 1 on any FAIL.)
 // chain (game/js/quest/questE2eRun.js, fresh runtime, prerequisites first) and prints every step; exit 1 names the first failing step.
 import { staticReach } from './reach-check.mjs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createQuestBook, AVAILABLE, READY, DONE, ACTIVE, STATUS_NAMES } from '../game/js/quest/sim/questBook.js';
 import { loadDesignAssets, loadQuestFiles, loadPackQuests } from './validate-content.mjs';
 import { loadQuestE2eBundle } from './quest-e2e-content.mjs';
-import { runQuestE2e } from '../game/js/quest/questE2eRun.js';
+import { runQuestE2e, createQuestE2e } from '../game/js/quest/questE2eRun.js';
 
 /** Facts (events) one objective needs. World data is consulted for pickups, beasts and areas: a missing target is a FAIL. */
 function factsFor(o, w, packOps) {
@@ -137,7 +138,22 @@ export async function simQuestCli(argv, out = console.log) {
   return res.ok ? 0 : 1;
 }
 
+/** ED-QUI-09 --all: every giver quest through the shared e2e chain (one runtime, prerequisites in order), one PASS/FAIL line each. -> exit code. */
+export async function simAllCli(argv, out = console.log) {
+  const at = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
+  const h = await createQuestE2e(await loadQuestE2eBundle(at('--root') ? { root: at('--root') } : {}));
+  const rows = h.defs.map((d) => { const r = h.runQuest(d); return { id: d.id, ok: !!r.ok, step: r.ok ? null : r.step, reason: r.ok ? null : String(r.msg) }; });
+  const bad = rows.filter((r) => !r.ok);
+  if (argv.includes('--json')) out(JSON.stringify({ total: rows.length, pass: rows.length - bad.length, fail: bad.length, rows }, null, 1));
+  else {
+    for (const r of rows) out(r.ok ? 'PASS ' + r.id : 'FAIL ' + r.id + ' at ' + r.step + ': ' + r.reason);
+    out(`${rows.length} quest(s): ${rows.length - bad.length} PASS, ${bad.length} FAIL`);
+  }
+  return bad.length ? 1 : 0;
+}
+
 async function main() {
+  if (process.argv.includes('--all')) { process.exitCode = await simAllCli(process.argv.slice(2)); return; }
   if (process.argv.includes('--quest')) { process.exitCode = await simQuestCli(process.argv.slice(2)); return; }
   const json = process.argv.includes('--json');
   const assets = await loadDesignAssets();

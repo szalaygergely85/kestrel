@@ -1347,3 +1347,8 @@ Verify (main session): `node tools/verify-editor-water.mjs {port} [backend]` (po
 - ED-QUI-10 BRANCH-EDIT (kestrel-4, branch edqui10, 2026-10-17): setBranchText/setBranchGoto/setBranchFlags + gotoTargets in tools/editor/quest/conversation.js (R19 38 cap, dangling GOTO refused, 1 flag per choice, Accept flag/GOTO locked); lines.js dialogueText now re-renders a changed node's `choices` in place (untouched files byte-identical, tested). UI in questDialogue.js (text input n/38, GOTO select, flag input).
   Tests: conversation.test.mjs extended; `run-tests --filter editor` 72/72 PASS. Headless still not run (Node-only rule): `node tools/verify-edqui-10.mjs {port}` (9725-9799) writes docs/test-reports/edqui/edqui-10.png.
   Open: CSS for .q-btext-in/.q-bgoto/.q-bflag not tuned; status stays po-review pending the still.
+
+### ED-QUI-09 SIM-CLI (kestrel-4, edqui11) - done, Node only
+- 07b1 already shipped `--quest <id> [--json]` (runQuestE2e). Added `--all [--json] [--root]` in tools/quest-sim.mjs (`simAllCli`: one shared e2e runtime via createQuestE2e, prerequisites in order, one PASS/FAIL line per quest + total, exit 1 on any FAIL).
+- Tests: tools/quest-sim-cli.test.mjs 10/10 (burl.road exit 0, broken fixture exit 1 naming step `5 objectives`, --all pass + broken fixture FAIL line).
+- `--all` on real content: `88 quest(s): 88 PASS, 0 FAIL`. check-deps OK (89 warnings, pre-existing).
