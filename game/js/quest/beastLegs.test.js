@@ -120,6 +120,16 @@ function walkFrames(legs, rig, ground, n, slope) {
   for (let s = 0; s < 60; s++) { e.transform.y += 1 / 60; voxel.anim = 'walk'; legs.stepNpc('bear', e, voxel, 0, -5, ground); if (voxel.legPose && voxel.legPose[0] > 0) w++; }
   ok('OB-215: Burl gets legPose with 48 beasts attached (' + w + ')', w >= 55 && legs.stats.attached === 49);
 }
+{ // arch batch 2026-10-17 item 8: running beast counter equals a rescan through attach/release
+  const L = createBeastLegs({ pool: { models: new Map([['bear', pm]]) } });
+  const e = (n) => ({ transform: { x: n, y: 0, z: 0, yawDeg: 0 } });
+  const v = () => ({ model: 'bear', anim: 'walk' });
+  let same = true;
+  for (let k = 0; k < 10; k++) { L.step(k, e(k), v(), 0, 0, 0, false); if (L.rescanBeasts() !== L.stats.attached) same = false; }
+  for (const k of [3, 3, 7, 0]) { L.release(k, null); if (L.rescanBeasts() !== L.stats.attached) same = false; }
+  L.step(3, e(3), v(), 0, 0, 0, false); L.releaseAll();
+  ok('beastLegs running attach counter equals a rescan', same && L.rescanBeasts() === 0 && L.stats.attached === 0, String(L.stats.attached));
+}
 console.log(`beastLegs: ${pass} pass, ${fail} fail`);
 for (const f of failures) console.log('FAIL', f);
 process.exit(fail ? 1 : 0);

@@ -16,9 +16,11 @@ export function createBeastLegs(opts) {
   let phase = new Float64Array(64).fill(-1); // ANIM-BLEND-03: per-slot driver phase of the last step (-1 = legs inactive); the blender reads it
   const scratch = { clip: 0, frame: 0, tMs: 0 };
   const npcKeys = [];
-  const api = { driver, pool: o.pool, dtMs: 1000 / 60, stats: { attached: 0 }, get phase() { return phase; }, step, stepNpc, release, releaseAll };
+  const api = { driver, pool: o.pool, dtMs: 1000 / 60, stats: { attached: 0 }, rescanBeasts, get phase() { return phase; }, step, stepNpc, release, releaseAll };
 
-  function beastsAttached() { let n = 0; for (let i = 0; i < slot.length && i < NPC_BASE; i++) if (slot[i] >= 0) n++; return n; }
+  let beastN = 0; // running count of attached beast slots (i < NPC_BASE)
+  function beastsAttached() { return beastN; }
+  function rescanBeasts() { let n = 0; for (let i = 0; i < slot.length && i < NPC_BASE; i++) if (slot[i] >= 0) n++; return n; }
   function grow(i) {
     if (i < slot.length) return;
     const n = Math.max(i + 1, slot.length * 2);
@@ -28,7 +30,7 @@ export function createBeastLegs(opts) {
   }
   function release(i, v) {
     if (!driver || i >= slot.length) return;
-    if (slot[i] >= 0) { driver.release(slot[i]); slot[i] = -1; api.stats.attached--; }
+    if (slot[i] >= 0) { driver.release(slot[i]); slot[i] = -1; api.stats.attached--; if (i < NPC_BASE) beastN--; }
     ent[i] = null; mod[i] = null; if (i < phase.length) phase[i] = -1;
     if (v) v.legPose = null;
   }
@@ -45,7 +47,7 @@ export function createBeastLegs(opts) {
       if (i < NPC_BASE && beastsAttached() >= beastCap) return false; // beasts stop at beastCap, NPCs use the reserve
       slot[i] = driver.attach(pm); ent[i] = e; mod[i] = pm;
       if (slot[i] < 0) return false;
-      api.stats.attached++;
+      api.stats.attached++; if (i < NPC_BASE) beastN++;
     }
     const idx = pm.clipIndex && v.anim && Object.prototype.hasOwnProperty.call(pm.clipIndex, v.anim) ? pm.clipIndex[v.anim] : -1;
     const t = e.transform, io = driver.io;

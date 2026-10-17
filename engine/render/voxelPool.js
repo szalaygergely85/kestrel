@@ -125,6 +125,10 @@ export class VoxelPool {
     this._collectWarned = 0;
     this.prioRange = Infinity; // RF17-11: tier-1 entities outrank props only within this many metres (opt-in; default off so far quest givers keep drawing - beasts already get tier 1 only within 25 m in beastView)
     this._selFrame = 0;
+    // Per-pool stamps (arch batch 2026-10-17 item 3/4): two pools collecting one world no longer share state on the entity.
+    this._selStamp = new WeakMap(); // entity -> _selFrame it was selected in (hysteresis)
+    this._queueStamp = new WeakMap(); // entity -> _frameId it was queued in (isQueued, O(1))
+    this._frameId = 0;
     this._pushWarned = 0;
   }
 
@@ -176,6 +180,7 @@ export class VoxelPool {
    * loop but keeps this reset). */
   beginFrame() {
     this._rawCount = 0;
+    this._frameId++;
     this._epoch++;
   }
 
@@ -275,6 +280,7 @@ export class VoxelPool {
     slot.fromClip = -1; slot.fromW = 0;
     if (t.scale > 0) slot.scale = t.scale; else slot.scale = 1;
     // EMIS-01b: stable identity of the entity (numeric id as-is; string id hashed, no allocation)
+    this._queueStamp.set(e, this._frameId);
     slot.entity = e; // 38.23: objectIdFor(entity)
     // TALK-E1 (38.28 item 7): optional `components.voxel.partRot = {part, rx, ry, rz}`, added to the clip rotation.
     const pr = v.partRot;
@@ -315,8 +321,7 @@ export class VoxelPool {
 
   /** GOB-INVIS: true when entity `e` was queued by this frame's collect() (not hidden, model known, inside the nearest-cap set). Host gates enemy bars on it. */
   isQueued(e) {
-    for (let i = 0; i < this._rawCount; i++) if (this.raw[i].entity === e) return true;
-    return false;
+    return this._queueStamp.get(e) === this._frameId && this._rawCount > 0;
   }
 
   collect(world, cam) {
@@ -359,7 +364,7 @@ export class VoxelPool {
       // RF17-11: tier 1 (NPCs/hostiles) only outranks plain props within `prioRange` m; farther it competes by distance like tier 0. Tier >= 2 (markers) always wins.
       if (p === 1 && d2 > prioR2) p = 0;
       // Hysteresis: an entity drawn last frame gets ~5% distance credit, so two near-equal entities never flip-flop under camera jitter.
-      if (ents[i]._voxSel === prevFrame) d2 *= HYST_D2;
+      if (this._selStamp.get(ents[i]) === prevFrame) d2 *= HYST_D2;
       let j;
       if (count < ecap) {
         j = count - 1; count++;
@@ -369,7 +374,7 @@ export class VoxelPool {
       while (j >= 0 && (pri[j] < p || (pri[j] === p && dist[j] > d2))) { dist[j + 1] = dist[j]; idx[j + 1] = idx[j]; pri[j + 1] = pri[j]; j--; }
       dist[j + 1] = d2; idx[j + 1] = i; pri[j + 1] = p;
     }
-    for (let k = 0; k < count; k++) { ents[idx[k]]._voxSel = curFrame; this._queueEntity(ents[idx[k]]); }
+    for (let k = 0; k < count; k++) { this._selStamp.set(ents[idx[k]], curFrame); this._queueEntity(ents[idx[k]]); }
   }
 
   /**

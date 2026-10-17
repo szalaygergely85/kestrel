@@ -2131,3 +2131,5 @@ gpucompare rtx4060 headless: only the 4 known FAIL rows (crash room, half occlud
 
 - ROUTE-LEGS (kestrel-1, routelegs): not a player bug - tools/route-walk-browser.mjs waypoints were stale after CH1-D1a (5b lacked the SW gap jump at (14,10) so the player dropped off the landing; 7a walked through the now-closed breach; 7c door.toggle + walk-down leg missing). Fixed by mirroring tools/route-walk.mjs (5b jump, 7a overlook only, new 7c via fireInteraction door.toggle). The script never set an exit code (browser-batch PASS = exit 0, so it hid this): now exit 1 on any leg !completed/fell (OPTIONAL_LEGS map for exemptions, empty).
   Result: all 12 legs complete on the default path (port 9530). Files: tools/route-walk-browser.mjs, this note. Not committed.
+
+- 2026-10-17 arch-batch items 3/4/8 (kestrel-1, voxstamp): VoxelPool hysteresis stamp now per pool (WeakMap _selStamp) and isQueued O(1) via per-pool _queueStamp/_frameId; beastLegs keeps a running beast counter (rescanBeasts() for the test). Tests added (independent pools, isQueued vs scan, 0-alloc, counter vs rescan); filter suite 5/5 PASS. Status: arch-review. Not committed.

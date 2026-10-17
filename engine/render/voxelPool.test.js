@@ -222,6 +222,29 @@ if (global.gc) {
   ents.set('cut', cut); ents.set('unk', unk); (fakeWorld(ents)).renderVersion = 2;
   const w2 = fakeWorld(ents); w2.renderVersion = 2; poolH.collect(w2, camH);
   ok('GOB-INVIS isQueued: cut by cap false, unknown model false', poolH.isQueued(cut) === false && poolH.isQueued(unk) === false);
+
+  // Arch batch 2026-10-17 (3/4/8): per-pool hysteresis stamp + O(1) isQueued
+  const hw = new Map();
+  for (let i = 0; i < 20; i++) hw.set(`h${i}`, { components: { voxel: { model: 'bear', frame: 0, t: 0 } }, transform: { x: (i % 2) * 0.01, y: 1 + i * 0.5, z: 0, yawDeg: 0 } });
+  const mkPool = () => { const p = new VoxelPool(); p.renderer = 'dda'; p.bind(registry, table); return p; };
+  const cams = [0, 0.3, -0.2, 0.45, 0.1, -0.4, 0.25].map((y) => ({ x: 0, y, z: 0 }));
+  const selOf = (p) => { const r = []; for (let i = 0; i < p._rawCount; i++) r.push(p.raw[i].y); return r.sort((u, v) => u - v).join(','); };
+  const pa = mkPool(), pb = mkPool(), pc = mkPool(), wa = fakeWorld(hw);
+  const alone = [], mixed = [];
+  for (const c of cams) { pa.collect(wa, c); alone.push(selOf(pa)); }
+  for (let k = 0; k < cams.length; k++) { pb.collect(wa, cams[k]); mixed.push(selOf(pb)); pc.collect(wa, cams[(k * 3 + 5) % cams.length]); } // pc fights over the same entities
+  ok('pool hysteresis independent: pool selection identical with a second pool on the same world', JSON.stringify(alone) === JSON.stringify(mixed));
+  let qOk = true;
+  for (const e of hw.values()) { let scan = false; for (let i = 0; i < pc._rawCount; i++) if (pc.raw[i].entity === e) scan = true; if (pc.isQueued(e) !== scan) qOk = false; }
+  ok('isQueued O(1) equals the raw-list scan on the fixture', qOk && pc.isQueued(hw.get('h0')) && !pc.isQueued(hw.get('h19')));
+  pc.beginFrame(); ok('isQueued false after beginFrame (nothing queued)', !pc.isQueued(hw.get('h0')));
+  if (typeof globalThis.gc === 'function') {
+    for (let i = 0; i < 300; i++) pa.collect(wa, cams[i % cams.length]);
+    gc(); gc(); const h0 = process.memoryUsage().heapUsed;
+    for (let i = 0; i < 3000; i++) { pa.collect(wa, cams[i % cams.length]); pa.isQueued(hw.get('h3')); }
+    gc(); gc(); const grow = process.memoryUsage().heapUsed - h0;
+    ok('collect + isQueued 0 alloc per frame', grow < 100000, String(grow));
+  }
 }
 
 // ---- ME-22 (28.12 item 4): meshOnly router - dda never receives a mesh-
