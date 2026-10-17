@@ -49,13 +49,53 @@ function replaceNodeArray(text, id, key, rendered) {
 const renderChoices = (a) => '[' + a.map((c) => '{' + Object.entries(c).map(([k, v]) => JSON.stringify(k) + ': ' + JSON.stringify(v)).join(', ') + '}').join(', ') + ']';
 const nodeChoices = (obj, id) => (obj.nodes && obj.nodes[id] && Array.isArray(obj.nodes[id].choices) ? obj.nodes[id].choices : null);
 
+
+// ---- EV17-15: generator-style rendering of whole nodes / entries (keys sorted, lines one per row, choices on one line)
+const inlineObj = (o) => '{' + Object.entries(o).map(([k, v]) => JSON.stringify(k) + ': ' + JSON.stringify(v)).join(', ') + '}';
+export function renderNode(n) {
+  const parts = Object.keys(n).sort().map((k) => JSON.stringify(k) + ': ' + (k === 'lines' ? renderLines(n.lines) : k === 'choices' ? renderChoices(n.choices) : JSON.stringify(n[k])));
+  return '{' + parts.join(', ') + '}';
+}
+/** End index (exclusive) of the JSON value starting at text[i] ({ or [ ). */
+function spanEnd(text, i) {
+  let depth = 0, inStr = false;
+  for (; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) { if (c === '\\') i++; else if (c === '"') inStr = false; continue; }
+    if (c === '"') inStr = true; else if (c === '{' || c === '[') depth++; else if ((c === '}' || c === ']') && --depth === 0) return i + 1;
+  }
+  return -1;
+}
+function rebuildNodes(text, nodes) {
+  const eol = text.indexOf(String.fromCharCode(13)) >= 0 ? String.fromCharCode(13, 10) : String.fromCharCode(10);
+  const k = text.indexOf('"nodes"'), open = text.indexOf('{', k), end = spanEnd(text, open);
+  const old = new Map(); let i = open + 1;
+  for (;;) {
+    const m = new RegExp(String.raw`\s*"((?:[^"\\]|\\.)*)"\s*:\s*`, 'y'); m.lastIndex = i;
+    const r = m.exec(text); if (!r) break;
+    const vs = m.lastIndex, ve = spanEnd(text, vs);
+    old.set(JSON.parse('"' + r[1] + '"'), text.slice(vs, ve)); i = ve;
+    const c = new RegExp("\\s*,", "y"); c.lastIndex = i; if (c.exec(text)) i = c.lastIndex; else break;
+  }
+  const body = Object.entries(nodes).map(([id, n]) => '    ' + JSON.stringify(id) + ': ' + (old.get(id) ?? renderNode(n).split('\n').join(eol))).join(',' + eol);
+  return text.slice(0, open + 1) + eol + body + eol + '  ' + text.slice(end - 1);
+}
+function rebuildEntries(text, entries) {
+  const eol = text.indexOf(String.fromCharCode(13)) >= 0 ? String.fromCharCode(13, 10) : String.fromCharCode(10);
+  const k = text.indexOf('"entry"'), open = text.indexOf('[', k), end = spanEnd(text, open);
+  return text.slice(0, open) + '[' + eol + entries.map((e) => '    ' + inlineObj(e)).join(',' + eol) + eol + '  ]' + text.slice(end);
+}
+
 /** Text a dialogue file would be saved as (original text if no node's lines / choices changed). */
 export function dialogueText(f) {
   let text = f.text;
+  // EV17-15: nodes / entries added or removed (quest duplicate / delete): only those spans are rewritten, in the generator's style
+  if (JSON.stringify(Object.keys(f.obj.nodes || {})) !== JSON.stringify(Object.keys(f.orig.nodes || {}))) text = rebuildNodes(text, f.obj.nodes);
+  if (JSON.stringify(f.obj.entry || []) !== JSON.stringify(f.orig.entry || [])) text = rebuildEntries(text, f.obj.entry || []);
   for (const id of Object.keys(f.obj.nodes || {})) {
     for (const [key, get, render] of [['lines', nodeLines, renderLines], ['choices', nodeChoices, renderChoices]]) {
       const now = get(f.obj, id), was = get(f.orig, id);
-      if (!now || JSON.stringify(now) === JSON.stringify(was)) continue;
+      if (!now || !was || JSON.stringify(now) === JSON.stringify(was)) continue;
       const next = replaceNodeArray(text, id, key, render(now));
       if (next === null) throw new Error(`${f.name}: cannot locate node ${id}`);
       text = next;

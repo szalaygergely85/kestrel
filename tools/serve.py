@@ -41,6 +41,24 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
         os.replace(tmp, target)
         self.send_response(204)
         self.end_headers()
+    # EV17-15: quest editor deletes a quest file. DELETE /content/quests/<name>.quest.json only, same loopback guard as PUT.
+    def do_DELETE(self):
+        import os, re, urllib.parse
+        if self.client_address[0] not in ('127.0.0.1', '::1'):
+            return self.send_error(403, 'localhost only')
+        host = (self.headers.get('Host') or '').split(':')[0]
+        origin = self.headers.get('Origin') or ''
+        if host not in ('localhost', '127.0.0.1', '[::1]') or (origin and urllib.parse.urlparse(origin).hostname not in ('localhost', '127.0.0.1', '::1')):
+            return self.send_error(403, 'same-origin localhost only')
+        path = urllib.parse.unquote(urllib.parse.urlparse(self.path).path)
+        if not re.fullmatch(r'/content/quests/[A-Za-z0-9_.-]+\.quest\.json', path):
+            return self.send_error(403, 'only content/quests/*.quest.json')
+        target = os.path.realpath(os.path.join(self.directory, path.lstrip('/')))
+        if not os.path.isfile(target):
+            return self.send_error(404)
+        os.remove(target)
+        self.send_response(204)
+        self.end_headers()
 
 
 def main():
