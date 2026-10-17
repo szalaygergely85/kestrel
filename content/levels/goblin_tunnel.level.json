@@ -147,7 +147,15 @@
   "lights": [
     {"id": "torchRoom", "on": true, "preset": "torch", "x": 16.5, "y": 27.5, "z": 4.1},
     {"id": "torchBend", "on": true, "preset": "torch", "x": 8.5, "y": 22.5, "z": 5.3},
-    {"id": "torchEast", "on": true, "preset": "torch", "x": 32.5, "y": 29.5, "z": 2.6}
+    {"id": "torchEast", "on": true, "preset": "torch", "x": 32.5, "y": 29.5, "z": 2.6},
+    {"id":"stairHook","on":true,"preset":"lanternHook","x":3.3,"y":17.2,"z":6.6},
+    {"id":"corrN1","on":true,"preset":"lanternHook","x":22,"y":22.3,"z":3.9},
+    {"id":"corrS1","on":true,"preset":"lanternHook","x":26.5,"y":24.7,"z":3.6},
+    {"id":"corrN2","on":true,"preset":"lanternHook","x":31,"y":22.3,"z":3.3},
+    {"id":"corrS2","on":true,"preset":"lanternHook","x":35,"y":24.7,"z":3},
+    {"id":"roomE1","on":true,"preset":"lanternHook","x":23.6,"y":28.5,"z":3.8},
+    {"id":"roomE2","on":true,"preset":"lanternHook","x":23.6,"y":32,"z":3.8},
+    {"id":"elbowHook","on":true,"preset":"lanternHook","x":33.3,"y":36,"z":3}
   ],
   "props": [],
   "interactables": [],
