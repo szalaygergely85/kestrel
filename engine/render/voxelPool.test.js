@@ -367,7 +367,7 @@ if (global.gc) {
 
 // ---- RF17-11 (OB-171): 218 entities; tier-1 within 40 m first, far props last, stable under jitter, 0 alloc ----
 {
-  const pool = new VoxelPool(); pool.renderer = 'dda'; pool.bind(registry, table);
+  const pool = new VoxelPool(); pool.renderer = 'dda'; pool.bind(registry, table); pool.prioRange = 40; // opt-in range (default Infinity: quest givers stay drawn far away)
   const cap = Math.max(0, pool.cap - pool.reserve);
   const m = new Map(); const npcX = [];
   for (let i = 0; i < 8; i++) { const x = 30 + i; npcX.push(x); m.set(`n${i}`, { components: { voxel: { model: 'bear', priority: 1 } }, transform: { x, y: 0, z: 0, yawDeg: 0 } }); }

@@ -123,7 +123,7 @@ export class VoxelPool {
     this._nearDist = new Float64Array(MAX_VOX_INSTANCES_MESH);
     this._nearPri = new Int8Array(MAX_VOX_INSTANCES_MESH); // VOX-PRIO-01: tier of each selected entry
     this._collectWarned = 0;
-    this.prioRange = 40; // RF17-11: tier-1 entities (NPCs/hostiles) outrank props only within this many metres
+    this.prioRange = Infinity; // RF17-11: tier-1 entities outrank props only within this many metres (opt-in; default off so far quest givers keep drawing - beasts already get tier 1 only within 25 m in beastView)
     this._selFrame = 0;
     this._pushWarned = 0;
   }
