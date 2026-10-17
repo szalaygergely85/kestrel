@@ -19,7 +19,8 @@ import { World } from '../world/World.js';
 import { scatterTrees } from '../world/scatter.js';
 import { loadTestAssets } from '../../tools/testing/content-node.mjs';
 import { packTerrainTextures } from './gpu/TerrainTextures.js';
-import { makeTerrainShadeCtx, shadeTerrain } from './terrainShade.js';
+import { makeTerrainShadeCtx, shadeTerrain, setFarForest, setFarForestDay, farForestDayOf } from './terrainShade.js';
+import { readFileSync } from 'node:fs';
 const { assets } = await loadTestAssets();
 const w = World.load(assets.world('world_m1'), assets, { physics: 'mesh', detail: false });
 const T = w.terrain; if (!T.farReady) T.bakeFarSync();
@@ -41,4 +42,21 @@ for (const t of [200, 400, 800]) for (const [fm, nz, nl] of [[0, 1, Math.sin(75 
   if (fm === 0) assert.ok(shade(t, nz, nl, fm, 0.85) >= 100, 'sunlit canopy top too dark at ' + t + ' m');
   else assert.ok(shade(t, nz, nl, fm, 0.85) >= 40, 'forest face luma floor (owner: near-black navy trees) at ' + t + ' m');
 }
+// 3) OB-222 candidate (?farforest=1): shaded face luma >= 65 at 200 m noon, green > blue; night + off byte-identical; fades out by 500 m
+const rgb = (t, nl, K) => { const o = shadeTerrain(t, 1, 0.16 * K + 1.1 * nl, 100, 200, 0, ctx, { glyph: 0, level: 0, fg: [0, 0, 0], bg: [0, 0, 0] }, 1, 10, 0, 0, 0); return [...o.fg, ...o.bg, o.glyph]; };
+const day = farForestDayOf(0.9, Math.sin(75 * Math.PI / 180));
+assert.ok(day > 0.99 && farForestDayOf(0.02, -0.3) === 0, 'day weight: noon 1, night 0');
+setFarForest(0); setFarForestDay(day); const offDay = rgb(200, 0, 0.85), off400 = rgb(500, 0, 0.85), offNight = rgb(200, 0, 0.85);
+setFarForest(1); setFarForestDay(day);
+const on = rgb(200, 0, 0.85), L = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+assert.ok(L(on) >= 65, 'farforest shaded face luma >= 65 at 200 m noon, got ' + L(on));
+assert.ok(on[1] > on[2], 'farforest green > blue, got ' + on.slice(0, 3));
+assert.ok(L(offDay) < 55, 'baseline still dark (test sanity), got ' + L(offDay));
+assert.deepEqual(rgb(500, 0, 0.85), off400, 'no change at >= 500 m (fog takeover)');
+setFarForestDay(0); assert.deepEqual(rgb(200, 0, 0.85), offNight, 'night byte-identical');
+setFarForest(0); setFarForestDay(day); assert.deepEqual(rgb(200, 0, 0.85), offDay, '?farforest=0 byte-identical');
+setFarForest(0);
+// 4) WGSL twin carries the same constants (parity string)
+const src = readFileSync(new URL('./gpu/wgsl/shade.wgsl.js', import.meta.url), 'utf8');
+for (const k of ['FF_FLOOR', 'FF_RANGE', 'FF_FADE_A', 'FF_FADE_B', 'FF_SUN_REF', 'FF_ELEV_LO', 'FF_ELEV_HI', 'FF_TGT']) assert.ok(src.includes(k), 'shade.wgsl.js must use ' + k);
 console.log('farForestNoon: ok');

@@ -232,7 +232,7 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
     fgP: FGREC ? { x: 1 + (FGREC.under || 0), y: FGREC.startM, z: FGREC.fadeM, w: FGREC.mix } : { x: 0, y: 0, z: 1, w: 0 }, fgW: FGREC ? { x: FGREC.dirX, y: FGREC.dirY, z: FGREC.cyc, w: FGREC.invTravel } : { x: 0, y: 0, z: 0, w: 0 }, fgQ: FGREC ? { x: FGREC.qb, y: FGREC.tPrev, z: FGREC.qt, w: 0 } : { x: 0, y: 0, z: 0, w: 0 }, /* AA-22 */
     fgT: Array.from({ length: FG_TYPES }, (_, i) => FGREC ? { x: FGREC.types[i * 4], y: FGREC.types[i * 4 + 1], z: FGREC.types[i * 4 + 2], w: FGREC.types[i * 4 + 3] } : { x: 0, y: 0, z: 0, w: 0 }),
     cliff: { x: 1, y: 1, z: 0, w: 0 }, // OB-104b2: rock = fixture row 1
-    skyGlowOn: { x: 0, y: floorY, z: 0, w: 1 }, // DN-02
+    skyGlowOn: { x: 0, y: floorY, z: 0, w: 1 }, faceK: [{ w: 0 }, { w: 0 }], // DN-02 + OB-222 candidate off
   });
   const MAX_F = MAX_FEATURES_PER_TYPE;
   function runTerrain(src, trials, wet = 0, floorY = 0, sky = null) {
@@ -536,8 +536,9 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   // re-pinned 63190 -> 64622 by AA-16 (OB-208: folLight leaf-card light smoothing, fogView.w bit field)
   // re-pinned 64622 -> 64993 by AA-22 (OB-208: wind hold, bucketed far-grass gust + appended fgQ; fgQ.x = 0 = old phase)
   // re-pinned 64985 -> 65357 by OB-217 (shaded grass value range, skyGlowOn.w = strength; 0 = identical)
-  assert.equal(SHADE_WGSL.length, 65357, 'stable off: SHADE_WGSL length unchanged');
-  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '996a77b5ce1d4dd46bd83a4ddb5c7904e0d0aea307f633cd26ba707dc5ac7ead', 'stable off: SHADE_WGSL byte-identical to pre-073b');
+  // re-pinned 65357 -> 66072 by OB-222 candidate (far forest face floor, su.faceK[1].w flag; 0 = identical output)
+  assert.equal(SHADE_WGSL.length, 66072, 'stable off: SHADE_WGSL length unchanged');
+  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), 'b036afc6bb6db42b077364fb1a1fa7e8118882fa8bde07419d58d473c0a092cb', 'stable off: SHADE_WGSL byte-identical to pre-073b');
   assert.ok(!/lvl|lvOut|location\(2\)/.test(SHADE_WGSL), 'stable off: no level output');
   assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
   assert.deepEqual(SHADE_LEVEL_TARGETS, ['rgba8', 'rgba8', 'r8ui']);

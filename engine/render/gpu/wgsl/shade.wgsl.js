@@ -38,7 +38,7 @@ import { SKYLINE_FOG_WGSL } from '../../skyline.js'; // MAP-06b (38.42)
 import { UNDER_WGSL } from '../../underwater.js'; // SWIM-04c (38.54)
 import { GI_SAMPLE_WGSL, giBindingWgsl } from '../../giGpu.js';
 import { CAO_SUN_W } from '../../contactAO.js'; // 38.78 rev
-import { CLIFF_NZ, FOREST_FACE_NZ, FOREST_FACE_K, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE, FAR_GLYPH_CELL, FAR_BLEND_FP0, FAR_BLEND_FP1, NOISE_CELLS, NOISE_W, NOISE_SALT, PATCH_K, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX, GRASS_AO_LO, GRASS_TIP_H, GRASS_BASE_H, GRASS_LEAN_G, GRASS_LEVELS, GRASS_ROWS, GRASS_TINT_AMP, GRASS_GX_HAS, GRASS_BACKLIGHT_K, GRASS_SHADE_LO, GRASS_SHADE_HI, GRASS_SHADE_DAY_SUN, GRASS_SHADE_LIFT, GRASS_SHADE_SPREAD, FG_SLOPE, FG_GUST, FG_MOD, FG_CODES, FG_TYPES } from '../../terrainShade.js';
+import { CLIFF_NZ, FOREST_FACE_NZ, FOREST_FACE_K, FF_FLOOR, FF_RANGE, FF_FADE_A, FF_FADE_B, FF_SUN_REF, FF_ELEV_LO, FF_ELEV_HI, FF_TGT, FOREST_TRUNK_CHANCE, FOREST_TRUNK_SALT, FOREST_TRUNK_CODE, FAR_GLYPH_CELL, FAR_BLEND_FP0, FAR_BLEND_FP1, NOISE_CELLS, NOISE_W, NOISE_SALT, PATCH_K, FP_DEFAULT_K, FP_ANISO_T, FP_ANISO_MAX, GRASS_AO_LO, GRASS_TIP_H, GRASS_BASE_H, GRASS_LEAN_G, GRASS_LEVELS, GRASS_ROWS, GRASS_TINT_AMP, GRASS_GX_HAS, GRASS_BACKLIGHT_K, GRASS_SHADE_LO, GRASS_SHADE_HI, GRASS_SHADE_DAY_SUN, GRASS_SHADE_LIFT, GRASS_SHADE_SPREAD, FG_SLOPE, FG_GUST, FG_MOD, FG_CODES, FG_TYPES } from '../../terrainShade.js';
 
 
 
@@ -269,6 +269,18 @@ ${LK ? `        if (fgw > 0.5 - 0.4 * sg) { code = select(select(${FG_CODES[1]},
     br = dk.r * 255.0 * gain * 0.3; bgc = dk.g * 255.0 * gain * 0.3; bbc = dk.b * 255.0 * gain * 0.3;
     fr *= ${FOREST_FACE_K.toFixed(4)}; fgc *= ${FOREST_FACE_K.toFixed(4)}; fbc *= ${FOREST_FACE_K.toFixed(4)};
     br *= ${FOREST_FACE_K.toFixed(4)}; bgc *= ${FOREST_FACE_K.toFixed(4)}; bbc *= ${FOREST_FACE_K.toFixed(4)};
+    if (su.faceK[1].w > 0.0) { // OB-222 candidate (?farforest=1; twin: terrainShade.js)
+      let ffA = clamp(su.sunI / ${FF_SUN_REF.toFixed(4)}, 0.0, 1.0);
+      let ffE = clamp((su.sunDir.z - ${FF_ELEV_LO.toFixed(4)}) / ${(FF_ELEV_HI - FF_ELEV_LO).toFixed(4)}, 0.0, 1.0);
+      let ffD = ffA * ffE * ffE * (3.0 - 2.0 * ffE);
+      let ffF = clamp((t - ${FF_FADE_A.toFixed(4)}) / ${(FF_FADE_B - FF_FADE_A).toFixed(4)}, 0.0, 1.0);
+      let ffS = clamp((${FF_FLOOR.toFixed(4)} - (0.2126 * fr + 0.7152 * fgc + 0.0722 * fbc)) / ${(FF_FLOOR * FF_RANGE).toFixed(4)}, 0.0, 1.0);
+      let ffL = ffD * (1.0 - ffF * ffF * (3.0 - 2.0 * ffF)) * ffS;
+      if (ffL > 0.0) {
+        fr += (${FF_TGT[0].toFixed(4)} - fr) * ffL; fgc += (${FF_TGT[1].toFixed(4)} - fgc) * ffL; fbc += (${FF_TGT[2].toFixed(4)} - fbc) * ffL;
+        br += (${(FF_TGT[0] * 0.3).toFixed(4)} - br) * ffL; bgc += (${(FF_TGT[1] * 0.3).toFixed(4)} - bgc) * ffL; bbc += (${(FF_TGT[2] * 0.3).toFixed(4)} - bbc) * ffL;
+      }
+    }
   }
 
   var f = (t - su.terrainFogStart) / (su.terrainFogFull - su.terrainFogStart);

@@ -55,6 +55,16 @@ export const FOREST_FACE_NZ = 0.9;
 // OB-104b (38.55): terrain faces steeper than 60 degrees (N.z < 0.5) shade as the recipe's `rock` type, texture laid along the wall + its height.
 export const CLIFF_NZ = 0.5;
 export const FOREST_FACE_K = 0.8;
+// OB-222 candidate (?farforest=1): shaded far forest faces keep a green hue + a luma floor by day (WGSL twin: shade.wgsl.js, su.faceK[1].w = on flag).
+// lift = day * fade(t) * clamp((FLOOR - luma) / (FLOOR * RANGE)) blends fg toward TGT (forest green at luma FLOOR), bg toward 0.3 * that. Night (day = 0) and sunlit faces (luma >= FLOOR) unchanged.
+export const FF_FLOOR = 70, FF_RANGE = 0.35, FF_FADE_A = 250, FF_FADE_B = 500, FF_SUN_REF = 0.6, FF_ELEV_LO = 0.05, FF_ELEV_HI = 0.4;
+export const FF_TGT = [54.0, 78.0, 36.0]; // green (0.36, 0.52, 0.24) scaled to luma 70
+let farForestK = 0, farForestDay = 0;
+export function setFarForest(k) { farForestK = k > 0 ? 1 : 0; }
+export function getFarForest() { return farForestK; }
+/** Day weight 0..1 from sun intensity and elevation (dirZ). Test/shadeTerrainCells set it via setFarForestDay. */
+export function farForestDayOf(sunI, sunZ) { const a = Math.min(1, Math.max(0, sunI / FF_SUN_REF)); let e = (sunZ - FF_ELEV_LO) / (FF_ELEV_HI - FF_ELEV_LO); e = e < 0 ? 0 : e > 1 ? 1 : e; return a * e * e * (3 - 2 * e); }
+export function setFarForestDay(d) { farForestDay = d; }
 export const FOREST_TRUNK_CHANCE = 1 / 3;
 export const FOREST_TRUNK_SALT = 30;
 export const FOREST_TRUNK_CODE = 124 - 32; // '|' as glyphIdx
@@ -414,6 +424,15 @@ export function shadeTerrain(t, type, b, u, v, timeSec, ctx, out, faceMode = 0, 
     br = TL[dOff] * 255 * gain * 0.3; bg = TL[dOff + 1] * 255 * gain * 0.3; bb = TL[dOff + 2] * 255 * gain * 0.3;
     fr *= FOREST_FACE_K; fg *= FOREST_FACE_K; fb *= FOREST_FACE_K;
     br *= FOREST_FACE_K; bg *= FOREST_FACE_K; bb *= FOREST_FACE_K;
+    if (farForestK > 0 && farForestDay > 0) { // OB-222 candidate
+      let fd = (t - FF_FADE_A) / (FF_FADE_B - FF_FADE_A); fd = fd < 0 ? 0 : fd > 1 ? 1 : fd;
+      let sl = (FF_FLOOR - (0.2126 * fr + 0.7152 * fg + 0.0722 * fb)) / (FF_FLOOR * FF_RANGE); sl = sl < 0 ? 0 : sl > 1 ? 1 : sl;
+      const ls = farForestDay * (1 - fd * fd * (3 - 2 * fd)) * sl;
+      if (ls > 0) {
+        fr += (FF_TGT[0] - fr) * ls; fg += (FF_TGT[1] - fg) * ls; fb += (FF_TGT[2] - fb) * ls;
+        br += (FF_TGT[0] * 0.3 - br) * ls; bg += (FF_TGT[1] * 0.3 - bg) * ls; bb += (FF_TGT[2] * 0.3 - bb) * ls;
+      }
+    }
   }
 
   // Fog (item 5 + overworld_far.js "fog" section): 50 -> 1500 m, curve 0.7.
@@ -813,6 +832,7 @@ export function shadeTerrainCells(fb, terrain, world, timeSec = 0, hashCell = 0)
   const giOn = !!gi && gi.on && gi.field !== null;
   const giInvSky = giOn ? 1 / Math.max(1e-6, gi.skyRGB[0] + gi.skyRGB[1] + gi.skyRGB[2]) : 0;
   if (giOn) giMemoBegin(gi);
+  farForestDay = farForestDayOf(sun.sunI, sun.dirZ);
   const fsOn = farSkyActive(); // VISQA-02: per-cell far-fog sky shift (fogShape.js), off = FAR_SKY stays 0
   for (let i = 0; i < n; i++) {
     const kd = gbuf.kind[i];
