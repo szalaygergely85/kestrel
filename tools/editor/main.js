@@ -2983,8 +2983,8 @@ function drawAssetGhost() {
 
 // ED-WATER-01 (OB-223): rect water regions of the world file; edits are normal commit() records (rebuild reloads world.water).
 let waterOn = false;
-const waterTool = createWaterTool({ doc, fileId: fileKey('world', doc.worldId), commit, onChange: () => { frame.markDirty(); waterPanel.refresh(); } });
-const waterPanel = mountWaterPanel(document.body, { tool: waterTool, onToggle: (on) => { waterOn = on; frame.markDirty(); }, onFrame: (id) => frameWater(id) });
+const waterTool = createWaterTool({ doc, fileId: fileKey('world', doc.worldId), commit, floorAt: (x, y) => world.floorAt(x, y), onChange: () => { frame.markDirty(); waterPanel.refresh(); } });
+const waterPanel = mountWaterPanel(document.body, { tool: waterTool, onToggle: (on) => { waterOn = on; frame.markDirty(); }, onFrame: (id) => frameWater(id), onNewPool: async (shape) => { const h = await pickAt(Math.floor(rt.cols / 2), Math.floor(rt.rows / 2), pickCtx()); const p = h && h.world ? h.world : { x: cam.x, y: cam.y }; waterTool.createPool(p.x, p.y, shape); } });
 function frameWater(id) { // list select: look at the water from above-south, region fills ~60% of the view
   const b = waterTool.bounds(id); if (!b) return;
   cam = createCameraPose({ ...cam, ...frameCamera(b, world.floorAt((b[0] + b[2]) / 2, (b[1] + b[3]) / 2), cam.fov) }); frame.markDirty();
