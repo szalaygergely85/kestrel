@@ -16,6 +16,21 @@ export function createLogicWire(o) {
   const props = createPropStates(world, { nav: o.nav, player: o.player, meshStates: o.meshStates });
   const ctx = { world, book: o.book || null, inventory: o.inventory || null, sim: o.sim || null, props, logic, hooks: o.hooks || null, feed: o.feed || null, hint: o.hint || null, sound: o.sound || null };
   let dirty = false, clearCheck = false, warnedDt = false;
+  // D-120 (QD-09): elite/named groups come back in their area after `brain.lingerSec` (authored on the group's entities). A cleared group
+  // with lingerSec > 0 counts down in world.state.logicLinger (saved); at 0 it respawns at home once the player is >= LINGER_FAR_M away.
+  const LINGER_FAR_M = 60;
+  const lingerOf = (g) => { const sim = ctx.sim; if (!sim) return 0; const l = sim.groupSlots(g); const b = l.length ? sim.entities[l[0]].components.brain : null; return b && b.lingerSec > 0 ? b.lingerSec : 0; };
+  const lingerMap = () => world.state.logicLinger || (world.state.logicLinger = {});
+  function lingerStep(dt) {
+    const m = world.state.logicLinger; if (!m) return;
+    for (const g in m) {
+      if (logic.groups[g] !== 2) { delete m[g]; continue; }
+      if ((m[g] -= dt) > 0) continue;
+      const sim = ctx.sim, l = sim.groupSlots(g), pl = o.player ? o.player() : null, h = l.length ? sim.entities[l[0]].components.brain.home : null;
+      if (pl && h && Math.hypot(pl.x - h[0], pl.y - h[1]) < LINGER_FAR_M) { m[g] = 0; continue; } // too close: wait (no pop-in)
+      sim.despawnGroup(g); sim.spawnGroup(g); logic.groups[g] = 1; delete m[g]; dirty = true;
+    }
+  }
 
   /** Queue an engine event by name: push('area.enter', 'area', 'rook.yard'). Unknown name is dropped; unused value hits wildcard blocks only. */
   function push(name, argName, value) {
@@ -56,7 +71,7 @@ export function createLogicWire(o) {
   function checkGroups() {
     const sim = ctx.sim; if (!sim) return;
     for (const g of Object.keys(sim.groups)) {
-      if (logic.groups[g] === 1 && sim.groupDead(g)) { logic.groups[g] = 2; push('group.cleared', 'group', g); }
+      if (logic.groups[g] === 1 && sim.groupDead(g)) { logic.groups[g] = 2; const ls = lingerOf(g); if (ls > 0) lingerMap()[g] = ls; push('group.cleared', 'group', g); }
     }
   }
 
@@ -65,6 +80,7 @@ export function createLogicWire(o) {
     if (!warnedDt && dt !== undefined && Math.abs(dt - SIM_STEP) > 1e-6) { warnedDt = true; console.warn(`logic: tick dt ${dt} is not the fixed step ${SIM_STEP}`); }
     props.step();
     if (clearCheck) { clearCheck = false; checkGroups(); }
+    if (world.state.logicLinger) lingerStep(dt);
     const used = logic.step(ctx);
     if (used > 0) dirty = true;
     // BH2-E2: save() allocates (JSON round trip). While timers run, re-save only when the pending queue changed (count) or once per
