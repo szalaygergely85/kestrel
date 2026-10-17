@@ -55,8 +55,8 @@ export const CLIP_FOR = { closed: 'closed', opening: 'open', open: 'opened' }; /
  * @returns {{card: any, onBoot: Function, onTick: Function, drawHud: Function}} a gameHooks handler set, plus
  *   `card` (test/dev access to the mounted item-get card view).
  */
-export function createChestHook({ defs, items, style, rgb, openedChestsOf = null, seed = 1, reduceMotion = false, notify = null, canOpenGate = null }) {
-  const card = createItemGetCard(null, { style, items, rgb, reduceMotion });
+export function createChestHook({ defs, items, style, rgb, openedChestsOf = null, seed = 1, reduceMotion = false, notify = null, canOpenGate = null, onCardOpen = null }) {
+  const card = createItemGetCard(null, { style, items, rgb, reduceMotion, onOpen: onCardOpen });
   const itemDefs = items.defs;
   // OB-075: with `notify` (main.js: toasts.say) chest / gear pickups show a one-line "Looted: Leggings" / "Looted: 2 Potions" toast, no pause, no card.
   // Without it (Node fixtures) the old item-get card is used. The heart-piece card (heartHook.js, a story beat) is kept.

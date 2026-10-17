@@ -1,7 +1,7 @@
 // S8-C-07: cached item-get card. Host owns input routing/pause and calls step even while gameplay is paused.
 // Formatting happens at create/push; draw/step reuse the queue, layout, colours and payload-free state.
 const TIER_KEY={worn:'uiHint',sturdy:'heroGreen',fine:'gold'}; // keys of uiStyle.itemGetCard.hex
-export function createItemGetCard(adapter, {style:S, items, rgb, reduceMotion=false, dev=false}) {
+export function createItemGetCard(adapter, {style:S, items, rgb, reduceMotion=false, dev=false, onOpen=null}) {
   const reduced=()=>typeof reduceMotion==='function'?!!reduceMotion():!!reduceMotion; // bool or live getter
   const T=S.timing, P=S.panel, F=S.frame, B=S.iconBox, info=Object.create(null), queue=[];
   if (![T.holdSec,T.fadeIn,T.fadeOut,T.gapSec].every(n=>Number.isFinite(n)&&n>0)
@@ -52,7 +52,7 @@ export function createItemGetCard(adapter, {style:S, items, rgb, reduceMotion=fa
         : inf.def.stackMax>1 && count>=2 ? S.count.format.replace('{n}',String(count)) : inf.defLine,
         countFg:packFull ? fullFg : colours[progress ? progress.fg : inf.defLine&&inf.tierKey ? inf.tierKey : S.count.fg],queueLine:''});
       for(let i=0;i<queue.length;i++)queue[i].queueLine=queue.length>1 ? S.footer.queue.format.replace('{i}',String(i+1)).replace('{n}',String(queue.length)) : '';
-      if(phase==='idle'){phase='show';age=0;index=0;paused(true);}
+      if(phase==='idle'){phase='show';age=0;index=0;paused(true);if(onOpen)onOpen();} // EV17-02: card opens -> sparkle cue
     },
     dismiss,
     clear(){queue.length=0;index=0;age=0;if(phase!=='idle'){phase='idle';paused(false);}},

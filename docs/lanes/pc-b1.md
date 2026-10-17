@@ -2132,3 +2132,5 @@ gpucompare rtx4060 headless: only the 4 known FAIL rows (crash room, half occlud
 ### EV17-01 combat feel audio (k1, branch ev1701, po-review, UNCOMMITTED) 2026-10-17
 - New game/js/audio/combatSfx.js (cue table + 60-150 ms per-cue rate limit + lub-dub heartbeat, injected synth) + combatSfx.test.js; hurtFx.low getter (+test). Main hook block: combatSfx + beast:died/combat:hit listeners, sword-state swing edge and heartbeat step beside hurtFx.step; `window.__combatSfx` dev handle. Player-hurt = combat:hit with target 'player'.
 - Verify (NOT run): `node tools/verify-combat-sfx.mjs 9510` (event bus triggers each cue, asserts counts; heartbeat part only counts if `__debug.vitals` exists). Node tests: combatSfx.test.js, hurtFx.test.js pass.
+
+- EV17-02 (k1, ev1702): game/js/audio/uiSfx.js (+test) cue table + rate limit + mute; quest book onChange -> accepted/ready/done, itemGetCard onOpen (via chestHook onCardOpen) -> sparkle, pauseMenu onSfx -> move/confirm tick. tools/verify-ui-sfx.mjs headless OK (port 9520). Not committed.
