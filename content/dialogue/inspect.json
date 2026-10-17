@@ -2,6 +2,8 @@
   "version": 1,
   "note": "Look-at texts (writer: docs/story.md 'This side - look-at texts'). Key = entity components.inspect.text. Optional: entities[] = extra anchor ids without that component, afterItem = the anchor only appears once that item has been taken (never clashes with its pickup prompt), radius, hint/hintTitle = second banner. Never locks: banner only.",
   "texts": {
+    "note.farmTable": {"prompt": "[E] Read the note", "title": "A note on the crate", "lines": ["Three plates on an upturned crate. Dusty.","Scratched on a board: GONE TO THE OUTWALL.","BACK BY SPRING. DO NOT LET THE FIRE DIE."], "radius": 3.0, "entities": ["qd01_farmTable"]},
+    "note.towerScratch": {"prompt": "[E] Read the claw marks", "title": "Marks by the tower door", "lines": ["Claw marks, low and fresh. Two sizes.","Something small, and something smaller.","They dig at the door from the inside."], "radius": 3.0, "entities": ["qd04_towerScratch"]},
     "note.strand.monster": {
       "prompt": "[E] Read the sign",
       "title": "A sign on the Long Strand",

@@ -8,6 +8,7 @@
     "sword": { "entity": "tower.sword" },
     "relay.mirror": { "pickup": true },
     "relay.brass": { "pickup": true },
+    "lamp.hood": { "pickup": true },
     "berry.blue": { "pickup": true },
     "redcap": { "pickup": true },
     "brass.scrap": { "pickup": true },

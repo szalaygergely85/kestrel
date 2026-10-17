@@ -2379,7 +2379,9 @@
     {"id": "dressCrypt14", "castShadow": true, "mesh": "quaternius/Prop_Crate", "origin": {"x": 1677.3, "y": 1349.7, "z": -55.9}, "scale": 0.65, "yawDeg": 40},
     {"id": "dressCrypt15", "castShadow": true, "mesh": "quaternius/Rock_Medium_3_bare", "origin": {"x": 1677.4, "y": 1355.3, "z": -56.8}, "scale": 0.5, "yawDeg": 60},
     {"id": "dressCrypt16", "castShadow": true, "mesh": "quaternius/Pebble_Round_1_bare", "origin": {"x": 1671.8, "y": 1355.3, "z": -56.8}, "scale": 1, "yawDeg": 150},
-    {"id": "dressCrypt17", "castShadow": true, "mesh": "quaternius/Prop_Brick4", "origin": {"x": 1672.1, "y": 1354, "z": -56.8}, "scale": 1, "yawDeg": 200}
+    {"id": "dressCrypt17", "castShadow": true, "mesh": "quaternius/Prop_Brick4", "origin": {"x": 1672.1, "y": 1354, "z": -56.8}, "scale": 1, "yawDeg": 200},
+    {"id": "qd01_farmCrate", "mesh": "quaternius/Prop_Crate", "note": "QD-01: the upturned crate the farm note lies on (anchor qd01_farmTable)", "origin": {"x": 1091, "y": 1090, "z": -79.85}, "scale": 0.7, "yawDeg": 20},
+    {"id": "qd04_doorPost", "collide": false, "mesh": "quaternius/Prop_WoodenFence_Single", "note": "QD-04: the plank by the tower door with the claw marks (anchor qd04_towerScratch)", "origin": {"x": 1488, "y": 1031, "z": 1.67}, "scale": 0.55, "yawDeg": 90}
   ],
   "entities": [
     {"id": "player", "note": "pose = tower.start (x 17.0, y 9.5, facingDeg 330, pitchDeg 30, eyeH 0.3, lying) + origin -> world (1497.0, 1027.5)", "spawn": {"from": "start", "structure": "tower"}, "type": "player"},
@@ -2585,7 +2587,12 @@
     {"id": "strandCaveLamp", "components": {"voxel": {"anim": "lit", "loop": true, "model": "floorLanternVox"}}, "note": "UNDER-05: smugglers lantern (existing floorLanternVox; light = level lights[lantern])", "type": "prop", "x": 1613.9, "y": 1723, "z": -95.31},
     {"id": "strandCaveNote", "components": {"inspect": {"text": "note.smugglers"}}, "note": "UNDER-05: smugglers note (text inspect.json note.smugglers, written QUEST-WRITER-FILL-01)", "type": "prop", "x": 1615.6, "y": 1724.9, "z": -95.31},
     {"id": "chestStrandCave", "components": {"voxel": {"anim": "closed", "loop": false, "model": "chestBig"}}, "note": "UNDER-05: the earned chest at the back (guarded by the tortoise homes; chestDefs.js table)", "type": "prop", "x": 1618.9, "y": 1722.9, "yawDeg": 180, "z": -95.31},
-    {"id": "chestGoblinTunnel", "components": {"voxel": {"anim": "closed", "loop": false, "model": "chestBig"}}, "note": "UNDER-06: the goblins' stash (chestDefs.js table); earned: opens once the 3 tunnel goblins are dead", "type": "prop", "x": 945.5, "y": 948.3, "yawDeg": 0, "z": -88.8}
+    {"id": "chestGoblinTunnel", "components": {"voxel": {"anim": "closed", "loop": false, "model": "chestBig"}}, "note": "UNDER-06: the goblins' stash (chestDefs.js table); earned: opens once the 3 tunnel goblins are dead", "type": "prop", "x": 945.5, "y": 948.3, "yawDeg": 0, "z": -88.8},
+    {"id": "qd01_farmTable", "components": {"inspect": {"text": "note.farmTable"}}, "note": "QD-01: the note on the farm table (Plates for Three step 3)", "type": "prop", "x": 1091, "y": 1090, "z": "ground"},
+    {"id": "qd04_towerScratch", "components": {"inspect": {"text": "note.towerScratch"}}, "note": "QD-04: claw marks on the tower door (Scratches at the Door step 1)", "type": "prop", "x": 1488, "y": 1031, "z": "ground"},
+    {"id": "qd04_fox1", "components": {"brain": {"beastKind": "fox_raider", "group": "qd04.foxes", "home": [1484, 1036], "kind": "beast", "reserve": true, "role": "melee"}, "targetable": {"height": 0.5, "radius": 0.35}, "voxel": {"anim": "idle", "loop": true, "model": "fox"}}, "note": "QD-04: reserve fox of the Scratches at the Door ambush (down until qd04.scratch spawns it)", "type": "beast", "x": 1484, "y": 1036, "z": "ground"},
+    {"id": "qd04_fox2", "components": {"brain": {"beastKind": "fox_raider", "group": "qd04.foxes", "home": [1490, 1037], "kind": "beast", "reserve": true, "role": "melee"}, "targetable": {"height": 0.5, "radius": 0.35}, "voxel": {"anim": "idle", "loop": true, "model": "fox"}}, "note": "QD-04: reserve fox of the Scratches at the Door ambush (down until qd04.scratch spawns it)", "type": "beast", "x": 1490, "y": 1037, "z": "ground"},
+    {"id": "qd04_hood", "components": {"questPickup": {"item": "lamp.hood", "n": 1}, "voxel": {"anim": "idle", "loop": true, "model": "pickup.brass.scrap"}}, "note": "QD-04: dented lamp hood the foxes dragged out (brass scrap pickup)", "type": "prop", "x": 1486, "y": 1034, "z": "ground"}
   ],
   "horizon": [],
   "state": {

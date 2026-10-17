@@ -105,6 +105,15 @@
     },
     "joss": {
       "entity": "joss"
+    },
+    "qd01_farmTable": {
+      "entity": "qd01_farmTable"
+    },
+    "rsInspectWell": {
+      "entity": "rsInspectWell"
+    },
+    "qd04_towerScratch": {
+      "entity": "qd04_towerScratch"
     }
   }
 }

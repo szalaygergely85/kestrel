@@ -35,7 +35,7 @@ spawnRegionalBeasts(world, geo, 12);
 const sim = createBeastSim(world, { tileNav: true, nav: gridNav, rng: createRng(nc.seed ?? 1), events, band: undefined, playerMaxHp: 100, hpPerDamage: 1, waterNav: (() => { try { return buildWaterNav(world, gridNav.grid); } catch (e) { return null; } })() });
 console.warn = warn;
 
-const boars = []; world.forEachEntity((e) => { const b = e.components && e.components.brain; if (b && b.kind === 'beast' && b.species !== 'wolf' && b.species !== 'bear' && b.species !== 'goblin' && (e.transform || e).x !== undefined) boars.push(e); });
+const boars = []; world.forEachEntity((e) => { const b = e.components && e.components.brain; if (b && b.kind === 'beast' && b.species !== 'wolf' && b.species !== 'bear' && b.species !== 'goblin' && b.beastKind !== 'fox_raider' && (e.transform || e).x !== undefined) boars.push(e); });
 const near = boars.filter((e) => Math.hypot(e.transform.x - PX, e.transform.y - PY) < 60);
 const start = new Map(near.map((e) => [e.id, [e.transform.x, e.transform.y]]));
 const moved = new Map(near.map((e) => [e.id, 0]));

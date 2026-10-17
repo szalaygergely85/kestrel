@@ -420,18 +420,37 @@
     },
     {
       "id": "sq.burl.tower",
-      "title": "Look at the Tower Door",
+      "title": "Scratches at the Door",
       "site": "burl",
       "steps": [
         {
-          "template": "explore",
+          "template": "talk",
           "params": {
-            "areas": [
-              "towerDoor"
-            ]
+            "to": "qd04_towerScratch"
           },
-          "objText": "Look at the tower door",
-          "journal": "Burl fears the tower. Check its door."
+          "objText": "Read the claw marks at the door",
+          "journal": "Something claws at the tower door."
+        },
+        {
+          "template": "kill",
+          "params": {
+            "ids": [
+              "qd04_fox1",
+              "qd04_fox2"
+            ],
+            "count": 2
+          },
+          "objText": "Drive off the two foxes",
+          "journal": "Foxes burst out of the tower."
+        },
+        {
+          "template": "collect",
+          "params": {
+            "item": "lamp.hood",
+            "count": 1
+          },
+          "objText": "Pick up what they dragged out",
+          "journal": "Take what the foxes dragged out."
         }
       ],
       "requires": [
@@ -446,27 +465,31 @@
       "reward": {
         "items": [
           {
+            "id": "brass.scrap",
+            "n": 2
+          },
+          {
             "id": "arrow",
-            "n": 5
+            "n": 10
           }
         ]
       },
       "band": 1,
-      "returnText": "Tell Burl about the door",
+      "returnText": "Tell Burl about the foxes",
       "lines": {
         "offer": [
-          "You came out of the tower by its old door.",
-          "Something scratches at it at night. Go and look?"
+          "Something claws at the tower door at night.",
+          "My cub sleeps near it. Read the marks?"
         ],
         "active": [
-          "The tower door. Look low down, for the scratches."
+          "The tower door. Read the marks, then be ready."
         ],
         "ready": [
-          "Claw marks, low down? Badgers. Rude, but not boars.",
-          "Feathered sticks. You use them better than I do."
+          "Foxes. Rude, but small.",
+          "That lamp hood is off your ship. Take these."
         ],
         "done": [
-          "Badgers at the door. You could do worse for neighbours."
+          "Quiet nights at the tower now. Thank you."
         ]
       }
     },
@@ -1626,8 +1649,29 @@
               "farmGate"
             ]
           },
-          "objText": "Look at the river farm gate",
-          "journal": "Check the farm gate by the river."
+          "objText": "Go to the river farm gate",
+          "journal": "Find out who lived at the farm."
+        },
+        {
+          "template": "kill",
+          "params": {
+            "ids": [
+              "farmGob1",
+              "farmGob2",
+              "farmGob3"
+            ],
+            "count": 3
+          },
+          "objText": "Defeat the 3 goblins",
+          "journal": "Goblins hold the farm. Drive them off."
+        },
+        {
+          "template": "talk",
+          "params": {
+            "to": "qd01_farmTable"
+          },
+          "objText": "Read the note on the crate",
+          "journal": "Read the note at the farm."
         }
       ],
       "requires": [
@@ -1647,21 +1691,21 @@
         "table": "gear.t2"
       },
       "band": 3,
-      "returnText": "Tell Burl what you found",
+      "returnText": "Tell Burl about the note",
       "lines": {
         "offer": [
           "A farm by the river. I smelled bread there once.",
-          "Go and look at its gate. Tell me who lives there."
+          "Who lived there? Go and see. I need to know."
         ],
         "active": [
-          "The farm gate, by the river. South of the road."
+          "The river farm, south of the road. Go in."
         ],
         "ready": [
-          "Plates set for three. The gate chained from outside.",
-          "Oh, sky-cub. Here. Take this. Wear it well."
+          "Gone to the Outwall. Back by spring. Alive!",
+          "Take this, sky-cub. You earned it."
         ],
         "done": [
-          "Three plates. I will not think about it. Much."
+          "Alive, and gone to the Outwall. I can wait."
         ]
       }
     },
@@ -1876,7 +1920,7 @@
     },
     {
       "id": "sq.fc.well",
-      "title": "The Dry Well",
+      "title": "The Cold Well",
       "site": "rook",
       "steps": [
         {
@@ -1886,8 +1930,16 @@
               "well"
             ]
           },
-          "objText": "Look at the dry well north of the post",
-          "journal": "Check the dry well north of the post."
+          "objText": "Go to the well north of the post",
+          "journal": "Cold air comes out of the old well."
+        },
+        {
+          "template": "talk",
+          "params": {
+            "to": "rsInspectWell"
+          },
+          "objText": "Look down into the well",
+          "journal": "Look down the cold well."
         }
       ],
       "requires": [
@@ -1899,8 +1951,8 @@
       "reward": {
         "items": [
           {
-            "id": "arrow",
-            "n": 5
+            "id": "potion.mp",
+            "n": 1
           }
         ]
       },
@@ -1908,18 +1960,18 @@
       "returnText": "Tell Rook about the well",
       "lines": {
         "offer": [
-          "There is a well. Dry. Planks on it. A brick fell.",
-          "I think the bottom has something in it. Look. I can't."
+          "Cold air comes up out of that old well.",
+          "I will not go near it. You look. Tell me."
         ],
         "active": [
-          "The well, north of the trade post. Planks and bricks."
+          "The well, north of the trade post. Look down it."
         ],
         "ready": [
-          "Dry, and no echo? Then it is full of leaves. Ha.",
-          "You looked. I counted. Here, five sticks."
+          "It gave you something, did it? Keep it close.",
+          "Here, a Mana Potion. Not for me. For you."
         ],
         "done": [
-          "A dry well. Even the rain gave up on it."
+          "Cold well. Warm hands. Good hands, mind."
         ]
       }
     },

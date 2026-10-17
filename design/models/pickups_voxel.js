@@ -556,7 +556,7 @@
   // ============================ ITEM -> MODEL MAP ============================
   var ITEM = {
     signArm: 'pickup.signArm', packet: 'pickup.packet', barleySheaf: 'pickup.barleySheaf', 'berry.blue': 'pickup.berry.blue',
-    'brass.scrap': 'pickup.brass.scrap', emberpod: 'pickup.emberpod', redcap: 'pickup.redcap', redCap: 'pickup.redcap',
+    'brass.scrap': 'pickup.brass.scrap', 'lamp.hood': 'pickup.brass.scrap', emberpod: 'pickup.emberpod', redcap: 'pickup.redcap', redCap: 'pickup.redcap',
     'relay.brass': 'pickup.relay.brass', 'relay.mirror': 'pickup.relay.mirror',
     'potion.hp': 'pickup.potion.hp', 'potion.mp': 'pickup.potion.mp', hp: 'pickup.potion.hp', mp: 'pickup.potion.mp'
   };
