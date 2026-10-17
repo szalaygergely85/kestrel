@@ -73,6 +73,8 @@ try {
   if (args.probe) await evaluateAsync(cdp, readFileSync(args.probe, 'utf8')); // dev: a timing wrapper script (fills window.__probeLog)
   if (args['heap-profile']) { await cdp.send('HeapProfiler.enable'); await cdp.send('HeapProfiler.startSampling', { samplingInterval: 32768, includeObjectsCollectedByMinorGC: true, includeObjectsCollectedByMajorGC: true }); }
   if (args['cpu-profile']) { await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', { interval: 500 }); await cdp.send('Profiler.start'); }
+  const GC = `(() => { const c = window.__gpuCount; if (!c) return null; const b = []; for (const [id, e] of c.byBuf) b.push([id, e.size, e.n, e.bytes]); return { frames: c.frames, writes: c.writes, writeBytes: c.writeBytes, same: c.same, sameBytes: c.sameBytes, setBindGroup: c.setBindGroup, setPipeline: c.setPipeline, setVertexBuffer: c.setVertexBuffer, draws: c.draws, passes: c.passes, b }; })()`; // D-107 (?gpucount=1 via --extra): per-frame GPU call counts over the walk
+  const gc0 = await evaluate(cdp, GC);
   const r = await evaluateAsync(cdp, DRIVER(seconds), (seconds + 60) * 1000);
   const heapProf = args['heap-profile'] ? (await cdp.send('HeapProfiler.stopSampling')).profile : null;
   const cpuProf = args['cpu-profile'] ? (await cdp.send('Profiler.stop')).profile : null;
@@ -92,6 +94,13 @@ try {
     p99: +[...r.itv].sort((a, b) => a - b)[Math.floor(r.itv.length * 0.99)].toFixed(1), fps: +(1000 / (r.itv.reduce((a, b) => a + b, 0) / r.itv.length)).toFixed(0), spikeCount: r.spikeCount, gcSpikes, allocMb: r.alloc.slice(0, 8),
     rank: Object.entries(rank).sort((a, b) => b[1].sumMs - a[1].sumMs).map(([k, v]) => ({ cause: k, n: v.n, maxMs: +v.maxMs.toFixed(1) })) };
   console.log(JSON.stringify(row));
+  const gc1 = gc0 && await evaluate(cdp, GC);
+  if (gc1) { const st = await evaluate(cdp, 'window.__gpuCount.stacks ? JSON.stringify(window.__gpuCount.stacks) : ""'); if (st) console.log('STACKS ' + JSON.stringify(Object.entries(JSON.parse(st)).sort((a, b) => b[1].n - a[1].n).slice(0, 8))); }
+  if (gc1) {
+    const fr = gc1.frames - gc0.frames, pf = (k) => +((gc1[k] - gc0[k]) / fr).toFixed(1), prev = new Map(gc0.b.map((e) => [e[0], e]));
+    const top = gc1.b.map((e) => { const o = prev.get(e[0]) || [0, 0, 0, 0]; return { size: e[1], callsPerFrame: +((e[2] - o[2]) / fr).toFixed(2), kbPerFrame: +((e[3] - o[3]) / fr / 1024).toFixed(1) }; }).filter((e) => e.callsPerFrame > 0).sort((a, b) => b.callsPerFrame - a.callsPerFrame || b.kbPerFrame - a.kbPerFrame).slice(0, Number(args.top || 12));
+    console.log('GPUCOUNT ' + JSON.stringify({ frames: fr, writes: pf('writes'), sameWrites: pf('same'), sameKB: +((gc1.sameBytes - gc0.sameBytes) / fr / 1024).toFixed(1), writeKB: +((gc1.writeBytes - gc0.writeBytes) / fr / 1024).toFixed(1), setBindGroup: pf('setBindGroup'), setPipeline: pf('setPipeline'), setVertexBuffer: pf('setVertexBuffer'), draws: pf('draws'), passes: pf('passes'), top }));
+  }
   if (heapProf || cpuProf) {
     const date = new Date().toISOString().slice(0, 10), out = args['heap-out'] || path.join(ROOT, 'docs', 'test-reports', `perf-alloc-${date}.md`);
     const heap = heapProf && summariseHeap(heapProf, 20), cpu = cpuProf && summariseCpu(cpuProf, 20);

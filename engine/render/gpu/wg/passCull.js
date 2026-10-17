@@ -359,7 +359,9 @@ export class WgCullPass {
       const b = this.queue[q], g = b.g, n = g.count;
       if (n <= 0) continue;
       const cnt = n > b.cap ? b.cap : n;
-      if (!b.static || b.uploaded < 0 || b.uploaded < cnt) {
+      const ver = g.ib.version; // D-107: a dynamic batch whose instance buffer version and row count are unchanged already holds these bytes on the GPU (writers bump ib.version)
+      if ((!b.static && !(ver !== undefined && b.upVer === ver && b.uploaded === cnt)) || b.uploaded < 0 || b.uploaded < cnt) {
+        b.upVer = ver;
         if (b.viewCount !== cnt) { b.view = g.ib.u32.subarray(0, cnt * INSTANCE_STRIDE); b.viewCount = cnt; }
         d.writeBuffer(b.src, b.view, 0); b.uploaded = cnt; s.uploads++;
       }
