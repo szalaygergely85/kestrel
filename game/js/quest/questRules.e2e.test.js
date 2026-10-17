@@ -59,6 +59,7 @@ const loadedIds = new Set([m1.id, ...defs.map((d) => d.id)]);
 const newRelay = (saved, sq) => createQuestRelay(m1, saved || null, defs, sq || null);
 let relay = newRelay();
 const book0 = () => relay.book;
+const enterArea = (id) => { const z = [{ id, x: 500, y: 500, r: 3, zMin: 0 }]; relay.pollAreas(-9999, -9999, 2, z); relay.pollAreas(500, 500, 2, z); }; // OB-220b: pollAreas is edge-triggered: step out, then in
 const initialStatus = Object.fromEntries(defs.map((d) => [d.id, relay.book.statusOf(d.id)]));
 
 const inv = ensureInventory({}, null);
@@ -142,7 +143,7 @@ function doObjective(def, o, fail) {
     case 'area': {
       if (!areaIds.has(w.id)) fail('5 objectives', "area '" + w.id + "' is not in content/quests/areas.json (no trigger zone)");
       player.transform.x = 500; player.transform.y = 500; player.transform.z = 2;
-      relay.pollAreas(500, 500, 2, [{ id: w.id, x: 500, y: 500, r: 3, zMin: 0 }]); break;
+      enterArea(w.id); break;
     }
     case 'beasts': {
       const ids = w.kind !== undefined ? Array.from({ length: w.count }, (_, n) => w.kind + 'E2E' + (n + 1)) : w.ids.slice(0, w.count); // kind: right kind prefix (kindOf), count of kills
@@ -163,7 +164,7 @@ function advanceM1(stepId) {
     if (w.type === 'flag' && /^quest\..+\.done$/.test(w.id)) { const dep = defs.find((d) => 'quest.' + d.id + '.done' === w.id); if (dep) fastDone(dep); }
     else if (w.type === 'flag') relay.questFlag(w.id, w.equals === undefined ? true : w.equals);
     else if (w.type === 'item') relay.feed({ type: 'item:got', id: w.id });
-    else if (w.type === 'area') relay.pollAreas(500, 500, 2, [{ id: w.id, x: 500, y: 500, r: 3, zMin: 0 }]);
+    else if (w.type === 'area') enterArea(w.id);
     if (o.id === stepId) return;
   }
 }
@@ -284,11 +285,13 @@ function audit(def) {
 
   // ---- R4: accept -> '!' gone, tracked
   {
-    const e = [];
-    for (let n = 0; n < 30 && st(q) === AVAILABLE; n++) { notePanel ? relay.book.accept(q) : (objectGiver && noteGiver(giver) ? readNote(giver, true) : talk(who, 'q.' + q + '.accept')); finishShadows(q); }
+    const e = []; let atAccept = null;
+    for (let n = 0; n < 30 && st(q) === AVAILABLE; n++) { notePanel ? relay.book.accept(q) : (objectGiver && noteGiver(giver) ? readNote(giver, true) : talk(who, 'q.' + q + '.accept')); if (st(q) !== AVAILABLE && !atAccept) atAccept = { status: st(q), done: relay.book.questState(I).completed.slice() }; finishShadows(q); }
     if (st(q) === AVAILABLE) { e.push('talking to ' + who + ' never accepts the quest (Accept flag q.' + q + '.accept); at giver: ' + defs.filter((d) => d.giver && d.giver.npc === giver).map((d) => d.id.replace(/^.*./, '') + ':' + STATUS_NAMES[st(d.id)]).join(' ')); relay.book.accept(q); }
     if (markState('avail', giver) !== 'none' && !sharing('avail', giver).length) e.push("'!' still shows over " + giver + ' after accept');
     if (relay.book.tracked() !== I) e.push('accepted quest is not tracked');
+    if (atAccept) { const pk = atAccept.done.filter((id) => { const ob = def.objectives.find((x) => x.id === id); return !ob || !['item', 'collect', 'deliver'].includes(ob.when.type); }); atAccept.done = pk; if (!pk.length && atAccept.status === READY) atAccept.status = ACTIVE; } // pack items carried in count by design (facts count before accept)
+    if (atAccept && (atAccept.status === READY || atAccept.done.length > 0)) e.push('OB-220b: quest is ' + STATUS_NAMES[atAccept.status] + ' with ' + atAccept.done.length + ' step(s) done the moment it is accepted (no movement needed): ' + atAccept.done.join(', '));
     if (st(q) === ACTIVE && !(relay.objectiveText() || '')) e.push('empty HUD line after accept');
     if (st(q) === ACTIVE && !journalNames().includes((def.title || q).slice(0, 14))) e.push('journal does not list it after accept');
     rec(q, 'R4', !e.length, e.join('; '));
@@ -332,6 +335,17 @@ function audit(def) {
       if (st(q) !== DONE) { e.push('talking to ' + turnIn + ' did not hand in'); relay.book.handIn(q); }
       for (const it of (def.reward && def.reward.items) || []) { const got = countOf(inv, it.id) - before[it.id]; if (got !== it.n && !def.objectives.some((x) => x.when.id === it.id)) e.push('reward ' + it.id + ' x' + it.n + ' granted ' + got); }
       if (markState('ready', turnIn) !== 'none' && !sharing('ready', turnIn).length) e.push("'?' still over " + turnIn + ' after hand-in');
+      { // OB-220a: a handed-in quest leaves every list, mark and the compass, and is never re-offered
+        const lq = lists(), here = (arr) => arr.some((m) => m && (m.id === q || m.quest === q || m === I));
+        if (st(q) === DONE) {
+          if (relay.book.tracked() === I) e.push('still tracked after hand-in');
+          if (journalNames().includes('[ACTIVE] ' + (def.title || q))) e.push('still in the active journal list');
+          const tt = hud.target(relay.book, cworld); if (tt && tt.kind === 1 && giverAt.get(tt.x) === turnIn && !sharing('ready', turnIn).length) e.push('compass still points at the hand-in ' + turnIn);
+          if (here(lq.gR) || here(lq.sR) || here(lq.gA) || here(lq.sA)) e.push('quest still in a mark list after hand-in');
+          for (let n = 0; n < 2; n++) talk(giver, null);
+          if (st(q) !== DONE) e.push('talking to the giver again changed a DONE quest to ' + STATUS_NAMES[st(q)] + ' (re-offered)');
+        }
+      }
       if (def.next && st(def.next) !== AVAILABLE) e.push('next ' + def.next + ' is ' + STATUS_NAMES[st(def.next)] + ' after hand-in (expected available)');
     } else e.push('not READY after the objectives');
     rec(q, 'R6', !e.length, e.join('; '));

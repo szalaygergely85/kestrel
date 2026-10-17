@@ -2059,3 +2059,9 @@ Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-
 ### 2026-10-17 OB-221 + OB-220 (slot kestrel-1, Node only)
 - OB-221: questLog.js left pane now has gold "Main" / blue "Side" headings (main first, empty group hides heading, `view` rows; headings are not selectable, heading click swallowed, click rows offset). New questLogGroups.test.js.
 - OB-220: "next light" = Lamps on the Verge (sq.rb.lamps, giver Joss). Zone `lamps` (r 22 @1263,1052) contained Joss (21.7 m) so accepting finished the walk at once; r -> 14 in world_m1.world.json. Test ob220Lamps.test.js (giver outside zone). Not verified in-game; lamps positions not re-checked vs r 14 (owner to walk). GI not affected.
+
+### 2026-10-17 OB-220 (a)(b) + OB-142 (slot kestrel-1, Node only)
+- (a) Audited all 88 quests: after hand-in none stays tracked/in active journal/mark lists/compass or is re-offered (new asserts in questRules.e2e R6); no relay-quest bug found in Node (could be the lamps case only; owner re-test).
+- (b) Real cause besides lamps: book.accept kept earlier area/talk facts, so a visited zone / talked NPC made a SIDE quest ready at accept (9 quests: burl.stone/tower, rb.road, fc.ford/again, ow.ford/song...). Fix: accept clears the quest's area + talk.* facts (side quests only), questRelay.pollAreas now edge-triggered (re-entry feeds; onPoll still first visit only). Pack-item carry (deliver/collect) still counts by design. New R4 guard + ob220ZoneAccept.test.js (giver not inside its zone).
+- OB-142: nothing lived within 96 m of the ford (main.js skips ambient fauna on ?at/?pose dev links - by design). Added rule fordBoars (3 boars, rect 1000,1075..1060,1125, ~53 m) in regionalBeasts.js + ob142River.test.js (>=3 land beasts <=60 m of ford).
+- Tests: --filter quest,beast,spawn,fauna,region,relay,save green; validate-content OK. Not committed.

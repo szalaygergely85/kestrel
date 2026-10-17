@@ -63,6 +63,8 @@ export const REGION_RULES = Object.freeze([
   // OB-142: river-road groups (Bend -> Ford), 10-50 m south of the road, rects clear of Joss (1262,1030) + Bend Waystone; `gap` = own group gap (the 120 m default would reject two groups 80 m apart).
   { region: 'roadWest', key: 'riverRoadBoarsA', species: 'boar', groups: 1, size: 3, rect: [1155, 1076, 1215, 1126], gap: 40 },
   { region: 'roadWest', key: 'riverRoadBoarsB', species: 'boar', groups: 1, size: 2, rect: [1235, 1082, 1295, 1132], gap: 40 },
+  // OB-142 (2nd pass): nothing lived within 96 m of the ford itself - boar sounder on the south bank, rect clear of the ford crossing + waystone.
+  { region: 'ford', key: 'fordBoars', species: 'boar', groups: 1, size: 3, rect: [1000, 1075, 1060, 1125], gap: 40 },
   { region: 'ford', key: 'riverRoadDeer', species: 'deer', groups: 1, size: 2, rect: [1100, 1104, 1150, 1150], gap: 40 },
 ]);
 
