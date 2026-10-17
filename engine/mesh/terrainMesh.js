@@ -30,6 +30,8 @@ import { DRAW_TERRAIN } from './DrawList.js';
 export const FAR_TILE_QUADS = 32;
 /** LOD1 far tiles keep every 4th vertex column/row (32 m effective spacing). */
 export const FAR_LOD1_STEP = 4;
+/** COAST-LOD (TEASER-QA-06): LOD1 step (16 m) for far tiles near a feature, see `farLod1StepFor`. */
+export const FAR_LOD1_STEP_FINE = 2;
 /** Far tiles within this 2D distance of the eye draw at LOD0 (8 m); beyond it, LOD1. */
 export const RING0_M = 512;
 
@@ -219,11 +221,21 @@ function fillFarTile(terrain, lod0, lod1, pos, nrm, idx, bb) {
   bb[0] = x0; bb[1] = y0; bb[2] = z0; bb[3] = x1; bb[4] = y1; bb[5] = z1;
 }
 
+/** COAST-LOD (TEASER-QA-06): LOD1 step of a far tile, fixed at tile build (no runtime switching). Fine (`FAR_LOD1_STEP_FINE`, 16 m) when the recipe's generic `geo.farDetail = {distAt(x, y), radius}` puts the tile (4 corners + centre) within `radius` of a feature (|distAt| < radius, e.g. the coast); every other tile keeps `FAR_LOD1_STEP`. The field comes from the recipe: the engine stays game-agnostic. */
+function farLod1StepFor(terrain, desc) {
+  const fd = terrain.recipe && terrain.recipe.geo && terrain.recipe.geo.farDetail;
+  if (!fd || typeof fd.distAt !== 'function') return FAR_LOD1_STEP;
+  const r = desc.worldRect, cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
+  const pts = [r.x0, r.y0, r.x1, r.y0, r.x0, r.y1, r.x1, r.y1, cx, cy];
+  for (let k = 0; k < 10; k += 2) if (Math.abs(fd.distAt(pts[k], pts[k + 1])) < fd.radius) return FAR_LOD1_STEP_FINE;
+  return FAR_LOD1_STEP;
+}
+
 /** Builds one far tile's MeshData (LOD0 + LOD1, both with skirts) once. Index layout is FIXED forever (`ranges` never change size): band-under exclusion (`applyFarExclusion`) only ever rewrites LOD0 main-quad index VALUES in place (real quad <-> degenerate 0,0,0 triangle), never resizes anything.
  * @returns {FarTileMesh} */
 function buildFarTileMesh(terrain, desc) {
   const lod0 = buildFarLodLayout(desc, 1);
-  const lod1 = buildFarLodLayout(desc, FAR_LOD1_STEP);
+  const lod1 = buildFarLodLayout(desc, farLod1StepFor(terrain, desc));
   const nc0 = lod0.cols.length, nr0 = lod0.rows.length, perim0 = lod0.perim.length;
   const nc1 = lod1.cols.length, nr1 = lod1.rows.length, perim1 = lod1.perim.length;
   const vCount0 = nc0 * nr0 + perim0, vCount1 = nc1 * nr1 + perim1;

@@ -2073,3 +2073,8 @@ Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-
 ### 2026-10-17 FARFOREST-ON (slot kestrel-1, Node only)
 - game/js/main.js:221: missing `farforest` param = ON, `?farforest=0` = old look (tools/verify-far-silhouette.mjs AB=farforest already passes explicit 0/1). Engine module default untouched; farForestNoon.test.js already asserts `?farforest=0` byte-identical (comment updated). No cinematics/editor callers of setFarForest.
 - Tests: --filter farForest,api,shade green (4 suites); main.js --check ok. NOTE: gpucompare default-path rows change for far forest cells; main session reruns gpucompare and re-pins baseline. Not committed.
+
+### TEASER-QA-06 COAST-LOD (kestrel-1, coastlod) - arch-review
+- terrainMesh.js: `farLod1StepFor` (tile build, fixed): step 2 (`FAR_LOD1_STEP_FINE`) if min |recipe.geo.farDetail.distAt| over 4 corners+centre < radius, else 4. world_geo.js installGeo sets farDetail (coastSD.sd). New engine/mesh/coastLod.test.js.
+- Numbers: radius 150 -> 23/64 tiles, LOD1 verts x1.76 (busts 1.5x); radius 60 (shipped) -> 13 tiles, x1.43 (7232->10352), mean err 0.187 m, off-coast tiles hash-identical. Band max jump 55.43 m (>55 by 0.43, inherent 16 m step on cliffs; 8 m grid is 28.4): test allows 55.5. ASK ARCHITECT: accept radius 60 / 55.5, or other budget.
+- Still: `node tools/teaser-stills.mjs --port {port} --ids teaser-strand-dawn` (not run, Node only).
