@@ -218,7 +218,7 @@ setFoliageDice(new URLSearchParams(location.search).get('aafol') !== '0'); // AA
 setFoliageLight(new URLSearchParams(location.search).get('aafoll') !== '0'); // AA-16 (OB-208): leaf-card light smoothing, ?aafoll=0 = off
 setFoliageEdge(new URLSearchParams(location.search).get('aafoledge') !== '0'); // AA-17 (OB-208): resolve hysteresis keeps a leaf key across leaf cards, ?aafoledge=0 = off
 setEdgeHold(new URLSearchParams(location.search).get('aaedge') !== '0'); // AA-18 (OB-208): stable pass lets edge cells take history (glyph hold), ?aaedge=0 = off
-setFarForest(new URLSearchParams(location.search).get('farforest') === '1' ? 1 : 0); // OB-222 candidate: ?farforest=1 = green far forest faces + luma floor (default off until the owner A/B)
+setFarForest(new URLSearchParams(location.search).get('farforest') === '0' ? 0 : 1); // OB-222: far-forest green faces + luma floor default ON (architect 38.9x Q4); ?farforest=0 = old look
 setGrassShade(new URLSearchParams(location.search).get('grassshade') === '0' ? 0 : 1); // OB-217: ?grassshade=0 = old shaded grass (before/after)
 { const aw = new URLSearchParams(location.search).get('aawind'); setWindHold(aw === null ? 3 : +aw | 0); } // AA-22 (OB-208): wind hold, ?aawind=0 off (1 far grass, 2 lean, 3 both)
 setVoxelHold(new URLSearchParams(location.search).get('aavox') !== '0'); // AA-21 (OB-208): resolve hysteresis keeps a voxel prop's face key (kind 8), ?aavox=0 = off

@@ -2065,3 +2065,7 @@ Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-
 - (b) Real cause besides lamps: book.accept kept earlier area/talk facts, so a visited zone / talked NPC made a SIDE quest ready at accept (9 quests: burl.stone/tower, rb.road, fc.ford/again, ow.ford/song...). Fix: accept clears the quest's area + talk.* facts (side quests only), questRelay.pollAreas now edge-triggered (re-entry feeds; onPoll still first visit only). Pack-item carry (deliver/collect) still counts by design. New R4 guard + ob220ZoneAccept.test.js (giver not inside its zone).
 - OB-142: nothing lived within 96 m of the ford (main.js skips ambient fauna on ?at/?pose dev links - by design). Added rule fordBoars (3 boars, rect 1000,1075..1060,1125, ~53 m) in regionalBeasts.js + ob142River.test.js (>=3 land beasts <=60 m of ford).
 - Tests: --filter quest,beast,spawn,fauna,region,relay,save green; validate-content OK. Not committed.
+
+### 2026-10-17 FARFOREST-ON (slot kestrel-1, Node only)
+- game/js/main.js:221: missing `farforest` param = ON, `?farforest=0` = old look (tools/verify-far-silhouette.mjs AB=farforest already passes explicit 0/1). Engine module default untouched; farForestNoon.test.js already asserts `?farforest=0` byte-identical (comment updated). No cinematics/editor callers of setFarForest.
+- Tests: --filter farForest,api,shade green (4 suites); main.js --check ok. NOTE: gpucompare default-path rows change for far forest cells; main session reruns gpucompare and re-pins baseline. Not committed.

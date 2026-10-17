@@ -42,7 +42,7 @@ for (const t of [200, 400, 800]) for (const [fm, nz, nl] of [[0, 1, Math.sin(75 
   if (fm === 0) assert.ok(shade(t, nz, nl, fm, 0.85) >= 100, 'sunlit canopy top too dark at ' + t + ' m');
   else assert.ok(shade(t, nz, nl, fm, 0.85) >= 40, 'forest face luma floor (owner: near-black navy trees) at ' + t + ' m');
 }
-// 3) OB-222 candidate (?farforest=1): shaded face luma >= 65 at 200 m noon, green > blue; night + off byte-identical; fades out by 500 m
+// 3) OB-222 candidate (default ON in main.js, ?farforest=0 = old): shaded face luma >= 65 at 200 m noon, green > blue; night + off byte-identical; fades out by 500 m
 const rgb = (t, nl, K) => { const o = shadeTerrain(t, 1, 0.16 * K + 1.1 * nl, 100, 200, 0, ctx, { glyph: 0, level: 0, fg: [0, 0, 0], bg: [0, 0, 0] }, 1, 10, 0, 0, 0); return [...o.fg, ...o.bg, o.glyph]; };
 const day = farForestDayOf(0.9, Math.sin(75 * Math.PI / 180));
 assert.ok(day > 0.99 && farForestDayOf(0.02, -0.3) === 0, 'day weight: noon 1, night 0');
