@@ -47,3 +47,32 @@ export function createResnap(world) {
     get size() { return list.length; },
   };
 }
+
+/**
+ * OB-155 follow-up: NPC / giver seat. `add(id)` re-seats the entity's z against floorZ once (a stale saved z, or a spawn before
+ * terrain.near loaded; never x/y; offsets outside [-3, 3] m stay = deliberate heights) and tracks it so a late near-terrain
+ * arrival re-seats it again. `step()` every tick (cheap). The kinematic collider and the [E] Talk record follow the new z.
+ */
+export function createNpcSeat(world) {
+  const rs = createResnap(world), done = new Set();
+  const apply = (id, t, z) => {
+    t.z = z;
+    const h = world.get(id), c = h && h.data && h.data.components;
+    if (c && c.collider && c.collider.kinematic && !(c.voxel && c.voxel.hidden) && world.setEntityCollider) world.setEntityCollider(id, t.x, t.y, z);
+    const L = world.interactables; if (L) for (let i = 0; i < L.length; i++) if (L[i].key === 'npc.' + id) { L[i].z = z + 1; break; }
+  };
+  return {
+    add(id) {
+      const h = world.get(id), t = h && h.data && h.data.transform;
+      if (!t || done.has(id)) return false;
+      done.add(id);
+      const f = floorZ(world, t.x, t.y, t.z), off = f == null ? null : t.z - f;
+      if (off !== null && off >= -3 && off <= 3 && Math.abs(off) > 0.02) apply(id, t, f);
+      rs.track(() => t, (z) => apply(id, t, z));
+      return true;
+    },
+    step: () => rs.step(),
+    reset() { done.clear(); },
+    get size() { return rs.size; },
+  };
+}

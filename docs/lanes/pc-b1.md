@@ -2076,3 +2076,8 @@ Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-
 - Still: `node tools/teaser-stills.mjs --port {port} --ids teaser-strand-dawn` (not run, Node only).
 
 - OB-155 runtime (k1, dropsnap): new game/js/quest/groundSnap.js (floorZ = supportAt mesh/structure floor else floorAt/groundAt; createResnap re-seats tracked entities when terrain.near arrives, keeps fixed offset). Wired: leftover/reward drops (questPickups groundFn was terrain-only), quest pickup props re-snap, area-mark z (main.js markResolve used terrain heightAt). Entity marks already follow giver z (markZ). Beast corpse loot interactable uses the beast's own z (ok). Unused spawnDrop/spawnItemDrop have no runtime callers. Test: groundSnap.test.js; filter suites green. Not done: giver NPC/beast re-snap on late near (owned by sim, not touched); no browser check.
+
+## OB-155 follow-up (NPC/giver seat) - kestrel-1 npcsnap
+- groundSnap.js: new createNpcSeat(world) (add(id) one-shot reseat via floorZ, window [-3,3] m, never x/y; tracks via createResnap for late near; collider + [E] Talk z follow). main.js: seat all bear/rook/hesk/dorrin/giver/life NPC ids on world:loaded (covers saves), step in the fixed loop.
+- npcWalk.snap uses floorZ (tower/bridge floors) + own resnap step; lifeWire villager groundAt uses floorZ. Beasts untouched (their sim does not sample terrain-only at spawn that I found; not audited further).
+- Tests: groundSnap.test.js (late near, tower floor stays, stale save z, tree height kept). filter suites 28 green, quest-sim 89/89. Not browser-checked.
