@@ -228,7 +228,9 @@ setVoxelHold(new URLSearchParams(location.search).get('aavox') !== '0'); // AA-2
 setLeafUvHold(new URLSearchParams(location.search).get('aaleafuv') !== '0'); // AA-26 (OB-208): stable pass holds soft-edge leaf cells without the UV drift test, ?aaleafuv=0 = off
 setLeafLevelHold(new URLSearchParams(location.search).get('aaleaflv') !== '0'); // AA-29 (OB-208): held leaf glyph survives a +-2 level step, ?aaleaflv=0 = +-1
 setMoonRimEnabled(new URLSearchParams(location.search).get('moonrim') !== '0'); // RND-NIGHT-RIM-03: ?moonrim=0 = no moon rim
-import { setAltDice, setTorchFlicker } from '../../engine/index.js';
+import { setAltDice, setTorchFlicker, setLeafQuant, setFoliageDice2 } from '../../engine/index.js';
+setLeafQuant(new URLSearchParams(location.search).get('leafq') !== '0'); // FD-09a: leaf ramp pairs at distance; ?leafq=0 old
+setFoliageDice2(new URLSearchParams(location.search).get('foldice2') !== '0'); // FD-09b: leaf dice switch spread; ?foldice2=0 old
 setAltDice(new URLSearchParams(location.search).get('aaalt') !== '0'); // FD-05/FD-06 (OB-198/208): world-anchored coarser alt-glyph + ground dice; ?aaalt=0 = old
 setTorchFlicker(({ '0': 'off', old: 'old' })[new URLSearchParams(location.search).get('torchflick')] || 'gentle'); // FD-07: gentle torch flicker; ?torchflick=0 off, =old pre-change
 setSeamHold(new URLSearchParams(location.search).get('aaseam') !== '0'); // AA-31 (OB-208): mesh/prop facet-seam cells keep history without the UV check, ?aaseam=0 = off
