@@ -1361,3 +1361,7 @@ Verify (main session): `node tools/verify-editor-water.mjs {port} [backend]` (po
 ### ED-WATER-02 (kestrel-4, waternew) - po-review
 Water tool: New pool (rect 6x6 / circle r3, at viewport-centre pick, z=floor+0.4, look pond, id pond_<n>, selected, 1 undo), Delete (2-click confirm, editable only, 1 undo), Look dropdown (looks in world water list), max-depth hint (red "water sits above the ground" at <=0). Files: tools/editor/waterTool.js (+createPool/deleteSelected/setLook/depth/maxDepth, floorAt dep), waterPanel.js, main.js (floorAt + onNewPool), waterTool.test.mjs, verify-editor-water.mjs (create/resize/delete/undo).
 Gate: waterTool.test.mjs PASS, run-tests --filter editor, node --check ok. Browser: node tools/verify-editor-water.mjs {port} (not run). Note: the Look dropdown lists only existing looks; a pool of an unknown look adds it to the list.
+
+### R9-BAND (kestrel-4, branch r9band) - ready for review
+R9 re-scoped (arch 38.9x Q2): river test dropped; warns when early quest (band<=5) target sits where `bandMinAt` > 5. bandMinAt = createBand(world_geo.regions).bandAt (game/js/quest/sim/band.js, same grid as main.js). `R9_OK` set added; quest-zone-lint (OB-136) switched to the same bandAt (opt `bandMinAt`), fixtures updated.
+Remaining R9 count: 3 (sq.reg.highPastures b8, sq.reg.signalHill b7, sq.reg.heath b8 - wardens). The ow chain (mq.ow.fence, sq.ow.wolves, sq.ow.night: wolf1/wolf2 at ~848,990 = band 6) hit too; put in R9_OK per AC, PO should confirm or move the pack. quest-zone-lint real: 0 hits. Tests green.
