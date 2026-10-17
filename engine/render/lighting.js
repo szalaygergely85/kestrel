@@ -28,6 +28,7 @@
 // and documents its own version of this deviation.
 
 import { PROJ_HFOV_DEG as HFOV_DEG } from './projection.js';
+import { moonRimK, moonRimAmount, MOON_RIM_COL, MOON_RIM_FAR_M } from './moonRim.js'; // RND-NIGHT-RIM-03
 import { dirFromAzEl, localToWorld } from '../core/transform.js';
 import { sunFromHours } from '../core/sunPath.js';
 import { gridLocal } from '../world/gridLocal.js';
@@ -82,7 +83,9 @@ export const MOON_SWITCH_DEG = -6; // DN-01: below this sun elevation the light 
 /** `moon` (DN-01, default false = unchanged): below MOON_SWITCH_DEG light from the moon, i.e. the sun path at h + 12. */
 export function applySunHours(world, lights, h, path, on, moon = false) {
   sunFromHours(h, path, hourSunScratch);
-  if (moon && hourSunScratch.elevationDeg < MOON_SWITCH_DEG) sunFromHours(h + 12, path, hourSunScratch);
+  const isMoon = moon && hourSunScratch.elevationDeg < MOON_SWITCH_DEG;
+  if (isMoon) sunFromHours(h + 12, path, hourSunScratch);
+  if (lights) lights.moonActive = isMoon; // RND-NIGHT-RIM-03: the light slot carries the moon (rim gate)
   setWorldSun(world, lights, hourSunScratch.elevationDeg, hourSunScratch.azimuthDeg, on);
 }
 /** AUD2-02: dark gap (deg below MOON_SWITCH_DEG) in which the moon-lit light stays off, so the sun<->moon direction flip is never visible. */
@@ -97,6 +100,7 @@ export function applySunPair(world, lights, shadowH, h, path, on) {
   const moon = hourSunScratch.elevationDeg < MOON_SWITCH_DEG;
   const gap = moon && hourSunScratch.elevationDeg > MOON_SWITCH_DEG - MOON_GAP_DEG;
   if (lights) {
+    lights.moonActive = moon; // RND-NIGHT-RIM-03: slot carries the moon only when the pair decided moon (the rim must not use a low dusk sun)
     sunFromHours(shadowH + (moon ? 12 : 0), path, hourSunScratch);
     worldSunScratch.elevation = hourSunScratch.elevationDeg; worldSunScratch.azimuth = hourSunScratch.azimuthDeg; worldSunScratch.on = on && !gap;
     lights.setSun(worldSunScratch);
@@ -746,6 +750,13 @@ export function liveSunScale(P) {
   return k < 0 ? 0 : k > 1 ? 1 : k;
 }
 
+/** RND-NIGHT-RIM-03: per-frame moon-rim strength (lights.moonRim = {k, farM}); 0 = off. The sun slot carries the moon at night (applySunPair). */
+function syncMoonRim(lights, P) {
+  const m = lights.moonRim || (lights.moonRim = { k: 0, farM: MOON_RIM_FAR_M });
+  const live = P && P.liveLook, s = lights.sun;
+  m.k = live && s && lights.moonActive === true && Number.isFinite(live.sunI) ? moonRimK(live.sunI, !!s.on, s.dir[2]) : 0;
+}
+
 /**
  * SUN-COL-LIVE: makes `lights.sun.col` follow the day/night look (`P.liveLook`, blendLook) so every sun consumer
  * (light pass JS + WGSL via passLight's sunCol uniform, sprites, particles, GI mix) agrees with the terrain's live
@@ -757,6 +768,7 @@ export function liveSunScale(P) {
 export function syncLiveSun(lights, P) {
   if (!lights) return;
   const s = lights.sun;
+  syncMoonRim(lights, P);
   if (!s.baseCol) s.baseCol = Float32Array.from(s.col);
   const b = s.baseCol, k = liveSunScale(P);
   if (k >= 1) { s.col[0] = b[0]; s.col[1] = b[1]; s.col[2] = b[2]; return; }
@@ -1366,6 +1378,7 @@ function aoTapInto(tx, ty, kind, depth, cols, rows, pitched, terms, P) {
   aoAcc[0] += aoTapOcc(aoPar[9], aoPar[10], aoPar[11], aoTapP[0] - P[0], aoTapP[1] - P[1], aoTapP[2] - P[2], aoPar[12], aoPar[13]);
 }
 
+const rimD = new Float64Array(3);
 export function lightSurfaces(fb, lights, cam, world) {
   const lb = fb.light;
   // Architect review 1 item 3: `lightSurfaces` sets `uniform = false` ITSELF
@@ -1407,6 +1420,8 @@ export function lightSurfaces(fb, lights, cam, world) {
   const kind = gbuf.kind, face = gbuf.face, rgb = lb.rgb;
   // CONTACT-AO-01a: per-cell occlusion byte (LIGHT.w bits 1..7 twin); stale bytes cleared once when the feature turns off.
   const caoOn = lights.cao != null && lights.cao.n > 0 && !!lb.caoQ;
+  const rimK = lights.moonRim && lights.sun && lights.sun.on ? lights.moonRim.k : 0, rimFar = lights.moonRim ? lights.moonRim.farM : MOON_RIM_FAR_M; // RND-NIGHT-RIM-03
+  if (rimK > 0) { rimD[0] = lights.sun.dir[0]; rimD[1] = lights.sun.dir[1]; rimD[2] = lights.sun.dir[2]; }
   if (!caoOn && lb.caoQ && lb.caoDirty) { lb.caoQ.fill(0); lb.caoDirty = false; }
   if (caoOn) lb.caoDirty = true;
   // ME-15c: the JS sun shadow map (compositor.js, mesh renderer + shadows.sun 'map') replaces the sun DDA; shade reads `lb.sunMapOn`.
@@ -1485,6 +1500,12 @@ export function lightSurfaces(fb, lights, cam, world) {
           giIo[0] = px; giIo[1] = pz; giIo[2] = py; giIo[3] = nx; giIo[4] = nz; giIo[5] = ny; sampleGIBuf(lights.gi, giIo, giAmb);
           rgb[o] -= giAmb[0] * k; rgb[o + 1] -= giAmb[1] * k; rgb[o + 2] -= giAmb[2] * k;
         } else { rgb[o] -= lights.ambient[0] * k; rgb[o + 1] -= lights.ambient[1] * k; rgb[o + 2] -= lights.ambient[2] * k; }
+      }
+      // RND-NIGHT-RIM-03: moon rim (additive, order-independent of the CAO subtract), every kind incl. terrain/grass (WGSL twin: light.wgsl.js fs_main; rule: moonRim.js).
+      if (rimK > 0) {
+        const ex = cam.x - px, ey = cam.y - py, ez = cam.z - pz, il = 1 / (Math.sqrt(ex * ex + ey * ey + ez * ez) || 1);
+        const ra = moonRimAmount(nx, ny, nz, ex * il, ey * il, ez * il, rimD[0], rimD[1], rimD[2], depth[i], rimK, rimFar);
+        rgb[o] += MOON_RIM_COL[0] * ra; rgb[o + 1] += MOON_RIM_COL[1] * ra; rgb[o + 2] += MOON_RIM_COL[2] * ra;
       }
       // CONTACT-AO-01a (38.78): blob contact AO, ambient only. Terrain/grass cells only record the byte (shade applies it to b).
       if (caoOn) {

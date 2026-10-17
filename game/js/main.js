@@ -215,6 +215,7 @@ import { wireHitSparks, hitSparksEnabled } from './fx/hitSparkWire.js'; // HIT-S
 import { parsePointShadows, presetPointShadowsOn } from './pointShadowOpt.js'; // ME-16e: ?pointshadows=0|N
 import { parseGlow } from './glowOpt.js'; // EMIS-03/04: bleed + halo knob
 import { setReduceMotion, isReduceMotion, eyeZ, gateKick, textSizeCols } from './ui/comfort.js'; // SETTINGS-APPLY-01
+import { setMoonRimEnabled } from '../../engine/index.js';
 import { PHYSICS, createUnderState, setApiWarnings, setFoliageDice, setFoliageLight, setFoliageEdge, setEdgeHold, setVoxelHold, setWindHold, setGrassShade, setFarForest, setLeafUvHold, setTerrainSnapHold, setLeafLevelHold, setSeamHold } from '../../engine/index.js';
 setFoliageDice(new URLSearchParams(location.search).get('aafol') !== '0'); // AA-15 (OB-208): leaf-card world glyph dice, ?aafol=0 = old per-card u/v dice
 setFoliageLight(new URLSearchParams(location.search).get('aafoll') !== '0'); // AA-16 (OB-208): leaf-card light smoothing, ?aafoll=0 = off
@@ -226,6 +227,7 @@ setGrassShade(new URLSearchParams(location.search).get('grassshade') === '0' ? 0
 setVoxelHold(new URLSearchParams(location.search).get('aavox') !== '0'); // AA-21 (OB-208): resolve hysteresis keeps a voxel prop's face key (kind 8), ?aavox=0 = off
 setLeafUvHold(new URLSearchParams(location.search).get('aaleafuv') !== '0'); // AA-26 (OB-208): stable pass holds soft-edge leaf cells without the UV drift test, ?aaleafuv=0 = off
 setLeafLevelHold(new URLSearchParams(location.search).get('aaleaflv') !== '0'); // AA-29 (OB-208): held leaf glyph survives a +-2 level step, ?aaleaflv=0 = +-1
+setMoonRimEnabled(new URLSearchParams(location.search).get('moonrim') !== '0'); // RND-NIGHT-RIM-03: ?moonrim=0 = no moon rim
 setSeamHold(new URLSearchParams(location.search).get('aaseam') !== '0'); // AA-31 (OB-208): mesh/prop facet-seam cells keep history without the UV check, ?aaseam=0 = off
 setTerrainSnapHold(new URLSearchParams(location.search).get('aaterrsnap') !== '0'); // AA-28 (OB-208): terrain glyph survives a brightness-only stable snap, ?aaterrsnap=0 = off
 if (new URLSearchParams(window.location.search).get('debug') === '1') setApiWarnings(true); // ENG-API-01h: dev flag only - deprecated engine names warn once
