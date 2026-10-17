@@ -6,7 +6,7 @@ import { createCompassHud, FALLBACK_COMPASS_STYLE } from './ui/compassHud.js';
 import { createQuestLogScreen } from './ui/questLog.js';
 import { nextLine, EXPLORE_TEXT } from './questNext.js';
 const rd = (f) => JSON.parse(readFileSync(new URL('../../content/quests/' + f, import.meta.url)));
-const m1 = rd('m1.quest.json'), defs = ['tower.blade', 'burl.boars', 'burl.follow', 'burl.stone', 'burl.road', 'mq.bend.call', 'mq.ford.stones', 'mq.ford.mirror', 'mq.river.road', 'mq.smoke', 'sq.burl.blue'].map((n) => rd(n + '.quest.json'));
+const m1 = { ...rd('m1.quest.json'), internal: false }, /* M1-RETIRE: legacy-mechanism test on a VISIBLE copy of m1 (the real m1 is internal; m1Retire.test.js covers the player view) */ defs = ['tower.blade', 'burl.boars', 'burl.follow', 'burl.stone', 'burl.road', 'mq.bend.call', 'mq.ford.stones', 'mq.ford.mirror', 'mq.river.road', 'mq.smoke', 'sq.burl.blue'].map((n) => rd(n + '.quest.json'));
 const pos = { rook: [982, 1060], bear: [100, 100], hesk: [500, 500] };
 const world = { resolve(kind, id, out) { const p = kind === 'giver' && pos[id]; if (!p) return false; out.x = p[0]; out.y = p[1]; return true; } };
 const ctx = { resolve: world.resolve, x: 0, y: 0 };

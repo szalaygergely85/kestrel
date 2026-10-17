@@ -108,6 +108,7 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
     showSilent = false; let silentOpen = false;
     for (let i = 0; i < n; i++) {
       const s = book.status(i);
+      if (i === 0 && book.def(0).internal) continue; // M1-RETIRE (OB-224): the internal chapter tracker is never listed
       const gated = i === 0 && s !== DONE && typeof book.mainStepGated === 'function' && book.mainStepGated();
       if (i === 0 && s !== DONE && !gated && !mainSection(book.def(0), book.objectives(0, mainRows))) { silentOpen = s === 2; continue; } // OB-099: covered by a giver quest
       if (gated) continue; // OB-201 (rule OB-156/D-082): m1 step owned by a giver quest not accepted yet -> no active entry / objective until accepted
@@ -117,7 +118,7 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
     mainAct.sort((a, b) => (a === 0 ? -1 : b === 0 ? 1 : b - a)); act.sort((a, b) => b - a);
     // OB-100 (owner): a quest shows only once it is picked up (accepted) - offered / unlocked quests are not listed
     for (let i = 1; i < n; i++) if (book.status(i) === DONE && book.def(i).format) done.push(i); // QUEST-FORMAT: finished format quests stay listed below the active ones
-    if (book.status(0) === DONE) done.push(0); // OB-099: handed-in giver quests disappear; only the finished chapter row (CH1-09 re-read) stays
+    if (book.status(0) === DONE && !book.def(0).internal) done.push(0); // OB-099: handed-in giver quests disappear; only the finished chapter row (CH1-09 re-read) stays
     // OB-221: MAIN group first (active, then the finished chapter row), then SIDE (active, then finished); an empty group has no heading
     const doneMain = done.filter(isMain), doneSide = done.filter(i => !isMain(i)); dones = []; view = [];
     const addGroup = (head, list, finished) => {

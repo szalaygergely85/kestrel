@@ -105,7 +105,7 @@ console.log('content-lint.test: ok (' + Object.keys(cases).length + ' rules + cl
   for (const [bad, re] of [[{ begin: undefined }, /no begin/], [{ end: undefined }, /no end/], [{ rewards: {} }, /empty rewards/], [{ objectives: [{}, {}, {}, {}] }, /4 objectives/], [{ next: 'q.nope' }, /next "q.nope"/], [{ requires: { quests: ['q.nope'] } }, /requires unknown/], [{ xp: 10 }, /xp/]]) {
     const f = run17({ ...ok, id: 'q.bad', ...bad }, two); assert.ok(f.some((x) => re.test(x.msg) && x.id === 'q.bad' && x.level === 'error'), 'R17 ' + JSON.stringify(bad) + ': ' + f.map((x) => x.msg));
   }
-  const legacyId = [...R17_LEGACY][0], f = run17({ ...ok, id: legacyId, rewards: {} }, two).filter((x) => x.id === legacyId); assert.ok(f.length === 1 && f[0].level === 'warn', 'legacy allow-list warns'); assert.ok(R17_LEGACY.has('m1'));
+  const legacyId = [...R17_LEGACY][0], f = run17({ ...ok, id: legacyId, rewards: {} }, two).filter((x) => x.id === legacyId); assert.ok(f.length === 1 && f[0].level === 'warn', 'legacy allow-list warns'); assert.ok(!R17_LEGACY.has('m1'), 'M1-RETIRE: m1 is internal, not a legacy quest');
   assert.equal(LEVELS.R17, 'error');
 }
 console.log('content-lint.test R17: ok');

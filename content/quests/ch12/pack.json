@@ -844,8 +844,8 @@
       ],
       "requires": [
         {
-          "quest": "m1",
-          "step": "relay1"
+          "quest": "burl.road",
+          "step": "wake"
         }
       ],
       "reward": {
@@ -907,8 +907,8 @@
       ],
       "requires": [
         {
-          "quest": "m1",
-          "step": "relay1"
+          "quest": "burl.road",
+          "step": "wake"
         },
         {
           "quest": "sq.rb.shield",
@@ -976,8 +976,8 @@
       ],
       "requires": [
         {
-          "quest": "m1",
-          "step": "relay1"
+          "quest": "burl.road",
+          "step": "wake"
         },
         {
           "quest": "sq.rb.shield",
@@ -1414,8 +1414,8 @@
       ],
       "requires": [
         {
-          "quest": "m1",
-          "step": "relay1"
+          "quest": "burl.road",
+          "step": "wake"
         }
       ],
       "reward": {
@@ -1469,8 +1469,8 @@
       ],
       "requires": [
         {
-          "quest": "m1",
-          "step": "relay1"
+          "quest": "burl.road",
+          "step": "wake"
         },
         {
           "quest": "sq.rb.lamps",
@@ -1528,8 +1528,8 @@
       ],
       "requires": [
         {
-          "quest": "m1",
-          "step": "relay1"
+          "quest": "burl.road",
+          "step": "wake"
         },
         {
           "quest": "sq.rb.rocks",

@@ -23,9 +23,10 @@ function bladeFromMain(def, main, boars) {
 /** OB-210: a MAIN giver quest that owns m1 steps (same `when`) but is missing from a save made before it existed: facts copied from m1;
  *  accepted once m1 completed an owned step or that step's mark.taken flag is set (the player was sent off); handed in once m1 completed the last owned step. */
 function fromMainSteps(def, mainDef, main) {
-  if (!isMainDef(def) || !def.giver || !Array.isArray(main.completed) || !main.flags) return undefined;
-  const whens = new Set(def.objectives.map(o => JSON.stringify(o.when)));
-  const owned = mainDef.objectives.filter(o => whens.has(JSON.stringify(o.when)));
+  if (!def.giver || !Array.isArray(main.completed) || !main.flags) return undefined;
+  const whens = new Set(def.objectives.map(o => JSON.stringify(o.when))), doneFlag = 'quest.' + def.id + '.done';
+  const byFlag = o => o.when && o.when.type === 'flag' && o.when.id === doneFlag; // M1-RETIRE: the m1 step that waits on this quest's done flag is owned by it
+  const owned = mainDef.objectives.filter(o => (isMainDef(def) && whens.has(JSON.stringify(o.when))) || byFlag(o));
   if (!owned.length) return undefined;
   const accepted = owned.some(o => main.completed.includes(o.id) || (o.mark && o.mark.taken && main.flags[o.mark.taken]));
   if (!accepted) return undefined; // not reached yet: the quest is simply offered (fresh state)
@@ -388,6 +389,7 @@ export function createQuestBook(mainDef, giverDefs = [], saved = null) {
   /** OB-124b / OB-155i: main-chain step marks (data: objective.mark = {start?, taken?}). The CURRENT m1 step shows a gold '!' at `start`
    *  until the giver handed it over (flag `mark.taken`). No '?' here: a waypoint is not a hand-in (rule OB-156); waypoints go on the compass/HUD. */
   book.chainMarks = function chainMarks(outAvail) {
+    if (entries[0].def.internal) return; // M1-RETIRE (OB-224): an internal chapter tracker never marks; the small quests own every '!'/'?'
     const st = entries[0].state, o = entries[0].def.objectives[st.completed.length];
     const m = o && o.mark; if (!m || !m.start) return;
     if (m.taken && entries[0].state.flags[m.taken]) return;

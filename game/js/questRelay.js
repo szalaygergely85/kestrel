@@ -1,7 +1,7 @@
 // US-096w: bridges game events/facts into the lane-C quest sim (quest/sim/quest.js) and exposes the current
 // objective text for the HUD. Pure data + a small UI-layer draw; no world/engine imports, so it runs in Node.
 import { questObjectives, whenCounted } from './quest/sim/quest.js';
-import { nextLine } from './questNext.js'; // OB-183
+import { nextLine, EXPLORE_TEXT } from './questNext.js'; // OB-183
 import { createQuestBook, READY } from './quest/sim/questBook.js'; // QG-03: the relay's m1 state IS book.main
 
 const BREACH_R2 = 3 * 3, BREACH_DZ = 2.5; // "reached the breach": within 3 m (xy) of the marker and 2.5 m in z
@@ -45,6 +45,7 @@ export function createQuestRelay(def, saved = null, giverDefs = [], savedQuests 
   let seen = state.completed.length; // steps already accounted for (restore sets it, so a restore never toasts)
   function sectionToasts(from, to) {
     const objs = def.objectives, titles = new Map((def.sections || []).filter(x => x.silent !== true).map(x => [x.id, x.title])); // PO-CH1-04: silent sections (owned by a giver quest's own toast) never toast
+    if (def.internal) { if (to >= objs.length && from < to) relay.onSection(''); return; } // M1-RETIRE: no section toasts; one silent call when the chain ends (chapter card)
     for (let i = from; i < to; i++) {
       const sec = objs[i].section;
       if (sec && (i + 1 >= objs.length || objs[i + 1].section !== sec) && titles.has(sec)) relay.onSection(titles.get(sec));
@@ -92,6 +93,7 @@ export function createQuestRelay(def, saved = null, giverDefs = [], savedQuests 
         const k = Math.min(book.questState(t).completed.length, d.objectives.length - 1), o = d.objectives[k];
         return whenCounted(o.when) ? o.text + ' ' + book.objectives(t, scratch)[k].progress + '/' + (o.when.count ?? 1) : o.text;
       }
+      if (def.internal) { const h = nextLine(book, relay.nextCtx); return state.completed.length >= def.objectives.length ? h || def.doneText || DONE_TEXT : h && h !== EXPLORE_TEXT ? h : ''; } // M1-RETIRE (OB-224): never an m1 step; the next giver or nothing
       if (state.completed.length >= def.objectives.length) return nextLine(book, relay.nextCtx) || def.doneText || DONE_TEXT; // OB-183: never stuck - name the next giver
       if (book.mainStepGated && book.mainStepGated()) return ''; // OB-199: step not accepted yet -> no HUD line (only the giver's '!')
       const o = def.objectives[state.completed.length];

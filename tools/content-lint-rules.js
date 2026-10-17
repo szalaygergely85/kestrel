@@ -17,7 +17,6 @@ export const TITLES = {
 };
 /** Legacy quests that do not follow the D-106 format yet: WARN instead of ERROR "until the D-106 chain rewrite". Every other id is an ERROR. */
 export const R17_LEGACY = new Set([ // each id: until the D-106 chain rewrite
-  'm1',
   'tower.blade',
   'burl.boars',
   'burl.follow',
@@ -236,7 +235,7 @@ export const RULES = {
   R19: (c) => r19(c),
   R17: (c) => {
     const defs = c.formatQuests || [], ids = new Set(defs.map((q) => q.id));
-    return defs.flatMap((q) => formatProblems(q, ids).map((p) => ({ ...F('R17', q.id, '-', '-', p), level: R17_LEGACY.has(q.id) ? 'warn' : 'error' })));
+    return defs.filter((q) => !q.internal).flatMap((q) => formatProblems(q, ids).map((p) => ({ ...F('R17', q.id, '-', '-', p), level: R17_LEGACY.has(q.id) ? 'warn' : 'error' })));
   },
   R14: (c) => {
     const out = [];

@@ -7,7 +7,7 @@ import { createQuestBook } from '../quest/sim/questBook.js';
 import { createQuestLogScreen } from './questLog.js';
 
 const rd = n => JSON.parse(readFileSync(new URL('../../../content/quests/' + n, import.meta.url)));
-const main = rd('m1.quest.json'), blade = rd('tower.blade.quest.json');
+const main = { ...rd('m1.quest.json'), internal: false }, /* M1-RETIRE: legacy-mechanism test on a VISIBLE copy of m1 (the real m1 is internal; m1Retire.test.js covers the player view) */ blade = rd('tower.blade.quest.json');
 const side = (id, title) => ({ version: 1, id, title, giver: { npc: 'g' + id }, objectives: [{ id: 'o', text: 'Do ' + title, journal: 'j', when: { type: 'area', id: 'a' + id } }] });
 const sA = side('sq.a', 'Side Alpha'), sB = side('sq.b', 'Side Beta');
 const ui = createUiLayer({ cols: 160 });
