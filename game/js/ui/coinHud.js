@@ -17,7 +17,7 @@ export function coinAlpha(age, holdSec = COIN_HUD_SEC, fadeSec = COIN_FADE_SEC) 
 
 /** HUD view. `value` is read via get(); `touch()` (call on wallet:changed) restarts the timer. Draw is a no-op when hidden. */
 export function createCoinHud({ get, holdSec = COIN_HUD_SEC, fadeSec = COIN_FADE_SEC } = {}) {
-  let age = -1;
+  let age = -1, value = -1, label = '';
   return {
     touch() { age = 0; },
     step(dt) { if (age >= 0) age += dt; },
@@ -26,11 +26,14 @@ export function createCoinHud({ get, holdSec = COIN_HUD_SEC, fadeSec = COIN_FADE
     draw(ui, x, y, bg, visible) {
       const a = visible ? this.alpha() : 0;
       if (a <= 0) return;
-      const s = coinLabel(get());
-      const f = (c, i) => (bg[i] + (c - bg[i]) * a) | 0;
-      for (let i = 0; i < s.length + 1; i++) {
-        const code = i < s.length ? s.charCodeAt(i) - 32 : 0;
-        ui.setCellRGB(x + i, y, code, f(COIN_FG[0], 0), f(COIN_FG[1], 1), f(COIN_FG[2], 2), bg[0] | 0, bg[1] | 0, bg[2] | 0);
+      const raw = get(), next = Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0;
+      if (next !== value) { value = next; label = coinLabel(next); }
+      const r = (bg[0] + (COIN_FG[0] - bg[0]) * a) | 0;
+      const g = (bg[1] + (COIN_FG[1] - bg[1]) * a) | 0;
+      const b = (bg[2] + (COIN_FG[2] - bg[2]) * a) | 0;
+      for (let i = 0; i < label.length + 1; i++) {
+        const code = i < label.length ? label.charCodeAt(i) - 32 : 0;
+        ui.setCellRGB(x + i, y, code, r, g, b, bg[0] | 0, bg[1] | 0, bg[2] | 0);
       }
     },
   };
