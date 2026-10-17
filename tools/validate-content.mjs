@@ -69,6 +69,7 @@ import { validateVoxelModel, loadContentPack, PROP_SCALE_MIN, PROP_SCALE_MAX, me
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { normalizeQuestDef } from '../game/js/quest/sim/questFormat.js'; // UNDER-07: D-106 new-format quest files read as the legacy shape
 import { readFile } from 'node:fs/promises';
+import { lintDialogueDir } from './dialogue-lint.mjs'; // EV17-16: dialogue graph lint (report only)
 import { validateQuestDefinition } from '../game/js/quest/sim/quest.js';
 import { createCrafting } from '../game/js/quest/sim/crafting.js';
 import { lintSpellPlacements } from '../game/js/quest/sim/spellBooks.js'; // SPELL-09
@@ -1331,6 +1332,7 @@ async function main() {
     infos.push(`R19 quest/dialogue text: ${hits.length} hit(s) ${JSON.stringify(by)}; allow-list ${JSON.stringify(R19_ALLOW)}`);
     allErrors.push(...applyR19Allow(hits));
   }
+  { const dh = lintDialogueDir(dialogueFilesDir); infos.push(`dialogue graph lint: ${dh.length} hit(s)`); for (const h of dh) warnings.push(`dialogue-lint ${h.rule} ${h.where}: ${h.msg}`); }
   for (const w of warnings) console.warn(`WARN ${w}`);
   // CONTENT-LINT-01: `--lint` also runs tools/content-lint.mjs; its findings are printed as INFO/WARN and never fail validate-content
   if (process.argv.includes('--lint')) {
