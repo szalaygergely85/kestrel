@@ -113,6 +113,7 @@ import { createSaveRelay } from './saveRelay.js'; // US-089w/US-096w: save + aut
 import { parseOccl, createHzbInvalidator } from './occlGate.js'; // OCCL-MAIN-01
 import { watchDeviceLost } from './deviceLost.js'; // S8-B1-10 (38.10c): device-lost card
 import { createQuestPickups, itemLabel } from './questPickups.js'; // QUESTS-01
+import { coinText } from './quest/sim/wallet.js'; // CUR-01
 import { setInspectSink, wrapText } from './quest/questInspect.js'; // QL-04
 import { createErrands, labelOf, gateOnMeet, isWorn, bannerLines } from './quest/errands.js'; // QL-WIRE: Ch1-2 errands
 import { generateAll, generateForNpc } from './quest/questSnippets.js'; // QL-T4: generated q.<id>.* dialogue routes
@@ -642,6 +643,9 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
     } });
   window.__charKit = charKit;
   saveRelay.bindEvents(engine.events);
+  // CUR-01 (D-121): coin hooks. 'coin:got' {n} = already paid (quest hand-in) -> toast; 'coin:drop' {n} = chest / beast drop (CUR-06 emits it) -> wallet + toast. 'wallet:changed' {value,delta} is emitted by the wallet (HUD, CUR-02).
+  engine.events.on('coin:got', (p) => { if (p && lootToast) lootToast.say(coinText(p.n), [226, 214, 176]); });
+  engine.events.on('coin:drop', (p) => { const n = p && p.n; if (Number.isInteger(n) && n > 0 && saveRelay.wallet.add(n) > 0 && lootToast) lootToast.say(coinText(n), [226, 214, 176]); });
   gameHooks.register(saveRelay.handlers());
   saveRelay.quest.onPoll = (name, a, b) => gameHooks.emitSimple(name, a, b);
   gameHooks.onSaveRequest(() => { if (saveRelay && gameHooks.ctx.world) { if (dirWire) dirWire.save(gameHooks.ctx.world.state); } if (saveRelay && gameHooks.ctx.world) saveRelay.save(gameHooks.ctx.world, { ending: gameHooks.ctx.state.ending }); });
@@ -752,7 +756,7 @@ gameHooks.register(createSpellBookHook({ getBook: () => spellBookHolder, getDefs
 // QUESTS-01: generic world pickup prop + pack counts for collect/deliver objectives + hand-in reward grant (game/js/questPickups.js)
 let questBeastSim = null; // SOFTLOCK-01: the live beast sim for the kill-quest accept rule (set where the sim is built)
 if (saveRelay) saveRelay.quest.setLivingOfKind((kind) => { const s = questBeastSim; if (!s || !s.ids) return 99; let n = 0; for (let i = 0; i < s.ids.length; i++) if (kindOf(s.ids[i]) === kind && !s.down[i] && !isBeastDeadState(s.state[i])) n++; return n; }); // SOFTLOCK-01 + R6-FIX C: installed on every book the relay creates/loads (not lazily in questPickups.sync)
-const questPickups = (itemDefs && saveRelay) ? createQuestPickups({ getBook: () => saveRelay.quest.book, feed: (e) => saveRelay.quest.feed(e), defs: itemDefs, isWorn }) : null; // QL-WIRE: requireEquipped hand-ins
+const questPickups = (itemDefs && saveRelay) ? createQuestPickups({ getBook: () => saveRelay.quest.book, feed: (e) => saveRelay.quest.feed(e), defs: itemDefs, isWorn, wallet: saveRelay.wallet }) : null; // QL-WIRE: requireEquipped hand-ins
 if (questPickups) gameHooks.register(questPickups);
 // US-090w: title menu before play. Off for `?title=0`, capture/bench/compare/cinematic pages, `?capture=1`, `?at=`/`?pose=` dev poses and bare `?level=` rooms.
 const menuWanted = params.get('title') !== '0' && !isCaptureOrBench && params.get('capture') !== '1' && !params.has('at') && !params.has('pose') && !params.get('level') && !params.get('cinematic');

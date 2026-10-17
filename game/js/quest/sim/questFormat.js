@@ -23,7 +23,7 @@ export function normalizeQuestDef(def) {
   if (def.rewards !== undefined) {
     const r = def.rewards || {}, items = (r.items || []).map((i) => ({ ...i }));
     if (r.heartPiece) items.push({ id: HEART_PIECE_ITEM, n: r.heartPiece === true ? 1 : r.heartPiece });
-    d.reward = { items }; if (r.coin) d.reward.coin = r.coin;
+    d.reward = { items }; if (r.coin !== undefined && r.coin !== 0) d.reward.coin = r.coin; // CUR-01: bad values reach questBook's validation
     delete d.rewards;
   }
   return d;

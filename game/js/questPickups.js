@@ -25,7 +25,7 @@ export function itemLabel(defs, id) {
 }
 
 /** @param {{getBook: () => any, feed: (e:any) => any, defs: Record<string, any>}} o */
-export function createQuestPickups({ getBook, feed, defs, isWorn }) {
+export function createQuestPickups({ getBook, feed, defs, isWorn, wallet = null }) { // CUR-01: wallet = {add(n)}
   let ctx = null, props = [], tick = 0, ops = null, opsInv = null, lastAdded = 0, resnap = null;
 
   const groundFn = () => (ctx && ctx.world ? (x, y) => floorZ(ctx.world, x, y, ctx.player && ctx.player.transform ? ctx.player.transform.z : null) : null); // structure/mesh floor too
@@ -116,6 +116,10 @@ export function createQuestPickups({ getBook, feed, defs, isWorn }) {
     /** Hand-in reward ({items:[{id,n}]}) -> pack (+ toast event). Returns the number of item stacks granted. */
     grantReward(reward) {
       const inv = pack(); let k = 0;
+      if (reward && reward.coin > 0 && wallet) { // CUR-01: once per hand-in (the caller fires it from the live quest:done only, never on load)
+        const got = wallet.add(reward.coin);
+        if (got > 0 && ctx && ctx.events) ctx.events.emit('coin:got', { n: got });
+      }
       if (!inv || !reward || !reward.items) return 0;
       if (reward.unlock && ctx.world && ctx.events && reward.unlock.includes('fireball')) unlockFireball(ctx.world, ctx.events); // FB-02: `unlock:fireball` reward; the flag writer is idempotent (once, never double-given)
       for (const it of reward.items) {
