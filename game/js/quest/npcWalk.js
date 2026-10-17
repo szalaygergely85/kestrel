@@ -3,6 +3,7 @@
 // components.walkBarks = { name: { "<wpIndex>": "<barkId>" } }. Movement = engine createPathFollower; z from terrain.groundAt;
 // clip walk/idle; the kinematic collider follows via world.setEntityCollider. Zero allocation per step (start() allocates).
 import { createPathFollower, yawFromDelta } from '../../../engine/index.js';
+import { floorZ, createResnap } from './groundSnap.js'; // OB-155: structure/mesh floor + late near terrain
 
 export const WAIT_FAR_M = 10, RESUME_NEAR_M = 6, BARK_NEAR_M = 8, WALK_SPEED = 1.6, TURN_DEG_S = 240;
 const HIDE_Z = -500; // parked collider depth (no setEntityCollider "remove" exists)
@@ -17,6 +18,7 @@ export function createNpcWalk(world, id, ctx = {}) {
   if (!d || !d.transform) return null;
   const t = d.transform, comps = d.components || {}, v = comps.voxel || null;
   let f = null, pts = null, name = '', opts = null;
+  let resnap = null;
   let barkIdx = null, barkIds = null, barkDone = null; // parallel arrays, filled at start()
   const api = {
     active: false, done: false, waiting: false, hidden: false,
@@ -57,6 +59,8 @@ export function createNpcWalk(world, id, ctx = {}) {
     hide() { api.active = false; api.done = true; api.waiting = false; hideNow(); },
     /** Fixed step. (px,py) = the player. */
     step(dt, px, py) {
+      if (!resnap) { resnap = createResnap(world); resnap.track(() => t, (z) => { t.z = z; if (comps.collider && comps.collider.kinematic && !api.hidden) world.setEntityCollider(id, t.x, t.y, z); }); }
+      resnap.step(); // late near terrain: a standing/waiting NPC is re-seated once
       if (!api.active) return;
       const lead = opts.lead;
       const moved = f.step(dt, 1, lead ? px : NaN, lead ? py : NaN);
@@ -86,7 +90,7 @@ export function createNpcWalk(world, id, ctx = {}) {
     if (h.play) h.play(a); else v.anim = a;
   }
   function snap() {
-    const z = world.terrain ? world.terrain.groundAt(t.x, t.y) : t.z;
+    const g = floorZ(world, t.x, t.y, t.z), z = g == null ? t.z : g; // terrain-only groundAt missed bridge/tower floors
     t.z = z;
     if (comps.collider && comps.collider.kinematic) world.setEntityCollider(id, t.x, t.y, z);
   }

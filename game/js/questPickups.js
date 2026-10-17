@@ -9,6 +9,7 @@
 import { addItem, removeItem, countOf } from './quest/sim/inventory.js';
 import { unlockFireball } from './quest/features.js';
 import { spawnLeftoverDrop, setStackPickupSink } from './quest/sim/pickups.js';
+import { floorZ, createResnap } from './quest/groundSnap.js'; // OB-155 runtime
 
 export const REACH = 2.2, REACH_DZ = 3, POLL_STEPS = 10;
 
@@ -25,9 +26,9 @@ export function itemLabel(defs, id) {
 
 /** @param {{getBook: () => any, feed: (e:any) => any, defs: Record<string, any>}} o */
 export function createQuestPickups({ getBook, feed, defs, isWorn }) {
-  let ctx = null, props = [], tick = 0, ops = null, opsInv = null, lastAdded = 0;
+  let ctx = null, props = [], tick = 0, ops = null, opsInv = null, lastAdded = 0, resnap = null;
 
-  const groundFn = () => (ctx && ctx.world && ctx.world.terrain ? (x, y) => ctx.world.terrain.groundAt(x, y) : null);
+  const groundFn = () => (ctx && ctx.world ? (x, y) => floorZ(ctx.world, x, y, ctx.player && ctx.player.transform ? ctx.player.transform.z : null) : null); // structure/mesh floor too
   function pack() { return (ctx && ctx.inventory) || null; }
   function leftover(id, n) { // same as grantReward's leftover: ground drop at the player's feet (never despawns) + inventory:full
     const t = ctx && ctx.player && ctx.player.transform, canDrop = !!(t && ctx.world && ctx.world.spawn);
@@ -67,7 +68,7 @@ export function createQuestPickups({ getBook, feed, defs, isWorn }) {
 
   const hook = {
     onBoot(c) {
-      ctx = c; props = []; tick = 0; ops = null;
+      ctx = c; props = []; tick = 0; ops = null; resnap = createResnap(c.world);
       // EQ-23: leftover stacks lying on the ground re-enter the pack through the normal path (partial fit allowed).
       setStackPickupSink((id, n) => {
         const inv = pack(); if (!inv) return 0;
@@ -79,6 +80,7 @@ export function createQuestPickups({ getBook, feed, defs, isWorn }) {
         const q = e.components && e.components.questPickup; if (!q || !e.transform) return;
         // QL-05: "[E] Pick" prompt (the take itself stays in onTick; the behaviour 'pickup.take' is a no-op that only shows the prompt)
         const ia = { key: 'qp.' + id, name: 'pickup.take', x: e.transform.x, y: e.transform.y, z: e.transform.z + 0.3, radius: REACH, prompt: ('[E] Pick up ' + itemLabel(defs, q.item)).slice(0, 28), def: { pickupId: id }, bodyId: id, bodyR: 0.35, bodyH: 0.7 }; // OB-084: [E] on the whole item
+        resnap.track(() => e.transform, (z) => { e.transform.z = z; ia.z = z + 0.3; }); // re-seat when near terrain streams in late
         props.push({ id, tr: e.transform, item: q.item, n: q.n || 1, acceptQuest: q.acceptQuest || null, ia, shown: null });
         if (!c.world.addInteractable) return;
         c.world.removeInteractable('qp.' + id);
@@ -88,6 +90,7 @@ export function createQuestPickups({ getBook, feed, defs, isWorn }) {
     },
     onTick() {
       if (!ctx || !ctx.player) return;
+      if (resnap) resnap.step();
       if (++tick % POLL_STEPS === 0) sync();
       if (!ctx.state.interactPressed || !props.length) return;
       const p = ctx.player.transform, inv = pack();

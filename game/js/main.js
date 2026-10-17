@@ -235,6 +235,7 @@ import { createModelPreview, createCharCache } from '../../engine/index.js'; // 
 import { composeCharacter, meshCharacter, collapseRig, riggedModelDef, HUMANOID_SPLIT_LEG_RIG, createFootIk, voxelPointWorld } from '../../engine/index.js'; // OB-086: the kit character in the world
 import { drawArrowCount, drawVitals, drawHurtEdge, kickDeg, applyDeathFade, computeDeathCardState, drawDeathCard } from './quest/vitalsView.js';
 import { drawPlayerLevel } from './quest/levelHud.js'; // PLAYER-LEVEL-01 / SPELL-R8: HUD "Lv N" (power bands, D-116)
+import { floorZ, createNpcSeat } from './quest/groundSnap.js';
 import { stepPickups, resetPickups } from './quest/sim/pickups.js'; // US-080b (30.2)
 import { ensureInventory, validateItemDefs, migrateSword, addItem } from './quest/sim/inventory.js'; // US-091a1 (37.16.4)
 import { presentPickups } from './quest/pickupsView.js';
@@ -654,7 +655,7 @@ let bearBarks = null; // CH1-06: content/dialogue/bear.barks.json (not in the co
       };
     };
     const MARK_ENT = { noteKeepLight: 'tower.noteKeepLight' }; // level props are world entities '<placementId>.<propId>'
-    const markResolve = (id, out) => { const h = markWorld && markWorld.get(MARK_ENT[id] || (saveRelay.quest.book ? saveRelay.quest.book.entityFor(id) : id)), t = h && h.data && h.data.transform; if (!t) { const a = MARK_AREA[id], tr = a && markWorld && areaTrigger(markWorld, a); if (!tr) return false; const at = MARK_AT[id] || tr, gz = markWorld.heightAt(at.x, at.y); out.x = at.x; out.y = at.y; out.z = (gz == null ? 0 : gz) + 2.2; return true; } out.x = t.x; out.y = t.y + (MARK_DY[id] || 0); out.z = markZ(t, entityTop(markWorld, h.data, (k) => gameVoxelPool.models.get(k)), MARK_TOP[id]); out.s = MARK_SCALE[id] || 1; return true; };
+    const markResolve = (id, out) => { const h = markWorld && markWorld.get(MARK_ENT[id] || (saveRelay.quest.book ? saveRelay.quest.book.entityFor(id) : id)), t = h && h.data && h.data.transform; if (!t) { const a = MARK_AREA[id], tr = a && markWorld && areaTrigger(markWorld, a); if (!tr) return false; const at = MARK_AT[id] || tr, gz = floorZ(markWorld, at.x, at.y, null); /* OB-155: mesh/structure floor + near terrain */ out.x = at.x; out.y = at.y; out.z = (gz == null ? 0 : gz) + 2.2; return true; } out.x = t.x; out.y = t.y + (MARK_DY[id] || 0); out.z = markZ(t, entityTop(markWorld, h.data, (k) => gameVoxelPool.models.get(k)), MARK_TOP[id]); out.s = MARK_SCALE[id] || 1; return true; };
     // MARK-GIVER-ONLY-01 (owner), amended OB-124b: objective steps get no per-step waypoint mark here; instead book.chainMarks (m1 objective.mark data) adds gold '!' at the start entity / '?' at the end entity of the current main step (below). Flip to re-enable if a distinct waypoint symbol is designed.
     const OBJECTIVE_MARKS = false;
     if (OBJECTIVE_MARKS) registerQuestMarks(gameHooks, { fx: window.ASSETS.questMarkFx, resolve: markResolve, create: () => markHandle('questMark') });
@@ -1257,6 +1258,7 @@ async function runGame(mode, cinematic = null) {
   let wild = null; // WILD-06: ambient fauna, rebuilt on every 'world:loaded' (= reset on load / new game / restart)
   Object.defineProperty(window.__debug, 'lifeWire', { configurable: true, get: () => lifeWire }); // LIFE-HOOKS-01: verify-raid reads/forces raids through this
   Object.defineProperty(window.__debug, 'wild', { configurable: true, get: () => (wild ? { alive: wild.stats.alive, drawn: wild.drawn ? wild.drawn() : 0 } : null) }); Object.defineProperty(window.__debug, 'wildRaw', { configurable: true, get: () => (wild ? { w: wild, pool: gameVoxelPool } : null) }); // verify-wild steps/feeds through this (headless sim never runs) // WILD-06b: read-only headless hook
+  let npcSeat = null; // OB-155 follow-up
   let outLife = null, lifeNav = null, lifeData = null; // LIFE-04: Outwall villagers + chat
   Object.defineProperty(window.__debug, 'outLife', { configurable: true, get: () => outLife }); // LIFE-04: tools/verify-outwall-life.mjs
   try { lifeData = { life: await (await fetch('../content/life/outwall.life.json')).json(), barks: await (await fetch('../content/dialogue/life.barks.json')).json() }; } catch (e) { console.warn('[life] villagers off:', e && e.message); }
@@ -1833,6 +1835,9 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       dialogueCtl.addNpc('rook'); // Rook the crow: no-op until the entity exists in the world
       outwall = saveEnabled && saveRelay ? createOutwall({ world, questFlag: (k) => saveRelay.quest.questFlag(k) }) : null;
       for (const nid of talkNpcIds(questGenCtx ? questGenCtx.giverDefs : [], bundle.dialogues)) if (nid !== 'bear') dialogueCtl.addNpc(nid); // QWALK-WARDEN-TALK + R6-FIX A: EVERY giver/turn-in npc with a dialogue (wardens, Bram, Joss ...) gets [E] Talk (bear: bearTurn rule above; addNpc is idempotent)
+      // OB-155 follow-up: NPCs/givers re-seated on the floor once (stale saved z, spawned before near terrain) and again when near arrives
+      npcSeat = createNpcSeat(world);
+      for (const nid of ['bear', 'rook', 'hesk', 'dorrin', ...talkNpcIds(questGenCtx ? questGenCtx.giverDefs : [], bundle.dialogues), ...(lifeData && lifeData.life ? lifeData.life.npcs.map((n) => n.id) : [])]) npcSeat.add(nid);
       dialogueCtl.addNpc('hesk'); dialogueCtl.addNpc('dorrin'); // Ch3 Outwall NPCs (world_m1 entities, char.kit model registered at boot; both share the default kit look, no tint)
       if (outLife) outLife.dispose(); // LIFE-04: villagers replace the OUT-02 spawn hook; only with saves live (same gate as OUT-01), never in capture/bench
       outLife = lifeData && outwall && lifeNav && mode === 'world' ? createOutwallLife({ world, life: lifeData.life, nav: lifeNav, tileNav: !!(world.terrainGrid && world.nav && lifeNav === world.nav), events: engine.events, state: world.state, outwall, dialogue: dialogueCtl, barksData: lifeData.barks, style: window.ASSETS.uiStyle.dialogue, hour: clockHour(world.state, clockCfg) }) : null;
@@ -2354,6 +2359,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       if (lifeWire && simDue) lifeWire.step(clockHour(engine.world.state, clockCfg)); // LIFE-08: raids roll at night
       if (wild) { const pt = playerHandle.data.transform; wild.step(dt, pt.x, pt.y, controls.run, look.yawDeg); if (regionAmb) regionAmb.step(dt, pt.x, pt.y); } // WILD-06: ambient only, never hashed
       if (escort) { const uiHold = uiLocked || !!(dialogueCtl && dialogueCtl.open); /* AUD-06 */ const pt = playerHandle.data.transform; if (escort) { if (burlReopen && !(dialogueCtl && (dialogueCtl.open || dialogueCtl._closing))) { burlReopen = false; const bh = engine.world.get('bear'), bt2 = bh && bh.data.transform; if (bt2 && (bt2.x - pt.x) ** 2 + (bt2.y - pt.y) ** 2 <= 36) dialogueCtl.openFor('bear'); } escort.step(dt, pt.x, pt.y, uiHold); if (bearTurn) bearTurn.paused = escort.busy; } } // CH1-07/08b: before the bear turn
+      if (npcSeat) npcSeat.step();
       if (nub) nub.step(dt); // NUB-01: same fixed step as the escort
       if (outwall) { const pt = playerHandle.data.transform; outwall.step(dt, pt.x, pt.y); if (outLife && simDue) outLife.step(dt, clockHour(engine.world.state, clockCfg), pt.x, pt.y); } // OUT-01 (owns yaw only when idle) + LIFE-04
       if (bearTurn) { const pt = playerHandle.data.transform; bearTurn.step(dt, pt.x, pt.y, !!(dialogueCtl && dialogueCtl.open)); } // NPC-BEAR-01 // US-079a (29.1)

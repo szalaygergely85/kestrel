@@ -6,6 +6,7 @@ import { createVillagers } from './villagers.js';
 import { createChat } from './chat.js';
 import { createBarks } from '../quest/barks.js';
 import { yawFromDelta } from '../../../engine/index.js';
+import { floorZ } from '../quest/groundSnap.js'; // OB-155: villager z = structure/mesh floor or terrain
 
 export const DAY_KEY = 'clock.day'; // whole game days elapsed (saved in world.state; the clock itself only stores the hour)
 const ACTIVE = 2;
@@ -95,7 +96,7 @@ export function createOutwallLife({ world, life, nav, events, state, outwall, di
     }
     if (a.hidden !== !!wasHidden || !a.hidden) parked(i, a.hidden);
   }
-  const v = createVillagers({ life: lf, nav, tileNav, groundAt: (x, y) => world.terrain.groundAt(x, y), collide, hour, dayIndex: state[DAY_KEY] | 0, events, apply,
+  const v = createVillagers({ life: lf, nav, tileNav, groundAt: (x, y) => { const g = floorZ(world, x, y, null); return g == null ? world.terrain.groundAt(x, y) : g; }, collide, hour, dayIndex: state[DAY_KEY] | 0, events, apply,
     isPaused: (id) => id === talking || chat.stopped(idx(id)) });
   const barks = createBarks({ world, data: barksData, questFlag: () => {}, dialogue, style });
   const chat = createChat({ schedule: v.sched, x: xs, y: ys, player, barks, data: barksData, seed,
