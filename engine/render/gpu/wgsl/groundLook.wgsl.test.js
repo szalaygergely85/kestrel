@@ -133,7 +133,7 @@ function run(src, trials, FG, fw = GROUND_ALT_BIT) {
 const r1 = run(LOOKSRC, 600, null);
 assert.ok(r1.n >= 3000 && r1.bad <= r1.n * 0.001, `look shadeTerrain vs JS: ${r1.bad}/${r1.n} differ`);
 const r2 = run(LOOKSRC, 600, mkFg());
-// both lattices, and independence from the foliage bits: w = 0 (0.25 m), 8 (0.75 m), 12 (8 + foliage bit 4), 4 (foliage bit alone: ground stays 0.25 m)
+// both lattices, and independence from the foliage bits: w = 0 (0.25 m), 8 (GROUND_ALT_M, 0.5 m), 12 (8 + foliage bit 4), 4 (foliage bit alone: ground stays 0.25 m)
 let rw = 0;
 for (const fw of [0, 4, 12]) { const r = run(LOOKSRC, 300, null, fw); rw += r.n; assert.ok(r.bad <= r.n * 0.001 && r.lkBad <= r.lkN * 0.002 && r.maxErr < 2e-4, `look parity fogView.w=${fw}: ${r.bad}/${r.n}, lk ${r.lkBad}/${r.lkN}, err ${r.maxErr}`); }
 setAltDice(true);
@@ -152,7 +152,7 @@ assert.ok(r1.blend > 500 && r1.anim > 100 && r1.lean > 50, `coverage blend ${r1.
   assert.ok(run(mc('select(lo, hi, w > h4)', 'select(lo, hi, w < h4)'), 250, null).bad > 5, 'mutation: border dither side caught');
   assert.ok(run(mc('let dith = 1.0 - df * df * (3.0 - 2.0 * df);', 'let dith = 1.0;'), 250, null).bad > 5, 'mutation: dither fade caught');
   assert.ok(run(mc('& 8u) != 0u)', '& 4u) != 0u)'), 250, null, 8).bad > 5, 'mutation: lattice gate bit caught');
-  assert.ok(run(mc('0.7500000000, (u32', '0.5000000000, (u32'), 250, null, 8).bad > 5, 'mutation: ground alt size caught');
+  assert.ok(run(mc('0.5000000000, (u32', '0.7500000000, (u32'), 250, null, 8).bad > 5, 'mutation: ground alt size caught');
   setAltDice(true);
   assert.ok(run(mc('hashFast(cx, cy, 71)', 'hashFast(cx, cy, 72)'), 250, null).bad > 5, 'mutation: colour dice salt caught');
 }
