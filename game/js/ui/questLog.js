@@ -164,8 +164,8 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
       if (parts.length) right.push({ kind: 'dim', text: clipped((isDone ? T.received : T.reward) + parts.join(', '), RIGHT_W) });
     }
     if (s === READY && i > 0) { const g = book.turnInOf ? book.turnInOf(i) : book.giverOf ? book.giverOf(i) : null; if (g) right.push({ kind: 'head', text: clipped(T.handIn + ascii(String(giverName(g))), RIGHT_W) }); }
-    if (i > 0 && !isDone && s !== AVAILABLE && book.track) right.push({ kind: 'head', text: book.tracked() === i ? T.tracked : T.track });
-    if (book.canAbandon && book.canAbandon(def.id)) right.push({ kind: 'head', text: sure ? T.abandonSure : T.abandon });
+    if (i > 0 && !isDone && s !== AVAILABLE && book.track) right.push({ kind: 'head', act: 'KeyT', text: book.tracked() === i ? T.tracked : T.track });
+    if (book.canAbandon && book.canAbandon(def.id)) right.push({ kind: 'head', act: 'KeyX', text: sure ? T.abandonSure : T.abandon });
   }
   function show() { open = true; sure = false; sel = 0; top = 0; rebuild(); }
   function close() { open = false; }
@@ -174,6 +174,8 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
     if (!open) return false;
     const r = cy - bounds.y - LIST_TOP, c = cx - bounds.x, k = top + r;
     if (r >= 0 && r < LIST_ROWS && c >= LEFT_X - 2 && c < DIV_X && k < quests.length) { sure = false; sel = k; rebuild(); return true; }
+    const rr = cy - bounds.y - (LIST_TOP - 1), ln = right[rr]; // OB-219: the right-pane [X] Abandon / [T] Track rows are clickable (two clicks abandon, like X X)
+    if (ln && ln.act && c >= RIGHT_X && c < RIGHT_X + RIGHT_W) return handleKey(ln.act);
     return false;
   }
   /** Returns true when the key was consumed. Enter on the done main quest hands off to the journal; J/Esc close; W/S move (wraps). */

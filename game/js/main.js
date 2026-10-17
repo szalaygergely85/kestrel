@@ -1350,6 +1350,8 @@ async function runGame(mode, cinematic = null) {
     else if (res.kind === 'refuse') toasts.say(res.slot < HAND_SLOTS ? 'That does not fit this hand' : 'Cannot be placed on the quick bar', [220, 110, 60]);
   });
   window.addEventListener('click', (e) => { if (invView && invView.isOpen) e.stopPropagation(); }, true);
+  window.addEventListener('mousedown', (e) => { if (e.button !== 0 || !ui || !qlView || !qlView.isOpen()) return; const c = qbCell(e); if (qlView.handleClick(c[0], c[1])) { e.stopPropagation(); e.preventDefault(); } }, true); // OB-219: J log mouse (select quest, Abandon/Track rows)
+  window.addEventListener('click', (e) => { if (qlView && qlView.isOpen()) e.stopPropagation(); }, true); // an open log never re-locks the pointer by click
   // US-090w: title menu pointer - hover selects, click activates; the click never reaches PlayerLook's pointer-lock handler.
   const menuCell = (e) => { const r = canvas.getBoundingClientRect(); return [Math.floor((e.clientX - r.left) / r.width * ui.cols), Math.floor((e.clientY - r.top) / r.height * ui.rows)]; };
   canvas.addEventListener('mousemove', (e) => {
