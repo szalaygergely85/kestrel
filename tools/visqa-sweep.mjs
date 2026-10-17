@@ -1,5 +1,7 @@
 // VISQA-01: visual-QA sweep. Live clock (NOT ?at=/?pose=, those freeze liveLook), god mode + ground snap, ~11 spots x 3 hours.
 // Run: node tools/visqa-sweep.mjs <port> (PC-B 9500-9999, CDP = port+1)  -> docs/test-reports/visqa/<spot>-<hh>.png + index.md
+// TOOLS-ROBUST: QUALITY=high|medium|ultra (or --quality p; default high), GRID=WxH (or --grid; added as &grid=), SHOT_TIMEOUT=90000 ms per spot (+1 retry with a fresh page load),
+// the page is reloaded (about:blank first) for every hour so multi-hour runs work in one call; one PASS/FAIL line per shot.
 // Env: HOURS=9,13,22  ONLY=ford,bend (spot filter)  SETTLE=6000 (ms per spot)
 // VISQA-10: `node tools/visqa-sweep.mjs <port> --set 2` -> underground interiors, 3-4 m close-ups of characters/animals and
 // UI screens opened with real CDP key events, default game hour -> docs/test-reports/visqa/s2-<name>.png + "## Set 2" in index.md.
@@ -7,6 +9,7 @@ import { spawn } from 'node:child_process';
 import { writeFileSync, readFileSync, readdirSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path'; import os from 'node:os';
 import { pickCliffPose, pickEntity, closeupPose } from './visqa-pick.mjs';
+import { pickQuality, runShot, resultLine } from './still-robust.mjs';
 import { ROOT, validatePort, findBrowserBinary, buildLaunchFlags, waitForHttp, connectCdp, evaluate, evaluateAsync, killTree } from './capture-browser.mjs';
 
 // [name, x, y, yawDeg (0 = north/-y, 90 = east), pitchDeg, note]
@@ -23,6 +26,7 @@ export const SPOTS = [
   ['lake-shore', 1215, 547, 0, 0, 'Glasswater south shore'],
   ['burl-home', 1407.5, 1014.5, 322, 4, "VISQA-09: Burl at his post-departure home waypoint walks.home (1404,1010), seen from 5.7 m SE. NOTE: no home BUILDING exists in tracked content (the waypoint is just a clearing; content/local/placements.json has no structures), so this frames Burl only"],
   ['grove-nw', 1406, 916, 0, 8, 'TEASER-QA-01: grove north-west teaser-leaves stand'],
+  ['cemetery-crypt', 1643.8, 1380.0, 45, 0, 'TOOLS-ROBUST: crypt door (cem32/cem36 at 1650.9,1372.97) from 10 m south-west, eye height, looking north-east at the door; cryptLamp check'],
   ['smoke-fire', 958, 1011, 0, 6, 'VISQA-15: smokeFire1 brazier at the base of the goblin smoke plume (958,1004)'],
 ];
 // VISQA-10 set 2. Interiors: [name, x, y, zFloor (null = ground snap), yawDeg, pitchDeg, note] (world coords from the level origins in world_m1)
@@ -53,6 +57,8 @@ export const UI_SCREENS = [
   ['pause', [], [], 'pause menu (pointer lock lost = what Esc does in a real browser)'],
   ['settings', ['KeyS', 'Enter'], ['Escape', 'Escape'], 'Settings from the pause menu (S selects, Enter opens)'],
 ];
+const argOf = (n) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : undefined; };
+const QUALITY = pickQuality(argOf('--quality'), process.env), GRID = argOf('--grid') || process.env.GRID || '', SHOT_TIMEOUT = Number(process.env.SHOT_TIMEOUT || 90000);
 const set2 = process.argv.includes('--set') && process.argv[process.argv.indexOf('--set') + 1] === '2';
 const port = Number(process.argv[2] || 9725); validatePort(port);
 const hours = (process.env.HOURS || '9,13,22').split(',').map(Number);
@@ -65,11 +71,11 @@ const outDir = path.join(ROOT, process.env.OUTDIR || 'docs/test-reports/visqa');
 const profile = mkdtempSync(path.join(os.tmpdir(), 'kestrel-visqa-'));
 const server = spawn('python', ['-c', 'import http.server,sys; http.server.ThreadingHTTPServer.request_queue_size=128; sys.argv=["tools/serve.py",sys.argv[1]]; import tools.serve; tools.serve.main()', String(port)], { cwd: ROOT, stdio: 'ignore', windowsHide: true });
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
-let browser, cdp; const rows = [];
+let browser, cdp, failed = 0; const rows = [];
 const shot = async (name, pose, note) => { const r = await cdp.send('Page.captureScreenshot', { format: 'png' }); const file = `s2-${name}.png`; writeFileSync(path.join(outDir, file), Buffer.from(r.data, 'base64')); rows.push({ file, pose, note }); console.log('still', file, pose); };
 const key = async (code) => { const k = code.startsWith('Key') ? code.slice(3).toLowerCase() : code; await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', code, key: k }); await pause(120); await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', code, key: k }); await pause(120); };
 async function runSet2() {
-  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?save=0&nopause=1&quality=medium&backend=webgpu&title=0` });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?save=0&nopause=1&quality=${QUALITY}&backend=webgpu&title=0` });
   let ok = false;
   for (let i = 0; i < 600 && !ok; i++) { await pause(300); try { ok = !!(await evaluate(cdp, '!!(window.__debug && window.__debug.playerHandle && window.__debug.world && window.__debug.beasts) && !/Checking your graphics/.test(document.body.innerText||"")')); } catch { /* navigating */ } }
   if (!ok) throw new Error('set 2: never ready');
@@ -128,12 +134,20 @@ try {
   await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
   if (set2) await runSet2();
   for (const h of (set2 ? [] : hours)) {
-    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?save=0&nopause=1&quality=medium&backend=webgpu&title=0&time=${h}${EXTRA}${(process.env.QS || '').split('|')[hours.indexOf(h)] || ''}` });   // QS='&scatter=0|&aamesh=0' = extra query per HOURS entry (dev probe)
-    let ok = false;
-    for (let i = 0; i < (Number(process.env.READY_TRIES) || 600) && !ok; i++) { await pause(300); try { ok = !!(await evaluate(cdp, '!!(window.__debug && window.__debug.playerHandle && window.__debug.world) && !/Checking your graphics/.test(document.body.innerText||"")')); } catch { /* navigating */ } }
-    if (!ok) throw new Error('never ready ' + JSON.stringify(await evaluateAsync(cdp, '(async()=>location.href+" "+document.readyState+" "+document.title+" "+document.body.innerHTML.length+" "+JSON.stringify(window.__debug&&window.__debug.bootErrors))()').catch((e) => String(e))));
-    await pause(4000);
-    for (let [name, x, y, yaw, pitch, note] of spots) {
+    // reload from about:blank for every hour (a second world in the same page never became ready); retry the whole load once
+    const loadHour = async () => {
+      await cdp.send('Page.navigate', { url: 'about:blank' }); await pause(800);
+      await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/game/index.html?save=0&nopause=1&quality=${QUALITY}&backend=webgpu&title=0&time=${h}${GRID ? '&grid=' + GRID : ''}${EXTRA}${(process.env.QS || '').split('|')[hours.indexOf(h)] || ''}` });   // QS='&scatter=0|&aamesh=0' = extra query per HOURS entry (dev probe)
+      let ok = false;
+      for (let i = 0; i < (Number(process.env.READY_TRIES) || 600) && !ok; i++) { await pause(300); try { ok = !!(await evaluate(cdp, '!!(window.__debug && window.__debug.playerHandle && window.__debug.world) && !/Checking your graphics/.test(document.body.innerText||"")')); } catch { /* navigating */ } }
+      if (!ok) throw new Error('never ready ' + JSON.stringify(await evaluateAsync(cdp, '(async()=>location.href+" "+document.readyState+" "+document.title+" "+document.body.innerHTML.length+" "+JSON.stringify(window.__debug&&window.__debug.bootErrors))()').catch((e) => String(e))));
+      await pause(4000);
+    };
+    const lh = await runShot(loadHour, { timeoutMs: (Number(process.env.READY_TRIES) || 600) * 300 + 30000, retries: 1, label: 'load ' + h });
+    console.log(resultLine('load-' + h, lh)); if (!lh.ok) { failed++; continue; }
+    for (const spot of spots) {
+      const r = await runShot(async () => {
+      let [name, x, y, yaw, pitch, note] = spot;
       if (name === 'cliff') { // VISQA-21: steepest slope within 60 m of the spot (tools/visqa-pick.mjs pickCliffPose, injected), camera 12 m back looking up at it
         const pose = await evaluate(cdp, `(()=>{const T=__debug.world.terrain,g=(a,b)=>(T.groundAt||T.heightAt).call(T,a,b);return (${pickCliffPose})(g,${x},${y},60,12,1.6)})()`).catch(() => null);
         if (pose) { x = pose.x; y = pose.y; yaw = pose.yaw; pitch = pose.pitch; console.log('cliff pose', JSON.stringify(pose)); } else console.log('cliff pose: NO slope found near', x, y, '(keeping the spot)');
@@ -146,14 +160,17 @@ try {
       const s = await cdp.send('Page.captureScreenshot', { format: 'png' });
       const file = `${name}-${String(h).padStart(2, '0')}${SUFFIX}.png`;
       writeFileSync(path.join(outDir, file), Buffer.from(s.data, 'base64'));
-      rows.push({ name, h, file, x, y, yaw, pitch, gz, note }); console.log('still', file, 'gz', gz);
+      rows.push({ name, h, file, x, y, yaw, pitch, gz, note }); return file;
+      }, { timeoutMs: SHOT_TIMEOUT, retries: 1, label: spot[0] + '-' + h, recover: loadHour });
+      console.log(resultLine(spot[0] + '-' + String(h).padStart(2, '0'), r)); if (!r.ok) failed++;
     }
   }
 } finally {
   clearTimeout(killer); cdp?.close(); if (browser?.pid) killTree(browser.pid); if (server.pid) killTree(server.pid);
   await pause(300); try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch {}
 }
-if (SUFFIX) { console.log('wrote', rows.length, 'stills (SUFFIX set: no index.md)'); process.exit(0); }
+if (failed) process.exitCode = 1;
+if (SUFFIX) { console.log('wrote', rows.length, 'stills (SUFFIX set: no index.md)'); process.exit(failed ? 1 : 0); }
 const idxPath = path.join(outDir, 'index.md');
 let oldIdx = ''; try { oldIdx = readFileSync(idxPath, 'utf8'); } catch {}
 const s2At = oldIdx.indexOf('\n## Set 2'), set2Old = s2At >= 0 ? oldIdx.slice(s2At) : '';
@@ -161,7 +178,7 @@ if (set2) {
   let s2 = `\n## Set 2 (VISQA-10)\n\n\`node tools/visqa-sweep.mjs <port> --set 2\` - default hour, god mode; interiors at the floor z, close-ups 3.5 m, UI via real key events.\n\n| still | pose / key | note |\n|---|---|---|\n`;
   for (const r of rows) s2 += `| ${r.pose === 'not found' ? '-' : `![${r.file}](${r.file})`} | ${r.pose} | ${r.note} |\n`;
   writeFileSync(idxPath, (s2At >= 0 ? oldIdx.slice(0, s2At) : oldIdx) + s2);
-  console.log('wrote', rows.length, 'set-2 stills + index.md'); process.exit(0);
+  console.log('wrote', rows.length, 'set-2 stills + index.md'); process.exit(failed ? 1 : 0);
 }
 // contact sheet from every still in the folder (a partial re-run with ONLY/HOURS keeps the other cells): one row per spot, one column per hour
 const files = readdirSync(outDir).filter((f) => /-\d\d\.png$/.test(f));
