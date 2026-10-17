@@ -6,7 +6,8 @@ import detailPassMod from '../../../../design/detail-pass.js';
 import terrainDef from '../../../../design/levels/overworld_far.js';
 import geoMod from '../../../../design/levels/world_geo.js';
 import voxelWorldMod from '../../../../design/models/voxel_world.js';
-import { Events } from '../../../../engine/dev.js';
+// minimal event bus (engine/dev.js Events is off limits for game/js outside dev/, check-deps)
+class Events { constructor() { this.m = {}; } on(n, f) { (this.m[n] ||= []).push(f); return () => { this.m[n] = this.m[n].filter((g) => g !== f); }; } emit(n, p) { for (const f of this.m[n] || []) f(p); } }
 import { loadTestAssets } from '../../../../tools/testing/content-node.mjs';
 import { spawnRegionalBeasts } from './regionalBeasts.js';
 import { floorZ } from '../groundSnap.js';

@@ -228,6 +228,9 @@ setVoxelHold(new URLSearchParams(location.search).get('aavox') !== '0'); // AA-2
 setLeafUvHold(new URLSearchParams(location.search).get('aaleafuv') !== '0'); // AA-26 (OB-208): stable pass holds soft-edge leaf cells without the UV drift test, ?aaleafuv=0 = off
 setLeafLevelHold(new URLSearchParams(location.search).get('aaleaflv') !== '0'); // AA-29 (OB-208): held leaf glyph survives a +-2 level step, ?aaleaflv=0 = +-1
 setMoonRimEnabled(new URLSearchParams(location.search).get('moonrim') !== '0'); // RND-NIGHT-RIM-03: ?moonrim=0 = no moon rim
+import { setAltDice, setTorchFlicker } from '../../engine/index.js';
+setAltDice(new URLSearchParams(location.search).get('aaalt') !== '0'); // FD-05/FD-06 (OB-198/208): world-anchored coarser alt-glyph + ground dice; ?aaalt=0 = old
+setTorchFlicker(({ '0': 'off', old: 'old' })[new URLSearchParams(location.search).get('torchflick')] || 'gentle'); // FD-07: gentle torch flicker; ?torchflick=0 off, =old pre-change
 setSeamHold(new URLSearchParams(location.search).get('aaseam') !== '0'); // AA-31 (OB-208): mesh/prop facet-seam cells keep history without the UV check, ?aaseam=0 = off
 setTerrainSnapHold(new URLSearchParams(location.search).get('aaterrsnap') !== '0'); // AA-28 (OB-208): terrain glyph survives a brightness-only stable snap, ?aaterrsnap=0 = off
 if (new URLSearchParams(window.location.search).get('debug') === '1') setApiWarnings(true); // ENG-API-01h: dev flag only - deprecated engine names warn once

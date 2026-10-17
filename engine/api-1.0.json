@@ -527,6 +527,7 @@
     {"name":"setLeafLevelHold","area":"render","tier":"experimental"},
     {"name":"setLeafUvHold","area":"render","tier":"experimental"},
     {"name":"setLook","area":"render","tier":"experimental"},
+    {"name":"setMoonRimEnabled","area":"render","tier":"experimental"},
     {"name":"setSampleDh","area":"world","tier":"stable"},
     {"name":"setSampleType","area":"world","tier":"stable"},
     {"name":"setSeamHold","area":"render","tier":"experimental"},
