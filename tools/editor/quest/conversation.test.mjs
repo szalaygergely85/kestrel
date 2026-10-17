@@ -36,9 +36,9 @@ for (const x of dm.files.values()) assert.equal(dialogueText(x), readFileSync(jo
 const defs = { 'potion.hp': { name: 'Health Potion', rarity: 'common' }, 'heart.piece': { name: 'Heart Piece' } };
 const q = by('sq.burl.blue');
 const t = rewardTiles(q, defs, {}, model);
-assert.equal(t.coin.enabled, false); assert.equal(t.coin.note, COIN_NOTE); assert.equal(t.heart.shown, true);
+assert.equal(t.coin.enabled, true); assert.equal(t.coin.note, COIN_NOTE); assert.ok(/^(side|main|errand|elite) [0-9]+-[0-9]+$/.test(t.coin.hint), 'band hint'); assert.equal(t.heart.shown, true);
 assert.equal(rewardTiles(q, {}, {}).heart.shown, false, 'heart only if registered');
-assert.equal(rewardTiles(q, defs, { coinPaid: true }).coin.enabled, true);
+assert.equal(rewardTiles(q, defs, { coinPaid: false }).coin.enabled, false);
 const before = JSON.stringify(q.raw);
 const r1 = setRewardItems(q, { items: [...t.items, { id: 'potion.hp', n: 2 }] });
 r1.cmd.apply(); assert.ok(q.raw.reward && !q.raw.rewards && q.raw.reward.items.some((i) => i.id === 'potion.hp' && i.n === 2));
@@ -47,6 +47,10 @@ if (t.items.length) assert.ok(setRewardItems(q, { items: [], heartPiece: 0, coin
 assert.ok(setRewardItems(q, { heartPiece: 1 }).cmd);
 const fq = model.quests.find((x) => x.raw.rewards !== undefined);
 if (fq) { const c = setRewardItems(fq, { heartPiece: 1 }); c.cmd.apply(); assert.ok(fq.raw.rewards.heartPiece === 1 && fq.raw.reward === undefined); c.cmd.undo(); }
+{   // CUR-05: coin edit + undo, byte-identical
+  const b0 = JSON.stringify(q.raw), cc = setRewardItems(q, { coin: 12 }); cc.cmd.apply(); assert.equal(rewardTiles(q, defs, {}, model).coin.n, 12);
+  cc.cmd.undo(); assert.equal(JSON.stringify(q.raw), b0, "coin undo byte-identical");
+}
 assert.equal(rewardLint({ raw: { id: 'x' } }, defs).length, 1, 'no reward = warning');
 // ED-QUI-10 branch edits
 import { setBranchText, setBranchGoto, setBranchFlags, gotoTargets } from './conversation.js';

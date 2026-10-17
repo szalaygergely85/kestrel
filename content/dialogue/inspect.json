@@ -128,6 +128,12 @@
       "prompt": "[E] Read the stone",
       "title": "A standing stone",
       "lines": ["A dressed block, set on end beside the track.", "Old mortar on one face. Once part of a bridge pier.", "A Crown stamp, half chiselled away.", "The bridge was pulled down. Not by the river."]
+    },
+    "note.stoneKnot": {
+      "prompt": "[E] Look at the knot",
+      "title": "A knot at the stone's foot",
+      "lines": ["A cord tied round a root at the stone's foot.", "A lamp-trimmer's hitch, old and grey.", "Whoever tied it knew the stone by name."],
+      "entities": ["qd06_stoneKnot"]
     }
   }
 }
