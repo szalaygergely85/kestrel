@@ -257,10 +257,11 @@
                      { shape: 'capsule', ax: 900, ay: 904, bx: 918, by: 903, r: 3 } ] },        // south, beyond the ring path
           // short green meadow: patches on the open slopes of the tower hill and along the road meadows - NOT the hill path, the
           // tower (bbox 1480..1504 x 1018..1032) + 3 m, the groves (forest), the pond / flooded cellar, the bee farm or the standing stones
-          { name: 'meadow', ground: ['grass', 'flowers'], density: 0.75, heightM: [0.15, 0.4], groundTint: 0.35, ramp: ['bladeMeadowBase', 'bladeMeadow', 'bladeMeadowTip'],
-            // OB-101 (owner 2026-10-12 'make a huge area around'): four big fields ring the tower/spawn (tower bbox 1480..1504 x 1018..1032
+          // GRASS-VARIETY-01: the meadow areas below carry 3 grass types (clover / meadow / seed-head, design/look/grassTypes.js) split by world-space noise patches
+          ...(function () {
+            var meadowAreas =             // OB-101 (owner 2026-10-12 'make a huge area around'): four big fields ring the tower/spawn (tower bbox 1480..1504 x 1018..1032
             // + 3 m + 1.5 m feather stays bare); road/paths/pond/rock cut by cutGround, groves by the ground filter
-            areas: [ { shape: 'capsule', ax: 1450, ay: 1070, bx: 1535, by: 1070, r: 32 },       // OB-101 huge field, y 1038..1102
+[ { shape: 'capsule', ax: 1450, ay: 1070, bx: 1535, by: 1070, r: 32 },       // OB-101 huge field, y 1038..1102
                      { shape: 'capsule', ax: 1450, ay: 980, bx: 1535, by: 980, r: 32 },         // OB-101 huge field, y 948..1012
                      { shape: 'capsule', ax: 1440, ay: 1000, bx: 1440, by: 1050, r: 34 },       // OB-101 huge field, x 1406..1474
                      { shape: 'capsule', ax: 1545, ay: 1000, bx: 1545, by: 1050, r: 35 },       // OB-101 huge field, x 1510..1580
@@ -274,7 +275,12 @@
                      { shape: 'disc', x: 1360, y: 1086, r: 8 },                                 // LARGE field south of Road West (boarR)
                      { shape: 'disc', x: 1295, y: 1022, r: 2 },                                 // small clump north of the Bend
                      { shape: 'capsule', ax: 1244, ay: 1080, bx: 1256, by: 1075, r: 3 },        // medium strip south of the Bend lamps
-                     { shape: 'disc', x: 1110, y: 1095, r: 4 } ] }                              // medium, road meadow east of the ford
+                     { shape: 'disc', x: 1110, y: 1095, r: 4 } ]; // last: medium, road meadow east of the ford
+            var GT = globalThis.GRASS_TYPES;
+            var base = { name: 'meadow', ground: ['grass', 'flowers'], density: 0.75, heightM: [0.15, 0.4], groundTint: 0.35, ramp: ['bladeMeadowBase', 'bladeMeadow', 'bladeMeadowTip'] };
+            var out = GT && GT.types ? GT.types : [base];
+            return out.map(function (t) { var v = {}; for (var k in t) v[k] = t[k]; v.areas = meadowAreas; return v; });
+          })()
         ]
       },
       slopeEps: 2.0                                  // m: typeAt slope = central difference of heightAt at +-2 m

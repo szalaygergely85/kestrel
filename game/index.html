@@ -187,6 +187,7 @@
        moved to content/*.json by US-027b (architecture.md 21.9) - js/main.js
        now loads them via loadContentPack + AssetRegistry.fromJSON instead of
        a classic <script> tag; see design/README.md. -->
+  <script src="../design/look/grassTypes.js"></script> <!-- GRASS-VARIETY-01: globalThis.GRASS_TYPES, read by overworld_far.js (must load first) -->
   <script src="../design/levels/overworld_far.js"></script>
   <!-- MAP-02/03/05: world geography (sea, ridges, lake, marsh, biomes) installed into the recipe by js/main.js -->
   <script src="../design/levels/world_geo.js"></script>

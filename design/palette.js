@@ -1606,6 +1606,9 @@
   colors.bladeStrawBase = '#7a6a34'; colors.bladeStraw = '#b89a50'; colors.bladeStrawTip = '#e0cc8a';    // tall dry-gold straw field
   colors.bladeBankBase = '#1f3a20'; colors.bladeBank = '#34602e'; colors.bladeBankTip = '#5f8a3c';       // dark lush river bank
   colors.bladeWallBase = '#4a5040'; colors.bladeWall = '#74806a'; colors.bladeWallTip = '#a4ac90';       // sparse grey-green near the Outwall
+  // GRASS-VARIETY-01: seed-head grass (sage -> olive-gold, pale seed tips) and clover (deep leaf green -> pale pink-white flowers); design/look/grassTypes.js
+  colors.bladeSeedBase = '#4f6234'; colors.bladeSeed = '#8c9a48'; colors.bladeSeedTip = '#d2c78a';
+  colors.bladeCloverBase = '#2f5a2e'; colors.bladeClover = '#4e8040'; colors.bladeCloverTip = '#e6d2dc';
   materials.fur_bear = fabricMat('WILDLIFE (BEAR-D1). Black bear coat: near-black, faint blue-grey sheen ticks.', 'furBear', 0.70, 0.13,
     { a: { shade: 1.00 }, t: { shade: 1.12, tint: 'furBearSheen', amount: 0.3, glyph: "'" }, d: { shade: 0.86, tint: 'furBearDark', amount: 0.4 } },
     ['atad', 'aaaa', 'daat', 'aaaa']);
