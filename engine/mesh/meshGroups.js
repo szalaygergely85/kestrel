@@ -274,7 +274,7 @@ export class MeshGroupSet {
       const g = this.groups[k], mem = g.members, R = g._R;
       if (this.hits[g.slot] === 0) { g.drawCount[0] = 0; gd[k] = Infinity; continue; } // STREAM-01b: no chosen member (all streamed out) -> nothing to compact
       const srcF = g.ib.f32, srcU = g.ib.u32, dst = g.drawIb[0].u32;
-      let w = 0, dmin = Infinity;
+      let w = 0, dmin = Infinity, hh = 0x811c9dc5; // D-107: hh = FNV mix of the compacted words, so an unchanged survivor set is not re-uploaded
       for (let j = 0; j < mem.length; j++) {
         if (chosen[mem[j]] !== 1) continue;
         if (kept + w >= MAX_GROUPED_KEPT) break;
@@ -282,12 +282,13 @@ export class MeshGroupSet {
         const tx = srcF[o + 3], ty = srcF[o + 7], tz = srcF[o + 11];
         if (planes && classifyAABB(planes, tx - R, ty - R, tz - R, tx + R, ty + R, tz + R) === CULL_OUT) continue;
         const wo = w * INSTANCE_STRIDE;
-        for (let c = 0; c < INSTANCE_STRIDE; c++) dst[wo + c] = srcU[o + c];
+        for (let c = 0; c < INSTANCE_STRIDE; c++) { const v = srcU[o + c]; dst[wo + c] = v; hh = Math.imul(hh ^ v, 16777619); }
         w++;
         const dx = tx - cx, dy = ty - cy, d2 = dx * dx + dy * dy;
         if (d2 < dmin) dmin = d2;
       }
-      g.drawCount[0] = w; touchInstances(g.drawIb[0]); // AUD-02: raw compaction writes -> version bump
+      g.drawCount[0] = w; hh = (hh ^ w) | 0;
+      if (hh !== g._hash || w !== g._hashN) { g._hash = hh; g._hashN = w; touchInstances(g.drawIb[0]); } // AUD-02: raw compaction writes -> version bump, D-107: only when the survivor rows changed (same hash + count = same bytes)
       kept += w;
       gd[k] = dmin;
       if (w > 0) live++;

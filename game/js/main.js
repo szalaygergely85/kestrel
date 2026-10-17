@@ -548,6 +548,7 @@ const { rt: builtRt, pipeline: wgPipeline, device: gpuDevice, info: rendererInfo
   stable: params.get('stable') === '1' || !!params.get('gpucompare'), // US-073c (38.25); D-119 (owner 2026-10-16, OB-215): default OFF - the stable pass left ghost trails and stale brick patches; `?stable=1` on (flicker tools pass it); ?gpucompare=1 builds it for the `stable` row (the pass stays off for every other row)
   shadows: shadowOpts, gpuCull: params.get('gpucull') !== '0', occl: occlOpt.occl, pointShadows: pointShadowOpt.pointShadows, pointShadowLevel: pointShadowOpt.pointShadowLevel, glow: parseGlow(params, resolvedQuality && resolvedQuality.name), // EMIS-03/04: emissive bleed + halo (High/Ultra, ?emissive=); OCCL-MAIN-01: `?occl=1` two-phase HZB occlusion, default OFF, WebGPU only
   onCompileProgress: (done, total) => { bootStages.enter('pipelines'); if (bootCard) bootCard.setStageLines(bootStages.cardText()); if (bootProg) bootProg.count('compile', done, total); } }); // WG-4a: `?gpucull=0` = CPU instance cull on WebGPU; WG-3d: the WebGPU pipeline needs the same sun-shadow options as the engine
+if (params.get('gpucount') === '1' && gpuDevice && gpuDevice.enableCount) gpuDevice.enableCount(params.get('stacks') === '1'); // D-107 dev: per-submit writeBuffer/setBindGroup counter (window.__gpuCount, tools/perf-walk.mjs --extra gpucount=1)
 bootSpan('createRenderer total (' + rendererInfo.label + ')', tCR);
 if (bootProg) { bootProg.phase('engine'); await bootPaint(); }
 const tCE = bootNow();

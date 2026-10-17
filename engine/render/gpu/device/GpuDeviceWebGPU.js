@@ -103,8 +103,41 @@ export class GpuDeviceWebGPU {
     /** @type {any} */ this._bg0 = null; /** @type {any} */ this._bg1 = null; this._bg1Off = -1; /** @type {any} */ this._ib = null; /** @type {any} */ this._ibFmt = null;
     /** @type {any[]} */ this._vb = new Array(16).fill(null); this._vbOff = new Array(16).fill(0);
     this._dyn = [0];
+    /** D-107 dev counter (`?gpucount=1`): per-frame writeBuffer/setBindGroup counts, see enableCount. */ this.gpuCount = null;
     /** @type {Map<number, any[]>} */ this._staging = new Map();
     this._canvasTarget = null;
+  }
+
+  /**
+   * D-107: dev-only call counter (game/js/main.js parses `?gpucount=1[&stacks=1]`, window.__gpuCount). Wraps queue.writeBuffer (every caller) and each render-pass setBindGroup/setPipeline/
+   * setVertexBuffer/draw; totals are per run, per-frame averages = total / frames. `byBuf`: per destination buffer {n, bytes}. Zero cost when off.
+   */
+  enableCount(stacks = false) {
+    const c = this.gpuCount = { frames: 0, writes: 0, writeBytes: 0, setBindGroup: 0, setPipeline: 0, setVertexBuffer: 0, draws: 0, passes: 0, skipped: 0, byBuf: new Map(), bufIds: new WeakMap(), nextId: 0, byPass: {}, last: new Map(), same: 0, sameBytes: 0, stacks: stacks ? {} : null };
+    const q = this.gpu.queue, orig = q.writeBuffer.bind(q);
+    q.writeBuffer = (buf, off, data, dOff, size) => {
+      const n = size !== undefined ? size : (data.byteLength - (dOff || 0));
+      c.writes++; c.writeBytes += n;
+      let id = c.bufIds.get(buf); if (id === undefined) { id = c.nextId++; c.bufIds.set(buf, id); }
+      let e = c.byBuf.get(id); if (!e) { e = { size: buf.size, n: 0, bytes: 0 }; c.byBuf.set(id, e); }
+      e.n++; e.bytes += n;
+      { // identical-bytes detector: hash of the last write to this (buffer, offset); same hash + size = a redundant upload
+        const dd = data instanceof ArrayBuffer ? data : data.buffer, base = (dOff || 0) + (data instanceof ArrayBuffer ? 0 : data.byteOffset);
+        const u = (base & 3) === 0 ? new Uint32Array(dd, base, n >> 2) : null; let h = 0x811c9dc5 ^ n;
+        if (u) { for (let i = 0; i < u.length; i++) h = Math.imul(h ^ u[i], 16777619); const key = id * 4096 + (off >> 2 & 4095); if (c.last.get(key) === h) { c.same++; c.sameBytes += n; e.same = (e.same || 0) + 1; } c.last.set(key, h); }
+      }
+      if (c.stacks) { const k = (new Error().stack || '').split(String.fromCharCode(10)).slice(2, 5).map((l) => l.trim().replace(/^at /, '').replace(/https?:\/\/[^/]+\//, '')).join(' < '); const o = c.stacks[k] || (c.stacks[k] = { n: 0, bytes: 0 }); o.n++; o.bytes += n; }
+      return orig(buf, off, data, dOff, size);
+    };
+    globalThis.__gpuCount = c;
+  }
+
+  /** @param {any} pass wrap one render pass for the D-107 counter */
+  _countPass(pass) {
+    const c = this.gpuCount; c.passes++;
+    const w = (name, key) => { const f = pass[name].bind(pass); pass[name] = (...a) => { c[key]++; return f(...a); }; };
+    w('setBindGroup', 'setBindGroup'); w('setPipeline', 'setPipeline'); w('setVertexBuffer', 'setVertexBuffer'); w('draw', 'draws'); w('drawIndexed', 'draws');
+    return pass;
   }
 
   /** WG-1b2: bind the canvas (called by createGpuDevice after adapter/device/self-test succeeded, so a failed webgpu request leaves the canvas free for WebGL2). @param {any} canvas */
@@ -506,6 +539,7 @@ export class GpuDeviceWebGPU {
     }
     this.timer.attach(pd);
     this._pass = this._encoder.beginRenderPass(pd);
+    if (this.gpuCount) this._countPass(this._pass);
     this._curPipeline = null; this._resetPassState();
     this._boundTarget = target;
     if (this.tracePasses) { // FIX-PASS: owner stack only for the TRACE_PASSES_AFTER_ABORT passes after a stale pass was seen, then 0-alloc again
@@ -683,6 +717,7 @@ export class GpuDeviceWebGPU {
     const ring = this.uniformRing;
     if (ring.usedBytes > 0) this.gpu.queue.writeBuffer(this._ringBuf, 0, ring.buffer, 0, ring.usedBytes);
     ring.reset();
+    if (this.gpuCount) { this.gpuCount.frames++; this.gpuCount.skipped = this.skippedCalls; }
     if (this._encoder) {
       const timing = this.timer.resolve(this._encoder);
       this.gpu.queue.submit([this._encoder.finish()]); this._encoder = null;
