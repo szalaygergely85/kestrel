@@ -1325,3 +1325,8 @@ Writer next: rewrite a pack to <= 38; programmer then lowers `R19_ALLOW`. No que
   RF17-19 done: `run-tests.mjs --changed [base]` (default origin/master; git diff base...HEAD + working tree + untracked; suite is changed / same dir / static-imports a changed file; check-deps always).
   Pure fn in tools/testSelect.mjs (selectSuites, relativeImports) + tools/testSelect.test.mjs (fixture list, no git). Existing flags untouched; run-tests.test.mjs unchanged.
   Verified: --filter run-tests,testSelect,editor/undo -> 4 PASS. Note: queue rows were at lines 25/27 of kestrel/docs/pc-b-queue.md, not in this clone's copy.
+
+### RF17-11 / OB-171 (kestrel-3, voxprio) - arch-review
+VOX-PRIO-01 already had tiers (voxel.priority 0..3 then distance). Added in engine/render/voxelPool.js collect(): tier 1 only outranks props within `pool.prioRange` (40 m, else demoted to tier 0); 5% distance hysteresis (d2*0.9, `entity._voxSel` frame stamp) for last-frame-drawn entities; 0 alloc.
+Test (voxelPool.test.js): 218 entities, NPCs within 40 m all kept, 90 m NPC demoted, far props dropped, same set over 50 jittered frames, 0 alloc. voxelPool/mesh filter: 70/70 PASS.
+NEEDS B1-main: none required (game already sets priority 1 for NPCs/givers/bear, 2 for markers); verify hostile beasts spawn with voxel.priority = 1 (grep not done, one line in the spawn code if missing).
