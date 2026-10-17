@@ -17,4 +17,13 @@ hud.draw(ui, 10, 2, [0, 0, 0], true); assert.equal(cells.length, 'Coin 5'.length
 cells.length = 0; hud.draw(ui, 10, 2, [0, 0, 0], false); assert.equal(cells.length, 0, 'hidden when not visible');
 hud.step(0.7); assert.equal(hud.alpha(), 0);
 hud.touch(); v = 6; hud.step(0.1); assert.equal(hud.alpha(), 1, 'new change restarts');
+const text = () => cells.slice(0, -1).map(c => String.fromCharCode(c[2] + 32)).join('');
+cells.length = 0; hud.draw(ui, 10, 2, [10, 20, 30], true);
+assert.equal(text(), 'Coin 6', 'changed getter value redraws cached label');
+v = 125.9; cells.length = 0; hud.draw(ui, 10, 2, [10, 20, 30], true);
+assert.equal(text(), 'Coin 125', 'label updates without requiring touch');
+v = NaN; cells.length = 0; hud.draw(ui, 10, 2, [10, 20, 30], true);
+assert.equal(text(), 'Coin 0', 'nonfinite value normalizes to zero');
+hud.step(3.15); cells.length = 0; hud.draw(ui, 10, 2, [10, 20, 30], true);
+assert.deepEqual(cells[0].slice(3), [118, 117, 103, 10, 20, 30], 'fade blends channels with background');
 console.log('coinHud: all passed');
