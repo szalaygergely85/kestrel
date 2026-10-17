@@ -13,7 +13,7 @@ const all = [...files.quests, ...packs.quests].map(q => q.def);
 const get = id => all.find(d => d.id === id);
 const IDS = ['sq.ow.night', 'sq.ow.bears', 'sq.ow.letters', 'sq.ow.song', 'sq.ow.trail', 'sq.ow.news'];
 // requires chain: stub every earlier gate (wolves, names, board, mirror, relay) as open
-const GATES = ['sq.ow.wolves', 'mq.ow.names', 'mq.ow.board', 'mq.ford.mirror', 'mq.ow.relay'];
+const GATES = ['sq.ow.wolves', 'mq.ow.names', 'mq.ow.board', 'mq.ford.mirror', 'mq.ow.relay', 'mq.ow.close']; // mq.ow.close = mq.ow.board's next (QL-MAIN-01)
 const mk = () => {
   const gates = GATES.map(g => { const d = { ...get(g) }; delete d.requires; return d; });
   const b = createQuestBook(get('m1'), [...gates, ...IDS.map(get)]);

@@ -15,7 +15,7 @@ ok(st && st.keepMask, 'site strandCave placed (keepTerrain)');
 const errs = validateUnder(world);
 ok(errs.length === 0, 'validateUnder: ' + errs.slice(0, 2).join('; '));
 const lv = JSON.parse(fs.readFileSync(new URL('../../../../content/levels/strand_cave.level.json', import.meta.url), 'utf8'));
-ok(lv.ambience === 'cave' && lv.lights.filter((l) => !/^(dressTorch|cave(Mid|East|Mouth))/.test(l.id)).length === 1 && lv.lights[0].preset === 'lanternHook', 'ambience cave, one lantern');
+ok(lv.ambience === 'cave' && lv.lights.filter((l) => !/^(dressTorch|cave(Mid|East|Mouth|RakeW|RakeE))/.test(l.id)).length === 1 && lv.lights[0].preset === 'lanternHook', 'ambience cave, one lantern');
 const site = UNDER_SITES.find((s) => s.id === 'strandCave'), FL = site.z;
 ok(FL >= SEA + 0.3, 'floor above sea level + 0.3: ' + (FL - SEA).toFixed(2));
 const mat = (c) => lv.legend[c].floorMat;
