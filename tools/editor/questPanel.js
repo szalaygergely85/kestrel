@@ -102,7 +102,7 @@ export async function mountQuestPanel(root, opts) {
   }
 
   // ED-QUI-05/06: conversation (Accept/Exit, dangling GOTO) and reward problems join the live lint list
-  const coinFlags = { coinPaid: false };   // runtime pays items only (questBook.js); flip when the grant pays rewards.coin
+  const coinFlags = { coinPaid: true };   // CUR-05: coin tile on (D-121)
   // ED-QUI-06: card [05] reward tiles
   function rewardsBox(q) {
     const t = rewardTiles(q, itemDefs, coinFlags, model), wrap = el('div', 'q-rewards'); wrap.id = 'quest-rewards';
@@ -125,11 +125,11 @@ export async function mountQuestPanel(root, opts) {
       n.addEventListener('change', () => apply({ heartPiece: Math.min(1, Math.max(0, Number(n.value) || 0)) }));
       const row = el('div', 'q-orow'); row.append(n, el('span', 'q-ometa', '/ 1')); tile.append(row); grid.append(tile);
     }
-    const coin = el('div', 'q-rtile disabled'); coin.id = 'quest-coin'; coin.title = t.coin.note;
+    const coin = el('div', t.coin.enabled ? 'q-rtile' : 'q-rtile disabled'); coin.id = 'quest-coin'; coin.title = t.coin.note;
     coin.append(el('div', 'q-oname', 'Coin'));
     const cn = el('input'); cn.type = 'number'; cn.min = 0; cn.value = t.coin.n; cn.style.width = '3.5em'; cn.disabled = !t.coin.enabled;
     if (t.coin.enabled) cn.addEventListener('change', () => apply({ coin: Number(cn.value) || 0 }));
-    coin.append(cn); if (t.coin.note) coin.append(el('div', 'q-ometa', t.coin.note)); grid.append(coin);
+    coin.append(cn); coin.append(el('div', 'q-ometa', 'Band: ' + t.coin.hint)); if (t.coin.note) coin.append(el('div', 'q-ometa', t.coin.note)); grid.append(coin);
     const add = el('select'); add.id = 'quest-reward-add'; add.append(new Option('+ Add item...', ''));
     for (const c of itemChoices(itemDefs)) if (c.id !== HEART_PIECE_ITEM && !t.items.some((x) => x.id === c.id)) add.append(new Option(c.name, c.id));
     add.addEventListener('change', () => { if (add.value) apply({ items: [...t.items, { id: add.value, n: 1 }] }); });

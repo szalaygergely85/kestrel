@@ -4,7 +4,10 @@
 import { setQuestField } from './model.js';
 import { formatView, isFormatDef, HEART_PIECE_ITEM } from './format.js';
 
-export const COIN_NOTE = 'Currency: owner decision open';
+export const COIN_NOTE = '';
+export const COIN_BANDS = { errand: [5, 15], side: [15, 40], main: [20, 50], elite: [40, 100] };   // = tools/coin-lint.mjs
+/** Band hint text for a quest, e.g. "side 15-40". */
+export function coinBandHint(q) { const raw = q.raw || {}, b = COIN_BANDS[raw.rewardBand] ? raw.rewardBand : String(q.id || raw.id).startsWith('mq.') ? 'main' : 'side'; return `${b} ${COIN_BANDS[b][0]}-${COIN_BANDS[b][1]}`; }
 const human = (s) => { const h = String(s ?? '').replace(/[._]/g, ' '); return h.charAt(0).toUpperCase() + h.slice(1); };
 
 /**
@@ -20,7 +23,7 @@ export function rewardTiles(q, itemDefs = {}, flags = {}, model = null) {
   const nx = v.next ? { id: v.next, title: ((model && model.quests.find((x) => x.id === v.next)) || {}).title || v.next, note: 'Offered at hand-in, never auto-started' } : null;
   const empty = !items.length && !heartN && !rw.coin;
   return {
-    items, heart: { shown: heartHere, n: heartN }, coin: { enabled: !!flags.coinPaid, n: rw.coin || 0, note: flags.coinPaid ? '' : COIN_NOTE },
+    items, heart: { shown: heartHere, n: heartN }, coin: { enabled: flags.coinPaid !== false, n: rw.coin || 0, note: flags.coinPaid === false ? 'Coin disabled' : COIN_NOTE, hint: coinBandHint(q) },
     next: nx, empty, canRemoveLast: false,
     problems: empty ? ['This quest rewards nothing (add an item, a heart piece or a coin)'] : [],
   };
