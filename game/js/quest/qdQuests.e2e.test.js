@@ -10,12 +10,13 @@ const h = await createQuestE2e(bundle); // one shared run, like allQuests.e2e (B
 const pack = JSON.parse(fs.readFileSync(new URL('../../../content/quests/ch12/pack.json', import.meta.url), 'utf8'));
 const world = JSON.parse(fs.readFileSync(new URL('../../../content/worlds/world_m1.world.json', import.meta.url), 'utf8'));
 const row = (id) => pack.quests.find((q) => q.id === id);
-for (const id of ['sq.he.farm', 'sq.fc.well', 'sq.burl.tower']) {
+for (const id of ['sq.he.farm', 'sq.fc.well', 'sq.burl.tower', 'sq.he.wallow', 'sq.fc.shrine']) {
   const r = h.runQuest(h.defs.find((d) => d.id === id));
   assert.ok(r.ok, id + ' e2e failed at ' + r.step + ': ' + r.msg);
   const q = row(id);
-  assert.ok(q.steps.length >= 2 && q.steps.length <= 3, id + ' 1-3 objectives');
-  for (const s of q.steps) { assert.ok(s.objText.length <= 38, id + ' objText ' + s.objText); assert.ok(s.journal.length <= 38, id + ' journal ' + s.journal); }
+  const objs = q.steps || q.objectives;
+  assert.ok(objs.length >= 2 && objs.length <= 3, id + ' 1-3 objectives');
+  for (const s of objs) { assert.ok((s.objText || s.text).length <= 38, id + ' objText ' + (s.objText || s.text)); assert.ok(s.journal.length <= 38, id + ' journal ' + s.journal); }
   for (const k of ['offer', 'active', 'ready', 'done']) for (const l of q.lines[k]) assert.ok(l.length <= 56, id + ' line ' + l);
 }
 // shape: kill ids exist as reserve beasts of the right group; talk sites resolve to world entities with an inspect text
@@ -45,4 +46,8 @@ assert.equal(ent('qd04_fox1').components.brain.beastKind, 'fox_raider');
   bk.feed({ type: 'item:got', id: 'lamp.hood' });
   assert.ok(step3().status !== 'active' && step3().progress === 1, 'the lamp hood completes step 3: ' + JSON.stringify(step3()));
 }
+// QD-09: Old Tusk / Who Pushed the Shrine shape (reserve groups, chest table, elite linger)
+assert.equal(ent('qd09_oldTusk').components.brain.group, 'wallow.oldTusk'); assert.ok(ent('qd09_oldTusk').components.brain.lingerSec > 1200, 'Old Tusk lingers longer than the elite day');
+for (const id of ['qd09_bones1', 'qd09_bones2']) assert.equal(ent(id).components.brain.group, 'shrine.bones');
+assert.ok(ent('chestWallow').components.voxel.model === 'chestSmall', 'wallow chest');
 console.log('qdQuests.e2e ok');

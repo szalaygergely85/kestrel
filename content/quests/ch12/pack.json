@@ -1522,18 +1522,39 @@
     },
     {
       "id": "sq.he.wallow",
-      "title": "The Boar Wallow",
+      "title": "Old Tusk",
       "site": "rook",
-      "steps": [
+      "objectives": [
         {
-          "template": "explore",
-          "params": {
-            "areas": [
-              "wallow"
-            ]
+          "id": "reach",
+          "text": "Go to the boar wallow",
+          "when": {
+            "type": "area",
+            "id": "wallow"
           },
-          "objText": "Look at the wallow south of the road",
-          "journal": "Check the wallow south of the road."
+          "journal": "The wallow is south of the road."
+        },
+        {
+          "id": "tusk",
+          "text": "Defeat Old Tusk",
+          "when": {
+            "type": "beasts",
+            "ids": [
+              "qd09_oldTusk"
+            ],
+            "count": 1
+          },
+          "journal": "A giant boar rises from the mud."
+        },
+        {
+          "id": "hides",
+          "text": "Dig out Rook's hides",
+          "when": {
+            "type": "flag",
+            "id": "chest.chestWallow",
+            "equals": true
+          },
+          "journal": "Rook's hides lie buried in the mud."
         }
       ],
       "requires": [
@@ -1546,22 +1567,22 @@
         "table": "gear.t1"
       },
       "band": 2,
-      "returnText": "Tell Rook what you saw",
+      "returnText": "Tell Rook about Old Tusk",
       "lines": {
         "offer": [
-          "Boars. At the wallow, south of the Bend road.",
-          "They dug up my hides. I counted. They are short.",
-          "Go and look. Tell me how many holes."
+          "A giant boar sits on my buried hides.",
+          "Old Tusk, in the wallow south of the road.",
+          "Drive him off and dig my hides out."
         ],
         "active": [
-          "The wallow. South. Count the holes for me."
+          "The wallow, south. Old Tusk, then my hides."
         ],
         "ready": [
-          "Eleven holes, and one very fat boar. Ha.",
-          "Mine, the hides, but you may have this. Found it."
+          "Eleven holes. One very dead boar.",
+          "The hides are mine. This is yours."
         ],
         "done": [
-          "Eleven. I will never get them all back."
+          "Eleven holes. I will fill them in."
         ]
       }
     },
@@ -1905,18 +1926,31 @@
     },
     {
       "id": "sq.fc.shrine",
-      "title": "The Fallen Shrine",
+      "title": "Who Pushed the Shrine",
       "site": "postkeeper",
-      "steps": [
+      "objectives": [
         {
-          "template": "explore",
-          "params": {
-            "areas": [
-              "shrine"
-            ]
+          "id": "look",
+          "text": "Read the shrine stone",
+          "when": {
+            "type": "flag",
+            "id": "talk.rsInspectShrine",
+            "equals": true
           },
-          "objText": "Look at the fallen shrine",
-          "journal": "Fallen shrine by the note post. Look."
+          "journal": "Read the fallen shrine by the post."
+        },
+        {
+          "id": "bones",
+          "text": "Defeat the two skeletons",
+          "when": {
+            "type": "beasts",
+            "ids": [
+              "qd09_bones1",
+              "qd09_bones2"
+            ],
+            "count": 2
+          },
+          "journal": "Skeletons rise from the grave earth."
         }
       ],
       "requires": [
@@ -1930,29 +1964,24 @@
         }
       ],
       "reward": {
-        "items": [
-          {
-            "id": "arrow",
-            "n": 10
-          }
-        ]
+        "table": "gear.t2"
       },
       "band": 4,
-      "returnText": "Tell the post-keeper which way it fell",
+      "returnText": "Tell the post-keeper what rose",
       "lines": {
         "offer": [
-          "A shrine lies fallen by the notice post.",
-          "Go and look. Tell me which way it fell."
+          "The shrine fell west, against the wind.",
+          "Somebody pushed it. Go and read the stone."
         ],
         "active": [
           "The fallen shrine, by the notice post."
         ],
         "ready": [
-          "West? It fell west. Of course it did.",
-          "Ten arrows. Odd thing to ask, I know."
+          "Below, like the crypt. Of course.",
+          "Take this for the trouble."
         ],
         "done": [
-          "Always west, out here. Even the stones."
+          "Pushed from below. I sleep badly now."
         ]
       }
     },

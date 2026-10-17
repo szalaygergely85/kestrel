@@ -26,6 +26,7 @@ export const CHEST_TABLES = {
   chestBearDen: { fixed: [{ item: 'arrow', n: 12 }, { item: 'potion.hp', n: 1 }, { item: 'scroll.spell', n: 1 }], weighted: [], gear: { tier: 'sturdy' } }, // UNDER-04: the stash behind the sleeping bear (guarded by the bear home, not by depth)
   chestStrandCave: { fixed: [{ item: 'arrow', n: 10 }, { item: 'potion.hp', n: 1 }], weighted: [], gear: { tier: 'sturdy' } }, // UNDER-05: the smugglers' chest at the back of the Long Strand sea cave (guarded by the tortoise homes)
   chestGoblinTunnel: { fixed: [{ item: 'arrow', n: 12 }, { item: 'potion.hp', n: 1 }], weighted: [], gear: { tier: 'sturdy' } }, // UNDER-06: the goblins' stash in the tunnel between campNorth and campEast (earned: opens when the 3 tunnel goblins are dead)
+  chestWallow: { fixed: [{ item: 'boar.hide', n: 2 }], weighted: [] }, // QD-09 Old Tusk: Rook's buried hide bundle (feeds Gondola Plate)
   chestCart: { fixed: [{ item: 'honeycomb', n: 1 }, { item: 'arrow', n: 10 }], weighted: [], gear: { tier: 'worn' } }, // QD-05 The Tipped Cart strongbox (the honeycomb feeds sq.honey)
   chestHidden: { fixed: [], weighted: [], gear: { tier: 'fine' } },
   chestBed: { fixed: [{ item: 'arrow', n: 10 }], weighted: [], gear: { tier: 'sturdy' } }, // SWIM-04d: Glasswater lake-bed chest (needsBottom)

@@ -65,7 +65,7 @@
     "inspect.shrine": {
       "prompt": "[E] Look at the shrine",
       "title": "A fallen shrine",
-      "lines": ["A stone niche on its back. The pillar leans west.", "Three rings cut in the base, worn soft.", "The same mark as the waystones.", "In the niche, a cup of rainwater. Fresh."]
+      "lines": ["A stone niche on its back. The pillar leans west.", "Three rings cut in the base, worn soft.", "The same mark as the waystones.", "In the niche, a cup of rainwater. Fresh.", "The base is scraped from below. It was pushed."]
     },
     "inspect.woodpile": {
       "prompt": "[E] Look at the woodpile",

@@ -1,0 +1,86 @@
+[
+  {
+    "id": "qd09.tusk",
+    "rev": 1,
+    "name": "Old Tusk rises in the wallow",
+    "once": true,
+    "when": {
+      "on": "area.enter",
+      "area": "wallow"
+    },
+    "if": [
+      {
+        "is": "quest",
+        "quest": "sq.he.wallow",
+        "state": "active"
+      },
+      {
+        "is": "group",
+        "group": "wallow.oldTusk",
+        "state": "reserve"
+      }
+    ],
+    "do": [
+      {
+        "act": "beasts.spawn",
+        "group": "wallow.oldTusk"
+      }
+    ]
+  },
+  {
+    "id": "qd09.bones",
+    "rev": 1,
+    "name": "Skeletons rise behind the shrine (read)",
+    "once": true,
+    "when": {
+      "on": "flag.set",
+      "flag": "talk.rsInspectShrine"
+    },
+    "if": [
+      {
+        "is": "quest",
+        "quest": "sq.fc.shrine",
+        "state": "active"
+      }
+    ],
+    "do": [
+      {
+        "act": "beasts.spawn",
+        "group": "shrine.bones"
+      }
+    ]
+  },
+  {
+    "id": "qd09.bones.return",
+    "rev": 1,
+    "name": "Skeletons rise behind the shrine (back at it)",
+    "once": true,
+    "when": {
+      "on": "area.enter",
+      "area": "shrine"
+    },
+    "if": [
+      {
+        "is": "quest",
+        "quest": "sq.fc.shrine",
+        "state": "active"
+      },
+      {
+        "is": "flag",
+        "flag": "talk.rsInspectShrine",
+        "eq": true
+      },
+      {
+        "is": "group",
+        "group": "shrine.bones",
+        "state": "reserve"
+      }
+    ],
+    "do": [
+      {
+        "act": "beasts.spawn",
+        "group": "shrine.bones"
+      }
+    ]
+  }
+]
