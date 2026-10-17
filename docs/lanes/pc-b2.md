@@ -1372,3 +1372,9 @@ Gate: waterTool.test.mjs PASS, run-tests --filter editor, node --check ok. Brows
 ### R9-BAND (kestrel-4, branch r9band) - ready for review
 R9 re-scoped (arch 38.9x Q2): river test dropped; warns when early quest (band<=5) target sits where `bandMinAt` > 5. bandMinAt = createBand(world_geo.regions).bandAt (game/js/quest/sim/band.js, same grid as main.js). `R9_OK` set added; quest-zone-lint (OB-136) switched to the same bandAt (opt `bandMinAt`), fixtures updated.
 Remaining R9 count: 3 (sq.reg.highPastures b8, sq.reg.signalHill b7, sq.reg.heath b8 - wardens). The ow chain (mq.ow.fence, sq.ow.wolves, sq.ow.night: wolf1/wolf2 at ~848,990 = band 6) hit too; put in R9_OK per AC, PO should confirm or move the pack. quest-zone-lint real: 0 hits. Tests green.
+
+### VISQA-13 INTERIOR-GREEN (kestrel-3, undergreen) - dev, arch-review not needed (content only, no engine change)
+- Diagnosis: carpet/decor/scatter are NOT the source (crypt still identical with ?carpet=0&decor=cpu; structures are bbox-excluded already). The green = `moss_cap` part on world-placed non-bare rocks + all Pebble_* meshes inside the 4 level boxes.
+- Fix (data): 8 new `Pebble_*_bare` mesh json (moss_cap -> rock, manifest rows) + 52 placements in the crypt/fordCellar/goblinTunnel/bearDen boxes switched to `_bare` meshes (world_m1.world.json); outside the boxes untouched.
+- Test: tools/interiorGreen.test.mjs (245 placements, 4 zones, 0 moss meshes); run-tests --filter world 86 PASS. Stills: docs/test-reports/visqa/visqa13-<spot>-before|after.png.
+- Note: default s2 stills show only ~4-10 faintly green px before AND after (blue-grey blob in crypt is a pebble, now bare); the queue's "bush clumps" were mostly dark moss-cap tint. Owner check at 8000 recommended.
