@@ -72,6 +72,7 @@ import { initAudio, setMuted, setVolume, toggleMute, isMuted } from './audio/syn
 import { resetGameAudio, stepGameAudio } from './audio/sfx.js';
 // ---- end US-020a ----
 import { createSafeBindings, resolveGameKeys } from './gameKeys.js'; // BINDINGS-WIRE-01
+const DEBUG_MOD = 'ShiftLeft'; // REPORT-KEY-01: dev-only modifier (Shift+F8 god mode under ?debug=1), not a rebindable gameplay key
 import { loadSettings, saveSettings, getSaveStorage } from './platform/index.js'; // US-060: remembered mute (D-012)
 import { loadBootBundle } from './packBoot.js';
 import { applyLocalOverlay } from './localOverlay.js';
@@ -2156,7 +2157,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
     if (demoEnd) demoEnd.step((c) => input.pressed(c));
     if (input.pressed(gameKeys.mute)) { toggleMute(); saveSettings({ muted: isMuted() }); } // US-060: remember across reload
     if (input.pressed('F3')) overlay.toggle();
-    if (input.pressed('F8') && !(params.get('debug') === '1' && input.isDown('ShiftLeft'))) { // REPORT-KEY-01: bug snapshot (debug god mode = Shift+F8)
+    if (input.pressed('F8') && !(params.get('debug') === '1' && input.isDown(DEBUG_MOD))) { // REPORT-KEY-01: bug snapshot (debug god mode = Shift+F8)
       const t = playerHandle.data.transform, qn = bootOpts.quality ? bootOpts.quality.name : 'none';
       takeSnapshot({ build: window.__buildId || new Date(performance.timeOrigin).toISOString().slice(0, 16), x: t.x, y: t.y, z: t.z, yaw: look.yawDeg, pitch: look.pitchDeg, hour: clockHour(engine.world.state, clockCfg), quality: qn, renderer: rendererInfo.label, w: window.innerWidth, h: window.innerHeight, cols: rt.cols, rows: rt.rows, flags: window.location.search })
         .then(() => { if (toasts) toasts.say('Bug snapshot copied - paste it in your report', [226, 214, 176]); });
@@ -2421,7 +2422,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         stepPickups(engine.world, playerHandle.data); // US-080b (30.2)
         // US-080a1 AC5 (`?debug=1` only): F8 toggles invulnerability, F9 deals 5 HP.
         if (params.get('debug') === '1') {
-          if (input.pressed('F8') && input.isDown('ShiftLeft')) vitals.setGodMode(!vitals.godMode);
+          if (input.pressed('F8') && input.isDown(DEBUG_MOD)) vitals.setGodMode(!vitals.godMode);
           if (input.pressed('F9')) vitals.debugHit();
         }
       }

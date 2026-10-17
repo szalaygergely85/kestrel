@@ -22,7 +22,7 @@ book.feed({ type: 'flag:set', key: 'wake', value: true });
 assert.equal(book.accept('tower.blade'), true); upd();
 assert.deepEqual(s.left, ['Not Safe'], 'only the giver quest is listed');
 assert.equal(s.right[0], 'Not Safe');
-assert.ok(s.right.join(' ').includes('A note pinned to the wall: it is not safe here. Find a blade.'), 'short description: ' + s.right);
+assert.ok(s.right.join(' ').includes('It is not safe here. Find a blade.'), 'short description: ' + s.right);
 assert.ok(has(/^\[>\] Go up the tower$/), 'go step has no count: ' + s.right);
 assert.ok(!has(/Sword|safe to go outside/), 'no future objectives: ' + s.right);
 book.feed({ type: 'area:entered', id: 'breach' }); upd();
