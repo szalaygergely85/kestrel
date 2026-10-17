@@ -10,6 +10,9 @@
     "notePost": {
       "entity": "notePost"
     },
+    "qd06_stoneKnot": {
+      "entity": "qd06_stoneKnot"
+    },
     "relayBend": {
       "entity": "relayBend"
     },
