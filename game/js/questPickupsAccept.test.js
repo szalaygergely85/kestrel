@@ -23,3 +23,22 @@ function run(full) {
 const a = run(false); assert.equal(a.added.length, 1, 'normal pick: one inventory:added'); assert.deepEqual(a.removed, ['pk']);
 const b = run(true); assert.equal(b.added.length, 0, 'full pack: no "+1" toast');
 console.log('questPickupsAccept: ok');
+
+// OB-216: an object giver whose quest is not open yet (opensAfter) is hidden with no '[E] Pick up' prompt; it appears once the quest is AVAILABLE.
+{
+  let status = 0; const ia = new Set(); let accepted = 0;
+  const inv = ensureInventory({}, null);
+  const book = { packOps: null, statusOf: () => status, countedItems: () => [], accept() { if (status !== 1) return false; accepted++; this.packOps.add('packet', 1); status = 2; return true; } };
+  const ent = { transform: { x: 0, y: 0, z: 0 }, components: { voxel: { model: 'pickup.packet' }, questPickup: { item: 'packet', n: 1, acceptQuest: 'sq.packet' } } };
+  const removed = [];
+  const world = { renderVersion: 0, forEachEntity: (fn) => fn(ent, 'pk'), entity: (id) => (removed.includes(id) ? null : ent), remove: (id) => removed.push(id), addInteractable: (d) => ia.add(d.key), removeInteractable: (k) => ia.delete(k) };
+  const qp = createQuestPickups({ getBook: () => book, feed() {}, defs: { packet: { name: 'Cloth packet', stackMax: 9 } } });
+  const st = { interactPressed: false };
+  qp.onBoot({ world, events: { emit() {} }, state: st, inventory: inv, player: { transform: { x: 0, y: 0, z: 0 } } });
+  assert.equal(ia.size, 0, 'locked quest: no pick-up prompt'); assert.equal(ent.components.voxel.hidden, true, 'locked quest: packet hidden');
+  st.interactPressed = true; qp.onTick(); st.interactPressed = false; assert.equal(accepted, 0, 'locked: E does nothing');
+  status = 1; for (let i = 0; i < 10; i++) qp.onTick();
+  assert.ok(ia.has('qp.pk'), 'open quest: prompt back'); assert.equal(ent.components.voxel.hidden, false, 'open quest: packet visible');
+  st.interactPressed = true; qp.onTick(); assert.equal(accepted, 1, 'open: E accepts'); assert.deepEqual(removed, ['pk']);
+  console.log('questPickupsAccept OB-216: ok');
+}

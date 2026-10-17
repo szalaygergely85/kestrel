@@ -99,6 +99,7 @@ out.water.splice(fi, 0, ...rivers);                           // lower index tha
   if (!(drop >= 2 && drop <= 20)) throw new Error('braidFalls drop out of 2..20 m: ' + drop);
   const lip = [x + uy * hw, y - ux * hw, x - uy * hw, y + ux * hw].map((v) => +v.toFixed(2));
   out.waterfalls = (out.waterfalls || []).filter((w) => w.id !== 'braidFalls');
+  // OB-213: out 4.5 m/s (throw ~8.3 m) so the sheet clears the grassy ramp under the east half of the lip and lands in the plunge reach (was 1.5: green slope cut the falls)
   out.waterfalls.push({ id: 'braidFalls', lip, z: +lipZ.toFixed(3), drop, outDeg, out: 4.5, look: 'waterfall' });
 }
 fs.writeFileSync(FILE, stringifyContent(out), 'utf8');

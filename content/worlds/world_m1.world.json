@@ -2655,7 +2655,6 @@
   "streaming": {
     "cutM": 180,
     "keepFar": [
-      "sg",
       "relay",
       "tower",
       "waystone"

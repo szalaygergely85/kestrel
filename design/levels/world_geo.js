@@ -28,6 +28,7 @@
         pts: [[-40, 330], [250, 240], [560, 260], [860, 150], [1180, 110], [1500, 180], [1800, 140], [2100, 240]],
         gorge: { width: 90, keep: 0.25, note: 'the river cuts a notch: range height x 0.25 at the river' } },
       { id: 'westFells', name: 'the West Fells (P; was recipe.ridge)', h: 170, w: 190, ridged: { scale: 150, amp: 60 }, seedOff: 73,
+        coastFade: 260, // OB-209b: the fells sink toward the sea over 260 m (coast sd), so the 12 m cliff no longer slices a 150 m flat-topped wall (the far 'pale building')
         pts: [[110, 300], [190, 500], [240, 700], [230, 840], [260, 1000], [230, 1200], [170, 1430]] }
     ],
     peaks: [
@@ -229,6 +230,7 @@
       var n = U.fbm(x / R.ridged.scale, y / R.ridged.scale, G.seed + R.seedOff, 4, 0.5, 2), rn = 1 - Math.abs(2 * n - 1);
       var add = R.h * f + R.ridged.amp * rn * rn * gauss(d / (R.w * 0.7));
       if (R.gorge) add *= 1 - (1 - R.gorge.keep) * gauss(dr / R.gorge.width);
+      if (R.coastFade) add *= smooth(0, R.coastFade, coastSD(x, y).sd); // OB-209b
       h += add;
     }
     for (i = 0; i < G.peaks.length; i++) { var p = G.peaks[i]; h += p.h * gauss(hypot(x - p.x, y - p.y) / p.r); }
@@ -378,13 +380,13 @@
     // deprecate (PERF-09), no polymorphic range maps (only Whitecombs has `gorge`). gauss / hypot / smooth / ell are written out by
     // hand with the SAME expressions: those calls sit behind the range/peak filters, so TurboFan's call-frequency gate left them
     // un-inlined and every double argument/return was a fresh HeapNumber. riverX only runs when a gorge needs it (pure function of y).
-    var TD = T.drop, TY0 = T.y0, TYD = T.y1 - T.y0, NR = G.ranges.length, NP = G.peaks.length, RK = 11;
+    var TD = T.drop, TY0 = T.y0, TYD = T.y1 - T.y0, NR = G.ranges.length, NP = G.peaks.length, RK = 12;
     var RID = [], RSEED = new Int32Array(NR), RG = new Float64Array(NR * RK), PK = new Float64Array(NP * 5);
     G.ranges.forEach(function (R, i) {   // box x0,y0,x1,y1 | w, h, scale, amp, w*0.7, 1-keep, gorge width (0 = no gorge)
       var o = i * RK, B = rangeBox[i]; RID.push(R.id); RSEED[i] = G.seed + R.seedOff;   // int seed: passed to fbm as a Smi, as before
       RG[o] = B[0]; RG[o + 1] = B[1]; RG[o + 2] = B[2]; RG[o + 3] = B[3]; RG[o + 4] = R.w; RG[o + 5] = R.h;
       RG[o + 6] = R.ridged.scale; RG[o + 7] = R.ridged.amp; RG[o + 8] = R.w * 0.7;
-      RG[o + 9] = R.gorge ? 1 - R.gorge.keep : 0; RG[o + 10] = R.gorge ? R.gorge.width : 0;
+      RG[o + 9] = R.gorge ? 1 - R.gorge.keep : 0; RG[o + 10] = R.gorge ? R.gorge.width : 0; RG[o + 11] = R.coastFade || 0;
     });
     G.peaks.forEach(function (p, i) { var o = i * 5; PK[o] = p.x; PK[o + 1] = p.y; PK[o + 2] = p.h; PK[o + 3] = p.r; PK[o + 4] = p.r * 28; });
     var GP = G.gate.pass; ell(GP, GP.x, GP.y);   // fills GP._cs = [cos, sin] of rot, exactly as ell() reads it
@@ -408,6 +410,7 @@
               if (dr < 0) dr = Math.abs(x - U.riverX(y));
               g = dr / RG[o + 10]; add *= 1 - RG[o + 9] * Math.exp(-(g * g));
             }
+            if (RG[o + 11] !== 0) add *= smooth(0, RG[o + 11], F.sdf('coast', x, y)); // OB-209b coastFade (same as geoHeight, 16 m bilinear sd)
             h += add;
           }
           for (i = 0; i < NP; i++) {                                          // beyond 28 r exp underflows to exactly 0

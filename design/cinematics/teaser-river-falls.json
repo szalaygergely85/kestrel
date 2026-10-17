@@ -2,33 +2,33 @@
   "version": 1,
   "id": "teaser-river-falls",
   "fps": 30,
-  "note": "TEASER (owner 2026-10-16, TikTok 9:16, capture --hour 11; opening shot): starts 3.5 m over the lower braid ~28 m below braidFalls (lip ~1245,603, 16.6 m drop -60 -> -76.6) looking up at the falls (pitch +12..+14), climbs while still ~20 m off the face (falls stay in frame), passes 3 m over the lip, then glides north up braid_outlet looking up-river (pitch -8). TEASER-QA-03 (2026-10-16): end key z -54.5 -> -51, pitch -8 -> -11: from 2.7 m over the -57.2 banks the 1.2 m higher Glasswater (-58, correct: the outlet drops -58 -> -59.6) only showed as a grazing sky-grey band above the bank strip (read as a raised slab); from 6 m it reads as an open lake.",
+  "note": "TEASER (owner 2026-10-16, TikTok 9:16, capture --hour 11; opening shot): starts ~5 m over the lower braid ~50 m below braidFalls (whole falls lip-to-pool in frame; the sheet throws ~8 m out since OB-213),603, 16.6 m drop -60 -> -76.6) looking up at the falls (pitch +12..+14), climbs while still ~20 m off the face (falls stay in frame), passes 3 m over the lip, then glides north up braid_outlet looking up-river (pitch -8).",
   "keys": [
     {
       "t": 0,
-      "x": 1240.5,
-      "y": 632,
-      "z": -73,
-      "yawDeg": 8,
-      "pitchDeg": 12,
+      "x": 1232,
+      "y": 655,
+      "z": -71,
+      "yawDeg": 14,
+      "pitchDeg": 3,
       "ease": "linear"
     },
     {
       "t": 3,
-      "x": 1241.5,
-      "y": 624,
+      "x": 1237,
+      "y": 638,
       "z": -66,
-      "yawDeg": 7,
-      "pitchDeg": 6,
+      "yawDeg": 10,
+      "pitchDeg": 0,
       "ease": "linear"
     },
     {
       "t": 5,
       "x": 1243.5,
-      "y": 610,
-      "z": -57,
+      "y": 612,
+      "z": -56.5,
       "yawDeg": 4,
-      "pitchDeg": -2,
+      "pitchDeg": -3,
       "ease": "linear"
     },
     {
@@ -44,9 +44,9 @@
       "t": 8,
       "x": 1247,
       "y": 580,
-      "z": -51,
+      "z": -54.5,
       "yawDeg": 0,
-      "pitchDeg": -11,
+      "pitchDeg": -8,
       "ease": "linear"
     }
   ]
