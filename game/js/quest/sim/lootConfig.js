@@ -25,6 +25,7 @@ export const LOOT_TABLE = {
       { chance: 0.2, give: { item: 'arrow', min: 3, max: 5 } },
     ],
     fixed: [{ item: 'boar.meat', n: 1 }],
+    coin: { chance: 0.10, min: 1, max: 5 }, // CUR-06: straight to the wallet through the seeded loot RNG (CUR-01 pays it)
     orb: { chance: 0.50, kinds: ['hp', 'mp'] },
   },
   // GOB-05 (38.57 (5)): no fixed drops; arrow 2-4 (0.3), goblin.trinket x1 (0.25, a sell item, icon NEEDS DESIGNER), orb 0.4.
@@ -34,9 +35,13 @@ export const LOOT_TABLE = {
       { chance: 0.25, give: { item: 'goblin.trinket', min: 1, max: 1 } },
     ],
     fixed: [],
+    coin: { chance: 0.10, min: 1, max: 5 }, // CUR-06
     orb: { chance: 0.40, kinds: ['hp', 'mp'] },
   },
 };
+
+/** CUR-06: elite beasts (respawning, D-120) drop 10-20 coin on EVERY kill; loot.js emits coin:drop for the CUR-01 wallet. */
+export const ELITE_COIN = { chance: 1, min: 10, max: 20 };
 
 /** The loot RNG's own stream (37.16.3): XORed into the world nav seed so the beast wander RNG is never perturbed. */
 export const LOOT_SEED_SALT = 0x10075;

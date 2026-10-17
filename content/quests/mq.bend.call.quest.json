@@ -10,6 +10,6 @@
     { "id": "knot", "text": "Read the knot on the mount", "journal": "It blinks in threes. Read its knot.", "when": { "type": "flag", "id": "lore.knot.read", "equals": true } }
   ],
   "returnText": "Talk to Rook",
-  "reward": { "items": [{ "id": "chart.river", "n": 1 }] },
+  "reward": { "coin": 35, "items": [{ "id": "chart.river", "n": 1 }] },
   "abandonable": false
 }

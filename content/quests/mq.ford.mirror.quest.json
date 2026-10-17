@@ -9,6 +9,6 @@
     { "id": "glass", "text": "Take the glass from Rook's nest", "journal": "Take the Ford glass from Rook's nest.", "when": { "type": "item", "id": "relay.mirror" } },
     { "id": "wake", "text": "Wake the Ford Waystone", "journal": "Glass in hand. Wake the Ford Waystone.", "when": { "type": "flag", "id": "waystone.ws_ford.woken", "equals": true } }
   ],
-  "rewards": { "items": [{ "id": "potion.hp", "n": 1 }] },
+  "rewards": { "coin": 45, "items": [{ "id": "potion.hp", "n": 1 }] },
   "abandonable": false
 }

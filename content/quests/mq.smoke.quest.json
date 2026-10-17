@@ -11,5 +11,5 @@
   ],
   "returnText": "Talk to Rook",
   "abandonable": false,
-  "reward": { "items": [{ "id": "potion.hp", "n": 1 }] }
+  "reward": { "coin": 35, "items": [{ "id": "potion.hp", "n": 1 }] }
 }

@@ -8,5 +8,6 @@
     { "id": "arrive", "text": "Follow Burl", "journal": "The bear is Burl. Follow her lead.", "when": { "type": "flag", "id": "burl.arrived", "equals": true } }
   ],
   "returnText": "Talk to Burl at the stone",
-  "reward": { "items": [{ "id": "arrow", "n": 5 }] }
+  "rewardBand": "errand",
+  "reward": { "coin": 10, "items": [{ "id": "arrow", "n": 5 }] }
 }

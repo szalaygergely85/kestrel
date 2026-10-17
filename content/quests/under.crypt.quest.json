@@ -14,7 +14,8 @@
     { "id": "chest", "text": "Take what was sealed in", "journal": "Put down the dead to open the chest.", "when": { "type": "flag", "id": "under.crypt.chest.chestCrypt", "equals": true } }
   ],
   "returnText": "Return to Bram at the post",
-  "rewards": { "items": [{ "id": "potion.hp", "n": 2 }] },
+  "rewardBand": "elite",
+  "rewards": { "coin": 95, "items": [{ "id": "potion.hp", "n": 2 }] },
   "lines": {
     "offer": [
       "By the graves there's a crypt. Sealed, years back.",

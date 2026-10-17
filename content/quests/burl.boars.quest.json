@@ -8,5 +8,6 @@
     { "id": "beasts", "text": "Kill boars", "journal": "Kill all five boars in Burl's woods.", "when": { "type": "beasts", "kind": "boar", "ids": ["boar1", "boar2", "boar3", "boar4", "boar5"], "count": 5 } }
   ],
   "returnText": "Return to the bear",
-  "reward": { "items": [{ "id": "arrow", "n": 10 }] }
+  "rewardBand": "errand",
+  "reward": { "coin": 10, "items": [{ "id": "arrow", "n": 10 }] }
 }

@@ -44,5 +44,6 @@
       "Climb the tower stair and find the blade?"
     ]
   },
-  "reward": { "items": [{ "id": "arrow", "n": 5 }] }
+  "rewardBand": "elite",
+  "reward": { "coin": 65, "items": [{ "id": "arrow", "n": 5 }] }
 }
