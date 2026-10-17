@@ -5,7 +5,7 @@
   "giver": { "npc": "bear" },
   "requires": [{ "quest": "burl.boars", "done": true }],
   "objectives": [
-    { "id": "arrive", "text": "Follow Burl", "journal": "The boars are gone, and the bear has a name: Burl. Follow her to where she leads.", "when": { "type": "flag", "id": "burl.arrived", "equals": true } }
+    { "id": "arrive", "text": "Follow Burl", "journal": "The bear is Burl. Follow her lead.", "when": { "type": "flag", "id": "burl.arrived", "equals": true } }
   ],
   "returnText": "Talk to Burl at the stone",
   "reward": { "items": [{ "id": "arrow", "n": 5 }] }

@@ -1253,20 +1253,10 @@ export function lintQuestText(files) {
 
 // Named allow-list of today's hits: "<file>|<kind>" -> max hits. It may only shrink (a larger count fails; so does a stale, too-high entry).
 export const R19_ALLOW = { // today's journal-length hits (writer to shorten later; may only shrink)
-  'content/quests/burl.boars.quest.json|objlen': 1,
-  'content/quests/burl.follow.quest.json|objlen': 1,
-  'content/quests/burl.stone.quest.json|objlen': 1,
   'content/quests/ch12/pack.json|objlen': 52,
   'content/quests/ch3/pack.json|objlen': 17,
   'content/quests/ch3b/pack.json|objlen': 6,
-  'content/quests/m1.quest.json|objlen': 13,
-  'content/quests/mq.bend.call.quest.json|objlen': 2,
-  'content/quests/mq.ford.mirror.quest.json|objlen': 2,
-  'content/quests/mq.ford.stones.quest.json|objlen': 1,
-  'content/quests/mq.river.road.quest.json|objlen': 1,
-  'content/quests/mq.smoke.quest.json|objlen': 2,
   'content/quests/regions/pack.json|objlen': 10,
-  'content/quests/sq.burl.blue.quest.json|objlen': 2,
   'content/quests/tower.blade.quest.json|objlen': 3,
   'content/quests/under.crypt.quest.json|objlen': 3,
   'content/quests/under.graves.quest.json|objlen': 2,

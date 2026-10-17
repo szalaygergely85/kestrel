@@ -6,7 +6,7 @@
   "main": true,
   "requires": [{ "quest": "mq.river.road", "step": "riverBank" }],
   "objectives": [
-    { "id": "fordWest", "text": "Cross the stepping stones", "journal": "The river runs wide and loud. Cross on the stepping stones.", "when": { "type": "area", "id": "fordWest" } }
+    { "id": "fordWest", "text": "Cross the stepping stones", "journal": "Wide river. Cross on stepping stones.", "when": { "type": "area", "id": "fordWest" } }
   ],
   "returnText": "Talk to Rook",
   "abandonable": false,

@@ -31,7 +31,7 @@
       "id": "wake",
       "section": "q01",
       "text": "Get up from the wreck",
-      "journal": "The Kestrel came down through a tower roof. Get up from the wreck and look around.",
+      "journal": "The Kestrel crashed. Get up and look.",
       "when": {
         "type": "flag",
         "id": "wake",
@@ -42,7 +42,7 @@
       "id": "breach",
       "section": "q01",
       "text": "Climb to the top of the tower",
-      "journal": "You are alive, and the wreck still smokes. Climb to the top of the tower.",
+      "journal": "Alive. Climb to the top of the tower.",
       "when": {
         "type": "area",
         "id": "breach"
@@ -52,7 +52,7 @@
       "id": "sword",
       "section": "q01",
       "text": "Take up the ruin steel",
-      "journal": "You reached the top. Take up the ruin steel lying in the ashes.",
+      "journal": "Take the ruin steel from the ashes.",
       "when": {
         "type": "item",
         "id": "sword"
@@ -62,7 +62,7 @@
       "id": "leave",
       "section": "q01",
       "text": "Leave through the tower door",
-      "journal": "You have the sword. Go down and out through the tower door.",
+      "journal": "Sword in hand. Go out the tower door.",
       "when": {
         "type": "area",
         "id": "towerDoor"
@@ -75,7 +75,7 @@
       "id": "bladeDone",
       "section": "q01",
       "text": "Tell Burl you are out",
-      "journal": "You are out of the tower, and a bear waits there. Talk to her.",
+      "journal": "A bear waits outside. Talk to her.",
       "when": {
         "type": "flag",
         "id": "quest.tower.blade.done",
@@ -86,7 +86,7 @@
       "id": "beasts",
       "section": "q03",
       "text": "Help Burl with the boars",
-      "journal": "The old bear outside talks. Help her drive the wild boars from the woods.",
+      "journal": "Help the bear drive out the boars.",
       "when": {
         "type": "flag",
         "id": "quest.burl.boars.done",
@@ -97,7 +97,7 @@
       "id": "follow",
       "section": "q04",
       "text": "Follow the bear",
-      "journal": "The boars are gone, and the bear has a name: Burl. Follow her to where she leads.",
+      "journal": "The bear is Burl. Follow her lead.",
       "when": {
         "type": "flag",
         "id": "quest.burl.follow.done",
@@ -108,7 +108,7 @@
       "id": "waystone",
       "section": "q05",
       "text": "Wake the waystone",
-      "journal": "Burl brought you to an old stone in the meadow. It is dark. Wake it.",
+      "journal": "Burl led you to a dark stone. Wake it.",
       "when": {
         "type": "flag",
         "id": "waystone.waystone.woken",
@@ -122,7 +122,7 @@
       "id": "stoneDone",
       "section": "q05",
       "text": "Tell Burl the stone is awake",
-      "journal": "The stone glows. Go back to Burl and tell her.",
+      "journal": "The stone glows. Go back to Burl.",
       "when": {
         "type": "flag",
         "id": "quest.burl.stone.done",
@@ -133,7 +133,7 @@
       "id": "road",
       "section": "q06",
       "text": "Take the road west",
-      "journal": "The stone woke and glows. Take the road west, toward the next light.",
+      "journal": "Take the road west to the next light.",
       "when": {
         "type": "area",
         "id": "roadWest"
@@ -148,7 +148,7 @@
       "id": "relayFound",
       "section": "q06",
       "text": "Find the dead waystone at the bend",
-      "journal": "The road bends ahead. Somewhere near it stands a dead waystone. Find it.",
+      "journal": "Find the dead waystone by the bend.",
       "when": {
         "type": "area",
         "id": "bendRelay"
@@ -161,7 +161,7 @@
       "id": "relay1",
       "section": "q06",
       "text": "Wake the waystone",
-      "journal": "You found the waystone at the bend, cold and silent. Wake it.",
+      "journal": "The Bend waystone is cold. Wake it.",
       "when": {
         "type": "flag",
         "id": "waystone.ws_roadBend.woken",
@@ -175,7 +175,7 @@
       "id": "bendCall",
       "section": "q06",
       "text": "Tell Rook about the Bend stone",
-      "journal": "The Bend stone is awake. A crow named Rook watched it from the ruin. Talk to Rook.",
+      "journal": "Talk to Rook, the crow in the ruin.",
       "when": {
         "type": "flag",
         "id": "quest.mq.bend.call.done",

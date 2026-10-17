@@ -6,8 +6,8 @@
   "main": true,
   "requires": [{ "quest": "mq.bend.call", "done": true }, { "quest": "mq.ford.stones", "step": "fordWest" }],
   "objectives": [
-    { "id": "glass", "text": "Take the glass from Rook's nest", "journal": "The Ford Waystone is cold. Its glass is gone. Rook has it. Take it from the nest.", "when": { "type": "item", "id": "relay.mirror" } },
-    { "id": "wake", "text": "Wake the Ford Waystone", "journal": "You have the glass back from the nest. Wake the Ford Waystone.", "when": { "type": "flag", "id": "waystone.ws_ford.woken", "equals": true } }
+    { "id": "glass", "text": "Take the glass from Rook's nest", "journal": "Take the Ford glass from Rook's nest.", "when": { "type": "item", "id": "relay.mirror" } },
+    { "id": "wake", "text": "Wake the Ford Waystone", "journal": "Glass in hand. Wake the Ford Waystone.", "when": { "type": "flag", "id": "waystone.ws_ford.woken", "equals": true } }
   ],
   "rewards": { "items": [{ "id": "potion.hp", "n": 1 }] },
   "abandonable": false
