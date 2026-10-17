@@ -166,5 +166,11 @@ if (global.gc) {
   for (let i = 0; i < 3000; i++) r.view.draw(r.ui);
   global.gc(); ok('draw allocates ~nothing', process.memoryUsage().heapUsed <= before + 3e5);
 }
+{ // CUR-02: "Coin N" always on the inventory screen
+  let coin = 0; const r = rig({ coinOf: () => coin }); r.step('KeyI');
+  ok('coin line Coin 0', /Coin 0/.test(r.draw()));
+  coin = 47; ok('coin line Coin 47', /Coin 47/.test(r.draw()));
+  ok('no coin line without coinOf', !/Coin \d/.test(rig().draw()));
+}
 console.log(`${pass} passed, ${fail} failed.`);
 if (fail) { failures.forEach((f) => console.error('FAIL:', f)); process.exit(1); }

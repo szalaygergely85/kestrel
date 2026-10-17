@@ -9,6 +9,7 @@ import { SLOTS as PACK_SLOTS, assignHand, removeItem, moveSlot } from './sim/inv
 import { wrapNoteLines } from './noteRead.js';
 import { gearRecipe } from './gearLook.js';
 import { createPreviewYaw } from './previewYaw.js';
+import { coinLabel } from '../ui/coinHud.js'; // CUR-02
 import { createSpellPageView } from './spellPageView.js'; // SPELL-03
 import { itemPower, slotPower, itemPowerTotal, spellPower, powerText, powerCompare, headerText, breakdownText, nextLevelText } from './sim/power.js'; // PLAYER-LEVEL-01
 
@@ -35,6 +36,7 @@ const HINTS = [['W/A/S/D', true], [' select   ', false], ['E', true], [' use / w
  * @param {object} o
  * @param {any} o.style `ASSETS.uiStyle.inventory`   @param {any} o.items `ASSETS.items` ({defs, keys})
  * @param {Record<string, number[]>} o.rgb palette key -> [r, g, b]   @param {() => any} o.inventoryOf
+ * @param {() => number} [o.coinOf] CUR-02: wallet value for the "Coin N" line
  * @param {() => ({hp:number,max:number}|null)} [o.healthOf] @param {{say?: Function}|null} [o.toast]
  * @param {() => void} [o.onHandsChanged] after a hand assignment (spells) @param {() => void} [o.onOpen] @param {() => void} [o.onClose]
  * @param {(i:number)=>string} [o.slotLockText] OB-156: detail line for a locked cell that holds an item
@@ -476,6 +478,7 @@ export function createInventoryScreen(o) {
         stat2 = 'DMG x' + (Math.round(md * 100) / 100) + '   Arrows ' + arrows;
       }
       text(L.stats.x, L.stats.y, stat1, C.uiText, bg); text(L.stats.x, L.stats.y + 1, stat2, C.uiText, bg);
+      if (o.coinOf) text(L.stats.x + 24, L.stats.y + 1, coinLabel(o.coinOf()), C.gold, bg); // CUR-02: always shown, right of the DMG / Arrows line
       // PLAYER-LEVEL-01: "Power 5,300 - Level 4" / "Items 4,450 + Spells 850" / "Next level at 8,000" (derived, never saved)
       const pi = itemPowerTotal(e, defs), ps = spellPower(o.spellPage ? o.spellPage.book : null);
       if (pi !== pwItems || ps !== pwSpells) { pwItems = pi; pwSpells = ps; pw1 = headerText(pi + ps); pw2 = breakdownText(pi, ps); pw3 = nextLevelText(pi + ps); }
