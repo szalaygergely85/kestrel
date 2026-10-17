@@ -10,7 +10,7 @@
 // checks themselves being too strict - see validate-content.mjs's "3. Voxel
 // models" comment for a real example of a check that started out too
 // strict before this fixture existed).
-import { validateContent, loadQuestFiles, validateDialogueFiles, validateBarks, lintQuestText, applyR19Allow, R19_ALLOW } from './validate-content.mjs';
+import { validateContent, loadQuestFiles, validateDialogueFiles, validateBarks, lintQuestText, applyR19Allow, R19_ALLOW, groupR19ByPack } from './validate-content.mjs';
 import { makeOk } from '../engine/test/assert.js';
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -689,6 +689,9 @@ for (const [name, breakFixture, finding] of areaCases) {
   ok('R19 allow-list covers hit', applyR19Allow(hit, { 'content/quests/x.quest.json|objlen': 1 }).length === 0);
   ok('R19 stale allow-list entry fails (may only shrink)', applyR19Allow([], { 'content/quests/x.quest.json|objlen': 1 }).length === 1);
   ok('R19 growth fails', applyR19Allow([...hit, ...q({ journal: 'y'.repeat(40) })], { 'content/quests/x.quest.json|objlen': 1 }).length === 1);
+  { const g = groupR19ByPack([...hit, ...hit, { file: 'content/quests/other.json', kind: 'objlen', where: 'a', text: 'z' }, { file: 'content/quests/ch3/pack.json', kind: 'esc', where: 'b', text: 'Esc' }], { 'content/quests/x.quest.json|objlen': 2, 'content/quests/other.json|objlen': 1 });
+    ok('R19 groupByPack groups allow-listed hits per pack', Object.keys(g).sort().join() === 'other.json,x.quest.json' && g['x.quest.json'].length === 2 && g['other.json'].length === 1); }
+  ok('R19 real allow-list only shrinks (total <= 119, QUEST-WRITER-BATCH-01)', Object.values(R19_ALLOW).reduce((a, b) => a + b, 0) <= 119);
   ok('R19 real allow-list is non-negative ints', Object.values(R19_ALLOW).every((n) => Number.isInteger(n) && n > 0));
 }
 
