@@ -1379,3 +1379,6 @@ Remaining R9 count: 3 (sq.reg.highPastures b8, sq.reg.signalHill b7, sq.reg.heat
 - Test: tools/interiorGreen.test.mjs (245 placements, 4 zones, 0 moss meshes); run-tests --filter world 86 PASS. Stills: docs/test-reports/visqa/visqa13-<spot>-before|after.png.
 - Note: default s2 stills show only ~4-10 faintly green px before AND after (blue-grey blob in crypt is a pebble, now bare); the queue's "bush clumps" were mostly dark moss-cap tint. Owner check at 8000 recommended.
 - SPELL-R7 ARCH CHANGES (tkfix): loadSim frees beasts saved in STATE_HELD/THROWN into stagger (spell block reset); holdStep clamp hoisted to module scope clampAbs; lv3 test save/load mid-hold + mid-flight. telekinesis,beast,save suites 33/33 PASS.
+- OB-222 far-forest WGSL probes (ARCH CHANGES, kestrel-4/ffparity): shade.wgsl.test.js runTerrain got an `ff` option (faceK[1].w=1, su.sunI/sunDir.z, setFarForest(1)+setFarForestDay(farForestDayOf)); noon + dusk x t 200/350/600 m on forest faces, JS twin == WGSL (<=0.1 % f32 slack).
+- 6 in-test mutations (FF_FLOOR, FF_RANGE, FF_FADE_A/B, FF_SUN_REF, FF_ELEV_LO/HI, FF_TGT) each give >20 mismatches, so changing any WGSL FF_ term fails; no shader change. Proven by the mutation asserts (edit applied to the shader string in memory, not on disk).
+- `run-tests --filter shade,farForest,wgsl`: 35 PASS; shade.wgsl.test.js ~1.7 s.
