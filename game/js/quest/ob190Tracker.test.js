@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { createQuestRelay, HUD_ROW } from '../questRelay.js';
 
 const rd = (p) => JSON.parse(readFileSync(new URL('../../../' + p, import.meta.url), 'utf8'));
-const m1 = rd('content/quests/m1.quest.json');
+const m1 = { ...rd('content/quests/m1.quest.json'), internal: false }; /* M1-RETIRE: legacy-mechanism test on a VISIBLE copy of m1 (the real m1 is internal; m1Retire.test.js covers the player view) */
 const givers = ['tower.blade', 'burl.boars', 'burl.follow', 'burl.stone'].map((n) => rd(`content/quests/${n}.quest.json`));
 const r = createQuestRelay(m1, undefined, givers, undefined);
 r.world = { state: {} };

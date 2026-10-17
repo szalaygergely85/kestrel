@@ -9,7 +9,7 @@ import '../../../design/items.js';
 import { itemLabel } from '../questPickups.js';
 
 const dir = fileURLToPath(new URL('../../../content/quests', import.meta.url));
-const m1 = JSON.parse(fs.readFileSync(dir + '/m1.quest.json', 'utf8'));
+const m1 = { ...JSON.parse(fs.readFileSync(dir + '/m1.quest.json', 'utf8')), internal: false }; /* M1-RETIRE: legacy-mechanism test on a VISIBLE copy of m1 (the real m1 is internal; m1Retire.test.js covers the player view) */
 const boars = JSON.parse(fs.readFileSync(dir + '/burl.boars.quest.json', 'utf8'));
 const blade = JSON.parse(fs.readFileSync(dir + '/tower.blade.quest.json', 'utf8'));
 const book = createQuestBook(m1, [blade, boars]);

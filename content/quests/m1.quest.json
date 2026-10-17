@@ -2,6 +2,8 @@
   "version": 1,
   "id": "m1",
   "title": "Beyond the Wall",
+  "internal": true,
+  "note": "M1-RETIRE (OB-224): internal chapter-progress tracker only. Never a quest the player sees (journal, HUD line, compass, marks, toasts); every step is owned by a small giver quest or is the wake beat.",
   "sections": [
     {
       "id": "q01",

@@ -14,7 +14,7 @@ import { EXPLORE_TEXT } from './questNext.js';
 const burl = JSON.parse(readFileSync(new URL('../../content/quests/burl.boars.quest.json', import.meta.url)));
 const blade = JSON.parse(readFileSync(new URL('../../content/quests/tower.blade.quest.json', import.meta.url)));
 const giverDefs = [blade, burl];
-const questDef = JSON.parse(readFileSync(new URL('../../content/quests/m1.quest.json', import.meta.url)));
+const questDef = { ...JSON.parse(readFileSync(new URL('../../content/quests/m1.quest.json', import.meta.url))), internal: false }; /* M1-RETIRE: legacy-mechanism test on a VISIBLE copy of m1 (the real m1 is internal; m1Retire.test.js covers the player view) */
 // objective texts come from the content (writer pass may change them), not from this test
 const OBJ = Object.fromEntries(questDef.objectives.map((o) => [o.id, o.text]));
 const assets = new AssetRegistry({ palette: {} });

@@ -8,7 +8,7 @@ import { createQuestRelay } from '../questRelay.js';
 import { applySave, collectSave } from './save/saveState.js';
 
 const rd = (p) => JSON.parse(readFileSync(new URL('../../../' + p, import.meta.url), 'utf8'));
-const m1 = rd('content/quests/m1.quest.json'), burl = rd('content/quests/burl.boars.quest.json'), blade = rd('content/quests/tower.blade.quest.json');
+const m1 = { ...rd('content/quests/m1.quest.json'), internal: false }, /* M1-RETIRE: legacy-mechanism test on a VISIBLE copy of m1 (the real m1 is internal; m1Retire.test.js covers the player view) */ burl = rd('content/quests/burl.boars.quest.json'), blade = rd('content/quests/tower.blade.quest.json');
 const GD = [blade, burl, rd('content/quests/burl.follow.quest.json'), rd('content/quests/burl.stone.quest.json')];
 const dialogues = { bear: compileDialogue(rd('content/dialogue/bear.dialogue.json')) };
 import { offerIndices } from './dialogueView.js';

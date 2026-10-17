@@ -15,7 +15,7 @@ const cap = (id) => String(id).charAt(0).toUpperCase() + String(id).slice(1);
 
 /** True while any main quest (m1 chain or mq.*) is active or waiting for its hand-in. */
 export function hasActiveMain(book) {
-  for (let i = 0; i < book.count; i++) if (book.isMain(i) && (book.status(i) === ACTIVE || book.status(i) === READY)) return true;
+  for (let i = 0; i < book.count; i++) if (!(i === 0 && book.def(0).internal) && book.isMain(i) && (book.status(i) === ACTIVE || book.status(i) === READY)) return true;
   return false;
 }
 
