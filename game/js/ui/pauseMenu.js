@@ -13,7 +13,7 @@ const IDS = ['resume', 'settings', 'fullscreen', 'save', 'load', 'menu'];
  * @param {{adapter:any, style?:any, onResume:()=>void, onSettings:()=>void, onSave:()=>boolean, onLoad:(slot:number,save:any)=>void,
  *          onMainMenu:()=>void, isDirty?:()=>boolean}} o
  */
-export function createPauseMenu({ adapter, style = null, onResume, onSettings, onFullscreen = () => {}, onUnstuck = null, onSave, onLoad, onMainMenu, isDirty = () => false }) {
+export function createPauseMenu({ adapter, style = null, onResume, onSettings, onFullscreen = () => {}, onUnstuck = null, onSave, onLoad, onMainMenu, isDirty = () => false, onSfx = null }) {
   // OB-140: the Unstuck row exists only when main.js wires it (hidden in capture/bench)
   const items = onUnstuck ? [...PAUSE_ITEMS.slice(0, 5), 'Unstuck', PAUSE_ITEMS[5]] : PAUSE_ITEMS, ids = onUnstuck ? [...IDS.slice(0, 5), 'unstuck', IDS[5]] : IDS;
   const MENU_IDX = items.length - 1, LOAD_IDX = items.length - 2;
@@ -73,12 +73,12 @@ export function createPauseMenu({ adapter, style = null, onResume, onSettings, o
   }
   function handleKey(code) {
     if (code === 'Escape') { if (mode === 'main') return false; message = ''; go('main', mode === 'load' ? LOAD_IDX : MENU_IDX); return true; }
-    if (code === 'Enter' || code === 'Space') return activate();
+    if (code === 'Enter' || code === 'Space') { const ok = activate(); if (ok && onSfx) onSfx('confirm'); return ok; } // EV17-02
     const d = code === 'ArrowUp' || code === 'KeyW' ? -1 : code === 'ArrowDown' || code === 'KeyS' ? 1 : 0;
     if (!d) return false;
     for (let s = 1; s <= rows.length; s++) {
       const n = (selected + d * s + rows.length) % rows.length;
-      if (rows[n].enabled) { selected = n; break; }
+      if (rows[n].enabled) { if (onSfx && n !== selected) onSfx('move'); selected = n; break; }
     }
     return true;
   }

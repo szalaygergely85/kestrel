@@ -196,6 +196,9 @@ import { createEquipPlay, registerGearItems } from './quest/equipPlay.js'; // EQ
 import { createStubItemSim } from './quest/sim/hands.js'; // EQ-07: no-op sims so the router arms shield / bow
 import { EQUIP_VIEW_MODELS, loadShieldView, presentShield, loadBowView, presentBow, drawBlockSpark, createArrowView } from './quest/equipView.js'; // EQ-07/09
 import { playShieldClank, playBowShot, playRelayHum } from './audio/sfx.js'; // EQ-07/09
+import { createUiSfx } from './audio/uiSfx.js'; // EV17-02: quest accepted/ready/done, item-get sparkle, pause-menu ticks
+import { createCombatSfx } from './audio/combatSfx.js'; // EV17-01: swing / hit / hurt / beast death / heartbeat cues
+import { isMuted as audioIsMuted, playToneBurst as audioTone, playNoiseBurst as audioNoise } from './audio/synth.js';
 import { createTargetables } from './quest/sim/targetables.js';
 import { FIREBALL_CFG, refreshLocked } from './quest/spellConfig.js';
 import { createSpellDispatcher } from './quest/sim/spellCast.js'; // SPELL-04
@@ -346,6 +349,9 @@ const blinkFlash = createBlinkFlash({ enabled: deathFlowEnabled(params, isCaptur
 const deathFlow = createDeathFlow({ enabled: deathFlowEnabled(params, isCaptureOrBench), onRespawn: () => { deathRespawnDue = true; } });
 setReduceMotion(savedSettings.reduceMotion); // SETTINGS-APPLY-01: read at boot, the Settings panel updates it live
 setEnemyBarsOn(savedSettings.enemyBars); setDamageNumbersOn(savedSettings.dmgNumbers); // HPBAR-02 / DMGNUM-01: Combat HUD switches (default On)
+const combatSfx = createCombatSfx({ tone: audioTone, noise: audioNoise, isMuted: audioIsMuted }); let combatSwingPrev = false; // EV17-01 (cues no-op until audio exists; synth bursts bail without a ctx)
+window.__combatSfx = combatSfx; // dev handle for tools/verify-combat-sfx.mjs
+const uiSfx = createUiSfx({ tone: audioTone, isMuted: audioIsMuted }); window.__uiSfx = uiSfx; // EV17-02 (+ dev handle for tools/verify-ui-sfx.mjs)
 const hurtFx = createHurtFx({ enabled: hurtFxEnabled(params, isCaptureOrBench), reduceMotion: isReduceMotion }); // HURT-FX-01: off in capture/bench/compare and ?fx=0
 const bootOpts = resolveBootOptions({ params, resolved: resolvedQuality, savedSettings, captureLike: isCaptureOrBench, geometryCompare: isGeometryCompare,
   defaultCols: GRID_DEFAULT_COLS, shadowLevel: resolveShadowLevel });
@@ -732,7 +738,7 @@ let lootToast = null; // OB-082: the toast view lives in the boot block below (l
 const chestHook = (itemDefs && assets.uiStyle && assets.uiStyle.itemGetCard)
   ? createChestHook({
     defs: [], items: window.ASSETS.items, style: assets.uiStyle.itemGetCard, rgb: assets.palette.rgb,
-    openedChestsOf: () => (saveRelay ? saveRelay.openedChests : []), reduceMotion: isReduceMotion,
+    openedChestsOf: () => (saveRelay ? saveRelay.openedChests : []), reduceMotion: isReduceMotion, onCardOpen: () => uiSfx.itemGet(), // EV17-02
     canOpenGate: (id) => underHook.canOpenChest(id), // UNDER-02: chestCrypt only once room 3 is cleared
     notify: (t) => { if (lootToast) lootToast.say(t, [226, 214, 176]); }, // OB-075 (+ OB-082: was a ReferenceError on every loot): chest / gear loot = a toast line, not the item-get card
   })
@@ -1046,6 +1052,7 @@ const swordStyleIds = {
 };
 sprites.pool.renderer = renderer; // review item 1: sprite rects follow the pitched scene
 const wgActive = !!(wgPipeline && wgPipeline.ready && rt.backend === 'webgpu'); // WG-2b: geometry-only WebGPU pipeline (CPU still shades)
+engine.events.on('combat:hit', (p) => combatSfx.hit(p)); engine.events.on('beast:died', () => combatSfx.beastDied()); // EV17-01
 engine.events.on('combat:hit', (p) => { if (p && p.source === 'player') hitStop.trigger(p.heavy ? 'heavy' : 'light'); }); // HITSTOP-01
 const hzb = createHzbInvalidator(() => ((occlOpt.enabled || params.get('stable') === '1') && wgActive && wgPipeline.ready ? wgPipeline : null), { onCut: () => { if (engine.instances && engine.instances.resetLodHistory) engine.instances.resetLodHistory(); if (wgActive && wgPipeline.resetLodHistory) wgPipeline.resetLodHistory(); } }); // OCCL-MAIN-01 (+ US-073c): cuts invalidate the HZB and the stable-pass history
 if (wgActive) { wgPipeline.bindVoxels(gameVoxelPool); wgPipeline.bindViewModel(engine.viewModel); }
@@ -1886,7 +1893,8 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         saveRelay.quest.onSection = (title) => { if (tv && msg) tv.say('Quest complete: ' + title, msg.fg); const ws = world.state; if (chapterCard && saveRelay.quest.done && ws['waystone.waystone.woken'] && ws['waystone.ws_roadBend.woken']) chapterCard.trigger(); /* PO-CH1-08: card only after the meadow stone AND the relay */ }; // CH1-02: live section completion only
         offerToast = createOfferToast(saveRelay.quest.book, (g) => GIVER_INFO[g] ? GIVER_INFO[g].name : g.charAt(0).toUpperCase() + g.slice(1)); offerToast.seed(); offerToastMsg = msg; // QUEST-NEXT-GIVER-01 (compass: compassHud.target)
         saveRelay.quest.book.onChange = (name, id) => {
-          gameHooks.emitSimple(name, id);
+          gameHooks.emitSimple(name, id); uiSfx.quest(name); // EV17-02
+         
           if (name === 'quest:done' && world && world.state) world.state['quest.done.' + id] = true; // SPELL-R6: quest-reward spell sources (spellBooks PLACEMENTS flag)
           if (logicWire && (name === 'quest:accepted' || name === 'quest:done')) logicWire.notify(name === 'quest:accepted' ? 'quest.accepted' : 'quest.done', 'quest', id); // ED-LOGIC-01c
           if (name === 'quest:accepted') actionSig.questAccepted = true; // FS-01: first accepted quest -> [J] Journal hint
@@ -2103,6 +2111,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
     if (!cinematic && mode === 'world') pauseMenu = createPauseMenu({
       adapter: (saveRelay && saveRelay.adapter) || { listSlots: () => [], readSlot: () => ({ ok: true, save: null }) },
       style: window.ASSETS && window.ASSETS.uiStyle ? window.ASSETS.uiStyle.menu : null,
+      onSfx: (k) => (k === 'move' ? uiSfx.menuMove() : uiSfx.menuConfirm()), // EV17-02
       onResume: () => { if (pauseResume.soft) pauseResume.resume(); else relockPointer(); }, // OB-072: soft pause = lock never lost
       onSettings: () => openSettings({ assets, engine, look, onDifficulty: (d) => { if (beasts && beasts.setDifficulty) beasts.setDifficulty(d); combatHud.bars.bars.setDifficulty(d); } }),
       onFullscreen: toggleFullscreen, // OB-072
@@ -2433,6 +2442,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
         if (wasDead && !vitals.dead) { if (swimWire) swimWire.reset(); deathRespawnDue = false; deathFlow.respawned(performance.now()); }
         deathFlow.step(performance.now());
         hurtFx.step(1000 / 60, vitals.hp, !vitals.dead); // HURT-FX-01
+        { const sw = !!(sword && sword.state >= ST_LIGHT && sword.state <= ST_HARD); if (sw && !combatSwingPrev) combatSfx.swing(); combatSwingPrev = sw; combatSfx.step(1000 / 60, hurtFx.low); } // EV17-01
         stepPickups(engine.world, playerHandle.data); // US-080b (30.2)
         // US-080a1 AC5 (`?debug=1` only): F8 toggles invulnerability, F9 deals 5 HP.
         if (params.get('debug') === '1') {
