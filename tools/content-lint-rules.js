@@ -8,7 +8,7 @@ export const LEVELS = { R1: 'error', R2: 'error', R3: 'error', R4: 'error', R5: 
 export const TITLES = {
   R1: 'floating placed prop/tree', R2: 'components.sprite in the world', R3: 'raw id in player text', R4: '"relay" in player text',
   R5: 'giver unreachable', R6: 'smoke without a source', R7: 'chimney outside a building', R8: 'chest with no guard/puzzle/giver nearby',
-  R9: 'early quest objective across the river', R10: 'quest given/returned by an object', R11: 'banned mesh placed',
+  R9: 'early quest objective in a band > 5 zone', R10: 'quest given/returned by an object', R11: 'banned mesh placed',
   R12: 'entity not supported by ground/structure (floating or buried)', R13: 'prompt/marker anchor has no visible model', R14: 'quest flow (OB-156): character giver, Accept/Exit, character return',
   R15: 'logic blocks (ED-LOGIC-01d): refs exist, group spawned by one block, no flag loop',
   R17: 'quest format (D-106): begin, end, rewards, max 3 objectives, known next/requires ids, no xp',
@@ -41,6 +41,10 @@ const WALL_MOUNTED = /(^|\.)(lantern|keeperLamp|stairLamp|swordLamp)$|^(tower.)?
 // R12 owner-verified / coarse-AABB exceptions (id -> reason); the lint samples slab AABB tops and misses these supports
 // hung/mounted on purpose (not floor cases); the rule cannot see a floor for them
 const R12_OK = new Map([['towerCrown', 'ring hung on the 10-14 m tower walls, no floor'], ['tower.ropeTether', 'rope tied to the hem of a hanging cloth, no floor'], ['relayBend', 'waystone foot seated 0.22 m into its RockPath base slab on purpose (owner-verified); seated vs buried is not decidable from geometry'], ['relayFord', 'same: waystone foot seated into the ford base slab'], ['seaMonster', 'swims at the sea surface, not ground-supported (water, not a floor case)']]);
+// quest ids allowed to send early players into a band > 5 zone (one-line reason each; OB-136: crossing is intended, only the zone band matters)
+const R9_OK = new Set([
+  'mq.ow.fence', 'sq.ow.wolves', 'sq.ow.night', // ow chain: wolf1/wolf2 pack homes at (846..850, 985..996) sit in the band-6 west zone; wolves ARE the quest (PO to confirm or move the pack)
+]);
 const R8_OK = new Set(['chestBed']); // lake-bed chest: guarded by the dive itself (SWIM-04d, onBottom)
 const NAMES = new Set(['bear', 'rook', 'hesk', 'dorrin']); // main.js giverName table
 
@@ -204,11 +208,12 @@ export const RULES = {
   },
   // R8 [OB-152] ctx.chests = [{id,x,y}], ctx.guards = [{x,y,kind}] (beast homes, camps, puzzles, givers)
   R8: (c) => c.chests.filter((ch) => !R8_OK.has(ch.id) && !c.guards.some((g) => dist(g, ch) < CHEST_R)).map((ch) => F('R8', ch.id, ch.x, ch.y, `no enemy/camp/puzzle/giver within ${CHEST_R} m (open-field chest)`)),
-  // R9 [OB-136] ctx.quests with .targets=[{id,x,y}], .early (opens before the level-5 flag), ctx.riverX(y) + half width
+  // R9 [OB-136, arch 38.9x Q2] ctx.quests with .targets=[{id,x,y}], .early (opens before the level-5 flag), ctx.bandMinAt(x,y) = zone band min level
   R9: (c) => {
     const out = [];
-    for (const q of c.quests) if (q.early) for (const t of q.targets || []) {
-      if (t.x < c.riverX(t.y) - (c.riverHalf ?? 10)) out.push(F('R9', q.id, t.x, t.y, `early quest target "${t.id}" is west of the river (x < ${f1(c.riverX(t.y))})`));
+    for (const q of c.quests) if (q.early && !R9_OK.has(q.id)) for (const t of q.targets || []) {
+      const b = c.bandMinAt(t.x, t.y);
+      if (b > 5) out.push(F('R9', q.id, t.x, t.y, `early quest target "${t.id}" sits in a zone with min level ${b} (> 5)`));
     }
     return out;
   },

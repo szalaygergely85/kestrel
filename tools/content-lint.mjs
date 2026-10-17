@@ -39,6 +39,7 @@ export async function buildContext(opts = {}) {
   const { floatingProps, sunkProps } = await import('./probe-floating-props.mjs');
   const { loadDesignAssets, loadPackQuests, loadQuestFiles } = await import('./validate-content.mjs');
   const { supportBoxes } = await import('./prop-ground-lint.mjs');
+  const { createBand } = await import('../game/js/quest/sim/band.js');
   const G = globalThis.ASSETS.levels.world_geo, T = globalThis.ASSETS.levels.overworld_far;
   G.util.installGeo(T.util);
   // JSON-pack levels/worlds merged into the globals by an earlier loadTestAssets (e.g. validate-content --lint) would trip fromJSON's dual-source check
@@ -244,7 +245,7 @@ export async function buildContext(opts = {}) {
     fxModels: new Set(Object.entries(globalThis.ASSETS.models || {}).filter(([, m]) => m && m.fx === true).map(([k]) => k)),
     formatQuests: quests, questTexts, r19Allow, names: nameList, logic, entSupport, anchors, entities, structures: def.structures, floating, texts, jsTexts, quests: qs, itemDefs: assets.items?.defs || (await loadDesignAssets()).items?.defs,
     labelOf, giverIds, pos, groundAt: gz, walkable, characters, levelIds: new Set((JSON.parse(fs.readFileSync(path.join(root, 'content/levels/tower.level.json'), 'utf8')).props || []).map((p) => p.id)), chests: entities.filter((e) => /^chest/.test(e.id)), guards,
-    riverX: (y) => T.util.riverX(y), riverHalf: 10,
+    bandMinAt: createBand(G.regions).bandAt,
   };
 }
 

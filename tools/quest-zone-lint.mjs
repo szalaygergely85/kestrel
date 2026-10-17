@@ -8,16 +8,8 @@ import { fileURLToPath } from 'node:url';
 export const levelOf = (d) => (Array.isArray(d.band) ? d.band[0] : typeof d.band === 'number' ? d.band : 1);
 
 /** -> [{ quest, main, level, obj, what, x, y }] low-band objective targets on the far side of the river. */
-export function lintQuestZones({ world, areas, defs, farX = 1000 }) {
-  const rivers = (world.water || []).filter((w) => w.shape === 'river').map((w) => w.path);
-  const riverAt = (y) => {
-    for (const p of rivers) for (let i = 0; i + 1 < p.length; i++) {
-      const a = p[i], b = p[i + 1];
-      if (y >= a[1] && y <= b[1]) { const t = b[1] === a[1] ? 0 : (y - a[1]) / (b[1] - a[1]); return [a[0] + (b[0] - a[0]) * t, (a[3] + (b[3] - a[3]) * t) / 2]; }
-    }
-    return null;
-  };
-  const side = (x, y) => { const r = riverAt(y); return !r ? (x < farX ? 'far' : 'near') : x < r[0] - r[1] ? 'far' : 'near'; };
+export function lintQuestZones({ world, areas, defs, bandMinAt }) {
+  const side = (x, y) => (bandMinAt(x, y) > 5 ? 'far' : 'near'); // OB-136/D-070: 'far' = zone band min level > 5 (no river test)
   const ents = new Map((world.entities || []).filter((e) => e.id && e.x != null).map((e) => [e.id, e]));
   const trig = new Map((world.triggers || []).filter((t) => t.x != null).map((t) => [t.id, t]));
   const wsById = new Map((world.entities || []).filter((e) => e.components?.waystone).map((e) => [e.components.waystone.id, e]));
@@ -63,12 +55,20 @@ export function lintQuestZones({ world, areas, defs, farX = 1000 }) {
 
 export const zoneWarning = (h) => `quest-zone ${h.quest}${h.main ? ' (main)' : ''}: band ${h.level} quest, objective ${h.obj} targets ${h.what} (${Math.round(h.x)},${Math.round(h.y)}) across the river (far side = band 5-10, OB-136)`;
 
+/** Zone band min level at a point, from the game's own band grid (game/js/quest/sim/band.js over world_geo.regions). */
+export async function realBandMinAt() {
+  globalThis.window = globalThis.window || globalThis;
+  await import('../design/levels/overworld_far.js'); await import('../design/levels/world_geo.js');
+  const { createBand } = await import('../game/js/quest/sim/band.js');
+  return createBand(globalThis.ASSETS.levels.world_geo.regions).bandAt;
+}
+
 /** Real content -> warning strings. */
 export async function lintRealZones({ quests }) {
   const root = new URL('../', import.meta.url);
   const world = JSON.parse(readFileSync(new URL('content/worlds/world_m1.world.json', root), 'utf8'));
   const areas = JSON.parse(readFileSync(new URL('content/quests/areas.json', root), 'utf8')).areas;
-  return lintQuestZones({ world, areas, defs: quests.map((q) => q.def) }).map(zoneWarning);
+  return lintQuestZones({ world, areas, defs: quests.map((q) => q.def), bandMinAt: await realBandMinAt() }).map(zoneWarning);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

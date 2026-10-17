@@ -1,17 +1,19 @@
 // tools/editor/waterPanel.js - ED-WATER-01 (OB-223). Small floating "Water" panel (toggle, region list, z / width / height
 // fields) + the viewport overlay (outline and 8 handles of the selected rect). Logic lives in waterTool.js (Node-tested).
 import { projectPoint } from './ray.js';
-import { regionHandles, isCircle } from './waterTool.js';
+import { regionHandles, isCircle, isEditable } from './waterTool.js';
 const BG = '#0a0b10';
 
 /** deps: { tool, onToggle:(on)=>void } -> { el, refresh(), isOn() } */
-export function mountWaterPanel(root, { tool, onToggle, onFrame = () => {} }) {
+export function mountWaterPanel(root, { tool, onToggle, onFrame = () => {}, onNewPool = () => {} }) {
   const el = document.createElement('div');
   el.id = 'water-panel';
   el.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:20;background:#12141c;color:#cfd6e6;font:12px monospace;border:1px solid #2c3142;padding:6px 8px;max-width:260px';
   el.innerHTML = '<label><input type="checkbox" id="water-on"> Water tool</label><div id="water-body" hidden>' +
     '<select id="water-list" size="6" style="width:100%;margin:4px 0"></select>' +
     '<div id="water-fields">z <input id="water-z" type="number" step="0.05" style="width:62px"> w <input id="water-w" type="number" step="0.5" min="1" style="width:52px"> h <input id="water-h" type="number" step="0.5" min="1" style="width:52px"> r <input id="water-r" type="number" step="0.5" min="1" style="width:52px"></div>' +
+    '<div>look <select id="water-look"></select></div><div id="water-depth"></div>' +
+    '<div style="margin-top:4px"><button id="water-new">New pool</button> <label><input type="radio" name="water-shape" value="rect" checked>rect</label> <label><input type="radio" name="water-shape" value="circle">circle</label> <button id="water-del">Delete</button></div>' +
     '<div id="water-msg" style="margin-top:4px;color:#e0b060"></div>' +
     '<div style="color:#7a8296">Click water to pick; drag a handle to resize, drag inside to move.</div></div>';
   root.appendChild(el);
@@ -19,6 +21,9 @@ export function mountWaterPanel(root, { tool, onToggle, onFrame = () => {} }) {
   let on = false;
   $('water-on').addEventListener('change', (e) => { on = e.target.checked; $('water-body').hidden = !on; if (!on) tool.select(null); onToggle(on); refresh(); });
   $('water-list').addEventListener('change', (e) => { tool.select(e.target.value); onFrame(e.target.value); });
+  $('water-new').addEventListener('click', () => onNewPool(el.querySelector('input[name=water-shape]:checked').value));
+  $('water-del').addEventListener('click', () => { tool.deleteSelected(); refresh(); });
+  $('water-look').addEventListener('change', (e) => { tool.setLook(e.target.value); refresh(); });
   $('water-r').addEventListener('change', (e) => { tool.setRadius(parseFloat(e.target.value)); refresh(); });
   $('water-z').addEventListener('change', (e) => { tool.setSurfaceZ(parseFloat(e.target.value)); refresh(); });
   const size = () => { tool.setSize(parseFloat($('water-w').value), parseFloat($('water-h').value)); refresh(); };
@@ -37,6 +42,12 @@ export function mountWaterPanel(root, { tool, onToggle, onFrame = () => {} }) {
     const circ = isCircle(cur);
     for (const id of ['water-z', 'water-w', 'water-h', 'water-r']) $(id).disabled = !editable || (circ ? id === 'water-w' || id === 'water-h' : id === 'water-r');
     if (cur && editable) { $('water-z').value = cur.z; if (circ) $('water-r').value = cur.r; else { $('water-w').value = cur.rect[2] - cur.rect[0]; $('water-h').value = cur.rect[3] - cur.rect[1]; } }
+    const lk = $('water-look'), looks = tool.looks(); lk.innerHTML = '';
+    for (const l of (cur && editable && cur.look && !looks.includes(cur.look) ? [cur.look, ...looks] : looks)) { const o = document.createElement('option'); o.value = o.textContent = l; o.selected = !!cur && cur.look === l; lk.appendChild(o); }
+    lk.disabled = !editable;
+    const dp = cur && isEditable(cur) ? tool.depth() : null, de = $('water-depth');
+    de.textContent = dp == null ? '' : dp <= 0 ? 'water sits above the ground' : `max depth ${dp.toFixed(2)} m`; de.style.color = dp != null && dp <= 0 ? '#ff5050' : '#7a8296';
+    $('water-del').disabled = !editable; $('water-del').textContent = tool.st.armed && tool.st.armed === tool.st.sel ? 'Delete? click again' : 'Delete';
     $('water-msg').textContent = tool.st.msg;
   }
   return { el, refresh, isOn: () => on };

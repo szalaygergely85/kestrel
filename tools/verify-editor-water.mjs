@@ -53,6 +53,20 @@ try {
   writeFileSync(path.join(ROOT, 'docs/test-reports/edwater/pond.png'), Buffer.from((await cdp.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
   await evaluate(cdp, 'window.__editor.doUndo(); window.__editor.rebuildNow()'); // undoes the pond
   assert.equal(await wet(1505, 1010), false, 'undo restores the small pond');
+  // ED-WATER-02: new pool (6x6 at the given point) -> resize -> delete, each one undo step
+  const nid = await evaluate(cdp, `(() => { const t = window.__editor.water.tool; return t.createPool(1500, 1030, 'rect'); })()`);
+  assert.ok(nid && nid.startsWith('pond_'), 'pool created: ' + nid);
+  await evaluate(cdp, 'window.__editor.rebuildNow()');
+  assert.equal(await wet(1500, 1030), nid, 'new pool is water at its centre');
+  const okp = await evaluate(cdp, `(() => { const t = window.__editor.water.tool; const r = t.current().rect; if (!t.down(r[2], (r[1] + r[3]) / 2)) return 'no-down'; t.move(r[2] + 4, (r[1] + r[3]) / 2); return t.up() ? 'ok' : 'no-up'; })()`);
+  assert.equal(okp, 'ok'); await evaluate(cdp, 'window.__editor.rebuildNow()');
+  assert.equal(await wet(1506, 1030), nid, 'resized pool covers +4 m east');
+  assert.equal(await evaluate(cdp, `(() => { const t = window.__editor.water.tool; t.deleteSelected(); return t.deleteSelected(); })()`), true);
+  await evaluate(cdp, 'window.__editor.rebuildNow()');
+  assert.equal(await wet(1500, 1030), false, 'deleted pool is dry');
+  for (let i = 0; i < 3; i++) await evaluate(cdp, 'window.__editor.doUndo()'); // delete, resize, create
+  await evaluate(cdp, 'window.__editor.rebuildNow()');
+  assert.equal(await wet(1500, 1030), false, 'undo of create leaves no pool');
   // undo puts it back
   await evaluate(cdp, 'window.__editor.doUndo(); window.__editor.rebuildNow()');
   assert.equal(await wet(1500, 1000), false, 'undo restores the dry area');

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createStack } from './undo.js';
 import { applyEdit, invert } from './commands.js';
-import { isEditable, readOnlyReason, GENERATED_TIP, hitTest, hitHandle, handles, resizeRadius, circleHandles, frameCamera, resizeRect, moveRect, setRectSize, createWaterTool } from './waterTool.js';
+import { isEditable, readOnlyReason, GENERATED_TIP, hitTest, hitHandle, handles, resizeRadius, circleHandles, frameCamera, resizeRect, moveRect, setRectSize, createWaterTool, maxDepth, makePool } from './waterTool.js';
 
 const mk = () => ({ water: [
   { id: 'big', look: 'sea', rect: [0, 0, 100, 100], shape: 'rect', z: 0 },
@@ -10,10 +10,10 @@ const mk = () => ({ water: [
   { id: 'pond', c: [5, 5], r: 4, shape: 'circle', z: 2 },
   { id: 'braid', path: [[0, 0, 0, 10]], shape: 'river' },
 ] });
-const setup = () => {
+const setup = (floor = () => 1) => {
   const def = mk(), doc = { files: new Map([['world/m1', { def, dirty: false }]]) }, stack = createStack(); let rebuilds = 0;
   const commit = (rec) => { applyEdit(doc, rec); stack.push(rec); rebuilds++; };
-  const tool = createWaterTool({ doc, fileId: 'world/m1', commit });
+  const tool = createWaterTool({ doc, fileId: 'world/m1', commit, floorAt: floor });
   return { def, doc, stack, tool, get rebuilds() { return rebuilds; } };
 };
 const undo = (s) => { const r = s.stack.undo(); applyEdit(s.doc, invert(r)); };
@@ -74,4 +74,24 @@ while (s.stack.canUndo) undo(s); assert.equal(JSON.stringify(def), before);
 assert.equal(JSON.stringify(JSON.parse(JSON.stringify(def))), before);
 // regions list
 const rg = tool.regions(); assert.equal(rg.find((r) => r.id === 'cellar').w, 10); assert.equal(rg.find((r) => r.id === 'braid').tip, GENERATED_TIP);
+// ED-WATER-02: new pool / delete / look / depth
+{
+  const s2 = setup((x, y) => (x > 50 ? 3 : 1)); const t = s2.tool, dw = s2.def.water, b0 = JSON.stringify(s2.def), n = dw.length;
+  assert.deepEqual(makePool('rect', 10, 20, 1, 'p'), { id: 'p', look: 'pond', z: 1.4, shape: 'rect', rect: [7, 17, 13, 23] });
+  assert.equal(t.createPool(10, 20), 'pond_6'); assert.equal(dw.length, n + 1); assert.equal(t.st.sel, 'pond_6'); assert.equal(s2.stack.size, 1);
+  const np = dw[n]; assert.deepEqual([np.rect, np.z, np.look], [[7, 17, 13, 23], 1.4, 'pond']);
+  assert.equal(t.depth(), 0.4); assert.equal(t.createPool(80, 0, 'circle'), 'pond_7'); assert.deepEqual([dw[n + 1].c, dw[n + 1].r, dw[n + 1].z], [[80, 0], 3, 3.4]);
+  assert.equal(s2.stack.size, 2); undo(s2); assert.equal(dw.length, n + 1); redo(s2); assert.equal(dw.length, n + 2); undo(s2); undo(s2); assert.equal(JSON.stringify(s2.def), b0);
+  // read-only + unknown ground refused
+  t.select('braid'); assert.ok(!t.deleteSelected()); assert.ok(!t.deleteSelected()); assert.ok(!t.setLook('x')); assert.equal(dw.length, n); assert.equal(t.depth(), null);
+  assert.equal(setup(() => NaN).tool.createPool(1, 1), '');
+  // delete: needs 2 calls, one undo step, selection cleared, other select disarms
+  t.select('cellar'); assert.ok(!t.deleteSelected()); assert.equal(t.st.armed, 'cellar'); assert.equal(dw.length, n); t.select('big'); assert.equal(t.st.armed, null);
+  t.select('cellar'); t.deleteSelected(); assert.ok(t.deleteSelected()); assert.equal(dw.length, n - 1); assert.equal(t.st.sel, null); assert.equal(s2.stack.size, 1);
+  undo(s2); assert.equal(JSON.stringify(s2.def), b0); assert.equal(s2.def.water[1].id, 'cellar'); redo(s2); assert.equal(dw.length, n - 1); undo(s2);
+  // look
+  assert.deepEqual(t.looks(), ['sea', 'murky']); t.select('cellar'); assert.ok(t.setLook('sea')); assert.equal(dw[1].look, 'sea'); assert.ok(!t.setLook('sea')); undo(s2); assert.equal(dw[1].look, 'murky');
+  // depth: floating pool (surface at/below floor) and circle sampling
+  t.select('big'); assert.equal(t.depth(), -1); assert.equal(maxDepth({ rect: [0, 0, 4, 4], z: 5 }, () => 2), 3); assert.equal(maxDepth({ c: [0, 0], r: 2, z: 1, shape: 'circle' }, (x) => (x > 2.5 ? -50 : 1)), 0);
+}
 console.log('waterTool tests PASS');
