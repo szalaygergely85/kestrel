@@ -23,11 +23,9 @@ Claude stopped at its weekly API limit. Recovery inspected its last local transc
 - `check-deps OK` (2491 files; existing warnings allowed). `coin-lint`: 0 errors, 0 warnings.
 - Coin HUD caches its label and interpolates RGB without allocating a closure on each draw.
 
-## Remaining decisions
+## Follow-up decisions resolved (D-122)
 
-- QD-15 Ash Mile/Reedmire: bat and wisp models are absent. Recommend the designer supplies the approved models; alternative is an owner-approved replacement encounter. Original quests remain intact.
-- QD-15 Northwood/Whitecombs: horn and rope token item IDs are not defined. Recommend approved item definitions; alternative is to remove those story items from the design. Original quests remain intact.
-- QD-15 Strand: the current delivery rule requires delivery recipient = final hand-in NPC. Recommend an intermediate delivery objective to Edda followed by return to Strand; alternative is two linked outbound/return quests. Original delivery remains intact.
+- The owner delegated the QD-15 choices after this recovery. D-122 approves real bat/wisp asset production, inventory-free horn/rope chest facts, and a two-quest Strand delivery/return chain using supported goblin archers. The implementation queue and quest specification carry these choices; they no longer need PC-A approval. These follow-up features are not implemented by this decision-only change.
 - CUR-04 trade screen was not started by the interrupted agents. CUR-03 trade data/logic is integrated; its UI remains the next currency item.
 - The separate sky-haze branch and parked flicker experiments were not part of the interrupted quest/currency batch; their existing owner-look/architecture requirements remain.
 

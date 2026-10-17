@@ -1,6 +1,13 @@
 # PC-B queue
 
-> **Recovery 2026-10-17:** QD-01..09 and CUR-01/02/03/05/06 integrated; QD-15a Downs/Heath complete. Remaining QD-15 decisions and verification: `docs/test-reports/pc-b-recovery-2026-10-17.md`. CUR-04 trade screen is next; no new epic work was started during recovery.
+> **Recovery 2026-10-17:** QD-01..09 and CUR-01/02/03/05/06 integrated; QD-15a Downs/Heath complete. Recovery verification (QD-15 choices resolved by D-122): `docs/test-reports/pc-b-recovery-2026-10-17.md`. CUR-04 trade screen is next; no new epic work was started during recovery.
+
+## QD-15 decisions approved (D-122, 2026-10-17)
+Owner delegated these decisions to Codex. These items no longer wait for PC-A choices; ordinary implementation review remains.
+- **QD-15b Northwood/Whitecombs:** ready for content implementation. Use chest flags for horn/rope story facts; no new pack items. Keep actual arrows/potions/gear loot. Spec: quest-depth-proposal section 3 amendment + D-122.
+- **QD-15c Strand:** ready for content implementation. Two linked quests, existing delivery rules and supported goblin-archer ambush. Follow D-122 for IDs, rewards, post-accept objectives and old-save behavior.
+- **QD-15d bat/wisp assets:** approved designer work. Register real `bat` / `wisp` actor models, preview and visually verify; no substitute creatures.
+- **QD-15e Ash Mile/Reedmire:** implement the existing night objectives after QD-15d registers the assets. Dependency is asset production, not owner approval.
 
 ## PC-B refill 2026-10-17 evening (recovered draft; PC-A to ratify)
 > Recovery audit: this draft predates completed work. EV17-01/02/10/15/16 are already implemented; do not restart them. Currency was approved in D-121. See the recovery handoff for the integrated batch and the remaining QD-15 blockers.

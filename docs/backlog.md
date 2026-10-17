@@ -3,8 +3,8 @@
 > **PC-B handoff 2026-10-17 recovery - START HERE.** Claude hit its weekly limit; its unpublished quest/currency batch is recovered on pc-b.
 > - Owner can test coin rewards and HUD/inventory counts, the reworked quests, the Downs herder and Heath lockbox.
 > - Ready for PC-A technical/PO review; checks and exact scope: docs/test-reports/pc-b-recovery-2026-10-17.md.
-> - QD-15 blockers: recommend approved bat/wisp art and horn/rope item IDs, plus intermediate delivery support for Strand; alternatives are recorded in the report.
-> - Next: CUR-04 trade screen, then the blocked wardens after decisions. Parked sky/flicker experiments remain separate.
+> - QD-15 choices approved in D-122 (owner delegated): real bat/wisp assets; horn/rope as chest facts; Strand as two linked quests with supported goblin archers.
+> - Ready: QD-15b/c content; QD-15d designer assets then night quests; CUR-04 trade screen. Parked sky/flicker experiments remain separate.
 
 > **!!! OWNER P0 (2026-10-16, PC-A): OB-209 (pale "building" silhouette on the far hill + navy far trees, reported ~4 times; OB-059/061/089/175/204 reopened) and OB-203 reopened (backpack: cannot leave gaps). Top of docs/pc-b-queue.md. Do these before anything else, with a regression gate so OB-209 cannot come back.**
 

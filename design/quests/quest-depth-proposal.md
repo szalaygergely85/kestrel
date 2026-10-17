@@ -60,6 +60,14 @@ Net result: 20 quests -> 17 (3 cuts: sq.burl.hint, sq.fc.again, sq.burl.ask). 15
 | sq.reg.strand | The road to the Downs is watched. | 1 Carry the arrows to Edda. On the Downs road, 2 `bandit_archer` ambush you (AMB, area). 2 Bring Edda's reply back to the Strand warden (talk). | group `strand.road` + logic block; 2 Edda lines |
 | sq.reg.whitecombs | A climber went up and never came down. | 1 Drive off 2 bears. 2 Find the climber's pack in the bears' den (chest): a rope token + `potion.hp` x2 + a sturdy roll. | `chestCombDen` + table, 1 inspect note in the pack |
 
+### QD-15 implementation amendment (D-122, owner-delegated decision, 2026-10-17)
+
+This amendment supersedes the asset/item/delivery choices in the five relevant rows above.
+- Ash Mile/Reedmire retain their bats/wisps. The missing actor models are approved designer work; implementation depends on registered, visually verified assets, not another owner decision.
+- Northwood's horn and Whitecombs' rope are inventory-free quest facts, recorded by opening the named chest and acknowledged in inspect/hand-in text. Do not add item IDs or pack slots. The listed arrows, potions and sturdy roll remain actual loot.
+- Strand splits into `sq.reg.strand` (Kit -> Edda, deliver 5 arrows, hand in at Edda, 15 coins) and `sq.reg.strand.reply` (Edda -> Kit, Accept/Exit, return-road ambush of 2 existing goblin archers, reach Strand after acceptance, hand in at Kit, 15 coins + 2 Health Potions). Existing completed outbound saves keep their completion/rewards. The return quest is offered, not auto-accepted. Use existing delivery and quest-ambush mechanics; no delivery-engine extension.
+- Gate each completed part with real quest events, save/load and duplicate-reward checks, content/text lint, and the required real-GPU owner-visible still. D-122 approves these choices; it does not sign off the implementation.
+
 ## 4. NEW short quests (OPTIONAL, they use mechanics no quest uses yet)
 
 | New id / title / giver | Hook | Objectives | Mechanics | Needs |
