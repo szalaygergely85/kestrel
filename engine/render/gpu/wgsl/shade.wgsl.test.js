@@ -100,7 +100,7 @@ const f1Tex = (flat, width, height) => { const d = []; for (let i = 0; i < width
 const faceKRows = [[table.faceK[0], table.faceK[1], table.faceK[2], table.faceK[3]], [table.faceK[4], table.faceK[5], table.faceK[6], 0]];
 const shading = table.shading;
 const su = {
-  wetness: 0, skyGlowOn: { x: 0, y: 0, z: 0, w: 0 }, cellAspect: packed.uniforms.cellAspect, cutoff: shading.cutoff, lift: shading.lift, aoR: table.ao.r, aoK: table.ao.k, faceK: faceKRows,
+  wetness: 0, fogView: { x: 0, y: 0, z: 0, w: 0 }, skyGlowOn: { x: 0, y: 0, z: 0, w: 0 }, cellAspect: packed.uniforms.cellAspect, cutoff: shading.cutoff, lift: shading.lift, aoR: table.ao.r, aoK: table.ao.k, faceK: faceKRows,
 };
 assert.equal(su.cellAspect, shading.cellAspect, 'uniform cellAspect == shading.cellAspect');
 const POW2 = [0.125, 0.25, 0.5, 1, 2, 4];
@@ -556,8 +556,9 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   // re-pinned 64622 -> 64993 by AA-22 (OB-208: wind hold, bucketed far-grass gust + appended fgQ; fgQ.x = 0 = old phase)
   // re-pinned 64985 -> 65357 by OB-217 (shaded grass value range, skyGlowOn.w = strength; 0 = identical)
   // re-pinned 65357 -> 66072 by OB-222 candidate (far forest face floor, su.faceK[1].w flag; 0 = identical output)
-  assert.equal(SHADE_WGSL.length, 66072, 'stable off: SHADE_WGSL length unchanged');
-  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), 'b036afc6bb6db42b077364fb1a1fa7e8118882fa8bde07419d58d473c0a092cb', 'stable off: SHADE_WGSL byte-identical to pre-073b');
+  // re-pinned 66072 -> 66367 by FD-05 (alt-glyph dice bit: fogView.w bit 4; 0 = identical output)
+  assert.equal(SHADE_WGSL.length, 66367, 'stable off: SHADE_WGSL length unchanged');
+  assert.equal(createHash('sha256').update(SHADE_WGSL).digest('hex'), '3d36be08bdcbc33869e6592134175aa496a1ea94a6d2194fb14b647760fd00f4', 'stable off: SHADE_WGSL byte-identical to pre-073b');
   assert.ok(!/lvl|lvOut|location\(2\)/.test(SHADE_WGSL), 'stable off: no level output');
   assert.deepEqual(SHADE_TARGETS, ['rgba8', 'rgba8']);
   assert.deepEqual(SHADE_LEVEL_TARGETS, ['rgba8', 'rgba8', 'r8ui']);

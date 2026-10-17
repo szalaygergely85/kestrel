@@ -471,8 +471,10 @@ export function shadeCore(table, rec, u, v, z, aoD, dudx, dvdx, dudy, dvdy, dist
     hJ = hA;
   } else {
     const cx = Math.floor(u * ds * 0.5), cy = Math.floor(v * ds * 0.5);
-    hA = hashFast(cx, cy, rec.seed);
     hC = hashFast(cx, cy, rec.seed + 13);
+    if (fogShapeCtx.on && fogShapeCtx.aaAlt && fogShapeCtx.mode !== 2) { // FD-05: alt-glyph die on a 2x coarser texel cell (hC / hJ-grid unchanged)
+      hA = hashFast(Math.floor(u * ds * 0.25), Math.floor(v * ds * 0.25), rec.seed);
+    } else hA = hashFast(cx, cy, rec.seed);
     hJ = g ? hashFast(bix, course, rec.seed) : hA;
   }
   const hB = hashFast(btx, bty, rec.seed + 7);

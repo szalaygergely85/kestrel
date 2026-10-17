@@ -59,6 +59,7 @@ export function fogDirShear(hx, hy, tanE, out) {
  */
 export const fogShapeCtx = { on: false, mode: 0, camZ: 0, terms: null, sunX: 0, sunY: 0, sunZ: 0, sunI: 0,
   camX: 0, camY: 0, aaFol: true, // AA-15 (OB-208): camera x/y + the foliage world-dice switch (`?aafol=0` -> setFoliageDice(false))
+  aaAlt: true, // FD-05 (OB-198/208): coarser world-stable alt-glyph dice (cell x2 non-grid, leaf block x3); `?aaalt=0` -> setAltDice(false) (main.js line to add by the main session)
   aaFolL: true, // AA-16 (OB-208): leaf-card light smoothing switch (`?aafoll=0` -> setFoliageLight(false))
   aaEdgeHold: true, // AA-18 (OB-208): stable pass lets edge cells take history (`?aaedge=0` -> setEdgeHold(false)); read by passStable.js
   aaLeafUv: true, // AA-26 (OB-208): stable pass skips the UV drift test on soft-edge leaf cells (`?aaleafuv=0` -> setLeafUvHold(false)); read by passStable.js
@@ -85,6 +86,8 @@ export function meshOutdoorFog(world, cam, palette) {
 /** AA-15 (OB-208): switch the foliage world-space glyph dice (default on). Read by the CPU twin (detailShade.js) and passShade.js (fogView.w). */
 export function setFoliageDice(on) { fogShapeCtx.aaFol = !!on; }
 /** AA-16 (OB-208): switch the leaf-card light smoothing (default on). Read by detailShade.js shadeSurfaces and passShade.js (fogView.w bit 2). */
+/** FD-05: switch the coarse alt-glyph dice (default on; `?aaalt=0` off). Read by detailShade.js shadeCore + folDiceJS, passShade.js (fogView.w bit 4). */
+export function setAltDice(on) { fogShapeCtx.aaAlt = !!on; }
 export function setFoliageLight(on) { fogShapeCtx.aaFolL = !!on; }
 /** AA-17 (OB-208): switch the resolve-hysteresis soft-edge leaf match (kind + material, any planeId; default on). Read by passCell.js (ResolveU.folEdge). */
 export function setFoliageEdge(on) { fogShapeCtx.aaFolE = !!on; }
@@ -103,7 +106,7 @@ export function setLeafLevelHold(on) { fogShapeCtx.aaLeafLv = !!on; }
 export function setSeamHold(on) { fogShapeCtx.aaSeam = !!on; }
 export function setEdgeCorner(eps) { fogShapeCtx.aaEdgeEps = Number.isFinite(eps) ? eps : 0; }
 /** AA-16: fogView.w bit field for passShade.js - 1 = world glyph dice (AA-15), 2 = leaf light smoothing (AA-16). */
-export function foliageBits() { return (fogShapeCtx.aaFol ? 1 : 0) + (fogShapeCtx.aaFolL ? 2 : 0); }
+export function foliageBits() { return (fogShapeCtx.aaFol ? 1 : 0) + (fogShapeCtx.aaFolL ? 2 : 0) + (fogShapeCtx.aaAlt ? 4 : 0); }
 
 /**
  * AA-15 (OB-208): glyph dice for soft-edge leaf cards (kind 9), keyed to a WORLD-space block instead of the per-card u/v (leaf cards
@@ -113,7 +116,7 @@ export function foliageBits() { return (fogShapeCtx.aaFol ? 1 : 0) + (fogShapeCt
  */
 export function folDiceJS(col, row, dist, seed) { // seed = material seed + salt (977)
   const c = fogShapeCtx, d = fogCellDirJS(col, row), fr = Math.fround;
-  const q = dist >= 64 ? 4 : dist >= 32 ? 2 : dist >= 16 ? 1 : 0.5, iq = 1 / q;
+  const q = (dist >= 64 ? 4 : dist >= 32 ? 2 : dist >= 16 ? 1 : 0.5) * (c.aaAlt ? 3 : 1), iq = 1 / q; // FD-05: x3 block when aaAlt
   const px = fr(fr(c.camX) + fr(fr(d[0]) * fr(dist))), py = fr(fr(c.camY) + fr(fr(d[1]) * fr(dist))), pz = fr(fr(c.camZ) + fr(fr(d[2]) * fr(dist)));
   const ix = Math.floor(px * iq), iy = Math.floor(py * iq), iz = Math.floor(pz * iq);
   let h = (Math.imul(ix | 0, 0x27d4eb2d) ^ Math.imul((iy + Math.imul(iz, 8191)) | 0, 0x165667b1) ^ Math.imul(seed | 0, 0x9e3779b1)) | 0;
