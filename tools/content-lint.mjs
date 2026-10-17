@@ -245,6 +245,7 @@ export async function buildContext(opts = {}) {
     fxModels: new Set(Object.entries(globalThis.ASSETS.models || {}).filter(([, m]) => m && m.fx === true).map(([k]) => k)),
     formatQuests: quests, questTexts, r19Allow, names: nameList, logic, entSupport, anchors, entities, structures: def.structures, floating, texts, jsTexts, quests: qs, itemDefs: assets.items?.defs || (await loadDesignAssets()).items?.defs,
     labelOf, giverIds, pos, groundAt: gz, walkable, characters, levelIds: new Set((JSON.parse(fs.readFileSync(path.join(root, 'content/levels/tower.level.json'), 'utf8')).props || []).map((p) => p.id)), chests: entities.filter((e) => /^chest/.test(e.id)), guards,
+    riverX: (y) => T.util.riverX(y), riverHalf: 10, // kept for jossPlacement.test (R9 itself no longer uses the river)
     bandMinAt: createBand(G.regions).bandAt,
   };
 }
