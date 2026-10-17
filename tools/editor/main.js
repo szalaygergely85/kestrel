@@ -18,6 +18,8 @@ import { createCameraPose, updateCamera, startPoseForStructure, adjustSpeed, clo
 import { createAxisGizmo } from './axisGizmo.js';
 import { createQuestOverlay } from './questOverlay.js';
 import { createAreaOverlay } from './aiAreaOverlay.js'; // ED-AI-05
+import { createWaterTool } from './waterTool.js'; // ED-WATER-01 (OB-223)
+import { mountWaterPanel, createWaterOverlay } from './waterPanel.js';
 import { unprojectCell, rayPoint, projectPoint, screenCentreGroundHit } from './ray.js';
 import { pickAt, pickMarkers } from './pick.js';
 import { resolveMeshClick } from './meshClick.js';
@@ -2350,6 +2352,12 @@ canvas.addEventListener('mousedown', async (e) => {
   const tok = clickGuard.begin();
   if (col < 0 || col >= rt.cols || row < 0 || row >= rt.rows) return;
 
+  if (waterOn) { // ED-WATER-01: the Water tool owns the left button (pick region / drag handle / drag inside)
+    const hit = await pickAt(col, row, pickCtx());
+    if (clickGuard.isStale(tok)) return;
+    if (hit.world && (hit.kind === 'terrain' || hit.kind === 'surface')) { if (!waterTool.down(hit.world.x, hit.world.y)) waterTool.pick(hit.world.x, hit.world.y); }
+    frame.markDirty(); return;
+  }
   if (questPanelHandle && !questPickerArmed()) { // ED-QUEST-04: a click on a quest pin selects that objective in the panel
     const pin = questOverlay.pinAt(col, row);
     if (pin) { questPanelHandle.selectObjective(pin.qid, pin.obj); return; }
@@ -2644,6 +2652,7 @@ window.addEventListener('mouseup', (e) => {
     if(rec) commit(rec);
     return;
   }
+  if (waterTool.st.drag) { waterTool.up(); frame.markDirty(); return; }
   if (aiTool() && aiTool().st.draft && aiTool().st.draft.type === 'disc') { aiTool().pointerUp(); frame.markDirty(); return; }
   if (tb.stroke) { terrainStrokeEnd(false); return; }
   if (gb.stroke) { grassStrokeEnd(false); return; }
@@ -2727,12 +2736,14 @@ window.addEventListener('mouseup', (e) => {
 // ED-TERRAIN-1c: cursor ring + stroke dabs follow the pointer over the terrain.
 canvas.addEventListener('mousemove', async (e) => {
   const aiDrag = aiTool() && aiTool().st.draft && aiTool().st.draft.type === 'disc';
-  if (toolMode !== 'terrain' && toolMode !== 'grass' && toolMode !== 'foliage' && !aiDrag) return;
+  const waterDrag = !!waterTool.st.drag;
+  if (toolMode !== 'terrain' && toolMode !== 'grass' && toolMode !== 'foliage' && !aiDrag && !waterDrag) return;
   const { col, row } = computeMouseCell(e);
   const tok = hoverGuard.begin();
   if (col < 0 || col >= rt.cols || row < 0 || row >= rt.rows) return;
   const hit = await pickAt(col, row, pickCtx());
   if (hoverGuard.isStale(tok)) return; // 38.21 risk (a): a newer click/move or a world rebuild superseded this pick
+  if (waterDrag && hit.world) { waterTool.move(hit.world.x, hit.world.y); frame.markDirty(); return; }
   if (aiDrag && hit.kind === 'terrain' && hit.world) { aiTool().pointerMove(hit.world.x, hit.world.y); frame.markDirty(); return; }
   if (hit.kind === 'terrain' && hit.world) {
     if (toolMode === 'foliage') { fl.hover = { x: hit.world.x, y: hit.world.y }; { const z = FB.zoneOf(fl.hover.x, fl.hover.y), k = FB.zoneKey(z.cx, z.cy); if (k !== fl.zoneKey) { fl.zoneKey = k; updateFoliageMeter(); } } if (dp.stroke) decorStrokeMove(fl.hover); else if (fl.ctl && fl.ctl.active) fl.ctl.move(fl.hover); frame.markDirty(); return; }
@@ -2970,6 +2981,11 @@ function drawAssetGhost() {
   drawText(overlayPlate, c + 1, r, ` ${meshKeyFromIcon(assetDrag.modelKey) ?? assetDrag.modelKey}`, dimHex, bgHex);
 }
 
+// ED-WATER-01 (OB-223): rect water regions of the world file; edits are normal commit() records (rebuild reloads world.water).
+let waterOn = false;
+const waterTool = createWaterTool({ doc, fileId: fileKey('world', doc.worldId), commit, onChange: () => { frame.markDirty(); waterPanel.refresh(); } });
+const waterPanel = mountWaterPanel(document.body, { tool: waterTool, onToggle: (on) => { waterOn = on; frame.markDirty(); } });
+const waterOverlay = createWaterOverlay({ rt, getCam: () => cam, renderer: RENDERER });
 const overlayPlate = createOverlayTarget(engine.ui, rt);
 const overlayGlyph = createOverlayTarget(engine.ui, rt, { glyphOnly: true });
 const aiAreaOverlay = createAreaOverlay({ rt, getCam: () => cam, floorAt: (x, y) => world.floorAt(x, y), renderer: RENDERER, names: (k) => (aiTool() && aiTool().model && creaturesHandle.kindName ? creaturesHandle.kindName(k) : k) });
@@ -2979,6 +2995,7 @@ function drawOverlay(fb) {
   const selection = primarySelection();
   if (questPanelHandle) questOverlay.draw(overlayPlate, questPanelHandle.markerState());   // ED-QUEST-04
   if (aiTool()) aiAreaOverlay.draw(overlayPlate, aiTool());   // ED-AI-05
+  if (waterOn) waterOverlay.draw(overlayPlate, waterTool);   // ED-WATER-01
   if (markersOn) drawMarkers(overlayPlate, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets.palette, selection, RENDERER, groupDrag?.previewItems);
   for (const item of sel.items) drawSelectionHighlight(overlayPlate, cam, rt.cols, rt.rows, rt.pxCellW, rt.pxCellH, world, assets, doc, item, '#ffd24a', RENDERER, groupDrag?.previewItems);
   if (boxDrag?.moved) drawMeshHighlightRect(overlayPlate,boxDrag.rect,'#ffd24a');
@@ -3051,6 +3068,7 @@ window.__editor = {
   doImportVox,
   // OB-218: model keys of the voxel instances queued for the last frame (verify-editor-characters.mjs)
   drawnModelKeys: () => { const p = frame.voxelPool; return p.raw.slice(0, p._rawCount).map((r) => r.modelKey); },
+  water: { tool: waterTool, panel: waterPanel, setOn: (on) => { const c = document.querySelector('#water-on'); c.checked = !!on; c.dispatchEvent(new Event('change')); } }, // ED-WATER-01 (verify-editor-water.mjs)
   setCamPose: (o) => { cam = createCameraPose({ ...cam, ...o }); frame.markDirty(); },
 };
 
