@@ -2055,3 +2055,7 @@ Before/after teaser t=0: docs/test-reports/ob213-falls-before.png / ob213-falls-
   Coast band |sd|<150: LOD1 max neighbour jump 65 m (cliff x=132,y=1476, -33 vs -98) vs 28 m on the 8 m grid in x; beaches fine (1 jump >20, 8 on cliffs). The cliff data itself is steep (22 m in 12 m + fells), so stairs = 32 m sampling of a real wall.
   Tried: tent-filtered LOD1 heights (1,2,3,4,3,2,1): max jump 65->45, max err vs 8 m grid 30->22, but mean err 0.74->0.96 (shaves peaks) = not a clear win. LOD1 step 2 (16 m): jump 55, mean err 0.32, max err 21.5 (cost 4x LOD1 verts).
   Options: (a) coast-band LOD1 step 2 (tiles with |sd|<150), (b) accept + treat dawn tongue/horizon bar as sea skirt/water issue (not terrain LOD). Needs owner-eye decision; no hashes touched. Verify still: node tools/teaser-stills.mjs --port {port} --ids teaser-strand-dawn
+
+### 2026-10-17 OB-221 + OB-220 (slot kestrel-1, Node only)
+- OB-221: questLog.js left pane now has gold "Main" / blue "Side" headings (main first, empty group hides heading, `view` rows; headings are not selectable, heading click swallowed, click rows offset). New questLogGroups.test.js.
+- OB-220: "next light" = Lamps on the Verge (sq.rb.lamps, giver Joss). Zone `lamps` (r 22 @1263,1052) contained Joss (21.7 m) so accepting finished the walk at once; r -> 14 in world_m1.world.json. Test ob220Lamps.test.js (giver outside zone). Not verified in-game; lamps positions not re-checked vs r 14 (owner to walk). GI not affected.

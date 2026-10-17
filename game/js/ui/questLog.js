@@ -49,7 +49,8 @@ export function createQuestLog(def, {hudWidth=60,width=72,fg='#e8e2d0',bg='#0a0b
 // (title, story summary from the active objective's `journal`, objectives with counts). Strings are rebuilt only on open,
 // key input and a changed book.version; draw() never formats or allocates.
 export const QUEST_LOG_KEYS = ['ArrowUp', 'ArrowDown', 'KeyW', 'KeyS', 'ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD', 'Tab', 'KeyE', 'Backspace', 'Enter', 'KeyJ', 'Escape', 'KeyX', 'KeyT'];
-export const QUEST_LOG_TEXT = Object.freeze({ header: 'PENCIL NOTES', empty: 'Nothing yet. Not nothing.', paneL: 'QUESTS', abandon: '[X] Abandon quest', track: '[T] Track this quest', tracked: '[T] Tracked (compass + objective)', talkTo: 'Talk to ', abandonSure: '[X] again to abandon (progress resets)', finished: 'All done. Nothing left to do here.', footer: 'W/S select  T track  X abandon  J close', footerDone: 'W/S select  Enter re-read  J close', giver: 'Given by: ', returnTo: 'Return to ', next: 'Next: ', reward: 'Reward: ', received: 'Received: ', handIn: 'Hand in to: ', objectives: 'Objectives' });
+export const QUEST_LOG_TEXT = Object.freeze({ header: 'PENCIL NOTES', empty: 'Nothing yet. Not nothing.', paneL: 'QUESTS', abandon: '[X] Abandon quest', track: '[T] Track this quest', tracked: '[T] Tracked (compass + objective)', talkTo: 'Talk to ', groupMain: 'Main', groupSide: 'Side', abandonSure: '[X] again to abandon (progress resets)', finished: 'All done. Nothing left to do here.', footer: 'W/S select  T track  X abandon  J close', footerDone: 'W/S select  Enter re-read  J close', giver: 'Given by: ', returnTo: 'Return to ', next: 'Next: ', reward: 'Reward: ', received: 'Received: ', handIn: 'Hand in to: ', objectives: 'Objectives' });
+const GROUP_GOLD = '#ecc45c', GROUP_BLUE = '#78beff'; // OB-221: gold = main, blue = side (quickbarView GOLD / compassHud SIDE_BLUE)
 const AVAILABLE = 1, READY = 3, DONE = 4, LIST_TOP = 6, LIST_ROWS = 14, LEFT_X = 4, LEFT_W = 22, DIV_X = 27, RIGHT_X = 29, RIGHT_W = 40;
 
 /** Word wrap into at most `max` lines of `w` chars (last line ellipsised). Rebuild-time only. */
@@ -85,6 +86,7 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
   const bounds = { x: 0, y: 0, w: width, h: 24 };
   const scratch = [];
   let open = false, built = -1, sel = 0, top = 0, quests = [], names = [], doneFrom = 0, right = [], sure = false;
+  let view = [], dones = []; // OB-221: view = left-pane rows (>= 0: index into quests; -1 'Main' heading; -2 'Side' heading); dones[k] = quest k is finished
 
   /** MAIN = the chapter quest (index 0), `mq.*` ids, or def.kind === 'main'. */
   const isMain = i => typeof book.isMain === 'function' ? book.isMain(i) : (i === 0 || isMainDef(book.def(i))); // OB-155: shared rule
@@ -116,17 +118,24 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
     // OB-100 (owner): a quest shows only once it is picked up (accepted) - offered / unlocked quests are not listed
     for (let i = 1; i < n; i++) if (book.status(i) === DONE && book.def(i).format) done.push(i); // QUEST-FORMAT: finished format quests stay listed below the active ones
     if (book.status(0) === DONE) done.push(0); // OB-099: handed-in giver quests disappear; only the finished chapter row (CH1-09 re-read) stays
-    for (const i of mainAct) quests.push(i);
-    for (const i of act) quests.push(i);
-    for (const i of off) quests.push(i);
-    doneFrom = quests.length;
-    for (const i of done) quests.push(i);
-    for (let k = 0; k < quests.length; k++) { const i = quests[k], d = book.def(i); names.push(clipped(ascii((k >= doneFrom && i === 0 && doneTitle) || d.title || d.id), LEFT_W)); }
-    for (let k = 0; k < quests.length; k++) if (quests[k] === 0 && k < doneFrom) { const m = mainSection(book.def(0), book.objectives(0, mainRows)); if (m) names[k] = clipped(ascii(m.title), LEFT_W); }
+    // OB-221: MAIN group first (active, then the finished chapter row), then SIDE (active, then finished); an empty group has no heading
+    const doneMain = done.filter(isMain), doneSide = done.filter(i => !isMain(i)); dones = []; view = [];
+    const addGroup = (head, list, finished) => {
+      if (!list.length && !finished.length) return;
+      view.push(head);
+      for (const i of list) { view.push(quests.length); quests.push(i); dones.push(false); }
+      for (const i of finished) { view.push(quests.length); quests.push(i); dones.push(true); }
+    };
+    addGroup(-1, mainAct, doneMain); addGroup(-2, act.concat(off), doneSide);
+    doneFrom = dones.indexOf(true); if (doneFrom < 0) doneFrom = quests.length;
+    for (let k = 0; k < quests.length; k++) { const i = quests[k], d = book.def(i); names.push(clipped(ascii((dones[k] && i === 0 && doneTitle) || d.title || d.id), LEFT_W)); }
+    for (let k = 0; k < quests.length; k++) if (quests[k] === 0 && !dones[k]) { const m = mainSection(book.def(0), book.objectives(0, mainRows)); if (m) names[k] = clipped(ascii(m.title), LEFT_W); }
     if (sel >= quests.length) sel = Math.max(0, quests.length - 1);
-    if (sel < top) top = sel;
-    if (sel >= top + LIST_ROWS) top = sel - LIST_ROWS + 1;
-    if (quests.length <= LIST_ROWS || top < 0) top = 0;
+    const vsel = Math.max(0, view.indexOf(sel)); // scroll in view rows (headings take a row); keep a group heading visible with its first row
+    const vtarget = vsel > 0 && view[vsel - 1] < 0 ? vsel - 1 : vsel;
+    if (vtarget < top) top = vtarget;
+    if (vsel >= top + LIST_ROWS) top = vsel - LIST_ROWS + 1;
+    if (view.length <= LIST_ROWS || top < 0) top = 0;
     right = [];
     if (quests[sel] === undefined) return;
     const i = quests[sel], def = book.def(i), s = book.status(i), isDone = s === DONE;
@@ -172,8 +181,8 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
   /** Mouse: grid cell coords; selects the clicked quest name. True when consumed. */
   function handleClick(cx, cy) {
     if (!open) return false;
-    const r = cy - bounds.y - LIST_TOP, c = cx - bounds.x, k = top + r;
-    if (r >= 0 && r < LIST_ROWS && c >= LEFT_X - 2 && c < DIV_X && k < quests.length) { sure = false; sel = k; rebuild(); return true; }
+    const r = cy - bounds.y - LIST_TOP, c = cx - bounds.x, v = view[top + r];
+    if (r >= 0 && r < LIST_ROWS && c >= LEFT_X - 2 && c < DIV_X && v !== undefined) { if (v >= 0) { sure = false; sel = v; rebuild(); } return true; } // a heading click is swallowed
     const rr = cy - bounds.y - (LIST_TOP - 1), ln = right[rr]; // OB-219: the right-pane [X] Abandon / [T] Track rows are clickable (two clicks abandon, like X X)
     if (ln && ln.act && c >= RIGHT_X && c < RIGHT_X + RIGHT_W) return handleKey(ln.act);
     return false;
@@ -229,9 +238,11 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
     for (let y = bounds.y + LIST_TOP - 1; y < bounds.y + LIST_TOP + LIST_ROWS; y++) ui.setCell(bounds.x + DIV_X, y, '|', div, bg);
     drawText(ui, bounds.x + LEFT_X, bounds.y + LIST_TOP - 1, T.paneL, head, bg);
     const focusSt = style?.row.focus, normSt = style?.row.normal;
-    for (let r = 0; r < LIST_ROWS; r++) { // LEFT pane
-      const k = top + r; if (k >= quests.length) break;
-      const y = bounds.y + LIST_TOP + r, focus = k === sel, isDone = k >= doneFrom;
+    for (let r = 0; r < LIST_ROWS; r++) { // LEFT pane (OB-221: Main / Side headings between the quest rows)
+      const v = view[top + r]; if (v === undefined) break;
+      const y = bounds.y + LIST_TOP + r;
+      if (v < 0) { drawText(ui, bounds.x + LEFT_X - 2, y, v === -1 ? T.groupMain : T.groupSide, v === -1 ? GROUP_GOLD : GROUP_BLUE, bg); continue; }
+      const k = v, focus = k === sel, isDone = dones[k];
       const ink = style ? colour(focus ? focusSt.fg : isDone ? style.row.disabled.fg : normSt.fg) : fg, back = style && focus ? style.bg[focusSt.bg] : bg;
       if (focus && style) for (let x = style.row.bandFrom; x < DIV_X; x++) ui.setCell(bounds.x + x, y, ' ', ink, back);
       drawText(ui, bounds.x + LEFT_X, y, names[k], ink, back);
@@ -245,5 +256,5 @@ export function createQuestLogScreen(book, { style = null, text = {}, width = 72
     }
     return bounds;
   }
-  return { open: show, close, handleKey, handleClick, draw, isOpen: () => open, snapshot: () => ({ open, sel, top, left: names.slice(), doneFrom, right: right.map(l => l.text), lines: names.concat(right.map(l => l.text)) }) };
+  return { open: show, close, handleKey, handleClick, draw, isOpen: () => open, snapshot: () => ({ open, sel, top, left: names.slice(), doneFrom, view: view.map(v => (v === -1 ? T.groupMain : v === -2 ? T.groupSide : names[v])), groups: view.filter(v => v < 0).map(v => (v === -1 ? 'main' : 'side')), right: right.map(l => l.text), lines: names.concat(right.map(l => l.text)) }) };
 }

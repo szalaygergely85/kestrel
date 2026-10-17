@@ -2629,7 +2629,7 @@
     {"id": "fenceGap", "note": "QL-B2 area-only zone: the meadow fence gap", "r": 6, "shape": "circle", "x": 1386, "y": 1031},
     {"id": "woodpile", "note": "QL-B2 area-only zone: the woodcutter's corner at Burl's clearing", "r": 6, "shape": "circle", "x": 1464, "y": 1017},
     {"id": "wagon", "note": "QL-B2 area-only zone: the abandoned cart on Road West", "r": 6, "shape": "circle", "x": 1347, "y": 1058},
-    {"id": "lamps", "note": "QL-B2 area-only zone: the two brass lamps along the Bend verge", "r": 22, "shape": "circle", "x": 1263, "y": 1052},
+    {"id": "lamps", "note": "QL-B2 area-only zone: the two brass lamps along the Bend verge (OB-220: r 18 = both lamps at 17 m inside, Joss at 21.7 m + 3 m talk range outside)", "r": 18, "shape": "circle", "x": 1263, "y": 1052},
     {"id": "forestEdge", "note": "QL-B2 area-only zone: rocks and fallen logs at the forest edge", "r": 9, "shape": "circle", "x": 1190, "y": 1044},
     {"id": "wallow", "note": "QL-B2 area-only zone: the boar wallow", "r": 10, "shape": "circle", "x": 1320, "y": 1070},
     {"id": "farmGate", "note": "QL-B2 area-only zone: the river farm gate", "r": 8, "shape": "circle", "x": 1080, "y": 1090},
