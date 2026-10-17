@@ -105,13 +105,17 @@ export function createLegDriver(capacity = 48) {
     // ---- LOD: nearest SOLVE_MAX attached animals within SOLVE_R (other slots' d2 are last frame's: deterministic, one frame stale)
     const cx = x - io[5], cy = y - io[6], d2 = cx * cx + cy * cy;
     state[S + H_D2] = d2;
-    let rank = 0;
-    for (let j = 0; j < capacity; j++) {
-      const dj = state[j * STATE_STRIDE + H_D2];
-      if (j !== slot && (dj < d2 || (dj === d2 && j < slot))) rank++;
-    }
+    // PERF (D-107): outside the radius the rank cannot matter -> skip the O(capacity) scan; inside, stop counting once SOLVE_MAX is reached (same inLod).
     const rr = state[S + H_SOLVED] ? SOLVE_R_HYST : SOLVE_R;
-    const inLod = rank < SOLVE_MAX && d2 < rr * rr;
+    let inLod = d2 < rr * rr;
+    if (inLod) {
+      let rank = 0;
+      for (let j = 0; j < capacity && rank < SOLVE_MAX; j++) {
+        const dj = state[j * STATE_STRIDE + H_D2];
+        if (j !== slot && (dj < d2 || (dj === d2 && j < slot))) rank++;
+      }
+      inLod = rank < SOLVE_MAX;
+    }
     state[S + H_SOLVED] = inLod ? 1 : 0;
 
     // ---- clip -> gait / stand
